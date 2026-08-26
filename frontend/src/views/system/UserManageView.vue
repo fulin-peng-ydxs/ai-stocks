@@ -506,8 +506,10 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('roles')" label="角色">
             <template #default="{ row }">
-              <el-tag v-for="c in orderedRoles(row)" :key="c" :type="roleTagType(c)" :style="roleTagStyle(c)" size="small"
-                      effect="plain" class="role-tag">{{ roleName(row, c) }}</el-tag>
+              <span v-if="row.roles?.length" class="app-inline-info">
+                <el-tag v-for="c in orderedRoles(row)" :key="c" :type="roleTagType(c)" :style="roleTagStyle(c)" size="small"
+                        effect="plain" class="role-tag">{{ roleName(row, c) }}</el-tag>
+              </span>
               <span v-if="!row.roles?.length" class="muted">—</span>
             </template>
           </AppTableColumn>
@@ -638,7 +640,6 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-3); }
 .page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
-.role-tag { margin-right: 4px; }
 .muted { color: var(--el-text-color-secondary); }
 .locked-field { color: var(--el-text-color-regular); }
 .setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }

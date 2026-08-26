@@ -195,7 +195,7 @@ function parentLabel(s: SlotSpec): string | null {
               @click="focus(s.id)"
             >
               <span class="slot-name">{{ s.label || s.id }}</span>
-              <span class="slot-kind">
+              <span class="slot-kind app-inline-info">
                 {{ compLabel(s) }}
                 <span v-if="s.region === 'overlay'" class="off-tag">overlay</span>
                 <span v-else-if="s.parentId" class="off-tag">嵌套于 {{ parentLabel(s) }}</span>
@@ -418,7 +418,6 @@ function parentLabel(s: SlotSpec): string | null {
   justify-content: space-between;
 }
 .off-tag {
-  margin-left: 6px;
   font-size: var(--app-font-size-micro);
   color: var(--el-color-warning);
 }

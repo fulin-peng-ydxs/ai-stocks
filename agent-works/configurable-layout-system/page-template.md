@@ -86,6 +86,7 @@
 规则入口：[DESIGN.md](../../DESIGN.md) §3「Typography Rules / Spacing & Rhythm Rules」。
 
 - 新增或复用的语义类 / token：
+- 行内信息单元：非连续内容是否按 DESIGN §3.2 使用 ` · `、`.app-inline-info` 或 Teleport 浮层唯一 `popper-class`，且未用手工空格、`&nbsp;`、私有 `margin-left/right` 修补：
 - 排版或间距特例：
 - 页头容器对齐：`.page-head` / `.page-toolbar` 是否 `align-items: flex-start`（动作区钉标题顶）——禁止 `flex-end` / `center` 使抽屉触发钮跨页高度不一致；内嵌标题行 `.page-title-row` / `.title-row` 与右侧 `.page-head-actions` 不属此列。
 - 自检结论：

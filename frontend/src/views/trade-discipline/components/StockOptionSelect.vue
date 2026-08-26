@@ -93,13 +93,14 @@ onUnmounted(() => {
       :loading="loading"
       :disabled="disabled"
       :clearable="clearable"
+      popper-class="stock-option-select-popper"
       placeholder="输入代码或名称搜索"
       no-data-text="没有匹配股票"
       @update:model-value="select"
     >
-      <el-option v-for="item in options" :key="item.code" :label="`${item.code} ${item.name}`" :value="item.code">
-        <span>{{ item.code }} · {{ item.name }}</span>
-        <small v-if="item.industry || item.delist_date">
+      <el-option v-for="item in options" :key="item.code" :label="`${item.code} · ${item.name}`" :value="item.code">
+        <span class="stock-option-select__primary">{{ item.code }} · {{ item.name }}</span>
+        <small v-if="item.industry || item.delist_date" class="stock-option-select__meta">
           {{ [item.industry, item.delist_date ? '已退市' : ''].filter(Boolean).join(' · ') }}
         </small>
       </el-option>
@@ -112,7 +113,23 @@ onUnmounted(() => {
 
 <style scoped>
 .stock-option-select, .el-select { width: 100%; }
-.el-select :deep(.el-select-dropdown__item) { display: flex; justify-content: space-between; gap: var(--app-space-3); }
 small { color: var(--el-text-color-secondary); }
 .stock-option-select__error { display: block; margin-top: var(--app-space-1); color: var(--el-color-danger); }
+:global(.stock-option-select-popper .el-select-dropdown__item) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-3);
+}
+:global(.stock-option-select-popper .stock-option-select__primary) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:global(.stock-option-select-popper .stock-option-select__meta) {
+  flex: none;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
 </style>

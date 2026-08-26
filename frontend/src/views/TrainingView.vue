@@ -656,8 +656,9 @@ onBeforeUnmount(detachKeyboard)
               </HelpTipItem>
             </HelpTip>
           </h2>
-          <p class="page-subtitle">回合 {{ view!.cur_round + 1 }}/{{ view!.n_rounds }} · 第 {{ round.cursor_idx + 1 }}/{{ round.window_days }} 个交易日 · 盲测中
-            <el-tag v-if="round.board" size="small" effect="plain" class="board-tag">{{ round.board }}</el-tag>
+          <p class="page-subtitle app-inline-info">
+            <span>回合 {{ view!.cur_round + 1 }}/{{ view!.n_rounds }} · 第 {{ round.cursor_idx + 1 }}/{{ round.window_days }} 个交易日 · 盲测中</span>
+            <el-tag v-if="round.board" size="small" effect="plain">{{ round.board }}</el-tag>
           </p>
         </div>
         <div class="page-head-actions">
@@ -843,8 +844,8 @@ onBeforeUnmount(detachKeyboard)
         <el-card v-for="rd in detail.rounds" :key="rd.seq" shadow="never" class="round-card">
           <template #header>
             <div class="round-head">
-              <span class="rname">回合 {{ rd.seq + 1 }} · {{ rd.name }} <span class="muted">{{ rd.code }}</span>
-                <el-tag v-if="rd.board" size="small" effect="plain" class="board-tag">{{ rd.board }}</el-tag>
+              <span class="rname app-inline-info"><span>回合 {{ rd.seq + 1 }} · {{ rd.name }} <span class="muted">{{ rd.code }}</span></span>
+                <el-tag v-if="rd.board" size="small" effect="plain">{{ rd.board }}</el-tag>
               </span>
               <span class="muted">{{ rd.start_date }} ~ {{ rd.end_date }}</span>
               <span class="round-ret">你 <b :class="(rd.round_return ?? 0) >= 0 ? 'up' : 'down'">{{ pct(rd.round_return) }}</b> · 满仓持有 <b :class="(rd.benchmark_return ?? 0) >= 0 ? 'up' : 'down'">{{ pct(rd.benchmark_return) }}</b> · 回撤 <b class="down">{{ pct(rd.max_drawdown) }}</b></span>
@@ -1067,7 +1068,6 @@ onBeforeUnmount(detachKeyboard)
 .rule-val { color: var(--el-text-color-regular); font-variant-numeric: tabular-nums; }
 .grade-dot { margin-right: var(--app-space-3); font-weight: var(--app-font-weight-strong); }
 .grade-dot--last { margin-right: 0; }
-.board-tag { margin-left: 8px; }
 .round-head { display: flex; align-items: baseline; gap: var(--app-space-4); flex-wrap: wrap; }
 .round-head .rname { font-weight: var(--app-font-weight-section); }
 .round-head .round-ret { margin-left: auto; font-size: var(--app-font-size-table); }

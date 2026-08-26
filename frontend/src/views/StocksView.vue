@@ -926,7 +926,7 @@ onMounted(async () => {
           </AppTableColumn>
           <AppTableColumn v-if="canViewGroups && colVisible('groups')" label="所属分组">
             <template #default="{ row }">
-              <span v-if="row.groups?.length" class="tag-line">
+              <span v-if="row.groups?.length" class="app-inline-info">
                 <el-tag
                   v-for="g in row.groups"
                   :key="g.id"
@@ -1198,13 +1198,6 @@ onMounted(async () => {
 }
 .gb-name-edit:hover .gb-edit-icon {
   color: var(--el-color-primary);
-}
-.tag-line {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--app-space-1);
-  margin-left: 6px;
-  flex-wrap: wrap;
 }
 .box-tag {
   border-radius: 4px;

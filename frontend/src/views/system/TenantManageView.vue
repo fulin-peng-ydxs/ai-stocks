@@ -328,8 +328,10 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
         >
           <AppTableColumn label="租户名" prop="name" fixed="left" show-overflow-tooltip sortable="custom">
             <template #default="{ row }">
-              {{ row.name }}
-              <SystemBuiltinTag v-if="row.id === DEFAULT_TENANT_ID" class="builtin-tag" />
+              <span class="app-inline-info app-inline-info--nowrap">
+                <span>{{ row.name }}</span>
+                <SystemBuiltinTag v-if="row.id === DEFAULT_TENANT_ID" />
+              </span>
             </template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('id')" label="租户 ID" prop="id">
@@ -405,7 +407,6 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-3); }
 .page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
-.builtin-tag { margin-left: 4px; }
 .mono { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); }
 .muted { color: var(--el-text-color-secondary); }
 .locked-field { color: var(--el-text-color-regular); }

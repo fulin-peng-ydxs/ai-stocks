@@ -416,7 +416,7 @@ onMounted(() => {
         <el-option v-for="(l, k) in ISSUE_TYPE_LABEL" :key="k" :label="l" :value="k" />
       </el-select>
       <AppSearchInput v-model="filters.code" placeholder="股票/板块代码或名称" style="width: 210px" @search="applyFilter" />
-      <div class="summary">
+      <div class="summary app-inline-info">
         <el-tag
           v-for="s in data?.summary ?? []"
           :key="s.issue_type"
@@ -587,7 +587,7 @@ onMounted(() => {
 .layer-tag { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .filter-row { flex-wrap: wrap; }
 .summary { margin-left: auto; }
-.sm-tag { margin-left: 6px; cursor: pointer; user-select: none; }
+.sm-tag { cursor: pointer; user-select: none; }
 .sm-tag:focus-visible {
   outline: 2px solid var(--el-color-warning-light-3);
   outline-offset: 2px;

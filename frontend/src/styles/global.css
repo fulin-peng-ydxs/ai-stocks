@@ -424,6 +424,17 @@ html.dark {
 .app-cluster-sm { display: flex; align-items: center; gap: var(--app-space-control-gap); flex-wrap: wrap; }
 .app-cluster-md { display: flex; align-items: center; gap: var(--app-space-2); flex-wrap: wrap; }
 .app-cluster-lg { display: flex; align-items: center; gap: var(--app-space-3); flex-wrap: wrap; }
+.app-inline-info {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-space-control-gap);
+  flex-wrap: wrap;
+  vertical-align: middle;
+}
+.app-inline-info--md { gap: var(--app-space-2); }
+.app-inline-info--nowrap { flex-wrap: nowrap; }
+.app-inline-info > .el-tag { flex: none; }
 
 .page-table-compact .el-table__cell {
   padding-top: 6px;

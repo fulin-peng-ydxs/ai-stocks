@@ -55,6 +55,38 @@ describe('字体与间距设计契约', () => {
     expect(globalCss).toMatch(/\.page-head\s*\{[\s\S]*?align-items:\s*flex-start/)
     expect(globalCss).toContain('.app-page-title')
     expect(globalCss).toContain('.app-cluster-md')
+    expect(design).toContain('### 3.2 Inline Information Unit Rules')
+    expect(design).toContain('明显不是同一个连贯内容单位的信息不得直接相邻')
+    expect(globalCss).toContain('.app-inline-info')
+    expect(globalCss).toContain('.app-inline-info--nowrap')
+  })
+
+  it('独立行内信息使用全局信息组，标签不以页面私有固定边距修补', () => {
+    const violations: string[] = []
+
+    for (const file of sourceFiles(SRC_DIR)) {
+      const rel = relative(SRC_DIR, file)
+      for (const css of styleBlocks(file)) {
+        for (const match of css.matchAll(/([^{}]+)\{([^{}]*?)\}/gs)) {
+          const selector = match[1].trim()
+          if (!/(tag|badge|chip)/i.test(selector)) continue
+          for (const margin of match[2].matchAll(/margin-(left|right)\s*:\s*([^;\n]+)/g)) {
+            const value = margin[2].trim()
+            if (value === 'auto' || value === '0') continue
+            violations.push(`${rel}:${lineOf(css, match.index ?? 0)} ${selector} -> margin-${margin[1]}: ${value}`)
+          }
+        }
+      }
+    }
+
+    expect(violations).toEqual([])
+
+    const schedule = read(join(SRC_DIR, 'views/data/ScheduleView.vue'))
+    const stockSelect = read(join(SRC_DIR, 'views/trade-discipline/components/StockOptionSelect.vue'))
+    expect(schedule).toContain('class="app-inline-info app-inline-info--nowrap"')
+    expect(stockSelect).toContain('popper-class="stock-option-select-popper"')
+    expect(stockSelect).toContain(':global(.stock-option-select-popper .el-select-dropdown__item)')
+    expect(stockSelect).not.toContain('.el-select :deep(.el-select-dropdown__item)')
   })
 
   it('登录页右侧光晕由当前预设强调色推导，避免单套预设漏覆盖', () => {

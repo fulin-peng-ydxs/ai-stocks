@@ -24,6 +24,7 @@ describe('StockOptionSelect', () => {
       props: { modelValue: null, tradeDate: '2026-08-22' }, global: { plugins: [ElementPlus] },
     })
     const select = wrapper.findComponent({ name: 'ElSelect' })
+    expect(select.props('popperClass')).toBe('stock-option-select-popper')
     select.props('remoteMethod')('平安')
     expect(searchStocks).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(250)
@@ -34,6 +35,7 @@ describe('StockOptionSelect', () => {
       expect.any(AbortSignal),
       '2026-08-22',
     )
+    expect(wrapper.findComponent({ name: 'ElOption' }).props('label')).toBe('000001.SZ · 平安银行')
     select.vm.$emit('update:modelValue', '000001.SZ')
     await wrapper.vm.$nextTick()
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([stock])

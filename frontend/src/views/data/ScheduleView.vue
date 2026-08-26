@@ -603,12 +603,14 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           </AppTableColumn>
           <AppTableColumn v-if="jobColVisible('nextRun')" label="下次触发">
             <template #default="{ row }">
-              <span v-if="!row.enabled">—</span>
-              <span v-else-if="row.trigger_mode === 'dependency' && !row.next_run_time">等待上游</span>
-              <span v-else>{{ fmtTime(row.next_run_time) }}</span>
-              <el-tag v-if="row.waiting_trigger_count" size="small" effect="plain" type="warning">
-                等待 {{ row.waiting_trigger_count }}
-              </el-tag>
+              <span class="app-inline-info app-inline-info--nowrap">
+                <span v-if="!row.enabled">—</span>
+                <span v-else-if="row.trigger_mode === 'dependency' && !row.next_run_time">等待上游</span>
+                <span v-else>{{ fmtTime(row.next_run_time) }}</span>
+                <el-tag v-if="row.waiting_trigger_count" size="small" effect="plain" type="warning">
+                  等待 {{ row.waiting_trigger_count }}
+                </el-tag>
+              </span>
             </template>
           </AppTableColumn>
           <AppTableColumn v-if="jobColVisible('retry')" label="自身重试" show-overflow-tooltip>

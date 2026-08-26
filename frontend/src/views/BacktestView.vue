@@ -2522,7 +2522,7 @@ async function openTradeChart(row: TradeRow) {
 .temp-readonly-chip {
   display: inline-flex;
   align-items: center;
-  margin-left: var(--app-space-2);
+  gap: var(--app-space-control-gap);
   padding: 2px 6px;
   border: 1px dashed var(--el-border-color);
   border-radius: var(--layout-control-radius, 6px);
