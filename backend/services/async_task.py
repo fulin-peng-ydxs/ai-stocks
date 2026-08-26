@@ -873,12 +873,13 @@ def _h_enrich_basic(params: dict, ctx: TaskContext) -> dict:
 
 
 def _reingest_board_bar_with_retry(
-    bsvc, code: str, td, ctx: TaskContext
+    bsvc, code: str, start, end, ctx: TaskContext
 ) -> dict:
-    """板块指数单日重采：返回 0 行时按 ths_board 配置指数退避重试。
+    """板块指数定向重采：返回 0 行时按 ths_board 配置指数退避重试。
 
-    源端按年返回 K 线，单点请求可能因数据暂未发布而返回空（如盘后源端延迟）。
-    与网络层重试对齐：读取系统配置 ths_board.max_retries / retry_backoff_sec。
+    粗粒度末尾缺口可传连续区间，逐日缺口/非法值传单日。源端按年返回 K 线，
+    定向请求可能因数据暂未发布而返回空（如盘后源端延迟）。与网络层重试对齐：
+    读取系统配置 ths_board.max_retries / retry_backoff_sec。
     """
     from backend.config import get_effective_settings
 
@@ -891,7 +892,7 @@ def _reingest_board_bar_with_retry(
         # 否则 ingest_board_bar 会把该板块误判为“续跑已完成”而直接跳过。
         ctx.checkpoint.pop("bar_done_codes", None)
         res = _call_with_ctx(
-            bsvc.ingest_board_bar, td, end=td, board_codes=[code], ctx=ctx)
+            bsvc.ingest_board_bar, start, end=end, board_codes=[code], ctx=ctx)
         if res.get("failed"):
             raise RuntimeError(f"板块指数重采失败：{res['failed']}")
         last_res = res
@@ -900,10 +901,44 @@ def _reingest_board_bar_with_retry(
             return res
         if attempt < max_retries:
             sleep = backoff * (2 ** (attempt - 1))
-            ctx.log(f"板块 {code} {td} 指数单日重采返回 0 行，{sleep:.1f}s 后第 {attempt + 1} 次重试")
+            date_range = str(start) if start == end else f"{start}~{end}"
+            ctx.log(f"板块 {code} {date_range} 指数重采返回 0 行，"
+                    f"{sleep:.1f}s 后第 {attempt + 1} 次重试")
             import time
             time.sleep(sleep)
     return last_res
+
+
+def _board_trailing_gap_range(c, code: str, fallback_end):
+    """返回板块末尾连续缺口的定向恢复区间，避免固定从历史起点整段重采。
+
+    截止日以 daily_bar 当前全局最新日为准，保证旧 issue 延迟执行时仍能追到最新。
+    已有指数时从其下一开市日开始；从未入库时无法判断板块成立日，只恢复最新日，
+    后续逐日缺口由实际数据起点和质检窗口继续识别。
+    """
+    import pandas as pd
+
+    latest = c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]
+    end = pd.Timestamp(latest).date() if latest is not None and not pd.isna(latest) else fallback_end
+    if end is None:
+        raise RuntimeError("板块指数缺口缺少可恢复的目标交易日")
+
+    last = c.query_df(
+        "SELECT max(trade_date) AS d FROM board_bar WHERE board_code=?", [code]
+    ).iloc[0]["d"]
+    if last is None or pd.isna(last):
+        return end, end
+    last = pd.Timestamp(last).date()
+    if last >= end:
+        return None, end
+
+    next_open = c.query_df(
+        "SELECT min(trade_date) AS d FROM trade_calendar "
+        "WHERE is_open AND trade_date>? AND trade_date<=?",
+        [last, end],
+    ).iloc[0]["d"]
+    start = pd.Timestamp(next_open).date() if next_open is not None and not pd.isna(next_open) else end
+    return start, end
 
 
 def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, list, str]:
@@ -968,17 +1003,19 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
             else:
                 note = "无行情可重算"
         elif issue_type == "board_index_gap":
-            # 板块指数缺口：重采该板块指数（指定板块），数据补齐后重扫收敛
-            from datetime import date as _d
-
+            # 末尾缺口：只补「最后已有日的下一交易日 → 当前全局最新日」，不再固定从 2024
+            # 整段重采。这样连续缺两日会一次补两日，也不会被无关历史年份失败拖累。
             from backend.services.board_ingest import BoardIngestService
-            ctx.log(f"恢复(板块指数缺口)：重采板块 {code} 指数")
-            bsvc = BoardIngestService(c)
-            res = _call_with_ctx(
-                bsvc.ingest_board_bar, _d(2024, 1, 1), board_codes=[code], ctx=ctx)
-            if res.get("failed"):
-                raise RuntimeError(f"板块指数重采失败：{res['failed']}")
-            note = f"重采指数 {res.get('rows', 0)} 行"
+            repair_start, repair_end = _board_trailing_gap_range(c, str(code), td)
+            if repair_start is None:
+                note = f"板块指数已追平 {repair_end}，无需重复重采"
+            else:
+                ctx.log(f"恢复(板块指数缺口)：重采板块 {code} "
+                        f"{repair_start}~{repair_end} 指数")
+                bsvc = BoardIngestService(c)
+                res = _reingest_board_bar_with_retry(
+                    bsvc, str(code), repair_start, repair_end, ctx)
+                note = f"重采指数 {res.get('rows', 0)} 行"
             ctx.log(note)
         elif issue_type == "board_index_gap_daily":
             # 板块指数逐日缺口：按缺失日窄窗口重采该板块指数。
@@ -990,7 +1027,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
             else:
                 ctx.log(f"恢复(板块指数逐日缺口)：重采板块 {code} {td} 指数")
                 bsvc = BoardIngestService(c)
-                res = _reingest_board_bar_with_retry(bsvc, code, td, ctx)
+                res = _reingest_board_bar_with_retry(bsvc, code, td, td, ctx)
                 note = f"重采指数 {res.get('rows', 0)} 行"
                 ctx.log(note)
         elif issue_type == "board_index_invalid":
@@ -1002,7 +1039,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
             else:
                 ctx.log(f"恢复(板块指数数据异常)：重采板块 {code} {td} 指数")
                 bsvc = BoardIngestService(c)
-                res = _reingest_board_bar_with_retry(bsvc, code, td, ctx)
+                res = _reingest_board_bar_with_retry(bsvc, code, td, td, ctx)
                 note = f"重采指数 {res.get('rows', 0)} 行"
                 ctx.log(note)
         elif issue_type == "board_member_incomplete":

@@ -564,7 +564,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 | --- | --- | --- |
 | 现有采集链对齐 | 已闭环 | 板块已进入 CLI、daily、异步任务、采集页、调度页、任务中心、数据源状态、维度目录、数据概览和质量体系；支持 backfill/update、concept/industry、指定板块、阶段选择和限量 |
 | 失败与续跑 | 已闭环 | 字典按类型、成分/指数按板块、资金流按类型+周期记录 checkpoint；部分失败使任务/流水线 `ok=false`，保留成功 checkpoint，可只重试未成功工作单元；显式空板块范围不会误扩成全量 |
-| 修复流程 | 已闭环 | `board_member_incomplete` 重采完整成分快照，`board_index_gap` 补采指数，`board_fund_unmatched` 刷新字典并重采资金流；仅真实复检通过后 resolved，失败或复检未通过保留 open，失败工作单元不写完成 checkpoint |
+| 修复流程 | 已闭环 | `board_member_incomplete` 重采完整成分快照；`board_index_gap` 补最后已有日之后的末尾连续区间（从未入库只补当前最新日），`board_index_gap_daily` / `board_index_invalid` 按问题日重采，不再固定从 2024 年回采；`board_fund_unmatched` 刷新字典并重采资金流。仅真实复检通过后 resolved，失败或复检未通过保留 open，失败工作单元不写完成 checkpoint |
 | 数据概览 | 已补齐 | 除 `board` 维度行外，概览和闭环图展示 4 表行数、概念/行业数量、成分/指数/资金流覆盖、指数/资金流最新日期、未闭环问题分类和最近采集状态，并提供前往板块采集入口 |
 | 当前未完成范围 | 无 | `/sectors` 与 `/sectors/:code` 页面、pageRegistry、页面配置、权限矩阵、质检动作与发布级全量验收均已完成 |
 

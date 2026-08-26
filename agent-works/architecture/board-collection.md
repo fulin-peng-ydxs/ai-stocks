@@ -139,7 +139,7 @@
 
 | issue_type | 产生方 | 含义 | 修复动作 |
 |-----------|--------|------|----------|
-| `board_index_gap` | `scan_board_quality` 扫描 | 板块指数最新日线滞后全局最新交易日 | 重采该板块指数（2024 年起） |
+| `board_index_gap` | `scan_board_quality` 扫描 | 板块指数最新日线滞后全局最新交易日 | 补最后已有日之后到当前全局最新日的末尾连续区间；从未入库时只补当前最新日 |
 | `board_index_gap_daily` | `scan_board_quality` 扫描 | 板块指数近 `GAP_WINDOW_DAYS` 个开市日内某具体交易日缺失 | 按缺失日窄窗口重采该板块指数 |
 | `board_index_invalid` | `scan_board_quality` 扫描 | 指数 OHLC 缺失/越界、价格非正或成交量额为负 | 按异常日窄窗口重采该板块指数 |
 | `board_member_incomplete` | 采集层 + `scan_board_quality` | 成分快照采集不完整/失败，或宣称支持成分但从未形成完整快照 | 重采成分（force 绕周频） |
@@ -150,7 +150,7 @@
 关键语义：
 - `scan_board_quality` 先完整计算再**事务内替换**扫描型 open 问题，扫描失败不丢旧台账；已 ignored 的板块按 `(code, type)` 整体豁免。替换是**同键（issue_type+code+trade_date）复用 open id 原地收敛**而非 DELETE+重建：仍存在的问题 id 不变、detail 原位刷新；本轮不再出现的问题收敛为 `resolved`（id 保留），保证 issue id 跨扫描稳定，板块 fix 修完立即重扫不会作废批量任务里后续待修 issue 的 id。`board_member_incomplete` 不在此替换集，由采集层即时写 + active/ignored 去重，扫描只补盲区。指数完整性与字段合法性分开复检；资金流缺失逐板块检查**每个周期**最新快照是否追平基准日，不使用不会回退的 `has_fund_flow` 做当前质量证据，也不会因单板块当日补采而误报全市场。
 - 资金流质检**多周期口径**：update 已每日全周期刷新，任一周期单次失败会留下该周期缺口，`board_fund_missing`（detail.periods 列缺失周期）/ `board_fund_stale`（detail 列滞后周期）可定向重采修复；数据源**不支持按日期回溯补采**，故不检查历史某天缺口，只盯最新快照新鲜度。stale 只把「有快照但滞后」的周期计入，从未有快照的周期由 missing 按板块覆盖。
-- `board_index_gap` 与 `board_index_gap_daily` 共存：前者定位「最新交易日没追上」，后者定位「历史窗口内具体某天缺失」。修复后者时使用缺失日作为 `start=end` 的窄窗口重采，`get_board_bar` 返回前按 `[start, end]` 过滤，故只幂等 upsert 该缺失日当天数据（**不回填全年**，源端虽按年拉取但在请求侧已截断）；缺一整段连续历史（如板块成立前的整段）不靠逐日修复补，须走 `board_index_gap` 重采（2024 年起）或 `ingest_board_bar(2024-01-01, …)` 全量回填。
+- `board_index_gap` 与 `board_index_gap_daily` 共存：前者定位「最新交易日没追上」，恢复时从该板块最后已有日的下一开市日补到当前全局最新日；旧 issue 延迟执行也会追到执行时的最新日，已经被其它任务追平则直接复检，不重复请求源端。从未入库时无法判断板块成立日，只尝试当前最新日，避免把成立前历史当缺口。后者定位「历史窗口内具体某天缺失」，使用缺失日作为 `start=end` 窄窗口重采；源端虽按年请求，但返回前按请求区间过滤，只幂等 upsert 对应日期。初始化完整历史仍单独走 `backfill`（源端可用年限为 2024 起）。
 - **晚成立板块豁免**：逐日缺口扫描以各板块 `min(board_bar.trade_date)` 为数据起点锚，起点（板块成立日）之前的缺失属源端本无数据、不报；起点之后的缺失照报漏采。新板块（如每季「xx一季报预增」）首次进字典即自动豁免成立前缺口，不靠人工 ignore；若其成立后被漏采（起点之后空洞）仍会报。源端 2024 起才有板块指数，`backfill` 后 `min` 即真实起点；老板块漏采补采后 `min` 回填 2024-01-02，豁免自动失效。
 - `board_fund_missing` 与 `board_fund_unmatched` 方向相反：前者是「字典目标板块当前无新鲜快照」，后者是「源有、字典缺」。
 - `board_fund_stale` 与 `board_index_gap` 等价：资金流是整体批量采集，停摆时所有板块一起滞后，故记单条源级 issue（code=NULL），修复动作重采全源，不拆逐板块。
@@ -164,7 +164,7 @@
 
 板块 issue 走统一的 fix 任务机制（与个股同链路）：
 1. 创建 fix 任务 → issue 置 `fixing` + 绑定 `fix_task_id`；
-2. `_recover_one` 按 issue_type 分派重采（指数重采 2024 起 / 指数逐日缺口按缺失日窄窗口重采 / 成分 `force=True` 绕周频 / 资金流缺失按 detail 周期定向 `board_codes`+`periods`、滞后按 detail 周期全源重采、未匹配全周期重采）；
+2. `_recover_one` 按 issue_type 分派重采（指数末尾缺口补最后已有日之后的连续区间 / 指数逐日缺口与非法值按问题日窄窗口重采 / 成分 `force=True` 绕周频 / 资金流缺失按 detail 周期定向 `board_codes`+`periods`、滞后按 detail 周期全源重采、未匹配全周期重采）；
 3. `recheck_clean` 真检查该问题是否消失（如成分查 `member_snapshot_at` 非空且无 active 同类 issue，逐日缺口查该日 `board_bar` 记录是否存在）；
 4. 通过 → `resolved`；未通过 → 保持 open；任务失败/中断 → `fixing` 复位 `open`；扫描型板块问题修复后立即重扫，同一底层缺口产生的关联台账同步收敛（重扫同键复用 id，不重排 open issue；批量任务里已被重扫先收敛的兄弟 issue 按 `resolved` 良性跳过，不再报「质检问题不存在」失败）。
 
@@ -230,7 +230,7 @@
 |------|------|
 | `backend/tests/test_ths_board_source.py`（24 用例） | 数据源层（mock HTTP 不触网）：v cookie/401 刷新、字典/成分/指数解析、资金流翻页、**资金流空壳页重试与跳过（不截断后续页）**、登录墙/登录态、限流参数注入 |
 | `backend/tests/test_board_ingest.py`（22 用例） | 字典/成分/指数/资金流采集、**全周期默认采集与多周期 upsert/append**、只进不出幂等、不完整快照不落库、周频跳过、**ignored 豁免（fund + member）**、fund checkpoint 范围签名与旧格式迁移、update/backfill 语义、留痕、写锁归类、事务原子性 |
-| `backend/tests/test_data_mgmt_b.py` 板块用例（~21） | board 任务注册/互斥/续跑/部分失败、force_members 透传、scan_board_quality 扫描与事务替换、**多周期 fund_missing/stale 检查与按周期定向重采**、recheck_clean 复检、三类 issue 修复闭环、搜索、概览/hub 板块统计 |
+| `backend/tests/test_data_mgmt_b.py` 板块用例 | board 任务注册/互斥/续跑/部分失败、force_members 透传、scan_board_quality 扫描与事务替换、**多周期 fund_missing/stale 检查与按周期定向重采**、recheck_clean 复检、末尾连续缺口/逐日缺口/非法值修复边界、无历史数据与已追平兼容、搜索、概览/hub 板块统计 |
 | `backend/tests/test_sectors_api.py`（12 用例） | `/api/sectors*` 只读接口、权限、涨幅口径、成分股排序、**多周期净流入字段与排序** |
 | `backend/tests/test_board_watchlist.py` | 板块自选归属隔离、幂等增删、失效快照保留 |
 | `backend/tests/test_pipeline.py` | `DailyPipeline.run(board=True)` 集成、`--skip-board` |

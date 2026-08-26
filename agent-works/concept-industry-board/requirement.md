@@ -237,7 +237,8 @@
 
 - **功能描述**：板块指数缺口扫描，写 `data_quality_issue`。
 - **🔴 成分数波动不再质检（2026-08-09 修订）**：改为「只进不出」成分模型后，成分数变化是源端真实重组、非数据错误，**删除 `board_member_wave` 波动扫描与 `member_surge_shrink` 候选恢复机制**（见 R2 修订）；成分采集的完整性由采集层「完整快照才落库」保证（见 R2 完整性即闸门）。
-- **指数缺口**：`board_bar` 最近交易日滞后于 `daily_bar` 全局最新交易日 → 写 `board_index_gap`，阈值配置化。
+- **指数缺口**：`board_bar` 最近交易日滞后于 `daily_bar` 全局最新交易日 → 写 `board_index_gap`；恢复时补「该板块最后已有日的下一交易日 → 当前全局最新交易日」的末尾连续区间。从未入库、无法判断成立日的板块只尝试当前最新日，不固定回采历史年份。
+- **指数逐日缺口**：近期交易日中间缺失 → 每个缺失日写 `board_index_gap_daily`；恢复时只重采问题对应日期。两类问题可同时存在，修复后统一重扫，自动收敛已经补齐的关联问题。
 - **状态流转**：复用 `data_quality_issue` 真实枚举 `open → fixing → resolved`，另有 `ignored`。
 - **实现**：复用 `data_report.py` 质检扫描，保留板块指数缺口规则。
 
@@ -612,7 +613,7 @@ board_fund_flow   板块资金流
 ## 14. 当前实施事实校准（2026-08-14）
 
 - **采集与数据管理闭环已实现**：R1-R6、R12、R21 的采集、调度、任务、失败续跑、质量扫描、问题修复和概览承接均已落地；采集支持 `backfill|update`、`concept|industry`、指定板块、阶段范围与限量。
-- **修复状态以复检为准**：`board_member_incomplete`、`board_index_gap`、`board_fund_unmatched` 均通过异步 fix 复用同一板块采集服务；采集失败或复检仍不通过时不得 resolved，也不得把失败工作单元写入完成 checkpoint。
+- **修复状态以复检为准**：`board_member_incomplete`、`board_index_gap`、`board_index_gap_daily`、`board_index_invalid`、`board_fund_unmatched` 均通过异步 fix 复用同一板块采集服务；末尾指数缺口定向补连续滞后区间，逐日缺口与非法值按问题日重采。采集失败或复检仍不通过时不得 resolved，也不得把失败工作单元写入完成 checkpoint。
 - **接口与权限已实现**：`/api/sectors*` 查询服务、`sectors:view` 后端守卫、资源/menu seed 与既有库授权回填已落地。
 - **页面与权限闭环已实现**：`/sectors`、`/sectors/:code`、前端路由、菜单/资源、pageRegistry、页面设置和业务页 E2E 均已落地；R7-R11、R13-R14、R22-R23 已进入回归维护状态。
 - **MACD 扩展已映射**：R26 对应列表 K 线模式、详情页、`StockChartWorkspace`、板块指标接口与标题语义测试；数据口径固定为原始连续指数。

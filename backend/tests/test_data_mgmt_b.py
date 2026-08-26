@@ -1334,7 +1334,7 @@ def test_hub_includes_board_stage(client, monkeypatch):
 
 
 def test_board_index_gap_fix_reingests_and_resolves(client, monkeypatch):
-    """board_index_gap fix：重采板块指数 → 复检通过 → resolved。"""
+    """board_index_gap fix：补最后已有日到全局最新日的末尾连续缺口。"""
     svc = AsyncTaskService(client)
     from backend.services import ingest
     from backend.services.board_ingest import BoardIngestService
@@ -1343,28 +1343,116 @@ def test_board_index_gap_fix_reingests_and_resolves(client, monkeypatch):
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
     monkeypatch.setattr(BoardIngestService, "__init__",
                         lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
-    # mock 板块重采：把 board_bar 补到全局最新交易日，使复检通过
-    monkeypatch.setattr(BoardIngestService, "ingest_board_bar",
-                        lambda self, start, end=None, board_codes=None: {"rows": 1, "boards": 1}, raising=True)
+    captured = {}
+
+    def fake_ingest_board_bar(self, start, end=None, board_codes=None, ctx=None):
+        captured.update({"start": start, "end": end, "board_codes": board_codes})
+        self.c.execute(
+            "INSERT INTO board_bar "
+            "(board_code, trade_date, open, high, low, close, volume, amount) VALUES "
+            "('309121', DATE '2026-08-06', 100, 101, 99, 100, 1000, 100000),"
+            "('309121', DATE '2026-08-07', 100, 101, 99, 100, 1000, 100000)")
+        return {"rows": 2, "boards": 1, "failed": []}
+
+    monkeypatch.setattr(
+        BoardIngestService, "ingest_board_bar", fake_ingest_board_bar, raising=True)
     client.execute("INSERT INTO board_dict (board_code, name, board_type, has_bar) "
                    "VALUES ('309121','AI PC','concept',TRUE)")
     client.execute("INSERT INTO daily_bar (code, trade_date, close) VALUES ('600000.SH', DATE '2026-08-07', 10.0)")
-    client.execute("INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at) "
-                   "VALUES (1, '309121', 'board_index_gap', 'mid', 'open', now())")
-
-    # 重采后 board_bar 有数据到最新交易日 → 复检通过
-    def fake_recheck(self, issue_type, code, td, **kwargs):
-        if issue_type == "board_index_gap":
-            # 模拟重采后 board_bar 已到 08-07（全局最新）
-            self.c.execute("INSERT INTO board_bar (board_code, trade_date, close) "
-                           "VALUES ('309121', DATE '2026-08-07', 100.0)")
-            return True
-        return True
-    monkeypatch.setattr("backend.services.data_report.DataIntegrityReport.recheck_clean",
-                        fake_recheck, raising=True)
+    client.execute(
+        "INSERT INTO trade_calendar (trade_date, is_open) VALUES "
+        "(DATE '2026-08-05', TRUE),(DATE '2026-08-06', TRUE),(DATE '2026-08-07', TRUE)")
+    client.execute(
+        "INSERT INTO board_bar "
+        "(board_code, trade_date, open, high, low, close, volume, amount) "
+        "VALUES ('309121', DATE '2026-08-05', 100, 101, 99, 100, 1000, 100000)")
+    # issue 是旧扫描生成的 08-06；执行时全局已到 08-07，恢复仍须追到当前最新日。
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detected_at) "
+        "VALUES (1, '309121', DATE '2026-08-06', 'board_index_gap', 'mid', 'open', now())")
     tid = svc.create("fix", {"issue_id": 1})
     _wait(svc, tid)
     row = client.query_df("SELECT status FROM data_quality_issue WHERE id=1").iloc[0]
+    assert row["status"] == "resolved"
+    assert captured == {
+        "start": date(2026, 8, 6),
+        "end": date(2026, 8, 7),
+        "board_codes": ["309121"],
+    }
+
+
+def test_board_index_gap_fix_without_existing_bar_only_fetches_latest_day(client, monkeypatch):
+    """从未入库的板块无法判断成立日，只补全局最新日，不再固定回采 2024 至今。"""
+    svc = AsyncTaskService(client)
+    from backend.services import ingest
+    from backend.services.board_ingest import BoardIngestService
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    monkeypatch.setattr(BoardIngestService, "__init__",
+                        lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
+    captured = {}
+
+    def fake_ingest_board_bar(self, start, end=None, board_codes=None, ctx=None):
+        captured.update({"start": start, "end": end})
+        self.c.execute(
+            "INSERT INTO board_bar "
+            "(board_code, trade_date, open, high, low, close, volume, amount) "
+            "VALUES ('309268', DATE '2026-08-07', 100, 101, 99, 100, 1000, 100000)")
+        return {"rows": 1, "boards": 1, "failed": []}
+
+    monkeypatch.setattr(
+        BoardIngestService, "ingest_board_bar", fake_ingest_board_bar, raising=True)
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_bar) "
+                   "VALUES ('309268','中报预增','concept',TRUE)")
+    client.execute("INSERT INTO daily_bar (code, trade_date, close) "
+                   "VALUES ('600000.SH', DATE '2026-08-07', 10.0)")
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detected_at) "
+        "VALUES (2, '309268', DATE '2026-08-07', 'board_index_gap', 'mid', 'open', now())")
+
+    tid = svc.create("fix", {"issue_id": 2})
+    _wait(svc, tid)
+
+    row = client.query_df("SELECT status FROM data_quality_issue WHERE id=2").iloc[0]
+    assert row["status"] == "resolved"
+    assert captured == {"start": date(2026, 8, 7), "end": date(2026, 8, 7)}
+
+
+def test_board_index_gap_fix_skips_remote_when_already_caught_up(client, monkeypatch):
+    """旧问题执行前已被其它采集追平时直接复检，不重复请求板块源。"""
+    svc = AsyncTaskService(client)
+    from backend.services import ingest
+    from backend.services.board_ingest import BoardIngestService
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    monkeypatch.setattr(BoardIngestService, "__init__",
+                        lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("板块指数已追平，不应再次请求源端")
+
+    monkeypatch.setattr(BoardIngestService, "ingest_board_bar", fail_if_called, raising=True)
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_bar) "
+                   "VALUES ('309121','AI PC','concept',TRUE)")
+    client.execute("INSERT INTO daily_bar (code, trade_date, close) "
+                   "VALUES ('600000.SH', DATE '2026-08-07', 10.0)")
+    client.execute(
+        "INSERT INTO board_bar "
+        "(board_code, trade_date, open, high, low, close, volume, amount) "
+        "VALUES ('309121', DATE '2026-08-07', 100, 101, 99, 100, 1000, 100000)")
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detected_at) "
+        "VALUES (3, '309121', DATE '2026-08-07', 'board_index_gap', 'mid', 'open', now())")
+
+    tid = svc.create("fix", {"issue_id": 3})
+    _wait(svc, tid)
+
+    row = client.query_df("SELECT status FROM data_quality_issue WHERE id=3").iloc[0]
     assert row["status"] == "resolved"
 
 
