@@ -200,8 +200,10 @@ CREATE TABLE IF NOT EXISTS trade_discipline_checkin_revision (
     CONSTRAINT td_revision_kind_no_check
     CHECK ((revision_kind='initial' AND revision_no=1)
         OR (revision_kind='amendment' AND revision_no>1)),
-    CHECK (assessment IN ('complied','breached')),
-    CHECK ((assessment='breached' AND btrim(coalesce(violation_detail,'')) <> '')
+    CONSTRAINT td_revision_assessment_check
+    CHECK (assessment IN ('complied','partial','breached')),
+    CONSTRAINT td_revision_violation_detail_check
+    CHECK ((assessment IN ('partial','breached') AND btrim(coalesce(violation_detail,'')) <> '')
         OR (assessment='complied' AND violation_detail IS NULL)),
     PRIMARY KEY (tenant_id, owner_user_id, checkin_id, revision_no),
     UNIQUE (tenant_id, owner_user_id, checkin_id, revision_no, rule_id, version_no),
@@ -243,8 +245,10 @@ CREATE TABLE IF NOT EXISTS trade_discipline_operation (
     version_no INTEGER NOT NULL, stock_code TEXT NOT NULL, stock_name_snapshot TEXT NOT NULL,
     side TEXT NOT NULL, stock_rule_id TEXT NOT NULL, action_rule_id TEXT NOT NULL,
     price NUMERIC(20,4), quantity NUMERIC(20,4), amount NUMERIC(20,2), fee NUMERIC(20,2),
-    operated_at TIMESTAMPTZ, note TEXT, display_order INTEGER NOT NULL,
+    operated_at TIMESTAMPTZ, note TEXT, compliance_status TEXT, display_order INTEGER NOT NULL,
     CHECK (side IN ('buy','sell')),
+    CONSTRAINT td_operation_compliance_status_check
+    CHECK (compliance_status IS NULL OR compliance_status IN ('complied','breached')),
     CHECK (btrim(stock_code) <> '' AND btrim(stock_name_snapshot) <> ''),
     CHECK (price IS NULL OR price >= 0), CHECK (quantity IS NULL OR quantity >= 0),
     CHECK (amount IS NULL OR amount >= 0), CHECK (fee IS NULL OR fee >= 0),
@@ -298,6 +302,50 @@ DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint
     CHECK ((revision_kind='initial' AND revision_no=1)
         OR (revision_kind='amendment' AND revision_no>1));
 END IF; END $$;
+
+ALTER TABLE trade_discipline_operation
+    ADD COLUMN IF NOT EXISTS compliance_status TEXT;
+
+DO $$ DECLARE item RECORD; BEGIN
+    FOR item IN
+        SELECT c.conname FROM pg_constraint c
+        WHERE c.conrelid='trade_discipline_checkin_revision'::regclass
+          AND c.contype='c'
+          AND pg_get_constraintdef(c.oid) LIKE '%assessment%'
+          AND c.conname NOT IN (
+              'td_revision_assessment_check',
+              'td_revision_violation_detail_check'
+          )
+    LOOP
+        EXECUTE format(
+            'ALTER TABLE trade_discipline_checkin_revision DROP CONSTRAINT %I', item.conname
+        );
+    END LOOP;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+        WHERE conname='td_revision_assessment_check') THEN
+        ALTER TABLE trade_discipline_checkin_revision
+            ADD CONSTRAINT td_revision_assessment_check
+            CHECK (assessment IN ('complied','partial','breached'));
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+        WHERE conname='td_revision_violation_detail_check') THEN
+        ALTER TABLE trade_discipline_checkin_revision
+            ADD CONSTRAINT td_revision_violation_detail_check
+            CHECK ((assessment IN ('partial','breached')
+                AND btrim(coalesce(violation_detail,'')) <> '')
+                OR (assessment='complied' AND violation_detail IS NULL));
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+        WHERE conname='td_operation_compliance_status_check') THEN
+        ALTER TABLE trade_discipline_operation
+            ADD CONSTRAINT td_operation_compliance_status_check
+            CHECK (compliance_status IS NULL
+                OR compliance_status IN ('complied','breached'));
+    END IF;
+END $$;
 
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='td_rule_latest_version_fk') THEN
     ALTER TABLE trade_discipline_rule ADD CONSTRAINT td_rule_latest_version_fk

@@ -224,6 +224,19 @@ test('真实夹具在三视口及超宽屏呈现生命周期全序、四类历�
   await expectChildFillsContainer(checkin.getByTestId('operation-card-editor'), '.operation-grid')
   await expectOperationEditorLayout(checkin)
 
+  await checkin.getByRole('button', { name: '修正打卡', exact: true }).click()
+  await checkin.getByTestId('checkin-assessment').getByText('部分履约', { exact: true }).click()
+  await expect(checkin.getByTestId('checkin-no-operation')).toBeDisabled()
+  await expect(operationCards.first()).toContainText('履约状态未选择')
+  await expect(operationCards.nth(1)).toContainText('履约状态未选择')
+  await operationToggles.first().click()
+  await checkin.getByTestId('operation-compliance-0').getByText('已履约', { exact: true }).click()
+  await operationToggles.nth(1).click()
+  await checkin.getByTestId('operation-compliance-1').getByText('未履约', { exact: true }).click()
+  await expect(operationCards.first()).toContainText('已履约')
+  await expect(operationCards.nth(1)).toContainText('未履约')
+  await checkin.getByRole('button', { name: '取消修正', exact: true }).click()
+
   if (testInfo.project.name === 'chromium-default' && initialViewport) {
     await page.setViewportSize(initialViewport)
   }

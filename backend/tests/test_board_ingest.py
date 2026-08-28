@@ -642,8 +642,8 @@ def _two_boards(c: DuckDBClient) -> None:
               "('309121','AI PC','concept',TRUE),('881121','半导体','industry',TRUE)")
 
 
-def test_bar_ready_probe_skips_when_source_lagging(tmp_path):
-    """全量增量且截止日=今天：源端没出当日数据时整阶段跳过，不落半成品、不记成功。"""
+def test_bar_ready_probe_falls_back_when_source_lagging(tmp_path):
+    """全量增量且截止日=今天：未就绪时回退到上一交易日继续补采。"""
     from backend.services.board_ingest import _asia_date
     today = _asia_date()
     yesterday = today - timedelta(days=1)
@@ -653,16 +653,18 @@ def test_bar_ready_probe_skips_when_source_lagging(tmp_path):
     })
     svc, c = _make_service(tmp_path, src)
     _two_boards(c)
+    c.execute("INSERT INTO trade_calendar (trade_date, is_open) VALUES (?, TRUE)", [yesterday])
     ctx = _LogCtx()
     r = svc.ingest_board_bar(yesterday - timedelta(days=6), end=today, probe_ready=True, ctx=ctx)
-    assert r["skipped"] is True and r["reason"] == "source_not_ready"
-    assert r["rows"] == 0 and r["boards"] == 0 and r["failed"] == []
-    assert r["start"] and r["end"] == today.isoformat()
-    # 不落库、不写 data_update_log（跳过 ≠ 成功也不是失败）
-    assert c.query_df("SELECT * FROM board_bar").empty
-    assert c.query_df("SELECT * FROM data_update_log WHERE table_name='board_bar'").empty
+    assert r["fallback"] is True and r["reason"] == "source_not_ready"
+    assert r["requested_end"] == today.isoformat() and r["end"] == yesterday.isoformat()
+    assert r["rows"] == 2 and r["boards"] == 2 and r["failed"] == []
+    assert r["at_end"] == 2 and r["scope_total"] == 2
+    assert len(c.query_df("SELECT * FROM board_bar")) == 2
+    assert len(c.query_df("SELECT * FROM data_update_log WHERE table_name='board_bar' "
+                          "AND status='success'")) == 1
     warns = [m for lv, m in ctx.logs if lv == "warn"]
-    assert any("未就绪" in m and str(today) in m for m in warns)
+    assert any("未就绪" in m and str(today) in m and str(yesterday) in m for m in warns)
 
 
 def test_bar_ready_probe_passes_and_logs_window_freshness(tmp_path):

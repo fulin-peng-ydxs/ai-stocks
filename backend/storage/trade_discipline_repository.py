@@ -711,8 +711,8 @@ class TradeDisciplineRepository:
                     "INSERT INTO trade_discipline_operation "
                     "(id,tenant_id,owner_user_id,checkin_id,revision_no,rule_id,version_no,"
                     "stock_code,stock_name_snapshot,side,stock_rule_id,action_rule_id,price,"
-                    "quantity,amount,fee,operated_at,note,display_order) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "quantity,amount,fee,operated_at,note,compliance_status,display_order) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     [
                         item["id"],
                         *self.owner,
@@ -731,6 +731,7 @@ class TradeDisciplineRepository:
                         item.get("fee"),
                         item.get("operated_at"),
                         item.get("note"),
+                        item.get("compliance_status"),
                         item["display_order"],
                     ],
                 )

@@ -3,15 +3,15 @@ import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  getDataQuality, fixQualityIssue, ignoreQualityIssue, resetQualityIssue, recoverQualityBatch,
+  getDataQuality, fixQualityIssue, ignoreQualityIssue, restoreQualityMonitoring,
+  resetQualityIssue, recoverQualityBatch,
   markDelisted, createTask, getTask,
   ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE, SEVERITY_LABEL, ISSUE_STATUS_LABEL, ISSUE_LAYER, LAYER_LABEL,
   RECOVER_ACTION_LABEL,
   type DataQuality, type QualityIssue, type CheckupReport,
 } from '@/api/data'
-import { ElMessageBox } from 'element-plus'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -199,10 +199,40 @@ async function fixOne(row: QualityIssue) {
   } catch { row.status = 'open' } finally { busyId.value = null }
 }
 
-async function ignoreOne(row: QualityIssue) {
+const ignoreDlg = ref(false)
+const ignoreRow = ref<QualityIssue | null>(null)
+const ignoreScope = ref<'occurrence' | 'object'>('occurrence')
+const ignoring = ref(false)
+function openIgnore(row: QualityIssue) {
+  ignoreRow.value = row
+  ignoreScope.value = 'occurrence'
+  ignoreDlg.value = true
+}
+
+async function confirmIgnore() {
+  if (!ignoreRow.value) return
+  ignoring.value = true
   try {
-    await ignoreQualityIssue(row.id)
-    ElMessage.success('已标记为正常/忽略，后续质检不再上报该问题')
+    await ignoreQualityIssue(ignoreRow.value.id, ignoreScope.value)
+    ElMessage.success(ignoreScope.value === 'occurrence'
+      ? '已忽略本次；问题消失后，本次忽略会自动失效'
+      : '已整体忽略；恢复监控前不再上报该对象的同类问题')
+    ignoreDlg.value = false
+    await load()
+  } catch { /* 拦截器弹错 */ } finally { ignoring.value = false }
+}
+
+async function restoreMonitoring(row: QualityIssue) {
+  try {
+    await ElMessageBox.confirm(
+      '恢复后，当前异常若仍存在，将在下一次质检或采集时重新上报。确认恢复监控？',
+      '恢复监控',
+      { type: 'warning' },
+    )
+  } catch { return }
+  try {
+    await restoreQualityMonitoring(row.id)
+    ElMessage.success('已恢复监控')
     await load()
   } catch { /* 拦截器弹错 */ }
 }
@@ -230,6 +260,16 @@ function openDelist(row: QualityIssue) {
 }
 
 function qualityRowActions(row: QualityIssue): AppRowAction[] {
+  if (row.status === 'ignored' && row.ignore_active) {
+    return [{
+      key: 'restore-monitoring',
+      label: '恢复监控',
+      testId: `quality-restore-monitoring-${row.id}`,
+      type: 'warning',
+      permission: 'data-quality:fix',
+      onClick: () => restoreMonitoring(row),
+    }]
+  }
   if (row.status !== 'open' && row.status !== 'fixing') return []
   const busy = busyId.value !== null
   const fixingElsewhere = row.status === 'fixing' && busyId.value !== row.id
@@ -264,11 +304,12 @@ function qualityRowActions(row: QualityIssue): AppRowAction[] {
     {
       key: 'ignore',
       label: '标记正常',
+      testId: `quality-ignore-${row.id}`,
       type: 'info',
       permission: 'data-quality:fix',
       disabled: busy,
       placement: 'more',
-      onClick: () => ignoreOne(row),
+      onClick: () => openIgnore(row),
     },
   ]
 }
@@ -508,6 +549,9 @@ onMounted(() => {
         <AppTableColumn v-if="colVisible('status')" label="状态">
           <template #default="{ row }">
             <el-tag :type="statType[row.status] ?? 'info'" size="small" effect="plain">{{ ISSUE_STATUS_LABEL[row.status] ?? row.status }}</el-tag>
+            <span v-if="row.status === 'ignored' && row.ignore_scope" class="ignore-scope-label">
+              {{ row.ignore_scope === 'object' ? '整体' : '本次' }}{{ row.ignore_active ? '' : '（已失效）' }}
+            </span>
           </template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('detectedAt')" label="检出时间" prop="time" sortable="custom">
@@ -523,6 +567,28 @@ onMounted(() => {
     </template>
 
     <template #overlays>
+    <el-dialog v-model="ignoreDlg" title="选择忽略范围" width="440px" data-testid="quality-ignore-dialog">
+      <p class="ignore-tip">
+        {{ ignoreRow?.code || ignoreRow?.name || '当前对象' }} ·
+        {{ ignoreRow ? (ISSUE_TYPE_LABEL[ignoreRow.issue_type] ?? ignoreRow.issue_type) : '' }}
+      </p>
+      <el-radio-group v-model="ignoreScope" class="ignore-scope-group" data-testid="quality-ignore-scope">
+        <el-radio value="occurrence" border>
+          <span class="ignore-option-title">仅忽略本次（推荐）</span>
+          <span class="ignore-option-note">异常持续期间不重复上报；消失后再发生会重新报告。</span>
+        </el-radio>
+        <el-radio value="object" border>
+          <span class="ignore-option-title">整体忽略</span>
+          <span class="ignore-option-note">持续忽略该对象的同类问题，直到手动恢复监控。</span>
+        </el-radio>
+      </el-radio-group>
+      <template #footer>
+        <el-button @click="ignoreDlg = false">取消</el-button>
+        <el-button v-permission="'data-quality:fix'" type="primary" :loading="ignoring"
+                   data-testid="quality-ignore-confirm" @click="confirmIgnore">确认忽略</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 标记退市对话框 -->
     <el-dialog v-model="delistDlg" title="标记退市" width="440px">
       <p class="delist-tip">
@@ -615,6 +681,13 @@ onMounted(() => {
   box-shadow: 0 0 0 1px var(--el-color-warning-light-3);
 }
 .muted { color: var(--el-text-color-secondary); }
+.ignore-scope-label { margin-left: 6px; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
+.ignore-tip { margin: 0 0 var(--app-space-4); color: var(--el-text-color-secondary); }
+.ignore-scope-group { display: flex; flex-direction: column; align-items: stretch; gap: var(--app-space-3); }
+.ignore-scope-group :deep(.el-radio) { height: auto; margin: 0; padding: 12px; align-items: flex-start; }
+.ignore-scope-group :deep(.el-radio__label) { display: flex; flex-direction: column; gap: 4px; white-space: normal; }
+.ignore-option-title { color: var(--el-text-color-primary); font-weight: var(--app-font-weight-section); }
+.ignore-option-note { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); line-height: 1.5; }
 :deep(.row-done) { opacity: 0.55; }
 .checkup-head { display: flex; align-items: center; gap: var(--app-space-3); flex-wrap: wrap; margin-bottom: 16px; }
 .checkup-score { font-size: var(--app-font-size-section-title); font-weight: var(--app-font-weight-section); }

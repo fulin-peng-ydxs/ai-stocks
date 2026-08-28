@@ -130,6 +130,91 @@ test.describe('板块数据质量恢复', () => {
     expect(consoleIssues).toEqual([])
   })
 
+  test('标记正常可选择忽略范围并恢复监控', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== 'chromium-standard', '忽略范围交互仅在标准视口执行')
+    const consoleIssues = collectConsoleIssues(page)
+    await loginAsDebugUser(page, request, 'debug_system')
+    let issueState: 'open' | 'ignored-active' | 'ignored-inactive' = 'open'
+    let submittedScope = ''
+
+    await page.route('**/api/data/quality/93001/ignore', async (route) => {
+      submittedScope = String(route.request().postDataJSON()?.scope ?? '')
+      issueState = 'ignored-active'
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          msg: 'ok',
+          data: { id: 93001, status: 'ignored', ignore_scope: submittedScope },
+        }),
+      })
+    })
+    await page.route('**/api/data/quality/93001/restore-monitoring', async (route) => {
+      issueState = 'ignored-inactive'
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          msg: 'ok',
+          data: { id: 93001, status: 'ignored', ignore_active: false },
+        }),
+      })
+    })
+    await page.route('**/api/data/quality?*', async (route) => {
+      const ignored = issueState !== 'open'
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          msg: 'ok',
+          data: {
+            summary: [{ issue_type: 'board_index_gap_daily', n: 1 }],
+            total: 1,
+            page: 1,
+            size: 20,
+            list: [{
+              id: 93001,
+              code: 'E2E9001',
+              name: 'E2E忽略范围',
+              trade_date: '2099-01-05',
+              issue_type: 'board_index_gap_daily',
+              severity: 'mid',
+              status: ignored ? 'ignored' : 'open',
+              detail: '指数逐日缺口',
+              detected_at: '2099-01-05 09:30:00',
+              resolved_at: ignored ? '2099-01-05 10:00:00' : null,
+              ignore_scope: ignored ? 'object' : null,
+              ignore_active: issueState === 'ignored-active',
+            }],
+          },
+        }),
+      })
+    })
+
+    await openPageAndWaitForHeading(page, '/data/quality', '数据质量')
+    await page.getByRole('button', { name: '更多', exact: true }).click()
+    await page.getByTestId('quality-ignore-93001').click()
+    await expect(page.getByTestId('quality-ignore-dialog')).toBeVisible()
+    await expect(page.getByRole('radio', { name: /仅忽略本次/ })).toBeChecked()
+    await page.getByText('整体忽略', { exact: true }).click()
+    await expect(page.getByRole('radio', { name: /整体忽略/ })).toBeChecked()
+    await page.getByTestId('quality-ignore-confirm').click()
+
+    await expect(page.getByText('整体', { exact: true })).toBeVisible()
+    expect(submittedScope).toBe('object')
+    await page.getByTestId('quality-restore-monitoring-93001').click()
+    await page.getByRole('button', { name: '确定', exact: true }).click()
+    await expect(page.getByText('整体（已失效）', { exact: true })).toBeVisible()
+    expect(issueState).toBe('ignored-inactive')
+    expect(consoleIssues).toEqual([])
+  })
+
   test('成分采集不完整可发起重采并在任务成功后刷新收敛', async ({
     page,
     request,

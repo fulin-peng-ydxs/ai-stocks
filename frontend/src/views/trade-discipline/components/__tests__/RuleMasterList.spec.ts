@@ -31,6 +31,7 @@ describe('RuleMasterList', () => {
 
   it.each([
     { assessment: 'complied', label: '已履约 · r2', tone: 'is-success' },
+    { assessment: 'partial', label: '部分履约 · r2', tone: 'is-warning' },
     { assessment: 'breached', label: '未履约 · r2', tone: 'is-danger' },
   ] as const)('$label 使用对应履约语义色', ({ assessment, label, tone }) => {
     const wrapper = mount(RuleMasterList, {

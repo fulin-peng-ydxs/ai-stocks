@@ -10,6 +10,11 @@ import AppTableColumn from '@/components/AppTableColumn.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import type { TableSortChange } from '@/composables/useTableSort'
 import {
+  checkinAssessmentLabel,
+  checkinAssessmentOptions,
+  checkinAssessmentTagType,
+} from '@/utils/tradeDisciplineAssessment'
+import {
   listTradeDisciplineCheckins,
   type CheckinHistoryQuery,
   type CheckinHistoryRow,
@@ -54,10 +59,6 @@ const ruleOptions = computed(() => props.rules.map((rule) => ({
   value: rule.id,
   label: rule.name || rule.proposed_name || '未命名规则',
 })))
-const assessmentOptions = [
-  { value: 'complied', label: '已履约' },
-  { value: 'breached', label: '未履约' },
-]
 const operationOptions = [
   { value: 'false', label: '有操作' },
   { value: 'true', label: '无操作' },
@@ -170,7 +171,7 @@ defineExpose({ reload: load })
           </div>
         </AppControlItem>
         <AppFilterSelect class="rule-filter" data-testid="history-rule-filter" :model-value="query.rule_id || ''" :options="ruleOptions" :multiple="false" placeholder="全部规则" @change="updateQuery({ rule_id: String($event) || undefined })" />
-        <AppFilterSelect class="assessment-filter" data-testid="history-assessment-filter" :model-value="query.assessment || ''" :options="assessmentOptions" :multiple="false" placeholder="全部结果" @change="updateQuery({ assessment: (String($event) || undefined) as CheckinHistoryQuery['assessment'] })" />
+        <AppFilterSelect class="assessment-filter" data-testid="history-assessment-filter" :model-value="query.assessment || ''" :options="checkinAssessmentOptions" :multiple="false" placeholder="全部结果" @change="updateQuery({ assessment: (String($event) || undefined) as CheckinHistoryQuery['assessment'] })" />
         <AppFilterSelect class="operation-filter" data-testid="history-operation-filter" :model-value="noOperationValue" :options="operationOptions" :multiple="false" placeholder="全部操作状态" @change="updateQuery({ no_operation: booleanValue($event) })" />
         <AppFilterSelect class="amended-filter" data-testid="history-amended-filter" :model-value="amendedValue" :options="amendedOptions" :multiple="false" placeholder="全部修订状态" @change="updateQuery({ amended: booleanValue($event) })" />
         <StockOptionSelect class="stock-filter" :model-value="selectedStock" clearable @update:model-value="selectStock" />
@@ -218,7 +219,7 @@ defineExpose({ reload: load })
         </template>
       </AppTableColumn>
       <AppTableColumn v-if="colVisible('assessment')" prop="assessment" label="用户自评">
-        <template #default="{ row }"><el-tag :type="row.assessment === 'complied' ? 'success' : 'danger'" effect="plain">{{ row.assessment === 'complied' ? '已履约' : '未履约' }}</el-tag></template>
+        <template #default="{ row }"><el-tag :type="checkinAssessmentTagType(row.assessment)" effect="plain">{{ checkinAssessmentLabel(row.assessment) }}</el-tag></template>
       </AppTableColumn>
       <AppTableColumn v-if="colVisible('operation_count')" label="操作"><template #default="{ row }">{{ row.no_operation ? '无操作' : `${row.operation_count} 笔` }}</template></AppTableColumn>
       <AppTableColumn v-if="colVisible('reason_name_snapshot')" prop="reason_name_snapshot" label="违规摘要" role="description"><template #default="{ row }">{{ row.reason_name_snapshot || '—' }}</template></AppTableColumn>

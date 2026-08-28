@@ -43,6 +43,29 @@ describe('TradeOperationEditor', () => {
     expect(created[0].action_rule_id).toBe('')
   })
 
+  it('部分履约时逐笔选择状态并在折叠卡展示结果', async () => {
+    const operation = {
+      client_key: 'partial-operation', stock_code: '000001.SZ', stock_name_snapshot: '平安银行',
+      side: 'buy' as const, stock_rule_id: 'stock-1', action_rule_id: 'buy-1',
+      price: null, quantity: null, amount: null, fee: null, operated_at: null,
+      note: null, compliance_status: null, display_order: 1,
+    }
+    const wrapper = mount(TradeOperationEditor, {
+      props: { modelValue: [operation], version, tradeDate: '2026-08-22', showCompliance: true },
+      global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } },
+    })
+
+    expect(wrapper.text()).toContain('履约状态未选择')
+    await wrapper.get('[data-testid="operation-card-toggle"]').trigger('click')
+    wrapper.findComponent({ name: 'ElSegmented' }).vm.$emit('update:modelValue', 'complied')
+    await flushPromises()
+    const changed = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as any[]
+    expect(changed[0].compliance_status).toBe('complied')
+    await wrapper.setProps({ modelValue: changed })
+    expect(wrapper.text()).toContain('已履约')
+    expect(wrapper.text()).not.toContain('履约状态未选择')
+  })
+
   it('成交事实保持十进制字符串并以定点价量计算提示', async () => {
     const operation = {
       client_key: 'large-operation', stock_code: '000001.SZ', stock_name_snapshot: '平安银行',

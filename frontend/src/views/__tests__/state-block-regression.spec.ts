@@ -81,6 +81,7 @@ vi.mock('@/api/data', () => ({
   getDataQuality: vi.fn(),
   fixQualityIssue: vi.fn(),
   ignoreQualityIssue: vi.fn(),
+  restoreQualityMonitoring: vi.fn(),
   resetQualityIssue: vi.fn(),
   recoverQualityBatch: vi.fn(),
   markDelisted: vi.fn(),

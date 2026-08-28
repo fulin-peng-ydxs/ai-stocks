@@ -37,7 +37,7 @@ BOARD_INGEST_STAGES: tuple[str, ...] = ("dict", "members", "bar", "fund")
 
 # 源端当日就绪探测（对齐行情 update 的 _UPDATE_READY_* 就绪门）：板块指数源端分板块陆续发布，
 # 采早了会落一批"停在昨天"的半成品还报成功（实测 2026-08-18 晚 480 板块仅 27 个已出当日）。
-# 全量增量且截止日=今天时先抽样探测，未达阈值整阶段跳过，不拿旧数据冒充成功。
+# 全量增量且截止日=今天时先抽样探测，未达阈值回退到上一交易日继续采集。
 _BAR_READY_SAMPLE = 10
 _BAR_READY_RATIO = 0.5
 
@@ -413,6 +413,13 @@ class BoardIngestService:
                 "UPDATE data_quality_issue SET status='resolved', resolved_at=now(), fix_task_id=NULL "
                 "WHERE issue_type='board_member_incomplete' AND code=? "
                 "AND status IN ('open','fixing')", [code])
+            from backend.dataquality.ignore_rules import deactivate_occurrence_ignores
+            ignored_dates = self.c.query_df(
+                "SELECT trade_date FROM data_quality_issue WHERE issue_type='board_member_incomplete' "
+                "AND code=? AND status='ignored' AND ignore_active=true", [code])
+            deactivate_occurrence_ignores(
+                self.c, "board_member_incomplete", code, ignored_dates["trade_date"].tolist(),
+            )
         return {"total": len(cur_set), "added": len(cur_set) - existing}
 
     # ── 3. 指数 ──────────────────────────────────────────────
@@ -426,9 +433,11 @@ class BoardIngestService:
 
         ctx：任务上下文，逐板块打实时日志（对齐现有采集「指数 X 完成」模式）。
         probe_ready：仅每日增量（ingest_board update 分支）传 True——全量且截止日=今天时
-        先抽样探测源端当日数据是否就绪，未就绪整阶段跳过；backfill/指定板块/缺口重采不传，
-        尊重调用方意图直接采。"""
+        先抽样探测源端当日数据是否就绪，未就绪回退到上一交易日继续采集；backfill/指定板块/
+        缺口重采不传，尊重调用方意图直接采。"""
         end = end or _asia_date()
+        requested_end = end
+        fallback = False
         types = _board_types(board_type)
         if board_codes is not None:
             if not board_codes:
@@ -468,15 +477,16 @@ class BoardIngestService:
             # 缺口窄窗口重采不传 probe_ready，尊重调用方意图；非交易日 end<今天，数据必已发布。
             ready, sampled = self._probe_bar_ready(df_boards, end)
             if ready / max(sampled, 1) < _BAR_READY_RATIO:
+                fallback_end = self._previous_open_day(end)
                 msg = (f"板块指数源端当日数据未就绪：抽样 {ready}/{sampled} 个板块已出 {end}，"
-                       f"本次跳过指数采集（区间 {start} ~ {end}），下轮定时自动补齐")
+                       f"回退到上一交易日 {fallback_end} 继续采集；"
+                       "下轮定时仍会重新目标当天")
                 log.warning(msg)
                 if ctx:
                     ctx.log(msg, "warn")
-                return {"rows": 0, "boards": 0, "failed": [], "skipped": True,
-                        "reason": "source_not_ready",
-                        "start": start.isoformat(), "end": end.isoformat(),
-                        "at_end": ready, "scope_total": len(scope_codes)}
+                end = fallback_end
+                start = min(start, end)
+                fallback = True
         for i, (_, b) in enumerate(df_boards.iterrows(), 1):
             code, board_type = str(b["board_code"]), str(b["board_type"])
             if ctx:
@@ -526,7 +536,19 @@ class BoardIngestService:
                  total_rows, boards, len(failed), skip_detail, start, end, fresh)
         return {"rows": total_rows, "boards": boards, "failed": failed,
                 "start": start.isoformat(), "end": end.isoformat(),
+                "requested_end": requested_end.isoformat(), "fallback": fallback,
+                "reason": "source_not_ready" if fallback else None,
                 "at_end": at_end, "scope_total": len(scope_codes)}
+
+    def _previous_open_day(self, day: date) -> date:
+        """返回 day 之前最近的开市日；日历异常缺失时仅回退一个自然日作为最后兜底。"""
+        df = self.c.query_df(
+            "SELECT max(trade_date) AS d FROM trade_calendar WHERE is_open AND trade_date < ?",
+            [day],
+        )
+        if not df.empty and pd.notna(df.iloc[0]["d"]):
+            return pd.Timestamp(df.iloc[0]["d"]).date()
+        return day - timedelta(days=1)
 
     def _probe_bar_ready(self, df_boards: pd.DataFrame, end: date) -> tuple[int, int]:
         """抽样探测源端是否已发布 end 当日板块指数，返回 (已出数板块数, 抽样数)。
@@ -761,13 +783,28 @@ class BoardIngestService:
             "AND (json_extract_string(try_cast(data_quality_issue.detail AS JSON), '$.board_type') IS NULL "
             "OR b.board_type=json_extract_string(try_cast(data_quality_issue.detail AS JSON), "
             "'$.board_type')))")
+        from backend.dataquality.ignore_rules import filter_ignored_issues
         seen = {(x["board_type"], x["name"]) for x in items}
-        for board_type, name in seen:
+        candidates = [
+            {
+                "code": None,
+                "trade_date": sdate,
+                "issue_type": "board_fund_unmatched",
+                "detail": json.dumps({"name": name, "board_type": board_type}, ensure_ascii=False),
+            }
+            for board_type, name in seen
+        ]
+        candidates = filter_ignored_issues(
+            self.c, candidates, ("board_fund_unmatched",), reconcile_occurrences=True,
+        )
+        for candidate in candidates:
+            payload = json.loads(candidate["detail"])
+            board_type, name = payload["board_type"], payload["name"]
             # 幂等：同名同类型的未匹配 issue 已存在（open/fixing/ignored）不重复建——
             # ignored 豁免对齐 board_index_gap/member_incomplete：用户标记正常后重采不得翻回 open。
             existing = int(self.c.query_df(
                 "SELECT count(*) AS n FROM data_quality_issue "
-                "WHERE issue_type='board_fund_unmatched' AND status IN ('open','fixing','ignored') "
+                "WHERE issue_type='board_fund_unmatched' AND status IN ('open','fixing') "
                 "AND json_extract_string(try_cast(detail AS JSON), '$.name')=? "
                 "AND COALESCE(json_extract_string(try_cast(detail AS JSON), '$.board_type'), ?)=?",
                 [name, board_type, board_type]).iloc[0]["n"])
@@ -782,7 +819,7 @@ class BoardIngestService:
                 "VALUES (?, ?, ?, 'board_fund_unmatched', ?, "
                 "'open', ?, now(), NULL)",
                 [issue_id, None, sdate, severity_for("board_fund_unmatched"),
-                 json.dumps({"name": name, "board_type": board_type}, ensure_ascii=False)])
+                 candidate["detail"]])
 
     def _write_incomplete_quality(self, code: str, sdate: date, reason: str) -> None:
         """成分快照采集不完整/失败写质检（board_member_incomplete），供数据质量页逐板块重采。
@@ -791,9 +828,24 @@ class BoardIngestService:
         （采集失败会反复触发，避免刷屏；ignored 豁免对齐 fund/board_index_gap——用户标记正常后
         重采不得翻回 open；重采成功/复检通过后 resolved 收敛）。
         """
+        from backend.dataquality.ignore_rules import filter_ignored_issues
+        candidates = filter_ignored_issues(
+            self.c,
+            [{
+                "code": code,
+                "trade_date": sdate,
+                "issue_type": "board_member_incomplete",
+                "detail": json.dumps({"reason": reason, "snapshot_date": sdate.isoformat()},
+                                     ensure_ascii=False),
+            }],
+            ("board_member_incomplete",),
+            reconcile_occurrences=False,
+        )
+        if not candidates:
+            return
         existing = self.c.query_df(
             "SELECT count(*) AS n FROM data_quality_issue "
-            "WHERE issue_type='board_member_incomplete' AND code=? AND status IN ('open','fixing','ignored')",
+            "WHERE issue_type='board_member_incomplete' AND code=? AND status IN ('open','fixing')",
             [code])
         if int(existing.iloc[0]["n"]) > 0:
             return
@@ -805,6 +857,4 @@ class BoardIngestService:
             "detail, detected_at, fix_task_id) "
             "VALUES (?, ?, ?, 'board_member_incomplete', ?, "
             "'open', ?, now(), NULL)",
-            [issue_id, code, sdate, severity_for("board_member_incomplete"),
-             json.dumps({"reason": reason, "snapshot_date": sdate.isoformat()},
-                        ensure_ascii=False)])
+            [issue_id, code, sdate, severity_for("board_member_incomplete"), candidates[0]["detail"]])

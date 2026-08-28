@@ -88,6 +88,29 @@ def test_operation_request_allows_server_owned_stock_name_snapshot():
     assert body.stock_name_snapshot is None
 
 
+def test_partial_assessment_and_operation_status_are_openapi_validated():
+    from backend.api.trade_discipline import CheckinContentBody
+
+    body = CheckinContentBody(
+        assessment="partial",
+        no_operation=False,
+        reason_code="unplanned_operation",
+        violation_detail="部分操作没有履约",
+        operations=[
+            {
+                "stock_code": "000001.SZ",
+                "side": "buy",
+                "stock_rule_id": "stock-1",
+                "action_rule_id": "buy-1",
+                "compliance_status": "complied",
+                "display_order": 1,
+            }
+        ],
+    )
+    assert body.assessment == "partial"
+    assert body.operations[0].compliance_status == "complied"
+
+
 def test_trade_discipline_routes_are_openapi_visible_and_precisely_guarded(client):
     expected = {
         ("GET", "/api/trade-discipline/summary"): {

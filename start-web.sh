@@ -36,11 +36,11 @@ start() {
   local pid
   pid="$(running_pid)"
   if [[ -n "$pid" ]]; then
-    echo "⚠️  前端已在运行 (PID $pid，端口 $PORT)，如需重启请用 ./start-web.sh restart"
+    echo "⚠️  前端已在运行 (PID ${pid}，端口 ${PORT})，如需重启请用 ./start-web.sh restart"
     exit 0
   fi
 
-  echo "🚀 启动前端（dev / HMR，端口 $PORT）…"
+  echo "🚀 启动前端（dev / HMR，端口 ${PORT}）…"
   nohup npm --prefix frontend run dev -- --port "$PORT" --strictPort > "$LOG_FILE" 2>&1 < /dev/null &
   disown 2>/dev/null || true
 

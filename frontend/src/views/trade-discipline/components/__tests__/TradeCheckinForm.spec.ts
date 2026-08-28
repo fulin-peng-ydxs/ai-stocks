@@ -47,6 +47,19 @@ const OperationStub = defineComponent({
   template: '<button type="button" aria-label="填写操作" @click="$emit(\'update:modelValue\', [operation])">填写操作</button>',
   setup() { return { operation } },
 })
+const PartialOperationStub = defineComponent({
+  name: 'TradeOperationEditor',
+  emits: ['update:modelValue'],
+  template: '<button type="button" aria-label="填写混合操作" @click="$emit(\'update:modelValue\', operations)">填写混合操作</button>',
+  setup() {
+    return {
+      operations: [
+        { ...operation, compliance_status: 'complied', display_order: 1 },
+        { ...operation, side: 'sell', action_rule_id: 'action-buy-1', compliance_status: 'breached', display_order: 2 },
+      ],
+    }
+  },
+})
 
 function mountForm(
   stubs: Record<string, unknown> = {},
@@ -213,6 +226,31 @@ describe('TradeCheckinForm', () => {
     await flushPromises()
     expect(submitCheckin).toHaveBeenCalledWith(expect.objectContaining({
       assessment: 'breached', no_operation: true, reason_code: 'impulsive', operations: [],
+    }))
+  })
+
+  it('提交“部分履约”时要求逐笔混合状态并复用整体未履约原因', async () => {
+    getContext.mockResolvedValueOnce(emptyContext).mockResolvedValue({ ...emptyContext, checkin: saved })
+    const wrapper = mountForm({
+      TradeOperationEditor: PartialOperationStub,
+      ViolationReasonCombobox: ReasonStub,
+    })
+    await flushPromises()
+    wrapper.findComponent({ name: 'ElSegmented' }).vm.$emit('update:modelValue', 'partial')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findComponent({ name: 'ElCheckbox' }).props('disabled')).toBe(true)
+    await wrapper.get('[aria-label="填写混合操作"]').trigger('click')
+    await wrapper.get('[aria-label="选择原因"]').trigger('click')
+    await wrapper.findAll('textarea')[0].setValue('一笔已履约，一笔未履约')
+    await wrapper.get('button.el-button--primary').trigger('click')
+    await flushPromises()
+    expect(submitCheckin).toHaveBeenCalledWith(expect.objectContaining({
+      assessment: 'partial', no_operation: false, reason_code: 'impulsive',
+      violation_detail: '一笔已履约，一笔未履约',
+      operations: [
+        expect.objectContaining({ compliance_status: 'complied', display_order: 1 }),
+        expect.objectContaining({ compliance_status: 'breached', display_order: 2 }),
+      ],
     }))
   })
 

@@ -752,6 +752,7 @@ class TradeDisciplineService:
                     "fee": self._decimal(item.get("fee"), places=2, label="交易费用"),
                     "operated_at": operated_at,
                     "note": self._optional_text(item.get("note"), "操作说明"),
+                    "compliance_status": item.get("compliance_status"),
                     "display_order": display_order,
                 }
             )
@@ -798,14 +799,18 @@ class TradeDisciplineService:
         version: dict[str, Any],
     ) -> dict[str, Any]:
         assessment = payload.get("assessment")
-        if assessment not in {"complied", "breached"}:
-            raise ValidationError("用户自评必须为 complied 或 breached")
+        if assessment not in {"complied", "partial", "breached"}:
+            raise ValidationError("用户自评必须为 complied、partial 或 breached")
         no_operation = payload.get("no_operation")
         if not isinstance(no_operation, bool):
             raise ValidationError("是否无操作必须为布尔值")
         raw_operations = payload.get("operations") or []
         if not isinstance(raw_operations, list):
             raise ValidationError("操作记录必须为数组")
+        if assessment == "partial" and no_operation:
+            raise ValidationError("部分履约必须填写实际操作")
+        if assessment == "partial" and len(raw_operations) < 2:
+            raise ValidationError("部分履约至少需要两笔操作")
         if no_operation and raw_operations:
             raise ValidationError("今日无操作与操作记录互斥")
         if not no_operation and not raw_operations:
@@ -820,11 +825,12 @@ class TradeDisciplineService:
         selected_reasons = sum(
             value is not None and str(value).strip() != "" for value in reason_values
         )
-        if assessment == "breached":
+        has_violation = assessment in {"partial", "breached"}
+        if has_violation:
             if not isinstance(violation_detail, str) or not violation_detail.strip():
-                raise ValidationError("未履约时必须填写详细说明")
+                raise ValidationError("部分履约或未履约时必须填写详细说明")
             if selected_reasons != 1:
-                raise ValidationError("未履约时必须且只能选择一个原因")
+                raise ValidationError("部分履约或未履约时必须且只能选择一个原因")
         else:
             if selected_reasons or (violation_detail is not None and str(violation_detail).strip()):
                 raise ValidationError("已履约不能填写未履约原因或详细说明")
@@ -832,6 +838,14 @@ class TradeDisciplineService:
         operations = self._prepare_operations(
             raw_operations, trade_date=trade_date, version=version
         )
+        operation_statuses = [item.get("compliance_status") for item in operations]
+        if assessment == "partial":
+            if any(status not in {"complied", "breached"} for status in operation_statuses):
+                raise ValidationError("部分履约时每笔操作都必须选择履约状态")
+            if set(operation_statuses) != {"complied", "breached"}:
+                raise ValidationError("部分履约必须同时包含已履约和未履约操作")
+        elif any(status is not None for status in operation_statuses):
+            raise ValidationError("仅部分履约可以填写单笔操作履约状态")
         return {
             "assessment": assessment,
             "no_operation": no_operation,
@@ -848,7 +862,7 @@ class TradeDisciplineService:
         conn: psycopg.Connection,
         prepared: dict[str, Any],
     ) -> dict[str, str | None] | None:
-        if prepared["assessment"] != "breached":
+        if prepared["assessment"] not in {"partial", "breached"}:
             return None
         builtins = {code: name for code, name in BUILTIN_VIOLATION_REASONS}
         normalized_builtins = {
@@ -1107,7 +1121,7 @@ class TradeDisciplineService:
         page = max(1, int(page))
         page_size = max(1, min(int(page_size), 100))
         assessment = filters.get("assessment")
-        if assessment is not None and assessment not in {"complied", "breached"}:
+        if assessment is not None and assessment not in {"complied", "partial", "breached"}:
             raise ValidationError("履约结果筛选值不正确")
         if sort_by != "trade_date":
             raise ValidationError("履约历史排序字段不正确")

@@ -132,6 +132,17 @@ def _operation(trade_date: date, *, side: str = "buy", complete: bool = True) ->
     return item
 
 
+def _partial_operations(trade_date: date) -> list[dict]:
+    return [
+        dict(_operation(trade_date), compliance_status="complied", display_order=1),
+        dict(
+            _operation(trade_date, side="sell"),
+            compliance_status="breached",
+            display_order=2,
+        ),
+    ]
+
+
 def _count(pg, table: str, *, owner: str = TEST_OWNER) -> int:
     return int(
         pg.query_df(
@@ -182,6 +193,104 @@ def test_four_assessment_operation_combinations(pg, market, assessment, no_opera
         assert result["violation_detail"] == payload["violation_detail"]
     else:
         assert result["reason_name_snapshot"] is None
+
+
+def test_partial_assessment_persists_mixed_operation_statuses(pg, market):
+    trade_date, _, _ = _seed_market(market)
+    service = _service(pg, market)
+    rule_id = _published_rule(service)
+
+    result = service.submit_checkin(
+        rule_id,
+        trade_date,
+        {
+            "assessment": "partial",
+            "no_operation": False,
+            "reason_code": "unplanned_operation",
+            "violation_detail": "买入按计划执行，卖出没有按纪律完成",
+            "operations": _partial_operations(trade_date),
+        },
+    )
+
+    assert result["assessment"] == "partial"
+    assert result["reason_name_snapshot"] == "计划外操作"
+    assert [item["compliance_status"] for item in result["operations"]] == [
+        "complied",
+        "breached",
+    ]
+    page = service.list_checkins(assessment="partial")
+    assert page["total"] == 1
+    assert page["list"][0]["id"] == result["checkin_id"]
+
+
+@pytest.mark.parametrize(
+    ("payload_patch", "message"),
+    [
+        ({"no_operation": True, "operations": []}, "部分履约必须填写实际操作"),
+        (
+            {"operations": [dict(_partial_operations(date(2099, 1, 1))[0])]},
+            "部分履约至少需要两笔操作",
+        ),
+        (
+            {
+                "operations": [
+                    dict(_partial_operations(date(2099, 1, 1))[0], compliance_status=None),
+                    _partial_operations(date(2099, 1, 1))[1],
+                ]
+            },
+            "每笔操作都必须选择履约状态",
+        ),
+        (
+            {
+                "operations": [
+                    dict(item, compliance_status="complied")
+                    for item in _partial_operations(date(2099, 1, 1))
+                ]
+            },
+            "必须同时包含已履约和未履约操作",
+        ),
+    ],
+)
+def test_partial_assessment_rejects_incomplete_or_non_mixed_statuses(
+    pg, market, payload_patch, message
+):
+    trade_date, _, _ = _seed_market(market)
+    service = _service(pg, market)
+    rule_id = _published_rule(service)
+    operations = payload_patch.get("operations")
+    if operations:
+        for operation in operations:
+            operation["operated_at"] = datetime.combine(
+                trade_date, time(10, 30), tzinfo=SHANGHAI
+            )
+    payload = {
+        "assessment": "partial",
+        "no_operation": False,
+        "reason_code": "unplanned_operation",
+        "violation_detail": "部分操作没有履约",
+        "operations": _partial_operations(trade_date),
+        **payload_patch,
+    }
+    with pytest.raises(ValidationError, match=message):
+        service.submit_checkin(rule_id, trade_date, payload)
+
+
+def test_non_partial_assessment_rejects_operation_compliance_status(pg, market):
+    trade_date, _, _ = _seed_market(market)
+    service = _service(pg, market)
+    rule_id = _published_rule(service)
+    with pytest.raises(ValidationError, match="仅部分履约"):
+        service.submit_checkin(
+            rule_id,
+            trade_date,
+            {
+                "assessment": "complied",
+                "no_operation": False,
+                "operations": [
+                    dict(_operation(trade_date), compliance_status="complied")
+                ],
+            },
+        )
 
 
 def test_incomplete_financial_facts_allowed_and_rule_links_enforced(pg, market):

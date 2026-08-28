@@ -4,6 +4,10 @@ import { Plus } from '@element-plus/icons-vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import type { CheckinSummaryRule, TradeDisciplineRule } from '@/api/tradeDiscipline'
+import {
+  checkinAssessmentLabel,
+  checkinAssessmentTagType,
+} from '@/utils/tradeDisciplineAssessment'
 
 const props = defineProps<{
   rules: TradeDisciplineRule[]
@@ -42,9 +46,7 @@ function managementLabel(rule: TradeDisciplineRule): string {
   const checkin = checkinByRule.value.get(rule.id)
   if (checkin) {
     if (!checkin.checkin_id) return '待打卡'
-    return checkin.assessment === 'complied'
-      ? `已履约 · r${checkin.current_revision_no}`
-      : `未履约 · r${checkin.current_revision_no}`
+    return `${checkinAssessmentLabel(checkin.assessment!)} · r${checkin.current_revision_no}`
   }
   const event = rule.latest_management_event
   if (rule.has_pending_management_action && event) {
@@ -62,7 +64,7 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
   const checkin = checkinByRule.value.get(rule.id)
   if (checkin) {
     if (!checkin.checkin_id) return 'warning'
-    return checkin.assessment === 'complied' ? 'success' : 'danger'
+    return checkinAssessmentTagType(checkin.assessment!)
   }
   if (rule.has_pending_management_action || rule.draft_revision) return 'warning'
   if (rule.management_status === 'unpublished') return 'warning'

@@ -141,6 +141,8 @@ export interface QualityIssue {
   detail: string
   detected_at: string | null
   resolved_at: string | null
+  ignore_scope: 'occurrence' | 'object' | null
+  ignore_active: boolean
 }
 export interface QualitySummaryItem { issue_type: string; n: number }
 export interface DataQuality {
@@ -168,8 +170,13 @@ export function fixQualityIssue(issueId: number): Promise<{ task_id: string }> {
 export function fixQualityBatch(issueIds: number[]): Promise<{ task_id: string }> {
   return http.post('/data/quality/fix-batch', { issue_ids: issueIds })
 }
-export function ignoreQualityIssue(issueId: number): Promise<{ id: number; status: string }> {
-  return http.post(`/data/quality/${issueId}/ignore`)
+export function ignoreQualityIssue(issueId: number, scope: 'occurrence' | 'object'):
+  Promise<{ id: number; status: string; ignore_scope: 'occurrence' | 'object' }> {
+  return http.post(`/data/quality/${issueId}/ignore`, { scope })
+}
+export function restoreQualityMonitoring(issueId: number):
+  Promise<{ id: number; status: string; ignore_active: boolean }> {
+  return http.post(`/data/quality/${issueId}/restore-monitoring`)
 }
 // 手动复位「修复中」→「未处理」：绑定的修复任务已失败/中断/卡死时解套
 export function resetQualityIssue(issueId: number): Promise<{ id: number; status: string }> {

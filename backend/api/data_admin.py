@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import pandas as pd
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
@@ -458,7 +459,7 @@ def quality(issue_type: str | None = None, severity: str | None = None,
     }.get(sort_by, "q.detected_at")
     df = c.query_df(
         f"SELECT q.id, q.code, sb.name AS name, q.trade_date, q.issue_type, q.severity, q.status, "
-        f"q.detail, q.detected_at, q.resolved_at "
+        f"q.detail, q.detected_at, q.resolved_at, q.ignore_scope, q.ignore_active "
         f"FROM data_quality_issue q LEFT JOIN stock_basic sb ON sb.code = q.code WHERE {where} "
         f"ORDER BY {sort_expr} {direction} NULLS LAST, q.detected_at DESC NULLS LAST, q.id "
         f"LIMIT {int(size)} OFFSET {int((page-1)*size)}", params)
@@ -510,6 +511,9 @@ def quality(issue_type: str | None = None, severity: str | None = None,
             except (ValueError, TypeError):
                 pass  # 非法 JSON 保留原样
         r["id"] = int(r["id"])
+        ignore_active = r.get("ignore_active")
+        r["ignore_active"] = False if ignore_active is None or pd.isna(ignore_active) \
+            else bool(ignore_active)
     return ok({"summary": summary, "total": total, "page": page, "size": size, "list": rows})
 
 
@@ -632,26 +636,58 @@ def quality_reset(issue_id: int) -> ApiResponse:
     return ok({"id": issue_id, "status": "open"})
 
 
+class QualityIgnoreIn(BaseModel):
+    scope: str = Field(pattern="^(occurrence|object)$")
+
+
 @router.post("/quality/{issue_id}/ignore", response_model=ApiResponse, dependencies=_QUALITY_FIX)
-def quality_ignore(issue_id: int) -> ApiResponse:
-    """标记为正常/忽略（DM-D22）：不可恢复或真实极端值（如新股首日大涨）人工确认正常，
-    置 status='ignored'。质检幂等重扫不会再翻回 open（DELETE 只清 open）。"""
+def quality_ignore(issue_id: int, body: QualityIgnoreIn | None = None) -> ApiResponse:
+    """标记正常并选择范围；body 为空兼容旧调用，默认仅忽略本次。"""
     c = get_client()
     from datetime import datetime
-    row = c.query_df("SELECT status, fix_task_id FROM data_quality_issue WHERE id=?", [issue_id])
+    scope = body.scope if body else "occurrence"
+    row = c.query_df(
+        "SELECT status, fix_task_id, ignore_scope, ignore_active "
+        "FROM data_quality_issue WHERE id=?", [issue_id])
     if row.empty:
         return err(404, f"质检问题不存在: id={issue_id}")
     status = str(row.iloc[0]["status"])
-    if status == "ignored":
-        return ok({"id": issue_id, "status": "ignored"})
+    active = row.iloc[0]["ignore_active"]
+    is_active = False if active is None or pd.isna(active) else bool(active)
+    if status == "ignored" and is_active:
+        if str(row.iloc[0]["ignore_scope"]) != scope:
+            return err(409, "该问题已有不同范围的生效中忽略规则，请先恢复监控")
+        return ok({"id": issue_id, "status": "ignored", "ignore_scope": scope})
     if status == "fixing":
         return err(409, "问题正在恢复中，不能同时标记正常",
                    {"fix_task_id": row.iloc[0]["fix_task_id"]})
     if status != "open":
         return err(400, f"仅未处理问题可标记正常，当前状态: {status}")
-    c.execute("UPDATE data_quality_issue SET status='ignored', resolved_at=?, fix_task_id=NULL WHERE id=?",
-              [datetime.now(), issue_id])
-    return ok({"id": issue_id, "status": "ignored"})
+    c.execute(
+        "UPDATE data_quality_issue SET status='ignored', resolved_at=?, fix_task_id=NULL, "
+        "ignore_scope=?, ignore_active=true WHERE id=?",
+        [datetime.now(), scope, issue_id],
+    )
+    return ok({"id": issue_id, "status": "ignored", "ignore_scope": scope})
+
+
+@router.post("/quality/{issue_id}/restore-monitoring", response_model=ApiResponse,
+             dependencies=_QUALITY_FIX)
+def quality_restore_monitoring(issue_id: int) -> ApiResponse:
+    """停用忽略规则；当前异常若仍存在，会在下一次质检/采集时重新报告。"""
+    c = get_client()
+    row = c.query_df(
+        "SELECT status, ignore_active FROM data_quality_issue WHERE id=?", [issue_id])
+    if row.empty:
+        return err(404, f"质检问题不存在: id={issue_id}")
+    if str(row.iloc[0]["status"]) != "ignored":
+        return err(400, "仅已忽略的问题可恢复监控")
+    active = row.iloc[0]["ignore_active"]
+    if active is None or pd.isna(active) or not bool(active):
+        return ok({"id": issue_id, "status": "ignored", "ignore_active": False})
+    c.execute(
+        "UPDATE data_quality_issue SET ignore_active=false WHERE id=?", [issue_id])
+    return ok({"id": issue_id, "status": "ignored", "ignore_active": False})
 
 
 class MarkDelistedIn(BaseModel):

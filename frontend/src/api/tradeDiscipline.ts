@@ -2,7 +2,8 @@ import http from './client'
 
 export type RuleManagementStatus = 'unpublished' | 'active' | 'archived'
 export type RuleEffectiveStatus = 'unpublished' | 'active' | 'archived'
-export type CheckinAssessment = 'complied' | 'breached'
+export type CheckinAssessment = 'complied' | 'partial' | 'breached'
+export type OperationComplianceStatus = 'complied' | 'breached'
 
 export interface RuleLifecycleEvent {
   event_type: 'publish' | 'archive' | 'restore'
@@ -183,6 +184,7 @@ export interface CheckinOperation {
   fee: string | null
   operated_at: string | null
   note: string | null
+  compliance_status?: OperationComplianceStatus | null
   display_order: number
   stock_rule_name?: string | null
   action_rule_name?: string | null

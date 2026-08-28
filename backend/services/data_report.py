@@ -443,7 +443,8 @@ class DataIntegrityReport:
         """
         from datetime import datetime
 
-        from backend.dataquality.checker import EXACT_IGNORE_ISSUE_TYPES, severity_for
+        from backend.dataquality.checker import severity_for
+        from backend.dataquality.ignore_rules import filter_ignored_issues
         ph = ",".join("?" * len(issue_types))
         # code/trade_date 统一规范化：源级问题（如 fund_stale）code=NULL，须与扫描侧 None 同键
         def _norm_code(v):
@@ -455,20 +456,10 @@ class DataIntegrityReport:
         old = self.c.query_df(
             f"SELECT id, code, trade_date, issue_type FROM data_quality_issue "
             f"WHERE status='open' AND issue_type IN ({ph})", list(issue_types))
-        # 扫描计算期间可能发生人工忽略；落库前在同一事务内重读，避免把刚 ignored 的同键
-        # 问题重新插成 open。单日事件精确到日期，状态型问题按对象整体豁免。
-        ignored = self.c.query_df(
-            f"SELECT code, trade_date, issue_type FROM data_quality_issue "
-            f"WHERE status='ignored' AND issue_type IN ({ph})", list(issue_types))
-        ignored_exact: set[tuple] = set()
-        ignored_coarse: set[tuple] = set()
-        for _, r in ignored.iterrows():
-            issue_type = str(r["issue_type"])
-            code = _norm_code(r["code"])
-            if issue_type in EXACT_IGNORE_ISSUE_TYPES:
-                ignored_exact.add((issue_type, code, _norm_td(r["trade_date"])))
-            else:
-                ignored_coarse.add((issue_type, code))
+        # 落库前重读通用忽略规则，避免扫描计算期间的人工操作被旧快照覆盖。
+        issues = filter_ignored_issues(
+            self.c, issues, issue_types, reconcile_occurrences=True,
+        )
 
         key_old: dict[tuple, int] = {}
         for _, r in old.iterrows():
@@ -481,11 +472,6 @@ class DataIntegrityReport:
             code = x["code"]
             td_raw = x.get("trade_date")
             key = (x["issue_type"], _norm_code(code), _norm_td(td_raw))
-            if x["issue_type"] in EXACT_IGNORE_ISSUE_TYPES:
-                if key in ignored_exact:
-                    continue
-            elif (x["issue_type"], _norm_code(code)) in ignored_coarse:
-                continue
             fresh_keys.add(key)
             iid = key_old.get(key)
             if iid is None:
@@ -552,21 +538,7 @@ class DataIntegrityReport:
         先在事务外完整计算本轮问题；失败时旧问题不变。最后使用短事务原子替换台账。
         verify 占用异步写任务全局槽位，避免其他数据任务并发写。
         """
-        from backend.dataquality.checker import EXACT_IGNORE_ISSUE_TYPES, SCAN_ISSUE_TYPES
-        ph = ",".join("?" * len(SCAN_ISSUE_TYPES))
-        # 已「标记为正常/忽略」的不再上报：L3 按 (股,类型,日期) 精确豁免；
-        # L2/L4 按 (股,类型) 整体豁免（缺口/滞后/市值是状态而非单日事件）。
-        def _ignored_keys(ignored: pd.DataFrame) -> tuple[set, set]:
-            exact, coarse = set(), set()
-            for _, r in ignored.iterrows():
-                coarse.add((r["code"], r["issue_type"]))
-                td = None if pd.isna(r["trade_date"]) else str(pd.Timestamp(r["trade_date"]).date())
-                exact.add((r["code"], r["issue_type"], td))
-            return exact, coarse
-
-        ig = self.c.query_df(
-            "SELECT code, issue_type, trade_date FROM data_quality_issue WHERE status='ignored'")
-        ig_exact, ig_coarse = _ignored_keys(ig)
+        from backend.dataquality.checker import SCAN_ISSUE_TYPES
         # L3 异常涨跌幅：耗时扫描均在事务外完成，每条 SQL 结束即释放
         # 共享连接锁，任务状态/日志轮询可在查询间隙进入。
         df = self.c.query_df(
@@ -596,24 +568,21 @@ class DataIntegrityReport:
         ab_rows = [
             {"code": r["code"], "trade_date": r["trade_date"], "issue_type": "abnormal_change",
              "detail": f"涨跌幅 {r['chg']*100:.1f}% 超上限 {r['lim']*100:.0f}%"}
-            for _, r in bad.iterrows()
-            if (
-                r["code"], "abnormal_change", str(pd.Timestamp(r["trade_date"]).date())
-            ) not in ig_exact]
-        adj_rows = self._collect_adj_jump_issues(ignored_exact=ig_exact)
+            for _, r in bad.iterrows()]
+        adj_rows = self._collect_adj_jump_issues()
         # L2 + L4：来自统一的覆盖鲜活全景（与 quality_model/stock_quality 同口径）
         frame, _ = self._coverage_frame(gap_window_days)
         rows = []
         for _, r in frame.iterrows():
             code = r["code"]
-            if not r["mv_ok"] and (code, "mv_missing") not in ig_coarse:
+            if not r["mv_ok"]:
                 rows.append({"code": code, "issue_type": "mv_missing",
                              "detail": f"{r['mv_detail']}（字段契约不全，需补估值/市值数据）"})
-            if int(r["gap_days"]) > 0 and (code, "data_gap") not in ig_coarse:
+            if int(r["gap_days"]) > 0:
                 rows.append({"code": code, "trade_date": r["gap_lo"], "issue_type": "data_gap",
                              "detail": f"近{gap_window_days}个交易日内 {int(r['gap_days'])} 天无行情"
                                        f"（疑似漏采，待重采确认）：{r['gap_lo']}~{r['gap_hi']}"})
-            if int(r["stale_days"]) > 0 and (code, "stale") not in ig_coarse:
+            if int(r["stale_days"]) > 0:
                 rows.append({"code": code, "trade_date": r["latest_date"], "issue_type": "stale",
                              "detail": f"数据未更新到最新交易日，滞后 {int(r['stale_days'])} 个交易日"
                                        f"（自 {r['stale_lo']} 起）"})
@@ -623,35 +592,22 @@ class DataIntegrityReport:
         # 同窗口同数据），命中多少写多少——与概览口径一致，台账不再静默。
         for _, r in frame.iterrows():
             code = r["code"]
-            if bool(r["mv_ok"]) and int(r["mv_gap_days"]) > 0 and (code, "mv_gap") not in ig_coarse:
+            if bool(r["mv_ok"]) and int(r["mv_gap_days"]) > 0:
                 rows.append({"code": code, "trade_date": r["mv_gap_hi"], "issue_type": "mv_gap",
                              "detail": f"近{gap_window_days}个交易日内 {int(r['mv_gap_days'])} 天市值字段缺口"
                                        f"（需补市值）：{r['mv_detail']}"})
         # 仅台账替换使用短事务：失败回滚保留旧问题，计算期间不锁住轮询。
         with self.c.transaction():
-            # 计算期间用户可能把问题「标记正常」；落库前重读 ignored，
-            # 防止用计算开始时的旧豁免快照重新插入 open 问题。
-            current_ignored = self.c.query_df(
-                "SELECT code, issue_type, trade_date FROM data_quality_issue "
-                "WHERE status='ignored'")
-            current_exact, current_coarse = _ignored_keys(current_ignored)
-            issue_rows = []
-            for issue in ab_rows + adj_rows + rows:
-                code, issue_type = issue["code"], issue["issue_type"]
-                td_raw = issue.get("trade_date")
-                td = None if td_raw is None or pd.isna(td_raw) else str(pd.Timestamp(td_raw).date())
-                if issue_type in EXACT_IGNORE_ISSUE_TYPES:
-                    if (code, issue_type, td) in current_exact:
-                        continue
-                elif (code, issue_type) in current_coarse:
-                    continue
-                issue_rows.append(issue)
-            self.c.execute(
-                f"DELETE FROM data_quality_issue WHERE status='open' AND issue_type IN ({ph})",
-                list(SCAN_ISSUE_TYPES))
-            self._insert_issues(issue_rows)
+            issue_rows = ab_rows + adj_rows + rows
+            self._upsert_scan_issues(issue_rows, SCAN_ISSUE_TYPES)
+        active_rows = self.c.query_df(
+            f"SELECT issue_type, count(*) AS n FROM data_quality_issue WHERE status='open' "
+            f"AND issue_type IN ({','.join('?' * len(SCAN_ISSUE_TYPES))}) GROUP BY issue_type",
+            list(SCAN_ISSUE_TYPES),
+        )
+        active_counts = {str(r["issue_type"]): int(r["n"]) for _, r in active_rows.iterrows()}
         inserted_counts = {
-            issue_type: sum(row["issue_type"] == issue_type for row in issue_rows)
+            issue_type: active_counts.get(issue_type, 0)
             for issue_type in SCAN_ISSUE_TYPES
         }
         return {
@@ -677,34 +633,13 @@ class DataIntegrityReport:
         成分数波动不做质量判断；但 has_members=true 且从未形成完整快照必须进入台账，
         否则概览只能显示覆盖不足、质量页却没有恢复入口。
         """
-        from backend.dataquality.checker import EXACT_IGNORE_ISSUE_TYPES
-
         # 板块指数缺口：board_bar 最近交易日滞后于 daily_bar 全局最新交易日。
-        # 单日事件精确到日期，状态型问题才按板块整体豁免。
-        def _ignored_keys(issue_type: str) -> tuple[set[str], set[tuple[str, date | None]]]:
-            codes: set[str] = set()
-            exact: set[tuple[str, date | None]] = set()
-            igdf = self.c.query_df(
-                "SELECT code, trade_date FROM data_quality_issue "
-                "WHERE issue_type=? AND status='ignored'",
-                [issue_type])
-            for _, r in igdf.iterrows():
-                code = str(r["code"])
-                trade_date = None if pd.isna(r["trade_date"]) \
-                    else pd.Timestamp(r["trade_date"]).date()
-                if issue_type in EXACT_IGNORE_ISSUE_TYPES:
-                    exact.add((code, trade_date))
-                else:
-                    codes.add(code)
-            return codes, exact
-
         gap_issues: list[dict] = []
         latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
         fund_date = None
         if latest is not None:
             latest = pd.Timestamp(latest).date()
             fund_date = latest
-            ig_gap, _ = _ignored_keys("board_index_gap")
             gap_df = self.c.query_df(
                 """
                 SELECT b.board_code, b.name, max(bar.trade_date) AS last_bar
@@ -715,8 +650,6 @@ class DataIntegrityReport:
                 """)
             for _, r in gap_df.iterrows():
                 code = str(r["board_code"])
-                if code in ig_gap:
-                    continue
                 last_bar = r["last_bar"]
                 if last_bar is None or pd.Timestamp(last_bar).date() < latest:
                     gap_issues.append({
@@ -731,7 +664,6 @@ class DataIntegrityReport:
             # 数据起点 = min(board_bar.trade_date)（成立前不会有行），起点之前的缺失属正常、不报，
             # 不靠人工 ignore（避免每季新板块重复豁免）。起点之后缺失即漏采/异常，照报。
             daily_gap_issues: list[dict] = []
-            _, ig_gap_daily = _ignored_keys("board_index_gap_daily")
             recent_days, _ = self._recent_open_days(latest, GAP_WINDOW_DAYS)
             recent_set = set(recent_days)
             if recent_set:
@@ -767,8 +699,6 @@ class DataIntegrityReport:
                         # 成立前豁免：起点之前的缺失是板块成立前源端本无数据，不算缺口。
                         if bar_start is not None and md < bar_start:
                             continue
-                        if (code, md) in ig_gap_daily:
-                            continue
                         daily_gap_issues.append({
                             "code": code, "trade_date": md,
                             "issue_type": "board_index_gap_daily",
@@ -779,7 +709,6 @@ class DataIntegrityReport:
             daily_gap_issues = []
 
         # 板块指数内容合法性：记录存在不代表可用于行情展示，坏 OHLC/负成交字段必须可发现、可重采。
-        _, ig_invalid = _ignored_keys("board_index_invalid")
         invalid_df = self.c.query_df(
             """
             SELECT d.board_code, d.name, b.trade_date, b.open, b.high, b.low, b.close,
@@ -802,12 +731,11 @@ class DataIntegrityReport:
                           f"V={r['volume']} A={r['amount']}",
             }
             for _, r in invalid_df.iterrows()
-            if (str(r["board_code"]), pd.Timestamp(r["trade_date"]).date()) not in ig_invalid
         ]
 
         # 从未形成完整成分快照也属于不可用状态。采集中途失败仍由采集层即时写同一类型，
         # 这里仅补齐“从未采集/历史初始化漏跑”的静态盲区，并尊重 active/ignored 去重。
-        active_member_codes, _ = _ignored_keys("board_member_incomplete")
+        active_member_codes: set[str] = set()
         active_member_df = self.c.query_df(
             "SELECT code FROM data_quality_issue "
             "WHERE issue_type='board_member_incomplete' AND status IN ('open','fixing')")
@@ -834,7 +762,6 @@ class DataIntegrityReport:
         # 少量当日记录，若按当日全量覆盖判断会误报其他已追平的板块。
         # 多周期：每个板块一条 issue、detail 列缺失周期列表（缺全部周期不刷 5 条）。
         # 数据源不支持按日期回溯，故不检查历史某天缺口，只盯最新快照新鲜度。
-        ig_fund, _ = _ignored_keys("board_fund_missing")
         latest_fund = self._scalar(
             "SELECT max(snapshot_date) FROM board_fund_flow WHERE period='即时'")
         latest_fund = None if latest_fund is None or pd.isna(latest_fund) \
@@ -853,8 +780,6 @@ class DataIntegrityReport:
                 have_map.setdefault(str(r["board_code"]), set()).add(str(r["period"]))
             for _, b in boards.iterrows():
                 bcode = str(b["board_code"])
-                if bcode in ig_fund:
-                    continue
                 missing = [p for p in FUND_FLOW_PERIODS
                            if p not in have_map.get(bcode, set())]
                 if missing:
@@ -873,8 +798,7 @@ class DataIntegrityReport:
         # 只把「有快照但滞后」的周期计入：从未有快照的周期（新板块/老数据模式）由
         # board_fund_missing 按板块覆盖，这里不重复报源级滞后。
         stale_issues: list[dict] = []
-        ignored_fund_stale, _ = _ignored_keys("board_fund_stale")
-        if latest is not None and not ignored_fund_stale:
+        if latest is not None:
             lag_parts: list[str] = []
             lag_periods: list[str] = []
             for period in FUND_FLOW_PERIODS:
@@ -907,12 +831,28 @@ class DataIntegrityReport:
             self._upsert_scan_issues(
                 gap_issues + daily_gap_issues + invalid_issues + fund_issues + stale_issues,
                 scan_issue_types)
-            if member_issues:
-                self._insert_issues(member_issues)
-        return {"index_gap": len(gap_issues), "index_gap_daily": len(daily_gap_issues),
-                "index_invalid": len(invalid_issues),
-                "member_incomplete": len(member_issues),
-                "fund_missing": len(fund_issues), "fund_stale": len(stale_issues)}
+            from backend.dataquality.ignore_rules import filter_ignored_issues
+            visible_member_issues = filter_ignored_issues(
+                self.c, member_issues, ("board_member_incomplete",),
+                reconcile_occurrences=True,
+            )
+            if visible_member_issues:
+                self._insert_issues(visible_member_issues)
+        all_board_types = (*scan_issue_types, "board_member_incomplete")
+        active = self.c.query_df(
+            f"SELECT issue_type, count(*) AS n FROM data_quality_issue WHERE status='open' "
+            f"AND issue_type IN ({','.join('?' * len(all_board_types))}) GROUP BY issue_type",
+            list(all_board_types),
+        )
+        counts = {str(r["issue_type"]): int(r["n"]) for _, r in active.iterrows()}
+        return {
+            "index_gap": counts.get("board_index_gap", 0),
+            "index_gap_daily": counts.get("board_index_gap_daily", 0),
+            "index_invalid": counts.get("board_index_invalid", 0),
+            "member_incomplete": counts.get("board_member_incomplete", 0),
+            "fund_missing": counts.get("board_fund_missing", 0),
+            "fund_stale": counts.get("board_fund_stale", 0),
+        }
 
     # ── 单条问题复检（恢复后判断问题是否真消失，DM-D22）──
     def recheck_clean(self, issue_type: str, code: str | None, trade_date: date | None,

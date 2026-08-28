@@ -74,7 +74,7 @@ snapshot_runtime_state() {
   health_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
     http://127.0.0.1:8000/api/health 2>/dev/null)" || health_code="000"
   if [[ "$health_code" != "200" ]]; then
-    echo "现有后端健康检查为 $health_code，拒绝快照并停止未知状态服务" >&2
+    echo "现有后端健康检查为 ${health_code}，拒绝快照并停止未知状态服务" >&2
     return 1
   fi
   "$PY" -m backend.devtools.backend_runtime_state snapshot \
@@ -221,7 +221,7 @@ status() {
     echo "● 后端：运行中 (PID $pid)  /api/health=200  端口 8000"
     return 0
   fi
-  echo "● 后端：异常（进程存活但服务不可用，PID $pid）  /api/health=$code  端口 8000"
+  echo "● 后端：异常（进程存活但服务不可用，PID ${pid}）  /api/health=$code  端口 8000"
   return 1
 }
 
@@ -264,7 +264,7 @@ restart_safely() {
   if [[ "$code" == "200" ]]; then
     assert_idle
   else
-    echo "后端健康检查为 $code，执行恢复性重启" >&2
+    echo "后端健康检查为 ${code}，执行恢复性重启" >&2
   fi
   stop
   start dev

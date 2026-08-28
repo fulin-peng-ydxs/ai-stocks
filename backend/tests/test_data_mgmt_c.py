@@ -591,6 +591,84 @@ def test_ignore_sticks_across_rescan(client):
     assert client.query_df("SELECT status FROM data_quality_issue WHERE id=?", [iid]).iloc[0]["status"] == "ignored"
 
 
+def test_occurrence_ignore_expires_after_issue_disappears_and_reports_recurrence(client):
+    """仅忽略本次：持续异常被抑制，扫描确认消失后规则失效，再发生会重新报告。"""
+    from backend.api.data_admin import QualityIgnoreIn, quality_ignore
+    from backend.dataquality.ignore_rules import filter_ignored_issues
+
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detail, detected_at) "
+        "VALUES (701, 'A.SH', DATE '2026-08-20', 'data_gap', 'mid', 'open', '缺口', now())")
+    assert quality_ignore(701, QualityIgnoreIn(scope="occurrence")).code == 0
+    candidate = [{
+        "code": "A.SH", "trade_date": date(2026, 8, 20),
+        "issue_type": "data_gap", "detail": "缺口",
+    }]
+    assert filter_ignored_issues(
+        client, candidate, ("data_gap",), reconcile_occurrences=True,
+    ) == []
+    assert filter_ignored_issues(
+        client, [], ("data_gap",), reconcile_occurrences=True,
+    ) == []
+    active = client.query_df(
+        "SELECT ignore_active FROM data_quality_issue WHERE id=701").iloc[0]["ignore_active"]
+    assert bool(active) is False
+    assert filter_ignored_issues(
+        client, candidate, ("data_gap",), reconcile_occurrences=True,
+    ) == candidate
+
+
+def test_object_ignore_and_restore_monitoring_are_generic(client):
+    """整体忽略跨日期生效；恢复监控后同对象同类型重新可报告。"""
+    from backend.api.data_admin import (
+        QualityIgnoreIn,
+        quality_ignore,
+        quality_restore_monitoring,
+    )
+    from backend.dataquality.ignore_rules import filter_ignored_issues
+
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detail, detected_at) "
+        "VALUES (702, 'A.SH', DATE '2026-08-20', 'abnormal_change', 'mid', 'open', '异常', now())")
+    assert quality_ignore(702, QualityIgnoreIn(scope="object")).data["ignore_scope"] == "object"
+    later = [{
+        "code": "A.SH", "trade_date": date(2026, 8, 26),
+        "issue_type": "abnormal_change", "detail": "再次异常",
+    }]
+    assert filter_ignored_issues(
+        client, later, ("abnormal_change",), reconcile_occurrences=True,
+    ) == []
+    assert quality_restore_monitoring(702).code == 0
+    assert filter_ignored_issues(
+        client, later, ("abnormal_change",), reconcile_occurrences=True,
+    ) == later
+
+
+def test_unmatched_board_ignore_does_not_affect_other_names(client):
+    """无代码的名称映射类问题按来源类型+原始名称区分对象。"""
+    from backend.api.data_admin import QualityIgnoreIn, quality_ignore
+    from backend.dataquality.ignore_rules import filter_ignored_issues
+
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detail, detected_at) VALUES "
+        "(703, NULL, DATE '2026-08-20', 'board_fund_unmatched', 'mid', 'open', "
+        "'{\"name\":\"概念甲\",\"board_type\":\"concept\"}', now())")
+    quality_ignore(703, QualityIgnoreIn(scope="object"))
+    candidates = [
+        {"code": None, "trade_date": date(2026, 8, 26), "issue_type": "board_fund_unmatched",
+         "detail": '{"name":"概念甲","board_type":"concept"}'},
+        {"code": None, "trade_date": date(2026, 8, 26), "issue_type": "board_fund_unmatched",
+         "detail": '{"name":"概念乙","board_type":"concept"}'},
+    ]
+    visible = filter_ignored_issues(
+        client, candidates, ("board_fund_unmatched",), reconcile_occurrences=True,
+    )
+    assert [row["detail"] for row in visible] == [candidates[1]["detail"]]
+
+
 def test_three_views_consistent(client):
     """闭环4：概览/逐股/质检三处同口径——缺口数一致。"""
     rep = DataIntegrityReport(client)

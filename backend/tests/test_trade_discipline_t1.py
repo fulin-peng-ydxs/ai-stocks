@@ -157,9 +157,12 @@ def test_trade_discipline_foreign_keys_include_owner_and_indexes_exist(pg):
             "td_rule_latest_version_fk",
             "td_checkin_current_revision_fk",
             "td_checkin_submission_source_check",
+            "td_revision_assessment_check",
+            "td_revision_violation_detail_check",
+            "td_operation_compliance_status_check",
         ]],
     )["conname"])
-    assert len(checks) == 6
+    assert len(checks) == 9
 
     source = pg.query_df(
         "SELECT column_default,is_nullable FROM information_schema.columns "
@@ -167,6 +170,13 @@ def test_trade_discipline_foreign_keys_include_owner_and_indexes_exist(pg):
         "AND column_name='submission_source'"
     ).iloc[0]
     assert "workbench" in source["column_default"] and source["is_nullable"] == "NO"
+
+    compliance_column = pg.query_df(
+        "SELECT is_nullable FROM information_schema.columns "
+        "WHERE table_schema='public' AND table_name='trade_discipline_operation' "
+        "AND column_name='compliance_status'"
+    ).iloc[0]
+    assert compliance_column["is_nullable"] == "YES"
 
     obsolete_name_uniques = pg.query_df(
         "SELECT c.conname FROM pg_constraint c "

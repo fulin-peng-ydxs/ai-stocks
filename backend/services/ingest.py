@@ -330,12 +330,21 @@ class IngestionService:
         df, used_source = self._fetch_daily_with_fallback(code, start, end, source or self.src, ctx=ctx)
         if df is None or df.empty:
             raise DataSourceError(f"{code} {start}~{end} 主源+兜底源均无数据")
+        source_dates = list(df["trade_date"])
         # 入库闸门：行级自清洗 + 校验（坏行入库前就处理，不再依赖事后手动修）
         df, sanitize_stats = sanitize_bars(df)
         # L1 质量问题：被丢弃的非法收盘价行入台账（M2.9 DM-D15，入库即暴露不静默）
         if sanitize_stats.get("dropped_dates"):
             self._record_issues(code, sanitize_stats["dropped_dates"], "null_close",
                                 "收盘价为空或非正，已丢弃该行（原始数据缺损）")
+        from backend.dataquality.ignore_rules import deactivate_occurrence_ignores
+        dropped_dates = {
+            pd.Timestamp(td).date() for td in (sanitize_stats.get("dropped_dates") or [])
+        }
+        deactivate_occurrence_ignores(
+            self.c, "null_close", code,
+            [td for td in source_dates if pd.Timestamp(td).date() not in dropped_dates],
+        )
         if df.empty:
             return 0
         if sanitize_stats["dropped"] or sanitize_stats["fixed_ohl"]:
@@ -352,10 +361,21 @@ class IngestionService:
         df = add_markers(df, board_limit_pct, is_st)
         # OHL 修补行：真实振幅未知 → 强制不标一字板，并记入问题台账（不静默/不臆造）
         if "_ohl_repaired" in df.columns and df["_ohl_repaired"].any():
+            repaired_dates = {
+                pd.Timestamp(td).date()
+                for td in df.loc[df["_ohl_repaired"], "trade_date"].tolist()
+            }
             df.loc[df["_ohl_repaired"], "is_one_word"] = False
             self._record_issues(code, df[df["_ohl_repaired"]]["trade_date"], "ohl_repaired",
                                 "开高低缺失，已用收盘价回填（不标一字板）")
             df = df.drop(columns=["_ohl_repaired"])
+        else:
+            repaired_dates = set()
+        deactivate_occurrence_ignores(
+            self.c, "ohl_repaired", code,
+            [td for td in df["trade_date"].tolist()
+             if pd.Timestamp(td).date() not in repaired_dates],
+        )
         # 源行情覆盖后，派生清洗因子必须重新计算；否则源 adj_factor 被修正时，
         # 旧 adj_factor_clean 可能继续污染复权价。
         df["adj_factor_clean"] = None
@@ -724,21 +744,27 @@ class IngestionService:
         """
         from datetime import datetime
 
-        from backend.dataquality.checker import EXACT_IGNORE_ISSUE_TYPES, severity_for
+        from backend.dataquality.checker import severity_for
+        from backend.dataquality.ignore_rules import filter_ignored_issues
 
         sev = severity_for(issue_type)
         rows = []
-        for td in trade_dates:
+        candidates = filter_ignored_issues(
+            self.c,
+            [{"code": code, "trade_date": td, "issue_type": issue_type, "detail": detail}
+             for td in trade_dates],
+            (issue_type,),
+            reconcile_occurrences=False,
+        )
+        for candidate in candidates:
+            td = candidate["trade_date"]
             now = datetime.now()
             existing = self.c.query_df(
                 "SELECT id, status FROM data_quality_issue WHERE code=? AND trade_date=? AND issue_type=? "
-                "AND status IN ('open','fixing','ignored') ORDER BY id LIMIT 1",
+                "AND status IN ('open','fixing') ORDER BY id LIMIT 1",
                 [code, td, issue_type],
             )
             if not existing.empty:
-                if issue_type in EXACT_IGNORE_ISSUE_TYPES \
-                        and str(existing.iloc[0]["status"]) == "ignored":
-                    continue
                 self.c.execute(
                     "UPDATE data_quality_issue SET severity=?, status='open', detail=?, detected_at=?, "
                     "fix_task_id=NULL WHERE id=?",
@@ -1007,13 +1033,13 @@ class IngestionService:
             return ref
         return self._previous_open_day(ref)
 
-    def _resolve_update_end(self, requested_end: date, basic: list[str], codes: list[str] | None, ctx=None) -> date | None:
+    def _resolve_update_end(self, requested_end: date, basic: list[str], codes: list[str] | None, ctx=None) -> date:
         """收敛增量更新的目标截止日：
 
         ① 非交易日（requested_end 无开市行且日历已覆盖到该日）→ **回退到最新交易日**为截止，
            不跳过任务（周末/节假日跑也能确保补齐到上一交易日；已最新则逐股短路，无网络开销）。
-        ② 全市场 + 今天确是交易日 → 抽样探测主源当日日线是否就绪；未就绪 → 返回 None 跳过本次
-           （只在"当天交易日但数据没出"时跳过，**不**降级到上一交易日，避免拉半成品）。
+        ② 全市场 + 今天确是交易日 → 抽样探测主源当日日线是否就绪；未就绪 →
+           回退到上一交易日继续增量。本轮不拉取当日半成品，下轮仍会重新目标当天。
         ③ 指定股票/小批量 → 尊重用户意图，直接用收敛后的目标日。
         """
         cal = self.repo.c.query_df(
@@ -1062,13 +1088,14 @@ class IngestionService:
         total = max(len(sample), 1)
         ratio = ready / total
         if ratio < _UPDATE_READY_RATIO:
+            fallback = self._previous_open_day(requested_end)
             msg = (f"今日 {requested_end} 主源日线未完全就绪：抽样 {ready}/{len(sample)} 有数据"
-                   f"（空 {empty}，异常 {errors}），本次全市场增量直接结束，不降级到上一交易日，也不逐只走兜底源")
+                   f"（空 {empty}，异常 {errors}），回退到上一交易日 {fallback} "
+                   "继续增量，本轮不逐只拉取当日半成品")
             log.warning(msg)
             if ctx:
                 ctx.log(msg, "warn")
-            self._skip_reason = "primary_not_ready"
-            return None
+            return fallback
         return requested_end
 
     def update(self, codes: list[str] | None = None, concurrency: int | None = None, ctx=None) -> dict:
@@ -1100,8 +1127,8 @@ class IngestionService:
         completed_codes = set(done_codes) | set(basic[:skip_done])
         resumed_count = len(completed_codes)
         pending = [c for c in basic if c not in completed_codes]
-        # 续跑锁定本次任务目标日：首跑就绪门通过后固化 target_end，续跑直接取回，避免被重算成
-        # 「今天」后又因今天源未就绪整次跳过（连原目标日本该补的也补不到）。target_end 仅在首跑成功
+        # 续跑锁定本次任务目标日：首跑就绪门收敛后固化 target_end，续跑直接取回，避免被重算成
+        # 「今天」后又重新触发就绪判定，保证中断前后处理同一截止日。target_end 仅在首跑成功
         # 解析后写入，故"存在即代表前置(日历/指数)已完成"，续跑据此一并跳过这两个幂等前置。
         pinned_end = None
         if ctx and ctx.checkpoint.get("target_end"):
@@ -1115,15 +1142,7 @@ class IngestionService:
                 ctx.log(f"续跑：沿用本次任务目标日 {end}，跳过日历/指数前置（已于首跑完成且幂等入库）")
         else:
             self.ingest_calendar(end - timedelta(days=30), end, ctx=ctx)  # 先补日历（判交易日要用）
-            self._skip_reason = "primary_not_ready"
             end = self._resolve_update_end(end, basic, codes, ctx=ctx)
-        if end is None:   # 仅"今天是交易日但主源当日数据未就绪"才走到这里（非交易日已回退到上一交易日）
-            result = {"target": 0, "ok": 0, "fail": 0, "rows": 0, "concurrency": concurrency,
-                      "skipped": True, "reason": "primary_not_ready"}
-            if ctx:
-                ctx.progress(1.0, "主源当日数据未就绪，本次未执行行情更新")
-                ctx.log("■ 增量更新结束：主源当日数据未就绪，本次未执行行情更新")
-            return result
         if pinned_end is None:
             # 指数行情与日行情同口径：从 index_bar 已入库最新日 +1 增量补到 end（已收敛到最新交易日），
             # 不再每次固定拉「今天-30」窗口；已最新则跳过，不会"凭空一直更新"。
@@ -1253,7 +1272,7 @@ class IngestionService:
                 ex.shutdown(wait=True)
 
         # ── 缺口收口（DM 口径统一：与质量修复-补采共用 reconcile_gaps，confirm=False 只补不确认）──
-        # 常规增量只补 max+1~today；若主源返回部分数据则兜底不触发、最新缺口会漏（如停牌次日/源端
+        # 常规增量只补 max+1~target_end；若主源返回部分数据则兜底不触发、最新缺口会漏（如停牌次日/源端
         # 当日缺数）。此处用批量缺口口径（同 _coverage_frame，含减确认停牌）找出有缺口/滞后的股，
         # 窄区间重采让兜底正确触发把能补的补回。放在刷因子前，使补回行一并刷净。
         # 注意：自动收口只补回、不自动确认停牌——真停牌交由质检+补采那条有把关的路径确认，避免把
@@ -1274,7 +1293,9 @@ class IngestionService:
                         ctx.log(f"缺口收口进度 {gi}/{gtotal}：开始处理 {gcode}")
                         ctx.flush()
                 try:
-                    r = self.reconcile_gaps(gcode, confirm=False)
+                    # 就绪探测已回退时，库内可能有少数股票曾局部写入当天数据。
+                    # 自动收口必须与本轮 target_end 一致，不得再绕过回退去请求当天。
+                    r = self.reconcile_gaps(gcode, confirm=False, through=end)
                     if r["rows"]:
                         total_rows += r["rows"]
                         updated.add(gcode)
@@ -1313,8 +1334,13 @@ class IngestionService:
             # 失败独立隔离，不连累后面的历史补采。
             latest_val: dict = {}
             try:
-                latest_val = (self.ingest_valuation_latest(codes=codes, concurrency=concurrency, ctx=ctx)
-                              if ctx else self.ingest_valuation_latest(codes=codes, concurrency=concurrency))
+                # 与本轮已收敛的目标日保持一致：若库内少数股票曾局部写入当天数据，
+                # 不得让市值补采又以全库 max(trade_date) 绕过本轮回退。
+                latest_val = self.ingest_valuation_latest(
+                    trade_date=end, codes=codes, concurrency=concurrency, ctx=ctx
+                ) if ctx else self.ingest_valuation_latest(
+                    trade_date=end, codes=codes, concurrency=concurrency
+                )
             except TaskCancelled:  # 终止穿透：勿与"市值源失败"混为一谈
                 raise
             except Exception as se:  # noqa: BLE001
@@ -1340,7 +1366,7 @@ class IngestionService:
             ctx.log(f"■ 增量更新完成：成功 {ok}、失败 {fail}，共写入 {total_rows} 行（{n} 只）")
             ctx.log("说明：本次已补最新交易日 total_mv；历史中间缺口未在本次覆盖，质检 `mv_gap` 仍显示属正常，"
                     "需跑 `valuation --fill-gaps`（或质量页补修）一次性回补历史市值。")
-        # 行情/市值/复权因子已变 → 标评分快照失效（惰性，下次读取重算）。skipped 早退分支已在上方直接返回，不走到这里。
+        # 行情/市值/复权因子已变 → 标评分快照失效（惰性，下次读取重算）。
         try:
             result["snapshots_marked_stale"] = self._mark_snapshots_stale()
         except Exception as e:  # noqa: BLE001  失效标记失败不影响采集结果
@@ -1360,7 +1386,8 @@ class IngestionService:
             return f"确认停牌 {cf} 天"
         return "源端仍无数据，保持待处理"
 
-    def reconcile_gaps(self, code: str, ctx=None, confirm: bool = True) -> dict:
+    def reconcile_gaps(self, code: str, ctx=None, confirm: bool = True,
+                       through: date | None = None) -> dict:
         """收口单只股票窗口内的覆盖缺口（增量更新与质量修复-补采共用，统一口径）。
 
         步骤：窗口内仍缺的开市日 → 窄区间重采（区间收窄到缺口，主源整段无数据时兜底才会触发，
@@ -1371,10 +1398,14 @@ class IngestionService:
           - 质量修复-补采（有人按质检台账把关）传 True：保留"反向确认停牌"收敛语义。
           - 增量更新自动收尾传 False：只补回，不自动确认——避免把"可能只是源端当日未发布"的最新
             缺口在全市场范围内误标成不可逆的停牌；真停牌交由质检+补采这条把关路径确认。
+        through：可选的截止日；增量自动收口传入本轮 target_end，防止源端未就绪回退后
+          又被库内局部的当天数据抬高缺口窗口。人工质量修复不传，仍处理全部真实缺口。
         """
         from backend.services.data_report import DataIntegrityReport
         rep = DataIntegrityReport()   # 默认 get_client() 单例，与 self.repo.c 同一连接
         miss = rep.missing_days_for(code)
+        if through is not None:
+            miss = [d for d in miss if d <= through]
         if not miss:
             return {"miss": [], "backfilled": [], "confirmed": 0, "rows": 0}
         lo, hi = min(miss), max(miss)
@@ -1389,6 +1420,8 @@ class IngestionService:
             if ctx:
                 ctx.log(f"缺口收口：{code} {lo}~{hi} 源端仍无行情数据，进入停牌确认判断：{e}", "warn")
         still = rep.missing_days_for(code)   # 仍缺的开市日（已随新 min_bar 收窄 lo，排除上市前的伪缺口）
+        if through is not None:
+            still = [d for d in still if d <= through]
         confirmed = rep.confirm_suspension(code, still) if (confirm and still) else 0
         if ctx and confirmed:
             ctx.log(f"缺口收口：{code} 已确认停牌 {confirmed} 天")
@@ -2012,15 +2045,13 @@ class IngestionService:
                 if ctx:
                     bar = result["bar"]
                     rng = f"区间 {bar.get('start')} ~ {bar.get('end')}"
-                    if bar.get("skipped"):
-                        # 就绪门拦截：不算失败、不落半成品，下轮定时自动补
-                        ctx.log(f"步骤 {idx['n']}/{total} 板块指数（{rng}）："
-                                f"源端当日数据未就绪（已出 {bar.get('at_end', 0)}/{bar.get('scope_total', 0)}），"
-                                f"本次跳过")
-                    else:
-                        ctx.log(f"步骤 {idx['n']}/{total} 板块指数（{rng}）："
-                                f"{bar.get('rows', 0)} 行 / {bar.get('boards', 0)} 板块"
-                                f"（已出截止日 {bar.get('at_end', 0)}/{bar.get('scope_total', 0)}）")
+                    fallback_note = (
+                        f"，源端未就绪，已从 {bar.get('requested_end')} 回退"
+                        if bar.get("fallback") else ""
+                    )
+                    ctx.log(f"步骤 {idx['n']}/{total} 板块指数（{rng}{fallback_note}）："
+                            f"{bar.get('rows', 0)} 行 / {bar.get('boards', 0)} 板块"
+                            f"（已出截止日 {bar.get('at_end', 0)}/{bar.get('scope_total', 0)}）")
                 result["failed"] += [f"bar:{x}" for x in result["bar"].get("failed", [])]
             except TaskCancelled:  # 终止穿透：板块指数阶段被终止应转可续跑中断
                 raise

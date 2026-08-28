@@ -161,7 +161,7 @@ def test_quality_issue_migration_columns_and_severity():
     with DuckDBClient(db_path=":memory:") as c:
         init_db(c)
         cols = c.query_df("PRAGMA table_info('data_quality_issue')")["name"].tolist()
-        for col in ("status", "severity", "resolved_at"):
+        for col in ("status", "severity", "resolved_at", "ignore_scope", "ignore_active"):
             assert col in cols
         # 插入各类型，验证迁移 UPDATE 的严重度映射逻辑（手动按 DM-D10 核对）
         c.execute("INSERT INTO data_quality_issue (id, code, issue_type, detected_at) VALUES "

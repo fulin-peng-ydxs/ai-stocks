@@ -126,7 +126,9 @@ CREATE TABLE IF NOT EXISTS data_quality_issue (
     detail      VARCHAR,
     detected_at TIMESTAMP,
     resolved_at TIMESTAMP,       -- 修复完成回写
-    fix_task_id VARCHAR          -- 进入 fixing 时绑定的异步任务 id；任务失败/中断/重启可据此复位
+    fix_task_id VARCHAR,         -- 进入 fixing 时绑定的异步任务 id；任务失败/中断/重启可据此复位
+    ignore_scope VARCHAR,        -- occurrence=仅本次 / object=同对象同类型整体
+    ignore_active BOOLEAN        -- 忽略规则是否仍生效；本次问题消失或人工恢复后为 false
 );
 """
 
@@ -855,7 +857,18 @@ _MIGRATIONS: list[str] = [
     "ALTER TABLE data_quality_issue ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP",
     # 修复中闭环：绑定异步任务 id，任务失败/中断/重启时据此把 fixing 复位为 open（不留孤儿）
     "ALTER TABLE data_quality_issue ADD COLUMN IF NOT EXISTS fix_task_id VARCHAR",
+    "ALTER TABLE data_quality_issue ADD COLUMN IF NOT EXISTS ignore_scope VARCHAR",
+    "ALTER TABLE data_quality_issue ADD COLUMN IF NOT EXISTS ignore_active BOOLEAN",
+    # 历史 ignored 沿用升级前口径，避免上线后已确认正常的问题突然重新告警。
+    "UPDATE data_quality_issue SET ignore_scope=CASE "
+    "WHEN issue_type IN ('null_close','ohl_repaired','abnormal_change','adj_jump',"
+    "'board_index_gap_daily','board_index_invalid') THEN 'occurrence' ELSE 'object' END "
+    "WHERE status='ignored' AND ignore_scope IS NULL",
+    "UPDATE data_quality_issue SET ignore_active=true "
+    "WHERE status='ignored' AND ignore_active IS NULL",
     "UPDATE data_quality_issue SET status='open' WHERE status IS NULL",
+    "UPDATE data_quality_issue SET ignore_active=false "
+    "WHERE status<>'ignored' AND ignore_active IS NULL",
     # 严重度映射（DM-D10）：adj_jump=high；ohl_repaired/mv_missing=low；其余(abnormal_change/data_gap/stale)=mid
     "UPDATE data_quality_issue SET severity = CASE "
     "WHEN issue_type='adj_jump' THEN 'high' "

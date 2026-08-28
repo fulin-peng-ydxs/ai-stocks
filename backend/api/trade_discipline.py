@@ -124,11 +124,12 @@ class OperationBody(StrictBody):
     fee: MoneyDecimal | None = None
     operated_at: datetime | None = None
     note: str | None = None
+    compliance_status: Literal["complied", "breached"] | None = None
     display_order: int = Field(ge=1)
 
 
 class CheckinContentBody(StrictBody):
-    assessment: Literal["complied", "breached"]
+    assessment: Literal["complied", "partial", "breached"]
     no_operation: bool
     reason_code: str | None = None
     reason_id: str | None = None
@@ -378,7 +379,7 @@ def list_checkins(
     date_from: date | None = None,
     date_to: date | None = None,
     rule_id: str | None = None,
-    assessment: Literal["complied", "breached"] | None = None,
+    assessment: Literal["complied", "partial", "breached"] | None = None,
     no_operation: bool | None = None,
     amended: bool | None = None,
     stock: str | None = None,

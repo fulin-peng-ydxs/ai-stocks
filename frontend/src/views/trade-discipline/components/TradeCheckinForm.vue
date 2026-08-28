@@ -5,6 +5,10 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import { getErrorMessage } from '@/utils/error'
 import { decimalToMinorUnits, multiplyToMinorUnits } from '@/utils/fixedDecimal'
+import {
+  checkinAssessmentOptions,
+  hasCheckinViolation,
+} from '@/utils/tradeDisciplineAssessment'
 import TradeOperationEditor from './TradeOperationEditor.vue'
 import ViolationReasonCombobox, { type ReasonValue } from './ViolationReasonCombobox.vue'
 import {
@@ -111,6 +115,7 @@ async function load(): Promise<void> {
 }
 
 async function toggleNoOperation(value: boolean): Promise<void> {
+  if (form.assessment === 'partial' && value) return
   if (value && form.operations.length) {
     try {
       await ElMessageBox.confirm('选择“今日无操作”会清空已填写的操作记录。', '清空操作记录？', {
@@ -123,9 +128,11 @@ async function toggleNoOperation(value: boolean): Promise<void> {
 }
 
 function validate(): string | null {
+  if (form.assessment === 'partial' && form.operations.length < 2) return '部分履约至少需要两笔操作'
   if (!form.no_operation && !form.operations.length) return '请添加至少一条操作，或选择“今日无操作”'
-  if (form.assessment === 'breached' && !form.reason) return '未履约时必须选择或输入一个原因'
-  if (form.assessment === 'breached' && !form.violation_detail.trim()) return '未履约时必须填写详细说明'
+  if (hasCheckinViolation(form.assessment) && !form.reason) return '部分履约或未履约时必须选择或输入一个原因'
+  if (hasCheckinViolation(form.assessment) && !form.violation_detail.trim()) return '部分履约或未履约时必须填写详细说明'
+  const operationStatuses = form.operations.map((operation) => operation.compliance_status)
   for (const [index, operation] of form.operations.entries()) {
     const prefix = `操作 ${index + 1}`
     const operationError = (message: string) => {
@@ -135,6 +142,9 @@ function validate(): string | null {
     if (!operation.stock_code || !operation.stock_name_snapshot) return operationError('请选择股票')
     if (!operation.stock_rule_id) return operationError('请选择选股规则')
     if (!operation.action_rule_id) return operationError('请选择买卖规则')
+    if (form.assessment === 'partial' && !operation.compliance_status) {
+      return operationError('请选择履约状态')
+    }
     if (operation.operated_at && operation.operated_at.slice(0, 10) !== props.tradeDate) {
       return operationError('操作时间必须属于当前交易日')
     }
@@ -145,6 +155,10 @@ function validate(): string | null {
       if (units === null) return operationError('金额与数量格式不正确')
       if (units < 0n) return operationError('金额与数量不能为负数')
     }
+  }
+  if (form.assessment === 'partial') {
+    if (!operationStatuses.includes('complied')) return '部分履约至少需要一笔已履约操作'
+    if (!operationStatuses.includes('breached')) return '部分履约至少需要一笔未履约操作'
   }
   return null
 }
@@ -159,14 +173,14 @@ function amountMismatchRows(): number[] {
 }
 
 function payload(): CheckinContentPayload {
-  const breached = form.assessment === 'breached'
+  const hasViolation = hasCheckinViolation(form.assessment)
   return {
     assessment: form.assessment,
     no_operation: form.no_operation,
-    reason_code: breached && form.reason?.kind === 'builtin' ? form.reason.code ?? null : null,
-    reason_id: breached && form.reason?.kind === 'custom' ? form.reason.id ?? null : null,
-    reason_text: breached && form.reason?.kind === 'text' ? form.reason.name.trim() : null,
-    violation_detail: breached ? form.violation_detail.trim() : null,
+    reason_code: hasViolation && form.reason?.kind === 'builtin' ? form.reason.code ?? null : null,
+    reason_id: hasViolation && form.reason?.kind === 'custom' ? form.reason.id ?? null : null,
+    reason_text: hasViolation && form.reason?.kind === 'text' ? form.reason.name.trim() : null,
+    violation_detail: hasViolation ? form.violation_detail.trim() : null,
     review_note: form.review_note.trim() || null,
     operations: form.operations.map((item, index) => ({
       // 操作属于修订快照，不能复用上一修订的全局主键；null 交由服务端生成新 ID。
@@ -182,6 +196,7 @@ function payload(): CheckinContentPayload {
       fee: item.fee,
       operated_at: item.operated_at,
       note: item.note,
+      compliance_status: form.assessment === 'partial' ? item.compliance_status : null,
       display_order: index + 1,
     })),
   }
@@ -261,6 +276,18 @@ function requestDateChange(value: string | null): void {
   if (value && value !== props.tradeDate) emit('request-date-change', value)
 }
 
+watch(() => form.assessment, (assessment, previous) => {
+  if (assessment === 'partial') {
+    form.no_operation = false
+    return
+  }
+  if (previous === 'partial') {
+    form.operations = form.operations.map((operation) => ({
+      ...operation,
+      compliance_status: null,
+    }))
+  }
+})
 watch(() => [props.ruleId, props.tradeDate] as const, load, { immediate: true })
 defineExpose({ isDirty, requestLeave, load, startAmend })
 </script>
@@ -292,12 +319,12 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
                 data-testid="checkin-assessment"
                 v-model="form.assessment"
                 :disabled="readonly"
-                :options="[{ label: '已履约', value: 'complied' }, { label: '未履约', value: 'breached' }]"
+                :options="checkinAssessmentOptions"
               />
             </el-form-item>
-            <el-checkbox data-testid="checkin-no-operation" :model-value="form.no_operation" :disabled="readonly" @change="toggleNoOperation(Boolean($event))">今日无操作</el-checkbox>
+            <el-checkbox data-testid="checkin-no-operation" :model-value="form.no_operation" :disabled="readonly || form.assessment === 'partial'" @change="toggleNoOperation(Boolean($event))">今日无操作</el-checkbox>
           </div>
-          <div v-if="form.assessment === 'breached'" class="breach-grid">
+          <div v-if="hasCheckinViolation(form.assessment)" class="breach-grid">
             <el-form-item label="未履约原因" required>
               <ViolationReasonCombobox v-model="form.reason" data-testid="checkin-reason" :disabled="readonly" />
             </el-form-item>
@@ -316,6 +343,7 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
           v-model="form.operations"
           :version="context.version"
           :trade-date="tradeDate"
+          :show-compliance="form.assessment === 'partial'"
           :disabled="readonly"
         />
 

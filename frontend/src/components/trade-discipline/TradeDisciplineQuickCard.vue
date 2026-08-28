@@ -6,6 +6,7 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import { quickNoOperationTradeDisciplineCheckin } from '@/api/tradeDiscipline'
 import { useTradeDisciplineSummary } from '@/composables/useTradeDisciplineSummary'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
+import { checkinAssessmentLabel } from '@/utils/tradeDisciplineAssessment'
 
 const props = defineProps<{ canSubmit: boolean; tradeDate: string }>()
 const emit = defineEmits<{
@@ -31,7 +32,7 @@ const allCompleted = computed(() => Boolean(summary.value?.total && summary.valu
 
 function ruleStatus(rule: NonNullable<typeof summary.value>['rules'][number]): string {
   if (!rule.checkin_id) return '待打卡'
-  const result = rule.assessment === 'breached' ? '未履约' : '已履约'
+  const result = checkinAssessmentLabel(rule.assessment!)
   return rule.status === 'amended' ? `${result} · 已修正` : result
 }
 

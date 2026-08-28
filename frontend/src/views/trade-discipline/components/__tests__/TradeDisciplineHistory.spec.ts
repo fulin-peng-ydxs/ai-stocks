@@ -17,7 +17,7 @@ vi.mock('@/api/tradeDiscipline', () => ({
 
 const row: CheckinHistoryRow = {
   id: 'checkin-1', rule_id: 'rule-1', rule_name: '趋势纪律', trade_date: '2026-08-22',
-  status: 'amended', current_revision_no: 2, version_no: 3, assessment: 'breached',
+  status: 'amended', current_revision_no: 2, version_no: 3, assessment: 'partial',
   no_operation: false, reason_name_snapshot: '冲动交易', operation_count: 1,
   submitted_at: '2026-08-22T18:00:00', amended_at: '2026-08-22T19:00:00',
   updated_at: '2026-08-22T19:00:00',
@@ -66,6 +66,7 @@ describe('TradeDisciplineHistory', () => {
     })
     expect(wrapper.text()).toContain('趋势纪律 · v3')
     expect(wrapper.text()).toContain('冲动交易')
+    expect(wrapper.text()).toContain('部分履约')
     expect(wrapper.text()).toContain('r2 · 已修正')
     await wrapper.get('[data-testid="history-detail-checkin-1"]').trigger('click')
     expect(wrapper.emitted('detail')).toEqual([[row]])

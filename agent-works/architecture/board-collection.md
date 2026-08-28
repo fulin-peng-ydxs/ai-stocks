@@ -78,7 +78,7 @@
 
 | mode | 字典 | 成分 | 指数 | 资金流 |
 |------|------|------|------|--------|
-| `update`（每日增量） | 全量 upsert | 周频跳过逻辑 | 截止最近交易日、区间起点往前取 **7 个自然日**缓冲（覆盖跨周末/长假缺口，非"7 个交易日"）；全量且截止日=今天时先**源端就绪探测**，未就绪整阶段跳过 | 全周期（即时/3日/5日/10日/20日）每日刷新 |
+| `update`（每日增量） | 全量 upsert | 周频跳过逻辑 | 截止最近交易日、区间起点往前取 **7 个自然日**缓冲（覆盖跨周末/长假缺口，非"7 个交易日"）；非交易日不探测直接回退，交易日全量先**源端就绪探测**，未就绪回退到上一交易日继续采集 | 全周期（即时/3日/5日/10日/20日）每日刷新 |
 | `backfill`（初始化） | 全量 upsert | 强制全量（绕周频） | 源端可用年限（2024 起） | 全周期 |
 
 资金流增量全周期口径：滚动周期（3日/5日/10日/20日）是源端按最近 N 个交易日滚动重算的值，每日变化，只采「即时」会让多周期数据停在 backfill 当天。数据源不支持按日期回溯补采，故缺失的历史某天无法追回，质检只盯最新快照新鲜度（见下）。
@@ -89,7 +89,7 @@
 
 - **触发条件**：仅「全量（未指定 `board_codes`）且截止日=今天（即今天是交易日）」。指定板块、backfill、缺口窄窗口重采尊重调用方意图不探测；非交易日截止日<今天，历史数据必已发布，也不探测。
 - **判定**：均匀抽样 10 个板块请求当日单日指数，已出数占比 < 50% 视为未就绪（`_BAR_READY_SAMPLE`/`_BAR_READY_RATIO`，`board_ingest.py`）。
-- **跳过语义**：返回 `skipped=True, reason=source_not_ready`，**不计失败、不落半成品、不写 `data_update_log`**，任务日志 warn 说明；不写 checkpoint，续跑/下轮定时自动重探并补齐（7 日缓冲天然覆盖）。
+- **回退语义**：未就绪时不拉当日半成品，将本轮 `end` 收敛为上一交易日并继续整体采集；结果返回 `fallback=True, reason=source_not_ready, requested_end, end`，任务日志 warn 说明原目标和实际截止日。下轮定时仍重新目标当天，7 日缓冲保证之前的漏采可同步补齐。
 - **新鲜度透出**：每次指数采集的结果与日志（任务阶段行 + `data_update_log` detail）都带**采集区间 `start ~ end`** 和「已出截止日 K/N」（本轮范围内库内已覆盖到截止日的板块数，含续跑已完成），让「成功但源端滞后」在日志层面直接可见。
 
 `force_members` 解析（`ingest.py:1823`）：未显式传值时，`mode=backfill` **或** 显式指定 `board_codes` → 强制全量；否则默认 update 走周频。**显式传 `False` 会覆盖自动解析**（历史教训：CLI 曾始终传 `args.force_members` 默认 False，导致指定板块重采被周频挡住，已修为仅显式 `--force-members` 才传）。
@@ -148,13 +148,13 @@
 | `board_fund_stale` | `scan_board_quality` 扫描 | 源级资金流某周期快照滞后全局最新交易日（源级单条，code=NULL，detail 列滞后周期） | 按滞后周期重采全源资金流 |
 
 关键语义：
-- `scan_board_quality` 先完整计算再**事务内替换**扫描型 open 问题，扫描失败不丢旧台账；逐日指数缺口与单日非法值的 ignored 按 `(code, type, trade_date)` 精确豁免，其余板块状态型问题按 `(code, type)` 整体豁免。替换是**同键（issue_type+code+trade_date）复用 open id 原地收敛**而非 DELETE+重建：仍存在的问题 id 不变、detail 原位刷新；本轮不再出现的问题收敛为 `resolved`（id 保留），保证 issue id 跨扫描稳定，板块 fix 修完立即重扫不会作废批量任务里后续待修 issue 的 id。`board_member_incomplete` 不在此替换集，由采集层即时写 + active/ignored 去重，扫描只补盲区。指数完整性与字段合法性分开复检；资金流缺失逐板块检查**每个周期**最新快照是否追平基准日，不使用不会回退的 `has_fund_flow` 做当前质量证据，也不会因单板块当日补采而误报全市场。
+- `scan_board_quality` 先完整计算再**事务内收敛**扫描型 open 问题，扫描失败不丢旧台账。所有板块问题都支持用户选择“仅忽略本次”或“整体忽略”：本次异常消失后规则自动失效，整体规则须人工恢复监控；无代码的源级/名称映射问题使用稳定来源或名称组合标识。收敛时**同键（issue_type+code+trade_date）复用 open id**：仍存在的问题 id 不变、detail 原位刷新；本轮不再出现的问题转为 `resolved`（id 保留），保证 issue id 跨扫描稳定，板块 fix 修完立即重扫不会作废批量任务里后续待修 issue 的 id。`board_member_incomplete` 由采集层即时写、扫描补盲区，并共同消费通用忽略规则。指数完整性与字段合法性分开复检；资金流缺失逐板块检查**每个周期**最新快照是否追平基准日，不使用不会回退的 `has_fund_flow` 做当前质量证据，也不会因单板块当日补采而误报全市场。
 - 资金流质检**多周期口径**：update 已每日全周期刷新，任一周期单次失败会留下该周期缺口，`board_fund_missing`（detail.periods 列缺失周期）/ `board_fund_stale`（detail 列滞后周期）可定向重采修复；数据源**不支持按日期回溯补采**，故不检查历史某天缺口，只盯最新快照新鲜度。stale 只把「有快照但滞后」的周期计入，从未有快照的周期由 missing 按板块覆盖。
 - `board_index_gap` 与 `board_index_gap_daily` 共存：前者定位「最新交易日没追上」，恢复时从该板块最后已有日的下一开市日补到当前全局最新日；旧 issue 延迟执行也会追到执行时的最新日，已经被其它任务追平则直接复检，不重复请求源端。从未入库时无法判断板块成立日，只尝试当前最新日，避免把成立前历史当缺口。后者定位「历史窗口内具体某天缺失」，使用缺失日作为 `start=end` 窄窗口重采；源端虽按年请求，但返回前按请求区间过滤，只幂等 upsert 对应日期。初始化完整历史仍单独走 `backfill`（源端可用年限为 2024 起）。
 - **晚成立板块豁免**：逐日缺口扫描以各板块 `min(board_bar.trade_date)` 为数据起点锚，起点（板块成立日）之前的缺失属源端本无数据、不报；起点之后的缺失照报漏采。新板块（如每季「xx一季报预增」）首次进字典即自动豁免成立前缺口，不靠人工 ignore；若其成立后被漏采（起点之后空洞）仍会报。源端 2024 起才有板块指数，`backfill` 后 `min` 即真实起点；老板块漏采补采后 `min` 回填 2024-01-02，豁免自动失效。
 - `board_fund_missing` 与 `board_fund_unmatched` 方向相反：前者是「字典目标板块当前无新鲜快照」，后者是「源有、字典缺」。
 - `board_fund_stale` 与 `board_index_gap` 等价：资金流是整体批量采集，停摆时所有板块一起滞后，故记单条源级 issue（code=NULL），修复动作重采全源，不拆逐板块。
-- `board_member_incomplete` / `board_fund_unmatched` 由采集事件写入，幂等判重含 `ignored`（标记正常后重采不翻回 open）。
+- `board_member_incomplete` / `board_fund_unmatched` 由采集事件写入，写入前统一匹配生效中的忽略规则；仅本次规则在完整成分成功或名称恢复匹配后自动失效。
 - severity 走 `SEVERITY_BY_TYPE` 统一映射（板块专项均为 `mid`），不硬编码。
 - 个股 `scan_quality_issues` 的 DELETE+INSERT 也包事务（对齐板块 scan 失败保留语义）；个股覆盖帧缓存签名排除板块 issue，板块写入不击穿个股 frame 缓存。
 
@@ -210,7 +210,7 @@
 | `GET /api/data/boards` | `data:overview` | 板块搜索（采集页「指定板块」下拉） |
 | `GET /api/data/stock-quality` 等 | `data:overview` | 逐股/质量口径（板块 issue 按层归类展示） |
 | `GET /api/data/quality` | `data-quality:view` | 质检台账（板块 issue 名称从 board_dict/detail 补全，支持板块代码/名称搜索） |
-| `POST /api/data/quality/{id}/fix`、`/fix-batch`、`/recover-batch`、`/{id}/reset`、`/{id}/ignore` | `data-quality:fix` | 板块 issue 的修复/批量恢复/复位/忽略 |
+| `POST /api/data/quality/{id}/fix`、`/fix-batch`、`/recover-batch`、`/{id}/reset`、`/{id}/ignore`、`/{id}/restore-monitoring` | `data-quality:fix` | 板块 issue 的修复/批量恢复/复位/按范围忽略/恢复监控 |
 | `POST /api/data/tasks`、`GET /tasks/{id}`、`/resume`、`/cancel` | `data-task:manage` | 板块采集任务创建/进度/续跑/取消（`task_type=board`） |
 | `GET/POST /api/data/schedules` 及子端点 | `data-schedule:manage` | 板块定时采集任务 CRUD/启停/立即触发 |
 | `GET/POST /api/data/settings` | `data-settings:manage` | `ths_board` 配置段读写（限流/超时/成分更新间隔） |

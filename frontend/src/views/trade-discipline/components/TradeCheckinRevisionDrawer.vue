@@ -14,6 +14,10 @@ import {
 import { getErrorMessage } from '@/utils/error'
 import { formatDecimalString } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
+import {
+  checkinAssessmentLabel,
+  checkinAssessmentTagType,
+} from '@/utils/tradeDisciplineAssessment'
 
 const props = defineProps<{
   modelValue: boolean
@@ -116,7 +120,7 @@ watch(
         <div>
           <div class="detail-kicker">{{ detail.trade_date }} · r{{ detail.revision_no }}</div>
           <h3>{{ detail.rule_name }}</h3>
-          <p>规则版本 v{{ detail.version_no }} · {{ detail.assessment === 'complied' ? '已履约' : '未履约' }}</p>
+          <p>规则版本 v{{ detail.version_no }} · {{ checkinAssessmentLabel(detail.assessment) }}</p>
         </div>
         <div class="hero-facts">
           <el-tag :type="detail.revision_no === detail.current_revision_no ? 'success' : 'info'" effect="plain">
@@ -148,7 +152,7 @@ watch(
       <section class="detail-card">
         <h4>履约结论</h4>
         <dl class="fact-grid">
-          <div><dt>用户自评</dt><dd>{{ detail.assessment === 'complied' ? '已履约' : '未履约' }}</dd></div>
+          <div><dt>用户自评</dt><dd><el-tag :type="checkinAssessmentTagType(detail.assessment)" effect="plain">{{ checkinAssessmentLabel(detail.assessment) }}</el-tag></dd></div>
           <div><dt>操作状态</dt><dd>{{ detail.no_operation ? '今日无操作' : `${detail.operations.length} 笔操作` }}</dd></div>
           <div><dt>未履约原因</dt><dd>{{ detail.reason_name_snapshot || '—' }}</dd></div>
           <div><dt>记录时间</dt><dd>{{ formatTime(detail.created_at || detail.amended_at || detail.submitted_at) }}</dd></div>
@@ -197,6 +201,12 @@ watch(
             <template #default="{ row }">{{ row.stock_code }} · {{ row.stock_name_snapshot }}</template>
           </AppTableColumn>
           <AppTableColumn label="方向"><template #default="{ row }">{{ sideText(row.side) }}</template></AppTableColumn>
+          <AppTableColumn v-if="detail.assessment === 'partial'" label="履约状态">
+            <template #default="{ row }">
+              <el-tag v-if="row.compliance_status" :type="checkinAssessmentTagType(row.compliance_status)" effect="plain" size="small">{{ checkinAssessmentLabel(row.compliance_status) }}</el-tag>
+              <span v-else>—</span>
+            </template>
+          </AppTableColumn>
           <AppTableColumn label="规则关联" role="description">
             <template #default="{ row }">{{ row.stock_rule_name || '—' }} / {{ row.action_rule_name || '—' }}</template>
           </AppTableColumn>

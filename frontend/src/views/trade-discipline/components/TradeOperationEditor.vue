@@ -10,6 +10,10 @@ import {
   multiplyToMinorUnits,
 } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
+import {
+  checkinAssessmentLabel,
+  checkinAssessmentTagType,
+} from '@/utils/tradeDisciplineAssessment'
 import FixedDecimalInput from './FixedDecimalInput.vue'
 import StockOptionSelect from './StockOptionSelect.vue'
 import TradeDirectionGroupGrid, {
@@ -25,6 +29,7 @@ const props = defineProps<{
   modelValue: CheckinOperation[]
   version: RuleVersionDetail
   tradeDate: string
+  showCompliance?: boolean
   disabled?: boolean
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: CheckinOperation[]] }>()
@@ -50,7 +55,7 @@ function emptyOperation(order: number, side: 'buy' | 'sell'): CheckinOperation {
     stock_rule_id: stockRules.value.length === 1 ? stockRules.value[0].detail_id! : '',
     action_rule_id: actionRules(side).length === 1 ? actionRules(side)[0].detail_id! : '',
     price: null, quantity: null, amount: null, fee: null,
-    operated_at: null, note: null, display_order: order,
+    operated_at: null, note: null, compliance_status: null, display_order: order,
   }
 }
 
@@ -99,6 +104,7 @@ function cardPreview(operation: CheckinOperation): string {
 function operationIssue(operation: CheckinOperation): string | null {
   if (!operation.stock_code || !operation.stock_name_snapshot
     || !operation.stock_rule_id || !operation.action_rule_id) return '信息未完整'
+  if (props.showCompliance && !operation.compliance_status) return '履约状态未选择'
   if (operation.operated_at && operation.operated_at.slice(0, 10) !== props.tradeDate) {
     return '日期需检查'
   }
@@ -124,6 +130,12 @@ function expandOperation(index: number): void {
 function update(index: number, patch: Partial<CheckinOperation>): void {
   const next = props.modelValue.map((item, position) => position === index ? { ...item, ...patch } : item)
   emit('update:modelValue', next)
+}
+
+function updateCompliance(index: number, value: unknown): void {
+  update(index, {
+    compliance_status: value === 'complied' || value === 'breached' ? value : null,
+  })
 }
 
 function add(side: 'buy' | 'sell'): void {
@@ -226,9 +238,17 @@ defineExpose({ expandOperation })
             @toggle="toggle(operation, index)"
           >
       <template #status>
-        <span v-if="operationIssue(operation)" class="operation-card__issue">
-          {{ operationIssue(operation) }}
-        </span>
+        <div class="operation-card__status">
+          <el-tag
+            v-if="showCompliance && operation.compliance_status"
+            :type="checkinAssessmentTagType(operation.compliance_status)"
+            effect="plain"
+            size="small"
+          >{{ checkinAssessmentLabel(operation.compliance_status) }}</el-tag>
+          <span v-if="operationIssue(operation)" class="operation-card__issue">
+            {{ operationIssue(operation) }}
+          </span>
+        </div>
       </template>
       <template #tools>
         <div class="operation-card__tools">
@@ -266,6 +286,15 @@ defineExpose({ expandOperation })
           </el-select>
           <small v-if="!actionRules(operation.side).length" class="field-error">当前方向没有可用买卖规则</small>
         </el-form-item>
+        <el-form-item v-if="showCompliance" label="履约状态" required class="operation-field operation-field--compliance">
+          <el-segmented
+            :model-value="operation.compliance_status"
+            :options="[{ label: '已履约', value: 'complied' }, { label: '未履约', value: 'breached' }]"
+            :disabled="disabled"
+            :data-testid="`operation-compliance-${index}`"
+            @update:model-value="updateCompliance(index, $event)"
+          />
+        </el-form-item>
         <el-form-item label="成交价" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.price" :scale="4" :integer-digits="16" :disabled="disabled" placeholder="0.0000" @update:model-value="update(index, { price: $event })" /></el-form-item>
         <el-form-item label="数量" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.quantity" :scale="4" :integer-digits="16" :disabled="disabled" placeholder="0.0000" @update:model-value="update(index, { quantity: $event })" /></el-form-item>
         <el-form-item label="成交金额" class="operation-field operation-field--amount">
@@ -295,6 +324,7 @@ defineExpose({ expandOperation })
   font-size: var(--app-font-size-caption);
   font-weight: var(--app-font-weight-section);
 }
+.operation-card__status { display: flex; align-items: center; gap: var(--app-space-2); }
 .operation-card__tools { display: flex; justify-content: flex-end; width: 100%; }
 .operation-grid {
   display: grid;
@@ -305,6 +335,7 @@ defineExpose({ expandOperation })
 .operation-field--rule { grid-column: span 6; }
 .operation-field--amount { grid-column: span 3; }
 .operation-field--time { grid-column: span 6; }
+.operation-field--compliance { grid-column: span 6; }
 .operation-grid :deep(.el-select), .operation-grid :deep(.el-input), .operation-grid :deep(.el-date-editor) { width: 100%; }
 .operation-grid :deep(.el-form-item__content) { display: block; }
 .operation-note { grid-column: 1 / -1; }
