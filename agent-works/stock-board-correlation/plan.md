@@ -1,7 +1,7 @@
 # 个股走势关联板块开发计划
 
 > 计划版本：2026-08-29
-> 当前状态：进行中（T1 已完成；T2-T11 待开始）
+> 当前状态：进行中（T1-T2 已完成；T3-T11 待开始）
 > 需求状态：业务闭环与正式需求已确认，无阻塞项
 > 本计划仅拆解实施任务，不进入代码开发。
 
@@ -257,11 +257,11 @@ index_bar + stock_basic ───┘       │ 固定算法 v1
 
 | 范围 | 需求 | 计划开发内容 | 任务 | 状态 | 偏差 | 对应验收标准/验证方式/跳过证明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 必须 | R1 | 累计归属服务、单股路由、批量内部接口、累计口径和更新时间 | T2 | 待开始 | 一致 | 服务/接口测试覆盖合法类型、去重排序、孤儿、空结果、权限 |
+| 必须 | R1 | 累计归属服务、单股路由、批量内部接口、累计口径和更新时间 | T2 | 已完成 | 一致 | 服务/接口测试已覆盖合法类型、稳定排序去重、孤儿、空结果、格式校验和 401/403 |
 | 必须 | R2 | 固定算法 v1、四类基准、整股回退、中性化、缩尾、双窗口、决胜和可信度 | T3 | 待开始 | 一致 | 固定夹具与人工期望对照；全部算法边界单测 |
 | 必须 | R3 | 当前冠军表、每股状态表、全量/范围原子替换、合法空清旧、失败回滚 | T1、T4 | 进行中 | 部分覆盖 | T1 已完成 DDL、约束与升级/回滚验证；T4 原子替换与失败回滚待实施 |
 | 必须 | R4 | 新任务类型、参数、写互斥、动态调度、阶段日志和结果统计 | T5、T9 | 待开始 | 一致 | API、任务集成、Vitest、聚焦 E2E |
-| 必须 | R5 | 单股/批量摘要、日期保护、三类业务批量合并、P95与无 N+1 | T6、T10 | 待开始 | 一致 | SQL 调用计数、接口回归、性能基准 |
+| 必须 | R5 | 单股/批量摘要、日期保护、三类业务批量合并、P95与无 N+1 | T2、T6、T10 | 进行中 | 部分覆盖 | T2 已证明累计归属批量一次 SQL、空集合零 SQL；冠军摘要、日期保护与性能基准待 T6/T10 |
 | 必须 | R6 | 共享单元格、统一标题/空态/悬浮/低可信提示/权限跳转、列配置 | T7、T10 | 待开始 | 一致 | 共享组件 Vitest、pageRegistry 契约、三页面 E2E |
 | 必须 | R7 | 股票普通表和分组表接入，保留旧行业/板块语义和排序口径 | T6、T8 | 待开始 | 一致 | API、StocksView Vitest、普通/分组 E2E |
 | 必须 | R8 | 仅 `/board/run` 接入，历史日期退化，`board/compute` 保持隔离 | T6、T8 | 待开始 | 一致 | Board API、页面测试、防未来回归 |
@@ -296,7 +296,7 @@ index_bar + stock_basic ───┘       │ 固定算法 v1
 
 ### 6.2 任务 T2：实现累计行业/概念归属服务与单股契约
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T1
 - 需求：R1、R5
 - 涉及：`backend/services/stock_board_correlation.py`、`backend/services/stock_codes.py`、`backend/services/stock_ingest.py`、`backend/api/stocks.py`、相关 API 类型和测试。
@@ -306,7 +306,7 @@ index_bar + stock_basic ───┘       │ 固定算法 v1
 - 边界：空集合零 SQL；股票不存在/无关系均空数组；不使用 `stock_basic.industry` 兜底；孤儿关系过滤。
 - 验证：服务单测、API 200/401/403、路由扫描；查询计数断言批量一次完成。
 - 完成标准：R1 输出字段、权限与异常全部可观察，现有资源 seed 无重复项。
-- 实际落地情况：待实施
+- 实际落地情况：已新增 `backend/services/stock_codes.py`，由既有个股采集参数和相关性领域服务共用沪深代码规范化与稳定去重；新增 `StockBoardCorrelationService.get_membership/get_memberships`，通过一次 `board_member INNER JOIN stock_basic INNER JOIN board_dict` 查询过滤未知股票、板块字典孤儿和非法类型，按名称/代码稳定排序，返回累计口径及有效关系中的最大 `member_snapshot_at`。已新增受 `stocks:view` 保护的 `GET /api/stocks/{code}/related-boards` 和前端 API 类型/调用封装；本阶段未读取冠军表、未接入列表或页面，冠军摘要与日期保护仍归 T6。
 
 ### 6.3 任务 T3：实现相关性算法 v1
 
@@ -460,7 +460,7 @@ T1 实际状态：上述两张 DuckDB 当前态表、正向/回滚 SQL 和数据
 - 接口：R1 单股归属、摘要结构、空集合、日期不匹配、股票/分组/榜单/筛选批量合并、`board_compute` 隔离、401/403 和路由资源扫描。
 - 查询计数：50/200 行调用前后固定次数，不允许逐行读取相关性。
 - 计划命令：先判断服务锁状态，再运行新增测试文件及受影响既有测试，例如 `python -m pytest backend/tests/test_stock_board_correlation.py backend/tests/test_api.py backend/tests/test_stock_group.py backend/tests/test_stage4_board.py backend/tests/test_stage5_resource_codes.py -q`。
-- 具体完成情况：T1 已执行 `python -m pytest backend/tests/test_stock_board_correlation_storage.py backend/tests/test_ddl.py backend/tests/test_data_management.py -q`，结果 `35 passed in 2.32s`；覆盖初始化幂等、只读跳过 DDL、主键和字段、非法值约束、目录登记与新鲜度、正向 SQL 重复执行及回滚不影响无关表。算法、事务切换、接口和查询计数属于 T3/T4/T6/T10，仍待验证。
+- 具体完成情况：T1 已执行存储、DDL、目录聚焦测试，结果 `35 passed in 2.32s`。T2 已执行 `python -m pytest backend/tests/test_stock_board_correlation_membership.py backend/tests/test_stock_ingest.py backend/tests/test_stock_benchmark_api.py -q`，结果 `44 passed in 0.73s`；覆盖共享代码规范化兼容、批量一次 SQL、空集合零 SQL、合法类型与孤儿过滤、稳定排序、更新时间、空结果、不回退 `stock_basic.industry`、接口 200/400/401/403 和路由资源码。算法、冠军事务切换、日期保护及列表合并仍待 T3/T4/T6/T10。
 
 ### 8.2 性能基准
 
@@ -468,7 +468,7 @@ T1 实际状态：上述两张 DuckDB 当前态表、正向/回滚 SQL 和数据
 - 条件：本地预热 DuckDB、不含公网、同一硬件连续多轮，报告样本数、P50/P95、SQL 次数和数据规模。
 - 门槛：单股 P95≤10ms、50只≤20ms、200只≤50ms；数据库请求次数不随行数线性增长。
 - 报告路径：`agent-works/stock-board-correlation/performance-report.md`。
-- 具体完成情况：待验证。
+- 具体完成情况：待验证。T2 仅验证批量归属查询次数固定为一次、空集合零查询，尚未执行 1/50/200 代码的冠军摘要 P95 基准。
 
 ### 8.3 前端组件、页面与配置
 
@@ -479,7 +479,7 @@ T1 实际状态：上述两张 DuckDB 当前态表、正向/回滚 SQL 和数据
 - 测试与构建：必须执行 `cd frontend && npm test` 和 `npm run build` 同步 `dist`，不得只跑聚焦 Vitest 代替完整前端契约门禁。
 - 设计门禁：使用校准后的本地 E2E 环境执行 `AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:design`，覆盖 1100×620、1366×768、1440×900 以及 ready/loading/empty/error/permission；若实际安全环境为 `test|local`，仅替换环境枚举，不放宽写门控。
 - E2E：通过 T10 的 seed/cleanup 入口准备确定性数据，使用 5181 验证列显隐、结构化说明、权限跳转、历史退化、调度配置/回显/取消/立即执行；需要新增/更新稳定 `data-testid` 或可访问名称，不使用坐标、CSS 层级或临时中文正文匹配。
-- 具体完成情况：待验证。
+- 具体完成情况：T2 新增 `StockBoardMembership` 前端 API 类型与请求封装，聚焦 API 测试 4 项通过，`npm run build` 成功并同步本地 `frontend/dist`。完整 `npm test` 为 950/951 项通过，唯一失败来自本次未触达且 `HEAD` 已存在的 `QualityView.vue` 两处 DESIGN 基线违规（`gap: 4px`、`line-height: 1.5`）；为遵守单阶段边界未在 T2 混入该页面修复。T2 未新增或修改页面、组件、布局配置和样式，页面四态及 DESIGN 验收仍待 T7-T10。
 
 ### 8.4 结构体检与异常
 

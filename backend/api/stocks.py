@@ -15,6 +15,7 @@ from backend.auth.deps import require_perm, require_system_perm
 from backend.groups.stock_group import StockGroupRepo
 from backend.indicators.engine import _IND_COLS
 from backend.services.market_benchmark import MarketBenchmarkService
+from backend.services.stock_board_correlation import StockBoardCorrelationService
 from backend.storage import get_client
 from backend.storage.repository import MarketRepository
 
@@ -147,6 +148,20 @@ def list_stocks(q: str | None = None, board: str | None = None,
         r["pct_chg"] = round(float(r["pct_chg"]), 2) if r.get("pct_chg") is not None and not pd.isna(r["pct_chg"]) else None
         r["groups"] = groups_by_code.get(r["code"], [])
     return ok({"total": total, "page": page, "size": size, "trade_date": str(td), "list": rows})
+
+
+@router.get(
+    "/stocks/{code}/related-boards",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_perm("stocks:view"))],
+)
+def stock_related_boards(code: str) -> ApiResponse:
+    """返回股票在板块数据中累计收录的行业和概念归属。"""
+    try:
+        membership = StockBoardCorrelationService(get_client()).get_membership(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ok(membership)
 
 
 @router.get("/stocks/{code}/bars", response_model=ApiResponse,

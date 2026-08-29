@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
+
+from backend.services.stock_codes import normalize_stock_codes
 
 STOCK_INGEST_RECIPES = (
     "daily_update",
@@ -26,7 +27,6 @@ STOCK_INGEST_RECIPE_LABELS = {
     "delisted_history": "退市股历史补全",
 }
 
-_CODE_RE = re.compile(r"^\d{6}\.(?:SH|SZ)$")
 _COMMON_FIELDS = {"recipe", "codes", "date_start", "date_end", "years", "concurrency"}
 _CODE_RECIPES = {
     "daily_update", "history_backfill", "range_refetch",
@@ -72,14 +72,7 @@ def normalize_stock_ingest_params(params: dict | None) -> dict:
         codes = raw.get("codes")
         if not isinstance(codes, (list, tuple)) or not codes:
             raise ValueError("指定股票时 codes 必须是非空数组")
-        normalized_codes = []
-        for item in codes:
-            code = str(item).strip().upper()
-            if not _CODE_RE.fullmatch(code):
-                raise ValueError(f"股票代码格式非法: {item}")
-            if code not in normalized_codes:
-                normalized_codes.append(code)
-        out["codes"] = normalized_codes
+        out["codes"] = normalize_stock_codes(codes)
 
     if recipe == "range_refetch":
         start_raw = raw.get("date_start")

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '@/api/client'
-import { getIndicators, getStockBenchmarkBars } from '@/api/stocks'
+import { getIndicators, getStockBenchmarkBars, getStockBoardMembership } from '@/api/stocks'
 
 vi.mock('@/api/client', () => ({
   default: {
@@ -62,5 +62,17 @@ describe('getStockBenchmarkBars', () => {
       signal: controller.signal,
       skipGlobalError: true,
     })
+  })
+})
+
+describe('getStockBoardMembership', () => {
+  beforeEach(() => {
+    vi.mocked(http.get).mockReset()
+  })
+
+  it('编码股票代码并请求累计行业概念归属', () => {
+    getStockBoardMembership('600000.SH')
+
+    expect(http.get).toHaveBeenCalledWith('/stocks/600000.SH/related-boards')
   })
 })

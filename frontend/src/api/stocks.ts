@@ -34,6 +34,20 @@ export interface StockList {
   list: StockBasic[]
 }
 
+export interface BoardMembershipItem {
+  board_code: string
+  name: string
+  board_type: 'industry' | 'concept'
+}
+
+export interface StockBoardMembership {
+  code: string
+  membership_scope: 'cumulative'
+  membership_updated_at: string | null
+  industries: BoardMembershipItem[]
+  concepts: BoardMembershipItem[]
+}
+
 export interface Bar {
   date: string
   open: number
@@ -100,6 +114,10 @@ export interface IndicatorParams {
 
 export function listStocks(params?: StockListParams): Promise<StockList> {
   return http.get('/stocks', { params })
+}
+
+export function getStockBoardMembership(code: string): Promise<StockBoardMembership> {
+  return http.get(`/stocks/${encodeURIComponent(code)}/related-boards`)
 }
 
 export function getBars(
