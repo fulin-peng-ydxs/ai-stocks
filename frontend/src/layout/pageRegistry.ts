@@ -134,6 +134,8 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'score', label: '综合分' },
           { key: 'grade', label: '评级' },
           { key: 'subScores', label: '分项达标分' },
+          { key: 'relatedIndustry', label: '走势行业' },
+          { key: 'relatedConcept', label: '走势概念' },
         ],
         sortFields: [
           { key: 'score', label: '综合分' },
@@ -178,6 +180,8 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'score', label: '综合分' },
           { key: 'grade', label: '评级' },
           { key: 'st', label: 'ST 标记' },
+          { key: 'relatedIndustry', label: '走势行业' },
+          { key: 'relatedConcept', label: '走势概念' },
         ],
         sortFields: [
           { key: 'score', label: '综合分' },
@@ -219,6 +223,8 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'industry', label: '行业' },
           { key: 'board', label: '板块' },
           { key: 'status', label: '状态' },
+          { key: 'relatedIndustry', label: '走势行业' },
+          { key: 'relatedConcept', label: '走势概念' },
         ],
         sortFields: [
           { key: 'pct_chg', label: '涨跌幅' },
@@ -237,6 +243,8 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'addDate', label: '加入日期' },
           { key: 'ret', label: '截止涨幅' },
           { key: 'lastDate', label: '截至日期' },
+          { key: 'relatedIndustry', label: '走势行业' },
+          { key: 'relatedConcept', label: '走势概念' },
         ],
         sortFields: [
           { key: 'add_date', label: '加入日期' },

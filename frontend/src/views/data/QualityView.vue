@@ -685,9 +685,9 @@ onMounted(() => {
 .ignore-tip { margin: 0 0 var(--app-space-4); color: var(--el-text-color-secondary); }
 .ignore-scope-group { display: flex; flex-direction: column; align-items: stretch; gap: var(--app-space-3); }
 .ignore-scope-group :deep(.el-radio) { height: auto; margin: 0; padding: 12px; align-items: flex-start; }
-.ignore-scope-group :deep(.el-radio__label) { display: flex; flex-direction: column; gap: 4px; white-space: normal; }
+.ignore-scope-group :deep(.el-radio__label) { display: flex; flex-direction: column; gap: var(--app-space-1); white-space: normal; }
 .ignore-option-title { color: var(--el-text-color-primary); font-weight: var(--app-font-weight-section); }
-.ignore-option-note { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); line-height: 1.5; }
+.ignore-option-note { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); line-height: var(--app-line-height-comfy); }
 :deep(.row-done) { opacity: 0.55; }
 .checkup-head { display: flex; align-items: center; gap: var(--app-space-3); flex-wrap: wrap; margin-bottom: 16px; }
 .checkup-score { font-size: var(--app-font-size-section-title); font-weight: var(--app-font-weight-section); }
