@@ -4,7 +4,7 @@
 
 - 业务模块：个股走势关联板块。
 - 本次核查目标：从第三方视角复核 R1-R10 在数据、算法、任务、读取、页面、权限、运维和回滚链路中的闭环，并确认 R11-R20 未被超范围实现。
-- 文件范围：T1-T10 的功能提交及 T11 修订，重点覆盖 `backend/indicators/stock_board_correlation.py`、`backend/services/stock_board_correlation.py`、异步任务与调度、四个后端消费点、三类业务页面、调度页面、共享组件、DDL/SQL、质量检查、性能脚本和 E2E 夹具。
+- 文件范围：T1-T10 的功能提交及 T11 复审修订，重点覆盖 `backend/indicators/stock_board_correlation.py`、`backend/services/stock_board_correlation.py`、异步任务与调度、四个后端消费点、三类业务页面、调度页面、共享组件、DDL/SQL、质量检查、性能脚本、E2E 夹具与 runner 生命周期。
 - 排除范围：提交 `0bc4130` 的无关界面文案修改；`frontend/dist`、`data/`、`logs/`、环境文件和本地运行数据；R11-R20 所列后续建议或暂不实现能力。
 - 证据来源：
   - `requirement-closure.md`、`requirement.md`、`plan.md`：confirmed，功能边界、需求编号、验收标准和阶段状态事实源。
@@ -58,7 +58,13 @@
 
 无未修复问题。
 
-复审期间已修复两项低风险一致性问题：算法及批量加载注释残留 `v1` 标识；共享股票多选默认占位包含 DESIGN 明确要求移出控件的“可多选”说明。修复后算法常量仍为 `stock-board-correlation-v2`，占位只保留“输入代码或名称搜索”。
+复审期间已确认并修复以下问题：
+
+- runner 在后端初始停止时错误调用依赖在线状态的 `stop-if-idle`，且 `test:design` 前置检查会在 runner 启动后端前退出。现由共享生命周期函数按初始运行/停止状态分支处理，前置检查只校验本地安全边界，退出恢复原状态。
+- 榜单和筛选 E2E 曾拦截 `/api/board/*`、`/api/screen/run` 并重组响应，不能证明后端附加 `related_boards`。现由 PG 夹具写入固定评分/筛选资产，页面真实调用方案列表、`/api/board/run` 与 `/api/screen/run`。
+- 计划和留痕曾早于实际验收结论标记 T10/T11 完成。修复期间按实际证据重新打开，完整门禁通过后再恢复完成并记录复审历史。
+- 早期复审还修复了基准目标日契约、板块收益重复构造、旧 `v1` 标识和股票多选默认占位 DESIGN 偏差。
+- 完整门禁自审发现任务偏好迟到回填会让 ready 表格重新覆盖加载态，并发现真实公开回测 45 秒超时边界波动；均已修复并复验。
 
 ## 待业务确认的问题
 
@@ -83,7 +89,7 @@
 - `frontend/src/components/RelatedBoardCell.vue`、`frontend/src/components/data/StockCodeMultiSelect.vue`：共享展示与范围选择。
 - `frontend/src/views/StocksView.vue`、`BoardView.vue`、`ScreenView.vue`、`data/ScheduleView.vue`：业务页面和管理入口。
 - `backend/storage/ddl.py`、`create-stock-board-correlation.sql`、`rollback-stock-board-correlation.sql`：当前态结构和回滚。
-- `backend/services/data_verify.py`、性能脚本、相关测试及 E2E 夹具：质量和验收闭环。
+- `backend/services/data_verify.py`、性能脚本、相关测试、PG + DuckDB E2E 夹具及 runner：质量和验收闭环。
 
 ## 建议下一步
 
@@ -95,4 +101,4 @@
 
 - 本核查不证明累计成员是目标日当前有效成员；接口和页面仅表达“走势相关”，R11 仍需独立的数据源与移出语义。
 - 本核查不覆盖历史冠军、个股详情、领先滞后、盘中计算、未归属板块比较或人工编辑冠军。
-- 页面三视口、账号权限和确定性数据链路已在 T10 完整设计门禁中验证；本次 T11 修订未重新运行全量 Playwright，因为改动仅涉及注释与已由完整 Vitest/构建覆盖的默认占位。
+- 页面三视口、账号权限、真实榜单/筛选接口和确定性数据链路已在后端初始停止态的完整 `npm run test:design` 中重新验证；关联夹具退出时 PG 六表与 DuckDB 专属数据均为零残留。

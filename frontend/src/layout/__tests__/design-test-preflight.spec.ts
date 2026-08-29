@@ -1,7 +1,5 @@
 import { execFile } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { createServer } from 'node:http'
-import type { AddressInfo } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
@@ -58,28 +56,6 @@ async function failedCheck(
   throw new Error('环境前置检查应当失败')
 }
 
-async function startHealthServer(body: unknown): Promise<{
-  apiUrl: string
-  close: () => Promise<void>
-}> {
-  const server = createServer((_request, response) => {
-    response.writeHead(200, { 'Content-Type': 'application/json' })
-    response.end(JSON.stringify(body))
-  })
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  const address = server.address() as AddressInfo
-
-  return {
-    apiUrl: `http://127.0.0.1:${address.port}/api`,
-    close: () => new Promise<void>((resolve, reject) => {
-      server.close((error) => {
-        if (error) reject(error)
-        else resolve()
-      })
-    }),
-  }
-}
-
 const validEnvironment = {
   AI_STOCKS_ENV: 'test',
   AI_STOCKS_E2E_WRITE: '1',
@@ -118,65 +94,33 @@ describe('完整设计验收环境前置检查', () => {
     expect(failure.stderr).toContain('完整设计验收要求显式设置本地测试环境')
   })
 
-  it('后端不可访问时给出带写模式的重启指引', async () => {
-    const closedServer = await startHealthServer({ code: 0 })
-    const apiUrl = closedServer.apiUrl
-    await closedServer.close()
+  it('后端初始停止时由 runner 管理生命周期，前置检查仍通过', async () => {
+    const result = await runCheck({
+      ...validEnvironment,
+      E2E_API_URL: undefined,
+    })
 
+    expect(result.stderr).toBe('')
+    expect(result.stdout).toContain('后端运行态由 E2E runner 受控管理')
+  })
+
+  it('拒绝由完整验收 runner 管理范围外的 API 地址', async () => {
     const failure = await failedCheck({
       ...validEnvironment,
-      E2E_API_URL: apiUrl,
+      E2E_API_URL: 'http://127.0.0.1:8765/api',
     })
 
     expect(failure.code).toBe(1)
-    expect(failure.stderr).toContain('无法访问后端 E2E 健康检查')
-    expect(failure.stderr).toContain(
-      'AI_STOCKS_ENV=test AI_STOCKS_E2E_WRITE=1 ./start.sh restart',
-    )
+    expect(failure.stderr).toContain('仅允许 E2E_API_URL=http://127.0.0.1:8000/api')
   })
 
-  it('运行中的后端未启用 E2E 写模式时根据业务码提前失败', async () => {
-    const server = await startHealthServer({
-      code: 403,
-      msg: 'E2E 写环境未启用',
-      data: null,
+  it('显式本地 API 地址时通过', async () => {
+    const result = await runCheck({
+      ...validEnvironment,
+      E2E_API_URL: 'http://127.0.0.1:8000/api/',
     })
 
-    try {
-      const failure = await failedCheck({
-        ...validEnvironment,
-        E2E_API_URL: server.apiUrl,
-      })
-
-      expect(failure.code).toBe(1)
-      expect(failure.stderr).toContain('后端未按 E2E 写模式启动')
-      expect(failure.stderr).toContain('E2E 写环境未启用')
-    } finally {
-      await server.close()
-    }
-  })
-
-  it('后端返回 code 0 和合法 PG 指纹时通过', async () => {
-    const server = await startHealthServer({
-      code: 0,
-      msg: 'ok',
-      data: {
-        environment: 'test',
-        pgFingerprint: 'a'.repeat(64),
-      },
-    })
-
-    try {
-      const result = await runCheck({
-        ...validEnvironment,
-        E2E_API_URL: server.apiUrl,
-      })
-
-      expect(result.stderr).toBe('')
-      expect(result.stdout).toContain('设计验收环境检查通过')
-      expect(result.stdout).toContain(`${server.apiUrl}/health/e2e`)
-    } finally {
-      await server.close()
-    }
+    expect(result.stderr).toBe('')
+    expect(result.stdout).toContain('设计验收安全环境检查通过')
   })
 })

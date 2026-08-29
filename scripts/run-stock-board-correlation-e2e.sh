@@ -7,6 +7,8 @@ cd "$PROJECT_ROOT"
 # shellcheck source=scripts/load-local-env.sh
 source "$PROJECT_ROOT/scripts/load-local-env.sh"
 load_project_local_env
+# shellcheck source=scripts/e2e-backend-lifecycle.sh
+source "$PROJECT_ROOT/scripts/e2e-backend-lifecycle.sh"
 
 if [[ "${AI_STOCKS_ENV:-}" != "dev" && "${AI_STOCKS_ENV:-}" != "test" && "${AI_STOCKS_ENV:-}" != "local" ]]; then
   echo "请显式设置 AI_STOCKS_ENV=dev|test|local 后再运行关联板块 E2E"
@@ -43,15 +45,23 @@ start_e2e_backend() {
 }
 
 fixture() {
+  if [[ -z "$pg_fingerprint" ]]; then
+    echo "缺少 PostgreSQL 指纹，拒绝执行关联板块夹具" >&2
+    return 1
+  fi
   AI_STOCKS_ENV_FILE=/dev/null \
     AI_STOCKS_ENV="$AI_STOCKS_ENV" \
     AI_STOCKS_E2E_WRITE=1 \
     AI_STOCKS_DUCKDB_READ_ONLY=0 \
-    "$PROJECT_ROOT/start.sh" e2e-stock-board-correlation "$@"
+    "$PROJECT_ROOT/start.sh" e2e-stock-board-correlation "$@" \
+      --expected-pg-fingerprint "$pg_fingerprint"
 }
 
 cleanup_fixture_with_retry() {
   local attempt output status
+  if [[ -z "$pg_fingerprint" ]]; then
+    return 0
+  fi
   for attempt in 1 2 3 4 5 6 7 8 9 10; do
     if output="$(fixture cleanup 2>&1)"; then
       printf '%s\n' "$output"
@@ -123,7 +133,7 @@ trap 'exit 143' TERM
 
 pg_fingerprint="$(read_pg_fingerprint || true)"
 if [[ -z "$pg_fingerprint" ]]; then
-  "$PROJECT_ROOT/start.sh" stop-if-idle
+  stop_backend_if_running
   owns_backend=1
   start_e2e_backend
   pg_fingerprint="$(read_pg_fingerprint || true)"
@@ -137,7 +147,7 @@ AI_STOCKS_ENV_FILE=/dev/null AI_STOCKS_ENV="$AI_STOCKS_ENV" \
   "$PROJECT_ROOT/start.sh" dev-users --keep-password \
     --expected-pg-fingerprint "$pg_fingerprint" >/dev/null
 
-"$PROJECT_ROOT/start.sh" stop-if-idle
+stop_backend_if_running
 owns_backend=1
 cleanup_fixture_with_retry
 fixture seed

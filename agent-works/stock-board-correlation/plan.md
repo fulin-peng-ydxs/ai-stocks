@@ -1,7 +1,7 @@
 # 个股走势关联板块开发计划
 
 > 计划版本：2026-08-30
-> 当前状态：已完成（T1-T11 全部完成）
+> 当前状态：已完成（T1-T11 全部完成；2026-08-30 复审缺陷修复并重新验收）
 > 需求状态：业务闭环与正式需求已确认，无阻塞项
 > 本文按阶段拆解实施任务，并在每阶段完成后同步记录实际落地与验证结果。
 
@@ -413,13 +413,13 @@ index_bar + stock_basic ───┘       │ 版本化相关性算法（当前
 - 依赖：T5-T9
 - 需求：R1-R10
 - 涉及：结构体检服务/测试、后端 API/集成测试、前端 Vitest、Playwright、性能脚本与报告。
-- 操作：增加结果表体检；建立 1/50/200 只预热读取基准和 SQL 计数；新增 `backend/devtools/e2e_stock_board_correlation.py` 与 `./start.sh e2e-stock-board-correlation seed|cleanup` 的确定性夹具入口，只写 `9977*.SZ` 股票、`E2ECORR_*` 板块、`E2E相关-` 名称、`e2e_sbc_` 调度/任务前缀和 2097 年专属日期数据；运行聚焦后端、完整前端测试/构建/设计门禁、pageRegistry、组件和四页面关键交互验证。
+- 操作：增加结果表体检；建立 1/50/200 只预热读取基准和 SQL 计数；新增 `backend/devtools/e2e_stock_board_correlation.py` 与 `./start.sh e2e-stock-board-correlation seed|cleanup --expected-pg-fingerprint ...` 的确定性夹具入口，只写 PG 固定调试账号归属下的 `e2e_sbc_*` 评分/筛选方案和快照，以及 DuckDB 的 `9977*.SZ` 股票、`E2ECORR_*` 板块、`E2E相关-` 名称、`e2e_sbc_` 调度/任务前缀和 2097 年专属日期数据；运行聚焦后端、完整前端测试/构建/设计门禁、pageRegistry、组件和四页面关键交互验证。
 - 产出：结构体检、性能基准与 `performance-report.md`、安全 E2E 夹具/脚本、聚焦 E2E 用例和可追溯测试结果。
 - 影响：测试夹具只使用隔离数据库或现有安全 E2E 机制，不写共享开发数据。
 - 边界：执行会访问项目 DuckDB 的后端测试前按 `./start.sh status/stop` 处理锁，结束后恢复原服务状态；夹具 seed/cleanup 必须在后端停服、本地/测试环境和 `AI_STOCKS_E2E_WRITE=1` 下运行，只按精确前缀/日期清理并验证零残留；前端 E2E 使用 5181，固定调试账号先按 `agent-works/multi-tenant-rbac/test-users.md` 校准，不猜账号权限。
 - 验证：见第 8 章命令和验收矩阵。
 - 完成标准：单股 P95≤10ms、50只≤20ms、200只≤50ms；无 N+1；`npm test`、`npm run build`、`npm run test:design` 与聚焦后端/E2E 全部通过，夹具清理后无前缀残留。
-- 实际落地情况：已将 13 项关联结果结构体检接入 `DataVerifier.run/run_structured`，覆盖重复键、枚举、有限值/范围、15/40 样本、板块字典孤儿、状态孤儿、状态/冠军日期版本基准一致、冠军存在标志、算法版本、基准回退契约以及股票/板块/指数未来日期。已新增固定 5000 状态/10000 冠军、1/50/200 代码、预热 5 轮/正式 50 轮的可执行读取基准，每轮固定一条 SQL，P95 分别为 `2.498/3.761/6.293ms`，均通过 `10/20/50ms` 门槛。已新增受环境与写开关双门控的 `e2e-stock-board-correlation` seed/cleanup、专用安全 runner 和三视口 Playwright；真实登录读取真实股票/冠军/调度/任务夹具，覆盖三页面两列、说明、列显隐、最小权限无跳转、历史日期降级、调度回显/取消/立即执行入口和任务终态统计，结果 `5 passed / 4 skipped`（权限及系统写入口按设计只在标准视口执行），cleanup 验证零残留并恢复原后端。后端聚焦回归 `99 passed`，完整前端 Vitest `124 files / 968 tests`、生产构建和 Ruff/diff 检查通过；同时修复既有质检调度和板块帮助提示 E2E 对实际文案的漂移。新增 `scripts/run-design-e2e.sh`，普通读写、2099 板块、2097 关联板块、2098 交易纪律和公开回测只读五组按互斥生命周期串行执行，复用各专用 runner，退出统一清理并恢复原后端运行档案。最终完整 `npm run test:design` 单次通过：Vitest `968 passed`、生产构建通过、普通 E2E `102 passed / 24 skipped`、板块 `15 passed / 12 skipped`、关联板块 `5 passed / 4 skipped`、交易纪律 `6 passed / 6 skipped`、公开回测 `3 passed`；所有确定性夹具均精确清理，日常后端恢复 `/api/health=200`。T10 至此关闭，未进入 T11。
+- 实际落地情况：已将 13 项关联结果结构体检接入 `DataVerifier.run/run_structured`，覆盖重复键、枚举、有限值/范围、15/40 样本、板块字典孤儿、状态孤儿、状态/冠军日期版本基准一致、冠军存在标志、算法版本、基准回退契约以及股票/板块/指数未来日期。已新增固定 5000 状态/10000 冠军、1/50/200 代码、预热 5 轮/正式 50 轮的可执行读取基准，每轮固定一条 SQL，P95 分别为 `2.498/3.761/6.293ms`，均通过 `10/20/50ms` 门槛。2026-08-30 复审确认早期 runner 在后端初始停止时会错误调用在线任务检查，且榜单、筛选 E2E 伪造接口响应；修复期间 T10 按实际证据视为待重新验收。现已抽取共享生命周期判断，运行态先 `assert-idle`/快照/停服，停止态直接启动测试后端，退出按原状态恢复；环境前置检查只验证本地安全边界，不再要求后端预先在线，并以 shell 回归覆盖初始运行、初始停止、守卫失败、测试失败、信号、清理和恢复失败契约。关联夹具扩展为 PG + DuckDB，PG 写入固定评分方案、评分快照及筛选方案，使用被测后端 PG 指纹防误库并对六张 PG 表和 DuckDB 专属数据断言零残留；三页面用例真实调用 `/api/stocks`、`/api/board/profiles`、`/api/board/run`、`/api/screen/profiles` 与 `/api/screen/run`，不再伪造榜单和筛选响应。最终从后端停止态执行完整 `npm run test:design` 单次通过：Vitest `969 passed`、生产构建通过、普通 E2E `102 passed / 24 skipped`、板块 `15 passed / 12 skipped`、关联板块 `5 passed / 4 skipped`、交易纪律 `6 passed / 6 skipped`、公开回测 `3 passed`；所有确定性夹具精确清理并恢复停止态。T10 在修复和重新验收后关闭。
 
 ### 6.11 任务 T11：第三方视角业务/代码自审、事实文档与留痕
 
@@ -433,7 +433,7 @@ index_bar + stock_basic ───┘       │ 版本化相关性算法（当前
 - 边界：只修改本功能直接受影响的事实源；无代码事实变化的架构文档不为凑留痕而改，用户已有无关工作区改动不纳入格式化或修复。
 - 验证：逐项回查 R1-R20 映射、Git diff、测试结果、SQL 注释、文档链接和未提交数据文件。
 - 完成标准：无未解释偏差、无未修复确定性问题，事实文档与代码一致。
-- 实际落地情况：已按 T1-T10 功能提交范围逐项复核 R1-R20、需求/计划映射、算法目标日与基准回退、防未来函数、累计成员措辞、原子切换、失败保旧、双库边界、任务互斥、权限、批量读取、历史日期隔离、页面复用、四态、DESIGN、SQL、发布和回滚。复审修复了纯算法及批量输入注释中两处旧 `v1` 标识，并将 `StockCodeMultiSelect` 默认占位从包含“可多选”的长文案收敛为 DESIGN 规定的“动作 + 对象”；未发现剩余确定性业务缺陷。新增同目录 `business-audit.md` 与 `development-trace.md`，既有架构、数据管理、DESIGN、AGENTS 和 E2E 指南已在 T1-T10 同步且与最终实现一致，无需为留痕重复改写。修订后 Ruff、`git diff --check`、后端聚焦 `92 passed`、完整前端 `124 files / 969 passed` 和生产构建通过；后端按测试前状态恢复，`/api/health=200`。T11 完成，未进入任何后续功能阶段。
+- 实际落地情况：已按 T1-T10 功能提交范围逐项复核 R1-R20、需求/计划映射、算法目标日与基准回退、防未来函数、累计成员措辞、原子切换、失败保旧、双库边界、任务互斥、权限、批量读取、历史日期隔离、页面复用、四态、DESIGN、SQL、发布和回滚。历次复审修复了基准目标日契约、重复收益计算、旧 `v1` 标识、股票多选占位，以及本轮 runner 停止态、真实榜单/筛选链路和验收状态失真问题；统一门禁过程中还修复任务偏好迟到回填重新覆盖 ready 表格的加载态，并将真实公开回测用例超时调整到可覆盖实测时长。`business-audit.md`、`development-trace.md`、AGENTS 与 E2E 指南均已同步最终事实；需求业务口径未变化，无需修改 `requirement.md`。修订后后端夹具/生命周期聚焦回归 `5 passed`、Ruff、前端完整 Vitest `969 passed`、生产构建和停止态完整 `npm run test:design` 均通过。T11 在复审缺陷修复、事实同步和重新验收后完成，未进入任何后续功能阶段。
 
 ## 7. 数据库、SQL、seed 与配置计划
 
@@ -446,7 +446,7 @@ index_bar + stock_basic ───┘       │ 版本化相关性算法（当前
 | 菜单/资源 seed | `backend/storage/pg_ddl.py` | 复用现有 `stocks:view`、`board:view`、`screen:run`、`sectors:view`、`data-task:manage`、`data-schedule:manage` | 无新增 seed 执行 | 不改变角色、菜单或租户权限 | 不适用；通过路由扫描确认复用正确 |
 | 页面列配置 | `frontend/src/layout/pageRegistry.ts` | 登记四个业务表的两列候选 | 前端发布即生效 | 旧用户配置缺新 key 时按现有默认回退为可见 | 回滚前端登记和列消费；旧配置中的未知 key 由现有兼容机制忽略 |
 | 算法配置 | 领域模块版本常量 | 固定 R2 映射、窗口、阈值、权重和缩尾 | 编译/部署时 | 所有任务同一口径 | 回滚版本并执行全量重算；禁止混用结果 |
-| E2E 夹具 | `backend/devtools/e2e_stock_board_correlation.py`、`./start.sh e2e-stock-board-correlation` | 为三页面、权限和调度交互提供确定性股票/板块/冠军/任务数据 | 仅聚焦 E2E 前 seed，结束后无论成功失败均 cleanup；执行时后端必须停服 | 只写 `9977*.SZ`、`E2ECORR_*`、`E2E相关-`、`e2e_sbc_` 与 2097 年日期，受本地环境 + `AI_STOCKS_E2E_WRITE=1` 双门控 | cleanup 按代码/前缀/日期交集精确删除并断言零残留；不以恢复默认值方式覆盖共享数据 |
+| E2E 夹具 | `backend/devtools/e2e_stock_board_correlation.py`、`./start.sh e2e-stock-board-correlation` | 为三页面、权限和调度交互提供真实后端确定性数据 | 仅聚焦 E2E 前 seed，结束后无论成功失败均 cleanup；runner 负责停服和恢复 | PG 只写 `default/debug_system` 下固定 `e2e_sbc_*` 评分/筛选资产，DuckDB 只写 `9977*.SZ`、`E2ECORR_*`、`E2E相关-`、`e2e_sbc_*` 与 2097 年日期；受本地环境、写开关和 PG 指纹门控 | cleanup 按精确归属/主键/代码/前缀/日期删除，并断言六张 PG 表及 DuckDB 专属数据零残留 |
 
 SQL 文件实施要求：必须包含总体用途、字段注释、前置条件、执行语句、影响范围、验证 SQL 和回滚说明；不得包含本地数据库路径、密钥或调度 seed。
 

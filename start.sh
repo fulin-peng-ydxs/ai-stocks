@@ -15,7 +15,7 @@
 #   ./start.sh e2e-user [参数]   Playwright 临时用户内部入口
 #   ./start.sh e2e-backtest-run [参数]  Playwright 公开回测内部入口
 #   ./start.sh e2e-board-data seed|cleanup  Playwright 板块行情 DuckDB 夹具
-#   ./start.sh e2e-stock-board-correlation seed|cleanup  走势关联板块 DuckDB 夹具
+#   ./start.sh e2e-stock-board-correlation seed|cleanup [参数]  走势关联板块 PG + DuckDB 夹具
 #   ./start.sh e2e-trade-discipline seed|cleanup [参数]  交易纪律 PG + DuckDB 夹具
 #
 # 设计要点：

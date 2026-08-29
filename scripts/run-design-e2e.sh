@@ -7,6 +7,8 @@ cd "$PROJECT_ROOT"
 # shellcheck source=scripts/load-local-env.sh
 source "$PROJECT_ROOT/scripts/load-local-env.sh"
 load_project_local_env
+# shellcheck source=scripts/e2e-backend-lifecycle.sh
+source "$PROJECT_ROOT/scripts/e2e-backend-lifecycle.sh"
 
 if [[ "${AI_STOCKS_ENV:-}" != "dev" && "${AI_STOCKS_ENV:-}" != "test" && "${AI_STOCKS_ENV:-}" != "local" ]]; then
   echo "请显式设置 AI_STOCKS_ENV=dev|test|local 后再运行完整设计 E2E" >&2
@@ -65,7 +67,7 @@ start_backend() {
 
 stop_and_start_backend() {
   local read_only="$1"
-  "$PROJECT_ROOT/start.sh" stop-if-idle
+  stop_backend_if_running
   owns_backend=1
   start_backend "$read_only"
 }

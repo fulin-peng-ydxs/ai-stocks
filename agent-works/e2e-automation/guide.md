@@ -48,6 +48,8 @@ AI_STOCKS_ENV=dev ./start.sh dev-users
 (cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:sectors)
 # 交易纪律聚焦回归：脚本取得/锁定 PG 指纹，管理 PG + DuckDB 夹具并恢复服务
 (cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:trade-discipline)
+# 个股走势关联板块聚焦回归：脚本取得/锁定 PG 指纹，管理 PG + DuckDB 夹具并恢复服务
+(cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:stock-board-correlation)
 # 普通全量回归前先在后端停服状态准备板块确定性数据
 ./start.sh stop
 AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 ./start.sh e2e-board-data cleanup

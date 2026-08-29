@@ -462,7 +462,9 @@ function applyTaskPrefs() {
       ? 'failed'
       : ''
   taskPage.value = 1
-  loadTasks()
+  // 远端偏好可能在首屏任务已返回后才完成 hydration；此时重新套用默认筛选属于后台刷新，
+  // 不应把已经可读的任务表重新盖上 loading。首次尚无数据时仍保留完整加载态。
+  void loadTasks(tasks.value.length > 0)
 }
 function applyLogPrefs() {
   logFilter.value.status = settings.logStatus === 'failed' ? 'failed' : ''
@@ -955,7 +957,8 @@ watch(
         <PageSettingSection title="任务中心">
           <div class="setting-item">
             <div class="setting-label">默认任务筛选</div>
-            <PageSegmented v-model="settings.taskStatus" aria-label="默认任务筛选" :options="[
+            <PageSegmented v-model="settings.taskStatus" aria-label="默认任务筛选"
+                           test-id="task-status-default" :options="[
               { label: '全部', value: 'all' },
               { label: '运行中', value: 'active' },
               { label: '失败项', value: 'failed' },

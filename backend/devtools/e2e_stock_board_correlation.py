@@ -1,26 +1,201 @@
-"""个股走势关联板块 Playwright 确定性 DuckDB 夹具。
+"""个股走势关联板块 Playwright 确定性 DuckDB + PostgreSQL 夹具。
 
-只写 9977*.SZ、E2ECORR_*、E2E相关-*、e2e_sbc_* 与 2097 年固定日期。
-seed/cleanup 均要求本地测试环境和 ``AI_STOCKS_E2E_WRITE=1``，并在事务内按专属
-主键交集清理；用于页面 E2E，不得在后端持有 DuckDB 锁时执行。
+只写 9977*.SZ、E2ECORR_*、E2E相关-*、e2e_sbc_* 与 2097 年固定日期；PG 资产
+固定归属 default/debug_system。seed/cleanup 均要求本地测试环境、
+``AI_STOCKS_E2E_WRITE=1`` 及被测后端 PG 指纹，并在事务内按专属主键清理；用于页面
+E2E，不得在后端持有 DuckDB 锁时执行。
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-from datetime import date, timedelta
+import re
+import secrets
+from datetime import UTC, date, datetime, timedelta
 
 from backend.devtools.environment_guard import require_e2e_write_enabled
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient, get_client
+from backend.storage.pg_client import PostgresClient, get_pg_client
+from backend.storage.pg_identity import pg_fingerprint
 
 STOCK_CODES = tuple(f"9977{index:02d}.SZ" for index in range(1, 5))
 BOARD_CODES = ("E2ECORR_INDUSTRY", "E2ECORR_CONCEPT")
 BENCHMARK_CODES = ("000001.SH", "399001.SZ", "399006.SZ", "000688.SH")
 TASK_PREFIX = "e2e_sbc_"
+FIXTURE_TENANT_ID = "default"
+FIXTURE_OWNER_USER_ID = "debug_system"
+SCORE_PROFILE_ID = "e2e_sbc_score_profile"
+SCREEN_PROFILE_ID = "e2e_sbc_screen_profile"
 FIXTURE_START = date(2097, 1, 2)
 FIXTURE_POINTS = 80
+_PG_FINGERPRINT_RE = re.compile(r"^[a-f0-9]{64}$")
+
+
+def _assert_pg_target(pg: PostgresClient, expected_pg_fingerprint: str) -> None:
+    if not _PG_FINGERPRINT_RE.fullmatch(expected_pg_fingerprint or ""):
+        raise RuntimeError("缺少合法的 64 位 PostgreSQL 指纹，拒绝执行关联板块 E2E 数据写入")
+    if not secrets.compare_digest(pg_fingerprint(pg), expected_pg_fingerprint):
+        raise RuntimeError("关联板块 E2E 夹具 PostgreSQL 与被测后端不一致，拒绝执行数据写入")
+
+
+def _assert_seed_owner(pg: PostgresClient) -> None:
+    owner = pg.query_df(
+        "SELECT tenant_id,id,status FROM sys_user WHERE account=%s LIMIT 1",
+        [FIXTURE_OWNER_USER_ID],
+    )
+    if (
+        owner.empty
+        or str(owner.iloc[0]["tenant_id"]) != FIXTURE_TENANT_ID
+        or str(owner.iloc[0]["id"]) != FIXTURE_OWNER_USER_ID
+        or str(owner.iloc[0]["status"]) != "active"
+    ):
+        raise RuntimeError("关联板块固定调试账号未校准，请先执行 ./start.sh dev-users")
+
+
+def _cleanup_pg(pg: PostgresClient) -> dict[str, int]:
+    removed: dict[str, int] = {}
+    with pg.transaction() as conn, conn.cursor() as cur:
+        statements = (
+            (
+                "score_snapshot",
+                (
+                    "DELETE FROM score_snapshot WHERE tenant_id=%s AND owner_user_id=%s "
+                    "AND profile_id=%s"
+                ),
+                [FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID, SCORE_PROFILE_ID],
+            ),
+            (
+                "score_snapshot_meta",
+                (
+                    "DELETE FROM score_snapshot_meta WHERE tenant_id=%s AND owner_user_id=%s "
+                    "AND profile_id=%s"
+                ),
+                [FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID, SCORE_PROFILE_ID],
+            ),
+            (
+                "score_profile_version",
+                (
+                    "DELETE FROM score_profile_version WHERE tenant_id=%s AND owner_user_id=%s "
+                    "AND id=%s"
+                ),
+                [FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID, SCORE_PROFILE_ID],
+            ),
+            (
+                "score_profile",
+                "DELETE FROM score_profile WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+                [FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID, SCORE_PROFILE_ID],
+            ),
+            (
+                "screen_profile_version",
+                (
+                    "DELETE FROM screen_profile_version WHERE tenant_id=%s AND owner_user_id=%s "
+                    "AND id=%s"
+                ),
+                [FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID, SCREEN_PROFILE_ID],
+            ),
+            (
+                "screen_profile",
+                "DELETE FROM screen_profile WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+                [FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID, SCREEN_PROFILE_ID],
+            ),
+        )
+        for name, sql, params in statements:
+            cur.execute(sql, params)
+            removed[name] = max(cur.rowcount, 0)
+    return removed
+
+
+def _seed_pg(pg: PostgresClient, target_date: date) -> None:
+    from backend.scoring.snapshot import _current_param_hash
+
+    now = datetime(2097, 4, 30, 18, 0, 0, tzinfo=UTC)
+    score_items = json.dumps(
+        [{
+            "indicator": "total_mv",
+            "params": {},
+            "weight": 1,
+            "scoring": {"type": "linear", "min": 0, "max": 20_000_000_000},
+        }],
+        ensure_ascii=False,
+    )
+    grade_thresholds = json.dumps({"watch": 0, "leader": 101, "core": 102})
+    screen_expression = json.dumps(
+        {"type": "col", "field": "total_mv", "cmp": ">", "value": 0},
+        ensure_ascii=False,
+    )
+    with pg.transaction() as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO score_profile "
+            "(id,tenant_id,owner_user_id,name,version,items,grade_thresholds,is_preset,"
+            "visibility,created_at,updated_at) VALUES (%s,%s,%s,%s,1,%s,%s,false,'private',%s,%s)",
+            [SCORE_PROFILE_ID, FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID,
+             "E2E 关联展示评分方案", score_items, grade_thresholds, now, now],
+        )
+        cur.execute(
+            "INSERT INTO score_profile_version "
+            "(id,tenant_id,owner_user_id,version,name,items,grade_thresholds,saved_at) "
+            "VALUES (%s,%s,%s,1,%s,%s,%s,%s)",
+            [SCORE_PROFILE_ID, FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID,
+             "E2E 关联展示评分方案", score_items, grade_thresholds, now],
+        )
+        for rank, code in enumerate(STOCK_CODES, 1):
+            cur.execute(
+                "INSERT INTO score_snapshot "
+                "(trade_date,tenant_id,owner_user_id,profile_id,profile_version,code,"
+                "total_score,grade,rank,sub_scores) VALUES (%s,%s,%s,%s,1,%s,%s,%s,%s,%s)",
+                [target_date, FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID, SCORE_PROFILE_ID,
+                 code, 90 - rank, "观察", rank, json.dumps({"total_mv": 90 - rank})],
+            )
+        cur.execute(
+            "INSERT INTO score_snapshot_meta "
+            "(trade_date,tenant_id,owner_user_id,profile_id,profile_version,computed_at,"
+            "stale,n_codes,param_hash) VALUES (%s,%s,%s,%s,1,%s,false,%s,%s)",
+            [target_date, FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID, SCORE_PROFILE_ID,
+             now, len(STOCK_CODES), _current_param_hash()],
+        )
+        cur.execute(
+            "INSERT INTO screen_profile "
+            "(id,tenant_id,owner_user_id,name,version,expression,params,is_preset,visibility,"
+            "created_at,updated_at) VALUES (%s,%s,%s,%s,1,%s,'{}',false,'private',%s,%s)",
+            [SCREEN_PROFILE_ID, FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID,
+             "E2E 关联展示筛选方案", screen_expression, now, now],
+        )
+        cur.execute(
+            "INSERT INTO screen_profile_version "
+            "(id,tenant_id,owner_user_id,version,name,expression,saved_at) "
+            "VALUES (%s,%s,%s,1,%s,%s,%s)",
+            [SCREEN_PROFILE_ID, FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID,
+             "E2E 关联展示筛选方案", screen_expression, now],
+        )
+
+
+def _pg_residual_counts(pg: PostgresClient) -> dict[str, int]:
+    frame = pg.query_df(
+        "SELECT "
+        "(SELECT count(*) FROM score_profile WHERE tenant_id=%s AND owner_user_id=%s AND id=%s) "
+        "+ (SELECT count(*) FROM score_profile_version WHERE tenant_id=%s AND owner_user_id=%s "
+        "AND id=%s) "
+        "+ (SELECT count(*) FROM score_snapshot WHERE tenant_id=%s AND owner_user_id=%s "
+        "AND profile_id=%s) "
+        "+ (SELECT count(*) FROM score_snapshot_meta WHERE tenant_id=%s AND owner_user_id=%s "
+        "AND profile_id=%s) AS score_rows, "
+        "(SELECT count(*) FROM screen_profile WHERE tenant_id=%s AND owner_user_id=%s AND id=%s) "
+        "+ (SELECT count(*) FROM screen_profile_version WHERE tenant_id=%s AND owner_user_id=%s "
+        "AND id=%s) "
+        "AS screen_rows",
+        [FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID, SCORE_PROFILE_ID,
+         FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID, SCORE_PROFILE_ID,
+         FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID, SCORE_PROFILE_ID,
+         FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID, SCORE_PROFILE_ID,
+         FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID, SCREEN_PROFILE_ID,
+         FIXTURE_TENANT_ID, FIXTURE_OWNER_USER_ID, SCREEN_PROFILE_ID],
+    )
+    return {
+        "score_rows": int(frame.iloc[0]["score_rows"]),
+        "screen_rows": int(frame.iloc[0]["screen_rows"]),
+    }
 
 
 def fixture_dates() -> list[date]:
@@ -139,11 +314,21 @@ def _residual_counts(client: DuckDBClient) -> dict[str, int]:
     return {"stocks": code_count, "boards": board_count, "tasks": task_count}
 
 
-def seed_stock_board_correlation(client: DuckDBClient | None = None) -> dict[str, object]:
+def seed_stock_board_correlation(
+    client: DuckDBClient | None = None,
+    *,
+    pg: PostgresClient | None = None,
+    expected_pg_fingerprint: str | None = None,
+) -> dict[str, object]:
     """幂等写入页面、筛选和任务中心所需的固定行情与当前冠军。"""
     require_e2e_write_enabled()
     client = client or get_client()
     init_db(client)
+    if expected_pg_fingerprint is not None:
+        pg = pg or get_pg_client()
+        _assert_pg_target(pg, expected_pg_fingerprint)
+        _assert_seed_owner(pg)
+        _cleanup_pg(pg)
     dates = fixture_dates()
     target_date = dates[-1]
     computed_at = "2097-04-30 18:00:00"
@@ -295,35 +480,55 @@ def seed_stock_board_correlation(client: DuckDBClient | None = None) -> dict[str
             "(nextval('seq_task_log'),'e2e_sbc_task',1,?,'info','阶段 5/5：原子切换完成')",
             [computed_at],
         )
+    if pg is not None:
+        _seed_pg(pg, target_date)
     return {
         "stockCodes": list(STOCK_CODES),
         "boardCodes": list(BOARD_CODES),
         "targetDate": target_date.isoformat(),
         "jobId": "e2e_sbc_job",
         "taskId": "e2e_sbc_task",
+        "scoreProfileId": SCORE_PROFILE_ID,
+        "screenProfileId": SCREEN_PROFILE_ID,
     }
 
 
-def cleanup_stock_board_correlation(client: DuckDBClient | None = None) -> dict[str, object]:
+def cleanup_stock_board_correlation(
+    client: DuckDBClient | None = None,
+    *,
+    pg: PostgresClient | None = None,
+    expected_pg_fingerprint: str | None = None,
+) -> dict[str, object]:
     require_e2e_write_enabled()
     client = client or get_client()
     init_db(client)
+    pg_removed: dict[str, int] = {}
+    pg_residual: dict[str, int] = {}
+    if expected_pg_fingerprint is not None:
+        pg = pg or get_pg_client()
+        _assert_pg_target(pg, expected_pg_fingerprint)
+        pg_removed = _cleanup_pg(pg)
+        pg_residual = _pg_residual_counts(pg)
+        if any(pg_residual.values()):
+            raise RuntimeError(f"关联板块 E2E PostgreSQL 清理后仍有残留：{pg_residual}")
     with client.transaction():
         removed = _cleanup(client)
         residual = _residual_counts(client)
         if any(residual.values()):
             raise RuntimeError(f"关联板块 E2E 清理后仍有残留：{residual}")
-    return {"removed": removed, "residual": residual}
+    return {"removed": removed, "residual": residual,
+            "pgRemoved": pg_removed, "pgResidual": pg_residual}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("seed", "cleanup"))
+    parser.add_argument("--expected-pg-fingerprint", required=True)
     args = parser.parse_args()
     result = (
-        seed_stock_board_correlation()
+        seed_stock_board_correlation(expected_pg_fingerprint=args.expected_pg_fingerprint)
         if args.command == "seed"
-        else cleanup_stock_board_correlation()
+        else cleanup_stock_board_correlation(expected_pg_fingerprint=args.expected_pg_fingerprint)
     )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0

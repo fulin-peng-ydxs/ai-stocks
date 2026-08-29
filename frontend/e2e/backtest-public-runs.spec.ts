@@ -23,6 +23,7 @@ async function waitForStableValue(input: Locator, timeoutMs = 10_000): Promise<s
 // 复用重跑归「我的」+ loading + source_run_ref 审计：调试账号的实盘撮合成本与 DuckDB 锁
 // 串行使该链路在 CI 浏览器层不稳定，已由后端真实 PG 回归（§6.8.19/§6.8.20）闭合。
 test('回测页浏览公开回测：分段脱敏、加载查看不写 mine、关闭恢复表单、只读无删除', async ({ page, request }) => {
+  test.setTimeout(90_000)
   const consoleIssues = collectConsoleIssues(page)
   const seeded = await seedPublicBacktestRun(request, { ownerAccount: 'debug_normal', visibility: 'public' })
 

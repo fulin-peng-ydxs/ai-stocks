@@ -9,84 +9,29 @@ import { requireSeededCorrelationStocks } from './helpers/stockBoardCorrelation'
 
 const API_URL = process.env.E2E_API_URL || DEFAULT_E2E_API_URL
 
-function relatedSummary(row: StockBasic) {
-  return row.related_boards
-}
-
-async function installBoardResult(page: Page, stocks: StockBasic[], targetDate: string) {
-  await page.route('**/api/board/profiles*', async (route) => {
-    await route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({
-        code: 0,
-        msg: 'ok',
-        data: [{
-          id: 'e2e_sbc_profile',
-          profile_ref: 'e2e_sbc_profile',
-          name: 'E2E 关联展示方案',
-          version: 1,
-          source: 'mine',
-          is_preset: false,
-        }],
-      }),
-    })
-  })
-  await page.route('**/api/board/run', async (route) => {
-    await route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({
-        code: 0,
-        msg: 'ok',
-        data: {
-          run_date: targetDate,
-          top: stocks.length,
-          count: stocks.length,
-          cache_status: 'cached',
-          list: stocks.map((row, index) => ({
-            rank: index + 1,
-            code: row.code,
-            name: row.name,
-            board: row.board,
-            total_score: 90 - index,
-            grade: '观察',
-            sub_scores: {},
-            related_boards: relatedSummary(row),
-          })),
-        },
-      }),
-    })
-  })
-}
-
-async function installScreenResult(page: Page, stocks: StockBasic[], targetDate: string) {
-  await page.route('**/api/screen/run', async (route) => {
-    await route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({
-        code: 0,
-        msg: 'ok',
-        data: {
-          run_date: targetDate,
-          count: stocks.length,
-          exclude_st: true,
-          hits: stocks.map((row, index) => ({
-            code: row.code,
-            name: row.name,
-            total_score: 80 - index,
-            grade: '观察',
-            is_st: false,
-            related_boards: relatedSummary(row),
-          })),
-        },
-      }),
-    })
-  })
-}
-
 async function resetColumns(page: Page) {
   await page.getByTestId('page-settings-trigger').click()
   const drawer = page.getByTestId('page-settings-drawer')
   await drawer.getByTestId('page-settings-reset').click()
+  await drawer.getByRole('button', { name: '关闭页面设置' }).click()
+}
+
+async function ensureRelatedColumnsVisible(page: Page, slotId: 'table' | 'result') {
+  await page.getByTestId('page-settings-trigger').click()
+  const drawer = page.getByTestId('page-settings-drawer')
+  const industrySwitch = drawer.getByTestId(
+    `component-${slotId}-hiddenColumns-relatedIndustry-switch`,
+  )
+  if (!await industrySwitch.isVisible()) {
+    await drawer.getByRole('button', { name: '组件设置', exact: true }).click()
+  }
+  for (const key of ['relatedIndustry', 'relatedConcept']) {
+    const columnSwitch = drawer.getByTestId(`component-${slotId}-hiddenColumns-${key}-switch`)
+    await expect(columnSwitch).toBeVisible()
+    const checkbox = columnSwitch.locator('input[type="checkbox"]')
+    if (!await checkbox.isChecked()) await columnSwitch.click()
+    await expect(checkbox).toBeChecked()
+  }
   await drawer.getByRole('button', { name: '关闭页面设置' }).click()
 }
 
@@ -99,9 +44,11 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
     const consoleIssues = collectConsoleIssues(page)
     const auth = await loginAsDebugUser(page, request, 'debug_system')
     const fixture = await requireSeededCorrelationStocks(request, auth.accessToken)
+    const headers = { authorization: `Bearer ${auth.accessToken}` }
 
     await openPageAndWaitForHeading(page, '/stocks', '个股查询')
     await resetColumns(page)
+    await ensureRelatedColumnsVisible(page, 'table')
     await page.getByPlaceholder('代码 / 名称').fill('E2E相关-股票')
     await page.getByPlaceholder('代码 / 名称').press('Enter')
     await expect(page.getByRole('columnheader', { name: '走势行业' })).toBeVisible()
@@ -123,19 +70,58 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
     await industrySwitch.click()
     await stockDrawer.getByRole('button', { name: '关闭页面设置' }).click()
     await expect(page.getByRole('columnheader', { name: '走势行业' })).toHaveCount(0)
-    await resetColumns(page)
+    await ensureRelatedColumnsVisible(page, 'table')
 
-    await installBoardResult(page, fixture.stocks, fixture.targetDate)
+    const boardProfilesResponse = await request.get(`${API_URL}/board/profiles`, {
+      headers,
+      params: { source: 'mine' },
+    })
+    expect(boardProfilesResponse.ok()).toBe(true)
+    const boardProfilesBody = await boardProfilesResponse.json()
+    const boardProfile = boardProfilesBody.data.find(
+      (item: { id: string }) => item.id === 'e2e_sbc_score_profile',
+    )
+    expect(boardProfile).toBeTruthy()
+    const boardRunResponse = await request.post(`${API_URL}/board/run`, {
+      headers,
+      data: {
+        profile_ref: boardProfile.profile_ref,
+        run_date: fixture.targetDate,
+        top: fixture.stocks.length,
+      },
+    })
+    expect(boardRunResponse.ok()).toBe(true)
+    const boardRunBody = await boardRunResponse.json()
+    expect(boardRunBody.data.list).toHaveLength(fixture.stocks.length)
+    expect(boardRunBody.data.list.every((row: StockBasic) => row.related_boards?.industry)).toBe(true)
+
     await openPageAndWaitForHeading(page, '/board', '每日榜单')
     await resetColumns(page)
+    await ensureRelatedColumnsVisible(page, 'table')
+    await expect(page.getByTestId('board-profile-select')).toContainText('E2E 关联展示评分方案')
     await expect(page.getByRole('columnheader', { name: '走势行业' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'E2E相关-概念冠军' }).first()).toBeVisible()
 
-    await installScreenResult(page, fixture.stocks, fixture.targetDate)
+    const screenProfilesResponse = await request.get(`${API_URL}/profiles`, {
+      headers,
+      params: { source: 'mine' },
+    })
+    expect(screenProfilesResponse.ok()).toBe(true)
+    const screenProfilesBody = await screenProfilesResponse.json()
+    expect(screenProfilesBody.data.some(
+      (item: { id: string }) => item.id === 'e2e_sbc_screen_profile',
+    )).toBe(true)
+
     await openPageAndWaitForHeading(page, '/screen', '策略筛选')
     await resetColumns(page)
-    await page.getByRole('button', { name: '运行筛选', exact: true }).click()
-    await expect(page.getByRole('columnheader', { name: '走势行业' })).toBeVisible()
+    await ensureRelatedColumnsVisible(page, 'result')
+    await expect(page.getByTestId('screen-profile-select')).toContainText('E2E 关联展示筛选方案')
+    const runButton = page.getByRole('button', { name: '运行筛选', exact: true })
+    await expect(runButton).toBeEnabled()
+    await runButton.click()
+    await expect(page.getByRole('columnheader', { name: '走势行业' })).toBeVisible({
+      timeout: 30_000,
+    })
     await expect(page.getByRole('link', { name: 'E2E相关-行业冠军' }).first()).toBeVisible()
     expect(consoleIssues).toEqual([])
   })
@@ -204,9 +190,21 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
     await expect.poll(() => runRequested).toBe(true)
     await expect(page).toHaveURL(/\/data\/ingest$/)
     await expect(page.getByRole('dialog', { name: '立即执行' })).toBeHidden()
-    const statusSelect = page.getByTestId('task-status-filter')
-    await statusSelect.hover()
-    await statusSelect.locator('.el-select__clear').click()
+    await page.getByTestId('page-settings-trigger').click()
+    const settingsDrawer = page.getByTestId('page-settings-drawer')
+    await settingsDrawer.getByTestId('task-status-default-all').click()
+    await settingsDrawer.getByRole('button', { name: '关闭页面设置' }).click()
+    const taskResponsePromise = page.waitForResponse((response) => (
+      response.request().method() === 'GET'
+      && new URL(response.url()).pathname === '/api/data/tasks'
+    ))
+    await page.getByRole('button', { name: '刷新', exact: true }).first().click()
+    const taskResponse = await taskResponsePromise
+    expect(taskResponse.ok()).toBe(true)
+    const taskBody = await taskResponse.json()
+    expect(taskBody.data.tasks.some(
+      (task: { id: string }) => task.id === 'e2e_sbc_task',
+    )).toBe(true)
 
     const taskPanel = page.getByTestId('task-center-panel')
     const taskRow = taskPanel.getByRole('row').filter({ hasText: 'E2E相关-盘后计算' })
