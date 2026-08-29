@@ -1,7 +1,7 @@
 # 个股走势关联板块开发计划
 
 > 计划版本：2026-08-29
-> 当前状态：进行中（T1-T2 已完成；T3-T11 待开始）
+> 当前状态：进行中（T1-T3 已完成；T4-T11 待开始）
 > 需求状态：业务闭环与正式需求已确认，无阻塞项
 > 本计划仅拆解实施任务，不进入代码开发。
 
@@ -258,7 +258,7 @@ index_bar + stock_basic ───┘       │ 固定算法 v1
 | 范围 | 需求 | 计划开发内容 | 任务 | 状态 | 偏差 | 对应验收标准/验证方式/跳过证明 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 必须 | R1 | 累计归属服务、单股路由、批量内部接口、累计口径和更新时间 | T2 | 已完成 | 一致 | 服务/接口测试已覆盖合法类型、稳定排序去重、孤儿、空结果、格式校验和 401/403 |
-| 必须 | R2 | 固定算法 v1、四类基准、整股回退、中性化、缩尾、双窗口、决胜和可信度 | T3 | 待开始 | 一致 | 固定夹具与人工期望对照；全部算法边界单测 |
+| 必须 | R2 | 固定算法 v1、四类基准、整股回退、中性化、缩尾、双窗口、决胜和可信度 | T3 | 已完成 | 一致 | 固定夹具与人工期望及算法边界单测均已通过；版本固定为 `stock-board-correlation-v1` |
 | 必须 | R3 | 当前冠军表、每股状态表、全量/范围原子替换、合法空清旧、失败回滚 | T1、T4 | 进行中 | 部分覆盖 | T1 已完成 DDL、约束与升级/回滚验证；T4 原子替换与失败回滚待实施 |
 | 必须 | R4 | 新任务类型、参数、写互斥、动态调度、阶段日志和结果统计 | T5、T9 | 待开始 | 一致 | API、任务集成、Vitest、聚焦 E2E |
 | 必须 | R5 | 单股/批量摘要、日期保护、三类业务批量合并、P95与无 N+1 | T2、T6、T10 | 进行中 | 部分覆盖 | T2 已证明累计归属批量一次 SQL、空集合零 SQL；冠军摘要、日期保护与性能基准待 T6/T10 |
@@ -310,7 +310,7 @@ index_bar + stock_basic ───┘       │ 固定算法 v1
 
 ### 6.3 任务 T3：实现相关性算法 v1
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T2
 - 需求：R2
 - 涉及：`backend/services/stock_board_correlation.py` 或拆出的 `backend/indicators/stock_board_correlation.py`、领域单测。
@@ -320,7 +320,7 @@ index_bar + stock_basic ───┘       │ 固定算法 v1
 - 边界：所有输入 `<=as_of_date`；基准自身不足与个股/候选不足严格分流；上证兜底不足抛完整性错误；NaN/Inf 候选无效；负相关可胜出。
 - 验证：固定小样本手算、四上市板、未知板、回退/不回退、21/61 收盘点、停牌/缺口不桥接、窗口外不补样本、常数序列、同分决胜、行业概念隔离测试。
 - 完成标准：R2 每条算法契约均有独立断言，算法版本唯一。
-- 实际落地情况：待实施
+- 实际落地情况：已新增 `backend/indicators/stock_board_correlation.py` 纯算法模块，固定 `stock-board-correlation-v1`、61 个开市收盘点、20/60 窗口、15/40 样本、四类基准、整股上证回退、市场中性化、5%/95% 缩尾、Pearson、0.6/0.4 综合分、可信度和四级稳定决胜；相邻开市日任一价格缺失即丢弃该区间，不跨缺口或向窗口外补样本。`StockBoardCorrelationService.load_correlation_inputs` 以固定批量查询加载后复权个股价、原始板块/指数价及累计候选，严格限制到实际目标日；本阶段只返回内存输入与纯计算结果，不写 T1 正式表、不进入 T4。
 
 ### 6.4 任务 T4：实现计算编排、完整性校验与原子替换
 
@@ -460,7 +460,7 @@ T1 实际状态：上述两张 DuckDB 当前态表、正向/回滚 SQL 和数据
 - 接口：R1 单股归属、摘要结构、空集合、日期不匹配、股票/分组/榜单/筛选批量合并、`board_compute` 隔离、401/403 和路由资源扫描。
 - 查询计数：50/200 行调用前后固定次数，不允许逐行读取相关性。
 - 计划命令：先判断服务锁状态，再运行新增测试文件及受影响既有测试，例如 `python -m pytest backend/tests/test_stock_board_correlation.py backend/tests/test_api.py backend/tests/test_stock_group.py backend/tests/test_stage4_board.py backend/tests/test_stage5_resource_codes.py -q`。
-- 具体完成情况：T1 已执行存储、DDL、目录聚焦测试，结果 `35 passed in 2.32s`。T2 已执行 `python -m pytest backend/tests/test_stock_board_correlation_membership.py backend/tests/test_stock_ingest.py backend/tests/test_stock_benchmark_api.py -q`，结果 `44 passed in 0.73s`；覆盖共享代码规范化兼容、批量一次 SQL、空集合零 SQL、合法类型与孤儿过滤、稳定排序、更新时间、空结果、不回退 `stock_basic.industry`、接口 200/400/401/403 和路由资源码。算法、冠军事务切换、日期保护及列表合并仍待 T3/T4/T6/T10。
+- 具体完成情况：T1 存储、DDL、目录聚焦测试为 `35 passed`；T2 累计归属、采集兼容和接口聚焦测试为 `44 passed`。T3 执行 `python -m pytest backend/tests/test_stock_board_correlation_algorithm.py backend/tests/test_stock_board_correlation_membership.py backend/tests/test_stock_board_correlation_storage.py -q`，结果 `31 passed in 1.04s`；覆盖四上市板/未知板、61 点日历、缺口不桥接、后复权/原始价批量装配、回退与上证失败、个股/候选不足不回退、短窗不扩展、缩尾、中性化、常数及非有限输入无效、负相关冠军、类型隔离、综合分、可信度及 score/corr60/sample60/code 全部决胜层级。冠军事务切换、日期保护和列表合并仍待 T4/T6/T10。
 
 ### 8.2 性能基准
 
@@ -486,7 +486,7 @@ T1 实际状态：上述两张 DuckDB 当前态表、正向/回滚 SQL 和数据
 - 检查主键重复、非法板块类型/可信度、非有限分数、样本低于 15/40、冠军字典孤儿、状态/冠军日期或版本不一致、结果日期晚于 `daily_bar/board_bar/index_bar` 可用日。
 - 模拟无候选、仅一种类型、停牌错日、无板块指数、上证兜底不足、任务异常、事务失败、同日重复、两个写任务竞争、字典后续消失。
 - 模拟部分股票状态已最新、部分缺状态/落后及算法版本升级，证明 `force=false` 不会错误整批跳过。
-- 具体完成情况：待验证。
+- 具体完成情况：T3 已覆盖无候选、个股与候选短窗样本不足、映射基准不可用、上证兜底不足、常数中性序列、负相关和日历/价格缺口；正式结果一致性、未来日期、字典后续失效及事务异常仍待 T4/T10。
 
 ### 8.5 需求与范围回归
 
