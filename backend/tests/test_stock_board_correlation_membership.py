@@ -130,6 +130,7 @@ def test_related_boards_api_returns_membership_and_rejects_invalid_code(monkeypa
         assert data["membership_scope"] == "cumulative"
         assert len(data["industries"]) == 2
         assert len(data["concepts"]) == 2
+        assert data["related_boards"] is None
 
         invalid = client.get("/api/stocks/600000/related-boards")
         assert invalid.status_code == 400

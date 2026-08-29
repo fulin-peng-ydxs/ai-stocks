@@ -109,6 +109,7 @@ def test_board_compute_accepts_visible_score_profile_ref(client, pg, market, mon
         )
         assert r.status_code == 200
         assert r.json()["data"]["list"][0]["code"] == "T3B_COMPUTE.SZ"
+        assert "related_boards" not in r.json()["data"]["list"][0]
     finally:
         pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", [owner])
         pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", [owner])
@@ -190,13 +191,19 @@ def test_board_run_requires_view_and_rejects_non_preset(client, pg, public_prese
         _rm_user(pg, u1, t1, r1)
 
 
-def test_board_run_reads_fresh_public_snapshot_only(client, pg, public_preset):
-    """/board/run 对 fresh 快照直接读取，不重复物化；榜单行带 stock_basic 的名称与板块。"""
+def test_board_run_reads_fresh_public_snapshot_only(
+    client,
+    pg,
+    market,
+    public_preset,
+    monkeypatch,
+):
+    """/board/run 对 fresh 快照直接读取，并按榜单日期批量附加冠军摘要。"""
     preset_id, _priv_id = public_preset
     ptid, pown = PUBLIC_BOARD_OWNER
     uid, tid, rid = _mk_user(pg, codes=["board:view"])
-    from backend.storage import get_client
-    c = get_client()
+    c = market
+    monkeypatch.setattr("backend.api.board.get_client", lambda: c)
     try:
         from backend.indicators.compute import build_params, param_hash
         ph = param_hash(build_params())
@@ -208,10 +215,27 @@ def test_board_run_reads_fresh_public_snapshot_only(client, pg, public_preset):
         pg.execute(
             "INSERT INTO score_snapshot "
             "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,code,total_score,grade,rank,sub_scores) "
-            "VALUES (%s,%s,1,%s,%s,'T3B001.SZ',91.5,'A',1,'{}')",
+            "VALUES (%s,%s,1,%s,%s,'600099.SH',91.5,'A',1,'{}')",
             [_PUB_DATE, preset_id, ptid, pown])
         c.execute(
-            "INSERT INTO stock_basic (code, name, board) VALUES ('T3B001.SZ', '测试榜一股', '创业板')",
+            "INSERT INTO stock_basic (code, name, board) VALUES "
+            "('600099.SH', '测试榜一股', '主板')",
+        )
+        c.execute(
+            "INSERT INTO board_dict (board_code,name,board_type) VALUES "
+            "('T3B_BOARD','测试行业','industry')"
+        )
+        c.execute(
+            "INSERT INTO stock_board_correlation_state VALUES "
+            "('600099.SH',?,TIMESTAMP '2099-01-02 10:00:00','stock-board-correlation-v2',"
+            "'000001.SH',false,true,false)",
+            [_PUB_DATE],
+        )
+        c.execute(
+            "INSERT INTO stock_board_correlation VALUES "
+            "('600099.SH','industry','T3B_BOARD',0.8,0.8,0.8,20,60,'high','000001.SH',"
+            "false,?,TIMESTAMP '2099-01-02 10:00:00','stock-board-correlation-v2')",
+            [_PUB_DATE],
         )
 
         r = client.post("/api/board/run",
@@ -220,11 +244,27 @@ def test_board_run_reads_fresh_public_snapshot_only(client, pg, public_preset):
         assert r.status_code == 200
         data = r.json()["data"]
         assert data["count"] == 1
-        assert data["list"][0]["code"] == "T3B001.SZ"
+        assert data["list"][0]["code"] == "600099.SH"
         assert data["list"][0]["name"] == "测试榜一股"
-        assert data["list"][0]["board"] == "创业板"
+        assert data["list"][0]["board"] == "主板"
+        assert data["list"][0]["related_boards"]["industry"]["name"] == "测试行业"
+
+        c.execute(
+            "UPDATE stock_board_correlation SET as_of_date=DATE '2099-01-02' "
+            "WHERE code='600099.SH'"
+        )
+        c.execute(
+            "UPDATE stock_board_correlation_state SET as_of_date=DATE '2099-01-02' "
+            "WHERE code='600099.SH'"
+        )
+        historical = client.post(
+            "/api/board/run",
+            json={"profile_id": preset_id, "run_date": _PUB_DATE, "top": 10},
+            headers=_auth(uid, tid),
+        ).json()["data"]["list"][0]["related_boards"]
+        assert historical["industry"] is None
+        assert historical["unavailable_reason"] == "as_of_mismatch"
     finally:
-        c.execute("DELETE FROM stock_basic WHERE code='T3B001.SZ'")
         _rm_user(pg, uid, tid, rid)
 
 

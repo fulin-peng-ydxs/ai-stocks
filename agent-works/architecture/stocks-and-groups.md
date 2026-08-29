@@ -12,6 +12,7 @@
 - 当日涨跌幅按交易日 `LEFT JOIN daily_bar` 现算 `(close/pre_close-1)*100`（`stocks.py:62`），`trade_date` 缺省取 `max(trade_date)`。
 - 退市/ST 口径：`board='退市'` 只看 `delist_date IS NOT NULL`，其余板块一律 `delist_date IS NULL` 排除退市；`board='ST'` 按名称含 `ST` 过滤，其它板块可选 `exclude_st` 再剔 ST（`stocks.py:42-52`）。
 - 只有认证上下文具备 `stock-group:view`（或 system）时才构造 `StockGroupRepo` 并批量调用 `groups_for_codes`；无权限时统一返回空 `groups`，不读取分组资产，也不会因仓库构造而创建默认分组。前端同时隐藏分组列、分组视图和对应页面设置元数据。
+- 股票当前页在最终分页行形成后，以响应 `trade_date` 一次批量读取 `stock_board_correlation_state + stock_board_correlation + board_dict` 并附加可选 `related_boards`；分组页先从 PG 取资产、再从 DuckDB 取行情，最终只对当前页按各行 `last_date` 批量合并摘要，禁止跨库 JOIN。业务日期与摘要 `as_of_date` 不一致时行业/概念为空并标记 `as_of_mismatch`，不会用最新冠军装饰历史行。
 
 ### 行情、指标、报价与买卖评估分层
 

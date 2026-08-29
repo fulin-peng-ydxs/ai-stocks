@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Literal, TypedDict
@@ -28,6 +28,7 @@ from backend.indicators.stock_board_correlation import (
     precompute_market_returns,
     resolve_benchmark_code,
 )
+from backend.services.market_benchmark import MarketBenchmarkService
 from backend.services.stock_codes import normalize_stock_code, normalize_stock_codes
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
@@ -44,6 +45,31 @@ class StockBoardMembership(TypedDict):
     membership_updated_at: str | None
     industries: list[BoardMembershipItem]
     concepts: list[BoardMembershipItem]
+
+
+class RelatedBoardWinner(TypedDict):
+    board_code: str
+    name: str
+    score: float
+    corr_20: float
+    corr_60: float
+    sample_20: int
+    sample_60: int
+    confidence: Literal["high", "medium", "low"]
+
+
+class RelatedBoardBenchmark(TypedDict):
+    code: str
+    name: str
+    fallback: bool
+
+
+class StockRelatedBoards(TypedDict, total=False):
+    as_of_date: str
+    benchmark: RelatedBoardBenchmark
+    industry: RelatedBoardWinner | None
+    concept: RelatedBoardWinner | None
+    unavailable_reason: Literal["as_of_mismatch"]
 
 
 @dataclass(frozen=True)
@@ -132,7 +158,7 @@ def normalize_correlation_task_params(
 
 
 class StockBoardCorrelationService:
-    """读取公共市场板块归属；不把累计关系误称为当前有效关系。"""
+    """读取累计板块归属与当前冠军摘要，并编排版本化批量计算。"""
 
     def __init__(self, client: DuckDBClient | None = None):
         self.c = client or get_client()
@@ -666,6 +692,112 @@ class StockBoardCorrelationService:
                     }
                 )
         return result
+
+    def get_related_boards(
+        self,
+        codes: Iterable[object],
+        business_dates: date | str | Mapping[str, date | str | None] | None = None,
+    ) -> dict[str, StockRelatedBoards | None]:
+        """一次查询返回多股冠军摘要；逐代码业务日期缺失时按历史不匹配处理。"""
+        normalized = normalize_stock_codes(codes)
+        if not normalized:
+            return {}
+
+        protect_dates = isinstance(business_dates, Mapping) or business_dates is not None
+        if isinstance(business_dates, Mapping):
+            normalized_dates = {
+                normalize_stock_code(code): (None if value is None else pd.Timestamp(value).date())
+                for code, value in business_dates.items()
+            }
+        else:
+            uniform_date = None if business_dates is None else pd.Timestamp(business_dates).date()
+            normalized_dates = {code: uniform_date for code in normalized}
+
+        placeholders = ",".join("?" for _ in normalized)
+        rows = self.c.query_df(
+            "SELECT s.code, s.as_of_date, s.benchmark_code, s.benchmark_fallback, "
+            "       c.board_type, c.board_code, c.score, c.corr_20, c.corr_60, "
+            "       c.sample_20, c.sample_60, c.confidence, bd.name AS board_name "
+            "FROM stock_board_correlation_state s "
+            "LEFT JOIN stock_board_correlation c ON c.code=s.code "
+            "  AND c.as_of_date=s.as_of_date "
+            "  AND c.algorithm_version=s.algorithm_version "
+            "  AND c.benchmark_code=s.benchmark_code "
+            "  AND c.benchmark_fallback=s.benchmark_fallback "
+            "LEFT JOIN board_dict bd ON bd.board_code=c.board_code "
+            "  AND bd.board_type=c.board_type "
+            f"WHERE s.code IN ({placeholders}) "
+            "ORDER BY s.code, CASE c.board_type WHEN 'industry' THEN 0 ELSE 1 END",
+            normalized,
+        )
+        result: dict[str, StockRelatedBoards | None] = {code: None for code in normalized}
+        for row in rows.to_dict("records"):
+            code = str(row["code"])
+            as_of_date = pd.Timestamp(row["as_of_date"]).date()
+            summary = result.get(code)
+            if summary is None:
+                benchmark_code = str(row["benchmark_code"])
+                summary = {
+                    "as_of_date": str(as_of_date),
+                    "benchmark": {
+                        "code": benchmark_code,
+                        "name": MarketBenchmarkService.name(benchmark_code),
+                        "fallback": bool(row["benchmark_fallback"]),
+                    },
+                    "industry": None,
+                    "concept": None,
+                }
+                business_date = normalized_dates.get(code)
+                if protect_dates and business_date != as_of_date:
+                    summary["unavailable_reason"] = "as_of_mismatch"
+                result[code] = summary
+            if "unavailable_reason" in summary:
+                continue
+            board_type = row.get("board_type")
+            board_name = row.get("board_name")
+            if (
+                board_type not in ("industry", "concept")
+                or board_name is None
+                or pd.isna(board_name)
+            ):
+                continue
+            summary[board_type] = {
+                "board_code": str(row["board_code"]),
+                "name": str(board_name),
+                "score": float(row["score"]),
+                "corr_20": float(row["corr_20"]),
+                "corr_60": float(row["corr_60"]),
+                "sample_20": int(row["sample_20"]),
+                "sample_60": int(row["sample_60"]),
+                "confidence": str(row["confidence"]),
+            }
+        return result
+
+    def attach_related_boards(
+        self,
+        rows: list[dict[str, Any]],
+        business_dates: date | str | Mapping[str, date | str | None] | None,
+    ) -> list[dict[str, Any]]:
+        """给已形成的响应行批量附加摘要；非标准遗留代码安全退化为 null。"""
+        normalized_by_raw: dict[str, str] = {}
+        for row in rows:
+            raw_code = str(row.get("code") or "")
+            try:
+                normalized_by_raw[raw_code] = normalize_stock_code(raw_code)
+            except ValueError:
+                row["related_boards"] = None
+        filtered_dates = business_dates
+        if isinstance(business_dates, Mapping):
+            filtered_dates = {
+                normalized: business_dates.get(raw_code, business_dates.get(normalized))
+                for raw_code, normalized in normalized_by_raw.items()
+            }
+        summaries = self.get_related_boards(normalized_by_raw.values(), filtered_dates)
+        for row in rows:
+            raw_code = str(row.get("code") or "")
+            normalized = normalized_by_raw.get(raw_code)
+            row["related_boards"] = summaries.get(normalized) if normalized else None
+        return rows
 
     def load_correlation_inputs(
         self,

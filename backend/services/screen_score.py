@@ -17,6 +17,7 @@ from backend.config import get_effective_settings
 from backend.scoring.model import ScoreModel
 from backend.screening.engine import ScreenEngine
 from backend.screening.profile import ProfileRepo
+from backend.services.stock_board_correlation import StockBoardCorrelationService
 from backend.storage.duckdb_client import get_client
 from backend.storage.repository import MarketRepository
 
@@ -107,6 +108,7 @@ class ScreenScoreService:
                         "grade": grade, "is_st": is_st})
         # 按综合分降序（None 排最后）
         out.sort(key=lambda r: (r["total_score"] is not None, r["total_score"] or 0), reverse=True)
+        StockBoardCorrelationService(self.c).attach_related_boards(out, run_date)
         return out
 
     # ── 买点/风险信号（T-M6-3）：批量、hfq 基准一致 ──

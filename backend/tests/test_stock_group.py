@@ -126,6 +126,40 @@ def test_group_crud_and_returns(repo):
         repo.delete(default_gid)
 
 
+def test_group_page_attaches_related_boards_by_each_members_last_date(repo):
+    as_of = date(2026, 8, 28)
+    repo.mkt.execute(
+        "INSERT INTO stock_basic (code,name,board) VALUES ('600000.SH','浦发银行','主板')"
+    )
+    repo.mkt.execute(
+        "INSERT INTO daily_bar (code,trade_date,close,pre_close,adj_factor) VALUES "
+        "('600000.SH',?,10.5,10.0,1.0)",
+        [as_of],
+    )
+    repo.mkt.execute(
+        "INSERT INTO board_dict (board_code,name,board_type) VALUES ('881001','银行','industry')"
+    )
+    repo.mkt.execute(
+        "INSERT INTO stock_board_correlation_state VALUES "
+        "('600000.SH',?,TIMESTAMP '2026-08-29 10:00:00','stock-board-correlation-v2',"
+        "'000001.SH',false,true,false)",
+        [as_of],
+    )
+    repo.mkt.execute(
+        "INSERT INTO stock_board_correlation VALUES "
+        "('600000.SH','industry','881001',0.8,0.8,0.8,20,60,'high','000001.SH',false,?,"
+        "TIMESTAMP '2026-08-29 10:00:00','stock-board-correlation-v2')",
+        [as_of],
+    )
+    gid = repo.create("相关性组", as_of, codes=["600000.SH"])
+
+    group = repo.get(gid)
+
+    row = group["members"]["list"][0]
+    assert row["last_date"] == "2026-08-28"
+    assert row["related_boards"]["industry"]["name"] == "银行"
+
+
 def test_member_before_data_has_null_return(repo):
     """加入日晚于该股最后数据 → 无法取基准价，涨幅置空，不计入整组平均。"""
     gid = repo.create("组", date(2026, 1, 2), "", ["A"])

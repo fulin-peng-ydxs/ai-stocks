@@ -226,11 +226,18 @@ class StockGroupRepo:
         page = max(int(page), 1)
         size = max(min(int(size), 200), 1)
         start = (page - 1) * size
+        page_rows = sorted_members[start:start + size]
+        from backend.services.stock_board_correlation import StockBoardCorrelationService
+
+        StockBoardCorrelationService(self.mkt).attach_related_boards(
+            page_rows,
+            {row["code"]: row.get("last_date") for row in page_rows},
+        )
         meta["members"] = {
             "total": len(filtered),
             "page": page,
             "size": size,
-            "list": sorted_members[start:start + size],
+            "list": page_rows,
         }
         return meta
 

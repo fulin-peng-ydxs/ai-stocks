@@ -44,8 +44,9 @@
 ## 业务架构
 
 - **筛选↔评分↔榜单**：
-  - 筛选页 `/screen/run` → `ScreenScoreService.screen_scored`：跑筛选得命中票，再用固定 `ScoreModel` 给命中票打分排序、标/排 ST。
+  - 筛选页 `/screen/run` → `ScreenScoreService.screen_scored`：跑筛选得命中票，再用固定 `ScoreModel` 给命中票打分排序、标/排 ST；最终命中排序形成后，按 `run_date` 一次批量附加当前走势行业/概念摘要，摘要不参与筛选或评分，历史日期不匹配时冠军为空。
   - 每日榜单页 `/score-profiles/run` 与回测“查看当日榜单” `/board/compute` → 走评分快照层 `ScoreSnapshotRepo.get_board`，对全市场按评分方案排序，不依赖筛选。
+  - 当前页面实际榜单入口 `/board/run` 在 Top N 形成后按 `run_date` 一次批量附加 `related_boards`；历史日期与当前冠军截止日不一致时只返回空冠军和 `as_of_mismatch`。`/board/compute` 是回测/历史计算链路，明确不接入当前冠军摘要。
   - 旧固定模型公共读 `/scores`、`/scores/top`（读 `score_result`）**已废弃删除**（前端无调用方，产品已切到评分快照层）。
 - **统一基座**：指标统一从指标注册表/`wide_snapshot` 取，筛选的 `ind` 叶子与评分项的 `indicator` 都经 `resolve_indicator`/`IndicatorDefRepo` 解析，表达式型指标动态算后 attach 成列。
 - **涉及表**（`backend/storage/pg_ddl.py`；`ddl.py` 为迁移保留的旧 DuckDB 定义）：

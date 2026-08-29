@@ -1,7 +1,7 @@
 # 个股走势关联板块开发计划
 
 > 计划版本：2026-08-29
-> 当前状态：进行中（T1-T5 已完成；T6-T11 待开始）
+> 当前状态：进行中（T1-T6 已完成；T7-T11 待开始）
 > 需求状态：业务闭环与正式需求已确认，无阻塞项
 > 本计划仅拆解实施任务，不进入代码开发。
 
@@ -262,11 +262,11 @@ index_bar + stock_basic ───┘       │ 版本化相关性算法（当前
 | 必须 | R2 | 固定算法契约、四类基准、整股回退、中性化、缩尾、双窗口、决胜和可信度 | T3 | 已完成 | 一致 | 已独立覆盖映射基准目标日缺失时整股回退、上证目标日缺失时失败，以及中间缺口但样本达标时不回退；修订版本为 `stock-board-correlation-v2`，既有 v1 状态会自动重算 |
 | 必须 | R3 | 当前冠军表、每股状态表、全量/范围原子替换、合法空清旧、失败回滚 | T1、T4 | 已完成 | 一致 | DDL、完整性校验、全量/范围替换、合法空和事务故障测试均已通过 |
 | 必须 | R4 | 新任务类型、参数、写互斥、动态调度、阶段日志和结果统计 | T4、T5、T9 | 进行中 | 部分覆盖 | T4/T5 已完成后端计算、任务、互斥、调度、日志与统计闭环；任务中心中文标签和类型专属表单待 T9 |
-| 必须 | R5 | 单股/批量摘要、日期保护、三类业务批量合并、P95与无 N+1 | T2、T6、T10 | 进行中 | 部分覆盖 | T2 已证明累计归属批量一次 SQL、空集合零 SQL；冠军摘要、日期保护与性能基准待 T6/T10 |
+| 必须 | R5 | 单股/批量摘要、日期保护、三类业务批量合并、P95与无 N+1 | T2、T6、T10 | 进行中 | 部分覆盖 | T6 已完成一条 SQL 批量摘要、统一/逐行日期保护、四个后端消费点和 50/200 行固定一次查询；最终读取 P95 基准待 T10 |
 | 必须 | R6 | 共享单元格、统一标题/空态/悬浮/低可信提示/权限跳转、列配置 | T7、T10 | 待开始 | 一致 | 共享组件 Vitest、pageRegistry 契约、三页面 E2E |
-| 必须 | R7 | 股票普通表和分组表接入，保留旧行业/板块语义和排序口径 | T6、T8 | 待开始 | 一致 | API、StocksView Vitest、普通/分组 E2E |
-| 必须 | R8 | 仅 `/board/run` 接入，历史日期退化，`board/compute` 保持隔离 | T6、T8 | 待开始 | 一致 | Board API、页面测试、防未来回归 |
-| 必须 | R9 | 筛选命中批量接入、结果列和按可见列导出名称 | T6、T8 | 待开始 | 一致 | Screen API、Vitest、CSV 断言 |
+| 必须 | R7 | 股票普通表和分组表接入，保留旧行业/板块语义和排序口径 | T6、T8 | 进行中 | 部分覆盖 | T6 已完成普通列表统一日期、分组逐行 `last_date` 的后端批量合并；页面列与交互待 T8 |
+| 必须 | R8 | 仅 `/board/run` 接入，历史日期退化，`board/compute` 保持隔离 | T6、T8 | 进行中 | 部分覆盖 | T6 已验证 `/board/run` 当前/历史日期保护与 `/board/compute` 无摘要字段；页面列待 T8 |
+| 必须 | R9 | 筛选命中批量接入、结果列和按可见列导出名称 | T6、T8 | 进行中 | 部分覆盖 | T6 已完成筛选最终排序后按 `run_date` 批量合并且不改变评分顺序；页面列与 CSV 待 T8 |
 | 必须 | R10 | 任务可观测、结构体检、算法/API/前端/性能测试和事实文档 | T1、T5、T9、T10、T11 | 进行中 | 部分覆盖 | T1/T5 已完成结构约束、任务阶段日志、结果统计和任务能力；前端展示、全链路体检及最终留痕待 T9-T11 |
 | 建议 | R11 | 暂不纳入 | - | 跳过 | 未覆盖 | 候选接口返回 `membership_scope=cumulative`，不声称当前有效 |
 | 建议 | R12 | 暂不纳入 | - | 跳过 | 未覆盖 | DDL 无日期历史主键，连续任务不增长 |
@@ -353,7 +353,7 @@ index_bar + stock_basic ───┘       │ 版本化相关性算法（当前
 
 ### 6.6 任务 T6：实现批量摘要并接入三类后端响应
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T4
 - 需求：R5、R7、R8、R9
 - 涉及：领域读取服务、`backend/api/stocks.py`、`backend/groups/stock_group.py`、`backend/api/board.py`、`backend/services/screen_score.py`/`backend/api/profiles.py`、接口测试。
@@ -363,7 +363,7 @@ index_bar + stock_basic ───┘       │ 版本化相关性算法（当前
 - 边界：空集合不查询；分组保持 PG/DuckDB 分读；`board_compute` 和历史回测链路不接入；摘要异常不得被吞成伪空，主查询的整体错误策略按现有接口执行。
 - 验证：最新/历史日期、逐行日期、空状态、孤儿、无 N+1、响应兼容、`board_compute` 隔离测试。
 - 完成标准：四个后端消费点都只增加固定次数查询，历史数据不出现最新冠军。
-- 实际落地情况：待实施
+- 实际落地情况：已新增 `StockBoardCorrelationService.get_related_boards/attach_related_boards`，用一条 `state LEFT JOIN champion LEFT JOIN board_dict` 查询返回去重代码映射，复用 `MarketBenchmarkService.name` 补指数名称；无状态返回 `null`，字典孤儿冠军不伪造名称，空集合零查询。统一业务日期和逐代码日期都执行 fail-closed 保护，日期不一致时保留真实截止日与基准，但行业/概念为空并返回 `as_of_mismatch`；逐代码日期映射缺项同样不泄露最新冠军。股票分页按响应 `trade_date`、分组当前页按每行 `last_date`、`/board/run` 按 `run_date`、筛选最终排序结果按 `run_date` 各批量附加一次，原字段、分页、排序与评分不变；分组继续 PG/DuckDB 分读，摘要错误沿原主请求错误策略上抛。`/board/compute` 与回测链路未接入。聚焦回归 `177 passed in 33.89s`，覆盖当前/历史 `/board/run`、筛选当前/历史、普通/分组列表、空状态、字典孤儿和旧式非标准代码兼容；50/200 行均固定一次摘要 SQL，P95 留待 T10。
 
 ### 6.7 任务 T7：新增共享展示组件并登记页面列
 
@@ -461,7 +461,7 @@ T1 实际状态：上述两张 DuckDB 当前态表、正向/回滚 SQL 和数据
 - 接口：R1 单股归属、摘要结构、空集合、日期不匹配、股票/分组/榜单/筛选批量合并、`board_compute` 隔离、401/403 和路由资源扫描。
 - 查询计数：50/200 行调用前后固定次数，不允许逐行读取相关性。
 - 计划命令：先判断服务锁状态，再运行新增测试文件及受影响既有测试，例如 `python -m pytest backend/tests/test_stock_board_correlation.py backend/tests/test_api.py backend/tests/test_stock_group.py backend/tests/test_stage4_board.py backend/tests/test_stage5_resource_codes.py -q`。
-- 具体完成情况：T1 存储、DDL、目录聚焦测试为 `35 passed`；T2 累计归属、采集兼容和接口聚焦测试为 `44 passed`。T3 执行算法、归属和存储聚焦回归为 `31 passed`。T4 聚焦回归为 `47 passed`。T5 及本次 R2 修订执行 `python -m pytest backend/tests/test_stock_board_correlation_benchmark.py backend/tests/test_stock_board_correlation_task.py backend/tests/test_stock_board_correlation_orchestration.py backend/tests/test_stock_board_correlation_algorithm.py backend/tests/test_stock_board_correlation_membership.py backend/tests/test_stock_board_correlation_storage.py backend/tests/test_pipeline.py backend/tests/test_data_mgmt_b.py -q`，结果 `153 passed in 13.14s`；覆盖确定性基准入口、目标日基准缺失、上证失败并保留旧正式结果、中间缺口不误回退、v1 状态自动重算、唯一代码收益预计算，以及参数、注册、互斥、阶段日志、成功/跳过/失败统计、取消、重启中断、调度 CRUD/重试配置/立即运行、既有依赖事件等待写槽位和失败重试。批量摘要日期保护、前端任务表单和列表合并仍待 T6/T9/T10。
+- 具体完成情况：T1 存储、DDL、目录聚焦测试为 `35 passed`；T2 累计归属、采集兼容和接口聚焦测试为 `44 passed`。T3 执行算法、归属和存储聚焦回归为 `31 passed`。T4 聚焦回归为 `47 passed`。T5 及 R2 修订聚焦回归为 `153 passed`。T6 执行摘要、股票/分组、榜单、筛选、算法、任务、调度及既有数据管理链路聚焦回归，结果 `177 passed in 33.89s`；覆盖单股/批量摘要、统一/逐行日期保护、当前/历史消费、50/200 行固定一次摘要 SQL、`board_compute` 隔离和 T1-T5 兼容。前端任务表单、页面列、最终 P95 和全链路验证仍待 T7-T10。
 
 ### 8.2 性能基准
 

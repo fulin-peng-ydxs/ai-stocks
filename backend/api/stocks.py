@@ -140,6 +140,7 @@ def list_stocks(q: str | None = None, board: str | None = None,
         if can_view_groups
         else {}
     )
+    StockBoardCorrelationService(c).attach_related_boards(rows, td)
     for r in rows:
         r["list_date"] = str(r["list_date"]) if r.get("list_date") is not None and not pd.isna(r["list_date"]) else None
         r["delist_date"] = str(r["delist_date"]) if r.get("delist_date") is not None and not pd.isna(r["delist_date"]) else None
@@ -155,10 +156,14 @@ def list_stocks(q: str | None = None, board: str | None = None,
     response_model=ApiResponse,
     dependencies=[Depends(require_perm("stocks:view"))],
 )
-def stock_related_boards(code: str) -> ApiResponse:
-    """返回股票在板块数据中累计收录的行业和概念归属。"""
+def stock_related_boards(code: str, business_date: date | None = None) -> ApiResponse:
+    """返回股票累计归属及当前冠军摘要；传业务日期时启用历史保护。"""
     try:
-        membership = StockBoardCorrelationService(get_client()).get_membership(code)
+        service = StockBoardCorrelationService(get_client())
+        membership = service.get_membership(code)
+        membership["related_boards"] = service.get_related_boards(
+            [code], business_date
+        )[membership["code"]]
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ok(membership)

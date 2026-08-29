@@ -11,6 +11,7 @@ from backend.api.response import ApiResponse, err, ok
 from backend.auth.context import get_current_context
 from backend.auth.deps import require_perm
 from backend.services.public_board import get_public_board_profile, latest_market_date
+from backend.services.stock_board_correlation import StockBoardCorrelationService
 from backend.storage import get_client, get_pg_client
 from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
 
@@ -187,6 +188,7 @@ def board_run(body: dict) -> ApiResponse:
         "total_score": float(r["total_score"]), "grade": r["grade"],
         "sub_scores": _subs(r.get("sub_scores")),
     } for _, r in board.iterrows()]
+    StockBoardCorrelationService(c).attach_related_boards(rows, run_date)
     return ok({
         "run_date": str(run_date),
         "top": top,
