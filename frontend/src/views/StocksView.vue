@@ -14,6 +14,7 @@ import HelpTipItem from '@/components/HelpTipItem.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 import StockAnalysisNameCell from '@/components/StockAnalysisNameCell.vue'
+import RelatedBoardCell from '@/components/RelatedBoardCell.vue'
 import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
 import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.vue'
 import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
@@ -859,6 +860,12 @@ onMounted(async () => {
               />
             </template>
           </AppTableColumn>
+          <AppTableColumn v-if="groupColVisible('relatedIndustry')" label="走势行业">
+            <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="industry" /></template>
+          </AppTableColumn>
+          <AppTableColumn v-if="groupColVisible('relatedConcept')" label="走势概念">
+            <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="concept" /></template>
+          </AppTableColumn>
           <AppTableColumn v-if="groupColVisible('price')" label="股价" prop="price" sortable="custom">
             <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPrice(row.price) }}</b></template>
           </AppTableColumn>
@@ -948,6 +955,12 @@ onMounted(async () => {
             </template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('board')" label="板块" prop="board" />
+          <AppTableColumn v-if="colVisible('relatedIndustry')" label="走势行业">
+            <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="industry" /></template>
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('relatedConcept')" label="走势概念">
+            <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="concept" /></template>
+          </AppTableColumn>
           <AppTableColumn v-if="colVisible('status')" label="状态">
             <template #default="{ row }">
               <el-tag v-if="row.delist_date" type="info" effect="plain" size="small">退市</el-tag>

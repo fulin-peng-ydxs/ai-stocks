@@ -1,6 +1,7 @@
 // 个股查询 API（对应 backend/api/stocks.py）
 import http from './client'
 import type { AppRequestConfig } from './client'
+import type { StockRelatedBoards } from '@/types/relatedBoards'
 
 export interface StockBasic {
   code: string
@@ -13,6 +14,7 @@ export interface StockBasic {
   close: number | null        // 指定交易日收盘价（元）
   pct_chg: number | null      // 指定交易日涨跌幅（%）
   groups: { id: string; name: string; color: string; is_default: boolean }[]
+  related_boards?: StockRelatedBoards | null
 }
 
 export interface StockListParams {

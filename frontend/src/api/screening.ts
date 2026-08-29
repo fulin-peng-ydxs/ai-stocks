@@ -1,5 +1,6 @@
 // 筛选方案 + 运行筛选 API（对应 backend/api/profiles.py）
 import http from './client'
+import type { StockRelatedBoards } from '@/types/relatedBoards'
 
 export interface Profile {
   id: string
@@ -33,6 +34,7 @@ export interface ScreenHit {
   total_score: number | null
   grade: string
   is_st: boolean
+  related_boards?: StockRelatedBoards | null
 }
 
 export interface ScreenResult {

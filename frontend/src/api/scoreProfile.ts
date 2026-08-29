@@ -1,5 +1,6 @@
 // 评分规则方案 + 技术指标注册表 API（对应 backend/api/score_profiles.py、indicators.py）
 import http from './client'
+import type { StockRelatedBoards } from '@/types/relatedBoards'
 
 // ── 技术指标注册表 ──
 export interface IndicatorParam {
@@ -110,6 +111,7 @@ export interface ScoreRunRow {
   total_score: number
   grade: string
   sub_scores: Record<string, number>
+  related_boards?: StockRelatedBoards | null
 }
 
 // source=mine：下拉只加载自己的资产（纯 owner，R3/C2）；不传维持 list_visible 兼容

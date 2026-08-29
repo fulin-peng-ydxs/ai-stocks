@@ -8,6 +8,10 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useStockSet } from '@/stores/stockSet'
 
+const layoutMockState = vi.hoisted(() => ({
+  hiddenColumnsBySlot: {} as Record<string, string[]>,
+}))
+
 vi.mock('@/composables/useRemoteLayoutConfig', () => ({
   useRemoteLayoutConfig: () => ({
     effective: {},
@@ -17,8 +21,8 @@ vi.mock('@/composables/useRemoteLayoutConfig', () => ({
     sourceOf: vi.fn(),
     isDirty: ref(false),
     resetAll: vi.fn(),
-    componentValueOf: vi.fn((_slot: string, field: string) => {
-      if (field === 'hiddenColumns') return []
+    componentValueOf: vi.fn((slot: string, field: string) => {
+      if (field === 'hiddenColumns') return layoutMockState.hiddenColumnsBySlot[slot] ?? []
       if (field === 'pageSize') return 50
       if (field === 'border') return false
       return ''
@@ -143,6 +147,7 @@ import * as screeningApi from '@/api/screening'
 import * as backtestApi from '@/api/backtest'
 import * as tradeApi from '@/api/tradeProfile'
 import * as trainingApi from '@/api/training'
+import * as csvUtils from '@/utils/csv'
 import BoardView from '@/views/BoardView.vue'
 import OverviewView from '@/views/data/OverviewView.vue'
 import IngestView from '@/views/data/IngestView.vue'
@@ -258,6 +263,7 @@ async function mountView(component: Component) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  layoutMockState.hiddenColumnsBySlot = {}
   localStorage.clear()
   document.body.innerHTML = ''
   ;(scoreApi.getIndicatorRegistry as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -713,6 +719,51 @@ describe('代表性页面四态回归', () => {
 
     resolveRerun?.({ run_date: '2026-08-01', count: 0, exclude_st: true, hits: [] })
     await flushPromises()
+    wrapper.unmount()
+  })
+
+  it('筛选 CSV 只按可见列导出走势板块名称，不泄露相关度内部字段', async () => {
+    layoutMockState.hiddenColumnsBySlot.result = ['relatedConcept']
+    ;(screeningApi.runScreen as ReturnType<typeof vi.fn>).mockResolvedValue({
+      run_date: '2026-08-28',
+      count: 1,
+      exclude_st: true,
+      hits: [{
+        code: '000001.SZ',
+        name: '平安银行',
+        total_score: 90,
+        grade: '观察',
+        is_st: false,
+        related_boards: {
+          as_of_date: '2026-08-28',
+          benchmark: { code: '399001.SZ', name: '深证成指', fallback: false },
+          industry: {
+            board_code: '881001', name: '银行', score: 0.82,
+            corr_20: 0.86, corr_60: 0.76, sample_20: 20, sample_60: 58,
+            confidence: 'high',
+          },
+          concept: {
+            board_code: '885001', name: '中特估', score: 0.55,
+            corr_20: 0.6, corr_60: 0.48, sample_20: 19, sample_60: 50,
+            confidence: 'medium',
+          },
+        },
+      }],
+    })
+    const wrapper = await mountView(ScreenView)
+    await wrapper.findAll('button').find((button) => button.text().includes('运行筛选'))!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button').find((button) => button.text().includes('导出 CSV'))!.trigger('click')
+
+    expect(csvUtils.downloadCsv).toHaveBeenCalledWith(
+      '筛选结果_2026-08-28.csv',
+      ['代码', '名称', '走势行业', '综合分', '评级', '是否ST'],
+      [['000001.SZ', '平安银行', '银行', 90, '观察', '']],
+    )
+    const serialized = JSON.stringify((csvUtils.downloadCsv as ReturnType<typeof vi.fn>).mock.calls[0])
+    expect(serialized).not.toContain('中特估')
+    expect(serialized).not.toContain('corr_20')
+    expect(serialized).not.toContain('0.82')
     wrapper.unmount()
   })
 

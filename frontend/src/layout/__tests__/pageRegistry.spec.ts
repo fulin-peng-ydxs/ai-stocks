@@ -124,10 +124,7 @@ function configurableColumnVisibilityKeys(source: string): Set<string> {
   return keys
 }
 
-// stock-board-correlation T7/T8 是刻意拆分的相邻本地提交：T7 先建立组件与设置候选，
-// T8 再把同一共享组件接入三个页面。白名单只允许这 8 个明确待 T8 消费的过渡项；
-// T8 必须删除本集合并恢复所有候选零例外的双向契约。
-const PENDING_T8_RELATED_BOARD_COLUMNS = new Set([
+const RELATED_BOARD_COLUMNS = new Set([
   'board.table.relatedIndustry',
   'board.table.relatedConcept',
   'screen.result.relatedIndustry',
@@ -749,18 +746,16 @@ describe('组件消费关系与配置一致性（P4）', () => {
       const visibleKeys = configurableColumnVisibilityKeys(source)
       for (const [slotId, meta] of configurableSlots) {
         for (const column of meta.columns ?? []) {
-          const identity = `${entry.pageKey}.${slotId}.${column.key}`
-          if (PENDING_T8_RELATED_BOARD_COLUMNS.has(identity)) continue
           expect(
             visibleKeys.has(column.key),
-            `${identity} 已登记为可配置列，但页面没有真实显隐判断`,
+            `${entry.pageKey}.${slotId}.${column.key} 已登记为可配置列，但页面没有真实显隐判断`,
           ).toBe(true)
         }
       }
     }
   })
 
-  it('T7 只为四个既有业务表登记走势行业与走势概念，过渡项精确受控', () => {
+  it('T8 只为四个既有业务表消费走势行业与走势概念列', () => {
     const actual = new Set<string>()
     for (const entry of PAGE_REGISTRY) {
       for (const [slotId, meta] of Object.entries(entry.componentMeta ?? {})) {
@@ -772,7 +767,22 @@ describe('组件消费关系与配置一致性（P4）', () => {
         }
       }
     }
-    expect(actual).toEqual(PENDING_T8_RELATED_BOARD_COLUMNS)
+    expect(actual).toEqual(RELATED_BOARD_COLUMNS)
+
+    const consumers = [
+      { pageKey: 'board', visible: 'colVisible' },
+      { pageKey: 'screen', visible: 'colVisible' },
+      { pageKey: 'stocks', visible: 'colVisible' },
+      { pageKey: 'stocks', visible: 'groupColVisible' },
+    ]
+    for (const consumer of consumers) {
+      const source = sourceForPage(consumer.pageKey)
+      expect(source).toContain("import RelatedBoardCell from '@/components/RelatedBoardCell.vue'")
+      for (const [key, type] of [['relatedIndustry', 'industry'], ['relatedConcept', 'concept']]) {
+        expect(source).toContain(`${consumer.visible}('${key}')`)
+        expect(source).toMatch(new RegExp(`<RelatedBoardCell[^>]+board-type=["']${type}["']`))
+      }
+    }
   })
 
   it('独立详情行情统一消费 chart.minHeight，自适应工作台不机械套用固定高度', () => {

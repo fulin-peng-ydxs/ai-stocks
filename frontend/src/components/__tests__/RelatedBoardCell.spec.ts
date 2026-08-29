@@ -5,7 +5,11 @@ import { defineComponent, h } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import RelatedBoardCell from '../RelatedBoardCell.vue'
 import { useAuthStore } from '@/stores/auth'
-import type { RelatedBoardConfidence, RelatedBoardWinner } from '@/types/relatedBoards'
+import type {
+  RelatedBoardConfidence,
+  RelatedBoardWinner,
+  StockRelatedBoards,
+} from '@/types/relatedBoards'
 
 const ElPopoverStub = defineComponent({
   name: 'ElPopover',
@@ -30,7 +34,16 @@ const RouterLinkStub = defineComponent({
   name: 'RouterLink',
   props: ['to'],
   setup(props, { slots, attrs }) {
-    return () => h('a', { ...attrs, href: props.to }, slots.default?.())
+    return () => h('a', {
+      ...attrs,
+      href: props.to,
+      onClick: (event: MouseEvent) => {
+        event.preventDefault()
+        const listener = attrs.onClick
+        if (Array.isArray(listener)) listener.forEach((item) => (item as (e: MouseEvent) => void)(event))
+        else if (typeof listener === 'function') listener(event)
+      },
+    }, slots.default?.())
   },
 })
 
@@ -50,7 +63,23 @@ function winner(confidence: RelatedBoardConfidence, overrides: Partial<RelatedBo
   }
 }
 
-function mountCell(props: Record<string, unknown>, role = 'normal', permissions: string[] = []) {
+function summary(
+  confidence: RelatedBoardConfidence,
+  overrides: Partial<RelatedBoardWinner> = {},
+): StockRelatedBoards {
+  return {
+    as_of_date: '2026-08-28',
+    benchmark: { code: '000001.SH', name: '上证指数', fallback: false },
+    industry: winner(confidence, overrides),
+    concept: null,
+  }
+}
+
+function mountCell(
+  props: { summary?: StockRelatedBoards | null; boardType: 'industry' | 'concept'; testId?: string },
+  role = 'normal',
+  permissions: string[] = [],
+) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore()
@@ -79,7 +108,7 @@ describe('RelatedBoardCell', () => {
   })
 
   it.each(['high', 'medium'] as const)('%s 可信结果展示完整指标且不误标低可信', (confidence) => {
-    const wrapper = mountCell({ board: winner(confidence), asOfDate: '2026-08-28' })
+    const wrapper = mountCell({ summary: summary(confidence), boardType: 'industry' })
 
     expect(wrapper.text()).toContain('银行')
     expect(wrapper.text()).toContain('综合相关度0.8235')
@@ -98,8 +127,8 @@ describe('RelatedBoardCell', () => {
 
   it('低可信结果明确标记相关性较弱并安全处理非有限数', () => {
     const wrapper = mountCell({
-      board: winner('low', { score: -0.123456, corr_20: Number.NaN }),
-      asOfDate: null,
+      summary: { ...summary('low', { score: -0.123456, corr_20: Number.NaN }), as_of_date: '' },
+      boardType: 'industry',
     })
 
     expect(wrapper.text()).toContain('相关性较弱')
@@ -110,18 +139,26 @@ describe('RelatedBoardCell', () => {
 
   it('有 sectors:view 时渲染编码后的详情链接，system 角色也放行', () => {
     const allowed = mountCell(
-      { board: winner('high', { board_code: '概念/AI' }), testId: 'related-board' },
+      {
+        summary: summary('high', { board_code: '概念/AI' }),
+        boardType: 'industry',
+        testId: 'related-board',
+      },
       'normal',
       ['sectors:view'],
     )
     expect(allowed.get('a').attributes('href')).toBe('/sectors/%E6%A6%82%E5%BF%B5%2FAI')
 
-    const system = mountCell({ board: winner('medium') }, 'system')
+    const system = mountCell({ summary: summary('medium'), boardType: 'industry' }, 'system')
     expect(system.find('a').exists()).toBe(true)
   })
 
   it('无 sectors:view 时只渲染可聚焦文本，不产生链接或权限错误入口', () => {
-    const wrapper = mountCell({ board: winner('high') }, 'normal', ['stocks:view'])
+    const wrapper = mountCell(
+      { summary: summary('high'), boardType: 'industry' },
+      'normal',
+      ['stocks:view'],
+    )
 
     expect(wrapper.find('a').exists()).toBe(false)
     expect(wrapper.get('.related-board-cell__name').attributes('tabindex')).toBe('0')
@@ -129,7 +166,7 @@ describe('RelatedBoardCell', () => {
   })
 
   it('无冠军显示普通破折号且不虚构说明', () => {
-    const wrapper = mountCell({ board: null, testId: 'empty-related-board' })
+    const wrapper = mountCell({ summary: null, boardType: 'concept', testId: 'empty-related-board' })
 
     expect(wrapper.text()).toBe('—')
     expect(wrapper.find('.tooltip-stub').exists()).toBe(false)
@@ -137,7 +174,10 @@ describe('RelatedBoardCell', () => {
   })
 
   it('历史日期不匹配仍显示破折号，但提供可聚焦的固定说明', () => {
-    const wrapper = mountCell({ board: null, unavailableReason: 'as_of_mismatch' })
+    const wrapper = mountCell({
+      summary: { ...summary('high'), industry: null, unavailable_reason: 'as_of_mismatch' },
+      boardType: 'industry',
+    })
 
     expect(wrapper.text()).toBe('—')
     expect(wrapper.get('.tooltip-stub').attributes('data-content')).toBe('未保留该历史日期的相关性结果')
@@ -145,5 +185,19 @@ describe('RelatedBoardCell', () => {
     expect(wrapper.getComponent(ElTooltipStub).props('trigger')).toEqual(['hover', 'focus'])
     ;(wrapper.get('.related-board-cell__empty').element as HTMLElement).focus()
     expect(document.activeElement).toBe(wrapper.get('.related-board-cell__empty').element)
+  })
+
+  it('点击板块链接不冒泡触发表格行点击', async () => {
+    const wrapper = mountCell(
+      { summary: summary('high'), boardType: 'industry' },
+      'normal',
+      ['sectors:view'],
+    )
+    let bubbled = 0
+    wrapper.element.parentElement?.addEventListener('click', () => { bubbled += 1 })
+
+    await wrapper.get('a').trigger('click')
+
+    expect(bubbled).toBe(0)
   })
 })

@@ -17,6 +17,7 @@ import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
 import StockAnalysisNameCell from '@/components/StockAnalysisNameCell.vue'
+import RelatedBoardCell from '@/components/RelatedBoardCell.vue'
 import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
 import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
@@ -635,6 +636,12 @@ onMounted(async () => {
           </template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('board')" label="板块" prop="board" />
+        <AppTableColumn v-if="colVisible('relatedIndustry')" label="走势行业">
+          <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="industry" /></template>
+        </AppTableColumn>
+        <AppTableColumn v-if="colVisible('relatedConcept')" label="走势概念">
+          <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="concept" /></template>
+        </AppTableColumn>
         <AppTableColumn v-if="colVisible('score')" label="综合分" prop="total_score" sortable :sort-by="(r:any)=>r.total_score">
           <template #default="{ row }">
             <strong class="score">{{ row.total_score }}</strong>

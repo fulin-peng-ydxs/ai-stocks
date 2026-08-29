@@ -1,5 +1,6 @@
 // 股票分组 API（个股查询·篮子，对应 backend/api/stock_groups.py）
 import http from './client'
+import type { StockRelatedBoards } from '@/types/relatedBoards'
 
 export interface GroupSummary {
   id: string
@@ -21,6 +22,7 @@ export interface GroupMember {
   pct_chg: number | null    // 最新交易日当日涨跌幅（%）
   last_date: string | null
   note: string
+  related_boards?: StockRelatedBoards | null
 }
 
 export interface GroupDetail {

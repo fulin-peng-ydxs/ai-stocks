@@ -25,6 +25,7 @@ import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
+import RelatedBoardCell from '@/components/RelatedBoardCell.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -560,9 +561,14 @@ function rowClass({ row }: { row: ScreenHit }) {
 }
 function exportCsv() {
   if (!result.value?.hits.length) return
-  const headers = ['代码', '名称', '综合分', '评级', '是否ST']
+  const relatedColumns = [
+    { key: 'relatedIndustry', label: '走势行业', nameOf: (hit: ScreenHit) => hit.related_boards?.industry?.name ?? '' },
+    { key: 'relatedConcept', label: '走势概念', nameOf: (hit: ScreenHit) => hit.related_boards?.concept?.name ?? '' },
+  ].filter((column) => colVisible(column.key))
+  const headers = ['代码', '名称', ...relatedColumns.map((column) => column.label), '综合分', '评级', '是否ST']
   const data = result.value.hits.map((h) => [
-    h.code, h.name ?? '', h.total_score ?? '', h.grade ?? '', h.is_st ? 'ST' : '',
+    h.code, h.name ?? '', ...relatedColumns.map((column) => column.nameOf(h)),
+    h.total_score ?? '', h.grade ?? '', h.is_st ? 'ST' : '',
   ])
   downloadCsv(`筛选结果_${result.value.date}.csv`, headers, data)
 }
@@ -871,6 +877,12 @@ onMounted(initializeScreen)
                   <span>{{ row.name || '—' }}</span>
                   <el-tag v-if="colVisible('st') && row.is_st" type="danger" size="small" effect="dark" style="margin-left: 6px">ST</el-tag>
                 </template>
+              </AppTableColumn>
+              <AppTableColumn v-if="colVisible('relatedIndustry')" label="走势行业">
+                <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="industry" /></template>
+              </AppTableColumn>
+              <AppTableColumn v-if="colVisible('relatedConcept')" label="走势概念">
+                <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="concept" /></template>
               </AppTableColumn>
               <AppTableColumn v-if="colVisible('score')" label="综合分" prop="total_score" sortable :sort-by="(r:any)=>r.total_score ?? -Infinity">
                 <template #default="{ row }">

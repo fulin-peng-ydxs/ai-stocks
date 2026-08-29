@@ -4,26 +4,29 @@ import { getActivePinia } from 'pinia'
 import { RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
-import type { RelatedBoardWinner } from '@/types/relatedBoards'
+import type { RelatedBoardWinner, StockRelatedBoards } from '@/types/relatedBoards'
 
 const props = withDefaults(defineProps<{
-  board?: RelatedBoardWinner | null
-  asOfDate?: string | null
-  unavailableReason?: 'as_of_mismatch' | null
+  summary?: StockRelatedBoards | null
+  boardType: 'industry' | 'concept'
   testId?: string
 }>(), {
-  board: null,
-  asOfDate: null,
-  unavailableReason: null,
+  summary: null,
 })
 
 const auth = getActivePinia() ? useAuthStore() : null
+const board = computed<RelatedBoardWinner | null>(() => {
+  if (props.summary?.unavailable_reason) return null
+  return props.summary?.[props.boardType] ?? null
+})
+const asOfDate = computed(() => props.summary?.as_of_date ?? null)
+const unavailableReason = computed(() => props.summary?.unavailable_reason ?? null)
 const canNavigate = computed(() => Boolean(
-  props.board
+  board.value
   && auth
   && hasPermission(auth.role, auth.permissions, 'sectors:view'),
 ))
-const sectorPath = computed(() => `/sectors/${encodeURIComponent(props.board?.board_code ?? '')}`)
+const sectorPath = computed(() => `/sectors/${encodeURIComponent(board.value?.board_code ?? '')}`)
 
 function formatCorrelation(value: number): string {
   if (!Number.isFinite(value)) return '—'
@@ -44,6 +47,7 @@ function formatCorrelation(value: number): string {
         class="related-board-cell__name related-board-cell__name--link"
         :to="sectorPath"
         :data-testid="testId"
+        @click.stop
       >{{ board.name }}</RouterLink>
       <span
         v-else
