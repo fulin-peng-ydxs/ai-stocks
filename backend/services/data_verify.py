@@ -7,6 +7,7 @@ C. 独立数据源交叉验证（联网）：随机若干股，本地存储 vs �
    校验不复权价 + 前复权价（验证 adj_factor / pre_close 逻辑）。
 D. 需求字段完整性契约：必填字段非空，已知数据源局限显式豁免。
 E. 板块数据：四表孤儿/日历一致/OHLC/枚举取值/能力标记与实际数据一致。
+G. 个股走势关联板块：当前态/冠军一致性、数值契约、引用完整性和日期支撑。
 
 每项给 PASS/FAIL + 明细，最后汇总。
 """
@@ -143,7 +144,7 @@ class DataVerifier:
     def cross_validate(self, codes: list[str] | None = None, n_dates: int = 5) -> None:
         self._cur_group = "C. 独立数据源交叉验证"
         self._say("\nC. 独立数据源交叉验证（实时重拉对比）")
-        from backend.datasource.akshare_source import AKShareSource, to_full_code
+        from backend.datasource.akshare_source import AKShareSource
 
         # 默认覆盖各板块代表
         if codes is None:
@@ -319,6 +320,152 @@ class DataVerifier:
                 f"{label}能力标记与实际数据一致", miss == 0 and extra == 0,
                 f"有标记无数据 {miss} / 有数据无标记 {extra}")
 
+    def check_stock_board_correlation(self) -> None:
+        """核查当前相关性派生表，不重算算法，也不写质量台账。
+
+        DDL 约束能阻止新坏数据写入；本组仍显式扫描数值、引用和跨表口径，覆盖旧库、
+        人工 SQL、版本升级残留以及底层行情被后续清理后的漂移。
+        """
+        from backend.indicators.stock_board_correlation import ALGORITHM_VERSION
+
+        self._cur_group = "G. 个股走势关联板块"
+        self._say("\nG. 个股走势关联板块（当前态/冠军/行情支撑）")
+
+        duplicate_champions = self._count(
+            "SELECT count(*) FROM (SELECT code,board_type FROM stock_board_correlation "
+            "GROUP BY code,board_type HAVING count(*)>1)"
+        )
+        duplicate_states = self._count(
+            "SELECT count(*) FROM (SELECT code FROM stock_board_correlation_state "
+            "GROUP BY code HAVING count(*)>1)"
+        )
+        self._check(
+            "相关性结果主键无重复",
+            duplicate_champions == 0 and duplicate_states == 0,
+            f"冠军重复 {duplicate_champions} / 状态重复 {duplicate_states}",
+        )
+
+        invalid_domain = self._count(
+            "SELECT count(*) FROM stock_board_correlation "
+            "WHERE board_type NOT IN ('industry','concept') "
+            "OR confidence NOT IN ('high','medium','low')"
+        )
+        invalid_numeric = self._count(
+            "SELECT count(*) FROM stock_board_correlation "
+            "WHERE NOT isfinite(score) OR NOT isfinite(corr_20) OR NOT isfinite(corr_60) "
+            "OR score NOT BETWEEN -1 AND 1 OR corr_20 NOT BETWEEN -1 AND 1 "
+            "OR corr_60 NOT BETWEEN -1 AND 1"
+        )
+        invalid_samples = self._count(
+            "SELECT count(*) FROM stock_board_correlation WHERE sample_20<15 OR sample_60<40"
+        )
+        self._check(
+            "冠军类型与可信度取值合法", invalid_domain == 0, f"非法 {invalid_domain}"
+        )
+        self._check(
+            "冠军分数与相关系数有限且位于 [-1,1]",
+            invalid_numeric == 0,
+            f"非法 {invalid_numeric}",
+        )
+        self._check(
+            "冠军样本达到 15/40 门槛", invalid_samples == 0, f"不足 {invalid_samples}"
+        )
+
+        orphan_boards = self._count(
+            "SELECT count(*) FROM stock_board_correlation c LEFT JOIN board_dict d "
+            "ON d.board_code=c.board_code AND d.board_type=c.board_type "
+            "WHERE d.board_code IS NULL"
+        )
+        orphan_states = self._count(
+            "SELECT count(*) FROM stock_board_correlation c "
+            "LEFT JOIN stock_board_correlation_state s ON s.code=c.code WHERE s.code IS NULL"
+        )
+        self._check(
+            "冠军板块均有同类型字典记录", orphan_boards == 0, f"孤儿 {orphan_boards}"
+        )
+        self._check(
+            "冠军均有对应每股状态", orphan_states == 0, f"孤儿 {orphan_states}"
+        )
+
+        mismatched_champions = self._count(
+            "SELECT count(*) FROM stock_board_correlation c "
+            "JOIN stock_board_correlation_state s ON s.code=c.code "
+            "WHERE c.as_of_date IS DISTINCT FROM s.as_of_date "
+            "OR c.computed_at IS DISTINCT FROM s.computed_at "
+            "OR c.algorithm_version IS DISTINCT FROM s.algorithm_version "
+            "OR c.benchmark_code IS DISTINCT FROM s.benchmark_code "
+            "OR c.benchmark_fallback IS DISTINCT FROM s.benchmark_fallback"
+        )
+        flag_mismatches = self._count(
+            "SELECT count(*) FROM stock_board_correlation_state s WHERE "
+            "s.has_industry_champion IS DISTINCT FROM EXISTS "
+            "(SELECT 1 FROM stock_board_correlation c "
+            " WHERE c.code=s.code AND c.board_type='industry') OR "
+            "s.has_concept_champion IS DISTINCT FROM EXISTS "
+            "(SELECT 1 FROM stock_board_correlation c "
+            " WHERE c.code=s.code AND c.board_type='concept')"
+        )
+        stale_versions = self._count(
+            "SELECT count(*) FROM stock_board_correlation_state WHERE algorithm_version<>?",
+            [ALGORITHM_VERSION],
+        ) + self._count(
+            "SELECT count(*) FROM stock_board_correlation WHERE algorithm_version<>?",
+            [ALGORITHM_VERSION],
+        )
+        self._check(
+            "状态与冠军日期/时间/版本/基准一致",
+            mismatched_champions == 0,
+            f"不一致 {mismatched_champions}",
+        )
+        self._check(
+            "状态冠军标记与实际行一致", flag_mismatches == 0, f"不一致 {flag_mismatches}"
+        )
+        self._check(
+            f"结果算法版本均为 {ALGORITHM_VERSION}",
+            stale_versions == 0,
+            f"旧版本 {stale_versions}",
+        )
+
+        invalid_benchmarks = self._count(
+            "SELECT count(*) FROM stock_board_correlation_state "
+            "WHERE benchmark_code NOT IN ('000001.SH','399001.SZ','399006.SZ','000688.SH') "
+            "OR (benchmark_fallback AND benchmark_code<>'000001.SH')"
+        )
+        self._check(
+            "状态基准代码与回退标记合法", invalid_benchmarks == 0, f"非法 {invalid_benchmarks}"
+        )
+
+        unsupported_stock_dates = self._count(
+            "SELECT count(*) FROM stock_board_correlation_state s "
+            "WHERE s.as_of_date>COALESCE((SELECT max(b.trade_date) FROM daily_bar b "
+            "WHERE b.code=s.code), DATE '0001-01-01')"
+        )
+        unsupported_board_dates = self._count(
+            "SELECT count(*) FROM stock_board_correlation c "
+            "WHERE c.as_of_date>COALESCE((SELECT max(b.trade_date) FROM board_bar b "
+            "WHERE b.board_code=c.board_code), DATE '0001-01-01')"
+        )
+        unsupported_benchmark_dates = self._count(
+            "SELECT count(*) FROM stock_board_correlation_state s "
+            "WHERE s.as_of_date>COALESCE((SELECT max(b.trade_date) FROM index_bar b "
+            "WHERE b.index_code=s.benchmark_code), DATE '0001-01-01')"
+        )
+        self._check(
+            "结果日期不晚于个股行情可用日",
+            unsupported_stock_dates == 0,
+            f"无行情支撑 {unsupported_stock_dates}",
+        )
+        self._check(
+            "结果日期不晚于冠军板块行情可用日",
+            unsupported_board_dates == 0,
+            f"无行情支撑 {unsupported_board_dates}",
+        )
+        self._check(
+            "结果日期不晚于基准行情可用日",
+            unsupported_benchmark_dates == 0,
+            f"无行情支撑 {unsupported_benchmark_dates}",
+        )
+
     def run(self, cross: bool = True) -> bool:
         print("=" * 64)
         print("数据正确性 + 完整性 系统性核查")
@@ -327,6 +474,7 @@ class DataVerifier:
         self.check_prices()
         self.check_contract()
         self.check_board()
+        self.check_stock_board_correlation()
         self.check_calendar_readiness()
         if cross:
             self.cross_validate()
@@ -352,6 +500,7 @@ class DataVerifier:
         self.check_prices()
         self.check_contract()
         self.check_board()
+        self.check_stock_board_correlation()
         self.check_calendar_readiness()
         if cross:
             self.cross_validate()

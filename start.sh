@@ -15,6 +15,7 @@
 #   ./start.sh e2e-user [参数]   Playwright 临时用户内部入口
 #   ./start.sh e2e-backtest-run [参数]  Playwright 公开回测内部入口
 #   ./start.sh e2e-board-data seed|cleanup  Playwright 板块行情 DuckDB 夹具
+#   ./start.sh e2e-stock-board-correlation seed|cleanup  走势关联板块 DuckDB 夹具
 #   ./start.sh e2e-trade-discipline seed|cleanup [参数]  交易纪律 PG + DuckDB 夹具
 #
 # 设计要点：
@@ -303,12 +304,16 @@ case "${1:-dev}" in
     shift
     "$PY" -m backend.devtools.e2e_board_data "$@"
     ;;
+  e2e-stock-board-correlation)
+    shift
+    "$PY" -m backend.devtools.e2e_stock_board_correlation "$@"
+    ;;
   e2e-trade-discipline)
     shift
     "$PY" -m backend.devtools.e2e_trade_discipline "$@"
     ;;
   *)
-    echo "用法: ./start.sh [dev|prod|stop|restart|status|assert-idle|stop-if-idle|logs|dev-users|e2e-user|e2e-backtest-run|e2e-board-data|e2e-trade-discipline]"
+    echo "用法: ./start.sh [dev|prod|stop|restart|status|assert-idle|stop-if-idle|logs|dev-users|e2e-user|e2e-backtest-run|e2e-board-data|e2e-stock-board-correlation|e2e-trade-discipline]"
     exit 1
     ;;
 esac

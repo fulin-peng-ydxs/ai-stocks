@@ -691,7 +691,8 @@ watch(
                          @change="() => { taskPage = 1; loadTasks() }">
                 <el-option v-for="o in TASK_TYPE_OPTIONS" :key="o.v" :label="o.l" :value="o.v" />
               </el-select>
-              <el-select v-model="taskFilter.status" placeholder="状态" clearable size="small" style="width: 110px"
+              <el-select v-model="taskFilter.status" data-testid="task-status-filter"
+                         placeholder="状态" clearable size="small" style="width: 110px"
                          @change="() => { taskPage = 1; loadTasks() }">
                 <el-option v-for="o in TASK_STATUS_OPTIONS" :key="o.v" :label="o.l" :value="o.v" />
               </el-select>

@@ -25,12 +25,12 @@ test.describe('质检问题定时恢复', () => {
 
       await expect(page.getByTestId('schedule-issue-type')).toBeVisible()
       await page.getByTestId('schedule-issue-type').click()
-      await page.getByRole('option', { name: '行情缺口(疑似漏采)' }).click()
+      await page.getByRole('option', { name: '行情·近端缺某日', exact: true }).click()
       await page.getByTestId('schedule-enabled').click()
       await page.getByTestId('schedule-save').click()
 
       const jobRow = page.getByRole('row').filter({ hasText: jobName })
-      await expect(jobRow).toContainText('质检问题恢复·行情缺口(疑似漏采)')
+      await expect(jobRow).toContainText('质检问题恢复·行情·近端缺某日')
       await expect(jobRow.getByRole('switch')).not.toBeChecked()
 
       const response = await request.get(`${API_URL}/data/schedules`, { headers })
