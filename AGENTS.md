@@ -97,6 +97,7 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 - 路由层保持薄封装，复杂业务放 `services/` 或领域模块；测试文件使用 `test_*.py`。
 - 前端使用 Vue 3 Composition API + TypeScript，组件 PascalCase；API 封装在 `frontend/src/api/*.ts`，布局逻辑在 `frontend/src/layout/`。
 - 新增后端领域逻辑优先补服务/领域单测；涉及数据口径、防未来函数、DDL、回测撮合、权限和资产隔离时必须覆盖边界。
+- 涉及全量批处理、超长参数列表、窗口/聚合 SQL 或明确规模门槛时，小夹具之外必须补代表性规模回归；阶段验收还需通过真实入口或等价数据规模覆盖输入加载、计算与落表，纯算法基准和 Mock 响应不能替代该链路。
 - 新增布局、校验、配置合并或权限消费逻辑时，同步补充 Vitest。
 - 涉及页面、组件、样式、表格、弹窗、抽屉时，计划必须说明是否触发页面设计闭环和组件/布局维护矩阵。
 - 涉及真实用户点击链路的页面改动，应按 `agent-works/e2e-automation/guide.md` 判断是否必须复用、更新或新增 Playwright E2E。E2E 只使用稳定 `data-testid`、可访问名称或项目 helper，不使用坐标、脆弱 CSS 层级或临时中文正文匹配作为长期选择器。

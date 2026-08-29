@@ -80,6 +80,7 @@
 | 🧪 **回测验证** | `BacktestView` | `/api/backtest/*` | ①策略回测：净值/绩效/逐笔成交（含卖出原因）；②评分验证：分层命中率与超额命中率；历史记录可按权限公开，公开记录可复用参数重跑 | [backtest.md](agent-works/architecture/backtest.md) |
 | ✅ **交易纪律** | `TradeDisciplineView`（`/trade-discipline`） | `/api/trade-discipline/*` | 维护私人交易规则和不可变版本，按真实交易日完成履约打卡、操作记录、历史修订；用户中心支持查看待办和快捷无操作履约 | [trade-discipline.md](agent-works/architecture/trade-discipline.md) |
 | 🔍 **个股与分组** | `StocksView` / `StockDetailView` | `/api/stocks/*`, `/api/stock-groups` | 服务端排序分页与跨页分组；查询页可在共享工作台中做多股走势对比和 K 线分析；详情页提供指标快照、买卖方案信号与连续翻看 | [stocks-and-groups.md](agent-works/architecture/stocks-and-groups.md) |
+| 🧭 **走势板块关联** | `StocksView` / `BoardView` / `ScreenView` / `ScheduleView` | `/api/stocks/*`, `/api/board/run`, `/api/screen/run`, `/api/data/*` | 在累计行业/概念候选中按市场中性化相关性选出当前冠军；页面统一展示相关度、有效样本和截止日，管理员通过任务与调度维护结果 | [stock-board-correlation.md](agent-works/architecture/stock-board-correlation.md) |
 | ⚙️ **配置管理** | `ConfigView`（`/system/config/{score,trade,tech,system}`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 四个子页：评分规则（可公开/复制/版本回看）/ 买卖指标（买入+卖出+兜底，可公开/复制）/ 技术指标（注册表）/ 系统设置（数据源、回测成本、认证与审计白名单） | [config-definitions.md](agent-works/architecture/config-definitions.md) |
 | 🎨 **布局配置** | `views/layout/{Presets,Pages,Components}`（`/system/layout/*`） | `/api/layout/*` | 可配置布局系统的产品化工作台 3 子页：预设管理（全局风格 token / 预设×组件默认 / 响应式默认）、页面布局（左预览右配置 + `default→preset→page→user` 四层来源追踪）、系统组件（组件能力目录 + 字段开放策略 + 页面 slot 自动继承覆盖） | [DESIGN.md](DESIGN.md) |
 | 🔐 **系统菜单 / 权限 / 租户** | `views/system/{UserManage,RoleManage,MenuResource,TenantManage}` | `/api/auth/*`, `/api/users`, `/api/roles`, `/api/menus`, `/api/resources`, `/api/tenants` | 登录会话、用户域、角色授权、菜单树、功能点和租户启停；接口、菜单、按钮同源授权 | [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) |
@@ -397,6 +398,7 @@ python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB
 | [CLAUDE.md](CLAUDE.md) | Claude Code 薄入口，指向 AGENTS 与 Claude 项目记忆 |
 | [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) | 登录鉴权、系统菜单、细粒度权限、多租户资产隔离和公开资产可见性的当前技术架构 |
 | [environment-configuration.md](agent-works/architecture/environment-configuration.md) | 环境变量、变量文件、YAML 基线、PG/DuckDB `app_config` 边界和配置生效规则 |
+| [stock-board-correlation.md](agent-works/architecture/stock-board-correlation.md) | 走势行业/概念冠军的算法口径、有效样本含义、任务落表、页面读取和风险边界 |
 | [multi-tenant-rbac](agent-works/multi-tenant-rbac/) | 系统菜单、权限、多租户相关需求与落地记录 |
 | [DESIGN.md — 前端设计与布局规范](DESIGN.md) | 前端布局事实源与页面开发契约：可配置布局系统、页面设计闭环、组件/布局维护矩阵、设置抽屉规范；强制规则归 `frontend/src/layout` + 契约测试 |
 | [page-template.md — 新页面开发模板](agent-works/configurable-layout-system/page-template.md) | AI/开发者新建或改造页面时复制使用的页面设计块、维护矩阵、7 个原型骨架和验收清单 |

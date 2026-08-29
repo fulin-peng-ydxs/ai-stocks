@@ -64,10 +64,13 @@ function formatCorrelation(value: number): string {
         <div><dt>综合相关度</dt><dd>{{ formatCorrelation(board.score) }}</dd></div>
         <div><dt>20 日相关度</dt><dd>{{ formatCorrelation(board.corr_20) }}</dd></div>
         <div><dt>60 日相关度</dt><dd>{{ formatCorrelation(board.corr_60) }}</dd></div>
-        <div><dt>20 日样本</dt><dd>{{ board.sample_20 }}</dd></div>
-        <div><dt>60 日样本</dt><dd>{{ board.sample_60 }}</dd></div>
+        <div><dt>20 日有效样本</dt><dd>{{ board.sample_20 }}</dd></div>
+        <div><dt>60 日有效样本</dt><dd>{{ board.sample_60 }}</dd></div>
         <div><dt>数据截止日</dt><dd>{{ asOfDate || '—' }}</dd></div>
       </dl>
+      <p class="related-board-cell__sample-note">
+        有效样本指股票、板块与基准三方同日均有可计算收益。
+      </p>
     </div>
   </el-popover>
 
@@ -171,5 +174,10 @@ function formatCorrelation(value: number): string {
 .related-board-cell__metrics dd {
   color: var(--el-text-color-primary);
   font-variant-numeric: tabular-nums;
+}
+
+.related-board-cell__sample-note {
+  margin: var(--app-space-2) 0 0;
+  color: var(--el-text-color-secondary);
 }
 </style>

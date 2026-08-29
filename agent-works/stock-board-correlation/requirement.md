@@ -1,6 +1,6 @@
 # 个股走势关联板块需求文档
 
-> 文档版本：2026-08-29
+> 文档版本：2026-08-30
 > 上游闭环：[`requirement-closure.md`](requirement-closure.md)（已确认）
 > 关联基础能力：[`concept-industry-board/requirement.md`](../concept-industry-board/requirement.md)
 > 页面原型：不生成。本次只更新既有表格列和调度表单，不新增页面、不重排主要区域、不引入复杂跨区域交互。
@@ -541,3 +541,15 @@ board_member + board_dict       daily_bar + board_bar + index_bar
 - **覆盖需求**：R1-R10。
 - **目标**：按项目规则复查防未来函数、累计成员表述、双库边界、权限、页面复用、任务互斥、性能和异常回退。
 - **里程碑**：无未修复的确定性问题；根据最终实现同步板块采集、数据管理、页面设计矩阵、数据字典等受影响事实文档，并生成同目录开发留痕和业务核查。
+
+### 开发阶段完成回写
+
+| 阶段 | 状态 | 实际完成与验证 | 关联文档 |
+| --- | --- | --- | --- |
+| 阶段 1：算法与当前结果基础 | 已完成 | T1-T4 已完成 DDL、v2 算法、完整性校验和原子替换；算法/存储/事务边界测试通过，真实全市场任务最终验证 5211 只股票和 67592 条候选成功切换 | [`plan.md`](plan.md)、[`development-trace.md`](development-trace.md) |
+| 阶段 2：任务与调度闭环 | 已完成 | T5、T9 已完成任务互斥、五阶段日志、范围/force 参数、动态调度和管理端交互；任务集成、调度、Vitest 与聚焦 E2E 通过 | [`plan.md`](plan.md)、[`development-trace.md`](development-trace.md) |
+| 阶段 3：通用读取与性能 | 已完成 | T6、T10 已完成四个后端消费点、日期保护和固定一次摘要 SQL；1/50/200 代码 P95 为 `2.498/3.761/6.293ms` | [`performance-report.md`](performance-report.md)、[`plan.md`](plan.md) |
+| 阶段 4：渐进接入三个业务页面 | 已完成 | T7-T10 已完成共享单元格、四个表格 slot、列配置、有效样本口径说明、真实榜单/筛选接口链路和三视口门禁；完整 `npm run test:design` 通过 | [`plan.md`](plan.md)、[`development-trace.md`](development-trace.md) |
+| 阶段 5：复审与事实同步 | 已完成 | T11 已修复复审发现的问题，并以 1024 股票规模回归、真实全市场任务和最终文档一致性检查收口；独立技术架构见 [`../architecture/stock-board-correlation.md`](../architecture/stock-board-correlation.md) | [`business-audit.md`](business-audit.md)、[`development-trace.md`](development-trace.md)、[`performance-report.md`](performance-report.md) |
+
+本回写只记录实际完成状态与验证证据，不改变 R1-R20 的范围、验收标准和建议项处理状态。
