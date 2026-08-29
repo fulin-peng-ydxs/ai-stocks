@@ -802,11 +802,51 @@ CREATE TABLE IF NOT EXISTS board_fund_flow (
 );
 """
 
+# 个股走势关联板块当前冠军：每只股票的行业/概念各最多一行，不保存历史快照或候选明细。
+DDL_STOCK_BOARD_CORRELATION = """
+CREATE TABLE IF NOT EXISTS stock_board_correlation (
+    code               VARCHAR NOT NULL,
+    board_type         VARCHAR NOT NULL CHECK (board_type IN ('industry', 'concept')),
+    board_code         VARCHAR NOT NULL,
+    score              DOUBLE NOT NULL CHECK (isfinite(score) AND score BETWEEN -1 AND 1),
+    corr_20            DOUBLE NOT NULL CHECK (isfinite(corr_20) AND corr_20 BETWEEN -1 AND 1),
+    corr_60            DOUBLE NOT NULL CHECK (isfinite(corr_60) AND corr_60 BETWEEN -1 AND 1),
+    sample_20          INTEGER NOT NULL CHECK (sample_20 >= 15),
+    sample_60          INTEGER NOT NULL CHECK (sample_60 >= 40),
+    confidence         VARCHAR NOT NULL CHECK (confidence IN ('high', 'medium', 'low')),
+    benchmark_code     VARCHAR NOT NULL,
+    benchmark_fallback BOOLEAN NOT NULL DEFAULT FALSE,
+    as_of_date         DATE NOT NULL,
+    computed_at        TIMESTAMP NOT NULL,
+    algorithm_version  VARCHAR NOT NULL,
+    PRIMARY KEY (code, board_type)
+);
+"""
+
+# 每股本轮计算状态：即使行业和概念都无合法冠军，也能表达已成功处理及实际数据口径。
+DDL_STOCK_BOARD_CORRELATION_STATE = """
+CREATE TABLE IF NOT EXISTS stock_board_correlation_state (
+    code                    VARCHAR PRIMARY KEY,
+    as_of_date              DATE NOT NULL,
+    computed_at             TIMESTAMP NOT NULL,
+    algorithm_version       VARCHAR NOT NULL,
+    benchmark_code          VARCHAR NOT NULL,
+    benchmark_fallback      BOOLEAN NOT NULL DEFAULT FALSE,
+    has_industry_champion   BOOLEAN NOT NULL DEFAULT FALSE,
+    has_concept_champion    BOOLEAN NOT NULL DEFAULT FALSE
+);
+"""
+
 M_BOARD_TABLES: dict[str, str] = {
     "board_dict": DDL_BOARD_DICT,
     "board_member": DDL_BOARD_MEMBER,
     "board_bar": DDL_BOARD_BAR,
     "board_fund_flow": DDL_BOARD_FUND_FLOW,
+}
+
+M_STOCK_BOARD_CORRELATION_TABLES: dict[str, str] = {
+    "stock_board_correlation": DDL_STOCK_BOARD_CORRELATION,
+    "stock_board_correlation_state": DDL_STOCK_BOARD_CORRELATION_STATE,
 }
 
 # 数据维度注册表 seed（DM-D4/D5）：已采集维度 + 规划中占位（股东数/筹码峰）。
@@ -948,7 +988,8 @@ def init_db(client: DuckDBClient | None = None) -> list[str]:
         client.execute(seq_sql)
     created: list[str] = []
     all_tables = {**M1_TABLES, **M2_TABLES, **M3_TABLES, **M4_TABLES, **M5_TABLES, **M6_TABLES,
-                  **M28_TABLES, **M_TRAINING_TABLES, **M_BOARD_TABLES}
+                  **M28_TABLES, **M_TRAINING_TABLES, **M_BOARD_TABLES,
+                  **M_STOCK_BOARD_CORRELATION_TABLES}
     for name, sql in all_tables.items():
         client.execute(sql)
         created.append(name)

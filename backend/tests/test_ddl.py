@@ -6,6 +6,7 @@ import pytest
 
 from backend.datasource.base import DataSource, with_retry
 from backend.storage.ddl import (
+    _DIMENSION_SEED,
     M1_TABLES,
     M2_TABLES,
     M3_TABLES,
@@ -13,9 +14,9 @@ from backend.storage.ddl import (
     M5_TABLES,
     M6_TABLES,
     M28_TABLES,
-    M_TRAINING_TABLES,
     M_BOARD_TABLES,
-    _DIMENSION_SEED,
+    M_STOCK_BOARD_CORRELATION_TABLES,
+    M_TRAINING_TABLES,
     init_db,
     list_tables,
 )
@@ -35,6 +36,7 @@ def test_init_db_creates_all_tables():
             **M28_TABLES,
             **M_TRAINING_TABLES,
             **M_BOARD_TABLES,
+            **M_STOCK_BOARD_CORRELATION_TABLES,
         }
         assert set(created) == set(expected.keys())
         tables = list_tables(client)

@@ -1,7 +1,7 @@
 # 个股走势关联板块开发计划
 
 > 计划版本：2026-08-29
-> 初始状态：待开始
+> 当前状态：进行中（T1 已完成；T2-T11 待开始）
 > 需求状态：业务闭环与正式需求已确认，无阻塞项
 > 本计划仅拆解实施任务，不进入代码开发。
 
@@ -259,14 +259,14 @@ index_bar + stock_basic ───┘       │ 固定算法 v1
 | --- | --- | --- | --- | --- | --- | --- |
 | 必须 | R1 | 累计归属服务、单股路由、批量内部接口、累计口径和更新时间 | T2 | 待开始 | 一致 | 服务/接口测试覆盖合法类型、去重排序、孤儿、空结果、权限 |
 | 必须 | R2 | 固定算法 v1、四类基准、整股回退、中性化、缩尾、双窗口、决胜和可信度 | T3 | 待开始 | 一致 | 固定夹具与人工期望对照；全部算法边界单测 |
-| 必须 | R3 | 当前冠军表、每股状态表、全量/范围原子替换、合法空清旧、失败回滚 | T1、T4 | 待开始 | 一致 | DDL与事务集成测试；连续日期行数稳定 |
+| 必须 | R3 | 当前冠军表、每股状态表、全量/范围原子替换、合法空清旧、失败回滚 | T1、T4 | 进行中 | 部分覆盖 | T1 已完成 DDL、约束与升级/回滚验证；T4 原子替换与失败回滚待实施 |
 | 必须 | R4 | 新任务类型、参数、写互斥、动态调度、阶段日志和结果统计 | T5、T9 | 待开始 | 一致 | API、任务集成、Vitest、聚焦 E2E |
 | 必须 | R5 | 单股/批量摘要、日期保护、三类业务批量合并、P95与无 N+1 | T6、T10 | 待开始 | 一致 | SQL 调用计数、接口回归、性能基准 |
 | 必须 | R6 | 共享单元格、统一标题/空态/悬浮/低可信提示/权限跳转、列配置 | T7、T10 | 待开始 | 一致 | 共享组件 Vitest、pageRegistry 契约、三页面 E2E |
 | 必须 | R7 | 股票普通表和分组表接入，保留旧行业/板块语义和排序口径 | T6、T8 | 待开始 | 一致 | API、StocksView Vitest、普通/分组 E2E |
 | 必须 | R8 | 仅 `/board/run` 接入，历史日期退化，`board/compute` 保持隔离 | T6、T8 | 待开始 | 一致 | Board API、页面测试、防未来回归 |
 | 必须 | R9 | 筛选命中批量接入、结果列和按可见列导出名称 | T6、T8 | 待开始 | 一致 | Screen API、Vitest、CSV 断言 |
-| 必须 | R10 | 任务可观测、结构体检、算法/API/前端/性能测试和事实文档 | T5、T9、T10、T11 | 待开始 | 一致 | 体检测试、测试命令、基准报告、自审清单 |
+| 必须 | R10 | 任务可观测、结构体检、算法/API/前端/性能测试和事实文档 | T1、T5、T9、T10、T11 | 进行中 | 部分覆盖 | T1 已完成结构约束、目录和存储测试；任务、全链路体检及最终事实文档待后续任务 |
 | 建议 | R11 | 暂不纳入 | - | 跳过 | 未覆盖 | 候选接口返回 `membership_scope=cumulative`，不声称当前有效 |
 | 建议 | R12 | 暂不纳入 | - | 跳过 | 未覆盖 | DDL 无日期历史主键，连续任务不增长 |
 | 建议 | R13 | 暂不纳入 | - | 跳过 | 未覆盖 | `/stocks/:code` 代码、请求、pageRegistry 回归无变化 |
@@ -282,7 +282,7 @@ index_bar + stock_basic ───┘       │ 固定算法 v1
 
 ### 6.1 任务 T1：新增当前结果数据结构、升级 SQL 与数据目录
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：无
 - 需求：R3、R10
 - 涉及：`backend/storage/ddl.py`、`backend/storage/catalog.py`、`agent-works/stock-board-correlation/create-stock-board-correlation.sql`、`agent-works/stock-board-correlation/rollback-stock-board-correlation.sql`、存储测试。
@@ -292,7 +292,7 @@ index_bar + stock_basic ───┘       │ 固定算法 v1
 - 边界：只读连接跳过 DDL；迁移不得 seed 调度、菜单或权限；表为空时页面正常退化。
 - 验证：隔离 DuckDB 执行两次初始化均成功；`PRAGMA table_info`/约束与计划一致；目录可见；回滚脚本只删除两个派生表。
 - 完成标准：新旧库均可获得结构，重复执行幂等，SQL 注释和回滚完整。
-- 实际落地情况：待实施
+- 实际落地情况：已在 `backend/storage/ddl.py` 新增 `stock_board_correlation` 与 `stock_board_correlation_state`，纳入 `init_db` 和数据目录；冠军表按 `(code, board_type)` 唯一，约束合法类型、有限相关值、15/40 最低样本和可信度，状态表可表达行业/概念均无冠军的合法空结果。已提供幂等正向 SQL、仅删除两张派生表的回滚 SQL及专用存储测试；未创建调度、菜单、权限或初始化数据，也未进入 T2。
 
 ### 6.2 任务 T2：实现累计行业/概念归属服务与单股契约
 
@@ -449,6 +449,8 @@ index_bar + stock_basic ───┘       │ 固定算法 v1
 
 SQL 文件实施要求：必须包含总体用途、字段注释、前置条件、执行语句、影响范围、验证 SQL 和回滚说明；不得包含本地数据库路径、密钥或调度 seed。
 
+T1 实际状态：上述两张 DuckDB 当前态表、正向/回滚 SQL 和数据目录均已落地；后续调度、页面列、算法配置与 E2E 夹具仍保持待实施。
+
 ## 8. 测试与验证计划
 
 ### 8.1 后端单元与集成
@@ -458,7 +460,7 @@ SQL 文件实施要求：必须包含总体用途、字段注释、前置条件�
 - 接口：R1 单股归属、摘要结构、空集合、日期不匹配、股票/分组/榜单/筛选批量合并、`board_compute` 隔离、401/403 和路由资源扫描。
 - 查询计数：50/200 行调用前后固定次数，不允许逐行读取相关性。
 - 计划命令：先判断服务锁状态，再运行新增测试文件及受影响既有测试，例如 `python -m pytest backend/tests/test_stock_board_correlation.py backend/tests/test_api.py backend/tests/test_stock_group.py backend/tests/test_stage4_board.py backend/tests/test_stage5_resource_codes.py -q`。
-- 具体完成情况：待验证。
+- 具体完成情况：T1 已执行 `python -m pytest backend/tests/test_stock_board_correlation_storage.py backend/tests/test_ddl.py backend/tests/test_data_management.py -q`，结果 `35 passed in 2.32s`；覆盖初始化幂等、只读跳过 DDL、主键和字段、非法值约束、目录登记与新鲜度、正向 SQL 重复执行及回滚不影响无关表。算法、事务切换、接口和查询计数属于 T3/T4/T6/T10，仍待验证。
 
 ### 8.2 性能基准
 

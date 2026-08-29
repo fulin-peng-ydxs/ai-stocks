@@ -16,7 +16,16 @@ from backend.storage.duckdb_client import DuckDBClient, get_client
 # 时序数据表：其"最新数据时间"应跟上全局最新交易日，据此判鲜活（M2.9 DM-D15）。
 # 非时序表（日历/日志/质检台账）鲜活度无意义，fresh=None。
 _TIMESERIES_TABLES: frozenset[str] = frozenset(
-    {"daily_bar", "daily_metrics", "index_bar", "board_bar", "board_fund_flow"})
+    {
+        "daily_bar",
+        "daily_metrics",
+        "index_bar",
+        "board_bar",
+        "board_fund_flow",
+        "stock_board_correlation",
+        "stock_board_correlation_state",
+    }
+)
 
 _BOARD_ISSUES_BY_TABLE: dict[str, tuple[str, ...]] = {
     "board_dict": ("board_index_gap", "board_index_invalid", "board_member_incomplete", "board_fund_unmatched"),
@@ -204,6 +213,48 @@ TABLE_CATALOG: dict[str, dict] = {
             {"name": "net_inflow", "type": "DOUBLE", "name_cn": "净流入", "desc": ""},
             {"name": "leader_stock", "type": "VARCHAR", "name_cn": "领涨股", "desc": ""},
             {"name": "leader_pct", "type": "DOUBLE", "name_cn": "领涨股涨幅", "desc": ""},
+        ],
+    },
+    "stock_board_correlation": {
+        "name_cn": "个股走势关联板块冠军",
+        "purpose": "每只股票当前行业/概念走势相关冠军及双窗口市场中性相关结果；仅保存当前态，不保存候选和历史快照。",
+        "date_col": "as_of_date",
+        "relations": [
+            "code → stock_basic",
+            "board_code → board_dict",
+            "code → stock_board_correlation_state",
+        ],
+        "fields": [
+            {"name": "code", "type": "VARCHAR", "name_cn": "股票代码", "desc": "主键之一"},
+            {"name": "board_type", "type": "VARCHAR", "name_cn": "板块类型", "desc": "industry / concept，主键之一"},
+            {"name": "board_code", "type": "VARCHAR", "name_cn": "冠军板块代码", "desc": "关联 board_dict"},
+            {"name": "score", "type": "DOUBLE", "name_cn": "综合相关分", "desc": "0.6×corr_20 + 0.4×corr_60"},
+            {"name": "corr_20", "type": "DOUBLE", "name_cn": "20日相关系数", "desc": "市场中性收益相关系数"},
+            {"name": "corr_60", "type": "DOUBLE", "name_cn": "60日相关系数", "desc": "市场中性收益相关系数"},
+            {"name": "sample_20", "type": "INTEGER", "name_cn": "20日样本数", "desc": "冠军至少 15 个有效样本"},
+            {"name": "sample_60", "type": "INTEGER", "name_cn": "60日样本数", "desc": "冠军至少 40 个有效样本"},
+            {"name": "confidence", "type": "VARCHAR", "name_cn": "可信度", "desc": "high / medium / low"},
+            {"name": "benchmark_code", "type": "VARCHAR", "name_cn": "实际基准", "desc": "本股中性化实际使用的市场指数"},
+            {"name": "benchmark_fallback", "type": "BOOLEAN", "name_cn": "是否回退基准", "desc": "板块基准不足时整股回退上证指数"},
+            {"name": "as_of_date", "type": "DATE", "name_cn": "数据截止日", "desc": "本轮共同目标交易日"},
+            {"name": "computed_at", "type": "TIMESTAMP", "name_cn": "计算时间", "desc": "本轮成功计算时间"},
+            {"name": "algorithm_version", "type": "VARCHAR", "name_cn": "算法版本", "desc": "用于强制重算与一致性校验"},
+        ],
+    },
+    "stock_board_correlation_state": {
+        "name_cn": "个股走势关联板块状态",
+        "purpose": "记录每只股票最近一次成功处理口径及行业/概念冠军是否存在，使两类合法为空时仍可与未计算区分。",
+        "date_col": "as_of_date",
+        "relations": ["code → stock_basic", "code → stock_board_correlation"],
+        "fields": [
+            {"name": "code", "type": "VARCHAR", "name_cn": "股票代码", "desc": "主键"},
+            {"name": "as_of_date", "type": "DATE", "name_cn": "数据截止日", "desc": "本轮共同目标交易日"},
+            {"name": "computed_at", "type": "TIMESTAMP", "name_cn": "计算时间", "desc": "本轮成功处理时间"},
+            {"name": "algorithm_version", "type": "VARCHAR", "name_cn": "算法版本", "desc": "与冠军结果保持一致"},
+            {"name": "benchmark_code", "type": "VARCHAR", "name_cn": "实际基准", "desc": "本股中性化实际使用的市场指数"},
+            {"name": "benchmark_fallback", "type": "BOOLEAN", "name_cn": "是否回退基准", "desc": "是否整股回退上证指数"},
+            {"name": "has_industry_champion", "type": "BOOLEAN", "name_cn": "有行业冠军", "desc": "FALSE 可表示合法空结果"},
+            {"name": "has_concept_champion", "type": "BOOLEAN", "name_cn": "有概念冠军", "desc": "FALSE 可表示合法空结果"},
         ],
     },
 }
