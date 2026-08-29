@@ -88,7 +88,7 @@ R1-R10 全部纳入本次开发，按 T1-T11 依赖顺序实施。任何一个�
 ```text
 board_member + board_dict ─┐
 daily_bar + board_bar ─────┼─> StockBoardCorrelationCalculator
-index_bar + stock_basic ───┘       │ 固定算法 v1
+index_bar + stock_basic ───┘       │ 版本化相关性算法（当前 v2）
                                     v
                          候选内存结果 + 每股计算状态
                                     │ 完整性校验
@@ -128,7 +128,7 @@ index_bar + stock_basic ───┘       │ 固定算法 v1
 - 新增 `GET /api/stocks/{code}/related-boards`，返回 `membership_scope=cumulative`、`membership_updated_at`、`industries`、`concepts` 及当前摘要；不存在股票或无关系返回空数组，不用 `stock_basic.industry` 兜底。
 - 路由复用 `stocks:view`，不新增资源码；同步后端路由权限扫描测试和前端 API 类型。三个列表页面不调用该单股路由，而由原接口内部批量服务合并。
 
-### 4.4 R2 算法 v1
+### 4.4 R2 版本化相关性算法
 
 - 当前版本常量为 `stock-board-correlation-v2`；v2 修正基准目标日有效性并使既有 v1 状态自动触发重算。窗口、权重、样本、缩尾、基准映射仍全部写在同一领域模块中，不进入调度参数。
 - `as_of_date` 为不晚于 `trade_calendar` 开市日和 `daily_bar`、`board_bar`、`index_bar` 三类数据族最新日期的共同任务级目标日；所有 SQL 显式 `<= as_of_date`，单个陈旧候选不能反向改写任务日期。
@@ -309,7 +309,7 @@ index_bar + stock_basic ───┘       │ 固定算法 v1
 - 完成标准：R1 输出字段、权限与异常全部可观察，现有资源 seed 无重复项。
 - 实际落地情况：已新增 `backend/services/stock_codes.py`，由既有个股采集参数和相关性领域服务共用沪深代码规范化与稳定去重；新增 `StockBoardCorrelationService.get_membership/get_memberships`，通过一次 `board_member INNER JOIN stock_basic INNER JOIN board_dict` 查询过滤未知股票、板块字典孤儿和非法类型，按名称/代码稳定排序，返回累计口径及有效关系中的最大 `member_snapshot_at`。已新增受 `stocks:view` 保护的 `GET /api/stocks/{code}/related-boards` 和前端 API 类型/调用封装；本阶段未读取冠军表、未接入列表或页面，冠军摘要与日期保护仍归 T6。
 
-### 6.3 任务 T3：实现相关性算法 v1
+### 6.3 任务 T3：实现版本化相关性算法
 
 - 状态：已完成
 - 依赖：T2
@@ -461,7 +461,7 @@ T1 实际状态：上述两张 DuckDB 当前态表、正向/回滚 SQL 和数据
 - 接口：R1 单股归属、摘要结构、空集合、日期不匹配、股票/分组/榜单/筛选批量合并、`board_compute` 隔离、401/403 和路由资源扫描。
 - 查询计数：50/200 行调用前后固定次数，不允许逐行读取相关性。
 - 计划命令：先判断服务锁状态，再运行新增测试文件及受影响既有测试，例如 `python -m pytest backend/tests/test_stock_board_correlation.py backend/tests/test_api.py backend/tests/test_stock_group.py backend/tests/test_stage4_board.py backend/tests/test_stage5_resource_codes.py -q`。
-- 具体完成情况：T1 存储、DDL、目录聚焦测试为 `35 passed`；T2 累计归属、采集兼容和接口聚焦测试为 `44 passed`。T3 执行算法、归属和存储聚焦回归为 `31 passed`。T4 聚焦回归为 `47 passed`。T5 及本次 R2 修订执行 `python -m pytest backend/tests/test_stock_board_correlation_task.py backend/tests/test_stock_board_correlation_orchestration.py backend/tests/test_stock_board_correlation_algorithm.py backend/tests/test_stock_board_correlation_membership.py backend/tests/test_stock_board_correlation_storage.py backend/tests/test_pipeline.py backend/tests/test_data_mgmt_b.py -q`，结果 `151 passed in 12.47s`；覆盖目标日基准缺失、上证失败并保留旧正式结果、中间缺口不误回退、v1 状态自动重算、唯一代码收益预计算，以及参数、注册、互斥、阶段日志、成功/跳过/失败统计、取消、重启中断、调度 CRUD/重试配置/立即运行、既有依赖事件等待写槽位和失败重试。批量摘要日期保护、前端任务表单和列表合并仍待 T6/T9/T10。
+- 具体完成情况：T1 存储、DDL、目录聚焦测试为 `35 passed`；T2 累计归属、采集兼容和接口聚焦测试为 `44 passed`。T3 执行算法、归属和存储聚焦回归为 `31 passed`。T4 聚焦回归为 `47 passed`。T5 及本次 R2 修订执行 `python -m pytest backend/tests/test_stock_board_correlation_benchmark.py backend/tests/test_stock_board_correlation_task.py backend/tests/test_stock_board_correlation_orchestration.py backend/tests/test_stock_board_correlation_algorithm.py backend/tests/test_stock_board_correlation_membership.py backend/tests/test_stock_board_correlation_storage.py backend/tests/test_pipeline.py backend/tests/test_data_mgmt_b.py -q`，结果 `153 passed in 13.14s`；覆盖确定性基准入口、目标日基准缺失、上证失败并保留旧正式结果、中间缺口不误回退、v1 状态自动重算、唯一代码收益预计算，以及参数、注册、互斥、阶段日志、成功/跳过/失败统计、取消、重启中断、调度 CRUD/重试配置/立即运行、既有依赖事件等待写槽位和失败重试。批量摘要日期保护、前端任务表单和列表合并仍待 T6/T9/T10。
 
 ### 8.2 性能基准
 
@@ -469,7 +469,7 @@ T1 实际状态：上述两张 DuckDB 当前态表、正向/回滚 SQL 和数据
 - 条件：本地预热 DuckDB、不含公网、同一硬件连续多轮，报告样本数、P50/P95、SQL 次数和数据规模。
 - 门槛：单股 P95≤10ms、50只≤20ms、200只≤50ms；数据库请求次数不随行数线性增长。
 - 报告路径：`agent-works/stock-board-correlation/performance-report.md`。
-- 具体完成情况：全量计算初测已按 5000 股票、50000 候选执行，结果见 `performance-report.md`；已验证板块与基准收益按唯一代码预计算，纯计算单轮为 `59.561s`、`839 candidate/s`、计算阶段 Python 分配峰值 `2.25 MiB`。该数据是开启 `tracemalloc` 的单轮算法基线，不冒充最终多轮 P50/P95；1/50/200 代码冠军摘要读取基准仍待 T6/T10。
+- 具体完成情况：仓库内确定性入口已按固定种子 `20260829`、5000 股票、50000 候选执行，结果见 `performance-report.md`；已验证板块与基准收益按唯一代码预计算，纯计算单轮为 `61.646693s`、`811.074 candidate/s`、计算阶段 Python 分配峰值 `2.66 MiB`。该数据是开启 `tracemalloc` 的单轮算法基线，不冒充最终多轮 P50/P95；1/50/200 代码冠军摘要读取基准仍待 T6/T10。
 
 ### 8.3 前端组件、页面与配置
 
