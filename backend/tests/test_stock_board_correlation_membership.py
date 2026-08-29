@@ -88,6 +88,35 @@ def test_membership_batch_is_one_query_and_filters_invalid_relations():
         assert result["000001.SZ"]["membership_updated_at"] is None
 
 
+def test_membership_large_batch_avoids_duckdb_window_parameter_internal_error():
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        codes = [f"{700000 + index}.SH" for index in range(1024)]
+        market.execute(
+            "INSERT INTO board_dict (board_code,name,board_type,member_snapshot_at) "
+            "VALUES ('large-industry','大批量行业','industry',"
+            "TIMESTAMP '2026-08-28 18:00:00')"
+        )
+        market.conn.executemany(
+            "INSERT INTO stock_basic (code,name,board) VALUES (?,?,'主板')",
+            [(code, f"大批量股票{index}") for index, code in enumerate(codes)],
+        )
+        market.conn.executemany(
+            "INSERT INTO board_member (board_code,code) VALUES ('large-industry',?)",
+            [(code,) for code in codes],
+        )
+        counting = _CountingClient(market)
+
+        result = StockBoardCorrelationService(counting).get_memberships(codes)  # type: ignore[arg-type]
+
+        assert counting.queries == 1
+        assert len(result) == len(codes)
+        assert result[codes[-1]]["membership_updated_at"] == "2026-08-28T18:00:00"
+        assert result[codes[-1]]["industries"] == [
+            {"board_code": "large-industry", "name": "大批量行业", "board_type": "industry"}
+        ]
+
+
 def test_empty_membership_batch_does_not_query():
     counting = _CountingClient(DuckDBClient(db_path=":memory:"))
     assert StockBoardCorrelationService(counting).get_memberships([]) == {}  # type: ignore[arg-type]

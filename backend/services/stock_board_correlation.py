@@ -103,12 +103,6 @@ class CorrelationRunResult:
     switched: bool
 
 
-def _timestamp_text(value: object) -> str | None:
-    if value is None or pd.isna(value):
-        return None
-    return pd.Timestamp(value).isoformat()
-
-
 def _price_series_by_code(
     frame: pd.DataFrame,
     *,
@@ -653,8 +647,7 @@ class StockBoardCorrelationService:
         placeholders = ",".join("?" for _ in normalized)
         rows = self.c.query_df(
             "SELECT bm.code, bd.board_code, bd.name, bd.board_type, "
-            "       max(bd.member_snapshot_at) OVER (PARTITION BY bm.code) "
-            "           AS membership_updated_at "
+            "       bd.member_snapshot_at "
             "FROM board_member bm "
             "INNER JOIN stock_basic sb ON sb.code = bm.code "
             "INNER JOIN board_dict bd ON bd.board_code = bm.board_code "
@@ -666,15 +659,23 @@ class StockBoardCorrelationService:
         )
 
         seen: set[tuple[str, str, str]] = set()
+        latest_membership_at: dict[str, pd.Timestamp] = {}
         for row in rows.to_dict("records"):
             code = str(row["code"])
+            if code not in result:
+                continue
+            snapshot_at = row.get("member_snapshot_at")
+            if snapshot_at is not None and not pd.isna(snapshot_at):
+                snapshot_ts = pd.Timestamp(snapshot_at)
+                if snapshot_ts > latest_membership_at.get(code, pd.Timestamp.min):
+                    latest_membership_at[code] = snapshot_ts
+                    result[code]["membership_updated_at"] = snapshot_ts.isoformat()
             board_type = str(row["board_type"])
             board_code = str(row["board_code"])
             key = (code, board_type, board_code)
-            if code not in result or key in seen:
+            if key in seen:
                 continue
             seen.add(key)
-            result[code]["membership_updated_at"] = _timestamp_text(row["membership_updated_at"])
             if board_type == "industry":
                 result[code]["industries"].append(
                     {
