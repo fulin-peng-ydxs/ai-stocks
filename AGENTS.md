@@ -105,6 +105,7 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 - `./start.sh e2e-stock-board-correlation seed|cleanup` 是个股走势关联板块的确定性 DuckDB 夹具，只写 `9977*.SZ`、`E2ECORR_*`、`E2E相关-*`、`e2e_sbc_*` 和 2097 年固定行情/当前冠军/调度任务；同样受本地环境 + `AI_STOCKS_E2E_WRITE=1` 双重门控。聚焦回归统一使用 `cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:stock-board-correlation`，脚本负责账号校准、停服、夹具生命周期、零残留检查和原后端运行档案恢复。
 - `./start.sh e2e-trade-discipline seed|cleanup --expected-pg-fingerprint <64位十六进制>` 是交易纪律的确定性 PG + DuckDB 夹具，仅写 `debug_tenant` 固定调试账号归属下 `e2e_td_`/`E2E纪律-`/`E2E类型-` 前缀数据和 DuckDB 的 `9988*.SZ`、2098 年固定交易日；两个动作均要求本地环境、`AI_STOCKS_E2E_WRITE=1`、后端 `/api/health/e2e` 指纹与夹具直连 PG 一致，并须在后端停服时执行。聚焦回归只使用 `cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:trade-discipline`，脚本负责指纹、账号校准、服务切换、夹具清理，并按 `start.sh` 生成的不含密钥运行档案恢复原模式、环境文件、安全开关和 PG 目标；档案只保存额外项目环境变量的不可逆摘要，恢复前还须核对环境文件与这些摘要。原服务运行但档案缺失或不匹配时必须在停服前 fail-closed。
 - 跑**全量 Playwright**（多 spec 三视口并行）时，被测后端还须额外 `AI_STOCKS_E2E_LOGIN_BYPASS=1`：三视口为独立 worker 进程，各自密集 `POST /auth/login`（同源 127.0.0.1），不豁免会撞 `login_rate_per_min`（默认 10/min）单 IP 限流导致大面积登录失败。该豁免三重门控（环境白名单 + `AI_STOCKS_E2E_WRITE=1` + 本变量），仅放开 login 的 IP 限流，回归结束后重启后端移除。
+- 完整设计验收统一执行 `cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:design`；其 Playwright 阶段由 `scripts/run-design-e2e.sh` 按普通读写、板块夹具、关联板块夹具、交易纪律夹具、公开回测只读五组串行编排，禁止把不同固定日期夹具同时 seed 后跑单轮全量。入口负责快照和恢复原后端参数，任何一组失败均执行精确清理。
 
 ## 协作与提交
 

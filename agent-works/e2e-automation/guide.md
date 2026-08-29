@@ -92,10 +92,14 @@ Playwright 固定使用前端 `5181`，避免抢占日常开发端口 `5173`；�
 `./start.sh e2e-user` 创建/销毁用户；该入口与后端复用 `.env.local` 加载，且后端、Playwright
 和夹具必须同时处于明确 dev/test/local 环境并启用 `AI_STOCKS_E2E_WRITE=1`。任一条件缺失、
 PG 指纹不一致或后端运行中切换数据库时均 fail-closed，不执行物理清理。
-完整设计验收入口 `npm run test:design` 还会在 Vitest、构建和 Playwright 之前请求同一
+完整设计验收入口 `npm run test:design` 会在 Vitest、构建和 Playwright 之前请求同一
 `/api/health/e2e` 契约；后端不可访问、业务码非 `0` 或 PG 指纹非法时立即停止，并提示使用
-相同 `AI_STOCKS_ENV` 与 `AI_STOCKS_E2E_WRITE=1` 重启后端。自定义后端地址时，前置检查与
-Playwright 统一读取 `E2E_API_URL`。
+相同 `AI_STOCKS_ENV` 与 `AI_STOCKS_E2E_WRITE=1` 重启后端。单独运行前置检查或普通 Playwright
+时可统一设置 `E2E_API_URL`；完整设计 E2E 会管理本机后端和物理夹具，为防止远端/本地目标
+错配，仅允许默认 `http://127.0.0.1:8000/api`。Playwright 阶段由 `scripts/run-design-e2e.sh` 分组编排：
+普通无物理夹具 spec 先共享读写后端串行执行；板块、关联板块、交易纪律分别复用各自专用
+runner，在每组之间完成精确 seed/cleanup；公开回测最后切换 DuckDB 只读后端单独执行。
+总入口会快照并恢复测试前后端运行参数，失败、中断和成功退出都不保留 E2E 安全开关或夹具。
 `frontend/playwright-report/` 是本地忽略的可打开验收产物；用例通过 `testInfo.attach()` 附加的截图会进入该报告。需要对外归档时由 CI 或发布流程保存整个报告目录，不在业务提交中追踪哈希附件。
 
 控制台问题统一通过 `frontend/e2e/helpers/console.ts::collectConsoleIssues()` 收集，默认同时阻断 `error` 和 `warning`。路由注入形成的预期 HTTP 失败必须通过 `allowedHttpStatuses` 显式声明；不得在用例内复制监听器、只检查 `error` 或私自放宽 warning 口径。

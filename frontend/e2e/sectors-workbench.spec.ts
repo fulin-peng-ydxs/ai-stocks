@@ -366,8 +366,9 @@ test.describe('板块行情工作台', () => {
     await scrollWrap.evaluate((node) => { node.scrollLeft = 80 })
     await expect.poll(() => scrollWrap.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0)
 
-    await page.getByTestId('sectors-help-tip').focus()
-    await expect(page.getByText('涨幅口径', { exact: true })).toBeVisible()
+    // 按共享 HelpTip 声明的 hover 交互打开说明，断言组件实际问题文案。
+    await page.getByTestId('sectors-help-tip').hover()
+    await expect(page.getByText('涨幅口径是什么：', { exact: true })).toBeVisible()
     await page.keyboard.press('Escape')
 
     const hideAnalysis = page.getByTestId('sectors-hide-analysis')

@@ -9,6 +9,9 @@ const FRONTEND_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const CHECK_SCRIPT = fileURLToPath(
   new URL('../../../scripts/check-design-test-env.mjs', import.meta.url),
 )
+const DESIGN_E2E_SCRIPT = fileURLToPath(
+  new URL('../../../../scripts/run-design-e2e.sh', import.meta.url),
+)
 
 interface CheckResult {
   stdout: string
@@ -91,6 +94,17 @@ describe('完整设计验收环境前置检查', () => {
     expect(packageJson.scripts['test:design']).toMatch(
       /^node scripts\/check-design-test-env\.mjs && /,
     )
+  })
+
+  it('Playwright 按互斥夹具和 DuckDB 模式分组编排', () => {
+    const script = readFileSync(DESIGN_E2E_SCRIPT, 'utf8')
+
+    expect(script).toContain('run-sector-e2e.sh')
+    expect(script).toContain('run-stock-board-correlation-e2e.sh')
+    expect(script).toContain('run-trade-discipline-e2e.sh')
+    expect(script).toContain('e2e/backtest-public-runs.spec.ts')
+    expect(script).toContain('stop_and_start_backend 1')
+    expect(script).toContain('stock-board-correlation|trade-discipline')
   })
 
   it('调用方未显式启用安全环境时在访问后端前失败', async () => {
