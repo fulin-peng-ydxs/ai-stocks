@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable
+import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Literal, TypedDict
@@ -70,6 +71,8 @@ class CorrelationRunResult:
     skipped_count: int
     benchmark_counts: dict[str, int]
     fallback_count: int
+    calculation_seconds: float
+    write_seconds: float
     switched: bool
 
 
@@ -94,6 +97,37 @@ def _price_series_by_code(
             None if price is None or pd.isna(price) else float(price)
         )
     return result
+
+
+def normalize_correlation_task_params(
+    params: dict[str, Any] | None,
+    *,
+    client: DuckDBClient | None = None,
+) -> dict[str, Any]:
+    """规范任务/调度共用参数，并在保存时拒绝未知或项目范围外股票。"""
+    if params is not None and not isinstance(params, dict):
+        raise ValueError("个股走势关联板块任务参数必须是对象")
+    raw = dict(params or {})
+    unknown = sorted(set(raw) - {"codes", "force"})
+    if unknown:
+        raise ValueError(f"个股走势关联板块任务不支持参数: {','.join(unknown)}")
+    force = raw.get("force", False)
+    if not isinstance(force, bool):
+        # API/调度校验统一以 ValueError 映射 400，不让类型错误逃逸成 500。
+        raise ValueError("个股走势关联板块任务的 force 必须是布尔值")  # noqa: TRY004
+    raw_codes = raw.get("codes")
+    if raw_codes is None:
+        codes: list[str] = []
+    elif isinstance(raw_codes, str):
+        code_parts = [part for part in raw_codes.split(",") if part.strip()]
+        codes = normalize_stock_codes(code_parts)
+    elif isinstance(raw_codes, Iterable) and not isinstance(raw_codes, (dict, bytes)):
+        codes = normalize_stock_codes(raw_codes)
+    else:
+        raise ValueError("个股走势关联板块任务的 codes 必须是数组或逗号分隔文本")
+    if codes and client is not None:
+        StockBoardCorrelationService(client).validate_configured_codes(codes)
+    return {"codes": codes, "force": force}
 
 
 class StockBoardCorrelationService:
@@ -179,6 +213,30 @@ class StockBoardCorrelationService:
             raise CorrelationInputError("股票范围校验失败: " + "; ".join(errors))
         return normalized, False
 
+    def validate_configured_codes(self, codes: Iterable[object]) -> list[str]:
+        """调度保存期只校验存在性和项目板块；上市/退市点时状态留到执行期校验。"""
+        normalized = normalize_stock_codes(codes)
+        if not normalized:
+            return []
+        placeholders = ",".join("?" for _ in normalized)
+        rows = self.c.query_df(
+            f"SELECT code, board FROM stock_basic WHERE code IN ({placeholders})",
+            normalized,
+        )
+        by_code = {
+            str(row["code"]): None if pd.isna(row["board"]) else str(row["board"])
+            for row in rows.to_dict("records")
+        }
+        errors = []
+        for code in normalized:
+            if code not in by_code:
+                errors.append(f"{code}:未知股票")
+            elif by_code[code] not in ("主板", "创业板", "科创板"):
+                errors.append(f"{code}:不属于主板/创业板/科创板")
+        if errors:
+            raise CorrelationInputError("股票范围校验失败: " + "; ".join(errors))
+        return normalized
+
     def _target_is_current(
         self,
         codes: list[str],
@@ -208,6 +266,50 @@ class StockBoardCorrelationService:
         )
         return state_count == len(codes) and outside_winners == 0
 
+    def _current_scope_statistics(self, codes: list[str]) -> dict[str, Any]:
+        """跳过计算时读取当前范围真实统计，避免把“未重算”误报成零冠军。"""
+        placeholders = ",".join("?" for _ in codes)
+        candidates = int(self.c.query_df(
+            "SELECT count(*) AS n FROM board_member bm "
+            "INNER JOIN board_dict bd ON bd.board_code=bm.board_code "
+            f"WHERE bm.code IN ({placeholders}) "
+            "AND bd.board_type IN ('industry','concept')",
+            codes,
+        ).iloc[0]["n"])
+        champions = self.c.query_df(
+            "SELECT board_type,count(*) AS n FROM stock_board_correlation "
+            f"WHERE code IN ({placeholders}) GROUP BY board_type",
+            codes,
+        )
+        champion_counts = {
+            str(row["board_type"]): int(row["n"])
+            for row in champions.to_dict("records")
+        }
+        state = self.c.query_df(
+            "SELECT count(*) FILTER (WHERE NOT has_industry_champion "
+            "AND NOT has_concept_champion) AS empty_count, "
+            "count(*) FILTER (WHERE benchmark_fallback) AS fallback_count "
+            "FROM stock_board_correlation_state "
+            f"WHERE code IN ({placeholders})",
+            codes,
+        ).iloc[0]
+        benchmarks = self.c.query_df(
+            "SELECT benchmark_code,count(*) AS n FROM stock_board_correlation_state "
+            f"WHERE code IN ({placeholders}) GROUP BY benchmark_code",
+            codes,
+        )
+        return {
+            "candidate_count": candidates,
+            "industry_count": champion_counts.get("industry", 0),
+            "concept_count": champion_counts.get("concept", 0),
+            "empty_count": int(state["empty_count"] or 0),
+            "fallback_count": int(state["fallback_count"] or 0),
+            "benchmark_counts": {
+                str(row["benchmark_code"]): int(row["n"])
+                for row in benchmarks.to_dict("records")
+            },
+        }
+
     def compute_and_replace(
         self,
         codes: Iterable[object] | None = None,
@@ -215,17 +317,40 @@ class StockBoardCorrelationService:
         force: bool = False,
         upper_bound: date | None = None,
         computed_at: datetime | None = None,
+        phase_callback: Callable[[str], None] | None = None,
+        cancel_check: Callable[[], None] | None = None,
     ) -> CorrelationRunResult:
         """完整计算目标范围，并在校验成功后原子替换两张当前态表。"""
+
+        def enter_phase(phase: str) -> None:
+            if phase_callback is not None:
+                phase_callback(phase)
+            if cancel_check is not None:
+                cancel_check()
+
         if not isinstance(force, bool):
             raise CorrelationInputError("force 必须为布尔值")
+        enter_phase("read_candidates")
         target_date = self.resolve_target_date(upper_bound)
         targets, full_scope = self.resolve_target_codes(target_date, codes)
         if not force and self._target_is_current(targets, target_date, full_scope=full_scope):
+            current = self._current_scope_statistics(targets)
             return CorrelationRunResult(
-                target_date, len(targets), 0, 0, 0, 0, len(targets), {}, 0, False
+                target_date,
+                len(targets),
+                current["candidate_count"],
+                current["industry_count"],
+                current["concept_count"],
+                current["empty_count"],
+                len(targets),
+                current["benchmark_counts"],
+                current["fallback_count"],
+                0.0,
+                0.0,
+                False,
             )
 
+        enter_phase("load_prices")
         bundle = self.load_correlation_inputs(targets, target_date)
         if bundle.as_of_date != target_date:
             raise CorrelationInputError("批量输入实际日期与目标日不一致")
@@ -233,20 +358,26 @@ class StockBoardCorrelationService:
             missing = sorted(set(targets) - set(bundle.stock_boards))
             raise CorrelationInputError(f"批量输入缺少目标股票: {','.join(missing)}")
 
-        results = [
-            calculate_stock_correlations(
-                code=code,
-                board=bundle.stock_boards[code],
-                calendar_dates=bundle.calendar_dates,
-                stock_closes=bundle.stock_closes.get(code, {}),
-                candidates=bundle.candidates.get(code, ()),
-                board_closes=bundle.board_closes,
-                benchmark_closes=bundle.benchmark_closes,
+        enter_phase("calculate")
+        calculation_started = time.perf_counter()
+        results = []
+        for index, code in enumerate(targets):
+            if index and index % 100 == 0 and cancel_check is not None:
+                cancel_check()
+            results.append(
+                calculate_stock_correlations(
+                    code=code,
+                    board=bundle.stock_boards[code],
+                    calendar_dates=bundle.calendar_dates,
+                    stock_closes=bundle.stock_closes.get(code, {}),
+                    candidates=bundle.candidates.get(code, ()),
+                    board_closes=bundle.board_closes,
+                    benchmark_closes=bundle.benchmark_closes,
+                )
             )
-            for code in targets
-        ]
         # DuckDB computed_at 为无时区 TIMESTAMP，沿用仓库既有本地时间口径。
         timestamp = computed_at or datetime.now()  # noqa: DTZ005
+        enter_phase("validate")
         states, champions = self._build_and_validate_rows(
             targets,
             target_date,
@@ -254,7 +385,11 @@ class StockBoardCorrelationService:
             results,
             bundle.stock_boards,
         )
+        calculation_seconds = time.perf_counter() - calculation_started
+        enter_phase("switch")
+        write_started = time.perf_counter()
         self._replace_rows(states, champions, targets, full_scope=full_scope)
+        write_seconds = time.perf_counter() - write_started
 
         benchmark_counts: dict[str, int] = {}
         for result in results:
@@ -275,6 +410,8 @@ class StockBoardCorrelationService:
             skipped_count=0,
             benchmark_counts=benchmark_counts,
             fallback_count=sum(result.benchmark_fallback for result in results),
+            calculation_seconds=calculation_seconds,
+            write_seconds=write_seconds,
             switched=True,
         )
 

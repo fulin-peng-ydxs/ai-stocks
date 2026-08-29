@@ -29,7 +29,7 @@ _DEFAULT_AUDIT_CLEANUP_TIME = "03:30"
 # 可配成定时任务的类型：原子采集/维护/质检 + 按问题类型动态恢复。
 SCHEDULABLE_TASK_TYPES = (
     "update", "backfill", "ingest_date", "stock_ingest", "recompute", "verify", "checkup", "fix", "enrich_basic",
-    "audit_cleanup", "board",
+    "audit_cleanup", "board", "stock_board_correlation",
 )
 _WEEKDAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]   # 1..7 → APScheduler 名称
 _WEEKDAY_CN = ["一", "二", "三", "四", "五", "六", "日"]
@@ -500,6 +500,11 @@ class ScheduledJobService:
             from backend.services.stock_ingest import normalize_stock_ingest_params
 
             normalized_params = normalize_stock_ingest_params(normalized_params)
+        if task_type == "stock_board_correlation":
+            from backend.services.stock_board_correlation import normalize_correlation_task_params
+
+            normalized_params = normalize_correlation_task_params(
+                normalized_params, client=self.c)
         if trigger_mode not in _TRIGGER_MODES:
             raise ValueError(f"未知触发方式: {trigger_mode}（可选 {_TRIGGER_MODES}）")
         delay = _normalize_delay(dependency_delay, field="依赖延迟")

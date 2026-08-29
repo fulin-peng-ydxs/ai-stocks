@@ -150,6 +150,10 @@ def test_full_run_skip_partial_stale_version_change_and_forced_idempotence(marke
 
     skipped = service.compute_and_replace()
     assert skipped.switched is False and skipped.skipped_count == 2
+    assert skipped.candidate_count == 3
+    assert (skipped.industry_champion_count, skipped.concept_champion_count) == (2, 1)
+    assert skipped.empty_result_count == 0
+    assert skipped.benchmark_counts == {"000001.SH": 1, "399001.SZ": 1}
 
     client.execute(
         "UPDATE stock_board_correlation_state SET algorithm_version='old' WHERE code='600000.SH'"
@@ -334,3 +338,35 @@ def test_full_scope_does_not_skip_when_out_of_pool_stale_rows_exist(market):
         ).fetchone()[0]
         == 0
     )
+
+
+def test_phase_callbacks_cancel_immediately_before_switch_without_changing_rows(market):
+    client, _ = market
+    service = StockBoardCorrelationService(client)
+    service.compute_and_replace(force=True, computed_at=_computed_at(8))
+    before = _snapshot(client)
+    phases = []
+
+    def phase_callback(phase):
+        phases.append(phase)
+
+    def cancel_check():
+        if phases[-1] == "switch":
+            raise RuntimeError("cancel before atomic switch")
+
+    with pytest.raises(RuntimeError, match="cancel before atomic switch"):
+        service.compute_and_replace(
+            force=True,
+            computed_at=_computed_at(9),
+            phase_callback=phase_callback,
+            cancel_check=cancel_check,
+        )
+
+    assert phases == [
+        "read_candidates",
+        "load_prices",
+        "calculate",
+        "validate",
+        "switch",
+    ]
+    assert _snapshot(client) == before

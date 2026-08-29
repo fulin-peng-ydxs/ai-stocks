@@ -77,7 +77,7 @@ def resume_task(task_id: str) -> ApiResponse:
 
 @router.post("/tasks/{task_id}/cancel", response_model=ApiResponse, dependencies=_TASK_GUARD)
 def cancel_task(task_id: str) -> ApiResponse:
-    """请求终止运行中/排队中的任务（协作式：到下一个检查点停下，标记为可续跑）。"""
+    """协作式终止运行中/排队任务；是否可续跑由对应任务能力决定。"""
     svc = AsyncTaskService()
     task = svc.get(task_id)
     if not task:

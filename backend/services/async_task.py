@@ -5,8 +5,8 @@ DuckDB 单连接 + RLock 串行化 SQL，线程安全；长任务在 SQL 之间�
 
 M2.8-B 增强：
 - **实时日志**（FR-DM-9）：TaskContext.log() 批量写 task_log（节流，DM-D8），前端按 after_seq 增量拉。
-- **checkpoint / 续跑**（FR-DM-10）：处理器把已完成项写 result.checkpoint；服务重启 reconcile() 把
-  残留 running/pending 标 interrupted；resume() 按 checkpoint 跳过已完成续跑。
+- **checkpoint / 续跑**（FR-DM-10）：支持续跑的处理器把已完成项写 result.checkpoint；服务重启
+  reconcile() 把残留 running/pending 标 interrupted；resume() 仅按任务能力和 checkpoint 续跑。
 - **并发互斥**（FR-DM-11）：写任务（采集/质检/恢复等）不允许并发，创建即 409。
 - **数据修复**（FR-DM-4）：fix 任务定向重拉单条质检问题对应股票/日期，回写 issue 状态。
 
@@ -27,11 +27,11 @@ log = get_logger("services.async_task")
 # 全部任务类型：旧原子任务保持兼容，stock_ingest 按安全方案统一分派既有采集能力。
 TASK_TYPES = ("update", "backfill", "ingest_date", "ingest_codes", "rebuild_price_factors",
               "recompute", "verify", "checkup", "fix", "enrich_basic", "audit_cleanup",
-              "board", "stock_ingest")
+              "board", "stock_ingest", "stock_board_correlation")
 # 写类任务：互斥（写任务之间不并发），且服务重启需 reconcile。
 WRITE_TASK_TYPES = frozenset({"update", "backfill", "ingest_date", "ingest_codes",
                               "rebuild_price_factors", "verify", "fix", "enrich_basic",
-                              "board", "stock_ingest"})
+                              "board", "stock_ingest", "stock_board_correlation"})
 
 # 日志保留（DM-D8）
 LOG_MAX_PER_TASK = 2000
@@ -103,6 +103,11 @@ TASK_CAPABILITIES: dict[str, dict] = {
         "resume_granularity": "phase_code",
         "cancel_message": "会在当前股票或当前外部接口请求结束后的检查点停止",
     },
+    "stock_board_correlation": {
+        "can_cancel": True, "can_resume": False, "cancel_mode": "checkpoint",
+        "resume_granularity": None,
+        "cancel_message": "会在当前计算阶段或原子切换开始前停止；原子切换开始后不中断",
+    },
 }
 
 
@@ -161,7 +166,7 @@ class TaskContext:
         self.set_checkpoint(phase=phase, **data)
 
     def check_cancel(self) -> None:
-        """协作式取消检查点：被请求取消则抛 TaskCancelled（执行器捕获→标记可续跑）。"""
+        """协作式取消检查点：被请求取消则抛 TaskCancelled，由执行器按能力收尾。"""
         with _CANCEL_LOCK:
             cancelled = self.tid in _CANCELLED
         if cancelled:
@@ -247,6 +252,10 @@ class AsyncTaskService:
             from backend.services.stock_ingest import normalize_stock_ingest_params
 
             params = normalize_stock_ingest_params(params)
+        if task_type == "stock_board_correlation":
+            from backend.services.stock_board_correlation import normalize_correlation_task_params
+
+            params = normalize_correlation_task_params(params, client=self.c)
         with _TASK_CREATE_LOCK:
             if trigger_event_id:
                 existing = self.c.query_df(
@@ -375,10 +384,16 @@ class AsyncTaskService:
                 task_type=task_type,
             )
         except TaskCancelled:
-            ctx.log("⏹ 任务已被用户终止（已完成的部分已入库，可续跑）", "warn")
+            can_resume = bool(TASK_CAPABILITIES.get(task_type, {}).get("can_resume"))
+            if can_resume:
+                terminal_message = "已终止（可续跑）"
+                ctx.log("⏹ 任务已被用户终止（已完成的部分已入库，可续跑）", "warn")
+            else:
+                terminal_message = "已终止（不支持续跑，重新执行将完整计算）"
+                ctx.log("⏹ 任务已被用户终止（正式结果未发生不完整切换）", "warn")
             self._release_fixing(tid)
             ctx.flush()
-            self._set(tid, status="interrupted", message="已终止（可续跑）")
+            self._set(tid, status="interrupted", message=terminal_message)
             self._audit_task(
                 action="interrupt",
                 result="failed",
@@ -444,9 +459,16 @@ class AsyncTaskService:
         """服务启动调用：残留 running/pending → interrupted；孤儿 fixing → open；清理超期日志。"""
         stuck = self.c.query_df(
             "SELECT count(*) AS n FROM async_task WHERE status IN ('pending','running')").iloc[0]["n"]
+        resumable_types = sorted(
+            task_type for task_type, capability in TASK_CAPABILITIES.items()
+            if capability.get("can_resume")
+        )
+        resume_placeholders = ",".join("?" for _ in resumable_types)
         self.c.execute(
-            "UPDATE async_task SET status='interrupted', message='服务重启中断，可续跑', updated_at=? "
-            "WHERE status IN ('pending','running')", [datetime.now()])
+            "UPDATE async_task SET status='interrupted', message=CASE "
+            f"WHEN task_type IN ({resume_placeholders}) THEN '服务重启中断，可续跑' "
+            "ELSE '服务重启中断，不支持续跑，请重新执行' END, updated_at=? "
+            "WHERE status IN ('pending','running')", [*resumable_types, datetime.now()])
         # 重启后没有任何任务在跑，故所有 fixing 必为孤儿（绑定的任务已中断）→ 复位为 open，可重新恢复
         fixing = int(self.c.query_df(
             "SELECT count(*) AS n FROM data_quality_issue WHERE status='fixing'").iloc[0]["n"])
@@ -467,7 +489,7 @@ class AsyncTaskService:
         return _row(df.iloc[0])
 
     def cancel(self, tid: str) -> bool:
-        """请求终止运行中/排队中的任务（协作式）：执行器在下一个检查点停下并标记可续跑。"""
+        """协作式请求终止；执行器在下一检查点停下，并按任务能力声明是否可续跑。"""
         t = self.get(tid)
         if not t or t["status"] not in ("pending", "running"):
             return False
@@ -1342,6 +1364,88 @@ def _h_board(params: dict, ctx: TaskContext) -> dict:
     return {"message": "板块采集完成", "result": result, "ok": True}
 
 
+def _h_stock_board_correlation(params: dict, ctx: TaskContext) -> dict:
+    """计算个股走势行业/概念冠军；正式表只在最后一个短事务中切换。"""
+    from backend.indicators.stock_board_correlation import CorrelationInputError
+    from backend.services.stock_board_correlation import (
+        StockBoardCorrelationService,
+        normalize_correlation_task_params,
+    )
+
+    labels = {
+        "read_candidates": (0.08, "阶段 1/5：读取候选"),
+        "load_prices": (0.22, "阶段 2/5：加载行情"),
+        "calculate": (0.45, "阶段 3/5：批量计算"),
+        "validate": (0.76, "阶段 4/5：结果校验"),
+        "switch": (0.92, "阶段 5/5：原子切换"),
+    }
+
+    def report_phase(phase: str) -> None:
+        progress, message = labels[phase]
+        ctx.log(message)
+        ctx.progress(progress, message.split("：", 1)[1] + "…")
+
+    def report_compute_phase(phase: str) -> None:
+        # 目标范围预校验已作为“读取候选”阶段展示；计算服务重复进入该阶段时不重复日志。
+        if phase != "read_candidates":
+            report_phase(phase)
+
+    failure_stats = {
+        "target_date": None, "target_stock_count": 0, "candidate_relation_count": 0,
+        "industry_champion_count": 0, "concept_champion_count": 0,
+        "empty_result_count": 0, "skipped_count": 0, "failed_count": 1,
+        "benchmark_counts": {}, "fallback_count": 0,
+        "calculation_seconds": 0.0, "write_seconds": 0.0, "switched": False,
+    }
+
+    def expected_failure(exc: ValueError) -> dict:
+        ctx.log(f"完整性校验失败：{exc}", "error")
+        return {"ok": False, "message": str(exc), **failure_stats}
+
+    report_phase("read_candidates")
+    ctx.check_cancel()
+    try:
+        normalized = normalize_correlation_task_params(params, client=get_client())
+    except ValueError as exc:
+        return expected_failure(exc)
+    try:
+        service = StockBoardCorrelationService()
+        target_date = service.resolve_target_date()
+        targets, _ = service.resolve_target_codes(target_date, normalized["codes"])
+        failure_stats.update({
+            "target_date": target_date.isoformat(),
+            "target_stock_count": len(targets),
+        })
+        result = service.compute_and_replace(
+            normalized["codes"], force=normalized["force"],
+            upper_bound=target_date,
+            phase_callback=report_compute_phase, cancel_check=ctx.check_cancel,
+        )
+    except CorrelationInputError as exc:
+        return expected_failure(exc)
+    payload = {
+        "ok": True,
+        "message": (f"目标范围 {result.target_count} 只已是最新，安全跳过"
+                    if not result.switched
+                    else f"个股走势关联板块计算完成：{result.target_count} 只"),
+        "target_date": result.target_date.isoformat(),
+        "target_stock_count": result.target_count,
+        "candidate_relation_count": result.candidate_count,
+        "industry_champion_count": result.industry_champion_count,
+        "concept_champion_count": result.concept_champion_count,
+        "empty_result_count": result.empty_result_count,
+        "skipped_count": result.skipped_count,
+        "failed_count": 0,
+        "benchmark_counts": result.benchmark_counts,
+        "fallback_count": result.fallback_count,
+        "calculation_seconds": round(result.calculation_seconds, 6),
+        "write_seconds": round(result.write_seconds, 6),
+        "switched": result.switched,
+    }
+    ctx.progress(1.0, payload["message"])
+    return payload
+
+
 _HANDLERS = {
     "update": _h_update,
     "backfill": _h_backfill,
@@ -1356,4 +1460,5 @@ _HANDLERS = {
     "audit_cleanup": _h_audit_cleanup,
     "board": _h_board,
     "stock_ingest": _h_stock_ingest,
+    "stock_board_correlation": _h_stock_board_correlation,
 }
