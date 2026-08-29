@@ -350,7 +350,7 @@ export function resetSettings(paths: string[]): Promise<{ reset: number }> {
 export type TaskType =
   | 'update' | 'backfill' | 'ingest_date' | 'ingest_codes' | 'rebuild_price_factors'
   | 'recompute' | 'verify' | 'checkup' | 'fix'
-  | 'enrich_basic' | 'audit_cleanup' | 'board' | 'stock_ingest'
+  | 'enrich_basic' | 'audit_cleanup' | 'board' | 'stock_ingest' | 'stock_board_correlation'
 
 // ── 数据结构体检报告（checkup 任务 result.checkup）──
 export interface CheckupCheck { name: string; ok: boolean; detail: string }
@@ -437,6 +437,7 @@ export const TASK_LABEL: Record<TaskType, string> = {
   recompute: '评分维护', verify: '数据质检',
   checkup: '结构体检', fix: '质检问题恢复', enrich_basic: '退市标记刷新',
   audit_cleanup: '审计日志清理', board: '板块采集', stock_ingest: '个股采集',
+  stock_board_correlation: '个股走势关联板块',
 }
 export const STATUS_LABEL: Record<TaskStatus, string> = {
   pending: '排队中', running: '运行中', done: '已完成', failed: '失败', interrupted: '已中断',
@@ -481,6 +482,12 @@ export function taskDisplayLabel(
       parts.push(params.only.map((stage: string) => labels[stage] ?? stage).join('+'))
     }
     return `${base}·${parts.join('·')}`
+  }
+  if (taskType === 'stock_board_correlation') {
+    const scope = Array.isArray(params?.codes) && params.codes.length
+      ? `指定 ${params.codes.length} 只`
+      : '全市场'
+    return `${base}·${scope}${params?.force === true ? '·强制重算' : ''}`
   }
   return base
 }

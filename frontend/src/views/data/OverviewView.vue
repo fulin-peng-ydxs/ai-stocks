@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import StockCodeMultiSelect from '@/components/data/StockCodeMultiSelect.vue'
 import { onMounted, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
@@ -70,10 +71,7 @@ const dims = ref<Dimension[]>([])
 const sq = ref<StockQuality | null>(null)
 const sqLoading = ref(true)
 const sqError = ref('')
-const sqSelected = ref<string[]>([])           // 已选股票代码（下拉多选）
-const sqOptions = ref<{ code: string; label: string }[]>([])
-const sqOptLoading = ref(false)
-const sqOptError = ref('')
+const sqSelected = ref<string[]>([])
 const sqPage = ref(1)
 const { pageSize: sqSize, changePageSize: changeSqSize } = useComponentPageSizeSession({
   resolveDefault: () => componentValueOf('stockTable', 'pageSize'),
@@ -202,33 +200,7 @@ async function loadSq() {
     sqLoading.value = false
   }
 }
-// 下拉多选：输入代码或名称远程搜索候选股
-async function remoteSearch(q: string) {
-  if (!q) { sqOptions.value = []; sqOptError.value = ''; return }
-  sqOptLoading.value = true
-  sqOptError.value = ''
-  try {
-    const r = await getStockQuality({ keyword: q, size: 30 })
-    sqOptions.value = r.list.map((x) => ({ code: x.code, label: `${x.code} ${x.name}` }))
-  } catch (error) {
-    sqOptions.value = []
-    sqOptError.value = getErrorMessage(error, '股票候选加载失败')
-  } finally {
-    sqOptLoading.value = false
-  }
-}
 function onSqSelect() { sqPage.value = 1; loadSq() }
-// 支持粘贴逗号/空格/换行分隔的多个代码（如 600000.SH,000001.SZ）→ 拆分后追加到已选
-function onSqPaste(e: ClipboardEvent) {
-  const text = e.clipboardData?.getData('text') ?? ''
-  if (!/[,，\s]/.test(text.trim())) return  // 单个值交给默认输入逻辑
-  e.preventDefault()
-  const codes = text.split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean)
-  if (!codes.length) return
-  const merged = new Set([...sqSelected.value, ...codes])
-  sqSelected.value = Array.from(merged)
-  onSqSelect()
-}
 
 function gotoQuality(severity?: string, issueType?: string) {
   const q: Record<string, string> = {}
@@ -557,14 +529,12 @@ onMounted(load)
                 <span class="hint">点击层级徽章进入解决页 · 最新交易日 {{ (sq?.latest_trade_date || '—').slice(0, 10) }}</span>
               </div>
               <div class="sq-bar">
-                <el-select v-model="sqSelected" multiple filterable remote clearable collapse-tags
-                           allow-create default-first-option
-                           :remote-method="remoteSearch" :loading="sqOptLoading" :reserve-keyword="false"
-                           :no-data-text="sqOptError || '无匹配股票'"
-                           placeholder="输入代码或名称搜索，可多选"
-                           @change="onSqSelect" @paste.native="onSqPaste">
-                  <el-option v-for="o in sqOptions" :key="o.code" :label="o.label" :value="o.code" />
-                </el-select>
+                <StockCodeMultiSelect
+                  v-model="sqSelected"
+                  test-id="overview-stock-codes"
+                  aria-label="逐股体检股票范围"
+                  @change="onSqSelect"
+                />
               </div>
               <AppStateBlock
                 v-if="sqLoading && !sq"

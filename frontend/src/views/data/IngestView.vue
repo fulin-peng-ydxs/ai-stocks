@@ -136,7 +136,7 @@ function tableBorder(slotId: string): boolean {
 }
 const TASK_TYPE_OPTIONS: { v: TaskType; l: string }[] = [
   'stock_ingest', 'update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
-  'recompute', 'verify', 'checkup', 'fix', 'enrich_basic', 'board',
+  'recompute', 'verify', 'checkup', 'fix', 'enrich_basic', 'board', 'stock_board_correlation',
 ].map((v) => ({ v: v as TaskType, l: TASK_LABEL[v as TaskType] }))
 const TASK_STATUS_OPTIONS: { v: TaskStatus; l: string }[] = (
   ['pending', 'running', 'done', 'failed', 'interrupted'] as TaskStatus[]).map((v) => ({ v, l: STATUS_LABEL[v] }))
@@ -160,6 +160,11 @@ const PHASE_LABEL: Record<string, string> = {
   board_fund_flow: '板块资金流',
   delisted_history: '退市股历史',
   stock_basic: '基础资料',
+  read_candidates: '读取候选',
+  load_prices: '加载行情',
+  calculate: '批量计算',
+  validate: '结果校验',
+  switch: '原子切换',
 }
 function taskPhaseText(t: AsyncTask): string {
   const cap = t.capability
@@ -197,7 +202,8 @@ function logRowClass({ row }: { row: { status: string } }): string {
 const writeRunning = computed(() =>
   tasks.value.some((t) => ['pending', 'running'].includes(t.status)
     && ['update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
-      'verify', 'fix', 'enrich_basic', 'board', 'stock_ingest'].includes(t.task_type)))
+      'verify', 'fix', 'enrich_basic', 'board', 'stock_ingest',
+      'stock_board_correlation'].includes(t.task_type)))
 
 // 总耗时：进行中=开始到现在(随 now 每秒刷新)；已结束/人工终止=开始到截止时间(updated_at)。
 const now = ref(Date.now())
@@ -401,8 +407,13 @@ async function resume(t: AsyncTask) {
 // ── 终止（协作式：到下一只股票/下一步停下，可续跑）──
 async function cancel(t: AsyncTask) {
   const tip = t.capability?.cancel_message || '会在下一个安全检查点停止'
+  const preservation = t.task_type === 'stock_board_correlation'
+    ? '终止后不会保存本次未切换结果，重新执行会从头开始。'
+    : t.capability?.can_resume
+      ? '终止后已完成的部分会保留。'
+      : '该任务不支持续跑，终止后需重新创建任务。'
   try {
-    await ElMessageBox.confirm(`终止后已完成的部分会保留。${tip}。确认终止该任务？`,
+    await ElMessageBox.confirm(`${preservation}${tip}。确认终止该任务？`,
                                '终止任务', { type: 'warning' })
   } catch { return }
   try {
@@ -420,6 +431,27 @@ const logTaskFinished = computed(() => {
   const status = logTask.value?.status
   return status === 'done' || status === 'failed' || status === 'interrupted'
 })
+const correlationResult = computed<Record<string, any> | null>(() => {
+  if (!logTaskFinished.value || logTask.value?.task_type !== 'stock_board_correlation') return null
+  return logTask.value.result && typeof logTask.value.result === 'object'
+    ? logTask.value.result
+    : null
+})
+function correlationWriteStatus(): string {
+  if (!correlationResult.value) return '—'
+  if (logTask.value?.status === 'failed' || Number(correlationResult.value.failed_count) > 0) {
+    return '未切换（失败）'
+  }
+  return correlationResult.value.switched ? '已原子切换' : '安全跳过'
+}
+function correlationBenchmarkText(): string {
+  const counts = correlationResult.value?.benchmark_counts
+  if (!counts || typeof counts !== 'object') return '—'
+  const items = Object.entries(counts)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([code, count]) => `${code} ${count}`)
+  return items.join(' · ') || '—'
+}
 // autoScroll 单向：抽屉默认值 → 会话 ref；日志抽屉复选框改动只进会话态，不写回默认。
 const autoScroll = ref(Boolean(settings.autoScroll))
 watch(() => settings.autoScroll, (value) => { autoScroll.value = Boolean(value) })
@@ -655,7 +687,7 @@ watch(
           <div class="blk-head">
             <span>任务中心</span>
             <div class="flt">
-              <el-select v-model="taskFilter.task_type" placeholder="类型" clearable size="small" style="width: 130px"
+              <el-select v-model="taskFilter.task_type" placeholder="类型" clearable size="small" style="width: 180px"
                          @change="() => { taskPage = 1; loadTasks() }">
                 <el-option v-for="o in TASK_TYPE_OPTIONS" :key="o.v" :label="o.l" :value="o.v" />
               </el-select>
@@ -875,10 +907,32 @@ watch(
         <el-checkbox v-model="autoScroll" size="small">自动滚动</el-checkbox>
       </div>
       <div v-if="logTaskFinished" class="log-followups">
-        <span>采集结果可继续在数据页核验</span>
+        <span>任务结果可继续在数据页核验</span>
         <el-button link type="primary" @click="goToDataResult('/data/overview')">查看数据概览</el-button>
         <el-button link type="primary" @click="goToDataResult('/data/quality')">查看数据质量</el-button>
       </div>
+      <el-descriptions
+        v-if="correlationResult"
+        :column="3"
+        size="small"
+        border
+        class="correlation-task-result"
+        data-testid="correlation-task-result"
+      >
+        <el-descriptions-item label="目标日期">{{ correlationResult.target_date || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="目标股票">{{ correlationResult.target_stock_count ?? 0 }}</el-descriptions-item>
+        <el-descriptions-item label="候选关系">{{ correlationResult.candidate_relation_count ?? 0 }}</el-descriptions-item>
+        <el-descriptions-item label="行业冠军">{{ correlationResult.industry_champion_count ?? 0 }}</el-descriptions-item>
+        <el-descriptions-item label="概念冠军">{{ correlationResult.concept_champion_count ?? 0 }}</el-descriptions-item>
+        <el-descriptions-item label="空结果">{{ correlationResult.empty_result_count ?? 0 }}</el-descriptions-item>
+        <el-descriptions-item label="回退上证">{{ correlationResult.fallback_count ?? 0 }}</el-descriptions-item>
+        <el-descriptions-item label="跳过股票">{{ correlationResult.skipped_count ?? 0 }}</el-descriptions-item>
+        <el-descriptions-item label="失败数">{{ correlationResult.failed_count ?? 0 }}</el-descriptions-item>
+        <el-descriptions-item label="计算耗时">{{ correlationResult.calculation_seconds ?? 0 }} 秒</el-descriptions-item>
+        <el-descriptions-item label="写入耗时">{{ correlationResult.write_seconds ?? 0 }} 秒</el-descriptions-item>
+        <el-descriptions-item label="基准分布">{{ correlationBenchmarkText() }}</el-descriptions-item>
+        <el-descriptions-item label="写入状态">{{ correlationWriteStatus() }}</el-descriptions-item>
+      </el-descriptions>
       <div ref="logBody" class="log-body">
         <div v-for="l in logs" :key="l.seq" class="log-line" :class="l.level">
           <span class="lt">{{ (l.ts || '').slice(11, 19) }}</span>
@@ -975,6 +1029,7 @@ watch(
 .task-id { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .log-meta { flex: 0 0 auto; display: flex; align-items: center; gap: var(--app-space-2); margin-bottom: 10px; }
 .log-followups { flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; gap: var(--app-space-2); margin: -2px 0 10px; font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
+.correlation-task-result { flex: 0 0 auto; margin-bottom: var(--app-space-3); }
 .lm-msg { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lm-phase { font-size: var(--app-font-size-caption); color: var(--el-color-warning); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-body { flex: 1 1 auto; min-height: 0; overflow: auto; background: var(--el-fill-color-darker); border-radius: 6px; padding: 10px; font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); }

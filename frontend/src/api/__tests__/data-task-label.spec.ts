@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -22,6 +24,10 @@ describe('taskDisplayLabel', () => {
       .toBe('个股采集·日常同步')
     expect(taskDisplayLabel('stock_ingest', { recipe: 'valuation_gaps' }))
       .toBe('个股采集·市值缺口修复')
+    expect(taskDisplayLabel('stock_board_correlation', { codes: ['600000.SH'], force: true }))
+      .toBe('个股走势关联板块·指定 1 只·强制重算')
+    expect(taskDisplayLabel('stock_board_correlation', { force: false }))
+      .toBe('个股走势关联板块·全市场')
   })
 
   it('板块质检类型、恢复文案和采集阶段使用同一套定义', () => {
@@ -33,5 +39,26 @@ describe('taskDisplayLabel', () => {
     expect(RECOVER_ACTION_LABEL.board_index_gap_daily).toBe('重采缺失日指数')
     expect(RECOVER_ACTION_LABEL.board_index_invalid).toBe('重采异常日指数')
     expect(BOARD_STAGE_OPTIONS.map((item) => item.value)).toEqual(['dict', 'members', 'bar', 'fund'])
+  })
+
+  it('相关性任务表单、任务筛选与五阶段标签完整接线', () => {
+    const schedule = readFileSync(resolve('src/views/data/ScheduleView.vue'), 'utf8')
+    const ingest = readFileSync(resolve('src/views/data/IngestView.vue'), 'utf8')
+    const overview = readFileSync(resolve('src/views/data/OverviewView.vue'), 'utf8')
+    const stockScope = readFileSync(resolve('src/components/data/StockIngestScopeFields.vue'), 'utf8')
+
+    expect(schedule).toContain("form.task_type === 'stock_board_correlation'")
+    expect(schedule).toContain('v-model="form.correlation.scope"')
+    expect(schedule).toContain('v-model="form.correlation.codes"')
+    expect(schedule).toContain('v-model="form.correlation.force"')
+    expect(schedule).toContain('buildStockBoardCorrelationTaskParams(form.correlation)')
+    expect(ingest).toContain("'stock_board_correlation'")
+    for (const phase of ['read_candidates', 'load_prices', 'calculate', 'validate', 'switch']) {
+      expect(ingest).toContain(`${phase}:`)
+    }
+    expect(ingest).toContain('data-testid="correlation-task-result"')
+    expect(ingest).toContain("return '未切换（失败）'")
+    expect(overview).toContain('<StockCodeMultiSelect')
+    expect(stockScope).toContain('<StockCodeMultiSelect')
   })
 })

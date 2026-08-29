@@ -32,6 +32,7 @@ import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
 import { compareScheduleFrequency } from '@/utils/scheduleFrequencySort'
 import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
+import StockCodeMultiSelect from '@/components/data/StockCodeMultiSelect.vue'
 import StockIngestScopeFields from '@/components/data/StockIngestScopeFields.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
 import {
@@ -41,6 +42,12 @@ import {
   stockIngestFormFromTask,
   type StockIngestFormValue,
 } from '@/utils/stockIngest'
+import {
+  buildStockBoardCorrelationTaskParams,
+  createStockBoardCorrelationTaskForm,
+  stockBoardCorrelationTaskFormFromParams,
+  type StockBoardCorrelationTaskForm,
+} from '@/utils/stockBoardCorrelationTask'
 
 const router = useRouter()
 const settingsOpen = ref(false)
@@ -160,6 +167,7 @@ const saving = ref(false)
 const form = reactive({
   name: '', task_type: 'stock_ingest' as TaskType,
   stock: createStockIngestForm() as StockIngestFormValue,
+  correlation: createStockBoardCorrelationTaskForm() as StockBoardCorrelationTaskForm,
   issue_type: 'null_close',
   board_mode: 'update' as 'update' | 'backfill',
   board_type: '' as BoardTypeScope,
@@ -186,6 +194,7 @@ function openCreate() {
   editingId.value = ''
   Object.assign(form, {
     name: '', task_type: 'stock_ingest', stock: createStockIngestForm(),
+    correlation: createStockBoardCorrelationTaskForm(),
     issue_type: qualityIssueTypes.value[0] || 'null_close',
     board_mode: 'update', board_type: '', board_stages: ['dict', 'members', 'bar', 'fund'],
     board_force_members: false,
@@ -205,6 +214,7 @@ function openEdit(j: ScheduledJob) {
   Object.assign(form, {
     name: j.name, task_type: stock ? 'stock_ingest' : j.task_type,
     stock: stock || createStockIngestForm(),
+    correlation: stockBoardCorrelationTaskFormFromParams(j.params),
     issue_type: j.params?.issue_type || qualityIssueTypes.value[0] || 'null_close',
     board_mode: j.params?.mode === 'backfill' ? 'backfill' : 'update',
     board_type: j.params?.board_type === 'concept' || j.params?.board_type === 'industry'
@@ -237,6 +247,10 @@ function buildPayload(): ScheduledJobInput | null {
   const params: Record<string, unknown> = {}
   if (form.task_type === 'stock_ingest') {
     const built = buildStockIngestParams(form.stock)
+    if (built.error) { ElMessage.warning(built.error); return null }
+    Object.assign(params, built.params)
+  } else if (form.task_type === 'stock_board_correlation') {
+    const built = buildStockBoardCorrelationTaskParams(form.correlation)
     if (built.error) { ElMessage.warning(built.error); return null }
     Object.assign(params, built.params)
   } else if (form.task_type === 'fix') {
@@ -837,6 +851,37 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           v-model="form.stock"
           test-id-prefix="schedule-stock"
         />
+        <template v-if="form.task_type === 'stock_board_correlation'">
+          <el-form-item label="股票范围">
+            <PageSegmented
+              v-model="form.correlation.scope"
+              :options="[{ label: '全市场', value: 'all' }, { label: '指定股票', value: 'selected' }]"
+              test-id="schedule-correlation-scope"
+              tone="primary"
+              aria-label="个股走势关联板块计算范围"
+            />
+          </el-form-item>
+          <el-form-item v-if="form.correlation.scope === 'selected'" label="指定股票">
+            <StockCodeMultiSelect
+              v-model="form.correlation.codes"
+              test-id="schedule-correlation-codes"
+              aria-label="个股走势关联板块指定股票"
+            />
+          </el-form-item>
+          <el-form-item label="重算策略">
+            <el-switch
+              v-model="form.correlation.force"
+              data-testid="schedule-correlation-force"
+              active-text="同日强制重算"
+              inactive-text="无新交易日时跳过"
+            />
+          </el-form-item>
+          <el-alert
+            type="info"
+            :closable="false"
+            title="计算窗口、基准、权重和样本门槛由版本化算法统一管理，不在调度任务中单独配置。"
+          />
+        </template>
 
         <el-divider
           content-position="left"
