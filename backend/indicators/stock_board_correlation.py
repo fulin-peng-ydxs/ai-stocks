@@ -14,22 +14,26 @@ from typing import Literal
 
 import numpy as np
 
-ALGORITHM_VERSION = "stock-board-correlation-v1"
+# v2 修复基准目标日缺失仍被视为可用的问题；版本提升会让旧结果自动失效并重算。
+ALGORITHM_VERSION = "stock-board-correlation-v2"
 CALENDAR_POINTS = 61
 SHORT_WINDOW = 20
 LONG_WINDOW = 60
 MIN_SHORT_SAMPLES = 15
 MIN_LONG_SAMPLES = 40
 FALLBACK_BENCHMARK = "000001.SH"
-REQUIRED_BENCHMARKS = frozenset({
-    FALLBACK_BENCHMARK,
-    "399001.SZ",
-    "399006.SZ",
-    "000688.SH",
-})
+REQUIRED_BENCHMARKS = frozenset(
+    {
+        FALLBACK_BENCHMARK,
+        "399001.SZ",
+        "399006.SZ",
+        "000688.SH",
+    }
+)
 
 BoardType = Literal["industry", "concept"]
 PriceSeries = Mapping[date, float | int | None]
+ReturnSeries = Mapping[date, float]
 
 
 class CorrelationInputError(ValueError):
@@ -103,6 +107,14 @@ def build_market_returns(
 ) -> dict[date, float]:
     """按相邻市场开市日计算收益，结果键为区间结束日；缺口两侧都不生成收益。"""
     calendar = normalize_calendar(calendar_dates)
+    return _build_market_returns_normalized(closes, calendar)
+
+
+def _build_market_returns_normalized(
+    closes: PriceSeries,
+    calendar: tuple[date, ...],
+) -> dict[date, float]:
+    """在调用方已规范日历时构造收益，供批量预计算避免重复规范化。"""
     returns: dict[date, float] = {}
     for previous_date, current_date in pairwise(calendar):
         previous = closes.get(previous_date)
@@ -113,6 +125,18 @@ def build_market_returns(
         if np.isfinite(value):
             returns[current_date] = value
     return returns
+
+
+def precompute_market_returns(
+    closes_by_code: Mapping[str, PriceSeries],
+    calendar_dates: Sequence[object],
+) -> dict[str, dict[date, float]]:
+    """按唯一证券代码批量构造收益；结果仅在本次计算内复用。"""
+    calendar = normalize_calendar(calendar_dates)
+    return {
+        code: _build_market_returns_normalized(closes, calendar)
+        for code, closes in closes_by_code.items()
+    }
 
 
 def resolve_benchmark_code(board: str | None, code: str) -> tuple[str, bool]:
@@ -161,10 +185,17 @@ def classify_confidence(
     return "low"
 
 
-def _has_benchmark_samples(returns: Mapping[date, float], interval_dates: tuple[date, ...]) -> bool:
+def _benchmark_is_available(
+    closes: PriceSeries,
+    returns: ReturnSeries,
+    interval_dates: tuple[date, ...],
+    as_of_date: date,
+) -> bool:
+    """基准必须有目标日有效收盘，且固定双窗口收益样本同时达标。"""
     short_dates = interval_dates[-SHORT_WINDOW:]
     return (
-        sum(day in returns for day in short_dates) >= MIN_SHORT_SAMPLES
+        _valid_price(closes.get(as_of_date))
+        and sum(day in returns for day in short_dates) >= MIN_SHORT_SAMPLES
         and sum(day in returns for day in interval_dates) >= MIN_LONG_SAMPLES
     )
 
@@ -251,26 +282,44 @@ def calculate_stock_correlations(
     candidates: Iterable[CandidateRef],
     board_closes: Mapping[str, PriceSeries],
     benchmark_closes: Mapping[str, PriceSeries],
+    board_returns: Mapping[str, ReturnSeries] | None = None,
+    benchmark_returns: Mapping[str, ReturnSeries] | None = None,
 ) -> StockCorrelationResult:
     """计算单股行业/概念冠军；最终基准不足时抛错，个股或候选不足只返回空冠军。"""
     calendar = normalize_calendar(calendar_dates)
     interval_dates = calendar[1:]
-    mapped_benchmark, fallback = resolve_benchmark_code(board, code)
-    mapped_returns = build_market_returns(
-        benchmark_closes.get(mapped_benchmark, {}),
-        calendar,
+    prepared_board_returns = (
+        precompute_market_returns(board_closes, calendar)
+        if board_returns is None
+        else board_returns
     )
-    if not _has_benchmark_samples(mapped_returns, interval_dates):
+    prepared_benchmark_returns = (
+        precompute_market_returns(benchmark_closes, calendar)
+        if benchmark_returns is None
+        else benchmark_returns
+    )
+    mapped_benchmark, fallback = resolve_benchmark_code(board, code)
+    mapped_closes = benchmark_closes.get(mapped_benchmark, {})
+    mapped_returns = prepared_benchmark_returns.get(mapped_benchmark, {})
+    if not _benchmark_is_available(
+        mapped_closes,
+        mapped_returns,
+        interval_dates,
+        calendar[-1],
+    ):
         if mapped_benchmark == FALLBACK_BENCHMARK:
-            raise BenchmarkDataError("上证指数不满足 20/60 日窗口最低样本 15/40")
+            raise BenchmarkDataError("上证指数目标日收盘缺失或不满足 20/60 日窗口最低样本 15/40")
         mapped_benchmark = FALLBACK_BENCHMARK
         fallback = True
-        mapped_returns = build_market_returns(
-            benchmark_closes.get(FALLBACK_BENCHMARK, {}),
-            calendar,
-        )
-        if not _has_benchmark_samples(mapped_returns, interval_dates):
-            raise BenchmarkDataError("上证指数不满足 20/60 日窗口最低样本 15/40")
+        mapped_closes = benchmark_closes.get(FALLBACK_BENCHMARK, {})
+        mapped_returns = prepared_benchmark_returns.get(FALLBACK_BENCHMARK, {})
+        if not _benchmark_is_available(
+            mapped_closes,
+            mapped_returns,
+            interval_dates,
+            calendar[-1],
+        ):
+            raise BenchmarkDataError("上证指数目标日收盘缺失或不满足 20/60 日窗口最低样本 15/40")
 
     stock_returns = build_market_returns(stock_closes, calendar)
     by_type: dict[BoardType, list[CorrelationWinner]] = {"industry": [], "concept": []}
@@ -280,13 +329,13 @@ def calculate_stock_correlations(
         if candidate.board_type not in by_type or key in seen:
             continue
         seen.add(key)
-        candidate_closes = board_closes.get(candidate.board_code)
-        if candidate_closes is None:
+        candidate_returns = prepared_board_returns.get(candidate.board_code)
+        if candidate_returns is None:
             continue
         result = _candidate_result(
             candidate,
             stock_returns,
-            build_market_returns(candidate_closes, calendar),
+            candidate_returns,
             mapped_returns,
             interval_dates,
         )

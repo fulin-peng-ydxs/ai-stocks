@@ -18,6 +18,7 @@ from backend.indicators.stock_board_correlation import (
     classify_confidence,
     normalize_calendar,
     pick_correlation_winner,
+    precompute_market_returns,
     resolve_benchmark_code,
     winsorized_pearson,
 )
@@ -139,6 +140,72 @@ def test_mapped_benchmark_shortage_falls_back_for_whole_stock():
     assert result.benchmark_code == "000001.SH"
     assert result.benchmark_fallback is True
     assert result.industry is not None
+
+
+def test_mapped_benchmark_missing_as_of_close_falls_back_for_whole_stock():
+    dates, stock, industry, _, benchmark = _series_fixture()
+    mapped = dict(benchmark)
+    mapped.pop(dates[-1])
+
+    result = calculate_stock_correlations(
+        code="000001.SZ",
+        board="主板",
+        calendar_dates=dates,
+        stock_closes=stock,
+        candidates=[CandidateRef("881001", "industry")],
+        board_closes={"881001": industry},
+        benchmark_closes={"399001.SZ": mapped, "000001.SH": benchmark},
+    )
+
+    assert result.benchmark_code == "000001.SH"
+    assert result.benchmark_fallback is True
+    assert result.industry is not None
+
+
+def test_shanghai_benchmark_missing_as_of_close_fails_even_when_samples_are_sufficient():
+    dates, stock, industry, _, benchmark = _series_fixture()
+    benchmark.pop(dates[-1])
+
+    with pytest.raises(BenchmarkDataError, match="目标日收盘缺失"):
+        calculate_stock_correlations(
+            code="600000.SH",
+            board="主板",
+            calendar_dates=dates,
+            stock_closes=stock,
+            candidates=[CandidateRef("881001", "industry")],
+            board_closes={"881001": industry},
+            benchmark_closes={"000001.SH": benchmark},
+        )
+
+
+def test_benchmark_middle_gap_keeps_mapping_when_both_sample_thresholds_hold():
+    dates, stock, industry, _, benchmark = _series_fixture()
+    benchmark.pop(dates[10])
+
+    result = calculate_stock_correlations(
+        code="000001.SZ",
+        board="主板",
+        calendar_dates=dates,
+        stock_closes=stock,
+        candidates=[CandidateRef("881001", "industry")],
+        board_closes={"881001": industry},
+        benchmark_closes={"399001.SZ": benchmark, "000001.SH": {}},
+    )
+
+    assert result.benchmark_code == "399001.SZ"
+    assert result.benchmark_fallback is False
+    assert result.industry is not None
+
+
+def test_precomputed_returns_match_direct_construction():
+    dates, _, industry, concept, benchmark = _series_fixture()
+    closes = {"881001": industry, "301001": concept, "000001.SH": benchmark}
+
+    prepared = precompute_market_returns(closes, dates)
+
+    assert prepared == {
+        code: build_market_returns(series, dates) for code, series in closes.items()
+    }
 
 
 def test_shanghai_fallback_shortage_fails_instead_of_mixing_benchmarks():

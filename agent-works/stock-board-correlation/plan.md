@@ -130,11 +130,12 @@ index_bar + stock_basic ───┘       │ 固定算法 v1
 
 ### 4.4 R2 算法 v1
 
-- 版本常量建议为 `stock-board-correlation-v1`，窗口、权重、样本、缩尾、基准映射全部写在同一领域模块中，不进入调度参数。
+- 当前版本常量为 `stock-board-correlation-v2`；v2 修正基准目标日有效性并使既有 v1 状态自动触发重算。窗口、权重、样本、缩尾、基准映射仍全部写在同一领域模块中，不进入调度参数。
 - `as_of_date` 为不晚于 `trade_calendar` 开市日和 `daily_bar`、`board_bar`、`index_bar` 三类数据族最新日期的共同任务级目标日；所有 SQL 显式 `<= as_of_date`，单个陈旧候选不能反向改写任务日期。
 - 从 `trade_calendar` 取得截至目标日的 61 个连续开市收盘日，形成 60 个固定收益区间；短窗取其末 20 个区间。个股使用后复权收盘，板块和指数使用原始连续收盘；只有相邻两个开市日都存在有效收盘才计算该区间收益，停牌、上市前或数据缺口记为缺失，不跨日桥接，也不向窗口外补样本。
 - 基准按股票映射：沪市主板 `000001.SH`、深市主板 `399001.SZ`、创业板 `399006.SZ`、科创板 `000688.SH`、未知上市板/交易所回退 `000001.SH`。
-- 先检查映射指数自身在 20/60 目标窗口内是否分别达到 15/40 个有效收益；不足时整只股票的两种类型和两个窗口统一回退上证指数。个股或候选自身不足只淘汰对应股票/候选，不触发回退；上证指数仍不足则整个任务失败且不切换。
+- 先检查映射指数在目标日存在有效收盘，且自身在 20/60 目标窗口内分别达到 15/40 个有效收益；任一条件不满足时整只股票的两种类型和两个窗口统一回退上证指数。个股或候选自身不足只淘汰对应股票/候选，不触发回退；上证指数仍不满足目标日或样本条件则整个任务失败且不切换。
+- 单次批量任务按唯一板块代码和唯一基准代码预计算收益映射；逐股只构造该股收益并复用候选板块/基准收益，禁止按约五万条候选关系重复构造相同板块收益。
 - 每个候选在固定 20/60 区间内按股票、板块、最终基准三方同日有效样本对齐，股票和板块分别减同日基准收益；各自按 5%/95% 分位缩尾后计算 Pearson。非有限系数无效。
 - 两窗均达标后 `score = 0.6*corr_20 + 0.4*corr_60`；按 score、corr60、sample60 降序和 board_code 升序稳定决胜，行业/概念隔离。
 - 高可信：`sample_60>=50 && score>=0.70 && corr_20/corr_60同号`；中可信：`sample_60>=40 && score>=0.50`；其余合格结果为低。负相关最高者仍可成为低可信冠军。
@@ -258,7 +259,7 @@ index_bar + stock_basic ───┘       │ 固定算法 v1
 | 范围 | 需求 | 计划开发内容 | 任务 | 状态 | 偏差 | 对应验收标准/验证方式/跳过证明 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 必须 | R1 | 累计归属服务、单股路由、批量内部接口、累计口径和更新时间 | T2 | 已完成 | 一致 | 服务/接口测试已覆盖合法类型、稳定排序去重、孤儿、空结果、格式校验和 401/403 |
-| 必须 | R2 | 固定算法 v1、四类基准、整股回退、中性化、缩尾、双窗口、决胜和可信度 | T3 | 已完成 | 一致 | 固定夹具与人工期望及算法边界单测均已通过；版本固定为 `stock-board-correlation-v1` |
+| 必须 | R2 | 固定算法契约、四类基准、整股回退、中性化、缩尾、双窗口、决胜和可信度 | T3 | 已完成 | 一致 | 已独立覆盖映射基准目标日缺失时整股回退、上证目标日缺失时失败，以及中间缺口但样本达标时不回退；修订版本为 `stock-board-correlation-v2`，既有 v1 状态会自动重算 |
 | 必须 | R3 | 当前冠军表、每股状态表、全量/范围原子替换、合法空清旧、失败回滚 | T1、T4 | 已完成 | 一致 | DDL、完整性校验、全量/范围替换、合法空和事务故障测试均已通过 |
 | 必须 | R4 | 新任务类型、参数、写互斥、动态调度、阶段日志和结果统计 | T4、T5、T9 | 进行中 | 部分覆盖 | T4/T5 已完成后端计算、任务、互斥、调度、日志与统计闭环；任务中心中文标签和类型专属表单待 T9 |
 | 必须 | R5 | 单股/批量摘要、日期保护、三类业务批量合并、P95与无 N+1 | T2、T6、T10 | 进行中 | 部分覆盖 | T2 已证明累计归属批量一次 SQL、空集合零 SQL；冠军摘要、日期保护与性能基准待 T6/T10 |
@@ -320,7 +321,7 @@ index_bar + stock_basic ───┘       │ 固定算法 v1
 - 边界：所有输入 `<=as_of_date`；基准自身不足与个股/候选不足严格分流；上证兜底不足抛完整性错误；NaN/Inf 候选无效；负相关可胜出。
 - 验证：固定小样本手算、四上市板、未知板、回退/不回退、21/61 收盘点、停牌/缺口不桥接、窗口外不补样本、常数序列、同分决胜、行业概念隔离测试。
 - 完成标准：R2 每条算法契约均有独立断言，算法版本唯一。
-- 实际落地情况：已新增 `backend/indicators/stock_board_correlation.py` 纯算法模块，固定 `stock-board-correlation-v1`、61 个开市收盘点、20/60 窗口、15/40 样本、四类基准、整股上证回退、市场中性化、5%/95% 缩尾、Pearson、0.6/0.4 综合分、可信度和四级稳定决胜；相邻开市日任一价格缺失即丢弃该区间，不跨缺口或向窗口外补样本。`StockBoardCorrelationService.load_correlation_inputs` 以固定批量查询加载后复权个股价、原始板块/指数价及累计候选，严格限制到实际目标日；本阶段只返回内存输入与纯计算结果，不写 T1 正式表、不进入 T4。
+- 实际落地情况：已新增 `backend/indicators/stock_board_correlation.py` 纯算法模块，当前修订版本为 `stock-board-correlation-v2`，固定 61 个开市收盘点、20/60 窗口、15/40 样本、四类基准、整股上证回退、市场中性化、5%/95% 缩尾、Pearson、0.6/0.4 综合分、可信度和四级稳定决胜；基准可用性同时要求目标日有效收盘与双窗口样本达标，映射基准失败时整股回退，上证失败时阻止切换，中间缺口仍按样本门槛判定。相邻开市日任一价格缺失即丢弃该区间，不跨缺口或向窗口外补样本。`StockBoardCorrelationService.load_correlation_inputs` 以固定批量查询加载后复权个股价、原始板块/指数价及累计候选，严格限制到实际目标日；计算编排按唯一板块和基准预计算收益，逐股复用而不按候选关系重复构造。版本变化会使 v1 状态在 `force=false` 下自动重算，不遗留错误旧结果。本阶段只返回内存输入与纯计算结果，不写 T1 正式表、不进入 T4。
 
 ### 6.4 任务 T4：实现计算编排、完整性校验与原子替换
 
@@ -460,7 +461,7 @@ T1 实际状态：上述两张 DuckDB 当前态表、正向/回滚 SQL 和数据
 - 接口：R1 单股归属、摘要结构、空集合、日期不匹配、股票/分组/榜单/筛选批量合并、`board_compute` 隔离、401/403 和路由资源扫描。
 - 查询计数：50/200 行调用前后固定次数，不允许逐行读取相关性。
 - 计划命令：先判断服务锁状态，再运行新增测试文件及受影响既有测试，例如 `python -m pytest backend/tests/test_stock_board_correlation.py backend/tests/test_api.py backend/tests/test_stock_group.py backend/tests/test_stage4_board.py backend/tests/test_stage5_resource_codes.py -q`。
-- 具体完成情况：T1 存储、DDL、目录聚焦测试为 `35 passed`；T2 累计归属、采集兼容和接口聚焦测试为 `44 passed`。T3 执行算法、归属和存储聚焦回归为 `31 passed`。T4 聚焦回归为 `47 passed`。T5 执行 `python -m pytest backend/tests/test_stock_board_correlation_task.py backend/tests/test_stock_board_correlation_orchestration.py backend/tests/test_stock_board_correlation_algorithm.py backend/tests/test_stock_board_correlation_membership.py backend/tests/test_stock_board_correlation_storage.py backend/tests/test_pipeline.py backend/tests/test_data_mgmt_b.py -q`，结果 `145 passed in 12.77s`；覆盖参数、注册、互斥、阶段日志、成功/跳过/失败统计、取消、重启中断、调度 CRUD/重试配置/立即运行，以及既有依赖事件等待写槽位和失败重试回归。批量摘要日期保护、前端任务表单和列表合并仍待 T6/T9/T10。
+- 具体完成情况：T1 存储、DDL、目录聚焦测试为 `35 passed`；T2 累计归属、采集兼容和接口聚焦测试为 `44 passed`。T3 执行算法、归属和存储聚焦回归为 `31 passed`。T4 聚焦回归为 `47 passed`。T5 及本次 R2 修订执行 `python -m pytest backend/tests/test_stock_board_correlation_task.py backend/tests/test_stock_board_correlation_orchestration.py backend/tests/test_stock_board_correlation_algorithm.py backend/tests/test_stock_board_correlation_membership.py backend/tests/test_stock_board_correlation_storage.py backend/tests/test_pipeline.py backend/tests/test_data_mgmt_b.py -q`，结果 `151 passed in 12.47s`；覆盖目标日基准缺失、上证失败并保留旧正式结果、中间缺口不误回退、v1 状态自动重算、唯一代码收益预计算，以及参数、注册、互斥、阶段日志、成功/跳过/失败统计、取消、重启中断、调度 CRUD/重试配置/立即运行、既有依赖事件等待写槽位和失败重试。批量摘要日期保护、前端任务表单和列表合并仍待 T6/T9/T10。
 
 ### 8.2 性能基准
 
@@ -468,7 +469,7 @@ T1 实际状态：上述两张 DuckDB 当前态表、正向/回滚 SQL 和数据
 - 条件：本地预热 DuckDB、不含公网、同一硬件连续多轮，报告样本数、P50/P95、SQL 次数和数据规模。
 - 门槛：单股 P95≤10ms、50只≤20ms、200只≤50ms；数据库请求次数不随行数线性增长。
 - 报告路径：`agent-works/stock-board-correlation/performance-report.md`。
-- 具体完成情况：待验证。T2 仅验证批量归属查询次数固定为一次、空集合零查询，尚未执行 1/50/200 代码的冠军摘要 P95 基准。
+- 具体完成情况：全量计算初测已按 5000 股票、50000 候选执行，结果见 `performance-report.md`；已验证板块与基准收益按唯一代码预计算，纯计算单轮为 `59.561s`、`839 candidate/s`、计算阶段 Python 分配峰值 `2.25 MiB`。该数据是开启 `tracemalloc` 的单轮算法基线，不冒充最终多轮 P50/P95；1/50/200 代码冠军摘要读取基准仍待 T6/T10。
 
 ### 8.3 前端组件、页面与配置
 

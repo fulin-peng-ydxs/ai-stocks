@@ -25,6 +25,7 @@ from backend.indicators.stock_board_correlation import (
     StockCorrelationResult,
     calculate_stock_correlations,
     classify_confidence,
+    precompute_market_returns,
     resolve_benchmark_code,
 )
 from backend.services.stock_codes import normalize_stock_code, normalize_stock_codes
@@ -360,6 +361,12 @@ class StockBoardCorrelationService:
 
         enter_phase("calculate")
         calculation_started = time.perf_counter()
+        # 板块与指数行情已按唯一代码加载；收益也按唯一代码构造，避免按候选关系重复计算。
+        board_returns = precompute_market_returns(bundle.board_closes, bundle.calendar_dates)
+        benchmark_returns = precompute_market_returns(
+            bundle.benchmark_closes,
+            bundle.calendar_dates,
+        )
         results = []
         for index, code in enumerate(targets):
             if index and index % 100 == 0 and cancel_check is not None:
@@ -373,6 +380,8 @@ class StockBoardCorrelationService:
                     candidates=bundle.candidates.get(code, ()),
                     board_closes=bundle.board_closes,
                     benchmark_closes=bundle.benchmark_closes,
+                    board_returns=board_returns,
+                    benchmark_returns=benchmark_returns,
                 )
             )
         # DuckDB computed_at 为无时区 TIMESTAMP，沿用仓库既有本地时间口径。

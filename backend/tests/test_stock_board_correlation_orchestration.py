@@ -11,7 +11,11 @@ import pytest
 
 import backend.services.stock_board_correlation as correlation_service_module
 from backend.common.exceptions import StorageError
-from backend.indicators.stock_board_correlation import ALGORITHM_VERSION, CorrelationInputError
+from backend.indicators.stock_board_correlation import (
+    ALGORITHM_VERSION,
+    BenchmarkDataError,
+    CorrelationInputError,
+)
 from backend.services.stock_board_correlation import StockBoardCorrelationService
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
@@ -156,7 +160,8 @@ def test_full_run_skip_partial_stale_version_change_and_forced_idempotence(marke
     assert skipped.benchmark_counts == {"000001.SH": 1, "399001.SZ": 1}
 
     client.execute(
-        "UPDATE stock_board_correlation_state SET algorithm_version='old' WHERE code='600000.SH'"
+        "UPDATE stock_board_correlation_state "
+        "SET algorithm_version='stock-board-correlation-v1' WHERE code='600000.SH'"
     )
     second_time = _computed_at(9)
     refreshed = service.compute_and_replace(computed_at=second_time)
@@ -267,6 +272,62 @@ def test_integrity_failure_is_rejected_before_writes(market, monkeypatch, corrup
     monkeypatch.setattr(correlation_service_module, "calculate_stock_correlations", corrupt_result)
     with pytest.raises(CorrelationInputError, match=reason):
         service.compute_and_replace(force=True)
+
+    assert _snapshot(client) == before
+
+
+def test_batch_orchestration_builds_board_and_benchmark_returns_once_per_unique_code(
+    market,
+    monkeypatch,
+):
+    client, _ = market
+    service = StockBoardCorrelationService(client)
+    calls: list[set[str]] = []
+    original = correlation_service_module.precompute_market_returns
+
+    def track_precompute(closes_by_code, calendar_dates):
+        calls.append(set(closes_by_code))
+        return original(closes_by_code, calendar_dates)
+
+    monkeypatch.setattr(
+        correlation_service_module,
+        "precompute_market_returns",
+        track_precompute,
+    )
+
+    result = service.compute_and_replace(force=True)
+
+    assert result.target_count == 2
+    assert calls == [{"301001", "881001"}, {"000001.SH", "000688.SH", "399001.SZ", "399006.SZ"}]
+
+
+def test_target_day_benchmark_fallback_is_persisted_and_missing_shanghai_keeps_old_rows(market):
+    client, dates = market
+    service = StockBoardCorrelationService(client)
+    service.compute_and_replace(force=True, computed_at=_computed_at(8))
+
+    client.execute(
+        "DELETE FROM index_bar WHERE index_code='399001.SZ' AND trade_date=?",
+        [dates[-1]],
+    )
+    fallback_result = service.compute_and_replace(force=True, computed_at=_computed_at(9))
+    fallback_state = client.query_df(
+        "SELECT benchmark_code,benchmark_fallback "
+        "FROM stock_board_correlation_state WHERE code='000001.SZ'"
+    ).iloc[0]
+    assert fallback_result.fallback_count == 1
+    assert fallback_state.to_dict() == {
+        "benchmark_code": "000001.SH",
+        "benchmark_fallback": True,
+    }
+
+    before = _snapshot(client)
+    client.execute(
+        "DELETE FROM index_bar WHERE index_code='000001.SH' AND trade_date=?",
+        [dates[-1]],
+    )
+    with pytest.raises(BenchmarkDataError, match="目标日收盘缺失"):
+        service.compute_and_replace(force=True, computed_at=_computed_at(10))
 
     assert _snapshot(client) == before
 
