@@ -804,7 +804,7 @@ class StockBoardCorrelationService:
         codes: Iterable[object],
         as_of_date: date,
     ) -> LoadedCorrelationInputs:
-        """固定次数批量加载 v1 算法输入，不计算、不写正式结果。"""
+        """固定次数批量加载当前版本算法输入，不计算、不写正式结果。"""
         normalized = normalize_stock_codes(codes)
         if not normalized:
             return LoadedCorrelationInputs(None, (), {}, {}, {}, {}, {})

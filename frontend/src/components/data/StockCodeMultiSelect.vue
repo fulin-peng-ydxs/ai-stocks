@@ -10,7 +10,7 @@ const props = withDefaults(defineProps<{
   ariaLabel?: string
 }>(), {
   testId: undefined,
-  placeholder: '输入股票代码或名称搜索，可多选',
+  placeholder: '输入代码或名称搜索',
   ariaLabel: '股票代码多选',
 })
 
