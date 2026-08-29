@@ -151,6 +151,8 @@ board_neutral_t = board_return_t - benchmark_return_t
 | 板块详情跳转 | `/sectors/{board_code}` | 只有 `sectors:view` 才生成链接；无权限仍可看板块名称 |
 | 任务与调度 | 数据管理任务中心、定时调度 | 使用既有 system-only `data-task:manage`、`data-schedule:manage` |
 
+四个业务表格统一使用“行业走势”“概念走势”列名，冠军名称以小号朴素标签展示。悬浮层保留综合相关度、20/60 日相关度、20/60 日有效样本数和数据截止日；有效样本的技术定义由本文统一维护，页面不重复展示定义句。
+
 业务日期只有与状态 `as_of_date` 一致时才返回冠军。历史日期不匹配时保留真实截止日和基准信息，但行业、概念为空并标记 `as_of_mismatch`，页面显示“—”和固定说明，禁止用最新冠军装饰历史结果。
 
 ## 空结果怎么判断

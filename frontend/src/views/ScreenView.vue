@@ -562,8 +562,8 @@ function rowClass({ row }: { row: ScreenHit }) {
 function exportCsv() {
   if (!result.value?.hits.length) return
   const relatedColumns = [
-    { key: 'relatedIndustry', label: '走势行业', nameOf: (hit: ScreenHit) => hit.related_boards?.industry?.name ?? '' },
-    { key: 'relatedConcept', label: '走势概念', nameOf: (hit: ScreenHit) => hit.related_boards?.concept?.name ?? '' },
+    { key: 'relatedIndustry', label: '行业走势', nameOf: (hit: ScreenHit) => hit.related_boards?.industry?.name ?? '' },
+    { key: 'relatedConcept', label: '概念走势', nameOf: (hit: ScreenHit) => hit.related_boards?.concept?.name ?? '' },
   ].filter((column) => colVisible(column.key))
   const headers = ['代码', '名称', ...relatedColumns.map((column) => column.label), '综合分', '评级', '是否ST']
   const data = result.value.hits.map((h) => [
@@ -878,10 +878,10 @@ onMounted(initializeScreen)
                   <el-tag v-if="colVisible('st') && row.is_st" type="danger" size="small" effect="dark" style="margin-left: 6px">ST</el-tag>
                 </template>
               </AppTableColumn>
-              <AppTableColumn v-if="colVisible('relatedIndustry')" label="走势行业">
+              <AppTableColumn v-if="colVisible('relatedIndustry')" label="行业走势">
                 <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="industry" /></template>
               </AppTableColumn>
-              <AppTableColumn v-if="colVisible('relatedConcept')" label="走势概念">
+              <AppTableColumn v-if="colVisible('relatedConcept')" label="概念走势">
                 <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="concept" /></template>
               </AppTableColumn>
               <AppTableColumn v-if="colVisible('score')" label="综合分" prop="total_score" sortable :sort-by="(r:any)=>r.total_score ?? -Infinity">

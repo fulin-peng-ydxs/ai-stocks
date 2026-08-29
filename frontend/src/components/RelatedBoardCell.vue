@@ -42,19 +42,21 @@ function formatCorrelation(value: number): string {
     :width="280"
   >
     <template #reference>
-      <RouterLink
-        v-if="canNavigate"
-        class="related-board-cell__name related-board-cell__name--link"
-        :to="sectorPath"
-        :data-testid="testId"
-        @click.stop
-      >{{ board.name }}</RouterLink>
-      <span
-        v-else
-        class="related-board-cell__name"
-        tabindex="0"
-        :data-testid="testId"
-      >{{ board.name }}</span>
+      <el-tag class="related-board-cell__tag" size="small" effect="plain">
+        <RouterLink
+          v-if="canNavigate"
+          class="related-board-cell__name related-board-cell__name--link"
+          :to="sectorPath"
+          :data-testid="testId"
+          @click.stop
+        >{{ board.name }}</RouterLink>
+        <span
+          v-else
+          class="related-board-cell__name"
+          tabindex="0"
+          :data-testid="testId"
+        >{{ board.name }}</span>
+      </el-tag>
     </template>
 
     <div class="related-board-cell__popover" :aria-label="`${board.name}相关性说明`">
@@ -68,9 +70,6 @@ function formatCorrelation(value: number): string {
         <div><dt>60 日有效样本</dt><dd>{{ board.sample_60 }}</dd></div>
         <div><dt>数据截止日</dt><dd>{{ asOfDate || '—' }}</dd></div>
       </dl>
-      <p class="related-board-cell__sample-note">
-        有效样本指股票、板块与基准三方同日均有可计算收益。
-      </p>
     </div>
   </el-popover>
 
@@ -125,6 +124,16 @@ function formatCorrelation(value: number): string {
   text-decoration: underline;
 }
 
+.related-board-cell__tag {
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+.related-board-cell__tag :deep(.el-tag__content) {
+  min-width: 0;
+  overflow: hidden;
+}
+
 .related-board-cell__empty {
   color: var(--app-placeholder-text);
 }
@@ -176,8 +185,4 @@ function formatCorrelation(value: number): string {
   font-variant-numeric: tabular-nums;
 }
 
-.related-board-cell__sample-note {
-  margin: var(--app-space-2) 0 0;
-  color: var(--el-text-color-secondary);
-}
 </style>

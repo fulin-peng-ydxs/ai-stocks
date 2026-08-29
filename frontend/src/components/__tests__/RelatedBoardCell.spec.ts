@@ -30,6 +30,18 @@ const ElTooltipStub = defineComponent({
   },
 })
 
+const ElTagStub = defineComponent({
+  name: 'ElTag',
+  props: ['size', 'effect'],
+  setup(props, { slots }) {
+    return () => h('span', {
+      class: 'tag-stub',
+      'data-size': props.size,
+      'data-effect': props.effect,
+    }, slots.default?.())
+  },
+})
+
 const RouterLinkStub = defineComponent({
   name: 'RouterLink',
   props: ['to'],
@@ -92,6 +104,7 @@ function mountCell(
       stubs: {
         ElPopover: ElPopoverStub,
         ElTooltip: ElTooltipStub,
+        ElTag: ElTagStub,
         RouterLink: RouterLinkStub,
       },
     },
@@ -116,9 +129,13 @@ describe('RelatedBoardCell', () => {
     expect(wrapper.text()).toContain('60 日相关度0.7589')
     expect(wrapper.text()).toContain('20 日有效样本20')
     expect(wrapper.text()).toContain('60 日有效样本58')
-    expect(wrapper.text()).toContain('有效样本指股票、板块与基准三方同日均有可计算收益')
+    expect(wrapper.text()).not.toContain('有效样本指股票、板块与基准三方同日均有可计算收益')
     expect(wrapper.text()).toContain('数据截止日2026-08-28')
     expect(wrapper.text()).not.toContain('相关性较弱')
+    expect(wrapper.getComponent(ElTagStub).props()).toMatchObject({
+      size: 'small',
+      effect: 'plain',
+    })
     expect(wrapper.getComponent(ElPopoverStub).props('trigger')).toEqual(['hover', 'focus'])
     const reference = wrapper.get('.related-board-cell__name')
     expect(reference.attributes('tabindex')).toBe('0')

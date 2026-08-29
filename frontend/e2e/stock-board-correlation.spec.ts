@@ -51,8 +51,8 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
     await ensureRelatedColumnsVisible(page, 'table')
     await page.getByPlaceholder('代码 / 名称').fill('E2E相关-股票')
     await page.getByPlaceholder('代码 / 名称').press('Enter')
-    await expect(page.getByRole('columnheader', { name: '走势行业' })).toBeVisible()
-    await expect(page.getByRole('columnheader', { name: '走势概念' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: '行业走势' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: '概念走势' })).toBeVisible()
     const industry = page.getByRole('link', { name: 'E2E相关-行业冠军' }).first()
     await expect(industry).toBeVisible()
     await industry.focus()
@@ -69,7 +69,7 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
     }
     await industrySwitch.click()
     await stockDrawer.getByRole('button', { name: '关闭页面设置' }).click()
-    await expect(page.getByRole('columnheader', { name: '走势行业' })).toHaveCount(0)
+    await expect(page.getByRole('columnheader', { name: '行业走势' })).toHaveCount(0)
     await ensureRelatedColumnsVisible(page, 'table')
 
     const boardProfilesResponse = await request.get(`${API_URL}/board/profiles`, {
@@ -99,7 +99,7 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
     await resetColumns(page)
     await ensureRelatedColumnsVisible(page, 'table')
     await expect(page.getByTestId('board-profile-select')).toContainText('E2E 关联展示评分方案')
-    await expect(page.getByRole('columnheader', { name: '走势行业' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: '行业走势' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'E2E相关-概念冠军' }).first()).toBeVisible()
 
     const screenProfilesResponse = await request.get(`${API_URL}/profiles`, {
@@ -119,7 +119,7 @@ test.describe('个股走势关联板块 T10 页面验收', () => {
     const runButton = page.getByRole('button', { name: '运行筛选', exact: true })
     await expect(runButton).toBeEnabled()
     await runButton.click()
-    await expect(page.getByRole('columnheader', { name: '走势行业' })).toBeVisible({
+    await expect(page.getByRole('columnheader', { name: '行业走势' })).toBeVisible({
       timeout: 30_000,
     })
     await expect(page.getByRole('link', { name: 'E2E相关-行业冠军' }).first()).toBeVisible()

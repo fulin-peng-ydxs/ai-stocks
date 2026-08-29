@@ -398,7 +398,7 @@ python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB
 | [CLAUDE.md](CLAUDE.md) | Claude Code 薄入口，指向 AGENTS 与 Claude 项目记忆 |
 | [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) | 登录鉴权、系统菜单、细粒度权限、多租户资产隔离和公开资产可见性的当前技术架构 |
 | [environment-configuration.md](agent-works/architecture/environment-configuration.md) | 环境变量、变量文件、YAML 基线、PG/DuckDB `app_config` 边界和配置生效规则 |
-| [stock-board-correlation.md](agent-works/architecture/stock-board-correlation.md) | 走势行业/概念冠军的算法口径、有效样本含义、任务落表、页面读取和风险边界 |
+| [stock-board-correlation.md](agent-works/architecture/stock-board-correlation.md) | 行业/概念走势冠军的算法口径、有效样本含义、任务落表、页面读取和风险边界 |
 | [multi-tenant-rbac](agent-works/multi-tenant-rbac/) | 系统菜单、权限、多租户相关需求与落地记录 |
 | [DESIGN.md — 前端设计与布局规范](DESIGN.md) | 前端布局事实源与页面开发契约：可配置布局系统、页面设计闭环、组件/布局维护矩阵、设置抽屉规范；强制规则归 `frontend/src/layout` + 契约测试 |
 | [page-template.md — 新页面开发模板](agent-works/configurable-layout-system/page-template.md) | AI/开发者新建或改造页面时复制使用的页面设计块、维护矩阵、7 个原型骨架和验收清单 |

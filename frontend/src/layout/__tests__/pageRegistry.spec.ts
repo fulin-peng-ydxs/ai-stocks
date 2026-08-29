@@ -755,14 +755,14 @@ describe('组件消费关系与配置一致性（P4）', () => {
     }
   })
 
-  it('T8 只为四个既有业务表消费走势行业与走势概念列', () => {
+  it('T8 只为四个既有业务表消费行业走势与概念走势列', () => {
     const actual = new Set<string>()
     for (const entry of PAGE_REGISTRY) {
       for (const [slotId, meta] of Object.entries(entry.componentMeta ?? {})) {
         for (const column of meta.columns ?? []) {
           if (column.key === 'relatedIndustry' || column.key === 'relatedConcept') {
             actual.add(`${entry.pageKey}.${slotId}.${column.key}`)
-            expect(column.label).toBe(column.key === 'relatedIndustry' ? '走势行业' : '走势概念')
+            expect(column.label).toBe(column.key === 'relatedIndustry' ? '行业走势' : '概念走势')
           }
         }
       }

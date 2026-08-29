@@ -757,7 +757,7 @@ describe('代表性页面四态回归', () => {
 
     expect(csvUtils.downloadCsv).toHaveBeenCalledWith(
       '筛选结果_2026-08-28.csv',
-      ['代码', '名称', '走势行业', '综合分', '评级', '是否ST'],
+      ['代码', '名称', '行业走势', '综合分', '评级', '是否ST'],
       [['000001.SZ', '平安银行', '银行', 90, '观察', '']],
     )
     const serialized = JSON.stringify((csvUtils.downloadCsv as ReturnType<typeof vi.fn>).mock.calls[0])

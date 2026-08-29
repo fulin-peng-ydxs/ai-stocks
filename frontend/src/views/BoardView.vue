@@ -636,10 +636,10 @@ onMounted(async () => {
           </template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('board')" label="板块" prop="board" />
-        <AppTableColumn v-if="colVisible('relatedIndustry')" label="走势行业">
+        <AppTableColumn v-if="colVisible('relatedIndustry')" label="行业走势">
           <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="industry" /></template>
         </AppTableColumn>
-        <AppTableColumn v-if="colVisible('relatedConcept')" label="走势概念">
+        <AppTableColumn v-if="colVisible('relatedConcept')" label="概念走势">
           <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="concept" /></template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('score')" label="综合分" prop="total_score" sortable :sort-by="(r:any)=>r.total_score">
