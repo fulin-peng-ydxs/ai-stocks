@@ -448,13 +448,14 @@ export const ISSUE_TYPES_ACTIVE = [
   'board_fund_unmatched', 'board_fund_missing', 'board_fund_stale',
 ] as const
 export const ISSUE_TYPE_LABEL: Record<string, string> = {
-  null_close: '收盘价非法(丢弃)', ohl_repaired: '开高低修补', mv_missing: '市值缺失',
-  mv_gap: '市值缺口(近端)', abnormal_change: '异常涨跌幅', adj_jump: '复权跳变',
-  data_gap: '行情缺口(疑似漏采)', stale: '数据滞后',
-  board_index_gap: '板块指数缺口', board_index_gap_daily: '板块指数逐日缺口',
-  board_index_invalid: '板块指数数据异常', board_member_incomplete: '板块成分采集不完整',
-  board_fund_unmatched: '板块资金流未匹配',
-  board_fund_missing: '板块资金流缺失', board_fund_stale: '板块资金流滞后',
+  // 展示名统一为「对象·现象」，现象词固定：缺失/缺口(近端缺某日)/滞后(未更新到最新)/非法/异常/跳变/修补/为空。
+  null_close: '行情·收盘价为空(丢弃)', ohl_repaired: '行情·开高低修补', mv_missing: '市值·整段缺失',
+  mv_gap: '市值·近端缺某日', abnormal_change: '行情·涨跌幅异常', adj_jump: '复权·因子跳变',
+  data_gap: '行情·近端缺某日', stale: '行情·未更新到最新',
+  board_index_gap: '板块指数·未更新到最新', board_index_gap_daily: '板块指数·近端缺某日',
+  board_index_invalid: '板块指数·字段非法', board_member_incomplete: '板块成分·采集不完整',
+  board_fund_unmatched: '板块资金流·未映射',
+  board_fund_missing: '板块资金流·源未收录', board_fund_stale: '板块资金流·未更新到最新',
 }
 
 /** 任务列表/调度/顶栏共用的展示口径：fix 任务带上动态恢复的质检问题类型。 */
@@ -510,7 +511,7 @@ export const LAYER_LABEL: Record<string, string> = {
 export const LAYER_DESC: Record<string, string> = {
   L1: 'L1 入库闸门：收盘价合法、开高低正常',
   L2: 'L2 字段契约：市值字段（总市值 / 流通市值）完整',
-  L3: 'L3 正确性：无复权跳变 / 异常涨跌',
+  L3: 'L3 正确性：无复权因子跳变 / 涨跌幅异常',
   L4: 'L4 覆盖鲜活：无缺口且更新到最新交易日',
   板块: '板块维度：指数覆盖与字段合法、成分快照完整、资金流覆盖与映射（独立于个股四层质量）',
 }
@@ -530,11 +531,11 @@ export const BOARD_STAGE_OPTIONS: { label: string; value: BoardIngestStage }[] =
   { label: '指数', value: 'bar' }, { label: '资金流', value: 'fund' },
 ]
 export const BOARD_ISSUE_ITEMS = [
-  { key: 'board_member_incomplete', label: '成分不完整', hint: '重采成分快照' },
-  { key: 'board_index_gap', label: '指数尾部缺口', hint: '补齐至最新交易日' },
-  { key: 'board_index_gap_daily', label: '指数逐日缺口', hint: '补齐具体缺失日' },
-  { key: 'board_index_invalid', label: '指数数据异常', hint: '重采 OHLC/成交异常日' },
-  { key: 'board_fund_unmatched', label: '资金流未匹配', hint: '重采全源并检查归属' },
-  { key: 'board_fund_missing', label: '资金流缺失', hint: '补齐最新交易日覆盖' },
-  { key: 'board_fund_stale', label: '资金流滞后', hint: '重采全源即时快照' },
+  { key: 'board_member_incomplete', label: '成分·采集不完整', hint: '重采成分快照' },
+  { key: 'board_index_gap', label: '指数·未到最新', hint: '补齐至最新交易日' },
+  { key: 'board_index_gap_daily', label: '指数·近端缺某日', hint: '补齐具体缺失日' },
+  { key: 'board_index_invalid', label: '指数·字段非法', hint: '重采 OHLC/成交异常日' },
+  { key: 'board_fund_unmatched', label: '资金流·未映射', hint: '重采全源并检查归属' },
+  { key: 'board_fund_missing', label: '资金流·源未收录', hint: '补齐最新交易日覆盖' },
+  { key: 'board_fund_stale', label: '资金流·未到最新', hint: '重采全源即时快照' },
 ] as const

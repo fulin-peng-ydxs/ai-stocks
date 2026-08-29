@@ -140,13 +140,13 @@ function layerCell(k: string, lay: any): { type: string; text: string; tip: stri
   if (!lay) return { type: 'info', text: '—', tip: '' }
   if (lay.ok) {
     const okTip: Record<string, string> = {
-      L1: '入库无异常', L2: '市值字段完整', L3: '无复权跳变/异常涨跌', L4: '无缺口且数据鲜活',
+      L1: '入库无异常', L2: '市值字段完整', L3: '无复权因子跳变/涨跌幅异常', L4: '无缺口且数据鲜活',
     }
     return { type: 'success', text: '达标', tip: okTip[k] }
   }
-  if (k === 'L1') return { type: 'danger', text: `${lay.issues} 问题`, tip: `入库问题 ${lay.issues} 项（收盘价非法/开高低修补）→ 点击查看并修复` }
+  if (k === 'L1') return { type: 'danger', text: `${lay.issues} 问题`, tip: `入库问题 ${lay.issues} 项（行情·收盘价为空/开高低修补）→ 点击查看并修复` }
   if (k === 'L2') return { type: 'danger', text: '缺', tip: '市值字段缺失（总市值/流通市值未补全）→ 点击前往质量页恢复' }
-  if (k === 'L3') return { type: 'danger', text: `${lay.issues} 问题`, tip: `正确性问题 ${lay.issues} 项（复权跳变/异常涨跌）→ 点击查看并修复` }
+  if (k === 'L3') return { type: 'danger', text: `${lay.issues} 问题`, tip: `正确性问题 ${lay.issues} 项（复权·因子跳变/涨跌幅异常）→ 点击查看并修复` }
   // L4
   const parts: string[] = []
   if (lay.gap_days) parts.push(`缺口 ${lay.gap_days} 天${lay.gap_lo ? `（${lay.gap_lo}~${lay.gap_hi}）` : ''}`)
