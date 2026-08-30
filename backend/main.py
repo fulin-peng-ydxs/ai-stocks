@@ -33,6 +33,7 @@ from backend.api.dicts import router as dict_router
 from backend.api.health import router as health_router
 from backend.api.indicators import router as indicators_router
 from backend.api.layout import router as layout_router
+from backend.api.limit_ladder import router as limit_ladder_router
 from backend.api.menus import router as menus_router
 from backend.api.profiles import router as profiles_router
 from backend.api.resources import router as resources_router
@@ -144,6 +145,7 @@ def create_app() -> FastAPI:
     app.include_router(config_router)
     app.include_router(indicators_router)
     app.include_router(layout_router)
+    app.include_router(limit_ladder_router)
     app.include_router(score_profiles_router)
     app.include_router(sectors_router)
     app.include_router(trade_discipline_router)

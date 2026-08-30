@@ -70,6 +70,23 @@ class LadderAggregate:
 
 
 @dataclass(frozen=True, slots=True)
+class LadderWindowMetric:
+    code: str
+    window_limit_up_days: int
+    window_start_date: date
+    actual_trade_days: int
+
+
+@dataclass(frozen=True, slots=True)
+class LimitLadderWindowCalculation:
+    trade_date: date
+    requested_window: int
+    requested_window_start_date: date
+    requested_window_trade_days: int
+    stocks: tuple[LadderWindowMetric, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class LimitLadderCalculation:
     trade_date: date
     requested_window: int
@@ -245,6 +262,66 @@ class LimitLadderCalculator:
                 sorted(issues.values(), key=lambda issue: (issue.trade_date, issue.code, issue.reason))
             ),
             batch_query_count=self._batch_query_count,
+        )
+
+    def calculate_window_metrics(
+        self,
+        trade_date: date,
+        codes: list[str],
+        *,
+        window: int = 31,
+    ) -> LimitLadderWindowCalculation:
+        """Calculate only bounded rolling fields for an already-published stock set."""
+        if window not in SUPPORTED_WINDOWS:
+            raise ValueError(f"window must be one of {sorted(SUPPORTED_WINDOWS)}")
+        calendar = self._calendar_through(trade_date)
+        if not calendar or calendar[-1] != trade_date:
+            raise ValueError(f"not an open trade date: {trade_date}")
+        window_dates = calendar[-window:]
+        requested_codes = sorted(set(codes))
+        requested_set = set(requested_codes)
+        basics = self._point_in_time_basics(trade_date)
+        basic_by_code = {
+            str(row["code"]): row
+            for _, row in basics.iterrows()
+            if str(row["code"]) in requested_set
+        }
+        facts = self._load_daily_facts(sorted(basic_by_code), window_dates)
+        metrics: list[LadderWindowMetric] = []
+        for code in requested_codes:
+            basic = basic_by_code.get(code)
+            if basic is None:
+                continue
+            list_date = self._date_value(basic.get("list_date"))
+            actual_dates = [day for day in window_dates if list_date is None or day >= list_date]
+            limit_up_days = 0
+            for day in actual_dates:
+                fact = facts.get((code, day))
+                if fact is None or self._bool_value(fact.get("confirmed_suspension")):
+                    continue
+                result, _ = self.evaluate_fact(
+                    code=code,
+                    basic=basic,
+                    fact=fact,
+                    calendar=calendar,
+                )
+                if result.is_limit_up:
+                    limit_up_days += 1
+            if actual_dates:
+                metrics.append(
+                    LadderWindowMetric(
+                        code=code,
+                        window_limit_up_days=limit_up_days,
+                        window_start_date=actual_dates[0],
+                        actual_trade_days=len(actual_dates),
+                    )
+                )
+        return LimitLadderWindowCalculation(
+            trade_date=trade_date,
+            requested_window=window,
+            requested_window_start_date=window_dates[0],
+            requested_window_trade_days=len(window_dates),
+            stocks=tuple(metrics),
         )
 
     def _calendar_through(self, trade_date: date) -> list[date]:
