@@ -10,6 +10,8 @@ from enum import StrEnum
 
 MAIN_BOARD_ST_10_EFFECTIVE_DATE = date(2026, 7, 6)
 MAIN_BOARD_ST_OLD_LIMIT = 0.05
+MAIN_BOARD_REGISTRATION_EFFECTIVE_DATE = date(2023, 4, 10)
+CHINEXT_REGISTRATION_EFFECTIVE_DATE = date(2020, 8, 24)
 CENT = Decimal("0.01")
 
 
@@ -143,6 +145,44 @@ def board_price_limit_pct(board: ListingBoard) -> float:
     if not isinstance(board, ListingBoard):
         raise TypeError(f"unsupported listing board: {board}")
     return 0.20 if board in {ListingBoard.CHINEXT, ListingBoard.STAR} else 0.10
+
+
+def ipo_price_limit_applicability(
+    *,
+    board: ListingBoard,
+    list_date: date,
+    listing_session_number: int,
+) -> PriceLimitApplicability:
+    """Resolve IPO-day price-limit applicability from supported exchange regimes.
+
+    STAR stocks and registration-based ChiNext/main-board IPOs have no price limit
+    for their first five trading sessions. Older main-board IPO first-day rules used
+    a special ceiling that this EOD dataset cannot reconstruct, so that one session
+    is deliberately ``UNKNOWN`` instead of being treated as an ordinary 10% day.
+    """
+    if listing_session_number < 1:
+        raise ValueError("listing_session_number must be positive")
+    if board is ListingBoard.STAR:
+        return (
+            PriceLimitApplicability.NOT_APPLICABLE
+            if listing_session_number <= 5
+            else PriceLimitApplicability.APPLICABLE
+        )
+    if board is ListingBoard.CHINEXT and list_date >= CHINEXT_REGISTRATION_EFFECTIVE_DATE:
+        return (
+            PriceLimitApplicability.NOT_APPLICABLE
+            if listing_session_number <= 5
+            else PriceLimitApplicability.APPLICABLE
+        )
+    if board is ListingBoard.MAIN and list_date >= MAIN_BOARD_REGISTRATION_EFFECTIVE_DATE:
+        return (
+            PriceLimitApplicability.NOT_APPLICABLE
+            if listing_session_number <= 5
+            else PriceLimitApplicability.APPLICABLE
+        )
+    if listing_session_number == 1:
+        return PriceLimitApplicability.UNKNOWN
+    return PriceLimitApplicability.APPLICABLE
 
 
 def evaluate_close_limit_up(

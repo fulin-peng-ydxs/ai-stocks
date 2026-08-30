@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from datetime import date
 
 import pytest
 
@@ -13,6 +14,7 @@ from backend.market_rules import (
     PriceLimitApplicability,
     board_price_limit_pct,
     evaluate_close_limit_up,
+    ipo_price_limit_applicability,
     listing_board_for,
 )
 
@@ -105,6 +107,27 @@ def test_unknown_applicability_value_fails_closed():
         applicability="invalid",  # type: ignore[arg-type]
     )
     assert result.status is CloseLimitStatus.UNSUPPORTED_RULE
+
+
+@pytest.mark.parametrize(
+    ("board", "list_date", "session", "expected"),
+    [
+        (ListingBoard.STAR, "2019-07-22", 5, PriceLimitApplicability.NOT_APPLICABLE),
+        (ListingBoard.STAR, "2019-07-22", 6, PriceLimitApplicability.APPLICABLE),
+        (ListingBoard.CHINEXT, "2020-08-24", 1, PriceLimitApplicability.NOT_APPLICABLE),
+        (ListingBoard.MAIN, "2023-04-10", 5, PriceLimitApplicability.NOT_APPLICABLE),
+        (ListingBoard.MAIN, "2023-04-07", 1, PriceLimitApplicability.UNKNOWN),
+        (ListingBoard.MAIN, "2023-04-07", 2, PriceLimitApplicability.APPLICABLE),
+    ],
+)
+def test_ipo_price_limit_applicability_is_regime_and_session_aware(
+    board, list_date, session, expected
+):
+    assert ipo_price_limit_applicability(
+        board=board,
+        list_date=date.fromisoformat(list_date),
+        listing_session_number=session,
+    ) is expected
 
 
 @pytest.mark.parametrize(

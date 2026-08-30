@@ -23,7 +23,13 @@ from backend.config import get_effective_settings
 from backend.dataquality.checker import add_markers, sanitize_bars
 from backend.datasource.akshare_source import classify_board
 from backend.datasource.base import DataSource, get_source
+from backend.limit_ladder.rules import (
+    PointInTimeSTStatus,
+    STStatusQuality,
+    resolve_point_in_time_st,
+)
 from backend.services.async_task import TaskCancelled
+from backend.services.stock_st_status import StockSTStatusFact, StockSTStatusService
 from backend.services.trade_calendar_readiness import (
     calendar_readiness_detail,
     calendar_request_end,
@@ -60,6 +66,8 @@ class IngestionService:
         init_db(self.c)  # 确保表已建
         self.repo = MarketRepository(self.c)
         self._bao: DataSource | None = None
+        self._limit_ladder_st_dates: set[date] = set()
+        self._limit_ladder_st_lock = threading.Lock()
 
     def _bao_source(self) -> DataSource:
         """惰性创建补充源（默认 baostock，由 datasource.fallback 配置决定）。"""
@@ -254,14 +262,50 @@ class IngestionService:
         return df
 
     # ── 单只股票日线 + 衍生指标 ──
-    def _is_st_by_name(self, code: str) -> bool:
-        """按 stock_basic 当前名称判定是否 ST（含 ST/*ST），带进程内缓存。"""
+    def _st_status_by_name(self, code: str) -> PointInTimeSTStatus:
+        """Resolve the current name fallback while preserving approximate provenance."""
         cache = getattr(self, "_st_name_cache", None)
         if cache is None:
             df = self.repo.c.query_df("SELECT code, name FROM stock_basic")
-            cache = {r["code"]: ("ST" in str(r["name"]).upper()) for _, r in df.iterrows()}
+            cache = {
+                r["code"]: self._st_status_from_name_value(r["name"])
+                for _, r in df.iterrows()
+            }
             self._st_name_cache = cache
-        return cache.get(code, False)
+        return cache.get(code, resolve_point_in_time_st(name=None))
+
+    def _is_st_by_name(self, code: str) -> bool:
+        """Compatibility wrapper for existing marker and factor-refresh callers."""
+        return self._st_status_by_name(code).is_st
+
+    @staticmethod
+    def _st_status_from_name_value(value) -> PointInTimeSTStatus:
+        name = None if value is None or pd.isna(value) else str(value)
+        return resolve_point_in_time_st(name=name)
+
+    def _track_limit_ladder_st_dates(self, dates: list[date]) -> None:
+        if not dates:
+            return
+        self._ensure_limit_ladder_st_tracking()
+        with self._limit_ladder_st_lock:
+            self._limit_ladder_st_dates.update(dates)
+
+    def _reset_limit_ladder_st_dates(self) -> None:
+        self._ensure_limit_ladder_st_tracking()
+        with self._limit_ladder_st_lock:
+            self._limit_ladder_st_dates.clear()
+
+    def _limit_ladder_st_date_result(self) -> list[str]:
+        self._ensure_limit_ladder_st_tracking()
+        with self._limit_ladder_st_lock:
+            return [value.isoformat() for value in sorted(self._limit_ladder_st_dates)]
+
+    def _ensure_limit_ladder_st_tracking(self) -> None:
+        """Keep lightweight ``__new__`` test doubles and maintenance callers compatible."""
+        if not hasattr(self, "_limit_ladder_st_lock"):
+            self._limit_ladder_st_lock = threading.Lock()
+        if not hasattr(self, "_limit_ladder_st_dates"):
+            self._limit_ladder_st_dates = set()
 
     def _fetch_daily_with_fallback(
         self, code: str, start: date, end: date, primary: DataSource, ctx=None,
@@ -326,6 +370,7 @@ class IngestionService:
         self, code: str, start: date, end: date,
         board_limit_pct: float | None = None, is_st: bool | None = None,
         source: DataSource | None = None, ctx=None,
+        st_status: PointInTimeSTStatus | None = None,
     ) -> int:
         df, used_source = self._fetch_daily_with_fallback(code, start, end, source or self.src, ctx=ctx)
         if df is None or df.empty:
@@ -355,8 +400,19 @@ class IngestionService:
         # 不再一律 False。免费源无历史每日 ST，故用 stock_basic 当前名称尽力而为）
         if board_limit_pct is None:
             _, _, board_limit_pct = classify_board(code.split(".")[0])
-        if is_st is None:
-            is_st = self._is_st_by_name(code)
+        if st_status is None:
+            fallback = self._st_status_by_name(code)
+            st_status = (
+                fallback
+                if is_st is None
+                else PointInTimeSTStatus(
+                    is_st=bool(is_st),
+                    source=fallback.source,
+                    source_ref=fallback.source_ref,
+                    quality=STStatusQuality.APPROXIMATE,
+                )
+            )
+        is_st = st_status.is_st
         # 质检标记：涨跌停/一字板/ST（回测撮合前提）
         df = add_markers(df, board_limit_pct, is_st)
         # OHL 修补行：真实振幅未知 → 强制不标一字板，并记入问题台账（不静默/不臆造）
@@ -385,6 +441,19 @@ class IngestionService:
             "adj_factor_clean", "is_st", "is_suspended", "limit_status", "is_one_word",
         ]
         n = self.repo.upsert_daily_bar(df[bar_cols])
+        affected_st_dates = StockSTStatusService(self.c).upsert_facts(
+            [
+                StockSTStatusFact(
+                    code=code,
+                    trade_date=pd.Timestamp(trade_day).date(),
+                    status=st_status,
+                )
+                for trade_day in df["trade_date"].tolist()
+            ],
+            change_reason="daily_ingest",
+            task_id=getattr(ctx, "tid", None),
+        )
+        self._track_limit_ladder_st_dates(affected_st_dates)
         # 衍生指标：流通市值 = 收盘 × 当日流通股本（新浪日线自带 float_share）
         if "float_share" in df.columns:
             metrics = pd.DataFrame(
@@ -827,6 +896,7 @@ class IngestionService:
         （限流按线程隔离，总速率≈N×单线程），写入由 DuckDB 单写锁串行。默认 1（串行）。
         ⚠️ 调高并发即调高总请求速率，注意免费源封禁风险。
         """
+        self._reset_limit_ladder_st_dates()
         years = years or self.s.datasource.history_years
         end = self._latest_open_day()   # 收敛到最近交易日，非交易日不当截止
         start = date(end.year - years, end.month, end.day)
@@ -847,7 +917,8 @@ class IngestionService:
         # 板块涨跌幅 + ST 状态查找表（ST 由名称含 "ST" 判定）
         limit_lut = dict(zip(basic["code"], basic["price_limit_pct"]))
         st_lut = {
-            r["code"]: ("ST" in str(r["name"]).upper()) for _, r in basic.iterrows()
+            r["code"]: self._st_status_from_name_value(r["name"]).is_st
+            for _, r in basic.iterrows()
         }
 
         # 断点续跑 + 部分覆盖修复：旧逻辑"有任意数据就跳过"会把仅有部分近期数据的股票
@@ -951,6 +1022,7 @@ class IngestionService:
                 ctx.log(f"↻ 重算干净复权因子（{len(updated)} 只新入库）…")
             self._refresh_clean_factors(sorted(updated), ctx=ctx)
         result = {"target": len(target_codes), "ok": ok, "skip": skip, "fail": fail, "rows": total_rows}
+        result["limit_ladder_st_affected_dates"] = self._limit_ladder_st_date_result()
         # 市值透明化：历史补数只采行情，total_mv 历史市值不在本任务内采（市值源是慢接口，单列）。
         # 明确告知缺口去向，避免“市值盲区”不透明——增量更新只保最新交易日，历史全段缺口须靠
         # ingest_valuation_gaps/`valuation --fill-gaps`（或质量页补修）一次性回补，增量不自动补历史。
@@ -1108,6 +1180,7 @@ class IngestionService:
         ctx（M2.8-B，可选 TaskContext）：传入则逐股写实时日志 + 进度 + checkpoint（FR-DM-9/10）。
         续跑天然幂等：从各股已入库最新日 +1 起，重复跑只补缺口。
         """
+        self._reset_limit_ladder_st_dates()
         end = date.today()
         concurrency = concurrency or self.s.datasource.update_concurrency
         basic = (
@@ -1323,6 +1396,7 @@ class IngestionService:
             self._refresh_clean_factors(sorted(updated), ctx=ctx)
         result = {"target": n, "ok": ok, "fail": fail, "rows": total_rows, "concurrency": concurrency,
                   "reconcile": recon}
+        result["limit_ladder_st_affected_dates"] = self._limit_ladder_st_date_result()
         # 补市值并入更新行情（容错子阶段）：更新即产出 L2 完整数据（float_mv 由日线自带 + total_mv）。
         # 幂等只补缺失股；失败仅记日志、不让整次更新失败（市值源是慢接口，单独容错隔离）。
         # 注意 total_mv 的增量语义：这里只保「最新交易日」新鲜，历史中间缺口不归 update 管
@@ -1505,7 +1579,10 @@ class IngestionService:
             if ctx:
                 ctx.set_checkpoint(prep_done=True)
         limit_lut = dict(zip(live["code"], live["price_limit_pct"]))
-        st_lut = {r["code"]: ("ST" in str(r["name"]).upper()) for _, r in live.iterrows()}
+        st_lut = {
+            r["code"]: self._st_status_from_name_value(r["name"]).is_st
+            for _, r in live.iterrows()
+        }
         target = live["code"].tolist()
         done_codes = set(ctx.checkpoint.get("done_codes") or []) if (ctx and ctx.checkpoint) else set()
         target = [c for c in target if c not in done_codes]
@@ -1660,7 +1737,10 @@ class IngestionService:
                          verb: str = "重算价格因子") -> dict:
         basic = self.repo.c.query_df("SELECT code, name, price_limit_pct FROM stock_basic")
         limit_lut = dict(zip(basic["code"], basic["price_limit_pct"]))
-        st_lut = {r["code"]: ("ST" in str(r["name"]).upper()) for _, r in basic.iterrows()}
+        st_lut = {
+            r["code"]: self._st_status_from_name_value(r["name"]).is_st
+            for _, r in basic.iterrows()
+        }
         done_codes = set(ctx.checkpoint.get("factor_done_codes") or []) if (ctx and ctx.checkpoint) else set()
         target = [c for c in target if c not in done_codes]
         ok = fail = rows = 0
@@ -1893,7 +1973,7 @@ class IngestionService:
             try:
                 code6 = code.split(".")[0]
                 _, _, limit_pct = self._in_target_board(code6)
-                is_st = "ST" in str(r["name"]).upper()
+                is_st = self._st_status_from_name_value(r["name"]).is_st
                 # 补 stock_basic 一行（退市股，含退市日）
                 self.repo.upsert_stock_basic(
                     pd.DataFrame([{
@@ -1944,12 +2024,14 @@ class IngestionService:
         - only：可选子集（"dict"/"members"/"bar"/"fund"），CLI --dict 等分表运行用。
         board_type 可限制 concept/industry；ctx 提供任务中心进度日志。
         """
+        from datetime import date as _d
+        from datetime import timedelta as _td
+
         from backend.services.board_ingest import (
             BOARD_INGEST_STAGES,
             BoardIngestService,
             normalize_board_stages,
         )
-        from datetime import date as _d, timedelta as _td
 
         if mode not in ("backfill", "update"):
             raise ValueError("板块采集模式仅支持 backfill/update")
