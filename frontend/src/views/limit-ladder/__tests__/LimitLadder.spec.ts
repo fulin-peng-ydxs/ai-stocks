@@ -14,6 +14,7 @@ const stock: LimitLadderStock = {
   amount:123000000,industry_name:'软件',industry_board_code:'I001',source_version:'v1',
   window_limit_up_days:3,window_start_date:'2026-08-20',actual_trade_days:8,
   snapshot_concepts:[{board_code:'C001',board_name:'人工智能'},{board_code:'C002',board_name:'机器人'}],
+  latest_related_industry:{board_code:'I900',board_name:'数字服务',as_of_date:'2026-08-28'},
   latest_related_concept:{board_code:'C002',board_name:'机器人',as_of_date:'2026-08-28'},
 }
 
@@ -22,7 +23,7 @@ const result: LimitLadderResult = {
   has_snapshot:true,filters:{},snapshot:{snapshot_id:'snapshot-1',trade_date:'2026-08-28',computed_at:'2026-08-28T18:00:00',stock_count:1,has_approx_st:false,coverage:{}},
   requested_window_start_date:'2026-07-17',requested_window_trade_days:31,dynamic_window_status:'ready',
   summary:{stock_count:1,highest_board:2,first_board_count:0},
-  hotspots:{industry:[{group_key:'I001',group_name:'软件',stock_count:1}],concept:[{group_key:'C002',group_name:'机器人',stock_count:1}]},
+  hotspots:{industry:[{group_key:'I900',group_name:'数字服务',stock_count:1}],concept:[{group_key:'C002',group_name:'机器人',stock_count:1}]},
   layers:[{consecutive_days:2,stock_count:1,stocks:[stock]}],
 }
 

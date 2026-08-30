@@ -31,7 +31,7 @@ export interface LimitLadderConcept {
   board_name: string
 }
 
-export interface LimitLadderRelatedConcept extends LimitLadderConcept {
+export interface LimitLadderRelatedBoard extends LimitLadderConcept {
   as_of_date: string
 }
 
@@ -53,7 +53,8 @@ export interface LimitLadderStock {
   window_start_date: string | null
   actual_trade_days: number | null
   snapshot_concepts: LimitLadderConcept[]
-  latest_related_concept: LimitLadderRelatedConcept | null
+  latest_related_industry: LimitLadderRelatedBoard | null
+  latest_related_concept: LimitLadderRelatedBoard | null
 }
 
 export interface LimitLadderLayer {
@@ -86,6 +87,7 @@ export interface LimitLadderResult {
   requested_window_start_date: string | null
   requested_window_trade_days: number
   dynamic_window_status: string
+  related_board_status?: string
   related_concept_status?: string
   coverage?: Record<string, unknown>
   last_success_at?: string | null

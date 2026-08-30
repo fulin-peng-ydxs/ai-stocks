@@ -215,7 +215,7 @@ class LimitLadderQueryService:
             filters.window,
         )
         concepts = self._snapshot_concepts(snapshot_id)
-        related, related_status = self._latest_related_concepts([str(row["code"]) for row in stocks])
+        related, related_status = self._latest_related_boards([str(row["code"]) for row in stocks])
         enriched = []
         for stock in stocks:
             code = str(stock["code"])
@@ -227,7 +227,8 @@ class LimitLadderQueryService:
                     "window_start_date": metric.get("window_start_date"),
                     "actual_trade_days": metric.get("actual_trade_days"),
                     "snapshot_concepts": concepts.get(code, []),
-                    "latest_related_concept": related.get(code),
+                    "latest_related_industry": related.get(code, {}).get("industry"),
+                    "latest_related_concept": related.get(code, {}).get("concept"),
                 }
             )
         visible = self._filter(enriched, filters)
@@ -254,6 +255,7 @@ class LimitLadderQueryService:
             "requested_window_start_date": requested_start,
             "requested_window_trade_days": requested_days,
             "dynamic_window_status": dynamic_status,
+            "related_board_status": related_status,
             "related_concept_status": related_status,
             "summary": summary,
             "hotspots": self._hotspots(visible),
@@ -359,7 +361,7 @@ class LimitLadderQueryService:
             )
         return result
 
-    def _latest_related_concepts(self, codes: list[str]):
+    def _latest_related_boards(self, codes: list[str]):
         if not codes:
             return {}, "ready"
         try:
@@ -367,24 +369,24 @@ class LimitLadderQueryService:
             with self.c.temp_view(frame, "ladder_related_codes") as code_view:
                 rows = self.c.query_df(
                     f"""
-                    SELECT c.code,c.board_code,d.name AS board_name,c.as_of_date
+                    SELECT c.code,c.board_type,c.board_code,d.name AS board_name,c.as_of_date
                     FROM stock_board_correlation c
                     JOIN {code_view} wanted ON wanted.code=c.code
                     LEFT JOIN board_dict d ON d.board_code=c.board_code
-                    WHERE c.board_type='concept'
+                    WHERE c.board_type IN ('industry','concept')
                     """
                 )
-            return {
-                str(row["code"]): {
+            result: dict[str, dict[str, dict[str, str]]] = {}
+            for row in rows.to_dict("records"):
+                result.setdefault(str(row["code"]), {})[str(row["board_type"])] = {
                     "board_code": str(row["board_code"]),
                     "board_name": self._nullable_text(row.get("board_name"))
                     or str(row["board_code"]),
                     "as_of_date": self._date(row["as_of_date"]).isoformat(),
                 }
-                for row in rows.to_dict("records")
-            }, "ready"
+            return result, "ready"
         except Exception as exc:  # noqa: BLE001 -- current correlation is optional enrichment
-            log.warning("天梯最新相关概念查询降级: %s", exc)
+            log.warning("天梯最新相关行业/概念查询降级: %s", exc)
             return {}, "degraded"
 
     @staticmethod
@@ -402,9 +404,8 @@ class LimitLadderQueryService:
             if keyword and keyword not in str(stock["code"]).casefold() and keyword not in str(stock["name"]).casefold():
                 continue
             if filters.hotspot_type == "industry":
-                key = stock.get("industry_board_code") or (
-                    "__unclassified__" if stock.get("industry_name") == "未分类" else f"name:{stock.get('industry_name')}"
-                )
+                related = stock.get("latest_related_industry")
+                key = related.get("board_code") if related else "__unclassified__"
                 if key != filters.hotspot_key:
                     continue
             if filters.hotspot_type == "concept":
@@ -438,21 +439,14 @@ class LimitLadderQueryService:
     def _hotspots(stocks: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
         counts: dict[tuple[str, str, str], int] = {}
         for stock in stocks:
-            industry_name = str(stock.get("industry_name") or "未分类")
-            industry_key = stock.get("industry_board_code") or (
-                "__unclassified__" if industry_name == "未分类" else f"name:{industry_name}"
-            )
-            counts[("industry", str(industry_key), industry_name)] = counts.get(
-                ("industry", str(industry_key), industry_name), 0
-            ) + 1
-            # 顶部概念热点与卡片保持同一业务语义：每股只按当前走势相关冠军计数一次。
-            # 快照多概念集合仍作为历史归属事实保留，但不参与热点聚合和筛选。
-            related = stock.get("latest_related_concept") or {
-                "board_code": "__unclassified__",
-                "board_name": "未分类",
-            }
-            key = ("concept", str(related["board_code"]), str(related["board_name"]))
-            counts[key] = counts.get(key, 0) + 1
+            # 顶部两类热点都使用当前走势相关冠军；快照归属事实不参与热点聚合。
+            for kind in ("industry", "concept"):
+                related = stock.get(f"latest_related_{kind}") or {
+                    "board_code": "__unclassified__",
+                    "board_name": "未分类",
+                }
+                key = (kind, str(related["board_code"]), str(related["board_name"]))
+                counts[key] = counts.get(key, 0) + 1
         result = {"industry": [], "concept": []}
         for (kind, key, name), count in sorted(
             counts.items(), key=lambda item: (item[0][0], -item[1], item[0][2], item[0][1])

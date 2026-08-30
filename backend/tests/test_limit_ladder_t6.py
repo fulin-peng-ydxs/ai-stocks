@@ -94,7 +94,8 @@ def _seed_ladder(market):
     MarketRepository(market).upsert_daily_bar(pd.DataFrame(bars))
     market.execute(
         "INSERT INTO board_dict (board_code,name,board_type) VALUES "
-        "('C001','人工智能','concept'),('C002','机器人','concept')"
+        "('C001','人工智能','concept'),('C002','机器人','concept'),"
+        "('I900','数字服务','industry')"
     )
     market.execute(
         "INSERT INTO board_member (board_code,code) VALUES "
@@ -105,9 +106,11 @@ def _seed_ladder(market):
         INSERT INTO stock_board_correlation (
             code,board_type,board_code,score,corr_20,corr_60,sample_20,sample_60,
             confidence,benchmark_code,benchmark_fallback,as_of_date,computed_at,algorithm_version
-        ) VALUES ('600001.SH','concept','C002',0.8,0.8,0.8,20,60,'high','000300.SH',false,?,current_timestamp,'v1')
+        ) VALUES
+          ('600001.SH','concept','C002',0.8,0.8,0.8,20,60,'high','000300.SH',false,?,current_timestamp,'v1'),
+          ('600001.SH','industry','I900',0.7,0.7,0.7,20,60,'high','000300.SH',false,?,current_timestamp,'v1')
         """,
-        [trade_date],
+        [trade_date, trade_date],
     )
     outcome = LimitLadderSnapshotService(market).materialize(trade_date, task_id="task-ok")
     assert outcome.status == "valid"
@@ -134,11 +137,21 @@ def test_query_keeps_stock_level_short_history_and_separates_concepts(market):
         "board_name": "机器人",
         "as_of_date": trade_date.isoformat(),
     }
+    assert software["latest_related_industry"] == {
+        "board_code": "I900",
+        "board_name": "数字服务",
+        "as_of_date": trade_date.isoformat(),
+    }
+    assert data["hotspots"]["industry"] == [
+        {"group_key": "I900", "group_name": "数字服务", "stock_count": 1},
+        {"group_key": "__unclassified__", "group_name": "未分类", "stock_count": 1},
+    ]
     assert data["hotspots"]["concept"] == [
         {"group_key": "__unclassified__", "group_name": "未分类", "stock_count": 1},
         {"group_key": "C002", "group_name": "机器人", "stock_count": 1},
     ]
     assert sum(item["stock_count"] for item in data["hotspots"]["concept"]) == 2
+    assert sum(item["stock_count"] for item in data["hotspots"]["industry"]) == 2
 
 
 def test_filters_summary_hotspots_and_csv_share_one_visible_collection(market):
@@ -159,6 +172,22 @@ def test_filters_summary_hotspots_and_csv_share_one_visible_collection(market):
     ]
     assert data["hotspots"]["concept"] == [
         {"group_key": "C002", "group_name": "机器人", "stock_count": 1},
+    ]
+
+    industry_data = service.query(
+        trade_date,
+        LimitLadderFilters(
+            window=10,
+            boards=("main",),
+            ignore_st=False,
+            keyword="甲",
+            hotspot_type="industry",
+            hotspot_key="I900",
+        ),
+    )
+    assert industry_data["summary"]["stock_count"] == 1
+    assert industry_data["hotspots"]["industry"] == [
+        {"group_key": "I900", "group_name": "数字服务", "stock_count": 1},
     ]
 
     filename, payload = service.export_csv(trade_date, filters)
@@ -242,6 +271,7 @@ def test_dynamic_enrichment_failures_do_not_mask_published_snapshot(market, monk
     )
     assert data["snapshot"]["stock_count"] == 2
     assert data["dynamic_window_status"] == "degraded"
+    assert data["related_board_status"] == "degraded"
     assert data["related_concept_status"] == "degraded"
     assert sum(layer["stock_count"] for layer in data["layers"]) == 2
 

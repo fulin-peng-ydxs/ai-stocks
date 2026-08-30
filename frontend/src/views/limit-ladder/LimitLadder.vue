@@ -133,7 +133,7 @@ function resetFilters(): void {
       <AppControlRow align="center">
         <TradeDatePicker :model-value="tradeDate" placeholder="选择交易日" data-testid="limit-ladder-date" @update:model-value="$emit('update:tradeDate',$event)" />
         <PageSegmented :model-value="filters.window" :options="windowOptions" size="small" tone="primary" test-id="limit-ladder-window" aria-label="统计窗口" @update:model-value="updateFilters({window:Number($event) as LimitLadderFilters['window']})" />
-        <AppFilterSelect class="limit-ladder__board-filter" :model-value="filters.boards" :options="boardOptions" placeholder="上市板块" :max-collapse-tags="1" data-testid="limit-ladder-boards" @change="updateBoards" />
+        <AppFilterSelect class="limit-ladder__board-filter" :model-value="filters.boards" :options="boardOptions" placeholder="上市板块" data-testid="limit-ladder-boards" @change="updateBoards" />
         <el-checkbox :model-value="filters.ignoreSt" data-testid="limit-ladder-ignore-st" @update:model-value="updateFilters({ignoreSt:Boolean($event)})">忽略 ST</el-checkbox>
         <el-checkbox :model-value="filters.oneWordOnly" data-testid="limit-ladder-one-word" @update:model-value="updateFilters({oneWordOnly:Boolean($event)})">仅一字板</el-checkbox>
         <AppSearchInput v-model="keywordDraft" class="limit-ladder__search" placeholder="代码 / 名称" data-testid="limit-ladder-keyword" @search="searchKeyword" />
@@ -200,7 +200,7 @@ function resetFilters(): void {
   padding: var(--app-space-3) var(--app-space-4);
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
-.limit-ladder__board-filter { width: 210px; }
+.limit-ladder__board-filter { width: 300px; }
 .limit-ladder__search { width: 180px; }
 .limit-ladder__summary {
   display: grid;
@@ -225,7 +225,7 @@ function resetFilters(): void {
   display: grid;
   grid-template-columns: auto auto auto;
   align-items: baseline;
-  justify-content: start;
+  justify-content: center;
   gap: var(--app-space-1);
 }
 .limit-ladder__summary span,
@@ -286,11 +286,15 @@ function resetFilters(): void {
   color: var(--el-text-color-secondary);
 }
 .limit-ladder__cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 196px));
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--app-space-2);
-  justify-content: start;
+  justify-content: center;
   padding: var(--app-space-2);
+}
+.limit-ladder__cards > * {
+  flex: 1 1 148px;
+  max-width: 196px;
 }
 @media (max-width: 900px) {
   .limit-ladder__summary { grid-template-columns: repeat(3, 1fr); }

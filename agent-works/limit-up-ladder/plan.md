@@ -18,7 +18,7 @@
 | 范围 | 现状依据 | 本计划处理 |
 | --- | --- | --- |
 | 涨跌停规则 | `backend/market_rules.py` 已有 `price_limit_pct_for`，主板 ST 以 2026-07-06 为 5%/10% 分界，科创/创业 ST 保持 20% | 扩展共享规则以覆盖收盘封板、无涨跌幅限制日及点时 ST；天梯不另建平行口径 |
-| 行情事实 | DuckDB 已有 `stock_basic`、`daily_bar`、`trade_calendar`、`board_dict`、`board_member`、`stock_board_correlation(_state)`；`daily_bar` 有 `is_st`、`is_one_word` | 新增点时 ST 与天梯版本化快照表；市场、板块和相关概念仍从既有事实读取 |
+| 行情事实 | DuckDB 已有 `stock_basic`、`daily_bar`、`trade_calendar`、`board_dict`、`board_member`、`stock_board_correlation(_state)`；`daily_bar` 有 `is_st`、`is_one_word` | 新增点时 ST 与天梯版本化快照表；市场、板块和当前走势相关行业/概念仍从既有事实读取 |
 | 完整性 | `backend/services/trade_calendar_readiness.py` 已有交易日历就绪检查；采集服务能返回实际受影响日期 | 增加“选中日点时股票池 + 有效行情/停牌”门禁，不把不完整数据发布为空快照 |
 | 快照模式 | `backend/scoring/snapshot.py` 已有失效、按日期标记及持久化模式 | 复用失效思想，采用“状态指针 + 不可变成功版本”保证失败时保留旧结果 |
 | 长任务 | `backend/services/async_task.py` 已有任务类型、单 DuckDB 写者、同类任务冲突、进度和日志；前端 `data.ts` 有封闭 `TaskType`/`TASK_LABEL` | 新增 `limit_ladder_recompute` 写任务和同日幂等键；同步任务中心前端类型、筛选、名称、摘要和测试 |
@@ -83,7 +83,7 @@
 | `limit_ladder_snapshot` | `snapshot_id` 主键；`trade_date,rule_version,computed_at,stock_count,has_approx_st,coverage_json,source_version` | 不可变成功版本元数据；合法空快照也保留版本 |
 | `limit_ladder_snapshot_stock` | `(snapshot_id,code)` 主键；名称、板块、涨停比例、ST/质量、一字板、连续板、成交额、行业及来源版本 | 卡片与分层的固化事实 |
 | `limit_ladder_snapshot_concept` | `(snapshot_id,code,board_code)` 主键；`board_name,source_version` | 多概念固化集合用于历史事实和 CSV，与当前相关概念严格分离，不作为顶部概念热点口径 |
-| `limit_ladder_snapshot_aggregate` | `(snapshot_id,group_type,group_key)` 主键；`group_name,stock_count` | 快照行业/完整概念归属的发布校验结果；页面行业热点按快照行业、概念热点按当前唯一相关冠军受控重算 |
+| `limit_ladder_snapshot_aggregate` | `(snapshot_id,group_type,group_key)` 主键；`group_name,stock_count` | 快照专属行业/完整概念归属的发布校验结果；页面两类热点均按当前唯一走势相关冠军受控重算 |
 | PG `limit_ladder_task_ledger` | `command_id` 不可变 UUID 主键；`task_id,trade_date,source,actor_kind,tenant_id,actor_user_id,actor_account,trigger_tenant_id,trigger_user_id,trigger_account,request_ip,request_method,request_path,request_id,status,rule_version,result_summary,retry_count,last_error,created/updated_at`；`source IN (auto_first_load,auto_invalid_refresh,admin_recompute)`；`status IN (requested,running,succeeded,failed,interrupted)`；对 `trade_date WHERE status IN ('requested','running')` 建部分唯一索引 | 三种入口共享同日活动命令；终态释放日期占位。管理员主体从鉴权上下文和 PG 用户事实固化；自动任务使用独立 `system:limit-ladder` 主体并保留触发请求身份，不信任前端身份字段 |
 | PG `limit_ladder_audit_outbox` | `(command_id,event_type)` 唯一；`source_event_key=command_id:event_type`、完整主体/请求快照 `payload`、`status,retry_count,next_retry_at,last_error,created/delivered_at` | requested/running/succeeded/failed/interrupted 可靠投递；终态可由 DuckDB 任务对账补建，审计投递不得重新推断操作者 |
 | PG `audit_log.source_event_key` | 可空字段 + 非空唯一索引 | outbox 投递使用 `ON CONFLICT DO NOTHING`，避免投递成功后进程中断造成重复审计 |
@@ -96,9 +96,9 @@
 2. 完整性门禁以 `list_date<=T AND (delist_date IS NULL OR delist_date>=T)` 且板块为主/科/创形成点时股票池。池内每股必须存在 T 日有效日线，或存在 `stock_suspension` 的 T 日确认停牌；两者均无、OHLC/前收盘非法或涨跌幅规则不可判定时拒绝发布。采集日志仅按第 4.2 节定义的结构化 T 日终态摘要判定，不扫描任意历史 failed 行。
 3. 滚动“X 天 N 板”最多批量读取 60 个交易日。连续板高度不受 60 日窗口限制：先定位选中日涨停候选，再以候选代码集合按批次继续向前读取交易日和行情，直到每只候选遇到未涨停、停牌、缺行情或上市边界；每批对剩余候选一次性查询，禁止逐股 N+1，也禁止用 60 日截断高度。
 4. 逐日涨停事实统一调用 `market_rules`；无涨跌幅限制且不可可靠判定时拒绝发布受影响结果。选中日涨停股票才进入快照。
-5. 行业单归属只使用快照生成时的权威 `stock_basic.industry`；历史概念归属集合使用 `board_member + board_dict` 多归属并供 CSV 留痕，顶部概念热点与筛选则按每股唯一的当前走势相关冠军。行业名称仅在唯一精确匹配行业字典时附稳定 `board_code`，否则保留统计/筛选但不提供详情跳转；缺失归“未分类”。
+5. 快照专属行业只使用生成时的权威 `stock_basic.industry`，历史概念归属集合使用 `board_member + board_dict` 多归属，两者供卡片/CSV 留痕；顶部行业与概念热点及筛选均按每股唯一的当前走势相关冠军，缺失归“未分类”。
 6. 10/20/31/60 日次数是查询读模型：对快照候选股票批量计算，返回 `window_start_date` 和 `actual_trade_days`；切换窗口不新建快照；同层固定按“窗口次数降序、当日成交额降序、代码升序”。
-7. R11 从 `stock_board_correlation` 当前成功态读取概念冠军、`board_code` 和 `as_of_date`，在服务层合并到返回 DTO；不写入历史快照、不传历史 `business_date` 限制。
+7. 查询从 `stock_board_correlation` 当前成功态一次批量读取行业/概念冠军、`board_code` 和 `as_of_date`，在服务层分别合并为 `latest_related_industry/latest_related_concept`；不写入历史快照、不传历史 `business_date` 限制。
 8. 展示筛选在已发布快照集合上取交集；摘要、层内数量、热点和 CSV 使用同一筛选函数，防止四套口径漂移。
 
 完整性结果 `coverage` 使用固定结构：`pool_count`、`valid_bar_count`、`confirmed_suspension_count`、`missing_count`、`invalid_bar_count`、`unsupported_rule_count`、`ingest_terminal_status=success|partial|failed|unknown`、`ingest_run_id`、`reason_codes[]`、`sample_codes[]`（每类最多 20 个）、`checked_at`。日行情顶层编排结束时向 `data_update_log` 写结构化终态摘要：`table_name=daily_bar`、`source=pipeline`、`date_start=date_end=T`、JSON `detail.kind=market_day_terminal`，detail 同时含 `run_id/expected/successful/failed/status`。门禁只解析此类摘要，无法解析或缺 kind 的旧 detail 忽略；同日按 `updated_at DESC,id DESC` 取一条，后续 success 覆盖早期失败，历史无摘要为 unknown 并依赖事实闭合。原因码至少包括 `NOT_TRADING_DAY`、`INGEST_PARTIAL`、`MISSING_BAR_OR_SUSPENSION`、`INVALID_DAILY_BAR`、`UNSUPPORTED_LIMIT_RULE`。只有所有计数闭合、差异数为 0，且终态为 success 或 unknown 时，股票数为 0 才能认定为合法无涨停。
@@ -110,12 +110,12 @@
 | 方法与路径 | 权限 | 能力与关键返回 |
 | --- | --- | --- |
 | `GET /trade-dates` | `limit-ladder:view` | 可用交易日、最新完整日及日期就绪原因；底层复用交易日能力 |
-| `GET /{trade_date}` | `limit-ladder:view` | `window=10|20|31|60`、板块/ST/一字板/关键词/热点筛选；顶层返回状态、coverage、层级、摘要、热点及 `requested_window_start_date/requested_window_trade_days`；每个股票 DTO 独立返回 `window_start_date/actual_trade_days` 和相关概念截止日 |
+| `GET /{trade_date}` | `limit-ladder:view` | `window=10|20|31|60`、板块/ST/一字板/关键词/热点筛选；顶层返回状态、coverage、层级、摘要、热点及 `requested_window_start_date/requested_window_trade_days`；每个股票 DTO 独立返回 `window_start_date/actual_trade_days`、最新走势相关行业/概念和相关截止日 |
 | `GET /{trade_date}/status` | `limit-ladder:view` | 无快照/计算中/有效/失效/失败及任务进度，供首算与重算轮询 |
 | `GET /{trade_date}/export` | `limit-ladder:view` | 与查询接口共用参数规范化和筛选函数，输出 UTF-8 BOM CSV |
 | `POST /{trade_date}/recompute` | `limit-ladder:recompute` + system 硬守卫 | 以 `admin_recompute` 调用统一 `ensure_date_task`；同日任意来源 requested/running 返回活动命令/任务，succeeded/failed/interrupted 后允许新建 |
 
-错误契约：非法窗口/板块/日期返回 400；无权限 403；非交易日和未就绪使用稳定业务码与结构化原因；合法空结果为 200 且 `snapshot.stock_count=0`。动态窗口或相关概念局部失败不能覆盖成功快照主体。
+错误契约：非法窗口/板块/日期返回 400；无权限 403；非交易日和未就绪使用稳定业务码与结构化原因；合法空结果为 200 且 `snapshot.stock_count=0`。动态窗口或相关行业/概念局部失败不能覆盖成功快照主体。
 
 ### 4.4 权限、菜单与审计
 
@@ -143,7 +143,7 @@
 | 固定窗口 | R9 | 10/20/31/60，默认 31；只改次数与同层排序；短上市历史显示实际起始日 | `PageSegmented`，卡片辅助文案消费 `window_start_date/actual_trade_days` | ladder query `window` | 非法值回退 31；局部失败保留旧视图 | T6、T8、T9、T12 |
 | 板块/ST/一字板/关键词 | R15、R16 | 条件取交集，交易日变化清热点与选股，不触发重算 | `AppControlRow`、多选、checkbox、搜索输入 | 共用查询/导出参数 | 筛选空与当日无涨停分开 | T6、T8、T12 |
 | 三项摘要 | R17 | 当前筛选集合的总数、最高板、首板数 | 领域摘要组件，消费统一筛选结果 | ladder query | 无结果最高板“—” | T6、T8 |
-| 行业/概念热点 | R10 | 分栏计数；行业按单一快照归属，概念按每股唯一最新走势相关冠军，概念合计不超过当前股票数；点击聚焦天梯，再点取消 | 新增页面域 `LadderHotspots`；可选板块详情入口独立处理 | ladder query 聚合 | 无 `sectors:view` 仍可筛选但不可跳详情 | T3、T6、T8、T12 |
+| 行业/概念热点 | R10 | 分栏计数；两类均按每股唯一最新走势相关冠军，任一类别合计不超过当前股票数；点击聚焦天梯，再点取消 | 新增页面域 `LadderHotspots`；可选板块详情入口独立处理 | ladder query 聚合 | 无 `sectors:view` 仍可筛选但不可跳详情 | T3、T6、T8、T12 |
 | 连板天梯 | R3、R4、R7、R8、R9、R15、R16 | 最高板至首板、层数量、卡片键盘选择和明确标签 | 新增页面域 `LimitLadder`/`LimitLadderCard`，不登记为系统组件种类 | ladder query | 近似 ST 提示；筛选空、过期结果明确 | T3、T8、T11、T12 |
 | 卡片最新相关概念 | R11 | 点击直接进入 `/sectors/:boardCode`，不改变天梯热点筛选 | 复用 `RelatedBoardCell` 的权限/展示语义或抽取最小通用链接适配 | 当前 correlation 字段 | 无结果“—”；无 `sectors:view` 只读 | T6、T8、T12 |
 | 股票行情分析 | R12、R14 | 卡片选择驱动分析，高亮当前项；截止选中日 | `MarketMasterDetailWorkspace`、`StockAnalysisPanel`、分析 session composable | 既有 stock bars/indicators | 局部失败局部重试，不清天梯 | T10、T11、T12 |
@@ -175,7 +175,7 @@
 | 必须实现 | R7 | 不受 60 日窗口截断的连续板算法和最高至首板分层 | T3、T8 | 已完成 | 一致 | 75 连板夹具返回 75；停牌/缺失/未涨停/上市边界中断 |
 | 必须实现 | R8 | 卡片完整字段及标签 | T3、T6、T8 | 已完成 | 一致 | DTO/组件/视觉验收 |
 | 必须实现 | R9 | 10/20/31/60 动态次数、固定排序及股票级短上市实际起始日 | T3、T6、T8、T9、T12 | 进行中（T3、T6、T8、T9 完成） | 一致 | 每个股票 DTO/卡片显示自身 `window_start_date/actual_trade_days`，顶层字段不混用 |
-| 必须实现 | R10 | `stock_basic.industry` 单行业、每股唯一最新走势相关概念、未分类和当前筛选聚合 | T3、T4、T6、T8、T10 修复 | 已完成 | 页面验收后纠偏 | 行业不按代码猜测；概念热点合计不超过当前股票数并与卡片概念一致 |
+| 必须实现 | R10 | 每股唯一最新走势相关行业/概念、未分类和当前筛选聚合 | T3、T4、T6、T8、T10 修复 | 已完成 | 页面验收后纠偏 | 两类热点都不使用专属归属字段，任一类别合计不超过当前股票数 |
 | 必须实现 | R11 | 当前最新概念、截止日、直接板块跳转 | T6、T8、T12 | 进行中（T6、T8 完成） | 一致 | 接口字段/权限/路由 E2E |
 | 必须实现 | R12 | 复用行情分析、详情集合和返回恢复 | T10、T12 | 进行中（T10 完成） | 一致 | Playwright 完整往返 |
 | 必须实现 | R13 | 查看/重算/关联权限、seed、结构化主体账本和审计对账 | T2、T5、T7、T11 | 进行中（T2、T5、T7 完成） | 一致 | 非 system 不可获重算码；自动/管理员身份及请求来源完整且不可由前端伪造；任务终态审计唯一 |
@@ -278,16 +278,16 @@
 
 - 状态：已完成。
 - 依赖：T4、T5。
-- 输入：当前成功快照、窗口参数、展示筛选、当前相关概念和任务状态。
+- 输入：当前成功快照、窗口参数、展示筛选、当前走势相关行业/概念和任务状态。
 - 目标：提供前端无需推断的稳定查询、状态和导出契约。
 - 涉及文件/模块：新增 `backend/api/limit_ladder.py`、`backend/services/limit_ladder_query.py`、`backend/main.py`、API 测试。
 - 操作：实现第 4.3 节端点；GET 遇到无快照或失效时分别以 `auto_first_load/auto_invalid_refresh` 调用 T5 `ensure_date_task`，管理员 POST 以 `admin_recompute` 调用同一入口；统一参数/筛选函数；顶层返回 coverage、快照状态及 `requested_window_start_date/requested_window_trade_days`，每个股票 DTO 返回自己的 `window_start_date/actual_trade_days`；R10 快照概念与 R11 当前概念分字段；CSV 复用同一集合。
 - 产出：查询/状态/导出/重算 API 和类型化响应模型。
 - 影响范围：新增 API 前缀，不改变既有接口。
-- 边界与异常：无快照/失效只通过统一入口创建或复用任务；筛选空与合法空分码；相关概念失败降级；非法窗口/板块/日期 400。
+- 边界与异常：无快照/失效只通过统一入口创建或复用任务；筛选空与合法空分码；相关行业/概念失败降级；非法窗口/板块/日期 400。
 - 验证方式：逐状态响应断言；短上市股票的 `window_start_date/actual_trade_days` 只出现在对应股票 DTO，顶层仅使用 `requested_window_start_date/requested_window_trade_days`；CSV 行集合等于查询集合且三个概念字段独立；并发返回同一活动任务。
 - 完成标准：R2/R5/R6/R8～R11/R16～R18 的前端所需字段齐全且可验证。
-- 实际落地情况：新增 `LimitLadderQueryService`，以不可变成功快照为主体，提供交易日、逐状态、统一筛选、分层、摘要、当前可见热点和 CSV 读模型；无快照与失效快照只经 T5 统一入口分别触发首算与刷新，并立即返回可轮询的计算状态。10/20/31/60 日字段仅对快照股票批量读取最多 60 个交易日，不重跑完整连续板长历史；顶层与股票级短历史字段严格分离。快照多概念与当前走势相关概念、截止日分别返回，动态窗口或当前概念局部失败不遮蔽旧成功快照；动态窗口主计算和降级元数据同时失败时仍返回快照主体。页面验收纠偏后，行业热点继续按单一快照行业聚合，概念热点与筛选统一改为每股唯一的当前走势相关冠军，完整快照概念集合只保留为历史事实和 CSV 字段。新增四个查询/导出端点和 system-only 重算端点，板块别名、ST、一字板、关键词和热点使用同一交集函数，CSV 输出 UTF-8 BOM、复用同一可见集合并防止外部名称触发电子表格公式，非交易日最近交易日保持日期格式。逐状态、非法参数、权限元数据、短上市、筛选聚合、概念分离、双重降级、CSV 安全与集合契约测试通过；本阶段未改页面，因此页面自动化归入 T5 任务中心承接和后续页面阶段。
+- 实际落地情况：新增 `LimitLadderQueryService`，以不可变成功快照为主体，提供交易日、逐状态、统一筛选、分层、摘要、当前可见热点和 CSV 读模型；无快照与失效快照只经 T5 统一入口分别触发首算与刷新，并立即返回可轮询的计算状态。10/20/31/60 日字段仅对快照股票批量读取最多 60 个交易日，不重跑完整连续板长历史；顶层与股票级短历史字段严格分离。快照专属行业/多概念与当前走势相关行业/概念分别返回，动态窗口或当前相关板块局部失败不遮蔽旧成功快照；动态窗口主计算和降级元数据同时失败时仍返回快照主体。页面验收纠偏后，行业与概念热点及筛选统一改为每股唯一的当前走势相关冠军，快照专属行业和完整概念集合只保留为历史事实、卡片和 CSV 字段。新增四个查询/导出端点和 system-only 重算端点，板块别名、ST、一字板、关键词和热点使用同一交集函数，CSV 输出 UTF-8 BOM、复用同一可见集合并防止外部名称触发电子表格公式，非交易日最近交易日保持日期格式。逐状态、非法参数、权限元数据、短上市、筛选聚合、相关字段分离、双重降级、CSV 安全与集合契约测试通过；本阶段未改页面，因此页面自动化归入 T5 任务中心承接和后续页面阶段。
 
 ### T1～T9 当前自审结论
 
@@ -324,7 +324,7 @@
 - 边界与异常：未分类、快照多概念与唯一热点概念分离、近似 ST、筛选空、无 sectors 权限、短历史和导出失败。
 - 验证方式：组件测试逐项证明卡片字段、起始日、热点取交集、摘要同步、概念点击不改筛选及 CSV 参数一致。
 - 完成标准：R7～R11/R15～R18 的主视图结果可观察且无口径分叉。
-- 实际落地情况：新增类型化 `limitLadder` API，统一规范化查询、路由和 CSV 参数；URL 可恢复日期、固定窗口、板块、ST、一字板、关键词及热点条件，非法值回退系统默认。`LimitLadder` 复用既有筛选、日期、状态和主从工作区组件，摘要、热点、层级和导出全部消费同一服务端筛选结果；热点每组默认展示前 12 项，可展开/收起且活动热点始终保留。页面验收纠偏后，概念热点与卡片统一使用每股唯一最新走势相关概念，不再因完整快照多概念集合产生远超涨停股数的统计项。`LimitLadderCard` 展示板位、窗口涨停次数、一字/ST、成交额、行业、短上市实际起始日和当前相关概念；相关概念仅在具备 `sectors:view` 时跳板块，点击不改变热点筛选。筛选空、合法空、未就绪、请求失败和近似 ST 均有独立反馈，CSV 使用鉴权下载并沿用同一规范化参数。组件/API 新增 9 项聚焦断言（含非法 URL 和活动热点收敛），与布局回归合计 64 项通过；真实浏览器验证和截图事实见本节前自审结论。
+- 实际落地情况：新增类型化 `limitLadder` API，统一规范化查询、路由和 CSV 参数；URL 可恢复日期、固定窗口、板块、ST、一字板、关键词及热点条件，非法值回退系统默认。`LimitLadder` 复用既有筛选、日期、状态和主从工作区组件，摘要、热点、层级和导出全部消费同一服务端筛选结果；热点每组默认展示前 12 项，可展开/收起且活动热点始终保留。页面验收纠偏后，行业与概念热点统一使用每股唯一最新走势相关冠军，不再使用专属行业或完整快照多概念集合；卡片概念继续使用同一相关概念冠军。`LimitLadderCard` 展示板位、窗口涨停次数、一字/ST、成交额、专属行业、短上市实际起始日和当前相关概念；相关概念仅在具备 `sectors:view` 时跳板块，点击不改变热点筛选。筛选空、合法空、未就绪、请求失败和近似 ST 均有独立反馈，CSV 使用鉴权下载并沿用同一规范化参数。组件/API 新增 9 项聚焦断言（含非法 URL 和活动热点收敛），与布局回归合计 64 项通过；真实浏览器验证和截图事实见本节前自审结论。
 
 ### T9：个人偏好配置闭环
 
@@ -356,9 +356,9 @@
 - 完成标准：R12/R14 及原型四个页面功能区全部可操作。
 - 实际落地情况：`LimitLadderView` 复用 `MarketMasterDetailWorkspace`、`StockAnalysisPanel`、`useStockAnalysisSession`、`useStockAnalysisSelection` 和 `stockSet` 完成桌面主从联动；卡片选择具有边框与 `aria-current` 双重选中反馈，行情查询统一以天梯交易日作为 `endDate`，对比/K线局部失败继续由共享分析组件独立重试。详情入口按 `stocks:view` 显隐，跳转前写入当前筛选后的最高板至首板有序集合、来源标签及含交易日、窗口、全部筛选、选中项和卡片锚点的完整返回 URL；详情返回后恢复选中态并只在当前天梯容器内滚动到锚点。日期切换使旧请求序号失效并清空选择/窄屏抽屉，筛选剔除当前股票时共享选择状态机回退到新集合首项。
 - 响应式与复用：`MarketMasterDetailWorkspace` 新增通用 `compact` 模式，窄屏只挂载列表，避免桌面/抽屉双分析请求；`PageDrawer` 新增受控 `full=100%` 语义档位，仅铺满 `LayoutHost` 页面区域；`StockAnalysisPanel` 新增调用页权限驱动的 `canOpenDetail`，并修复 1100px 低宽下头部控件覆盖详情入口。768×1024 点击卡片打开页面内全宽分析抽屉，关闭后滚回原卡片；1100×620 桌面保持详情入口可点击和主区可操作。
-- 页面验收修复：移除无状态含义的“完整工作台”装饰标签；`AppFilterSelect` 公共选择区固定单行并按宽度提前折叠，本页三板块固定显示 1 个标签和剩余数量；天梯层级取消强制 560/620px 横向宽度，卡片网格改为 `auto-fill` 的 148～196px 紧凑列，稀疏层不再由单卡拉满。顶部概念热点与筛选从快照完整概念集合纠偏为每股唯一最新走势相关冠军，统计合计不超过当前股票数；快照概念集合继续独立保留给历史事实和 CSV。
+- 页面验收修复：移除无状态含义的“完整工作台”装饰标签；`AppFilterSelect` 公共选择区固定单行并按宽度提前折叠，本页三板块默认展示 3 个标签；天梯层级取消强制 560/620px 横向宽度，卡片使用可换行 Flex 的 148～196px 紧凑列，未填满一行时整组居中。顶部行业与概念热点及筛选均纠偏为每股唯一最新走势相关冠军，任一类别统计合计不超过当前股票数；快照专属行业和概念集合继续独立保留给历史事实、卡片与 CSV。
 - 状态闭环：页面按 `SNAPSHOT_PENDING`、`NOT_TRADING_DAY`、`SNAPSHOT_NOT_READY`、`SNAPSHOT_FAILED`、`SNAPSHOT_STALE`、合法空和筛选空分别展示计算、引导、可重试错误或持续过期提示；未发布快照不再显示伪摘要，覆盖原因码转换为用户可理解说明，旧成功快照在重算/失败时继续可浏览。`/limit-ladder` 已从 `STAGED_FRONTEND_MENU_CODES` 移除，菜单、`limit-ladder:view` 默认授权和 system-only 重算资源本身未改动，不新增 SQL、seed、表、接口、部署参数或系统组件 kind。
-- 验证情况：新增/更新分析权限、选择回退、状态映射、卡片选中、主从 compact 和 PageDrawer full 组件测试；页面验收修复后，后端 T6 聚焦 15 项与 Ruff、前端相关 11 项、全量前端 989 项和生产构建通过。5181 Playwright 使用真实 `debug_system` 登录，在 1100×620 完成卡片→分析→详情→返回并核对 `stockSet`/完整 URL/选中锚点，同时量取多选高度不超过 34px、卡片宽度不超过 197px且装饰标签不存在；在 768×1024 核对抽屉与 `LayoutHost` 左边界及宽度一致、Esc 关闭和卡片恢复。两条用例控制台 error/warning 为 0，并留存 `limit-ladder-desktop-return.png`、`limit-ladder-768-analysis-drawer.png`。阶段边界只修复 T10，没有执行 T11 后端综合/代表性规模验证或 T12 全链路回归。
+- 验证情况：新增/更新分析权限、选择回退、状态映射、卡片选中、主从 compact 和 PageDrawer full 组件测试；页面验收修复后，后端 T6 聚焦 15 项与 Ruff、前端相关 11 项、全量前端 989 项和生产构建通过。5181 Playwright 使用真实 `debug_system` 登录，在 1100×620 完成卡片→分析→详情→返回并核对 `stockSet`/完整 URL/选中锚点，同时确认板块多选默认三个标签全部可见且无折叠计数，量取控件高度不超过 34px、卡片宽度不超过 197px、单卡中心偏移不超过 1px且装饰标签不存在；在 768×1024 核对抽屉与 `LayoutHost` 左边界及宽度一致、Esc 关闭和卡片恢复。两条用例控制台 error/warning 为 0，Playwright 忽略目录 `frontend/test-results/` 生成 `limit-ladder-desktop-return.png`、`limit-ladder-768-analysis-drawer.png`。阶段边界只修复 T10，没有执行 T11 后端综合/代表性规模验证或 T12 全链路回归。
 
 ### T11：后端综合测试与代表性规模验证
 
@@ -464,7 +464,7 @@
 ### 10.1 风险
 
 - 历史 ST 仅能近似时会影响旧日期涨停判断；通过质量标识、页面提示和后续精确回填失效收口。
-- 行业统计使用 `stock_basic.industry`，与同花顺行业板块并非同一语义；只有名称唯一精确匹配时才提供详情跳转，避免为追求跳转而错误归属。
+- 快照专属行业继续使用 `stock_basic.industry` 供卡片和 CSV 留痕；顶部行业热点独立使用 `stock_board_correlation` 的当前行业冠军，两者不得混用。
 - 首次访问可能触发全市场计算；需要批量读取、同日任务幂等和代表性规模验证，避免阻塞请求线程。
 - 快照失效挂点分散在采集、修复、规则和归属治理链路；遗漏会导致旧结果静默有效，T4/T11 必须做失效矩阵测试。
 - 任务中心进度表仍在 DuckDB；它是现有平台事实，若未来迁移 PG 需独立项目，不能在本功能中半迁移。
@@ -472,9 +472,9 @@
 ### 10.2 假设
 
 - 上市板块仍只支持主板、创业板、科创板，不含北交所。
-- 当前 `stock_board_correlation` 的概念冠军是 R11 唯一最新走势相关概念来源。
+- 当前 `stock_board_correlation` 的行业/概念冠军是顶部两类热点的唯一走势相关来源；概念冠军同时供卡片展示和跳转。
 - 概念跳转以 `board_dict.board_code` 为稳定引用；行业仅在 `stock_basic.industry` 名称唯一精确匹配行业字典时获得跳转引用；“未分类”和非唯一行业不跳转。
-- 页面查询结果规模是单日涨停股票集合，可在服务层合并 DuckDB 快照与当前相关概念，不构成跨库大结果集风险。
+- 页面查询结果规模是单日涨停股票集合，可在服务层批量合并 DuckDB 快照与当前相关行业/概念，不构成跨库大结果集风险。
 
 ### 10.3 待确认项
 

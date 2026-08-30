@@ -10,6 +10,7 @@ const stock = {
   industry_board_code: 'I001', source_version: 'e2e-v1', window_limit_up_days: 3,
   window_start_date: '2026-07-17', actual_trade_days: 31,
   snapshot_concepts: [{ board_code: 'C001', board_name: '金融科技' }],
+  latest_related_industry: { board_code: 'I900', board_name: '金融服务', as_of_date: tradeDate },
   latest_related_concept: { board_code: 'C001', board_name: '金融科技', as_of_date: tradeDate },
 }
 const bar = {
@@ -37,7 +38,7 @@ async function installDeterministicLadder(page: Page): Promise<void> {
         snapshot: { snapshot_id: 'e2e-snapshot', trade_date: tradeDate, computed_at: `${tradeDate}T18:00:00`, stock_count: 1, has_approx_st: false, coverage: {} },
         requested_window_start_date: '2026-07-17', requested_window_trade_days: 31,
         dynamic_window_status: 'ready', summary: { stock_count: 1, highest_board: 2, first_board_count: 0 },
-        hotspots: { industry: [{ group_key: 'I001', group_name: '银行', stock_count: 1 }], concept: [{ group_key: 'C001', group_name: '金融科技', stock_count: 1 }] },
+        hotspots: { industry: [{ group_key: 'I900', group_name: '金融服务', stock_count: 1 }], concept: [{ group_key: 'C001', group_name: '金融科技', stock_count: 1 }] },
         layers: [{ consecutive_days: 2, stock_count: 1, stocks: [stock] }],
       },
     }),
@@ -65,6 +66,11 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
 
   await page.goto(`/limit-ladder?date=${tradeDate}&window=31`)
   await expect(page.getByText('完整工作台')).toHaveCount(0)
+  const boardFilter = page.getByTestId('limit-ladder-boards')
+  await expect(boardFilter.getByText('主板', { exact: true })).toBeVisible()
+  await expect(boardFilter.getByText('科创板', { exact: true })).toBeVisible()
+  await expect(boardFilter.getByText('创业板', { exact: true })).toBeVisible()
+  await expect(boardFilter.getByText('+1', { exact: true })).toHaveCount(0)
   const card = page.getByTestId(`limit-ladder-card-${stock.code}`)
   await expect(card).toBeVisible()
   const density = await page.evaluate(() => {
@@ -72,10 +78,18 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
       .getBoundingClientRect()
     const stockCard = document.querySelector('[data-stock-code="000001.SZ"]')!
       .getBoundingClientRect()
-    return { boardHeight: board.height, cardWidth: stockCard.width }
+    const cards = document.querySelector('.limit-ladder__cards')!.getBoundingClientRect()
+    return {
+      boardHeight: board.height,
+      cardWidth: stockCard.width,
+      cardCenterOffset: Math.abs(
+        (stockCard.left + stockCard.width / 2) - (cards.left + cards.width / 2),
+      ),
+    }
   })
   expect(density.boardHeight).toBeLessThanOrEqual(34)
   expect(density.cardWidth).toBeLessThanOrEqual(197)
+  expect(density.cardCenterOffset).toBeLessThanOrEqual(1)
   await card.click()
   await expect(page.getByTestId('stock-analysis-panel')).toBeVisible()
   await expect(page.getByTestId('stock-analysis-open-detail')).toBeVisible()
