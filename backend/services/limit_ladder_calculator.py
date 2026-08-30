@@ -129,7 +129,7 @@ class LimitLadderCalculator:
                 fact.get("is_suspended")
             ):
                 continue
-            result, st_status = self._evaluate_fact(
+            result, st_status = self.evaluate_fact(
                 code=code,
                 basic=row,
                 fact=fact,
@@ -167,7 +167,7 @@ class LimitLadderCalculator:
                     if fact is not None and not self._bool_value(
                         fact.get("confirmed_suspension")
                     ):
-                        result, _ = self._evaluate_fact(
+                        result, _ = self.evaluate_fact(
                             code=code,
                             basic=basic,
                             fact=fact,
@@ -219,7 +219,7 @@ class LimitLadderCalculator:
                     window_limit_up_days=counts[code],
                     window_start_date=actual_dates[0],
                     actual_trade_days=len(actual_dates),
-                    amount=float(selected.get("amount") or 0),
+                    amount=self._finite_number(selected.get("amount")),
                     industry_name=industry_name,
                     industry_board_code=industry_codes.get(industry_name),
                     concepts=tuple(concepts_by_code.get(code, ())),
@@ -310,7 +310,8 @@ class LimitLadderCalculator:
             for _, row in rows.iterrows()
         }
 
-    def _evaluate_fact(self, *, code: str, basic, fact: dict, calendar: list[date]):
+    def evaluate_fact(self, *, code: str, basic, fact: dict, calendar: list[date]):
+        """Evaluate one daily fact with the shared board, IPO and point-in-time ST rules."""
         st_status = self._st_status(basic, fact)
         board = listing_board_for(board=self._text(basic.get("board")), code=code)
         list_date = self._date_value(basic.get("list_date"))
@@ -428,3 +429,8 @@ class LimitLadderCalculator:
     def _bool_value(value) -> bool:
         """DuckDB/pandas nullable booleans must not turn NaN into truthy values."""
         return False if value is None or pd.isna(value) else bool(value)
+
+    @staticmethod
+    def _finite_number(value) -> float:
+        number = 0.0 if value is None or pd.isna(value) else float(value)
+        return number if pd.notna(number) and abs(number) != float("inf") and number >= 0 else 0.0

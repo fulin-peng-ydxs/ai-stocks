@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
@@ -83,9 +84,51 @@ class IngestionService:
         dates 为 None → 全量标 stale；否则按受影响交易日细粒度标。
         """
         from backend.scoring.snapshot import ScoreSnapshotRepo
+        from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
+
+        try:
+            ladder = LimitLadderSnapshotService(self.c)
+            if dates:
+                ladder.invalidate_dates(dates, reason="market_data_changed")
+            else:
+                ladder.invalidate_all(reason="market_data_changed")
+        except Exception as e:  # noqa: BLE001 -- scoring invalidation must remain independent
+            log.warning("行情变更后标记连板天梯失效失败: %s", e)
         if dates:
             return ScoreSnapshotRepo(get_client()).mark_stale_dates(dates)
         return ScoreSnapshotRepo(get_client()).mark_stale_all()
+
+    def _log_market_day_terminal(
+        self,
+        trade_date: date,
+        *,
+        expected: int,
+        successful: int,
+        failed: int,
+        run_id: str,
+    ) -> dict:
+        """Write the only structured market-day terminal fact consumed by the ladder gate."""
+        status = "success" if failed == 0 and successful >= expected else (
+            "partial" if successful > 0 else "failed"
+        )
+        detail = {
+            "kind": "market_day_terminal",
+            "run_id": run_id,
+            "expected": expected,
+            "successful": successful,
+            "failed": failed,
+            "status": status,
+        }
+        self.repo.log_update(
+            "daily_bar",
+            "pipeline",
+            trade_date,
+            trade_date,
+            successful,
+            status,
+            json.dumps(detail, ensure_ascii=False, sort_keys=True),
+        )
+        return detail
 
     def _source_for(self, capability: str) -> DataSource:
         """按能力选源：主源支持→主源；否则补源支持→补源；都不支持→报错。
@@ -1445,6 +1488,14 @@ class IngestionService:
             result["snapshots_marked_stale"] = self._mark_snapshots_stale()
         except Exception as e:  # noqa: BLE001  失效标记失败不影响采集结果
             log.warning("增量更新后标记评分快照失效失败: %s", e)
+        if codes is None:
+            result["market_day_terminal"] = self._log_market_day_terminal(
+                end,
+                expected=n_total,
+                successful=len(completed_codes),
+                failed=fail,
+                run_id=str(getattr(ctx, "tid", None) or f"manual-update-{end.isoformat()}"),
+            )
         log.info("增量更新完成: %s", result)
         return result
 
@@ -2175,6 +2226,17 @@ class IngestionService:
                                  if code not in known_codes]
         result["failed"] = list(dict.fromkeys(result["failed"]))
         result["ok"] = not result["failed"]
+        if any(stage in steps for stage in ("dict", "members")):
+            try:
+                from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
+
+                result["limit_ladder_snapshots_invalidated"] = (
+                    LimitLadderSnapshotService(svc.c).invalidate_all(
+                        reason="board_membership_changed"
+                    )
+                )
+            except Exception as e:  # noqa: BLE001 -- board ingestion result remains authoritative
+                log.warning("板块字典/成分变更后标记连板天梯失效失败: %s", e)
         if ctx:
             ctx.progress(1.0, "板块采集完成")
             ctx.log(f"板块采集完成（{mode}）：字典{result['dict']} 成分{len(result['members'])} 板块 "
