@@ -75,6 +75,7 @@ function optionTestId(value: OptionValue): string | undefined {
   gap: var(--app-space-control-gap);
   transition: background-color .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
+.seg-label { white-space: nowrap; }
 .seg-btn:hover:not(.active) {
   background: var(--page-settings-seg-hover-bg);
   color: var(--page-settings-text);
@@ -100,11 +101,14 @@ function optionTestId(value: OptionValue): string | undefined {
   color: var(--el-color-primary);
 }
 .page-segmented--small {
+  box-sizing: border-box;
+  height: var(--app-control-height-md);
   padding: 2px;
   border-radius: var(--layout-control-radius);
 }
 .page-segmented--small .seg-btn {
-  min-height: var(--app-control-height-md);
+  min-height: 0;
+  height: 100%;
   padding: 0 var(--app-space-2);
   border-radius: calc(var(--layout-control-radius) - 1px);
 }

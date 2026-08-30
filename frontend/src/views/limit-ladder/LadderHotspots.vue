@@ -38,7 +38,11 @@ function visibleItems(kind: LimitLadderHotspotType): LimitLadderHotspot[] {
           :aria-pressed="activeType === kind && activeKey === item.group_key"
           :data-testid="`limit-ladder-hotspot-${kind}-${item.group_key}`"
           @click="$emit('toggle', kind, item.group_key)"
-        ><span>{{ item.group_name }}</span><b>{{ item.stock_count }}</b></ElButton>
+        >
+          <span>{{ item.group_name }}</span>
+          <span class="ladder-hotspots__separator" aria-hidden="true">·</span>
+          <b>{{ item.stock_count }}只</b>
+        </ElButton>
         <span v-if="!hotspots[kind].length" class="ladder-hotspots__empty">暂无</span>
         <ElButton
           v-else-if="hotspots[kind].length > MAX_VISIBLE"
@@ -56,7 +60,8 @@ function visibleItems(kind: LimitLadderHotspotType): LimitLadderHotspot[] {
 .ladder-hotspots__group { display:grid; grid-template-columns:70px minmax(0,1fr); align-items:start; gap:var(--app-space-2); }
 .ladder-hotspots__group>strong { padding-top:5px; color:var(--el-text-color-secondary); font-size:var(--app-font-size-caption); }
 .ladder-hotspots__chips { display:flex; flex-wrap:wrap; gap:var(--app-space-1); }
-.ladder-hotspots__chip { display:inline-flex; align-items:center; gap:var(--app-space-1); min-height:28px; margin:0; padding:0 var(--app-space-2); border:1px solid var(--el-border-color); border-radius:999px; background:var(--el-bg-color); color:var(--el-text-color-regular); cursor:pointer; }
+.ladder-hotspots__chip { display:inline-flex; align-items:center; gap:var(--app-space-control-gap); min-height:28px; margin:0; padding:0 var(--app-space-2); border:1px solid var(--el-border-color); border-radius:999px; background:var(--el-bg-color); color:var(--el-text-color-regular); cursor:pointer; }
+.ladder-hotspots__separator { color:var(--el-border-color-darker); }
 .ladder-hotspots__chip b { color:var(--el-text-color-secondary); font-size:var(--app-font-size-caption); font-variant-numeric:tabular-nums; }
 .ladder-hotspots__chip:hover,.ladder-hotspots__chip.is-active { border-color:var(--el-color-primary); color:var(--el-color-primary); }
 .ladder-hotspots__chip.is-active { background:var(--el-color-primary-light-9); }

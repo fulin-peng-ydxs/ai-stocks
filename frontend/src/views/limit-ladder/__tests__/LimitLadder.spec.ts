@@ -35,14 +35,24 @@ function router() {
 }
 
 describe('LimitLadderCard', () => {
-  it('展示完整板位字段与短上市实际起始日', () => {
+  it('展示精简卡片、走势相关行业和动态窗口统计', () => {
     const wrapper=mount(LimitLadderCard,{props:{stock,window:31,canViewSectors:true,returnPath:'/limit-ladder?window=31&selected=600001.SH'},global:{plugins:[ElementPlus,router()]}})
     expect(wrapper.text()).toContain('甲软件')
-    expect(wrapper.text()).toContain('2 连板')
     expect(wrapper.text()).toContain('31 日 3 板')
     expect(wrapper.text()).toContain('窗口仅 8 日 · 自 2026-08-20 起')
-    expect(wrapper.text()).toContain('成交额 1.23 亿')
+    expect(wrapper.get('[data-testid="limit-ladder-related-industry"]').text()).toBe('数字服务')
+    expect(wrapper.text()).not.toContain('软件 ·')
+    expect(wrapper.text()).not.toContain('成交额')
+    expect(wrapper.text()).not.toContain('截至')
+    expect(wrapper.text()).not.toContain('+10%')
+    expect(wrapper.get('.limit-ladder-card__window-stat b').classes()).toContain('is-multiple')
     expect(wrapper.get('[data-testid="limit-ladder-related-600001.SH"]').attributes('href')).toBe('/sectors/C002?return_to=/limit-ladder?window=31%26selected=600001.SH')
+  })
+
+  it('X 日 N 板仅在 N 大于 1 时强调数字', () => {
+    const wrapper=mount(LimitLadderCard,{props:{stock:{...stock,window_limit_up_days:1},window:31,canViewSectors:false},global:{plugins:[ElementPlus,router()]}})
+    expect(wrapper.get('.limit-ladder-card__window-stat').text()).toContain('31 日 1 板')
+    expect(wrapper.get('.limit-ladder-card__window-stat b').classes()).not.toContain('is-multiple')
   })
 
   it('概念点击只跳板块，不触发卡片选择；无权限时退化只读', async () => {
@@ -65,7 +75,9 @@ describe('LimitLadderCard', () => {
 describe('LadderHotspots', () => {
   it('按每股唯一的走势最相关概念输出热点交集条件', async () => {
     const wrapper=mount(LadderHotspots,{props:{hotspots:result.hotspots,activeType:'industry',activeKey:'I001'}})
-    expect(wrapper.text()).toContain('机器人1')
+    const concept = wrapper.get('[data-testid="limit-ladder-hotspot-concept-C002"]')
+    expect(concept.get('.ladder-hotspots__separator').text()).toBe('·')
+    expect(concept.get('b').text()).toBe('1只')
     await wrapper.get('[data-testid="limit-ladder-hotspot-concept-C002"]').trigger('click')
     expect(wrapper.emitted('toggle')).toEqual([['concept','C002']])
   })
@@ -90,6 +102,13 @@ describe('LimitLadder', () => {
     expect(wrapper.emitted('update:filters')).toContainEqual([{
       ...DEFAULT_LIMIT_LADDER_FILTERS,hotspotType:'concept',hotspotKey:'C002',
     }])
+  })
+
+  it('所有梯级使用同一宽度，不再按板位缩窄', () => {
+    const firstBoardStock={...stock,code:'000001.SZ',name:'乙银行',consecutive_days:1,window_limit_up_days:1}
+    const wrapper=mount(LimitLadder,{props:{result:{...result,layers:[...result.layers,{consecutive_days:1,stock_count:1,stocks:[firstBoardStock]}]},filters:{...DEFAULT_LIMIT_LADDER_FILTERS},tradeDate:'2026-08-28',loading:false,error:'',exporting:false,canViewSectors:true},global:{plugins:[ElementPlus,router()],stubs:{TradeDatePicker:true}}})
+    expect(wrapper.get('[data-testid="limit-ladder-layer-2"]').attributes('style')).toBeUndefined()
+    expect(wrapper.get('[data-testid="limit-ladder-layer-1"]').attributes('style')).toBeUndefined()
   })
 
   it('筛选空与合法空快照使用不同提示', async () => {

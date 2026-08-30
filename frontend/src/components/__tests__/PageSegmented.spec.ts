@@ -14,6 +14,7 @@ describe('PageSegmented', () => {
     })
 
     expect(wrapper.classes()).toContain('page-segmented--small')
+    expect(wrapper.get('.seg-btn').classes()).toContain('seg-btn')
   })
 
   it('supports the shared primary tone for page-level mode switches', () => {

@@ -20,14 +20,10 @@ const relatedLocation = computed(() => ({
 const shortHistory = computed(() => (
   props.stock.actual_trade_days != null && props.stock.actual_trade_days < props.window
 ))
-const amountText = computed(() => {
-  const value = Number(props.stock.amount)
-  if (!Number.isFinite(value)) return '—'
-  if (value >= 1e8) return `${(value / 1e8).toFixed(2)} 亿`
-  if (value >= 1e4) return `${(value / 1e4).toFixed(0)} 万`
-  return value.toLocaleString('zh-CN')
-})
-const limitText = computed(() => `${(Number(props.stock.price_limit_pct) * 100).toFixed(0)}%`)
+const windowLimitUpDays = computed(() => props.stock.window_limit_up_days)
+const relatedIndustryName = computed(() => (
+  props.stock.latest_related_industry?.board_name || '未分类'
+))
 
 function selectCard(): void {
   emit('select', props.stock)
@@ -52,12 +48,14 @@ function selectCard(): void {
         <strong>{{ stock.name }}</strong>
         <span>{{ stock.code }}</span>
       </div>
-      <span class="limit-ladder-card__limit">+{{ limitText }}</span>
     </header>
 
     <div class="limit-ladder-card__metrics">
-      <strong>{{ stock.consecutive_days === 1 ? '首板' : `${stock.consecutive_days} 连板` }}</strong>
-      <span>{{ window }} 日 {{ stock.window_limit_up_days ?? '—' }} 板</span>
+      <span class="limit-ladder-card__window-stat">
+        {{ window }} 日
+        <b :class="{ 'is-multiple': (windowLimitUpDays ?? 0) > 1 }">{{ windowLimitUpDays ?? '—' }}</b>
+        板
+      </span>
       <el-tag v-if="stock.is_st" size="small" type="danger" effect="plain">ST</el-tag>
       <el-tag v-if="stock.is_one_word" size="small" type="warning" effect="plain">一字</el-tag>
     </div>
@@ -67,9 +65,10 @@ function selectCard(): void {
     </p>
 
     <footer class="limit-ladder-card__foot">
-      <div>
-        <span>{{ stock.board }} · {{ stock.industry_name || '未分类' }}</span>
-        <small>成交额 {{ amountText }}</small>
+      <div class="limit-ladder-card__classification">
+        <span>{{ stock.board }}</span>
+        <span aria-hidden="true">·</span>
+        <span data-testid="limit-ladder-related-industry">{{ relatedIndustryName }}</span>
       </div>
       <div v-if="stock.latest_related_concept" class="limit-ladder-card__concept">
         <RouterLink
@@ -80,7 +79,6 @@ function selectCard(): void {
           @click.stop
         >{{ stock.latest_related_concept.board_name }} ↗</RouterLink>
         <span v-else tabindex="0">{{ stock.latest_related_concept.board_name }}</span>
-        <small>截至 {{ stock.latest_related_concept.as_of_date }}</small>
       </div>
       <span v-else class="limit-ladder-card__empty">暂无相关概念</span>
     </footer>
@@ -111,7 +109,6 @@ function selectCard(): void {
   outline: 2px solid var(--el-color-primary);
   outline-offset: 2px;
 }
-.limit-ladder-card__head,
 .limit-ladder-card__metrics,
 .limit-ladder-card__foot {
   display: flex;
@@ -135,11 +132,6 @@ function selectCard(): void {
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
 }
-.limit-ladder-card__limit {
-  color: var(--app-market-up, var(--el-color-danger));
-  font-weight: var(--app-font-weight-strong);
-  font-variant-numeric: tabular-nums;
-}
 .limit-ladder-card__metrics {
   justify-content: flex-start;
   flex-wrap: wrap;
@@ -147,8 +139,13 @@ function selectCard(): void {
   color: var(--el-text-color-regular);
   font-size: var(--app-font-size-table);
 }
-.limit-ladder-card__metrics strong {
-  color: var(--app-market-up, var(--el-color-danger));
+.limit-ladder-card__window-stat b {
+  color: inherit;
+  font-weight: var(--app-font-weight-strong);
+  font-variant-numeric: tabular-nums;
+}
+.limit-ladder-card__window-stat b.is-multiple {
+  color: var(--market-up-color);
 }
 .limit-ladder-card__history {
   margin: var(--app-space-1) 0 0;
@@ -156,22 +153,32 @@ function selectCard(): void {
   line-height: var(--app-line-height-comfy);
 }
 .limit-ladder-card__foot {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-control-gap);
   align-items: stretch;
+  justify-content: flex-start;
   margin-top: var(--app-space-2);
   padding-top: var(--app-space-1);
   border-top: 1px solid var(--el-border-color-extra-light);
+  color: var(--el-text-color-regular);
   font-size: var(--app-font-size-caption);
 }
-.limit-ladder-card__foot > div:first-child,
-.limit-ladder-card__concept {
-  display: flex;
+.limit-ladder-card__classification {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
   min-width: 0;
-  gap: var(--app-space-1);
+  gap: var(--app-space-control-gap);
+}
+.limit-ladder-card__classification > span:first-child,
+.limit-ladder-card__classification > span:nth-child(2) {
+  flex: none;
+}
+.limit-ladder-card__classification > span:last-child {
+  flex: 1 1 auto;
 }
 .limit-ladder-card__concept {
+  min-width: 0;
   text-align: left;
 }
 .limit-ladder-card__foot span,
@@ -183,6 +190,7 @@ function selectCard(): void {
   white-space: nowrap;
 }
 .limit-ladder-card__concept a {
+  display: block;
   color: var(--el-color-primary);
   text-decoration: none;
 }

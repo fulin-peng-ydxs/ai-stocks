@@ -42,7 +42,7 @@ const boardOptions = [
   { value: 'star', label: '科创板' },
   { value: 'gem', label: '创业板' },
 ]
-const windowOptions = [10, 20, 31, 60].map((value) => ({ label: `${value} 日`, value }))
+const windowOptions = [10, 20, 31, 60].map((value) => ({ label: `${value}日`, value }))
 const ladderMeta = computed(() => props.result
   ? `${props.result.summary.stock_count} 只 · ${props.filters.window} 日口径`
   : '等待快照')
@@ -99,13 +99,6 @@ const staleDescription = computed(() => {
     .filter(Boolean)
     .join(' · ')
 })
-function ladderWidth(height: number): string {
-  const highest = props.result?.summary.highest_board ?? height
-  return `${Math.max(
-    54,
-    100 - Math.max(0, height - 1) * (46 / Math.max(1, highest - 1)),
-  )}%`
-}
 function updateFilters(patch: Partial<LimitLadderFilters>): void {
   emit('update:filters', { ...props.filters, ...patch })
 }
@@ -132,11 +125,15 @@ function resetFilters(): void {
   <div class="limit-ladder" data-testid="limit-ladder-main">
     <section class="limit-ladder__toolbar" aria-label="连板天梯筛选">
       <AppControlRow align="center">
-        <TradeDatePicker :model-value="tradeDate" placeholder="选择交易日" data-testid="limit-ladder-date" @update:model-value="$emit('update:tradeDate',$event)" />
-        <PageSegmented :model-value="filters.window" :options="windowOptions" size="small" tone="primary" test-id="limit-ladder-window" aria-label="统计窗口" @update:model-value="updateFilters({window:Number($event) as LimitLadderFilters['window']})" />
+        <div class="limit-ladder__date">
+          <TradeDatePicker :model-value="tradeDate" placeholder="选择交易日" data-testid="limit-ladder-date" @update:model-value="$emit('update:tradeDate',$event)" />
+        </div>
+        <PageSegmented class="limit-ladder__window" :model-value="filters.window" :options="windowOptions" size="small" tone="primary" test-id="limit-ladder-window" aria-label="统计窗口" @update:model-value="updateFilters({window:Number($event) as LimitLadderFilters['window']})" />
         <AppFilterSelect class="limit-ladder__board-filter" :model-value="filters.boards" :options="boardOptions" placeholder="上市板块" data-testid="limit-ladder-boards" @change="updateBoards" />
-        <el-checkbox :model-value="filters.ignoreSt" data-testid="limit-ladder-ignore-st" @update:model-value="updateFilters({ignoreSt:Boolean($event)})">忽略 ST</el-checkbox>
-        <el-checkbox :model-value="filters.oneWordOnly" data-testid="limit-ladder-one-word" @update:model-value="updateFilters({oneWordOnly:Boolean($event)})">仅一字板</el-checkbox>
+        <div class="limit-ladder__checks app-inline-info app-inline-info--nowrap" data-testid="limit-ladder-checks">
+          <el-checkbox :model-value="filters.ignoreSt" data-testid="limit-ladder-ignore-st" @update:model-value="updateFilters({ignoreSt:Boolean($event)})">忽略 ST</el-checkbox>
+          <el-checkbox :model-value="filters.oneWordOnly" data-testid="limit-ladder-one-word" @update:model-value="updateFilters({oneWordOnly:Boolean($event)})">仅一字板</el-checkbox>
+        </div>
         <AppSearchInput v-model="keywordDraft" class="limit-ladder__search" placeholder="代码 / 名称" data-testid="limit-ladder-keyword" @search="searchKeyword" />
         <el-button class="limit-ladder__command" :icon="RefreshLeft" @click="resetFilters">清除筛选</el-button>
         <el-button class="limit-ladder__command" :icon="Download" :loading="exporting" :disabled="!result?.has_snapshot" data-testid="limit-ladder-export" @click="$emit('export')">导出 CSV</el-button>
@@ -180,7 +177,7 @@ function resetFilters(): void {
       </AppStateBlock>
       <AppStateBlock v-else-if="!result.layers.length" state="empty"><div class="limit-ladder__empty-copy"><strong>当日无涨停股票</strong><span>这是合法的空快照，不代表加载失败。</span></div></AppStateBlock>
       <div v-else class="limit-ladder__layers" aria-label="连板天梯分层">
-        <section v-for="layer in result.layers" :key="layer.consecutive_days" class="limit-ladder__layer" :style="{width:ladderWidth(layer.consecutive_days)}" :data-testid="`limit-ladder-layer-${layer.consecutive_days}`">
+        <section v-for="layer in result.layers" :key="layer.consecutive_days" class="limit-ladder__layer" :data-testid="`limit-ladder-layer-${layer.consecutive_days}`">
           <header class="limit-ladder__layer-head"><span>{{ layer.consecutive_days }}B</span><strong>{{ layer.consecutive_days===1?'首板':`${layer.consecutive_days} 连板` }}</strong><small>{{ layer.stock_count }} 只</small></header>
           <div class="limit-ladder__cards"><LimitLadderCard v-for="stock in layer.stocks" :key="stock.code" :stock="stock" :window="filters.window" :can-view-sectors="canViewSectors" :selected="stock.code === selectedCode" :return-path="returnPath" @select="$emit('select',$event)" /></div>
         </section>
@@ -203,8 +200,16 @@ function resetFilters(): void {
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .limit-ladder__board-filter { width: 300px; }
+.limit-ladder__date { width: 220px; }
+.limit-ladder__date :deep(.el-date-editor) { width: 100%; }
+.limit-ladder__window { width: 180px; }
 .limit-ladder__search { width: 180px; }
 .limit-ladder__command { flex: 0 0 auto; }
+.limit-ladder__checks {
+  flex: 0 0 auto;
+  min-height: var(--app-control-height-md);
+}
+.limit-ladder__checks :deep(.el-checkbox) { margin: 0; }
 .limit-ladder__summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(96px, auto)) minmax(180px, 1fr);
@@ -268,6 +273,7 @@ function resetFilters(): void {
   min-width: 0;
 }
 .limit-ladder__layer {
+  width: 100%;
   min-width: min(100%, 184px);
   border: 1px solid var(--el-border-color);
   border-radius: var(--layout-card-radius);
@@ -281,7 +287,7 @@ function resetFilters(): void {
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .limit-ladder__layer-head > span {
-  color: var(--app-market-up, var(--el-color-danger));
+  color: var(--market-up-color);
   font-weight: var(--app-font-weight-strong);
 }
 .limit-ladder__layer-head small {
@@ -304,6 +310,5 @@ function resetFilters(): void {
   .limit-ladder__summary-meta { grid-column: 1 / -1; justify-content: flex-start; }
   .limit-ladder__body { padding: var(--app-space-3); }
   .limit-ladder__layers { align-items: stretch; }
-  .limit-ladder__layer { width: 100% !important; }
 }
 </style>
