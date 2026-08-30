@@ -37,6 +37,7 @@ SHARED_RESOURCE_CODES: tuple[str, ...] = (
 # 不含 baseline（那是强制注入、非授权）与 system-only（挂 visible='system' 菜单，非 system 授不了）。
 BUSINESS_RESOURCE_CODES: tuple[str, ...] = (
     "board:view", "board:compute", "score:run",
+    "limit-ladder:view",
     "score-profile:view", "score-profile:save", "score-profile:delete",
     "trade-profile:view", "trade-profile:save", "trade-profile:delete", "trade-profile:preview",
     "screen-profile:view", "screen-profile:save", "screen-profile:delete", "screen:run",
@@ -59,8 +60,8 @@ TRADE_DISCIPLINE_RESOURCE_CODES: tuple[str, ...] = (
 )
 
 # 后端分阶段先行交付、正式前端尚未接入的菜单。授权和 API 可先完成验证，但 /me 必须对所有角色
-# 隐藏这些入口；对应前端路由、pageRegistry、DESIGN marker 和页面同批就绪后才从此集合移除。
-STAGED_FRONTEND_MENU_CODES: frozenset[str] = frozenset()
+# 隐藏这些入口；对应页面的业务数据、关键交互、权限消费和浏览器回归形成完整闭环后才从此集合移除。
+STAGED_FRONTEND_MENU_CODES: frozenset[str] = frozenset({"/limit-ladder"})
 
 # 资产公开权限码（asset-ownership-refactor C4/R4）：放开普通用户自主发布——
 # tenant/public publish 默认授予 normal 与 tenant_admin（system 恒有全量）。

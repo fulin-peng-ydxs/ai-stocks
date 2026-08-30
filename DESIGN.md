@@ -628,6 +628,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | pageKey | 页面 | 原型 | 可编辑旋钮 | 组件清单 |
 |---|---|---|---|---|
 | `board` | `BoardView`（每日榜单） | `master-detail` | `density` | action:`filter-bar` / main:`master-detail` / nested:`wide-table` / nested:`chart` |
+| `limit-ladder` | `LimitLadderView`（连板天梯） | `master-detail` | `density` | action:`filter-bar` / main:`master-detail` / nested:`section` / nested:`section` |
 | `screen` | `ScreenView`（策略筛选） | `list` | `density` | action:`filter-bar` / main:`data-table` |
 | `stocks` | `StocksView`（个股查询） | `master-detail` | `density` | action:`filter-bar` / main:`master-detail` / nested:`wide-table` / nested:`wide-table` / nested:`chart` / footer |
 | `data-quality` | `QualityView`（数据质量） | `list` | `density` | action:`filter-bar` / main:`data-table` |

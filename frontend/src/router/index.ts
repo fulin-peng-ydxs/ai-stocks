@@ -26,6 +26,12 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('@/views/BoardView.vue'),
     meta: { title: '每日榜单' },
   },
+  {
+    path: '/limit-ladder',
+    name: 'limit-ladder',
+    component: () => import('@/views/LimitLadderView.vue'),
+    meta: { title: '连板天梯' },
+  },
   { path: '/score-profiles', redirect: '/system/config/score' },
   // 系统管理父菜单（P9 IA 归位）：系统配置 + 布局配置（三孙工作区）统一收入 /system/* 下。
   // 旧路由 /config、/layout-config/* 直接废弃、不做重定向（单用户本地、无外部书签）。

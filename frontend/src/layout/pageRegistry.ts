@@ -119,6 +119,29 @@ function configEntry(pageKey: string, label: string, path: string): PageRegistry
 
 const REGISTRY: PageRegistryEntry[] = [
   {
+    pageKey: 'limit-ladder',
+    label: '连板天梯',
+    path: '/limit-ladder',
+    archetype: 'master-detail',
+    responsiveProfile: 'mixed-panel',
+    supportsComponentConfig: false,
+    layout: {
+      pageKey: 'limit-ladder',
+      archetype: 'master-detail',
+      hasActionRegion: true,
+      density: 'standard',
+      responsive: singleColumn(),
+      slots: [
+        { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
+        { id: 'workspace', component: 'master-detail', region: 'main', minH: 360, label: '连板天梯研究工作台', order: 1 },
+        { id: 'ladder', component: 'section', region: 'main', parentId: 'workspace', label: '天梯分层', order: 1 },
+        { id: 'analysis', component: 'section', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2 },
+        { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
+      ],
+      editable: [densityKnob()],
+    },
+  },
+  {
     pageKey: 'board',
     label: '每日榜单',
     path: '/board',

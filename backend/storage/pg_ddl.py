@@ -1363,6 +1363,7 @@ _SEED_MENU_TREE: list = [
         ("/stocks", "个股行情", None, "login", []),
         ("/sectors", "板块行情", None, "login", []),
         ("/board", "每日榜单", None, "login", []),
+        ("/limit-ladder", "连板天梯", None, "login", []),
     ]),
     ("/screen", "策略筛选", "Filter", "login", []),
     ("/backtest", "策略回测", "DataLine", "login", []),
@@ -1435,6 +1436,11 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
     # B) 每日榜单（/board，login）
     ("/board", "board:view",         "查看每日榜单",     "api", "POST", "/api/board/run"),
     ("/board", "board:compute",      "榜单即时计算",     "api", "GET",  "/api/board/compute"),
+    # 连板天梯查看属于业务默认授权；管理员重算挂 system 菜单形成第二道系统权限边界。
+    ("/limit-ladder", "limit-ladder:view", "查看连板天梯", "api", "GET",
+     "/api/limit-ladder/{trade_date}"),
+    ("/data/ingest", "limit-ladder:recompute", "重算连板天梯", "api", "POST",
+     "/api/limit-ladder/{trade_date}/recompute"),
     ("/system/config/score", "score:run", "评分方案打分", "api", "POST", "/api/score-profiles/run"),
     # B) 策略筛选（/screen，login）
     ("/screen", "screen-profile:view",   "查看筛选方案", "api", "GET",    "/api/profiles"),
@@ -1515,7 +1521,7 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
 
 # 默认授权：业务页所有登录用户可用；用户管理授予租户管理员（管本租户用户）；system 由 resolver 判全量。
 _BUSINESS_MENU_CODES: tuple[str, ...] = (
-    "quotes", "/stocks", "/sectors", "/board", "/screen", "/backtest", "/training",
+    "quotes", "/stocks", "/sectors", "/board", "/limit-ladder", "/screen", "/backtest", "/training",
     "system", "/system/config", "/system/config/score", "/system/config/trade")
 _TENANT_ADMIN_EXTRA_MENUS: tuple[str, ...] = (
     "system", "permission", "/system/users")
