@@ -7,6 +7,8 @@ export const PAGE_DRAWER_WIDTHS = {
   xxl: 'clamp(640px, 60%, 820px)',
   // 日志、字段差异和长 JSON 在宽屏下需要更多横向空间，页面只消费语义档位。
   wide: 'clamp(560px, 46%, 760px)',
+  // 窄屏业务工作台承载同一复杂能力时使用，边界仍由 LayoutHost 限制。
+  full: '100%',
 } as const
 
 export type PageDrawerSize = keyof typeof PAGE_DRAWER_WIDTHS

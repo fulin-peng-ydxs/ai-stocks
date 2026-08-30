@@ -46,8 +46,10 @@ const props = withDefaults(defineProps<{
   slot2: AuxiliaryChartType
   slot3: AuxiliaryChartType
   heightRatios: number[]
+  canOpenDetail?: boolean
 }>(), {
   adjustMode: 'qfq',
+  canOpenDetail: true,
 })
 
 const emit = defineEmits<{
@@ -342,7 +344,7 @@ onBeforeUnmount(() => {
           <h3>{{ active?.name || '等待选择股票' }}</h3>
           <span v-if="active">{{ active.code }}</span>
           <el-button
-            v-if="active"
+            v-if="active && canOpenDetail"
             link
             type="primary"
             class="stock-detail-link"
@@ -624,6 +626,14 @@ onBeforeUnmount(() => {
   flex: 1 1 auto;
 }
 @media (max-width: 1180px) {
+  .stock-analysis-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .stock-analysis-controls {
+    width: 100%;
+    flex-wrap: wrap;
+  }
   .stock-analysis-identity p {
     display: none;
   }

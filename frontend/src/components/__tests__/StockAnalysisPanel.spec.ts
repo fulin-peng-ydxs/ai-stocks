@@ -209,4 +209,11 @@ describe('StockAnalysisPanel', () => {
     expect(wrapper.emitted('activate')).toHaveLength(1)
     expect(wrapper.emitted('remove')).toHaveLength(1)
   })
+
+  it('调用页无个股详情权限时不渲染详情入口', async () => {
+    const wrapper = mountPanel({ canOpenDetail: false })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="stock-analysis-open-detail"]').exists()).toBe(false)
+  })
 })

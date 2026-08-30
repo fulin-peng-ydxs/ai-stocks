@@ -52,6 +52,13 @@ describe('LimitLadderCard', () => {
     expect(wrapper.find('[data-testid="limit-ladder-related-600001.SH"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('机器人')
   })
+
+  it('选中态同时提供边框和 aria-current，不只依赖颜色', () => {
+    const wrapper=mount(LimitLadderCard,{props:{stock,window:31,canViewSectors:true,selected:true},global:{plugins:[ElementPlus,router()]}})
+    expect(wrapper.classes()).toContain('limit-ladder-card--selected')
+    expect(wrapper.attributes('aria-current')).toBe('true')
+    expect(wrapper.attributes('data-stock-code')).toBe(stock.code)
+  })
 })
 
 describe('LadderHotspots', () => {
@@ -90,5 +97,26 @@ describe('LimitLadder', () => {
     expect(wrapper.text()).toContain('当前筛选无匹配股票')
     await wrapper.setProps({result:{...result,business_code:'EMPTY_SNAPSHOT',summary:{stock_count:0,highest_board:null,first_board_count:0},layers:[]}})
     expect(wrapper.text()).toContain('当日无涨停股票')
+  })
+
+  it('区分计算中、非交易日、覆盖失败和带旧结果的过期状态', async () => {
+    const wrapper=mount(LimitLadder,{props:{result:{...result,has_snapshot:false,business_code:'SNAPSHOT_PENDING',snapshot_status:'calculating',snapshot:null,layers:[]},filters:{...DEFAULT_LIMIT_LADDER_FILTERS},tradeDate:'2026-08-28',loading:false,error:'',exporting:false,canViewSectors:false},global:{plugins:[ElementPlus],stubs:{TradeDatePicker:true}}})
+    expect(wrapper.text()).toContain('天梯快照正在计算')
+    expect(wrapper.find('[data-testid="limit-ladder-summary-total"]').exists()).toBe(false)
+
+    await wrapper.setProps({result:{...result,has_snapshot:false,business_code:'NOT_TRADING_DAY',snapshot_status:'not_trading_day',snapshot:null,layers:[],nearest_previous_trade_date:'2026-08-27'}})
+    expect(wrapper.text()).toContain('所选日期不是交易日')
+    expect(wrapper.text()).toContain('最近交易日为 2026-08-27')
+    expect(wrapper.findAll('button').some((button) => button.text() === '重试')).toBe(false)
+
+    await wrapper.setProps({result:{...result,has_snapshot:false,business_code:'SNAPSHOT_FAILED',snapshot_status:'failed',snapshot:null,layers:[],failure_summary:'MISSING_BAR_OR_SUSPENSION'}})
+    expect(wrapper.text()).toContain('天梯快照计算失败')
+    expect(wrapper.text()).toContain('部分股票缺少行情或停牌确认')
+    expect(wrapper.text()).toContain('重试')
+
+    await wrapper.setProps({result:{...result,business_code:'SNAPSHOT_STALE',snapshot_status:'recalculating',last_success_at:'2026-08-28T18:00:00'}})
+    expect(wrapper.get('[data-testid="limit-ladder-stale-notice"]').text()).toContain('结果已过期')
+    expect(wrapper.get('[data-testid="limit-ladder-stale-notice"]').text()).toContain('当前展示最后成功版本')
+    expect(wrapper.get('[data-testid="limit-ladder-layer-2"]').text()).toContain('2 连板')
   })
 })

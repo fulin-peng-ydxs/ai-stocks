@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 
 const props = defineProps<{
   analysisVisible: boolean
+  compact?: boolean
   eyebrow: string
   title: string
   meta?: string
@@ -17,12 +19,14 @@ const emit = defineEmits<{
 function toggleAnalysis(): void {
   emit('update:analysisVisible', !props.analysisVisible)
 }
+
+const renderAnalysis = computed(() => props.analysisVisible && !props.compact)
 </script>
 
 <template>
   <div
     class="market-master-detail"
-    :class="{ 'market-master-detail--list-only': !analysisVisible }"
+    :class="{ 'market-master-detail--list-only': !renderAnalysis }"
   >
     <section class="market-list-panel" :aria-label="listAriaLabel || title">
       <header class="market-list-head">
@@ -33,6 +37,7 @@ function toggleAnalysis(): void {
         <div class="market-list-actions">
           <span v-if="meta" class="app-caption-text">{{ meta }}</span>
           <AppIconButton
+            v-if="!compact"
             :label="analysisVisible ? '收起走势分析，仅看列表' : '显示走势分析'"
             :data-testid="analysisVisible ? 'market-hide-analysis' : 'market-show-analysis'"
             :native-title="false"
@@ -47,7 +52,7 @@ function toggleAnalysis(): void {
       </div>
     </section>
 
-    <slot v-if="analysisVisible" name="analysis" />
+    <slot v-if="renderAnalysis" name="analysis" />
   </div>
 </template>
 

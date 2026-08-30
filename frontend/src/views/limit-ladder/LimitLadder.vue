@@ -25,6 +25,7 @@ const props = defineProps<{
   error: string
   exporting: boolean
   canViewSectors: boolean
+  selectedCode?: string
 }>()
 const emit = defineEmits<{
   'update:filters': [filters: LimitLadderFilters]
@@ -51,6 +52,52 @@ const hasApproximateSt = computed(() => Boolean(
     )),
 ))
 const filteredEmpty = computed(() => props.result?.business_code === 'FILTER_EMPTY')
+const staleSnapshot = computed(() => props.result?.business_code === 'SNAPSHOT_STALE')
+const pendingSnapshot = computed(() => props.result?.business_code === 'SNAPSHOT_PENDING')
+const coverageReasonLabels: Record<string, string> = {
+  NOT_TRADING_DAY: '所选日期不是交易日',
+  POINT_IN_TIME_POOL_EMPTY: '当日点时股票池为空',
+  INGEST_PARTIAL: '当日行情采集未完整成功',
+  MISSING_BAR_OR_SUSPENSION: '部分股票缺少行情或停牌确认',
+  INVALID_DAILY_BAR: '部分日行情字段无效',
+  UNSUPPORTED_LIMIT_RULE: '部分股票无法可靠判断涨停规则',
+}
+function readableReason(value: string | null | undefined): string {
+  if (!value) return ''
+  return value.split(',').map((reason) => coverageReasonLabels[reason.trim()] || reason.trim()).join('；')
+}
+const coverageReasons = computed(() => {
+  const value = props.result?.coverage?.reason_codes
+  return Array.isArray(value)
+    ? value.map((reason) => coverageReasonLabels[String(reason)] || String(reason)).join('；')
+    : ''
+})
+const unavailableTitle = computed(() => {
+  if (props.result?.business_code === 'NOT_TRADING_DAY') return '所选日期不是交易日'
+  if (props.result?.business_code === 'SNAPSHOT_FAILED') return '天梯快照计算失败'
+  if (props.result?.business_code === 'SNAPSHOT_NOT_READY') return '行情数据尚未就绪'
+  return '当前交易日尚无可用快照'
+})
+const unavailableDescription = computed(() => {
+  if (props.result?.business_code === 'NOT_TRADING_DAY') {
+    return props.result.nearest_previous_trade_date
+      ? `请切换到交易日；最近交易日为 ${props.result.nearest_previous_trade_date}`
+      : '请切换到有效交易日后重试'
+  }
+  return readableReason(props.result?.failure_summary)
+    || readableReason(props.result?.invalid_reason)
+    || coverageReasons.value
+    || '系统尚未发布通过完整性校验的结果，请稍后重试'
+})
+const staleDescription = computed(() => {
+  const status = props.result?.snapshot_status === 'recalculating' ? '新版本正在重算' : '新版本暂不可用'
+  const lastSuccess = props.result?.last_success_at || props.result?.snapshot?.computed_at
+  const failure = readableReason(props.result?.failure_summary)
+    || readableReason(props.result?.invalid_reason)
+  return [status, lastSuccess ? `当前展示最后成功版本 ${lastSuccess}` : '', failure || '']
+    .filter(Boolean)
+    .join(' · ')
+})
 function ladderWidth(height: number): string {
   const highest = props.result?.summary.highest_board ?? height
   return `${Math.max(
@@ -94,7 +141,16 @@ function resetFilters(): void {
         <el-button :icon="Download" :loading="exporting" :disabled="!result?.has_snapshot" data-testid="limit-ladder-export" @click="$emit('export')">导出 CSV</el-button>
       </AppControlRow>
     </section>
-    <section v-if="result" class="limit-ladder__summary" aria-label="天梯摘要">
+    <div
+      v-if="staleSnapshot"
+      class="limit-ladder__status-notice"
+      role="status"
+      data-testid="limit-ladder-stale-notice"
+    >
+      <el-tag type="warning" effect="plain">结果已过期</el-tag>
+      <span>{{ staleDescription }}</span>
+    </div>
+    <section v-if="result?.has_snapshot" class="limit-ladder__summary" aria-label="天梯摘要">
       <div><span>当前股票</span><strong data-testid="limit-ladder-summary-total">{{ result.summary.stock_count }}</strong><small>只</small></div>
       <div><span>最高板位</span><strong>{{ result.summary.highest_board ?? '—' }}</strong><small>板</small></div>
       <div><span>首板股票</span><strong>{{ result.summary.first_board_count }}</strong><small>只</small></div>
@@ -104,7 +160,19 @@ function resetFilters(): void {
     <div class="limit-ladder__body">
       <AppStateBlock v-if="loading" state="loading" title="正在加载天梯快照" :skeleton-rows="6" />
       <AppStateBlock v-else-if="error" state="error" title="天梯加载失败" :description="error" retry @retry="$emit('retry')" />
-      <AppStateBlock v-else-if="!result?.has_snapshot" state="empty"><div class="limit-ladder__empty-copy"><strong>当前交易日快照尚未就绪</strong><span>系统已受理或正在准备快照，可稍后重试。</span></div></AppStateBlock>
+      <AppStateBlock v-else-if="pendingSnapshot" state="loading" title="天梯快照正在计算" description="天梯快照正在计算，完成并通过完整性校验后会发布结果" :skeleton-rows="6" />
+      <AppStateBlock
+        v-else-if="!result?.has_snapshot"
+        :state="result?.business_code === 'NOT_TRADING_DAY' ? 'empty' : 'error'"
+      >
+        <div class="limit-ladder__empty-copy">
+          <strong>{{ unavailableTitle }}</strong>
+          <span>{{ unavailableDescription }}</span>
+        </div>
+        <template v-if="result?.business_code !== 'NOT_TRADING_DAY'" #extra>
+          <el-button type="primary" @click="$emit('retry')">重试</el-button>
+        </template>
+      </AppStateBlock>
       <AppStateBlock v-else-if="filteredEmpty" state="empty">
         <div class="limit-ladder__empty-copy"><strong>当前筛选无匹配股票</strong><span>清除筛选后可恢复完整天梯。</span></div>
         <template #extra><el-button type="primary" @click="resetFilters">清除筛选</el-button></template>
@@ -113,7 +181,7 @@ function resetFilters(): void {
       <div v-else class="limit-ladder__layers" aria-label="连板天梯分层">
         <section v-for="layer in result.layers" :key="layer.consecutive_days" class="limit-ladder__layer" :style="{width:ladderWidth(layer.consecutive_days)}" :data-testid="`limit-ladder-layer-${layer.consecutive_days}`">
           <header class="limit-ladder__layer-head"><span>{{ layer.consecutive_days }}B</span><strong>{{ layer.consecutive_days===1?'首板':`${layer.consecutive_days} 连板` }}</strong><small>{{ layer.stock_count }} 只</small></header>
-          <div class="limit-ladder__cards"><LimitLadderCard v-for="stock in layer.stocks" :key="stock.code" :stock="stock" :window="filters.window" :can-view-sectors="canViewSectors" @select="$emit('select',$event)" /></div>
+          <div class="limit-ladder__cards"><LimitLadderCard v-for="stock in layer.stocks" :key="stock.code" :stock="stock" :window="filters.window" :can-view-sectors="canViewSectors" :selected="stock.code === selectedCode" @select="$emit('select',$event)" /></div>
         </section>
       </div>
     </div>
@@ -141,6 +209,17 @@ function resetFilters(): void {
   align-items: center;
   padding: var(--app-space-3) var(--app-space-4);
   border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.limit-ladder__status-notice {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--app-space-2);
+  padding: var(--app-space-2) var(--app-space-4);
+  border-bottom: 1px solid var(--el-color-warning-light-7);
+  background: var(--el-color-warning-light-9);
+  color: var(--el-text-color-regular);
+  font-size: var(--app-font-size-caption);
 }
 .limit-ladder__summary > div:not(.limit-ladder__summary-meta) {
   display: grid;

@@ -7,6 +7,7 @@ const props = defineProps<{
   stock: LimitLadderStock
   window: LimitLadderWindow
   canViewSectors: boolean
+  selected?: boolean
 }>()
 
 const emit = defineEmits<{ select: [stock: LimitLadderStock] }>()
@@ -34,9 +35,12 @@ function selectCard(): void {
 <template>
   <article
     class="limit-ladder-card"
+    :class="{ 'limit-ladder-card--selected': selected }"
     tabindex="0"
+    :aria-current="selected ? 'true' : undefined"
     :aria-label="`选择${stock.name}查看走势`"
     :data-testid="`limit-ladder-card-${stock.code}`"
+    :data-stock-code="stock.code"
     @click="selectCard"
     @keydown.enter.prevent="selectCard"
     @keydown.space.prevent="selectCard"
@@ -96,6 +100,10 @@ function selectCard(): void {
   border-color: var(--el-color-primary-light-5);
   box-shadow: var(--el-box-shadow-light);
   transform: translateY(-1px);
+}
+.limit-ladder-card--selected {
+  border-color: var(--el-color-primary);
+  box-shadow: inset 3px 0 0 var(--el-color-primary), var(--el-box-shadow-light);
 }
 .limit-ladder-card:focus-visible {
   outline: 2px solid var(--el-color-primary);

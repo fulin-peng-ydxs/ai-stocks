@@ -32,6 +32,23 @@ describe('useStockAnalysisSelection', () => {
     expect(selection.items.value.map((item) => item.code)).toEqual(['300001.SZ'])
   })
 
+  it('可关闭首项自动选择，但已选项被筛除时仍回退当前集合首项', async () => {
+    const source = ref([
+      { code: '000001.SZ', name: '平安银行' },
+      { code: '600000.SH', name: '浦发银行' },
+    ])
+    const selection = useStockAnalysisSelection(source, { autoSelectFirst: false })
+    expect(selection.activeCode.value).toBe('')
+
+    selection.select(source.value[1]!)
+    source.value = [{ code: '000001.SZ', name: '平安银行' }]
+    await nextTick()
+    expect(selection.activeCode.value).toBe('000001.SZ')
+
+    selection.clear()
+    expect(selection.activeCode.value).toBe('')
+  })
+
   it('激活队列中已有项只移动高亮,队列顺序不变', () => {
     const source = ref([
       { code: 'A', name: '甲' },

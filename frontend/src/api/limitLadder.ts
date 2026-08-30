@@ -87,6 +87,11 @@ export interface LimitLadderResult {
   requested_window_trade_days: number
   dynamic_window_status: string
   related_concept_status?: string
+  coverage?: Record<string, unknown>
+  last_success_at?: string | null
+  failure_summary?: string | null
+  invalid_reason?: string | null
+  nearest_previous_trade_date?: string | null
   summary: {
     stock_count: number
     highest_board: number | null

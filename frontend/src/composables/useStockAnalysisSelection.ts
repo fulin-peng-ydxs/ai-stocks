@@ -15,6 +15,7 @@ export interface StockAnalysisSelectable {
 export interface StockAnalysisSelectionOptions {
   maxItems?: number
   onLimitReached?: (limit: number) => void
+  autoSelectFirst?: boolean
 }
 
 /** 股票行情工作台共享的当前观察与跨页对比队列状态机。队列顺序稳定,激活只移动高亮不重排。 */
@@ -23,6 +24,7 @@ export function useStockAnalysisSelection<T extends StockAnalysisSelectable>(
   options: StockAnalysisSelectionOptions = {},
 ) {
   const limit = options.maxItems ?? 6
+  const autoSelectFirst = options.autoSelectFirst ?? true
   const lookup = ref<Record<string, T>>({})
   const queue = ref<CompareQueueState>(emptyCompareQueue())
 
@@ -63,6 +65,9 @@ export function useStockAnalysisSelection<T extends StockAnalysisSelectable>(
     })
     if (!nextItems.length) {
       applyState({ ...queue.value, activeCode: '' })
+      return
+    }
+    if (!activeCode.value && !autoSelectFirst) {
       return
     }
     if (!nextItems.some((item) => item.code === activeCode.value)) {
@@ -108,7 +113,7 @@ export function useStockAnalysisSelection<T extends StockAnalysisSelectable>(
   }
 
   function clear(): void {
-    const active = sourceItems.value[0]?.code || ''
+    const active = autoSelectFirst ? sourceItems.value[0]?.code || '' : ''
     applyState({ queueCodes: active ? [active] : [], pinnedCodes: [], activeCode: active })
   }
 

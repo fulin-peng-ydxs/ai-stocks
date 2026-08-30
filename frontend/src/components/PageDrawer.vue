@@ -30,7 +30,11 @@ if (import.meta.env.DEV && pageTarget == null) {
 }
 // 真实页面由 LayoutHost 提供目标；body 回退仅兼容组件预览与把 LayoutHost 替换为测试桩的场景。
 const appendTarget = computed(() => pageTarget?.value ?? 'body')
-const modalClassName = computed(() => ['page-drawer-modal', props.modalClass].filter(Boolean).join(' '))
+const modalClassName = computed(() => [
+  'page-drawer-modal',
+  props.size === 'full' ? 'page-drawer-modal--full' : '',
+  props.modalClass,
+].filter(Boolean).join(' '))
 const drawerWidth = computed(() => PAGE_DRAWER_WIDTHS[props.size])
 </script>
 
@@ -56,5 +60,9 @@ const drawerWidth = computed(() => PAGE_DRAWER_WIDTHS[props.size])
 /* PageDrawer teleport 到 LayoutHost 根节点；absolute 让遮罩严格服从页面边界，而非视口。 */
 .el-overlay.page-drawer-modal {
   position: absolute;
+}
+.el-overlay.page-drawer-modal--full .el-drawer {
+  width: 100% !important;
+  max-width: none;
 }
 </style>

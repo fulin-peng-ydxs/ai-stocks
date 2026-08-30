@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
+import PageDrawer from '@/components/PageDrawer.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
+import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
 import {
   exportLimitLadder,
   filtersFromRouteQuery,
@@ -22,10 +24,22 @@ import {
 } from '@/api/limitLadder'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useKlinePrefs } from '@/composables/useKlinePrefs'
+import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
+import { useStockAnalysisSession } from '@/composables/useStockAnalysisSession'
+import {
+  createDefaultStockChartPreferences,
+  useStockChartPreferences,
+} from '@/composables/useStockChartPreferences'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useStockSet } from '@/stores/stockSet'
 import { hasPermission } from '@/utils/permission'
+import {
+  PRICE_COMPARE_METRIC_ORDER,
+  type PriceCompareMetric,
+} from '@/utils/marketCompare'
 import LimitLadder from '@/views/limit-ladder/LimitLadder.vue'
 import {
   DEFAULT_LIMIT_LADDER_PREFERENCE,
@@ -37,8 +51,11 @@ import {
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const stockSet = useStockSet()
 const settingsOpen = ref(false)
-const analysisVisible = ref(false)
+const ladderHost = ref<HTMLElement | null>(null)
+const analysisDrawerOpen = ref(false)
+const isNarrowViewport = ref(false)
 const tradeDate = ref<string | null>(
   typeof route.query.date === 'string' ? route.query.date : null,
 )
@@ -49,6 +66,7 @@ const error = ref('')
 const exporting = ref(false)
 let requestSequence = 0
 let syncingRoute = false
+let narrowMedia: MediaQueryList | null = null
 
 const {
   settings: preference,
@@ -64,6 +82,33 @@ const preferenceDraft = reactive<LimitLadderPreferenceV1>(
   normalizeLimitLadderPreference(DEFAULT_LIMIT_LADDER_PREFERENCE),
 )
 
+const analysisDefaults = reactive({
+  defaultChartMode: 'compare' as 'compare' | 'kline',
+  showAnalysisPanel: DEFAULT_LIMIT_LADDER_PREFERENCE.showAnalysisPanel,
+  compareRange: 60,
+  benchmarkCode: '000905.SH',
+  compareMetrics: [...PRICE_COMPARE_METRIC_ORDER] as PriceCompareMetric[],
+  defaultCompareMetric: 'cum' as PriceCompareMetric,
+  adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
+})
+const { validDefault: klineDefaultRange } = useKlinePrefs()
+const {
+  analysisPanelVisible,
+  chartMode,
+  compareRange,
+  compareMetric,
+  benchmarkCode,
+  adjustMode,
+  visibleCompareMetrics,
+  klineRange,
+} = useStockAnalysisSession(analysisDefaults, klineDefaultRange)
+const chartSettingsState = ref(createDefaultStockChartPreferences())
+const chartSettings = computed({
+  get: () => chartSettingsState.value,
+  set: (value) => { chartSettingsState.value = value },
+})
+const chartPreferences = useStockChartPreferences(chartSettings, ref(true))
+
 function effectivePreference(): LimitLadderPreferenceV1 {
   return preferenceRemoteError.value
     ? normalizeLimitLadderPreference(DEFAULT_LIMIT_LADDER_PREFERENCE)
@@ -77,6 +122,24 @@ function resetPreferenceDraft(): void {
 const canViewSectors = computed(() => (
   hasPermission(auth.role, auth.permissions, 'sectors:view')
 ))
+const canViewStockDetail = computed(() => (
+  hasPermission(auth.role, auth.permissions, 'stocks:view')
+))
+const analysisSourceItems = computed(() => (
+  result.value?.layers.flatMap((layer) => layer.stocks) ?? []
+))
+const {
+  activeCode: activeAnalysisCode,
+  activeItem: activeAnalysisItem,
+  items: analysisItems,
+  select: selectAnalysisItem,
+  activate: activateAnalysisCode,
+  remove: removeAnalysisCode,
+  clear: clearAnalysisSelection,
+} = useStockAnalysisSelection(analysisSourceItems, {
+  autoSelectFirst: false,
+  onLimitReached: (limit) => ElMessage.warning(`最多对比${limit}只股票`),
+})
 const workspaceMeta = computed(() => result.value?.has_snapshot
   ? `${result.value.summary.stock_count} 只 · ${filters.value.window} 日口径`
   : '等待快照')
@@ -112,7 +175,7 @@ const drawerConfig = {
 
 async function applySystemDefaults(): Promise<void> {
   filters.value = filtersFromLimitLadderPreference(DEFAULT_LIMIT_LADDER_PREFERENCE)
-  analysisVisible.value = DEFAULT_LIMIT_LADDER_PREFERENCE.showAnalysisPanel
+  analysisDefaults.showAnalysisPanel = DEFAULT_LIMIT_LADDER_PREFERENCE.showAnalysisPanel
   await syncUrl()
   await loadLadder()
 }
@@ -165,10 +228,40 @@ async function syncUrl(): Promise<void> {
       query: {
         ...filtersToRouteQuery(filters.value),
         ...(tradeDate.value ? { date: tradeDate.value } : {}),
+        ...(activeAnalysisCode.value ? { selected: activeAnalysisCode.value } : {}),
+        ...(activeAnalysisCode.value ? { anchor: activeAnalysisCode.value } : {}),
       },
     })
   } finally {
     syncingRoute = false
+  }
+}
+
+function queryText(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+async function restoreScrollAnchor(code: string): Promise<void> {
+  if (!code) return
+  await nextTick()
+  const card = Array.from(ladderHost.value?.querySelectorAll<HTMLElement>('[data-stock-code]') ?? [])
+    .find((node) => node.dataset.stockCode === code)
+  card?.scrollIntoView({ block: 'center', inline: 'nearest' })
+}
+
+async function reconcileAnalysisContext(): Promise<void> {
+  await nextTick()
+  const requestedCode = queryText(route.query.selected)
+  const requestedItem = analysisSourceItems.value.find((item) => item.code === requestedCode)
+  if (requestedItem) selectAnalysisItem(requestedItem)
+
+  if (!analysisSourceItems.value.length) {
+    clearAnalysisSelection()
+    analysisDrawerOpen.value = false
+  }
+  const anchor = queryText(route.query.anchor)
+  if (anchor && analysisSourceItems.value.some((item) => item.code === anchor)) {
+    await restoreScrollAnchor(anchor)
   }
 }
 
@@ -181,6 +274,9 @@ async function loadLadder(): Promise<void> {
     const data = await getLimitLadder(tradeDate.value, filters.value)
     if (sequence !== requestSequence) return
     result.value = data
+    await reconcileAnalysisContext()
+    if (sequence !== requestSequence) return
+    if (activeAnalysisCode.value !== queryText(route.query.selected)) await syncUrl()
   } catch (value) {
     if (sequence !== requestSequence) return
     error.value = errorMessage(value, '天梯加载失败，请稍后重试')
@@ -200,6 +296,8 @@ async function setTradeDate(next: string | null): Promise<void> {
   tradeDate.value = next
   filters.value = { ...filters.value, hotspotType: null, hotspotKey: null }
   result.value = null
+  clearAnalysisSelection()
+  analysisDrawerOpen.value = false
   await syncUrl()
   await loadLadder()
 }
@@ -223,14 +321,59 @@ async function exportCsv(): Promise<void> {
   }
 }
 
-function selectStock(_stock: LimitLadderStock): void {
-  ElMessage.info('走势分析将在下一阶段接入，当前筛选结果保持不变')
+async function selectStock(stock: LimitLadderStock): Promise<void> {
+  selectAnalysisItem(stock)
+  if (isNarrowViewport.value) analysisDrawerOpen.value = true
+  else analysisPanelVisible.value = true
+  await syncUrl()
+}
+
+async function activateAnalysisItem(code: string): Promise<void> {
+  activateAnalysisCode(code)
+  await syncUrl()
+}
+
+async function removeAnalysisItem(code: string): Promise<void> {
+  removeAnalysisCode(code)
+  await syncUrl()
+}
+
+async function openActiveAnalysisDetail(): Promise<void> {
+  const active = activeAnalysisItem.value
+  if (!canViewStockDetail.value || !active) return
+  const items = analysisSourceItems.value.map((item) => ({ code: item.code, name: item.name }))
+  await syncUrl()
+  stockSet.setSet('list', items, '连板天梯', '', {
+    total: items.length,
+    loadedPages: items.length ? [1] : [],
+    pageSize: Math.max(items.length, 1),
+    returnPath: route.fullPath,
+  })
+  await router.push(`/stocks/${active.code}`)
+}
+
+function handleRatioDraft(ratios: number[]): void {
+  chartPreferences.updateRatioDraft(ratios)
+}
+
+function handleRatioCommit(ratios: number[]): void {
+  chartPreferences.updateRatioDraft(ratios)
+  chartPreferences.commitRatioDraft()
+}
+
+function updateNarrowViewport(event?: MediaQueryListEvent): void {
+  isNarrowViewport.value = event?.matches ?? narrowMedia?.matches ?? false
+  if (!isNarrowViewport.value) analysisDrawerOpen.value = false
 }
 
 watch(
   settingsOpen,
   () => resetPreferenceDraft(),
 )
+
+watch(analysisDrawerOpen, (open) => {
+  if (!open) void restoreScrollAnchor(activeAnalysisCode.value)
+})
 
 watch(
   () => route.query,
@@ -251,6 +394,9 @@ watch(
 )
 
 onMounted(async () => {
+  narrowMedia = window.matchMedia('(max-width: 768px)')
+  updateNarrowViewport()
+  narrowMedia.addEventListener('change', updateNarrowViewport)
   try {
     await whenPreferenceHydrated()
     const savedPreference = effectivePreference()
@@ -259,7 +405,7 @@ onMounted(async () => {
       route.query,
       filtersFromLimitLadderPreference(savedPreference),
     )
-    analysisVisible.value = savedPreference.showAnalysisPanel
+    analysisDefaults.showAnalysisPanel = savedPreference.showAnalysisPanel
     const dates = await listLimitLadderTradeDates()
     if (!tradeDate.value) {
       tradeDate.value = dates.latest_complete_date
@@ -277,17 +423,23 @@ onMounted(async () => {
     error.value = errorMessage(value, '交易日加载失败，请稍后重试')
   }
 })
+
+onBeforeUnmount(() => {
+  requestSequence += 1
+  narrowMedia?.removeEventListener('change', updateNarrowViewport)
+  narrowMedia = null
+})
 </script>
 
 <template>
-  <LayoutHost :layout="effective">
+  <LayoutHost :layout="effective" data-testid="limit-ladder-page">
     <template #action>
       <div class="lh-action">
         <div class="page-head">
           <div>
             <div class="page-title-line">
               <h2 class="app-page-title">连板天梯</h2>
-              <el-tag size="small" type="success" effect="plain">主视图已接入</el-tag>
+              <el-tag size="small" type="success" effect="plain">完整工作台</el-tag>
             </div>
             <p class="page-subtitle">按交易日观察涨停梯队，筛选、热点与导出共享同一快照口径。</p>
           </div>
@@ -298,7 +450,8 @@ onMounted(async () => {
 
     <template #main>
       <MarketMasterDetailWorkspace
-        v-model:analysis-visible="analysisVisible"
+        v-model:analysis-visible="analysisPanelVisible"
+        :compact="isNarrowViewport"
         eyebrow="LIMIT LADDER"
         title="涨停梯队"
         :meta="workspaceMeta"
@@ -306,39 +459,81 @@ onMounted(async () => {
         data-testid="limit-ladder-workspace"
       >
         <template #list>
-          <LimitLadder
-            :result="result"
-            :filters="filters"
-            :trade-date="tradeDate"
-            :loading="loading"
-            :error="error"
-            :exporting="exporting"
-            :can-view-sectors="canViewSectors"
-            @update:filters="setFilters"
-            @update:trade-date="setTradeDate"
-            @retry="loadLadder"
-            @export="exportCsv"
-            @select="selectStock"
-          />
+          <div ref="ladderHost" class="limit-ladder-host">
+            <LimitLadder
+              :result="result"
+              :filters="filters"
+              :trade-date="tradeDate"
+              :loading="loading"
+              :error="error"
+              :exporting="exporting"
+              :can-view-sectors="canViewSectors"
+              :selected-code="activeAnalysisCode"
+              @update:filters="setFilters"
+              @update:trade-date="setTradeDate"
+              @retry="loadLadder"
+              @export="exportCsv"
+              @select="selectStock"
+            />
+          </div>
         </template>
         <template #analysis>
-          <el-card
-            shadow="never"
-            class="analysis-placeholder"
-            role="region"
-            aria-label="股票走势分析"
-          >
-            <AppStateBlock
-              state="empty"
-              title="选择股票后查看走势"
-              description="主结果已可研究；走势联动、详情返回和窄屏抽屉将在 T10 接入。"
-            />
-          </el-card>
+          <StockAnalysisPanel
+            v-model:mode="chartMode"
+            v-model:compare-range="compareRange"
+            v-model:compare-metric="compareMetric"
+            v-model:benchmark-code="benchmarkCode"
+            v-model:kline-range="klineRange"
+            :active="activeAnalysisItem"
+            :items="analysisItems"
+            :compare-metrics="visibleCompareMetrics"
+            :adjust-mode="adjustMode"
+            :end-date="tradeDate"
+            :slot2="chartPreferences.preferences.value.slot2"
+            :slot3="chartPreferences.preferences.value.slot3"
+            :height-ratios="chartPreferences.currentRatios.value"
+            :can-open-detail="canViewStockDetail"
+            @activate="activateAnalysisItem"
+            @remove="removeAnalysisItem"
+            @open-detail="openActiveAnalysisDetail"
+            @ratio-draft="handleRatioDraft"
+            @ratio-commit="handleRatioCommit"
+          />
         </template>
       </MarketMasterDetailWorkspace>
     </template>
 
     <template #overlays>
+      <PageDrawer
+        v-if="isNarrowViewport"
+        v-model="analysisDrawerOpen"
+        title="股票走势分析"
+        size="full"
+        modal-class="limit-ladder-analysis-drawer"
+        data-testid="limit-ladder-analysis-drawer"
+      >
+        <StockAnalysisPanel
+          v-model:mode="chartMode"
+          v-model:compare-range="compareRange"
+          v-model:compare-metric="compareMetric"
+          v-model:benchmark-code="benchmarkCode"
+          v-model:kline-range="klineRange"
+          :active="activeAnalysisItem"
+          :items="analysisItems"
+          :compare-metrics="visibleCompareMetrics"
+          :adjust-mode="adjustMode"
+          :end-date="tradeDate"
+          :slot2="chartPreferences.preferences.value.slot2"
+          :slot3="chartPreferences.preferences.value.slot3"
+          :height-ratios="chartPreferences.currentRatios.value"
+          :can-open-detail="canViewStockDetail"
+          @activate="activateAnalysisItem"
+          @remove="removeAnalysisItem"
+          @open-detail="openActiveAnalysisDetail"
+          @ratio-draft="handleRatioDraft"
+          @ratio-commit="handleRatioCommit"
+        />
+      </PageDrawer>
       <PageSettingsDrawer
         v-model="settingsOpen"
         title="连板天梯"
@@ -420,18 +615,11 @@ onMounted(async () => {
   align-items: center;
   gap: var(--app-space-2);
 }
-.analysis-placeholder {
+.limit-ladder-host {
   display: flex;
-  min-width: 0;
-  min-height: 0;
-  height: 100%;
-}
-.analysis-placeholder :deep(.el-card__body) {
-  display: flex;
-  width: 100%;
+  flex: 1 1 auto;
   min-height: 0;
 }
-.analysis-placeholder .app-state-block { flex: 1 1 auto; }
 .setting-item {
   display: flex;
   flex-direction: column;
@@ -454,5 +642,16 @@ onMounted(async () => {
 }
 @media (max-width: 720px) {
   .page-title-line { align-items: flex-start; flex-direction: column; }
+}
+</style>
+
+<style>
+.limit-ladder-analysis-drawer .el-drawer__body {
+  display: flex;
+  min-height: 0;
+  padding: var(--app-space-3);
+}
+.limit-ladder-analysis-drawer .stock-analysis-panel {
+  flex: 1 1 auto;
 }
 </style>
