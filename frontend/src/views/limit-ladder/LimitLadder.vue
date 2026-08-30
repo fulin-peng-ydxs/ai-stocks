@@ -26,6 +26,7 @@ const props = defineProps<{
   exporting: boolean
   canViewSectors: boolean
   selectedCode?: string
+  returnPath?: string
 }>()
 const emit = defineEmits<{
   'update:filters': [filters: LimitLadderFilters]
@@ -137,12 +138,12 @@ function resetFilters(): void {
         <el-checkbox :model-value="filters.ignoreSt" data-testid="limit-ladder-ignore-st" @update:model-value="updateFilters({ignoreSt:Boolean($event)})">忽略 ST</el-checkbox>
         <el-checkbox :model-value="filters.oneWordOnly" data-testid="limit-ladder-one-word" @update:model-value="updateFilters({oneWordOnly:Boolean($event)})">仅一字板</el-checkbox>
         <AppSearchInput v-model="keywordDraft" class="limit-ladder__search" placeholder="代码 / 名称" data-testid="limit-ladder-keyword" @search="searchKeyword" />
-        <el-button :icon="RefreshLeft" @click="resetFilters">清除筛选</el-button>
-        <el-button :icon="Download" :loading="exporting" :disabled="!result?.has_snapshot" data-testid="limit-ladder-export" @click="$emit('export')">导出 CSV</el-button>
+        <el-button class="limit-ladder__command" :icon="RefreshLeft" @click="resetFilters">清除筛选</el-button>
+        <el-button class="limit-ladder__command" :icon="Download" :loading="exporting" :disabled="!result?.has_snapshot" data-testid="limit-ladder-export" @click="$emit('export')">导出 CSV</el-button>
       </AppControlRow>
     </section>
     <div
-      v-if="staleSnapshot"
+      v-if="staleSnapshot && !loading && !error"
       class="limit-ladder__status-notice"
       role="status"
       data-testid="limit-ladder-stale-notice"
@@ -150,13 +151,13 @@ function resetFilters(): void {
       <el-tag type="warning" effect="plain">结果已过期</el-tag>
       <span>{{ staleDescription }}</span>
     </div>
-    <section v-if="result?.has_snapshot" class="limit-ladder__summary" aria-label="天梯摘要">
+    <section v-if="result?.has_snapshot && !loading && !error" class="limit-ladder__summary" aria-label="天梯摘要">
       <div><span>当前股票</span><strong data-testid="limit-ladder-summary-total">{{ result.summary.stock_count }}</strong><small>只</small></div>
       <div><span>最高板位</span><strong>{{ result.summary.highest_board ?? '—' }}</strong><small>板</small></div>
       <div><span>首板股票</span><strong>{{ result.summary.first_board_count }}</strong><small>只</small></div>
       <div class="limit-ladder__summary-meta"><span>{{ ladderMeta }}</span><el-tag v-if="hasApproximateSt" type="warning" effect="plain" size="small">历史 ST 含近似口径</el-tag></div>
     </section>
-    <LadderHotspots v-if="result?.has_snapshot" :hotspots="result.hotspots" :active-type="filters.hotspotType" :active-key="filters.hotspotKey" @toggle="toggleHotspot" />
+    <LadderHotspots v-if="result?.has_snapshot && !loading && !error" :hotspots="result.hotspots" :active-type="filters.hotspotType" :active-key="filters.hotspotKey" @toggle="toggleHotspot" />
     <div class="limit-ladder__body">
       <AppStateBlock v-if="loading" state="loading" title="正在加载天梯快照" :skeleton-rows="6" />
       <AppStateBlock v-else-if="error" state="error" title="天梯加载失败" :description="error" retry @retry="$emit('retry')" />
@@ -181,7 +182,7 @@ function resetFilters(): void {
       <div v-else class="limit-ladder__layers" aria-label="连板天梯分层">
         <section v-for="layer in result.layers" :key="layer.consecutive_days" class="limit-ladder__layer" :style="{width:ladderWidth(layer.consecutive_days)}" :data-testid="`limit-ladder-layer-${layer.consecutive_days}`">
           <header class="limit-ladder__layer-head"><span>{{ layer.consecutive_days }}B</span><strong>{{ layer.consecutive_days===1?'首板':`${layer.consecutive_days} 连板` }}</strong><small>{{ layer.stock_count }} 只</small></header>
-          <div class="limit-ladder__cards"><LimitLadderCard v-for="stock in layer.stocks" :key="stock.code" :stock="stock" :window="filters.window" :can-view-sectors="canViewSectors" :selected="stock.code === selectedCode" @select="$emit('select',$event)" /></div>
+          <div class="limit-ladder__cards"><LimitLadderCard v-for="stock in layer.stocks" :key="stock.code" :stock="stock" :window="filters.window" :can-view-sectors="canViewSectors" :selected="stock.code === selectedCode" :return-path="returnPath" @select="$emit('select',$event)" /></div>
         </section>
       </div>
     </div>
@@ -193,6 +194,7 @@ function resetFilters(): void {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
 }
 .limit-ladder__toolbar {
@@ -202,6 +204,7 @@ function resetFilters(): void {
 }
 .limit-ladder__board-filter { width: 300px; }
 .limit-ladder__search { width: 180px; }
+.limit-ladder__command { flex: 0 0 auto; }
 .limit-ladder__summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(96px, auto)) minmax(180px, 1fr);

@@ -15,6 +15,7 @@ describe('sanitizeSectorSourceQuery', () => {
       page: '3',
       scope: 'watchlist',
       date: '2026-08-11',
+      return_to: '/limit-ladder?window=31&selected=600001.SH',
     })).toEqual({
       type: 'concept',
       sort: 'pct_5d',
@@ -23,6 +24,7 @@ describe('sanitizeSectorSourceQuery', () => {
       page: '3',
       scope: 'watchlist',
       date: '2026-08-11',
+      return_to: '/limit-ladder?window=31&selected=600001.SH',
     })
   })
 
@@ -35,6 +37,7 @@ describe('sanitizeSectorSourceQuery', () => {
       scope: 'mine',
       date: '2026/08/11',
       extra: 'ignored',
+      return_to: 'https://evil.example/steal',
     })).toEqual({})
   })
 })
@@ -104,6 +107,16 @@ describe('sectorListLocation', () => {
 
   it('无合法来源参数时返回默认列表', () => {
     expect(sectorListLocation({ sort: 'name', page: '-1' })).toEqual({
+      path: '/sectors',
+      query: {},
+    })
+  })
+
+  it('仅允许返回连板天梯的内部完整路径，拒绝开放重定向', () => {
+    expect(sectorListLocation({
+      return_to: '/limit-ladder?window=20&boards=main,gem&selected=600001.SH',
+    })).toBe('/limit-ladder?window=20&boards=main,gem&selected=600001.SH')
+    expect(sectorListLocation({ return_to: '//evil.example/steal' })).toEqual({
       path: '/sectors',
       query: {},
     })

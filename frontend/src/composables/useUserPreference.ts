@@ -67,6 +67,12 @@ export function useUserPreference<T extends object>(options: UseUserPreferenceOp
 
   async function saveRemoteNow(): Promise<void> {
     if (!getAccessToken()) return
+    // 显式保存拥有本轮写入所有权，取消 watcher 已排队的同值保存，避免重复 POST
+    // 以及两个请求倒序返回后覆盖 saveError/remoteError 状态。
+    if (saveTimer) {
+      window.clearTimeout(saveTimer)
+      saveTimer = undefined
+    }
     saving.value = true
     try {
       await saveUserPreference<T>({

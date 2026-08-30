@@ -33,7 +33,7 @@ def test_default_grants_only_include_view_and_completed_t10_menu_is_released():
     assert "/limit-ladder" in _BUSINESS_MENU_CODES
     assert "limit-ladder:view" in BUSINESS_RESOURCE_CODES
     assert "limit-ladder:recompute" not in BUSINESS_RESOURCE_CODES
-    assert STAGED_FRONTEND_MENU_CODES == frozenset()
+    assert "/limit-ladder" not in STAGED_FRONTEND_MENU_CODES
 
 
 def test_rbac_upgrade_is_marker_guarded_append_only_and_invalidates_permissions():
@@ -65,6 +65,8 @@ def test_page_file_precedes_route_and_registry_registration():
     assert "data-scaffold-placeholder" not in source
     assert "<StockAnalysisPanel" in source
     assert 'size="full"' in source
+    assert "v-permission=\"'limit-ladder:recompute'\"" in source
+    assert "recomputeLimitLadder" in source
     assert "name: 'limit-ladder'" in router
     assert "component: () => import('@/views/LimitLadderView.vue')" in router
     assert "pageKey: 'limit-ladder'" in registry

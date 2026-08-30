@@ -111,6 +111,13 @@ export interface LimitLadderTradeDates {
   latest_candidate_ready: boolean
 }
 
+export interface LimitLadderRecomputeResult {
+  command_id: string
+  task_id: string | null
+  status: string
+  reused: boolean
+}
+
 export const DEFAULT_LIMIT_LADDER_FILTERS: LimitLadderFilters = {
   window: 31,
   boards: ['main', 'star', 'gem'],
@@ -218,6 +225,10 @@ export function getLimitLadder(
   return http.get(`/limit-ladder/${encodeURIComponent(tradeDate)}`, {
     params: toLimitLadderQueryParams(filters),
   })
+}
+
+export function recomputeLimitLadder(tradeDate: string): Promise<LimitLadderRecomputeResult> {
+  return http.post(`/limit-ladder/${encodeURIComponent(tradeDate)}/recompute`)
 }
 
 function exportFilename(disposition: string | null, tradeDate: string, window: number): string {

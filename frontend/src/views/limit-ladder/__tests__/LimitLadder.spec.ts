@@ -36,13 +36,13 @@ function router() {
 
 describe('LimitLadderCard', () => {
   it('展示完整板位字段与短上市实际起始日', () => {
-    const wrapper=mount(LimitLadderCard,{props:{stock,window:31,canViewSectors:true},global:{plugins:[ElementPlus,router()]}})
+    const wrapper=mount(LimitLadderCard,{props:{stock,window:31,canViewSectors:true,returnPath:'/limit-ladder?window=31&selected=600001.SH'},global:{plugins:[ElementPlus,router()]}})
     expect(wrapper.text()).toContain('甲软件')
     expect(wrapper.text()).toContain('2 连板')
     expect(wrapper.text()).toContain('31 日 3 板')
     expect(wrapper.text()).toContain('窗口仅 8 日 · 自 2026-08-20 起')
     expect(wrapper.text()).toContain('成交额 1.23 亿')
-    expect(wrapper.get('[data-testid="limit-ladder-related-600001.SH"]').attributes('href')).toBe('/sectors/C002')
+    expect(wrapper.get('[data-testid="limit-ladder-related-600001.SH"]').attributes('href')).toBe('/sectors/C002?return_to=/limit-ladder?window=31%26selected=600001.SH')
   })
 
   it('概念点击只跳板块，不触发卡片选择；无权限时退化只读', async () => {
@@ -118,5 +118,16 @@ describe('LimitLadder', () => {
     expect(wrapper.get('[data-testid="limit-ladder-stale-notice"]').text()).toContain('结果已过期')
     expect(wrapper.get('[data-testid="limit-ladder-stale-notice"]').text()).toContain('当前展示最后成功版本')
     expect(wrapper.get('[data-testid="limit-ladder-layer-2"]').text()).toContain('2 连板')
+  })
+
+  it('主动加载和失败状态接管结果区，不与旧摘要热点并存', async () => {
+    const wrapper=mount(LimitLadder,{props:{result,filters:{...DEFAULT_LIMIT_LADDER_FILTERS},tradeDate:'2026-08-28',loading:true,error:'',exporting:false,canViewSectors:false},global:{plugins:[ElementPlus],stubs:{TradeDatePicker:true}}})
+    expect(wrapper.find('[data-testid="limit-ladder-summary-total"]').exists()).toBe(false)
+    expect(wrapper.find('.ladder-hotspots').exists()).toBe(false)
+    expect(wrapper.text()).toContain('正在加载天梯快照')
+    await wrapper.setProps({loading:false,error:'网络失败'})
+    expect(wrapper.find('[data-testid="limit-ladder-summary-total"]').exists()).toBe(false)
+    expect(wrapper.find('.ladder-hotspots').exists()).toBe(false)
+    expect(wrapper.text()).toContain('网络失败')
   })
 })

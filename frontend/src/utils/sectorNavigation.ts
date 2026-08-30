@@ -10,6 +10,7 @@ export interface SectorSourceQuery {
   page?: string
   scope?: 'watchlist'
   date?: string
+  return_to?: string
 }
 
 export interface SectorListPreferences {
@@ -35,6 +36,7 @@ const SORT_FIELDS: readonly SectorSortField[] = [
   'up_count',
 ]
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const LIMIT_LADDER_RETURN_RE = /^\/limit-ladder(?:\?|$)/
 
 /** 详情页与列表页共用来源参数白名单，非法字段逐项丢弃。 */
 export function sanitizeSectorSourceQuery(raw: LocationQuery): SectorSourceQuery {
@@ -57,6 +59,10 @@ export function sanitizeSectorSourceQuery(raw: LocationQuery): SectorSourceQuery
   if (get('scope') === 'watchlist') result.scope = 'watchlist'
   const date = get('date')
   if (DATE_RE.test(date)) result.date = date
+  const returnTo = get('return_to')
+  if (returnTo.length <= 2000 && LIMIT_LADDER_RETURN_RE.test(returnTo)) {
+    result.return_to = returnTo
+  }
   return result
 }
 
@@ -93,6 +99,8 @@ export function resolveSectorListState(
 export function sectorListLocation(raw: LocationQuery): {
   path: '/sectors'
   query: LocationQueryRaw
-} {
-  return { path: '/sectors', query: toLocationQuery(sanitizeSectorSourceQuery(raw)) }
+} | string {
+  const query = sanitizeSectorSourceQuery(raw)
+  if (query.return_to) return query.return_to
+  return { path: '/sectors', query: toLocationQuery(query) }
 }

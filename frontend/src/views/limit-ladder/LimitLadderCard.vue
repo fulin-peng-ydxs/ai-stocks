@@ -8,13 +8,15 @@ const props = defineProps<{
   window: LimitLadderWindow
   canViewSectors: boolean
   selected?: boolean
+  returnPath?: string
 }>()
 
 const emit = defineEmits<{ select: [stock: LimitLadderStock] }>()
 
-const relatedPath = computed(() => (
-  `/sectors/${encodeURIComponent(props.stock.latest_related_concept?.board_code ?? '')}`
-))
+const relatedLocation = computed(() => ({
+  path: `/sectors/${encodeURIComponent(props.stock.latest_related_concept?.board_code ?? '')}`,
+  query: props.returnPath ? { return_to: props.returnPath } : undefined,
+}))
 const shortHistory = computed(() => (
   props.stock.actual_trade_days != null && props.stock.actual_trade_days < props.window
 ))
@@ -72,7 +74,7 @@ function selectCard(): void {
       <div v-if="stock.latest_related_concept" class="limit-ladder-card__concept">
         <RouterLink
           v-if="canViewSectors"
-          :to="relatedPath"
+          :to="relatedLocation"
           :aria-label="`进入${stock.latest_related_concept.board_name}板块行情`"
           :data-testid="`limit-ladder-related-${stock.code}`"
           @click.stop

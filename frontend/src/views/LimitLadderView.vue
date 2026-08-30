@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
@@ -18,6 +18,7 @@ import {
   getLimitLadder,
   listLimitLadderTradeDates,
   normalizeLimitLadderFilters,
+  recomputeLimitLadder,
   type LimitLadderFilters,
   type LimitLadderResult,
   type LimitLadderStock,
@@ -64,9 +65,12 @@ const result = ref<LimitLadderResult | null>(null)
 const loading = ref(false)
 const error = ref('')
 const exporting = ref(false)
+const recomputing = ref(false)
 let requestSequence = 0
 let syncingRoute = false
 let narrowMedia: MediaQueryList | null = null
+let resultRefreshTimer: number | undefined
+const RESULT_REFRESH_MS = 1500
 
 const {
   settings: preference,
@@ -143,6 +147,7 @@ const {
 const workspaceMeta = computed(() => result.value?.has_snapshot
   ? `${result.value.summary.stock_count} 只 · ${filters.value.window} 日口径`
   : '等待快照')
+const ladderReturnPath = computed(() => route.fullPath)
 
 const baseLayout = getPageLayout('limit-ladder')
 const {
@@ -265,23 +270,83 @@ async function reconcileAnalysisContext(): Promise<void> {
   }
 }
 
-async function loadLadder(): Promise<void> {
+function clearResultRefresh(): void {
+  if (resultRefreshTimer) window.clearTimeout(resultRefreshTimer)
+  resultRefreshTimer = undefined
+}
+
+function needsResultRefresh(data: LimitLadderResult | null): boolean {
+  return data?.business_code === 'SNAPSHOT_PENDING'
+    || data?.snapshot_status === 'calculating'
+    || data?.snapshot_status === 'recalculating'
+}
+
+function scheduleResultRefresh(): void {
+  clearResultRefresh()
+  if (!needsResultRefresh(result.value)) return
+  resultRefreshTimer = window.setTimeout(() => {
+    resultRefreshTimer = undefined
+    void requestLadder(true)
+  }, RESULT_REFRESH_MS)
+}
+
+async function requestLadder(background: boolean): Promise<void> {
   if (!tradeDate.value) return
   const sequence = ++requestSequence
-  loading.value = true
-  error.value = ''
+  if (!background) {
+    loading.value = true
+    error.value = ''
+  }
   try {
     const data = await getLimitLadder(tradeDate.value, filters.value)
     if (sequence !== requestSequence) return
     result.value = data
+    if (background) error.value = ''
     await reconcileAnalysisContext()
     if (sequence !== requestSequence) return
     if (activeAnalysisCode.value !== queryText(route.query.selected)) await syncUrl()
   } catch (value) {
     if (sequence !== requestSequence) return
-    error.value = errorMessage(value, '天梯加载失败，请稍后重试')
+    if (!background) error.value = errorMessage(value, '天梯加载失败，请稍后重试')
   } finally {
-    if (sequence === requestSequence) loading.value = false
+    if (sequence === requestSequence) {
+      if (!background) loading.value = false
+      scheduleResultRefresh()
+    }
+  }
+}
+
+async function loadLadder(): Promise<void> {
+  clearResultRefresh()
+  await requestLadder(false)
+}
+
+async function recomputeCurrentDate(): Promise<void> {
+  if (!tradeDate.value || recomputing.value) return
+  try {
+    await ElMessageBox.confirm(
+      `确认重算 ${tradeDate.value} 的连板天梯？新结果完整发布前仍保留最后成功快照。`,
+      '重算当日',
+      { type: 'warning', confirmButtonText: '确认重算', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  recomputing.value = true
+  try {
+    const task = await recomputeLimitLadder(tradeDate.value)
+    ElMessage.success(task.reused ? '该交易日已有重算任务，已继续跟踪' : '重算任务已提交')
+    await loadLadder()
+    if (!needsResultRefresh(result.value)) {
+      resultRefreshTimer = window.setTimeout(() => {
+        resultRefreshTimer = undefined
+        void requestLadder(true)
+      }, RESULT_REFRESH_MS)
+    }
+  } catch (value) {
+    ElMessage.error(errorMessage(value, '重算提交失败，请稍后重试'))
+  } finally {
+    recomputing.value = false
   }
 }
 
@@ -426,6 +491,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   requestSequence += 1
+  clearResultRefresh()
   narrowMedia?.removeEventListener('change', updateNarrowViewport)
   narrowMedia = null
 })
@@ -440,7 +506,18 @@ onBeforeUnmount(() => {
             <h2 class="app-page-title">连板天梯</h2>
             <p class="page-subtitle">按交易日观察涨停梯队，筛选、热点与导出共享同一快照口径。</p>
           </div>
-          <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
+          <div class="page-head__actions">
+            <el-button
+              v-permission="'limit-ladder:recompute'"
+              type="warning"
+              plain
+              :loading="recomputing"
+              :disabled="!tradeDate"
+              data-testid="limit-ladder-recompute"
+              @click="recomputeCurrentDate"
+            >重算当日</el-button>
+            <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
+          </div>
         </div>
       </div>
     </template>
@@ -466,6 +543,7 @@ onBeforeUnmount(() => {
               :exporting="exporting"
               :can-view-sectors="canViewSectors"
               :selected-code="activeAnalysisCode"
+              :return-path="ladderReturnPath"
               @update:filters="setFilters"
               @update:trade-date="setTradeDate"
               @retry="loadLadder"
@@ -611,6 +689,12 @@ onBeforeUnmount(() => {
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
+}
+.page-head__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--app-space-2);
 }
 .setting-item {
   display: flex;

@@ -151,6 +151,28 @@ describe('useUserPreference', () => {
     expect(pref.remoteError.value).toBe(false)
   })
 
+  it('显式保存取消 watcher 已排队的同值写入，避免重复请求和状态倒序', async () => {
+    vi.useFakeTimers()
+    login()
+    const pref = useUserPreference({
+      scope: 'page',
+      pageKey: 'limit-ladder',
+      prefKey: 'settings',
+      defaults: { window: 31 },
+      localStorageKey: 'pref:limit-ladder-explicit-save',
+    })
+    await pref.whenHydrated()
+    pref.value.window = 20
+    await nextTick()
+    await pref.saveRemoteNow()
+    await vi.advanceTimersByTimeAsync(350)
+
+    expect(prefApi.saveUserPreference).toHaveBeenCalledTimes(1)
+    expect(prefApi.saveUserPreference).toHaveBeenCalledWith(expect.objectContaining({
+      value: { window: 20 },
+    }))
+  })
+
   it('图表组合在远端返回前被编辑时继续遵守 dirty-before-hydrate', async () => {
     login()
     const remote = deferred<{ items: Array<{ value: {

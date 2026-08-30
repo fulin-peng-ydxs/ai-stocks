@@ -5,13 +5,20 @@ import {
   exportLimitLadder,
   filtersFromRouteQuery,
   filtersToRouteQuery,
+  recomputeLimitLadder,
   toLimitLadderQueryParams,
 } from '@/api/limitLadder'
 
+const http = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
+vi.mock('@/api/client', () => ({ default: http }))
 vi.mock('@/api/authToken', () => ({ getAccessToken: () => 'test-token' }))
 
 describe('limitLadder API filters', () => {
-  beforeEach(() => { vi.restoreAllMocks() })
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    http.get.mockReset()
+    http.post.mockReset()
+  })
 
   it('URL 状态经过规范化后可无损恢复', () => {
     const filters={...DEFAULT_LIMIT_LADDER_FILTERS,window:10 as const,boards:['main','gem'] as const,ignoreSt:false,oneWordOnly:true,keyword:'甲',hotspotType:'concept' as const,hotspotKey:'C001'}
@@ -53,5 +60,11 @@ describe('limitLadder API filters', () => {
     expect(Object.fromEntries(url.searchParams.entries())).toEqual(Object.fromEntries(Object.entries(expected).filter(([,value])=>value!==undefined).map(([key,value])=>[key,String(value)])))
     expect(fetchMock.mock.calls[0][1]).toEqual({headers:{Authorization:'Bearer test-token'}})
     expect(exported.filename).toBe('limit.csv')
+  })
+
+  it('管理员重算调用当前交易日的受保护接口', async () => {
+    http.post.mockResolvedValue({ command_id: 'cmd-1', task_id: 'task-1', status: 'requested', reused: false })
+    await expect(recomputeLimitLadder('2026-08-28')).resolves.toMatchObject({ command_id: 'cmd-1' })
+    expect(http.post).toHaveBeenCalledWith('/limit-ladder/2026-08-28/recompute')
   })
 })
