@@ -167,6 +167,32 @@ def test_filters_summary_hotspots_and_csv_share_one_visible_collection(market):
     assert rows[0]["相关概念截止日"] == "2022-08-28"
 
 
+def test_csv_export_escapes_spreadsheet_formulas(market):
+    trade_date = _seed_ladder(market)
+    snapshot_id = market.query_df(
+        "SELECT current_snapshot_id FROM limit_ladder_snapshot_state WHERE trade_date=?",
+        [trade_date],
+    ).iloc[0]["current_snapshot_id"]
+    market.execute(
+        "UPDATE limit_ladder_snapshot_stock SET name='=cmd',industry_name=' @industry' "
+        "WHERE snapshot_id=? AND code='600001.SH'",
+        [snapshot_id],
+    )
+    market.execute(
+        "UPDATE limit_ladder_snapshot_concept SET board_name='+concept' "
+        "WHERE snapshot_id=? AND code='600001.SH'",
+        [snapshot_id],
+    )
+    _, payload = LimitLadderQueryService(
+        market, coordinator=_FakeCoordinator()
+    ).export_csv(trade_date, LimitLadderFilters(ignore_st=False))
+    rows = list(csv.DictReader(io.StringIO(payload.decode("utf-8-sig"))))
+    row = next(item for item in rows if item["代码"] == "600001.SH")
+    assert row["名称"] == "'=cmd"
+    assert row["快照行业"] == "' @industry"
+    assert row["快照概念"].startswith("'+concept")
+
+
 def test_missing_snapshot_uses_only_unified_first_load_entry(market):
     trade_date = date(2026, 8, 28)
     MarketRepository(market).upsert_trade_calendar(
@@ -214,6 +240,34 @@ def test_dynamic_enrichment_failures_do_not_mask_published_snapshot(market, monk
     assert data["dynamic_window_status"] == "degraded"
     assert data["related_concept_status"] == "degraded"
     assert sum(layer["stock_count"] for layer in data["layers"]) == 2
+
+
+def test_dynamic_window_fallback_failure_still_returns_published_snapshot(market, monkeypatch):
+    trade_date = _seed_ladder(market)
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("window storage unavailable")
+
+    monkeypatch.setattr(LimitLadderCalculator, "calculate_window_metrics", fail)
+    monkeypatch.setattr(LimitLadderCalculator, "_calendar_through", fail)
+    data = LimitLadderQueryService(market, coordinator=_FakeCoordinator()).query(
+        trade_date, LimitLadderFilters(ignore_st=False)
+    )
+    assert data["snapshot"]["stock_count"] == 2
+    assert data["dynamic_window_status"] == "degraded"
+    assert data["requested_window_start_date"] is None
+    assert data["requested_window_trade_days"] == 0
+
+
+def test_non_trading_day_uses_date_only_nearest_trade_date(market):
+    previous = date(2026, 8, 28)
+    MarketRepository(market).upsert_trade_calendar(
+        pd.DataFrame({"trade_date": [previous], "is_open": [True]})
+    )
+    data = LimitLadderQueryService(market, coordinator=_FakeCoordinator()).status(
+        date(2026, 8, 30)
+    )
+    assert data["nearest_previous_trade_date"] == "2026-08-28"
 
 
 @pytest.mark.parametrize(

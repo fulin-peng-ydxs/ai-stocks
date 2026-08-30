@@ -255,6 +255,61 @@ def test_invalidation_is_date_scoped_and_preserves_pointer(market):
     assert rows[1]["status"] == "valid"
 
 
+def test_incremental_market_invalidation_keeps_ladder_date_scoped(market, monkeypatch):
+    first = date(2026, 8, 27)
+    second = date(2026, 8, 28)
+    for trade_date, snapshot_id in ((first, "snap-1"), (second, "snap-2")):
+        market.execute(
+            "INSERT INTO limit_ladder_snapshot_state "
+            "(trade_date,status,current_snapshot_id,rule_version,updated_at) "
+            "VALUES (?,'valid',?,'v1',current_timestamp)",
+            [trade_date, snapshot_id],
+        )
+
+    class FakeScoreSnapshots:
+        def mark_stale_all(self):
+            return 0
+
+    monkeypatch.setattr(
+        "backend.scoring.snapshot.ScoreSnapshotRepo", lambda client: FakeScoreSnapshots()
+    )
+    service = IngestionService.__new__(IngestionService)
+    service.c = market
+    service._mark_snapshots_stale(ladder_dates=[second])
+    rows = market.query_df(
+        "SELECT trade_date,status FROM limit_ladder_snapshot_state ORDER BY trade_date"
+    ).to_dict("records")
+    assert [row["status"] for row in rows] == ["valid", "invalid"]
+
+
+def test_coverage_fingerprint_tracks_published_one_word_and_industry_dictionary(market):
+    trade_date = date(2026, 8, 28)
+    _seed_calendar(market, trade_date)
+    _seed_basic(market, [
+        ("600001.SH", "甲公司", "主板", date(2020, 1, 1), "软件", 0.10),
+    ])
+    MarketRepository(market).upsert_daily_bar(
+        pd.DataFrame([{**_bar("600001.SH", trade_date, close=11.0), "is_one_word": False}])
+    )
+    market.execute(
+        "INSERT INTO board_dict (board_code,name,board_type) "
+        "VALUES ('I001','软件','industry')"
+    )
+    service = LimitLadderSnapshotService(market)
+    initial = service.check_coverage(trade_date).upstream_fingerprint
+
+    market.execute(
+        "UPDATE daily_bar SET is_one_word=TRUE WHERE code=? AND trade_date=?",
+        ["600001.SH", trade_date],
+    )
+    one_word_changed = service.check_coverage(trade_date).upstream_fingerprint
+    assert one_word_changed != initial
+
+    market.execute("UPDATE board_dict SET board_code='I002' WHERE board_code='I001'")
+    industry_changed = service.check_coverage(trade_date).upstream_fingerprint
+    assert industry_changed != one_word_changed
+
+
 def test_ingest_terminal_helper_writes_structured_fact(market):
     service = IngestionService.__new__(IngestionService)
     service.c = market

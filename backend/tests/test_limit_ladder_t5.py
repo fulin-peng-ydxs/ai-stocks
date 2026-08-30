@@ -380,6 +380,8 @@ def test_limit_ladder_handler_materializes_and_closes_pg_command(market, monkeyp
 
         def mark_terminal(self, command_id, **fields):
             transitions.append((fields["status"], {"command_id": command_id, **fields}))
+            if fields["status"] == "succeeded":
+                raise RuntimeError("temporary pg failure")
             return True
 
     monkeypatch.setattr(
@@ -402,6 +404,19 @@ def test_limit_ladder_handler_materializes_and_closes_pg_command(market, monkeyp
     assert [status for status, _ in transitions] == ["running", "succeeded"]
     assert transitions[-1][1]["summary"]["coverage"]["reason_codes"] == []
     assert phases[-1]["phase_done"] == 3
+
+
+def test_reconcile_maps_done_task_from_snapshot_outcome():
+    from backend.services.limit_ladder_task_coordinator import LimitLadderTaskCoordinator
+
+    assert LimitLadderTaskCoordinator._duck_status({
+        "status": "done",
+        "result": {"snapshot_status": "valid"},
+    }) == "succeeded"
+    assert LimitLadderTaskCoordinator._duck_status({
+        "status": "done",
+        "result": {"ok": False, "snapshot_status": "invalid"},
+    }) == "failed"
 
 
 def test_limit_ladder_is_internal_non_resumable_task_type():

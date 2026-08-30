@@ -220,7 +220,7 @@ class LimitLadderTaskCoordinator:
             for command in self.repository.list_active():
                 duck_task = self._duck_task_for_command(str(command["command_id"]))
                 if duck_task is not None:
-                    mapped = self._duck_status(str(duck_task.get("status")))
+                    mapped = self._duck_status(duck_task)
                     if mapped == "running":
                         updated += int(self.repository.transition(
                             command_id=str(command["command_id"]),
@@ -321,14 +321,23 @@ class LimitLadderTaskCoordinator:
         return _row(rows.iloc[0])
 
     @staticmethod
-    def _duck_status(status: str) -> str | None:
-        return {
+    def _duck_status(task: dict[str, Any]) -> str | None:
+        status = {
             "pending": "running",
             "running": "running",
             "done": "succeeded",
             "failed": "failed",
             "interrupted": "interrupted",
-        }.get(status)
+        }.get(str(task.get("status")))
+        if status != "succeeded":
+            return status
+        result = task.get("result")
+        if isinstance(result, dict) and (
+            result.get("ok") is False
+            or result.get("snapshot_status") not in {None, "valid"}
+        ):
+            return "failed"
+        return "succeeded"
 
     @staticmethod
     def _task_summary(task: dict) -> dict[str, Any] | None:

@@ -1505,22 +1505,28 @@ def _h_limit_ladder_recompute(params: dict, ctx: TaskContext) -> dict:
             }
         ctx.set_phase("limit_ladder", phase_total=3, phase_done=2, current_item=raw_date)
         ctx.log(f"阶段 2/3：不可变快照已原子切换 {outcome.snapshot_id}")
-        coordinator.mark_terminal(
-            command_id,
-            status="succeeded",
-            task_id=ctx.tid,
-            summary=summary,
-        )
+        try:
+            coordinator.mark_terminal(
+                command_id,
+                status="succeeded",
+                task_id=ctx.tid,
+                summary=summary,
+            )
+        except Exception as mirror_exc:  # noqa: BLE001 -- published snapshot remains authoritative
+            ctx.log(f"PG 成功终态镜像失败，将由启动/周期对账补齐：{mirror_exc}", "warn")
         ctx.set_phase("limit_ladder", phase_total=3, phase_done=3, current_item=raw_date)
         ctx.progress(1.0, f"{raw_date} 连板天梯快照完成")
         return {"message": f"{raw_date} 连板天梯快照完成", **summary}
     except Exception as exc:
-        coordinator.mark_terminal(
-            command_id,
-            status="failed",
-            task_id=ctx.tid,
-            error=str(exc),
-        )
+        try:
+            coordinator.mark_terminal(
+                command_id,
+                status="failed",
+                task_id=ctx.tid,
+                error=str(exc),
+            )
+        except Exception as mirror_exc:  # noqa: BLE001 -- preserve the original task failure
+            ctx.log(f"PG 失败终态镜像失败，将由启动/周期对账补齐：{mirror_exc}", "warn")
         raise
 
 

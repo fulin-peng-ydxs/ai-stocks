@@ -702,7 +702,8 @@ watch(
           <div class="blk-head">
             <span>任务中心</span>
             <div class="flt">
-              <el-select v-model="taskFilter.task_type" placeholder="类型" clearable size="small" style="width: 180px"
+              <el-select v-model="taskFilter.task_type" data-testid="task-type-filter"
+                         placeholder="类型" clearable size="small" style="width: 180px"
                          @change="() => { taskPage = 1; loadTasks() }">
                 <el-option v-for="o in TASK_TYPE_OPTIONS" :key="o.v" :label="o.l" :value="o.v" />
               </el-select>

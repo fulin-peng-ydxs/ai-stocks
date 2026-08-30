@@ -172,6 +172,7 @@ class LimitLadderSnapshotService:
                     "close": self._json_value(fact.get("close")),
                     "pre_close": self._json_value(fact.get("pre_close")),
                     "amount": self._json_value(fact.get("amount")),
+                    "is_one_word": self._json_value(fact.get("is_one_word")),
                     "st": st_status.is_st,
                     "st_source": st_status.source,
                     "st_source_ref": st_status.source_ref,
@@ -192,12 +193,14 @@ class LimitLadderSnapshotService:
         if unsupported:
             reasons.append("UNSUPPORTED_LIMIT_RULE")
         concepts = self._concept_fingerprint(codes)
+        industries = self._industry_fingerprint()
         fingerprint = self._fingerprint(
             {
                 "trade_date": str(trade_date),
                 "terminal_status": terminal_status,
                 "facts": fingerprint_rows,
                 "concepts": concepts,
+                "industries": industries,
             }
         )
         return LimitLadderCoverage(
@@ -492,7 +495,7 @@ class LimitLadderSnapshotService:
             rows = self.c.query_df(
                 f"""
                 SELECT b.code,b.trade_date,b.open,b.high,b.low,b.close,b.pre_close,
-                       b.amount,b.is_suspended,
+                       b.amount,b.is_suspended,b.is_one_word,
                        st.is_st AS point_is_st,st.source AS st_source,
                        st.source_ref AS st_source_ref,st.quality AS st_quality,
                        (s.trade_date IS NOT NULL) AS confirmed_suspension
@@ -504,7 +507,7 @@ class LimitLadderSnapshotService:
                   ON s.code=b.code AND s.trade_date=b.trade_date
                 WHERE b.trade_date=?
                 UNION ALL
-                SELECT s.code,s.trade_date,NULL,NULL,NULL,NULL,NULL,NULL,TRUE,
+                SELECT s.code,s.trade_date,NULL,NULL,NULL,NULL,NULL,NULL,TRUE,NULL,
                        st.is_st,st.source,st.source_ref,st.quality,TRUE
                 FROM stock_suspension s
                 JOIN {view} codes ON codes.code=s.code
@@ -570,6 +573,16 @@ class LimitLadderSnapshotService:
             )
         return [
             (str(row["code"]), str(row["board_code"]), str(row["name"]))
+            for _, row in rows.iterrows()
+        ]
+
+    def _industry_fingerprint(self) -> list[tuple[str, str]]:
+        rows = self.c.query_df(
+            "SELECT board_code,name FROM board_dict "
+            "WHERE board_type='industry' ORDER BY board_code,name"
+        )
+        return [
+            (str(row["board_code"]), str(row["name"]))
             for _, row in rows.iterrows()
         ]
 

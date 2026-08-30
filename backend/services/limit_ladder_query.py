@@ -278,7 +278,7 @@ class LimitLadderQueryService:
         for stock in stocks:
             related = stock.get("latest_related_concept") or {}
             writer.writerow(
-                [
+                [self._csv_cell(value) for value in [
                     trade_date.isoformat(), stock["code"], stock["name"], stock["board"],
                     stock["consecutive_days"], stock["window_limit_up_days"], stock["window_start_date"],
                     stock["actual_trade_days"], stock["price_limit_pct"], "是" if stock["is_st"] else "否",
@@ -286,7 +286,7 @@ class LimitLadderQueryService:
                     stock["industry_name"], "、".join(item["board_name"] for item in stock["snapshot_concepts"]),
                     related.get("board_name", ""), related.get("board_code", ""), related.get("as_of_date", ""),
                     data["snapshot_status"], data["snapshot"]["computed_at"],
-                ]
+                ]]
             )
         filename = f"limit-ladder-{trade_date.isoformat()}-{filters.window}d.csv"
         return filename, output.getvalue().encode("utf-8-sig")
@@ -312,9 +312,23 @@ class LimitLadderQueryService:
             )
         except Exception as exc:  # noqa: BLE001 -- immutable snapshot remains readable
             log.warning("天梯动态窗口计算降级 date=%s window=%s: %s", trade_date, window, exc)
-            dates = LimitLadderCalculator(self.c)._calendar_through(trade_date)
-            requested = dates[-window:]
-            return (self._iso(requested[0]) if requested else None, len(requested), {}, "degraded")
+            try:
+                dates = LimitLadderCalculator(self.c)._calendar_through(trade_date)
+                requested = dates[-window:]
+                return (
+                    self._iso(requested[0]) if requested else None,
+                    len(requested),
+                    {},
+                    "degraded",
+                )
+            except Exception as fallback_exc:  # noqa: BLE001 -- snapshot body still wins
+                log.warning(
+                    "天梯动态窗口降级元数据也不可用 date=%s window=%s: %s",
+                    trade_date,
+                    window,
+                    fallback_exc,
+                )
+                return (None, 0, {}, "degraded")
 
     def _load_snapshot(self, snapshot_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         meta = self.c.query_df(
@@ -482,12 +496,15 @@ class LimitLadderQueryService:
             "SELECT max(trade_date) AS trade_date FROM trade_calendar WHERE is_open AND trade_date<?",
             [trade_date],
         )
+        nearest_date = self._date(nearest.iloc[0]["trade_date"])
         return {
             "trade_date": trade_date.isoformat(),
             "business_code": "NOT_TRADING_DAY",
             "snapshot_status": "not_trading_day",
             "has_snapshot": False,
-            "nearest_previous_trade_date": self._iso(nearest.iloc[0]["trade_date"]),
+            "nearest_previous_trade_date": (
+                nearest_date.isoformat() if nearest_date is not None else None
+            ),
             "coverage": {"reason_codes": ["NOT_TRADING_DAY"]},
             "task": None,
         }
@@ -540,3 +557,12 @@ class LimitLadderQueryService:
     @staticmethod
     def _nullable_text(value: Any) -> str | None:
         return None if value is None or pd.isna(value) else str(value)
+
+    @staticmethod
+    def _csv_cell(value: Any) -> Any:
+        """Prevent spreadsheet formula execution for externally sourced text cells."""
+        if not isinstance(value, str):
+            return value
+        if value.lstrip().startswith(("=", "+", "-", "@")):
+            return "'" + value
+        return value

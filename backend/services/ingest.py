@@ -69,6 +69,8 @@ class IngestionService:
         self._bao: DataSource | None = None
         self._limit_ladder_st_dates: set[date] = set()
         self._limit_ladder_st_lock = threading.Lock()
+        self._limit_ladder_market_dates: set[date] = set()
+        self._limit_ladder_market_lock = threading.Lock()
 
     def _bao_source(self) -> DataSource:
         """惰性创建补充源（默认 baostock，由 datasource.fallback 配置决定）。"""
@@ -76,21 +78,28 @@ class IngestionService:
             self._bao = get_source(self.s.datasource.fallback)
         return self._bao
 
-    def _mark_snapshots_stale(self, dates: list[date] | None = None) -> int:
+    def _mark_snapshots_stale(
+        self,
+        dates: list[date] | None = None,
+        *,
+        ladder_dates: list[date] | None = None,
+    ) -> int:
         """行情/基础信息变更后标记评分快照失效（惰性，不重算）。
 
         下沉到服务层：CLI 命令与 async_task 处理器共享同一批 IngestionService 方法，
         一处覆盖 CLI + 任务中心 + DailyPipeline，避免 CLI 运维后旧榜单被当 fresh 读取。
-        dates 为 None → 全量标 stale；否则按受影响交易日细粒度标。
+        dates 为 None → 评分快照全量标 stale；否则按受影响交易日细粒度标。
+        ladder_dates 可单独约束天梯失效日期；显式空列表表示本轮没有行情日期变化。
         """
         from backend.scoring.snapshot import ScoreSnapshotRepo
         from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
 
         try:
             ladder = LimitLadderSnapshotService(self.c)
-            if dates:
-                ladder.invalidate_dates(dates, reason="market_data_changed")
-            else:
+            affected_ladder_dates = dates if ladder_dates is None else ladder_dates
+            if affected_ladder_dates:
+                ladder.invalidate_dates(affected_ladder_dates, reason="market_data_changed")
+            elif ladder_dates is None:
                 ladder.invalidate_all(reason="market_data_changed")
         except Exception as e:  # noqa: BLE001 -- scoring invalidation must remain independent
             log.warning("行情变更后标记连板天梯失效失败: %s", e)
@@ -343,12 +352,36 @@ class IngestionService:
         with self._limit_ladder_st_lock:
             return [value.isoformat() for value in sorted(self._limit_ladder_st_dates)]
 
+    def _track_limit_ladder_market_dates(self, dates: list[date]) -> None:
+        if not dates:
+            return
+        self._ensure_limit_ladder_market_tracking()
+        with self._limit_ladder_market_lock:
+            self._limit_ladder_market_dates.update(dates)
+
+    def _reset_limit_ladder_market_dates(self) -> None:
+        self._ensure_limit_ladder_market_tracking()
+        with self._limit_ladder_market_lock:
+            self._limit_ladder_market_dates.clear()
+
+    def _limit_ladder_market_date_values(self) -> list[date]:
+        self._ensure_limit_ladder_market_tracking()
+        with self._limit_ladder_market_lock:
+            return sorted(self._limit_ladder_market_dates)
+
     def _ensure_limit_ladder_st_tracking(self) -> None:
         """Keep lightweight ``__new__`` test doubles and maintenance callers compatible."""
         if not hasattr(self, "_limit_ladder_st_lock"):
             self._limit_ladder_st_lock = threading.Lock()
         if not hasattr(self, "_limit_ladder_st_dates"):
             self._limit_ladder_st_dates = set()
+
+    def _ensure_limit_ladder_market_tracking(self) -> None:
+        """Keep lightweight ``__new__`` test doubles and maintenance callers compatible."""
+        if not hasattr(self, "_limit_ladder_market_lock"):
+            self._limit_ladder_market_lock = threading.Lock()
+        if not hasattr(self, "_limit_ladder_market_dates"):
+            self._limit_ladder_market_dates = set()
 
     def _fetch_daily_with_fallback(
         self, code: str, start: date, end: date, primary: DataSource, ctx=None,
@@ -484,6 +517,9 @@ class IngestionService:
             "adj_factor_clean", "is_st", "is_suspended", "limit_status", "is_one_word",
         ]
         n = self.repo.upsert_daily_bar(df[bar_cols])
+        self._track_limit_ladder_market_dates(
+            [pd.Timestamp(value).date() for value in df["trade_date"].tolist()]
+        )
         affected_st_dates = StockSTStatusService(self.c).upsert_facts(
             [
                 StockSTStatusFact(
@@ -940,6 +976,7 @@ class IngestionService:
         ⚠️ 调高并发即调高总请求速率，注意免费源封禁风险。
         """
         self._reset_limit_ladder_st_dates()
+        self._reset_limit_ladder_market_dates()
         years = years or self.s.datasource.history_years
         end = self._latest_open_day()   # 收敛到最近交易日，非交易日不当截止
         start = date(end.year - years, end.month, end.day)
@@ -1224,6 +1261,7 @@ class IngestionService:
         续跑天然幂等：从各股已入库最新日 +1 起，重复跑只补缺口。
         """
         self._reset_limit_ladder_st_dates()
+        self._reset_limit_ladder_market_dates()
         end = date.today()
         concurrency = concurrency or self.s.datasource.update_concurrency
         basic = (
@@ -1485,7 +1523,9 @@ class IngestionService:
                     "需跑 `valuation --fill-gaps`（或质量页补修）一次性回补历史市值。")
         # 行情/市值/复权因子已变 → 标评分快照失效（惰性，下次读取重算）。
         try:
-            result["snapshots_marked_stale"] = self._mark_snapshots_stale()
+            result["snapshots_marked_stale"] = self._mark_snapshots_stale(
+                ladder_dates=self._limit_ladder_market_date_values()
+            )
         except Exception as e:  # noqa: BLE001  失效标记失败不影响采集结果
             log.warning("增量更新后标记评分快照失效失败: %s", e)
         if codes is None:
