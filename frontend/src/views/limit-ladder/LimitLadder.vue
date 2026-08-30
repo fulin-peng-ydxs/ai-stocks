@@ -202,7 +202,11 @@ function resetFilters(): void {
 .limit-ladder__board-filter { width: 300px; }
 .limit-ladder__date { width: 220px; }
 .limit-ladder__date :deep(.el-date-editor) { width: 100%; }
-.limit-ladder__window { width: 180px; }
+.limit-ladder__window {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: max-content;
+}
 .limit-ladder__search { width: 180px; }
 .limit-ladder__command { flex: 0 0 auto; }
 .limit-ladder__checks {
@@ -302,8 +306,9 @@ function resetFilters(): void {
   padding: var(--app-space-2);
 }
 .limit-ladder__cards > * {
-  flex: 1 1 148px;
-  max-width: 196px;
+  flex: 0 0 184px;
+  width: 184px;
+  max-width: 100%;
 }
 @media (max-width: 900px) {
   .limit-ladder__summary { grid-template-columns: repeat(3, 1fr); }
