@@ -28,6 +28,8 @@ describe('taskDisplayLabel', () => {
       .toBe('个股走势关联板块·指定 1 只·强制重算')
     expect(taskDisplayLabel('stock_board_correlation', { force: false }))
       .toBe('个股走势关联板块·全市场')
+    expect(taskDisplayLabel('limit_ladder_recompute', { trade_date: '2026-08-28' }))
+      .toBe('连板天梯重算·2026-08-28')
   })
 
   it('板块质检类型、恢复文案和采集阶段使用同一套定义', () => {
@@ -60,5 +62,16 @@ describe('taskDisplayLabel', () => {
     expect(ingest).toContain("return '未切换（失败）'")
     expect(overview).toContain('<StockCodeMultiSelect')
     expect(stockScope).toContain('<StockCodeMultiSelect')
+  })
+
+  it('连板天梯任务只进入任务中心，不进入可配置调度', () => {
+    const schedule = readFileSync(resolve('src/views/data/ScheduleView.vue'), 'utf8')
+    const ingest = readFileSync(resolve('src/views/data/IngestView.vue'), 'utf8')
+
+    expect(ingest).toContain("'limit_ladder_recompute'")
+    expect(ingest).toContain('data-testid="limit-ladder-task-result"')
+    expect(ingest).toContain("row.trigger_source === 'system'")
+    expect(ingest).toContain('系统{{ row.job_name')
+    expect(schedule).not.toContain('limit_ladder_recompute')
   })
 })

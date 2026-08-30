@@ -111,6 +111,13 @@ class LimitLadderTaskRepository:
         )
         return None if df.empty else df.iloc[0].to_dict()
 
+    def list_active(self) -> list[dict[str, Any]]:
+        rows = self.pg.query_df(
+            "SELECT * FROM limit_ladder_task_ledger "
+            "WHERE status IN ('requested','running') ORDER BY created_at,command_id"
+        )
+        return rows.to_dict("records")
+
     def transition(
         self,
         *,

@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.context import get_current_context
 from backend.auth.deps import require_system_perm
+from backend.common.request import trusted_client_ip
 from backend.config import get_effective_settings
 from backend.storage.duckdb_client import get_client
 
@@ -29,12 +30,7 @@ _SETTINGS = [Depends(require_system_perm("data-settings:manage"))]   # 系统设
 
 
 def _client_ip(request: Request) -> str | None:
-    # 审计留痕用（system 管理员操作者 IP）；XFF 信任与限流同口径：仅可信反代时取 XFF，否则用连接地址。
-    if get_effective_settings().server.trust_forwarded_for:
-        xff = request.headers.get("x-forwarded-for")
-        if xff:
-            return xff.split(",")[0].strip()
-    return request.client.host if request.client else None
+    return trusted_client_ip(request)
 
 
 def _mask_email(addr: str) -> str:

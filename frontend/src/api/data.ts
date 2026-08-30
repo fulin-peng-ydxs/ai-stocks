@@ -351,6 +351,7 @@ export type TaskType =
   | 'update' | 'backfill' | 'ingest_date' | 'ingest_codes' | 'rebuild_price_factors'
   | 'recompute' | 'verify' | 'checkup' | 'fix'
   | 'enrich_basic' | 'audit_cleanup' | 'board' | 'stock_ingest' | 'stock_board_correlation'
+  | 'limit_ladder_recompute'
 
 // ── 数据结构体检报告（checkup 任务 result.checkup）──
 export interface CheckupCheck { name: string; ok: boolean; detail: string }
@@ -363,7 +364,7 @@ export interface CheckupReport {
   groups: CheckupGroup[]
 }
 export type TaskStatus = 'pending' | 'running' | 'done' | 'failed' | 'interrupted'
-export type TriggerSource = 'manual' | 'scheduled' | 'dependency' | 'retry'
+export type TriggerSource = 'manual' | 'scheduled' | 'dependency' | 'retry' | 'system'
 export interface AsyncTask {
   id: string
   task_type: TaskType
@@ -438,6 +439,7 @@ export const TASK_LABEL: Record<TaskType, string> = {
   checkup: '结构体检', fix: '质检问题恢复', enrich_basic: '退市标记刷新',
   audit_cleanup: '审计日志清理', board: '板块采集', stock_ingest: '个股采集',
   stock_board_correlation: '个股走势关联板块',
+  limit_ladder_recompute: '连板天梯重算',
 }
 export const STATUS_LABEL: Record<TaskStatus, string> = {
   pending: '排队中', running: '运行中', done: '已完成', failed: '失败', interrupted: '已中断',
@@ -488,6 +490,10 @@ export function taskDisplayLabel(
       ? `指定 ${params.codes.length} 只`
       : '全市场'
     return `${base}·${scope}${params?.force === true ? '·强制重算' : ''}`
+  }
+  if (taskType === 'limit_ladder_recompute') {
+    const tradeDate = typeof params?.trade_date === 'string' ? params.trade_date : ''
+    return tradeDate ? `${base}·${tradeDate}` : base
   }
   return base
 }

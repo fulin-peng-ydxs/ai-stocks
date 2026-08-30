@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import redis
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -240,7 +242,16 @@ def create_app() -> FastAPI:
     def _reconcile_tasks() -> None:
         try:
             from backend.services.async_task import AsyncTaskService
-            AsyncTaskService().reconcile()
+            from backend.services.limit_ladder_task_coordinator import (
+                LimitLadderTaskCoordinator,
+            )
+
+            # DuckDB residual tasks must become interrupted before PG mirrors their terminal state.
+            task_service = AsyncTaskService()
+            task_service.reconcile()
+            LimitLadderTaskCoordinator(task_service=task_service).reconcile(
+                startup_at=datetime.now(UTC)
+            )
         except Exception as e:  # noqa: BLE001
             log.warning("启动期任务 reconcile 异常: %s", e)
 

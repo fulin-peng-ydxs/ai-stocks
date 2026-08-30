@@ -137,6 +137,7 @@ function tableBorder(slotId: string): boolean {
 const TASK_TYPE_OPTIONS: { v: TaskType; l: string }[] = [
   'stock_ingest', 'update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
   'recompute', 'verify', 'checkup', 'fix', 'enrich_basic', 'board', 'stock_board_correlation',
+  'limit_ladder_recompute',
 ].map((v) => ({ v: v as TaskType, l: TASK_LABEL[v as TaskType] }))
 const TASK_STATUS_OPTIONS: { v: TaskStatus; l: string }[] = (
   ['pending', 'running', 'done', 'failed', 'interrupted'] as TaskStatus[]).map((v) => ({ v, l: STATUS_LABEL[v] }))
@@ -165,6 +166,7 @@ const PHASE_LABEL: Record<string, string> = {
   calculate: '批量计算',
   validate: '结果校验',
   switch: '原子切换',
+  limit_ladder: '连板天梯快照',
 }
 function taskPhaseText(t: AsyncTask): string {
   const cap = t.capability
@@ -203,7 +205,7 @@ const writeRunning = computed(() =>
   tasks.value.some((t) => ['pending', 'running'].includes(t.status)
     && ['update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
       'verify', 'fix', 'enrich_basic', 'board', 'stock_ingest',
-      'stock_board_correlation'].includes(t.task_type)))
+      'stock_board_correlation', 'limit_ladder_recompute'].includes(t.task_type)))
 
 // 总耗时：进行中=开始到现在(随 now 每秒刷新)；已结束/人工终止=开始到截止时间(updated_at)。
 const now = ref(Date.now())
@@ -436,6 +438,17 @@ const correlationResult = computed<Record<string, any> | null>(() => {
   return logTask.value.result && typeof logTask.value.result === 'object'
     ? logTask.value.result
     : null
+})
+const ladderResult = computed<Record<string, any> | null>(() => {
+  if (!logTaskFinished.value || logTask.value?.task_type !== 'limit_ladder_recompute') return null
+  const result = logTask.value.result && typeof logTask.value.result === 'object'
+    ? logTask.value.result
+    : {}
+  return {
+    ...result,
+    trade_date: result.trade_date || logTask.value.params?.trade_date,
+    snapshot_status: result.snapshot_status || STATUS_LABEL[logTask.value.status],
+  }
 })
 function correlationWriteStatus(): string {
   if (!correlationResult.value) return '—'
@@ -749,6 +762,9 @@ watch(
                 <el-tag v-else-if="row.trigger_source === 'retry'" type="danger" size="small" effect="plain">
                   重试{{ row.job_name ? `·${row.job_name}` : '' }}{{ row.retry_count ? ` #${row.retry_count}` : '' }}
                 </el-tag>
+                <el-tag v-else-if="row.trigger_source === 'system'" type="primary" size="small" effect="plain">
+                  系统{{ row.job_name ? `·${row.job_name}` : '' }}
+                </el-tag>
                 <el-tag v-else size="small" effect="plain" type="info">
                   {{ row.job_name ? `手动·${row.job_name}` : '手动' }}
                 </el-tag>
@@ -935,6 +951,25 @@ watch(
         <el-descriptions-item label="写入耗时">{{ correlationResult.write_seconds ?? 0 }} 秒</el-descriptions-item>
         <el-descriptions-item label="基准分布">{{ correlationBenchmarkText() }}</el-descriptions-item>
         <el-descriptions-item label="写入状态">{{ correlationWriteStatus() }}</el-descriptions-item>
+      </el-descriptions>
+      <el-descriptions
+        v-if="ladderResult"
+        :column="3"
+        size="small"
+        border
+        class="correlation-task-result"
+        data-testid="limit-ladder-task-result"
+      >
+        <el-descriptions-item label="交易日">{{ ladderResult.trade_date || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="快照状态">{{ ladderResult.snapshot_status || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="快照 ID">{{ ladderResult.snapshot_id || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="股票池">{{ ladderResult.coverage?.pool_count ?? 0 }}</el-descriptions-item>
+        <el-descriptions-item label="有效行情">{{ ladderResult.coverage?.valid_bar_count ?? 0 }}</el-descriptions-item>
+        <el-descriptions-item label="确认停牌">{{ ladderResult.coverage?.confirmed_suspension_count ?? 0 }}</el-descriptions-item>
+        <el-descriptions-item label="缺失">{{ ladderResult.coverage?.missing_count ?? 0 }}</el-descriptions-item>
+        <el-descriptions-item label="非法行情">{{ ladderResult.coverage?.invalid_bar_count ?? 0 }}</el-descriptions-item>
+        <el-descriptions-item label="未知规则">{{ ladderResult.coverage?.unsupported_rule_count ?? 0 }}</el-descriptions-item>
+        <el-descriptions-item label="采集终态">{{ ladderResult.coverage?.ingest_terminal_status || '—' }}</el-descriptions-item>
       </el-descriptions>
       <div ref="logBody" class="log-body">
         <div v-for="l in logs" :key="l.seq" class="log-line" :class="l.level">

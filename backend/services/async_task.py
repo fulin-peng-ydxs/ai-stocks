@@ -27,11 +27,12 @@ log = get_logger("services.async_task")
 # 全部任务类型：旧原子任务保持兼容，stock_ingest 按安全方案统一分派既有采集能力。
 TASK_TYPES = ("update", "backfill", "ingest_date", "ingest_codes", "rebuild_price_factors",
               "recompute", "verify", "checkup", "fix", "enrich_basic", "audit_cleanup",
-              "board", "stock_ingest", "stock_board_correlation")
+              "board", "stock_ingest", "stock_board_correlation", "limit_ladder_recompute")
 # 写类任务：互斥（写任务之间不并发），且服务重启需 reconcile。
 WRITE_TASK_TYPES = frozenset({"update", "backfill", "ingest_date", "ingest_codes",
                               "rebuild_price_factors", "verify", "fix", "enrich_basic",
-                              "board", "stock_ingest", "stock_board_correlation"})
+                              "board", "stock_ingest", "stock_board_correlation",
+                              "limit_ladder_recompute"})
 
 # 日志保留（DM-D8）
 LOG_MAX_PER_TASK = 2000
@@ -107,6 +108,11 @@ TASK_CAPABILITIES: dict[str, dict] = {
         "can_cancel": True, "can_resume": False, "cancel_mode": "checkpoint",
         "resume_granularity": None,
         "cancel_message": "会在当前计算阶段或原子切换开始前停止；原子切换开始后不中断",
+    },
+    "limit_ladder_recompute": {
+        "can_cancel": False, "can_resume": False, "cancel_mode": "none",
+        "resume_granularity": None,
+        "cancel_message": "单日快照采用原子切换，不支持中途终止或续跑",
     },
 }
 
@@ -1446,6 +1452,78 @@ def _h_stock_board_correlation(params: dict, ctx: TaskContext) -> dict:
     return payload
 
 
+def _h_limit_ladder_recompute(params: dict, ctx: TaskContext) -> dict:
+    """Materialize one ladder date and mirror every execution state to the PG ledger."""
+    from datetime import date as _date
+
+    from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
+    from backend.services.limit_ladder_task_coordinator import LimitLadderTaskCoordinator
+
+    command_id = str(params.get("command_id") or "").strip()
+    raw_date = str(params.get("trade_date") or "").strip()
+    if not command_id or not raw_date:
+        raise ValueError("连板天梯任务缺少 command_id 或 trade_date")
+    trade_date = _date.fromisoformat(raw_date)
+    coordinator = LimitLadderTaskCoordinator(task_service=ctx.svc)
+    command = coordinator.repository.get(command_id)
+    command_trade_date = command.get("trade_date") if command is not None else None
+    if isinstance(command_trade_date, datetime):
+        command_trade_date = command_trade_date.date()
+    if command is None or command_trade_date != trade_date:
+        raise ValueError("连板天梯 PG 命令与 DuckDB 任务参数不一致")
+    if not coordinator.mark_running(command_id, ctx.tid):
+        raise RuntimeError("连板天梯命令已进入终态，拒绝重复执行")
+
+    ctx.set_phase("limit_ladder", phase_total=3, phase_done=0, current_item=raw_date)
+    ctx.log(f"阶段 1/3：校验 {raw_date} 点时股票池与采集终态")
+    try:
+        outcome = LimitLadderSnapshotService(ctx.svc.c).materialize(
+            trade_date,
+            task_id=ctx.tid,
+        )
+        coverage = outcome.coverage.to_dict()
+        summary = {
+            "trade_date": raw_date,
+            "snapshot_id": outcome.snapshot_id,
+            "snapshot_status": outcome.status,
+            "coverage": coverage,
+        }
+        if outcome.status != "valid":
+            reason = ",".join(outcome.coverage.reason_codes) or "COVERAGE_NOT_READY"
+            coordinator.mark_terminal(
+                command_id,
+                status="failed",
+                task_id=ctx.tid,
+                summary=summary,
+                error=reason,
+            )
+            ctx.set_phase("limit_ladder", phase_total=3, phase_done=3, current_item=raw_date)
+            return {
+                "ok": False,
+                "message": f"{raw_date} 连板天梯未发布：{reason}",
+                **summary,
+            }
+        ctx.set_phase("limit_ladder", phase_total=3, phase_done=2, current_item=raw_date)
+        ctx.log(f"阶段 2/3：不可变快照已原子切换 {outcome.snapshot_id}")
+        coordinator.mark_terminal(
+            command_id,
+            status="succeeded",
+            task_id=ctx.tid,
+            summary=summary,
+        )
+        ctx.set_phase("limit_ladder", phase_total=3, phase_done=3, current_item=raw_date)
+        ctx.progress(1.0, f"{raw_date} 连板天梯快照完成")
+        return {"message": f"{raw_date} 连板天梯快照完成", **summary}
+    except Exception as exc:
+        coordinator.mark_terminal(
+            command_id,
+            status="failed",
+            task_id=ctx.tid,
+            error=str(exc),
+        )
+        raise
+
+
 _HANDLERS = {
     "update": _h_update,
     "backfill": _h_backfill,
@@ -1461,4 +1539,5 @@ _HANDLERS = {
     "board": _h_board,
     "stock_ingest": _h_stock_ingest,
     "stock_board_correlation": _h_stock_board_correlation,
+    "limit_ladder_recompute": _h_limit_ladder_recompute,
 }

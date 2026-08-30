@@ -40,6 +40,8 @@ _DELAY_UNITS = {"second": 1, "minute": 60, "hour": 3600}
 _MAX_DELAY_SECONDS = 30 * 24 * 3600
 _MAX_RETRIES = 20
 _DISPATCH_JOB_ID = "__schedule_dependency_dispatch__"
+_LIMIT_LADDER_RECONCILE_JOB_ID = "__limit_ladder_reconcile__"
+_limit_ladder_coordinator = None
 # 同进程内串行化事件认领、目标启停/删除和任务创建，保证“停用取消等待事件”与分发互斥。
 _EVENT_DISPATCH_LOCK = threading.RLock()
 
@@ -288,8 +290,30 @@ def _register_dependency_dispatcher() -> None:
         max_instances=1,
         coalesce=True,
     )
+    sched.add_job(
+        _reconcile_limit_ladder_tasks,
+        IntervalTrigger(seconds=30),
+        id=_LIMIT_LADDER_RECONCILE_JOB_ID,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     if not sched.running:
         sched.start()
+
+
+def _reconcile_limit_ladder_tasks() -> None:
+    """Best-effort periodic mirror/outbox delivery; coordinator owns the PG advisory lock."""
+    global _limit_ladder_coordinator
+    try:
+        from backend.services.limit_ladder_task_coordinator import LimitLadderTaskCoordinator
+
+        # Reuse the service so the 30-second loop does not rerun all idempotent DuckDB DDL.
+        if _limit_ladder_coordinator is None:
+            _limit_ladder_coordinator = LimitLadderTaskCoordinator()
+        _limit_ladder_coordinator.reconcile()
+    except Exception as exc:  # noqa: BLE001 -- scheduler loop must remain healthy
+        log.warning("[scheduler] 连板天梯任务对账失败: %s", exc)
 
 
 def _ensure_default_audit_cleanup_job() -> None:
