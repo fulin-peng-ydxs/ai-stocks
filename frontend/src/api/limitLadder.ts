@@ -163,15 +163,22 @@ function firstQueryValue(value: unknown): string {
   return Array.isArray(value) ? String(value[0] ?? '') : String(value ?? '')
 }
 
-export function filtersFromRouteQuery(query: Record<string, unknown>): LimitLadderFilters {
+export function filtersFromRouteQuery(
+  query: Record<string, unknown>,
+  defaults: LimitLadderFilters = DEFAULT_LIMIT_LADDER_FILTERS,
+): LimitLadderFilters {
   const boardsText = firstQueryValue(query.boards)
   const boards = boardsText
     ? boardsText.split(',').map((item) => item.trim()) as LimitLadderBoard[]
     : undefined
   return normalizeLimitLadderFilters({
-    window: Number(firstQueryValue(query.window)) as LimitLadderWindow,
-    boards,
-    ignoreSt: firstQueryValue(query.ignore_st) !== '0',
+    window: query.window === undefined
+      ? defaults.window
+      : Number(firstQueryValue(query.window)) as LimitLadderWindow,
+    boards: query.boards === undefined ? defaults.boards : boards,
+    ignoreSt: query.ignore_st === undefined
+      ? defaults.ignoreSt
+      : firstQueryValue(query.ignore_st) !== '0',
     oneWordOnly: firstQueryValue(query.one_word_only) === '1',
     keyword: firstQueryValue(query.keyword),
     hotspotType: firstQueryValue(query.hotspot_type) as LimitLadderHotspotType,

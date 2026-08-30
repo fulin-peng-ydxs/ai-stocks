@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
+import PageSegmented from '@/components/PageSegmented.vue'
+import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
+import PageToggleRow from '@/components/PageToggleRow.vue'
 import {
   exportLimitLadder,
   filtersFromRouteQuery,
@@ -18,11 +21,18 @@ import {
   type LimitLadderStock,
 } from '@/api/limitLadder'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { usePageSettings } from '@/composables/usePageSettings'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import LimitLadder from '@/views/limit-ladder/LimitLadder.vue'
+import {
+  DEFAULT_LIMIT_LADDER_PREFERENCE,
+  filtersFromLimitLadderPreference,
+  normalizeLimitLadderPreference,
+  type LimitLadderPreferenceV1,
+} from '@/views/limit-ladder/preferences'
 
 const route = useRoute()
 const router = useRouter()
@@ -39,6 +49,30 @@ const error = ref('')
 const exporting = ref(false)
 let requestSequence = 0
 let syncingRoute = false
+
+const {
+  settings: preference,
+  isDirty: preferenceDirty,
+  reset: resetPreference,
+  whenHydrated: whenPreferenceHydrated,
+  remoteError: preferenceRemoteError,
+  saving: preferenceSaving,
+  saveError: preferenceSaveError,
+  save: savePreference,
+} = usePageSettings('limit-ladder', DEFAULT_LIMIT_LADDER_PREFERENCE)
+const preferenceDraft = reactive<LimitLadderPreferenceV1>(
+  normalizeLimitLadderPreference(DEFAULT_LIMIT_LADDER_PREFERENCE),
+)
+
+function effectivePreference(): LimitLadderPreferenceV1 {
+  return preferenceRemoteError.value
+    ? normalizeLimitLadderPreference(DEFAULT_LIMIT_LADDER_PREFERENCE)
+    : normalizeLimitLadderPreference(preference)
+}
+
+function resetPreferenceDraft(): void {
+  Object.assign(preferenceDraft, effectivePreference())
+}
 
 const canViewSectors = computed(() => (
   hasPermission(auth.role, auth.permissions, 'sectors:view')
@@ -74,6 +108,46 @@ const drawerConfig = {
   componentSourceOf,
   componentLayerValuesOf,
   componentAllowedLayers,
+}
+
+async function applySystemDefaults(): Promise<void> {
+  filters.value = filtersFromLimitLadderPreference(DEFAULT_LIMIT_LADDER_PREFERENCE)
+  analysisVisible.value = DEFAULT_LIMIT_LADDER_PREFERENCE.showAnalysisPanel
+  await syncUrl()
+  await loadLadder()
+}
+
+async function savePreferenceDefaults(): Promise<void> {
+  const previous = effectivePreference()
+  const normalized = normalizeLimitLadderPreference(preferenceDraft)
+  Object.assign(preference, normalized)
+  await savePreference()
+  if (preferenceSaveError.value) {
+    Object.assign(preference, previous)
+    ElMessage.error('默认偏好保存失败，请检查网络后重试')
+    return
+  }
+  Object.assign(preferenceDraft, normalized)
+  settingsOpen.value = false
+  ElMessage.success('已保存连板天梯默认偏好')
+}
+
+function cancelPreferenceDraft(): void {
+  resetPreferenceDraft()
+  settingsOpen.value = false
+}
+
+async function resetAllSettings(): Promise<void> {
+  resetPreference()
+  resetAll()
+  resetPreferenceDraft()
+  await savePreference()
+  await applySystemDefaults()
+  if (preferenceSaveError.value) {
+    ElMessage.error('默认偏好已在本机恢复，远端保存失败，请稍后重试')
+    return
+  }
+  ElMessage.success('已恢复并应用系统默认设置')
 }
 
 function errorMessage(value: unknown, fallback: string): string {
@@ -154,11 +228,19 @@ function selectStock(_stock: LimitLadderStock): void {
 }
 
 watch(
+  settingsOpen,
+  () => resetPreferenceDraft(),
+)
+
+watch(
   () => route.query,
   (query) => {
     if (syncingRoute) return
     const nextDate = typeof query.date === 'string' ? query.date : tradeDate.value
-    const nextFilters = filtersFromRouteQuery(query)
+    const nextFilters = filtersFromRouteQuery(
+      query,
+      filtersFromLimitLadderPreference(effectivePreference()),
+    )
     const changed = nextDate !== tradeDate.value
       || JSON.stringify(nextFilters) !== JSON.stringify(filters.value)
     if (!changed) return
@@ -170,6 +252,14 @@ watch(
 
 onMounted(async () => {
   try {
+    await whenPreferenceHydrated()
+    const savedPreference = effectivePreference()
+    Object.assign(preferenceDraft, savedPreference)
+    filters.value = filtersFromRouteQuery(
+      route.query,
+      filtersFromLimitLadderPreference(savedPreference),
+    )
+    analysisVisible.value = savedPreference.showAnalysisPanel
     const dates = await listLimitLadderTradeDates()
     if (!tradeDate.value) {
       tradeDate.value = dates.latest_complete_date
@@ -252,12 +342,74 @@ onMounted(async () => {
       <PageSettingsDrawer
         v-model="settingsOpen"
         title="连板天梯"
-        :dirty="isDirty"
+        :dirty="isDirty || preferenceDirty"
         page-key="limit-ladder"
         :config="drawerConfig"
-        :business-visible="false"
-        @reset="resetAll"
-      />
+        :business-visible="true"
+        @reset="resetAllSettings"
+      >
+        <template #business>
+          <AppStateBlock
+            v-if="preferenceRemoteError"
+            state="error"
+            size="inline"
+            title="个人偏好读取失败"
+            description="当前使用系统默认，可重新保存后再试"
+          />
+          <PageSettingSection title="默认筛选">
+            <div class="setting-item">
+              <div class="setting-label">统计窗口</div>
+              <PageSegmented
+                v-model="preferenceDraft.window"
+                :options="[
+                  { label: '10 日', value: 10 },
+                  { label: '20 日', value: 20 },
+                  { label: '31 日', value: 31 },
+                  { label: '60 日', value: 60 },
+                ]"
+                aria-label="默认统计窗口"
+                test-id="limit-ladder-default-window"
+              />
+            </div>
+            <div class="setting-item">
+              <div class="setting-label">纳入板块</div>
+              <el-checkbox-group
+                v-model="preferenceDraft.boards"
+                class="board-preference-options"
+                aria-label="默认纳入板块"
+                data-testid="limit-ladder-default-boards"
+              >
+                <el-checkbox value="main">主板</el-checkbox>
+                <el-checkbox value="star">科创板</el-checkbox>
+                <el-checkbox value="gem">创业板</el-checkbox>
+              </el-checkbox-group>
+            </div>
+            <PageToggleRow
+              v-model="preferenceDraft.ignoreSt"
+              label="默认忽略 ST"
+              test-id="limit-ladder-default-ignore-st"
+            />
+            <PageToggleRow
+              v-model="preferenceDraft.showAnalysisPanel"
+              label="默认展开走势分析"
+              test-id="limit-ladder-default-analysis"
+            />
+          </PageSettingSection>
+          <div class="preference-actions">
+            <el-button data-testid="limit-ladder-default-cancel" @click="cancelPreferenceDraft">
+              取消
+            </el-button>
+            <el-button
+              type="primary"
+              :loading="preferenceSaving"
+              data-testid="limit-ladder-default-save"
+              @click="savePreferenceDefaults"
+            >
+              保存为默认
+            </el-button>
+          </div>
+        </template>
+      </PageSettingsDrawer>
     </template>
   </LayoutHost>
 </template>
@@ -280,6 +432,26 @@ onMounted(async () => {
   min-height: 0;
 }
 .analysis-placeholder .app-state-block { flex: 1 1 auto; }
+.setting-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-2);
+}
+.setting-label {
+  color: var(--page-settings-text);
+  font-size: var(--app-font-size-body);
+}
+.board-preference-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--app-space-1);
+}
+.preference-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--app-space-2);
+  padding-top: var(--app-space-2);
+}
 @media (max-width: 720px) {
   .page-title-line { align-items: flex-start; flex-direction: column; }
 }

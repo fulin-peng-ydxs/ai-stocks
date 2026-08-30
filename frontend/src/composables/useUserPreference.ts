@@ -77,6 +77,7 @@ export function useUserPreference<T extends object>(options: UseUserPreferenceOp
         schemaVersion: 1,
       })
       saveError.value = false
+      remoteError.value = false
     } catch {
       saveError.value = true
     } finally {

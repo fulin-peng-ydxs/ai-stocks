@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { reactive } from 'vue'
+import { ElButton } from 'element-plus'
 import type { LimitLadderHotspot, LimitLadderHotspotType } from '@/api/limitLadder'
 
 const props = defineProps<{
@@ -29,24 +30,22 @@ function visibleItems(kind: LimitLadderHotspotType): LimitLadderHotspot[] {
     <div v-for="kind in (['industry', 'concept'] as const)" :key="kind" class="ladder-hotspots__group">
       <strong>{{ kind === 'industry' ? '行业热点' : '概念热点' }}</strong>
       <div class="ladder-hotspots__chips">
-        <button
+        <ElButton
           v-for="item in visibleItems(kind)"
           :key="`${kind}-${item.group_key}`"
-          type="button"
           class="ladder-hotspots__chip"
           :class="{ 'is-active': activeType === kind && activeKey === item.group_key }"
           :aria-pressed="activeType === kind && activeKey === item.group_key"
           :data-testid="`limit-ladder-hotspot-${kind}-${item.group_key}`"
           @click="$emit('toggle', kind, item.group_key)"
-        ><span>{{ item.group_name }}</span><b>{{ item.stock_count }}</b></button>
+        ><span>{{ item.group_name }}</span><b>{{ item.stock_count }}</b></ElButton>
         <span v-if="!hotspots[kind].length" class="ladder-hotspots__empty">暂无</span>
-        <button
+        <ElButton
           v-else-if="hotspots[kind].length > MAX_VISIBLE"
-          type="button"
           class="ladder-hotspots__more"
           :aria-expanded="expanded[kind]"
           @click="expanded[kind] = !expanded[kind]"
-        >{{ expanded[kind] ? '收起' : `展开其余 ${hotspots[kind].length - MAX_VISIBLE} 项` }}</button>
+        >{{ expanded[kind] ? '收起' : `展开其余 ${hotspots[kind].length - MAX_VISIBLE} 项` }}</ElButton>
       </div>
     </div>
   </section>
@@ -57,13 +56,13 @@ function visibleItems(kind: LimitLadderHotspotType): LimitLadderHotspot[] {
 .ladder-hotspots__group { display:grid; grid-template-columns:70px minmax(0,1fr); align-items:start; gap:var(--app-space-2); }
 .ladder-hotspots__group>strong { padding-top:5px; color:var(--el-text-color-secondary); font-size:var(--app-font-size-caption); }
 .ladder-hotspots__chips { display:flex; flex-wrap:wrap; gap:var(--app-space-1); }
-.ladder-hotspots__chip { display:inline-flex; align-items:center; gap:var(--app-space-1); min-height:28px; padding:0 var(--app-space-2); border:1px solid var(--el-border-color); border-radius:999px; background:var(--el-bg-color); color:var(--el-text-color-regular); cursor:pointer; }
+.ladder-hotspots__chip { display:inline-flex; align-items:center; gap:var(--app-space-1); min-height:28px; margin:0; padding:0 var(--app-space-2); border:1px solid var(--el-border-color); border-radius:999px; background:var(--el-bg-color); color:var(--el-text-color-regular); cursor:pointer; }
 .ladder-hotspots__chip b { color:var(--el-text-color-secondary); font-size:var(--app-font-size-caption); font-variant-numeric:tabular-nums; }
 .ladder-hotspots__chip:hover,.ladder-hotspots__chip.is-active { border-color:var(--el-color-primary); color:var(--el-color-primary); }
 .ladder-hotspots__chip.is-active { background:var(--el-color-primary-light-9); }
 .ladder-hotspots__chip:focus-visible { outline:2px solid var(--el-color-primary); outline-offset:2px; }
 .ladder-hotspots__empty { color:var(--app-placeholder-text); font-size:var(--app-font-size-caption); }
-.ladder-hotspots__more { min-height:28px; padding:0 var(--app-space-1); border:0; background:transparent; color:var(--el-color-primary); cursor:pointer; }
+.ladder-hotspots__more { min-height:28px; margin:0; padding:0 var(--app-space-1); border:0; background:transparent; color:var(--el-color-primary); cursor:pointer; }
 .ladder-hotspots__more:hover { text-decoration:underline; }
 .ladder-hotspots__more:focus-visible { outline:2px solid var(--el-color-primary); outline-offset:2px; }
 @media (max-width:720px) { .ladder-hotspots__group { grid-template-columns:1fr; } }

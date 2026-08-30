@@ -131,6 +131,26 @@ describe('useUserPreference', () => {
     }))
   })
 
+  it('远端读取失败后显式保存成功会清除降级错误态', async () => {
+    login()
+    prefApi.listUserPreferences.mockRejectedValueOnce(new Error('offline'))
+    const pref = useUserPreference({
+      scope: 'page',
+      pageKey: 'limit-ladder',
+      prefKey: 'settings',
+      defaults: { window: 31 },
+      localStorageKey: 'pref:limit-ladder',
+    })
+    await pref.whenHydrated()
+    expect(pref.remoteError.value).toBe(true)
+
+    pref.value.window = 20
+    await pref.saveRemoteNow()
+
+    expect(pref.saveError.value).toBe(false)
+    expect(pref.remoteError.value).toBe(false)
+  })
+
   it('图表组合在远端返回前被编辑时继续遵守 dirty-before-hydrate', async () => {
     login()
     const remote = deferred<{ items: Array<{ value: {

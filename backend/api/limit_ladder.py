@@ -36,9 +36,18 @@ def _filters(
     hotspot_type: str | None,
     hotspot_key: str | None,
 ) -> LimitLadderFilters:
+    # 页面 URL 使用紧凑的 boards=main,gem；同时保留 FastAPI 原生重复参数兼容。
+    normalized_boards = tuple(
+        dict.fromkeys(
+            board.strip()
+            for item in boards or ()
+            for board in item.split(",")
+            if board.strip()
+        )
+    )
     normalized = LimitLadderFilters(
         window=window,
-        boards=tuple(dict.fromkeys(boards or ())),
+        boards=normalized_boards,
         ignore_st=ignore_st,
         one_word_only=one_word_only,
         keyword=(keyword or "").strip() or None,

@@ -155,7 +155,7 @@ function selectCard(): void {
 .limit-ladder-card__concept {
   display: grid;
   min-width: 0;
-  gap: 2px;
+  gap: var(--app-space-1);
 }
 .limit-ladder-card__concept {
   justify-items: end;

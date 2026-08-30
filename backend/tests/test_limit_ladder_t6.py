@@ -301,7 +301,11 @@ def test_status_exposes_each_public_state(market, status, snapshot_id, business_
 def test_api_contract_has_200_400_and_precise_permission(monkeypatch):
     class _StubQuery:
         def query(self, trade_date, filters, **kwargs):
-            return {"trade_date": trade_date.isoformat(), "window": filters.window}
+            return {
+                "trade_date": trade_date.isoformat(),
+                "window": filters.window,
+                "boards": list(filters.boards),
+            }
 
     monkeypatch.setattr(api_module, "LimitLadderQueryService", _StubQuery)
     app = FastAPI()
@@ -316,6 +320,14 @@ def test_api_contract_has_200_400_and_precise_permission(monkeypatch):
     assert client.get("/api/limit-ladder/not-a-date").status_code == 400
     assert client.get("/api/limit-ladder/2026-08-28?window=12").status_code == 400
     assert client.get("/api/limit-ladder/2026-08-28?boards=unknown").status_code == 400
+    comma_boards = client.get("/api/limit-ladder/2026-08-28?boards=main,gem")
+    assert comma_boards.status_code == 200
+    assert comma_boards.json()["data"]["boards"] == ["main", "gem"]
+    repeated_boards = client.get(
+        "/api/limit-ladder/2026-08-28?boards=main&boards=star"
+    )
+    assert repeated_boards.status_code == 200
+    assert repeated_boards.json()["data"]["boards"] == ["main", "star"]
 
     route = next(
         route for route in api_module.router.routes if route.path == "/api/limit-ladder/{trade_date}"
