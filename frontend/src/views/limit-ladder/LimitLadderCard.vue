@@ -61,7 +61,7 @@ function selectCard(): void {
     </div>
 
     <p v-if="shortHistory" class="limit-ladder-card__history" data-testid="limit-ladder-short-history">
-      上市历史不足 {{ window }} 个交易日，实际自 {{ stock.window_start_date || '—' }} 起（{{ stock.actual_trade_days }} 日）
+      窗口仅 {{ stock.actual_trade_days }} 日 · 自 {{ stock.window_start_date || '—' }} 起
     </p>
 
     <footer class="limit-ladder-card__foot">
@@ -88,7 +88,7 @@ function selectCard(): void {
 <style scoped>
 .limit-ladder-card {
   min-width: 0;
-  padding: var(--app-space-3);
+  padding: var(--app-space-2);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
@@ -140,7 +140,8 @@ function selectCard(): void {
 }
 .limit-ladder-card__metrics {
   justify-content: flex-start;
-  margin-top: var(--app-space-2);
+  flex-wrap: wrap;
+  margin-top: var(--app-space-1);
   color: var(--el-text-color-regular);
   font-size: var(--app-font-size-table);
 }
@@ -148,26 +149,36 @@ function selectCard(): void {
   color: var(--app-market-up, var(--el-color-danger));
 }
 .limit-ladder-card__history {
-  margin: var(--app-space-2) 0 0;
+  margin: var(--app-space-1) 0 0;
   color: var(--app-warning-text);
   line-height: var(--app-line-height-comfy);
 }
 .limit-ladder-card__foot {
-  align-items: flex-end;
-  margin-top: var(--app-space-3);
-  padding-top: var(--app-space-2);
+  display: grid;
+  align-items: stretch;
+  margin-top: var(--app-space-2);
+  padding-top: var(--app-space-1);
   border-top: 1px solid var(--el-border-color-extra-light);
   font-size: var(--app-font-size-caption);
 }
 .limit-ladder-card__foot > div:first-child,
 .limit-ladder-card__concept {
-  display: grid;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   min-width: 0;
   gap: var(--app-space-1);
 }
 .limit-ladder-card__concept {
-  justify-items: end;
-  text-align: right;
+  text-align: left;
+}
+.limit-ladder-card__foot span,
+.limit-ladder-card__foot a,
+.limit-ladder-card__foot small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .limit-ladder-card__concept a {
   color: var(--el-color-primary);
@@ -175,8 +186,4 @@ function selectCard(): void {
 }
 .limit-ladder-card__concept a:hover { text-decoration: underline; }
 .limit-ladder-card__empty { color: var(--app-placeholder-text); }
-@media (max-width: 720px) {
-  .limit-ladder-card__foot { align-items: flex-start; flex-direction: column; }
-  .limit-ladder-card__concept { justify-items: start; text-align: left; }
-}
 </style>

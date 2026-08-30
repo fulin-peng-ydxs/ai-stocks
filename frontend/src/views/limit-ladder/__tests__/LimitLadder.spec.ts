@@ -22,7 +22,7 @@ const result: LimitLadderResult = {
   has_snapshot:true,filters:{},snapshot:{snapshot_id:'snapshot-1',trade_date:'2026-08-28',computed_at:'2026-08-28T18:00:00',stock_count:1,has_approx_st:false,coverage:{}},
   requested_window_start_date:'2026-07-17',requested_window_trade_days:31,dynamic_window_status:'ready',
   summary:{stock_count:1,highest_board:2,first_board_count:0},
-  hotspots:{industry:[{group_key:'I001',group_name:'软件',stock_count:1}],concept:[{group_key:'C001',group_name:'人工智能',stock_count:1},{group_key:'C002',group_name:'机器人',stock_count:1}]},
+  hotspots:{industry:[{group_key:'I001',group_name:'软件',stock_count:1}],concept:[{group_key:'C002',group_name:'机器人',stock_count:1}]},
   layers:[{consecutive_days:2,stock_count:1,stocks:[stock]}],
 }
 
@@ -39,7 +39,7 @@ describe('LimitLadderCard', () => {
     expect(wrapper.text()).toContain('甲软件')
     expect(wrapper.text()).toContain('2 连板')
     expect(wrapper.text()).toContain('31 日 3 板')
-    expect(wrapper.text()).toContain('实际自 2026-08-20 起（8 日）')
+    expect(wrapper.text()).toContain('窗口仅 8 日 · 自 2026-08-20 起')
     expect(wrapper.text()).toContain('成交额 1.23 亿')
     expect(wrapper.get('[data-testid="limit-ladder-related-600001.SH"]').attributes('href')).toBe('/sectors/C002')
   })
@@ -62,9 +62,8 @@ describe('LimitLadderCard', () => {
 })
 
 describe('LadderHotspots', () => {
-  it('保留多概念计数并输出可组合的热点交集条件', async () => {
+  it('按每股唯一的走势最相关概念输出热点交集条件', async () => {
     const wrapper=mount(LadderHotspots,{props:{hotspots:result.hotspots,activeType:'industry',activeKey:'I001'}})
-    expect(wrapper.text()).toContain('人工智能1')
     expect(wrapper.text()).toContain('机器人1')
     await wrapper.get('[data-testid="limit-ladder-hotspot-concept-C002"]').trigger('click')
     expect(wrapper.emitted('toggle')).toEqual([['concept','C002']])

@@ -10,7 +10,7 @@ const stock = {
   industry_board_code: 'I001', source_version: 'e2e-v1', window_limit_up_days: 3,
   window_start_date: '2026-07-17', actual_trade_days: 31,
   snapshot_concepts: [{ board_code: 'C001', board_name: '金融科技' }],
-  latest_related_concept: null,
+  latest_related_concept: { board_code: 'C001', board_name: '金融科技', as_of_date: tradeDate },
 }
 const bar = {
   date: tradeDate, open: 10, high: 11, low: 9.8, close: 10.8, pre_close: 10,
@@ -64,8 +64,19 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   await installDeterministicLadder(page)
 
   await page.goto(`/limit-ladder?date=${tradeDate}&window=31`)
-  await expect(page.getByTestId(`limit-ladder-card-${stock.code}`)).toBeVisible()
-  await page.getByTestId(`limit-ladder-card-${stock.code}`).click()
+  await expect(page.getByText('完整工作台')).toHaveCount(0)
+  const card = page.getByTestId(`limit-ladder-card-${stock.code}`)
+  await expect(card).toBeVisible()
+  const density = await page.evaluate(() => {
+    const board = document.querySelector('[data-testid="limit-ladder-boards"] .el-select__wrapper')!
+      .getBoundingClientRect()
+    const stockCard = document.querySelector('[data-stock-code="000001.SZ"]')!
+      .getBoundingClientRect()
+    return { boardHeight: board.height, cardWidth: stockCard.width }
+  })
+  expect(density.boardHeight).toBeLessThanOrEqual(34)
+  expect(density.cardWidth).toBeLessThanOrEqual(197)
+  await card.click()
   await expect(page.getByTestId('stock-analysis-panel')).toBeVisible()
   await expect(page.getByTestId('stock-analysis-open-detail')).toBeVisible()
   await expect(page).toHaveURL(new RegExp(`selected=${stock.code.replace('.', '\\.')}`))

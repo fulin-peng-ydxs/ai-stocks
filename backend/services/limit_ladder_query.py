@@ -407,10 +407,11 @@ class LimitLadderQueryService:
                 )
                 if key != filters.hotspot_key:
                     continue
-            if filters.hotspot_type == "concept" and not any(
-                concept["board_code"] == filters.hotspot_key for concept in stock["snapshot_concepts"]
-            ):
-                continue
+            if filters.hotspot_type == "concept":
+                related = stock.get("latest_related_concept")
+                concept_key = related.get("board_code") if related else "__unclassified__"
+                if concept_key != filters.hotspot_key:
+                    continue
             result.append(stock)
         return result
 
@@ -444,12 +445,14 @@ class LimitLadderQueryService:
             counts[("industry", str(industry_key), industry_name)] = counts.get(
                 ("industry", str(industry_key), industry_name), 0
             ) + 1
-            concepts = stock.get("snapshot_concepts") or [
-                {"board_code": "__unclassified__", "board_name": "未分类"}
-            ]
-            for concept in concepts:
-                key = ("concept", str(concept["board_code"]), str(concept["board_name"]))
-                counts[key] = counts.get(key, 0) + 1
+            # 顶部概念热点与卡片保持同一业务语义：每股只按当前走势相关冠军计数一次。
+            # 快照多概念集合仍作为历史归属事实保留，但不参与热点聚合和筛选。
+            related = stock.get("latest_related_concept") or {
+                "board_code": "__unclassified__",
+                "board_name": "未分类",
+            }
+            key = ("concept", str(related["board_code"]), str(related["board_name"]))
+            counts[key] = counts.get(key, 0) + 1
         result = {"industry": [], "concept": []}
         for (kind, key, name), count in sorted(
             counts.items(), key=lambda item: (item[0][0], -item[1], item[0][2], item[0][1])

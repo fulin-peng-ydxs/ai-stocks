@@ -168,4 +168,16 @@ watch(
 .app-filter-select__control {
   width: 100%;
 }
+.app-filter-select__control :deep(.el-select__wrapper),
+.app-filter-select__control :deep(.el-select__selection) {
+  flex-wrap: nowrap;
+}
+.app-filter-select__control :deep(.el-select__wrapper) {
+  height: var(--app-control-height-md);
+  overflow: hidden;
+}
+.app-filter-select__control :deep(.el-select__selection) {
+  min-width: 0;
+  overflow: hidden;
+}
 </style>

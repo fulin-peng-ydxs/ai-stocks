@@ -134,6 +134,11 @@ def test_query_keeps_stock_level_short_history_and_separates_concepts(market):
         "board_name": "机器人",
         "as_of_date": trade_date.isoformat(),
     }
+    assert data["hotspots"]["concept"] == [
+        {"group_key": "__unclassified__", "group_name": "未分类", "stock_count": 1},
+        {"group_key": "C002", "group_name": "机器人", "stock_count": 1},
+    ]
+    assert sum(item["stock_count"] for item in data["hotspots"]["concept"]) == 2
 
 
 def test_filters_summary_hotspots_and_csv_share_one_visible_collection(market):
@@ -153,7 +158,6 @@ def test_filters_summary_hotspots_and_csv_share_one_visible_collection(market):
         "600001.SH"
     ]
     assert data["hotspots"]["concept"] == [
-        {"group_key": "C001", "group_name": "人工智能", "stock_count": 1},
         {"group_key": "C002", "group_name": "机器人", "stock_count": 1},
     ]
 

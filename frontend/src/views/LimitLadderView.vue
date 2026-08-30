@@ -437,10 +437,7 @@ onBeforeUnmount(() => {
       <div class="lh-action">
         <div class="page-head">
           <div>
-            <div class="page-title-line">
-              <h2 class="app-page-title">连板天梯</h2>
-              <el-tag size="small" type="success" effect="plain">完整工作台</el-tag>
-            </div>
+            <h2 class="app-page-title">连板天梯</h2>
             <p class="page-subtitle">按交易日观察涨停梯队，筛选、热点与导出共享同一快照口径。</p>
           </div>
           <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
@@ -610,11 +607,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.page-title-line {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-2);
-}
 .limit-ladder-host {
   display: flex;
   flex: 1 1 auto;
@@ -639,9 +631,6 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
   gap: var(--app-space-2);
   padding-top: var(--app-space-2);
-}
-@media (max-width: 720px) {
-  .page-title-line { align-items: flex-start; flex-direction: column; }
 }
 </style>
 

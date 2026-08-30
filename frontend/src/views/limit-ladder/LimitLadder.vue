@@ -133,7 +133,7 @@ function resetFilters(): void {
       <AppControlRow align="center">
         <TradeDatePicker :model-value="tradeDate" placeholder="选择交易日" data-testid="limit-ladder-date" @update:model-value="$emit('update:tradeDate',$event)" />
         <PageSegmented :model-value="filters.window" :options="windowOptions" size="small" tone="primary" test-id="limit-ladder-window" aria-label="统计窗口" @update:model-value="updateFilters({window:Number($event) as LimitLadderFilters['window']})" />
-        <AppFilterSelect class="limit-ladder__board-filter" :model-value="filters.boards" :options="boardOptions" placeholder="上市板块" :max-collapse-tags="2" data-testid="limit-ladder-boards" @change="updateBoards" />
+        <AppFilterSelect class="limit-ladder__board-filter" :model-value="filters.boards" :options="boardOptions" placeholder="上市板块" :max-collapse-tags="1" data-testid="limit-ladder-boards" @change="updateBoards" />
         <el-checkbox :model-value="filters.ignoreSt" data-testid="limit-ladder-ignore-st" @update:model-value="updateFilters({ignoreSt:Boolean($event)})">忽略 ST</el-checkbox>
         <el-checkbox :model-value="filters.oneWordOnly" data-testid="limit-ladder-one-word" @update:model-value="updateFilters({oneWordOnly:Boolean($event)})">仅一字板</el-checkbox>
         <AppSearchInput v-model="keywordDraft" class="limit-ladder__search" placeholder="代码 / 名称" data-testid="limit-ladder-keyword" @search="searchKeyword" />
@@ -262,10 +262,10 @@ function resetFilters(): void {
   flex-direction: column;
   gap: var(--app-space-3);
   align-items: center;
-  min-width: 620px;
+  min-width: 0;
 }
 .limit-ladder__layer {
-  min-width: 54%;
+  min-width: min(100%, 184px);
   border: 1px solid var(--el-border-color);
   border-radius: var(--layout-card-radius);
   background: color-mix(in srgb, var(--el-fill-color-light) 34%, var(--el-bg-color));
@@ -287,15 +287,16 @@ function resetFilters(): void {
 }
 .limit-ladder__cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(148px, 196px));
   gap: var(--app-space-2);
+  justify-content: start;
   padding: var(--app-space-2);
 }
 @media (max-width: 900px) {
   .limit-ladder__summary { grid-template-columns: repeat(3, 1fr); }
   .limit-ladder__summary-meta { grid-column: 1 / -1; justify-content: flex-start; }
   .limit-ladder__body { padding: var(--app-space-3); }
-  .limit-ladder__layers { min-width: 560px; align-items: stretch; }
+  .limit-ladder__layers { align-items: stretch; }
   .limit-ladder__layer { width: 100% !important; }
 }
 </style>
