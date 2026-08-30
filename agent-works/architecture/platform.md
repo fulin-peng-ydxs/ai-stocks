@@ -19,10 +19,11 @@
 
 ## 业务架构
 
-- **共用单例与初始化**：行情/研究相关服务经 `get_client()` 拿同一个 DuckDB 连接单例；用户资产、RBAC、平台配置和用户偏好经 `PostgresClient`。DuckDB `init_db()` 仍负责行情、任务、调度、数据维度等分析侧表的幂等建表；PG DDL 负责 `app_config`、布局平台配置、布局用户配置、用户偏好、菜单、角色和资产表。
+- **共用单例与初始化**：行情/研究相关服务经 `get_client()` 拿同一个 DuckDB 连接单例；用户资产、RBAC、平台配置和用户偏好经 `PostgresClient`。DuckDB `init_db()` 负责行情、任务、调度、数据维度以及连板天梯点时 ST/版本快照等分析侧表的幂等建表；PG DDL 负责 `app_config`、布局平台配置、布局用户配置、用户偏好、菜单、角色、资产表，以及连板天梯日期任务协调账本和可靠审计 outbox。
 
 - **表与目录分工**：
   - DuckDB 基础设施表：`async_task`（任务状态/进度/结果/来源标记）、`task_log`（实时日志，按 `seq` 增量拉、每任务保留最近 2000 条）、`scheduled_job`（定时任务定义）、`data_update_log`（采集留痕）、`data_dimension_registry`/`data_source_provenance`（数据维度与溯源）。
+  - 连板天梯数据边界：DuckDB 保存 `stock_st_status_*`、`limit_ladder_snapshot*` 行情分析事实；PG 保存 `limit_ladder_task_ledger`、`limit_ladder_audit_outbox` 协调与审计事实，二者不跨库 JOIN，后续任务编排通过 `command_id/task_id/source_event_key` 关联。
   - PostgreSQL 配置与用户偏好表：`app_config`（系统设置覆盖层）、`layout_preset`、`layout_page_config`、`layout_field_policy`、`layout_user_config`、`user_preference`；边界见 [environment-configuration.md](environment-configuration.md)。
   - 业务表（行情/方案/结果/回测/快照）由各业务模块拥有，但**统一经 `MarketRepository.upsert` 与点时查询闸门读写**，主键登记在 `repository._PK`。
   - 数据字典文档化：`backend/storage/catalog.py` 用代码内置 `TABLE_CATALOG` 维护表/字段中文说明，运行时 `build_catalog()` 拼上行数/最新数据时间/未解决质检数，供数据概览页渲染——不另建需手维护的字典表。

@@ -849,6 +849,138 @@ M_STOCK_BOARD_CORRELATION_TABLES: dict[str, str] = {
     "stock_board_correlation_state": DDL_STOCK_BOARD_CORRELATION_STATE,
 }
 
+# ── 连板天梯领域事实（agent-works/limit-up-ladder/，T2）──────────────
+
+DDL_STOCK_ST_STATUS_DAILY = """
+CREATE TABLE IF NOT EXISTS stock_st_status_daily (
+    code        VARCHAR NOT NULL,
+    trade_date  DATE NOT NULL,
+    is_st       BOOLEAN NOT NULL,
+    source      VARCHAR NOT NULL,
+    source_ref  VARCHAR,
+    quality     VARCHAR NOT NULL CHECK (quality IN ('accurate', 'approximate')),
+    captured_at TIMESTAMP NOT NULL,
+    updated_at  TIMESTAMP NOT NULL,
+    PRIMARY KEY (code, trade_date)
+);
+"""
+
+DDL_STOCK_ST_STATUS_HISTORY = """
+CREATE TABLE IF NOT EXISTS stock_st_status_history (
+    version_id     VARCHAR PRIMARY KEY,
+    code           VARCHAR NOT NULL,
+    trade_date     DATE NOT NULL,
+    old_is_st      BOOLEAN,
+    new_is_st      BOOLEAN NOT NULL,
+    old_source     VARCHAR,
+    new_source     VARCHAR NOT NULL,
+    old_source_ref VARCHAR,
+    new_source_ref VARCHAR,
+    old_quality    VARCHAR CHECK (old_quality IS NULL OR old_quality IN ('accurate', 'approximate')),
+    new_quality    VARCHAR NOT NULL CHECK (new_quality IN ('accurate', 'approximate')),
+    change_reason  VARCHAR NOT NULL,
+    changed_at     TIMESTAMP NOT NULL,
+    task_id        VARCHAR
+);
+"""
+
+DDL_LIMIT_LADDER_SNAPSHOT_STATE = """
+CREATE TABLE IF NOT EXISTS limit_ladder_snapshot_state (
+    trade_date           DATE PRIMARY KEY,
+    status               VARCHAR NOT NULL CHECK (
+        status IN ('calculating', 'valid', 'invalid', 'recalculating', 'failed')
+    ),
+    current_snapshot_id  VARCHAR,
+    last_success_at      TIMESTAMP,
+    task_id              VARCHAR,
+    rule_version         VARCHAR NOT NULL,
+    upstream_fingerprint VARCHAR,
+    failure_summary      VARCHAR,
+    invalid_reason       VARCHAR,
+    updated_at           TIMESTAMP NOT NULL
+);
+"""
+
+DDL_LIMIT_LADDER_SNAPSHOT = """
+CREATE TABLE IF NOT EXISTS limit_ladder_snapshot (
+    snapshot_id   VARCHAR PRIMARY KEY,
+    trade_date    DATE NOT NULL,
+    rule_version  VARCHAR NOT NULL,
+    computed_at   TIMESTAMP NOT NULL,
+    stock_count   INTEGER NOT NULL CHECK (stock_count >= 0),
+    has_approx_st BOOLEAN NOT NULL,
+    coverage_json VARCHAR NOT NULL,
+    source_version VARCHAR NOT NULL
+);
+"""
+
+DDL_LIMIT_LADDER_SNAPSHOT_STOCK = """
+CREATE TABLE IF NOT EXISTS limit_ladder_snapshot_stock (
+    snapshot_id      VARCHAR NOT NULL,
+    code             VARCHAR NOT NULL,
+    name             VARCHAR NOT NULL,
+    board            VARCHAR NOT NULL,
+    price_limit_pct  DOUBLE NOT NULL CHECK (price_limit_pct > 0),
+    is_st            BOOLEAN NOT NULL,
+    st_quality       VARCHAR NOT NULL CHECK (st_quality IN ('accurate', 'approximate')),
+    st_source        VARCHAR NOT NULL,
+    is_one_word      BOOLEAN NOT NULL,
+    consecutive_days INTEGER NOT NULL CHECK (consecutive_days >= 1),
+    amount           DOUBLE NOT NULL CHECK (isfinite(amount) AND amount >= 0),
+    industry_name    VARCHAR NOT NULL,
+    industry_board_code VARCHAR,
+    source_version   VARCHAR NOT NULL,
+    PRIMARY KEY (snapshot_id, code)
+);
+"""
+
+DDL_LIMIT_LADDER_SNAPSHOT_CONCEPT = """
+CREATE TABLE IF NOT EXISTS limit_ladder_snapshot_concept (
+    snapshot_id   VARCHAR NOT NULL,
+    code          VARCHAR NOT NULL,
+    board_code    VARCHAR NOT NULL,
+    board_name    VARCHAR NOT NULL,
+    source_version VARCHAR NOT NULL,
+    PRIMARY KEY (snapshot_id, code, board_code)
+);
+"""
+
+DDL_LIMIT_LADDER_SNAPSHOT_AGGREGATE = """
+CREATE TABLE IF NOT EXISTS limit_ladder_snapshot_aggregate (
+    snapshot_id VARCHAR NOT NULL,
+    group_type  VARCHAR NOT NULL CHECK (group_type IN ('industry', 'concept')),
+    group_key   VARCHAR NOT NULL,
+    group_name  VARCHAR NOT NULL,
+    stock_count INTEGER NOT NULL CHECK (stock_count >= 0),
+    PRIMARY KEY (snapshot_id, group_type, group_key)
+);
+"""
+
+M_LIMIT_LADDER_TABLES: dict[str, str] = {
+    "stock_st_status_daily": DDL_STOCK_ST_STATUS_DAILY,
+    "stock_st_status_history": DDL_STOCK_ST_STATUS_HISTORY,
+    "limit_ladder_snapshot_state": DDL_LIMIT_LADDER_SNAPSHOT_STATE,
+    "limit_ladder_snapshot": DDL_LIMIT_LADDER_SNAPSHOT,
+    "limit_ladder_snapshot_stock": DDL_LIMIT_LADDER_SNAPSHOT_STOCK,
+    "limit_ladder_snapshot_concept": DDL_LIMIT_LADDER_SNAPSHOT_CONCEPT,
+    "limit_ladder_snapshot_aggregate": DDL_LIMIT_LADDER_SNAPSHOT_AGGREGATE,
+}
+
+_LIMIT_LADDER_INDEXES: tuple[str, ...] = (
+    (
+        "CREATE INDEX IF NOT EXISTS idx_st_status_history_code_date "
+        "ON stock_st_status_history (code, trade_date, changed_at)"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS idx_limit_ladder_snapshot_date "
+        "ON limit_ladder_snapshot (trade_date, computed_at)"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS idx_limit_ladder_stock_snapshot "
+        "ON limit_ladder_snapshot_stock (snapshot_id, consecutive_days)"
+    ),
+)
+
 # 数据维度注册表 seed（DM-D4/D5）：已采集维度 + 规划中占位（股东数/筹码峰）。
 # 幂等 ON CONFLICT DO NOTHING：已存在则保留（允许后续人工调整 status）。
 _DIMENSION_SEED: list[tuple] = [
@@ -989,7 +1121,7 @@ def init_db(client: DuckDBClient | None = None) -> list[str]:
     created: list[str] = []
     all_tables = {**M1_TABLES, **M2_TABLES, **M3_TABLES, **M4_TABLES, **M5_TABLES, **M6_TABLES,
                   **M28_TABLES, **M_TRAINING_TABLES, **M_BOARD_TABLES,
-                  **M_STOCK_BOARD_CORRELATION_TABLES}
+                  **M_STOCK_BOARD_CORRELATION_TABLES, **M_LIMIT_LADDER_TABLES}
     for name, sql in all_tables.items():
         client.execute(sql)
         created.append(name)
@@ -999,6 +1131,8 @@ def init_db(client: DuckDBClient | None = None) -> list[str]:
             client.execute(mig)
         except Exception as e:  # noqa: BLE001
             log.warning("迁移跳过: %s (%s)", mig, e)
+    for idx_sql in _LIMIT_LADDER_INDEXES:
+        client.execute(idx_sql)
     try:
         seed_dimension_registry(client)
     except Exception as e:  # noqa: BLE001

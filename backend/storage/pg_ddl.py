@@ -966,7 +966,63 @@ CREATE TABLE IF NOT EXISTS audit_log (
     error_summary  TEXT,
     context        JSONB NOT NULL DEFAULT '{}'::jsonb,
     changes        JSONB NOT NULL DEFAULT '[]'::jsonb,
+    source_event_key TEXT,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+"""
+
+DDL_LIMIT_LADDER_TASK_LEDGER = """
+CREATE TABLE IF NOT EXISTS limit_ladder_task_ledger (
+    command_id          TEXT PRIMARY KEY,
+    task_id             TEXT,
+    trade_date          DATE NOT NULL,
+    source              TEXT NOT NULL CHECK (
+        source IN ('auto_first_load', 'auto_invalid_refresh', 'admin_recompute')
+    ),
+    actor_kind          TEXT NOT NULL CHECK (actor_kind IN ('system', 'user')),
+    tenant_id           TEXT,
+    actor_user_id       TEXT,
+    actor_account       TEXT NOT NULL,
+    trigger_tenant_id   TEXT,
+    trigger_user_id     TEXT,
+    trigger_account     TEXT,
+    request_ip          TEXT,
+    request_method      TEXT,
+    request_path        TEXT,
+    request_id          TEXT,
+    status              TEXT NOT NULL CHECK (
+        status IN ('requested', 'running', 'succeeded', 'failed', 'interrupted')
+    ),
+    rule_version        TEXT NOT NULL,
+    result_summary      JSONB,
+    retry_count         INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
+    last_error          TEXT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (
+        (actor_kind = 'system' AND tenant_id IS NULL AND actor_user_id IS NULL
+            AND actor_account = 'system:limit-ladder')
+        OR (actor_kind = 'user' AND tenant_id IS NOT NULL AND actor_user_id IS NOT NULL)
+    )
+);
+"""
+
+DDL_LIMIT_LADDER_AUDIT_OUTBOX = """
+CREATE TABLE IF NOT EXISTS limit_ladder_audit_outbox (
+    command_id       TEXT NOT NULL REFERENCES limit_ladder_task_ledger(command_id) ON DELETE RESTRICT,
+    event_type       TEXT NOT NULL CHECK (
+        event_type IN ('requested', 'running', 'succeeded', 'failed', 'interrupted')
+    ),
+    source_event_key TEXT NOT NULL,
+    payload          JSONB NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivered')),
+    retry_count      INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
+    next_retry_at    TIMESTAMPTZ,
+    last_error       TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    delivered_at     TIMESTAMPTZ,
+    PRIMARY KEY (command_id, event_type),
+    UNIQUE (source_event_key)
 );
 """
 
@@ -1098,6 +1154,8 @@ _OTHER_TABLES: dict[str, str] = {
     "layout_page_config": DDL_LAYOUT_PAGE_CONFIG,
     "layout_field_policy": DDL_LAYOUT_FIELD_POLICY,
     "audit_log": DDL_AUDIT_LOG,
+    "limit_ladder_task_ledger": DDL_LIMIT_LADDER_TASK_LEDGER,
+    "limit_ladder_audit_outbox": DDL_LIMIT_LADDER_AUDIT_OUTBOX,
     "dict_type": DDL_DICT_TYPE,
     "dict_item": DDL_DICT_ITEM,
 }
@@ -1131,6 +1189,25 @@ _STAGE5_INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_audit_log_result_time ON audit_log (result, event_time DESC)",
     "CREATE INDEX IF NOT EXISTS idx_dict_type_enabled_sort ON dict_type (enabled, sort, code)",
     "CREATE INDEX IF NOT EXISTS idx_dict_item_type_enabled_sort ON dict_item (type_code, enabled, sort, code)",
+)
+
+_LIMIT_LADDER_INDEXES: tuple[str, ...] = (
+    (
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_audit_log_source_event_key "
+        "ON audit_log (source_event_key) WHERE source_event_key IS NOT NULL"
+    ),
+    (
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_limit_ladder_active_trade_date "
+        "ON limit_ladder_task_ledger (trade_date) WHERE status IN ('requested', 'running')"
+    ),
+    (
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_limit_ladder_task_id "
+        "ON limit_ladder_task_ledger (task_id) WHERE task_id IS NOT NULL"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS idx_limit_ladder_outbox_delivery "
+        "ON limit_ladder_audit_outbox (status, next_retry_at, created_at)"
+    ),
 )
 
 _STAGE6_VISIBILITY_INDEXES: tuple[str, ...] = (
@@ -1524,6 +1601,10 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     for idx_sql in _RBAC_INDEXES:
         client.execute(idx_sql)
     for idx_sql in _STAGE5_INDEXES:
+        client.execute(idx_sql)
+    # CREATE TABLE IF NOT EXISTS does not add columns to an existing audit table.
+    client.execute("ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS source_event_key TEXT")
+    for idx_sql in _LIMIT_LADDER_INDEXES:
         client.execute(idx_sql)
     for constraint_sql in _TRADE_DISCIPLINE_POINTER_CONSTRAINTS:
         client.execute(constraint_sql)

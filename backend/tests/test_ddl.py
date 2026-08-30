@@ -16,6 +16,7 @@ from backend.storage.ddl import (
     M28_TABLES,
     M_BOARD_TABLES,
     M_STOCK_BOARD_CORRELATION_TABLES,
+    M_LIMIT_LADDER_TABLES,
     M_TRAINING_TABLES,
     init_db,
     list_tables,
@@ -37,6 +38,7 @@ def test_init_db_creates_all_tables():
             **M_TRAINING_TABLES,
             **M_BOARD_TABLES,
             **M_STOCK_BOARD_CORRELATION_TABLES,
+            **M_LIMIT_LADDER_TABLES,
         }
         assert set(created) == set(expected.keys())
         tables = list_tables(client)

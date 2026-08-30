@@ -54,6 +54,7 @@ class AuditRepository:
         error_summary: str | None = None,
         context: dict[str, Any] | None = None,
         changes: list[dict[str, Any]] | None = None,
+        source_event_key: str | None = None,
     ) -> str | None:
         """写入一条审计日志。
 
@@ -61,19 +62,21 @@ class AuditRepository:
         """
         audit_id = uuid.uuid4().hex
         try:
+            conflict_clause = "ON CONFLICT DO NOTHING" if source_event_key else ""
             self.pg.execute(
-                """
+                f"""
                 INSERT INTO audit_log (
                     id, tenant_id, actor_user_id, actor_account, event_category,
                     event_type, resource_code, action, target_type, target_id,
                     target_label, result, status, ip, method, path, duration_ms,
-                    error_summary, context, changes
+                    error_summary, context, changes, source_event_key
                 ) VALUES (
                     %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s::jsonb, %s::jsonb
+                    %s, %s::jsonb, %s::jsonb, %s
                 )
+                {conflict_clause}
                 """,
                 [
                     audit_id,
@@ -96,8 +99,16 @@ class AuditRepository:
                     error_summary,
                     json.dumps(context or {}, ensure_ascii=False, default=str),
                     json.dumps(changes or [], ensure_ascii=False, default=str),
+                    source_event_key,
                 ],
             )
+            if source_event_key:
+                existing = self.pg.query_df(
+                    "SELECT id FROM audit_log WHERE source_event_key=%s",
+                    [source_event_key],
+                )
+                if not existing.empty:
+                    return str(existing.iloc[0]["id"])
             return audit_id
         except Exception as e:  # noqa: BLE001
             log.warning("审计日志写入失败，已降级忽略: %s", e)
