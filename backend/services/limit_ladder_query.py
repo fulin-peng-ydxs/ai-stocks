@@ -224,6 +224,7 @@ class LimitLadderQueryService:
                 {
                     **self._json_row(stock),
                     "window_limit_up_days": metric.get("window_limit_up_days"),
+                    "window_return_pct": metric.get("window_return_pct"),
                     "window_start_date": metric.get("window_start_date"),
                     "actual_trade_days": metric.get("actual_trade_days"),
                     "snapshot_concepts": concepts.get(code, []),
@@ -272,7 +273,8 @@ class LimitLadderQueryService:
         writer = csv.writer(output)
         writer.writerow(
             [
-                "交易日", "代码", "名称", "板块", "连续板", "窗口涨停次数", "窗口起始日",
+                "交易日", "代码", "名称", "板块", "连续板", "窗口涨停次数", "窗口累计涨幅",
+                "窗口起始日",
                 "实际交易日", "涨跌停比例", "ST", "ST质量", "一字板", "成交额", "快照行业",
                 "快照概念", "最新相关概念", "相关概念代码", "相关概念截止日", "快照状态", "快照计算时间",
             ]
@@ -282,7 +284,8 @@ class LimitLadderQueryService:
             writer.writerow(
                 [self._csv_cell(value) for value in [
                     trade_date.isoformat(), stock["code"], stock["name"], stock["board"],
-                    stock["consecutive_days"], stock["window_limit_up_days"], stock["window_start_date"],
+                    stock["consecutive_days"], stock["window_limit_up_days"],
+                    stock["window_return_pct"], stock["window_start_date"],
                     stock["actual_trade_days"], stock["price_limit_pct"], "是" if stock["is_st"] else "否",
                     stock["st_quality"], "是" if stock["is_one_word"] else "否", stock["amount"],
                     stock["industry_name"], "、".join(item["board_name"] for item in stock["snapshot_concepts"]),
@@ -301,6 +304,7 @@ class LimitLadderQueryService:
             metrics = {
                 stock.code: {
                     "window_limit_up_days": stock.window_limit_up_days,
+                    "window_return_pct": stock.window_return_pct,
                     "window_start_date": stock.window_start_date.isoformat(),
                     "actual_trade_days": stock.actual_trade_days,
                 }

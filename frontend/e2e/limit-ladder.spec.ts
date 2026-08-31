@@ -46,6 +46,14 @@ test('三档桌面视口完成组合筛选、热点、短历史与 CSV 导出', 
   const download = await downloadPromise
   expect(download.suggestedFilename()).toBe(`limit-ladder-${limitLadderTradeDate}-20d.csv`)
 
+  await page.getByTestId('limit-ladder-reset').click()
+  await expect.poll(() => ({
+    window: latestQueryParams(fixture.queryUrls()).get('window'),
+    oneWordOnly: latestQueryParams(fixture.queryUrls()).get('one_word_only'),
+    keyword: latestQueryParams(fixture.queryUrls()).get('keyword'),
+  })).toEqual({ window: '31', oneWordOnly: 'false', keyword: null })
+  await expect(page.getByTestId('limit-ladder-reset').locator('.el-icon')).toHaveCount(0)
+
   const geometry = await page.evaluate(() => {
     const pageRoot = document.querySelector('[data-testid="limit-ladder-page"]')!
       .getBoundingClientRect()

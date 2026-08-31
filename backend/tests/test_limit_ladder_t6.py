@@ -130,7 +130,9 @@ def test_query_keeps_stock_level_short_history_and_separates_concepts(market):
     short = next(stock for stock in stocks if stock["code"] == "600002.SH")
     assert short["actual_trade_days"] == 3
     assert short["window_start_date"] == (trade_date - timedelta(days=2)).isoformat()
+    assert short["window_return_pct"] == 0.0
     software = next(stock for stock in stocks if stock["code"] == "600001.SH")
+    assert software["window_return_pct"] == 0.0
     assert {item["board_name"] for item in software["snapshot_concepts"]} == {"人工智能", "机器人"}
     assert software["latest_related_concept"] == {
         "board_code": "C002",
@@ -196,8 +198,40 @@ def test_filters_summary_hotspots_and_csv_share_one_visible_collection(market):
     rows = list(csv.DictReader(io.StringIO(payload.decode("utf-8-sig"))))
     assert [row["代码"] for row in rows] == ["600001.SH"]
     assert rows[0]["快照概念"] == "人工智能、机器人"
+    assert rows[0]["窗口累计涨幅"] == "0.0"
     assert rows[0]["最新相关概念"] == "机器人"
     assert rows[0]["相关概念截止日"] == "2022-08-28"
+
+
+def test_window_return_prefers_clean_adjustment_factor(market):
+    trade_date = _seed_ladder(market)
+    market.execute(
+        """
+        UPDATE daily_bar
+        SET adj_factor=9,adj_factor_clean=2
+        WHERE code='600001.SH'
+          AND trade_date=(SELECT min(trade_date) FROM daily_bar WHERE code='600001.SH')
+        """
+    )
+    market.execute(
+        """
+        UPDATE daily_bar
+        SET adj_factor=1,adj_factor_clean=2
+        WHERE code='600001.SH'
+          AND trade_date=(SELECT max(trade_date) FROM daily_bar WHERE code='600001.SH')
+        """
+    )
+
+    data = LimitLadderQueryService(market, coordinator=_FakeCoordinator()).query(
+        trade_date, LimitLadderFilters(window=10, ignore_st=False)
+    )
+    software = next(
+        stock
+        for layer in data["layers"]
+        for stock in layer["stocks"]
+        if stock["code"] == "600001.SH"
+    )
+    assert software["window_return_pct"] == 0.0
 
 
 def test_csv_export_escapes_spreadsheet_formulas(market):

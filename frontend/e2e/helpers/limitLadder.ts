@@ -6,6 +6,7 @@ export const limitLadderStock = {
   is_st: false, st_quality: 'accurate', st_source: 'e2e', is_one_word: false,
   consecutive_days: 2, amount: 123000000, industry_name: '专属行业旧值',
   industry_board_code: 'I001', source_version: 'e2e-v1', window_limit_up_days: 3,
+  window_return_pct: 12.34,
   window_start_date: '2026-08-20', actual_trade_days: 8,
   snapshot_concepts: [{ board_code: 'C001', board_name: '金融科技' }],
   latest_related_industry: {
@@ -19,6 +20,7 @@ export const limitLadderStock = {
 const firstBoardStock = {
   ...limitLadderStock,
   code: '000002.SZ', name: '万科A', consecutive_days: 1, window_limit_up_days: 1,
+  window_return_pct: -2.5,
   industry_name: '房地产',
   latest_related_industry: {
     board_code: 'I901', board_name: '地产服务', as_of_date: limitLadderTradeDate,
@@ -158,7 +160,7 @@ export async function installDeterministicLimitLadder(
     headers: {
       'content-disposition': `attachment; filename*=UTF-8''limit-ladder-${limitLadderTradeDate}-20d.csv`,
     },
-    body: '\uFEFF代码,名称,窗口涨停次数\n000001.SZ,平安银行,3\n',
+    body: '\uFEFF代码,名称,窗口涨停次数,窗口累计涨幅\n000001.SZ,平安银行,3,12.34\n',
   }))
   await page.route(new RegExp(`/api/limit-ladder/${limitLadderTradeDate}(?:\\?.*)?$`), (route) => {
     requestedUrls.push(route.request().url())

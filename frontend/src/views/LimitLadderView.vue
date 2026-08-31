@@ -508,6 +508,12 @@ onBeforeUnmount(() => {
           </div>
           <div class="page-head__actions">
             <el-button
+              :loading="exporting"
+              :disabled="!result?.has_snapshot"
+              data-testid="limit-ladder-export"
+              @click="exportCsv"
+            >导出 CSV</el-button>
+            <el-button
               v-permission="'limit-ladder:recompute'"
               type="warning"
               plain
@@ -540,14 +546,12 @@ onBeforeUnmount(() => {
               :trade-date="tradeDate"
               :loading="loading"
               :error="error"
-              :exporting="exporting"
               :can-view-sectors="canViewSectors"
               :selected-code="activeAnalysisCode"
               :return-path="ladderReturnPath"
               @update:filters="setFilters"
               @update:trade-date="setTradeDate"
               @retry="loadLadder"
-              @export="exportCsv"
               @select="selectStock"
             />
           </div>

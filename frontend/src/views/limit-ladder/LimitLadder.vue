@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Download, RefreshLeft } from '@element-plus/icons-vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
@@ -23,7 +22,6 @@ const props = defineProps<{
   tradeDate: string | null
   loading: boolean
   error: string
-  exporting: boolean
   canViewSectors: boolean
   selectedCode?: string
   returnPath?: string
@@ -32,7 +30,6 @@ const emit = defineEmits<{
   'update:filters': [filters: LimitLadderFilters]
   'update:tradeDate': [tradeDate: string | null]
   retry: []
-  export: []
   select: [stock: LimitLadderStock]
 }>()
 const keywordDraft = ref(props.filters.keyword)
@@ -135,8 +132,7 @@ function resetFilters(): void {
           <el-checkbox :model-value="filters.oneWordOnly" data-testid="limit-ladder-one-word" @update:model-value="updateFilters({oneWordOnly:Boolean($event)})">仅一字板</el-checkbox>
         </div>
         <AppSearchInput v-model="keywordDraft" class="limit-ladder__search" placeholder="代码 / 名称" data-testid="limit-ladder-keyword" @search="searchKeyword" />
-        <el-button class="limit-ladder__command" :icon="RefreshLeft" @click="resetFilters">清除筛选</el-button>
-        <el-button class="limit-ladder__command" :icon="Download" :loading="exporting" :disabled="!result?.has_snapshot" data-testid="limit-ladder-export" @click="$emit('export')">导出 CSV</el-button>
+        <el-button class="limit-ladder__command" data-testid="limit-ladder-reset" @click="resetFilters">重置</el-button>
       </AppControlRow>
     </section>
     <div
@@ -149,9 +145,9 @@ function resetFilters(): void {
       <span>{{ staleDescription }}</span>
     </div>
     <section v-if="result?.has_snapshot && !loading && !error" class="limit-ladder__summary" aria-label="天梯摘要">
-      <div><span>当前股票</span><strong data-testid="limit-ladder-summary-total">{{ result.summary.stock_count }}</strong><small>只</small></div>
-      <div><span>最高板位</span><strong>{{ result.summary.highest_board ?? '—' }}</strong><small>板</small></div>
-      <div><span>首板股票</span><strong>{{ result.summary.first_board_count }}</strong><small>只</small></div>
+      <div><span>当前股票</span><strong class="is-total" data-testid="limit-ladder-summary-total">{{ result.summary.stock_count }}</strong><small>只</small></div>
+      <div><span>最高板位</span><strong class="is-highest">{{ result.summary.highest_board ?? '—' }}</strong><small>板</small></div>
+      <div><span>首板股票</span><strong class="is-first">{{ result.summary.first_board_count }}</strong><small>只</small></div>
       <div class="limit-ladder__summary-meta"><span>{{ ladderMeta }}</span><el-tag v-if="hasApproximateSt" type="warning" effect="plain" size="small">历史 ST 含近似口径</el-tag></div>
     </section>
     <LadderHotspots v-if="result?.has_snapshot && !loading && !error" :hotspots="result.hotspots" :active-type="filters.hotspotType" :active-key="filters.hotspotKey" @toggle="toggleHotspot" />
@@ -173,8 +169,8 @@ function resetFilters(): void {
         </template>
       </AppStateBlock>
       <AppStateBlock v-else-if="filteredEmpty" data-testid="limit-ladder-state" state="empty">
-        <div class="limit-ladder__empty-copy"><strong>当前筛选无匹配股票</strong><span>清除筛选后可恢复完整天梯。</span></div>
-        <template #extra><el-button type="primary" @click="resetFilters">清除筛选</el-button></template>
+        <div class="limit-ladder__empty-copy"><strong>当前筛选无匹配股票</strong><span>重置筛选后可恢复完整天梯。</span></div>
+        <template #extra><el-button type="primary" @click="resetFilters">重置筛选</el-button></template>
       </AppStateBlock>
       <AppStateBlock v-else-if="!result.layers.length" data-testid="limit-ladder-state" state="empty"><div class="limit-ladder__empty-copy"><strong>当日无涨停股票</strong><span>这是合法的空快照，不代表加载失败。</span></div></AppStateBlock>
       <div v-else class="limit-ladder__layers" aria-label="连板天梯分层">
@@ -251,6 +247,9 @@ function resetFilters(): void {
   font-size: var(--app-font-size-title);
   font-variant-numeric: tabular-nums;
 }
+.limit-ladder__summary strong.is-total { color: var(--el-color-primary); }
+.limit-ladder__summary strong.is-highest { color: var(--market-up-color); }
+.limit-ladder__summary strong.is-first { color: var(--app-warning-text); }
 .limit-ladder__summary-meta {
   display: flex;
   flex-wrap: wrap;
@@ -279,7 +278,7 @@ function resetFilters(): void {
 }
 .limit-ladder__layer {
   width: 100%;
-  min-width: min(100%, 184px);
+  min-width: min(100%, 240px);
   border: 1px solid var(--el-border-color);
   border-radius: var(--layout-card-radius);
   background: color-mix(in srgb, var(--el-fill-color-light) 34%, var(--el-bg-color));
@@ -307,8 +306,8 @@ function resetFilters(): void {
   padding: var(--app-space-2);
 }
 .limit-ladder__cards > * {
-  flex: 0 0 184px;
-  width: 184px;
+  flex: 0 0 240px;
+  width: 240px;
   max-width: 100%;
 }
 @media (max-width: 900px) {

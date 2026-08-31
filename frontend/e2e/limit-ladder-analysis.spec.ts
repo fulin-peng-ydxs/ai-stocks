@@ -27,13 +27,14 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
     const toolbar = toolbarNode.getBoundingClientRect()
     const panel = document.querySelector('.market-list-panel')!.getBoundingClientRect()
     const exported = document.querySelector('[data-testid="limit-ladder-export"]')!.getBoundingClientRect()
+    const recompute = document.querySelector('[data-testid="limit-ladder-recompute"]')!.getBoundingClientRect()
     const controlHeights = [
       toolbarNode.querySelector('.el-date-editor'),
       toolbarNode.querySelector('.page-segmented'),
       toolbarNode.querySelector('.app-filter-select'),
       toolbarNode.querySelector('.limit-ladder__checks'),
       toolbarNode.querySelector('.app-search-input'),
-      document.querySelector('[data-testid="limit-ladder-export"]'),
+      toolbarNode.querySelector('[data-testid="limit-ladder-reset"]'),
     ].map((node) => node!.getBoundingClientRect().height)
     const controls = [...toolbarNode.querySelectorAll<HTMLElement>('.app-control-row > *')]
     const controlBoxes = controls.map((node) => node.getBoundingClientRect())
@@ -47,6 +48,8 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
       panelRight: panel.right,
       exportRight: exported.right,
       exportWidth: exported.width,
+      headerActionGap: recompute.left - exported.right,
+      headerActionTopDelta: Math.abs(recompute.top - exported.top),
       toolbarOverflow: toolbarNode.scrollWidth - toolbarNode.clientWidth,
       bodyOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       controlHeights,
@@ -56,6 +59,8 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   })
   expect(toolbarGeometry.exportRight).toBeLessThanOrEqual(toolbarGeometry.panelRight + 1)
   expect(toolbarGeometry.exportWidth).toBeGreaterThan(80)
+  expect(toolbarGeometry.headerActionGap).toBeGreaterThanOrEqual(7)
+  expect(toolbarGeometry.headerActionTopDelta).toBeLessThanOrEqual(1)
   expect(toolbarGeometry.toolbarOverflow).toBeLessThanOrEqual(1)
   expect(toolbarGeometry.bodyOverflow).toBeLessThanOrEqual(1)
   expect(toolbarGeometry.controlHeights).toEqual([32, 32, 32, 32, 32, 32])
@@ -66,7 +71,7 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   await page.setViewportSize({ width: 1100, height: 900 })
   await expect(card).toBeVisible()
   await card.evaluate((node) => node.scrollIntoView({ block: 'center', inline: 'center' }))
-  const cardScreenshotPath = testInfo.outputPath('limit-ladder-card-fields-v4.png')
+  const cardScreenshotPath = testInfo.outputPath('limit-ladder-card-fields-v5.png')
   await card.screenshot({ path: cardScreenshotPath })
   await testInfo.attach('limit-ladder-card', { path: cardScreenshotPath, contentType: 'image/png' })
   await page.setViewportSize({ width: 1100, height: 620 })
@@ -98,7 +103,7 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
     }
   })
   expect(density.boardHeight).toBeLessThanOrEqual(34)
-  expect(density.cardWidth).toBe(184)
+  expect(density.cardWidth).toBe(240)
   expect(density.cardWidthDelta).toBeLessThanOrEqual(1)
   expect(density.cardCenterOffset).toBeLessThanOrEqual(1)
   expect(density.layerWidthDelta).toBeLessThanOrEqual(1)
@@ -107,7 +112,7 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
     nodes.map((node) => node.getBoundingClientRect().width)
   ))
   expect(Math.max(...wideCardWidths) - Math.min(...wideCardWidths)).toBeLessThanOrEqual(1)
-  const wideScreenshotPath = testInfo.outputPath('limit-ladder-layout-wide-v4.png')
+  const wideScreenshotPath = testInfo.outputPath('limit-ladder-layout-wide-v5.png')
   await page.screenshot({ path: wideScreenshotPath, fullPage: true })
   await testInfo.attach('limit-ladder-wide', { path: wideScreenshotPath, contentType: 'image/png' })
   await page.setViewportSize({ width: 1100, height: 620 })
@@ -115,25 +120,28 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   await expect(card).not.toContainText('专属行业旧值')
   await expect(card).not.toContainText('成交额')
   await expect(card).not.toContainText('截至')
-  await expect(card).not.toContainText('+10%')
-  await expect(card.locator('.limit-ladder-card__window-stat b')).toHaveClass(/is-multiple/)
-  for (const selector of ['.limit-ladder-card__classification', '.limit-ladder-card__concept']) {
-    await expect(card.locator(selector)).toBeVisible()
-    expect((await card.locator(selector).boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(18)
-  }
+  await expect(card).not.toContainText(stock.code)
+  await expect(card).toContainText('2 日 2 板')
+  await expect(card).toContainText('31 日累计')
+  await expect(card).toContainText('+12.34%')
+  await expect(card.locator('.limit-ladder-card__window-stat')).toHaveClass(/is-streak/)
+  await expect(card.locator('.limit-ladder-card__foot')).toBeVisible()
   const cardContentGeometry = await card.evaluate((node) => {
     const cardBox = node.getBoundingClientRect()
-    const industryBox = node.querySelector('.limit-ladder-card__classification')!.getBoundingClientRect()
-    const conceptBox = node.querySelector('.limit-ladder-card__concept')!.getBoundingClientRect()
+    const footer = node.querySelector('.limit-ladder-card__foot')!
+    const footerBox = footer.getBoundingClientRect()
+    const childTops = [...footer.children].map((child) => child.getBoundingClientRect().top)
     return {
       cardTop: cardBox.top,
       cardBottom: cardBox.bottom,
-      industryTop: industryBox.top,
-      conceptBottom: conceptBox.bottom,
+      footerTop: footerBox.top,
+      footerBottom: footerBox.bottom,
+      footerTopDelta: Math.max(...childTops) - Math.min(...childTops),
     }
   })
-  expect(cardContentGeometry.industryTop).toBeGreaterThanOrEqual(cardContentGeometry.cardTop)
-  expect(cardContentGeometry.conceptBottom).toBeLessThanOrEqual(cardContentGeometry.cardBottom + 1)
+  expect(cardContentGeometry.footerTop).toBeGreaterThanOrEqual(cardContentGeometry.cardTop)
+  expect(cardContentGeometry.footerBottom).toBeLessThanOrEqual(cardContentGeometry.cardBottom + 1)
+  expect(cardContentGeometry.footerTopDelta).toBeLessThanOrEqual(1)
   await expect(page.getByTestId('limit-ladder-hotspot-industry-I900')).toContainText(/金融服务.*·.*1只/)
   const relatedHref = await page.getByTestId(`limit-ladder-related-${stock.code}`).getAttribute('href')
   expect(relatedHref).toContain(`/sectors/${stock.latest_related_concept.board_code}?return_to=`)

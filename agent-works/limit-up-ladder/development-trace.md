@@ -14,7 +14,7 @@
 
 - `backend/market_rules.py`、`backend/limit_ladder/rules.py` 统一普通、ST、创业板/科创板和特殊无涨跌幅日口径。
 - `backend/services/stock_st_status.py` 维护点时 ST 当前事实和不可变变更历史，并区分准确/近似质量。
-- `backend/services/limit_ladder_calculator.py` 批量读取候选与历史行情，计算无限回溯的连续板和固定窗口活跃度，避免逐股查询。
+- `backend/services/limit_ladder_calculator.py` 批量读取候选与历史行情，计算无限回溯的连续板、固定窗口活跃度和后复权累计涨幅，避免逐股查询。
 - `backend/services/limit_ladder_snapshot.py` 执行 coverage 门禁、不可变版本落表和状态指针原子切换；失败、失效和合法空均保留明确状态。
 
 ### 查询、任务与权限
@@ -26,7 +26,7 @@
 ### 页面与交互
 
 - `frontend/src/views/LimitLadderView.vue` 使用 `LayoutHost` 和 `MarketMasterDetailWorkspace` 装配页面，复用股票分析、PageDrawer、PageSettingsDrawer 和用户偏好骨架。
-- `LimitLadder.vue`、`LimitLadderCard.vue`、`LadderHotspots.vue` 实现互斥状态、筛选、等宽梯级/卡片、单卡居中、行业/概念分隔和相关板块跳转。
+- `LimitLadder.vue`、`LimitLadderCard.vue`、`LadderHotspots.vue` 实现互斥状态、筛选、240px 等宽梯级/卡片、单卡居中、行业/概念同行分隔、窗口累计涨幅和相关板块跳转；页头并列 CSV/重算，筛选区使用无图标重置。
 - 页面保留交易日、窗口、筛选、选择和滚动锚点；窄屏使用页面边界内的 full 抽屉，桌面使用主从工作台。
 
 ### 需求落地与证据映射
@@ -56,7 +56,7 @@
 | R24～R27 | 按确认范围未实现 | 需求文档“后续建议”；未新增跨日/批量能力 |
 | R28～R31 | 按确认范围未实现 | 数据能力或产品范围不满足；未提前开发 |
 
-当前实现与 `plan.md` 的 T1～T12 基本一致。T13 对计划进行事实校准时发现专项回滚文件未实际生成，以及审计前向 SQL 未记录共享对象所有权；这两项已修复，计划、架构边界和演练记录已同步。
+当前实现与 `plan.md` 的 T1～T14 一致。T13 已收口回滚与审计账本；T14 只调整 R8/R9/R17/R18 的卡片、动态窗口字段和操作层级，没有新增业务阶段、表、权限、菜单、配置、SQL、seed 或部署参数。
 
 ## 功能开发的具体实施方案
 
@@ -87,6 +87,7 @@
 - T12：前端全量 Vitest 995 项、生产构建和聚焦 Playwright 10 项通过；覆盖 768×1024、1100×620、1366×768、1440×900、1920×900，真实登录、截图/交互和控制台零告警见 `frontend-test-report.md`。
 - T13：后端聚焦 91 项全部通过，Ruff 通过；前端相关 10 个测试文件共 55 项通过，`npm run build` 通过。
 - T13 SQL：DuckDB 前向两次与七表逆依赖回滚通过；PG 审计/RBAC 前向两次、pending 拦截、正常回滚、marker tombstone 和权限版本失效通过，详见 `sql-rehearsal.md`。
+- T14：后端全部天梯测试 92 项和 Ruff 通过；前端相关组件/通用行情值/设计契约/无关超时回归共 46 项通过，生产构建通过；5181 Playwright 两 spec 以真实 `debug_system` 登录串行执行，6 通过/6 按视口约束跳过，保留卡片与 1920×900 截图。
 - T13 首次尝试的 `npm run test:run` 因 `package.json` 不存在该脚本而失败；核对真实脚本后改用 `npm test -- <聚焦文件>` 并通过，未将误命令计为产品失败。
 - 测试前按 DuckDB 锁规则停止原后端；验证后已恢复 dev 模式并确认 `/api/health=200`。
 - `git diff --check`、文档链接、R1～R31 映射和最终工作区范围在提交前再次检查。

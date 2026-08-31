@@ -6,6 +6,7 @@
 import type { SectorBar } from '@/api/sectors'
 import type { Bar } from '@/api/stocks'
 import { ALL_DAYS } from '@/composables/useKlinePrefs'
+import { formatMarketPercent, marketValueClass } from '@/utils/marketValue'
 import { formatMoney } from '@/utils/money'
 
 export type CompareMetric =
@@ -62,8 +63,7 @@ export function toBoardChartBars(bars: readonly SectorBar[]): Bar[] {
 }
 
 export function formatSectorPercent(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return '—'
-  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
+  return formatMarketPercent(value)
 }
 
 export function formatSectorInflow(value: number | null | undefined): string {
@@ -72,8 +72,7 @@ export function formatSectorInflow(value: number | null | undefined): string {
 }
 
 export function sectorValueClass(value: number | null | undefined): 'up' | 'down' | 'muted' | '' {
-  if (value == null || !Number.isFinite(value)) return 'muted'
-  return value > 0 ? 'up' : value < 0 ? 'down' : ''
+  return marketValueClass(value)
 }
 
 function pct(last: number, ref: number): number | null {

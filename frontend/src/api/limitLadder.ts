@@ -50,6 +50,7 @@ export interface LimitLadderStock {
   industry_board_code: string | null
   source_version: string
   window_limit_up_days: number | null
+  window_return_pct: number | null
   window_start_date: string | null
   actual_trade_days: number | null
   snapshot_concepts: LimitLadderConcept[]

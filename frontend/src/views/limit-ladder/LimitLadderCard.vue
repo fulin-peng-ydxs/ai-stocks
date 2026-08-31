@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { LimitLadderStock, LimitLadderWindow } from '@/api/limitLadder'
+import { formatMarketPercent, marketValueClass } from '@/utils/marketValue'
 
 const props = defineProps<{
   stock: LimitLadderStock
@@ -21,6 +22,13 @@ const shortHistory = computed(() => (
   props.stock.actual_trade_days != null && props.stock.actual_trade_days < props.window
 ))
 const windowLimitUpDays = computed(() => props.stock.window_limit_up_days)
+const usesConsecutiveStreak = computed(() => props.stock.consecutive_days > 1)
+const displayDays = computed(() => (
+  usesConsecutiveStreak.value ? props.stock.consecutive_days : props.window
+))
+const displayLimitUpDays = computed(() => (
+  usesConsecutiveStreak.value ? props.stock.consecutive_days : windowLimitUpDays.value
+))
 const relatedIndustryName = computed(() => (
   props.stock.latest_related_industry?.board_name || '未分类'
 ))
@@ -46,14 +54,24 @@ function selectCard(): void {
     <header class="limit-ladder-card__head">
       <div class="limit-ladder-card__identity">
         <strong>{{ stock.name }}</strong>
-        <span>{{ stock.code }}</span>
+      </div>
+      <div class="limit-ladder-card__return">
+        <span>{{ window }} 日累计</span>
+        <strong :class="marketValueClass(stock.window_return_pct)">
+          {{ formatMarketPercent(stock.window_return_pct) }}
+        </strong>
       </div>
     </header>
 
     <div class="limit-ladder-card__metrics">
-      <span class="limit-ladder-card__window-stat">
-        {{ window }} 日
-        <b :class="{ 'is-multiple': (windowLimitUpDays ?? 0) > 1 }">{{ windowLimitUpDays ?? '—' }}</b>
+      <span
+        class="limit-ladder-card__window-stat"
+        :class="{ 'is-streak': usesConsecutiveStreak }"
+      >
+        {{ displayDays }} 日
+        <b :class="{ 'is-multiple': !usesConsecutiveStreak && (displayLimitUpDays ?? 0) > 1 }">
+          {{ displayLimitUpDays ?? '—' }}
+        </b>
         板
       </span>
       <el-tag v-if="stock.is_st" size="small" type="danger" effect="plain">ST</el-tag>
@@ -65,12 +83,13 @@ function selectCard(): void {
     </p>
 
     <footer class="limit-ladder-card__foot">
-      <div class="limit-ladder-card__classification">
-        <span>{{ stock.board }}</span>
-        <span aria-hidden="true">·</span>
-        <span data-testid="limit-ladder-related-industry">{{ relatedIndustryName }}</span>
-      </div>
-      <div v-if="stock.latest_related_concept" class="limit-ladder-card__concept">
+      <span>{{ stock.board }}</span>
+      <span aria-hidden="true">·</span>
+      <span class="limit-ladder-card__industry" data-testid="limit-ladder-related-industry">
+        {{ relatedIndustryName }}
+      </span>
+      <span aria-hidden="true">·</span>
+      <span v-if="stock.latest_related_concept" class="limit-ladder-card__concept">
         <RouterLink
           v-if="canViewSectors"
           :to="relatedLocation"
@@ -79,7 +98,7 @@ function selectCard(): void {
           @click.stop
         >{{ stock.latest_related_concept.board_name }} ↗</RouterLink>
         <span v-else tabindex="0">{{ stock.latest_related_concept.board_name }}</span>
-      </div>
+      </span>
       <span v-else class="limit-ladder-card__empty">暂无相关概念</span>
     </footer>
   </article>
@@ -110,6 +129,7 @@ function selectCard(): void {
   outline-offset: 2px;
 }
 .limit-ladder-card__metrics,
+.limit-ladder-card__head,
 .limit-ladder-card__foot {
   display: flex;
   align-items: center;
@@ -117,20 +137,33 @@ function selectCard(): void {
   gap: var(--app-space-2);
 }
 .limit-ladder-card__identity {
+  flex: 1 1 auto;
   min-width: 0;
 }
-.limit-ladder-card__identity strong,
-.limit-ladder-card__identity span {
+.limit-ladder-card__identity strong {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.limit-ladder-card__identity span,
 .limit-ladder-card__foot small,
 .limit-ladder-card__history {
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
+}
+.limit-ladder-card__return {
+  display: grid;
+  flex: none;
+  justify-items: end;
+  font-variant-numeric: tabular-nums;
+}
+.limit-ladder-card__return span {
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+}
+.limit-ladder-card__return strong {
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-strong);
 }
 .limit-ladder-card__metrics {
   justify-content: flex-start;
@@ -147,6 +180,11 @@ function selectCard(): void {
 .limit-ladder-card__window-stat b.is-multiple {
   color: var(--market-up-color);
 }
+.limit-ladder-card__window-stat.is-streak,
+.limit-ladder-card__window-stat.is-streak b {
+  color: var(--market-up-color);
+  font-weight: var(--app-font-weight-strong);
+}
 .limit-ladder-card__history {
   margin: var(--app-space-1) 0 0;
   color: var(--app-warning-text);
@@ -154,9 +192,10 @@ function selectCard(): void {
 }
 .limit-ladder-card__foot {
   display: flex;
-  flex-direction: column;
+  width: 100%;
+  overflow: hidden;
   gap: var(--app-space-control-gap);
-  align-items: stretch;
+  align-items: center;
   justify-content: flex-start;
   margin-top: var(--app-space-2);
   padding-top: var(--app-space-1);
@@ -164,21 +203,14 @@ function selectCard(): void {
   color: var(--el-text-color-regular);
   font-size: var(--app-font-size-caption);
 }
-.limit-ladder-card__classification {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  gap: var(--app-space-control-gap);
-}
-.limit-ladder-card__classification > span:first-child,
-.limit-ladder-card__classification > span:nth-child(2) {
+.limit-ladder-card__foot > span:first-child,
+.limit-ladder-card__foot > span:nth-child(2),
+.limit-ladder-card__foot > span:nth-child(4) {
   flex: none;
 }
-.limit-ladder-card__classification > span:last-child {
-  flex: 1 1 auto;
-}
+.limit-ladder-card__industry,
 .limit-ladder-card__concept {
-  min-width: 0;
+  flex: 1 1 auto;
   text-align: left;
 }
 .limit-ladder-card__foot span,
@@ -190,7 +222,7 @@ function selectCard(): void {
   white-space: nowrap;
 }
 .limit-ladder-card__concept a {
-  display: block;
+  display: inline;
   color: var(--el-color-primary);
   text-decoration: none;
 }

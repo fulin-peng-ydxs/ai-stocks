@@ -73,6 +73,7 @@ class LadderAggregate:
 class LadderWindowMetric:
     code: str
     window_limit_up_days: int
+    window_return_pct: float | None
     window_start_date: date
     actual_trade_days: int
 
@@ -295,9 +296,16 @@ class LimitLadderCalculator:
             list_date = self._date_value(basic.get("list_date"))
             actual_dates = [day for day in window_dates if list_date is None or day >= list_date]
             limit_up_days = 0
+            adjusted_closes: list[float] = []
             for day in actual_dates:
                 fact = facts.get((code, day))
-                if fact is None or self._bool_value(fact.get("confirmed_suspension")):
+                if fact is None:
+                    continue
+                close = self._positive_number(fact.get("close"))
+                factor = self._positive_number(fact.get("adj_factor"))
+                if close is not None and factor is not None:
+                    adjusted_closes.append(close * factor)
+                if self._bool_value(fact.get("confirmed_suspension")):
                     continue
                 result, _ = self.evaluate_fact(
                     code=code,
@@ -312,6 +320,11 @@ class LimitLadderCalculator:
                     LadderWindowMetric(
                         code=code,
                         window_limit_up_days=limit_up_days,
+                        window_return_pct=(
+                            round((adjusted_closes[-1] / adjusted_closes[0] - 1) * 100, 2)
+                            if len(adjusted_closes) >= 2
+                            else None
+                        ),
                         window_start_date=actual_dates[0],
                         actual_trade_days=len(actual_dates),
                     )
@@ -356,6 +369,7 @@ class LimitLadderCalculator:
             rows = self.c.query_df(
                 f"""
                 SELECT b.code,b.trade_date,b.open,b.high,b.low,b.close,b.pre_close,
+                       COALESCE(b.adj_factor_clean,b.adj_factor) AS adj_factor,
                        b.amount,b.is_suspended,b.is_one_word,
                        st.is_st AS point_is_st,st.source AS st_source,
                        st.source_ref AS st_source_ref,st.quality AS st_quality,
@@ -368,7 +382,7 @@ class LimitLadderCalculator:
                 LEFT JOIN stock_suspension s
                   ON s.code=b.code AND s.trade_date=b.trade_date
                 UNION ALL
-                SELECT s.code,s.trade_date,NULL,NULL,NULL,NULL,NULL,NULL,TRUE,FALSE,
+                SELECT s.code,s.trade_date,NULL,NULL,NULL,NULL,NULL,NULL,NULL,TRUE,FALSE,
                        st.is_st,st.source,st.source_ref,st.quality,TRUE
                 FROM stock_suspension s
                 JOIN {code_view} codes ON codes.code=s.code
@@ -511,3 +525,14 @@ class LimitLadderCalculator:
     def _finite_number(value) -> float:
         number = 0.0 if value is None or pd.isna(value) else float(value)
         return number if pd.notna(number) and abs(number) != float("inf") and number >= 0 else 0.0
+
+    @staticmethod
+    def _positive_number(value) -> float | None:
+        """Return a finite positive price/factor, otherwise keep the metric unavailable."""
+        if value is None or pd.isna(value):
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if pd.notna(number) and abs(number) != float("inf") and number > 0 else None
