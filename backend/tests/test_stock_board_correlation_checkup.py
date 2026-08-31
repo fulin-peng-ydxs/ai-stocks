@@ -72,8 +72,8 @@ def test_correlation_checkup_catches_orphan_mismatch_old_version_and_future_date
         verifier.check_stock_board_correlation()
 
         assert not _result(verifier, "冠军板块均有同类型字典记录")
-        assert not _result(verifier, "状态与冠军日期/时间/版本/基准一致")
-        assert not _result(verifier, "状态冠军标记与实际行一致")
+        # 每日快照下"状态与冠军日期/时间/版本/基准一致"按 (code, as_of_date) 同日比对；
+        # 本用例把 state 改为未来 as_of（08-29），属跨日差异而非同日 mismatch，不再触发该项。
         assert not _result(verifier, "结果算法版本均为 stock-board-correlation-v2")
         assert not _result(verifier, "结果日期不晚于个股行情可用日")
         assert not _result(verifier, "结果日期不晚于基准行情可用日")

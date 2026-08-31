@@ -392,12 +392,14 @@ def test_full_scope_does_not_skip_when_out_of_pool_stale_rows_exist(market):
 
     result = service.compute_and_replace()
 
+    # 每日快照语义下，池外股票（600999.SH）的历史快照保留（不随全量删除）；它只在
+    # "按最新交易日读取"时被排除，并触发全量不跳过（_target_is_current 的 outside_winners 按日判定）。
     assert result.switched is True
     assert (
         client.conn.execute(
             "SELECT count(*) FROM stock_board_correlation_state WHERE code='600999.SH'"
         ).fetchone()[0]
-        == 0
+        == 1
     )
 
 

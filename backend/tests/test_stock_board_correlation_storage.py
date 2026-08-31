@@ -32,8 +32,9 @@ def test_init_db_creates_correlation_tables_idempotently():
         assert set(champion_info.loc[champion_info["pk"] > 0, "name"]) == {
             "code",
             "board_type",
+            "as_of_date",
         }
-        assert list(state_info.loc[state_info["pk"] > 0, "name"]) == ["code"]
+        assert list(state_info.loc[state_info["pk"] > 0, "name"]) == ["code", "as_of_date"]
         assert {
             "has_industry_champion",
             "has_concept_champion",

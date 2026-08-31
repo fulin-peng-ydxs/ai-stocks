@@ -340,12 +340,12 @@ class DataVerifier:
         self._say("\nG. 个股走势关联板块（当前态/冠军/行情支撑）")
 
         duplicate_champions = self._count(
-            "SELECT count(*) FROM (SELECT code,board_type FROM stock_board_correlation "
-            "GROUP BY code,board_type HAVING count(*)>1)"
+            "SELECT count(*) FROM (SELECT code,board_type,as_of_date FROM stock_board_correlation "
+            "GROUP BY code,board_type,as_of_date HAVING count(*)>1)"
         )
         duplicate_states = self._count(
-            "SELECT count(*) FROM (SELECT code FROM stock_board_correlation_state "
-            "GROUP BY code HAVING count(*)>1)"
+            "SELECT count(*) FROM (SELECT code,as_of_date FROM stock_board_correlation_state "
+            "GROUP BY code,as_of_date HAVING count(*)>1)"
         )
         self._check(
             "相关性结果主键无重复",
@@ -386,7 +386,9 @@ class DataVerifier:
         )
         orphan_states = self._count(
             "SELECT count(*) FROM stock_board_correlation c "
-            "LEFT JOIN stock_board_correlation_state s ON s.code=c.code WHERE s.code IS NULL"
+            "LEFT JOIN stock_board_correlation_state s "
+            "  ON s.code=c.code AND s.as_of_date=c.as_of_date "
+            "WHERE s.code IS NULL"
         )
         self._check(
             "冠军板块均有同类型字典记录", orphan_boards == 0, f"孤儿 {orphan_boards}"
@@ -397,9 +399,9 @@ class DataVerifier:
 
         mismatched_champions = self._count(
             "SELECT count(*) FROM stock_board_correlation c "
-            "JOIN stock_board_correlation_state s ON s.code=c.code "
-            "WHERE c.as_of_date IS DISTINCT FROM s.as_of_date "
-            "OR c.computed_at IS DISTINCT FROM s.computed_at "
+            "JOIN stock_board_correlation_state s "
+            "  ON s.code=c.code AND s.as_of_date=c.as_of_date "
+            "WHERE c.computed_at IS DISTINCT FROM s.computed_at "
             "OR c.algorithm_version IS DISTINCT FROM s.algorithm_version "
             "OR c.benchmark_code IS DISTINCT FROM s.benchmark_code "
             "OR c.benchmark_fallback IS DISTINCT FROM s.benchmark_fallback"
@@ -408,16 +410,22 @@ class DataVerifier:
             "SELECT count(*) FROM stock_board_correlation_state s WHERE "
             "s.has_industry_champion IS DISTINCT FROM EXISTS "
             "(SELECT 1 FROM stock_board_correlation c "
-            " WHERE c.code=s.code AND c.board_type='industry') OR "
+            " WHERE c.code=s.code AND c.as_of_date=s.as_of_date AND c.board_type='industry') OR "
             "s.has_concept_champion IS DISTINCT FROM EXISTS "
             "(SELECT 1 FROM stock_board_correlation c "
-            " WHERE c.code=s.code AND c.board_type='concept')"
+            " WHERE c.code=s.code AND c.as_of_date=s.as_of_date AND c.board_type='concept')"
         )
+        # 每日快照下，仅对「最新 as_of_date 的快照」强制当前算法版本；历史旧版本不强求。
         stale_versions = self._count(
-            "SELECT count(*) FROM stock_board_correlation_state WHERE algorithm_version<>?",
+            "SELECT count(*) FROM stock_board_correlation_state s "
+            "WHERE s.algorithm_version<>? AND s.as_of_date=("
+            "SELECT max(s2.as_of_date) FROM stock_board_correlation_state s2 WHERE s2.code=s.code)",
             [ALGORITHM_VERSION],
         ) + self._count(
-            "SELECT count(*) FROM stock_board_correlation WHERE algorithm_version<>?",
+            "SELECT count(*) FROM stock_board_correlation c "
+            "WHERE c.algorithm_version<>? AND c.as_of_date=("
+            "SELECT max(c2.as_of_date) FROM stock_board_correlation c2 "
+            "WHERE c2.code=c.code AND c2.board_type=c.board_type)",
             [ALGORITHM_VERSION],
         )
         self._check(
@@ -426,7 +434,9 @@ class DataVerifier:
             f"不一致 {mismatched_champions}",
         )
         self._check(
-            "状态冠军标记与实际行一致", flag_mismatches == 0, f"不一致 {flag_mismatches}"
+            "状态冠军标记与实际行一致",
+            flag_mismatches == 0,
+            f"不一致 {flag_mismatches}",
         )
         self._check(
             f"结果算法版本均为 {ALGORITHM_VERSION}",

@@ -23,6 +23,9 @@ class _CountingClient:
         self.queries.append(sql)
         return self.delegate.query_df(sql, params)
 
+    def temp_view(self, frame, name):
+        return self.delegate.temp_view(frame, name)
+
 
 def _seed_summary(client: DuckDBClient, *, as_of: date = date(2026, 8, 28)) -> None:
     client.execute(
@@ -50,13 +53,18 @@ def _seed_summary(client: DuckDBClient, *, as_of: date = date(2026, 8, 28)) -> N
     )
 
 
-def test_batch_summary_is_one_query_and_protects_per_row_dates():
+def test_batch_summary_reads_per_day_snapshot(monkeypatch):
     as_of = date(2026, 8, 28)
     with DuckDBClient(db_path=":memory:") as market:
         init_db(market)
         _seed_summary(market, as_of=as_of)
-        counting = _CountingClient(market)
-        service = StockBoardCorrelationService(counting)  # type: ignore[arg-type]
+        # 本用例聚焦「按业务日取对应快照」读取逻辑；按需回填（触发真实计算）抽离，由专项用例覆盖。
+        monkeypatch.setattr(
+            StockBoardCorrelationService,
+            "_backfill_missing_snapshots",
+            lambda self, codes, dates: None,
+        )
+        service = StockBoardCorrelationService(market)
 
         result = service.get_related_boards(
             ["600000.sh", "000001.SZ", "300001.SZ", "600000.SH"],
@@ -67,8 +75,7 @@ def test_batch_summary_is_one_query_and_protects_per_row_dates():
             },
         )
 
-        assert len(counting.queries) == 1
-        assert result["300001.SZ"] is None
+        assert result["300001.SZ"]["unavailable_reason"] == "as_of_mismatch"
         assert result["600000.SH"] == {
             "as_of_date": "2026-08-28",
             "benchmark": {"code": "399001.SZ", "name": "深证成指", "fallback": False},
@@ -84,13 +91,9 @@ def test_batch_summary_is_one_query_and_protects_per_row_dates():
             },
             "concept": None,
         }
-        assert result["000001.SZ"] == {
-            "as_of_date": "2026-08-28",
-            "benchmark": {"code": "000001.SH", "name": "上证指数", "fallback": True},
-            "industry": None,
-            "concept": None,
-            "unavailable_reason": "as_of_mismatch",
-        }
+        # 000001.SZ 请求 08-27 无对应日快照 → as_of_mismatch（该历史日期无快照）。
+        assert result["000001.SZ"]["unavailable_reason"] == "as_of_mismatch"
+        assert result["000001.SZ"]["as_of_date"] is None
 
 
 @pytest.mark.parametrize("count", [50, 200])
@@ -116,9 +119,14 @@ def test_batch_summary_query_count_does_not_grow_with_rows(count):
         assert len(counting.queries) == 1
 
 
-def test_empty_batch_is_zero_query_and_nonstandard_rows_degrade_to_null():
+def test_empty_batch_and_nonstandard_rows(monkeypatch):
     with DuckDBClient(db_path=":memory:") as market:
         init_db(market)
+        monkeypatch.setattr(
+            StockBoardCorrelationService,
+            "_backfill_missing_snapshots",
+            lambda self, codes, dates: None,
+        )
         counting = _CountingClient(market)
         service = StockBoardCorrelationService(counting)  # type: ignore[arg-type]
 
@@ -129,11 +137,12 @@ def test_empty_batch_is_zero_query_and_nonstandard_rows_degrade_to_null():
             {"LEGACY": "2026-08-27", "600000.SH": "2026-08-28"},
         )
 
-        assert rows == [
-            {"code": "LEGACY", "related_boards": None},
-            {"code": "600000.SH", "related_boards": None},
-        ]
-        assert len(counting.queries) == 1
+        # 非标准 legacy 代码安全降级为 null；标准代码请求了具体业务日但该日无快照 → as_of_mismatch。
+        assert rows[0] == {"code": "LEGACY", "related_boards": None}
+        assert rows[1]["code"] == "600000.SH"
+        rb = rows[1]["related_boards"]
+        assert rb["unavailable_reason"] == "as_of_mismatch"
+        assert rb["as_of_date"] is None
 
 
 def test_stock_list_attaches_one_batch_for_returned_page(monkeypatch):

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Literal, TypedDict
+
+_logger = logging.getLogger(__name__)
 
 import pandas as pd
 
@@ -284,19 +287,22 @@ class StockBoardCorrelationService:
         if not full_scope:
             return True
         state_count = int(
-            self.c.query_df("SELECT count(*) AS n FROM stock_board_correlation_state").iloc[0]["n"]
+            self.c.query_df(
+                "SELECT count(*) AS n FROM stock_board_correlation_state WHERE as_of_date=?",
+                [as_of_date],
+            ).iloc[0]["n"]
         )
         outside_winners = int(
             self.c.query_df(
                 "SELECT count(*) AS n FROM stock_board_correlation "
-                f"WHERE code NOT IN ({placeholders})",
-                codes,
+                f"WHERE code NOT IN ({placeholders}) AND as_of_date=?",
+                [*codes, as_of_date],
             ).iloc[0]["n"]
         )
         return state_count == len(codes) and outside_winners == 0
 
-    def _current_scope_statistics(self, codes: list[str]) -> dict[str, Any]:
-        """跳过计算时读取当前范围真实统计，避免把“未重算”误报成零冠军。"""
+    def _current_scope_statistics(self, codes: list[str], as_of_date: date) -> dict[str, Any]:
+        """跳过计算时读取该目标日范围真实统计，避免把“未重算”误报成零冠军。"""
         placeholders = ",".join("?" for _ in codes)
         candidates = int(self.c.query_df(
             "SELECT count(*) AS n FROM board_member bm "
@@ -307,8 +313,8 @@ class StockBoardCorrelationService:
         ).iloc[0]["n"])
         champions = self.c.query_df(
             "SELECT board_type,count(*) AS n FROM stock_board_correlation "
-            f"WHERE code IN ({placeholders}) GROUP BY board_type",
-            codes,
+            f"WHERE code IN ({placeholders}) AND as_of_date=? GROUP BY board_type",
+            [*codes, as_of_date],
         )
         champion_counts = {
             str(row["board_type"]): int(row["n"])
@@ -319,13 +325,13 @@ class StockBoardCorrelationService:
             "AND NOT has_concept_champion) AS empty_count, "
             "count(*) FILTER (WHERE benchmark_fallback) AS fallback_count "
             "FROM stock_board_correlation_state "
-            f"WHERE code IN ({placeholders})",
-            codes,
+            f"WHERE code IN ({placeholders}) AND as_of_date=?",
+            [*codes, as_of_date],
         ).iloc[0]
         benchmarks = self.c.query_df(
             "SELECT benchmark_code,count(*) AS n FROM stock_board_correlation_state "
-            f"WHERE code IN ({placeholders}) GROUP BY benchmark_code",
-            codes,
+            f"WHERE code IN ({placeholders}) AND as_of_date=? GROUP BY benchmark_code",
+            [*codes, as_of_date],
         )
         return {
             "candidate_count": candidates,
@@ -349,7 +355,7 @@ class StockBoardCorrelationService:
         phase_callback: Callable[[str], None] | None = None,
         cancel_check: Callable[[], None] | None = None,
     ) -> CorrelationRunResult:
-        """完整计算目标范围，并在校验成功后原子替换两张当前态表。"""
+        """完整计算目标范围，并在校验成功后按目标交易日写入当天快照（不影响其它日）。"""
 
         def enter_phase(phase: str) -> None:
             if phase_callback is not None:
@@ -363,7 +369,7 @@ class StockBoardCorrelationService:
         target_date = self.resolve_target_date(upper_bound)
         targets, full_scope = self.resolve_target_codes(target_date, codes)
         if not force and self._target_is_current(targets, target_date, full_scope=full_scope):
-            current = self._current_scope_statistics(targets)
+            current = self._current_scope_statistics(targets, target_date)
             return CorrelationRunResult(
                 target_date,
                 len(targets),
@@ -603,33 +609,51 @@ class StockBoardCorrelationService:
         *,
         full_scope: bool,
     ) -> None:
+        """按目标交易日 upsert 两张快照表；先清除该日该批旧行，避免"合法空"残留旧冠军。
+
+        targets/full_scope 仅作为写入目标范围的说明；先按 (code, as_of_date) 删除该日旧行
+        再 upsert，既保证"该日无冠军的股票"被清掉旧冠军，也不影响其它交易日快照。
+        """
         state_columns = ",".join(states.columns)
         champion_columns = ",".join(champions.columns)
+        state_updates = ",".join(
+            f"{col}=EXCLUDED.{col}"
+            for col in states.columns
+            if col not in ("code", "as_of_date")
+        )
+        champion_updates = ",".join(
+            f"{col}=EXCLUDED.{col}"
+            for col in champions.columns
+            if col not in ("code", "board_type", "as_of_date")
+        )
+        # 本批统一目标日（states 行均含同一 as_of_date）。
+        as_of_date = states["as_of_date"].iloc[0]
+        placeholders = ",".join("?" for _ in targets)
         with (
             self.c.temp_view(states, "correlation_states") as state_view,
             self.c.temp_view(champions, "correlation_champions") as champion_view,
             self.c.transaction(),
         ):
-            if full_scope:
-                self._run_replace_statement("DELETE FROM stock_board_correlation")
-                self._run_replace_statement("DELETE FROM stock_board_correlation_state")
-            else:
-                placeholders = ",".join("?" for _ in targets)
-                self._run_replace_statement(
-                    f"DELETE FROM stock_board_correlation WHERE code IN ({placeholders})",
-                    targets,
-                )
-                self._run_replace_statement(
-                    f"DELETE FROM stock_board_correlation_state WHERE code IN ({placeholders})",
-                    targets,
-                )
+            # 先清该日该批旧行：合法空（该日无冠军）的股票其旧冠军被移除，避免残留；其它日期不受影响。
+            self._run_replace_statement(
+                f"DELETE FROM stock_board_correlation "
+                f"WHERE code IN ({placeholders}) AND as_of_date=?",
+                [*targets, as_of_date],
+            )
+            self._run_replace_statement(
+                f"DELETE FROM stock_board_correlation_state "
+                f"WHERE code IN ({placeholders}) AND as_of_date=?",
+                [*targets, as_of_date],
+            )
             self._run_replace_statement(
                 f"INSERT INTO stock_board_correlation_state ({state_columns}) "
-                f"SELECT {state_columns} FROM {state_view}"
+                f"SELECT {state_columns} FROM {state_view} "
+                f"ON CONFLICT (code, as_of_date) DO UPDATE SET {state_updates}"
             )
             self._run_replace_statement(
                 f"INSERT INTO stock_board_correlation ({champion_columns}) "
-                f"SELECT {champion_columns} FROM {champion_view}"
+                f"SELECT {champion_columns} FROM {champion_view} "
+                f"ON CONFLICT (code, board_type, as_of_date) DO UPDATE SET {champion_updates}"
             )
 
     def get_membership(self, code: object) -> StockBoardMembership:
@@ -707,12 +731,16 @@ class StockBoardCorrelationService:
         codes: Iterable[object],
         business_dates: date | str | Mapping[str, date | str | None] | None = None,
     ) -> dict[str, StockRelatedBoards | None]:
-        """一次查询返回多股冠军摘要；逐代码业务日期缺失时按历史不匹配处理。"""
+        """一次查询返回多股各业务日期的冠军快照摘要。
+
+        业务日期匹配该日快照则返回该日冠军；该日无快照时触发按需回填（单日计算），
+        仍无法得到则标 as_of_mismatch（语义=该历史日期无快照）。逐代码业务日期缺失
+        （Mapping 中为 None）时按 fail-closed 处理。
+        """
         normalized = normalize_stock_codes(codes)
         if not normalized:
             return {}
 
-        protect_dates = isinstance(business_dates, Mapping) or business_dates is not None
         if isinstance(business_dates, Mapping):
             normalized_dates = {
                 normalize_stock_code(code): (None if value is None else pd.Timestamp(value).date())
@@ -721,33 +749,108 @@ class StockBoardCorrelationService:
         else:
             uniform_date = None if business_dates is None else pd.Timestamp(business_dates).date()
             normalized_dates = {code: uniform_date for code in normalized}
+        protect_dates = any(value is not None for value in normalized_dates.values())
 
-        placeholders = ",".join("?" for _ in normalized)
-        rows = self.c.query_df(
+        rows = self._query_related_boards_for_dates(normalized, normalized_dates, protect_dates)
+        if protect_dates:
+            missing = self._collect_missing_snapshot_codes(normalized, normalized_dates, rows)
+            if missing:
+                self._backfill_missing_snapshots(missing, normalized_dates)
+                rows = self._query_related_boards_for_dates(normalized, normalized_dates, protect_dates)
+        return self._assemble_related_boards(normalized, rows, protect_dates)
+
+    def _collect_missing_snapshot_codes(
+        self,
+        normalized: list[str],
+        normalized_dates: Mapping[str, date | None],
+        rows: pd.DataFrame,
+    ) -> list[str]:
+        """返回请求了具体业务日期、但该日无快照行的 code（供按需回填）。"""
+        have = {str(row["code"]) for row in rows.to_dict("records")}
+        return [
+            code
+            for code in normalized
+            if normalized_dates.get(code) is not None and code not in have
+        ]
+
+    def _query_related_boards_for_dates(
+        self,
+        normalized: list[str],
+        normalized_dates: Mapping[str, date | None],
+        protect_dates: bool,
+    ) -> pd.DataFrame:
+        """按每个 code 请求的业务日期取该日快照；未启用日期保护时取每 code 最新快照。"""
+        base_select = (
             "SELECT s.code, s.as_of_date, s.benchmark_code, s.benchmark_fallback, "
             "       c.board_type, c.board_code, c.score, c.corr_20, c.corr_60, "
             "       c.sample_20, c.sample_60, c.confidence, bd.name AS board_name "
             "FROM stock_board_correlation_state s "
-            "LEFT JOIN stock_board_correlation c ON c.code=s.code "
-            "  AND c.as_of_date=s.as_of_date "
-            "  AND c.algorithm_version=s.algorithm_version "
-            "  AND c.benchmark_code=s.benchmark_code "
-            "  AND c.benchmark_fallback=s.benchmark_fallback "
-            "LEFT JOIN board_dict bd ON bd.board_code=c.board_code "
-            "  AND bd.board_type=c.board_type "
-            f"WHERE s.code IN ({placeholders}) "
-            "ORDER BY s.code, CASE c.board_type WHEN 'industry' THEN 0 ELSE 1 END",
+        )
+        champion_join = (
+            "LEFT JOIN stock_board_correlation c ON c.code=s.code AND c.as_of_date=s.as_of_date "
+            "LEFT JOIN board_dict bd ON bd.board_code=c.board_code AND bd.board_type=c.board_type "
+        )
+        if protect_dates:
+            wanted = pd.DataFrame({
+                "code": normalized,
+                "as_of_date": [normalized_dates.get(code) for code in normalized],
+            })
+            with self.c.temp_view(wanted, "wanted_snapshot_dates") as view:
+                return self.c.query_df(
+                    base_select
+                    + f"JOIN {view} wanted ON wanted.code=s.code AND wanted.as_of_date=s.as_of_date "
+                    + champion_join
+                    + "ORDER BY s.code, CASE c.board_type WHEN 'industry' THEN 0 ELSE 1 END"
+                )
+        placeholders = ",".join("?" for _ in normalized)
+        return self.c.query_df(
+            base_select
+            + "JOIN (SELECT code, max(as_of_date) AS mx FROM stock_board_correlation_state "
+            f"WHERE code IN ({placeholders}) GROUP BY code) latest "
+            "ON latest.code=s.code AND latest.mx=s.as_of_date "
+            + champion_join
+            + "ORDER BY s.code, CASE c.board_type WHEN 'industry' THEN 0 ELSE 1 END",
             normalized,
         )
+
+    def _backfill_missing_snapshots(
+        self,
+        missing_codes: list[str],
+        normalized_dates: Mapping[str, date | None],
+    ) -> None:
+        """对请求了具体业务日期但该日无快照的 code，触发该日单日计算（同步写库）。
+
+        仅在缺快照时触发；DuckDB 写锁被占或数据不足以计算时降级跳过（由读取侧标 mismatch）。
+        """
+        by_date: dict[date, list[str]] = {}
+        for code in missing_codes:
+            requested = normalized_dates.get(code)
+            if requested is None:
+                continue
+            by_date.setdefault(requested, []).append(code)
+        for target_date, codes in by_date.items():
+            try:
+                self.compute_and_replace(codes, upper_bound=target_date)
+            except Exception as exc:  # noqa: BLE001 读接口回填降级：锁冲突/数据不足/校验失败均跳过
+                _logger.warning(
+                    "按需快照回填跳过 date=%s (%d 只): %s", target_date, len(codes), exc
+                )
+
+    def _assemble_related_boards(
+        self,
+        normalized: list[str],
+        rows: pd.DataFrame,
+        protect_dates: bool,
+    ) -> dict[str, StockRelatedBoards | None]:
+        """把按日快照行组装成摘要；protect_dates 时无快照的 code 标 as_of_mismatch。"""
         result: dict[str, StockRelatedBoards | None] = {code: None for code in normalized}
         for row in rows.to_dict("records"):
             code = str(row["code"])
-            as_of_date = pd.Timestamp(row["as_of_date"]).date()
             summary = result.get(code)
             if summary is None:
                 benchmark_code = str(row["benchmark_code"])
                 summary = {
-                    "as_of_date": str(as_of_date),
+                    "as_of_date": str(pd.Timestamp(row["as_of_date"]).date()),
                     "benchmark": {
                         "code": benchmark_code,
                         "name": MarketBenchmarkService.name(benchmark_code),
@@ -756,12 +859,7 @@ class StockBoardCorrelationService:
                     "industry": None,
                     "concept": None,
                 }
-                business_date = normalized_dates.get(code)
-                if protect_dates and business_date != as_of_date:
-                    summary["unavailable_reason"] = "as_of_mismatch"
                 result[code] = summary
-            if "unavailable_reason" in summary:
-                continue
             board_type = row.get("board_type")
             board_name = row.get("board_name")
             if (
@@ -780,6 +878,16 @@ class StockBoardCorrelationService:
                 "sample_60": int(row["sample_60"]),
                 "confidence": str(row["confidence"]),
             }
+        if protect_dates:
+            for code in normalized:
+                if result.get(code) is None:
+                    result[code] = {
+                        "as_of_date": None,
+                        "benchmark": {"code": None, "name": None, "fallback": False},
+                        "industry": None,
+                        "concept": None,
+                        "unavailable_reason": "as_of_mismatch",
+                    }
         return result
 
     def attach_related_boards(

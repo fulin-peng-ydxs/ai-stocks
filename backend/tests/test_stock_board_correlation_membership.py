@@ -237,7 +237,7 @@ def test_related_boards_api_fail_closed_when_as_of_behind_latest(monkeypatch):
         assert response.status_code == 200
         data = response.json()["data"]
         rb = data["related_boards"]
-        assert rb["as_of_date"] == "2026-08-28"
+        assert rb["as_of_date"] is None
         assert rb["unavailable_reason"] == "as_of_mismatch"
         assert rb["industry"] is None
         assert rb["concept"] is None

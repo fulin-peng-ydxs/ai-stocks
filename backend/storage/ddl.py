@@ -804,7 +804,7 @@ CREATE TABLE IF NOT EXISTS board_fund_flow (
 );
 """
 
-# 个股走势关联板块当前冠军：每只股票的行业/概念各最多一行，不保存历史快照或候选明细。
+# 个股走势关联板块冠军每日快照：每只股票每类型每交易日一行，保留各交易日结果；不保存候选明细。
 DDL_STOCK_BOARD_CORRELATION = """
 CREATE TABLE IF NOT EXISTS stock_board_correlation (
     code               VARCHAR NOT NULL,
@@ -821,21 +821,22 @@ CREATE TABLE IF NOT EXISTS stock_board_correlation (
     as_of_date         DATE NOT NULL,
     computed_at        TIMESTAMP NOT NULL,
     algorithm_version  VARCHAR NOT NULL,
-    PRIMARY KEY (code, board_type)
+    PRIMARY KEY (code, board_type, as_of_date)
 );
 """
 
-# 每股本轮计算状态：即使行业和概念都无合法冠军，也能表达已成功处理及实际数据口径。
+# 每股每交易日计算状态快照：即使行业和概念都无合法冠军，也能表达该日已成功处理及实际数据口径。
 DDL_STOCK_BOARD_CORRELATION_STATE = """
 CREATE TABLE IF NOT EXISTS stock_board_correlation_state (
-    code                    VARCHAR PRIMARY KEY,
+    code                    VARCHAR NOT NULL,
     as_of_date              DATE NOT NULL,
     computed_at             TIMESTAMP NOT NULL,
     algorithm_version       VARCHAR NOT NULL,
     benchmark_code          VARCHAR NOT NULL,
     benchmark_fallback      BOOLEAN NOT NULL DEFAULT FALSE,
     has_industry_champion   BOOLEAN NOT NULL DEFAULT FALSE,
-    has_concept_champion    BOOLEAN NOT NULL DEFAULT FALSE
+    has_concept_champion    BOOLEAN NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (code, as_of_date)
 );
 """
 
