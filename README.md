@@ -76,6 +76,7 @@
 | 模块 | 页面入口 | 主要 API | 你在这里完成什么 | 详细文档 |
 |------|----------|----------|------|----------|
 | 📈 **每日榜单** | `BoardView` | `/api/board/*` | 按用户可见**评分方案**全市场排序（自己的方案、租户公开、全体公开、平台内置预设；0–100 综合分 + 评级 + 分项达标分） | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
+| 🪜 **连板天梯** | `LimitLadderView`（`/limit-ladder`） | `/api/limit-ladder/*` | 按交易日查看收盘涨停梯队、固定窗口活跃度和走势相关热点；进入个股分析/详情，system 可发起单日重算 | [limit-ladder.md](agent-works/architecture/limit-ladder.md) |
 | 🧮 **策略筛选** | `ScreenView` | `/api/screen*`, `/api/profiles` | 统一条件构建器（AND/OR 树，叶子可选指标条件或表达式，同一份 AST）；方案可存、版本回看、按权限公开和复制 | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
 | 🧪 **回测验证** | `BacktestView` | `/api/backtest/*` | ①策略回测：净值/绩效/逐笔成交（含卖出原因）；②评分验证：分层命中率与超额命中率；历史记录可按权限公开，公开记录可复用参数重跑 | [backtest.md](agent-works/architecture/backtest.md) |
 | ✅ **交易纪律** | `TradeDisciplineView`（`/trade-discipline`） | `/api/trade-discipline/*` | 维护私人交易规则和不可变版本，按真实交易日完成履约打卡、操作记录、历史修订；用户中心支持查看待办和快捷无操作履约 | [trade-discipline.md](agent-works/architecture/trade-discipline.md) |
@@ -100,6 +101,7 @@ flowchart LR
   CFG["配置管理\n评分 / 买卖 / 技术指标 / 系统设置"] --> IND
   IND --> SCR["策略筛选\n条件树命中"]
   IND --> BRD["每日榜单\n评分排序"]
+  DB --> LAD["连板天梯\n涨停梯队 / 热点 / 快照"]
   SCR --> BT["回测验证\n策略回测"]
   BRD --> BT
   CFG --> BT
@@ -111,6 +113,7 @@ flowchart LR
   RBAC["系统菜单 / 权限 / 租户\n登录 / /me / 菜单树 / 功能码 / 归属上下文"] -. 控制入口与资产归属 .-> CFG
   RBAC -. 控制入口与资产归属 .-> SCR
   RBAC -. 控制入口与资产归属 .-> BRD
+  RBAC -. 控制查看与重算权限 .-> LAD
   RBAC -. 控制入口与资产归属 .-> BT
   RBAC -. 控制入口与资产归属 .-> TD
 ```
@@ -121,6 +124,7 @@ flowchart LR
 |------|----------|------|
 | 首次搭建本地库 | `backfill` → `delisted --enrich` → `valuation` → `rebuild-price-factors` → `verify-data` | 近 5 年行情、退市股、总市值、复权口径与体检报告齐全 |
 | 每天收盘后更新 | 数据管理 → 数据采集 → 个股采集 → 日常同步，或 `python -m backend.cli daily` | 最新行情入库、总市值补齐；CLI `daily` 还会继续执行质检 |
+| 复盘当日涨停梯队 | 最新行情 → 连板天梯 → 查看热点/板位 → 选择股票分析 → 进入个股或板块详情 | 当日不可变涨停快照、窗口活跃度、走势相关热点和可恢复的详情上下文 |
 | 发现榜单异常 | 数据管理 → 概览/质量定位缺口 → 修复 → 回榜单重新打开对应日期 | 评分快照会被标记失效，下次打开按可见方案自动重算 |
 | 新建选股思路 | 配置管理 → 评分规则/买卖指标建方案 → 策略筛选试条件 → 每日榜单看排序 | 得到可保存、可版本回看、可按权限公开的评分方案 |
 | 验证策略能否交易 | 策略筛选 + 评分方案 + 买卖方案 → 回测验证 | 净值、回撤、逐笔成交、卖出原因、分层命中率 |
@@ -399,6 +403,7 @@ python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB
 | [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) | 登录鉴权、系统菜单、细粒度权限、多租户资产隔离和公开资产可见性的当前技术架构 |
 | [environment-configuration.md](agent-works/architecture/environment-configuration.md) | 环境变量、变量文件、YAML 基线、PG/DuckDB `app_config` 边界和配置生效规则 |
 | [stock-board-correlation.md](agent-works/architecture/stock-board-correlation.md) | 行业/概念走势冠军的算法口径、有效样本含义、任务落表、页面读取和风险边界 |
+| [limit-ladder.md](agent-works/architecture/limit-ladder.md) | 连板天梯的涨停/ST 口径、快照 v2、任务协调、页面/API、权限、部署与风险边界 |
 | [multi-tenant-rbac](agent-works/multi-tenant-rbac/) | 系统菜单、权限、多租户相关需求与落地记录 |
 | [DESIGN.md — 前端设计与布局规范](DESIGN.md) | 前端布局事实源与页面开发契约：可配置布局系统、页面设计闭环、组件/布局维护矩阵、设置抽屉规范；强制规则归 `frontend/src/layout` + 契约测试 |
 | [page-template.md — 新页面开发模板](agent-works/configurable-layout-system/page-template.md) | AI/开发者新建或改造页面时复制使用的页面设计块、维护矩阵、7 个原型骨架和验收清单 |
