@@ -26,6 +26,7 @@ import {
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
+import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
 import { useStockAnalysisSession } from '@/composables/useStockAnalysisSession'
 import {
@@ -62,7 +63,8 @@ const stockSet = useStockSet()
 const settingsOpen = ref(false)
 const ladderHost = ref<HTMLElement | null>(null)
 const analysisDrawerOpen = ref(false)
-const isNarrowViewport = ref(false)
+const isNarrowViewport = useMediaQuery('(max-width: 768px)')
+const isLowHeightViewport = useMediaQuery('(max-height: 700px)')
 const tradeDate = ref<string | null>(
   typeof route.query.date === 'string' ? route.query.date : null,
 )
@@ -70,11 +72,11 @@ const filters = ref<LimitLadderFilters>(filtersFromRouteQuery(route.query))
 const result = ref<LimitLadderResult | null>(null)
 const loading = ref(false)
 const error = ref('')
+const forbidden = ref(false)
 const exporting = ref(false)
 const recomputing = ref(false)
 let requestSequence = 0
 let syncingRoute = false
-let narrowMedia: MediaQueryList | null = null
 let resultRefreshTimer: number | undefined
 let resultRefreshDeadlineTimer: number | undefined
 let resultRefreshAttempt = 0
@@ -157,6 +159,9 @@ const workspaceMeta = computed(() => result.value?.has_snapshot
   ? `${result.value.summary.stock_count} 只 · ${filters.value.window} 日口径`
   : '等待快照')
 const ladderReturnPath = computed(() => route.fullPath)
+const compactHotspots = computed(() => (
+  isLowHeightViewport.value && analysisPanelVisible.value && !isNarrowViewport.value
+))
 
 const baseLayout = getPageLayout('limit-ladder')
 const {
@@ -235,6 +240,10 @@ function errorMessage(value: unknown, fallback: string): string {
   )
 }
 
+function isPermissionError(value: unknown): boolean {
+  return (value as { response?: { status?: number } })?.response?.status === 403
+}
+
 async function syncUrl(): Promise<void> {
   syncingRoute = true
   try {
@@ -258,9 +267,17 @@ function queryText(value: unknown): string {
 async function restoreScrollAnchor(code: string): Promise<void> {
   if (!code) return
   await nextTick()
+  await new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()))
+  })
   const card = Array.from(ladderHost.value?.querySelectorAll<HTMLElement>('[data-stock-code]') ?? [])
     .find((node) => node.dataset.stockCode === code)
-  card?.scrollIntoView({ block: 'center', inline: 'nearest' })
+  const scrollRegion = card?.closest<HTMLElement>('.limit-ladder__content')
+  if (!card || !scrollRegion) return
+  const cardRect = card.getBoundingClientRect()
+  const regionRect = scrollRegion.getBoundingClientRect()
+  const centeredOffset = Math.max((scrollRegion.clientHeight - cardRect.height) / 2, 0)
+  scrollRegion.scrollTop += cardRect.top - regionRect.top - centeredOffset
 }
 
 async function reconcileAnalysisContext(): Promise<void> {
@@ -360,17 +377,26 @@ async function requestLadder(background: boolean): Promise<void> {
     loading.value = true
     error.value = ''
   }
+  forbidden.value = false
   try {
     const data = await getLimitLadder(tradeDate.value, filters.value)
     if (sequence !== requestSequence) return
     result.value = data
+    forbidden.value = false
     if (background) error.value = ''
+    if (!background) loading.value = false
     await reconcileAnalysisContext()
     if (sequence !== requestSequence) return
     if (activeAnalysisCode.value !== queryText(route.query.selected)) await syncUrl()
   } catch (value) {
     if (sequence !== requestSequence) return
-    if (!background) error.value = errorMessage(value, '天梯加载失败，请稍后重试')
+    if (isPermissionError(value)) {
+      result.value = null
+      error.value = ''
+      forbidden.value = true
+    } else if (!background) {
+      error.value = errorMessage(value, '天梯加载失败，请稍后重试')
+    }
   } finally {
     if (sequence === requestSequence) {
       if (!background) loading.value = false
@@ -489,15 +515,14 @@ function handleRatioCommit(ratios: number[]): void {
   chartPreferences.commitRatioDraft()
 }
 
-function updateNarrowViewport(event?: MediaQueryListEvent): void {
-  isNarrowViewport.value = event?.matches ?? narrowMedia?.matches ?? false
-  if (!isNarrowViewport.value) analysisDrawerOpen.value = false
-}
-
 watch(
   settingsOpen,
   () => resetPreferenceDraft(),
 )
+
+watch(isNarrowViewport, (narrow) => {
+  if (!narrow) analysisDrawerOpen.value = false
+})
 
 watch(analysisDrawerOpen, (open) => {
   if (!open) void restoreScrollAnchor(activeAnalysisCode.value)
@@ -514,7 +539,10 @@ watch(
     )
     const changed = nextDate !== tradeDate.value
       || JSON.stringify(nextFilters) !== JSON.stringify(filters.value)
-    if (!changed) return
+    if (!changed) {
+      void reconcileAnalysisContext()
+      return
+    }
     tradeDate.value = nextDate
     filters.value = nextFilters
     void loadLadder()
@@ -522,9 +550,6 @@ watch(
 )
 
 onMounted(async () => {
-  narrowMedia = window.matchMedia('(max-width: 768px)')
-  updateNarrowViewport()
-  narrowMedia.addEventListener('change', updateNarrowViewport)
   try {
     await whenPreferenceHydrated()
     const savedPreference = effectivePreference()
@@ -548,15 +573,19 @@ onMounted(async () => {
     await syncUrl()
     await loadLadder()
   } catch (value) {
-    error.value = errorMessage(value, '交易日加载失败，请稍后重试')
+    if (isPermissionError(value)) {
+      result.value = null
+      error.value = ''
+      forbidden.value = true
+    } else {
+      error.value = errorMessage(value, '交易日加载失败，请稍后重试')
+    }
   }
 })
 
 onBeforeUnmount(() => {
   requestSequence += 1
   clearResultRefresh()
-  narrowMedia?.removeEventListener('change', updateNarrowViewport)
-  narrowMedia = null
 })
 </script>
 
@@ -569,11 +598,9 @@ onBeforeUnmount(() => {
             <h2 class="app-page-title">连板天梯</h2>
             <p class="page-subtitle">按交易日观察涨停梯队，筛选、热点与导出共享同一快照口径。</p>
           </div>
-          <div class="page-head__actions">
+          <div class="page-head-actions">
             <el-button
               v-permission="'limit-ladder:recompute'"
-              type="warning"
-              plain
               :loading="recomputing"
               :disabled="!tradeDate"
               data-testid="limit-ladder-recompute"
@@ -609,7 +636,9 @@ onBeforeUnmount(() => {
               :trade-date="tradeDate"
               :loading="loading"
               :error="error"
+              :forbidden="forbidden"
               :can-view-sectors="canViewSectors"
+              :compact-hotspots="compactHotspots"
               :selected-code="activeAnalysisCode"
               :return-path="ladderReturnPath"
               @update:filters="setFilters"
@@ -756,12 +785,6 @@ onBeforeUnmount(() => {
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
-}
-.page-head__actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: var(--app-space-2);
 }
 .setting-item {
   display: flex;

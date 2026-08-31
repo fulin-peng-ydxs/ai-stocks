@@ -49,6 +49,9 @@ describe('LimitLadderCard', () => {
     expect(wrapper.text()).not.toContain('成交额')
     expect(wrapper.text()).not.toContain('截至')
     expect(wrapper.get('.limit-ladder-card__window-stat b').classes()).toContain('is-multiple')
+    expect(wrapper.get('.limit-ladder-card__identity strong').attributes('title')).toBe('甲软件')
+    expect(wrapper.get('[data-testid="limit-ladder-related-industry"]').attributes('title')).toBe('数字服务')
+    expect(wrapper.get('[data-testid="limit-ladder-related-600001.SH"]').attributes('title')).toBe('机器人')
     expect(wrapper.get('[data-testid="limit-ladder-related-600001.SH"]').attributes('href')).toBe('/sectors/C002?return_to=/limit-ladder?window=31%26selected=600001.SH')
   })
 
@@ -65,12 +68,27 @@ describe('LimitLadderCard', () => {
     await wrapper.setProps({canViewSectors:false})
     expect(wrapper.find('[data-testid="limit-ladder-related-600001.SH"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('机器人')
+    expect(wrapper.get('.limit-ladder-card__concept > span').attributes('tabindex')).toBeUndefined()
+  })
+
+  it('使用明确按钮选择股票，板块链接不嵌套在按钮内', async () => {
+    const wrapper=mount(LimitLadderCard,{props:{stock,window:31,canViewSectors:true},global:{plugins:[ElementPlus,router()]}})
+    const card=wrapper.get('article')
+    const select=wrapper.get('[data-testid="limit-ladder-card-select-600001.SH"]')
+    const related=wrapper.get('[data-testid="limit-ladder-related-600001.SH"]')
+    expect(card.attributes('tabindex')).toBeUndefined()
+    expect(select.element.tagName).toBe('BUTTON')
+    expect(select.attributes('aria-label')).toBe('选择甲软件查看走势')
+    expect(select.element.contains(related.element)).toBe(false)
+    await select.trigger('click')
+    expect(wrapper.emitted('select')).toEqual([[stock]])
   })
 
   it('选中态同时提供边框和 aria-current，不只依赖颜色', () => {
     const wrapper=mount(LimitLadderCard,{props:{stock,window:31,canViewSectors:true,selected:true},global:{plugins:[ElementPlus,router()]}})
     expect(wrapper.classes()).toContain('limit-ladder-card--selected')
     expect(wrapper.attributes('aria-current')).toBe('true')
+    expect(wrapper.get('.limit-ladder-card__select').attributes('aria-current')).toBe('true')
     expect(wrapper.attributes('data-stock-code')).toBe(stock.code)
   })
 })
@@ -93,6 +111,14 @@ describe('LadderHotspots', () => {
     await wrapper.get('.ladder-hotspots__more').trigger('click')
     expect(wrapper.findAll('.ladder-hotspots__chip')).toHaveLength(15)
     expect(wrapper.text()).toContain('收起')
+  })
+
+  it('低高度双栏按紧凑上限收敛热点，并保留当前筛选项', () => {
+    const concepts=Array.from({length:8},(_,index)=>({group_key:`C${index}`,group_name:`概念${index}`,stock_count:8-index}))
+    const wrapper=mount(LadderHotspots,{props:{hotspots:{industry:[],concept:concepts},activeType:'concept',activeKey:'C7',compact:true}})
+    expect(wrapper.findAll('.ladder-hotspots__chip')).toHaveLength(4)
+    expect(wrapper.text()).toContain('概念7')
+    expect(wrapper.get('.ladder-hotspots__more').text()).toContain('展开其余 4 项')
   })
 })
 
@@ -167,5 +193,14 @@ describe('LimitLadder', () => {
     expect(wrapper.find('[data-testid="limit-ladder-summary-total"]').exists()).toBe(false)
     expect(wrapper.find('.ladder-hotspots').exists()).toBe(false)
     expect(wrapper.text()).toContain('网络失败')
+  })
+
+  it('403 使用无权限状态且不提供重试操作', () => {
+    const wrapper=mount(LimitLadder,{props:{result:null,filters:{...DEFAULT_LIMIT_LADDER_FILTERS},tradeDate:'2026-08-28',loading:false,error:'',forbidden:true,canViewSectors:false},global:{plugins:[ElementPlus],stubs:{TradeDatePicker:true}}})
+    const state=wrapper.get('[data-testid="limit-ladder-state"]')
+    expect(state.classes()).toContain('app-state-block--permission')
+    expect(state.text()).toContain('无权限查看连板天梯')
+    expect(state.text()).toContain('请联系系统管理员调整权限')
+    expect(state.findAll('button').some((button) => button.text() === '重试')).toBe(false)
   })
 })

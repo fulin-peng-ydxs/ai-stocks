@@ -22,7 +22,9 @@ const props = defineProps<{
   tradeDate: string | null
   loading: boolean
   error: string
+  forbidden?: boolean
   canViewSectors: boolean
+  compactHotspots?: boolean
   selectedCode?: string
   returnPath?: string
 }>()
@@ -145,40 +147,57 @@ function resetFilters(): void {
       <el-tag type="warning" effect="plain">结果已过期</el-tag>
       <span>{{ staleDescription }}</span>
     </div>
-    <section v-if="result?.has_snapshot && !loading && !error" class="limit-ladder__summary" aria-label="天梯摘要">
-      <div><span>当前股票</span><strong class="is-total" data-testid="limit-ladder-summary-total">{{ result.summary.stock_count }}</strong><small>只</small></div>
-      <div><span>最高板位</span><strong class="is-highest">{{ result.summary.highest_board ?? '—' }}</strong><small>板</small></div>
-      <div><span>首板股票</span><strong class="is-first">{{ result.summary.first_board_count }}</strong><small>只</small></div>
-      <div class="limit-ladder__summary-meta"><span>{{ ladderMeta }}</span><el-tag v-if="hasApproximateSt" type="warning" effect="plain" size="small">历史 ST 含近似口径</el-tag></div>
-    </section>
-    <LadderHotspots v-if="result?.has_snapshot && !loading && !error" :hotspots="result.hotspots" :active-type="filters.hotspotType" :active-key="filters.hotspotKey" @toggle="toggleHotspot" />
-    <div class="limit-ladder__body">
-      <AppStateBlock v-if="loading" data-testid="limit-ladder-state" state="loading" title="正在加载天梯快照" :skeleton-rows="6" />
-      <AppStateBlock v-else-if="error" data-testid="limit-ladder-state" state="error" title="天梯加载失败" :description="error" retry @retry="$emit('retry')" />
-      <AppStateBlock v-else-if="pendingSnapshot" data-testid="limit-ladder-state" state="loading" title="天梯快照正在计算" description="天梯快照正在计算，完成并通过完整性校验后会发布结果" :skeleton-rows="6" />
-      <AppStateBlock
-        v-else-if="!result?.has_snapshot"
-        data-testid="limit-ladder-state"
-        :state="result?.business_code === 'NOT_TRADING_DAY' ? 'empty' : 'error'"
-      >
-        <div class="limit-ladder__empty-copy">
-          <strong>{{ unavailableTitle }}</strong>
-          <span>{{ unavailableDescription }}</span>
+    <div class="limit-ladder__content" data-testid="limit-ladder-scroll-region">
+      <section v-if="result?.has_snapshot && !loading && !error" class="limit-ladder__summary" aria-label="天梯摘要">
+        <div><span>当前股票</span><strong class="is-total" data-testid="limit-ladder-summary-total">{{ result.summary.stock_count }}</strong><small>只</small></div>
+        <div><span>最高板位</span><strong class="is-highest">{{ result.summary.highest_board ?? '—' }}</strong><small>板</small></div>
+        <div><span>首板股票</span><strong class="is-first">{{ result.summary.first_board_count }}</strong><small>只</small></div>
+        <div class="limit-ladder__summary-meta"><span>{{ ladderMeta }}</span><el-tag v-if="hasApproximateSt" type="warning" effect="plain" size="small">历史 ST 含近似口径</el-tag></div>
+      </section>
+      <LadderHotspots
+        v-if="result?.has_snapshot && !loading && !error"
+        :hotspots="result.hotspots"
+        :active-type="filters.hotspotType"
+        :active-key="filters.hotspotKey"
+        :compact="compactHotspots"
+        @toggle="toggleHotspot"
+      />
+      <div class="limit-ladder__body">
+        <AppStateBlock v-if="loading" data-testid="limit-ladder-state" state="loading" title="正在加载天梯快照" :skeleton-rows="6" />
+        <AppStateBlock
+          v-else-if="forbidden"
+          data-testid="limit-ladder-state"
+          state="error"
+          variant="permission"
+          title="无权限查看连板天梯"
+          description="请联系系统管理员调整权限"
+        />
+        <AppStateBlock v-else-if="error" data-testid="limit-ladder-state" state="error" title="天梯加载失败" :description="error" retry @retry="$emit('retry')" />
+        <AppStateBlock v-else-if="pendingSnapshot" data-testid="limit-ladder-state" state="loading" title="天梯快照正在计算" description="天梯快照正在计算，完成并通过完整性校验后会发布结果" :skeleton-rows="6" />
+        <AppStateBlock
+          v-else-if="!result?.has_snapshot"
+          data-testid="limit-ladder-state"
+          :state="result?.business_code === 'NOT_TRADING_DAY' ? 'empty' : 'error'"
+        >
+          <div class="limit-ladder__empty-copy">
+            <strong>{{ unavailableTitle }}</strong>
+            <span>{{ unavailableDescription }}</span>
+          </div>
+          <template v-if="result?.business_code !== 'NOT_TRADING_DAY'" #extra>
+            <el-button type="primary" @click="$emit('retry')">重试</el-button>
+          </template>
+        </AppStateBlock>
+        <AppStateBlock v-else-if="filteredEmpty" data-testid="limit-ladder-state" state="empty">
+          <div class="limit-ladder__empty-copy"><strong>当前筛选无匹配股票</strong><span>重置筛选后可恢复完整天梯。</span></div>
+          <template #extra><el-button type="primary" @click="resetFilters">重置筛选</el-button></template>
+        </AppStateBlock>
+        <AppStateBlock v-else-if="!result.layers.length" data-testid="limit-ladder-state" state="empty"><div class="limit-ladder__empty-copy"><strong>当日无涨停股票</strong><span>这是合法的空快照，不代表加载失败。</span></div></AppStateBlock>
+        <div v-else class="limit-ladder__layers" aria-label="连板天梯分层">
+          <section v-for="layer in result.layers" :key="layer.consecutive_days" class="limit-ladder__layer" :data-testid="`limit-ladder-layer-${layer.consecutive_days}`">
+            <header class="limit-ladder__layer-head"><span>{{ layer.consecutive_days }}B</span><strong>{{ layer.consecutive_days===1?'首板':`${layer.consecutive_days} 连板` }}</strong><small>{{ layer.stock_count }} 只</small></header>
+            <div class="limit-ladder__cards"><LimitLadderCard v-for="stock in layer.stocks" :key="stock.code" :stock="stock" :window="filters.window" :can-view-sectors="canViewSectors" :selected="stock.code === selectedCode" :return-path="returnPath" @select="$emit('select',$event)" /></div>
+          </section>
         </div>
-        <template v-if="result?.business_code !== 'NOT_TRADING_DAY'" #extra>
-          <el-button type="primary" @click="$emit('retry')">重试</el-button>
-        </template>
-      </AppStateBlock>
-      <AppStateBlock v-else-if="filteredEmpty" data-testid="limit-ladder-state" state="empty">
-        <div class="limit-ladder__empty-copy"><strong>当前筛选无匹配股票</strong><span>重置筛选后可恢复完整天梯。</span></div>
-        <template #extra><el-button type="primary" @click="resetFilters">重置筛选</el-button></template>
-      </AppStateBlock>
-      <AppStateBlock v-else-if="!result.layers.length" data-testid="limit-ladder-state" state="empty"><div class="limit-ladder__empty-copy"><strong>当日无涨停股票</strong><span>这是合法的空快照，不代表加载失败。</span></div></AppStateBlock>
-      <div v-else class="limit-ladder__layers" aria-label="连板天梯分层">
-        <section v-for="layer in result.layers" :key="layer.consecutive_days" class="limit-ladder__layer" :data-testid="`limit-ladder-layer-${layer.consecutive_days}`">
-          <header class="limit-ladder__layer-head"><span>{{ layer.consecutive_days }}B</span><strong>{{ layer.consecutive_days===1?'首板':`${layer.consecutive_days} 连板` }}</strong><small>{{ layer.stock_count }} 只</small></header>
-          <div class="limit-ladder__cards"><LimitLadderCard v-for="stock in layer.stocks" :key="stock.code" :stock="stock" :window="filters.window" :can-view-sectors="canViewSectors" :selected="stock.code === selectedCode" :return-path="returnPath" @select="$emit('select',$event)" /></div>
-        </section>
       </div>
     </div>
   </div>
@@ -191,6 +210,8 @@ function resetFilters(): void {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  container-name: limit-ladder;
+  container-type: inline-size;
 }
 .limit-ladder__toolbar {
   flex: 0 0 auto;
@@ -212,6 +233,12 @@ function resetFilters(): void {
   min-height: var(--app-control-height-md);
 }
 .limit-ladder__checks :deep(.el-checkbox) { margin: 0; }
+.limit-ladder__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
 .limit-ladder__summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(96px, auto)) minmax(180px, 1fr);
@@ -257,12 +284,7 @@ function resetFilters(): void {
   justify-content: flex-end;
   gap: var(--app-space-2);
 }
-.limit-ladder__body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  padding: var(--app-space-4);
-}
+.limit-ladder__body { padding: var(--app-space-4); }
 .limit-ladder__empty-copy {
   display: grid;
   gap: var(--app-space-1);
@@ -311,7 +333,7 @@ function resetFilters(): void {
   width: 220px;
   max-width: 100%;
 }
-@media (max-width: 900px) {
+@container limit-ladder (max-width: 700px) {
   .limit-ladder__summary { grid-template-columns: repeat(3, 1fr); }
   .limit-ladder__summary-meta { grid-column: 1 / -1; justify-content: flex-start; }
   .limit-ladder__body { padding: var(--app-space-3); }

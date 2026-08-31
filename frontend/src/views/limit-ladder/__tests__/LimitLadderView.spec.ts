@@ -66,6 +66,7 @@ const LimitLadderStub = defineComponent({
   props: {
     result: { type: Object, default: null },
     error: { type: String, default: '' },
+    forbidden: { type: Boolean, default: false },
   },
   setup(props) {
     return () => h('section', {
@@ -73,6 +74,7 @@ const LimitLadderStub = defineComponent({
       'data-business-code': (props.result as LimitLadderResult | null)?.business_code ?? '',
       'data-snapshot-status': (props.result as LimitLadderResult | null)?.snapshot_status ?? '',
       'data-error': props.error,
+      'data-forbidden': String(props.forbidden),
     })
   },
 })
@@ -206,6 +208,17 @@ afterEach(() => {
 })
 
 describe('LimitLadderView polling deadline', () => {
+  it('403 转为无权限状态，不退化成普通可重试错误', async () => {
+    vi.mocked(limitLadderApi.getLimitLadder).mockRejectedValue({
+      response: { status: 403 },
+      uiMessage: '无权查看连板天梯',
+    })
+    const wrapper = await mountView()
+
+    expect(stateProbe(wrapper).attributes('data-forbidden')).toBe('true')
+    expect(stateProbe(wrapper).attributes('data-error')).toBe('')
+  })
+
   it('120 秒触发页面超时并停止后续请求', async () => {
     vi.mocked(limitLadderApi.getLimitLadder)
       .mockResolvedValue(pendingResult('command-1', 'task-1'))

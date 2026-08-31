@@ -177,7 +177,9 @@ test('首次计算、覆盖失败、过期、空结果与 403 保持互斥状态
 
   fixture.setHttpError(403)
   await page.reload()
-  await expect(page.getByTestId('limit-ladder-state')).toContainText('无权查看连板天梯')
+  await expect(page.getByTestId('limit-ladder-state')).toContainText('无权限查看连板天梯')
+  await expect(page.getByTestId('limit-ladder-state')).toContainText('请联系系统管理员调整权限')
+  await expect(page.getByTestId('limit-ladder-state').getByRole('button', { name: '重试' })).toHaveCount(0)
   await expect(page.getByTestId('limit-ladder-summary-total')).toHaveCount(0)
   expect(consoleIssues).toEqual([])
 })

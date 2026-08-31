@@ -22,6 +22,7 @@ const shortHistory = computed(() => (
   props.stock.actual_trade_days != null && props.stock.actual_trade_days < props.window
 ))
 const windowLimitUpDays = computed(() => props.stock.window_limit_up_days)
+const hasMultipleLimitUps = computed(() => (windowLimitUpDays.value ?? 0) > 1)
 const relatedIndustryName = computed(() => (
   props.stock.latest_related_industry?.board_name || '未分类'
 ))
@@ -35,48 +36,52 @@ function selectCard(): void {
   <article
     class="limit-ladder-card"
     :class="{ 'limit-ladder-card--selected': selected }"
-    tabindex="0"
     :aria-current="selected ? 'true' : undefined"
-    :aria-label="`选择${stock.name}查看走势`"
     :data-testid="`limit-ladder-card-${stock.code}`"
     :data-stock-code="stock.code"
-    @click="selectCard"
-    @keydown.enter.prevent="selectCard"
-    @keydown.space.prevent="selectCard"
   >
-    <header class="limit-ladder-card__head">
-      <div class="limit-ladder-card__identity">
-        <strong>{{ stock.name }}</strong>
-        <span>{{ stock.code }}</span>
-      </div>
-      <div class="limit-ladder-card__return">
-        <span>累计涨幅</span>
-        <strong :class="marketValueClass(stock.window_return_pct)">
-          {{ formatMarketPercent(stock.window_return_pct) }}
-        </strong>
-      </div>
-    </header>
-
-    <div class="limit-ladder-card__metrics">
-      <span class="limit-ladder-card__window-stat">
-        {{ window }} 日
-        <b :class="{ 'is-multiple': (windowLimitUpDays ?? 0) > 1 }">
-          {{ windowLimitUpDays ?? '—' }}
-        </b>
-        板
+    <el-button
+      native-type="button"
+      class="limit-ladder-card__select"
+      :aria-current="selected ? 'true' : undefined"
+      :aria-label="`选择${stock.name}查看走势`"
+      :data-testid="`limit-ladder-card-select-${stock.code}`"
+      @click="selectCard"
+    >
+      <span class="limit-ladder-card__head">
+        <span class="limit-ladder-card__identity">
+          <strong :title="stock.name">{{ stock.name }}</strong>
+          <span>{{ stock.code }}</span>
+        </span>
+        <span class="limit-ladder-card__return">
+          <span>累计涨幅</span>
+          <strong :class="marketValueClass(stock.window_return_pct)">
+            {{ formatMarketPercent(stock.window_return_pct) }}
+          </strong>
+        </span>
       </span>
-      <el-tag v-if="stock.is_st" size="small" type="danger" effect="plain">ST</el-tag>
-      <el-tag v-if="stock.is_one_word" size="small" type="warning" effect="plain">一字</el-tag>
-    </div>
 
-    <p v-if="shortHistory" class="limit-ladder-card__history" data-testid="limit-ladder-short-history">
-      窗口仅 {{ stock.actual_trade_days }} 日 · 自 {{ stock.window_start_date || '—' }} 起
-    </p>
+      <span class="limit-ladder-card__metrics">
+        <span class="limit-ladder-card__window-stat">
+          {{ window }} 日
+          <b :class="{ 'is-multiple': hasMultipleLimitUps }">
+            {{ windowLimitUpDays ?? '—' }}
+          </b>
+          板
+        </span>
+        <el-tag v-if="stock.is_st" size="small" type="danger" effect="plain">ST</el-tag>
+        <el-tag v-if="stock.is_one_word" size="small" type="warning" effect="plain">一字</el-tag>
+      </span>
+
+      <span v-if="shortHistory" class="limit-ladder-card__history" data-testid="limit-ladder-short-history">
+        窗口仅 {{ stock.actual_trade_days }} 日 · 自 {{ stock.window_start_date || '—' }} 起
+      </span>
+    </el-button>
 
     <footer class="limit-ladder-card__foot">
       <span>{{ stock.board }}</span>
       <span aria-hidden="true">·</span>
-      <span class="limit-ladder-card__industry" data-testid="limit-ladder-related-industry">
+      <span class="limit-ladder-card__industry" :title="relatedIndustryName" data-testid="limit-ladder-related-industry">
         {{ relatedIndustryName }}
       </span>
       <span aria-hidden="true">·</span>
@@ -84,11 +89,12 @@ function selectCard(): void {
         <RouterLink
           v-if="canViewSectors"
           :to="relatedLocation"
+          :title="stock.latest_related_concept.board_name"
           :aria-label="`进入${stock.latest_related_concept.board_name}板块行情`"
           :data-testid="`limit-ladder-related-${stock.code}`"
           @click.stop
         >{{ stock.latest_related_concept.board_name }} ↗</RouterLink>
-        <span v-else tabindex="0">{{ stock.latest_related_concept.board_name }}</span>
+        <span v-else :title="stock.latest_related_concept.board_name">{{ stock.latest_related_concept.board_name }}</span>
       </span>
       <span v-else class="limit-ladder-card__empty">暂无相关概念</span>
     </footer>
@@ -103,10 +109,9 @@ function selectCard(): void {
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
   box-shadow: var(--el-box-shadow-lighter);
-  cursor: pointer;
   transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
 }
-.limit-ladder-card:hover {
+.limit-ladder-card:has(.limit-ladder-card__select:hover) {
   border-color: var(--el-color-primary-light-5);
   box-shadow: var(--el-box-shadow-light);
   transform: translateY(-1px);
@@ -115,9 +120,40 @@ function selectCard(): void {
   border-color: var(--el-color-primary);
   box-shadow: inset 3px 0 0 var(--el-color-primary), var(--el-box-shadow-light);
 }
-.limit-ladder-card:focus-visible {
+.limit-ladder-card__select.el-button:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: 2px;
+}
+.limit-ladder-card .limit-ladder-card__select.el-button {
+  --el-button-text-color: inherit;
+  --el-button-bg-color: transparent;
+  --el-button-border-color: transparent;
+  --el-button-hover-text-color: inherit;
+  --el-button-hover-bg-color: transparent;
+  --el-button-hover-border-color: transparent;
+  --el-button-active-text-color: inherit;
+  --el-button-active-bg-color: transparent;
+  --el-button-active-border-color: transparent;
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  line-height: var(--app-line-height-table);
+  text-align: left;
+  white-space: normal;
+}
+.limit-ladder-card .limit-ladder-card__select.el-button > :deep(span) {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
 }
 .limit-ladder-card__metrics,
 .limit-ladder-card__head,
@@ -181,6 +217,7 @@ function selectCard(): void {
   color: var(--market-up-color);
 }
 .limit-ladder-card__history {
+  display: block;
   margin: var(--app-space-1) 0 0;
   color: var(--app-warning-text);
   line-height: var(--app-line-height-comfy);

@@ -6,6 +6,7 @@ import {
   limitLadderFirstBoardStocks as firstBoardStocks,
   limitLadderStock as stock,
   limitLadderTradeDate as tradeDate,
+  makeLimitLadderResult,
 } from './helpers/limitLadder'
 
 test('桌面分析、详情返回与 1100×620 低高度上下文保持', async ({ page, request }, testInfo: TestInfo) => {
@@ -14,6 +15,28 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   const consoleIssues = collectConsoleIssues(page)
   await loginAsDebugUser(page, request, 'debug_system')
   const ladderApi = await installDeterministicLimitLadder(page)
+  ladderApi.setResult(makeLimitLadderResult({
+    hotspots: {
+      industry: [
+        { group_key: 'I900', group_name: '金融服务', stock_count: 1 },
+        { group_key: 'I901', group_name: '地产服务', stock_count: 6 },
+        ...Array.from({ length: 4 }, (_, index) => ({
+          group_key: `IX${index}`,
+          group_name: `行业样本${index + 1}`,
+          stock_count: 4 - index,
+        })),
+      ],
+      concept: [
+        { group_key: 'C001', group_name: '金融科技', stock_count: 1 },
+        { group_key: 'C002', group_name: '国企改革', stock_count: 6 },
+        ...Array.from({ length: 4 }, (_, index) => ({
+          group_key: `CX${index}`,
+          group_name: `概念样本${index + 1}`,
+          stock_count: 4 - index,
+        })),
+      ],
+    },
+  }))
 
   await page.goto(`/limit-ladder?date=${tradeDate}&window=31`)
   await expect(page.getByText('完整工作台')).toHaveCount(0)
@@ -66,6 +89,7 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   expect(toolbarGeometry.controlHeights).toEqual([32, 32, 32, 32, 32, 32])
   expect(toolbarGeometry.controlOverflow).toBeLessThanOrEqual(1)
   expect(toolbarGeometry.overlapCount).toBe(0)
+  await expect(page.getByTestId('limit-ladder-recompute')).not.toHaveClass(/el-button--warning/)
 
   const card = page.getByTestId(`limit-ladder-card-${stock.code}`)
   await page.setViewportSize({ width: 1100, height: 900 })
@@ -146,11 +170,46 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   const relatedHref = await page.getByTestId(`limit-ladder-related-${stock.code}`).getAttribute('href')
   expect(relatedHref).toContain(`/sectors/${stock.latest_related_concept.board_code}?return_to=`)
   expect(decodeURIComponent(String(relatedHref).split('return_to=')[1])).toContain('/limit-ladder?window=31')
-  await card.click()
+  await page.getByTestId(`limit-ladder-card-select-${stock.code}`).click()
   await expect(page.getByTestId('stock-analysis-panel')).toBeVisible()
   await expect(page.getByTestId('stock-analysis-open-detail')).toBeVisible()
   await expect(page).toHaveURL(new RegExp(`selected=${stock.code.replace('.', '\\.')}`))
   await expect(page).toHaveURL(new RegExp(`anchor=${stock.code.replace('.', '\\.')}`))
+  await expect(page.locator('.ladder-hotspots__chip')).toHaveCount(8)
+  const lowHeightLayout = await page.evaluate(() => {
+    const scrollRegion = document.querySelector<HTMLElement>('[data-testid="limit-ladder-scroll-region"]')!
+    const summary = document.querySelector<HTMLElement>('.limit-ladder__summary')!
+    const metrics = [...summary.children].slice(0, 3).map((node) => node.getBoundingClientRect())
+    const meta = summary.querySelector<HTMLElement>('.limit-ladder__summary-meta')!.getBoundingClientRect()
+    return {
+      scrollable: scrollRegion.scrollHeight > scrollRegion.clientHeight,
+      summaryOverflow: summary.scrollWidth - summary.clientWidth,
+      metricTopDelta: Math.max(...metrics.map((box) => box.top)) - Math.min(...metrics.map((box) => box.top)),
+      metaBelowMetrics: meta.top >= Math.max(...metrics.map((box) => box.bottom)) - 1,
+    }
+  })
+  expect(lowHeightLayout.scrollable).toBe(true)
+  expect(lowHeightLayout.summaryOverflow).toBeLessThanOrEqual(1)
+  expect(lowHeightLayout.metricTopDelta).toBeLessThanOrEqual(1)
+  expect(lowHeightLayout.metaBelowMetrics).toBe(true)
+  await page.getByTestId('limit-ladder-layer-2').scrollIntoViewIfNeeded()
+  await expect(page.getByTestId('limit-ladder-layer-2')).toBeInViewport()
+  await expect(card).toBeInViewport()
+  const cardLayout = await card.evaluate((node) => {
+    const cardBox = node.getBoundingClientRect()
+    const selectBox = node.querySelector<HTMLElement>('.limit-ladder-card__select')!.getBoundingClientRect()
+    const headBox = node.querySelector<HTMLElement>('.limit-ladder-card__head')!.getBoundingClientRect()
+    const metricsBox = node.querySelector<HTMLElement>('.limit-ladder-card__metrics')!.getBoundingClientRect()
+    const footerBox = node.querySelector<HTMLElement>('.limit-ladder-card__foot')!.getBoundingClientRect()
+    return {
+      horizontalInset: cardBox.width - selectBox.width,
+      headBeforeMetrics: headBox.bottom <= metricsBox.top + 1,
+      metricsBeforeFooter: metricsBox.bottom <= footerBox.top + 1,
+    }
+  })
+  expect(cardLayout.horizontalInset).toBeLessThanOrEqual(20)
+  expect(cardLayout.headBeforeMetrics).toBe(true)
+  expect(cardLayout.metricsBeforeFooter).toBe(true)
 
   const returnPath = await page.evaluate(() => JSON.parse(localStorage.getItem('ai-stocks:stockSet') || '{}').returnPath)
   expect(returnPath).toBeUndefined()
@@ -167,7 +226,10 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
 
   await page.getByTestId('stock-detail-back').click()
   await expect(page).toHaveURL(new RegExp(`/limit-ladder\\?.*selected=${stock.code.replace('.', '\\.')}`))
-  await expect(page.getByTestId(`limit-ladder-card-${stock.code}`)).toHaveAttribute('aria-current', 'true')
+  await expect(page).toHaveURL(new RegExp(`anchor=${stock.code.replace('.', '\\.')}`))
+  const restoredCard = page.getByTestId(`limit-ladder-card-${stock.code}`)
+  await expect(restoredCard).toHaveAttribute('aria-current', 'true')
+  await expect(restoredCard).toBeInViewport()
   const screenshotPath = testInfo.outputPath('limit-ladder-desktop-return.png')
   await page.screenshot({ path: screenshotPath, fullPage: true })
   await testInfo.attach('limit-ladder-desktop-return', { path: screenshotPath, contentType: 'image/png' })
@@ -182,7 +244,7 @@ test('768×1024 使用页面边界内全宽分析抽屉并可返回原卡片', a
   await installDeterministicLimitLadder(page)
 
   await page.goto(`/limit-ladder?date=${tradeDate}&window=31`)
-  await page.getByTestId(`limit-ladder-card-${stock.code}`).click()
+  await page.getByTestId(`limit-ladder-card-select-${stock.code}`).click()
   const drawer = page.getByTestId('limit-ladder-analysis-drawer')
   await expect(drawer).toBeVisible()
   const readGeometry = () => page.evaluate(() => {
