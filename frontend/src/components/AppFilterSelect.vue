@@ -17,6 +17,7 @@ const props = withDefaults(defineProps<{
   collapseOnOverflow?: boolean
   maxCollapseTags?: number
   disabled?: boolean
+  ariaLabel?: string
 }>(), {
   placeholder: '请选择',
   multiple: true,
@@ -26,6 +27,7 @@ const props = withDefaults(defineProps<{
   collapseOnOverflow: true,
   maxCollapseTags: 3,
   disabled: false,
+  ariaLabel: undefined,
 })
 
 const emit = defineEmits<{
@@ -135,7 +137,11 @@ watch(
 </script>
 
 <template>
-  <div ref="rootRef" class="app-filter-select">
+  <div
+    ref="rootRef"
+    class="app-filter-select"
+    :class="{ 'app-filter-select--multiple': multiple }"
+  >
     <el-select
       v-model="selected"
       class="app-filter-select__control"
@@ -148,6 +154,7 @@ watch(
       :fit-input-width="true"
       :disabled="disabled"
       :placeholder="placeholder"
+      :aria-label="ariaLabel"
       @change="onChange"
     >
       <el-option
@@ -174,10 +181,14 @@ watch(
 }
 .app-filter-select__control :deep(.el-select__wrapper) {
   height: var(--app-control-height-md);
+}
+.app-filter-select--multiple .app-filter-select__control :deep(.el-select__wrapper) {
   overflow: hidden;
 }
 .app-filter-select__control :deep(.el-select__selection) {
   min-width: 0;
+}
+.app-filter-select--multiple .app-filter-select__control :deep(.el-select__selection) {
   overflow: hidden;
 }
 </style>

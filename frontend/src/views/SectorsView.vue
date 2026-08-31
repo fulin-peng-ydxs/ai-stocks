@@ -18,6 +18,7 @@ import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import MarketCompareMetricStrip from '@/components/MarketCompareMetricStrip.vue'
 import type { MarketMetricStripItem } from '@/components/MarketCompareMetricStrip.vue'
+import MarketBenchmarkSelect from '@/components/MarketBenchmarkSelect.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -35,10 +36,7 @@ import {
   toggleComparePin,
   type CompareQueueState,
 } from '@/utils/compareQueue'
-import {
-  MARKET_BENCHMARK_OPTIONS,
-  normalizeMarketBenchmarkCode,
-} from '@/utils/marketBenchmarks'
+import { normalizeMarketBenchmarkCode } from '@/utils/marketBenchmarks'
 import {
   addSectorWatchlist,
   getSectorBenchmarkBars,
@@ -1153,13 +1151,10 @@ onMounted(async () => {
             <div class="chart-head-actions">
               <div v-if="chartMode === 'compare' && compareMetricKind === 'line'" class="benchmark-control">
                 <span>对比指数</span>
-                <AppFilterSelect
+                <MarketBenchmarkSelect
                   v-model="benchmarkCode"
-                  :options="MARKET_BENCHMARK_OPTIONS"
-                  :multiple="false"
-                  :clearable="false"
-                  :filterable="false"
-                  data-testid="sectors-benchmark"
+                  width="120px"
+                  test-id="sectors-benchmark"
                 />
               </div>
               <KlineRangeSelect v-if="chartMode === 'kline'" v-model="rangeDays" width="112px" test-id="sectors-range" />
@@ -1338,12 +1333,8 @@ onMounted(async () => {
             </div>
             <div class="setting-item">
               <div class="setting-label">默认对比指数</div>
-              <AppFilterSelect
+              <MarketBenchmarkSelect
                 v-model="settings.benchmarkCode"
-                :options="MARKET_BENCHMARK_OPTIONS"
-                :multiple="false"
-                :clearable="false"
-                :filterable="false"
               />
             </div>
             <PageToggleRow v-model="settings.showAnalysisPanel" label="显示走势分析区" />

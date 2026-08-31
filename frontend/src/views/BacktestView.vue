@@ -13,13 +13,13 @@ import { listScoreProfiles, browseScoreProfiles, copyScoreProfile, type ScorePro
 import { listTradeProfiles, browseTradeProfiles, copyTradeProfile, type TradeProfileSummary } from '@/api/tradeProfile'
 import { getBars, type Bar } from '@/api/stocks'
 import { fetchBenchmarkEquity, type BenchmarkEquity } from '@/utils/benchmarkEquity'
-import { MARKET_BENCHMARK_OPTIONS } from '@/utils/marketBenchmarks'
 import EquityChart from '@/components/EquityChart.vue'
 import CandleChart, { type TradeMarker } from '@/components/CandleChart.vue'
 import { Search, Close } from '@element-plus/icons-vue'
 import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
+import MarketBenchmarkSelect from '@/components/MarketBenchmarkSelect.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
@@ -1969,13 +1969,10 @@ async function openTradeChart(row: TradeRow) {
           <div class="block-title">资金曲线（组合 vs 基准 + 回撤）
             <span class="bench-choice">
               <span class="bench-choice-label">对比指数</span>
-              <AppFilterSelect
+              <MarketBenchmarkSelect
                 v-model="benchChoice"
-                :options="MARKET_BENCHMARK_OPTIONS"
-                :multiple="false"
-                :clearable="false"
-                :filterable="false"
-                data-testid="backtest-benchmark"
+                width="120px"
+                test-id="backtest-benchmark"
               />
             </span>
           </div>
@@ -2330,13 +2327,9 @@ async function openTradeChart(row: TradeRow) {
           <PageToggleRow v-model="settings.robustExpanded" label="默认展开稳健性测试" />
           <div class="setting-item">
             <div class="setting-label">默认对比指数</div>
-            <AppFilterSelect
+            <MarketBenchmarkSelect
               v-model="settings.benchmarkCode"
-              :options="MARKET_BENCHMARK_OPTIONS"
-              :multiple="false"
-              :clearable="false"
-              :filterable="false"
-              data-testid="backtest-default-benchmark"
+              test-id="backtest-default-benchmark"
             />
           </div>
         </PageSettingSection>

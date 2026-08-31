@@ -58,15 +58,18 @@ test.describe('板块行情工作台', () => {
       await expect(compareChart).toBeVisible()
       await expect(page.getByTestId('sectors-compare-rail').getByRole('button')).toHaveCount(1)
       await expect(compareChart).toHaveAttribute('data-benchmark-code', '000905.SH')
+      await expect(page.getByTestId('sectors-benchmark')).toContainText('中证 500')
       await expect.poll(async () => Number(
         await compareChart.getAttribute('data-benchmark-point-count'),
       )).toBeGreaterThan(0)
       await page.getByTestId('sectors-benchmark').click()
       await page.getByRole('option', { name: '不对比指数' }).click()
       await expect(compareChart).toHaveAttribute('data-benchmark-code', '')
+      await expect(page.getByTestId('sectors-benchmark')).toContainText('不对比指数')
       await page.getByTestId('sectors-benchmark').click()
       await page.getByRole('option', { name: '创业板指' }).click()
       await expect(compareChart).toHaveAttribute('data-benchmark-code', '399006.SZ')
+      await expect(page.getByTestId('sectors-benchmark')).toContainText('创业板指')
       await expect.poll(async () => Number(
         await compareChart.getAttribute('data-benchmark-point-count'),
       )).toBeGreaterThan(0)

@@ -136,5 +136,13 @@ describe('AppFilterSelect', () => {
     expect(select.attributes('data-multiple')).toBe('false')
     expect(select.attributes('data-collapse-tags')).toBe('false')
     expect(select.attributes('data-collapse-tags-tooltip')).toBe('false')
+    expect(wrapper.get('.app-filter-select').classes()).not.toContain('app-filter-select--multiple')
+  })
+
+  it('多选场景才启用裁剪容器，避免单选回显落入负层级后被裁掉', async () => {
+    const wrapper = mountSelect(['a', 'b'])
+    await flushPromises()
+
+    expect(wrapper.get('.app-filter-select').classes()).toContain('app-filter-select--multiple')
   })
 })
