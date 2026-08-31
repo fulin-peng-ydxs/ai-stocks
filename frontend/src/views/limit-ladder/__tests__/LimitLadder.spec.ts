@@ -121,6 +121,8 @@ describe('LimitLadder', () => {
   it('区分计算中、非交易日、覆盖失败和带旧结果的过期状态', async () => {
     const wrapper=mount(LimitLadder,{props:{result:{...result,has_snapshot:false,business_code:'SNAPSHOT_PENDING',snapshot_status:'calculating',snapshot:null,layers:[]},filters:{...DEFAULT_LIMIT_LADDER_FILTERS},tradeDate:'2026-08-28',loading:false,error:'',exporting:false,canViewSectors:false},global:{plugins:[ElementPlus],stubs:{TradeDatePicker:true}}})
     expect(wrapper.text()).toContain('天梯快照正在计算')
+    expect(wrapper.get('[data-testid="limit-ladder-state"]').classes())
+      .toContain('app-state-block--loading')
     expect(wrapper.find('[data-testid="limit-ladder-summary-total"]').exists()).toBe(false)
 
     await wrapper.setProps({result:{...result,has_snapshot:false,business_code:'NOT_TRADING_DAY',snapshot_status:'not_trading_day',snapshot:null,layers:[],nearest_previous_trade_date:'2026-08-27'}})

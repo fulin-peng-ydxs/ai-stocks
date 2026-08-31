@@ -1,116 +1,19 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test'
 import { loginAsDebugUser } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
-
-const tradeDate = '2026-08-28'
-const stock = {
-  code: '000001.SZ', name: '平安银行', board: '主板', price_limit_pct: 0.1,
-  is_st: false, st_quality: 'accurate', st_source: 'e2e', is_one_word: false,
-  consecutive_days: 2, amount: 123000000, industry_name: '专属行业旧值',
-  industry_board_code: 'I001', source_version: 'e2e-v1', window_limit_up_days: 3,
-  window_start_date: '2026-07-17', actual_trade_days: 31,
-  snapshot_concepts: [{ board_code: 'C001', board_name: '金融科技' }],
-  latest_related_industry: { board_code: 'I900', board_name: '金融服务', as_of_date: tradeDate },
-  latest_related_concept: { board_code: 'C001', board_name: '金融科技', as_of_date: tradeDate },
-}
-const firstBoardStock = {
-  ...stock,
-  code: '000002.SZ', name: '万科A', consecutive_days: 1, window_limit_up_days: 1,
-  industry_name: '房地产',
-  latest_related_industry: { board_code: 'I901', board_name: '地产服务', as_of_date: tradeDate },
-  latest_related_concept: { board_code: 'C002', board_name: '国企改革', as_of_date: tradeDate },
-}
-const firstBoardStocks = Array.from({ length: 6 }, (_, index) => index === 0
-  ? firstBoardStock
-  : {
-      ...firstBoardStock,
-      code: `00000${index + 2}.SZ`,
-      name: `首板样本${index + 1}`,
-    })
-const bar = {
-  date: tradeDate, open: 10, high: 11, low: 9.8, close: 10.8, pre_close: 10,
-  volume: 100000, amount: 1080000, turnover_rate: 1.2,
-}
-
-async function installDeterministicLadder(page: Page): Promise<{
-  recomputeCount: () => number
-}> {
-  let recomputeRequests = 0
-  let recomputeRefreshes = 0
-  await page.route('**/api/limit-ladder/trade-dates', (route) => route.fulfill({
-    contentType: 'application/json',
-    body: JSON.stringify({
-      code: 0, msg: 'ok', data: {
-        dates: [tradeDate], latest_candidate_date: tradeDate,
-        latest_complete_date: tradeDate, latest_candidate_coverage: {},
-        latest_candidate_ready: true,
-      },
-    }),
-  }))
-  await page.route(`**/api/limit-ladder/${tradeDate}/recompute`, (route) => {
-    recomputeRequests += 1
-    recomputeRefreshes = 0
-    return route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({
-        code: 0, msg: 'ok', data: {
-          command_id: 'e2e-command', task_id: 'e2e-task', status: 'requested', reused: false,
-        },
-      }),
-    })
-  })
-  await page.route(`**/api/limit-ladder/${tradeDate}?**`, (route) => {
-    const recalculating = recomputeRequests > 0 && recomputeRefreshes++ === 0
-    return route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({
-        code: 0, msg: 'ok', data: {
-        trade_date: tradeDate,
-        business_code: recalculating ? 'SNAPSHOT_STALE' : 'READY',
-        snapshot_status: recalculating ? 'recalculating' : 'valid',
-        stored_snapshot_status: 'valid', has_snapshot: true, filters: {},
-        snapshot: { snapshot_id: 'e2e-snapshot', trade_date: tradeDate, computed_at: `${tradeDate}T18:00:00`, stock_count: 7, has_approx_st: false, coverage: {} },
-        requested_window_start_date: '2026-07-17', requested_window_trade_days: 31,
-        dynamic_window_status: 'ready', summary: { stock_count: 7, highest_board: 2, first_board_count: 6 },
-        hotspots: {
-          industry: [
-            { group_key: 'I900', group_name: '金融服务', stock_count: 1 },
-            { group_key: 'I901', group_name: '地产服务', stock_count: 6 },
-          ],
-          concept: [
-            { group_key: 'C001', group_name: '金融科技', stock_count: 1 },
-            { group_key: 'C002', group_name: '国企改革', stock_count: 6 },
-          ],
-        },
-        layers: [
-          { consecutive_days: 2, stock_count: 1, stocks: [stock] },
-          { consecutive_days: 1, stock_count: 6, stocks: firstBoardStocks },
-        ],
-        },
-      }),
-    })
-  })
-  await page.route('**/api/stocks/benchmarks/*/bars?**', (route) => route.fulfill({
-    contentType: 'application/json',
-    body: JSON.stringify({ code: 0, msg: 'ok', data: { code: '000905.SH', name: '中证500', bars: [bar] } }),
-  }))
-  await page.route('**/api/stocks/000001.SZ/bars?**', (route) => route.fulfill({
-    contentType: 'application/json',
-    body: JSON.stringify({ code: 0, msg: 'ok', data: { code: stock.code, name: stock.name, adjust: 'qfq', bars: [bar] } }),
-  }))
-  await page.route('**/api/stocks/000001.SZ/indicators?**', (route) => route.fulfill({
-    contentType: 'application/json',
-    body: JSON.stringify({ code: 0, msg: 'ok', data: { code: stock.code, indicators: [{ trade_date: tradeDate, macd_diff: 1, macd_dea: 0.8, macd_hist: 0.2 }] } }),
-  }))
-  return { recomputeCount: () => recomputeRequests }
-}
+import {
+  installDeterministicLimitLadder,
+  limitLadderFirstBoardStocks as firstBoardStocks,
+  limitLadderStock as stock,
+  limitLadderTradeDate as tradeDate,
+} from './helpers/limitLadder'
 
 test('桌面分析、详情返回与 1100×620 低高度上下文保持', async ({ page, request }, testInfo: TestInfo) => {
   test.skip(testInfo.project.name !== 'chromium-standard', '聚焦串行验证一次')
   await page.setViewportSize({ width: 1100, height: 620 })
   const consoleIssues = collectConsoleIssues(page)
   await loginAsDebugUser(page, request, 'debug_system')
-  const ladderApi = await installDeterministicLadder(page)
+  const ladderApi = await installDeterministicLimitLadder(page)
 
   await page.goto(`/limit-ladder?date=${tradeDate}&window=31`)
   await expect(page.getByText('完整工作台')).toHaveCount(0)
@@ -268,7 +171,7 @@ test('768×1024 使用页面边界内全宽分析抽屉并可返回原卡片', a
   await page.setViewportSize({ width: 768, height: 1024 })
   const consoleIssues = collectConsoleIssues(page)
   await loginAsDebugUser(page, request, 'debug_system')
-  await installDeterministicLadder(page)
+  await installDeterministicLimitLadder(page)
 
   await page.goto(`/limit-ladder?date=${tradeDate}&window=31`)
   await page.getByTestId(`limit-ladder-card-${stock.code}`).click()

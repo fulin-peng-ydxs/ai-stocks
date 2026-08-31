@@ -128,7 +128,7 @@ runner，在每组之间完成精确 seed/cleanup；公开回测最后切换 Duc
 
 ## 当前基线用例
 
-- `frontend/e2e/limit-ladder-task-center.spec.ts`：连板天梯 T5 任务中心承接回归。三视口使用 `debug_system` 真实登录，覆盖任务类型/状态筛选请求、系统来源标签、日志抽屉、快照与 coverage 摘要、控制台告警阻断，并把全页截图作为 Playwright 报告附件。
+- `frontend/e2e/limit-ladder.spec.ts`、`limit-ladder-analysis.spec.ts`、`limit-ladder-preferences.spec.ts` 与 `limit-ladder-task-center.spec.ts`：连板天梯完整回归。共享 `helpers/limitLadder.ts` 的确定性接口夹具，三档桌面与单独 768 视口使用 `debug_system` 真实登录，覆盖组合筛选、短历史、CSV、首次计算与互斥状态、重算轮询、分析/详情返回、偏好闭环，以及任务完成/中断状态、结构化快照/coverage 摘要和控制台告警阻断；截图作为 Playwright 报告附件。
 - `frontend/e2e/component-state-preview.spec.ts`：三视口验证系统组件四态预览共用稳定容器、非 ready 态真实复用 `AppStateBlock`，并通过审计空表接口夹具确认表格只呈现一套全局空态图标、业务文案与操作，不嵌套第二套 `el-empty`。
 - `frontend/e2e/login-initial-render.spec.ts`：登录页首帧与表面回归。三项目刷新 `/login`，通过页面脚本记录真实 DOM 挂载过程，确保首次路由与鉴权守卫就绪前不会挂载工作台壳；同时验证登录品牌区、认证区和卡片在白天/夜间使用与工作台一致的固定中性底色。
 - `frontend/e2e/app-shell-surfaces.spec.ts`：应用外壳底色回归。三项目验证白天与夜间模式下侧栏、顶栏和主工作区使用原型固定中性色，并通过真实视觉环境切换确认预设不会改写基础背景。

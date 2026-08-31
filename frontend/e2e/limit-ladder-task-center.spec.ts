@@ -30,6 +30,19 @@ const ladderTask = {
   updated_at: '2026-08-28 18:01:00',
 }
 
+const interruptedTask = {
+  ...ladderTask,
+  id: 'e2e-limit-ladder-interrupted',
+  status: 'interrupted',
+  progress: 0.42,
+  message: '服务重启后任务已中断，最后成功快照仍可读取',
+  result: {
+    ...ladderTask.result,
+    snapshot_status: 'interrupted',
+  },
+  updated_at: '2026-08-28 18:00:30',
+}
+
 test('连板天梯任务可筛选并在日志抽屉展示快照与 coverage 摘要', async ({
   page,
   request,
@@ -47,10 +60,13 @@ test('连板天梯任务可筛选并在日志抽屉展示快照与 coverage 摘�
     }
     requestedTaskType = url.searchParams.get('task_type')
     requestedStatus = url.searchParams.get('status')
+    const tasks = url.searchParams.get('status') === 'interrupted'
+      ? [interruptedTask]
+      : [ladderTask]
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ code: 0, msg: 'ok', data: { tasks: [ladderTask], total: 1 } }),
+      body: JSON.stringify({ code: 0, msg: 'ok', data: { tasks, total: 1 } }),
     })
   })
   await page.route('**/api/data/tasks/e2e-limit-ladder-task', async (route) => {
@@ -68,6 +84,24 @@ test('连板天梯任务可筛选并在日志抽屉展示快照与 coverage 摘�
         code: 0,
         msg: 'ok',
         data: { logs: [{ seq: 1, ts: '2026-08-28 18:01:00', level: 'info', message: '快照已原子切换' }] },
+      }),
+    })
+  })
+  await page.route('**/api/data/tasks/e2e-limit-ladder-interrupted', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 0, msg: 'ok', data: interruptedTask }),
+    })
+  })
+  await page.route('**/api/data/tasks/e2e-limit-ladder-interrupted/logs?**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 0,
+        msg: 'ok',
+        data: { logs: [{ seq: 1, ts: '2026-08-28 18:00:30', level: 'warning', message: '重启对账标记 interrupted' }] },
       }),
     })
   })
@@ -91,6 +125,17 @@ test('连板天梯任务可筛选并在日志抽屉展示快照与 coverage 摘�
   await expect(result.getByText('5200')).toBeVisible()
   await expect(result.getByText('success')).toBeVisible()
   await expect(page.getByText('快照已原子切换')).toBeVisible()
+
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('task-log-drawer')).toBeHidden()
+  await page.getByTestId('task-status-filter').click()
+  await page.getByRole('option', { name: '已中断', exact: true }).click()
+  await expect.poll(() => requestedStatus).toBe('interrupted')
+  await expect(taskPanel.getByText('服务重启后任务已中断，最后成功快照仍可读取')).toBeVisible()
+  await expect(taskPanel.getByText('已中断', { exact: true })).toBeVisible()
+  await taskPanel.getByRole('button', { name: '日志', exact: true }).click()
+  await expect(page.getByTestId('limit-ladder-task-result')).toContainText('interrupted')
+  await expect(page.getByText('重启对账标记 interrupted')).toBeVisible()
 
   const screenshotPath = testInfo.outputPath('limit-ladder-task-center.png')
   await page.screenshot({ path: screenshotPath, fullPage: true })

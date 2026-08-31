@@ -156,11 +156,12 @@ function resetFilters(): void {
     </section>
     <LadderHotspots v-if="result?.has_snapshot && !loading && !error" :hotspots="result.hotspots" :active-type="filters.hotspotType" :active-key="filters.hotspotKey" @toggle="toggleHotspot" />
     <div class="limit-ladder__body">
-      <AppStateBlock v-if="loading" state="loading" title="正在加载天梯快照" :skeleton-rows="6" />
-      <AppStateBlock v-else-if="error" state="error" title="天梯加载失败" :description="error" retry @retry="$emit('retry')" />
-      <AppStateBlock v-else-if="pendingSnapshot" state="loading" title="天梯快照正在计算" description="天梯快照正在计算，完成并通过完整性校验后会发布结果" :skeleton-rows="6" />
+      <AppStateBlock v-if="loading" data-testid="limit-ladder-state" state="loading" title="正在加载天梯快照" :skeleton-rows="6" />
+      <AppStateBlock v-else-if="error" data-testid="limit-ladder-state" state="error" title="天梯加载失败" :description="error" retry @retry="$emit('retry')" />
+      <AppStateBlock v-else-if="pendingSnapshot" data-testid="limit-ladder-state" state="loading" title="天梯快照正在计算" description="天梯快照正在计算，完成并通过完整性校验后会发布结果" :skeleton-rows="6" />
       <AppStateBlock
         v-else-if="!result?.has_snapshot"
+        data-testid="limit-ladder-state"
         :state="result?.business_code === 'NOT_TRADING_DAY' ? 'empty' : 'error'"
       >
         <div class="limit-ladder__empty-copy">
@@ -171,11 +172,11 @@ function resetFilters(): void {
           <el-button type="primary" @click="$emit('retry')">重试</el-button>
         </template>
       </AppStateBlock>
-      <AppStateBlock v-else-if="filteredEmpty" state="empty">
+      <AppStateBlock v-else-if="filteredEmpty" data-testid="limit-ladder-state" state="empty">
         <div class="limit-ladder__empty-copy"><strong>当前筛选无匹配股票</strong><span>清除筛选后可恢复完整天梯。</span></div>
         <template #extra><el-button type="primary" @click="resetFilters">清除筛选</el-button></template>
       </AppStateBlock>
-      <AppStateBlock v-else-if="!result.layers.length" state="empty"><div class="limit-ladder__empty-copy"><strong>当日无涨停股票</strong><span>这是合法的空快照，不代表加载失败。</span></div></AppStateBlock>
+      <AppStateBlock v-else-if="!result.layers.length" data-testid="limit-ladder-state" state="empty"><div class="limit-ladder__empty-copy"><strong>当日无涨停股票</strong><span>这是合法的空快照，不代表加载失败。</span></div></AppStateBlock>
       <div v-else class="limit-ladder__layers" aria-label="连板天梯分层">
         <section v-for="layer in result.layers" :key="layer.consecutive_days" class="limit-ladder__layer" :data-testid="`limit-ladder-layer-${layer.consecutive_days}`">
           <header class="limit-ladder__layer-head"><span>{{ layer.consecutive_days }}B</span><strong>{{ layer.consecutive_days===1?'首板':`${layer.consecutive_days} 连板` }}</strong><small>{{ layer.stock_count }} 只</small></header>
