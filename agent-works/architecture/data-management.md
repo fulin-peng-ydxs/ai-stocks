@@ -141,7 +141,7 @@
 
 #### 连板天梯任务契约
 
-自动首算、失效刷新和 system-only 管理员单日重算统一进入 `limit_ladder_recompute`，同一交易日只允许一个 `requested/running` 命令。执行任务和实时日志继续保存在 DuckDB，PG 只保存日期级协调账本与可靠审计 outbox；两库通过 `command_id/task_id/source_event_key` 在服务层对账，禁止跨库 JOIN。任务不可取消、不可续跑，失败或中断保留最后成功快照；启动时先收敛 DuckDB 残留任务，再将 PG 活动态对账为终态。表、状态与边界详见 [platform.md](platform.md)，部署正反向结果见[连板天梯 SQL 演练记录](../limit-up-ladder/sql-rehearsal.md)。
+自动首算、失效刷新和 system-only 管理员单日重算统一进入 `limit_ladder_recompute`，同一交易日只允许一个 `requested/running` 命令。执行任务和实时日志继续保存在 DuckDB，PG 只保存日期级协调账本与可靠审计 outbox；两库通过 `command_id/task_id/source_event_key` 在服务层对账，禁止跨库 JOIN。任务不可取消、不可续跑，失败或中断保留最后成功快照；启动时先把 DuckDB 残留任务及其 `calculating/recalculating` 快照状态收敛为终态，再将 PG 活动态对账为终态。查询发现处理态没有活动任务时通过统一日期入口幂等重建；页面按任务标识指数退避轮询并设置总等待上限。表、状态与边界详见 [platform.md](platform.md)，部署正反向结果见[连板天梯 SQL 演练记录](../limit-up-ladder/sql-rehearsal.md)。
 
 个股采集表单由数据采集页与定时调度页复用，服务端只接受方案支持的字段：
 

@@ -90,7 +90,8 @@ const unavailableDescription = computed(() => {
 const staleDescription = computed(() => {
   const status = props.result?.snapshot_status === 'recalculating' ? '新版本正在重算' : '新版本暂不可用'
   const lastSuccess = props.result?.last_success_at || props.result?.snapshot?.computed_at
-  const failure = readableReason(props.result?.failure_summary)
+  const failure = props.result?.task_error
+    || readableReason(props.result?.failure_summary)
     || readableReason(props.result?.invalid_reason)
   return [status, lastSuccess ? `当前展示最后成功版本 ${lastSuccess}` : '', failure || '']
     .filter(Boolean)

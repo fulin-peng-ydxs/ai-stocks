@@ -94,6 +94,15 @@ export interface LimitLadderResult {
   last_success_at?: string | null
   failure_summary?: string | null
   invalid_reason?: string | null
+  task_error?: string | null
+  task?: {
+    command_id: string
+    task_id?: string | null
+    status: string
+    source: string
+    progress?: number | null
+    message?: string | null
+  } | null
   nearest_previous_trade_date?: string | null
   summary: {
     stock_count: number

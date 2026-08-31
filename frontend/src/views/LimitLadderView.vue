@@ -43,6 +43,12 @@ import {
 } from '@/utils/marketCompare'
 import LimitLadder from '@/views/limit-ladder/LimitLadder.vue'
 import {
+  LIMIT_LADDER_POLL_TIMEOUT_MS,
+  limitLadderPollDecision,
+  limitLadderPollDelay,
+  limitLadderPollTaskKey,
+} from '@/views/limit-ladder/polling'
+import {
   DEFAULT_LIMIT_LADDER_PREFERENCE,
   filtersFromLimitLadderPreference,
   normalizeLimitLadderPreference,
@@ -70,7 +76,9 @@ let requestSequence = 0
 let syncingRoute = false
 let narrowMedia: MediaQueryList | null = null
 let resultRefreshTimer: number | undefined
-const RESULT_REFRESH_MS = 1500
+let resultRefreshAttempt = 0
+let resultRefreshStartedAt = 0
+let resultRefreshTaskKey = ''
 
 const {
   settings: preference,
@@ -270,9 +278,14 @@ async function reconcileAnalysisContext(): Promise<void> {
   }
 }
 
-function clearResultRefresh(): void {
+function clearResultRefresh(resetTracking = true): void {
   if (resultRefreshTimer) window.clearTimeout(resultRefreshTimer)
   resultRefreshTimer = undefined
+  if (resetTracking) {
+    resultRefreshAttempt = 0
+    resultRefreshStartedAt = 0
+    resultRefreshTaskKey = ''
+  }
 }
 
 function needsResultRefresh(data: LimitLadderResult | null): boolean {
@@ -282,12 +295,40 @@ function needsResultRefresh(data: LimitLadderResult | null): boolean {
 }
 
 function scheduleResultRefresh(): void {
-  clearResultRefresh()
-  if (!needsResultRefresh(result.value)) return
+  clearResultRefresh(false)
+  if (!result.value || !needsResultRefresh(result.value)) {
+    clearResultRefresh()
+    return
+  }
+  const taskKey = limitLadderPollTaskKey(result.value)
+  if (taskKey !== resultRefreshTaskKey) {
+    resultRefreshTaskKey = taskKey
+    resultRefreshAttempt = 0
+    resultRefreshStartedAt = Date.now()
+  }
+  const decision = limitLadderPollDecision(
+    resultRefreshAttempt,
+    Date.now() - resultRefreshStartedAt,
+  )
+  if (decision.timedOut) {
+    const timeoutMessage = '计算任务等待超时，请重试；系统会重新检查并恢复孤儿任务'
+    if (result.value.has_snapshot) {
+      result.value = {
+        ...result.value,
+        snapshot_status: 'failed',
+        task_error: timeoutMessage,
+      }
+    } else {
+      error.value = timeoutMessage
+    }
+    return
+  }
+  const delay = decision.delayMs ?? LIMIT_LADDER_POLL_TIMEOUT_MS
+  resultRefreshAttempt += 1
   resultRefreshTimer = window.setTimeout(() => {
     resultRefreshTimer = undefined
     void requestLadder(true)
-  }, RESULT_REFRESH_MS)
+  }, delay)
 }
 
 async function requestLadder(background: boolean): Promise<void> {
@@ -341,7 +382,7 @@ async function recomputeCurrentDate(): Promise<void> {
       resultRefreshTimer = window.setTimeout(() => {
         resultRefreshTimer = undefined
         void requestLadder(true)
-      }, RESULT_REFRESH_MS)
+      }, limitLadderPollDelay(0))
     }
   } catch (value) {
     ElMessage.error(errorMessage(value, '重算提交失败，请稍后重试'))

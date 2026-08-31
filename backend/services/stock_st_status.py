@@ -45,6 +45,63 @@ class StockSTStatusService:
             ),
         )
 
+    @classmethod
+    def _deduplicated(
+        cls, facts: list[StockSTStatusFact]
+    ) -> dict[tuple[str, date], StockSTStatusFact]:
+        deduplicated: dict[tuple[str, date], StockSTStatusFact] = {}
+        for raw in facts:
+            fact = cls._normalized(raw)
+            key = (fact.code, fact.trade_date)
+            previous = deduplicated.get(key)
+            if previous is not None and previous.status != fact.status:
+                raise ValueError(f"conflicting ST facts in one batch: {fact.code} {fact.trade_date}")
+            deduplicated[key] = fact
+        return deduplicated
+
+    def prefer_existing_accurate(
+        self, facts: list[StockSTStatusFact]
+    ) -> list[StockSTStatusFact]:
+        """Keep authoritative stored facts when an ordinary approximate batch overlaps them."""
+        deduplicated = self._deduplicated(facts)
+        if not deduplicated:
+            return []
+        keys = pd.DataFrame(
+            [
+                {"code": code, "trade_date": trade_date}
+                for code, trade_date in deduplicated
+            ]
+        )
+        with self.c.temp_view(keys, "st_fact_keys") as view:
+            existing = self.c.query_df(
+                f"""
+                SELECT current.code,current.trade_date,current.is_st,current.source,
+                       current.source_ref,current.quality
+                FROM stock_st_status_daily current
+                JOIN {view} incoming
+                  ON current.code=incoming.code AND current.trade_date=incoming.trade_date
+                WHERE current.quality='accurate'
+                """
+            )
+        for _, row in existing.iterrows():
+            key = (str(row["code"]), pd.Timestamp(row["trade_date"]).date())
+            incoming = deduplicated[key]
+            if incoming.status.quality != STStatusQuality.APPROXIMATE:
+                continue
+            deduplicated[key] = StockSTStatusFact(
+                code=key[0],
+                trade_date=key[1],
+                status=PointInTimeSTStatus(
+                    is_st=bool(row["is_st"]),
+                    source=str(row["source"]),
+                    source_ref=(
+                        None if pd.isna(row["source_ref"]) else str(row["source_ref"])
+                    ),
+                    quality=STStatusQuality.ACCURATE,
+                ),
+            )
+        return list(deduplicated.values())
+
     def upsert_facts(
         self,
         facts: list[StockSTStatusFact],
@@ -59,14 +116,7 @@ class StockSTStatusService:
         if not change_reason.strip():
             raise ValueError("change_reason is required")
 
-        deduplicated: dict[tuple[str, date], StockSTStatusFact] = {}
-        for raw in facts:
-            fact = self._normalized(raw)
-            key = (fact.code, fact.trade_date)
-            previous = deduplicated.get(key)
-            if previous is not None and previous.status != fact.status:
-                raise ValueError(f"conflicting ST facts in one batch: {fact.code} {fact.trade_date}")
-            deduplicated[key] = fact
+        deduplicated = self._deduplicated(facts)
 
         now = captured_at or datetime.now(UTC).replace(tzinfo=None)
         rows = [
@@ -103,6 +153,14 @@ class StockSTStatusService:
                 key = (str(old["code"]), pd.Timestamp(old["trade_date"]).date())
                 new = deduplicated[key]
                 is_new = pd.isna(old["old_source"])
+                # 质量只能由 approximate 升为 accurate。普通采集无权把已存在的
+                # 权威事实降级；显式降级若未来确有业务需求，必须另建带审计的管理入口。
+                if (
+                    not is_new
+                    and str(old["old_quality"]) == STStatusQuality.ACCURATE.value
+                    and new.status.quality == STStatusQuality.APPROXIMATE
+                ):
+                    continue
                 old_ref = None if pd.isna(old["old_source_ref"]) else str(old["old_source_ref"])
                 changed = is_new or (
                     bool(old["old_is_st"]) != new.status.is_st

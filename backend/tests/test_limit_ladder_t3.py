@@ -71,6 +71,24 @@ def test_st_status_batch_is_idempotent_and_tracks_real_changes(market):
         "SELECT count(*) AS n FROM stock_st_status_history"
     ).iloc[0]["n"]) == 2
 
+    approximate_downgrade = StockSTStatusFact(
+        code=approximate.code,
+        trade_date=trade_date,
+        status=_status(False, "stock_name", STStatusQuality.APPROXIMATE),
+    )
+    assert service.upsert_facts(
+        [approximate_downgrade], change_reason="daily_ingest"
+    ) == []
+    current = market.query_df(
+        "SELECT is_st,source,quality FROM stock_st_status_daily"
+    ).iloc[0]
+    assert bool(current["is_st"]) is True
+    assert current["source"] == "exchange_notice"
+    assert current["quality"] == "accurate"
+    assert int(market.query_df(
+        "SELECT count(*) AS n FROM stock_st_status_history"
+    ).iloc[0]["n"]) == 2
+
 
 def test_ingest_one_daily_persists_approximate_st_fact(market, monkeypatch):
     market.execute(
@@ -113,6 +131,69 @@ def test_ingest_one_daily_persists_approximate_st_fact(market, monkeypatch):
     assert row["source"] == "stock_name"
     assert row["quality"] == "approximate"
     assert service._limit_ladder_st_date_result() == ["2026-08-28"]
+
+
+def test_ingest_one_daily_cannot_downgrade_accurate_st_fact_or_daily_marker(
+    market, monkeypatch
+):
+    trade_date = date(2026, 8, 28)
+    market.execute(
+        "INSERT INTO stock_basic (code,name,board,price_limit_pct,list_date) "
+        "VALUES ('600001.SH','已去星示例','主板',0.10,DATE '2020-01-01')"
+    )
+    accurate = StockSTStatusFact(
+        code="600001.SH",
+        trade_date=trade_date,
+        status=_status(True, "exchange_notice", STStatusQuality.ACCURATE),
+    )
+    StockSTStatusService(market).upsert_facts(
+        [accurate], change_reason="accurate_backfill"
+    )
+    service = IngestionService.__new__(IngestionService)
+    service.s = get_effective_settings()
+    service.c = market
+    service.repo = MarketRepository(market)
+    service.src = object()
+    service._bao = None
+    service._limit_ladder_st_dates = set()
+    service._limit_ladder_st_lock = threading.Lock()
+    bars = pd.DataFrame([{
+        "code": "600001.SH",
+        "trade_date": trade_date,
+        "open": 10.5,
+        "high": 10.5,
+        "low": 10.5,
+        "close": 10.5,
+        "pre_close": 10.0,
+        "volume": 100,
+        "amount": 1050.0,
+        "adj_factor": 1.0,
+        "turnover_rate": 1.0,
+    }])
+    monkeypatch.setattr(
+        service,
+        "_fetch_daily_with_fallback",
+        lambda *args, **kwargs: (bars.copy(), service.s.datasource.primary),
+    )
+
+    assert service.ingest_one_daily(
+        "600001.SH", trade_date, trade_date, board_limit_pct=0.10
+    ) == 1
+    fact = market.query_df(
+        "SELECT is_st,source,quality FROM stock_st_status_daily"
+    ).iloc[0]
+    bar = market.query_df(
+        "SELECT is_st FROM daily_bar WHERE code='600001.SH' AND trade_date=?",
+        [trade_date],
+    ).iloc[0]
+    assert bool(fact["is_st"]) is True
+    assert fact["source"] == "exchange_notice"
+    assert fact["quality"] == "accurate"
+    assert bool(bar["is_st"]) is True
+    assert int(market.query_df(
+        "SELECT count(*) AS n FROM stock_st_status_history"
+    ).iloc[0]["n"]) == 0
+    assert service._limit_ladder_st_date_result() == []
 
 
 def _seed_ladder_fixture(market) -> tuple[list[date], date]:

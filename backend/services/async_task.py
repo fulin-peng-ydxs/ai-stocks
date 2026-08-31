@@ -463,6 +463,8 @@ class AsyncTaskService:
     # ── 启动期 reconcile（FR-DM-10 + 日志清理 DM-D8）──
     def reconcile(self) -> dict:
         """服务启动调用：残留 running/pending → interrupted；孤儿 fixing → open；清理超期日志。"""
+        from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
+
         stuck = self.c.query_df(
             "SELECT count(*) AS n FROM async_task WHERE status IN ('pending','running')").iloc[0]["n"]
         resumable_types = sorted(
@@ -475,6 +477,9 @@ class AsyncTaskService:
             f"WHEN task_type IN ({resume_placeholders}) THEN '服务重启中断，可续跑' "
             "ELSE '服务重启中断，不支持续跑，请重新执行' END, updated_at=? "
             "WHERE status IN ('pending','running')", [*resumable_types, datetime.now()])
+        snapshot_states = LimitLadderSnapshotService(
+            self.c
+        ).recover_processing_after_restart()
         # 重启后没有任何任务在跑，故所有 fixing 必为孤儿（绑定的任务已中断）→ 复位为 open，可重新恢复
         fixing = int(self.c.query_df(
             "SELECT count(*) AS n FROM data_quality_issue WHERE status='fixing'").iloc[0]["n"])
@@ -484,9 +489,19 @@ class AsyncTaskService:
         cutoff = datetime.now() - timedelta(days=LOG_RETENTION_DAYS)
         self.c.execute("DELETE FROM task_log WHERE ts < ?", [cutoff])
         n = int(stuck)
-        if n or fixing:
-            log.info("reconcile：%d 个残留任务标记 interrupted，%d 条修复中问题复位为待处理", n, fixing)
-        return {"interrupted": n, "fixing_reset": fixing}
+        if n or fixing or snapshot_states:
+            log.info(
+                "reconcile：%d 个残留任务标记 interrupted，%d 个天梯处理态转失败，"
+                "%d 条修复中问题复位为待处理",
+                n,
+                snapshot_states,
+                fixing,
+            )
+        return {
+            "interrupted": n,
+            "limit_ladder_states_recovered": snapshot_states,
+            "fixing_reset": fixing,
+        }
 
     def get(self, tid: str) -> dict | None:
         df = self.c.query_df("SELECT * FROM async_task WHERE id=?", [tid])

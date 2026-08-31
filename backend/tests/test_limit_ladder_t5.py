@@ -172,6 +172,61 @@ def test_task_creation_failure_releases_date_for_next_command(pg):
         _cleanup(pg, [item for item in (failed_id, successful_id) if item])
 
 
+def test_ensure_date_task_replaces_terminal_duck_task_in_active_pg_slot(pg, market):
+    repository = LimitLadderTaskRepository(pg)
+    trade_date = _trade_date()
+    old_command_id = f"pytest_ll_terminal_{uuid4().hex}"
+    old_task_id = f"task_limit_ladder_recompute_{uuid4().hex}"
+    command_ids = [old_command_id]
+
+    class PersistedTasks(_FakeTasks):
+        def __init__(self):
+            super().__init__()
+            self.c = market
+
+    try:
+        repository.create_requested(LimitLadderTaskCommand(
+            command_id=old_command_id,
+            trade_date=trade_date,
+            source="auto_first_load",
+            actor_kind="system",
+            actor_account="system:limit-ladder",
+            rule_version="test-v1",
+        ))
+        now = datetime.now(UTC)
+        market.execute(
+            "INSERT INTO async_task "
+            "(id,task_type,params,status,progress,message,trigger_event_id,created_at,updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            [
+                old_task_id,
+                "limit_ladder_recompute",
+                "{}",
+                "interrupted",
+                1.0,
+                "服务重启中断",
+                old_command_id,
+                now,
+                now,
+            ],
+        )
+        tasks = PersistedTasks()
+        result = LimitLadderTaskCoordinator(
+            repository=repository,
+            task_service=tasks,
+            audit_repository=_FakeAudit(),
+            user_repository=_FakeUsers(),
+        ).ensure_date_task(trade_date, source="auto_first_load")
+        command_ids.append(result.command_id)
+
+        assert result.command_id != old_command_id
+        assert result.reused is False
+        assert repository.get(old_command_id)["status"] == "interrupted"
+        assert len(tasks.calls) == 1
+    finally:
+        _cleanup(pg, command_ids)
+
+
 def test_admin_identity_and_request_metadata_are_server_captured(pg, monkeypatch):
     repository = LimitLadderTaskRepository(pg)
     trade_date = _trade_date()
@@ -314,8 +369,32 @@ def test_restart_reconciliation_maps_duck_task_to_interrupted(pg, market):
                 now,
             ],
         )
+        market.execute(
+            """
+            INSERT INTO limit_ladder_snapshot_state (
+                trade_date,status,current_snapshot_id,task_id,rule_version,updated_at
+            ) VALUES (?, 'calculating', NULL, ?, 'test-v1', current_timestamp)
+            """,
+            [trade_date, task_id],
+        )
         tasks = AsyncTaskService(market)
-        assert tasks.reconcile()["interrupted"] == 1
+        restart = tasks.reconcile()
+        assert restart["interrupted"] == 1
+        assert restart["limit_ladder_states_recovered"] == 1
+        snapshot_state = market.query_df(
+            "SELECT status,current_snapshot_id,failure_summary "
+            "FROM limit_ladder_snapshot_state WHERE trade_date=?",
+            [trade_date],
+        ).iloc[0]
+        assert snapshot_state["status"] == "failed"
+        assert pd.isna(snapshot_state["current_snapshot_id"])
+        assert "服务重启中断" in snapshot_state["failure_summary"]
+        # 模拟异步任务恢复与 PG 对账之间再次出现的跨存储状态漂移；协调器必须兜底收敛。
+        market.execute(
+            "UPDATE limit_ladder_snapshot_state "
+            "SET status='calculating',failure_summary=NULL WHERE trade_date=?",
+            [trade_date],
+        )
         audit = _FakeAudit()
         result = LimitLadderTaskCoordinator(
             repository=repository,
@@ -325,14 +404,52 @@ def test_restart_reconciliation_maps_duck_task_to_interrupted(pg, market):
         ).reconcile(startup_at=datetime.now(UTC))
         row = repository.get(command_id)
         assert result["locked"] is True
+        assert result["snapshot_recovered"] == 1
         assert row is not None and row["status"] == "interrupted"
         assert row["task_id"] == task_id
         assert set(audit.events) == {
             f"{command_id}:requested",
             f"{command_id}:interrupted",
         }
+        assert market.query_df(
+            "SELECT status FROM limit_ladder_snapshot_state WHERE trade_date=?",
+            [trade_date],
+        ).iloc[0]["status"] == "failed"
     finally:
         _cleanup(pg, [command_id])
+
+
+def test_restart_reconciliation_preserves_last_snapshot_pointer(market):
+    trade_date = _trade_date()
+    task_id = f"task_limit_ladder_recompute_{uuid4().hex}"
+    now = datetime.now(UTC)
+    market.execute(
+        "INSERT INTO async_task "
+        "(id,task_type,params,status,progress,message,created_at,updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        [task_id, "limit_ladder_recompute", "{}", "running", 0.5, "running", now, now],
+    )
+    market.execute(
+        """
+        INSERT INTO limit_ladder_snapshot_state (
+            trade_date,status,current_snapshot_id,task_id,rule_version,updated_at
+        ) VALUES (?, 'recalculating', 'snap-old', ?, 'test-v1', current_timestamp)
+        """,
+        [trade_date, task_id],
+    )
+
+    result = AsyncTaskService(market).reconcile()
+
+    state = market.query_df(
+        "SELECT status,current_snapshot_id,task_id,failure_summary "
+        "FROM limit_ladder_snapshot_state WHERE trade_date=?",
+        [trade_date],
+    ).iloc[0]
+    assert result["limit_ladder_states_recovered"] == 1
+    assert state["status"] == "failed"
+    assert state["current_snapshot_id"] == "snap-old"
+    assert state["task_id"] == task_id
+    assert "服务重启中断" in state["failure_summary"]
 
 
 def test_limit_ladder_handler_materializes_and_closes_pg_command(market, monkeypatch):

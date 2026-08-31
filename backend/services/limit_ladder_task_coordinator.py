@@ -94,6 +94,40 @@ class LimitLadderTaskCoordinator:
             except Exception as exc:  # noqa: BLE001 -- unique/storage errors share wrapper
                 active = self.repository.get_active_for_date(trade_date)
                 if active is not None:
+                    duck_task = (
+                        self._duck_task_for_command(str(active["command_id"]))
+                        if getattr(self.tasks, "c", None) is not None
+                        else None
+                    )
+                    mapped = None if duck_task is None else self._duck_status(duck_task)
+                    if mapped in {"succeeded", "failed", "interrupted"}:
+                        self.repository.transition(
+                            command_id=str(active["command_id"]),
+                            status=mapped,
+                            task_id=str(duck_task["id"]),
+                            result_summary=self._task_summary(duck_task),
+                            last_error=(
+                                str(duck_task.get("message") or "")
+                                if mapped in {"failed", "interrupted"}
+                                else None
+                            ),
+                        )
+                        if mapped in {"failed", "interrupted"}:
+                            from backend.services.limit_ladder_snapshot import (
+                                LimitLadderSnapshotService,
+                            )
+
+                            LimitLadderSnapshotService(
+                                self.tasks.c
+                            ).recover_interrupted_task(
+                                str(duck_task["id"]),
+                                summary=(
+                                    str(duck_task.get("message") or "")
+                                    or "计算任务已中断，等待重新创建"
+                                ),
+                            )
+                        self.dispatch_outbox()
+                        continue
                     return self._result(active, reused=True)
                 last_error = exc
                 continue
@@ -215,8 +249,15 @@ class LimitLadderTaskCoordinator:
         with self.pg.transaction() as conn, conn.cursor() as cur:
             cur.execute("SELECT pg_try_advisory_xact_lock(hashtext(%s))", [_LOCK_NAME])
             if not bool(cur.fetchone()[0]):
-                return {"locked": False, "updated": 0, "delivered": 0, "failed": 0}
+                return {
+                    "locked": False,
+                    "updated": 0,
+                    "snapshot_recovered": 0,
+                    "delivered": 0,
+                    "failed": 0,
+                }
             updated = 0
+            snapshot_recovered = 0
             for command in self.repository.list_active():
                 duck_task = self._duck_task_for_command(str(command["command_id"]))
                 if duck_task is not None:
@@ -239,6 +280,20 @@ class LimitLadderTaskCoordinator:
                                 else None
                             ),
                         ))
+                        if mapped in {"failed", "interrupted"}:
+                            from backend.services.limit_ladder_snapshot import (
+                                LimitLadderSnapshotService,
+                            )
+
+                            snapshot_recovered += LimitLadderSnapshotService(
+                                self.tasks.c
+                            ).recover_interrupted_task(
+                                str(duck_task["id"]),
+                                summary=(
+                                    str(duck_task.get("message") or "")
+                                    or "计算任务已中断，等待重新创建"
+                                ),
+                            )
                     continue
                 created_at = self._as_datetime(command.get("created_at"))
                 if created_at is not None and created_at <= cutoff:
@@ -251,6 +306,7 @@ class LimitLadderTaskCoordinator:
             return {
                 "locked": True,
                 "updated": updated,
+                "snapshot_recovered": snapshot_recovered,
                 "delivered": dispatch["delivered"],
                 "failed": dispatch["failed"],
             }

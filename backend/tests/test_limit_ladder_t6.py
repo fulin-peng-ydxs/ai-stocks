@@ -275,6 +275,78 @@ def test_missing_snapshot_uses_only_unified_first_load_entry(market):
     assert coordinator.calls[0][1]["source"] == "auto_first_load"
 
 
+def test_orphaned_calculating_state_rebuilds_once_and_reuses_active_task(market):
+    trade_date = date(2026, 8, 28)
+    MarketRepository(market).upsert_trade_calendar(
+        pd.DataFrame({"trade_date": [trade_date], "is_open": [True]})
+    )
+    market.execute(
+        """
+        INSERT INTO limit_ladder_snapshot_state (
+            trade_date,status,current_snapshot_id,task_id,rule_version,updated_at
+        ) VALUES (?, 'calculating', NULL, 'orphan-task', 'v1', current_timestamp)
+        """,
+        [trade_date],
+    )
+
+    class RecoveringRepository:
+        active = None
+
+        def get_active_for_date(self, selected_date):
+            return self.active
+
+    class RecoveringCoordinator(_FakeCoordinator):
+        def __init__(self):
+            super().__init__()
+            self.repository = RecoveringRepository()
+
+        def ensure_date_task(self, selected_date, **kwargs):
+            result = super().ensure_date_task(selected_date, **kwargs)
+            self.repository.active = {
+                "command_id": result.command_id,
+                "task_id": result.task_id,
+                "status": result.status,
+                "source": kwargs["source"],
+            }
+            return result
+
+    coordinator = RecoveringCoordinator()
+    service = LimitLadderQueryService(market, coordinator=coordinator)
+
+    first = service.query(trade_date, LimitLadderFilters())
+    second = service.query(trade_date, LimitLadderFilters())
+
+    assert first["business_code"] == "SNAPSHOT_PENDING"
+    assert first["task"]["task_id"] == "task-1"
+    assert second["task"]["task_id"] == "task-1"
+    assert len(coordinator.calls) == 1
+    assert coordinator.calls[0][1]["source"] == "auto_first_load"
+
+
+def test_orphaned_recalculating_state_preserves_snapshot_and_rebuilds_refresh(market):
+    trade_date = _seed_ladder(market)
+    state = market.query_df(
+        "SELECT current_snapshot_id FROM limit_ladder_snapshot_state WHERE trade_date=?",
+        [trade_date],
+    ).iloc[0]
+    market.execute(
+        "UPDATE limit_ladder_snapshot_state "
+        "SET status='recalculating',task_id='orphan-task' WHERE trade_date=?",
+        [trade_date],
+    )
+    coordinator = _FakeCoordinator()
+
+    data = LimitLadderQueryService(market, coordinator=coordinator).query(
+        trade_date, LimitLadderFilters(ignore_st=False)
+    )
+
+    assert data["business_code"] == "SNAPSHOT_STALE"
+    assert data["current_snapshot_id"] == state["current_snapshot_id"]
+    assert data["snapshot"]["snapshot_id"] == state["current_snapshot_id"]
+    assert len(coordinator.calls) == 1
+    assert coordinator.calls[0][1]["source"] == "auto_invalid_refresh"
+
+
 def test_invalid_snapshot_remains_readable_and_uses_refresh_entry(market):
     trade_date = _seed_ladder(market)
     LimitLadderSnapshotService(market).invalidate_dates([trade_date], reason="daily_bar_changed")

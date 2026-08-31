@@ -488,9 +488,27 @@ class IngestionService:
                     quality=STStatusQuality.APPROXIMATE,
                 )
             )
-        is_st = st_status.is_st
+        st_service = StockSTStatusService(self.c)
+        incoming_st_facts = [
+            StockSTStatusFact(
+                code=code,
+                trade_date=pd.Timestamp(trade_day).date(),
+                status=st_status,
+            )
+            for trade_day in df["trade_date"].tolist()
+        ]
+        effective_st_facts = st_service.prefer_existing_accurate(incoming_st_facts)
+        effective_st_by_date = {
+            fact.trade_date: fact.status.is_st for fact in effective_st_facts
+        }
         # 质检标记：涨跌停/一字板/ST（回测撮合前提）
-        df = add_markers(df, board_limit_pct, is_st)
+        df = add_markers(df, board_limit_pct, st_status.is_st)
+        # 名称推断只是兜底。若指定日期已有准确事实，行情行的 ST 派生标记也必须
+        # 使用最终有效事实，不能只保护事实表而继续污染 daily_bar。
+        df["is_st"] = [
+            effective_st_by_date[pd.Timestamp(trade_day).date()]
+            for trade_day in df["trade_date"].tolist()
+        ]
         # OHL 修补行：真实振幅未知 → 强制不标一字板，并记入问题台账（不静默/不臆造）
         if "_ohl_repaired" in df.columns and df["_ohl_repaired"].any():
             repaired_dates = {
@@ -520,15 +538,8 @@ class IngestionService:
         self._track_limit_ladder_market_dates(
             [pd.Timestamp(value).date() for value in df["trade_date"].tolist()]
         )
-        affected_st_dates = StockSTStatusService(self.c).upsert_facts(
-            [
-                StockSTStatusFact(
-                    code=code,
-                    trade_date=pd.Timestamp(trade_day).date(),
-                    status=st_status,
-                )
-                for trade_day in df["trade_date"].tolist()
-            ],
+        affected_st_dates = st_service.upsert_facts(
+            effective_st_facts,
             change_reason="daily_ingest",
             task_id=getattr(ctx, "tid", None),
         )

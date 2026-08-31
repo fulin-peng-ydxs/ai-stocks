@@ -159,13 +159,27 @@ class LimitLadderQueryService:
         state = self._state_row(trade_date)
         task_error = None
         ensured_task = None
+        stored_status = None if state is None else str(state.get("status"))
+        orphaned_processing = bool(
+            state is not None
+            and stored_status in {"calculating", "recalculating"}
+            and self._active_task(trade_date) is None
+        )
         should_trigger = trigger_missing and (
             state is None
             or (state.get("current_snapshot_id") is None and str(state.get("status")) == "failed")
             or str(state.get("status")) == "invalid"
+            or orphaned_processing
         )
         if should_trigger:
-            source = "auto_invalid_refresh" if state is not None and str(state.get("status")) == "invalid" else "auto_first_load"
+            source = (
+                "auto_invalid_refresh"
+                if state is not None and (
+                    str(state.get("status")) == "invalid"
+                    or state.get("current_snapshot_id") is not None
+                )
+                else "auto_first_load"
+            )
             try:
                 ensured_task = self.coordinator.ensure_date_task(
                     trade_date,
@@ -465,6 +479,8 @@ class LimitLadderQueryService:
                 return None
             task_id = self._nullable_text(command.get("task_id"))
             runtime = self.coordinator.tasks.get(task_id) if task_id else None
+            if runtime is not None and str(runtime.get("status")) not in {"pending", "running"}:
+                return None
             return {
                 "command_id": str(command["command_id"]),
                 "task_id": task_id,

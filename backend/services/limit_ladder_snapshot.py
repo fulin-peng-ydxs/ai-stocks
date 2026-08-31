@@ -451,6 +451,40 @@ class LimitLadderSnapshotService:
             invalid_reason=None,
         )
 
+    def recover_processing_after_restart(self) -> int:
+        """Close every in-memory processing state after process restart, preserving old snapshots."""
+        return self._fail_processing_states(
+            summary="服务重启中断，等待重新创建计算任务",
+        )
+
+    def recover_interrupted_task(self, task_id: str, *, summary: str) -> int:
+        """Close a processing state when its persisted task has reached a failure terminal state."""
+        if not task_id.strip():
+            return 0
+        return self._fail_processing_states(task_id=task_id, summary=summary)
+
+    def _fail_processing_states(
+        self, *, summary: str, task_id: str | None = None
+    ) -> int:
+        where = "status IN ('calculating','recalculating')"
+        params: list[object] = [summary[:1000], self._now()]
+        if task_id is not None:
+            where += " AND task_id=?"
+            params.append(task_id)
+        before = self.c.query_df(
+            f"SELECT count(*) AS n FROM limit_ladder_snapshot_state WHERE {where}",
+            ([] if task_id is None else [task_id]),
+        )
+        self.c.execute(
+            f"""
+            UPDATE limit_ladder_snapshot_state
+            SET status='failed',failure_summary=?,invalid_reason=NULL,updated_at=?
+            WHERE {where}
+            """,
+            params,
+        )
+        return int(before.iloc[0]["n"])
+
     def _set_terminal_state(
         self,
         trade_date: date,
