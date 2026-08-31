@@ -769,6 +769,7 @@ DDL_BOARD_MEMBER = """
 CREATE TABLE IF NOT EXISTS board_member (
     board_code VARCHAR,
     code       VARCHAR,                    -- 6 位代码补交易所后缀对齐 stock_basic.code（如 600000.SH）
+    first_seen_date DATE,                  -- 首次完整采集到该关系的业务日；NULL=兼容存量，视为历史已存在
     PRIMARY KEY (board_code, code)
 );
 """
@@ -1148,6 +1149,8 @@ _MIGRATIONS: list[str] = [
     "UPDATE async_task SET task_type='update' WHERE task_type='daily'",
     # 成分修复需证明问题检出后发生过新的完整快照，不能只看历史 member_count。
     "ALTER TABLE board_dict ADD COLUMN IF NOT EXISTS member_snapshot_at TIMESTAMP",
+    # 存量成员保持 NULL，兼容既有历史计算；只有升级后新发现关系记录首次完整采集业务日。
+    "ALTER TABLE board_member ADD COLUMN IF NOT EXISTS first_seen_date DATE",
 ]
 
 
@@ -1167,6 +1170,68 @@ def seed_dimension_registry(client: DuckDBClient | None = None) -> int:
     return int(after) - int(before)
 
 
+def _primary_key_columns(client: DuckDBClient, table: str) -> set[str]:
+    """返回 DuckDB 表主键列集合，用于结构升级前置判断。"""
+    rows = client.query_df(f"PRAGMA table_info('{table}')")
+    if rows.empty:
+        return set()
+    return {str(row["name"]) for row in rows.to_dict("records") if bool(row.get("pk"))}
+
+
+def _migrate_stock_board_correlation_snapshot_keys(client: DuckDBClient) -> None:
+    """把旧的当前态主键幂等升级为按 as_of_date 保存的每日快照主键。"""
+    expected = {
+        "stock_board_correlation": {"code", "board_type", "as_of_date"},
+        "stock_board_correlation_state": {"code", "as_of_date"},
+    }
+    actual = {table: _primary_key_columns(client, table) for table in expected}
+    pending = [table for table, columns in expected.items() if actual[table] != columns]
+    if not pending:
+        return
+
+    with client.transaction():
+        if "stock_board_correlation" in pending:
+            client.conn.execute("DROP TABLE IF EXISTS stock_board_correlation_pk_new")
+            client.conn.execute(
+                DDL_STOCK_BOARD_CORRELATION.replace(
+                    "CREATE TABLE IF NOT EXISTS stock_board_correlation",
+                    "CREATE TABLE stock_board_correlation_pk_new",
+                    1,
+                )
+            )
+            client.conn.execute(
+                "INSERT INTO stock_board_correlation_pk_new "
+                "SELECT code,board_type,board_code,score,corr_20,corr_60,sample_20,sample_60,"
+                "confidence,benchmark_code,benchmark_fallback,as_of_date,computed_at,"
+                "algorithm_version FROM stock_board_correlation"
+            )
+            client.conn.execute("DROP TABLE stock_board_correlation")
+            client.conn.execute(
+                "ALTER TABLE stock_board_correlation_pk_new RENAME TO stock_board_correlation"
+            )
+        if "stock_board_correlation_state" in pending:
+            client.conn.execute("DROP TABLE IF EXISTS stock_board_correlation_state_pk_new")
+            client.conn.execute(
+                DDL_STOCK_BOARD_CORRELATION_STATE.replace(
+                    "CREATE TABLE IF NOT EXISTS stock_board_correlation_state",
+                    "CREATE TABLE stock_board_correlation_state_pk_new",
+                    1,
+                )
+            )
+            client.conn.execute(
+                "INSERT INTO stock_board_correlation_state_pk_new "
+                "SELECT code,as_of_date,computed_at,algorithm_version,benchmark_code,"
+                "benchmark_fallback,has_industry_champion,has_concept_champion "
+                "FROM stock_board_correlation_state"
+            )
+            client.conn.execute("DROP TABLE stock_board_correlation_state")
+            client.conn.execute(
+                "ALTER TABLE stock_board_correlation_state_pk_new "
+                "RENAME TO stock_board_correlation_state"
+            )
+    log.info("个股走势关联板块主键已升级为每日快照结构: %s", ",".join(pending))
+
+
 def init_db(client: DuckDBClient | None = None) -> list[str]:
     """幂等创建全部表与序列（M1 数据底座 + M2 指标），返回已创建的表名列表。"""
     client = client or get_client()
@@ -1183,6 +1248,7 @@ def init_db(client: DuckDBClient | None = None) -> list[str]:
         client.execute(sql)
         created.append(name)
         log.debug("表已就绪: %s", name)
+    _migrate_stock_board_correlation_snapshot_keys(client)
     for mig in _MIGRATIONS:
         try:
             client.execute(mig)

@@ -15,6 +15,7 @@ from backend.common.logging import get_logger
 from backend.services.limit_ladder_calculator import SUPPORTED_WINDOWS
 from backend.services.limit_ladder_snapshot import RULE_VERSION, LimitLadderSnapshotService
 from backend.services.limit_ladder_task_coordinator import LimitLadderTaskCoordinator
+from backend.services.stock_board_correlation import StockBoardCorrelationService
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
 log = get_logger("services.limit_ladder_query")
@@ -124,8 +125,8 @@ class LimitLadderQueryService:
             }
         has_snapshot = bool(row.get("current_snapshot_id"))
         stored_status = str(row["status"])
-        public_status = "recalculating" if task and has_snapshot else (
-            "calculating" if task else stored_status
+        public_status = (
+            "recalculating" if task and has_snapshot else ("calculating" if task else stored_status)
         )
         return {
             "trade_date": trade_date.isoformat(),
@@ -175,7 +176,8 @@ class LimitLadderQueryService:
         if should_trigger:
             source = (
                 "auto_invalid_refresh"
-                if state is not None and (
+                if state is not None
+                and (
                     str(state.get("status")) == "invalid"
                     or state.get("current_snapshot_id") is not None
                 )
@@ -211,7 +213,9 @@ class LimitLadderQueryService:
             status["business_code"] = "SNAPSHOT_STALE" if has_snapshot else "SNAPSHOT_PENDING"
         if task_error:
             status["task_error"] = task_error
-        snapshot_id = None if state is None else self._nullable_text(state.get("current_snapshot_id"))
+        snapshot_id = (
+            None if state is None else self._nullable_text(state.get("current_snapshot_id"))
+        )
         if snapshot_id is None:
             return {
                 **status,
@@ -230,7 +234,9 @@ class LimitLadderQueryService:
             snapshot_id, filters.window, snapshot
         )
         concepts = self._snapshot_concepts(snapshot_id)
-        related, related_status = self._latest_related_boards([str(row["code"]) for row in stocks])
+        related, related_status = self._related_boards_for_date(
+            [str(row["code"]) for row in stocks], trade_date
+        )
         enriched = []
         for stock in stocks:
             code = str(stock["code"])
@@ -251,7 +257,11 @@ class LimitLadderQueryService:
         visible.sort(
             key=lambda stock: (
                 -int(stock["consecutive_days"]),
-                -(int(stock["window_limit_up_days"]) if stock["window_limit_up_days"] is not None else -1),
+                -(
+                    int(stock["window_limit_up_days"])
+                    if stock["window_limit_up_days"] is not None
+                    else -1
+                ),
                 -float(stock["amount"]),
                 str(stock["code"]),
             )
@@ -302,25 +312,58 @@ class LimitLadderQueryService:
         writer = csv.writer(output)
         writer.writerow(
             [
-                "交易日", "代码", "名称", "板块", "连续板", "窗口涨停次数", "窗口累计涨幅",
+                "交易日",
+                "代码",
+                "名称",
+                "板块",
+                "连续板",
+                "窗口涨停次数",
+                "窗口累计涨幅",
                 "窗口起始日",
-                "实际交易日", "涨跌停比例", "ST", "ST质量", "一字板", "成交额", "快照行业",
-                "快照概念", "最新相关概念", "相关概念代码", "相关概念截止日", "快照状态", "快照计算时间",
+                "实际交易日",
+                "涨跌停比例",
+                "ST",
+                "ST质量",
+                "一字板",
+                "成交额",
+                "快照行业",
+                "快照概念",
+                "最新相关概念",
+                "相关概念代码",
+                "相关概念截止日",
+                "快照状态",
+                "快照计算时间",
             ]
         )
         for stock in stocks:
             related = stock.get("latest_related_concept") or {}
             writer.writerow(
-                [self._csv_cell(value) for value in [
-                    trade_date.isoformat(), stock["code"], stock["name"], stock["board"],
-                    stock["consecutive_days"], stock["window_limit_up_days"],
-                    stock["window_return_pct"], stock["window_start_date"],
-                    stock["actual_trade_days"], stock["price_limit_pct"], "是" if stock["is_st"] else "否",
-                    stock["st_quality"], "是" if stock["is_one_word"] else "否", stock["amount"],
-                    stock["industry_name"], "、".join(item["board_name"] for item in stock["snapshot_concepts"]),
-                    related.get("board_name", ""), related.get("board_code", ""), related.get("as_of_date", ""),
-                    data["snapshot_status"], data["snapshot"]["computed_at"],
-                ]]
+                [
+                    self._csv_cell(value)
+                    for value in [
+                        trade_date.isoformat(),
+                        stock["code"],
+                        stock["name"],
+                        stock["board"],
+                        stock["consecutive_days"],
+                        stock["window_limit_up_days"],
+                        stock["window_return_pct"],
+                        stock["window_start_date"],
+                        stock["actual_trade_days"],
+                        stock["price_limit_pct"],
+                        "是" if stock["is_st"] else "否",
+                        stock["st_quality"],
+                        "是" if stock["is_one_word"] else "否",
+                        stock["amount"],
+                        stock["industry_name"],
+                        "、".join(item["board_name"] for item in stock["snapshot_concepts"]),
+                        related.get("board_name", ""),
+                        related.get("board_code", ""),
+                        related.get("as_of_date", ""),
+                        data["snapshot_status"],
+                        data["snapshot"]["computed_at"],
+                    ]
+                ]
             )
         filename = f"limit-ladder-{trade_date.isoformat()}-{filters.window}d.csv"
         return filename, output.getvalue().encode("utf-8-sig")
@@ -334,8 +377,10 @@ class LimitLadderQueryService:
             [snapshot_id, window],
         )
         if rows.empty:
-            status = "ready" if int(snapshot.get("stock_count") or 0) == 0 and metadata else (
-                "unavailable"
+            status = (
+                "ready"
+                if int(snapshot.get("stock_count") or 0) == 0 and metadata
+                else ("unavailable")
             )
             return (
                 metadata.get("requested_window_start_date"),
@@ -347,7 +392,8 @@ class LimitLadderQueryService:
             str(row["code"]): {
                 "window_limit_up_days": int(row["window_limit_up_days"]),
                 "window_return_pct": (
-                    None if pd.isna(row.get("window_return_pct"))
+                    None
+                    if pd.isna(row.get("window_return_pct"))
                     else float(row["window_return_pct"])
                 ),
                 "window_start_date": self._date(row["window_start_date"]).isoformat(),
@@ -393,35 +439,31 @@ class LimitLadderQueryService:
             )
         return result
 
-    def _latest_related_boards(self, codes: list[str]):
+    def _related_boards_for_date(self, codes: list[str], trade_date: date):
+        """读取天梯业务日的同日相关性快照，不跨日期拼接冠军，也不在读链路写库。"""
         if not codes:
             return {}, "ready"
         try:
-            frame = pd.DataFrame({"code": codes})
-            with self.c.temp_view(frame, "ladder_related_codes") as code_view:
-                rows = self.c.query_df(
-                    f"""
-                    SELECT code, board_type, board_code, board_name, as_of_date FROM (
-                        SELECT c.code,c.board_type,c.board_code,d.name AS board_name,c.as_of_date,
-                               ROW_NUMBER() OVER (PARTITION BY c.code,c.board_type ORDER BY c.as_of_date DESC) AS rn
-                        FROM stock_board_correlation c
-                        JOIN {code_view} wanted ON wanted.code=c.code
-                        LEFT JOIN board_dict d ON d.board_code=c.board_code
-                        WHERE c.board_type IN ('industry','concept')
-                    ) ranked WHERE rn=1
-                    """
-                )
+            summaries = StockBoardCorrelationService(self.c).get_related_boards(codes, trade_date)
             result: dict[str, dict[str, dict[str, str]]] = {}
-            for row in rows.to_dict("records"):
-                result.setdefault(str(row["code"]), {})[str(row["board_type"])] = {
-                    "board_code": str(row["board_code"]),
-                    "board_name": self._nullable_text(row.get("board_name"))
-                    or str(row["board_code"]),
-                    "as_of_date": self._date(row["as_of_date"]).isoformat(),
-                }
-            return result, "ready"
-        except Exception as exc:  # noqa: BLE001 -- current correlation is optional enrichment
-            log.warning("天梯最新相关行业/概念查询降级: %s", exc)
+            missing = False
+            for code, summary in summaries.items():
+                if not summary or summary.get("unavailable_reason"):
+                    missing = True
+                    continue
+                as_of_date = str(summary["as_of_date"])
+                for board_type in ("industry", "concept"):
+                    winner = summary.get(board_type)
+                    if winner is None:
+                        continue
+                    result.setdefault(code, {})[board_type] = {
+                        "board_code": str(winner["board_code"]),
+                        "board_name": str(winner["name"]),
+                        "as_of_date": as_of_date,
+                    }
+            return result, "partial" if missing else "ready"
+        except Exception as exc:  # noqa: BLE001 -- correlation is optional enrichment
+            log.warning("天梯业务日相关行业/概念查询降级 date=%s: %s", trade_date, exc)
             return {}, "degraded"
 
     @staticmethod
@@ -436,7 +478,11 @@ class LimitLadderQueryService:
                 continue
             if filters.one_word_only and not stock["is_one_word"]:
                 continue
-            if keyword and keyword not in str(stock["code"]).casefold() and keyword not in str(stock["name"]).casefold():
+            if (
+                keyword
+                and keyword not in str(stock["code"]).casefold()
+                and keyword not in str(stock["name"]).casefold()
+            ):
                 continue
             if filters.hotspot_type == "industry":
                 related = stock.get("latest_related_industry")
@@ -474,7 +520,7 @@ class LimitLadderQueryService:
     def _hotspots(stocks: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
         counts: dict[tuple[str, str, str], int] = {}
         for stock in stocks:
-            # 顶部两类热点都使用当前走势相关冠军；快照归属事实不参与热点聚合。
+            # 顶部两类热点都使用天梯业务日的同日走势相关冠军；快照归属事实不参与热点聚合。
             for kind in ("industry", "concept"):
                 related = stock.get(f"latest_related_{kind}") or {
                     "board_code": "__unclassified__",

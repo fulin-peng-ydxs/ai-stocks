@@ -173,6 +173,32 @@ def test_gate_accepts_confirmed_suspensions_from_partial_ingest(market):
     assert coverage.reason_codes == ()
 
 
+def test_gate_fingerprint_ignores_explicit_future_concepts(market):
+    trade_date = date(2026, 8, 28)
+    _seed_calendar(market, trade_date)
+    _seed_basic(market, [
+        ("600001.SH", "甲公司", "主板", date(2020, 1, 1), "软件", 0.10),
+    ])
+    MarketRepository(market).upsert_daily_bar(pd.DataFrame([_bar("600001.SH", trade_date)]))
+    market.execute(
+        "INSERT INTO board_dict (board_code,name,board_type) VALUES ('C1','未来概念','concept')"
+    )
+    market.execute(
+        "INSERT INTO board_member (board_code,code,first_seen_date) VALUES ('C1','600001.SH',?)",
+        [trade_date + timedelta(days=1)],
+    )
+    service = LimitLadderSnapshotService(market)
+
+    before = service.check_coverage(trade_date).upstream_fingerprint
+    market.execute(
+        "UPDATE board_member SET first_seen_date=? WHERE board_code='C1' AND code='600001.SH'",
+        [trade_date],
+    )
+    after = service.check_coverage(trade_date).upstream_fingerprint
+
+    assert before != after
+
+
 def test_legal_empty_snapshot_is_published_and_repeat_creates_immutable_version(market):
     trade_date = date(2026, 8, 28)
     _seed_calendar(market, trade_date)

@@ -104,6 +104,15 @@ def _seed_ladder(market):
     )
     market.execute(
         """
+        INSERT INTO stock_board_correlation_state (
+            code,as_of_date,computed_at,algorithm_version,benchmark_code,
+            benchmark_fallback,has_industry_champion,has_concept_champion
+        ) VALUES ('600001.SH',?,current_timestamp,'v1','000300.SH',false,true,true)
+        """,
+        [trade_date],
+    )
+    market.execute(
+        """
         INSERT INTO stock_board_correlation (
             code,board_type,board_code,score,corr_20,corr_60,sample_20,sample_60,
             confidence,benchmark_code,benchmark_fallback,as_of_date,computed_at,algorithm_version
@@ -155,6 +164,39 @@ def test_query_keeps_stock_level_short_history_and_separates_concepts(market):
     ]
     assert sum(item["stock_count"] for item in data["hotspots"]["concept"]) == 2
     assert sum(item["stock_count"] for item in data["hotspots"]["industry"]) == 2
+
+
+def test_query_does_not_resurrect_old_concept_after_same_day_legal_empty(market):
+    trade_date = _seed_ladder(market)
+    prior_date = trade_date - timedelta(days=1)
+    market.execute(
+        "INSERT INTO stock_board_correlation_state VALUES "
+        "('600002.SH',?,current_timestamp,'v1','000300.SH',false,false,true)",
+        [prior_date],
+    )
+    market.execute(
+        "INSERT INTO stock_board_correlation VALUES "
+        "('600002.SH','concept','C001',0.6,0.6,0.6,20,60,'medium','000300.SH',false,?,"
+        "current_timestamp,'v1')",
+        [prior_date],
+    )
+    market.execute(
+        "INSERT INTO stock_board_correlation_state VALUES "
+        "('600002.SH',?,current_timestamp,'v1','000300.SH',false,false,false)",
+        [trade_date],
+    )
+
+    data = LimitLadderQueryService(market, coordinator=_FakeCoordinator()).query(
+        trade_date, LimitLadderFilters(window=10, ignore_st=False)
+    )
+
+    second = next(
+        stock
+        for layer in data["layers"]
+        for stock in layer["stocks"]
+        if stock["code"] == "600002.SH"
+    )
+    assert second["latest_related_concept"] is None
 
 
 def test_filters_summary_hotspots_and_csv_share_one_visible_collection(market):

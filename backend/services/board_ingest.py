@@ -396,10 +396,10 @@ class BoardIngestService:
                 f"SELECT count(*) AS n FROM board_member WHERE board_code=? AND code IN ({ph})",
                 [code, *sorted(cur_set)]).iloc[0]["n"])
             self.c.execute(
-                f"INSERT INTO board_member (board_code, code) "
-                f"SELECT ?, code FROM (VALUES {','.join(f'(?)' for _ in cur_set)}) t(code) "
+                f"INSERT INTO board_member (board_code, code, first_seen_date) "
+                f"SELECT ?, code, ? FROM (VALUES {','.join('(?)' for _ in cur_set)}) t(code) "
                 f"ON CONFLICT (board_code, code) DO NOTHING",
-                [code, *sorted(cur_set)])
+                [code, sdate, *sorted(cur_set)])
             self.c.execute(
                 "UPDATE board_dict SET member_count=?, member_snapshot_at=now(), updated_at=now() "
                 "WHERE board_code=?",

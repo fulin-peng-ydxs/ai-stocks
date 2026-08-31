@@ -52,6 +52,49 @@ def test_read_only_init_skips_ddl_and_keeps_existing_tables(tmp_path):
         assert EXPECTED_TABLES <= set(list_tables(reader))
 
 
+def test_init_db_migrates_old_current_state_primary_keys_and_preserves_rows():
+    with DuckDBClient(db_path=":memory:") as client:
+        client.execute(
+            "CREATE TABLE stock_board_correlation ("
+            "code VARCHAR,board_type VARCHAR,board_code VARCHAR,score DOUBLE,corr_20 DOUBLE,"
+            "corr_60 DOUBLE,sample_20 INTEGER,sample_60 INTEGER,confidence VARCHAR,"
+            "benchmark_code VARCHAR,benchmark_fallback BOOLEAN,as_of_date DATE,"
+            "computed_at TIMESTAMP,algorithm_version VARCHAR,PRIMARY KEY(code,board_type))"
+        )
+        client.execute(
+            "CREATE TABLE stock_board_correlation_state ("
+            "code VARCHAR PRIMARY KEY,as_of_date DATE,computed_at TIMESTAMP,"
+            "algorithm_version VARCHAR,benchmark_code VARCHAR,benchmark_fallback BOOLEAN,"
+            "has_industry_champion BOOLEAN,has_concept_champion BOOLEAN)"
+        )
+        client.execute(
+            "INSERT INTO stock_board_correlation VALUES "
+            "('600000.SH','industry','881001',0.6,0.5,0.75,20,60,'high',"
+            "'000001.SH',false,DATE '2026-08-28',TIMESTAMP '2026-08-29 16:00:00','v1')"
+        )
+        client.execute(
+            "INSERT INTO stock_board_correlation_state VALUES "
+            "('600000.SH',DATE '2026-08-28',TIMESTAMP '2026-08-29 16:00:00',"
+            "'v1','000001.SH',false,true,false)"
+        )
+
+        init_db(client)
+
+        champion_info = client.query_df("PRAGMA table_info('stock_board_correlation')")
+        state_info = client.query_df("PRAGMA table_info('stock_board_correlation_state')")
+        assert set(champion_info.loc[champion_info["pk"] > 0, "name"]) == {
+            "code",
+            "board_type",
+            "as_of_date",
+        }
+        assert set(state_info.loc[state_info["pk"] > 0, "name"]) == {"code", "as_of_date"}
+        assert client.query_df("SELECT count(*) n FROM stock_board_correlation").iloc[0]["n"] == 1
+        assert (
+            client.query_df("SELECT count(*) n FROM stock_board_correlation_state").iloc[0]["n"]
+            == 1
+        )
+
+
 def _valid_champion_values() -> tuple:
     return (
         "600000.SH",

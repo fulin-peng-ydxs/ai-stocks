@@ -181,6 +181,23 @@ def test_full_run_skip_partial_stale_version_change_and_forced_idempotence(marke
     ) == {ALGORITHM_VERSION}
 
 
+def test_future_membership_is_excluded_from_run_and_skip_statistics(market):
+    client, dates = market
+    client.execute(
+        "UPDATE board_member SET first_seen_date=? WHERE board_code='301001' AND code='600000.SH'",
+        [dates[-1] + timedelta(days=1)],
+    )
+    service = StockBoardCorrelationService(client)
+
+    first = service.compute_and_replace(force=True)
+    skipped = service.compute_and_replace()
+
+    assert first.candidate_count == 2
+    assert first.concept_champion_count == 0
+    assert skipped.candidate_count == 2
+    assert skipped.concept_champion_count == 0
+
+
 def test_range_replacement_keeps_other_stock_and_legal_empty_clears_old_winners(market):
     client, _ = market
     service = StockBoardCorrelationService(client)
@@ -381,7 +398,7 @@ def test_commit_failure_rolls_back_exact_previous_rows(tmp_path):
         assert _snapshot(client) == before
 
 
-def test_full_scope_does_not_skip_when_out_of_pool_stale_rows_exist(market):
+def test_full_scope_cleans_target_day_out_of_pool_rows_then_skips(market):
     client, dates = market
     service = StockBoardCorrelationService(client)
     service.compute_and_replace(force=True)
@@ -392,15 +409,15 @@ def test_full_scope_does_not_skip_when_out_of_pool_stale_rows_exist(market):
 
     result = service.compute_and_replace()
 
-    # 每日快照语义下，池外股票（600999.SH）的历史快照保留（不随全量删除）；它只在
-    # "按最新交易日读取"时被排除，并触发全量不跳过（_target_is_current 的 outside_winners 按日判定）。
+    # 全量重算使目标日快照与点时股票池完全一致；只清目标日，不影响其它日期历史。
     assert result.switched is True
     assert (
         client.conn.execute(
             "SELECT count(*) FROM stock_board_correlation_state WHERE code='600999.SH'"
         ).fetchone()[0]
-        == 1
+        == 0
     )
+    assert service.compute_and_replace().switched is False
 
 
 def test_phase_callbacks_cancel_immediately_before_switch_without_changing_rows(market):

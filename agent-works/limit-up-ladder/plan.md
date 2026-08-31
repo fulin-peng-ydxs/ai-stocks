@@ -18,7 +18,7 @@
 | 范围 | 现状依据 | 本计划处理 |
 | --- | --- | --- |
 | 涨跌停规则 | `backend/market_rules.py` 已有 `price_limit_pct_for`，主板 ST 以 2026-07-06 为 5%/10% 分界，科创/创业 ST 保持 20% | 扩展共享规则以覆盖收盘封板、无涨跌幅限制日及点时 ST；天梯不另建平行口径 |
-| 行情事实 | DuckDB 已有 `stock_basic`、`daily_bar`、`trade_calendar`、`board_dict`、`board_member`、`stock_board_correlation(_state)`；`daily_bar` 有 `is_st`、`is_one_word` | 新增点时 ST 与天梯版本化快照表；市场、板块和当前走势相关行业/概念仍从既有事实读取 |
+| 行情事实 | DuckDB 已有 `stock_basic`、`daily_bar`、`trade_calendar`、`board_dict`、`board_member`、`stock_board_correlation(_state)`；`daily_bar` 有 `is_st`、`is_one_word` | 新增点时 ST 与天梯版本化快照表；市场、板块和同日走势相关行业/概念仍从既有按日事实读取 |
 | 完整性 | `backend/services/trade_calendar_readiness.py` 已有交易日历就绪检查；采集服务能返回实际受影响日期 | 增加“选中日点时股票池 + 有效行情/停牌”门禁，不把不完整数据发布为空快照 |
 | 快照模式 | `backend/scoring/snapshot.py` 已有失效、按日期标记及持久化模式 | 复用失效思想，采用“状态指针 + 不可变成功版本”保证失败时保留旧结果 |
 | 长任务 | `backend/services/async_task.py` 已有任务类型、单 DuckDB 写者、同类任务冲突、进度和日志；前端 `data.ts` 有封闭 `TaskType`/`TASK_LABEL` | 新增 `limit_ladder_recompute` 写任务和同日幂等键；同步任务中心前端类型、筛选、名称、摘要和测试 |
@@ -67,7 +67,7 @@
 | R28 | 首次封板时间、开板次数、封单金额 | 跳过 | 当前 EOD 数据源不可可靠支持 |
 | R29 | 北交所 | 跳过 | 超出当前股票池边界 |
 | R30 | 盘中实时天梯 | 跳过 | 超出 EOD 产品定位 |
-| R31 | 历史日期的走势相关概念快照 | 跳过 | 已确认历史榜读取当前最新相关概念 |
+| R31 | 历史日期的走势相关概念快照 | 上游已实现并消费 | 天梯按选中交易日读取同日快照，无同日结果 fail-closed |
 
 ## 4. 技术方案
 
@@ -98,12 +98,12 @@
 2. 完整性门禁以 `list_date<=T AND (delist_date IS NULL OR delist_date>=T)` 且板块为主/科/创形成点时股票池。池内每股必须存在 T 日有效日线，或存在 `stock_suspension` 的 T 日确认停牌；两者均无、OHLC/前收盘非法或涨跌幅规则不可判定时拒绝发布。采集日志仅按第 4.2 节定义的结构化 T 日终态摘要判定，不扫描任意历史 failed 行。
 3. 滚动“X 天 N 板”最多批量读取 60 个交易日。连续板高度不受 60 日窗口限制：先定位选中日涨停候选，再以候选代码集合按批次继续向前读取交易日和行情，直到每只候选遇到未涨停、停牌、缺行情或上市边界；每批对剩余候选一次性查询，禁止逐股 N+1，也禁止用 60 日截断高度。
 4. 逐日涨停事实统一调用 `market_rules`；无涨跌幅限制且不可可靠判定时拒绝发布受影响结果。选中日涨停股票才进入快照。
-5. 快照专属行业只使用生成时的权威 `stock_basic.industry`，历史概念归属集合使用 `board_member + board_dict` 多归属，两者只供历史事实及接口/CSV 兼容；卡片、顶部行业与概念热点及筛选均按每股唯一的当前走势相关冠军，缺失归“未分类”。
+5. 快照专属行业只使用生成时的权威 `stock_basic.industry`；概念归属集合按 `first_seen_date IS NULL OR first_seen_date <= T` 使用 `board_member + board_dict` 多归属。两者只供天梯快照事实及接口/CSV 兼容；卡片、热点及筛选均按每股在 T 日唯一的同日走势相关冠军，缺失归“未分类”。
 6. 10/20/31/60 日次数、后复权累计涨幅、`window_start_date` 和 `actual_trade_days` 在 snapshot v2 发布时批量计算，并与卡片事实作为同一不可变版本原子冻结。查询按所选窗口读取对应子集，切换窗口不新建快照，也不混用修正后的当前行情；同层固定按“窗口次数降序、当日成交额降序、代码升序”。
-7. 查询从 `stock_board_correlation` 当前成功态一次批量读取行业/概念冠军、`board_code` 和 `as_of_date`，在服务层分别合并为 `latest_related_industry/latest_related_concept`；不写入历史快照、不传历史 `business_date` 限制。
+7. 查询从 `stock_board_correlation` 按选中交易日一次批量读取同日行业/概念冠军、`board_code` 和 `as_of_date`，在服务层合并到兼容字段 `latest_related_industry/latest_related_concept`；查询只读，不同步补算或借用其它日期结果。
 8. 展示筛选在已发布快照集合上取交集；摘要、层内数量、热点和 CSV 使用同一筛选函数，防止四套口径漂移。
 
-完整性结果 `coverage` 使用固定结构：`pool_count`、`valid_bar_count`、`confirmed_suspension_count`、`missing_count`、`invalid_bar_count`、`unsupported_rule_count`、`ingest_terminal_status=success|partial|failed|unknown`、`ingest_run_id`、`reason_codes[]`、`sample_codes[]`（每类最多 20 个）、`checked_at`。日行情顶层编排结束时向 `data_update_log` 写结构化终态摘要：`table_name=daily_bar`、`source=pipeline`、`date_start=date_end=T`、JSON `detail.kind=market_day_terminal`，detail 同时含 `run_id/expected/successful/failed/status`。门禁只解析此类摘要，无法解析或缺 kind 的旧 detail 忽略；同日按 `updated_at DESC,id DESC` 取一条，后续 success 覆盖早期失败，历史无摘要为 unknown 并依赖事实闭合。原因码至少包括 `NOT_TRADING_DAY`、`INGEST_PARTIAL`、`MISSING_BAR_OR_SUSPENSION`、`INVALID_DAILY_BAR`、`UNSUPPORTED_LIMIT_RULE`。只有所有计数闭合、差异数为 0，且终态为 success 或 unknown 时，股票数为 0 才能认定为合法无涨停。
+完整性结果 `coverage` 使用固定结构：`pool_count`、`valid_bar_count`、`confirmed_suspension_count`、`missing_count`、`invalid_bar_count`、`unsupported_rule_count`、`ingest_terminal_status=success|partial|failed|unknown`、`ingest_run_id`、`reason_codes[]`、`sample_codes[]`（每类最多 20 个）、`checked_at`。日行情顶层编排结束时向 `data_update_log` 写结构化终态摘要。门禁只解析 `detail.kind=market_day_terminal` 的同日最新摘要；旧 detail 忽略，历史无摘要为 unknown。`partial/failed` 是诊断事实，不单独否决：只要有效行情与确认停牌完整闭合点时股票池，且缺失、非法行情和规则不可判定均为 0，即可发布；否则拒绝。原因码至少包括 `NOT_TRADING_DAY`、`INGEST_PARTIAL`、`MISSING_BAR_OR_SUSPENSION`、`INVALID_DAILY_BAR`、`UNSUPPORTED_LIMIT_RULE`。
 
 ### 4.3 API 契约
 
@@ -198,7 +198,7 @@
 | 暂不实现 | R28 | 盘中封板字段 | - | 跳过 | 未覆盖 | 数据源不支持 |
 | 暂不实现 | R29 | 北交所 | - | 跳过 | 未覆盖 | 股票池不包含 |
 | 暂不实现 | R30 | 盘中实时天梯 | - | 跳过 | 未覆盖 | EOD 定位 |
-| 暂不实现 | R31 | 历史相关概念快照 | - | 跳过 | 未覆盖 | 当前最新概念已确认 |
+| 上游能力 | R31 | 历史相关概念快照 | T6 | 已消费 | 无偏差 | 选中交易日同日读取，无快照时 fail-closed |
 
 ## 6. 详细实施步骤与进度追踪
 
@@ -258,9 +258,9 @@
 - 产出：门禁结果、快照仓库、状态转换 API、失效矩阵。
 - 影响范围：天梯日期状态和上游任务完成钩子；不删除旧成功版本。
 - 边界与异常：点时池闭合、停牌证明、早期失败后成功补采、同日多来源日志、历史无结构化摘要、非法 OHLC、特殊规则未知、合法空和发布故障。
-- 验证方式：后写 success 覆盖早期 partial/failed；非结构化旧日志不作硬否决；历史无摘要但事实闭合可发布；最新终态 partial/failed 必须拒绝；故障后仍指向旧成功。
+- 验证方式：后写 success 覆盖早期 partial/failed；非结构化旧日志不作硬否决；历史无摘要但事实闭合可发布；partial/failed 在确认停牌等事实完整解释全部缺口时可发布，仍有未解释缺口时拒绝；故障后仍指向旧成功。
 - 完成标准：R2/R4～R6/R10 的门禁、状态和一致性验收可复现。
-- 实际落地情况：新增 `LimitLadderSnapshotService`，按点时股票池批量核对有效 OHLC/前收盘、确认停牌、缺行情、规则未知和最新结构化采集终态，输出固定 coverage、原因码、样本代码及上游指纹；指纹覆盖一字板标记、点时 ST、概念归属和行业字典映射，事务内可识别所有会改变已发布股票字段的上游漂移。非结构化旧日志被忽略，无终态日志按 `unknown + 事实闭合` 处理，后写 partial/failed 会阻断发布。发布采用不可变版本，单个 DuckDB 事务写元数据、股票、概念、聚合并切换状态指针；合法无涨停仍发布零股票版本，发布失败或上游漂移保留旧成功指针并记录 failed。点时 ST 真实变化与同日快照失效在同一事务提交，指定日期行情及日常增量行情按实际返回日期失效，全量行情/基础信息及板块字典/成分变化使用有边界扩大范围且不删除旧版本。增量行情全市场编排新增 `market_day_terminal` 结构化终态摘要。非交易日、事实闭合、旧日志忽略、后写终态覆盖、合法空、重复不可变版本、事务故障回滚、旧指针回退、发布字段指纹和精确日期失效测试均已通过。
+- 实际落地情况：`LimitLadderSnapshotService` 按点时股票池批量核对有效 OHLC/前收盘、确认停牌、缺行情、规则未知和最新结构化采集终态，输出固定 coverage、原因码、样本代码及上游指纹；指纹中的概念归属同样按 `first_seen_date IS NULL OR first_seen_date <= T`。非结构化旧日志被忽略，无终态日志按 `unknown + 事实闭合` 处理；partial/failed 仅在仍有未解释事实缺口时阻断发布。发布采用不可变版本，单个 DuckDB 事务写元数据、股票、概念、聚合并切换状态指针；合法无涨停仍发布零股票版本，失败保留旧成功指针。
 
 ### T5：DuckDB 任务执行、可靠 PG 审计与任务中心前端
 
@@ -280,7 +280,7 @@
 
 - 状态：已完成。
 - 依赖：T4、T5。
-- 输入：当前成功快照、窗口参数、展示筛选、当前走势相关行业/概念和任务状态。
+- 输入：当前成功天梯快照、窗口参数、展示筛选、选中交易日同日走势相关行业/概念和任务状态。
 - 目标：提供前端无需推断的稳定查询、状态和导出契约。
 - 涉及文件/模块：新增 `backend/api/limit_ladder.py`、`backend/services/limit_ladder_query.py`、`backend/main.py`、API 测试。
 - 操作：实现第 4.3 节端点；GET 遇到无快照或失效时分别以 `auto_first_load/auto_invalid_refresh` 调用 T5 `ensure_date_task`，管理员 POST 以 `admin_recompute` 调用同一入口；统一参数/筛选函数；顶层返回 coverage、快照状态及 `requested_window_start_date/requested_window_trade_days`，每个股票 DTO 返回自己的 `window_start_date/actual_trade_days`；R10 快照概念与 R11 当前概念分字段；CSV 复用同一集合。
@@ -289,7 +289,7 @@
 - 边界与异常：无快照/失效只通过统一入口创建或复用任务；筛选空与合法空分码；相关行业/概念失败降级；非法窗口/板块/日期 400。
 - 验证方式：逐状态响应断言；短上市股票的 `window_start_date/actual_trade_days` 只出现在对应股票 DTO，顶层仅使用 `requested_window_start_date/requested_window_trade_days`；CSV 行集合等于查询集合且三个概念字段独立；并发返回同一活动任务。
 - 完成标准：R2/R5/R6/R8～R11/R16～R18 的前端所需字段齐全且可验证。
-- 实际落地情况：新增 `LimitLadderQueryService`，以不可变成功快照为主体，提供交易日、逐状态、统一筛选、分层、摘要、当前可见热点和 CSV 读模型；无快照与失效快照只经 T5 统一入口分别触发首算与刷新，并立即返回可轮询的计算状态。10/20/31/60 日字段仅对快照股票批量读取最多 60 个交易日，不重跑完整连续板长历史；顶层与股票级短历史字段严格分离。快照专属行业/多概念与当前走势相关行业/概念分别返回，动态窗口或当前相关板块局部失败不遮蔽旧成功快照；动态窗口主计算和降级元数据同时失败时仍返回快照主体。页面验收纠偏后，行业与概念热点及筛选统一改为每股唯一的当前走势相关冠军；快照专属行业和完整概念集合只保留为历史事实及接口/CSV 兼容字段，不再用于热点、筛选或卡片展示。新增四个查询/导出端点和 system-only 重算端点，板块别名、ST、一字板、关键词和热点使用同一交集函数，CSV 输出 UTF-8 BOM、复用同一可见集合并防止外部名称触发电子表格公式，非交易日最近交易日保持日期格式。逐状态、非法参数、权限元数据、短上市、筛选聚合、相关字段分离、双重降级、CSV 安全与集合契约测试通过；本阶段未改页面，因此页面自动化归入 T5 任务中心承接和后续页面阶段。
+- 实际落地情况：`LimitLadderQueryService` 以不可变成功快照为主体，提供交易日、状态、筛选、分层、摘要、热点和 CSV 读模型。快照专属行业/多概念与选中日同日走势相关行业/概念分别返回；相关性读取失败或同日快照缺失不遮蔽天梯主体，并按未分类降级。兼容字段名仍为 `latest_related_*`，但值只来自选中业务日同日快照，查询链路不写库。
 
 ### T1～T9 阶段自审留痕（历史）
 

@@ -47,10 +47,7 @@ class LimitLadderCoverage:
             + self.invalid_bar_count
             + self.unsupported_rule_count
         )
-        return (
-            closed
-            and not self.reason_codes
-        )
+        return closed and not self.reason_codes
 
     def to_dict(self) -> dict:
         payload = asdict(self)
@@ -191,7 +188,7 @@ class LimitLadderSnapshotService:
             reasons.append("INVALID_DAILY_BAR")
         if unsupported:
             reasons.append("UNSUPPORTED_LIMIT_RULE")
-        concepts = self._concept_fingerprint(codes)
+        concepts = self._concept_fingerprint(codes, trade_date)
         industries = self._industry_fingerprint()
         fingerprint = self._fingerprint(
             {
@@ -299,9 +296,20 @@ class LimitLadderSnapshotService:
                 for stock in calculation.stocks
             ],
             columns=[
-                "snapshot_id", "code", "name", "board", "price_limit_pct", "is_st",
-                "st_quality", "st_source", "is_one_word", "consecutive_days", "amount",
-                "industry_name", "industry_board_code", "source_version",
+                "snapshot_id",
+                "code",
+                "name",
+                "board",
+                "price_limit_pct",
+                "is_st",
+                "st_quality",
+                "st_source",
+                "is_one_word",
+                "consecutive_days",
+                "amount",
+                "industry_name",
+                "industry_board_code",
+                "source_version",
             ],
         )
         concepts = pd.DataFrame(
@@ -350,8 +358,13 @@ class LimitLadderSnapshotService:
                 for metric in window_calculation.stocks
             ],
             columns=[
-                "snapshot_id", "code", "window_days", "window_limit_up_days",
-                "window_return_pct", "window_start_date", "actual_trade_days",
+                "snapshot_id",
+                "code",
+                "window_days",
+                "window_limit_up_days",
+                "window_return_pct",
+                "window_start_date",
+                "actual_trade_days",
                 "source_version",
             ],
         )
@@ -361,9 +374,7 @@ class LimitLadderSnapshotService:
                     "requested_window_start_date": (
                         window_calculation.requested_window_start_date.isoformat()
                     ),
-                    "requested_window_trade_days": (
-                        window_calculation.requested_window_trade_days
-                    ),
+                    "requested_window_trade_days": (window_calculation.requested_window_trade_days),
                 }
                 for window, window_calculation in window_calculations.items()
             },
@@ -456,13 +467,14 @@ class LimitLadderSnapshotService:
             "SELECT trade_date FROM limit_ladder_snapshot_state WHERE current_snapshot_id IS NOT NULL"
         )
         return self.invalidate_dates(
-            [self._date(value) for value in rows.get("trade_date", pd.Series(dtype=object)).tolist()],
+            [
+                self._date(value)
+                for value in rows.get("trade_date", pd.Series(dtype=object)).tolist()
+            ],
             reason=reason,
         )
 
-    def request_invalidation(
-        self, trade_dates: list[date] | None, *, reason: str
-    ) -> int:
+    def request_invalidation(self, trade_dates: list[date] | None, *, reason: str) -> int:
         """Persist the intent first, then atomically invalidate and close the event."""
         dates = sorted({self._date(value) for value in (trade_dates or []) if value is not None})
         event_id = uuid4().hex
@@ -529,9 +541,7 @@ class LimitLadderSnapshotService:
                     "last_error=?,updated_at=? WHERE event_id=?",
                     [str(exc)[:1000], self._now(), row["event_id"]],
                 )
-                raise RuntimeError(
-                    f"limit ladder invalidation pending: {row['event_id']}"
-                ) from exc
+                raise RuntimeError(f"limit ladder invalidation pending: {row['event_id']}") from exc
         return total
 
     def mark_invalid(
@@ -551,9 +561,7 @@ class LimitLadderSnapshotService:
             invalid_reason=reason,
         )
 
-    def mark_failed(
-        self, trade_date: date, *, summary: str, task_id: str | None = None
-    ) -> None:
+    def mark_failed(self, trade_date: date, *, summary: str, task_id: str | None = None) -> None:
         self._set_terminal_state(
             trade_date,
             status="failed",
@@ -575,9 +583,7 @@ class LimitLadderSnapshotService:
             return 0
         return self._fail_processing_states(task_id=task_id, summary=summary)
 
-    def _fail_processing_states(
-        self, *, summary: str, task_id: str | None = None
-    ) -> int:
+    def _fail_processing_states(self, *, summary: str, task_id: str | None = None) -> int:
         where = "status IN ('calculating','recalculating')"
         params: list[object] = [summary[:1000], self._now()]
         if task_id is not None:
@@ -702,7 +708,9 @@ class LimitLadderSnapshotService:
             return status, None if run_id is None else str(run_id)
         return "unknown", None
 
-    def _concept_fingerprint(self, codes: list[str]) -> list[tuple[str, str, str]]:
+    def _concept_fingerprint(
+        self, codes: list[str], trade_date: date
+    ) -> list[tuple[str, str, str]]:
         if not codes:
             return []
         frame = pd.DataFrame({"code": codes})
@@ -714,8 +722,10 @@ class LimitLadderSnapshotService:
                 JOIN {view} codes ON codes.code=bm.code
                 JOIN board_dict bd ON bd.board_code=bm.board_code
                 WHERE bd.board_type='concept'
+                  AND (bm.first_seen_date IS NULL OR bm.first_seen_date<=?)
                 ORDER BY bm.code,bd.board_code,bd.name
-                """
+                """,
+                [trade_date],
             )
         return [
             (str(row["code"]), str(row["board_code"]), str(row["name"]))
@@ -727,10 +737,7 @@ class LimitLadderSnapshotService:
             "SELECT board_code,name FROM board_dict "
             "WHERE board_type='industry' ORDER BY board_code,name"
         )
-        return [
-            (str(row["board_code"]), str(row["name"]))
-            for _, row in rows.iterrows()
-        ]
+        return [(str(row["board_code"]), str(row["name"])) for _, row in rows.iterrows()]
 
     def _insert_frame(self, table: str, frame: pd.DataFrame) -> None:
         if frame.empty:

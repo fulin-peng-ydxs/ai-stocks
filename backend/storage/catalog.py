@@ -175,12 +175,13 @@ TABLE_CATALOG: dict[str, dict] = {
     },
     "board_member": {
         "name_cn": "板块成分股",
-        "purpose": "板块↔成分股多对多关系，只进不出累积（每行一只成分股，不删除）。",
-        "date_col": None,
+        "purpose": "板块↔成分股多对多关系，只进不出累积；首次观测日为空的存量关系兼容全部历史。",
+        "date_col": "first_seen_date",
         "relations": ["board_code → board_dict", "code → stock_basic"],
         "fields": [
             {"name": "board_code", "type": "VARCHAR", "name_cn": "板块代码", "desc": ""},
             {"name": "code", "type": "VARCHAR", "name_cn": "成分股代码", "desc": "含交易所后缀"},
+            {"name": "first_seen_date", "type": "DATE", "name_cn": "首次观测日", "desc": "首次完整采集到该关系的业务日；NULL 视为历史已存在"},
         ],
     },
     "board_bar": {

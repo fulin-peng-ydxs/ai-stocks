@@ -182,9 +182,7 @@ class LimitLadderCalculator:
                         break
                     fact = facts.get((code, day))
                     result = None
-                    if fact is not None and not self._bool_value(
-                        fact.get("confirmed_suspension")
-                    ):
+                    if fact is not None and not self._bool_value(fact.get("confirmed_suspension")):
                         result, _ = self.evaluate_fact(
                             code=code,
                             basic=basic,
@@ -208,7 +206,7 @@ class LimitLadderCalculator:
             if not active and offset >= HISTORY_BATCH_SIZE:
                 break
 
-        concepts_by_code = self._concepts_for(sorted(candidates))
+        concepts_by_code = self._concepts_for(sorted(candidates), trade_date)
         industry_codes = self._unique_industry_codes()
         stocks: list[LadderStock] = []
         for code, candidate in candidates.items():
@@ -225,9 +223,7 @@ class LimitLadderCalculator:
                 LadderStock(
                     code=code,
                     name=self._text(basic.get("name")) or code,
-                    board=listing_board_for(
-                        board=self._text(basic.get("board")), code=code
-                    ).value,
+                    board=listing_board_for(board=self._text(basic.get("board")), code=code).value,
                     price_limit_pct=candidate["limit_pct"],
                     is_st=st_status.is_st,
                     st_quality=st_status.quality.value,
@@ -260,7 +256,9 @@ class LimitLadderCalculator:
             stocks=tuple(stocks),
             aggregates=tuple(aggregates),
             coverage_issues=tuple(
-                sorted(issues.values(), key=lambda issue: (issue.trade_date, issue.code, issue.reason))
+                sorted(
+                    issues.values(), key=lambda issue: (issue.trade_date, issue.code, issue.reason)
+                )
             ),
             batch_query_count=self._batch_query_count,
         )
@@ -352,7 +350,7 @@ class LimitLadderCalculator:
             for _, row in basics.iterrows()
             if str(row["code"]) in requested_set
         }
-        max_dates = calendar[-max(SUPPORTED_WINDOWS):]
+        max_dates = calendar[-max(SUPPORTED_WINDOWS) :]
         facts = self._load_daily_facts(sorted(basic_by_code), max_dates)
         calculations: dict[int, LimitLadderWindowCalculation] = {}
         for window in sorted(SUPPORTED_WINDOWS):
@@ -423,7 +421,9 @@ class LimitLadderCalculator:
             [trade_date, trade_date],
         )
 
-    def _load_daily_facts(self, codes: list[str], dates: list[date]) -> dict[tuple[str, date], dict]:
+    def _load_daily_facts(
+        self, codes: list[str], dates: list[date]
+    ) -> dict[tuple[str, date], dict]:
         if not codes or not dates:
             return {}
         code_frame = pd.DataFrame({"code": codes})
@@ -483,8 +483,8 @@ class LimitLadderCalculator:
                     list_date=list_date,
                     listing_session_number=current_index - first_index + 1,
                 )
-        board_pct = None if pd.isna(basic.get("price_limit_pct")) else float(
-            basic.get("price_limit_pct")
+        board_pct = (
+            None if pd.isna(basic.get("price_limit_pct")) else float(basic.get("price_limit_pct"))
         )
         result = evaluate_close_limit_up(
             close=fact.get("close"),
@@ -509,7 +509,9 @@ class LimitLadderCalculator:
             )
         return resolve_point_in_time_st(name=LimitLadderCalculator._text(basic.get("name")))
 
-    def _concepts_for(self, codes: list[str]) -> dict[str, tuple[LadderConcept, ...]]:
+    def _concepts_for(
+        self, codes: list[str], trade_date: date
+    ) -> dict[str, tuple[LadderConcept, ...]]:
         if not codes:
             return {}
         code_frame = pd.DataFrame({"code": codes})
@@ -521,8 +523,10 @@ class LimitLadderCalculator:
                 JOIN {code_view} codes ON codes.code=bm.code
                 JOIN board_dict bd ON bd.board_code=bm.board_code
                 WHERE bd.board_type='concept'
+                  AND (bm.first_seen_date IS NULL OR bm.first_seen_date<=?)
                 ORDER BY bm.code,bd.name,bd.board_code
-                """
+                """,
+                [trade_date],
             )
         result: dict[str, list[LadderConcept]] = {}
         for _, row in rows.iterrows():

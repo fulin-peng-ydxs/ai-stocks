@@ -16,7 +16,7 @@
 | 点时 ST | 当前事实与不可变变更历史；质量只允许从 `approximate` 升到 `accurate` | `backend/services/stock_st_status.py` |
 | 连板计算 | 批量加载行情；连续板回溯到中断或上市边界，不受 60 日窗口截断 | `backend/services/limit_ladder_calculator.py` |
 | 快照发布 | coverage 门禁、不可变版本、四档窗口指标冻结、状态指针原子切换 | `backend/services/limit_ladder_snapshot.py` |
-| 查询读模型 | 统一筛选、摘要、热点、短历史字段、CSV 和当前走势冠军合并 | `backend/services/limit_ladder_query.py` |
+| 查询读模型 | 统一筛选、摘要、热点、短历史字段、CSV 和同日走势冠军合并 | `backend/services/limit_ladder_query.py` |
 | 日期任务协调 | 自动首算、失效刷新、管理员重算共享同日活动命令 | `backend/services/limit_ladder_task_coordinator.py`、`backend/storage/limit_ladder_task_repository.py` |
 | 执行与审计 | DuckDB 保存任务进度/日志；PG 保存日期协调账本和可靠审计 outbox | `backend/services/async_task.py`、`backend/storage/pg_ddl.py` |
 | 页面 | 主从工作台、天梯卡片、热点、设置、窄屏抽屉和详情返回 | `frontend/src/views/LimitLadderView.vue`、`frontend/src/views/limit-ladder/` |
@@ -40,7 +40,7 @@ flowchart LR
   COORD --> LEDGER[(PG 日期账本 / 审计 outbox)]
   COORD --> TASK[(DuckDB async_task / task_log)]
   TASK --> SNAP
-  CORR[(当前走势相关行业 / 概念冠军)] --> QUERY[查询读模型]
+  CORR[(同业务日走势相关行业 / 概念冠军)] --> QUERY[查询读模型]
   STATE --> QUERY
   QUERY --> PAGE[连板天梯页面 / CSV]
   PAGE --> STOCK[个股行情与详情]
@@ -65,7 +65,7 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 2. 每只股票在 T 日必须存在有效日线或确认停牌事实；点时股票池以“有效日线 + 确认停牌”闭合且不存在缺失、非法行情或不支持规则时即可发布。采集终态 `partial/failed` 保留为诊断事实，但已被确认停牌完整解释的无行情不再误判为缺失；仍有未解释缺口时继续拒绝发布。
 3. 只把 T 日收盘涨停股票作为候选，继续向前批量读取，直到每只股票出现未涨停、停牌、缺行情或上市边界。
 4. 一次计算 10/20/31/60 日涨停次数、后复权累计涨幅、实际起始日和实际交易日数。
-5. 在同一 DuckDB 事务写入快照元数据、股票、概念、聚合和四档窗口指标，校验通过后切换 `current_snapshot_id`。
+5. 概念成员按 `first_seen_date IS NULL OR first_seen_date <= T` 取点时兼容集合；在同一 DuckDB 事务写入快照元数据、股票、概念、聚合和四档窗口指标，校验通过后切换 `current_snapshot_id`。
 
 ### 上游失效与补偿
 
@@ -105,7 +105,7 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 
 - 入口：菜单「最新行情 → 连板天梯」，路由 `/limit-ladder`。
 - 默认：最新完整交易日、31 日窗口、主/科/创全选、忽略 ST。
-- 热点：行业与概念均按每股唯一的当前走势相关冠军计数；点击热点筛选当前天梯。
+- 热点：行业与概念均按每股唯一的天梯交易日同日走势相关冠军计数；点击热点筛选当前天梯。同日相关快照缺失时归入未分类，不借用其它日期冠军。
 - 卡片：显示名称/代码、窗口板数、累计涨幅、ST/一字板、上市板块、走势相关行业和概念；接口的连板高度保持一级分层，所属板块、所属行业、所属概念、累计涨幅、累计涨停只在每层内部做稳定二级排序；概念链接直接进入板块行情，不重复触发热点筛选。
 - 分析：桌面右侧复用股票分析；768px 窄屏使用页面内全屏 `PageDrawer`。页面设置与个股查询保持同序：共享图表设置（含复权）→ 默认筛选及 `StockAnalysisDefaultFields` → K线设置；对比指数、周期、指标、模式、复权、辅助图表、高度比例和展开状态统一消费 `limit-ladder` 页面偏好，修改即自动保存。个股与板块详情返回均恢复交易日、筛选、层内排序、选中股票和卡片锚点。
 - 低高度：筛选工具栏固定，摘要、热点和梯级共用成长滚动区；热点默认收敛但可展开。
@@ -156,5 +156,5 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 | --- | --- | --- | --- |
 | 中 | 历史 ST 仅有近似事实 | 旧日期涨停与连板可信度下降 | 快照和页面标记质量；准确回填后按受影响日期向后失效 |
 | 中 | 正式数据副本尚未完成迁移与恢复演练 | 正式环境锁等待、耗时和资源峰值未知 | 上线前按 SQL 演练文档复演并记录备份恢复耗时 |
-| 低 | 当前走势冠军不是历史点时归属 | 历史天梯展示的是当前最新相关行业/概念 | 页面保持统一语义，接口/CSV保留截止日；历史相关性快照仍属 R31 之外 |
+| 低 | 天梯日缺少同日走势相关快照 | 对应行业/概念暂显示未分类或“—” | 查询只读且 fail-closed；通过相关性异步任务补算该日，不借用其它日期结果 |
 | 低 | DuckDB 单写者限制 | 首算或重算可能排队 | 统一异步任务和同日活动命令；页面展示处理态，不以同步长请求阻塞 |

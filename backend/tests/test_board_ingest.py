@@ -227,9 +227,10 @@ def test_member_only_append_no_delete(tmp_path):
               "VALUES ('309121','AI PC','concept',TRUE)")
     r = svc._ingest_one_member("309121", "concept", date(2026, 1, 5))
     assert r["total"] == 3
-    df = c.query_df("SELECT board_code, code FROM board_member")
+    df = c.query_df("SELECT board_code, code, first_seen_date FROM board_member")
     assert len(df) == 3
     assert set(df["code"]) == {"300476.SZ", "603936.SH", "002913.SZ"}
+    assert set(pd.to_datetime(df["first_seen_date"]).dt.date) == {date(2026, 1, 5)}
     # member_count 刷新为本次完整快照返回数
     assert int(_member_count(c, "309121")) == 3
     assert r["added"] == 3
@@ -243,8 +244,11 @@ def test_member_only_append_no_delete(tmp_path):
     r2 = svc2._ingest_one_member("309121", "concept", date(2026, 1, 6))
     # 300750 新增，002913 保留（只进不出）
     assert r2["total"] == 3
-    df2 = c2.query_df("SELECT code FROM board_member")
+    df2 = c2.query_df("SELECT code, first_seen_date FROM board_member")
     assert set(df2["code"]) == {"300476.SZ", "603936.SH", "002913.SZ", "300750.SZ"}
+    first_seen = dict(zip(df2["code"], df2["first_seen_date"]))
+    assert pd.isna(first_seen["300476.SZ"])
+    assert pd.Timestamp(first_seen["300750.SZ"]).date() == date(2026, 1, 6)
     assert int(_member_count(c2, "309121")) == 3  # 当前快照成分数
     assert r2["added"] == 1
 

@@ -424,8 +424,8 @@ class DataVerifier:
         ) + self._count(
             "SELECT count(*) FROM stock_board_correlation c "
             "WHERE c.algorithm_version<>? AND c.as_of_date=("
-            "SELECT max(c2.as_of_date) FROM stock_board_correlation c2 "
-            "WHERE c2.code=c.code AND c2.board_type=c.board_type)",
+            "SELECT max(s2.as_of_date) FROM stock_board_correlation_state s2 "
+            "WHERE s2.code=c.code)",
             [ALGORITHM_VERSION],
         )
         self._check(

@@ -324,6 +324,22 @@ def test_calculator_freezes_industry_concepts_and_reports_coverage(market):
     assert "688003.SH" not in {stock.code for stock in result.stocks}  # IPO no-limit session
 
 
+def test_calculator_filters_explicit_future_concepts_but_keeps_legacy_null(market):
+    _, trade_date = _seed_ladder_fixture(market)
+    market.execute(
+        "UPDATE board_member SET first_seen_date=NULL WHERE board_code='C1' AND code='600001.SH'"
+    )
+    market.execute(
+        "UPDATE board_member SET first_seen_date=? WHERE board_code='C2' AND code='600001.SH'",
+        [trade_date + timedelta(days=1)],
+    )
+
+    result = LimitLadderCalculator(market).calculate(trade_date, window=31)
+
+    first = next(stock for stock in result.stocks if stock.code == "600001.SH")
+    assert [concept.board_code for concept in first.concepts] == ["C1"]
+
+
 def test_calculator_uses_per_stock_window_and_missing_day_breaks_streak(market):
     days = [date(2026, 8, 10) + timedelta(days=index) for index in range(15)]
     MarketRepository(market).upsert_trade_calendar(

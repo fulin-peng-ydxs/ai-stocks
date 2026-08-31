@@ -8,12 +8,9 @@ from backend.storage.duckdb_client import DuckDBClient
 
 
 def _seed_supported_result(client: DuckDBClient) -> None:
+    client.execute("INSERT INTO stock_basic (code,name) VALUES ('600000.SH','E2E体检股票')")
     client.execute(
-        "INSERT INTO stock_basic (code,name) VALUES ('600000.SH','E2E体检股票')"
-    )
-    client.execute(
-        "INSERT INTO daily_bar (code,trade_date,close) "
-        "VALUES ('600000.SH',DATE '2026-08-28',10)"
+        "INSERT INTO daily_bar (code,trade_date,close) VALUES ('600000.SH',DATE '2026-08-28',10)"
     )
     client.execute(
         "INSERT INTO board_dict (board_code,name,board_type) "
@@ -55,7 +52,7 @@ def test_correlation_checkup_passes_for_supported_consistent_result():
         assert verifier.fails() == []
 
 
-def test_correlation_checkup_catches_orphan_mismatch_old_version_and_future_dates():
+def test_correlation_checkup_catches_orphan_and_future_dates():
     with DuckDBClient(db_path=":memory:") as client:
         init_db(client)
         _seed_supported_result(client)
@@ -74,9 +71,30 @@ def test_correlation_checkup_catches_orphan_mismatch_old_version_and_future_date
         assert not _result(verifier, "冠军板块均有同类型字典记录")
         # 每日快照下"状态与冠军日期/时间/版本/基准一致"按 (code, as_of_date) 同日比对；
         # 本用例把 state 改为未来 as_of（08-29），属跨日差异而非同日 mismatch，不再触发该项。
-        assert not _result(verifier, "结果算法版本均为 stock-board-correlation-v2")
+        # 最新状态已经推进到 08-29，08-28 的旧算法冠军属于保留的历史快照，不应误报。
+        assert _result(verifier, "结果算法版本均为 stock-board-correlation-v2")
         assert not _result(verifier, "结果日期不晚于个股行情可用日")
         assert not _result(verifier, "结果日期不晚于基准行情可用日")
+
+
+def test_historical_old_champion_is_not_treated_as_latest_when_current_type_is_empty():
+    with DuckDBClient(db_path=":memory:") as client:
+        init_db(client)
+        _seed_supported_result(client)
+        client.execute(
+            "INSERT INTO stock_board_correlation_state VALUES "
+            "('600000.SH',DATE '2026-08-29',TIMESTAMP '2026-08-30 10:00:00',"
+            "'stock-board-correlation-v2','000001.SH',false,false,false)"
+        )
+        client.execute(
+            "UPDATE stock_board_correlation SET algorithm_version='stock-board-correlation-v1' "
+            "WHERE as_of_date=DATE '2026-08-28'"
+        )
+
+        verifier = DataVerifier(client, quiet=True)
+        verifier.check_stock_board_correlation()
+
+        assert _result(verifier, "结果算法版本均为 stock-board-correlation-v2")
 
 
 def test_structured_checkup_contains_correlation_group():
@@ -86,8 +104,6 @@ def test_structured_checkup_contains_correlation_group():
 
         report = verifier.run_structured(cross=False)
 
-        group = next(
-            item for item in report["groups"] if item["group"] == "G. 个股走势关联板块"
-        )
+        group = next(item for item in report["groups"] if item["group"] == "G. 个股走势关联板块")
         assert len(group["checks"]) == 13
         assert all(check["ok"] for check in group["checks"])

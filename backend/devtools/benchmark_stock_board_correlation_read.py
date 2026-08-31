@@ -36,6 +36,9 @@ class _CountingClient:
         self.query_count += 1
         return self.delegate.query_df(sql, params)
 
+    def temp_view(self, frame, name: str):
+        return self.delegate.temp_view(frame, name)
+
 
 @dataclass(frozen=True)
 class ReadScaleResult:

@@ -90,6 +90,28 @@ def test_membership_batch_is_one_query_and_filters_invalid_relations():
         assert result["000001.SZ"]["membership_updated_at"] is None
 
 
+def test_membership_as_of_keeps_legacy_null_and_filters_explicit_future_first_seen():
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_memberships(market)
+        market.execute(
+            "UPDATE board_member SET first_seen_date=DATE '2026-08-29' "
+            "WHERE board_code='301002' AND code='600000.SH'"
+        )
+
+        before = StockBoardCorrelationService(market).get_memberships(
+            ["600000.SH"], date(2026, 8, 28)
+        )["600000.SH"]
+        on_date = StockBoardCorrelationService(market).get_memberships(
+            ["600000.SH"], date(2026, 8, 29)
+        )["600000.SH"]
+
+        assert {item["board_code"] for item in before["concepts"]} == {"301001"}
+        assert {item["board_code"] for item in on_date["concepts"]} == {"301001", "301002"}
+        # 未回填 first_seen_date 的存量行业关系在任意历史日期继续参与。
+        assert {item["board_code"] for item in before["industries"]} == {"881001", "881002"}
+
+
 def test_membership_large_batch_avoids_duckdb_window_parameter_internal_error():
     with DuckDBClient(db_path=":memory:") as market:
         init_db(market)

@@ -53,17 +53,11 @@ def _seed_summary(client: DuckDBClient, *, as_of: date = date(2026, 8, 28)) -> N
     )
 
 
-def test_batch_summary_reads_per_day_snapshot(monkeypatch):
+def test_batch_summary_reads_per_day_snapshot():
     as_of = date(2026, 8, 28)
     with DuckDBClient(db_path=":memory:") as market:
         init_db(market)
         _seed_summary(market, as_of=as_of)
-        # 本用例聚焦「按业务日取对应快照」读取逻辑；按需回填（触发真实计算）抽离，由专项用例覆盖。
-        monkeypatch.setattr(
-            StockBoardCorrelationService,
-            "_backfill_missing_snapshots",
-            lambda self, codes, dates: None,
-        )
         service = StockBoardCorrelationService(market)
 
         result = service.get_related_boards(
@@ -119,14 +113,9 @@ def test_batch_summary_query_count_does_not_grow_with_rows(count):
         assert len(counting.queries) == 1
 
 
-def test_empty_batch_and_nonstandard_rows(monkeypatch):
+def test_empty_batch_and_nonstandard_rows():
     with DuckDBClient(db_path=":memory:") as market:
         init_db(market)
-        monkeypatch.setattr(
-            StockBoardCorrelationService,
-            "_backfill_missing_snapshots",
-            lambda self, codes, dates: None,
-        )
         counting = _CountingClient(market)
         service = StockBoardCorrelationService(counting)  # type: ignore[arg-type]
 
@@ -143,6 +132,22 @@ def test_empty_batch_and_nonstandard_rows(monkeypatch):
         rb = rows[1]["related_boards"]
         assert rb["unavailable_reason"] == "as_of_mismatch"
         assert rb["as_of_date"] is None
+
+
+def test_all_none_date_mapping_fails_closed_without_returning_latest_snapshot():
+    as_of = date(2026, 8, 28)
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_summary(market, as_of=as_of)
+
+        result = StockBoardCorrelationService(market).get_related_boards(
+            ["600000.SH", "000001.SZ"],
+            {"600000.SH": None, "000001.SZ": None},
+        )
+
+        assert result["600000.SH"]["unavailable_reason"] == "as_of_mismatch"
+        assert result["000001.SZ"]["unavailable_reason"] == "as_of_mismatch"
+        assert result["600000.SH"]["industry"] is None
 
 
 def test_stock_list_attaches_one_batch_for_returned_page(monkeypatch):
