@@ -76,6 +76,7 @@ let requestSequence = 0
 let syncingRoute = false
 let narrowMedia: MediaQueryList | null = null
 let resultRefreshTimer: number | undefined
+let resultRefreshDeadlineTimer: number | undefined
 let resultRefreshAttempt = 0
 let resultRefreshStartedAt = 0
 let resultRefreshTaskKey = ''
@@ -279,9 +280,13 @@ async function reconcileAnalysisContext(): Promise<void> {
 }
 
 function clearResultRefresh(resetTracking = true): void {
-  if (resultRefreshTimer) window.clearTimeout(resultRefreshTimer)
+  if (resultRefreshTimer !== undefined) window.clearTimeout(resultRefreshTimer)
   resultRefreshTimer = undefined
   if (resetTracking) {
+    if (resultRefreshDeadlineTimer !== undefined) {
+      window.clearTimeout(resultRefreshDeadlineTimer)
+    }
+    resultRefreshDeadlineTimer = undefined
     resultRefreshAttempt = 0
     resultRefreshStartedAt = 0
     resultRefreshTaskKey = ''
@@ -294,6 +299,25 @@ function needsResultRefresh(data: LimitLadderResult | null): boolean {
     || data?.snapshot_status === 'recalculating'
 }
 
+function stopResultRefreshAtTimeout(): void {
+  if (!result.value || !needsResultRefresh(result.value)) {
+    clearResultRefresh()
+    return
+  }
+  const timeoutMessage = '计算任务等待超时，请重试；系统会重新检查并恢复孤儿任务'
+  requestSequence += 1
+  clearResultRefresh()
+  if (result.value.has_snapshot) {
+    result.value = {
+      ...result.value,
+      snapshot_status: 'failed',
+      task_error: timeoutMessage,
+    }
+  } else {
+    error.value = timeoutMessage
+  }
+}
+
 function scheduleResultRefresh(): void {
   clearResultRefresh(false)
   if (!result.value || !needsResultRefresh(result.value)) {
@@ -302,25 +326,23 @@ function scheduleResultRefresh(): void {
   }
   const taskKey = limitLadderPollTaskKey(result.value)
   if (taskKey !== resultRefreshTaskKey) {
+    if (resultRefreshDeadlineTimer !== undefined) {
+      window.clearTimeout(resultRefreshDeadlineTimer)
+    }
     resultRefreshTaskKey = taskKey
     resultRefreshAttempt = 0
-    resultRefreshStartedAt = Date.now()
+    resultRefreshStartedAt = performance.now()
+    resultRefreshDeadlineTimer = window.setTimeout(() => {
+      resultRefreshDeadlineTimer = undefined
+      stopResultRefreshAtTimeout()
+    }, LIMIT_LADDER_POLL_TIMEOUT_MS)
   }
   const decision = limitLadderPollDecision(
     resultRefreshAttempt,
-    Date.now() - resultRefreshStartedAt,
+    performance.now() - resultRefreshStartedAt,
   )
   if (decision.timedOut) {
-    const timeoutMessage = '计算任务等待超时，请重试；系统会重新检查并恢复孤儿任务'
-    if (result.value.has_snapshot) {
-      result.value = {
-        ...result.value,
-        snapshot_status: 'failed',
-        task_error: timeoutMessage,
-      }
-    } else {
-      error.value = timeoutMessage
-    }
+    stopResultRefreshAtTimeout()
     return
   }
   const delay = decision.delayMs ?? LIMIT_LADDER_POLL_TIMEOUT_MS

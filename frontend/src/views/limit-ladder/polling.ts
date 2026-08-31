@@ -15,16 +15,19 @@ export function limitLadderPollDecision(
   attempt: number,
   elapsedMs: number,
 ): { timedOut: boolean; delayMs: number | null } {
-  if (elapsedMs >= LIMIT_LADDER_POLL_TIMEOUT_MS) {
+  const remainingMs = Math.max(0, LIMIT_LADDER_POLL_TIMEOUT_MS - Math.max(0, elapsedMs))
+  if (remainingMs === 0) {
     return { timedOut: true, delayMs: null }
   }
-  return { timedOut: false, delayMs: limitLadderPollDelay(attempt) }
+  return {
+    timedOut: false,
+    delayMs: Math.min(limitLadderPollDelay(attempt), remainingMs),
+  }
 }
 
 export function limitLadderPollTaskKey(result: LimitLadderResult): string {
   return [
     result.trade_date,
-    result.task?.command_id || 'no-command',
-    result.task?.task_id || 'no-task',
+    result.task?.command_id || result.task?.task_id || 'no-task',
   ].join(':')
 }
