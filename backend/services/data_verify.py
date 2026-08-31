@@ -14,7 +14,7 @@ G. 个股走势关联板块：当前态/冠军一致性、数值契约、引用�
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pandas as pd
 
@@ -150,7 +150,7 @@ class DataVerifier:
         if codes is None:
             codes = ["600000.SH", "000001.SZ", "300750.SZ", "688981.SH"]
         src = AKShareSource()
-        end = date.today()
+        end = datetime.now(UTC).date()
         start = date(end.year - 1, end.month, end.day)
 
         for code in codes:
@@ -226,6 +226,14 @@ class DataVerifier:
             w = f" AND {where}" if where else ""
             n_null = self._count(f"SELECT count(*) FROM {table} WHERE {col} IS NULL{w}")
             self._check(f"{label} 无缺失", n_null == 0, f"缺 {n_null}")
+        pending_ladder_invalidations = self._count(
+            "SELECT count(*) FROM limit_ladder_invalidation_outbox WHERE status='pending'"
+        )
+        self._check(
+            "连板天梯·失效 outbox 无积压",
+            pending_ladder_invalidations == 0,
+            f"待处理 {pending_ladder_invalidations}",
+        )
         # 复权因子单独查：与业务口径一致（COALESCE clean→源），源列允许 NULL（仅审计）
         adj_missing = self._count(
             "SELECT count(*) FROM daily_bar WHERE COALESCE(adj_factor_clean, adj_factor) IS NULL")

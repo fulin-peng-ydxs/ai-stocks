@@ -15,9 +15,8 @@ from fastapi.testclient import TestClient
 from backend.api import limit_ladder as api_module
 from backend.auth.context import AuthContext, reset_context, set_context
 from backend.common.exceptions import ForbiddenError
-from backend.services.limit_ladder_calculator import LimitLadderCalculator
 from backend.services.limit_ladder_query import LimitLadderFilters, LimitLadderQueryService
-from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
+from backend.services.limit_ladder_snapshot import RULE_VERSION, LimitLadderSnapshotService
 from backend.storage.repository import MarketRepository
 
 
@@ -364,39 +363,38 @@ def test_invalid_snapshot_remains_readable_and_uses_refresh_entry(market):
     assert coordinator.calls[0][1]["source"] == "auto_invalid_refresh"
 
 
-def test_dynamic_enrichment_failures_do_not_mask_published_snapshot(market, monkeypatch):
+def test_related_board_failure_does_not_mask_frozen_window_metrics(market):
     trade_date = _seed_ladder(market)
 
-    def fail_window(*args, **kwargs):
-        raise RuntimeError("window unavailable")
-
-    monkeypatch.setattr(LimitLadderCalculator, "calculate_window_metrics", fail_window)
     market.execute("DROP TABLE stock_board_correlation")
     data = LimitLadderQueryService(market, coordinator=_FakeCoordinator()).query(
         trade_date, LimitLadderFilters(ignore_st=False)
     )
     assert data["snapshot"]["stock_count"] == 2
-    assert data["dynamic_window_status"] == "degraded"
+    assert data["dynamic_window_status"] == "ready"
     assert data["related_board_status"] == "degraded"
     assert data["related_concept_status"] == "degraded"
     assert sum(layer["stock_count"] for layer in data["layers"]) == 2
 
 
-def test_dynamic_window_fallback_failure_still_returns_published_snapshot(market, monkeypatch):
+def test_published_window_metrics_do_not_change_with_current_daily_bar(market):
     trade_date = _seed_ladder(market)
 
-    def fail(*args, **kwargs):
-        raise RuntimeError("window storage unavailable")
-
-    monkeypatch.setattr(LimitLadderCalculator, "calculate_window_metrics", fail)
-    monkeypatch.setattr(LimitLadderCalculator, "_calendar_through", fail)
-    data = LimitLadderQueryService(market, coordinator=_FakeCoordinator()).query(
+    service = LimitLadderQueryService(market, coordinator=_FakeCoordinator())
+    before = service.query(
         trade_date, LimitLadderFilters(ignore_st=False)
     )
-    assert data["snapshot"]["stock_count"] == 2
-    assert data["dynamic_window_status"] == "degraded"
-    assert data["requested_window_start_date"] is None
-    assert data["requested_window_trade_days"] == 0
+    before_stocks = [stock for layer in before["layers"] for stock in layer["stocks"]]
+    market.execute(
+        "UPDATE daily_bar SET close=close*0.5 WHERE trade_date<?",
+        [trade_date],
+    )
+    after = service.query(trade_date, LimitLadderFilters(ignore_st=False))
+    after_stocks = [stock for layer in after["layers"] for stock in layer["stocks"]]
+    assert [stock["window_return_pct"] for stock in after_stocks] == [
+        stock["window_return_pct"] for stock in before_stocks
+    ]
+    assert after["dynamic_window_status"] == "ready"
 
 
 def test_non_trading_day_uses_date_only_nearest_trade_date(market):
@@ -431,7 +429,7 @@ def test_status_exposes_each_public_state(market, status, snapshot_id, business_
             trade_date,status,current_snapshot_id,rule_version,updated_at
         ) VALUES (?,?,?,?,current_timestamp)
         """,
-        [trade_date, status, snapshot_id, "v1"],
+        [trade_date, status, snapshot_id, RULE_VERSION],
     )
     data = LimitLadderQueryService(market, coordinator=_FakeCoordinator()).status(trade_date)
     assert data["snapshot_status"] == status

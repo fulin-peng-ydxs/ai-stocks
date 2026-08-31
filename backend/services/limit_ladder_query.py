@@ -12,11 +12,8 @@ from typing import Any, Literal
 import pandas as pd
 
 from backend.common.logging import get_logger
-from backend.services.limit_ladder_calculator import (
-    SUPPORTED_WINDOWS,
-    LimitLadderCalculator,
-)
-from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
+from backend.services.limit_ladder_calculator import SUPPORTED_WINDOWS
+from backend.services.limit_ladder_snapshot import RULE_VERSION, LimitLadderSnapshotService
 from backend.services.limit_ladder_task_coordinator import LimitLadderTaskCoordinator
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
@@ -111,9 +108,10 @@ class LimitLadderQueryService:
 
     def status(self, trade_date: date) -> dict[str, Any]:
         """Expose snapshot and task states without creating a new task."""
+        LimitLadderSnapshotService(self.c).process_pending_invalidations()
         if not self._is_open_date(trade_date):
             return self._not_trading_day(trade_date)
-        row = self._state_row(trade_date)
+        row = self._current_rule_state(trade_date)
         task = self._active_task(trade_date)
         if row is None:
             return {
@@ -156,7 +154,8 @@ class LimitLadderQueryService:
         if not self._is_open_date(trade_date):
             return self._not_trading_day(trade_date)
 
-        state = self._state_row(trade_date)
+        LimitLadderSnapshotService(self.c).process_pending_invalidations()
+        state = self._current_rule_state(trade_date)
         task_error = None
         ensured_task = None
         stored_status = None if state is None else str(state.get("status"))
@@ -224,9 +223,7 @@ class LimitLadderQueryService:
 
         snapshot, stocks = self._load_snapshot(snapshot_id)
         requested_start, requested_days, metrics, dynamic_status = self._window_metrics(
-            trade_date,
-            [str(row["code"]) for row in stocks],
-            filters.window,
+            snapshot_id, filters.window, snapshot
         )
         concepts = self._snapshot_concepts(snapshot_id)
         related, related_status = self._latest_related_boards([str(row["code"]) for row in stocks])
@@ -277,6 +274,20 @@ class LimitLadderQueryService:
             "layers": self._layers(visible),
         }
 
+    def _current_rule_state(self, trade_date: date):
+        row = self._state_row(trade_date)
+        if (
+            row is not None
+            and row.get("current_snapshot_id")
+            and str(row.get("rule_version")) != RULE_VERSION
+            and str(row.get("status")) not in {"calculating", "recalculating"}
+        ):
+            LimitLadderSnapshotService(self.c).mark_invalid(
+                trade_date, reason="rule_version_changed"
+            )
+            row = self._state_row(trade_date)
+        return row
+
     def export_csv(self, trade_date: date, filters: LimitLadderFilters) -> tuple[str, bytes]:
         """Export exactly the same normalized, filtered stock collection as query()."""
         data = self.query(trade_date, filters, trigger_missing=False)
@@ -310,45 +321,42 @@ class LimitLadderQueryService:
         filename = f"limit-ladder-{trade_date.isoformat()}-{filters.window}d.csv"
         return filename, output.getvalue().encode("utf-8-sig")
 
-    def _window_metrics(self, trade_date: date, codes: list[str], window: int):
-        try:
-            calculation = LimitLadderCalculator(self.c).calculate_window_metrics(
-                trade_date, codes, window=window
+    def _window_metrics(self, snapshot_id: str, window: int, snapshot: dict[str, Any]):
+        metadata = snapshot.get("window_metadata", {}).get(str(window), {})
+        rows = self.c.query_df(
+            "SELECT code,window_limit_up_days,window_return_pct,window_start_date,"
+            "actual_trade_days FROM limit_ladder_snapshot_window_metric "
+            "WHERE snapshot_id=? AND window_days=? ORDER BY code",
+            [snapshot_id, window],
+        )
+        if rows.empty:
+            status = "ready" if int(snapshot.get("stock_count") or 0) == 0 and metadata else (
+                "unavailable"
             )
-            metrics = {
-                stock.code: {
-                    "window_limit_up_days": stock.window_limit_up_days,
-                    "window_return_pct": stock.window_return_pct,
-                    "window_start_date": stock.window_start_date.isoformat(),
-                    "actual_trade_days": stock.actual_trade_days,
-                }
-                for stock in calculation.stocks
-            }
             return (
-                calculation.requested_window_start_date.isoformat(),
-                calculation.requested_window_trade_days,
-                metrics,
-                "ready",
+                metadata.get("requested_window_start_date"),
+                int(metadata.get("requested_window_trade_days") or 0),
+                {},
+                status,
             )
-        except Exception as exc:  # noqa: BLE001 -- immutable snapshot remains readable
-            log.warning("天梯动态窗口计算降级 date=%s window=%s: %s", trade_date, window, exc)
-            try:
-                dates = LimitLadderCalculator(self.c)._calendar_through(trade_date)
-                requested = dates[-window:]
-                return (
-                    self._iso(requested[0]) if requested else None,
-                    len(requested),
-                    {},
-                    "degraded",
-                )
-            except Exception as fallback_exc:  # noqa: BLE001 -- snapshot body still wins
-                log.warning(
-                    "天梯动态窗口降级元数据也不可用 date=%s window=%s: %s",
-                    trade_date,
-                    window,
-                    fallback_exc,
-                )
-                return (None, 0, {}, "degraded")
+        metrics = {
+            str(row["code"]): {
+                "window_limit_up_days": int(row["window_limit_up_days"]),
+                "window_return_pct": (
+                    None if pd.isna(row.get("window_return_pct"))
+                    else float(row["window_return_pct"])
+                ),
+                "window_start_date": self._date(row["window_start_date"]).isoformat(),
+                "actual_trade_days": int(row["actual_trade_days"]),
+            }
+            for row in rows.to_dict("records")
+        }
+        return (
+            metadata.get("requested_window_start_date"),
+            int(metadata.get("requested_window_trade_days") or 0),
+            metrics,
+            "ready",
+        )
 
     def _load_snapshot(self, snapshot_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         meta = self.c.query_df(
@@ -359,6 +367,8 @@ class LimitLadderQueryService:
         snapshot = self._json_row(meta.iloc[0].to_dict())
         raw_coverage = snapshot.pop("coverage_json", None)
         snapshot["coverage"] = self._parse_json(raw_coverage)
+        raw_window_metadata = snapshot.pop("window_metadata_json", None)
+        snapshot["window_metadata"] = self._parse_json(raw_window_metadata)
         rows = self.c.query_df(
             "SELECT * EXCLUDE (snapshot_id) FROM limit_ladder_snapshot_stock "
             "WHERE snapshot_id=? ORDER BY consecutive_days DESC,amount DESC,code",

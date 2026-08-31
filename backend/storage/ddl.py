@@ -910,6 +910,7 @@ CREATE TABLE IF NOT EXISTS limit_ladder_snapshot (
     stock_count   INTEGER NOT NULL CHECK (stock_count >= 0),
     has_approx_st BOOLEAN NOT NULL,
     coverage_json VARCHAR NOT NULL,
+    window_metadata_json VARCHAR NOT NULL DEFAULT '{}',
     source_version VARCHAR NOT NULL
 );
 """
@@ -956,6 +957,34 @@ CREATE TABLE IF NOT EXISTS limit_ladder_snapshot_aggregate (
 );
 """
 
+DDL_LIMIT_LADDER_SNAPSHOT_WINDOW_METRIC = """
+CREATE TABLE IF NOT EXISTS limit_ladder_snapshot_window_metric (
+    snapshot_id          VARCHAR NOT NULL,
+    code                 VARCHAR NOT NULL,
+    window_days          INTEGER NOT NULL CHECK (window_days IN (10,20,31,60)),
+    window_limit_up_days INTEGER NOT NULL CHECK (window_limit_up_days >= 0),
+    window_return_pct    DOUBLE,
+    window_start_date    DATE NOT NULL,
+    actual_trade_days    INTEGER NOT NULL CHECK (actual_trade_days > 0),
+    source_version       VARCHAR NOT NULL,
+    PRIMARY KEY (snapshot_id, code, window_days)
+);
+"""
+
+DDL_LIMIT_LADDER_INVALIDATION_OUTBOX = """
+CREATE TABLE IF NOT EXISTS limit_ladder_invalidation_outbox (
+    event_id       VARCHAR PRIMARY KEY,
+    affected_from  DATE,
+    reason         VARCHAR NOT NULL,
+    status         VARCHAR NOT NULL CHECK (status IN ('pending','completed')),
+    attempt_count  INTEGER NOT NULL CHECK (attempt_count >= 0),
+    last_error     VARCHAR,
+    created_at     TIMESTAMP NOT NULL,
+    updated_at     TIMESTAMP NOT NULL,
+    completed_at   TIMESTAMP
+);
+"""
+
 M_LIMIT_LADDER_TABLES: dict[str, str] = {
     "stock_st_status_daily": DDL_STOCK_ST_STATUS_DAILY,
     "stock_st_status_history": DDL_STOCK_ST_STATUS_HISTORY,
@@ -964,6 +993,8 @@ M_LIMIT_LADDER_TABLES: dict[str, str] = {
     "limit_ladder_snapshot_stock": DDL_LIMIT_LADDER_SNAPSHOT_STOCK,
     "limit_ladder_snapshot_concept": DDL_LIMIT_LADDER_SNAPSHOT_CONCEPT,
     "limit_ladder_snapshot_aggregate": DDL_LIMIT_LADDER_SNAPSHOT_AGGREGATE,
+    "limit_ladder_snapshot_window_metric": DDL_LIMIT_LADDER_SNAPSHOT_WINDOW_METRIC,
+    "limit_ladder_invalidation_outbox": DDL_LIMIT_LADDER_INVALIDATION_OUTBOX,
 }
 
 _LIMIT_LADDER_INDEXES: tuple[str, ...] = (
@@ -978,6 +1009,10 @@ _LIMIT_LADDER_INDEXES: tuple[str, ...] = (
     (
         "CREATE INDEX IF NOT EXISTS idx_limit_ladder_stock_snapshot "
         "ON limit_ladder_snapshot_stock (snapshot_id, consecutive_days)"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS idx_limit_ladder_invalidation_pending "
+        "ON limit_ladder_invalidation_outbox (status, created_at)"
     ),
 )
 
@@ -1008,6 +1043,8 @@ _DIMENSION_SEED: list[tuple] = [
 
 # 轻量迁移：给已存在的旧表补列（CREATE TABLE IF NOT EXISTS 不会改既有表结构）
 _MIGRATIONS: list[str] = [
+    "ALTER TABLE limit_ladder_snapshot ADD COLUMN IF NOT EXISTS "
+    "window_metadata_json VARCHAR DEFAULT '{}'",
     "ALTER TABLE backtest_trade ADD COLUMN IF NOT EXISTS entry_rank INTEGER",
     "ALTER TABLE backtest_trade ADD COLUMN IF NOT EXISTS entry_pick_rank INTEGER",
     "ALTER TABLE backtest_trade ADD COLUMN IF NOT EXISTS entry_pool INTEGER",

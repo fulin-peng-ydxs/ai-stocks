@@ -1,6 +1,6 @@
 # 连板天梯开发计划
 
-> 计划状态：已完成（T1～T16）
+> 计划状态：已完成（T1～T17）
 > 需求基线：`requirement.md`（R1～R31）
 > 页面原型：`prototypes/limit-up-ladder.html`
 
@@ -73,17 +73,19 @@
 
 ### 4.1 数据模型与发布状态
 
-在 DuckDB 新增以下七张领域表，均在 `backend/storage/ddl.py` 登记并由 `init_db` 幂等建表；PG 新增统一日期任务协调账本和审计 outbox，并为共享审计表增加可空唯一事件键：
+在 DuckDB 新增以下九张领域表，均在 `backend/storage/ddl.py` 登记并由 `init_db` 幂等建表；PG 新增统一日期任务协调账本和审计 outbox，并为共享审计表增加可空唯一事件键：
 
 | 表 | 关键字段与约束 | 用途 |
 | --- | --- | --- |
 | `stock_st_status_daily` | `(code,trade_date)` 主键；`is_st,source,source_ref,quality,captured_at,updated_at` | 点时 ST 当前事实；`quality=accurate|approximate`，近似不得伪装准确 |
 | `stock_st_status_history` | `version_id` 主键；`code,trade_date,old_is_st,new_is_st,old/new_source,old/new_quality,change_reason,changed_at,task_id` | 不可变变更追溯；同值同来源幂等重跑不追加，值/来源/质量变化才追加 |
 | `limit_ladder_snapshot_state` | `trade_date` 主键；`status,current_snapshot_id,last_success_at,task_id,rule_version,upstream_fingerprint,failure_summary,invalid_reason,updated_at` | 日期级状态指针；状态仅允许 `calculating|valid|invalid|recalculating|failed` |
-| `limit_ladder_snapshot` | `snapshot_id` 主键；`trade_date,rule_version,computed_at,stock_count,has_approx_st,coverage_json,source_version` | 不可变成功版本元数据；合法空快照也保留版本 |
+| `limit_ladder_snapshot` | `snapshot_id` 主键；`trade_date,rule_version,computed_at,stock_count,has_approx_st,coverage_json,window_metadata_json,source_version` | 不可变成功版本元数据及四档请求窗口元数据；合法空快照也保留版本 |
 | `limit_ladder_snapshot_stock` | `(snapshot_id,code)` 主键；名称、板块、涨停比例、ST/质量、一字板、连续板、成交额、行业及来源版本 | 卡片与分层的固化事实 |
 | `limit_ladder_snapshot_concept` | `(snapshot_id,code,board_code)` 主键；`board_name,source_version` | 多概念固化集合用于历史事实和 CSV，与当前相关概念严格分离，不作为顶部概念热点口径 |
 | `limit_ladder_snapshot_aggregate` | `(snapshot_id,group_type,group_key)` 主键；`group_name,stock_count` | 快照专属行业/完整概念归属的发布校验结果；页面两类热点均按当前唯一走势相关冠军受控重算 |
+| `limit_ladder_snapshot_window_metric` | `(snapshot_id,code,window_days)` 主键；`window_limit_up_days,window_return_pct,window_start_date,actual_trade_days,source_version` | 与快照同事务冻结四档窗口指标，失效快照不混用修正后行情 |
+| `limit_ladder_invalidation_outbox` | `event_id` 主键；`affected_from,reason,status,attempt_count,last_error,created/updated/completed_at` | 持久化上游失效意图；`affected_from=NULL` 为全量，pending 必须补偿或显式失败 |
 | PG `limit_ladder_task_ledger` | `command_id` 不可变 UUID 主键；`task_id,trade_date,source,actor_kind,tenant_id,actor_user_id,actor_account,trigger_tenant_id,trigger_user_id,trigger_account,request_ip,request_method,request_path,request_id,status,rule_version,result_summary,retry_count,last_error,created/updated_at`；`source IN (auto_first_load,auto_invalid_refresh,admin_recompute)`；`status IN (requested,running,succeeded,failed,interrupted)`；对 `trade_date WHERE status IN ('requested','running')` 建部分唯一索引 | 三种入口共享同日活动命令；终态释放日期占位。管理员主体从鉴权上下文和 PG 用户事实固化；自动任务使用独立 `system:limit-ladder` 主体并保留触发请求身份，不信任前端身份字段 |
 | PG `limit_ladder_audit_outbox` | `(command_id,event_type)` 唯一；`source_event_key=command_id:event_type`、完整主体/请求快照 `payload`、`status,retry_count,next_retry_at,last_error,created/delivered_at` | requested/running/succeeded/failed/interrupted 可靠投递；终态可由 DuckDB 任务对账补建，审计投递不得重新推断操作者 |
 | PG `audit_log.source_event_key` | 可空字段 + 非空唯一索引 | outbox 投递使用 `ON CONFLICT DO NOTHING`，避免投递成功后进程中断造成重复审计 |
@@ -167,14 +169,14 @@
 | 范围 | 需求 | 计划开发内容 | 任务 | 状态 | 偏差 | 验证 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 必须实现 | R1 | 先建可编译页面壳，再接路由、菜单、pageRegistry，且不改每日榜单 | T7、T10 | 已完成 | 一致 | 页面文件存在后路由才登记；T10 解除 staged 后菜单可进且 `/board` 回归不变 |
-| 必须实现 | R2 | 固定 coverage 契约区分非交易日、未就绪与合法空 | T2、T4、T6、T11 | 已完成 | 一致 | 每个原因码可复现；仅覆盖闭合时允许空快照 |
+| 必须实现 | R2 | 固定 coverage 契约区分非交易日、未就绪与合法空 | T2、T4、T6、T11、T17 | 已完成 | T17 严格排除空上市日 | `list_date<=T` 股票池、空上市日契约告警与门禁回归通过 |
 | 必须实现 | R3 | 共享收盘涨停规则及特殊日保护 | T1、T3、T16 | 已完成 | T16 修复 ST 质量倒退 | accurate→approximate 拒绝、采集派生标记及涨停规则回归通过 |
-| 必须实现 | R4 | 每日 ST 当前事实、不可变变更历史、近似质量、回填失效及默认隐藏 | T1、T2、T3、T4、T8、T11、T16 | 已完成 | T16 修复 ST 质量倒退 | 领域存储质量单调与普通采集端到端回归通过 |
-| 必须实现 | R5 | 首读通过统一日期任务入口物化、成功版本持久化、重复读取 | T2、T4、T5、T6、T16 | 已完成 | T16 补齐孤儿状态恢复 | 无旧/有旧快照重启、再次 GET 和状态收敛通过 |
-| 必须实现 | R6 | 三种来源共享日期任务协调、活动态同日幂等、含 interrupted 的状态、原子发布和可靠 PG 账本 | T4、T5、T6、T11、T16 | 已完成 | T16 补齐跨存储恢复 | 启动恢复、PG 对账兜底和幂等重建回归通过 |
+| 必须实现 | R4 | 每日 ST 当前事实、不可变变更历史、近似质量、回填失效及默认隐藏 | T1、T2、T3、T4、T8、T11、T16、T17 | 已完成 | T17 补齐历史依赖传播 | ST D 日修正与 `T>=D` 失效同事务回归通过 |
+| 必须实现 | R5 | 首读通过统一日期任务入口物化、成功版本持久化、重复读取 | T2、T4、T5、T6、T16、T17 | 已完成 | T17 补齐窗口事实原子性 | 四档窗口值/元数据同版本冻结，旧 v1 自动失效 |
+| 必须实现 | R6 | 三种来源共享日期任务协调、活动态同日幂等、含 interrupted 的状态、原子发布和可靠 PG 账本 | T4、T5、T6、T11、T16、T17 | 已完成 | T17 补齐上游失效补偿 | 失效 outbox pending/重放/失败上抛与查询 fail-closed 回归通过 |
 | 必须实现 | R7 | 不受 60 日窗口截断的连续板算法和最高至首板分层 | T3、T8 | 已完成 | 一致 | 75 连板夹具返回 75；停牌/缺失/未涨停/上市边界中断 |
 | 必须实现 | R8 | 卡片完整字段及标签 | T3、T6、T8 | 已完成 | 一致 | DTO/组件/视觉验收 |
-| 必须实现 | R9 | 10/20/31/60 动态次数、固定排序及股票级短上市实际起始日 | T3、T6、T8、T9、T12 | 已完成 | 一致 | 每个股票 DTO/卡片显示自身 `window_start_date/actual_trade_days`，顶层字段不混用 |
+| 必须实现 | R9 | 10/20/31/60 动态次数、固定排序及股票级短上市实际起始日 | T3、T6、T8、T9、T12、T17 | 已完成 | T17 冻结四档窗口 | 卡片值、请求窗口元数据和 CSV 同 snapshot_id，修正日线后旧版不变 |
 | 必须实现 | R10 | 每股唯一最新走势相关行业/概念、未分类和当前筛选聚合 | T3、T4、T6、T8、T10 修复 | 已完成 | 页面验收后纠偏 | 两类热点都不使用专属归属字段，任一类别合计不超过当前股票数 |
 | 必须实现 | R11 | 当前最新概念、截止日、直接板块跳转 | T6、T8、T12 | 已完成 | 一致 | 接口字段/权限/路由 E2E |
 | 必须实现 | R12 | 复用行情分析、详情集合和返回恢复 | T10、T12 | 已完成 | 一致 | Playwright 完整往返 |
@@ -453,11 +455,23 @@
 - 完成标准：两个 P1 复现转为回归测试并通过，孤儿处理态不再无限等待，审查文档范围和状态为最新事实，独立本地提交完成。
 - 实际落地情况：`StockSTStatusService` 在原事务冲突判定中阻止 `accurate→approximate`，普通日线采集先批量取得最终有效事实并同步写入 `daily_bar.is_st`；启动 `AsyncTaskService.reconcile()` 将残留任务和孤儿快照处理态共同收敛，PG 协调器对跨存储漂移再次兜底，查询入口发现处理态无活动任务时通过统一日期命令幂等重建；PG 活动槽若仍指向 DuckDB 终态，统一入口会先释放旧槽再有限重试。前端按交易日和稳定 command 标识轮询，采用 1.5/3/6/12 秒退避、12 秒封顶，以单调时钟计时并按剩余时间截断最后一档，同时由独立 120 秒截止定时器使慢请求失效，保证到期后不再续发请求。新增 4 项 `LimitLadderView` 假时钟/deferred Promise 测试，真实覆盖 deadline 触发后停止请求、慢响应无法覆盖超时、同 command 不重置和新 command 重启周期。天梯后端全量 97 项、附加异步恢复首轮聚焦 50 项、前端策略/组件/页面 20 项、生产构建及真实登录 Playwright 6 项通过（另 6 项按视口约束跳过）。审查范围已明确覆盖 `4338920^..c55e65f`，架构、开发留痕、业务核查和前端报告同步。未新增权限、菜单、SQL、seed、配置或部署参数，未开发 R20～R31。
 
+### T17：上游修复后的快照一致性与补偿闭环
+
+- 当前状态：已完成。
+- 依赖：T16。
+- 输入：对 T1～T16 和 `4338920^..HEAD` 的快速业务核查发现历史事实传播、失效失败补偿、点时股票池与过期快照字段一致性缺口。
+- 目标：历史 D 日事实变更可失效全部 `T>=D` 已发布快照；失效意图持久化且失败显式使上游任务失败；严格使用 `list_date<=T`；窗口涨停数与累计涨幅与快照同版本冻结，不混用修正后新事实。
+- 影响范围：天梯 DuckDB 表与前向 SQL、快照/计算/查询/ST/采集服务、异常补偿、相关后端测试和需求/计划/架构/留痕/核查/演练文档。
+- 边界：不新增 R20～R31；不伪造不存在的历史板块成员事实；不改页面、权限、菜单或前端交互。
+- 验证方式：失效传播与 outbox 故障注入、ST 事务传播、空上市日排除、快照窗口指标不可变、查询/CSV 回归、DDL 幂等、代表性规模回归、R1～R31 整体业务复审。
+- 完成标准：已确认问题均有自动化回归，补偿状态可追溯且不静默返回旧结果，所有事实文档更新，完成整体自审和独立本地提交。
+- 实际落地情况：失效语义改为从最早受影响日向后传播，ST 变更与传播保持同 DuckDB 事务；行情/基础信息/板块采集先写持久化失效 outbox，失败使上游任务失败，查询前重放 pending，`verify/checkup` 检查积压。点时股票池严格排除空上市日，原有上市日必填契约补了明确回归。四档窗口指标及请求窗口元数据与 snapshot v2 原子冻结，旧 v1 首读自动失效；历史板块归属明确为重算时最新归属冻结，不虚构 T 日成员事实。整仓后端 1275 项、天梯 101 项 + 数据契约 9 项、代表性 5,200 股 × 61 日规模链路、DuckDB 九表前向两次/逆依赖零残留及聚焦 Ruff 全部通过。首轮整仓发现的 4 项测试/配套失真已修正并在第二轮全量通过。未改前端源码，故未重复浏览器验证；未改权限、菜单 seed、PG 表或配置，仅补齐既有菜单全仓断言和回滚确认门禁。未开发 R20～R31。
+
 ## 7. 数据库、SQL、seed 与配置计划
 
 | 路径 | 数据库/用途 | 执行时机 | 影响范围 | 回滚 |
 | --- | --- | --- | --- | --- |
-| `agent-works/limit-up-ladder/limit-ladder-schema.sql` | DuckDB 新增第 4.1 节七张表、约束和索引 | 部署后端代码前或首次启动前；代码 `init_db` 同样幂等补建 | 新增天梯/ST 当前及历史表，不改现有行情和任务中心 | 无业务数据时可按依赖顺序 drop；已有快照/ST 历史时先备份，代码回滚默认保留表 |
+| `agent-works/limit-up-ladder/limit-ladder-schema.sql` | DuckDB 新增第 4.1 节九张表、约束和索引 | 部署后端代码前或首次启动前；代码 `init_db` 同样幂等补建 | 新增天梯/ST 当前及历史、窗口指标和失效补偿表，不改现有行情和任务中心 | 无业务数据时可按依赖顺序 drop；已有快照/ST 历史时先备份，代码回滚默认保留表 |
 | `agent-works/limit-up-ladder/limit-ladder-audit-ledger.sql` | PG 新增含三种 source、结构化主体/触发身份/请求来源、interrupted 终态的日期任务账本，requested/running 同日活动态部分唯一索引、五类事件审计 outbox，并给 `audit_log` 增加可空 `source_event_key` 与非空唯一索引；marker 记录本迁移实际创建的对象 | 后端启用任何自动首算或管理员重算入口前 | 平台任务协调/审计辅助表及共享审计表兼容字段；终态释放同日活动槽位；不改 DuckDB 任务表 | 先完成/导出未投递 outbox；专项回滚只删除 marker 归属且未被其他业务复用的对象，旧审计记录不受影响 |
 | `agent-works/limit-up-ladder/limit-ladder-rbac.sql` | PG 新增菜单、两资源码、normal/tenant_admin 初始 view 授权、marker 和 `perm_ver` 失效 | 前后端同批发布；事务 + advisory lock 执行一次 | 全局菜单/RBAC；受影响用户需重新登录 | 依据 marker/账本只删迁移插入且仍存在的授权与节点；发现账本外自定义角色引用则拒绝级联 |
 | `agent-works/limit-up-ladder/rollback-limit-ladder.sql` | PG RBAC/审计辅助结构确定性回滚和 DuckDB 保留/删除说明 | 仅发布回退且人工确认后 | 菜单、权限、审计辅助结构和领域表 | 必须显式确认 marker；先处理未投递 outbox；默认保留 DuckDB 快照/ST 历史，可恢复代码后继续使用 |
@@ -480,7 +494,7 @@
 - 回归：每日榜单、个股详情、板块详情、用户偏好、任务中心 `TaskType/TASK_LABEL/筛选/摘要` 和权限扫描；完成情况：T5 已验证任务中心类型标签、筛选、系统来源、终态摘要和调度页不暴露内部任务，T12 补齐 interrupted 筛选、状态、快照/coverage 摘要和日志回归，并通过全量 995 项前端测试。
 - 构建：改动 `frontend/src` 后必须执行 `cd frontend && npm run build && cd ..`；完成情况：T5、T7、T8、T9、T10、T12、T14、T15、T16 构建均已通过，`frontend/dist` 与源码同步。
 - 原型一致性：实现对照 `prototypes/limit-up-ladder.html`，黄色原型批注不进入正式页面；卡片概念点击只跳板块行情；完成情况：T8 已验证筛选、摘要、热点、天梯形态、卡片及概念直跳，分析/设置完整原型随 T9/T10 验证。
-- 需求映射：自动检查 R1～R31 均在第 5 节且状态合法；完成情况：T1～T16 已完成，R1～R19 全部开发、修复与验证闭合；R20～R31 按已确认范围继续保持“跳过”。
+- 需求映射：自动检查 R1～R31 均在第 5 节且状态合法；完成情况：T1～T17 已完成，R1～R19 全部开发、修复与验证闭合；R20～R31 按已确认范围继续保持“跳过”。
 
 ## 9. 发布与回滚
 

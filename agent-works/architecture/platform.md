@@ -23,7 +23,7 @@
 
 - **表与目录分工**：
   - DuckDB 基础设施表：`async_task`（任务状态/进度/结果/来源标记）、`task_log`（实时日志，按 `seq` 增量拉、每任务保留最近 2000 条）、`scheduled_job`（定时任务定义）、`data_update_log`（采集留痕）、`data_dimension_registry`/`data_source_provenance`（数据维度与溯源）。
-  - 连板天梯数据边界：DuckDB 保存 `stock_st_status_*`、`limit_ladder_snapshot*` 行情分析事实；ST 质量只允许由 `approximate` 升为 `accurate`，普通名称推断不得覆盖已存在的准确事实，日线派生标记也消费最终有效事实。天梯门禁按点时股票池闭合有效日线/确认停牌后，以不可变版本和状态指针原子发布，失败或失效不删除旧成功版本。计算器按候选集合分批读取历史，连续板不受 60 日展示窗口截断；ST、行情、基础信息和板块归属变化只标记受影响快照失效。PG 保存 `limit_ladder_task_ledger`、`limit_ladder_audit_outbox` 协调与审计事实，二者不跨库 JOIN；`LimitLadderTaskCoordinator` 用同日活动态唯一约束协调三种来源，以 `command_id/task_id/source_event_key` 关联 DuckDB 执行、PG 状态和幂等审计。
+  - 连板天梯数据边界：DuckDB 保存 `stock_st_status_*`、`limit_ladder_snapshot*` 行情分析事实；ST 质量只允许由 `approximate` 升为 `accurate`，普通名称推断不得覆盖已存在的准确事实，日线派生标记也消费最终有效事实。天梯门禁严格按 `list_date<=T` 点时股票池闭合有效日线/确认停牌后，以不可变版本和状态指针原子发布，四档窗口涨停数/累计涨幅也随同一版本冻结，失败或失效不删除旧成功版本。计算器按候选集合分批读取历史，连续板不受 60 日展示窗口截断；D 日 ST、行情或停牌变化传播失效全部 `T>=D` 快照，基础信息和当前板块归属变化全量失效。采集链路先写 `limit_ladder_invalidation_outbox` 再执行失效，失败向上游抛出并保留 pending；查询在读快照前重试 pending，无法收敛时不静默返回旧 valid。PG 保存 `limit_ladder_task_ledger`、`limit_ladder_audit_outbox` 协调与审计事实，二者不跨库 JOIN；`LimitLadderTaskCoordinator` 用同日活动态唯一约束协调三种来源，以 `command_id/task_id/source_event_key` 关联 DuckDB 执行、PG 状态和幂等审计。
   - PostgreSQL 配置与用户偏好表：`app_config`（系统设置覆盖层）、`layout_preset`、`layout_page_config`、`layout_field_policy`、`layout_user_config`、`user_preference`；边界见 [environment-configuration.md](environment-configuration.md)。
   - 业务表（行情/方案/结果/回测/快照）由各业务模块拥有，但**统一经 `MarketRepository.upsert` 与点时查询闸门读写**，主键登记在 `repository._PK`。
   - 数据字典文档化：`backend/storage/catalog.py` 用代码内置 `TABLE_CATALOG` 维护表/字段中文说明，运行时 `build_catalog()` 拼上行数/最新数据时间/未解决质检数，供数据概览页渲染——不另建需手维护的字典表。

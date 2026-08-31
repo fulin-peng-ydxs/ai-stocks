@@ -337,6 +337,72 @@ class LimitLadderCalculator:
             stocks=tuple(metrics),
         )
 
+    def calculate_all_window_metrics(
+        self, trade_date: date, codes: list[str]
+    ) -> dict[int, LimitLadderWindowCalculation]:
+        """Calculate every supported window from one bounded fact read."""
+        calendar = self._calendar_through(trade_date)
+        if not calendar or calendar[-1] != trade_date:
+            raise ValueError(f"not an open trade date: {trade_date}")
+        requested_codes = sorted(set(codes))
+        requested_set = set(requested_codes)
+        basics = self._point_in_time_basics(trade_date)
+        basic_by_code = {
+            str(row["code"]): row
+            for _, row in basics.iterrows()
+            if str(row["code"]) in requested_set
+        }
+        max_dates = calendar[-max(SUPPORTED_WINDOWS):]
+        facts = self._load_daily_facts(sorted(basic_by_code), max_dates)
+        calculations: dict[int, LimitLadderWindowCalculation] = {}
+        for window in sorted(SUPPORTED_WINDOWS):
+            window_dates = calendar[-window:]
+            metrics: list[LadderWindowMetric] = []
+            for code in requested_codes:
+                basic = basic_by_code.get(code)
+                if basic is None:
+                    continue
+                list_date = self._date_value(basic.get("list_date"))
+                actual_dates = [day for day in window_dates if day >= list_date]
+                limit_up_days = 0
+                adjusted_closes: list[float] = []
+                for day in actual_dates:
+                    fact = facts.get((code, day))
+                    if fact is None:
+                        continue
+                    close = self._positive_number(fact.get("close"))
+                    factor = self._positive_number(fact.get("adj_factor"))
+                    if close is not None and factor is not None:
+                        adjusted_closes.append(close * factor)
+                    if self._bool_value(fact.get("confirmed_suspension")):
+                        continue
+                    result, _ = self.evaluate_fact(
+                        code=code, basic=basic, fact=fact, calendar=calendar
+                    )
+                    if result.is_limit_up:
+                        limit_up_days += 1
+                metrics.append(
+                    LadderWindowMetric(
+                        code=code,
+                        window_limit_up_days=limit_up_days,
+                        window_return_pct=(
+                            round((adjusted_closes[-1] / adjusted_closes[0] - 1) * 100, 2)
+                            if len(adjusted_closes) >= 2
+                            else None
+                        ),
+                        window_start_date=actual_dates[0],
+                        actual_trade_days=len(actual_dates),
+                    )
+                )
+            calculations[window] = LimitLadderWindowCalculation(
+                trade_date=trade_date,
+                requested_window=window,
+                requested_window_start_date=window_dates[0],
+                requested_window_trade_days=len(window_dates),
+                stocks=tuple(metrics),
+            )
+        return calculations
+
     def _calendar_through(self, trade_date: date) -> list[date]:
         rows = self.c.query_df(
             "SELECT trade_date FROM trade_calendar "
@@ -350,7 +416,7 @@ class LimitLadderCalculator:
             """
             SELECT code,name,board,list_date,delist_date,industry,price_limit_pct
             FROM stock_basic
-            WHERE (list_date IS NULL OR list_date<=?)
+            WHERE list_date IS NOT NULL AND list_date<=?
               AND (delist_date IS NULL OR delist_date>=?)
             ORDER BY code
             """,

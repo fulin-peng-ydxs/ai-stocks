@@ -141,7 +141,7 @@
 
 #### 连板天梯任务契约
 
-自动首算、失效刷新和 system-only 管理员单日重算统一进入 `limit_ladder_recompute`，同一交易日只允许一个 `requested/running` 命令。执行任务和实时日志继续保存在 DuckDB，PG 只保存日期级协调账本与可靠审计 outbox；两库通过 `command_id/task_id/source_event_key` 在服务层对账，禁止跨库 JOIN。任务不可取消、不可续跑，失败或中断保留最后成功快照；启动时先把 DuckDB 残留任务及其 `calculating/recalculating` 快照状态收敛为终态，再将 PG 活动态对账为终态。查询发现处理态没有活动任务时通过统一日期入口幂等重建；页面按稳定 command 标识指数退避轮询，按剩余时间截断最后一档，并通过单调时钟和独立截止定时器严格限制总等待为 120 秒。表、状态与边界详见 [platform.md](platform.md)，部署正反向结果见[连板天梯 SQL 演练记录](../limit-up-ladder/sql-rehearsal.md)。
+自动首算、失效刷新和 system-only 管理员单日重算统一进入 `limit_ladder_recompute`，同一交易日只允许一个 `requested/running` 命令。执行任务和实时日志继续保存在 DuckDB，PG 只保存日期级协调账本与可靠审计 outbox；两库通过 `command_id/task_id/source_event_key` 在服务层对账，禁止跨库 JOIN。任务不可取消、不可续跑，失败或中断保留最后成功快照；上游采集的天梯失效是任务成功的必要收尾，DuckDB 失效 outbox 先落 pending，执行失败会使采集任务失败而非只记 warning。`verify/checkup` 同时检查 pending 积压。启动时先把 DuckDB 残留任务及其 `calculating/recalculating` 快照状态收敛为终态，再将 PG 活动态对账为终态。查询先补偿 pending 失效，再处理孤儿处理态和规则版本升级；任一失败均不把旧数据当作有效快照返回。页面按稳定 command 标识指数退避轮询，按剩余时间截断最后一档，并通过单调时钟和独立截止定时器严格限制总等待为 120 秒。表、状态与边界详见 [platform.md](platform.md)，部署正反向结果见[连板天梯 SQL 演练记录](../limit-up-ladder/sql-rehearsal.md)。
 
 个股采集表单由数据采集页与定时调度页复用，服务端只接受方案支持的字段：
 

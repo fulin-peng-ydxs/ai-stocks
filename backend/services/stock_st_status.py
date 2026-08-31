@@ -243,8 +243,7 @@ class StockSTStatusService:
                         UPDATE limit_ladder_snapshot_state AS state
                         SET status='invalid',invalid_reason='st_status_changed',
                             failure_summary=NULL,updated_at=?
-                        FROM {affected_view} affected
-                        WHERE state.trade_date=affected.trade_date
+                        WHERE state.trade_date>=(SELECT min(trade_date) FROM {affected_view})
                           AND state.current_snapshot_id IS NOT NULL
                           AND state.status NOT IN ('calculating','recalculating')
                         """,

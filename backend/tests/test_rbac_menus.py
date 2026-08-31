@@ -141,7 +141,9 @@ def test_tree_for_system(client, env):
     assert {"quotes", "system", "permission", "/system/users"} <= codes   # 含 seed 树
     # 嵌套结构：quotes 应有子节点
     quotes = next(n for n in r.json()["data"] if n["code"] == "quotes")
-    assert {c["code"] for c in quotes["children"]} == {"/stocks", "/sectors", "/board"}
+    assert {c["code"] for c in quotes["children"]} == {
+        "/stocks", "/sectors", "/board", "/limit-ladder"
+    }
 
 
 # ── CRUD / 唯一 ──

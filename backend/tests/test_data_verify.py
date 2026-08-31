@@ -35,6 +35,25 @@ def test_contract_passes_when_complete():
         assert all(base)
 
 
+def test_contract_catches_missing_list_date_and_pending_ladder_invalidation():
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        c.execute(
+            "INSERT INTO stock_basic (code,name,exchange,board,list_date,price_limit_pct,industry) "
+            "VALUES ('600001.SH','未知上市日','SH','主板',NULL,0.10,'J66')"
+        )
+        c.execute(
+            "INSERT INTO limit_ladder_invalidation_outbox "
+            "(event_id,reason,status,attempt_count,created_at,updated_at) "
+            "VALUES ('pending-1','test','pending',0,current_timestamp,current_timestamp)"
+        )
+        verifier = DataVerifier(c)
+        verifier.check_contract()
+        checks = {name: ok for name, ok, _ in verifier.results}
+        assert checks["基础·上市日 无缺失"] is False
+        assert checks["连板天梯·失效 outbox 无积压"] is False
+
+
 def _insert_bar(c, code, td, close, adj_factor=None, adj_clean=None):
     c.execute(
         "INSERT INTO daily_bar (code, trade_date, close, adj_factor, adj_factor_clean) "

@@ -229,7 +229,7 @@ def test_publication_transaction_rolls_back_partial_version(tmp_path, monkeypatc
     client.close()
 
 
-def test_invalidation_is_date_scoped_and_preserves_pointer(market):
+def test_historical_invalidation_propagates_to_all_later_snapshots(market):
     first = date(2026, 8, 27)
     second = date(2026, 8, 28)
     for trade_date, snapshot_id in ((first, "snap-1"), (second, "snap-2")):
@@ -244,7 +244,7 @@ def test_invalidation_is_date_scoped_and_preserves_pointer(market):
     changed = LimitLadderSnapshotService(market).invalidate_dates(
         [first], reason="st_status_changed"
     )
-    assert changed == 1
+    assert changed == 2
     rows = market.query_df(
         "SELECT trade_date,status,current_snapshot_id,invalid_reason "
         "FROM limit_ladder_snapshot_state ORDER BY trade_date"
@@ -252,10 +252,12 @@ def test_invalidation_is_date_scoped_and_preserves_pointer(market):
     assert rows[0]["status"] == "invalid"
     assert rows[0]["current_snapshot_id"] == "snap-1"
     assert rows[0]["invalid_reason"] == "st_status_changed"
-    assert rows[1]["status"] == "valid"
+    assert rows[1]["status"] == "invalid"
+    assert rows[1]["current_snapshot_id"] == "snap-2"
+    assert rows[1]["invalid_reason"] == "st_status_changed"
 
 
-def test_incremental_market_invalidation_keeps_ladder_date_scoped(market, monkeypatch):
+def test_incremental_market_invalidation_starts_at_earliest_changed_date(market, monkeypatch):
     first = date(2026, 8, 27)
     second = date(2026, 8, 28)
     for trade_date, snapshot_id in ((first, "snap-1"), (second, "snap-2")):
@@ -275,11 +277,88 @@ def test_incremental_market_invalidation_keeps_ladder_date_scoped(market, monkey
     )
     service = IngestionService.__new__(IngestionService)
     service.c = market
-    service._mark_snapshots_stale(ladder_dates=[second])
+    service._mark_snapshots_stale(ladder_dates=[first])
     rows = market.query_df(
         "SELECT trade_date,status FROM limit_ladder_snapshot_state ORDER BY trade_date"
     ).to_dict("records")
-    assert [row["status"] for row in rows] == ["valid", "invalid"]
+    assert [row["status"] for row in rows] == ["invalid", "invalid"]
+
+
+def test_unknown_list_date_is_excluded_from_point_in_time_pool(market):
+    trade_date = date(2026, 8, 28)
+    _seed_calendar(market, trade_date)
+    _seed_basic(market, [
+        ("600001.SH", "已知", "主板", date(2020, 1, 1), "软件", 0.10),
+        ("600002.SH", "未知", "主板", None, "软件", 0.10),
+    ])
+    MarketRepository(market).upsert_daily_bar(
+        pd.DataFrame([_bar("600001.SH", trade_date)])
+    )
+
+    coverage = LimitLadderSnapshotService(market).check_coverage(trade_date)
+
+    assert coverage.ready is True
+    assert coverage.pool_count == 1
+
+
+def test_invalidation_outbox_remains_pending_and_raises_on_failure(market, monkeypatch):
+    service = LimitLadderSnapshotService(market)
+    monkeypatch.setattr(
+        service,
+        "process_pending_invalidations",
+        lambda: (_ for _ in ()).throw(RuntimeError("forced invalidation failure")),
+    )
+    with pytest.raises(RuntimeError, match="forced invalidation failure"):
+        service.request_invalidation([date(2026, 8, 28)], reason="test")
+    row = market.query_df(
+        "SELECT status,attempt_count,last_error FROM limit_ladder_invalidation_outbox"
+    ).iloc[0]
+    assert row["status"] == "pending"
+    assert int(row["attempt_count"]) == 0
+    assert pd.isna(row["last_error"])
+
+
+def test_pending_invalidation_outbox_replays_to_completion(market):
+    trade_date = date(2026, 8, 28)
+    market.execute(
+        "INSERT INTO limit_ladder_snapshot_state "
+        "(trade_date,status,current_snapshot_id,rule_version,updated_at) "
+        "VALUES (?,'valid','snap-1','v1',current_timestamp)",
+        [trade_date],
+    )
+    market.execute(
+        "INSERT INTO limit_ladder_invalidation_outbox "
+        "(event_id,affected_from,reason,status,attempt_count,created_at,updated_at) "
+        "VALUES ('pending-replay',?,'retry','pending',0,current_timestamp,current_timestamp)",
+        [trade_date],
+    )
+
+    assert LimitLadderSnapshotService(market).process_pending_invalidations() == 1
+    state = market.query_df(
+        "SELECT status,invalid_reason FROM limit_ladder_snapshot_state"
+    ).iloc[0]
+    event = market.query_df(
+        "SELECT status,attempt_count,completed_at FROM limit_ladder_invalidation_outbox"
+    ).iloc[0]
+    assert state["status"] == "invalid"
+    assert state["invalid_reason"] == "retry"
+    assert event["status"] == "completed"
+    assert int(event["attempt_count"]) == 1
+    assert pd.notna(event["completed_at"])
+
+
+def test_ingest_does_not_swallow_ladder_invalidation_failure(market, monkeypatch):
+    def fail_invalidation(*args, **kwargs):
+        raise RuntimeError("forced ladder invalidation failure")
+
+    monkeypatch.setattr(
+        LimitLadderSnapshotService, "request_invalidation", fail_invalidation
+    )
+    service = IngestionService.__new__(IngestionService)
+    service.c = market
+
+    with pytest.raises(RuntimeError, match="forced ladder invalidation failure"):
+        service._mark_snapshots_stale(ladder_dates=[date(2026, 8, 28)])
 
 
 def test_coverage_fingerprint_tracks_published_one_word_and_industry_dictionary(market):
@@ -331,16 +410,20 @@ def test_ingest_terminal_helper_writes_structured_fact(market):
     assert json.loads(row["detail"]) == detail
 
 
-def test_st_fact_change_invalidates_same_date_atomically(market):
+def test_st_fact_change_invalidates_same_and_later_dates_atomically(market):
     trade_date = date(2026, 8, 28)
-    market.execute(
-        """
-        INSERT INTO limit_ladder_snapshot_state (
-            trade_date,status,current_snapshot_id,rule_version,updated_at
-        ) VALUES (?,'valid','snap-1','v1',current_timestamp)
-        """,
-        [trade_date],
-    )
+    for day, snapshot_id in (
+        (trade_date, "snap-1"),
+        (trade_date + timedelta(days=1), "snap-2"),
+    ):
+        market.execute(
+            """
+            INSERT INTO limit_ladder_snapshot_state (
+                trade_date,status,current_snapshot_id,rule_version,updated_at
+            ) VALUES (?,'valid',?,'v1',current_timestamp)
+            """,
+            [day, snapshot_id],
+        )
     status = PointInTimeSTStatus(
         is_st=True,
         source="exchange_notice",
@@ -351,9 +434,10 @@ def test_st_fact_change_invalidates_same_date_atomically(market):
         [StockSTStatusFact("600001.SH", trade_date, status)],
         change_reason="accurate_backfill",
     ) == [trade_date]
-    state = market.query_df(
-        "SELECT status,current_snapshot_id,invalid_reason FROM limit_ladder_snapshot_state"
-    ).iloc[0]
-    assert state["status"] == "invalid"
-    assert state["current_snapshot_id"] == "snap-1"
-    assert state["invalid_reason"] == "st_status_changed"
+    states = market.query_df(
+        "SELECT status,current_snapshot_id,invalid_reason "
+        "FROM limit_ladder_snapshot_state ORDER BY trade_date"
+    ).to_dict("records")
+    assert [state["status"] for state in states] == ["invalid", "invalid"]
+    assert [state["current_snapshot_id"] for state in states] == ["snap-1", "snap-2"]
+    assert all(state["invalid_reason"] == "st_status_changed" for state in states)

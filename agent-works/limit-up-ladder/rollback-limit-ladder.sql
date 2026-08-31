@@ -1,4 +1,5 @@
 -- 连板天梯 PostgreSQL 专项回滚脚本。
+-- AI_STOCKS_MENU_OVERWRITE: EXPLICIT_CONFIRMATION_REQUIRED
 -- 前置条件：应用版本已停止创建/读取连板天梯任务，已完成 PG 备份并人工确认永久回退。
 -- 影响范围：只回滚两份 migration marker 记录为本功能实际插入的 RBAC 和审计账本对象。
 -- 安全边界：pending outbox、账本外授权/子菜单/资源引用、共享审计键复用均会 fail-closed。
@@ -18,6 +19,11 @@ DECLARE
 BEGIN
     PERFORM pg_advisory_xact_lock(8410010006);
     PERFORM pg_advisory_xact_lock(8410010007);
+
+    IF current_setting('ai_stocks.confirm_menu_overwrite', true)
+        IS DISTINCT FROM 'CONFIRM_LIMIT_LADDER_ROLLBACK' THEN
+        RAISE EXCEPTION '未设置连板天梯专项回滚确认口令，拒绝修改菜单/资源';
+    END IF;
 
     SELECT value::jsonb INTO rbac_marker FROM app_config WHERE key=rbac_key;
     SELECT value::jsonb INTO audit_marker FROM app_config WHERE key=audit_key;
@@ -170,6 +176,8 @@ COMMIT;
 -- 验证：两个 marker 均为 applied=false/rolled_back=true；迁移实际创建的 PG 对象不存在。
 -- 默认不要删除 DuckDB 数据。如已备份且确认永久清除，请在停止后端并独占 DuckDB 写锁后单独执行：
 -- BEGIN TRANSACTION;
+-- DROP TABLE IF EXISTS limit_ladder_invalidation_outbox;
+-- DROP TABLE IF EXISTS limit_ladder_snapshot_window_metric;
 -- DROP TABLE IF EXISTS limit_ladder_snapshot_aggregate;
 -- DROP TABLE IF EXISTS limit_ladder_snapshot_concept;
 -- DROP TABLE IF EXISTS limit_ladder_snapshot_stock;

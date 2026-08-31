@@ -94,15 +94,14 @@ class IngestionService:
         from backend.scoring.snapshot import ScoreSnapshotRepo
         from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
 
-        try:
-            ladder = LimitLadderSnapshotService(self.c)
-            affected_ladder_dates = dates if ladder_dates is None else ladder_dates
-            if affected_ladder_dates:
-                ladder.invalidate_dates(affected_ladder_dates, reason="market_data_changed")
-            elif ladder_dates is None:
-                ladder.invalidate_all(reason="market_data_changed")
-        except Exception as e:  # noqa: BLE001 -- scoring invalidation must remain independent
-            log.warning("行情变更后标记连板天梯失效失败: %s", e)
+        ladder = LimitLadderSnapshotService(self.c)
+        affected_ladder_dates = dates if ladder_dates is None else ladder_dates
+        if affected_ladder_dates:
+            ladder.request_invalidation(
+                affected_ladder_dates, reason="market_data_changed"
+            )
+        elif ladder_dates is None:
+            ladder.request_invalidation(None, reason="market_data_changed")
         if dates:
             return ScoreSnapshotRepo(get_client()).mark_stale_dates(dates)
         return ScoreSnapshotRepo(get_client()).mark_stale_all()
@@ -1138,10 +1137,7 @@ class IngestionService:
         if codes is None:
             self._post_ingest_validate()
         # 行情已变 → 标评分快照失效（惰性）。skip 全量或 rows=0 也标（回填可能只是幂等跳过，但基础信息/因子仍可能变）。
-        try:
-            result["snapshots_marked_stale"] = self._mark_snapshots_stale()
-        except Exception as e:  # noqa: BLE001
-            log.warning("回填后标记评分快照失效失败: %s", e)
+        result["snapshots_marked_stale"] = self._mark_snapshots_stale()
         return result
 
     def _post_ingest_validate(self) -> None:
@@ -1533,12 +1529,9 @@ class IngestionService:
             ctx.log("说明：本次已补最新交易日 total_mv；历史中间缺口未在本次覆盖，质检 `mv_gap` 仍显示属正常，"
                     "需跑 `valuation --fill-gaps`（或质量页补修）一次性回补历史市值。")
         # 行情/市值/复权因子已变 → 标评分快照失效（惰性，下次读取重算）。
-        try:
-            result["snapshots_marked_stale"] = self._mark_snapshots_stale(
-                ladder_dates=self._limit_ladder_market_date_values()
-            )
-        except Exception as e:  # noqa: BLE001  失效标记失败不影响采集结果
-            log.warning("增量更新后标记评分快照失效失败: %s", e)
+        result["snapshots_marked_stale"] = self._mark_snapshots_stale(
+            ladder_dates=self._limit_ladder_market_date_values()
+        )
         if codes is None:
             result["market_day_terminal"] = self._log_market_day_terminal(
                 end,
@@ -1798,11 +1791,9 @@ class IngestionService:
         result = {"target": n, "ok": ok, "fail": fail, "rows": total_rows,
                   "range": [str(start), str(end)], "dates": dates}
         # 指定日期行情已变 → 按受影响交易日标评分快照失效（细粒度，惰性）
-        try:
-            result["snapshots_marked_stale"] = self._mark_snapshots_stale(
-                [date.fromisoformat(x) for x in dates] if dates else None)
-        except Exception as e:  # noqa: BLE001
-            log.warning("指定日期采集后标记评分快照失效失败: %s", e)
+        result["snapshots_marked_stale"] = self._mark_snapshots_stale(
+            [date.fromisoformat(x) for x in dates] if dates else None
+        )
         if ctx:
             ctx.log(f"■ 指定日期采集完成：成功 {ok}、失败 {fail}，共写入 {total_rows} 行（{start}~{end}）")
         log.info("指定日期采集完成: %s", {k: v for k, v in result.items() if k != "dates"})
@@ -1882,10 +1873,7 @@ class IngestionService:
                     ctx.log(f"[{i}/{n}] {code} {verb}失败: {e}", "warn")
         result = {"target": n, "ok": ok, "fail": fail, "rows": rows}
         # 复权因子/前收盘/涨跌停标记已重算 → 标评分快照失效（惰性，K线与打分口径都可能受影响）
-        try:
-            result["snapshots_marked_stale"] = self._mark_snapshots_stale()
-        except Exception as e:  # noqa: BLE001
-            log.warning("%s后标记评分快照失效失败: %s", verb, e)
+        result["snapshots_marked_stale"] = self._mark_snapshots_stale()
         log.info("%s完成: %s", verb, result)
         if ctx:
             ctx.log(f"■ {verb}完成：成功 {ok}、失败 {fail}，共处理 {rows} 行")
@@ -2022,10 +2010,7 @@ class IngestionService:
         log.info("%s 补全基础信息 %d 只（含退市股+行业）", dates_src.name, n)
         # 基础信息（退市/上市日/板块）已变 → 标评分快照失效（影响退市股排除口径）
         if n > 0:
-            try:
-                self._mark_snapshots_stale()
-            except Exception as e:  # noqa: BLE001
-                log.warning("补全基础信息后标记评分快照失效失败: %s", e)
+            self._mark_snapshots_stale()
         if ctx:
             ctx.set_phase(
                 "stock_basic", done=1, total=1,
@@ -2102,10 +2087,7 @@ class IngestionService:
                 self.repo.log_update("daily_bar", bao.name, start, None, 0, "failed", f"{code}: {e}")
         result = {"target": len(dl), "ok": ok, "skip": skip, "fail": fail, "rows": total_rows}
         # 退市股历史已变 → 标评分快照失效（退市股影响幸存者偏差口径）
-        try:
-            result["snapshots_marked_stale"] = self._mark_snapshots_stale()
-        except Exception as e:  # noqa: BLE001
-            log.warning("退市股灌入后标记评分快照失效失败: %s", e)
+        result["snapshots_marked_stale"] = self._mark_snapshots_stale()
         log.info("退市股灌入完成: %s", result)
         if ctx:
             ctx.log(f"子任务：退市股历史灌入完成，成功{ok} 跳过{skip} 失败{fail}，写入 {total_rows} 行")
@@ -2278,16 +2260,13 @@ class IngestionService:
         result["failed"] = list(dict.fromkeys(result["failed"]))
         result["ok"] = not result["failed"]
         if any(stage in steps for stage in ("dict", "members")):
-            try:
-                from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
+            from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
 
-                result["limit_ladder_snapshots_invalidated"] = (
-                    LimitLadderSnapshotService(svc.c).invalidate_all(
-                        reason="board_membership_changed"
-                    )
+            result["limit_ladder_snapshots_invalidated"] = (
+                LimitLadderSnapshotService(svc.c).request_invalidation(
+                    None, reason="board_membership_changed"
                 )
-            except Exception as e:  # noqa: BLE001 -- board ingestion result remains authoritative
-                log.warning("板块字典/成分变更后标记连板天梯失效失败: %s", e)
+            )
         if ctx:
             ctx.progress(1.0, "板块采集完成")
             ctx.log(f"板块采集完成（{mode}）：字典{result['dict']} 成分{len(result['members'])} 板块 "

@@ -3,7 +3,7 @@
 ## 演练结论
 
 - 演练日期：2026-08-31。
-- DuckDB：七张领域表前向脚本连续执行两次均成功，随后按逆依赖顺序删除，最终零残留。
+- DuckDB：九张领域表前向脚本连续执行两次均成功，包含新增的快照窗口指标和失效 outbox；随后按逆依赖顺序删除，最终零残留。
 - PostgreSQL：审计账本和 RBAC 前向脚本连续执行两次均成功且无重复数据；存在 pending outbox 时回滚按预期失败，投递完成后专项回滚成功。
 - PG 回滚后两个 marker 均进入 `applied=false / rolled_back=true` tombstone，迁移创建的菜单、资源、授权、账本、outbox、共享审计索引与字段均按所有权记录清理。
 - 演练使用临时 DuckDB 文件和随机隔离 PG schema；正常与异常路径结束后均已删除，不读写项目 `data/`，不修改共享菜单、权限、审计或业务数据。
@@ -12,7 +12,7 @@
 
 | 文件 | 数据库 | 验证内容 |
 | --- | --- | --- |
-| `limit-ladder-schema.sql` | DuckDB | 七表、约束、索引、重复前向、逆依赖删除 |
+| `limit-ladder-schema.sql` | DuckDB | 九表、约束、索引、重复前向、逆依赖删除 |
 | `limit-ladder-audit-ledger.sql` | PostgreSQL | migration marker、对象所有权、两表、三个索引、共享审计兼容字段、重复前向 |
 | `limit-ladder-rbac.sql` | PostgreSQL | 菜单、两个资源、默认角色授权、marker、`perm_ver` 失效、重复前向 |
 | `rollback-limit-ladder.sql` | PostgreSQL | marker 校验、pending outbox 拦截、账本外引用保护、共享字段复用保护、正常回滚、tombstone |
@@ -28,8 +28,8 @@
 
 | 场景 | 预期 | 结果 |
 | --- | --- | --- |
-| DuckDB 前向执行两次 | 七表存在且无重复/报错 | 通过，7/7 |
-| DuckDB 逆依赖删除 | 七表全部消失 | 通过，0 残留 |
+| DuckDB 前向执行两次 | 九表存在且无重复/报错 | 通过，9/9 |
+| DuckDB 逆依赖删除 | 九表全部消失 | 通过，0 残留 |
 | PG 审计前向执行两次 | marker、两表和索引幂等 | 通过 |
 | PG RBAC 前向执行两次 | 1 个菜单、2 个资源、3 个 view 菜单授权、3 个 view 资源授权、1 个 recompute 授权 | 通过 |
 | 管理员修改迁移创建的菜单身份后回滚 | 整体事务拒绝，不删除已修改节点 | 通过，命中严格身份保护 |
@@ -56,4 +56,4 @@
 2. 停止旧后端，依次执行 DuckDB schema、PG audit ledger、PG RBAC 三份前向 SQL。
 3. 运行各脚本验证查询后发布后端与前端，重新登录刷新权限版本。
 4. 回退代码时默认保留 DuckDB 快照/ST 历史；只有永久撤销并完成备份后才单独执行注释中的 DuckDB 删除段。
-5. 执行 PG 专项回滚前必须先投递或导出 pending outbox；任何 fail-closed 异常均不得通过手工级联删除绕过。
+5. 执行 PG 专项回滚前必须在同一会话显式设置 `ai_stocks.confirm_menu_overwrite=CONFIRM_LIMIT_LADDER_ROLLBACK`，并先投递或导出 pending outbox；任何 fail-closed 异常均不得通过手工级联删除绕过。

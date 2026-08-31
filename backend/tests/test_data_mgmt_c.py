@@ -840,7 +840,7 @@ def test_update_resume_retries_failed_code_with_empty_exact_checkpoint(client, m
         raising=True,
     )
     monkeypatch.setattr(
-        ingest.IngestionService, "_mark_snapshots_stale", lambda self: 0, raising=True
+        ingest.IngestionService, "_mark_snapshots_stale", lambda self, **kwargs: 0, raising=True
     )
 
     calls = []
@@ -913,7 +913,7 @@ def test_delisted_history_does_not_skip_partially_covered_code(client, monkeypat
         raising=True,
     )
     monkeypatch.setattr(
-        ingest.IngestionService, "_mark_snapshots_stale", lambda self: 0, raising=True
+        ingest.IngestionService, "_mark_snapshots_stale", lambda self, **kwargs: 0, raising=True
     )
 
     result = ingest.IngestionService().ingest_delisted(years=5)

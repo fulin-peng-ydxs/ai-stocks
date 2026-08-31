@@ -116,7 +116,7 @@ def test_update_valuation_respects_fallback_target(client, monkeypatch):
     svc._resolve_update_end = lambda *_, **__: target
     svc._ingest_indices_incremental = lambda *_, **__: 0
     svc.ingest_valuation = lambda *_, **__: {"total_mv_rows": 0}
-    svc._mark_snapshots_stale = lambda: 0
+    svc._mark_snapshots_stale = lambda **kwargs: 0
     monkeypatch.setattr(data_report.DataIntegrityReport, "gapped_codes", lambda self: [])
     captured: dict[str, date] = {}
 

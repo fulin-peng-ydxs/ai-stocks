@@ -18,7 +18,7 @@ from backend.services.limit_ladder_calculator import (
 )
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
-RULE_VERSION = "limit-ladder-v1"
+RULE_VERSION = "limit-ladder-v2"
 SOURCE_VERSION = "duckdb-eod-v1"
 TERMINAL_STATUSES = frozenset({"success", "partial", "failed", "unknown"})
 
@@ -100,7 +100,7 @@ class LimitLadderSnapshotService:
             """
             SELECT code,name,board,list_date,delist_date,industry,price_limit_pct
             FROM stock_basic
-            WHERE (list_date IS NULL OR list_date<=?)
+            WHERE list_date IS NOT NULL AND list_date<=?
               AND (delist_date IS NULL OR delist_date>=?)
             ORDER BY code
             """,
@@ -332,6 +332,45 @@ class LimitLadderSnapshotService:
             ],
             columns=["snapshot_id", "group_type", "group_key", "group_name", "stock_count"],
         )
+        window_calculations = LimitLadderCalculator(self.c).calculate_all_window_metrics(
+            calculation.trade_date, [stock.code for stock in calculation.stocks]
+        )
+        window_metrics = pd.DataFrame(
+            [
+                {
+                    "snapshot_id": snapshot_id,
+                    "code": metric.code,
+                    "window_days": window,
+                    "window_limit_up_days": metric.window_limit_up_days,
+                    "window_return_pct": metric.window_return_pct,
+                    "window_start_date": metric.window_start_date,
+                    "actual_trade_days": metric.actual_trade_days,
+                    "source_version": SOURCE_VERSION,
+                }
+                for window, window_calculation in window_calculations.items()
+                for metric in window_calculation.stocks
+            ],
+            columns=[
+                "snapshot_id", "code", "window_days", "window_limit_up_days",
+                "window_return_pct", "window_start_date", "actual_trade_days",
+                "source_version",
+            ],
+        )
+        window_metadata_json = json.dumps(
+            {
+                str(window): {
+                    "requested_window_start_date": (
+                        window_calculation.requested_window_start_date.isoformat()
+                    ),
+                    "requested_window_trade_days": (
+                        window_calculation.requested_window_trade_days
+                    ),
+                }
+                for window, window_calculation in window_calculations.items()
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
         coverage_json = json.dumps(coverage.to_dict(), ensure_ascii=False, sort_keys=True)
         with self.c.transaction():
             latest_coverage = self.check_coverage(calculation.trade_date)
@@ -344,8 +383,8 @@ class LimitLadderSnapshotService:
                 """
                 INSERT INTO limit_ladder_snapshot (
                     snapshot_id,trade_date,rule_version,computed_at,stock_count,
-                    has_approx_st,coverage_json,source_version
-                ) VALUES (?,?,?,?,?,?,?,?)
+                    has_approx_st,coverage_json,window_metadata_json,source_version
+                ) VALUES (?,?,?,?,?,?,?,?,?)
                 """,
                 [
                     snapshot_id,
@@ -355,12 +394,14 @@ class LimitLadderSnapshotService:
                     len(calculation.stocks),
                     any(stock.st_quality == "approximate" for stock in calculation.stocks),
                     coverage_json,
+                    window_metadata_json,
                     SOURCE_VERSION,
                 ],
             )
             self._insert_frame("limit_ladder_snapshot_stock", stocks)
             self._insert_frame("limit_ladder_snapshot_concept", concepts)
             self._insert_frame("limit_ladder_snapshot_aggregate", aggregates)
+            self._insert_frame("limit_ladder_snapshot_window_metric", window_metrics)
             self.c.execute(
                 """
                 INSERT INTO limit_ladder_snapshot_state (
@@ -390,26 +431,24 @@ class LimitLadderSnapshotService:
         dates = sorted({self._date(value) for value in trade_dates if value is not None})
         if not dates:
             return 0
-        frame = pd.DataFrame({"trade_date": dates})
-        with self.c.transaction(), self.c.temp_view(frame, "ladder_invalid_dates") as view:
+        affected_from = dates[0]
+        with self.c.transaction():
             before = self.c.query_df(
-                f"""
-                SELECT count(*) AS n FROM limit_ladder_snapshot_state state
-                JOIN {view} affected USING (trade_date)
-                WHERE state.current_snapshot_id IS NOT NULL
-                  AND state.status NOT IN ('calculating','recalculating','invalid')
                 """
+                SELECT count(*) AS n FROM limit_ladder_snapshot_state state
+                WHERE state.trade_date>=? AND state.current_snapshot_id IS NOT NULL
+                  AND state.status NOT IN ('calculating','recalculating','invalid')
+                """,
+                [affected_from],
             )
             self.c.execute(
-                f"""
+                """
                 UPDATE limit_ladder_snapshot_state AS state
                 SET status='invalid',invalid_reason=?,failure_summary=NULL,updated_at=?
-                FROM {view} affected
-                WHERE state.trade_date=affected.trade_date
-                  AND state.current_snapshot_id IS NOT NULL
+                WHERE state.trade_date>=? AND state.current_snapshot_id IS NOT NULL
                   AND state.status NOT IN ('calculating','recalculating')
                 """,
-                [reason, self._now()],
+                [reason, self._now(), affected_from],
             )
         return int(before.iloc[0]["n"])
 
@@ -421,6 +460,80 @@ class LimitLadderSnapshotService:
             [self._date(value) for value in rows.get("trade_date", pd.Series(dtype=object)).tolist()],
             reason=reason,
         )
+
+    def request_invalidation(
+        self, trade_dates: list[date] | None, *, reason: str
+    ) -> int:
+        """Persist the intent first, then atomically invalidate and close the event."""
+        dates = sorted({self._date(value) for value in (trade_dates or []) if value is not None})
+        event_id = uuid4().hex
+        now = self._now()
+        self.c.execute(
+            """
+            INSERT INTO limit_ladder_invalidation_outbox (
+                event_id,affected_from,reason,status,attempt_count,last_error,
+                created_at,updated_at,completed_at
+            ) VALUES (?,?,?,'pending',0,NULL,?,?,NULL)
+            """,
+            [event_id, dates[0] if dates else None, reason, now, now],
+        )
+        return self.process_pending_invalidations()
+
+    def process_pending_invalidations(self) -> int:
+        rows = self.c.query_df(
+            "SELECT event_id,affected_from,reason FROM limit_ladder_invalidation_outbox "
+            "WHERE status='pending' ORDER BY created_at,event_id"
+        )
+        total = 0
+        for row in rows.to_dict("records"):
+            try:
+                with self.c.transaction():
+                    affected_from = row.get("affected_from")
+                    if affected_from is None or pd.isna(affected_from):
+                        count_row = self.c.query_df(
+                            "SELECT count(*) AS n FROM limit_ladder_snapshot_state "
+                            "WHERE current_snapshot_id IS NOT NULL "
+                            "AND status NOT IN ('calculating','recalculating','invalid')"
+                        )
+                        self.c.execute(
+                            "UPDATE limit_ladder_snapshot_state SET status='invalid',"
+                            "invalid_reason=?,failure_summary=NULL,updated_at=? "
+                            "WHERE current_snapshot_id IS NOT NULL "
+                            "AND status NOT IN ('calculating','recalculating')",
+                            [row["reason"], self._now()],
+                        )
+                    else:
+                        affected_from = self._date(affected_from)
+                        count_row = self.c.query_df(
+                            "SELECT count(*) AS n FROM limit_ladder_snapshot_state "
+                            "WHERE trade_date>=? AND current_snapshot_id IS NOT NULL "
+                            "AND status NOT IN ('calculating','recalculating','invalid')",
+                            [affected_from],
+                        )
+                        self.c.execute(
+                            "UPDATE limit_ladder_snapshot_state SET status='invalid',"
+                            "invalid_reason=?,failure_summary=NULL,updated_at=? "
+                            "WHERE trade_date>=? AND current_snapshot_id IS NOT NULL "
+                            "AND status NOT IN ('calculating','recalculating')",
+                            [row["reason"], self._now(), affected_from],
+                        )
+                    self.c.execute(
+                        "UPDATE limit_ladder_invalidation_outbox SET status='completed',"
+                        "attempt_count=attempt_count+1,last_error=NULL,updated_at=?,completed_at=? "
+                        "WHERE event_id=?",
+                        [self._now(), self._now(), row["event_id"]],
+                    )
+                    total += int(count_row.iloc[0]["n"])
+            except Exception as exc:
+                self.c.execute(
+                    "UPDATE limit_ladder_invalidation_outbox SET attempt_count=attempt_count+1,"
+                    "last_error=?,updated_at=? WHERE event_id=?",
+                    [str(exc)[:1000], self._now(), row["event_id"]],
+                )
+                raise RuntimeError(
+                    f"limit ladder invalidation pending: {row['event_id']}"
+                ) from exc
+        return total
 
     def mark_invalid(
         self,

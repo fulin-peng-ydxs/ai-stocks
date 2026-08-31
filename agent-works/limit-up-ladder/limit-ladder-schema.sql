@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS limit_ladder_snapshot (
     stock_count INTEGER NOT NULL CHECK (stock_count >= 0), -- 涨停股票数
     has_approx_st BOOLEAN NOT NULL,       -- 是否含近似 ST 事实
     coverage_json VARCHAR NOT NULL,       -- 完整性门禁摘要 JSON
+    window_metadata_json VARCHAR NOT NULL DEFAULT '{}', -- 四档请求窗口起始日/交易日数
     source_version VARCHAR NOT NULL       -- 上游来源版本
 );
 
@@ -102,14 +103,42 @@ CREATE TABLE IF NOT EXISTS limit_ladder_snapshot_aggregate (
     PRIMARY KEY (snapshot_id, group_type, group_key)
 );
 
+-- 与不可变快照同事务冻结四档窗口统计，避免失效快照混用修正后的当前行情。
+CREATE TABLE IF NOT EXISTS limit_ladder_snapshot_window_metric (
+    snapshot_id VARCHAR NOT NULL,
+    code VARCHAR NOT NULL,
+    window_days INTEGER NOT NULL CHECK (window_days IN (10,20,31,60)),
+    window_limit_up_days INTEGER NOT NULL CHECK (window_limit_up_days >= 0),
+    window_return_pct DOUBLE,
+    window_start_date DATE NOT NULL,
+    actual_trade_days INTEGER NOT NULL CHECK (actual_trade_days > 0),
+    source_version VARCHAR NOT NULL,
+    PRIMARY KEY (snapshot_id, code, window_days)
+);
+
+-- 上游写入完成后先登记失效意图；处理失败保留 pending，查询不得静默返回旧 valid。
+CREATE TABLE IF NOT EXISTS limit_ladder_invalidation_outbox (
+    event_id VARCHAR PRIMARY KEY,
+    affected_from DATE,                  -- NULL 表示全量失效
+    reason VARCHAR NOT NULL,
+    status VARCHAR NOT NULL CHECK (status IN ('pending','completed')),
+    attempt_count INTEGER NOT NULL CHECK (attempt_count >= 0),
+    last_error VARCHAR,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    completed_at TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_st_status_history_code_date
     ON stock_st_status_history (code, trade_date, changed_at);
 CREATE INDEX IF NOT EXISTS idx_limit_ladder_snapshot_date
     ON limit_ladder_snapshot (trade_date, computed_at);
 CREATE INDEX IF NOT EXISTS idx_limit_ladder_stock_snapshot
     ON limit_ladder_snapshot_stock (snapshot_id, consecutive_days);
+CREATE INDEX IF NOT EXISTS idx_limit_ladder_invalidation_pending
+    ON limit_ladder_invalidation_outbox (status, created_at);
 
 COMMIT;
 
--- 验证：查询 information_schema.tables 确认上述七张表存在，并重复执行本脚本验证幂等。
--- 确认永久删除时的逆依赖回滚顺序：aggregate、concept、stock、state、snapshot、history、daily。
+-- 验证：查询 information_schema.tables 确认上述九张表存在，并重复执行本脚本验证幂等。
+-- 确认永久删除时的逆依赖回滚顺序：outbox、window_metric、aggregate、concept、stock、state、snapshot、history、daily。
