@@ -146,7 +146,7 @@ const statusType: Record<TaskStatus, 'success' | 'danger' | 'info' | 'warning'> 
   done: 'success', failed: 'danger', running: 'warning', pending: 'info', interrupted: 'danger',
 }
 function isCancellingTask(t: AsyncTask | null | undefined): boolean {
-  return !!t && t.status === 'running' && String(t.message || '').includes('终止中')
+  return !!t && t.status === 'running' && Boolean(t.cancel_requested_at)
 }
 const PHASE_LABEL: Record<string, string> = {
   daily_bar: '行情采集',

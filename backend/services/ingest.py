@@ -23,7 +23,12 @@ from backend.common.logging import get_logger
 from backend.config import get_effective_settings
 from backend.dataquality.checker import add_markers, sanitize_bars
 from backend.datasource.akshare_source import classify_board
-from backend.datasource.base import DataSource, get_source
+from backend.datasource.base import (
+    DataSource,
+    check_thread_cancel,
+    get_source,
+    thread_cancel_scope,
+)
 from backend.limit_ladder.rules import (
     PointInTimeSTStatus,
     STStatusQuality,
@@ -159,6 +164,95 @@ class IngestionService:
             src = get_source(source_name)
             tls.src = src
         return src
+
+    @staticmethod
+    def _run_bounded_parallel(
+        items: list,
+        worker,
+        *,
+        concurrency: int,
+        ctx,
+        wait_label: str,
+        on_complete,
+    ) -> None:
+        """有界执行可取消采集，不预提交全量任务，也不留下终止后的孤儿写线程。
+
+        收到终止时只取消尚未开始的 Future，并等待最多 ``concurrency`` 个在途工作单元
+        到达安全边界。工作线程内的数据源限流/重试会读取同一取消检查器，从而跳过后续
+        退避和重试；执行器完全退出后，外层才会把任务标记为 interrupted。
+        """
+        iterator = iter(items)
+        executor = ThreadPoolExecutor(max_workers=concurrency)
+        pending: dict = {}
+        completed = 0
+        last_heartbeat = 0.0
+
+        def _run(item):
+            with thread_cancel_scope(ctx.check_cancel if ctx else None):
+                return worker(item)
+
+        def _submit_one() -> bool:
+            try:
+                item = next(iterator)
+            except StopIteration:
+                return False
+            pending[executor.submit(_run, item)] = item
+            return True
+
+        for _ in range(min(concurrency, len(items))):
+            _submit_one()
+
+        try:
+            while pending:
+                if ctx:
+                    ctx.check_cancel()
+                done_futures, _ = wait(
+                    set(pending), timeout=1.0, return_when=FIRST_COMPLETED
+                )
+                now = time.monotonic()
+                if not done_futures:
+                    if ctx and now - last_heartbeat >= 10:
+                        last_heartbeat = now
+                        ctx.log(
+                            f"{wait_label}等待中：已完成 {completed}/{len(items)}，"
+                            f"在途 {len(pending)}，外部接口返回后继续"
+                        )
+                        ctx.flush()
+                    continue
+                for future in done_futures:
+                    item = pending.pop(future)
+                    if ctx:
+                        ctx.check_cancel()
+                    try:
+                        value = future.result()
+                        error = None
+                    except TaskCancelled:
+                        raise
+                    except Exception as exc:  # noqa: BLE001 - 单工作单元失败交给调用方记录
+                        value = None
+                        error = exc
+                    completed += 1
+                    on_complete(completed, item, value, error, len(pending))
+                    if ctx:
+                        ctx.check_cancel()
+                    _submit_one()
+        except TaskCancelled:
+            cancelled = sum(1 for future in pending if future.cancel())
+            running = sum(1 for future in pending if not future.done() and not future.cancelled())
+            if ctx:
+                ctx.log(
+                    f"终止收尾：已取消 {cancelled} 个排队工作单元，"
+                    f"等待 {running} 个在途请求安全结束…",
+                    "warn",
+                )
+                ctx.flush()
+            executor.shutdown(wait=True, cancel_futures=True)
+            raise
+        except BaseException:
+            executor.shutdown(wait=True, cancel_futures=True)
+            raise
+        else:
+            executor.shutdown(wait=True)
 
     def _in_target_board(self, code6: str) -> tuple[bool, str, float]:
         """是否纳入目标板块（默认剔除北交所）。返回 (纳入?, board, limit_pct)。"""
@@ -448,6 +542,8 @@ class IngestionService:
         st_status: PointInTimeSTStatus | None = None,
     ) -> int:
         df, used_source = self._fetch_daily_with_fallback(code, start, end, source or self.src, ctx=ctx)
+        # 并发终止可能发生在网络返回与入库之间；此检查保证任务进入 interrupted 后不再遗留写入。
+        check_thread_cancel()
         if df is None or df.empty:
             raise DataSourceError(f"{code} {start}~{end} 主源+兜底源均无数据")
         source_dates = list(df["trade_date"])
@@ -626,8 +722,6 @@ class IngestionService:
                     fail += 1
                     _fail(code, e)
         else:  # 并发：线程局部 DataSource，写入由 DuckDB RLock 串行
-            import threading
-
             tls = threading.local()
             source_name = val_src.name
 
@@ -635,34 +729,25 @@ class IngestionService:
                 src = self._thread_source(tls, source_name)
                 return _one(code, src)
 
-            with ThreadPoolExecutor(max_workers=concurrency) as ex:
-                futs = {ex.submit(_worker, c): c for c in pending}
-                pending_futs = set(futs)
-                i = 0
-                last_heartbeat = 0.0
-                while pending_futs:
-                    if ctx:
-                        ctx.check_cancel()
-                    done_futs, pending_futs = wait(pending_futs, timeout=1.0, return_when=FIRST_COMPLETED)
-                    now = time.monotonic()
-                    if not done_futs:
-                        if ctx and now - last_heartbeat >= 10:
-                            last_heartbeat = now
-                            ctx.log(f"历史市值字段补采等待中：已完成 {i}/{n}，在途 {len(pending_futs)}，外部接口返回后继续")
-                            ctx.flush()
-                        continue
-                    for fut in done_futs:
-                        i += 1
-                        code = futs[fut]
-                        if ctx:
-                            ctx.set_phase("valuation_history", phase_total=n, phase_done=i - 1, current_item=code)
-                        try:
-                            rows += fut.result()
-                            ok += 1
-                            _tick(i)
-                        except Exception as e:  # noqa: BLE001
-                            fail += 1
-                            _fail(code, e)
+            def _complete(i, code, value, error, _in_flight):
+                nonlocal rows, ok, fail
+                if ctx:
+                    ctx.set_phase(
+                        "valuation_history", phase_total=n, phase_done=i - 1,
+                        current_item=code,
+                    )
+                if error is None:
+                    rows += value
+                    ok += 1
+                    _tick(i)
+                else:
+                    fail += 1
+                    _fail(code, error)
+
+            self._run_bounded_parallel(
+                pending, _worker, concurrency=concurrency, ctx=ctx,
+                wait_label="历史市值字段补采", on_complete=_complete,
+            )
         result = {"target": len(live), "ok": ok, "skip": skip, "fail": fail, "total_mv_rows": rows}
         log.info("估值入库完成: %s", result)
         if ctx:
@@ -734,8 +819,6 @@ class IngestionService:
                         ctx.log(f"最新日市值补采进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
                         ctx.flush()
         else:
-            import threading
-
             tls = threading.local()
             source_name = val_src.name
 
@@ -743,42 +826,44 @@ class IngestionService:
                 src = self._thread_source(tls, source_name)
                 return _one(code, src)
 
-            with ThreadPoolExecutor(max_workers=concurrency) as ex:
-                futs = {ex.submit(_worker, c): c for c in pending}
-                pending_futs = set(futs)
-                i = 0
-                last_heartbeat = 0.0
-                while pending_futs:
+            def _complete(i, code, value, error, _in_flight):
+                nonlocal rows, ok, fail
+                if ctx:
+                    ctx.set_phase(
+                        "valuation_latest", phase_total=n, phase_done=i - 1,
+                        current_item=code,
+                        valuation_latest_done_codes=sorted(done_latest),
+                    )
+                if error is None:
+                    rows += value
+                    ok += 1
+                    done_latest.add(code)
+                else:
+                    fail += 1
+                    log.warning("%s 补最新日市值失败: %s", code, error)
                     if ctx:
-                        ctx.check_cancel()
-                    done_futs, pending_futs = wait(pending_futs, timeout=1.0, return_when=FIRST_COMPLETED)
-                    now = time.monotonic()
-                    if not done_futs:
-                        if ctx and now - last_heartbeat >= 10:
-                            last_heartbeat = now
-                            ctx.log(f"最新日市值补采等待中：已完成 {i}/{n}，在途 {len(pending_futs)}，外部接口返回后继续")
-                            ctx.flush()
-                        continue
-                    for fut in done_futs:
-                        i += 1
-                        code = futs[fut]
-                        if ctx:
-                            ctx.set_phase("valuation_latest", phase_total=n, phase_done=i - 1, current_item=code,
-                                          valuation_latest_done_codes=sorted(done_latest))
-                        try:
-                            rows += fut.result(); ok += 1
-                            done_latest.add(code)
-                        except Exception as e:  # noqa: BLE001
-                            fail += 1; log.warning("%s 补最新日市值失败: %s", code, e)
-                            if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
-                                ctx.log(f"{code} 最新日市值补采失败（{trade_date}）：{e}", "warn")
-                        if i % 20 == 0 or i == n:
-                            log.info("补最新日市值进度 %d/%d（成功%d 失败%d，写入 %d行）", i, n, ok, fail, rows)
-                            if ctx:
-                                ctx.set_phase("valuation_latest", phase_total=n, phase_done=i, current_item=code,
-                                              valuation_latest_done_codes=sorted(done_latest))
-                                ctx.log(f"最新日市值补采进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
-                                ctx.flush()
+                        ctx.log(f"{code} 最新日市值补采失败（{trade_date}）：{error}", "warn")
+                if i % 20 == 0 or i == n:
+                    log.info(
+                        "补最新日市值进度 %d/%d（成功%d 失败%d，写入 %d行）",
+                        i, n, ok, fail, rows,
+                    )
+                    if ctx:
+                        ctx.set_phase(
+                            "valuation_latest", phase_total=n, phase_done=i,
+                            current_item=code,
+                            valuation_latest_done_codes=sorted(done_latest),
+                        )
+                        ctx.log(
+                            f"最新日市值补采进度 {i}/{n}：成功{ok} 失败{fail}，"
+                            f"写入 {rows} 行"
+                        )
+                        ctx.flush()
+
+            self._run_bounded_parallel(
+                pending, _worker, concurrency=concurrency, ctx=ctx,
+                wait_label="最新日市值补采", on_complete=_complete,
+            )
         result = {"trade_date": str(trade_date), "ok": ok, "fail": fail, "total_mv_rows": rows}
         log.info("补最新日市值完成: %s", result)
         if ctx:
@@ -842,8 +927,6 @@ class IngestionService:
                         ctx.log(f"市值缺口回补进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
                         ctx.flush()
         else:
-            import threading
-
             tls = threading.local()
             source_name = val_src.name
 
@@ -851,42 +934,45 @@ class IngestionService:
                 src = self._thread_source(tls, source_name)
                 return _one(item, src)
 
-            with ThreadPoolExecutor(max_workers=concurrency) as ex:
-                futs = {ex.submit(_worker, it): it for it in pending}
-                pending_futs = set(futs)
-                i = 0
-                last_heartbeat = 0.0
-                while pending_futs:
+            def _complete(i, item, value, error, _in_flight):
+                nonlocal rows, ok, fail
+                code, lo, hi = item
+                if ctx:
+                    ctx.set_phase(
+                        "valuation_gap", phase_total=n, phase_done=i - 1,
+                        current_item=code,
+                        valuation_gap_done_codes=sorted(done_gap_codes),
+                    )
+                if error is None:
+                    rows += value
+                    ok += 1
+                    done_gap_codes.add(code)
+                else:
+                    fail += 1
+                    log.warning("%s 市值回补失败: %s", code, error)
                     if ctx:
-                        ctx.check_cancel()
-                    done_futs, pending_futs = wait(pending_futs, timeout=1.0, return_when=FIRST_COMPLETED)
-                    now = time.monotonic()
-                    if not done_futs:
-                        if ctx and now - last_heartbeat >= 10:
-                            last_heartbeat = now
-                            ctx.log(f"市值缺口回补等待中：已完成 {i}/{n}，在途 {len(pending_futs)}，外部接口返回后继续")
-                            ctx.flush()
-                        continue
-                    for fut in done_futs:
-                        i += 1
-                        item = futs[fut]
-                        if ctx:
-                            ctx.set_phase("valuation_gap", phase_total=n, phase_done=i - 1, current_item=item[0],
-                                          valuation_gap_done_codes=sorted(done_gap_codes))
-                        try:
-                            rows += fut.result(); ok += 1
-                            done_gap_codes.add(item[0])
-                        except Exception as e:  # noqa: BLE001
-                            fail += 1; log.warning("%s 市值回补失败: %s", item[0], e)
-                            if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
-                                ctx.log(f"{item[0]} 市值缺口回补失败（{item[1]}~{item[2]}）：{e}", "warn")
-                        if i % 20 == 0 or i == n:
-                            log.info("市值回补进度 %d/%d（成功%d 失败%d，写入 %d行）", i, n, ok, fail, rows)
-                            if ctx:
-                                ctx.set_phase("valuation_gap", phase_total=n, phase_done=i, current_item=item[0],
-                                              valuation_gap_done_codes=sorted(done_gap_codes))
-                                ctx.log(f"市值缺口回补进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
-                                ctx.flush()
+                        ctx.log(f"{code} 市值缺口回补失败（{lo}~{hi}）：{error}", "warn")
+                if i % 20 == 0 or i == n:
+                    log.info(
+                        "市值回补进度 %d/%d（成功%d 失败%d，写入 %d行）",
+                        i, n, ok, fail, rows,
+                    )
+                    if ctx:
+                        ctx.set_phase(
+                            "valuation_gap", phase_total=n, phase_done=i,
+                            current_item=code,
+                            valuation_gap_done_codes=sorted(done_gap_codes),
+                        )
+                        ctx.log(
+                            f"市值缺口回补进度 {i}/{n}：成功{ok} 失败{fail}，"
+                            f"写入 {rows} 行"
+                        )
+                        ctx.flush()
+
+            self._run_bounded_parallel(
+                pending, _worker, concurrency=concurrency, ctx=ctx,
+                wait_label="市值缺口回补", on_complete=_complete,
+            )
         result = {"target": n, "ok": ok, "fail": fail, "total_mv_rows": rows}
         log.info("市值缺口回补完成: %s", result)
         if ctx:
@@ -1067,8 +1153,6 @@ class IngestionService:
                     fail += 1
                     _fail(i, code, e)
         else:  # 并发：线程局部 DataSource（限流按线程隔离），写入由 DuckDB RLock 串行
-            import threading
-
             tls = threading.local()
             source_name = self.src.name
 
@@ -1076,37 +1160,27 @@ class IngestionService:
                 src = self._thread_source(tls, source_name)
                 return _one(code, source=src)
 
-            with ThreadPoolExecutor(max_workers=concurrency) as ex:
-                futs = {ex.submit(_worker, c): c for c in pending}
-                pending_futs = set(futs)
-                i = 0
-                last_heartbeat = 0.0
-                while pending_futs:
-                    if ctx:
-                        ctx.check_cancel()
-                    done_futs, pending_futs = wait(pending_futs, timeout=1.0, return_when=FIRST_COMPLETED)
-                    now = time.monotonic()
-                    if not done_futs:
-                        if ctx and now - last_heartbeat >= 10:
-                            last_heartbeat = now
-                            ctx.log(f"历史补数等待中：已完成 {i}/{n}，在途 {len(pending_futs)}，外部接口返回后继续")
-                            ctx.flush()
-                        continue
-                    for fut in done_futs:
-                        i += 1
-                        code = futs[fut]
-                        if ctx:
-                            ctx.set_phase("daily_bar", phase_total=n, phase_done=i - 1, current_item=code)
-                        try:
-                            rows = fut.result()
-                            total_rows += rows
-                            if rows:
-                                updated.add(code)
-                            ok += 1
-                            _tick(i, code, rows)
-                        except Exception as e:  # noqa: BLE001
-                            fail += 1
-                            _fail(i, code, e)
+            def _complete(i, code, value, error, _in_flight):
+                nonlocal total_rows, ok, fail
+                if ctx:
+                    ctx.set_phase(
+                        "daily_bar", phase_total=n, phase_done=i - 1,
+                        current_item=code,
+                    )
+                if error is None:
+                    total_rows += value
+                    if value:
+                        updated.add(code)
+                    ok += 1
+                    _tick(i, code, value)
+                else:
+                    fail += 1
+                    _fail(i, code, error)
+
+            self._run_bounded_parallel(
+                pending, _worker, concurrency=concurrency, ctx=ctx,
+                wait_label="历史补数", on_complete=_complete,
+            )
         if updated:
             if ctx:
                 ctx.log(f"↻ 重算干净复权因子（{len(updated)} 只新入库）…")
@@ -1384,53 +1458,36 @@ class IngestionService:
                 src = self._thread_source(tls, source_name)
                 return self._update_one(code, end, source=src)
 
-            ex = ThreadPoolExecutor(max_workers=concurrency)
-            try:
-                futs = {ex.submit(_worker, c): c for c in pending}
-                pending_futs = set(futs)
-                completed = len(completed_codes)
-                last_heartbeat = 0.0
-                while pending_futs:
+            def _complete(i, code, value, error, in_flight):
+                nonlocal total_rows, ok, fail
+                a = resumed_count + i
+                if error is None:
+                    total_rows += value
+                    if value:
+                        updated.add(code)
+                    ok += 1
+                    completed_codes.add(code)
+                    _tick(a, code, value, in_flight=in_flight)
+                else:
+                    fail += 1
+                    log.warning("%s 增量失败: %s", code, error)
                     if ctx:
-                        ctx.check_cancel()
-                    done, pending_futs = wait(pending_futs, timeout=1.0, return_when=FIRST_COMPLETED)
-                    now = time.monotonic()
-                    if not done:
-                        if ctx and now - last_heartbeat >= 10:
-                            last_heartbeat = now
-                            ctx.log(f"并发增量等待中：已完成 {completed}/{n_total}，在途 {len(pending_futs)}，"
-                                    "外部数据源请求返回后继续")
-                            ctx.flush()
-                        continue
-                    for fut in done:
-                        a = completed + 1
-                        completed = a
-                        code = futs[fut]
-                        if ctx:
-                            ctx.check_cancel()
-                        try:
-                            rows = fut.result()
-                            total_rows += rows
-                            if rows:
-                                updated.add(code)
-                            ok += 1
-                            completed_codes.add(code)
-                            _tick(a, code, rows, in_flight=len(pending_futs))
-                        except Exception as e:  # noqa: BLE001
-                            fail += 1
-                            log.warning("%s 增量失败: %s", code, e)
-                            if ctx:
-                                ctx.log(f"[{a}/{n_total}] {code} 增量更新失败（补到 {end}，主源+兜底源均未取到）: {e}", "error")
-                            self.repo.log_update("daily_bar", self.src.name, None, end, 0, "failed", f"{code}: {e}")
-                            if a % 20 == 0 or a == n_total:
-                                _checkpoint(a)
-            except Exception:
-                for fut in pending_futs:
-                    fut.cancel()
-                ex.shutdown(wait=False, cancel_futures=True)
-                raise
-            else:
-                ex.shutdown(wait=True)
+                        ctx.log(
+                            f"[{a}/{n_total}] {code} 增量更新失败（补到 {end}，"
+                            f"主源+兜底源均未取到）: {error}",
+                            "error",
+                        )
+                    self.repo.log_update(
+                        "daily_bar", self.src.name, None, end, 0, "failed",
+                        f"{code}: {error}",
+                    )
+                    if a % 20 == 0 or a == n_total:
+                        _checkpoint(a)
+
+            self._run_bounded_parallel(
+                pending, _worker, concurrency=concurrency, ctx=ctx,
+                wait_label="并发增量", on_complete=_complete,
+            )
 
         # ── 缺口收口（DM 口径统一：与质量修复-补采共用 reconcile_gaps，confirm=False 只补不确认）──
         # 常规增量只补 max+1~target_end；若主源返回部分数据则兜底不触发、最新缺口会漏（如停牌次日/源端
@@ -1616,6 +1673,8 @@ class IngestionService:
         不覆盖日线更准值）+ 最新总/流通股本入 stock_basic。返回 total_mv 写入行数。
         供 ingest_valuation 全量补市值与 reconcile_gaps 收口补市值共用，口径一致。"""
         v = source.get_valuation(code, start, end)
+        # 与行情入库保持同一安全边界：取消后不把刚返回的外部结果继续写入 DuckDB。
+        check_thread_cancel()
         if v is None or v.empty:
             return 0
         # 只保留 daily_bar 已有的交易日，杜绝 value_em 日期错位产生游离 metrics 行
@@ -1736,8 +1795,6 @@ class IngestionService:
                     fail += 1
                     _fail(i, code, e)
         else:  # 并发：线程局部 DataSource（限流按线程隔离），写入由 DuckDB RLock 串行
-            import threading
-
             tls = threading.local()
             source_name = self.src.name
 
@@ -1745,40 +1802,29 @@ class IngestionService:
                 src = self._thread_source(tls, source_name)
                 return _one(code, source=src)
 
-            with ThreadPoolExecutor(max_workers=concurrency) as ex:
-                futs = {ex.submit(_worker, c): c for c in target}
-                pending_futs = set(futs)
-                i = 0
-                last_heartbeat = 0.0
-                while pending_futs:
-                    if ctx:
-                        ctx.check_cancel()
-                    done_futs, pending_futs = wait(pending_futs, timeout=1.0, return_when=FIRST_COMPLETED)
-                    now = time.monotonic()
-                    if not done_futs:
-                        if ctx and now - last_heartbeat >= 10:
-                            last_heartbeat = now
-                            ctx.log(f"指定日期采集等待中：已完成 {i}/{n}，在途 {len(pending_futs)}，外部接口返回后继续")
-                            ctx.flush()
-                        continue
-                    for fut in done_futs:
-                        i += 1
-                        code = futs[fut]
-                        if ctx:
-                            ctx.set_phase("daily_bar", done=len(done_codes), total=full_total,
-                                          phase_total=full_total, phase_done=len(done_codes),
-                                          current_item=code, done_codes=sorted(done_codes))
-                        try:
-                            rows = fut.result()
-                            total_rows += rows
-                            if rows:
-                                updated.add(code)
-                            ok += 1
-                            done_codes.add(code)
-                            _tick(i, code, rows)
-                        except Exception as e:  # noqa: BLE001
-                            fail += 1
-                            _fail(i, code, e)
+            def _complete(i, code, value, error, _in_flight):
+                nonlocal total_rows, ok, fail
+                if ctx:
+                    ctx.set_phase(
+                        "daily_bar", done=len(done_codes), total=full_total,
+                        phase_total=full_total, phase_done=len(done_codes),
+                        current_item=code, done_codes=sorted(done_codes),
+                    )
+                if error is None:
+                    total_rows += value
+                    if value:
+                        updated.add(code)
+                    ok += 1
+                    done_codes.add(code)
+                    _tick(i, code, value)
+                else:
+                    fail += 1
+                    _fail(i, code, error)
+
+            self._run_bounded_parallel(
+                target, _worker, concurrency=concurrency, ctx=ctx,
+                wait_label="指定日期采集", on_complete=_complete,
+            )
         if updated:
             if ctx:
                 ctx.log(f"↻ 增量刷新干净复权因子（{len(updated)} 只有新行）…")

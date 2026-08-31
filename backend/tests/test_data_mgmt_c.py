@@ -1162,9 +1162,202 @@ def test_task_cancel_marks_interrupted(client, monkeypatch):
         if (svc.get(tid) or {}).get("status") == "running":
             break
         time.sleep(0.05)
+    assert svc.get(tid)["cancel_requested_at"] is None
     assert svc.cancel(tid) is True
+    requested = svc.get(tid)
+    assert requested["cancel_requested_at"] is not None
     t = _wait(svc, tid)
     assert t["status"] == "interrupted" and "终止" in (t["message"] or "")
+
+
+def test_pending_task_cancel_is_not_cleared_when_runner_starts(client, monkeypatch):
+    """回归：pending 状态下立即终止，执行线程启动时不能吞掉取消标记。"""
+    from backend.services import async_task
+
+    captured_threads = []
+    monkeypatch.setattr(
+        async_task.threading.Thread,
+        "start",
+        lambda thread: captured_threads.append(thread),
+    )
+    monkeypatch.setattr(async_task, "_mark_snapshots_stale", lambda: 0)
+
+    entered_handler = []
+
+    def _handler(_params, ctx):
+        entered_handler.append(True)
+        ctx.check_cancel()
+        return {"ok": True}
+
+    monkeypatch.setitem(async_task._HANDLERS, "update", _handler)
+    svc = AsyncTaskService(client)
+    tid = svc.create("update")
+    assert svc.get(tid)["status"] == "pending"
+    assert svc.cancel(tid) is True
+    requested_at = svc.get(tid)["cancel_requested_at"]
+
+    assert len(captured_threads) == 1
+    captured_threads[0].run()
+
+    task = svc.get(tid)
+    assert entered_handler == [True]
+    assert task["status"] == "interrupted"
+    assert task["cancel_requested_at"] == requested_at
+
+
+def test_bounded_parallel_cancel_does_not_drain_full_queue():
+    """回归：终止大批量并发采集时，只收口在途窗口，不能等待数千个预提交任务跑完。"""
+    from backend.datasource.base import check_thread_cancel
+    from backend.services.async_task import TaskCancelled
+    from backend.services.ingest import IngestionService
+
+    class _Ctx:
+        def __init__(self):
+            self.cancelled = threading.Event()
+            self.logs = []
+
+        def check_cancel(self):
+            if self.cancelled.is_set():
+                raise TaskCancelled()
+
+        def log(self, message, level="info"):
+            self.logs.append((level, message))
+
+        def flush(self):
+            pass
+
+    ctx = _Ctx()
+    started = []
+    started_lock = threading.Lock()
+    window_full = threading.Event()
+    completed = []
+    outcome = []
+
+    def worker(item):
+        with started_lock:
+            started.append(item)
+            if len(started) == 3:
+                window_full.set()
+        while True:
+            check_thread_cancel()
+            time.sleep(0.01)
+
+    def run():
+        try:
+            IngestionService._run_bounded_parallel(
+                list(range(5000)), worker, concurrency=3, ctx=ctx,
+                wait_label="测试采集", on_complete=lambda *args: completed.append(args),
+            )
+        except TaskCancelled:
+            outcome.append("cancelled")
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    assert window_full.wait(timeout=1.0)
+    ctx.cancelled.set()
+    thread.join(timeout=2.0)
+
+    assert not thread.is_alive()
+    assert outcome == ["cancelled"]
+    assert len(started) == 3
+    assert completed == []
+    assert any("终止收尾" in message for _, message in ctx.logs)
+
+
+def test_retry_backoff_observes_parallel_cancel():
+    """终止后不再等待完整指数退避，也不发起下一次外部请求。"""
+    from backend.datasource.base import thread_cancel_scope, with_retry
+    from backend.services.async_task import TaskCancelled
+
+    cancelled = threading.Event()
+
+    class _Source:
+        _max_retries = 3
+        _retry_backoff_sec = 10.0
+
+        def __init__(self):
+            self.attempts = 0
+
+        @with_retry()
+        def request(self):
+            self.attempts += 1
+            raise RuntimeError("temporary")
+
+    def check_cancel():
+        if cancelled.is_set():
+            raise TaskCancelled()
+
+    source = _Source()
+    outcome = []
+
+    def run():
+        try:
+            with thread_cancel_scope(check_cancel):
+                source.request()
+        except TaskCancelled:
+            outcome.append("cancelled")
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    deadline = time.time() + 1.0
+    while source.attempts == 0 and time.time() < deadline:
+        time.sleep(0.01)
+    cancelled.set()
+    thread.join(timeout=1.0)
+
+    assert not thread.is_alive()
+    assert outcome == ["cancelled"]
+    assert source.attempts == 1
+
+
+def test_bounded_parallel_cancel_waits_for_inflight_safe_exit():
+    """终止不能留下孤儿线程：已进入不可打断边界的工作单元退出前，执行器不得返回。"""
+    from backend.services.async_task import TaskCancelled
+    from backend.services.ingest import IngestionService
+
+    class _Ctx:
+        cancelled = False
+
+        def check_cancel(self):
+            if self.cancelled:
+                raise TaskCancelled()
+
+        def log(self, *_args, **_kwargs):
+            pass
+
+        def flush(self):
+            pass
+
+    ctx = _Ctx()
+    entered = threading.Event()
+    release = threading.Event()
+    outcome = []
+
+    def worker(_item):
+        entered.set()
+        release.wait(timeout=2.0)
+        return 1
+
+    def run():
+        try:
+            IngestionService._run_bounded_parallel(
+                [1, 2, 3], worker, concurrency=1, ctx=ctx,
+                wait_label="测试采集", on_complete=lambda *_args: None,
+            )
+        except TaskCancelled:
+            outcome.append("cancelled")
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    assert entered.wait(timeout=1.0)
+    ctx.cancelled = True
+    time.sleep(0.1)
+    assert thread.is_alive()
+    release.set()
+    thread.join(timeout=1.0)
+
+    assert not thread.is_alive()
+    assert outcome == ["cancelled"]
 
 
 # ── 去抖干净因子：根治 qfq 逐日漂移（福达合金式样本）──

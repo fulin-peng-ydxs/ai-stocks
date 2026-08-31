@@ -499,7 +499,7 @@ CREATE TABLE IF NOT EXISTS async_task (
     id          VARCHAR PRIMARY KEY,
     task_type   VARCHAR,            -- update | backfill | recompute | verify
     params      VARCHAR,            -- 入参（JSON）
-    status      VARCHAR,            -- pending | running | done | failed
+    status      VARCHAR,            -- pending | running | done | failed | interrupted
     progress    DOUBLE,             -- 0~1
     message     VARCHAR,            -- 当前进度文案 / 结果摘要 / 失败原因
     result      VARCHAR,            -- 结果（JSON，可空）
@@ -511,6 +511,7 @@ CREATE TABLE IF NOT EXISTS async_task (
     trigger_event_id VARCHAR,       -- 产生本任务的持久化触发事件
     retry_count INTEGER,            -- 自身重试序号，首次执行为 0
     execution_attempt INTEGER,      -- 同一任务续跑时递增，终态事件据此幂等
+    cancel_requested_at TIMESTAMP,  -- 人工终止请求时间；不再依赖 message 文案推断取消态
     created_at  TIMESTAMP,
     updated_at  TIMESTAMP
 );
@@ -1120,6 +1121,7 @@ _MIGRATIONS: list[str] = [
     "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS trigger_event_id VARCHAR",
     "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS retry_count INTEGER",
     "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS execution_attempt INTEGER",
+    "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS cancel_requested_at TIMESTAMP",
     "UPDATE async_task SET chain_id=id WHERE chain_id IS NULL",
     "UPDATE async_task SET retry_count=0 WHERE retry_count IS NULL",
     "UPDATE async_task SET execution_attempt=1 WHERE execution_attempt IS NULL",

@@ -20,11 +20,13 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
+from contextlib import contextmanager
 from datetime import date
 from functools import wraps
-from typing import Callable
 
 import pandas as pd
 
@@ -32,6 +34,44 @@ from backend.common.exceptions import DataSourceError
 from backend.common.logging import get_logger
 
 log = get_logger("datasource.base")
+
+
+_CANCEL_LOCAL = threading.local()
+
+
+def check_thread_cancel() -> None:
+    """执行当前采集工作线程的协作式终止检查；普通调用未绑定检查器时为空操作。"""
+    check = getattr(_CANCEL_LOCAL, "check", None)
+    if check is not None:
+        check()
+
+
+def _cancel_aware_sleep(seconds: float) -> None:
+    """把限流/重试等待切成短片，避免终止后仍完整等待指数退避。"""
+    deadline = time.monotonic() + max(float(seconds), 0.0)
+    while True:
+        check_thread_cancel()
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        time.sleep(min(remaining, 0.1))
+
+
+@contextmanager
+def thread_cancel_scope(check):
+    """仅在当前工作线程绑定取消检查器，退出时恢复原值，避免污染共享数据源实例。"""
+    previous = getattr(_CANCEL_LOCAL, "check", None)
+    _CANCEL_LOCAL.check = check
+    try:
+        yield
+    finally:
+        if previous is None:
+            try:
+                delattr(_CANCEL_LOCAL, "check")
+            except AttributeError:
+                pass
+        else:
+            _CANCEL_LOCAL.check = previous
 
 
 # ── 限流 / 重试 装饰器（应对公开接口频率/稳定性限制，需求 §10.1）──
@@ -57,9 +97,12 @@ def rate_limited(min_interval_sec: float) -> Callable:
             last = getattr(self, attr, 0.0)
             wait = interval - (time.monotonic() - last)
             if wait > 0:
-                time.sleep(wait)
+                _cancel_aware_sleep(wait)
             try:
-                return fn(self, *args, **kwargs)
+                check_thread_cancel()
+                result = fn(self, *args, **kwargs)
+                check_thread_cancel()
+                return result
             finally:
                 setattr(self, attr, time.monotonic())
 
@@ -88,16 +131,20 @@ def with_retry(max_retries: int = 3, backoff_sec: float = 2.0) -> Callable:
                 backoff = backoff_sec
             last_err: Exception | None = None
             for attempt in range(1, retries + 1):
+                check_thread_cancel()
                 try:
-                    return fn(*args, **kwargs)
+                    result = fn(*args, **kwargs)
+                    check_thread_cancel()
+                    return result
                 except Exception as e:  # noqa: BLE001
                     last_err = e
+                    check_thread_cancel()
                     if attempt < retries:
                         sleep = backoff * (2 ** (attempt - 1))
                         log.warning(
                             "%s 第%d次失败: %s，%.1fs 后重试", fn.__name__, attempt, e, sleep
                         )
-                        time.sleep(sleep)
+                        _cancel_aware_sleep(sleep)
             raise DataSourceError(
                 f"{fn.__name__} 重试 {retries} 次仍失败: {last_err}"
             ) from last_err

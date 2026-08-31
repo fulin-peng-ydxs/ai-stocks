@@ -315,11 +315,15 @@ class AsyncTaskService:
             busy = self._running_write()
             if busy:
                 raise ConcurrentTaskError(busy[1], busy[0])
+        with _CANCEL_LOCK:
+            # 续跑复用原 task id；仅在本次重新排队前清除上一轮已消费的取消标记。
+            _CANCELLED.discard(tid)
         params = t.get("params") or {}
         pending_message = "重试未完成项排队…" if t["status"] == "failed" else "继续任务排队…"
         self.c.execute(
             "UPDATE async_task SET status='pending', progress=0.0, message=?, "
-            "execution_attempt=COALESCE(execution_attempt,1)+1, updated_at=? WHERE id=?",
+            "execution_attempt=COALESCE(execution_attempt,1)+1, cancel_requested_at=NULL, "
+            "updated_at=? WHERE id=?",
             [pending_message, datetime.now(), tid])
         self._audit_task(
             action="resume",
@@ -334,9 +338,9 @@ class AsyncTaskService:
         return tid
 
     def _run(self, tid: str, task_type: str, params: dict, checkpoint: dict | None) -> None:
-        with _CANCEL_LOCK:           # 清除上一轮残留的取消标记（避免续跑刚启动就被旧标记误终止）
-            _CANCELLED.discard(tid)
         ctx = TaskContext(self, tid, checkpoint)
+        # 新任务 id 天然没有旧取消标记；续跑已在 resume() 排队前显式清理。
+        # 这里不能清理，否则用户在 pending→线程启动竞态窗口发出的终止会被吞掉。
         self._set(tid, status="running", progress=0.05, message="开始…")
         self._audit_task(
             action="start",
@@ -526,7 +530,11 @@ class AsyncTaskService:
             task_id=tid,
             task_type=t["task_type"],
         )
-        self._set(tid, message=f"终止中…（{cap.get('cancel_message') or '到下一个检查点停下'}）")
+        self._set(
+            tid,
+            message=f"终止中…（{cap.get('cancel_message') or '到下一个检查点停下'}）",
+            cancel_requested_at=datetime.now(),
+        )
         return True
 
     @staticmethod
@@ -591,9 +599,9 @@ class AsyncTaskService:
 def _row(r) -> dict:
     import pandas as pd
     d = r.to_dict()
-    for k in ("created_at", "updated_at"):
-        if d.get(k) is not None:
-            d[k] = str(d[k])
+    for k in ("created_at", "updated_at", "cancel_requested_at"):
+        value = d.get(k)
+        d[k] = None if value is None or pd.isna(value) else str(value)
     if d.get("progress") is not None and not pd.isna(d["progress"]):
         d["progress"] = float(d["progress"])
     for key, default in (("retry_count", 0), ("execution_attempt", 1)):

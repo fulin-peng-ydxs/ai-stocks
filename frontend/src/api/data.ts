@@ -381,6 +381,7 @@ export interface AsyncTask {
   trigger_event_id?: string | null
   retry_count?: number
   execution_attempt?: number
+  cancel_requested_at?: string | null
   capability?: {
     can_cancel?: boolean
     can_resume?: boolean
