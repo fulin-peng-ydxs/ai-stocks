@@ -401,11 +401,14 @@ class LimitLadderQueryService:
             with self.c.temp_view(frame, "ladder_related_codes") as code_view:
                 rows = self.c.query_df(
                     f"""
-                    SELECT c.code,c.board_type,c.board_code,d.name AS board_name,c.as_of_date
-                    FROM stock_board_correlation c
-                    JOIN {code_view} wanted ON wanted.code=c.code
-                    LEFT JOIN board_dict d ON d.board_code=c.board_code
-                    WHERE c.board_type IN ('industry','concept')
+                    SELECT code, board_type, board_code, board_name, as_of_date FROM (
+                        SELECT c.code,c.board_type,c.board_code,d.name AS board_name,c.as_of_date,
+                               ROW_NUMBER() OVER (PARTITION BY c.code,c.board_type ORDER BY c.as_of_date DESC) AS rn
+                        FROM stock_board_correlation c
+                        JOIN {code_view} wanted ON wanted.code=c.code
+                        LEFT JOIN board_dict d ON d.board_code=c.board_code
+                        WHERE c.board_type IN ('industry','concept')
+                    ) ranked WHERE rn=1
                     """
                 )
             result: dict[str, dict[str, dict[str, str]]] = {}
