@@ -239,6 +239,65 @@ def test_expected_integrity_failure_returns_diagnostic_result(monkeypatch):
     assert ctx.logs[-1] == ("完整性校验失败：上证指数样本不足", "error")
 
 
+def test_skipped_run_reports_target_and_family_dates(monkeypatch):
+    """跳过时 message 须给出目标日与三类数据族最新日期，并在个股行情领先时提示补齐板块指数。"""
+    ctx = _Ctx()
+    fake_client = SimpleNamespace()
+    monkeypatch.setattr(async_task_module, "get_client", lambda: fake_client)
+    from backend.services import stock_board_correlation as service_module
+
+    monkeypatch.setattr(service_module, "get_client", lambda: fake_client)
+    monkeypatch.setattr(
+        service_module.StockBoardCorrelationService,
+        "resolve_target_date",
+        lambda self: date(2026, 8, 28),
+    )
+    monkeypatch.setattr(
+        service_module.StockBoardCorrelationService,
+        "resolve_data_family_maxima",
+        lambda self: {
+            "daily_bar": date(2026, 8, 31),
+            "board_bar": date(2026, 8, 28),
+            "index_bar": date(2026, 8, 28),
+        },
+    )
+    monkeypatch.setattr(
+        service_module.StockBoardCorrelationService,
+        "resolve_target_codes",
+        lambda self, target_date, codes: (["600000.SH", "000001.SZ"], True),
+    )
+
+    def skip_compute(self, *args, **kwargs):
+        return CorrelationRunResult(
+            target_date=date(2026, 8, 28),
+            target_count=2,
+            candidate_count=5,
+            industry_champion_count=2,
+            concept_champion_count=1,
+            empty_result_count=0,
+            skipped_count=2,
+            benchmark_counts={},
+            fallback_count=0,
+            calculation_seconds=0.0,
+            write_seconds=0.0,
+            switched=False,
+        )
+
+    monkeypatch.setattr(
+        service_module.StockBoardCorrelationService, "compute_and_replace", skip_compute
+    )
+    result = _h_stock_board_correlation({}, ctx)
+
+    assert result["switched"] is False
+    assert result["message"] == (
+        "目标日期 2026-08-28 已是当前共同数据的最新可用日"
+        "（个股行情 2026-08-31 / 板块指数 2026-08-28 / 宽基指数 2026-08-28），"
+        "2 只股票当前结果已与该日期一致，安全跳过。"
+        "若需推进到更新日期（2026-08-31），请先补齐板块指数/指数日线后再执行本任务"
+    )
+    assert ctx.progresses[-1] == (1.0, result["message"])
+
+
 def test_cancelled_task_is_not_marked_resumable(market, monkeypatch):
     started = threading.Event()
     release = threading.Event()

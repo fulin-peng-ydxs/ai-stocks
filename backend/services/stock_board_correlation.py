@@ -157,17 +157,25 @@ class StockBoardCorrelationService:
     def __init__(self, client: DuckDBClient | None = None):
         self.c = client or get_client()
 
+    def resolve_data_family_maxima(self) -> dict[str, date | None]:
+        """返回个股、板块指数、宽基指数三类日线各自最新交易日；某数据族为空时该值为 None。"""
+        maxima = self.c.query_df(
+            "SELECT (SELECT max(trade_date) FROM daily_bar) AS daily_bar, "
+            "       (SELECT max(trade_date) FROM board_bar) AS board_bar, "
+            "       (SELECT max(trade_date) FROM index_bar) AS index_bar"
+        ).iloc[0]
+        return {
+            name: (pd.Timestamp(value).date() if value is not None and not pd.isna(value) else None)
+            for name, value in maxima.items()
+        }
+
     def resolve_target_date(self, upper_bound: date | None = None) -> date:
         """取日历、个股、板块和指数四类数据均不晚于的最近开市日。"""
-        maxima = self.c.query_df(
-            "SELECT (SELECT max(trade_date) FROM daily_bar) AS daily_date, "
-            "       (SELECT max(trade_date) FROM board_bar) AS board_date, "
-            "       (SELECT max(trade_date) FROM index_bar) AS index_date"
-        ).iloc[0]
-        missing = [name for name, value in maxima.items() if value is None or pd.isna(value)]
+        maxima = self.resolve_data_family_maxima()
+        missing = [name for name, value in maxima.items() if value is None]
         if missing:
             raise CorrelationInputError(f"目标日缺少数据事实源: {','.join(missing)}")
-        ceiling = min(pd.Timestamp(value).date() for value in maxima.tolist())
+        ceiling = min(value for value in maxima.values())
         if upper_bound is not None:
             ceiling = min(ceiling, pd.Timestamp(upper_bound).date())
         calendar = self.c.query_df(

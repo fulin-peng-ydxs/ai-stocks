@@ -1452,11 +1452,32 @@ def _h_stock_board_correlation(params: dict, ctx: TaskContext) -> dict:
         )
     except CorrelationInputError as exc:
         return expected_failure(exc)
+    message = f"个股走势关联板块计算完成：{result.target_count} 只"
+    if not result.switched:
+        families = service.resolve_data_family_maxima()
+        family_text = " / ".join(
+            f"{label} {value.isoformat()}" if value else f"{label} 无数据"
+            for label, value in (
+                ("个股行情", families.get("daily_bar")),
+                ("板块指数", families.get("board_bar")),
+                ("宽基指数", families.get("index_bar")),
+            )
+        )
+        message = (
+            f"目标日期 {result.target_date} 已是当前共同数据的最新可用日（{family_text}），"
+            f"{result.target_count} 只股票当前结果已与该日期一致，安全跳过"
+        )
+        # 个股行情已领先于共同目标日，通常是板块/指数数据未跟上，给出可执行的恢复提示。
+        daily = families.get("daily_bar")
+        if daily is not None and daily > result.target_date:
+            message += (
+                f"。若需推进到更新日期（{daily.isoformat()}），"
+                "请先补齐板块指数/指数日线后再执行本任务"
+            )
+        ctx.log(message)
     payload = {
         "ok": True,
-        "message": (f"目标范围 {result.target_count} 只已是最新，安全跳过"
-                    if not result.switched
-                    else f"个股走势关联板块计算完成：{result.target_count} 只"),
+        "message": message,
         "target_date": result.target_date.isoformat(),
         "target_stock_count": result.target_count,
         "candidate_relation_count": result.candidate_count,

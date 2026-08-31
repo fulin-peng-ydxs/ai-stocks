@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -199,3 +201,66 @@ def test_related_boards_route_exposes_stocks_view_and_returns_401_403(monkeypatc
     )
     monkeypatch.setattr("backend.auth.deps.get_current_context", lambda: context)
     assert client.get("/api/stocks/600000.SH/related-boards").status_code == 403
+
+
+def test_related_boards_api_fail_closed_when_as_of_behind_latest(monkeypatch):
+    """单股接口未传业务日期时，默认以最新交易日参与保护：冠军 as_of 落后 → as_of_mismatch。
+
+    与列表页口径一致；防止把旧冠军装饰成"当天"。空 daily_bar 时该守卫不触发（退化为直接返回最近结果）。
+    """
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_memberships(market)
+        # daily_bar 最新交易日 = 08-31；冠军结果 as_of 仍 = 08-28（落后）→ 应 as_of_mismatch。
+        market.execute(
+            "INSERT INTO daily_bar (code, trade_date) VALUES ('600000.SH', DATE '2026-08-31')"
+        )
+        market.execute(
+            "INSERT INTO stock_board_correlation_state "
+            "(code,as_of_date,computed_at,algorithm_version,benchmark_code,benchmark_fallback,"
+            "has_industry_champion,has_concept_champion) VALUES "
+            "('600000.SH',DATE '2026-08-28',TIMESTAMP '2026-08-28 18:00:00',"
+            "'stock-board-correlation-v2','399001.SZ',false,true,true)"
+        )
+        market.execute(
+            "INSERT INTO stock_board_correlation "
+            "(code,board_type,board_code,score,corr_20,corr_60,sample_20,sample_60,confidence,"
+            "benchmark_code,benchmark_fallback,as_of_date,computed_at,algorithm_version) VALUES "
+            "('600000.SH','industry','881002',0.82,0.86,0.76,20,58,'high','399001.SZ',false,"
+            "DATE '2026-08-28',TIMESTAMP '2026-08-28 18:00:00','stock-board-correlation-v2'),"
+            "('600000.SH','concept','301002',0.51,0.55,0.45,18,50,'medium','399001.SZ',false,"
+            "DATE '2026-08-28',TIMESTAMP '2026-08-28 18:00:00','stock-board-correlation-v2')"
+        )
+        client = _api_client(monkeypatch, market)
+
+        response = client.get("/api/stocks/600000.SH/related-boards")
+        assert response.status_code == 200
+        data = response.json()["data"]
+        rb = data["related_boards"]
+        assert rb["as_of_date"] == "2026-08-28"
+        assert rb["unavailable_reason"] == "as_of_mismatch"
+        assert rb["industry"] is None
+        assert rb["concept"] is None
+
+
+def test_resolve_data_family_maxima_exposes_three_families():
+    """resolve_data_family_maxima 返回个股/板块指数/宽基指数三者各自最新交易日。"""
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        market.execute(
+            "INSERT INTO daily_bar (code, trade_date) VALUES ('600000.SH', DATE '2026-08-31')"
+        )
+        market.execute(
+            "INSERT INTO board_bar (board_code, trade_date, close) "
+            "VALUES ('881001', DATE '2026-08-28', 1.0)"
+        )
+        market.execute(
+            "INSERT INTO index_bar (index_code, trade_date, close) "
+            "VALUES ('000001', DATE '2026-08-28', 1.0)"
+        )
+        svc = StockBoardCorrelationService(market)
+        assert svc.resolve_data_family_maxima() == {
+            "daily_bar": date(2026, 8, 31),
+            "board_bar": date(2026, 8, 28),
+            "index_bar": date(2026, 8, 28),
+        }

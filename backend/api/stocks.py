@@ -157,9 +157,21 @@ def list_stocks(q: str | None = None, board: str | None = None,
     dependencies=[Depends(require_perm("stocks:view"))],
 )
 def stock_related_boards(code: str, business_date: date | None = None) -> ApiResponse:
-    """返回股票累计归属及当前冠军摘要；传业务日期时启用历史保护。"""
+    """返回股票累计归属及当前冠军摘要；未传业务日期时按"默认最新交易日"启用历史保护。
+
+    与列表页口径一致：业务日期 = daily_bar 最新交易日；当冠军 as_of_date 与之不一致时返回
+    as_of_mismatch（冠军为空），禁止用最新结果装饰历史行。无最新交易日（空表）时不保护，
+    退化为直接返回最近结果。
+    """
     try:
-        service = StockBoardCorrelationService(get_client())
+        client = get_client()
+        if business_date is None:
+            latest = client.query_df(
+                "SELECT max(trade_date) AS d FROM daily_bar"
+            ).iloc[0]["d"]
+            if latest is not None and not pd.isna(latest):
+                business_date = pd.Timestamp(latest).date()
+        service = StockBoardCorrelationService(client)
         membership = service.get_membership(code)
         membership["related_boards"] = service.get_related_boards(
             [code], business_date
