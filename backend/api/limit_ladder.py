@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.context import get_current_context
 from backend.auth.deps import require_perm, require_system_perm
+from backend.services.async_task import ConcurrentTaskError
 from backend.services.limit_ladder_query import LimitLadderFilters, LimitLadderQueryService
 from backend.services.limit_ladder_task_coordinator import LimitLadderTaskCoordinator
 
@@ -105,12 +106,19 @@ def recompute(trade_date: str, request: Request) -> ApiResponse:
     date_status = LimitLadderQueryService().status(parsed_date)
     if date_status["business_code"] == "NOT_TRADING_DAY":
         return err(4004, "所选日期不是交易日", date_status)
-    result = LimitLadderTaskCoordinator().ensure_date_task(
-        parsed_date,
-        source="admin_recompute",
-        auth_context=get_current_context(),
-        request=request,
-    )
+    try:
+        result = LimitLadderTaskCoordinator().ensure_date_task(
+            parsed_date,
+            source="admin_recompute",
+            auth_context=get_current_context(),
+            request=request,
+        )
+    except ConcurrentTaskError as exc:
+        return err(
+            409,
+            f"已有写任务在运行（{exc.task_type}），请等待其完成后再重算",
+            {"running_id": exc.running_id},
+        )
     return ok(
         {
             "command_id": result.command_id,

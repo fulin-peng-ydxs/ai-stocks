@@ -115,6 +115,7 @@ describe('StockAnalysisPanel', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
+    expect(wrapper.get('[data-testid="stock-analysis-benchmark"]').text()).toContain('中证 500')
     expect(stockApi.getStockBenchmarkBars).toHaveBeenCalledWith(
       '000905.SH',
       expect.objectContaining({ lookback: 61, end: '2026-08-07' }),

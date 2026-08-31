@@ -166,6 +166,7 @@ describe('LimitLadder', () => {
     expect(wrapper.text()).toContain('天梯快照正在计算')
     expect(wrapper.get('[data-testid="limit-ladder-state"]').classes())
       .toContain('app-state-block--loading')
+    expect(wrapper.text()).toContain('页面最多等待 2 分钟')
     expect(wrapper.find('[data-testid="limit-ladder-summary-total"]').exists()).toBe(false)
 
     await wrapper.setProps({result:{...result,has_snapshot:false,business_code:'NOT_TRADING_DAY',snapshot_status:'not_trading_day',snapshot:null,layers:[],nearest_previous_trade_date:'2026-08-27'}})
@@ -176,7 +177,20 @@ describe('LimitLadder', () => {
     await wrapper.setProps({result:{...result,has_snapshot:false,business_code:'SNAPSHOT_FAILED',snapshot_status:'failed',snapshot:null,layers:[],failure_summary:'MISSING_BAR_OR_SUSPENSION'}})
     expect(wrapper.text()).toContain('天梯快照计算失败')
     expect(wrapper.text()).toContain('部分股票缺少行情或停牌确认')
-    expect(wrapper.text()).toContain('重试')
+    expect(wrapper.text()).toContain('刷新状态')
+
+    await wrapper.setProps({canRecompute:true})
+    expect(wrapper.text()).toContain('重新计算')
+
+    await wrapper.setProps({result:{...result,has_snapshot:false,business_code:'SNAPSHOT_NOT_READY',snapshot_status:'invalid',snapshot:null,layers:[],invalid_reason:'INGEST_PARTIAL',coverage:{reason_codes:['INGEST_PARTIAL']}}})
+    expect(wrapper.text()).toContain('当日行情采集未完整成功')
+    expect(wrapper.text()).toContain('请联系有数据任务权限的管理员执行行情补采')
+    expect(wrapper.text()).not.toContain('去补采行情')
+
+    await wrapper.setProps({ canManageData: true })
+    expect(wrapper.text()).toContain('请前往“数据采集”执行“日常同步”')
+    await wrapper.get('button.el-button--primary.is-plain').trigger('click')
+    expect(wrapper.emitted('openIngest')).toHaveLength(1)
 
     await wrapper.setProps({result:{...result,business_code:'SNAPSHOT_STALE',snapshot_status:'recalculating',last_success_at:'2026-08-28T18:00:00'}})
     expect(wrapper.get('[data-testid="limit-ladder-stale-notice"]').text()).toContain('结果已过期')

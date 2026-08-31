@@ -69,6 +69,10 @@ const { dataMin, dataMax, ensureLoaded } = useTradeDates()
 // 工作标签按 path 缓存独立实例；返回列表后全局 route.params 已无 code，详情实例仍须固定自身 code。
 const code = ref(String(route.params.code || ''))
 const sourceQuery = computed(() => sanitizeSectorSourceQuery(route.query))
+const returnLocation = computed(() => sectorListLocation(route.query))
+const returnLabel = computed(() => (
+  typeof returnLocation.value === 'string' ? '返回连板天梯' : '返回板块行情'
+))
 const settingsOpen = ref(false)
 
 const layout = getPageLayout('sectors-detail')
@@ -263,8 +267,9 @@ async function loadAll(): Promise<void> {
   await Promise.all([loadChart(), loadMembers()])
 }
 
-function returnToList(): void {
-  void router.replace(sectorListLocation(route.query))
+function returnToSource(): void {
+  // 与个股详情一致：进入详情时固化可信来源，显式返回使用 push 恢复来源现场。
+  void router.push(returnLocation.value)
 }
 function openStock(row: SectorMember): void {
   if (!canViewStocks.value) return
@@ -356,8 +361,8 @@ onMounted(async () => {
     <template #action>
       <div class="lh-action detail-action">
         <div class="detail-nav">
-          <el-button :icon="ArrowLeft" text data-testid="sector-detail-back" @click="returnToList">
-            返回板块行情
+          <el-button :icon="ArrowLeft" text data-testid="sector-detail-back" @click="returnToSource">
+            {{ returnLabel }}
           </el-button>
           <div class="detail-actions">
             <TradeDatePicker v-model="tradeDate" default-latest class="detail-date" />

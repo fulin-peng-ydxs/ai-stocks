@@ -6,6 +6,22 @@ import {
   type LimitLadderFilters,
   type LimitLadderWindow,
 } from '@/api/limitLadder'
+import { normalizeMarketBenchmarkCode } from '@/utils/marketBenchmarks'
+import {
+  createDefaultStockChartPreferences,
+  normalizeStockChartPreferences,
+  type StockChartPreferences,
+} from '@/composables/useStockChartPreferences'
+import {
+  PRICE_COMPARE_METRIC_ORDER,
+  isPriceCompareMetric,
+  type PriceCompareMetric,
+} from '@/utils/marketCompare'
+import {
+  DEFAULT_LIMIT_LADDER_CARD_SORT,
+  normalizeLimitLadderCardSort,
+  type LimitLadderCardSort,
+} from './sorting'
 
 export interface LimitLadderPreferenceV1 extends Record<string, unknown> {
   schemaVersion: 1
@@ -13,6 +29,14 @@ export interface LimitLadderPreferenceV1 extends Record<string, unknown> {
   ignoreSt: boolean
   boards: LimitLadderBoard[]
   showAnalysisPanel: boolean
+  cardSort: LimitLadderCardSort
+  defaultChartMode: 'compare' | 'kline'
+  compareRange: number
+  benchmarkCode: string
+  compareMetrics: PriceCompareMetric[]
+  defaultCompareMetric: PriceCompareMetric
+  adjustMode: '' | 'qfq' | 'hfq'
+  charts: StockChartPreferences
 }
 
 export const DEFAULT_LIMIT_LADDER_PREFERENCE: LimitLadderPreferenceV1 = {
@@ -21,9 +45,26 @@ export const DEFAULT_LIMIT_LADDER_PREFERENCE: LimitLadderPreferenceV1 = {
   ignoreSt: DEFAULT_LIMIT_LADDER_FILTERS.ignoreSt,
   boards: [...DEFAULT_LIMIT_LADDER_FILTERS.boards],
   showAnalysisPanel: false,
+  cardSort: DEFAULT_LIMIT_LADDER_CARD_SORT,
+  defaultChartMode: 'compare',
+  compareRange: 60,
+  benchmarkCode: '000905.SH',
+  compareMetrics: [...PRICE_COMPARE_METRIC_ORDER],
+  defaultCompareMetric: 'cum',
+  adjustMode: 'qfq',
+  charts: createDefaultStockChartPreferences(),
 }
 
 const VALID_BOARDS = new Set<LimitLadderBoard>(DEFAULT_LIMIT_LADDER_FILTERS.boards)
+
+function defaultPreference(): LimitLadderPreferenceV1 {
+  return {
+    ...DEFAULT_LIMIT_LADDER_PREFERENCE,
+    boards: [...DEFAULT_LIMIT_LADDER_PREFERENCE.boards],
+    compareMetrics: [...DEFAULT_LIMIT_LADDER_PREFERENCE.compareMetrics],
+    charts: normalizeStockChartPreferences(DEFAULT_LIMIT_LADDER_PREFERENCE.charts),
+  }
+}
 
 /**
  * 兼容无 schemaVersion 的旧值；未知新版本和非法字段按字段回退系统默认，
@@ -31,11 +72,11 @@ const VALID_BOARDS = new Set<LimitLadderBoard>(DEFAULT_LIMIT_LADDER_FILTERS.boar
  */
 export function normalizeLimitLadderPreference(value: unknown): LimitLadderPreferenceV1 {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return { ...DEFAULT_LIMIT_LADDER_PREFERENCE, boards: [...DEFAULT_LIMIT_LADDER_PREFERENCE.boards] }
+    return defaultPreference()
   }
   const input = value as Partial<Record<keyof LimitLadderPreferenceV1, unknown>>
   if (input.schemaVersion !== undefined && input.schemaVersion !== 1) {
-    return { ...DEFAULT_LIMIT_LADDER_PREFERENCE, boards: [...DEFAULT_LIMIT_LADDER_PREFERENCE.boards] }
+    return defaultPreference()
   }
   const rawBoards = Array.isArray(input.boards) ? input.boards : []
   const boardsValid = rawBoards.length > 0
@@ -43,6 +84,19 @@ export function normalizeLimitLadderPreference(value: unknown): LimitLadderPrefe
   const boards = boardsValid
     ? Array.from(new Set(rawBoards as LimitLadderBoard[]))
     : [...DEFAULT_LIMIT_LADDER_PREFERENCE.boards]
+  const compareMetrics = PRICE_COMPARE_METRIC_ORDER.filter((metric) => (
+    Array.isArray(input.compareMetrics) && input.compareMetrics.includes(metric)
+  ))
+  const visibleMetrics = compareMetrics.length
+    ? compareMetrics
+    : [...DEFAULT_LIMIT_LADDER_PREFERENCE.compareMetrics]
+  const defaultCompareMetric = isPriceCompareMetric(input.defaultCompareMetric)
+    && visibleMetrics.includes(input.defaultCompareMetric)
+    ? input.defaultCompareMetric
+    : visibleMetrics[0]!
+  const compareRange = [5, 10, 20, 60, 120, 250].includes(Number(input.compareRange))
+    ? Number(input.compareRange)
+    : DEFAULT_LIMIT_LADDER_PREFERENCE.compareRange
   return {
     schemaVersion: 1,
     window: LIMIT_LADDER_WINDOWS.includes(Number(input.window) as LimitLadderWindow)
@@ -55,6 +109,14 @@ export function normalizeLimitLadderPreference(value: unknown): LimitLadderPrefe
     showAnalysisPanel: typeof input.showAnalysisPanel === 'boolean'
       ? input.showAnalysisPanel
       : DEFAULT_LIMIT_LADDER_PREFERENCE.showAnalysisPanel,
+    cardSort: normalizeLimitLadderCardSort(input.cardSort),
+    defaultChartMode: input.defaultChartMode === 'kline' ? 'kline' : 'compare',
+    compareRange,
+    benchmarkCode: normalizeMarketBenchmarkCode(input.benchmarkCode),
+    compareMetrics: visibleMetrics,
+    defaultCompareMetric,
+    adjustMode: input.adjustMode === '' || input.adjustMode === 'hfq' ? input.adjustMode : 'qfq',
+    charts: normalizeStockChartPreferences(input.charts),
   }
 }
 

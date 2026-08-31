@@ -19,7 +19,7 @@ describe('limit ladder polling policy', () => {
     ])
   })
 
-  it('以交易日和后端命令标识区分轮询周期且不因任务实例变化重置', () => {
+  it('同一交易日共享硬截止时间，不受后台任务 ID 变化影响', () => {
     const result = {
       trade_date: '2026-08-28',
       task: {
@@ -29,15 +29,17 @@ describe('limit ladder polling policy', () => {
         source: 'auto_first_load',
       },
     } as LimitLadderResult
-    expect(limitLadderPollTaskKey(result)).toBe('2026-08-28:command-1')
+    expect(limitLadderPollTaskKey(result)).toBe('2026-08-28')
     expect(limitLadderPollTaskKey({
       ...result,
       task: { ...result.task!, task_id: 'task-2' },
-    })).toBe('2026-08-28:command-1')
+    })).toBe('2026-08-28')
     expect(limitLadderPollTaskKey({
       ...result,
       task: { ...result.task!, command_id: '', task_id: 'task-2' },
-    })).toBe('2026-08-28:task-2')
+    })).toBe('2026-08-28')
+    expect(limitLadderPollTaskKey({ ...result, trade_date: '2026-08-29' }))
+      .toBe('2026-08-29')
   })
 
   it('最后一次等待按剩余时间截断并在上限处停止轮询', () => {

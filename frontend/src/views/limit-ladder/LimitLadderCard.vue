@@ -156,18 +156,24 @@ function selectCard(): void {
   width: 100%;
 }
 .limit-ladder-card__metrics,
-.limit-ladder-card__head,
 .limit-ladder-card__foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--app-space-2);
 }
+.limit-ladder-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--app-space-2);
+}
 .limit-ladder-card__identity {
   display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
-  align-items: baseline;
-  gap: var(--app-space-control-gap);
+  align-items: flex-start;
+  gap: 0;
   min-width: 0;
 }
 .limit-ladder-card__identity strong,
@@ -176,9 +182,11 @@ function selectCard(): void {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.limit-ladder-card__identity strong { flex: 0 1 auto; }
+.limit-ladder-card__identity strong {
+  width: 100%;
+}
 .limit-ladder-card__identity span {
-  flex: none;
+  width: 100%;
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
 }

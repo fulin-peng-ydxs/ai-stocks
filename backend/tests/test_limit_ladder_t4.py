@@ -140,10 +140,37 @@ def test_gate_uses_latest_structured_terminal_and_ignores_legacy_detail(market):
     _log_terminal(
         market, trade_date, "partial", "partial-run", datetime(2026, 8, 28, 18, 3, tzinfo=UTC)
     )
-    blocked = LimitLadderSnapshotService(market).check_coverage(trade_date)
-    assert blocked.ready is False
-    assert blocked.ingest_terminal_status == "partial"
-    assert blocked.reason_codes == ("INGEST_PARTIAL",)
+    covered = LimitLadderSnapshotService(market).check_coverage(trade_date)
+    assert covered.ready is True
+    assert covered.ingest_terminal_status == "partial"
+    assert covered.reason_codes == ()
+
+
+def test_gate_accepts_confirmed_suspensions_from_partial_ingest(market):
+    trade_date = date(2026, 8, 28)
+    _seed_calendar(market, trade_date)
+    _seed_basic(market, [
+        ("600001.SH", "甲公司", "主板", date(2020, 1, 1), "软件", 0.10),
+        ("600002.SH", "乙公司", "主板", date(2020, 1, 1), "软件", 0.10),
+    ])
+    MarketRepository(market).upsert_daily_bar(pd.DataFrame([_bar("600001.SH", trade_date)]))
+    market.execute(
+        "INSERT INTO stock_suspension (code,trade_date,confirmed_at) "
+        "VALUES (?,?,current_timestamp)",
+        ["600002.SH", trade_date],
+    )
+    _log_terminal(
+        market, trade_date, "partial", "partial-suspension-run",
+        datetime(2026, 8, 28, 18, 0, tzinfo=UTC),
+    )
+
+    coverage = LimitLadderSnapshotService(market).check_coverage(trade_date)
+
+    assert coverage.valid_bar_count == 1
+    assert coverage.confirmed_suspension_count == 1
+    assert coverage.missing_count == 0
+    assert coverage.ready is True
+    assert coverage.reason_codes == ()
 
 
 def test_legal_empty_snapshot_is_published_and_repeat_creates_immutable_version(market):

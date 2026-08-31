@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
+import MarketBenchmarkSelect from '@/components/MarketBenchmarkSelect.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
-import { MARKET_BENCHMARK_OPTIONS } from '@/utils/marketBenchmarks'
 import {
   PRICE_COMPARE_METRIC_META,
   PRICE_COMPARE_METRIC_ORDER,
@@ -52,9 +52,11 @@ watch(compareMetrics, (metrics) => {
   </div>
   <div class="setting-item">
     <div class="setting-label">默认对比指数</div>
-    <el-select v-model="benchmarkCode" style="width: 160px">
-      <el-option v-for="option in MARKET_BENCHMARK_OPTIONS" :key="option.value" :value="option.value" :label="option.label" />
-    </el-select>
+    <MarketBenchmarkSelect
+      v-model="benchmarkCode"
+      aria-label="默认对比指数"
+      test-id="stock-analysis-default-benchmark"
+    />
   </div>
   <div class="setting-item">
     <div class="setting-label">对比指标</div>

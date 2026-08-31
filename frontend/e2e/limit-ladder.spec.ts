@@ -23,7 +23,7 @@ test('三档桌面视口完成组合筛选、热点、短历史与 CSV 导出', 
   await loginAsDebugUser(page, request, 'debug_system')
   const fixture = await installDeterministicLimitLadder(page)
 
-  await page.goto(`/limit-ladder?date=${limitLadderTradeDate}&window=31`)
+  await page.goto(`/limit-ladder?date=${limitLadderTradeDate}&window=31&boards=main,star,gem&ignore_st=1`)
   await expect(page.getByTestId(`limit-ladder-card-${limitLadderStock.code}`)).toBeVisible()
   await expect(page.getByTestId('limit-ladder-short-history').first())
     .toContainText('窗口仅 8 日 · 自 2026-08-20 起')
@@ -105,8 +105,9 @@ test('首次计算、覆盖失败、过期、空结果与 403 保持互斥状态
     makeLimitLadderResult(),
   )
 
-  await page.goto(`/limit-ladder?date=${limitLadderTradeDate}&window=31`)
+  await page.goto(`/limit-ladder?date=${limitLadderTradeDate}&window=31&boards=main,star,gem&ignore_st=1`)
   await expect(page.getByTestId('limit-ladder-state')).toContainText('天梯快照正在计算')
+  await expect(page.getByTestId('limit-ladder-state')).toContainText('页面最多等待 2 分钟')
   await expect(page.getByTestId('limit-ladder-summary-total')).toHaveText('7', { timeout: 5_000 })
   await expect(page.getByTestId('limit-ladder-state')).toHaveCount(0)
 
@@ -129,6 +130,11 @@ test('首次计算、覆盖失败、过期、空结果与 403 保持互斥状态
     }))
     await page.reload()
     await expect(page.getByTestId('limit-ladder-state')).toContainText(label)
+    if (code === 'INGEST_PARTIAL') {
+      await expect(page.getByTestId('limit-ladder-state'))
+        .toContainText('请前往“数据采集”执行“日常同步”')
+      await expect(page.getByRole('button', { name: '去补采行情' })).toBeVisible()
+    }
     await expect(page.getByTestId('limit-ladder-summary-total')).toHaveCount(0)
   }
 
@@ -138,6 +144,12 @@ test('首次计算、覆盖失败、过期、空结果与 403 保持互斥状态
   }))
   await page.reload()
   await expect(page.getByTestId('limit-ladder-state')).toContainText('天梯快照计算失败')
+  await page.getByRole('button', { name: '重新计算', exact: true }).click()
+  await page.getByRole('button', { name: '确认重算' }).click()
+  await expect.poll(fixture.recomputeCount).toBe(1)
+  await expect(page.getByTestId('limit-ladder-state')).toContainText('天梯快照计算失败', {
+    timeout: 5_000,
+  })
 
   fixture.setResult(makeLimitLadderResult({
     business_code: 'SNAPSHOT_STALE',

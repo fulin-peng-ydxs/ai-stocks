@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -11,6 +12,8 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
+import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.vue'
+import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import {
   exportLimitLadder,
   filtersFromRouteQuery,
@@ -30,8 +33,8 @@ import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
 import { useStockAnalysisSession } from '@/composables/useStockAnalysisSession'
 import {
-  createDefaultStockChartPreferences,
   useStockChartPreferences,
+  type AuxiliaryChartSlot,
 } from '@/composables/useStockChartPreferences'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
@@ -55,6 +58,13 @@ import {
   normalizeLimitLadderPreference,
   type LimitLadderPreferenceV1,
 } from '@/views/limit-ladder/preferences'
+import {
+  DEFAULT_LIMIT_LADDER_CARD_SORT,
+  LIMIT_LADDER_CARD_SORT_OPTIONS,
+  normalizeLimitLadderCardSort,
+  sortLimitLadderLayers,
+  type LimitLadderCardSort,
+} from '@/views/limit-ladder/sorting'
 
 const route = useRoute()
 const router = useRouter()
@@ -69,6 +79,7 @@ const tradeDate = ref<string | null>(
   typeof route.query.date === 'string' ? route.query.date : null,
 )
 const filters = ref<LimitLadderFilters>(filtersFromRouteQuery(route.query))
+const cardSort = ref<LimitLadderCardSort>(normalizeLimitLadderCardSort(route.query.card_sort))
 const result = ref<LimitLadderResult | null>(null)
 const loading = ref(false)
 const error = ref('')
@@ -87,15 +98,12 @@ const {
   settings: preference,
   isDirty: preferenceDirty,
   reset: resetPreference,
+  hydrated: preferenceHydrated,
   whenHydrated: whenPreferenceHydrated,
   remoteError: preferenceRemoteError,
-  saving: preferenceSaving,
   saveError: preferenceSaveError,
   save: savePreference,
 } = usePageSettings('limit-ladder', DEFAULT_LIMIT_LADDER_PREFERENCE)
-const preferenceDraft = reactive<LimitLadderPreferenceV1>(
-  normalizeLimitLadderPreference(DEFAULT_LIMIT_LADDER_PREFERENCE),
-)
 
 const analysisDefaults = reactive({
   defaultChartMode: 'compare' as 'compare' | 'kline',
@@ -117,12 +125,11 @@ const {
   visibleCompareMetrics,
   klineRange,
 } = useStockAnalysisSession(analysisDefaults, klineDefaultRange)
-const chartSettingsState = ref(createDefaultStockChartPreferences())
 const chartSettings = computed({
-  get: () => chartSettingsState.value,
-  set: (value) => { chartSettingsState.value = value },
+  get: () => preference.charts,
+  set: (value) => { preference.charts = value },
 })
-const chartPreferences = useStockChartPreferences(chartSettings, ref(true))
+const chartPreferences = useStockChartPreferences(chartSettings, preferenceHydrated)
 
 function effectivePreference(): LimitLadderPreferenceV1 {
   return preferenceRemoteError.value
@@ -130,8 +137,14 @@ function effectivePreference(): LimitLadderPreferenceV1 {
     : normalizeLimitLadderPreference(preference)
 }
 
-function resetPreferenceDraft(): void {
-  Object.assign(preferenceDraft, effectivePreference())
+function applyAnalysisDefaults(value: LimitLadderPreferenceV1): void {
+  analysisDefaults.defaultChartMode = value.defaultChartMode
+  analysisDefaults.showAnalysisPanel = value.showAnalysisPanel
+  analysisDefaults.compareRange = value.compareRange
+  analysisDefaults.benchmarkCode = value.benchmarkCode
+  analysisDefaults.compareMetrics = [...value.compareMetrics]
+  analysisDefaults.defaultCompareMetric = value.defaultCompareMetric
+  analysisDefaults.adjustMode = value.adjustMode
 }
 
 const canViewSectors = computed(() => (
@@ -140,8 +153,15 @@ const canViewSectors = computed(() => (
 const canViewStockDetail = computed(() => (
   hasPermission(auth.role, auth.permissions, 'stocks:view')
 ))
+const canRecompute = computed(() => (
+  hasPermission(auth.role, auth.permissions, 'limit-ladder:recompute')
+))
+const canManageData = computed(() => (
+  hasPermission(auth.role, auth.permissions, 'data-task:manage')
+))
 const analysisSourceItems = computed(() => (
-  result.value?.layers.flatMap((layer) => layer.stocks) ?? []
+  sortLimitLadderLayers(result.value?.layers ?? [], cardSort.value)
+    .flatMap((layer) => layer.stocks)
 ))
 const {
   activeCode: activeAnalysisCode,
@@ -194,35 +214,15 @@ const drawerConfig = {
 
 async function applySystemDefaults(): Promise<void> {
   filters.value = filtersFromLimitLadderPreference(DEFAULT_LIMIT_LADDER_PREFERENCE)
-  analysisDefaults.showAnalysisPanel = DEFAULT_LIMIT_LADDER_PREFERENCE.showAnalysisPanel
+  cardSort.value = DEFAULT_LIMIT_LADDER_CARD_SORT
+  applyAnalysisDefaults(DEFAULT_LIMIT_LADDER_PREFERENCE)
   await syncUrl()
   await loadLadder()
-}
-
-async function savePreferenceDefaults(): Promise<void> {
-  const previous = effectivePreference()
-  const normalized = normalizeLimitLadderPreference(preferenceDraft)
-  Object.assign(preference, normalized)
-  await savePreference()
-  if (preferenceSaveError.value) {
-    Object.assign(preference, previous)
-    ElMessage.error('默认偏好保存失败，请检查网络后重试')
-    return
-  }
-  Object.assign(preferenceDraft, normalized)
-  settingsOpen.value = false
-  ElMessage.success('已保存连板天梯默认偏好')
-}
-
-function cancelPreferenceDraft(): void {
-  resetPreferenceDraft()
-  settingsOpen.value = false
 }
 
 async function resetAllSettings(): Promise<void> {
   resetPreference()
   resetAll()
-  resetPreferenceDraft()
   await savePreference()
   await applySystemDefaults()
   if (preferenceSaveError.value) {
@@ -253,6 +253,7 @@ async function syncUrl(): Promise<void> {
         ...(tradeDate.value ? { date: tradeDate.value } : {}),
         ...(activeAnalysisCode.value ? { selected: activeAnalysisCode.value } : {}),
         ...(activeAnalysisCode.value ? { anchor: activeAnalysisCode.value } : {}),
+        card_sort: cardSort.value,
       },
     })
   } finally {
@@ -439,6 +440,14 @@ async function recomputeCurrentDate(): Promise<void> {
   }
 }
 
+async function retryLadder(): Promise<void> {
+  if (result.value?.business_code === 'SNAPSHOT_FAILED' && canRecompute.value) {
+    await recomputeCurrentDate()
+    return
+  }
+  await loadLadder()
+}
+
 async function setFilters(next: LimitLadderFilters): Promise<void> {
   filters.value = normalizeLimitLadderFilters(next)
   await syncUrl()
@@ -454,6 +463,11 @@ async function setTradeDate(next: string | null): Promise<void> {
   analysisDrawerOpen.value = false
   await syncUrl()
   await loadLadder()
+}
+
+async function setCardSort(next: LimitLadderCardSort): Promise<void> {
+  cardSort.value = normalizeLimitLadderCardSort(next)
+  await syncUrl()
 }
 
 async function exportCsv(): Promise<void> {
@@ -510,15 +524,16 @@ function handleRatioDraft(ratios: number[]): void {
   chartPreferences.updateRatioDraft(ratios)
 }
 
+function setAuxiliaryChart(slot: AuxiliaryChartSlot, value: string | number | boolean): void {
+  chartPreferences.setSlotType(slot, value)
+}
+
 function handleRatioCommit(ratios: number[]): void {
   chartPreferences.updateRatioDraft(ratios)
   chartPreferences.commitRatioDraft()
 }
 
-watch(
-  settingsOpen,
-  () => resetPreferenceDraft(),
-)
+watch(preference, () => applyAnalysisDefaults(normalizeLimitLadderPreference(preference)), { deep: true })
 
 watch(isNarrowViewport, (narrow) => {
   if (!narrow) analysisDrawerOpen.value = false
@@ -539,6 +554,7 @@ watch(
     )
     const changed = nextDate !== tradeDate.value
       || JSON.stringify(nextFilters) !== JSON.stringify(filters.value)
+    cardSort.value = normalizeLimitLadderCardSort(query.card_sort ?? cardSort.value)
     if (!changed) {
       void reconcileAnalysisContext()
       return
@@ -553,7 +569,8 @@ onMounted(async () => {
   try {
     await whenPreferenceHydrated()
     const savedPreference = effectivePreference()
-    Object.assign(preferenceDraft, savedPreference)
+    applyAnalysisDefaults(savedPreference)
+    cardSort.value = normalizeLimitLadderCardSort(route.query.card_sort ?? savedPreference.cardSort)
     filters.value = filtersFromRouteQuery(
       route.query,
       filtersFromLimitLadderPreference(savedPreference),
@@ -612,7 +629,7 @@ onBeforeUnmount(() => {
               data-testid="limit-ladder-export"
               @click="exportCsv"
             >导出 CSV</el-button>
-            <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
+            <PageSettingsTrigger :dirty="isDirty || preferenceDirty" @click="settingsOpen = true" />
           </div>
         </div>
       </div>
@@ -638,12 +655,17 @@ onBeforeUnmount(() => {
               :error="error"
               :forbidden="forbidden"
               :can-view-sectors="canViewSectors"
+              :can-recompute="canRecompute"
+              :can-manage-data="canManageData"
               :compact-hotspots="compactHotspots"
               :selected-code="activeAnalysisCode"
               :return-path="ladderReturnPath"
+              :card-sort="cardSort"
               @update:filters="setFilters"
               @update:trade-date="setTradeDate"
-              @retry="loadLadder"
+              @update:card-sort="setCardSort"
+              @retry="retryLadder"
+              @open-ingest="router.push('/data/ingest')"
               @select="selectStock"
             />
           </div>
@@ -720,13 +742,45 @@ onBeforeUnmount(() => {
             state="error"
             size="inline"
             title="个人偏好读取失败"
-            description="当前使用系统默认，可重新保存后再试"
+            description="当前使用系统默认，修改后会继续尝试同步"
           />
+          <AppStateBlock
+            v-else-if="preferenceSaveError"
+            state="error"
+            size="inline"
+            title="默认偏好远端同步失败"
+            description="当前修改已保存在本机，网络恢复后再次修改即可重试"
+          />
+          <StockChartSettingSection
+            :slot2="chartPreferences.preferences.value.slot2"
+            :slot3="chartPreferences.preferences.value.slot3"
+            :chart-types="chartPreferences.visibleTypes.value"
+            :default-ratios="chartPreferences.defaultRatios.value"
+            test-id-prefix="limit-ladder-chart"
+            @change="setAuxiliaryChart"
+            @save-default-ratios="chartPreferences.setDefaultHeightRatios"
+            @save-current-as-default="chartPreferences.saveCurrentRatiosAsDefault"
+          >
+            <template #before>
+              <div class="setting-item">
+                <div class="setting-label">复权模式</div>
+                <PageSegmented
+                  v-model="preference.adjustMode"
+                  aria-label="复权模式"
+                  :options="[
+                    { label: '不复权', value: '' },
+                    { label: '前复权', value: 'qfq' },
+                    { label: '后复权', value: 'hfq' },
+                  ]"
+                />
+              </div>
+            </template>
+          </StockChartSettingSection>
           <PageSettingSection title="默认筛选">
             <div class="setting-item">
               <div class="setting-label">统计窗口</div>
               <PageSegmented
-                v-model="preferenceDraft.window"
+                v-model="preference.window"
                 :options="[
                   { label: '10 日', value: 10 },
                   { label: '20 日', value: 20 },
@@ -740,7 +794,7 @@ onBeforeUnmount(() => {
             <div class="setting-item">
               <div class="setting-label">纳入板块</div>
               <el-checkbox-group
-                v-model="preferenceDraft.boards"
+                v-model="preference.boards"
                 class="board-preference-options"
                 aria-label="默认纳入板块"
                 data-testid="limit-ladder-default-boards"
@@ -751,29 +805,34 @@ onBeforeUnmount(() => {
               </el-checkbox-group>
             </div>
             <PageToggleRow
-              v-model="preferenceDraft.ignoreSt"
+              v-model="preference.ignoreSt"
               label="默认忽略 ST"
               test-id="limit-ladder-default-ignore-st"
             />
-            <PageToggleRow
-              v-model="preferenceDraft.showAnalysisPanel"
-              label="默认展开走势分析"
-              test-id="limit-ladder-default-analysis"
+            <div class="setting-item">
+              <div class="setting-label">卡片层内排序</div>
+              <el-select
+                v-model="preference.cardSort"
+                data-testid="limit-ladder-default-card-sort"
+              >
+                <el-option
+                  v-for="option in LIMIT_LADDER_CARD_SORT_OPTIONS"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
+            </div>
+            <StockAnalysisDefaultFields
+              v-model:default-chart-mode="preference.defaultChartMode"
+              v-model:compare-range="preference.compareRange"
+              v-model:benchmark-code="preference.benchmarkCode"
+              v-model:compare-metrics="preference.compareMetrics"
+              v-model:default-compare-metric="preference.defaultCompareMetric"
+              v-model:show-analysis-panel="preference.showAnalysisPanel"
             />
           </PageSettingSection>
-          <div class="preference-actions">
-            <el-button data-testid="limit-ladder-default-cancel" @click="cancelPreferenceDraft">
-              取消
-            </el-button>
-            <el-button
-              type="primary"
-              :loading="preferenceSaving"
-              data-testid="limit-ladder-default-save"
-              @click="savePreferenceDefaults"
-            >
-              保存为默认
-            </el-button>
-          </div>
+          <KlineSettingSection />
         </template>
       </PageSettingsDrawer>
     </template>
@@ -799,12 +858,6 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--app-space-1);
-}
-.preference-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--app-space-2);
-  padding-top: var(--app-space-2);
 }
 </style>
 

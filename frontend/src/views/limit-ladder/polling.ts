@@ -26,8 +26,5 @@ export function limitLadderPollDecision(
 }
 
 export function limitLadderPollTaskKey(result: LimitLadderResult): string {
-  return [
-    result.trade_date,
-    result.task?.command_id || result.task?.task_id || 'no-task',
-  ].join(':')
+  return result.trade_date
 }

@@ -24,6 +24,7 @@ vi.mock('@/composables/usePageSettings', () => ({
     settings: reactive(structuredClone(defaults)),
     isDirty: ref(false),
     reset: vi.fn(),
+    hydrated: ref(true),
     whenHydrated: () => Promise.resolve(),
     remoteError: ref(false),
     saving: ref(false),
@@ -270,7 +271,7 @@ describe('LimitLadderView polling deadline', () => {
     expect(stateProbe(wrapper).attributes('data-error')).toContain('计算任务等待超时')
   })
 
-  it('新 command 会开启新的 120 秒轮询周期', async () => {
+  it('后台反复创建新 command 也不能重置页面 120 秒 deadline', async () => {
     const slowRequest = deferred<LimitLadderResult>()
     vi.mocked(limitLadderApi.getLimitLadder)
       .mockResolvedValueOnce(pendingResult('command-1', 'task-1'))
@@ -280,8 +281,6 @@ describe('LimitLadderView polling deadline', () => {
 
     await vi.advanceTimersByTimeAsync(120_000)
     expect(limitLadderApi.getLimitLadder).toHaveBeenCalledTimes(3)
-    expect(stateProbe(wrapper).attributes('data-error')).toBe('')
-    await vi.advanceTimersByTimeAsync(1_500)
     expect(stateProbe(wrapper).attributes('data-error')).toContain('计算任务等待超时')
   })
 })

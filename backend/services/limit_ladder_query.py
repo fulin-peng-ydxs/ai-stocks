@@ -159,15 +159,17 @@ class LimitLadderQueryService:
         task_error = None
         ensured_task = None
         stored_status = None if state is None else str(state.get("status"))
+        coverage_gate = None
         orphaned_processing = bool(
             state is not None
             and stored_status in {"calculating", "recalculating"}
             and self._active_task(trade_date) is None
         )
+        if trigger_missing and stored_status == "invalid":
+            coverage_gate = LimitLadderSnapshotService(self.c).check_coverage(trade_date)
         should_trigger = trigger_missing and (
             state is None
-            or (state.get("current_snapshot_id") is None and str(state.get("status")) == "failed")
-            or str(state.get("status")) == "invalid"
+            or (stored_status == "invalid" and coverage_gate is not None and coverage_gate.ready)
             or orphaned_processing
         )
         if should_trigger:
@@ -192,6 +194,8 @@ class LimitLadderQueryService:
             state = self._state_row(trade_date)
 
         status = self.status(trade_date)
+        if coverage_gate is not None and not coverage_gate.ready:
+            status["coverage"] = coverage_gate.to_dict()
         if ensured_task is not None and status.get("task") is None:
             has_snapshot = bool(state and state.get("current_snapshot_id"))
             status["task"] = {

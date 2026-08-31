@@ -15,8 +15,14 @@ import {
 } from '@/api/limitLadder'
 import LadderHotspots from './LadderHotspots.vue'
 import LimitLadderCard from './LimitLadderCard.vue'
+import {
+  DEFAULT_LIMIT_LADDER_CARD_SORT,
+  LIMIT_LADDER_CARD_SORT_OPTIONS,
+  sortLimitLadderLayers,
+  type LimitLadderCardSort,
+} from './sorting'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   result: LimitLadderResult | null
   filters: LimitLadderFilters
   tradeDate: string | null
@@ -24,15 +30,22 @@ const props = defineProps<{
   error: string
   forbidden?: boolean
   canViewSectors: boolean
+  canRecompute?: boolean
+  canManageData?: boolean
   compactHotspots?: boolean
   selectedCode?: string
   returnPath?: string
-}>()
+  cardSort?: LimitLadderCardSort
+}>(), {
+  cardSort: DEFAULT_LIMIT_LADDER_CARD_SORT,
+})
 const emit = defineEmits<{
   'update:filters': [filters: LimitLadderFilters]
   'update:tradeDate': [tradeDate: string | null]
   retry: []
+  openIngest: []
   select: [stock: LimitLadderStock]
+  'update:cardSort': [sort: LimitLadderCardSort]
 }>()
 const keywordDraft = ref(props.filters.keyword)
 watch(() => props.filters.keyword, (value) => { keywordDraft.value = value })
@@ -42,6 +55,10 @@ const boardOptions = [
   { value: 'gem', label: '创业板' },
 ]
 const windowOptions = [10, 20, 31, 60].map((value) => ({ label: `${value}日`, value }))
+const sortedLayers = computed(() => sortLimitLadderLayers(
+  props.result?.layers ?? [],
+  props.cardSort,
+))
 const ladderMeta = computed(() => props.result
   ? `${props.result.summary.stock_count} 只 · ${props.filters.window} 日口径`
   : '等待快照')
@@ -54,6 +71,14 @@ const hasApproximateSt = computed(() => Boolean(
 const filteredEmpty = computed(() => props.result?.business_code === 'FILTER_EMPTY')
 const staleSnapshot = computed(() => props.result?.business_code === 'SNAPSHOT_STALE')
 const pendingSnapshot = computed(() => props.result?.business_code === 'SNAPSHOT_PENDING')
+const failedSnapshot = computed(() => props.result?.business_code === 'SNAPSHOT_FAILED')
+const coverageBlocked = computed(() => (
+  String(props.result?.invalid_reason || '').includes('INGEST_PARTIAL')
+  || (props.result?.coverage?.reason_codes as unknown[] | undefined)?.includes('INGEST_PARTIAL')
+))
+const retryText = computed(() => (
+  failedSnapshot.value && props.canRecompute ? '重新计算' : '刷新状态'
+))
 const coverageReasonLabels: Record<string, string> = {
   NOT_TRADING_DAY: '所选日期不是交易日',
   POINT_IN_TIME_POOL_EMPTY: '当日点时股票池为空',
@@ -84,10 +109,27 @@ const unavailableDescription = computed(() => {
       ? `请切换到交易日；最近交易日为 ${props.result.nearest_previous_trade_date}`
       : '请切换到有效交易日后重试'
   }
-  return readableReason(props.result?.failure_summary)
+  const reason = readableReason(props.result?.failure_summary)
     || readableReason(props.result?.invalid_reason)
     || coverageReasons.value
-    || '系统尚未发布通过完整性校验的结果，请稍后重试'
+  if (coverageBlocked.value) {
+    const action = props.canManageData
+      ? '请前往“数据采集”执行“日常同步”，任务完成后返回本页刷新状态，系统会自动重算'
+      : '请联系有数据任务权限的管理员执行行情补采，完成后刷新状态'
+    return `${reason || '当日行情采集未完整成功'}；${action}`
+  }
+  return props.result?.task_error || reason || '系统尚未发布通过完整性校验的结果，请稍后重试'
+})
+const pendingDescription = computed(() => {
+  const task = props.result?.task
+  const progress = typeof task?.progress === 'number'
+    ? `当前进度 ${Math.round(task.progress * 100)}%`
+    : ''
+  return [
+    `天梯快照正在计算：${task?.message || '正在校验行情完整性并生成快照'}`,
+    progress,
+    '页面最多等待 2 分钟；失败后会停止等待并显示原因',
+  ].filter(Boolean).join(' · ')
 })
 const staleDescription = computed(() => {
   const status = props.result?.snapshot_status === 'recalculating' ? '新版本正在重算' : '新版本暂不可用'
@@ -130,6 +172,18 @@ function resetFilters(): void {
         </div>
         <PageSegmented class="limit-ladder__window" :model-value="filters.window" :options="windowOptions" size="small" tone="primary" test-id="limit-ladder-window" aria-label="统计窗口" @update:model-value="updateFilters({window:Number($event) as LimitLadderFilters['window']})" />
         <AppFilterSelect class="limit-ladder__board-filter" :model-value="filters.boards" :options="boardOptions" placeholder="上市板块" data-testid="limit-ladder-boards" @change="updateBoards" />
+        <label class="limit-ladder__sort-control">
+          <span>层内排序</span>
+          <AppFilterSelect
+            :model-value="cardSort"
+            :options="LIMIT_LADDER_CARD_SORT_OPTIONS"
+            :multiple="false"
+            :clearable="false"
+            :filterable="false"
+            data-testid="limit-ladder-card-sort"
+            @update:model-value="$emit('update:cardSort', $event as LimitLadderCardSort)"
+          />
+        </label>
         <div class="limit-ladder__checks app-inline-info app-inline-info--nowrap" data-testid="limit-ladder-checks">
           <el-checkbox :model-value="filters.ignoreSt" data-testid="limit-ladder-ignore-st" @update:model-value="updateFilters({ignoreSt:Boolean($event)})">忽略 ST</el-checkbox>
           <el-checkbox :model-value="filters.oneWordOnly" data-testid="limit-ladder-one-word" @update:model-value="updateFilters({oneWordOnly:Boolean($event)})">仅一字板</el-checkbox>
@@ -173,7 +227,7 @@ function resetFilters(): void {
           description="请联系系统管理员调整权限"
         />
         <AppStateBlock v-else-if="error" data-testid="limit-ladder-state" state="error" title="天梯加载失败" :description="error" retry @retry="$emit('retry')" />
-        <AppStateBlock v-else-if="pendingSnapshot" data-testid="limit-ladder-state" state="loading" title="天梯快照正在计算" description="天梯快照正在计算，完成并通过完整性校验后会发布结果" :skeleton-rows="6" />
+        <AppStateBlock v-else-if="pendingSnapshot" data-testid="limit-ladder-state" state="loading" title="天梯快照正在计算" :description="pendingDescription" :skeleton-rows="6" />
         <AppStateBlock
           v-else-if="!result?.has_snapshot"
           data-testid="limit-ladder-state"
@@ -184,7 +238,13 @@ function resetFilters(): void {
             <span>{{ unavailableDescription }}</span>
           </div>
           <template v-if="result?.business_code !== 'NOT_TRADING_DAY'" #extra>
-            <el-button type="primary" @click="$emit('retry')">重试</el-button>
+            <el-button
+              v-if="coverageBlocked && canManageData"
+              type="primary"
+              plain
+              @click="$emit('openIngest')"
+            >去补采行情</el-button>
+            <el-button type="primary" @click="$emit('retry')">{{ retryText }}</el-button>
           </template>
         </AppStateBlock>
         <AppStateBlock v-else-if="filteredEmpty" data-testid="limit-ladder-state" state="empty">
@@ -193,7 +253,7 @@ function resetFilters(): void {
         </AppStateBlock>
         <AppStateBlock v-else-if="!result.layers.length" data-testid="limit-ladder-state" state="empty"><div class="limit-ladder__empty-copy"><strong>当日无涨停股票</strong><span>这是合法的空快照，不代表加载失败。</span></div></AppStateBlock>
         <div v-else class="limit-ladder__layers" aria-label="连板天梯分层">
-          <section v-for="layer in result.layers" :key="layer.consecutive_days" class="limit-ladder__layer" :data-testid="`limit-ladder-layer-${layer.consecutive_days}`">
+          <section v-for="layer in sortedLayers" :key="layer.consecutive_days" class="limit-ladder__layer" :data-testid="`limit-ladder-layer-${layer.consecutive_days}`">
             <header class="limit-ladder__layer-head"><span>{{ layer.consecutive_days }}B</span><strong>{{ layer.consecutive_days===1?'首板':`${layer.consecutive_days} 连板` }}</strong><small>{{ layer.stock_count }} 只</small></header>
             <div class="limit-ladder__cards"><LimitLadderCard v-for="stock in layer.stocks" :key="stock.code" :stock="stock" :window="filters.window" :can-view-sectors="canViewSectors" :selected="stock.code === selectedCode" :return-path="returnPath" @select="$emit('select',$event)" /></div>
           </section>
@@ -219,6 +279,16 @@ function resetFilters(): void {
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .limit-ladder__board-filter { width: 300px; }
+.limit-ladder__sort-control {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--app-space-control-gap);
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+  white-space: nowrap;
+}
+.limit-ladder__sort-control :deep(.app-filter-select) { width: 128px; }
 .limit-ladder__date { width: 220px; }
 .limit-ladder__date :deep(.el-date-editor) { width: 100%; }
 .limit-ladder__window {
@@ -325,7 +395,7 @@ function resetFilters(): void {
   display: flex;
   flex-wrap: wrap;
   gap: var(--app-space-2);
-  justify-content: center;
+  justify-content: flex-start;
   padding: var(--app-space-2);
 }
 .limit-ladder__cards > * {

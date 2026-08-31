@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
 import pytest
@@ -15,6 +16,7 @@ from fastapi.testclient import TestClient
 from backend.api import limit_ladder as api_module
 from backend.auth.context import AuthContext, reset_context, set_context
 from backend.common.exceptions import ForbiddenError
+from backend.services.async_task import ConcurrentTaskError
 from backend.services.limit_ladder_query import LimitLadderFilters, LimitLadderQueryService
 from backend.services.limit_ladder_snapshot import RULE_VERSION, LimitLadderSnapshotService
 from backend.storage.repository import MarketRepository
@@ -363,6 +365,53 @@ def test_invalid_snapshot_remains_readable_and_uses_refresh_entry(market):
     assert coordinator.calls[0][1]["source"] == "auto_invalid_refresh"
 
 
+def test_incomplete_ingest_does_not_create_repeating_auto_tasks(market):
+    trade_date = _seed_ladder(market)
+    LimitLadderSnapshotService(market).mark_invalid(
+        trade_date,
+        reason="INGEST_PARTIAL",
+        task_id="failed-task",
+    )
+    market.execute(
+        "UPDATE limit_ladder_snapshot_state SET current_snapshot_id=NULL WHERE trade_date=?",
+        [trade_date],
+    )
+    detail = json.dumps({
+        "kind": "market_day_terminal",
+        "run_id": "partial-run",
+        "expected": 3,
+        "successful": 2,
+        "failed": 1,
+        "status": "partial",
+    })
+    market.execute(
+        """
+        INSERT INTO data_update_log (
+            id,table_name,source,date_start,date_end,row_count,status,detail,updated_at
+        ) VALUES (nextval('seq_update_log'),'daily_bar','pipeline',?,?,?,?,?,?)
+        """,
+        [trade_date, trade_date, 1, "partial", detail, datetime.now(UTC)],
+    )
+    market.execute(
+        "DELETE FROM daily_bar WHERE code=? AND trade_date=?",
+        ["600001.SH", trade_date],
+    )
+    coordinator = _FakeCoordinator()
+    service = LimitLadderQueryService(market, coordinator=coordinator)
+
+    first = service.query(trade_date, LimitLadderFilters(ignore_st=False))
+    second = service.query(trade_date, LimitLadderFilters(ignore_st=False))
+
+    assert first["business_code"] == second["business_code"] == "SNAPSHOT_NOT_READY"
+    assert first["snapshot_status"] == second["snapshot_status"] == "invalid"
+    assert first["invalid_reason"] == second["invalid_reason"] == "INGEST_PARTIAL"
+    assert first["coverage"]["reason_codes"] == [
+        "INGEST_PARTIAL",
+        "MISSING_BAR_OR_SUSPENSION",
+    ]
+    assert coordinator.calls == []
+
+
 def test_related_board_failure_does_not_mask_frozen_window_metrics(market):
     trade_date = _seed_ladder(market)
 
@@ -445,6 +494,13 @@ def test_api_contract_has_200_400_and_precise_permission(monkeypatch):
                 "boards": list(filters.boards),
             }
 
+        def status(self, trade_date):
+            return {"business_code": "READY", "trade_date": trade_date.isoformat()}
+
+    class _BusyCoordinator:
+        def ensure_date_task(self, *args, **kwargs):
+            raise ConcurrentTaskError("update", "task-update-running")
+
     monkeypatch.setattr(api_module, "LimitLadderQueryService", _StubQuery)
     app = FastAPI()
     app.include_router(api_module.router)
@@ -458,6 +514,12 @@ def test_api_contract_has_200_400_and_precise_permission(monkeypatch):
     assert client.get("/api/limit-ladder/not-a-date").status_code == 400
     assert client.get("/api/limit-ladder/2026-08-28?window=12").status_code == 400
     assert client.get("/api/limit-ladder/2026-08-28?boards=unknown").status_code == 400
+    monkeypatch.setattr(api_module, "LimitLadderTaskCoordinator", _BusyCoordinator)
+    monkeypatch.setattr(api_module, "get_current_context", lambda: object())
+    response = client.post("/api/limit-ladder/2026-08-28/recompute")
+    assert response.status_code == 200
+    assert response.json()["code"] == 409
+    assert response.json()["data"]["running_id"] == "task-update-running"
     comma_boards = client.get("/api/limit-ladder/2026-08-28?boards=main,gem")
     assert comma_boards.status_code == 200
     assert comma_boards.json()["data"]["boards"] == ["main", "gem"]

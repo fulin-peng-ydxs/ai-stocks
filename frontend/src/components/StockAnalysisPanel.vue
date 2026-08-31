@@ -4,10 +4,10 @@ import { ArrowRight } from '@element-plus/icons-vue'
 import type { Bar, IndicatorField, IndicatorRow } from '@/api/stocks'
 import { getBars, getIndicators } from '@/api/stocks'
 import { getStockBenchmarkBars } from '@/api/stocks'
-import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import CompareQueueRail from '@/components/CompareQueueRail.vue'
 import type { CompareQueueItem } from '@/components/CompareQueueRail.vue'
 import MarketCompareMetricStrip from '@/components/MarketCompareMetricStrip.vue'
+import MarketBenchmarkSelect from '@/components/MarketBenchmarkSelect.vue'
 import type { MarketMetricStripItem } from '@/components/MarketCompareMetricStrip.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
@@ -18,7 +18,6 @@ import { ALL_DAYS } from '@/composables/useKlinePrefs'
 import { STOCK_COMPARE_RANGES } from '@/composables/useStockAnalysisSession'
 import type { AuxiliaryChartType } from '@/composables/useStockChartPreferences'
 import { getErrorMessage } from '@/utils/error'
-import { MARKET_BENCHMARK_OPTIONS } from '@/utils/marketBenchmarks'
 import {
   PRICE_COMPARE_METRIC_META,
   priceCompareSetLookback,
@@ -360,13 +359,10 @@ onBeforeUnmount(() => {
       <div class="stock-analysis-controls">
         <div v-if="mode === 'compare'" class="stock-benchmark-control">
           <span>对比指数</span>
-          <AppFilterSelect
+          <MarketBenchmarkSelect
             :model-value="benchmarkCode"
-            :options="MARKET_BENCHMARK_OPTIONS"
-            :multiple="false"
-            :clearable="false"
-            :filterable="false"
-            data-testid="stock-analysis-benchmark"
+            width="160px"
+            test-id="stock-analysis-benchmark"
             @update:model-value="emit('update:benchmarkCode', String($event))"
           />
         </div>
@@ -596,9 +592,6 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
   white-space: nowrap;
-}
-.stock-benchmark-control :deep(.app-filter-select) {
-  width: 124px;
 }
 .stock-analysis-stage {
   position: relative;

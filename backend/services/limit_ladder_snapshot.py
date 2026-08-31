@@ -50,7 +50,6 @@ class LimitLadderCoverage:
         return (
             closed
             and not self.reason_codes
-            and self.ingest_terminal_status in {"success", "unknown"}
         )
 
     def to_dict(self) -> dict:
@@ -184,7 +183,7 @@ class LimitLadderSnapshotService:
         reasons: list[str] = []
         if not codes:
             reasons.append("POINT_IN_TIME_POOL_EMPTY")
-        if terminal_status in {"partial", "failed"}:
+        if terminal_status in {"partial", "failed"} and missing:
             reasons.append("INGEST_PARTIAL")
         if missing:
             reasons.append("MISSING_BAR_OR_SUSPENSION")

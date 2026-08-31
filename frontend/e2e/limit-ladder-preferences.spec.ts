@@ -6,6 +6,7 @@ import {
   type E2EAuthSnapshot,
 } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
+import { createDefaultStockChartPreferences } from '../src/composables/useStockChartPreferences'
 
 const defaultPreference = {
   schemaVersion: 1,
@@ -13,15 +14,23 @@ const defaultPreference = {
   ignoreSt: true,
   boards: ['main', 'star', 'gem'],
   showAnalysisPanel: false,
+  cardSort: 'limitUps',
+  defaultChartMode: 'compare',
+  compareRange: 60,
+  benchmarkCode: '000905.SH',
+  compareMetrics: ['cum', 'roll_5d', 'roll_10d', 'roll_20d', 'roll_30d', 'roll_60d'],
+  defaultCompareMetric: 'cum',
+  adjustMode: 'qfq',
+  charts: createDefaultStockChartPreferences(),
 }
 
 async function openBusinessSettings(page: Page): Promise<void> {
   await page.getByTestId('page-settings-trigger').click()
-  const save = page.getByTestId('limit-ladder-default-save')
-  if (!await save.isVisible()) {
+  const field = page.getByTestId('limit-ladder-default-window-20')
+  if (!await field.isVisible()) {
     await page.getByText('业务选项', { exact: true }).click()
   }
-  await expect(save).toBeVisible()
+  await expect(field).toBeVisible()
 }
 
 async function readPreference(
@@ -35,14 +44,15 @@ async function readPreference(
   })
 }
 
-test('个人默认支持取消、保存、URL 覆盖和恢复默认', async ({ page, request }, testInfo: TestInfo) => {
+test('个人默认修改即保存、走势图同步、URL 覆盖和恢复默认', async ({ page, request }, testInfo: TestInfo) => {
   test.setTimeout(90_000)
   test.skip(
     testInfo.project.name !== 'chromium-standard',
     '偏好写入链路只在标准视口串行执行',
   )
-  const consoleIssues = collectConsoleIssues(page, { allowedHttpStatuses: [503] })
-  const auth = await loginAsDebugUser(page, request, 'debug_system')
+  const consoleIssues = collectConsoleIssues(page)
+  // 偏好写用独立普通账号，避免与并行执行的 system 页面用例互相覆盖同一远端偏好。
+  const auth = await loginAsDebugUser(page, request, 'debug_normal')
   const originalPreference = await readPreference(request, auth)
   await saveUserPreference(request, auth, {
     scope: 'page',
@@ -58,37 +68,12 @@ test('个人默认支持取消、保存、URL 覆盖和恢复默认', async ({ p
 
     await openBusinessSettings(page)
     await page.getByTestId('limit-ladder-default-window-20').click()
-    await page.getByTestId('limit-ladder-default-cancel').click()
-    await expect(page.getByTestId('page-settings-drawer')).toBeHidden()
-    expect(await readPreference(request, auth)).toEqual(defaultPreference)
-
-    await openBusinessSettings(page)
-    await page.getByTestId('limit-ladder-default-window-20').click()
-    await page.route('**/api/user-preferences', async (route) => {
-      if (route.request().method() !== 'POST') {
-        await route.continue()
-        return
-      }
-      await route.fulfill({
-        status: 503,
-        contentType: 'application/json',
-        body: JSON.stringify({ code: 5000, msg: '偏好服务暂不可用', data: null }),
-      })
-    })
-    await page.getByTestId('limit-ladder-default-save').click()
-    await expect(page.getByText('默认偏好保存失败，请检查网络后重试')).toBeVisible()
-    await expect(page.getByTestId('page-settings-drawer')).toBeVisible()
-    expect(await readPreference(request, auth)).toEqual(defaultPreference)
-    await page.getByTestId('limit-ladder-default-cancel').click()
-    await page.unroute('**/api/user-preferences')
-
-    await openBusinessSettings(page)
-    await page.getByTestId('limit-ladder-default-window-20').click()
     await page.getByTestId('limit-ladder-default-boards')
       .getByText('科创板', { exact: true })
       .click()
     await page.getByTestId('limit-ladder-default-ignore-st-switch').click()
-    await page.getByTestId('limit-ladder-default-analysis-switch').click()
+    await page.getByTestId('stock-analysis-default-benchmark').locator('.el-select__wrapper').click()
+    await page.getByRole('option', { name: '沪深 300' }).click()
     await expect(page.getByTestId('limit-ladder-default-window-20'))
       .toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByTestId('limit-ladder-default-boards')
@@ -96,31 +81,30 @@ test('个人默认支持取消、保存、URL 覆盖和恢复默认', async ({ p
       .not.toBeChecked()
     await expect(page.getByTestId('limit-ladder-default-ignore-st-switch'))
       .not.toHaveClass(/is-checked/)
-    await expect(page.getByTestId('limit-ladder-default-analysis-switch'))
-      .toHaveClass(/is-checked/)
 
-    const screenshotPath = testInfo.outputPath('limit-ladder-preference-draft.png')
+    const screenshotPath = testInfo.outputPath('limit-ladder-preference-auto-save.png')
     await page.screenshot({ path: screenshotPath, fullPage: true })
-    await testInfo.attach('limit-ladder-preference-draft', {
+    await testInfo.attach('limit-ladder-preference-auto-save', {
       path: screenshotPath,
       contentType: 'image/png',
     })
 
-    await page.getByTestId('limit-ladder-default-save').click()
-    await expect(page.getByText('已保存连板天梯默认偏好')).toBeVisible()
     await expect.poll(() => readPreference(request, auth)).toEqual({
-      schemaVersion: 1,
+      ...defaultPreference,
       window: 20,
       ignoreSt: false,
       boards: ['main', 'gem'],
-      showAnalysisPanel: true,
+      benchmarkCode: '000300.SH',
     })
+    await page.getByRole('button', { name: '关闭页面设置' }).click()
 
     await page.goto('/limit-ladder')
     await expect(page).toHaveURL(/window=20/)
     await expect(page).toHaveURL(/boards=main,gem/)
     await expect(page).toHaveURL(/ignore_st=0/)
-    await expect(page.getByTestId('market-hide-analysis')).toBeVisible()
+    await expect(page.getByTestId('market-show-analysis')).toBeVisible()
+    await page.getByTestId('market-show-analysis').click()
+    await expect(page.getByTestId('stock-analysis-benchmark')).toContainText('沪深 300')
 
     await page.goto('/limit-ladder?window=60&boards=star&ignore_st=1')
     await expect(page.getByTestId('limit-ladder-window-60')).toHaveAttribute('aria-pressed', 'true')
