@@ -1,0 +1,92 @@
+# 连板天梯
+
+## 功能的详细需求
+
+连板天梯用于在 EOD 场景按交易日观察收盘涨停梯队。系统需要以统一市场规则和点时 ST 状态判断涨停，在行情完整性门禁闭合后发布不可变快照，并支持 10/20/31/60 日活跃度、上市板块/ST/一字板/关键词筛选、走势相关行业与概念热点、CSV、个股分析、详情返回和个人默认偏好。
+
+读取、自动首算、失效刷新与管理员单日重算必须共享同一业务口径；失败或失效时保留最后成功快照。页面查看要求 `limit-ladder:view`，显式重算仅限 system 用户，行业/概念详情和个股详情继续消费既有独立权限。任务执行留在 DuckDB 任务中心，日期级跨来源协调和可靠审计落 PostgreSQL，禁止跨库 JOIN。
+
+本期范围是 R1～R19。R20～R23 明确不实现晋级率、炸板率、自定义窗口和用户排序；R24～R31 的跨日趋势、历史回放、批量重算、盘中字段、北交所、实时天梯和历史相关性快照继续留作后续，不得提前连续开发。
+
+## 功能开发的实际结果
+
+### 规则、数据与发布
+
+- `backend/market_rules.py`、`backend/limit_ladder/rules.py` 统一普通、ST、创业板/科创板和特殊无涨跌幅日口径。
+- `backend/services/stock_st_status.py` 维护点时 ST 当前事实和不可变变更历史，并区分准确/近似质量。
+- `backend/services/limit_ladder_calculator.py` 批量读取候选与历史行情，计算无限回溯的连续板和固定窗口活跃度，避免逐股查询。
+- `backend/services/limit_ladder_snapshot.py` 执行 coverage 门禁、不可变版本落表和状态指针原子切换；失败、失效和合法空均保留明确状态。
+
+### 查询、任务与权限
+
+- `backend/services/limit_ladder_query.py` 统一筛选、摘要、走势相关热点、短历史元数据和 CSV，行业/概念均按每股唯一当前冠军统计。
+- `backend/services/limit_ladder_task_coordinator.py` 与 `backend/storage/limit_ladder_task_repository.py` 通过 PG 日期账本、部分唯一索引和可靠 outbox 协调三类来源，并与 DuckDB 任务通过稳定 ID 对账。
+- `backend/api/limit_ladder.py` 提供交易日、读取、CSV 和 system-only 单日重算入口；菜单、资源、默认角色授权、前端路由和按钮显隐已完整接入。
+
+### 页面与交互
+
+- `frontend/src/views/LimitLadderView.vue` 使用 `LayoutHost` 和 `MarketMasterDetailWorkspace` 装配页面，复用股票分析、PageDrawer、PageSettingsDrawer 和用户偏好骨架。
+- `LimitLadder.vue`、`LimitLadderCard.vue`、`LadderHotspots.vue` 实现互斥状态、筛选、等宽梯级/卡片、单卡居中、行业/概念分隔和相关板块跳转。
+- 页面保留交易日、窗口、筛选、选择和滚动锚点；窄屏使用页面边界内的 full 抽屉，桌面使用主从工作台。
+
+### 需求落地与证据映射
+
+| 需求 | 实际状态 | 主要实现/验证证据 |
+| --- | --- | --- |
+| R1 | 已完成 | 路由、菜单、pageRegistry、T7 与 Playwright |
+| R2 | 已完成 | snapshot coverage、T4/T6 状态矩阵 |
+| R3 | 已完成 | `market_rules.py`、规则测试 |
+| R4 | 已完成 | 点时 ST 当前/历史、质量提示、T3/T4 |
+| R5 | 已完成 | 不可变快照和原子状态指针、T4/T11 |
+| R6 | 已完成 | 失效矩阵、三来源协调、管理员重算、T4/T5/T12 |
+| R7 | 已完成 | 连续板计算、等宽梯级和卡片、T3/E2E |
+| R8 | 已完成 | 卡片核心字段、字段排除断言和截图 |
+| R9 | 已完成 | 10/20/31/60 固定窗口、默认 31、短历史测试 |
+| R10 | 已完成 | 每股唯一行业/概念冠军热点与交集筛选、T6/E2E |
+| R11 | 已完成 | 当前相关概念独立字段与板块直跳、T6/E2E |
+| R12 | 已完成 | 共用分析、详情权限、URL/滚动恢复、E2E |
+| R13 | 已完成 | 前后端守卫、RBAC/审计账本、T5/T7/T12 |
+| R14 | 已完成 | 状态互斥、响应式、aria、五视口 E2E |
+| R15 | 已完成 | 一字板标记与筛选、T6/E2E |
+| R16 | 已完成 | 板块/ST/关键词筛选、T6/E2E |
+| R17 | 已完成 | 当前筛选集合摘要、T6/E2E |
+| R18 | 已完成 | 公式注入防护和当前筛选 CSV、T6/E2E |
+| R19 | 已完成 | PG 用户偏好、本地回退、取消/失败回滚/E2E |
+| R20～R23 | 按确认范围未实现 | 需求文档“暂不实现”；代码无对应控件或计算 |
+| R24～R27 | 按确认范围未实现 | 需求文档“后续建议”；未新增跨日/批量能力 |
+| R28～R31 | 按确认范围未实现 | 数据能力或产品范围不满足；未提前开发 |
+
+当前实现与 `plan.md` 的 T1～T12 基本一致。T13 对计划进行事实校准时发现专项回滚文件未实际生成，以及审计前向 SQL 未记录共享对象所有权；这两项已修复，计划、架构边界和演练记录已同步。
+
+## 功能开发的具体实施方案
+
+1. 日线采集与治理链路写入点时 ST，行情、ST、基础信息和板块归属变化只标记受影响日期失效。
+2. 查询日期先经过交易日和完整性门禁；需要计算时由 PG 协调器取得同日活动槽，再创建 DuckDB `limit_ladder_recompute` 写任务。
+3. 计算器批量加载候选和足够历史，按点时规则判断每日涨停、连续板和窗口次数；快照服务在单事务内写不可变版本及明细，完整成功后才切换当前指针。
+4. 查询服务读取当前或最后成功版本，在服务层合并当前走势相关行业/概念，统一完成筛选、热点、摘要和 CSV；两库不发生 JOIN。
+5. 页面用 URL 承载可恢复筛选/选择上下文，以共用组件完成控件、主从分析、详情跳转和窄屏抽屉；偏好只保存稳定默认值，不覆盖显式 URL。
+6. 自动首算、失效刷新和管理员重算均写 PG 账本和 outbox；outbox 以 `source_event_key` 幂等投递，启动对账收敛 interrupted/failed 状态。
+7. 部署采用三份前向 SQL和一份专项回滚 SQL。RBAC 与审计迁移分别使用 marker 和 advisory lock；回滚只删除 marker 归属对象，遇到未投递审计或外部复用立即拒绝。
+
+## 上线部署操作
+
+上线前必须完成数据库备份并核对目标环境：
+
+1. 停止后端，确认 DuckDB 无其他写者。
+2. 执行 `limit-ladder-schema.sql`，创建七张 DuckDB 点时 ST/快照领域表。
+3. 执行 `limit-ladder-audit-ledger.sql`，创建 PG 日期账本、可靠 outbox、兼容审计字段和所有权 marker。
+4. 执行 `limit-ladder-rbac.sql`，只补缺失菜单、资源和默认角色授权，并使相关用户 `perm_ver` 失效。
+5. 发布后端和 `frontend/dist`，健康检查后重新登录，以 system 首算完整交易日，再以普通角色验证只读页面。
+6. 代码回退默认保留 DuckDB 事实；PG 永久撤销使用 `rollback-limit-ladder.sql`，执行前必须处理 pending outbox，并服从脚本的账本外引用保护。
+
+本期不新增环境变量、外部服务、第三方配置或可调度 job；`limit_ladder_recompute` 是内部任务类型，不在调度页面开放。
+
+## 验证情况
+
+- T11：后端 90 项聚焦测试通过；隔离规模入口覆盖 5,200 股、61 个交易日、317,200 条日线，发布 257 股，批量读取查询 2 次，详细结果见 `performance-report.md`。
+- T12：前端全量 Vitest 995 项、生产构建和聚焦 Playwright 10 项通过；覆盖 768×1024、1100×620、1366×768、1440×900、1920×900，真实登录、截图/交互和控制台零告警见 `frontend-test-report.md`。
+- T13：后端聚焦 91 项全部通过，Ruff 通过；前端相关 10 个测试文件共 55 项通过，`npm run build` 通过。
+- T13 SQL：DuckDB 前向两次与七表逆依赖回滚通过；PG 审计/RBAC 前向两次、pending 拦截、正常回滚、marker tombstone 和权限版本失效通过，详见 `sql-rehearsal.md`。
+- T13 首次尝试的 `npm run test:run` 因 `package.json` 不存在该脚本而失败；核对真实脚本后改用 `npm test -- <聚焦文件>` 并通过，未将误命令计为产品失败。
+- 测试前按 DuckDB 锁规则停止原后端；验证后已恢复 dev 模式并确认 `/api/health=200`。
+- `git diff --check`、文档链接、R1～R31 映射和最终工作区范围在提交前再次检查。

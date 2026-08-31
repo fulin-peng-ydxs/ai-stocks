@@ -399,7 +399,7 @@
 
 ### T13：文档、升级演练、需求映射与最终自审
 
-- 状态：待开始。
+- 状态：已完成。
 - 依赖：T11、T12。
 - 输入：真实代码 diff、SQL、测试结果、需求 R1～R31 和设计/RBAC 规范。
 - 目标：校准计划状态、完成发布回滚演练并从第三方视角修复遗漏。
@@ -410,14 +410,14 @@
 - 边界与异常：任何降级、未执行测试或范围偏差必须显式记录，不能批量标完成。
 - 验证方式：R1～R31 映射扫描、SQL 静态扫描、`git diff --check`、构建产物同步和事实文档链接检查。
 - 完成标准：无 `待确认/阻塞/部分覆盖` 遗留，无未解释超范围，计划与实现一致。
-- 实际落地情况：待实施。
+- 实际落地情况：完成 `4338920^..06dec29` 全功能提交范围的代码、业务、设计、RBAC、数据一致性和阶段边界复核；新增 `development-trace.md`、`business-audit.md`、`sql-rehearsal.md`，并同步数据管理任务中心的 DuckDB 执行态 + PG 协调/审计边界。审查发现原计划引用的专项回滚 SQL 未落地，且原审计前向 SQL 无法区分既有共享结构与本迁移创建对象；现已新增 `rollback-limit-ladder.sql`，并为审计迁移补充独立 marker、advisory lock 和对象所有权账本，回滚对 pending outbox、账本外授权/子节点、共享审计键复用均 fail-closed。随机隔离 DuckDB 完成七表前向两次与逆依赖回滚；随机隔离 PG schema 完成审计/RBAC 前向两次、pending 拦截、正常回滚、marker tombstone 与 `perm_ver` 失效，演练 schema 已清理。最终聚焦后端 91 项、Ruff、前端 55 项及生产构建通过；首次误用不存在的 `npm run test:run` 已如实记录并以仓库真实 `npm test -- ...` 重跑通过。T13 未修改页面产品代码，浏览器证据沿用 T12 已通过的真实登录、五视口截图/交互与零控制台告警结果。后端按测试前状态恢复为 dev 模式并确认 `/api/health=200`。R1～R19 均有实现与验证证据，R20～R31 继续保持确认后的后续/不实现范围；没有提前开发后续业务阶段。
 
 ## 7. 数据库、SQL、seed 与配置计划
 
 | 路径 | 数据库/用途 | 执行时机 | 影响范围 | 回滚 |
 | --- | --- | --- | --- | --- |
 | `agent-works/limit-up-ladder/limit-ladder-schema.sql` | DuckDB 新增第 4.1 节七张表、约束和索引 | 部署后端代码前或首次启动前；代码 `init_db` 同样幂等补建 | 新增天梯/ST 当前及历史表，不改现有行情和任务中心 | 无业务数据时可按依赖顺序 drop；已有快照/ST 历史时先备份，代码回滚默认保留表 |
-| `agent-works/limit-up-ladder/limit-ladder-audit-ledger.sql` | PG 新增含三种 source、结构化主体/触发身份/请求来源、interrupted 终态的日期任务账本，requested/running 同日活动态部分唯一索引、五类事件审计 outbox，并给 `audit_log` 增加可空 `source_event_key` 与非空唯一索引 | 后端启用任何自动首算或管理员重算入口前 | 平台任务协调/审计辅助表及共享审计表兼容字段；终态释放同日活动槽位；不改 DuckDB 任务表 | 先完成/导出未投递 outbox，再删部分唯一索引、审计唯一索引/字段及辅助表；旧审计记录不受影响 |
+| `agent-works/limit-up-ladder/limit-ladder-audit-ledger.sql` | PG 新增含三种 source、结构化主体/触发身份/请求来源、interrupted 终态的日期任务账本，requested/running 同日活动态部分唯一索引、五类事件审计 outbox，并给 `audit_log` 增加可空 `source_event_key` 与非空唯一索引；marker 记录本迁移实际创建的对象 | 后端启用任何自动首算或管理员重算入口前 | 平台任务协调/审计辅助表及共享审计表兼容字段；终态释放同日活动槽位；不改 DuckDB 任务表 | 先完成/导出未投递 outbox；专项回滚只删除 marker 归属且未被其他业务复用的对象，旧审计记录不受影响 |
 | `agent-works/limit-up-ladder/limit-ladder-rbac.sql` | PG 新增菜单、两资源码、normal/tenant_admin 初始 view 授权、marker 和 `perm_ver` 失效 | 前后端同批发布；事务 + advisory lock 执行一次 | 全局菜单/RBAC；受影响用户需重新登录 | 依据 marker/账本只删迁移插入且仍存在的授权与节点；发现账本外自定义角色引用则拒绝级联 |
 | `agent-works/limit-up-ladder/rollback-limit-ladder.sql` | PG RBAC/审计辅助结构确定性回滚和 DuckDB 保留/删除说明 | 仅发布回退且人工确认后 | 菜单、权限、审计辅助结构和领域表 | 必须显式确认 marker；先处理未投递 outbox；默认保留 DuckDB 快照/ST 历史，可恢复代码后继续使用 |
 | `backend/storage/ddl.py` | 新库及本地启动的 DuckDB 幂等 seed | 应用初始化 | 新领域表 | 代码回滚不主动删表 |

@@ -51,6 +51,28 @@ def test_rbac_upgrade_is_marker_guarded_append_only_and_invalidates_permissions(
     assert "delete from sys_resource" not in normalized
 
 
+def test_forward_and_rollback_sql_are_marker_owned_and_fail_closed():
+    audit_sql = (
+        ROOT / "agent-works/limit-up-ladder/limit-ladder-audit-ledger.sql"
+    ).read_text()
+    rollback_sql = (
+        ROOT / "agent-works/limit-up-ladder/rollback-limit-ladder.sql"
+    ).read_text()
+    audit_normalized = " ".join(audit_sql.lower().split())
+    rollback_normalized = " ".join(rollback_sql.lower().split())
+
+    assert "migration.limit_ladder_audit_ledger_v1" in audit_sql
+    assert "created_audit_column" in audit_sql
+    assert "created_ledger_table" in audit_sql
+    assert "pg_advisory_xact_lock(8410010007)" in audit_normalized
+    assert "where status='pending'" in rollback_normalized
+    assert "存在账本外角色授权" in rollback_sql
+    assert "已被其他业务复用" in rollback_sql
+    assert "perm_ver=perm_ver+1" in rollback_normalized
+    assert "drop table if exists limit_ladder_audit_outbox" in rollback_normalized
+    assert "drop table if exists limit_ladder_snapshot_stock" in rollback_normalized
+
+
 def test_page_file_precedes_route_and_registry_registration():
     page = ROOT / "frontend/src/views/LimitLadderView.vue"
     router = (ROOT / "frontend/src/router/index.ts").read_text()

@@ -130,6 +130,7 @@
 | 旧行情任务 | `update/backfill/ingest_date/ingest_codes` | 与统一入口对应方案相同 | 历史任务与旧接口继续兼容；旧调度中的可调度类型继续执行，新建 Web 任务不再直接使用 |
 | 板块采集 | `board` | 板块字典/成分快照/指数/资金流 | 板块数据（概念/行业），增量或全量回填 |
 | 走势板块相关性 | `stock_board_correlation` | 按版本化算法计算每股行业/概念冠军当前态 | 通过调度创建；任务中心展示五阶段、目标日期和覆盖统计，不提供未完成结果续跑 |
+| 连板天梯单日重算 | `limit_ladder_recompute` | 按完整性门禁计算并原子发布指定交易日不可变天梯快照 | 内部任务类型，不开放调度配置；DuckDB `async_task/task_log` 展示执行进度，PG `limit_ladder_task_ledger` 与 `limit_ladder_audit_outbox` 保存跨来源协调和可靠审计事实 |
 | 重新计算 | `recompute` | 复权清洗因子、pre_close、涨跌停标记、相关快照失效 | 重采行情后、复权跳变后 |
 | 质检扫描 | `verify`/质量扫描 | 四层质量问题，写入台账 | 补数后复查 |
 | 数据体检 | `checkup` | 结构/字段契约，只读报告 | 初始化后或重大补数后 |
@@ -137,6 +138,10 @@
 #### 走势板块相关性任务契约
 
 任务固定经历读取候选、加载行情、批量计算、结果校验和原子切换五阶段；失败保留最后成功正式结果，不生成默认调度。算法、有效样本、数据表、页面读取、权限、性能和运维边界统一见 [stock-board-correlation.md](stock-board-correlation.md)。
+
+#### 连板天梯任务契约
+
+自动首算、失效刷新和 system-only 管理员单日重算统一进入 `limit_ladder_recompute`，同一交易日只允许一个 `requested/running` 命令。执行任务和实时日志继续保存在 DuckDB，PG 只保存日期级协调账本与可靠审计 outbox；两库通过 `command_id/task_id/source_event_key` 在服务层对账，禁止跨库 JOIN。任务不可取消、不可续跑，失败或中断保留最后成功快照；启动时先收敛 DuckDB 残留任务，再将 PG 活动态对账为终态。表、状态与边界详见 [platform.md](platform.md)，部署正反向结果见[连板天梯 SQL 演练记录](../limit-up-ladder/sql-rehearsal.md)。
 
 个股采集表单由数据采集页与定时调度页复用，服务端只接受方案支持的字段：
 
