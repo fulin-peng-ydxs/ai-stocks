@@ -22,13 +22,6 @@ const shortHistory = computed(() => (
   props.stock.actual_trade_days != null && props.stock.actual_trade_days < props.window
 ))
 const windowLimitUpDays = computed(() => props.stock.window_limit_up_days)
-const usesConsecutiveStreak = computed(() => props.stock.consecutive_days > 1)
-const displayDays = computed(() => (
-  usesConsecutiveStreak.value ? props.stock.consecutive_days : props.window
-))
-const displayLimitUpDays = computed(() => (
-  usesConsecutiveStreak.value ? props.stock.consecutive_days : windowLimitUpDays.value
-))
 const relatedIndustryName = computed(() => (
   props.stock.latest_related_industry?.board_name || '未分类'
 ))
@@ -54,9 +47,10 @@ function selectCard(): void {
     <header class="limit-ladder-card__head">
       <div class="limit-ladder-card__identity">
         <strong>{{ stock.name }}</strong>
+        <span>{{ stock.code }}</span>
       </div>
       <div class="limit-ladder-card__return">
-        <span>{{ window }} 日累计</span>
+        <span>累计涨幅</span>
         <strong :class="marketValueClass(stock.window_return_pct)">
           {{ formatMarketPercent(stock.window_return_pct) }}
         </strong>
@@ -64,13 +58,10 @@ function selectCard(): void {
     </header>
 
     <div class="limit-ladder-card__metrics">
-      <span
-        class="limit-ladder-card__window-stat"
-        :class="{ 'is-streak': usesConsecutiveStreak }"
-      >
-        {{ displayDays }} 日
-        <b :class="{ 'is-multiple': !usesConsecutiveStreak && (displayLimitUpDays ?? 0) > 1 }">
-          {{ displayLimitUpDays ?? '—' }}
+      <span class="limit-ladder-card__window-stat">
+        {{ window }} 日
+        <b :class="{ 'is-multiple': (windowLimitUpDays ?? 0) > 1 }">
+          {{ windowLimitUpDays ?? '—' }}
         </b>
         板
       </span>
@@ -137,14 +128,23 @@ function selectCard(): void {
   gap: var(--app-space-2);
 }
 .limit-ladder-card__identity {
+  display: flex;
   flex: 1 1 auto;
+  align-items: baseline;
+  gap: var(--app-space-control-gap);
   min-width: 0;
 }
-.limit-ladder-card__identity strong {
-  display: block;
+.limit-ladder-card__identity strong,
+.limit-ladder-card__identity span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.limit-ladder-card__identity strong { flex: 0 1 auto; }
+.limit-ladder-card__identity span {
+  flex: none;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
 }
 .limit-ladder-card__foot small,
 .limit-ladder-card__history {
@@ -179,11 +179,6 @@ function selectCard(): void {
 }
 .limit-ladder-card__window-stat b.is-multiple {
   color: var(--market-up-color);
-}
-.limit-ladder-card__window-stat.is-streak,
-.limit-ladder-card__window-stat.is-streak b {
-  color: var(--market-up-color);
-  font-weight: var(--app-font-weight-strong);
 }
 .limit-ladder-card__history {
   margin: var(--app-space-1) 0 0;

@@ -508,12 +508,6 @@ onBeforeUnmount(() => {
           </div>
           <div class="page-head__actions">
             <el-button
-              :loading="exporting"
-              :disabled="!result?.has_snapshot"
-              data-testid="limit-ladder-export"
-              @click="exportCsv"
-            >导出 CSV</el-button>
-            <el-button
               v-permission="'limit-ladder:recompute'"
               type="warning"
               plain
@@ -522,6 +516,12 @@ onBeforeUnmount(() => {
               data-testid="limit-ladder-recompute"
               @click="recomputeCurrentDate"
             >重算当日</el-button>
+            <el-button
+              :loading="exporting"
+              :disabled="!result?.has_snapshot"
+              data-testid="limit-ladder-export"
+              @click="exportCsv"
+            >导出 CSV</el-button>
             <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
           </div>
         </div>

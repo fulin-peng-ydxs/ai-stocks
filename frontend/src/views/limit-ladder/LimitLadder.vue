@@ -278,7 +278,7 @@ function resetFilters(): void {
 }
 .limit-ladder__layer {
   width: 100%;
-  min-width: min(100%, 240px);
+  min-width: min(100%, 220px);
   border: 1px solid var(--el-border-color);
   border-radius: var(--layout-card-radius);
   background: color-mix(in srgb, var(--el-fill-color-light) 34%, var(--el-bg-color));
@@ -306,8 +306,8 @@ function resetFilters(): void {
   padding: var(--app-space-2);
 }
 .limit-ladder__cards > * {
-  flex: 0 0 240px;
-  width: 240px;
+  flex: 0 0 220px;
+  width: 220px;
   max-width: 100%;
 }
 @media (max-width: 900px) {

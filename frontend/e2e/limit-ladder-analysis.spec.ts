@@ -48,7 +48,7 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
       panelRight: panel.right,
       exportRight: exported.right,
       exportWidth: exported.width,
-      headerActionGap: recompute.left - exported.right,
+      headerActionGap: exported.left - recompute.right,
       headerActionTopDelta: Math.abs(recompute.top - exported.top),
       toolbarOverflow: toolbarNode.scrollWidth - toolbarNode.clientWidth,
       bodyOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -71,7 +71,7 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   await page.setViewportSize({ width: 1100, height: 900 })
   await expect(card).toBeVisible()
   await card.evaluate((node) => node.scrollIntoView({ block: 'center', inline: 'center' }))
-  const cardScreenshotPath = testInfo.outputPath('limit-ladder-card-fields-v5.png')
+  const cardScreenshotPath = testInfo.outputPath('limit-ladder-card-fields-v6.png')
   await card.screenshot({ path: cardScreenshotPath })
   await testInfo.attach('limit-ladder-card', { path: cardScreenshotPath, contentType: 'image/png' })
   await page.setViewportSize({ width: 1100, height: 620 })
@@ -103,7 +103,7 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
     }
   })
   expect(density.boardHeight).toBeLessThanOrEqual(34)
-  expect(density.cardWidth).toBe(240)
+  expect(density.cardWidth).toBe(220)
   expect(density.cardWidthDelta).toBeLessThanOrEqual(1)
   expect(density.cardCenterOffset).toBeLessThanOrEqual(1)
   expect(density.layerWidthDelta).toBeLessThanOrEqual(1)
@@ -112,7 +112,7 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
     nodes.map((node) => node.getBoundingClientRect().width)
   ))
   expect(Math.max(...wideCardWidths) - Math.min(...wideCardWidths)).toBeLessThanOrEqual(1)
-  const wideScreenshotPath = testInfo.outputPath('limit-ladder-layout-wide-v5.png')
+  const wideScreenshotPath = testInfo.outputPath('limit-ladder-layout-wide-v6.png')
   await page.screenshot({ path: wideScreenshotPath, fullPage: true })
   await testInfo.attach('limit-ladder-wide', { path: wideScreenshotPath, contentType: 'image/png' })
   await page.setViewportSize({ width: 1100, height: 620 })
@@ -120,11 +120,11 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   await expect(card).not.toContainText('专属行业旧值')
   await expect(card).not.toContainText('成交额')
   await expect(card).not.toContainText('截至')
-  await expect(card).not.toContainText(stock.code)
-  await expect(card).toContainText('2 日 2 板')
-  await expect(card).toContainText('31 日累计')
+  await expect(card).toContainText(stock.code)
+  await expect(card).toContainText('31 日 3 板')
+  await expect(card).toContainText('累计涨幅')
   await expect(card).toContainText('+12.34%')
-  await expect(card.locator('.limit-ladder-card__window-stat')).toHaveClass(/is-streak/)
+  await expect(card.locator('.limit-ladder-card__window-stat b')).toHaveClass(/is-multiple/)
   await expect(card.locator('.limit-ladder-card__foot')).toBeVisible()
   const cardContentGeometry = await card.evaluate((node) => {
     const cardBox = node.getBoundingClientRect()

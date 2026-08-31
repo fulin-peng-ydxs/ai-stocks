@@ -65,3 +65,11 @@ Playwright 报告和忽略目录 `frontend/test-results/` 中保留本次截图�
 - 5181 Playwright 对 `limit-ladder.spec.ts` 与 `limit-ladder-analysis.spec.ts` 以 `--workers=1` 执行，6 项通过、6 项按视口约束跳过。首轮 4 worker 时两个会话的 Vite/真实偏好初始化请求被取消，经 trace 确认未发起天梯业务请求，串行重跑后全部通过，不属于产品缺陷。
 - 截图复核确认卡片 240px 等宽、单卡居中、无股票代码、上市板块/行业/概念同行，连板整段上涨红，右上窗口累计涨幅颜色正确；页头 CSV/重算并列，筛选区无图标重置且控件无重叠。
 - T14 未新增权限、菜单、配置、SQL、seed 或部署项，未进入 R20～R31。
+
+## 7. T15 增量验收
+
+- 天梯组件、排版间距和按钮设计契约共 30 项通过，`npm run build` 通过并同步 `frontend/dist`。
+- 5181 Playwright 对 `limit-ladder.spec.ts` 与 `limit-ladder-analysis.spec.ts` 使用真实 `debug_system` 登录、`--workers=1` 执行，6 项通过、6 项按视口约束跳过。
+- 截图复核确认卡片为 220px 固定等宽且单卡居中，名称与代码同一行，行业与概念强制同一行；板数固定显示当前窗口“X日N板”且仅 N 大于 1 时标红；累计标题为“累计涨幅”。
+- 页头顺序为“重算当日 → 导出 CSV → 页面设置”；紧凑视口的筛选控件按完整控件换行，无重叠或高度回退。
+- T15 只回调卡片展示和页头顺序，未修改后端、权限、菜单、配置、SQL、seed 或部署项，未进入 R20～R31。
