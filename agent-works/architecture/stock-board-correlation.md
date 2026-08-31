@@ -28,10 +28,10 @@
 | 层次 | 当前实现 | 关键入口 |
 | --- | --- | --- |
 | 纯算法 | 固定开市日历、收益构造、基准选择、市场中性化、缩尾 Pearson、双窗口加权、可信度和稳定决胜 | `backend/indicators/stock_board_correlation.py` |
-| 领域服务 | 股票池与目标日解析、累计候选和行情批量加载、唯一代码收益预计算、完整性校验、原子替换和摘要读取 | `backend/services/stock_board_correlation.py` |
+| 领域服务 | 股票池与目标日解析、累计候选和行情批量加载、唯一代码收益预计算、完整性校验、按日快照写入和摘要读取 | `backend/services/stock_board_correlation.py` |
 | 异步任务 | `stock_board_correlation` 五阶段任务、DuckDB 写互斥、取消检查、结果统计 | `backend/services/async_task.py` |
 | 动态调度 | 全市场或指定股票、`force`、交易日限制、依赖和重试；代码不创建默认调度 | `backend/scheduler/scheduler.py` |
-| 数据结构 | 当前冠军表与每股当前状态表；只保存当前态，不保存每日快照和全部候选明细 | `backend/storage/ddl.py` |
+| 数据结构 | 冠军与状态按交易日快照（每日一行），保存各交易日结果，不保存候选明细 | `backend/storage/ddl.py` |
 | 后端读取 | 单股累计归属及冠军接口；股票、分组、榜单和筛选结果形成后批量附加摘要 | `backend/api/stocks.py`、`backend/groups/stock_group.py`、`backend/api/board.py`、`backend/services/screen_score.py` |
 | 前端展示 | 四个表格 slot 复用同一单元格，统一相关度、有效样本、截止日、低可信提示、历史保护和权限跳转 | `frontend/src/components/RelatedBoardCell.vue`、`frontend/src/layout/pageRegistry.ts` |
 
@@ -135,7 +135,7 @@ board_neutral_t = board_return_t - benchmark_return_t
 
 每只成功处理的股票一行，即使行业和概念都没有冠军也会写入。`has_industry_champion/has_concept_champion` 表示两种冠军是否存在，支撑合法空结果、日期保护和版本重算判断。
 
-两张表都是可重算派生当前态，不保存每日历史冠军、全部候选相关性或逐股空结果原因。正向与回滚 SQL 位于：
+两张表都是可重算派生的每日快照，保存各交易日冠军，不保存全部候选相关性或逐股空结果原因。正向与回滚 SQL 位于：
 
 - `agent-works/stock-board-correlation/create-stock-board-correlation.sql`
 - `agent-works/stock-board-correlation/rollback-stock-board-correlation.sql`
@@ -205,7 +205,7 @@ AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:stock-board-correlation
 | --- | --- | --- | --- |
 | 中 | `board_member` 是累计关系，不是目标日当前有效成员 | 已退出板块的股票仍可能参与候选比较 | 页面只表达“走势相关”；不宣称当前主营或有效归属 |
 | 中 | 基准或行情缺口降低共同有效样本 | 候选无冠军或可信度降低 | 相邻日不桥接、15/40 门槛、基准整股回退、上证不足整批失败 |
-| 中 | 当前态没有历史冠军 | 历史页面不能展示对应日期结果 | 业务日期 fail-closed，绝不借用最新冠军 |
+| 中 | 历史交易日无快照 | 该历史日期页面不能展示对应日结果 | 业务日期按对应日快照取；无快照才触发按需回填，仍无则 fail-closed |
 | 中 | 当前状态不保存空结果原因 | 页面只能显示“—”，运维诊断需查候选和行情 | 技术文档明确边界；若要展示原因需独立扩展数据契约 |
 | 中 | 生产并发与硬件不同于本地验证 | 全量任务窗口或读取尾延迟可能变化 | DuckDB 写互斥、内存计算、短事务切换；生产首轮继续观察 |
 | 低 | 负相关候选仍可成为相对冠军 | 用户可能误读为强同向关联 | 页面显示带符号相关度并将结果标为低可信；文档明确解释 |

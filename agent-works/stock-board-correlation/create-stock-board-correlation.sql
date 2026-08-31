@@ -1,4 +1,4 @@
--- 个股走势关联板块：DuckDB 当前态结构升级脚本
+-- 个股走势关联板块：DuckDB 每日快照结构升级脚本
 --
 -- 执行时机：部署包含相关性计算服务的版本前执行；应用 init_db 也会幂等创建相同结构。
 -- 前置条件：确认目标为行情 DuckDB，执行进程持有唯一写锁，且数据库不是只读模式。
@@ -8,7 +8,7 @@
 
 BEGIN TRANSACTION;
 
--- 每只股票的行业/概念各最多一个当前冠军，不保存候选或历史快照。
+-- 每只股票的行业/概念每交易日一行冠军快照，不保存候选明细。
 CREATE TABLE IF NOT EXISTS stock_board_correlation (
     code               VARCHAR NOT NULL,  -- 含交易所后缀的股票代码
     board_type         VARCHAR NOT NULL CHECK (board_type IN ('industry', 'concept')), -- 冠军类型
@@ -21,22 +21,23 @@ CREATE TABLE IF NOT EXISTS stock_board_correlation (
     confidence         VARCHAR NOT NULL CHECK (confidence IN ('high', 'medium', 'low')), -- 可信度
     benchmark_code     VARCHAR NOT NULL,  -- 实际使用的市场基准代码
     benchmark_fallback BOOLEAN NOT NULL DEFAULT FALSE, -- 是否整股回退上证指数
-    as_of_date         DATE NOT NULL,     -- 本轮共同目标交易日
+    as_of_date         DATE NOT NULL,     -- 共同目标交易日
     computed_at        TIMESTAMP NOT NULL, -- 本轮成功计算时间
     algorithm_version  VARCHAR NOT NULL,  -- 算法版本
-    PRIMARY KEY (code, board_type)
+    PRIMARY KEY (code, board_type, as_of_date)
 );
 
--- 每股最近一次成功处理状态；两类冠军均不存在也是合法结果。
+-- 每股每交易日成功处理状态快照；两类冠军均不存在也是合法结果。
 CREATE TABLE IF NOT EXISTS stock_board_correlation_state (
-    code                    VARCHAR PRIMARY KEY, -- 含交易所后缀的股票代码
-    as_of_date              DATE NOT NULL,       -- 本轮共同目标交易日
-    computed_at             TIMESTAMP NOT NULL,  -- 本轮成功处理时间
+    code                    VARCHAR NOT NULL, -- 含交易所后缀的股票代码
+    as_of_date              DATE NOT NULL,       -- 交易日
+    computed_at             TIMESTAMP NOT NULL,  -- 该日成功处理时间
     algorithm_version       VARCHAR NOT NULL,    -- 算法版本
     benchmark_code          VARCHAR NOT NULL,    -- 实际使用的市场基准代码
     benchmark_fallback      BOOLEAN NOT NULL DEFAULT FALSE, -- 是否整股回退上证指数
     has_industry_champion   BOOLEAN NOT NULL DEFAULT FALSE, -- 是否存在行业冠军
-    has_concept_champion    BOOLEAN NOT NULL DEFAULT FALSE  -- 是否存在概念冠军
+    has_concept_champion    BOOLEAN NOT NULL DEFAULT FALSE, -- 是否存在概念冠军
+    PRIMARY KEY (code, as_of_date)
 );
 
 COMMIT;
