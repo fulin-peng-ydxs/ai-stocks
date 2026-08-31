@@ -1,7 +1,8 @@
 -- 连板天梯 DuckDB 领域表前向升级脚本。
 -- 前置条件：停止持有目标 DuckDB 写锁的后端进程，并完成数据库备份。
 -- 执行时机：启用连板天梯 ST 采集或快照计算代码前；可重复执行。
--- 影响范围：仅新增点时 ST、不可变快照及聚合表，不修改行情和任务中心表。
+-- 影响范围：新增点时 ST、不可变快照及聚合表；存量 T16 快照表补充窗口元数据列，
+--           旧行回填为 {} 并统一为 NOT NULL；不修改行情和任务中心表。
 -- 回滚：默认保留事实数据；确认永久撤销且已备份后，按文末逆依赖顺序删除。
 
 BEGIN TRANSACTION;
@@ -63,6 +64,18 @@ CREATE TABLE IF NOT EXISTS limit_ladder_snapshot (
     window_metadata_json VARCHAR NOT NULL DEFAULT '{}', -- 四档请求窗口起始日/交易日数
     source_version VARCHAR NOT NULL       -- 上游来源版本
 );
+
+-- T16 → T17 存量库升级：CREATE TABLE IF NOT EXISTS 不会修改已有表结构。
+-- DuckDB 修改列约束前必须移除依赖索引；脚本末尾会按原定义幂等恢复。
+DROP INDEX IF EXISTS idx_limit_ladder_snapshot_date;
+-- 分三步执行兼容已有数据；重复执行时旧行和约束保持同一结果。
+ALTER TABLE limit_ladder_snapshot
+    ADD COLUMN IF NOT EXISTS window_metadata_json VARCHAR DEFAULT '{}';
+UPDATE limit_ladder_snapshot
+    SET window_metadata_json = '{}'
+    WHERE window_metadata_json IS NULL;
+ALTER TABLE limit_ladder_snapshot
+    ALTER COLUMN window_metadata_json SET NOT NULL;
 
 -- 成功快照内的股票事实，冻结名称、板块、ST、板位、成交额和行业归属。
 CREATE TABLE IF NOT EXISTS limit_ladder_snapshot_stock (
@@ -140,5 +153,6 @@ CREATE INDEX IF NOT EXISTS idx_limit_ladder_invalidation_pending
 
 COMMIT;
 
--- 验证：查询 information_schema.tables 确认上述九张表存在，并重复执行本脚本验证幂等。
+-- 验证：查询 information_schema.tables 确认上述九张表存在；查询 information_schema.columns
+--       确认 window_metadata_json.is_nullable='NO'，并重复执行本脚本验证幂等。
 -- 确认永久删除时的逆依赖回滚顺序：outbox、window_metric、aggregate、concept、stock、state、snapshot、history、daily。

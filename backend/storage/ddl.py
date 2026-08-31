@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from backend.common.exceptions import StorageError
 from backend.common.logging import get_logger
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
@@ -1043,8 +1044,16 @@ _DIMENSION_SEED: list[tuple] = [
 
 # 轻量迁移：给已存在的旧表补列（CREATE TABLE IF NOT EXISTS 不会改既有表结构）
 _MIGRATIONS: list[str] = [
-    "ALTER TABLE limit_ladder_snapshot ADD COLUMN IF NOT EXISTS "
-    "window_metadata_json VARCHAR DEFAULT '{}'",
+    "DROP INDEX IF EXISTS idx_limit_ladder_snapshot_date",
+    (
+        "ALTER TABLE limit_ladder_snapshot ADD COLUMN IF NOT EXISTS "
+        "window_metadata_json VARCHAR DEFAULT '{}'"
+    ),
+    (
+        "UPDATE limit_ladder_snapshot SET window_metadata_json='{}' "
+        "WHERE window_metadata_json IS NULL"
+    ),
+    "ALTER TABLE limit_ladder_snapshot ALTER COLUMN window_metadata_json SET NOT NULL",
     "ALTER TABLE backtest_trade ADD COLUMN IF NOT EXISTS entry_rank INTEGER",
     "ALTER TABLE backtest_trade ADD COLUMN IF NOT EXISTS entry_pick_rank INTEGER",
     "ALTER TABLE backtest_trade ADD COLUMN IF NOT EXISTS entry_pool INTEGER",
@@ -1069,20 +1078,28 @@ _MIGRATIONS: list[str] = [
     "ALTER TABLE data_quality_issue ADD COLUMN IF NOT EXISTS ignore_scope VARCHAR",
     "ALTER TABLE data_quality_issue ADD COLUMN IF NOT EXISTS ignore_active BOOLEAN",
     # 历史 ignored 沿用升级前口径，避免上线后已确认正常的问题突然重新告警。
-    "UPDATE data_quality_issue SET ignore_scope=CASE "
-    "WHEN issue_type IN ('null_close','ohl_repaired','abnormal_change','adj_jump',"
-    "'board_index_gap_daily','board_index_invalid') THEN 'occurrence' ELSE 'object' END "
-    "WHERE status='ignored' AND ignore_scope IS NULL",
-    "UPDATE data_quality_issue SET ignore_active=true "
-    "WHERE status='ignored' AND ignore_active IS NULL",
+    (
+        "UPDATE data_quality_issue SET ignore_scope=CASE "
+        "WHEN issue_type IN ('null_close','ohl_repaired','abnormal_change','adj_jump',"
+        "'board_index_gap_daily','board_index_invalid') THEN 'occurrence' ELSE 'object' END "
+        "WHERE status='ignored' AND ignore_scope IS NULL"
+    ),
+    (
+        "UPDATE data_quality_issue SET ignore_active=true "
+        "WHERE status='ignored' AND ignore_active IS NULL"
+    ),
     "UPDATE data_quality_issue SET status='open' WHERE status IS NULL",
-    "UPDATE data_quality_issue SET ignore_active=false "
-    "WHERE status<>'ignored' AND ignore_active IS NULL",
+    (
+        "UPDATE data_quality_issue SET ignore_active=false "
+        "WHERE status<>'ignored' AND ignore_active IS NULL"
+    ),
     # 严重度映射（DM-D10）：adj_jump=high；ohl_repaired/mv_missing=low；其余(abnormal_change/data_gap/stale)=mid
-    "UPDATE data_quality_issue SET severity = CASE "
-    "WHEN issue_type='adj_jump' THEN 'high' "
-    "WHEN issue_type='ohl_repaired' THEN 'low' "
-    "ELSE 'mid' END WHERE severity IS NULL",
+    (
+        "UPDATE data_quality_issue SET severity = CASE "
+        "WHEN issue_type='adj_jump' THEN 'high' "
+        "WHEN issue_type='ohl_repaired' THEN 'low' "
+        "ELSE 'mid' END WHERE severity IS NULL"
+    ),
     # qfq 根治：去抖后干净因子独立成列，K线前/后复权改用它（源 adj_factor 带舍入噪声）。
     # 旧库该列为空，下次入库收尾或手动 rebuild-price-factors 会回填；get_bars 期间 COALESCE 回落原始因子。
     "ALTER TABLE daily_bar ADD COLUMN IF NOT EXISTS adj_factor_clean DOUBLE",
@@ -1170,6 +1187,18 @@ def init_db(client: DuckDBClient | None = None) -> list[str]:
             log.warning("迁移跳过: %s (%s)", mig, e)
     for idx_sql in _LIMIT_LADDER_INDEXES:
         client.execute(idx_sql)
+    snapshot_metadata_column = client.query_df(
+        "SELECT is_nullable FROM information_schema.columns "
+        "WHERE table_schema='main' AND table_name='limit_ladder_snapshot' "
+        "AND column_name='window_metadata_json'"
+    )
+    if (
+        len(snapshot_metadata_column) != 1
+        or snapshot_metadata_column.iloc[0]["is_nullable"] != "NO"
+    ):
+        raise StorageError(
+            "limit_ladder_snapshot.window_metadata_json 升级未完成：要求存在且 NOT NULL"
+        )
     try:
         seed_dimension_registry(client)
     except Exception as e:  # noqa: BLE001

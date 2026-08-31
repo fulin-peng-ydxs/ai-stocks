@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -32,6 +33,69 @@ def test_limit_ladder_duckdb_schema_is_idempotent_and_accepts_empty_snapshot():
         assert int(client.query_df(
             "SELECT stock_count FROM limit_ladder_snapshot WHERE snapshot_id='empty'"
         ).iloc[0]["stock_count"]) == 0
+
+
+def _prepare_t16_snapshot_table(client: DuckDBClient) -> None:
+    client.execute(
+        "CREATE TABLE limit_ladder_snapshot ("
+        "snapshot_id VARCHAR PRIMARY KEY,trade_date DATE NOT NULL,"
+        "rule_version VARCHAR NOT NULL,computed_at TIMESTAMP NOT NULL,"
+        "stock_count INTEGER NOT NULL CHECK (stock_count >= 0),"
+        "has_approx_st BOOLEAN NOT NULL,coverage_json VARCHAR NOT NULL,"
+        "source_version VARCHAR NOT NULL)"
+    )
+    client.execute(
+        "CREATE INDEX idx_limit_ladder_snapshot_date "
+        "ON limit_ladder_snapshot (trade_date, computed_at)"
+    )
+    client.execute(
+        "INSERT INTO limit_ladder_snapshot "
+        "(snapshot_id,trade_date,rule_version,computed_at,stock_count,has_approx_st,"
+        "coverage_json,source_version) VALUES "
+        "('legacy',DATE '2026-08-28','v1',current_timestamp,0,false,'{}','fixture')"
+    )
+
+
+def _assert_t17_snapshot_column_contract(client: DuckDBClient) -> None:
+    row = client.query_df(
+        "SELECT window_metadata_json FROM limit_ladder_snapshot "
+        "WHERE snapshot_id='legacy'"
+    ).iloc[0]
+    assert row["window_metadata_json"] == "{}"
+    column = client.query_df(
+        "SELECT is_nullable,column_default FROM information_schema.columns "
+        "WHERE table_schema='main' AND table_name='limit_ladder_snapshot' "
+        "AND column_name='window_metadata_json'"
+    ).iloc[0]
+    assert column["is_nullable"] == "NO"
+    assert column["column_default"] == "'{}'"
+    with pytest.raises(StorageError):
+        client.execute(
+            "UPDATE limit_ladder_snapshot SET window_metadata_json=NULL "
+            "WHERE snapshot_id='legacy'"
+        )
+
+
+def test_init_db_upgrades_t16_snapshot_metadata_column_idempotently():
+    with DuckDBClient(db_path=":memory:") as client:
+        _prepare_t16_snapshot_table(client)
+        init_db(client)
+        init_db(client)
+        _assert_t17_snapshot_column_contract(client)
+
+
+def test_schema_sql_upgrades_t16_snapshot_metadata_column_idempotently():
+    schema_sql = (
+        Path(__file__).parents[2]
+        / "agent-works"
+        / "limit-up-ladder"
+        / "limit-ladder-schema.sql"
+    ).read_text(encoding="utf-8")
+    with DuckDBClient(db_path=":memory:") as client:
+        _prepare_t16_snapshot_table(client)
+        client.execute(schema_sql)
+        client.execute(schema_sql)
+        _assert_t17_snapshot_column_contract(client)
 
 
 @pytest.mark.parametrize(
