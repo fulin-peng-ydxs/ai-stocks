@@ -11,6 +11,7 @@ import {
   watch,
 } from 'vue'
 import { ElMessage } from 'element-plus'
+import AppDatePicker from '@/components/AppDatePicker.vue'
 import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
@@ -546,7 +547,7 @@ onBeforeUnmount(stopTimer)
       <el-card shadow="never" class="filter-card">
         <AppControlRow class="audit-filters">
           <AppControlItem>
-            <el-date-picker
+            <AppDatePicker
               v-model="dateRange"
               type="datetimerange"
               start-placeholder="开始时间"

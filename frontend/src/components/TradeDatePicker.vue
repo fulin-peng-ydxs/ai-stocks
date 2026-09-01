@@ -3,6 +3,7 @@
 import { onMounted, watch } from 'vue'
 import type { Placement } from 'element-plus'
 import { useTradeDates } from '@/composables/useTradeDates'
+import AppDatePicker from '@/components/AppDatePicker.vue'
 
 const props = defineProps<{
   modelValue: string | null
@@ -44,7 +45,7 @@ onMounted(() => { void ensureLatestLoaded() })
 </script>
 
 <template>
-  <el-date-picker
+  <AppDatePicker
     :model-value="modelValue"
     type="date"
     value-format="YYYY-MM-DD"

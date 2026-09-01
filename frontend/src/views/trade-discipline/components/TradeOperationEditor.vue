@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { Delete, Plus } from '@element-plus/icons-vue'
+import AppDatePicker from '@/components/AppDatePicker.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppSummaryDisclosureCard from '@/components/AppSummaryDisclosureCard.vue'
@@ -272,7 +273,7 @@ defineExpose({ expandOperation })
           />
         </el-form-item>
         <el-form-item label="操作时间" class="operation-field operation-field--time">
-          <el-date-picker :model-value="operation.operated_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" format="YYYY-MM-DD HH:mm" :disabled="disabled" @update:model-value="update(index, { operated_at: $event })" />
+          <AppDatePicker :model-value="operation.operated_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" format="YYYY-MM-DD HH:mm" :disabled="disabled" @update:model-value="update(index, { operated_at: $event })" />
         </el-form-item>
         <el-form-item label="选股规则" required class="operation-field operation-field--rule">
           <el-select :model-value="operation.stock_rule_id" :disabled="disabled || !stockRules.length" placeholder="选择规则" @update:model-value="update(index, { stock_rule_id: $event })">

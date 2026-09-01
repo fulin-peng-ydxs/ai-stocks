@@ -89,6 +89,21 @@ describe('字体与间距设计契约', () => {
     expect(stockSelect).not.toContain('.el-select :deep(.el-select-dropdown__item)')
   })
 
+  it('日期控件统一经过 AppDatePicker，默认浮层不得回退到页面上方', () => {
+    const directDatePickers = sourceFiles(SRC_DIR)
+      .filter((file) => relative(SRC_DIR, file) !== 'components/AppDatePicker.vue')
+      .filter((file) => /<(?:el-date-picker|ElDatePicker)\b/.test(read(file)))
+      .map((file) => relative(SRC_DIR, file))
+    const appDatePicker = read(join(SRC_DIR, 'components/AppDatePicker.vue'))
+    const tradeDatePicker = read(join(SRC_DIR, 'components/TradeDatePicker.vue'))
+
+    expect(directDatePickers).toEqual([])
+    expect(appDatePicker).toContain("placement: 'bottom-start'")
+    expect(appDatePicker).toContain("fallbackPlacements: () => ['bottom-start', 'bottom-end']")
+    expect(tradeDatePicker).toContain("import AppDatePicker from '@/components/AppDatePicker.vue'")
+    expect(tradeDatePicker).toContain('<AppDatePicker')
+  })
+
   it('登录页右侧光晕由当前预设强调色推导，避免单套预设漏覆盖', () => {
     const loginView = read(join(SRC_DIR, 'views/LoginView.vue'))
 
@@ -145,7 +160,8 @@ describe('字体与间距设计契约', () => {
         }
         for (const match of css.matchAll(/(^|[;{}\n]\s*)gap\s*:\s*([^;\n]+)/g)) {
           const value = match[2].trim()
-          if (!value.startsWith('var(')) {
+          // 0 不引入新的间距尺度，允许组件显式消除父级 gap。
+          if (value !== '0' && !value.startsWith('var(')) {
             violations.push(`${rel}:${lineOf(css, match.index ?? 0)} gap: ${value}`)
           }
         }

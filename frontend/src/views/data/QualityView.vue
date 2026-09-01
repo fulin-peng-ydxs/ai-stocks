@@ -13,6 +13,7 @@ import {
   type DataQuality, type QualityIssue, type CheckupReport,
 } from '@/api/data'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppDatePicker from '@/components/AppDatePicker.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
@@ -600,8 +601,8 @@ onMounted(() => {
           <span>{{ delistRow?.code }} {{ delistRow?.name }}</span>
         </el-form-item>
         <el-form-item label="退市日期">
-          <el-date-picker v-model="delistDate" type="date" value-format="YYYY-MM-DD"
-                          format="YYYY年MM月DD日" placeholder="该股最后有效交易日" />
+          <AppDatePicker v-model="delistDate" type="date" value-format="YYYY-MM-DD"
+                         format="YYYY年MM月DD日" placeholder="该股最后有效交易日" />
         </el-form-item>
       </el-form>
       <template #footer>
