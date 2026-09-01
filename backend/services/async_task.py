@@ -264,6 +264,11 @@ class AsyncTaskService:
             from backend.services.stock_ingest import normalize_stock_ingest_params
 
             params = normalize_stock_ingest_params(params)
+        if task_type == "board":
+            from backend.services.board_ingest import normalize_board_force_current_day
+
+            mode = str(params.get("mode") or "update")
+            normalize_board_force_current_day(mode, params.get("force_current_day"))
         if task_type == "stock_board_correlation":
             from backend.services.stock_board_correlation import normalize_correlation_task_params
 
@@ -741,7 +746,12 @@ def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
     ctx.progress(0.08, f"{label}准备中…")
 
     if recipe == "daily_update":
-        result = ing.update(codes=codes, concurrency=concurrency, ctx=ctx)
+        result = ing.update(
+            codes=codes,
+            concurrency=concurrency,
+            force_current_day=bool(normalized.get("force_current_day")),
+            ctx=ctx,
+        )
     elif recipe == "history_backfill":
         result = ing.backfill(
             codes=codes, years=normalized.get("years"), concurrency=concurrency, ctx=ctx)
@@ -1374,7 +1384,10 @@ def _h_board(params: dict, ctx: TaskContext) -> dict:
     「指定板块」/重采用），未传则全量。中断后续跑会按字典类型、板块代码和资金流周期的
     阶段 checkpoint 跳过已经成功的工作单元。
     """
-    from backend.services.board_ingest import normalize_board_stages
+    from backend.services.board_ingest import (
+        normalize_board_force_current_day,
+        normalize_board_stages,
+    )
     from backend.services.ingest import IngestionService
     # codes 兼容数组与逗号分隔字符串（对齐 only 参数的处理，避免字符串被逐字符拆散）
     raw_codes = params.get("codes") or []
@@ -1388,11 +1401,16 @@ def _h_board(params: dict, ctx: TaskContext) -> dict:
     ctx.progress(0.05, "板块采集进行中…")
     ctx.check_cancel()
     mode = str(params.get("mode") or "update")
+    force_current_day = normalize_board_force_current_day(
+        mode, params.get("force_current_day"),
+    )
     only = normalize_board_stages(params.get("only"))
     ingest_kwargs = {
         "ctx": ctx, "board_type": params.get("board_type"),
         "board_codes": spec_codes or None, "mode": mode,
     }
+    if force_current_day:
+        ingest_kwargs["force_current_day"] = True
     if only:
         ingest_kwargs["only"] = only
     if params.get("limit") is not None:

@@ -40,6 +40,10 @@ def test_stock_ingest_task_registered_as_resumable_write_task():
     [
         ({"recipe": "daily_update"}, {"recipe": "daily_update"}),
         (
+            {"recipe": "daily_update", "force_current_day": True},
+            {"recipe": "daily_update", "force_current_day": True},
+        ),
+        (
             {"recipe": "history_backfill", "codes": ["600000.SH"], "years": 5, "concurrency": 2},
             {"recipe": "history_backfill", "codes": ["600000.SH"], "years": 5, "concurrency": 2},
         ),
@@ -69,6 +73,8 @@ def test_normalize_stock_ingest_params_accepts_seven_safe_recipes(params, expect
         {"recipe": "daily_update", "concurrency": 17},
         {"recipe": "daily_update", "concurrency": 0},
         {"recipe": "daily_update", "extra": True},
+        {"recipe": "daily_update", "force_current_day": "true"},
+        {"recipe": "history_backfill", "force_current_day": True},
     ],
 )
 def test_normalize_stock_ingest_params_rejects_unsafe_combinations(params):
@@ -146,4 +152,26 @@ def test_stock_ingest_handler_forwards_recipe_parameters(monkeypatch):
     )
     assert calls == [{
         "codes": ["600000.SH"], "years": 8, "concurrency": 3, "ctx": ctx,
+    }]
+
+
+def test_stock_ingest_handler_forwards_force_current_day(monkeypatch):
+    calls = []
+
+    class FakeIngestion:
+        def update(self, **kwargs):
+            calls.append(kwargs)
+            return {"ok": 1, "fail": 0}
+
+    import backend.services.ingest as ingest_module
+
+    monkeypatch.setattr(ingest_module, "IngestionService", FakeIngestion)
+    ctx = _Ctx()
+    _h_stock_ingest({"recipe": "daily_update", "force_current_day": True}, ctx)
+
+    assert calls == [{
+        "codes": None,
+        "concurrency": None,
+        "force_current_day": True,
+        "ctx": ctx,
     }]

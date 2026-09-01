@@ -502,7 +502,10 @@ class ScheduledJobService:
             if fix_params.get("issue_id") is not None or fix_params.get("issue_ids"):
                 raise ValueError("定时恢复按问题类型动态取数，不接受固定问题 ID")
         if task_type == "board":
-            from backend.services.board_ingest import normalize_board_stages
+            from backend.services.board_ingest import (
+                normalize_board_force_current_day,
+                normalize_board_stages,
+            )
 
             mode = str(normalized_params.get("mode") or "update")
             if mode not in ("update", "backfill"):
@@ -520,6 +523,9 @@ class ScheduledJobService:
             force_members = normalized_params.get("force_members")
             if force_members is not None and not isinstance(force_members, bool):
                 raise ValueError("板块定时采集的 force_members 必须是布尔值")
+            normalize_board_force_current_day(
+                mode, normalized_params.get("force_current_day"),
+            )
         if task_type == "stock_ingest":
             from backend.services.stock_ingest import normalize_stock_ingest_params
 

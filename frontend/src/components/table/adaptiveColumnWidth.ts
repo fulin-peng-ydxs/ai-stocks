@@ -58,9 +58,9 @@ export const ADAPTIVE_COLUMN_RULES: Record<AdaptiveColumnRole, AdaptiveColumnPol
   date: { minWidth: 120, maxAutoWidth: 192 },
   datetime: { minWidth: 168, maxAutoWidth: 224 },
   key: { minWidth: 160, maxAutoWidth: 240 },
-  // 多动作列保持稳定窄宽；放不下的动作由 AppRowActions 收进「更多」。
+  // 操作列数值是默认下限；运行时可按行操作组的最低可用组合向上扩展。
   action: { width: 144 },
-  // 单动作或仅需「更多」入口时保持固定窄宽，避免挤压名称、描述和数值列。
+  // 紧凑操作列同样以该值为默认下限，而不是不可突破的固定上限。
   'action-compact': { width: 96 },
   text: { minWidth: 140, maxAutoWidth: 240 },
   description: { minWidth: 200, maxAutoWidth: 320 },
@@ -182,4 +182,16 @@ export function resolveAdaptiveColumnWidth(
     headerCapped: headerSizing.capped,
     headerIndent,
   }
+}
+
+/** 操作列取语义档位默认值与当前各行最低宽度需求的最大值。 */
+export function resolveActionColumnWidth(
+  defaultWidth: number,
+  rowMinimumWidths: Iterable<number>,
+): number {
+  let resolved = defaultWidth
+  for (const width of rowMinimumWidths) {
+    if (Number.isFinite(width)) resolved = Math.max(resolved, Math.ceil(width))
+  }
+  return resolved
 }

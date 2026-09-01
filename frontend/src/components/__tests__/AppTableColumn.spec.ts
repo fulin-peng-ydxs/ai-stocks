@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 import { mount } from '@vue/test-utils'
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, inject, onBeforeUnmount, onMounted } from 'vue'
 import { describe, expect, it } from 'vitest'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import {
   estimateHeaderTextWidth,
   inferAdaptiveColumnRole,
+  resolveActionColumnWidth,
   resolveAdaptiveColumnWidth,
 } from '@/components/table/adaptiveColumnWidth'
+import { ROW_ACTION_COLUMN_WIDTH_CONTEXT } from '@/components/table/rowActionColumnWidth'
 
 const ElTableColumnStub = defineComponent({
   name: 'ElTableColumn',
@@ -64,7 +66,7 @@ describe('自适应表格列', () => {
     expect(inferAdaptiveColumnRole({ label: '收益率' })).toBe('number')
   })
 
-  it('操作列按动作密度使用两档固定宽度且不吞占表格余量', () => {
+  it('操作列按动作密度使用两档默认下限且不主动吞占表格余量', () => {
     expect(resolveAdaptiveColumnWidth({ label: '操作', role: 'action' })).toMatchObject({
       role: 'action',
       width: 144,
@@ -73,6 +75,35 @@ describe('自适应表格列', () => {
       role: 'action-compact',
       width: 96,
     })
+    expect(resolveActionColumnWidth(144, [120, 188, 160.2])).toBe(188)
+    expect(resolveActionColumnWidth(96, [72])).toBe(96)
+    expect(resolveActionColumnWidth(144, [160.2])).toBe(161)
+  })
+
+  it('操作列取所有已渲染行最低需求的最大值', async () => {
+    const sources = [Symbol('short-row'), Symbol('long-row')]
+    const WidthReporter = defineComponent({
+      props: { index: { type: Number, required: true } },
+      setup(props) {
+        const context = inject(ROW_ACTION_COLUMN_WIDTH_CONTEXT)
+        const source = sources[props.index]
+        onMounted(() => context?.setMinimumWidth(source, props.index === 0 ? 132 : 188))
+        onBeforeUnmount(() => context?.removeMinimumWidth(source))
+        return () => h('span', `row-${props.index}`)
+      },
+    })
+    const wrapper = mount(AppTableColumn, {
+      props: { label: '操作', role: 'action' },
+      slots: {
+        default: () => [h(WidthReporter, { index: 0 }), h(WidthReporter, { index: 1 })],
+      },
+      global: {
+        stubs: { ElTableColumn: ElTableColumnStub },
+      },
+    })
+
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.column').attributes('data-width')).toBe('188')
   })
 
   it('复合实体列为前置控件和主副信息保留统一识别宽度', () => {

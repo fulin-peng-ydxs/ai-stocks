@@ -7,12 +7,14 @@ import {
   type BoardTypeScope,
 } from '@/api/data'
 import PageSegmented from '@/components/PageSegmented.vue'
+import CurrentDayFallbackField from '@/components/data/CurrentDayFallbackField.vue'
 
 const props = defineProps<{
   mode: 'update' | 'backfill'
   boardType: BoardTypeScope
   stages: BoardIngestStage[]
   forceMembers: boolean
+  forceCurrentDay: boolean
   testIdPrefix: string
 }>()
 
@@ -21,6 +23,7 @@ const emit = defineEmits<{
   'update:boardType': [value: BoardTypeScope]
   'update:stages': [value: BoardIngestStage[]]
   'update:forceMembers': [value: boolean]
+  'update:forceCurrentDay': [value: boolean]
 }>()
 
 const includesMembers = computed(() => props.stages.includes('members'))
@@ -67,7 +70,13 @@ const includesMembers = computed(() => props.stages.includes('members'))
       :data-testid="`${testIdPrefix}-force-members`"
       @update:model-value="$emit('update:forceMembers', Boolean($event))"
     >
-      强制刷新成分快照（绕过周频间隔）
+      强制刷新成分快照（绕过间隔）
     </el-checkbox>
   </el-form-item>
+  <CurrentDayFallbackField
+    v-if="mode === 'update' && (stages.includes('bar') || stages.includes('fund'))"
+    :model-value="forceCurrentDay"
+    :test-id="`${testIdPrefix}-force-current-day`"
+    @update:model-value="$emit('update:forceCurrentDay', $event)"
+  />
 </template>

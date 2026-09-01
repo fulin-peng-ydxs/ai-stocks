@@ -543,6 +543,28 @@ def test_board_task_force_members_passthrough(client, monkeypatch):
     assert captured["force_members"] is None  # 未传 → 不设键，ingest_board 按 mode/codes 自动解析
 
 
+def test_board_task_force_current_day_passthrough(client, monkeypatch):
+    """板块增量任务将强制当日参数透传到采集编排。"""
+    from backend.services import ingest as ingest_mod
+    from backend.services.async_task import AsyncTaskService
+
+    captured: dict = {}
+
+    def fake_ingest_board(self, ctx=None, board_type=None, board_codes=None,
+                          mode="update", force_current_day=False):
+        captured["force_current_day"] = force_current_day
+        return {"dict": None, "members": {}, "bar": None,
+                "fund_flow": None, "failed": []}
+
+    monkeypatch.setattr(ingest_mod.IngestionService, "ingest_board", fake_ingest_board, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    svc = AsyncTaskService(client)
+    task = svc.create("board", {"mode": "update", "force_current_day": True})
+
+    assert _wait(svc, task)["status"] == "done"
+    assert captured["force_current_day"] is True
+
+
 def test_board_task_write_mutex(client, monkeypatch):
     """board 是写任务：运行中禁止并发创建其他写任务。"""
     import time

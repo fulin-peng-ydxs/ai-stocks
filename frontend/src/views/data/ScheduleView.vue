@@ -175,6 +175,7 @@ const form = reactive({
   board_type: '' as BoardTypeScope,
   board_stages: ['dict', 'members', 'bar', 'fund'] as BoardIngestStage[],
   board_force_members: false,
+  board_force_current_day: false,
   freq_type: 'daily' as FreqType,
   time: '15:30', weekdays: [1, 2, 3, 4, 5] as number[], day: 1, cron: '',
   trigger_mode: 'time' as TriggerMode,
@@ -205,7 +206,7 @@ function openCreate() {
     resultMaintenance: createResultMaintenanceTaskForm(),
     issue_type: qualityIssueTypes.value[0] || 'null_close',
     board_mode: 'update', board_type: '', board_stages: ['dict', 'members', 'bar', 'fund'],
-    board_force_members: false,
+    board_force_members: false, board_force_current_day: false,
     freq_type: 'daily', time: '15:30', weekdays: [1, 2, 3, 4, 5], day: 1, cron: '',
     trigger_mode: 'time', dependency_job_id: '', dependency_condition: 'completion',
     dependency_delay_value: 0, dependency_delay_unit: 'minute',
@@ -240,6 +241,7 @@ function openEdit(j: ScheduledJob) {
       ? j.params.only.filter((x): x is BoardIngestStage => ['dict', 'members', 'bar', 'fund'].includes(x))
       : ['dict', 'members', 'bar', 'fund'],
     board_force_members: j.params?.force_members === true,
+    board_force_current_day: j.params?.force_current_day === true,
     freq_type: j.freq_type,
     time: j.freq_config?.time || '15:30',
     weekdays: j.freq_config?.weekdays?.length ? [...j.freq_config.weekdays] : [1, 2, 3, 4, 5],
@@ -279,6 +281,11 @@ function buildPayload(): ScheduledJobInput | null {
     params.only = form.board_stages
     if (form.board_type) params.board_type = form.board_type
     if (form.board_force_members && form.board_stages.includes('members')) params.force_members = true
+    if (
+      form.board_mode === 'update'
+      && form.board_force_current_day
+      && (form.board_stages.includes('bar') || form.board_stages.includes('fund'))
+    ) params.force_current_day = true
   }
   if (form.trigger_mode === 'dependency' && !form.dependency_job_id) {
     ElMessage.warning('请选择上游任务'); return null
@@ -359,8 +366,8 @@ async function remove(j: ScheduledJob) {
 async function runNow(j: ScheduledJob) {
   try {
     await ElMessageBox.confirm(
-      `立即执行一次「${j.name}」（${taskDisplayLabel(j.task_type, j.params)}）？不等定时时间点直接触发；`
-      + `任务会按自身规则执行；采集类任务在非交易日 / 当日数据未就绪时会自行跳过实际拉取。`,
+      `立即执行一次「${j.name}」（${taskDisplayLabel(j.task_type, j.params)}）？`
+      + '将直接创建任务，不等待定时点，并按当前任务参数执行。',
       '立即执行', { type: 'warning' })
   } catch { return }
   try {
@@ -872,6 +879,7 @@ onActivated(openResultScheduleFromIntent)
           v-model:board-type="form.board_type"
           v-model:stages="form.board_stages"
           v-model:force-members="form.board_force_members"
+          v-model:force-current-day="form.board_force_current_day"
           test-id-prefix="schedule-board"
         />
         <StockIngestScopeFields

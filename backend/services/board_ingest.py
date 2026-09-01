@@ -37,7 +37,7 @@ BOARD_INGEST_STAGES: tuple[str, ...] = ("dict", "members", "bar", "fund")
 
 # 源端当日就绪探测（对齐行情 update 的 _UPDATE_READY_* 就绪门）：板块指数源端分板块陆续发布，
 # 采早了会落一批"停在昨天"的半成品还报成功（实测 2026-08-18 晚 480 板块仅 27 个已出当日）。
-# 全量增量且截止日=今天时先抽样探测，未达阈值回退到上一交易日继续采集。
+# 增量且截止日=今天时先抽样探测，未达阈值回退到上一交易日继续采集。
 _BAR_READY_SAMPLE = 10
 _BAR_READY_RATIO = 0.5
 
@@ -57,6 +57,17 @@ def normalize_board_stages(value) -> list[str] | None:
     if unknown:
         raise ValueError(f"未知板块采集步骤: {unknown}")
     return stages
+
+
+def normalize_board_force_current_day(mode: str, value) -> bool:
+    """校验板块当日退级参数；仅增量模式允许显式绕过。"""
+    if value is None:
+        return False
+    if not isinstance(value, bool):
+        raise ValueError("板块强制采集当日必须是布尔值")
+    if mode != "update" and value:
+        raise ValueError("只有板块增量采集支持强制采集当日")
+    return value
 
 
 def _asia_date() -> date:
@@ -432,8 +443,8 @@ class BoardIngestService:
         """板块指数日线：幂等 upsert 原值。end 缺省=今天。返回 {"rows": n, "boards": n}。
 
         ctx：任务上下文，逐板块打实时日志（对齐现有采集「指数 X 完成」模式）。
-        probe_ready：仅每日增量（ingest_board update 分支）传 True——全量且截止日=今天时
-        先抽样探测源端当日数据是否就绪，未就绪回退到上一交易日继续采集；backfill/指定板块/
+        probe_ready：仅每日增量（ingest_board update 分支）传 True——截止日=今天时
+        先抽样探测源端当日数据是否就绪，未就绪回退到上一交易日继续采集；backfill/
         缺口重采不传，尊重调用方意图直接采。"""
         end = end or _asia_date()
         requested_end = end
@@ -472,9 +483,9 @@ class BoardIngestService:
         if ctx and n_total:
             tail = f"（续跑跳过已完成 {resumed_done}）" if resumed_done else ""
             ctx.log(f"板块指数采集区间 {start} ~ {end}，待采 {n_total} 个板块{tail}")
-        if probe_ready and board_codes is None and n_total and end >= _asia_date():
-            # 就绪探测：仅「每日增量全量 + 截止日=今天（即今天是交易日）」。backfill/指定板块/
-            # 缺口窄窗口重采不传 probe_ready，尊重调用方意图；非交易日 end<今天，数据必已发布。
+        if probe_ready and n_total and end >= _asia_date():
+            # 就绪探测：仅「每日增量 + 截止日=今天」。backfill/缺口窄窗口重采不传
+            # probe_ready；非交易日默认 end<今天，数据必已发布。
             ready, sampled = self._probe_bar_ready(df_boards, end)
             if ready / max(sampled, 1) < _BAR_READY_RATIO:
                 fallback_end = self._previous_open_day(end)

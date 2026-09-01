@@ -14,6 +14,42 @@ export const MORE_BUTTON_ESTIMATED_WIDTH = 64
 export const ROW_ACTION_GAP = 8
 
 /**
+ * 计算行操作组不丢失直接入口时所需的最低内容宽度。
+ *
+ * 单动作至少完整显示该动作；多动作至少保留两个操作入口，可以是两个直接动作，
+ * 也可以是首个直接动作和「更多」（「更多」本身计作一个入口）。只有调用方明确
+ * 禁止行内动作，或全部动作都指定进入更多菜单时，才允许最低形态仅保留「更多」。
+ */
+export function computeRowMinimumContentWidth(
+  actions: AppRowActionMeasure[],
+  limit: number,
+  moreButtonWidth: number = MORE_BUTTON_ESTIMATED_WIDTH,
+): number {
+  if (!actions.length) return 0
+
+  const fillable = actions.filter((action) => action.placement !== 'more')
+  const normalizedLimit = Math.max(0, limit)
+  if (!fillable.length || normalizedLimit === 0) return moreButtonWidth
+
+  // 枚举所有至少保留一个直接动作的有效形态，取其中最窄者：两个直接动作
+  // 可能比「长动作 + 更多」更窄，因此不能把后者写死为唯一最低组合。
+  let minimum = Number.POSITIVE_INFINITY
+  const maxInline = Math.min(fillable.length, normalizedLimit)
+  for (let inlineCount = 1; inlineCount <= maxInline; inlineCount++) {
+    let width = 0
+    for (let index = 0; index < inlineCount; index++) {
+      width += (index > 0 ? ROW_ACTION_GAP : 0) + measureActionWidth(fillable[index])
+    }
+    const needsMore = inlineCount < fillable.length || actions.some((action) => (
+      action.placement === 'more'
+    ))
+    if (needsMore) width += ROW_ACTION_GAP + moreButtonWidth
+    minimum = Math.min(minimum, width)
+  }
+  return minimum
+}
+
+/**
  * 按可用宽度计算行内应保留几个按钮、是否出现「更多」。
  *
  * 优先级：显式 `placement: 'more'` 的动作恒入更多；其余按原始顺序贪心塞入行内，

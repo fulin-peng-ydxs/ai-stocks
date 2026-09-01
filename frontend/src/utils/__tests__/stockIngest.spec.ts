@@ -33,8 +33,22 @@ describe('stock ingest shared form contract', () => {
     })).error).toContain('1–30')
   })
 
+  it('only submits force-current-day for daily updates', () => {
+    const daily = createStockIngestForm({ force_current_day: true })
+    expect(buildStockIngestParams(daily).params).toMatchObject({
+      recipe: 'daily_update', force_current_day: true,
+    })
+    expect(stockIngestSummary(daily)).toContain('强制当日')
+
+    const history = createStockIngestForm({
+      recipe: 'history_backfill', force_current_day: true,
+    })
+    expect(buildStockIngestParams(history).params).not.toHaveProperty('force_current_day')
+  })
+
   it('maps legacy scheduled jobs into the unified model', () => {
     expect(stockIngestFormFromTask('update', {})?.recipe).toBe('daily_update')
+    expect(stockIngestFormFromTask('update', { force_current_day: true })?.force_current_day).toBe(true)
     expect(stockIngestFormFromTask('backfill', { years: 5 })?.years).toBe(5)
     expect(stockIngestFormFromTask('ingest_date', {
       date_start: '2026-08-01', codes: ['600000.SH'],

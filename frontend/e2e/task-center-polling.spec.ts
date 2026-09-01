@@ -14,7 +14,57 @@ const activeTask = {
   updated_at: '2026-07-20 10:01:00',
 }
 
+const resumableFailedTask = {
+  ...activeTask,
+  id: 'e2e-resumable-failed-task',
+  status: 'failed',
+  message: '操作列最低宽度验证',
+  capability: {
+    can_cancel: false,
+    can_resume: true,
+    checkpoint: { phase: 'daily_bar' },
+  },
+}
+
 test.describe('任务中心轮询', () => {
+  test('多动作列自动扩展并保留两个直接操作入口', async ({ page, request }) => {
+    await loginAsDebugUser(page, request, 'debug_system')
+
+    await page.route('**/api/data/tasks?**', async (route) => {
+      const url = new URL(route.request().url())
+      if (!url.searchParams.has('page')) {
+        await route.continue()
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          msg: 'ok',
+          data: { tasks: [resumableFailedTask], total: 1 },
+        }),
+      })
+    })
+
+    await page.goto('/data/ingest')
+    const row = page.getByRole('row').filter({ hasText: '操作列最低宽度验证' })
+    await expect(row.getByRole('button', { name: '重试未完成项', exact: true })).toBeVisible()
+    await expect(row.getByRole('button', { name: '日志', exact: true })).toBeVisible()
+    await expect(row.getByRole('button', { name: '更多', exact: true })).toHaveCount(0)
+
+    const geometry = await row.locator('.app-row-actions').evaluate((element) => {
+      const group = element.getBoundingClientRect()
+      const cell = element.closest('td')?.getBoundingClientRect()
+      return {
+        cellWidth: cell?.width ?? 0,
+        fitsCell: Boolean(cell && group.left >= cell.left && group.right <= cell.right),
+      }
+    })
+    expect(geometry.cellWidth).toBeGreaterThan(144)
+    expect(geometry.fitsCell).toBe(true)
+  })
+
   test('运行中任务自动刷新时不重复显示加载遮罩', async ({ page, request }) => {
     await loginAsDebugUser(page, request, 'debug_system')
 

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import StockCodeMultiSelect from '@/components/data/StockCodeMultiSelect.vue'
+import CurrentDayFallbackField from '@/components/data/CurrentDayFallbackField.vue'
 import {
   STOCK_INGEST_RECIPE_OPTIONS,
   isHeavyStockIngestRecipe,
@@ -41,6 +42,7 @@ function changeRecipe(recipe: StockIngestRecipe) {
     date_end: recipe === 'range_refetch' ? props.modelValue.date_end : '',
     years: stockIngestSupportsYears(recipe) ? props.modelValue.years : null,
     concurrency: stockIngestSupportsConcurrency(recipe) ? props.modelValue.concurrency : null,
+    force_current_day: recipe === 'daily_update' ? props.modelValue.force_current_day : false,
   })
 }
 
@@ -124,6 +126,13 @@ function changeRecipe(recipe: StockIngestRecipe) {
     />
     <span class="hint">留空沿用全局配置；提高并发会增加免费数据源封禁风险</span>
   </el-form-item>
+
+  <CurrentDayFallbackField
+    v-if="modelValue.recipe === 'daily_update'"
+    :model-value="modelValue.force_current_day"
+    :test-id="`${testIdPrefix}-force-current-day`"
+    @update:model-value="patch({ force_current_day: $event })"
+  />
 
   <el-alert
     v-if="isHeavy"

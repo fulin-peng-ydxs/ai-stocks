@@ -697,17 +697,55 @@ def test_bar_ready_probe_passes_and_logs_window_freshness(tmp_path):
     assert f"已出 {today}：2/2" in detail
 
 
-def test_bar_probe_bypassed_for_explicit_board_codes(tmp_path):
-    """指定板块（手动重采/缺口窄窗口修复）尊重调用方意图，即使开了就绪探测开关也不探测。"""
+def test_bar_probe_applies_to_explicit_board_codes(tmp_path):
+    """指定板块增量也执行就绪退级，强制当日由上层显式关闭探测。"""
     from backend.services.board_ingest import _asia_date
     today = _asia_date()
     yesterday = today - timedelta(days=1)
     src = _FakeSource({}, bar={"309121": _bar_df([yesterday])})
     svc, c = _make_service(tmp_path, src)
     _two_boards(c)
+    c.execute("INSERT INTO trade_calendar (trade_date, is_open) VALUES (?, TRUE)", [yesterday])
     r = svc.ingest_board_bar(yesterday, end=today, board_codes=["309121"], probe_ready=True)
-    assert "skipped" not in r and r["rows"] == 1
-    assert r["at_end"] == 0 and r["scope_total"] == 1
+    assert r["fallback"] is True and r["end"] == yesterday.isoformat()
+    assert r["rows"] == 1 and r["at_end"] == 1 and r["scope_total"] == 1
+
+
+def test_board_update_force_current_day_bypasses_all_fallbacks(monkeypatch):
+    """强制当日直接使用今天，指数不做就绪探测，资金流沿用同一目标日。"""
+    from backend.services import board_ingest as board_module
+    from backend.services.ingest import IngestionService
+
+    today = date(2026, 8, 29)
+    previous = today - timedelta(days=1)
+    captured: dict = {}
+
+    class _FakeBoardService:
+        def ingest_board_bar(self, start, end=None, **kwargs):
+            captured["bar_end"] = end
+            captured["probe_ready"] = kwargs.get("probe_ready")
+            return {
+                "rows": 0, "boards": 0, "failed": [], "start": start.isoformat(),
+                "end": end.isoformat(), "requested_end": end.isoformat(), "fallback": False,
+                "at_end": 0, "scope_total": 0,
+            }
+
+        def ingest_board_fund_flow(self, snapshot_date=None, **kwargs):
+            captured["fund_date"] = snapshot_date
+            return {"rows": 0, "unmatched": 0, "failed": []}
+
+    monkeypatch.setattr(board_module, "_asia_date", lambda: today)
+    monkeypatch.setattr(board_module, "BoardIngestService", _FakeBoardService)
+    svc = IngestionService.__new__(IngestionService)
+    svc._latest_open_day = lambda: previous
+
+    svc.ingest_board(mode="update", only=["bar", "fund"], force_current_day=True)
+
+    assert captured == {
+        "bar_end": today,
+        "probe_ready": False,
+        "fund_date": today,
+    }
 
 
 def test_bar_probe_off_by_default_for_backfill(tmp_path):

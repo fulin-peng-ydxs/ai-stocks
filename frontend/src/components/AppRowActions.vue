@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { getActivePinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import {
+  computeRowMinimumContentWidth,
   computeRowLayout,
+  MORE_BUTTON_ESTIMATED_WIDTH,
   type AppRowAction,
   type AppRowActionMeasure,
   type AppRowActionType,
 } from './rowActions'
+import { ROW_ACTION_COLUMN_WIDTH_CONTEXT } from './table/rowActionColumnWidth'
 
 const props = withDefaults(defineProps<{
   actions: AppRowAction[]
@@ -26,6 +29,8 @@ const props = withDefaults(defineProps<{
 })
 
 const auth = getActivePinia() ? useAuthStore() : null
+const actionColumnWidth = inject(ROW_ACTION_COLUMN_WIDTH_CONTEXT, null)
+const actionColumnWidthSource = Symbol('row-action-width')
 type ButtonRef = HTMLElement | { $el?: HTMLElement } | null
 const moreButton = ref<ButtonRef>(null)
 const menuEl = ref<HTMLElement | null>(null)
@@ -51,6 +56,9 @@ function isAllowed(action: AppRowAction): boolean {
 }
 
 const visibleActions = computed(() => props.actions.filter(isAllowed))
+const actionMeasurementSignature = computed(() => visibleActions.value.map((action) => (
+  [action.key, action.label, action.placement ?? 'auto', action.loading ? 'loading' : 'idle'].join('\u0000')
+)).join('\u0001'))
 
 const measuredActions = computed<AppRowActionMeasure[]>(() =>
   visibleActions.value.map((action) => {
@@ -99,9 +107,10 @@ const moreActions = computed(() => {
 
 function measure(): void {
   const parent = rootEl.value?.parentElement
+  let padX = 0
   if (parent) {
     const cs = getComputedStyle(parent)
-    const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0)
+    padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0)
     availableWidth.value = Math.max(0, parent.clientWidth - padX)
   } else {
     availableWidth.value = 0
@@ -117,9 +126,25 @@ function measure(): void {
   const moreNode = moreEl
     ? moreEl instanceof HTMLElement ? moreEl : moreEl.$el ?? null
     : null
-  if (moreNode && moreNode.offsetWidth > 0) moreWidth.value = moreNode.offsetWidth
+  const nextMoreWidth = moreNode && moreNode.offsetWidth > 0
+    ? moreNode.offsetWidth
+    : MORE_BUTTON_ESTIMATED_WIDTH
+  moreWidth.value = nextMoreWidth
 
   widthMap.value = next
+  const measured = visibleActions.value.map((action) => {
+    const width = next[action.key]
+    return { ...action, measured: width, measuredOk: width !== undefined }
+  })
+  const minimumContentWidth = computeRowMinimumContentWidth(
+    measured,
+    Math.max(0, props.inlineLimit),
+    nextMoreWidth,
+  )
+  actionColumnWidth?.setMinimumWidth(
+    actionColumnWidthSource,
+    Math.ceil(minimumContentWidth + padX),
+  )
 }
 
 function setupObserver(): void {
@@ -134,7 +159,10 @@ function teardownObserver(): void {
   observer = null
 }
 
-watch(visibleActions, () => { void nextTick(measure) })
+watch(
+  [actionMeasurementSignature, () => props.inlineLimit, () => props.moreLabel],
+  () => { void nextTick(measure) },
+)
 
 onMounted(() => {
   void nextTick(() => {
@@ -265,6 +293,7 @@ function runMenuAction(action: AppRowAction, event: MouseEvent): void {
 }
 
 onBeforeUnmount(() => {
+  actionColumnWidth?.removeMinimumWidth(actionColumnWidthSource)
   teardownObserver()
   removeListeners()
 })
@@ -326,6 +355,7 @@ onBeforeUnmount(() => {
         :class="actionClass(action, index)"
         link
         size="small"
+        :loading="action.loading"
       >
         {{ action.label }}
       </el-button>

@@ -641,6 +641,12 @@ def test_board_schedulable_and_catalog(tmp_path):
             "mode": "update", "board_type": "concept", "only": ["bar", "fund"],
             "force_members": False,
         }
+        forced = svc.create(
+            name="强制板块当日", task_type="board",
+            params={"mode": "update", "only": ["bar"], "force_current_day": True},
+            freq_type="daily", freq_config={"time": "16:10"},
+            trading_day_only=False, enabled=False)
+        assert forced["params"]["force_current_day"] is True
         with pytest.raises(ValueError, match="update/backfill"):
             svc.create(name="非法板块模式", task_type="board", params={"mode": "daily"},
                        freq_type="daily", freq_config={"time": "15:30"},
@@ -653,6 +659,12 @@ def test_board_schedulable_and_catalog(tmp_path):
             svc.create(name="非法板块阶段", task_type="board", params={"only": ["price"]},
                        freq_type="daily", freq_config={"time": "15:30"},
                        trading_day_only=True, enabled=False)
+        with pytest.raises(ValueError, match="只有板块增量采集"):
+            svc.create(
+                name="非法强制回填", task_type="board",
+                params={"mode": "backfill", "force_current_day": True},
+                freq_type="daily", freq_config={"time": "15:30"},
+                trading_day_only=False, enabled=False)
         # 2. catalog 含板块表（审计问题4）
         cat = build_catalog(c)
         tables = {x["table"] for x in cat}

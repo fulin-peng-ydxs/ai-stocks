@@ -67,7 +67,7 @@
 
 | 维度 | `update` 增量 | `backfill` 全量补数 | `ingest_date` 指定日期 |
 |------|--------------|--------------------|----------------------|
-| 目标日 | 自动取"今天"；非交易日不探测、直接回退到上一交易日，交易日过**就绪门**`_resolve_update_end`，主源未就绪也回退到上一交易日继续增量；续跑用 `target_end` 锁定首跑已收敛目标日 | `date.today()` 重算（历史区间，无就绪门，重算无害） | 用户显式 `start/end`（存 `params`，续跑天然不漂） |
+| 目标日 | 自动取“今天”；默认在非交易日或主源未就绪时回退到上一交易日；`force_current_day=true` 时跳过回退并直接尝试当天；续跑用 `target_end` 锁定首跑目标日 | `date.today()` 重算（历史区间，无就绪门，重算无害） | 用户显式 `start/end`（存 `params`，续跑天然不漂） |
 | 基础信息 | 读库不刷 | `ingest_stock_basic` 刷名册（建底路径） | 读库不刷 |
 | 补市值 | 收尾补最新交易日 + 整股从没市值的票补历史；**历史中间缺口不归 update 管**（见上 `total_mv` 增量语义），需 `valuation --fill-gaps` | 不补（只采行情）；结束报告缺 `total_mv` 数，历史市值请 `valuation --fill-gaps` 一次性回补 | 不补 |
 | 收尾 | 缺口收口 + 刷因子 | 刷因子 + 全市场契约校验 | 刷因子 |
@@ -150,7 +150,7 @@
 
 | 方案 | `recipe` | 允许参数 |
 |------|----------|----------|
-| 日常同步 | `daily_update` | `codes`、`concurrency` |
+| 日常同步 | `daily_update` | `codes`、`concurrency`、`force_current_day` |
 | 历史行情补全 | `history_backfill` | `codes`、`years`、`concurrency` |
 | 日期区间重采 | `range_refetch` | `codes`、`date_start/date_end`、`concurrency` |
 | 市值历史补采 | `valuation_history` | `codes`、`years`、`concurrency` |
@@ -159,6 +159,8 @@
 | 退市股历史补全 | `delisted_history` | `years`，固定退市股票池 |
 
 省略 `codes` 表示全市场；指定股票时必须是非空数组。采集表单、概览逐股体检和走势板块相关性调度统一使用 `StockCodeMultiSelect`，共同承接远程搜索、批量粘贴、去重和候选错误；非法或超范围代码仍由对应提交接口最终校验并保留原表单输入。并发范围为 1–16，日期区间不可反向。历史行情、日期区间、市值历史/缺口和退市股历史属于高耗时方案，手动提交与保存调度前均显示风险确认。
+
+个股日常同步与板块增量采集统一使用 `force_current_day`：默认在非交易日或当日行情未就绪时退回上一交易日；值为 `true` 时直接尝试当天。全量回填和其他非增量方案不接受该语义。板块资金流沿用本轮板块指数收敛后的目标日。
 
 **采集内容明细**：
 

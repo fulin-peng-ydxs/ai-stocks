@@ -27,7 +27,9 @@ STOCK_INGEST_RECIPE_LABELS = {
     "delisted_history": "退市股历史补全",
 }
 
-_COMMON_FIELDS = {"recipe", "codes", "date_start", "date_end", "years", "concurrency"}
+_COMMON_FIELDS = {
+    "recipe", "codes", "date_start", "date_end", "years", "concurrency", "force_current_day",
+}
 _CODE_RECIPES = {
     "daily_update", "history_backfill", "range_refetch",
     "valuation_history", "valuation_gaps",
@@ -65,6 +67,15 @@ def normalize_stock_ingest_params(params: dict | None) -> dict:
     if recipe not in STOCK_INGEST_RECIPES:
         raise ValueError(f"个股采集方案非法（可选 {STOCK_INGEST_RECIPES}）")
     out: dict = {"recipe": recipe}
+
+    if "force_current_day" in raw:
+        force_current_day = raw["force_current_day"]
+        if not isinstance(force_current_day, bool):
+            raise ValueError("强制采集当日须为布尔值")
+        if recipe != "daily_update":
+            raise ValueError(f"{STOCK_INGEST_RECIPE_LABELS[recipe]}不支持强制采集当日")
+        if force_current_day:
+            out["force_current_day"] = True
 
     if "codes" in raw:
         if recipe not in _CODE_RECIPES:

@@ -5,7 +5,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick } from 'vue'
 import AppRowActions from '../AppRowActions.vue'
 import { useAuthStore } from '@/stores/auth'
-import type { AppRowAction } from '../rowActions'
+import {
+  computeRowMinimumContentWidth,
+  type AppRowAction,
+} from '../rowActions'
+import {
+  ROW_ACTION_COLUMN_WIDTH_CONTEXT,
+  type RowActionColumnWidthContext,
+} from '../table/rowActionColumnWidth'
 
 const ElButtonStub = defineComponent({
   name: 'ElButton',
@@ -57,6 +64,9 @@ async function mountActions(actions: AppRowAction[], opts: {
   buttonWidths?: number[]
   /** 「更多」按钮模拟宽度 */
   moreWidth?: number
+  /** 单元格横向内边距总和 */
+  containerPaddingX?: number
+  widthContext?: RowActionColumnWidthContext
 } = {}) {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -74,6 +84,9 @@ async function mountActions(actions: AppRowAction[], opts: {
     },
     global: {
       plugins: [pinia],
+      provide: opts.widthContext ? {
+        [ROW_ACTION_COLUMN_WIDTH_CONTEXT as symbol]: opts.widthContext,
+      } : undefined,
       stubs: {
         ElButton: ElButtonStub,
         ElIcon: ElIconStub,
@@ -90,6 +103,10 @@ async function mountActions(actions: AppRowAction[], opts: {
         value: opts.containerWidth,
         configurable: true,
       })
+      if (opts.containerPaddingX) {
+        rootEl.parentElement.style.paddingLeft = `${opts.containerPaddingX / 2}px`
+        rootEl.parentElement.style.paddingRight = `${opts.containerPaddingX / 2}px`
+      }
     }
     // 测量层按钮顺序 = visibleActions 顺序，其后是「更多」按钮副本
     const measureButtons = wrapper.findAll('.app-row-actions__measure .app-row-actions__button')
@@ -256,5 +273,45 @@ describe('AppRowActions', () => {
     // 三个按钮 196px < 400px，无需更多
     expect(directButtons).toEqual(['编辑', '重置密码', '删除'])
     expect(wrapper.find('[data-testid="t-actions-more"]').exists()).toBe(false)
+  })
+
+  it('单动作完整显示，多动作从两直接动作或首动作加更多中选择最低宽度', () => {
+    expect(computeRowMinimumContentWidth([
+      { key: 'logs', label: '日志', measured: 40, measuredOk: true },
+    ], 2, 56)).toBe(40)
+    expect(computeRowMinimumContentWidth([
+      { key: 'retry', label: '重试未完成项', measured: 92, measuredOk: true },
+      { key: 'logs', label: '日志', measured: 40, measuredOk: true },
+    ], 2, 56)).toBe(140)
+    expect(computeRowMinimumContentWidth([
+      { key: 'retry', label: '重试未完成项', measured: 92, measuredOk: true },
+      { key: 'logs', label: '日志', measured: 40, measuredOk: true },
+      { key: 'delete', label: '删除', measured: 40, measuredOk: true },
+    ], 2, 56)).toBe(156)
+    expect(computeRowMinimumContentWidth([
+      { key: 'delete', label: '删除', placement: 'more', measured: 40, measuredOk: true },
+    ], 2, 56)).toBe(56)
+  })
+
+  it('向所属操作列上报含单元格内边距的最低可用宽度', async () => {
+    const widthContext: RowActionColumnWidthContext = {
+      setMinimumWidth: vi.fn(),
+      removeMinimumWidth: vi.fn(),
+    }
+    const wrapper = await mountActions([
+      { key: 'retry', label: '重试未完成项' },
+      { key: 'logs', label: '日志' },
+    ], {
+      inlineLimit: 2,
+      containerWidth: 144,
+      buttonWidths: [92, 40],
+      moreWidth: 56,
+      containerPaddingX: 24,
+      widthContext,
+    })
+
+    expect(widthContext.setMinimumWidth).toHaveBeenLastCalledWith(expect.any(Symbol), 164)
+    wrapper.unmount()
+    expect(widthContext.removeMinimumWidth).toHaveBeenCalledWith(expect.any(Symbol))
   })
 })

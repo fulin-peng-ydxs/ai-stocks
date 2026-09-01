@@ -17,6 +17,7 @@ export interface StockIngestFormValue {
   date_end: string
   years: number | null
   concurrency: number | null
+  force_current_day: boolean
 }
 
 export const STOCK_INGEST_RECIPE_OPTIONS: Array<{
@@ -53,7 +54,7 @@ export function createStockIngestForm(
 ): StockIngestFormValue {
   return {
     recipe: 'daily_update', scope: 'all', codes: [], date_start: '', date_end: '',
-    years: null, concurrency: null, ...patch,
+    years: null, concurrency: null, force_current_day: false, ...patch,
   }
 }
 
@@ -77,6 +78,9 @@ export function buildStockIngestParams(
   form: StockIngestFormValue,
 ): { params?: Record<string, unknown>; error?: string } {
   const params: Record<string, unknown> = { recipe: form.recipe }
+  if (form.recipe === 'daily_update' && form.force_current_day) {
+    params.force_current_day = true
+  }
   if (stockIngestSupportsCodes(form.recipe) && form.scope === 'selected') {
     if (!form.codes.length) return { error: '指定股票范围时请至少选择一只股票' }
     params.codes = [...form.codes]
@@ -112,6 +116,7 @@ export function stockIngestSummary(form: StockIngestFormValue): string {
     parts.push(`${form.date_start} ~ ${form.date_end || form.date_start}`)
   }
   if (stockIngestSupportsYears(form.recipe) && form.years) parts.push(`近 ${form.years} 年`)
+  if (form.recipe === 'daily_update' && form.force_current_day) parts.push('强制当日')
   return parts.join(' · ')
 }
 
@@ -136,5 +141,6 @@ export function stockIngestFormFromTask(
     date_end: raw.date_end || raw.date_start || raw.date || '',
     years: raw.years ?? null,
     concurrency: raw.concurrency ?? null,
+    force_current_day: raw.force_current_day === true,
   })
 }

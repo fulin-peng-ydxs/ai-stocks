@@ -1,9 +1,22 @@
 <script setup lang="ts">
-import { computed, useAttrs, useSlots } from 'vue'
 import {
+  computed,
+  defineComponent,
+  provide,
+  reactive,
+  type PropType,
+  useAttrs,
+  useSlots,
+} from 'vue'
+import {
+  resolveActionColumnWidth,
   resolveAdaptiveColumnWidth,
   type AdaptiveColumnRole,
 } from '@/components/table/adaptiveColumnWidth'
+import {
+  ROW_ACTION_COLUMN_WIDTH_CONTEXT,
+  type RowActionColumnWidthContext,
+} from '@/components/table/rowActionColumnWidth'
 
 defineOptions({ inheritAttrs: false })
 
@@ -20,6 +33,7 @@ const props = defineProps<{
 
 const attrs = useAttrs()
 const slots = useSlots()
+const actionWidthRequests = reactive(new Map<symbol, number>())
 const forwardedAttrs = computed(() => {
   const { width: _width, minWidth: _minWidth, 'min-width': _kebabMinWidth, ...rest } = attrs
   return rest
@@ -31,6 +45,40 @@ const sizing = computed(() => resolveAdaptiveColumnWidth({
   filterable: attrs.filters !== undefined || attrs['filter-method'] !== undefined,
   customHeader: Boolean(slots.header),
 }))
+const isActionColumn = computed(() => (
+  sizing.value.role === 'action' || sizing.value.role === 'action-compact'
+))
+const resolvedWidth = computed(() => {
+  const defaultWidth = sizing.value.width
+  if (!isActionColumn.value || defaultWidth === undefined) return defaultWidth
+  return resolveActionColumnWidth(defaultWidth, actionWidthRequests.values())
+})
+
+const actionWidthContext: RowActionColumnWidthContext = {
+  setMinimumWidth(source, width) {
+    if (!isActionColumn.value) return
+    actionWidthRequests.set(source, Math.max(0, width))
+  },
+  removeMinimumWidth(source) {
+    actionWidthRequests.delete(source)
+  },
+}
+
+// Element Plus 延后到表体组件中执行列 slot；用无 DOM 包装的中间组件把列级上下文
+// 带到真实单元格渲染树，避免 slot 的异步消费切断 provide/inject 链路。
+const RowActionWidthProvider = defineComponent({
+  name: 'RowActionWidthProvider',
+  props: {
+    context: {
+      type: Object as PropType<RowActionColumnWidthContext>,
+      required: true,
+    },
+  },
+  setup(providerProps, { slots: providerSlots }) {
+    provide(ROW_ACTION_COLUMN_WIDTH_CONTEXT, providerProps.context)
+    return () => providerSlots.default?.()
+  },
+})
 const headerTitle = computed(() => [props.label, props.headerMeta].filter(Boolean).join(' · '))
 const headerStyle = computed(() => ({
   '--app-table-column-header-indent': `${sizing.value.headerIndent ?? 0}px`,
@@ -43,7 +91,7 @@ const headerStyle = computed(() => ({
     :type="type"
     :label="label"
     :prop="prop"
-    :width="sizing.width"
+    :width="resolvedWidth"
     :min-width="sizing.minWidth"
   >
     <template v-if="$slots.header" #header="scope">
@@ -64,7 +112,13 @@ const headerStyle = computed(() => ({
       :key="slotName"
       #[slotName]="scope"
     >
-      <slot :name="slotName" v-bind="scope ?? {}" />
+      <RowActionWidthProvider
+        v-if="slotName === 'default' && isActionColumn"
+        :context="actionWidthContext"
+      >
+        <slot :name="slotName" v-bind="scope ?? {}" />
+      </RowActionWidthProvider>
+      <slot v-else :name="slotName" v-bind="scope ?? {}" />
     </template>
   </el-table-column>
 </template>

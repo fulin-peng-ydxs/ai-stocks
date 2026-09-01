@@ -67,6 +67,17 @@ def test_trading_day_not_ready_falls_back_to_previous_open_day(client):
                for _, message in ctx.logs)
 
 
+def test_selected_codes_not_ready_also_fall_back(client):
+    today = date(2026, 8, 28)
+    previous = today - timedelta(days=1)
+    _seed_calendar(client, [(previous, True), (today, True)])
+    svc = _service(client, lambda *_: pd.DataFrame())
+
+    target = svc._resolve_update_end(today, ["600000.SH"], ["600000.SH"], _LogCtx())
+
+    assert target == previous
+
+
 def test_non_trading_day_falls_back_without_readiness_probe(client):
     closed_day = date(2026, 8, 29)
     previous = closed_day - timedelta(days=1)
@@ -81,6 +92,28 @@ def test_non_trading_day_falls_back_without_readiness_probe(client):
     )
 
     assert target == previous
+
+
+def test_force_current_day_bypasses_fallback_and_readiness_probe(client):
+    closed_day = date(2026, 8, 29)
+    previous = closed_day - timedelta(days=1)
+    _seed_calendar(client, [(previous, True), (closed_day, False)])
+
+    def fail_if_probed(*_):
+        raise AssertionError("强制当日不应执行源端就绪探测")
+
+    ctx = _LogCtx()
+    svc = _service(client, fail_if_probed)
+    target = svc._resolve_update_end(
+        closed_day,
+        [f"{i:06d}.SZ" for i in range(100)],
+        None,
+        ctx,
+        force_current_day=True,
+    )
+
+    assert target == closed_day
+    assert any("强制采集当日" in message for _, message in ctx.logs)
 
 
 def test_automatic_gap_reconcile_respects_fallback_target(client, monkeypatch):

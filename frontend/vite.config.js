@@ -12,6 +12,11 @@ export default defineConfig({
     server: {
         host: '0.0.0.0', // 监听所有网卡：本机 127.0.0.1 与局域网 IP 均可访问（与后端 0.0.0.0 一致）
         port: 5173,
+        // Codex、编辑器等工具可能通过原子替换写文件，macOS 原生事件偶发漏报；轮询保证 HMR 稳定触发。
+        watch: {
+            usePolling: true,
+            interval: 200,
+        },
         proxy: {
             '/api': {
                 target: 'http://127.0.0.1:8000',

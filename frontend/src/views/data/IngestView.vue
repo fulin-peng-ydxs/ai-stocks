@@ -259,11 +259,12 @@ type OptionForm = {
   board_type: BoardTypeScope
   board_stages: BoardIngestStage[]
   force_members: boolean
+  board_force_current_day: boolean
   stock: StockIngestFormValue
 }
 const defaultOptionForm = (): OptionForm => ({
   codes: [], mode: 'update', board_type: '', board_stages: ['dict', 'members', 'bar', 'fund'],
-  force_members: false, stock: createStockIngestForm(),
+  force_members: false, board_force_current_day: false, stock: createStockIngestForm(),
 })
 const optForm = ref<OptionForm>(defaultOptionForm())
 
@@ -364,6 +365,11 @@ async function submitOptions() {
     params.only = f.board_stages
     if (f.board_type) params.board_type = f.board_type
     if (f.force_members && f.board_stages.includes('members')) params.force_members = true
+    if (
+      f.mode === 'update'
+      && f.board_force_current_day
+      && (f.board_stages.includes('bar') || f.board_stages.includes('fund'))
+    ) params.force_current_day = true
   }
   if (optType.value === 'stock_ingest' && isHeavyStockIngestRecipe(f.stock.recipe)) {
     try {
@@ -963,6 +969,7 @@ watch(
           v-model:board-type="optForm.board_type"
           v-model:stages="optForm.board_stages"
           v-model:force-members="optForm.force_members"
+          v-model:force-current-day="optForm.board_force_current_day"
           test-id-prefix="ingest-board"
         />
         <el-form-item v-if="optType === 'board'" label="指定板块">

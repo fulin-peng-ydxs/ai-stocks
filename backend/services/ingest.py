@@ -1185,15 +1185,28 @@ class IngestionService:
             return ref
         return self._previous_open_day(ref)
 
-    def _resolve_update_end(self, requested_end: date, basic: list[str], codes: list[str] | None, ctx=None) -> date:
+    def _resolve_update_end(
+        self,
+        requested_end: date,
+        basic: list[str],
+        codes: list[str] | None,
+        ctx=None,
+        *,
+        force_current_day: bool = False,
+    ) -> date:
         """收敛增量更新的目标截止日：
 
         ① 非交易日（requested_end 无开市行且日历已覆盖到该日）→ **回退到最新交易日**为截止，
            不跳过任务（周末/节假日跑也能确保补齐到上一交易日；已最新则逐股短路，无网络开销）。
         ② 全市场 + 今天确是交易日 → 抽样探测主源当日日线是否就绪；未就绪 →
            回退到上一交易日继续增量。本轮不拉取当日半成品，下轮仍会重新目标当天。
-        ③ 指定股票/小批量 → 尊重用户意图，直接用收敛后的目标日。
+        ③ 全市场与指定股票都执行同一退级规则；只有 force_current_day 才跳过退级。
         """
+        if force_current_day:
+            if ctx:
+                ctx.log(f"已强制采集当日 {requested_end}，跳过交易日和数据就绪检查", "warn")
+            return requested_end
+
         cal = self.repo.c.query_df(
             "SELECT is_open FROM trade_calendar WHERE trade_date = ?",
             [requested_end],
@@ -1211,11 +1224,10 @@ class IngestionService:
                     ctx.log(f"今日 {requested_end} 非交易日，回退到最新交易日 {target} 截止")
             # 日历未覆盖到该日（异常）→ 不武断判闭市，沿用 requested_end 继续
 
-        # 指定股票/小批量：尊重用户意图，直接用收敛后的目标日（不做全市场就绪保护）。
-        if codes or len(basic) < 100:
+        if not basic:
             return target
 
-        # 全市场：只有"今天确是交易日"才做主源当日就绪探测；非交易日已回退到上一交易日（数据必就绪），无需探测。
+        # 只有"今天确是交易日"才做主源当日就绪探测；非交易日已回退，无需探测。
         if target != requested_end:
             return target
 
@@ -1250,7 +1262,13 @@ class IngestionService:
             return fallback
         return requested_end
 
-    def update(self, codes: list[str] | None = None, concurrency: int | None = None, ctx=None) -> dict:
+    def update(
+        self,
+        codes: list[str] | None = None,
+        concurrency: int | None = None,
+        force_current_day: bool = False,
+        ctx=None,
+    ) -> dict:
         """增量更新：每只股票从已入库最新日 +1 起补到今天。
 
         concurrency（T-M7-7）：>1 时用线程池并发拉取，**每线程独立 DataSource（限流按线程隔离，
@@ -1294,7 +1312,9 @@ class IngestionService:
                 ctx.log(f"续跑：沿用本次任务目标日 {end}，跳过日历/指数前置（已于首跑完成且幂等入库）")
         else:
             self.ingest_calendar(end - timedelta(days=30), end, ctx=ctx)  # 先补日历（判交易日要用）
-            end = self._resolve_update_end(end, basic, codes, ctx=ctx)
+            end = self._resolve_update_end(
+                end, basic, codes, ctx=ctx, force_current_day=force_current_day,
+            )
         if pinned_end is None:
             # 指数行情与日行情同口径：从 index_bar 已入库最新日 +1 增量补到 end（已收敛到最新交易日），
             # 不再每次固定拉「今天-30」窗口；已最新则跳过，不会"凭空一直更新"。
@@ -2044,7 +2064,8 @@ class IngestionService:
     def ingest_board(self, ctx=None, board_type: str | None = None,
                      board_codes: list[str] | None = None, mode: str = "update",
                      only: list[str] | None = None, limit: int | None = None,
-                     force_members: bool | None = None) -> dict:
+                     force_members: bool | None = None,
+                     force_current_day: bool = False) -> dict:
         """板块数据编排：字典 → 成分快照 → 指数 → 资金流。
 
         承接 plan §6.4 T4：单步骤失败记日志不中断（返回失败清单），供 T5/T6 失败隔离与续跑。
@@ -2052,6 +2073,7 @@ class IngestionService:
           成分快照默认绕过周频全量拉（force_members 默认 True）。
         - mode="update"（每日增量）：指数只补最近交易日 + 资金流每日刷新全周期（即时/3日/5日/10日/20日）；
           成分股按周频跳过逻辑拉完整快照（只进不出关系幂等合并），force_members=True 时绕过间隔。
+          force_current_day=True 时跳过非交易日与源端就绪退级，直接尝试当天。
         - only：可选子集（"dict"/"members"/"bar"/"fund"），CLI --dict 等分表运行用。
         board_type 可限制 concept/industry；ctx 提供任务中心进度日志。
         """
@@ -2061,6 +2083,7 @@ class IngestionService:
         from backend.services.board_ingest import (
             BOARD_INGEST_STAGES,
             BoardIngestService,
+            _asia_date,
             normalize_board_stages,
         )
 
@@ -2070,6 +2093,10 @@ class IngestionService:
             raise ValueError("板块类型仅支持 concept/industry")
         if limit is not None and limit <= 0:
             raise ValueError("板块采集 limit 必须大于 0")
+        if not isinstance(force_current_day, bool):
+            raise ValueError("板块强制采集当日必须是布尔值")
+        if mode != "update" and force_current_day:
+            raise ValueError("只有板块增量采集支持强制采集当日")
         # force_members 未显式指定时：backfill 初始化、或显式指定板块子集（手动重采语义）→ 绕过周频；
         # 默认全量 update 走周频跳过（避免每日增量全量重拉已完整板块）。
         if force_members is None:
@@ -2082,6 +2109,12 @@ class IngestionService:
         # 分表选择与任务 API/调度共用同一白名单和空值语义。
         normalized_steps = normalize_board_stages(only)
         steps = list(BOARD_INGEST_STAGES if normalized_steps is None else normalized_steps)
+        uses_market_date = any(step in steps for step in ("bar", "fund"))
+        update_target = (
+            _asia_date() if force_current_day else self._latest_open_day()
+        ) if mode == "update" and uses_market_date else None
+        if force_current_day and uses_market_date and ctx:
+            ctx.log(f"已强制采集当日 {update_target}，跳过交易日和数据就绪检查", "warn")
         # 阶段日志对齐现有采集（阶段 i/N + 进度推进，前端任务中心实时可见）
         total = len(steps)
         idx = {"n": 0}
@@ -2148,13 +2181,15 @@ class IngestionService:
                 else:
                     # 增量：复用现有采集交易日语义——截止到最近交易日（非交易日回退），
                     # 区间起点往前取 7 个自然日缓冲覆盖跨周末/长假缺口；
-                    # 全量增量开启源端当日就绪探测（指定板块重采尊重用户意图不探测）
-                    end = self._latest_open_day()   # 与行情 update 同一交易日口径
+                    # 增量默认开启源端当日就绪探测；强制当日时才跳过。
+                    assert update_target is not None
+                    end = update_target
                     result["bar"] = svc.ingest_board_bar(end - _td(days=7), end=end,
                                                          board_codes=board_codes,
                                                          board_type=board_type,
-                                                         probe_ready=board_codes is None,
+                                                         probe_ready=not force_current_day,
                                                          ctx=ctx)
+                    update_target = _d.fromisoformat(result["bar"]["end"])
                 if ctx:
                     bar = result["bar"]
                     rng = f"区间 {bar.get('start')} ~ {bar.get('end')}"
@@ -2184,6 +2219,7 @@ class IngestionService:
                     # 增量资金流每日刷新全周期（即时/3日/5日/10日/20日）：
                     # 滚动周期值每个交易日都会更新，只采即时会让多周期数据停在 backfill 当天。
                     result["fund_flow"] = svc.ingest_board_fund_flow(
+                        snapshot_date=update_target,
                         board_codes=board_codes, board_type=board_type, ctx=ctx)
                 if ctx:
                     ctx.log(f"步骤 {idx['n']}/{total} 板块资金流：{result['fund_flow'].get('rows', 0)} 行"
