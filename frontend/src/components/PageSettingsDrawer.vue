@@ -7,6 +7,7 @@ import { applicableComponentFields, getPageEntry, type SlotConfigMeta } from '@/
 import { getComponentFieldDef } from '@/layout/componentConfig'
 import SettingsGroup from './SettingsGroup.vue'
 import ComponentAutoSettings from './ComponentAutoSettings.vue'
+import PageSettingSection from './PageSettingSection.vue'
 import PageDrawer from './PageDrawer.vue'
 import LayoutSettingsSection from '@/layout/components/LayoutSettingsSection.vue'
 import AppIconButton from './AppIconButton.vue'
@@ -38,6 +39,10 @@ const props = withDefaults(defineProps<{
   businessVisible?: boolean
   /** 运行时只开放指定组件 slot；复用 ComponentAutoSettings 的 slotIds 过滤能力。 */
   componentSlotIds?: string[]
+  /** 将指定组件 slot 的配置归入业务选项，适用于需和页面业务偏好一起理解的工作台设置。 */
+  businessComponentSlotIds?: string[]
+  /** 页面运行态组件值，仅用于“采用当前值”入口，不改变默认值单向投影规则。 */
+  componentRuntimeValueOf?: (slotId: string, field: string) => unknown
   componentMetaOverrides?: Record<string, SlotConfigMeta>
 }>(), {
   businessVisible: true,
@@ -109,18 +114,32 @@ const activeConfig = computed<DrawerConfig | undefined>(() => {
 })
 
 const hasLayoutKnobs = computed(() => !!activeConfig.value?.knobs?.length)
-const hasComponentConfig = computed(
-  () => {
-    const entry = props.pageKey ? getPageEntry(props.pageKey) : undefined
-    if (!entry) return false
-    return entry.layout.slots
-      .filter((slot) => !props.componentSlotIds || props.componentSlotIds.includes(slot.id))
-      .some((slot) => applicableComponentFields(entry, slot.id, 'user').some((def) =>
-        (activeConfig.value?.componentAllowedLayers?.(slot.component, def.key) ?? def.layers).includes('user'),
-      ))
-  },
-)
+const regularComponentSlotIds = computed(() => {
+  const entry = props.pageKey ? getPageEntry(props.pageKey) : undefined
+  if (!entry) return []
+  const businessIds = new Set(props.businessComponentSlotIds ?? [])
+  return entry.layout.slots
+    .map((slot) => slot.id)
+    .filter((slotId) => (!props.componentSlotIds || props.componentSlotIds.includes(slotId)) && !businessIds.has(slotId))
+})
+
+function hasUserComponentConfig(slotIds: string[]): boolean {
+  const entry = props.pageKey ? getPageEntry(props.pageKey) : undefined
+  if (!entry) return false
+  const visible = new Set(slotIds)
+  return entry.layout.slots
+    .filter((slot) => visible.has(slot.id))
+    .some((slot) => applicableComponentFields(entry, slot.id, 'user').some((def) =>
+      (activeConfig.value?.componentAllowedLayers?.(slot.component, def.key) ?? def.layers).includes('user'),
+    ))
+}
+
+const hasComponentConfig = computed(() => hasUserComponentConfig(regularComponentSlotIds.value))
+const hasBusinessComponentConfig = computed(() => (
+  props.businessVisible !== false && hasUserComponentConfig(props.businessComponentSlotIds ?? [])
+))
 const hasBusinessSlot = computed(() => props.businessVisible !== false && !!slots.business)
+const hasBusinessContent = computed(() => hasBusinessSlot.value || hasBusinessComponentConfig.value)
 
 type SectionKey = 'layout' | 'components' | 'business'
 const SECTION_KEYS: SectionKey[] = ['layout', 'components', 'business']
@@ -198,9 +217,9 @@ function handleReset(): void {
 
       <!--
         固定三段（P13）：布局 / 组件设置 / 业务选项，均为可折叠的 SettingsGroup（level 1 卡片）。
-        - 传 :config(+:pageKey)：布局段(editable 旋钮)与组件设置段(ComponentAutoSettings)由元数据自动渲染。
+        - 传 :config(+:pageKey)：布局段与组件字段由元数据自动渲染；指定组件字段可归入业务选项。
         - 未迁移页：回落具名插槽 #layout/#components/#business（+ default 插槽）。
-        业务选项始终由页面声明（业务态/「页面记忆」，不进四层配置链路）。
+        业务选项以页面声明为主；归入其中的组件字段仍保持原配置链路和来源展示。
       -->
       <div class="ps-body" :class="{ 'is-scroll-disabled': !bodyScroll }">
         <AppStateBlock
@@ -250,15 +269,15 @@ function handleReset(): void {
             <ComponentAutoSettings
               :page-key="pageKey!"
               :config="activeConfig"
-              :drawer-business-visible="hasBusinessSlot"
-              :slot-ids="componentSlotIds"
+              :drawer-business-visible="hasBusinessContent"
+              :slot-ids="regularComponentSlotIds"
               :component-meta-overrides="componentMetaOverrides"
               :allowed-layers-of="activeConfig.componentAllowedLayers"
             />
           </SettingsGroup>
 
           <SettingsGroup
-            v-if="hasBusinessSlot"
+            v-if="hasBusinessContent"
             title="业务选项"
             badge="页面记忆"
             :level="1"
@@ -266,6 +285,19 @@ function handleReset(): void {
             :model-value="sectionOpen('business')"
             @update:model-value="(open) => setSectionOpen('business', open)"
           >
+            <PageSettingSection v-if="hasBusinessComponentConfig" title="列表与图表布局">
+              <ComponentAutoSettings
+                :page-key="pageKey!"
+                :config="activeConfig"
+                :slot-ids="businessComponentSlotIds"
+                :component-meta-overrides="componentMetaOverrides"
+                :allowed-layers-of="activeConfig.componentAllowedLayers"
+                :collapsible-slot="false"
+                :show-slot-title="false"
+                :drawer-business-visible="true"
+                :runtime-value-of="componentRuntimeValueOf"
+              />
+            </PageSettingSection>
             <slot name="business" />
           </SettingsGroup>
         </template>

@@ -383,7 +383,7 @@ test.describe('板块行情工作台', () => {
     await hideAnalysis.focus()
     await page.keyboard.press('Enter')
     await expect(page.getByTestId('sectors-chart')).toHaveCount(0)
-    await expect(page.getByTestId('sectors-workspace')).toHaveClass(/sector-workspace--list-only/)
+    await expect(page.getByTestId('sectors-workspace')).toHaveClass(/market-master-detail--list-only/)
     await page.getByTestId('sectors-show-analysis').click()
     await expect(page.getByTestId('sectors-chart')).toBeVisible()
 

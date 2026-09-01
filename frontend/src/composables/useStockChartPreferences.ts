@@ -208,10 +208,6 @@ export function useStockChartPreferences(
     clearDraft()
   }
 
-  function saveCurrentRatiosAsDefault(): void {
-    setDefaultHeightRatios(currentRatios.value)
-  }
-
   // 远端默认完成水合时只初始化尚未被用户操作的组合；水合后的抽屉编辑或重置仅同步
   // 实际变化的默认组合，不能顺带清除其它组合在本次会话里的临时比例。
   watch(
@@ -259,7 +255,6 @@ export function useStockChartPreferences(
     commitRatioDraft,
     cancelRatioDraft: clearDraft,
     setDefaultHeightRatios,
-    saveCurrentRatiosAsDefault,
   }
 }
 

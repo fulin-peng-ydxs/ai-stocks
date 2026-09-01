@@ -48,6 +48,8 @@ export interface ComponentFieldDef {
   highFrequency?: boolean
   /** 简短帮助文案。 */
   help?: string
+  /** 存在页面会话值时，用此文案提供“采用当前值”的显式入口。 */
+  runtimeValueActionLabel?: string
   /**
    * 字段对组件实例的适用条件。缺省为 always；候选型字段由组件实例元数据自动判定，
    * explicit 字段要求实例明确声明启用或给出不适用原因，禁止靠页面漏登记表达能力差异。
@@ -111,6 +113,20 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       default: 560,
       highFrequency: true,
       help: '控制包含标题、K 线与量能的完整图表区域高度。',
+      applicability: 'explicit',
+    },
+  ],
+  'master-detail': [
+    {
+      key: 'masterWidth',
+      label: '列表默认宽度',
+      control: 'int',
+      layers: ['preset', 'page', 'user'],
+      min: 360,
+      max: 1200,
+      default: 1200,
+      highFrequency: true,
+      runtimeValueActionLabel: '使用页面当前宽度',
       applicability: 'explicit',
     },
   ],

@@ -344,7 +344,7 @@ npm run scaffold-page -- --pageKey my-list --label "列表页" --archetype list 
 npm run scaffold-page -- --pageKey my-master-detail --label "主从页" --archetype master-detail --route /my-master-detail --view MyMasterDetailView
 ```
 
-结构：`action:filter-bar` + `main:data-table` + `main:detail`。适合左侧列表、右侧详情；两栏各自承载滚动，不把详情塞进弹窗替代主流程。
+结构：`action:filter-bar` + `main:data-table` + `main:detail`。适合左侧列表、右侧详情；两栏各自承载滚动，不把详情塞进弹窗替代主流程。行情列表+分析图表必须复用 `MarketMasterDetailWorkspace`；需开放列表宽度时，registry 的 `master-detail` slot 显式启用 `masterWidth`，通过 `PageSettingsDrawer.businessComponentSlotIds` 将其和相关分析默认项归在业务选项，页面只把抽屉默认值传给工作台，主区拖动不自动反写持久层；需要长期沿用时由抽屉显式采用页面当前宽度。
 
 ### 9.3 dashboard
 

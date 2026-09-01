@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, type Sort } from 'element-plus'
-import { ArrowRight, DArrowLeft, DArrowRight, Star, StarFilled } from '@element-plus/icons-vue'
+import { ArrowRight, Star, StarFilled } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
@@ -19,11 +19,13 @@ import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import MarketCompareMetricStrip from '@/components/MarketCompareMetricStrip.vue'
 import type { MarketMetricStripItem } from '@/components/MarketCompareMetricStrip.vue'
 import MarketBenchmarkSelect from '@/components/MarketBenchmarkSelect.vue'
+import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
+import { useMarketMasterWidthRuntime } from '@/composables/useMarketMasterWidthRuntime'
 import SectorCompareChart from '@/components/SectorCompareChart.vue'
 import type { CrossSectionDatum } from '@/components/SectorCompareChart.vue'
 import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
@@ -145,6 +147,7 @@ const drawerConfig = {
   componentLayerValuesOf,
   componentAllowedLayers,
 }
+const { setCurrentMasterWidth, componentRuntimeValueOf } = useMarketMasterWidthRuntime()
 
 const DEFAULT_SORT = 'pct_today:desc'
 const SORTABLE_FIELDS = [
@@ -443,16 +446,12 @@ async function loadChart(): Promise<void> {
 
 // 走势分析区显隐单向：抽屉默认值 → 会话 ref；主区「》」收起/展开只进会话态，不写回默认。
 const analysisPanelVisible = ref(settings.showAnalysisPanel !== false)
-/** 收起分析区时保留观察对象与对比队列；再次展开后按当前筛选状态刷新走势。 */
-function setAnalysisPanelVisible(visible: boolean): void {
-  analysisPanelVisible.value = visible
-  applyAnalysisPanelSideEffect(visible)
-}
-// 抽屉改默认值 → 同步会话并套用同一副作用；主区动作只改会话 ref，不写回 settings。
+// 抽屉改默认值 → 同步会话；主区收展只改会话 ref，两者统一触发副作用。
 watch(() => settings.showAnalysisPanel, (visible) => {
   analysisPanelVisible.value = visible !== false
-  applyAnalysisPanelSideEffect(visible !== false)
 })
+watch(analysisPanelVisible, applyAnalysisPanelSideEffect)
+/** 收起分析区时保留观察对象与对比队列；再次展开后按当前筛选状态刷新走势。 */
 function applyAnalysisPanelSideEffect(visible: boolean): void {
   if (visible) {
     void loadChart()
@@ -872,36 +871,19 @@ onMounted(async () => {
         retry
         @retry="load"
       />
-      <div
+      <MarketMasterDetailWorkspace
         v-else
-        class="sector-workspace"
-        :class="{ 'sector-workspace--list-only': !analysisPanelVisible }"
+        v-model:analysis-visible="analysisPanelVisible"
+        eyebrow="强弱排行"
+        :title="marketDate || tradeDate || '最新交易日'"
+        :meta="`${total} 个${listScope === 'watchlist' ? '自选' : '板块'}`"
+        list-aria-label="板块强弱排行"
+        :default-master-width="Number(componentValueOf('workspace', 'masterWidth') ?? 1200)"
+        @master-width-change="setCurrentMasterWidth"
+        test-id-prefix="sectors"
         data-testid="sectors-workspace"
       >
-        <section class="rank-panel" aria-label="板块强弱排行">
-          <header class="panel-head rank-head">
-            <div class="rank-head-primary">
-              <div>
-                <div class="panel-eyebrow">强弱排行</div>
-                <h3 class="app-section-title">{{ marketDate || tradeDate || '最新交易日' }}</h3>
-              </div>
-            </div>
-            <div class="rank-head-actions">
-              <div class="rank-meta app-caption-text">
-                <span>{{ total }} 个{{ listScope === 'watchlist' ? '自选' : '板块' }}</span>
-                <span>{{ analysisPanelVisible ? '点击行切换走势' : '点击行选择板块' }}</span>
-              </div>
-              <AppIconButton
-                :label="analysisPanelVisible ? '收起走势分析，仅看排行' : '显示走势分析'"
-                :data-testid="analysisPanelVisible ? 'sectors-hide-analysis' : 'sectors-show-analysis'"
-                :native-title="false"
-                @click="setAnalysisPanelVisible(!analysisPanelVisible)"
-              >
-                <el-icon><DArrowRight v-if="analysisPanelVisible" /><DArrowLeft v-else /></el-icon>
-              </AppIconButton>
-            </div>
-          </header>
-
+        <template #list>
           <AppDataTable
             data-testid="sectors-table"
             kind="wide-table"
@@ -1113,10 +1095,10 @@ onMounted(async () => {
               <span v-else>暂无板块数据，请先运行板块采集</span>
             </template>
           </AppDataTable>
-        </section>
+        </template>
 
+        <template #analysis>
         <section
-          v-if="analysisPanelVisible"
           class="chart-panel"
           aria-label="板块走势分析"
           data-testid="sectors-chart"
@@ -1279,7 +1261,8 @@ onMounted(async () => {
             </span>
           </footer>
         </section>
-      </div>
+        </template>
+      </MarketMasterDetailWorkspace>
     </template>
 
     <template #overlays>
@@ -1290,6 +1273,8 @@ onMounted(async () => {
         page-key="sectors"
         :config="drawerConfig"
         :business-visible="true"
+        :business-component-slot-ids="['workspace']"
+        :component-runtime-value-of="componentRuntimeValueOf"
         @reset="resetSettings"
       >
         <template #business>
@@ -1298,10 +1283,10 @@ onMounted(async () => {
             :slot3="chartPreferences.preferences.value.slot3"
             :chart-types="chartPreferences.visibleTypes.value"
             :default-ratios="chartPreferences.defaultRatios.value"
+            :current-ratios="chartPreferences.currentRatios.value"
             test-id-prefix="sectors-chart"
             @change="setAuxiliaryChart"
             @save-default-ratios="chartPreferences.setDefaultHeightRatios"
-            @save-current-as-default="chartPreferences.saveCurrentRatiosAsDefault"
           />
           <PageSettingSection title="默认查询">
             <div v-if="canViewWatchlist" class="setting-item">
@@ -1404,20 +1389,6 @@ onMounted(async () => {
 .keyword-input {
   width: 160px;
 }
-.sector-workspace {
-  height: 100%;
-  min-height: 0;
-  min-width: 860px;
-  display: grid;
-  grid-template-columns: minmax(360px, 0.82fr) minmax(500px, 1.18fr);
-  gap: var(--app-space-3);
-  overflow-x: auto;
-}
-.sector-workspace--list-only {
-  min-width: 640px;
-  grid-template-columns: minmax(0, 1fr);
-}
-.rank-panel,
 .chart-panel {
   min-width: 0;
   min-height: 0;
@@ -1427,7 +1398,6 @@ onMounted(async () => {
   background: var(--el-bg-color);
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
 }
-.rank-panel,
 .chart-panel {
   display: flex;
   flex-direction: column;
@@ -1441,34 +1411,10 @@ onMounted(async () => {
   padding: var(--app-space-3) var(--app-space-4);
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
-.rank-head {
-  min-height: 64px;
-  background: color-mix(in srgb, var(--el-color-primary-light-9) 42%, var(--el-bg-color));
-}
-.rank-head-primary {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-2);
-  min-width: 0;
-}
-.rank-head-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-2);
-}
-.rank-meta {
-  display: flex;
-  align-items: flex-end;
-  flex-direction: column;
-}
-.rank-panel :deep(.app-data-table) {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-.rank-panel :deep(.el-table__row.sector-row--active > td.el-table__cell) {
+:deep(.el-table__row.sector-row--active > td.el-table__cell) {
   background: color-mix(in srgb, var(--el-color-primary-light-9) 72%, var(--el-bg-color));
 }
-.rank-panel :deep(.el-table__row.sector-row--active > td:first-child) {
+:deep(.el-table__row.sector-row--active > td:first-child) {
   box-shadow: inset 3px 0 0 var(--el-color-primary);
 }
 .sector-name-cell {
@@ -1483,7 +1429,7 @@ onMounted(async () => {
 .watchlist-button--active {
   color: var(--el-color-primary);
 }
-.rank-panel :deep(.el-table__row.sector-row--unavailable > td.el-table__cell) {
+:deep(.el-table__row.sector-row--unavailable > td.el-table__cell) {
   background: var(--el-fill-color-extra-light);
   color: var(--el-text-color-placeholder);
 }

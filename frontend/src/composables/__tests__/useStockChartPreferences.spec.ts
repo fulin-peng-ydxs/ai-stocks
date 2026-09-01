@@ -132,7 +132,7 @@ describe('useStockChartPreferences draft state', () => {
     expect(writeSource).not.toHaveBeenCalled()
   })
 
-  it('主区拖动提交只更新会话比例，显式设为默认后才写持久偏好源', async () => {
+  it('主区拖动提交只更新会话比例，抽屉保存当前比例后才写持久偏好源', async () => {
     const persisted = ref<StockChartPreferences>(createDefaultStockChartPreferences())
     const source = computed({
       get: () => persisted.value,
@@ -152,7 +152,7 @@ describe('useStockChartPreferences draft state', () => {
     expect(model.currentRatios.value).toEqual([0.5, 0.3, 0.2])
     expect(persisted.value.heightRatios['kline|volume|macd']).toEqual([0.6, 0.2, 0.2])
 
-    model.saveCurrentRatiosAsDefault()
+    model.setDefaultHeightRatios(model.currentRatios.value)
     await nextTick()
     expect(persisted.value.heightRatios['kline|volume|macd']).toEqual([0.5, 0.3, 0.2])
   })

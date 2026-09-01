@@ -30,6 +30,7 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useMarketMasterWidthRuntime } from '@/composables/useMarketMasterWidthRuntime'
 import { useTradeDates } from '@/composables/useTradeDates'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
@@ -73,8 +74,9 @@ const {
   componentLayerValuesOf, componentAllowedLayers,
 } = useRemoteLayoutConfig(boardLayout)
 
-// 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
+// 设置抽屉由 PageSettingsDrawer 按元数据渲染；workspace 宽度与相关分析默认项共同归入业务选项。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
+const { setCurrentMasterWidth, componentRuntimeValueOf } = useMarketMasterWidthRuntime()
 
 const router = useRouter()
 const stockSet = useStockSet()
@@ -600,6 +602,8 @@ onMounted(async () => {
       :title="runDate || '最新交易日'"
       :meta="boardListMeta"
       list-aria-label="每日榜单结果"
+      :default-master-width="Number(componentValueOf('workspace', 'masterWidth') ?? 1200)"
+      @master-width-change="setCurrentMasterWidth"
       data-testid="board-market-workspace"
     >
       <template #list>
@@ -701,6 +705,8 @@ onMounted(async () => {
       :dirty="isDirty || layoutDirty"
       page-key="board"
       :config="drawerConfig"
+      :business-component-slot-ids="['workspace']"
+      :component-runtime-value-of="componentRuntimeValueOf"
       @reset="reset(); resetLayout()"
     >
       <template #business>
@@ -709,10 +715,10 @@ onMounted(async () => {
           :slot3="chartPreferences.preferences.value.slot3"
           :chart-types="chartPreferences.visibleTypes.value"
           :default-ratios="chartPreferences.defaultRatios.value"
+          :current-ratios="chartPreferences.currentRatios.value"
           test-id-prefix="board-chart"
           @change="setAuxiliaryChart"
           @save-default-ratios="chartPreferences.setDefaultHeightRatios"
-          @save-current-as-default="chartPreferences.saveCurrentRatiosAsDefault"
         >
           <template #before>
           <div class="setting-item">

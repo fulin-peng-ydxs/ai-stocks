@@ -38,6 +38,7 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
+import { useMarketMasterWidthRuntime } from '@/composables/useMarketMasterWidthRuntime'
 import { useStockSet, type StockListState } from '@/stores/stockSet'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
@@ -121,8 +122,9 @@ const {
   whenRemoteHydrated,
 } = useRemoteLayoutConfig(stocksLayout)
 
-// 设置抽屉的「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
+// 设置抽屉由 PageSettingsDrawer 按元数据渲染；workspace 宽度与相关分析默认项共同归入业务选项。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
+const { setCurrentMasterWidth, componentRuntimeValueOf } = useMarketMasterWidthRuntime()
 
 // 普通列表表格的组件配置（slot 'table'）：抽屉写值由 ComponentAutoSettings 自动渲染；
 // 这里只保留页面渲染/查询要读的派生值（默认排序、每页条数、列显隐 getter），写值统一经组件配置层。
@@ -818,6 +820,8 @@ onMounted(async () => {
       :title="analysisListTitle"
       :meta="analysisListMeta"
       list-aria-label="个股行情列表"
+      :default-master-width="Number(componentValueOf('workspace', 'masterWidth') ?? 1200)"
+      @master-width-change="setCurrentMasterWidth"
       data-testid="stocks-market-workspace"
     >
       <template #list>
@@ -1096,6 +1100,8 @@ onMounted(async () => {
       :config="drawerConfig"
       :business-visible="true"
       :component-slot-ids="settingsComponentSlotIds"
+      :business-component-slot-ids="['workspace']"
+      :component-runtime-value-of="componentRuntimeValueOf"
       :component-meta-overrides="settingsComponentMetaOverrides"
       @reset="reset(); resetLayout()"
     >
@@ -1105,10 +1111,10 @@ onMounted(async () => {
           :slot3="chartPreferences.preferences.value.slot3"
           :chart-types="chartPreferences.visibleTypes.value"
           :default-ratios="chartPreferences.defaultRatios.value"
+          :current-ratios="chartPreferences.currentRatios.value"
           test-id-prefix="stocks-chart"
           @change="setAuxiliaryChart"
           @save-default-ratios="chartPreferences.setDefaultHeightRatios"
-          @save-current-as-default="chartPreferences.saveCurrentRatiosAsDefault"
         >
           <template #before>
           <div class="setting-item">

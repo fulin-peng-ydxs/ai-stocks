@@ -75,9 +75,9 @@ function mountDrawer(defaultCollapsedRef: Ref<string[]>) {
         LayoutSettingsSection: true,
         ComponentAutoSettings: {
           name: 'ComponentAutoSettings',
-          props: ['config', 'slotIds', 'componentMetaOverrides'],
+          props: ['config', 'slotIds', 'componentMetaOverrides', 'showSlotTitle', 'runtimeValueOf'],
           template: `
-            <div>
+            <div class="component-auto-settings" :data-slot-ids="slotIds?.join(',')" :data-show-slot-title="String(showSlotTitle)">
               <button class="set-drawer-size" @click="config.setComponentKnob('settings', 'size', 'lg')" />
               <button class="set-drawer-collapsed" @click="config.setComponentKnob('settings', 'defaultCollapsed', ['layout'])" />
             </div>
@@ -169,6 +169,24 @@ describe('PageSettingsDrawer', () => {
     const autoSettings = wrapper.findComponent({ name: 'ComponentAutoSettings' })
     expect(autoSettings.props('slotIds')).toEqual(['table'])
     expect(autoSettings.props('componentMetaOverrides')).toEqual(overrides)
+  })
+
+  it('把指定组件配置移入业务选项并从组件设置排除', async () => {
+    const defaults = ref<string[]>([])
+    const { wrapper } = mountDrawer(defaults)
+
+    const componentRuntimeValueOf = vi.fn(() => 848)
+    await wrapper.setProps({ businessComponentSlotIds: ['workspace'], componentRuntimeValueOf })
+
+    const business = wrapper.get('.settings-group[data-title="业务选项"]')
+    const businessSettings = business.get('.component-auto-settings[data-slot-ids="workspace"]')
+    expect(businessSettings.attributes('data-show-slot-title')).toBe('false')
+    expect(business.text()).toContain('列表与图表布局')
+    expect(wrapper.findAllComponents({ name: 'ComponentAutoSettings' }).at(-1)?.props('runtimeValueOf'))
+      .toBe(componentRuntimeValueOf)
+
+    const components = wrapper.get('.settings-group[data-title="组件设置"]')
+    expect(components.find('.component-auto-settings[data-slot-ids="workspace"]').exists()).toBe(false)
   })
 
   it('当前策略关闭全部个人组件字段时不渲染空组件段', async () => {

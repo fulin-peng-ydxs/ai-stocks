@@ -13,13 +13,13 @@ const props = defineProps<{
   slot3: AuxiliaryChartType
   chartTypes: ChartType[]
   defaultRatios: number[]
+  currentRatios: number[]
   testIdPrefix?: string
 }>()
 
 const emit = defineEmits<{
   change: [slot: AuxiliaryChartSlot, value: string | number | boolean]
   saveDefaultRatios: [ratios: number[]]
-  saveCurrentAsDefault: []
 }>()
 
 const auxiliaryChartOptions = [
@@ -35,11 +35,6 @@ const chartTypeLabels: Record<ChartType, string> = {
 }
 const ratioDraft = ref<number[]>([])
 const ratioTotal = computed(() => ratioDraft.value.reduce((sum, value) => sum + Number(value || 0), 0))
-const ratioValid = computed(() => (
-  ratioDraft.value.length === props.chartTypes.length
-  && ratioDraft.value.every((value) => Number.isFinite(value) && value > 0)
-  && ratioTotal.value === 100
-))
 
 function toPercentages(ratios: number[]): number[] {
   if (!ratios.length) return []
@@ -65,13 +60,36 @@ function toPercentages(ratios: number[]): number[] {
   return result
 }
 
-function saveDraftAsDefault(): void {
-  if (!ratioValid.value) return
-  emit('saveDefaultRatios', ratioDraft.value.map((value) => value / 100))
+function redistributePercentages(editedIndex: number, rawValue: number | undefined): number[] {
+  const count = props.chartTypes.length
+  if (count <= 1) return [100]
+
+  const maxEdited = 100 - (count - 1)
+  const editedValue = Math.min(maxEdited, Math.max(1, Math.round(Number(rawValue) || 1)))
+  const otherCount = count - 1
+  const remaining = 100 - editedValue
+  const baseValue = Math.floor(remaining / otherCount)
+  let extra = remaining - baseValue * otherCount
+
+  return props.chartTypes.map((_, index) => {
+    if (index === editedIndex) return editedValue
+    const value = baseValue + (extra > 0 ? 1 : 0)
+    extra = Math.max(0, extra - 1)
+    return value
+  })
 }
 
-function saveCurrentAsDefault(): void {
-  emit('saveCurrentAsDefault')
+function persistRatios(ratios: number[]): void {
+  ratioDraft.value = ratios
+  emit('saveDefaultRatios', ratios.map((value) => value / 100))
+}
+
+function updateRatio(index: number, value: number | undefined): void {
+  persistRatios(redistributePercentages(index, value))
+}
+
+function useCurrentRatios(): void {
+  persistRatios(toPercentages(props.currentRatios))
 }
 
 watch(
@@ -117,30 +135,24 @@ watch(
           <label v-for="(type, index) in chartTypes" :key="type" class="ratio-input">
             <span>{{ chartTypeLabels[type] }}</span>
             <el-input-number
-              v-model="ratioDraft[index]"
+              :model-value="ratioDraft[index]"
               :min="1"
-              :max="99"
+              :max="100 - (chartTypes.length - 1)"
               :step="1"
               :precision="0"
               controls-position="right"
               :aria-label="`${chartTypeLabels[type]}默认高度百分比`"
+              @update:model-value="updateRatio(index, $event)"
             />
             <span>%</span>
           </label>
         </div>
-        <div class="ratio-summary" :class="{ invalid: !ratioValid }">合计 {{ ratioTotal }}%</div>
+        <div class="ratio-summary">合计 {{ ratioTotal }}%</div>
         <div class="ratio-actions">
           <el-button
-            :disabled="!ratioValid"
-            :data-testid="`${testIdPrefix || 'chart'}-save-default-ratios`"
-            @click="saveDraftAsDefault"
-          >保存默认比例</el-button>
-          <el-button
-            type="primary"
-            plain
             :data-testid="`${testIdPrefix || 'chart'}-save-current-ratios`"
-            @click="saveCurrentAsDefault"
-          >当前比例设为默认</el-button>
+            @click="useCurrentRatios"
+          >使用页面当前比例</el-button>
         </div>
       </template>
     </div>
@@ -181,9 +193,6 @@ watch(
   color: var(--page-settings-text-subtle);
   font-size: var(--app-font-size-table);
 }
-.ratio-summary.invalid {
-  color: var(--el-color-danger);
-}
 .ratio-inputs {
   display: grid;
   gap: var(--app-space-2);
@@ -197,9 +206,7 @@ watch(
   font-size: var(--app-font-size-table);
 }
 .ratio-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
-  gap: var(--app-space-2);
+  display: flex;
 }
 
 .ratio-actions :deep(.el-button) {

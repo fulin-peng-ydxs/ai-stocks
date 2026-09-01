@@ -380,6 +380,29 @@ def test_component_config_ownership_boundary(client):
             layout=chart_layout,
         )
 
+    workspace_layout = {"slots": [{"id": "workspace", "component": "master-detail"}]}
+    saved = repo.set_user_config(
+        "stocks",
+        {"values": {"slots.workspace.config.masterWidth": 520}},
+        user_id="u1",
+        layout=workspace_layout,
+    )
+    assert saved["config"]["values"]["slots.workspace.config.masterWidth"] == 520
+    with pytest.raises(LayoutConfigValidationError, match="不能小于"):
+        repo.set_user_config(
+            "stocks",
+            {"values": {"slots.workspace.config.masterWidth": 359}},
+            user_id="u1",
+            layout=workspace_layout,
+        )
+    with pytest.raises(LayoutConfigValidationError, match="不能大于"):
+        repo.set_user_config(
+            "stocks",
+            {"values": {"slots.workspace.config.masterWidth": 1201}},
+            user_id="u1",
+            layout=workspace_layout,
+        )
+
 
 def test_validate_api_rejects_misplaced_component_field(client):
     api = TestClient(app)

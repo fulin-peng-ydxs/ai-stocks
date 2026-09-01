@@ -124,7 +124,14 @@ const REGISTRY: PageRegistryEntry[] = [
     path: '/limit-ladder',
     archetype: 'master-detail',
     responsiveProfile: 'mixed-panel',
-    supportsComponentConfig: false,
+    supportsComponentConfig: true,
+    componentMeta: {
+      workspace: {
+        fieldApplicability: {
+          masterWidth: { enabled: true },
+        },
+      },
+    },
     layout: {
       pageKey: 'limit-ladder',
       archetype: 'master-detail',
@@ -149,6 +156,11 @@ const REGISTRY: PageRegistryEntry[] = [
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
     componentMeta: {
+      workspace: {
+        fieldApplicability: {
+          masterWidth: { enabled: true },
+        },
+      },
       table: {
         columns: [
           { key: 'code', label: '代码列' },
@@ -236,6 +248,11 @@ const REGISTRY: PageRegistryEntry[] = [
     supportsComponentConfig: true,
     // table=列表视图主表；groupTable=分组视图表，两者按组件种类自动继承字段并单独寻址。
     componentMeta: {
+      workspace: {
+        fieldApplicability: {
+          masterWidth: { enabled: true },
+        },
+      },
       table: {
         columns: [
           { key: 'code', label: '代码' },
@@ -573,6 +590,13 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'master-detail',
     responsiveProfile: 'single-column',
     supportsComponentConfig: false,
+    componentMeta: {
+      content: {
+        fieldApplicability: {
+          masterWidth: { enabled: false, reason: '角色权限页使用独立树表布局，尚未接入行情主从工作台' },
+        },
+      },
+    },
     layout: {
       pageKey: 'role-manage',
       archetype: 'master-detail',
@@ -631,6 +655,11 @@ const REGISTRY: PageRegistryEntry[] = [
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
     componentMeta: {
+      content: {
+        fieldApplicability: {
+          masterWidth: { enabled: false, reason: '菜单编辑页的左树右表单由业务页自主编排，不消费行情主从工作台' },
+        },
+      },
       resourceTable: {
         columns: [
           { key: 'code', label: '功能码' },
@@ -708,6 +737,11 @@ const REGISTRY: PageRegistryEntry[] = [
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
     componentMeta: {
+      workspace: {
+        fieldApplicability: {
+          masterWidth: { enabled: false, reason: '数据字典页的左导航右表格由业务页自主编排，不消费行情主从工作台' },
+        },
+      },
       itemTable: {
         columns: [
           { key: 'code', label: 'code 列' },
@@ -966,6 +1000,11 @@ const REGISTRY: PageRegistryEntry[] = [
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
     componentMeta: {
+      workspace: {
+        fieldApplicability: {
+          masterWidth: { enabled: true },
+        },
+      },
       table: {
         columns: [
           { key: 'name', label: '板块名称' },

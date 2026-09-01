@@ -29,6 +29,7 @@ import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import { useMediaQuery } from '@/composables/useMediaQuery'
+import { useMarketMasterWidthRuntime } from '@/composables/useMarketMasterWidthRuntime'
 import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
 import { useStockAnalysisSession } from '@/composables/useStockAnalysisSession'
 import {
@@ -218,6 +219,7 @@ const drawerConfig = {
   componentLayerValuesOf,
   componentAllowedLayers,
 }
+const { setCurrentMasterWidth, componentRuntimeValueOf } = useMarketMasterWidthRuntime()
 
 async function applySystemDefaults(): Promise<void> {
   filters.value = filtersFromLimitLadderPreference(DEFAULT_LIMIT_LADDER_PREFERENCE)
@@ -641,6 +643,8 @@ onBeforeUnmount(() => {
         title="涨停梯队"
         :meta="workspaceMeta"
         list-aria-label="连板天梯分层"
+        :default-master-width="Number(componentValueOf('workspace', 'masterWidth') ?? 1200)"
+        @master-width-change="setCurrentMasterWidth"
         data-testid="limit-ladder-workspace"
       >
         <template #list>
@@ -733,6 +737,8 @@ onBeforeUnmount(() => {
         page-key="limit-ladder"
         :config="drawerConfig"
         :business-visible="true"
+        :business-component-slot-ids="['workspace']"
+        :component-runtime-value-of="componentRuntimeValueOf"
         @reset="resetAllSettings"
       >
         <template #business>
@@ -755,10 +761,10 @@ onBeforeUnmount(() => {
             :slot3="chartPreferences.preferences.value.slot3"
             :chart-types="chartPreferences.visibleTypes.value"
             :default-ratios="chartPreferences.defaultRatios.value"
+            :current-ratios="chartPreferences.currentRatios.value"
             test-id-prefix="limit-ladder-chart"
             @change="setAuxiliaryChart"
             @save-default-ratios="chartPreferences.setDefaultHeightRatios"
-            @save-current-as-default="chartPreferences.saveCurrentRatiosAsDefault"
           >
             <template #before>
               <div class="setting-item">

@@ -67,6 +67,8 @@ const props = withDefaults(
     drawerBusinessVisible?: boolean
     /** 页面运行时可按当前业务上下文覆盖 slot 元数据，例如当前 tab 的可折叠分区候选。 */
     componentMetaOverrides?: Record<string, SlotConfigMeta>
+    /** 页面会话中的当前值；字段声明 runtimeValueActionLabel 时渲染采用入口。 */
+    runtimeValueOf?: (slotId: string, field: string) => unknown
   }>(),
   { layer: 'user', collapsibleSlot: true, showSlotTitle: true, clearable: false },
 )
@@ -162,6 +164,10 @@ function strVal(slotId: string, field: string): string {
 function numVal(slotId: string, field: string, fallback: number): number {
   const v = props.config.componentValueOf(slotId, field)
   return typeof v === 'number' ? v : fallback
+}
+function runtimeNumber(slotId: string, field: string): number | undefined {
+  const value = props.runtimeValueOf?.(slotId, field)
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 function numericFieldDefs(slot: AutoSlot): ComponentFieldDef[] {
   return slot.fields
@@ -450,6 +456,13 @@ function setSort(slotId: string, field: string, order: string): void {
             if (value != null) config.setComponentKnob(s.slotId, field.key, value)
           }"
         />
+        <el-button
+          v-if="layer === 'user' && field.runtimeValueActionLabel"
+          class="ca-runtime-action"
+          :disabled="runtimeNumber(s.slotId, field.key) == null"
+          :data-testid="`component-${s.slotId}-${field.key}-use-runtime`"
+          @click="config.setComponentKnob(s.slotId, field.key, runtimeNumber(s.slotId, field.key))"
+        >{{ field.runtimeValueActionLabel }}</el-button>
         <span v-if="field.help" class="ca-help">{{ field.help }}</span>
       </div>
 
@@ -644,6 +657,10 @@ function setSort(slotId: string, field: string, order: string): void {
 }
 .ca-number {
   width: 100%;
+}
+.ca-runtime-action {
+  width: 100%;
+  margin-left: 0;
 }
 .ca-help {
   color: var(--page-settings-text-subtle);

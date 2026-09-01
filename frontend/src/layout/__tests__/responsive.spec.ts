@@ -58,14 +58,16 @@ describe('自适应策略摘要（P8）', () => {
     expect(s.lockedSlots.map((slot) => slot.id)).toContain('workspace')
   })
 
-  it('股票主从工作台最小列宽与容器宽度一致，不产生局部 12px 溢出', () => {
+  it('股票主从工作台为可拖动三列布局，最小宽度覆盖列表、分隔条和分析区', () => {
     const workspace = readFileSync(
       new URL('../../components/MarketMasterDetailWorkspace.vue', import.meta.url),
       'utf8',
     )
-    expect(workspace).toContain('grid-template-columns: minmax(360px, 0.82fr) minmax(0, 1.18fr)')
-    expect(workspace).toContain('min-width: 860px')
-    expect(workspace).not.toContain('minmax(500px, 1.18fr)')
+    expect(workspace).toContain('const MASTER_MIN_WIDTH = 360')
+    expect(workspace).toContain('const MASTER_MAX_WIDTH = 1200')
+    expect(workspace).toContain('const DETAIL_MIN_WIDTH = 240')
+    expect(workspace).toContain('grid-template-columns: 1200px 12px minmax(240px, 1fr)')
+    expect(workspace).toContain('min-width: 612px')
   })
 
   it('嵌套/overlay slot 不进响应式摘要（只看顶层主区）', () => {

@@ -541,10 +541,10 @@ onMounted(async () => {
             :slot3="chartPreferences.preferences.value.slot3"
             :chart-types="chartPreferences.visibleTypes.value"
             :default-ratios="chartPreferences.defaultRatios.value"
+            :current-ratios="chartPreferences.currentRatios.value"
             test-id-prefix="sector-detail-chart"
             @change="setAuxiliaryChart"
             @save-default-ratios="chartPreferences.setDefaultHeightRatios"
-            @save-current-as-default="chartPreferences.saveCurrentRatiosAsDefault"
           />
           <KlineSettingSection />
         </template>

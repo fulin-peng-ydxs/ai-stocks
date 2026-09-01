@@ -824,6 +824,26 @@ describe('组件消费关系与配置一致性（P4）', () => {
     expect(applicableComponentFields(sectorWorkbench, 'chart').map((field) => field.key)).not.toContain('minHeight')
   })
 
+  it('行情主从工作台统一消费抽屉默认宽度，主区拖动不反写配置层', () => {
+    for (const pageKey of ['stocks', 'board', 'limit-ladder', 'sectors']) {
+      const entry = getPageEntry(pageKey)!
+      expect(applicableComponentFields(entry, 'workspace').map((field) => field.key)).toContain('masterWidth')
+      const source = sourceForPage(pageKey)
+      expect(source).toContain('<MarketMasterDetailWorkspace')
+      expect(source).toContain("componentValueOf('workspace', 'masterWidth')")
+      expect(source).toContain(':business-component-slot-ids="[\'workspace\']"')
+      expect(source).toContain(':component-runtime-value-of="componentRuntimeValueOf"')
+      expect(source).toContain('@master-width-change="setCurrentMasterWidth"')
+    }
+
+    const workspaceSource = readFileSync(
+      new URL('../../components/MarketMasterDetailWorkspace.vue', import.meta.url),
+      'utf8',
+    )
+    expect(workspaceSource).toContain('useDefaultedSessionValue(configuredMasterWidth)')
+    expect(workspaceSource).not.toContain('setComponentKnob')
+  })
+
   it('板块列表与详情恢复默认同时重置业务偏好和组件配置', () => {
     const listSource = sourceForPage('sectors')
     const detailSource = sourceForPage('sectors-detail')
@@ -1101,13 +1121,14 @@ describe('组件消费关系与配置一致性（P4）', () => {
     ).toEqual([])
   })
 
-  it('多图工作区统一声明默认比例编辑和显式设为默认入口', () => {
+  it('多图工作区统一声明当前比例采用和实时默认比例写入', () => {
     for (const entry of PAGE_REGISTRY) {
       const source = sourceForPage(entry.pageKey)
       if (!source.includes('<StockChartSettingSection')) continue
       expect(source).toContain(':default-ratios="chartPreferences.defaultRatios.value"')
+      expect(source).toContain(':current-ratios="chartPreferences.currentRatios.value"')
       expect(source).toContain('@save-default-ratios="chartPreferences.setDefaultHeightRatios"')
-      expect(source).toContain('@save-current-as-default="chartPreferences.saveCurrentRatiosAsDefault"')
+      expect(source).not.toContain('@save-current-as-default')
     }
   })
 

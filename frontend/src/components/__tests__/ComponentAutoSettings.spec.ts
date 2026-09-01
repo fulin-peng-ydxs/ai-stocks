@@ -12,6 +12,7 @@ vi.mock('@/layout/pageRegistry', () => ({
       'border-demo': [{ key: 'border', layers: ['page'] }],
       'config-panel-demo': [{ key: 'defaultCollapsed', layers: ['page', 'user'] }],
       'chart-demo': [{ key: 'minHeight', layers: ['page', 'user'] }],
+      'master-demo': [{ key: 'masterWidth', layers: ['preset', 'page', 'user'] }],
       'system-config': [
         { key: 'bodyScroll', layers: ['preset', 'page'] },
         { key: 'defaultCollapsed', layers: ['preset', 'page', 'user'] },
@@ -77,6 +78,14 @@ vi.mock('@/layout/pageRegistry', () => ({
         componentMeta: {},
       }
     }
+    if (pageKey === 'master-demo') {
+      return {
+        pageKey,
+        supportsComponentConfig: true,
+        layout: { slots: [{ id: 'workspace', component: 'master-detail', label: '行情工作台' }] },
+        componentMeta: {},
+      }
+    }
     return {
       pageKey,
       supportsComponentConfig: true,
@@ -92,6 +101,8 @@ vi.mock('@/layout/componentConfig', () => {
   const fieldDef = (_kind: string, field: string) => (
     field === 'minHeight'
       ? { key: 'minHeight', label: '图表区域高度', control: 'int', layers: ['page', 'user'], min: 480, max: 900, default: 560 }
+      : field === 'masterWidth'
+        ? { key: 'masterWidth', label: '列表默认宽度', control: 'int', layers: ['preset', 'page', 'user'], min: 360, max: 1200, default: 1200, runtimeValueActionLabel: '使用页面当前宽度' }
       : field === 'border'
       ? { key: 'border', label: '显示表格边框', control: 'bool', layers: ['page'], default: false }
       : field === 'bodyScroll'
@@ -103,6 +114,8 @@ vi.mock('@/layout/componentConfig', () => {
     getApplicableComponentFieldDefs: (kind: string, meta: any, layer: string) => {
       const fields = kind === 'chart'
         ? ['minHeight']
+        : kind === 'master-detail'
+          ? ['masterWidth']
         : kind === 'config-panel'
           ? ['defaultCollapsed']
           : kind === 'settings-drawer'
@@ -278,6 +291,40 @@ function mountChartDemo() {
           emits: ['update:modelValue'],
           template: '<button class="number-stub" :data-value="modelValue" :data-min="min" :data-max="max" @click="$emit(\'update:modelValue\', 620)" />',
         },
+        ElButton: { template: '<button><slot /></button>' },
+        ElSelect: true,
+        ElOption: true,
+        ElSwitch: true,
+        ElCheckboxGroup: true,
+        ElCheckbox: true,
+        ElEmpty: true,
+      },
+    },
+  })
+  return { wrapper, setComponentKnob }
+}
+
+function mountMasterDemo(runtimeWidth?: number) {
+  const setComponentKnob = vi.fn()
+  const wrapper = mount(ComponentAutoSettings as Component, {
+    props: {
+      pageKey: 'master-demo',
+      runtimeValueOf: vi.fn(() => runtimeWidth),
+      config: {
+        componentValueOf: vi.fn(() => 1200),
+        setComponentKnob,
+      },
+    },
+    global: {
+      stubs: {
+        SettingsGroup: { template: '<section><slot /></section>' },
+        SourceTag: true,
+        AppRowActions: true,
+        ElInputNumber: true,
+        ElButton: {
+          props: ['disabled'],
+          template: '<button :disabled="disabled"><slot /></button>',
+        },
         ElSelect: true,
         ElOption: true,
         ElSwitch: true,
@@ -332,6 +379,20 @@ describe('ComponentAutoSettings', () => {
     })
     await wrapper.find('.number-stub').trigger('click')
     expect(setComponentKnob).toHaveBeenCalledWith('chart', 'minHeight', 620)
+  })
+
+  it('行情工作台可采用页面当前宽度作为持久化默认值', async () => {
+    const { wrapper, setComponentKnob } = mountMasterDemo(772)
+
+    await wrapper.get('[data-testid="component-workspace-masterWidth-use-runtime"]').trigger('click')
+
+    expect(setComponentKnob).toHaveBeenCalledWith('workspace', 'masterWidth', 772)
+  })
+
+  it('页面当前宽度尚未上报时禁用采用入口', () => {
+    const { wrapper } = mountMasterDemo()
+    expect(wrapper.get('[data-testid="component-workspace-masterWidth-use-runtime"]').attributes('disabled'))
+      .toBeDefined()
   })
 
   it('config-panel 默认折叠候选支持按当前业务覆盖并保留隐藏选中值', async () => {
