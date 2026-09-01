@@ -102,14 +102,15 @@ class DataIntegrityReport:
                 "mv_gap_days", "mv_gap_lo", "mv_gap_hi", "gap_days", "gap_lo",
                 "gap_hi", "stale_days", "stale_lo", "l1_open", "l3_open", "open_total"]
         # 数据变更签名缓存：同一页多接口复用，任一数据变更即失效。
-        # openi 只数个股 issue 类型（L1-L4），排除板块 issue（code=board_code 不参与个股 frame）——
-        # 板块采集写 fund/member 问题不应击穿个股覆盖帧缓存。
+        # openi 只数个股 issue 类型（L1-L4），市场指数/板块类型都有独立质量层，
+        # 不参与个股 frame，也不应击穿个股覆盖帧缓存。
         sig = self.c.query_df(
             "SELECT (SELECT max(trade_date) FROM daily_bar) latest, "
             "(SELECT count(*) FROM daily_bar) bars, "
             "(SELECT count(*) FROM daily_metrics) metrics, "
             "(SELECT count(*) FROM data_quality_issue WHERE status='open' "
-            "   AND issue_type NOT IN ('board_index_gap','board_index_gap_daily','board_member_incomplete',"
+            "   AND issue_type NOT IN ('market_index_gap','market_index_gap_daily',"
+            "'market_index_invalid','board_index_gap','board_index_gap_daily','board_member_incomplete',"
             "'board_fund_unmatched','board_fund_missing','board_fund_stale')) openi, "
             "(SELECT count(*) FROM stock_suspension) susp, "
             "(SELECT count(*) FROM daily_metrics WHERE total_mv IS NULL OR float_mv IS NULL) mvnull"
@@ -169,7 +170,8 @@ class DataIntegrityReport:
             "count(*) FILTER (WHERE issue_type IN ('null_close','ohl_repaired')) l1, "
             "count(*) FILTER (WHERE issue_type IN ('abnormal_change','adj_jump')) l3 "
             "FROM data_quality_issue WHERE status='open' "
-            "AND issue_type NOT IN ('board_index_gap','board_index_gap_daily','board_member_incomplete',"
+            "AND issue_type NOT IN ('market_index_gap','market_index_gap_daily',"
+            "'market_index_invalid','board_index_gap','board_index_gap_daily','board_member_incomplete',"
             "'board_fund_unmatched','board_fund_missing','board_fund_stale') "
             "GROUP BY code")
         iss_map = {r["code"]: (int(r["tot"]), int(r["l1"]), int(r["l3"])) for _, r in iss.iterrows()}
@@ -619,6 +621,129 @@ class DataIntegrityReport:
             "stale_rows": inserted_counts["stale"],
         }
 
+    # ── 市场基准指数质检 ─────────────────────────────────────
+    def scan_market_index_quality(self, gap_window_days: int = GAP_WINDOW_DAYS) -> dict:
+        """逐配置指数扫描尾部滞后、近端逐日缺口和字段非法，并幂等写入质量台账。
+
+        市场指数与板块指数共用扫描型问题状态机，但配置来源和恢复服务不同，故保持
+        独立扫描入口。指数首条数据之前视为源端历史边界；首条之后的开市日缺失才报
+        逐日缺口。从未入库的配置指数只报尾部缺口，避免一次扫描生成整个窗口的问题。
+        """
+        from backend.services.market_benchmark import BENCHMARK_NAMES, configured_benchmark_codes
+
+        codes = configured_benchmark_codes()
+        issue_types = (
+            "market_index_gap", "market_index_gap_daily", "market_index_invalid",
+        )
+        if not codes:
+            with self.c.transaction():
+                self._upsert_scan_issues([], issue_types)
+            return {"index_gap": 0, "index_gap_daily": 0, "index_invalid": 0}
+
+        ph = ",".join("?" * len(codes))
+        latest_raw = self._scalar("SELECT max(trade_date) FROM daily_bar")
+        latest = None if latest_raw is None or pd.isna(latest_raw) \
+            else pd.Timestamp(latest_raw).date()
+        span_df = self.c.query_df(
+            f"SELECT index_code, min(trade_date) AS first_bar, max(trade_date) AS last_bar "
+            f"FROM index_bar WHERE index_code IN ({ph}) GROUP BY index_code",
+            codes,
+        )
+        spans = {
+            str(r["index_code"]): (
+                pd.Timestamp(r["first_bar"]).date(), pd.Timestamp(r["last_bar"]).date()
+            )
+            for _, r in span_df.iterrows()
+        }
+
+        gap_issues: list[dict] = []
+        daily_gap_issues: list[dict] = []
+        if latest is not None:
+            for code in codes:
+                last_bar = spans.get(code, (None, None))[1]
+                if last_bar is None or last_bar < latest:
+                    gap_issues.append({
+                        "code": code,
+                        "trade_date": latest,
+                        "issue_type": "market_index_gap",
+                        "detail": f"{BENCHMARK_NAMES.get(code, code)}（{code}）未更新到最新交易日："
+                                  f"最近 {last_bar or '无数据'}，目标 {latest}",
+                    })
+
+            recent_days, _ = self._recent_open_days(latest, gap_window_days)
+            if recent_days:
+                bars = self.c.query_df(
+                    f"SELECT index_code, trade_date FROM index_bar "
+                    f"WHERE index_code IN ({ph}) AND trade_date BETWEEN ? AND ?",
+                    [*codes, recent_days[0], recent_days[-1]],
+                )
+                dates_by_code: dict[str, set[date]] = {code: set() for code in codes}
+                for _, r in bars.iterrows():
+                    dates_by_code[str(r["index_code"])].add(
+                        pd.Timestamp(r["trade_date"]).date()
+                    )
+                for code in codes:
+                    first_bar = spans.get(code, (None, None))[0]
+                    if first_bar is None:
+                        continue
+                    for missing_day in recent_days:
+                        if missing_day < first_bar or missing_day in dates_by_code[code]:
+                            continue
+                        daily_gap_issues.append({
+                            "code": code,
+                            "trade_date": missing_day,
+                            "issue_type": "market_index_gap_daily",
+                            "detail": f"{BENCHMARK_NAMES.get(code, code)}（{code}）近端缺口："
+                                      f"{missing_day} 无指数日线",
+                        })
+
+        invalid_df = self.c.query_df(
+            f"""
+            SELECT index_code, trade_date, open, high, low, close, volume, amount
+            FROM index_bar
+            WHERE index_code IN ({ph})
+              AND (NOT EXISTS (
+                       SELECT 1 FROM trade_calendar c
+                       WHERE c.trade_date=index_bar.trade_date AND c.is_open
+                   )
+                   OR open IS NULL OR open<=0 OR close IS NULL OR close<=0
+                   OR high IS NULL OR high<=0 OR low IS NULL OR low<=0 OR high<low
+                   OR open>high OR open<low
+                   OR close>high OR close<low
+                   OR COALESCE(volume, 0)<0 OR COALESCE(amount, 0)<0)
+            """,
+            codes,
+        )
+        invalid_issues = [
+            {
+                "code": str(r["index_code"]),
+                "trade_date": pd.Timestamp(r["trade_date"]).date(),
+                "issue_type": "market_index_invalid",
+                "detail": f"{BENCHMARK_NAMES.get(str(r['index_code']), str(r['index_code']))}"
+                          f"（{r['index_code']}）指数数据非法：O={r['open']} H={r['high']} "
+                          f"L={r['low']} C={r['close']} V={r['volume']} A={r['amount']}",
+            }
+            for _, r in invalid_df.iterrows()
+        ]
+
+        with self.c.transaction():
+            self._upsert_scan_issues(
+                gap_issues + daily_gap_issues + invalid_issues,
+                issue_types,
+            )
+        active = self.c.query_df(
+            f"SELECT issue_type, count(*) AS n FROM data_quality_issue "
+            f"WHERE status='open' AND issue_type IN ({','.join('?' * len(issue_types))}) "
+            f"GROUP BY issue_type",
+            list(issue_types),
+        )
+        counts = {str(r["issue_type"]): int(r["n"]) for _, r in active.iterrows()}
+        return {
+            "index_gap": counts.get("market_index_gap", 0),
+            "index_gap_daily": counts.get("market_index_gap_daily", 0),
+            "index_invalid": counts.get("market_index_invalid", 0),
+        }
+
     # ── 板块维度质检（板块概念需求 R12，T7）──────────────────
     def scan_board_quality(self) -> dict:
         """板块数据质检：成分覆盖、板块指数缺口/非法值和资金流覆盖扫描。
@@ -953,6 +1078,45 @@ class DataIntegrityReport:
             df = df.assign(gap_days=gap_days)
             actionable = (ratio > 0.5) & self._active_l3_mask(df) & (gap_days.fillna(0) <= 30)
             return not bool(actionable.any())
+        if issue_type in ("market_index_gap", "market_index_gap_daily", "market_index_invalid"):
+            from backend.services.market_benchmark import configured_benchmark_codes
+
+            if code not in configured_benchmark_codes():
+                return True
+            if issue_type == "market_index_gap":
+                latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
+                if latest is None or pd.isna(latest):
+                    return False
+                last_bar = self._scalar(
+                    "SELECT max(trade_date) FROM index_bar WHERE index_code=?", [code]
+                )
+                return bool(
+                    last_bar is not None
+                    and not pd.isna(last_bar)
+                    and pd.Timestamp(last_bar).date() >= pd.Timestamp(latest).date()
+                )
+            if trade_date is None:
+                return False
+            if issue_type == "market_index_gap_daily":
+                return int(self._scalar(
+                    "SELECT count(*) FROM index_bar WHERE index_code=? AND trade_date=?",
+                    [code, trade_date],
+                )) > 0
+            valid = self._scalar(
+                """SELECT count(*) FROM index_bar
+                   WHERE index_code=? AND trade_date=?
+                     AND EXISTS (
+                       SELECT 1 FROM trade_calendar c
+                       WHERE c.trade_date=index_bar.trade_date AND c.is_open
+                     )
+                     AND NOT (open IS NULL OR open<=0 OR close IS NULL OR close<=0
+                       OR high IS NULL OR high<=0 OR low IS NULL OR low<=0 OR high<low
+                       OR open>high OR open<low
+                       OR close>high OR close<low
+                       OR COALESCE(volume, 0)<0 OR COALESCE(amount, 0)<0)""",
+                [code, trade_date],
+            )
+            return int(valid) > 0
         if issue_type == "board_index_gap":
             # 板块指数缺口复检：与 scan_board_quality 扫描口径一致——只针对 has_bar 板块。
             # has_bar=false（源端无该板块指数能力）说明本就不该有指数，问题可收敛为已解决；
@@ -1179,7 +1343,9 @@ class DataIntegrityReport:
         open_days = self.calendar_open_days(start, end)
         df = self.c.query_df(
             "SELECT index_code, count(*) AS days, min(trade_date) lo, max(trade_date) hi "
-            "FROM index_bar GROUP BY index_code ORDER BY index_code"
+            "FROM index_bar WHERE trade_date BETWEEN ? AND ? "
+            "GROUP BY index_code ORDER BY index_code",
+            [start, end],
         )
         df["coverage"] = (df["days"] / open_days).round(4) if open_days else 0
         return {"calendar_open_days": open_days, "indices": df.to_dict("records")}

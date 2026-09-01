@@ -448,6 +448,7 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
 // 当前在用的问题类型（下拉筛选用此顺序；missing_or_suspended 已废弃，不再产出/不再列出）。
 export const ISSUE_TYPES_ACTIVE = [
   'null_close', 'ohl_repaired', 'mv_missing', 'mv_gap', 'abnormal_change', 'adj_jump', 'data_gap', 'stale',
+  'market_index_gap', 'market_index_gap_daily', 'market_index_invalid',
   'board_index_gap', 'board_index_gap_daily', 'board_index_invalid', 'board_member_incomplete',
   'board_fund_unmatched', 'board_fund_missing', 'board_fund_stale',
 ] as const
@@ -456,6 +457,9 @@ export const ISSUE_TYPE_LABEL: Record<string, string> = {
   null_close: '行情·收盘价为空(丢弃)', ohl_repaired: '行情·开高低修补', mv_missing: '市值·整段缺失',
   mv_gap: '市值·近端缺某日', abnormal_change: '行情·涨跌幅异常', adj_jump: '复权·因子跳变',
   data_gap: '行情·近端缺某日', stale: '行情·未更新到最新',
+  market_index_gap: '市场指数·未更新到最新',
+  market_index_gap_daily: '市场指数·近端缺某日',
+  market_index_invalid: '市场指数·字段非法',
   board_index_gap: '板块指数·未更新到最新', board_index_gap_daily: '板块指数·近端缺某日',
   board_index_invalid: '板块指数·字段非法', board_member_incomplete: '板块成分·采集不完整',
   board_fund_unmatched: '板块资金流·未映射',
@@ -502,6 +506,7 @@ export function taskDisplayLabel(
 export const ISSUE_LAYER: Record<string, string> = {
   null_close: 'L1', ohl_repaired: 'L1', mv_missing: 'L2', mv_gap: 'L2',
   abnormal_change: 'L3', adj_jump: 'L3', data_gap: 'L4', stale: 'L4',
+  market_index_gap: '指数', market_index_gap_daily: '指数', market_index_invalid: '指数',
   board_index_gap: '板块', board_index_gap_daily: '板块', board_index_invalid: '板块',
   board_member_incomplete: '板块', board_fund_unmatched: '板块',
   board_fund_missing: '板块', board_fund_stale: '板块',
@@ -511,6 +516,8 @@ export const RECOVER_ACTION_LABEL: Record<string, string> = {
   null_close: '重采该日', ohl_repaired: '重采该日', mv_missing: '补市值', mv_gap: '补市值缺口',
   abnormal_change: '重采该日', adj_jump: '重采整段重算复权',
   data_gap: '重采缺口', stale: '增量补尾',
+  market_index_gap: '补齐市场指数', market_index_gap_daily: '重采市场指数缺失日',
+  market_index_invalid: '重采市场指数异常日',
   board_index_gap: '重采指数', board_index_gap_daily: '重采缺失日指数',
   board_index_invalid: '重采异常日指数', board_member_incomplete: '重采成分',
   board_fund_unmatched: '重采资金流',
@@ -518,6 +525,7 @@ export const RECOVER_ACTION_LABEL: Record<string, string> = {
 }
 export const LAYER_LABEL: Record<string, string> = {
   L1: 'L1 入库闸门', L2: 'L2 字段契约', L3: 'L3 正确性', L4: 'L4 覆盖鲜活',
+  指数: '市场指数维度',
   板块: '板块维度',  // 板块 issue 独立层（不混入个股 L1-L4 打分）
 }
 // 四层质量模型的权威说明（单一出处）：质量页 HelpTip / 概览逐股列等处统一引用此处，
@@ -527,6 +535,7 @@ export const LAYER_DESC: Record<string, string> = {
   L2: 'L2 字段契约：市值字段（总市值 / 流通市值）完整',
   L3: 'L3 正确性：无复权因子跳变 / 涨跌幅异常',
   L4: 'L4 覆盖鲜活：无缺口且更新到最新交易日',
+  指数: '市场指数维度：每个配置指数均更新到最新、近端无缺口且 OHLC/成交字段合法',
   板块: '板块维度：指数覆盖与字段合法、成分快照完整、资金流覆盖与映射（独立于个股四层质量）',
 }
 export const SEVERITY_LABEL: Record<string, string> = { high: '高', mid: '中', low: '低' }

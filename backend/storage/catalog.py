@@ -34,6 +34,10 @@ _BOARD_ISSUES_BY_TABLE: dict[str, tuple[str, ...]] = {
     "board_fund_flow": ("board_fund_unmatched", "board_fund_missing", "board_fund_stale"),
 }
 
+_MARKET_INDEX_ISSUES: tuple[str, ...] = (
+    "market_index_gap", "market_index_gap_daily", "market_index_invalid",
+)
+
 # 每张基础数据表的元信息。
 # - date_col：用于取"最新数据时间"的列（None 表示该表无时间维度，取 NULL）。
 # - relations：与其它表的关联关系（人类可读）。
@@ -97,7 +101,8 @@ TABLE_CATALOG: dict[str, dict] = {
         "name_cn": "指数日线",
         "purpose": (
             "六类市场指数行情（中证 500、沪深 300、上证指数、科创 50、深证成指、"
-            "创业板指），用于回测基准与相对强弱计算。"
+            "创业板指），用于回测基准与相对强弱计算；按配置指数分别检查"
+            "鲜活度、近端缺口和行合法性。"
         ),
         "date_col": "trade_date",
         "relations": ["trade_date → trade_calendar"],
@@ -143,12 +148,16 @@ TABLE_CATALOG: dict[str, dict] = {
         "name_cn": "数据质量问题",
         "purpose": "质检发现的问题台账：类型/严重度/状态，支持单条重拉/重算修复闭环。",
         "date_col": "detected_at",
-        "relations": ["code → stock_basic", "(code, trade_date) → daily_bar"],
+        "relations": [
+            "个股 code → stock_basic",
+            "市场指数 code → index_bar.index_code",
+            "板块 code → board_dict.board_code",
+        ],
         "fields": [
             {"name": "id", "type": "BIGINT", "name_cn": "序号", "desc": "自增"},
-            {"name": "code", "type": "VARCHAR", "name_cn": "股票代码", "desc": "涉及股票"},
+            {"name": "code", "type": "VARCHAR", "name_cn": "对象代码", "desc": "股票、市场指数或板块代码；源级问题可空"},
             {"name": "trade_date", "type": "DATE", "name_cn": "交易日", "desc": "涉及日期（可空）"},
-            {"name": "issue_type", "type": "VARCHAR", "name_cn": "问题类型", "desc": "null_close/ohl_repaired(L1) / mv_missing(L2) / abnormal_change/adj_jump(L3) / data_gap/stale(L4)"},
+            {"name": "issue_type", "type": "VARCHAR", "name_cn": "问题类型", "desc": "个股 L1-L4、市场指数或板块质量问题"},
             {"name": "severity", "type": "VARCHAR", "name_cn": "严重度", "desc": "high/mid/low"},
             {"name": "status", "type": "VARCHAR", "name_cn": "状态", "desc": "open/fixing/resolved/ignored"},
             {"name": "detail", "type": "VARCHAR", "name_cn": "详情", "desc": "问题描述"},
@@ -296,8 +305,10 @@ def build_catalog(client: DuckDBClient | None = None) -> list[dict]:
             open_issues = int(client.query_df(
                 "SELECT count(*) AS n FROM data_quality_issue WHERE status='open'"
             ).iloc[0]["n"])
-        elif table in _BOARD_ISSUES_BY_TABLE and _table_exists(client, "data_quality_issue"):
-            issue_types = _BOARD_ISSUES_BY_TABLE[table]
+        elif (table == "index_bar" or table in _BOARD_ISSUES_BY_TABLE) \
+                and _table_exists(client, "data_quality_issue"):
+            issue_types = _MARKET_INDEX_ISSUES if table == "index_bar" \
+                else _BOARD_ISSUES_BY_TABLE[table]
             ph = ",".join("?" * len(issue_types))
             open_issues = int(client.query_df(
                 f"SELECT count(*) AS n FROM data_quality_issue "
@@ -308,6 +319,26 @@ def build_catalog(client: DuckDBClient | None = None) -> list[dict]:
         if table in _TIMESERIES_TABLES:
             if latest_time is None or global_latest is None:
                 fresh = False
+            elif table == "index_bar":
+                # 必须每个已配置市场指数都追平，不能被全表 max(date) 掩盖单指数停更。
+                from backend.services.market_benchmark import configured_benchmark_codes
+
+                codes = configured_benchmark_codes()
+                ph = ",".join("?" * len(codes))
+                latest_by_code = client.query_df(
+                    f"SELECT index_code, max(trade_date) AS latest "
+                    f"FROM index_bar WHERE index_code IN ({ph}) GROUP BY index_code",
+                    codes,
+                ) if codes else pd.DataFrame(columns=["index_code", "latest"])
+                latest_map = {
+                    str(r["index_code"]): str(pd.Timestamp(r["latest"]).date())
+                    for _, r in latest_by_code.iterrows()
+                    if r["latest"] is not None and not pd.isna(r["latest"])
+                }
+                fresh = bool(codes) and bool(global_latest) and all(
+                    latest_map.get(code) is not None and latest_map[code] >= global_latest
+                    for code in codes
+                )
             else:
                 latest_date = str(pd.Timestamp(latest_time).date())
                 # 板块源（指数/资金流）采集节奏可能领先个股行情（如周末已采到下周一的板块数据），

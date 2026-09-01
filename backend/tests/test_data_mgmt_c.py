@@ -342,6 +342,54 @@ def test_verify_is_scan_only(client, monkeypatch):
     assert "fails" not in (t.get("result") or {})   # 不再夹带结构校验结果
 
 
+def test_verify_task_includes_market_index_scan(client, monkeypatch):
+    """手动/定时 verify 与 daily 一致，市场指数扫描不是孤立方法。"""
+    from backend.services.async_task import _h_verify
+
+    called = {"base": 0, "market": 0, "board": 0}
+    monkeypatch.setattr(
+        DataIntegrityReport,
+        "scan_quality_issues",
+        lambda self: called.__setitem__("base", called["base"] + 1) or {
+            "abnormal_change_rows": 0,
+            "adj_jump_rows": 0,
+            "mv_missing_rows": 0,
+            "mv_gap_rows": 0,
+            "data_gap_rows": 0,
+            "stale_rows": 0,
+        },
+        raising=True,
+    )
+    monkeypatch.setattr(
+        DataIntegrityReport,
+        "scan_market_index_quality",
+        lambda self: called.__setitem__("market", called["market"] + 1) or {
+            "index_gap": 1, "index_gap_daily": 0, "index_invalid": 0,
+        },
+        raising=True,
+    )
+    monkeypatch.setattr(
+        DataIntegrityReport,
+        "scan_board_quality",
+        lambda self: called.__setitem__("board", called["board"] + 1) or {
+            "index_gap": 0,
+        },
+        raising=True,
+    )
+
+    class _Ctx:
+        def progress(self, *_args):
+            pass
+
+        def log(self, *_args):
+            pass
+
+    result = _h_verify({}, _Ctx())
+    assert called == {"base": 1, "market": 1, "board": 1}
+    assert result["quality"]["market_index"]["index_gap"] == 1
+    assert "发现 1 项问题" in result["message"]
+
+
 # ════════════ M2.9.2：质检-恢复闭环（四闭环）════════════
 
 def _gap_issue_id(c, code="B.SH"):

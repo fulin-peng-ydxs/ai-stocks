@@ -19,6 +19,12 @@ BENCHMARK_NAMES = {
 }
 
 
+def configured_benchmark_codes() -> list[str]:
+    """返回系统启用的市场基准代码，保持配置顺序并去重。"""
+    cfg = get_effective_settings().backtest
+    return list(dict.fromkeys([cfg.benchmark_main, *cfg.benchmark_others]))
+
+
 class MarketBenchmarkService:
     """按系统允许列表读取市场指数，避免板块和个股路由复制查询与白名单。"""
 
@@ -27,8 +33,7 @@ class MarketBenchmarkService:
 
     @staticmethod
     def validate_code(index_code: str) -> None:
-        cfg = get_effective_settings().backtest
-        allowed = {cfg.benchmark_main, *cfg.benchmark_others}
+        allowed = set(configured_benchmark_codes())
         if index_code not in allowed:
             raise ValueError(f"不支持的指数基准: {index_code}")
 

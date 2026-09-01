@@ -387,7 +387,10 @@ def search_boards(keyword: str | None = None, board_type: str | None = None,
 
 # ── 质量修复（FR-DM-4）─────────────────────────────────────
 def _quality_keyword_clause(c, keyword: str, alias: str = "q") -> tuple[str, list[str]]:
-    """质量台账对象搜索单一口径：股票、板块及无 code 的未匹配资金流名称。"""
+    """质量台账对象搜索单一口径：股票、市场指数、板块及未匹配资金流名称。"""
+    from backend.services.market_benchmark import BENCHMARK_NAMES
+
+    keyword_text = keyword.strip().lower()
     kw = f"%{keyword.strip().lower()}%"
     clauses = [
         (f"{alias}.code IN (SELECT code FROM stock_basic "
@@ -402,6 +405,13 @@ def _quality_keyword_clause(c, keyword: str, alias: str = "q") -> tuple[str, lis
             f"{alias}.code IN (SELECT board_code FROM board_dict "
             "WHERE lower(board_code) LIKE ? OR lower(name) LIKE ?)")
         params += [kw, kw]
+    market_codes = [
+        code for code, name in BENCHMARK_NAMES.items()
+        if keyword_text in code.lower() or keyword_text in name.lower()
+    ]
+    if market_codes:
+        clauses.append(f"{alias}.code IN ({','.join('?' * len(market_codes))})")
+        params += market_codes
     clauses.append(
         f"({alias}.issue_type='board_fund_unmatched' AND "
         f"lower(COALESCE(json_extract_string(try_cast({alias}.detail AS JSON), '$.name'), '')) LIKE ?)")
@@ -460,8 +470,9 @@ def quality(issue_type: str | None = None, severity: str | None = None,
         f"ORDER BY {sort_expr} {direction} NULLS LAST, q.detected_at DESC NULLS LAST, q.id "
         f"LIMIT {int(size)} OFFSET {int((page-1)*size)}", params)
     rows = df.to_dict("records")
-    # 板块问题名称：board_member_incomplete 的 code=board_code → board_dict.name；
-    # board_fund_unmatched 的 code=NULL → detail JSON 里的 name。避免名称列空。
+    # 非股票问题名称：市场指数走统一名称表；板块 code 走 board_dict；无 code 的资金流读 detail。
+    from backend.services.market_benchmark import BENCHMARK_NAMES
+
     board_issue_codes = {str(x) for x in df["code"].tolist() if x is not None} if not df.empty else set()
     board_names: dict[str, str] = {}
     if board_issue_codes:
@@ -477,7 +488,10 @@ def quality(issue_type: str | None = None, severity: str | None = None,
         it = r.get("issue_type")
         detail = r.get("detail")
         if nm is None or pd.isna(nm) or not str(nm).strip():
-            if it in ("board_member_incomplete", "board_index_gap", "board_index_gap_daily",
+            if it in ("market_index_gap", "market_index_gap_daily", "market_index_invalid") \
+                    and r.get("code"):
+                nm = BENCHMARK_NAMES.get(str(r["code"]), str(r["code"]))
+            elif it in ("board_member_incomplete", "board_index_gap", "board_index_gap_daily",
                       "board_index_invalid",
                       "board_fund_missing") and r.get("code"):
                 nm = board_names.get(str(r["code"]), "")

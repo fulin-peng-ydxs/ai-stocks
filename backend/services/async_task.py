@@ -866,15 +866,19 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
     ctx.log("数据质检：扫描市值缺失 / 异常涨跌 / 复权跳变 / 缺口 / 滞后，写入质量台账")
     rep = DataIntegrityReport()
     q = rep.scan_quality_issues()
-    # 板块维度质检（指数缺口）同一质检内跑；采集即时问题由采集层写台账。
+    # 市场指数与板块维度同一质检任务内扫描，统一进入问题台账与恢复闭环。
+    q["market_index"] = rep.scan_market_index_quality()
     q["board"] = rep.scan_board_quality()
-    n = sum(int(q.get(k, 0)) for k in
+    base_count = sum(int(q.get(k, 0)) for k in
             ("abnormal_change_rows", "adj_jump_rows", "mv_missing_rows", "mv_gap_rows",
              "data_gap_rows", "stale_rows"))
+    market_index = q.get("market_index") or {}
     b = q.get("board") or {}
+    n = base_count + sum(int(v) for v in market_index.values()) + sum(int(v) for v in b.values())
     ctx.log(f"质检完成：异常涨跌 {q.get('abnormal_change_rows', 0)}、复权跳变 {q.get('adj_jump_rows', 0)}、"
             f"市值缺失 {q.get('mv_missing_rows', 0)}、市值缺口 {q.get('mv_gap_rows', 0)}、"
             f"缺口 {q.get('data_gap_rows', 0)}、滞后 {q.get('stale_rows', 0)}、"
+            f"市场指数缺口 {market_index.get('index_gap', 0)}、"
             f"板块指数缺口 {b.get('index_gap', 0)}")
     return {"message": f"质检完成：发现 {n} 项问题" if n else "质检完成：未发现新问题", "quality": q}
 
@@ -1016,6 +1020,54 @@ def _board_trailing_gap_range(c, code: str, fallback_end):
     return start, end
 
 
+def _market_index_trailing_gap_range(c, code: str, fallback_end):
+    """返回配置市场指数的末尾恢复区间；从未入库时回填系统历史窗口。"""
+    import pandas as pd
+
+    from backend.config import get_effective_settings
+
+    latest = c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]
+    end = pd.Timestamp(latest).date() if latest is not None and not pd.isna(latest) else fallback_end
+    if end is None:
+        raise RuntimeError("市场指数缺口缺少可恢复的目标交易日")
+
+    last = c.query_df(
+        "SELECT max(trade_date) AS d FROM index_bar WHERE index_code=?", [code]
+    ).iloc[0]["d"]
+    if last is None or pd.isna(last):
+        history_start = (
+            pd.Timestamp(end)
+            - pd.DateOffset(years=get_effective_settings().datasource.history_years)
+        ).date()
+        first_open = c.query_df(
+            "SELECT min(trade_date) AS d FROM trade_calendar "
+            "WHERE is_open AND trade_date>=? AND trade_date<=?",
+            [history_start, end],
+        ).iloc[0]["d"]
+        start = pd.Timestamp(first_open).date() \
+            if first_open is not None and not pd.isna(first_open) else history_start
+        return start, end
+    last = pd.Timestamp(last).date()
+    if last >= end:
+        return None, end
+    next_open = c.query_df(
+        "SELECT min(trade_date) AS d FROM trade_calendar "
+        "WHERE is_open AND trade_date>? AND trade_date<=?",
+        [last, end],
+    ).iloc[0]["d"]
+    start = pd.Timestamp(next_open).date() if next_open is not None and not pd.isna(next_open) else end
+    return start, end
+
+
+def _reingest_market_index(ing, code: str, start, end, ctx: TaskContext) -> int:
+    """调用既有指数采集能力定向恢复；0 行视为未恢复并让任务失败回到 open。"""
+    rows = ing.ingest_indices(start, end, ctx=ctx, codes=[code])
+    if rows <= 0:
+        date_range = str(start) if start == end else f"{start}~{end}"
+        raise RuntimeError(f"市场指数 {code} {date_range} 重采返回 0 行")
+    return int(rows)
+
+
 def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, list, str]:
     """恢复单条质检问题 → 复检 → 回写状态。返回 (复检是否通过, 受影响日期, 文案)。"""
     import pandas as pd
@@ -1077,6 +1129,26 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
                 ing.ingest_one_daily(code, lo, hi, ctx=ctx)
             else:
                 note = "无行情可重算"
+        elif issue_type == "market_index_gap":
+            repair_start, repair_end = _market_index_trailing_gap_range(c, str(code), td)
+            if repair_start is None:
+                note = f"市场指数已追平 {repair_end}，无需重复重采"
+            else:
+                ctx.log(f"恢复(市场指数缺口)：重采 {code} {repair_start}~{repair_end}")
+                rows = _reingest_market_index(
+                    ing, str(code), repair_start, repair_end, ctx
+                )
+                note = f"重采指数 {rows} 行"
+            ctx.log(note)
+        elif issue_type in ("market_index_gap_daily", "market_index_invalid"):
+            if td is None:
+                note = "缺少日期，无法定向重采"
+            else:
+                reason = "逐日缺口" if issue_type == "market_index_gap_daily" else "数据异常"
+                ctx.log(f"恢复(市场指数{reason})：重采 {code} {td}")
+                rows = _reingest_market_index(ing, str(code), td, td, ctx)
+                note = f"重采指数 {rows} 行"
+                ctx.log(note)
         elif issue_type == "board_index_gap":
             # 末尾缺口：只补「最后已有日的下一交易日 → 当前全局最新日」，不再固定从 2024
             # 整段重采。这样连续缺两日会一次补两日，也不会被无关历史年份失败拖累。
@@ -1228,6 +1300,16 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
                 ctx.log(f"板块关联问题复检完成：{scan_result}")
             except Exception as scan_error:  # noqa: BLE001 -- 当前问题已复检通过，关联扫描降级告警
                 ctx.log(f"当前问题已解决，但板块关联问题复检失败：{scan_error}", "warn")
+                note += "；关联问题复检失败，请稍后重新质检"
+        scan_market_index_types = {
+            "market_index_gap", "market_index_gap_daily", "market_index_invalid",
+        }
+        if issue_type in scan_market_index_types:
+            try:
+                scan_result = rep.scan_market_index_quality()
+                ctx.log(f"市场指数关联问题复检完成：{scan_result}")
+            except Exception as scan_error:  # noqa: BLE001 -- 当前问题已真实修复
+                ctx.log(f"当前问题已解决，但市场指数关联问题复检失败：{scan_error}", "warn")
                 note += "；关联问题复检失败，请稍后重新质检"
     else:
         c.execute("UPDATE data_quality_issue SET status='open', fix_task_id=NULL WHERE id=?", [issue_id])

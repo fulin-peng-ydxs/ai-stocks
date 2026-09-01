@@ -712,6 +712,22 @@ def test_quality_list_searches_board_code_and_name(client):
     assert by_name.data["list"][0]["name"] == "AI PC"
 
 
+def test_quality_list_searches_market_index_code_and_name(client):
+    """市场指数问题复用质量列表，并能按中文名称或代码搜索。"""
+    from backend.api.data_admin import quality
+
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, issue_type, severity, status, detected_at) "
+        "VALUES (22, '399006.SZ', 'market_index_gap', 'mid', 'open', now())"
+    )
+    by_name = quality(code="创业板指", status="open")
+    by_code = quality(code="399006.SZ", status="open")
+    assert by_name.code == 0 and by_name.data["total"] == 1
+    assert by_code.code == 0 and by_code.data["total"] == 1
+    assert by_name.data["list"][0]["name"] == "创业板指"
+
+
 def test_quality_actions_reject_conflicting_status_transitions(client):
     """已解决不能再恢复，运行中的 fixing 不能被忽略或手工复位。"""
     from backend.api.data_admin import quality_fix, quality_ignore, quality_reset

@@ -43,6 +43,17 @@ describe('taskDisplayLabel', () => {
     expect(BOARD_STAGE_OPTIONS.map((item) => item.value)).toEqual(['dict', 'members', 'bar', 'fund'])
   })
 
+  it('市场指数质检类型复用质量台账与恢复任务映射', () => {
+    expect(ISSUE_TYPES_ACTIVE).toEqual(expect.arrayContaining([
+      'market_index_gap', 'market_index_gap_daily', 'market_index_invalid',
+    ]))
+    expect(RECOVER_ACTION_LABEL.market_index_gap).toBe('补齐市场指数')
+    expect(RECOVER_ACTION_LABEL.market_index_gap_daily).toBe('重采市场指数缺失日')
+    expect(RECOVER_ACTION_LABEL.market_index_invalid).toBe('重采市场指数异常日')
+    expect(taskDisplayLabel('fix', { issue_type: 'market_index_invalid' }))
+      .toBe('质检问题恢复·市场指数·字段非法')
+  })
+
   it('相关性任务表单、任务筛选与五阶段标签完整接线', () => {
     const schedule = readFileSync(resolve('src/views/data/ScheduleView.vue'), 'utf8')
     const ingest = readFileSync(resolve('src/views/data/IngestView.vue'), 'utf8')

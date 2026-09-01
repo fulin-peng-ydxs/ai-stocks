@@ -107,7 +107,8 @@ class DailyPipeline:
                 from backend.services.data_report import DataIntegrityReport
                 rep = DataIntegrityReport(self.c)
                 base = rep.scan_quality_issues()
-                # 板块扫描失败必须让质检步骤失败，保留旧问题并暴露给任务状态。
+                # 市场指数/板块扫描失败必须让质检步骤失败，保留旧问题并暴露给任务状态。
+                base["market_index"] = rep.scan_market_index_quality()
                 base["board"] = rep.scan_board_quality()
                 return base
             step("数据质检", _quality)

@@ -35,6 +35,7 @@ from backend.limit_ladder.rules import (
     resolve_point_in_time_st,
 )
 from backend.services.async_task import TaskCancelled
+from backend.services.market_benchmark import configured_benchmark_codes
 from backend.services.stock_st_status import StockSTStatusFact, StockSTStatusService
 from backend.services.trade_calendar_readiness import (
     calendar_readiness_detail,
@@ -307,7 +308,7 @@ class IngestionService:
         codes: list[str] | None = None,
     ) -> int:
         """采集配置内指数；可指定子集供逐指数增量补采复用。"""
-        configured = [self.s.backtest.benchmark_main, *self.s.backtest.benchmark_others]
+        configured = configured_benchmark_codes()
         allowed = set(configured)
         codes = list(dict.fromkeys(codes if codes is not None else configured))
         unsupported = [code for code in codes if code not in allowed]
@@ -335,10 +336,7 @@ class IngestionService:
 
     def _ingest_indices_incremental(self, end: date, ctx=None) -> int:
         """逐指数补到目标日；首次加入配置的指数自动回填系统历史窗口。"""
-        codes = list(dict.fromkeys([
-            self.s.backtest.benchmark_main,
-            *self.s.backtest.benchmark_others,
-        ]))
+        codes = configured_benchmark_codes()
         latest_df = self.repo.c.query_df(
             "SELECT index_code, max(trade_date) AS d FROM index_bar GROUP BY index_code"
         )

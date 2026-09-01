@@ -127,6 +127,9 @@ SEVERITY_BY_TYPE: dict[str, str] = {
     "mv_gap": "mid",           # 近端逐日市值字段缺口（total_mv/float_mv）——逐日缺、code 聚合
     "data_gap": "mid",         # 存续期缺口（疑似漏采，待重采反向确认）（M2.9.2 L4）
     "stale": "mid",            # 尾部鲜活滞后（最新<全局最新交易日）（M2.9.2 L4）
+    "market_index_gap": "mid",  # 配置市场指数未追平全局最新交易日
+    "market_index_gap_daily": "mid",  # 配置市场指数近端具体开市日缺失
+    "market_index_invalid": "mid",  # 配置市场指数 OHLC/成交字段非法
     "board_index_gap": "mid",  # 板块指数缺口（board_bar 滞后全局最新交易日）（板块概念 R12）
     "board_index_gap_daily": "mid",  # 板块指数逐日缺口（近端窗口内具体某日缺失）
     "board_index_invalid": "mid",  # 板块指数 OHLC/成交字段非法（已有记录但内容不可用）
@@ -159,6 +162,10 @@ ISSUE_LAYER: dict[str, str] = {
     "adj_jump": "L3",
     "data_gap": "L4",
     "stale": "L4",
+    # 市场基准指数独立层：不混入逐股质量评分，但进入同一质量台账与恢复闭环。
+    "market_index_gap": "指数",
+    "market_index_gap_daily": "指数",
+    "market_index_invalid": "指数",
     # 板块维度独立层（板块概念）：不混入个股 L1-L4 打分，仅质量页/概览按层归类展示。
     "board_index_gap": "板块",
     "board_index_gap_daily": "板块",
@@ -176,13 +183,16 @@ L4_ISSUE_TYPES: tuple[str, ...] = ("data_gap", "stale")
 # 「标记正常」的精确豁免类型：只豁免同一对象、同一问题类型、同一交易日。
 # 其余状态型问题按对象与类型整体豁免，避免各扫描/采集入口自行写死而产生口径分叉。
 EXACT_IGNORE_ISSUE_TYPES: frozenset[str] = frozenset(
-    L1_ISSUE_TYPES + L3_ISSUE_TYPES + ("board_index_gap_daily", "board_index_invalid")
+    L1_ISSUE_TYPES + L3_ISSUE_TYPES
+    + ("market_index_gap_daily", "market_index_invalid",
+       "board_index_gap_daily", "board_index_invalid")
 )
 # 能进入质检台账的完整问题类型集。调度、恢复参数校验统一复用这一契约，
 # 避免新增质量层问题后只能手工处理。
 QUALITY_ISSUE_TYPES: tuple[str, ...] = (
     L1_ISSUE_TYPES + L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES
-    + ("board_index_gap", "board_index_gap_daily", "board_index_invalid", "board_member_incomplete",
+    + ("market_index_gap", "market_index_gap_daily", "market_index_invalid",
+       "board_index_gap", "board_index_gap_daily", "board_index_invalid", "board_member_incomplete",
        "board_fund_unmatched", "board_fund_missing", "board_fund_stale")
 )
 # 质检（scan_quality_issues）每次重扫并幂等覆盖的"自动问题"类型（L2/L3/L4）；

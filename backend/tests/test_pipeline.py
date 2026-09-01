@@ -577,19 +577,26 @@ def test_pipeline_board_total_steps_count(tmp_path, monkeypatch):
         assert any("2/2" in m and "数据质检" in m for m in ctx_logs)
 
 
-def test_pipeline_quality_includes_board_scan(tmp_path, monkeypatch):
-    """daily 质检步骤同时跑板块扫描（scan_board_quality 已接线，非孤立方法）。"""
+def test_pipeline_quality_includes_market_index_and_board_scans(tmp_path, monkeypatch):
+    """daily 质检步骤同时跑市场指数与板块扫描，避免出现孤立质检能力。"""
     from backend.services import ingest as ingest_mod
     from backend.services.data_report import DataIntegrityReport
     from backend.services.pipeline import DailyPipeline
 
-    called = {"board": 0, "base": 0}
+    called = {"market_index": 0, "board": 0, "base": 0}
+
+    def fake_scan_market_index(self):
+        called["market_index"] += 1
+        return {"index_gap": 1}
 
     def fake_scan_board(self):
         called["board"] += 1
         return {"index_gap": 2}
 
     monkeypatch.setattr(DataIntegrityReport, "scan_board_quality", fake_scan_board, raising=True)
+    monkeypatch.setattr(
+        DataIntegrityReport, "scan_market_index_quality", fake_scan_market_index, raising=True,
+    )
     monkeypatch.setattr(DataIntegrityReport, "scan_quality_issues",
                         lambda self: (called.__setitem__("base", called["base"] + 1) or
                                       {"abnormal_change_rows": 0}), raising=True)
@@ -603,6 +610,7 @@ def test_pipeline_quality_includes_board_scan(tmp_path, monkeypatch):
         _seed_market_with_latest(c)
         DailyPipeline(c).run(skip_update=True)
         assert called["base"] == 1   # 基础四层质检跑了
+        assert called["market_index"] == 1  # 配置市场指数扫描已接线
         assert called["board"] == 1  # 板块扫描也跑了（接线验证）
 
 

@@ -1,6 +1,6 @@
 # 数据管理
 
-> 把"公开免费数据源"转成"可解释、可回测、防未来"的本地数据底座：采集入库 → 清洗复权 → 四层质检 → 修复闭环 → 调度运维，全在「数据管理」页内闭环。
+> 把"公开免费数据源"转成"可解释、可回测、防未来"的本地数据底座：采集入库 → 清洗复权 → 个股四层与指数/板块独立质检 → 修复闭环 → 调度运维，全在「数据管理」页内闭环。
 
 <span style="color:#2563eb">●</span> 采集　<span style="color:#7c3aed">●</span> 质检　<span style="color:#16a34a">●</span> 修复　<span style="color:#dc2626">●</span> 高风险
 
@@ -32,7 +32,7 @@
 
 `_valuation_one` 只写 `daily_bar` 已有交易日（杜绝游离行）；`total_mv` 覆盖写、`float_mv` 仅空缺回填（日线已写的更准值不覆盖）；最新总/流通股本写回 `stock_basic`。
 
-### 四层质检（`backend/services/data_report.py`、`dataquality/checker.py`）
+### 个股四层与指数/板块独立质检（`backend/services/data_report.py`、`dataquality/checker.py`）
 统一口径 `_coverage_frame`（全市场一次扫描 + 数据变更签名内存缓存），概览/逐股/质检三处共用同一份，保证数字一致。
 
 | 层 | issue_type | 判定 | 粒度 |
@@ -44,13 +44,15 @@
 | | `adj_jump` | 相邻日前复权价跳变>50% | 逐(code,日) |
 | L4 覆盖鲜活 | `data_gap` / `stale` | 近 90 交易日内部缺口/尾部滞后（扣已确认停牌） | 整股 |
 
-- **幂等**：每次质检按 `(issue_type, code, trade_date)` 原地收敛自动问题（L2/L3/L4）；仍存在的问题复用 id，本轮消失的问题转为 `resolved`，新问题才新增，反复运行不堆积。
+市场指数不混入个股 L1-L4 评分，但使用同一 `data_quality_issue` 台账和修复状态机。对当前配置的每只基准指数分别检查：`market_index_gap` 表示未追平全局最新交易日，`market_index_gap_daily` 表示近端某个开市日缺失，`market_index_invalid` 表示非开市日数据、OHLC 非正/越界或成交量额为负。数据目录的 `index_bar` 鲜活度同样要求每只已配置指数都不落后，不再被全表单个最新值掩盖。
+
+- **幂等**：每次质检按 `(issue_type, code, trade_date)` 原地收敛自动问题（个股 L2/L3/L4、市场指数和板块）；仍存在的问题复用 id，本轮消失的问题转为 `resolved`，新问题才新增，反复运行不堆积。
 - **事务边界**：全市场问题计算在事务外完成，每条 SQL 结束即释放共享 DuckDB 连接锁；仅最终台账收敛使用短事务。计算失败不改旧台账，落库前会重读生效中的忽略规则，防止覆盖计算期间的人工操作；任务状态与日志查询可在扫描 SQL 间隙继续响应。
 - **`mv_gap` 不设上限**：命中多少在市股就写多少条（按 code 聚合），与概览 L2 实时口径完全一致——台账不再静默；缺口大时（如新交易日大面积未补）台账会一次出现大量 `mv_gap`，跑 `valuation --fill-gaps` 或一键恢复后随之清零。
 - **通用忽略范围**：所有问题均可选择“仅忽略本次”或“整体忽略”。前者抑制当前持续事件，完整扫描或成功采集确认异常消失后自动失效；后者按稳定业务对象与问题类型持续抑制，直到质量页执行“恢复监控”。无代码的资金流源级问题使用稳定来源标识，未匹配名称使用板块类型与原始名称标识，避免互相误伤。历史 `ignored` 按升级前各类型的精确/整体口径迁移。
 
 ### 数据体检（`backend/services/data_verify.py`，与质检互补）
-`DataVerifier` 做**结构/正确性/字段契约**逐行核查（孤儿行、键对齐、日历一致、OHLC 序、复权因子、整列字段缺失、在市股逐行市值无缺失），只读不写台账，结果以 PASS/FAIL 报告呈现（`run_structured`）。板块四表（`board_dict/board_member/board_bar/board_fund_flow`）同纳入体检（E 组）：孤儿板块、指数日历一致、OHLC/量额合法、枚举取值（board_type/period）、`has_bar/has_members/has_fund_flow` 能力标记与实际数据双向一致；板块缺口/新鲜度仍归质检台账+修复闭环，体检不重复。可选联网交叉验证（实时重拉对比原价/前复权价），仅 CLI 用。复权因子核查口径与业务一致：`COALESCE(adj_factor_clean, adj_factor)`，源 `adj_factor` 允许 NULL（仅审计，akshare 个别除权日源因子缺失时 clean 已回填前段因子）。
+`DataVerifier` 做**结构/正确性/字段契约**逐行核查（孤儿行、键对齐、日历一致、OHLC 序、复权因子、整列字段缺失、在市股逐行市值无缺失），只读不写台账，结果以 PASS/FAIL 报告呈现（`run_structured`）。市场指数的配置覆盖、日历/OHLC 合法性和鲜活缺口已由可写台账的指数质检统一承担，避免只报 FAIL 却无法修复。板块四表（`board_dict/board_member/board_bar/board_fund_flow`）同纳入体检（E 组）：孤儿板块、指数日历一致、OHLC/量额合法、枚举取值（board_type/period）、`has_bar/has_members/has_fund_flow` 能力标记与实际数据双向一致；板块缺口/新鲜度仍归质检台账+修复闭环，体检不重复。可选联网交叉验证（实时重拉对比原价/前复权价），仅 CLI 用。复权因子核查口径与业务一致：`COALESCE(adj_factor_clean, adj_factor)`，源 `adj_factor` 允许 NULL（仅审计，akshare 个别除权日源因子缺失时 clean 已回填前段因子）。
 
 ### 异步任务执行模型（终止 / 续跑 / 三类采集差异，[async_task.py](../../backend/services/async_task.py)、[ingest.py](../../backend/services/ingest.py)）
 
@@ -85,7 +87,7 @@
         │ 限流·重试·超时·兜底·溯源                          │
         │                                                  ├─ rebuild-price-factors: adj_factor_clean / pre_close / 涨跌停标记
         │                                                  │
-   质检 scan_quality_issues ──写──> data_quality_issue 台账 ──修复闭环──> _valuation_one / reconcile_gaps / ingest_one_daily
+   质检 个股/市场指数/板块扫描 ──写──> data_quality_issue 台账 ──修复闭环──> 定向重采/补缺/补市值/重算复权
    体检 DataVerifier ──> PASS/FAIL 报告（不写台账）
         │
    编排: pipeline.DailyPipeline / services.IngestionService（增量 update / 全量 backfill）
@@ -164,7 +166,7 @@
 | 交易日历 | `trade_calendar` | AKShare | 每次采集主动请求到下一自然年末，只保存数据源已发布事实；用于补数范围、定时任务交易日判断、回测循环和交易纪律下一日生效 |
 | 股票基础信息 | `stock_basic` | AKShare + baostock 兜底 | 股票列表、板块、ST/退市、上市/退市日、点时股票池 |
 | 日线行情 | `daily_bar` | 新浪日线/baostock | K线、指标、筛选、榜单、回测撮合 |
-| 指数行情 | `index_bar` | AKShare | 中证 500、沪深 300、上证指数、科创 50、深证成指、创业板指；用于回测基准和市场环境对照。增量更新按指数分别计算最新日，新配置指数自动回填系统历史窗口 |
+| 指数行情 | `index_bar` | AKShare | 中证 500、沪深 300、上证指数、科创 50、深证成指、创业板指；用于回测基准和市场环境对照。增量更新按指数分别计算最新日，新配置指数自动回填系统历史窗口；质检按指数分别识别滞后、单日缺口与非法行，可在质量页定向重采并复检收敛 |
 | 流通市值 | `daily_metrics.float_mv` | 日线内流通股本派生 | 股票池过滤、列表展示、市值条件 |
 | 总市值 | `daily_metrics.total_mv` | 东财单只估值 | 数据质量 L2、股票池过滤、榜单/筛选市值条件 |
 | 溯源 | `data_source_provenance` | 采集服务写入 | 审计某段数据来自主源还是备源 |
@@ -196,6 +198,9 @@
 | `adj_jump` | L3 正确性 | 前复权价格跳变异常 | 重采整段并重算复权 | K线、收益率、指标 |
 | `data_gap` | L4 覆盖鲜活 | 近 90 交易日中间缺日 | 缺口收口/重采 | 指标连续性、筛选和回测 |
 | `stale` | L4 覆盖鲜活 | 尾部行情落后 | 增量更新 | 最新榜单和个股列表 |
+| `market_index_gap` | 市场指数 | 已配置指数未追平全局最新交易日 | 补最后已有日到最新日；从未入库则回填系统历史窗口 | 回测基准、个股/板块对比 |
+| `market_index_gap_daily` | 市场指数 | 近端某个开市日指数缺失 | 只重采问题对应日期 | 对比曲线连续性 |
+| `market_index_invalid` | 市场指数 | 非开市日行、OHLC 非正/越界或量额为负 | 重采异常日指数 | 对比涨跌幅、市场环境 |
 | `board_index_gap` | 板块维度 | 板块指数滞后全局最新交易日 | 补最后已有日之后到当前最新日的末尾连续区间 | 板块行情、涨幅榜 |
 | `board_index_gap_daily` | 板块维度 | 近端某个开市日指数缺失 | 只重采问题对应日期 | 板块趋势连续性 |
 | `board_index_invalid` | 板块维度 | 指数 OHLC/成交字段不合法 | 重采异常日指数 | 板块行情、涨幅榜 |
@@ -293,7 +298,7 @@ flowchart LR
 增量更新 update(): 日历自愈 → 指数 → 全市场日线增量 → 缺口收口 reconcile_gaps
                  → 刷干净复权因子 → 补最新交易日 total_mv(逐只) → 历史补采(仅整股从没市值的
                    新票)；历史中间缺口不自动补，跑 `valuation --fill-gaps` 一次性清
-→ 数据质检 scan_quality_issues(四层写台账)
+→ 数据质检（个股四层 + 市场指数 + 板块，统一写台账）
 → (可选) 数据体检 DataVerifier
 ```
 可手动 `cli daily`，或在「定时调度」页配 `stock_ingest` 日常同步以及 `verify`/`fix`/`checkup` 等数据任务按 cron/每日触发（通常仅交易日）；审计日志清理通过 `audit_cleanup` 定时任务执行，不受交易日限制。CLI 继续作为应急和批处理入口，不再是七类常用个股采集能力的唯一入口。
@@ -302,6 +307,7 @@ flowchart LR
 ```
 质检发现 → status=open → 手工恢复/按 issue_type 定时恢复 → status=fixing(绑 fix_task_id)
   → 按 issue_type 分派: mv_missing/mv_gap→补市值; data_gap/stale→reconcile_gaps;
+     market_index_gap→补指数尾部/首次历史; market_index_gap_daily/market_index_invalid→重采单日指数;
      null_close/ohl_repaired/abnormal_change→单日重采; adj_jump→整段重采重算复权
   → recheck_clean 复检 → 通过=resolved / 未通过=退回 open
 任务失败或服务重启 → fixing 孤儿自动复位 open（不留死锁）；ignored 人工豁免幂等不翻回。
