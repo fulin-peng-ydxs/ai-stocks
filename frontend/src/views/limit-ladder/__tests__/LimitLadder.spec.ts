@@ -179,24 +179,27 @@ describe('LimitLadder', () => {
     expect(wrapper.text()).toContain('部分股票缺少行情或停牌确认')
     expect(wrapper.text()).toContain('刷新状态')
 
-    await wrapper.setProps({canManageData:true})
-    expect(wrapper.text()).toContain('去结果维护')
+    await wrapper.setProps({ canManageData: true, canRecompute: true })
+    expect(wrapper.text()).toContain('重新计算')
     await wrapper.get('button.el-button--primary').trigger('click')
-    expect(wrapper.emitted('openMaintenance')).toHaveLength(1)
+    expect(wrapper.emitted('retry')).toHaveLength(1)
 
     await wrapper.setProps({canManageData:false,result:{...result,has_snapshot:false,business_code:'SNAPSHOT_NOT_READY',snapshot_status:'invalid',snapshot:null,layers:[],invalid_reason:'INGEST_PARTIAL',coverage:{reason_codes:['INGEST_PARTIAL']}}})
     expect(wrapper.text()).toContain('当日行情采集未完整成功')
     expect(wrapper.text()).toContain('请联系有数据任务权限的管理员执行行情补采')
     expect(wrapper.text()).not.toContain('去补采行情')
 
-    await wrapper.setProps({ canManageData: true })
+    await wrapper.setProps({ canManageData: true, canRecompute: true })
     expect(wrapper.text()).toContain('请前往“数据采集”执行“日常同步”')
+    expect(wrapper.text()).toContain('返回本页点击“重算当日”')
     await wrapper.get('button.el-button--primary.is-plain').trigger('click')
     expect(wrapper.emitted('openIngest')).toHaveLength(1)
 
     await wrapper.setProps({result:{...result,business_code:'SNAPSHOT_STALE',snapshot_status:'recalculating',last_success_at:'2026-08-28T18:00:00'}})
     expect(wrapper.get('[data-testid="limit-ladder-stale-notice"]').text()).toContain('结果已过期')
-    expect(wrapper.get('[data-testid="limit-ladder-stale-notice"]').text()).toContain('当前展示最后成功版本')
+    expect(wrapper.get('[data-testid="limit-ladder-stale-notice"]').text()).toContain('当前版本正在重算')
+    expect(wrapper.get('[data-testid="limit-ladder-stale-notice"]').text()).toContain('当前展示 2026-08-28T18:00:00 生成的最后成功版本')
+    expect(wrapper.get('[data-testid="limit-ladder-stale-notice"]').text()).toContain('计算完成后将自动刷新')
     expect(wrapper.get('[data-testid="limit-ladder-layer-2"]').text()).toContain('2 连板')
   })
 

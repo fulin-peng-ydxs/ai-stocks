@@ -119,3 +119,13 @@ def test_resource_list_marks_baseline_locked(env):
     for c in ("backtest:view", "config:view", "user:list"):
         if c in by_code:
             assert by_code[c]["baseline_locked"] is False, f"{c} 不应标 baseline_locked"
+
+
+def test_resource_list_marks_explicit_system_only_resource_locked(env):
+    """业务菜单内的管理员操作仍需在角色权限树显示并锁定。"""
+    from backend.storage.resource_repository import ResourceRepository
+
+    by_code = {r["code"]: r for r in ResourceRepository().list_all()}
+    assert by_code["limit-ladder:recompute"]["menu_id"] == "/limit-ladder"
+    assert by_code["limit-ladder:recompute"]["system_locked"] is True
+    assert by_code["limit-ladder:view"]["system_locked"] is False

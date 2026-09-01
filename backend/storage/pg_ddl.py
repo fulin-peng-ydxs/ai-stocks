@@ -1436,10 +1436,10 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
     # B) 每日榜单（/board，login）
     ("/board", "board:view",         "查看每日榜单",     "api", "POST", "/api/board/run"),
     ("/board", "board:compute",      "榜单即时计算",     "api", "GET",  "/api/board/compute"),
-    # 连板天梯查看属于业务默认授权；管理员重算挂 system 菜单形成第二道系统权限边界。
+    # 连板天梯查看属于业务默认授权；管理员重算归属同一业务页，system-only 由资源元数据与接口硬守卫表达。
     ("/limit-ladder", "limit-ladder:view", "查看连板天梯", "api", "GET",
      "/api/limit-ladder/{trade_date}"),
-    ("/data/ingest", "limit-ladder:recompute", "重算连板天梯", "api", "POST",
+    ("/limit-ladder", "limit-ladder:recompute", "重算连板天梯", "api", "POST",
      "/api/limit-ladder/{trade_date}/recompute"),
     ("/system/config/score", "score:run", "评分方案打分", "api", "POST", "/api/score-profiles/run"),
     # B) 策略筛选（/screen，login）
@@ -1543,6 +1543,8 @@ _TENANT_ADMIN_AUDIT_REVOKE_MARKER = "migration.tenant_admin_audit_default_revoke
 _DICT_ITEM_COLOR_BACKFILL_MARKER = "migration.dict_item_color_defaults_v1"
 _CONFIG_SPLIT_MENU_DISCOVERY_MARKER = "migration.config_split_menu_discovery_v1"
 _CONFIG_SPLIT_MENU_DISCOVERY_LOCK = 8410010006
+_LIMIT_LADDER_RECOMPUTE_ANCHOR_MARKER = "migration.limit_ladder_recompute_anchor_v1"
+_LIMIT_LADDER_RECOMPUTE_ANCHOR_LOCK = 8410010008
 _LEGACY_SCORE_PROFILES_MENU_ID = "/score-profiles"
 TRADE_DISCIPLINE_RBAC_MARKER = "migration.trade_discipline_default_grants_v1"
 TRADE_DISCIPLINE_RBAC_LOCK = 8410010005
@@ -2195,6 +2197,7 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
         _SEED_RESOURCES,
         excluded_codes=set(TRADE_DISCIPLINE_RESOURCE_CODES),
     )
+    _migrate_limit_ladder_recompute_anchor(client)
     # 4) 默认授权（首次 seed + 存量库一次性回填）
     _seed_role_grants(client, [m["code"] for m in menu_rows])
     _record_config_split_legacy_menu_state(client)
@@ -2245,6 +2248,53 @@ def _seed_resource_rows(
             "INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, sort, is_builtin) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE) ON CONFLICT (id) DO NOTHING",
             [code, menu_code, code, name, rtype, method, path, i * 10])
+
+
+def _migrate_limit_ladder_recompute_anchor(client: PostgresClient) -> None:
+    """把历史默认锚点从“数据采集”迁回“连板天梯”，并保留管理员自定义归属。
+
+    旧实现借 system 菜单表达 system-only，导致权限码出现在错误的管理分组。迁移只改仍保持旧默认
+    `/data/ingest` 的内置资源；已在正确位置时幂等通过，其他归属视为管理员自定义并原样保留。
+    """
+    with client.transaction() as conn, conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", [_LIMIT_LADDER_RECOMPUTE_ANCHOR_LOCK])
+        cur.execute(
+            "SELECT 1 FROM app_config WHERE key=%s",
+            [_LIMIT_LADDER_RECOMPUTE_ANCHOR_MARKER],
+        )
+        if cur.fetchone():
+            return
+        cur.execute(
+            "SELECT menu_id, is_builtin FROM sys_resource "
+            "WHERE id=%s AND code=%s FOR UPDATE",
+            ["limit-ladder:recompute", "limit-ladder:recompute"],
+        )
+        row = cur.fetchone()
+        state = "missing"
+        previous_menu_id = None
+        if row:
+            previous_menu_id = row[0]
+            if row[0] == "/data/ingest" and bool(row[1]):
+                cur.execute(
+                    "UPDATE sys_resource SET menu_id=%s, updated_at=now() WHERE id=%s",
+                    ["/limit-ladder", "limit-ladder:recompute"],
+                )
+                state = "migrated"
+            elif row[0] == "/limit-ladder":
+                state = "already_current"
+            else:
+                state = "preserved_custom"
+        cur.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
+            "ON CONFLICT (key) DO NOTHING",
+            [
+                _LIMIT_LADDER_RECOMPUTE_ANCHOR_MARKER,
+                json.dumps(
+                    {"applied": True, "state": state, "previous_menu_id": previous_menu_id},
+                    ensure_ascii=False,
+                ),
+            ],
+        )
 
 
 def _remove_legacy_paid_role(client: PostgresClient) -> None:

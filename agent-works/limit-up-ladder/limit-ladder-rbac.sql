@@ -40,12 +40,6 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM sys_menu WHERE id='quotes' AND code='quotes') THEN
         RAISE EXCEPTION '缺少最新行情父菜单 quotes，拒绝创建孤立菜单';
     END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM sys_menu
-        WHERE id='/data/ingest' AND code='/data/ingest' AND visible='system'
-    ) THEN
-        RAISE EXCEPTION '缺少 system 数据采集菜单，无法锚定重算权限';
-    END IF;
     IF (
         SELECT count(*) FROM sys_role
         WHERE (id='system' AND code='system' AND kind='system')
@@ -95,17 +89,16 @@ BEGIN
         INSERT INTO sys_resource
             (id,menu_id,code,name,type,api_method,api_path,sort,is_builtin)
         VALUES
-            ('limit-ladder:recompute','/data/ingest','limit-ladder:recompute','重算连板天梯',
+            ('limit-ladder:recompute','/limit-ladder','limit-ladder:recompute','重算连板天梯',
              'api','POST','/api/limit-ladder/{trade_date}/recompute',10,TRUE);
         inserted_resource_ids := inserted_resource_ids || jsonb_build_array('limit-ladder:recompute');
     END IF;
     IF NOT EXISTS (
         SELECT 1 FROM sys_resource r
-        JOIN sys_menu m ON m.id=r.menu_id
         WHERE r.id='limit-ladder:recompute' AND r.code='limit-ladder:recompute'
-          AND m.visible='system'
+          AND r.menu_id='/limit-ladder'
     ) THEN
-        RAISE EXCEPTION '重算资源未锚定 system 菜单，拒绝继续授权';
+        RAISE EXCEPTION '重算资源未归属连板天梯菜单，拒绝继续授权';
     END IF;
 
     FOREACH role_id IN ARRAY ARRAY['system','tenant_admin','normal'] LOOP

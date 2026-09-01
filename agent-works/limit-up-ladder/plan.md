@@ -122,7 +122,7 @@
 ### 4.4 权限、菜单与审计
 
 - 在 `_SEED_MENU_TREE` 的“最新行情”下新增 `/limit-ladder` 叶子，只补缺失行。
-- 在 `_SEED_RESOURCES` 新增 `limit-ladder:view`（挂 `/limit-ladder` 业务菜单）和 `limit-ladder:recompute`（挂既有 `visible=system` 的 `/data/ingest` 系统菜单作为权限锚点）。后者仍由天梯页面按钮消费，但借助现有 `system_only_resource_ids()` 同时阻止非 system 角色获得该资源码。
+- 在 `_SEED_RESOURCES` 新增 `limit-ladder:view` 和 `limit-ladder:recompute`，两者均归属真实入口 `/limit-ladder`。重算权限登记到 `EXPLICIT_SYSTEM_ONLY_RESOURCE_CODES`，由 `system_only_resource_ids()` 阻止非 system 角色获得，并在权限树显示为“仅系统管理员”；不能再借无关系统菜单表达权限性质。
 - `/limit-ladder` 加入业务菜单集合；新库 normal/tenant_admin 对齐每日榜单默认范围。存量库通过一次性 marker SQL 原子补默认授权并自增受影响用户 `perm_ver`，后续管理员撤销不被启动 seed 补回。
 - 重算后端必须使用 `require_system_perm("limit-ladder:recompute")`；按钮使用 `v-permission`，不能只按账号名判断。
 - 板块跳转只在有 `sectors:view` 时可操作；个股详情继续要求 `stocks:view`。
@@ -307,10 +307,10 @@
 - 操作：第一步创建含 `LayoutHost`/状态占位的页面壳并登记 `master-detail`；第二步添加静态路由；第三步 seed 菜单/两资源码和默认 view 授权；前端未完整时使用 staged menu，T10 完成后解除。
 - 产出：可编译页面壳、registry 记录、路由、菜单、资源和升级授权 SQL。
 - 影响范围：最新行情菜单和默认业务角色；不覆盖管理员运行时配置。
-- 边界与异常：seed 只补缺失；recompute 锚定 system 菜单；无角色 fail-closed；页面文件必须先于路由提交。
+- 边界与异常：seed 只补缺失；recompute 归属天梯菜单并显式 system-only；无角色 fail-closed；页面文件必须先于路由提交。
 - 验证方式：每一步均可构建；路由解析、菜单 seed 幂等、默认角色、system-only 防误授和保留管理员配置测试通过。
 - 完成标准：R1/R13 的页面入口和权限骨架可独立落地且无编译中间态。
-- 实际落地情况：新增 `LimitLadderView.vue` 可编译页面壳，真实消费 `LayoutHost`、`getPageLayout('limit-ladder')`、`MarketMasterDetailWorkspace`、`AppStateBlock` 与 `PageSettingsDrawer`；页面只展示阶段接入状态和主从区收展，不包含 T8 业务控件。`pageRegistry` 以 `master-detail` 登记 action/head、workspace、ladder、analysis 和 settings，静态路由在页面文件存在后接入，`DESIGN.md` marker 同步。PG seed 在“最新行情”下只补 `/limit-ladder`，新增默认业务码 `limit-ladder:view`，将 `limit-ladder:recompute` 锚定 `/data/ingest` system 菜单且不并入业务默认资源；`/limit-ladder` 在 T10 前加入 staged 集合，system 也不收到未完成菜单。专项 SQL 可处理 seed 已先行的存量库，使用 marker/锁/插入账本只补 normal、tenant_admin、system 所需授权并同步 `perm_ver`，重复执行 no-op，不覆盖菜单或资源运行时配置。
+- 实际落地情况：新增 `LimitLadderView.vue` 可编译页面壳，真实消费 `LayoutHost`、`getPageLayout('limit-ladder')`、`MarketMasterDetailWorkspace`、`AppStateBlock` 与 `PageSettingsDrawer`；页面只展示阶段接入状态和主从区收展，不包含 T8 业务控件。`pageRegistry` 以 `master-detail` 登记 action/head、workspace、ladder、analysis 和 settings，静态路由在页面文件存在后接入，`DESIGN.md` marker 同步。PG seed 在“最新行情”下只补 `/limit-ladder`，新增默认业务码 `limit-ladder:view`；`limit-ladder:recompute` 同样归属天梯菜单，但以显式 system-only 元数据锁定且不并入业务默认资源。存量旧默认锚点由独立 marker 迁回，管理员自定义归属保持不变；专项 SQL 继续以 marker/锁/插入账本补齐授权并同步 `perm_ver`。
 - 验证情况：后端 T7 契约 4 项及菜单父链、seed 幂等、菜单/资源配置保留、全量行保留、资源唯一性共 6 项回归通过；前端 registry、responsive、component-config 共 55 项通过，`npm run build` 通过。专项 SQL 已在本地开发 PG 连续执行两次并核对 marker=1、normal/tenant_admin 仅有 view、system 独占 recompute；另在事务内注入冲突 marker，已确认 fail-closed 且回滚后合法 marker 保持不变；后端重启后 `/api/health=200`。交互式浏览器自动化在真实 `debug_system` 登录态完成 1366×768、768×1024 页面截图、分析区收展、设置抽屉、staged 菜单隐藏及直接路由验证，控制台 error/warning 均为空；截图位于本地忽略目录 `agent-works/limit-up-ladder/screenshots/`。
 
 ### T8：筛选、摘要、热点、天梯卡片与导出前端

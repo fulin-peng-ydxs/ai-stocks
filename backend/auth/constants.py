@@ -33,8 +33,15 @@ SHARED_RESOURCE_CODES: tuple[str, ...] = (
     "dict:read",             # GET /api/dict/items/public（登录基线字典消费读；管理页仍 system-only）
 )
 
+# 普通业务页面内仍仅允许平台系统管理员执行的操作。其余 system-only 资源可由归属菜单
+# visible='system' 推导；这里补足不能靠错误菜单归属表达的例外。授权后端和权限树共同消费，
+# 接口本身仍必须使用 require_system_perm 做不可降级硬守卫。
+EXPLICIT_SYSTEM_ONLY_RESOURCE_CODES: tuple[str, ...] = (
+    "limit-ladder:recompute",
+)
+
 # 可授权业务码：normal/tenant_admin 默认授予的研究业务功能码（seed 首次写入 + 既有库一次性回填）。
-# 不含 baseline（那是强制注入、非授权）与 system-only（挂 visible='system' 菜单，非 system 授不了）。
+# 不含 baseline（那是强制注入、非授权）与 system-only（由系统菜单或显式集合锁定，非 system 授不了）。
 BUSINESS_RESOURCE_CODES: tuple[str, ...] = (
     "board:view", "board:compute", "score:run",
     "limit-ladder:view",

@@ -144,7 +144,7 @@ test('首次计算、覆盖失败、过期、空结果与 403 保持互斥状态
   }))
   await page.reload()
   await expect(page.getByTestId('limit-ladder-state')).toContainText('天梯快照计算失败')
-  await expect(page.getByRole('button', { name: '去结果维护', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '重新计算', exact: true })).toBeVisible()
 
   fixture.setResult(makeLimitLadderResult({
     business_code: 'SNAPSHOT_STALE',

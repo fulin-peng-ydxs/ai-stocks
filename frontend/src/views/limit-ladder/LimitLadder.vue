@@ -32,6 +32,7 @@ const props = withDefaults(defineProps<{
   error: string
   forbidden?: boolean
   canViewSectors: boolean
+  canRecompute?: boolean
   canManageData?: boolean
   compactHotspots?: boolean
   selectedCode?: string
@@ -47,7 +48,6 @@ const emit = defineEmits<{
   'update:tradeDate': [tradeDate: string | null]
   retry: []
   openIngest: []
-  openMaintenance: []
   select: [stock: LimitLadderStock]
   'update:cardSort': [sort: LimitLadderCardSort]
 }>()
@@ -80,6 +80,9 @@ const failedSnapshot = computed(() => props.result?.business_code === 'SNAPSHOT_
 const coverageBlocked = computed(() => (
   String(props.result?.invalid_reason || '').includes('INGEST_PARTIAL')
   || (props.result?.coverage?.reason_codes as unknown[] | undefined)?.includes('INGEST_PARTIAL')
+))
+const retryText = computed(() => (
+  failedSnapshot.value && props.canRecompute ? '重新计算' : '刷新状态'
 ))
 const coverageReasonLabels: Record<string, string> = {
   NOT_TRADING_DAY: '所选日期不是交易日',
@@ -115,8 +118,10 @@ const unavailableDescription = computed(() => {
     || readableReason(props.result?.invalid_reason)
     || coverageReasons.value
   if (coverageBlocked.value) {
-    const action = props.canManageData
-      ? '请前往“数据采集”执行“日常同步”；如需刷新已有结果，再到“结果维护”执行天梯失效'
+    const action = props.canManageData && props.canRecompute
+      ? '请前往“数据采集”执行“日常同步”，完成后返回本页点击“重算当日”'
+      : props.canManageData
+        ? '请前往“数据采集”执行“日常同步”，完成后联系有重算权限的管理员'
       : '请联系有数据任务权限的管理员执行行情补采，完成后刷新状态'
     return `${reason || '当日行情采集未完整成功'}；${action}`
   }
@@ -134,12 +139,18 @@ const pendingDescription = computed(() => {
   ].filter(Boolean).join(' · ')
 })
 const staleDescription = computed(() => {
-  const status = props.result?.snapshot_status === 'recalculating' ? '新版本正在重算' : '新版本暂不可用'
+  const recalculating = props.result?.snapshot_status === 'recalculating'
+  const status = recalculating ? '当前版本正在重算' : '新版本暂不可用'
   const lastSuccess = props.result?.last_success_at || props.result?.snapshot?.computed_at
   const failure = props.result?.task_error
     || readableReason(props.result?.failure_summary)
     || readableReason(props.result?.invalid_reason)
-  return [status, lastSuccess ? `当前展示最后成功版本 ${lastSuccess}` : '', failure || '']
+  return [
+    status,
+    lastSuccess ? `当前展示 ${lastSuccess} 生成的最后成功版本` : '',
+    recalculating ? '计算完成后将自动刷新' : '',
+    failure || '',
+  ]
     .filter(Boolean)
     .join(' · ')
 })
@@ -246,12 +257,7 @@ function resetFilters(): void {
               plain
               @click="$emit('openIngest')"
             >去补采行情</el-button>
-            <el-button
-              v-if="failedSnapshot && canManageData"
-              type="primary"
-              @click="$emit('openMaintenance')"
-            >去结果维护</el-button>
-            <el-button v-else type="primary" @click="$emit('retry')">刷新状态</el-button>
+            <el-button type="primary" @click="$emit('retry')">{{ retryText }}</el-button>
           </template>
         </AppStateBlock>
         <AppStateBlock v-else-if="filteredEmpty" data-testid="limit-ladder-state" state="empty">

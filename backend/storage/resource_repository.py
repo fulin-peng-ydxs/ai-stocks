@@ -11,13 +11,14 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from backend.auth.constants import SHARED_RESOURCE_CODES
+from backend.auth.constants import EXPLICIT_SYSTEM_ONLY_RESOURCE_CODES, SHARED_RESOURCE_CODES
 from backend.common.logging import get_logger
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
 log = get_logger("storage.resource_repository")
 
 _BASELINE_CODES = set(SHARED_RESOURCE_CODES)   # baseline_locked：角色页恒勾选、置灰不可反选（stage4·R21）
+_EXPLICIT_SYSTEM_ONLY_CODES = set(EXPLICIT_SYSTEM_ONLY_RESOURCE_CODES)
 
 _RES_COLS = "id, menu_id, code, name, type, api_method, api_path, sort, is_builtin"
 
@@ -34,6 +35,8 @@ class ResourceRepository:
             "sort": int(r["sort"]), "is_builtin": bool(r["is_builtin"]),
             # baseline 基线：角色页据此渲染为恒勾选+置灰+不可反选（与 system-only 置灰相反语义）
             "baseline_locked": r["code"] in _BASELINE_CODES,
+            # 普通业务菜单下的 system-only 操作不能靠菜单可见性推导，需显式下发给权限树锁定。
+            "system_locked": r["code"] in _EXPLICIT_SYSTEM_ONLY_CODES,
         }
 
     def list_all(self, menu_id: str | None = None) -> list[dict]:

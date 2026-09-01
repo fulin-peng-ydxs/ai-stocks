@@ -44,7 +44,7 @@ RBAC 主数据落 PostgreSQL，核心表由 `backend/storage/pg_ddl.py` 创建�
 
 权限码精确匹配，不使用通配符。用户状态、租户状态、角色授权、菜单资源变更会让受影响用户 `perm_ver` 自增；业务写入和 `perm_ver` 自增在同一 PG 事务提交，Redis 清缓存只是提交后的优化。旧 token 下次请求因 `perm_ver` 不一致失效。
 
-system-only 边界在数据层还有一道防线：`role_repository` 的 `system_only_resource_ids()` 归集 `visible='system'` 菜单下挂的全部资源码，角色授权（`PUT /api/roles/{id}/perms`）落库时拦下这些码、防止被误授予非 system 角色——即「接口守卫 + 数据层拦截」双保险，即使前端或服务层绕过，特权功能码也无法经授权表外泄到普通角色。
+system-only 边界在数据层还有一道防线：`role_repository` 的 `system_only_resource_ids()` 同时归集 `visible='system'` 菜单下的资源码，以及普通业务页内显式登记在 `EXPLICIT_SYSTEM_ONLY_RESOURCE_CODES` 的管理员操作。角色授权（`PUT /api/roles/{id}/perms`）落库时拦下这些码，前端权限树依据 `system_locked` 显示但置灰不可授——即「接口硬守卫 + 数据层拦截 + 统一交互」三层一致。业务页管理员操作应归属真实业务菜单，不能为了表达 system-only 而挂到无关系统菜单。
 
 ### 4. 前端授权消费
 

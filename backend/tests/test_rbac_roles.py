@@ -240,6 +240,17 @@ def test_grant_system_only_code_rejected(client, env):
     assert r.status_code == 403   # system-only 码不可授予非 system 角色
 
 
+def test_grant_explicit_system_only_code_on_business_menu_rejected(client, env):
+    rid = env.mk_role()
+    recompute = _res_id(env.pg, "limit-ladder:recompute")
+    r = client.put(
+        f"/api/roles/{rid}/perms",
+        json={"menuIds": [], "resourceIds": [recompute]},
+        headers=env.sys_headers(),
+    )
+    assert r.status_code == 403
+
+
 def test_grant_bumps_members_perm_ver(client, env):
     rid = env.mk_role()
     tid = env.mk_tenant()

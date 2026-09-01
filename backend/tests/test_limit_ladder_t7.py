@@ -2,7 +2,11 @@
 
 from pathlib import Path
 
-from backend.auth.constants import BUSINESS_RESOURCE_CODES, STAGED_FRONTEND_MENU_CODES
+from backend.auth.constants import (
+    BUSINESS_RESOURCE_CODES,
+    EXPLICIT_SYSTEM_ONLY_RESOURCE_CODES,
+    STAGED_FRONTEND_MENU_CODES,
+)
 from backend.storage.pg_ddl import (
     _BUSINESS_MENU_CODES,
     _SEED_MENU_TREE,
@@ -25,8 +29,9 @@ def test_limit_ladder_menu_and_resources_have_correct_authorization_anchors():
     view = resources["limit-ladder:view"]
     recompute = resources["limit-ladder:recompute"]
     assert view[0] == "/limit-ladder" and view[4:] == ("GET", "/api/limit-ladder/{trade_date}")
-    assert recompute[0] == "/data/ingest"
+    assert recompute[0] == "/limit-ladder"
     assert recompute[4:] == ("POST", "/api/limit-ladder/{trade_date}/recompute")
+    assert "limit-ladder:recompute" in EXPLICIT_SYSTEM_ONLY_RESOURCE_CODES
 
 
 def test_default_grants_only_include_view_and_completed_t10_menu_is_released():
@@ -49,6 +54,17 @@ def test_rbac_upgrade_is_marker_guarded_append_only_and_invalidates_permissions(
     assert "update sys_resource" not in normalized
     assert "delete from sys_menu" not in normalized
     assert "delete from sys_resource" not in normalized
+
+
+def test_recompute_permission_is_visible_under_ladder_but_locked_for_non_system_roles():
+    role_source = (ROOT / "frontend/src/views/system/RoleManageView.vue").read_text()
+    menu_source = (ROOT / "frontend/src/views/system/MenuResourceView.vue").read_text()
+    api_source = (ROOT / "frontend/src/api/menu.ts").read_text()
+
+    assert "locked || !!res.system_locked" in role_source
+    assert "r.system_locked" not in menu_source
+    assert "mr-resource-name" not in menu_source
+    assert "system_locked?: boolean" in api_source
 
 
 def test_forward_and_rollback_sql_are_marker_owned_and_fail_closed():

@@ -62,12 +62,14 @@ defineProps<{
 .pt-resource-copy {
   display: flex;
   flex: 1 1 auto;
+  gap: var(--app-space-1);
   min-width: 0;
   flex-direction: column;
 }
 .pt-fname {
   overflow: hidden;
   font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -76,6 +78,7 @@ defineProps<{
   color: var(--el-text-color-secondary);
   font-family: var(--app-font-family-mono);
   font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

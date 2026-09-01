@@ -83,7 +83,7 @@ function buildTree(menus: MenuNode[], resources: Resource[]) {
         label: res.name,
         kind: 'resource',
         nodeType: res.type,
-        sysLocked: locked,
+        sysLocked: locked || !!res.system_locked,
         baselineLocked,
       })
       // baseline 恒勾选、不可反选：排除出可勾选/全选原子叶子集（后端强制注入+保存并入，前端不当作授权项）

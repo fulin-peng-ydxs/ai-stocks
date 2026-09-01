@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from backend.auth.constants import ASSIGNABLE_PRESET_ROLES
+from backend.auth.constants import ASSIGNABLE_PRESET_ROLES, EXPLICIT_SYSTEM_ONLY_RESOURCE_CODES
 from backend.common.logging import get_logger
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
@@ -142,9 +142,14 @@ class RoleRepository:
         return set(df["id"].tolist()) if not df.empty else set()
 
     def system_only_resource_ids(self) -> set[str]:
-        """归属 visible='system' 菜单的功能码 id：这些接口由 require_system 硬守卫，授予非 system
-        角色也不生效，禁止授予以免造成"已授权"的误导观感（如 role:*/menu:*/tenant:*）。"""
+        """返回不可授予非 system 角色的功能码 id。
+
+        系统菜单资源由可见性推导；普通业务页上的管理员操作由显式 system-only 码补充。
+        这些接口均由 require_system_perm 硬守卫，禁止误授造成“已授权但不可用”的误导。
+        """
         df = self.pg.query_df(
             "SELECT r.id FROM sys_resource r JOIN sys_menu m ON m.id = r.menu_id "
-            "WHERE m.visible = 'system'")
+            "WHERE m.visible = 'system' OR r.code = ANY(%s)",
+            [list(EXPLICIT_SYSTEM_ONLY_RESOURCE_CODES)],
+        )
         return set(df["id"].tolist()) if not df.empty else set()

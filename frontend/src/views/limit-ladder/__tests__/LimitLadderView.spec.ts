@@ -4,7 +4,7 @@ import { flushPromises, shallowMount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h, reactive, ref, type Component } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessageBox } from 'element-plus'
 import type { LimitLadderResult } from '@/api/limitLadder'
 import { useAuthStore } from '@/stores/auth'
 
@@ -206,11 +206,35 @@ beforeEach(() => {
 
 afterEach(() => {
   mountedWrappers.splice(0).forEach((wrapper) => wrapper.unmount())
+  vi.restoreAllMocks()
   vi.clearAllTimers()
   vi.useRealTimers()
 })
 
 describe('LimitLadderView polling deadline', () => {
+  it('有权限时保留重算当日并按所选日期提交', async () => {
+    vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(readyResult())
+    vi.mocked(limitLadderApi.recomputeLimitLadder).mockResolvedValue({
+      command_id: 'command-recompute',
+      task_id: 'task-recompute',
+      status: 'requested',
+      reused: false,
+    })
+    const confirm = vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
+    const wrapper = await mountView()
+
+    const button = wrapper.get('[data-testid="limit-ladder-recompute"]')
+    await button.trigger('click')
+    await flushPromises()
+
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining('2026-08-28'),
+      '重算当日',
+      expect.objectContaining({ confirmButtonText: '确认重算' }),
+    )
+    expect(limitLadderApi.recomputeLimitLadder).toHaveBeenCalledWith('2026-08-28')
+  })
+
   it('偏好和交易日尚未初始化完成时保持加载态，不闪现无快照失败态', async () => {
     const datesRequest = deferred<Awaited<ReturnType<typeof limitLadderApi.listLimitLadderTradeDates>>>()
     vi.mocked(limitLadderApi.listLimitLadderTradeDates).mockReturnValue(datesRequest.promise)

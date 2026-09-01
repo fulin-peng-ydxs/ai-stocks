@@ -31,6 +31,7 @@ export interface Resource {
   is_builtin: boolean
   role_count?: number
   baseline_locked?: boolean // 登录基线共享读码：角色页恒勾选+置灰不可反选（stage4·R21）
+  system_locked?: boolean // 普通业务菜单下仍仅系统管理员可用：角色页显示但置灰不可授
 }
 
 export function listMenus(): Promise<MenuNode[]> {
