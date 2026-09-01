@@ -60,10 +60,14 @@ import {
 } from '@/views/limit-ladder/preferences'
 import {
   DEFAULT_LIMIT_LADDER_CARD_SORT,
+  DEFAULT_LIMIT_LADDER_CARD_SORT_ORDER,
   LIMIT_LADDER_CARD_SORT_OPTIONS,
+  defaultLimitLadderCardSortOrder,
   normalizeLimitLadderCardSort,
+  normalizeLimitLadderCardSortOrder,
   sortLimitLadderLayers,
   type LimitLadderCardSort,
+  type LimitLadderCardSortOrder,
 } from '@/views/limit-ladder/sorting'
 
 const route = useRoute()
@@ -80,8 +84,16 @@ const tradeDate = ref<string | null>(
 )
 const filters = ref<LimitLadderFilters>(filtersFromRouteQuery(route.query))
 const cardSort = ref<LimitLadderCardSort>(normalizeLimitLadderCardSort(route.query.card_sort))
+const cardSortOrder = ref<LimitLadderCardSortOrder>(
+  normalizeLimitLadderCardSortOrder(
+    route.query.card_order,
+    defaultLimitLadderCardSortOrder(cardSort.value),
+  ),
+)
 const result = ref<LimitLadderResult | null>(null)
-const loading = ref(false)
+// 首次请求前还要等待个人偏好和交易日列表，期间必须保持加载态，避免把 result=null
+// 短暂渲染成“无可用快照”的业务失败态。
+const loading = ref(true)
 const error = ref('')
 const forbidden = ref(false)
 const exporting = ref(false)
@@ -160,7 +172,7 @@ const canManageData = computed(() => (
   hasPermission(auth.role, auth.permissions, 'data-task:manage')
 ))
 const analysisSourceItems = computed(() => (
-  sortLimitLadderLayers(result.value?.layers ?? [], cardSort.value)
+  sortLimitLadderLayers(result.value?.layers ?? [], cardSort.value, cardSortOrder.value)
     .flatMap((layer) => layer.stocks)
 ))
 const {
@@ -215,6 +227,7 @@ const drawerConfig = {
 async function applySystemDefaults(): Promise<void> {
   filters.value = filtersFromLimitLadderPreference(DEFAULT_LIMIT_LADDER_PREFERENCE)
   cardSort.value = DEFAULT_LIMIT_LADDER_CARD_SORT
+  cardSortOrder.value = DEFAULT_LIMIT_LADDER_CARD_SORT_ORDER
   applyAnalysisDefaults(DEFAULT_LIMIT_LADDER_PREFERENCE)
   await syncUrl()
   await loadLadder()
@@ -254,6 +267,7 @@ async function syncUrl(): Promise<void> {
         ...(activeAnalysisCode.value ? { selected: activeAnalysisCode.value } : {}),
         ...(activeAnalysisCode.value ? { anchor: activeAnalysisCode.value } : {}),
         card_sort: cardSort.value,
+        card_order: cardSortOrder.value,
       },
     })
   } finally {
@@ -555,6 +569,12 @@ watch(
     const changed = nextDate !== tradeDate.value
       || JSON.stringify(nextFilters) !== JSON.stringify(filters.value)
     cardSort.value = normalizeLimitLadderCardSort(query.card_sort ?? cardSort.value)
+    cardSortOrder.value = normalizeLimitLadderCardSortOrder(
+      query.card_order,
+      query.card_sort === undefined
+        ? cardSortOrder.value
+        : defaultLimitLadderCardSortOrder(cardSort.value),
+    )
     if (!changed) {
       void reconcileAnalysisContext()
       return
@@ -571,6 +591,12 @@ onMounted(async () => {
     const savedPreference = effectivePreference()
     applyAnalysisDefaults(savedPreference)
     cardSort.value = normalizeLimitLadderCardSort(route.query.card_sort ?? savedPreference.cardSort)
+    cardSortOrder.value = normalizeLimitLadderCardSortOrder(
+      route.query.card_order,
+      route.query.card_sort === undefined
+        ? savedPreference.cardSortOrder
+        : defaultLimitLadderCardSortOrder(cardSort.value),
+    )
     filters.value = filtersFromRouteQuery(
       route.query,
       filtersFromLimitLadderPreference(savedPreference),
@@ -585,6 +611,7 @@ onMounted(async () => {
     }
     if (!tradeDate.value) {
       error.value = '暂无可用交易日'
+      loading.value = false
       return
     }
     await syncUrl()
@@ -597,6 +624,7 @@ onMounted(async () => {
     } else {
       error.value = errorMessage(value, '交易日加载失败，请稍后重试')
     }
+    loading.value = false
   }
 })
 
@@ -661,6 +689,7 @@ onBeforeUnmount(() => {
               :selected-code="activeAnalysisCode"
               :return-path="ladderReturnPath"
               :card-sort="cardSort"
+              :card-sort-order="cardSortOrder"
               @update:filters="setFilters"
               @update:trade-date="setTradeDate"
               @update:card-sort="setCardSort"
@@ -776,7 +805,7 @@ onBeforeUnmount(() => {
               </div>
             </template>
           </StockChartSettingSection>
-          <PageSettingSection title="默认筛选">
+          <PageSettingSection title="默认查询">
             <div class="setting-item">
               <div class="setting-label">统计窗口</div>
               <PageSegmented
@@ -822,6 +851,18 @@ onBeforeUnmount(() => {
                   :value="option.value"
                 />
               </el-select>
+            </div>
+            <div class="setting-item">
+              <div class="setting-label">排序方向</div>
+              <PageSegmented
+                v-model="preference.cardSortOrder"
+                :options="[
+                  { label: '升序', value: 'asc' },
+                  { label: '降序', value: 'desc' },
+                ]"
+                aria-label="默认卡片排序方向"
+                test-id="limit-ladder-default-card-sort-order"
+              />
             </div>
             <StockAnalysisDefaultFields
               v-model:default-chart-mode="preference.defaultChartMode"

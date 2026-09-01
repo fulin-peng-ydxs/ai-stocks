@@ -13,6 +13,7 @@ import {
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppTabToolbar from '@/components/AppTabToolbar.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -67,6 +68,12 @@ const {
 
 // 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
+type IngestWorkspaceTab = 'tasks' | 'logs'
+const workspaceTabDefault = computed<IngestWorkspaceTab>(() => (
+  componentValueOf('workspace', 'defaultActive') === 'logs' ? 'logs' : 'tasks'
+))
+const activeWorkspaceTab = ref<IngestWorkspaceTab>(workspaceTabDefault.value)
+watch(workspaceTabDefault, (value) => { activeWorkspaceTab.value = value })
 const loading = ref(false)
 
 // ── 任务中心：服务端分页 / 排序 / 筛选（M2.9.5）──
@@ -641,8 +648,7 @@ watch(
     </div>
     </template>
 
-    <template #main>
-    <div class="ingest-body">
+    <template #body>
       <div class="ingest-top">
       <!-- 采集区 -->
       <el-card shadow="never" class="blk">
@@ -694,14 +700,16 @@ watch(
         </div>
       </el-card>
       </div>
+    </template>
 
+    <template #workspace>
       <div class="ingest-bottom">
-      <!-- 任务中心 -->
-      <el-card shadow="never" class="blk ingest-panel">
-        <template #header>
-          <div class="blk-head">
-            <span>任务中心</span>
-            <div class="flt">
+      <el-card shadow="never" class="app-workspace-card" data-testid="ingest-workspace">
+        <el-tabs v-model="activeWorkspaceTab" class="app-workspace-tabs" data-testid="ingest-workspace-tabs">
+          <el-tab-pane label="任务中心" name="tasks">
+            <div class="app-workspace-panel">
+          <AppTabToolbar label="任务中心操作栏" data-testid="ingest-tasks-toolbar">
+            <template #actions>
               <el-select v-model="taskFilter.task_type" data-testid="task-type-filter"
                          placeholder="类型" clearable size="small" style="width: 180px"
                          @change="() => { taskPage = 1; loadTasks() }">
@@ -712,9 +720,9 @@ watch(
                          @change="() => { taskPage = 1; loadTasks() }">
                 <el-option v-for="o in TASK_STATUS_OPTIONS" :key="o.v" :label="o.l" :value="o.v" />
               </el-select>
-            </div>
-          </div>
-        </template>
+            </template>
+            <template #description>筛选变更后自动刷新；点击任务行查看运行日志</template>
+          </AppTabToolbar>
         <div class="panel-table-wrap" data-testid="task-center-panel">
           <AppStateBlock
             v-if="taskLoading && !tasks.length"
@@ -798,15 +806,13 @@ watch(
             </AppTableColumn>
           </AppDataTable>
         </div>
-      </el-card>
+            </div>
+          </el-tab-pane>
 
-      <!-- 采集更新日志（按表/批次留痕）-->
-      <el-card shadow="never" class="blk ingest-panel">
-        <template #header>
-          <div class="blk-head">
-            <span>采集日志</span>
-            <div class="flt">
-              <span class="hint">失败行可见原因；逐股明细见任务中心「日志」</span>
+          <el-tab-pane label="采集日志" name="logs" lazy>
+            <div class="app-workspace-panel" data-testid="ingest-log-panel">
+          <AppTabToolbar label="采集日志操作栏" data-testid="ingest-logs-toolbar">
+            <template #actions>
               <el-select v-model="logFilter.table_name" placeholder="目标表" clearable size="small" style="width: 140px"
                          @change="() => { logPage = 1; loadLogs() }">
                 <el-option v-for="t in logTables" :key="t" :label="t" :value="t" />
@@ -817,9 +823,9 @@ watch(
                 <el-option label="失败" value="failed" />
                 <el-option label="部分" value="partial" />
               </el-select>
-            </div>
-          </div>
-        </template>
+            </template>
+            <template #description>失败行可见原因；逐股明细见任务中心「日志」</template>
+          </AppTabToolbar>
         <div class="panel-table-wrap">
           <AppStateBlock
             v-if="logLoading && !updateLogList.length"
@@ -874,9 +880,11 @@ watch(
             </AppTableColumn>
           </AppDataTable>
         </div>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
       </el-card>
       </div>
-    </div>
     </template>
 
     <template #overlays>
@@ -1019,15 +1027,7 @@ watch(
 
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; }
-/* 填满 LayoutHost 的条件成长区；内部「顶部固定卡 + 底部双栏成长表」，放不下时整区内滚 */
-.ingest-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-4);
-}
+/* 顶部操作卡固定，底部成长工作区以 Tab 切换两张表。 */
 .ingest-top {
   display: flex;
   flex-direction: column;
@@ -1036,17 +1036,6 @@ watch(
 .ingest-bottom {
   flex: 1 1 auto;
   min-height: 520px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--app-space-4);
-}
-.ingest-panel {
-  margin-bottom: 0;
-  min-height: 0;
-}
-.ingest-panel :deep(.el-card__body) {
-  flex: 1 1 auto;
-  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -1081,12 +1070,7 @@ watch(
 :deep(.row-partial) { background: var(--el-color-warning-light-9); }
 .fail-detail { color: var(--app-danger-text); }
 .partial-detail { color: var(--app-warning-text); }
-@media (max-width: 1280px) {
-  .ingest-bottom {
-    grid-template-columns: 1fr;
-    min-height: unset;
-  }
-}
+@media (max-width: 1280px) { .ingest-bottom { min-height: 520px; } }
 </style>
 
 <!-- PageDrawer 经 teleport 挂到 LayoutHost 内容区，scoped 作用域属性不会带到抽屉根，

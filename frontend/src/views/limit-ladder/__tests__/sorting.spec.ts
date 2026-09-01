@@ -52,16 +52,37 @@ describe('limit ladder card sorting', () => {
   ]
 
   it('保留接口层级一级顺序，只在层内按用户字段二级排序', () => {
-    const sorted = sortLimitLadderLayers(layers, 'return')
+    const sorted = sortLimitLadderLayers(layers, 'return', 'desc')
     expect(sorted.map((layer) => layer.consecutive_days)).toEqual([2, 1])
     expect(sorted[0]!.stocks.map((item) => item.code)).toEqual(['B', 'A'])
     expect(sorted[1]!.stocks.map((item) => item.code)).toEqual(['D', 'C'])
     expect(layers[0]!.stocks.map((item) => item.code)).toEqual(['A', 'B'])
   })
 
+  it('支持按抽屉配置切换升序与降序', () => {
+    const ascending = sortLimitLadderLayers(layers, 'return', 'asc')
+    const descending = sortLimitLadderLayers(layers, 'return', 'desc')
+
+    expect(ascending[0]!.stocks.map((item) => item.code)).toEqual(['A', 'B'])
+    expect(descending[0]!.stocks.map((item) => item.code)).toEqual(['B', 'A'])
+  })
+
   it('二级字段相同时稳定保留接口兜底顺序', () => {
     const sorted = sortLimitLadderLayers(layers, 'board')
     expect(sorted[0]!.stocks.map((item) => item.code)).toEqual(['A', 'B'])
     expect(sorted[1]!.stocks.map((item) => item.code)).toEqual(['C', 'D'])
+  })
+
+  it('旧调用未传方向时延续文本升序和数字降序', () => {
+    const textLayers: LimitLadderLayer[] = [{
+      consecutive_days: 1,
+      stock_count: 2,
+      stocks: [stock('B', { board: '科创板' }), stock('A', { board: '创业板' })],
+    }]
+
+    expect(sortLimitLadderLayers(textLayers, 'board')[0]!.stocks.map((item) => item.code))
+      .toEqual(['A', 'B'])
+    expect(sortLimitLadderLayers(layers, 'return')[0]!.stocks.map((item) => item.code))
+      .toEqual(['B', 'A'])
   })
 })

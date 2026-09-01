@@ -19,8 +19,12 @@ import {
 } from '@/utils/marketCompare'
 import {
   DEFAULT_LIMIT_LADDER_CARD_SORT,
+  DEFAULT_LIMIT_LADDER_CARD_SORT_ORDER,
+  defaultLimitLadderCardSortOrder,
   normalizeLimitLadderCardSort,
+  normalizeLimitLadderCardSortOrder,
   type LimitLadderCardSort,
+  type LimitLadderCardSortOrder,
 } from './sorting'
 
 export interface LimitLadderPreferenceV1 extends Record<string, unknown> {
@@ -30,6 +34,7 @@ export interface LimitLadderPreferenceV1 extends Record<string, unknown> {
   boards: LimitLadderBoard[]
   showAnalysisPanel: boolean
   cardSort: LimitLadderCardSort
+  cardSortOrder: LimitLadderCardSortOrder
   defaultChartMode: 'compare' | 'kline'
   compareRange: number
   benchmarkCode: string
@@ -46,6 +51,7 @@ export const DEFAULT_LIMIT_LADDER_PREFERENCE: LimitLadderPreferenceV1 = {
   boards: [...DEFAULT_LIMIT_LADDER_FILTERS.boards],
   showAnalysisPanel: false,
   cardSort: DEFAULT_LIMIT_LADDER_CARD_SORT,
+  cardSortOrder: DEFAULT_LIMIT_LADDER_CARD_SORT_ORDER,
   defaultChartMode: 'compare',
   compareRange: 60,
   benchmarkCode: '000905.SH',
@@ -97,6 +103,7 @@ export function normalizeLimitLadderPreference(value: unknown): LimitLadderPrefe
   const compareRange = [5, 10, 20, 60, 120, 250].includes(Number(input.compareRange))
     ? Number(input.compareRange)
     : DEFAULT_LIMIT_LADDER_PREFERENCE.compareRange
+  const cardSort = normalizeLimitLadderCardSort(input.cardSort)
   return {
     schemaVersion: 1,
     window: LIMIT_LADDER_WINDOWS.includes(Number(input.window) as LimitLadderWindow)
@@ -109,7 +116,12 @@ export function normalizeLimitLadderPreference(value: unknown): LimitLadderPrefe
     showAnalysisPanel: typeof input.showAnalysisPanel === 'boolean'
       ? input.showAnalysisPanel
       : DEFAULT_LIMIT_LADDER_PREFERENCE.showAnalysisPanel,
-    cardSort: normalizeLimitLadderCardSort(input.cardSort),
+    cardSort,
+    // 旧偏好没有方向字段：文本字段延续原升序，数字字段延续原降序。
+    cardSortOrder: normalizeLimitLadderCardSortOrder(
+      input.cardSortOrder,
+      defaultLimitLadderCardSortOrder(cardSort),
+    ),
     defaultChartMode: input.defaultChartMode === 'kline' ? 'kline' : 'compare',
     compareRange,
     benchmarkCode: normalizeMarketBenchmarkCode(input.benchmarkCode),

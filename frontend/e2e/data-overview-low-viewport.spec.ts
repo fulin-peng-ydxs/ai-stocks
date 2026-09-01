@@ -63,6 +63,8 @@ test('数据概览在 1100×620 保持固定摘要和可用主工作区', async 
   await expect(workspace).toBeVisible()
   await page.getByRole('tab', { name: '数据资产' }).click()
   await expect(page.getByTestId('overview-asset-table')).toBeVisible()
+  await expect(page.getByTestId('overview-assets-toolbar')).toContainText('展开行查看字段字典与表间关联')
+  await expect(page.getByTestId('overview-assets-toolbar').getByText('数据资产表', { exact: true })).toHaveCount(0)
 
   const geometry = await page.evaluate(() => {
     const rect = (testId: string) => {
@@ -100,6 +102,10 @@ test('数据概览在 1100×620 保持固定摘要和可用主工作区', async 
 
   await page.getByRole('tab', { name: '逐股分层体检' }).click()
   await expect(page.getByTestId('overview-stock-table')).toBeVisible()
+  const stockToolbar = page.getByTestId('overview-stocks-toolbar')
+  await expect(stockToolbar.getByTestId('overview-stock-codes')).toBeVisible()
+  await expect(stockToolbar).toContainText('点击层级徽章进入解决页')
+  await expect(stockToolbar.getByText('L1 入库 / L2 契约 / L3 正确性 / L4 覆盖鲜活', { exact: true })).toHaveCount(0)
   await expectAdaptiveTableFillsContainer(page, 'overview-stock-table')
   await expect(summary).toBeVisible()
   await expect(quality).toBeVisible()
@@ -126,11 +132,13 @@ test('数据概览两类表格在各桌面视口都自适应铺满内容区', as
   await expect(page.getByTestId('overview-workspace')).toBeVisible()
   await page.getByRole('tab', { name: '数据资产' }).click()
   await expect(page.getByTestId('overview-asset-table')).toBeVisible()
+  await expect(page.getByTestId('overview-assets-toolbar')).toBeVisible()
   await expectAdaptiveTableFillsContainer(page, 'overview-asset-table')
 
   await page.getByRole('tab', { name: '逐股分层体检' }).click()
   // 该表格为 DuckDB 重查询页面，并发下读锁排队可能慢于默认 8s——放宽可见性等待（已知架构边界，非渲染缺陷）。
   await expect(page.getByTestId('overview-stock-table')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTestId('overview-stocks-toolbar')).toBeVisible()
   await expectAdaptiveTableFillsContainer(page, 'overview-stock-table')
   expect(consoleIssues).toEqual([])
 })

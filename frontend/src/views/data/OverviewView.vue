@@ -9,6 +9,7 @@ import {
   type Overview, type CatalogTable, type Dimension, type StockQuality,
 } from '@/api/data'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppTabToolbar from '@/components/AppTabToolbar.vue'
 import HelpHint from '@/components/HelpHint.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
@@ -440,16 +441,15 @@ onMounted(load)
       <el-card
         v-else
         shadow="never"
-        class="overview-workspace-card"
+        class="app-workspace-card overview-workspace-card"
         data-testid="overview-workspace"
       >
-        <el-tabs v-model="activeWorkspaceTab" class="overview-tabs">
+        <el-tabs v-model="activeWorkspaceTab" class="app-workspace-tabs overview-tabs">
           <el-tab-pane label="数据资产" name="assets">
-            <div class="overview-panel">
-              <div class="panel-head">
-                <span class="panel-title">数据资产表</span>
-                <span class="hint">展开行查看字段字典与表间关联；规划中维度暂无物理表</span>
-              </div>
+            <div class="app-workspace-panel overview-panel">
+              <AppTabToolbar label="数据资产操作栏" data-testid="overview-assets-toolbar">
+                <template #description>展开行查看字段字典与表间关联；规划中维度暂无物理表</template>
+              </AppTabToolbar>
               <AppDataTable
                 :data="assets"
                 size="small"
@@ -523,19 +523,21 @@ onMounted(load)
           </el-tab-pane>
 
           <el-tab-pane label="逐股分层体检" name="stocks" lazy>
-            <div class="overview-panel">
-              <div class="panel-head">
-                <span class="panel-title">L1 入库 / L2 契约 / L3 正确性 / L4 覆盖鲜活</span>
-                <span class="hint">点击层级徽章进入解决页 · 最新交易日 {{ (sq?.latest_trade_date || '—').slice(0, 10) }}</span>
-              </div>
-              <div class="sq-bar">
-                <StockCodeMultiSelect
-                  v-model="sqSelected"
-                  test-id="overview-stock-codes"
-                  aria-label="逐股体检股票范围"
-                  @change="onSqSelect"
-                />
-              </div>
+            <div class="app-workspace-panel overview-panel">
+              <AppTabToolbar label="逐股分层体检操作栏" data-testid="overview-stocks-toolbar">
+                <template #actions>
+                  <StockCodeMultiSelect
+                    v-model="sqSelected"
+                    class="overview-stock-filter"
+                    test-id="overview-stock-codes"
+                    aria-label="逐股体检股票范围"
+                    @change="onSqSelect"
+                  />
+                </template>
+                <template #description>
+                  点击层级徽章进入解决页 · 最新交易日 {{ (sq?.latest_trade_date || '—').slice(0, 10) }}
+                </template>
+              </AppTabToolbar>
               <AppStateBlock
                 v-if="sqLoading && !sq"
                 state="loading"
@@ -590,7 +592,7 @@ onMounted(load)
           </el-tab-pane>
 
           <el-tab-pane label="板块数据" name="board" lazy class="board-pane">
-            <div class="overview-panel" v-if="ov?.board">
+            <div class="app-workspace-panel overview-panel" v-if="ov?.board">
               <div class="board-hero">
                 <div class="board-hero-main">
                   <span class="board-eyebrow">同花顺板块源</span>
@@ -765,53 +767,6 @@ onMounted(load)
 .setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
 .setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
 .overview-summary { min-width: 0; }
-.overview-workspace-card {
-  height: 100%;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.overview-workspace-card :deep(.el-card__body) {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 10px 14px 12px;
-}
-.overview-tabs {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.overview-tabs :deep(.el-tabs__header) {
-  flex: 0 0 auto;
-  margin-bottom: 8px;
-}
-.overview-tabs :deep(.el-tabs__content) {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
-}
-.overview-tabs :deep(.el-tab-pane) {
-  height: 100%;
-  min-height: 0;
-}
-.overview-panel {
-  height: 100%;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.panel-head {
-  flex: 0 0 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--app-space-3);
-  margin-bottom: 8px;
-}
 .panel-title {
   color: var(--el-text-color-primary);
   font-size: var(--app-font-size-table);
@@ -846,8 +801,7 @@ onMounted(load)
 .quality-summary :deep(.el-card__body) { padding: 10px 12px; }
 .clk-tag { cursor: pointer; }
 .clk-tag:hover { filter: brightness(0.95); text-decoration: underline; }
-.sq-bar { display: flex; gap: var(--app-space-2); margin-bottom: 12px; }
-.sq-bar .el-select { width: min(460px, 100%); }
+.overview-stock-filter { width: min(460px, 100%); }
 .txt-warn { color: var(--app-warning-text); font-weight: var(--app-font-weight-section); }
 .pager { display: flex; justify-content: flex-end; margin-top: 12px; }
 
@@ -1157,7 +1111,6 @@ onMounted(load)
   .layer-card { padding: 3px 7px; }
   .layer-name { margin-bottom: 2px; font-size: var(--app-font-size-caption); }
   .layer-foot { display: none; }
-  .panel-head { margin-bottom: 5px; }
   .overview-workspace-card :deep(.el-card__body) { padding: 6px 10px 8px; }
   .overview-tabs :deep(.el-tabs__header) { margin-bottom: 5px; }
 }

@@ -17,9 +17,11 @@ import LadderHotspots from './LadderHotspots.vue'
 import LimitLadderCard from './LimitLadderCard.vue'
 import {
   DEFAULT_LIMIT_LADDER_CARD_SORT,
+  DEFAULT_LIMIT_LADDER_CARD_SORT_ORDER,
   LIMIT_LADDER_CARD_SORT_OPTIONS,
   sortLimitLadderLayers,
   type LimitLadderCardSort,
+  type LimitLadderCardSortOrder,
 } from './sorting'
 
 const props = withDefaults(defineProps<{
@@ -36,8 +38,10 @@ const props = withDefaults(defineProps<{
   selectedCode?: string
   returnPath?: string
   cardSort?: LimitLadderCardSort
+  cardSortOrder?: LimitLadderCardSortOrder
 }>(), {
   cardSort: DEFAULT_LIMIT_LADDER_CARD_SORT,
+  cardSortOrder: DEFAULT_LIMIT_LADDER_CARD_SORT_ORDER,
 })
 const emit = defineEmits<{
   'update:filters': [filters: LimitLadderFilters]
@@ -58,6 +62,7 @@ const windowOptions = [10, 20, 31, 60].map((value) => ({ label: `${value}日`, v
 const sortedLayers = computed(() => sortLimitLadderLayers(
   props.result?.layers ?? [],
   props.cardSort,
+  props.cardSortOrder,
 ))
 const ladderMeta = computed(() => props.result
   ? `${props.result.summary.stock_count} 只 · ${props.filters.window} 日口径`

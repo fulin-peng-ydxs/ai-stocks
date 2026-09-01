@@ -68,6 +68,7 @@ const LimitLadderStub = defineComponent({
     result: { type: Object, default: null },
     error: { type: String, default: '' },
     forbidden: { type: Boolean, default: false },
+    loading: { type: Boolean, default: false },
   },
   setup(props) {
     return () => h('section', {
@@ -76,6 +77,7 @@ const LimitLadderStub = defineComponent({
       'data-snapshot-status': (props.result as LimitLadderResult | null)?.snapshot_status ?? '',
       'data-error': props.error,
       'data-forbidden': String(props.forbidden),
+      'data-loading': String(props.loading),
     })
   },
 })
@@ -209,6 +211,27 @@ afterEach(() => {
 })
 
 describe('LimitLadderView polling deadline', () => {
+  it('偏好和交易日尚未初始化完成时保持加载态，不闪现无快照失败态', async () => {
+    const datesRequest = deferred<Awaited<ReturnType<typeof limitLadderApi.listLimitLadderTradeDates>>>()
+    vi.mocked(limitLadderApi.listLimitLadderTradeDates).mockReturnValue(datesRequest.promise)
+    vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(readyResult())
+
+    const wrapper = await mountView()
+    expect(stateProbe(wrapper).attributes('data-loading')).toBe('true')
+    expect(stateProbe(wrapper).attributes('data-business-code')).toBe('')
+
+    datesRequest.resolve({
+      dates: ['2026-08-28'],
+      latest_candidate_date: '2026-08-28',
+      latest_complete_date: '2026-08-28',
+      latest_candidate_coverage: {},
+      latest_candidate_ready: true,
+    })
+    await flushPromises()
+    expect(stateProbe(wrapper).attributes('data-loading')).toBe('false')
+    expect(stateProbe(wrapper).attributes('data-business-code')).toBe('READY')
+  })
+
   it('403 转为无权限状态，不退化成普通可重试错误', async () => {
     vi.mocked(limitLadderApi.getLimitLadder).mockRejectedValue({
       response: { status: 403 },

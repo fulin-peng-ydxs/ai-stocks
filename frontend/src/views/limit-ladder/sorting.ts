@@ -1,8 +1,10 @@
 import type { LimitLadderLayer, LimitLadderStock } from '@/api/limitLadder'
 
 export type LimitLadderCardSort = 'board' | 'industry' | 'concept' | 'return' | 'limitUps'
+export type LimitLadderCardSortOrder = 'asc' | 'desc'
 
 export const DEFAULT_LIMIT_LADDER_CARD_SORT: LimitLadderCardSort = 'limitUps'
+export const DEFAULT_LIMIT_LADDER_CARD_SORT_ORDER: LimitLadderCardSortOrder = 'desc'
 
 export const LIMIT_LADDER_CARD_SORT_OPTIONS: Array<{
   value: LimitLadderCardSort
@@ -25,6 +27,21 @@ export function normalizeLimitLadderCardSort(value: unknown): LimitLadderCardSor
     : DEFAULT_LIMIT_LADDER_CARD_SORT
 }
 
+export function defaultLimitLadderCardSortOrder(
+  sort: LimitLadderCardSort,
+): LimitLadderCardSortOrder {
+  return sort === 'board' || sort === 'industry' || sort === 'concept' ? 'asc' : 'desc'
+}
+
+export function normalizeLimitLadderCardSortOrder(
+  value: unknown,
+  fallback: LimitLadderCardSortOrder = DEFAULT_LIMIT_LADDER_CARD_SORT_ORDER,
+): LimitLadderCardSortOrder {
+  return value === 'asc' || value === 'desc'
+    ? value
+    : fallback
+}
+
 function textCompare(left: string | null | undefined, right: string | null | undefined): number {
   const leftText = String(left ?? '').trim()
   const rightText = String(right ?? '').trim()
@@ -38,14 +55,14 @@ function textCompare(left: string | null | undefined, right: string | null | und
   })
 }
 
-function numberCompareDesc(left: number | null | undefined, right: number | null | undefined): number {
+function numberCompare(left: number | null | undefined, right: number | null | undefined): number {
   const leftValue = typeof left === 'number' && Number.isFinite(left)
     ? left
-    : Number.NEGATIVE_INFINITY
+    : Number.POSITIVE_INFINITY
   const rightValue = typeof right === 'number' && Number.isFinite(right)
     ? right
-    : Number.NEGATIVE_INFINITY
-  return rightValue - leftValue
+    : Number.POSITIVE_INFINITY
+  return leftValue - rightValue
 }
 
 function compareStock(left: LimitLadderStock, right: LimitLadderStock, sort: LimitLadderCardSort): number {
@@ -62,8 +79,22 @@ function compareStock(left: LimitLadderStock, right: LimitLadderStock, sort: Lim
       right.latest_related_concept?.board_name,
     )
   }
-  if (sort === 'return') return numberCompareDesc(left.window_return_pct, right.window_return_pct)
-  return numberCompareDesc(left.window_limit_up_days, right.window_limit_up_days)
+  if (sort === 'return') return numberCompare(left.window_return_pct, right.window_return_pct)
+  return numberCompare(left.window_limit_up_days, right.window_limit_up_days)
+}
+
+function hasSortValue(stock: LimitLadderStock, sort: LimitLadderCardSort): boolean {
+  if (sort === 'board') return Boolean(String(stock.board ?? '').trim())
+  if (sort === 'industry') {
+    return Boolean(String(
+      stock.latest_related_industry?.board_name || stock.industry_name || '',
+    ).trim())
+  }
+  if (sort === 'concept') {
+    return Boolean(String(stock.latest_related_concept?.board_name ?? '').trim())
+  }
+  const value = sort === 'return' ? stock.window_return_pct : stock.window_limit_up_days
+  return typeof value === 'number' && Number.isFinite(value)
 }
 
 /**
@@ -73,9 +104,16 @@ function compareStock(left: LimitLadderStock, right: LimitLadderStock, sort: Lim
 export function sortLimitLadderLayers(
   layers: readonly LimitLadderLayer[],
   sort: LimitLadderCardSort,
+  order?: LimitLadderCardSortOrder,
 ): LimitLadderLayer[] {
+  const direction = (order ?? defaultLimitLadderCardSortOrder(sort)) === 'desc' ? -1 : 1
   return layers.map((layer) => ({
     ...layer,
-    stocks: [...layer.stocks].sort((left, right) => compareStock(left, right, sort)),
+    stocks: [...layer.stocks].sort((left, right) => {
+      const leftHasValue = hasSortValue(left, sort)
+      const rightHasValue = hasSortValue(right, sort)
+      if (leftHasValue !== rightHasValue) return leftHasValue ? -1 : 1
+      return compareStock(left, right, sort) * direction
+    }),
   }))
 }

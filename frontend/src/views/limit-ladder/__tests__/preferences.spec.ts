@@ -28,6 +28,7 @@ describe('limit ladder preferences', () => {
     expect(normalizeLimitLadderPreference({
       schemaVersion: 1,
       cardSort: 'industry',
+      cardSortOrder: 'asc',
       defaultChartMode: 'kline',
       compareRange: 120,
       benchmarkCode: '000300.SH',
@@ -36,6 +37,7 @@ describe('limit ladder preferences', () => {
       adjustMode: 'hfq',
     })).toMatchObject({
       cardSort: 'industry',
+      cardSortOrder: 'asc',
       defaultChartMode: 'kline',
       compareRange: 120,
       benchmarkCode: '000300.SH',
@@ -45,14 +47,22 @@ describe('limit ladder preferences', () => {
     })
     expect(normalizeLimitLadderPreference({
       cardSort: 'unknown',
+      cardSortOrder: 'unknown',
       benchmarkCode: 'unknown',
       compareMetrics: [],
     })).toMatchObject({
       cardSort: 'limitUps',
+      cardSortOrder: 'desc',
       benchmarkCode: '000905.SH',
       compareMetrics: DEFAULT_LIMIT_LADDER_PREFERENCE.compareMetrics,
       defaultCompareMetric: 'cum',
       charts: createDefaultStockChartPreferences(),
+    })
+    expect(normalizeLimitLadderPreference({
+      cardSort: 'industry',
+    })).toMatchObject({
+      cardSort: 'industry',
+      cardSortOrder: 'asc',
     })
   })
 

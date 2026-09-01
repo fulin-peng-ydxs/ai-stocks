@@ -33,6 +33,7 @@ const VIEWPORT_HEIGHT =
 const HANDWRITTEN_LAYOUT = /class="[^"]*\bv-(?:page|grow|scroll)\b/
 const SCAFFOLD_PLACEHOLDER = /\bdata-scaffold-placeholder\b/
 const QUERY_BUTTON = /<el-button\b([^>]*)>\s*查询\s*<\/el-button>/gs
+const PRIVATE_DEFAULT_FILTER_SECTION = /<PageSettingSection\b[^>]*\btitle=["']默认筛选["']/
 const VIEWPORT_DRAWER = /<(?:el-drawer|ElDrawer)\b/
 const PAGE_DRAWER = /<PageDrawer\b[\s\S]*?>/g
 const DRAWER_SIZE_KEYS = Object.keys(PAGE_DRAWER_WIDTHS)
@@ -117,6 +118,16 @@ describe('布局契约守卫（M6）', () => {
       }
     }
     expect(offenders, `查询是筛选栏主命令，应使用 <el-button type="primary">：\n${offenders.join('\n')}`).toEqual([])
+  })
+
+  it('页面设置中的默认查询分区必须统一命名', () => {
+    const offenders = files
+      .filter((file) => PRIVATE_DEFAULT_FILTER_SECTION.test(readFileSync(file, 'utf8')))
+      .map(rel)
+    expect(
+      offenders,
+      `以下页面仍使用私有“默认筛选”分区，应统一为“默认查询”：\n${offenders.join('\n')}`,
+    ).toEqual([])
   })
 
   it('页面抽屉必须使用 PageDrawer，不得覆盖应用顶栏与导航', () => {

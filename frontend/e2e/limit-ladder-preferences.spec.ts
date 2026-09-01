@@ -15,6 +15,7 @@ const defaultPreference = {
   boards: ['main', 'star', 'gem'],
   showAnalysisPanel: false,
   cardSort: 'limitUps',
+  cardSortOrder: 'desc',
   defaultChartMode: 'compare',
   compareRange: 60,
   benchmarkCode: '000905.SH',
@@ -72,6 +73,7 @@ test('个人默认修改即保存、走势图同步、URL 覆盖和恢复默认'
       .getByText('科创板', { exact: true })
       .click()
     await page.getByTestId('limit-ladder-default-ignore-st-switch').click()
+    await page.getByTestId('limit-ladder-default-card-sort-order-asc').click()
     await page.getByTestId('stock-analysis-default-benchmark').locator('.el-select__wrapper').click()
     await page.getByRole('option', { name: '沪深 300' }).click()
     await expect(page.getByTestId('limit-ladder-default-window-20'))
@@ -81,6 +83,8 @@ test('个人默认修改即保存、走势图同步、URL 覆盖和恢复默认'
       .not.toBeChecked()
     await expect(page.getByTestId('limit-ladder-default-ignore-st-switch'))
       .not.toHaveClass(/is-checked/)
+    await expect(page.getByTestId('limit-ladder-default-card-sort-order-asc'))
+      .toHaveAttribute('aria-pressed', 'true')
 
     const screenshotPath = testInfo.outputPath('limit-ladder-preference-auto-save.png')
     await page.screenshot({ path: screenshotPath, fullPage: true })
@@ -94,6 +98,7 @@ test('个人默认修改即保存、走势图同步、URL 覆盖和恢复默认'
       window: 20,
       ignoreSt: false,
       boards: ['main', 'gem'],
+      cardSortOrder: 'asc',
       benchmarkCode: '000300.SH',
     })
     await page.getByRole('button', { name: '关闭页面设置' }).click()
@@ -102,6 +107,7 @@ test('个人默认修改即保存、走势图同步、URL 覆盖和恢复默认'
     await expect(page).toHaveURL(/window=20/)
     await expect(page).toHaveURL(/boards=main,gem/)
     await expect(page).toHaveURL(/ignore_st=0/)
+    await expect(page).toHaveURL(/card_order=asc/)
     await expect(page.getByTestId('market-show-analysis')).toBeVisible()
     await page.getByTestId('market-show-analysis').click()
     await expect(page.getByTestId('stock-analysis-benchmark')).toContainText('沪深 300')

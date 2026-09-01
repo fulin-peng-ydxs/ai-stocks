@@ -774,6 +774,12 @@ const REGISTRY: PageRegistryEntry[] = [
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
     componentMeta: {
+      workspace: {
+        tabs: [
+          { key: 'tasks', label: '任务中心' },
+          { key: 'logs', label: '采集日志' },
+        ],
+      },
       taskTable: {
         sortFields: [
           { key: 'time', label: '截止时间' },
@@ -798,8 +804,9 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'body', component: 'section', region: 'main', order: 1 },
-        { id: 'taskTable', component: 'data-table', region: 'main', parentId: 'body', label: '任务中心', order: 2, config: { pagination: true, defaultSort: 'time:desc' } },
-        { id: 'logTable', component: 'data-table', region: 'main', parentId: 'body', label: '采集日志', order: 3, config: { pagination: true, defaultSort: 'time:desc' } },
+        { id: 'workspace', component: 'tabs', region: 'main', growMain: true, label: '采集任务工作区', order: 2, config: { defaultActive: 'tasks' } },
+        { id: 'taskTable', component: 'data-table', region: 'main', parentId: 'workspace', label: '任务中心', order: 3, config: { pagination: true, defaultSort: 'time:desc' } },
+        { id: 'logTable', component: 'data-table', region: 'main', parentId: 'workspace', label: '采集日志', order: 4, config: { pagination: true, defaultSort: 'time:desc' } },
       ],
       editable: [densityKnob()],
     },

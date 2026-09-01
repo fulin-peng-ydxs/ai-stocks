@@ -448,6 +448,20 @@ describe('页面注册表完整性', () => {
     expect(drawer).toContain('<PageDrawer')
   })
 
+  it('数据采集将任务中心与采集日志登记为同一成长页签的两个面板', () => {
+    const entry = getPageEntry('data-ingest')!
+    const workspace = entry.layout.slots.find((slot) => slot.id === 'workspace')
+
+    expect(workspace).toMatchObject({ component: 'tabs', growMain: true })
+    expect(workspace?.parentId).toBeUndefined()
+    expect(entry.componentMeta?.workspace?.tabs).toEqual([
+      { key: 'tasks', label: '任务中心' },
+      { key: 'logs', label: '采集日志' },
+    ])
+    expect(entry.layout.slots.filter((slot) => slot.parentId === 'workspace').map((slot) => slot.id))
+      .toEqual(['taskTable', 'logTable'])
+  })
+
   it('登记列元数据的列表组件自动继承通用列显隐能力', () => {
     for (const entry of PAGE_REGISTRY) {
       for (const [slotId, meta] of Object.entries(entry.componentMeta ?? {})) {

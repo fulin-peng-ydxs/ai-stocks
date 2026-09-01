@@ -619,7 +619,7 @@ onMounted(() => {
       @reset="reset(); resetLayout()"
     >
       <template #business>
-        <PageSettingSection title="默认筛选">
+        <PageSettingSection title="默认查询">
           <div class="setting-item">
             <div class="setting-label">状态筛选</div>
             <PageSegmented v-model="settings.defaultStatus" aria-label="状态筛选" :options="[
