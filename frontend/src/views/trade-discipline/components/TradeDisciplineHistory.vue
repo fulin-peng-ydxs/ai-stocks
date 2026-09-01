@@ -221,7 +221,7 @@ defineExpose({ reload: load })
       <AppTableColumn v-if="colVisible('assessment')" prop="assessment" label="用户自评">
         <template #default="{ row }"><el-tag :type="checkinAssessmentTagType(row.assessment)" effect="plain">{{ checkinAssessmentLabel(row.assessment) }}</el-tag></template>
       </AppTableColumn>
-      <AppTableColumn v-if="colVisible('operation_count')" label="操作"><template #default="{ row }">{{ row.no_operation ? '无操作' : `${row.operation_count} 笔` }}</template></AppTableColumn>
+      <AppTableColumn v-if="colVisible('operation_count')" label="操作笔数" prop="operation_count" role="number"><template #default="{ row }">{{ row.no_operation ? '无操作' : `${row.operation_count} 笔` }}</template></AppTableColumn>
       <AppTableColumn v-if="colVisible('reason_name_snapshot')" prop="reason_name_snapshot" label="违规摘要" role="description"><template #default="{ row }">{{ row.reason_name_snapshot || '—' }}</template></AppTableColumn>
       <AppTableColumn v-if="colVisible('current_revision_no')" label="修订">
         <template #default="{ row }"><el-tag :type="row.status === 'amended' ? 'warning' : 'info'" effect="plain">r{{ row.current_revision_no }}{{ row.status === 'amended' ? ' · 已修正' : '' }}</el-tag></template>

@@ -625,7 +625,7 @@ onBeforeUnmount(detachKeyboard)
             <AppTableColumn label="结束时间" prop="completed_at" sortable="custom">
               <template #default="{ row }">{{ row.completed_at?.slice(0, 16) ?? '--' }}</template>
             </AppTableColumn>
-            <AppTableColumn label="操作">
+            <AppTableColumn label="操作" role="action-compact">
               <template #default="{ row }">
                 <AppRowActions :actions="sessionRowActions(row)" :inline-limit="1" />
               </template>

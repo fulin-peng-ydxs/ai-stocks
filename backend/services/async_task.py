@@ -10,7 +10,7 @@ M2.8-B 增强：
 - **并发互斥**（FR-DM-11）：写任务（采集/质检/恢复等）不允许并发，创建即 409。
 - **数据修复**（FR-DM-4）：fix 任务定向重拉单条质检问题对应股票/日期，回写 issue 状态。
 
-数据变更类任务完成后标记评分快照失效；评分维护任务会显式生产 PUBLIC_BOARD_OWNER 公共榜单。
+采集与数据变化任务只维护原始数据；走势、天梯和榜单结果由显式结果维护任务处理。
 """
 
 from __future__ import annotations
@@ -27,12 +27,13 @@ log = get_logger("services.async_task")
 # 全部任务类型：旧原子任务保持兼容，stock_ingest 按安全方案统一分派既有采集能力。
 TASK_TYPES = ("update", "backfill", "ingest_date", "ingest_codes", "rebuild_price_factors",
               "recompute", "verify", "checkup", "fix", "enrich_basic", "audit_cleanup",
-              "board", "stock_ingest", "stock_board_correlation", "limit_ladder_recompute")
+              "board", "stock_ingest", "stock_board_correlation", "limit_ladder_invalidate",
+              "limit_ladder_recompute")
 # 写类任务：互斥（写任务之间不并发），且服务重启需 reconcile。
 WRITE_TASK_TYPES = frozenset({"update", "backfill", "ingest_date", "ingest_codes",
                               "rebuild_price_factors", "verify", "fix", "enrich_basic",
                               "board", "stock_ingest", "stock_board_correlation",
-                              "limit_ladder_recompute"})
+                              "limit_ladder_invalidate", "limit_ladder_recompute"})
 
 # 日志保留（DM-D8）
 LOG_MAX_PER_TASK = 2000
@@ -113,6 +114,11 @@ TASK_CAPABILITIES: dict[str, dict] = {
         "can_cancel": False, "can_resume": False, "cancel_mode": "none",
         "resume_granularity": None,
         "cancel_message": "单日快照采用原子切换，不支持中途终止或续跑",
+    },
+    "limit_ladder_invalidate": {
+        "can_cancel": False, "can_resume": False, "cancel_mode": "none",
+        "resume_granularity": None,
+        "cancel_message": "失效标记为短事务，不支持中途终止或续跑",
     },
 }
 
@@ -262,6 +268,14 @@ class AsyncTaskService:
             from backend.services.stock_board_correlation import normalize_correlation_task_params
 
             params = normalize_correlation_task_params(params, client=self.c)
+        if task_type == "recompute":
+            from backend.services.result_maintenance import normalize_score_invalidation_params
+
+            params = normalize_score_invalidation_params(params)
+        if task_type == "limit_ladder_invalidate":
+            from backend.services.result_maintenance import normalize_ladder_invalidation_params
+
+            params = normalize_ladder_invalidation_params(params)
         with _TASK_CREATE_LOCK:
             if trigger_event_id:
                 existing = self.c.query_df(
@@ -625,42 +639,8 @@ def _row(r) -> dict:
 
 # ── 任务处理器：(params, ctx) → result dict ─────────────────────────
 def _mark_snapshots_stale() -> int:
-    """标全量评分快照失效，供评分维护及采集任务缺少失效结果时兜底。"""
-    from backend.scoring.snapshot import ScoreSnapshotRepo
-    return ScoreSnapshotRepo(get_client()).mark_stale_all()
-
-
-def _ensure_ingest_snapshots_stale(result: dict, dates: list | None = None) -> tuple[int, bool]:
-    """复用采集层失效结果；仅在采集层未返回结果时由任务层兜底。
-
-    返回 ``(失效数量, 是否由任务层兜底)``。采集服务通常已在数据写入收尾时完成失效
-    标记，任务处理器不得再次无条件 UPDATE，否则第二次幂等调用只会返回 0 并制造误导日志。
-    """
-    if "snapshots_marked_stale" in result:
-        return int(result.get("snapshots_marked_stale") or 0), False
-    if dates is not None:
-        from backend.scoring.snapshot import ScoreSnapshotRepo
-
-        stale = ScoreSnapshotRepo(get_client()).mark_stale_dates(dates) if dates else 0
-    else:
-        stale = _mark_snapshots_stale()
-    return stale, True
-
-
-def _log_snapshot_invalidation(ctx: TaskContext, stale: int, fallback: bool) -> None:
-    source = "任务层兜底标记" if fallback else "采集阶段已标记"
-    ctx.log(f"阶段 2/3：确认评分快照失效状态，{source} {stale} 项")
-    ctx.progress(0.9, "确认评分快照失效状态…")
-
-
-def _produce_public_board_snapshots(params: dict) -> dict:
-    from backend.services.public_board import produce_public_board_snapshots
-
-    profile_ids = params.get("profile_ids")
-    if isinstance(profile_ids, str):
-        profile_ids = [x.strip() for x in profile_ids.split(",") if x.strip()]
-    run_date = params.get("run_date") or params.get("date")
-    return produce_public_board_snapshots(run_date=run_date, profile_ids=profile_ids)
+    """Legacy test seam; data-change handlers no longer invalidate derived results."""
+    return 0
 
 
 def _concurrency(params: dict) -> int | None:
@@ -689,27 +669,21 @@ def _call_with_ctx(fn, *args, ctx: TaskContext, **kwargs):
 
 def _h_update(params: dict, ctx: TaskContext) -> dict:
     from backend.services.ingest import IngestionService
-    ctx.log("阶段 1/3：增量更新行情")
+    ctx.log("增量更新行情")
     ctx.progress(0.1, "增量更新行情中…")
     res = IngestionService().update(codes=params.get("codes"), concurrency=_concurrency(params), ctx=ctx)
     if res.get("skipped"):
-        return {"message": "主源当日数据未就绪，本次增量未执行", "ingest": res, "snapshots_marked_stale": 0}
-    stale, fallback = _ensure_ingest_snapshots_stale(res)
-    _log_snapshot_invalidation(ctx, stale, fallback)
-    ctx.log("阶段 3/3：增量任务收尾，失效快照将在后续读取时按需重算")
-    return {"message": f"更新完成：{res}", "ingest": res, "snapshots_marked_stale": stale}
+        return {"message": "主源当日数据未就绪，本次增量未执行", "ingest": res}
+    return {"message": f"更新完成：{res}", "ingest": res}
 
 
 def _h_backfill(params: dict, ctx: TaskContext) -> dict:
     from backend.services.ingest import IngestionService
-    ctx.log("阶段 1/3：历史行情补数")
+    ctx.log("历史行情补数")
     ctx.progress(0.1, "历史补数中（可能较久）…")
     res = IngestionService().backfill(codes=params.get("codes"), years=params.get("years"),
                                       concurrency=_concurrency(params), ctx=ctx)
-    stale, fallback = _ensure_ingest_snapshots_stale(res)
-    _log_snapshot_invalidation(ctx, stale, fallback)
-    ctx.log("阶段 3/3：补数任务收尾，失效快照将在后续读取时按需重算")
-    return {"message": f"补数完成：{res}", "ingest": res, "snapshots_marked_stale": stale}
+    return {"message": f"补数完成：{res}", "ingest": res}
 
 
 def _h_ingest_date(params: dict, ctx: TaskContext) -> dict:
@@ -722,19 +696,11 @@ def _h_ingest_date(params: dict, ctx: TaskContext) -> dict:
         raise ValueError("缺少 date 或 date_start 参数")
     start = _date.fromisoformat(str(d0))
     end = _date.fromisoformat(str(d1))
-    ctx.log(f"阶段 1/3：指定日期行情采集 {start}~{end}")
+    ctx.log(f"指定日期行情采集 {start}~{end}")
     ctx.progress(0.1, f"采集 {start}~{end} 行情…")
     res = IngestionService().ingest_date(start, end, codes=params.get("codes"),
                                          concurrency=_concurrency(params), ctx=ctx)
-    days = res.get("dates", [])
-    affected_dates = [_date.fromisoformat(x) for x in days]
-    stale, fallback = _ensure_ingest_snapshots_stale(res, dates=affected_dates)
-    _log_snapshot_invalidation(ctx, stale, fallback)
-    ctx.log(
-        f"阶段 3/3：指定日期采集收尾，受影响交易日 {len(days)} 天，"
-        "失效快照将在后续读取时按需重算"
-    )
-    return {"message": f"指定采集完成：{res}", "ingest": res, "snapshots_marked_stale": stale}
+    return {"message": f"指定采集完成：{res}", "ingest": res}
 
 
 def _h_ingest_codes(params: dict, ctx: TaskContext) -> dict:
@@ -743,19 +709,15 @@ def _h_ingest_codes(params: dict, ctx: TaskContext) -> dict:
     codes = params.get("codes")
     if not codes:
         raise ValueError("缺少 codes 参数")
-    ctx.log(f"阶段 1/3：指定股票增量采集，{len(codes)} 只")
+    ctx.log(f"指定股票增量采集，{len(codes)} 只")
     ctx.progress(0.1, f"采集 {len(codes)} 只指定股票…")
     res = IngestionService().update(codes=codes, concurrency=_concurrency(params), ctx=ctx)
     if res.get("skipped"):
         return {
             "message": "主源当日数据未就绪，本次指定股票采集未执行",
             "ingest": res,
-            "snapshots_marked_stale": 0,
         }
-    stale, fallback = _ensure_ingest_snapshots_stale(res)
-    _log_snapshot_invalidation(ctx, stale, fallback)
-    ctx.log("阶段 3/3：指定股票采集收尾，失效快照将在后续读取时按需重算")
-    return {"message": f"指定股票采集完成：{res}", "ingest": res, "snapshots_marked_stale": stale}
+    return {"message": f"指定股票采集完成：{res}", "ingest": res}
 
 
 def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
@@ -819,39 +781,36 @@ def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
 
 
 def _h_recompute(params: dict, ctx: TaskContext) -> dict:
-    ctx.log("▶ 评分维护：刷新评分缓存，并生产最新交易日公共榜单快照")
-    ctx.progress(0.25, "刷新评分缓存…")
-    stale = _mark_snapshots_stale()
-    ctx.log(f"阶段 1/2：{stale} 项评分快照已标记为需重算")
-    ctx.progress(0.75, "生产公共榜单快照…")
-    public_board = _produce_public_board_snapshots(params)
-    ctx.log(
-        "阶段 2/2：公共榜单生产完成，"
-        f"交易日 {public_board.get('run_date') or '-'}，"
-        f"方案 {public_board.get('profile_count', 0)} 个，"
-        f"明细 {public_board.get('total_rows', 0)} 行"
+    """Explicitly invalidate daily-board score snapshots; reads rematerialize them later."""
+    from backend.scoring.snapshot import ScoreSnapshotRepo
+    from backend.services.result_maintenance import (
+        normalize_score_invalidation_params,
+        resolve_target_date,
     )
+
+    normalized = normalize_score_invalidation_params(params)
+    target_date = resolve_target_date(normalized, ctx.svc.c)
+    scope = "全部快照" if target_date is None else target_date.isoformat()
+    ctx.log(f"每日榜单失效：目标范围 {scope}")
+    ctx.progress(0.5, "标记评分快照失效…")
+    repo = ScoreSnapshotRepo(ctx.svc.c)
+    stale = repo.mark_stale_all() if target_date is None else repo.mark_stale_dates([target_date])
+    ctx.log(f"已标记 {stale} 项评分快照失效；下次读取时按需重算")
     return {
-        "message": (
-            f"评分维护完成：{stale} 项评分标记为需重算；"
-            f"公共榜单已生产到 {public_board.get('run_date') or '-'}"
-        ),
+        "message": f"每日榜单失效完成：{stale} 项，目标范围 {scope}",
         "snapshots_marked_stale": stale,
-        "public_board": public_board,
+        "target_mode": normalized["target_mode"],
+        "trade_date": target_date.isoformat() if target_date else None,
     }
 
 
 def _h_rebuild_price_factors(params: dict, ctx: TaskContext) -> dict:
     from backend.services.ingest import IngestionService
-    ctx.log("阶段 1/3：重算价格因子")
+    ctx.log("重算价格因子")
     ctx.progress(0.05, "重算价格因子…")
     codes = params.get("codes")
     res = IngestionService().rebuild_price_factors(codes=codes, ctx=ctx)
-    stale, fallback = _ensure_ingest_snapshots_stale(res)
-    _log_snapshot_invalidation(ctx, stale, fallback)
-    ctx.log("阶段 3/3：价格因子任务收尾，失效快照将在后续读取时按需重算")
-    return {"message": f"价格因子重算完成：{res}", "rebuild": res,
-            "snapshots_marked_stale": stale}
+    return {"message": f"价格因子重算完成：{res}", "rebuild": res}
 
 
 def _h_verify(params: dict, ctx: TaskContext) -> dict:
@@ -1330,7 +1289,6 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
     """
     from backend.services.ingest import IngestionService
     from backend.services.data_report import DataIntegrityReport
-    from backend.scoring.snapshot import ScoreSnapshotRepo
     c = get_client()
     rep = DataIntegrityReport(c)
     ing = IngestionService()
@@ -1364,15 +1322,8 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
         issue_type = str(params.get("issue_type") or "").strip()
         message = f"质检问题恢复完成：{issue_type} 当前无待处理问题"
         ctx.progress(1.0, message)
-        return {"message": message, "ok": True, "resolved": 0, "failed": 0, "total": 0,
-                "snapshots_marked_stale": 0}
-    issue_types = set()
-    if ids:
-        issue_types = set(c.query_df(
-            f"SELECT DISTINCT issue_type FROM data_quality_issue "
-            f"WHERE id IN ({','.join('?' for _ in ids)})", ids)["issue_type"].astype(str))
+        return {"message": message, "ok": True, "resolved": 0, "failed": 0, "total": 0}
     resolved = 0
-    all_affected: list = []
     failed = 0
     last_msg = ""
     last_err = ""
@@ -1387,9 +1338,8 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
                       current_item=iid, issue_done_ids=sorted(done_ids))
         ctx.progress(min(0.1 + 0.8 * (i - 1) / n, 0.9), f"恢复 {i}/{n}…")
         try:
-            clean, affected, msg = _recover_one(c, rep, ing, ctx, iid)
+            clean, _affected, msg = _recover_one(c, rep, ing, ctx, iid)
             resolved += int(clean)
-            all_affected += affected
             last_msg = msg
             if clean:
                 done_ids.add(iid)
@@ -1404,14 +1354,6 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
                           phase_total=phase_total, phase_done=len(done_ids),
                           current_item=iid, issue_done_ids=sorted(done_ids))
             ctx.log(f"[{i}/{n}] 恢复失败 id={iid}: {e}（已退回待处理）", "error")
-    ctx.progress(0.95, "更新评分快照失效状态…")
-    if all_affected:
-        stale = ScoreSnapshotRepo(c).mark_stale_dates(sorted(set(all_affected)))
-    elif resolved and issue_types.intersection({"mv_missing", "mv_gap", "adj_jump"}):
-        stale = _mark_snapshots_stale()
-    else:
-        # 板块字典/成分/指数/资金流不参与个股评分，修复成功后无需让全部评分快照失效。
-        stale = 0
     # 诚实文案：区分 已解决 / 复检未通过(仍 open) / 恢复失败(异常退回 open)。单条直接给原因。
     if n == 1:
         msg = (last_msg if not failed
@@ -1422,8 +1364,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
             msg += f"，{failed} 条恢复失败（已退回待处理，详见日志）"
     # ok：单条=是否解决；批量=有解决且无失败时视为成功（部分失败由 ok=false 让前端给警告）
     ok = (resolved == n)
-    return {"message": msg, "ok": ok, "resolved": resolved, "failed": failed, "total": n,
-            "snapshots_marked_stale": stale}
+    return {"message": msg, "ok": ok, "resolved": resolved, "failed": failed, "total": n}
 
 
 def _h_board(params: dict, ctx: TaskContext) -> dict:
@@ -1521,7 +1462,15 @@ def _h_stock_board_correlation(params: dict, ctx: TaskContext) -> dict:
         return expected_failure(exc)
     try:
         service = StockBoardCorrelationService()
-        target_date = service.resolve_target_date()
+        requested_date = normalized.get("trade_date")
+        upper_bound = (
+            datetime.fromisoformat(requested_date).date() if requested_date else None
+        )
+        target_date = service.resolve_target_date(upper_bound=upper_bound)
+        if upper_bound is not None and target_date != upper_bound:
+            raise CorrelationInputError(
+                f"固定日期 {upper_bound.isoformat()} 不是三类行情共同可用的交易日"
+            )
         targets, _ = service.resolve_target_codes(target_date, normalized["codes"])
         failure_stats.update({
             "target_date": target_date.isoformat(),
@@ -1576,6 +1525,42 @@ def _h_stock_board_correlation(params: dict, ctx: TaskContext) -> dict:
     }
     ctx.progress(1.0, payload["message"])
     return payload
+
+
+def _h_limit_ladder_invalidate(params: dict, ctx: TaskContext) -> dict:
+    """Explicitly invalidate ladder snapshots without starting their recomputation."""
+    from datetime import date as _date
+
+    from backend.services.limit_ladder_query import LimitLadderQueryService
+    from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
+    from backend.services.result_maintenance import (
+        normalize_ladder_invalidation_params,
+        resolve_target_date,
+    )
+
+    normalized = normalize_ladder_invalidation_params(params)
+    if normalized["target_mode"] == "latest":
+        latest = LimitLadderQueryService(ctx.svc.c).trade_dates(limit=1)["latest_complete_date"]
+        if not latest:
+            raise ValueError("没有通过天梯完整性门禁的交易日")
+        target_date = _date.fromisoformat(latest)
+    else:
+        target_date = resolve_target_date(normalized, ctx.svc.c)
+    scope = f"{target_date.isoformat()} 起"
+    ctx.log(f"连板天梯失效：目标范围 {scope}")
+    ctx.progress(0.5, "标记连板天梯快照失效…")
+    service = LimitLadderSnapshotService(ctx.svc.c)
+    invalidated = service.request_invalidation(
+        [target_date],
+        reason="explicit_result_maintenance",
+    )
+    ctx.log(f"已标记 {invalidated} 个天梯日期失效；访问对应日期时按现有门禁重算")
+    return {
+        "message": f"连板天梯失效完成：{invalidated} 个日期，目标范围 {scope}",
+        "invalidated_count": invalidated,
+        "target_mode": normalized["target_mode"],
+        "trade_date": target_date.isoformat(),
+    }
 
 
 def _h_limit_ladder_recompute(params: dict, ctx: TaskContext) -> dict:
@@ -1671,5 +1656,6 @@ _HANDLERS = {
     "board": _h_board,
     "stock_ingest": _h_stock_ingest,
     "stock_board_correlation": _h_stock_board_correlation,
+    "limit_ladder_invalidate": _h_limit_ladder_invalidate,
     "limit_ladder_recompute": _h_limit_ladder_recompute,
 }

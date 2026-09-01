@@ -1653,7 +1653,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               <el-switch v-permission="'indicator:def-manage'" :model-value="row.enabled" size="small" @change="toggleEnabled(row)" />
             </template>
           </AppTableColumn>
-          <AppTableColumn label="操作">
+          <AppTableColumn label="操作" role="action-compact">
             <template #default="{ row }">
               <AppRowActions :actions="indicatorDefRowActions(row)" :inline-limit="1" />
             </template>

@@ -666,7 +666,7 @@ onBeforeUnmount(stopTimer)
           <AppTableColumn v-if="colVisible('error_summary')" label="错误摘要" show-overflow-tooltip>
             <template #default="{ row }">{{ row.error_summary || '-' }}</template>
           </AppTableColumn>
-          <AppTableColumn label="操作" fixed="right">
+          <AppTableColumn label="操作" role="action-compact" fixed="right">
             <template #default="{ row }">
               <AppRowActions :actions="auditRowActions(row)" :inline-limit="1" />
             </template>

@@ -42,8 +42,9 @@ interface AdaptiveColumnPolicy extends AdaptiveColumnRule {
 
 /**
  * 自适应列宽的唯一数值事实源。
- * 除结构列外只提供最小宽度，最终宽度由 Element Plus 的 fit 算法按容器余量同比分配；
- * 当最小宽度总和超过容器时，表体自然进入横向滚动。
+ * 内容列只提供最小宽度，最终宽度由 Element Plus 的 fit 算法按容器余量同比分配；
+ * 结构列和操作列使用固定语义宽度，避免无内容承载能力的列吞占富余空间。
+ * 当列宽总和超过容器时，表体自然进入横向滚动。
  */
 export const ADAPTIVE_COLUMN_RULES: Record<AdaptiveColumnRole, AdaptiveColumnPolicy> = {
   structural: { width: 48 },
@@ -57,8 +58,9 @@ export const ADAPTIVE_COLUMN_RULES: Record<AdaptiveColumnRole, AdaptiveColumnPol
   date: { minWidth: 120, maxAutoWidth: 192 },
   datetime: { minWidth: 168, maxAutoWidth: 224 },
   key: { minWidth: 160, maxAutoWidth: 240 },
-  action: { minWidth: 232, maxAutoWidth: 280 },
-  // 单行少量操作的紧凑操作列：容纳「更多」按钮(~54px)测量层，又不像 action(232) 那样被 fit 算法拉伸挤压内容列
+  // 多动作列保持稳定窄宽；放不下的动作由 AppRowActions 收进「更多」。
+  action: { width: 144 },
+  // 单动作或仅需「更多」入口时保持固定窄宽，避免挤压名称、描述和数值列。
   'action-compact': { width: 96 },
   text: { minWidth: 140, maxAutoWidth: 240 },
   description: { minWidth: 200, maxAutoWidth: 320 },

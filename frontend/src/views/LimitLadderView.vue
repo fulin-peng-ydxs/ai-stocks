@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
@@ -21,7 +21,6 @@ import {
   getLimitLadder,
   listLimitLadderTradeDates,
   normalizeLimitLadderFilters,
-  recomputeLimitLadder,
   type LimitLadderFilters,
   type LimitLadderResult,
   type LimitLadderStock,
@@ -97,7 +96,6 @@ const loading = ref(true)
 const error = ref('')
 const forbidden = ref(false)
 const exporting = ref(false)
-const recomputing = ref(false)
 let requestSequence = 0
 let syncingRoute = false
 let resultRefreshTimer: number | undefined
@@ -164,9 +162,6 @@ const canViewSectors = computed(() => (
 ))
 const canViewStockDetail = computed(() => (
   hasPermission(auth.role, auth.permissions, 'stocks:view')
-))
-const canRecompute = computed(() => (
-  hasPermission(auth.role, auth.permissions, 'limit-ladder:recompute')
 ))
 const canManageData = computed(() => (
   hasPermission(auth.role, auth.permissions, 'data-task:manage')
@@ -425,41 +420,18 @@ async function loadLadder(): Promise<void> {
   await requestLadder(false)
 }
 
-async function recomputeCurrentDate(): Promise<void> {
-  if (!tradeDate.value || recomputing.value) return
-  try {
-    await ElMessageBox.confirm(
-      `确认重算 ${tradeDate.value} 的连板天梯？新结果完整发布前仍保留最后成功快照。`,
-      '重算当日',
-      { type: 'warning', confirmButtonText: '确认重算', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
-  recomputing.value = true
-  try {
-    const task = await recomputeLimitLadder(tradeDate.value)
-    ElMessage.success(task.reused ? '该交易日已有重算任务，已继续跟踪' : '重算任务已提交')
-    await loadLadder()
-    if (!needsResultRefresh(result.value)) {
-      resultRefreshTimer = window.setTimeout(() => {
-        resultRefreshTimer = undefined
-        void requestLadder(true)
-      }, limitLadderPollDelay(0))
-    }
-  } catch (value) {
-    ElMessage.error(errorMessage(value, '重算提交失败，请稍后重试'))
-  } finally {
-    recomputing.value = false
-  }
+async function retryLadder(): Promise<void> {
+  await loadLadder()
 }
 
-async function retryLadder(): Promise<void> {
-  if (result.value?.business_code === 'SNAPSHOT_FAILED' && canRecompute.value) {
-    await recomputeCurrentDate()
-    return
-  }
-  await loadLadder()
+async function openLadderMaintenance(): Promise<void> {
+  await router.push({
+    path: '/data/ingest',
+    query: {
+      task_type: 'limit_ladder_invalidate',
+      ...(tradeDate.value ? { trade_date: tradeDate.value } : {}),
+    },
+  })
 }
 
 async function setFilters(next: LimitLadderFilters): Promise<void> {
@@ -645,12 +617,10 @@ onBeforeUnmount(() => {
           </div>
           <div class="page-head-actions">
             <el-button
-              v-permission="'limit-ladder:recompute'"
-              :loading="recomputing"
-              :disabled="!tradeDate"
-              data-testid="limit-ladder-recompute"
-              @click="recomputeCurrentDate"
-            >重算当日</el-button>
+              v-if="canManageData"
+              data-testid="limit-ladder-maintenance"
+              @click="openLadderMaintenance"
+            >结果维护</el-button>
             <el-button
               :loading="exporting"
               :disabled="!result?.has_snapshot"
@@ -683,7 +653,6 @@ onBeforeUnmount(() => {
               :error="error"
               :forbidden="forbidden"
               :can-view-sectors="canViewSectors"
-              :can-recompute="canRecompute"
               :can-manage-data="canManageData"
               :compact-hotspots="compactHotspots"
               :selected-code="activeAnalysisCode"
@@ -694,6 +663,7 @@ onBeforeUnmount(() => {
               @update:trade-date="setTradeDate"
               @update:card-sort="setCardSort"
               @retry="retryLadder"
+              @open-maintenance="openLadderMaintenance"
               @open-ingest="router.push('/data/ingest')"
               @select="selectStock"
             />

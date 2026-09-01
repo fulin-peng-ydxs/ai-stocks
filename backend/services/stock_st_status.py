@@ -233,20 +233,4 @@ class StockSTStatusService:
                         FROM {history_view}
                         """
                     )
-            if changed_keys:
-                affected_dates = pd.DataFrame(
-                    {"trade_date": sorted({trade_date for _, trade_date in changed_keys})}
-                )
-                with self.c.temp_view(affected_dates, "st_changed_dates") as affected_view:
-                    self.c.execute(
-                        f"""
-                        UPDATE limit_ladder_snapshot_state AS state
-                        SET status='invalid',invalid_reason='st_status_changed',
-                            failure_summary=NULL,updated_at=?
-                        WHERE state.trade_date>=(SELECT min(trade_date) FROM {affected_view})
-                          AND state.current_snapshot_id IS NOT NULL
-                          AND state.status NOT IN ('calculating','recalculating')
-                        """,
-                        [now],
-                    )
         return sorted({trade_date for _, trade_date in changed_keys})

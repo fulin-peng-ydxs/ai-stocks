@@ -610,7 +610,7 @@ onMounted(loadAll)
               <AppTableColumn v-if="colVisible('updated_at')" label="更新时间" prop="updated_at" sortable="custom">
                 <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
               </AppTableColumn>
-              <AppTableColumn label="操作" fixed="right">
+              <AppTableColumn label="操作" role="action" fixed="right">
                 <template #default="{ row }">
                   <AppRowActions :actions="itemRowActions(row)" :inline-limit="1" />
                 </template>

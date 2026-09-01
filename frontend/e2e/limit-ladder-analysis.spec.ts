@@ -85,7 +85,7 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
     const toolbar = toolbarNode.getBoundingClientRect()
     const panel = document.querySelector('.market-list-panel')!.getBoundingClientRect()
     const exported = document.querySelector('[data-testid="limit-ladder-export"]')!.getBoundingClientRect()
-    const recompute = document.querySelector('[data-testid="limit-ladder-recompute"]')!.getBoundingClientRect()
+    const maintenance = document.querySelector('[data-testid="limit-ladder-maintenance"]')!.getBoundingClientRect()
     const controlHeights = [
       toolbarNode.querySelector('.el-date-editor'),
       toolbarNode.querySelector('.page-segmented'),
@@ -106,8 +106,8 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
       panelRight: panel.right,
       exportRight: exported.right,
       exportWidth: exported.width,
-      headerActionGap: exported.left - recompute.right,
-      headerActionTopDelta: Math.abs(recompute.top - exported.top),
+      headerActionGap: exported.left - maintenance.right,
+      headerActionTopDelta: Math.abs(maintenance.top - exported.top),
       toolbarOverflow: toolbarNode.scrollWidth - toolbarNode.clientWidth,
       bodyOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       controlHeights,
@@ -124,7 +124,8 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   expect(toolbarGeometry.controlHeights).toEqual([32, 32, 32, 32, 32, 32])
   expect(toolbarGeometry.controlOverflow).toBeLessThanOrEqual(1)
   expect(toolbarGeometry.overlapCount).toBe(0)
-  await expect(page.getByTestId('limit-ladder-recompute')).not.toHaveClass(/el-button--warning/)
+  await expect(page.getByTestId('limit-ladder-maintenance')).toHaveText('结果维护')
+  await expect(page.getByTestId('limit-ladder-maintenance')).not.toHaveClass(/el-button--warning/)
   await page.getByTestId('limit-ladder-card-sort').locator('.el-select__wrapper').click()
   await page.getByRole('option', { name: '累计涨幅' }).click()
   await expect(page).toHaveURL(/card_sort=return/)
@@ -139,12 +140,6 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   await testInfo.attach('limit-ladder-card', { path: cardScreenshotPath, contentType: 'image/png' })
   await page.setViewportSize({ width: 1100, height: 620 })
 
-  await page.getByTestId('limit-ladder-recompute').click()
-  await page.getByRole('button', { name: '确认重算' }).click()
-  await expect.poll(ladderApi.recomputeCount).toBe(1)
-  await expect(page.getByTestId('limit-ladder-stale-notice')).toBeVisible()
-  await expect(page.getByTestId('limit-ladder-stale-notice')).toBeHidden({ timeout: 5000 })
-  await expect(card).toBeVisible()
   const density = await page.evaluate(() => {
     const board = document.querySelector('[data-testid="limit-ladder-boards"] .el-select__wrapper')!
       .getBoundingClientRect()

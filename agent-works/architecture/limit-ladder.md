@@ -17,7 +17,7 @@
 | 连板计算 | 批量加载行情；连续板回溯到中断或上市边界，不受 60 日窗口截断 | `backend/services/limit_ladder_calculator.py` |
 | 快照发布 | coverage 门禁、不可变版本、四档窗口指标冻结、状态指针原子切换 | `backend/services/limit_ladder_snapshot.py` |
 | 查询读模型 | 统一筛选、摘要、热点、短历史字段、CSV 和同日走势冠军合并 | `backend/services/limit_ladder_query.py` |
-| 日期任务协调 | 自动首算、失效刷新、管理员重算共享同日活动命令 | `backend/services/limit_ladder_task_coordinator.py`、`backend/storage/limit_ladder_task_repository.py` |
+| 日期任务协调 | 查询首算、显式失效后的按需刷新、兼容管理 API 重算共享同日活动命令 | `backend/services/limit_ladder_task_coordinator.py`、`backend/storage/limit_ladder_task_repository.py` |
 | 执行与审计 | DuckDB 保存任务进度/日志；PG 保存日期协调账本和可靠审计 outbox | `backend/services/async_task.py`、`backend/storage/pg_ddl.py` |
 | 页面 | 主从工作台、天梯卡片、热点、设置、窄屏抽屉和详情返回 | `frontend/src/views/LimitLadderView.vue`、`frontend/src/views/limit-ladder/` |
 
@@ -32,7 +32,7 @@ flowchart LR
   ST[(stock_st_status_daily)] --> CALC[连板与窗口计算]
   GATE --> CALC
   CALC --> SNAP[(DuckDB 不可变快照 v2)]
-  INGEST[行情 / ST / 基础信息 / 板块采集] --> INV[(失效 outbox)]
+  MAINT[结果维护手动 / 用户调度] --> INV[(失效 outbox)]
   INV --> STATE[(日期状态指针)]
   SNAP --> STATE
   GET[GET 查询] --> COORD[统一日期任务协调]
@@ -67,11 +67,12 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 4. 一次计算 10/20/31/60 日涨停次数、后复权累计涨幅、实际起始日和实际交易日数。
 5. 概念成员按 `first_seen_date IS NULL OR first_seen_date <= T` 取点时兼容集合；在同一 DuckDB 事务写入快照元数据、股票、概念、聚合和四档窗口指标，校验通过后切换 `current_snapshot_id`。
 
-### 上游失效与补偿
+### 显式失效与补偿
 
-- 历史 D 日行情、停牌或 ST 事实变化会失效全部已发布的 `T >= D` 快照，因为连续板没有 60 日回溯上限。
-- 基础信息或当前板块归属变化使用全量失效边界。
-- 上游先写 `limit_ladder_invalidation_outbox`，再执行失效；失败保留 pending 并使上游任务失败。
+- 「连板天梯失效」支持最新完整交易日或固定起始交易日；固定日必须是交易日历中已登记的开市日。
+- 对起始日 D 执行时，标记全部已发布的 `T >= D` 快照失效；连续板没有 60 日回溯上限，因此不收窄传播范围。
+- 结果任务先写 `limit_ladder_invalidation_outbox`，再执行失效；失败保留 pending 并使本次结果任务失败。
+- 采集、补数、修复、ST 事实和板块归属变化只更新原始数据，不自动写该 outbox；如需联动，由用户在调度中显式配置依赖。
 - 查询前重放 pending；`verify/checkup` 同时检查积压，不能把补偿失败后的旧结果继续标成 valid。
 
 ## 数据模型
@@ -88,7 +89,7 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 | `limit_ladder_snapshot_concept` | 发布时完整概念归属集合 |
 | `limit_ladder_snapshot_aggregate` | 发布校验使用的行业/概念聚合 |
 | `limit_ladder_snapshot_window_metric` | 每股四档窗口次数、累计涨幅和短历史字段 |
-| `limit_ladder_invalidation_outbox` | 上游失效意图、重试和完成状态 |
+| `limit_ladder_invalidation_outbox` | 显式结果维护的失效意图、重试和完成状态 |
 
 ### PostgreSQL 协调与审计事实
 
@@ -111,7 +112,7 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 - 低高度：筛选工具栏固定，摘要、热点和梯级共用成长滚动区；热点默认收敛但可展开。
 - 初始化态：个人偏好和可用交易日尚未完成加载时保持统一骨架，不把尚未发起快照请求的 `result=null` 渲染成无快照失败态。
 - 权限态：页面 403 使用 permission 状态并提示联系管理员，不提供无意义重试。
-- 任务态：计算中明确显示最长等待时间；存在未解释行情缺口时，有数据任务权限的用户可直接前往「数据采集」执行「日常同步」，完成后返回刷新状态并由系统自动重算；无权限用户显示需联系的角色。确认停牌不要求补行情。计算异常时 system 用户的页内动作直接进入重算确认，其他用户只能刷新状态并等待管理员处理；后台不得静默重建失败任务。
+- 任务态：计算中明确显示最长等待时间；存在未解释行情缺口时，有数据任务权限的用户可先前往「数据采集」补齐数据，再到「结果维护」手动执行天梯失效，或由调度配置两者的显式依赖。计算异常时，领域页只提供「去结果维护」或刷新状态，不再保留重复的页内重算控制。
 
 ## API 与权限
 
@@ -127,7 +128,7 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 
 ## 配置、部署与回滚
 
-本模块没有新增环境变量、外部服务或可调度 job。`limit_ladder_recompute` 是内部任务类型，不出现在定时调度配置中。
+本模块没有新增环境变量或外部服务。`limit_ladder_invalidate` 是面向用户的可调度结果维护任务；`limit_ladder_recompute` 仍是查询按需物化的内部任务类型，不出现在调度任务类型中。
 
 部署顺序和验证查询见 [`../limit-up-ladder/sql-rehearsal.md`](../limit-up-ladder/sql-rehearsal.md)：
 

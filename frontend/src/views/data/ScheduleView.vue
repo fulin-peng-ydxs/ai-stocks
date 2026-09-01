@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import {
@@ -32,8 +32,8 @@ import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
 import { compareScheduleFrequency } from '@/utils/scheduleFrequencySort'
 import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
-import StockCodeMultiSelect from '@/components/data/StockCodeMultiSelect.vue'
 import StockIngestScopeFields from '@/components/data/StockIngestScopeFields.vue'
+import ResultMaintenanceTaskFields from '@/components/data/ResultMaintenanceTaskFields.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
 import {
   buildStockIngestParams,
@@ -43,11 +43,13 @@ import {
   type StockIngestFormValue,
 } from '@/utils/stockIngest'
 import {
-  buildStockBoardCorrelationTaskParams,
-  createStockBoardCorrelationTaskForm,
-  stockBoardCorrelationTaskFormFromParams,
-  type StockBoardCorrelationTaskForm,
-} from '@/utils/stockBoardCorrelationTask'
+  buildResultMaintenanceTaskParams,
+  consumeResultMaintenanceScheduleIntent,
+  createResultMaintenanceTaskForm,
+  isResultMaintenanceTask,
+  resultMaintenanceTaskFormFromParams,
+  type ResultMaintenanceTaskForm,
+} from '@/utils/resultMaintenanceTask'
 
 const router = useRouter()
 const settingsOpen = ref(false)
@@ -167,7 +169,7 @@ const saving = ref(false)
 const form = reactive({
   name: '', task_type: 'stock_ingest' as TaskType,
   stock: createStockIngestForm() as StockIngestFormValue,
-  correlation: createStockBoardCorrelationTaskForm() as StockBoardCorrelationTaskForm,
+  resultMaintenance: createResultMaintenanceTaskForm() as ResultMaintenanceTaskForm,
   issue_type: 'null_close',
   board_mode: 'update' as 'update' | 'backfill',
   board_type: '' as BoardTypeScope,
@@ -184,17 +186,23 @@ const form = reactive({
 })
 const dlgTitle = computed(() => (editingId.value ? '编辑调度任务' : '新建调度任务'))
 const dependencyOptions = computed(() => jobs.value.filter((job) => job.id !== editingId.value))
-// 采集类任务（逐股拉取）才有并发概念；评分维护/质检无需并发
+// 采集类任务（逐股拉取）才有并发概念；结果维护/质检无需并发。
 watch(() => form.task_type, (type, prev) => {
   if (type === 'audit_cleanup') form.trading_day_only = false
   else if (prev === 'audit_cleanup' && !editingId.value) form.trading_day_only = true
 })
 
+function changeTaskType(type: TaskType) {
+  if (isResultMaintenanceTask(type)) {
+    form.resultMaintenance = createResultMaintenanceTaskForm()
+  }
+}
+
 function openCreate() {
   editingId.value = ''
   Object.assign(form, {
     name: '', task_type: 'stock_ingest', stock: createStockIngestForm(),
-    correlation: createStockBoardCorrelationTaskForm(),
+    resultMaintenance: createResultMaintenanceTaskForm(),
     issue_type: qualityIssueTypes.value[0] || 'null_close',
     board_mode: 'update', board_type: '', board_stages: ['dict', 'members', 'bar', 'fund'],
     board_force_members: false,
@@ -208,13 +216,22 @@ function openCreate() {
   dlg.value = true
 }
 
+function openResultScheduleFromIntent() {
+  const queryTaskType = consumeResultMaintenanceScheduleIntent()
+  if (!queryTaskType) return
+  openCreate()
+  form.task_type = queryTaskType
+}
+
 function openEdit(j: ScheduledJob) {
   editingId.value = j.id
   const stock = stockIngestFormFromTask(j.task_type, j.params)
   Object.assign(form, {
     name: j.name, task_type: stock ? 'stock_ingest' : j.task_type,
     stock: stock || createStockIngestForm(),
-    correlation: stockBoardCorrelationTaskFormFromParams(j.params),
+    resultMaintenance: isResultMaintenanceTask(j.task_type)
+      ? resultMaintenanceTaskFormFromParams(j.task_type, j.params)
+      : createResultMaintenanceTaskForm(),
     issue_type: j.params?.issue_type || qualityIssueTypes.value[0] || 'null_close',
     board_mode: j.params?.mode === 'backfill' ? 'backfill' : 'update',
     board_type: j.params?.board_type === 'concept' || j.params?.board_type === 'industry'
@@ -249,8 +266,8 @@ function buildPayload(): ScheduledJobInput | null {
     const built = buildStockIngestParams(form.stock)
     if (built.error) { ElMessage.warning(built.error); return null }
     Object.assign(params, built.params)
-  } else if (form.task_type === 'stock_board_correlation') {
-    const built = buildStockBoardCorrelationTaskParams(form.correlation)
+  } else if (isResultMaintenanceTask(form.task_type)) {
+    const built = buildResultMaintenanceTaskParams(form.task_type, form.resultMaintenance)
     if (built.error) { ElMessage.warning(built.error); return null }
     Object.assign(params, built.params)
   } else if (form.task_type === 'fix') {
@@ -519,7 +536,13 @@ async function load() {
   } finally { loading.value = false }
 }
 
-onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
+onMounted(async () => {
+  await Promise.all([load(), loadSources(false)])
+  openResultScheduleFromIntent()
+})
+
+// keep-alive 缓存页再次进入时不会重新执行 onMounted，激活时消费一次性新建意图。
+onActivated(openResultScheduleFromIntent)
 </script>
 
 <template>
@@ -532,7 +555,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
         <HelpTip title="这页管什么？" :width="440">
           <HelpTipItem question="调度任务管什么">
             <ul>
-              <li>可自定义数据采集、评分维护、数据质检、按问题类型恢复和审计清理任务。</li>
+              <li>可自定义数据采集、结果维护、数据质检、按问题类型恢复和审计清理任务。</li>
               <li>可选择时间或任务依赖触发，配置延迟与受控重试，也可启停或立即执行。</li>
               <li>实际执行记录进入「数据采集」任务中心，并标注「定时·任务名」。</li>
             </ul>
@@ -544,7 +567,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           </HelpTipItem>
         </HelpTip>
       </h2>
-      <p class="page-subtitle">按时间或上游任务结果编排采集、评分、质检、恢复与审计任务，支持延迟触发和有上限重试。</p>
+      <p class="page-subtitle">按时间或上游任务结果编排采集、结果维护、质检、恢复与审计任务，支持延迟触发和有上限重试。</p>
       </div>
       <div class="page-head-actions">
         <el-button
@@ -633,7 +656,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           <AppTableColumn v-if="jobColVisible('lastRun')" label="最近触发">
             <template #default="{ row }">{{ fmtTime(row.last_run_at) }}</template>
           </AppTableColumn>
-          <AppTableColumn label="操作" fixed="right">
+          <AppTableColumn label="操作" role="action" fixed="right">
             <template #default="{ row }">
               <AppRowActions :actions="scheduleRowActions(row)" :inline-limit="2" />
             </template>
@@ -687,7 +710,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           <AppTableColumn v-if="sourceColVisible('timeout')" label="超时">
             <template #default="{ row }">{{ row.timeout_sec }}s</template>
           </AppTableColumn>
-          <AppTableColumn label="操作" fixed="right">
+          <AppTableColumn label="操作" role="action-compact" fixed="right">
             <template #default="{ row }">
               <AppRowActions v-if="row.source === 'ths_board'" :actions="boardSourceRowActions()" :inline-limit="1" />
             </template>
@@ -822,7 +845,12 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           />
         </el-form-item>
         <el-form-item label="任务类型">
-          <el-select v-model="form.task_type" data-testid="schedule-task-type" style="width: 100%">
+          <el-select
+            v-model="form.task_type"
+            data-testid="schedule-task-type"
+            style="width: 100%"
+            @change="changeTaskType"
+          >
             <el-option v-for="o in taskTypeOptions()" :key="o.value" :label="o.label" :value="o.value" />
           </el-select>
         </el-form-item>
@@ -851,37 +879,19 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           v-model="form.stock"
           test-id-prefix="schedule-stock"
         />
-        <template v-if="form.task_type === 'stock_board_correlation'">
-          <el-form-item label="股票范围">
-            <PageSegmented
-              v-model="form.correlation.scope"
-              :options="[{ label: '全市场', value: 'all' }, { label: '指定股票', value: 'selected' }]"
-              test-id="schedule-correlation-scope"
-              tone="primary"
-              aria-label="个股走势关联板块计算范围"
-            />
-          </el-form-item>
-          <el-form-item v-if="form.correlation.scope === 'selected'" label="指定股票">
-            <StockCodeMultiSelect
-              v-model="form.correlation.codes"
-              test-id="schedule-correlation-codes"
-              aria-label="个股走势关联板块指定股票"
-            />
-          </el-form-item>
-          <el-form-item label="重算策略">
-            <el-switch
-              v-model="form.correlation.force"
-              data-testid="schedule-correlation-force"
-              active-text="同日强制重算"
-              inactive-text="无新交易日时跳过"
-            />
-          </el-form-item>
-          <el-alert
-            type="info"
-            :closable="false"
-            title="计算窗口、基准、权重和样本门槛由版本化算法统一管理，不在调度任务中单独配置。"
-          />
-        </template>
+        <ResultMaintenanceTaskFields
+          v-if="isResultMaintenanceTask(form.task_type)"
+          v-model="form.resultMaintenance"
+          :task-type="form.task_type"
+          test-id-prefix="schedule-result"
+        />
+        <el-alert
+          v-if="isResultMaintenanceTask(form.task_type)"
+          type="warning"
+          :closable="false"
+          title="保存只会登记调度，不会立即执行；以后自动触发或在调度列表点击“立即执行”时，均使用这里保存的结果参数。"
+          data-testid="schedule-result-execution-scope"
+        />
 
         <el-divider
           content-position="left"
@@ -981,7 +991,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           type="primary"
           :loading="saving"
           @click="save"
-        >保存</el-button>
+        >保存调度</el-button>
       </template>
     </el-dialog>
 

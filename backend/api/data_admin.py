@@ -169,8 +169,8 @@ def hub() -> ApiResponse:
     if dd and (bd is None or str(bd) < str(dd)):
         tip = "尚未生成榜单快照" if bd is None else f"榜单快照最新到 {bd}，数据已到 {dd}"
         risk.append({"level": "info",
-                     "text": f"{tip}——需运行「评分维护」任务或公共榜单 CLI 生产最新公共榜单快照",
-                     "link": "/board"})
+                     "text": f"{tip}——可在「结果维护」中失效后访问榜单按需重算，或用公共榜单 CLI 预生产",
+                     "link": "/data/ingest"})
     if days_since_scan is None:
         risk.append({"level": "warning", "text": "尚未做过数据质检", "link": "/data/quality"})
     elif days_since_scan > 3:
@@ -724,13 +724,6 @@ def quality_mark_delisted(issue_id: int, body: MarkDelistedIn) -> ApiResponse:
     except (ValueError, TypeError):
         return err(400, f"退市日期非法: {body.delist_date}（需 YYYY-MM-DD）")
     c.execute("UPDATE stock_basic SET delist_date=? WHERE code=?", [dl, code])
-    # 退市口径已变 → 标评分快照失效（惰性；退市股影响排除口径）
-    try:
-        from backend.scoring.snapshot import ScoreSnapshotRepo
-        ScoreSnapshotRepo(get_client()).mark_stale_all()
-    except Exception as e:  # noqa: BLE001
-        from backend.common.logging import get_logger
-        get_logger("api.data_admin").warning("标记退市后评分快照失效失败: %s", e)
     now = datetime.now()
     affected = int(c.query_df(
         "SELECT count(*) AS n FROM data_quality_issue WHERE code=? "

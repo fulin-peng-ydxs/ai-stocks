@@ -73,10 +73,6 @@ class IngestionService:
         init_db(self.c)  # 确保表已建
         self.repo = MarketRepository(self.c)
         self._bao: DataSource | None = None
-        self._limit_ladder_st_dates: set[date] = set()
-        self._limit_ladder_st_lock = threading.Lock()
-        self._limit_ladder_market_dates: set[date] = set()
-        self._limit_ladder_market_lock = threading.Lock()
 
     def _bao_source(self) -> DataSource:
         """惰性创建补充源（默认 baostock，由 datasource.fallback 配置决定）。"""
@@ -90,27 +86,9 @@ class IngestionService:
         *,
         ladder_dates: list[date] | None = None,
     ) -> int:
-        """行情/基础信息变更后标记评分快照失效（惰性，不重算）。
-
-        下沉到服务层：CLI 命令与 async_task 处理器共享同一批 IngestionService 方法，
-        一处覆盖 CLI + 任务中心 + DailyPipeline，避免 CLI 运维后旧榜单被当 fresh 读取。
-        dates 为 None → 评分快照全量标 stale；否则按受影响交易日细粒度标。
-        ladder_dates 可单独约束天梯失效日期；显式空列表表示本轮没有行情日期变化。
-        """
-        from backend.scoring.snapshot import ScoreSnapshotRepo
-        from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
-
-        ladder = LimitLadderSnapshotService(self.c)
-        affected_ladder_dates = dates if ladder_dates is None else ladder_dates
-        if affected_ladder_dates:
-            ladder.request_invalidation(
-                affected_ladder_dates, reason="market_data_changed"
-            )
-        elif ladder_dates is None:
-            ladder.request_invalidation(None, reason="market_data_changed")
-        if dates:
-            return ScoreSnapshotRepo(get_client()).mark_stale_dates(dates)
-        return ScoreSnapshotRepo(get_client()).mark_stale_all()
+        """Legacy test seam; collection no longer invalidates derived results."""
+        _ = (dates, ladder_dates)
+        return 0
 
     def _log_market_day_terminal(
         self,
@@ -426,54 +404,6 @@ class IngestionService:
         name = None if value is None or pd.isna(value) else str(value)
         return resolve_point_in_time_st(name=name)
 
-    def _track_limit_ladder_st_dates(self, dates: list[date]) -> None:
-        if not dates:
-            return
-        self._ensure_limit_ladder_st_tracking()
-        with self._limit_ladder_st_lock:
-            self._limit_ladder_st_dates.update(dates)
-
-    def _reset_limit_ladder_st_dates(self) -> None:
-        self._ensure_limit_ladder_st_tracking()
-        with self._limit_ladder_st_lock:
-            self._limit_ladder_st_dates.clear()
-
-    def _limit_ladder_st_date_result(self) -> list[str]:
-        self._ensure_limit_ladder_st_tracking()
-        with self._limit_ladder_st_lock:
-            return [value.isoformat() for value in sorted(self._limit_ladder_st_dates)]
-
-    def _track_limit_ladder_market_dates(self, dates: list[date]) -> None:
-        if not dates:
-            return
-        self._ensure_limit_ladder_market_tracking()
-        with self._limit_ladder_market_lock:
-            self._limit_ladder_market_dates.update(dates)
-
-    def _reset_limit_ladder_market_dates(self) -> None:
-        self._ensure_limit_ladder_market_tracking()
-        with self._limit_ladder_market_lock:
-            self._limit_ladder_market_dates.clear()
-
-    def _limit_ladder_market_date_values(self) -> list[date]:
-        self._ensure_limit_ladder_market_tracking()
-        with self._limit_ladder_market_lock:
-            return sorted(self._limit_ladder_market_dates)
-
-    def _ensure_limit_ladder_st_tracking(self) -> None:
-        """Keep lightweight ``__new__`` test doubles and maintenance callers compatible."""
-        if not hasattr(self, "_limit_ladder_st_lock"):
-            self._limit_ladder_st_lock = threading.Lock()
-        if not hasattr(self, "_limit_ladder_st_dates"):
-            self._limit_ladder_st_dates = set()
-
-    def _ensure_limit_ladder_market_tracking(self) -> None:
-        """Keep lightweight ``__new__`` test doubles and maintenance callers compatible."""
-        if not hasattr(self, "_limit_ladder_market_lock"):
-            self._limit_ladder_market_lock = threading.Lock()
-        if not hasattr(self, "_limit_ladder_market_dates"):
-            self._limit_ladder_market_dates = set()
-
     def _fetch_daily_with_fallback(
         self, code: str, start: date, end: date, primary: DataSource, ctx=None,
     ) -> tuple[pd.DataFrame | None, str]:
@@ -628,15 +558,11 @@ class IngestionService:
             "adj_factor_clean", "is_st", "is_suspended", "limit_status", "is_one_word",
         ]
         n = self.repo.upsert_daily_bar(df[bar_cols])
-        self._track_limit_ladder_market_dates(
-            [pd.Timestamp(value).date() for value in df["trade_date"].tolist()]
-        )
-        affected_st_dates = st_service.upsert_facts(
+        st_service.upsert_facts(
             effective_st_facts,
             change_reason="daily_ingest",
             task_id=getattr(ctx, "tid", None),
         )
-        self._track_limit_ladder_st_dates(affected_st_dates)
         # 衍生指标：流通市值 = 收盘 × 当日流通股本（新浪日线自带 float_share）
         if "float_share" in df.columns:
             metrics = pd.DataFrame(
@@ -1069,8 +995,6 @@ class IngestionService:
         （限流按线程隔离，总速率≈N×单线程），写入由 DuckDB 单写锁串行。默认 1（串行）。
         ⚠️ 调高并发即调高总请求速率，注意免费源封禁风险。
         """
-        self._reset_limit_ladder_st_dates()
-        self._reset_limit_ladder_market_dates()
         years = years or self.s.datasource.history_years
         end = self._latest_open_day()   # 收敛到最近交易日，非交易日不当截止
         start = date(end.year - years, end.month, end.day)
@@ -1184,7 +1108,6 @@ class IngestionService:
                 ctx.log(f"↻ 重算干净复权因子（{len(updated)} 只新入库）…")
             self._refresh_clean_factors(sorted(updated), ctx=ctx)
         result = {"target": len(target_codes), "ok": ok, "skip": skip, "fail": fail, "rows": total_rows}
-        result["limit_ladder_st_affected_dates"] = self._limit_ladder_st_date_result()
         # 市值透明化：历史补数只采行情，total_mv 历史市值不在本任务内采（市值源是慢接口，单列）。
         # 明确告知缺口去向，避免“市值盲区”不透明——增量更新只保最新交易日，历史全段缺口须靠
         # ingest_valuation_gaps/`valuation --fill-gaps`（或质量页补修）一次性回补，增量不自动补历史。
@@ -1208,8 +1131,6 @@ class IngestionService:
         # 入库后自动校验（全市场回填才跑契约检查，避免部分加载误报）
         if codes is None:
             self._post_ingest_validate()
-        # 行情已变 → 标评分快照失效（惰性）。skip 全量或 rows=0 也标（回填可能只是幂等跳过，但基础信息/因子仍可能变）。
-        result["snapshots_marked_stale"] = self._mark_snapshots_stale()
         return result
 
     def _post_ingest_validate(self) -> None:
@@ -1339,8 +1260,6 @@ class IngestionService:
         ctx（M2.8-B，可选 TaskContext）：传入则逐股写实时日志 + 进度 + checkpoint（FR-DM-9/10）。
         续跑天然幂等：从各股已入库最新日 +1 起，重复跑只补缺口。
         """
-        self._reset_limit_ladder_st_dates()
-        self._reset_limit_ladder_market_dates()
         end = date.today()
         concurrency = concurrency or self.s.datasource.update_concurrency
         basic = (
@@ -1539,7 +1458,6 @@ class IngestionService:
             self._refresh_clean_factors(sorted(updated), ctx=ctx)
         result = {"target": n, "ok": ok, "fail": fail, "rows": total_rows, "concurrency": concurrency,
                   "reconcile": recon}
-        result["limit_ladder_st_affected_dates"] = self._limit_ladder_st_date_result()
         # 补市值并入更新行情（容错子阶段）：更新即产出 L2 完整数据（float_mv 由日线自带 + total_mv）。
         # 幂等只补缺失股；失败仅记日志、不让整次更新失败（市值源是慢接口，单独容错隔离）。
         # 注意 total_mv 的增量语义：这里只保「最新交易日」新鲜，历史中间缺口不归 update 管
@@ -1583,10 +1501,6 @@ class IngestionService:
             ctx.log(f"■ 增量更新完成：成功 {ok}、失败 {fail}，共写入 {total_rows} 行（{n} 只）")
             ctx.log("说明：本次已补最新交易日 total_mv；历史中间缺口未在本次覆盖，质检 `mv_gap` 仍显示属正常，"
                     "需跑 `valuation --fill-gaps`（或质量页补修）一次性回补历史市值。")
-        # 行情/市值/复权因子已变 → 标评分快照失效（惰性，下次读取重算）。
-        result["snapshots_marked_stale"] = self._mark_snapshots_stale(
-            ladder_dates=self._limit_ladder_market_date_values()
-        )
         if codes is None:
             result["market_day_terminal"] = self._log_market_day_terminal(
                 end,
@@ -1834,10 +1748,6 @@ class IngestionService:
         dates = [str(pd.Timestamp(d).date()) for d in days]
         result = {"target": n, "ok": ok, "fail": fail, "rows": total_rows,
                   "range": [str(start), str(end)], "dates": dates}
-        # 指定日期行情已变 → 按受影响交易日标评分快照失效（细粒度，惰性）
-        result["snapshots_marked_stale"] = self._mark_snapshots_stale(
-            [date.fromisoformat(x) for x in dates] if dates else None
-        )
         if ctx:
             ctx.log(f"■ 指定日期采集完成：成功 {ok}、失败 {fail}，共写入 {total_rows} 行（{start}~{end}）")
         log.info("指定日期采集完成: %s", {k: v for k, v in result.items() if k != "dates"})
@@ -1916,8 +1826,6 @@ class IngestionService:
                                   current_item=code, factor_done_codes=sorted(done_codes))
                     ctx.log(f"[{i}/{n}] {code} {verb}失败: {e}", "warn")
         result = {"target": n, "ok": ok, "fail": fail, "rows": rows}
-        # 复权因子/前收盘/涨跌停标记已重算 → 标评分快照失效（惰性，K线与打分口径都可能受影响）
-        result["snapshots_marked_stale"] = self._mark_snapshots_stale()
         log.info("%s完成: %s", verb, result)
         if ctx:
             ctx.log(f"■ {verb}完成：成功 {ok}、失败 {fail}，共处理 {rows} 行")
@@ -2052,9 +1960,6 @@ class IngestionService:
         n = self.repo.upsert_stock_basic(out)
         self.repo.log_update("stock_basic", dates_src.name, None, None, n, "success", "补上市/退市日+行业")
         log.info("%s 补全基础信息 %d 只（含退市股+行业）", dates_src.name, n)
-        # 基础信息（退市/上市日/板块）已变 → 标评分快照失效（影响退市股排除口径）
-        if n > 0:
-            self._mark_snapshots_stale()
         if ctx:
             ctx.set_phase(
                 "stock_basic", done=1, total=1,
@@ -2130,8 +2035,6 @@ class IngestionService:
                     ctx.log(f"退市股 {code} 灌入失败：{e}", "warn")
                 self.repo.log_update("daily_bar", bao.name, start, None, 0, "failed", f"{code}: {e}")
         result = {"target": len(dl), "ok": ok, "skip": skip, "fail": fail, "rows": total_rows}
-        # 退市股历史已变 → 标评分快照失效（退市股影响幸存者偏差口径）
-        result["snapshots_marked_stale"] = self._mark_snapshots_stale()
         log.info("退市股灌入完成: %s", result)
         if ctx:
             ctx.log(f"子任务：退市股历史灌入完成，成功{ok} 跳过{skip} 失败{fail}，写入 {total_rows} 行")
@@ -2303,14 +2206,6 @@ class IngestionService:
                                  if code not in known_codes]
         result["failed"] = list(dict.fromkeys(result["failed"]))
         result["ok"] = not result["failed"]
-        if any(stage in steps for stage in ("dict", "members")):
-            from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
-
-            result["limit_ladder_snapshots_invalidated"] = (
-                LimitLadderSnapshotService(svc.c).request_invalidation(
-                    None, reason="board_membership_changed"
-                )
-            )
         if ctx:
             ctx.progress(1.0, "板块采集完成")
             ctx.log(f"板块采集完成（{mode}）：字典{result['dict']} 成分{len(result['members'])} 板块 "

@@ -305,13 +305,18 @@ def test_hub_stages_and_risk(client):
 # ── 定时触发的任务带来源标记走任务系统（调度系统重构）──
 def test_task_carries_trigger_source(client, monkeypatch):
     """定时/手动触发的任务都走同一套；trigger_source/job_name 落库供任务中心区分展示。"""
-    monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
     monkeypatch.setattr(
-        "backend.services.async_task._produce_public_board_snapshots",
-        lambda _params: {"run_date": "2024-01-05", "profile_count": 0, "total_rows": 0, "profiles": []},
+        "backend.scoring.snapshot.ScoreSnapshotRepo",
+        lambda _client: SimpleNamespace(mark_stale_dates=lambda _dates: 0, mark_stale_all=lambda: 0),
     )
     svc = AsyncTaskService(client)
-    tid = svc.create("recompute", trigger_source="scheduled", job_id="job_x", job_name="盘后刷新")
+    tid = svc.create(
+        "recompute",
+        {"target_mode": "all"},
+        trigger_source="scheduled",
+        job_id="job_x",
+        job_name="盘后刷新",
+    )
     t = _wait(svc, tid)
     assert t["status"] == "done"
     assert t["trigger_source"] == "scheduled" and t["job_name"] == "盘后刷新" and t["job_id"] == "job_x"
@@ -730,7 +735,7 @@ def test_three_views_consistent(client):
 
 # ── 每日自动任务默认含质检步（DM-D14）──
 def test_daily_pipeline_includes_quality_step(client):
-    """v2.0 精简后每日流程 = 更新（含补市值）→ 数据质检；公共榜单由评分维护/CLI 生产。"""
+    """v2.0 精简后每日流程 = 更新（含补市值）→ 数据质检，不联动榜单。"""
     from backend.services.pipeline import DailyPipeline
     client.execute("INSERT INTO daily_bar (code, trade_date, close, pre_close) "
                    "VALUES ('A.SH', DATE '2024-01-03', 10.0, 9.9)")
@@ -738,7 +743,7 @@ def test_daily_pipeline_includes_quality_step(client):
     res = DailyPipeline(client).run(skip_update=True, board=False)
     names = [s["step"] for s in res["steps"]]
     assert "数据质检" in names
-    # 评分榜单/预设筛选已不再作为每日流程步骤；公共榜单生产由评分维护/CLI 承担。
+    # 榜单/预设筛选不在每日流程中预跑；失效与触发时机由结果维护/调度独立决定。
     assert "打分榜单+买点风险" not in names and "预设筛选" not in names
 
 

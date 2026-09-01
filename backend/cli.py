@@ -580,16 +580,8 @@ def cmd_purge_suspension_bars(args: argparse.Namespace) -> int:
         "AND (b.volume = 0 OR b.volume IS NULL))")
     # 3) 删 daily_bar 停牌日行
     c.execute(f"DELETE FROM daily_bar WHERE {cond}")
-    # 行情已删 → 标评分快照失效（惰性；K线/打分口径都受影响）
-    try:
-        from backend.scoring.snapshot import ScoreSnapshotRepo
-        stale = ScoreSnapshotRepo(get_client()).mark_stale_all()
-        print(f"已标记 {stale} 项评分快照失效（下次读取按需重算）。")
-    except Exception as e:  # noqa: BLE001
-        print(f"警告：标记评分快照失效失败（不影响本次清理）：{e}")
     print(f"已完成：记入 stock_suspension 并从 daily_bar/daily_metrics 删除 {n} 行停牌日数据。")
-    print("建议随后在应用「任务中心」跑一次『评分维护』(recompute)，或执行 public-board CLI "
-          "生产最新公共榜单；若关心指标，可对受影响股重算指标。")
+    print("如需维护衍生结果，请在应用「结果维护」中显式执行对应任务，或配置任务调度。")
     return 0
 
 

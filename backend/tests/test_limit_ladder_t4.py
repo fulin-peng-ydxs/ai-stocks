@@ -310,7 +310,7 @@ def test_historical_invalidation_propagates_to_all_later_snapshots(market):
     assert rows[1]["invalid_reason"] == "st_status_changed"
 
 
-def test_incremental_market_invalidation_starts_at_earliest_changed_date(market, monkeypatch):
+def test_incremental_market_change_does_not_invalidate_ladder(market):
     first = date(2026, 8, 27)
     second = date(2026, 8, 28)
     for trade_date, snapshot_id in ((first, "snap-1"), (second, "snap-2")):
@@ -321,20 +321,13 @@ def test_incremental_market_invalidation_starts_at_earliest_changed_date(market,
             [trade_date, snapshot_id],
         )
 
-    class FakeScoreSnapshots:
-        def mark_stale_all(self):
-            return 0
-
-    monkeypatch.setattr(
-        "backend.scoring.snapshot.ScoreSnapshotRepo", lambda client: FakeScoreSnapshots()
-    )
     service = IngestionService.__new__(IngestionService)
     service.c = market
-    service._mark_snapshots_stale(ladder_dates=[first])
+    assert service._mark_snapshots_stale(ladder_dates=[first]) == 0
     rows = market.query_df(
         "SELECT trade_date,status FROM limit_ladder_snapshot_state ORDER BY trade_date"
     ).to_dict("records")
-    assert [row["status"] for row in rows] == ["invalid", "invalid"]
+    assert [row["status"] for row in rows] == ["valid", "valid"]
 
 
 def test_unknown_list_date_is_excluded_from_point_in_time_pool(market):
@@ -400,7 +393,7 @@ def test_pending_invalidation_outbox_replays_to_completion(market):
     assert pd.notna(event["completed_at"])
 
 
-def test_ingest_does_not_swallow_ladder_invalidation_failure(market, monkeypatch):
+def test_ingest_never_calls_ladder_invalidation(market, monkeypatch):
     def fail_invalidation(*args, **kwargs):
         raise RuntimeError("forced ladder invalidation failure")
 
@@ -410,8 +403,7 @@ def test_ingest_does_not_swallow_ladder_invalidation_failure(market, monkeypatch
     service = IngestionService.__new__(IngestionService)
     service.c = market
 
-    with pytest.raises(RuntimeError, match="forced ladder invalidation failure"):
-        service._mark_snapshots_stale(ladder_dates=[date(2026, 8, 28)])
+    assert service._mark_snapshots_stale(ladder_dates=[date(2026, 8, 28)]) == 0
 
 
 def test_coverage_fingerprint_tracks_published_one_word_and_industry_dictionary(market):
@@ -463,7 +455,7 @@ def test_ingest_terminal_helper_writes_structured_fact(market):
     assert json.loads(row["detail"]) == detail
 
 
-def test_st_fact_change_invalidates_same_and_later_dates_atomically(market):
+def test_st_fact_change_does_not_implicitly_invalidate_ladder(market):
     trade_date = date(2026, 8, 28)
     for day, snapshot_id in (
         (trade_date, "snap-1"),
@@ -491,6 +483,6 @@ def test_st_fact_change_invalidates_same_and_later_dates_atomically(market):
         "SELECT status,current_snapshot_id,invalid_reason "
         "FROM limit_ladder_snapshot_state ORDER BY trade_date"
     ).to_dict("records")
-    assert [state["status"] for state in states] == ["invalid", "invalid"]
+    assert [state["status"] for state in states] == ["valid", "valid"]
     assert [state["current_snapshot_id"] for state in states] == ["snap-1", "snap-2"]
-    assert all(state["invalid_reason"] == "st_status_changed" for state in states)
+    assert all(pd.isna(state["invalid_reason"]) for state in states)

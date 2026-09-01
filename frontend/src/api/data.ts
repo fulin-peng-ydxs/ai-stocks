@@ -351,7 +351,7 @@ export type TaskType =
   | 'update' | 'backfill' | 'ingest_date' | 'ingest_codes' | 'rebuild_price_factors'
   | 'recompute' | 'verify' | 'checkup' | 'fix'
   | 'enrich_basic' | 'audit_cleanup' | 'board' | 'stock_ingest' | 'stock_board_correlation'
-  | 'limit_ladder_recompute'
+  | 'limit_ladder_invalidate' | 'limit_ladder_recompute'
 
 // ── 数据结构体检报告（checkup 任务 result.checkup）──
 export interface CheckupCheck { name: string; ok: boolean; detail: string }
@@ -436,10 +436,11 @@ export function getUpdateLogs(params: {
 export const TASK_LABEL: Record<TaskType, string> = {
   update: '增量更新', backfill: '历史补数', ingest_date: '指定日期采集',
   ingest_codes: '指定股票采集', rebuild_price_factors: '重算价格因子',
-  recompute: '评分维护', verify: '数据质检',
+  recompute: '每日榜单失效', verify: '数据质检',
   checkup: '结构体检', fix: '质检问题恢复', enrich_basic: '退市标记刷新',
   audit_cleanup: '审计日志清理', board: '板块采集', stock_ingest: '个股采集',
-  stock_board_correlation: '个股走势关联板块',
+  stock_board_correlation: '走势相关重算',
+  limit_ladder_invalidate: '连板天梯失效',
   limit_ladder_recompute: '连板天梯重算',
 }
 export const STATUS_LABEL: Record<TaskStatus, string> = {
@@ -494,7 +495,16 @@ export function taskDisplayLabel(
     const scope = Array.isArray(params?.codes) && params.codes.length
       ? `指定 ${params.codes.length} 只`
       : '全市场'
-    return `${base}·${scope}${params?.force === true ? '·强制重算' : ''}`
+    const tradeDate = typeof params?.trade_date === 'string' ? params.trade_date : '最新完整交易日'
+    return `${base}·${tradeDate}·${scope}`
+  }
+  if (taskType === 'recompute' || taskType === 'limit_ladder_invalidate') {
+    const scope = params?.target_mode === 'all'
+      ? '全部快照'
+      : (typeof params?.trade_date === 'string' && params.trade_date
+          ? params.trade_date
+          : '最新完整交易日')
+    return `${base}·${scope}`
   }
   if (taskType === 'limit_ladder_recompute') {
     const tradeDate = typeof params?.trade_date === 'string' ? params.trade_date : ''

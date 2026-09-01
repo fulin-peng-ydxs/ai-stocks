@@ -129,10 +129,10 @@ def normalize_correlation_task_params(
     if params is not None and not isinstance(params, dict):
         raise ValueError("个股走势关联板块任务参数必须是对象")
     raw = dict(params or {})
-    unknown = sorted(set(raw) - {"codes", "force"})
+    unknown = sorted(set(raw) - {"codes", "force", "trade_date"})
     if unknown:
         raise ValueError(f"个股走势关联板块任务不支持参数: {','.join(unknown)}")
-    force = raw.get("force", False)
+    force = raw.get("force", True)
     if not isinstance(force, bool):
         # API/调度校验统一以 ValueError 映射 400，不让类型错误逃逸成 500。
         raise ValueError("个股走势关联板块任务的 force 必须是布尔值")  # noqa: TRY004
@@ -148,7 +148,16 @@ def normalize_correlation_task_params(
         raise ValueError("个股走势关联板块任务的 codes 必须是数组或逗号分隔文本")
     if codes and client is not None:
         StockBoardCorrelationService(client).validate_configured_codes(codes)
-    return {"codes": codes, "force": force}
+    raw_date = str(raw.get("trade_date") or "").strip()
+    if raw_date:
+        try:
+            date.fromisoformat(raw_date)
+        except ValueError as exc:
+            raise ValueError("个股走势关联板块固定日期非法，须为 YYYY-MM-DD") from exc
+    normalized: dict[str, Any] = {"codes": codes, "force": force}
+    if raw_date:
+        normalized["trade_date"] = raw_date
+    return normalized
 
 
 class StockBoardCorrelationService:

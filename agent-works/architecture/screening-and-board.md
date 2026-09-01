@@ -170,7 +170,7 @@ flowchart LR
 
 | 模块 | 关联方式 |
 |------|----------|
-| 数据管理 | 行情/市值/股票基础信息是榜单和筛选的原始输入；数据任务会让评分快照 stale |
+| 数据管理 | 行情/市值/股票基础信息是榜单和筛选的原始输入；「结果维护」或用户配置的调度可显式让评分快照 stale |
 | 配置管理 | 指标注册表、评分方案、筛选条件可用指标都从这里来 |
 | 回测验证 | 回测组合筛选方案、评分方案、买卖方案，复用榜单评分口径；公开筛选方案通过 `profile_ref` 进入回测候选池，后端按可见性解析真实 owner 的表达式 |
 | 个股与分组 | 榜单或筛选结果中的股票可进入详情查看 K线和买卖方案信号 |
@@ -182,7 +182,7 @@ flowchart LR
 - **ST 排除口径**：每日榜单强制排除当前名称含 `ST` 的股票；筛选页默认 `exclude_st=true`（前端默认值与后端默认值一致），可关闭后结果只标记 `is_st`。该口径不是点时 ST，历史回溯存在当前名称偏差，风险见下表。
 - **评分快照生成与失效**：
   - 生成：首次请求某 `(日期,方案,版本)` 触发 `_materialize` → 落 `score_snapshot` 明细 + meta(stale=false)。
-  - 失效：`IngestionService` 在行情变更收尾时只标 stale——全量影响调用 `mark_stale_all`，明确受影响日期时调用 `mark_stale_dates`；异步任务处理器复用该结果，仅在采集层未返回失效结果时兜底标记，不立即重算。
+  - 失效：只有「每日榜单失效」结果维护任务按用户选择的最新交易日、固定交易日或全部快照调用 `mark_stale_dates/mark_stale_all`；采集、补数、修复不再隐式标记。
   - 重算：下次 `get_board` 读到 meta 缺失或 stale → 当场重算覆盖、meta 置 false 再返回。
 - **方案版本化**：`ProfileRepo.save` / `ScoreProfileRepo.save` 仅在名称或内容实质变更时 version+1 并归档历史版本（内容未变返回原版本，避免重复 seed 致版本虚增）。
 - **方案 id 自动生成**：三类方案的 `save`/`save_with_id` 均接受空 `pid`——新建时由 `_make_id(name)` 用 `prefixed_readable_id(name, prefix="screen_")` 派生可读 id，撞库追加 `_2/_3…` 后缀（[profile.py:271](backend/screening/profile.py:271)、[profile.py:280](backend/screening/profile.py:280)）；`save_with_id` 返回 `(id, version)` 供 API 在新建响应里回传真实 id，前端据此把「编辑器身份」绑到新方案上。名称必填，空名 `save` 抛 `ValueError`。

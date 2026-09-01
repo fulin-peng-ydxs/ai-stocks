@@ -24,6 +24,7 @@ interface ElementFinding {
   line: number
   forbiddenProps: string[]
   missingColumnSemantics: boolean
+  ambiguousActionRole: boolean
   nestedTableEmpty: boolean
 }
 
@@ -46,8 +47,14 @@ function inspectTemplate(file: string): ElementFinding[] {
       const propNames = node.props
         .map((prop: any) => prop.type === 6 ? prop.name : prop.arg?.content)
         .filter(Boolean)
+      const staticAttr = (name: string): string | undefined => node.props.find(
+        (prop: any) => prop.type === 6 && prop.name === name,
+      )?.value?.content
       const missingColumnSemantics = node.tag === 'AppTableColumn'
         && !['label', 'prop', 'type', 'role'].some((name) => propNames.includes(name))
+      const ambiguousActionRole = node.tag === 'AppTableColumn'
+        && staticAttr('label') === '操作'
+        && !['action', 'action-compact'].includes(staticAttr('role') ?? '')
       const nestedTableEmpty = ['el-empty', 'ElEmpty'].includes(node.tag)
         && ancestors.some((ancestor) => ancestor.tag === 'AppDataTable')
         && ancestors.some((ancestor) => ancestor.tag === 'template' && ancestor.props.some(
@@ -57,6 +64,7 @@ function inspectTemplate(file: string): ElementFinding[] {
         ['table', 'el-table', 'el-table-column'].includes(node.tag)
         || (['AppTableColumn', 'AppDataTable'].includes(node.tag)
           && (forbiddenProps.length || missingColumnSemantics))
+        || ambiguousActionRole
         || nestedTableEmpty
       ) {
         findings.push({
@@ -65,6 +73,7 @@ function inspectTemplate(file: string): ElementFinding[] {
           line: node.loc.start.line,
           forbiddenProps,
           missingColumnSemantics,
+          ambiguousActionRole,
           nestedTableEmpty,
         })
       }
@@ -118,6 +127,17 @@ describe('统一自适应表格契约', () => {
     expect(
       findings,
       `无 label/prop/type 的自定义列无法可靠推导宽度，必须声明 role：\n${findings.map((item) =>
+        `${item.file}:${item.line}`).join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('操作列必须显式声明动作密度语义', () => {
+    const findings = [...vueFiles(VIEWS_DIR), ...vueFiles(COMPONENTS_DIR)]
+      .flatMap(inspectTemplate)
+      .filter((item) => item.ambiguousActionRole)
+    expect(
+      findings,
+      `操作列必须按动作密度声明 action / action-compact：\n${findings.map((item) =>
         `${item.file}:${item.line}`).join('\n')}`,
     ).toEqual([])
   })

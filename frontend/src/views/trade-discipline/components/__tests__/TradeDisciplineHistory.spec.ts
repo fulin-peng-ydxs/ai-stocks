@@ -118,6 +118,18 @@ describe('TradeDisciplineHistory', () => {
     expect(columns.some((column) => column.props('role') === 'action-compact')).toBe(false)
   })
 
+  it('操作统计使用数值列语义而不是动作列宽度', async () => {
+    const wrapper = mountHistory()
+    await flushPromises()
+    const operationCountColumn = wrapper.findAllComponents(AppTableColumn).find(
+      (column) => column.props('prop') === 'operation_count',
+    )
+    expect(operationCountColumn?.props()).toMatchObject({
+      label: '操作笔数',
+      role: 'number',
+    })
+  })
+
   it('查询失败由历史表格区接管且不保留旧数据', async () => {
     const wrapper = mountHistory()
     await flushPromises()

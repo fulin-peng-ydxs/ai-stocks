@@ -143,36 +143,8 @@ def test_resume_interrupted(client, monkeypatch):
         svc.resume("task_r")
 
 
-def test_update_reuses_ingest_snapshot_invalidation_result(monkeypatch):
-    """采集层已完成失效标记时，任务层复用真实数量且不再重复全量 UPDATE。"""
-    from backend.services import async_task, ingest
-
-    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None)
-    monkeypatch.setattr(
-        ingest.IngestionService,
-        "update",
-        lambda self, codes=None, concurrency=None, ctx=None: {
-            "ok": 1,
-            "snapshots_marked_stale": 7,
-        },
-    )
-
-    def fail_on_duplicate_mark():
-        raise AssertionError("采集层已有失效结果，不应再次标记")
-
-    monkeypatch.setattr(async_task, "_mark_snapshots_stale", fail_on_duplicate_mark)
-    ctx = _CaptureTaskContext()
-    result = async_task._h_update({}, ctx)
-
-    assert result["snapshots_marked_stale"] == 7
-    messages = [message for message, _ in ctx.logs]
-    assert "阶段 2/3：确认评分快照失效状态，采集阶段已标记 7 项" in messages
-    assert "阶段 3/3：增量任务收尾，失效快照将在后续读取时按需重算" in messages
-    assert all("刷新评分缓存" not in message for message in messages)
-
-
-def test_update_falls_back_when_ingest_has_no_snapshot_result(monkeypatch):
-    """兼容异常或旧采集实现：未返回失效结果时，任务层仍执行一次兜底标记。"""
+def test_update_does_not_invalidate_derived_results(monkeypatch):
+    """采集任务只维护原始数据，不再触发榜单或天梯失效。"""
     from backend.services import async_task, ingest
 
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None)
@@ -181,17 +153,17 @@ def test_update_falls_back_when_ingest_has_no_snapshot_result(monkeypatch):
         "update",
         lambda self, codes=None, concurrency=None, ctx=None: {"ok": 1},
     )
-    calls = []
-    monkeypatch.setattr(
-        async_task, "_mark_snapshots_stale", lambda: calls.append("fallback") or 3
-    )
 
+    def fail_on_mark():
+        raise AssertionError("采集任务不应标记任何衍生结果失效")
+
+    monkeypatch.setattr(async_task, "_mark_snapshots_stale", fail_on_mark)
     ctx = _CaptureTaskContext()
     result = async_task._h_update({}, ctx)
 
-    assert calls == ["fallback"]
-    assert result["snapshots_marked_stale"] == 3
-    assert ("阶段 2/3：确认评分快照失效状态，任务层兜底标记 3 项", "info") in ctx.logs
+    assert "snapshots_marked_stale" not in result
+    messages = [message for message, _ in ctx.logs]
+    assert all("失效" not in message for message in messages)
 
 
 def test_ingest_codes_skipped_does_not_invalidate_snapshots(monkeypatch):
@@ -211,7 +183,7 @@ def test_ingest_codes_skipped_does_not_invalidate_snapshots(monkeypatch):
     monkeypatch.setattr(async_task, "_mark_snapshots_stale", fail_on_mark)
     result = async_task._h_ingest_codes({"codes": ["600000.SH"]}, _CaptureTaskContext())
 
-    assert result["snapshots_marked_stale"] == 0
+    assert "snapshots_marked_stale" not in result
     assert "未执行" in result["message"]
 
 

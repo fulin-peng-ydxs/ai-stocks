@@ -558,7 +558,7 @@ onMounted(() => {
         <AppTableColumn v-if="colVisible('detectedAt')" label="检出时间" prop="time" sortable="custom">
           <template #default="{ row }">{{ (row.detected_at || '').slice(0, 19) }}</template>
         </AppTableColumn>
-        <AppTableColumn label="操作" fixed="right">
+        <AppTableColumn label="操作" role="action" fixed="right">
           <template #default="{ row }">
             <AppRowActions :actions="qualityRowActions(row)" :inline-limit="2" />
           </template>

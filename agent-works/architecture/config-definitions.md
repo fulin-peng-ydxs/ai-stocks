@@ -230,7 +230,7 @@ Web 系统设置当前只开放数据源限流/并发/容错、回测成本、�
 
 - **白名单系统参数**（数据源并发/限流/容错、回测成本、认证防滥用、审计保留期）：前端表单保存后按 [environment-configuration.md](environment-configuration.md) 的 PG 覆盖层规则生效。
 - **YAML 基线参数**（股票池、市值边界、TopN、指标全局周期等，含成段中文注释）：按 [environment-configuration.md](environment-configuration.md) 的 YAML reload 规则刷新。
-- **全局指标参数变更**：参数进 `build_params` → `param_hash` 变 → `IndicatorEngine` 单次运行缓存键失效 → 下次计算自动重算；评分快照另由失效触发器标 stale 后重算。
+- **全局指标参数变更**：参数进 `build_params` → `param_hash` 变 → `IndicatorEngine` 单次运行缓存键失效 → 下次计算重算；已物化评分快照不会跟随配置变更自动失效，需用户在「结果维护」手动执行或配置调度。
 
 ---
 

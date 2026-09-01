@@ -2,7 +2,7 @@
 
 统一各入口（生产任务 / 试运行 / 回测排名 / 评分验证）的打分口径，避免重复实时计算。
 - 惰性物化：首次请求某 (日期, 方案, 版本) → 整天打分一次落 score_snapshot + 写 meta(stale=false)。
-- 惰性失效（关键）：行情数据变更只把 score_snapshot_meta 标 stale=true（便宜），**不立即重算**；
+- 显式失效（关键）：结果维护任务把 score_snapshot_meta 标 stale=true（便宜），**不立即重算**；
   下次 get 时若 meta 缺失或 stale → 当场重算覆盖、meta 置 false 再返回，否则直接用缓存。
 - 只读入口可调用 get_board_cached：只读 fresh 快照，缺失/失效返回空表，不触发物化。
 - 口径与回测 `_decision_data` 一致：wide_snapshot 单日 + 排除 ST + ScoreProfileModel（表达式型指标补列）。
@@ -15,10 +15,10 @@ from datetime import date, datetime
 
 import pandas as pd
 
+from backend.auth.context import get_current_owner
 from backend.common.logging import get_logger
 from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
-from backend.auth.context import get_current_owner
 
 log = get_logger("scoring.snapshot")
 
@@ -68,7 +68,8 @@ class ScoreSnapshotRepo:
 
     - 快照明细/元数据走 PG（self.pg，%s + 归属过滤），批量写用 AssetRepository。
     - score_day 计算读行情/指标走 DuckDB（self.mkt）。
-    - 失效标记（mark_stale_*）是**全局**的：行情变更影响所有归属者，不按归属过滤。
+    - 失效标记（mark_stale_*）是**全局**的：显式维护时按选定日期
+      影响所有归属者，不按当前请求归属过滤。
     第一位保留为 market 以兼容历史 ScoreSnapshotRepo(c) 调用。
     """
 
@@ -216,9 +217,9 @@ class ScoreSnapshotRepo:
             [run_date, profile_id, version, self.tenant_id, self.owner_user_id,
              datetime.now(), False, int(len(df)), ph])
 
-    # ── 失效（惰性标记，不重算）；行情共享 → 全局失效，不按归属过滤 ──
+    # ── 显式结果维护（惰性标记，不重算）；共享行情口径 → 全局失效 ──
     def mark_stale_dates(self, trade_dates: list[date]) -> int:
-        """触发器1：行情数据变更后，把这些交易日的**所有方案版本/所有归属者**快照标记失效。"""
+        """按用户选定的交易日标记所有方案版本、所有归属者快照失效。"""
         dates = [d for d in trade_dates if d is not None]
         if not dates:
             return 0
@@ -233,7 +234,7 @@ class ScoreSnapshotRepo:
         return n
 
     def mark_stale_all(self) -> int:
-        """触发器1（粗粒度）：数据全量变更（补数/重算）后标记全部快照失效。返回受影响行数。"""
+        """按用户选定的“全部快照”范围标记失效，返回受影响行数。"""
         before = self.pg.query_df("SELECT count(*) AS n FROM score_snapshot_meta WHERE stale=false")
         self.pg.execute("UPDATE score_snapshot_meta SET stale=true")
         n = int(before.iloc[0]["n"]) if not before.empty else 0

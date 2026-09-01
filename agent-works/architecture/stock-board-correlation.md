@@ -30,7 +30,7 @@
 | 纯算法 | 固定开市日历、收益构造、基准选择、市场中性化、缩尾 Pearson、双窗口加权、可信度和稳定决胜 | `backend/indicators/stock_board_correlation.py` |
 | 领域服务 | 股票池与目标日解析、点时兼容候选和行情批量加载、唯一代码收益预计算、完整性校验、按日快照写入和摘要读取 | `backend/services/stock_board_correlation.py` |
 | 异步任务 | `stock_board_correlation` 五阶段任务、DuckDB 写互斥、取消检查、结果统计 | `backend/services/async_task.py` |
-| 动态调度 | 全市场或指定股票、`force`、交易日限制、依赖和重试；代码不创建默认调度 | `backend/scheduler/scheduler.py` |
+| 结果维护与调度 | 最新完整日或固定交易日，全市场或指定股票；手动与调度均强制重算，代码不创建默认调度 | `backend/services/result_maintenance.py`、`backend/scheduler/scheduler.py` |
 | 数据结构 | 冠军与状态按交易日快照（每日一行），保存各交易日结果，不保存候选明细 | `backend/storage/ddl.py` |
 | 后端读取 | 单股累计归属及冠军接口；股票、分组、榜单和筛选结果形成后批量附加摘要 | `backend/api/stocks.py`、`backend/groups/stock_group.py`、`backend/api/board.py`、`backend/services/screen_score.py` |
 | 前端展示 | 四个表格 slot 复用同一单元格，统一相关度、有效样本、截止日、低可信提示、历史保护和权限跳转 | `frontend/src/components/RelatedBoardCell.vue`、`frontend/src/layout/pageRegistry.ts` |
@@ -110,14 +110,14 @@ board_neutral_t = board_return_t - benchmark_return_t
 
 ## 计算与发布流程
 
-1. 解析目标交易日和全市场/指定股票范围；拒绝未知、尚未上市、已退市、北交所或项目范围外的显式代码。
+1. 解析最新共同完整交易日或用户选定的固定交易日，以及全市场/指定股票范围；固定日不能被静默回退到更早日期，并拒绝未知、尚未上市、已退市、北交所或项目范围外的显式代码。
 2. 一次批量读取行业/概念候选：`first_seen_date IS NULL` 的历史关系始终参与，明确日期的关系仅在 `first_seen_date <= 目标日` 时参与；按唯一股票、板块和基准加载 61 个收盘点。
 3. 按唯一板块和基准预计算收益映射，逐股复用，避免按候选关系重复构造。
 4. 分别计算行业、概念冠军，并生成每股状态。没有合格冠军是合法状态，不视为逐股失败。
 5. 校验目标覆盖、唯一性、类型、有限值、样本、日期、算法版本、基准和板块字典引用。
 6. 仅在全部校验通过后，用一个短 DuckDB 事务替换目标范围的冠军表和状态表；失败或取消保留最后成功结果。
 
-任务中心固定展示读取候选、加载行情、批量计算、结果校验、原子切换五阶段。任务可在切换前协作式取消，不支持从不完整结果续跑。安全跳过时，任务结果说明本次目标日与个股/板块指数/宽基指数三类数据族各自最新日期，并在个股行情领先于目标日时提示补齐板块指数/指数日线以推进到更近日期。
+任务中心固定展示读取候选、加载行情、批量计算、结果校验、原子切换五阶段。结果维护入口始终传入 `force=true`，即使已有同版本结果也重算；任务可在切换前协作式取消，不支持从不完整结果续跑。失败不切换当前态，保留最后成功结果。
 
 ## 数据模型
 

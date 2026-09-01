@@ -179,10 +179,12 @@ describe('LimitLadder', () => {
     expect(wrapper.text()).toContain('部分股票缺少行情或停牌确认')
     expect(wrapper.text()).toContain('刷新状态')
 
-    await wrapper.setProps({canRecompute:true})
-    expect(wrapper.text()).toContain('重新计算')
+    await wrapper.setProps({canManageData:true})
+    expect(wrapper.text()).toContain('去结果维护')
+    await wrapper.get('button.el-button--primary').trigger('click')
+    expect(wrapper.emitted('openMaintenance')).toHaveLength(1)
 
-    await wrapper.setProps({result:{...result,has_snapshot:false,business_code:'SNAPSHOT_NOT_READY',snapshot_status:'invalid',snapshot:null,layers:[],invalid_reason:'INGEST_PARTIAL',coverage:{reason_codes:['INGEST_PARTIAL']}}})
+    await wrapper.setProps({canManageData:false,result:{...result,has_snapshot:false,business_code:'SNAPSHOT_NOT_READY',snapshot_status:'invalid',snapshot:null,layers:[],invalid_reason:'INGEST_PARTIAL',coverage:{reason_codes:['INGEST_PARTIAL']}}})
     expect(wrapper.text()).toContain('当日行情采集未完整成功')
     expect(wrapper.text()).toContain('请联系有数据任务权限的管理员执行行情补采')
     expect(wrapper.text()).not.toContain('去补采行情')

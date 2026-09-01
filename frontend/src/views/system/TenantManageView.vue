@@ -353,7 +353,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           <AppTableColumn v-if="colVisible('created')" label="创建时间" prop="created" sortable="custom">
             <template #default="{ row }">{{ fmtTime(row.created_at) }}</template>
           </AppTableColumn>
-          <AppTableColumn label="操作" fixed="right">
+          <AppTableColumn label="操作" role="action" fixed="right">
             <template #default="{ row }">
               <AppRowActions :actions="tenantRowActions(row)" :inline-limit="3" />
             </template>

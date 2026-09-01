@@ -394,7 +394,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
                   <span v-else class="muted">暂无页面消费</span>
                 </template>
               </AppTableColumn>
-              <AppTableColumn label="操作" fixed="right">
+              <AppTableColumn label="操作" role="action-compact" fixed="right">
                 <template #default="{ row }">
                   <AppRowActions
                     :actions="componentRowActions(row)"

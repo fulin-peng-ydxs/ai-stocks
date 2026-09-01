@@ -64,6 +64,17 @@ describe('自适应表格列', () => {
     expect(inferAdaptiveColumnRole({ label: '收益率' })).toBe('number')
   })
 
+  it('操作列按动作密度使用两档固定宽度且不吞占表格余量', () => {
+    expect(resolveAdaptiveColumnWidth({ label: '操作', role: 'action' })).toMatchObject({
+      role: 'action',
+      width: 144,
+    })
+    expect(resolveAdaptiveColumnWidth({ label: '操作', role: 'action-compact' })).toMatchObject({
+      role: 'action-compact',
+      width: 96,
+    })
+  })
+
   it('复合实体列为前置控件和主副信息保留统一识别宽度', () => {
     expect(resolveAdaptiveColumnWidth({
       role: 'entity',

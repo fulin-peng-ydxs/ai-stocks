@@ -32,7 +32,6 @@ const props = withDefaults(defineProps<{
   error: string
   forbidden?: boolean
   canViewSectors: boolean
-  canRecompute?: boolean
   canManageData?: boolean
   compactHotspots?: boolean
   selectedCode?: string
@@ -48,6 +47,7 @@ const emit = defineEmits<{
   'update:tradeDate': [tradeDate: string | null]
   retry: []
   openIngest: []
+  openMaintenance: []
   select: [stock: LimitLadderStock]
   'update:cardSort': [sort: LimitLadderCardSort]
 }>()
@@ -80,9 +80,6 @@ const failedSnapshot = computed(() => props.result?.business_code === 'SNAPSHOT_
 const coverageBlocked = computed(() => (
   String(props.result?.invalid_reason || '').includes('INGEST_PARTIAL')
   || (props.result?.coverage?.reason_codes as unknown[] | undefined)?.includes('INGEST_PARTIAL')
-))
-const retryText = computed(() => (
-  failedSnapshot.value && props.canRecompute ? '重新计算' : '刷新状态'
 ))
 const coverageReasonLabels: Record<string, string> = {
   NOT_TRADING_DAY: '所选日期不是交易日',
@@ -119,7 +116,7 @@ const unavailableDescription = computed(() => {
     || coverageReasons.value
   if (coverageBlocked.value) {
     const action = props.canManageData
-      ? '请前往“数据采集”执行“日常同步”，任务完成后返回本页刷新状态，系统会自动重算'
+      ? '请前往“数据采集”执行“日常同步”；如需刷新已有结果，再到“结果维护”执行天梯失效'
       : '请联系有数据任务权限的管理员执行行情补采，完成后刷新状态'
     return `${reason || '当日行情采集未完整成功'}；${action}`
   }
@@ -249,7 +246,12 @@ function resetFilters(): void {
               plain
               @click="$emit('openIngest')"
             >去补采行情</el-button>
-            <el-button type="primary" @click="$emit('retry')">{{ retryText }}</el-button>
+            <el-button
+              v-if="failedSnapshot && canManageData"
+              type="primary"
+              @click="$emit('openMaintenance')"
+            >去结果维护</el-button>
+            <el-button v-else type="primary" @click="$emit('retry')">刷新状态</el-button>
           </template>
         </AppStateBlock>
         <AppStateBlock v-else-if="filteredEmpty" data-testid="limit-ladder-state" state="empty">

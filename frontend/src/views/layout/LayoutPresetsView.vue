@@ -353,7 +353,7 @@ onMounted(reloadPresets)
               <el-tag v-else type="primary" effect="plain">自定义</el-tag>
             </template>
           </AppTableColumn>
-          <AppTableColumn label="操作" fixed="right">
+          <AppTableColumn label="操作" role="action" fixed="right">
             <template #default="{ row }">
               <AppRowActions :actions="presetRowActions(row)" :inline-limit="2" />
             </template>

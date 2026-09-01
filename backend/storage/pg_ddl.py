@@ -45,8 +45,8 @@ DEFAULT_TENANT_ID = "default"
 DEFAULT_OWNER_USER_ID = "admin"
 
 # 平台公共榜单归属（stage4·C1 已确认）：每日榜单公共读**有意固定**此归属（default/admin
-# 平台槽），全员登录用户共享同一份、**不按当前用户过滤**；评分维护任务 / public-board CLI 以此归属
-# 生产公共预设 score_snapshot。属"有意全局"（与 indicator_def / mark_stale_* 同类先例），**禁止**后续按
+# 平台槽），全员登录用户共享同一份、**不按当前用户过滤**；榜单按需物化 / public-board CLI 以此归属
+# 生产公共预设 score_snapshot，结果维护只显式标记快照 stale。属"有意全局"，**禁止**后续按
 # 私有资产隔离铁律"纠正"为 get_current_owner()。个人自建方案结果仍纯私有（走 /board/compute +
 # ScoreSnapshotRepo 按调用者归属）。
 PUBLIC_BOARD_OWNER = (DEFAULT_TENANT_ID, DEFAULT_OWNER_USER_ID)

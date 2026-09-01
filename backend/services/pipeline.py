@@ -6,8 +6,8 @@
 M2.9（DM-D14）：每日自动任务默认含"数据质检"步（quality=True，扫 abnormal_change/adj_jump 写台账），
 使数据质量随每日流程自动监控，不再只靠手动体检。verify 仍为可选的结构/契约交叉校验。
 
-v2.0 精简：评分榜单/预设筛选不在每日流程预跑；公共榜单由评分维护任务或
-`python -m backend.cli public-board` 以 PUBLIC_BOARD_OWNER 归属显式生产。
+v2.0 精简：评分榜单/预设筛选不在每日流程预跑；结果维护任务只负责
+显式失效，榜单读取按需物化，`python -m backend.cli public-board` 可显式预生产。
 补市值并入 update()，不再单列步骤。
 
 用法：DailyPipeline().run(skip_update=False, quality=True, verify=False)
@@ -40,7 +40,8 @@ class DailyPipeline:
         """每日流程（v2.0 精简 + 板块）：更新行情（含补市值）→ 板块采集 → 数据质检 →（可选）数据体检。
 
         评分榜单/预设筛选不在本流程预跑；榜单页只读已生产的公共 fresh 快照。
-        最新公共榜单由评分维护任务或 public-board CLI 生产——故移除原步骤4（打分榜单）、
+        榜单读取在快照缺失或失效时按需物化，public-board CLI 可预生产——
+        故移除原步骤4（打分榜单）、
         步骤5（预设筛选）。
         补市值已并入 IngestionService.update()，不再单列步骤。
         板块采集（板块概念需求 R21）：board=True 默认执行；skip_update=True 仍采集板块
@@ -113,7 +114,7 @@ class DailyPipeline:
                 return base
             step("数据质检", _quality)
 
-        # 评分榜单 / 预设筛选不在此预跑；公共榜单生产见评分维护任务与 public-board CLI。
+        # 评分榜单 / 预设筛选不在此预跑；读取按需物化，public-board CLI 可预生产。
 
         # 4. 可选：数据体检（不联网交叉验证）
         if verify:

@@ -23,6 +23,7 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
+import ResultMaintenanceTaskFields from '@/components/data/ResultMaintenanceTaskFields.vue'
 import StockIngestScopeFields from '@/components/data/StockIngestScopeFields.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
@@ -38,6 +39,15 @@ import {
   isHeavyStockIngestRecipe,
   type StockIngestFormValue,
 } from '@/utils/stockIngest'
+import {
+  buildResultMaintenanceTaskParams,
+  consumeResultMaintenanceScheduleIntent,
+  createResultMaintenanceTaskForm,
+  isResultMaintenanceTask,
+  queueResultMaintenanceScheduleIntent,
+  type ResultMaintenanceTaskForm,
+  type ResultMaintenanceTaskType,
+} from '@/utils/resultMaintenanceTask'
 
 const route = useRoute()
 const router = useRouter()
@@ -144,7 +154,7 @@ function tableBorder(slotId: string): boolean {
 const TASK_TYPE_OPTIONS: { v: TaskType; l: string }[] = [
   'stock_ingest', 'update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
   'recompute', 'verify', 'checkup', 'fix', 'enrich_basic', 'board', 'stock_board_correlation',
-  'limit_ladder_recompute',
+  'limit_ladder_invalidate', 'limit_ladder_recompute',
 ].map((v) => ({ v: v as TaskType, l: TASK_LABEL[v as TaskType] }))
 const TASK_STATUS_OPTIONS: { v: TaskStatus; l: string }[] = (
   ['pending', 'running', 'done', 'failed', 'interrupted'] as TaskStatus[]).map((v) => ({ v, l: STATUS_LABEL[v] }))
@@ -212,7 +222,7 @@ const writeRunning = computed(() =>
   tasks.value.some((t) => ['pending', 'running'].includes(t.status)
     && ['update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
       'verify', 'fix', 'enrich_basic', 'board', 'stock_ingest',
-      'stock_board_correlation', 'limit_ladder_recompute'].includes(t.task_type)))
+      'stock_board_correlation', 'limit_ladder_invalidate', 'limit_ladder_recompute'].includes(t.task_type)))
 
 // 总耗时：进行中=开始到现在(随 now 每秒刷新)；已结束/人工终止=开始到截止时间(updated_at)。
 const now = ref(Date.now())
@@ -257,6 +267,36 @@ const defaultOptionForm = (): OptionForm => ({
 })
 const optForm = ref<OptionForm>(defaultOptionForm())
 
+// 结果维护与任务调度复用同一份字段组件和参数构造器，避免两个入口口径分叉。
+const resultDlg = ref(false)
+const resultType = ref<ResultMaintenanceTaskType>('stock_board_correlation')
+const resultForm = ref<ResultMaintenanceTaskForm>(createResultMaintenanceTaskForm())
+
+function openResultMaintenance(type: ResultMaintenanceTaskType, tradeDate = '') {
+  resultType.value = type
+  resultForm.value = createResultMaintenanceTaskForm(
+    tradeDate ? { target_mode: 'fixed', trade_date: tradeDate } : {},
+  )
+  resultDlg.value = true
+}
+
+async function submitResultMaintenance() {
+  const built = buildResultMaintenanceTaskParams(resultType.value, resultForm.value)
+  if (built.error) { ElMessage.warning(built.error); return }
+  resultDlg.value = false
+  await submit(resultType.value, built.params)
+}
+
+async function configureResultSchedule(type: ResultMaintenanceTaskType) {
+  queueResultMaintenanceScheduleIntent(type)
+  try {
+    await router.push('/data/schedule')
+  } finally {
+    // 导航被守卫拦截时清掉意图，避免用户以后正常进入调度页却误弹新建窗口。
+    if (route.path !== '/data/schedule') consumeResultMaintenanceScheduleIntent()
+  }
+}
+
 // 指定板块下拉：个股搜索由共享 StockIngestScopeFields 承担，采集页/调度页口径一致。
 const codeOptions = ref<{ code: string; label: string }[]>([])
 const codeOptLoading = ref(false)
@@ -281,6 +321,12 @@ function openOptions(type: 'stock_ingest' | 'board') {
 // 从概览/质量页带 ?code=&start=&end= 跳来 → 预填「指定日期采集」对话框（重采该股缺口区间）
 function openFromQuery() {
   const q = route.query
+  const queryTaskType = typeof q.task_type === 'string' ? q.task_type : ''
+  if (isResultMaintenanceTask(queryTaskType)) {
+    const tradeDate = typeof q.trade_date === 'string' ? q.trade_date : ''
+    openResultMaintenance(queryTaskType, tradeDate)
+    return
+  }
   if (q.task_type === 'board') {
     optType.value = 'board'
     optForm.value = defaultOptionForm()
@@ -609,9 +655,12 @@ onMounted(async () => {
 watch(
   () => route.query,
   (q) => {
-    if (!pageInitialized) return
+    // keep-alive 下本页的 watch 在切到任务调度后仍存活，只消费属于数据采集页的参数，
+    // 避免“配置调度”跳转时在后台误开手动执行弹窗，返回后才突然显示。
+    if (!pageInitialized || route.path !== '/data/ingest') return
     // 仅当 query 实际带本次跳转参数时弹框；避免页面内其他 query 变化误弹
-    if (q.task_type === 'board' || (typeof q.code === 'string' && q.code)) {
+    if (q.task_type === 'board' || isResultMaintenanceTask(String(q.task_type || ''))
+      || (typeof q.code === 'string' && q.code)) {
       openFromQuery()
       router.replace({ query: {} }).catch(() => {})
     }
@@ -629,7 +678,8 @@ watch(
         <HelpTip title="这页能做什么？" :width="420">
           <HelpTipItem question="手动任务怎么执行">
             <ul>
-              <li>数据采集、补数和评分维护在后台异步执行；可离开页面，之后回到任务中心查看实时日志，并支持中断后继续或重试未完成部分。</li>
+              <li>数据采集、补数和结果维护在后台异步执行；可离开页面，之后回到任务中心查看实时日志。</li>
+              <li>采集不会自动刷新走势、天梯或榜单；是否联动由你在「任务调度」中配置。</li>
             </ul>
           </HelpTipItem>
           <HelpTipItem question="定时任务在哪里看">
@@ -639,7 +689,7 @@ watch(
           </HelpTipItem>
         </HelpTip>
       </h2>
-      <p class="page-subtitle">手动触发采集/补数/评分维护，后台异步执行，可在任务中心查看实时日志与续跑。</p>
+      <p class="page-subtitle">手动触发数据采集与结果维护；自动执行时间和依赖关系由任务调度配置。</p>
       </div>
       <div class="page-head-actions">
         <el-button :loading="loading" @click="load">刷新</el-button>
@@ -661,41 +711,47 @@ watch(
             <div class="act-t">个股采集</div>
             <div class="act-d">日常同步 / 历史行情 / 区间重采 / 市值 / 基础资料 / 退市股历史</div>
             <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning"
-                       @click="submit('stock_ingest', { recipe: 'daily_update' })">日常同步</el-button>
-            <el-button v-permission="'data-task:manage'" text size="small" @click="openOptions('stock_ingest')">配置采集…</el-button>
+                       @click="submit('stock_ingest', { recipe: 'daily_update' })">手动执行</el-button>
+            <el-button v-permission="'data-task:manage'" text size="small" @click="openOptions('stock_ingest')">配置采集</el-button>
           </div>
           <div class="act">
             <div class="act-t">板块采集</div>
             <div class="act-d">板块字典/成分/指数/资金流（执行=增量，更多选项可选回填）</div>
             <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning"
-                       @click="submit('board', { mode: 'update' }, '板块采集（增量）开始？')">执行</el-button>
-            <el-button v-permission="'data-task:manage'" text size="small" @click="openOptions('board')">更多选项…</el-button>
+                       @click="submit('board', { mode: 'update' }, '板块采集（增量）开始？')">手动执行</el-button>
+            <el-button v-permission="'data-task:manage'" text size="small" @click="openOptions('board')">配置采集</el-button>
           </div>
         </div>
       </el-card>
 
-      <!-- 评分维护区 -->
+      <!-- 结果维护区 -->
       <el-card shadow="never" class="blk">
-        <template #header><div class="blk-head"><span>评分维护</span>
-          <span class="hint">数据质检入口在「数据质量」页。</span></div></template>
+        <template #header><div class="blk-head"><span>结果维护</span>
+          <span class="hint">立即执行与调度配置相互独立；自动执行参数和触发时机在任务调度保存。</span></div></template>
         <div class="act-grid">
           <div class="act">
-            <div class="act-t">生产公共榜单
-              <HelpTip title="什么时候需要？" :width="360">
-                <HelpTipItem question="为什么需要执行">
-                  <ul>
-                    <li>榜单页只读取已生产的公共快照，采集、补数或修复后相关评分会过期。</li>
-                  </ul>
-                </HelpTipItem>
-                <HelpTipItem question="执行后会做什么">
-                  <ul>
-                    <li>刷新评分缓存，并按最新交易日生产平台公共预设榜单。</li>
-                  </ul>
-                </HelpTipItem>
-              </HelpTip>
-            </div>
-            <div class="act-d">刷新评分缓存，并生成最新交易日公共预设榜单快照</div>
-            <el-button v-permission="'data-task:manage'" type="primary" plain size="small" @click="submit('recompute')">执行</el-button>
+            <div class="act-t">走势相关重算</div>
+            <div class="act-d">强制重算股票与行业、概念板块的走势相关结果，并原子发布</div>
+            <el-button v-permission="'data-task:manage'" type="primary" plain size="small"
+                       @click="openResultMaintenance('stock_board_correlation')">手动执行</el-button>
+            <el-button v-permission="'data-schedule:manage'" text size="small"
+                       @click="configureResultSchedule('stock_board_correlation')">配置调度</el-button>
+          </div>
+          <div class="act">
+            <div class="act-t">连板天梯失效</div>
+            <div class="act-d">只标记指定日期起的快照失效；访问对应日期时再重算</div>
+            <el-button v-permission="'data-task:manage'" type="primary" plain size="small"
+                       @click="openResultMaintenance('limit_ladder_invalidate')">手动执行</el-button>
+            <el-button v-permission="'data-schedule:manage'" text size="small"
+                       @click="configureResultSchedule('limit_ladder_invalidate')">配置调度</el-button>
+          </div>
+          <div class="act">
+            <div class="act-t">每日榜单失效</div>
+            <div class="act-d">只标记评分快照失效；下次读取对应榜单时按需重算</div>
+            <el-button v-permission="'data-task:manage'" type="primary" plain size="small"
+                       @click="openResultMaintenance('recompute')">手动执行</el-button>
+            <el-button v-permission="'data-schedule:manage'" text size="small"
+                       @click="configureResultSchedule('recompute')">配置调度</el-button>
           </div>
         </div>
       </el-card>
@@ -799,7 +855,7 @@ watch(
             <AppTableColumn label="总耗时">
               <template #default="{ row }">{{ taskDuration(row) }}</template>
             </AppTableColumn>
-            <AppTableColumn label="操作">
+            <AppTableColumn label="操作" role="action">
               <template #default="{ row }">
                 <AppRowActions :actions="taskRowActions(row)" :inline-limit="2" />
               </template>
@@ -921,6 +977,33 @@ watch(
       <template #footer>
         <el-button @click="optDlg = false">取消</el-button>
         <el-button v-permission="'data-task:manage'" type="primary" @click="submitOptions">执行</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="resultDlg"
+      :title="TASK_LABEL[resultType]"
+      width="520px"
+      data-testid="result-maintenance-dialog"
+    >
+      <el-form label-width="92px">
+        <ResultMaintenanceTaskFields
+          v-model="resultForm"
+          :task-type="resultType"
+          test-id-prefix="manual-result"
+        />
+        <el-alert
+          type="warning"
+          :closable="false"
+          title="本次只按以上参数立即执行，不读取、修改或覆盖任何已保存的调度配置。"
+          data-testid="manual-result-execution-scope"
+        />
+      </el-form>
+      <template #footer>
+        <el-button @click="resultDlg = false">取消</el-button>
+        <el-button v-permission="'data-task:manage'" type="primary" @click="submitResultMaintenance">
+          按以上参数执行
+        </el-button>
       </template>
     </el-dialog>
 

@@ -95,10 +95,10 @@ def test_params_normalize_text_deduplicate_defaults_and_validate_scope(market):
         "codes": ["600000.SH", "300001.SZ"],
         "force": True,
     }
-    assert normalize_correlation_task_params({}) == {"codes": [], "force": False}
+    assert normalize_correlation_task_params({}) == {"codes": [], "force": True}
     assert normalize_correlation_task_params({"codes": " ,  "}) == {
         "codes": [],
-        "force": False,
+        "force": True,
     }
 
     with pytest.raises(ValueError, match="force 必须是布尔值"):
@@ -139,7 +139,7 @@ def test_handler_emits_fixed_phases_and_complete_result(monkeypatch):
     monkeypatch.setattr(
         service_module.StockBoardCorrelationService,
         "resolve_target_date",
-        lambda self: date(2026, 8, 29),
+        lambda self, upper_bound=None: date(2026, 8, 29),
     )
     monkeypatch.setattr(
         service_module.StockBoardCorrelationService,
@@ -214,7 +214,7 @@ def test_expected_integrity_failure_returns_diagnostic_result(monkeypatch):
     monkeypatch.setattr(
         service_module.StockBoardCorrelationService,
         "resolve_target_date",
-        lambda self: date(2026, 8, 29),
+        lambda self, upper_bound=None: date(2026, 8, 29),
     )
     monkeypatch.setattr(
         service_module.StockBoardCorrelationService,
@@ -250,7 +250,7 @@ def test_skipped_run_reports_target_and_family_dates(monkeypatch):
     monkeypatch.setattr(
         service_module.StockBoardCorrelationService,
         "resolve_target_date",
-        lambda self: date(2026, 8, 28),
+        lambda self, upper_bound=None: date(2026, 8, 28),
     )
     monkeypatch.setattr(
         service_module.StockBoardCorrelationService,
