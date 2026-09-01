@@ -12,15 +12,15 @@ export interface RelatedBoardWinner {
 }
 
 export interface RelatedBoardBenchmark {
-  code: string
-  name: string
+  code: string | null
+  name: string | null
   fallback: boolean
 }
 
 export interface StockRelatedBoards {
-  as_of_date: string
+  as_of_date: string | null
   benchmark: RelatedBoardBenchmark
   industry: RelatedBoardWinner | null
   concept: RelatedBoardWinner | null
-  unavailable_reason?: 'as_of_mismatch'
+  unavailable_reason?: 'as_of_mismatch' | 'first_load_pending'
 }

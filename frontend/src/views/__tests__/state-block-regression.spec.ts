@@ -239,12 +239,16 @@ const stubs = {
   teleport: true,
 }
 
-async function mountView(component: Component) {
+async function mountView(
+  component: Component,
+  authOptions: { role?: string; permissions?: string[] } = {},
+) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore()
-  auth.role = 'system'
-  auth.permissions = ['screen:run', 'screen-profile:view', 'backtest:run', 'training:start']
+  auth.role = authOptions.role ?? 'system'
+  auth.permissions = authOptions.permissions
+    ?? ['screen:run', 'screen-profile:view', 'backtest:run', 'training:start']
   auth.menusStatus = 'ready'
   await router.push('/')
   await router.isReady()
@@ -321,6 +325,7 @@ describe('代表性页面四态回归', () => {
     const push = vi.spyOn(router, 'push')
     const wrapper = await mountView(BoardView)
 
+    expect(wrapper.find('[data-testid="board-recompute-current"]').exists()).toBe(true)
     expect(boardApi.runBoardProfile).toHaveBeenCalledWith(expect.objectContaining({
       profile_id: 'board1',
       run_date: '2024-12-31',
@@ -374,6 +379,64 @@ describe('代表性页面四态回归', () => {
       profile_ref: 'ref_public_score',
       run_date: '2024-12-31',
     }))
+  })
+
+  it('本人评分方案可按所选日期重算当日榜单', async () => {
+    ;(boardApi.listBoardProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'board1', name: '我的榜单方案', version: 1,
+        source: 'mine', visibility: 'private', readonly: false,
+      },
+    ])
+    ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      run_date: '2024-12-31', top: 50, count: 0, list: [],
+    })
+
+    const wrapper = await mountView(BoardView, {
+      role: 'normal',
+      permissions: ['board:view', 'board:compute'],
+    })
+    const recompute = wrapper.get('[data-testid="board-recompute-current"]')
+    await recompute.trigger('click')
+    await flushPromises()
+
+    expect(boardApi.runBoardProfile).toHaveBeenCalledTimes(2)
+    expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({
+      profile_id: 'board1',
+      run_date: '2024-12-31',
+      force: true,
+    }))
+  })
+
+  it('他人公开评分方案和无计算权限的本人方案都不显示重算入口', async () => {
+    ;(boardApi.listBoardProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'public-score', profile_ref: 'ref_public_score', name: '公开评分方案', version: 2,
+        source: 'public', visibility: 'public', readonly: true,
+      },
+    ])
+    ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      run_date: '2024-12-31', top: 50, count: 0, list: [],
+    })
+
+    const publicWrapper = await mountView(BoardView, {
+      role: 'normal',
+      permissions: ['board:view', 'board:compute'],
+    })
+    expect(publicWrapper.find('[data-testid="board-recompute-current"]').exists()).toBe(false)
+    publicWrapper.unmount()
+
+    ;(boardApi.listBoardProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'board1', name: '我的榜单方案', version: 1,
+        source: 'mine', visibility: 'private', readonly: false,
+      },
+    ])
+    const noPermissionWrapper = await mountView(BoardView, {
+      role: 'normal',
+      permissions: ['board:view'],
+    })
+    expect(noPermissionWrapper.find('[data-testid="board-recompute-current"]').exists()).toBe(false)
   })
 
   it('榜单加载失败显示错误态且不显示表格空态', async () => {

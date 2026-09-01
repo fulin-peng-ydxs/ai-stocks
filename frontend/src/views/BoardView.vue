@@ -46,6 +46,10 @@ import { ElMessage } from 'element-plus'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import {
+  relatedBoardFirstLoadContext,
+  useRelatedBoardFirstLoad,
+} from '@/composables/useRelatedBoardFirstLoad'
 import { useStockSet } from '@/stores/stockSet'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
@@ -203,6 +207,14 @@ const cacheStatus = ref('')
 const canViewBoardProfiles = computed(() =>
   hasPermission(auth.role, auth.permissions, 'board:view'),
 )
+const canRecomputeCurrentBoard = computed(() => Boolean(
+  curProfile.value
+  && hasPermission(auth.role, auth.permissions, 'board:compute')
+  && (
+    auth.isSystem
+    || curProfile.value.source === 'mine'
+  )
+))
 const boardSelectRef = ref<InstanceType<typeof AssetProfileSelect> | null>(null)
 async function fetchMineBoardProfiles(): Promise<ScoreProfileSummary[]> {
   if (!canViewBoardProfiles.value) return []
@@ -416,13 +428,15 @@ function scoreLevel(v: number | undefined): string {
   return n >= 80 ? 'hi' : n >= 50 ? 'mid' : 'lo'
 }
 let loadSequence = 0
-async function load() {
-  if (!profileRef.value) return
+const relatedBoardFirstLoad = useRelatedBoardFirstLoad(load)
+const recomputing = ref(false)
+async function loadBoard(force: boolean): Promise<boolean> {
+  if (!profileRef.value) return false
   const selected = curProfile.value
   if (!selected) {
     error.value = '评分方案信息尚未加载完成，请重新选择'
     loading.value = false
-    return
+    return false
   }
   const sequence = ++loadSequence
   loading.value = true
@@ -432,9 +446,14 @@ async function load() {
       ...(selected.profile_ref ? { profile_ref: selected.profile_ref } : { profile_id: selected.id }),
       run_date: runDate.value || undefined,
       top: topN.value,
+      ...(force ? { force: true } : {}),
     })
-    if (sequence !== loadSequence) return
+    if (sequence !== loadSequence) return false
     rows.value = res.list
+    relatedBoardFirstLoad.observe(
+      res.list,
+      relatedBoardFirstLoadContext(res.list, res.run_date),
+    )
     cacheStatus.value = res.cache_status || ''
     syncingRunDate.value = true
     runDate.value = res.run_date
@@ -442,8 +461,9 @@ async function load() {
     syncingRunDate.value = false
     if (!res.list.length) ElMessage.info('无结果（可能该日无数据）')
     if (sequence === loadSequence && pendingDefaultKey === profileRef.value) pendingDefaultKey = ''
+    return true
   } catch (e) {
-    if (sequence !== loadSequence) return
+    if (sequence !== loadSequence) return false
     const loadingDefault = pendingDefaultKey !== '' && pendingDefaultKey === profileRef.value
     // 只有后端明确返回“方案不存在/不可见”的业务 404 才清除默认偏好。
     // 服务重启、断网、超时、5xx 或其他权限异常都保留偏好，让用户可以重试。
@@ -455,11 +475,27 @@ async function load() {
       cacheStatus.value = ''
       loading.value = false
       ElMessage.warning('默认加载方案已不可见（可能已被取消公开或删除），已清除默认设置')
-      return
+      return false
     }
-    error.value = getErrorMessage(e, '榜单加载失败')
+    error.value = getErrorMessage(e, force ? '榜单重算失败' : '榜单加载失败')
+    return false
   } finally {
     if (sequence === loadSequence) loading.value = false
+  }
+}
+
+function load() {
+  return loadBoard(false)
+}
+
+async function recomputeCurrentBoard(): Promise<void> {
+  if (!canRecomputeCurrentBoard.value || recomputing.value) return
+  recomputing.value = true
+  try {
+    const completed = await loadBoard(true)
+    if (completed) ElMessage.success('所选交易日榜单已重算')
+  } finally {
+    recomputing.value = false
   }
 }
 
@@ -541,7 +577,20 @@ onMounted(async () => {
       </div>
       <div class="page-head-actions">
         <div class="ops">
-          <el-button :loading="loading" type="primary" @click="load">刷新</el-button>
+          <el-button
+            :loading="loading && !recomputing"
+            :disabled="recomputing"
+            type="primary"
+            @click="load"
+          >刷新</el-button>
+          <el-button
+            v-if="canRecomputeCurrentBoard"
+            v-permission="'board:compute'"
+            data-testid="board-recompute-current"
+            :loading="recomputing"
+            :disabled="loading && !recomputing"
+            @click="recomputeCurrentBoard"
+          >重算当日</el-button>
           <el-button :disabled="!rows.length" @click="exportCsv">导出 CSV</el-button>
         </div>
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />

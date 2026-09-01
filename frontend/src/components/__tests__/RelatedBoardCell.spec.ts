@@ -205,6 +205,22 @@ describe('RelatedBoardCell', () => {
     expect(document.activeElement).toBe(wrapper.get('.related-board-cell__empty').element)
   })
 
+  it('首次计算任务创建后显示明确的计算中状态', () => {
+    const wrapper = mountCell({
+      summary: {
+        ...summary('high'),
+        as_of_date: null,
+        industry: null,
+        unavailable_reason: 'first_load_pending',
+      },
+      boardType: 'industry',
+    })
+
+    expect(wrapper.text()).toBe('计算中')
+    expect(wrapper.get('.tooltip-stub').attributes('data-content')).toBe('首次计算正在等待或执行，完成后将自动刷新')
+    expect(wrapper.get('.related-board-cell__empty').attributes('aria-label')).toBe('走势相关首次计算中')
+  })
+
   it('点击板块链接不冒泡触发表格行点击', async () => {
     const wrapper = mountCell(
       { summary: summary('high'), boardType: 'industry' },

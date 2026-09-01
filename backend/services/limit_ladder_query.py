@@ -440,15 +440,21 @@ class LimitLadderQueryService:
         return result
 
     def _related_boards_for_date(self, codes: list[str], trade_date: date):
-        """读取天梯业务日的同日相关性快照，不跨日期拼接冠军，也不在读链路写库。"""
+        """读取天梯业务日的同日快照；缺档时只排队首次任务，不在请求内同步计算。"""
         if not codes:
             return {}, "ready"
         try:
             summaries = StockBoardCorrelationService(self.c).get_related_boards(codes, trade_date)
             result: dict[str, dict[str, dict[str, str]]] = {}
             missing = False
+            pending = False
             for code, summary in summaries.items():
-                if not summary or summary.get("unavailable_reason"):
+                if not summary:
+                    missing = True
+                    continue
+                unavailable_reason = summary.get("unavailable_reason")
+                if unavailable_reason:
+                    pending = pending or unavailable_reason == "first_load_pending"
                     missing = True
                     continue
                 as_of_date = str(summary["as_of_date"])
@@ -461,6 +467,8 @@ class LimitLadderQueryService:
                         "board_name": str(winner["name"]),
                         "as_of_date": as_of_date,
                     }
+            if pending:
+                return result, "calculating"
             return result, "partial" if missing else "ready"
         except Exception as exc:  # noqa: BLE001 -- correlation is optional enrichment
             log.warning("天梯业务日相关行业/概念查询降级 date=%s: %s", trade_date, exc)

@@ -26,5 +26,14 @@ export function limitLadderPollDecision(
 }
 
 export function limitLadderPollTaskKey(result: LimitLadderResult): string {
-  return result.trade_date
+  const snapshotPending = result.business_code === 'SNAPSHOT_PENDING'
+    || result.snapshot_status === 'calculating'
+    || result.snapshot_status === 'recalculating'
+  const phase = snapshotPending
+    ? 'snapshot'
+    : result.related_board_status === 'calculating'
+      || result.related_concept_status === 'calculating'
+      ? 'related'
+      : 'ready'
+  return `${result.trade_date}:${phase}`
 }

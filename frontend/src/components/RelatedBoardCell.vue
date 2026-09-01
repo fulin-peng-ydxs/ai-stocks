@@ -74,6 +74,20 @@ function formatCorrelation(value: number): string {
   </el-popover>
 
   <el-tooltip
+    v-else-if="unavailableReason === 'first_load_pending'"
+    content="首次计算正在等待或执行，完成后将自动刷新"
+    :trigger="['hover', 'focus']"
+    placement="top"
+  >
+    <span
+      class="related-board-cell__empty related-board-cell__empty--pending"
+      tabindex="0"
+      aria-label="走势相关首次计算中"
+      :data-testid="testId"
+    >计算中</span>
+  </el-tooltip>
+
+  <el-tooltip
     v-else-if="unavailableReason === 'as_of_mismatch'"
     content="未保留该历史日期的相关性结果"
     :trigger="['hover', 'focus']"
@@ -140,6 +154,10 @@ function formatCorrelation(value: number): string {
 
 .related-board-cell__empty--explained {
   cursor: help;
+}
+
+.related-board-cell__empty--pending {
+  color: var(--el-color-primary);
 }
 
 .related-board-cell__popover {

@@ -53,11 +53,20 @@ def _seed_summary(client: DuckDBClient, *, as_of: date = date(2026, 8, 28)) -> N
     )
 
 
-def test_batch_summary_reads_per_day_snapshot():
+def test_batch_summary_reads_per_day_snapshot(monkeypatch):
+    from backend.services.async_task import AsyncTaskService
+
+    monkeypatch.setattr(AsyncTaskService, "_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(AsyncTaskService, "_audit_task", staticmethod(lambda **kwargs: None))
     as_of = date(2026, 8, 28)
     with DuckDBClient(db_path=":memory:") as market:
         init_db(market)
         _seed_summary(market, as_of=as_of)
+        market.execute(
+            "INSERT INTO stock_basic (code,name,board,list_date) VALUES "
+            "('000001.SZ','平安银行','主板','1991-04-03'),"
+            "('300001.SZ','特锐德','创业板','2009-10-30')"
+        )
         service = StockBoardCorrelationService(market)
 
         result = service.get_related_boards(
@@ -69,7 +78,7 @@ def test_batch_summary_reads_per_day_snapshot():
             },
         )
 
-        assert result["300001.SZ"]["unavailable_reason"] == "as_of_mismatch"
+        assert result["300001.SZ"]["unavailable_reason"] == "first_load_pending"
         assert result["600000.SH"] == {
             "as_of_date": "2026-08-28",
             "benchmark": {"code": "399001.SZ", "name": "深证成指", "fallback": False},
@@ -85,9 +94,125 @@ def test_batch_summary_reads_per_day_snapshot():
             },
             "concept": None,
         }
-        # 000001.SZ 请求 08-27 无对应日快照 → as_of_mismatch（该历史日期无快照）。
-        assert result["000001.SZ"]["unavailable_reason"] == "as_of_mismatch"
+        # 000001.SZ 虽已有 08-28 快照，请求 08-27 缺档仍按日期进入首次计算。
+        assert result["000001.SZ"]["unavailable_reason"] == "first_load_pending"
         assert result["000001.SZ"]["as_of_date"] is None
+
+
+def test_missing_daily_snapshot_enqueues_one_deduplicated_first_load_task(monkeypatch):
+    as_of = date(2026, 8, 28)
+    from backend.services.async_task import AsyncTaskService
+
+    monkeypatch.setattr(AsyncTaskService, "_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(AsyncTaskService, "_audit_task", staticmethod(lambda **kwargs: None))
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        market.execute(
+            "INSERT INTO stock_basic (code,name,board,list_date) VALUES "
+            "('600000.SH','浦发银行','主板','1999-11-10'),"
+            "('000001.SZ','平安银行','主板','1991-04-03')"
+        )
+        service = StockBoardCorrelationService(market)
+
+        first = service.get_related_boards(["600000.SH", "000001.SZ"], as_of)
+        second = service.get_related_boards(["000001.SZ", "600000.SH"], as_of)
+        tasks = market.query_df(
+            "SELECT id,params,trigger_source,job_name,trigger_event_id FROM async_task"
+        ).to_dict("records")
+
+        assert len(tasks) == 1
+        assert tasks[0]["trigger_source"] == "system"
+        assert tasks[0]["job_name"] == "走势相关自动首次计算"
+        assert "stock-board-correlation:first-load:" in tasks[0]["trigger_event_id"]
+        assert first["600000.SH"]["unavailable_reason"] == "first_load_pending"
+        assert second["000001.SZ"]["unavailable_reason"] == "first_load_pending"
+
+
+def test_missing_historical_snapshot_enqueues_date_scoped_first_load(monkeypatch):
+    """其它日期已有快照也不影响：所选历史日期缺档仍按日期创建首次任务。"""
+    from backend.services.async_task import AsyncTaskService
+
+    monkeypatch.setattr(AsyncTaskService, "_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(AsyncTaskService, "_audit_task", staticmethod(lambda **kwargs: None))
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_summary(market, as_of=date(2026, 8, 28))
+        market.execute(
+            "INSERT INTO stock_basic (code,name,board,list_date) "
+            "VALUES ('600000.SH','浦发银行','主板','1999-11-10')"
+        )
+
+        result = StockBoardCorrelationService(market).get_related_boards(
+            ["600000.SH"], date(2026, 8, 27)
+        )
+        tasks = market.query_df(
+            "SELECT params,trigger_event_id FROM async_task"
+        ).to_dict("records")
+
+        assert len(tasks) == 1
+        assert '"trade_date": "2026-08-27"' in tasks[0]["params"]
+        assert ":2026-08-27:" in tasks[0]["trigger_event_id"]
+        assert result["600000.SH"]["unavailable_reason"] == "first_load_pending"
+
+
+def test_busy_write_slot_keeps_distinct_first_load_scope_waiting(monkeypatch):
+    """另一范围占用写槽时不丢任务；释放后由下一次业务轮询创建。"""
+    from backend.services.async_task import AsyncTaskService
+
+    monkeypatch.setattr(AsyncTaskService, "_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(AsyncTaskService, "_audit_task", staticmethod(lambda **kwargs: None))
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        market.execute(
+            "INSERT INTO stock_basic (code,name,board,list_date) VALUES "
+            "('600000.SH','浦发银行','主板','1999-11-10'),"
+            "('000001.SZ','平安银行','主板','1991-04-03')"
+        )
+        service = StockBoardCorrelationService(market)
+
+        first = service.get_related_boards(["600000.SH"], date(2026, 8, 28))
+        waiting = service.get_related_boards(["000001.SZ"], date(2026, 8, 28))
+        tasks_before_release = market.query_df(
+            "SELECT id,status,trigger_event_id FROM async_task ORDER BY created_at"
+        ).to_dict("records")
+
+        assert first["600000.SH"]["unavailable_reason"] == "first_load_pending"
+        assert waiting["000001.SZ"]["unavailable_reason"] == "first_load_pending"
+        assert len(tasks_before_release) == 1
+
+        market.execute(
+            "UPDATE async_task SET status='done' WHERE id=?",
+            [tasks_before_release[0]["id"]],
+        )
+        retried = service.get_related_boards(["000001.SZ"], date(2026, 8, 28))
+        tasks_after_release = market.query_df(
+            "SELECT trigger_event_id FROM async_task ORDER BY created_at"
+        ).to_dict("records")
+
+        assert retried["000001.SZ"]["unavailable_reason"] == "first_load_pending"
+        assert len(tasks_after_release) == 2
+        assert len({task["trigger_event_id"] for task in tasks_after_release}) == 2
+
+
+def test_first_load_task_creation_failure_keeps_read_api_available(monkeypatch):
+    as_of = date(2026, 8, 28)
+
+    class _BusyTaskService:
+        def __init__(self, _client):
+            pass
+
+        @staticmethod
+        def create(*_args, **_kwargs):
+            raise RuntimeError("DuckDB 写任务繁忙")
+
+    monkeypatch.setattr("backend.services.async_task.AsyncTaskService", _BusyTaskService)
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        result = StockBoardCorrelationService(market).get_related_boards(
+            ["600000.SH"], as_of
+        )
+
+    assert result["600000.SH"]["unavailable_reason"] == "as_of_mismatch"
 
 
 @pytest.mark.parametrize("count", [50, 200])

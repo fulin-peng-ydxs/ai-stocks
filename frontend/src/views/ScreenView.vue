@@ -26,6 +26,10 @@ import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
 import RelatedBoardCell from '@/components/RelatedBoardCell.vue'
+import {
+  relatedBoardFirstLoadContext,
+  useRelatedBoardFirstLoad,
+} from '@/composables/useRelatedBoardFirstLoad'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -436,6 +440,10 @@ async function run() {
       exclude_st: excludeSt.value,
     })
     result.value = { date: r.run_date, count: r.count, hits: r.hits }
+    relatedBoardFirstLoad.observe(
+      r.hits,
+      relatedBoardFirstLoadContext(r.hits, r.run_date),
+    )
     // 回填实际运行交易日（默认最新时让用户看到本次结果口径，与评分试算一致）
     runDate.value = r.run_date
   } catch (error) {
@@ -445,6 +453,8 @@ async function run() {
     loading.value = false
   }
 }
+
+const relatedBoardFirstLoad = useRelatedBoardFirstLoad(run)
 
 // ── 保存（实质变更才版本+1；载入的自定义方案可覆盖更新；id 为空由后端自动生成）──
 const saving = ref(false)

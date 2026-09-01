@@ -115,6 +115,7 @@ def board_run(body: dict) -> ApiResponse:
     """按可见评分方案读取榜单；快照缺失或 stale 时物化到方案 owner 的共享缓存槽。
 
     body: {profile_ref | profile_id, run_date?, top?, force?}
+    force 仅允许方案 owner（需 board:compute）或 system 管理员执行。
     """
     from backend.scoring.score_profile import ScoreProfileRepo
     from backend.scoring.snapshot import ScoreSnapshotRepo
@@ -151,8 +152,19 @@ def board_run(body: dict) -> ApiResponse:
     ctx = get_current_context()
     if force and not (ctx and (ctx.is_system or "board:compute" in ctx.resources)):
         return err(403, "强制刷新需要 board:compute 权限")
+    if force and not (
+        ctx
+        and (
+            ctx.is_system
+            or (
+                prof["tenant_id"] == ctx.tenant_id
+                and prof["owner_user_id"] == ctx.user_id
+            )
+        )
+    ):
+        return err(403, "只能重算自己的评分方案榜单")
     from backend.scoring.snapshot import _current_param_hash
-    was_fresh = snapshot_repo._fresh(run_date, pid, version, _current_param_hash())  # noqa: SLF001
+    was_fresh = snapshot_repo._fresh(run_date, pid, version, _current_param_hash())
     if force:
         pg.execute(
             "UPDATE score_snapshot_meta SET stale=true WHERE trade_date=%s AND profile_id=%s "

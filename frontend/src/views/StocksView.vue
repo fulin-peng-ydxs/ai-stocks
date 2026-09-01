@@ -55,6 +55,10 @@ import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageEntry, getPageLayout, type SlotConfigMeta } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import {
+  relatedBoardFirstLoadContext,
+  useRelatedBoardFirstLoad,
+} from '@/composables/useRelatedBoardFirstLoad'
 import { getErrorMessage } from '@/utils/error'
 import { formatMoney } from '@/utils/money'
 import {
@@ -194,6 +198,10 @@ const {
 })
 const total = ref(0)
 const rows = ref<StockBasic[]>([])
+const relatedBoardFirstLoad = useRelatedBoardFirstLoad(async () => {
+  if (inGroupMode.value) await loadGroupDetail()
+  else await load()
+})
 
 // ST / 退市板块下「排除 ST」无意义（隐藏），其余板块默认排除 ST
 watch(board, (b) => {
@@ -256,6 +264,10 @@ async function load() {
       size: size.value,
     })
     rows.value = data.list
+    relatedBoardFirstLoad.observe(
+      data.list,
+      relatedBoardFirstLoadContext(data.list, data.trade_date),
+    )
     total.value = data.total
   } catch (error) {
     loadError.value = getErrorMessage(error, '个股列表加载失败')
@@ -388,6 +400,10 @@ async function loadGroupDetail() {
       sort_by: groupSortBy.value,
       sort_order: groupSortOrder.value,
     })
+    relatedBoardFirstLoad.observe(
+      groupDetail.value.members.list,
+      relatedBoardFirstLoadContext(groupDetail.value.members.list, (row) => row.last_date),
+    )
   } catch (error) {
     groupError.value = getErrorMessage(error, '分组明细加载失败')
   } finally {

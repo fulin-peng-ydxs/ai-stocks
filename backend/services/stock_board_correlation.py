@@ -7,10 +7,12 @@ import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
+from hashlib import sha256
 from typing import Any, Literal, TypedDict
 
 import pandas as pd
 
+from backend.common.logging import get_logger
 from backend.indicators.stock_board_correlation import (
     ALGORITHM_VERSION,
     CALENDAR_POINTS,
@@ -31,6 +33,8 @@ from backend.indicators.stock_board_correlation import (
 from backend.services.market_benchmark import MarketBenchmarkService
 from backend.services.stock_codes import normalize_stock_code, normalize_stock_codes
 from backend.storage.duckdb_client import DuckDBClient, get_client
+
+log = get_logger("services.stock_board_correlation")
 
 
 class BoardMembershipItem(TypedDict):
@@ -59,8 +63,8 @@ class RelatedBoardWinner(TypedDict):
 
 
 class RelatedBoardBenchmark(TypedDict):
-    code: str
-    name: str
+    code: str | None
+    name: str | None
     fallback: bool
 
 
@@ -69,7 +73,7 @@ class StockRelatedBoards(TypedDict, total=False):
     benchmark: RelatedBoardBenchmark
     industry: RelatedBoardWinner | None
     concept: RelatedBoardWinner | None
-    unavailable_reason: Literal["as_of_mismatch"]
+    unavailable_reason: Literal["as_of_mismatch", "first_load_pending"]
 
 
 @dataclass(frozen=True)
@@ -759,9 +763,9 @@ class StockBoardCorrelationService:
     ) -> dict[str, StockRelatedBoards | None]:
         """一次查询返回多股各业务日期的冠军快照摘要。
 
-        业务日期匹配该日快照则返回该日冠军；该日无快照时只读返回 as_of_mismatch，
-        不在查询链路同步计算或写库。逐代码业务日期缺失（Mapping 中为 None）时按
-        fail-closed 处理。
+        业务日期匹配该日快照则返回该日冠军；该日无快照时只创建异步首次计算任务，
+        不在查询请求内同步计算或写正式结果。逐代码业务日期缺失（Mapping 中为 None）
+        时按 fail-closed 处理。
         """
         normalized = normalize_stock_codes(codes)
         if not normalized:
@@ -778,7 +782,92 @@ class StockBoardCorrelationService:
         protect_dates = isinstance(business_dates, Mapping) or business_dates is not None
 
         rows = self._query_related_boards_for_dates(normalized, normalized_dates, protect_dates)
-        return self._assemble_related_boards(normalized, rows, protect_dates)
+        first_load_codes: set[str] = set()
+        if protect_dates:
+            missing = self._collect_missing_snapshot_codes(normalized, normalized_dates, rows)
+            if missing:
+                first_load_codes = self._enqueue_first_load_tasks(missing, normalized_dates)
+        return self._assemble_related_boards(
+            normalized,
+            rows,
+            protect_dates,
+            first_load_codes=first_load_codes,
+        )
+
+    @staticmethod
+    def _collect_missing_snapshot_codes(
+        normalized: list[str],
+        normalized_dates: Mapping[str, date | None],
+        rows: pd.DataFrame,
+    ) -> list[str]:
+        """找出请求了具体业务日、但尚无该日状态快照的股票。"""
+        have = {str(row["code"]) for row in rows.to_dict("records")}
+        return [
+            code
+            for code in normalized
+            if normalized_dates.get(code) is not None and code not in have
+        ]
+
+    def _enqueue_first_load_tasks(
+        self,
+        missing_codes: list[str],
+        normalized_dates: Mapping[str, date | None],
+    ) -> set[str]:
+        """按日期和股票范围幂等创建首次计算任务，不恢复任何上游变化联动。"""
+        from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
+
+        by_date: dict[date, list[str]] = {}
+        for code in missing_codes:
+            requested = normalized_dates.get(code)
+            if requested is not None:
+                by_date.setdefault(requested, []).append(code)
+
+        pending: set[str] = set()
+        try:
+            tasks = AsyncTaskService(self.c)
+        except Exception as exc:  # noqa: BLE001 -- 读取不能被任务基础设施故障拖垮
+            log.warning("走势相关首次计算服务初始化失败: %s", exc)
+            return pending
+        for target_date, codes in by_date.items():
+            scope = sorted(set(codes))
+            scope_hash = sha256(",".join(scope).encode("utf-8")).hexdigest()[:20]
+            event_id = (
+                f"stock-board-correlation:first-load:{ALGORITHM_VERSION}:"
+                f"{target_date.isoformat()}:{scope_hash}"
+            )
+            try:
+                task_id = tasks.create(
+                    "stock_board_correlation",
+                    {
+                        "codes": scope,
+                        "force": True,
+                        "trade_date": target_date.isoformat(),
+                    },
+                    trigger_source="system",
+                    job_name="走势相关自动首次计算",
+                    trigger_event_id=event_id,
+                )
+                task = tasks.get(task_id)
+                if task and task.get("status") in {"pending", "running"}:
+                    pending.update(scope)
+            except ConcurrentTaskError as exc:
+                # 全局写槽繁忙不代表该日期没有结果：将其暴露为等待态，读取方后续
+                # 轮询会在写槽释放后再次幂等尝试，从而不丢失不同日期/范围的首次任务。
+                pending.update(scope)
+                log.info(
+                    "走势相关首次计算等待写槽 date=%s scope=%d running=%s",
+                    target_date,
+                    len(scope),
+                    exc.running_id,
+                )
+            except Exception as exc:  # noqa: BLE001 -- 任务基础设施异常时读取仍须可用
+                log.warning(
+                    "走势相关首次计算任务创建失败 date=%s scope=%d: %s",
+                    target_date,
+                    len(scope),
+                    exc,
+                )
+        return pending
 
     def _query_related_boards_for_dates(
         self,
@@ -827,8 +916,11 @@ class StockBoardCorrelationService:
         normalized: list[str],
         rows: pd.DataFrame,
         protect_dates: bool,
+        *,
+        first_load_codes: set[str] | None = None,
     ) -> dict[str, StockRelatedBoards | None]:
         """把按日快照行组装成摘要；protect_dates 时无快照的 code 标 as_of_mismatch。"""
+        pending_codes = first_load_codes or set()
         result: dict[str, StockRelatedBoards | None] = {code: None for code in normalized}
         for row in rows.to_dict("records"):
             code = str(row["code"])
@@ -867,12 +959,15 @@ class StockBoardCorrelationService:
         if protect_dates:
             for code in normalized:
                 if result.get(code) is None:
+                    first_load_pending = code in pending_codes
                     result[code] = {
                         "as_of_date": None,
                         "benchmark": {"code": None, "name": None, "fallback": False},
                         "industry": None,
                         "concept": None,
-                        "unavailable_reason": "as_of_mismatch",
+                        "unavailable_reason": (
+                            "first_load_pending" if first_load_pending else "as_of_mismatch"
+                        ),
                     }
         return result
 

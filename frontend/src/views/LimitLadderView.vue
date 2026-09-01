@@ -326,6 +326,8 @@ function needsResultRefresh(data: LimitLadderResult | null): boolean {
   return data?.business_code === 'SNAPSHOT_PENDING'
     || data?.snapshot_status === 'calculating'
     || data?.snapshot_status === 'recalculating'
+    || data?.related_board_status === 'calculating'
+    || data?.related_concept_status === 'calculating'
 }
 
 function stopResultRefreshAtTimeout(): void {
@@ -333,9 +335,27 @@ function stopResultRefreshAtTimeout(): void {
     clearResultRefresh()
     return
   }
-  const timeoutMessage = '计算任务等待超时，请重试；系统会重新检查并恢复孤儿任务'
+  const snapshotPending = result.value.business_code === 'SNAPSHOT_PENDING'
+    || result.value.snapshot_status === 'calculating'
+    || result.value.snapshot_status === 'recalculating'
+  const relatedPending = !snapshotPending && (
+    result.value.related_board_status === 'calculating'
+    || result.value.related_concept_status === 'calculating'
+  )
+  const timeoutMessage = relatedPending
+    ? '走势相关计算等待超时，可稍后刷新查看'
+    : '计算任务等待超时，请重试；系统会重新检查并恢复孤儿任务'
   requestSequence += 1
   clearResultRefresh()
+  if (relatedPending) {
+    result.value = {
+      ...result.value,
+      related_board_status: 'partial',
+      related_concept_status: 'partial',
+    }
+    ElMessage.warning(timeoutMessage)
+    return
+  }
   if (result.value.has_snapshot) {
     result.value = {
       ...result.value,
