@@ -13,13 +13,15 @@ import { ROW_ACTION_COLUMN_WIDTH_CONTEXT } from '@/components/table/rowActionCol
 
 const ElTableColumnStub = defineComponent({
   name: 'ElTableColumn',
-  props: ['label', 'prop', 'type', 'width', 'minWidth'],
+  props: ['label', 'prop', 'type', 'width', 'minWidth', 'align', 'headerAlign'],
   setup(props, { slots }) {
     return () => h('div', {
       class: 'column',
       'data-type': props.type,
       'data-width': props.width,
       'data-min-width': props.minWidth,
+      'data-align': props.align,
+      'data-header-align': props.headerAlign,
     }, [
       ...(slots.default?.({ row: { value: '测试值' }, $index: 0 }) ?? []),
       ...(slots.header?.({ column: {} }) ?? []),
@@ -78,6 +80,28 @@ describe('自适应表格列', () => {
     expect(resolveActionColumnWidth(144, [120, 188, 160.2])).toBe(188)
     expect(resolveActionColumnWidth(96, [72])).toBe(96)
     expect(resolveActionColumnWidth(144, [160.2])).toBe(161)
+  })
+
+  it('操作列默认统一居中，并允许页面显式覆盖对齐方式', async () => {
+    const wrapper = mount(AppTableColumn, {
+      props: { label: '操作', role: 'action' },
+      global: { stubs: { ElTableColumn: ElTableColumnStub } },
+    })
+
+    expect(wrapper.get('.column').attributes('data-align')).toBe('center')
+    expect(wrapper.get('.column').attributes('data-header-align')).toBe('center')
+
+    await wrapper.setProps({ role: 'text' })
+    expect(wrapper.get('.column').attributes('data-align')).toBeUndefined()
+    expect(wrapper.get('.column').attributes('data-header-align')).toBeUndefined()
+
+    const overridden = mount(AppTableColumn, {
+      props: { label: '操作', role: 'action-compact' },
+      attrs: { align: 'right', 'header-align': 'left' },
+      global: { stubs: { ElTableColumn: ElTableColumnStub } },
+    })
+    expect(overridden.get('.column').attributes('data-align')).toBe('right')
+    expect(overridden.get('.column').attributes('data-header-align')).toBe('left')
   })
 
   it('操作列取所有已渲染行最低需求的最大值', async () => {

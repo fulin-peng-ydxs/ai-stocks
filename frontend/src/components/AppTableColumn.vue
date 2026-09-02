@@ -48,6 +48,14 @@ const sizing = computed(() => resolveAdaptiveColumnWidth({
 const isActionColumn = computed(() => (
   sizing.value.role === 'action' || sizing.value.role === 'action-compact'
 ))
+const resolvedAlign = computed(() => (
+  typeof attrs.align === 'string' ? attrs.align : (isActionColumn.value ? 'center' : undefined)
+))
+const resolvedHeaderAlign = computed(() => (
+  typeof attrs['header-align'] === 'string'
+    ? attrs['header-align']
+    : (isActionColumn.value ? 'center' : undefined)
+))
 const resolvedWidth = computed(() => {
   const defaultWidth = sizing.value.width
   if (!isActionColumn.value || defaultWidth === undefined) return defaultWidth
@@ -93,6 +101,8 @@ const headerStyle = computed(() => ({
     :prop="prop"
     :width="resolvedWidth"
     :min-width="sizing.minWidth"
+    :align="resolvedAlign"
+    :header-align="resolvedHeaderAlign"
   >
     <template v-if="$slots.header" #header="scope">
       <slot name="header" v-bind="scope ?? {}" />

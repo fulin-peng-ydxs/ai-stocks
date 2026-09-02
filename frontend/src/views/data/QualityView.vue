@@ -11,7 +11,7 @@ import {
   markDelisted, createTask, getTask,
   ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE, SEVERITY_LABEL, ISSUE_STATUS_LABEL, ISSUE_LAYER, LAYER_LABEL,
   RECOVER_ACTION_LABEL,
-  type DataQuality, type QualityIssue, type CheckupReport,
+  type DataQuality, type QualityIssue, type CheckupCheck, type CheckupReport, type CheckupStatus,
 } from '@/api/data'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDatePicker from '@/components/AppDatePicker.vue'
@@ -396,6 +396,35 @@ async function runVerify() {
 const checkupRunning = ref(false)
 const checkupOpen = ref(false)
 const checkupReport = ref<CheckupReport | null>(null)
+function checkupStatus(check: CheckupCheck): CheckupStatus {
+  return check.status ?? (check.ok ? 'pass' : 'fail')
+}
+function checkupTagType(check: CheckupCheck): 'success' | 'warning' | 'danger' {
+  const status = checkupStatus(check)
+  return status === 'pass' ? 'success' : status === 'warn' ? 'warning' : 'danger'
+}
+function checkupFlag(check: CheckupCheck): 'PASS' | 'WARN' | 'FAIL' {
+  const status = checkupStatus(check)
+  return status === 'pass' ? 'PASS' : status === 'warn' ? 'WARN' : 'FAIL'
+}
+const checkupWarningCount = computed(() => checkupReport.value?.warning_count
+  ?? checkupReport.value?.groups.flatMap((group) => group.checks)
+    .filter((check) => checkupStatus(check) === 'warn').length
+  ?? 0)
+const checkupHeaderType = computed<'success' | 'warning' | 'danger'>(() => {
+  if (!checkupReport.value?.all_ok) return 'danger'
+  return checkupWarningCount.value ? 'warning' : 'success'
+})
+const checkupHeaderText = computed(() => {
+  if (!checkupReport.value) return ''
+  if (!checkupReport.value.all_ok) return `${checkupReport.value.fails.length} 项未通过`
+  return checkupWarningCount.value ? `体检通过，${checkupWarningCount.value} 项提醒` : '全部通过'
+})
+const checkupScoreText = computed(() => {
+  if (!checkupReport.value) return ''
+  const warning = checkupWarningCount.value ? ` · ${checkupWarningCount.value} 提醒` : ''
+  return `${checkupReport.value.passed} 通过${warning} / ${checkupReport.value.total} 总项`
+})
 async function runCheckup() {
   checkupRunning.value = true
   try {
@@ -684,18 +713,22 @@ onMounted(() => {
     <el-dialog v-model="checkupOpen" title="数据结构体检报告" width="640px" align-center>
       <template v-if="checkupReport">
         <div class="checkup-head">
-          <el-tag :type="checkupReport.all_ok ? 'success' : 'danger'" effect="dark" size="large">
-            {{ checkupReport.all_ok ? '全部通过' : `${checkupReport.fails.length} 项未通过` }}
+          <el-tag :type="checkupHeaderType" effect="dark" size="large">
+            {{ checkupHeaderText }}
           </el-tag>
-          <span class="checkup-score">{{ checkupReport.passed }} / {{ checkupReport.total }} 项通过</span>
+          <span class="checkup-score">{{ checkupScoreText }}</span>
           <span class="checkup-note">结构合法性 + 价格正确性 + 字段契约 + 板块数据（本地核查，与质检台账互补，不写台账）</span>
         </div>
         <div v-for="g in checkupReport.groups" :key="g.group" class="checkup-group">
           <div class="checkup-group-title">{{ g.group }}</div>
-          <div v-for="c in g.checks" :key="c.name" class="checkup-row" :class="{ bad: !c.ok }">
-            <el-tag :type="c.ok ? 'success' : 'danger'" size="small" effect="plain" class="checkup-flag">
-              {{ c.ok ? 'PASS' : 'FAIL' }}
-            </el-tag>
+          <div v-for="c in g.checks" :key="c.name" class="checkup-row"
+               :class="{ bad: checkupStatus(c) === 'fail', warn: checkupStatus(c) === 'warn' }">
+            <el-tooltip :disabled="checkupStatus(c) !== 'warn' || !(c.help || c.detail)"
+                        :content="c.help || c.detail" placement="top">
+              <el-tag :type="checkupTagType(c)" size="small" effect="plain" class="checkup-flag">
+                {{ checkupFlag(c) }}
+              </el-tag>
+            </el-tooltip>
             <span class="checkup-name">{{ c.name }}</span>
             <span v-if="c.detail" class="checkup-detail">{{ c.detail }}</span>
           </div>

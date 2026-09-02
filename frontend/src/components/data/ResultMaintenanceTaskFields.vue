@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import AppDatePicker from '@/components/AppDatePicker.vue'
+import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import StockCodeMultiSelect from '@/components/data/StockCodeMultiSelect.vue'
 import {
@@ -44,11 +44,8 @@ function patch(value: Partial<ResultMaintenanceTaskForm>) {
     />
   </el-form-item>
   <el-form-item v-if="modelValue.target_mode === 'fixed'" label="固定日期">
-    <AppDatePicker
+    <TradeDatePicker
       :model-value="modelValue.trade_date"
-      type="date"
-      value-format="YYYY-MM-DD"
-      format="YYYY-MM-DD"
       placeholder="选择交易日"
       :clearable="false"
       :data-testid="`${testIdPrefix}-trade-date`"

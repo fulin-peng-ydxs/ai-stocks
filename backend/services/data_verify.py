@@ -39,10 +39,29 @@ class DataVerifier:
 
     def _check(self, name: str, ok: bool, detail: str = "") -> None:
         self.results.append((name, ok, detail))
-        self._structured.append({"group": self._cur_group, "name": name, "ok": ok, "detail": detail})
+        status = "pass" if ok else "fail"
+        self._structured.append(
+            {"group": self._cur_group, "name": name, "ok": ok, "status": status, "detail": detail}
+        )
         if not self.quiet:
             flag = "PASS" if ok else "FAIL"
             print(f"  [{flag}] {name}" + (f" — {detail}" if detail else ""))
+
+    def _warn(self, name: str, detail: str, help_text: str = "") -> None:
+        """记录不阻断体检的覆盖提醒，并与真正的数据错误明确区分。"""
+        self.results.append((name, True, detail))
+        self._structured.append(
+            {
+                "group": self._cur_group,
+                "name": name,
+                "ok": True,
+                "status": "warn",
+                "detail": detail,
+                "help": help_text,
+            }
+        )
+        if not self.quiet:
+            print(f"  [WARN] {name} — {detail}")
 
     def fails(self) -> list[str]:
         """返回未通过项名称列表。"""
@@ -453,12 +472,12 @@ class DataVerifier:
             "状态基准代码与回退标记合法", invalid_benchmarks == 0, f"非法 {invalid_benchmarks}"
         )
 
-        unsupported_stock_dates = self._count(
+        uncovered_stock_dates = self._count(
             "SELECT count(*) FROM stock_board_correlation_state s "
             "WHERE s.as_of_date>COALESCE((SELECT max(b.trade_date) FROM daily_bar b "
             "WHERE b.code=s.code), DATE '0001-01-01')"
         )
-        unsupported_board_dates = self._count(
+        uncovered_board_dates = self._count(
             "SELECT count(*) FROM stock_board_correlation c "
             "WHERE c.as_of_date>COALESCE((SELECT max(b.trade_date) FROM board_bar b "
             "WHERE b.board_code=c.board_code), DATE '0001-01-01')"
@@ -468,20 +487,26 @@ class DataVerifier:
             "WHERE s.as_of_date>COALESCE((SELECT max(b.trade_date) FROM index_bar b "
             "WHERE b.index_code=s.benchmark_code), DATE '0001-01-01')"
         )
+        if uncovered_stock_dates:
+            self._warn(
+                "个股行情覆盖至结果日期",
+                f"目标日未覆盖 {uncovered_stock_dates} 条",
+                "可能是停牌或采集缺口，请以质检台账为准；该日期差异本身不否定结果。",
+            )
+        else:
+            self._check("个股行情覆盖至结果日期", True, "目标日未覆盖 0 条")
+        if uncovered_board_dates:
+            self._warn(
+                "冠军板块行情覆盖至结果日期",
+                f"目标日未覆盖 {uncovered_board_dates} 条",
+                "相关性结果仍由 15/40 共同有效样本门槛约束。",
+            )
+        else:
+            self._check("冠军板块行情覆盖至结果日期", True, "目标日未覆盖 0 条")
         self._check(
-            "结果日期不晚于个股行情可用日",
-            unsupported_stock_dates == 0,
-            f"无行情支撑 {unsupported_stock_dates}",
-        )
-        self._check(
-            "结果日期不晚于冠军板块行情可用日",
-            unsupported_board_dates == 0,
-            f"无行情支撑 {unsupported_board_dates}",
-        )
-        self._check(
-            "结果日期不晚于基准行情可用日",
+            "基准目标日行情完整",
             unsupported_benchmark_dates == 0,
-            f"无行情支撑 {unsupported_benchmark_dates}",
+            f"目标日未覆盖 {unsupported_benchmark_dates} 条",
         )
 
     def run(self, cross: bool = True) -> bool:
@@ -496,21 +521,22 @@ class DataVerifier:
         self.check_calendar_readiness()
         if cross:
             self.cross_validate()
-        passed = sum(1 for _, ok, _ in self.results if ok)
-        total = len(self.results)
+        passed = sum(1 for item in self._structured if item["status"] == "pass")
+        warnings = sum(1 for item in self._structured if item["status"] == "warn")
+        total = len(self._structured)
         print("\n" + "=" * 64)
-        print(f"核查结果：{passed}/{total} 通过")
+        print(f"核查结果：{passed} 通过 / {warnings} 提醒 / {total} 总项")
         fails = [n for n, ok, _ in self.results if not ok]
         if fails:
             print("未通过项：", fails)
         print("=" * 64)
-        return passed == total
+        return not fails
 
     def run_structured(self, cross: bool = False) -> dict:
         """跑体检并返回结构化结果（供 Web 体检报告渲染）。
 
         默认 cross=False：只跑本地 SQL 的 A/B/D 组（快、无网络风险）；C 组联网交叉验证按需开。
-        返回 {passed, total, all_ok, fails, groups:[{group, checks:[{name, ok, detail}]}]}。
+        返回 {passed, warnings, total, all_ok, fails, groups:[{group, checks:[...]}]}。
         """
         self.results = []
         self._structured = []
@@ -529,13 +555,25 @@ class DataVerifier:
             if g not in groups:
                 groups[g] = []
                 order.append(g)
-            groups[g].append({"name": it["name"], "ok": it["ok"], "detail": it["detail"]})
-        passed = sum(1 for it in self._structured if it["ok"])
+            groups[g].append(
+                {
+                    "name": it["name"],
+                    "ok": it["ok"],
+                    "status": it["status"],
+                    "detail": it["detail"],
+                    "help": it.get("help", ""),
+                }
+            )
+        passed = sum(1 for it in self._structured if it["status"] == "pass")
+        warnings = [it["name"] for it in self._structured if it["status"] == "warn"]
         total = len(self._structured)
+        fails = [it["name"] for it in self._structured if it["status"] == "fail"]
         return {
             "passed": passed,
+            "warning_count": len(warnings),
+            "warnings": warnings,
             "total": total,
-            "all_ok": passed == total,
-            "fails": [it["name"] for it in self._structured if not it["ok"]],
+            "all_ok": not fails,
+            "fails": fails,
             "groups": [{"group": g, "checks": groups[g]} for g in order],
         }

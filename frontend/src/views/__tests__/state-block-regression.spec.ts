@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import ElementPlus, { ElMessage } from 'element-plus'
+import ElementPlus, { ElMessage, ElTooltip } from 'element-plus'
 import { computed, reactive, ref, type Component } from 'vue'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -649,6 +649,49 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.text()).toContain('数据质量刷新失败')
     expect(wrapper.text()).toContain('refresh failed')
     expect(wrapper.find('.app-data-table').exists()).toBe(false)
+  })
+
+  it('结构体检将行情目标日缺口展示为提醒而非失败', async () => {
+    ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockResolvedValue({
+      list: [], total: 0, summary: [],
+    })
+    ;(dataApi.createTask as ReturnType<typeof vi.fn>).mockResolvedValue({ task_id: 'task-checkup-1' })
+    ;(dataApi.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'task-checkup-1', task_type: 'checkup', status: 'done', progress: 1,
+      message: '体检通过：1 项提醒', params: {}, created_at: '', updated_at: '',
+      result: {
+        checkup: {
+          passed: 1, warning_count: 1, warnings: ['个股行情覆盖至结果日期'],
+          total: 2, all_ok: true, fails: [],
+          groups: [{
+            group: 'G. 个股走势关联板块',
+            checks: [
+              {
+                name: '个股行情覆盖至结果日期', ok: true, status: 'warn',
+                detail: '目标日未覆盖 17 条', help: '该日期差异本身不否定结果。',
+              },
+              {
+                name: '基准目标日行情完整', ok: true, status: 'pass',
+                detail: '目标日未覆盖 0 条',
+              },
+            ],
+          }],
+        },
+      },
+    })
+
+    const wrapper = await mountView(QualityView)
+    const checkupButton = wrapper.findAll('button')
+      .find((button) => button.text().includes('结构体检'))!
+    await checkupButton.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('体检通过，1 项提醒')
+    expect(wrapper.text()).toContain('WARN')
+    const warningRow = wrapper.get('.checkup-row.warn')
+    expect(warningRow.text()).toContain('目标日未覆盖 17 条')
+    expect(warningRow.findComponent(ElTooltip).props('content')).toBe('该日期差异本身不否定结果。')
+    expect(wrapper.text()).not.toContain('1 项未通过')
   })
 
   it('立即质检轮询超时后自动重试，运行中防重复提交并按失败终态提示', async () => {

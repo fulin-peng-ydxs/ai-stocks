@@ -354,10 +354,19 @@ export type TaskType =
   | 'limit_ladder_invalidate' | 'limit_ladder_recompute'
 
 // ── 数据结构体检报告（checkup 任务 result.checkup）──
-export interface CheckupCheck { name: string; ok: boolean; detail: string }
+export type CheckupStatus = 'pass' | 'warn' | 'fail'
+export interface CheckupCheck {
+  name: string
+  ok: boolean
+  status?: CheckupStatus
+  detail: string
+  help?: string
+}
 export interface CheckupGroup { group: string; checks: CheckupCheck[] }
 export interface CheckupReport {
   passed: number
+  warning_count?: number
+  warnings?: string[]
   total: number
   all_ok: boolean
   fails: string[]

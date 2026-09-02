@@ -70,7 +70,7 @@ describe('taskDisplayLabel', () => {
     expect(schedule).toContain('consumeResultMaintenanceScheduleIntent()')
     expect(ingest).toContain('queueResultMaintenanceScheduleIntent(type)')
     expect(ingest).toContain("router.push('/data/schedule')")
-    expect(schedule).toContain('保存只会登记调度，不会立即执行')
+    expect(schedule).not.toContain('保存只会登记调度，不会立即执行')
     expect(ingest).toContain('<ResultMaintenanceTaskFields')
     expect(ingest).toContain('buildResultMaintenanceTaskParams(resultType.value, resultForm.value)')
     expect(ingest).toContain("route.path !== '/data/ingest'")

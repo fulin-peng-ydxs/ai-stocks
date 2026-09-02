@@ -864,11 +864,23 @@ def _h_checkup(params: dict, ctx: TaskContext) -> dict:
     ctx.log("数据体检：结构/完整性 + 价格正确性 + 字段契约 + 板块数据" + ("（含联网交叉验证）" if cross else ""))
     report = DataVerifier(quiet=True).run_structured(cross=cross)
     for g in report["groups"]:
-        bad = [c["name"] for c in g["checks"] if not c["ok"]]
-        ctx.log(f"{g['group']}：{len(g['checks']) - len(bad)}/{len(g['checks'])} 通过"
-                + (f"；未过：{', '.join(bad)}" if bad else ""))
-    msg = (f"体检通过：{report['passed']}/{report['total']}" if report["all_ok"]
-           else f"体检发现 {len(report['fails'])} 项未通过（{report['passed']}/{report['total']} 通过）")
+        bad = [c["name"] for c in g["checks"] if c["status"] == "fail"]
+        warnings = [c["name"] for c in g["checks"] if c["status"] == "warn"]
+        passed = len(g["checks"]) - len(bad) - len(warnings)
+        ctx.log(
+            f"{g['group']}：{passed} 通过 / {len(warnings)} 提醒 / {len(g['checks'])} 总项"
+            + (f"；提醒：{', '.join(warnings)}" if warnings else "")
+            + (f"；未过：{', '.join(bad)}" if bad else "")
+        )
+    if report["all_ok"]:
+        msg = f"体检通过：{report['passed']} 通过"
+        if report["warning_count"]:
+            msg += f"，{report['warning_count']} 项提醒"
+    else:
+        msg = (
+            f"体检发现 {len(report['fails'])} 项未通过"
+            f"（{report['passed']} 通过，{report['warning_count']} 提醒）"
+        )
     ctx.log(msg)
     return {"message": msg, "checkup": report}
 

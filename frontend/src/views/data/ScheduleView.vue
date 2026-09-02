@@ -893,14 +893,6 @@ onActivated(openResultScheduleFromIntent)
           :task-type="form.task_type"
           test-id-prefix="schedule-result"
         />
-        <el-alert
-          v-if="isResultMaintenanceTask(form.task_type)"
-          type="warning"
-          :closable="false"
-          title="保存只会登记调度，不会立即执行；以后自动触发或在调度列表点击“立即执行”时，均使用这里保存的结果参数。"
-          data-testid="schedule-result-execution-scope"
-        />
-
         <el-divider
           content-position="left"
           class="form-section-divider"
