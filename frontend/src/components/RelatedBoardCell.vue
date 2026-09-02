@@ -87,20 +87,6 @@ function formatCorrelation(value: number): string {
     >计算中</span>
   </el-tooltip>
 
-  <el-tooltip
-    v-else-if="unavailableReason === 'as_of_mismatch'"
-    content="未保留该历史日期的相关性结果"
-    :trigger="['hover', 'focus']"
-    placement="top"
-  >
-    <span
-      class="related-board-cell__empty related-board-cell__empty--explained"
-      tabindex="0"
-      aria-label="未保留该历史日期的相关性结果"
-      :data-testid="testId"
-    >—</span>
-  </el-tooltip>
-
   <span
     v-else
     class="related-board-cell__empty"
@@ -122,8 +108,7 @@ function formatCorrelation(value: number): string {
   white-space: nowrap;
 }
 
-.related-board-cell__name:focus-visible,
-.related-board-cell__empty--explained:focus-visible {
+.related-board-cell__name:focus-visible {
   border-radius: var(--el-border-radius-small);
   outline: 2px solid var(--el-color-primary);
   outline-offset: 2px;

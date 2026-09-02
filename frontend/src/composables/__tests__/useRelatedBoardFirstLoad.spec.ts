@@ -3,7 +3,10 @@
 import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useRelatedBoardFirstLoad } from '../useRelatedBoardFirstLoad'
+import {
+  mergeRelatedBoardResults,
+  useRelatedBoardFirstLoad,
+} from '../useRelatedBoardFirstLoad'
 
 describe('useRelatedBoardFirstLoad', () => {
   beforeEach(() => {
@@ -12,6 +15,26 @@ describe('useRelatedBoardFirstLoad', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('静默回填只修改走势摘要并保留行对象', () => {
+    const row = { code: '600000.SH', name: '原名称', related_boards: null }
+    const rows = [row]
+    const related = {
+      as_of_date: '2026-09-02',
+      benchmark: { code: '000001.SH', name: '上证指数', fallback: false },
+      industry: null,
+      concept: null,
+    }
+
+    mergeRelatedBoardResults(rows, [{
+      code: '600000.SH',
+      related_boards: related,
+    }])
+
+    expect(rows[0]).toBe(row)
+    expect(row.name).toBe('原名称')
+    expect(row.related_boards).toBe(related)
   })
 
   it('计算中时轮询业务查询，刷新结果就绪后停止', async () => {
@@ -95,7 +118,7 @@ describe('useRelatedBoardFirstLoad', () => {
 
     expect(refresh).toHaveBeenCalledTimes(4)
     await vi.advanceTimersByTimeAsync(20)
-    expect(refresh).toHaveBeenCalledTimes(5)
+    expect(refresh).toHaveBeenCalledTimes(4)
     wrapper.unmount()
   })
 
@@ -130,9 +153,9 @@ describe('useRelatedBoardFirstLoad', () => {
     observe([pending('600000.SH')], '600000.SH@2026-09-02')
     await vi.advanceTimersByTimeAsync(60)
 
-    expect(refresh).toHaveBeenCalledTimes(3)
+    expect(refresh).toHaveBeenCalledTimes(2)
     await vi.advanceTimersByTimeAsync(60)
-    expect(refresh).toHaveBeenCalledTimes(3)
+    expect(refresh).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
 })

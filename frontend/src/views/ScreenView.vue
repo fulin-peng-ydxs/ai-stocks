@@ -28,6 +28,7 @@ import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
 import RelatedBoardCell from '@/components/RelatedBoardCell.vue'
 import {
   relatedBoardFirstLoadContext,
+  mergeRelatedBoardResults,
   useRelatedBoardFirstLoad,
 } from '@/composables/useRelatedBoardFirstLoad'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
@@ -423,11 +424,18 @@ watch(() => settings.excludeSt, (value) => {
   excludeSt.value = Boolean(value)
 })
 
-async function run() {
+let runSequence = 0
+async function runScreenResults(background = false) {
   const ast = buildAst()
-  if (!ast) return ElMessage.warning('请先添加条件')
-  loading.value = true
-  resultError.value = ''
+  if (!ast) {
+    if (!background) ElMessage.warning('请先添加条件')
+    return
+  }
+  const sequence = ++runSequence
+  if (!background) {
+    loading.value = true
+    resultError.value = ''
+  }
   // 不清空 result：让旧结果留在 loading 遮罩下，避免闪回空态（结果区盒子保持不变）
   try {
     const r = await runScreen({
@@ -439,7 +447,9 @@ async function run() {
       run_date: runDate.value || undefined,
       exclude_st: excludeSt.value,
     })
-    result.value = { date: r.run_date, count: r.count, hits: r.hits }
+    if (sequence !== runSequence) return
+    if (background && result.value) mergeRelatedBoardResults(result.value.hits, r.hits)
+    else result.value = { date: r.run_date, count: r.count, hits: r.hits }
     relatedBoardFirstLoad.observe(
       r.hits,
       relatedBoardFirstLoadContext(r.hits, r.run_date),
@@ -447,14 +457,19 @@ async function run() {
     // 回填实际运行交易日（默认最新时让用户看到本次结果口径，与评分试算一致）
     runDate.value = r.run_date
   } catch (error) {
+    if (sequence !== runSequence || background) return
     resultError.value = getErrorMessage(error, '筛选运行失败')
     ElMessage.error(resultError.value)
   } finally {
-    loading.value = false
+    if (!background && sequence === runSequence) loading.value = false
   }
 }
 
-const relatedBoardFirstLoad = useRelatedBoardFirstLoad(run)
+function run() {
+  return runScreenResults(false)
+}
+
+const relatedBoardFirstLoad = useRelatedBoardFirstLoad(() => runScreenResults(true))
 
 // ── 保存（实质变更才版本+1；载入的自定义方案可覆盖更新；id 为空由后端自动生成）──
 const saving = ref(false)

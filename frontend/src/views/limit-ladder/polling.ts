@@ -11,20 +11,6 @@ export function limitLadderPollDelay(attempt: number): number {
   )
 }
 
-export function limitLadderPollDecision(
-  attempt: number,
-  elapsedMs: number,
-): { timedOut: boolean; delayMs: number | null } {
-  const remainingMs = Math.max(0, LIMIT_LADDER_POLL_TIMEOUT_MS - Math.max(0, elapsedMs))
-  if (remainingMs === 0) {
-    return { timedOut: true, delayMs: null }
-  }
-  return {
-    timedOut: false,
-    delayMs: Math.min(limitLadderPollDelay(attempt), remainingMs),
-  }
-}
-
 export function limitLadderPollTaskKey(result: LimitLadderResult): string {
   const snapshotPending = result.business_code === 'SNAPSHOT_PENDING'
     || result.snapshot_status === 'calculating'

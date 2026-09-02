@@ -59,6 +59,7 @@ import { getPageEntry, getPageLayout, type SlotConfigMeta } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import {
   relatedBoardFirstLoadContext,
+  mergeRelatedBoardResults,
   useRelatedBoardFirstLoad,
 } from '@/composables/useRelatedBoardFirstLoad'
 import { getErrorMessage } from '@/utils/error'
@@ -201,8 +202,8 @@ const {
 const total = ref(0)
 const rows = ref<StockBasic[]>([])
 const relatedBoardFirstLoad = useRelatedBoardFirstLoad(async () => {
-  if (inGroupMode.value) await loadGroupDetail()
-  else await load()
+  if (inGroupMode.value) await loadGroupDetail(true)
+  else await load(true)
 })
 const analysisRefreshRevision = ref(0)
 
@@ -252,10 +253,12 @@ watch(groupDefaultSortOrder, (value) => {
 })
 
 const stockListRequest = createLatestRequestGuard()
-async function load() {
+async function load(background = false) {
   const requestId = stockListRequest.begin()
-  loading.value = true
-  loadError.value = ''
+  if (!background) {
+    loading.value = true
+    loadError.value = ''
+  }
   try {
     const data = await listStocks({
       q: q.value || undefined,
@@ -268,7 +271,8 @@ async function load() {
       size: size.value,
     })
     if (!stockListRequest.isCurrent(requestId)) return
-    rows.value = data.list
+    if (background) mergeRelatedBoardResults(rows.value, data.list)
+    else rows.value = data.list
     relatedBoardFirstLoad.observe(
       data.list,
       relatedBoardFirstLoadContext(data.list, data.trade_date),
@@ -276,9 +280,9 @@ async function load() {
     total.value = data.total
   } catch (error) {
     if (!stockListRequest.isCurrent(requestId)) return
-    loadError.value = getErrorMessage(error, '个股列表加载失败')
+    if (!background) loadError.value = getErrorMessage(error, '个股列表加载失败')
   } finally {
-    if (stockListRequest.isCurrent(requestId)) loading.value = false
+    if (!background && stockListRequest.isCurrent(requestId)) loading.value = false
   }
 }
 function search() {
@@ -450,7 +454,7 @@ async function refreshStocks(): Promise<void> {
   else await load()
   analysisRefreshRevision.value += 1
 }
-async function loadGroupDetail() {
+async function loadGroupDetail(background = false) {
   if (!activeGid.value) return
   if (!canViewGroups.value) {
     groupDetail.value = null
@@ -459,8 +463,10 @@ async function loadGroupDetail() {
   }
   const gid = activeGid.value
   const revision = ++groupLoadRevision
-  groupLoading.value = true
-  groupError.value = ''
+  if (!background) {
+    groupLoading.value = true
+    groupError.value = ''
+  }
   try {
     const detail = await getGroup(gid, {
       page: groupPage.value,
@@ -474,16 +480,20 @@ async function loadGroupDetail() {
       sort_order: groupSortOrder.value,
     })
     if (revision !== groupLoadRevision || gid !== activeGid.value) return
-    groupDetail.value = detail
+    if (background && groupDetail.value) {
+      mergeRelatedBoardResults(groupDetail.value.members.list, detail.members.list)
+    } else {
+      groupDetail.value = detail
+    }
     relatedBoardFirstLoad.observe(
       detail.members.list,
       relatedBoardFirstLoadContext(detail.members.list, (row) => row.last_date),
     )
   } catch (error) {
     if (revision !== groupLoadRevision || gid !== activeGid.value) return
-    groupError.value = getErrorMessage(error, '分组明细加载失败')
+    if (!background) groupError.value = getErrorMessage(error, '分组明细加载失败')
   } finally {
-    if (revision === groupLoadRevision) groupLoading.value = false
+    if (!background && revision === groupLoadRevision) groupLoading.value = false
   }
 }
 const groupRows = computed<GroupMember[]>(() => groupDetail.value?.members.list ?? [])

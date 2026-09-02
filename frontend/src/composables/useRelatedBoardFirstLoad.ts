@@ -1,7 +1,7 @@
-import { onBeforeUnmount } from 'vue'
+import { useAsyncResultPolling } from '@/composables/useAsyncResultPolling'
 import type { StockRelatedBoards } from '@/types/relatedBoards'
 
-interface RelatedBoardRow {
+export interface RelatedBoardRow {
   code?: string
   related_boards?: StockRelatedBoards | null
 }
@@ -25,6 +25,20 @@ export function relatedBoardFirstLoadContext<T extends RelatedBoardRow>(
     .join('|')
 }
 
+/** 静默轮询只回填走势摘要，保留页面行对象和其它业务字段，避免触发整表与分析区刷新。 */
+export function mergeRelatedBoardResults<T extends RelatedBoardRow>(
+  currentRows: T[],
+  incomingRows: RelatedBoardRow[],
+): void {
+  const incomingByCode = new Map(
+    incomingRows.map((row) => [String(row.code ?? ''), row.related_boards ?? null]),
+  )
+  currentRows.forEach((row) => {
+    const code = String(row.code ?? '')
+    if (incomingByCode.has(code)) row.related_boards = incomingByCode.get(code)
+  })
+}
+
 /**
  * 统一观察四类走势摘要消费页返回的首次计算状态；只轮询调用方已有业务读取接口，
  * 避免普通业务用户依赖 system-only 任务详情权限，也不让各页面复制轮询生命周期。
@@ -33,66 +47,19 @@ export function useRelatedBoardFirstLoad(
   refresh: () => unknown | Promise<unknown>,
   options: FirstLoadPollingOptions = {},
 ) {
-  const intervalMs = options.intervalMs ?? 1500
-  const timeoutMs = options.timeoutMs ?? 120_000
-  let timer: number | undefined
-  let polling = false
-  let disposed = false
-  let pending = false
-  let startedAt = 0
-  let activeContext = ''
-
-  function schedule(): void {
-    if (disposed || timer !== undefined || polling || !pending) return
-    timer = window.setTimeout(() => {
-      timer = undefined
-      void poll()
-    }, intervalMs)
-  }
-
-  async function poll(): Promise<void> {
-    if (disposed || polling || !pending) return
-    polling = true
-    try {
-      await refresh()
-    } finally {
-      polling = false
-      if (startedAt && Date.now() - startedAt >= timeoutMs) pending = false
-      schedule()
-    }
-  }
+  const polling = useAsyncResultPolling(refresh, {
+    intervalMs: options.intervalMs,
+    timeoutMs: options.timeoutMs,
+    // 表格刷新会因行情排序变化带回另一页股票，这不代表用户切换了读取上下文。
+    resetContextDuringRefresh: false,
+  })
 
   function observe(rows: RelatedBoardRow[], context = ''): void {
-    if (context && context !== activeContext) {
-      activeContext = context
-      // 轮询刷新可能因行情变化带回另一页股票，不能因此无限延长本轮等待。
-      // 只有轮询之外的切页、切日期等用户操作，才开始新的等待周期。
-      if (!polling) {
-        startedAt = 0
-        if (timer !== undefined) window.clearTimeout(timer)
-        timer = undefined
-      }
-    }
-    pending = rows.some((row) => (
-      row.related_boards?.unavailable_reason === 'first_load_pending'
-    ))
-    if (pending) {
-      if (!startedAt) startedAt = Date.now()
-    } else {
-      startedAt = 0
-      activeContext = context
-      if (timer !== undefined) window.clearTimeout(timer)
-      timer = undefined
-    }
-    schedule()
+    polling.observe(
+      rows.some((row) => row.related_boards?.unavailable_reason === 'first_load_pending'),
+      context,
+    )
   }
-
-  onBeforeUnmount(() => {
-    disposed = true
-    pending = false
-    if (timer !== undefined) window.clearTimeout(timer)
-    timer = undefined
-  })
 
   return { observe }
 }

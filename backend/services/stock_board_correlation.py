@@ -182,6 +182,31 @@ class StockBoardCorrelationService:
             for name, value in maxima.items()
         }
 
+    def _first_load_data_signature(self) -> str:
+        """首次任务幂等水位；同时识别最新日推进和相同最新日下的历史补数。"""
+        row = self.c.query_df(
+            "SELECT (SELECT count(*) FROM daily_bar) AS daily_count, "
+            "       (SELECT max(trade_date) FROM daily_bar) AS daily_max, "
+            "       (SELECT count(*) FROM board_bar) AS board_count, "
+            "       (SELECT max(trade_date) FROM board_bar) AS board_max, "
+            "       (SELECT count(*) FROM index_bar) AS index_count, "
+            "       (SELECT max(trade_date) FROM index_bar) AS index_max, "
+            "       (SELECT count(*) FROM trade_calendar WHERE is_open=true) AS calendar_count, "
+            "       (SELECT max(trade_date) FROM trade_calendar WHERE is_open=true) AS calendar_max"
+        ).iloc[0]
+
+        def normalize_signature_value(value: Any) -> str:
+            if value is None or pd.isna(value):
+                return "-"
+            if hasattr(value, "isoformat"):
+                return str(value.isoformat())
+            return str(value)
+
+        return "|".join(
+            f"{name}={normalize_signature_value(value)}"
+            for name, value in sorted(row.items())
+        )
+
     def resolve_target_date(self, upper_bound: date | None = None) -> date:
         """取日历、个股、板块和指数四类数据均不晚于的最近开市日。"""
         maxima = self.resolve_data_family_maxima()
@@ -813,7 +838,7 @@ class StockBoardCorrelationService:
         missing_codes: list[str],
         normalized_dates: Mapping[str, date | None],
     ) -> set[str]:
-        """按日期和股票范围幂等创建首次计算任务，不恢复任何上游变化联动。"""
+        """按日期、股票范围和数据水位幂等创建首次任务，不注册采集完成联动。"""
         from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
 
         by_date: dict[date, list[str]] = {}
@@ -830,7 +855,12 @@ class StockBoardCorrelationService:
             return pending
         for target_date, codes in by_date.items():
             scope = sorted(set(codes))
-            scope_hash = sha256(",".join(scope).encode("utf-8")).hexdigest()[:20]
+            # 同一数据水位内保持幂等；上游后来补齐并推进任一数据族水位后，允许曾失败的
+            # 首次任务生成新事件重新尝试，不被旧 failed 任务永久锁死。
+            data_signature = self._first_load_data_signature()
+            scope_hash = sha256(
+                (",".join(scope) + "|" + data_signature).encode("utf-8")
+            ).hexdigest()[:20]
             event_id = (
                 f"stock-board-correlation:first-load:{ALGORITHM_VERSION}:"
                 f"{target_date.isoformat()}:{scope_hash}"
@@ -851,30 +881,10 @@ class StockBoardCorrelationService:
                 if task and task.get("status") in {"pending", "running"}:
                     pending.update(scope)
             except ConcurrentTaskError as exc:
-                # 只有上游数据已经具备计算条件时，写槽繁忙才属于真实等待态。
-                # 数据族为空或所选日期尚未共同就绪时直接降级，避免页面把“不具备
-                # 计算条件”误报为持续计算中。
-                try:
-                    available_date = self.resolve_target_date(upper_bound=target_date)
-                except CorrelationInputError as input_exc:
-                    log.info(
-                        "走势相关首次计算不等待写槽 date=%s scope=%d reason=%s",
-                        target_date,
-                        len(scope),
-                        input_exc,
-                    )
-                    continue
-                if available_date != target_date:
-                    log.info(
-                        "走势相关首次计算不等待写槽 date=%s scope=%d available=%s",
-                        target_date,
-                        len(scope),
-                        available_date,
-                    )
-                    continue
-                pending.update(scope)
+                # 当前没有创建出走势任务，不能把“另一写任务占槽”冒充为走势计算中。
+                # 写槽释放后由用户再次读取、结果维护或已配置调度决定是否创建任务。
                 log.info(
-                    "走势相关首次计算等待写槽 date=%s scope=%d running=%s",
+                    "走势相关首次计算未创建（写槽繁忙）date=%s scope=%d running=%s",
                     target_date,
                     len(scope),
                     exc.running_id,
@@ -903,6 +913,7 @@ class StockBoardCorrelationService:
         )
         champion_join = (
             "LEFT JOIN stock_board_correlation c ON c.code=s.code AND c.as_of_date=s.as_of_date "
+            "AND c.algorithm_version=s.algorithm_version "
             "LEFT JOIN board_dict bd ON bd.board_code=c.board_code AND bd.board_type=c.board_type "
         )
         if protect_dates:
@@ -917,17 +928,20 @@ class StockBoardCorrelationService:
                     base_select
                     + f"JOIN {view} wanted ON wanted.code=s.code AND wanted.as_of_date=s.as_of_date "
                     + champion_join
-                    + "ORDER BY s.code, CASE c.board_type WHEN 'industry' THEN 0 ELSE 1 END"
+                    + "WHERE s.algorithm_version=? "
+                    + "ORDER BY s.code, CASE c.board_type WHEN 'industry' THEN 0 ELSE 1 END",
+                    [ALGORITHM_VERSION],
                 )
         placeholders = ",".join("?" for _ in normalized)
         return self.c.query_df(
             base_select
             + "JOIN (SELECT code, max(as_of_date) AS mx FROM stock_board_correlation_state "
-            f"WHERE code IN ({placeholders}) GROUP BY code) latest "
+            f"WHERE code IN ({placeholders}) AND algorithm_version=? GROUP BY code) latest "
             "ON latest.code=s.code AND latest.mx=s.as_of_date "
             + champion_join
+            + "WHERE s.algorithm_version=? "
             + "ORDER BY s.code, CASE c.board_type WHEN 'industry' THEN 0 ELSE 1 END",
-            normalized,
+            [*normalized, ALGORITHM_VERSION, ALGORITHM_VERSION],
         )
 
     def _assemble_related_boards(

@@ -68,11 +68,6 @@ def test_batch_summary_reads_per_day_snapshot(monkeypatch):
             "('300001.SZ','特锐德','创业板','2009-10-30')"
         )
         service = StockBoardCorrelationService(market)
-        monkeypatch.setattr(
-            service,
-            "resolve_target_date",
-            lambda upper_bound=None: upper_bound,
-        )
 
         result = service.get_related_boards(
             ["600000.sh", "000001.SZ", "300001.SZ", "600000.SH"],
@@ -83,7 +78,8 @@ def test_batch_summary_reads_per_day_snapshot(monkeypatch):
             },
         )
 
-        assert result["300001.SZ"]["unavailable_reason"] == "first_load_pending"
+        # 同一请求的另一日期任务已占写槽，未创建的范围不能冒充“计算中”。
+        assert result["300001.SZ"]["unavailable_reason"] == "as_of_mismatch"
         assert result["600000.SH"] == {
             "as_of_date": "2026-08-28",
             "benchmark": {"code": "399001.SZ", "name": "深证成指", "fallback": False},
@@ -160,8 +156,83 @@ def test_missing_historical_snapshot_enqueues_date_scoped_first_load(monkeypatch
         assert result["600000.SH"]["unavailable_reason"] == "first_load_pending"
 
 
-def test_busy_write_slot_keeps_distinct_first_load_scope_waiting(monkeypatch):
-    """另一范围占用写槽时不丢任务；释放后由下一次业务轮询创建。"""
+def test_old_algorithm_snapshot_is_not_served_and_enqueues_current_version(monkeypatch):
+    """同日旧算法结果必须视为缺档，不能继续装饰业务页面。"""
+    from backend.services.async_task import AsyncTaskService
+
+    monkeypatch.setattr(AsyncTaskService, "_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(AsyncTaskService, "_audit_task", staticmethod(lambda **kwargs: None))
+    as_of = date(2026, 8, 28)
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_summary(market, as_of=as_of)
+        market.execute(
+            "INSERT INTO stock_basic (code,name,board,list_date) "
+            "VALUES ('600000.SH','浦发银行','主板','1999-11-10')"
+        )
+        market.execute(
+            "UPDATE stock_board_correlation_state SET algorithm_version='old-version' "
+            "WHERE code='600000.SH' AND as_of_date=?",
+            [as_of],
+        )
+        market.execute(
+            "UPDATE stock_board_correlation SET algorithm_version='old-version' "
+            "WHERE code='600000.SH' AND as_of_date=?",
+            [as_of],
+        )
+
+        result = StockBoardCorrelationService(market).get_related_boards(["600000.SH"], as_of)
+        tasks = market.query_df(
+            "SELECT task_type,status FROM async_task WHERE task_type='stock_board_correlation'"
+        ).to_dict("records")
+
+        assert result["600000.SH"]["unavailable_reason"] == "first_load_pending"
+        assert tasks == [{"task_type": "stock_board_correlation", "status": "pending"}]
+
+
+def test_failed_first_load_retries_only_after_upstream_data_watermark_changes(monkeypatch):
+    """失败任务在相同数据水位保持幂等，上游推进后允许创建一次新尝试。"""
+    from backend.services.async_task import AsyncTaskService
+
+    monkeypatch.setattr(AsyncTaskService, "_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(AsyncTaskService, "_audit_task", staticmethod(lambda **kwargs: None))
+    as_of = date(2026, 8, 28)
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        market.execute(
+            "INSERT INTO stock_basic (code,name,board,list_date) "
+            "VALUES ('600000.SH','浦发银行','主板','1999-11-10')"
+        )
+        service = StockBoardCorrelationService(market)
+
+        first = service.get_related_boards(["600000.SH"], as_of)
+        first_task = market.query_df("SELECT id FROM async_task").iloc[0]["id"]
+        market.execute("UPDATE async_task SET status='failed' WHERE id=?", [first_task])
+        unchanged = service.get_related_boards(["600000.SH"], as_of)
+
+        market.execute(
+            "INSERT INTO daily_bar (code,trade_date,close,pre_close) "
+            "VALUES ('600000.SH',?,10.5,10.0)",
+            [as_of],
+        )
+        retried = service.get_related_boards(["600000.SH"], as_of)
+        tasks = market.query_df("SELECT id,status FROM async_task ORDER BY created_at").to_dict(
+            "records"
+        )
+        market.execute("UPDATE async_task SET status='failed' WHERE id=?", [tasks[-1]["id"]])
+        repeated = service.get_related_boards(["600000.SH"], as_of)
+        final_count = int(market.query_df("SELECT count(*) AS n FROM async_task").iloc[0]["n"])
+
+        assert first["600000.SH"]["unavailable_reason"] == "first_load_pending"
+        assert unchanged["600000.SH"]["unavailable_reason"] == "as_of_mismatch"
+        assert retried["600000.SH"]["unavailable_reason"] == "first_load_pending"
+        assert repeated["600000.SH"]["unavailable_reason"] == "as_of_mismatch"
+        assert len(tasks) == 2
+        assert final_count == 2
+
+
+def test_busy_write_slot_does_not_claim_uncreated_first_load_is_calculating(monkeypatch):
+    """另一写任务占槽时不冒充走势计算中；释放后再次读取才创建任务。"""
     from backend.services.async_task import AsyncTaskService
 
     monkeypatch.setattr(AsyncTaskService, "_run", lambda *args, **kwargs: None)
@@ -174,20 +245,14 @@ def test_busy_write_slot_keeps_distinct_first_load_scope_waiting(monkeypatch):
             "('000001.SZ','平安银行','主板','1991-04-03')"
         )
         service = StockBoardCorrelationService(market)
-        monkeypatch.setattr(
-            service,
-            "resolve_target_date",
-            lambda upper_bound=None: upper_bound,
-        )
-
         first = service.get_related_boards(["600000.SH"], date(2026, 8, 28))
-        waiting = service.get_related_boards(["000001.SZ"], date(2026, 8, 28))
+        blocked = service.get_related_boards(["000001.SZ"], date(2026, 8, 28))
         tasks_before_release = market.query_df(
             "SELECT id,status,trigger_event_id FROM async_task ORDER BY created_at"
         ).to_dict("records")
 
         assert first["600000.SH"]["unavailable_reason"] == "first_load_pending"
-        assert waiting["000001.SZ"]["unavailable_reason"] == "first_load_pending"
+        assert blocked["000001.SZ"]["unavailable_reason"] == "as_of_mismatch"
         assert len(tasks_before_release) == 1
 
         market.execute(

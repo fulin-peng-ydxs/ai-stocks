@@ -9,6 +9,7 @@
 
 - 需求文档：[requirement.md](requirement.md)。
 - 上游闭环：[requirement-closure.md](requirement-closure.md)。
+- 当前运行闭环：[stock-board-correlation-closed-loop-flow.md](stock-board-correlation-closed-loop-flow.md)。
 - 关联能力：`agent-works/concept-industry-board/requirement.md`。
 - 功能目标：基于股票累计行业、概念归属，按上市板对应指数做市场中性化，预计算并原子保存每只股票的行业走势冠军和概念走势冠军，供个股查询、每日榜单、策略筛选毫秒级批量读取。
 - 本次不做：R11-R20（除已实现的按交易日快照）；尤其不保存全部候选明细，不接入个股详情，不做盘中计算、全市场非归属板块比较或人工改冠军。
@@ -152,7 +153,7 @@ index_bar + stock_basic ───┘       │ 版本化相关性算法（当前
 ### 4.6 R5 批量摘要与日期保护
 
 - `get_related_boards(codes, business_dates)` 通过固定次数批量查询状态、冠军和 `board_dict`，并复用 `backend/services/market_benchmark.py` 的指数名称事实源补充 benchmark name，返回 `code -> related_boards`；`business_dates` 支持统一日期或逐代码日期，禁止在新模块复制第五份指数名称映射。
-- 按业务日期只取同日快照返回冠军；该日无快照时 `industry/concept=null`、`unavailable_reason=as_of_mismatch`。GET 不同步计算或写库，补算统一使用异步任务入口。
+- 按业务日期只取同日、当前算法版本快照返回冠军；缺档时 GET 只幂等登记异步首次任务，不同步计算或写正式结果。同一数据水位失败不循环重建，上游水位变化后允许一次新尝试。
 - 未处理或缺失状态时返回 `related_boards=null`；结果表孤儿字典不伪造名称，相应冠军为空并由结构体检报告。
 - 股票分页用响应 `trade_date`；分组按每行 `last_date`；榜单与筛选用 `run_date`。每个调用方仅在形成最终代码集合后调用一次，不改变原排序、分页或评分。
 
@@ -163,7 +164,7 @@ index_bar + stock_basic ───┘       │ 版本化相关性算法（当前
 | 页面功能点 | 需求 | 技术实现 | 组件/模块 | 数据/API | 状态、权限与异常 | 任务 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 普通表行业走势/概念走势 | R5、R6、R7 | `list_stocks` 对当前页一次批量合并；两列默认可见且不参与服务端排序 | `RelatedBoardCell`、`StocksView`、`stocks.table` | `GET /api/stocks` 行内可选 `related_boards` | 随主表 loading；无结果“—”；摘要缺失不阻断主表；`stocks:view` | T6、T7、T8 |
-| 分组表行业走势/概念走势 | R5、R6、R7 | `StockGroupRepo.get` 在 PG/行情合并完成后，按当前页代码和逐行 `last_date` 一次批量附加 | 同一共享单元格、`stocks.groupTable` | `GET /api/stock-groups/{gid}` | 严禁跨库 JOIN；日期不匹配显示“—”及历史说明；原分组错误态不变 | T6、T7、T8 |
+| 分组表行业走势/概念走势 | R5、R6、R7 | `StockGroupRepo.get` 在 PG/行情合并完成后，按当前页代码和逐行 `last_date` 一次批量附加 | 同一共享单元格、`stocks.groupTable` | `GET /api/stock-groups/{gid}` | 严禁跨库 JOIN；日期不匹配统一显示“—”；原分组错误态不变 | T6、T7、T8 |
 | 悬浮解释 | R6 | 可聚焦 popover 展示 score、20/60 相关度、样本、截止日；低可信显示“相关性较弱” | `RelatedBoardCell` | 行内摘要 | 长名称单行退化；字段缺失安全显示“—” | T7 |
 | 权限感知跳转 | R6 | 有 `sectors:view` 才渲染可点击入口并导航 `/sectors/:code` | `RelatedBoardCell`、权限工具 | 无额外请求 | 无权限为普通文本，不触发 403；详情后端仍 fail-closed | T7 |
 | 列显隐 | R6、R7 | 在两个 slot 的 `componentMeta.columns` 登记并消费 `hiddenColumns` | `pageRegistry.ts`、现有设置抽屉 | 现有布局/用户偏好接口 | 保存、读取、重置和旧配置缺字段回退沿用现有机制 | T7、T8 |
@@ -175,7 +176,7 @@ index_bar + stock_basic ───┘       │ 版本化相关性算法（当前
 
 | 页面功能点 | 需求 | 技术实现 | 组件/模块 | 数据/API | 状态、权限与异常 | 任务 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 榜单行业走势/概念走势 | R5、R6、R8 | `board_run` 得到 Top N 后按代码和 `run_date` 批量合并；登记两列并真实消费 | `RelatedBoardCell`、`BoardView`、`board.table` | `POST /api/board/run` | 最新日期展示；历史不即时回算，显示“—”；摘要空不影响榜单 | T6、T7、T8 |
+| 榜单行业走势/概念走势 | R5、R6、R8 | `board_run` 得到 Top N 后按代码和 `run_date` 批量合并；登记两列并真实消费 | `RelatedBoardCell`、`BoardView`、`board.table` | `POST /api/board/run` | 同日当前版本展示；缺档只登记异步首次任务，不在请求内计算；摘要空不影响榜单 | T6、T7、T8 |
 | 历史链路隔离 | R8 | `board_compute`、回测买入日榜单及评分快照不调用摘要服务 | 后端回归测试 | `GET /api/board/compute` | 防未来数据；原排名、评分档、分项分不变 | T6、T10 |
 | 点击、悬浮、列显隐 | R6、R8 | 完全复用共享单元格和现有列偏好 | `RelatedBoardCell`、设置抽屉 | 行内摘要 | `board:view` 查看；`sectors:view` 决定点击；主表四态不变 | T7、T8 |
 
@@ -185,7 +186,7 @@ index_bar + stock_basic ───┘       │ 版本化相关性算法（当前
 
 | 页面功能点 | 需求 | 技术实现 | 组件/模块 | 数据/API | 状态、权限与异常 | 任务 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 筛选行业走势/概念走势 | R5、R6、R9 | `screen_scored` 形成最终命中并排序后，按代码和 `run_date` 批量附加 | `RelatedBoardCell`、`ScreenView`、`screen.result` | `POST /api/screen/run` | 最新显示；历史为空；摘要不参与筛选表达式、评分或排序 | T6、T7、T8 |
+| 筛选行业走势/概念走势 | R5、R6、R9 | `screen_scored` 形成最终命中并排序后，按代码和 `run_date` 批量附加 | `RelatedBoardCell`、`ScreenView`、`screen.result` | `POST /api/screen/run` | 同日当前版本展示；缺档等待时显示“计算中”，其他缺失显示“—”；摘要不参与筛选表达式、评分或排序 | T6、T7、T8 |
 | CSV 导出 | R9 | 根据当前列可见性追加“行业走势”“概念走势”名称，空值输出空字符串 | `ScreenView.exportCsv`、现有 `downloadCsv` | 当前页面结果 | 不导出代码、分数、样本、算法字段；原列顺序和内容不变 | T8 |
 | 点击、悬浮、列显隐 | R6、R9 | 复用共享单元格，登记并消费两列 | `RelatedBoardCell`、设置抽屉 | 行内摘要 | `screen:run` 查看；`sectors:view` 决定点击；重跑时随结果整体替换 | T7、T8 |
 
@@ -238,7 +239,7 @@ index_bar + stock_basic ───┘       │ 版本化相关性算法（当前
 | 页面/区域 | ready | loading | empty | error | permission |
 | --- | --- | --- | --- | --- | --- |
 | 三个业务主表 | 原表 + 两个可配置列；摘要空仅显示单元格“—” | 首次/刷新继续由 `AppDataTable` 分流，不新增逐行 loading | 主表继续使用唯一全局表格空态；无冠军不是整表空态 | 主请求错误接管原区域并保留重试；摘要查询异常按原接口整体错误策略处理，不吞成伪空 | 原页面 403 走既有无权态；`sectors:view` 缺失只让名称不可点击 |
-| 历史日期单元格 | 名称不展示，显示“—”并提供“未保留该历史日期”解释 | 不单独加载 | 属于合法局部空值，不触发主表 empty | 不把日期不匹配当错误 | 仍按原页面查看权限；不尝试跳转 |
+| 缺失日期单元格 | 真实等待首次任务时显示“计算中”；其他缺失统一显示“—” | 复用公共轮询生命周期 | 属于局部状态，不触发主表 empty | 不把日期不匹配当整页错误 | 仍按原页面查看权限；不尝试跳转 |
 | 调度表/编辑 dialog | 类型、范围、force 正常回显并可保存 | 类型列表/保存/立即执行展示现有 loading | 无任务继续使用现有任务表空态 | 参数 400 保留 dialog 和输入；列表/执行失败留可见错误及重试/纠正入口 | `data-schedule:manage` / `data-task:manage` 按 system-only 守卫，前端动作与后端 403 双重验证 |
 
 维护矩阵与 DESIGN 合规结论：
@@ -371,13 +372,13 @@ index_bar + stock_basic ───┘       │ 版本化相关性算法（当前
 - 依赖：T6
 - 需求：R6
 - 涉及：`frontend/src/components/RelatedBoardCell.vue`、组件测试、`frontend/src/layout/pageRegistry.ts`、`DESIGN.md`、pageRegistry 测试。
-- 操作：实现名称、可聚焦结构化 popover、低可信提示、空态、历史不匹配说明和权限感知导航；为四个业务表 slot 登记两列；组件进入 DESIGN 真实复用组件清单。
+- 操作：实现名称、可聚焦结构化 popover、低可信提示、统一空态和权限感知导航；为四个业务表 slot 登记两列；组件进入 DESIGN 真实复用组件清单。
 - 产出：`RelatedBoardCell.vue`、四个 slot 列登记、DESIGN 组件登记、组件与 pageRegistry 契约测试。
 - 影响：新增业务域复用组件，不新增系统组件 kind、配置字段、主题 token 或布局 schema。
-- 边界：无 `sectors:view` 不渲染链接；空/历史不匹配均显示“—”但提示不同；最多展示四位小数；不在页面复制 popover。
+- 边界：无 `sectors:view` 不渲染链接；所有非等待缺失统一显示“—”且不增加原因标签；最多展示四位小数；不在页面复制 popover。
 - 验证：组件 Vitest 覆盖 high/medium/low/null/mismatch/有无权限、键盘聚焦和无链接跳转；pageRegistry 候选与真实消费双向测试。
 - 完成标准：三个页面能消费同一组件契约，列配置可保存/读取/回退。
-- 实际落地情况：已新增共享 `RelatedBoardCell` 与跨 API 复用的 `relatedBoards` 类型契约，统一呈现冠军名称、综合/20日/60日相关度、20/60日有效样本和截止日，数值最多四位小数；冠军名称使用小号朴素标签，页面不额外展示有效样本定义提示。低可信固定提示“相关性较弱”，无冠军与历史不匹配都显示“—”，但只有历史不匹配提供“未保留该历史日期的相关性结果”可聚焦提示。有 `sectors:view` 或 system 身份才生成经编码的 `/sectors/:code` 链接，无权限保持可聚焦纯文本且不触发权限错误。`board.table`、`screen.result`、`stocks.table`、`stocks.groupTable` 已各登记“行业走势/概念走势”两列，继续继承既有 `hiddenColumns` 保存、读取、重置和旧配置回退机制。T7 曾以精确 8 项过渡集合锁定待消费列；T8 已删除该集合并恢复零例外双向门禁。组件、pageRegistry 与页面状态聚焦回归 `76 passed`，生产构建通过；专项真实后端三视口 E2E `5 passed / 4 skipped`，验证列名、键盘聚焦说明、列显隐和三业务页真实数据链路。未新增系统组件 kind、配置字段、主题 token、布局 schema、路由、菜单或权限 seed。
+- 实际落地情况：共享 `RelatedBoardCell` 与跨 API 复用的 `relatedBoards` 类型契约统一呈现冠军名称、综合/20日/60日相关度、20/60日有效样本和截止日，数值最多四位小数；冠军名称使用小号朴素标签，页面不额外展示有效样本定义提示。低可信固定提示“相关性较弱”，所有非等待缺失统一显示“—”，不展示额外原因标签或悬浮说明。有 `sectors:view` 或 system 身份才生成经编码的 `/sectors/:code` 链接，无权限保持可聚焦纯文本且不触发权限错误。`board.table`、`screen.result`、`stocks.table`、`stocks.groupTable` 已各登记“行业走势/概念走势”两列，继续继承既有 `hiddenColumns` 保存、读取、重置和旧配置回退机制。表格与天梯共同消费 `useAsyncResultPolling` 的绝对超时、单请求串行、上下文与卸载清理，只保留固定间隔和分阶段退避的业务差异。未新增系统组件 kind、配置字段、主题 token、布局 schema、路由、菜单或权限 seed。
 
 ### 6.8 任务 T8：接入个股、榜单、筛选页面与 CSV
 

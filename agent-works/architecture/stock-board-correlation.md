@@ -6,7 +6,7 @@
 
 > “走势相关”表示在扣除共同市场基准后，股票与板块收益的同步程度；不表示公司主营归属、当前有效成分关系、因果关系或投资建议。
 
-需求与验收边界见 [`../stock-board-correlation/requirement.md`](../stock-board-correlation/requirement.md)，开发和验证证据见 [`../stock-board-correlation/plan.md`](../stock-board-correlation/plan.md) 与 [`../stock-board-correlation/performance-report.md`](../stock-board-correlation/performance-report.md)。
+当前端到端运行事实见 [`../stock-board-correlation/stock-board-correlation-closed-loop-flow.md`](../stock-board-correlation/stock-board-correlation-closed-loop-flow.md)，需求与验收边界见 [`../stock-board-correlation/requirement.md`](../stock-board-correlation/requirement.md)，开发和验证证据见 [`../stock-board-correlation/plan.md`](../stock-board-correlation/plan.md) 与 [`../stock-board-correlation/performance-report.md`](../stock-board-correlation/performance-report.md)。
 
 ## 页面字段怎么理解
 
@@ -33,7 +33,7 @@
 | 结果维护与调度 | 缺失快照由读取入口创建一次首次计算；已有结果的再次维护支持最新完整日或固定交易日、全市场或指定股票，手动与调度均强制重算，代码不创建默认调度 | `backend/services/stock_board_correlation.py`、`backend/services/result_maintenance.py`、`backend/scheduler/scheduler.py` |
 | 数据结构 | 冠军与状态按交易日快照（每日一行），保存各交易日结果，不保存候选明细 | `backend/storage/ddl.py` |
 | 后端读取 | 单股累计归属及冠军接口；股票、分组、榜单和筛选结果形成后批量附加摘要；天梯按整份日期快照合并同日冠军 | `backend/api/stocks.py`、`backend/groups/stock_group.py`、`backend/api/board.py`、`backend/services/screen_score.py`、`backend/services/limit_ladder_query.py` |
-| 前端展示 | 四个表格 slot 复用同一单元格，统一相关度、有效样本、截止日、低可信提示、历史保护和权限跳转 | `frontend/src/components/RelatedBoardCell.vue`、`frontend/src/layout/pageRegistry.ts` |
+| 前端展示 | 四个表格 slot 复用同一单元格并在后台轮询时只合并走势摘要；表格与天梯复用同一轮询生命周期，分别保留轻量固定间隔和天梯分阶段退避策略 | `frontend/src/components/RelatedBoardCell.vue`、`frontend/src/composables/useAsyncResultPolling.ts`、`frontend/src/composables/useRelatedBoardFirstLoad.ts`、`frontend/src/layout/pageRegistry.ts` |
 
 ## 系统架构
 
@@ -52,7 +52,7 @@ flowchart LR
   STATE --> READ[批量摘要读取]
   WINNER --> READ
   READ -->|同日快照缺失| TASK
-  READ --> PAGES[股票 / 分组 / 榜单 / 筛选]
+  READ --> PAGES[股票 / 分组 / 榜单 / 筛选 / 天梯]
 ```
 
 ## 算法口径
@@ -159,7 +159,7 @@ board_neutral_t = board_return_t - benchmark_return_t
 
 四个业务表格统一使用“行业走势”“概念走势”列名，冠军名称以小号朴素标签展示。悬浮层保留综合相关度、20/60 日相关度、20/60 日有效样本数和数据截止日；有效样本的技术定义由本文统一维护，页面不重复展示定义句。
 
-按业务日期只匹配该日冠军快照返回。该日、该股票范围无状态快照时，GET 使用算法版本、日期和规范化股票范围生成稳定触发事件，幂等创建 `stock_board_correlation` 异步首次计算任务；请求线程不计算、不写正式结果，页面显示“计算中”并通过原业务读取接口自动刷新，不依赖任务中心管理权限。同范围重复读取复用任务；全局写槽繁忙时继续返回 `first_load_pending`，后续业务轮询在写槽释放后补建该范围任务；只有任务基础设施异常等创建失败才返回 `as_of_mismatch`。任务失败后不会由数据变化或采集链路自动重试，用户可在结果维护或调度中显式执行。
+按业务日期只匹配该日、当前算法版本的冠军快照返回，旧版本和其他日期均不得装饰当前业务行。缺少状态快照时，GET 使用算法版本、日期、规范化股票范围和上游数据水位生成触发事件，幂等创建 `stock_board_correlation` 异步首次计算任务；请求线程不计算、不写正式结果，只有任务已经创建且处于 `pending/running` 时页面才显示“计算中”并通过原业务读取接口自动刷新。同一数据水位的失败任务不会被查询反复重建；上游最新日推进或同日补数改变水位后，允许一次新尝试。全局写槽被其他任务占用时，走势任务尚未创建，页面直接降级为空；写槽释放后由再次读取、结果维护或已配置调度决定是否创建。采集任务本身不直接触发失效或重算。
 
 ## 空结果怎么判断
 
@@ -168,8 +168,8 @@ board_neutral_t = board_return_t - benchmark_return_t
 - 股票在该业务日没有该类型候选。
 - 股票、候选板块或基准在窗口内缺少相邻收盘，导致共同有效样本低于 15/40。
 - 中性收益为常数或相关系数无法得到有限值。
-- 页面业务日期没有同日结果快照，且首次任务未能创建或已经失败，此时返回 `as_of_mismatch`。
-- 尚未成功执行过该业务日相关性任务时返回 `first_load_pending`，页面显示“计算中”。
+- 页面业务日期没有同日当前版本结果快照，且首次任务未能创建或同数据水位任务已经失败，此时返回 `as_of_mismatch`，页面仍统一显示“—”。
+- 已成功创建该业务日首次任务且任务仍为 `pending/running` 时返回 `first_load_pending`，页面显示“计算中”。
 
 每日状态表不保存逐股空结果原因。页面只能区分业务日期快照缺失和普通无冠军，不能从 `has_*_champion=false` 反推出具体缺数来源；若产品需要展示原因，需要新增持久化字段和接口契约。
 
@@ -211,7 +211,7 @@ AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:stock-board-correlation
 | --- | --- | --- | --- |
 | 中 | `board_member` 只有首次观察日，没有移出时间线 | 已退出板块的股票仍可能参与候选比较 | `NULL` 兼容全部历史，明确首次观察日晚于目标日则排除；页面不宣称当前主营或有效归属 |
 | 中 | 基准或行情缺口降低共同有效样本 | 候选无冠军或可信度降低 | 相邻日不桥接、15/40 门槛、基准整股回退、上证不足整批失败 |
-| 中 | 历史交易日无快照 | 首次读取需等待后台任务，失败时该历史日期仍无结果 | GET 幂等创建指定日期、指定范围的异步首次任务且不在请求内同步写库；失败后由结果维护或用户调度重试 |
+| 中 | 业务日当前版本无快照 | 首次读取需等待后台任务，失败时该业务日仍无结果 | GET 按数据水位幂等创建指定日期、指定范围的异步首次任务；同水位失败不循环，上游补数后可再尝试，也可由结果维护或用户调度重算 |
 | 中 | 每日状态不保存空结果原因 | 页面只能显示“—”，运维诊断需查候选和行情 | 技术文档明确边界；若要展示原因需独立扩展数据契约 |
 | 中 | 生产并发与硬件不同于本地验证 | 全量任务窗口或读取尾延迟可能变化 | DuckDB 写互斥、内存计算、短事务切换；生产首轮继续观察 |
 | 低 | 负相关候选仍可成为相对冠军 | 用户可能误读为强同向关联 | 页面显示带符号相关度并将结果标为低可信；文档明确解释 |

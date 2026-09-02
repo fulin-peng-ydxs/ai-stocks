@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from backend.api import limit_ladder as api_module
 from backend.auth.context import AuthContext, reset_context, set_context
 from backend.common.exceptions import ForbiddenError
+from backend.indicators.stock_board_correlation import ALGORITHM_VERSION
 from backend.services.async_task import ConcurrentTaskError
 from backend.services.limit_ladder_query import LimitLadderFilters, LimitLadderQueryService
 from backend.services.limit_ladder_snapshot import RULE_VERSION, LimitLadderSnapshotService
@@ -108,10 +109,10 @@ def _seed_ladder(market):
             code,as_of_date,computed_at,algorithm_version,benchmark_code,
             benchmark_fallback,has_industry_champion,has_concept_champion
         ) VALUES
-          ('600001.SH',?,current_timestamp,'v1','000300.SH',false,true,true),
-          ('600002.SH',?,current_timestamp,'v1','000300.SH',false,false,false)
+          ('600001.SH',?,current_timestamp,?,'000300.SH',false,true,true),
+          ('600002.SH',?,current_timestamp,?,'000300.SH',false,false,false)
         """,
-        [trade_date, trade_date],
+        [trade_date, ALGORITHM_VERSION, trade_date, ALGORITHM_VERSION],
     )
     market.execute(
         """
@@ -119,10 +120,10 @@ def _seed_ladder(market):
             code,board_type,board_code,score,corr_20,corr_60,sample_20,sample_60,
             confidence,benchmark_code,benchmark_fallback,as_of_date,computed_at,algorithm_version
         ) VALUES
-          ('600001.SH','concept','C002',0.8,0.8,0.8,20,60,'high','000300.SH',false,?,current_timestamp,'v1'),
-          ('600001.SH','industry','I900',0.7,0.7,0.7,20,60,'high','000300.SH',false,?,current_timestamp,'v1')
+          ('600001.SH','concept','C002',0.8,0.8,0.8,20,60,'high','000300.SH',false,?,current_timestamp,?),
+          ('600001.SH','industry','I900',0.7,0.7,0.7,20,60,'high','000300.SH',false,?,current_timestamp,?)
         """,
-        [trade_date, trade_date],
+        [trade_date, ALGORITHM_VERSION, trade_date, ALGORITHM_VERSION],
     )
     outcome = LimitLadderSnapshotService(market).materialize(trade_date, task_id="task-ok")
     assert outcome.status == "valid"
@@ -173,14 +174,14 @@ def test_query_does_not_resurrect_old_concept_after_same_day_legal_empty(market)
     prior_date = trade_date - timedelta(days=1)
     market.execute(
         "INSERT INTO stock_board_correlation_state VALUES "
-        "('600002.SH',?,current_timestamp,'v1','000300.SH',false,false,true)",
-        [prior_date],
+        "('600002.SH',?,current_timestamp,?,'000300.SH',false,false,true)",
+        [prior_date, ALGORITHM_VERSION],
     )
     market.execute(
         "INSERT INTO stock_board_correlation VALUES "
         "('600002.SH','concept','C001',0.6,0.6,0.6,20,60,'medium','000300.SH',false,?,"
-        "current_timestamp,'v1')",
-        [prior_date],
+        "current_timestamp,?)",
+        [prior_date, ALGORITHM_VERSION],
     )
     data = LimitLadderQueryService(market, coordinator=_FakeCoordinator()).query(
         trade_date, LimitLadderFilters(window=10, ignore_st=False)

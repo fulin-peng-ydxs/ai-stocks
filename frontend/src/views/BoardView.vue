@@ -48,6 +48,7 @@ import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import {
   relatedBoardFirstLoadContext,
+  mergeRelatedBoardResults,
   useRelatedBoardFirstLoad,
 } from '@/composables/useRelatedBoardFirstLoad'
 import { useStockSet } from '@/stores/stockSet'
@@ -429,19 +430,23 @@ function scoreLevel(v: number | undefined): string {
   return n >= 80 ? 'hi' : n >= 50 ? 'mid' : 'lo'
 }
 let loadSequence = 0
-const relatedBoardFirstLoad = useRelatedBoardFirstLoad(load)
+const relatedBoardFirstLoad = useRelatedBoardFirstLoad(() => loadBoard(false, true))
 const recomputing = ref(false)
-async function loadBoard(force: boolean): Promise<boolean> {
+async function loadBoard(force: boolean, background = false): Promise<boolean> {
   if (!profileRef.value) return false
   const selected = curProfile.value
   if (!selected) {
-    error.value = '评分方案信息尚未加载完成，请重新选择'
-    loading.value = false
+    if (!background) {
+      error.value = '评分方案信息尚未加载完成，请重新选择'
+      loading.value = false
+    }
     return false
   }
   const sequence = ++loadSequence
-  loading.value = true
-  error.value = ''
+  if (!background) {
+    loading.value = true
+    error.value = ''
+  }
   try {
     const res = await runBoardProfile({
       ...(selected.profile_ref ? { profile_ref: selected.profile_ref } : { profile_id: selected.id }),
@@ -450,7 +455,8 @@ async function loadBoard(force: boolean): Promise<boolean> {
       ...(force ? { force: true } : {}),
     })
     if (sequence !== loadSequence) return false
-    rows.value = res.list
+    if (background) mergeRelatedBoardResults(rows.value, res.list)
+    else rows.value = res.list
     relatedBoardFirstLoad.observe(
       res.list,
       relatedBoardFirstLoadContext(res.list, res.run_date),
@@ -460,7 +466,7 @@ async function loadBoard(force: boolean): Promise<boolean> {
     runDate.value = res.run_date
     await nextTick()
     syncingRunDate.value = false
-    if (!res.list.length) ElMessage.info('无结果（可能该日无数据）')
+    if (!background && !res.list.length) ElMessage.info('无结果（可能该日无数据）')
     if (sequence === loadSequence && pendingDefaultKey === profileRef.value) pendingDefaultKey = ''
     return true
   } catch (e) {
@@ -478,10 +484,10 @@ async function loadBoard(force: boolean): Promise<boolean> {
       ElMessage.warning('默认加载方案已不可见（可能已被取消公开或删除），已清除默认设置')
       return false
     }
-    error.value = getErrorMessage(e, force ? '榜单重算失败' : '榜单加载失败')
+    if (!background) error.value = getErrorMessage(e, force ? '榜单重算失败' : '榜单加载失败')
     return false
   } finally {
-    if (sequence === loadSequence) loading.value = false
+    if (!background && sequence === loadSequence) loading.value = false
   }
 }
 

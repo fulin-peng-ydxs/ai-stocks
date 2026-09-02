@@ -191,18 +191,15 @@ describe('RelatedBoardCell', () => {
     expect(wrapper.get('[data-testid="empty-related-board"]').attributes('aria-label')).toBe('暂无走势板块')
   })
 
-  it('历史日期不匹配仍显示破折号，但提供可聚焦的固定说明', () => {
+  it('日期无结果与合法空结果统一只显示破折号', () => {
     const wrapper = mountCell({
       summary: { ...summary('high'), industry: null, unavailable_reason: 'as_of_mismatch' },
       boardType: 'industry',
     })
 
     expect(wrapper.text()).toBe('—')
-    expect(wrapper.get('.tooltip-stub').attributes('data-content')).toBe('未保留该历史日期的相关性结果')
-    expect(wrapper.get('.related-board-cell__empty').attributes('tabindex')).toBe('0')
-    expect(wrapper.getComponent(ElTooltipStub).props('trigger')).toEqual(['hover', 'focus'])
-    ;(wrapper.get('.related-board-cell__empty').element as HTMLElement).focus()
-    expect(document.activeElement).toBe(wrapper.get('.related-board-cell__empty').element)
+    expect(wrapper.find('.tooltip-stub').exists()).toBe(false)
+    expect(wrapper.get('.related-board-cell__empty').attributes('aria-label')).toBe('暂无走势板块')
   })
 
   it('首次计算任务创建后显示明确的计算中状态', () => {
