@@ -160,6 +160,31 @@ def test_group_page_attaches_related_boards_by_each_members_last_date(repo):
     assert row["related_boards"]["industry"]["name"] == "银行"
 
 
+def test_group_reuses_stock_filters_and_trade_date_cutoff(repo):
+    """分组视图复用普通列表筛选，并按所选交易日计算当时行情和累计涨幅。"""
+    repo.mkt.execute("UPDATE stock_basic SET board='主板' WHERE code='A'")
+    repo.mkt.execute("UPDATE stock_basic SET name='ST乙股', board='创业板' WHERE code='B'")
+    gid = repo.create("筛选组", date(2026, 1, 2), codes=["A", "B"])
+
+    as_of = repo.get(gid, trade_date=date(2026, 1, 5), sort_by="code")
+    rows = {row["code"]: row for row in as_of["members"]["list"]}
+    assert rows["A"]["last_date"] == "2026-01-05"
+    assert rows["A"]["price"] == 110.0
+    assert rows["A"]["ret"] == 0.1
+    assert rows["B"]["ret"] == round(50 / 60 - 1, 4)
+
+    main_board = repo.get(gid, board="主板", trade_date=date(2026, 1, 5))
+    assert [row["code"] for row in main_board["members"]["list"]] == ["A"]
+    assert repo.get(gid, board="创业板", exclude_st=True)["members"]["total"] == 0
+    st_only = repo.get(gid, board="ST")
+    assert [row["code"] for row in st_only["members"]["list"]] == ["B"]
+
+    repo.mkt.execute("UPDATE stock_basic SET delist_date='2026-02-01' WHERE code='A'")
+    assert repo.get(gid)["members"]["total"] == 2
+    assert repo.get(gid, exclude_delisted=True)["members"]["total"] == 1
+    assert [row["code"] for row in repo.get(gid, board="退市")["members"]["list"]] == ["A"]
+
+
 def test_member_before_data_has_null_return(repo):
     """加入日晚于该股最后数据 → 无法取基准价，涨幅置空，不计入整组平均。"""
     gid = repo.create("组", date(2026, 1, 2), "", ["A"])

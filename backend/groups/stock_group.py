@@ -20,10 +20,10 @@ from datetime import date, datetime
 
 import pandas as pd
 
+from backend.auth.context import get_current_owner
 from backend.common.logging import get_logger
 from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
-from backend.auth.context import get_current_owner
 
 log = get_logger("groups.stock_group")
 
@@ -202,6 +202,9 @@ class StockGroupRepo:
         return out
 
     def get(self, gid: str, page: int = 1, size: int = 50, q: str | None = None,
+            board: str | None = None, exclude_st: bool = False,
+            exclude_delisted: bool = False,
+            trade_date: date | None = None,
             sort_by: str = "add_date", sort_order: str = "asc") -> dict | None:
         self.ensure_default_group()
         g = self.pg.query_df(
@@ -217,16 +220,25 @@ class StockGroupRepo:
         # 内部字段不外泄
         meta.pop("tenant_id", None)
         meta.pop("owner_user_id", None)
-        all_members = self._members_with_returns(gid)
+        all_members = self._members_with_returns(gid, trade_date=trade_date)
         rets = [m["ret"] for m in all_members if m["ret"] is not None]
         meta["avg_ret"] = round(sum(rets) / len(rets), 4) if rets else None
         meta["count"] = len(all_members)
-        filtered = self._filter_members(all_members, q)
+        filtered = self._filter_members(
+            all_members,
+            q,
+            board=board,
+            exclude_st=exclude_st,
+            exclude_delisted=exclude_delisted,
+        )
         sorted_members = self._sort_members(filtered, sort_by, sort_order)
         page = max(int(page), 1)
         size = max(min(int(size), 200), 1)
         start = (page - 1) * size
-        page_rows = sorted_members[start:start + size]
+        page_rows = [
+            {key: value for key, value in member.items() if not key.startswith("_")}
+            for member in sorted_members[start:start + size]
+        ]
         from backend.services.stock_board_correlation import StockBoardCorrelationService
 
         StockBoardCorrelationService(self.mkt).attach_related_boards(
@@ -241,17 +253,29 @@ class StockGroupRepo:
         }
         return meta
 
-    def _filter_members(self, members: list[dict], q: str | None) -> list[dict]:
-        if not q:
-            return members
-        needle = q.strip().lower()
-        if not needle:
-            return members
-        return [
-            m for m in members
-            if needle in str(m.get("code") or "").lower()
-            or needle in str(m.get("name") or "").lower()
-        ]
+    def _filter_members(self, members: list[dict], q: str | None,
+                        *, board: str | None = None,
+                        exclude_st: bool = False,
+                        exclude_delisted: bool = False) -> list[dict]:
+        needle = (q or "").strip().lower()
+
+        def matches(member: dict) -> bool:
+            if needle and (
+                needle not in str(member.get("code") or "").lower()
+                and needle not in str(member.get("name") or "").lower()
+            ):
+                return False
+            if board == "退市":
+                return bool(member.get("_delisted"))
+            if member.get("_delisted") and (board or exclude_delisted):
+                return False
+            if board == "ST":
+                return bool(member.get("_is_st"))
+            if board and member.get("_board") != board:
+                return False
+            return not (exclude_st and member.get("_is_st"))
+
+        return [member for member in members if matches(member)]
 
     def _sort_members(self, members: list[dict], sort_by: str, sort_order: str) -> list[dict]:
         key = sort_by if sort_by in {"code", "name", "add_date", "ret", "last_date", "price", "pct_chg"} else "add_date"
@@ -287,7 +311,7 @@ class StockGroupRepo:
             })
         return out
 
-    def _members_with_returns(self, gid: str) -> list[dict]:
+    def _members_with_returns(self, gid: str, trade_date: date | None = None) -> list[dict]:
         # 1) 成员：PG（资产）
         m = self.pg.query_df(
             f"SELECT code, add_date, note FROM stock_group_member "
@@ -299,13 +323,15 @@ class StockGroupRepo:
         ph = ",".join("?" * len(codes))   # 行情库 DuckDB 占位符
         # 2) 行情：DuckDB（只读）——名称 + 各股最新前复权收盘/当日涨跌
         names_df = self.mkt.query_df(
-            f"SELECT code, name FROM stock_basic WHERE code IN ({ph})", codes)
-        names = dict(zip(names_df["code"], names_df["name"]))
+            f"SELECT code, name, board, delist_date FROM stock_basic WHERE code IN ({ph})", codes)
+        basics = {row["code"]: row for row in names_df.to_dict("records")}
+        cutoff_clause = " AND trade_date<=?" if trade_date else ""
+        last_params = [*codes, trade_date] if trade_date else codes
         last = self.mkt.query_df(
             f"SELECT code, close*COALESCE(adj_factor_clean, adj_factor) AS h, close AS px, "
             f"       CASE WHEN pre_close > 0 THEN (close / pre_close - 1) * 100 END AS day_pct, trade_date FROM "
             f"(SELECT *, row_number() OVER (PARTITION BY code ORDER BY trade_date DESC) AS rn "
-            f" FROM daily_bar WHERE code IN ({ph})) WHERE rn=1", codes)
+            f" FROM daily_bar WHERE code IN ({ph}){cutoff_clause}) WHERE rn=1", last_params)
         last_h = dict(zip(last["code"], last["h"]))
         last_px = dict(zip(last["code"], last["px"]))
         last_pct = dict(zip(last["code"], last["day_pct"]))
@@ -317,21 +343,31 @@ class StockGroupRepo:
             ad = pd.Timestamp(r["add_date"]).date() if not pd.isna(r["add_date"]) else None
             entry = None
             if ad is not None:
+                entry_cutoff = " AND trade_date<=?" if trade_date else ""
+                entry_params = [code, ad, trade_date] if trade_date else [code, ad]
                 e = self.mkt.query_df(
                     "SELECT close*COALESCE(adj_factor_clean, adj_factor) AS h, trade_date FROM daily_bar "
-                    "WHERE code=? AND trade_date>=? ORDER BY trade_date LIMIT 1", [code, ad])
+                    f"WHERE code=? AND trade_date>=?{entry_cutoff} ORDER BY trade_date LIMIT 1",
+                    entry_params,
+                )
                 if not e.empty:
                     entry = float(e.iloc[0]["h"])
             lh = last_h.get(code)
             ret = round(float(lh / entry - 1), 4) if entry and lh and entry > 0 else None
             px = last_px.get(code)
             dpct = last_pct.get(code)
+            basic = basics.get(code, {})
+            name = basic.get("name")
+            delist_date = basic.get("delist_date")
             out.append({
-                "code": code, "name": names.get(code),
+                "code": code, "name": name,
                 "add_date": str(ad) if ad else None,
                 "ret": ret, "last_date": last_d.get(code),
                 "price": round(float(px), 2) if px is not None and not pd.isna(px) else None,
                 "pct_chg": round(float(dpct), 2) if dpct is not None and not pd.isna(dpct) else None,
                 "note": r["note"] or "",
+                "_board": basic.get("board"),
+                "_is_st": "ST" in str(name or "").upper(),
+                "_delisted": delist_date is not None and not pd.isna(delist_date),
             })
         return out

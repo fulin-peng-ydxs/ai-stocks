@@ -4,7 +4,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { PAGE_SIZE_OPTIONS, normalizePageSize } from '@/constants/pagination'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Edit } from '@element-plus/icons-vue'
+import { ArrowDown, Delete, Edit } from '@element-plus/icons-vue'
+import AppIconButton from '@/components/AppIconButton.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -211,14 +212,13 @@ watch(board, (b) => {
 watch(tradeDate, () => {
   if (restoringListState) return
   clearAnalysisSelection()
-  search()
+  searchCurrentView()
 })
 watch(() => settings.excludeSt, (value) => {
   if (restoringListState) return
-  if (inGroupMode.value) return
   if (board.value === 'ST' || board.value === '退市') return
   excludeSt.value = Boolean(value)
-  search()
+  searchCurrentView()
 })
 watch(defaultSortBy, (value) => {
   if (restoringListState) return
@@ -301,10 +301,11 @@ const groupError = ref('')
 const groupListError = ref('')
 const inGroupMode = computed(() => !!activeGid.value)
 const groupPage = ref(1)
-const groupQ = ref('')
 const groupSortBy = ref(groupDefaultSortBy.value)
 const groupSortOrder = ref<'asc' | 'desc'>(groupDefaultSortOrder.value)
 const groupTotal = computed(() => groupDetail.value?.members.total ?? 0)
+const lastActiveGid = ref('')
+let groupLoadRevision = 0
 // 首屏在远端组件默认值水合完成前保持恢复态，避免 watcher 抢跑并覆盖返回列表态。
 let restoringListState = true
 
@@ -333,10 +334,10 @@ const visibleDefaultView = computed<'list' | 'group'>({
 const defaultViewOptions = computed<{ label: string; value: 'list' | 'group' }[]>(() => (
   canViewGroups.value
     ? [
-        { label: '普通查询', value: 'list' },
-        { label: '默认分组', value: 'group' },
+        { label: '全市场', value: 'list' },
+        { label: '分组', value: 'group' },
       ]
-    : [{ label: '普通查询', value: 'list' }]
+    : [{ label: '全市场', value: 'list' }]
 ))
 async function reloadGroups() {
   // 次级加载按自身 view 码优雅降级：无 stock-group:view 的部分授权角色（如只授 stocks:view）
@@ -362,10 +363,12 @@ watch(activeGid, async (gid) => {
   cart.value = []   // 切换上下文清空选择
   if (!restoringListState) groupPage.value = 1
   if (!gid) {
+    groupLoadRevision += 1
     groupDetail.value = null
     await load()
     return
   }
+  lastActiveGid.value = gid
   if (!canViewGroups.value) {
     activeGid.value = ''
     return
@@ -375,14 +378,45 @@ watch(activeGid, async (gid) => {
 watch(() => settings.defaultView, async (value) => {
   if (restoringListState) return
   if (value === 'group') {
-    const dg = defaultGroup.value
-    if (canViewGroups.value && dg && dg.member_count > 0 && activeGid.value !== dg.id) activeGid.value = dg.id
+    changeView('group')
   } else if (activeGid.value) {
-    activeGid.value = ''
+    changeView('list')
   } else {
     await load()
   }
 })
+const currentView = computed<'list' | 'group'>(() => (inGroupMode.value ? 'group' : 'list'))
+const viewOptions = [
+  { label: '全市场', value: 'list' },
+  { label: '分组', value: 'group' },
+] satisfies { label: string; value: 'list' | 'group' }[]
+
+function changeView(value: 'list' | 'group') {
+  if (value === 'list') {
+    if (activeGid.value) lastActiveGid.value = activeGid.value
+    activeGid.value = ''
+    return
+  }
+  if (!canViewGroups.value) return
+  const remembered = groups.value.find((group) => group.id === lastActiveGid.value)
+  const target = remembered || defaultGroup.value || groups.value[0]
+  if (target) activeGid.value = target.id
+}
+
+function onViewChange(value: string | number | boolean) {
+  if (value === 'list' || value === 'group') changeView(value)
+}
+
+function switchGroup(gid: string) {
+  if (!canViewGroups.value || !gid) return
+  activeGid.value = gid
+}
+
+function searchCurrentView() {
+  clearAnalysisSelection()
+  if (inGroupMode.value) groupSearch()
+  else search()
+}
 async function loadGroupDetail() {
   if (!activeGid.value) return
   if (!canViewGroups.value) {
@@ -390,24 +424,33 @@ async function loadGroupDetail() {
     activeGid.value = ''
     return
   }
+  const gid = activeGid.value
+  const revision = ++groupLoadRevision
   groupLoading.value = true
   groupError.value = ''
   try {
-    groupDetail.value = await getGroup(activeGid.value, {
+    const detail = await getGroup(gid, {
       page: groupPage.value,
       size: groupSize.value,
-      q: groupQ.value || undefined,
+      q: q.value || undefined,
+      board: board.value || undefined,
+      exclude_st: excludeSt.value,
+      exclude_delisted: board.value !== '退市',
+      trade_date: tradeDate.value || undefined,
       sort_by: groupSortBy.value,
       sort_order: groupSortOrder.value,
     })
+    if (revision !== groupLoadRevision || gid !== activeGid.value) return
+    groupDetail.value = detail
     relatedBoardFirstLoad.observe(
-      groupDetail.value.members.list,
-      relatedBoardFirstLoadContext(groupDetail.value.members.list, (row) => row.last_date),
+      detail.members.list,
+      relatedBoardFirstLoadContext(detail.members.list, (row) => row.last_date),
     )
   } catch (error) {
+    if (revision !== groupLoadRevision || gid !== activeGid.value) return
     groupError.value = getErrorMessage(error, '分组明细加载失败')
   } finally {
-    groupLoading.value = false
+    if (revision === groupLoadRevision) groupLoading.value = false
   }
 }
 const groupRows = computed<GroupMember[]>(() => groupDetail.value?.members.list ?? [])
@@ -547,7 +590,11 @@ function groupQuerySnapshot() {
   return {
     page: groupPage.value,
     size: Math.min(groupSize.value, 100),
-    q: groupQ.value || undefined,
+    q: q.value || undefined,
+    board: board.value || undefined,
+    exclude_st: excludeSt.value,
+    exclude_delisted: board.value !== '退市',
+    trade_date: tradeDate.value || undefined,
     sort_by: groupSortBy.value,
     sort_order: groupSortOrder.value,
   }
@@ -566,7 +613,7 @@ function currentListState(): StockListState {
     activeGid: activeGid.value,
     groupPage: groupPage.value,
     groupSize: groupSize.value,
-    groupQ: groupQ.value,
+    groupQ: q.value,
     groupSortBy: groupSortBy.value,
     groupSortOrder: groupSortOrder.value,
   }
@@ -691,8 +738,10 @@ async function doDeleteGroup() {
   await ElMessageBox.confirm(`确认删除分组「${groupDetail.value.name}」？成员关系一并清除。`, '删除分组', { type: 'warning' })
   await deleteGroup(activeGid.value)
   ElMessage.success('已删除')
-  activeGid.value = ''
   await reloadGroups()
+  lastActiveGid.value = ''
+  const fallback = defaultGroup.value || groups.value[0]
+  activeGid.value = fallback?.id || ''
 }
 
 onMounted(async () => {
@@ -705,7 +754,7 @@ onMounted(async () => {
   const restore = route.query.restore === '1' ? stockSet.listState : null
   if (restore) {
     restoringListState = true
-    q.value = restore.q
+    q.value = restore.mode === 'group' ? (restore.groupQ || restore.q) : restore.q
     board.value = restore.board
     excludeSt.value = restore.excludeSt
     tradeDate.value = restore.tradeDate
@@ -716,7 +765,6 @@ onMounted(async () => {
     size.value = normalizePageSize(restore.size)
     groupSize.value = normalizePageSize(restore.groupSize)
     groupPage.value = restore.groupPage
-    groupQ.value = restore.groupQ
     groupSortBy.value = restore.groupSortBy
     groupSortOrder.value = restore.groupSortOrder
     activeGid.value = restore.mode === 'group' && canViewGroups.value ? restore.activeGid : ''
@@ -739,7 +787,7 @@ onMounted(async () => {
   restoringListState = true
   tradeDate.value = dataMax.value || ''
   restoringListState = false
-  if (canViewGroups.value && settings.defaultView === 'group' && dg && dg.member_count > 0) {
+  if (canViewGroups.value && settings.defaultView === 'group' && dg) {
     activeGid.value = dg.id
   } else {
     await load()
@@ -766,14 +814,6 @@ onMounted(async () => {
       <p class="page-subtitle">按代码/名称/板块筛选个股行情，可跨分页勾选与分组管理。</p>
       </div>
       <div class="page-head-actions">
-        <el-select v-if="canViewGroups" v-model="activeGid" placeholder="查看分组" clearable filterable style="width: 220px">
-          <el-option v-for="g in groups" :key="g.id" :value="g.id" :label="`${g.name}（${g.member_count}）`">
-            <span class="group-option">
-              <span class="color-dot" :style="{ backgroundColor: g.color }" />
-              <span>{{ g.name }}（{{ g.member_count }}）</span>
-            </span>
-          </el-option>
-        </el-select>
         <AppStateBlock
           v-if="groupListError"
           state="error"
@@ -788,11 +828,21 @@ onMounted(async () => {
     </div>
 
     <!-- 搜索 / 筛选（置顶）-->
-    <el-card v-if="!inGroupMode" shadow="never" class="filter-card">
+    <el-card shadow="never" class="filter-card">
       <AppControlRow class="filter-row">
+        <PageSegmented
+          v-if="canViewGroups"
+          :model-value="currentView"
+          :options="viewOptions"
+          aria-label="个股范围"
+          test-id="stocks-list-scope"
+          size="small"
+          tone="primary"
+          @update:model-value="onViewChange"
+        />
         <TradeDatePicker v-model="tradeDate" placeholder="交易日期" clearable style="width: 180px" />
-        <AppSearchInput v-model="q" placeholder="代码 / 名称" style="width: 220px" @search="search" />
-        <el-select v-model="board" placeholder="全部板块" style="width: 130px" clearable @change="search">
+        <AppSearchInput v-model="q" placeholder="代码 / 名称" style="width: 220px" @search="searchCurrentView" />
+        <el-select v-model="board" placeholder="全部板块" style="width: 130px" clearable @change="searchCurrentView">
           <el-option label="主板" value="主板" />
           <el-option label="创业板" value="创业板" />
           <el-option label="科创板" value="科创板" />
@@ -806,11 +856,28 @@ onMounted(async () => {
     <el-card v-if="inGroupMode && groupDetail" shadow="never" class="group-banner">
       <div class="gb-row">
         <div class="gb-main">
-          <span class="gb-name gb-name-edit" title="点击编辑分组" @click="openEdit">
-            <span class="color-dot" :style="{ backgroundColor: groupDetail.color }" />
-            {{ groupDetail.name }}
-            <el-icon class="gb-edit-icon"><Edit /></el-icon>
-          </span>
+          <el-dropdown trigger="click" @command="switchGroup">
+            <el-button link type="primary" class="gb-name" data-testid="stocks-group-switcher">
+              <span class="color-dot" :style="{ backgroundColor: groupDetail.color }" />
+              {{ groupDetail.name }}
+              <el-icon><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item
+                  v-for="g in groups"
+                  :key="g.id"
+                  :command="g.id"
+                  :disabled="g.id === activeGid"
+                >
+                  <span class="group-option">
+                    <span class="color-dot" :style="{ backgroundColor: g.color }" />
+                    <span>{{ g.name }}（{{ g.member_count }}）</span>
+                  </span>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-tag size="small" effect="plain">建组 {{ groupDetail.group_date || '—' }}</el-tag>
           <el-tag v-if="groupDetail.is_default" size="small" type="danger" effect="plain">默认</el-tag>
           <el-tag size="small" effect="plain">{{ groupDetail.count }} 只</el-tag>
@@ -818,11 +885,24 @@ onMounted(async () => {
             <b :class="pctClass(groupDetail.avg_ret)">{{ fmtPctRatio(groupDetail.avg_ret) }}</b>
             <span class="gb-hint">（各股自加入日起·等权平均）</span>
           </span>
+          <span v-if="groupDetail.description" class="gb-desc" :title="groupDetail.description">{{ groupDetail.description }}</span>
         </div>
         <div class="gb-ops">
-          <span v-if="groupDetail.description" class="gb-desc">{{ groupDetail.description }}</span>
-          <AppSearchInput v-model="groupQ" placeholder="组内搜索" size="small" style="width: 160px" @search="groupSearch" />
-          <el-button v-permission="'stock-group:delete'" size="small" type="danger" plain :disabled="groupDetail.is_default" @click="doDeleteGroup">删除分组</el-button>
+          <AppIconButton
+            v-permission="'stock-group:update'"
+            label="编辑分组"
+            size="sm"
+            tone="primary"
+            @click="openEdit"
+          ><Edit /></AppIconButton>
+          <AppIconButton
+            v-permission="'stock-group:delete'"
+            :label="groupDetail.is_default ? '默认自选分组不能删除' : '删除分组'"
+            size="sm"
+            tone="danger"
+            :disabled="groupDetail.is_default"
+            @click="doDeleteGroup"
+          ><Delete /></AppIconButton>
         </div>
       </div>
     </el-card>
@@ -961,6 +1041,13 @@ onMounted(async () => {
                   effect="plain"
                   class="box-tag"
                   :style="tagStyle(g.color)"
+                  role="button"
+                  tabindex="0"
+                  :aria-label="`查看分组：${g.name}`"
+                  :title="`查看分组：${g.name}`"
+                  @click.stop="switchGroup(g.id)"
+                  @keydown.enter.stop.prevent="switchGroup(g.id)"
+                  @keydown.space.stop.prevent="switchGroup(g.id)"
                 >
                   {{ g.name }}
                 </el-tag>
@@ -1202,6 +1289,9 @@ onMounted(async () => {
 .group-banner {
   margin-bottom: 0;
 }
+.group-banner :deep(.el-card__body) {
+  padding: var(--app-space-2) var(--app-space-3);
+}
 .gb-row {
   display: flex;
   justify-content: space-between;
@@ -1218,25 +1308,18 @@ onMounted(async () => {
 .gb-name {
   font-size: var(--app-font-size-data);
   font-weight: var(--app-font-weight-section);
-}
-.gb-name-edit {
-  cursor: pointer;
-  transition: color 0.15s;
-}
-.gb-name-edit:hover {
-  color: var(--el-color-primary);
-}
-.gb-edit-icon {
-  font-size: var(--app-font-size-table);
-  color: var(--app-placeholder-text);
-  margin-left: 2px;
-}
-.gb-name-edit:hover .gb-edit-icon {
-  color: var(--el-color-primary);
+  padding: 0;
 }
 .box-tag {
   border-radius: 4px;
   font-weight: var(--app-font-weight-section);
+}
+.box-tag[role='button'] {
+  cursor: pointer;
+}
+.box-tag[role='button']:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
 }
 .industry-tag {
   color: var(--el-color-primary);

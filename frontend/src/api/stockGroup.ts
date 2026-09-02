@@ -51,6 +51,10 @@ export interface GroupMembersParams {
   page?: number
   size?: number
   q?: string
+  board?: string
+  exclude_st?: boolean
+  exclude_delisted?: boolean
+  trade_date?: string
   sort_by?: string
   sort_order?: string
 }

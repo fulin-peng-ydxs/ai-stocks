@@ -51,12 +51,19 @@ def list_groups() -> ApiResponse:
 @router.get("/stock-groups/{gid}", response_model=ApiResponse,
             dependencies=[Depends(require_perm("stock-group:view"))])
 def get_group(gid: str, page: int = 1, size: int = 50, q: str | None = None,
+              board: str | None = None, exclude_st: bool = False,
+              exclude_delisted: bool = False,
+              trade_date: date | None = None,
               sort_by: str = "add_date", sort_order: str = "asc") -> ApiResponse:
     g = StockGroupRepo().get(
         gid,
         page=page,
         size=size,
         q=q,
+        board=board,
+        exclude_st=exclude_st,
+        exclude_delisted=exclude_delisted,
+        trade_date=trade_date,
         sort_by=sort_by,
         sort_order=sort_order,
     )
