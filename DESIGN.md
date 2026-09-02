@@ -378,6 +378,8 @@ Key Characteristics：
 - 页面触发的抽屉必须使用 `PageDrawer`，遮罩和抽屉高度限制在当前 `LayoutHost` 内容区；只有应用顶栏触发的用户中心、外观等全局抽屉可以使用视口级浮层。
 - Element Plus teleport 生成的浮层 DOM 必须使用唯一全局类或 `:global` 定位内部样式，不要依赖 scoped 深层样式碰运气。
 - 普通 modal 用于确认、短表单、少字段编辑；宽表、长流程、跨模块设置优先 drawer、全屏弹窗或独立页面。
+- 同一操作组内的同类任务必须采用一致的弹窗触发模型、对齐方式、footer 顺序和提交文案；只要同组任务需要在执行前展示参数，就统一使用参数弹窗，不得混用直接提交、`ElMessageBox` 和表单弹窗。
+- 异步任务参数弹窗提交期间，主按钮必须有 loading 并阻止重复提交；提交失败时保留弹窗与已填内容，只有成功后才关闭。
 - 抽屉正文可以内滚，但外层页面不能跟随滚动；footer 或关键操作应保持稳定位置。
 
 弹窗文案容量规则（解决窄弹窗内占位/说明文字被截断）：
@@ -640,7 +642,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `stocks` | `StocksView`（个股查询） | `master-detail` | `density` | action:`filter-bar` / main:`master-detail` / nested:`wide-table` / nested:`wide-table` / nested:`chart` / footer |
 | `data-quality` | `QualityView`（数据质量） | `list` | `density` | action:`filter-bar` / main:`data-table` |
 | `data-schedule` | `ScheduleView`（任务调度） | `detail` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / nested:`data-table` / overlay:`detail` |
-| `data-ingest` | `IngestView`（数据采集） | `workbench` | `density` | action:`toolbar` / main:`section` / main:`tabs(growMain)` / nested:`data-table` / nested:`data-table` |
+| `data-ingest` | `IngestView`（数据采集） | `workbench` | `density` | action:`toolbar` / main:`section` / main:`tabs(growMain)` / nested:`data-table` / nested:`data-table` / overlay:`form` / overlay:`form` / overlay:`detail` |
 | `data-overview` | `OverviewView`（数据概览） | `workbench` | `density` | action:`toolbar` / main:`kpi-grid` / main:`stat-strip` / main:`tabs` / nested:`wide-table` / nested:`data-table` |
 | `backtest` | `BacktestView`（策略回测） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` |
 | `training` | `TrainingView`（盘感训练） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / nested:`chart` |

@@ -460,6 +460,8 @@ describe('页面注册表完整性', () => {
     ])
     expect(entry.layout.slots.filter((slot) => slot.parentId === 'workspace').map((slot) => slot.id))
       .toEqual(['taskTable', 'logTable'])
+    expect(entry.layout.slots.filter((slot) => slot.region === 'overlay').map((slot) => slot.id))
+      .toEqual(['ingestExecutionDialog', 'resultMaintenanceDialog', 'taskLogDrawer', 'settings'])
   })
 
   it('登记列元数据的列表组件自动继承通用列显隐能力', () => {

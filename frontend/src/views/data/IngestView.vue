@@ -36,7 +36,6 @@ import type { AppRowAction } from '@/components/rowActions'
 import {
   buildStockIngestParams,
   createStockIngestForm,
-  isHeavyStockIngestRecipe,
   type StockIngestFormValue,
 } from '@/utils/stockIngest'
 import {
@@ -250,8 +249,9 @@ function taskDuration(t: AsyncTask): string {
   return h ? `${h}h${m}m${sec}s` : m ? `${m}m${sec}s` : `${sec}s`
 }
 
-// ── 更多选项对话框 ──
+// ── 采集执行对话框 ──
 const optDlg = ref(false)
+const optSubmitting = ref(false)
 const optType = ref<'stock_ingest' | 'board'>('stock_ingest')
 type OptionForm = {
   codes: string[]
@@ -270,6 +270,7 @@ const optForm = ref<OptionForm>(defaultOptionForm())
 
 // 结果维护与任务调度复用同一份字段组件和参数构造器，避免两个入口口径分叉。
 const resultDlg = ref(false)
+const resultSubmitting = ref(false)
 const resultType = ref<ResultMaintenanceTaskType>('stock_board_correlation')
 const resultForm = ref<ResultMaintenanceTaskForm>(createResultMaintenanceTaskForm())
 
@@ -282,10 +283,15 @@ function openResultMaintenance(type: ResultMaintenanceTaskType, tradeDate = '') 
 }
 
 async function submitResultMaintenance() {
+  if (resultSubmitting.value) return
   const built = buildResultMaintenanceTaskParams(resultType.value, resultForm.value)
   if (built.error) { ElMessage.warning(built.error); return }
-  resultDlg.value = false
-  await submit(resultType.value, built.params)
+  resultSubmitting.value = true
+  try {
+    if (await submit(resultType.value, built.params)) resultDlg.value = false
+  } finally {
+    resultSubmitting.value = false
+  }
 }
 
 async function configureResultSchedule(type: ResultMaintenanceTaskType) {
@@ -312,7 +318,7 @@ async function remoteCode(q: string) {
   }
 }
 
-function openOptions(type: 'stock_ingest' | 'board') {
+function openIngestExecution(type: 'stock_ingest' | 'board') {
   optType.value = type
   optForm.value = defaultOptionForm()
   codeOptions.value = []
@@ -352,6 +358,7 @@ function openFromQuery() {
 }
 
 async function submitOptions() {
+  if (optSubmitting.value) return
   const f = optForm.value
   const params: Record<string, unknown> = {}
   if (optType.value === 'stock_ingest') {
@@ -371,27 +378,25 @@ async function submitOptions() {
       && (f.board_stages.includes('bar') || f.board_stages.includes('fund'))
     ) params.force_current_day = true
   }
-  if (optType.value === 'stock_ingest' && isHeavyStockIngestRecipe(f.stock.recipe)) {
-    try {
-      await ElMessageBox.confirm('该采集方案可能运行较久，确认提交？', '个股采集', { type: 'warning' })
-    } catch { return }
+  optSubmitting.value = true
+  try {
+    if (await submit(optType.value, params)) optDlg.value = false
+  } finally {
+    optSubmitting.value = false
   }
-  optDlg.value = false
-  await submit(optType.value, params)
 }
 
 // ── 提交任务 ──
-async function submit(type: TaskType, params?: Record<string, unknown>, confirm?: string) {
-  if (confirm) {
-    try { await ElMessageBox.confirm(confirm, TASK_LABEL[type], { type: 'warning' }) } catch { return }
-  }
+async function submit(type: TaskType, params?: Record<string, unknown>): Promise<boolean> {
   try {
     const { task_id } = await createTask(type, params)
     ElMessage.success(`已提交：${TASK_LABEL[type]}`)
     await refreshTasks()
     openLogs(task_id)
+    return true
   } catch (e) {
     /* 409 等错误由 http 拦截器已弹出提示 */
+    return false
   }
 }
 
@@ -717,15 +722,15 @@ watch(
             <div class="act-t">个股采集</div>
             <div class="act-d">日常同步 / 历史行情 / 区间重采 / 市值 / 基础资料 / 退市股历史</div>
             <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning"
-                       @click="submit('stock_ingest', { recipe: 'daily_update' })">手动执行</el-button>
-            <el-button v-permission="'data-task:manage'" text size="small" @click="openOptions('stock_ingest')">配置采集</el-button>
+                       data-testid="manual-stock-ingest"
+                       @click="openIngestExecution('stock_ingest')">手动执行</el-button>
           </div>
           <div class="act">
             <div class="act-t">板块采集</div>
-            <div class="act-d">板块字典/成分/指数/资金流（执行=增量，更多选项可选回填）</div>
+            <div class="act-d">板块字典 / 成分 / 指数 / 资金流，可选增量或全量回填</div>
             <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning"
-                       @click="submit('board', { mode: 'update' }, '板块采集（增量）开始？')">手动执行</el-button>
-            <el-button v-permission="'data-task:manage'" text size="small" @click="openOptions('board')">配置采集</el-button>
+                       data-testid="manual-board-ingest"
+                       @click="openIngestExecution('board')">手动执行</el-button>
           </div>
         </div>
       </el-card>
@@ -739,6 +744,7 @@ watch(
             <div class="act-t">走势相关重算</div>
             <div class="act-d">强制重算股票与行业、概念板块的走势相关结果，并原子发布</div>
             <el-button v-permission="'data-task:manage'" type="primary" plain size="small"
+                       data-testid="manual-stock-board-correlation"
                        @click="openResultMaintenance('stock_board_correlation')">手动执行</el-button>
             <el-button v-permission="'data-schedule:manage'" text size="small"
                        @click="configureResultSchedule('stock_board_correlation')">配置调度</el-button>
@@ -747,6 +753,7 @@ watch(
             <div class="act-t">连板天梯失效</div>
             <div class="act-d">只标记指定日期起的快照失效；访问对应日期时再重算</div>
             <el-button v-permission="'data-task:manage'" type="primary" plain size="small"
+                       data-testid="manual-limit-ladder-invalidate"
                        @click="openResultMaintenance('limit_ladder_invalidate')">手动执行</el-button>
             <el-button v-permission="'data-schedule:manage'" text size="small"
                        @click="configureResultSchedule('limit_ladder_invalidate')">配置调度</el-button>
@@ -755,6 +762,7 @@ watch(
             <div class="act-t">每日榜单失效</div>
             <div class="act-d">只标记评分快照失效；下次读取对应榜单时按需重算</div>
             <el-button v-permission="'data-task:manage'" type="primary" plain size="small"
+                       data-testid="manual-score-snapshot-invalidate"
                        @click="openResultMaintenance('recompute')">手动执行</el-button>
             <el-button v-permission="'data-schedule:manage'" text size="small"
                        @click="configureResultSchedule('recompute')">配置调度</el-button>
@@ -950,11 +958,15 @@ watch(
     </template>
 
     <template #overlays>
-    <!-- 更多选项对话框 -->
+    <!-- 采集执行对话框 -->
     <el-dialog
       v-model="optDlg"
-      :title="`${TASK_LABEL[optType]} · 更多选项`"
-      width="460px"
+      :title="TASK_LABEL[optType]"
+      width="520px"
+      align-center
+      :close-on-click-modal="!optSubmitting"
+      :close-on-press-escape="!optSubmitting"
+      :show-close="!optSubmitting"
       data-testid="ingest-options-dialog"
     >
       <el-form label-width="92px">
@@ -982,8 +994,14 @@ watch(
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="optDlg = false">取消</el-button>
-        <el-button v-permission="'data-task:manage'" type="primary" @click="submitOptions">执行</el-button>
+        <el-button :disabled="optSubmitting" @click="optDlg = false">取消</el-button>
+        <el-button
+          v-permission="'data-task:manage'"
+          type="primary"
+          :loading="optSubmitting"
+          data-testid="ingest-execute-submit"
+          @click="submitOptions"
+        >按以上参数执行</el-button>
       </template>
     </el-dialog>
 
@@ -991,6 +1009,10 @@ watch(
       v-model="resultDlg"
       :title="TASK_LABEL[resultType]"
       width="520px"
+      align-center
+      :close-on-click-modal="!resultSubmitting"
+      :close-on-press-escape="!resultSubmitting"
+      :show-close="!resultSubmitting"
       data-testid="result-maintenance-dialog"
     >
       <el-form label-width="92px">
@@ -999,16 +1021,16 @@ watch(
           :task-type="resultType"
           test-id-prefix="manual-result"
         />
-        <el-alert
-          type="warning"
-          :closable="false"
-          title="本次只按以上参数立即执行，不读取、修改或覆盖任何已保存的调度配置。"
-          data-testid="manual-result-execution-scope"
-        />
       </el-form>
       <template #footer>
-        <el-button @click="resultDlg = false">取消</el-button>
-        <el-button v-permission="'data-task:manage'" type="primary" @click="submitResultMaintenance">
+        <el-button :disabled="resultSubmitting" @click="resultDlg = false">取消</el-button>
+        <el-button
+          v-permission="'data-task:manage'"
+          type="primary"
+          :loading="resultSubmitting"
+          data-testid="result-maintenance-execute-submit"
+          @click="submitResultMaintenance"
+        >
           按以上参数执行
         </el-button>
       </template>
