@@ -396,7 +396,13 @@ async function onLogout() {
                 <div class="topbar-panel-title">交易数据状态</div>
                 <div class="topbar-panel-sub">EOD 数据、质量与最近更新</div>
               </div>
-              <AppIconButton label="刷新交易数据状态" size="sm" variant="soft" @click="refreshShellStatus">
+              <AppIconButton
+                label="刷新交易数据状态"
+                size="sm"
+                variant="soft"
+                :loading="shellStatusLoading"
+                @click="refreshShellStatus"
+              >
                 <el-icon><Refresh /></el-icon>
               </AppIconButton>
             </header>
@@ -485,7 +491,13 @@ async function onLogout() {
                 <div class="topbar-panel-title">任务中心</div>
                 <div class="topbar-panel-sub">采集、质检、修复任务概览</div>
               </div>
-              <AppIconButton label="刷新任务" size="sm" variant="soft" @click="refreshShellStatus">
+              <AppIconButton
+                label="刷新任务"
+                size="sm"
+                variant="soft"
+                :loading="shellStatusLoading"
+                @click="refreshShellStatus"
+              >
                 <el-icon><Refresh /></el-icon>
               </AppIconButton>
             </header>

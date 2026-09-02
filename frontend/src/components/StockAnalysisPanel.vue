@@ -46,9 +46,11 @@ const props = withDefaults(defineProps<{
   slot3: AuxiliaryChartType
   heightRatios: number[]
   canOpenDetail?: boolean
+  refreshRevision?: number
 }>(), {
   adjustMode: 'qfq',
   canOpenDetail: true,
+  refreshRevision: 0,
 })
 
 const emit = defineEmits<{
@@ -320,6 +322,7 @@ watch(
     props.benchmarkCode,
     props.klineRange,
     props.adjustMode,
+    props.refreshRevision,
   ],
   load,
   { immediate: true },

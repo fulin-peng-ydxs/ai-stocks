@@ -176,7 +176,7 @@ defineExpose({ reload: load })
         <AppFilterSelect class="amended-filter" data-testid="history-amended-filter" :model-value="amendedValue" :options="amendedOptions" :multiple="false" placeholder="全部修订状态" @change="updateQuery({ amended: booleanValue($event) })" />
         <StockOptionSelect class="stock-filter" :model-value="selectedStock" clearable @update:model-value="selectStock" />
         <AppSearchInput class="reason-filter" v-model="reasonText" placeholder="违规原因" @search="updateQuery({ reason: reasonText.trim() || undefined })" />
-        <el-button :disabled="!hasFilters" @click="resetFilters">重置</el-button>
+        <el-button data-testid="history-reset-filters" :disabled="!hasFilters" @click="resetFilters">重置筛选</el-button>
       </AppControlRow>
     </el-card>
 

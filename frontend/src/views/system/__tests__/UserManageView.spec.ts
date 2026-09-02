@@ -7,6 +7,7 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import { computed, defineComponent, h, inject, provide, reactive, ref, type Component, type ComputedRef } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import UserManageView from '@/views/system/UserManageView.vue'
+import AppSearchInput from '@/components/AppSearchInput.vue'
 
 vi.mock('@/api/user', () => ({
   listUsers: vi.fn(),
@@ -54,6 +55,12 @@ import * as tenantApi from '@/api/tenant'
 import * as dictApi from '@/api/dict'
 
 const tableRowsKey = Symbol('tableRows')
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
 
 const ElTableStub = defineComponent({
   name: 'ElTable',
@@ -185,6 +192,47 @@ afterEach(() => {
 })
 
 describe('UserManageView 字典颜色', () => {
+  it('重置筛选恢复页面默认值且只重新查询一次', async () => {
+    const wrapper = await mountView()
+    const reset = wrapper.findAll('button').find((button) => button.text() === '重置筛选')!
+    expect(reset.attributes('disabled')).toBeDefined()
+
+    await wrapper.get('input[placeholder="搜索账号 / 邮箱"]').setValue('debug')
+    expect(reset.attributes('disabled')).toBeUndefined()
+    const before = (userApi.listUsers as ReturnType<typeof vi.fn>).mock.calls.length
+    await reset.trigger('click')
+    await flushPromises()
+
+    expect((userApi.listUsers as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before + 1)
+    expect(userApi.listUsers).toHaveBeenLastCalledWith(expect.objectContaining({ q: undefined, status: undefined }))
+  })
+
+  it('连续查询只提交最后一次响应', async () => {
+    const wrapper = await mountView()
+    const slow = deferred<{ items: Record<string, unknown>[]; total: number }>()
+    const fast = deferred<{ items: Record<string, unknown>[]; total: number }>()
+    ;(userApi.listUsers as ReturnType<typeof vi.fn>)
+      .mockImplementationOnce(() => slow.promise)
+      .mockImplementationOnce(() => fast.promise)
+
+    const input = wrapper.get('input[placeholder="搜索账号 / 邮箱"]')
+    const search = wrapper.findComponent(AppSearchInput)
+    await input.setValue('slow')
+    search.vm.$emit('search')
+    await wrapper.vm.$nextTick()
+    await input.setValue('fast')
+    search.vm.$emit('search')
+
+    fast.resolve({ items: [{ id: 'fast', account: 'fast-result' }], total: 1 })
+    await flushPromises()
+    expect(wrapper.text()).toContain('fast-result')
+
+    slow.resolve({ items: [{ id: 'slow', account: 'slow-result' }], total: 1 })
+    await flushPromises()
+    expect(wrapper.text()).toContain('fast-result')
+    expect(wrapper.text()).not.toContain('slow-result')
+  })
+
   it('角色和用户状态标签优先使用字典颜色', async () => {
     const wrapper = await mountView()
     expect(dictApi.getPublicDictItems).toHaveBeenCalledWith('role_type')

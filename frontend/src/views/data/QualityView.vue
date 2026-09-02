@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import AppTableColumn from '@/components/AppTableColumn.vue'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import {
   getDataQuality, fixQualityIssue, ignoreQualityIssue, restoreQualityMonitoring,
   resetQualityIssue, recoverQualityBatch,
@@ -126,20 +127,31 @@ function detailText(detail: string): string {
   return detail
 }
 
+const defaultStatusFilters = computed(() => settings.defaultStatus === 'all'
+  ? []
+  : settings.defaultStatus === 'open'
+    ? ['open']
+    : ['open', 'fixing'])
+const defaultSeverityFilters = computed(() => settings.defaultSeverity === 'high' ? ['high'] : [])
 function applyDefaultFilters() {
-  filters.value.status = settings.defaultStatus === 'all'
-    ? []
-    : settings.defaultStatus === 'open'
-      ? ['open']
-      : ['open', 'fixing']
-  filters.value.severity = settings.defaultSeverity === 'high' ? ['high'] : []
+  filters.value.status = [...defaultStatusFilters.value]
+  filters.value.severity = [...defaultSeverityFilters.value]
 }
+const hasQueryFilters = computed(() => (
+  filters.value.issue_type.length > 0
+  || filters.value.code.trim() !== ''
+  || filters.value.status.join(',') !== defaultStatusFilters.value.join(',')
+  || filters.value.severity.join(',') !== defaultSeverityFilters.value.join(',')
+))
+let suppressFilterReload = false
 
+const qualityListRequest = createLatestRequestGuard()
 async function load() {
+  const requestId = qualityListRequest.begin()
   loading.value = true
   loadError.value = ''
   try {
-    data.value = await getDataQuality({
+    const result = await getDataQuality({
       issue_type: filters.value.issue_type.join(',') || undefined,
       severity: filters.value.severity.join(',') || undefined,
       status: filters.value.status.join(',') || undefined,
@@ -148,18 +160,45 @@ async function load() {
       sort_by: sortBy.value,
       sort_order: sortOrder.value,
     })
+    if (!qualityListRequest.isCurrent(requestId)) return
+    data.value = result
   } catch (error) {
+    if (!qualityListRequest.isCurrent(requestId)) return
     loadError.value = getErrorMessage(error, '数据质量加载失败')
   } finally {
-    loading.value = false
+    if (qualityListRequest.isCurrent(requestId)) loading.value = false
   }
 }
 
 // 筛选变更自动触发（列表交互标准）；多选数组用 deep 监听
 watch(() => [filters.value.issue_type, filters.value.severity, filters.value.status],
-  () => { page.value = 1; load() }, { deep: true })
-watch(() => settings.defaultStatus, () => { applyDefaultFilters() })
-watch(() => settings.defaultSeverity, () => { applyDefaultFilters() })
+  () => {
+    if (suppressFilterReload) return
+    page.value = 1
+    load()
+  }, { deep: true })
+
+async function applyDefaultFiltersOnce(): Promise<void> {
+  suppressFilterReload = true
+  applyDefaultFilters()
+  page.value = 1
+  await nextTick()
+  suppressFilterReload = false
+  await load()
+}
+watch(() => [settings.defaultStatus, settings.defaultSeverity], () => { void applyDefaultFiltersOnce() })
+
+async function resetQueryFilters(): Promise<void> {
+  if (!hasQueryFilters.value) return
+  suppressFilterReload = true
+  filters.value.issue_type = []
+  filters.value.code = ''
+  applyDefaultFilters()
+  page.value = 1
+  await nextTick()
+  suppressFilterReload = false
+  await load()
+}
 
 // 轮询任务到终态后回调（完成即自动刷新列表，闭环4）。返回任务结果供按真实结果提示。
 async function waitTask(taskId: string): Promise<{ status: string; message: string; result?: Record<string, any> | null }> {
@@ -477,6 +516,7 @@ onMounted(() => {
         <el-option v-for="(l, k) in ISSUE_TYPE_LABEL" :key="k" :label="l" :value="k" />
       </el-select>
       <AppSearchInput v-model="filters.code" placeholder="股票/板块代码或名称" style="width: 210px" @search="applyFilter" />
+      <el-button data-testid="quality-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
       <div class="summary app-inline-info">
         <el-tag
           v-for="s in data?.summary ?? []"

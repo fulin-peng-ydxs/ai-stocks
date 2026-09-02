@@ -136,15 +136,20 @@ describe('LimitLadder', () => {
     }])
   })
 
-  it('重置按钮无图标并恢复全部默认筛选', async () => {
+  it('重置筛选按钮无图标并恢复全部默认筛选', async () => {
     const wrapper=mount(LimitLadder,{props:{result,filters:{...DEFAULT_LIMIT_LADDER_FILTERS,keyword:'甲',oneWordOnly:true},tradeDate:'2026-08-28',loading:false,error:'',canViewSectors:true},global:{plugins:[ElementPlus,router()],stubs:{TradeDatePicker:true}}})
     const reset=wrapper.get('[data-testid="limit-ladder-reset"]')
-    expect(reset.text()).toBe('重置')
+    expect(reset.text()).toBe('重置筛选')
     expect(reset.find('.el-icon').exists()).toBe(false)
     await reset.trigger('click')
     expect(wrapper.emitted('update:filters')).toContainEqual([{
       ...DEFAULT_LIMIT_LADDER_FILTERS,
     }])
+  })
+
+  it('筛选条件为默认值时禁用重置筛选', () => {
+    const wrapper=mount(LimitLadder,{props:{result,filters:{...DEFAULT_LIMIT_LADDER_FILTERS},tradeDate:'2026-08-28',loading:false,error:'',canViewSectors:true},global:{plugins:[ElementPlus,router()],stubs:{TradeDatePicker:true}}})
+    expect(wrapper.get('[data-testid="limit-ladder-reset"]').attributes('disabled')).toBeDefined()
   })
 
   it('所有梯级使用同一宽度，不再按板位缩窄', () => {

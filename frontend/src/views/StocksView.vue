@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import AppTableColumn from '@/components/AppTableColumn.vue'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { PAGE_SIZE_OPTIONS, normalizePageSize } from '@/constants/pagination'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import { ArrowDown, Delete, Edit } from '@element-plus/icons-vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
@@ -203,6 +204,7 @@ const relatedBoardFirstLoad = useRelatedBoardFirstLoad(async () => {
   if (inGroupMode.value) await loadGroupDetail()
   else await load()
 })
+const analysisRefreshRevision = ref(0)
 
 // ST / 退市板块下「排除 ST」无意义（隐藏），其余板块默认排除 ST
 watch(board, (b) => {
@@ -249,7 +251,9 @@ watch(groupDefaultSortOrder, (value) => {
   groupSearch()
 })
 
+const stockListRequest = createLatestRequestGuard()
 async function load() {
+  const requestId = stockListRequest.begin()
   loading.value = true
   loadError.value = ''
   try {
@@ -263,6 +267,7 @@ async function load() {
       page: page.value,
       size: size.value,
     })
+    if (!stockListRequest.isCurrent(requestId)) return
     rows.value = data.list
     relatedBoardFirstLoad.observe(
       data.list,
@@ -270,9 +275,10 @@ async function load() {
     )
     total.value = data.total
   } catch (error) {
+    if (!stockListRequest.isCurrent(requestId)) return
     loadError.value = getErrorMessage(error, '个股列表加载失败')
   } finally {
-    loading.value = false
+    if (stockListRequest.isCurrent(requestId)) loading.value = false
   }
 }
 function search() {
@@ -416,6 +422,33 @@ function searchCurrentView() {
   clearAnalysisSelection()
   if (inGroupMode.value) groupSearch()
   else search()
+}
+const hasQueryFilters = computed(() => (
+  q.value.trim() !== ''
+  || board.value !== ''
+  || tradeDate.value !== (dataMax.value || '')
+))
+
+async function resetQueryFilters(): Promise<void> {
+  if (!hasQueryFilters.value) return
+  restoringListState = true
+  q.value = ''
+  board.value = ''
+  excludeSt.value = Boolean(settings.excludeSt)
+  tradeDate.value = dataMax.value || ''
+  page.value = 1
+  groupPage.value = 1
+  await nextTick()
+  restoringListState = false
+  clearAnalysisSelection()
+  if (inGroupMode.value) await loadGroupDetail()
+  else await load()
+}
+
+async function refreshStocks(): Promise<void> {
+  if (inGroupMode.value) await loadGroupDetail()
+  else await load()
+  analysisRefreshRevision.value += 1
 }
 async function loadGroupDetail() {
   if (!activeGid.value) return
@@ -823,6 +856,7 @@ onMounted(async () => {
           retry
           @retry="reloadGroups"
         />
+        <el-button data-testid="stocks-refresh" :loading="loading || groupLoading" @click="refreshStocks">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
     </div>
@@ -849,6 +883,7 @@ onMounted(async () => {
           <el-option label="ST 板块" value="ST" />
           <el-option label="退市板块" value="退市" />
         </el-select>
+        <el-button data-testid="stocks-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
       </AppControlRow>
     </el-card>
 
@@ -1094,6 +1129,7 @@ onMounted(async () => {
           :slot2="chartPreferences.preferences.value.slot2"
           :slot3="chartPreferences.preferences.value.slot3"
           :height-ratios="chartPreferences.currentRatios.value"
+          :refresh-revision="analysisRefreshRevision"
           @activate="activateAnalysisCode"
           @remove="removeAnalysisCode"
           @open-detail="openActiveAnalysisDetail"

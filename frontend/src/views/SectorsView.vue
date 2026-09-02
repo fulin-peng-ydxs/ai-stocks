@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage, type Sort } from 'element-plus'
+import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import { ArrowRight, Star, StarFilled } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppControlRow from '@/components/AppControlRow.vue'
@@ -534,7 +535,9 @@ async function toggleWatchlist(row: SectorRow): Promise<void> {
   }
 }
 
-async function load(): Promise<void> {
+const sectorListRequest = createLatestRequestGuard()
+async function load(options: { deferChart?: boolean } = {}): Promise<void> {
+  const requestId = sectorListRequest.begin()
   syncSourceQuery()
   loading.value = true
   loadError.value = ''
@@ -550,6 +553,7 @@ async function load(): Promise<void> {
       page: page.value,
       size: size.value,
     })
+    if (!sectorListRequest.isCurrent(requestId)) return
     rows.value = data.list
     total.value = data.total
     marketDate.value = data.trade_date
@@ -562,7 +566,7 @@ async function load(): Promise<void> {
     const maxPage = Math.max(1, Math.ceil(data.total / size.value))
     if (page.value > maxPage) {
       page.value = maxPage
-      return load()
+      return load(options)
     }
 
     // 首屏直接呈现可用走势，避免必须先理解控件才能看到内容。
@@ -577,13 +581,14 @@ async function load(): Promise<void> {
         // 翻页/筛选导致观察项离开当前列表：回退到首个可用项，队列顺序保持稳定。
         applyQueue(activateCompareCode(currentQueue(), first, COMPARE_MAX))
       }
-      void loadChart()
+      if (!options.deferChart) void loadChart()
     }
   } catch (error) {
+    if (!sectorListRequest.isCurrent(requestId)) return
     if (getErrorStatus(error) === 403) forbidden.value = true
     loadError.value = getErrorMessage(error, '板块列表加载失败')
   } finally {
-    loading.value = false
+    if (sectorListRequest.isCurrent(requestId)) loading.value = false
   }
 }
 
@@ -599,6 +604,40 @@ function onDateChange(): void {
   if (restoring) return
   search()
   void loadChart()
+}
+
+const defaultBoardType = computed<BoardType | ''>(() => (
+  settings.defaultType === 'concept' || settings.defaultType === 'industry'
+    ? settings.defaultType
+    : ''
+))
+const defaultListScope = computed<'all' | 'watchlist'>(() => (
+  canViewWatchlist.value && settings.defaultScope === 'watchlist' ? 'watchlist' : 'all'
+))
+const hasQueryFilters = computed(() => (
+  listScope.value !== defaultListScope.value
+  || boardType.value !== defaultBoardType.value
+  || tradeDate.value !== (dataMax.value || '')
+  || keyword.value.trim() !== ''
+))
+
+async function resetQueryFilters(): Promise<void> {
+  if (!hasQueryFilters.value) return
+  restoring = true
+  listScope.value = defaultListScope.value
+  boardType.value = defaultBoardType.value
+  tradeDate.value = dataMax.value || ''
+  keyword.value = ''
+  page.value = 1
+  await nextTick()
+  restoring = false
+  await load({ deferChart: true })
+  await loadChart()
+}
+
+async function refreshSectors(): Promise<void> {
+  await Promise.all([load({ deferChart: true }), loadWatchlist()])
+  await loadChart()
 }
 
 watch([sortBy, sortOrder], () => {
@@ -812,7 +851,10 @@ onMounted(async () => {
             </h2>
             <p class="page-subtitle">从强弱排行定位主线，点选板块后在同一视野比较走势。</p>
           </div>
-          <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
+          <div class="page-head-actions">
+            <el-button data-testid="sectors-refresh" :loading="loading || chartLoading" @click="refreshSectors">刷新</el-button>
+            <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
+          </div>
         </div>
 
         <el-card shadow="never" class="filter-card">
@@ -850,6 +892,7 @@ onMounted(async () => {
               data-testid="sectors-keyword"
               @search="search"
             />
+            <el-button data-testid="sectors-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
           </AppControlRow>
         </el-card>
       </div>

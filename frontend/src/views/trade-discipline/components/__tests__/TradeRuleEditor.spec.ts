@@ -139,7 +139,7 @@ describe('TradeRuleEditor', () => {
     await field(wrapper, '规则名称').get('input').setValue('临时名称')
 
     const resetButton = wrapper.findAll('.rule-editor__footer .el-button')
-      .find((button) => button.text() === '重置')!
+      .find((button) => button.text() === '还原修改')!
     await resetButton.trigger('click')
 
     expect(field(wrapper, '规则名称').get('input').element.value).toBe('趋势纪律')

@@ -381,7 +381,7 @@ onMounted(loadAll)
           <div class="rm-detail-foot" v-if="activeRole">
             <span class="dirty" :class="{ hidden: !dirty }">● 有未保存修改</span>
             <div class="page-head-actions">
-              <el-button :disabled="!dirty || treeReadonly" @click="resetGrants">还原</el-button>
+              <el-button :disabled="!dirty || treeReadonly" @click="resetGrants">还原修改</el-button>
               <el-button type="primary" :loading="saving" :disabled="treeReadonly" @click="save">保存并刷新权限</el-button>
             </div>
           </div>

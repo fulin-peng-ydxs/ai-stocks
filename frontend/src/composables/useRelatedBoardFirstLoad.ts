@@ -65,9 +65,13 @@ export function useRelatedBoardFirstLoad(
   function observe(rows: RelatedBoardRow[], context = ''): void {
     if (context && context !== activeContext) {
       activeContext = context
-      startedAt = 0
-      if (timer !== undefined) window.clearTimeout(timer)
-      timer = undefined
+      // 轮询刷新可能因行情变化带回另一页股票，不能因此无限延长本轮等待。
+      // 只有轮询之外的切页、切日期等用户操作，才开始新的等待周期。
+      if (!polling) {
+        startedAt = 0
+        if (timer !== undefined) window.clearTimeout(timer)
+        timer = undefined
+      }
     }
     pending = rows.some((row) => (
       row.related_boards?.unavailable_reason === 'first_load_pending'

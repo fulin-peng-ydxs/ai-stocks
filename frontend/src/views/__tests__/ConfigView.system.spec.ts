@@ -271,12 +271,12 @@ beforeEach(() => {
 })
 
 describe('ConfigView system tab', () => {
-  it('系统设置保存与重置留在当前页签工具区，不进入总页头', async () => {
+  it('系统设置保存与恢复默认留在当前页签工具区，不进入总页头', async () => {
     const wrapper = await mountView()
     expect(wrapper.find('.page-head-actions').text()).not.toContain('保存并生效')
-    expect(wrapper.find('.page-head-actions').text()).not.toContain('重置配置')
+    expect(wrapper.find('.page-head-actions').text()).not.toContain('恢复默认')
     expect(wrapper.find('.sys-tab-toolbar').text()).toContain('保存并生效')
-    expect(wrapper.find('.sys-tab-toolbar').text()).toContain('重置配置')
+    expect(wrapper.find('.sys-tab-toolbar').text()).toContain('恢复默认')
   })
 
   it('按设置接口动态渲染认证和审计配置，且不加载指标注册表', async () => {

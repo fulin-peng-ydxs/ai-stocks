@@ -851,8 +851,27 @@ class StockBoardCorrelationService:
                 if task and task.get("status") in {"pending", "running"}:
                     pending.update(scope)
             except ConcurrentTaskError as exc:
-                # 全局写槽繁忙不代表该日期没有结果：将其暴露为等待态，读取方后续
-                # 轮询会在写槽释放后再次幂等尝试，从而不丢失不同日期/范围的首次任务。
+                # 只有上游数据已经具备计算条件时，写槽繁忙才属于真实等待态。
+                # 数据族为空或所选日期尚未共同就绪时直接降级，避免页面把“不具备
+                # 计算条件”误报为持续计算中。
+                try:
+                    available_date = self.resolve_target_date(upper_bound=target_date)
+                except CorrelationInputError as input_exc:
+                    log.info(
+                        "走势相关首次计算不等待写槽 date=%s scope=%d reason=%s",
+                        target_date,
+                        len(scope),
+                        input_exc,
+                    )
+                    continue
+                if available_date != target_date:
+                    log.info(
+                        "走势相关首次计算不等待写槽 date=%s scope=%d available=%s",
+                        target_date,
+                        len(scope),
+                        available_date,
+                    )
+                    continue
                 pending.update(scope)
                 log.info(
                     "走势相关首次计算等待写槽 date=%s scope=%d running=%s",

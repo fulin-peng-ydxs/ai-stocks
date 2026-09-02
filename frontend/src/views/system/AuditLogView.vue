@@ -115,6 +115,16 @@ const filters = reactive({
   tenant_id: [] as string[],
 })
 const dateRange = ref<[string, string] | null>(null)
+const hasFilters = computed(() => (
+  dateRange.value !== null
+  || filters.event_category.length > 0
+  || filters.result.length > 0
+  || filters.status.length > 0
+  || filters.resource_code.trim() !== ''
+  || filters.actor_keyword.trim() !== ''
+  || filters.target_keyword.trim() !== ''
+  || filters.tenant_id.length > 0
+))
 
 const rows = ref<AuditLog[]>([])
 const total = ref(0)
@@ -589,7 +599,7 @@ onBeforeUnmount(stopTimer)
             class="w180"
             @change="filterChanged"
           />
-          <el-button @click="resetFilters">重置</el-button>
+          <el-button data-testid="audit-reset-filters" :disabled="!hasFilters" @click="resetFilters">重置筛选</el-button>
         </AppControlRow>
       </el-card>
     </template>
@@ -674,7 +684,7 @@ onBeforeUnmount(stopTimer)
           <template #empty>
             <div class="app-table-empty">
               <span class="app-table-empty__description">暂无审计记录</span>
-              <el-button @click="resetFilters">重置筛选</el-button>
+              <el-button v-if="hasFilters" @click="resetFilters">重置筛选</el-button>
             </div>
           </template>
         </AppDataTable>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import AppDatePicker from '@/components/AppDatePicker.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import StockCodeMultiSelect from '@/components/data/StockCodeMultiSelect.vue'
 import {
@@ -43,7 +44,7 @@ function patch(value: Partial<ResultMaintenanceTaskForm>) {
     />
   </el-form-item>
   <el-form-item v-if="modelValue.target_mode === 'fixed'" label="固定日期">
-    <el-date-picker
+    <AppDatePicker
       :model-value="modelValue.trade_date"
       type="date"
       value-format="YYYY-MM-DD"
@@ -88,7 +89,7 @@ function patch(value: Partial<ResultMaintenanceTaskForm>) {
   display: block;
   margin-top: 6px;
   color: var(--el-text-color-secondary);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
 }
 </style>

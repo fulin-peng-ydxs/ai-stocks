@@ -39,7 +39,23 @@ describe('AppSearchInput', () => {
     await input.trigger('keyup', { key: 'Enter' })
     expect(wrapper.emitted('search')).toHaveLength(1)
     // flush 已取消防抖队列，因此不会再触发
+    vi.advanceTimersByTime(300)
     expect(wrapper.emitted('search')).toHaveLength(1)
+  })
+
+  it('防抖查询已经完成后，同值回车不重复查询', async () => {
+    const wrapper = mountSearch()
+    const input = wrapper.find('input')
+    await input.setValue('abc')
+    vi.advanceTimersByTime(300)
+    expect(wrapper.emitted('search')).toHaveLength(1)
+
+    await input.trigger('keyup', { key: 'Enter' })
+    expect(wrapper.emitted('search')).toHaveLength(1)
+
+    vi.advanceTimersByTime(301)
+    await input.trigger('keyup', { key: 'Enter' })
+    expect(wrapper.emitted('search')).toHaveLength(2)
   })
 
   it('清空立即发 search 且值清空', async () => {
@@ -52,4 +68,3 @@ describe('AppSearchInput', () => {
     expect(wrapper.emitted('search')).toHaveLength(1)
   })
 })
-

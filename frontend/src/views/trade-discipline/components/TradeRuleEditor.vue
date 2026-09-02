@@ -699,7 +699,7 @@ defineExpose({
 
       <footer v-if="canManage && editing" class="rule-editor__footer">
         <span v-if="dirty" class="dirty-copy">有未保存修改</span>
-        <el-button v-permission="'trade-discipline:rule-manage'" @click="restoreBaseline">重置</el-button>
+        <el-button v-permission="'trade-discipline:rule-manage'" :disabled="!dirty" @click="restoreBaseline">还原修改</el-button>
         <el-button v-if="hasSavedDraft && !isUnpublished" v-permission="'trade-discipline:rule-manage'" type="danger" plain :loading="command === 'discard'" @click="discardSavedDraft">放弃草稿</el-button>
         <el-button v-permission="'trade-discipline:rule-manage'" :loading="command === 'save'" @click="saveDraft()">保存草稿</el-button>
         <el-button v-permission="'trade-discipline:rule-manage'" type="primary" :loading="command === 'publish'" @click="publish">保存并启用</el-button>

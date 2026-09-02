@@ -508,6 +508,16 @@ async function reloadRangeData() {
   await Promise.all([loadBars(), loadIndicators()])
 }
 
+async function refreshStockDetail(): Promise<void> {
+  await Promise.all([
+    reloadRangeData(),
+    loadLatestQuote(),
+    loadGroups(),
+    loadStockGroups(),
+    tradeId.value ? evalTrade() : Promise.resolve(),
+  ])
+}
+
 watch(viewDays, () => {
   void reloadRangeData()
 })
@@ -848,6 +858,11 @@ onBeforeUnmount(() => {
       </div>
       <div class="page-head-actions">
         <div class="ops">
+          <el-button
+            data-testid="stock-detail-refresh"
+            :loading="barsLoading || indicatorLoading || quoteLoading || tradeLoading"
+            @click="refreshStockDetail"
+          >刷新</el-button>
           <KlineRangeSelect v-model="viewDays" test-id="stock-detail-range" />
         </div>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />

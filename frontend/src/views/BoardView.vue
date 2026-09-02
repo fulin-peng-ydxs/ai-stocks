@@ -353,6 +353,7 @@ const displayRows = computed(() => {
   return list
 })
 const analysisSourceItems = computed(() => displayRows.value)
+const analysisRefreshRevision = ref(0)
 const {
   activeCode: activeAnalysisCode,
   activeItem: activeAnalysisItem,
@@ -488,6 +489,11 @@ function load() {
   return loadBoard(false)
 }
 
+async function refreshBoard(): Promise<void> {
+  const completed = await load()
+  if (completed) analysisRefreshRevision.value += 1
+}
+
 async function recomputeCurrentBoard(): Promise<void> {
   if (!canRecomputeCurrentBoard.value || recomputing.value) return
   recomputing.value = true
@@ -581,7 +587,7 @@ onMounted(async () => {
             :loading="loading && !recomputing"
             :disabled="recomputing"
             type="primary"
-            @click="load"
+            @click="refreshBoard"
           >刷新</el-button>
           <el-button
             v-if="canRecomputeCurrentBoard"
@@ -737,6 +743,7 @@ onMounted(async () => {
           :slot2="chartPreferences.preferences.value.slot2"
           :slot3="chartPreferences.preferences.value.slot3"
           :height-ratios="chartPreferences.currentRatios.value"
+          :refresh-revision="analysisRefreshRevision"
           @activate="activateAnalysisCode"
           @remove="removeAnalysisCode"
           @open-detail="openActiveAnalysisDetail"

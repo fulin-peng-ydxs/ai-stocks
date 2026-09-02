@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import AppTableColumn from '@/components/AppTableColumn.vue'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -23,6 +23,7 @@ import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useTableSort } from '@/composables/useTableSort'
 import { usePublicDictItems } from '@/composables/usePublicDictItems'
+import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import { useAuthStore } from '@/stores/auth'
 import {
   listUsers, createUser, updateUser, setUserStatus, resetUserPassword, deleteUser,
@@ -148,6 +149,14 @@ const { pageSize: size, changePageSize } = useComponentPageSizeSession({
 })
 const filters = ref<{ tenant: string; role: string; status: string; q: string }>(
   { tenant: '', role: '', status: '', q: '' })
+const defaultFilterStatus = computed(() => settings.defaultStatus === 'active' ? 'active' : '')
+const hasQueryFilters = computed(() => (
+  filters.value.tenant !== ''
+  || filters.value.role !== ''
+  || filters.value.status !== defaultFilterStatus.value
+  || filters.value.q.trim() !== ''
+))
+let suppressFilterReload = false
 const USER_SORT_FIELDS = ['created', 'lastLogin', 'account', 'tenant'] as const
 const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(typeof USER_SORT_FIELDS)[number]>({
   slotId: 'table',
@@ -175,7 +184,9 @@ function statusLabel(code: string): string {
   return dictItemLabel(userStatusDictItems.value, code, STATUS_TAG[code]?.label ?? code)
 }
 
+const userListRequest = createLatestRequestGuard()
 async function load() {
+  const requestId = userListRequest.begin()
   loading.value = true
   loadError.value = false
   try {
@@ -188,19 +199,40 @@ async function load() {
       sort_by: sortBy.value,
       sort_order: sortOrder.value,
     })
+    if (!userListRequest.isCurrent(requestId)) return
     list.value = res.items
     total.value = res.total
   } catch {
+    if (!userListRequest.isCurrent(requestId)) return
     loadError.value = true   // 拦截器已弹全局提示；页内保留错误态可重试
   } finally {
-    loading.value = false
+    if (userListRequest.isCurrent(requestId)) loading.value = false
   }
 }
 
 // 下拉筛选变更自动查询（列表交互标准）；搜索框回车/清空触发。
 watch(() => [filters.value.tenant, filters.value.role, filters.value.status],
-  () => { page.value = 1; load() })
+  () => {
+    if (suppressFilterReload) return
+    page.value = 1
+    load()
+  })
 function search() { page.value = 1; load() }
+
+async function resetQueryFilters(): Promise<void> {
+  if (!hasQueryFilters.value) return
+  suppressFilterReload = true
+  Object.assign(filters.value, {
+    tenant: '',
+    role: '',
+    status: defaultFilterStatus.value,
+    q: '',
+  })
+  page.value = 1
+  await nextTick()
+  suppressFilterReload = false
+  await load()
+}
 
 function fmtTime(v?: string | null): string {
   return (v || '—').slice(0, 19).replace('T', ' ')
@@ -462,6 +494,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
               <el-option v-for="item in userStatusOptions" :key="item.code" :label="item.label" :value="item.code" />
             </el-select>
             <AppSearchInput v-model="filters.q" placeholder="搜索账号 / 邮箱" style="width: 220px" @search="search" />
+            <el-button data-testid="user-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
           </AppControlRow>
         </el-card>
         <AppStateBlock
@@ -609,7 +642,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
         </el-form>
         <template #footer>
           <el-button @click="resetVisible = false">取消</el-button>
-          <el-button type="primary" :loading="resetting" @click="confirmReset">重置</el-button>
+          <el-button type="primary" :loading="resetting" @click="confirmReset">重置密码</el-button>
         </template>
       </el-dialog>
 

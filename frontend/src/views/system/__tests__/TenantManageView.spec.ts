@@ -151,6 +151,21 @@ afterEach(() => {
 })
 
 describe('TenantManageView 状态字典复用', () => {
+  it('重置筛选恢复页面默认值且只重新查询一次', async () => {
+    const wrapper = await mountView()
+    const reset = wrapper.findAll('button').find((button) => button.text() === '重置筛选')!
+    expect(reset.attributes('disabled')).toBeDefined()
+
+    await wrapper.get('input[placeholder="搜索租户名 / ID"]').setValue('租户A')
+    expect(reset.attributes('disabled')).toBeUndefined()
+    const before = (tenantApi.listTenants as ReturnType<typeof vi.fn>).mock.calls.length
+    await reset.trigger('click')
+    await flushPromises()
+
+    expect((tenantApi.listTenants as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before + 1)
+    expect(tenantApi.listTenants).toHaveBeenLastCalledWith(expect.objectContaining({ q: undefined, status: undefined }))
+  })
+
   it('租户状态文字和颜色使用 user_status 字典', async () => {
     const wrapper = await mountView()
     expect(dictApi.getPublicDictItems).toHaveBeenCalledWith('user_status')

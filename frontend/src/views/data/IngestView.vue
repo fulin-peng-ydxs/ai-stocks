@@ -28,6 +28,7 @@ import StockIngestScopeFields from '@/components/data/StockIngestScopeFields.vue
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useTableSort } from '@/composables/useTableSort'
+import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
@@ -99,6 +100,12 @@ const { pageSize: taskSize, changePageSize: changeTaskPageSize } = useComponentP
   reload: loadTasks,
 })
 const taskFilter = ref<{ status: string; task_type: string }>({ status: '', task_type: '' })
+const defaultTaskStatus = computed(() => (
+  settings.taskStatus === 'active' ? 'running' : settings.taskStatus === 'failed' ? 'failed' : ''
+))
+const hasTaskFilters = computed(() => (
+  taskFilter.value.status !== defaultTaskStatus.value || taskFilter.value.task_type !== ''
+))
 const TASK_SORT_FIELDS = ['time', 'type', 'status'] as const
 const {
   sortBy: taskSortBy,
@@ -131,6 +138,10 @@ const { pageSize: logSize, changePageSize: changeLogPageSize } = useComponentPag
 })
 const logTables = ref<string[]>([])
 const logFilter = ref<{ status: string; table_name: string }>({ status: '', table_name: '' })
+const defaultLogStatus = computed(() => settings.logStatus === 'failed' ? 'failed' : '')
+const hasLogFilters = computed(() => (
+  logFilter.value.status !== defaultLogStatus.value || logFilter.value.table_name !== ''
+))
 const LOG_SORT_FIELDS = ['time', 'table', 'status'] as const
 const {
   sortBy: logSortBy,
@@ -401,10 +412,13 @@ async function submit(type: TaskType, params?: Record<string, unknown>): Promise
 }
 
 let taskTimer: number | undefined
+const taskListRequest = createLatestRequestGuard()
+const ingestLogRequest = createLatestRequestGuard()
 function activeCount() {
   return tasks.value.filter((t) => t.status === 'pending' || t.status === 'running').length
 }
 async function loadTasks(silent = false) {
+  const requestId = taskListRequest.begin()
   const before = activeCount()
   if (!silent) taskLoading.value = true
   if (!silent) taskError.value = ''
@@ -414,13 +428,15 @@ async function loadTasks(silent = false) {
       status: taskFilter.value.status || undefined, task_type: taskFilter.value.task_type || undefined,
       sort: taskSortBy.value, order: taskSortOrder.value,
     })
+    if (!taskListRequest.isCurrent(requestId)) return
     tasks.value = r.tasks
     taskTotal.value = r.total ?? r.tasks.length
   } catch (error) {
+    if (!taskListRequest.isCurrent(requestId)) return
     // 自动轮询失败不把仍可使用的旧任务列表切成整区 error；用户主动请求仍由四态接管。
     if (!silent) taskError.value = getErrorMessage(error, '任务中心加载失败')
   } finally {
-    if (!silent) taskLoading.value = false
+    if (taskListRequest.isCurrent(requestId)) taskLoading.value = false
   }
   const after = activeCount()
   if (before > 0 && after === 0) {
@@ -434,6 +450,7 @@ async function loadTasks(silent = false) {
 }
 const refreshTasks = loadTasks   // 兼容旧调用名
 async function loadLogs() {
+  const requestId = ingestLogRequest.begin()
   logLoading.value = true
   logError.value = ''
   try {
@@ -442,13 +459,15 @@ async function loadLogs() {
       status: logFilter.value.status || undefined, table_name: logFilter.value.table_name || undefined,
       sort: logSortBy.value, order: logSortOrder.value,
     })
+    if (!ingestLogRequest.isCurrent(requestId)) return
     updateLogList.value = r.list
     logTotal.value = r.total
     if (r.tables?.length) logTables.value = r.tables
   } catch (error) {
+    if (!ingestLogRequest.isCurrent(requestId)) return
     logError.value = getErrorMessage(error, '采集日志加载失败')
   } finally {
-    logLoading.value = false
+    if (ingestLogRequest.isCurrent(requestId)) logLoading.value = false
   }
 }
 async function load() {
@@ -458,6 +477,20 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+async function resetTaskFilters(): Promise<void> {
+  if (!hasTaskFilters.value) return
+  taskFilter.value = { status: defaultTaskStatus.value, task_type: '' }
+  taskPage.value = 1
+  await loadTasks()
+}
+
+async function resetLogFilters(): Promise<void> {
+  if (!hasLogFilters.value) return
+  logFilter.value = { status: defaultLogStatus.value, table_name: '' }
+  logPage.value = 1
+  await loadLogs()
 }
 
 // ── 中断后继续 / 失败后重试未完成项 ──
@@ -790,6 +823,7 @@ watch(
                          @change="() => { taskPage = 1; loadTasks() }">
                 <el-option v-for="o in TASK_STATUS_OPTIONS" :key="o.v" :label="o.l" :value="o.v" />
               </el-select>
+              <el-button data-testid="task-reset-filters" size="small" :disabled="!hasTaskFilters" @click="resetTaskFilters">重置筛选</el-button>
             </template>
             <template #description>筛选变更后自动刷新；点击任务行查看运行日志</template>
           </AppTabToolbar>
@@ -893,6 +927,7 @@ watch(
                 <el-option label="失败" value="failed" />
                 <el-option label="部分" value="partial" />
               </el-select>
+              <el-button data-testid="log-reset-filters" size="small" :disabled="!hasLogFilters" @click="resetLogFilters">重置筛选</el-button>
             </template>
             <template #description>失败行可见原因；逐股明细见任务中心「日志」</template>
           </AppTabToolbar>

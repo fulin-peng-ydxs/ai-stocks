@@ -13,7 +13,7 @@ import AppDataTable from '@/components/AppDataTable.vue'
  * 实时布局预览、页面层组件默认值编辑与只读诊断在同一工作台内闭环。
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import {
   getEffectiveLayoutConfig,
@@ -383,8 +383,17 @@ async function savePageConfig() {
 }
 
 async function resetPageConfig() {
+  try {
+    await ElMessageBox.confirm(
+      `确认将「${selectedPage.value?.label || selectedPageKey.value}」的页面配置恢复为系统默认？`,
+      '恢复页面默认',
+      { type: 'warning', confirmButtonText: '恢复默认', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
   await resetLayoutConfig({ scope: 'page', pageKey: selectedPageKey.value })
-  ElMessage.success('页面配置已重置')
+  ElMessage.success('页面配置已恢复默认')
   await loadPageConfig()
 }
 
@@ -481,8 +490,17 @@ async function runValidationReport() {
 }
 
 async function resetUserConfig() {
+  try {
+    await ElMessageBox.confirm(
+      `确认清除用户「${selectedUserId.value}」在当前页面的全部个性化覆盖？`,
+      '清除用户覆盖',
+      { type: 'warning', confirmButtonText: '清除覆盖', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
   await resetLayoutConfig({ scope: 'user', pageKey: selectedPageKey.value, userId: selectedUserId.value })
-  ElMessage.success('用户覆盖已重置')
+  ElMessage.success('用户覆盖已清除')
   await runValidationReport()
 }
 
@@ -726,7 +744,7 @@ onMounted(async () => {
 
                 <div class="button-row cc-save-row">
                   <el-button v-permission="'layout:page-manage'" type="primary" :loading="pageSaving" @click="savePageConfig">保存页面配置</el-button>
-                  <el-button v-permission="'layout:page-manage'" @click="resetPageConfig">重置页面配置</el-button>
+                  <el-button v-permission="'layout:page-manage'" @click="resetPageConfig">恢复页面默认</el-button>
                 </div>
               </section>
             </div>
@@ -771,7 +789,7 @@ onMounted(async () => {
               <div class="toolbar-actions">
                 <el-input v-model="selectedUserId" class="user-input" placeholder="userId" />
                 <el-button v-permission="'layout:page-manage'" type="primary" :loading="reportLoading" @click="runValidationReport">重新校验</el-button>
-                <el-button v-permission="'layout:page-manage'" @click="resetUserConfig">重置用户覆盖</el-button>
+                <el-button v-permission="'layout:page-manage'" @click="resetUserConfig">清除用户覆盖</el-button>
               </div>
             </div>
 

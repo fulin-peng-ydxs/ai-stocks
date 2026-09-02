@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useDebouncedQuery } from '@/composables/useDebouncedQuery'
 
 export interface AppSearchInputProps {
@@ -29,7 +29,23 @@ const value = computed({
   set: (next: string) => emit('update:modelValue', next),
 })
 
-const query = useDebouncedQuery(() => emit('search'), props.debounceMs)
+let pendingValue = props.modelValue
+let lastSearchedValue: string | undefined
+let lastSearchedAt = 0
+watch(() => props.modelValue, (next) => { pendingValue = next })
+
+const query = useDebouncedQuery(() => {
+  const now = Date.now()
+  if (pendingValue === lastSearchedValue && now - lastSearchedAt <= props.debounceMs) return
+  lastSearchedValue = pendingValue
+  lastSearchedAt = now
+  emit('search')
+}, props.debounceMs)
+
+function scheduleQuery(next: string): void {
+  pendingValue = next
+  query.schedule()
+}
 </script>
 
 <template>
@@ -40,7 +56,7 @@ const query = useDebouncedQuery(() => emit('search'), props.debounceMs)
     :clearable="clearable"
     :size="size"
     :maxlength="maxlength"
-    @input="query.schedule"
+    @input="scheduleQuery"
     @keyup.enter="query.flush"
     @clear="query.flush"
   >

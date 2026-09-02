@@ -267,6 +267,10 @@ async function loadAll(): Promise<void> {
   await Promise.all([loadChart(), loadMembers()])
 }
 
+async function refreshSectorDetail(): Promise<void> {
+  await Promise.all([loadAll(), loadWatchlistState()])
+}
+
 function returnToSource(): void {
   // 与个股详情一致：进入详情时固化可信来源，显式返回使用 push 恢复来源现场。
   void router.push(returnLocation.value)
@@ -365,6 +369,11 @@ onMounted(async () => {
             {{ returnLabel }}
           </el-button>
           <div class="detail-actions">
+            <el-button
+              data-testid="sector-detail-refresh"
+              :loading="detailLoading || chartLoading || memberLoading"
+              @click="refreshSectorDetail"
+            >刷新</el-button>
             <TradeDatePicker v-model="tradeDate" default-latest class="detail-date" />
             <PageSettingsTrigger :dirty="pageDirty" @click="settingsOpen = true" />
           </div>

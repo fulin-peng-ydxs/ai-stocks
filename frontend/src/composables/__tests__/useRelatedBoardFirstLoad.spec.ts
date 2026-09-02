@@ -98,4 +98,41 @@ describe('useRelatedBoardFirstLoad', () => {
     expect(refresh).toHaveBeenCalledTimes(5)
     wrapper.unmount()
   })
+
+  it('轮询刷新导致当前页股票变化时不重置绝对等待时限', async () => {
+    let observe!: ReturnType<typeof useRelatedBoardFirstLoad>['observe']
+    let sequence = 0
+    const pending = (code: string) => ({
+      code,
+      related_boards: {
+        as_of_date: null,
+        benchmark: { code: null, name: null, fallback: false },
+        industry: null,
+        concept: null,
+        unavailable_reason: 'first_load_pending' as const,
+      },
+    })
+    const refresh = vi.fn(() => {
+      sequence += 1
+      const code = `60000${sequence}.SH`
+      observe([pending(code)], `${code}@2026-09-02`)
+    })
+    const wrapper = mount(defineComponent({
+      setup() {
+        ;({ observe } = useRelatedBoardFirstLoad(refresh, {
+          intervalMs: 10,
+          timeoutMs: 25,
+        }))
+        return () => null
+      },
+    }))
+
+    observe([pending('600000.SH')], '600000.SH@2026-09-02')
+    await vi.advanceTimersByTimeAsync(60)
+
+    expect(refresh).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(60)
+    expect(refresh).toHaveBeenCalledTimes(3)
+    wrapper.unmount()
+  })
 })

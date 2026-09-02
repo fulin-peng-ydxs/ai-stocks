@@ -2,7 +2,7 @@
 import AppTableColumn from '@/components/AppTableColumn.vue'
 // 租户管理页（多租户 RBAC stage3·T14，R14）。承接 tenant-management.html（去勾选列、无批量工具条）。
 // 列表 + 筛选 + 分页 + 编辑弹窗（含指定管理员）+ 行内启停 + 查看用户跳转。整页仅系统管理员可达（require_system）。
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -23,6 +23,7 @@ import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useTableSort } from '@/composables/useTableSort'
+import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import { usePublicDictItems } from '@/composables/usePublicDictItems'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -76,6 +77,11 @@ const { pageSize: size, changePageSize } = useComponentPageSizeSession({
   reload: () => load(),
 })
 const filters = ref<{ status: string; q: string }>({ status: '', q: '' })
+const defaultFilterStatus = computed(() => settings.defaultStatus === 'active' ? 'active' : '')
+const hasQueryFilters = computed(() => (
+  filters.value.status !== defaultFilterStatus.value || filters.value.q.trim() !== ''
+))
+let suppressFilterReload = false
 const TENANT_SORT_FIELDS = ['created', 'name', 'userCount'] as const
 const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(typeof TENANT_SORT_FIELDS)[number]>({
   slotId: 'table',
@@ -107,7 +113,9 @@ function statusTagStyle(code: string) {
   return dictTagStyleByCode(userStatusDictItems.value, code)
 }
 
+const tenantListRequest = createLatestRequestGuard()
 async function load() {
+  const requestId = tenantListRequest.begin()
   loading.value = true
   loadError.value = false
   try {
@@ -118,17 +126,34 @@ async function load() {
       sort_by: sortBy.value,
       sort_order: sortOrder.value,
     })
+    if (!tenantListRequest.isCurrent(requestId)) return
     list.value = res.items
     total.value = res.total
   } catch {
+    if (!tenantListRequest.isCurrent(requestId)) return
     loadError.value = true
   } finally {
-    loading.value = false
+    if (tenantListRequest.isCurrent(requestId)) loading.value = false
   }
 }
 
-watch(() => filters.value.status, () => { page.value = 1; load() })
+watch(() => filters.value.status, () => {
+  if (suppressFilterReload) return
+  page.value = 1
+  load()
+})
 function search() { page.value = 1; load() }
+
+async function resetQueryFilters(): Promise<void> {
+  if (!hasQueryFilters.value) return
+  suppressFilterReload = true
+  filters.value.status = defaultFilterStatus.value
+  filters.value.q = ''
+  page.value = 1
+  await nextTick()
+  suppressFilterReload = false
+  await load()
+}
 
 function fmtTime(v?: string | null): string {
   return (v || '—').slice(0, 19).replace('T', ' ')
@@ -297,6 +322,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
               <el-option v-for="item in tenantStatusOptions" :key="item.code" :label="item.label" :value="item.code" />
             </el-select>
             <AppSearchInput v-model="filters.q" placeholder="搜索租户名 / ID" style="width: 220px" @search="search" />
+            <el-button data-testid="tenant-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
           </AppControlRow>
         </el-card>
       </div>

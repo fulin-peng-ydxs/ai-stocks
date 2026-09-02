@@ -99,6 +99,7 @@ const error = ref('')
 const forbidden = ref(false)
 const exporting = ref(false)
 const recomputing = ref(false)
+const analysisRefreshRevision = ref(0)
 let requestSequence = 0
 let syncingRoute = false
 let resultRefreshTimer: number | undefined
@@ -447,6 +448,11 @@ async function loadLadder(): Promise<void> {
   await requestLadder(false)
 }
 
+async function refreshLadder(): Promise<void> {
+  await loadLadder()
+  analysisRefreshRevision.value += 1
+}
+
 async function recomputeCurrentDate(): Promise<void> {
   if (!tradeDate.value || recomputing.value || !canRecompute.value) return
   try {
@@ -667,6 +673,12 @@ onBeforeUnmount(() => {
           </div>
           <div class="page-head-actions">
             <el-button
+              data-testid="limit-ladder-refresh"
+              :loading="loading"
+              :disabled="!tradeDate || recomputing"
+              @click="refreshLadder"
+            >刷新</el-button>
+            <el-button
               v-if="canRecompute"
               v-permission="'limit-ladder:recompute'"
               :loading="recomputing"
@@ -739,6 +751,7 @@ onBeforeUnmount(() => {
             :slot2="chartPreferences.preferences.value.slot2"
             :slot3="chartPreferences.preferences.value.slot3"
             :height-ratios="chartPreferences.currentRatios.value"
+            :refresh-revision="analysisRefreshRevision"
             :can-open-detail="canViewStockDetail"
             @activate="activateAnalysisItem"
             @remove="removeAnalysisItem"
@@ -773,6 +786,7 @@ onBeforeUnmount(() => {
           :slot2="chartPreferences.preferences.value.slot2"
           :slot3="chartPreferences.preferences.value.slot3"
           :height-ratios="chartPreferences.currentRatios.value"
+          :refresh-revision="analysisRefreshRevision"
           :can-open-detail="canViewStockDetail"
           @activate="activateAnalysisItem"
           @remove="removeAnalysisItem"

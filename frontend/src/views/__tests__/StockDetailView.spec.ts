@@ -505,6 +505,25 @@ describe('StockDetailView 三图数据协调', () => {
     )
   })
 
+  it('手动刷新保留当前股票和方案并同步行情、指标、报价与买卖评估', async () => {
+    const wrapper = await mountView()
+    await emitTradeReady(wrapper)
+    vi.mocked(stocksApi.getBars).mockClear()
+    vi.mocked(stocksApi.getIndicators).mockClear()
+    vi.mocked(stocksApi.getTradeEval).mockClear()
+
+    const refresh = wrapper.get('[data-testid="stock-detail-refresh"]')
+    await refresh.trigger('click')
+    await flushPromises()
+
+    expect(stocksApi.getBars).toHaveBeenCalledTimes(2)
+    expect(stocksApi.getIndicators).toHaveBeenCalledTimes(1)
+    expect(stocksApi.getTradeEval).toHaveBeenCalledWith(
+      '600000.SH', 'avr_trade_1', undefined, expect.any(AbortSignal),
+    )
+    expect(router.currentRoute.value.params.code).toBe('600000.SH')
+  })
+
   it('最小 stocks:view 权限不请求也不展示分组和买卖评估能力', async () => {
     const wrapper = await mountView(['stocks:view'])
 

@@ -278,14 +278,14 @@ async function resetActiveSystemTab() {
   const tabLabel = sysTabs.value.find((tab) => tab.key === activeSysTab.value)?.label || '当前配置'
   await ElMessageBox.confirm(
     `确认将「${tabLabel}」下所有配置恢复为默认值？未保存的编辑也会被丢弃。`,
-    '重置配置',
+    '恢复默认',
     { type: 'warning' },
   )
   sysSaving.value = true
   sysSaveError.value = false
   try {
     await resetSettings(activeSysPaths.value)
-    ElMessage.success('配置已重置')
+    ElMessage.success('配置已恢复默认')
     await loadSystem()
   } catch {
     sysSaveError.value = true
@@ -1322,9 +1322,9 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 <li>「保存并生效」写入后立即影响全站运行；存在超出允许范围的配置项时无法保存。</li>
               </ul>
             </HelpTipItem>
-            <HelpTipItem question="重置做什么">
+            <HelpTipItem question="恢复默认做什么">
               <ul>
-                <li>「重置配置」将当前分组页签下所有配置恢复为默认值，未保存的编辑一并丢弃。</li>
+                <li>「恢复默认」将当前分组页签下所有配置恢复为默认值，未保存的编辑一并丢弃。</li>
               </ul>
             </HelpTipItem>
           </HelpTip>
@@ -1958,7 +1958,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                     :disabled="!activeSysPaths.length"
                     @click="resetActiveSystemTab"
                   >
-                    重置配置
+                    恢复默认
                   </el-button>
                   <el-button
                     v-permission="'data-settings:manage'"

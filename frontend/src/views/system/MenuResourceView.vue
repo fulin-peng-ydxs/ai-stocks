@@ -710,7 +710,7 @@ onMounted(() => { loadTree() })
             <div class="mr-detail-foot">
               <span class="dirty" :class="{ hidden: !formDirty }">● 菜单属性有未保存修改</span>
               <div class="page-head-actions">
-                <el-button :disabled="!formDirty" @click="resetForm">还原</el-button>
+                <el-button :disabled="!formDirty" @click="resetForm">还原修改</el-button>
                 <el-button type="primary" :loading="savingForm" :disabled="!formDirty || !canMenuUpdate" @click="saveForm">保存</el-button>
               </div>
             </div>

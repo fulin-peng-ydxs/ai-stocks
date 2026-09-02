@@ -68,6 +68,11 @@ def test_batch_summary_reads_per_day_snapshot(monkeypatch):
             "('300001.SZ','特锐德','创业板','2009-10-30')"
         )
         service = StockBoardCorrelationService(market)
+        monkeypatch.setattr(
+            service,
+            "resolve_target_date",
+            lambda upper_bound=None: upper_bound,
+        )
 
         result = service.get_related_boards(
             ["600000.sh", "000001.SZ", "300001.SZ", "600000.SH"],
@@ -169,6 +174,11 @@ def test_busy_write_slot_keeps_distinct_first_load_scope_waiting(monkeypatch):
             "('000001.SZ','平安银行','主板','1991-04-03')"
         )
         service = StockBoardCorrelationService(market)
+        monkeypatch.setattr(
+            service,
+            "resolve_target_date",
+            lambda upper_bound=None: upper_bound,
+        )
 
         first = service.get_related_boards(["600000.SH"], date(2026, 8, 28))
         waiting = service.get_related_boards(["000001.SZ"], date(2026, 8, 28))
@@ -192,6 +202,23 @@ def test_busy_write_slot_keeps_distinct_first_load_scope_waiting(monkeypatch):
         assert retried["000001.SZ"]["unavailable_reason"] == "first_load_pending"
         assert len(tasks_after_release) == 2
         assert len({task["trigger_event_id"] for task in tasks_after_release}) == 2
+
+
+def test_busy_write_slot_with_missing_upstream_data_does_not_report_calculating(monkeypatch):
+    """写槽繁忙但上游数据缺失时直接降级，不能让读取页持续显示计算中。"""
+    from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
+
+    def raise_busy(*_args, **_kwargs):
+        raise ConcurrentTaskError("stock_ingest", "task-stock-ingest-running")
+
+    monkeypatch.setattr(AsyncTaskService, "create", raise_busy)
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        result = StockBoardCorrelationService(market).get_related_boards(
+            ["600000.SH"], date(2026, 8, 28)
+        )
+
+    assert result["600000.SH"]["unavailable_reason"] == "as_of_mismatch"
 
 
 def test_first_load_task_creation_failure_keeps_read_api_available(monkeypatch):

@@ -5,6 +5,47 @@ import { collectConsoleIssues } from './helpers/console'
 import { openPageAndWaitForHeading } from './helpers/navigation'
 
 test.describe('板块数据质量恢复', () => {
+  test('重置筛选仅在条件生效后可用且只重新查询一次', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== 'chromium-standard', '筛选重置聚焦验证仅在标准视口执行')
+    const consoleIssues = collectConsoleIssues(page)
+    await loginAsDebugUser(page, request, 'debug_system')
+    const qualityRequests: string[] = []
+
+    await page.route('**/api/data/quality?*', async (route) => {
+      qualityRequests.push(route.request().url())
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          msg: 'ok',
+          data: { summary: [], total: 0, page: 1, size: 20, list: [] },
+        }),
+      })
+    })
+
+    await openPageAndWaitForHeading(page, '/data/quality', '数据质量')
+    const resetButton = page.getByTestId('quality-reset-filters')
+    const codeInput = page.getByPlaceholder('股票/板块代码或名称')
+    await expect(resetButton).toBeDisabled()
+
+    await codeInput.fill('600000')
+    await codeInput.press('Enter')
+    await expect.poll(() => qualityRequests.filter((url) => url.includes('code=600000')).length).toBe(1)
+    await expect(resetButton).toBeEnabled()
+
+    const requestCountBeforeReset = qualityRequests.length
+    await resetButton.click()
+    await expect(codeInput).toHaveValue('')
+    await expect(resetButton).toBeDisabled()
+    await expect.poll(() => qualityRequests.length).toBe(requestCountBeforeReset + 1)
+    expect(qualityRequests.at(-1)).not.toContain('code=')
+    expect(consoleIssues).toEqual([])
+  })
+
   test('立即质检提交后防重复操作并按失败终态反馈', async ({
     page,
     request,

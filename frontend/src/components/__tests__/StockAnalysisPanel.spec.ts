@@ -127,6 +127,20 @@ describe('StockAnalysisPanel', () => {
     expect(wrapper.emitted('update:compareMetric')).toEqual([['roll_30d'], ['roll_60d']])
   })
 
+  it('刷新修订变化时保留当前上下文并重新加载走势', async () => {
+    const wrapper = mountPanel({ refreshRevision: 0 })
+    await flushPromises()
+    expect(stockApi.getBars).toHaveBeenCalledTimes(2)
+    expect(stockApi.getStockBenchmarkBars).toHaveBeenCalledTimes(1)
+
+    await wrapper.setProps({ refreshRevision: 1 })
+    await flushPromises()
+
+    expect(stockApi.getBars).toHaveBeenCalledTimes(4)
+    expect(stockApi.getStockBenchmarkBars).toHaveBeenCalledTimes(2)
+    expect(wrapper.props('active')).toEqual({ code: '000001.SZ', name: '平安银行' })
+  })
+
   it('市场交易日加载失败时留下可重试错误态，且重试不刷新已成功股票', async () => {
     ;(stockApi.getStockBenchmarkBars as ReturnType<typeof vi.fn>)
       .mockRejectedValueOnce(new Error('日历服务不可用'))

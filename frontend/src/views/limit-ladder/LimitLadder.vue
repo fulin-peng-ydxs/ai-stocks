@@ -74,6 +74,15 @@ const hasApproximateSt = computed(() => Boolean(
     )),
 ))
 const filteredEmpty = computed(() => props.result?.business_code === 'FILTER_EMPTY')
+const hasFilters = computed(() => (
+  props.filters.window !== DEFAULT_LIMIT_LADDER_FILTERS.window
+  || props.filters.ignoreSt !== DEFAULT_LIMIT_LADDER_FILTERS.ignoreSt
+  || props.filters.oneWordOnly !== DEFAULT_LIMIT_LADDER_FILTERS.oneWordOnly
+  || props.filters.keyword.trim() !== DEFAULT_LIMIT_LADDER_FILTERS.keyword
+  || props.filters.hotspotType !== DEFAULT_LIMIT_LADDER_FILTERS.hotspotType
+  || props.filters.hotspotKey !== DEFAULT_LIMIT_LADDER_FILTERS.hotspotKey
+  || props.filters.boards.join(',') !== DEFAULT_LIMIT_LADDER_FILTERS.boards.join(',')
+))
 const staleSnapshot = computed(() => props.result?.business_code === 'SNAPSHOT_STALE')
 const pendingSnapshot = computed(() => props.result?.business_code === 'SNAPSHOT_PENDING')
 const failedSnapshot = computed(() => props.result?.business_code === 'SNAPSHOT_FAILED')
@@ -202,7 +211,7 @@ function resetFilters(): void {
           <el-checkbox :model-value="filters.oneWordOnly" data-testid="limit-ladder-one-word" @update:model-value="updateFilters({oneWordOnly:Boolean($event)})">仅一字板</el-checkbox>
         </div>
         <AppSearchInput v-model="keywordDraft" class="limit-ladder__search" placeholder="代码 / 名称" data-testid="limit-ladder-keyword" @search="searchKeyword" />
-        <el-button class="limit-ladder__command" data-testid="limit-ladder-reset" @click="resetFilters">重置</el-button>
+        <el-button class="limit-ladder__command" data-testid="limit-ladder-reset" :disabled="!hasFilters" @click="resetFilters">重置筛选</el-button>
       </AppControlRow>
     </section>
     <div
@@ -262,7 +271,7 @@ function resetFilters(): void {
         </AppStateBlock>
         <AppStateBlock v-else-if="filteredEmpty" data-testid="limit-ladder-state" state="empty">
           <div class="limit-ladder__empty-copy"><strong>当前筛选无匹配股票</strong><span>重置筛选后可恢复完整天梯。</span></div>
-          <template #extra><el-button type="primary" @click="resetFilters">重置筛选</el-button></template>
+          <template #extra><el-button type="primary" data-filter-reset-empty @click="resetFilters">重置筛选</el-button></template>
         </AppStateBlock>
         <AppStateBlock v-else-if="!result.layers.length" data-testid="limit-ladder-state" state="empty"><div class="limit-ladder__empty-copy"><strong>当日无涨停股票</strong><span>这是合法的空快照，不代表加载失败。</span></div></AppStateBlock>
         <div v-else class="limit-ladder__layers" aria-label="连板天梯分层">

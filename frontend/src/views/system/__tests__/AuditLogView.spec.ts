@@ -186,11 +186,21 @@ describe('AuditLogView', () => {
     }))
   })
 
-  it('空列表显示空态并可重置筛选', async () => {
+  it('空列表仅在筛选生效时提供重置筛选', async () => {
     ;(auditApi.listAuditLogs as ReturnType<typeof vi.fn>).mockResolvedValue({ list: [], total: 0, page: 1, page_size: 50 })
     const wrapper = await mountView()
     expect(wrapper.text()).toContain('暂无审计记录')
+    expect(wrapper.findAll('button').filter((button) => button.text() === '重置筛选')).toHaveLength(1)
+    expect(wrapper.findAll('button').find((button) => button.text() === '重置筛选')?.attributes('disabled')).toBeDefined()
+
+    const eventSelect = wrapper.findAllComponents(AppFilterSelect)
+      .find((node) => node.props('placeholder') === '事件类型')
+    eventSelect!.vm.$emit('update:modelValue', ['rbac'])
+    eventSelect!.vm.$emit('change', ['rbac'])
+    await flushPromises()
+
     expect(wrapper.text()).toContain('重置筛选')
+    expect(wrapper.findAll('button').filter((button) => button.text() === '重置筛选')).toHaveLength(2)
   })
 
   it('列表加载失败显示错误态，重试后恢复', async () => {

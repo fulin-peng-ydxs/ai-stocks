@@ -301,7 +301,7 @@ onMounted(reloadPresets)
           </div>
           <div class="page-head-actions">
             <el-button @click="importExportVisible = true">导入导出</el-button>
-            <el-button @click="reloadPresets">刷新</el-button>
+            <el-button :loading="loading" @click="reloadPresets">刷新</el-button>
             <el-button v-permission="'layout:preset-manage'" type="primary" @click="openNewPreset">新增预设</el-button>
           </div>
         </div>
