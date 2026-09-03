@@ -4,7 +4,7 @@ import { flushPromises, shallowMount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h, reactive, ref, type Component } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import ElementPlus, { ElMessageBox } from 'element-plus'
+import ElementPlus, { ElMessage, ElMessageBox } from 'element-plus'
 import type { LimitLadderResult } from '@/api/limitLadder'
 import { useAuthStore } from '@/stores/auth'
 
@@ -233,6 +233,24 @@ describe('LimitLadderView polling deadline', () => {
       expect.objectContaining({ confirmButtonText: '确认重算' }),
     )
     expect(limitLadderApi.recomputeLimitLadder).toHaveBeenCalledWith('2026-08-28')
+  })
+
+  it('重算写任务占用时只由页面展示一次业务提示', async () => {
+    vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(readyResult())
+    vi.mocked(limitLadderApi.recomputeLimitLadder).mockRejectedValue({
+      uiMessage: '已有写任务在运行（stock_ingest），请等待其完成后再重算',
+    })
+    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
+    const error = vi.spyOn(ElMessage, 'error')
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-testid="limit-ladder-recompute"]').trigger('click')
+    await flushPromises()
+
+    expect(error).toHaveBeenCalledTimes(1)
+    expect(error).toHaveBeenCalledWith(
+      '已有写任务在运行（stock_ingest），请等待其完成后再重算',
+    )
   })
 
   it('偏好和交易日尚未初始化完成时保持加载态，不闪现无快照失败态', async () => {

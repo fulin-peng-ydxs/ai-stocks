@@ -65,6 +65,10 @@ describe('limitLadder API filters', () => {
   it('管理员重算调用当前交易日的受保护接口', async () => {
     http.post.mockResolvedValue({ command_id: 'cmd-1', task_id: 'task-1', status: 'requested', reused: false })
     await expect(recomputeLimitLadder('2026-08-28')).resolves.toMatchObject({ command_id: 'cmd-1' })
-    expect(http.post).toHaveBeenCalledWith('/limit-ladder/2026-08-28/recompute')
+    expect(http.post).toHaveBeenCalledWith(
+      '/limit-ladder/2026-08-28/recompute',
+      undefined,
+      { skipGlobalError: true },
+    )
   })
 })

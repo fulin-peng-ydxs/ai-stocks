@@ -1,4 +1,4 @@
-import http from './client'
+import http, { type AppRequestConfig } from './client'
 import { getAccessToken } from './authToken'
 
 export const LIMIT_LADDER_WINDOWS = [10, 20, 31, 60] as const
@@ -238,7 +238,11 @@ export function getLimitLadder(
 }
 
 export function recomputeLimitLadder(tradeDate: string): Promise<LimitLadderRecomputeResult> {
-  return http.post(`/limit-ladder/${encodeURIComponent(tradeDate)}/recompute`)
+  return http.post(
+    `/limit-ladder/${encodeURIComponent(tradeDate)}/recompute`,
+    undefined,
+    { skipGlobalError: true } as AppRequestConfig,
+  )
 }
 
 function exportFilename(disposition: string | null, tradeDate: string, window: number): string {
