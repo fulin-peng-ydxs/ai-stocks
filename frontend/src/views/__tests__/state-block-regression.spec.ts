@@ -230,7 +230,7 @@ const stubs = {
   AssetProfileLabel: { template: '<span>{{ name }}</span>', props: ['name'] },
   AssetVisibilityActions: true,
   AssetVisibilityTag: true,
-  CandleChart: true,
+  StockChartWorkspace: true,
   EquityChart: true,
   GrowthChart: true,
   KlineRangeSelect: true,

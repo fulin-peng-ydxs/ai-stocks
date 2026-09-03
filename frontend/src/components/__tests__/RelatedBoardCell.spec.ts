@@ -46,9 +46,12 @@ const RouterLinkStub = defineComponent({
   name: 'RouterLink',
   props: ['to'],
   setup(props, { slots, attrs }) {
+    const href = typeof props.to === 'string'
+      ? props.to
+      : `${props.to.path}${props.to.query?.return_to ? `?return_to=${encodeURIComponent(props.to.query.return_to)}` : ''}`
     return () => h('a', {
       ...attrs,
-      href: props.to,
+      href,
       onClick: (event: MouseEvent) => {
         event.preventDefault()
         const listener = attrs.onClick
@@ -88,7 +91,12 @@ function summary(
 }
 
 function mountCell(
-  props: { summary?: StockRelatedBoards | null; boardType: 'industry' | 'concept'; testId?: string },
+  props: {
+    summary?: StockRelatedBoards | null
+    boardType: 'industry' | 'concept'
+    testId?: string
+    returnPath?: string
+  },
   role = 'normal',
   permissions: string[] = [],
 ) {
@@ -169,6 +177,31 @@ describe('RelatedBoardCell', () => {
 
     const system = mountCell({ summary: summary('medium'), boardType: 'industry' }, 'system')
     expect(system.find('a').exists()).toBe(true)
+  })
+
+  it('携带可信来源完整路径，非法来源不进入板块详情地址', () => {
+    const allowed = mountCell(
+      {
+        summary: summary('high'),
+        boardType: 'industry',
+        returnPath: '/stocks?restore=1&page=3',
+      },
+      'normal',
+      ['sectors:view'],
+    )
+    expect(allowed.get('a').attributes('href'))
+      .toBe('/sectors/881001?return_to=%2Fstocks%3Frestore%3D1%26page%3D3')
+
+    const rejected = mountCell(
+      {
+        summary: summary('high'),
+        boardType: 'industry',
+        returnPath: 'https://evil.example/steal',
+      },
+      'normal',
+      ['sectors:view'],
+    )
+    expect(rejected.get('a').attributes('href')).toBe('/sectors/881001')
   })
 
   it('无 sectors:view 时只渲染可聚焦文本，不产生链接或权限错误入口', () => {

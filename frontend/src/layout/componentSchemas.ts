@@ -85,6 +85,7 @@ const overlayShape: ConfigShape = {
 const chartShape: ConfigShape = {
   chartType,
   minHeight: 'int',
+  stockChart: 'object',
   aspectRatio: 'number',
   legend: 'bool',
   tooltip: 'bool',

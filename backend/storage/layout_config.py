@@ -57,6 +57,7 @@ COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
     "defaultSort": {"type": "str", "layers": {"page", "user"}},
     "hiddenColumns": {"type": "str_list", "layers": {"page", "user"}},
     "minHeight": {"type": "int", "layers": {"page", "user"}, "min": 480, "max": 900},
+    "stockChart": {"type": "object", "layers": {"page", "user"}},
     "masterWidth": {"type": "int", "layers": {"preset", "page", "user"}, "min": 360, "max": 1200},
     "defaultActive": {"type": "str", "layers": {"page", "user"}},
     "size": {"type": "enum", "layers": {"preset", "page", "user"}, "options": {"sm", "md", "lg"}},
@@ -73,7 +74,7 @@ COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
 COMPONENT_CONFIG_FIELDS_BY_KIND: dict[str, set[str]] = {
     "data-table": {"border", "pageSize", "defaultSort", "hiddenColumns"},
     "wide-table": {"border", "pageSize", "defaultSort", "hiddenColumns"},
-    "chart": {"minHeight"},
+    "chart": {"minHeight", "stockChart"},
     "master-detail": {"masterWidth"},
     "tabs": {"defaultActive"},
     "settings-drawer": {"size", "bodyScroll", "collapsibleSections", "defaultCollapsed"},
@@ -148,6 +149,9 @@ def check_component_config_ownership(values: dict[str, Any], layout: dict[str, A
             continue
         if field == "minHeight" and "minHeight" not in slot_config:
             errors.append(f"组件 {kind} 的当前实例使用自适应高度，不能配置 minHeight（slot {slot_id}）")
+            continue
+        if field == "stockChart" and "stockChart" not in slot_config:
+            errors.append(f"组件 {kind} 的当前实例不是股票多图工作区，不能配置 stockChart（slot {slot_id}）")
             continue
         if field == "defaultSort" and "defaultSort" not in slot_config:
             errors.append(f"组件 {kind} 的当前实例未启用默认排序，不能配置 defaultSort（slot {slot_id}）")
@@ -375,8 +379,45 @@ def _normalize_component_value(field: str, value: Any, layer: str | None) -> Any
     if t == "object":
         if not isinstance(value, dict):
             raise LayoutConfigValidationError(f"组件配置 {field} 需为对象")
+        if field == "stockChart":
+            return _normalize_stock_chart(value)
         return value
     raise LayoutConfigValidationError(f"组件配置 {field} 类型未知")
+
+
+def _normalize_stock_chart(value: dict[str, Any]) -> dict[str, Any]:
+    """股票多图组件配置是稳定契约；拒绝缺字段、重复图层或失真的比例。"""
+    auxiliary = {"volume", "macd", "hidden"}
+    slot2 = value.get("slot2")
+    slot3 = value.get("slot3")
+    if slot2 not in auxiliary or slot3 not in auxiliary:
+        raise LayoutConfigValidationError("组件配置 stockChart 的辅助图类型非法")
+    if slot2 != "hidden" and slot2 == slot3:
+        raise LayoutConfigValidationError("组件配置 stockChart 的辅助图不能重复")
+    expected_lengths = {
+        "kline": 1,
+        "kline|volume": 2,
+        "kline|macd": 2,
+        "kline|volume|macd": 3,
+        "kline|macd|volume": 3,
+    }
+    ratios = value.get("heightRatios")
+    if not isinstance(ratios, dict) or set(ratios) != set(expected_lengths):
+        raise LayoutConfigValidationError("组件配置 stockChart 的高度比例组合不完整")
+    normalized_ratios: dict[str, list[float]] = {}
+    for key, length in expected_lengths.items():
+        items = ratios.get(key)
+        if (
+            not isinstance(items, list)
+            or len(items) != length
+            or any(isinstance(item, bool) or not isinstance(item, (int, float)) or item <= 0 for item in items)
+        ):
+            raise LayoutConfigValidationError(f"组件配置 stockChart 的 {key} 高度比例非法")
+        total = float(sum(items))
+        if abs(total - 1.0) > 1e-6:
+            raise LayoutConfigValidationError(f"组件配置 stockChart 的 {key} 高度比例之和必须为 1")
+        normalized_ratios[key] = [float(item) / total for item in items]
+    return {"slot2": slot2, "slot3": slot3, "heightRatios": normalized_ratios}
 
 
 def _normalize_path_value(path: str, value: Any, layer: str | None = None) -> Any:

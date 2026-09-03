@@ -19,6 +19,7 @@ import {
   type ComponentConfigLayer,
   type ComponentSlotConfigMeta,
 } from './componentConfig'
+import { createDefaultStockChartPreferences } from '@/composables/useStockChartPreferences'
 
 /** 页面响应式策略（plan.md §14.3）。受控命名，不等于自由编辑断点。 */
 export type ResponsiveProfile =
@@ -142,7 +143,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
         { id: 'workspace', component: 'master-detail', region: 'main', minH: 360, label: '连板天梯研究工作台', order: 1 },
         { id: 'ladder', component: 'section', region: 'main', parentId: 'workspace', label: '天梯分层', order: 1 },
-        { id: 'analysis', component: 'section', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2 },
+        { id: 'analysis', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences() } },
         { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
       ],
       editable: [densityKnob()],
@@ -195,7 +196,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
         { id: 'workspace', component: 'master-detail', region: 'main', minH: 360, label: '榜单股票行情工作台', order: 1 },
         { id: 'table', component: 'wide-table', region: 'main', parentId: 'workspace', label: '榜单列表', order: 1, config: { pagination: false, defaultSort: 'score' } },
-        { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2 },
+        { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences() } },
       ],
       editable: [densityKnob()],
     },
@@ -314,7 +315,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'table', component: 'wide-table', region: 'main', parentId: 'workspace', label: '普通查询列表', order: 1, config: { pagination: true, defaultSort: 'pct_chg:asc' } },
         // 分组视图表：与 table 互斥渲染（按 defaultView 模式），建模为 table 的可寻址子槽，承载独立列集，不进主流渲染。
         { id: 'groupTable', component: 'wide-table', region: 'main', parentId: 'workspace', label: '分组视图', order: 2, config: { pagination: true, defaultSort: 'add_date:asc' } },
-        { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 3 },
+        { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 3, config: { stockChart: createDefaultStockChartPreferences() } },
       ],
       editable: [densityKnob()],
     },
@@ -396,6 +397,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'body', component: 'section', region: 'main', order: 1 },
         // 逐笔成交表：嵌套在 body 分区内，进入统一可寻址模型（slots.trades.config.*），P7 已接入页面消费（排序/列显隐）。
         { id: 'trades', component: 'data-table', region: 'main', parentId: 'body', label: '逐笔成交', order: 2, config: { pagination: false, defaultSort: 'entry' } },
+        { id: 'chart', component: 'chart', region: 'main', parentId: 'body', label: '交易回放图表', order: 3, config: { stockChart: createDefaultStockChartPreferences() } },
       ],
       editable: [densityKnob()],
     },
@@ -432,7 +434,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'body', component: 'section', region: 'main', order: 1 },
         { id: 'history', component: 'data-table', region: 'main', parentId: 'body', label: '训练历史', order: 2, config: { pagination: true, defaultSort: 'created_at:desc' } },
         // 训练台/结算的 K 线工作区：进入统一可寻址模型（slots.chart.config.*），承载「图表区域高度」等组件特性。
-        { id: 'chart', component: 'chart', region: 'main', parentId: 'body', label: '训练图表', order: 3, config: { minHeight: 650 } },
+        { id: 'chart', component: 'chart', region: 'main', parentId: 'body', label: '训练图表', order: 3, config: { minHeight: 650, stockChart: createDefaultStockChartPreferences() } },
         // 设置抽屉：overlay 区，进入统一可寻址模型，不参与主流渲染（由页面自行渲染抽屉）。
         { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
       ],
@@ -795,7 +797,7 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'detail', component: 'detail', region: 'main', order: 1 },
-        { id: 'chart', component: 'chart', region: 'main', parentId: 'detail', label: '个股行情', order: 1, config: { minHeight: 650 } },
+        { id: 'chart', component: 'chart', region: 'main', parentId: 'detail', label: '个股行情', order: 1, config: { minHeight: 650, stockChart: createDefaultStockChartPreferences() } },
       ],
       editable: [densityKnob()],
     },
@@ -1063,7 +1065,7 @@ const REGISTRY: PageRegistryEntry[] = [
             hiddenColumns: ['pct_20d', 'net_inflow_3d', 'net_inflow_5d', 'net_inflow_10d', 'net_inflow_20d'],
           },
         },
-        { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '板块走势分析', order: 2 },
+        { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '板块走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences() } },
       ],
       editable: [densityKnob()],
     },
@@ -1099,7 +1101,7 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'detail', component: 'detail', region: 'main', label: '板块详情', order: 1 },
-        { id: 'chart', component: 'chart', region: 'main', parentId: 'detail', label: '板块指数', order: 1, config: { minHeight: 560 } },
+        { id: 'chart', component: 'chart', region: 'main', parentId: 'detail', label: '板块指数', order: 1, config: { minHeight: 560, stockChart: createDefaultStockChartPreferences() } },
         { id: 'memberTable', component: 'data-table', region: 'main', parentId: 'detail', label: '成分股', order: 2, config: { pagination: true, defaultSort: 'pct:desc', pageSize: 20 } },
       ],
       editable: [densityKnob()],
@@ -1121,6 +1123,11 @@ export function componentMetaForSlot(entry: PageRegistryEntry, slot: SlotSpec): 
     fieldApplicability.minHeight = typeof slot.config?.minHeight === 'number'
       ? { enabled: true }
       : { enabled: false, reason: '该图表实例未声明固定区域高度' }
+  }
+  if (slot.component === 'chart' && !fieldApplicability.stockChart) {
+    fieldApplicability.stockChart = slot.config?.stockChart
+      ? { enabled: true }
+      : { enabled: false, reason: '该图表实例不是股票 K 线多图工作区' }
   }
   return { ...declared, fieldApplicability }
 }

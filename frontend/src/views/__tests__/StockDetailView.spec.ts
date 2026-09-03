@@ -8,28 +8,66 @@ import ElementPlus from 'element-plus'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import { useAuthStore } from '@/stores/auth'
 import { useStockSet } from '@/stores/stockSet'
+import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
+import {
+  chartCompositionKey,
+  normalizeStockChartPreferences,
+  setAuxiliaryChartType,
+  visibleChartTypes,
+} from '@/composables/useStockChartPreferences'
 
 const pageSettingsState = vi.hoisted(() => ({
   current: null as any,
   reset: vi.fn(),
 }))
 const resetLayout = vi.hoisted(() => vi.fn())
+const componentConfigState = vi.hoisted(() => ({ current: null as any }))
+
+function defaultChartConfig() {
+  return {
+    slot2: 'volume',
+    slot3: 'macd',
+    heightRatios: {
+      kline: [1],
+      'kline|volume': [0.75, 0.25],
+      'kline|macd': [0.75, 0.25],
+      'kline|volume|macd': [0.6, 0.2, 0.2],
+      'kline|macd|volume': [0.6, 0.2, 0.2],
+    },
+  }
+}
 
 vi.mock('@/composables/useRemoteLayoutConfig', () => ({
-  useRemoteLayoutConfig: () => ({
+  useRemoteLayoutConfig: () => {
+    componentConfigState.current ??= reactive(defaultChartConfig())
+    return ({
     effective: {},
     knobs: [],
     setKnob: vi.fn(),
     valueOf: vi.fn(),
     sourceOf: vi.fn(),
     isDirty: ref(false),
-    resetAll: resetLayout,
-    componentValueOf: vi.fn(),
-    setComponentKnob: vi.fn(),
-    componentSourceOf: vi.fn(),
+    resetAll: () => {
+      resetLayout()
+      Object.assign(componentConfigState.current, defaultChartConfig())
+    },
+    componentValueOf: vi.fn((_slotId: string, field: string) => (
+      field === 'stockChart' ? componentConfigState.current : field === 'minHeight' ? 650 : undefined
+    )),
+    setComponentKnob: vi.fn((_slotId: string, field: string, value: unknown) => {
+      if (field !== 'stockChart') return
+      for (const key of Object.keys(componentConfigState.current)) delete componentConfigState.current[key]
+      Object.assign(componentConfigState.current, structuredClone(value))
+    }),
+    componentSourceOf: vi.fn(() => 'default'),
     layerValuesOf: vi.fn(),
     componentLayerValuesOf: vi.fn(),
-  }),
+    remoteHydrated: ref(true),
+    whenRemoteHydrated: async () => undefined,
+    saveRemoteUserConfig: async () => undefined,
+    remoteSaveError: ref(false),
+  })
+  },
 }))
 
 vi.mock('@/composables/usePageSettings', () => ({
@@ -124,16 +162,39 @@ const StockChartWorkspaceStub = defineComponent({
 
 const PageSettingsDrawerStub = defineComponent({
   name: 'PageSettingsDrawer',
-  props: ['businessVisible'],
+  props: ['businessVisible', 'config', 'componentRuntimeValueOf'],
   emits: ['reset'],
   setup(_props, { emit, slots }) {
-    return () => h('aside', { 'data-testid': 'page-settings-drawer' }, [
+    return () => {
+      const config = (_props as any).config
+      const value = normalizeStockChartPreferences(config.componentValueOf('chart', 'stockChart'))
+      const key = chartCompositionKey(value)
+      const runtime = normalizeStockChartPreferences(
+        (_props as any).componentRuntimeValueOf?.('chart', 'stockChart') ?? value,
+      )
+      return h('aside', { 'data-testid': 'page-settings-drawer' }, [
+      h(StockChartSettingSection, {
+        slot2: value.slot2,
+        slot3: value.slot3,
+        chartTypes: visibleChartTypes(value),
+        defaultRatios: value.heightRatios[key],
+        currentRatios: runtime.heightRatios[key],
+        testIdPrefix: 'component-chart-stock-chart',
+        onChange: (slot: 'slot2' | 'slot3', next: unknown) => config.setComponentKnob(
+          'chart', 'stockChart', setAuxiliaryChartType(value, slot, next),
+        ),
+        onSaveDefaultRatios: (ratios: number[]) => config.setComponentKnob('chart', 'stockChart', {
+          ...value,
+          heightRatios: { ...value.heightRatios, [key]: ratios },
+        }),
+      }),
       slots.business?.(),
       h('button', {
         'data-testid': 'page-settings-reset',
         onClick: () => emit('reset'),
       }, '恢复默认'),
     ])
+    }
   },
 })
 
@@ -419,6 +480,7 @@ describe('StockDetailView 三图数据协调', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     pageSettingsState.current = null
+    componentConfigState.current = null
     resetLayout.mockReset()
     localStorage.clear()
     setDefaultApiResponses()
@@ -629,7 +691,7 @@ describe('StockDetailView 三图数据协调', () => {
 
     const barsAfterRange = vi.mocked(stocksApi.getBars).mock.calls.length
     const indicatorsAfterRange = vi.mocked(stocksApi.getIndicators).mock.calls.length
-    pageSettingsState.current.charts.slot3 = 'hidden'
+    componentConfigState.current.slot3 = 'hidden'
     await nextTick()
     await flushPromises()
 
@@ -644,55 +706,55 @@ describe('StockDetailView 三图数据协调', () => {
     const initialIndicators = vi.mocked(stocksApi.getIndicators).mock.calls.length
     const workspace = wrapper.findComponent(StockChartWorkspaceStub)
 
-    expect(wrapper.get('[data-testid="stock-detail-chart-slot1-kline"]').text())
+    expect(wrapper.get('[data-testid="component-chart-stock-chart-slot1-kline"]').text())
       .toContain('固定，不可隐藏')
 
-    await wrapper.get('[data-testid="stock-detail-chart-slot2-macd"]').trigger('click')
+    await wrapper.get('[data-testid="component-chart-stock-chart-slot2-macd"]').trigger('click')
     await nextTick()
-    expect(pageSettingsState.current.charts).toMatchObject({
+    expect(componentConfigState.current).toMatchObject({
       slot2: 'macd',
       slot3: 'volume',
     })
     expect(workspace.props('slot2')).toBe('macd')
     expect(workspace.props('slot3')).toBe('volume')
 
-    await wrapper.get('[data-testid="stock-detail-chart-slot3-hidden"]').trigger('click')
+    await wrapper.get('[data-testid="component-chart-stock-chart-slot3-hidden"]').trigger('click')
     await nextTick()
     expect(workspace.props('slot3')).toBe('hidden')
     expect(stocksApi.getBars).toHaveBeenCalledTimes(initialBars)
     expect(stocksApi.getIndicators).toHaveBeenCalledTimes(initialIndicators)
 
     const persistedBeforeDraft = JSON.parse(
-      JSON.stringify(pageSettingsState.current.charts.heightRatios),
+      JSON.stringify(componentConfigState.current.heightRatios),
     )
     await wrapper.get('[data-testid="ratio-draft"]').trigger('click')
     await nextTick()
-    expect(pageSettingsState.current.charts.heightRatios).toEqual(persistedBeforeDraft)
+    expect(componentConfigState.current.heightRatios).toEqual(persistedBeforeDraft)
 
     await wrapper.get('[data-testid="ratio-commit"]').trigger('click')
     await nextTick()
-    expect(pageSettingsState.current.charts.heightRatios['kline|macd'])
+    expect(componentConfigState.current.heightRatios['kline|macd'])
       .toEqual([0.75, 0.25])
 
     // 三图终态用于验证 commit 真正写入当前有序组合，而不是草稿或其他组合。
-    await wrapper.get('[data-testid="stock-detail-chart-slot3-volume"]').trigger('click')
+    await wrapper.get('[data-testid="component-chart-stock-chart-slot3-volume"]').trigger('click')
     await nextTick()
     await wrapper.get('[data-testid="ratio-commit"]').trigger('click')
     await nextTick()
     expect(workspace.props('heightRatios')).toEqual([0.5, 0.3, 0.2])
-    expect(pageSettingsState.current.charts.heightRatios['kline|macd|volume'])
+    expect(componentConfigState.current.heightRatios['kline|macd|volume'])
       .toEqual([0.6, 0.2, 0.2])
 
-    await wrapper.get('[data-testid="stock-detail-chart-save-current-ratios"]').trigger('click')
+    await wrapper.get('[data-testid="component-chart-stock-chart-save-current-ratios"]').trigger('click')
     await nextTick()
-    expect(pageSettingsState.current.charts.heightRatios['kline|macd|volume'])
+    expect(componentConfigState.current.heightRatios['kline|macd|volume'])
       .toEqual([0.5, 0.3, 0.2])
 
     await wrapper.get('[data-testid="page-settings-reset"]').trigger('click')
     await nextTick()
     expect(pageSettingsState.reset).toHaveBeenCalledTimes(1)
     expect(resetLayout).toHaveBeenCalledTimes(1)
-    expect(pageSettingsState.current.charts).toEqual({
+    expect(componentConfigState.current).toEqual({
       slot2: 'volume',
       slot3: 'macd',
       heightRatios: {

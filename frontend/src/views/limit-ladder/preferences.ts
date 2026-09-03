@@ -8,11 +8,6 @@ import {
 } from '@/api/limitLadder'
 import { normalizeMarketBenchmarkCode } from '@/utils/marketBenchmarks'
 import {
-  createDefaultStockChartPreferences,
-  normalizeStockChartPreferences,
-  type StockChartPreferences,
-} from '@/composables/useStockChartPreferences'
-import {
   PRICE_COMPARE_METRIC_ORDER,
   isPriceCompareMetric,
   type PriceCompareMetric,
@@ -41,7 +36,6 @@ export interface LimitLadderPreferenceV1 extends Record<string, unknown> {
   compareMetrics: PriceCompareMetric[]
   defaultCompareMetric: PriceCompareMetric
   adjustMode: '' | 'qfq' | 'hfq'
-  charts: StockChartPreferences
 }
 
 export const DEFAULT_LIMIT_LADDER_PREFERENCE: LimitLadderPreferenceV1 = {
@@ -58,7 +52,6 @@ export const DEFAULT_LIMIT_LADDER_PREFERENCE: LimitLadderPreferenceV1 = {
   compareMetrics: [...PRICE_COMPARE_METRIC_ORDER],
   defaultCompareMetric: 'cum',
   adjustMode: 'qfq',
-  charts: createDefaultStockChartPreferences(),
 }
 
 const VALID_BOARDS = new Set<LimitLadderBoard>(DEFAULT_LIMIT_LADDER_FILTERS.boards)
@@ -68,7 +61,6 @@ function defaultPreference(): LimitLadderPreferenceV1 {
     ...DEFAULT_LIMIT_LADDER_PREFERENCE,
     boards: [...DEFAULT_LIMIT_LADDER_PREFERENCE.boards],
     compareMetrics: [...DEFAULT_LIMIT_LADDER_PREFERENCE.compareMetrics],
-    charts: normalizeStockChartPreferences(DEFAULT_LIMIT_LADDER_PREFERENCE.charts),
   }
 }
 
@@ -128,7 +120,6 @@ export function normalizeLimitLadderPreference(value: unknown): LimitLadderPrefe
     compareMetrics: visibleMetrics,
     defaultCompareMetric,
     adjustMode: input.adjustMode === '' || input.adjustMode === 'hfq' ? input.adjustMode : 'qfq',
-    charts: normalizeStockChartPreferences(input.charts),
   }
 }
 

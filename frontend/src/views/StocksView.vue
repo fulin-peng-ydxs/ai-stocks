@@ -19,7 +19,6 @@ import StockAnalysisNameCell from '@/components/StockAnalysisNameCell.vue'
 import RelatedBoardCell from '@/components/RelatedBoardCell.vue'
 import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
 import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.vue'
-import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import { listStocks, type StockBasic, type StockListParams } from '@/api/stocks'
 import {
   addMembers,
@@ -49,10 +48,10 @@ import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
 import { useStockAnalysisSession } from '@/composables/useStockAnalysisSession'
 import {
-  createDefaultStockChartPreferences,
-  useStockChartPreferences,
-  type AuxiliaryChartSlot,
-} from '@/composables/useStockChartPreferences'
+  composeComponentRuntimeValueOf,
+  useStockChartComponentConfig,
+} from '@/composables/useStockChartComponentConfig'
+import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageEntry, getPageLayout, type SlotConfigMeta } from '@/layout'
@@ -87,14 +86,8 @@ const stocksDefaults = {
   compareMetrics: [...PRICE_COMPARE_METRIC_ORDER] as PriceCompareMetric[],
   defaultCompareMetric: 'cum' as PriceCompareMetric,
   adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
-  charts: createDefaultStockChartPreferences(),
 }
-const { settings, isDirty, reset, hydrated, whenHydrated } = usePageSettings('stocks', stocksDefaults)
-const chartSettings = computed({
-  get: () => settings.charts,
-  set: (value) => { settings.charts = value },
-})
-const chartPreferences = useStockChartPreferences(chartSettings, hydrated)
+const { settings, isDirty, reset, whenHydrated } = usePageSettings('stocks', stocksDefaults)
 const { validDefault: klineDefaultRange } = useKlinePrefs()
 const {
   analysisPanelVisible,
@@ -127,11 +120,27 @@ const {
   componentLayerValuesOf,
   componentAllowedLayers,
   whenRemoteHydrated,
+  remoteHydrated,
+  saveRemoteUserConfig,
+  remoteSaveError,
 } = useRemoteLayoutConfig(stocksLayout)
 
-// 设置抽屉由 PageSettingsDrawer 按元数据渲染；workspace 宽度与相关分析默认项共同归入业务选项。
+// 设置抽屉由 PageSettingsDrawer 按元数据渲染；workspace 宽度、表格与图表均归入本页组件设置。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
-const { setCurrentMasterWidth, componentRuntimeValueOf } = useMarketMasterWidthRuntime()
+const { setCurrentMasterWidth, componentRuntimeValueOf: masterRuntimeValueOf } = useMarketMasterWidthRuntime()
+const chartPreferences = useStockChartComponentConfig({
+  componentValueOf,
+  setComponentKnob,
+  hydrated: remoteHydrated,
+})
+const componentRuntimeValueOf = composeComponentRuntimeValueOf(
+  masterRuntimeValueOf,
+  chartPreferences.componentRuntimeValueOf,
+)
+useLegacyStockChartPreferenceMigration({
+  pageKey: 'stocks', componentSourceOf, setComponentKnob, whenRemoteHydrated,
+  saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
+})
 
 // 普通列表表格的组件配置（slot 'table'）：抽屉写值由 ComponentAutoSettings 自动渲染；
 // 这里只保留页面渲染/查询要读的派生值（默认排序、每页条数、列显隐 getter），写值统一经组件配置层。
@@ -322,7 +331,7 @@ let restoringListState = true
 const auth = useAuthStore()
 const canViewGroups = computed(() => hasPermission(auth.role, auth.permissions, 'stock-group:view'))
 const settingsComponentSlotIds = computed(() => (
-  canViewGroups.value ? undefined : ['table']
+  canViewGroups.value ? undefined : ['table', 'chart']
 ))
 const settingsComponentMetaOverrides = computed<Record<string, SlotConfigMeta> | undefined>(() => {
   if (canViewGroups.value) return undefined
@@ -587,19 +596,6 @@ function stockAnalysisRowClass({ row }: { row: { code: string } }): string {
 
 function openActiveAnalysisDetail(): void {
   if (activeAnalysisCode.value) enterDetail(activeAnalysisCode.value)
-}
-
-function setAuxiliaryChart(slot: AuxiliaryChartSlot, value: string | number | boolean): void {
-  chartPreferences.setSlotType(slot, value)
-}
-
-function handleRatioDraft(ratios: number[]): void {
-  chartPreferences.updateRatioDraft(ratios)
-}
-
-function handleRatioCommit(ratios: number[]): void {
-  chartPreferences.updateRatioDraft(ratios)
-  chartPreferences.commitRatioDraft()
 }
 
 const allCurChecked = computed(() => curRows.value.length > 0 && curRows.value.every((r) => inCart(r.code)))
@@ -1006,10 +1002,10 @@ onMounted(async () => {
             </template>
           </AppTableColumn>
           <AppTableColumn v-if="groupColVisible('relatedIndustry')" label="行业走势">
-            <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="industry" /></template>
+            <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="industry" :return-path="route.fullPath" /></template>
           </AppTableColumn>
           <AppTableColumn v-if="groupColVisible('relatedConcept')" label="概念走势">
-            <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="concept" /></template>
+            <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="concept" :return-path="route.fullPath" /></template>
           </AppTableColumn>
           <AppTableColumn v-if="groupColVisible('price')" label="股价" prop="price" sortable="custom">
             <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPrice(row.price) }}</b></template>
@@ -1108,10 +1104,10 @@ onMounted(async () => {
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('board')" label="板块" prop="board" />
           <AppTableColumn v-if="colVisible('relatedIndustry')" label="行业走势">
-            <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="industry" /></template>
+            <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="industry" :return-path="route.fullPath" /></template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('relatedConcept')" label="概念走势">
-            <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="concept" /></template>
+            <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="concept" :return-path="route.fullPath" /></template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('status')" label="状态">
             <template #default="{ row }">
@@ -1143,8 +1139,8 @@ onMounted(async () => {
           @activate="activateAnalysisCode"
           @remove="removeAnalysisCode"
           @open-detail="openActiveAnalysisDetail"
-          @ratio-draft="handleRatioDraft"
-          @ratio-commit="handleRatioCommit"
+          @ratio-draft="chartPreferences.handleRatioDraft"
+          @ratio-commit="chartPreferences.handleRatioCommit"
         />
       </template>
     </MarketMasterDetailWorkspace>
@@ -1249,23 +1245,12 @@ onMounted(async () => {
       :config="drawerConfig"
       :business-visible="true"
       :component-slot-ids="settingsComponentSlotIds"
-      :business-component-slot-ids="['workspace']"
       :component-runtime-value-of="componentRuntimeValueOf"
       :component-meta-overrides="settingsComponentMetaOverrides"
       @reset="reset(); resetLayout()"
     >
       <template #business>
-        <StockChartSettingSection
-          :slot2="chartPreferences.preferences.value.slot2"
-          :slot3="chartPreferences.preferences.value.slot3"
-          :chart-types="chartPreferences.visibleTypes.value"
-          :default-ratios="chartPreferences.defaultRatios.value"
-          :current-ratios="chartPreferences.currentRatios.value"
-          test-id-prefix="stocks-chart"
-          @change="setAuxiliaryChart"
-          @save-default-ratios="chartPreferences.setDefaultHeightRatios"
-        >
-          <template #before>
+        <PageSettingSection title="行情口径">
           <div class="setting-item">
             <div class="setting-label">复权模式</div>
             <PageSegmented v-model="settings.adjustMode" aria-label="复权模式" :options="[
@@ -1274,8 +1259,7 @@ onMounted(async () => {
               { label: '后复权', value: 'hfq' },
             ]" />
           </div>
-          </template>
-        </StockChartSettingSection>
+        </PageSettingSection>
         <PageSettingSection title="默认查询">
           <div class="setting-item">
             <div class="setting-label">默认视图</div>

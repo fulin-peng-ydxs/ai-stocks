@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_LIMIT_LADDER_FILTERS, filtersFromRouteQuery } from '@/api/limitLadder'
-import { createDefaultStockChartPreferences } from '@/composables/useStockChartPreferences'
 import {
   DEFAULT_LIMIT_LADDER_PREFERENCE,
   filtersFromLimitLadderPreference,
@@ -56,7 +55,6 @@ describe('limit ladder preferences', () => {
       benchmarkCode: '000905.SH',
       compareMetrics: DEFAULT_LIMIT_LADDER_PREFERENCE.compareMetrics,
       defaultCompareMetric: 'cum',
-      charts: createDefaultStockChartPreferences(),
     })
     expect(normalizeLimitLadderPreference({
       cardSort: 'industry',

@@ -11,7 +11,10 @@ vi.mock('@/layout/pageRegistry', () => ({
       'sort-demo': [{ key: 'defaultSort', layers: ['page', 'user'] }],
       'border-demo': [{ key: 'border', layers: ['page'] }],
       'config-panel-demo': [{ key: 'defaultCollapsed', layers: ['page', 'user'] }],
-      'chart-demo': [{ key: 'minHeight', layers: ['page', 'user'] }],
+      'chart-demo': [
+        { key: 'minHeight', layers: ['page', 'user'] },
+        { key: 'stockChart', layers: ['page', 'user'] },
+      ],
       'master-demo': [{ key: 'masterWidth', layers: ['preset', 'page', 'user'] }],
       'system-config': [
         { key: 'bodyScroll', layers: ['preset', 'page'] },
@@ -99,7 +102,9 @@ vi.mock('@/layout/pageRegistry', () => ({
 
 vi.mock('@/layout/componentConfig', () => {
   const fieldDef = (_kind: string, field: string) => (
-    field === 'minHeight'
+    field === 'stockChart'
+      ? { key: 'stockChart', label: '图表组合与内部比例', control: 'object', layers: ['page', 'user'] }
+      : field === 'minHeight'
       ? { key: 'minHeight', label: '图表区域高度', control: 'int', layers: ['page', 'user'], min: 480, max: 900, default: 560 }
       : field === 'masterWidth'
         ? { key: 'masterWidth', label: '列表默认宽度', control: 'int', layers: ['preset', 'page', 'user'], min: 360, max: 1200, default: 1200, runtimeValueActionLabel: '使用页面当前宽度' }
@@ -113,7 +118,7 @@ vi.mock('@/layout/componentConfig', () => {
     getComponentFieldDef: fieldDef,
     getApplicableComponentFieldDefs: (kind: string, meta: any, layer: string) => {
       const fields = kind === 'chart'
-        ? ['minHeight']
+        ? ['minHeight', 'stockChart']
         : kind === 'master-detail'
           ? ['masterWidth']
         : kind === 'config-panel'
@@ -274,7 +279,21 @@ function mountChartDemo() {
     props: {
       pageKey: 'chart-demo',
       config: {
-        componentValueOf: vi.fn(() => 560),
+        componentValueOf: vi.fn((_slotId: string, field: string) => (
+          field === 'stockChart'
+            ? {
+                slot2: 'volume',
+                slot3: 'macd',
+                heightRatios: {
+                  kline: [1],
+                  'kline|volume': [0.75, 0.25],
+                  'kline|macd': [0.75, 0.25],
+                  'kline|volume|macd': [0.6, 0.2, 0.2],
+                  'kline|macd|volume': [0.6, 0.2, 0.2],
+                },
+              }
+            : 560
+        )),
         setComponentKnob,
       },
     },
@@ -298,6 +317,11 @@ function mountChartDemo() {
         ElCheckboxGroup: true,
         ElCheckbox: true,
         ElEmpty: true,
+        StockChartSettingSection: {
+          props: ['slot2', 'slot3', 'defaultRatios', 'currentRatios'],
+          emits: ['change', 'saveDefaultRatios'],
+          template: '<button class="stock-chart-stub" @click="$emit(\'change\', \'slot2\', \'macd\')">chart</button>',
+        },
       },
     },
   })
@@ -379,6 +403,17 @@ describe('ComponentAutoSettings', () => {
     })
     await wrapper.find('.number-stub').trigger('click')
     expect(setComponentKnob).toHaveBeenCalledWith('chart', 'minHeight', 620)
+  })
+
+  it('股票多图组合在组件设置中按 slot 写回统一 stockChart 字段', async () => {
+    const { wrapper, setComponentKnob } = mountChartDemo()
+    expect(wrapper.text()).toContain('图表组合与内部比例')
+    await wrapper.find('.stock-chart-stub').trigger('click')
+    expect(setComponentKnob).toHaveBeenCalledWith(
+      'chart',
+      'stockChart',
+      expect.objectContaining({ slot2: 'macd', slot3: 'volume' }),
+    )
   })
 
   it('行情工作台可采用页面当前宽度作为持久化默认值', async () => {

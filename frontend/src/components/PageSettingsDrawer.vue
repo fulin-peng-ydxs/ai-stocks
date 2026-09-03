@@ -7,7 +7,6 @@ import { applicableComponentFields, getPageEntry, type SlotConfigMeta } from '@/
 import { getComponentFieldDef } from '@/layout/componentConfig'
 import SettingsGroup from './SettingsGroup.vue'
 import ComponentAutoSettings from './ComponentAutoSettings.vue'
-import PageSettingSection from './PageSettingSection.vue'
 import PageDrawer from './PageDrawer.vue'
 import LayoutSettingsSection from '@/layout/components/LayoutSettingsSection.vue'
 import AppIconButton from './AppIconButton.vue'
@@ -39,8 +38,6 @@ const props = withDefaults(defineProps<{
   businessVisible?: boolean
   /** 运行时只开放指定组件 slot；复用 ComponentAutoSettings 的 slotIds 过滤能力。 */
   componentSlotIds?: string[]
-  /** 将指定组件 slot 的配置归入业务选项，适用于需和页面业务偏好一起理解的工作台设置。 */
-  businessComponentSlotIds?: string[]
   /** 页面运行态组件值，仅用于“采用当前值”入口，不改变默认值单向投影规则。 */
   componentRuntimeValueOf?: (slotId: string, field: string) => unknown
   componentMetaOverrides?: Record<string, SlotConfigMeta>
@@ -117,10 +114,9 @@ const hasLayoutKnobs = computed(() => !!activeConfig.value?.knobs?.length)
 const regularComponentSlotIds = computed(() => {
   const entry = props.pageKey ? getPageEntry(props.pageKey) : undefined
   if (!entry) return []
-  const businessIds = new Set(props.businessComponentSlotIds ?? [])
   return entry.layout.slots
     .map((slot) => slot.id)
-    .filter((slotId) => (!props.componentSlotIds || props.componentSlotIds.includes(slotId)) && !businessIds.has(slotId))
+    .filter((slotId) => !props.componentSlotIds || props.componentSlotIds.includes(slotId))
 })
 
 function hasUserComponentConfig(slotIds: string[]): boolean {
@@ -135,11 +131,8 @@ function hasUserComponentConfig(slotIds: string[]): boolean {
 }
 
 const hasComponentConfig = computed(() => hasUserComponentConfig(regularComponentSlotIds.value))
-const hasBusinessComponentConfig = computed(() => (
-  props.businessVisible !== false && hasUserComponentConfig(props.businessComponentSlotIds ?? [])
-))
 const hasBusinessSlot = computed(() => props.businessVisible !== false && !!slots.business)
-const hasBusinessContent = computed(() => hasBusinessSlot.value || hasBusinessComponentConfig.value)
+const hasBusinessContent = computed(() => hasBusinessSlot.value)
 
 type SectionKey = 'layout' | 'components' | 'business'
 const SECTION_KEYS: SectionKey[] = ['layout', 'components', 'business']
@@ -273,6 +266,7 @@ function handleReset(): void {
               :slot-ids="regularComponentSlotIds"
               :component-meta-overrides="componentMetaOverrides"
               :allowed-layers-of="activeConfig.componentAllowedLayers"
+              :runtime-value-of="componentRuntimeValueOf"
             />
           </SettingsGroup>
 
@@ -285,19 +279,6 @@ function handleReset(): void {
             :model-value="sectionOpen('business')"
             @update:model-value="(open) => setSectionOpen('business', open)"
           >
-            <PageSettingSection v-if="hasBusinessComponentConfig" title="列表与图表布局">
-              <ComponentAutoSettings
-                :page-key="pageKey!"
-                :config="activeConfig"
-                :slot-ids="businessComponentSlotIds"
-                :component-meta-overrides="componentMetaOverrides"
-                :allowed-layers-of="activeConfig.componentAllowedLayers"
-                :collapsible-slot="false"
-                :show-slot-title="false"
-                :drawer-business-visible="true"
-                :runtime-value-of="componentRuntimeValueOf"
-              />
-            </PageSettingSection>
             <slot name="business" />
           </SettingsGroup>
         </template>

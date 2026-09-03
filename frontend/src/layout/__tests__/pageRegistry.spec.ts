@@ -610,13 +610,13 @@ describe('页面注册表完整性', () => {
       <script setup lang="ts">
       import ReplayChart,
         { type TradeMarker }
-        from '@/components/CandleChart.vue'
+        from '@/components/stock-chart/StockChartWorkspace.vue'
       import { default as DrawerAlias } from '@/components/PageDrawer.vue'
       import LayoutAlias from '@/layout/components/LayoutHost.vue'
       import type { HelpTipProps } from '@/components/HelpTip.vue'
       </script>
     `)
-    expect([...components].sort()).toEqual(['CandleChart', 'LayoutHost', 'PageDrawer'])
+    expect([...components].sort()).toEqual(['LayoutHost', 'PageDrawer', 'StockChartWorkspace'])
   })
 
   it('DESIGN 组件登记只读取核心真实复用组件表格第一列', () => {
@@ -798,6 +798,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
         expect(source).toContain(`${consumer.visible}('${key}')`)
         expect(source).toMatch(new RegExp(`<RelatedBoardCell[^>]+board-type=["']${type}["']`))
       }
+      expect(source).toContain(':return-path="route.fullPath"')
     }
   })
 
@@ -826,14 +827,14 @@ describe('组件消费关系与配置一致性（P4）', () => {
     expect(applicableComponentFields(sectorWorkbench, 'chart').map((field) => field.key)).not.toContain('minHeight')
   })
 
-  it('行情主从工作台统一消费抽屉默认宽度，主区拖动不反写配置层', () => {
+  it('行情主从工作台统一在组件设置消费默认宽度，主区拖动不反写配置层', () => {
     for (const pageKey of ['stocks', 'board', 'limit-ladder', 'sectors']) {
       const entry = getPageEntry(pageKey)!
       expect(applicableComponentFields(entry, 'workspace').map((field) => field.key)).toContain('masterWidth')
       const source = sourceForPage(pageKey)
       expect(source).toContain('<MarketMasterDetailWorkspace')
       expect(source).toContain("componentValueOf('workspace', 'masterWidth')")
-      expect(source).toContain(':business-component-slot-ids="[\'workspace\']"')
+      expect(source).not.toContain('business-component-slot-ids')
       expect(source).toContain(':component-runtime-value-of="componentRuntimeValueOf"')
       expect(source).toContain('@master-width-change="setCurrentMasterWidth"')
     }
@@ -846,14 +847,15 @@ describe('组件消费关系与配置一致性（P4）', () => {
     expect(workspaceSource).not.toContain('setComponentKnob')
   })
 
-  it('板块列表与详情恢复默认同时重置业务偏好和组件配置', () => {
+  it('板块列表恢复业务偏好和组件配置，详情仅恢复自身组件配置', () => {
     const listSource = sourceForPage('sectors')
     const detailSource = sourceForPage('sectors-detail')
 
     expect(listSource).toContain('@reset="resetSettings"')
     expect(listSource).toMatch(/function resetSettings\(\)[\s\S]*reset\(\)[\s\S]*resetLayout\(\)/)
     expect(detailSource).toContain('@reset="resetSettings"')
-    expect(detailSource).toMatch(/function resetSettings\(\)[\s\S]*resetPageSettings\(\)[\s\S]*resetLayout\(\)/)
+    expect(detailSource).toMatch(/function resetSettings\(\)[\s\S]*resetLayout\(\)/)
+    expect(detailSource).not.toContain('usePageSettings(')
   })
 
   it('data-table / wide-table 必须消费并真实接入 border 页面级配置', () => {
@@ -1123,15 +1125,36 @@ describe('组件消费关系与配置一致性（P4）', () => {
     ).toEqual([])
   })
 
-  it('多图工作区统一声明当前比例采用和实时默认比例写入', () => {
+  it('多图工作区统一消费 page+slot 组件配置，不再在页面业务偏好维护平行字段', () => {
     for (const entry of PAGE_REGISTRY) {
       const source = sourceForPage(entry.pageKey)
-      if (!source.includes('<StockChartSettingSection')) continue
-      expect(source).toContain(':default-ratios="chartPreferences.defaultRatios.value"')
-      expect(source).toContain(':current-ratios="chartPreferences.currentRatios.value"')
-      expect(source).toContain('@save-default-ratios="chartPreferences.setDefaultHeightRatios"')
-      expect(source).not.toContain('@save-current-as-default')
+      const stockChartSlot = entry.layout.slots.find((slot) => slot.config?.stockChart)
+      if (!stockChartSlot) continue
+      expect(source).toContain('useStockChartComponentConfig({')
+      expect(source).toContain(':height-ratios="chartPreferences.currentRatios.value"')
+      expect(source).toContain('useLegacyStockChartPreferenceMigration({')
+      expect(source).not.toContain('<StockChartSettingSection')
+      expect(source).not.toMatch(/\bcharts:\s*createDefaultStockChartPreferences\(/)
     }
+  })
+
+  it('个股与板块详情始终开放图表组件实例设置和默认高度比例', () => {
+    for (const pageKey of ['stock-detail', 'sectors-detail']) {
+      const source = sourceForPage(pageKey)
+      expect(source).toContain(':business-visible="true"')
+      expect(source).toContain(':component-runtime-value-of="chartPreferences.componentRuntimeValueOf"')
+      expect(source).toContain('useStockChartComponentConfig({')
+      expect(source).not.toContain('<StockChartSettingSection')
+    }
+  })
+
+  it('回测交易回放消费统一多图工作区和共享默认比例，不再保留旧画布分叉', () => {
+    const source = sourceForPage('backtest')
+    expect(source).toContain("import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'")
+    expect(source).toContain('<StockChartWorkspace')
+    expect(source).toContain('useStockChartComponentConfig({')
+    expect(source).toContain(':height-ratios="chartPreferences.currentRatios.value"')
+    expect(source).not.toContain('CandleChart')
   })
 
   it('股票分析工作台统一消费默认会话投影与共享选择状态机', () => {

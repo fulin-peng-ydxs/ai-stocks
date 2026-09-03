@@ -9,6 +9,12 @@ import type { SectorBar } from '@/api/sectors'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { chartCssVariable, hasRenderableChartSize, useEChartsTheme } from '@/components/chartTheme'
 import {
+  buildMarketCompareLineOption,
+  escapeChartHtml,
+  marketCompareChangeColors,
+  marketCompareLineColors,
+} from '@/components/marketCompareChart'
+import {
   COMPARE_METRIC_META,
   metricKind,
   type CompareMetric,
@@ -54,14 +60,7 @@ const meta = computed(() => COMPARE_METRIC_META[props.metric])
 const isBar = computed(() => metricKind(props.metric, props.rangeDays) === 'bar')
 
 // 对比线只消费当前主题的语义 token，避免固定色板在自定义预设或夜间模式下失真。
-const lineColors = computed(() => [
-  theme.value.focus,
-  theme.value.accent,
-  chartCssVariable('--el-color-success', theme.value.focus),
-  chartCssVariable('--el-color-danger', theme.value.accent),
-  chartCssVariable('--el-color-info', theme.value.label),
-  chartCssVariable('--shell-accent', theme.value.focus),
-])
+const lineColors = computed(() => marketCompareLineColors(theme.value))
 
 function toPriceSeries(series: CompareSeries): PriceCompareSeries {
   return {
@@ -91,21 +90,11 @@ function alignedMetric(series: CompareSeries): (number | null)[] {
   return lineComparison.value.valuesByCode[series.code] ?? []
 }
 
-function escapeHtml(value: unknown): string {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
-}
-
 function renderLine() {
   if (!chart) return
   const t = theme.value
   const colors = lineColors.value
-  const upColor = chartCssVariable('--market-up-color', '#f66055')
-  const downColor = chartCssVariable('--market-down-color', '#1ec96e')
+  const changeColors = marketCompareChangeColors(t)
   const benchmarkData = props.benchmark ? alignedMetric(props.benchmark) : null
   const sectorSeries = props.series.map((s, i) => ({
     name: s.name,
@@ -134,69 +123,42 @@ function renderLine() {
       z: 1,
     }] : []),
   ]
-  chart.setOption({
-    animation: false,
-    backgroundColor: t.background,
-    color: colors,
-    grid: { left: 56, right: 24, top: 40, bottom: 58 },
-    legend: {
-      data: series.map((item) => item.name),
-      top: 4, textStyle: { color: t.label, fontSize: 11 },
-    },
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: t.tooltipBackground, borderColor: t.tooltipBorder, borderWidth: 1,
-      textStyle: { color: t.text, fontSize: 12 },
-      axisPointer: { type: 'cross', label: { backgroundColor: t.axis } },
-      formatter: (params: any) => {
-        const rows = (Array.isArray(params) ? params : [params]).filter(Boolean)
-        const date = escapeHtml(rows[0]?.axisValueLabel ?? rows[0]?.name ?? '')
-        const content = rows.map((item: any) => {
-          const value = typeof item.value === 'number' ? item.value : Number(item.value)
-          const valid = Number.isFinite(value)
-          const color = !valid || value === 0 ? t.text : value > 0 ? upColor : downColor
-          const valueText = valid ? `${value > 0 ? '+' : ''}${value.toFixed(2)}%` : '--'
-          const isBenchmark = item.seriesName === benchmarkName
-          const benchmarkValue = benchmarkData?.[Number(item.dataIndex)]
-          const excess = valid && !isBenchmark && typeof benchmarkValue === 'number'
-            ? +(value - benchmarkValue).toFixed(2)
-            : null
-          const excessColor = excess == null || excess === 0 ? t.label : excess > 0 ? upColor : downColor
-          return `<div style="display:flex;justify-content:space-between;gap:18px">`
-            + `<span>${item.marker ?? ''}${escapeHtml(item.seriesName)}</span>`
-            + `<span style="text-align:right"><strong style="color:${color}">${valueText}</strong>`
-            + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}%</small>`)
-            + '</span>'
-            + '</div>'
-        }).join('')
-        return `<div style="min-width:150px;line-height:1.7">`
-          + `<div style="color:${t.label};margin-bottom:2px">${date} · ${meta.value.label}</div>`
-          + content
-          + '</div>'
-      },
-    },
-    xAxis: {
-      type: 'category', data: dates.value, boundaryGap: false,
-      axisLine: { lineStyle: { color: t.axis } },
-      axisLabel: { color: t.label, fontSize: 10 },
-    },
-    yAxis: {
-      scale: true,
-      axisLine: { show: false },
-      axisLabel: { color: t.label, fontSize: 10, formatter: '{value}%' },
-      splitLine: { lineStyle: { color: t.split } },
-    },
-    dataZoom: [
-      { type: 'inside', start: 0, end: 100 },
-      {
-        type: 'slider', bottom: 6, height: 18,
-        start: 0, end: 100,
-        borderColor: t.axis, fillerColor: t.area,
-        textStyle: { color: t.label },
-      },
-    ],
+  chart.setOption(buildMarketCompareLineOption({
+    theme: t,
+    colors,
+    dates: dates.value,
     series,
-  }, { notMerge: true })
+    tooltipFormatter: (params: unknown) => {
+      const rows = (Array.isArray(params) ? params : [params]).filter(Boolean) as any[]
+      const date = escapeChartHtml(rows[0]?.axisValueLabel ?? rows[0]?.name ?? '')
+      const content = rows.map((item: any) => {
+        const value = typeof item.value === 'number' ? item.value : Number(item.value)
+        const valid = item.value != null && Number.isFinite(value)
+        const color = !valid || value === 0
+          ? changeColors.neutral
+          : value > 0 ? changeColors.up : changeColors.down
+        const valueText = valid ? `${value > 0 ? '+' : ''}${value.toFixed(2)}%` : '--'
+        const isBenchmark = item.seriesName === benchmarkName
+        const benchmarkValue = benchmarkData?.[Number(item.dataIndex)]
+        const excess = valid && !isBenchmark && typeof benchmarkValue === 'number'
+          ? +(value - benchmarkValue).toFixed(2)
+          : null
+        const excessColor = excess == null || excess === 0
+          ? t.label
+          : excess > 0 ? changeColors.up : changeColors.down
+        return `<div style="display:flex;justify-content:space-between;gap:18px">`
+          + `<span>${item.marker ?? ''}${escapeChartHtml(item.seriesName)}</span>`
+          + `<span style="text-align:right"><strong style="color:${color}">${valueText}</strong>`
+          + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}%</small>`)
+          + '</span>'
+          + '</div>'
+      }).join('')
+      return `<div style="min-width:150px;line-height:1.7">`
+        + `<div style="color:${t.label};margin-bottom:2px">${date} · ${meta.value.label}</div>`
+        + content
+        + '</div>'
+    },
+  }), { notMerge: true })
 }
 
 function renderBar() {
@@ -244,7 +206,7 @@ function renderBar() {
       axisPointer: { type: 'shadow' },
       formatter: (params: any) => {
         const rows = (Array.isArray(params) ? params : [params]).filter(Boolean)
-        const name = escapeHtml(rows[0]?.axisValueLabel ?? rows[0]?.name ?? '')
+        const name = escapeChartHtml(rows[0]?.axisValueLabel ?? rows[0]?.name ?? '')
         const content = rows.map((item: any) => {
           const value = typeof item.value === 'number' ? item.value : Number(item.value)
           const valid = item.value != null && Number.isFinite(value)
@@ -255,7 +217,7 @@ function renderBar() {
               : `${value > 0 ? '+' : ''}${value.toFixed(2)}${unit}`)
             : '--'
           return `<div style="display:flex;justify-content:space-between;gap:18px">`
-            + `<span>${item.marker ?? ''}${escapeHtml(item.seriesName)}</span>`
+            + `<span>${item.marker ?? ''}${escapeChartHtml(item.seriesName)}</span>`
             + `<span style="text-align:right"><strong style="color:${color}">${valueText}</strong></span>`
             + '</div>'
         }).join('')

@@ -16,6 +16,7 @@ import AppRowActions from './AppRowActions.vue'
 import SettingsGroup from './SettingsGroup.vue'
 import PageSegmented from './PageSegmented.vue'
 import PageToggleRow from './PageToggleRow.vue'
+import StockChartSettingSection from './StockChartSettingSection.vue'
 import SourceTag from './SourceTag.vue'
 import {
   componentMetaForSlot,
@@ -29,6 +30,12 @@ import {
   type ComponentConfigSource,
   type ComponentFieldDef,
 } from '@/layout/componentConfig'
+import {
+  chartCompositionKey,
+  normalizeStockChartPreferences,
+  setAuxiliaryChartType,
+  visibleChartTypes,
+} from '@/composables/useStockChartPreferences'
 import type { AppRowAction } from './rowActions'
 
 interface ComponentConfigAccess {
@@ -208,6 +215,44 @@ function staticStringListFieldDefs(slot: AutoSlot): ComponentFieldDef[] {
     .map((field) => getComponentFieldDef(slot.kind as never, field))
     .filter((def): def is ComponentFieldDef => def?.control === 'string[]' && Boolean(def.options?.length))
 }
+
+function stockChartValue(slotId: string) {
+  return normalizeStockChartPreferences(props.config.componentValueOf(slotId, 'stockChart'))
+}
+
+function stockChartTypes(slotId: string) {
+  return visibleChartTypes(stockChartValue(slotId))
+}
+
+function stockChartCurrentRatios(slotId: string): number[] {
+  const runtime = props.runtimeValueOf?.(slotId, 'stockChart')
+  const value = normalizeStockChartPreferences(runtime ?? stockChartValue(slotId))
+  return value.heightRatios[chartCompositionKey(value)]
+}
+
+function setStockChartSlot(
+  slotId: string,
+  slot: 'slot2' | 'slot3',
+  value: string | number | boolean,
+): void {
+  props.config.setComponentKnob(
+    slotId,
+    'stockChart',
+    setAuxiliaryChartType(stockChartValue(slotId), slot, value),
+  )
+}
+
+function setStockChartRatios(slotId: string, ratios: number[]): void {
+  const value = stockChartValue(slotId)
+  const key = chartCompositionKey(value)
+  props.config.setComponentKnob(slotId, 'stockChart', {
+    ...value,
+    heightRatios: {
+      ...value.heightRatios,
+      [key]: ratios,
+    },
+  })
+}
 function boolVal(slotId: string, field: string, fallback: boolean): boolean {
   const v = props.config.componentValueOf(slotId, field)
   return typeof v === 'boolean' ? v : fallback
@@ -289,6 +334,34 @@ function setSort(slotId: string, field: string, order: string): void {
       :data-cc-slot="s.slotId"
       :class="{ 'ca-highlight': s.slotId === highlightSlot }"
     >
+      <div v-if="s.fields.includes('stockChart')" class="ca-item">
+        <div class="ca-label-row">
+          <span class="ca-label">图表组合与内部比例</span>
+          <span class="ca-actions">
+            <SourceTag
+              v-if="srcOf(s.slotId, 'stockChart')"
+              :source="srcOf(s.slotId, 'stockChart')!"
+              :values="srcValuesOf(s.slotId, 'stockChart')"
+            />
+            <AppRowActions
+              v-if="clearable && isOverridden(s.slotId, 'stockChart')"
+              :actions="clearFieldActions(s.slotId, 'stockChart')"
+              :inline-limit="1"
+            />
+          </span>
+        </div>
+        <StockChartSettingSection
+          :slot2="stockChartValue(s.slotId).slot2"
+          :slot3="stockChartValue(s.slotId).slot3"
+          :chart-types="stockChartTypes(s.slotId)"
+          :default-ratios="stockChartValue(s.slotId).heightRatios[chartCompositionKey(stockChartValue(s.slotId))]"
+          :current-ratios="stockChartCurrentRatios(s.slotId)"
+          :test-id-prefix="`component-${s.slotId}-stock-chart`"
+          @change="(slot, value) => setStockChartSlot(s.slotId, slot, value)"
+          @save-default-ratios="(ratios) => setStockChartRatios(s.slotId, ratios)"
+        />
+      </div>
+
       <template v-if="s.fields.includes('defaultSort') && s.meta.sortFields?.length">
         <!-- field:order 模式：字段 + 方向 -->
         <div v-if="s.meta.sortHasDirection !== false" class="ca-item">

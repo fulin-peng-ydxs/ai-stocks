@@ -18,6 +18,7 @@ vi.mock('@/composables/usePageSettings', () => ({
       settings: pageSettingsState.current,
       isDirty: ref(false),
       reset: vi.fn(),
+      hydrated: ref(true),
     }
   },
 }))
@@ -163,7 +164,7 @@ const stubs = {
     props: ['points', 'benchmarkCode', 'fill', 'extraBenchmark', 'showBenchmark'],
     template: '<div class="equity-chart-stub" :data-benchmark="benchmarkCode" :data-extra="JSON.stringify(extraBenchmark)" :data-show-benchmark="showBenchmark"><slot/></div>',
   },
-  CandleChart: true,
+    StockChartWorkspace: true,
   // 占位替代布尔 stub(true)：布尔 stub 在 el-option v-for 等结构下会触发 emitsOptions 空引用
   AssetVisibilityActions: { template: '<div />' },
   AssetVisibilityTag: {

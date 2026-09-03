@@ -35,7 +35,6 @@ import PageToggleRow from '@/components/PageToggleRow.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
-import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import type { MacdPanelState } from '@/components/stock-chart/workspaceOptions'
 import { useStockSet } from '@/stores/stockSet'
 import { useAuthStore } from '@/stores/auth'
@@ -46,11 +45,8 @@ import { usePageSettings } from '@/composables/usePageSettings'
 import { useDebouncedQuery } from '@/composables/useDebouncedQuery'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
-import {
-  createDefaultStockChartPreferences,
-  useStockChartPreferences,
-  type AuxiliaryChartSlot,
-} from '@/composables/useStockChartPreferences'
+import { useStockChartComponentConfig } from '@/composables/useStockChartComponentConfig'
+import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { resolveComponentNumberValue } from '@/layout/componentConfig'
@@ -76,7 +72,8 @@ const {
   setComponentKnob,
   componentSourceOf,
   layerValuesOf,
-  componentLayerValuesOf, componentAllowedLayers,
+  componentLayerValuesOf, componentAllowedLayers, remoteHydrated, whenRemoteHydrated,
+  saveRemoteUserConfig, remoteSaveError,
 } = useRemoteLayoutConfig(detailLayout)
 
 // 抽屉的布局与图表区域高度由 PageSettingsDrawer 按 pageRegistry 元数据统一渲染。
@@ -107,29 +104,17 @@ const detailDefaults = {
     is_platform_breakout: true,
     is_vol_breakout: true,
   },
-  charts: createDefaultStockChartPreferences(),
 }
-const { settings, isDirty, reset, hydrated } = usePageSettings('stock-detail', detailDefaults)
-const chartSettings = computed({
-  get: () => settings.charts,
-  set: (value) => {
-    settings.charts = value
-  },
+const { settings, isDirty, reset } = usePageSettings('stock-detail', detailDefaults)
+const chartPreferences = useStockChartComponentConfig({
+  componentValueOf,
+  setComponentKnob,
+  hydrated: remoteHydrated,
 })
-const chartPreferences = useStockChartPreferences(chartSettings, hydrated)
-function setAuxiliaryChart(slot: AuxiliaryChartSlot, value: string | number | boolean): void {
-  chartPreferences.setSlotType(slot, value)
-}
-
-function handleRatioDraft(ratios: number[]): void {
-  chartPreferences.updateRatioDraft(ratios)
-}
-
-function handleRatioCommit(ratios: number[]): void {
-  // pointer 未移动也可能直接产生 commit；先接收终态，再只向持久偏好写入一次。
-  chartPreferences.updateRatioDraft(ratios)
-  chartPreferences.commitRatioDraft()
-}
+useLegacyStockChartPreferenceMigration({
+  pageKey: 'stock-detail', componentSourceOf, setComponentKnob, whenRemoteHydrated,
+  saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
+})
 
 function resetDetailSettings(): void {
   chartPreferences.cancelRatioDraft()
@@ -970,8 +955,8 @@ onBeforeUnmount(() => {
         :zoom-start="0"
         :zoom-end="100"
         :min-height="configuredChartHeight"
-        @ratio-draft="handleRatioDraft"
-        @ratio-commit="handleRatioCommit"
+        @ratio-draft="chartPreferences.handleRatioDraft"
+        @ratio-commit="chartPreferences.handleRatioCommit"
         @retry-macd="loadIndicators"
       />
 
@@ -1099,20 +1084,12 @@ onBeforeUnmount(() => {
       :dirty="isDirty || layoutDirty"
       page-key="stock-detail"
       :config="drawerConfig"
+      :business-visible="true"
+      :component-runtime-value-of="chartPreferences.componentRuntimeValueOf"
       @reset="resetDetailSettings"
     >
       <template #business>
-        <StockChartSettingSection
-          :slot2="chartPreferences.preferences.value.slot2"
-          :slot3="chartPreferences.preferences.value.slot3"
-          :chart-types="chartPreferences.visibleTypes.value"
-          :default-ratios="chartPreferences.defaultRatios.value"
-          :current-ratios="chartPreferences.currentRatios.value"
-          test-id-prefix="stock-detail-chart"
-          @change="setAuxiliaryChart"
-          @save-default-ratios="chartPreferences.setDefaultHeightRatios"
-        >
-          <template #before>
+        <PageSettingSection title="行情口径">
           <div class="setting-item">
             <div class="setting-label">复权模式</div>
             <PageSegmented v-model="settings.adjustMode" aria-label="复权模式" :options="[
@@ -1121,8 +1098,7 @@ onBeforeUnmount(() => {
               { label: '后复权', value: 'hfq' },
             ]" />
           </div>
-          </template>
-        </StockChartSettingSection>
+        </PageSettingSection>
 
         <KlineSettingSection />
 

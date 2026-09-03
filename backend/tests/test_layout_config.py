@@ -444,6 +444,56 @@ def test_component_config_rejects_fields_not_applicable_to_slot_instance(client)
         )
 
 
+def test_stock_chart_component_config_validates_instance_and_ratio_contract(client):
+    repo = LayoutConfigRepo(client)
+    valid = {
+        "slot2": "volume",
+        "slot3": "macd",
+        "heightRatios": {
+            "kline": [1],
+            "kline|volume": [0.75, 0.25],
+            "kline|macd": [0.75, 0.25],
+            "kline|volume|macd": [0.6, 0.2, 0.2],
+            "kline|macd|volume": [0.6, 0.2, 0.2],
+        },
+    }
+    layout = {"slots": [{"id": "chart", "component": "chart", "config": {"stockChart": valid}}]}
+
+    saved = repo.set_user_config(
+        "stocks",
+        {"values": {"slots.chart.config.stockChart": valid}},
+        user_id="u1",
+        layout=layout,
+    )
+    assert saved["config"]["values"]["slots.chart.config.stockChart"] == valid
+
+    duplicate = {**valid, "slot3": "volume"}
+    with pytest.raises(LayoutConfigValidationError, match="辅助图不能重复"):
+        repo.set_user_config(
+            "stocks",
+            {"values": {"slots.chart.config.stockChart": duplicate}},
+            user_id="u1",
+            layout=layout,
+        )
+
+    invalid_ratios = json.loads(json.dumps(valid))
+    invalid_ratios["heightRatios"]["kline|volume"] = [0.8, 0.3]
+    with pytest.raises(LayoutConfigValidationError, match="比例之和必须为 1"):
+        repo.set_page_config(
+            "stocks",
+            {"values": {"slots.chart.config.stockChart": invalid_ratios}},
+            layout=layout,
+        )
+
+    with pytest.raises(LayoutConfigValidationError, match="不是股票多图工作区"):
+        repo.set_user_config(
+            "stocks",
+            {"values": {"slots.chart.config.stockChart": valid}},
+            user_id="u1",
+            layout={"slots": [{"id": "chart", "component": "chart", "config": {}}]},
+        )
+
+
 def test_component_config_page_user_priority(client):
     repo = LayoutConfigRepo(client)
     board_layout = {

@@ -11,10 +11,17 @@ import {
 import { listProfiles, getProfile, browseProfiles, copyProfile, type Profile } from '@/api/screening'
 import { listScoreProfiles, browseScoreProfiles, copyScoreProfile, type ScoreProfileSummary } from '@/api/scoreProfile'
 import { listTradeProfiles, browseTradeProfiles, copyTradeProfile, type TradeProfileSummary } from '@/api/tradeProfile'
-import { getBars, type Bar } from '@/api/stocks'
+import {
+  getBars,
+  getIndicators,
+  type Bar,
+  type IndicatorField,
+  type IndicatorRow,
+} from '@/api/stocks'
 import { fetchBenchmarkEquity, type BenchmarkEquity } from '@/utils/benchmarkEquity'
 import EquityChart from '@/components/EquityChart.vue'
-import CandleChart, { type TradeMarker } from '@/components/CandleChart.vue'
+import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
+import type { MacdPanelState, TradeMarker } from '@/components/stock-chart/workspaceOptions'
 import { Search, Close } from '@element-plus/icons-vue'
 import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
@@ -46,6 +53,8 @@ import {
   type BacktestRunSummary,
 } from '@/components/asset-search/types'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useStockChartComponentConfig } from '@/composables/useStockChartComponentConfig'
+import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
 import { useTradeDates } from '@/composables/useTradeDates'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
@@ -73,6 +82,12 @@ const backtestDefaults = {
 }
 const { settings, isDirty, reset } = usePageSettings('backtest', backtestDefaults)
 
+function resetBacktestSettings(): void {
+  chartPreferences.cancelRatioDraft()
+  reset()
+  resetLayout()
+}
+
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
 const backtestLayout = getPageLayout('backtest')
 const {
@@ -89,7 +104,20 @@ const {
   componentAllowedLayers,
   isDirty: layoutDirty,
   resetAll: resetLayout,
+  remoteHydrated,
+  whenRemoteHydrated,
+  saveRemoteUserConfig,
+  remoteSaveError,
 } = useRemoteLayoutConfig(backtestLayout)
+const chartPreferences = useStockChartComponentConfig({
+  componentValueOf,
+  setComponentKnob,
+  hydrated: remoteHydrated,
+})
+useLegacyStockChartPreferenceMigration({
+  pageKey: 'backtest', componentSourceOf, setComponentKnob, whenRemoteHydrated,
+  saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
+})
 
 // 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
@@ -1466,13 +1494,51 @@ const chartDlg = ref(false)
 const dlgCode = ref('')
 const dlgName = ref<string | null>(null)
 const dlgBars = ref<Bar[]>([])
+const dlgIndicators = ref<IndicatorRow[]>([])
+const dlgIndicatorLoading = ref(false)
+const dlgIndicatorError = ref('')
 const dlgMarkers = ref<TradeMarker[]>([])
 const dlgTrades = ref<DlgTrade[]>([])
 const dlgClicked = ref<TradeRow | null>(null)
 const dlgLoading = ref(false)
 const dlgZoom = ref<{ start: number; end: number }>({ start: 55, end: 100 })
+const BACKTEST_MACD_FIELDS = [
+  'macd_diff',
+  'macd_dea',
+  'macd_hist',
+  'macd_golden_cross',
+  'macd_dead_cross',
+] as const satisfies readonly IndicatorField[]
+const dlgMacdState = computed<MacdPanelState>(() => {
+  if (dlgIndicatorLoading.value) return 'loading'
+  if (dlgIndicatorError.value) return 'error'
+  const hasCompleteMacd = dlgIndicators.value.some((row) => (
+    typeof row.macd_diff === 'number'
+    && typeof row.macd_dea === 'number'
+    && typeof row.macd_hist === 'number'
+  ))
+  return hasCompleteMacd ? 'ready' : 'insufficient'
+})
 
 const ymd = (s: string) => (s || '').slice(0, 10) // 容错：去掉可能的 " 00:00:00"
+
+async function loadDialogIndicators(): Promise<void> {
+  if (!dlgCode.value) return
+  dlgIndicatorLoading.value = true
+  dlgIndicatorError.value = ''
+  try {
+    const data = await getIndicators(dlgCode.value, {
+      lookback: 6000,
+      fields: BACKTEST_MACD_FIELDS,
+    })
+    dlgIndicators.value = data.indicators
+  } catch (error) {
+    dlgIndicators.value = []
+    dlgIndicatorError.value = getErrorMessage(error, 'MACD 指标载入失败')
+  } finally {
+    dlgIndicatorLoading.value = false
+  }
+}
 
 // 点击交易的本笔摘要（左上角）：收益率 / 买入金额 / 卖出金额 / 股数
 const dlgSummary = computed(() => {
@@ -1537,7 +1603,10 @@ async function openTradeChart(row: TradeRow) {
   dlgLoading.value = true
   chartDlg.value = true
   dlgBars.value = []
+  dlgIndicators.value = []
+  dlgIndicatorError.value = ''
   dlgMarkers.value = []
+  const indicatorRequest = loadDialogIndicators()
   try {
     const firstEntry = ymd(ts[0].entry_date)
     const lastExit = ymd(ts[ts.length - 1].exit_date)
@@ -1577,6 +1646,7 @@ async function openTradeChart(row: TradeRow) {
   } catch (e) {
     ElMessage.error((e as Error).message || 'K线载入失败')
   } finally {
+    await indicatorRequest
     dlgLoading.value = false
   }
 }
@@ -2206,8 +2276,26 @@ async function openTradeChart(row: TradeRow) {
           <span class="lg sell">▼ 卖出（卖出原因 + 该笔收益）</span>
           <span class="dlg-hint">买卖点按成交日标注</span>
         </div>
-        <CandleChart v-if="dlgBars.length" :bars="dlgBars" :markers="dlgMarkers"
-                     :zoom-start="dlgZoom.start" :zoom-end="dlgZoom.end" />
+        <StockChartWorkspace
+          v-if="dlgBars.length"
+          class="backtest-trade-chart"
+          :bars="dlgBars"
+          :indicators="dlgIndicators"
+          :markers="dlgMarkers"
+          :slot2="chartPreferences.preferences.value.slot2"
+          :slot3="chartPreferences.preferences.value.slot3"
+          :height-ratios="chartPreferences.currentRatios.value"
+          adjust-label="前复权"
+          :zoom-start="dlgZoom.start"
+          :zoom-end="dlgZoom.end"
+          :min-height="480"
+          :macd-state="dlgMacdState"
+          :macd-error="dlgIndicatorError"
+          aria-label="回测交易 K 线多图联动工作区"
+          @ratio-draft="chartPreferences.handleRatioDraft"
+          @ratio-commit="chartPreferences.handleRatioCommit"
+          @retry-macd="loadDialogIndicators"
+        />
         <div class="dlg-tbl-title">本股交易明细 + 卖出后表现（看卖得对不对）</div>
         <AppDataTable :data="dlgTrades" size="small" class="dlg-trades" embedded>
           <AppTableColumn label="买入" prop="entry_date" />
@@ -2297,7 +2385,8 @@ async function openTradeChart(row: TradeRow) {
       :dirty="isDirty || layoutDirty"
       page-key="backtest"
       :config="drawerConfig"
-      @reset="reset(); resetLayout()"
+      :component-runtime-value-of="chartPreferences.componentRuntimeValueOf"
+      @reset="resetBacktestSettings"
     >
       <template #business>
         <PageSettingSection title="默认参数">

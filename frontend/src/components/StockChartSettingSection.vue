@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import PageSegmented from '@/components/PageSegmented.vue'
-import PageSettingSection from '@/components/PageSettingSection.vue'
 import type {
   AuxiliaryChartSlot,
   AuxiliaryChartType,
@@ -100,7 +99,7 @@ watch(
 </script>
 
 <template>
-  <PageSettingSection title="图表设置" desc="图表类型和默认高度在新会话中生效；主页面拖动只调整当前会话。">
+  <div class="stock-chart-settings">
     <slot name="before" />
     <div class="setting-item">
       <div class="setting-label">图表一</div>
@@ -156,10 +155,20 @@ watch(
         </div>
       </template>
     </div>
-  </PageSettingSection>
+  </div>
 </template>
 
 <style scoped>
+.stock-chart-settings {
+  display: grid;
+  gap: var(--app-space-3);
+}
+.settings-help {
+  margin: 0;
+  color: var(--page-settings-text-subtle);
+  font-size: var(--app-font-size-table);
+  line-height: var(--app-line-height-comfy);
+}
 .setting-item {
   display: flex;
   flex-direction: column;

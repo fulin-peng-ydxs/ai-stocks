@@ -10,6 +10,10 @@
  * 合并优先级：slot.config（代码默认） < preset < page < user，仅允许各字段声明的层级覆盖。
  */
 import type { ComponentKind, PageLayout, SlotSpec } from './schema'
+import {
+  createDefaultStockChartPreferences,
+  normalizeStockChartPreferences,
+} from '@/composables/useStockChartPreferences'
 
 /** 可覆盖层级（不含 default：default 即 slot.config 代码默认）。 */
 export type ComponentConfigLayer = 'preset' | 'page' | 'user'
@@ -112,7 +116,17 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       max: 900,
       default: 560,
       highFrequency: true,
-      help: '控制包含标题、K 线与量能的完整图表区域高度。',
+      help: '控制K 线与量能的完整图表区域高度。',
+      applicability: 'explicit',
+    },
+    {
+      key: 'stockChart',
+      label: '图表组合与内部比例',
+      control: 'object',
+      layers: ['page', 'user'],
+      default: createDefaultStockChartPreferences() as unknown as Record<string, unknown>,
+      highFrequency: true,
+      help: '配置 K线、成交量、MACD 的组合及各组合默认高度比例。',
       applicability: 'explicit',
     },
   ],
@@ -361,6 +375,9 @@ export function coerceComponentValue(def: ComponentFieldDef, value: unknown): Co
     case 'object':
       if (value == null || typeof value !== 'object' || Array.isArray(value))
         throw new ComponentConfigError(`${def.label} 需为对象`)
+      if (def.key === 'stockChart') {
+        return normalizeStockChartPreferences(value) as unknown as Record<string, unknown>
+      }
       return value as Record<string, unknown>
   }
 }

@@ -13,7 +13,6 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
 import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.vue'
-import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import {
   exportLimitLadder,
   filtersFromRouteQuery,
@@ -35,9 +34,10 @@ import { useAsyncResultPolling } from '@/composables/useAsyncResultPolling'
 import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
 import { useStockAnalysisSession } from '@/composables/useStockAnalysisSession'
 import {
-  useStockChartPreferences,
-  type AuxiliaryChartSlot,
-} from '@/composables/useStockChartPreferences'
+  composeComponentRuntimeValueOf,
+  useStockChartComponentConfig,
+} from '@/composables/useStockChartComponentConfig'
+import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -134,12 +134,6 @@ const {
   visibleCompareMetrics,
   klineRange,
 } = useStockAnalysisSession(analysisDefaults, klineDefaultRange)
-const chartSettings = computed({
-  get: () => preference.charts,
-  set: (value) => { preference.charts = value },
-})
-const chartPreferences = useStockChartPreferences(chartSettings, preferenceHydrated)
-
 function effectivePreference(): LimitLadderPreferenceV1 {
   return preferenceRemoteError.value
     ? normalizeLimitLadderPreference(DEFAULT_LIMIT_LADDER_PREFERENCE)
@@ -207,6 +201,10 @@ const {
   componentSourceOf,
   componentLayerValuesOf,
   componentAllowedLayers,
+  remoteHydrated,
+  whenRemoteHydrated,
+  saveRemoteUserConfig,
+  remoteSaveError,
 } = useRemoteLayoutConfig(baseLayout)
 const drawerConfig = {
   knobs,
@@ -220,7 +218,21 @@ const drawerConfig = {
   componentLayerValuesOf,
   componentAllowedLayers,
 }
-const { setCurrentMasterWidth, componentRuntimeValueOf } = useMarketMasterWidthRuntime()
+const { setCurrentMasterWidth, componentRuntimeValueOf: masterRuntimeValueOf } = useMarketMasterWidthRuntime()
+const chartPreferences = useStockChartComponentConfig({
+  slotId: 'analysis',
+  componentValueOf,
+  setComponentKnob,
+  hydrated: remoteHydrated,
+})
+const componentRuntimeValueOf = composeComponentRuntimeValueOf(
+  masterRuntimeValueOf,
+  chartPreferences.componentRuntimeValueOf,
+)
+useLegacyStockChartPreferenceMigration({
+  pageKey: 'limit-ladder', slotId: 'analysis', componentSourceOf, setComponentKnob,
+  whenRemoteHydrated, saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
+})
 
 async function applySystemDefaults(): Promise<void> {
   filters.value = filtersFromLimitLadderPreference(DEFAULT_LIMIT_LADDER_PREFERENCE)
@@ -523,19 +535,6 @@ async function openActiveAnalysisDetail(): Promise<void> {
   await router.push(`/stocks/${active.code}`)
 }
 
-function handleRatioDraft(ratios: number[]): void {
-  chartPreferences.updateRatioDraft(ratios)
-}
-
-function setAuxiliaryChart(slot: AuxiliaryChartSlot, value: string | number | boolean): void {
-  chartPreferences.setSlotType(slot, value)
-}
-
-function handleRatioCommit(ratios: number[]): void {
-  chartPreferences.updateRatioDraft(ratios)
-  chartPreferences.commitRatioDraft()
-}
-
 watch(preference, () => applyAnalysisDefaults(normalizeLimitLadderPreference(preference)), { deep: true })
 
 watch(isNarrowViewport, (narrow) => {
@@ -717,8 +716,8 @@ onBeforeUnmount(() => {
             @activate="activateAnalysisItem"
             @remove="removeAnalysisItem"
             @open-detail="openActiveAnalysisDetail"
-            @ratio-draft="handleRatioDraft"
-            @ratio-commit="handleRatioCommit"
+            @ratio-draft="chartPreferences.handleRatioDraft"
+            @ratio-commit="chartPreferences.handleRatioCommit"
           />
         </template>
       </MarketMasterDetailWorkspace>
@@ -752,8 +751,8 @@ onBeforeUnmount(() => {
           @activate="activateAnalysisItem"
           @remove="removeAnalysisItem"
           @open-detail="openActiveAnalysisDetail"
-          @ratio-draft="handleRatioDraft"
-          @ratio-commit="handleRatioCommit"
+          @ratio-draft="chartPreferences.handleRatioDraft"
+          @ratio-commit="chartPreferences.handleRatioCommit"
         />
       </PageDrawer>
       <PageSettingsDrawer
@@ -763,7 +762,6 @@ onBeforeUnmount(() => {
         page-key="limit-ladder"
         :config="drawerConfig"
         :business-visible="true"
-        :business-component-slot-ids="['workspace']"
         :component-runtime-value-of="componentRuntimeValueOf"
         @reset="resetAllSettings"
       >
@@ -782,17 +780,7 @@ onBeforeUnmount(() => {
             title="默认偏好远端同步失败"
             description="当前修改已保存在本机，网络恢复后再次修改即可重试"
           />
-          <StockChartSettingSection
-            :slot2="chartPreferences.preferences.value.slot2"
-            :slot3="chartPreferences.preferences.value.slot3"
-            :chart-types="chartPreferences.visibleTypes.value"
-            :default-ratios="chartPreferences.defaultRatios.value"
-            :current-ratios="chartPreferences.currentRatios.value"
-            test-id-prefix="limit-ladder-chart"
-            @change="setAuxiliaryChart"
-            @save-default-ratios="chartPreferences.setDefaultHeightRatios"
-          >
-            <template #before>
+          <PageSettingSection title="行情口径">
               <div class="setting-item">
                 <div class="setting-label">复权模式</div>
                 <PageSegmented
@@ -805,8 +793,7 @@ onBeforeUnmount(() => {
                   ]"
                 />
               </div>
-            </template>
-          </StockChartSettingSection>
+          </PageSettingSection>
           <PageSettingSection title="默认查询">
             <div class="setting-item">
               <div class="setting-label">统计窗口</div>

@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   resolveSectorListState,
   sanitizeSectorSourceQuery,
+  sectorDetailLocation,
   sectorListLocation,
+  sectorReturnLabel,
+  trustedSectorReturnPath,
 } from '../sectorNavigation'
 
 describe('sanitizeSectorSourceQuery', () => {
@@ -112,13 +115,50 @@ describe('sectorListLocation', () => {
     })
   })
 
-  it('仅允许返回连板天梯的内部完整路径，拒绝开放重定向', () => {
-    expect(sectorListLocation({
-      return_to: '/limit-ladder?window=20&boards=main,gem&selected=600001.SH',
-    })).toBe('/limit-ladder?window=20&boards=main,gem&selected=600001.SH')
+  it.each([
+    '/limit-ladder?window=20&selected=600001.SH',
+    '/stocks?restore=1&page=3',
+    '/board?date=2026-09-02',
+    '/screen?profile_ref=opaque',
+  ])('允许返回可信业务列表完整路径：%s', (returnTo) => {
+    expect(sectorListLocation({ return_to: returnTo })).toBe(returnTo)
+  })
+
+  it('拒绝开放重定向和非来源业务路由', () => {
     expect(sectorListLocation({ return_to: '//evil.example/steal' })).toEqual({
       path: '/sectors',
       query: {},
     })
+    expect(trustedSectorReturnPath('/admin?next=/stocks')).toBeUndefined()
+    expect(trustedSectorReturnPath('/stocks/600000.SH')).toBeUndefined()
+  })
+})
+
+describe('sectorDetailLocation', () => {
+  it('统一编码板块代码并只携带可信来源', () => {
+    expect(sectorDetailLocation('概念/AI', '/board?date=2026-09-02')).toEqual({
+      path: '/sectors/%E6%A6%82%E5%BF%B5%2FAI',
+      query: { return_to: '/board?date=2026-09-02' },
+    })
+    expect(sectorDetailLocation('881001', 'https://evil.example')).toEqual({
+      path: '/sectors/881001',
+      query: undefined,
+    })
+  })
+})
+
+describe('sectorReturnLabel', () => {
+  it.each([
+    ['/limit-ladder?window=20', '返回连板天梯'],
+    ['/stocks?page=3', '返回个股查询'],
+    ['/board?date=2026-09-02', '返回每日榜单'],
+    ['/screen?profile_ref=opaque', '返回策略筛选'],
+  ])('按可信来源 %s 展示 %s', (returnTo, label) => {
+    expect(sectorReturnLabel({ return_to: returnTo })).toBe(label)
+  })
+
+  it('非法或缺失来源使用板块行情兜底文案', () => {
+    expect(sectorReturnLabel({ return_to: '/admin' })).toBe('返回板块行情')
+    expect(sectorReturnLabel({})).toBe('返回板块行情')
   })
 })

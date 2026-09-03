@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, VideoPlay } from '@element-plus/icons-vue'
 import {
@@ -52,6 +52,7 @@ import { confirmProfileVisibilityReduction } from '@/utils/assetVisibility'
 import type { AppRowAction } from '@/components/rowActions'
 
 const router = useRouter()
+const route = useRoute()
 const stockSet = useStockSet()
 const settingsOpen = ref(false)
 // 排除 ST、AST 预览属业务态偏好，保留 usePageSettings；结果排序与列显隐迁入组件配置层（plan.md §13.3）。
@@ -904,10 +905,10 @@ onMounted(initializeScreen)
                 </template>
               </AppTableColumn>
               <AppTableColumn v-if="colVisible('relatedIndustry')" label="行业走势">
-                <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="industry" /></template>
+                <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="industry" :return-path="route.fullPath" /></template>
               </AppTableColumn>
               <AppTableColumn v-if="colVisible('relatedConcept')" label="概念走势">
-                <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="concept" /></template>
+                <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="concept" :return-path="route.fullPath" /></template>
               </AppTableColumn>
               <AppTableColumn v-if="colVisible('score')" label="综合分" prop="total_score" sortable :sort-by="(r:any)=>r.total_score ?? -Infinity">
                 <template #default="{ row }">

@@ -14,7 +14,12 @@ const pageSettingsState = vi.hoisted(() => ({ current: null as any }))
 vi.mock('@/composables/usePageSettings', () => ({
   usePageSettings: (_key: string, defaults: Record<string, unknown>) => {
     pageSettingsState.current ??= reactive(structuredClone(defaults))
-    return { settings: pageSettingsState.current, isDirty: ref(false), reset: vi.fn() }
+    return {
+      settings: pageSettingsState.current,
+      isDirty: ref(false),
+      reset: vi.fn(),
+      hydrated: ref(true),
+    }
   },
 }))
 
@@ -68,7 +73,7 @@ const stubs = {
   PageToggleRow: true,
   HelpTip: { template: '<span><slot/></span>' },
   EquityChart: true,
-  CandleChart: true,
+  StockChartWorkspace: true,
   AssetVisibilityActions: { template: '<div />' },
   AssetVisibilityTag: { template: '<div />' },
   // 抽屉不真实打开（el-table 幻影行 + teleport），加载查看改由组件 loaded 事件驱动

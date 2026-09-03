@@ -29,7 +29,6 @@ import PageToggleRow from '@/components/PageToggleRow.vue'
 import { useMarketMasterWidthRuntime } from '@/composables/useMarketMasterWidthRuntime'
 import SectorCompareChart from '@/components/SectorCompareChart.vue'
 import type { CrossSectionDatum } from '@/components/SectorCompareChart.vue'
-import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
@@ -78,10 +77,10 @@ import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeS
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import {
-  createDefaultStockChartPreferences,
-  useStockChartPreferences,
-  type AuxiliaryChartSlot,
-} from '@/composables/useStockChartPreferences'
+  composeComponentRuntimeValueOf,
+  useStockChartComponentConfig,
+} from '@/composables/useStockChartComponentConfig'
+import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
 import { useTableSort } from '@/composables/useTableSort'
 import { useTradeDates } from '@/composables/useTradeDates'
 import { getPageLayout } from '@/layout'
@@ -110,14 +109,8 @@ const sectorsDefaults = {
   compareMetrics: COMPARE_METRIC_ORDER as CompareMetric[],
   defaultCompareMetric: 'cum' as CompareMetric,
   compareWindow: 250,
-  charts: createDefaultStockChartPreferences(),
 }
-const { settings, isDirty, reset, hydrated, whenHydrated } = usePageSettings('sectors', sectorsDefaults)
-const chartSettings = computed({
-  get: () => settings.charts,
-  set: (value) => { settings.charts = value },
-})
-const chartPreferences = useStockChartPreferences(chartSettings, hydrated)
+const { settings, isDirty, reset, whenHydrated } = usePageSettings('sectors', sectorsDefaults)
 
 const sectorsLayout = getPageLayout('sectors')
 const {
@@ -134,7 +127,10 @@ const {
   componentSourceOf,
   componentLayerValuesOf,
   componentAllowedLayers,
+  remoteHydrated,
   whenRemoteHydrated,
+  saveRemoteUserConfig,
+  remoteSaveError,
 } = useRemoteLayoutConfig(sectorsLayout)
 const drawerConfig = {
   knobs: layoutKnobs,
@@ -148,7 +144,20 @@ const drawerConfig = {
   componentLayerValuesOf,
   componentAllowedLayers,
 }
-const { setCurrentMasterWidth, componentRuntimeValueOf } = useMarketMasterWidthRuntime()
+const { setCurrentMasterWidth, componentRuntimeValueOf: masterRuntimeValueOf } = useMarketMasterWidthRuntime()
+const chartPreferences = useStockChartComponentConfig({
+  componentValueOf,
+  setComponentKnob,
+  hydrated: remoteHydrated,
+})
+const componentRuntimeValueOf = composeComponentRuntimeValueOf(
+  masterRuntimeValueOf,
+  chartPreferences.componentRuntimeValueOf,
+)
+useLegacyStockChartPreferenceMigration({
+  pageKey: 'sectors', componentSourceOf, setComponentKnob, whenRemoteHydrated,
+  saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
+})
 
 const DEFAULT_SORT = 'pct_today:desc'
 const SORTABLE_FIELDS = [
@@ -702,19 +711,6 @@ const fmtInflow = formatSectorInflow
 const pctClass = sectorValueClass
 function fmtFlowDate(value: string | null): string {
   return value ? value.slice(5) : '—'
-}
-
-function setAuxiliaryChart(slot: AuxiliaryChartSlot, value: string | number | boolean): void {
-  chartPreferences.setSlotType(slot, value)
-}
-
-function handleRatioDraft(ratios: number[]): void {
-  chartPreferences.updateRatioDraft(ratios)
-}
-
-function handleRatioCommit(ratios: number[]): void {
-  chartPreferences.updateRatioDraft(ratios)
-  chartPreferences.commitRatioDraft()
 }
 
 function resetSettings(): void {
@@ -1283,8 +1279,8 @@ onMounted(async () => {
               :zoom-start="0"
               :zoom-end="100"
               aria-label="板块指数多图联动工作区"
-              @ratio-draft="handleRatioDraft"
-              @ratio-commit="handleRatioCommit"
+              @ratio-draft="chartPreferences.handleRatioDraft"
+              @ratio-commit="chartPreferences.handleRatioCommit"
             />
           </div>
 
@@ -1316,21 +1312,10 @@ onMounted(async () => {
         page-key="sectors"
         :config="drawerConfig"
         :business-visible="true"
-        :business-component-slot-ids="['workspace']"
         :component-runtime-value-of="componentRuntimeValueOf"
         @reset="resetSettings"
       >
         <template #business>
-          <StockChartSettingSection
-            :slot2="chartPreferences.preferences.value.slot2"
-            :slot3="chartPreferences.preferences.value.slot3"
-            :chart-types="chartPreferences.visibleTypes.value"
-            :default-ratios="chartPreferences.defaultRatios.value"
-            :current-ratios="chartPreferences.currentRatios.value"
-            test-id-prefix="sectors-chart"
-            @change="setAuxiliaryChart"
-            @save-default-ratios="chartPreferences.setDefaultHeightRatios"
-          />
           <PageSettingSection title="默认查询">
             <div v-if="canViewWatchlist" class="setting-item">
               <div class="setting-label">默认板块范围</div>

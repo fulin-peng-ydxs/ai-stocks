@@ -67,6 +67,11 @@ describe('SectorCompareChart', () => {
     expect(content).toContain('超额 +3.00%')
     expect(content).toContain('超额 -4.00%')
     expect(content.match(/超额/g)).toHaveLength(2)
+    const emptyContent = option.tooltip.formatter([
+      { axisValueLabel: '2026-08-11', seriesName: '缺失板块', value: null, dataIndex: 5, marker: '' },
+    ])
+    expect(emptyContent).toContain('--')
+    expect(emptyContent).not.toContain('+0.00%')
     expect(option.dataZoom).toEqual([
       expect.objectContaining({ start: 0, end: 100 }),
       expect.objectContaining({ start: 0, end: 100 }),

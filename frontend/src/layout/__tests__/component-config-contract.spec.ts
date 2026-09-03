@@ -95,7 +95,7 @@ function backendUserPersistenceByKindField(): Record<string, string> {
 describe('组件配置字段注册契约', () => {
   it('每个受控字段都有统一抽屉渲染策略', () => {
     const specialized = new Set([
-      'defaultSort', 'pageSize', 'defaultActive', 'hiddenColumns', 'defaultCollapsed',
+      'defaultSort', 'pageSize', 'defaultActive', 'hiddenColumns', 'defaultCollapsed', 'stockChart',
     ])
     const unsupported: string[] = []
     for (const [kind, defs] of Object.entries(COMPONENT_FIELD_DEFS)) {

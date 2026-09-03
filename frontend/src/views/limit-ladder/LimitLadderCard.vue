@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { LimitLadderStock, LimitLadderWindow } from '@/api/limitLadder'
 import { formatMarketPercent, marketValueClass } from '@/utils/marketValue'
+import { sectorDetailLocation } from '@/utils/sectorNavigation'
 
 const props = defineProps<{
   stock: LimitLadderStock
@@ -14,10 +15,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{ select: [stock: LimitLadderStock] }>()
 
-const relatedLocation = computed(() => ({
-  path: `/sectors/${encodeURIComponent(props.stock.latest_related_concept?.board_code ?? '')}`,
-  query: props.returnPath ? { return_to: props.returnPath } : undefined,
-}))
+const relatedLocation = computed(() => sectorDetailLocation(
+  props.stock.latest_related_concept?.board_code ?? '',
+  props.returnPath,
+))
 const shortHistory = computed(() => (
   props.stock.actual_trade_days != null && props.stock.actual_trade_days < props.window
 ))

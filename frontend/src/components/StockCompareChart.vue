@@ -3,7 +3,13 @@ import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMoun
 import * as echarts from 'echarts'
 import type { Bar } from '@/api/stocks'
 import AppStateBlock from '@/components/AppStateBlock.vue'
-import { chartCssVariable, hasRenderableChartSize, useEChartsTheme } from '@/components/chartTheme'
+import { hasRenderableChartSize, useEChartsTheme } from '@/components/chartTheme'
+import {
+  buildMarketCompareLineOption,
+  escapeChartHtml,
+  marketCompareChangeColors,
+  marketCompareLineColors,
+} from '@/components/marketCompareChart'
 import {
   alignPriceComparison,
   PRICE_COMPARE_METRIC_META,
@@ -35,14 +41,7 @@ let chart: echarts.ECharts | null = null
 let resizeListening = false
 let resizeObserver: ResizeObserver | null = null
 
-const colors = computed(() => [
-  theme.value.focus,
-  theme.value.accent,
-  chartCssVariable('--el-color-success', theme.value.focus),
-  chartCssVariable('--el-color-danger', theme.value.accent),
-  chartCssVariable('--el-color-info', theme.value.label),
-  chartCssVariable('--shell-accent', theme.value.focus),
-])
+const colors = computed(() => marketCompareLineColors(theme.value))
 
 function toPriceSeries(item: StockCompareSeries): PriceCompareSeries {
   return {
@@ -66,15 +65,6 @@ const dates = computed(() => comparison.value.dates)
 const hasCommonInterval = computed(() => dates.value.length >= 2)
 const metricLabel = computed(() => PRICE_COMPARE_METRIC_META[props.metric].label)
 
-function escapeHtml(value: unknown): string {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
-}
-
 function relativeSeries(item: StockCompareSeries): (number | null)[] {
   return comparison.value.valuesByCode[item.code] ?? []
 }
@@ -83,8 +73,7 @@ function render(): void {
   if (!chart) return
   const currentTheme = theme.value
   const palette = colors.value
-  const upColor = chartCssVariable('--market-up-color', '#f66055')
-  const downColor = chartCssVariable('--market-down-color', '#1ec96e')
+  const changeColors = marketCompareChangeColors(currentTheme)
   const stockSeries = props.series.map((item, index) => {
     const active = item.code === props.activeCode
     return {
@@ -117,79 +106,43 @@ function render(): void {
       z: 1,
     }] : []),
   ]
-  chart.setOption({
-    animation: false,
-    backgroundColor: currentTheme.background,
-    color: palette,
-    grid: { left: 56, right: 24, top: 40, bottom: 58 },
-    legend: {
-      data: series.map((item) => item.name),
-      top: 4,
-      type: 'scroll',
-      textStyle: { color: currentTheme.label, fontSize: 11 },
-    },
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: currentTheme.tooltipBackground,
-      borderColor: currentTheme.tooltipBorder,
-      borderWidth: 1,
-      textStyle: { color: currentTheme.text, fontSize: 12 },
-      axisPointer: { type: 'cross', label: { backgroundColor: currentTheme.axis } },
-      formatter: (params: any) => {
-        const rows = (Array.isArray(params) ? params : [params]).filter(Boolean)
-        const date = String(rows[0]?.axisValueLabel ?? rows[0]?.name ?? '')
-        const content = rows.map((row: any) => {
-          const relative = Number(row.value)
-          const valid = row.value != null && Number.isFinite(relative)
-          const relativeText = valid ? `${relative > 0 ? '+' : ''}${relative.toFixed(2)}%` : '--'
-          const color = !valid || relative === 0 ? currentTheme.text : relative > 0 ? upColor : downColor
-          const isBenchmark = row.seriesName === benchmarkName
-          const benchmarkValue = benchmarkData?.[Number(row.dataIndex)]
-          const excess = valid && !isBenchmark && typeof benchmarkValue === 'number'
-            ? +(relative - benchmarkValue).toFixed(2)
-            : null
-          const excessColor = excess == null || excess === 0 ? currentTheme.label : excess > 0 ? upColor : downColor
-          return `<div style="display:flex;justify-content:space-between;gap:18px">`
-            + `<span>${row.marker ?? ''}${escapeHtml(row.seriesName)}</span>`
-            + `<span style="text-align:right"><strong style="color:${color}">${relativeText}</strong>`
-            + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}%</small>`)
-            + '</span>'
-            + '</div>'
-        }).join('')
-        return `<div style="min-width:180px;line-height:1.7">`
-          + `<div style="color:${currentTheme.label};margin-bottom:2px">${escapeHtml(date)} · ${metricLabel.value}</div>`
-          + content
-          + '</div>'
-      },
-    },
-    xAxis: {
-      type: 'category',
-      data: dates.value,
-      boundaryGap: false,
-      axisLine: { lineStyle: { color: currentTheme.axis } },
-      axisLabel: { color: currentTheme.label, fontSize: 10 },
-    },
-    yAxis: {
-      scale: true,
-      axisLine: { show: false },
-      axisLabel: { color: currentTheme.label, fontSize: 10, formatter: '{value}%' },
-      splitLine: { lineStyle: { color: currentTheme.split } },
-    },
-    dataZoom: [
-      { type: 'inside', start: 0, end: 100 },
-      {
-        type: 'slider',
-        bottom: 6,
-        height: 18,
-        start: 0,
-        end: 100,
-        borderColor: currentTheme.axis,
-        fillerColor: currentTheme.area,
-        textStyle: { color: currentTheme.label },
-      },
-    ],
+  chart.setOption(buildMarketCompareLineOption({
+    theme: currentTheme,
+    colors: palette,
+    dates: dates.value,
     series,
-  }, { notMerge: true })
+    scrollLegend: true,
+    tooltipFormatter: (params: unknown) => {
+      const rows = (Array.isArray(params) ? params : [params]).filter(Boolean) as any[]
+      const date = String(rows[0]?.axisValueLabel ?? rows[0]?.name ?? '')
+      const content = rows.map((row: any) => {
+        const relative = Number(row.value)
+        const valid = row.value != null && Number.isFinite(relative)
+        const relativeText = valid ? `${relative > 0 ? '+' : ''}${relative.toFixed(2)}%` : '--'
+        const color = !valid || relative === 0
+          ? changeColors.neutral
+          : relative > 0 ? changeColors.up : changeColors.down
+        const isBenchmark = row.seriesName === benchmarkName
+        const benchmarkValue = benchmarkData?.[Number(row.dataIndex)]
+        const excess = valid && !isBenchmark && typeof benchmarkValue === 'number'
+          ? +(relative - benchmarkValue).toFixed(2)
+          : null
+        const excessColor = excess == null || excess === 0
+          ? currentTheme.label
+          : excess > 0 ? changeColors.up : changeColors.down
+        return `<div style="display:flex;justify-content:space-between;gap:18px">`
+          + `<span>${row.marker ?? ''}${escapeChartHtml(row.seriesName)}</span>`
+          + `<span style="text-align:right"><strong style="color:${color}">${relativeText}</strong>`
+          + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}%</small>`)
+          + '</span>'
+          + '</div>'
+      }).join('')
+      return `<div style="min-width:180px;line-height:1.7">`
+        + `<div style="color:${currentTheme.label};margin-bottom:2px">${escapeChartHtml(date)} · ${metricLabel.value}</div>`
+        + content
+        + '</div>'
+    },
+  }), { notMerge: true })
 }
 
 function resize(): void {

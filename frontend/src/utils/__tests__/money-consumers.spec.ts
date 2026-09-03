@@ -16,7 +16,6 @@ describe('全站金额格式消费契约', () => {
     'views/SectorDetailView.vue',
     'views/StocksView.vue',
     'components/EquityChart.vue',
-    'components/CandleChart.vue',
     'components/SectorCompareChart.vue',
     'components/stock-chart/chartUtils.ts',
     'views/StockDetailView.vue',

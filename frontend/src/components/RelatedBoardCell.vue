@@ -4,12 +4,14 @@ import { getActivePinia } from 'pinia'
 import { RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
+import { sectorDetailLocation } from '@/utils/sectorNavigation'
 import type { RelatedBoardWinner, StockRelatedBoards } from '@/types/relatedBoards'
 
 const props = withDefaults(defineProps<{
   summary?: StockRelatedBoards | null
   boardType: 'industry' | 'concept'
   testId?: string
+  returnPath?: string
 }>(), {
   summary: null,
 })
@@ -26,7 +28,10 @@ const canNavigate = computed(() => Boolean(
   && auth
   && hasPermission(auth.role, auth.permissions, 'sectors:view'),
 ))
-const sectorPath = computed(() => `/sectors/${encodeURIComponent(board.value?.board_code ?? '')}`)
+const sectorLocation = computed(() => sectorDetailLocation(
+  board.value?.board_code ?? '',
+  props.returnPath,
+))
 
 function formatCorrelation(value: number): string {
   if (!Number.isFinite(value)) return '—'
@@ -46,7 +51,7 @@ function formatCorrelation(value: number): string {
         <RouterLink
           v-if="canNavigate"
           class="related-board-cell__name related-board-cell__name--link"
-          :to="sectorPath"
+          :to="sectorLocation"
           :data-testid="testId"
           @click.stop
         >{{ board.name }}</RouterLink>

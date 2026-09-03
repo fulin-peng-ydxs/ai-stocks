@@ -23,7 +23,6 @@ import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
-import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import {
@@ -31,14 +30,10 @@ import {
   trimKlineRange,
   useKlinePrefs,
 } from '@/composables/useKlinePrefs'
-import { usePageSettings } from '@/composables/usePageSettings'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
-import {
-  createDefaultStockChartPreferences,
-  useStockChartPreferences,
-  type AuxiliaryChartSlot,
-} from '@/composables/useStockChartPreferences'
+import { useStockChartComponentConfig } from '@/composables/useStockChartComponentConfig'
+import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
 import { useTableSort } from '@/composables/useTableSort'
 import { useTradeDates } from '@/composables/useTradeDates'
 import { getPageLayout } from '@/layout'
@@ -52,6 +47,7 @@ import { formatMoney } from '@/utils/money'
 import {
   sanitizeSectorSourceQuery,
   sectorListLocation,
+  sectorReturnLabel,
   toLocationQuery,
 } from '@/utils/sectorNavigation'
 import {
@@ -70,9 +66,7 @@ const { dataMin, dataMax, ensureLoaded } = useTradeDates()
 const code = ref(String(route.params.code || ''))
 const sourceQuery = computed(() => sanitizeSectorSourceQuery(route.query))
 const returnLocation = computed(() => sectorListLocation(route.query))
-const returnLabel = computed(() => (
-  typeof returnLocation.value === 'string' ? '返回连板天梯' : '返回板块行情'
-))
+const returnLabel = computed(() => sectorReturnLabel(route.query))
 const settingsOpen = ref(false)
 
 const layout = getPageLayout('sectors-detail')
@@ -88,7 +82,8 @@ const {
   componentValueOf,
   setComponentKnob,
   componentSourceOf,
-  componentLayerValuesOf, componentAllowedLayers,
+  componentLayerValuesOf, componentAllowedLayers, remoteHydrated, whenRemoteHydrated,
+  saveRemoteUserConfig, remoteSaveError,
 } = useRemoteLayoutConfig(layout)
 const drawerConfig = {
   knobs: layoutKnobs,
@@ -103,21 +98,16 @@ const drawerConfig = {
 componentAllowedLayers,
 }
 
-const detailDefaults = { charts: createDefaultStockChartPreferences() }
-const {
-  settings,
-  isDirty: settingsDirty,
-  reset: resetPageSettings,
-  hydrated,
-} = usePageSettings('sectors-detail', detailDefaults)
-const chartSettings = computed({
-  get: () => settings.charts,
-  set: (value) => {
-    settings.charts = value
-  },
+const chartPreferences = useStockChartComponentConfig({
+  componentValueOf,
+  setComponentKnob,
+  hydrated: remoteHydrated,
 })
-const chartPreferences = useStockChartPreferences(chartSettings, hydrated)
-const pageDirty = computed(() => layoutDirty.value || settingsDirty.value)
+useLegacyStockChartPreferenceMigration({
+  pageKey: 'sectors-detail', componentSourceOf, setComponentKnob, whenRemoteHydrated,
+  saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
+})
+const pageDirty = computed(() => layoutDirty.value)
 
 const MEMBER_PAGE_SIZES = [10, 20, 30, 50]
 const normalizeMemberPageSize = (value: unknown) => {
@@ -319,21 +309,7 @@ const fmtInflow = formatSectorInflow
 const pctClass = sectorValueClass
 function resetSettings(): void {
   chartPreferences.cancelRatioDraft()
-  resetPageSettings()
   resetLayout()
-}
-
-function handleRatioDraft(ratios: number[]): void {
-  chartPreferences.updateRatioDraft(ratios)
-}
-
-function handleRatioCommit(ratios: number[]): void {
-  chartPreferences.updateRatioDraft(ratios)
-  chartPreferences.commitRatioDraft()
-}
-
-function setAuxiliaryChart(slot: AuxiliaryChartSlot, value: string | number | boolean): void {
-  chartPreferences.setSlotType(slot, value)
 }
 
 watch([sortBy, sortOrder], () => {
@@ -473,8 +449,8 @@ onMounted(async () => {
               :zoom-start="0"
               :zoom-end="100"
               aria-label="板块指数 K 线与量能联动工作区"
-              @ratio-draft="handleRatioDraft"
-              @ratio-commit="handleRatioCommit"
+              @ratio-draft="chartPreferences.handleRatioDraft"
+              @ratio-commit="chartPreferences.handleRatioCommit"
             />
           </div>
         </section>
@@ -542,19 +518,11 @@ onMounted(async () => {
         page-key="sectors-detail"
         :dirty="pageDirty"
         :config="drawerConfig"
+        :business-visible="true"
+        :component-runtime-value-of="chartPreferences.componentRuntimeValueOf"
         @reset="resetSettings"
       >
         <template #business>
-          <StockChartSettingSection
-            :slot2="chartPreferences.preferences.value.slot2"
-            :slot3="chartPreferences.preferences.value.slot3"
-            :chart-types="chartPreferences.visibleTypes.value"
-            :default-ratios="chartPreferences.defaultRatios.value"
-            :current-ratios="chartPreferences.currentRatios.value"
-            test-id-prefix="sector-detail-chart"
-            @change="setAuxiliaryChart"
-            @save-default-ratios="chartPreferences.setDefaultHeightRatios"
-          />
           <KlineSettingSection />
         </template>
       </PageSettingsDrawer>

@@ -15,7 +15,6 @@ import { ArrowRight } from '@element-plus/icons-vue'
 import EquityChart from '@/components/EquityChart.vue'
 import GrowthChart from '@/components/GrowthChart.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
-import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import { useStatusColorPalette } from '@/components/chartTheme'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
@@ -29,12 +28,8 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
-import {
-  createDefaultStockChartPreferences,
-  useStockChartPreferences,
-  type AuxiliaryChartSlot,
-  type StockChartPreferences,
-} from '@/composables/useStockChartPreferences'
+import { useStockChartComponentConfig } from '@/composables/useStockChartComponentConfig'
+import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
@@ -63,7 +58,7 @@ const phase = computed<'config' | 'running' | 'result'>(() => {
 })
 
 // ── 页面设置（开局参数 + 快捷下单预设，均持久化）──
-const { settings: cfg, isDirty, reset, hydrated } = usePageSettings('training', {
+const { settings: cfg, isDirty, reset } = usePageSettings('training', {
   mode: 'single' as 'single' | 'multi',
   range_start: null as string | null,
   range_end: null as string | null,
@@ -76,7 +71,6 @@ const { settings: cfg, isDirty, reset, hydrated } = usePageSettings('training', 
   orderMode: 'hands' as 'hands' | 'amount',
   handsPresetStr: '1,10,20',
   amountWanPresetStr: '1,10,20',
-  charts: createDefaultStockChartPreferences(),
 })
 // 主区只操作本次训练会话；cfg 仅承载设置抽屉里的长期默认，主区不反写。
 const sessionConfig = reactive({
@@ -97,23 +91,6 @@ watch(
   },
   { deep: true },
 )
-const chartSettings = computed({
-  get: () => cfg.charts,
-  set: (value: StockChartPreferences) => {
-    cfg.charts = value
-  },
-})
-const chartPreferences = useStockChartPreferences(chartSettings, hydrated)
-function setAuxiliaryChart(slot: AuxiliaryChartSlot, value: string | number | boolean): void {
-  chartPreferences.setSlotType(slot, value)
-}
-function handleRatioDraft(ratios: number[]): void {
-  chartPreferences.updateRatioDraft(ratios)
-}
-function handleRatioCommit(ratios: number[]): void {
-  chartPreferences.updateRatioDraft(ratios)
-  chartPreferences.commitRatioDraft()
-}
 const settingsOpen = ref(false)
 
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
@@ -130,8 +107,18 @@ const {
   setComponentKnob,
   componentSourceOf,
   layerValuesOf,
-  componentLayerValuesOf, componentAllowedLayers,
+  componentLayerValuesOf, componentAllowedLayers, remoteHydrated, whenRemoteHydrated,
+  saveRemoteUserConfig, remoteSaveError,
 } = useRemoteLayoutConfig(trainingLayout)
+const chartPreferences = useStockChartComponentConfig({
+  componentValueOf,
+  setComponentKnob,
+  hydrated: remoteHydrated,
+})
+useLegacyStockChartPreferenceMigration({
+  pageKey: 'training', componentSourceOf, setComponentKnob, whenRemoteHydrated,
+  saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
+})
 
 // 抽屉「布局 / 组件设置」由 PageSettingsDrawer 自动渲染；历史表与训练图表字段按 registry 自动继承。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
@@ -688,8 +675,8 @@ onBeforeUnmount(detachKeyboard)
             :zoom-end="100"
             :min-height="configuredChartHeight"
             :aria-label="'训练 K 线（盲测）工作区'"
-            @ratio-draft="handleRatioDraft"
-            @ratio-commit="handleRatioCommit"
+            @ratio-draft="chartPreferences.handleRatioDraft"
+            @ratio-commit="chartPreferences.handleRatioCommit"
           />
         </div>
 
@@ -866,8 +853,8 @@ onBeforeUnmount(detachKeyboard)
               :zoom-end="100"
               :min-height="configuredChartHeight"
               :aria-label="'结算回看 K 线工作区'"
-              @ratio-draft="handleRatioDraft"
-              @ratio-commit="handleRatioCommit"
+              @ratio-draft="chartPreferences.handleRatioDraft"
+              @ratio-commit="chartPreferences.handleRatioCommit"
             /></div>
             <div class="round-equity"><EquityChart :points="roundEquityPoints(rd, detail.initial_capital)" benchmark-code="满仓持有" fill /></div>
           </div>
@@ -901,6 +888,7 @@ onBeforeUnmount(detachKeyboard)
     page-key="training"
     :config="drawerConfig"
     :component-slot-ids="phase === 'config' ? ['history'] : ['chart']"
+    :component-runtime-value-of="chartPreferences.componentRuntimeValueOf"
     @reset="reset(); chartPreferences.cancelRatioDraft(); resetLayout()"
   >
       <template #business>
@@ -948,16 +936,6 @@ onBeforeUnmount(detachKeyboard)
       </PageSettingSection>
       <template v-if="phase !== 'config'">
         <KlineSettingSection />
-        <StockChartSettingSection
-          :slot2="chartPreferences.preferences.value.slot2"
-          :slot3="chartPreferences.preferences.value.slot3"
-            :chart-types="chartPreferences.visibleTypes.value"
-            :default-ratios="chartPreferences.defaultRatios.value"
-            :current-ratios="chartPreferences.currentRatios.value"
-          test-id-prefix="training-chart"
-          @change="setAuxiliaryChart"
-            @save-default-ratios="chartPreferences.setDefaultHeightRatios"
-        />
       </template>
       <PageSettingSection title="选股范围" desc="控制随机选股时的股票池过滤条件。">
         <div class="setting-item">
