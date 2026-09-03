@@ -14,6 +14,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowRight } from '@element-plus/icons-vue'
 import EquityChart from '@/components/EquityChart.vue'
 import GrowthChart from '@/components/GrowthChart.vue'
+import StockChartRegion from '@/components/stock-chart/StockChartRegion.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import { useStatusColorPalette } from '@/components/chartTheme'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -661,23 +662,30 @@ onBeforeUnmount(detachKeyboard)
     <template #main>
     <div class="run-body">
         <div class="chart-block">
-          <StockChartWorkspace
-            :data-configured-height="configuredChartHeight"
-            :style="{ flexBasis: `${configuredChartHeight}px` }"
-            :bars="displayBars"
-            :warmup-bars="warmupBars"
-            :indicators="indicatorRows"
-            :markers="round.markers"
+          <StockChartRegion
+            v-slot="{ contentHeight }"
+            :total-height="configuredChartHeight"
             :slot2="chartPreferences.preferences.value.slot2"
             :slot3="chartPreferences.preferences.value.slot3"
-            :height-ratios="chartPreferences.currentRatios.value"
-            :zoom-start="0"
-            :zoom-end="100"
-            :min-height="configuredChartHeight"
-            :aria-label="'训练 K 线（盲测）工作区'"
-            @ratio-draft="chartPreferences.handleRatioDraft"
-            @ratio-commit="chartPreferences.handleRatioCommit"
-          />
+            aria-label="训练 K 线图表区域"
+          >
+            <StockChartWorkspace
+              class="training-chart-workspace"
+              :bars="displayBars"
+              :warmup-bars="warmupBars"
+              :indicators="indicatorRows"
+              :markers="round.markers"
+              :slot2="chartPreferences.preferences.value.slot2"
+              :slot3="chartPreferences.preferences.value.slot3"
+              :height-ratios="chartPreferences.currentRatios.value"
+              :zoom-start="0"
+              :zoom-end="100"
+              :min-height="contentHeight"
+              :aria-label="'训练 K 线（盲测）工作区'"
+              @ratio-draft="chartPreferences.handleRatioDraft"
+              @ratio-commit="chartPreferences.handleRatioCommit"
+            />
+          </StockChartRegion>
         </div>
 
         <div v-permission="'training:trade'" class="action-panel">
@@ -839,23 +847,32 @@ onBeforeUnmount(detachKeyboard)
             </div>
           </template>
           <div class="round-grid">
-            <div class="round-chart"><StockChartWorkspace
-              :data-configured-height="configuredChartHeight"
-              :style="{ flexBasis: `${configuredChartHeight}px` }"
-              :bars="viewDays >= 99999 ? rd.bars : rd.bars.slice(-viewDays)"
-              :warmup-bars="viewDays >= 99999 ? [] : rd.bars.slice(0, -viewDays || undefined)"
-              :indicators="barsToIndicatorRows(rd.bars)"
-              :markers="rd.markers"
-              :slot2="chartPreferences.preferences.value.slot2"
-              :slot3="chartPreferences.preferences.value.slot3"
-              :height-ratios="chartPreferences.currentRatios.value"
-              :zoom-start="0"
-              :zoom-end="100"
-              :min-height="configuredChartHeight"
-              :aria-label="'结算回看 K 线工作区'"
-              @ratio-draft="chartPreferences.handleRatioDraft"
-              @ratio-commit="chartPreferences.handleRatioCommit"
-            /></div>
+            <div class="round-chart">
+              <StockChartRegion
+                v-slot="{ contentHeight }"
+                :total-height="configuredChartHeight"
+                :slot2="chartPreferences.preferences.value.slot2"
+                :slot3="chartPreferences.preferences.value.slot3"
+                aria-label="结算回看 K 线图表区域"
+              >
+                <StockChartWorkspace
+                  class="training-chart-workspace"
+                  :bars="viewDays >= 99999 ? rd.bars : rd.bars.slice(-viewDays)"
+                  :warmup-bars="viewDays >= 99999 ? [] : rd.bars.slice(0, -viewDays || undefined)"
+                  :indicators="barsToIndicatorRows(rd.bars)"
+                  :markers="rd.markers"
+                  :slot2="chartPreferences.preferences.value.slot2"
+                  :slot3="chartPreferences.preferences.value.slot3"
+                  :height-ratios="chartPreferences.currentRatios.value"
+                  :zoom-start="0"
+                  :zoom-end="100"
+                  :min-height="contentHeight"
+                  :aria-label="'结算回看 K 线工作区'"
+                  @ratio-draft="chartPreferences.handleRatioDraft"
+                  @ratio-commit="chartPreferences.handleRatioCommit"
+                />
+              </StockChartRegion>
+            </div>
             <div class="round-equity"><EquityChart :points="roundEquityPoints(rd, detail.initial_capital)" benchmark-code="满仓持有" fill /></div>
           </div>
           <AppDataTable :data="rd.trades" size="small" class="round-trades" empty-text="本回合无成交" embedded max-height="240">
@@ -1009,6 +1026,7 @@ onBeforeUnmount(detachKeyboard)
 /* 训练中：固定块（图+面板）+ 主表 → 混合成长区 */
 .run-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--app-space-2); overflow: auto; padding-right: 2px; }
 .chart-block { flex: 0 0 auto; }
+.training-chart-workspace { height: 100%; }
 .action-panel { flex: 0 0 auto; background: var(--el-fill-color-light); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: var(--app-space-2); }
 .acct { display: flex; gap: var(--app-space-5); flex-wrap: wrap; }
 .acct-item { display: flex; flex-direction: column; }

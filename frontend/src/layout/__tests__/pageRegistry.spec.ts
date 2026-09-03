@@ -802,9 +802,10 @@ describe('组件消费关系与配置一致性（P4）', () => {
     }
   })
 
-  it('独立详情行情统一消费 chart.minHeight，自适应工作台不机械套用固定高度', () => {
+  it('固定高度股票图表统一经外层容器消费 chart.minHeight，自适应工作台不机械套用', () => {
     const stockDetail = getPageEntry('stock-detail')!
     const sectorDetail = getPageEntry('sectors-detail')!
+    const training = getPageEntry('training')!
     const sectorWorkbench = getPageEntry('sectors')!
 
     expect(applicableComponentFields(stockDetail, 'chart').map((field) => field.key)).toContain('minHeight')
@@ -822,6 +823,21 @@ describe('组件消费关系与配置一致性（P4）', () => {
       config: { minHeight: 560 },
     })
     expect(sourceForPage('sectors-detail')).toContain("componentValueOf('chart', 'minHeight')")
+
+    expect(applicableComponentFields(training, 'chart').map((field) => field.key)).toContain('minHeight')
+    expect(training.layout.slots.find((slot) => slot.id === 'chart')).toMatchObject({
+      component: 'chart',
+      config: { minHeight: 650 },
+    })
+
+    for (const pageKey of ['stock-detail', 'sectors-detail', 'training']) {
+      const source = sourceForPage(pageKey)
+      expect(source).toContain("import StockChartRegion from '@/components/stock-chart/StockChartRegion.vue'")
+      expect(source).toContain('<StockChartRegion')
+      expect(source).toContain(':total-height="configuredChartHeight"')
+      expect(source).toContain(':min-height="contentHeight"')
+      expect(source).not.toMatch(/configuredChartHeight(?:\.value)?\s*-/)
+    }
 
     expect(sectorWorkbench.layout.slots.find((slot) => slot.id === 'chart')?.component).toBe('chart')
     expect(applicableComponentFields(sectorWorkbench, 'chart').map((field) => field.key)).not.toContain('minHeight')

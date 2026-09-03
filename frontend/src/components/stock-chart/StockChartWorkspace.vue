@@ -38,6 +38,7 @@ import {
   panelMetricColor,
   panelMinHeight,
   panelTitle,
+  stockChartWorkspaceMinHeight,
   volumeMetrics,
   type MacdPanelState,
   type TradeMarker,
@@ -121,10 +122,7 @@ const panels = computed<PanelDescriptor[]>(() => {
   return next
 })
 const effectiveMinHeight = computed(() => {
-  const panelFloor = panels.value.reduce(
-    (total, panel) => total + panelMinHeight(panel.type),
-    Math.max(0, panels.value.length - 1) * SPLITTER_SIZE,
-  )
+  const panelFloor = stockChartWorkspaceMinHeight(panels.value.map((panel) => panel.type))
   const requested = Number(props.minHeight)
   return Math.max(panelFloor, Number.isFinite(requested) && requested > 0 ? requested : 0)
 })

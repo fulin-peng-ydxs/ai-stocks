@@ -235,10 +235,12 @@ function setStockChartSlot(
   slot: 'slot2' | 'slot3',
   value: string | number | boolean,
 ): void {
+  const current = stockChartValue(slotId)
+  if (current[slot] === value) return
   props.config.setComponentKnob(
     slotId,
     'stockChart',
-    setAuxiliaryChartType(stockChartValue(slotId), slot, value),
+    setAuxiliaryChartType(current, slot, value),
   )
 }
 

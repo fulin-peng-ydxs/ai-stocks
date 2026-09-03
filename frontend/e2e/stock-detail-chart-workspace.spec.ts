@@ -11,7 +11,6 @@ import {
   authenticateDebugUser,
   createTemporaryE2EUser,
   destroyTemporaryE2EUsers,
-  getUserPreference,
   installAuthSnapshot,
   loginAsDebugUser,
   saveUserPreference,
@@ -62,6 +61,19 @@ const preferenceKey = (item: Pick<PreferencePayload, 'scope' | 'pageKey' | 'pref
   `${item.scope}|${item.pageKey || ''}|${item.prefKey}`
 )
 
+async function getStockChartLayoutPreference(
+  request: APIRequestContext,
+  auth: E2EAuthSnapshot,
+): Promise<{ slot2?: string; slot3?: string }> {
+  const response = await request.get(`${API_URL}/layout/users/stock-detail`, {
+    headers: { authorization: `Bearer ${auth.accessToken}` },
+  })
+  expect(response.ok(), '读取个股详情组件配置失败').toBe(true)
+  const body = await response.json()
+  expect(body.code, body.msg || '读取个股详情组件配置返回非 0 code').toBe(0)
+  return body.data?.config?.values?.['slots.chart.config.stockChart'] ?? {}
+}
+
 function runInStandardViewport(testInfo: TestInfo) {
   test.skip(
     testInfo.project.name !== 'chromium-standard',
@@ -73,6 +85,54 @@ async function installPreferenceEndpoint(page: Page, seeds: PreferencePayload[] 
   const store = new Map<string, PreferencePayload>()
   const writes = new Map<string, number>()
   seeds.forEach((item) => store.set(preferenceKey(item), item))
+  const seededCharts = (seeds.find((item) => (
+    item.scope === 'page' && item.pageKey === 'stock-detail' && item.prefKey === 'settings'
+  ))?.value as { charts?: unknown } | undefined)?.charts
+  let layoutValues: Record<string, unknown> = seededCharts === undefined
+    ? {}
+    : { 'slots.chart.config.stockChart': structuredClone(seededCharts) }
+  let layoutWrites = 0
+
+  await page.route('**/api/layout/effective/stock-detail*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 0,
+        msg: 'ok',
+        data: {
+          pageKey: 'stock-detail',
+          userId: 'local',
+          presetKey: null,
+          schemaVersion: 1,
+          values: layoutValues,
+          source: Object.fromEntries(Object.keys(layoutValues).map((key) => [key, 'user'])),
+          layers: [{ layer: 'user', config: { schemaVersion: 1, values: layoutValues } }],
+          componentFieldPolicies: [],
+        },
+      }),
+    })
+  })
+  await page.route('**/api/layout/users/stock-detail*', async (route) => {
+    const body = route.request().postDataJSON() as {
+      config?: { values?: Record<string, unknown> }
+    }
+    layoutValues = structuredClone(body.config?.values ?? {})
+    layoutWrites += 1
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 0,
+        msg: 'ok',
+        data: {
+          userId: 'local',
+          pageKey: 'stock-detail',
+          config: { schemaVersion: 1, values: layoutValues },
+        },
+      }),
+    })
+  })
 
   await page.route('**/api/user-preferences*', async (route) => {
     const routedRequest = route.request()
@@ -122,6 +182,12 @@ async function installPreferenceEndpoint(page: Page, seeds: PreferencePayload[] 
     store,
     writesFor(key: string) {
       return writes.get(key) || 0
+    },
+    layoutValue(path = 'slots.chart.config.stockChart') {
+      return layoutValues[path]
+    },
+    layoutWrites() {
+      return layoutWrites
     },
   }
 }
@@ -560,11 +626,11 @@ test.describe('个股详情三图工作区', () => {
       .toHaveCSS('background-color', 'rgb(255, 255, 255)')
     await expect(drawer.locator('.sg-l1').first())
       .toHaveCSS('background-color', 'rgb(255, 255, 255)')
-    await expect(drawer.getByTestId('stock-detail-chart-slot1-kline')).toContainText(
+    await expect(drawer.getByTestId('component-chart-stock-chart-slot1-kline')).toContainText(
       '固定，不可隐藏',
     )
-    await expect(drawer.getByTestId('stock-detail-chart-slot2-volume')).toHaveClass(/active/)
-    await expect(drawer.getByTestId('stock-detail-chart-slot3-macd')).toHaveClass(/active/)
+    await expect(drawer.getByTestId('component-chart-stock-chart-slot2-volume')).toHaveClass(/active/)
+    await expect(drawer.getByTestId('component-chart-stock-chart-slot3-macd')).toHaveClass(/active/)
     expect(consoleIssues).toEqual([])
   })
 
@@ -734,11 +800,6 @@ test.describe('个股详情三图工作区', () => {
     const { samples } = await loadStocksOnlyContext(page, request)
     const [sample, nextSample] = samples
     const code = sample.code
-    const stockDetailPreferenceKey = preferenceKey({
-      scope: 'page',
-      pageKey: 'stock-detail',
-      prefKey: 'settings',
-    })
     const preferences = await installPreferenceEndpoint(page)
     await installFixedStockListEndpoint(page, samples)
     let failNextIndicatorRequest = true
@@ -792,14 +853,15 @@ test.describe('个股详情三图工作区', () => {
       await detailSettingsDrawer.getByRole('button', { name: '组件设置', exact: true }).click()
     }
     await expect(chartHeightControl).toBeVisible()
-    await expect(workspace).toHaveAttribute('data-configured-height', '650')
-    await expect(detailSettingsDrawer.getByTestId('stock-detail-chart-slot1-kline')).toContainText(
+    await expect(page.getByTestId('stock-detail-chart-region'))
+      .toHaveAttribute('data-configured-height', '650')
+    await expect(detailSettingsDrawer.getByTestId('component-chart-stock-chart-slot1-kline')).toContainText(
       '固定，不可隐藏',
     )
 
     // 重复选择当前类型、按下后原位释放分隔线均不得产生无业务变化的偏好写入。
-    const writesBeforeNoopActions = preferences.writesFor(stockDetailPreferenceKey)
-    await detailSettingsDrawer.getByTestId('stock-detail-chart-slot2-volume').click()
+    const writesBeforeNoopActions = preferences.layoutWrites()
+    await detailSettingsDrawer.getByTestId('component-chart-stock-chart-slot2-volume').click()
     await detailSettingsDrawer.getByRole('button', { name: '关闭页面设置' }).click()
     const initialSeparator = workspace.getByRole('separator').first()
     const separatorBox = await initialSeparator.boundingBox()
@@ -811,23 +873,21 @@ test.describe('个股详情三图工作区', () => {
     await page.mouse.down()
     await page.mouse.up()
     await page.waitForTimeout(400)
-    expect(preferences.writesFor(stockDetailPreferenceKey)).toBe(writesBeforeNoopActions)
+    expect(preferences.layoutWrites()).toBe(writesBeforeNoopActions)
     await page.getByTestId('page-settings-trigger').click()
     await expect(detailSettingsDrawer).toBeVisible()
 
     // 目标类型已被另一槽使用时自动交换，不产生新的行情或指标请求。
-    await detailSettingsDrawer.getByTestId('stock-detail-chart-slot2-macd').click()
+    await detailSettingsDrawer.getByTestId('component-chart-stock-chart-slot2-macd').click()
     await expect(workspace.locator('[data-panel-key="slot2"]')).toContainText('MACD')
     await expect(workspace.locator('[data-panel-key="slot3"]')).toContainText('量能')
 
-    await detailSettingsDrawer.getByTestId('stock-detail-chart-slot3-hidden').click()
+    await detailSettingsDrawer.getByTestId('component-chart-stock-chart-slot3-hidden').click()
     await expect(page.locator('[data-panel-key]')).toHaveCount(2)
     await expect(workspace.getByRole('separator')).toHaveCount(1)
     await expect.poll(() => {
-      const value = preferences.store.get(stockDetailPreferenceKey)?.value as {
-        charts?: { slot2?: string; slot3?: string }
-      } | undefined
-      return [value?.charts?.slot2, value?.charts?.slot3]
+      const value = preferences.layoutValue() as { slot2?: string; slot3?: string } | undefined
+      return [value?.slot2, value?.slot3]
     }).toEqual(['macd', 'hidden'])
     expect(indicatorRequests).toBe(indicatorRequestsBeforeSettings)
 
@@ -865,10 +925,10 @@ test.describe('个股详情三图工作区', () => {
     await expect(draggedSeparator).not.toHaveAttribute('aria-valuenow', ratioBeforePointer || '')
     // 主区拖动只改变当前会话，不写回页面默认比例。
     await expect.poll(() => {
-      const value = preferences.store.get(stockDetailPreferenceKey)?.value as {
-        charts?: { heightRatios?: Record<string, number[]> }
+      const value = preferences.layoutValue() as {
+        heightRatios?: Record<string, number[]>
       } | undefined
-      return value?.charts?.heightRatios?.['kline|macd']
+      return value?.heightRatios?.['kline|macd']
     }).toEqual([0.75, 0.25])
     const panelHeights = await workspace.locator('[data-panel-key]').evaluateAll((panels) => (
       panels.map((panel) => panel.getBoundingClientRect().height)
@@ -895,20 +955,20 @@ test.describe('个股详情三图工作区', () => {
     await expect(firstSeparator).not.toHaveAttribute('aria-valuenow', ratioBeforeKeyboard || '')
     const ratioAfterKeyboard = await firstSeparator.getAttribute('aria-valuenow')
     await expect.poll(() => {
-      const value = preferences.store.get(stockDetailPreferenceKey)?.value as {
-        charts?: { heightRatios?: Record<string, number[]> }
+      const value = preferences.layoutValue() as {
+        heightRatios?: Record<string, number[]>
       } | undefined
-      return value?.charts?.heightRatios?.['kline|macd']
+      return value?.heightRatios?.['kline|macd']
     }).toEqual([0.75, 0.25])
 
     await page.getByTestId('page-settings-trigger').click()
     const resetDrawer = page.getByTestId('page-settings-drawer')
-    await resetDrawer.getByTestId('stock-detail-chart-save-current-ratios').click()
+    await resetDrawer.getByTestId('component-chart-stock-chart-save-current-ratios').click()
     await expect.poll(() => {
-      const value = preferences.store.get(stockDetailPreferenceKey)?.value as {
-        charts?: { heightRatios?: Record<string, number[]> }
+      const value = preferences.layoutValue() as {
+        heightRatios?: Record<string, number[]>
       } | undefined
-      return value?.charts?.heightRatios?.['kline|macd']
+      return value?.heightRatios?.['kline|macd']
     }).not.toEqual([0.75, 0.25])
     await page.reload()
     await expect(workspace.getByRole('separator').first()).toHaveAttribute(
@@ -919,23 +979,11 @@ test.describe('个股详情三图工作区', () => {
     await page.getByTestId('page-settings-trigger').click()
     await resetDrawer.getByTestId('page-settings-reset').click()
     await expect(page.locator('[data-panel-key]')).toHaveCount(3)
-    await expect(resetDrawer.getByTestId('stock-detail-chart-slot2-volume')).toHaveClass(/active/)
-    await expect(resetDrawer.getByTestId('stock-detail-chart-slot3-macd')).toHaveClass(/active/)
+    await expect(resetDrawer.getByTestId('component-chart-stock-chart-slot2-volume')).toHaveClass(/active/)
+    await expect(resetDrawer.getByTestId('component-chart-stock-chart-slot3-macd')).toHaveClass(/active/)
     await expect(workspace.getByRole('separator').first()).toHaveAttribute('aria-valuenow', '60')
-    await expect.poll(() => {
-      const value = preferences.store.get(stockDetailPreferenceKey)?.value as {
-        charts?: {
-          slot2?: string
-          slot3?: string
-          heightRatios?: Record<string, number[]>
-        }
-      } | undefined
-      return {
-        slot2: value?.charts?.slot2,
-        slot3: value?.charts?.slot3,
-        ratios: value?.charts?.heightRatios?.['kline|volume|macd'],
-      }
-    }).toEqual({ slot2: 'volume', slot3: 'macd', ratios: [0.6, 0.2, 0.2] })
+    // 重置是清除用户层覆盖，界面回退到 registry 默认值，不再把默认值冗余写回用户层。
+    await expect.poll(() => preferences.layoutValue()).toBeUndefined()
     expect(indicatorRequests).toBe(indicatorRequestsAfterPersistenceChecks)
     expect(consoleIssues).toEqual([])
   })
@@ -994,18 +1042,14 @@ test.describe('个股详情三图工作区', () => {
       await expect(secondaryWorkspace.locator('[data-panel-key="slot2"]')).toContainText('MACD')
 
       await normalPage.getByTestId('page-settings-trigger').click()
-      await normalPage.getByTestId('stock-detail-chart-slot3-hidden').click()
+      await normalPage.getByTestId('component-chart-stock-chart-slot3-hidden').click()
       await expect(normalWorkspace.locator('[data-panel-key]')).toHaveCount(2)
       await expect.poll(async () => {
-        const value = await getUserPreference(request, normalAuth, prefParams) as {
-          charts?: { slot2?: string; slot3?: string }
-        }
-        return [value.charts?.slot2, value.charts?.slot3]
+        const value = await getStockChartLayoutPreference(request, normalAuth)
+        return [value.slot2, value.slot3]
       }).toEqual(['volume', 'hidden'])
-      const secondaryValue = await getUserPreference(request, secondaryAuth, prefParams) as {
-        charts?: { slot2?: string; slot3?: string }
-      }
-      expect([secondaryValue.charts?.slot2, secondaryValue.charts?.slot3]).toEqual(['macd', 'volume'])
+      const secondaryValue = await getStockChartLayoutPreference(request, secondaryAuth)
+      expect([secondaryValue.slot2, secondaryValue.slot3]).toEqual(['macd', 'volume'])
 
       await Promise.all([normalPage.reload(), secondaryPage.reload()])
       await expect(normalWorkspace.locator('[data-panel-key]')).toHaveCount(2)
@@ -1042,6 +1086,21 @@ test.describe('个股详情三图工作区', () => {
         body: JSON.stringify({ code: 403, msg: 'E2E 偏好服务无权限', data: null }),
       })
     })
+    await page.route('**/api/layout/effective/stock-detail*', async (route) => {
+      await route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 403, msg: 'E2E 布局服务无权限', data: null }),
+      })
+    })
+    await page.route('**/api/layout/users/stock-detail*', async (route) => {
+      remoteWriteAttempts += 1
+      await route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 403, msg: 'E2E 布局服务无权限', data: null }),
+      })
+    })
 
     await page.goto(`/stocks/${sample.code}`)
     const workspace = page.getByLabel('行情多图联动工作区')
@@ -1049,13 +1108,14 @@ test.describe('个股详情三图工作区', () => {
     await expect(workspace.locator('[data-panel-key="slot2"]')).toContainText('MACD')
 
     await page.getByTestId('page-settings-trigger').click()
-    await page.getByTestId('stock-detail-chart-slot3-volume').click()
+    await page.getByTestId('component-chart-stock-chart-slot3-volume').click()
     await expect(workspace.locator('[data-panel-key]')).toHaveCount(3)
     await expect.poll(() => page.evaluate(() => {
       const value = JSON.parse(
-        window.localStorage.getItem('ai-stocks:page-settings:stock-detail') || '{}',
+        window.localStorage.getItem('ai-stocks:layout-cc:stock-detail') || '{}',
       )
-      return [value.charts?.slot2, value.charts?.slot3]
+      const stockChart = value.values?.['slots.chart.config.stockChart']
+      return [stockChart?.slot2, stockChart?.slot3]
     })).toEqual(['macd', 'volume'])
     await expect.poll(() => remoteWriteAttempts).toBeGreaterThan(0)
     expect(consoleIssues).toEqual([])

@@ -54,6 +54,12 @@ export function panelMinHeight(type: ChartType): number {
   return type === 'kline' ? KLINE_MIN_HEIGHT : AUXILIARY_MIN_HEIGHT
 }
 
+/** 股票多图工作区在当前图表组合下不可压缩的内容高度。 */
+export function stockChartWorkspaceMinHeight(types: readonly ChartType[]): number {
+  return types.reduce((total, type) => total + panelMinHeight(type), 0)
+    + Math.max(0, types.length - 1) * SPLITTER_SIZE
+}
+
 export function panelMetricColor(
   theme: StockChartTheme,
   type: ChartType,

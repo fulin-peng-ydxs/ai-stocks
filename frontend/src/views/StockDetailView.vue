@@ -34,6 +34,7 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
+import StockChartRegion from '@/components/stock-chart/StockChartRegion.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import type { MacdPanelState } from '@/components/stock-chart/workspaceOptions'
 import { useStockSet } from '@/stores/stockSet'
@@ -938,27 +939,36 @@ onBeforeUnmount(() => {
         title="正在加载个股行情…"
       />
       <div v-show="!barsLoading || bars.length" class="stock-detail-ready">
-      <StockChartWorkspace
-        class="detail-chart-workspace"
-        :data-configured-height="configuredChartHeight"
-        :style="{ flexBasis: `${configuredChartHeight}px` }"
-        v-loading="barsLoading && bars.length > 0"
-        :bars="displayBars"
-        :warmup-bars="warmupBars"
-        :indicators="indicatorRows"
-        :slot2="chartPreferences.preferences.value.slot2"
-        :slot3="chartPreferences.preferences.value.slot3"
-        :height-ratios="chartPreferences.currentRatios.value"
-        :adjust-label="adjustLabel"
-        :macd-state="macdState"
-        :macd-error="indicatorError"
-        :zoom-start="0"
-        :zoom-end="100"
-        :min-height="configuredChartHeight"
-        @ratio-draft="chartPreferences.handleRatioDraft"
-        @ratio-commit="chartPreferences.handleRatioCommit"
-        @retry-macd="loadIndicators"
-      />
+        <StockChartRegion
+          v-slot="{ contentHeight }"
+          class="detail-chart-region"
+          data-testid="stock-detail-chart-region"
+          :total-height="configuredChartHeight"
+          :slot2="chartPreferences.preferences.value.slot2"
+          :slot3="chartPreferences.preferences.value.slot3"
+          grow
+          aria-label="个股行情图表区域"
+        >
+          <StockChartWorkspace
+            class="detail-chart-workspace"
+            v-loading="barsLoading && bars.length > 0"
+            :bars="displayBars"
+            :warmup-bars="warmupBars"
+            :indicators="indicatorRows"
+            :slot2="chartPreferences.preferences.value.slot2"
+            :slot3="chartPreferences.preferences.value.slot3"
+            :height-ratios="chartPreferences.currentRatios.value"
+            :adjust-label="adjustLabel"
+            :macd-state="macdState"
+            :macd-error="indicatorError"
+            :zoom-start="0"
+            :zoom-end="100"
+            :min-height="contentHeight"
+            @ratio-draft="chartPreferences.handleRatioDraft"
+            @ratio-commit="chartPreferences.handleRatioCommit"
+            @retry-macd="loadIndicators"
+          />
+        </StockChartRegion>
 
       <el-card
         v-if="settings.showIndicatorSnapshot"
@@ -1148,7 +1158,7 @@ onBeforeUnmount(() => {
 }
 
 .detail-chart-workspace {
-  flex: 1 0 auto;
+  height: 100%;
 }
 
 .page-head {

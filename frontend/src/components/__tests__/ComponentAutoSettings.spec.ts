@@ -320,7 +320,7 @@ function mountChartDemo() {
         StockChartSettingSection: {
           props: ['slot2', 'slot3', 'defaultRatios', 'currentRatios'],
           emits: ['change', 'saveDefaultRatios'],
-          template: '<button class="stock-chart-stub" @click="$emit(\'change\', \'slot2\', \'macd\')">chart</button>',
+          template: '<div><button class="stock-chart-stub" @click="$emit(\'change\', \'slot2\', \'macd\')">chart</button><button class="stock-chart-current-stub" @click="$emit(\'change\', \'slot2\', \'volume\')">current</button></div>',
         },
       },
     },
@@ -414,6 +414,12 @@ describe('ComponentAutoSettings', () => {
       'stockChart',
       expect.objectContaining({ slot2: 'macd', slot3: 'volume' }),
     )
+  })
+
+  it('股票多图组合重复选择当前类型时不写入组件配置', async () => {
+    const { wrapper, setComponentKnob } = mountChartDemo()
+    await wrapper.find('.stock-chart-current-stub').trigger('click')
+    expect(setComponentKnob).not.toHaveBeenCalled()
   })
 
   it('行情工作台可采用页面当前宽度作为持久化默认值', async () => {

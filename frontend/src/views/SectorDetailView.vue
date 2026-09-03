@@ -23,6 +23,7 @@ import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
+import StockChartRegion from '@/components/stock-chart/StockChartRegion.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import {
@@ -141,7 +142,6 @@ const configuredChartHeight = computed(() => resolveComponentNumberValue(
   componentValueOf('chart', 'minHeight'),
   chartDefaultHeight,
 ))
-const chartWorkspaceMinHeight = computed(() => Math.max(384, configuredChartHeight.value - 80))
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
 }
@@ -419,41 +419,47 @@ onMounted(async () => {
           <div class="metric metric--leader"><span>成员领涨</span><strong>{{ detail?.leader_stock || '—' }} <em :class="pctClass(detail?.leader_pct)">{{ fmtPct(detail?.leader_pct) }}</em></strong></div>
         </section>
 
-        <section
+        <StockChartRegion
           class="content-panel chart-section"
           data-testid="sector-detail-chart-section"
-          :data-configured-height="configuredChartHeight"
-          :style="{ flexBasis: `${configuredChartHeight}px` }"
+          :total-height="configuredChartHeight"
+          :slot2="chartPreferences.preferences.value.slot2"
+          :slot3="chartPreferences.preferences.value.slot3"
+          aria-label="板块指数图表区域"
         >
-          <header class="section-head">
-            <div>
-              <h3 class="app-section-title">板块指数</h3>
-              <p class="app-caption-text">原始连续指数 · 开高低收与量能</p>
+          <template #header>
+            <header class="section-head">
+              <div>
+                <h3 class="app-section-title">板块指数</h3>
+                <p class="app-caption-text">原始连续指数 · 开高低收与量能</p>
+              </div>
+              <KlineRangeSelect v-model="viewDays" width="112px" test-id="sector-detail-range" />
+            </header>
+          </template>
+          <template #default="{ contentHeight }">
+            <div class="chart-stage" v-loading="chartLoading && bars.length > 0">
+              <AppStateBlock v-if="chartError" state="error" size="compact" title="指数走势加载失败" :description="chartError" retry @retry="loadChart" />
+              <AppStateBlock v-else-if="chartLoading && !bars.length" state="loading" size="compact" title="正在加载指数走势…" />
+              <AppStateBlock v-else-if="!bars.length" state="empty" size="compact" title="暂无指数走势" description="请先运行板块指数采集，或切换交易日期" />
+              <StockChartWorkspace
+                v-else
+                class="sector-chart-workspace"
+                :bars="bars"
+                :indicators="indicators"
+                :slot2="chartPreferences.preferences.value.slot2"
+                :slot3="chartPreferences.preferences.value.slot3"
+                :height-ratios="chartPreferences.currentRatios.value"
+                adjust-label="原始连续指数"
+                :min-height="contentHeight"
+                :zoom-start="0"
+                :zoom-end="100"
+                aria-label="板块指数 K 线与量能联动工作区"
+                @ratio-draft="chartPreferences.handleRatioDraft"
+                @ratio-commit="chartPreferences.handleRatioCommit"
+              />
             </div>
-            <KlineRangeSelect v-model="viewDays" width="112px" test-id="sector-detail-range" />
-          </header>
-          <div class="chart-stage" v-loading="chartLoading && bars.length > 0">
-            <AppStateBlock v-if="chartError" state="error" size="compact" title="指数走势加载失败" :description="chartError" retry @retry="loadChart" />
-            <AppStateBlock v-else-if="chartLoading && !bars.length" state="loading" size="compact" title="正在加载指数走势…" />
-            <AppStateBlock v-else-if="!bars.length" state="empty" size="compact" title="暂无指数走势" description="请先运行板块指数采集，或切换交易日期" />
-            <StockChartWorkspace
-              v-else
-              class="sector-chart-workspace"
-              :bars="bars"
-              :indicators="indicators"
-              :slot2="chartPreferences.preferences.value.slot2"
-              :slot3="chartPreferences.preferences.value.slot3"
-              :height-ratios="chartPreferences.currentRatios.value"
-              adjust-label="原始连续指数"
-              :min-height="chartWorkspaceMinHeight"
-              :zoom-start="0"
-              :zoom-end="100"
-              aria-label="板块指数 K 线与量能联动工作区"
-              @ratio-draft="chartPreferences.handleRatioDraft"
-              @ratio-commit="chartPreferences.handleRatioCommit"
-            />
-          </div>
-        </section>
+          </template>
+        </StockChartRegion>
 
         <section class="content-panel member-section" data-testid="sector-detail-member-section">
           <header class="section-head">
@@ -661,7 +667,7 @@ onMounted(async () => {
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .chart-stage {
-  flex: 1;
+  height: 100%;
   min-height: 0;
 }
 .sector-chart-workspace {

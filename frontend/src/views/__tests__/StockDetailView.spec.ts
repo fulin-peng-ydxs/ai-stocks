@@ -160,6 +160,18 @@ const StockChartWorkspaceStub = defineComponent({
   },
 })
 
+const StockChartRegionStub = defineComponent({
+  name: 'StockChartRegion',
+  props: ['totalHeight', 'slot2', 'slot3'],
+  setup(props, { slots }) {
+    return () => h('section', {
+      'data-testid': 'stock-detail-chart-region',
+      'data-configured-height': props.totalHeight,
+      'data-content-height': props.totalHeight,
+    }, slots.default?.({ contentHeight: Number(props.totalHeight) }))
+  },
+})
+
 const PageSettingsDrawerStub = defineComponent({
   name: 'PageSettingsDrawer',
   props: ['businessVisible', 'config', 'componentRuntimeValueOf'],
@@ -332,6 +344,7 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
       LayoutHost: {
         template: '<main><slot name="action"/><slot name="main"/><slot name="overlays"/></main>',
       },
+      StockChartRegion: StockChartRegionStub,
       StockChartWorkspace: StockChartWorkspaceStub,
       StockChartSettingSection: false,
       AppStateBlock: AppStateBlockStub,
@@ -557,7 +570,8 @@ describe('StockDetailView 三图数据协调', () => {
     expect(workspace.props('macdState')).toBe('ready')
     expect(workspace.props('adjustLabel')).toBe('前复权')
     expect(workspace.props('minHeight')).toBe(650)
-    expect(workspace.attributes('data-configured-height')).toBe('650')
+    expect(wrapper.get('[data-testid="stock-detail-chart-region"]').attributes('data-configured-height'))
+      .toBe('650')
     expect(wrapper.text()).toContain('12.34')
     expect(stocksApi.getTradeEval).toHaveBeenCalledWith(
       '600000.SH',
