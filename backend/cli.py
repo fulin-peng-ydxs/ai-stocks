@@ -464,6 +464,7 @@ def cmd_board(args: argparse.Namespace) -> int:
     ingest_kwargs: dict = {
         "ctx": CliTaskContext(), "board_type": args.board_type,
         "board_codes": codes, "only": only, "limit": args.limit,
+        "date_start": args.start, "date_end": args.end,
     }
     # 仅显式 --force-members 时传 True；否则不传（None 由 ingest_board 按 mode/board_codes 自动解析，
     # 避免 CLI 指定板块重采被周频跳过挡住）
@@ -720,7 +721,7 @@ def build_parser() -> argparse.ArgumentParser:
     board_mode = p_board.add_mutually_exclusive_group()
     board_mode.add_argument("--backfill", action="store_true",
                             help="全量回填（指数历史 + 首次成分快照 + 资金流全周期）")
-    board_mode.add_argument("--update", action="store_true", help="增量（仅补今日；默认模式）")
+    board_mode.add_argument("--update", action="store_true", help="按板块最新水位增量续采（默认模式）")
     p_board.add_argument("--dict", action="store_true", dest="only_dict",
                          help="只采板块字典（board_dict）")
     p_board.add_argument("--members", action="store_true", dest="only_members",
@@ -733,6 +734,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_board.add_argument("--type", dest="board_type", choices=("concept", "industry"),
                          help="只采概念或行业板块")
     p_board.add_argument("--limit", type=int, help="只取字典前 N 个板块（小批量验证）")
+    p_board.add_argument("--start", help="指数采集开始日 YYYY-MM-DD（仅增量模式；留空按最新水位）")
+    p_board.add_argument("--end", help="指数采集结束日 YYYY-MM-DD（留空=开始日）")
     p_board.add_argument("--force-members", action="store_true",
                          help="绕过成分周频跳过，强制全量拉成分快照（质量修复/手动补采用）")
     p_board.set_defaults(func=cmd_board)

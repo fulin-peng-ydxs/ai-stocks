@@ -1,4 +1,5 @@
 export const OVERFLOW_AWARE_COLUMN_CLASS = 'app-table-column--overflow-aware'
+export const ACTION_COLUMN_CLASS = 'app-table-column--action'
 export const CELL_VISUAL_MEASURED_CLASS = 'app-table-cell--visual-measured'
 export const CELL_VISUAL_OVERFLOW_CLASS = 'app-table-cell--visual-overflow'
 

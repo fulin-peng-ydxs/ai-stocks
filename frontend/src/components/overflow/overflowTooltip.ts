@@ -1,10 +1,14 @@
-import { CELL_VISUAL_OVERFLOW_CLASS } from '@/components/table/cellVisualOverflow'
+import {
+  ACTION_COLUMN_CLASS,
+  CELL_VISUAL_OVERFLOW_CLASS,
+} from '@/components/table/cellVisualOverflow'
 
 const OVERFLOW_TOLERANCE_PX = 0.5
-const EXISTING_DISCLOSURE_SELECTOR = [
+const OVERFLOW_TOOLTIP_EXCLUSION_SELECTOR = [
   '[data-overflow-tooltip-disabled]',
   '.el-tooltip__trigger',
   '[aria-describedby]',
+  `.${ACTION_COLUMN_CLASS}`,
 ].join(',')
 
 export function isNativeEllipsisOverflow(element: HTMLElement): boolean {
@@ -14,8 +18,8 @@ export function isNativeEllipsisOverflow(element: HTMLElement): boolean {
     || element.scrollHeight > element.clientHeight + OVERFLOW_TOLERANCE_PX
 }
 
-function hasExistingDisclosure(element: HTMLElement): boolean {
-  return Boolean(element.closest(EXISTING_DISCLOSURE_SELECTOR))
+function isWithinTooltipExclusion(element: HTMLElement): boolean {
+  return Boolean(element.closest(OVERFLOW_TOOLTIP_EXCLUSION_SELECTOR))
 }
 
 /**
@@ -25,10 +29,13 @@ function hasExistingDisclosure(element: HTMLElement): boolean {
 export function findOverflowTooltipTarget(target: EventTarget | null): HTMLElement | null {
   if (!(target instanceof Node)) return null
   let element = target instanceof HTMLElement ? target : target.parentElement
+  // 操作组、操作列和已有说明浮层是完整的交互边界。命中边界后不得继续向上
+  // 把 Element Plus 单元格及隐藏测量副本拼成普通文本提示。
+  if (element && isWithinTooltipExclusion(element)) return null
   while (element && element !== document.documentElement) {
     const overflowed = element.classList.contains(CELL_VISUAL_OVERFLOW_CLASS)
       || isNativeEllipsisOverflow(element)
-    if (overflowed && !hasExistingDisclosure(element)) return element
+    if (overflowed) return element
     element = element.parentElement
   }
   return null

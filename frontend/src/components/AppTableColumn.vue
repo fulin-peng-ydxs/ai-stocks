@@ -17,7 +17,10 @@ import {
   ROW_ACTION_COLUMN_WIDTH_CONTEXT,
   type RowActionColumnWidthContext,
 } from '@/components/table/rowActionColumnWidth'
-import { OVERFLOW_AWARE_COLUMN_CLASS } from '@/components/table/cellVisualOverflow'
+import {
+  ACTION_COLUMN_CLASS,
+  OVERFLOW_AWARE_COLUMN_CLASS,
+} from '@/components/table/cellVisualOverflow'
 
 defineOptions({ inheritAttrs: false })
 
@@ -64,6 +67,7 @@ const overflowAware = computed(() => (
 const resolvedColumnClassName = computed(() => [
   attrs.className,
   attrs['class-name'],
+  isActionColumn.value ? ACTION_COLUMN_CLASS : undefined,
   overflowAware.value ? OVERFLOW_AWARE_COLUMN_CLASS : undefined,
 ].filter(Boolean).join(' '))
 const resolvedAlign = computed(() => (

@@ -305,6 +305,7 @@ onBeforeUnmount(() => {
     class="app-row-actions"
     role="group"
     :aria-label="ariaLabel"
+    data-overflow-tooltip-disabled
     :data-testid="testId"
   >
     <template v-if="visibleActions.length">

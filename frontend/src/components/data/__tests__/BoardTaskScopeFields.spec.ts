@@ -28,11 +28,33 @@ describe('BoardTaskScopeFields', () => {
     })
 
     expect(wrapper.find('[data-testid="board-force-current-day"]').exists()).toBe(true)
+    expect(
+      wrapper.findAll('.app-caption-text')
+        .every((item) => item.element.closest('.app-inline-info') !== null),
+    ).toBe(true)
 
     await wrapper.setProps({ mode: 'backfill' })
     expect(wrapper.find('[data-testid="board-force-current-day"]').exists()).toBe(false)
 
     await wrapper.setProps({ mode: 'update', stages: ['members'] })
     expect(wrapper.find('[data-testid="board-force-current-day"]').exists()).toBe(false)
+  })
+
+  it('shows the reusable manual index range only when enabled for incremental bars', async () => {
+    const wrapper = mount(BoardTaskScopeFields, {
+      props: { ...baseProps, allowDateRange: true },
+      global: {
+        stubs: {
+          TradeDatePicker: { props: ['modelValue'], template: '<input />' },
+          'el-checkbox': { template: '<button><slot /></button>' },
+          'el-checkbox-group': { template: '<div><slot /></div>' },
+          'el-form-item': { template: '<div><slot /></div>' },
+        },
+      },
+    })
+
+    expect(wrapper.find('[data-testid="board-date-start"]').exists()).toBe(true)
+    await wrapper.setProps({ stages: ['fund'] })
+    expect(wrapper.find('[data-testid="board-date-start"]').exists()).toBe(false)
   })
 })

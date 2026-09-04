@@ -2065,25 +2065,28 @@ class IngestionService:
                      board_codes: list[str] | None = None, mode: str = "update",
                      only: list[str] | None = None, limit: int | None = None,
                      force_members: bool | None = None,
-                     force_current_day: bool = False) -> dict:
+                     force_current_day: bool = False,
+                     date_start: date | str | None = None,
+                     date_end: date | str | None = None) -> dict:
         """板块数据编排：字典 → 成分快照 → 指数 → 资金流。
 
         承接 plan §6.4 T4：单步骤失败记日志不中断（返回失败清单），供 T5/T6 失败隔离与续跑。
         - mode="backfill"（初始化）：指数全量回填（源端可用起始年 2024 起）+ 资金流全周期；
           成分快照默认绕过周频全量拉（force_members 默认 True）。
         - mode="update"（每日增量）：指数只补最近交易日 + 资金流每日刷新全周期（即时/3日/5日/10日/20日）；
-          成分股按周频跳过逻辑拉完整快照（只进不出关系幂等合并），force_members=True 时绕过间隔。
+          指数按各板块已落库最大交易日续采到目标日；成分股按周频跳过逻辑拉完整快照，
+          force_members=True 时绕过间隔。date_start/date_end 可显式指定指数采集区间。
           force_current_day=True 时跳过非交易日与源端就绪退级，直接尝试当天。
         - only：可选子集（"dict"/"members"/"bar"/"fund"），CLI --dict 等分表运行用。
         board_type 可限制 concept/industry；ctx 提供任务中心进度日志。
         """
         from datetime import date as _d
-        from datetime import timedelta as _td
 
         from backend.services.board_ingest import (
             BOARD_INGEST_STAGES,
             BoardIngestService,
             _asia_date,
+            normalize_board_date_range,
             normalize_board_stages,
         )
 
@@ -2097,6 +2100,9 @@ class IngestionService:
             raise ValueError("板块强制采集当日必须是布尔值")
         if mode != "update" and force_current_day:
             raise ValueError("只有板块增量采集支持强制采集当日")
+        explicit_start, explicit_end = normalize_board_date_range(
+            mode, date_start, date_end, force_current_day,
+        )
         # force_members 未显式指定时：backfill 初始化、或显式指定板块子集（手动重采语义）→ 绕过周频；
         # 默认全量 update 走周频跳过（避免每日增量全量重拉已完整板块）。
         if force_members is None:
@@ -2184,15 +2190,15 @@ class IngestionService:
                         _d(2024, 1, 1), board_codes=board_codes,
                         board_type=board_type, ctx=ctx)
                 else:
-                    # 增量：复用现有采集交易日语义——截止到最近交易日（非交易日回退），
-                    # 区间起点往前取 7 个自然日缓冲覆盖跨周末/长假缺口；
-                    # 增量默认开启源端当日就绪探测；强制当日时才跳过。
-                    assert update_target is not None
-                    end = update_target
-                    result["bar"] = svc.ingest_board_bar(end - _td(days=7), end=end,
+                    # 显式区间尊重调用方输入；自动增量按每个板块最大交易日续采，避免固定短窗口
+                    # 在任务中断超过窗口后留下永久缺口。
+                    assert update_target is not None or explicit_end is not None
+                    end = explicit_end or update_target
+                    result["bar"] = svc.ingest_board_bar(explicit_start, end=end,
                                                          board_codes=board_codes,
                                                          board_type=board_type,
-                                                         probe_ready=not force_current_day,
+                                                         probe_ready=not explicit_start and not force_current_day,
+                                                         resume_from_latest=not bool(explicit_start),
                                                          ctx=ctx)
                     update_target = _d.fromisoformat(result["bar"]["end"])
                     if "fund" in steps:

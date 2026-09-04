@@ -44,15 +44,17 @@ function patch(value: Partial<ResultMaintenanceTaskForm>) {
     />
   </el-form-item>
   <el-form-item v-if="modelValue.target_mode === 'fixed'" label="固定日期">
-    <TradeDatePicker
-      :model-value="modelValue.trade_date"
-      placeholder="选择交易日"
-      :clearable="false"
-      :data-testid="`${testIdPrefix}-trade-date`"
-      style="width: 100%"
-      @update:model-value="patch({ trade_date: String($event || '') })"
-    />
-    <span v-if="taskType === 'limit_ladder_invalidate'" class="hint">固定日期表示从该日开始向后失效。</span>
+    <div class="app-inline-info app-inline-info--fill">
+      <TradeDatePicker
+        :model-value="modelValue.trade_date"
+        placeholder="选择交易日"
+        :clearable="false"
+        :data-testid="`${testIdPrefix}-trade-date`"
+        style="width: 100%"
+        @update:model-value="patch({ trade_date: String($event || '') })"
+      />
+      <span v-if="taskType === 'limit_ladder_invalidate'" class="app-caption-text">固定日期表示从该日开始向后失效。</span>
+    </div>
   </el-form-item>
   <template v-if="taskType === 'stock_board_correlation'">
     <el-form-item label="股票范围">
@@ -80,13 +82,3 @@ function patch(value: Partial<ResultMaintenanceTaskForm>) {
     :title="RESULT_MAINTENANCE_DESCRIPTION[taskType]"
   />
 </template>
-
-<style scoped>
-.hint {
-  display: block;
-  margin-top: 6px;
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-caption);
-  line-height: var(--app-line-height-caption);
-}
-</style>

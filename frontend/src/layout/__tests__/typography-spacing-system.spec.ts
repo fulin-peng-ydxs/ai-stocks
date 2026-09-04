@@ -233,6 +233,28 @@ describe('字体与间距设计契约', () => {
     ).toEqual([])
   })
 
+  it('数据采集与任务调度表单的辅助说明统一消费全局 caption 语义类', () => {
+    const targets = [
+      'components/data/BoardTaskScopeFields.vue',
+      'components/data/StockIngestScopeFields.vue',
+      'components/data/CurrentDayFallbackField.vue',
+      'components/data/ResultMaintenanceTaskFields.vue',
+      'views/data/IngestView.vue',
+      'views/data/ScheduleView.vue',
+    ]
+
+    for (const target of targets) {
+      const source = read(join(SRC_DIR, target))
+      expect(source, target).toContain('app-caption-text')
+      expect(source, target).toContain('app-inline-info')
+      expect(source, target).not.toContain('class="hint')
+      expect(source, target).not.toMatch(/\.hint\s*\{/)
+    }
+
+    const globalCss = read(join(SRC_DIR, 'styles/global.css'))
+    expect(globalCss).toContain('.app-inline-info--fill { width: 100%; }')
+  })
+
   it('页面标题行间距由布局系统承载，禁止 .page-head 叠加私有 margin/padding-bottom', () => {
     // 事故复盘：QualityView/BoardView 的 .page-head { margin-bottom: 14px } 与 .lh-action 的
     // gap(12px) 叠加成 26px，造成页面间距不一致。间距一律由布局系统承载：

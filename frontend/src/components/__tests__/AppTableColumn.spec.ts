@@ -10,6 +10,7 @@ import {
   resolveAdaptiveColumnWidth,
 } from '@/components/table/adaptiveColumnWidth'
 import { ROW_ACTION_COLUMN_WIDTH_CONTEXT } from '@/components/table/rowActionColumnWidth'
+import { ACTION_COLUMN_CLASS } from '@/components/table/cellVisualOverflow'
 
 const ElTableColumnStub = defineComponent({
   name: 'ElTableColumn',
@@ -94,6 +95,7 @@ describe('自适应表格列', () => {
     expect(action.get('.column').attributes('data-class-name')).not.toContain(
       'app-table-column--overflow-aware',
     )
+    expect(action.get('.column').attributes('data-class-name')).toContain(ACTION_COLUMN_CLASS)
   })
 
   it('忽略遗留的列级 tooltip 配置，统一交给自动溢出机制', () => {

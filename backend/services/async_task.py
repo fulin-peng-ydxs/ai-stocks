@@ -265,10 +265,18 @@ class AsyncTaskService:
 
             params = normalize_stock_ingest_params(params)
         if task_type == "board":
-            from backend.services.board_ingest import normalize_board_force_current_day
+            from backend.services.board_ingest import (
+                normalize_board_date_range,
+                normalize_board_force_current_day,
+            )
 
             mode = str(params.get("mode") or "update")
-            normalize_board_force_current_day(mode, params.get("force_current_day"))
+            force_current_day = normalize_board_force_current_day(
+                mode, params.get("force_current_day"),
+            )
+            normalize_board_date_range(
+                mode, params.get("date_start"), params.get("date_end"), force_current_day,
+            )
         if task_type == "stock_board_correlation":
             from backend.services.stock_board_correlation import normalize_correlation_task_params
 
@@ -1397,6 +1405,7 @@ def _h_board(params: dict, ctx: TaskContext) -> dict:
     阶段 checkpoint 跳过已经成功的工作单元。
     """
     from backend.services.board_ingest import (
+        normalize_board_date_range,
         normalize_board_force_current_day,
         normalize_board_stages,
     )
@@ -1416,6 +1425,9 @@ def _h_board(params: dict, ctx: TaskContext) -> dict:
     force_current_day = normalize_board_force_current_day(
         mode, params.get("force_current_day"),
     )
+    date_start, date_end = normalize_board_date_range(
+        mode, params.get("date_start"), params.get("date_end"), force_current_day,
+    )
     only = normalize_board_stages(params.get("only"))
     ingest_kwargs = {
         "ctx": ctx, "board_type": params.get("board_type"),
@@ -1423,6 +1435,9 @@ def _h_board(params: dict, ctx: TaskContext) -> dict:
     }
     if force_current_day:
         ingest_kwargs["force_current_day"] = True
+    if date_start:
+        ingest_kwargs["date_start"] = date_start
+        ingest_kwargs["date_end"] = date_end
     if only:
         ingest_kwargs["only"] = only
     if params.get("limit") is not None:

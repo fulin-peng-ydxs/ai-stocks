@@ -565,6 +565,33 @@ def test_board_task_force_current_day_passthrough(client, monkeypatch):
     assert captured["force_current_day"] is True
 
 
+def test_board_task_date_range_passthrough(client, monkeypatch):
+    """板块手动指数区间在创建时校验，并以 date 类型透传采集编排。"""
+    from datetime import date
+
+    from backend.services import ingest as ingest_mod
+    from backend.services.async_task import AsyncTaskService
+
+    captured = {}
+
+    def fake_ingest_board(self, ctx=None, board_type=None, board_codes=None,
+                          mode="update", date_start=None, date_end=None):
+        captured.update(date_start=date_start, date_end=date_end)
+        return {"dict": None, "members": {}, "bar": None,
+                "fund_flow": None, "failed": []}
+
+    monkeypatch.setattr(ingest_mod.IngestionService, "ingest_board", fake_ingest_board, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    svc = AsyncTaskService(client)
+    task = svc.create("board", {"mode": "update", "date_start": "2026-08-01",
+                                "date_end": "2026-08-03"})
+
+    assert _wait(svc, task)["status"] == "done"
+    assert captured == {"date_start": date(2026, 8, 1), "date_end": date(2026, 8, 3)}
+    with pytest.raises(ValueError, match="起始日期不能晚于结束日期"):
+        svc.create("board", {"date_start": "2026-08-03", "date_end": "2026-08-01"})
+
+
 def test_board_task_write_mutex(client, monkeypatch):
     """board 是写任务：运行中禁止并发创建其他写任务。"""
     import time
@@ -1410,7 +1437,7 @@ def test_board_member_incomplete_fix_reingests(client, monkeypatch):
 
 def test_board_update_uses_latest_open_day(client, monkeypatch):
     """板块 update 指数区间复用现有交易日语义（_latest_open_day），非裸 today。"""
-    from datetime import date, timedelta
+    from datetime import date
     from backend.services import ingest as ingest_mod
     from backend.services.ingest import IngestionService
     from backend.services.board_ingest import BoardIngestService
@@ -1427,11 +1454,13 @@ def test_board_update_uses_latest_open_day(client, monkeypatch):
         return {}
 
     def fake_ingest_board_bar(self, start, end=None, board_codes=None,
-                              board_type=None, probe_ready=False, ctx=None):
+                              board_type=None, probe_ready=False,
+                              resume_from_latest=False, ctx=None):
         captured["bar_type"] = board_type
         captured["probe_ready"] = probe_ready
         captured["start"] = start
         captured["end"] = end
+        captured["resume_from_latest"] = resume_from_latest
         return {"rows": 0, "boards": 0}
 
     def fake_ingest_board_fund_flow(self, snapshot_date=None, periods=None, board_codes=None,
@@ -1451,9 +1480,10 @@ def test_board_update_uses_latest_open_day(client, monkeypatch):
                         lambda self: date(2026, 8, 7), raising=True)
 
     IngestionService().ingest_board(mode="update", board_type="concept")
-    # 指数区间：start = 最近交易日 - 7 天 = 07-31；end = 最近交易日
-    assert captured["start"] == date(2026, 8, 7) - timedelta(days=7)
+    # 指数按各板块最新水位续采，不再使用统一 7 天窗口。
+    assert captured["start"] is None
     assert captured["end"] == date(2026, 8, 7)
+    assert captured["resume_from_latest"] is True
     # 全量增量开启源端就绪探测（指定板块重采才关）
     assert captured["probe_ready"] is True
     # 资金流：update 每日刷新全周期（periods=None → 默认全周期）
@@ -1524,7 +1554,7 @@ def test_ingest_board_only_selects_tables(client, monkeypatch):
                         called.__setitem__("members", 1) or {}, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_bar",
                         lambda self, start, end=None, board_codes=None, board_type=None,
-                        probe_ready=False, ctx=None:
+                        probe_ready=False, resume_from_latest=False, ctx=None:
                         called.__setitem__("bar", 1) or {"rows": 0, "boards": 0}, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_fund_flow",
                         lambda self, snapshot_date=None, periods=None, board_codes=None,

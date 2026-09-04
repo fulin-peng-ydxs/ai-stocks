@@ -71,6 +71,36 @@ def normalize_board_force_current_day(mode: str, value) -> bool:
     return value
 
 
+def normalize_board_date_range(
+    mode: str, date_start: date | str | None, date_end: date | str | None,
+    force_current_day: bool = False,
+) -> tuple[date | None, date | None]:
+    """规范化手动指数区间；留空表示按板块最新水位自动增量。"""
+    def parse(value, label: str) -> date | None:
+        if value in (None, ""):
+            return None
+        if isinstance(value, date):
+            return value
+        try:
+            return date.fromisoformat(str(value))
+        except ValueError as exc:
+            raise ValueError(f"板块{label}必须是 YYYY-MM-DD") from exc
+
+    start = parse(date_start, "起始日期")
+    end = parse(date_end, "结束日期")
+    if end and not start:
+        raise ValueError("指定板块指数结束日期时必须同时指定起始日期")
+    if start and not end:
+        end = start
+    if start and end and start > end:
+        raise ValueError("板块指数起始日期不能晚于结束日期")
+    if start and mode != "update":
+        raise ValueError("显式板块指数区间仅支持增量模式")
+    if start and force_current_day:
+        raise ValueError("显式板块指数区间不能与强制采集当日同时使用")
+    return start, end
+
+
 def _asia_date() -> date:
     """Asia/Shanghai 当前日期（快照日期语义）。"""
     return datetime.now(timezone.utc).astimezone(tz=timezone(timedelta(hours=8))).date()
@@ -436,25 +466,35 @@ class BoardIngestService:
 
     # ── 3. 指数 ──────────────────────────────────────────────
 
-    def ingest_board_bar(self, start: date, end: date | None = None,
+    def ingest_board_bar(self, start: date | None, end: date | None = None,
                          board_codes: list[str] | None = None,
                          board_type: str | None = None,
                          probe_ready: bool = False,
+                         resume_from_latest: bool = False,
                          ctx: object | None = None) -> dict:
         """板块指数日线：幂等 upsert 原值。end 缺省=今天。返回 {"rows": n, "boards": n}。
 
         ctx：任务上下文，逐板块打实时日志（对齐现有采集「指数 X 完成」模式）。
+        resume_from_latest：自动增量按每个板块已落库最大交易日的下一自然日续采；从未落库的
+        板块只尝试截止日，历史初始化由 backfill 负责。该模式下 start 必须为 None。
         probe_ready：仅每日增量（ingest_board update 分支）传 True——截止日=今天时
         先抽样探测源端当日数据是否就绪，未就绪回退到上一交易日继续采集；backfill/
         缺口重采不传，尊重调用方意图直接采。"""
+        if resume_from_latest and start is not None:
+            raise ValueError("按板块最新日期续采时不得指定统一起始日期")
+        if not resume_from_latest and start is None:
+            raise ValueError("板块指数区间采集必须指定起始日期")
         end = end or _asia_date()
+        if start is not None and start > end:
+            raise ValueError("板块指数起始日期不能晚于结束日期")
         requested_end = end
         fallback = False
         types = _board_types(board_type)
         if board_codes is not None:
             if not board_codes:
                 return {"rows": 0, "boards": 0, "failed": [],
-                        "start": start.isoformat(), "end": end.isoformat(),
+                        "start": start.isoformat() if start else None,
+                        "end": end.isoformat(),
                         "at_end": 0, "scope_total": 0}
             type_clause = " AND board_type=?" if board_type else ""
             df_boards = self.c.query_df(
@@ -479,11 +519,36 @@ class BoardIngestService:
             df_boards = df_boards[~df_boards["board_code"].astype(str).isin(done_codes)]
             if ctx:
                 ctx.log(f"指数：{resumed_done} 个板块上次已完成，本次跳过")
+        board_starts: dict[str, date] = {}
+        if resume_from_latest and len(df_boards):
+            scope = [str(x) for x in df_boards["board_code"].tolist()]
+            latest = self.c.query_df(
+                f"SELECT board_code, max(trade_date) AS d FROM board_bar "
+                f"WHERE board_code IN ({_in_placeholders(len(scope))}) GROUP BY board_code",
+                scope,
+            )
+            latest_map = dict(zip(latest["board_code"].astype(str), latest["d"]))
+            pending: list[bool] = []
+            for code in df_boards["board_code"].astype(str):
+                last = latest_map.get(code)
+                board_start = end if last is None or pd.isna(last) else pd.Timestamp(last).date() + timedelta(days=1)
+                board_starts[code] = board_start
+                pending.append(board_start <= end)
+            pending_mask = pd.Series(pending, index=df_boards.index)
+            current_codes = set(df_boards.loc[~pending_mask, "board_code"].astype(str))
+            done_codes.update(current_codes)
+            df_boards = df_boards[pending_mask]
+            board_starts = {
+                code: board_starts[code] for code in df_boards["board_code"].astype(str)
+            }
+            if current_codes and ctx:
+                ctx.log(f"指数：{len(current_codes)} 个板块已到 {end}，无需请求")
         n_total = len(df_boards)
         phase_total = len(done_codes) + n_total
         if ctx and n_total:
             tail = f"（续跑跳过已完成 {resumed_done}）" if resumed_done else ""
-            ctx.log(f"板块指数采集区间 {start} ~ {end}，待采 {n_total} 个板块{tail}")
+            range_text = "逐板块水位续采" if resume_from_latest else f"{start} ~ {end}"
+            ctx.log(f"板块指数采集区间 {range_text}，待采 {n_total} 个板块{tail}")
         if probe_ready and n_total and end >= _asia_date():
             # 就绪探测：仅「每日增量 + 截止日=今天」。backfill/缺口窄窗口重采不传
             # probe_ready；非交易日默认 end<今天，数据必已发布。
@@ -497,7 +562,8 @@ class BoardIngestService:
                 if ctx:
                     ctx.log(msg, "warn")
                 end = fallback_end
-                start = min(start, end)
+                if start is not None:
+                    start = min(start, end)
                 fallback = True
         for i, (_, b) in enumerate(df_boards.iterrows(), 1):
             code, board_type = str(b["board_code"]), str(b["board_type"])
@@ -507,7 +573,12 @@ class BoardIngestService:
                               phase_total=phase_total, phase_done=len(done_codes),
                               current_item=code, bar_done_codes=sorted(done_codes))
             try:
-                df = self.src.get_board_bar(code, board_type, start, end)
+                board_start = board_starts.get(code, start)
+                assert board_start is not None
+                if board_start > end:
+                    done_codes.add(code)
+                    continue
+                df = self.src.get_board_bar(code, board_type, board_start, end)
                 failed_years = list(df.attrs.get("failed_years") or [])
                 if df.empty:
                     if ctx:
@@ -519,7 +590,7 @@ class BoardIngestService:
                     boards += 1
                 if failed_years:
                     failed.append(f"{code}: years {failed_years}")
-                    self._log_update("board_bar", start, end, len(df), "partial",
+                    self._log_update("board_bar", board_start, end, len(df), "partial",
                                      f"{code} 失败年份 {failed_years}")
                 if not failed_years:
                     done_codes.add(code)
@@ -533,7 +604,7 @@ class BoardIngestService:
             except Exception as e:  # noqa: BLE001
                 log.warning("板块 %s 指数取数失败: %s", code, e)
                 failed.append(f"{code}: {e}")
-                self._log_update("board_bar", start, end, 0, "failed", f"{code} {e}")
+                self._log_update("board_bar", board_starts.get(code, start), end, 0, "failed", f"{code} {e}")
                 if ctx:
                     ctx.log(f"指数 {i}/{n_total} {code}：失败 {e}", "error")
         status = "partial" if failed else "success"
@@ -541,13 +612,15 @@ class BoardIngestService:
         # 避免「成功 480 板块」掩盖「大部分停在昨天」；缺口仍由质检扫描兜底发现。
         at_end = self._count_at_end(scope_codes, end) if scope_codes else 0
         fresh = f"，已出 {end}：{at_end}/{len(scope_codes)}"
-        self._log_update("board_bar", start, end, total_rows, status,
+        log_start = min(board_starts.values()) if board_starts else (end if resume_from_latest else start)
+        self._log_update("board_bar", log_start, end, total_rows, status,
                          f"{boards} 个板块（失败 {len(failed)}{fresh}）")
         skip_detail = f"，续跑跳过已完成 {resumed_done}" if resumed_done else ""
         log.info("板块指数入库 %d 行 / %d 个板块（失败 %d%s，%s ~ %s%s）",
-                 total_rows, boards, len(failed), skip_detail, start, end, fresh)
+                 total_rows, boards, len(failed), skip_detail, log_start, end, fresh)
         return {"rows": total_rows, "boards": boards, "failed": failed,
-                "start": start.isoformat(), "end": end.isoformat(),
+                "start": log_start.isoformat() if log_start else None, "end": end.isoformat(),
+                "resume_from_latest": resume_from_latest,
                 "requested_end": requested_end.isoformat(), "fallback": fallback,
                 "reason": "source_not_ready" if fallback else None,
                 "at_end": at_end, "scope_total": len(scope_codes)}

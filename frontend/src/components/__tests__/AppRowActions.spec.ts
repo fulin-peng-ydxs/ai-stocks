@@ -144,6 +144,9 @@ describe('AppRowActions', () => {
     ], { testId: 'user-actions' })
 
     const directButtons = visibleButtons(wrapper).map((button) => button.text())
+    expect(wrapper.get('.app-row-actions').attributes()).toHaveProperty(
+      'data-overflow-tooltip-disabled',
+    )
     expect(directButtons).toEqual(['编辑', '重置密码', '更多'])
     expect(visibleButtons(wrapper)[0].classes()).toContain('is-tone-primary')
     expect(document.body.querySelector('.app-row-actions-menu')).toBeNull()

@@ -595,7 +595,7 @@ onActivated(openResultScheduleFromIntent)
       <el-card shadow="never" class="blk jobs-card">
         <template #header>
           <div class="blk-head"><span>调度任务</span>
-            <span class="hint">时间任务到点触发；依赖任务命中上游结果后可靠等待并按配置延迟执行。</span></div>
+            <span class="app-caption-text">时间任务到点触发；依赖任务命中上游结果后可靠等待并按配置延迟执行。</span></div>
         </template>
         <AppStateBlock
           v-if="loading && !jobs.length"
@@ -863,15 +863,17 @@ onActivated(openResultScheduleFromIntent)
         </el-form-item>
         <!-- 按类型的动态参数 -->
         <el-form-item v-if="form.task_type === 'fix'" label="问题类型">
-          <el-select v-model="form.issue_type" data-testid="schedule-issue-type" style="width: 100%">
-            <el-option
-              v-for="issueType in qualityIssueTypes"
-              :key="issueType"
-              :label="ISSUE_TYPE_LABEL[issueType] ?? issueType"
-              :value="issueType"
-            />
-          </el-select>
-          <span class="hint">每次触发时动态恢复该类型当前所有“未处理”问题，无问题时正常结束</span>
+          <div class="app-inline-info app-inline-info--fill">
+            <el-select v-model="form.issue_type" data-testid="schedule-issue-type" style="width: 100%">
+              <el-option
+                v-for="issueType in qualityIssueTypes"
+                :key="issueType"
+                :label="ISSUE_TYPE_LABEL[issueType] ?? issueType"
+                :value="issueType"
+              />
+            </el-select>
+            <span class="app-caption-text">每次触发时动态恢复该类型当前所有“未处理”问题，无问题时正常结束</span>
+          </div>
         </el-form-item>
         <BoardTaskScopeFields
           v-if="form.task_type === 'board'"
@@ -911,8 +913,10 @@ onActivated(openResultScheduleFromIntent)
           </el-checkbox-group>
         </el-form-item>
         <el-form-item v-if="form.freq_type === 'monthly'" label="每月几号">
-          <el-input-number v-model="form.day" :min="1" :max="28" />
-          <span class="hint">1–28（避开月末不确定）</span>
+          <div class="app-inline-info">
+            <el-input-number v-model="form.day" :min="1" :max="28" />
+            <span class="app-caption-text">1–28（避开月末不确定）</span>
+          </div>
         </el-form-item>
         <el-form-item v-if="form.freq_type === 'cron'" label="cron 表达式">
           <el-input v-model="form.cron" placeholder="分 时 日 月 周，如 30 15 * * 1-5" />
@@ -939,8 +943,10 @@ onActivated(openResultScheduleFromIntent)
             </el-select>
           </el-form-item>
           <el-form-item label="结果条件">
-            <PageSegmented v-model="form.dependency_condition" :options="CONDITION_OPTIONS" test-id="schedule-dependency-condition" aria-label="依赖结果条件" />
-            <span class="hint">“完成后”包含成功和失败；人工终止不会触发</span>
+            <div class="app-inline-info">
+              <PageSegmented v-model="form.dependency_condition" :options="CONDITION_OPTIONS" test-id="schedule-dependency-condition" aria-label="依赖结果条件" />
+              <span class="app-caption-text">“完成后”包含成功和失败；人工终止不会触发</span>
+            </div>
           </el-form-item>
           <el-form-item label="触发延迟">
             <el-input-number v-model="form.dependency_delay_value" data-testid="schedule-dependency-delay" :min="0" :precision="0" />
@@ -952,15 +958,19 @@ onActivated(openResultScheduleFromIntent)
 
         <el-divider content-position="left" class="form-section-divider">自身重试</el-divider>
         <el-form-item label="启用重试">
-          <el-switch v-model="form.retry_enabled" data-testid="schedule-retry-enabled" />
-          <span class="hint">本任务结果持续命中条件时循环执行，达到上限后结束</span>
+          <div class="app-inline-info">
+            <el-switch v-model="form.retry_enabled" data-testid="schedule-retry-enabled" />
+            <span class="app-caption-text">本任务结果持续命中条件时循环执行，达到上限后结束</span>
+          </div>
         </el-form-item>
         <template v-if="form.retry_enabled">
           <el-form-item label="循环条件">
-            <PageSegmented v-model="form.retry_condition" :options="CONDITION_OPTIONS" test-id="schedule-retry-condition" aria-label="循环结果条件" />
-            <span v-if="form.retry_condition === 'completion'" class="hint warn-hint">
-              成功和失败都会继续循环，直到达到次数上限；人工终止除外
-            </span>
+            <div class="app-inline-info">
+              <PageSegmented v-model="form.retry_condition" :options="CONDITION_OPTIONS" test-id="schedule-retry-condition" aria-label="循环结果条件" />
+              <span v-if="form.retry_condition === 'completion'" class="app-caption-text warn-hint">
+                成功和失败都会继续循环，直到达到次数上限；人工终止除外
+              </span>
+            </div>
           </el-form-item>
           <el-form-item label="重试延迟">
             <el-input-number v-model="form.retry_delay_value" data-testid="schedule-retry-delay" :min="0" :precision="0" />
@@ -969,15 +979,19 @@ onActivated(openResultScheduleFromIntent)
             </el-select>
           </el-form-item>
           <el-form-item label="最大重试">
-            <el-input-number v-model="form.max_retries" data-testid="schedule-max-retries" :min="1" :max="20" :precision="0" />
-            <span class="hint">不含首次执行；最多 20 次</span>
+            <div class="app-inline-info">
+              <el-input-number v-model="form.max_retries" data-testid="schedule-max-retries" :min="1" :max="20" :precision="0" />
+              <span class="app-caption-text">不含首次执行；最多 20 次</span>
+            </div>
           </el-form-item>
         </template>
 
         <el-divider content-position="left" class="form-section-divider">选项</el-divider>
         <el-form-item v-if="form.trigger_mode === 'time'" label="仅交易日">
-          <el-switch v-model="form.trading_day_only" />
-          <span class="hint">开启后非交易日自动跳过（行情/质检类建议开）</span>
+          <div class="app-inline-info">
+            <el-switch v-model="form.trading_day_only" />
+            <span class="app-caption-text">开启后非交易日自动跳过（行情/质检类建议开）</span>
+          </div>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="form.enabled" data-testid="schedule-enabled" />
@@ -1034,7 +1048,7 @@ onActivated(openResultScheduleFromIntent)
 /* 填满 LayoutHost 的条件成长区；放不下时整区内滚（兜底阶梯第 3 级） */
 .schedule-body { flex: 1 1 auto; overflow: auto; min-height: 0; display: flex; flex-direction: column; }
 .delay-unit-select { width: 96px; margin-left: var(--space-2); }
-.warn-hint { color: var(--el-color-warning-dark-2); }
+.warn-hint { color: var(--app-warning-text); }
 .jobs-card {
   flex: 1 1 auto;
   min-height: 300px;
@@ -1054,7 +1068,6 @@ onActivated(openResultScheduleFromIntent)
 .blk { margin-bottom: 16px; }
 .blk:last-child { margin-bottom: 0; }
 .blk-head { display: flex; justify-content: space-between; align-items: center; }
-.hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-left: 10px; }
 .form-section-divider { margin: var(--app-space-4) 0 14px; }
 .src-status { display: inline-flex; align-items: center; gap: var(--app-space-control-gap); }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }

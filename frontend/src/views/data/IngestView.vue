@@ -271,11 +271,14 @@ type OptionForm = {
   board_stages: BoardIngestStage[]
   force_members: boolean
   board_force_current_day: boolean
+  board_date_start: string
+  board_date_end: string
   stock: StockIngestFormValue
 }
 const defaultOptionForm = (): OptionForm => ({
   codes: [], mode: 'update', board_type: '', board_stages: ['dict', 'members', 'bar', 'fund'],
-  force_members: false, board_force_current_day: false, stock: createStockIngestForm(),
+  force_members: false, board_force_current_day: false,
+  board_date_start: '', board_date_end: '', stock: createStockIngestForm(),
 })
 const optForm = ref<OptionForm>(defaultOptionForm())
 
@@ -383,6 +386,19 @@ async function submitOptions() {
     params.only = f.board_stages
     if (f.board_type) params.board_type = f.board_type
     if (f.force_members && f.board_stages.includes('members')) params.force_members = true
+    if (f.board_date_end && !f.board_date_start) {
+      ElMessage.warning('指定指数结束日期时必须同时指定开始日期'); return
+    }
+    if (f.board_date_start && f.board_date_end && f.board_date_start > f.board_date_end) {
+      ElMessage.warning('指数开始日期不能晚于结束日期'); return
+    }
+    if (f.board_date_start && f.board_force_current_day) {
+      ElMessage.warning('指定指数区间不能与强制采集当日同时使用'); return
+    }
+    if (f.mode === 'update' && f.board_stages.includes('bar') && f.board_date_start) {
+      params.date_start = f.board_date_start
+      params.date_end = f.board_date_end || f.board_date_start
+    }
     if (
       f.mode === 'update'
       && f.board_force_current_day
@@ -748,7 +764,7 @@ watch(
       <el-card shadow="never" class="blk">
         <template #header>
           <div class="blk-head"><span>数据采集</span>
-            <span class="hint">采集对象＝数据资产表中的：日线行情 / 市值指标 / 指数 / 交易日历 / 概念与行业板块。同类采集任务不可并发。</span></div>
+            <span class="app-caption-text">采集对象＝数据资产表中的：日线行情 / 市值指标 / 指数 / 交易日历 / 概念与行业板块。同类采集任务不可并发。</span></div>
         </template>
         <div class="act-grid">
           <div class="act">
@@ -771,7 +787,7 @@ watch(
       <!-- 结果维护区 -->
       <el-card shadow="never" class="blk">
         <template #header><div class="blk-head"><span>结果维护</span>
-          <span class="hint">立即执行与调度配置相互独立；自动执行参数和触发时机在任务调度保存。</span></div></template>
+          <span class="app-caption-text">立即执行与调度配置相互独立；自动执行参数和触发时机在任务调度保存。</span></div></template>
         <div class="act-grid">
           <div class="act">
             <div class="act-t">走势相关重算</div>
@@ -1017,15 +1033,20 @@ watch(
           v-model:stages="optForm.board_stages"
           v-model:force-members="optForm.force_members"
           v-model:force-current-day="optForm.board_force_current_day"
+          v-model:date-start="optForm.board_date_start"
+          v-model:date-end="optForm.board_date_end"
+          allow-date-range
           test-id-prefix="ingest-board"
         />
         <el-form-item v-if="optType === 'board'" label="指定板块">
-          <el-select v-model="optForm.codes" multiple filterable remote clearable collapse-tags
-                     :remote-method="remoteCode" :loading="codeOptLoading" :reserve-keyword="false"
-                     placeholder="输入板块代码或名称搜索" style="width: 100%">
-            <el-option v-for="o in codeOptions" :key="o.code" :label="o.label" :value="o.code" />
-          </el-select>
-          <span class="hint">可多选；留空=全部板块</span>
+          <div class="app-inline-info app-inline-info--fill">
+            <el-select v-model="optForm.codes" multiple filterable remote clearable collapse-tags
+                       :remote-method="remoteCode" :loading="codeOptLoading" :reserve-keyword="false"
+                       placeholder="输入板块代码或名称搜索" style="width: 100%">
+              <el-option v-for="o in codeOptions" :key="o.code" :label="o.label" :value="o.code" />
+            </el-select>
+            <span class="app-caption-text">可多选；留空=全部板块</span>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -1196,7 +1217,6 @@ watch(
 .setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
 .blk { margin-bottom: 16px; }
 .blk-head { display: flex; justify-content: space-between; align-items: center; gap: var(--app-space-3); }
-.hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .flt { display: flex; align-items: center; gap: var(--app-space-2); }
 .act-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--app-space-3); }
 .act { border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 12px 14px; }

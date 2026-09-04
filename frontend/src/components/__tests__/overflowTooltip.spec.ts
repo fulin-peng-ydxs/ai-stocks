@@ -5,7 +5,10 @@ import {
   isNativeEllipsisOverflow,
   overflowTooltipContent,
 } from '@/components/overflow/overflowTooltip'
-import { CELL_VISUAL_OVERFLOW_CLASS } from '@/components/table/cellVisualOverflow'
+import {
+  ACTION_COLUMN_CLASS,
+  CELL_VISUAL_OVERFLOW_CLASS,
+} from '@/components/table/cellVisualOverflow'
 
 function setBox(element: HTMLElement, clientWidth: number, scrollWidth: number): void {
   Object.defineProperty(element, 'clientWidth', { value: clientWidth, configurable: true })
@@ -54,6 +57,25 @@ describe('全局省略悬浮目标判定', () => {
     setBox(disclosed, 40, 100)
     document.body.append(disclosed)
     expect(findOverflowTooltipTarget(disclosed)).toBeNull()
+  })
+
+  it('操作列和动作组不会被单元格原生省略拼成通用悬浮内容', () => {
+    document.body.innerHTML = `
+      <td class="${ACTION_COLUMN_CLASS}">
+        <div id="action-cell" class="cell" style="overflow:hidden;text-overflow:ellipsis">
+          <div data-overflow-tooltip-disabled>
+            <button id="run-action">立即执行</button>
+            <span aria-hidden="true">立即执行编辑触发记录删除更多</span>
+          </div>
+        </div>
+      </td>
+    `
+    const cell = document.querySelector<HTMLElement>('#action-cell')!
+    const button = document.querySelector<HTMLElement>('#run-action')!
+    setBox(cell, 140, 320)
+
+    expect(isNativeEllipsisOverflow(cell)).toBe(true)
+    expect(findOverflowTooltipTarget(button)).toBeNull()
   })
 
   it('无文本节点的输入值和既有 title 也复用统一提示内容', () => {

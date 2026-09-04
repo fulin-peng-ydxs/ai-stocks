@@ -95,6 +95,10 @@ def test_empty_code_scope_never_expands_to_all_boards(tmp_path):
     assert svc.ingest_board_members(board_codes=[]) == {}
     r = svc.ingest_board_bar(date(2026, 1, 1), board_codes=[])
     assert r["rows"] == 0 and r["boards"] == 0 and r["failed"] == []
+    resumed = svc.ingest_board_bar(
+        None, end=date(2026, 1, 2), board_codes=[], resume_from_latest=True,
+    )
+    assert resumed["start"] is None and resumed["end"] == "2026-01-02"
     assert svc.ingest_board_fund_flow(board_codes=[]) == {
         "rows": 0, "unmatched": 0, "failed": [],
     }
@@ -800,3 +804,45 @@ def test_bar_probe_bypassed_for_past_end(tmp_path):
     r = svc.ingest_board_bar(end - timedelta(days=6), end=end)
     assert "skipped" not in r and r["boards"] == 2
     assert r["at_end"] == 2
+
+
+def test_bar_incremental_resumes_each_board_from_its_latest_date(tmp_path):
+    """自动增量逐板块续水位；已到目标日的板块不再请求。"""
+    end = date(2026, 8, 7)
+
+    class RecordingSource(_FakeSource):
+        def __init__(self):
+            super().__init__({})
+            self.calls = []
+
+        def get_board_bar(self, code, board_type, start, range_end):
+            self.calls.append((code, start, range_end))
+            return _bar_df([range_end])
+
+    src = RecordingSource()
+    svc, c = _make_service(tmp_path, src)
+    _two_boards(c)
+    c.execute(
+        "INSERT INTO board_bar (board_code, trade_date, open, high, low, close, volume, amount) "
+        "VALUES ('309121', '2026-08-05', 1, 1, 1, 1, 1, 1), "
+        "('881121', '2026-08-07', 1, 1, 1, 1, 1, 1)"
+    )
+
+    result = svc.ingest_board_bar(None, end=end, resume_from_latest=True)
+
+    assert src.calls == [("309121", date(2026, 8, 6), end)]
+    assert result["resume_from_latest"] is True
+    assert result["start"] == "2026-08-06"
+
+
+def test_board_date_range_normalization():
+    """手动指数区间支持单日简写，并拒绝冲突或逆序参数。"""
+    from backend.services.board_ingest import normalize_board_date_range
+
+    assert normalize_board_date_range("update", "2026-08-01", None) == (
+        date(2026, 8, 1), date(2026, 8, 1),
+    )
+    with pytest.raises(ValueError, match="起始日期不能晚于结束日期"):
+        normalize_board_date_range("update", "2026-08-02", "2026-08-01")
+    with pytest.raises(ValueError, match="不能与强制采集当日"):
+        normalize_board_date_range("update", "2026-08-01", None, True)
