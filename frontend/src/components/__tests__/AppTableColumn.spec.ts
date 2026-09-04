@@ -114,6 +114,10 @@ describe('自适应表格列', () => {
     expect(inferAdaptiveColumnRole({ label: '股票代码', prop: 'code' })).toBe('code')
     expect(inferAdaptiveColumnRole({ label: '采集状态' })).toBe('status')
     expect(inferAdaptiveColumnRole({ label: '收益率' })).toBe('number')
+    expect(resolveAdaptiveColumnWidth({ label: '评级' })).toMatchObject({
+      role: 'status',
+      minWidth: 112,
+    })
   })
 
   it('操作列按动作密度使用两档默认下限且不主动吞占表格余量', () => {

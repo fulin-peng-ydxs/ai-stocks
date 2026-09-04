@@ -53,7 +53,9 @@ export const ADAPTIVE_COLUMN_RULES: Record<AdaptiveColumnRole, AdaptiveColumnPol
   name: { minWidth: 128, maxAutoWidth: 240 },
   // 主副两行共同识别业务对象；前置控件占位由 leadingControls 统一叠加。
   entity: { minWidth: 152, maxAutoWidth: 320 },
-  status: { minWidth: 96, maxAutoWidth: 192 },
+  // 状态列要容纳表格单元格留白与常见五字标签，避免有限枚举仍属于正常
+  // 短文案时被 max-width: 100% 误压缩成省略号。
+  status: { minWidth: 112, maxAutoWidth: 192 },
   number: { minWidth: 96, maxAutoWidth: 192 },
   date: { minWidth: 120, maxAutoWidth: 192 },
   datetime: { minWidth: 168, maxAutoWidth: 224 },
