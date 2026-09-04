@@ -338,6 +338,7 @@ Key Characteristics：
 - `list` 原型必须且只能有一个顶层 `growMain`；主列表不得使用 `embedded`。
 - 页面数据表格统一使用 `AppDataTable + AppTableColumn`。页面不得直接使用原生 `<table>`、`el-table`、`el-table-column`，也不得向列传 `width/min-width`。
 - 列宽采用语义自适应契约：选择、展开、序号等结构列保持稳定窄宽；普通名称使用 `name`，含前置选择/收藏等控件并展示主副信息的对象识别列使用 `entity`；其余列取“语义内容基础宽度”和“表头标签 + 同行元信息 + 排序/筛选控件 + 主内容前置控件”估算宽度的较大值，并按 8px 网格取整。中英文混排使用稳定字符权重估算，不做运行时 DOM/数据采样，避免数据变化触发列宽跳动；异常长表头受角色上限保护并保留完整 `title`。容器有余量时由 Element Plus `fit` 按最小宽度权重分配并铺满，空间不足时保持最小可读宽度并由表体横向滚动。
+- 单个 `el-tag` 独占单元格时，`AppDataTable` 以标签真实矩形是否越过单元格外边界判断内容溢出；不得使用包含透明 padding 的 `scrollWidth` 制造虚假省略号，也不得由页面为此增加 tooltip、改变标签尺寸或私调列宽。
 - 自适应列宽的角色、字符权重、控件预留、上限和数值唯一维护在 `components/table/adaptiveColumnWidth.ts`；页面只在动态标签无法推导时声明语义 `role`，不得复制数值。所有标准表头保持单行且不换行；日期、单位或短口径摘要使用 `header-meta` 在标签后同行弱化展示；主内容前存在紧凑控件时使用 `leading-controls` 让组件统一缩进表头并预留列宽。说明性长文本继续放 `HelpTip` / `HelpHint`，不得通过私有 header slot 拼接第二套样式。
 - 表头保持稳定，分页、批量操作和关键筛选不被表体滚动带走。
 - 不使用隔行变色作为默认识别手段；当前全局样式会取消 stripe 背景。

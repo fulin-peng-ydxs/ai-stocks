@@ -41,7 +41,7 @@ const includesMembers = computed(() => props.stages.includes('members'))
       aria-label="板块采集模式"
       @update:model-value="$emit('update:mode', $event as 'update' | 'backfill')"
     />
-    <span class="hint">增量补近期指数并采即时资金流；全量回填会扩展指数与资金流历史范围</span>
+    <span class="hint">增量补近期指数，全量回填扩展指数历史；两种模式都刷新资金流五个周期</span>
   </el-form-item>
   <el-form-item label="板块类型">
     <PageSegmented

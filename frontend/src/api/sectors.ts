@@ -12,7 +12,7 @@ export type SortOrder = 'asc' | 'desc'
 export type BoardType = 'concept' | 'industry'
 export type SectorMemberSortField = 'pct' | 'code'
 
-/** 板块列表行（涨幅 pct_* 从 board_bar 实时计算；各周期净流入取资金流最新快照行）。 */
+/** 板块列表行（涨幅 pct_* 从 board_bar 计算；各周期净流入严格匹配同一行情截面日）。 */
 export interface SectorRow {
   board_code: string
   app_code: string | null
@@ -58,7 +58,7 @@ export interface SectorList {
   total: number
   /** 涨幅截面交易日（board_bar）。 */
   trade_date: string | null
-  /** 资金流快照日（board_fund_flow 最新 snapshot_date）。 */
+  /** 与行情截面同日的资金流快照日；当日无匹配数据时为 null。 */
   fund_flow_date: string | null
   page: number
   size: number

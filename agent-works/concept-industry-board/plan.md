@@ -198,7 +198,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 | 可选增强 | R11 | 统一 K 线范围与高度拖拽 | 全局范围选项 + 行情多图工作区 + 高度比例持久化 | T12 | 已完成 | 一致 | 本次纳入 |
 | 可选增强 | R12 | 板块维度数据质检（指数缺口） | data_report 板块指数缺口扫描 + 复用 `data_quality_issue` | T7 | 已完成 | 一致（2026-08-09 只进不出修订） | 本次纳入；成分数波动不再质检（源端重组非错误），`board_member_incomplete` 覆盖采集完整性 |
 | 可选增强 | R13 | 详情页成分股统一分页 | members 接口服务端分页 + AppPagination + pageSize 组件字段 | T8、T12 | 已完成 | 一致 | members 服务端分页、AppPagination 与 pageSize 配置闭环已落地 |
-| 可选增强 | R14 | 详情页资金流统计卡 | 摘要卡即时净流入（最新 snapshot_date period=即时） | T8、T12 | 已完成 | 一致 | 详情摘要已展示即时净流入及独立资金日期 |
+| 可选增强 | R14 | 详情页资金流统计卡 | 摘要卡即时净流入（snapshot_date=行情截面日，period=即时） | T8、T12 | 已完成 | 一致 | 详情摘要展示同日即时净流入，缺失不回退 |
 | 必须实现 | R21 | 采集流程集成（daily/回填/增量/断点/失败隔离） | DailyPipeline 加 `board: bool = True` 步骤 + CLI `board --backfill/--update` + `--skip-board` + 类型/指定板块/阶段范围 + 失败清单与部分失败降级 + 参数化测试矩阵 | T5、T6 + 本轮复核修复 | 已完成 | 一致 | daily、CLI、任务中心、采集页和调度页已对齐；`ok=false` 正确落 failed，成功单元不重复续跑 |
 | 必须实现 | R22 | 页面/RBAC 接入 | 菜单/资源 seed + `sectors:view` 进 BUSINESS_RESOURCE_CODES + 既有库回填 + bump perm_ver + 路由守卫 + pageRegistry 登记 | T10a、T10b、T11、T12、T14 | 已完成 | 一致 | 菜单、资源、接口守卫、默认授权、详情子路由、按钮 `v-permission` 与最小权限浏览器验收已闭环 |
 | 必须实现 | R23 | 页面配置闭环 | 两页业务偏好、全局 K 线范围、`chart.minHeight` 与表格组件字段保存/读取/消费/回退 + 构建/布局/三视口验收 | T11、T12、T14、T15 | 已完成 | 一致 | pageRegistry、前后端字段守门、抽屉渲染、页面真实消费、单测、构建和三视口 E2E 已闭环 |
@@ -269,7 +269,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
   5. `DuckDBClient.transaction()`：现有 `execute()` 按调用持 RLock，多语句 BEGIN..COMMIT 块之间会被其他线程 SQL 插入（破坏原子性）；新增上下文管理器在整个事务块内持 RLock，多语句写块（如成分落库 + member_count 刷新）统一走它。**写锁冲突识别机制（T4 定稿，2026-08-09 实测）**：DuckDB 写锁是文件锁，跨进程冲突**立即失败**（实测 0.006s 抛 `IOException: Could not set lock on file ... Conflicting lock is held`），本机 DuckDB 1.5.3 **无锁等待配置**（`SET duckdb_max_lock_wait_time` 抛 `CatalogException: unrecognized configuration parameter`，已实测）；因此不设置任何锁等待超时，识别完全靠**异常消息关键字归类**——`duckdb_client` 的 `except Exception` 会把 connect/execute 抛的 IOException 包进 `StorageError`（实测消息含 "Could not set lock ... Conflicting lock"），`transaction()` 异常包装层匹配 `lock`/`Cannot open`/`Another client`/`busy` 关键字 → 归类为软失败 `duckdb_write_unavailable`，其余按普通 `StorageError` 500。**连接恢复语义（2026-08-09 实测，无需显式释放）**：写模式 connect 即获文件锁，冲突只发生在 connect 阶段（无「连接已建立后执行语句才冲突」的中间态）；`conn` property 仅在 connect 成功后赋值 `self._conn`，connect 抛异常时 `_conn` 保持 `None`，`execute/query_df` 的 `self._conn=None` 为幂等无害操作，`close()` 在 `_conn is None` 时跳过——锁释放后同一实例重试即自动重建连接恢复（实测 0.02s 成功），**无需显式释放连接**；`transaction()` 仅做关键字归类，不添加连接释放逻辑。现有同步短写先例（data_admin.py quality_reset/ignore）为单语句不受影响。
 - 产出：采集服务 + `transaction()` 助手 + 单测（只进不出落库 ON CONFLICT 幂等、不完整快照不落库、资金流映射与未匹配质检、member_count 刷新、事务原子性——中途失败整体回滚、**跨进程写锁冲突归类 `duckdb_write_unavailable` 且锁释放后重试可恢复**）。
 - 影响范围：DuckDB 4 表写入；`data_quality_issue` 新增 issue 类型 `board_member_incomplete`。
-- 边界与异常：快照日期 = Asia/Shanghai 实际成功采集日期；成分股代码补交易所后缀对齐 `stock_basic.code`。
+- 边界与异常：成分快照日期取 Asia/Shanghai 实际成功采集日；资金流快照由主编排标记为目标交易日，不使用周末/节假日采集日；成分股代码补交易所后缀对齐 `stock_basic.code`。
 - 验证方式：`python -m pytest backend/tests/test_board_ingest*.py -q`（跑前先 `./start.sh status` 确认后端已停，结束按原状态恢复，遵守 DuckDB 锁规则）。
 - 完成标准：R1-R4 验收标准中可用单测覆盖的部分全绿。
 - 实际落地情况：已实施（2026-08-09 T4 执行）——`backend/services/board_ingest.py` 新建 `BoardIngestService`（字典两阶段 upsert / 成分快照 diff [in_date,out_date) / 候选保存事务① / 指数幂等 upsert / 资金流名称映射+未匹配写质检）；`backend/storage/duckdb_client.py` 新增 `transaction()` 上下文管理器（RLock 跨 BEGIN..COMMIT + 写锁关键字归类 `_LOCK_CONFLICT_RE` + 异常回滚 + 连接重建语义）；`backend/services/ingest.py` 新增 `ingest_board` 编排（单步骤失败隔离返回失败清单）。10 个单测全绿（diff 区间/不完整快照不退出 diff/payload_hash 规范化与幂等四态/波动拦截/member_count 刷新时机/事务原子性回滚/写锁关键字归类/资金流映射与未匹配质检）。`transaction()` 文件库实测：提交成功、中途失败整体回滚、连接重建后表仍在。**🔴 2026-08-09 只进不出改造后本任务产物已变更**：成分改为 `(board_code, code)` 累积落库、删候选/diff/payload_hash，见 T9 废弃说明与版本注记。
@@ -323,13 +323,13 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 依赖：T4（数据来源）；**T10a（常量 + 资源 seed 前置部分）须先行或与 T8 同批交付**——T8 的 403/权限验收隐含依赖 `sectors:view` 进 `BUSINESS_RESOURCE_CODES` 与资源 seed，不可晚于 T8 收尾（T10a 依赖仅 T1，无环）
 - 涉及文件/模块：`backend/api/sectors.py`（新增路由）、`backend/services/board_query.py`（新增查询服务）、`backend/main.py`（挂路由）、`backend/tests/test_sectors_api*.py`（新增）
 - 目标：板块列表/详情/bars/members 四类只读接口及市场指数基准 bars 按需求 §6.2 契约要点实现。
-- 操作：参数白名单校验（未知参数 400）；`sort_by` 稳定字段码；统计口径（涨幅收盘价对比、历史不足「—」、累计成员涨跌家数口径、行情日/资金日双日期显式返回）；`trade_date` 只控制行情截面，不回溯最近快照返回数或资金流；空值「—」；404/400/403；members 服务端分页（size 默认 20）；板块数 <600 单次全查内存合并（双库边界：只读 DuckDB，成分股现价/涨跌幅/换手取个股行情表同库关联）；涨幅从 `board_bar` 实时计算，不从资金流周期表读；领涨股按行情截面日历史累计关系中 `pct_chg` 最大者计算，并在同一次聚合中得到累计成员涨跌家数；列表只展示 `has_members` 或 `has_bar` 为 true 的板块。
+- 操作：参数白名单校验（未知参数 400）；`sort_by` 稳定字段码；统计口径（涨幅收盘价对比、历史不足「—」、累计成员涨跌家数口径、资金流与行情截面同日匹配）；`trade_date` 同时控制行情和资金流截面，资金流当日缺失返回空且不回退，最近成分快照返回数仍不随日期回溯；空值「—」；404/400/403；members 服务端分页（size 默认 20）；板块数 <600 单次全查内存合并（双库边界：只读 DuckDB，成分股现价/涨跌幅/换手取个股行情表同库关联）；涨幅从 `board_bar` 实时计算，不从资金流周期表读；领涨股按行情截面日历史累计关系中 `pct_chg` 最大者计算，并在同一次聚合中得到累计成员涨跌家数；列表只展示 `has_members` 或 `has_bar` 为 true 的板块。
 - 产出：接口 + 服务 + 单测/接口测试（口径与 DuckDB 对账）。
 - 影响范围：新增只读接口，无既有接口变化。
 - 边界与异常：不跨库 JOIN；资金流数据日期与涨幅数据日期分别返回。
 - 验证方式：接口测试 + 与 DuckDB 抽验对账（涨幅/净流入/成分数）。
 - 完成标准：R7-R10、R13、R14 的数据层验收通过。
-- 实际落地情况：`BoardQueryService` 提供列表/详情/bars/members 四查询；涨幅从 `board_bar` 实时计算，净流入取资金流最新即时行，领涨股与涨跌家数在一次成分股行情聚合中按所选交易日计算，避免 N+1；同涨幅按成交额/代码稳定决胜。接口参数白名单、404/400/403 与分页排序均有测试覆盖。
+- 实际落地情况：`BoardQueryService` 提供列表/详情/bars/members 四查询；涨幅从 `board_bar` 实时计算，净流入只取与所选交易日同日的资金流行，领涨股与涨跌家数在一次成分股行情聚合中按同日计算，避免 N+1；同涨幅按成交额/代码稳定决胜。接口参数白名单、404/400/403 与分页排序均有测试覆盖。
 
 ### 6.9 任务 T9：候选成分快照接口（查询/确认应用/丢弃）
 

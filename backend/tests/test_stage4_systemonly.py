@@ -117,6 +117,7 @@ _SYSTEM_ONLY_ENDPOINTS = [
     ("GET", "/api/layout/field-policies", None),                   # layout:field-policy
     ("GET", "/api/data/overview", None),                           # data:overview
     ("GET", "/api/data/quality", None),                            # data-quality:view
+    ("POST", "/api/data/quality/ignore-batch", {"issue_type": ["data_gap"]}),
     ("POST", "/api/data/sources/test", {}),                        # data-source:test
     ("GET", "/api/data/tasks", None),                              # data-task:manage
     ("GET", "/api/data/status", None),                             # data-status:view

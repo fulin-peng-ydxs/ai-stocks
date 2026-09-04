@@ -2113,6 +2113,11 @@ class IngestionService:
         update_target = (
             _asia_date() if force_current_day else self._latest_open_day()
         ) if mode == "update" and uses_market_date else None
+        # 资金流源不返回可靠数据日：主编排统一用目标交易日标记快照，
+        # 使列表/详情可按行情截面严格同日匹配。backfill 也不得用周末或节假日的采集日。
+        fund_snapshot_date = (
+            update_target if mode == "update" else self._latest_open_day()
+        ) if "fund" in steps else None
         if force_current_day and uses_market_date and ctx:
             ctx.log(f"已强制采集当日 {update_target}，跳过交易日和数据就绪检查", "warn")
         # 阶段日志对齐现有采集（阶段 i/N + 进度推进，前端任务中心实时可见）
@@ -2190,6 +2195,8 @@ class IngestionService:
                                                          probe_ready=not force_current_day,
                                                          ctx=ctx)
                     update_target = _d.fromisoformat(result["bar"]["end"])
+                    if "fund" in steps:
+                        fund_snapshot_date = update_target
                 if ctx:
                     bar = result["bar"]
                     rng = f"区间 {bar.get('start')} ~ {bar.get('end')}"
@@ -2212,15 +2219,10 @@ class IngestionService:
                 ctx.progress(round(0.05 + 0.25 * idx["n"] / total, 3), "板块资金流…")
                 ctx.flush()
             try:
-                if mode == "backfill":
-                    result["fund_flow"] = svc.ingest_board_fund_flow(
-                        board_codes=board_codes, board_type=board_type, ctx=ctx)
-                else:
-                    # 增量资金流每日刷新全周期（即时/3日/5日/10日/20日）：
-                    # 滚动周期值每个交易日都会更新，只采即时会让多周期数据停在 backfill 当天。
-                    result["fund_flow"] = svc.ingest_board_fund_flow(
-                        snapshot_date=update_target,
-                        board_codes=board_codes, board_type=board_type, ctx=ctx)
+                # update/backfill 均刷新全周期：滚动周期值每个交易日都会变化。
+                result["fund_flow"] = svc.ingest_board_fund_flow(
+                    snapshot_date=fund_snapshot_date,
+                    board_codes=board_codes, board_type=board_type, ctx=ctx)
                 if ctx:
                     ctx.log(f"步骤 {idx['n']}/{total} 板块资金流：{result['fund_flow'].get('rows', 0)} 行"
                             f"（未匹配 {result['fund_flow'].get('unmatched', 0)}）")

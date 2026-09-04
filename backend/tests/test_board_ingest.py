@@ -556,9 +556,10 @@ def test_fund_checkpoint_legacy_and_scope(tmp_path):
     assert f"{other_scope}:concept:即时" in changed.checkpoint["fund_done_keys"]
 
 
-def test_ingest_board_mode_update_vs_backfill(tmp_path, monkeypatch):
-    """增量/全量语义：update 只采即时资金流，backfill 全周期；指数区间不同。"""
+def test_ingest_board_fund_period_selection_and_bar_range(tmp_path):
+    """资金流服务支持显式周期子集和默认全周期；指数区间由调用方控制。"""
     import pandas as pd
+
     from backend.services.board_ingest import BoardIngestService
 
     # 用真实 BoardIngestService + 假源
@@ -580,16 +581,16 @@ def test_ingest_board_mode_update_vs_backfill(tmp_path, monkeypatch):
     src = _ModeSource({})
     svc = BoardIngestService(client=_make_service(tmp_path, src)[1], source=src)
 
-    # update 模式
+    # 显式只采即时（用于定向调用；当前 update 主编排默认传全周期）
     svc.ingest_board_dict()
     svc.ingest_board_members(board_codes=["309121"], force=True)
     svc.ingest_board_bar(date(2026, 8, 1), board_codes=["309121"])
     svc.ingest_board_fund_flow(periods=("即时",))
-    assert set(calls["fund_periods"]) == {"即时"}    # update 只采即时（概念+行业各一次）
-    # backfill 模式（直接调 fund_flow 全周期）
+    assert set(calls["fund_periods"]) == {"即时"}    # 概念+行业各一次
+    # 不传 periods 时采集全周期
     calls["fund_periods"].clear()
     svc.ingest_board_fund_flow()
-    assert set(calls["fund_periods"]) == {"即时", "3日", "5日", "10日", "20日"}  # backfill 全周期
+    assert set(calls["fund_periods"]) == {"即时", "3日", "5日", "10日", "20日"}  # 默认全周期
 
 
 def test_ingest_writes_update_log(tmp_path):
@@ -746,6 +747,28 @@ def test_board_update_force_current_day_bypasses_all_fallbacks(monkeypatch):
         "probe_ready": False,
         "fund_date": today,
     }
+
+
+def test_board_backfill_fund_uses_latest_open_day(monkeypatch):
+    """backfill 资金流以最近交易日标记快照，不使用周末采集日。"""
+    from backend.services import board_ingest as board_module
+    from backend.services.ingest import IngestionService
+
+    latest_open_day = date(2026, 8, 28)
+    captured: dict = {}
+
+    class _FakeBoardService:
+        def ingest_board_fund_flow(self, snapshot_date=None, **kwargs):
+            captured["fund_date"] = snapshot_date
+            return {"rows": 0, "unmatched": 0, "failed": []}
+
+    monkeypatch.setattr(board_module, "BoardIngestService", _FakeBoardService)
+    svc = IngestionService.__new__(IngestionService)
+    svc._latest_open_day = lambda: latest_open_day
+
+    svc.ingest_board(mode="backfill", only=["fund"])
+
+    assert captured == {"fund_date": latest_open_day}
 
 
 def test_bar_probe_off_by_default_for_backfill(tmp_path):

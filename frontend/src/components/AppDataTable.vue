@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppPagination from '@/components/AppPagination.vue'
+import { syncTagCellVisualOverflow } from '@/components/table/cellVisualOverflow'
 import type { Sort } from 'element-plus'
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
 
 defineOptions({ inheritAttrs: false })
 
@@ -63,6 +64,25 @@ const resolvedScrollbarAlwaysOn = computed(
   () => props.scrollbarAlwaysOn ?? props.kind === 'wide-table',
 )
 const tableRef = ref<{ $el?: HTMLElement } | null>(null)
+let tableResizeObserver: ResizeObserver | null = null
+let observedTableRoot: HTMLElement | null = null
+
+function observeTableResize(root: HTMLElement): void {
+  if (typeof ResizeObserver === 'undefined' || observedTableRoot === root) return
+  tableResizeObserver?.disconnect()
+  tableResizeObserver = new ResizeObserver(syncCellVisualOverflow)
+  tableResizeObserver.observe(root)
+  observedTableRoot = root
+}
+
+function syncCellVisualOverflow(): void {
+  void nextTick(() => {
+    const root = tableRef.value?.$el
+    if (!root) return
+    observeTableResize(root)
+    syncTagCellVisualOverflow(root)
+  })
+}
 
 function syncSemanticTableLabels(): void {
   void nextTick(() => {
@@ -78,8 +98,19 @@ function syncSemanticTableLabels(): void {
   })
 }
 
-onMounted(syncSemanticTableLabels)
-watch(() => [props.ariaLabel, props.loading, props.data.length], syncSemanticTableLabels)
+onMounted(() => {
+  syncSemanticTableLabels()
+  syncCellVisualOverflow()
+})
+onUpdated(syncCellVisualOverflow)
+onBeforeUnmount(() => {
+  tableResizeObserver?.disconnect()
+  observedTableRoot = null
+})
+watch(() => [props.ariaLabel, props.loading, props.data.length], () => {
+  syncSemanticTableLabels()
+  syncCellVisualOverflow()
+})
 
 const emit = defineEmits<{
   'sort-change': [value: Sort]
@@ -194,6 +225,10 @@ const emit = defineEmits<{
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
+}
+
+.app-data-table :deep(.el-table__body .cell.app-table-cell--visual-content-fits) {
+  text-overflow: clip;
 }
 
 .app-data-table :deep(th .caret-wrapper) {

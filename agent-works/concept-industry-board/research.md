@@ -173,7 +173,7 @@ board_member_candidate  成分快照候选（异常快照暂存与人工确认�
 **推荐（2026-08-08 修订；🔴 候选/diff 部分已由 2026-08-09 只进不出改造取代，见 §7 现行事实）**：
 
 1. 以**同花顺为唯一板块数据源**，落地 §5 的 4 张表 + 采集链（板块字典、成分关系只进不出累积、历史指数、资金流一次到位；候选恢复机制已废弃，不落候选表）；
-2. 资金流**第一期纳入**（`board_fund_flow`，即时/3日/5日/10日/20日全周期采集，页面本期只展示即时），支撑资金面验证；
+2. 资金流已纳入（`board_fund_flow`，即时/3日/5日/10日/20日全周期采集和展示），支撑资金面验证；
 3. 限流通过**限速 + 分批断点**控制；
 4. 东财 push2his 概念指数历史可作为同花顺指数的交叉验证（可选，暂不实现）。
 
@@ -189,11 +189,11 @@ board_member_candidate  成分快照候选（异常快照暂存与人工确认�
 - **数据模型**：当前为 `board_dict`、`board_member`、`board_bar`、`board_fund_flow` 4 表；`board_member_candidate` 已删除。`board_member` 主键为 `(board_code, code)`，只进不出，不维护 `in_date/out_date`，不做快照 diff。
 - **完整性闸门**：只有非空且 `complete=True` 的成分快照才落库；成功时在同一事务中新增关系、刷新 `member_count/member_snapshot_at/member_history_start_date` 并收敛活跃 `board_member_incomplete`。不完整或异常时旧数据不动、更新日志记失败、问题保留待重采。
 - **数据源适配**：`ThsBoardSource` 已独立落地，字典、clid、成分、指数、资金流均由同一适配器提供；clid 按实例缓存。指数分年请求会通过 DataFrame `failed_years` 标记部分失败，失败年份不写完成 checkpoint。
-- **采集范围与增量**：支持 `backfill|update`、`concept|industry`、指定板块、阶段范围和限量。update 只补近期指数并采即时资金流；backfill 回填源端可用指数历史并采全部资金流周期。显式空代码范围是 no-op，不会退化为全量。
+- **采集范围与增量**：支持 `backfill|update`、`concept|industry`、指定板块、阶段范围和限量。update 只补近期指数，backfill 回填源端可用指数历史；两种模式均每次刷新即时/3日/5日/10日/20日资金流。资金流源不支持按历史日期回溯，历史快照依靠每日运行逐步积累。显式空代码范围是 no-op，不会退化为全量。
 - **断点与失败**：字典按类型、成分/指数按板块、资金流按类型+周期记录 checkpoint；部分失败任务最终为 failed，但保留已成功 checkpoint 供定向续跑。
-- **质量修复**：现行问题类型为 `board_index_gap`、`board_member_incomplete`、`board_fund_unmatched`。修复复用同一采集服务，只有真实复检通过才 resolved；失败或复检未通过回到 open。
+- **质量修复**：板块质量覆盖指数最新日/近端逐日缺口与非法值、成分不完整、资金流未映射/缺周期/滞后。修复复用同一采集服务，只有真实复检通过才 resolved；失败或复检未通过回到 open。
 - **数据概览**：除维度注册外，现已聚合 4 表行数、概念/行业数量、成分/指数/资金流覆盖、最新日期、活跃问题分类和最近采集状态。
-- **范围边界**：数据采集与数据管理闭环已完成；板块业务查询后端 `/api/sectors*` 已完成，但 `/sectors` 与 `/sectors/:code` 前端业务页仍未落地。
+- **范围边界**：数据采集、数据管理、`/api/sectors*` 查询以及 `/sectors`、`/sectors/:code` 前端页面已落地。
 
 ---
 

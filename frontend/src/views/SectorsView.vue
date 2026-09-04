@@ -229,7 +229,6 @@ const {
 })
 const total = ref(0)
 const rows = ref<SectorRow[]>([])
-const fundFlowDate = ref<string | null>(null)
 const boardLookup = ref<Record<string, SectorRow>>({})
 const watchlistCodes = ref<Set<string>>(new Set())
 const watchlistBusyCodes = ref<Set<string>>(new Set())
@@ -339,7 +338,7 @@ const requestedPointCount = computed(() => (
     ? effectiveRange.value + 1
     : effectiveRange.value
 ))
-// 截面数据：即时净流入取列表行最新资金快照；累计成员涨跌取所选行情日截面；单日累计退化为「今日涨幅」柱状。
+// 截面数据：即时净流入与累计成员涨跌都匹配所选行情日；单日累计退化为「今日涨幅」柱状。
 const crossSection = computed<CrossSectionDatum[]>(() => {
   if (compareMetric.value === 'inflow') {
     return compareRows.value.map((row) => ({
@@ -566,7 +565,6 @@ async function load(options: { deferChart?: boolean } = {}): Promise<void> {
     rows.value = data.list
     total.value = data.total
     marketDate.value = data.trade_date
-    fundFlowDate.value = data.fund_flow_date
     boardLookup.value = {
       ...boardLookup.value,
       ...Object.fromEntries(data.list.map((row) => [row.board_code, row])),
@@ -709,9 +707,6 @@ async function openDetail(): Promise<void> {
 const fmtPct = formatSectorPercent
 const fmtInflow = formatSectorInflow
 const pctClass = sectorValueClass
-function fmtFlowDate(value: string | null): string {
-  return value ? value.slice(5) : '—'
-}
 
 function resetSettings(): void {
   chartPreferences.cancelRatioDraft()
@@ -830,7 +825,7 @@ onMounted(async () => {
                 </HelpTipItem>
                 <HelpTipItem question="资金口径是什么">
                   <ul>
-                    <li>即时及多日净流入来自资金流快照，单位为亿元；资金快照日可能与行情交易日不同，以净流入表头日期为准。</li>
+                    <li>即时及多日净流入来自与行情同日的资金流快照，单位为亿元；当日未匹配到数据时显示“—”，不回退到其他日期。</li>
                   </ul>
                 </HelpTipItem>
                 <HelpTipItem question="排行如何操作">
@@ -1057,7 +1052,6 @@ onMounted(async () => {
               prop="net_inflow"
               sortable="custom"
               role="number"
-              :header-meta="fmtFlowDate(fundFlowDate)"
               align="right"
             >
               <template #default="{ row }">

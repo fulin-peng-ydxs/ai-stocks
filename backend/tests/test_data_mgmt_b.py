@@ -687,6 +687,42 @@ def test_quality_recover_batch_code_filter_keeps_other_conditions(client, monkey
     assert captured[-1]["params"]["issue_ids"] == [14]
 
 
+def test_quality_ignore_batch_marks_only_filtered_open_issues(client):
+    """一键标记正常复用质量页筛选，只处理 open，并统一采用仅本次范围。"""
+    from backend.api.data_admin import quality_ignore_batch
+
+    client.execute("INSERT INTO board_dict (board_code, name, board_type) "
+                   "VALUES ('309121','AI PC','concept')")
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, issue_type, severity, status, detail, detected_at) VALUES "
+        "(21, '309121', 'board_fund_missing', 'mid', 'open', '{}', now()), "
+        "(22, '309121', 'board_fund_missing', 'mid', 'resolved', '{}', now()), "
+        "(23, '309121', 'board_index_gap', 'mid', 'open', '{}', now()), "
+        "(24, '881121', 'board_fund_missing', 'mid', 'open', '{}', now())")
+
+    response = quality_ignore_batch({
+        "issue_type": ["board_fund_missing"], "severity": ["mid"], "code": "AI PC",
+    })
+
+    assert response.code == 0
+    assert response.data == {"count": 1, "status": "ignored", "ignore_scope": "occurrence"}
+    rows = client.query_df(
+        "SELECT id, status, ignore_scope, ignore_active, resolved_at "
+        "FROM data_quality_issue ORDER BY id",
+    ).set_index("id")
+    assert rows.loc[21, "status"] == "ignored"
+    assert rows.loc[21, "ignore_scope"] == "occurrence"
+    assert bool(rows.loc[21, "ignore_active"])
+    assert rows.loc[21, "resolved_at"] is not None
+    assert rows.loc[22, "status"] == "resolved"
+    assert rows.loc[23, "status"] == "open"
+    assert rows.loc[24, "status"] == "open"
+
+    rejected = quality_ignore_batch({})
+    assert rejected.code == 400
+
+
 def test_quality_list_searches_board_code_and_name(client):
     """质量列表的对象搜索与批量恢复共用口径，板块名称不再搜不到。"""
     from backend.api.data_admin import quality

@@ -41,9 +41,11 @@ def _seed(c):
                      [6000.0, 6060.0, 6030.0, 6120.0]):
         c.execute("INSERT INTO index_bar (index_code, trade_date, close) "
                   "VALUES ('000905.SH', CAST(? AS DATE), ?)", [d, cl])
-    # 资金流（AI PC 即时）
+    # 资金流：08-07 与行情截面同日；08-09 用于验证页面不误取全表最新快照。
     c.execute("INSERT INTO board_fund_flow (board_code, snapshot_date, period, net_inflow, "
-              "leader_stock, leader_pct) VALUES ('309121', DATE '2026-08-09', '即时', 45.6, '胜宏科技', 8.5)")
+              "leader_stock, leader_pct) VALUES "
+              "('309121', DATE '2026-08-07', '即时', 45.6, '胜宏科技', 8.5), "
+              "('309121', DATE '2026-08-09', '即时', 99.9, '未使用的新快照', 9.9)")
     # 成分（AI PC 2 只，半导体 0）
     for code in ("000001.SZ", "000002.SZ"):
         c.execute("INSERT INTO board_member (board_code, code) VALUES ('309121', ?)", [code])
@@ -76,7 +78,7 @@ def test_list_sectors_basic(c):
     r = svc.list_sectors()
     assert r["total"] == 2
     assert r["trade_date"] == "2026-08-07"
-    assert r["fund_flow_date"] == "2026-08-09"
+    assert r["fund_flow_date"] == "2026-08-07"
     rows = {x["board_code"]: x for x in r["list"]}
     ai = rows["309121"]
     # 今日涨幅：最近收盘 115 vs 前收 108 → 6.48%
@@ -99,17 +101,21 @@ def test_list_sectors_basic(c):
 
 
 def test_list_sectors_pct_today_none_when_board_missing_selected_date(c):
-    """所选交易日板块无指数数据时，今日涨跌幅置空（前端「—」），不回退用旧收盘代算。"""
+    """所选日期的板块指数和资金流都严格按同日匹配，不回退。"""
     svc = _svc(c)
     r = svc.list_sectors(trade_date=date(2026, 8, 8))
     assert r["trade_date"] == "2026-08-08"
     rows = {x["board_code"]: x for x in r["list"]}
     # AI PC 最近指数数据在 08-07，08-08 无数据 → 今日涨跌幅 None，但行仍保留
     assert rows["309121"]["pct_today"] is None
+    assert rows["309121"]["net_inflow"] is None
+    assert r["fund_flow_date"] is None
     # 有当日数据的交易日仍正常计算（08-06：108 vs 08-05 的 110）
     r_ok = svc.list_sectors(trade_date=date(2026, 8, 6))
     ai = {x["board_code"]: x for x in r_ok["list"]}["309121"]
     assert ai["pct_today"] == pytest.approx(-1.82, abs=0.01)
+    assert ai["net_inflow"] is None
+    assert r_ok["fund_flow_date"] is None
 
 
 def test_list_sectors_filter_sort_paginate(c):
@@ -129,11 +135,11 @@ def test_list_sectors_filter_sort_paginate(c):
 
 def test_list_sectors_multi_period_inflow(c):
     """列表返回各周期净流入字段（即时/3日/5日/10日/20日），并按 5 日净流入排序。"""
-    # 为 AI PC 补多周期资金流（最新 snapshot_date 同一天）
+    # 为 AI PC 补齐行情截面日的多周期资金流
     for period, net in (("3日", 12.3), ("5日", -5.6), ("10日", 30.0), ("20日", -2.1)):
         c.execute(
             "INSERT INTO board_fund_flow (board_code, snapshot_date, period, net_inflow) "
-            "VALUES ('309121', DATE '2026-08-09', ?, ?)", [period, net])
+            "VALUES ('309121', DATE '2026-08-07', ?, ?)", [period, net])
     svc = _svc(c)
     r = svc.list_sectors()
     ai = {x["board_code"]: x for x in r["list"]}["309121"]
@@ -161,7 +167,7 @@ def test_get_sector_detail_multi_period_inflow(c):
     for period, net in (("3日", 12.3), ("5日", -5.6)):
         c.execute(
             "INSERT INTO board_fund_flow (board_code, snapshot_date, period, net_inflow) "
-            "VALUES ('309121', DATE '2026-08-09', ?, ?)", [period, net])
+            "VALUES ('309121', DATE '2026-08-07', ?, ?)", [period, net])
     d = _svc(c).get_sector("309121")
     assert d["net_inflow"] == pytest.approx(45.6)
     assert d["net_inflow_3d"] == pytest.approx(12.3)
@@ -184,6 +190,15 @@ def test_get_sector_detail(c):
     assert d["net_inflow"] == pytest.approx(45.6)
     assert d["up_count"] == 1 and d["down_count"] == 0
     assert d["has_members"] and d["has_bar"] and d["has_fund_flow"]
+
+
+def test_get_sector_detail_fund_flow_strictly_matches_trade_date(c):
+    """详情指定日期无资金流时返回空，不使用其他日期快照。"""
+    d = _svc(c).get_sector("309121", date(2026, 8, 6))
+    assert d is not None
+    assert d["trade_date"] == "2026-08-06"
+    assert d["fund_flow_date"] is None
+    assert d["net_inflow"] is None
 
 
 def test_detail_and_subset_queries_push_board_codes_into_fact_sql(c, monkeypatch):

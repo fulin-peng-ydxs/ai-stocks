@@ -10,7 +10,8 @@
 4. 资金流：board_fund_flow 全周期 upsert + 名称匹配映射、未匹配写质检不伪造代码。
 
 关键语义：
-- 快照日期 = Asia/Shanghai 实际成功采集日期（需求 R2）。
+- 成分快照日期 = Asia/Shanghai 实际成功采集日期；资金流快照日期由主编排
+  传入当前目标交易日，供页面与行情截面严格同日匹配。
 - 成分股代码补交易所后缀对齐 stock_basic.code（复用 akshare_source.to_full_code）。
 - member_count 记录最近一次完整源快照返回的成员数量；board_member 本身保留累计出现过的关系。
 """
@@ -612,7 +613,8 @@ class BoardIngestService:
                                ctx: object | None = None) -> dict:
         """资金流 upsert + 名称匹配映射；未匹配写质检不伪造代码（R4）。
 
-        periods=None → 全周期（"即时","3日","5日","10日","20日"）；update 模式只传 ("即时",)。
+        periods=None → 全周期（"即时","3日","5日","10日","20日"）；也可由调用方
+        显式传入周期子集用于定向修复。当前 update/backfill 主编排均每次刷新全周期。
         ctx：任务上下文，按类型×周期打实时日志。
         """
         sdate = snapshot_date or _asia_date()

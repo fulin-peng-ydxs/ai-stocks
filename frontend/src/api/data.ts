@@ -193,6 +193,11 @@ export function recoverQualityBatch(
 ): Promise<{ task_id: string; count: number }> {
   return http.post('/data/quality/recover-batch', filter)
 }
+export function ignoreQualityBatch(
+  filter: { issue_type?: string[]; severity?: string[]; code?: string },
+): Promise<{ count: number; status: 'ignored'; ignore_scope: 'occurrence' }> {
+  return http.post('/data/quality/ignore-batch', filter)
+}
 
 // ── 定时任务（调度系统重构）──
 export type FreqType = 'daily' | 'weekly' | 'monthly' | 'cron'

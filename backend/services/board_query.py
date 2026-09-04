@@ -8,8 +8,9 @@
   N 个交易日前收盘），不从 `board_fund_flow` 周期表读（资金流周期 net_ratio 是资金面数据，
   不参与价格排序）。列表口径下，所选交易日该板块无指数数据时 pct_today 置空，
   不回退用旧收盘代算今日涨幅。
-- **资金流净流入按周期读 `board_fund_flow` 最新 snapshot_date 行**：即时/3日/5日/10日/20日
+- **资金流净流入按周期严格读取行情截面日同日快照**：即时/3日/5日/10日/20日
   对应 `net_inflow`/`net_inflow_3d`/`net_inflow_5d`/`net_inflow_10d`/`net_inflow_20d`。
+  当日无快照时返回空值，不回退到其他日期。
 - **领涨股** = `board_member` 历史累计成员中，行情截面日 `pct_chg` 最大者；停牌、缺收盘
   或缺有效前收者排除，同涨幅按成交额降序、股票代码升序稳定决胜。资金流源自带的
   领涨字段仅保留原始数据，不参与页面口径。
@@ -83,9 +84,9 @@ class BoardQueryService:
               "fund_flow_date": 资金流快照日, "page": p, "size": s}。
         空值字段统一 None（前端「—」）；列表只展示 has_members 或 has_bar 的板块。
         """
-        # 涨幅截面：指定交易日或最新；资金流快照日单独取
+        # 涨幅截面：指定交易日或最新；资金流只取同一截面日。
         bar_date = trade_date or self._latest_bar_date()
-        fund_date = self._latest_fund_date()
+        fund_date = self._fund_date_for_trade_date(bar_date, board_codes=board_codes)
         rows = self._sector_rows(bar_date, fund_date, board_codes=board_codes)
 
         # 过滤
@@ -134,8 +135,8 @@ class BoardQueryService:
         )
         # 2. board_bar 涨幅（最近 vs N 交易日前收盘，截面 bar_date）
         bar_ts = self._bar_close_series(bar_date, board_codes=board_codes)
-        # 3. board_fund_flow 各周期净流入（最新 snapshot_date，多周期）
-        fund_map = self._latest_fund_flow(fund_date, board_codes=board_codes)
+        # 3. board_fund_flow 各周期净流入（与行情截面严格同日，多周期）
+        fund_map = self._fund_flow_on_date(fund_date, board_codes=board_codes)
         member_market = self._member_market_by_board(bar_date, board_codes=board_codes)
 
         rows = []
@@ -210,13 +211,13 @@ class BoardQueryService:
             out[str(code)] = (last_date, g["close"].reset_index(drop=True))
         return out
 
-    def _latest_fund_flow(
+    def _fund_flow_on_date(
         self,
         fund_date: date | None,
         *,
         board_codes: set[str] | None = None,
     ) -> dict[str, dict]:
-        """最新 snapshot_date 的各周期净流入，key=board_code → {net_inflow, net_inflow_3d, ...}。"""
+        """指定截面日的各周期净流入，key=board_code → {net_inflow, net_inflow_3d, ...}。"""
         if fund_date is None:
             return {}
         # 周期 → 字段名（与 _FUND_FIELD_PERIOD 同源反向）
@@ -299,9 +300,26 @@ class BoardQueryService:
         v = self.c.query_df("SELECT max(trade_date) AS t FROM board_bar").iloc[0]["t"]
         return None if v is None or str(v) == "NaT" else pd.Timestamp(v).date()
 
-    def _latest_fund_date(self) -> date | None:
-        """board_fund_flow 最新 snapshot_date。"""
-        v = self.c.query_df("SELECT max(snapshot_date) AS t FROM board_fund_flow").iloc[0]["t"]
+    def _fund_date_for_trade_date(
+        self,
+        trade_date: date | None,
+        *,
+        board_codes: set[str] | None = None,
+    ) -> date | None:
+        """返回指定行情截面日是否存在可展示板块的资金流快照。"""
+        if trade_date is None:
+            return None
+        codes = sorted(board_codes) if board_codes is not None else []
+        if board_codes is not None and not codes:
+            return None
+        code_clause = f" AND f.board_code IN ({','.join('?' for _ in codes)})" if codes else ""
+        v = self.c.query_df(
+            "SELECT max(f.snapshot_date) AS t FROM board_fund_flow f "
+            "JOIN board_dict d ON d.board_code=f.board_code "
+            "WHERE f.snapshot_date=? AND (d.has_members OR d.has_bar)"
+            f"{code_clause}",
+            [trade_date, *codes],
+        ).iloc[0]["t"]
         return None if v is None or str(v) == "NaT" else pd.Timestamp(v).date()
 
     # ── 详情 ────────────────────────────────────────────────
@@ -315,11 +333,11 @@ class BoardQueryService:
             return None
         r = df.iloc[0]
         bar_date = trade_date or self._latest_bar_date()
-        fund_date = self._latest_fund_date()
+        fund_date = self._fund_date_for_trade_date(bar_date, board_codes={code})
         target = {code}
         bar_entry = self._bar_close_series(bar_date, board_codes=target).get(code)
         bar = bar_entry[1] if bar_entry is not None else None
-        ff = self._latest_fund_flow(fund_date, board_codes=target).get(code)
+        ff = self._fund_flow_on_date(fund_date, board_codes=target).get(code)
         market = self._member_market_by_board(bar_date, board_codes=target).get(code)
         out = {
             "board_code": str(r["board_code"]),

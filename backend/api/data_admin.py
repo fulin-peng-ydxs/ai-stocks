@@ -533,6 +533,55 @@ class FixIn(BaseModel):
     trade_date: str | None = None
 
 
+def _quality_open_issue_ids(c, body: dict) -> tuple[list[int], list[str]]:
+    """按质量页的类型、严重度和对象筛选，返回待处理问题 id 与类型筛选。"""
+    def _multi(val) -> list[str]:
+        if isinstance(val, list):
+            return [str(x).strip() for x in val if str(x).strip()]
+        return [x.strip() for x in str(val).split(",") if x.strip()] if val else []
+
+    conds = ["status='open'"]
+    params: list = []
+    types = _multi(body.get("issue_type"))
+    if types:
+        conds.append(f"issue_type IN ({','.join('?' * len(types))})")
+        params += types
+    sevs = _multi(body.get("severity"))
+    if sevs:
+        conds.append(f"severity IN ({','.join('?' * len(sevs))})")
+        params += sevs
+    if body.get("code"):
+        clause, values = _quality_keyword_clause(c, str(body["code"]), alias="data_quality_issue")
+        conds.append(clause)
+        params += values
+    ids = c.query_df(
+        f"SELECT id FROM data_quality_issue WHERE {' AND '.join(conds)} ORDER BY id",
+        params,
+    )["id"].tolist()
+    return [int(x) for x in ids], types
+
+
+@router.post("/quality/ignore-batch", response_model=ApiResponse, dependencies=_QUALITY_FIX)
+def quality_ignore_batch(body: dict) -> ApiResponse:
+    """按当前筛选批量标记正常；只处理 open，并统一采用“仅本次”忽略范围。"""
+    if not any((body.get("issue_type"), body.get("severity"), body.get("code"))):
+        return err(400, "请先选择问题类型、严重度或输入代码/名称")
+    from datetime import datetime
+
+    c = get_client()
+    with c.transaction():
+        ids, _ = _quality_open_issue_ids(c, body)
+        if not ids:
+            return err(400, "没有符合当前筛选的待处理问题")
+        c.execute(
+            "UPDATE data_quality_issue SET status='ignored', resolved_at=?, fix_task_id=NULL, "
+            "ignore_scope='occurrence', ignore_active=true "
+            f"WHERE status='open' AND id IN ({','.join('?' * len(ids))})",
+            [datetime.now(), *ids],
+        )
+    return ok({"count": len(ids), "status": "ignored", "ignore_scope": "occurrence"})
+
+
 @router.post("/quality/{issue_id}/fix", response_model=ApiResponse, dependencies=_QUALITY_FIX)
 def quality_fix(issue_id: int) -> ApiResponse:
     from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
@@ -592,29 +641,9 @@ def quality_recover_batch(body: dict) -> ApiResponse:
     """
     from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
     c = get_client()
-
-    def _multi(val) -> list[str]:
-        if isinstance(val, list):
-            return [str(x).strip() for x in val if str(x).strip()]
-        return [x.strip() for x in str(val).split(",") if x.strip()] if val else []
-
-    conds = ["status='open'"]
-    params: list = []
-    types = _multi(body.get("issue_type"))
-    if types:
-        conds.append(f"issue_type IN ({','.join('?' * len(types))})"); params += types
-    sevs = _multi(body.get("severity"))
-    if sevs:
-        conds.append(f"severity IN ({','.join('?' * len(sevs))})"); params += sevs
-    if body.get("code"):
-        clause, values = _quality_keyword_clause(c, str(body["code"]), alias="data_quality_issue")
-        conds.append(clause)
-        params += values
-    ids = c.query_df(
-        f"SELECT id FROM data_quality_issue WHERE {' AND '.join(conds)} ORDER BY id", params)["id"].tolist()
+    ids, types = _quality_open_issue_ids(c, body)
     if not ids:
         return err(400, "没有符合当前筛选的待处理问题")
-    ids = [int(x) for x in ids]
     params: dict = {"issue_ids": ids}
     if len(types) == 1:   # 单一类型筛选 → 任务中心显示「问题修复·<类型>」
         params["issue_type"] = types[0]

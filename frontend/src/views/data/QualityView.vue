@@ -7,7 +7,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import {
   getDataQuality, fixQualityIssue, ignoreQualityIssue, restoreQualityMonitoring,
-  resetQualityIssue, recoverQualityBatch,
+  resetQualityIssue, recoverQualityBatch, ignoreQualityBatch,
   markDelisted, createTask, getTask,
   ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE, SEVERITY_LABEL, ISSUE_STATUS_LABEL, ISSUE_LAYER, LAYER_LABEL,
   RECOVER_ACTION_LABEL,
@@ -445,6 +445,16 @@ async function runCheckup() {
 const canBatch = computed(() =>
   !!(filters.value.issue_type.length || filters.value.severity.length || filters.value.code.trim()))
 const batching = ref(false)
+const batchIgnoring = ref(false)
+function currentBatchFilter() {
+  const f = filters.value
+  return {
+    issue_type: f.issue_type.length ? f.issue_type : undefined,
+    severity: f.severity.length ? f.severity : undefined,
+    code: f.code.trim() || undefined,
+  }
+}
+
 async function batchRecover() {
   const f = filters.value
   const scope = [f.issue_type.map((t) => ISSUE_TYPE_LABEL[t] ?? t).join('、'),
@@ -457,14 +467,30 @@ async function batchRecover() {
   } catch { return }
   batching.value = true
   try {
-    const { count } = await recoverQualityBatch({
-      issue_type: f.issue_type.length ? f.issue_type : undefined,
-      severity: f.severity.length ? f.severity : undefined,
-      code: f.code.trim() || undefined,
-    })
+    const { count } = await recoverQualityBatch(currentBatchFilter())
     ElMessage.success(`已提交批量恢复 ${count} 条，前往任务中心查看进度（可终止）`)
     router.push('/data/ingest')   // 跳任务中心看进度/实时日志
   } catch { /* 400无匹配/409并发 由拦截器提示 */ } finally { batching.value = false }
+}
+
+async function batchMarkNormal() {
+  const f = filters.value
+  const scope = [f.issue_type.map((t) => ISSUE_TYPE_LABEL[t] ?? t).join('、'),
+                 f.severity.map((s) => `${SEVERITY_LABEL[s]}危`).join('、'),
+                 f.code.trim()].filter(Boolean).join(' / ')
+  try {
+    await ElMessageBox.confirm(
+      `将当前筛选【${scope}】下所有“待处理”问题批量标记为正常，仅豁免本次异常。确认？`,
+      '一键标记正常',
+      { type: 'warning' },
+    )
+  } catch { return }
+  batchIgnoring.value = true
+  try {
+    const { count } = await ignoreQualityBatch(currentBatchFilter())
+    ElMessage.success(`已将 ${count} 条问题标记为正常`)
+    await load()
+  } catch { /* 400无匹配由拦截器提示 */ } finally { batchIgnoring.value = false }
 }
 
 onMounted(() => {
@@ -511,6 +537,7 @@ onMounted(() => {
           <HelpTipItem question="何时恢复或标记正常">
             <ul>
               <li>缺口先按漏采重采，源端确无数据则确认为停牌且不再上报；新股首日大涨等真实极端值可标记正常。</li>
+              <li>需要批量处理时，先按问题类型、严重度或对象筛选，再一键将范围内的未处理问题标记为本次正常。</li>
             </ul>
           </HelpTipItem>
         </HelpTip>
@@ -521,6 +548,10 @@ onMounted(() => {
         <el-button v-permission="'data-quality:fix'" type="warning" plain :loading="batching" :disabled="!canBatch"
                    :title="canBatch ? '' : '请先选择类型/严重度/代码再批量恢复'" @click="batchRecover">
           一键恢复
+        </el-button>
+        <el-button v-permission="'data-quality:fix'" type="info" plain :loading="batchIgnoring" :disabled="!canBatch"
+                   :title="canBatch ? '' : '请先选择类型/严重度/代码再批量标记正常'" @click="batchMarkNormal">
+          一键标记正常
         </el-button>
         <el-button v-permission="'data-task:manage'" type="primary" plain
                    :loading="verifyRunning" :disabled="verifyRunning" @click="runVerify">立即质检</el-button>
