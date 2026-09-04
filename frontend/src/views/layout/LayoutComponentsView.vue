@@ -357,7 +357,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
                   <div class="muted">{{ row.kind }}</div>
                 </template>
               </AppTableColumn>
-              <AppTableColumn label="说明" show-overflow-tooltip>
+              <AppTableColumn label="说明">
                 <template #default="{ row }">{{ row.description }}</template>
               </AppTableColumn>
               <AppTableColumn label="最低尺寸">
@@ -549,7 +549,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
                   >{{ row.statusLabel }}</el-tag>
                 </template>
               </AppTableColumn>
-              <AppTableColumn prop="reason" label="依据" show-overflow-tooltip />
+              <AppTableColumn prop="reason" label="依据" />
             </AppDataTable>
             <div v-else class="muted">该组件没有个人层字段，或尚无页面消费。</div>
           </div>

@@ -734,7 +734,7 @@ onMounted(async () => {
                       <el-tag size="small" :type="diagnosticTagType(row.status)" effect="plain">{{ row.statusLabel }}</el-tag>
                     </template>
                   </AppTableColumn>
-                  <AppTableColumn prop="detail" label="说明" show-overflow-tooltip />
+                  <AppTableColumn prop="detail" label="说明" />
                 </AppDataTable>
                 <el-empty
                   v-if="!focusedDiagnosticRows.length"

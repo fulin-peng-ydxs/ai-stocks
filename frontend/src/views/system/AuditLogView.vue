@@ -642,7 +642,7 @@ onBeforeUnmount(stopTimer)
           <AppTableColumn v-if="colVisible('event_time')" label="时间" prop="event_time" sortable="custom">
             <template #default="{ row }">{{ formatTime(row.event_time) }}</template>
           </AppTableColumn>
-          <AppTableColumn v-if="colVisible('actor')" label="处理人" show-overflow-tooltip>
+          <AppTableColumn v-if="colVisible('actor')" label="处理人">
             <template #default="{ row }">{{ actorText(row) }}</template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('event_category')" label="事件类型" prop="event_category" sortable="custom">
@@ -652,10 +652,10 @@ onBeforeUnmount(stopTimer)
               </el-tag>
             </template>
           </AppTableColumn>
-          <AppTableColumn v-if="colVisible('resource_code')" label="资源码" show-overflow-tooltip>
+          <AppTableColumn v-if="colVisible('resource_code')" label="资源码">
             <template #default="{ row }"><span class="mono">{{ row.resource_code || '-' }}</span></template>
           </AppTableColumn>
-          <AppTableColumn v-if="colVisible('target')" label="目标对象" show-overflow-tooltip>
+          <AppTableColumn v-if="colVisible('target')" label="目标对象">
             <template #default="{ row }">
               <span class="target-cell">
                 <b>{{ targetText(row) }}</b>
@@ -669,11 +669,11 @@ onBeforeUnmount(stopTimer)
           <AppTableColumn v-if="colVisible('status')" label="状态" prop="status" sortable="custom">
             <template #default="{ row }"><el-tag :type="tagType(row.status)" :style="statusTagStyle(row.status)" effect="plain">{{ statusLabel(row.status) }}</el-tag></template>
           </AppTableColumn>
-          <AppTableColumn v-if="colVisible('ip')" label="IP" prop="ip" show-overflow-tooltip />
+          <AppTableColumn v-if="colVisible('ip')" label="IP" prop="ip" />
           <AppTableColumn v-if="colVisible('duration_ms')" label="耗时" prop="duration_ms" sortable="custom">
             <template #default="{ row }">{{ formatDuration(row.duration_ms) }}</template>
           </AppTableColumn>
-          <AppTableColumn v-if="colVisible('error_summary')" label="错误摘要" show-overflow-tooltip>
+          <AppTableColumn v-if="colVisible('error_summary')" label="错误摘要">
             <template #default="{ row }">{{ row.error_summary || '-' }}</template>
           </AppTableColumn>
           <AppTableColumn label="操作" role="action-compact" fixed="right">

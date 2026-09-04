@@ -352,7 +352,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           @page-change="(p: number) => { page = p; load() }"
           @size-change="changePageSize"
         >
-          <AppTableColumn label="租户名" prop="name" fixed="left" show-overflow-tooltip sortable="custom">
+          <AppTableColumn label="租户名" prop="name" fixed="left" sortable="custom">
             <template #default="{ row }">
               <span class="app-inline-info app-inline-info--nowrap">
                 <span>{{ row.name }}</span>
@@ -370,7 +370,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
               </el-tag>
             </template>
           </AppTableColumn>
-          <AppTableColumn v-if="colVisible('admin')" label="租户管理员" show-overflow-tooltip>
+          <AppTableColumn v-if="colVisible('admin')" label="租户管理员">
             <template #default="{ row }">{{ row.admin_account || '—' }}</template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('userCount')" label="用户数" prop="userCount" align="right" sortable="custom">

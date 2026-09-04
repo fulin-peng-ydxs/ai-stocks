@@ -38,6 +38,7 @@ import TopNavigation from '@/components/TopNavigation.vue'
 import WorkspaceTabs from '@/components/WorkspaceTabs.vue'
 import WorkspaceRouteView from '@/components/WorkspaceRouteView.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import AppOverflowTooltipHost from '@/components/AppOverflowTooltipHost.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import TradeDisciplineQuickCard from '@/components/trade-discipline/TradeDisciplineQuickCard.vue'
 
@@ -714,6 +715,7 @@ async function onLogout() {
       </div>
     </el-drawer>
   </el-container>
+  <AppOverflowTooltipHost />
 </template>
 
 <style scoped>

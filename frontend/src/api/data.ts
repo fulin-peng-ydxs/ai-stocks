@@ -130,6 +130,8 @@ export function getDataStatus(): Promise<DataStatus> {
 }
 
 // ── 质检与修复（FR-DM-4）──
+export type QualityIgnoreScope = 'occurrence' | 'object'
+
 export interface QualityIssue {
   id: number
   code: string
@@ -141,7 +143,7 @@ export interface QualityIssue {
   detail: string
   detected_at: string | null
   resolved_at: string | null
-  ignore_scope: 'occurrence' | 'object' | null
+  ignore_scope: QualityIgnoreScope | null
   ignore_active: boolean
 }
 export interface QualitySummaryItem { issue_type: string; n: number }
@@ -170,8 +172,8 @@ export function fixQualityIssue(issueId: number): Promise<{ task_id: string }> {
 export function fixQualityBatch(issueIds: number[]): Promise<{ task_id: string }> {
   return http.post('/data/quality/fix-batch', { issue_ids: issueIds })
 }
-export function ignoreQualityIssue(issueId: number, scope: 'occurrence' | 'object'):
-  Promise<{ id: number; status: string; ignore_scope: 'occurrence' | 'object' }> {
+export function ignoreQualityIssue(issueId: number, scope: QualityIgnoreScope):
+  Promise<{ id: number; status: string; ignore_scope: QualityIgnoreScope }> {
   return http.post(`/data/quality/${issueId}/ignore`, { scope })
 }
 export function restoreQualityMonitoring(issueId: number):
@@ -195,8 +197,9 @@ export function recoverQualityBatch(
 }
 export function ignoreQualityBatch(
   filter: { issue_type?: string[]; severity?: string[]; code?: string },
-): Promise<{ count: number; status: 'ignored'; ignore_scope: 'occurrence' }> {
-  return http.post('/data/quality/ignore-batch', filter)
+  scope: QualityIgnoreScope,
+): Promise<{ count: number; status: 'ignored'; ignore_scope: QualityIgnoreScope }> {
+  return http.post('/data/quality/ignore-batch', { ...filter, scope })
 }
 
 // ── 定时任务（调度系统重构）──

@@ -31,6 +31,7 @@ import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
+import SubScoreChips from '@/components/SubScoreChips.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
@@ -761,11 +762,6 @@ function clearScoreRunResult() {
   scoreRunCompleted.value = false
 }
 const subKeys = computed(() => items.value.map((i) => i.indicator))
-
-function scoreLevel(v: number | undefined): string {
-  const n = v ?? 0
-  return n >= 80 ? 'hi' : n >= 50 ? 'mid' : 'lo'
-}
 
 async function tryRun() {
   if (!items.value.length || weightSum.value !== 100) {
@@ -1562,22 +1558,17 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               </AppTableColumn>
               <AppTableColumn label="评级">
                 <template #default="{ row }">
-                  <ScoreGradeTag v-if="row.grade" :grade="row.grade" size="small" />
+                  <ScoreGradeTag v-if="row.grade" :grade="row.grade" />
                   <span v-else>—</span>
                 </template>
               </AppTableColumn>
               <AppTableColumn label="分项达标分">
                 <template #default="{ row }">
-                  <div class="subchips">
-                    <span
-                      v-for="k in subKeys"
-                      :key="k"
-                      class="subchip score"
-                      :class="scoreLevel(row.sub_scores?.[k])"
-                    >
-                      <i>{{ nameOf(k) }}</i><b>{{ Math.round(row.sub_scores?.[k] ?? 0) }}</b>
-                    </span>
-                  </div>
+                  <SubScoreChips
+                    :score-keys="subKeys"
+                    :scores="row.sub_scores"
+                    :label-of="nameOf"
+                  />
                 </template>
               </AppTableColumn>
             </AppDataTable>
@@ -1604,7 +1595,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         <AppDataTable :data="techRows" size="small" :border="tableBorder('techTable')"
                   :default-sort="techDefaultSort" @sort-change="onTechSortChange">
           <AppTableColumn prop="name_cn" label="名称" sortable="custom" />
-          <AppTableColumn prop="key" label="标识" show-overflow-tooltip>
+          <AppTableColumn prop="key" label="标识">
             <template #default="{ row }">
               <span class="mono">{{ row.key }}</span>
             </template>
@@ -2376,47 +2367,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 }
 .bs-item i {
   font-style: normal;
-  color: var(--el-text-color-secondary);
-}
-/* 试算结果分项达标分：彩色徽章，按分值高低着色 */
-.subchips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--app-space-control-gap);
-}
-.subchip.score {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--app-space-control-gap);
-  white-space: nowrap;
-  margin: 0;
-  padding: 2px 7px;
-  border-radius: 11px;
-  line-height: var(--app-line-height-comfy);
-}
-.subchip.score i {
-  font-style: normal;
-  color: var(--el-text-color-secondary);
-}
-.subchip.score b {
-  font-variant-numeric: tabular-nums;
-}
-.subchip.score.hi {
-  background: var(--score-high-bg);
-}
-.subchip.score.hi b {
-  color: var(--score-high-text);
-}
-.subchip.score.mid {
-  background: var(--score-mid-bg);
-}
-.subchip.score.mid b {
-  color: var(--score-mid-text);
-}
-.subchip.score.lo {
-  background: var(--el-fill-color);
-}
-.subchip.score.lo b {
   color: var(--el-text-color-secondary);
 }
 @media (max-width: 980px) {

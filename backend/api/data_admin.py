@@ -563,9 +563,12 @@ def _quality_open_issue_ids(c, body: dict) -> tuple[list[int], list[str]]:
 
 @router.post("/quality/ignore-batch", response_model=ApiResponse, dependencies=_QUALITY_FIX)
 def quality_ignore_batch(body: dict) -> ApiResponse:
-    """按当前筛选批量标记正常；只处理 open，并统一采用“仅本次”忽略范围。"""
+    """按当前筛选批量标记正常；只处理 open，忽略范围与单条操作保持一致。"""
     if not any((body.get("issue_type"), body.get("severity"), body.get("code"))):
         return err(400, "请先选择问题类型、严重度或输入代码/名称")
+    scope = str(body.get("scope") or "occurrence")
+    if scope not in ("occurrence", "object"):
+        return err(400, "scope 仅支持 occurrence 或 object")
     from datetime import datetime
 
     c = get_client()
@@ -575,11 +578,11 @@ def quality_ignore_batch(body: dict) -> ApiResponse:
             return err(400, "没有符合当前筛选的待处理问题")
         c.execute(
             "UPDATE data_quality_issue SET status='ignored', resolved_at=?, fix_task_id=NULL, "
-            "ignore_scope='occurrence', ignore_active=true "
+            "ignore_scope=?, ignore_active=true "
             f"WHERE status='open' AND id IN ({','.join('?' * len(ids))})",
-            [datetime.now(), *ids],
+            [datetime.now(), scope, *ids],
         )
-    return ok({"count": len(ids), "status": "ignored", "ignore_scope": "occurrence"})
+    return ok({"count": len(ids), "status": "ignored", "ignore_scope": scope})
 
 
 @router.post("/quality/{issue_id}/fix", response_model=ApiResponse, dependencies=_QUALITY_FIX)

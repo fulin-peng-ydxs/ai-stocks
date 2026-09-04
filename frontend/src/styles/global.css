@@ -18,6 +18,37 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* 表格内标签统一使用 24px 紧凑几何和居中基线；业务颜色由各标签组件决定。 */
+.app-table-tag-shell {
+  display: inline-flex;
+  max-width: 100%;
+  height: var(--app-control-height-xs);
+  align-items: center;
+  vertical-align: middle;
+}
+
+.app-table-tag-shell > .el-tag,
+.app-data-table td.app-table-column--overflow-aware .el-tag {
+  max-width: 100%;
+}
+
+.app-table-tag-shell > .el-tag {
+  height: 100%;
+}
+
+.app-table-tag-shell > .el-tag .el-tag__content,
+.app-data-table td.app-table-column--overflow-aware .el-tag .el-tag__content {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-table-tag-shell > .el-tag .el-tag__content {
+  display: block;
+  line-height: var(--app-line-height-table);
+}
+
 :root {
   --app-font-family-base: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable',
     'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', 'Hiragino Sans GB', sans-serif;

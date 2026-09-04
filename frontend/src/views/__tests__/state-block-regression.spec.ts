@@ -88,6 +88,7 @@ vi.mock('@/api/data', () => ({
   restoreQualityMonitoring: vi.fn(),
   resetQualityIssue: vi.fn(),
   recoverQualityBatch: vi.fn(),
+  ignoreQualityBatch: vi.fn(),
   markDelisted: vi.fn(),
   createTask: vi.fn(),
   getTask: vi.fn(),
@@ -649,6 +650,33 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.text()).toContain('数据质量刷新失败')
     expect(wrapper.text()).toContain('refresh failed')
     expect(wrapper.find('.app-data-table').exists()).toBe(false)
+  })
+
+  it('数据质量批量标记正常复用范围弹窗并提交整体忽略', async () => {
+    ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockResolvedValue({
+      list: [], total: 0, summary: [],
+    })
+    ;(dataApi.ignoreQualityBatch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      count: 2, status: 'ignored', ignore_scope: 'object',
+    })
+    const wrapper = await mountView(QualityView)
+    const search = wrapper.find('input[placeholder="股票/板块代码或名称"]')
+    await search.setValue('309121')
+    const batchButton = wrapper.findAll('button')
+      .find((button) => button.text().includes('一键标记正常'))!
+    await batchButton.trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('仅忽略本次（推荐）')
+    expect(document.body.textContent).toContain('整体忽略')
+    const objectOption = Array.from(document.querySelectorAll<HTMLElement>('.el-radio'))
+      .find((item) => item.textContent?.includes('整体忽略'))!
+    objectOption.click()
+    await wrapper.vm.$nextTick()
+    document.querySelector<HTMLButtonElement>('[data-testid="quality-ignore-confirm"]')!.click()
+    await flushPromises()
+
+    expect(dataApi.ignoreQualityBatch).toHaveBeenCalledWith({ code: '309121' }, 'object')
   })
 
   it('结构体检将行情目标日缺口展示为提醒而非失败', async () => {

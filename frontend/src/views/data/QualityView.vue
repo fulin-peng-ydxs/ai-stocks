@@ -11,7 +11,8 @@ import {
   markDelisted, createTask, getTask,
   ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE, SEVERITY_LABEL, ISSUE_STATUS_LABEL, ISSUE_LAYER, LAYER_LABEL,
   RECOVER_ACTION_LABEL,
-  type DataQuality, type QualityIssue, type CheckupCheck, type CheckupReport, type CheckupStatus,
+  type DataQuality, type QualityIssue, type QualityIgnoreScope, type CheckupCheck, type CheckupReport,
+  type CheckupStatus,
 } from '@/api/data'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDatePicker from '@/components/AppDatePicker.vue'
@@ -241,22 +242,33 @@ async function fixOne(row: QualityIssue) {
 
 const ignoreDlg = ref(false)
 const ignoreRow = ref<QualityIssue | null>(null)
-const ignoreScope = ref<'occurrence' | 'object'>('occurrence')
+const ignoreScope = ref<QualityIgnoreScope>('occurrence')
+const ignoreBatch = ref(false)
+const ignoreBatchLabel = ref('')
 const ignoring = ref(false)
 function openIgnore(row: QualityIssue) {
   ignoreRow.value = row
+  ignoreBatch.value = false
+  ignoreBatchLabel.value = ''
   ignoreScope.value = 'occurrence'
   ignoreDlg.value = true
 }
 
 async function confirmIgnore() {
-  if (!ignoreRow.value) return
+  if (!ignoreBatch.value && !ignoreRow.value) return
   ignoring.value = true
   try {
-    await ignoreQualityIssue(ignoreRow.value.id, ignoreScope.value)
-    ElMessage.success(ignoreScope.value === 'occurrence'
-      ? '已忽略本次；问题消失后，本次忽略会自动失效'
-      : '已整体忽略；恢复监控前不再上报该对象的同类问题')
+    if (ignoreBatch.value) {
+      const { count } = await ignoreQualityBatch(currentBatchFilter(), ignoreScope.value)
+      ElMessage.success(ignoreScope.value === 'occurrence'
+        ? `已将 ${count} 条问题标记为本次正常`
+        : `已将 ${count} 条问题标记为整体正常；恢复监控前不再上报对应对象的同类问题`)
+    } else {
+      await ignoreQualityIssue(ignoreRow.value!.id, ignoreScope.value)
+      ElMessage.success(ignoreScope.value === 'occurrence'
+        ? '已忽略本次；问题消失后，本次忽略会自动失效'
+        : '已整体忽略；恢复监控前不再上报该对象的同类问题')
+    }
     ignoreDlg.value = false
     await load()
   } catch { /* 拦截器弹错 */ } finally { ignoring.value = false }
@@ -445,7 +457,6 @@ async function runCheckup() {
 const canBatch = computed(() =>
   !!(filters.value.issue_type.length || filters.value.severity.length || filters.value.code.trim()))
 const batching = ref(false)
-const batchIgnoring = ref(false)
 function currentBatchFilter() {
   const f = filters.value
   return {
@@ -473,24 +484,15 @@ async function batchRecover() {
   } catch { /* 400无匹配/409并发 由拦截器提示 */ } finally { batching.value = false }
 }
 
-async function batchMarkNormal() {
+function batchMarkNormal() {
   const f = filters.value
-  const scope = [f.issue_type.map((t) => ISSUE_TYPE_LABEL[t] ?? t).join('、'),
-                 f.severity.map((s) => `${SEVERITY_LABEL[s]}危`).join('、'),
-                 f.code.trim()].filter(Boolean).join(' / ')
-  try {
-    await ElMessageBox.confirm(
-      `将当前筛选【${scope}】下所有“待处理”问题批量标记为正常，仅豁免本次异常。确认？`,
-      '一键标记正常',
-      { type: 'warning' },
-    )
-  } catch { return }
-  batchIgnoring.value = true
-  try {
-    const { count } = await ignoreQualityBatch(currentBatchFilter())
-    ElMessage.success(`已将 ${count} 条问题标记为正常`)
-    await load()
-  } catch { /* 400无匹配由拦截器提示 */ } finally { batchIgnoring.value = false }
+  ignoreRow.value = null
+  ignoreBatch.value = true
+  ignoreBatchLabel.value = [f.issue_type.map((t) => ISSUE_TYPE_LABEL[t] ?? t).join('、'),
+                            f.severity.map((s) => `${SEVERITY_LABEL[s]}危`).join('、'),
+                            f.code.trim()].filter(Boolean).join(' / ')
+  ignoreScope.value = 'occurrence'
+  ignoreDlg.value = true
 }
 
 onMounted(() => {
@@ -537,7 +539,7 @@ onMounted(() => {
           <HelpTipItem question="何时恢复或标记正常">
             <ul>
               <li>缺口先按漏采重采，源端确无数据则确认为停牌且不再上报；新股首日大涨等真实极端值可标记正常。</li>
-              <li>需要批量处理时，先按问题类型、严重度或对象筛选，再一键将范围内的未处理问题标记为本次正常。</li>
+              <li>需要批量处理时，先按问题类型、严重度或对象筛选，再选择仅忽略本次或整体忽略。</li>
             </ul>
           </HelpTipItem>
         </HelpTip>
@@ -549,7 +551,8 @@ onMounted(() => {
                    :title="canBatch ? '' : '请先选择类型/严重度/代码再批量恢复'" @click="batchRecover">
           一键恢复
         </el-button>
-        <el-button v-permission="'data-quality:fix'" type="info" plain :loading="batchIgnoring" :disabled="!canBatch"
+        <el-button v-permission="'data-quality:fix'" type="info" plain
+                   :loading="ignoring && ignoreBatch" :disabled="!canBatch"
                    :title="canBatch ? '' : '请先选择类型/严重度/代码再批量标记正常'" @click="batchMarkNormal">
           一键标记正常
         </el-button>
@@ -630,7 +633,7 @@ onMounted(() => {
           </template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" />
-        <AppTableColumn v-if="colVisible('name')" label="名称" prop="name" show-overflow-tooltip />
+        <AppTableColumn v-if="colVisible('name')" label="名称" prop="name" />
         <AppTableColumn v-if="colVisible('date')" label="日期">
           <template #default="{ row }">{{ (row.trade_date || '—').slice(0, 10) }}</template>
         </AppTableColumn>
@@ -644,14 +647,16 @@ onMounted(() => {
         <AppTableColumn v-if="colVisible('type')" label="类型">
           <template #default="{ row }">{{ ISSUE_TYPE_LABEL[row.issue_type] ?? row.issue_type }}</template>
         </AppTableColumn>
-        <AppTableColumn v-if="colVisible('detail')" label="详情" show-overflow-tooltip>
+        <AppTableColumn v-if="colVisible('detail')" label="详情">
           <template #default="{ row }">{{ detailText(row.detail) }}</template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('status')" label="状态">
           <template #default="{ row }">
             <el-tag :type="statType[row.status] ?? 'info'" size="small" effect="plain">{{ ISSUE_STATUS_LABEL[row.status] ?? row.status }}</el-tag>
             <span v-if="row.status === 'ignored' && row.ignore_scope" class="ignore-scope-label">
-              {{ row.ignore_scope === 'object' ? '整体' : '本次' }}{{ row.ignore_active ? '' : '（已失效）' }}
+              {{ row.ignore_active
+                ? (row.ignore_scope === 'object' ? '整体' : '本次')
+                : (row.ignore_scope === 'object' ? '整体忽略已结束' : '本次豁免已结束') }}
             </span>
           </template>
         </AppTableColumn>
@@ -670,8 +675,13 @@ onMounted(() => {
     <template #overlays>
     <el-dialog v-model="ignoreDlg" title="选择忽略范围" width="440px" data-testid="quality-ignore-dialog">
       <p class="ignore-tip">
-        {{ ignoreRow?.code || ignoreRow?.name || '当前对象' }} ·
-        {{ ignoreRow ? (ISSUE_TYPE_LABEL[ignoreRow.issue_type] ?? ignoreRow.issue_type) : '' }}
+        <template v-if="ignoreBatch">
+          当前筛选【{{ ignoreBatchLabel }}】下所有“待处理”问题
+        </template>
+        <template v-else>
+          {{ ignoreRow?.code || ignoreRow?.name || '当前对象' }} ·
+          {{ ignoreRow ? (ISSUE_TYPE_LABEL[ignoreRow.issue_type] ?? ignoreRow.issue_type) : '' }}
+        </template>
       </p>
       <el-radio-group v-model="ignoreScope" class="ignore-scope-group" data-testid="quality-ignore-scope">
         <el-radio value="occurrence" border>
@@ -680,7 +690,11 @@ onMounted(() => {
         </el-radio>
         <el-radio value="object" border>
           <span class="ignore-option-title">整体忽略</span>
-          <span class="ignore-option-note">持续忽略该对象的同类问题，直到手动恢复监控。</span>
+          <span class="ignore-option-note">
+            {{ ignoreBatch
+              ? '持续忽略筛选结果中每个对象的同类问题，直到逐项恢复监控。'
+              : '持续忽略该对象的同类问题，直到手动恢复监控。' }}
+          </span>
         </el-radio>
       </el-radio-group>
       <template #footer>

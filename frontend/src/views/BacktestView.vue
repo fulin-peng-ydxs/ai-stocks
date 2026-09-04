@@ -2213,7 +2213,7 @@ async function openTradeChart(row: TradeRow) {
           </AppTableColumn>
           <AppTableColumn v-if="tradeColVisible('grade')" label="买入档">
             <template #default="{ row }">
-              <ScoreGradeTag v-if="row.grade" :grade="row.grade" size="small" />
+              <ScoreGradeTag v-if="row.grade" :grade="row.grade" />
               <span v-else-if="row.entry_score != null" class="muted" title="综合分未达「观察」档阈值，但因候选池内排名靠前而买入">无评级·{{ row.entry_score.toFixed(0) }}分</span>
               <span v-else class="muted">—</span>
             </template>
@@ -2264,7 +2264,7 @@ async function openTradeChart(row: TradeRow) {
             </span>
             <span class="ds-rank2">
               全市场榜单 <b>#{{ dlgSummary.rank || '—' }}</b> ·
-              <ScoreGradeTag v-if="dlgSummary.grade" :grade="dlgSummary.grade" size="small" />
+              <ScoreGradeTag v-if="dlgSummary.grade" :grade="dlgSummary.grade" />
               <span v-else>—</span>
               <el-button link type="primary" size="small" @click="openDayBoard(dlgSummary.entry, dlgCode)">查看当日榜单</el-button>
             </span>
@@ -2316,7 +2316,7 @@ async function openTradeChart(row: TradeRow) {
           </AppTableColumn>
           <AppTableColumn label="买入档">
             <template #default="{ row }">
-              <ScoreGradeTag v-if="row.grade" :grade="row.grade" size="small" />
+              <ScoreGradeTag v-if="row.grade" :grade="row.grade" />
               <span v-else-if="row.entry_score != null" class="muted">无评级·{{ row.entry_score.toFixed(0) }}分</span>
               <span v-else class="muted">—</span>
             </template>
@@ -2357,7 +2357,7 @@ async function openTradeChart(row: TradeRow) {
           <AppTableColumn label="综合分" prop="total_score" />
           <AppTableColumn label="评级" prop="grade">
             <template #default="{ row }">
-              <ScoreGradeTag v-if="row.grade" :grade="row.grade" size="small" />
+              <ScoreGradeTag v-if="row.grade" :grade="row.grade" />
               <span v-else>—</span>
             </template>
           </AppTableColumn>

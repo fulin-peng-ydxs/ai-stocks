@@ -577,10 +577,10 @@ onMounted(loadAll)
               @page-change="pageChanged"
               @size-change="changePageSize"
             >
-              <AppTableColumn v-if="colVisible('code')" label="code" prop="code" show-overflow-tooltip sortable="custom">
+              <AppTableColumn v-if="colVisible('code')" label="code" prop="code" sortable="custom">
                 <template #default="{ row }"><span class="mono">{{ row.code }}</span></template>
               </AppTableColumn>
-              <AppTableColumn v-if="colVisible('label')" label="名称" prop="label" show-overflow-tooltip sortable="custom">
+              <AppTableColumn v-if="colVisible('label')" label="名称" prop="label" sortable="custom">
                 <template #default="{ row }">
                   <el-tag v-if="row.color" effect="plain" :style="dictTagStyle(row.color)">{{ row.label }}</el-tag>
                   <span v-else>{{ row.label }}</span>
@@ -606,7 +606,7 @@ onMounted(loadAll)
                   />
                 </template>
               </AppTableColumn>
-              <AppTableColumn v-if="colVisible('remark')" label="备注" prop="remark" show-overflow-tooltip />
+              <AppTableColumn v-if="colVisible('remark')" label="备注" prop="remark" />
               <AppTableColumn v-if="colVisible('updated_at')" label="更新时间" prop="updated_at" sortable="custom">
                 <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
               </AppTableColumn>

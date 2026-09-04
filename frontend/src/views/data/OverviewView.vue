@@ -469,7 +469,7 @@ onMounted(load)
                         <AppTableColumn label="字段" prop="name" />
                         <AppTableColumn label="中文名" prop="name_cn" />
                         <AppTableColumn label="类型" prop="type" />
-                        <AppTableColumn label="说明" prop="desc" show-overflow-tooltip />
+                        <AppTableColumn label="说明" prop="desc" />
                       </AppDataTable>
                       <el-empty v-else class="app-empty app-empty--tiny" description="规划中维度，本期暂无物理表与字段" />
                     </div>
@@ -486,7 +486,7 @@ onMounted(load)
                     </el-tag>
                   </template>
                 </AppTableColumn>
-                <AppTableColumn label="数据源" prop="source" show-overflow-tooltip />
+                <AppTableColumn label="数据源" prop="source" />
                 <AppTableColumn label="行数" align="right">
                   <template #default="{ row }">{{ row.rows.toLocaleString() }}</template>
                 </AppTableColumn>

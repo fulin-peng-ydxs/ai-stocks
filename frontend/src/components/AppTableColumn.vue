@@ -17,6 +17,7 @@ import {
   ROW_ACTION_COLUMN_WIDTH_CONTEXT,
   type RowActionColumnWidthContext,
 } from '@/components/table/rowActionColumnWidth'
+import { OVERFLOW_AWARE_COLUMN_CLASS } from '@/components/table/cellVisualOverflow'
 
 defineOptions({ inheritAttrs: false })
 
@@ -35,7 +36,16 @@ const attrs = useAttrs()
 const slots = useSlots()
 const actionWidthRequests = reactive(new Map<symbol, number>())
 const forwardedAttrs = computed(() => {
-  const { width: _width, minWidth: _minWidth, 'min-width': _kebabMinWidth, ...rest } = attrs
+  const {
+    width: _width,
+    minWidth: _minWidth,
+    'min-width': _kebabMinWidth,
+    className: _className,
+    'class-name': _kebabClassName,
+    showOverflowTooltip: _showOverflowTooltip,
+    'show-overflow-tooltip': _kebabShowOverflowTooltip,
+    ...rest
+  } = attrs
   return rest
 })
 const forwardedSlotNames = computed(() => Object.keys(slots).filter((name) => name !== 'header'))
@@ -48,6 +58,14 @@ const sizing = computed(() => resolveAdaptiveColumnWidth({
 const isActionColumn = computed(() => (
   sizing.value.role === 'action' || sizing.value.role === 'action-compact'
 ))
+const overflowAware = computed(() => (
+  !['structural', 'rank', 'action', 'action-compact'].includes(sizing.value.role)
+))
+const resolvedColumnClassName = computed(() => [
+  attrs.className,
+  attrs['class-name'],
+  overflowAware.value ? OVERFLOW_AWARE_COLUMN_CLASS : undefined,
+].filter(Boolean).join(' '))
 const resolvedAlign = computed(() => (
   typeof attrs.align === 'string' ? attrs.align : (isActionColumn.value ? 'center' : undefined)
 ))
@@ -87,7 +105,6 @@ const RowActionWidthProvider = defineComponent({
     return () => providerSlots.default?.()
   },
 })
-const headerTitle = computed(() => [props.label, props.headerMeta].filter(Boolean).join(' · '))
 const headerStyle = computed(() => ({
   '--app-table-column-header-indent': `${sizing.value.headerIndent ?? 0}px`,
 }))
@@ -101,6 +118,7 @@ const headerStyle = computed(() => ({
     :prop="prop"
     :width="resolvedWidth"
     :min-width="sizing.minWidth"
+    :class-name="resolvedColumnClassName"
     :align="resolvedAlign"
     :header-align="resolvedHeaderAlign"
   >
@@ -111,7 +129,6 @@ const headerStyle = computed(() => ({
       <span
         class="app-table-column-header"
         :style="headerStyle"
-        :title="sizing.headerCapped ? headerTitle : undefined"
       >
         <span v-if="label" class="app-table-column-header__label">{{ label }}</span>
         <span v-if="headerMeta" class="app-table-column-header__meta">{{ headerMeta }}</span>

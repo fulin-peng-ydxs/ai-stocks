@@ -1,12 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-const props = withDefaults(defineProps<{
+const props = defineProps<{
   grade: string
-  size?: 'small' | 'default' | 'large'
-}>(), {
-  size: 'default',
-})
+}>()
 
 const type = computed(() => {
   if (props.grade === '主升浪核心') return 'danger'
@@ -17,5 +14,7 @@ const type = computed(() => {
 </script>
 
 <template>
-  <el-tag :type="type" :size="size" effect="light">{{ grade }}</el-tag>
+  <span class="app-table-tag-shell">
+    <el-tag :type="type" size="small" effect="light">{{ grade }}</el-tag>
+  </span>
 </template>

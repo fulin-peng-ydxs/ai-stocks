@@ -688,11 +688,13 @@ def test_quality_recover_batch_code_filter_keeps_other_conditions(client, monkey
 
 
 def test_quality_ignore_batch_marks_only_filtered_open_issues(client):
-    """一键标记正常复用质量页筛选，只处理 open，并统一采用仅本次范围。"""
+    """一键标记正常复用质量页筛选，只处理 open，并支持本次与整体两种范围。"""
     from backend.api.data_admin import quality_ignore_batch
 
-    client.execute("INSERT INTO board_dict (board_code, name, board_type) "
-                   "VALUES ('309121','AI PC','concept')")
+    client.execute(
+        "INSERT INTO board_dict (board_code, name, board_type) VALUES "
+        "('309121','AI PC','concept'), ('881121','行业样例','industry')",
+    )
     client.execute(
         "INSERT INTO data_quality_issue "
         "(id, code, issue_type, severity, status, detail, detected_at) VALUES "
@@ -719,8 +721,22 @@ def test_quality_ignore_batch_marks_only_filtered_open_issues(client):
     assert rows.loc[23, "status"] == "open"
     assert rows.loc[24, "status"] == "open"
 
+    object_response = quality_ignore_batch({
+        "issue_type": ["board_fund_missing"], "code": "881121", "scope": "object",
+    })
+    assert object_response.code == 0
+    assert object_response.data == {"count": 1, "status": "ignored", "ignore_scope": "object"}
+    object_row = client.query_df(
+        "SELECT status, ignore_scope, ignore_active FROM data_quality_issue WHERE id=24",
+    ).iloc[0]
+    assert object_row["status"] == "ignored"
+    assert object_row["ignore_scope"] == "object"
+    assert bool(object_row["ignore_active"])
+
     rejected = quality_ignore_batch({})
     assert rejected.code == 400
+    invalid_scope = quality_ignore_batch({"issue_type": ["board_index_gap"], "scope": "forever"})
+    assert invalid_scope.code == 400
 
 
 def test_quality_list_searches_board_code_and_name(client):

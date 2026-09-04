@@ -620,11 +620,11 @@ onActivated(openResultScheduleFromIntent)
           :default-sort="elementDefaultSort"
           @sort-change="onSortChange"
         >
-          <AppTableColumn v-if="jobColVisible('name')" label="名称" prop="name" show-overflow-tooltip sortable="custom" />
+          <AppTableColumn v-if="jobColVisible('name')" label="名称" prop="name" sortable="custom" />
           <AppTableColumn v-if="jobColVisible('taskType')" label="任务类型">
             <template #default="{ row }">{{ taskDisplayLabel(row.task_type, row.params) }}</template>
           </AppTableColumn>
-          <AppTableColumn v-if="jobColVisible('freq')" label="触发规则" prop="freq" show-overflow-tooltip sortable="custom">
+          <AppTableColumn v-if="jobColVisible('freq')" label="触发规则" prop="freq" sortable="custom">
             <template #default="{ row }"><span data-testid="schedule-frequency">{{ row.trigger_text || row.freq_text }}</span></template>
           </AppTableColumn>
           <AppTableColumn v-if="jobColVisible('tradingDay')" label="仅交易日" align="center">
@@ -657,7 +657,7 @@ onActivated(openResultScheduleFromIntent)
               </span>
             </template>
           </AppTableColumn>
-          <AppTableColumn v-if="jobColVisible('retry')" label="自身重试" show-overflow-tooltip>
+          <AppTableColumn v-if="jobColVisible('retry')" label="自身重试">
             <template #default="{ row }">{{ retryText(row) }}</template>
           </AppTableColumn>
           <AppTableColumn v-if="jobColVisible('lastRun')" label="最近触发">
@@ -807,7 +807,7 @@ onActivated(openResultScheduleFromIntent)
         @retry="loadTriggerEvents"
       />
       <AppDataTable v-else :data="triggerEvents" embedded size="small">
-        <AppTableColumn label="来源任务" show-overflow-tooltip>
+        <AppTableColumn label="来源任务">
           <template #default="{ row }">{{ row.source_job_name || row.source_task_id }}</template>
         </AppTableColumn>
         <AppTableColumn label="来源结果" align="center">
@@ -832,7 +832,7 @@ onActivated(openResultScheduleFromIntent)
             </el-tag>
           </template>
         </AppTableColumn>
-        <AppTableColumn label="下游任务" show-overflow-tooltip>
+        <AppTableColumn label="下游任务">
           <template #default="{ row }">{{ row.task_id || row.message || '—' }}</template>
         </AppTableColumn>
         <template #empty>暂无依赖或自身重试触发记录</template>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppPagination from '@/components/AppPagination.vue'
-import { syncTagCellVisualOverflow } from '@/components/table/cellVisualOverflow'
+import { syncTableCellVisualOverflow } from '@/components/table/cellVisualOverflow'
 import type { Sort } from 'element-plus'
 import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
 
@@ -66,6 +66,7 @@ const resolvedScrollbarAlwaysOn = computed(
 const tableRef = ref<{ $el?: HTMLElement } | null>(null)
 let tableResizeObserver: ResizeObserver | null = null
 let observedTableRoot: HTMLElement | null = null
+let overflowSyncPending = false
 
 function observeTableResize(root: HTMLElement): void {
   if (typeof ResizeObserver === 'undefined' || observedTableRoot === root) return
@@ -76,11 +77,14 @@ function observeTableResize(root: HTMLElement): void {
 }
 
 function syncCellVisualOverflow(): void {
+  if (overflowSyncPending) return
+  overflowSyncPending = true
   void nextTick(() => {
+    overflowSyncPending = false
     const root = tableRef.value?.$el
     if (!root) return
     observeTableResize(root)
-    syncTagCellVisualOverflow(root)
+    syncTableCellVisualOverflow(root)
   })
 }
 
@@ -106,6 +110,7 @@ onUpdated(syncCellVisualOverflow)
 onBeforeUnmount(() => {
   tableResizeObserver?.disconnect()
   observedTableRoot = null
+  overflowSyncPending = false
 })
 watch(() => [props.ariaLabel, props.loading, props.data.length], () => {
   syncSemanticTableLabels()
@@ -227,8 +232,9 @@ const emit = defineEmits<{
   white-space: nowrap;
 }
 
-.app-data-table :deep(.el-table__body .cell.app-table-cell--visual-content-fits) {
-  text-overflow: clip;
+.app-data-table :deep(.el-table__body .cell.app-table-cell--visual-overflow) {
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-data-table :deep(th .caret-wrapper) {

@@ -18,5 +18,7 @@ describe('ScoreGradeTag', () => {
 
     expect(wrapper.text()).toBe(grade)
     expect(wrapper.get('.el-tag').classes()).toContain(`el-tag--${type}`)
+    expect(wrapper.get('.el-tag').classes()).toContain('el-tag--small')
+    expect(wrapper.find('.app-table-tag-shell').exists()).toBe(true)
   })
 })

@@ -47,21 +47,23 @@ function formatCorrelation(value: number): string {
     :width="280"
   >
     <template #reference>
-      <el-tag class="related-board-cell__tag" size="small" effect="plain">
-        <RouterLink
-          v-if="canNavigate"
-          class="related-board-cell__name related-board-cell__name--link"
-          :to="sectorLocation"
-          :data-testid="testId"
-          @click.stop
-        >{{ board.name }}</RouterLink>
-        <span
-          v-else
-          class="related-board-cell__name"
-          tabindex="0"
-          :data-testid="testId"
-        >{{ board.name }}</span>
-      </el-tag>
+      <span class="app-table-tag-shell related-board-cell__tag">
+        <el-tag size="small" effect="plain">
+          <RouterLink
+            v-if="canNavigate"
+            class="related-board-cell__name related-board-cell__name--link"
+            :to="sectorLocation"
+            :data-testid="testId"
+            @click.stop
+          >{{ board.name }}</RouterLink>
+          <span
+            v-else
+            class="related-board-cell__name"
+            tabindex="0"
+            :data-testid="testId"
+          >{{ board.name }}</span>
+        </el-tag>
+      </span>
     </template>
 
     <div class="related-board-cell__popover" :aria-label="`${board.name}相关性说明`">
@@ -107,7 +109,7 @@ function formatCorrelation(value: number): string {
   max-width: 100%;
   overflow: hidden;
   color: var(--el-text-color-regular);
-  line-height: var(--app-line-height-compact);
+  line-height: var(--app-line-height-table);
   text-overflow: ellipsis;
   vertical-align: middle;
   white-space: nowrap;
@@ -129,13 +131,7 @@ function formatCorrelation(value: number): string {
 }
 
 .related-board-cell__tag {
-  max-width: 100%;
-  vertical-align: middle;
-}
-
-.related-board-cell__tag :deep(.el-tag__content) {
   min-width: 0;
-  overflow: hidden;
 }
 
 .related-board-cell__empty {

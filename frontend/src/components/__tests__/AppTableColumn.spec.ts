@@ -13,7 +13,16 @@ import { ROW_ACTION_COLUMN_WIDTH_CONTEXT } from '@/components/table/rowActionCol
 
 const ElTableColumnStub = defineComponent({
   name: 'ElTableColumn',
-  props: ['label', 'prop', 'type', 'width', 'minWidth', 'align', 'headerAlign'],
+  props: [
+    'label',
+    'prop',
+    'type',
+    'width',
+    'minWidth',
+    'align',
+    'headerAlign',
+    'className',
+  ],
   setup(props, { slots }) {
     return () => h('div', {
       class: 'column',
@@ -22,6 +31,7 @@ const ElTableColumnStub = defineComponent({
       'data-min-width': props.minWidth,
       'data-align': props.align,
       'data-header-align': props.headerAlign,
+      'data-class-name': props.className,
     }, [
       ...(slots.default?.({ row: { value: '测试值' }, $index: 0 }) ?? []),
       ...(slots.header?.({ column: {} }) ?? []),
@@ -59,6 +69,44 @@ describe('自适应表格列', () => {
       role: 'rank',
       width: 60,
     })
+  })
+
+  it('内容列默认统一启用真实溢出判定，结构列和操作列保持专用契约', () => {
+    const content = mount(AppTableColumn, {
+      props: { label: '评级', prop: 'grade' },
+      global: { stubs: { ElTableColumn: ElTableColumnStub } },
+    })
+    const structural = mount(AppTableColumn, {
+      props: { type: 'selection' },
+      global: { stubs: { ElTableColumn: ElTableColumnStub } },
+    })
+    const action = mount(AppTableColumn, {
+      props: { label: '操作', role: 'action' },
+      global: { stubs: { ElTableColumn: ElTableColumnStub } },
+    })
+
+    expect(content.get('.column').attributes('data-class-name')).toContain(
+      'app-table-column--overflow-aware',
+    )
+    expect(structural.get('.column').attributes('data-class-name')).not.toContain(
+      'app-table-column--overflow-aware',
+    )
+    expect(action.get('.column').attributes('data-class-name')).not.toContain(
+      'app-table-column--overflow-aware',
+    )
+  })
+
+  it('忽略遗留的列级 tooltip 配置，统一交给自动溢出机制', () => {
+    const wrapper = mount(AppTableColumn, {
+      props: { label: '状态' },
+      attrs: { 'show-overflow-tooltip': false },
+      global: { stubs: { ElTableColumn: ElTableColumnStub } },
+    })
+
+    expect(wrapper.get('.column').attributes('data-class-name')).toContain(
+      'app-table-column--overflow-aware',
+    )
+    expect(wrapper.get('.column').attributes('show-overflow-tooltip')).toBeUndefined()
   })
 
   it('长文本、代码、状态和数值使用不同的自适应权重', () => {
@@ -230,7 +278,7 @@ describe('自适应表格列', () => {
     )
   })
 
-  it('异常长表头达到角色宽度上限后保留完整 title', () => {
+  it('异常长表头达到角色宽度上限后交给全局真实截断提示', () => {
     const label = '这是一个异常长且不应该无限撑开表格的动态指标名称'
     const wrapper = mount(AppTableColumn, {
       props: { label, role: 'number' },
@@ -241,7 +289,8 @@ describe('自适应表格列', () => {
     })
 
     expect(wrapper.get('.column').attributes('data-min-width')).toBe('192')
-    expect(wrapper.get('.app-table-column-header').attributes('title')).toBe(label)
+    expect(wrapper.get('.app-table-column-header').attributes('title')).toBeUndefined()
+    expect(wrapper.get('.app-table-column-header__label').text()).toBe(label)
   })
 
   it('自定义表头优先于标准表头且仍预留安全空间', () => {

@@ -533,8 +533,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           @size-change="changePageSize"
         >
           <AppTableColumn label="账号" prop="account" fixed="left" sortable="custom" />
-          <AppTableColumn v-if="colVisible('email')" label="邮箱" prop="email"
-                           show-overflow-tooltip>
+          <AppTableColumn v-if="colVisible('email')" label="邮箱" prop="email">
             <template #default="{ row }">{{ row.email || '—' }}</template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('roles')" label="角色">
@@ -547,7 +546,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
             </template>
           </AppTableColumn>
           <AppTableColumn v-if="isSystem && colVisible('tenant')" label="租户" prop="tenant"
-                           sortable="custom" show-overflow-tooltip>
+                           sortable="custom">
             <template #default="{ row }">{{ tenantName(row.tenant_id) }}</template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('status')" label="状态">

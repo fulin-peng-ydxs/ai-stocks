@@ -856,7 +856,7 @@ watch(
             @page-change="(p: number) => { taskPage = p; loadTasks() }"
             @size-change="changeTaskPageSize"
           >
-            <AppTableColumn label="任务ID" show-overflow-tooltip>
+            <AppTableColumn label="任务ID">
               <template #default="{ row }"><span class="task-id">{{ row.id }}</span></template>
             </AppTableColumn>
             <AppTableColumn label="类型" prop="type" sortable="custom">
@@ -864,7 +864,7 @@ watch(
                 {{ taskDisplayLabel(row.task_type, row.params) }}
               </template>
             </AppTableColumn>
-            <AppTableColumn label="来源" show-overflow-tooltip>
+            <AppTableColumn label="来源">
               <template #default="{ row }">
                 <el-tag v-if="row.trigger_source === 'scheduled'" type="warning" size="small" effect="plain">
                   定时{{ row.job_name ? `·${row.job_name}` : '' }}
@@ -896,7 +896,7 @@ watch(
                   :status="row.status === 'failed' || row.status === 'interrupted' ? 'exception' : row.status === 'done' ? 'success' : undefined" />
               </template>
             </AppTableColumn>
-            <AppTableColumn label="信息" prop="message" show-overflow-tooltip />
+            <AppTableColumn label="信息" prop="message" />
             <AppTableColumn label="截止时间" prop="time" sortable="custom">
               <template #default="{ row }">{{ (row.updated_at || '').slice(0, 19) }}</template>
             </AppTableColumn>
@@ -975,7 +975,7 @@ watch(
             <AppTableColumn label="区间">
               <template #default="{ row }">{{ row.date_start ? `${row.date_start} ~ ${row.date_end || row.date_start}` : '—' }}</template>
             </AppTableColumn>
-            <AppTableColumn label="详情 / 失败原因" show-overflow-tooltip>
+            <AppTableColumn label="详情 / 失败原因">
               <template #default="{ row }">
                 <span :class="{ 'fail-detail': row.status === 'failed', 'partial-detail': row.status === 'partial' }">{{ row.detail || (row.status === 'success' ? '—' : '') }}</span>
               </template>

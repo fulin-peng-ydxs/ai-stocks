@@ -332,7 +332,7 @@ onMounted(reloadPresets)
               <div class="muted">{{ row.key }}</div>
             </template>
           </AppTableColumn>
-          <AppTableColumn prop="description" label="说明" show-overflow-tooltip />
+          <AppTableColumn prop="description" label="说明" />
           <AppTableColumn label="密度">
             <template #default="{ row }">{{ row.config.values.density || row.config.values['componentDefaults.density'] || '-' }}</template>
           </AppTableColumn>
