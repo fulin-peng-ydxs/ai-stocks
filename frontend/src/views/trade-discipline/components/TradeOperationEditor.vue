@@ -5,6 +5,7 @@ import AppDatePicker from '@/components/AppDatePicker.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppSummaryDisclosureCard from '@/components/AppSummaryDisclosureCard.vue'
+import TradeDisciplineSectionPanel from '@/components/trade-discipline/TradeDisciplineSectionPanel.vue'
 import {
   decimalToMinorUnits,
   formatMinorUnits,
@@ -49,6 +50,13 @@ function actionRules(side: 'buy' | 'sell') {
   )
 }
 
+function defaultOperatedAt(tradeDate: string, now = new Date()): string {
+  const clock = [now.getHours(), now.getMinutes(), now.getSeconds()]
+    .map((value) => String(value).padStart(2, '0'))
+    .join(':')
+  return `${tradeDate}T${clock}`
+}
+
 function emptyOperation(order: number, side: 'buy' | 'sell'): CheckinOperation {
   return {
     client_key: `operation-${Date.now()}-${++operationKey}`,
@@ -56,7 +64,8 @@ function emptyOperation(order: number, side: 'buy' | 'sell'): CheckinOperation {
     stock_rule_id: stockRules.value.length === 1 ? stockRules.value[0].detail_id! : '',
     action_rule_id: actionRules(side).length === 1 ? actionRules(side)[0].detail_id! : '',
     price: null, quantity: null, amount: null, fee: null,
-    operated_at: null, note: null, compliance_status: null, display_order: order,
+    operated_at: defaultOperatedAt(props.tradeDate), note: null,
+    compliance_status: null, display_order: order,
   }
 }
 
@@ -196,14 +205,12 @@ defineExpose({ expandOperation })
 </script>
 
 <template>
-  <div class="operation-editor">
-    <div class="operation-editor__head">
-      <div>
-        <h4>操作事实</h4>
-        <p class="app-caption-text">按方向分组记录成交；规则关联以本次打卡绑定的版本为准。</p>
-      </div>
-    </div>
-
+  <TradeDisciplineSectionPanel
+    class="operation-editor"
+    title="操作事实"
+    description="按方向分组记录成交；规则关联以本次打卡绑定的版本为准。"
+    data-testid="checkin-operation-section"
+  >
     <TradeDirectionGroupGrid :groups="operationGroups">
       <template #actions="{ group }">
         <el-button
@@ -263,61 +270,81 @@ defineExpose({ expandOperation })
           ><Delete /></AppIconButton>
         </div>
       </template>
-      <div class="operation-grid">
-        <el-form-item label="股票" required class="operation-field operation-field--stock">
-          <StockOptionSelect
-            :model-value="operation.stock_code ? { code: operation.stock_code, name: operation.stock_name_snapshot, board: null, industry: null } : null"
-            :disabled="disabled"
-            :trade-date="tradeDate"
-            @update:model-value="selectStock(index, $event)"
-          />
-        </el-form-item>
-        <el-form-item label="操作时间" class="operation-field operation-field--time">
-          <AppDatePicker :model-value="operation.operated_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" format="YYYY-MM-DD HH:mm" :disabled="disabled" @update:model-value="update(index, { operated_at: $event })" />
-        </el-form-item>
-        <el-form-item label="选股规则" required class="operation-field operation-field--rule">
-          <el-select :model-value="operation.stock_rule_id" :disabled="disabled || !stockRules.length" placeholder="选择规则" @update:model-value="update(index, { stock_rule_id: $event })">
-            <el-option v-for="rule in stockRules" :key="rule.detail_id!" :label="rule.name || '未命名规则'" :value="rule.detail_id!" />
-          </el-select>
-          <small v-if="!stockRules.length" class="field-error">当前版本没有可用选股规则</small>
-        </el-form-item>
-        <el-form-item :label="operation.side === 'sell' ? '卖出规则' : '买入规则'" required class="operation-field operation-field--rule">
-          <el-select :model-value="operation.action_rule_id" :disabled="disabled || !actionRules(operation.side).length" placeholder="选择规则" @update:model-value="update(index, { action_rule_id: $event })">
-            <el-option v-for="rule in actionRules(operation.side)" :key="rule.detail_id!" :label="rule.name || '未命名规则'" :value="rule.detail_id!" />
-          </el-select>
-          <small v-if="!actionRules(operation.side).length" class="field-error">当前方向没有可用买卖规则</small>
-        </el-form-item>
-        <el-form-item v-if="showCompliance" label="履约状态" required class="operation-field operation-field--compliance">
-          <el-segmented
-            :model-value="operation.compliance_status"
-            :options="[{ label: '已履约', value: 'complied' }, { label: '未履约', value: 'breached' }]"
-            :disabled="disabled"
-            :data-testid="`operation-compliance-${index}`"
-            @update:model-value="updateCompliance(index, $event)"
-          />
-        </el-form-item>
-        <el-form-item label="成交价" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.price" :scale="4" :integer-digits="16" :disabled="disabled" placeholder="0.0000" @update:model-value="update(index, { price: $event })" /></el-form-item>
-        <el-form-item label="数量" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.quantity" :scale="4" :integer-digits="16" :disabled="disabled" placeholder="0.0000" @update:model-value="update(index, { quantity: $event })" /></el-form-item>
-        <el-form-item label="成交金额" class="operation-field operation-field--amount">
-          <FixedDecimalInput :model-value="operation.amount" grouped :disabled="disabled" @update:model-value="update(index, { amount: $event })" />
-          <small v-if="computedAmount(operation) !== null" :class="{ 'field-error': amountMismatch(operation) }">
-            价 × 量 = {{ computedAmount(operation) }}{{ amountMismatch(operation) ? '，与填写金额不一致' : '' }}
-          </small>
-        </el-form-item>
-        <el-form-item label="费用" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.fee" grouped :disabled="disabled" @update:model-value="update(index, { fee: $event })" /></el-form-item>
-        <el-form-item label="操作说明" class="operation-note"><el-input :model-value="operation.note" :disabled="disabled" maxlength="500" @update:model-value="update(index, { note: $event })" /></el-form-item>
+      <div class="operation-form-sections">
+        <section class="operation-form-section" aria-label="操作依据" data-testid="operation-context-section">
+          <header>
+            <h5>操作依据</h5>
+            <p>记录标的、执行时间及本次操作对应的纪律规则。</p>
+          </header>
+          <div class="operation-grid">
+            <el-form-item label="股票" required class="operation-field operation-field--stock">
+              <StockOptionSelect
+                :model-value="operation.stock_code ? { code: operation.stock_code, name: operation.stock_name_snapshot, board: null, industry: null } : null"
+                :disabled="disabled"
+                :trade-date="tradeDate"
+                @update:model-value="selectStock(index, $event)"
+              />
+            </el-form-item>
+            <el-form-item label="操作时间" class="operation-field operation-field--time">
+              <AppDatePicker :model-value="operation.operated_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" format="YYYY-MM-DD HH:mm" :disabled="disabled" @update:model-value="update(index, { operated_at: $event })" />
+            </el-form-item>
+            <el-form-item label="选股规则" required class="operation-field operation-field--rule">
+              <el-select :model-value="operation.stock_rule_id" :disabled="disabled || !stockRules.length" placeholder="选择规则" @update:model-value="update(index, { stock_rule_id: $event })">
+                <el-option v-for="rule in stockRules" :key="rule.detail_id!" :label="rule.name || '未命名规则'" :value="rule.detail_id!" />
+              </el-select>
+              <small v-if="!stockRules.length" class="field-error">当前版本没有可用选股规则</small>
+            </el-form-item>
+            <el-form-item :label="operation.side === 'sell' ? '卖出规则' : '买入规则'" required class="operation-field operation-field--rule">
+              <el-select :model-value="operation.action_rule_id" :disabled="disabled || !actionRules(operation.side).length" placeholder="选择规则" @update:model-value="update(index, { action_rule_id: $event })">
+                <el-option v-for="rule in actionRules(operation.side)" :key="rule.detail_id!" :label="rule.name || '未命名规则'" :value="rule.detail_id!" />
+              </el-select>
+              <small v-if="!actionRules(operation.side).length" class="field-error">当前方向没有可用买卖规则</small>
+            </el-form-item>
+            <el-form-item v-if="showCompliance" label="履约状态" required class="operation-field operation-field--compliance">
+              <el-segmented
+                :model-value="operation.compliance_status"
+                :options="[{ label: '已履约', value: 'complied' }, { label: '未履约', value: 'breached' }]"
+                :disabled="disabled"
+                :data-testid="`operation-compliance-${index}`"
+                @update:model-value="updateCompliance(index, $event)"
+              />
+            </el-form-item>
+          </div>
+        </section>
+
+        <section class="operation-form-section" aria-label="成交明细" data-testid="operation-trade-section">
+          <header>
+            <h5>成交明细</h5>
+            <p>价格、数量、金额和费用均为可选事实，系统不会覆盖手工填写值。</p>
+          </header>
+          <div class="operation-grid">
+            <el-form-item label="成交价" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.price" :scale="4" :integer-digits="16" :disabled="disabled" placeholder="0.0000" @update:model-value="update(index, { price: $event })" /></el-form-item>
+            <el-form-item label="数量" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.quantity" :scale="4" :integer-digits="16" :disabled="disabled" placeholder="0.0000" @update:model-value="update(index, { quantity: $event })" /></el-form-item>
+            <el-form-item label="成交金额" class="operation-field operation-field--amount">
+              <FixedDecimalInput :model-value="operation.amount" grouped :disabled="disabled" @update:model-value="update(index, { amount: $event })" />
+              <small v-if="computedAmount(operation) !== null" :class="{ 'field-error': amountMismatch(operation) }">
+                价 × 量 = {{ computedAmount(operation) }}{{ amountMismatch(operation) ? '，与填写金额不一致' : '' }}
+              </small>
+            </el-form-item>
+            <el-form-item label="费用" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.fee" grouped :disabled="disabled" @update:model-value="update(index, { fee: $event })" /></el-form-item>
+          </div>
+        </section>
+
+        <section class="operation-form-section" aria-label="操作说明" data-testid="operation-note-section">
+          <header>
+            <h5>操作说明</h5>
+          </header>
+          <el-form-item label="补充说明" class="operation-note"><el-input :model-value="operation.note" :disabled="disabled" maxlength="500" @update:model-value="update(index, { note: $event })" /></el-form-item>
+        </section>
       </div>
           </AppSummaryDisclosureCard>
         </div>
       </template>
     </TradeDirectionGroupGrid>
-  </div>
+  </TradeDisciplineSectionPanel>
 </template>
 
 <style scoped>
-.operation-editor { display: grid; gap: var(--app-space-3); }
-.operation-editor__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--app-space-3); }
-.operation-editor h4, .operation-editor p { margin: 0; }
 .operation-card-list { display: grid; gap: var(--app-space-2); }
 .operation-card__issue {
   flex: none;
@@ -327,6 +354,19 @@ defineExpose({ expandOperation })
 }
 .operation-card__status { display: flex; align-items: center; gap: var(--app-space-2); }
 .operation-card__tools { display: flex; justify-content: flex-end; width: 100%; }
+.operation-form-sections { display: grid; }
+.operation-form-section + .operation-form-section {
+  margin-top: var(--app-space-4);
+  padding-top: var(--app-space-4);
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.operation-form-section > header { margin-bottom: var(--app-space-3); }
+.operation-form-section h5 { margin: 0; font-size: var(--app-font-size-section); }
+.operation-form-section p {
+  margin: var(--app-space-1) 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+}
 .operation-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -339,7 +379,7 @@ defineExpose({ expandOperation })
 .operation-field--compliance { grid-column: span 6; }
 .operation-grid :deep(.el-select), .operation-grid :deep(.el-input), .operation-grid :deep(.el-date-editor) { width: 100%; }
 .operation-grid :deep(.el-form-item__content) { display: block; }
-.operation-note { grid-column: 1 / -1; }
+.operation-note { margin-bottom: 0; }
 .field-error { display: block; margin-top: var(--app-space-1); color: var(--el-color-danger); }
 @media (max-width: 1180px) {
   .operation-field--stock, .operation-field--time { grid-column: span 12; }

@@ -1386,7 +1386,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 
           <!-- 编辑器 -->
           <section class="editor editor-score">
-            <div class="ed-head">
+            <div class="ed-head app-cluster-md">
               <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
               <span v-if="editId && !isNew" class="id-badge mono">{{ editId }}</span>
               <span v-if="curVersion && !isNew" class="ver-badge" title="点击查看历史版本" @click="openScoreVersions">v{{ curVersion }}</span>
@@ -1746,7 +1746,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           </aside>
 
           <section class="editor">
-            <div class="ed-head">
+            <div class="ed-head app-cluster-md">
               <el-input v-model="tEditName" :disabled="tReadonly" placeholder="方案名称" style="width: 190px" />
               <span v-if="tEditId && !tIsNew" class="id-badge mono">{{ tEditId }}</span>
               <span v-if="tCurVersion && !tIsNew" class="ver-badge" title="点击查看历史版本" @click="openTradeVersions">v{{ tCurVersion }}</span>
@@ -2139,10 +2139,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   flex-direction: column;
   min-height: 0;
 }
-.ed-head {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-2);
+.editor-score > .ed-head {
+  margin-bottom: var(--app-space-3);
 }
 .spacer {
   flex: 1;
@@ -2245,7 +2243,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   display: flex;
   align-items: center;
   gap: var(--app-space-3);
-  margin: 22px 0 10px;
+  margin: var(--app-space-5) 0 var(--app-space-3);
 }
 .run-table-wrap {
   flex: 1 1 auto;
@@ -2324,7 +2322,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   gap: var(--app-space-control-gap);
 }
 .cond-block {
-  margin: 14px 0;
+  margin: var(--app-space-3) 0;
   padding: 12px 14px;
   border: 1px solid var(--el-border-color-light);
   border-radius: 8px;

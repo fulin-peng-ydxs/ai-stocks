@@ -84,10 +84,15 @@ const defaultDescription = computed(() => {
     <el-empty
       v-else-if="state === 'empty'"
       :class="emptyClass"
-      :description="$slots.default ? '' : (description || title || defaultTitle)"
+      :description="$slots.default || (title && description) ? '' : (description || title || defaultTitle)"
     >
-      <template v-if="$slots.default || $slots.extra" #default>
-        <slot />
+      <template v-if="$slots.default || $slots.extra || (title && description)" #default>
+        <slot>
+          <div v-if="title && description" class="app-state-block__empty-copy">
+            <strong>{{ title }}</strong>
+            <span>{{ description }}</span>
+          </div>
+        </slot>
         <slot name="extra" />
       </template>
     </el-empty>
@@ -172,6 +177,21 @@ const defaultDescription = computed(() => {
 .app-state-block__result {
   width: 100%;
   padding: 16px 0;
+}
+
+.app-state-block__empty-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-1);
+  color: var(--app-empty-text);
+  font-size: var(--app-font-size-table);
+  line-height: var(--app-line-height-comfy);
+}
+
+.app-state-block__empty-copy strong {
+  color: var(--el-text-color-primary);
+  font-size: var(--app-font-size-section-title);
+  font-weight: var(--app-font-weight-section);
 }
 
 .app-state-block__result--compact {

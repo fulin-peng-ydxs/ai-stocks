@@ -694,7 +694,7 @@ onMounted(initializeScreen)
 
         <!-- 编辑器 -->
         <section class="editor editor-screen">
-          <div class="ed-head">
+          <div class="ed-head app-cluster-md">
             <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
             <span v-if="editId && !isNew" class="id-badge mono">{{ editId }}</span>
             <span
@@ -1018,11 +1018,6 @@ onMounted(initializeScreen)
   flex-direction: column;
   min-height: 0;
 }
-.ed-head {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-2);
-}
 .spacer {
   flex: 1;
 }
@@ -1060,7 +1055,7 @@ onMounted(initializeScreen)
 }
 /* 条件构建区卡片包裹：与编辑器头/结果区区分边界（对齐买卖 cond-block） */
 .cond-block {
-  margin: 14px 0;
+  margin: var(--app-space-3) 0;
   padding: 12px 14px;
   border: 1px solid var(--el-border-color-light);
   border-radius: 8px;
@@ -1127,7 +1122,7 @@ onMounted(initializeScreen)
   display: flex;
   align-items: center;
   gap: var(--app-space-3);
-  margin: 22px 0 10px;
+  margin: var(--app-space-5) 0 var(--app-space-3);
   flex: none;
 }
 .run-title {

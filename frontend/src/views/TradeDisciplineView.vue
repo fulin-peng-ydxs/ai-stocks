@@ -112,7 +112,6 @@ const {
 const rules = ref<TradeDisciplineRule[]>([])
 const rulesLoading = ref(false)
 const rulesError = ref(false)
-const rulesReady = ref(false)
 const rulesTradeDate = ref('')
 const pagePermissionDenied = ref(false)
 const checkinSummary = ref<CheckinSummary | null>(null)
@@ -122,11 +121,17 @@ const checkinTradeDate = ref('')
 const selectedRuleId = ref('')
 const checkinRuleIds = computed(() => new Set(checkinSummary.value?.rules.map((item) => item.rule_id) ?? []))
 const displayRules = computed(() => activePanel.value === 'checkin'
-  ? rules.value.filter((rule) => checkinRuleIds.value.has(rule.id))
+  ? rules.value.filter((rule) => checkinSummary.value
+    ? checkinRuleIds.value.has(rule.id)
+    : rule.effective_status === 'active' && !!rule.effective_version)
   : rules.value)
 const selectedRule = computed(
   () => displayRules.value.find((rule) => rule.id === selectedRuleId.value) ?? displayRules.value[0] ?? null,
 )
+const isLatestCheckinDate = computed(() => checkinTradeDate.value === dataMax.value)
+const checkinEmptyDescription = computed(() => isLatestCheckinDate.value
+  ? '当前交易日没有可履约的正式规则；新规则发布后从下一真实交易日起生效'
+  : '这是历史日期的真实空状态，不能通过新建规则补写过去的履约关系')
 const ruleEditorRef = ref<{
   isDirty: () => boolean
   requestLeave: () => Promise<boolean>
@@ -177,10 +182,10 @@ const { pageSize: historyPageSize, changePageSize } = useComponentPageSizeSessio
 })
 
 const pageLoading = computed(
-  () => tradeDateStatus.value === 'loading' || (rulesLoading.value && !rulesReady.value),
+  () => tradeDateStatus.value === 'loading',
 )
 const pageError = computed(
-  () => tradeDateStatus.value === 'error' || (rulesError.value && !rulesReady.value),
+  () => tradeDateStatus.value === 'error',
 )
 function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
@@ -190,7 +195,6 @@ async function loadRules(tradeDate = dataMax.value): Promise<void> {
   const targetTradeDate = tradeDate ?? ''
   if (rulesTradeDate.value !== targetTradeDate) {
     rulesTradeDate.value = targetTradeDate
-    rulesReady.value = false
     rules.value = []
   }
   const seq = ++rulesLoadSeq
@@ -200,7 +204,6 @@ async function loadRules(tradeDate = dataMax.value): Promise<void> {
     const result = await listTradeDisciplineRules(targetTradeDate)
     if (seq !== rulesLoadSeq) return
     rules.value = result
-    rulesReady.value = true
     pagePermissionDenied.value = false
     if (activePanel.value !== 'checkin' && !rules.value.some((rule) => rule.id === selectedRuleId.value)) {
       selectedRuleId.value = rules.value[0]?.id ?? ''
@@ -292,9 +295,13 @@ async function createRule(): Promise<void> {
   } catch { /* 统一请求层已反馈 */ }
 }
 
-async function createRuleFromCheckin(): Promise<void> {
+async function openRuleManagement(): Promise<void> {
   await switchPanel('rules')
-  if (activePanel.value === 'rules') await createRule()
+}
+
+async function returnToLatestCheckinDate(): Promise<void> {
+  if (!dataMax.value) return
+  await changeCheckinTradeDate(dataMax.value)
 }
 
 async function handleRuleDeleted(): Promise<void> {
@@ -529,7 +536,7 @@ watch(tradeDisciplineChangeVersion, async () => {
         v-else-if="pageError"
         state="error"
         title="交易纪律加载失败"
-        description="交易日或规则数据不可用，当前页面已停止写操作"
+        description="交易日数据不可用，当前页面已停止写操作"
         retry
         @retry="loadPage"
       />
@@ -553,30 +560,6 @@ watch(tradeDisciplineChangeVersion, async () => {
             variant="permission"
             title="无权限查看履约打卡"
           />
-          <AppStateBlock
-            v-else-if="summaryError"
-            state="error"
-            title="履约摘要加载失败"
-            description="已停止展示和提交，重试后继续"
-            retry
-            @retry="loadCheckinWorkspace"
-          />
-          <AppStateBlock v-else-if="summaryLoading" state="loading" title="正在解析当日履约状态…" />
-          <AppStateBlock
-            v-else-if="rulesError && !displayRules.length"
-            state="error"
-            title="规则列表刷新失败"
-            description="当前交易日规则不可用，重试后继续"
-            retry
-            @retry="refreshRules"
-          />
-          <AppStateBlock v-else-if="!displayRules.length" state="empty" title="该交易日暂无生效规则">
-            <template #extra>
-              <el-button v-if="canManageRules" v-permission="'trade-discipline:rule-manage'" type="primary" @click="createRuleFromCheckin">
-                创建第一套规则
-              </el-button>
-            </template>
-          </AppStateBlock>
           <div v-else class="master-detail-shell">
             <RuleMasterList
               :rules="displayRules"
@@ -584,13 +567,63 @@ watch(tradeDisciplineChangeVersion, async () => {
               :loading="rulesLoading"
               :error="rulesError"
               :can-manage="canManageRules"
+              :show-create="false"
               :checkin-states="checkinSummary?.rules"
               @select="selectRule"
-              @create="createRuleFromCheckin"
               @retry="refreshRules"
             />
+            <AppStateBlock
+              v-if="summaryLoading"
+              class="panel-detail"
+              state="loading"
+              title="正在解析当日履约状态…"
+            />
+            <AppStateBlock
+              v-else-if="summaryError"
+              class="panel-detail"
+              state="error"
+              title="履约摘要加载失败"
+              description="已停止展示和提交，重试后继续"
+              retry
+              @retry="loadCheckinSummary"
+            />
+            <AppStateBlock
+              v-else-if="rulesError && !displayRules.length"
+              class="panel-detail"
+              state="error"
+              title="规则列表刷新失败"
+              description="当前交易日规则不可用，重试后继续"
+              retry
+              @retry="refreshRules"
+            />
+            <AppStateBlock
+              v-else-if="!displayRules.length"
+              class="panel-detail"
+              state="empty"
+              title="该交易日暂无生效规则"
+              :description="checkinEmptyDescription"
+            >
+              <template #extra>
+                <el-button
+                  v-if="!isLatestCheckinDate"
+                  type="primary"
+                  @click="returnToLatestCheckinDate"
+                >
+                  返回最新交易日
+                </el-button>
+                <el-button
+                  v-else-if="canManageRules"
+                  v-permission="'trade-discipline:rule-manage'"
+                  type="primary"
+                  plain
+                  @click="openRuleManagement"
+                >
+                  前往规则管理
+                </el-button>
+              </template>
+            </AppStateBlock>
             <TradeCheckinForm
-              v-if="selectedRule"
+              v-else-if="selectedRule"
               ref="checkinFormRef"
               :rule-id="selectedRule.id"
               :trade-date="checkinTradeDate"

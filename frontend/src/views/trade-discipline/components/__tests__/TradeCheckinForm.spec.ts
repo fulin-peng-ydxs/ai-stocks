@@ -53,10 +53,7 @@ const PartialOperationStub = defineComponent({
   template: '<button type="button" aria-label="填写混合操作" @click="$emit(\'update:modelValue\', operations)">填写混合操作</button>',
   setup() {
     return {
-      operations: [
-        { ...operation, compliance_status: 'complied', display_order: 1 },
-        { ...operation, side: 'sell', action_rule_id: 'action-buy-1', compliance_status: 'breached', display_order: 2 },
-      ],
+      operations: [{ ...operation, compliance_status: 'complied', display_order: 1 }],
     }
   },
 })
@@ -100,7 +97,7 @@ describe('TradeCheckinForm', () => {
       operations: [],
     }))
     expect(wrapper.emitted('submitted')).toHaveLength(1)
-    expect(wrapper.text()).toContain('已提交 · r1')
+    expect(wrapper.findAll('button').some((button) => button.text() === '修正打卡')).toBe(true)
   })
 
   it('提交校验失败时自动展开对应操作卡', async () => {
@@ -136,6 +133,7 @@ describe('TradeCheckinForm', () => {
     await flushPromises()
     const amendButton = wrapper.findAll('button').find((button) => button.text().includes('修正打卡'))
     expect(amendButton).toBeTruthy()
+    expect(amendButton!.classes()).toContain('el-button--primary')
     await amendButton!.trigger('click')
     await wrapper.get('textarea').setValue('盘后复核')
     await wrapper.get('button.el-button--primary').trigger('click')
@@ -161,6 +159,8 @@ describe('TradeCheckinForm', () => {
     const submitButton = wrapper.findAll('button').find((button) => button.text() === '提交修正')!
     expect(submitButton.attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('当前内容与最新修订一致；修改后才可提交')
+    expect(submitButton.element.closest('.checkin-head__facts')).not.toBeNull()
+    expect(wrapper.find('.checkin-actions').exists()).toBe(false)
     await submitButton.trigger('click')
     expect(amendCheckin).not.toHaveBeenCalled()
 
@@ -229,7 +229,7 @@ describe('TradeCheckinForm', () => {
     }))
   })
 
-  it('提交“部分履约”时要求逐笔混合状态并复用整体未履约原因', async () => {
+  it('提交“部分履约”时允许单笔操作状态并复用整体未履约原因', async () => {
     getContext.mockResolvedValueOnce(emptyContext).mockResolvedValue({ ...emptyContext, checkin: saved })
     const wrapper = mountForm({
       TradeOperationEditor: PartialOperationStub,
@@ -241,17 +241,34 @@ describe('TradeCheckinForm', () => {
     expect(wrapper.findComponent({ name: 'ElCheckbox' }).props('disabled')).toBe(true)
     await wrapper.get('[aria-label="填写混合操作"]').trigger('click')
     await wrapper.get('[aria-label="选择原因"]').trigger('click')
-    await wrapper.findAll('textarea')[0].setValue('一笔已履约，一笔未履约')
+    await wrapper.findAll('textarea')[0].setValue('选股规则存在偏差，操作本身已履约')
     await wrapper.get('button.el-button--primary').trigger('click')
     await flushPromises()
     expect(submitCheckin).toHaveBeenCalledWith(expect.objectContaining({
       assessment: 'partial', no_operation: false, reason_code: 'impulsive',
-      violation_detail: '一笔已履约，一笔未履约',
-      operations: [
-        expect.objectContaining({ compliance_status: 'complied', display_order: 1 }),
-        expect.objectContaining({ compliance_status: 'breached', display_order: 2 }),
-      ],
+      violation_detail: '选股规则存在偏差，操作本身已履约',
+      operations: [expect.objectContaining({ compliance_status: 'complied', display_order: 1 })],
     }))
+  })
+
+  it('部分履约仍要求至少一条操作且不能选择今日无操作', async () => {
+    const wrapper = mountForm({ ViolationReasonCombobox: ReasonStub })
+    await flushPromises()
+    wrapper.findComponent({ name: 'ElSegmented' }).vm.$emit('update:modelValue', 'partial')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findComponent({ name: 'ElCheckbox' }).props('disabled')).toBe(true)
+    await wrapper.get('[aria-label="选择原因"]').trigger('click')
+    await wrapper.findAll('textarea')[0].setValue('选股规则存在偏差')
+    await wrapper.findAll('button').find((button) => button.text() === '提交打卡')!.trigger('click')
+    expect(submitCheckin).not.toHaveBeenCalled()
+  })
+
+  it('履约判断区域提供与操作事实对称的标题和说明', async () => {
+    const wrapper = mountForm()
+    await flushPromises()
+    const section = wrapper.get('.checkin-section')
+    expect(section.get('h4').text()).toBe('履约判断')
+    expect(section.text()).toContain('实际交易在下方单独记录')
   })
 
   it('未提交修改离开时只提供放弃或继续编辑两个结果', async () => {

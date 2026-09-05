@@ -3,6 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
@@ -628,7 +630,28 @@ onBeforeUnmount(() => {
       <div class="lh-action">
         <div class="page-head">
           <div>
-            <h2 class="app-page-title">连板天梯</h2>
+            <h2 class="app-page-title">
+              连板天梯
+              <HelpTip title="连板天梯说明" :width="440" test-id="limit-ladder-help-tip">
+                <HelpTipItem question="天梯如何分层">
+                  <ul>
+                    <li>只纳入所选交易日收盘仍封住涨停的股票，并按最高连板到首板排列。</li>
+                    <li>连续交易日中遇到未涨停、停牌或缺少有效行情，连板计数即中断。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="统计窗口如何理解">
+                  <ul>
+                    <li>10、20、31、60 日窗口只影响卡片的“X 日 N 板”、累计涨幅和层内排序，不改变当日连板层级。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="数据口径是什么">
+                  <ul>
+                    <li>筛选、摘要、热点和导出共享所选交易日的同一快照；热点使用当日走势最相关行业与概念。</li>
+                    <li>本页用于盘后复盘，不代表盘中实时涨停状态。</li>
+                  </ul>
+                </HelpTipItem>
+              </HelpTip>
+            </h2>
             <p class="page-subtitle">按交易日观察涨停梯队，筛选、热点与导出共享同一快照口径。</p>
           </div>
           <div class="page-head-actions">

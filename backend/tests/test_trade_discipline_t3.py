@@ -195,7 +195,8 @@ def test_four_assessment_operation_combinations(pg, market, assessment, no_opera
         assert result["reason_name_snapshot"] is None
 
 
-def test_partial_assessment_persists_mixed_operation_statuses(pg, market):
+@pytest.mark.parametrize("operation_status", ["complied", "breached"])
+def test_partial_assessment_accepts_single_operation_status(pg, market, operation_status):
     trade_date, _, _ = _seed_market(market)
     service = _service(pg, market)
     rule_id = _published_rule(service)
@@ -207,17 +208,20 @@ def test_partial_assessment_persists_mixed_operation_statuses(pg, market):
             "assessment": "partial",
             "no_operation": False,
             "reason_code": "unplanned_operation",
-            "violation_detail": "买入按计划执行，卖出没有按纪律完成",
-            "operations": _partial_operations(trade_date),
+            "violation_detail": "整体规则存在偏差，单笔操作单独记录履约状态",
+            "operations": [
+                dict(
+                    _operation(trade_date),
+                    compliance_status=operation_status,
+                    display_order=1,
+                )
+            ],
         },
     )
 
     assert result["assessment"] == "partial"
     assert result["reason_name_snapshot"] == "计划外操作"
-    assert [item["compliance_status"] for item in result["operations"]] == [
-        "complied",
-        "breached",
-    ]
+    assert [item["compliance_status"] for item in result["operations"]] == [operation_status]
     page = service.list_checkins(assessment="partial")
     assert page["total"] == 1
     assert page["list"][0]["id"] == result["checkin_id"]
@@ -227,10 +231,7 @@ def test_partial_assessment_persists_mixed_operation_statuses(pg, market):
     ("payload_patch", "message"),
     [
         ({"no_operation": True, "operations": []}, "部分履约必须填写实际操作"),
-        (
-            {"operations": [dict(_partial_operations(date(2099, 1, 1))[0])]},
-            "部分履约至少需要两笔操作",
-        ),
+        ({"operations": []}, "部分履约至少需要一条操作"),
         (
             {
                 "operations": [
@@ -240,18 +241,9 @@ def test_partial_assessment_persists_mixed_operation_statuses(pg, market):
             },
             "每笔操作都必须选择履约状态",
         ),
-        (
-            {
-                "operations": [
-                    dict(item, compliance_status="complied")
-                    for item in _partial_operations(date(2099, 1, 1))
-                ]
-            },
-            "必须同时包含已履约和未履约操作",
-        ),
     ],
 )
-def test_partial_assessment_rejects_incomplete_or_non_mixed_statuses(
+def test_partial_assessment_rejects_missing_operation_status(
     pg, market, payload_patch, message
 ):
     trade_date, _, _ = _seed_market(market)

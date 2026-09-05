@@ -14,6 +14,7 @@ import RuleSummaryCard from '@/components/trade-discipline/RuleSummaryCard.vue'
 import TradeDirectionGroupGrid, {
   type TradeDirectionGroup,
 } from '@/components/trade-discipline/TradeDirectionGroupGrid.vue'
+import TradeDisciplineSectionPanel from '@/components/trade-discipline/TradeDisciplineSectionPanel.vue'
 import {
   archiveTradeDisciplineRule,
   copyTradeDisciplineRule,
@@ -626,8 +627,12 @@ defineExpose({
           </div>
         </section>
 
-        <section class="detail-group">
-          <header><div><h4>买卖规则</h4><p>按方向分组，正式发布至少启用一条买入和一条卖出规则</p></div></header>
+        <TradeDisciplineSectionPanel
+          class="detail-group"
+          title="买卖规则"
+          description="按方向分组，正式发布至少启用一条买入和一条卖出规则"
+          data-testid="action-rules-section"
+        >
           <TradeDirectionGroupGrid :groups="actionGroups">
             <template #actions="{ group }">
               <el-button v-if="canEditDetails" v-permission="'trade-discipline:rule-manage'" :icon="Plus" size="small" @click="addActionRule(group.value)">添加</el-button>
@@ -694,7 +699,7 @@ defineExpose({
               </div>
             </template>
           </TradeDirectionGroupGrid>
-        </section>
+        </TradeDisciplineSectionPanel>
       </el-form>
 
       <footer v-if="canManage && editing" class="rule-editor__footer">

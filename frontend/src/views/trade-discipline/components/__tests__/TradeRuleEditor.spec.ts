@@ -91,6 +91,17 @@ describe('TradeRuleEditor', () => {
     vi.restoreAllMocks()
   })
 
+  it('用统一业务分区完整包裹买卖规则和两个方向组', async () => {
+    const wrapper = await mountEditor()
+    const section = wrapper.get('[data-testid="action-rules-section"]')
+    expect(section.classes()).toContain('trade-discipline-section-panel')
+    expect(section.text()).toContain('买卖规则')
+    const body = section.get('[data-testid="trade-discipline-section-body"]')
+    expect(body.find('[data-testid="buy-rule-group"]').exists()).toBe(true)
+    expect(body.find('[data-testid="sell-rule-group"]').exists()).toBe(true)
+    expect(body.text()).not.toContain('买卖规则')
+  })
+
   it('保存时保留换行、启用态和调整后的展示顺序', async () => {
     const wrapper = await mountEditor()
     await wrapper.get('[aria-label="下移选股规则"]').trigger('click')

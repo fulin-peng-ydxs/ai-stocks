@@ -161,32 +161,7 @@ watch(
         <div class="text-snapshot"><strong>复盘说明</strong><p>{{ detail.review_note || '—' }}</p></div>
       </section>
 
-      <section v-if="ruleVersion" class="detail-card">
-        <h4>规则版本快照</h4>
-        <dl class="fact-grid">
-          <div><dt>规则名称</dt><dd>{{ ruleVersion.name }}</dd></div>
-          <div><dt>规则资金</dt><dd>¥ {{ formatMoney(ruleVersion.capital) }}</dd></div>
-        </dl>
-        <div class="rule-grid">
-          <div>
-            <strong>选股规则</strong>
-            <article v-for="rule in ruleVersion.stock_rules" :key="rule.detail_id || rule.display_order" class="rule-snapshot">
-              <span>{{ rule.name || '未命名规则' }} · {{ rule.enabled ? '启用' : '停用' }}</span>
-              <small>资金上限 ¥ {{ formatMoney(rule.max_capital) }}</small>
-              <p>{{ rule.content || '—' }}</p>
-            </article>
-          </div>
-          <div>
-            <strong>买卖规则</strong>
-            <article v-for="rule in ruleVersion.action_rules" :key="rule.detail_id || rule.display_order" class="rule-snapshot">
-              <span>{{ rule.name || '未命名规则' }} · {{ rule.action_type === 'buy' ? '买入' : '卖出' }} · {{ rule.enabled ? '启用' : '停用' }}</span>
-              <p>{{ rule.content || '—' }}</p>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      <section class="detail-card operation-section">
+      <section class="detail-card operation-section" data-testid="revision-operation-snapshot">
         <h4>操作快照</h4>
         <p v-if="detail.no_operation" class="empty-copy">该修订记录为“今日无操作”。</p>
         <AppDataTable
@@ -219,6 +194,31 @@ watch(
           </AppTableColumn>
           <AppTableColumn prop="note" label="说明" role="description"><template #default="{ row }">{{ row.note || '—' }}</template></AppTableColumn>
         </AppDataTable>
+      </section>
+
+      <section v-if="ruleVersion" class="detail-card" data-testid="revision-rule-snapshot">
+        <h4>规则版本快照</h4>
+        <dl class="fact-grid">
+          <div><dt>规则名称</dt><dd>{{ ruleVersion.name }}</dd></div>
+          <div><dt>规则资金</dt><dd>¥ {{ formatMoney(ruleVersion.capital) }}</dd></div>
+        </dl>
+        <div class="rule-grid">
+          <div>
+            <strong>选股规则</strong>
+            <article v-for="rule in ruleVersion.stock_rules" :key="rule.detail_id || rule.display_order" class="rule-snapshot">
+              <span>{{ rule.name || '未命名规则' }} · {{ rule.enabled ? '启用' : '停用' }}</span>
+              <small>资金上限 ¥ {{ formatMoney(rule.max_capital) }}</small>
+              <p>{{ rule.content || '—' }}</p>
+            </article>
+          </div>
+          <div>
+            <strong>买卖规则</strong>
+            <article v-for="rule in ruleVersion.action_rules" :key="rule.detail_id || rule.display_order" class="rule-snapshot">
+              <span>{{ rule.name || '未命名规则' }} · {{ rule.action_type === 'buy' ? '买入' : '卖出' }} · {{ rule.enabled ? '启用' : '停用' }}</span>
+              <p>{{ rule.content || '—' }}</p>
+            </article>
+          </div>
+        </div>
       </section>
     </div>
 

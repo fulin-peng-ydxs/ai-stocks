@@ -36,7 +36,7 @@ vi.mock('@/composables/useTradeDates', async () => {
   const { ref } = await import('vue')
   return {
     useTradeDates: () => ({
-      tradeDateSet: ref(new Set(['2026-08-22'])),
+      tradeDateSet: ref(new Set(['2026-08-15', '2026-08-22'])),
       dataMax: ref('2026-08-22'),
       status: tradeDateStatus,
       ensureLoaded: ensureTradeDates,
@@ -144,10 +144,82 @@ describe('交易纪律 T5 工作台壳', () => {
     expect(wrapper.text()).toContain('今日打卡')
     expect(wrapper.text()).toContain('规则管理')
     expect(wrapper.text()).toContain('历史记录')
-    expect(wrapper.text()).toContain('创建第一套规则')
+    expect(wrapper.text()).toContain('前往规则管理')
     expect(wrapper.text()).not.toContain('最新交易日')
     expect(wrapper.text()).not.toContain('已完成')
     expect(wrapper.text()).not.toContain('待打卡')
+  })
+
+  it('历史交易日没有生效规则时提供返回最新交易日但不提供创建入口', async () => {
+    const wrapper = await mountPage(
+      [
+        'trade-discipline:view',
+        'trade-discipline:rule-manage',
+        'trade-discipline:checkin-view',
+      ],
+      '/trade-discipline?trade_date=2026-08-15',
+    )
+
+    expect(getSummary).toHaveBeenCalledWith('2026-08-15')
+    expect(wrapper.text()).toContain('该交易日暂无生效规则')
+    expect(wrapper.text()).toContain('这是历史日期的真实空状态')
+    const returnButton = wrapper.findAll('button')
+      .find((button) => button.text() === '返回最新交易日')
+    expect(returnButton).toBeTruthy()
+    expect(wrapper.findAll('button').some((button) => button.text() === '前往规则管理'))
+      .toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === '新建规则'))
+      .toBe(false)
+
+    await returnButton!.trigger('click')
+    await flushPromises()
+    expect(getSummary).toHaveBeenLastCalledWith('2026-08-22')
+    expect(wrapper.findAll('button').some((button) => button.text() === '返回最新交易日'))
+      .toBe(false)
+  })
+
+  it('切换交易日时保持工作台结构并让左右组件独立加载', async () => {
+    const rule = ruleState()
+    listRules.mockResolvedValue([rule])
+    getSummary.mockResolvedValueOnce({
+      trade_date: '2026-08-22', total: 1, completed: 0, pending: 1,
+      rules: [{
+        rule_id: rule.id, rule_name: rule.name, version_no: 1,
+        effective_from_trade_date: '2026-08-22', checkin_id: null,
+        current_revision_no: null, status: null, assessment: null, no_operation: null,
+      }],
+    })
+    let resolveSummary: ((value: unknown) => void) | undefined
+    getSummary.mockReturnValueOnce(new Promise((resolve) => { resolveSummary = resolve }))
+    const CheckinStub = defineComponent({
+      name: 'TradeCheckinForm', emits: ['request-date-change'],
+      setup(_props, { expose }) {
+        expose({
+          isDirty: () => false,
+          requestLeave: async () => true,
+        })
+      },
+      template: '<button data-testid="change-checkin-date" @click="$emit(\'request-date-change\', \'2026-08-15\')">切换日期</button>',
+    })
+    const wrapper = await mountPage(
+      ['trade-discipline:view', 'trade-discipline:checkin-view'],
+      '/trade-discipline',
+      { TradeCheckinForm: CheckinStub },
+    )
+
+    await wrapper.get('[data-testid="change-checkin-date"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.master-detail-shell').exists()).toBe(true)
+    expect(wrapper.find('.rule-master').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="trade-discipline-tabs"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('正在解析当日履约状态…')
+    expect(wrapper.text()).not.toContain('正在加载交易纪律…')
+
+    resolveSummary?.({
+      trade_date: '2026-08-15', total: 0, completed: 0, pending: 0, rules: [],
+    })
+    await flushPromises()
   })
 
   it('在标题帮助中解释草稿、待生效、今日日期和历史版本口径', async () => {

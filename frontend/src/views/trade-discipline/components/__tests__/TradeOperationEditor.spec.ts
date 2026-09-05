@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import TradeOperationEditor from '@/views/trade-discipline/components/TradeOperationEditor.vue'
@@ -15,6 +15,36 @@ const version: RuleVersionDetail = {
 }
 
 describe('TradeOperationEditor', () => {
+  it('用统一业务分区完整包裹操作事实和买卖方向组', () => {
+    const wrapper = mount(TradeOperationEditor, {
+      props: { modelValue: [], version, tradeDate: '2026-08-22' },
+      global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } },
+    })
+    const section = wrapper.get('[data-testid="checkin-operation-section"]')
+    expect(section.classes()).toContain('trade-discipline-section-panel')
+    expect(section.text()).toContain('操作事实')
+    const body = section.get('[data-testid="trade-discipline-section-body"]')
+    expect(body.find('[data-testid="buy-operation-group"]').exists()).toBe(true)
+    expect(body.find('[data-testid="sell-operation-group"]').exists()).toBe(true)
+    expect(body.text()).not.toContain('操作事实')
+  })
+
+  it('新增操作默认使用履约交易日和当前时分秒', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 23, 9, 45, 6))
+    try {
+      const wrapper = mount(TradeOperationEditor, {
+        props: { modelValue: [], version, tradeDate: '2026-08-22' },
+        global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } },
+      })
+      await wrapper.get('button[aria-label="添加买入操作"]').trigger('click')
+      const created = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as any[]
+      expect(created[0].operated_at).toBe('2026-08-22T09:45:06')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('候选唯一时自动关联规则，方向由新增分组确定', async () => {
     const wrapper = mount(TradeOperationEditor, {
       props: { modelValue: [], version, tradeDate: '2026-08-22' },
@@ -30,6 +60,9 @@ describe('TradeOperationEditor', () => {
     expect(wrapper.findComponent({ name: 'StockOptionSelect' }).props('tradeDate')).toBe('2026-08-22')
     expect(wrapper.findComponent({ name: 'ElSegmented' }).exists()).toBe(false)
     expect(wrapper.get('[data-testid="operation-card-editor"]').text()).toContain('买入规则')
+    expect(wrapper.get('[data-testid="operation-context-section"]').text()).toContain('操作依据')
+    expect(wrapper.get('[data-testid="operation-trade-section"]').text()).toContain('成交明细')
+    expect(wrapper.get('[data-testid="operation-note-section"]').text()).toContain('操作说明')
   })
 
   it('同方向存在多个候选时不擅自选择', async () => {

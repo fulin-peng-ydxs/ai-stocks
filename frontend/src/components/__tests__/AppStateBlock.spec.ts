@@ -81,6 +81,16 @@ describe('AppStateBlock', () => {
     expect(wrapper.find('.app-state-block--compact').exists()).toBe(true)
   })
 
+  it('empty 同时传标题和说明时完整展示两层信息', () => {
+    const wrapper = mount(AppStateBlock, {
+      props: { state: 'empty', title: '暂无生效规则', description: '该日期没有可补录规则' },
+      global: { stubs },
+    })
+
+    expect(wrapper.get('.app-state-block__empty-copy').text()).toContain('暂无生效规则')
+    expect(wrapper.get('.app-state-block__empty-copy').text()).toContain('该日期没有可补录规则')
+  })
+
   it('inline empty 使用紧凑内联空态', () => {
     const wrapper = mount(AppStateBlock, {
       props: { state: 'empty', size: 'inline', description: '无匹配结果' },

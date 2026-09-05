@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
+import TradeDisciplineSectionPanel from '@/components/trade-discipline/TradeDisciplineSectionPanel.vue'
 import { getErrorMessage } from '@/utils/error'
 import { decimalToMinorUnits, multiplyToMinorUnits } from '@/utils/fixedDecimal'
 import {
@@ -55,9 +56,6 @@ const form = reactive<CheckinFormState>({
 
 const existing = computed(() => context.value?.checkin ?? null)
 const readonly = computed(() => !props.canSubmit || (!!existing.value && !editing.value))
-const statusText = computed(() => existing.value
-  ? `${existing.value.checkin_status === 'amended' ? '已修正' : '已提交'} · r${existing.value.current_revision_no}`
-  : '尚未提交')
 const amendmentUnchanged = computed(() => !!existing.value && editing.value && !isDirty())
 
 function reasonFromContext(value: CheckinContext['checkin']): ReasonValue | null {
@@ -128,11 +126,10 @@ async function toggleNoOperation(value: boolean): Promise<void> {
 }
 
 function validate(): string | null {
-  if (form.assessment === 'partial' && form.operations.length < 2) return '部分履约至少需要两笔操作'
+  if (form.assessment === 'partial' && !form.operations.length) return '部分履约至少需要一条操作'
   if (!form.no_operation && !form.operations.length) return '请添加至少一条操作，或选择“今日无操作”'
   if (hasCheckinViolation(form.assessment) && !form.reason) return '部分履约或未履约时必须选择或输入一个原因'
   if (hasCheckinViolation(form.assessment) && !form.violation_detail.trim()) return '部分履约或未履约时必须填写详细说明'
-  const operationStatuses = form.operations.map((operation) => operation.compliance_status)
   for (const [index, operation] of form.operations.entries()) {
     const prefix = `操作 ${index + 1}`
     const operationError = (message: string) => {
@@ -155,10 +152,6 @@ function validate(): string | null {
       if (units === null) return operationError('金额与数量格式不正确')
       if (units < 0n) return operationError('金额与数量不能为负数')
     }
-  }
-  if (form.assessment === 'partial') {
-    if (!operationStatuses.includes('complied')) return '部分履约至少需要一笔已履约操作'
-    if (!operationStatuses.includes('breached')) return '部分履约至少需要一笔未履约操作'
   }
   return null
 }
@@ -306,13 +299,45 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
         </div>
         <div class="checkin-head__facts">
           <TradeDatePicker :model-value="tradeDate" @update:model-value="requestDateChange" />
-          <el-tag :type="existing ? 'success' : 'info'" effect="plain">{{ statusText }}</el-tag>
+          <el-button
+            v-if="existing && !editing && canSubmit"
+            v-permission="'trade-discipline:checkin-submit'"
+            type="primary"
+            @click="enterEditing"
+          >修正打卡</el-button>
+          <div v-else-if="existing && editing && canSubmit" class="checkin-head__commands">
+            <el-button
+              v-permission="'trade-discipline:checkin-submit'"
+              :disabled="submitting"
+              @click="cancelAmend"
+            >取消修正</el-button>
+            <el-button
+              v-permission="'trade-discipline:checkin-submit'"
+              type="primary"
+              :loading="submitting"
+              :disabled="amendmentUnchanged"
+              :aria-describedby="amendmentUnchanged ? 'checkin-amend-unchanged-hint' : undefined"
+              @click="submit"
+            >提交修正</el-button>
+          </div>
         </div>
       </div>
 
+      <div
+        v-if="amendmentUnchanged"
+        id="checkin-amend-unchanged-hint"
+        class="checkin-amendment-hint"
+        role="status"
+      >当前内容与最新修订一致；修改后才可提交</div>
+
       <div v-if="!canSubmit" class="permission-note">当前账号仅可查看，不能提交或修正打卡。</div>
       <el-form label-position="top" class="checkin-form">
-        <section class="checkin-section">
+        <TradeDisciplineSectionPanel
+          class="checkin-section"
+          title="履约判断"
+          description="记录规则整体执行结果；部分履约或未履约需说明偏差，实际交易在下方单独记录。"
+          data-testid="checkin-assessment-section"
+        >
           <div class="assessment-row">
             <el-form-item label="履约自评" required>
               <el-segmented
@@ -335,7 +360,7 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
           <el-form-item label="复盘说明">
             <el-input v-model="form.review_note" data-testid="checkin-review-note" type="textarea" :rows="2" maxlength="1000" show-word-limit :disabled="readonly" />
           </el-form-item>
-        </section>
+        </TradeDisciplineSectionPanel>
 
         <TradeOperationEditor
           v-if="!form.no_operation"
@@ -347,34 +372,13 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
           :disabled="readonly"
         />
 
-        <div class="checkin-actions">
+        <div v-if="canSubmit && !existing" class="checkin-actions">
           <el-button
-            v-if="existing && !editing && canSubmit"
             v-permission="'trade-discipline:checkin-submit'"
-            @click="enterEditing"
-          >修正打卡</el-button>
-          <template v-else-if="canSubmit">
-            <span
-              v-if="amendmentUnchanged"
-              id="checkin-amend-unchanged-hint"
-              class="checkin-actions__hint"
-              role="status"
-            >当前内容与最新修订一致；修改后才可提交</span>
-            <el-button
-              v-if="existing"
-              v-permission="'trade-discipline:checkin-submit'"
-              :disabled="submitting"
-              @click="cancelAmend"
-            >取消修正</el-button>
-            <el-button
-              v-permission="'trade-discipline:checkin-submit'"
-              type="primary"
-              :loading="submitting"
-              :disabled="amendmentUnchanged"
-              :aria-describedby="amendmentUnchanged ? 'checkin-amend-unchanged-hint' : undefined"
-              @click="submit"
-            >{{ existing ? '提交修正' : '提交打卡' }}</el-button>
-          </template>
+            type="primary"
+            :loading="submitting"
+            @click="submit"
+          >提交打卡</el-button>
         </div>
       </el-form>
     </template>
@@ -383,11 +387,10 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
 
 <style scoped>
 .checkin-detail { display: block; }
-.checkin-head, .checkin-head__facts, .assessment-row, .checkin-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3); }
+.checkin-head, .checkin-head__facts, .checkin-head__commands, .assessment-row, .checkin-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3); }
 .checkin-head { align-items: flex-start; padding-bottom: var(--app-space-3); border-bottom: 1px solid var(--el-border-color-lighter); }
 .checkin-head .app-section-title { margin: var(--app-space-1) 0 0; }
 .checkin-form { margin-top: var(--app-space-4); display: grid; gap: var(--app-space-4); }
-.checkin-section { padding: var(--app-space-4); border: 1px solid var(--el-border-color-lighter); border-radius: var(--layout-card-radius); }
 .assessment-row { align-items: flex-start; }
 .breach-grid { display: grid; grid-template-columns: minmax(220px, 0.7fr) minmax(320px, 1.3fr); gap: var(--app-space-4); }
 .permission-note {
@@ -397,10 +400,17 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
   background: transparent;
   color: var(--el-text-color-secondary);
 }
+.checkin-amendment-hint {
+  margin-top: var(--app-space-2);
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+  text-align: right;
+}
 .checkin-actions { justify-content: flex-end; position: sticky; bottom: 0; padding: var(--app-space-3) 0 0; background: var(--el-bg-color); }
-.checkin-actions__hint { margin-right: auto; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 @media (max-width: 760px) {
   .checkin-head, .checkin-head__facts, .assessment-row { align-items: stretch; flex-direction: column; }
+  .checkin-head__commands { justify-content: flex-end; }
+  .checkin-amendment-hint { text-align: left; }
   .breach-grid { grid-template-columns: 1fr; }
 }
 </style>

@@ -9,14 +9,17 @@ import {
   checkinAssessmentTagType,
 } from '@/utils/tradeDisciplineAssessment'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   rules: TradeDisciplineRule[]
   selectedId: string
   loading?: boolean
   error?: boolean
   canManage: boolean
+  showCreate?: boolean
   checkinStates?: CheckinSummaryRule[] | null
-}>()
+}>(), {
+  showCreate: true,
+})
 
 const emit = defineEmits<{
   select: [ruleId: string]
@@ -75,19 +78,21 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
 <template>
   <aside class="rule-master" aria-label="规则管理列表">
     <div class="rule-master__tools">
-      <AppSearchInput v-model="query" size="small" placeholder="搜索规则" />
       <el-button
-        v-if="canManage"
+        v-if="canManage && showCreate"
         v-permission="'trade-discipline:rule-manage'"
         type="primary"
+        plain
         :icon="Plus"
         size="small"
+        class="rule-master__create"
         aria-label="新建规则"
         :disabled="loading || error"
         @click="emit('create')"
       >
-        新建
+        新建规则
       </el-button>
+      <AppSearchInput v-model="query" size="small" placeholder="搜索规则" />
     </div>
 
     <AppStateBlock v-if="loading && !rules.length" state="loading" size="tiny" />
@@ -148,7 +153,8 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
   flex-direction: column;
   gap: var(--app-space-2);
 }
-.rule-master__tools { display: flex; gap: var(--app-space-2); flex: none; }
+.rule-master__tools { display: grid; gap: var(--app-space-2); flex: none; }
+.rule-master__create { width: 100%; }
 .rule-master__list { min-height: 0; overflow: auto; display: grid; align-content: start; gap: var(--app-space-1); }
 .rule-master__item {
   min-height: 70px;

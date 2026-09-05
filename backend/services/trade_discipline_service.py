@@ -809,8 +809,8 @@ class TradeDisciplineService:
             raise ValidationError("操作记录必须为数组")
         if assessment == "partial" and no_operation:
             raise ValidationError("部分履约必须填写实际操作")
-        if assessment == "partial" and len(raw_operations) < 2:
-            raise ValidationError("部分履约至少需要两笔操作")
+        if assessment == "partial" and not raw_operations:
+            raise ValidationError("部分履约至少需要一条操作")
         if no_operation and raw_operations:
             raise ValidationError("今日无操作与操作记录互斥")
         if not no_operation and not raw_operations:
@@ -842,8 +842,6 @@ class TradeDisciplineService:
         if assessment == "partial":
             if any(status not in {"complied", "breached"} for status in operation_statuses):
                 raise ValidationError("部分履约时每笔操作都必须选择履约状态")
-            if set(operation_statuses) != {"complied", "breached"}:
-                raise ValidationError("部分履约必须同时包含已履约和未履约操作")
         elif any(status is not None for status in operation_statuses):
             raise ValidationError("仅部分履约可以填写单笔操作履约状态")
         return {
