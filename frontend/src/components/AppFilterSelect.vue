@@ -61,6 +61,13 @@ const selected = computed<string[] | string>({
     emit('update:modelValue', props.multiple ? toMulti(value) : String(Array.isArray(value) ? value[0] ?? '' : value ?? ''))
   },
 })
+const hasSelection = computed(() => (
+  props.multiple
+    ? toMulti(props.modelValue).length > 0
+    : String(
+      Array.isArray(props.modelValue) ? props.modelValue[0] ?? '' : props.modelValue ?? '',
+    ).trim() !== ''
+))
 
 function onChange(value: string[] | string) {
   emit('change', props.multiple ? toMulti(value) : String(Array.isArray(value) ? value[0] ?? '' : value ?? ''))
@@ -140,7 +147,10 @@ watch(
   <div
     ref="rootRef"
     class="app-filter-select"
-    :class="{ 'app-filter-select--multiple': multiple }"
+    :class="{
+      'app-filter-select--multiple': multiple,
+      'app-filter-select--has-selection': multiple && hasSelection,
+    }"
   >
     <el-select
       v-model="selected"
@@ -154,7 +164,7 @@ watch(
       :fit-input-width="true"
       :disabled="disabled"
       :placeholder="placeholder"
-      :aria-label="ariaLabel"
+      :aria-label="ariaLabel || placeholder"
       @change="onChange"
     >
       <el-option
@@ -182,13 +192,14 @@ watch(
 .app-filter-select__control :deep(.el-select__wrapper) {
   height: var(--app-control-height-md);
 }
-.app-filter-select--multiple .app-filter-select__control :deep(.el-select__wrapper) {
+.app-filter-select--multiple.app-filter-select--has-selection .app-filter-select__control :deep(.el-select__wrapper) {
   overflow: hidden;
 }
 .app-filter-select__control :deep(.el-select__selection) {
   min-width: 0;
 }
-.app-filter-select--multiple .app-filter-select__control :deep(.el-select__selection) {
+/* Element Plus 的空值可搜索多选会让 selection 高度归零；此时裁剪会隐藏负层级占位文案。 */
+.app-filter-select--multiple.app-filter-select--has-selection .app-filter-select__control :deep(.el-select__selection) {
   overflow: hidden;
 }
 </style>

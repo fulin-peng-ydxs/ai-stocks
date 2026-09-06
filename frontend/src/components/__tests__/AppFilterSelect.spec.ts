@@ -14,6 +14,8 @@ const ElSelectStub = defineComponent({
     collapseTags: { type: Boolean, default: false },
     collapseTagsTooltip: { type: Boolean, default: false },
     maxCollapseTags: { type: Number, default: 1 },
+    placeholder: { type: String, default: '' },
+    ariaLabel: { type: String, default: '' },
   },
   emits: ['update:modelValue', 'change'],
   setup(props, { slots }) {
@@ -25,6 +27,8 @@ const ElSelectStub = defineComponent({
       'data-collapse-tags': String(props.collapseTags),
       'data-collapse-tags-tooltip': String(props.collapseTagsTooltip),
       'data-max-collapse-tags': String(props.maxCollapseTags),
+      'data-placeholder': props.placeholder,
+      'data-aria-label': props.ariaLabel,
     }, [
       h('div', { class: 'el-select__wrapper' }, [
         h('div', { class: 'el-select__selection' }, slots.default?.()),
@@ -139,10 +143,34 @@ describe('AppFilterSelect', () => {
     expect(wrapper.get('.app-filter-select').classes()).not.toContain('app-filter-select--multiple')
   })
 
-  it('多选场景才启用裁剪容器，避免单选回显落入负层级后被裁掉', async () => {
+  it('多选有选中项时才启用裁剪容器', async () => {
     const wrapper = mountSelect(['a', 'b'])
     await flushPromises()
 
-    expect(wrapper.get('.app-filter-select').classes()).toContain('app-filter-select--multiple')
+    const root = wrapper.get('.app-filter-select')
+    expect(root.classes()).toContain('app-filter-select--multiple')
+    expect(root.classes()).toContain('app-filter-select--has-selection')
+  })
+
+  it('空值多选不启用裁剪并用占位文案提供可访问名称', async () => {
+    const wrapper = mountSelect([], { placeholder: '事件类型' })
+    await flushPromises()
+
+    const root = wrapper.get('.app-filter-select')
+    const select = wrapper.get('.el-select')
+    expect(root.classes()).toContain('app-filter-select--multiple')
+    expect(root.classes()).not.toContain('app-filter-select--has-selection')
+    expect(select.attributes('data-placeholder')).toBe('事件类型')
+    expect(select.attributes('data-aria-label')).toBe('事件类型')
+  })
+
+  it('显式可访问名称优先于占位文案', async () => {
+    const wrapper = mountSelect([], {
+      placeholder: '事件类型',
+      ariaLabel: '按事件类型筛选',
+    })
+    await flushPromises()
+
+    expect(wrapper.get('.el-select').attributes('data-aria-label')).toBe('按事件类型筛选')
   })
 })

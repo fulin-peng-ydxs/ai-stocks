@@ -257,7 +257,7 @@ Key Characteristics：
 | `StockCompareChart` | `frontend/src/components/StockCompareChart.vue` | 多股票前复权序列与可选市场指数的涨跌幅对比折线（对比指数统一共同基期，纯股票间对比各序列从自身首值起算），统一交易日、主题、图例、tooltip、超额收益和缩放 | 无直接系统组件种类；由 `StockAnalysisPanel` 承载 | 只表达股票相对走势，不扩展板块资金流、成员涨跌、领涨股等截面指标；与 `SectorCompareChart` 共同消费 `marketCompareChart.ts` 的序列色、金融涨跌色、tooltip 转义及折线坐标轴/缩放 option 骨架；统一使用显式市场日历；对比指数统一从首个共同有效日期起算并据此计算超额，个别序列上市较晚只缩短基准期、不否决整体，仅连一个共同有效日期都没有时才显示不可比较空态；纯股票间对比时各序列从自身首个有效值起算，上市前留空、停牌期前向延续为 0%，不因个别序列缺起点而否决整体；当前观察线可强化，但所有序列仍须可辨识且不依赖单一颜色 |
 | `SectorCompareChart` | `frontend/src/components/SectorCompareChart.vue` | 多板块连续指数的涨跌幅对比折线、市场指数超额和资金流/成员涨跌截面柱图 | 无直接系统组件种类；由板块行情分析区承载 | 折线与股票对比复用 `marketCompare` 的 N+1、统一交易日、停牌补齐和对比基期算法，并共同消费 `marketCompareChart.ts` 的折线 option 骨架；板块资金流和成员涨跌柱图保留领域私有配置，不并入通用折线组件；资金流、当日涨跌和成员涨跌缺失值保持空值，不得代填 0；页面偏好只消费 `sectors` 页面键，禁止与 `stocks` / `board` 串用默认指标或基准配置 |
 | `AppPagination` | `frontend/src/components/AppPagination.vue` | 列表页统一分页 | 由 `data-table`/`wide-table` 的 `pageSize` 配置间接驱动 | 服务端分页页脚优先复用 |
-| `AppFilterSelect` | `frontend/src/components/AppFilterSelect.vue` | 列表页筛选下拉 | 无直接系统组件种类 | 默认多选、可搜索、可清空；业务只允许单选时必须传 `multiple=false`；选择区固定单行，默认最多展示 3 个选中标签并在宽度不足时提前折叠，消费页可按已知小集合下调数量；筛选下拉优先复用 |
+| `AppFilterSelect` | `frontend/src/components/AppFilterSelect.vue` | 列表页筛选下拉 | 无直接系统组件种类 | 默认多选、可搜索、可清空；业务只允许单选时必须传 `multiple=false`；选择区固定单行，默认最多展示 3 个选中标签并在宽度不足时提前折叠，消费页可按已知小集合下调数量；空值未聚焦时必须直接显示占位文案，只有实际存在选中项时才能启用标签裁剪；未显式提供可访问名称时统一继承占位文案；筛选下拉优先复用 |
 | `AppSearchInput` | `frontend/src/components/AppSearchInput.vue` | 列表页关键字搜索输入，统一"输入即防抖查 + 回车/清空立即查" | 无直接系统组件种类 | 关键字输入防抖（默认 300ms，可传 `debounceMs`）后 `@search`，回车/清空立即 `@search`；消费页绑定 `v-model` + `@search`（`@search` = 重置第 1 页 + 加载）。查询触发、重置筛选和手动刷新的通用行为以「按钮与输入 › 查询、重置与刷新」为准。查询防抖编排统一走 `frontend/src/composables/useDebouncedQuery.ts`；关键字字段不得再用裸 `<el-input>` 手写防抖 |
 | `AppDatePicker` / `TradeDatePicker` | `frontend/src/components/AppDatePicker.vue`、`frontend/src/components/TradeDatePicker.vue` | 通用日期浮层入口与交易日选择器 | 无直接系统组件种类 | 页面和业务组件的日期、日期时间及范围选择必须经过 `AppDatePicker`，浮层默认在触发器下方，仅在下方左右对齐间回退；有明确交互理由时才允许覆盖到其他方位。交易日输入继续统一复用基于它封装的 `TradeDatePicker`，不得退回普通日期选择后自行补交易日校验。单日查询类页面若语义是“默认最新、允许回看”，统一使用 `defaultLatest` 显示数据最新交易日；训练区间、回测区间和数据任务边界等显式范围不得擅自默认 |
 | `KlineRangeSelect` / `KlineSettingSection` | `frontend/src/components/KlineRangeSelect.vue`、`frontend/src/components/KlineSettingSection.vue` | K线范围快捷选择与共享设置分区 | 无系统组件种类；消费全局 K线偏好 | 个股详情、盘感训练等 K线页面统一复用，不复制范围选项或偏好写入逻辑 |
@@ -561,7 +561,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 所有滚动祖先保持 `min-height: 0`。
 - 页面和主要组件必须声明 `ready / loading / empty / error` 四态处理；空态、错误态和加载态不得用彼此替代。
 - 列表页分页/排序走服务端；筛选变更自动触发；多选跨分页/搜索累积。
-- 列表页筛选下拉优先复用 `AppFilterSelect`；默认多选、可搜索、可清空，业务只允许单选时必须传 `multiple=false`；选择区必须保持单行，默认最多展示 3 个选中标签并在宽度不足时提前折叠，选择变更即向页面发出筛选事件，页面负责触发服务端查询。
+- 列表页筛选下拉优先复用 `AppFilterSelect`；默认多选、可搜索、可清空，业务只允许单选时必须传 `multiple=false`；选择区必须保持单行，默认最多展示 3 个选中标签并在宽度不足时提前折叠；标签裁剪只在实际存在选中项时启用，空值未聚焦时必须显示占位文案；未显式提供可访问名称时继承占位文案；选择变更即向页面发出筛选事件，页面负责触发服务端查询。
 - 普通命令使用 `el-button`，纯图标操作使用 `AppIconButton`；同一操作组只保留一个主按钮，并保持尺寸、图标和状态反馈一致。
 - 页面主体字体、字号、行高、字重和间距必须优先消费 `global.css` 的 `--app-font-*`、`--app-line-height-*`、`--app-space-*` token 或 `.app-*` 语义类；新增 px 值必须属于文档允许的局部特例。
 - 说明性/描述性文字只要不是极短标签或必要操作指引/实时状态说明，按内容复杂度收进 `HelpHint` / `HelpTip`：单块纯文本用 tooltip，需要标题、分段、列表、示例或多要点排版时用 popover。
