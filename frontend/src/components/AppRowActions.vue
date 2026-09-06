@@ -32,12 +32,8 @@ const auth = getActivePinia() ? useAuthStore() : null
 const actionColumnWidth = inject(ROW_ACTION_COLUMN_WIDTH_CONTEXT, null)
 const actionColumnWidthSource = Symbol('row-action-width')
 type ButtonRef = HTMLElement | { $el?: HTMLElement } | null
-const moreButton = ref<ButtonRef>(null)
-const menuEl = ref<HTMLElement | null>(null)
+const morePopover = ref<{ hide?: () => void } | null>(null)
 const menuOpen = ref(false)
-const menuStyle = ref<Record<string, string>>({})
-let listening = false
-let positionFrame: number | null = null
 
 // ── 宽度自适应折叠 ──
 const rootEl = ref<HTMLElement | null>(null)
@@ -192,98 +188,9 @@ function runAction(action: AppRowAction, event?: MouseEvent): void {
   action.onClick?.(event)
 }
 
-function getAnchorEl(): HTMLElement | null {
-  const raw = moreButton.value
-  if (!raw) return null
-  return raw instanceof HTMLElement ? raw : raw.$el ?? null
-}
-
-function positionMenu(): void {
-  const anchor = getAnchorEl()
-  if (!anchor) return
-  const rect = anchor.getBoundingClientRect()
-  const width = Math.max(128, rect.width + 44)
-  const viewportGap = 8
-  const left = Math.min(
-    window.innerWidth - width - viewportGap,
-    Math.max(viewportGap, rect.right - width),
-  )
-  const belowTop = rect.bottom + 4
-  const belowMaxHeight = window.innerHeight - belowTop - viewportGap
-  const top = belowMaxHeight >= 96 ? belowTop : Math.max(viewportGap, rect.top - 4 - 180)
-  const maxHeight = belowMaxHeight >= 96 ? belowMaxHeight : Math.max(96, rect.top - viewportGap)
-  menuStyle.value = {
-    top: `${Math.round(top)}px`,
-    left: `${Math.round(left)}px`,
-    minWidth: `${Math.round(width)}px`,
-    maxHeight: `${Math.round(maxHeight)}px`,
-  }
-}
-
-function requestMenuPosition(): void {
-  if (positionFrame !== null) return
-  positionFrame = window.requestAnimationFrame(() => {
-    positionFrame = null
-    if (!menuOpen.value) return
-    if (!getAnchorEl()) {
-      closeMenu()
-      return
-    }
-    positionMenu()
-  })
-}
-
-function addListeners(): void {
-  if (listening) return
-  document.addEventListener('click', onDocumentClick, true)
-  document.addEventListener('keydown', onDocumentKeydown, true)
-  window.addEventListener('resize', requestMenuPosition, true)
-  window.addEventListener('scroll', requestMenuPosition, true)
-  listening = true
-}
-
-function removeListeners(): void {
-  if (!listening) return
-  document.removeEventListener('click', onDocumentClick, true)
-  document.removeEventListener('keydown', onDocumentKeydown, true)
-  window.removeEventListener('resize', requestMenuPosition, true)
-  window.removeEventListener('scroll', requestMenuPosition, true)
-  if (positionFrame !== null) {
-    window.cancelAnimationFrame(positionFrame)
-    positionFrame = null
-  }
-  listening = false
-}
-
-function openMenu(): void {
-  if (!moreActions.value.length) return
-  positionMenu()
-  menuOpen.value = true
-  addListeners()
-  void nextTick(requestMenuPosition)
-}
-
 function closeMenu(): void {
+  morePopover.value?.hide?.()
   menuOpen.value = false
-  removeListeners()
-}
-
-function toggleMenu(event: MouseEvent): void {
-  event.stopPropagation()
-  if (menuOpen.value) closeMenu()
-  else openMenu()
-}
-
-function onDocumentClick(event: MouseEvent): void {
-  const target = event.target as Node | null
-  const anchor = getAnchorEl()
-  if (!target) return
-  if (anchor?.contains(target) || menuEl.value?.contains(target)) return
-  closeMenu()
-}
-
-function onDocumentKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape') closeMenu()
 }
 
 function runMenuAction(action: AppRowAction, event: MouseEvent): void {
@@ -295,7 +202,6 @@ function runMenuAction(action: AppRowAction, event: MouseEvent): void {
 onBeforeUnmount(() => {
   actionColumnWidth?.removeMinimumWidth(actionColumnWidthSource)
   teardownObserver()
-  removeListeners()
 })
 </script>
 
@@ -324,22 +230,58 @@ onBeforeUnmount(() => {
       >
         {{ action.label }}
       </el-button>
-      <span v-if="moreActions.length" class="app-row-actions__more-wrap">
-        <el-button
-          ref="moreButton"
-          class="app-row-actions__button app-row-actions__more"
-          :class="{ 'is-open': menuOpen }"
-          link
-          size="small"
-          :aria-expanded="menuOpen"
-          aria-haspopup="menu"
-          :data-testid="testId ? `${testId}-more` : undefined"
-          @click="toggleMenu"
+      <el-popover
+        v-if="moreActions.length"
+        ref="morePopover"
+        trigger="click"
+        role="menu"
+        placement="bottom-end"
+        :width="160"
+        :show-arrow="false"
+        :persistent="false"
+        :popper-style="{ padding: '4px' }"
+        popper-class="app-row-actions-popper"
+        @before-enter="menuOpen = true"
+        @after-leave="menuOpen = false"
+      >
+        <template #reference>
+          <el-button
+            class="app-row-actions__button app-row-actions__more"
+            :class="{ 'is-open': menuOpen }"
+            link
+            size="small"
+            :aria-expanded="menuOpen"
+            aria-haspopup="menu"
+            :data-testid="testId ? `${testId}-more` : undefined"
+            @click.stop
+          >
+            {{ moreLabel }}
+            <el-icon class="app-row-actions__more-icon"><ArrowDown /></el-icon>
+          </el-button>
+        </template>
+        <div
+          class="app-row-actions-menu"
+          :data-testid="testId ? `${testId}-menu` : undefined"
+          @click.stop
         >
-          {{ moreLabel }}
-          <el-icon class="app-row-actions__more-icon"><ArrowDown /></el-icon>
-        </el-button>
-      </span>
+          <el-button
+            v-for="action in moreActions"
+            :key="action.key"
+            class="app-row-actions-menu__item"
+            :class="actionClass(action)"
+            link
+            size="small"
+            :loading="action.loading"
+            :disabled="action.disabled || action.loading"
+            :title="action.title"
+            role="menuitem"
+            :data-testid="actionTestId(action)"
+            @click="runMenuAction(action, $event)"
+          >
+            {{ action.label }}
+          </el-button>
+        </div>
+      </el-popover>
     </template>
     <span v-else class="app-row-actions__empty">{{ emptyText }}</span>
     <span
@@ -371,34 +313,6 @@ onBeforeUnmount(() => {
         <el-icon class="app-row-actions__more-icon"><ArrowDown /></el-icon>
       </el-button>
     </span>
-    <Teleport to="body">
-      <div
-        v-if="menuOpen"
-        ref="menuEl"
-        class="app-row-actions-menu"
-        :style="menuStyle"
-        role="menu"
-        :data-testid="testId ? `${testId}-menu` : undefined"
-        @click.stop
-      >
-        <el-button
-          v-for="action in moreActions"
-          :key="action.key"
-          class="app-row-actions-menu__item"
-          :class="actionClass(action)"
-          link
-          size="small"
-          :loading="action.loading"
-          :disabled="action.disabled || action.loading"
-          :title="action.title"
-          role="menuitem"
-          :data-testid="actionTestId(action)"
-          @click="runMenuAction(action, $event)"
-        >
-          {{ action.label }}
-        </el-button>
-      </div>
-    </Teleport>
   </div>
 </template>
 
@@ -462,10 +376,6 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 
-.app-row-actions__more-wrap {
-  display: inline-flex;
-}
-
 .app-row-actions__more-icon {
   margin-left: 2px;
   font-size: var(--app-icon-size-xs);
@@ -491,17 +401,9 @@ onBeforeUnmount(() => {
 }
 
 .app-row-actions-menu {
-  position: fixed;
-  z-index: 3000;
   display: flex;
   flex-direction: column;
   gap: var(--app-space-1);
-  overflow: auto;
-  padding: 4px;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--layout-control-radius);
-  background: var(--el-bg-color-overlay);
-  box-shadow: var(--el-box-shadow-light);
 }
 
 .app-row-actions-menu__item {

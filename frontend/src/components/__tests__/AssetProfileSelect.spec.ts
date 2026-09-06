@@ -8,6 +8,7 @@ import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue
 import AssetSearchDrawer from '@/components/asset-search/AssetSearchDrawer.vue'
 import { useAuthStore } from '@/stores/auth'
 import type { ProfileSummary } from '@/components/asset-search/types'
+import assetProfileSelectSource from '@/components/asset-search/AssetProfileSelect.vue?raw'
 
 const mineItem: ProfileSummary = {
   id: 'my_a',
@@ -81,6 +82,19 @@ describe('AssetProfileSelect', () => {
     wrapper.unmount()
   })
 
+  it('横向模式固定为可压缩选择器加搜索按钮，避免窄宽度下按钮换行', async () => {
+    const { wrapper } = mountSelect()
+    await flush()
+
+    const root = wrapper.find('[data-testid="asset-profile-select"]')
+    expect(assetProfileSelectSource).toContain('display: inline-grid')
+    expect(assetProfileSelectSource).toContain('grid-template-columns: minmax(0, 1fr) auto')
+    expect(assetProfileSelectSource).not.toContain('flex-wrap: wrap')
+    expect(root.find('[data-testid="asset-profile-select-select"]').exists()).toBe(true)
+    expect(root.find('[data-testid="asset-profile-select-search"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('「我的」为空时空态引导去系统内置搜索', async () => {
     const { wrapper } = mountSelect({ fetchMine: async () => [] })
     await flush()
@@ -88,6 +102,34 @@ describe('AssetProfileSelect', () => {
     await flush()
     expect(document.body.textContent).toContain('暂无我的筛选方案')
     expect(document.body.textContent).toContain('去“系统内置”搜索复制')
+    wrapper.unmount()
+  })
+
+  it('首次加载失败时错误态接管选择器，不与空选择框并存', async () => {
+    const fetchMine = vi.fn().mockRejectedValueOnce(new Error('网络异常'))
+    const { wrapper } = mountSelect({ fetchMine })
+    await flush()
+
+    expect(wrapper.text()).toContain('筛选方案加载失败')
+    expect(wrapper.find('[data-testid="asset-profile-select-select"]').exists()).toBe(false)
+    expect(wrapper.find('.app-state-block__inline-error').exists()).toBe(true)
+    expect(wrapper.findAll('button').filter((button) => button.text() === '重试')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('已有方案刷新失败时保留 ready 内容并降级为持久提示', async () => {
+    const fetchMine = vi.fn()
+      .mockResolvedValueOnce([mineItem])
+      .mockRejectedValueOnce(new Error('网络异常'))
+    const { wrapper } = mountSelect({ fetchMine })
+    await flush()
+    await (wrapper.vm as unknown as { reload: () => Promise<ProfileSummary[] | null> }).reload()
+    await flush()
+
+    expect(wrapper.find('[data-testid="asset-profile-select-select"]').exists()).toBe(true)
+    expect(wrapper.find('.app-status-notice').exists()).toBe(true)
+    expect(wrapper.text()).toContain('当前继续使用已加载的方案')
+    expect(wrapper.find('.app-state-block--error').exists()).toBe(false)
     wrapper.unmount()
   })
 

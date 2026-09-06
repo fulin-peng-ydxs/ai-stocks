@@ -636,7 +636,7 @@ onMounted(() => { loadTree() })
                 <AppStateBlock
                   v-if="resError"
                   state="error"
-                  size="inline"
+                  size="compact"
                   title="功能点加载失败"
                   retry
                   @retry="retryResources"

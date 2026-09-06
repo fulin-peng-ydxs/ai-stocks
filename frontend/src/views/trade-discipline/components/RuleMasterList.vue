@@ -108,7 +108,7 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
     <AppStateBlock
       v-else-if="!filteredRules.length"
       state="empty"
-      size="compact"
+      size="inline"
       :title="query ? '没有匹配的规则' : '暂无交易规则'"
     />
     <div v-else v-loading="loading" class="rule-master__list" role="listbox" aria-label="选择交易规则">

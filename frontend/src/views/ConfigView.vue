@@ -30,6 +30,7 @@ import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
 import SubScoreChips from '@/components/SubScoreChips.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
@@ -1927,19 +1928,15 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             >
               <div v-if="tab.key === activeSysTab" class="sys-tab-toolbar">
                 <div v-if="sysSaveError || sysInvalidPaths.length" class="sys-alerts">
-                  <el-alert
+                  <AppStatusNotice
                     v-if="sysSaveError"
-                    type="error"
+                    tone="error"
                     title="保存失败，已保留当前编辑值"
-                    :closable="false"
-                    show-icon
                   />
-                  <el-alert
+                  <AppStatusNotice
                     v-else-if="sysInvalidPaths.length"
-                    type="warning"
+                    tone="warning"
                     title="存在超出允许范围的配置项"
-                    :closable="false"
-                    show-icon
                   />
                 </div>
                 <div class="sys-actions">

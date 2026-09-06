@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
@@ -99,6 +100,7 @@ const result = ref<LimitLadderResult | null>(null)
 const loading = ref(true)
 const error = ref('')
 const forbidden = ref(false)
+const noTradeDates = ref(false)
 const exporting = ref(false)
 const recomputing = ref(false)
 const analysisRefreshRevision = ref(0)
@@ -575,7 +577,11 @@ watch(
   },
 )
 
-onMounted(async () => {
+async function initializePage(): Promise<void> {
+  loading.value = true
+  error.value = ''
+  forbidden.value = false
+  noTradeDates.value = false
   try {
     await whenPreferenceHydrated()
     const savedPreference = effectivePreference()
@@ -600,7 +606,7 @@ onMounted(async () => {
         || null
     }
     if (!tradeDate.value) {
-      error.value = '暂无可用交易日'
+      noTradeDates.value = true
       loading.value = false
       return
     }
@@ -616,6 +622,10 @@ onMounted(async () => {
     }
     loading.value = false
   }
+}
+
+onMounted(() => {
+  void initializePage()
 })
 
 onBeforeUnmount(() => {
@@ -682,7 +692,33 @@ onBeforeUnmount(() => {
     </template>
 
     <template #main>
+      <AppStateBlock
+        v-if="!tradeDate && loading"
+        state="loading"
+        title="正在加载交易日与天梯数据…"
+      />
+      <AppStateBlock
+        v-else-if="!tradeDate && forbidden"
+        state="error"
+        variant="permission"
+        title="无权限查看连板天梯"
+      />
+      <AppStateBlock
+        v-else-if="!tradeDate && error"
+        state="error"
+        title="连板天梯初始化失败"
+        :description="error"
+        retry
+        @retry="initializePage"
+      />
+      <AppStateBlock
+        v-else-if="!tradeDate && noTradeDates"
+        state="empty"
+        title="暂无可用交易日"
+        description="完成行情采集后再查看连板天梯"
+      />
       <MarketMasterDetailWorkspace
+        v-else
         v-model:analysis-visible="analysisPanelVisible"
         :compact="isNarrowViewport"
         eyebrow="LIMIT LADDER"
@@ -789,17 +825,17 @@ onBeforeUnmount(() => {
         @reset="resetAllSettings"
       >
         <template #business>
-          <AppStateBlock
+          <AppStatusNotice
             v-if="preferenceRemoteError"
-            state="error"
-            size="inline"
+            tone="warning"
+            size="compact"
             title="个人偏好读取失败"
             description="当前使用系统默认，修改后会继续尝试同步"
           />
-          <AppStateBlock
+          <AppStatusNotice
             v-else-if="preferenceSaveError"
-            state="error"
-            size="inline"
+            tone="warning"
+            size="compact"
             title="默认偏好远端同步失败"
             description="当前修改已保存在本机，网络恢复后再次修改即可重试"
           />

@@ -79,6 +79,9 @@ const defaultDescription = computed(() => {
 
     <div v-else-if="state === 'empty' && isInline" class="app-empty-inline">
       <slot>{{ description || title || defaultTitle }}</slot>
+      <div v-if="$slots.extra" class="app-state-block__actions">
+        <slot name="extra" />
+      </div>
     </div>
 
     <el-empty
@@ -93,9 +96,28 @@ const defaultDescription = computed(() => {
             <span>{{ description }}</span>
           </div>
         </slot>
-        <slot name="extra" />
+        <div v-if="$slots.extra" class="app-state-block__actions">
+          <slot name="extra" />
+        </div>
       </template>
     </el-empty>
+
+    <div
+      v-else-if="state === 'error' && isInline"
+      class="app-state-block__inline-error"
+      role="alert"
+      aria-live="assertive"
+    >
+      <div class="app-state-block__inline-copy">
+        <strong>{{ defaultTitle }}</strong>
+        <span v-if="defaultDescription"><slot>{{ defaultDescription }}</slot></span>
+      </div>
+      <div v-if="retry || $slots.extra" class="app-state-block__actions">
+        <slot name="extra">
+          <el-button link type="primary" size="small" @click="emit('retry')">{{ retryText }}</el-button>
+        </slot>
+      </div>
+    </div>
 
     <el-result
       v-else
@@ -110,9 +132,11 @@ const defaultDescription = computed(() => {
         <slot>{{ defaultDescription }}</slot>
       </template>
       <template v-if="retry || $slots.extra" #extra>
-        <slot name="extra">
-          <el-button type="primary" @click="emit('retry')">{{ retryText }}</el-button>
-        </slot>
+        <div class="app-state-block__actions">
+          <slot name="extra">
+            <el-button type="primary" @click="emit('retry')">{{ retryText }}</el-button>
+          </slot>
+        </div>
       </template>
     </el-result>
   </div>
@@ -186,6 +210,49 @@ const defaultDescription = computed(() => {
   color: var(--app-empty-text);
   font-size: var(--app-font-size-table);
   line-height: var(--app-line-height-comfy);
+}
+
+.app-state-block__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--app-space-2);
+}
+
+.app-state-block--empty .app-state-block__actions {
+  margin-top: var(--app-space-3);
+}
+
+.app-empty-inline .app-state-block__actions {
+  margin-top: 0;
+}
+
+.app-state-block__inline-error {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--app-space-2);
+  color: var(--app-danger-text);
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-comfy);
+  text-align: left;
+}
+
+.app-state-block__inline-copy {
+  display: inline-flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: var(--app-space-1);
+  overflow-wrap: anywhere;
+}
+
+.app-state-block__inline-copy strong {
+  color: var(--el-text-color-primary);
+  font-weight: var(--app-font-weight-section);
 }
 
 .app-state-block__empty-copy strong {

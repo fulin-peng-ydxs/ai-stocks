@@ -10,7 +10,7 @@ import ComponentAutoSettings from './ComponentAutoSettings.vue'
 import PageDrawer from './PageDrawer.vue'
 import LayoutSettingsSection from '@/layout/components/LayoutSettingsSection.vue'
 import AppIconButton from './AppIconButton.vue'
-import AppStateBlock from './AppStateBlock.vue'
+import AppStatusNotice from './AppStatusNotice.vue'
 import type { PageDrawerSize } from './pageDrawerSize'
 import { useDrawerPreferences } from '@/composables/useDrawerPreferences'
 
@@ -215,18 +215,18 @@ function handleReset(): void {
         业务选项以页面声明为主；归入其中的组件字段仍保持原配置链路和来源展示。
       -->
       <div class="ps-body" :class="{ 'is-scroll-disabled': !bodyScroll }">
-        <AppStateBlock
+        <AppStatusNotice
           v-if="drawerPreferenceSyncing"
           class="ps-sync-state"
-          state="loading"
-          size="inline"
+          loading
+          size="compact"
           title="正在同步抽屉偏好…"
         />
-        <AppStateBlock
+        <AppStatusNotice
           v-else-if="drawerPreferenceFallback"
           class="ps-sync-state"
-          state="error"
-          size="inline"
+          tone="warning"
+          size="compact"
           title="抽屉偏好暂用本地设置"
           description="远端同步失败，当前使用本地偏好"
         />

@@ -24,6 +24,7 @@ import { hasPermission } from '@/utils/permission'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
 import RelatedBoardCell from '@/components/RelatedBoardCell.vue'
 import {
@@ -739,13 +740,10 @@ onMounted(initializeScreen)
           />
 
           <!-- 复杂嵌套方案：只读运行 -->
-          <el-alert
+          <AppStatusNotice
             v-if="complexAst"
-            type="info"
-            :closable="false"
-            show-icon
+            class="complex-ast-notice"
             title="该方案含嵌套分组，构建器暂以只读方式运行；如需改写请新建方案。"
-            style="margin: 10px 0"
           />
           <pre v-if="complexAst" class="ast">{{ JSON.stringify(complexAst, null, 2) }}</pre>
 
@@ -1104,6 +1102,7 @@ onMounted(initializeScreen)
   max-height: 200px;
   overflow: auto;
 }
+.complex-ast-notice { margin: var(--app-space-3) 0; }
 .readonly-builder {
   opacity: 0.82;
 }

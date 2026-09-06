@@ -11,6 +11,7 @@ import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
@@ -853,14 +854,14 @@ onMounted(async () => {
       <p class="page-subtitle">按代码/名称/板块筛选个股行情，可跨分页勾选与分组管理。</p>
       </div>
       <div class="page-head-actions">
-        <AppStateBlock
+        <AppStatusNotice
           v-if="groupListError"
-          state="error"
+          tone="warning"
           size="inline"
           title="分组列表加载失败"
           :description="groupListError"
-          retry
-          @retry="reloadGroups"
+          action-text="重新加载"
+          @action="reloadGroups"
         />
         <el-button data-testid="stocks-refresh" :loading="loading || groupLoading" @click="refreshStocks">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />

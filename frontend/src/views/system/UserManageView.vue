@@ -10,6 +10,7 @@ import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -497,14 +498,14 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
             <el-button data-testid="user-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
           </AppControlRow>
         </el-card>
-        <AppStateBlock
+        <AppStatusNotice
           v-if="dependencyError"
-          state="error"
-          size="inline"
+          tone="warning"
+          size="compact"
           title="筛选与表单选项加载不完整"
           :description="dependencyError"
-          retry
-          @retry="loadDependencies"
+          action-text="重新加载"
+          @action="loadDependencies"
         />
       </div>
     </template>

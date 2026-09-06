@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import AppIconButton from '@/components/AppIconButton.vue'
 import BuiltinOptionRow from '@/components/BuiltinOptionRow.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import { decimalToMinorUnits, formatMinorUnits } from '@/utils/fixedDecimal'
@@ -571,12 +572,24 @@ defineExpose({
         <div><span>编辑现场</span><strong>{{ hasSavedDraft ? `草稿 r${draftRevision}` : '无工作草稿' }}</strong></div>
       </div>
 
-      <div v-if="!canManage" class="readonly-banner">当前账号只有查看权限。</div>
-      <div v-else-if="isArchived" class="readonly-banner">归档规则不可编辑；恢复后可重新创建工作草稿。</div>
-      <div v-else-if="!editing" class="readonly-banner">
-        当前展示最新正式版本。创建工作草稿后再修改，正式版本不会被覆盖。
-        <el-button v-permission="'trade-discipline:rule-manage'" type="primary" size="small" :loading="command === 'open'" @click="beginEdit">编辑规则</el-button>
-      </div>
+      <AppStatusNotice v-if="!canManage" class="readonly-notice" title="当前账号只有查看权限" />
+      <AppStatusNotice
+        v-else-if="isArchived"
+        class="readonly-notice"
+        tone="warning"
+        title="归档规则不可编辑"
+        description="恢复后可重新创建工作草稿"
+      />
+      <AppStatusNotice
+        v-else-if="!editing"
+        class="readonly-notice"
+        title="当前展示最新正式版本"
+        description="创建工作草稿后再修改，正式版本不会被覆盖"
+      >
+        <template #action>
+          <el-button v-permission="'trade-discipline:rule-manage'" link type="primary" size="small" :loading="command === 'open'" @click="beginEdit">编辑规则</el-button>
+        </template>
+      </AppStatusNotice>
 
       <el-form class="rule-editor__form" label-position="top" :disabled="!editing || !canManage">
         <div class="rule-editor__base">
@@ -725,17 +738,7 @@ defineExpose({
 .rule-state-track > div + div { border-left: 1px solid var(--el-border-color-lighter); }
 .rule-state-track span { display: block; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .rule-state-track strong { display: block; margin-top: var(--app-space-1); color: var(--el-text-color-primary); font-size: var(--app-font-size-table); }
-.readonly-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--app-space-3);
-  margin-bottom: var(--app-space-4);
-  padding: var(--app-space-3);
-  border-left: 3px solid var(--el-color-primary);
-  background: transparent;
-  color: var(--el-text-color-secondary);
-}
+.readonly-notice { margin-bottom: var(--app-space-4); }
 .rule-editor__base { display: grid; grid-template-columns: minmax(260px, 2fr) minmax(220px, 1.3fr) minmax(240px, 1.3fr); gap: var(--app-space-3); align-items: end; }
 .rule-editor__base :deep(.el-input) { width: 100%; }
 .capital-meter { min-height: var(--app-control-height-md); margin-bottom: var(--app-space-4); padding: 0 var(--app-space-3); border: 1px solid color-mix(in srgb, var(--el-color-success) 38%, var(--el-border-color)); border-radius: var(--layout-control-radius); background: transparent; color: var(--el-color-success); display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-size: var(--app-font-size-caption); }

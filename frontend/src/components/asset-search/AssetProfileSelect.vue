@@ -8,6 +8,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { Search, Close } from '@element-plus/icons-vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import AssetSearchDrawer from './AssetSearchDrawer.vue'
@@ -102,6 +103,7 @@ const options = computed<ProfileSummary[]>(() => (
     ? [selectedLoadedItem.value, ...items.value]
     : tempItem.value ? [tempItem.value, ...items.value] : items.value
 ))
+const mineUnavailable = computed(() => !!errorMine.value && options.value.length === 0)
 
 const selectedItem = computed(() => (
   options.value.find((p) => assetItemKey(p) === props.modelValue) ?? null
@@ -238,69 +240,91 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
     :data-testid="testId"
   >
     <template v-if="mode === 'select'">
-      <el-select
-        v-model="inner"
-        class="asset-profile-select__select"
-        :placeholder="placeholder || `选我的${assetLabel}（可选）`"
-        clearable
-        filterable
-        :loading="loadingMine"
-        :data-testid="`${testId}-select`"
-      >
-        <template v-if="selectedItem" #label>
-          <AssetProfileLabel
-            :name="selectedItem.name"
-            :version="selectedItem.version"
-            :source="assetDisplaySource(selectedItem.source, selectedItem.is_preset)"
-            :is-preset="selectedItem.is_preset"
-            :owner-label="selectedItem.owner_label"
-            :readonly="selectedItem.readonly"
-            :label-mine="labelMine"
-          />
-        </template>
-        <el-option
-          v-for="p in options"
-          :key="assetItemKey(p)"
-          :label="p.name"
-          :value="assetItemKey(p)"
+      <AppStateBlock
+        v-if="mineUnavailable"
+        class="asset-profile-select__state"
+        state="error"
+        size="inline"
+        :title="`${assetLabel}加载失败`"
+        :description="errorMine"
+        retry
+        @retry="reload"
+      />
+      <template v-else>
+        <el-select
+          v-model="inner"
+          class="asset-profile-select__select"
+          :placeholder="placeholder || `选我的${assetLabel}（可选）`"
+          clearable
+          filterable
+          :loading="loadingMine"
+          :data-testid="`${testId}-select`"
         >
-          <AssetProfileLabel
-            :name="p.name"
-            :version="p.version"
-            :source="assetDisplaySource(p.source, p.is_preset)"
-            :is-preset="p.is_preset"
-            :owner-label="p.owner_label"
-            :readonly="p.readonly"
-            :label-mine="labelMine"
-          />
-        </el-option>
-        <template #empty>
-          <div class="asset-profile-select__empty">
-            <span>{{ emptyText }}</span>
-            <el-button
-              v-if="canBrowse"
-              link
-              type="primary"
-              size="small"
-              :data-testid="`${testId}-empty-search`"
-              @click="openSearch('preset')"
-            >
-              去“系统内置”搜索复制
-            </el-button>
-          </div>
-        </template>
-      </el-select>
-      <el-button
-        v-if="canBrowse"
-        class="asset-profile-select__search"
-        :data-testid="`${testId}-search`"
-        @click="openSearch()"
-      >
-        <template #icon>
-          <el-icon><Search /></el-icon>
-        </template>
-        搜索
-      </el-button>
+          <template v-if="selectedItem" #label>
+            <AssetProfileLabel
+              :name="selectedItem.name"
+              :version="selectedItem.version"
+              :source="assetDisplaySource(selectedItem.source, selectedItem.is_preset)"
+              :is-preset="selectedItem.is_preset"
+              :owner-label="selectedItem.owner_label"
+              :readonly="selectedItem.readonly"
+              :label-mine="labelMine"
+            />
+          </template>
+          <el-option
+            v-for="p in options"
+            :key="assetItemKey(p)"
+            :label="p.name"
+            :value="assetItemKey(p)"
+          >
+            <AssetProfileLabel
+              :name="p.name"
+              :version="p.version"
+              :source="assetDisplaySource(p.source, p.is_preset)"
+              :is-preset="p.is_preset"
+              :owner-label="p.owner_label"
+              :readonly="p.readonly"
+              :label-mine="labelMine"
+            />
+          </el-option>
+          <template #empty>
+            <div class="asset-profile-select__empty">
+              <span>{{ emptyText }}</span>
+              <el-button
+                v-if="canBrowse"
+                link
+                type="primary"
+                size="small"
+                :data-testid="`${testId}-empty-search`"
+                @click="openSearch('preset')"
+              >
+                去“系统内置”搜索复制
+              </el-button>
+            </div>
+          </template>
+        </el-select>
+        <el-button
+          v-if="canBrowse"
+          class="asset-profile-select__search"
+          :data-testid="`${testId}-search`"
+          @click="openSearch()"
+        >
+          <template #icon>
+            <el-icon><Search /></el-icon>
+          </template>
+          搜索
+        </el-button>
+        <AppStatusNotice
+          v-if="errorMine"
+          class="asset-profile-select__notice"
+          tone="warning"
+          size="inline"
+          :title="`${assetLabel}暂未更新`"
+          description="当前继续使用已加载的方案"
+          action-text="重新加载"
+          @action="reload"
+        />
+      </template>
     </template>
 
     <template v-else>
@@ -318,7 +342,8 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
         </el-button>
       </div>
       <AppStateBlock
-        v-if="errorMine"
+        v-if="mineUnavailable"
+        class="asset-profile-select__state"
         state="error"
         size="inline"
         :title="`${assetLabel}加载失败`"
@@ -326,35 +351,46 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
         retry
         @retry="reload"
       />
-      <ul v-else-if="options.length" class="asset-profile-select__list" v-loading="loadingMine">
-        <li
-          v-for="p in options"
-          :key="assetItemKey(p)"
-          :class="{ active: assetItemKey(p) === modelValue }"
-          @click="onSelect(assetItemKey(p))"
-        >
-          <AssetProfileLabel
-            class="asset-profile-select__item-label"
-            :name="p.name"
-            :version="p.version"
-            :source="assetDisplaySource(p.source, p.is_preset)"
-            :is-preset="p.is_preset"
-            :owner-label="p.owner_label"
-            :readonly="p.readonly"
-            :label-mine="labelMine"
-          />
-          <AppIconButton
-            v-if="isTempRow(p)"
-            class="asset-profile-select__remove"
-            :label="`从列表移除「${p.name}」`"
-            size="xs"
-            :data-testid="`${testId}-remove`"
-            @click="onRemoveTemp(p, $event)"
+      <template v-else-if="options.length">
+        <AppStatusNotice
+          v-if="errorMine"
+          tone="warning"
+          size="compact"
+          :title="`${assetLabel}暂未更新`"
+          description="当前继续使用已加载的方案"
+          action-text="重新加载"
+          @action="reload"
+        />
+        <ul class="asset-profile-select__list" v-loading="loadingMine">
+          <li
+            v-for="p in options"
+            :key="assetItemKey(p)"
+            :class="{ active: assetItemKey(p) === modelValue }"
+            @click="onSelect(assetItemKey(p))"
           >
-            <el-icon><Close /></el-icon>
-          </AppIconButton>
-        </li>
-      </ul>
+            <AssetProfileLabel
+              class="asset-profile-select__item-label"
+              :name="p.name"
+              :version="p.version"
+              :source="assetDisplaySource(p.source, p.is_preset)"
+              :is-preset="p.is_preset"
+              :owner-label="p.owner_label"
+              :readonly="p.readonly"
+              :label-mine="labelMine"
+            />
+            <AppIconButton
+              v-if="isTempRow(p)"
+              class="asset-profile-select__remove"
+              :label="`从列表移除「${p.name}」`"
+              size="xs"
+              :data-testid="`${testId}-remove`"
+              @click="onRemoveTemp(p, $event)"
+            >
+              <el-icon><Close /></el-icon>
+            </AppIconButton>
+          </li>
+        </ul>
+      </template>
       <div v-else class="asset-profile-select__empty">
         <AppStateBlock v-if="loadingMine" state="loading" size="tiny" :title="`正在加载${assetLabel}…`" />
         <template v-else>
@@ -372,16 +408,6 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
         </template>
       </div>
     </template>
-
-    <AppStateBlock
-      v-if="errorMine && mode === 'select'"
-      state="error"
-      size="inline"
-      :title="`${assetLabel}加载失败`"
-      :description="errorMine"
-      retry
-      @retry="reload"
-    />
 
     <AssetSearchDrawer
       ref="drawerRef"
@@ -402,7 +428,8 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
 
 <style scoped>
 .asset-profile-select {
-  display: inline-flex;
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--app-space-2);
   min-width: 0;
@@ -418,6 +445,12 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
 }
 .asset-profile-select__search {
   flex: 0 0 auto;
+}
+.asset-profile-select__notice {
+  grid-column: 1 / -1;
+}
+.asset-profile-select__state {
+  grid-column: 1 / -1;
 }
 .asset-profile-select__search--block {
   width: 100%;

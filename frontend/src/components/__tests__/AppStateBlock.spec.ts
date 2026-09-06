@@ -91,6 +91,18 @@ describe('AppStateBlock', () => {
     expect(wrapper.get('.app-state-block__empty-copy').text()).toContain('该日期没有可补录规则')
   })
 
+  it('empty 的说明与动作使用统一动作层分隔', () => {
+    const wrapper = mount(AppStateBlock, {
+      props: { state: 'empty', title: '暂无规则', description: '创建后即可开始使用' },
+      slots: { extra: '<button>新建规则</button>' },
+      global: { stubs },
+    })
+
+    expect(wrapper.get('.app-state-block__actions').text()).toContain('新建规则')
+    expect(wrapper.get('.app-state-block__actions').element.previousElementSibling)
+      .toBe(wrapper.get('.app-state-block__empty-copy').element)
+  })
+
   it('inline empty 使用紧凑内联空态', () => {
     const wrapper = mount(AppStateBlock, {
       props: { state: 'empty', size: 'inline', description: '无匹配结果' },
@@ -110,6 +122,18 @@ describe('AppStateBlock', () => {
     expect(wrapper.text()).toContain('列表加载失败')
     expect(wrapper.text()).toContain('请检查网络或稍后重试')
     await wrapper.find('.retry-btn').trigger('click')
+    expect(wrapper.emitted('retry')).toHaveLength(1)
+  })
+
+  it('inline error 使用无插画短文案和文字重试动作', async () => {
+    const wrapper = mount(AppStateBlock, {
+      props: { state: 'error', size: 'inline', title: '方案加载失败', description: '网络异常', retry: true },
+      global: { stubs },
+    })
+
+    expect(wrapper.find('.result-stub').exists()).toBe(false)
+    expect(wrapper.get('.app-state-block__inline-error').text()).toContain('网络异常')
+    await wrapper.get('.retry-btn').trigger('click')
     expect(wrapper.emitted('retry')).toHaveLength(1)
   })
 

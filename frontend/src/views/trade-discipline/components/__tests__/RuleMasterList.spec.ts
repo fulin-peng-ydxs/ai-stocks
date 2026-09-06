@@ -68,6 +68,8 @@ describe('RuleMasterList', () => {
     await wrapper.get('input').setValue('不存在')
     await new Promise((resolve) => window.setTimeout(resolve, 320))
     expect(wrapper.text()).toContain('没有匹配的规则')
+    expect(wrapper.find('.app-empty-inline').exists()).toBe(true)
+    expect(wrapper.find('.el-empty').exists()).toBe(false)
     await wrapper.get('[aria-label="新建规则"]').trigger('click')
     expect(wrapper.emitted('create')).toHaveLength(1)
   })

@@ -29,6 +29,7 @@ import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import MarketBenchmarkSelect from '@/components/MarketBenchmarkSelect.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -156,15 +157,18 @@ function onTradeSortChange({ prop }: { prop: string; order: string | null }): vo
 }
 
 const kind = ref<'strategy' | 'score_check'>(settings.kind)
-const dateStart = ref('2024-01-01')
-const dateEnd = ref('2024-12-31')
+const DEFAULT_DATE_START = '2024-01-01'
+const DEFAULT_DATE_END = '2024-12-31'
+const DEFAULT_INDUSTRY_PCT = 20
+const dateStart = ref(DEFAULT_DATE_START)
+const dateEnd = ref(DEFAULT_DATE_END)
 const profileId = ref<string>('')      // 筛选方案（候选池），空=全市场候选
 const scoreProfileId = ref<string>('') // 评分方案（排序/验证）
 const tradeProfileId = ref<string>('') // 买卖方案（买/卖/兜底）
 const topN = ref(Number(settings.topN))
 const initCap = ref(Number(settings.initCap))
 const industryOn = ref(false)
-const industryPct = ref(20)            // 单行业持仓上限 %
+const industryPct = ref(DEFAULT_INDUSTRY_PCT) // 单行业持仓上限 %
 // 基准指数选择（净值图虚线对比）：默认中证 500（与板块行情同款设置），可切换其它指数；fetch 结果注入 EquityChart。
 // 单向：抽屉「默认对比指数」→ 会话 ref；主区改动只进会话态，不写回默认。
 const benchChoice = ref<string>(settings.benchmarkCode)
@@ -321,12 +325,6 @@ const selectedTradeProfile = computed(() =>
   ?? (tempSelected.value.trade && tradeProfileKey(tempSelected.value.trade) === tradeProfileId.value
     ? tempSelected.value.trade : null),
 )
-const effectiveTradeProfile = computed<TradeProfileSummary | null>(() => (
-  tempSelected.value.trade
-  ?? tradeProfiles.value.find((p) => tradeProfileKey(p) === tradeProfileId.value || p.id === tradeProfileId.value)
-  ?? null
-))
-
 const loading = ref(false)
 const resultError = ref('')
 const resultErrorContext = ref<'run' | 'history'>('run')
@@ -353,6 +351,10 @@ const { dataMin, dataMax, prevTradeDate } = useTradeDates()
 const runHistory = ref<RunSummary[]>([])
 const historyError = ref('')
 const selectedRun = ref<string>('')
+type HistoryRetryTarget =
+  | { kind: 'load'; id: string; summary?: RunSummary }
+  | { kind: 'mine-switch'; id: string }
+const historyRetryTarget = ref<HistoryRetryTarget | null>(null)
 // 公开抽屉「加载查看」只保存当前只读快照，不写入 mine-only runHistory，也不把 opaque ref 写入 ElSelect。
 const externalRunSummary = ref<RunSummary | null>(null)
 // 当前结果实际使用的评分方案 ref（P1-2）：doRun 用冻结 body、loadRun 用该 run params 写入；
@@ -475,6 +477,57 @@ function clearDisplayedRunResult() {
   runTime.value = ''
   fromHistory.value = false
   resultError.value = ''
+}
+
+const hasResettableRunParams = computed(() => Boolean(
+  dateStart.value !== DEFAULT_DATE_START
+  || dateEnd.value !== DEFAULT_DATE_END
+  || profileId.value
+  || scoreProfileId.value
+  || tradeProfileId.value
+  || topN.value !== Number(settings.topN)
+  || initCap.value !== Number(settings.initCap)
+  || industryOn.value
+  || industryPct.value !== DEFAULT_INDUSTRY_PCT
+  || selectedRun.value
+  || externalRunSummary.value
+  || nextRunSourceRef.value
+  || strat.value
+  || sig.value
+  || resultError.value
+  || Object.values(tempSelected.value).some(Boolean)
+  || Object.values(historyProfileDisplays.value).some(Boolean)
+  || Object.values(historyProfileUnavailable.value).some(Boolean)
+))
+
+/** 恢复当前回测模式的初始参数，并彻底退出历史/公开记录投影。 */
+function resetRunParams() {
+  if (!hasResettableRunParams.value) return
+  invalidateRunViewOperation()
+  beforeExternalRun = null
+  historyRetryTarget.value = null
+  loadingRun.value = true
+  dateStart.value = DEFAULT_DATE_START
+  dateEnd.value = DEFAULT_DATE_END
+  profileId.value = ''
+  scoreProfileId.value = ''
+  tradeProfileId.value = ''
+  topN.value = Number(settings.topN)
+  initCap.value = Number(settings.initCap)
+  industryOn.value = false
+  industryPct.value = DEFAULT_INDUSTRY_PCT
+  tempSelected.value = { screen: null, score: null, trade: null }
+  historyProfileDisplays.value = { screen: null, score: null, trade: null }
+  historyProfileUnavailable.value = { screen: false, score: false, trade: false }
+  screenProfileSelectRef.value?.clearTransient?.()
+  scoreProfileSelectRef.value?.clearTransient?.()
+  tradeProfileSelectRef.value?.clearTransient?.()
+  nextRunSourceRef.value = ''
+  clearDisplayedRunResult()
+  nextTick(() => {
+    dirty.value = true
+    loadingRun.value = false
+  })
 }
 
 // 切换"策略/信号"标签 → 清空下方结果（避免显示与当前模式不符的旧结果）
@@ -918,6 +971,7 @@ function applyRunDetail(id: string, r: Awaited<ReturnType<typeof fetchRunDetail>
 
 async function loadRun(id: string, summary?: RunSummary) {
   if (!id) return
+  historyRetryTarget.value = { kind: 'load', id, summary }
   const sequence = beginRunViewOperation('load')
   loading.value = true
   nextRunSourceRef.value = ''
@@ -931,6 +985,7 @@ async function loadRun(id: string, summary?: RunSummary) {
     if (sequence !== runLoadSequence) return
     loadingRun.value = true
     applyRunDetail(id, r, summary)
+    historyRetryTarget.value = null
     clearDirtySoon()  // 载入成功 → 按钮置灰（loadingRun 保持到 nextTick，避免参数 watcher 误置脏）
   } catch (e) {
     if (sequence !== runLoadSequence) return
@@ -1054,6 +1109,7 @@ async function onMineRunSelected(id: string) {
     return
   }
   const sequence = beginRunViewOperation('load')
+  historyRetryTarget.value = { kind: 'mine-switch', id }
   loading.value = true
   resultError.value = ''
   try {
@@ -1061,7 +1117,9 @@ async function onMineRunSelected(id: string) {
     if (sequence !== runLoadSequence) return
     loadingRun.value = true
     commitMineRun()
+    selectedRun.value = id
     applyRunDetail(id, detail)
+    historyRetryTarget.value = null
     clearDirtySoon()
   } catch (error) {
     if (sequence !== runLoadSequence) return
@@ -1432,8 +1490,10 @@ async function doRun(body: RunParams, sequence?: number) {
 }
 
 function retryResult() {
-  if (resultErrorContext.value === 'history' && selectedRun.value) {
-    void loadRun(selectedRun.value)
+  if (resultErrorContext.value === 'history' && historyRetryTarget.value) {
+    const target = historyRetryTarget.value
+    if (target.kind === 'mine-switch') void onMineRunSelected(target.id)
+    else void loadRun(target.id, target.summary)
     return
   }
   void run()
@@ -1684,14 +1744,14 @@ async function openTradeChart(row: TradeRow) {
       <div class="page-head-actions">
         <div class="hist">
           <span class="lbl">回测记录</span>
-          <AppStateBlock
+          <AppStatusNotice
             v-if="historyError"
-            state="error"
+            tone="warning"
             size="inline"
             title="历史回测加载失败"
             :description="historyError"
-            retry
-            @retry="loadHistory"
+            action-text="重新加载"
+            @action="loadHistory"
           />
           <template v-else>
           <el-select
@@ -1985,18 +2045,18 @@ async function openTradeChart(row: TradeRow) {
         </template>
       </AppControlRow>
 
-      <AppControlRow v-if="kind === 'strategy' && effectiveTradeProfile" class="form-row sell-row" dense>
-        <AppControlItem label="卖出规则">
-          <span class="tip-inline">由买卖方案「{{ effectiveTradeProfile.name }}」的卖出条件 + 兜底接管</span>
-        </AppControlItem>
-      </AppControlRow>
-
       <!-- 运行按钮 + 紧贴其下的执行说明。dirty=蓝可点；出结果/载入历史后置灰；改参恢复 -->
       <div class="run-row">
         <el-button v-permission="'backtest:run'" :type="dirty ? 'primary' : 'info'" size="large" :loading="loading || runningRun"
                    :disabled="!dirty" @click="run">
           {{ dirty ? '运行回测' : '已是最新结果' }}
         </el-button>
+        <el-button
+          size="large"
+          data-testid="backtest-reset-params"
+          :disabled="!hasResettableRunParams"
+          @click="resetRunParams"
+        >重置参数</el-button>
       </div>
       <div class="tip-line">
         本地同步执行，区间数月约 10 秒级；信号质量分析覆盖全市场（耗时稍长）。
@@ -2021,9 +2081,12 @@ async function openTradeChart(row: TradeRow) {
       <template v-else>
       <div class="results-top">
       <!-- 加载历史时：显示这次回测的运行时间 -->
-      <div v-if="fromHistory && runTime && (strat || sig)" class="run-time-banner">
-        📂 加载的历史记录 · 回测于 <b>{{ runTime }}</b> 运行
-      </div>
+      <AppStatusNotice
+        v-if="fromHistory && runTime && (strat || sig)"
+        class="run-time-notice"
+        title="已载入历史记录"
+        :description="`回测于 ${runTime} 运行`"
+      />
       <!-- 策略：绩效卡 + 资金曲线 -->
       <template v-if="strat">
         <el-card shadow="never" class="block">
@@ -2346,8 +2409,13 @@ async function openTradeChart(row: TradeRow) {
         <div class="dlg-hint" style="margin-bottom:8px">
           这是<b>选股信号日</b>（买入日的前一交易日）全市场按评分排序的榜单；<b class="bd-hit-legend">高亮行</b>=本笔买入的票，能看清它在大盘里的相对位置。
         </div>
-        <el-alert v-if="boardMissing && boardRows.length" type="warning" :closable="false" show-icon style="margin-bottom:8px"
-                  title="本笔买入的票不在 Top 50 内（榜单名次更靠后）——它因选股方案命中且方案内排名靠前而被买入，并非综合分靠前。" />
+        <AppStatusNotice
+          v-if="boardMissing && boardRows.length"
+          class="board-missing-notice"
+          tone="warning"
+          title="本笔买入股票不在 Top 50 内"
+          description="该股票因选股方案命中且方案内排名靠前而被买入，并非综合分靠前"
+        />
         <AppDataTable :data="boardRows" :loading="boardLoading" loading-text="正在加载每日榜单…" size="small" height="460" :row-class-name="boardRowClass" embedded>
           <AppTableColumn label="#" prop="rank" />
           <AppTableColumn label="代码" prop="code" />
@@ -2480,11 +2548,8 @@ async function openTradeChart(row: TradeRow) {
   background: var(--el-color-primary-light-8); color: var(--el-color-primary);
   padding: 0 4px; border-radius: 3px; box-shadow: inset 3px 0 0 0 var(--el-color-primary);
 }
-.run-time-banner {
-  margin-bottom: 12px; padding: 7px 12px; border-radius: 6px; font-size: var(--app-font-size-table);
-  background: var(--el-color-info-light-9); color: var(--el-text-color-regular);
-  border: 1px solid var(--el-color-info-light-7);
-}
+.run-time-notice { margin-bottom: var(--app-space-3); }
+.board-missing-notice { margin-bottom: var(--app-space-2); }
 .backtest-body {
   flex: 1 1 auto;          /* 填满 LayoutHost 的条件成长区 */
   min-height: 0;
@@ -2509,9 +2574,8 @@ async function openTradeChart(row: TradeRow) {
   flex: 0 0 auto;  /* 绩效卡/资金曲线/稳健性/分层表：按内容取自然高 */
 }
 .lbl { color: var(--el-text-color-secondary); font-size: var(--app-font-size-table); margin-left: 6px; display: inline-flex; align-items: center; gap: var(--app-space-1); }
-.sell-row { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--el-border-color); }
 .robust-row { margin-bottom: 10px; }
-.run-row { margin-top: 14px; }
+.run-row { display: flex; align-items: center; gap: var(--app-space-2); margin-top: 14px; }
 .unit { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-right: 4px; }
 .unit.off { opacity: 0.4; }
 .tip-line { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); margin-top: 8px; }

@@ -4,6 +4,7 @@ import AppControlRow from '@/components/AppControlRow.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import {
@@ -214,15 +215,14 @@ function resetFilters(): void {
         <el-button class="limit-ladder__command" data-testid="limit-ladder-reset" :disabled="!hasFilters" @click="resetFilters">重置筛选</el-button>
       </AppControlRow>
     </section>
-    <div
+    <AppStatusNotice
       v-if="staleSnapshot && !loading && !error"
       class="limit-ladder__status-notice"
-      role="status"
       data-testid="limit-ladder-stale-notice"
-    >
-      <el-tag type="warning" effect="plain">结果已过期</el-tag>
-      <span>{{ staleDescription }}</span>
-    </div>
+      tone="warning"
+      title="结果已过期"
+      :description="staleDescription"
+    />
     <div class="limit-ladder__content" data-testid="limit-ladder-scroll-region">
       <section v-if="result?.has_snapshot && !loading && !error" class="limit-ladder__summary" aria-label="天梯摘要">
         <div><span>当前股票</span><strong class="is-total" data-testid="limit-ladder-summary-total">{{ result.summary.stock_count }}</strong><small>只</small></div>
@@ -340,15 +340,10 @@ function resetFilters(): void {
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .limit-ladder__status-notice {
-  display: flex;
   flex: 0 0 auto;
-  align-items: center;
-  gap: var(--app-space-2);
-  padding: var(--app-space-2) var(--app-space-4);
-  border-bottom: 1px solid var(--el-color-warning-light-7);
-  background: var(--el-color-warning-light-9);
-  color: var(--el-text-color-regular);
-  font-size: var(--app-font-size-caption);
+  border-width: 0 0 1px;
+  border-radius: 0;
+  padding-inline: var(--app-space-4);
 }
 .limit-ladder__summary > div:not(.limit-ladder__summary-meta) {
   display: grid;

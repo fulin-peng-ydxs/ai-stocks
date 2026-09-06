@@ -407,7 +407,7 @@ describe('BacktestView 三方案选择器（T5）', () => {
     wrapper.unmount()
   })
 
-  it('临时项作为运行口径：buildBody 按 tempSelected 快照取 ref（方案b 运行路径）', async () => {
+  it('临时项作为运行口径：buildBody 按 tempSelected 快照取 ref，页面不重复展示卖出说明', async () => {
     const wrapper = await mountView()
     await emitAllReady(wrapper)
     await emitLoaded(wrapper, 'backtest-trade-select', {
@@ -416,11 +416,11 @@ describe('BacktestView 三方案选择器（T5）', () => {
     // buildBody 按 tempSelected 快照取 ref
     const body = (wrapper.vm as any).buildBody()
     expect(body.trade_profile_id).toBe('avr_trade_pub')
-    expect(wrapper.find('.sell-row').text()).toContain('公开买卖')
+    expect(wrapper.find('.sell-row').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it('已有 mine 买卖方案时临时公开快照同时驱动运行参数和卖出规则名称', async () => {
+  it('已有 mine 买卖方案时临时公开快照驱动运行参数且不生成重复卖出说明', async () => {
     const wrapper = await mountView()
     await emitAllReady(wrapper)
     findSelect(wrapper, 'backtest-trade-select')!.vm.$emit('update:modelValue', 'avr_trade_1')
@@ -430,8 +430,7 @@ describe('BacktestView 三方案选择器（T5）', () => {
     })
 
     expect((wrapper.vm as any).buildBody().trade_profile_id).toBe('avr_trade_pub')
-    expect(wrapper.find('.sell-row').text()).toContain('公开买卖')
-    expect(wrapper.find('.sell-row').text()).not.toContain('趋势买卖')
+    expect(wrapper.find('.sell-row').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -508,6 +507,49 @@ describe('BacktestView 三方案选择器（T5）', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="backtest-score-select-temp"]').text()).toContain('新公开评分')
     expect(wrapper.find('[data-testid="backtest-score-select-temp"]').text()).not.toContain('默认趋势分')
+    wrapper.unmount()
+  })
+
+  it('重置参数清除历史记录投影、三个方案和结果，并在初始态禁用', async () => {
+    vi.mocked(backtestApi.listRuns).mockResolvedValue({
+      runs: [{
+        id: 'r-reset', run_ref: 'run_ref_reset', kind: 'strategy',
+        date_start: '2023-01-01', date_end: '2023-06-30', created_at: '2023-07-01 10:00:00',
+        profile_name: '历史选股', score_profile_name: '历史评分', trade_profile_name: '历史买卖',
+      } as any],
+    })
+    vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail({
+      date_start: '2023-01-01', date_end: '2023-06-30',
+      profile_id: 'history-screen', score_profile_id: 'history-score', trade_profile_id: 'history-trade',
+      top_n: 8, initial_capital: 1800000, industry_max_pct: 0.35,
+    }, { id: 'r-reset', run_ref: 'run_ref_reset' }))
+
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    const reset = wrapper.get('[data-testid="backtest-reset-params"]')
+    expect(reset.attributes('disabled')).toBeDefined()
+
+    ;(wrapper.vm as any).selectedRun = 'run_ref_reset'
+    await (wrapper.vm as any).onMineRunSelected('run_ref_reset')
+    await flushPromises()
+    expect(reset.attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-testid="backtest-score-select-temp"]').exists()).toBe(true)
+
+    await reset.trigger('click')
+    await flushPromises()
+
+    expect((wrapper.vm as any).selectedRun).toBe('')
+    expect((wrapper.vm as any).profileId).toBe('')
+    expect((wrapper.vm as any).scoreProfileId).toBe('')
+    expect((wrapper.vm as any).tradeProfileId).toBe('')
+    expect((wrapper.vm as any).dateStart).toBe('2024-01-01')
+    expect((wrapper.vm as any).dateEnd).toBe('2024-12-31')
+    expect((wrapper.vm as any).strat).toBeNull()
+    expect((wrapper.vm as any).sig).toBeNull()
+    expect(wrapper.find('[data-testid="backtest-score-select-temp"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="backtest-screen-select-temp"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="backtest-trade-select-temp"]').exists()).toBe(false)
+    expect(reset.attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
 
@@ -926,6 +968,32 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     return { prevResult }
   }
 
+  it('公开历史载入失败后的重试仍加载原记录，不会误触发重新回测', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    vi.mocked(backtestApi.getRun).mockRejectedValueOnce(new Error('网络瞬时失败'))
+    runDrawer(wrapper)!.vm.$emit('load', {
+      id: 'public-a', run_ref: 'run_ref_public_a', kind: 'strategy',
+      score_profile_name: '公开评分A', readonly: true, source: 'public',
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('历史回测载入失败')
+    vi.mocked(backtestApi.getRun).mockResolvedValueOnce(getRunDetail(
+      { date_start: '2024-01-01', date_end: '2024-06-30', score_profile_id: 'public-score' },
+      { id: 'public-a', run_ref: 'run_ref_public_a' },
+    ))
+    const retry = wrapper.findAll('button').find((button) => button.text() === '重试')
+    expect(retry).toBeTruthy()
+    await retry!.trigger('click')
+    await flushPromises()
+
+    expect(backtestApi.getRun).toHaveBeenLastCalledWith('run_ref_public_a')
+    expect(backtestApi.getRun).toHaveBeenCalledTimes(2)
+    expect(backtestApi.runBacktest).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('抽屉重跑成功但 mine 详情加载失败：不销毁公开快照，仍可关闭恢复公开A进入前现场（P1-1）', async () => {
     const wrapper = await mountView()
     const { prevResult } = await enterPublicRun(wrapper)
@@ -979,6 +1047,30 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     expect((wrapper.vm as any).externalRunSummary).toBeNull()
     expect((wrapper.vm as any).selectedRun).toBe('run_ref_mine')
     expect((wrapper.vm as any).dateStart).toBe('2025-01-01')
+    wrapper.unmount()
+  })
+
+  it('公开查看态切换 mine 失败后重试仍走原子切换链路', async () => {
+    const wrapper = await mountView()
+    await enterPublicRun(wrapper)
+    vi.mocked(backtestApi.getRun).mockRejectedValueOnce(new Error('网络瞬时失败'))
+    ;(wrapper.vm as any).selectedRun = 'run_ref_mine'
+    await (wrapper.vm as any).onMineRunSelected('run_ref_mine')
+    await flushPromises()
+    expect((wrapper.vm as any).externalRunSummary?.run_ref).toBe('run_ref_public_a')
+
+    vi.mocked(backtestApi.getRun).mockResolvedValueOnce(getRunDetail(
+      { date_start: '2025-01-01', date_end: '2025-06-30', score_profile_id: 'avr_score_1' },
+      { id: 'mine-run', run_ref: 'run_ref_mine' },
+    ))
+    const retry = wrapper.findAll('button').find((button) => button.text() === '重试')
+    expect(retry).toBeTruthy()
+    await retry!.trigger('click')
+    await flushPromises()
+
+    expect(backtestApi.getRun).toHaveBeenLastCalledWith('run_ref_mine')
+    expect((wrapper.vm as any).externalRunSummary).toBeNull()
+    expect((wrapper.vm as any).selectedRun).toBe('run_ref_mine')
     wrapper.unmount()
   })
 

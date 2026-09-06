@@ -2,7 +2,7 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, nextTick } from 'vue'
+import { cloneVNode, defineComponent, h, nextTick, ref } from 'vue'
 import AppRowActions from '../AppRowActions.vue'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -43,6 +43,36 @@ const ElIconStub = defineComponent({
   },
 })
 
+const ElPopoverStub = defineComponent({
+  name: 'ElPopover',
+  props: { role: String },
+  emits: ['before-enter', 'after-leave'],
+  setup(props, { emit, expose, slots }) {
+    const open = ref(false)
+    const hide = () => {
+      if (!open.value) return
+      open.value = false
+      emit('after-leave')
+    }
+    const toggle = () => {
+      open.value = !open.value
+      emit(open.value ? 'before-enter' : 'after-leave')
+    }
+    expose({ hide })
+    return () => {
+      const reference = (slots.reference?.() ?? []).map((vnode) => cloneVNode(vnode, {
+        onClick: toggle,
+        'aria-haspopup': props.role,
+        'aria-expanded': String(open.value),
+      }))
+      return h('span', { class: 'el-popover-stub' }, [
+        ...reference,
+        open.value ? slots.default?.() : null,
+      ])
+    }
+  },
+})
+
 const mountedWrappers: Array<{ unmount: () => void }> = []
 
 /** 收集可见区域（非测量层副本）的按钮 */
@@ -76,6 +106,7 @@ async function mountActions(actions: AppRowAction[], opts: {
 
   const host = document.createElement('div')
   host.style.width = '100%'
+  document.body.appendChild(host)
   const wrapper = mount(AppRowActions, {
     props: {
       actions,
@@ -90,6 +121,7 @@ async function mountActions(actions: AppRowAction[], opts: {
       stubs: {
         ElButton: ElButtonStub,
         ElIcon: ElIconStub,
+        ElPopover: ElPopoverStub,
         ArrowDown: true,
       },
     },
@@ -156,6 +188,8 @@ describe('AppRowActions', () => {
 
     expect(wrapper.get('[data-testid="user-actions-edit"]')).toBeTruthy()
     expect(wrapper.get('[data-testid="user-actions-more"]')).toBeTruthy()
+    expect(wrapper.get('[data-testid="user-actions-more"]').attributes('aria-haspopup')).toBe('menu')
+    expect(wrapper.get('[data-testid="user-actions-more"]').attributes('aria-expanded')).toBe('true')
     expect(document.body.querySelector('[data-testid="user-actions-menu"]')).not.toBeNull()
     const menuItems = Array.from(document.body.querySelectorAll('.app-row-actions-menu__item'))
     expect(menuItems.map((item) => item.textContent?.trim())).toEqual(['禁用', '删除'])
@@ -166,7 +200,9 @@ describe('AppRowActions', () => {
 
     const deleteItem = menuItems.find((item) => item.textContent?.trim() === '删除') as HTMLButtonElement
     deleteItem.click()
+    await nextTick()
     expect(remove).toHaveBeenCalledTimes(1)
+    expect(document.body.querySelector('[data-testid="user-actions-menu"]')).toBeNull()
   })
 
   it('首个未指定语义色的行内高频动作使用主色，后续普通动作保持弱化', async () => {

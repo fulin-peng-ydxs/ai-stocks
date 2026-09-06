@@ -1102,13 +1102,15 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.text()).toContain('backtest failed')
   })
 
-  it('回测方案局部加载失败保留表单并提供页内重试态', async () => {
+  it('回测方案首次加载失败由字段错误态接管，不与空选择框并存', async () => {
     ;(scoreApi.listScoreProfiles as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('score profiles failed'))
     const wrapper = await mountView(BacktestView)
-    // T5：方案加载错误由 AssetProfileSelect 组件内联承接（AppStateBlock + 重试），不再有页面聚合错误块；
-    // 局部失败不阻塞表单，运行入口仍可用。
+    const scoreSelector = wrapper.findAllComponents(AssetProfileSelect)
+      .find((select) => select.props('testId') === 'backtest-score-select')!
     expect(wrapper.text()).toContain('评分方案加载失败')
     expect(wrapper.text()).toContain('score profiles failed')
+    expect(scoreSelector.find('[data-testid="backtest-score-select-select"]').exists()).toBe(false)
+    expect(scoreSelector.find('.app-state-block__inline-error').exists()).toBe(true)
     expect(wrapper.text()).toContain('运行回测')
   })
 
