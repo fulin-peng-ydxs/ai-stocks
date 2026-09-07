@@ -30,7 +30,7 @@ cleanup() {
   if [[ "$owns_backend" != "1" ]]; then
     return
   fi
-  "$PROJECT_ROOT/start.sh" stop
+  "$PROJECT_ROOT/start.sh" stop --force
   AI_STOCKS_ENV="$AI_STOCKS_ENV" AI_STOCKS_E2E_WRITE=1 \
     "$PROJECT_ROOT/start.sh" e2e-board-data cleanup
   if [[ "$was_running" == "1" ]]; then

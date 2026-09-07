@@ -92,7 +92,7 @@ restore_runtime() {
   trap - EXIT
   set +e
   if [[ "$owns_backend" == "1" ]]; then
-    "$PROJECT_ROOT/start.sh" stop
+    "$PROJECT_ROOT/start.sh" stop --force
     cleanup_backtest_fixture || cleanup_exit=$?
     if [[ "$was_running" == "1" ]]; then
       "$PROJECT_ROOT/start.sh" restore-runtime "$runtime_snapshot" || restore_exit=$?

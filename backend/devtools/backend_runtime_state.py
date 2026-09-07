@@ -173,7 +173,8 @@ def restore_runtime_state(*, source: Path, start_script: Path, runtime_file: Pat
     subprocess.run([str(start_script), str(data["mode"])], env=environment, check=True)
     restored = load_runtime_state(runtime_file)
     if restored.get("pgFingerprint") != data.get("pgFingerprint"):
-        subprocess.run([str(start_script), "stop"], env=environment, check=False)
+        # The just-restored process points at an unexpected PG target and must not be left alive.
+        subprocess.run([str(start_script), "stop", "--force"], env=environment, check=False)
         raise RuntimeError("恢复后的 PostgreSQL 指纹与测试前不一致，已停止后端")
 
 

@@ -108,7 +108,7 @@ restore_and_cleanup() {
   if [[ "$owns_backend" != "1" ]]; then
     exit "$original_exit"
   fi
-  "$PROJECT_ROOT/start.sh" stop
+  "$PROJECT_ROOT/start.sh" stop --force
   cleanup_fixture_with_retry || cleanup_exit=$?
   if [[ "$cleanup_exit" != "0" ]]; then
     echo "关联板块 E2E 清理失败，可能存在专属前缀残留" >&2

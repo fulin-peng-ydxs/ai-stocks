@@ -8,6 +8,7 @@ import pytest
 from backend.devtools.backend_runtime_state import (
     build_restore_environment,
     build_runtime_state,
+    restore_runtime_state,
     snapshot_runtime_state,
 )
 
@@ -74,3 +75,39 @@ def test_snapshot_rejects_stale_pid_before_writing_target(tmp_path: Path) -> Non
         snapshot_runtime_state(source=source, target=target, expected_pid=456)
 
     assert not target.exists()
+
+
+def test_restore_force_stops_backend_when_pg_fingerprint_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "snapshot.json"
+    runtime_file = tmp_path / "runtime.json"
+    start_script = tmp_path / "start.sh"
+    state = {"mode": "dev", "pgFingerprint": "a" * 64}
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr(
+        "backend.devtools.backend_runtime_state.load_runtime_state",
+        lambda path: state if path == source else {"pgFingerprint": "b" * 64},
+    )
+    monkeypatch.setattr(
+        "backend.devtools.backend_runtime_state.build_restore_environment",
+        lambda *args, **kwargs: {},
+    )
+    monkeypatch.setattr(
+        "backend.devtools.backend_runtime_state.subprocess.run",
+        lambda command, **kwargs: calls.append([str(value) for value in command]),
+    )
+
+    with pytest.raises(RuntimeError, match="PostgreSQL 指纹"):
+        restore_runtime_state(
+            source=source,
+            start_script=start_script,
+            runtime_file=runtime_file,
+        )
+
+    assert calls == [
+        [str(start_script), "dev"],
+        [str(start_script), "stop", "--force"],
+    ]

@@ -245,7 +245,7 @@ cp .env.local.example .env.local
 1. `./start.sh status` 看后端进程、端口和 `/api/health`。
 2. `./start.sh logs` 看数据库初始化、调度器启动、报错堆栈。
 3. 浏览器打开 `http://localhost:5173`，前端报 API 错误时优先确认 Vite 代理是否仍指向 `127.0.0.1:8000`。
-4. 如果 DuckDB 被 CLI 或旧服务占用，先 `./start.sh stop`，确认没有其它写库进程后再启动。
+4. 如果 DuckDB 被 CLI 或旧服务占用，先执行安全停服 `./start.sh stop`；脚本会在有后台任务或无法读取任务状态时拒绝。只有明确接受任务被中断时才使用 `./start.sh stop --force`。
 
 ### 5.2 生产 / 集成模式
 

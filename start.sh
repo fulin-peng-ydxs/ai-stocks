@@ -5,8 +5,8 @@
 # 用法：
 #   ./start.sh            开发模式启动（热重载：改 backend/*.py 自动重启 worker）
 #   ./start.sh prod       生产模式启动（无热重载，开销更低、无瞬时 502）
-#   ./start.sh stop       停止后端
-#   ./start.sh restart    重启（开发模式）
+#   ./start.sh stop [--force]       安全停止；有任务时拒绝，--force 强制停止
+#   ./start.sh restart [--force]    安全重启（开发模式）；--force 强制重启
 #   ./start.sh status     查看运行状态
 #   ./start.sh assert-idle  确认没有待执行/运行中的后台任务
 #   ./start.sh stop-if-idle 仅在没有后台任务时停止后端
@@ -29,7 +29,7 @@
 # ───────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-cd "$(dirname "$0")"
+cd "$(dirname "${BASH_SOURCE[0]}")"
 
 PY="${PYTHON:-python}"
 LOG_DIR="logs"
@@ -152,7 +152,7 @@ PY
       echo "$pid" > "$PID_FILE"
       if ! write_runtime_state "$mode" "$pid"; then
         echo "❌ 无法写入可信后端运行档案，停止本次服务" >&2
-        stop
+        terminate_backend
         return 1
       fi
       echo "✅ 已启动 (PID $pid) — http://127.0.0.1:8000  | 日志：$LOG_FILE"
@@ -166,7 +166,7 @@ PY
   exit 1
 }
 
-stop() {
+terminate_backend() {
   local pid pgid i
   pid="$(running_pid)"
   if [[ -z "$pid" ]]; then
@@ -247,73 +247,99 @@ PY
     return 1
   fi
   if [[ "$count" != "0" ]]; then
-    echo "检测到 $count 个待执行或运行中的后台任务，拒绝停止后端；请等待任务结束或先显式终止任务" >&2
+    echo "检测到 $count 个待执行或运行中的后台任务，拒绝停止或重启后端；请等待任务结束，确需中断时显式追加 --force" >&2
     return 1
   fi
   echo "✅ 后端当前无待执行或运行中的后台任务"
 }
 
-restart_safely() {
-  local pid code
+stop_safely() {
+  local force="${1:-0}"
+  local pid
   pid="$(running_pid)"
   if [[ -z "$pid" ]]; then
-    start dev
-    return
+    terminate_backend
+    return 0
   fi
-  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
-    http://127.0.0.1:8000/api/health 2>/dev/null)" || code="000"
-  if [[ "$code" == "200" ]]; then
-    assert_idle
+
+  if [[ "$force" == "1" ]]; then
+    echo "⚠️  已显式启用强制停止/重启，将跳过后台任务状态检查" >&2
   else
-    echo "后端健康检查为 ${code}，执行恢复性重启" >&2
+    assert_idle
   fi
-  stop
+  terminate_backend
+}
+
+restart_safely() {
+  local force="${1:-0}"
+  local pid
+  pid="$(running_pid)"
+  if [[ -n "$pid" ]]; then
+    stop_safely "$force"
+  fi
   start dev
 }
 
-case "${1:-dev}" in
-  dev|"")   start dev ;;
-  prod)     start prod ;;
-  stop)     stop ;;
-  restart)  restart_safely ;;
-  status)   status ;;
-  assert-idle) assert_idle ;;
-  stop-if-idle) assert_idle; stop ;;
-  snapshot-runtime)
+parse_force_flag() {
+  if [[ "$#" == "0" ]]; then
+    echo 0
+    return 0
+  fi
+  if [[ "$#" == "1" && "$1" == "--force" ]]; then
+    echo 1
+    return 0
+  fi
+  echo "仅支持可选参数 --force" >&2
+  return 2
+}
+
+main() {
+  local action="${1:-dev}"
+  if [[ "$#" != "0" ]]; then
     shift
-    snapshot_runtime_state "${1:-}"
-    ;;
-  restore-runtime)
-    shift
-    restore_runtime_state "${1:-}"
-    ;;
-  logs)     tail -f "$LOG_FILE" ;;
-  dev-users)
-    shift
-    "$PY" -m backend.cli dev-users "$@"
-    ;;
-  e2e-user)
-    shift
-    "$PY" -m backend.devtools.e2e_test_users "$@"
-    ;;
-  e2e-backtest-run)
-    shift
-    "$PY" -m backend.devtools.e2e_backtest_runs "$@"
-    ;;
-  e2e-board-data)
-    shift
-    "$PY" -m backend.devtools.e2e_board_data "$@"
-    ;;
-  e2e-stock-board-correlation)
-    shift
-    "$PY" -m backend.devtools.e2e_stock_board_correlation "$@"
-    ;;
-  e2e-trade-discipline)
-    shift
-    "$PY" -m backend.devtools.e2e_trade_discipline "$@"
-    ;;
-  *)
-    echo "用法: ./start.sh [dev|prod|stop|restart|status|assert-idle|stop-if-idle|logs|dev-users|e2e-user|e2e-backtest-run|e2e-board-data|e2e-stock-board-correlation|e2e-trade-discipline]"
-    exit 1
-    ;;
-esac
+  fi
+  local force
+  case "$action" in
+    dev|"")
+      [[ "$#" == "0" ]] || { echo "dev 不接受额外参数" >&2; return 2; }
+      start dev
+      ;;
+    prod)
+      [[ "$#" == "0" ]] || { echo "prod 不接受额外参数" >&2; return 2; }
+      start prod
+      ;;
+    stop)
+      force="$(parse_force_flag "$@")"
+      stop_safely "$force"
+      ;;
+    restart)
+      force="$(parse_force_flag "$@")"
+      restart_safely "$force"
+      ;;
+    status)   status ;;
+    assert-idle) assert_idle ;;
+    stop-if-idle)
+      [[ "$#" == "0" ]] || { echo "stop-if-idle 不接受额外参数" >&2; return 2; }
+      stop_safely 0
+      ;;
+    snapshot-runtime) snapshot_runtime_state "${1:-}" ;;
+    restore-runtime) restore_runtime_state "${1:-}" ;;
+    logs)     tail -f "$LOG_FILE" ;;
+    dev-users) "$PY" -m backend.cli dev-users "$@" ;;
+    e2e-user) "$PY" -m backend.devtools.e2e_test_users "$@" ;;
+    e2e-backtest-run) "$PY" -m backend.devtools.e2e_backtest_runs "$@" ;;
+    e2e-board-data) "$PY" -m backend.devtools.e2e_board_data "$@" ;;
+    e2e-stock-board-correlation)
+      "$PY" -m backend.devtools.e2e_stock_board_correlation "$@"
+      ;;
+    e2e-trade-discipline) "$PY" -m backend.devtools.e2e_trade_discipline "$@" ;;
+    *)
+      echo "用法: ./start.sh [dev|prod|stop [--force]|restart [--force]|status|assert-idle|stop-if-idle|logs|dev-users|e2e-user|e2e-backtest-run|e2e-board-data|e2e-stock-board-correlation|e2e-trade-discipline]"
+      return 2
+      ;;
+  esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
