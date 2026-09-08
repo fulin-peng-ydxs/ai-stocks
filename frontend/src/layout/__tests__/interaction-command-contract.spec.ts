@@ -79,7 +79,37 @@ function commandButtons(): CommandButton[] {
 const commands = commandButtons()
 const at = (command: CommandButton) => `${command.file}:${command.line} ${command.label}`
 
+const FILTER_CARD = /<el-card\b(?=[^>]*\bfilter-card\b)[^>]*>([\s\S]*?)<\/el-card>/g
+const FILTER_CONDITION = /<(AppSearchInput|el-select|AppFilterSelect|AppDatePicker|TradeDatePicker|PageSegmented|StockOptionSelect|el-checkbox)\b/g
+
+function searchOrderAudit(): { inspected: number; offenders: string[] } {
+  const offenders: string[] = []
+  let inspected = 0
+  for (const file of vueFiles(resolve(SRC_DIR, 'views'))) {
+    const source = readFileSync(file, 'utf8')
+    for (const card of source.matchAll(FILTER_CARD)) {
+      const conditions = [...(card[1] ?? '').matchAll(FILTER_CONDITION)].map((match) => match[1])
+      const firstSearch = conditions.indexOf('AppSearchInput')
+      if (firstSearch < 0) continue
+      inspected += 1
+      const laterCondition = conditions
+        .slice(firstSearch + 1)
+        .find((component) => component !== 'AppSearchInput')
+      if (!laterCondition) continue
+      const line = source.slice(0, card.index).split('\n').length
+      offenders.push(`${relative(SRC_DIR, file).split('\\').join('/')}:${line} 搜索框后仍有 ${laterCondition}`)
+    }
+  }
+  return { inspected, offenders }
+}
+
 describe('查询、重置与刷新命令契约', () => {
+  it('列表筛选区的文本搜索框位于全部条件选择之后', () => {
+    const { inspected, offenders } = searchOrderAudit()
+    expect(inspected, '至少应扫描当前已登记的列表搜索筛选区').toBeGreaterThanOrEqual(8)
+    expect(offenders, `以下筛选区的搜索框不是最后一类条件：\n${offenders.join('\n')}`).toEqual([])
+  })
+
   it('DESIGN 保留统一操作状态和稳定语义名称', () => {
     for (const state of ['idle-clean', 'idle-dirty', 'querying', 'resetting', 'refreshing', 'error']) {
       expect(DESIGN_SOURCE).toContain(`\`${state}\``)

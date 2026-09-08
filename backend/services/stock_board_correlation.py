@@ -698,6 +698,53 @@ class StockBoardCorrelationService:
                 f"ON CONFLICT (code, board_type, as_of_date) DO UPDATE SET {champion_updates}"
             )
 
+    def list_membership_options(self) -> list[BoardMembershipItem]:
+        """返回存在有效股票成员的行业/概念选项，供个股列表统一筛选。"""
+        rows = self.c.query_df(
+            "SELECT DISTINCT bd.board_code, bd.name, bd.board_type "
+            "FROM board_dict bd "
+            "INNER JOIN board_member bm ON bm.board_code=bd.board_code "
+            "INNER JOIN stock_basic sb ON sb.code=bm.code "
+            "WHERE bd.board_type IN ('industry', 'concept') "
+            "ORDER BY CASE bd.board_type WHEN 'industry' THEN 0 ELSE 1 END, "
+            "         bd.name, bd.board_code"
+        )
+        return [
+            {
+                "board_code": str(row["board_code"]),
+                "name": str(row["name"]),
+                "board_type": str(row["board_type"]),
+            }
+            for row in rows.to_dict("records")
+        ]
+
+    def member_codes_for_board(
+        self,
+        board_code: str | None,
+        as_of_date: date | None = None,
+    ) -> set[str] | None:
+        """返回板块累计成员；未指定板块时返回 None，便于调用方区分“未筛选”。"""
+        normalized = str(board_code or "").strip()
+        if not normalized:
+            return None
+        date_clause = (
+            " AND (bm.first_seen_date IS NULL OR bm.first_seen_date<=?)"
+            if as_of_date is not None
+            else ""
+        )
+        params: list[object] = [normalized]
+        if as_of_date is not None:
+            params.append(pd.Timestamp(as_of_date).date())
+        rows = self.c.query_df(
+            "SELECT DISTINCT bm.code FROM board_member bm "
+            "INNER JOIN stock_basic sb ON sb.code=bm.code "
+            "INNER JOIN board_dict bd ON bd.board_code=bm.board_code "
+            "WHERE bd.board_code=? AND bd.board_type IN ('industry', 'concept')"
+            + date_clause,
+            params,
+        )
+        return {str(code) for code in rows["code"].tolist()}
+
     def get_membership(self, code: object) -> StockBoardMembership:
         normalized = normalize_stock_code(code)
         return self.get_memberships([normalized])[normalized]
@@ -809,7 +856,7 @@ class StockBoardCorrelationService:
         rows = self._query_related_boards_for_dates(normalized, normalized_dates, protect_dates)
         first_load_codes: set[str] = set()
         if protect_dates:
-            missing = self._collect_missing_snapshot_codes(normalized, normalized_dates, rows)
+            missing = self._collect_first_load_codes(normalized, normalized_dates, rows)
             if missing:
                 first_load_codes = self._enqueue_first_load_tasks(missing, normalized_dates)
         return self._assemble_related_boards(
@@ -832,6 +879,25 @@ class StockBoardCorrelationService:
             for code in normalized
             if normalized_dates.get(code) is not None and code not in have
         ]
+
+    def _collect_first_load_codes(
+        self,
+        normalized: list[str],
+        normalized_dates: Mapping[str, date | None],
+        rows: pd.DataFrame,
+    ) -> list[str]:
+        """只为从未存在当前算法快照的股票创建首次计算任务。"""
+        missing = self._collect_missing_snapshot_codes(normalized, normalized_dates, rows)
+        if not missing:
+            return []
+        placeholders = ",".join("?" for _ in missing)
+        existing = self.c.query_df(
+            "SELECT DISTINCT code FROM stock_board_correlation_state "
+            f"WHERE algorithm_version=? AND code IN ({placeholders})",
+            [ALGORITHM_VERSION, *missing],
+        )
+        existing_codes = {str(code) for code in existing["code"].tolist()}
+        return [code for code in missing if code not in existing_codes]
 
     def _enqueue_first_load_tasks(
         self,

@@ -112,6 +112,28 @@ def test_membership_as_of_keeps_legacy_null_and_filters_explicit_future_first_se
         assert {item["board_code"] for item in before["industries"]} == {"881001", "881002"}
 
 
+def test_membership_options_and_member_codes_share_valid_point_in_time_scope():
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_memberships(market)
+        market.execute(
+            "UPDATE board_member SET first_seen_date=DATE '2026-08-29' "
+            "WHERE board_code='301002' AND code='600000.SH'"
+        )
+        service = StockBoardCorrelationService(market)
+
+        options = service.list_membership_options()
+
+        assert [(item["board_type"], item["name"], item["board_code"]) for item in options] == [
+            ("industry", "银行", "881001"),
+            ("industry", "银行", "881002"),
+            ("concept", "中特估", "301001"),
+            ("concept", "金融科技", "301002"),
+        ]
+        assert service.member_codes_for_board(None) is None
+        assert service.member_codes_for_board("unknown") == set()
+        assert service.member_codes_for_board("301002", date(2026, 8, 28)) == set()
+        assert service.member_codes_for_board("301002", date(2026, 8, 29)) == {"600000.SH"}
 def test_membership_large_batch_avoids_duckdb_window_parameter_internal_error():
     with DuckDBClient(db_path=":memory:") as market:
         init_db(market)
@@ -190,16 +212,50 @@ def test_related_boards_api_returns_membership_and_rejects_invalid_code(monkeypa
         assert "股票代码格式非法" in invalid.json()["detail"]
 
 
+def test_membership_options_and_stock_list_filter_api(monkeypatch):
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_memberships(market)
+        market.execute(
+            "UPDATE board_member SET first_seen_date=DATE '2026-08-29' "
+            "WHERE board_code='301002' AND code='600000.SH'"
+        )
+        monkeypatch.setattr(
+            StockBoardCorrelationService,
+            "attach_related_boards",
+            lambda _self, _rows, _business_dates=None: None,
+        )
+        client = _api_client(monkeypatch, market)
+
+        options = client.get("/api/stocks/membership-options")
+        assert options.status_code == 200
+        assert len(options.json()["data"]["list"]) == 4
+
+        before = client.get(
+            "/api/stocks?trade_date=2026-08-28&membership_board_code=301002"
+        )
+        on_date = client.get(
+            "/api/stocks?trade_date=2026-08-29&membership_board_code=301002"
+        )
+        unknown = client.get(
+            "/api/stocks?trade_date=2026-08-29&membership_board_code=unknown"
+        )
+
+        assert before.json()["data"]["total"] == 0
+        assert [row["code"] for row in on_date.json()["data"]["list"]] == ["600000.SH"]
+        assert unknown.json()["data"]["total"] == 0
+
+
 def test_related_boards_route_exposes_stocks_view_and_returns_401_403(monkeypatch):
-    route_item = next(
-        item for item in router.routes if item.path == "/api/stocks/{code}/related-boards"
-    )
-    dependency = next(
-        dep.call
-        for dep in route_item.dependant.dependencies
-        if getattr(dep.call, "resource_code", None) == "stocks:view"
-    )
-    assert dependency.resource_code == "stocks:view"
+    paths = ("/api/stocks/{code}/related-boards", "/api/stocks/membership-options")
+    for path in paths:
+        route_item = next(item for item in router.routes if item.path == path)
+        dependency = next(
+            dep.call
+            for dep in route_item.dependant.dependencies
+            if getattr(dep.call, "resource_code", None) == "stocks:view"
+        )
+        assert dependency.resource_code == "stocks:view"
 
     app = FastAPI()
 
@@ -215,6 +271,7 @@ def test_related_boards_route_exposes_stocks_view_and_returns_401_403(monkeypatc
 
     monkeypatch.setattr("backend.auth.deps.get_current_context", lambda: None)
     assert client.get("/api/stocks/600000.SH/related-boards").status_code == 401
+    assert client.get("/api/stocks/membership-options").status_code == 401
 
     context = AuthContext(
         user_id="pytest_user",
@@ -223,6 +280,7 @@ def test_related_boards_route_exposes_stocks_view_and_returns_401_403(monkeypatc
     )
     monkeypatch.setattr("backend.auth.deps.get_current_context", lambda: context)
     assert client.get("/api/stocks/600000.SH/related-boards").status_code == 403
+    assert client.get("/api/stocks/membership-options").status_code == 403
 
 
 def test_related_boards_api_fail_closed_when_as_of_behind_latest(monkeypatch):

@@ -588,9 +588,6 @@ onBeforeUnmount(stopTimer)
             class="w120"
             @change="filterChanged"
           />
-          <AppSearchInput v-model="filters.resource_code" placeholder="资源码" style="width: 160px" @search="search" />
-          <AppSearchInput v-model="filters.actor_keyword" placeholder="处理人" style="width: 140px" @search="search" />
-          <AppSearchInput v-model="filters.target_keyword" placeholder="目标对象" style="width: 160px" @search="search" />
           <AppFilterSelect
             v-if="auth.isSystem"
             v-model="filters.tenant_id"
@@ -599,6 +596,9 @@ onBeforeUnmount(stopTimer)
             class="w180"
             @change="filterChanged"
           />
+          <AppSearchInput v-model="filters.resource_code" placeholder="资源码" style="width: 160px" @search="search" />
+          <AppSearchInput v-model="filters.actor_keyword" placeholder="处理人" style="width: 140px" @search="search" />
+          <AppSearchInput v-model="filters.target_keyword" placeholder="目标对象" style="width: 160px" @search="search" />
           <el-button data-testid="audit-reset-filters" :disabled="!hasFilters" @click="resetFilters">重置筛选</el-button>
         </AppControlRow>
       </el-card>

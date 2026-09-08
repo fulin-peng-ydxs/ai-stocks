@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '@/api/client'
-import { getIndicators, getStockBenchmarkBars, getStockBoardMembership } from '@/api/stocks'
+import {
+  getIndicators,
+  getStockBenchmarkBars,
+  getStockBoardMembership,
+  getStockMembershipOptions,
+  listStocks,
+} from '@/api/stocks'
 
 vi.mock('@/api/client', () => ({
   default: {
@@ -74,5 +80,21 @@ describe('getStockBoardMembership', () => {
     getStockBoardMembership('600000.SH')
 
     expect(http.get).toHaveBeenCalledWith('/stocks/600000.SH/related-boards')
+  })
+})
+
+describe('stock membership filters', () => {
+  beforeEach(() => {
+    vi.mocked(http.get).mockReset()
+  })
+
+  it('请求统一行业概念选项并透传成员板块筛选', () => {
+    getStockMembershipOptions()
+    expect(http.get).toHaveBeenCalledWith('/stocks/membership-options')
+
+    listStocks({ membership_board_code: '301001', page: 2 })
+    expect(http.get).toHaveBeenLastCalledWith('/stocks', {
+      params: { membership_board_code: '301001', page: 2 },
+    })
   })
 })

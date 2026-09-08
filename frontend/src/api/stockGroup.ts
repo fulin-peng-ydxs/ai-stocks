@@ -52,6 +52,7 @@ export interface GroupMembersParams {
   size?: number
   q?: string
   board?: string
+  membership_board_code?: string
   exclude_st?: boolean
   exclude_delisted?: boolean
   trade_date?: string

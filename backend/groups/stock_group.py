@@ -203,6 +203,7 @@ class StockGroupRepo:
 
     def get(self, gid: str, page: int = 1, size: int = 50, q: str | None = None,
             board: str | None = None, exclude_st: bool = False,
+            membership_board_code: str | None = None,
             exclude_delisted: bool = False,
             trade_date: date | None = None,
             sort_by: str = "add_date", sort_order: str = "asc") -> dict | None:
@@ -228,6 +229,8 @@ class StockGroupRepo:
             all_members,
             q,
             board=board,
+            membership_board_code=membership_board_code,
+            membership_as_of_date=trade_date,
             exclude_st=exclude_st,
             exclude_delisted=exclude_delisted,
         )
@@ -255,15 +258,25 @@ class StockGroupRepo:
 
     def _filter_members(self, members: list[dict], q: str | None,
                         *, board: str | None = None,
+                        membership_board_code: str | None = None,
+                        membership_as_of_date: date | None = None,
                         exclude_st: bool = False,
                         exclude_delisted: bool = False) -> list[dict]:
         needle = (q or "").strip().lower()
+        from backend.services.stock_board_correlation import StockBoardCorrelationService
+
+        membership_codes = StockBoardCorrelationService(self.mkt).member_codes_for_board(
+            membership_board_code,
+            membership_as_of_date,
+        )
 
         def matches(member: dict) -> bool:
             if needle and (
                 needle not in str(member.get("code") or "").lower()
                 and needle not in str(member.get("name") or "").lower()
             ):
+                return False
+            if membership_codes is not None and member.get("code") not in membership_codes:
                 return False
             if board == "退市":
                 return bool(member.get("_delisted"))

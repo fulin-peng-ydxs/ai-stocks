@@ -11,6 +11,7 @@
 - 排序字段走白名单映射防注入：`_STOCK_SORT_COLS`（`stocks.py:20`）只放行 `pct_chg / name / industry / code`，其余回落 `pct_chg`；`sort_order` 仅 `asc/desc`。排序统一 `... NULLS LAST, sb.code ASC`（`stocks.py:58`），停牌（当日无行情）的 NULL 涨跌幅恒排末尾，并以 code 作稳定次序键。
 - 当日涨跌幅按交易日 `LEFT JOIN daily_bar` 现算 `(close/pre_close-1)*100`（`stocks.py:62`），`trade_date` 缺省取 `max(trade_date)`。
 - 退市/ST 口径：`board='退市'` 只看 `delist_date IS NOT NULL`，其余板块一律 `delist_date IS NULL` 排除退市；`board='ST'` 按名称含 `ST` 过滤，其它板块可选 `exclude_st` 再剔 ST（`stocks.py:42-52`）。
+- 行业/概念筛选统一使用同花顺 `board_dict + board_member` 累计归属，选项由 `GET /stocks/membership-options` 按行业、概念稳定返回，列表与分组接口共同消费 `membership_board_code`。指定历史交易日时排除 `first_seen_date` 明确晚于该日的关系；存量空日期视为历史已存在。该口径不同于列表“行业”列的证监会行业分类。
 - 只有认证上下文具备 `stock-group:view`（或 system）时才构造 `StockGroupRepo` 并批量调用 `groups_for_codes`；无权限时统一返回空 `groups`，不读取分组资产，也不会因仓库构造而创建默认分组。前端同时隐藏分组列、分组视图和对应页面设置元数据。
 - 股票当前页在最终分页行形成后，以响应 `trade_date` 一次批量读取 `stock_board_correlation_state + stock_board_correlation + board_dict` 并附加可选 `related_boards`；分组页先从 PG 取资产、再从 DuckDB 取行情，最终只对当前页按各行 `last_date` 批量合并摘要，禁止跨库 JOIN。业务日期与摘要 `as_of_date` 不一致时行业/概念为空并标记 `as_of_mismatch`，不会用最新冠军装饰历史行。
 
@@ -55,7 +56,7 @@
 ## 业务架构
 
 ### 三块功能
-1. 个股查询与行情分析（`StocksView.vue`）：按交易日/板块/ST/退市/关键词筛选，服务端排序分页；选中股票后在双栏工作台切换多股走势对比或 K 线分析。
+1. 个股查询与行情分析（`StocksView.vue`）：按交易日/上市板块/ST/退市/同花顺行业或概念归属/关键词筛选，服务端排序分页；选中股票后在双栏工作台切换多股走势对比或 K 线分析。
 2. 个股详情（`StockDetailView.vue`）：K线/量能/MACD 三图工作区 + 最新指标快照 + 当前可见买卖方案在该股的买入/卖出信号与逐条成立明细 + 分组归属编辑 + 集合内上一只/下一只导航。
 3. 股票分组（`StocksView.vue` 分组视图 + `stock_groups.py`）：用户手动圈定的股票篮子，含成员加入日期与自加入日起的等权平均涨幅；全市场与分组通过筛选栏首项切换并共用交易日、关键词和板块条件，当前分组在紧凑上下文栏内切换和维护。
 
@@ -71,7 +72,7 @@
 - 读：`stock_basic`（板块/退市/名称）、`daily_bar`（行情/复权）。
 
 ### 主要 API
-- 个股：`GET /stocks`、`/stocks/{code}/bars`、`/stocks/benchmarks/{index_code}/bars`、`/stocks/{code}/indicators`、`/stocks/{code}/trade-eval`、`/stocks/{code}/signal`。
+- 个股：`GET /stocks`、`/stocks/membership-options`、`/stocks/{code}/bars`、`/stocks/benchmarks/{index_code}/bars`、`/stocks/{code}/indicators`、`/stocks/{code}/trade-eval`、`/stocks/{code}/signal`。
 - 分组：`GET/POST /stock-groups`、`GET/PATCH/DELETE /stock-groups/{gid}`、`POST/DELETE /stock-groups/{gid}/members`、`PATCH /stock-groups/{gid}/members/{code}`（改单股加入日）。
 
 ## 页面使用说明书
@@ -84,6 +85,7 @@
 |---------|------|------|
 | 交易日 | 决定涨跌幅和行情截面 | 默认最新交易日 |
 | 板块筛选 | 主板/创业板/科创板/ST/退市等 | 退市股单独入口，便于历史复盘 |
+| 所属行业/概念 | 单选同花顺行业或概念板块 | 行业、概念合并在一个可搜索下拉中，普通列表与分组共同生效 |
 | 关键词 | 按代码或名称搜索 | 服务端筛选 |
 | 排序 | 涨跌幅、名称、行业、代码 | 服务端排序，停牌 NULL 排后 |
 | 全市场 / 分组 | 切换全市场查询与分组成员列表 | 与板块行情的范围切换交互一致，切换后筛选栏保持不变 |

@@ -52,6 +52,7 @@ def list_groups() -> ApiResponse:
             dependencies=[Depends(require_perm("stock-group:view"))])
 def get_group(gid: str, page: int = 1, size: int = 50, q: str | None = None,
               board: str | None = None, exclude_st: bool = False,
+              membership_board_code: str | None = None,
               exclude_delisted: bool = False,
               trade_date: date | None = None,
               sort_by: str = "add_date", sort_order: str = "asc") -> ApiResponse:
@@ -61,6 +62,7 @@ def get_group(gid: str, page: int = 1, size: int = 50, q: str | None = None,
         size=size,
         q=q,
         board=board,
+        membership_board_code=membership_board_code,
         exclude_st=exclude_st,
         exclude_delisted=exclude_delisted,
         trade_date=trade_date,

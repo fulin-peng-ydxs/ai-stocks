@@ -17,6 +17,7 @@ export interface StockListState {
   mode: 'list' | 'group'
   q: string
   board: string
+  membershipBoardCode?: string
   excludeSt: boolean
   tradeDate: string
   sortBy: string

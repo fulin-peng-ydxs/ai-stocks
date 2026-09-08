@@ -8,6 +8,7 @@ import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import { ArrowDown, Delete, Edit } from '@element-plus/icons-vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
@@ -20,7 +21,13 @@ import StockAnalysisNameCell from '@/components/StockAnalysisNameCell.vue'
 import RelatedBoardCell from '@/components/RelatedBoardCell.vue'
 import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
 import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.vue'
-import { listStocks, type StockBasic, type StockListParams } from '@/api/stocks'
+import {
+  getStockMembershipOptions,
+  listStocks,
+  type StockBasic,
+  type StockListParams,
+  type StockMembershipOption,
+} from '@/api/stocks'
 import {
   addMembers,
   createGroup,
@@ -192,6 +199,26 @@ const loading = ref(false)
 const loadError = ref('')
 const q = ref('')
 const board = ref('')
+const membershipBoardCode = ref('')
+const membershipOptionRows = ref<StockMembershipOption[]>([])
+const membershipOptionsLoading = ref(false)
+const membershipOptionsError = ref('')
+const membershipOptionsRequest = createLatestRequestGuard()
+const membershipOptions = computed(() => {
+  const duplicateNames = new Map<string, number>()
+  for (const item of membershipOptionRows.value) {
+    const key = `${item.board_type}:${item.name}`
+    duplicateNames.set(key, (duplicateNames.get(key) ?? 0) + 1)
+  }
+  return membershipOptionRows.value.map((item) => {
+    const typeLabel = item.board_type === 'industry' ? '行业' : '概念'
+    const duplicate = (duplicateNames.get(`${item.board_type}:${item.name}`) ?? 0) > 1
+    return {
+      value: item.board_code,
+      label: `${typeLabel}｜${item.name}${duplicate ? `（${item.board_code}）` : ''}`,
+    }
+  })
+})
 const excludeSt = ref(Boolean(settings.excludeSt))        // 默认排除 ST
 const tradeDate = ref('')          // 交易日期（默认最新，展示当日涨跌幅）
 const sortBy = ref(defaultSortBy.value)      // 服务端排序字段（默认涨跌幅，初值取组件配置默认排序）
@@ -263,6 +290,22 @@ watch(groupDefaultSortOrder, (value) => {
 })
 
 const stockListRequest = createLatestRequestGuard()
+async function loadMembershipOptions(): Promise<void> {
+  const requestId = membershipOptionsRequest.begin()
+  membershipOptionsLoading.value = true
+  membershipOptionsError.value = ''
+  try {
+    const data = await getStockMembershipOptions()
+    if (!membershipOptionsRequest.isCurrent(requestId)) return
+    membershipOptionRows.value = data.list
+  } catch (error) {
+    if (!membershipOptionsRequest.isCurrent(requestId)) return
+    membershipOptionsError.value = getErrorMessage(error, '行业与概念选项加载失败')
+  } finally {
+    if (membershipOptionsRequest.isCurrent(requestId)) membershipOptionsLoading.value = false
+  }
+}
+
 async function load(background = false) {
   const requestId = stockListRequest.begin()
   if (!background) {
@@ -273,6 +316,7 @@ async function load(background = false) {
     const data = await listStocks({
       q: q.value || undefined,
       board: board.value || undefined,
+      membership_board_code: membershipBoardCode.value || undefined,
       exclude_st: excludeSt.value,
       trade_date: tradeDate.value || undefined,
       sort_by: sortBy.value,
@@ -440,6 +484,7 @@ function searchCurrentView() {
 const hasQueryFilters = computed(() => (
   q.value.trim() !== ''
   || board.value !== ''
+  || membershipBoardCode.value !== ''
   || tradeDate.value !== (dataMax.value || '')
 ))
 
@@ -448,6 +493,7 @@ async function resetQueryFilters(): Promise<void> {
   restoringListState = true
   q.value = ''
   board.value = ''
+  membershipBoardCode.value = ''
   excludeSt.value = Boolean(settings.excludeSt)
   tradeDate.value = dataMax.value || ''
   page.value = 1
@@ -460,8 +506,10 @@ async function resetQueryFilters(): Promise<void> {
 }
 
 async function refreshStocks(): Promise<void> {
-  if (inGroupMode.value) await loadGroupDetail()
-  else await load()
+  await Promise.all([
+    inGroupMode.value ? loadGroupDetail() : load(),
+    loadMembershipOptions(),
+  ])
   analysisRefreshRevision.value += 1
 }
 async function loadGroupDetail(background = false) {
@@ -483,6 +531,7 @@ async function loadGroupDetail(background = false) {
       size: groupSize.value,
       q: q.value || undefined,
       board: board.value || undefined,
+      membership_board_code: membershipBoardCode.value || undefined,
       exclude_st: excludeSt.value,
       exclude_delisted: board.value !== '退市',
       trade_date: tradeDate.value || undefined,
@@ -619,6 +668,7 @@ function querySnapshot(): StockListParams {
   return {
     q: q.value || undefined,
     board: board.value || undefined,
+    membership_board_code: membershipBoardCode.value || undefined,
     exclude_st: excludeSt.value,
     trade_date: tradeDate.value || undefined,
     sort_by: sortBy.value,
@@ -632,6 +682,7 @@ function groupQuerySnapshot() {
     size: Math.min(groupSize.value, 100),
     q: q.value || undefined,
     board: board.value || undefined,
+    membership_board_code: membershipBoardCode.value || undefined,
     exclude_st: excludeSt.value,
     exclude_delisted: board.value !== '退市',
     trade_date: tradeDate.value || undefined,
@@ -644,6 +695,7 @@ function currentListState(): StockListState {
     mode: inGroupMode.value ? 'group' : 'list',
     q: q.value,
     board: board.value,
+    membershipBoardCode: membershipBoardCode.value,
     excludeSt: excludeSt.value,
     tradeDate: tradeDate.value,
     sortBy: sortBy.value,
@@ -790,12 +842,13 @@ onMounted(async () => {
     whenRemoteHydrated(),
     auth.ensureLoaded().catch(() => undefined),
   ])
-  await reloadGroups()
+  await Promise.all([reloadGroups(), loadMembershipOptions()])
   const restore = route.query.restore === '1' ? stockSet.listState : null
   if (restore) {
     restoringListState = true
     q.value = restore.mode === 'group' ? (restore.groupQ || restore.q) : restore.q
     board.value = restore.board
+    membershipBoardCode.value = restore.membershipBoardCode || ''
     excludeSt.value = restore.excludeSt
     tradeDate.value = restore.tradeDate
     sortBy.value = restore.sortBy
@@ -846,12 +899,12 @@ onMounted(async () => {
         <HelpTip title="个股查询说明" :width="440">
           <HelpTipItem question="如何查询个股">
             <ul>
-              <li>按代码、名称或板块筛选个股，并支持分组查看与集合内翻页。</li>
+              <li>按代码、名称、上市板块或同花顺行业概念归属筛选，并支持分组查看与集合内翻页。</li>
             </ul>
           </HelpTipItem>
         </HelpTip>
       </h2>
-      <p class="page-subtitle">按代码/名称/板块筛选个股行情，可跨分页勾选与分组管理。</p>
+      <p class="page-subtitle">按代码、名称、上市板块或行业概念归属筛选，可跨分页勾选与分组管理。</p>
       </div>
       <div class="page-head-actions">
         <AppStatusNotice
@@ -863,7 +916,16 @@ onMounted(async () => {
           action-text="重新加载"
           @action="reloadGroups"
         />
-        <el-button data-testid="stocks-refresh" :loading="loading || groupLoading" @click="refreshStocks">刷新</el-button>
+        <AppStatusNotice
+          v-if="membershipOptionsError"
+          tone="warning"
+          size="inline"
+          title="行业与概念选项加载失败"
+          :description="membershipOptionsError"
+          action-text="重新加载"
+          @action="loadMembershipOptions"
+        />
+        <el-button data-testid="stocks-refresh" :loading="loading || groupLoading || membershipOptionsLoading" @click="refreshStocks">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
     </div>
@@ -882,7 +944,6 @@ onMounted(async () => {
           @update:model-value="onViewChange"
         />
         <TradeDatePicker v-model="tradeDate" placeholder="交易日期" clearable style="width: 180px" />
-        <AppSearchInput v-model="q" placeholder="代码 / 名称" style="width: 220px" @search="searchCurrentView" />
         <el-select v-model="board" placeholder="全部板块" style="width: 130px" clearable @change="searchCurrentView">
           <el-option label="主板" value="主板" />
           <el-option label="创业板" value="创业板" />
@@ -890,6 +951,17 @@ onMounted(async () => {
           <el-option label="ST 板块" value="ST" />
           <el-option label="退市板块" value="退市" />
         </el-select>
+        <AppFilterSelect
+          v-model="membershipBoardCode"
+          :options="membershipOptions"
+          :multiple="false"
+          :disabled="membershipOptionsLoading || !!membershipOptionsError"
+          placeholder="所属行业 / 概念"
+          aria-label="所属行业或概念"
+          style="width: 220px"
+          @change="searchCurrentView"
+        />
+        <AppSearchInput v-model="q" placeholder="代码 / 名称" style="width: 220px" @search="searchCurrentView" />
         <el-button data-testid="stocks-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
       </AppControlRow>
     </el-card>

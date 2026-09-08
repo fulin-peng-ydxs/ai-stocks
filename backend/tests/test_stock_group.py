@@ -185,6 +185,38 @@ def test_group_reuses_stock_filters_and_trade_date_cutoff(repo):
     assert [row["code"] for row in repo.get(gid, board="退市")["members"]["list"]] == ["A"]
 
 
+def test_group_filters_ths_membership_with_point_in_time_boundary(repo):
+    repo.mkt.execute(
+        "INSERT INTO board_dict (board_code,name,board_type) VALUES "
+        "('881001','银行','industry'),('301001','人工智能','concept')"
+    )
+    repo.mkt.execute(
+        "INSERT INTO board_member (board_code,code,first_seen_date) VALUES "
+        "('881001','A',NULL),('301001','B',DATE '2026-01-06')"
+    )
+    gid = repo.create("归属筛选组", date(2026, 1, 2), codes=["A", "B"])
+
+    industry = repo.get(
+        gid,
+        membership_board_code="881001",
+        trade_date=date(2026, 1, 5),
+    )
+    concept_before = repo.get(
+        gid,
+        membership_board_code="301001",
+        trade_date=date(2026, 1, 5),
+    )
+    concept_on_date = repo.get(
+        gid,
+        membership_board_code="301001",
+        trade_date=date(2026, 1, 6),
+    )
+
+    assert [row["code"] for row in industry["members"]["list"]] == ["A"]
+    assert concept_before["members"]["total"] == 0
+    assert [row["code"] for row in concept_on_date["members"]["list"]] == ["B"]
+
+
 def test_member_before_data_has_null_return(repo):
     """加入日晚于该股最后数据 → 无法取基准价，涨幅置空，不计入整组平均。"""
     gid = repo.create("组", date(2026, 1, 2), "", ["A"])

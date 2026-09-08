@@ -20,6 +20,7 @@ export interface StockBasic {
 export interface StockListParams {
   q?: string
   board?: string
+  membership_board_code?: string
   exclude_st?: boolean
   trade_date?: string
   sort_by?: string
@@ -48,6 +49,12 @@ export interface StockBoardMembership {
   membership_updated_at: string | null
   industries: BoardMembershipItem[]
   concepts: BoardMembershipItem[]
+}
+
+export type StockMembershipOption = BoardMembershipItem
+
+export interface StockMembershipOptions {
+  list: StockMembershipOption[]
 }
 
 export interface Bar {
@@ -116,6 +123,10 @@ export interface IndicatorParams {
 
 export function listStocks(params?: StockListParams): Promise<StockList> {
   return http.get('/stocks', { params })
+}
+
+export function getStockMembershipOptions(): Promise<StockMembershipOptions> {
+  return http.get('/stocks/membership-options')
 }
 
 export function getStockBoardMembership(code: string): Promise<StockBoardMembership> {

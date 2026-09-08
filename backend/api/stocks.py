@@ -88,10 +88,11 @@ def _serialize_indicator_rows(df: pd.DataFrame) -> list[dict]:
 @router.get("/stocks", response_model=ApiResponse,
             dependencies=[Depends(require_perm("stocks:view"))])
 def list_stocks(q: str | None = None, board: str | None = None,
+                membership_board_code: str | None = None,
                 exclude_st: bool = False, trade_date: date | None = None,
                 sort_by: str = "pct_chg", sort_order: str = "asc",
                 page: int = 1, size: int = 50) -> ApiResponse:
-    """个股列表（按交易日展示当日涨跌幅 + 板块/ST/退市筛选 + 服务端排序）。
+    """个股列表（按交易日展示当日涨跌幅 + 上市板块/行业概念归属筛选 + 服务端排序）。
 
     board: 主板/创业板/科创板 / 'ST'(只看 ST) / '退市'(只看退市)；除 '退市' 外均排除已退市。
     exclude_st=true 且非 ST 板块 → 过滤名称含 ST 的股票。
@@ -116,6 +117,15 @@ def list_stocks(q: str | None = None, board: str | None = None,
             params.append(board)
         if exclude_st and board != "ST":
             conds.append("sb.name NOT LIKE '%ST%'")
+    if membership_board_code:
+        conds.append(
+            "EXISTS (SELECT 1 FROM board_member bm "
+            "JOIN board_dict bd ON bd.board_code=bm.board_code "
+            "WHERE bm.code=sb.code AND bd.board_code=? "
+            "AND bd.board_type IN ('industry','concept') "
+            "AND (bm.first_seen_date IS NULL OR bm.first_seen_date<=?))"
+        )
+        params.extend([membership_board_code, td])
     where = " AND ".join(conds)
     total = int(c.query_df(f"SELECT count(*) AS n FROM stock_basic sb WHERE {where}", params).iloc[0]["n"])
 
@@ -149,6 +159,16 @@ def list_stocks(q: str | None = None, board: str | None = None,
         r["pct_chg"] = round(float(r["pct_chg"]), 2) if r.get("pct_chg") is not None and not pd.isna(r["pct_chg"]) else None
         r["groups"] = groups_by_code.get(r["code"], [])
     return ok({"total": total, "page": page, "size": size, "trade_date": str(td), "list": rows})
+
+
+@router.get(
+    "/stocks/membership-options",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_perm("stocks:view"))],
+)
+def stock_membership_options() -> ApiResponse:
+    """返回个股查询可用的同花顺行业与概念单选项。"""
+    return ok({"list": StockBoardCorrelationService(get_client()).list_membership_options()})
 
 
 @router.get(
