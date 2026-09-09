@@ -37,6 +37,18 @@ class PathsConfig(BaseModel):
     log_dir: str = "logs"
 
 
+class DuckDBConfig(BaseModel):
+    """DuckDB 进程内并发参数。
+
+    DuckDB 同一进程内的连接必须使用一致的打开配置，因此默认模式下读池连接在物理上
+    仍以读写配置打开，由存储层 SQL 类型检查把它们限制为逻辑只读。
+    """
+
+    read_pool_size: int = Field(default=4, ge=0, le=32)
+    read_acquire_timeout_sec: float = Field(default=3.0, gt=0, le=60)
+    slow_query_ms: int = Field(default=500, ge=1, le=60_000)
+
+
 class DataSourceConfig(BaseModel):
     primary: str = "akshare"
     fallback: str = "baostock"
@@ -264,6 +276,7 @@ class Settings(BaseModel):
     """全局配置根模型。"""
 
     paths: PathsConfig = Field(default_factory=PathsConfig)
+    duckdb: DuckDBConfig = Field(default_factory=DuckDBConfig)
     datasource: DataSourceConfig = Field(default_factory=DataSourceConfig)
     universe: UniverseConfig = Field(default_factory=UniverseConfig)
     price_limit: PriceLimitConfig = Field(default_factory=PriceLimitConfig)
@@ -408,7 +421,7 @@ def get_effective_settings() -> Settings:
         overrides = AppConfigRepo().get_overrides()
         if overrides:
             base = apply_overrides(base, overrides)
-    except Exception:  # noqa: BLE001 —— DB 未就绪/异常时静默回落 YAML
+    except Exception:  # noqa: BLE001, S110 —— DB 未就绪/异常时静默回落 YAML
         pass
     return Settings.model_validate(base)
 

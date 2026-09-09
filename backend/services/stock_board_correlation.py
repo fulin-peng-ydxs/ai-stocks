@@ -32,7 +32,7 @@ from backend.indicators.stock_board_correlation import (
 )
 from backend.services.market_benchmark import MarketBenchmarkService
 from backend.services.stock_codes import normalize_stock_code, normalize_stock_codes
-from backend.storage.duckdb_client import DuckDBClient, get_client
+from backend.storage.duckdb_client import DuckDBClient, get_client, is_managed_duckdb_client
 
 log = get_logger("services.stock_board_correlation")
 
@@ -167,8 +167,14 @@ def normalize_correlation_task_params(
 class StockBoardCorrelationService:
     """读取累计板块归属与当前冠军摘要，并编排版本化批量计算。"""
 
-    def __init__(self, client: DuckDBClient | None = None):
+    def __init__(
+        self,
+        client: DuckDBClient | None = None,
+    ):
         self.c = client or get_client()
+        # 项目托管的 market 单例始终使用独立任务运行态；显式内存/测试 client 则维持
+        # 同库注入，避免测试和离线工具误连项目运行库。
+        self._task_client = None if is_managed_duckdb_client(self.c) else self.c
 
     def resolve_data_family_maxima(self) -> dict[str, date | None]:
         """返回个股、板块指数、宽基指数三类日线各自最新交易日；某数据族为空时该值为 None。"""
@@ -832,6 +838,8 @@ class StockBoardCorrelationService:
         self,
         codes: Iterable[object],
         business_dates: date | str | Mapping[str, date | str | None] | None = None,
+        *,
+        schedule_missing: bool = True,
     ) -> dict[str, StockRelatedBoards | None]:
         """一次查询返回多股各业务日期的冠军快照摘要。
 
@@ -855,7 +863,7 @@ class StockBoardCorrelationService:
 
         rows = self._query_related_boards_for_dates(normalized, normalized_dates, protect_dates)
         first_load_codes: set[str] = set()
-        if protect_dates:
+        if protect_dates and schedule_missing:
             missing = self._collect_first_load_codes(normalized, normalized_dates, rows)
             if missing:
                 first_load_codes = self._enqueue_first_load_tasks(missing, normalized_dates)
@@ -886,18 +894,8 @@ class StockBoardCorrelationService:
         normalized_dates: Mapping[str, date | None],
         rows: pd.DataFrame,
     ) -> list[str]:
-        """只为从未存在当前算法快照的股票创建首次计算任务。"""
-        missing = self._collect_missing_snapshot_codes(normalized, normalized_dates, rows)
-        if not missing:
-            return []
-        placeholders = ",".join("?" for _ in missing)
-        existing = self.c.query_df(
-            "SELECT DISTINCT code FROM stock_board_correlation_state "
-            f"WHERE algorithm_version=? AND code IN ({placeholders})",
-            [ALGORITHM_VERSION, *missing],
-        )
-        existing_codes = {str(code) for code in existing["code"].tolist()}
-        return [code for code in missing if code not in existing_codes]
+        """为请求业务日缺少当前算法快照的股票创建按日补算任务。"""
+        return self._collect_missing_snapshot_codes(normalized, normalized_dates, rows)
 
     def _enqueue_first_load_tasks(
         self,
@@ -915,7 +913,11 @@ class StockBoardCorrelationService:
 
         pending: set[str] = set()
         try:
-            tasks = AsyncTaskService(self.c)
+            tasks = (
+                AsyncTaskService()
+                if self._task_client is None
+                else AsyncTaskService(self._task_client)
+            )
         except Exception as exc:  # noqa: BLE001 -- 读取不能被任务基础设施故障拖垮
             log.warning("走势相关首次计算服务初始化失败: %s", exc)
             return pending

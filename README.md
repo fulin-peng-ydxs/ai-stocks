@@ -40,7 +40,7 @@
 
 ## 1. 架构总览
 
-全栈：FastAPI 提供 REST 接口并在生产期托管前端构建产物（`frontend/dist`）。**持久层为混合架构**：行情/参考数据留嵌入式 DuckDB 单文件（只读分析），用户资产、系统菜单、角色权限、平台配置落 PostgreSQL（并发写、按 `tenant_id`+`owner_user_id` 隔离），Redis 作 token 黑名单、权限缓存、验证码和限流等短状态库。
+全栈：FastAPI 提供 REST 接口并在生产期托管前端构建产物（`frontend/dist`）。**持久层为混合架构**：行情/参考数据留嵌入式 DuckDB 单文件（一个专用写连接 + 同进程逻辑只读连接池），用户资产、系统菜单、角色权限、平台配置以及任务/日志/调度运行态落 PostgreSQL，Redis 作 token 黑名单、权限缓存、验证码和限流等短状态库。
 
 认证与授权以后端为事实源：`AuthMiddleware` 对非白名单 `/api/**` 默认拒绝，JWT 只承载身份和权限版本，`/api/auth/me` 返回用户、租户、角色、授权菜单树和功能码；接口用 `require_perm` / `require_system` / `require_system_perm` 做精确授权，前端侧栏、路由守卫和按钮级 `v-permission` 只消费后端结果。多租户数据归属由请求上下文注入到仓库和服务层，前端不决定资产归属；评分、筛选、买卖方案和回测记录支持 `private / tenant / public` 可见性，公开资产只读可见，方案类资产可复制为自己的 private（含指定历史版本），公开回测记录可复用参数重跑且发布范围不能超过引用方案可见范围；方案收窄可见性时会保留历史结果并同步收窄关联回测。技术架构见 [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md)，需求与落地记录见 [agent-works/multi-tenant-rbac/](agent-works/multi-tenant-rbac/)。
 
@@ -57,12 +57,12 @@
 │  screening · scoring · signals · backtest · indicators   领域引擎         │
 │  datasource      数据源适配（akshare / baostock，限流·重试·超时·兜底）    │
 │  dataquality     入库清洗 + 四层质检 + 修复闭环                           │
-│  storage         双库访问层：行情 DuckDB(点时安全) + 资产/RBAC/配置 PG    │
+│  storage         双库访问层：行情 DuckDB(点时安全) + 资产/任务/RBAC PG   │
 │  scheduler       APScheduler 定时调度（任务可在「数据管理」页配置）        │
 └───────────────────────────────┬─────────────────────────────────────────┘
                                  │
         行情 data/ai_stocks.duckdb (嵌入式列存,只读分析)  ·  PostgreSQL
-        (sys_* 权限表 + 用户方案/分组/回测/训练/快照/配置)  ·  Redis(短状态)
+        (sys_* 权限表 + 用户方案/分组/回测/训练/快照/配置/任务运行态) · Redis
 ```
 
 **核心数据流（每日收盘后）**：增量更新日线（含补最新交易日总市值；历史市值缺口另跑 `valuation --fill-gaps` 回补）→ 入库清洗 + 四层质检 → 动态算指标 → 按默认评分方案出榜单。
@@ -190,7 +190,7 @@ start.sh          后端启停脚本（dev/prod，见 §5.1）
 ## 4. 技术栈
 
 - **后端**：Python 3.11+（本机 3.12）/ FastAPI / Uvicorn / pandas + numpy / APScheduler / pydantic-settings
-- **持久层**：DuckDB（行情，嵌入式列存）+ PostgreSQL ≥14（用户资产/平台配置，psycopg3 同步）+ Redis ≥6（短状态）；后端启动期三库连通性自检
+- **持久层**：DuckDB（行情，嵌入式列存）+ PostgreSQL ≥14（用户资产/平台配置/任务运行态，psycopg3 同步）+ Redis ≥6（短状态）；后端启动期三库连通性自检
 - **前端**：Vue 3 + TypeScript + Element Plus + ECharts + Pinia + Vue Router + Vite
 - **数据源**：AKShare（新浪 / 东财系）+ baostock（退市股历史、复权因子兜底）
 - 依赖清单见 [`requirements.txt`](requirements.txt) / [`pyproject.toml`](pyproject.toml)
@@ -246,6 +246,16 @@ cp .env.local.example .env.local
 2. `./start.sh logs` 看数据库初始化、调度器启动、报错堆栈。
 3. 浏览器打开 `http://localhost:5173`，前端报 API 错误时优先确认 Vite 代理是否仍指向 `127.0.0.1:8000`。
 4. 如果 DuckDB 被 CLI 或旧服务占用，先执行安全停服 `./start.sh stop`；脚本会在有后台任务或无法读取任务状态时拒绝。只有明确接受任务被中断时才使用 `./start.sh stop --force`。
+
+任务运行态升级先停服并预演，再应用；激活标记写入前不会切换，也不会双写：
+
+```bash
+python -m backend.cli task-runtime-storage status
+python -m backend.cli task-runtime-storage migrate
+python -m backend.cli task-runtime-storage migrate --apply
+```
+
+紧急回退须保持停服，并显式确认：`python -m backend.cli task-runtime-storage rollback --confirm-marker migration.task_runtime_pg_v1`。命令会先把 PG 全量事实原子写回 DuckDB，再原子清空 PG 四张运行表并切换 marker；因此回退后仍可重新执行正向迁移。
 
 ### 5.2 生产 / 集成模式
 
@@ -353,6 +363,8 @@ Web 与 CLI 共用同一采集服务和行情口径。Web 是常用运维入口�
 | 定时调度 | 配置自动更新、质检、体检、审计清理 | 建每日收盘后「个股采集·日常同步」，再建定期 verify/checkup；审计清理默认每天 03:30 |
 
 写库任务全局互斥：采集、补数、修复、重算等同一时间只能跑一个。遇到 409 说明已有写任务在执行，去任务列表看进度，完成后再提交。
+
+任务状态、实时日志、调度定义和依赖事件存 PostgreSQL；实际行情写入仍只有一个 DuckDB 写任务。普通行情读取从逻辑只读连接池借连接并发执行，池繁忙最多等待 3 秒后返回 503，不会无限排队。
 
 终止为协作式（到下一只/下一问题的检查点停下，已完成部分保留，状态转"可续跑"）；续跑沿用该任务**原定目标日**（增量更新不会因隔天续跑而漂到今天），并跳过已完成的日历/指数等前置，从断点继续。CLI 的 `backfill`/`update`/`refetch-daily` 与任务中心同源，实时输出阶段进度。
 

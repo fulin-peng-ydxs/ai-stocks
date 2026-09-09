@@ -7,8 +7,9 @@ from fastapi import APIRouter
 from backend.api.response import ApiResponse, err, ok
 from backend.config import get_settings
 from backend.devtools.environment_guard import e2e_write_environment
-from backend.storage import get_client, get_pg_client, get_redis_client
+from backend.storage import get_pg_client, get_read_client, get_redis_client
 from backend.storage.pg_identity import pg_fingerprint
+from backend.storage.task_runtime import get_task_runtime_client, task_runtime_backend
 
 router = APIRouter(prefix="/api", tags=["health"])
 
@@ -19,14 +20,12 @@ def health() -> ApiResponse:
     s = get_settings()
     duckdb_ok = False
     duckdb_detail = ""
+    duckdb_pool: dict = {"enabled": False}
     active_task_count: int | None = None
     try:
-        client = get_client()
-        version = client.query_df("SELECT version() AS v").iloc[0]["v"]
-        task_row = client.query_df(
-            "SELECT count(*) AS n FROM async_task WHERE status IN ('pending', 'running')"
-        ).iloc[0]
-        active_task_count = int(task_row["n"])
+        client = get_read_client()
+        version = client.query_df("SELECT version() AS v", timeout_sec=0.1).iloc[0]["v"]
+        duckdb_pool = client.stats()
         duckdb_ok = True
         duckdb_detail = f"duckdb {version} @ {client.db_path.name}"
     except Exception as e:  # noqa: BLE001
@@ -34,9 +33,15 @@ def health() -> ApiResponse:
 
     pg_ok = False
     pg_detail = ""
+    runtime_backend = "unavailable"
     try:
         pg_ok = get_pg_client().ping()
         pg_detail = f"postgres @ {s.postgres.host}:{s.postgres.port}/{s.postgres.database}"
+        runtime_backend = task_runtime_backend()
+        task_row = get_task_runtime_client().query_df(
+            "SELECT count(*) AS n FROM async_task WHERE status IN ('pending', 'running')"
+        ).iloc[0]
+        active_task_count = int(task_row["n"])
     except Exception as e:  # noqa: BLE001
         pg_detail = str(e)
 
@@ -53,7 +58,9 @@ def health() -> ApiResponse:
             "status": "up",
             "duckdb_ok": duckdb_ok,
             "duckdb": duckdb_detail,
+            "duckdb_pool": duckdb_pool,
             "active_task_count": active_task_count,
+            "task_runtime_backend": runtime_backend,
             "pg_ok": pg_ok,
             "postgres": pg_detail,
             "redis_ok": redis_ok,

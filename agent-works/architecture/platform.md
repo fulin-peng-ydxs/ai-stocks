@@ -2,14 +2,14 @@
 
 > 横切所有业务模块的地基：FastAPI 全栈、混合持久层、点时安全仓库总闸门、异步任务底座、定时调度、配置入口与前端布局/交互标准。环境变量、变量文件和数据库配置覆盖层见 [environment-configuration.md](environment-configuration.md)。
 
-> 当前持久层边界：行情/参考数据留 DuckDB（只读分析），用户资产、系统菜单、角色权限和平台配置落 PostgreSQL，Redis 承载 token 黑名单、权限缓存、验证码和限流等短状态。系统菜单、权限和多租户技术架构见 [system-rbac-tenant.md](system-rbac-tenant.md)。
+> 当前持久层边界：行情/参考数据留 DuckDB（单写连接 + 同进程逻辑只读池），用户资产、系统菜单、角色权限、平台配置以及任务/调度运行态落 PostgreSQL，Redis 承载 token 黑名单、权限缓存、验证码和限流等短状态。系统菜单、权限和多租户技术架构见 [system-rbac-tenant.md](system-rbac-tenant.md)。
 
 <span style="color:#2563eb">●</span> 服务运行　<span style="color:#7c3aed">●</span> 任务调度　<span style="color:#16a34a">●</span> 配置生效　<span style="color:#dc2626">●</span> 平台约束
 
 ## 核心技术
 
-- **FastAPI 全栈**：后端 FastAPI（`backend/main.py:40` `create_app`）装配全部业务路由 + 静态托管 + 启动钩子（含三库连通性自检 `_check_storages`）；CLI（`backend/cli.py`）提供 `serve/health/backfill/update/daily/backtest/migrate-rbac` 等子命令，`serve` 内部即 `uvicorn.run("backend.main:app")`。**持久层**：行情 DuckDB + 资产/配置/RBAC PostgreSQL + 短状态 Redis；行情分析、任务编排和调度仍在本进程，用户资产和平台配置在 PG，Redis 承载限流和会话短状态。
-- **DuckDB 单文件嵌入式库**：`backend/storage/duckdb_client.py` 封装单文件连接。连接惰性创建、模块级单例 `get_client()`（`:121`）。DuckDB 连接非线程安全，FastAPI 同步端点跑在线程池会并发触碰同一连接，故用一把可重入锁 `RLock`（`:43`）串行化所有 `execute/query_df`；本地查询毫秒级，串行无感。SQL 出错即把 `_conn` 置空，下次访问自动重建（`:64`/`:73`）。幂等写入靠进程内唯一名临时视图 `temp_view()`（`:91`）+ `INSERT ... SELECT`，离开作用域自动注销，避免固定视图名在共享连接下被并发覆盖。
+- **FastAPI 全栈**：后端 FastAPI（`backend/main.py:40` `create_app`）装配全部业务路由 + 静态托管 + 启动钩子（含三库连通性自检 `_check_storages`）；CLI（`backend/cli.py`）提供 `serve/health/backfill/update/daily/backtest/migrate-rbac/task-runtime-storage` 等子命令，`serve` 内部即 `uvicorn.run("backend.main:app")`。**持久层**：行情 DuckDB + 资产/配置/RBAC/任务运行态 PostgreSQL + 短状态 Redis；行情分析和任务执行线程仍在本进程，任务编排、调度事实与用户资产落 PG，Redis 承载限流和会话短状态。
+- **DuckDB 单文件嵌入式库**：`backend/storage/duckdb_client.py` 保留一个 `get_write_client()` 专用写连接，每个连接内部仍以 `RLock` 保证线程安全；`get_read_client()` 默认管理 4 个独立逻辑只读连接，让查询利用 DuckDB MVCC 并发读取已提交快照。读池只接受单条 `SELECT`/读 PRAGMA/`EXPLAIN`，取连接默认最多等待 3 秒，池耗尽返回 503；环境变量把池大小设为 0 可回退到旧单连接串行模式。DuckDB 不允许同进程混用不同打开配置，因此默认读池连接物理上与写连接同为 read-write，只读性由 SQL 类型校验强制。
 - **点时安全仓库（总闸门）**：`backend/storage/repository.py` 的 `MarketRepository`。一是 `upsert()`（`:47`）按主键 `_PK`（`:22`）做 `ON CONFLICT DO UPDATE` 幂等写，重复运行不产生重复行。二是**防未来函数/防幸存者偏差总闸门**（`:103` 起）：`get_bars()`（`:108`）只返回 `trade_date <= end_date` 的行，复权用去抖因子列 `adj_factor_clean`（为空 `COALESCE` 回落 `adj_factor`），qfq 按 end_date 当日因子点时归一；`get_universe_asof()`（`:182`）以"当日有行情"为存活判据组装点时股票池，含当时存活后来退市的票，并叠加 ST/次新/停牌/一字板/流通市值/板块过滤。
 - **异步任务底座**：`backend/services/async_task.py`。`TASK_TYPES` 包含采集、补数、质检、修复、基础信息刷新、`audit_cleanup`，以及走势相关重算 `stock_board_correlation`、天梯失效 `limit_ladder_invalidate`、每日榜单失效 `recompute` 三类显式结果维护任务；走势相关读取缺失快照时复用同一任务类型幂等创建首次计算，`limit_ladder_recompute` 则是查询按需物化与兼容管理 API 共用的内部单日发布任务。`stock_ingest` 以场景参数统一承接 Web 个股采集，旧行情任务类型继续兼容。所有写任务受单写者互斥；手动、首次读取与调度触发共用 `AsyncTaskService.create()`、`TaskContext`、`TASK_CAPABILITIES` 和 `_HANDLERS` 的同一套执行、日志、取消与结果契约。
 - **APScheduler 定时调度**：`backend/scheduler/scheduler.py`。`SCHEDULABLE_TASK_TYPES` 包含 `stock_ingest/stock_board_correlation/limit_ladder_invalidate/recompute/board/verify/checkup/fix/enrich_basic/audit_cleanup`，并保留 `update/backfill/ingest_date` 供旧调度兼容执行；内部 `limit_ladder_recompute` 不对调度页面开放。三类结果任务不创建默认调度，用户可配置时间或其他调度的成功、失败、完成事件触发；依赖只决定何时执行，不推断或传递上游参数。频率经 `compile_trigger()` 统一编译为 APScheduler `CronTrigger`，到点回调 `_fire_job()` 创建 `async_task`。启动时只保留已有审计清理默认调度与天梯 PG 账本/outbox 内部对账，不为结果维护生成 `scheduled_job`。
@@ -19,10 +19,11 @@
 
 ## 业务架构
 
-- **共用单例与初始化**：行情/研究相关服务经 `get_client()` 拿同一个 DuckDB 连接单例；用户资产、RBAC、平台配置和用户偏好经 `PostgresClient`。DuckDB `init_db()` 负责行情、任务、调度、数据维度以及连板天梯点时 ST/版本快照等分析侧表的幂等建表；PG DDL 负责 `app_config`、布局平台配置、布局用户配置、用户偏好、菜单、角色、资产表，以及连板天梯日期任务协调账本和可靠审计 outbox。
+- **连接与初始化**：行情写服务经 `get_write_client()`，纯查询经 `get_read_client()`；用户资产、任务运行态、RBAC、平台配置和用户偏好经 `PostgresClient`。DuckDB `init_db()` 负责行情、数据维度以及连板天梯点时 ST/版本快照等分析事实；PG DDL 负责 `async_task/task_log/scheduled_job/scheduled_trigger_event`、`app_config`、布局、用户偏好、菜单、角色、资产，以及天梯日期协调账本和可靠审计 outbox。
 
 - **表与目录分工**：
-  - DuckDB 基础设施表：`async_task`（任务状态/进度/结果/来源标记）、`task_log`（实时日志，按 `seq` 增量拉、每任务保留最近 2000 条）、`scheduled_job`（定时任务定义）、`data_update_log`（采集留痕）、`data_dimension_registry`/`data_source_provenance`（数据维度与溯源）。
+  - PostgreSQL 任务基础设施表：`async_task`（任务状态/进度/JSONB 结果）、`task_log`（实时日志，按 `seq` 增量拉、每任务保留最近 2000 条）、`scheduled_job`（调度定义）、`scheduled_trigger_event`（依赖/重试事件）。DuckDB 同名旧表只作为迁移与受控回滚源冻结保留。
+  - DuckDB 运维与行情表：`data_update_log`、`data_dimension_registry`、`data_source_provenance` 及各行情/快照事实。
   - 连板天梯数据边界：DuckDB 保存 `stock_st_status_*`、`limit_ladder_snapshot*` 行情分析事实，快照按完整性门禁与不可变版本原子发布，失败或失效不删除旧成功版本。`limit_ladder_invalidate` 由用户手动或调度显式将选定交易日及之后的快照标记失效，先写 `limit_ladder_invalidation_outbox` 再处理失效；采集、补数、修复、ST 与板块变化不再触发该链路。查询在读快照前重试结果任务留下的 pending，并在快照失效时按需创建内部 `limit_ladder_recompute`。PG 保存日期协调账本与可靠审计 outbox，不与 DuckDB 跨库 JOIN。完整业务架构见 [limit-ladder.md](limit-ladder.md)。
   - PostgreSQL 配置与用户偏好表：`app_config`（系统设置覆盖层）、`layout_preset`、`layout_page_config`、`layout_field_policy`、`layout_user_config`、`user_preference`；边界见 [environment-configuration.md](environment-configuration.md)。
   - 业务表（行情/方案/结果/回测/快照）由各业务模块拥有，但**统一经 `MarketRepository.upsert` 与点时查询闸门读写**，主键登记在 `repository._PK`。
@@ -60,19 +61,20 @@ flowchart LR
   A["浏览器/Vite"] --> B["FastAPI"]
   C["CLI"] --> D["同一套 services"]
   B --> D
-  D --> E["DuckDBClient\n单连接+RLock"]
+  D --> E["DuckDB\n单写连接+逻辑只读池"]
   D --> F["AsyncTaskService\n写任务互斥"]
   G["APScheduler"] --> F
   F --> E
-  D --> H["PG app_config/layout/user_preference"]
+  F --> H["PG task/log/schedule/event"]
+  D --> I["PG asset/RBAC/config/preference"]
 ```
 
 关键约束：
 
-- DuckDB 是单文件数据库，所有 SQL 走同一个连接和锁。
+- DuckDB 是单文件数据库：写入集中到一个连接，纯读可从同进程连接池并发读取已提交快照。
 - 写库类异步任务同时只允许一个，避免采集/修复/重算互相踩踏。
 - CLI 写库命令和 Web 服务同时运行时可能争用库文件；做大规模 CLI 写操作前建议先停服务。
-- 调度器和取消状态是进程内状态，不支持多副本部署。
+- 调度定义、依赖事件与写任务槽位已由 PG 持久化/加 advisory lock；执行线程与协作式取消集合仍是进程内状态，因此仍按单后端进程部署。
 
 ### 3. 异步任务通用语义
 
@@ -132,7 +134,7 @@ flowchart LR
 - **重启恢复（reconcile）**：FastAPI `startup` 钩子先调 `AsyncTaskService.reconcile()`，把残留 `running/pending` 任务标 `interrupted`，同时把 DuckDB 中孤儿 `calculating/recalculating` 天梯状态转为 `failed` 并保留最后成功快照指针，再复位孤儿 fixing、清理超期日志；随后 `LimitLadderTaskCoordinator.reconcile()` 在 PG advisory lock 内按 `trigger_event_id=command_id` 镜像天梯账本终态，并对仍漂移的处理态做第二次收敛、收敛启动前无 Duck 任务的 requested 孤儿并投递 outbox。查询入口发现处理态但不存在活动任务时，还会通过同日唯一命令入口幂等重建。该顺序保证重启残留任务不会被误判为仍运行或让页面永久轮询。
 - **定时任务触发**：`startup` 另一钩子调 `start_scheduler()`：迁移旧单一配置→确保默认 `audit_cleanup` 调度存在→加载所有 `enabled` 的 job 注册到 APScheduler。到点 `_fire_job()` 读最新 job→若 `trading_day_only` 且非交易日则跳过（`_is_trading_day` 缺日历会自愈补采再判，采集统一尝试覆盖下一自然年）→`create` 一条带 `job_id/job_name` 的 `async_task`，记 `last_run`。已有写任务在跑则本次跳过（不排队），失败仅记日志不崩调度。启动自检、采集收尾和数据体检均报告“下一开市日/跨年覆盖”状态；数据源未发布未来安排时告警但不伪造交易日。job 的增删改启停即时生效：CRUD 里 `register_job/unregister_job` 复用同进程单例重注册触发器，免重启。
 - **配置改参即时生效**：系统设置页的保存、重置、YAML reload、变量文件和 DB 覆盖层规则只维护在 [environment-configuration.md](environment-configuration.md)，业务流程文档不再重复展开。
-- **dev/prod 启停**：`./start.sh`（dev，热重载，绑 127.0.0.1）/`./start.sh prod`（绑 0.0.0.0 对外）/`stop`/`restart`/`status`/`logs`。启动后轮询 `/api/health`（最多约 15s）确认健康；`stop` 按进程特征 `pgrep/pkill` 优雅停、必要时 `-9` 强杀。`shutdown` 钩子停 APScheduler。
+- **dev/prod 启停**：`./start.sh`（dev，热重载，绑 127.0.0.1）/`./start.sh prod`（绑 0.0.0.0 对外）/`stop`/`restart`/`status`/`logs`。启动后轮询 `/api/health`（最多约 15s）确认健康；`stop/restart` 默认从健康接口读取 PG 运行态中的可信活跃任务数，有任务或状态不可读时 fail-closed，确需中断才显式追加 `--force`。终止只作用于已识别的独立后端进程组；`shutdown` 钩子依次停止 APScheduler，并关闭 DuckDB 读池/写连接、PG 和 Redis 客户端。
 
 ## 风险事项
 

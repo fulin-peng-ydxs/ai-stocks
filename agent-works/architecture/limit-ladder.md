@@ -18,7 +18,7 @@
 | 快照发布 | coverage 门禁、不可变版本、四档窗口指标冻结、状态指针原子切换 | `backend/services/limit_ladder_snapshot.py` |
 | 查询读模型 | 统一筛选、摘要、热点、短历史字段、CSV 和同日走势冠军合并 | `backend/services/limit_ladder_query.py` |
 | 日期任务协调 | 查询首算、显式失效后的按需刷新、兼容管理 API 重算共享同日活动命令 | `backend/services/limit_ladder_task_coordinator.py`、`backend/storage/limit_ladder_task_repository.py` |
-| 执行与审计 | DuckDB 保存任务进度/日志；PG 保存日期协调账本和可靠审计 outbox | `backend/services/async_task.py`、`backend/storage/pg_ddl.py` |
+| 执行与审计 | PG 保存任务进度/日志、日期协调账本和可靠审计 outbox；DuckDB 保存天梯快照 | `backend/services/async_task.py`、`backend/storage/pg_ddl.py` |
 | 页面 | 主从工作台、天梯卡片、热点、设置、窄屏抽屉和详情返回 | `frontend/src/views/LimitLadderView.vue`、`frontend/src/views/limit-ladder/` |
 
 ## 系统架构
@@ -38,7 +38,7 @@ flowchart LR
   GET[GET 查询] --> COORD[统一日期任务协调]
   ADMIN[管理员重算] --> COORD
   COORD --> LEDGER[(PG 日期账本 / 审计 outbox)]
-  COORD --> TASK[(DuckDB async_task / task_log)]
+  COORD --> TASK[(PG async_task / task_log)]
   TASK --> SNAP
   CORR[(同业务日走势相关行业 / 概念冠军)] --> QUERY[查询读模型]
   STATE --> QUERY
@@ -47,7 +47,7 @@ flowchart LR
   PAGE --> SECTOR[板块行情]
 ```
 
-DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`、DuckDB `task_id` 和审计 `source_event_key` 在服务层关联两边状态。
+DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`、PG `task_id` 和审计 `source_event_key` 在服务层关联任务运行态与 DuckDB 快照。
 
 ## 业务流程
 
@@ -56,7 +56,7 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 1. `GET /api/limit-ladder/{trade_date}` 校验交易日和筛选参数。
 2. 查询入口先补偿 pending 失效事件，并检查规则版本和日期状态。
 3. 首次无快照时调用 `ensure_date_task()`；失效快照先重查 coverage，只有上游已完整时才自动刷新。同日已有 `requested/running` 命令则直接复用；`partial/failed` 等未就绪终态直接返回原因，禁止查询轮询反复创建必然失败的任务。
-4. DuckDB `limit_ladder_recompute` 任务完成 coverage、计算和原子发布。
+4. PG 中的 `limit_ladder_recompute` 运行态驱动执行器完成 DuckDB coverage、计算和原子发布。
 5. 页面分别为天梯快照计算和同日走势相关首次计算设置 120 秒硬截止轮询；同一阶段后台更换 `command_id/task_id` 不得重置截止时间，阶段切换后重新计时。成功后读取新版本，失败、未就绪或中断时停止等待，保留最后成功快照并显示原因和恢复动作。
 
 ### 计算与发布
@@ -100,7 +100,7 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 | `audit_log.source_event_key` | 审计事件幂等键，非空值唯一 |
 | `user_preference` | `page/limit-ladder/settings` 用户私有默认偏好 |
 
-任务执行事实仍在 DuckDB `async_task/task_log`。这是一项已确认的数据域边界，不把全平台任务中心迁入 PostgreSQL。
+任务执行事实位于 PostgreSQL `async_task/task_log`；DuckDB 同名旧表仅作为迁移回滚源冻结保留。天梯快照仍全部位于 DuckDB，服务层分别查询后关联，禁止跨库 JOIN。
 
 ## 页面使用说明
 

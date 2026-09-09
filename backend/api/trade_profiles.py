@@ -18,7 +18,7 @@ from backend.signals.trade_profile import (
     collect_indicators,
     eval_conditions,
 )
-from backend.storage import get_client
+from backend.storage import get_read_client as get_client
 
 router = APIRouter(prefix="/api", tags=["trade-profiles"])
 

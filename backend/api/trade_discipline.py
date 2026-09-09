@@ -17,7 +17,7 @@ from backend.auth.deps import require_any_perm, require_perm
 from backend.common.exceptions import NotFoundError, ValidationError
 from backend.services.audit_service import AuditService
 from backend.services.trade_discipline_service import TradeDisciplineService
-from backend.storage import get_client
+from backend.storage import get_read_client as get_client
 
 router = APIRouter(prefix="/api/trade-discipline", tags=["trade-discipline"])
 

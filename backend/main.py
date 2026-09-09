@@ -248,7 +248,7 @@ def create_app() -> FastAPI:
                 LimitLadderTaskCoordinator,
             )
 
-            # DuckDB residual tasks must become interrupted before PG mirrors their terminal state.
+            # 运行态残留任务先转 interrupted，再由 PG 天梯账本对账终态。
             task_service = AsyncTaskService()
             task_service.reconcile()
             LimitLadderTaskCoordinator(task_service=task_service).reconcile(
@@ -265,7 +265,12 @@ def create_app() -> FastAPI:
     @app.on_event("shutdown")
     def _stop_scheduler() -> None:
         from backend.scheduler.scheduler import shutdown_scheduler
+        from backend.storage import close_duckdb_clients, get_pg_client, get_redis_client
+
         shutdown_scheduler()
+        close_duckdb_clients()
+        get_pg_client().close()
+        get_redis_client().close()
 
     return app
 

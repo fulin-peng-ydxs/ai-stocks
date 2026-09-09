@@ -63,6 +63,20 @@ def test_health_reports_active_task_count(client, monkeypatch):
         def ping():
             return True
 
+    class ReadClient:
+        db_path = client.db_path
+
+        @staticmethod
+        def query_df(sql, params=None, **_kwargs):
+            return client.query_df(sql, params)
+
+        @staticmethod
+        def stats():
+            return {"enabled": True, "size": 1}
+
+    monkeypatch.setattr(health_api, "get_read_client", ReadClient)
+    monkeypatch.setattr(health_api, "get_task_runtime_client", lambda: client)
+    monkeypatch.setattr(health_api, "task_runtime_backend", lambda: "duckdb")
     monkeypatch.setattr(health_api, "get_pg_client", AvailableDependency)
     monkeypatch.setattr(health_api, "get_redis_client", AvailableDependency)
 
@@ -801,15 +815,21 @@ def test_quality_list_searches_market_index_code_and_name(client):
     assert by_name.data["list"][0]["name"] == "创业板指"
 
 
-def test_quality_actions_reject_conflicting_status_transitions(client):
+def test_quality_actions_reject_conflicting_status_transitions(client, monkeypatch):
     """已解决不能再恢复，运行中的 fixing 不能被忽略或手工复位。"""
+    from backend.api import data_admin
     from backend.api.data_admin import quality_fix, quality_ignore, quality_reset
 
     now = datetime.now()
-    client.execute(
+    runtime = DuckDBClient(db_path=":memory:")
+    init_db(runtime)
+    runtime.execute(
         "INSERT INTO async_task "
         "(id, task_type, params, status, progress, created_at, updated_at) "
-        "VALUES ('fix_running', 'fix', '{}', 'running', 0.5, ?, ?)", [now, now])
+        "VALUES ('fix_running', 'fix', '{}', 'running', 0.5, ?, ?)",
+        [now, now],
+    )
+    monkeypatch.setattr(data_admin, "get_task_runtime_client", lambda: runtime)
     client.execute(
         "INSERT INTO data_quality_issue "
         "(id, code, issue_type, severity, status, fix_task_id, detected_at) VALUES "
@@ -822,6 +842,7 @@ def test_quality_actions_reject_conflicting_status_transitions(client):
     state = client.query_df(
         "SELECT status, fix_task_id FROM data_quality_issue WHERE id=32").iloc[0]
     assert state["status"] == "fixing" and state["fix_task_id"] == "fix_running"
+    runtime.close()
 
 
 # ── 板块质检（R12，T7）───────────────────────────────────────

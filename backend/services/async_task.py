@@ -17,10 +17,17 @@ from __future__ import annotations
 
 import json
 import threading
+from contextlib import nullcontext
 from datetime import datetime, timedelta
 
 from backend.common.logging import get_logger
 from backend.storage.duckdb_client import get_client
+from backend.storage.task_runtime import (
+    get_task_runtime_client,
+    is_postgres_task_runtime,
+    runtime_json_param,
+    task_runtime_backend,
+)
 
 log = get_logger("services.async_task")
 
@@ -170,8 +177,7 @@ class TaskContext:
     def set_checkpoint(self, **data) -> None:
         """合并并持久化 checkpoint（写 result 列），供 resume 跳过已完成。"""
         self.checkpoint.update(data)
-        self.svc._set(self.tid, result=json.dumps({"checkpoint": self.checkpoint},
-                                                  ensure_ascii=False, default=str))
+        self.svc._set(self.tid, result={"checkpoint": self.checkpoint})
 
     def set_phase(self, phase: str, **data) -> None:
         """记录当前长子任务阶段；前端据此解释'下一个检查点'在哪里。"""
@@ -186,16 +192,28 @@ class TaskContext:
 
 
 class AsyncTaskService:
-    def __init__(self, client=None):
-        self.c = client or get_client()
-        from backend.storage.ddl import init_db
-        init_db(self.c)
+    def __init__(self, client=None, *, market_client=None):
+        if client is None:
+            client = (
+                get_client() if task_runtime_backend() == "duckdb" else get_task_runtime_client()
+            )
+        self.c = client
+        self.market = market_client or (get_client() if is_postgres_task_runtime(self.c) else self.c)
+        if not is_postgres_task_runtime(self.c):
+            from backend.storage.ddl import init_db
+
+            init_db(self.c)
 
     # ── id / 写入辅助 ──
     def _new_id(self, t: str) -> str:
         return f"task_{t}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
 
     def _set(self, tid: str, **fields) -> None:
+        if "result" in fields:
+            result = fields["result"]
+            if isinstance(result, str):
+                result = json.loads(result)
+            fields["result"] = runtime_json_param(self.c, result)
         fields["updated_at"] = datetime.now()
         cols = ", ".join(f"{k}=?" for k in fields)
         self.c.execute(f"UPDATE async_task SET {cols} WHERE id=?", [*fields.values(), tid])
@@ -222,15 +240,17 @@ class AsyncTaskService:
 
     def _write_logs(self, tid: str, rows: list[tuple]) -> None:
         """批量写 task_log（每行带自增 id）。rows=[(seq, ts, level, message)]。"""
-        import pandas as pd
-        ids = [int(self.c.query_df("SELECT nextval('seq_task_log') AS v").iloc[0]["v"]) for _ in rows]
-        df = pd.DataFrame(
-            [{"id": i, "task_id": tid, "seq": s, "ts": ts, "level": lv, "message": m}
-             for i, (s, ts, lv, m) in zip(ids, rows)])
-        with self.c.temp_view(df, "tlog") as v:
-            self.c.execute(
-                f"INSERT INTO task_log (id, task_id, seq, ts, level, message) "
-                f"SELECT id, task_id, seq, ts, level, message FROM {v}")
+        if is_postgres_task_runtime(self.c):
+            self.c.executemany(
+                "INSERT INTO task_log (task_id, seq, ts, level, message) VALUES (?,?,?,?,?)",
+                [(tid, seq, ts, level, message) for seq, ts, level, message in rows],
+            )
+        else:
+            self.c.executemany(
+                "INSERT INTO task_log (id, task_id, seq, ts, level, message) "
+                "VALUES (nextval('seq_task_log'),?,?,?,?,?)",
+                [(tid, seq, ts, level, message) for seq, ts, level, message in rows],
+            )
         self._trim_logs(tid)
 
     def _trim_logs(self, tid: str) -> None:
@@ -280,7 +300,7 @@ class AsyncTaskService:
         if task_type == "stock_board_correlation":
             from backend.services.stock_board_correlation import normalize_correlation_task_params
 
-            params = normalize_correlation_task_params(params, client=self.c)
+            params = normalize_correlation_task_params(params, client=self.market)
         if task_type == "recompute":
             from backend.services.result_maintenance import normalize_score_invalidation_params
 
@@ -289,7 +309,12 @@ class AsyncTaskService:
             from backend.services.result_maintenance import normalize_ladder_invalidation_params
 
             params = normalize_ladder_invalidation_params(params)
-        with _TASK_CREATE_LOCK:
+        storage_lock = (
+            self.c.task_create_transaction()
+            if is_postgres_task_runtime(self.c)
+            else nullcontext()
+        )
+        with _TASK_CREATE_LOCK, storage_lock:
             if trigger_event_id:
                 existing = self.c.query_df(
                     "SELECT id FROM async_task WHERE trigger_event_id=? ORDER BY created_at LIMIT 1",
@@ -308,7 +333,7 @@ class AsyncTaskService:
                 "trigger_source, job_id, job_name, chain_id, parent_task_id, trigger_event_id, "
                 "retry_count, execution_attempt, created_at, updated_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                [tid, task_type, json.dumps(params, ensure_ascii=False, default=str),
+                [tid, task_type, runtime_json_param(self.c, params),
                  "pending", 0.0, "已排队", None, trigger_source, job_id, job_name, chain_id,
                  parent_task_id, trigger_event_id, int(retry_count), 1, now, now])
         self._audit_task(
@@ -338,20 +363,26 @@ class AsyncTaskService:
             if isinstance(t.get("result"), dict) else None
         if t["status"] == "failed" and not checkpoint:
             raise ValueError("失败任务没有可用 checkpoint，请重新创建任务")
-        if task_type in WRITE_TASK_TYPES:
-            busy = self._running_write()
-            if busy:
-                raise ConcurrentTaskError(busy[1], busy[0])
-        with _CANCEL_LOCK:
-            # 续跑复用原 task id；仅在本次重新排队前清除上一轮已消费的取消标记。
-            _CANCELLED.discard(tid)
         params = t.get("params") or {}
         pending_message = "重试未完成项排队…" if t["status"] == "failed" else "继续任务排队…"
-        self.c.execute(
-            "UPDATE async_task SET status='pending', progress=0.0, message=?, "
-            "execution_attempt=COALESCE(execution_attempt,1)+1, cancel_requested_at=NULL, "
-            "updated_at=? WHERE id=?",
-            [pending_message, datetime.now(), tid])
+        storage_lock = (
+            self.c.task_create_transaction()
+            if is_postgres_task_runtime(self.c)
+            else nullcontext()
+        )
+        with _TASK_CREATE_LOCK, storage_lock:
+            if task_type in WRITE_TASK_TYPES:
+                busy = self._running_write()
+                if busy:
+                    raise ConcurrentTaskError(busy[1], busy[0])
+            with _CANCEL_LOCK:
+                # 续跑复用原 task id；仅在本次重新排队前清除上一轮已消费的取消标记。
+                _CANCELLED.discard(tid)
+            self.c.execute(
+                "UPDATE async_task SET status='pending', progress=0.0, message=?, "
+                "execution_attempt=COALESCE(execution_attempt,1)+1, cancel_requested_at=NULL, "
+                "updated_at=? WHERE id=?",
+                [pending_message, datetime.now(), tid])
         self._audit_task(
             action="resume",
             result="success",
@@ -478,11 +509,11 @@ class AsyncTaskService:
     def _release_fixing(self, tid: str) -> int:
         """把本任务名下仍卡在 fixing 的质检问题复位为 open（任务失败/中断时调用，不留孤儿）。"""
         try:
-            stuck = self.c.query_df(
+            stuck = self.market.query_df(
                 "SELECT count(*) AS n FROM data_quality_issue WHERE status='fixing' AND fix_task_id=?",
                 [tid]).iloc[0]["n"]
             if int(stuck):
-                self.c.execute(
+                self.market.execute(
                     "UPDATE data_quality_issue SET status='open', fix_task_id=NULL "
                     "WHERE status='fixing' AND fix_task_id=?", [tid])
                 log.info("任务 %s 终止：复位 %d 条修复中问题为待处理", tid, int(stuck))
@@ -509,13 +540,13 @@ class AsyncTaskService:
             "ELSE '服务重启中断，不支持续跑，请重新执行' END, updated_at=? "
             "WHERE status IN ('pending','running')", [*resumable_types, datetime.now()])
         snapshot_states = LimitLadderSnapshotService(
-            self.c
+            self.market
         ).recover_processing_after_restart()
         # 重启后没有任何任务在跑，故所有 fixing 必为孤儿（绑定的任务已中断）→ 复位为 open，可重新恢复
-        fixing = int(self.c.query_df(
+        fixing = int(self.market.query_df(
             "SELECT count(*) AS n FROM data_quality_issue WHERE status='fixing'").iloc[0]["n"])
         if fixing:
-            self.c.execute(
+            self.market.execute(
                 "UPDATE data_quality_issue SET status='open', fix_task_id=NULL WHERE status='fixing'")
         cutoff = datetime.now() - timedelta(days=LOG_RETENTION_DAYS)
         self.c.execute("DELETE FROM task_log WHERE ts < ?", [cutoff])

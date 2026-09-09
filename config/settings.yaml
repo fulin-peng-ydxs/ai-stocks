@@ -11,6 +11,12 @@ paths:
   export_dir: "data/exports"
   log_dir: "logs"
 
+# ── DuckDB 进程内读并发 ──
+duckdb:
+  read_pool_size: 4             # 逻辑只读连接数；环境变量设 0 可紧急退回单连接
+  read_acquire_timeout_sec: 3   # 读连接池等待上限（秒）
+  slow_query_ms: 500            # 慢查询告警阈值（毫秒）
+
 # ── 数据源（可插拔，F-DAT-11）──
 datasource:
   primary: "akshare"          # 主源

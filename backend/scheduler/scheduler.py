@@ -19,6 +19,12 @@ from decimal import Decimal, InvalidOperation
 
 from backend.common.logging import get_logger
 from backend.storage.duckdb_client import get_client
+from backend.storage.task_runtime import (
+    get_task_runtime_client,
+    is_postgres_task_runtime,
+    runtime_json_param,
+    task_runtime_backend,
+)
 
 log = get_logger("scheduler")
 
@@ -44,6 +50,11 @@ _LIMIT_LADDER_RECONCILE_JOB_ID = "__limit_ladder_reconcile__"
 _limit_ladder_coordinator = None
 # 同进程内串行化事件认领、目标启停/删除和任务创建，保证“停用取消等待事件”与分发互斥。
 _EVENT_DISPATCH_LOCK = threading.RLock()
+
+
+def _runtime_client():
+    """Resolve runtime storage while preserving the historical DuckDB test seam."""
+    return get_client() if task_runtime_backend() == "duckdb" else get_task_runtime_client()
 
 
 def _condition_matches(condition: str | None, status: str) -> bool:
@@ -413,9 +424,10 @@ def _migrate_legacy_config() -> None:
 # ── 定时任务定义的 CRUD（scheduled_job 表）──────────────────────────────
 class ScheduledJobService:
     def __init__(self, client=None, *, initialize: bool = True):
-        self.c = client or get_client()
-        if initialize:
+        self.c = client or _runtime_client()
+        if initialize and not is_postgres_task_runtime(self.c):
             from backend.storage.ddl import init_db
+
             init_db(self.c)
 
     @staticmethod
@@ -539,7 +551,7 @@ class ScheduledJobService:
             from backend.services.stock_board_correlation import normalize_correlation_task_params
 
             normalized_params = normalize_correlation_task_params(
-                normalized_params, client=self.c)
+                normalized_params, client=get_client())
         if task_type == "recompute":
             from backend.services.result_maintenance import normalize_score_invalidation_params
 
@@ -607,12 +619,12 @@ class ScheduledJobService:
                 "trigger_mode, dependency_job_id, dependency_condition, dependency_delay, "
                 "retry_config, trading_day_only, enabled, last_run_at, last_task_id, created_at, "
                 "updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                [jid, name.strip(), task_type, json.dumps(params, ensure_ascii=False, default=str),
-                 freq_type, json.dumps(freq_config or {}, ensure_ascii=False, default=str),
+                [jid, name.strip(), task_type, runtime_json_param(self.c, params),
+                 freq_type, runtime_json_param(self.c, freq_config or {}),
                  trigger_mode, dependency_job_id if trigger_mode == "dependency" else None,
                  dependency_condition if trigger_mode == "dependency" else None,
-                 json.dumps(dependency_delay, ensure_ascii=False),
-                 json.dumps(retry_config, ensure_ascii=False),
+                 runtime_json_param(self.c, dependency_delay),
+                 runtime_json_param(self.c, retry_config),
                  bool(trading_day_only), bool(enabled), None, None, now, now])
             job = self.get(jid)
             if job["enabled"]:
@@ -637,12 +649,12 @@ class ScheduledJobService:
                 "UPDATE scheduled_job SET name=?, task_type=?, params=?, freq_type=?, freq_config=?, "
                 "trigger_mode=?, dependency_job_id=?, dependency_condition=?, dependency_delay=?, "
                 "retry_config=?, trading_day_only=?, enabled=?, updated_at=? WHERE id=?",
-                [name.strip(), task_type, json.dumps(params, ensure_ascii=False, default=str),
-                 freq_type, json.dumps(freq_config or {}, ensure_ascii=False, default=str),
+                [name.strip(), task_type, runtime_json_param(self.c, params),
+                 freq_type, runtime_json_param(self.c, freq_config or {}),
                  trigger_mode, dependency_job_id if trigger_mode == "dependency" else None,
                  dependency_condition if trigger_mode == "dependency" else None,
-                 json.dumps(dependency_delay, ensure_ascii=False),
-                 json.dumps(retry_config, ensure_ascii=False),
+                 runtime_json_param(self.c, dependency_delay),
+                 runtime_json_param(self.c, retry_config),
                  bool(trading_day_only), bool(enabled), datetime.now(), jid])
             job = self.get(jid)
             unregister_job(jid)            # 先注销旧触发器
@@ -804,14 +816,14 @@ def _insert_trigger_event(
         "ON CONFLICT (id) DO NOTHING",
         [event_id, source.get("chain_id") or source["id"], source["id"], attempt,
          source["status"], target["id"], trigger_kind, trigger_condition, retry_count, due_at,
-         None, status, None, json.dumps(_job_snapshot(target), ensure_ascii=False, default=str),
+         None, status, None, runtime_json_param(client, _job_snapshot(target)),
          message, now, now])
     return event_id
 
 
 def enqueue_terminal_events(task_id: str, *, client=None) -> int:
     """为任务本次终态尝试生成普通依赖事件和自身重试事件；调用方负责事务边界。"""
-    client = client or get_client()
+    client = client or _runtime_client()
     task_df = client.query_df("SELECT * FROM async_task WHERE id=?", [task_id])
     if task_df.empty:
         return 0
@@ -875,17 +887,23 @@ def dispatch_due_events() -> int:
     """分发已到期的依赖/重试事件；写槽位繁忙时保持 waiting，下一轮继续。"""
     from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
 
-    svc = ScheduledJobService(get_client(), initialize=False)
-    events = svc.c.query_df(
-        "SELECT * FROM scheduled_trigger_event WHERE status='waiting' AND due_at<=? "
-        "ORDER BY due_at, created_at LIMIT 50", [datetime.now()])
+    svc = ScheduledJobService(_runtime_client(), initialize=False)
+    if is_postgres_task_runtime(svc.c):
+        events = svc.c.claim_due_events(now=datetime.now(), limit=50)
+    else:
+        events = svc.c.query_df(
+            "SELECT * FROM scheduled_trigger_event WHERE status='waiting' AND due_at<=? "
+            "ORDER BY due_at, created_at LIMIT 50", [datetime.now()])
     dispatched = 0
     for _, row in events.iterrows():
         event_id = str(row["id"])
         with _EVENT_DISPATCH_LOCK:
             # 到期列表是锁外快照；认领前重读，避免另一分发轮次或停用操作已经改变状态。
+            expected_status = "dispatching" if is_postgres_task_runtime(svc.c) else "waiting"
             latest = svc.c.query_df(
-                "SELECT * FROM scheduled_trigger_event WHERE id=? AND status='waiting'", [event_id])
+                "SELECT * FROM scheduled_trigger_event WHERE id=? AND status=?",
+                [event_id, expected_status],
+            )
             if latest.empty:
                 continue
             event = latest.iloc[0].to_dict()
@@ -893,13 +911,14 @@ def dispatch_due_events() -> int:
             if not target or not target["enabled"]:
                 svc.c.execute(
                     "UPDATE scheduled_trigger_event SET status='cancelled', message=?, updated_at=? "
-                    "WHERE id=? AND status='waiting'",
-                    ["目标任务不存在或已停用", datetime.now(), event_id])
+                    "WHERE id=? AND status=?",
+                    ["目标任务不存在或已停用", datetime.now(), event_id, expected_status])
                 continue
-            svc.c.execute(
-                "UPDATE scheduled_trigger_event SET status='dispatching', "
-                "message='正在创建下游任务', updated_at=? WHERE id=? AND status='waiting'",
-                [datetime.now(), event_id])
+            if not is_postgres_task_runtime(svc.c):
+                svc.c.execute(
+                    "UPDATE scheduled_trigger_event SET status='dispatching', "
+                    "message='正在创建下游任务', updated_at=? WHERE id=? AND status='waiting'",
+                    [datetime.now(), event_id])
             snapshot = _json_value(event.get("job_snapshot"), {})
             try:
                 tid = AsyncTaskService(svc.c).create(

@@ -146,6 +146,43 @@ def cmd_trade_discipline_rbac(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_task_runtime_storage(args: argparse.Namespace) -> int:
+    """Inspect, migrate, or explicitly roll back task runtime storage."""
+    import json
+
+    from backend.storage.task_runtime import TASK_RUNTIME_MIGRATION_MARKER
+    from backend.storage.task_runtime_migration import (
+        inspect_task_runtime_migration,
+        migrate_task_runtime_to_postgres,
+        rollback_task_runtime_to_duckdb,
+    )
+
+    try:
+        if args.task_runtime_action == "status":
+            report = inspect_task_runtime_migration()
+        elif args.task_runtime_action == "migrate":
+            report = (
+                migrate_task_runtime_to_postgres()
+                if args.apply
+                else inspect_task_runtime_migration()
+            )
+            if not args.apply:
+                report["dry_run"] = True
+        else:
+            report = rollback_task_runtime_to_duckdb(
+                confirm_marker=args.confirm_marker,
+            )
+    except Exception as exc:  # noqa: BLE001 -- CLI converts storage failures to a stable exit code
+        print(f"任务运行态存储操作失败：{exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True, default=str))
+    if args.task_runtime_action == "migrate" and not args.apply:
+        print("[dry-run] 未写入；确认停服且报告无误后追加 --apply。")
+    if args.task_runtime_action == "rollback":
+        print(f"已按确认标记 {TASK_RUNTIME_MIGRATION_MARKER} 回滚到 DuckDB。")
+    return 0
+
+
 def _todo(name: str):
     def _run(_: argparse.Namespace) -> int:
         log.warning("命令 '%s' 尚未实现（见任务清单对应里程碑）", name)
@@ -781,6 +818,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="必须精确传入 migration.trade_discipline_default_grants_v1",
     )
     p_td_rollback.set_defaults(func=cmd_trade_discipline_rbac)
+
+    p_runtime = sub.add_parser(
+        "task-runtime-storage",
+        help="任务/日志/调度运行态 DuckDB→PostgreSQL 迁移与受控回滚",
+    )
+    runtime_sub = p_runtime.add_subparsers(dest="task_runtime_action", required=True)
+    runtime_sub.add_parser("status", help="只读查看两端数量和迁移标记").set_defaults(
+        func=cmd_task_runtime_storage
+    )
+    p_runtime_migrate = runtime_sub.add_parser(
+        "migrate", help="迁移到 PostgreSQL；默认 dry-run"
+    )
+    p_runtime_migrate.add_argument(
+        "--apply", action="store_true", help="确认在单事务中复制并写入激活标记"
+    )
+    p_runtime_migrate.set_defaults(func=cmd_task_runtime_storage)
+    p_runtime_rollback = runtime_sub.add_parser(
+        "rollback", help="用 PostgreSQL 全量替换 DuckDB 运行态表并切回"
+    )
+    p_runtime_rollback.add_argument(
+        "--confirm-marker",
+        required=True,
+        help="必须精确传入 migration.task_runtime_pg_v1",
+    )
+    p_runtime_rollback.set_defaults(func=cmd_task_runtime_storage)
 
     p_mig = sub.add_parser(
         "migrate-rbac",

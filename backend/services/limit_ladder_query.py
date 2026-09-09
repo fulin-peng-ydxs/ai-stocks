@@ -16,7 +16,8 @@ from backend.services.limit_ladder_calculator import SUPPORTED_WINDOWS
 from backend.services.limit_ladder_snapshot import RULE_VERSION, LimitLadderSnapshotService
 from backend.services.limit_ladder_task_coordinator import LimitLadderTaskCoordinator
 from backend.services.stock_board_correlation import StockBoardCorrelationService
-from backend.storage.duckdb_client import DuckDBClient, get_client
+from backend.storage.duckdb_client import DuckDBClient
+from backend.storage.duckdb_client import get_read_client as get_client
 
 log = get_logger("services.limit_ladder_query")
 

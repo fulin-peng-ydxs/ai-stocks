@@ -1,9 +1,9 @@
 """PostgreSQL 建表 DDL（多租户混合持久层 stage1·T2）。
 
 职责边界（与 [ddl.py] 的 DuckDB 行情库分工）：
-- 本文件只建**用户私有资产 + 平台元数据**表，全部落 PG。
-- 行情/参考数据（stock_basic/daily_bar/daily_metrics/index_bar/...）与运维/质检/调度
-  （async_task/task_log/scheduled_job/data_*）**仍在 DuckDB**，不在此处。
+- 本文件创建**用户私有资产 + 平台元数据 + 任务运行态**表，全部落 PG。
+- 行情/参考数据（stock_basic/daily_bar/daily_metrics/index_bar/...）与数据质检事实
+  （data_*）仍在 DuckDB；async_task/task_log/scheduled_job/scheduled_trigger_event 位于 PG。
 
 归属与隔离（R9，**物理底座**）：
 - 资产表统一加 tenant_id + owner_user_id，且**主键以归属列打头**（复合主键
@@ -940,6 +940,102 @@ CREATE TABLE IF NOT EXISTS app_config (
 );
 """
 
+# ── 任务/调度运行态（从 DuckDB 解耦，行情库只保留领域数据）──────────────
+DDL_STORAGE_MIGRATION = """
+CREATE TABLE IF NOT EXISTS storage_migration (
+    marker      TEXT PRIMARY KEY,
+    state       TEXT NOT NULL CHECK (state IN ('applied', 'rolled_back')),
+    details     JSONB NOT NULL DEFAULT '{}'::jsonb,
+    applied_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+"""
+
+DDL_ASYNC_TASK_RUNTIME = """
+CREATE TABLE IF NOT EXISTS async_task (
+    id                  TEXT PRIMARY KEY,
+    task_type           TEXT NOT NULL,
+    params              JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status              TEXT NOT NULL CHECK (
+        status IN ('pending', 'running', 'done', 'failed', 'interrupted')
+    ),
+    progress            DOUBLE PRECISION NOT NULL DEFAULT 0,
+    message             TEXT,
+    result              JSONB,
+    trigger_source      TEXT,
+    job_id              TEXT,
+    job_name            TEXT,
+    chain_id            TEXT,
+    parent_task_id      TEXT,
+    trigger_event_id    TEXT,
+    retry_count         INTEGER NOT NULL DEFAULT 0,
+    execution_attempt   INTEGER NOT NULL DEFAULT 1,
+    cancel_requested_at TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ NOT NULL,
+    updated_at          TIMESTAMPTZ NOT NULL
+);
+"""
+
+DDL_TASK_LOG_RUNTIME = """
+CREATE TABLE IF NOT EXISTS task_log (
+    id          BIGSERIAL PRIMARY KEY,
+    task_id     TEXT NOT NULL REFERENCES async_task(id) ON DELETE CASCADE,
+    seq         INTEGER NOT NULL,
+    ts          TIMESTAMPTZ NOT NULL,
+    level       TEXT NOT NULL CHECK (level IN ('info', 'warn', 'warning', 'error')),
+    message     TEXT NOT NULL,
+    UNIQUE (task_id, seq)
+);
+"""
+
+DDL_SCHEDULED_JOB_RUNTIME = """
+CREATE TABLE IF NOT EXISTS scheduled_job (
+    id                       TEXT PRIMARY KEY,
+    name                     TEXT NOT NULL,
+    task_type                TEXT NOT NULL,
+    params                   JSONB NOT NULL DEFAULT '{}'::jsonb,
+    freq_type                TEXT,
+    freq_config              JSONB NOT NULL DEFAULT '{}'::jsonb,
+    trigger_mode             TEXT NOT NULL DEFAULT 'time' CHECK (
+        trigger_mode IN ('time', 'dependency')
+    ),
+    dependency_job_id        TEXT,
+    dependency_condition     TEXT,
+    dependency_delay         JSONB NOT NULL DEFAULT '{"value":0,"unit":"minute"}'::jsonb,
+    retry_config             JSONB NOT NULL DEFAULT '{}'::jsonb,
+    trading_day_only         BOOLEAN NOT NULL DEFAULT FALSE,
+    enabled                  BOOLEAN NOT NULL DEFAULT TRUE,
+    last_run_at              TIMESTAMPTZ,
+    last_task_id             TEXT,
+    created_at               TIMESTAMPTZ NOT NULL,
+    updated_at               TIMESTAMPTZ NOT NULL
+);
+"""
+
+DDL_SCHEDULED_TRIGGER_EVENT_RUNTIME = """
+CREATE TABLE IF NOT EXISTS scheduled_trigger_event (
+    id                  TEXT PRIMARY KEY,
+    chain_id            TEXT,
+    source_task_id      TEXT NOT NULL,
+    source_attempt      INTEGER NOT NULL DEFAULT 1,
+    source_status       TEXT NOT NULL,
+    target_job_id       TEXT NOT NULL,
+    trigger_kind        TEXT NOT NULL CHECK (trigger_kind IN ('dependency', 'retry')),
+    trigger_condition   TEXT,
+    retry_count         INTEGER NOT NULL DEFAULT 0,
+    due_at              TIMESTAMPTZ NOT NULL,
+    dispatched_at       TIMESTAMPTZ,
+    status              TEXT NOT NULL CHECK (
+        status IN ('waiting', 'dispatching', 'dispatched', 'cancelled', 'exhausted', 'failed')
+    ),
+    task_id             TEXT,
+    job_snapshot        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    message             TEXT,
+    created_at          TIMESTAMPTZ NOT NULL,
+    updated_at          TIMESTAMPTZ NOT NULL
+);
+"""
+
 
 # ── 阶段五平台能力：审计日志 + 数据字典（平台级，无 owner 归属）──────────────
 
@@ -1150,6 +1246,11 @@ _OTHER_TABLES: dict[str, str] = {
     "sys_tenant": DDL_SYS_TENANT,
     "sys_user": DDL_SYS_USER,
     "app_config": DDL_APP_CONFIG,
+    "storage_migration": DDL_STORAGE_MIGRATION,
+    "async_task": DDL_ASYNC_TASK_RUNTIME,
+    "task_log": DDL_TASK_LOG_RUNTIME,
+    "scheduled_job": DDL_SCHEDULED_JOB_RUNTIME,
+    "scheduled_trigger_event": DDL_SCHEDULED_TRIGGER_EVENT_RUNTIME,
     "layout_preset": DDL_LAYOUT_PRESET,
     "layout_page_config": DDL_LAYOUT_PAGE_CONFIG,
     "layout_field_policy": DDL_LAYOUT_FIELD_POLICY,
@@ -1208,6 +1309,44 @@ _LIMIT_LADDER_INDEXES: tuple[str, ...] = (
         "CREATE INDEX IF NOT EXISTS idx_limit_ladder_outbox_delivery "
         "ON limit_ladder_audit_outbox (status, next_retry_at, created_at)"
     ),
+)
+
+_TASK_RUNTIME_INDEXES: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_async_task_status_created ON async_task (status, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_async_task_type_status ON async_task (task_type, status)",
+    (
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_async_task_trigger_event "
+        "ON async_task (trigger_event_id) WHERE trigger_event_id IS NOT NULL"
+    ),
+    "CREATE INDEX IF NOT EXISTS idx_task_log_task_seq ON task_log (task_id, seq)",
+    "CREATE INDEX IF NOT EXISTS idx_task_log_ts ON task_log (ts)",
+    "CREATE INDEX IF NOT EXISTS idx_scheduled_job_enabled ON scheduled_job (enabled, trigger_mode)",
+    (
+        "CREATE INDEX IF NOT EXISTS idx_scheduled_event_due "
+        "ON scheduled_trigger_event (status, due_at)"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS idx_scheduled_event_target "
+        "ON scheduled_trigger_event (target_job_id, created_at DESC)"
+    ),
+)
+
+_TASK_RUNTIME_UPGRADES: tuple[str, ...] = (
+    """
+    DO $$
+    BEGIN
+        IF EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid='task_log'::regclass
+              AND conname='task_log_level_check'
+              AND pg_get_constraintdef(oid) NOT LIKE '%%warning%%'
+        ) THEN
+            ALTER TABLE task_log DROP CONSTRAINT task_log_level_check;
+            ALTER TABLE task_log ADD CONSTRAINT task_log_level_check
+                CHECK (level IN ('info', 'warn', 'warning', 'error'));
+        END IF;
+    END $$;
+    """,
 )
 
 _STAGE6_VISIBILITY_INDEXES: tuple[str, ...] = (
@@ -1614,6 +1753,10 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     client.execute("ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS source_event_key TEXT")
     for idx_sql in _LIMIT_LADDER_INDEXES:
         client.execute(idx_sql)
+    for idx_sql in _TASK_RUNTIME_INDEXES:
+        client.execute(idx_sql)
+    for upgrade_sql in _TASK_RUNTIME_UPGRADES:
+        client.execute(upgrade_sql)
     for constraint_sql in _TRADE_DISCIPLINE_POINTER_CONSTRAINTS:
         client.execute(constraint_sql)
     for idx_sql in _TRADE_DISCIPLINE_INDEXES:

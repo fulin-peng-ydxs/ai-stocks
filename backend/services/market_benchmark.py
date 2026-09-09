@@ -7,7 +7,8 @@ from datetime import date
 import pandas as pd
 
 from backend.config import get_effective_settings
-from backend.storage.duckdb_client import DuckDBClient, get_client
+from backend.storage.duckdb_client import DuckDBClient
+from backend.storage.duckdb_client import get_read_client as get_client
 
 BENCHMARK_NAMES = {
     "000905.SH": "中证 500",

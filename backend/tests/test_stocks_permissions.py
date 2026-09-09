@@ -33,6 +33,11 @@ def test_list_stocks_without_group_permission_does_not_read_or_create_groups(
     market,
 ):
     """只有 stocks:view 时，行情列表不应触碰或泄露自选分组资产。"""
+    from backend.services.async_task import AsyncTaskService
+
+    # 本用例只验证分组权限；缺少走势快照时保留任务记录，但不让后台线程越过内存库生命周期。
+    monkeypatch.setattr(AsyncTaskService, "_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(AsyncTaskService, "_audit_task", staticmethod(lambda **kwargs: None))
     suffix = uuid.uuid4().hex[:8]
     tenant_id = f"stocks_perm_t_{suffix}"
     user_id = f"stocks_perm_u_{suffix}"

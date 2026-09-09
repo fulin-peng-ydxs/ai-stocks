@@ -55,6 +55,8 @@ flowchart TD
 | `AI_STOCKS_E2E_WRITE` | `backend/devtools/environment_guard.py`、`/api/health/e2e` | 允许 Playwright 创建并物理销毁临时 PG 用户 | 默认未启用；只有精确值 `1` 放行，且必须同时满足本地/测试环境白名单 | 启动被测后端和执行 Playwright 时必须同时显式传入；回归结束后重启后端移除 |
 | `AI_STOCKS_E2E_LOGIN_BYPASS` | `backend/devtools/environment_guard.py::e2e_login_rate_bypass_enabled()`、`backend/services/auth_service.py::login` | 豁免登录接口的单 IP 限流（`login_rate_per_min`），供全量 Playwright 三视口并行密集登录 | 默认未启用；须 `AI_STOCKS_ENV=dev/test/local` + `AI_STOCKS_E2E_WRITE=1` + 本变量=`1` 三重门控同时成立。仅放开 login 的 IP 限流，账号锁定/失败计数/验证码等其余防滥用不受影响；生产（prod 强制去 E2E_WRITE）永不满足 | 仅全量 E2E 临时使用；启动被测后端时显式传入，回归结束后重启后端移除 |
 | `AI_STOCKS_DUCKDB_READ_ONLY` | `backend/storage/duckdb_client.py::get_client()`、`backend/storage/ddl.py::init_db()` | 后端以只读模式连接 DuckDB（不持单文件写锁、跳过 DDL/sequence 初始化） | 默认未启用（读写）；仅值为 `1` 时只读。DuckDB 写锁互斥（写模式下连只读连接也无法并存），故需独占写锁的受控夹具进程（如 `e2e-backtest-run` 种子/清理）与被测后端并存时，后端必须以只读启动 | 仅 E2E 临时使用；生产/日常保持缺省读写。回归结束后重启后端移除 |
+| `AI_STOCKS_DUCKDB_READ_POOL_SIZE` | `backend/storage/duckdb_client.py::get_read_client()` | 覆盖 DuckDB 逻辑只读连接池大小 | `0..32`；缺省读 `duckdb.read_pool_size=4`，设 `0` 会回退到专用写连接串行查询 | 启动时读取，修改后重启 |
+| `AI_STOCKS_TASK_STORAGE_BACKEND` | `backend/storage/task_runtime.py` | 选择任务/日志/调度运行态存储 | `auto`（默认）只在 PG 存在 `migration.task_runtime_pg_v1` applied 标记后使用 PG；标记不可读时 fail-closed，不猜测切库；`duckdb` 仅用于已执行受控回退后的紧急切回；`postgres` 缺标记也会 fail-closed | 启动时读取，禁止运行中切换或双写 |
 | `AI_STOCKS_ENV_FILE` | `scripts/load-local-env.sh` | 覆盖后端和 Playwright 启动器要读取的变量文件路径 | 仅自动化验证变量加载器时使用；日常缺省为仓库根目录 `.env.local` | `start.sh` 及 `scripts/run-playwright.sh` 启动子进程前 |
 | `AI_STOCKS_FILE_LOG` | `backend/common/logging.py` | 额外写 `logs/ai_stocks.log` | 可选；仅值为 `1` 时开启 | 首次配置 logger 时读取；默认只由 `start.sh` 汇总 stdout/stderr 到 `logs/backend.log` |
 | `PYTHON` | `start.sh` | 选择后端启动脚本使用的 Python 可执行文件 | 可选；默认 `python` | 必须在调用 `./start.sh` 前的 shell 环境中设置；当前脚本在读取 `.env.local` 前确定该值 |
@@ -76,6 +78,8 @@ flowchart TD
 | `.env.local` | 忽略 | `./start.sh`、`npm run test:e2e(:ui)` | 本机后端服务、受控 devtool 与 Playwright 变量，可写 `KEY=value` 或 `export KEY=value` |
 | `.env` / `.env.*.local` | 忽略 | 当前脚本无自动读取 | 保留给人工或外部工具，项目脚本不依赖它们 |
 | `config/settings.yaml` | 跟踪 | 后端配置模块 | 非敏感基线配置；敏感值不写入 |
+
+`duckdb.read_pool_size/read_acquire_timeout_sec/slow_query_ms` 是启动期非敏感基线，分别控制逻辑只读连接数、借连接最长等待和慢查询告警阈值。DuckDB 要求同一进程连接使用一致打开配置：默认服务的读连接物理上仍是 read-write 配置，由 statement type 校验只允许单条 `SELECT`/读 PRAGMA/`EXPLAIN`；`AI_STOCKS_DUCKDB_READ_ONLY=1` 时写连接和读池统一以物理只读配置打开。
 
 `start.sh` 与 `scripts/run-playwright.sh` 通过 `scripts/load-local-env.sh` 在项目根目录执行
 `set -a; source .env.local; set +a`，因此 `.env.local` 里的变量会同时进入后端服务、

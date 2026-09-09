@@ -14,7 +14,7 @@ from backend.auth.deps import require_perm, require_visibility_perm
 from backend.scoring.score_profile import ScoreProfileRepo
 from backend.services.asset_audit import record_asset_copy_audit, record_asset_visibility_audit
 from backend.services.asset_visibility import normalize_visibility
-from backend.storage import get_client
+from backend.storage import get_read_client as get_client
 
 router = APIRouter(prefix="/api", tags=["score-profiles"])
 

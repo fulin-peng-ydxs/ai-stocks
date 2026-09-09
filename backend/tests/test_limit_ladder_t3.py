@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import threading
 from datetime import date, timedelta
 
 import pandas as pd
@@ -101,8 +100,6 @@ def test_ingest_one_daily_persists_approximate_st_fact(market, monkeypatch):
     service.repo = MarketRepository(market)
     service.src = object()
     service._bao = None
-    service._limit_ladder_st_dates = set()
-    service._limit_ladder_st_lock = threading.Lock()
     bars = pd.DataFrame([{
         "code": "600001.SH",
         "trade_date": date(2026, 8, 28),
@@ -130,7 +127,6 @@ def test_ingest_one_daily_persists_approximate_st_fact(market, monkeypatch):
     assert bool(row["is_st"]) is True
     assert row["source"] == "stock_name"
     assert row["quality"] == "approximate"
-    assert service._limit_ladder_st_date_result() == ["2026-08-28"]
 
 
 def test_ingest_one_daily_cannot_downgrade_accurate_st_fact_or_daily_marker(
@@ -155,8 +151,6 @@ def test_ingest_one_daily_cannot_downgrade_accurate_st_fact_or_daily_marker(
     service.repo = MarketRepository(market)
     service.src = object()
     service._bao = None
-    service._limit_ladder_st_dates = set()
-    service._limit_ladder_st_lock = threading.Lock()
     bars = pd.DataFrame([{
         "code": "600001.SH",
         "trade_date": trade_date,
@@ -193,7 +187,6 @@ def test_ingest_one_daily_cannot_downgrade_accurate_st_fact_or_daily_marker(
     assert int(market.query_df(
         "SELECT count(*) AS n FROM stock_st_status_history"
     ).iloc[0]["n"]) == 0
-    assert service._limit_ladder_st_date_result() == []
 
 
 def _seed_ladder_fixture(market) -> tuple[list[date], date]:

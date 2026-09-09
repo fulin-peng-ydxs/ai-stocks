@@ -1,5 +1,7 @@
 # 个股走势关联板块开发计划
 
+> 当前基础设施边界（2026-09-09）：任务、日志、调度定义和依赖事件已由后续独立改造迁至 PostgreSQL；DuckDB 只保存行情和相关性快照。本文中“DuckDB 调度表/任务状态”等表述仅记录本功能当时的实施基线，当前运行契约以 `agent-works/architecture/platform.md` 和 `agent-works/duckdb-read-concurrency/` 为准。
+
 > 计划版本：2026-08-30
 > 当前状态：已完成（T1-T11 全部完成；2026-08-30 完成复审修复、完整门禁与真实全市场任务复验）
 > 需求状态：业务闭环与正式需求已确认，无阻塞项
@@ -457,7 +459,7 @@ index_bar + stock_basic ───┘       │ 版本化相关性算法（当前
 | 菜单/资源 seed | `backend/storage/pg_ddl.py` | 复用现有 `stocks:view`、`board:view`、`screen:run`、`sectors:view`、`data-task:manage`、`data-schedule:manage` | 无新增 seed 执行 | 不改变角色、菜单或租户权限 | 不适用；通过路由扫描确认复用正确 |
 | 页面列配置 | `frontend/src/layout/pageRegistry.ts` | 登记四个业务表的两列候选 | 前端发布即生效 | 旧用户配置缺新 key 时按现有默认回退为可见 | 回滚前端登记和列消费；旧配置中的未知 key 由现有兼容机制忽略 |
 | 算法配置 | 领域模块版本常量 | 固定 R2 映射、窗口、阈值、权重和缩尾 | 编译/部署时 | 所有任务同一口径 | 回滚版本并执行全量重算；禁止混用结果 |
-| E2E 夹具 | `backend/devtools/e2e_stock_board_correlation.py`、`./start.sh e2e-stock-board-correlation` | 为三页面、权限和调度交互提供真实后端确定性数据 | 仅聚焦 E2E 前 seed，结束后无论成功失败均 cleanup；runner 负责停服和恢复 | PG 只写 `default/debug_system` 下固定 `e2e_sbc_*` 评分/筛选资产，DuckDB 只写 `9977*.SZ`、`E2ECORR_*`、`E2E相关-`、`e2e_sbc_*` 与 2097 年日期；受本地环境、写开关和 PG 指纹门控 | cleanup 按精确归属/主键/代码/前缀/日期删除，并断言六张 PG 表及 DuckDB 专属数据零残留 |
+| E2E 夹具 | `backend/devtools/e2e_stock_board_correlation.py`、`./start.sh e2e-stock-board-correlation` | 为三页面、权限和调度交互提供真实后端确定性数据 | 仅聚焦 E2E 前 seed，结束后无论成功失败均 cleanup；runner 负责停服和恢复 | PG 写 `default/debug_system` 下固定 `e2e_sbc_*` 评分/筛选资产以及任务、日志、调度运行态，DuckDB 只写 `9977*.SZ`、`E2ECORR_*`、`E2E相关-` 与 2097 年行情/冠军；受本地环境、写开关和 PG 指纹门控 | cleanup 按精确归属/主键/代码/前缀/日期删除，并分别断言 PG 资产、PG 运行态及 DuckDB 行情专属数据零残留 |
 
 SQL 文件实施要求：必须包含总体用途、字段注释、前置条件、执行语句、影响范围、验证 SQL 和回滚说明；不得包含本地数据库路径、密钥或调度 seed。
 

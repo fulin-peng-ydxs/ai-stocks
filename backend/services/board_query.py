@@ -29,7 +29,8 @@ from datetime import date
 import pandas as pd
 
 from backend.indicators.compute import compute_macd
-from backend.storage.duckdb_client import DuckDBClient, get_client
+from backend.storage.duckdb_client import DuckDBClient
+from backend.storage.duckdb_client import get_read_client as get_client
 
 # 周期 → 交易日回溯天数（含当日）：今日=当天、5日=5个交易日、10日=10、20日=20。
 # 板块指数为交易日序列，N 日涨幅 = 最近收盘 vs 往前 N 个交易日收盘（如 5 日 = 最近 vs 第 5 个交易日）。

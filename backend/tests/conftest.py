@@ -20,6 +20,8 @@ os.environ.setdefault(
     "AI_STOCKS_CONFIG_ENCRYPTION_KEY",
     "bsKvJrJKsi9lG2hlViiCnZimaUG5tyKh0Rbt5d3ngQU=",
 )
+# 单测任务运行态固定走各用例的临时 DuckDB；禁止因开发库迁移标记误连真实 PG 任务表。
+os.environ.setdefault("AI_STOCKS_TASK_STORAGE_BACKEND", "duckdb")
 
 from backend.common.exceptions import StorageError
 from backend.storage.ddl import init_db

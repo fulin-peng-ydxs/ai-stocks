@@ -118,7 +118,7 @@ class LimitLadderTaskCoordinator:
                             )
 
                             LimitLadderSnapshotService(
-                                self.tasks.c
+                                getattr(self.tasks, "market", self.tasks.c)
                             ).recover_interrupted_task(
                                 str(duck_task["id"]),
                                 summary=(
@@ -286,7 +286,7 @@ class LimitLadderTaskCoordinator:
                             )
 
                             snapshot_recovered += LimitLadderSnapshotService(
-                                self.tasks.c
+                                getattr(self.tasks, "market", self.tasks.c)
                             ).recover_interrupted_task(
                                 str(duck_task["id"]),
                                 summary=(
@@ -300,7 +300,7 @@ class LimitLadderTaskCoordinator:
                     updated += int(self.repository.transition(
                         command_id=str(command["command_id"]),
                         status="failed",
-                        last_error="DuckDB task missing during reconciliation",
+                        last_error="task runtime row missing during reconciliation",
                     ))
             dispatch = self.dispatch_outbox()
             return {

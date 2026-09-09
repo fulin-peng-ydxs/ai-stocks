@@ -17,7 +17,7 @@ from backend.screening.profile import ProfileRepo
 from backend.services.asset_audit import record_asset_copy_audit, record_asset_visibility_audit
 from backend.services.asset_visibility import normalize_visibility
 from backend.services.screen_score import ScreenScoreService
-from backend.storage import get_client
+from backend.storage import get_read_client as get_client
 
 router = APIRouter(prefix="/api", tags=["screening"])
 

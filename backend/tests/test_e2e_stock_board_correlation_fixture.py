@@ -25,8 +25,8 @@ def test_fixture_seed_is_idempotent_and_cleanup_preserves_unrelated_rows(monkeyp
             "VALUES ('job_keep','保留调度','verify','{}',now(),now())"
         )
 
-        first = seed_stock_board_correlation(client)
-        second = seed_stock_board_correlation(client)
+        first = seed_stock_board_correlation(client, runtime_client=client)
+        second = seed_stock_board_correlation(client, runtime_client=client)
 
         assert first == second
         assert int(client.query_df(
@@ -41,7 +41,7 @@ def test_fixture_seed_is_idempotent_and_cleanup_preserves_unrelated_rows(monkeyp
             "SELECT count(*) n FROM stock_board_correlation"
         ).iloc[0]["n"]) == len(STOCK_CODES) * 2
 
-        result = cleanup_stock_board_correlation(client)
+        result = cleanup_stock_board_correlation(client, runtime_client=client)
 
         assert result["residual"] == {"stocks": 0, "boards": 0, "tasks": 0}
         assert int(client.query_df(

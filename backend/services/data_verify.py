@@ -23,7 +23,8 @@ from backend.services.trade_calendar_readiness import (
     calendar_readiness_detail,
     inspect_trade_calendar,
 )
-from backend.storage.duckdb_client import DuckDBClient, get_client
+from backend.storage.duckdb_client import DuckDBClient
+from backend.storage.duckdb_client import get_read_client as get_client
 
 log = get_logger("services.data_verify")
 

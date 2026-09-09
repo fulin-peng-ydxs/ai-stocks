@@ -16,6 +16,7 @@ from backend.auth.deps import require_system_perm
 from backend.common.request import trusted_client_ip
 from backend.config import get_effective_settings
 from backend.storage.duckdb_client import get_client
+from backend.storage.task_runtime import get_task_runtime_client
 
 router = APIRouter(prefix="/api/data", tags=["data-admin"])
 
@@ -670,7 +671,9 @@ def quality_reset(issue_id: int) -> ApiResponse:
         return err(400, "仅「修复中」的问题可复位")
     fix_task_id = row.iloc[0]["fix_task_id"]
     if fix_task_id:
-        task = c.query_df("SELECT status FROM async_task WHERE id=?", [fix_task_id])
+        task = get_task_runtime_client().query_df(
+            "SELECT status FROM async_task WHERE id=?", [fix_task_id]
+        )
         if not task.empty and str(task.iloc[0]["status"]) in ("pending", "running"):
             return err(409, "恢复任务仍在运行，请先终止任务或等待完成",
                        {"fix_task_id": str(fix_task_id)})

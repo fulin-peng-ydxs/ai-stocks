@@ -1,5 +1,7 @@
 # 个股走势关联板块需求文档
 
+> 当前基础设施边界（2026-09-09）：任务、日志、调度定义和依赖事件已由后续独立改造迁至 PostgreSQL；DuckDB 只保存行情和相关性快照。本文中关于 DuckDB 任务/调度存储的表述仅记录需求确认时的基线，当前运行契约以 `agent-works/architecture/platform.md` 和 `agent-works/duckdb-read-concurrency/` 为准。
+
 > 文档版本：2026-08-30
 > 上游闭环：[`requirement-closure.md`](requirement-closure.md)（已确认）
 > 当前运行闭环：[`stock-board-correlation-closed-loop-flow.md`](stock-board-correlation-closed-loop-flow.md)

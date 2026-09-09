@@ -16,7 +16,7 @@ from backend.groups.stock_group import StockGroupRepo
 from backend.indicators.engine import _IND_COLS
 from backend.services.market_benchmark import MarketBenchmarkService
 from backend.services.stock_board_correlation import StockBoardCorrelationService
-from backend.storage import get_client
+from backend.storage import get_read_client as get_client
 from backend.storage.repository import MarketRepository
 
 router = APIRouter(prefix="/api", tags=["stocks", "data"])
@@ -185,6 +185,7 @@ def stock_related_boards(code: str, business_date: date | None = None) -> ApiRes
     """
     try:
         client = get_client()
+        requested_business_date = business_date is not None
         if business_date is None:
             latest = client.query_df(
                 "SELECT max(trade_date) AS d FROM daily_bar"
@@ -194,7 +195,7 @@ def stock_related_boards(code: str, business_date: date | None = None) -> ApiRes
         service = StockBoardCorrelationService(client)
         membership = service.get_membership(code)
         membership["related_boards"] = service.get_related_boards(
-            [code], business_date
+            [code], business_date, schedule_missing=requested_business_date
         )[membership["code"]]
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

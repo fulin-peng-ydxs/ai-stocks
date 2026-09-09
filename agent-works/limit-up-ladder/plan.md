@@ -1,5 +1,7 @@
 # 连板天梯开发计划
 
+> 当前基础设施边界（2026-09-09）：任务、日志、调度定义和依赖事件已由后续独立改造迁至 PostgreSQL；DuckDB 只保存天梯及行情分析事实。本文中“DuckDB 任务中心”等表述仅记录本功能当时的实施基线，当前运行契约以 `agent-works/architecture/platform.md` 和 `agent-works/duckdb-read-concurrency/` 为准。
+
 > 计划状态：已完成（T1～T18）
 > 需求基线：`requirement.md`（R1～R31）
 > 页面原型：`prototypes/limit-up-ladder.html`

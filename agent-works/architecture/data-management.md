@@ -61,7 +61,7 @@
 - **协作式终止**：`cancel` 写入持久化的 `cancel_requested_at` 并设置进程内取消标记，执行器在每只股票/每个问题或业务阶段之间的检查点 `check_cancel()` 命中后抛 `TaskCancelled` → 状态转 `interrupted`。行情并发采集只维持不超过配置并发数的有界在途窗口，不预提交全市场队列；终止时取消未开始项，并只等待当前少量在途工作单元安全退出。数据源限流与重试退避也轮询同一取消标记，因此不会在取消后继续等待下一轮重试；网络请求本身不能强杀，最迟在当前请求返回或超时后进入安全收尾，全部在途线程退出后任务才转终态，杜绝终态之后仍有孤儿线程写库。是否可续跑由 `TASK_CAPABILITIES` 决定；不可续跑任务会明确提示重新完整执行。容错兜底块（缺口收口、补市值这类 `except` 隔离失败的尾部阶段）必须让 `TaskCancelled` 穿透，不得当成"子阶段失败"吞掉——否则终止会被吃掉、任务跑完变 `done`。
 - **续跑幂等**：`resume` 读 `result.checkpoint` 重新拉起。续跑不是"跳到中断的阶段"，而是从任务入口重进、各阶段按幂等跳过已完成项（`update`/`ingest_date` 按 checkpoint `done_codes`，`backfill` 按库内 `min(trade_date)` 覆盖判断，补市值按库内 `total_mv` 非空）。日历/指数/基础信息等前置用 `prep_done`/`target_end` 标记，续跑时跳过（已于首跑幂等入库）。
 - **并发续跑安全**：新浪日线内部使用 MiniRacer 解码；续跑可能跳过会串行初始化该运行时的日历/指数前置，因此日线适配器必须在进入并发请求前通过进程级锁完成一次性 V8 预热并保留上下文。禁止依赖“首次任务碰巧先调用过某个 AKShare 接口”，否则多个工作线程同时首次初始化会触发不可捕获的原生 FATAL，使服务子进程退出而 checkpoint 留在 `running`；应用重启后由 `reconcile` 标成 `interrupted`，完成项仍可续跑。
-- **受控停服安全**：健康端点公开且只公开 `pending/running` 任务数量。`./start.sh stop`、`restart` 和 `stop-if-idle` 统一先读取该数量；健康状态或任务数量无法可信读取、或者仍有活跃任务时一律 fail-closed，不得停止服务。只有操作人明确接受中断任务时才使用 `stop --force` 或 `restart --force`；已成功接管专用后端的 E2E 退出清理、启动失败回收和错误运行档案回滚等内部补偿路径也必须显式传入 `--force`，其余切换路径不得绕过检查。
+- **受控停服安全**：健康端点公开且只公开 PG（迁移前为 DuckDB）中的 `pending/running` 任务数量，同时返回 `task_runtime_backend` 与 DuckDB 读池统计。`./start.sh stop`、`restart` 和 `stop-if-idle` 统一先读取该数量；健康状态或任务数量无法可信读取、或者仍有活跃任务时一律 fail-closed，不得停止服务。只有操作人明确接受中断任务时才使用 `stop --force` 或 `restart --force`；内部补偿路径也必须显式传入 `--force`，其余切换路径不得绕过检查。
 
 行情采集的三类旧任务共用"日历→指数→逐股日线→刷净复权因子"主链，差异是**刻意**的，不应在服务层强行抹平。Web 新入口统一提交 `stock_ingest`，通过安全场景分派到这些既有服务；旧 `update/backfill/ingest_date/ingest_codes` 任务和历史调度继续兼容：
 
@@ -134,7 +134,7 @@
 | 走势相关重算 | `stock_board_correlation` | 最新完整日或固定日，全市场或指定股票；强制重算并原子发布 | 缺失快照首次读取时幂等创建一次；已有结果由「结果维护」手动或用户调度维护；失败保留最后成功结果 |
 | 连板天梯失效 | `limit_ladder_invalidate` | 最新完整日或固定起始日及之后；只标记失效 | 「结果维护」手动或用户调度；查询对应日期时按门禁重算 |
 | 每日榜单失效 | `recompute` | 最新交易日、固定日或全部评分快照；只标记 stale | 「结果维护」手动或用户调度；下次榜单读取按需重算。榜单页另提供 owner + `board:compute` 的「重算当日」，只精确失效并刷新当前日期/方案/版本；system 可维护可见方案 |
-| 连板天梯单日重算 | `limit_ladder_recompute` | 按完整性门禁计算并原子发布指定交易日不可变天梯快照 | 内部任务类型，不开放调度配置；DuckDB `async_task/task_log` 展示执行进度，PG `limit_ladder_task_ledger` 与 `limit_ladder_audit_outbox` 保存跨来源协调和可靠审计事实 |
+| 连板天梯单日重算 | `limit_ladder_recompute` | 按完整性门禁计算并原子发布指定交易日不可变天梯快照 | 内部任务类型，不开放调度配置；PG `async_task/task_log` 展示执行进度，`limit_ladder_task_ledger` 与 `limit_ladder_audit_outbox` 保存跨来源协调和可靠审计事实；DuckDB 只保存快照 |
 | 质检扫描 | `verify`/质量扫描 | 四层质量问题，写入台账 | 补数后复查 |
 | 数据体检 | `checkup` | 结构/字段契约，只读报告 | 初始化后或重大补数后 |
 

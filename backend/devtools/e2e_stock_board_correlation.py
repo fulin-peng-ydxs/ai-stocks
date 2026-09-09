@@ -1,7 +1,7 @@
 """个股走势关联板块 Playwright 确定性 DuckDB + PostgreSQL 夹具。
 
-只写 9977*.SZ、E2ECORR_*、E2E相关-*、e2e_sbc_* 与 2097 年固定日期；PG 资产
-固定归属 default/debug_system。seed/cleanup 均要求本地测试环境、
+DuckDB 只写 9977*.SZ、E2ECORR_*、E2E相关-* 与 2097 年固定行情；PostgreSQL
+写 e2e_sbc_* 任务运行态及固定归属 default/debug_system 的资产。seed/cleanup 均要求本地测试环境、
 ``AI_STOCKS_E2E_WRITE=1`` 及被测后端 PG 指纹，并在事务内按专属主键清理；用于页面
 E2E，不得在后端持有 DuckDB 锁时执行。
 """
@@ -13,12 +13,18 @@ import json
 import re
 import secrets
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from backend.devtools.environment_guard import require_e2e_write_enabled
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient, get_client
 from backend.storage.pg_client import PostgresClient, get_pg_client
 from backend.storage.pg_identity import pg_fingerprint
+from backend.storage.task_runtime import (
+    PostgresTaskRuntimeClient,
+    get_task_runtime_client,
+    runtime_json_param,
+)
 
 STOCK_CODES = tuple(f"9977{index:02d}.SZ" for index in range(1, 5))
 BOARD_CODES = ("E2ECORR_INDUSTRY", "E2ECORR_CONCEPT")
@@ -208,25 +214,124 @@ def fixture_dates() -> list[date]:
     return days
 
 
+def _cleanup_runtime(runtime: Any) -> dict[str, int]:
+    removed: dict[str, int] = {}
+    statements = (
+        (
+            "scheduled_trigger_event",
+            (
+                "target_job_id LIKE ? OR source_task_id LIKE ? OR task_id LIKE ?"
+            ),
+            [f"{TASK_PREFIX}%", f"{TASK_PREFIX}%", f"{TASK_PREFIX}%"],
+        ),
+        ("task_log", "task_id LIKE ?", [f"{TASK_PREFIX}%"]),
+        (
+            "async_task",
+            "id LIKE ? OR job_id LIKE ?",
+            [f"{TASK_PREFIX}%", f"{TASK_PREFIX}%"],
+        ),
+        ("scheduled_job", "id LIKE ?", [f"{TASK_PREFIX}%"]),
+    )
+    with runtime.transaction():
+        for table, where, params in statements:
+            frame = runtime.query_df(f"SELECT count(*) AS n FROM {table} WHERE {where}", params)
+            removed[table] = int(frame.iloc[0]["n"])
+            runtime.execute(f"DELETE FROM {table} WHERE {where}", params)
+    return removed
+
+
+def _runtime_residual_count(runtime: Any) -> int:
+    frame = runtime.query_df(
+        "SELECT "
+        "(SELECT count(*) FROM scheduled_trigger_event WHERE target_job_id LIKE ? "
+        "OR source_task_id LIKE ? OR task_id LIKE ?) + "
+        "(SELECT count(*) FROM task_log WHERE task_id LIKE ?) + "
+        "(SELECT count(*) FROM async_task WHERE id LIKE ? OR job_id LIKE ?) + "
+        "(SELECT count(*) FROM scheduled_job WHERE id LIKE ?) AS n",
+        [f"{TASK_PREFIX}%"] * 7,
+    )
+    return int(frame.iloc[0]["n"])
+
+
+def _seed_runtime(runtime: Any, target_date: date) -> None:
+    now = datetime(2097, 4, 30, 18, 0, 0, tzinfo=UTC)
+    task_result = {
+        "target_date": str(target_date),
+        "target_stock_count": len(STOCK_CODES),
+        "candidate_relation_count": 8,
+        "industry_champion_count": 4,
+        "concept_champion_count": 4,
+        "empty_result_count": 0,
+        "fallback_count": 0,
+        "skipped_count": 0,
+        "failed_count": 0,
+        "benchmark_counts": {"000001.SH": 4},
+        "calculation_seconds": 0.25,
+        "write_seconds": 0.03,
+        "switched": True,
+    }
+    with runtime.transaction():
+        runtime.execute(
+            "INSERT INTO scheduled_job "
+            "(id,name,task_type,params,freq_type,freq_config,trigger_mode,dependency_delay,"
+            "retry_config,trading_day_only,enabled,created_at,updated_at) VALUES "
+            "(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [
+                "e2e_sbc_job",
+                "E2E相关-盘后计算",
+                "stock_board_correlation",
+                runtime_json_param(runtime, {"codes": list(STOCK_CODES[:2]), "force": False}),
+                "daily",
+                runtime_json_param(runtime, {"time": "15:30"}),
+                "time",
+                runtime_json_param(runtime, {"value": 0, "unit": "minute"}),
+                runtime_json_param(
+                    runtime,
+                    {
+                        "enabled": False,
+                        "condition": "failure",
+                        "delay": {"value": 5, "unit": "minute"},
+                        "max_retries": 1,
+                    },
+                ),
+                True,
+                False,
+                now,
+                now,
+            ],
+        )
+        runtime.execute(
+            "INSERT INTO async_task "
+            "(id,task_type,params,status,progress,message,result,trigger_source,job_id,job_name,"
+            "retry_count,execution_attempt,created_at,updated_at) VALUES "
+            "(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [
+                "e2e_sbc_task",
+                "stock_board_correlation",
+                runtime_json_param(runtime, {"force": False}),
+                "done",
+                1,
+                "E2E 关联计算完成",
+                runtime_json_param(runtime, task_result),
+                "scheduled",
+                "e2e_sbc_job",
+                "E2E相关-盘后计算",
+                0,
+                1,
+                now,
+                now,
+            ],
+        )
+        runtime.execute(
+            "INSERT INTO task_log (task_id,seq,ts,level,message) VALUES (?,?,?,?,?)",
+            ["e2e_sbc_task", 1, now, "info", "阶段 5/5：原子切换完成"],
+        )
+
+
 def _cleanup(client: DuckDBClient) -> dict[str, int]:
     dates = fixture_dates()
     removed: dict[str, int] = {}
     statements = (
-        ("task_log", "DELETE FROM task_log WHERE task_id LIKE ?", [f"{TASK_PREFIX}%"]),
-        (
-            "async_task",
-            "DELETE FROM async_task WHERE id LIKE ? OR job_id LIKE ?",
-            [f"{TASK_PREFIX}%", f"{TASK_PREFIX}%"],
-        ),
-        (
-            "scheduled_trigger_event",
-            (
-                "DELETE FROM scheduled_trigger_event WHERE target_job_id LIKE ? "
-                "OR source_task_id LIKE ? OR task_id LIKE ?"
-            ),
-            [f"{TASK_PREFIX}%", f"{TASK_PREFIX}%", f"{TASK_PREFIX}%"],
-        ),
-        ("scheduled_job", "DELETE FROM scheduled_job WHERE id LIKE ?", [f"{TASK_PREFIX}%"]),
         (
             "stock_board_correlation",
             "DELETE FROM stock_board_correlation WHERE code IN (SELECT unnest(?::VARCHAR[]))",
@@ -289,7 +394,7 @@ def _cleanup(client: DuckDBClient) -> dict[str, int]:
     return removed
 
 
-def _residual_counts(client: DuckDBClient) -> dict[str, int]:
+def _residual_counts(client: DuckDBClient, runtime: Any) -> dict[str, int]:
     code_count = int(
         client.query_df(
             "SELECT count(*) n FROM stock_basic "
@@ -304,20 +409,18 @@ def _residual_counts(client: DuckDBClient) -> dict[str, int]:
             [list(BOARD_CODES)],
         ).iloc[0]["n"]
     )
-    task_count = int(
-        client.query_df(
-            "SELECT (SELECT count(*) FROM scheduled_job WHERE id LIKE ?) + "
-            "(SELECT count(*) FROM async_task WHERE id LIKE ? OR job_id LIKE ?) n",
-            [f"{TASK_PREFIX}%", f"{TASK_PREFIX}%", f"{TASK_PREFIX}%"],
-        ).iloc[0]["n"]
-    )
-    return {"stocks": code_count, "boards": board_count, "tasks": task_count}
+    return {
+        "stocks": code_count,
+        "boards": board_count,
+        "tasks": _runtime_residual_count(runtime),
+    }
 
 
 def seed_stock_board_correlation(
     client: DuckDBClient | None = None,
     *,
     pg: PostgresClient | None = None,
+    runtime_client: Any | None = None,
     expected_pg_fingerprint: str | None = None,
 ) -> dict[str, object]:
     """幂等写入页面、筛选和任务中心所需的固定行情与当前冠军。"""
@@ -327,8 +430,13 @@ def seed_stock_board_correlation(
     if expected_pg_fingerprint is not None:
         pg = pg or get_pg_client()
         _assert_pg_target(pg, expected_pg_fingerprint)
+    if pg is not None:
         _assert_seed_owner(pg)
         _cleanup_pg(pg)
+    runtime = runtime_client or (
+        PostgresTaskRuntimeClient(pg) if pg is not None else get_task_runtime_client()
+    )
+    _cleanup_runtime(runtime)
     dates = fixture_dates()
     target_date = dates[-1]
     computed_at = "2097-04-30 18:00:00"
@@ -391,7 +499,16 @@ def seed_stock_board_correlation(
             for point, day in enumerate(dates):
                 close = 100 + point * (0.2 + board_index * 0.05)
                 board_rows.append(
-                    (board_code, day, close - 0.1, close + 0.3, close - 0.3, close, 1_000_000, 100_000_000)
+                    (
+                        board_code,
+                        day,
+                        close - 0.1,
+                        close + 0.3,
+                        close - 0.3,
+                        close,
+                        1_000_000,
+                        100_000_000,
+                    )
                 )
         client.conn.executemany(
             "INSERT INTO board_bar "
@@ -438,50 +555,9 @@ def seed_stock_board_correlation(
             "VALUES (?,?,?,?,?,?,20,60,?,'000001.SH',false,?,?,'stock-board-correlation-v2')",
             champion_rows,
         )
-        client.execute(
-            "INSERT INTO scheduled_job "
-            "(id,name,task_type,params,freq_type,freq_config,trigger_mode,dependency_delay,"
-            "retry_config,trading_day_only,enabled,created_at,updated_at) VALUES "
-            "('e2e_sbc_job','E2E相关-盘后计算','stock_board_correlation',"
-            "'{\"codes\":[\"997701.SZ\",\"997702.SZ\"],\"force\":false}',"
-            "'daily','{\"time\":\"15:30\"}','time','{\"value\":0,\"unit\":\"minute\"}',"
-            "'{\"enabled\":false,\"condition\":\"failure\",\"delay\":{\"value\":5,"
-            "\"unit\":\"minute\"},\"max_retries\":1}',true,false,?,?)",
-            [computed_at, computed_at],
-        )
-        task_result = json.dumps(
-            {
-                "target_date": str(target_date),
-                "target_stock_count": len(STOCK_CODES),
-                "candidate_relation_count": 8,
-                "industry_champion_count": 4,
-                "concept_champion_count": 4,
-                "empty_result_count": 0,
-                "fallback_count": 0,
-                "skipped_count": 0,
-                "failed_count": 0,
-                "benchmark_counts": {"000001.SH": 4},
-                "calculation_seconds": 0.25,
-                "write_seconds": 0.03,
-                "switched": True,
-            },
-            ensure_ascii=False,
-        )
-        client.execute(
-            "INSERT INTO async_task "
-            "(id,task_type,params,status,progress,message,result,trigger_source,job_id,job_name,"
-            "retry_count,execution_attempt,created_at,updated_at) VALUES "
-            "('e2e_sbc_task','stock_board_correlation','{\"force\":false}','done',1,"
-            "'E2E 关联计算完成',?,'scheduled','e2e_sbc_job','E2E相关-盘后计算',0,1,?,?)",
-            [task_result, computed_at, computed_at],
-        )
-        client.execute(
-            "INSERT INTO task_log (id,task_id,seq,ts,level,message) VALUES "
-            "(nextval('seq_task_log'),'e2e_sbc_task',1,?,'info','阶段 5/5：原子切换完成')",
-            [computed_at],
-        )
     if pg is not None:
         _seed_pg(pg, target_date)
+    _seed_runtime(runtime, target_date)
     return {
         "stockCodes": list(STOCK_CODES),
         "boardCodes": list(BOARD_CODES),
@@ -497,6 +573,7 @@ def cleanup_stock_board_correlation(
     client: DuckDBClient | None = None,
     *,
     pg: PostgresClient | None = None,
+    runtime_client: Any | None = None,
     expected_pg_fingerprint: str | None = None,
 ) -> dict[str, object]:
     require_e2e_write_enabled()
@@ -507,16 +584,21 @@ def cleanup_stock_board_correlation(
     if expected_pg_fingerprint is not None:
         pg = pg or get_pg_client()
         _assert_pg_target(pg, expected_pg_fingerprint)
+    if pg is not None:
         pg_removed = _cleanup_pg(pg)
         pg_residual = _pg_residual_counts(pg)
         if any(pg_residual.values()):
             raise RuntimeError(f"关联板块 E2E PostgreSQL 清理后仍有残留：{pg_residual}")
+    runtime = runtime_client or (
+        PostgresTaskRuntimeClient(pg) if pg is not None else get_task_runtime_client()
+    )
+    runtime_removed = _cleanup_runtime(runtime)
     with client.transaction():
         removed = _cleanup(client)
-        residual = _residual_counts(client)
+        residual = _residual_counts(client, runtime)
         if any(residual.values()):
             raise RuntimeError(f"关联板块 E2E 清理后仍有残留：{residual}")
-    return {"removed": removed, "residual": residual,
+    return {"removed": {**removed, **runtime_removed}, "residual": residual,
             "pgRemoved": pg_removed, "pgResidual": pg_residual}
 
 
