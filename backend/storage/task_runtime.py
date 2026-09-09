@@ -196,8 +196,6 @@ def task_runtime_backend(
         raise ConfigError(
             "AI_STOCKS_TASK_STORAGE_BACKEND 仅支持 auto、duckdb、postgres"
         )
-    if configured == "duckdb":
-        return "duckdb"
     if _backend_cache is not None and not refresh:
         resolved = _backend_cache
     else:
@@ -216,6 +214,11 @@ def task_runtime_backend(
     if configured == "postgres" and resolved != "postgres":
         raise ConfigError(
             f"任务运行态尚未完成迁移，缺少标记 {TASK_RUNTIME_MIGRATION_MARKER}"
+        )
+    if configured == "duckdb" and resolved == "postgres":
+        raise ConfigError(
+            f"任务运行态迁移标记 {TASK_RUNTIME_MIGRATION_MARKER} 仍为 applied，"
+            "拒绝切回已冻结的 DuckDB 旧表；请先执行受控回退"
         )
     return resolved
 

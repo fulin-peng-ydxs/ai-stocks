@@ -29,6 +29,20 @@ from backend.storage.duckdb_client import DuckDBClient
 from backend.storage.pg_client import PostgresClient
 from backend.storage.pg_ddl import _ASSET_TABLES, init_pg_db
 
+
+@pytest.fixture(autouse=True)
+def _pin_test_task_runtime_to_duckdb():
+    """单测显式注入临时 DuckDB，不受开发库已迁移 marker 影响。"""
+    from backend.storage import task_runtime
+
+    previous = task_runtime._backend_cache
+    task_runtime._backend_cache = "duckdb"
+    try:
+        yield
+    finally:
+        task_runtime._backend_cache = previous
+
+
 TEST_TENANT = "pytest"
 TEST_OWNER = "pytest_owner"
 

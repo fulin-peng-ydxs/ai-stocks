@@ -20,6 +20,7 @@ import threading
 from contextlib import nullcontext
 from datetime import datetime, timedelta
 
+from backend.common.exceptions import ConflictError
 from backend.common.logging import get_logger
 from backend.storage.duckdb_client import get_client
 from backend.storage.task_runtime import (
@@ -130,7 +131,7 @@ TASK_CAPABILITIES: dict[str, dict] = {
 }
 
 
-class ConcurrentTaskError(Exception):
+class ConcurrentTaskError(ConflictError):
     """同类写任务已在运行（FR-DM-11，映射 409）。"""
 
     def __init__(self, task_type: str, running_id: str):
@@ -733,6 +734,7 @@ def _h_backfill(params: dict, ctx: TaskContext) -> dict:
 def _h_ingest_date(params: dict, ctx: TaskContext) -> dict:
     """指定日期采集（FR-DM-3 更多选项）：补单日或区间。"""
     from datetime import date as _date
+
     from backend.services.ingest import IngestionService
     d0 = params.get("date") or params.get("date_start")
     d1 = params.get("date_end") or d0
@@ -838,11 +840,11 @@ def _h_recompute(params: dict, ctx: TaskContext) -> dict:
     )
 
     normalized = normalize_score_invalidation_params(params)
-    target_date = resolve_target_date(normalized, ctx.svc.c)
+    target_date = resolve_target_date(normalized, ctx.svc.market)
     scope = "全部快照" if target_date is None else target_date.isoformat()
     ctx.log(f"每日榜单失效：目标范围 {scope}")
     ctx.progress(0.5, "标记评分快照失效…")
-    repo = ScoreSnapshotRepo(ctx.svc.c)
+    repo = ScoreSnapshotRepo(ctx.svc.market)
     stale = repo.mark_stale_all() if target_date is None else repo.mark_stale_dates([target_date])
     ctx.log(f"已标记 {stale} 项评分快照失效；下次读取时按需重算")
     return {
@@ -1348,8 +1350,8 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
     - null_close/abnormal   → 重采该单日；adj_jump → 重采该股整段 + 重算复权
     复检由 DataIntegrityReport.recheck_clean 判定：通过 → resolved；未通过 → 保持 open。
     """
-    from backend.services.ingest import IngestionService
     from backend.services.data_report import DataIntegrityReport
+    from backend.services.ingest import IngestionService
     c = get_client()
     rep = DataIntegrityReport(c)
     ing = IngestionService()
@@ -1616,16 +1618,18 @@ def _h_limit_ladder_invalidate(params: dict, ctx: TaskContext) -> dict:
 
     normalized = normalize_ladder_invalidation_params(params)
     if normalized["target_mode"] == "latest":
-        latest = LimitLadderQueryService(ctx.svc.c).trade_dates(limit=1)["latest_complete_date"]
+        latest = LimitLadderQueryService(ctx.svc.market).trade_dates(limit=1)[
+            "latest_complete_date"
+        ]
         if not latest:
             raise ValueError("没有通过天梯完整性门禁的交易日")
         target_date = _date.fromisoformat(latest)
     else:
-        target_date = resolve_target_date(normalized, ctx.svc.c)
+        target_date = resolve_target_date(normalized, ctx.svc.market)
     scope = f"{target_date.isoformat()} 起"
     ctx.log(f"连板天梯失效：目标范围 {scope}")
     ctx.progress(0.5, "标记连板天梯快照失效…")
-    service = LimitLadderSnapshotService(ctx.svc.c)
+    service = LimitLadderSnapshotService(ctx.svc.market)
     invalidated = service.request_invalidation(
         [target_date],
         reason="explicit_result_maintenance",
@@ -1664,7 +1668,7 @@ def _h_limit_ladder_recompute(params: dict, ctx: TaskContext) -> dict:
     ctx.set_phase("limit_ladder", phase_total=3, phase_done=0, current_item=raw_date)
     ctx.log(f"阶段 1/3：校验 {raw_date} 点时股票池与采集终态")
     try:
-        outcome = LimitLadderSnapshotService(ctx.svc.c).materialize(
+        outcome = LimitLadderSnapshotService(ctx.svc.market).materialize(
             trade_date,
             task_id=ctx.tid,
         )

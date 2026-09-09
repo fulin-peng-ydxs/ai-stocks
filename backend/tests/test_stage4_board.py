@@ -590,20 +590,27 @@ def test_board_run_materialize_uses_advisory_lock(pg, public_preset, monkeypatch
     assert rows["code"].tolist() == ["T3B_LOCK.SZ"]
 
 
-def test_result_maintenance_only_invalidates_board_snapshot(pg, public_preset, monkeypatch):
+def test_result_maintenance_only_invalidates_board_snapshot(
+    pg, market, public_preset, monkeypatch
+):
     """每日榜单结果维护只标记失效，不在任务内重新生产榜单。"""
     from backend.services import async_task
 
     preset_id, _priv_id = public_preset
     ptid, pown = PUBLIC_BOARD_OWNER
     target = date(2099, 1, 3)
+
+    def resolve_target(_params, client=None):
+        assert client is market
+        return target
+
     monkeypatch.setattr(
         "backend.services.result_maintenance.resolve_target_date",
-        lambda _params, _client=None: target,
+        resolve_target,
     )
 
     class Ctx:
-        svc = type("Svc", (), {"c": None})()
+        svc = type("Svc", (), {"c": pg, "market": market})()
         def log(self, *_args, **_kwargs): ...
         def progress(self, *_args, **_kwargs): ...
     pg.execute(

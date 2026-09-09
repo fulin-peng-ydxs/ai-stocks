@@ -5,8 +5,9 @@ from datetime import UTC, datetime
 import pandas as pd
 import pytest
 
-from backend.common.exceptions import ConfigError, StorageError
-from backend.storage import task_runtime
+from backend.common.exceptions import ConfigError, ConflictError, StorageError
+from backend.services.async_task import ConcurrentTaskError
+from backend.storage import task_runtime, task_runtime_migration
 from backend.storage.task_runtime import (
     TASK_RUNTIME_MIGRATION_MARKER,
     PostgresTaskRuntimeClient,
@@ -65,6 +66,10 @@ def test_runtime_json_normalizes_non_json_scalars_for_postgres():
     assert value == {"at": "2026-09-09 08:30:00"}
 
 
+def test_concurrent_task_error_crosses_postgres_transaction_boundary():
+    assert issubclass(ConcurrentTaskError, ConflictError)
+
+
 class _MarkerPg:
     def __init__(self, applied: bool):
         self.applied = applied
@@ -99,6 +104,23 @@ def test_explicit_postgres_fails_closed_without_marker(monkeypatch):
     task_runtime.reset_task_runtime_backend_cache()
 
 
+def test_explicit_duckdb_fails_closed_while_postgres_marker_is_applied(monkeypatch):
+    monkeypatch.setenv("AI_STOCKS_TASK_STORAGE_BACKEND", "duckdb")
+    monkeypatch.setattr(task_runtime, "get_pg_client", lambda: _MarkerPg(True))
+    task_runtime.reset_task_runtime_backend_cache()
+    with pytest.raises(ConfigError, match="拒绝切回.*DuckDB"):
+        task_runtime.task_runtime_backend(refresh=True)
+    task_runtime.reset_task_runtime_backend_cache()
+
+
+def test_explicit_duckdb_is_allowed_before_migration(monkeypatch):
+    monkeypatch.setenv("AI_STOCKS_TASK_STORAGE_BACKEND", "duckdb")
+    monkeypatch.setattr(task_runtime, "get_pg_client", lambda: _MarkerPg(False))
+    task_runtime.reset_task_runtime_backend_cache()
+    assert task_runtime.task_runtime_backend(refresh=True) == "duckdb"
+    task_runtime.reset_task_runtime_backend_cache()
+
+
 def test_auto_backend_fails_closed_when_marker_cannot_be_read(monkeypatch):
     monkeypatch.setenv("AI_STOCKS_TASK_STORAGE_BACKEND", "auto")
     monkeypatch.setattr(task_runtime, "get_pg_client", lambda: _UnavailableMarkerPg())
@@ -106,3 +128,32 @@ def test_auto_backend_fails_closed_when_marker_cannot_be_read(monkeypatch):
     with pytest.raises(ConfigError, match="拒绝.*猜测切换"):
         task_runtime.task_runtime_backend(refresh=True)
     task_runtime.reset_task_runtime_backend_cache()
+
+
+def test_migration_status_does_not_initialize_duckdb(monkeypatch):
+    frames = {
+        table: pd.DataFrame(columns=columns)
+        for table, columns in task_runtime_migration._TABLE_COLUMNS.items()
+    }
+    monkeypatch.setattr(task_runtime_migration, "_duck_frames", lambda _duck: frames)
+    monkeypatch.setattr(task_runtime_migration, "_validate_frames", lambda _frames: None)
+    monkeypatch.setattr(
+        task_runtime_migration,
+        "_pg_counts",
+        lambda _pg: {table: 0 for table in frames},
+    )
+    monkeypatch.setattr(
+        task_runtime_migration,
+        "init_db",
+        lambda _duck: pytest.fail("status/dry-run 不得执行 DuckDB 初始化"),
+    )
+
+    class MarkerlessPg:
+        @staticmethod
+        def query_df(_sql, _params=None):
+            return pd.DataFrame([{"name": None}])
+
+    report = task_runtime_migration.inspect_task_runtime_migration(
+        duck=object(), pg=MarkerlessPg()
+    )
+    assert report["state"] is None

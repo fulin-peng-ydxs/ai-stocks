@@ -508,7 +508,7 @@ def test_limit_ladder_handler_materializes_and_closes_pg_command(market, monkeyp
     phases: list[dict] = []
     context = SimpleNamespace(
         tid="task-handler",
-        svc=SimpleNamespace(c=market),
+        svc=SimpleNamespace(c=object(), market=market),
         set_phase=lambda phase, **data: phases.append({"phase": phase, **data}),
         log=lambda *args, **kwargs: None,
         progress=lambda *args, **kwargs: None,

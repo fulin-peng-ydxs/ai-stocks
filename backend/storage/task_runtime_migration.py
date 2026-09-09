@@ -159,7 +159,6 @@ def inspect_task_runtime_migration(
 ) -> dict[str, Any]:
     duck = duck or get_client()
     pg = pg or get_pg_client()
-    init_db(duck)
     frames = _duck_frames(duck)
     _validate_frames(frames)
     marker_table = pg.query_df("SELECT to_regclass('public.storage_migration') AS name")

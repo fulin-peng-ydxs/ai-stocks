@@ -36,7 +36,9 @@ def market(tmp_path):
 
 class _Ctx:
     def __init__(self, client):
-        self.svc = SimpleNamespace(c=client)
+        # 生产环境任务运行态在 PostgreSQL，行情事实在 DuckDB；用不可查询对象占住
+        # ``c``，防止结果维护处理器再次把行情 SQL 错发到任务运行库。
+        self.svc = SimpleNamespace(c=object(), market=client)
         self.logs: list[str] = []
 
     def log(self, message, level="info"):
