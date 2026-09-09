@@ -283,7 +283,7 @@ beforeEach(() => {
   ;(boardApi.listBoardProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([
     { id: 'board1', name: '榜单方案', version: 1, source: 'preset' },
   ])
-  ;(dataApi.getCatalog as ReturnType<typeof vi.fn>).mockResolvedValue({ tables: [] })
+  ;(dataApi.getCatalog as ReturnType<typeof vi.fn>).mockResolvedValue({ summary: {}, tables: [] })
   ;(dataApi.getDimensions as ReturnType<typeof vi.fn>).mockResolvedValue({ dimensions: [] })
   ;(dataApi.getStockQuality as ReturnType<typeof vi.fn>).mockResolvedValue({ list: [], total: 0 })
   ;(dataApi.getDataStatus as ReturnType<typeof vi.fn>).mockResolvedValue({})
@@ -577,6 +577,147 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.text()).toContain('逐股质量加载失败')
     expect(wrapper.text()).toContain('stock quality failed')
     expect(wrapper.text()).not.toContain('数据概览加载失败')
+  })
+
+  it('数据资产按双库和规划场景切换列集合且互不串用', async () => {
+    ;(dataApi.getOverview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      latest_trade_date: '2026-09-08', codes: { active: 1, delisted: 0 }, bar_rows: 1,
+      quality: { score: 100, open: 0, by_severity: {}, by_layer: [] },
+      gaps: { stocks_with_gap: 0, gap_days_total: 0 }, last_scan_at: null,
+    })
+    ;(dataApi.getCatalog as ReturnType<typeof vi.fn>).mockResolvedValue({
+      summary: {
+        duckdb: { active_tables: 26, legacy_tables: 28, unregistered_tables: 0, database_size_bytes: 1 },
+        postgres: { active_tables: 59, legacy_tables: 0, unregistered_tables: 0, database_size_bytes: 2 },
+      },
+      tables: [
+        {
+          key: 'duckdb:main:daily_bar', database: 'duckdb', schema: 'main', table: 'daily_bar',
+          name_cn: '日线行情', category: '行情参考', purpose: '行情', lifecycle: 'active',
+          source_of_truth: 'duckdb', metadata_complete: true, ownership_scope: 'market_global',
+          data_source: 'AKShare', row_count: 10, rows: 10, row_count_mode: 'estimated',
+          storage_bytes: null, latest_time: '2026-09-08', fresh: true, open_issues: 0,
+          fields: [], relations: [], measured_at: null,
+        },
+        {
+          key: 'postgres:public:audit_log', database: 'postgres', schema: 'public', table: 'audit_log',
+          name_cn: '审计日志', category: '审计与协调', purpose: '审计', lifecycle: 'active',
+          source_of_truth: 'postgres', metadata_complete: true, ownership_scope: 'platform_global',
+          data_source: '业务服务', row_count: 20, rows: 20, row_count_mode: 'estimated',
+          storage_bytes: 2048, latest_time: null, fresh: null, open_issues: 0,
+          fields: [], relations: [], measured_at: null,
+        },
+      ],
+    })
+    ;(dataApi.getDimensions as ReturnType<typeof vi.fn>).mockResolvedValue({
+      dimensions: [
+        { dimension: 'shareholders', name_cn: '股东数据', status: 'planned', source: '公开接口', tables: [], descr: '股东人数' },
+        { dimension: 'chip_peak', name_cn: '筹码分布', status: 'planned', source: '公开接口', tables: [], descr: '筹码峰' },
+      ],
+    })
+
+    const wrapper = await mountView(OverviewView)
+    const labels = () => wrapper.findAllComponents({ name: 'AppTableColumn' })
+      .map((column) => column.props('label')).filter(Boolean)
+    expect(labels()).toContain('数据库')
+    expect(labels()).not.toContain('归属范围')
+
+    ;(wrapper.vm as any).assetMode = 'duckdb'
+    await wrapper.vm.$nextTick()
+    expect(labels()).toContain('最新业务日')
+    expect(labels()).toContain('质量问题')
+    expect(labels()).not.toContain('表及索引空间')
+
+    ;(wrapper.vm as any).assetMode = 'postgres'
+    await wrapper.vm.$nextTick()
+    expect(labels()).toContain('归属范围')
+    expect(labels()).toContain('表及索引空间')
+    expect(labels()).not.toContain('鲜活度')
+
+    ;(wrapper.vm as any).assetMode = 'planned'
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).displayedAssets.map((item: any) => item.name_cn))
+      .toEqual(['股东数据', '筹码分布'])
+    expect(labels()).not.toContain('物理表')
+  })
+
+  it('数据资产旧表默认隐藏，开启后允许同名双库表并存并支持筛选', async () => {
+    ;(dataApi.getOverview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      latest_trade_date: null, codes: { active: 0, delisted: 0 }, bar_rows: 0,
+      quality: { score: 100, open: 0, by_severity: {}, by_layer: [] },
+      gaps: { stocks_with_gap: 0, gap_days_total: 0 }, last_scan_at: null,
+    })
+    const current = {
+      key: 'postgres:public:task_log', database: 'postgres', schema: 'public', table: 'task_log',
+      name_cn: '任务日志', category: '任务与调度', purpose: '运行日志', lifecycle: 'active',
+      source_of_truth: 'postgres', metadata_complete: true, ownership_scope: 'runtime_global',
+      data_source: '业务服务', row_count: 9, rows: 9, row_count_mode: 'estimated',
+      storage_bytes: 1024, latest_time: null, fresh: null, open_issues: 0,
+      fields: [], relations: [], measured_at: null,
+    }
+    const legacy = {
+      ...current, key: 'duckdb:main:task_log', database: 'duckdb', schema: 'main',
+      lifecycle: 'legacy_readonly', source_of_truth: 'postgres', storage_bytes: null,
+    }
+    ;(dataApi.getCatalog as ReturnType<typeof vi.fn>).mockImplementation(
+      ({ include_legacy }: { include_legacy?: boolean } = {}) => Promise.resolve({
+        summary: {
+          duckdb: { active_tables: 26, legacy_tables: 28, unregistered_tables: 0, database_size_bytes: 1 },
+          postgres: { active_tables: 59, legacy_tables: 0, unregistered_tables: 0, database_size_bytes: 2 },
+        },
+        tables: include_legacy ? [current, legacy] : [current],
+      }),
+    )
+
+    const wrapper = await mountView(OverviewView)
+    expect((wrapper.vm as any).displayedAssets).toHaveLength(1)
+    expect((wrapper.vm as any).displayedAssets[0].lifecycle).toBe('active')
+    await (wrapper.vm as any).toggleLegacyAssets(true)
+    await flushPromises()
+    expect(dataApi.getCatalog).toHaveBeenLastCalledWith({ database: 'all', include_legacy: true })
+    expect((wrapper.vm as any).displayedAssets.map((item: any) => item.key)).toEqual([
+      'postgres:public:task_log', 'duckdb:main:task_log',
+    ])
+
+    ;(wrapper.vm as any).assetKeyword = '不存在'
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).displayedAssets).toHaveLength(0)
+    ;(wrapper.vm as any).assetKeyword = ''
+    ;(wrapper.vm as any).assetCategory = '任务与调度'
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).displayedAssets).toHaveLength(2)
+  })
+
+  it('单表精确统计只刷新当前行，失败时保留原估算值', async () => {
+    ;(dataApi.getOverview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      latest_trade_date: null, codes: { active: 0, delisted: 0 }, bar_rows: 0,
+      quality: { score: 100, open: 0, by_severity: {}, by_layer: [] },
+      gaps: { stocks_with_gap: 0, gap_days_total: 0 }, last_scan_at: null,
+    })
+    const estimated = {
+      key: 'duckdb:main:daily_bar', database: 'duckdb', schema: 'main', table: 'daily_bar',
+      name_cn: '日线行情', category: '行情参考', purpose: '行情', lifecycle: 'active',
+      source_of_truth: 'duckdb', metadata_complete: true, ownership_scope: 'market_global',
+      data_source: 'AKShare', row_count: 10, rows: 10, row_count_mode: 'estimated',
+      storage_bytes: null, latest_time: null, fresh: false, open_issues: 0,
+      fields: [], relations: [], measured_at: null,
+    }
+    ;(dataApi.getCatalog as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ summary: {}, tables: [estimated] })
+      .mockResolvedValueOnce({
+        summary: {}, tables: [{ ...estimated, row_count: 12, rows: 12, row_count_mode: 'exact', measured_at: '2026-09-09T01:02:03Z' }],
+      })
+      .mockRejectedValueOnce(new Error('count failed'))
+
+    const wrapper = await mountView(OverviewView)
+    expect((wrapper.vm as any).formatRowCount((wrapper.vm as any).tables[0])).toBe('约 10')
+    await (wrapper.vm as any).loadExactCount(estimated)
+    await flushPromises()
+    expect((wrapper.vm as any).formatRowCount((wrapper.vm as any).tables[0])).toBe('12')
+    await (wrapper.vm as any).loadExactCount({ ...estimated, row_count: 12, row_count_mode: 'exact' })
+    await flushPromises()
+    expect((wrapper.vm as any).tables[0].row_count).toBe(12)
+    expect((wrapper.vm as any).exactErrors[estimated.key]).toContain('count failed')
   })
 
   it('板块日期追平但覆盖率不足时不显示整体同步', async () => {

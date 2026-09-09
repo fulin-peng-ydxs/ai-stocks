@@ -1,0 +1,215 @@
+"""双库数据资产目录：发现、生命周期、字段漂移和按需统计契约。"""
+
+from __future__ import annotations
+
+import re
+
+import pytest
+
+import backend.storage.catalog as catalog_mod
+from backend.storage.catalog import build_catalog, build_catalog_payload
+from backend.storage.ddl import init_db
+from backend.storage.duckdb_client import DuckDBClient
+
+LADDER_DUCK_TABLES = {
+    "stock_st_status_daily",
+    "stock_st_status_history",
+    "limit_ladder_snapshot_state",
+    "limit_ladder_snapshot",
+    "limit_ladder_snapshot_stock",
+    "limit_ladder_snapshot_concept",
+    "limit_ladder_snapshot_aggregate",
+    "limit_ladder_snapshot_window_metric",
+    "limit_ladder_invalidation_outbox",
+}
+LADDER_PG_TABLES = {"limit_ladder_task_ledger", "limit_ladder_audit_outbox"}
+
+
+@pytest.fixture()
+def catalog_env(pg, monkeypatch):
+    """固定为当前已迁移路由，避免测试结果受机器 marker 存量影响。"""
+    monkeypatch.setattr(catalog_mod, "_source_routing", lambda _pg: ("postgres", "postgres"))
+    with DuckDBClient(db_path=":memory:") as duck:
+        init_db(duck)
+        yield duck, pg
+
+
+def test_dual_catalog_discovers_all_current_and_legacy_tables(catalog_env):
+    duck, pg = catalog_env
+    payload = build_catalog_payload(
+        client=duck, pg_client=pg, database="all", include_legacy=True
+    )
+    tables = payload["tables"]
+    active = [item for item in tables if item["lifecycle"] == "active"]
+    legacy = [item for item in tables if item["lifecycle"] == "legacy_readonly"]
+
+    assert payload["summary"]["duckdb"]["active_tables"] == 26
+    assert payload["summary"]["duckdb"]["legacy_tables"] == 28
+    assert payload["summary"]["duckdb"]["unregistered_tables"] == 0
+    assert payload["summary"]["postgres"]["active_tables"] == 59
+    assert payload["summary"]["postgres"]["legacy_tables"] == 0
+    assert payload["summary"]["postgres"]["unregistered_tables"] == 0
+    assert len(active) == 85
+    assert len(legacy) == 28
+    assert all(item["metadata_complete"] for item in active)
+    assert len({item["key"] for item in tables}) == 113
+
+    duck_ladder = {
+        item["table"] for item in tables
+        if item["database"] == "duckdb" and item["category"] == "连板天梯"
+    }
+    pg_ladder = {
+        item["table"] for item in tables
+        if item["database"] == "postgres" and "连板" in item["name_cn"]
+    }
+    assert duck_ladder == LADDER_DUCK_TABLES
+    assert pg_ladder == LADDER_PG_TABLES
+
+
+def test_runtime_and_config_tables_follow_existing_storage_routes():
+    for table in ("async_task", "task_log", "scheduled_job", "scheduled_trigger_event"):
+        assert catalog_mod._lifecycle("duckdb", table, {table}, "duckdb", "postgres") == (
+            "active",
+            "duckdb",
+        )
+        assert catalog_mod._lifecycle("postgres", table, {table}, "duckdb", "postgres") == (
+            "legacy_readonly",
+            "duckdb",
+        )
+
+    for table in ("app_config", "layout_preset", "layout_page_config", "layout_field_policy"):
+        assert catalog_mod._lifecycle("duckdb", table, {table}, "postgres", "duckdb") == (
+            "active",
+            "duckdb",
+        )
+        assert catalog_mod._lifecycle("postgres", table, {table}, "postgres", "duckdb") == (
+            "legacy_readonly",
+            "duckdb",
+        )
+
+
+def test_catalog_fields_come_from_schema_and_cover_known_drift(catalog_env):
+    duck, pg = catalog_env
+    rows = build_catalog(
+        duck, pg_client=pg, database="duckdb", include_legacy=False
+    )
+    by_table = {item["table"]: item for item in rows}
+
+    quality_fields = {item["name"] for item in by_table["data_quality_issue"]["fields"]}
+    board_fields = {item["name"] for item in by_table["board_dict"]["fields"]}
+    fund_fields = {item["name"] for item in by_table["board_fund_flow"]["fields"]}
+    assert {"fix_task_id", "ignore_scope", "ignore_active"} <= quality_fields
+    assert {"source", "member_history_start_date", "last_seen_at", "updated_at"} <= board_fields
+    assert "net_ratio" in fund_fields
+    assert all(
+        {"nullable", "default", "primary_key", "references"} <= set(field)
+        for item in rows for field in item["fields"]
+    )
+
+
+def test_ladder_child_latest_date_requires_own_valid_snapshot_rows(catalog_env):
+    duck, pg = catalog_env
+    duck.execute(
+        "INSERT INTO daily_bar (code,trade_date,close) VALUES "
+        "('600000.SH',DATE '2024-01-03',10)"
+    )
+    duck.execute(
+        "INSERT INTO limit_ladder_snapshot "
+        "(snapshot_id,trade_date,rule_version,computed_at,stock_count,has_approx_st,"
+        "coverage_json,window_metadata_json,source_version) VALUES "
+        "('snap-1',DATE '2024-01-03','v1',TIMESTAMP '2024-01-03 16:00:00',1,false,'{}','{}','v1')"
+    )
+    duck.execute(
+        "INSERT INTO limit_ladder_snapshot_state "
+        "(trade_date,status,current_snapshot_id,rule_version,updated_at) VALUES "
+        "(DATE '2024-01-03','valid','snap-1','v1',TIMESTAMP '2024-01-03 16:01:00')"
+    )
+    duck.execute(
+        "INSERT INTO limit_ladder_snapshot_stock "
+        "(snapshot_id,code,name,board,price_limit_pct,is_st,st_quality,st_source,"
+        "is_one_word,consecutive_days,amount,industry_name,source_version) VALUES "
+        "('snap-1','600000.SH','浦发银行','main',0.1,false,'accurate','source',"
+        "false,2,1000,'银行','v1')"
+    )
+
+    rows = build_catalog(duck, pg_client=pg, database="duckdb")
+    by_table = {item["table"]: item for item in rows}
+    assert by_table["limit_ladder_snapshot"]["latest_time"].startswith("2024-01-03")
+    assert by_table["limit_ladder_snapshot_stock"]["latest_time"].startswith("2024-01-03")
+    assert by_table["limit_ladder_snapshot_stock"]["fresh"] is True
+    assert by_table["limit_ladder_snapshot_concept"]["latest_time"] is None
+    assert by_table["limit_ladder_snapshot_concept"]["fresh"] is False
+
+
+def test_estimated_mode_avoids_full_counts_and_exact_counts_only_target(
+    catalog_env, monkeypatch
+):
+    duck, pg = catalog_env
+    duck.execute(
+        "INSERT INTO daily_bar (code,trade_date,close) VALUES "
+        "('600000.SH',DATE '2024-01-03',10),('000001.SZ',DATE '2024-01-03',11)"
+    )
+    queries: list[str] = []
+    original = duck.query_df
+
+    def traced_query(sql, params=None):
+        queries.append(sql)
+        return original(sql, params)
+
+    monkeypatch.setattr(duck, "query_df", traced_query)
+    build_catalog_payload(client=duck, pg_client=pg, database="duckdb")
+    assert not any(
+        re.search(
+            r'SELECT\s+count\(\*\)\s+AS\s+n\s+FROM\s+"', sql, re.IGNORECASE
+        )
+        for sql in queries
+    )
+
+    queries.clear()
+    payload = build_catalog_payload(
+        client=duck,
+        pg_client=pg,
+        database="duckdb",
+        table="daily_bar",
+        count_mode="exact",
+    )
+    exact_queries = [sql for sql in queries if 'SELECT count(*) AS n FROM "' in sql]
+    assert exact_queries == ['SELECT count(*) AS n FROM "daily_bar"']
+    assert payload["tables"][0]["row_count"] == 2
+    assert payload["tables"][0]["row_count_mode"] == "exact"
+    assert payload["tables"][0]["measured_at"]
+
+
+@pytest.mark.parametrize(
+    ("database", "table", "count_mode"),
+    [
+        ("sqlite", None, "estimated"),
+        ("all", "daily_bar", "exact"),
+        ("duckdb", "main.daily_bar", "exact"),
+        ("duckdb", 'daily_bar";DROP TABLE stock_basic;--', "exact"),
+        ("duckdb", "not_a_real_table", "estimated"),
+    ],
+)
+def test_catalog_rejects_invalid_database_table_and_exact_scope(
+    catalog_env, database, table, count_mode
+):
+    duck, pg = catalog_env
+    with pytest.raises(ValueError):
+        build_catalog_payload(
+            client=duck,
+            pg_client=pg,
+            database=database,
+            table=table,
+            count_mode=count_mode,
+        )
+
+
+def test_catalog_fails_closed_when_postgres_discovery_fails(catalog_env):
+    duck, _pg = catalog_env
+
+    class BrokenPg:
+        def query_df(self, _sql, _params=None):
+            raise RuntimeError("catalog unavailable")
+
+    with pytest.raises(RuntimeError, match="catalog unavailable"):
+        build_catalog_payload(client=duck, pg_client=BrokenPg(), database="all")

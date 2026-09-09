@@ -36,20 +36,64 @@ export function getOverview(): Promise<Overview> {
 }
 
 
-export interface CatalogField { name: string; type: string; name_cn: string; desc: string }
+export type CatalogDatabase = 'duckdb' | 'postgres'
+export type CatalogLifecycle = 'active' | 'legacy_readonly' | 'unregistered'
+export type CatalogCountMode = 'estimated' | 'exact' | 'unavailable'
+export interface CatalogField {
+  name: string
+  type: string
+  name_cn: string
+  desc: string
+  nullable: boolean
+  default: string | null
+  primary_key: boolean
+  references: string | null
+}
 export interface CatalogTable {
+  key: string
+  database: CatalogDatabase
+  schema: 'main' | 'public'
   table: string
   name_cn: string
+  category: string
   purpose: string
-  rows: number
+  lifecycle: CatalogLifecycle
+  source_of_truth: CatalogDatabase
+  metadata_complete: boolean
+  ownership_scope: string
+  data_source: string
+  row_count: number | null
+  row_count_mode: CatalogCountMode
+  rows: number | null
+  storage_bytes: number | null
   latest_time: string | null
   fresh: boolean | null
   fields: CatalogField[]
   relations: string[]
   open_issues: number
+  measured_at: string | null
 }
-export function getCatalog(): Promise<{ tables: CatalogTable[] }> {
-  return http.get('/data/catalog')
+export interface CatalogDatabaseSummary {
+  connected: boolean
+  schema: 'main' | 'public'
+  database_name: string | null
+  active_tables: number
+  legacy_tables: number
+  unregistered_tables: number
+  database_size_bytes: number | null
+}
+export interface CatalogResponse {
+  summary: Partial<Record<CatalogDatabase, CatalogDatabaseSummary>>
+  tables: CatalogTable[]
+}
+export interface CatalogQuery {
+  database?: 'all' | CatalogDatabase
+  include_legacy?: boolean
+  table?: string
+  count_mode?: 'estimated' | 'exact'
+}
+export function getCatalog(params?: CatalogQuery): Promise<CatalogResponse> {
+  return http.get('/data/catalog', { params })
 }
 
 export interface Dimension {

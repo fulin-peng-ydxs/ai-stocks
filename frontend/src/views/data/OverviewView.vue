@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppFilterSelect from '@/components/AppFilterSelect.vue'
+import AppSearchInput from '@/components/AppSearchInput.vue'
+import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import StockCodeMultiSelect from '@/components/data/StockCodeMultiSelect.vue'
 import { onMounted, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   getOverview, getCatalog, getDimensions, getStockQuality, LAYER_DESC, BOARD_ISSUE_ITEMS,
-  type Overview, type CatalogTable, type Dimension, type StockQuality,
+  type Overview, type CatalogTable, type CatalogDatabaseSummary, type Dimension, type StockQuality,
 } from '@/api/data'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTabToolbar from '@/components/AppTabToolbar.vue'
@@ -67,6 +70,9 @@ const error = ref('')
 const ov = ref<Overview | null>(null)
 const tables = ref<CatalogTable[]>([])
 const dims = ref<Dimension[]>([])
+const catalogSummary = ref<Partial<Record<'duckdb' | 'postgres', CatalogDatabaseSummary>>>({})
+const catalogLoading = ref(false)
+const catalogError = ref('')
 
 // 逐股质量
 const sq = ref<StockQuality | null>(null)
@@ -88,41 +94,161 @@ const DIM_STATUS: Record<string, { label: string; type: 'success' | 'info' | 'wa
   planned: { label: '规划中', type: 'info' },
 }
 
-// 数据资产表（DM-D13）：数据字典 + 维度注册表合并为一张表。
-// 已采集维度映射到物理表显示运行时统计；规划中维度（无物理表）作占位行。
-const assets = computed(() => {
+type AssetMode = 'all' | 'duckdb' | 'postgres' | 'planned'
+const assetMode = ref<AssetMode>('all')
+const assetKeyword = ref('')
+const assetCategory = ref('')
+const showLegacyAssets = ref(false)
+const exactLoading = ref<Record<string, boolean>>({})
+const exactErrors = ref<Record<string, string>>({})
+
+const assetHiddenColumns = computed<string[]>(() =>
+  (componentValueOf('assetTable', 'hiddenColumns') as string[]) ?? [],
+)
+function assetColumnVisible(key: string): boolean {
+  return !assetHiddenColumns.value.includes(key)
+}
+
+// 物理表目录与规划维度分场景展示；维度注册仍负责补充 DuckDB 采集来源。
+const enrichedTables = computed(() => {
   const dimByTable: Record<string, Dimension> = {}
   for (const d of dims.value) for (const t of d.tables) dimByTable[t] = d
-  const rows: any[] = []
-  for (const t of tables.value) {
+  return tables.value.map((t) => {
     const d = dimByTable[t.table]
-    rows.push({
-      key: t.table, name_cn: t.name_cn, table: t.table,
-      status: d?.status ?? 'collected', source: d?.source ?? '—',
-      rows: t.rows, latest_time: t.latest_time, fresh: t.fresh,
-      open_issues: t.open_issues, fields: t.fields, purpose: t.purpose,
-      relations: t.relations, planned: false,
-    })
-  }
-  // 规划中维度：无对应物理表的（如股东数/筹码峰）作占位行
-  for (const d of dims.value) {
-    if (d.tables.every((t) => !tables.value.find((x) => x.table === t))) {
-      rows.push({
-        key: 'dim:' + d.dimension, name_cn: d.name_cn, table: '—',
-        status: d.status, source: d.source, rows: 0, latest_time: null, fresh: null,
-        open_issues: 0, fields: [], purpose: d.descr, relations: [], planned: true,
-      })
-    }
-  }
-  return rows
+    return { ...t, data_source: t.data_source === '—' ? d?.source ?? '—' : t.data_source }
+  })
 })
 
+const plannedAssets = computed(() => dims.value.filter((d) =>
+  d.status === 'planned'
+  && d.tables.every((table) => !tables.value.some((item) => item.table === table)),
+))
+
+const activeAssetCount = computed(() =>
+  (catalogSummary.value.duckdb?.active_tables ?? 0)
+  + (catalogSummary.value.postgres?.active_tables ?? 0),
+)
+const assetModeOptions = computed(() => [
+  { label: `全部 ${activeAssetCount.value}`, value: 'all' },
+  { label: `DuckDB ${catalogSummary.value.duckdb?.active_tables ?? 0}`, value: 'duckdb' },
+  { label: `PG ${catalogSummary.value.postgres?.active_tables ?? 0}`, value: 'postgres' },
+  { label: `规划中 ${plannedAssets.value.length}`, value: 'planned' },
+])
+
+const categoryOptions = computed(() => {
+  const values = assetMode.value === 'planned'
+    ? plannedAssets.value.map((item) => item.status)
+    : enrichedTables.value
+      .filter((item) => assetMode.value === 'all' || item.database === assetMode.value)
+      .map((item) => item.category)
+  return [...new Set(values)].sort().map((value) => ({
+    value,
+    label: assetMode.value === 'planned' ? DIM_STATUS[value]?.label ?? value : value,
+  }))
+})
+
+const displayedAssets = computed(() => {
+  const keyword = assetKeyword.value.trim().toLowerCase()
+  if (assetMode.value === 'planned') {
+    return plannedAssets.value.filter((item) => {
+      if (assetCategory.value && item.status !== assetCategory.value) return false
+      return !keyword
+        || `${item.name_cn} ${item.dimension} ${item.descr} ${item.source}`.toLowerCase().includes(keyword)
+    })
+  }
+  return enrichedTables.value.filter((item) => {
+    if (assetMode.value !== 'all' && item.database !== assetMode.value) return false
+    if (!showLegacyAssets.value && item.lifecycle === 'legacy_readonly') return false
+    if (assetCategory.value && item.category !== assetCategory.value) return false
+    return !keyword
+      || `${item.name_cn} ${item.table} ${item.category} ${item.purpose}`.toLowerCase().includes(keyword)
+  })
+})
+
+watch(assetMode, () => { assetCategory.value = '' })
+
+async function loadCatalog(includeLegacy = showLegacyAssets.value) {
+  catalogLoading.value = true
+  catalogError.value = ''
+  try {
+    const response = await getCatalog({ database: 'all', include_legacy: includeLegacy })
+    tables.value = response.tables
+    catalogSummary.value = response.summary
+    return true
+  } catch (e) {
+    catalogError.value = getErrorMessage(e, '数据资产目录加载失败')
+    return false
+  } finally {
+    catalogLoading.value = false
+  }
+}
+
+async function toggleLegacyAssets(value: boolean) {
+  const previous = showLegacyAssets.value
+  showLegacyAssets.value = value
+  if (!await loadCatalog(value)) showLegacyAssets.value = previous
+}
+
+async function loadExactCount(row: CatalogTable) {
+  exactLoading.value = { ...exactLoading.value, [row.key]: true }
+  const nextErrors = { ...exactErrors.value }
+  delete nextErrors[row.key]
+  exactErrors.value = nextErrors
+  try {
+    const response = await getCatalog({
+      database: row.database,
+      include_legacy: row.lifecycle === 'legacy_readonly',
+      table: row.table,
+      count_mode: 'exact',
+    })
+    const exact = response.tables[0]
+    if (!exact) throw new Error('精确统计未返回目标表')
+    tables.value = tables.value.map((item) => item.key === exact.key ? exact : item)
+  } catch (e) {
+    exactErrors.value = { ...exactErrors.value, [row.key]: getErrorMessage(e, '精确统计失败') }
+  } finally {
+    exactLoading.value = { ...exactLoading.value, [row.key]: false }
+  }
+}
+
+function formatRowCount(row: CatalogTable): string {
+  if (row.row_count == null) return '—'
+  const value = row.row_count.toLocaleString('zh-CN')
+  return row.row_count_mode === 'estimated' ? `约 ${value}` : value
+}
+
+function formatBytes(value: number | null): string {
+  if (value == null) return '—'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = value
+  let index = 0
+  while (size >= 1024 && index < units.length - 1) { size /= 1024; index += 1 }
+  return `${size.toLocaleString('zh-CN', { maximumFractionDigits: index === 0 ? 0 : 1 })} ${units[index]}`
+}
+
+const DB_LABEL = { duckdb: 'DuckDB', postgres: 'PostgreSQL' } as const
+function databaseLabel(value: string): string {
+  return DB_LABEL[value as keyof typeof DB_LABEL] ?? value
+}
+const SCOPE_LABEL: Record<string, string> = {
+  market_global: '全市场共享',
+  platform_global: '平台全局',
+  tenant_user: '租户 + 用户',
+  user: '单用户',
+  runtime_global: '运行态全局',
+}
+const LIFECYCLE_LABEL: Record<string, string> = {
+  active: '当前事实',
+  legacy_readonly: '迁移旧表',
+  unregistered: '待登记',
+}
+
 // 表级质量徽章：纳入鲜活度（最新时间空/滞后 → 不再误判"正常"）。
-function tableQuality(row: any): { type: string; text: string } {
-  if (row.planned) return { type: 'info', text: '规划中' }
+function tableFreshness(row: CatalogTable): { type: string; text: string } {
+  if (row.lifecycle === 'legacy_readonly') return { type: 'info', text: '只读旧表' }
   if (row.fresh === false) return { type: 'danger', text: row.latest_time ? '数据滞后' : '无数据' }
-  if (row.open_issues > 0) return { type: 'warning', text: `${row.open_issues} 待处理` }
-  return { type: 'success', text: '正常' }
+  if (row.fresh == null) return { type: 'info', text: '不适用' }
+  return { type: 'success', text: '鲜活' }
 }
 
 const scoreColor = computed(() => {
@@ -175,9 +301,14 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const [o, c, d] = await Promise.all([getOverview(), getCatalog(), getDimensions()])
+    const [o, c, d] = await Promise.all([
+      getOverview(),
+      getCatalog({ database: 'all', include_legacy: false }),
+      getDimensions(),
+    ])
     ov.value = o
     tables.value = c.tables
+    catalogSummary.value = c.summary
     dims.value = d.dimensions
     await loadSq()
   } catch (e) {
@@ -448,55 +579,184 @@ onMounted(load)
           <el-tab-pane label="数据资产" name="assets">
             <div class="app-workspace-panel overview-panel">
               <AppTabToolbar label="数据资产操作栏" data-testid="overview-assets-toolbar">
-                <template #description>展开行查看字段字典与表间关联；规划中维度暂无物理表</template>
+                <template #actions>
+                  <PageSegmented
+                    v-model="assetMode"
+                    :options="assetModeOptions"
+                    aria-label="数据资产数据库场景"
+                    data-testid="overview-asset-mode"
+                  />
+                  <AppSearchInput
+                    v-model="assetKeyword"
+                    class="asset-search"
+                    placeholder="搜索中文名、表名或用途"
+                    :debounce-ms="150"
+                  />
+                  <AppFilterSelect
+                    v-model="assetCategory"
+                    class="asset-category"
+                    :options="categoryOptions"
+                    :multiple="false"
+                    placeholder="业务分类"
+                    aria-label="数据资产业务分类"
+                  />
+                  <label v-if="assetMode === 'all' || assetMode === 'duckdb'" class="asset-legacy-toggle">
+                    <span>查看迁移旧表</span>
+                    <el-switch
+                      :model-value="showLegacyAssets"
+                      :loading="catalogLoading"
+                      data-testid="overview-asset-legacy"
+                      @change="toggleLegacyAssets(Boolean($event))"
+                    />
+                  </label>
+                </template>
+                <template #description>
+                  {{ assetMode === 'planned'
+                    ? '规划维度不参与物理表统计'
+                    : `当前显示 ${displayedAssets.length} 张；展开可查看真实字段并按需精确统计` }}
+                </template>
               </AppTabToolbar>
+
+              <AppStatusNotice
+                v-if="catalogError && tables.length"
+                class="asset-local-error"
+                title="目录切换失败，已保留原筛选结果"
+                :description="catalogError"
+                tone="error"
+                size="compact"
+                action-text="重试"
+                @action="loadCatalog()"
+              />
+
+              <AppStateBlock
+                v-if="catalogError && !tables.length"
+                state="error"
+                title="数据资产目录加载失败"
+                :description="catalogError"
+                retry
+                @retry="loadCatalog()"
+              />
+
               <AppDataTable
-                :data="assets"
+                v-else-if="assetMode === 'planned'"
+                :data="displayedAssets"
                 size="small"
                 height="100%"
-                aria-label="数据资产表"
-                data-testid="overview-asset-table"
+                aria-label="规划中数据资产表"
+                data-testid="overview-planned-asset-table"
                 :border="tableBorder('assetTable')"
-                :loading="loading"
-                row-key="key"
+                row-key="dimension"
               >
-                <AppTableColumn type="expand">
-                  <template #default="{ row }">
-                    <div class="expand">
-                      <div class="exp-line"><b>说明：</b>{{ row.purpose }}</div>
-                      <div class="exp-line" v-if="row.relations?.length"><b>关联：</b>{{ row.relations.join('；') }}</div>
-                      <AppDataTable v-if="row.fields?.length" :data="row.fields" size="small" class="fld-tbl" embedded>
-                        <AppTableColumn label="字段" prop="name" />
-                        <AppTableColumn label="中文名" prop="name_cn" />
-                        <AppTableColumn label="类型" prop="type" />
-                        <AppTableColumn label="说明" prop="desc" />
-                      </AppDataTable>
-                      <el-empty v-else class="app-empty app-empty--tiny" description="规划中维度，本期暂无物理表与字段" />
-                    </div>
-                  </template>
-                </AppTableColumn>
-                <AppTableColumn label="数据维度" prop="name_cn" />
-                <AppTableColumn label="物理表">
-                  <template #default="{ row }"><span class="mono">{{ row.table }}</span></template>
-                </AppTableColumn>
-                <AppTableColumn label="采集状态">
+                <AppTableColumn label="维度" prop="name_cn" />
+                <AppTableColumn label="状态" role="status">
                   <template #default="{ row }">
                     <el-tag :type="DIM_STATUS[row.status]?.type ?? 'info'" size="small" effect="plain">
                       {{ DIM_STATUS[row.status]?.label ?? row.status }}
                     </el-tag>
                   </template>
                 </AppTableColumn>
-                <AppTableColumn label="数据源" prop="source" />
-                <AppTableColumn label="行数" align="right">
-                  <template #default="{ row }">{{ row.rows.toLocaleString() }}</template>
+                <AppTableColumn label="预期来源" prop="source" />
+                <AppTableColumn label="说明" prop="descr" />
+              </AppDataTable>
+
+              <AppDataTable
+                v-else
+                :data="displayedAssets"
+                size="small"
+                height="100%"
+                aria-label="数据资产表"
+                data-testid="overview-asset-table"
+                :border="tableBorder('assetTable')"
+                :loading="loading || catalogLoading"
+                row-key="key"
+              >
+                <AppTableColumn type="expand">
+                  <template #default="{ row }">
+                    <div class="expand">
+                      <div class="asset-detail-grid">
+                        <div><b>用途</b><span>{{ row.purpose }}</span></div>
+                        <div><b>事实源</b><span>{{ databaseLabel(row.source_of_truth) }}</span></div>
+                        <div><b>生命周期</b><span>{{ LIFECYCLE_LABEL[row.lifecycle] }}</span></div>
+                        <div><b>关联关系</b><span>{{ row.relations?.join('；') || '—' }}</span></div>
+                      </div>
+                      <div class="asset-count-action">
+                        <el-button
+                          size="small"
+                          :loading="exactLoading[row.key]"
+                          data-testid="overview-asset-exact-count"
+                          @click="loadExactCount(row)"
+                        >精确统计行数</el-button>
+                        <span v-if="row.row_count_mode === 'exact' && row.measured_at" class="hint">
+                          统计于 {{ row.measured_at.slice(0, 19) }}
+                        </span>
+                        <span v-if="exactErrors[row.key]" class="asset-count-error" role="alert">
+                          {{ exactErrors[row.key] }}；已保留估算值
+                        </span>
+                      </div>
+                      <AppDataTable v-if="row.fields?.length" :data="row.fields" size="small" class="fld-tbl" embedded>
+                        <AppTableColumn label="字段" prop="name" />
+                        <AppTableColumn label="中文名" prop="name_cn" />
+                        <AppTableColumn label="原生类型" prop="type" />
+                        <AppTableColumn label="可空" role="status" align="center">
+                          <template #default="scope">{{ scope.row.nullable ? '是' : '否' }}</template>
+                        </AppTableColumn>
+                        <AppTableColumn label="默认值">
+                          <template #default="scope"><span class="mono">{{ scope.row.default ?? '—' }}</span></template>
+                        </AppTableColumn>
+                        <AppTableColumn label="主键" role="status" align="center">
+                          <template #default="scope">{{ scope.row.primary_key ? '是' : '—' }}</template>
+                        </AppTableColumn>
+                        <AppTableColumn label="外键" prop="references" />
+                        <AppTableColumn label="说明" prop="desc" />
+                      </AppDataTable>
+                    </div>
+                  </template>
                 </AppTableColumn>
-                <AppTableColumn label="最新数据时间">
+                <AppTableColumn v-if="assetMode === 'all' && assetColumnVisible('database')" label="数据库" role="status">
+                  <template #default="{ row }">
+                    <el-tag size="small" effect="plain">{{ databaseLabel(row.database) }}</el-tag>
+                  </template>
+                </AppTableColumn>
+                <AppTableColumn v-if="assetColumnVisible('name')" label="中文名" prop="name_cn" />
+                <AppTableColumn v-if="assetColumnVisible('table')" label="物理表" prop="table">
+                  <template #default="{ row }"><span class="mono">{{ row.table }}</span></template>
+                </AppTableColumn>
+                <AppTableColumn v-if="assetColumnVisible('category')" label="业务分类" prop="category" />
+                <AppTableColumn v-if="assetColumnVisible('lifecycle')" label="生命周期" role="status">
+                  <template #default="{ row }">
+                    <el-tag
+                      :type="row.lifecycle === 'active' ? 'success' : row.lifecycle === 'unregistered' ? 'warning' : 'info'"
+                      size="small"
+                      effect="plain"
+                    >
+                      {{ LIFECYCLE_LABEL[row.lifecycle] }}
+                    </el-tag>
+                    <span v-if="row.lifecycle === 'legacy_readonly'" class="asset-fact-source">PG 事实源</span>
+                  </template>
+                </AppTableColumn>
+                <AppTableColumn v-if="assetColumnVisible('rowCount')" label="行数" align="right">
+                  <template #default="{ row }">{{ formatRowCount(row) }}</template>
+                </AppTableColumn>
+
+                <AppTableColumn
+                  v-if="assetMode === 'duckdb' && assetColumnVisible('dataSource')"
+                  label="数据源"
+                  prop="data_source"
+                />
+                <AppTableColumn
+                  v-if="assetMode === 'duckdb' && assetColumnVisible('latestTime')"
+                  label="最新业务日"
+                >
                   <template #default="{ row }">{{ (row.latest_time || '—').slice(0, 19) }}</template>
                 </AppTableColumn>
-                <AppTableColumn role="status">
+                <AppTableColumn
+                  v-if="assetMode === 'duckdb' && assetColumnVisible('freshness')"
+                  label="鲜活度"
+                  role="status"
+                >
                   <template #header>
-                    <span>质量</span>
-                    <HelpTip title="表级质量怎么判定？" :width="440">
+                    <span>鲜活度</span>
+                    <HelpTip title="表级鲜活度怎么判定？" :width="440">
                       <HelpTipItem question="时序表如何判定">
                         <ul>
                           <li>日线行情、市值指标和指数的最新数据时间须不早于全局最新交易日才算鲜活；为空或滞后时显示「无数据 / 数据滞后」，有未解决质检问题时显示问题数。</li>
@@ -504,19 +764,45 @@ onMounted(load)
                       </HelpTipItem>
                       <HelpTipItem question="基础与台账表如何判定">
                         <ul>
-                          <li>股票基础信息、交易日历、采集日志和质量台账没有交易日时间维度，不判断鲜活；最新时间显示「—」属正常，只要有数据即为「正常」。</li>
+                          <li>基础与台账表不套用行情鲜活度。失效 outbox 单独展示最后更新时间和待处理数。</li>
                         </ul>
                       </HelpTipItem>
-                      <HelpTipItem question="规划中维度如何显示">
+                      <HelpTipItem question="连板天梯如何判定">
                         <ul>
-                          <li>股东数、筹码分布尚无物理表，统一显示「规划中」。</li>
+                          <li>快照子表通过有效 snapshot_id 关联主表取得最新业务日，鲜活度以最新有效状态和全局交易日比较。</li>
                         </ul>
                       </HelpTipItem>
                     </HelpTip>
                   </template>
                   <template #default="{ row }">
-                    <el-tag :type="tableQuality(row).type as any" size="small" effect="plain">{{ tableQuality(row).text }}</el-tag>
+                    <el-tag :type="tableFreshness(row).type as any" size="small" effect="plain">{{ tableFreshness(row).text }}</el-tag>
                   </template>
+                </AppTableColumn>
+                <AppTableColumn
+                  v-if="assetMode === 'duckdb' && assetColumnVisible('qualityIssues')"
+                  label="质量问题"
+                  role="status"
+                  align="right"
+                >
+                  <template #default="{ row }">
+                    <span :class="{ 'txt-warn': row.open_issues > 0 }">
+                      {{ row.open_issues > 0 ? `${row.open_issues} 待处理` : '0' }}
+                    </span>
+                  </template>
+                </AppTableColumn>
+
+                <AppTableColumn
+                  v-if="assetMode === 'postgres' && assetColumnVisible('ownershipScope')"
+                  label="归属范围"
+                >
+                  <template #default="{ row }">{{ SCOPE_LABEL[row.ownership_scope] ?? row.ownership_scope }}</template>
+                </AppTableColumn>
+                <AppTableColumn
+                  v-if="assetMode === 'postgres' && assetColumnVisible('storageBytes')"
+                  label="表及索引空间"
+                  align="right"
+                >
+                  <template #default="{ row }">{{ formatBytes(row.storage_bytes) }}</template>
                 </AppTableColumn>
               </AppDataTable>
             </div>
@@ -794,6 +1080,47 @@ onMounted(load)
 .expand { padding: 6px 14px; }
 .exp-line { font-size: var(--app-font-size-table); margin-bottom: 6px; color: var(--el-text-color-regular); }
 .fld-tbl { margin-top: 8px; }
+.asset-search { width: min(280px, 100%); }
+.asset-category { width: min(190px, 100%); }
+.asset-legacy-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-space-2);
+  white-space: nowrap;
+  color: var(--el-text-color-regular);
+  font-size: var(--app-font-size-table);
+}
+.asset-local-error {
+  flex: 0 0 auto;
+  margin-bottom: var(--app-space-2);
+}
+.asset-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: var(--app-space-2) var(--app-space-4);
+  color: var(--el-text-color-regular);
+  font-size: var(--app-font-size-table);
+}
+.asset-detail-grid > div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: var(--app-space-2);
+}
+.asset-detail-grid b { color: var(--el-text-color-primary); }
+.asset-count-action {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--app-space-2);
+  margin-top: var(--app-space-3);
+}
+.asset-count-error { color: var(--el-color-danger); font-size: var(--app-font-size-caption); }
+.asset-fact-source {
+  display: block;
+  margin-top: 2px;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+}
 .layer-card { padding: 8px 10px; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
 .layer-name { font-size: var(--app-font-size-table); font-weight: var(--app-font-weight-section); margin-bottom: 6px; }
 .layer-foot { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 4px; }
@@ -804,6 +1131,12 @@ onMounted(load)
 .overview-stock-filter { width: min(460px, 100%); }
 .txt-warn { color: var(--app-warning-text); font-weight: var(--app-font-weight-section); }
 .pager { display: flex; justify-content: flex-end; margin-top: 12px; }
+
+@media (max-width: 760px) {
+  .asset-search,
+  .asset-category { width: 100%; }
+  .asset-detail-grid { grid-template-columns: 1fr; }
+}
 
 /* ── 板块数据 tab ── */
 /* el-tabs 内容区 overflow:hidden 会裁超高内容，板块面板须自行承接滚动。 */

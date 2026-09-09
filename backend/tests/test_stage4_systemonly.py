@@ -116,6 +116,7 @@ _SYSTEM_ONLY_ENDPOINTS = [
     ("POST", "/api/layout/validate", {"config": {}}),              # layout:page-manage（本次新补守卫）
     ("GET", "/api/layout/field-policies", None),                   # layout:field-policy
     ("GET", "/api/data/overview", None),                           # data:overview
+    ("GET", "/api/data/catalog", None),                            # data:overview
     ("GET", "/api/data/quality", None),                            # data-quality:view
     ("POST", "/api/data/quality/ignore-batch", {"issue_type": ["data_gap"]}),
     ("POST", "/api/data/sources/test", {}),                        # data-source:test

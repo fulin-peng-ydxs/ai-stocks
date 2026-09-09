@@ -10,6 +10,15 @@
 - 主源 **AKShare**（新浪日线/指数/日历/股票列表 + 东财单只估值 `stock_value_em`）、备源 **baostock**（退市股历史、复权因子兜底）。能力按 `capabilities` 声明，编排层 `IngestionService._source_for(capability)` 按能力选源（主源支持→主源，否则备源），不硬编码"谁负责什么"。
 - 统一封装**限流**（`rate_limited`，按生效配置 `rate_limit_per_sec`）、**重试**（`with_retry`，指数退避）、**超时**（模块级注入 requests 默认超时）、**兜底**（主源取空→备源）、**溯源**（`data_source_provenance` 记录每段数据来自哪个源）。
 
+### 双库数据资产目录（`backend/storage/catalog.py`）
+
+- `GET /api/data/catalog` 面向系统管理员自动发现 DuckDB `main` 与 PostgreSQL `public` 的物理表和字段，并在服务层合并；两库之间不执行跨库 JOIN。当前迁移完成态包含 85 张当前事实表（DuckDB 26、PostgreSQL 59）和 28 张默认隐藏的 DuckDB 迁移旧表。
+- 系统目录提供原生类型、可空性、默认值、主键和外键；代码只维护中文名、用途、业务分类、归属范围、数据源和关系等业务注解。未登记的新物理表仍以 `unregistered` 展示，不能因缺注解而消失。
+- 列表行数使用数据库系统目录的快速估算；只有明确指定 `database + table` 时才允许单表 `COUNT(*)` 精确统计。表名先通过发现结果白名单校验；DuckDB 只报告数据库文件总大小，PostgreSQL 另报告表及索引空间。
+- 生命周期为 `active | legacy_readonly | unregistered`。任务运行态复用 `task_runtime_backend()`，平台布局配置复用配置迁移路由函数；受控回滚后事实源和旧表状态随真实 marker 自动切换，不维护第二套路由判断。
+- 连板天梯的 9 张 DuckDB 分析事实表与 2 张 PG 协调表全部进入目录。四张快照子表分别通过 `snapshot_id` 关联当前有效快照取得最新业务日；失效 outbox 展示更新时间与 pending 数，不套用行情鲜活度。
+- `GET /api/data/dimensions` 继续保存股东数据、筹码分布等尚无物理表的规划维度；前端将其单列为“规划中”，不与物理表统计混用。
+
 ### 入库清洗与复权口径（`backend/dataquality/checker.py`、`storage/repository.py`）
 - **L1 入库闸门** `sanitize_bars`：收盘价空/≤0 的行直接丢弃（记 `null_close`）；开高低缺失/≤0 用收盘价回填（记 `ohl_repaired`）；零成交量补 0。坏行入库即拦截/标记，不进下游。
 - **复权口径分离**（关键正确性约定）：源因子 `adj_factor` 仅用于 K 线前复权；`pre_close`（涨跌停判定基准）走**独立清洗因子**；去抖列 `adj_factor_clean` 是复权查询的统一口径（`COALESCE(adj_factor_clean, adj_factor)`）。`rebuild-price-factors` 全序列重算这三者，不联网、不改源 `adj_factor`。

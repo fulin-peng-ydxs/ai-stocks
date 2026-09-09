@@ -186,7 +186,9 @@ def reset_task_runtime_backend_cache() -> None:
     _backend_cache = None
 
 
-def task_runtime_backend(*, refresh: bool = False) -> str:
+def task_runtime_backend(
+    *, refresh: bool = False, pg_client: PostgresClient | None = None
+) -> str:
     """Resolve runtime backend; auto switches only after the committed marker exists."""
     global _backend_cache
     configured = os.environ.get("AI_STOCKS_TASK_STORAGE_BACKEND", "auto").strip().lower()
@@ -199,7 +201,7 @@ def task_runtime_backend(*, refresh: bool = False) -> str:
     if _backend_cache is not None and not refresh:
         resolved = _backend_cache
     else:
-        pg = get_pg_client()
+        pg = pg_client or get_pg_client()
         try:
             row = pg.query_df(
                 "SELECT marker FROM storage_migration WHERE marker=%s AND state='applied'",

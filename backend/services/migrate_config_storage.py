@@ -174,6 +174,11 @@ def _marker_exists(pg: PostgresClient) -> bool:
     return not df.empty
 
 
+def config_storage_backend(pg: PostgresClient | None = None) -> str:
+    """返回平台布局配置的真实读路由，供运行服务与资产目录共同消费。"""
+    return "postgres" if _marker_exists(pg or get_pg_client()) else "duckdb"
+
+
 def migrate_config_storage(
     *,
     dry_run: bool = False,

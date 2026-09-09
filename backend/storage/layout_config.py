@@ -294,7 +294,6 @@ LEGACY_BUILTIN_PRESET_MAP = {
 }
 
 _SINGLE_BLUE_PRESET_MARKER = "migration.layout_presets_single_blue_v1"
-_CONFIG_STORAGE_PG_MARKER = "migration.config_storage_pg_v1"
 _PRESET_SEED_LOCK = threading.Lock()
 
 
@@ -725,8 +724,9 @@ class LayoutConfigRepo:
         return int(self.c.query_df(sql, params or []).iloc[0]["n"])
 
     def _config_storage_migrated(self) -> bool:
-        df = self.pg.query_df("SELECT 1 FROM app_config WHERE key=%s", [_CONFIG_STORAGE_PG_MARKER])
-        return not df.empty
+        from backend.services.migrate_config_storage import config_storage_backend
+
+        return config_storage_backend(self.pg) == "postgres"
 
     def _should_read_duckdb_layout(self, table: str) -> bool:
         """迁移 marker 缺失且 DuckDB 有旧平台配置时，优先只读回退 DuckDB。

@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import pandas as pd
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
@@ -290,9 +292,26 @@ def _latest_board_date():
 
 
 @router.get("/catalog", response_model=ApiResponse, dependencies=_OVERVIEW)
-def catalog() -> ApiResponse:
-    from backend.storage.catalog import build_catalog
-    return ok({"tables": build_catalog()})
+def catalog(
+    database: Literal["all", "duckdb", "postgres"] = "all",
+    include_legacy: bool = False,
+    table: str | None = None,
+    count_mode: Literal["estimated", "exact"] = "estimated",
+) -> ApiResponse:
+    from backend.storage.catalog import CatalogExactCountError, build_catalog_payload
+
+    try:
+        payload = build_catalog_payload(
+            database=database,
+            include_legacy=include_legacy,
+            table=table,
+            count_mode=count_mode,
+        )
+    except ValueError as exc:
+        return err(400, str(exc))
+    except CatalogExactCountError as exc:
+        return err(500, str(exc))
+    return ok(payload)
 
 
 @router.get("/dimensions", response_model=ApiResponse, dependencies=_OVERVIEW)
