@@ -168,7 +168,8 @@ class DataIntegrityReport:
         iss = self.c.query_df(
             "SELECT code, count(*) tot, "
             "count(*) FILTER (WHERE issue_type IN ('null_close','ohl_repaired')) l1, "
-            "count(*) FILTER (WHERE issue_type IN ('abnormal_change','adj_jump')) l3 "
+            "count(*) FILTER (WHERE issue_type IN "
+            "('abnormal_change','price_volume_mismatch','adj_jump')) l3 "
             "FROM data_quality_issue WHERE status='open' "
             "AND issue_type NOT IN ('market_index_gap','market_index_gap_daily',"
             "'market_index_invalid','board_index_gap','board_index_gap_daily','board_member_incomplete',"
@@ -547,7 +548,7 @@ class DataIntegrityReport:
             """
             SELECT *
             FROM (
-                SELECT b.code, b.trade_date, b.pre_close,
+                SELECT b.code, b.trade_date, b.close, b.pre_close,
                        abs(b.close / b.pre_close - 1) AS chg,
                        COALESCE(sb.price_limit_pct, 0.10) AS lim,
                        sb.name,
@@ -566,11 +567,42 @@ class DataIntegrityReport:
             ) t
             """)
         df = df[self._active_l3_mask(df)]
-        bad = df[df["chg"] > df["lim"] + (0.011 / df["pre_close"]).clip(lower=0.005)]
-        ab_rows = [
-            {"code": r["code"], "trade_date": r["trade_date"], "issue_type": "abnormal_change",
-             "detail": f"涨跌幅 {r['chg']*100:.1f}% 超上限 {r['lim']*100:.0f}%"}
-            for _, r in bad.iterrows()]
+        from backend.market_rules import limit_prices, round_price_to_cent
+
+        candidates = df[df["chg"] > df["lim"].astype(float) - 0.002]
+        ab_rows = []
+        for _, row in candidates.iterrows():
+            up, down = limit_prices(float(row["pre_close"]), float(row["lim"]))
+            close = round_price_to_cent(float(row["close"]))
+            if down - 0.011 <= close <= up + 0.011:
+                continue
+            ab_rows.append({
+                "code": row["code"],
+                "trade_date": row["trade_date"],
+                "issue_type": "abnormal_change",
+                "detail": f"收盘价 {close:.2f} 超出合法区间 {down:.2f}~{up:.2f}",
+            })
+
+        mismatch = self.c.query_df(
+            """
+            SELECT code,trade_date,low,high,volume,amount,amount/volume AS average_price
+            FROM daily_bar
+            WHERE volume>0 AND amount IS NOT NULL AND low>0 AND high>=low
+              AND (amount/volume < low*0.99 OR amount/volume > high*1.01)
+            """
+        )
+        price_volume_rows = [
+            {
+                "code": row["code"],
+                "trade_date": row["trade_date"],
+                "issue_type": "price_volume_mismatch",
+                "detail": (
+                    f"成交均价 {float(row['average_price']):.4f} 超出价格区间 "
+                    f"{float(row['low']):.4f}~{float(row['high']):.4f}"
+                ),
+            }
+            for _, row in mismatch.iterrows()
+        ]
         adj_rows = self._collect_adj_jump_issues()
         # L2 + L4：来自统一的覆盖鲜活全景（与 quality_model/stock_quality 同口径）
         frame, _ = self._coverage_frame(gap_window_days)
@@ -600,7 +632,7 @@ class DataIntegrityReport:
                                        f"（需补市值）：{r['mv_detail']}"})
         # 仅台账替换使用短事务：失败回滚保留旧问题，计算期间不锁住轮询。
         with self.c.transaction():
-            issue_rows = ab_rows + adj_rows + rows
+            issue_rows = ab_rows + price_volume_rows + adj_rows + rows
             self._upsert_scan_issues(issue_rows, SCAN_ISSUE_TYPES)
         active_rows = self.c.query_df(
             f"SELECT issue_type, count(*) AS n FROM data_quality_issue WHERE status='open' "
@@ -614,6 +646,7 @@ class DataIntegrityReport:
         }
         return {
             "abnormal_change_rows": inserted_counts["abnormal_change"],
+            "price_volume_mismatch_rows": inserted_counts["price_volume_mismatch"],
             "adj_jump_rows": inserted_counts["adj_jump"],
             "mv_missing_rows": inserted_counts["mv_missing"],
             "mv_gap_rows": inserted_counts["mv_gap"],
@@ -1021,6 +1054,19 @@ class DataIntegrityReport:
                 "SELECT count(*) FROM data_quality_issue "
                 "WHERE code=? AND trade_date=? AND issue_type='ohl_repaired' AND status='open'",
                 [code, trade_date])) == 0
+        if issue_type == "price_volume_mismatch":
+            if trade_date is None:
+                return False
+            invalid = self._scalar(
+                """
+                SELECT count(*) FROM daily_bar
+                WHERE code=? AND trade_date=? AND volume>0 AND amount IS NOT NULL
+                  AND low>0 AND high>=low
+                  AND (amount/volume < low*0.99 OR amount/volume > high*1.01)
+                """,
+                [code, trade_date],
+            )
+            return int(invalid) == 0
         if issue_type == "abnormal_change":
             if trade_date is None:
                 return False
@@ -1028,7 +1074,8 @@ class DataIntegrityReport:
                 """
                 SELECT *
                 FROM (
-                    SELECT b.trade_date, b.close, b.pre_close, COALESCE(sb.price_limit_pct,0.10) lim,
+                    SELECT b.trade_date, b.close, b.pre_close,
+                           COALESCE(sb.price_limit_pct,0.10) lim,
                            sb.name,
                            sb.delist_date,
                            b.trade_date - lag(b.trade_date) OVER (PARTITION BY b.code ORDER BY b.trade_date)
@@ -1050,8 +1097,11 @@ class DataIntegrityReport:
             r = df.iloc[0]
             if not bool(self._active_l3_mask(df).iloc[0]):
                 return True
-            tolerance = max(0.005, 0.011 / float(r["pre_close"]))
-            return abs(r["close"] / r["pre_close"] - 1) <= r["lim"] + tolerance
+            from backend.market_rules import limit_prices, round_price_to_cent
+
+            up, down = limit_prices(float(r["pre_close"]), float(r["lim"]))
+            close = round_price_to_cent(float(r["close"]))
+            return down - 0.011 <= close <= up + 0.011
         if issue_type == "adj_jump":
             df = self.c.query_df(
                 """

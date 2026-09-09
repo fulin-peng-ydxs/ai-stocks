@@ -23,6 +23,7 @@
 - **L1 入库闸门** `sanitize_bars`：收盘价空/≤0 的行直接丢弃（记 `null_close`）；开高低缺失/≤0 用收盘价回填（记 `ohl_repaired`）；零成交量补 0。坏行入库即拦截/标记，不进下游。
 - **复权口径分离**（关键正确性约定）：源因子 `adj_factor` 仅用于 K 线前复权；`pre_close`（涨跌停判定基准）走**独立清洗因子**；去抖列 `adj_factor_clean` 是复权查询的统一口径（`COALESCE(adj_factor_clean, adj_factor)`）。`rebuild-price-factors` 全序列重算这三者，不联网、不改源 `adj_factor`。
 - **涨跌停与 ST 标记口径**：`daily_bar.limit_status` / `is_one_word` 由 `add_markers` 用原始 `pre_close` 按 A 股分位价格计算，涨停价 = `Decimal(pre_close × (1 + pct), ROUND_HALF_UP)` 到分，跌停价同理；当前入库标记的 `pct` 只用板块限制（主板 10%、创业板/科创板 20%），不把“当前名称含 ST”倒灌为历史 5%，避免把股票非 ST 历史阶段的 5%~10% 正常涨跌误标为涨跌停。`daily_bar.is_st` 仍按当前名称含 `ST` 写入，供默认股票池过滤；它不是点时 ST 时间线。回测撮合另按交易日规则处理 ST 比例：主板 ST 2026-07-06 前 5%、之后 10%，创业板/科创板 ST 20%。
+- **除权参考价校准**：新浪不直接提供官方 `pre_close`，由分位原价与后复权价反推时可能产生一分钱精度损失。适配器标记真实复权因子切换日；仅当该误差会令收盘价越过合法涨跌停边界时，入库层用直接提供 `preclose` 的 baostock 定向交叉校准。校准源不可用时该行拒绝落库，避免合法除权行情被持续误报且反复重采无法恢复。
 
 ### 市值口径（`daily_metrics` 表，仅 `code, trade_date, float_mv, total_mv` 四列）
 - **流通市值 `float_mv`**：新浪日线自带时变流通股本 `outstanding_share`→`float_share`，日线入库时同步算 `float_mv = close × float_share`（[ingest.py:228](../../backend/services/ingest.py)）。随行情天然齐全、永远当前。
@@ -61,7 +62,7 @@
 - **通用忽略范围**：所有问题均可选择“仅忽略本次”或“整体忽略”；质量页支持按问题类型、严重度或对象筛选，将范围内全部 `open` 问题批量按所选范围标记正常，默认推荐“仅忽略本次”。前者抑制当前持续事件，完整扫描或成功采集确认异常消失后自动失效；后者按筛选结果中每个稳定业务对象与问题类型持续抑制，直到质量页逐项执行“恢复监控”。无代码的资金流源级问题使用稳定来源标识，未匹配名称使用板块类型与原始名称标识，避免互相误伤。历史 `ignored` 按升级前各类型的精确/整体口径迁移。
 
 ### 数据体检（`backend/services/data_verify.py`，与质检互补）
-`DataVerifier` 做**结构/正确性/字段契约**逐行核查（孤儿行、键对齐、日历一致、OHLC 序、复权因子、整列字段缺失、在市股逐行市值无缺失），只读不写台账，结果以 PASS/FAIL 报告呈现（`run_structured`）。市场指数的配置覆盖、日历/OHLC 合法性和鲜活缺口已由可写台账的指数质检统一承担，避免只报 FAIL 却无法修复。板块四表（`board_dict/board_member/board_bar/board_fund_flow`）同纳入体检（E 组）：孤儿板块、指数日历一致、OHLC/量额合法、枚举取值（board_type/period）、`has_bar/has_members/has_fund_flow` 能力标记与实际数据双向一致；板块缺口/新鲜度仍归质检台账+修复闭环，体检不重复。可选联网交叉验证（实时重拉对比原价/前复权价），仅 CLI 用。复权因子核查口径与业务一致：`COALESCE(adj_factor_clean, adj_factor)`，源 `adj_factor` 允许 NULL（仅审计，akshare 个别除权日源因子缺失时 clean 已回填前段因子）。
+`DataVerifier` 做**结构/正确性/字段契约**逐行核查（孤儿行、键对齐、日历一致、OHLC 序、复权因子、整列字段缺失、在市股逐行市值无缺失），只读不写台账，结果以 PASS/FAIL 报告呈现（`run_structured`）。可写质量扫描还会按板块分价涨跌停上下限检查收盘越界（保留 1 分钱源端舍入容差），并检查成交额/成交量推导的均价是否落在 OHLC 区间；命中后写入质量台账并支持定向重采恢复。市场指数的配置覆盖、日历/OHLC 合法性和鲜活缺口已由可写台账的指数质检统一承担，避免只报 FAIL 却无法修复。板块四表（`board_dict/board_member/board_bar/board_fund_flow`）同纳入体检（E 组）：孤儿板块、指数日历一致、OHLC/量额合法、枚举取值（board_type/period）、`has_bar/has_members/has_fund_flow` 能力标记与实际数据双向一致；板块缺口/新鲜度仍归质检台账+修复闭环，体检不重复。可选联网交叉验证（实时重拉对比原价/前复权价），仅 CLI 用。复权因子核查口径与业务一致：`COALESCE(adj_factor_clean, adj_factor)`，源 `adj_factor` 允许 NULL（仅审计，akshare 个别除权日源因子缺失时 clean 已回填前段因子）。
 
 ### 异步任务执行模型（终止 / 续跑 / 三类采集差异，[async_task.py](../../backend/services/async_task.py)、[ingest.py](../../backend/services/ingest.py)）
 
@@ -70,6 +71,7 @@
 - **协作式终止**：`cancel` 写入持久化的 `cancel_requested_at` 并设置进程内取消标记，执行器在每只股票/每个问题或业务阶段之间的检查点 `check_cancel()` 命中后抛 `TaskCancelled` → 状态转 `interrupted`。行情并发采集只维持不超过配置并发数的有界在途窗口，不预提交全市场队列；终止时取消未开始项，并只等待当前少量在途工作单元安全退出。数据源限流与重试退避也轮询同一取消标记，因此不会在取消后继续等待下一轮重试；网络请求本身不能强杀，最迟在当前请求返回或超时后进入安全收尾，全部在途线程退出后任务才转终态，杜绝终态之后仍有孤儿线程写库。是否可续跑由 `TASK_CAPABILITIES` 决定；不可续跑任务会明确提示重新完整执行。容错兜底块（缺口收口、补市值这类 `except` 隔离失败的尾部阶段）必须让 `TaskCancelled` 穿透，不得当成"子阶段失败"吞掉——否则终止会被吃掉、任务跑完变 `done`。
 - **续跑幂等**：`resume` 读 `result.checkpoint` 重新拉起。续跑不是"跳到中断的阶段"，而是从任务入口重进、各阶段按幂等跳过已完成项（`update`/`ingest_date` 按 checkpoint `done_codes`，`backfill` 按库内 `min(trade_date)` 覆盖判断，补市值按库内 `total_mv` 非空）。日历/指数/基础信息等前置用 `prep_done`/`target_end` 标记，续跑时跳过（已于首跑幂等入库）。
 - **并发续跑安全**：新浪日线内部使用 MiniRacer 解码；续跑可能跳过会串行初始化该运行时的日历/指数前置，因此日线适配器必须在进入并发请求前通过进程级锁完成一次性 V8 预热并保留上下文。禁止依赖“首次任务碰巧先调用过某个 AKShare 接口”，否则多个工作线程同时首次初始化会触发不可捕获的原生 FATAL，使服务子进程退出而 checkpoint 留在 `running`；应用重启后由 `reconcile` 标成 `interrupted`，完成项仍可续跑。
+- **并发行情防串票**：新浪不复权与后复权响应必须覆盖同一日期集合，且同日成交量、成交额必须一致；不复权行情的成交均价还必须落在 OHLC 区间内（保留小幅舍入容差）。任一条件不满足都视为数据源语义失败，整对响应自动重试，重试耗尽后才进入备源，禁止把请求代码补到未经配对验证的行情上。
 - **受控停服安全**：健康端点公开且只公开 PG（迁移前为 DuckDB）中的 `pending/running` 任务数量，同时返回 `task_runtime_backend` 与 DuckDB 读池统计。`./start.sh stop`、`restart` 和 `stop-if-idle` 统一先读取该数量；健康状态或任务数量无法可信读取、或者仍有活跃任务时一律 fail-closed，不得停止服务。只有操作人明确接受中断任务时才使用 `stop --force` 或 `restart --force`；内部补偿路径也必须显式传入 `--force`，其余切换路径不得绕过检查。
 
 行情采集的三类旧任务共用"日历→指数→逐股日线→刷净复权因子"主链，差异是**刻意**的，不应在服务层强行抹平。Web 新入口统一提交 `stock_ingest`，通过安全场景分派到这些既有服务；旧 `update/backfill/ingest_date/ingest_codes` 任务和历史调度继续兼容：

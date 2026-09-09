@@ -63,6 +63,11 @@ _PRECLOSE_ANCHOR_DAYS = 20
 # 若用当日原始因子推导出的参考价与昨收差异不足 1 分，视为价格舍入噪声。
 _MIN_REF_PRICE_DIFF = 0.01
 
+# 新浪不复权/后复权请求必须描述同一批成交事实。并发抓取曾出现响应串票：某股票的
+# OHLC 来自相邻股票的后复权响应，而成交量额来自另一响应。若不在适配层拒绝，调用方会
+# 把请求代码补到错误行情上，直到涨跌停门禁才暴露。成交量额不随复权变化，适合作为配对指纹。
+_DAILY_SIGNATURE_REL_TOL = 1e-8
+
 
 # requests 默认超时（模块级可变；由 set_default_request_timeout 运行时更新，
 # 配合前端「请求超时」配置——新建数据源实例时按生效配置刷新此值）。
@@ -306,6 +311,63 @@ class AKShareSource(DataSource):
             f"{code6} sina日线",
         )
 
+    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
+    def _sina_daily_pair(
+        self, code6: str, start: date, end: date
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """成对获取并校验不复权/后复权响应；语义串票也按数据源失败自动重试。"""
+        raw = self._sina_daily(code6, start, end, "")
+        if raw is None or raw.empty or "date" not in raw.columns:
+            return pd.DataFrame(), pd.DataFrame()
+        hfq = self._sina_daily(code6, start, end, "hfq")
+        self._validate_daily_pair(code6, raw, hfq)
+        return raw, hfq
+
+    @staticmethod
+    def _validate_daily_pair(code6: str, raw: pd.DataFrame, hfq: pd.DataFrame) -> None:
+        required = {"date", "open", "high", "low", "close", "volume", "amount"}
+        if hfq is None or hfq.empty or not required.issubset(hfq.columns):
+            raise ValueError(f"{code6} 后复权响应缺失必要行情字段")
+        if not required.issubset(raw.columns):
+            raise ValueError(f"{code6} 不复权响应缺失必要行情字段")
+
+        raw_rows = raw.copy()
+        hfq_rows = hfq.copy()
+        raw_rows["date"] = pd.to_datetime(raw_rows["date"]).dt.date
+        hfq_rows["date"] = pd.to_datetime(hfq_rows["date"]).dt.date
+        raw_rows = raw_rows.set_index("date")
+        hfq_rows = hfq_rows.set_index("date")
+        common_dates = raw_rows.index.intersection(hfq_rows.index)
+        if len(common_dates) != len(raw_rows.index):
+            raise ValueError(f"{code6} 不复权/后复权响应日期集合不一致")
+
+        for field in ("volume", "amount"):
+            raw_values = pd.to_numeric(raw_rows.loc[common_dates, field], errors="coerce")
+            hfq_values = pd.to_numeric(hfq_rows.loc[common_dates, field], errors="coerce")
+            tolerance = raw_values.abs().clip(lower=1.0) * _DAILY_SIGNATURE_REL_TOL
+            mismatch = raw_values.isna() | hfq_values.isna() | (
+                (raw_values - hfq_values).abs() > tolerance
+            )
+            if mismatch.any():
+                sample = common_dates[mismatch.to_numpy()][0]
+                raise ValueError(
+                    f"{code6} 不复权/后复权响应疑似串票：{sample} {field} 不一致"
+                )
+
+        # 成交均价应落在当日价格区间内；允许 1% 误差吸收成交额/成交量单位舍入。
+        volume = pd.to_numeric(raw_rows["volume"], errors="coerce")
+        amount = pd.to_numeric(raw_rows["amount"], errors="coerce")
+        low = pd.to_numeric(raw_rows["low"], errors="coerce")
+        high = pd.to_numeric(raw_rows["high"], errors="coerce")
+        traded = volume > 0
+        average = amount / volume.where(traded)
+        invalid_average = traded & (
+            average.isna() | (average < low * 0.99) | (average > high * 1.01)
+        )
+        if invalid_average.any():
+            sample = raw_rows.index[invalid_average.to_numpy()][0]
+            raise ValueError(f"{code6} 行情响应疑似串票：{sample} 成交均价超出价格区间")
+
     def get_daily_bar(
         self, code: str, start: date, end: date, adjust: str = ""
     ) -> pd.DataFrame:
@@ -314,7 +376,7 @@ class AKShareSource(DataSource):
         # pre_close / 复权因子（否则窗口首日 shift(1) 为 NaN → pre_close 缺失 →
         # 涨跌幅算不出）。锚定段仅用于计算，最后裁掉、不入库。
         fetch_start = start - timedelta(days=_PRECLOSE_ANCHOR_DAYS)
-        raw = self._sina_daily(code6, fetch_start, end, "")
+        raw, hfq = self._sina_daily_pair(code6, fetch_start, end)
         # 空数据或返回结构异常（无 date 列，如无效 symbol）→ 视为无数据，不重试
         if raw is None or raw.empty or "date" not in raw.columns:
             return pd.DataFrame()
@@ -324,7 +386,6 @@ class AKShareSource(DataSource):
 
         # 复权因子 = 后复权收盘 / 不复权收盘（比例，前复权计算时再按最新因子归一）
         try:
-            hfq = self._sina_daily(code6, fetch_start, end, "hfq")
             hfq = hfq.copy()
             hfq["trade_date"] = pd.to_datetime(hfq["date"]).dt.date
             factor = hfq.set_index("trade_date")["close"] / raw.set_index("trade_date")["close"]
@@ -355,6 +416,12 @@ class AKShareSource(DataSource):
         # - qfq 价格需要保留数据源复权因子，否则历史 K 线会被官方参考价重新拉齐。
         # - pre_close 需要用去抖后的参考因子，否则非除权日涨跌幅会被小数噪声带偏。
         pre_close_factor = dejitter_adj_factor(out["adj_factor"], out["close"])
+        # 新浪不直接提供官方除权参考价，只能由两条均已按分位舍入的价格序列
+        # 反推。记录真实因子切换日，让入库层仅在“参考价精度足以改变合法
+        # 涨跌停边界”时向带官方 preclose 的备用源做定向校准。
+        out["_pre_close_factor_event"] = (
+            pre_close_factor.div(pre_close_factor.shift(1)).sub(1).abs().gt(1e-10)
+        )
 
         # 前收盘 = 官方除权参考价（除权除息/高送转日需按复权因子调整）：
         #   pre_close_t = close_{t-1} × adj_factor_{t-1} / adj_factor_t

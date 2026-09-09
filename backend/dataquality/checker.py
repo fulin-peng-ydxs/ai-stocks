@@ -121,6 +121,7 @@ def sanitize_bars(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 SEVERITY_BY_TYPE: dict[str, str] = {
     "adj_jump": "high",
     "abnormal_change": "mid",
+    "price_volume_mismatch": "high",
     "ohl_repaired": "low",
     "null_close": "mid",       # 收盘价空/非正被丢弃——原始数据缺损（M2.9 L1 入库闸门）
     "mv_missing": "low",       # 市值字段整股缺失——字段契约不全（M2.9.2 L2）
@@ -148,9 +149,9 @@ def severity_for(issue_type: str) -> str:
 # 把零散质检统一为分层体检：每个 issue_type 归一层，逐股/全局都按层展示。
 # L2/L4 为聚合度量（非空率 / 缺口鲜活），不逐行落 issue，仅在 stock_quality / quality_model 计算。
 QUALITY_LAYERS: list[dict] = [
-    {"layer": "L1", "name_cn": "入库闸门", "desc": "原始行情合法性：收盘价非空且为正、开高低合法（坏行入库即拦截/修补）"},
+    {"layer": "L1", "name_cn": "入库闸门", "desc": "新采行情的原始/复权响应配对一致，收盘价与开高低合法；除权边界按官方前收盘校准"},
     {"layer": "L2", "name_cn": "字段契约", "desc": "市值字段完整：总市值与流通市值都非空（流通市值供选股池过滤）"},
-    {"layer": "L3", "name_cn": "正确性", "desc": "复权口径一致、涨跌停约束、无异常单日涨跌"},
+    {"layer": "L3", "name_cn": "正确性", "desc": "复权因子、涨跌停边界及成交价量口径一致"},
     {"layer": "L4", "name_cn": "覆盖鲜活", "desc": "存续期无缺口、数据更新到最新交易日"},
 ]
 ISSUE_LAYER: dict[str, str] = {
@@ -159,6 +160,7 @@ ISSUE_LAYER: dict[str, str] = {
     "mv_missing": "L2",
     "mv_gap": "L2",
     "abnormal_change": "L3",
+    "price_volume_mismatch": "L3",
     "adj_jump": "L3",
     "data_gap": "L4",
     "stale": "L4",
@@ -178,7 +180,9 @@ ISSUE_LAYER: dict[str, str] = {
 # 各层落 data_quality_issue 表的离散异常类型（M2.9.2：四层都落表，质检可反复扫并幂等覆盖）。
 L1_ISSUE_TYPES: tuple[str, ...] = ("null_close", "ohl_repaired")
 L2_ISSUE_TYPES: tuple[str, ...] = ("mv_missing", "mv_gap")
-L3_ISSUE_TYPES: tuple[str, ...] = ("abnormal_change", "adj_jump")
+L3_ISSUE_TYPES: tuple[str, ...] = (
+    "abnormal_change", "price_volume_mismatch", "adj_jump",
+)
 L4_ISSUE_TYPES: tuple[str, ...] = ("data_gap", "stale")
 # 「标记正常」的精确豁免类型：只豁免同一对象、同一问题类型、同一交易日。
 # 其余状态型问题按对象与类型整体豁免，避免各扫描/采集入口自行写死而产生口径分叉。
@@ -234,24 +238,27 @@ class QualityChecker:
         return int(self.c.query_df("SELECT nextval('seq_quality_issue') AS v").iloc[0]["v"])
 
     def check_abnormal_change(self, code: str, board_limit_pct: float) -> int:
-        """单日涨跌幅超出板块上限（+0.5% 容差，新股/无 pre_close 除外）→ 异常。"""
+        """按交易所分价后的涨跌停价检查越界行情（新股/无 pre_close 由上层排除）。"""
+        from backend.market_rules import limit_prices, round_price_to_cent
+
         df = self.c.query_df(
             "SELECT code, trade_date, close, pre_close FROM daily_bar WHERE code = ? AND pre_close IS NOT NULL",
             [code],
         )
         if df.empty:
             return 0
-        chg = (df["close"] / df["pre_close"] - 1).abs()
-        bad = df[chg > board_limit_pct + 0.005]
-        issues = [
-            {
-                "code": r["code"],
-                "trade_date": r["trade_date"],
+        issues = []
+        for _, row in df.iterrows():
+            up, down = limit_prices(float(row["pre_close"]), board_limit_pct)
+            close = round_price_to_cent(float(row["close"]))
+            if down - 0.011 <= close <= up + 0.011:
+                continue
+            issues.append({
+                "code": row["code"],
+                "trade_date": row["trade_date"],
                 "issue_type": "abnormal_change",
-                "detail": f"涨跌幅 {(r['close']/r['pre_close']-1)*100:.2f}% 超板块上限 {board_limit_pct*100:.0f}%",
-            }
-            for _, r in bad.iterrows()
-        ]
+                "detail": f"收盘价 {close:.2f} 超出合法区间 {down:.2f}~{up:.2f}",
+            })
         return self._record(issues)
 
 

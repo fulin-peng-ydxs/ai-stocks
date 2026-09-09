@@ -453,6 +453,74 @@ class IngestionService:
             ctx.flush()
         raise DataSourceError(msg)
 
+    def _calibrate_corporate_action_pre_close(
+        self,
+        df: pd.DataFrame,
+        code: str,
+        board_limit_pct: float,
+        used_source: str,
+        ctx=None,
+    ) -> tuple[pd.DataFrame, str]:
+        """用直接提供 preclose 的备用源校准会改变涨跌停结论的除权日。
+
+        新浪原始价和后复权价都只保留到分，由二者比值反推除权参考价时可能
+        相差一分钱；这一分钱在再次计算涨跌停价时最多放大为两分钱。普通日
+        不触发额外请求，只有因子真实切换且当前参考价会把收盘判为越界时才
+        定向交叉验证，避免把合法除权行情反复列为质量问题。
+        """
+        marker = df.get("_pre_close_factor_event")
+        if marker is None or not bool(marker.fillna(False).any()):
+            return df, used_source
+
+        from backend.market_rules import limit_prices, round_price_to_cent
+
+        suspect_dates: list[date] = []
+        for _, row in df[marker.fillna(False)].iterrows():
+            pre_close = row.get("pre_close")
+            close = row.get("close")
+            if pd.isna(pre_close) or pd.isna(close) or float(pre_close) <= 0:
+                continue
+            up, down = limit_prices(float(pre_close), float(board_limit_pct))
+            rounded_close = round_price_to_cent(float(close))
+            if rounded_close < down - 0.011 or rounded_close > up + 0.011:
+                suspect_dates.append(pd.Timestamp(row["trade_date"]).date())
+        if not suspect_dates:
+            return df, used_source
+
+        backup = self._bao_source()
+        try:
+            with _BAO_FALLBACK_LOCK:
+                reference = backup.get_daily_bar(code, min(suspect_dates), max(suspect_dates))
+        except Exception as exc:  # noqa: BLE001
+            raise DataSourceError(
+                f"{code} 除权参考价会改变涨跌停结论，备用源校准失败: {exc}"
+            ) from exc
+        if reference is None or reference.empty:
+            raise DataSourceError(f"{code} 除权参考价会改变涨跌停结论，备用源无校准数据")
+
+        ref_by_date = {
+            pd.Timestamp(row["trade_date"]).date(): row.get("pre_close")
+            for _, row in reference.iterrows()
+        }
+        calibrated = df.copy()
+        for trade_day in suspect_dates:
+            exact = ref_by_date.get(trade_day)
+            if exact is None or pd.isna(exact) or float(exact) <= 0:
+                raise DataSourceError(f"{code} {trade_day} 备用源缺少有效官方前收盘")
+            calibrated.loc[
+                pd.to_datetime(calibrated["trade_date"]).dt.date == trade_day,
+                "pre_close",
+            ] = float(exact)
+        source = f"{used_source}+{backup.name}:preclose"
+        message = (
+            f"{code} 校准除权参考价 {len(suspect_dates)} 日："
+            f"{','.join(map(str, suspect_dates))}（{backup.name}）"
+        )
+        log.info(message)
+        if ctx:
+            ctx.log(message)
+        return calibrated, source
+
     def _record_provenance(self, code: str, table_name: str, start: date, end: date,
                            source: str, rows: int) -> None:
         """记录非默认源的取数事件（默认主源不记录），供审计/排查。只追加。"""
@@ -499,6 +567,9 @@ class IngestionService:
         # 不再一律 False。免费源无历史每日 ST，故用 stock_basic 当前名称尽力而为）
         if board_limit_pct is None:
             _, _, board_limit_pct = classify_board(code.split(".")[0])
+        df, used_source = self._calibrate_corporate_action_pre_close(
+            df, code, float(board_limit_pct), used_source, ctx=ctx
+        )
         if st_status is None:
             fallback = self._st_status_by_name(code)
             st_status = (
@@ -1887,12 +1958,12 @@ class IngestionService:
         if anchor_date is None:  # 全量 / 旧库首次：读全序列
             df = self.repo.c.query_df(
                 "SELECT code, trade_date, open, high, low, close, "
-                "       adj_factor, adj_factor_clean FROM daily_bar "
+                "       pre_close, adj_factor, adj_factor_clean FROM daily_bar "
                 "WHERE code=? ORDER BY trade_date", [code])
         else:  # 增量：读锚点当日起（含锚点做 shift / 去抖上下文）
             df = self.repo.c.query_df(
                 "SELECT code, trade_date, open, high, low, close, "
-                "       adj_factor, adj_factor_clean FROM daily_bar "
+                "       pre_close, adj_factor, adj_factor_clean FROM daily_bar "
                 "WHERE code=? AND trade_date>=? ORDER BY trade_date", [code, anchor_date])
             if len(df) <= 1:  # 只剩锚点本身，无新行
                 return 0
@@ -1909,7 +1980,13 @@ class IngestionService:
                 clean = clean * (stored / head)
         df = df.copy()
         df["adj_factor_clean"] = clean.to_numpy()
-        df["pre_close"] = compute_pre_close(df["close"], clean)
+        computed_pre_close = compute_pre_close(df["close"], clean)
+        factor_event = clean.div(clean.shift(1)).sub(1).abs().gt(1e-10)
+        # 入库时可能已经用直接提供官方 preclose 的备用源校准了除权日。
+        # 全量/增量因子重算不得再用低精度的新浪反推值把它覆盖回去。
+        existing_pre_close = pd.to_numeric(df["pre_close"], errors="coerce")
+        preserve = factor_event & existing_pre_close.gt(0)
+        df["pre_close"] = computed_pre_close.where(~preserve, existing_pre_close)
         marked = add_markers(df, board_limit_pct, is_st)
         if anchor_date is not None:  # 只写锚点之后的新行
             marked = marked[marked["trade_date"] > pd.Timestamp(anchor_date)]

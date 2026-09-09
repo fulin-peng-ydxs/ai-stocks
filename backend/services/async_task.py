@@ -880,12 +880,15 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
     q["market_index"] = rep.scan_market_index_quality()
     q["board"] = rep.scan_board_quality()
     base_count = sum(int(q.get(k, 0)) for k in
-            ("abnormal_change_rows", "adj_jump_rows", "mv_missing_rows", "mv_gap_rows",
+            ("abnormal_change_rows", "price_volume_mismatch_rows", "adj_jump_rows",
+             "mv_missing_rows", "mv_gap_rows",
              "data_gap_rows", "stale_rows"))
     market_index = q.get("market_index") or {}
     b = q.get("board") or {}
     n = base_count + sum(int(v) for v in market_index.values()) + sum(int(v) for v in b.values())
-    ctx.log(f"质检完成：异常涨跌 {q.get('abnormal_change_rows', 0)}、复权跳变 {q.get('adj_jump_rows', 0)}、"
+    ctx.log(f"质检完成：异常涨跌 {q.get('abnormal_change_rows', 0)}、"
+            f"价量错配 {q.get('price_volume_mismatch_rows', 0)}、"
+            f"复权跳变 {q.get('adj_jump_rows', 0)}、"
             f"市值缺失 {q.get('mv_missing_rows', 0)}、市值缺口 {q.get('mv_gap_rows', 0)}、"
             f"缺口 {q.get('data_gap_rows', 0)}、滞后 {q.get('stale_rows', 0)}、"
             f"市场指数缺口 {market_index.get('index_gap', 0)}、"
@@ -1135,7 +1138,9 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
                 note = ing.reconcile_note(r)
                 ctx.log(f"重采写入 {r['rows']} 行；{note}"
                         f"（内部缺口源端无数据者已确认停牌，末尾滞后不强判停牌）")
-        elif issue_type in ("null_close", "ohl_repaired", "abnormal_change"):
+        elif issue_type in (
+            "null_close", "ohl_repaired", "abnormal_change", "price_volume_mismatch"
+        ):
             if td:
                 ctx.log(f"恢复：重采 {code} {td} 单日行情")
                 ing.ingest_one_daily(code, td, td, ctx=ctx)

@@ -58,6 +58,13 @@ describe('taskDisplayLabel', () => {
       .toBe('质检问题恢复·市场指数·字段非法')
   })
 
+  it('价量错配复用质量台账与单日重采映射', () => {
+    expect(ISSUE_TYPES_ACTIVE).toContain('price_volume_mismatch')
+    expect(RECOVER_ACTION_LABEL.price_volume_mismatch).toBe('重采该日')
+    expect(taskDisplayLabel('fix', { issue_type: 'price_volume_mismatch' }))
+      .toBe('质检问题恢复·行情·价量口径错配')
+  })
+
   it('三类结果维护复用同一字段组件，相关性五阶段标签完整接线', () => {
     const schedule = readFileSync(resolve('src/views/data/ScheduleView.vue'), 'utf8')
     const ingest = readFileSync(resolve('src/views/data/IngestView.vue'), 'utf8')

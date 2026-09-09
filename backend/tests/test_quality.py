@@ -97,6 +97,75 @@ def test_compute_pre_close_exrights():
     assert abs(pc2.iloc[1] - 45.33) < 0.1
 
 
+def test_ingest_calibrates_limit_changing_corporate_action_pre_close(monkeypatch):
+    """除息参考价一分钱误差改变涨停结论时，使用备用源官方 preclose。"""
+    from datetime import date
+
+    import pandas as pd
+
+    from backend.services.ingest import IngestionService
+
+    primary = pd.DataFrame(
+        [{
+            "code": "603759.SH",
+            "trade_date": date(2026, 7, 2),
+            "close": 7.65,
+            "pre_close": 6.94,
+            "_pre_close_factor_event": True,
+        }]
+    )
+    backup = type("Backup", (), {
+        "name": "baostock",
+        "get_daily_bar": lambda self, code, start, end: pd.DataFrame(
+            [{"trade_date": date(2026, 7, 2), "pre_close": 6.95}]
+        ),
+    })()
+    service = object.__new__(IngestionService)
+    monkeypatch.setattr(service, "_bao_source", lambda: backup)
+
+    calibrated, source = service._calibrate_corporate_action_pre_close(
+        primary, "603759.SH", 0.10, "akshare"
+    )
+
+    assert calibrated.iloc[0]["pre_close"] == 6.95
+    assert source == "akshare+baostock:preclose"
+
+
+def test_factor_rebuild_preserves_calibrated_corporate_action_pre_close():
+    """后续干净因子重算不能把官方6.95再次覆盖成反推6.94。"""
+    from backend.services.ingest import IngestionService
+    from backend.storage.repository import MarketRepository
+
+    with DuckDBClient(db_path=":memory:") as client:
+        init_db(client)
+        client.execute(
+            "INSERT INTO stock_basic (code,name,price_limit_pct) "
+            "VALUES ('603759.SH','海天股份',0.10)"
+        )
+        client.execute(
+            """
+            INSERT INTO daily_bar
+              (code,trade_date,open,high,low,close,pre_close,adj_factor)
+            VALUES
+              ('603759.SH',DATE '2026-07-01',6.94,7.15,6.80,7.06,6.88,
+               1.5722379603399435),
+              ('603759.SH',DATE '2026-07-02',6.96,7.65,6.94,7.65,6.95,
+               1.5986928104575162)
+            """
+        )
+        service = object.__new__(IngestionService)
+        service.c = client
+        service.repo = MarketRepository(client)
+
+        service._recompute_clean_one("603759.SH", 0.10, False, full=True)
+
+        row = client.query_df(
+            "SELECT pre_close FROM daily_bar "
+            "WHERE code='603759.SH' AND trade_date=DATE '2026-07-02'"
+        ).iloc[0]
+        assert row["pre_close"] == 6.95
+
+
 def test_sina_js_runtime_initializes_once_under_concurrency(monkeypatch):
     """续跑跳过串行前置时，多工作线程不得并发首次初始化 MiniRacer。"""
     from backend.datasource import akshare_source
@@ -257,7 +326,7 @@ def test_get_daily_bar_anchors_window_first_day():
         return pd.DataFrame({
             "date": pd.to_datetime(dates),
             "open": closes, "high": closes, "low": closes, "close": closes,
-            "volume": [1000] * 4, "amount": [1e5] * 4,
+            "volume": [1000] * 4, "amount": [value * 1000 for value in closes],
             "turnover": [0.01] * 4, "outstanding_share": [10000] * 4,
         })
 
@@ -288,7 +357,7 @@ def test_get_daily_bar_keeps_source_adj_factor_for_qfq_prices():
         return pd.DataFrame({
             "date": pd.to_datetime(dates),
             "open": closes, "high": closes, "low": closes, "close": closes,
-            "volume": [1000] * 4, "amount": [1e5] * 4,
+            "volume": [1000] * 4, "amount": [value * 1000 for value in raw_close],
             "turnover": [0.01] * 4, "outstanding_share": [10000] * 4,
         })
 
@@ -299,6 +368,47 @@ def test_get_daily_bar_keeps_source_adj_factor_for_qfq_prices():
 
     assert abs(row_0611["pre_close"] - 80.13) < 0.01
     assert abs(row_0611["adj_factor"] - (110.32 / 76.01)) < 1e-12
+
+
+def test_get_daily_bar_retries_crossed_raw_and_hfq_responses():
+    """不复权/后复权成交指纹不一致时必须整对重试，不能把串票行情补上请求代码。"""
+    import datetime as dt
+
+    import pandas as pd
+
+    from backend.datasource.akshare_source import AKShareSource
+
+    calls = []
+
+    def frame(close, volume, amount):
+        return pd.DataFrame({
+            "date": pd.to_datetime(["2026-09-08", "2026-09-09"]),
+            "open": close, "high": close, "low": close, "close": close,
+            "volume": volume, "amount": amount,
+            "turnover": [0.01, 0.01], "outstanding_share": [10000, 10000],
+        })
+
+    def fake_sina(self, code6, start, end, adjust):
+        calls.append(adjust)
+        attempt = (len(calls) - 1) // 2
+        if attempt == 0:
+            return frame([16.0, 16.14], [1000, 1000], [16000, 16140]) if not adjust else frame(
+                [39.5, 39.9], [2000, 2000], [32000, 32280]
+            )
+        return frame([16.0, 16.14], [1000, 1000], [16000, 16140]) if not adjust else frame(
+            [39.5, 39.9], [1000, 1000], [16000, 16140]
+        )
+
+    src = AKShareSource()
+    src._max_retries = 2
+    src._retry_backoff_sec = 0
+    src._sina_daily = fake_sina.__get__(src, AKShareSource)
+
+    result = src.get_daily_bar("601919.SH", dt.date(2026, 9, 9), dt.date(2026, 9, 9))
+
+    assert calls == ["", "hfq", "", "hfq"]
+    assert result.iloc[0]["close"] == 16.14
+    assert result.iloc[0]["code"] == "601919.SH"
 
 
 def test_sanitize_bars():

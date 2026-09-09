@@ -91,6 +91,26 @@ def test_quality_model_l1l3_from_issues(client):
     assert qm["score"] == 0
 
 
+def test_quality_model_l3_includes_price_volume_mismatch(client):
+    """价量错配必须进入逐股 L3、全局质量评分，不能只出现在质量台账。"""
+    _seed(client)
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id,code,issue_type,severity,status,detected_at) "
+        "VALUES (2,'A.SH','price_volume_mismatch','high','open',?)",
+        [datetime.now()],
+    )
+
+    qm = DataIntegrityReport(client).quality_model()
+    by = {layer["layer"]: layer for layer in qm["by_layer"]}
+    stocks = {row["code"]: row for row in DataIntegrityReport(client).stock_quality()["list"]}
+
+    assert by["L3"]["pass_stocks"] == 1
+    assert by["L3"]["issues"] == 1
+    assert stocks["A.SH"]["layers"]["L3"]["issues"] == 1
+    assert qm["score"] == 0
+
+
 # ── 逐股名称搜索 + 分层明细（DM-D17/D15）──
 def test_stock_quality_keyword_and_layers(client):
     _seed(client)
@@ -147,6 +167,42 @@ def test_scan_quality_idempotent(client):
     n2 = int(client.query_df("SELECT count(*) AS n FROM data_quality_issue "
                              "WHERE issue_type='abnormal_change'").iloc[0]["n"])
     assert n1 == 1 and n2 == 1   # 第二次扫描不再追加重复
+
+
+def test_scan_quality_detects_tick_limit_and_price_volume_mismatch(client):
+    """质量台账必须覆盖分价涨停越界，以及涨幅未越界但价量明显串票的行情。"""
+    client.execute(
+        "INSERT INTO stock_basic (code,name,price_limit_pct) VALUES "
+        "('601919.SH','中远海控',0.10),('601921.SH','浙版传媒',0.10)"
+    )
+    client.execute(
+        """
+        INSERT INTO daily_bar
+          (code,trade_date,open,high,low,close,pre_close,volume,amount,is_st)
+        VALUES
+          ('601919.SH',DATE '2026-09-09',17.36,17.96,16.94,17.806168,16.14,
+           53573940,556032848.89,false),
+          ('601921.SH',DATE '2026-09-09',39.99,40.94,39.68,40.88812,41.97,
+           83947585,1377187122.0,false)
+        """
+    )
+
+    result = DataIntegrityReport(client).scan_quality_issues()
+    issues = client.query_df(
+        "SELECT code,issue_type FROM data_quality_issue "
+        "WHERE code IN ('601919.SH','601921.SH') AND status='open' "
+        "ORDER BY code,issue_type"
+    )
+
+    assert result["abnormal_change_rows"] >= 1
+    assert result["price_volume_mismatch_rows"] == 2
+    assert ("601919.SH", "abnormal_change") in set(issues.itertuples(index=False, name=None))
+    assert ("601919.SH", "price_volume_mismatch") in set(
+        issues.itertuples(index=False, name=None)
+    )
+    assert ("601921.SH", "price_volume_mismatch") in set(
+        issues.itertuples(index=False, name=None)
+    )
 
 
 def test_scan_quality_calculation_does_not_hold_connection_lock(client, monkeypatch):

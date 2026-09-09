@@ -138,6 +138,17 @@ class DataVerifier:
         neg_vol = self._count("SELECT count(*) FROM daily_bar WHERE volume<0 OR amount<0")
         self._check("成交量/额非负", neg_vol == 0, f"负值 {neg_vol}")
 
+        price_volume_mismatch = self._count(
+            "SELECT count(*) FROM daily_bar "
+            "WHERE volume>0 AND amount IS NOT NULL AND low>0 AND high>=low "
+            "AND (amount/volume < low*0.99 OR amount/volume > high*1.01)"
+        )
+        self._check(
+            "成交均价位于当日 OHLC 区间",
+            price_volume_mismatch == 0,
+            f"价量口径错配 {price_volume_mismatch}",
+        )
+
         # 复权因子口径与业务一致：优先 adj_factor_clean（去抖），源 adj_factor 仅作审计。
         # 源因子在个别除权日可能返回 NULL（akshare 源端缺陷），clean 已回填前段因子，
         # 若判源列非空会误报"数据坏"——业务读因子一律 COALESCE(adj_factor_clean, adj_factor)。
