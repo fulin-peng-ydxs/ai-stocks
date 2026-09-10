@@ -18,7 +18,7 @@ env/
 # 数据与产物（本地 DuckDB 单文件、parquet、导出）
 data/*.duckdb
 data/*.duckdb.wal
-data/*.duckdb.bak*
+data/*.duckdb.*
 data/parquet/
 data/exports/
 # 同花顺登录 cookie（浏览器登录态，含凭证，仅本地运行采集使用，不入库不入 git）

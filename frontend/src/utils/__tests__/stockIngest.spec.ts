@@ -71,6 +71,7 @@ describe('stock ingest shared form contract', () => {
     expect(buildStockIngestParams(full)).toEqual({ params: { recipe: 'st_status_refresh' } })
     expect(isHeavyStockIngestRecipe('st_status_refresh')).toBe(true)
     const option = STOCK_INGEST_RECIPE_OPTIONS.find((item) => item.value === 'st_status_refresh')
+    expect(option?.description).toContain('不覆盖行情价格')
     expect(option?.description).toContain('采集不直接失效结果')
     expect(option?.description).toContain('读取时按 ST 版本自检')
 

@@ -2236,7 +2236,8 @@ class IngestionService:
             ctx.log(
                 f"■ ST 状态刷新完成：成功 {ok}、失败 {fail}、事实 {rows} 行、"
                 f"影响 {len(changed)} 个交易日（{changed_scope}）；"
-                "未修改评分、天梯等下游结果，由用户或显式调度决定是否维护"
+                "未直接修改评分、天梯等下游结果；榜单与天梯读取时按 ST 版本自检，"
+                "是否提前批量维护仍由用户或显式调度决定"
             )
         return result
 

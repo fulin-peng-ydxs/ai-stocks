@@ -22,7 +22,7 @@
 ### 入库清洗与复权口径（`backend/dataquality/checker.py`、`storage/repository.py`）
 - **L1 入库闸门** `sanitize_bars`：收盘价空/≤0 的行直接丢弃（记 `null_close`）；开高低缺失/≤0 用收盘价回填（记 `ohl_repaired`）；零成交量补 0。坏行入库即拦截/标记，不进下游。
 - **复权口径分离**（关键正确性约定）：源因子 `adj_factor` 仅用于 K 线前复权；`pre_close`（涨跌停判定基准）走**独立清洗因子**；去抖列 `adj_factor_clean` 是复权查询的统一口径（`COALESCE(adj_factor_clean, adj_factor)`）。`rebuild-price-factors` 全序列重算这三者，不联网、不改源 `adj_factor`。
-- **涨跌停与 ST 标记口径**：`stock_st_status_daily` 是唯一 ST 点时事实；日线采集按同一日期集合读取 Baostock `isST`，禁止名称推断和默认非 ST。`daily_bar.is_st` 仅是同步投影，不供业务读取。`daily_bar.limit_status` / `is_one_word` 由 `add_markers` 用原始 `pre_close`、逐日 ST 和中央市场规则计算，涨跌停价按 `ROUND_HALF_UP` 到分。主板 ST 2026-07-06 前 5%、当日起 10%，创业板/科创板 ST 20%；入库、质检、训练、回测和天梯共用该规则。完整契约见 [st-status.md](st-status.md)。
+- **涨跌停与 ST 标记口径**：`stock_st_status_daily` 是唯一 ST 点时事实；日线采集先复用待入库日期已有的 `accurate` 事实，缺失或非权威时才通过 Baostock 的窄字段接口读取 `date/tradestatus/isST`，禁止名称推断和默认非 ST。该 ST 接口不提供行情价格；日线主源失败时的 Baostock 整段行情兜底、以及除权异常时只校准 `pre_close`，是两条独立的数据源路径。`daily_bar.is_st` 仅是同步投影，不供业务读取。`daily_bar.limit_status` / `is_one_word` 由 `add_markers` 用原始 `pre_close`、逐日 ST 和中央市场规则计算，涨跌停价按 `ROUND_HALF_UP` 到分。主板 ST 2026-07-06 前 5%、当日起 10%，创业板/科创板 ST 20%；入库、质检、训练、回测和天梯共用该规则。日常同步与 ST 强制校准的对照、全市场发布门和失败恢复契约见 [st-status.md](st-status.md)。
 - **除权参考价校准**：新浪不直接提供官方 `pre_close`，由分位原价与后复权价反推时可能产生一分钱精度损失。适配器标记真实复权因子切换日；仅当该误差会令收盘价越过合法涨跌停边界时，入库层用直接提供 `preclose` 的 baostock 定向交叉校准。校准源不可用时该行拒绝落库，避免合法除权行情被持续误报且反复重采无法恢复。
 
 ### 市值口径（`daily_metrics` 表，仅 `code, trade_date, float_mv, total_mv` 四列）
@@ -75,7 +75,7 @@
 - **并发行情防串票**：新浪不复权与后复权响应必须覆盖同一日期集合，且同日成交量、成交额必须一致；不复权行情的成交均价还必须落在 OHLC 区间内（保留小幅舍入容差）。任一条件不满足都视为数据源语义失败，整对响应自动重试，重试耗尽后才进入备源，禁止把请求代码补到未经配对验证的行情上。
 - **受控停服安全**：健康端点公开且只公开 PG（迁移前为 DuckDB）中的 `pending/running` 任务数量，同时返回 `task_runtime_backend` 与 DuckDB 读池统计。`./start.sh stop`、`restart` 和 `stop-if-idle` 统一先读取该数量；健康状态或任务数量无法可信读取、或者仍有活跃任务时一律 fail-closed，不得停止服务。只有操作人明确接受中断任务时才使用 `stop --force` 或 `restart --force`；内部补偿路径也必须显式传入 `--force`，其余切换路径不得绕过检查。
 
-行情采集的三类旧任务共用"日历→指数→逐股日线及 ST 点时事实→刷净复权因子"主链，差异是**刻意**的，不应在服务层强行抹平。Web 新入口统一提交 `stock_ingest`，通过安全场景分派到这些既有服务；另有“ST状态刷新”方案用于全市场/指定股票和全历史/指定区间校准，不新增任务类型。旧 `update/backfill/ingest_date/ingest_codes` 任务和历史调度继续兼容：
+行情采集的三类旧任务共用"日历→指数→逐股日线及 ST 点时事实→刷净复权因子"主链，差异是**刻意**的，不应在服务层强行抹平。Web 新入口统一提交 `stock_ingest`，通过安全场景分派到这些既有服务；另有“ST状态刷新”方案用于全市场/指定股票和全历史/指定区间强制校准，不新增任务类型。日线任务默认复用已有准确 ST，专项任务固定重新请求源端并使用全市场发布门；二者不是可互换入口，详见 [st-status.md](st-status.md)。旧 `update/backfill/ingest_date/ingest_codes` 任务和历史调度继续兼容：
 
 | 维度 | `update` 增量 | `backfill` 全量补数 | `ingest_date` 指定日期 |
 |------|--------------|--------------------|----------------------|
