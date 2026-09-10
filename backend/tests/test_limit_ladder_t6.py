@@ -215,6 +215,42 @@ def test_query_invalidates_only_requested_snapshot_when_historical_st_version_ch
     assert coordinator.calls[0][1]["source"] == "auto_invalid_refresh"
 
 
+def test_status_uses_dedicated_writer_when_logical_read_client_detects_st_change(market):
+    """生产查询走逻辑只读池，版本失配后的状态写入不得落到读对象。"""
+    trade_date = _seed_ladder(market)
+
+    class LogicalReadClient:
+        def query_df(self, sql, params=None):
+            return market.query_df(sql, params)
+
+    historical_day = trade_date - timedelta(days=9)
+    StockSTStatusService(market).upsert_facts(
+        [
+            StockSTStatusFact(
+                code="600001.SH",
+                trade_date=historical_day,
+                status=PointInTimeSTStatus(
+                    is_st=True,
+                    source="test_fixture",
+                    source_ref="logical_reader_correction",
+                    quality=STStatusQuality.ACCURATE,
+                ),
+            )
+        ],
+        change_reason="historical_correction",
+    )
+
+    data = LimitLadderQueryService(
+        LogicalReadClient(),
+        coordinator=_FakeCoordinator(),
+        write_client=market,
+    ).status(trade_date)
+
+    assert data["business_code"] == "SNAPSHOT_STALE"
+    assert data["stored_snapshot_status"] == "invalid"
+    assert data["invalid_reason"] == "st_input_version_changed"
+
+
 def test_query_preserves_old_snapshot_but_does_not_recompute_while_st_unpublished(market):
     trade_date = _seed_ladder(market)
     coordinator = _FakeCoordinator()

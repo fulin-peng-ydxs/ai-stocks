@@ -98,7 +98,7 @@
 | 配置生效 | `backend/api/config.py`、`backend/api/data_admin.py` | YAML 基线 reload 与 Web 系统设置；加载优先级见 [environment-configuration.md](environment-configuration.md) |
 
 - 评分试算 `/api/score-profiles/run`（score_profiles.py:56-107）：已保存方案走**评分快照层**（`ScoreSnapshotRepo.get_board`，命中即用/失效重算），未保存的 inline 方案当场 `score_day` 实时算不入库。
-- 评分快照 `ScoreSnapshotRepo`（snapshot.py:57-147）按 `(tenant_id, owner_user_id, profile_id, profile_version, trade_date)` 惰性物化到 `score_snapshot`+`score_snapshot_meta`（结果归方案 owner 缓存槽，可见者共读，详见 screening-and-board.md「评分快照惰性物化与失效」）：首读物化、行情变更只标 `stale=true` 不立即重算、下次读到 stale 才重算覆盖。
+- 评分快照 `ScoreSnapshotRepo` 按 `(tenant_id, owner_user_id, profile_id, profile_version, trade_date)` 惰性物化到 `score_snapshot`+`score_snapshot_meta`（结果归方案 owner 缓存槽，可见者共读，详见 screening-and-board.md「评分快照惰性物化与失效」）：读取同时比较 `stale`、指标 `param_hash` 和当日 `st_input_version`；显式维护只标 stale，版本不一致只让当前缓存不命中，均沿用同一锁内重算入口。
 - 三类方案 `/copy` 请求体可传 `version`；后端在可见性校验后按来源真实 `tenant_id + owner_user_id + id + version` 读取版本快照，副本固定从 v1、private 开始。只读公开方案的历史版本操作只能“复制此版本为我的”，不得把历史内容载入为可写原方案。
 - 配置页和筛选页的外部“加载查看”状态不进入 mine 数组。行内“×”只移除临时预览，不调用删除接口；方案删除只由编辑区右上角独立按钮承接。移除事件以临时项身份为准，不依赖 `readonly`（本人名下系统内置资产也可能可编辑）；收到事件后先取消在途详情并清空方案身份、参数、只读态、试算/筛选结果和错误，再刷新 mine，刷新失败仍保持空白新建态。
 
@@ -230,7 +230,7 @@ Web 系统设置当前只开放数据源限流/并发/容错、回测成本、�
 
 - **白名单系统参数**（数据源并发/限流/容错、回测成本、认证防滥用、审计保留期）：前端表单保存后按 [environment-configuration.md](environment-configuration.md) 的 PG 覆盖层规则生效。
 - **YAML 基线参数**（股票池、市值边界、TopN、指标全局周期等，含成段中文注释）：按 [environment-configuration.md](environment-configuration.md) 的 YAML reload 规则刷新。
-- **全局指标参数变更**：参数进 `build_params` → `param_hash` 变 → `IndicatorEngine` 单次运行缓存键失效 → 下次计算重算；已物化评分快照不会跟随配置变更自动失效，需用户在「结果维护」手动执行或配置调度。
+- **全局指标参数变更**：参数进 `build_params` → `param_hash` 变 → `IndicatorEngine` 单次运行缓存键失效；已物化评分快照在下次读取时也会因 meta 指纹不匹配而按需重算。需要提前批量维护、或变化不在现有指纹内时，才由用户执行「结果维护」或配置调度。
 
 ---
 
@@ -239,7 +239,7 @@ Web 系统设置当前只开放数据源限流/并发/容错、回测成本、�
 | 等级 | 风险点 | 影响 | 建议 |
 |------|--------|------|------|
 | <span style="color:#dc2626">●</span> 高 | 已实例化服务可能持有旧配置对象 | 长任务或已创建的领域服务实例不会自动重建，可能继续使用创建时的 effective settings | 配置改动后新任务/新请求生效；需要严格切换口径时重启服务或重建相关服务实例 |
-| <span style="color:#dc2626">●</span> 高 | YAML reload 不会自动失效历史快照 | 改指标全局参数后，已物化的旧评分快照可能继续返回 | 改全局指标参数后显式标记评分快照 stale 或重跑相关结果 |
+| <span style="color:#f59e0b">●</span> 中 | 部分结果输入没有读取版本 | `param_hash` 与 ST 版本能让所读榜单自愈，但其它行情/基础资料变化不会自动批量失效历史结果 | 按影响范围显式执行「结果维护」或配置调度；新增关键输入时同步扩展缓存指纹 |
 | <span style="color:#f59e0b">●</span> 中 | 启动 seed 覆盖整套 builtin | 首次启用时会持久化全部注册表定义，不只是新指标；回滚旧代码前若下游已引用新 key 会无法计算 | 发布前备份 `indicator_def` 并对账完整 builtin；回滚优先停用新增定义，不直接删除 |
 | <span style="color:#f59e0b">●</span> 中 | 评分指标解析仅支持固定周期映射 | 非预设 `ma/hhv` 周期在试算时失败（score_profile.py:48-56） | 任意周期先走表达式型指标 |
 | <span style="color:#f59e0b">●</span> 中 | RS 指标不可逐方案调参 | `rs_pct` 使用全局窗口，方案里传参无效 | 需要多窗口 RS 时新增独立表达式/内置指标 |

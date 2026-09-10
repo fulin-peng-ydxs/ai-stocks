@@ -34,7 +34,7 @@ export const STOCK_INGEST_RECIPE_OPTIONS: Array<{
   { value: 'valuation_gaps', label: '市值缺口修复', description: '按已有日线逐股补齐总市值和流通市值缺口', heavy: true },
   { value: 'basic_refresh', label: '基础资料刷新', description: '刷新上市日、退市日和行业，固定全市场' },
   { value: 'delisted_history', label: '退市股历史补全', description: '先刷新基础资料，再补回测窗口内退市股历史', heavy: true },
-  { value: 'st_status_refresh', label: 'ST状态刷新', description: '用 Baostock 回写逐日事实并报告变化日期；下游结果由用户另行维护', heavy: true },
+  { value: 'st_status_refresh', label: 'ST状态刷新', description: '用 Baostock 回写逐日事实；采集不直接失效结果，榜单与天梯读取时按 ST 版本自检', heavy: true },
 ]
 
 export const STOCK_INGEST_RECIPE_LABEL = Object.fromEntries(

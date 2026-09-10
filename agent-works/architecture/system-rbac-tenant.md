@@ -168,7 +168,7 @@ flowchart LR
 | 层 | 载体 | 用途 | 失效方式 |
 |---|---|---|---|
 | 短状态缓存 | Redis | 仅认证/鉴权域：token 黑名单、`perm_ver` 权限缓存、验证码、限流计数（`backend/auth/session_store.py`、`perm_resolver.py`） | `perm_ver` 自增即失效；TTL 见 `agent-works/multi-tenant-rbac/stage3-rbac-tenant/plan.md` §4.2（`auth:perms:{user_id}` 等，`TTL=access_ttl`） |
-| 评分快照（唯一落库计算缓存） | PostgreSQL `score_snapshot` + `score_snapshot_meta` | 每日榜单按 `(tenant, owner, trade_date, profile_id, profile_version, param_hash)` 惰性物化 | 显式失效：「结果维护」/用户调度标记范围 stale，或榜单 owner 的「重算当日」精确标记当前槽；采集和数据变化不隐式触发。**指标参数变更由 `param_hash` 指纹比较触发重算**（见 `screening-and-board.md` 评分快照节） |
+| 评分快照（唯一落库计算缓存） | PostgreSQL `score_snapshot` + `score_snapshot_meta` | 每日榜单按 `(tenant, owner, trade_date, profile_id, profile_version)` 惰性物化，meta 同时保存 `param_hash` 与当日 `st_input_version` | 显式失效：「结果维护」/用户调度标记范围 stale，或榜单 owner 的「重算当日」精确标记当前槽；采集不直接调用失效。读取时发现指标参数或 ST 版本变化，会让当前槽不命中并沿用锁内重算（见 `screening-and-board.md` 评分快照节） |
 | 指标进程内缓存 | `IndicatorEngine._cache`（LRU 上限 6） | 单次运行内对相同 `(codes, lo, hi, param_hash)` 复用 | 参数/算法版本变 → `param_hash` 变 → 不命中；跨请求不共享（每请求新建实例） |
 
 **约定**：新增计算类缓存一律优先复用评分快照层或进程内 LRU；Redis 只用于认证短状态，不塞计算结果。`data_report._coverage_frame` 另有"数据变更签名"内存缓存（概览页同页多次调用复用），属于统计口径缓存，与上表并列。

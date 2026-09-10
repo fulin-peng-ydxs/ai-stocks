@@ -37,7 +37,7 @@
 - 榜单计算前后再次读取 D 日版本，只有一致时才把明细与版本写入 PG；返回已命中缓存前也二次核对，以收窄 DuckDB ST 事实与 PG 快照之间的跨库竞态。ST 批次 `refreshing/failed` 时保留旧明细，但不把它返回为有效榜单。
 - 每日榜单 `/board/run` 在发布门关闭时返回 `business_code=ST_STATUS_NOT_READY` 和可读原因，页面进入明确错误态，不把不可用误显示成“当日空榜”；等待发布完成后由用户刷新即可按当前版本命中或自愈。
 - 公共榜单默认日期和数据概览“榜单最新日”同样比较 `stale`、当前指标参数指纹和 D 日 ST 输入版本；不会把仅有 `stale=false`、但参数或 ST 已变化的 PG 元数据报成 fresh。候选日期批量读取日期修订账本，避免跨库 N+1 查询。
-- 物化键 = `(tenant_id, owner_user_id, profile_id, profile_version, trade_date)`——**含方案 owner 归属维度**（`snapshot.py:113-115/121-123` 读缓存 WHERE 强制带 `tenant_id + owner_user_id`，物化时 `board.py:201-204` 把二者设为**方案 owner**）。`get_board`（snapshot.py:67）：meta 命中且未 stale → 直接读 `score_snapshot` 缓存；否则 `_materialize` 当场重算（`score_day` 全市场排除 ST 打分降序排名）覆盖明细 + 写 meta(stale=false)。
+- 物化键 = `(tenant_id, owner_user_id, profile_id, profile_version, trade_date)`——**含方案 owner 归属维度**；缓存读写的 WHERE 始终带 `tenant_id + owner_user_id`，API 把二者设为方案真实 owner。`get_board` 只有在 meta 的 `stale=false`、指标参数指纹和 D 日 ST 输入版本都匹配时才直接读 `score_snapshot`；否则进入 `_materialize_locked`，以 `score_day` 对全市场排除 ST 后打分并原子覆盖明细与 meta。
 - **榜单结果的共享语义（区别于「资产复用」）**：榜单不是可拥有的资产，没有「我的榜单」、**无复制/复用入口**。其结果是**一份物理快照，落在方案 owner 的缓存槽**（不属任何查看者）；凡对该评分方案有可见性（`get_visible`）且具 `board:view` 权限的人，对同一 `(方案,版本,交易日)` **共读这同一份快照**——首个请求者触发物化（`materialized`），后续命中同一份缓存（`cached`）。「所有人可见」受方案可见性约束：public 方案才接近全员共享，tenant 限同租户，private 仅 owner。
 - `score_day`（snapshot.py:25）口径与回测 `_decision_data`、`/board/compute` 一致：`wide_snapshot` 单日 → 按准确点时事实排除当日 ST → `attach_columns` 补表达式型指标列 → `ScoreProfileModel` 打分；事实未就绪时统一失败关闭。
 - 失效触发器（只标 meta、不重算，便宜）：
@@ -89,8 +89,9 @@
 ```mermaid
 flowchart LR
   A["选择日期+评分方案"] --> B["读取 score_snapshot_meta"]
-  B -->|命中且未 stale| C["直接返回缓存"]
-  B -->|缺失或 stale| D["wide_snapshot\n动态算指标"]
+  B --> V["比较 stale / param_hash\n/ 当日 ST 输入版本"]
+  V -->|全部一致| C["直接返回缓存"]
+  V -->|缺失或任一不一致| D["wide_snapshot\n动态算指标"]
   D --> E["ScoreProfileModel\n阈值打分+权重"]
   E --> F["写 score_snapshot\n返回榜单"]
 ```
@@ -177,7 +178,7 @@ flowchart LR
 
 | 模块 | 关联方式 |
 |------|----------|
-| 数据管理 | 行情/市值/股票基础信息是榜单和筛选的原始输入；「结果维护」或用户配置的调度可显式让评分快照 stale |
+| 数据管理 | 行情/市值/股票基础信息是榜单和筛选的原始输入；ST 与指标参数变化由榜单读取版本自检，其它变化可由「结果维护」或用户调度显式让评分快照 stale |
 | 配置管理 | 指标注册表、评分方案、筛选条件可用指标都从这里来 |
 | 回测验证 | 回测组合筛选方案、评分方案、买卖方案，复用榜单评分口径；公开筛选方案通过 `profile_ref` 进入回测候选池，后端按可见性解析真实 owner 的表达式 |
 | 个股与分组 | 榜单或筛选结果中的股票可进入详情查看 K线和买卖方案信号 |
@@ -199,9 +200,9 @@ flowchart LR
 
 | 等级 | 风险点 | 影响 | 建议 |
 |------|--------|------|------|
-| <span style="color:#f59e0b">●</span> 中 | ST 第三方事实源临时不可用或发生纠错 | 刷新批次失败时筛选、榜单和预览暂不可运行；历史结果可能需重算 | 依赖批次门禁、自动重连/续跑、变更历史及评分快照失效闭环恢复 |
+| <span style="color:#f59e0b">●</span> 中 | ST 第三方事实源临时不可用或发生纠错 | 刷新批次失败时筛选、榜单和预览暂不可运行；纠错后的旧榜单不可继续视为有效 | 依赖批次门禁、自动重连/续跑、变更历史及读取时 ST 版本自检闭环恢复 |
 | <span style="color:#f59e0b">●</span> 中 | expr 叶子逐股串行求值 | 全市场筛选随股票数线性变慢（engine.py:74） | 常用逻辑沉淀为指标，减少临时 expr |
-| <span style="color:#f59e0b">●</span> 中 | 评分快照失效依赖数据任务触发 | 绕过任务直接改库可能读到陈旧榜单 | 行情变更统一走数据任务，避免手工改库 |
+| <span style="color:#f59e0b">●</span> 中 | 部分结果输入未纳入缓存版本 | ST 与指标参数能在读取时自愈，但其它行情/基础资料被绕过正规流程修改后可能留下陈旧榜单 | 其它输入变化走「结果维护」或调度；新增关键输入时同步扩展指纹 |
 | <span style="color:#f59e0b">●</span> 中 | 评分指标周期受限 | 非预设 `ma/hhv` 周期会抛错 | 用表达式型指标绕行，后续扩展任意周期 |
 | <span style="color:#f59e0b">●</span> 中 | 筛选打分与榜单打分模型不一致 | `/screen/run` 与每日榜单分数不可直接比较 | 以榜单/回测评分方案为最终评分口径 |
 | <span style="color:#16a34a">●</span> 低 | 固定模型资金流维度恒 0 | 趋势榜单未纳入资金流信号（model.py:46） | 后续接入资金流数据后再启用权重 |

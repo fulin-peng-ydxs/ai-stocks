@@ -20,7 +20,7 @@ from backend.services.stock_st_status import (
     StockSTStatusService,
     STStatusNotReadyError,
 )
-from backend.storage.duckdb_client import DuckDBClient
+from backend.storage.duckdb_client import DuckDBClient, get_write_client
 from backend.storage.duckdb_client import get_read_client as get_client
 
 log = get_logger("services.limit_ladder_query")
@@ -70,8 +70,13 @@ class LimitLadderQueryService:
         client: DuckDBClient | None = None,
         *,
         coordinator: LimitLadderTaskCoordinator | None = None,
+        write_client: DuckDBClient | None = None,
     ):
         self.c = client or get_client()
+        # API 查询默认走逻辑只读连接池；读取时发现版本失配后的状态切换和
+        # pending outbox 补偿必须显式回到进程内唯一写连接。测试/任务显式
+        # 注入单个内存客户端时继续复用同一对象，避免误写真实库。
+        self._write = write_client or (client if client is not None else get_write_client())
         self._coordinator = coordinator
 
     @property
@@ -121,7 +126,7 @@ class LimitLadderQueryService:
 
     def status(self, trade_date: date) -> dict[str, Any]:
         """Expose snapshot and task states without creating a new task."""
-        LimitLadderSnapshotService(self.c).process_pending_invalidations()
+        LimitLadderSnapshotService(self._write).process_pending_invalidations()
         if not self._is_open_date(trade_date):
             return self._not_trading_day(trade_date)
         row, st_status_error = self._resolved_state(trade_date)
@@ -196,7 +201,7 @@ class LimitLadderQueryService:
         if not self._is_open_date(trade_date):
             return self._not_trading_day(trade_date)
 
-        LimitLadderSnapshotService(self.c).process_pending_invalidations()
+        LimitLadderSnapshotService(self._write).process_pending_invalidations()
         state, st_status_error = self._resolved_state(trade_date)
         task_error = None
         ensured_task = None
@@ -341,7 +346,7 @@ class LimitLadderQueryService:
             and str(row.get("rule_version")) != RULE_VERSION
             and str(row.get("status")) not in {"calculating", "recalculating"}
         ):
-            LimitLadderSnapshotService(self.c).mark_invalid(
+            LimitLadderSnapshotService(self._write).mark_invalid(
                 trade_date, reason="rule_version_changed"
             )
             row = self._state_row(trade_date)
@@ -357,7 +362,7 @@ class LimitLadderQueryService:
             and str(row.get("status")) not in {"calculating", "recalculating", "invalid"}
             and self._nullable_text(row.get("st_input_version")) != st_version
         ):
-            LimitLadderSnapshotService(self.c).mark_invalid(
+            LimitLadderSnapshotService(self._write).mark_invalid(
                 trade_date, reason="st_input_version_changed"
             )
             row = self._state_row(trade_date)

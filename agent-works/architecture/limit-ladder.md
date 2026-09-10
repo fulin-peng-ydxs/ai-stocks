@@ -16,7 +16,7 @@
 | 点时 ST | 当前事实、不可变变更历史与日期修订账本；质量只允许从 `approximate` 升到 `accurate` | `backend/services/stock_st_status.py` |
 | 连板计算 | 批量加载行情；连续板回溯到中断或上市边界，不受 60 日窗口截断 | `backend/services/limit_ladder_calculator.py` |
 | 快照发布 | coverage 门禁、不可变版本、四档窗口指标冻结、状态指针原子切换 | `backend/services/limit_ladder_snapshot.py` |
-| 查询读模型 | 统一筛选、摘要、热点、短历史字段、CSV 和同日走势冠军合并 | `backend/services/limit_ladder_query.py` |
+| 查询读模型 | 读池查询与单写状态切换分离；统一筛选、摘要、热点、短历史字段、CSV 和同日走势冠军合并 | `backend/services/limit_ladder_query.py` |
 | 日期任务协调 | 查询首算、显式失效后的按需刷新、兼容管理 API 重算共享同日活动命令 | `backend/services/limit_ladder_task_coordinator.py`、`backend/storage/limit_ladder_task_repository.py` |
 | 执行与审计 | PG 保存任务进度/日志、日期协调账本和可靠审计 outbox；DuckDB 保存天梯快照 | `backend/services/async_task.py`、`backend/storage/pg_ddl.py` |
 | 页面 | 主从工作台、天梯卡片、热点、设置、窄屏抽屉和详情返回 | `frontend/src/views/LimitLadderView.vue`、`frontend/src/views/limit-ladder/` |
@@ -54,7 +54,7 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 ### 查询与首次物化
 
 1. `GET /api/limit-ladder/{trade_date}` 校验交易日和筛选参数。
-2. 查询入口先补偿 pending 失效事件，并检查规则版本、日期状态及截至 T 日的已发布 ST 输入版本。版本为空或变化时只把当前 T 日标记 `invalid`；不扫描其它日期。
+2. 查询入口用逻辑只读池检查规则版本、日期状态及截至 T 日的已发布 ST 输入版本；pending 失效事件补偿和版本失配后的 `invalid` 状态切换显式走进程内唯一 DuckDB 写连接。版本为空或变化时只处理当前 T 日，不扫描其它日期。
 3. 首次无快照或当前快照失效时调用 `ensure_date_task()`；失效快照先重查 coverage，只有上游已完整时才自动刷新。同日已有 `requested/running` 命令则直接复用；`partial/failed` 等未就绪终态直接返回原因，禁止查询轮询反复创建必然失败的任务。ST 批次处于 `refreshing/failed` 时保留旧指针但返回 `ST_STATUS_NOT_READY`，不创建重算任务。
 4. PG 中的 `limit_ladder_recompute` 运行态驱动执行器完成 DuckDB coverage、计算和原子发布。
 5. 页面分别为天梯快照计算和同日走势相关首次计算设置 120 秒硬截止轮询；同一阶段后台更换 `command_id/task_id` 不得重置截止时间，阶段切换后重新计时。成功后读取新版本，失败、未就绪或中断时停止等待，保留最后成功快照并显示原因和恢复动作。
@@ -72,7 +72,7 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 - 「连板天梯失效」支持最新完整交易日或固定起始交易日；固定日必须是交易日历中已登记的开市日。
 - 对起始日 D 执行时，标记全部已发布的 `T >= D` 快照失效；连续板没有 60 日回溯上限，因此不收窄传播范围。
 - 结果任务先写 `limit_ladder_invalidation_outbox`，再执行失效；失败保留 pending 并使本次结果任务失败。
-- 包括“ST状态刷新”在内的采集、补数和板块归属变化只更新原始事实并报告影响范围，不自动写该 outbox。是否维护既有天梯结果由用户判断：手动执行本任务，或在调度页显式配置结果维护依赖。
+- 包括“ST状态刷新”在内的采集、补数和板块归属变化只更新原始事实并报告影响范围，不自动写该 outbox。ST 真实变化由被访问的天梯日期按版本自检；是否提前或批量维护既有结果仍由用户判断，可手动执行本任务或在调度页显式配置结果维护依赖。
 - 查询前重放 pending；`verify/checkup` 同时检查积压，不能把补偿失败后的旧结果继续标成 valid。
 
 ## 数据模型
