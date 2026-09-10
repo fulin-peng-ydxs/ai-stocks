@@ -163,20 +163,32 @@ def board_run(body: dict) -> ApiResponse:
         )
     ):
         return err(403, "只能重算自己的评分方案榜单")
-    from backend.scoring.snapshot import _current_param_hash
-    was_fresh = snapshot_repo._fresh(run_date, pid, version, _current_param_hash())
-    if force:
-        pg.execute(
-            "UPDATE score_snapshot_meta SET stale=true WHERE trade_date=%s AND profile_id=%s "
-            "AND profile_version=%s AND tenant_id=%s AND owner_user_id=%s",
-            [run_date, pid, version, prof["tenant_id"], prof["owner_user_id"]],
-        )
-    board = snapshot_repo.get_board(run_date, pid, top=top, profile=prof)
+    from backend.services.stock_st_status import STStatusNotReadyError
+
+    try:
+        was_fresh = snapshot_repo.is_fresh(run_date, pid, version)
+        if force:
+            pg.execute(
+                "UPDATE score_snapshot_meta SET stale=true WHERE trade_date=%s AND profile_id=%s "
+                "AND profile_version=%s AND tenant_id=%s AND owner_user_id=%s",
+                [run_date, pid, version, prof["tenant_id"], prof["owner_user_id"]],
+            )
+        board = snapshot_repo.get_board(run_date, pid, top=top, profile=prof)
+    except STStatusNotReadyError as exc:
+        return ok({
+            "run_date": str(run_date),
+            "top": top,
+            "count": 0,
+            "business_code": "ST_STATUS_NOT_READY",
+            "st_status_error": str(exc),
+            "list": [],
+        })
     if board.empty:
         return ok({
             "run_date": str(run_date),
             "top": top,
             "count": 0,
+            "business_code": "READY",
             "cache_status": "cached" if was_fresh and not force else "materialized",
             "list": [],
         })
@@ -205,6 +217,7 @@ def board_run(body: dict) -> ApiResponse:
         "run_date": str(run_date),
         "top": top,
         "count": len(rows),
+        "business_code": "READY",
         "profile_ref": prof.get("profile_ref") or repo.make_ref(prof["tenant_id"], prof["owner_user_id"], pid),
         "profile_version": version,
         "cache_status": "cached" if was_fresh and not force else "materialized",

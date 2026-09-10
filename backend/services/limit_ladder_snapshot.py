@@ -37,6 +37,7 @@ class LimitLadderCoverage:
     sample_codes: tuple[str, ...]
     checked_at: str
     upstream_fingerprint: str
+    st_input_version: str
 
     @property
     def ready(self) -> bool:
@@ -72,7 +73,8 @@ class LimitLadderSnapshotService:
     def check_coverage(self, trade_date: date) -> LimitLadderCoverage:
         from backend.services.stock_st_status import StockSTStatusService
 
-        StockSTStatusService(self.c).assert_published()
+        st_service = StockSTStatusService(self.c)
+        st_input_version = st_service.input_version_through(trade_date)
         checked_at = self._now().isoformat()
         calendar_rows = self.c.query_df(
             "SELECT trade_date FROM trade_calendar WHERE trade_date=? AND is_open",
@@ -92,6 +94,7 @@ class LimitLadderSnapshotService:
                 sample_codes=(),
                 checked_at=checked_at,
                 upstream_fingerprint=self._fingerprint({"trade_date": str(trade_date)}),
+                st_input_version=st_input_version,
             )
 
         calendar = self._calendar_through(trade_date)
@@ -224,6 +227,7 @@ class LimitLadderSnapshotService:
             sample_codes=tuple(samples),
             checked_at=checked_at,
             upstream_fingerprint=fingerprint,
+            st_input_version=st_input_version,
         )
 
     def materialize(
@@ -399,14 +403,16 @@ class LimitLadderSnapshotService:
             if (
                 not latest_coverage.ready
                 or latest_coverage.upstream_fingerprint != coverage.upstream_fingerprint
+                or latest_coverage.st_input_version != coverage.st_input_version
             ):
                 raise RuntimeError("limit ladder upstream changed during calculation")
             self.c.execute(
                 """
                 INSERT INTO limit_ladder_snapshot (
                     snapshot_id,trade_date,rule_version,computed_at,stock_count,
-                    has_approx_st,coverage_json,window_metadata_json,source_version
-                ) VALUES (?,?,?,?,?,?,?,?,?)
+                    has_approx_st,coverage_json,window_metadata_json,source_version,
+                    st_input_version
+                ) VALUES (?,?,?,?,?,?,?,?,?,?)
                 """,
                 [
                     snapshot_id,
@@ -418,6 +424,7 @@ class LimitLadderSnapshotService:
                     coverage_json,
                     window_metadata_json,
                     SOURCE_VERSION,
+                    coverage.st_input_version,
                 ],
             )
             self._insert_frame("limit_ladder_snapshot_stock", stocks)
@@ -428,13 +435,14 @@ class LimitLadderSnapshotService:
                 """
                 INSERT INTO limit_ladder_snapshot_state (
                     trade_date,status,current_snapshot_id,last_success_at,task_id,rule_version,
-                    upstream_fingerprint,failure_summary,invalid_reason,updated_at
-                ) VALUES (?, 'valid', ?, ?, ?, ?, ?, NULL, NULL, ?)
+                    upstream_fingerprint,st_input_version,failure_summary,invalid_reason,updated_at
+                ) VALUES (?, 'valid', ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
                 ON CONFLICT (trade_date) DO UPDATE SET
                     status='valid',current_snapshot_id=EXCLUDED.current_snapshot_id,
                     last_success_at=EXCLUDED.last_success_at,task_id=EXCLUDED.task_id,
                     rule_version=EXCLUDED.rule_version,
                     upstream_fingerprint=EXCLUDED.upstream_fingerprint,
+                    st_input_version=EXCLUDED.st_input_version,
                     failure_summary=NULL,invalid_reason=NULL,updated_at=EXCLUDED.updated_at
                 """,
                 [
@@ -444,6 +452,7 @@ class LimitLadderSnapshotService:
                     task_id,
                     RULE_VERSION,
                     coverage.upstream_fingerprint,
+                    coverage.st_input_version,
                     now,
                 ],
             )

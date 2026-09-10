@@ -207,11 +207,16 @@ def test_board_run_reads_fresh_public_snapshot_only(
     try:
         from backend.indicators.compute import build_params, param_hash
         ph = param_hash(build_params())
+        from backend.services.stock_st_status import StockSTStatusService
+        st_version = StockSTStatusService(c).input_version_for_date(
+            date.fromisoformat(_PUB_DATE)
+        )
         pg.execute(
             "INSERT INTO score_snapshot_meta "
-            "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes,param_hash) "
-            "VALUES (%s,%s,1,%s,%s,%s,FALSE,1,%s)",
-            [_PUB_DATE, preset_id, ptid, pown, datetime.now(), ph])
+            "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,"
+            "n_codes,param_hash,st_input_version) "
+            "VALUES (%s,%s,1,%s,%s,%s,FALSE,1,%s,%s)",
+            [_PUB_DATE, preset_id, ptid, pown, datetime.now(), ph, st_version])
         pg.execute(
             "INSERT INTO score_snapshot "
             "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,code,total_score,grade,rank,sub_scores) "
@@ -271,6 +276,35 @@ def test_board_run_reads_fresh_public_snapshot_only(
         ).json()["data"]["list"][0]["related_boards"]
         assert historical["industry"] is None
         assert historical["unavailable_reason"] == "first_load_pending"
+    finally:
+        _rm_user(pg, uid, tid, rid)
+
+
+def test_board_run_reports_st_status_not_ready_without_returning_old_cache(
+    client, pg, market, public_preset, monkeypatch
+):
+    from backend.services.stock_st_status import StockSTStatusService
+
+    preset_id, _priv_id = public_preset
+    uid, tid, rid = _mk_user(pg, codes=["board:view"])
+    monkeypatch.setattr("backend.api.board.get_client", lambda: market)
+    StockSTStatusService(market).begin_refresh(
+        task_id="st-refreshing",
+        target_count=1,
+        start=date.fromisoformat(_PUB_DATE),
+        end=date.fromisoformat(_PUB_DATE),
+    )
+    try:
+        response = client.post(
+            "/api/board/run",
+            json={"profile_id": preset_id, "run_date": _PUB_DATE},
+            headers=_auth(uid, tid),
+        )
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["business_code"] == "ST_STATUS_NOT_READY"
+        assert data["list"] == []
+        assert "refreshing" in data["st_status_error"]
     finally:
         _rm_user(pg, uid, tid, rid)
 
@@ -642,21 +676,52 @@ def test_result_maintenance_only_invalidates_board_snapshot(
     assert rows["code"].tolist() == ["T3B_OLD.SZ"]
 
 
-def test_data_admin_latest_board_date_reads_pg_public_preset(pg, public_preset):
-    """数据总览榜单新鲜度读取 PG 公共预设 fresh 快照，不读 DuckDB 旧口径/非预设。"""
+def test_data_admin_latest_board_date_reads_pg_public_preset(
+    pg, market, public_preset
+):
+    """数据总览只报告 PG 公共预设中与当前 ST 版本一致的最新榜单日。"""
     from backend.api.data_admin import _latest_board_date
+    from backend.indicators.compute import build_params, param_hash
+    from backend.services.stock_st_status import StockSTStatusFact, StockSTStatusService
+    from backend.limit_ladder.rules import PointInTimeSTStatus, STStatusQuality
 
     preset_id, priv_id = public_preset
     ptid, pown = PUBLIC_BOARD_OWNER
+    trade_date = date(2099, 1, 4)
+    st_service = StockSTStatusService(market)
+    st_service.upsert_facts(
+        [
+            StockSTStatusFact(
+                code="T3B_OVERVIEW.SZ",
+                trade_date=trade_date,
+                status=PointInTimeSTStatus(
+                    is_st=False,
+                    source="test_fixture",
+                    source_ref="overview",
+                    quality=STStatusQuality.ACCURATE,
+                ),
+            )
+        ],
+        change_reason="seed",
+    )
+    st_version = st_service.input_version_for_date(trade_date)
     pg.execute(
         "INSERT INTO score_snapshot_meta "
-        "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes) "
-        "VALUES (%s,%s,1,%s,%s,%s,FALSE,1)",
-        ["2099-01-04", preset_id, ptid, pown, datetime.now()])
+        "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,"
+        "n_codes,param_hash,st_input_version) VALUES (%s,%s,1,%s,%s,%s,FALSE,1,%s,%s)",
+        [
+            trade_date,
+            preset_id,
+            ptid,
+            pown,
+            datetime.now(),
+            param_hash(build_params()),
+            st_version,
+        ])
     pg.execute(
         "INSERT INTO score_snapshot_meta "
         "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes) "
         "VALUES (%s,%s,1,%s,%s,%s,FALSE,1)",
         ["2099-01-05", priv_id, ptid, pown, datetime.now()])
 
-    assert _latest_board_date() == "2099-01-04"
+    assert _latest_board_date(market=market, pg=pg) == "2099-01-04"

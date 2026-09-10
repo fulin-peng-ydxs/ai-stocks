@@ -447,6 +447,21 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.text()).toContain('board failed')
   })
 
+  it('ST 批次未发布时榜单显示明确错误态而不是空榜', async () => {
+    ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      run_date: '2024-12-31',
+      top: 50,
+      count: 0,
+      business_code: 'ST_STATUS_NOT_READY',
+      st_status_error: 'ST 点时事实批次状态为 refreshing',
+      list: [],
+    })
+    const wrapper = await mountView(BoardView)
+    expect(wrapper.text()).toContain('榜单加载失败')
+    expect(wrapper.text()).toContain('ST 点时事实批次状态为 refreshing')
+    expect(wrapper.text()).not.toContain('当前条件暂无榜单数据')
+  })
+
   it('默认榜单遇服务瞬时故障时保留默认偏好', async () => {
     localStorage.setItem('ai-stocks-board-default-profile', JSON.stringify({
       profile_ref: 'ref_default_score',

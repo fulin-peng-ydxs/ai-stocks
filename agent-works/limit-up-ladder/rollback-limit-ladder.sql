@@ -176,6 +176,8 @@ COMMIT;
 -- 验证：两个 marker 均为 applied=false/rolled_back=true；迁移实际创建的 PG 对象不存在。
 -- 默认不要删除 DuckDB 数据。如已备份且确认永久清除，请在停止后端并独占 DuckDB 写锁后单独执行：
 -- BEGIN TRANSACTION;
+-- DROP INDEX IF EXISTS idx_st_status_history_date;
+-- DROP INDEX IF EXISTS idx_st_status_daily_date;
 -- DROP TABLE IF EXISTS limit_ladder_invalidation_outbox;
 -- DROP TABLE IF EXISTS limit_ladder_snapshot_window_metric;
 -- DROP TABLE IF EXISTS limit_ladder_snapshot_aggregate;
@@ -183,6 +185,7 @@ COMMIT;
 -- DROP TABLE IF EXISTS limit_ladder_snapshot_stock;
 -- DROP TABLE IF EXISTS limit_ladder_snapshot_state;
 -- DROP TABLE IF EXISTS limit_ladder_snapshot;
+-- DROP TABLE IF EXISTS stock_st_status_date_revision;
 -- DROP TABLE IF EXISTS stock_st_status_history;
 -- DROP TABLE IF EXISTS stock_st_status_daily;
 -- COMMIT;

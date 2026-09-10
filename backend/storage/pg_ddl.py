@@ -787,6 +787,7 @@ CREATE TABLE IF NOT EXISTS score_snapshot_meta (
     stale           BOOLEAN,
     n_codes         INTEGER,
     param_hash      TEXT,
+    st_input_version TEXT,
     PRIMARY KEY (tenant_id, owner_user_id, trade_date, profile_id, profile_version)
 );
 """
@@ -1790,6 +1791,9 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     # 评分快照 meta 参数指纹列（既有库补列，幂等）：指标参数变更后读取时按指纹判定失效，见 scoring/snapshot.py
     client.execute(
         "ALTER TABLE score_snapshot_meta ADD COLUMN IF NOT EXISTS param_hash TEXT")
+    # 旧行保持 NULL，由评分快照首次读取按“不匹配”触发一次原位重算自愈。
+    client.execute(
+        "ALTER TABLE score_snapshot_meta ADD COLUMN IF NOT EXISTS st_input_version TEXT")
     return created
 
 

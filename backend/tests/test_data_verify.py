@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import date
+
+from backend.limit_ladder.rules import PointInTimeSTStatus, STStatusQuality
 from backend.services.data_verify import DataVerifier
+from backend.services.stock_st_status import StockSTStatusFact, StockSTStatusService
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
 
@@ -52,6 +56,56 @@ def test_contract_catches_missing_list_date_and_pending_ladder_invalidation():
         checks = {name: ok for name, ok, _ in verifier.results}
         assert checks["基础·上市日 无缺失"] is False
         assert checks["连板天梯·失效 outbox 无积压"] is False
+
+
+def test_structure_warns_when_valid_ladder_uses_old_st_version():
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        trade_date = "2026-01-05"
+        st_service = StockSTStatusService(c)
+        fact = StockSTStatusFact(
+            code="600001.SH",
+            trade_date=date.fromisoformat(trade_date),
+            status=PointInTimeSTStatus(
+                is_st=False,
+                source="test_fixture",
+                source_ref="initial",
+                quality=STStatusQuality.ACCURATE,
+            ),
+        )
+        st_service.upsert_facts([fact], change_reason="seed")
+        old_version = st_service.input_version_through(fact.trade_date)
+        c.execute(
+            "INSERT INTO limit_ladder_snapshot_state "
+            "(trade_date,status,current_snapshot_id,rule_version,st_input_version,updated_at) "
+            "VALUES (?, 'valid', 'snap-old', 'v1', ?, current_timestamp)",
+            [fact.trade_date, old_version],
+        )
+        st_service.upsert_facts(
+            [
+                StockSTStatusFact(
+                    code=fact.code,
+                    trade_date=fact.trade_date,
+                    status=PointInTimeSTStatus(
+                        is_st=True,
+                        source="test_fixture",
+                        source_ref="corrected",
+                        quality=STStatusQuality.ACCURATE,
+                    ),
+                )
+            ],
+            change_reason="correction",
+        )
+
+        verifier = DataVerifier(c, quiet=True)
+        verifier.check_structure()
+        warning = next(
+            item
+            for item in verifier._structured
+            if item["name"] == "连板天梯快照待 ST 版本自愈"
+        )
+        assert warning["status"] == "warn"
+        assert "1 个日期" in warning["detail"]
 
 
 def _insert_bar(c, code, td, close, adj_factor=None, adj_clean=None):

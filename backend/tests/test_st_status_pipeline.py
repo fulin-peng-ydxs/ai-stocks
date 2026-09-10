@@ -179,6 +179,64 @@ def test_st_dataset_version_preserves_subsecond_fact_changes(market):
     assert "2026-07-04T08:00:00.123456" in service.dataset_version(day, day)
 
 
+def test_result_input_versions_change_only_for_relevant_published_facts(market):
+    first = date(2026, 7, 3)
+    second = date(2026, 7, 6)
+    market.execute(
+        "INSERT INTO daily_bar (code,trade_date,close,pre_close,is_st) VALUES "
+        "('600001.SH',?,10,9.5,FALSE),('600001.SH',?,10,9.5,FALSE)",
+        [first, second],
+    )
+    service = StockSTStatusService(market)
+    captured = datetime(2026, 7, 7, 8, 0, 0, 123456, tzinfo=UTC).replace(tzinfo=None)
+    service.upsert_facts(
+        [_fact("600001.SH", first, False), _fact("600001.SH", second, False)],
+        change_reason="seed",
+        captured_at=captured,
+    )
+    first_date_version = service.input_version_for_date(first)
+    second_date_version = service.input_version_for_date(second)
+    through_second_version = service.input_version_through(second)
+    assert service.input_versions_for_dates([second, first]) == {
+        first: first_date_version,
+        second: second_date_version,
+    }
+    assert service.input_versions_through_dates([second, first]) == {
+        first: service.input_version_through(first),
+        second: through_second_version,
+    }
+
+    # 相同事实重采不写 updated_at/history，缓存版本保持不变。
+    assert service.upsert_facts(
+        [_fact("600001.SH", first, False)],
+        change_reason="same_fact",
+        captured_at=captured,
+    ) == []
+    assert service.input_version_for_date(first) == first_date_version
+    assert service.input_version_through(second) == through_second_version
+
+    # 即使使用相同捕获时间，历史计数也能识别真实值变化；仅 D 日榜单和 T>=D 天梯受影响。
+    service.upsert_facts(
+        [_fact("600001.SH", first, True)],
+        change_reason="correction",
+        captured_at=captured,
+    )
+    assert service.input_version_for_date(first) != first_date_version
+    assert service.input_version_for_date(second) == second_date_version
+    assert service.input_version_through(second) != through_second_version
+
+
+def test_result_input_version_respects_st_publication_gate(market):
+    day = date(2026, 7, 6)
+    service = StockSTStatusService(market)
+    service.begin_refresh(task_id="task-st", target_count=1, start=day, end=day)
+
+    with pytest.raises(STStatusNotReadyError, match="refreshing"):
+        service.input_version_for_date(day)
+    with pytest.raises(STStatusNotReadyError, match="refreshing"):
+        service.input_version_through(day)
+
+
 def test_set_based_marker_rebuild_applies_main_board_st_cutoff(market):
     before = date(2026, 7, 3)
     after = date(2026, 7, 6)

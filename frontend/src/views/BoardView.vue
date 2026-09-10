@@ -450,6 +450,14 @@ async function loadBoard(force: boolean, background = false): Promise<boolean> {
       ...(force ? { force: true } : {}),
     })
     if (sequence !== loadSequence) return false
+    if (res.business_code === 'ST_STATUS_NOT_READY') {
+      if (!background) {
+        error.value = res.st_status_error
+          || 'ST 状态刷新尚未完整发布，请等待完成后重试'
+        cacheStatus.value = ''
+      }
+      return false
+    }
     if (background) mergeRelatedBoardResults(rows.value, res.list)
     else rows.value = res.list
     relatedBoardFirstLoad.observe(

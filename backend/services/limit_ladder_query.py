@@ -16,6 +16,10 @@ from backend.services.limit_ladder_calculator import SUPPORTED_WINDOWS
 from backend.services.limit_ladder_snapshot import RULE_VERSION, LimitLadderSnapshotService
 from backend.services.limit_ladder_task_coordinator import LimitLadderTaskCoordinator
 from backend.services.stock_board_correlation import StockBoardCorrelationService
+from backend.services.stock_st_status import (
+    StockSTStatusService,
+    STStatusNotReadyError,
+)
 from backend.storage.duckdb_client import DuckDBClient
 from backend.storage.duckdb_client import get_read_client as get_client
 
@@ -93,7 +97,14 @@ class LimitLadderQueryService:
         candidate = dates[0] if dates else None
         coverage = None
         if candidate is not None:
-            coverage = LimitLadderSnapshotService(self.c).check_coverage(candidate).to_dict()
+            try:
+                coverage = LimitLadderSnapshotService(self.c).check_coverage(candidate).to_dict()
+            except STStatusNotReadyError as exc:
+                coverage = {
+                    "ready": False,
+                    "reason_codes": ["ST_STATUS_NOT_READY"],
+                    "detail": str(exc),
+                }
         latest_valid = self.c.query_df(
             "SELECT max(trade_date) AS trade_date FROM limit_ladder_snapshot_state "
             "WHERE status='valid' AND current_snapshot_id IS NOT NULL"
@@ -113,25 +124,53 @@ class LimitLadderQueryService:
         LimitLadderSnapshotService(self.c).process_pending_invalidations()
         if not self._is_open_date(trade_date):
             return self._not_trading_day(trade_date)
-        row = self._current_rule_state(trade_date)
+        row, st_status_error = self._resolved_state(trade_date)
+        return self._status_payload(trade_date, row, st_status_error)
+
+    def _status_payload(
+        self,
+        trade_date: date,
+        row: dict[str, Any] | None,
+        st_status_error: str | None,
+    ) -> dict[str, Any]:
+        """Build one public status shape for status and query without creating work."""
         task = self._active_task(trade_date)
         if row is None:
             return {
                 "trade_date": trade_date.isoformat(),
-                "business_code": "SNAPSHOT_PENDING" if task else "SNAPSHOT_MISSING",
-                "snapshot_status": "calculating" if task else "missing",
+                "business_code": (
+                    "ST_STATUS_NOT_READY"
+                    if st_status_error
+                    else ("SNAPSHOT_PENDING" if task else "SNAPSHOT_MISSING")
+                ),
+                "snapshot_status": (
+                    "st_status_not_ready"
+                    if st_status_error
+                    else ("calculating" if task else "missing")
+                ),
                 "stored_snapshot_status": "missing",
                 "has_snapshot": False,
+                "st_status_error": st_status_error,
                 "task": task,
             }
         has_snapshot = bool(row.get("current_snapshot_id"))
         stored_status = str(row["status"])
         public_status = (
-            "recalculating" if task and has_snapshot else ("calculating" if task else stored_status)
+            "st_status_not_ready"
+            if st_status_error
+            else (
+                "recalculating"
+                if task and has_snapshot
+                else ("calculating" if task else stored_status)
+            )
         )
         return {
             "trade_date": trade_date.isoformat(),
-            "business_code": self._state_business_code(public_status, has_snapshot),
+            "business_code": (
+                "ST_STATUS_NOT_READY"
+                if st_status_error
+                else self._state_business_code(public_status, has_snapshot)
+            ),
             "snapshot_status": public_status,
             "stored_snapshot_status": stored_status,
             "has_snapshot": has_snapshot,
@@ -139,6 +178,7 @@ class LimitLadderQueryService:
             "last_success_at": self._iso(row.get("last_success_at")),
             "failure_summary": self._nullable_text(row.get("failure_summary")),
             "invalid_reason": self._nullable_text(row.get("invalid_reason")),
+            "st_status_error": st_status_error,
             "updated_at": self._iso(row.get("updated_at")),
             "task": task,
         }
@@ -157,7 +197,7 @@ class LimitLadderQueryService:
             return self._not_trading_day(trade_date)
 
         LimitLadderSnapshotService(self.c).process_pending_invalidations()
-        state = self._current_rule_state(trade_date)
+        state, st_status_error = self._resolved_state(trade_date)
         task_error = None
         ensured_task = None
         stored_status = None if state is None else str(state.get("status"))
@@ -167,9 +207,12 @@ class LimitLadderQueryService:
             and stored_status in {"calculating", "recalculating"}
             and self._active_task(trade_date) is None
         )
-        if trigger_missing and stored_status == "invalid":
-            coverage_gate = LimitLadderSnapshotService(self.c).check_coverage(trade_date)
-        should_trigger = trigger_missing and (
+        if trigger_missing and stored_status == "invalid" and st_status_error is None:
+            try:
+                coverage_gate = LimitLadderSnapshotService(self.c).check_coverage(trade_date)
+            except STStatusNotReadyError as exc:
+                st_status_error = str(exc)
+        should_trigger = trigger_missing and st_status_error is None and (
             state is None
             or (stored_status == "invalid" and coverage_gate is not None and coverage_gate.ready)
             or orphaned_processing
@@ -196,7 +239,7 @@ class LimitLadderQueryService:
                 log.warning("天梯日期任务创建失败 date=%s: %s", trade_date, exc)
             state = self._state_row(trade_date)
 
-        status = self.status(trade_date)
+        status = self._status_payload(trade_date, state, st_status_error)
         if coverage_gate is not None and not coverage_gate.ready:
             status["coverage"] = coverage_gate.to_dict()
         if ensured_task is not None and status.get("task") is None:
@@ -269,9 +312,9 @@ class LimitLadderQueryService:
         )
         summary = self._summary(visible)
         business_code = status["business_code"]
-        if snapshot["stock_count"] == 0:
+        if business_code == "READY" and snapshot["stock_count"] == 0:
             business_code = "EMPTY_SNAPSHOT"
-        elif not visible:
+        elif business_code == "READY" and not visible:
             business_code = "FILTER_EMPTY"
         return {
             **status,
@@ -289,7 +332,8 @@ class LimitLadderQueryService:
             "layers": self._layers(visible),
         }
 
-    def _current_rule_state(self, trade_date: date):
+    def _resolved_state(self, trade_date: date) -> tuple[dict[str, Any] | None, str | None]:
+        """Resolve rule/ST freshness at read time and invalidate only the requested date."""
         row = self._state_row(trade_date)
         if (
             row is not None
@@ -301,12 +345,28 @@ class LimitLadderQueryService:
                 trade_date, reason="rule_version_changed"
             )
             row = self._state_row(trade_date)
-        return row
+        try:
+            st_version = StockSTStatusService(self.c).input_version_through(trade_date)
+        except STStatusNotReadyError as exc:
+            # A refreshing/failed ST batch is not a new published version. Preserve the last
+            # success pointer and do not enqueue a doomed ladder calculation.
+            return row, str(exc)
+        if (
+            row is not None
+            and row.get("current_snapshot_id")
+            and str(row.get("status")) not in {"calculating", "recalculating", "invalid"}
+            and self._nullable_text(row.get("st_input_version")) != st_version
+        ):
+            LimitLadderSnapshotService(self.c).mark_invalid(
+                trade_date, reason="st_input_version_changed"
+            )
+            row = self._state_row(trade_date)
+        return row, None
 
     def export_csv(self, trade_date: date, filters: LimitLadderFilters) -> tuple[str, bytes]:
         """Export exactly the same normalized, filtered stock collection as query()."""
         data = self.query(trade_date, filters, trigger_missing=False)
-        if data.get("snapshot") is None:
+        if data.get("snapshot") is None or data.get("snapshot_status") != "valid":
             raise ValueError(str(data.get("business_code") or "SNAPSHOT_NOT_AVAILABLE"))
         stocks = [stock for layer in data["layers"] for stock in layer["stocks"]]
         output = io.StringIO(newline="")

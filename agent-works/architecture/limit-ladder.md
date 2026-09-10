@@ -13,7 +13,7 @@
 | 层次 | 当前实现 | 关键入口 |
 | --- | --- | --- |
 | 市场规则 | 按交易日、上市板块和点时 ST 判断收盘涨停；特殊无涨跌幅日 fail-closed | `backend/market_rules.py`、`backend/limit_ladder/rules.py` |
-| 点时 ST | 当前事实与不可变变更历史；质量只允许从 `approximate` 升到 `accurate` | `backend/services/stock_st_status.py` |
+| 点时 ST | 当前事实、不可变变更历史与日期修订账本；质量只允许从 `approximate` 升到 `accurate` | `backend/services/stock_st_status.py` |
 | 连板计算 | 批量加载行情；连续板回溯到中断或上市边界，不受 60 日窗口截断 | `backend/services/limit_ladder_calculator.py` |
 | 快照发布 | coverage 门禁、不可变版本、四档窗口指标冻结、状态指针原子切换 | `backend/services/limit_ladder_snapshot.py` |
 | 查询读模型 | 统一筛选、摘要、热点、短历史字段、CSV 和同日走势冠军合并 | `backend/services/limit_ladder_query.py` |
@@ -54,8 +54,8 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 ### 查询与首次物化
 
 1. `GET /api/limit-ladder/{trade_date}` 校验交易日和筛选参数。
-2. 查询入口先补偿 pending 失效事件，并检查规则版本和日期状态。
-3. 首次无快照时调用 `ensure_date_task()`；失效快照先重查 coverage，只有上游已完整时才自动刷新。同日已有 `requested/running` 命令则直接复用；`partial/failed` 等未就绪终态直接返回原因，禁止查询轮询反复创建必然失败的任务。
+2. 查询入口先补偿 pending 失效事件，并检查规则版本、日期状态及截至 T 日的已发布 ST 输入版本。版本为空或变化时只把当前 T 日标记 `invalid`；不扫描其它日期。
+3. 首次无快照或当前快照失效时调用 `ensure_date_task()`；失效快照先重查 coverage，只有上游已完整时才自动刷新。同日已有 `requested/running` 命令则直接复用；`partial/failed` 等未就绪终态直接返回原因，禁止查询轮询反复创建必然失败的任务。ST 批次处于 `refreshing/failed` 时保留旧指针但返回 `ST_STATUS_NOT_READY`，不创建重算任务。
 4. PG 中的 `limit_ladder_recompute` 运行态驱动执行器完成 DuckDB coverage、计算和原子发布。
 5. 页面分别为天梯快照计算和同日走势相关首次计算设置 120 秒硬截止轮询；同一阶段后台更换 `command_id/task_id` 不得重置截止时间，阶段切换后重新计时。成功后读取新版本，失败、未就绪或中断时停止等待，保留最后成功快照并显示原因和恢复动作。
 
@@ -65,7 +65,7 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 2. 每只股票在 T 日必须存在有效日线或确认停牌事实；点时股票池以“有效日线 + 确认停牌”闭合且不存在缺失、非法行情或不支持规则时即可发布。采集终态 `partial/failed` 保留为诊断事实，但已被确认停牌完整解释的无行情不再误判为缺失；仍有未解释缺口时继续拒绝发布。
 3. 只把 T 日收盘涨停股票作为候选，继续向前批量读取，直到每只股票出现未涨停、停牌、缺行情或上市边界。
 4. 一次计算 10/20/31/60 日涨停次数、后复权累计涨幅、实际起始日和实际交易日数。
-5. 概念成员按 `first_seen_date IS NULL OR first_seen_date <= T` 取点时兼容集合；在同一 DuckDB 事务写入快照元数据、股票、概念、聚合和四档窗口指标，校验通过后切换 `current_snapshot_id`。
+5. 概念成员按 `first_seen_date IS NULL OR first_seen_date <= T` 取点时兼容集合；在同一 DuckDB 事务写入快照元数据、股票、概念、聚合和四档窗口指标。发布前重查 coverage 及 ST 输入版本，二者都与计算前一致才写入 snapshot/state 的同一 `st_input_version` 并切换 `current_snapshot_id`。
 
 ### 显式失效与补偿
 
@@ -84,6 +84,7 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 | `stock_st_status_daily` | 每股每日点时 ST 当前事实、来源和质量 |
 | `stock_st_status_history` | ST 值、来源或质量变化的不可变历史 |
 | `stock_st_status_refresh_state` | ST 批量刷新发布门，防止天梯读取刷新中的混合批次 |
+| `stock_st_status_date_revision` | 日期级 ST 单调修订号，支持截至 T 日版本快速聚合 |
 | `limit_ladder_snapshot_state` | 日期状态、当前成功版本、任务和失败摘要 |
 | `limit_ladder_snapshot` | 不可变快照元数据、coverage 和四档请求窗口元数据 |
 | `limit_ladder_snapshot_stock` | 股票身份、板位、ST/一字板和发布时事实 |
@@ -113,7 +114,7 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 - 低高度：筛选工具栏固定，摘要、热点和梯级共用成长滚动区；热点默认收敛但可展开。
 - 初始化态：个人偏好和可用交易日尚未完成加载时保持统一骨架，不把尚未发起快照请求的 `result=null` 渲染成无快照失败态。
 - 权限态：页面 403 使用 permission 状态并提示联系管理员，不提供无意义重试。
-- 任务态：计算中明确显示最长等待时间；已有最后成功快照进入重算时，继续展示该版本及生成时间，并明确提示“计算完成后将自动刷新”。存在未解释行情缺口时，有数据任务权限的用户先前往「数据采集」补齐数据，再返回本页显式「重算当日」，也可在调度中配置补采与天梯失效的依赖。页头和计算失败态均保留 system-only「重算当日」，只作用于当前选择日期；跨日期批量失效仍进入「结果维护」。
+- 任务态：计算中明确显示最长等待时间；已有最后成功快照进入重算时，继续展示该版本及生成时间，并明确提示“计算完成后将自动刷新”。ST 刷新未发布时同样可保留旧卡片供核对，但页面明确说明它不是当前有效结果且不自动发起重算。存在未解释行情缺口时，有数据任务权限的用户先前往「数据采集」补齐数据，再返回本页显式「重算当日」，也可在调度中配置补采与天梯失效的依赖。页头和计算失败态均保留 system-only「重算当日」，只作用于当前选择日期；跨日期批量失效仍进入「结果维护」。
 
 ## API 与权限
 

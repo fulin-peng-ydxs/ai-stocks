@@ -17,10 +17,10 @@ from backend.api import limit_ladder as api_module
 from backend.auth.context import AuthContext, reset_context, set_context
 from backend.common.exceptions import ForbiddenError
 from backend.indicators.stock_board_correlation import ALGORITHM_VERSION
+from backend.limit_ladder.rules import PointInTimeSTStatus, STStatusQuality
 from backend.services.async_task import ConcurrentTaskError
 from backend.services.limit_ladder_query import LimitLadderFilters, LimitLadderQueryService
 from backend.services.limit_ladder_snapshot import RULE_VERSION, LimitLadderSnapshotService
-from backend.limit_ladder.rules import PointInTimeSTStatus, STStatusQuality
 from backend.services.stock_st_status import StockSTStatusFact, StockSTStatusService
 from backend.storage.repository import MarketRepository
 
@@ -182,6 +182,63 @@ def test_query_keeps_stock_level_short_history_and_separates_concepts(market):
     ]
     assert sum(item["stock_count"] for item in data["hotspots"]["concept"]) == 2
     assert sum(item["stock_count"] for item in data["hotspots"]["industry"]) == 2
+
+
+def test_query_invalidates_only_requested_snapshot_when_historical_st_version_changes(market):
+    trade_date = _seed_ladder(market)
+    coordinator = _FakeCoordinator()
+    service = LimitLadderQueryService(market, coordinator=coordinator)
+    historical_day = trade_date - timedelta(days=9)
+    StockSTStatusService(market).upsert_facts(
+        [
+            StockSTStatusFact(
+                code="600001.SH",
+                trade_date=historical_day,
+                status=PointInTimeSTStatus(
+                    is_st=True,
+                    source="test_fixture",
+                    source_ref="historical_correction",
+                    quality=STStatusQuality.ACCURATE,
+                ),
+            )
+        ],
+        change_reason="historical_correction",
+    )
+
+    data = service.query(trade_date, LimitLadderFilters(ignore_st=False))
+
+    assert data["business_code"] == "SNAPSHOT_STALE"
+    assert data["stored_snapshot_status"] == "invalid"
+    assert data["invalid_reason"] == "st_input_version_changed"
+    assert data["has_snapshot"] is True
+    assert len(coordinator.calls) == 1
+    assert coordinator.calls[0][1]["source"] == "auto_invalid_refresh"
+
+
+def test_query_preserves_old_snapshot_but_does_not_recompute_while_st_unpublished(market):
+    trade_date = _seed_ladder(market)
+    coordinator = _FakeCoordinator()
+    StockSTStatusService(market).begin_refresh(
+        task_id="task-st-refresh",
+        target_count=2,
+        start=trade_date,
+        end=trade_date,
+    )
+
+    data = LimitLadderQueryService(market, coordinator=coordinator).query(
+        trade_date, LimitLadderFilters(ignore_st=False)
+    )
+
+    assert data["business_code"] == "ST_STATUS_NOT_READY"
+    assert data["snapshot_status"] == "st_status_not_ready"
+    assert data["stored_snapshot_status"] == "valid"
+    assert data["has_snapshot"] is True
+    assert "refreshing" in data["st_status_error"]
+    assert coordinator.calls == []
+    with pytest.raises(ValueError, match="ST_STATUS_NOT_READY"):
+        LimitLadderQueryService(market, coordinator=coordinator).export_csv(
+            trade_date, LimitLadderFilters(ignore_st=False)
+        )
 
 
 def test_query_does_not_resurrect_old_concept_after_same_day_legal_empty(market):
@@ -552,13 +609,14 @@ def test_status_exposes_each_public_state(market, status, snapshot_id, business_
     MarketRepository(market).upsert_trade_calendar(
         pd.DataFrame({"trade_date": [trade_date], "is_open": [True]})
     )
+    st_input_version = StockSTStatusService(market).input_version_through(trade_date)
     market.execute(
         """
         INSERT INTO limit_ladder_snapshot_state (
-            trade_date,status,current_snapshot_id,rule_version,updated_at
-        ) VALUES (?,?,?,?,current_timestamp)
+            trade_date,status,current_snapshot_id,rule_version,st_input_version,updated_at
+        ) VALUES (?,?,?,?,?,current_timestamp)
         """,
-        [trade_date, status, snapshot_id, RULE_VERSION],
+        [trade_date, status, snapshot_id, RULE_VERSION, st_input_version],
     )
     data = LimitLadderQueryService(market, coordinator=_FakeCoordinator()).status(trade_date)
     assert data["snapshot_status"] == status

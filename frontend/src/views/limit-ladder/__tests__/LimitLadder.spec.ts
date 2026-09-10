@@ -206,6 +206,18 @@ describe('LimitLadder', () => {
     expect(wrapper.get('[data-testid="limit-ladder-stale-notice"]').text()).toContain('当前展示 2026-08-28T18:00:00 生成的最后成功版本')
     expect(wrapper.get('[data-testid="limit-ladder-stale-notice"]').text()).toContain('计算完成后将自动刷新')
     expect(wrapper.get('[data-testid="limit-ladder-layer-2"]').text()).toContain('2 连板')
+
+    await wrapper.setProps({result:{
+      ...result,
+      business_code:'ST_STATUS_NOT_READY',
+      snapshot_status:'st_status_not_ready',
+      st_status_error:'ST 点时事实批次状态为 refreshing',
+    }})
+    const stNotice=wrapper.get('[data-testid="limit-ladder-stale-notice"]')
+    expect(stNotice.text()).toContain('ST 状态尚未就绪')
+    expect(stNotice.text()).toContain('未把旧快照判定为有效结果')
+    expect(stNotice.text()).toContain('最后成功版本供核对')
+    expect(wrapper.get('[data-testid="limit-ladder-layer-2"]').text()).toContain('2 连板')
   })
 
   it('主动加载和失败状态接管结果区，不与旧摘要热点并存', async () => {

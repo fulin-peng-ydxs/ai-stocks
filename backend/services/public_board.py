@@ -12,7 +12,8 @@ import pandas as pd
 
 from backend.common.logging import get_logger
 from backend.scoring.score_profile import ScoreProfileRepo
-from backend.scoring.snapshot import ScoreSnapshotRepo
+from backend.scoring.snapshot import ScoreSnapshotRepo, _current_param_hash
+from backend.services.stock_st_status import StockSTStatusService
 from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
 from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
@@ -61,37 +62,64 @@ def list_public_board_profiles(market=None, pg=None) -> list[dict]:
     return [p for p in public_profile_repo(market, pg).list() if p.get("is_preset")]
 
 
-def latest_fresh_public_snapshot_date(profile_id: str, profile_version: int, pg=None) -> date | None:
-    """某公共预设当前版本已生产且未 stale 的最新交易日。"""
+def _latest_st_version_matched_date(rows: pd.DataFrame, market=None) -> date | None:
+    """Return the latest PG snapshot date that still matches DuckDB ST facts."""
+    if rows.empty:
+        return None
+    service = StockSTStatusService(market or get_client())
+    expected_param_hash = _current_param_hash()
+    trade_dates = [
+        trade_date
+        for value in rows["trade_date"].tolist()
+        if (trade_date := _as_date(value)) is not None
+    ]
+    current_versions = service.input_versions_for_dates(trade_dates)
+    for row in rows.to_dict("records"):
+        trade_date = _as_date(row.get("trade_date"))
+        if trade_date is None:
+            continue
+        stored = row.get("st_input_version")
+        if (
+            row.get("param_hash") == expected_param_hash
+            and pd.notna(stored)
+            and str(stored) == current_versions[trade_date]
+        ):
+            return trade_date
+    return None
+
+
+def latest_fresh_public_snapshot_date(
+    profile_id: str,
+    profile_version: int,
+    pg=None,
+    market=None,
+) -> date | None:
+    """某公共预设当前版本中仍匹配已发布 ST 事实的最新交易日。"""
     client = pg or get_pg_client()
     df = client.query_df(
-        "SELECT max(trade_date) AS d FROM score_snapshot_meta "
+        "SELECT trade_date,param_hash,st_input_version FROM score_snapshot_meta "
         "WHERE tenant_id=%s AND owner_user_id=%s AND profile_id=%s "
-        "AND profile_version=%s AND stale=false",
+        "AND profile_version=%s AND stale=false ORDER BY trade_date DESC",
         [_PUB_TENANT, _PUB_OWNER, profile_id, int(profile_version)],
     )
-    if df.empty:
-        return None
-    return _as_date(df.iloc[0]["d"])
+    return _latest_st_version_matched_date(df, market)
 
 
-def latest_fresh_public_board_date(pg=None) -> date | None:
-    """数据总览口径：公共预设当前版本中，已生产且未 stale 的最新榜单日。"""
+def latest_fresh_public_board_date(pg=None, market=None) -> date | None:
+    """数据总览口径：公共预设中仍匹配已发布 ST 事实的最新榜单日。"""
     client = pg or get_pg_client()
     df = client.query_df(
-        "SELECT max(m.trade_date) AS d "
+        "SELECT DISTINCT m.trade_date,m.param_hash,m.st_input_version "
         "FROM score_snapshot_meta m "
         "JOIN score_profile p ON p.tenant_id=m.tenant_id "
         " AND p.owner_user_id=m.owner_user_id "
         " AND p.id=m.profile_id "
         " AND p.version=m.profile_version "
         "WHERE m.tenant_id=%s AND m.owner_user_id=%s "
-        "AND p.is_preset=true AND m.stale=false",
+        "AND p.is_preset=true AND m.stale=false ORDER BY m.trade_date DESC",
         [_PUB_TENANT, _PUB_OWNER],
     )
-    if df.empty:
-        return None
-    return _as_date(df.iloc[0]["d"])
+    return _latest_st_version_matched_date(df, market)
 
 
 def resolve_public_board_run_date(
@@ -108,7 +136,7 @@ def resolve_public_board_run_date(
     """
     if requested:
         return date.fromisoformat(requested)
-    fresh = latest_fresh_public_snapshot_date(profile_id, profile_version, pg)
+    fresh = latest_fresh_public_snapshot_date(profile_id, profile_version, pg, market)
     return fresh or latest_market_date(market)
 
 
@@ -150,7 +178,7 @@ def produce_public_board_snapshots(
         pid = prof["id"]
         version = int(prof.get("version") or 1)
         board = snapshot_repo.get_board(target_date, pid, profile=prof)
-        rows = int(len(board))
+        rows = len(board)
         total_rows += rows
         produced.append({"profile_id": pid, "version": version, "rows": rows})
 

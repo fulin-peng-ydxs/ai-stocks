@@ -84,7 +84,11 @@ const hasFilters = computed(() => (
   || props.filters.hotspotKey !== DEFAULT_LIMIT_LADDER_FILTERS.hotspotKey
   || props.filters.boards.join(',') !== DEFAULT_LIMIT_LADDER_FILTERS.boards.join(',')
 ))
-const staleSnapshot = computed(() => props.result?.business_code === 'SNAPSHOT_STALE')
+const stStatusBlocked = computed(() => props.result?.business_code === 'ST_STATUS_NOT_READY')
+const staleSnapshot = computed(() => (
+  props.result?.business_code === 'SNAPSHOT_STALE'
+  || (stStatusBlocked.value && props.result?.has_snapshot)
+))
 const pendingSnapshot = computed(() => props.result?.business_code === 'SNAPSHOT_PENDING')
 const failedSnapshot = computed(() => props.result?.business_code === 'SNAPSHOT_FAILED')
 const coverageBlocked = computed(() => (
@@ -101,6 +105,7 @@ const coverageReasonLabels: Record<string, string> = {
   MISSING_BAR_OR_SUSPENSION: '部分股票缺少行情或停牌确认',
   INVALID_DAILY_BAR: '部分日行情字段无效',
   UNSUPPORTED_LIMIT_RULE: '部分股票无法可靠判断涨停规则',
+  ST_STATUS_NOT_READY: 'ST 点时事实尚未发布',
 }
 function readableReason(value: string | null | undefined): string {
   if (!value) return ''
@@ -114,6 +119,7 @@ const coverageReasons = computed(() => {
 })
 const unavailableTitle = computed(() => {
   if (props.result?.business_code === 'NOT_TRADING_DAY') return '所选日期不是交易日'
+  if (stStatusBlocked.value) return 'ST 状态尚未就绪'
   if (props.result?.business_code === 'SNAPSHOT_FAILED') return '天梯快照计算失败'
   if (props.result?.business_code === 'SNAPSHOT_NOT_READY') return '行情数据尚未就绪'
   return '当前交易日尚无可用快照'
@@ -123,6 +129,10 @@ const unavailableDescription = computed(() => {
     return props.result.nearest_previous_trade_date
       ? `请切换到交易日；最近交易日为 ${props.result.nearest_previous_trade_date}`
       : '请切换到有效交易日后重试'
+  }
+  if (stStatusBlocked.value) {
+    return props.result?.st_status_error
+      || 'ST 状态刷新尚未完整发布，请等待刷新完成或重新运行“ST状态刷新”后重试'
   }
   const reason = readableReason(props.result?.failure_summary)
     || readableReason(props.result?.invalid_reason)
@@ -149,6 +159,14 @@ const pendingDescription = computed(() => {
   ].filter(Boolean).join(' · ')
 })
 const staleDescription = computed(() => {
+  if (stStatusBlocked.value) {
+    const lastSuccess = props.result?.last_success_at || props.result?.snapshot?.computed_at
+    return [
+      'ST 状态刷新尚未完整发布，系统未把旧快照判定为有效结果',
+      lastSuccess ? `下方仅保留 ${lastSuccess} 生成的最后成功版本供核对` : '',
+      props.result?.st_status_error || '',
+    ].filter(Boolean).join(' · ')
+  }
   const recalculating = props.result?.snapshot_status === 'recalculating'
   const status = recalculating ? '当前版本正在重算' : '新版本暂不可用'
   const lastSuccess = props.result?.last_success_at || props.result?.snapshot?.computed_at
@@ -220,7 +238,7 @@ function resetFilters(): void {
       class="limit-ladder__status-notice"
       data-testid="limit-ladder-stale-notice"
       tone="warning"
-      title="结果已过期"
+      :title="stStatusBlocked ? 'ST 状态尚未就绪' : '结果已过期'"
       :description="staleDescription"
     />
     <div class="limit-ladder__content" data-testid="limit-ladder-scroll-region">

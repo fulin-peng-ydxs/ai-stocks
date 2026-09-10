@@ -38,6 +38,13 @@ CREATE TABLE IF NOT EXISTS stock_st_status_history (
     task_id VARCHAR                        -- 产生变更的任务 ID
 );
 
+-- 每个交易日的 ST 事实修订号；有效事实变化时与事实同事务递增。
+CREATE TABLE IF NOT EXISTS stock_st_status_date_revision (
+    trade_date DATE PRIMARY KEY,         -- 被修订的 ST 事实日期
+    revision BIGINT NOT NULL CHECK (revision > 0), -- 单调递增的日期级修订号
+    updated_at TIMESTAMP NOT NULL        -- 最近有效事实变化时间
+);
+
 -- 日期级发布状态和当前成功版本指针；失败或失效时不清除 current_snapshot_id。
 CREATE TABLE IF NOT EXISTS limit_ladder_snapshot_state (
     trade_date DATE PRIMARY KEY,
@@ -47,6 +54,7 @@ CREATE TABLE IF NOT EXISTS limit_ladder_snapshot_state (
     task_id VARCHAR,                      -- 当前/最近计算任务 ID
     rule_version VARCHAR NOT NULL,        -- 涨停规则版本
     upstream_fingerprint VARCHAR,         -- 上游事实指纹
+    st_input_version VARCHAR,             -- 计算时截至业务日的已发布 ST 输入版本
     failure_summary VARCHAR,              -- 最近失败摘要
     invalid_reason VARCHAR,               -- 失效原因
     updated_at TIMESTAMP NOT NULL         -- 状态更新时间
@@ -62,7 +70,8 @@ CREATE TABLE IF NOT EXISTS limit_ladder_snapshot (
     has_approx_st BOOLEAN NOT NULL,       -- 是否含近似 ST 事实
     coverage_json VARCHAR NOT NULL,       -- 完整性门禁摘要 JSON
     window_metadata_json VARCHAR NOT NULL DEFAULT '{}', -- 四档请求窗口起始日/交易日数
-    source_version VARCHAR NOT NULL       -- 上游来源版本
+    source_version VARCHAR NOT NULL,      -- 上游来源版本
+    st_input_version VARCHAR              -- 计算时截至业务日的已发布 ST 输入版本
 );
 
 -- T16 → T17 存量库升级：CREATE TABLE IF NOT EXISTS 不会修改已有表结构。
@@ -76,6 +85,23 @@ UPDATE limit_ladder_snapshot
     WHERE window_metadata_json IS NULL;
 ALTER TABLE limit_ladder_snapshot
     ALTER COLUMN window_metadata_json SET NOT NULL;
+ALTER TABLE limit_ladder_snapshot_state
+    ADD COLUMN IF NOT EXISTS st_input_version VARCHAR;
+ALTER TABLE limit_ladder_snapshot
+    ADD COLUMN IF NOT EXISTS st_input_version VARCHAR;
+INSERT INTO stock_st_status_date_revision (trade_date,revision,updated_at)
+SELECT current.trade_date,
+       count(*) + COALESCE(history.change_count,0),
+       max(current.updated_at)
+FROM stock_st_status_daily current
+LEFT JOIN (
+    SELECT trade_date,count(*) AS change_count
+    FROM stock_st_status_history
+    GROUP BY trade_date
+) history ON history.trade_date=current.trade_date
+WHERE NOT EXISTS (SELECT 1 FROM stock_st_status_date_revision)
+GROUP BY current.trade_date,history.change_count
+ON CONFLICT (trade_date) DO NOTHING;
 
 -- 成功快照内的股票事实，冻结名称、板块、ST、板位、成交额和行业归属。
 CREATE TABLE IF NOT EXISTS limit_ladder_snapshot_stock (
@@ -144,6 +170,10 @@ CREATE TABLE IF NOT EXISTS limit_ladder_invalidation_outbox (
 
 CREATE INDEX IF NOT EXISTS idx_st_status_history_code_date
     ON stock_st_status_history (code, trade_date, changed_at);
+CREATE INDEX IF NOT EXISTS idx_st_status_daily_date
+    ON stock_st_status_daily (trade_date, updated_at);
+CREATE INDEX IF NOT EXISTS idx_st_status_history_date
+    ON stock_st_status_history (trade_date, changed_at);
 CREATE INDEX IF NOT EXISTS idx_limit_ladder_snapshot_date
     ON limit_ladder_snapshot (trade_date, computed_at);
 CREATE INDEX IF NOT EXISTS idx_limit_ladder_stock_snapshot
@@ -153,6 +183,7 @@ CREATE INDEX IF NOT EXISTS idx_limit_ladder_invalidation_pending
 
 COMMIT;
 
--- 验证：查询 information_schema.tables 确认上述九张表存在；查询 information_schema.columns
+-- 验证：查询 information_schema.tables 确认上述十张表存在；查询 information_schema.columns
 --       确认 window_metadata_json.is_nullable='NO'，并重复执行本脚本验证幂等。
--- 确认永久删除时的逆依赖回滚顺序：outbox、window_metric、aggregate、concept、stock、state、snapshot、history、daily。
+-- 确认永久删除时的逆依赖回滚顺序：outbox、window_metric、aggregate、concept、stock、
+-- state、snapshot、date_revision、history、daily。

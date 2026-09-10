@@ -130,6 +130,16 @@ state = ready
 
 这解决的是 ST 事实发布的双态交叉；它不等于自动重算历史业务结果。已发布的评分、回测、天梯有各自的版本和维护生命周期。
 
+### 5.1 结果缓存输入版本
+
+`stock_st_status_date_revision` 为每个事实日期保存单调修订号。`upsert_facts()` 只有在
+`is_st/source/source_ref/quality` 真实变化时，才在同一 DuckDB 事务递增对应日期；相同事实
+重采不递增。存量库初始化以当前事实数加变更历史数建立基线，不伪造任何旧结果使用过的版本。
+
+业务读取使用两个 `st-v2` 版本范围：每日榜单聚合 D 日修订，连板天梯聚合截至 T 日的日期
+修订。后者只扫描约千级日期账本，不扫描数百万日线/ST 事实。版本方法先经过发布门；
+`refreshing/failed` 时没有“可比较的新版本”，旧结果只能保留供核对，不能声明为有效。
+
 ## 6. 质检、结构体检和概览怎样体现
 
 ### 6.1 可恢复质量台账
@@ -148,8 +158,8 @@ state = ready
 
 ### 6.2 只读体检和页面概览
 
-- “结构体检”检查所有 `daily_bar` 是否有 `accurate` ST 事实，以及 `daily_bar.is_st` 是否与唯一事实一致。
-- “数据概览”的“ST 点时事实”卡片展示 `expected/present/accurate/approximate/missing/coverage_rate` 和批次发布状态；点击直接打开 ST状态刷新方案。
+- “结构体检”检查所有 `daily_bar` 是否有 `accurate` ST 事实、`daily_bar.is_st` 是否与唯一事实一致，以及每个 ST 事实日期是否都有修订账本；天梯当前快照版本为空或与当前截至日版本不一致时，给出待首次读取自愈提醒。ST 发布门未打开时明确提示暂不可核验，不把旧版本误判为正常。
+- “数据概览”的“ST 点时事实”卡片展示 `expected/present/accurate/approximate/missing/coverage_rate` 和批次发布状态；“ST 日期修订版本”独立展示修订表行数与最新日期，点击前者可直接打开 ST状态刷新方案。
 - 该覆盖率以已有 `daily_bar` 行为分母；连板天梯还会独立核对目标交易日的点时股票池、确认停牌、IPO 规则和行情合法性。因此概览 100% 不代表任意天梯日期必然可发布，天梯会给出自己的 coverage 原因码和样本股票。
 
 ## 7. 业务怎样消费
@@ -176,6 +186,11 @@ ST 刷新完成后返回：
 - `downstream_results_untouched=true`：明确表示未修改下游结果状态。
 
 采集代码不再调用 `ScoreSnapshotRepo.mark_stale_dates()`，也不调用 `LimitLadderSnapshotService.request_invalidation()`。原因是“事实发生变化”和“业务结果现在就要更新”不是同一项用户决策：历史页面可能需要保留旧发布结果做复核，某些变更也可能与当前使用范围无关。
+
+读取侧正确性门不属于采集联动：榜单在读取 D 日缓存时比较 D 日 `st_input_version`，天梯
+在读取 T 日缓存时比较截至 T 日版本。不同或存量 NULL 时只处置当前请求结果；榜单沿用锁内
+物化，天梯只把 T 日标记为 `invalid` 并沿用 `ensure_date_task(T)`。不会扫描、批量失效或创建
+新的调度依赖。计算发布前后再次比较版本，变化时拒绝发布混合口径结果。
 
 需要更新时，由用户在任务中心手动执行，或在调度页显式配置依赖：
 

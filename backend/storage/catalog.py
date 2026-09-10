@@ -28,6 +28,7 @@ _TIMESERIES_TABLES: frozenset[str] = frozenset(
         "board_fund_flow",
         "stock_board_correlation",
         "stock_board_correlation_state",
+        "stock_st_status_date_revision",
     }
 )
 
@@ -424,6 +425,13 @@ _DUCK_EXTRA_META: dict[str, dict[str, Any]] = {
         "ownership_scope": "market_global",
         "source": "ST 状态维护",
     },
+    "stock_st_status_date_revision": {
+        "name_cn": "ST 日期修订版本",
+        "category": "行情参考",
+        "purpose": "保存每个交易日 ST 事实的单调修订号，供榜单和天梯读取时低成本校验缓存。",
+        "ownership_scope": "market_global",
+        "source": "ST 状态维护",
+    },
     "limit_ladder_snapshot_state": {
         "name_cn": "连板天梯日期状态",
         "category": "连板天梯",
@@ -615,6 +623,7 @@ _DIRECT_LATEST_COLUMNS: dict[str, str] = {
     "stock_st_status_daily": "trade_date",
     "stock_st_status_history": "changed_at",
     "stock_st_status_refresh_state": "updated_at",
+    "stock_st_status_date_revision": "trade_date",
     "limit_ladder_snapshot_state": "trade_date",
     "limit_ladder_snapshot": "trade_date",
     "limit_ladder_invalidation_outbox": "updated_at",
@@ -624,6 +633,7 @@ _FRESH_TABLES = {
     "daily_bar", "daily_metrics", "index_bar", "board_bar", "board_fund_flow",
     "stock_board_correlation", "stock_board_correlation_state", "stock_st_status_daily",
     "stock_st_status_refresh_state",
+    "stock_st_status_date_revision",
     "limit_ladder_snapshot_state", "limit_ladder_snapshot", "limit_ladder_snapshot_stock",
     "limit_ladder_snapshot_concept", "limit_ladder_snapshot_aggregate",
     "limit_ladder_snapshot_window_metric",

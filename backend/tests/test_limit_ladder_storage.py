@@ -69,6 +69,15 @@ def _assert_t17_snapshot_column_contract(client: DuckDBClient) -> None:
     ).iloc[0]
     assert column["is_nullable"] == "NO"
     assert column["column_default"] == "'{}'"
+    version_columns = client.query_df(
+        "SELECT table_name,column_name FROM information_schema.columns "
+        "WHERE (table_name='limit_ladder_snapshot' OR "
+        "table_name='limit_ladder_snapshot_state') AND column_name='st_input_version'"
+    )
+    assert set(version_columns["table_name"]) == {
+        "limit_ladder_snapshot",
+        "limit_ladder_snapshot_state",
+    }
     with pytest.raises(StorageError):
         client.execute(
             "UPDATE limit_ladder_snapshot SET window_metadata_json=NULL "

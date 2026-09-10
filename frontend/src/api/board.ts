@@ -66,6 +66,8 @@ export function runBoardProfile(body: {
   count: number
   profile_ref?: string
   profile_version?: number
+  business_code?: 'READY' | 'ST_STATUS_NOT_READY'
+  st_status_error?: string
   cache_status?: 'cached' | 'materialized'
   list: ScoreRunRow[]
 }> {

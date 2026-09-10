@@ -298,6 +298,25 @@ class StockSTStatusService:
                         FROM {history_view}
                         """
                     )
+            if changed_keys:
+                revision_rows = pd.DataFrame(
+                    {
+                        "trade_date": sorted({trade_date for _, trade_date in changed_keys}),
+                        "updated_at": now,
+                    }
+                )
+                with self.c.temp_view(revision_rows, "st_revision_dates") as revision_view:
+                    self.c.execute(
+                        f"""
+                        INSERT INTO stock_st_status_date_revision (
+                            trade_date,revision,updated_at
+                        )
+                        SELECT trade_date,1,updated_at FROM {revision_view}
+                        ON CONFLICT (trade_date) DO UPDATE SET
+                            revision=stock_st_status_date_revision.revision+1,
+                            updated_at=EXCLUDED.updated_at
+                        """
+                    )
         return sorted({trade_date for _, trade_date in changed_keys})
 
     def status_map(
@@ -545,5 +564,122 @@ class StockSTStatusService:
                 str(coverage["accurate"]),
                 str(coverage["missing"]),
                 str(refresh_state.get("status") or "unpublished"),
+            ]
+        )
+
+    def input_version_for_date(self, trade_date: date) -> str:
+        """Return the published ST input version consumed by date-local results."""
+        return self._input_version(scope="date", trade_date=trade_date)
+
+    def input_version_through(self, trade_date: date) -> str:
+        """Return the published ST input version consumed by history-through-date results."""
+        return self._input_version(scope="through", trade_date=trade_date)
+
+    def input_versions_for_dates(self, trade_dates: list[date]) -> dict[date, str]:
+        """Return date-local versions in one ledger query for overview-style readers."""
+        requested = sorted(set(trade_dates))
+        if not requested:
+            return {}
+        self.assert_published()
+        rows = self.c.query_df(
+            "SELECT trade_date,revision,updated_at FROM stock_st_status_date_revision "
+            f"WHERE trade_date IN ({','.join('?' * len(requested))})",
+            requested,
+        )
+        revisions = {
+            pd.Timestamp(row["trade_date"]).date(): row for row in rows.to_dict("records")
+        }
+        return {
+            trade_date: self._format_input_version(
+                scope="date",
+                trade_date=trade_date,
+                date_count=1 if trade_date in revisions else 0,
+                revision_sum=(
+                    int(revisions[trade_date]["revision"]) if trade_date in revisions else 0
+                ),
+                updated_at=(
+                    revisions[trade_date]["updated_at"] if trade_date in revisions else None
+                ),
+            )
+            for trade_date in requested
+        }
+
+    def input_versions_through_dates(self, trade_dates: list[date]) -> dict[date, str]:
+        """Return cumulative versions for many dates without issuing one query per snapshot."""
+        requested = sorted(set(trade_dates))
+        if not requested:
+            return {}
+        self.assert_published()
+        rows = self.c.query_df(
+            "SELECT trade_date,revision,updated_at FROM stock_st_status_date_revision "
+            "WHERE trade_date<=? ORDER BY trade_date",
+            [requested[-1]],
+        ).to_dict("records")
+        versions: dict[date, str] = {}
+        index = 0
+        revision_sum = 0
+        latest_updated_at = None
+        for target in requested:
+            while index < len(rows) and pd.Timestamp(rows[index]["trade_date"]).date() <= target:
+                revision_sum += int(rows[index]["revision"])
+                changed_at = rows[index]["updated_at"]
+                if latest_updated_at is None or changed_at > latest_updated_at:
+                    latest_updated_at = changed_at
+                index += 1
+            versions[target] = self._format_input_version(
+                scope="through",
+                trade_date=target,
+                date_count=index,
+                revision_sum=revision_sum,
+                updated_at=latest_updated_at,
+            )
+        return versions
+
+    def _input_version(self, *, scope: str, trade_date: date) -> str:
+        """Build a change-sensitive version from the date-level revision ledger.
+
+        ``upsert_facts`` advances this ledger in the same transaction as every effective fact
+        change.  Reading one date is O(1); the historical scope aggregates trading-date rows
+        instead of rescanning millions of daily facts.
+        """
+        if scope not in {"date", "through"}:
+            raise ValueError("ST input version scope must be date or through")
+        self.assert_published()
+        operator = "=" if scope == "date" else "<="
+        row = self.c.query_df(
+            "SELECT count(*) AS date_count,COALESCE(sum(revision),0) AS revision_sum,"
+            "max(updated_at) AS updated_at FROM stock_st_status_date_revision "
+            f"WHERE trade_date{operator}?",
+            [trade_date],
+        ).iloc[0]
+        return self._format_input_version(
+            scope=scope,
+            trade_date=trade_date,
+            date_count=int(row["date_count"]),
+            revision_sum=int(row["revision_sum"]),
+            updated_at=row["updated_at"],
+        )
+
+    @staticmethod
+    def _format_input_version(
+        *,
+        scope: str,
+        trade_date: date,
+        date_count: int,
+        revision_sum: int,
+        updated_at,
+    ) -> str:
+        """Serialize one ST version consistently for scalar and batched readers."""
+        precise_updated_at = (
+            "none" if pd.isna(updated_at) else pd.Timestamp(updated_at).isoformat()
+        )
+        return ":".join(
+            [
+                "st-v2",
+                scope,
+                trade_date.isoformat(),
+                str(date_count),
+                str(revision_sum),
+                precise_updated_at,
             ]
         )

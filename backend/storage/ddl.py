@@ -541,6 +541,7 @@ CREATE TABLE IF NOT EXISTS score_snapshot_meta (
     computed_at     TIMESTAMP,
     stale           BOOLEAN,        -- true=已标记失效，下次读取时重算
     n_codes         INTEGER,
+    st_input_version VARCHAR,        -- 兼容旧 DuckDB 快照元数据的 ST 输入版本
     PRIMARY KEY (trade_date, profile_id, profile_version)
 );
 """
@@ -901,6 +902,14 @@ CREATE TABLE IF NOT EXISTS stock_st_status_refresh_state (
 );
 """
 
+DDL_STOCK_ST_STATUS_DATE_REVISION = """
+CREATE TABLE IF NOT EXISTS stock_st_status_date_revision (
+    trade_date DATE PRIMARY KEY,
+    revision   BIGINT NOT NULL CHECK (revision > 0),
+    updated_at TIMESTAMP NOT NULL
+);
+"""
+
 DDL_LIMIT_LADDER_SNAPSHOT_STATE = """
 CREATE TABLE IF NOT EXISTS limit_ladder_snapshot_state (
     trade_date           DATE PRIMARY KEY,
@@ -912,6 +921,7 @@ CREATE TABLE IF NOT EXISTS limit_ladder_snapshot_state (
     task_id              VARCHAR,
     rule_version         VARCHAR NOT NULL,
     upstream_fingerprint VARCHAR,
+    st_input_version     VARCHAR,
     failure_summary      VARCHAR,
     invalid_reason       VARCHAR,
     updated_at           TIMESTAMP NOT NULL
@@ -928,7 +938,8 @@ CREATE TABLE IF NOT EXISTS limit_ladder_snapshot (
     has_approx_st BOOLEAN NOT NULL,
     coverage_json VARCHAR NOT NULL,
     window_metadata_json VARCHAR NOT NULL DEFAULT '{}',
-    source_version VARCHAR NOT NULL
+    source_version VARCHAR NOT NULL,
+    st_input_version VARCHAR
 );
 """
 
@@ -1006,6 +1017,7 @@ M_LIMIT_LADDER_TABLES: dict[str, str] = {
     "stock_st_status_daily": DDL_STOCK_ST_STATUS_DAILY,
     "stock_st_status_history": DDL_STOCK_ST_STATUS_HISTORY,
     "stock_st_status_refresh_state": DDL_STOCK_ST_STATUS_REFRESH_STATE,
+    "stock_st_status_date_revision": DDL_STOCK_ST_STATUS_DATE_REVISION,
     "limit_ladder_snapshot_state": DDL_LIMIT_LADDER_SNAPSHOT_STATE,
     "limit_ladder_snapshot": DDL_LIMIT_LADDER_SNAPSHOT,
     "limit_ladder_snapshot_stock": DDL_LIMIT_LADDER_SNAPSHOT_STOCK,
@@ -1017,8 +1029,16 @@ M_LIMIT_LADDER_TABLES: dict[str, str] = {
 
 _LIMIT_LADDER_INDEXES: tuple[str, ...] = (
     (
+        "CREATE INDEX IF NOT EXISTS idx_st_status_daily_date "
+        "ON stock_st_status_daily (trade_date, updated_at)"
+    ),
+    (
         "CREATE INDEX IF NOT EXISTS idx_st_status_history_code_date "
         "ON stock_st_status_history (code, trade_date, changed_at)"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS idx_st_status_history_date "
+        "ON stock_st_status_history (trade_date, changed_at)"
     ),
     (
         "CREATE INDEX IF NOT EXISTS idx_limit_ladder_snapshot_date "
@@ -1084,6 +1104,20 @@ _MIGRATIONS: list[str] = [
     "ALTER TABLE backtest_trade ADD COLUMN IF NOT EXISTS entry_score DOUBLE",
     "DROP TABLE IF EXISTS watchlist_history",  # M2.7 废除观察池
     "ALTER TABLE score_snapshot ADD COLUMN IF NOT EXISTS sub_scores VARCHAR",
+    "ALTER TABLE score_snapshot_meta ADD COLUMN IF NOT EXISTS st_input_version VARCHAR",
+    "ALTER TABLE limit_ladder_snapshot_state ADD COLUMN IF NOT EXISTS st_input_version VARCHAR",
+    "ALTER TABLE limit_ladder_snapshot ADD COLUMN IF NOT EXISTS st_input_version VARCHAR",
+    (
+        "INSERT INTO stock_st_status_date_revision (trade_date,revision,updated_at) "
+        "SELECT current.trade_date,count(*)+COALESCE(history.change_count,0),"
+        "max(current.updated_at) FROM stock_st_status_daily current "
+        "LEFT JOIN (SELECT trade_date,count(*) AS change_count "
+        "FROM stock_st_status_history GROUP BY trade_date) history "
+        "ON history.trade_date=current.trade_date "
+        "WHERE NOT EXISTS (SELECT 1 FROM stock_st_status_date_revision) "
+        "GROUP BY current.trade_date,history.change_count "
+        "ON CONFLICT (trade_date) DO NOTHING"
+    ),
     "DROP TABLE IF EXISTS indicator",    # v2.0 删除指标预计算值表（改动态计算），旧库残留一并清
     "DROP TABLE IF EXISTS score_model",  # v2.0 score_model → score_profile，旧库残留一并清
     # M2.8 数据管理收口：质检问题加状态/严重度/解决时间（FR-DM-4），旧行回填

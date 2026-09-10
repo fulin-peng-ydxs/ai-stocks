@@ -132,6 +132,57 @@ class DataVerifier:
             st_mismatch == 0,
             f"不一致 {st_mismatch}",
         )
+        st_revision_missing = self._count(
+            "SELECT count(*) FROM (SELECT DISTINCT st.trade_date "
+            "FROM stock_st_status_daily st LEFT JOIN stock_st_status_date_revision revision "
+            "ON revision.trade_date=st.trade_date WHERE revision.trade_date IS NULL)"
+        )
+        self._check(
+            "ST 事实日期均有缓存修订版本",
+            st_revision_missing == 0,
+            f"缺失日期 {st_revision_missing}",
+        )
+        ladder_versions = self.c.query_df(
+            "SELECT trade_date,st_input_version FROM limit_ladder_snapshot_state "
+            "WHERE current_snapshot_id IS NOT NULL AND status='valid' ORDER BY trade_date"
+        )
+        stale_result_versions = 0
+        st_gate_error = None
+        if not ladder_versions.empty:
+            from backend.services.stock_st_status import (
+                StockSTStatusService,
+                STStatusNotReadyError,
+            )
+
+            st_service = StockSTStatusService(self.c)
+            try:
+                trade_dates = [
+                    pd.Timestamp(value).date()
+                    for value in ladder_versions["trade_date"].tolist()
+                ]
+                current_versions = st_service.input_versions_through_dates(trade_dates)
+                for row in ladder_versions.to_dict("records"):
+                    trade_date = pd.Timestamp(row["trade_date"]).date()
+                    expected = current_versions[trade_date]
+                    stored = row.get("st_input_version")
+                    if pd.isna(stored) or str(stored) != expected:
+                        stale_result_versions += 1
+            except STStatusNotReadyError as exc:
+                st_gate_error = str(exc)
+        if st_gate_error:
+            self._warn(
+                "连板天梯 ST 输入版本暂不可核验",
+                st_gate_error,
+                "等待 ST 刷新发布后重新运行结构体检；旧快照不会被声明为当前有效结果。",
+            )
+        elif stale_result_versions:
+            self._warn(
+                "连板天梯快照待 ST 版本自愈",
+                f"待首次读取重算 {stale_result_versions} 个日期",
+                "访问对应日期后会复用现有日期任务自动重算，无需批量迁移历史结果。",
+            )
+        else:
+            self._check("连板天梯当前快照均记录 ST 输入版本", True, "待自愈 0")
 
     def check_calendar_readiness(self, *, as_of: date | None = None) -> None:
         """检查生命周期下一开市日与跨年覆盖；缺失只报告，不推算交易日。"""

@@ -278,16 +278,16 @@ def _board_stage(c) -> dict | None:
         return None
 
 
-def _latest_board_date():
-    """榜单最新日 = PG 公共预设快照中"已物化且未失效"的最新交易日。
+def _latest_board_date(market=None, pg=None):
+    """榜单最新日 = PG 公共预设中仍匹配当前 ST 版本的最新交易日。
 
-    榜单页读 PG 的 PUBLIC_BOARD_OWNER 公共预设快照，且只读 stale=false；这里复用同一口径。
-    旧 DuckDB score_snapshot_meta 已不是榜单页事实源，会把数据总览报旧。
+    榜单页读 PG 的 PUBLIC_BOARD_OWNER 公共预设快照；这里同时复用其 stale、参数版本
+    和 DuckDB ST 输入版本口径。旧 DuckDB score_snapshot_meta 已不是榜单页事实源。
     """
     try:
         from backend.services.public_board import latest_fresh_public_board_date
 
-        t = latest_fresh_public_board_date()
+        t = latest_fresh_public_board_date(pg=pg, market=market)
         return None if t is None else str(t)
     except Exception:  # noqa: BLE001
         return None

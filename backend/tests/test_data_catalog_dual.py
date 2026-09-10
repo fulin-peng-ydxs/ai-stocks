@@ -24,6 +24,7 @@ ST_REFERENCE_TABLES = {
     "stock_st_status_daily",
     "stock_st_status_history",
     "stock_st_status_refresh_state",
+    "stock_st_status_date_revision",
 }
 LADDER_PG_TABLES = {"limit_ladder_task_ledger", "limit_ladder_audit_outbox"}
 
@@ -46,16 +47,16 @@ def test_dual_catalog_discovers_all_current_and_legacy_tables(catalog_env):
     active = [item for item in tables if item["lifecycle"] == "active"]
     legacy = [item for item in tables if item["lifecycle"] == "legacy_readonly"]
 
-    assert payload["summary"]["duckdb"]["active_tables"] == 27
+    assert payload["summary"]["duckdb"]["active_tables"] == 28
     assert payload["summary"]["duckdb"]["legacy_tables"] == 28
     assert payload["summary"]["duckdb"]["unregistered_tables"] == 0
     assert payload["summary"]["postgres"]["active_tables"] == 59
     assert payload["summary"]["postgres"]["legacy_tables"] == 0
     assert payload["summary"]["postgres"]["unregistered_tables"] == 0
-    assert len(active) == 86
+    assert len(active) == 87
     assert len(legacy) == 28
     assert all(item["metadata_complete"] for item in active)
-    assert len({item["key"] for item in tables}) == 114
+    assert len({item["key"] for item in tables}) == 115
 
     duck_ladder = {
         item["table"] for item in tables

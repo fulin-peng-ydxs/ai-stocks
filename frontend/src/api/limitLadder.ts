@@ -95,6 +95,7 @@ export interface LimitLadderResult {
   failure_summary?: string | null
   invalid_reason?: string | null
   task_error?: string | null
+  st_status_error?: string | null
   task?: {
     command_id: string
     task_id?: string | null
