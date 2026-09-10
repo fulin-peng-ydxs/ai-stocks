@@ -20,7 +20,7 @@ from backend.common.exceptions import DataSourceError
 from backend.common.logging import get_logger
 from backend.common.timeutil import fmt_date, to_date
 from backend.config import get_effective_settings, get_settings
-from backend.datasource.akshare_source import classify_board, to_full_code
+from backend.datasource.akshare_source import classify_board
 from backend.datasource.base import DataSource, rate_limited, with_retry
 
 log = get_logger("datasource.baostock")
@@ -49,20 +49,37 @@ def full_to_bs(full: str) -> str:
 
 def _collect(rs) -> pd.DataFrame:
     """把 baostock ResultData 收集为 DataFrame。"""
+    if rs.error_code != "0":
+        raise DataSourceError(
+            f"baostock 查询失败[{rs.error_code}]: {rs.error_msg or '未知错误'}"
+        )
     rows = []
     while rs.error_code == "0" and rs.next():
         rows.append(rs.get_row_data())
+    # baostock may only surface a socket/protocol failure while advancing the cursor.
+    # Returning rows accumulated before that point would publish a truncated interval as complete.
+    if rs.error_code != "0":
+        raise DataSourceError(
+            f"baostock 读取失败[{rs.error_code}]: {rs.error_msg or '未知错误'}"
+        )
     return pd.DataFrame(rows, columns=rs.fields)
 
 
 class BaostockSource(DataSource):
     name = "baostock"
     # baostock：日线/指数/日历 + 退市股 + 上市退市日 + 行业
-    capabilities = {"daily", "index", "calendar", "delisted", "adj_factor", "basic_dates", "industry"}
+    capabilities = {
+        "daily", "index", "calendar", "delisted", "adj_factor", "basic_dates",
+        "industry", "st_status",
+    }
 
     def __init__(self):
         self._logged_in = False
         self._login_at = 0.0   # 上次登录的 monotonic 时刻，配合 _LOGIN_TTL_SEC 触发重登
+        self._min_interval_sec = _MIN_INTERVAL
+        self._max_retries = _s.max_retries
+        self._retry_backoff_sec = _s.retry_backoff_sec
+        self._socket_timeout_sec = _s.socket_timeout_sec
         # 限流/重试读生效配置(含前端覆盖)，前端改「请求限流/重试」对新建实例即时生效；
         # 失败回落导入期默认。（baostock 登录态为进程级单连接，仍只能串行使用。）
         try:
@@ -70,8 +87,9 @@ class BaostockSource(DataSource):
             self._min_interval_sec = 1.0 / max(eff.rate_limit_per_sec, 0.1)
             self._max_retries = eff.max_retries
             self._retry_backoff_sec = eff.retry_backoff_sec
-        except Exception:  # noqa: BLE001
-            self._min_interval_sec = _MIN_INTERVAL
+            self._socket_timeout_sec = eff.socket_timeout_sec
+        except Exception as exc:  # noqa: BLE001
+            log.debug("读取 Baostock 生效配置失败，使用启动基线: %s", exc)
 
     def _ensure_login(self) -> None:
         import baostock as bs
@@ -100,9 +118,32 @@ class BaostockSource(DataSource):
 
             sock = getattr(ctx, "default_socket", None)
             if sock is not None:
-                sock.settimeout(float(get_effective_settings().datasource.socket_timeout_sec))
+                sock.settimeout(float(self._socket_timeout_sec))
         except Exception as e:  # noqa: BLE001
             log.debug("设置 baostock socket timeout 失败: %s", e)
+
+    def _invalidate_login(self) -> None:
+        """Discard a broken process-global socket so the retry performs a fresh login."""
+        self._logged_in = False
+        self._login_at = 0.0
+        try:
+            import baostock.common.context as ctx
+
+            sock = getattr(ctx, "default_socket", None)
+            if sock is not None:
+                sock.close()
+            setattr(ctx, "default_socket", None)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("清理失效 baostock socket 失败: %s", exc)
+
+    def _query_frame(self, query) -> pd.DataFrame:
+        """Run one SDK query and make transport failures recoverable by ``with_retry``."""
+        try:
+            self._ensure_login()
+            return _collect(query())
+        except Exception:
+            self._invalidate_login()
+            raise
 
     def close(self) -> None:
         if self._logged_in:
@@ -122,8 +163,7 @@ class BaostockSource(DataSource):
     def _query_basic(self) -> pd.DataFrame:
         import baostock as bs
 
-        self._ensure_login()
-        df = _collect(bs.query_stock_basic())
+        df = self._query_frame(bs.query_stock_basic)
         # 只保留股票（type==1），排除指数/其他
         df = df[df["type"] == "1"].copy()
         df["code_full"] = df["code"].apply(bs_to_full)
@@ -143,8 +183,7 @@ class BaostockSource(DataSource):
         """全市场行业分类（证监会行业）。列：code(带后缀), industry。"""
         import baostock as bs
 
-        self._ensure_login()
-        df = _collect(bs.query_stock_industry())
+        df = self._query_frame(bs.query_stock_industry)
         if df.empty:
             return pd.DataFrame(columns=["code", "industry"])
         df["code"] = df["code"].apply(bs_to_full)
@@ -187,14 +226,31 @@ class BaostockSource(DataSource):
     def _k_data(self, code: str, start: date, end: date, adjustflag: str) -> pd.DataFrame:
         import baostock as bs
 
-        self._ensure_login()
         fields = "date,open,high,low,close,preclose,volume,amount,turn,tradestatus,isST"
-        rs = bs.query_history_k_data_plus(
-            full_to_bs(code), fields,
-            start_date=fmt_date(start), end_date=fmt_date(end),
-            frequency="d", adjustflag=adjustflag,
+        return self._query_frame(
+            lambda: bs.query_history_k_data_plus(
+                full_to_bs(code), fields,
+                start_date=fmt_date(start), end_date=fmt_date(end),
+                frequency="d", adjustflag=adjustflag,
+            )
         )
-        return _collect(rs)
+
+    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
+    @rate_limited(_MIN_INTERVAL)
+    def _st_data(self, code: str, start: date, end: date) -> pd.DataFrame:
+        """Fetch only the three columns required by the ST identity timeline."""
+        import baostock as bs
+
+        return self._query_frame(
+            lambda: bs.query_history_k_data_plus(
+                full_to_bs(code),
+                "date,tradestatus,isST",
+                start_date=fmt_date(start),
+                end_date=fmt_date(end),
+                frequency="d",
+                adjustflag="3",
+            )
+        )
 
     def get_daily_bar(self, code: str, start: date, end: date, adjust: str = "") -> pd.DataFrame:
         raw = self._k_data(code, start, end, "3")  # 3=不复权
@@ -241,13 +297,38 @@ class BaostockSource(DataSource):
         out.loc[zero_vol, "turnover_rate"] = out.loc[zero_vol, "turnover_rate"].fillna(0.0)
         return out.reset_index(drop=True)
 
+    def get_st_status(self, code: str, start: date, end: date) -> pd.DataFrame:
+        """读取 baostock 的逐日 isST 字段，包含停牌返回行。
+
+        ST 是证券在该交易日的身份事实，与“是否有可交易行情行”无关。因此这里不能复用
+        ``get_daily_bar`` 的停牌过滤，否则停牌期间会制造 ST 时间线缺口。
+        """
+        raw = self._st_data(code, start, end)
+        if raw is None or raw.empty:
+            return pd.DataFrame(columns=["code", "trade_date", "is_st", "trade_status"])
+        raw = raw.replace("", None)
+        status = pd.to_numeric(raw["isST"], errors="coerce")
+        invalid = status.isna() | ~status.isin([0, 1])
+        if invalid.any():
+            bad_dates = raw.loc[invalid, "date"].astype(str).head(5).tolist()
+            raise DataSourceError(f"{code} baostock isST 非法，示例日期: {bad_dates}")
+        return pd.DataFrame(
+            {
+                "code": code,
+                "trade_date": raw["date"].apply(to_date),
+                "is_st": status.astype("int8").astype(bool),
+                "trade_status": pd.to_numeric(
+                    raw["tradestatus"], errors="coerce"
+                ).fillna(0).astype("int8"),
+            }
+        ).sort_values("trade_date").reset_index(drop=True)
+
     # ── 指数 ──
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
     @rate_limited(_MIN_INTERVAL)
     def get_index_bar(self, index_code: str, start: date, end: date) -> pd.DataFrame:
         import baostock as bs
 
-        self._ensure_login()
         # 指数代码带后缀（'000905.SH'）→ baostock 'sh.000905'
         if "." in index_code:
             code6, exch = index_code.split(".")
@@ -256,11 +337,12 @@ class BaostockSource(DataSource):
             bs_code = f"sh.{index_code}"
         else:
             bs_code = index_code
-        rs = bs.query_history_k_data_plus(
-            bs_code, "date,open,high,low,close,volume,amount",
-            start_date=fmt_date(start), end_date=fmt_date(end), frequency="d",
+        df = self._query_frame(
+            lambda: bs.query_history_k_data_plus(
+                bs_code, "date,open,high,low,close,volume,amount",
+                start_date=fmt_date(start), end_date=fmt_date(end), frequency="d",
+            )
         )
-        df = _collect(rs)
         if df.empty:
             return df
         for col in ["open", "high", "low", "close", "amount"]:
@@ -280,9 +362,9 @@ class BaostockSource(DataSource):
     def get_trade_calendar(self, start: date, end: date) -> pd.DataFrame:
         import baostock as bs
 
-        self._ensure_login()
-        rs = bs.query_trade_dates(start_date=fmt_date(start), end_date=fmt_date(end))
-        df = _collect(rs)
+        df = self._query_frame(
+            lambda: bs.query_trade_dates(start_date=fmt_date(start), end_date=fmt_date(end))
+        )
         return pd.DataFrame(
             {
                 "trade_date": df["calendar_date"].apply(to_date),

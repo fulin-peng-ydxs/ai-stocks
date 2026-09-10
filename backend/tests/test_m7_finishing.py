@@ -7,22 +7,8 @@ from datetime import date
 import pandas as pd
 
 from backend.services.data_report import DataIntegrityReport
-from backend.services.ingest import IngestionService
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
-
-
-def test_is_st_by_name():
-    with DuckDBClient(db_path=":memory:") as c:
-        init_db(c)
-        c.execute("INSERT INTO stock_basic (code, name) VALUES "
-                  "('000001.SZ','平安银行'),('000638.SZ','*ST万方'),('600519.SH','贵州茅台')")
-        svc = IngestionService.__new__(IngestionService)  # 跳过网络初始化
-        from backend.storage.repository import MarketRepository
-        svc.repo = MarketRepository(c)
-        assert svc._is_st_by_name("000638.SZ") is True
-        assert svc._is_st_by_name("000001.SZ") is False
-        assert svc._is_st_by_name("600519.SH") is False
 
 
 def test_scan_adj_jump_flags_gross_jump():

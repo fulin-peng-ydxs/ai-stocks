@@ -32,7 +32,6 @@ from backend.datasource.base import (
 from backend.limit_ladder.rules import (
     PointInTimeSTStatus,
     STStatusQuality,
-    resolve_point_in_time_st,
 )
 from backend.services.async_task import TaskCancelled
 from backend.services.market_benchmark import configured_benchmark_codes
@@ -383,26 +382,118 @@ class IngestionService:
         return df
 
     # ── 单只股票日线 + 衍生指标 ──
-    def _st_status_by_name(self, code: str) -> PointInTimeSTStatus:
-        """Resolve the current name fallback while preserving approximate provenance."""
-        cache = getattr(self, "_st_name_cache", None)
-        if cache is None:
-            df = self.repo.c.query_df("SELECT code, name FROM stock_basic")
-            cache = {
-                r["code"]: self._st_status_from_name_value(r["name"])
-                for _, r in df.iterrows()
-            }
-            self._st_name_cache = cache
-        return cache.get(code, resolve_point_in_time_st(name=None))
+    def _accurate_st_facts(
+        self,
+        code: str,
+        trade_dates: list[date],
+        *,
+        force: bool = False,
+        fetch_start: date | None = None,
+        fetch_end: date | None = None,
+        ctx=None,
+    ) -> list[StockSTStatusFact]:
+        """Resolve complete daily ST facts, fetching missing facts from baostock.
 
-    def _is_st_by_name(self, code: str) -> bool:
-        """Compatibility wrapper for existing marker and factor-refresh callers."""
-        return self._st_status_by_name(code).is_st
+        Stored accurate facts are reused. Missing dates are fetched as one contiguous range;
+        all source rows in that range are returned so suspended market days also become facts.
+        No current-name fallback is allowed in the production path.
+        """
+        dates = sorted(set(trade_dates))
+        if not dates and (fetch_start is None or fetch_end is None):
+            return []
+        if dates:
+            row = self.c.query_df(
+                """
+                SELECT trade_date,is_st,source,source_ref,quality
+                FROM stock_st_status_daily
+                WHERE code=? AND trade_date BETWEEN ? AND ? AND quality='accurate'
+                """,
+                [code, dates[0], dates[-1]],
+            )
+            by_date = {
+                pd.Timestamp(item["trade_date"]).date(): item
+                for _, item in row.iterrows()
+            }
+        else:
+            by_date = {}
+        if not force and all(day in by_date for day in dates):
+            return [
+                StockSTStatusFact(
+                    code=code,
+                    trade_date=day,
+                    status=PointInTimeSTStatus(
+                        is_st=bool(by_date[day]["is_st"]),
+                        source=str(by_date[day]["source"]),
+                        source_ref=(
+                            None if pd.isna(by_date[day]["source_ref"])
+                            else str(by_date[day]["source_ref"])
+                        ),
+                        quality=STStatusQuality.ACCURATE,
+                    ),
+                )
+                for day in dates
+            ]
+
+        query_start = fetch_start or dates[0]
+        query_end = fetch_end or dates[-1]
+        st_source, status_rows = self._fetch_st_status_rows(
+            code, query_start, query_end, ctx=ctx
+        )
+        if status_rows is None or status_rows.empty:
+            raise DataSourceError(f"{code} {query_start}~{query_end} ST 点时事实为空")
+        status_by_date = {
+            pd.Timestamp(row["trade_date"]).date(): bool(row["is_st"])
+            for _, row in status_rows.iterrows()
+        }
+        missing = [day for day in dates if day not in status_by_date]
+        if missing:
+            raise DataSourceError(
+                f"{code} ST 点时事实缺 {len(missing)} 个行情日，示例: "
+                f"{','.join(map(str, missing[:5]))}"
+            )
+        return [
+            StockSTStatusFact(
+                code=code,
+                trade_date=day,
+                status=PointInTimeSTStatus(
+                    is_st=status_by_date[day],
+                    source=st_source.name,
+                    source_ref="query_history_k_data_plus:isST",
+                    quality=STStatusQuality.ACCURATE,
+                ),
+            )
+            for day in sorted(status_by_date)
+        ]
+
+    def _fetch_st_status_rows(
+        self, code: str, start: date, end: date, *, ctx=None
+    ) -> tuple[DataSource, pd.DataFrame]:
+        """Fetch one raw ST interval while respecting Baostock's global session lock."""
+        st_source = self._source_for("st_status")
+        if ctx:
+            ctx.log(f"{code} 补采 ST 点时事实 {start}~{end}（{st_source.name}）")
+        lock = _BAO_FALLBACK_LOCK if st_source.name == "baostock" else threading.Lock()
+        with lock:
+            rows = st_source.get_st_status(code, start, end)
+        return st_source, rows
 
     @staticmethod
-    def _st_status_from_name_value(value) -> PointInTimeSTStatus:
-        name = None if value is None or pd.isna(value) else str(value)
-        return resolve_point_in_time_st(name=name)
+    def _st_facts_from_rows(
+        code: str, source: DataSource, rows: pd.DataFrame
+    ) -> list[StockSTStatusFact]:
+        return [
+            StockSTStatusFact(
+                code=code,
+                trade_date=pd.Timestamp(row["trade_date"]).date(),
+                status=PointInTimeSTStatus(
+                    is_st=bool(row["is_st"]),
+                    source=source.name,
+                    source_ref="query_history_k_data_plus:isST",
+                    quality=STStatusQuality.ACCURATE,
+                ),
+            )
+            for _, row in rows.iterrows()
+        ]
 
     def _fetch_daily_with_fallback(
         self, code: str, start: date, end: date, primary: DataSource, ctx=None,
@@ -537,7 +628,46 @@ class IngestionService:
         source: DataSource | None = None, ctx=None,
         st_status: PointInTimeSTStatus | None = None,
     ) -> int:
-        df, used_source = self._fetch_daily_with_fallback(code, start, end, source or self.src, ctx=ctx)
+        try:
+            df, used_source = self._fetch_daily_with_fallback(
+                code, start, end, source or self.src, ctx=ctx
+            )
+        except DataSourceError as daily_error:
+            # Baostock intentionally removes suspended rows from daily_bar but still exposes
+            # tradestatus=0 + isST. Only that positive suspension evidence may turn an empty
+            # daily result into a successful zero-row update; weekends/source failures still fail.
+            try:
+                st_source, status_rows = self._fetch_st_status_rows(code, start, end, ctx=ctx)
+                if status_rows is None or status_rows.empty:
+                    raise DataSourceError("ST 状态亦为空")
+                trade_status = pd.to_numeric(status_rows["trade_status"], errors="coerce")
+                if trade_status.isna().any() or not trade_status.eq(0).all():
+                    raise DataSourceError("ST 状态未确认全区间停牌")
+                expected_open = {
+                    pd.Timestamp(value).date()
+                    for value in self.c.query_df(
+                        "SELECT trade_date FROM trade_calendar "
+                        "WHERE is_open AND trade_date BETWEEN ? AND ?",
+                        [start, end],
+                    )["trade_date"].tolist()
+                }
+                returned_dates = {
+                    pd.Timestamp(value).date()
+                    for value in status_rows["trade_date"].tolist()
+                }
+                if not expected_open or not expected_open.issubset(returned_dates):
+                    raise DataSourceError("ST 状态未覆盖请求区间全部开市日")
+                check_thread_cancel()
+                StockSTStatusService(self.c).upsert_facts(
+                    self._st_facts_from_rows(code, st_source, status_rows),
+                    change_reason="daily_ingest_st_suspended",
+                    task_id=getattr(ctx, "tid", None),
+                )
+                if ctx:
+                    ctx.log(f"{code} {start}~{end} 已由 Baostock 确认停牌；保存 ST 事实，日线 0 行")
+                return 0
+            except DataSourceError as st_error:
+                raise DataSourceError(f"{daily_error}；ST 状态无法确认停牌: {st_error}") from daily_error
         # 并发终止可能发生在网络返回与入库之间；此检查保证任务进入 interrupted 后不再遗留写入。
         check_thread_cancel()
         if df is None or df.empty:
@@ -563,46 +693,44 @@ class IngestionService:
             log.warning("%s 入库清洗：丢弃%d 修复OHL%d 零成交填补%d",
                         code, sanitize_stats["dropped"], sanitize_stats["fixed_ohl"],
                         sanitize_stats["filled_zerovol"])
-        # 缺省时按代码判定板块涨跌幅；ST 按当前名称推导（T-M7-8：入库即置标，
-        # 不再一律 False。免费源无历史每日 ST，故用 stock_basic 当前名称尽力而为）
+        # 板块涨跌幅按代码判定；ST 必须来自与行情日期对齐的 Baostock 点时事实。
         if board_limit_pct is None:
             _, _, board_limit_pct = classify_board(code.split(".")[0])
         df, used_source = self._calibrate_corporate_action_pre_close(
             df, code, float(board_limit_pct), used_source, ctx=ctx
         )
-        if st_status is None:
-            fallback = self._st_status_by_name(code)
-            st_status = (
-                fallback
-                if is_st is None
-                else PointInTimeSTStatus(
-                    is_st=bool(is_st),
-                    source=fallback.source,
-                    source_ref=fallback.source_ref,
-                    quality=STStatusQuality.APPROXIMATE,
-                )
-            )
         st_service = StockSTStatusService(self.c)
-        incoming_st_facts = [
-            StockSTStatusFact(
-                code=code,
-                trade_date=pd.Timestamp(trade_day).date(),
-                status=st_status,
+        trade_dates = [pd.Timestamp(day).date() for day in df["trade_date"].tolist()]
+        if st_status is not None or is_st is not None:
+            # Explicit values are a test/import seam only and remain visibly approximate.
+            injected = st_status or PointInTimeSTStatus(
+                is_st=bool(is_st),
+                source="explicit_import",
+                source_ref=None,
+                quality=STStatusQuality.APPROXIMATE,
             )
-            for trade_day in df["trade_date"].tolist()
-        ]
-        effective_st_facts = st_service.prefer_existing_accurate(incoming_st_facts)
+            incoming_st_facts = [
+                StockSTStatusFact(code=code, trade_date=day, status=injected)
+                for day in trade_dates
+            ]
+            effective_st_facts = st_service.prefer_existing_accurate(incoming_st_facts)
+        else:
+            effective_st_facts = self._accurate_st_facts(
+                code,
+                trade_dates,
+                fetch_start=start,
+                fetch_end=end,
+                ctx=ctx,
+            )
         effective_st_by_date = {
             fact.trade_date: fact.status.is_st for fact in effective_st_facts
         }
         # 质检标记：涨跌停/一字板/ST（回测撮合前提）
-        df = add_markers(df, board_limit_pct, st_status.is_st)
-        # 名称推断只是兜底。若指定日期已有准确事实，行情行的 ST 派生标记也必须
-        # 使用最终有效事实，不能只保护事实表而继续污染 daily_bar。
-        df["is_st"] = [
+        point_in_time_st = [
             effective_st_by_date[pd.Timestamp(trade_day).date()]
             for trade_day in df["trade_date"].tolist()
         ]
+        df = add_markers(df, board_limit_pct, point_in_time_st)
         # OHL 修补行：真实振幅未知 → 强制不标一字板，并记入问题台账（不静默/不臆造）
         if "_ohl_repaired" in df.columns and df["_ohl_repaired"].any():
             repaired_dates = {
@@ -631,7 +759,7 @@ class IngestionService:
         n = self.repo.upsert_daily_bar(df[bar_cols])
         st_service.upsert_facts(
             effective_st_facts,
-            change_reason="daily_ingest",
+            change_reason="daily_ingest_st_sync",
             task_id=getattr(ctx, "tid", None),
         )
         # 衍生指标：流通市值 = 收盘 × 当日流通股本（新浪日线自带 float_share）
@@ -1083,12 +1211,8 @@ class IngestionService:
             if ctx:
                 ctx.set_checkpoint(prep_done=True)
         target_codes = basic["code"].tolist()
-        # 板块涨跌幅 + ST 状态查找表（ST 由名称含 "ST" 判定）
+        # 板块涨跌幅查找表；ST 状态由 ingest_one_daily 按行情日期读取 baostock 点时事实。
         limit_lut = dict(zip(basic["code"], basic["price_limit_pct"]))
-        st_lut = {
-            r["code"]: self._st_status_from_name_value(r["name"]).is_st
-            for _, r in basic.iterrows()
-        }
 
         # 断点续跑 + 部分覆盖修复：旧逻辑"有任意数据就跳过"会把仅有部分近期数据的股票
         # （如经缺口兜底补了近窗口、或上次中断）误判为已完成，早期历史永远补不上。改为按
@@ -1106,7 +1230,7 @@ class IngestionService:
                     f"区间 {start}~{end}（并发 {concurrency}）")
 
         def _one(code: str, source: DataSource | None = None, ctx_=None) -> int:
-            return self.ingest_one_daily(code, start, end, limit_lut.get(code), st_lut.get(code),
+            return self.ingest_one_daily(code, start, end, limit_lut.get(code),
                                          source=source, ctx=ctx_)
 
         def _tick(i: int, code: str, rows: int) -> None:
@@ -1736,10 +1860,6 @@ class IngestionService:
             if ctx:
                 ctx.set_checkpoint(prep_done=True)
         limit_lut = dict(zip(live["code"], live["price_limit_pct"]))
-        st_lut = {
-            r["code"]: self._st_status_from_name_value(r["name"]).is_st
-            for _, r in live.iterrows()
-        }
         target = live["code"].tolist()
         done_codes = set(ctx.checkpoint.get("done_codes") or []) if (ctx and ctx.checkpoint) else set()
         target = [c for c in target if c not in done_codes]
@@ -1756,7 +1876,7 @@ class IngestionService:
 
         def _one(code: str, source: DataSource | None = None, ctx_=None) -> int:
             return self.ingest_one_daily(
-                code, start, end, limit_lut.get(code), st_lut.get(code), source=source, ctx=ctx_)
+                code, start, end, limit_lut.get(code), source=source, ctx=ctx_)
 
         def _tick(i: int, code: str, rows: int) -> None:
             if ctx:
@@ -1860,6 +1980,239 @@ class IngestionService:
         )["code"].tolist()
         return self._recompute_clean(target, ctx=ctx, full=True, verb="重算价格因子")
 
+    def refresh_st_status(
+        self,
+        codes: list[str] | None = None,
+        start: date | None = None,
+        end: date | None = None,
+        ctx=None,
+    ) -> dict:
+        """Run one published ST refresh batch and fail closed on partial/cancelled runs."""
+        st_service = StockSTStatusService(self.c)
+        previous_state = st_service.refresh_state()
+        target_count = len(codes) if codes else int(self.c.query_df(
+            "SELECT count(DISTINCT code) AS n FROM daily_bar"
+        ).iloc[0]["n"])
+        st_service.begin_refresh(
+            task_id=getattr(ctx, "tid", None),
+            target_count=target_count,
+            start=start,
+            end=end,
+        )
+        try:
+            result = self._refresh_st_status_impl(codes=codes, start=start, end=end, ctx=ctx)
+        except Exception as exc:
+            st_service.finish_refresh(ready=False, error=str(exc))
+            raise
+        source_ready = int(result.get("fail") or 0) == 0
+        market_coverage = st_service.coverage()
+        coverage_ready = int(market_coverage["accurate"]) == int(market_coverage["expected"])
+        ready = source_ready and coverage_ready
+        if not source_ready:
+            error = f"{result.get('fail', 0)} 个刷新步骤失败"
+        elif not coverage_ready:
+            error = (
+                "全市场 ST 点时事实仍未完整覆盖："
+                f"权威 {market_coverage['accurate']}/{market_coverage['expected']}"
+            )
+        else:
+            error = None
+        # A failed full refresh can already have committed accurate facts for its successful
+        # stocks while deliberately skipping marker publication. If operators recover only the
+        # failed subset, the final subset must rebuild every marker before reopening the gate;
+        # otherwise facts are complete but old daily_bar projections remain mixed.
+        if (
+            ready
+            and codes is not None
+            and (previous_state is None or previous_state.get("status") != "ready")
+        ):
+            try:
+                result["projection_rows"] = st_service.rebuild_daily_bar_markers()
+            except Exception as exc:
+                st_service.finish_refresh(ready=False, error=str(exc))
+                raise
+        st_service.finish_refresh(
+            ready=ready,
+            error=error,
+        )
+        result["publication_status"] = "ready" if ready else "failed"
+        result["coverage"] = st_service.coverage(start, end)
+        return result
+
+    def _refresh_st_status_impl(
+        self,
+        codes: list[str] | None = None,
+        start: date | None = None,
+        end: date | None = None,
+        ctx=None,
+    ) -> dict:
+        """Backfill canonical ST facts from baostock and refresh every derived consumer.
+
+        With no date range the stored daily-bar span of each selected security is used. The
+        operation is serial because baostock owns a process-global session. A source failure
+        never falls back to the current name and is returned as a resumable per-code failure.
+        """
+        spans = self.repo.c.query_df(
+            """
+            SELECT b.code,min(b.trade_date) AS lo,max(b.trade_date) AS hi,
+                   sb.delist_date,COALESCE(sb.price_limit_pct,0.10) AS price_limit_pct
+            FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code=b.code
+            GROUP BY b.code,sb.delist_date,sb.price_limit_pct ORDER BY b.code
+            """
+        )
+        if codes:
+            spans = spans[spans["code"].isin(set(codes))]
+        all_target = spans.to_dict("records")
+        done_codes = {
+            str(code) for code in (getattr(ctx, "checkpoint", {}).get("st_done_codes") or [])
+        }
+        target = [item for item in all_target if str(item["code"]) not in done_codes]
+        source = self._source_for("st_status")
+        st_service = StockSTStatusService(self.c)
+        changed_dates: set[date] = {
+            date.fromisoformat(str(value))
+            for value in (getattr(ctx, "checkpoint", {}).get("st_changed_dates") or [])
+        }
+        touched_dates: set[date] = set()
+        rows = ok = fail = 0
+        failures: list[dict] = []
+        total = len(all_target)
+        completed_before = len(done_codes)
+        market_hi_raw = self.c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]
+        market_hi = None if pd.isna(market_hi_raw) else pd.Timestamp(market_hi_raw).date()
+        if ctx:
+            ctx.set_phase(
+                "st_status", phase_total=total, phase_done=completed_before, current_item=None
+            )
+            ctx.log(
+                f"▶ 开始 ST 状态刷新：{total} 只，已完成 {completed_before} 只，"
+                f"本轮待处理 {len(target)} 只，源 {source.name}，"
+                f"范围 {'指定区间' if start or end else '各股全部已有日线'}（串行）"
+            )
+            ctx.flush()
+        for index, item in enumerate(target, completed_before + 1):
+            code = str(item["code"])
+            lo = max(pd.Timestamp(item["lo"]).date(), start) if start else pd.Timestamp(item["lo"]).date()
+            stored_hi = pd.Timestamp(item["hi"]).date()
+            delist = None if pd.isna(item.get("delist_date")) else pd.Timestamp(item["delist_date"]).date()
+            natural_hi = min(market_hi or stored_hi, delist) if delist else (market_hi or stored_hi)
+            hi = min(natural_hi, end) if end else natural_hi
+            if hi < lo:
+                done_codes.add(code)
+                ok += 1
+                if ctx:
+                    ctx.set_checkpoint(st_done_codes=sorted(done_codes))
+                continue
+            if ctx:
+                ctx.check_cancel()
+                ctx.set_phase(
+                    "st_status", phase_total=total, phase_done=index - 1, current_item=code
+                )
+            changed_for_code: list[date] = []
+            try:
+                expected = [
+                    pd.Timestamp(value).date()
+                    for value in self.repo.c.query_df(
+                        "SELECT trade_date FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ? "
+                        "ORDER BY trade_date",
+                        [code, lo, hi],
+                    )["trade_date"].tolist()
+                ]
+                if market_hi is not None and hi == market_hi and hi not in expected:
+                    expected.append(hi)
+                facts = self._accurate_st_facts(
+                    code,
+                    expected,
+                    force=True,
+                    fetch_start=lo,
+                    fetch_end=hi,
+                    ctx=ctx,
+                )
+                touched_dates.update(fact.trade_date for fact in facts)
+                changed_for_code = st_service.upsert_facts(
+                    facts,
+                    change_reason="baostock_st_refresh",
+                    task_id=getattr(ctx, "tid", None),
+                )
+                changed_dates.update(changed_for_code)
+                rows += len(facts)
+                ok += 1
+                done_codes.add(code)
+                if ctx:
+                    ctx.set_checkpoint(
+                        st_done_codes=sorted(done_codes),
+                        st_changed_dates=sorted(str(day) for day in changed_dates),
+                    )
+            except Exception as exc:  # noqa: BLE001 - per-code resumable boundary
+                if ctx and changed_for_code:
+                    # Facts may already be committed when marker recomputation fails. Preserve
+                    # their dates so a resumed task still invalidates every affected consumer.
+                    ctx.set_checkpoint(
+                        st_done_codes=sorted(done_codes),
+                        st_changed_dates=sorted(str(day) for day in changed_dates),
+                    )
+                fail += 1
+                failures.append({"code": code, "error": str(exc)[:500]})
+                log.warning("%s ST 状态刷新失败: %s", code, exc)
+                if ctx:
+                    ctx.log(f"{code} ST 状态刷新失败：{exc}", "warn")
+            if ctx and (index % 20 == 0 or index == total):
+                ctx.set_phase(
+                    "st_status", phase_total=total, phase_done=index, current_item=code
+                )
+                ctx.progress(min(0.08 + 0.84 * index / max(total, 1), 0.92),
+                             f"ST 状态 {index}/{total}（成功{ok} 失败{fail}）")
+                ctx.log(f"ST 状态进度 {index}/{total}：成功{ok} 失败{fail}，读取 {rows} 行")
+                ctx.flush()
+
+        changed = sorted(changed_dates)
+        touched = sorted(touched_dates)
+        # Marker publication is one set-based step after a zero-failure source batch. It avoids
+        # needlessly recalculating adjustment factors per stock and cannot expose a mixed set.
+        projection_rows = (
+            st_service.rebuild_daily_bar_markers(codes=codes, start=start, end=end)
+            if fail == 0 else 0
+        )
+        invalidated = {"ladder": 0, "score": 0}
+        if changed:
+            from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
+
+            invalidated["ladder"] = LimitLadderSnapshotService(self.c).request_invalidation(
+                changed, reason="ST 点时事实刷新"
+            )
+            try:
+                from backend.scoring.snapshot import ScoreSnapshotRepo
+
+                invalidated["score"] = ScoreSnapshotRepo(self.c).mark_stale_dates(changed)
+            except Exception as exc:  # noqa: BLE001 - PG unavailability must stay visible
+                log.warning("ST 刷新后评分快照失效失败: %s", exc)
+                failures.append({"code": "score_snapshot", "error": str(exc)[:500]})
+                fail += 1
+        result = {
+            "target": total,
+            "ok": completed_before + ok,
+            "fail": fail,
+            "rows": rows,
+            "changed_dates": len(changed),
+            "changed_date_values": [str(day) for day in changed],
+            "touched_dates": len(touched),
+            "projection_rows": projection_rows,
+            "invalidated": invalidated,
+            "failures": failures[:50],
+            "coverage": st_service.coverage(start, end),
+        }
+        self.repo.log_update(
+            "stock_st_status_daily", source.name, start, end, rows,
+            "success" if fail == 0 else "partial",
+            json.dumps(result, ensure_ascii=False, default=str),
+        )
+        if ctx:
+            ctx.log(
+                f"■ ST 状态刷新完成：成功 {ok}、失败 {fail}、事实 {rows} 行、"
+                f"影响 {len(changed)} 个交易日"
+            )
+        return result
+
     def _refresh_clean_factors(self, codes: list[str], ctx=None) -> dict:
         """入库收尾：增量刷新本次更新过股票的 adj_factor_clean / pre_close / 标记。
 
@@ -1873,12 +2226,8 @@ class IngestionService:
 
     def _recompute_clean(self, target: list[str], ctx=None, full: bool = True,
                          verb: str = "重算价格因子") -> dict:
-        basic = self.repo.c.query_df("SELECT code, name, price_limit_pct FROM stock_basic")
+        basic = self.repo.c.query_df("SELECT code, price_limit_pct FROM stock_basic")
         limit_lut = dict(zip(basic["code"], basic["price_limit_pct"]))
-        st_lut = {
-            r["code"]: self._st_status_from_name_value(r["name"]).is_st
-            for _, r in basic.iterrows()
-        }
         done_codes = set(ctx.checkpoint.get("factor_done_codes") or []) if (ctx and ctx.checkpoint) else set()
         target = [c for c in target if c not in done_codes]
         ok = fail = rows = 0
@@ -1896,7 +2245,7 @@ class IngestionService:
                               current_item=code, factor_done_codes=sorted(done_codes))
             try:
                 rows += self._recompute_clean_one(
-                    code, float(limit_lut.get(code) or 0.10), bool(st_lut.get(code)), full=full)
+                    code, float(limit_lut.get(code) or 0.10), full=full)
                 ok += 1
                 done_codes.add(code)
                 if ctx:
@@ -1922,8 +2271,9 @@ class IngestionService:
             ctx.log(f"■ {verb}完成：成功 {ok}、失败 {fail}，共处理 {rows} 行")
         return result
 
-    def _recompute_clean_one(self, code: str, board_limit_pct: float, is_st: bool,
-                             full: bool = True) -> int:
+    def _recompute_clean_one(
+        self, code: str, board_limit_pct: float, full: bool = True
+    ) -> int:
         """单只去抖重算：写 adj_factor_clean/pre_close/标记。full=False 时只算锚点之后的新行。"""
         from backend.datasource.akshare_source import compute_pre_close, dejitter_adj_factor
 
@@ -1987,19 +2337,46 @@ class IngestionService:
         existing_pre_close = pd.to_numeric(df["pre_close"], errors="coerce")
         preserve = factor_event & existing_pre_close.gt(0)
         df["pre_close"] = computed_pre_close.where(~preserve, existing_pre_close)
-        marked = add_markers(df, board_limit_pct, is_st)
+        facts = self.c.query_df(
+            """
+            SELECT trade_date,is_st,quality FROM stock_st_status_daily
+            WHERE code=? AND trade_date BETWEEN ? AND ?
+            """,
+            [code, pd.Timestamp(df["trade_date"].min()).date(),
+             pd.Timestamp(df["trade_date"].max()).date()],
+        )
+        fact_map = {
+            pd.Timestamp(row["trade_date"]).date(): bool(row["is_st"])
+            for _, row in facts.iterrows()
+            if row["quality"] == STStatusQuality.ACCURATE.value
+        }
+        missing = [
+            pd.Timestamp(day).date() for day in df["trade_date"].tolist()
+            if pd.Timestamp(day).date() not in fact_map
+        ]
+        if missing:
+            # 复权因子与 ST 无关，不能因 ST 尚未回填而阻塞因子修复。此时只更新
+            # 因子/pre_close；价格标记由 ST 刷新任务在事实齐备后统一重算。
+            marked = df
+        else:
+            point_st = [fact_map[pd.Timestamp(day).date()] for day in df["trade_date"]]
+            marked = add_markers(df, board_limit_pct, point_st)
         if anchor_date is not None:  # 只写锚点之后的新行
             marked = marked[marked["trade_date"] > pd.Timestamp(anchor_date)]
         if marked.empty:
             return 0
-        cols = ["code", "trade_date", "adj_factor_clean", "pre_close",
-                "is_st", "is_suspended", "limit_status", "is_one_word"]
+        cols = ["code", "trade_date", "adj_factor_clean", "pre_close"]
+        if not missing:
+            cols += ["is_st", "is_suspended", "limit_status", "is_one_word"]
         with self.c.temp_view(marked[cols], prefix="clean_rebuild") as v:
+            marker_sql = (
+                ", is_st = v.is_st, is_suspended = v.is_suspended, "
+                "limit_status = v.limit_status, is_one_word = v.is_one_word"
+                if not missing else ""
+            )
             self.c.execute(
                 "UPDATE daily_bar AS b SET "
-                "adj_factor_clean = v.adj_factor_clean, pre_close = v.pre_close, "
-                "is_st = v.is_st, is_suspended = v.is_suspended, "
-                "limit_status = v.limit_status, is_one_word = v.is_one_word "
+                f"adj_factor_clean = v.adj_factor_clean, pre_close = v.pre_close{marker_sql} "
                 f"FROM {v} AS v "
                 "WHERE b.code = v.code AND b.trade_date = v.trade_date"
             )
@@ -2106,7 +2483,6 @@ class IngestionService:
             try:
                 code6 = code.split(".")[0]
                 _, _, limit_pct = self._in_target_board(code6)
-                is_st = self._st_status_from_name_value(r["name"]).is_st
                 # 补 stock_basic 一行（退市股，含退市日）
                 self.repo.upsert_stock_basic(
                     pd.DataFrame([{
@@ -2116,7 +2492,7 @@ class IngestionService:
                     }])
                 )
                 rows = self.ingest_one_daily(
-                    code, start, r["delist_date"], limit_pct, is_st, source=bao
+                    code, start, r["delist_date"], limit_pct, source=bao
                 )
                 total_rows += rows
                 ok += 1

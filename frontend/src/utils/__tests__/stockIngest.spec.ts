@@ -64,4 +64,19 @@ describe('stock ingest shared form contract', () => {
     expect(isHeavyStockIngestRecipe('delisted_history')).toBe(true)
     expect(isHeavyStockIngestRecipe('daily_update')).toBe(false)
   })
+
+  it('builds full-history and scoped ST refresh params', () => {
+    const full = createStockIngestForm({ recipe: 'st_status_refresh' })
+    expect(buildStockIngestParams(full)).toEqual({ params: { recipe: 'st_status_refresh' } })
+    expect(isHeavyStockIngestRecipe('st_status_refresh')).toBe(true)
+
+    const scoped = createStockIngestForm({
+      recipe: 'st_status_refresh', scope: 'selected', codes: ['601919.SH'],
+      date_start: '2026-07-03', date_end: '2026-07-06',
+    })
+    expect(buildStockIngestParams(scoped)).toEqual({ params: {
+      recipe: 'st_status_refresh', codes: ['601919.SH'],
+      date_start: '2026-07-03', date_end: '2026-07-06',
+    } })
+  })
 })

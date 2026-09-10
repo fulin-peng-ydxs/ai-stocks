@@ -18,6 +18,15 @@ export interface Overview {
   latest_trade_date: string | null
   codes: { active: number; delisted: number }
   bar_rows: number
+  st_status: {
+    expected: number; present: number; accurate: number; approximate: number; missing: number
+    coverage_rate: number; ready: boolean; first_date: string | null; latest_date: string | null
+    updated_at: string | null
+    refresh_state: null | {
+      status: 'refreshing' | 'ready' | 'failed'; task_id: string | null; target_count: number
+      date_start: string | null; date_end: string | null; last_error: string | null; updated_at: string | null
+    }
+  }
   board?: {
     board_dict: number; board_member: number; board_bar: number; board_fund_flow: number
     concept_count: number; industry_count: number
@@ -511,6 +520,7 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
 export const ISSUE_TYPES_ACTIVE = [
   'null_close', 'ohl_repaired', 'mv_missing', 'mv_gap', 'abnormal_change',
   'price_volume_mismatch', 'adj_jump', 'data_gap', 'stale',
+  'st_status_missing', 'st_status_approximate', 'st_status_mismatch',
   'market_index_gap', 'market_index_gap_daily', 'market_index_invalid',
   'board_index_gap', 'board_index_gap_daily', 'board_index_invalid', 'board_member_incomplete',
   'board_fund_unmatched', 'board_fund_missing', 'board_fund_stale',
@@ -521,6 +531,9 @@ export const ISSUE_TYPE_LABEL: Record<string, string> = {
   mv_gap: '市值·近端缺某日', abnormal_change: '行情·涨跌幅异常',
   price_volume_mismatch: '行情·价量口径错配', adj_jump: '复权·因子跳变',
   data_gap: '行情·近端缺某日', stale: '行情·未更新到最新',
+  st_status_missing: 'ST状态·逐日事实缺失',
+  st_status_approximate: 'ST状态·非权威兼容值',
+  st_status_mismatch: 'ST状态·日线投影不一致',
   market_index_gap: '市场指数·未更新到最新',
   market_index_gap_daily: '市场指数·近端缺某日',
   market_index_invalid: '市场指数·字段非法',
@@ -580,6 +593,7 @@ export const ISSUE_LAYER: Record<string, string> = {
   null_close: 'L1', ohl_repaired: 'L1', mv_missing: 'L2', mv_gap: 'L2',
   abnormal_change: 'L3', price_volume_mismatch: 'L3', adj_jump: 'L3',
   data_gap: 'L4', stale: 'L4',
+  st_status_missing: 'ST', st_status_approximate: 'ST', st_status_mismatch: 'ST',
   market_index_gap: '指数', market_index_gap_daily: '指数', market_index_invalid: '指数',
   board_index_gap: '板块', board_index_gap_daily: '板块', board_index_invalid: '板块',
   board_member_incomplete: '板块', board_fund_unmatched: '板块',
@@ -591,6 +605,8 @@ export const RECOVER_ACTION_LABEL: Record<string, string> = {
   abnormal_change: '重采该日', price_volume_mismatch: '重采该日',
   adj_jump: '重采整段重算复权',
   data_gap: '重采缺口', stale: '增量补尾',
+  st_status_missing: '刷新ST状态', st_status_approximate: '刷新ST状态',
+  st_status_mismatch: '同步ST状态',
   market_index_gap: '补齐市场指数', market_index_gap_daily: '重采市场指数缺失日',
   market_index_invalid: '重采市场指数异常日',
   board_index_gap: '重采指数', board_index_gap_daily: '重采缺失日指数',
@@ -602,6 +618,7 @@ export const LAYER_LABEL: Record<string, string> = {
   L1: 'L1 入库闸门', L2: 'L2 字段契约', L3: 'L3 正确性', L4: 'L4 覆盖鲜活',
   指数: '市场指数维度',
   板块: '板块维度',  // 板块 issue 独立层（不混入个股 L1-L4 打分）
+  ST: 'ST 点时事实',
 }
 // 四层质量模型的权威说明（单一出处）：质量页 HelpTip / 概览逐股列等处统一引用此处，
 // 以后调整口径或新增层/指标只改这里，不再各页各写一份（避免漏改）。

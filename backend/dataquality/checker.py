@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 import numpy as np
 import pandas as pd
@@ -25,13 +25,17 @@ log = get_logger("dataquality.checker")
 _EPS = 1e-4  # 涨跌停价比较容差（已 2 位小数取整）
 
 
-def limit_pct_for(board_limit_pct: float, is_st: bool) -> float:
-    """有效涨跌幅限制（未知日期按 2026-07-06 前历史 ST 口径）。"""
-    return price_limit_pct_for(board_limit_pct, is_st)
+def limit_pct_for(
+    board_limit_pct: float, is_st: bool, trade_date: date | str | None = None
+) -> float:
+    """有效涨跌幅限制；历史计算应显式传交易日。"""
+    return price_limit_pct_for(board_limit_pct, is_st, trade_date)
 
 
 def add_markers(
-    df: pd.DataFrame, board_limit_pct: float, is_st: bool
+    df: pd.DataFrame,
+    board_limit_pct: float,
+    is_st: bool | list[bool] | pd.Series,
 ) -> pd.DataFrame:
     """为日线 df 计算 limit_status / is_one_word / is_st 列（不改原 df）。
 
@@ -40,17 +44,31 @@ def add_markers(
     - limit_down_price = half_up(pre_close*(1-pct), 2)；close<=该价 → 跌停(-1)。
     - is_one_word：开=高=低=收 且 触及涨/跌停（一字板）。
 
-    ⚠️ ST 时变局限（需求 §14.1 / SDD §6.2）：免费源只给"当前"ST 状态，
-    无法还原历史每日 ST。若按当前 ST 状态(5%)倒灌全部历史，会把该股历史上
-    非 ST 时期的正常 5~10% 涨幅误判为涨跌停。故 **limit_status 一律按板块涨跌幅
-    计算**（不应用 ST 5% 折扣）；`is_st` 列仍记录当前状态供 universe 过滤用。
-    ST 股本就被 exclude_st 过滤排除，其 limit_status 不参与回测撮合，无副作用。
+    ``is_st`` 可以是单值（兼容单日/测试调用）或与 df 等长的逐日状态。每行都通过
+    ``price_limit_pct_for`` 计算有效限制，因此主板 ST 的 2026-07-06 规则切换会真实
+    作用于行情标记，而不是只存在于独立撮合代码里。
     """
     out = df.copy()
-    pct = board_limit_pct  # 仅按板块；不倒灌当前 ST 状态（见上）
+    if isinstance(is_st, pd.Series):
+        st_values = is_st.reset_index(drop=True).astype(bool).tolist()
+    elif isinstance(is_st, (list, tuple, np.ndarray)):
+        st_values = [bool(value) for value in is_st]
+    else:
+        st_values = [bool(is_st)] * len(out)
+    if len(st_values) != len(out):
+        raise ValueError("is_st 逐日状态数量必须与行情行数一致")
+    dates = out["trade_date"].tolist() if "trade_date" in out.columns else [None] * len(out)
+    pcts = pd.Series(
+        [
+            price_limit_pct_for(board_limit_pct, st, trade_day)
+            for st, trade_day in zip(st_values, dates, strict=True)
+        ],
+        index=out.index,
+        dtype="float64",
+    )
     pre = out["pre_close"]
-    limit_up = (pre * (1 + pct)).map(round_price_to_cent)
-    limit_down = (pre * (1 - pct)).map(round_price_to_cent)
+    limit_up = (pre * (1 + pcts)).map(round_price_to_cent)
+    limit_down = (pre * (1 - pcts)).map(round_price_to_cent)
 
     is_up = out["close"] >= (limit_up - _EPS)
     is_down = out["close"] <= (limit_down + _EPS)
@@ -64,7 +82,7 @@ def add_markers(
         & (out["low"] == out["close"])
     )
     out["is_one_word"] = (flat & (out["limit_status"] != 0)).fillna(False)
-    out["is_st"] = bool(is_st)
+    out["is_st"] = st_values
     out["is_suspended"] = False
     return out
 
@@ -128,6 +146,9 @@ SEVERITY_BY_TYPE: dict[str, str] = {
     "mv_gap": "mid",           # 近端逐日市值字段缺口（total_mv/float_mv）——逐日缺、code 聚合
     "data_gap": "mid",         # 存续期缺口（疑似漏采，待重采反向确认）（M2.9.2 L4）
     "stale": "mid",            # 尾部鲜活滞后（最新<全局最新交易日）（M2.9.2 L4）
+    "st_status_missing": "high",       # 行情/停牌事实存在但缺逐日 ST 权威事实
+    "st_status_approximate": "high",   # 仍为名称推断等非权威兼容值
+    "st_status_mismatch": "high",      # 过渡投影与唯一事实不一致
     "market_index_gap": "mid",  # 配置市场指数未追平全局最新交易日
     "market_index_gap_daily": "mid",  # 配置市场指数近端具体开市日缺失
     "market_index_invalid": "mid",  # 配置市场指数 OHLC/成交字段非法
@@ -164,6 +185,9 @@ ISSUE_LAYER: dict[str, str] = {
     "adj_jump": "L3",
     "data_gap": "L4",
     "stale": "L4",
+    "st_status_missing": "ST",
+    "st_status_approximate": "ST",
+    "st_status_mismatch": "ST",
     # 市场基准指数独立层：不混入逐股质量评分，但进入同一质量台账与恢复闭环。
     "market_index_gap": "指数",
     "market_index_gap_daily": "指数",
@@ -184,6 +208,9 @@ L3_ISSUE_TYPES: tuple[str, ...] = (
     "abnormal_change", "price_volume_mismatch", "adj_jump",
 )
 L4_ISSUE_TYPES: tuple[str, ...] = ("data_gap", "stale")
+ST_ISSUE_TYPES: tuple[str, ...] = (
+    "st_status_missing", "st_status_approximate", "st_status_mismatch",
+)
 # 「标记正常」的精确豁免类型：只豁免同一对象、同一问题类型、同一交易日。
 # 其余状态型问题按对象与类型整体豁免，避免各扫描/采集入口自行写死而产生口径分叉。
 EXACT_IGNORE_ISSUE_TYPES: frozenset[str] = frozenset(
@@ -194,7 +221,7 @@ EXACT_IGNORE_ISSUE_TYPES: frozenset[str] = frozenset(
 # 能进入质检台账的完整问题类型集。调度、恢复参数校验统一复用这一契约，
 # 避免新增质量层问题后只能手工处理。
 QUALITY_ISSUE_TYPES: tuple[str, ...] = (
-    L1_ISSUE_TYPES + L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES
+    L1_ISSUE_TYPES + L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES + ST_ISSUE_TYPES
     + ("market_index_gap", "market_index_gap_daily", "market_index_invalid",
        "board_index_gap", "board_index_gap_daily", "board_index_invalid", "board_member_incomplete",
        "board_fund_unmatched", "board_fund_missing", "board_fund_stale")
@@ -203,7 +230,7 @@ QUALITY_ISSUE_TYPES: tuple[str, ...] = (
 # L1 由入库闸门即时记录，质检只做防御性补扫，不在此清表。
 # 板块自动扫描由 scan_board_quality 在同一事务内独立替换，避免扫描失败时先删旧问题。
 SCAN_ISSUE_TYPES: tuple[str, ...] = (
-    L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES
+    L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES + ST_ISSUE_TYPES
 )
 
 
@@ -242,14 +269,22 @@ class QualityChecker:
         from backend.market_rules import limit_prices, round_price_to_cent
 
         df = self.c.query_df(
-            "SELECT code, trade_date, close, pre_close FROM daily_bar WHERE code = ? AND pre_close IS NOT NULL",
+            "SELECT b.code,b.trade_date,b.close,b.pre_close,st.is_st,st.quality "
+            "FROM daily_bar b LEFT JOIN stock_st_status_daily st "
+            "ON st.code=b.code AND st.trade_date=b.trade_date "
+            "WHERE b.code = ? AND b.pre_close IS NOT NULL",
             [code],
         )
         if df.empty:
             return 0
         issues = []
         for _, row in df.iterrows():
-            up, down = limit_prices(float(row["pre_close"]), board_limit_pct)
+            if pd.isna(row["is_st"]) or row["quality"] != "accurate":
+                continue  # ST completeness is reported by the dedicated ST contract scan.
+            pct = price_limit_pct_for(
+                board_limit_pct, bool(row["is_st"]), row["trade_date"]
+            )
+            up, down = limit_prices(float(row["pre_close"]), pct)
             close = round_price_to_cent(float(row["close"]))
             if down - 0.011 <= close <= up + 0.011:
                 continue

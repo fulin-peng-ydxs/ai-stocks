@@ -7,7 +7,6 @@ from datetime import date
 
 import pytest
 
-from backend.limit_ladder.rules import STStatusQuality, resolve_point_in_time_st
 from backend.market_rules import (
     CloseLimitStatus,
     ListingBoard,
@@ -176,31 +175,3 @@ def test_suspension_is_a_publishable_non_limit_up_fact():
     )
     assert result.status is CloseLimitStatus.SUSPENDED
     assert result.is_publishable is True
-
-
-def test_accurate_st_fact_wins_over_current_name():
-    status = resolve_point_in_time_st(
-        name="普通名称",
-        accurate_is_st=True,
-        accurate_source="exchange_notice",
-        accurate_source_ref="notice-1",
-    )
-    assert status.is_st is True
-    assert status.quality is STStatusQuality.ACCURATE
-    assert status.source == "exchange_notice"
-
-
-@pytest.mark.parametrize(
-    ("name", "expected"),
-    [("*ST示例", True), ("S*ST示例", True), ("st示例", True), ("BEST科技", False), (None, False)],
-)
-def test_name_fallback_is_always_marked_approximate(name, expected):
-    status = resolve_point_in_time_st(name=name)
-    assert status.is_st is expected
-    assert status.quality is STStatusQuality.APPROXIMATE
-    assert status.source == "stock_name"
-
-
-def test_accurate_st_fact_requires_traceable_source():
-    with pytest.raises(ValueError, match="requires accurate_source"):
-        resolve_point_in_time_st(name="ST示例", accurate_is_st=True)

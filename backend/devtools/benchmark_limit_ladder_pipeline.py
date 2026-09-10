@@ -200,11 +200,11 @@ def seed_scale_fixture(
     )
     _insert_frame(client, "stock_board_correlation", correlation)
     _insert_frame(client, "stock_st_status_daily", pd.DataFrame({
-        "code": codes,
-        "trade_date": TRADE_DATE,
-        "is_st": is_st,
+        "code": np.repeat(np.asarray(codes, dtype=object), trade_days),
+        "trade_date": np.tile(np.asarray(days, dtype=object), stock_count),
+        "is_st": row_is_st,
         "source": "scale_fixture",
-        "source_ref": [f"scale-{index}" for index in indexes],
+        "source_ref": [f"scale-{index}" for index in row_indexes],
         "quality": "accurate",
         "captured_at": now,
         "updated_at": now,

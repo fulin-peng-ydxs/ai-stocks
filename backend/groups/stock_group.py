@@ -349,6 +349,28 @@ class StockGroupRepo:
         last_px = dict(zip(last["code"], last["px"]))
         last_pct = dict(zip(last["code"], last["day_pct"]))
         last_d = {c: str(pd.Timestamp(d).date()) for c, d in zip(last["code"], last["trade_date"])}
+        from backend.services.stock_st_status import StockSTStatusService
+
+        status_date = trade_date
+        if status_date is None:
+            latest = self.mkt.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]
+            status_date = None if pd.isna(latest) else pd.Timestamp(latest).date()
+        st_map: dict[str, bool] = {}
+        st_codes_by_date: dict[date, list[str]] = {}
+        if status_date is not None:
+            for code in codes:
+                basic = basics.get(code, {})
+                delist_date = basic.get("delist_date")
+                point_date = status_date
+                if delist_date is not None and not pd.isna(delist_date):
+                    last_value = last_d.get(code)
+                    if last_value is None:
+                        continue
+                    point_date = pd.Timestamp(last_value).date()
+                st_codes_by_date.setdefault(point_date, []).append(code)
+        st_service = StockSTStatusService(self.mkt)
+        for point_date, point_codes in st_codes_by_date.items():
+            st_map.update(st_service.status_map(point_date, point_codes))
         # 3) 内存合并
         out = []
         for _, r in m.iterrows():
@@ -380,7 +402,7 @@ class StockGroupRepo:
                 "pct_chg": round(float(dpct), 2) if dpct is not None and not pd.isna(dpct) else None,
                 "note": r["note"] or "",
                 "_board": basic.get("board"),
-                "_is_st": "ST" in str(name or "").upper(),
+                "_is_st": bool(st_map.get(code, False)),
                 "_delisted": delist_date is not None and not pd.isna(delist_date),
             })
         return out

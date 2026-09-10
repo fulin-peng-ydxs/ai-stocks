@@ -117,6 +117,28 @@ def price_limit_pct_for(
     return MAIN_BOARD_ST_OLD_LIMIT
 
 
+def price_limit_pct_sql(
+    board_limit_expr: str,
+    is_st_expr: str,
+    trade_date_expr: str,
+) -> str:
+    """Return the SQL form of :func:`price_limit_pct_for` for internal bulk checks.
+
+    The expressions are supplied only by trusted backend code, never from request input.
+    Keeping the cutoff and branch order here prevents large-table verification SQL from
+    growing a second hard-coded market-rule implementation.
+    """
+    board = f"COALESCE(({board_limit_expr}),0.10)"
+    cutoff = MAIN_BOARD_ST_10_EFFECTIVE_DATE.isoformat()
+    return (
+        "CASE "
+        f"WHEN NOT COALESCE(({is_st_expr}),FALSE) THEN {board} "
+        f"WHEN {board}>=0.20-1e-12 THEN {board} "
+        f"WHEN CAST(({trade_date_expr}) AS DATE)>=DATE '{cutoff}' THEN {board} "
+        f"ELSE {MAIN_BOARD_ST_OLD_LIMIT} END"
+    )
+
+
 def listing_board_for(*, board: str | None = None, code: str | None = None) -> ListingBoard | None:
     """Resolve the three supported listing boards without an unsafe default."""
     normalized = (board or "").strip().lower()

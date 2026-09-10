@@ -16,6 +16,8 @@ from backend.scheduler.scheduler import SCHEDULABLE_TASK_TYPES
 from backend.services import async_task as async_task_module
 from backend.services.async_task import TASK_CAPABILITIES, TASK_TYPES, AsyncTaskService
 from backend.services.limit_ladder_task_coordinator import LimitLadderTaskCoordinator
+from backend.limit_ladder.rules import PointInTimeSTStatus, STStatusQuality
+from backend.services.stock_st_status import StockSTStatusFact, StockSTStatusService
 from backend.storage.limit_ladder_task_repository import (
     LimitLadderTaskCommand,
     LimitLadderTaskRepository,
@@ -480,6 +482,18 @@ def test_limit_ladder_handler_materializes_and_closes_pg_command(market, monkeyp
         "is_st": False,
         "is_suspended": False,
     }]))
+    StockSTStatusService(market).upsert_facts([
+        StockSTStatusFact(
+            code="600001.SH",
+            trade_date=trade_date,
+            status=PointInTimeSTStatus(
+                is_st=False,
+                source="test_fixture",
+                source_ref="test_limit_ladder_t5",
+                quality=STStatusQuality.ACCURATE,
+            ),
+        )
+    ], change_reason="test_fixture", captured_at=datetime.now(UTC))
     transitions: list[tuple[str, dict]] = []
 
     class FakeCoordinator:

@@ -89,7 +89,7 @@ def test_st_status_batch_is_idempotent_and_tracks_real_changes(market):
     ).iloc[0]["n"]) == 2
 
 
-def test_ingest_one_daily_persists_approximate_st_fact(market, monkeypatch):
+def test_ingest_one_daily_persists_accurate_st_fact(market, monkeypatch):
     market.execute(
         "INSERT INTO stock_basic (code,name,board,price_limit_pct,list_date) "
         "VALUES ('600001.SH','*ST示例','主板',0.10,DATE '2020-01-01')"
@@ -118,6 +118,14 @@ def test_ingest_one_daily_persists_approximate_st_fact(market, monkeypatch):
         "_fetch_daily_with_fallback",
         lambda *args, **kwargs: (bars.copy(), service.s.datasource.primary),
     )
+    monkeypatch.setattr(
+        service,
+        "_accurate_st_facts",
+        lambda *args, **kwargs: [StockSTStatusFact(
+            code="600001.SH", trade_date=date(2026, 8, 28),
+            status=_status(True, "baostock", STStatusQuality.ACCURATE),
+        )],
+    )
     assert service.ingest_one_daily(
         "600001.SH", date(2026, 8, 28), date(2026, 8, 28), board_limit_pct=0.10
     ) == 1
@@ -125,8 +133,8 @@ def test_ingest_one_daily_persists_approximate_st_fact(market, monkeypatch):
         "SELECT is_st,source,quality FROM stock_st_status_daily"
     ).iloc[0]
     assert bool(row["is_st"]) is True
-    assert row["source"] == "stock_name"
-    assert row["quality"] == "approximate"
+    assert row["source"] == "baostock"
+    assert row["quality"] == "accurate"
 
 
 def test_ingest_one_daily_cannot_downgrade_accurate_st_fact_or_daily_marker(
@@ -168,6 +176,11 @@ def test_ingest_one_daily_cannot_downgrade_accurate_st_fact_or_daily_marker(
         service,
         "_fetch_daily_with_fallback",
         lambda *args, **kwargs: (bars.copy(), service.s.datasource.primary),
+    )
+    monkeypatch.setattr(
+        service,
+        "_accurate_st_facts",
+        lambda *args, **kwargs: [accurate],
     )
 
     assert service.ingest_one_daily(
@@ -272,6 +285,18 @@ def _seed_ladder_fixture(market) -> tuple[list[date], date]:
         "is_one_word": False,
     })
     MarketRepository(market).upsert_daily_bar(pd.DataFrame(rows))
+    fact_rows = market.query_df("SELECT code,trade_date FROM daily_bar")
+    StockSTStatusService(market).upsert_facts(
+        [
+            StockSTStatusFact(
+                code=str(row["code"]),
+                trade_date=pd.Timestamp(row["trade_date"]).date(),
+                status=_status(False, "baostock", STStatusQuality.ACCURATE),
+            )
+            for _, row in fact_rows.iterrows()
+        ],
+        change_reason="fixture",
+    )
     market.execute(
         "INSERT INTO stock_suspension (code,trade_date,confirmed_at) "
         "VALUES ('600002.SH',?,current_timestamp)",
@@ -375,6 +400,18 @@ def test_calculator_uses_per_stock_window_and_missing_day_breaks_streak(market):
         "turnover_rate": 1.0,
     })
     MarketRepository(market).upsert_daily_bar(pd.DataFrame(rows))
+    fact_rows = market.query_df("SELECT code,trade_date FROM daily_bar")
+    StockSTStatusService(market).upsert_facts(
+        [
+            StockSTStatusFact(
+                code=str(row["code"]),
+                trade_date=pd.Timestamp(row["trade_date"]).date(),
+                status=_status(False, "baostock", STStatusQuality.ACCURATE),
+            )
+            for _, row in fact_rows.iterrows()
+        ],
+        change_reason="fixture",
+    )
 
     result = LimitLadderCalculator(market).calculate(days[-1], window=20)
     by_code = {stock.code: stock for stock in result.stocks}

@@ -33,7 +33,7 @@ score = 超额收益得分×0.40 + 绝对收益得分×0.25 + 回撤控制得分
 
 **随机抽样校验**（`create_session`）：最大重试 80 次（`MAX_PICK_RETRY`），每次随机起点 → `MarketRepository.get_universe_asof` 取当日候选池 → 校验：起点前 ≥60 历史交易日（`MIN_HISTORY`）、起点后有 ≥window_days 连续交易日数据、窗口内不退市；multi 模式用 `used_codes` 集合去重。
 
-训练默认硬性股票池来自 `get_effective_settings().universe`，前端只显式暴露“排除 ST”和“板块”两个筛选项：
+训练默认硬性股票池来自 `get_effective_settings().universe`，前端只显式暴露“排除 ST”和“板块”两个筛选项。ST 过滤和训练撮合的涨跌停比例均读取 `stock_st_status_daily` 准确点时事实；缺失、非权威或刷新未发布时失败关闭：
 
 | 规则 | 默认值 / 口径 |
 |------|---------------|

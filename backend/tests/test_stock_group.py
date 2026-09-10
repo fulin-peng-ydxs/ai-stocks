@@ -41,6 +41,13 @@ def _seed_market(c):
     c.register_df("_basic", basic)
     c.execute("INSERT INTO stock_basic (code, name) SELECT code, name FROM _basic")
     c.unregister("_basic")
+    c.execute(
+        "INSERT INTO stock_st_status_daily "
+        "(code,trade_date,is_st,source,source_ref,quality,captured_at,updated_at) "
+        "SELECT code,trade_date,code='B','baostock',"
+        "'query_history_k_data_plus:isST','accurate',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP "
+        "FROM daily_bar"
+    )
 
 
 @pytest.fixture()
@@ -134,6 +141,13 @@ def test_group_page_attaches_related_boards_by_each_members_last_date(repo):
     repo.mkt.execute(
         "INSERT INTO daily_bar (code,trade_date,close,pre_close,adj_factor) VALUES "
         "('600000.SH',?,10.5,10.0,1.0)",
+        [as_of],
+    )
+    repo.mkt.execute(
+        "INSERT INTO stock_st_status_daily "
+        "(code,trade_date,is_st,source,source_ref,quality,captured_at,updated_at) "
+        "VALUES ('600000.SH',?,FALSE,'baostock','query_history_k_data_plus:isST',"
+        "'accurate',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
         [as_of],
     )
     repo.mkt.execute(

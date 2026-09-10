@@ -70,6 +70,9 @@ class LimitLadderSnapshotService:
         self.c = client or get_client()
 
     def check_coverage(self, trade_date: date) -> LimitLadderCoverage:
+        from backend.services.stock_st_status import StockSTStatusService
+
+        StockSTStatusService(self.c).assert_published()
         checked_at = self._now().isoformat()
         calendar_rows = self.c.query_df(
             "SELECT trade_date FROM trade_calendar WHERE trade_date=? AND is_open",
@@ -115,6 +118,7 @@ class LimitLadderSnapshotService:
         terminal_status, run_id = self._latest_terminal(trade_date)
 
         valid = suspended = missing = invalid = unsupported = 0
+        st_not_ready = 0
         samples: list[str] = []
         fingerprint_rows: list[dict] = []
         calculator = LimitLadderCalculator(self.c)
@@ -134,6 +138,12 @@ class LimitLadderSnapshotService:
                 missing += 1
                 self._sample(samples, code)
                 fingerprint_rows.append({"code": code, "fact": "unconfirmed_suspension"})
+                continue
+            if pd.isna(fact.get("st_source")) or fact.get("st_quality") != "accurate":
+                st_not_ready += 1
+                invalid += 1
+                self._sample(samples, code)
+                fingerprint_rows.append({"code": code, "fact": "st_status_not_ready"})
                 continue
             if not self._valid_ohlc(fact):
                 invalid += 1
@@ -188,6 +198,8 @@ class LimitLadderSnapshotService:
             reasons.append("INVALID_DAILY_BAR")
         if unsupported:
             reasons.append("UNSUPPORTED_LIMIT_RULE")
+        if st_not_ready:
+            reasons.append("ST_STATUS_NOT_READY")
         concepts = self._concept_fingerprint(codes, trade_date)
         industries = self._industry_fingerprint()
         fingerprint = self._fingerprint(

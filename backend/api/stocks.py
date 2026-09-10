@@ -95,13 +95,42 @@ def list_stocks(q: str | None = None, board: str | None = None,
     """个股列表（按交易日展示当日涨跌幅 + 上市板块/行业概念归属筛选 + 服务端排序）。
 
     board: 主板/创业板/科创板 / 'ST'(只看 ST) / '退市'(只看退市)；除 '退市' 外均排除已退市。
-    exclude_st=true 且非 ST 板块 → 过滤名称含 ST 的股票。
+    exclude_st=true 且非 ST 板块 → 过滤该交易日的权威 ST 点时事实。
     trade_date 默认最新交易日，LEFT JOIN 当日行情算涨跌幅 pct_chg。
     sort_by ∈ {pct_chg,close,name,industry,code}，sort_order ∈ {asc,desc}；NULL（停牌）恒排末尾。
     """
     c = get_client()
     td = (trade_date if trade_date else pd.Timestamp(
         c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]).date())
+    from backend.services.stock_st_status import StockSTStatusService
+
+    if board == "退市":
+        missing = c.query_df(
+            "SELECT sb.code FROM stock_basic sb WHERE sb.delist_date IS NOT NULL "
+            "AND NOT EXISTS (SELECT 1 FROM stock_st_status_daily st "
+            "WHERE st.code=sb.code AND st.trade_date<=LEAST(sb.delist_date, ?) "
+            "AND st.quality='accurate') LIMIT 5",
+            [td],
+        )["code"].astype(str).tolist()
+        if missing:
+            from backend.services.stock_st_status import STStatusNotReadyError
+
+            raise STStatusNotReadyError(
+                f"退市股票缺少退市前 ST 点时事实，示例 {','.join(missing)}；请先运行 ST状态刷新"
+            )
+        st_join = (
+            "LEFT JOIN LATERAL (SELECT s.is_st FROM stock_st_status_daily s "
+            "WHERE s.code=sb.code AND s.trade_date<=LEAST(sb.delist_date, ?) "
+            "AND s.quality='accurate' ORDER BY s.trade_date DESC LIMIT 1) st ON TRUE "
+        )
+    else:
+        listed_codes = c.query_df(
+            "SELECT code FROM stock_basic WHERE (list_date IS NULL OR list_date<=?) "
+            "AND delist_date IS NULL",
+            [td],
+        )["code"].astype(str).tolist()
+        StockSTStatusService(c).status_map(td, listed_codes)
+        st_join = "JOIN stock_st_status_daily st ON st.code=sb.code AND st.trade_date=? "
     conds, params = ["1=1"], []
     if q:
         conds.append("(sb.code LIKE ? OR sb.name LIKE ?)")
@@ -111,12 +140,12 @@ def list_stocks(q: str | None = None, board: str | None = None,
     else:
         conds.append("sb.delist_date IS NULL")        # 其他板块一律排除退市
         if board == "ST":
-            conds.append("sb.name LIKE '%ST%'")
+            conds.append("st.is_st IS TRUE")
         elif board:
             conds.append("sb.board = ?")
             params.append(board)
         if exclude_st and board != "ST":
-            conds.append("sb.name NOT LIKE '%ST%'")
+            conds.append("st.is_st IS FALSE")
     if membership_board_code:
         conds.append(
             "EXISTS (SELECT 1 FROM board_member bm "
@@ -127,19 +156,25 @@ def list_stocks(q: str | None = None, board: str | None = None,
         )
         params.extend([membership_board_code, td])
     where = " AND ".join(conds)
-    total = int(c.query_df(f"SELECT count(*) AS n FROM stock_basic sb WHERE {where}", params).iloc[0]["n"])
+    total = int(c.query_df(
+        f"SELECT count(*) AS n FROM stock_basic sb "
+        f"{st_join}"
+        f"WHERE {where}",
+        [td, *params],
+    ).iloc[0]["n"])
 
     col = _STOCK_SORT_COLS.get(sort_by, "pct_chg")
     order = "DESC" if str(sort_order).lower() == "desc" else "ASC"
     order_clause = f"{col} {order} NULLS LAST, sb.code ASC"
     df = c.query_df(
         f"SELECT sb.code, sb.name, sb.board, sb.industry, sb.list_date, sb.delist_date, "
-        f"       (sb.name LIKE '%ST%') AS is_st, b.close AS close, "
+        f"       st.is_st AS is_st, b.close AS close, "
         f"       CASE WHEN b.pre_close > 0 THEN (b.close / b.pre_close - 1) * 100 END AS pct_chg "
         f"FROM stock_basic sb "
+        f"{st_join}"
         f"LEFT JOIN daily_bar b ON b.code = sb.code AND b.trade_date = ? "
         f"WHERE {where} ORDER BY {order_clause} LIMIT {int(size)} OFFSET {int((page-1)*size)}",
-        [td, *params])
+        [td, td, *params])
     rows = df.to_dict("records")
     ctx = get_current_context()
     can_view_groups = bool(

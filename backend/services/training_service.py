@@ -296,9 +296,10 @@ class TrainingService:
         return float(df.iloc[0]["price_limit_pct"])
 
     def _effective_price_limit_pct(self, code: str, trade_date: date, board_pct: float) -> float:
-        df = self.c.query_df("SELECT name FROM stock_basic WHERE code = ?", [code])
-        name = "" if df.empty or pd.isna(df.iloc[0]["name"]) else str(df.iloc[0]["name"])
-        return price_limit_pct_for(board_pct, "ST" in name.upper(), trade_date)
+        from backend.services.stock_st_status import StockSTStatusService
+
+        is_st = StockSTStatusService(self.c).status_map(trade_date, [code])[code]
+        return price_limit_pct_for(board_pct, is_st, trade_date)
 
     # ════════════════════════════════════════════════════════════
     # 读取与视图

@@ -8,21 +8,21 @@
 
 ### 数据源适配（`backend/datasource/`）
 - 主源 **AKShare**（新浪日线/指数/日历/股票列表 + 东财单只估值 `stock_value_em`）、备源 **baostock**（退市股历史、复权因子兜底）。能力按 `capabilities` 声明，编排层 `IngestionService._source_for(capability)` 按能力选源（主源支持→主源，否则备源），不硬编码"谁负责什么"。
-- 统一封装**限流**（`rate_limited`，按生效配置 `rate_limit_per_sec`）、**重试**（`with_retry`，指数退避）、**超时**（模块级注入 requests 默认超时）、**兜底**（主源取空→备源）、**溯源**（`data_source_provenance` 记录每段数据来自哪个源）。
+- 统一封装**限流**（`rate_limited`，按生效配置 `rate_limit_per_sec`）、**重试**（`with_retry`，指数退避）、**超时**（模块级注入 requests 默认超时）、**兜底**（主源取空→备源）、**溯源**（`data_source_provenance` 记录每段数据来自哪个源）。Baostock 同时提供与日线日期对齐的历史 `isST`；完整闭环见 [st-status.md](st-status.md)。
 
 ### 双库数据资产目录（`backend/storage/catalog.py`）
 
-- `GET /api/data/catalog` 面向系统管理员自动发现 DuckDB `main` 与 PostgreSQL `public` 的物理表和字段，并在服务层合并；两库之间不执行跨库 JOIN。当前迁移完成态包含 85 张当前事实表（DuckDB 26、PostgreSQL 59）和 28 张默认隐藏的 DuckDB 迁移旧表。
-- 系统目录提供原生类型、可空性、默认值、主键和外键；代码只维护中文名、用途、业务分类、归属范围、数据源和关系等业务注解。未登记的新物理表仍以 `unregistered` 展示，不能因缺注解而消失。
+- `GET /api/data/catalog` 面向系统管理员自动发现 DuckDB `main` 与 PostgreSQL `public` 的物理表和字段，并在服务层合并；两库之间不执行跨库 JOIN。当前迁移完成态包含 86 张当前事实表（DuckDB 27、PostgreSQL 59）和 28 张默认隐藏的 DuckDB 迁移旧表。
+- 系统目录提供原生类型、可空性、默认值、主键和外键；代码只维护中文名、用途、业务分类、归属范围、数据源和关系等业务注解。未登记的新物理表仍以 `unregistered` 展示，不能因缺注解而消失。ST 当前事实、变更历史和刷新发布状态均归“行情参考”。
 - 列表行数使用数据库系统目录的快速估算；只有明确指定 `database + table` 时才允许单表 `COUNT(*)` 精确统计。表名先通过发现结果白名单校验；DuckDB 只报告数据库文件总大小，PostgreSQL 另报告表及索引空间。
 - 生命周期为 `active | legacy_readonly | unregistered`。任务运行态复用 `task_runtime_backend()`，平台布局配置复用配置迁移路由函数；受控回滚后事实源和旧表状态随真实 marker 自动切换，不维护第二套路由判断。
-- 连板天梯的 9 张 DuckDB 分析事实表与 2 张 PG 协调表全部进入目录。四张快照子表分别通过 `snapshot_id` 关联当前有效快照取得最新业务日；失效 outbox 展示更新时间与 pending 数，不套用行情鲜活度。
+- 连板天梯的 7 张 DuckDB 分析事实表、ST 的 3 张行情参考表与 2 张 PG 协调表全部进入目录。四张快照子表分别通过 `snapshot_id` 关联当前有效快照取得最新业务日；失效 outbox 展示更新时间与 pending 数，不套用行情鲜活度。
 - `GET /api/data/dimensions` 继续保存股东数据、筹码分布等尚无物理表的规划维度；前端将其单列为“规划中”，不与物理表统计混用。
 
 ### 入库清洗与复权口径（`backend/dataquality/checker.py`、`storage/repository.py`）
 - **L1 入库闸门** `sanitize_bars`：收盘价空/≤0 的行直接丢弃（记 `null_close`）；开高低缺失/≤0 用收盘价回填（记 `ohl_repaired`）；零成交量补 0。坏行入库即拦截/标记，不进下游。
 - **复权口径分离**（关键正确性约定）：源因子 `adj_factor` 仅用于 K 线前复权；`pre_close`（涨跌停判定基准）走**独立清洗因子**；去抖列 `adj_factor_clean` 是复权查询的统一口径（`COALESCE(adj_factor_clean, adj_factor)`）。`rebuild-price-factors` 全序列重算这三者，不联网、不改源 `adj_factor`。
-- **涨跌停与 ST 标记口径**：`daily_bar.limit_status` / `is_one_word` 由 `add_markers` 用原始 `pre_close` 按 A 股分位价格计算，涨停价 = `Decimal(pre_close × (1 + pct), ROUND_HALF_UP)` 到分，跌停价同理；当前入库标记的 `pct` 只用板块限制（主板 10%、创业板/科创板 20%），不把“当前名称含 ST”倒灌为历史 5%，避免把股票非 ST 历史阶段的 5%~10% 正常涨跌误标为涨跌停。`daily_bar.is_st` 仍按当前名称含 `ST` 写入，供默认股票池过滤；它不是点时 ST 时间线。回测撮合另按交易日规则处理 ST 比例：主板 ST 2026-07-06 前 5%、之后 10%，创业板/科创板 ST 20%。
+- **涨跌停与 ST 标记口径**：`stock_st_status_daily` 是唯一 ST 点时事实；日线采集按同一日期集合读取 Baostock `isST`，禁止名称推断和默认非 ST。`daily_bar.is_st` 仅是同步投影，不供业务读取。`daily_bar.limit_status` / `is_one_word` 由 `add_markers` 用原始 `pre_close`、逐日 ST 和中央市场规则计算，涨跌停价按 `ROUND_HALF_UP` 到分。主板 ST 2026-07-06 前 5%、当日起 10%，创业板/科创板 ST 20%；入库、质检、训练、回测和天梯共用该规则。完整契约见 [st-status.md](st-status.md)。
 - **除权参考价校准**：新浪不直接提供官方 `pre_close`，由分位原价与后复权价反推时可能产生一分钱精度损失。适配器标记真实复权因子切换日；仅当该误差会令收盘价越过合法涨跌停边界时，入库层用直接提供 `preclose` 的 baostock 定向交叉校准。校准源不可用时该行拒绝落库，避免合法除权行情被持续误报且反复重采无法恢复。
 
 ### 市值口径（`daily_metrics` 表，仅 `code, trade_date, float_mv, total_mv` 四列）
@@ -50,9 +50,10 @@
 | L1 入库闸门 | `null_close` / `ohl_repaired` | 采集时即时记录 | 逐(code,日) |
 | L2 字段契约 | `mv_missing` | 整股从没采过 total_mv/float_mv | 整股 |
 | | `mv_gap` | 近 90 交易日逐日市值字段缺口（`total_mv`/`float_mv` 任一为空或缺行） | code 聚合（detail 写区间）|
-| L3 正确性 | `abnormal_change` | `\|涨跌\|>板块上限+0.5%` | 逐(code,日) |
+| L3 正确性 | `abnormal_change` | `\|涨跌\|>逐日板块/ST 上限` 且收盘分价越过合法边界 | 逐(code,日) |
 | | `adj_jump` | 相邻日前复权价跳变>50% | 逐(code,日) |
 | L4 覆盖鲜活 | `data_gap` / `stale` | 近 90 交易日内部缺口/尾部滞后（扣已确认停牌） | 整股 |
+| ST 点时事实 | `st_status_missing` / `st_status_approximate` / `st_status_mismatch` | 缺事实、非权威或日线投影不同步 | code 聚合（detail 写区间） |
 
 市场指数不混入个股 L1-L4 评分，但使用同一 `data_quality_issue` 台账和修复状态机。对当前配置的每只基准指数分别检查：`market_index_gap` 表示未追平全局最新交易日，`market_index_gap_daily` 表示近端某个开市日缺失，`market_index_invalid` 表示非开市日数据、OHLC 非正/越界或成交量额为负。数据目录的 `index_bar` 鲜活度同样要求每只已配置指数都不落后，不再被全表单个最新值掩盖。
 
@@ -74,7 +75,7 @@
 - **并发行情防串票**：新浪不复权与后复权响应必须覆盖同一日期集合，且同日成交量、成交额必须一致；不复权行情的成交均价还必须落在 OHLC 区间内（保留小幅舍入容差）。任一条件不满足都视为数据源语义失败，整对响应自动重试，重试耗尽后才进入备源，禁止把请求代码补到未经配对验证的行情上。
 - **受控停服安全**：健康端点公开且只公开 PG（迁移前为 DuckDB）中的 `pending/running` 任务数量，同时返回 `task_runtime_backend` 与 DuckDB 读池统计。`./start.sh stop`、`restart` 和 `stop-if-idle` 统一先读取该数量；健康状态或任务数量无法可信读取、或者仍有活跃任务时一律 fail-closed，不得停止服务。只有操作人明确接受中断任务时才使用 `stop --force` 或 `restart --force`；内部补偿路径也必须显式传入 `--force`，其余切换路径不得绕过检查。
 
-行情采集的三类旧任务共用"日历→指数→逐股日线→刷净复权因子"主链，差异是**刻意**的，不应在服务层强行抹平。Web 新入口统一提交 `stock_ingest`，通过安全场景分派到这些既有服务；旧 `update/backfill/ingest_date/ingest_codes` 任务和历史调度继续兼容：
+行情采集的三类旧任务共用"日历→指数→逐股日线及 ST 点时事实→刷净复权因子"主链，差异是**刻意**的，不应在服务层强行抹平。Web 新入口统一提交 `stock_ingest`，通过安全场景分派到这些既有服务；另有“ST状态刷新”方案用于全市场/指定股票和全历史/指定区间校准，不新增任务类型。旧 `update/backfill/ingest_date/ingest_codes` 任务和历史调度继续兼容：
 
 | 维度 | `update` 增量 | `backfill` 全量补数 | `ingest_date` 指定日期 |
 |------|--------------|--------------------|----------------------|

@@ -200,6 +200,13 @@ class MarketRepository:
         mv_max = f.get("float_mv_max", u.float_mv_max)
         boards = f.get("boards", u.boards)
 
+        from backend.services.stock_st_status import StockSTStatusService
+
+        day_codes = self.c.query_df(
+            "SELECT code FROM daily_bar WHERE trade_date=? ORDER BY code", [asof]
+        )["code"].astype(str).tolist()
+        StockSTStatusService(self.c).status_map(asof, day_codes)
+
         conds = ["b.trade_date = ?"]  # 当日有行情 = 已上市且未停牌（点时存活）
         params: list = [asof]
 
@@ -209,7 +216,7 @@ class MarketRepository:
             conds.append(f"sb.board IN ({placeholders})")
             params.extend(boards)
         if exclude_st:
-            conds.append("b.is_st = FALSE")
+            conds.append("st.is_st = FALSE")
         if exclude_one_word:
             conds.append("NOT (b.is_one_word AND b.limit_status = 1)")
         # 次新剔除：截至 asof 已有交易日数 >= min_list_days
@@ -229,6 +236,7 @@ class MarketRepository:
         sql = (
             "SELECT b.code FROM daily_bar b "
             "JOIN stock_basic sb ON sb.code = b.code "
+            "JOIN stock_st_status_daily st ON st.code=b.code AND st.trade_date=b.trade_date "
             f"{mv_join} "
             f"WHERE {' AND '.join(conds)} "
             "ORDER BY b.code"

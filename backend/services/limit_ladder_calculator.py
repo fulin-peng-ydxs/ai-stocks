@@ -11,7 +11,6 @@ import pandas as pd
 from backend.limit_ladder.rules import (
     PointInTimeSTStatus,
     STStatusQuality,
-    resolve_point_in_time_st,
 )
 from backend.market_rules import (
     CloseLimitStatus,
@@ -147,6 +146,9 @@ class LimitLadderCalculator:
                 fact.get("is_suspended")
             ):
                 continue
+            if pd.isna(fact.get("st_source")) or fact.get("st_quality") != "accurate":
+                self._add_issue(issues, code, trade_date, "ST_STATUS_NOT_READY")
+                continue
             result, st_status = self.evaluate_fact(
                 code=code,
                 basic=row,
@@ -183,13 +185,17 @@ class LimitLadderCalculator:
                     fact = facts.get((code, day))
                     result = None
                     if fact is not None and not self._bool_value(fact.get("confirmed_suspension")):
-                        result, _ = self.evaluate_fact(
-                            code=code,
-                            basic=basic,
-                            fact=fact,
-                            calendar=calendar,
-                        )
-                        self._record_rule_issue(issues, code, day, result.status)
+                        if pd.isna(fact.get("st_source")) or fact.get("st_quality") != "accurate":
+                            if day in window_set:
+                                self._add_issue(issues, code, day, "ST_STATUS_NOT_READY")
+                        else:
+                            result, _ = self.evaluate_fact(
+                                code=code,
+                                basic=basic,
+                                fact=fact,
+                                calendar=calendar,
+                            )
+                            self._record_rule_issue(issues, code, day, result.status)
                     elif day in window_set and list_date is not None and day >= list_date:
                         self._add_issue(issues, code, day, "MISSING_BAR_OR_SUSPENSION")
 
@@ -507,7 +513,12 @@ class LimitLadderCalculator:
                 source_ref=None if pd.isna(source_ref) else str(source_ref),
                 quality=STStatusQuality(str(fact.get("st_quality"))),
             )
-        return resolve_point_in_time_st(name=LimitLadderCalculator._text(basic.get("name")))
+        from backend.services.stock_st_status import STStatusNotReadyError
+
+        raise STStatusNotReadyError(
+            f"{fact.get('trade_date')} {basic.get('code') or ''} 缺少 ST 点时事实；"
+            "连板天梯禁止用当前名称兜底"
+        )
 
     def _concepts_for(
         self, codes: list[str], trade_date: date

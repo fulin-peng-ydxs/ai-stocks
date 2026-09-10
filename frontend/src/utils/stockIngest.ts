@@ -6,6 +6,7 @@ export type StockIngestRecipe =
   | 'valuation_gaps'
   | 'basic_refresh'
   | 'delisted_history'
+  | 'st_status_refresh'
 
 export type StockIngestScope = 'all' | 'selected'
 
@@ -33,6 +34,7 @@ export const STOCK_INGEST_RECIPE_OPTIONS: Array<{
   { value: 'valuation_gaps', label: '市值缺口修复', description: '按已有日线逐股补齐总市值和流通市值缺口', heavy: true },
   { value: 'basic_refresh', label: '基础资料刷新', description: '刷新上市日、退市日和行业，固定全市场' },
   { value: 'delisted_history', label: '退市股历史补全', description: '先刷新基础资料，再补回测窗口内退市股历史', heavy: true },
+  { value: 'st_status_refresh', label: 'ST状态刷新', description: '用 Baostock 逐日事实回写全部或指定股票/区间，并失效受影响结果', heavy: true },
 ]
 
 export const STOCK_INGEST_RECIPE_LABEL = Object.fromEntries(
@@ -41,6 +43,7 @@ export const STOCK_INGEST_RECIPE_LABEL = Object.fromEntries(
 
 const CODE_RECIPES = new Set<StockIngestRecipe>([
   'daily_update', 'history_backfill', 'range_refetch', 'valuation_history', 'valuation_gaps',
+  'st_status_refresh',
 ])
 const YEAR_RECIPES = new Set<StockIngestRecipe>([
   'history_backfill', 'valuation_history', 'delisted_history',
@@ -85,11 +88,13 @@ export function buildStockIngestParams(
     if (!form.codes.length) return { error: '指定股票范围时请至少选择一只股票' }
     params.codes = [...form.codes]
   }
-  if (form.recipe === 'range_refetch') {
-    if (!form.date_start) return { error: '日期区间重采需填写起始日期' }
-    if (form.date_end && form.date_end < form.date_start) return { error: '结束日期不得早于起始日期' }
-    params.date_start = form.date_start
-    params.date_end = form.date_end || form.date_start
+  if (form.recipe === 'range_refetch' || form.recipe === 'st_status_refresh') {
+    if (form.recipe !== 'st_status_refresh' || form.date_start) {
+      if (!form.date_start) return { error: '日期区间重采需填写起始日期' }
+      if (form.date_end && form.date_end < form.date_start) return { error: '结束日期不得早于起始日期' }
+      params.date_start = form.date_start
+      params.date_end = form.date_end || form.date_start
+    }
   }
   if (stockIngestSupportsYears(form.recipe) && form.years != null) {
     if (!Number.isInteger(form.years) || form.years < 1 || form.years > 30) {
@@ -112,7 +117,7 @@ export function stockIngestSummary(form: StockIngestFormValue): string {
     ? `${form.codes.length || 0} 只指定股票`
     : '全市场'
   const parts = [label, scope]
-  if (form.recipe === 'range_refetch' && form.date_start) {
+  if ((form.recipe === 'range_refetch' || form.recipe === 'st_status_refresh') && form.date_start) {
     parts.push(`${form.date_start} ~ ${form.date_end || form.date_start}`)
   }
   if (stockIngestSupportsYears(form.recipe) && form.years) parts.push(`近 ${form.years} 年`)

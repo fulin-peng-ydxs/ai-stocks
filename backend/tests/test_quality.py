@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 
 from backend.dataquality.checker import QualityChecker, add_markers, limit_pct_for
-from backend.market_rules import price_limit_pct_for, round_price_to_cent
+from backend.market_rules import price_limit_pct_for, price_limit_pct_sql, round_price_to_cent
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
 
@@ -26,6 +26,17 @@ def test_limit_pct_st_override():
     assert price_limit_pct_for(0.20, is_st=True, trade_date="2026-07-06") == 0.20
 
 
+def test_limit_pct_sql_uses_same_st_cutoff(market):
+    expression = price_limit_pct_sql("board_pct", "is_st", "trade_date")
+    result = market.query_df(
+        f"SELECT {expression} AS pct FROM (VALUES "
+        "(0.10,TRUE,DATE '2026-07-03'),(0.10,TRUE,DATE '2026-07-06'),"
+        "(0.20,TRUE,DATE '2026-07-06'),(0.10,FALSE,DATE '2026-07-03')) "
+        "t(board_pct,is_st,trade_date)"
+    )["pct"].tolist()
+    assert result == [0.05, 0.10, 0.20, 0.10]
+
+
 def test_round_price_to_cent_uses_half_up():
     assert round_price_to_cent(1.005) == 1.01
 
@@ -42,6 +53,18 @@ def test_one_word_limit():
     df = add_markers(_bar(11.0, 11.0, 11.0, 11.0, 10.0), 0.10, False)
     assert df["limit_status"].iloc[0] == 1
     assert df["is_one_word"].iloc[0]
+
+
+def test_st_markers_apply_main_board_rule_cutoff_per_trade_date():
+    bars = pd.DataFrame([
+        {"trade_date": "2026-07-03", "open": 10.5, "high": 10.5, "low": 10.5,
+         "close": 10.5, "pre_close": 10.0},
+        {"trade_date": "2026-07-06", "open": 10.5, "high": 10.5, "low": 10.5,
+         "close": 10.5, "pre_close": 10.0},
+    ])
+    marked = add_markers(bars, 0.10, [True, True])
+    assert marked["limit_status"].tolist() == [1, 0]
+    assert marked["is_st"].tolist() == [True, True]
 
 
 def test_limit_down_star_board():
@@ -67,6 +90,11 @@ def test_abnormal_change_detection():
         c.execute(
             "INSERT INTO daily_bar (code, trade_date, close, pre_close) VALUES "
             "('600000.SH', DATE '2024-01-02', 13.0, 10.0)"  # +30% 远超主板 10%
+        )
+        c.execute(
+            "INSERT INTO stock_st_status_daily "
+            "(code,trade_date,is_st,source,quality,captured_at,updated_at) VALUES "
+            "('600000.SH',DATE '2024-01-02',FALSE,'baostock','accurate',now(),now())"
         )
         qc = QualityChecker(c)
         n = qc.check_abnormal_change("600000.SH", 0.10)
@@ -156,8 +184,14 @@ def test_factor_rebuild_preserves_calibrated_corporate_action_pre_close():
         service = object.__new__(IngestionService)
         service.c = client
         service.repo = MarketRepository(client)
+        client.execute(
+            "INSERT INTO stock_st_status_daily "
+            "(code,trade_date,is_st,source,quality,captured_at,updated_at) VALUES "
+            "('603759.SH',DATE '2026-07-01',FALSE,'baostock','accurate',now(),now()),"
+            "('603759.SH',DATE '2026-07-02',FALSE,'baostock','accurate',now(),now())"
+        )
 
-        service._recompute_clean_one("603759.SH", 0.10, False, full=True)
+        service._recompute_clean_one("603759.SH", 0.10, full=True)
 
         row = client.query_df(
             "SELECT pre_close FROM daily_bar "

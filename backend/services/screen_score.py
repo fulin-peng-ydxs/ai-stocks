@@ -61,11 +61,12 @@ class ScreenScoreService:
         log.info("方案[%s] %s 命中 %d 只", prof["name"], run_date, len(hits))
         return hits
 
-    def _st_codes(self) -> set[str]:
-        """当前名称含 ST 的代码集（榜单/筛选统一口径，见 rank_board 注释）。"""
-        return set(
-            self.c.query_df("SELECT code FROM stock_basic WHERE name LIKE '%ST%'")["code"].tolist()
-        )
+    def _st_codes(self, run_date: date, codes: list[str]) -> set[str]:
+        """ST codes from the canonical point-in-time fact table; missing facts block use."""
+        from backend.services.stock_st_status import StockSTStatusService
+
+        status = StockSTStatusService(self.c).status_map(run_date, codes)
+        return {code for code, is_st in status.items() if is_st}
 
     # ── 筛选 + 对命中打分排序（供筛选页：列表化、ST 标记、可排除 ST）──
     def screen_scored(
@@ -89,7 +90,7 @@ class ScreenScoreService:
         if not hits:
             return []
 
-        st_codes = self._st_codes()
+        st_codes = self._st_codes(run_date, hits)
         snap = self.engine._snapshot(run_date, hits)  # 命中票的当日截面
         scored = self.model.score(snap) if not snap.empty else None
         name_df = self.c.query_df(
@@ -206,14 +207,8 @@ class ScreenScoreService:
         if snap.empty:
             log.warning("%s 无截面数据", run_date)
             return pd.DataFrame()
-        # ST 不参与趋势龙头榜单（风险警示/退市风险，与"龙头"语义冲突）。
-        # 注：daily_bar.is_st 历史标记不可靠（入库未按名称推导），故以 stock_basic
-        # 当前名称含 "ST" 为准（点时 ST 时间线免费源缺，T-M3-11 另案处理）。
-        st_codes = set(
-            self.c.query_df(
-                "SELECT code FROM stock_basic WHERE name LIKE '%ST%'"
-            )["code"].tolist()
-        )
+        # ST 不参与趋势龙头榜单；历史日期严格读取当日 ST 事实，缺失则门禁失败。
+        st_codes = self._st_codes(run_date, snap.index.astype(str).tolist())
         n_st = int(snap.index.isin(st_codes).sum())
         snap = snap[~snap.index.isin(st_codes)]
         if n_st:

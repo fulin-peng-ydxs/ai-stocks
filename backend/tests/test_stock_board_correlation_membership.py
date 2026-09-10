@@ -50,6 +50,18 @@ def _seed_memberships(client: DuckDBClient) -> None:
         "('999001', '600000.SH'), ('missing', '600000.SH'), "
         "('881002', '300999.SZ')"
     )
+    client.execute(
+        "INSERT INTO stock_st_status_daily "
+        "(code,trade_date,is_st,source,source_ref,quality,captured_at,updated_at) VALUES "
+        "('600000.SH',DATE '2026-08-28',FALSE,'baostock',"
+        "'query_history_k_data_plus:isST','accurate',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),"
+        "('600000.SH',DATE '2026-08-29',FALSE,'baostock',"
+        "'query_history_k_data_plus:isST','accurate',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),"
+        "('000001.SZ',DATE '2026-08-28',FALSE,'baostock',"
+        "'query_history_k_data_plus:isST','accurate',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),"
+        "('000001.SZ',DATE '2026-08-29',FALSE,'baostock',"
+        "'query_history_k_data_plus:isST','accurate',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
+    )
 
 
 def test_stock_code_helper_normalizes_and_stably_deduplicates():

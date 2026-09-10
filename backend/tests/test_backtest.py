@@ -121,6 +121,22 @@ def _seed_one_stock(c, code, rows, pct=0.10, name="测试", rs=50.0):
     c.register_df("t", pd.DataFrame(bars)); c.execute("INSERT INTO daily_bar BY NAME SELECT * FROM t"); c.unregister("t")
     c.execute("INSERT INTO stock_basic (code,name,board,price_limit_pct) VALUES (?,?,?,?)",
               [code, name, "主板", pct])
+    st_rows = [{
+        "code": code,
+        "trade_date": d,
+        "is_st": name.upper().startswith(("ST", "*ST", "S*ST")),
+        "source": "test_fixture",
+        "source_ref": "test_backtest",
+        "quality": "accurate",
+    } for (d, *_3) in all_rows]
+    c.register_df("tst", pd.DataFrame(st_rows))
+    c.execute(
+        "INSERT INTO stock_st_status_daily "
+        "(code,trade_date,is_st,source,source_ref,quality,captured_at,updated_at) "
+        "SELECT code,trade_date,is_st,source,source_ref,quality,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP "
+        "FROM tst"
+    )
+    c.unregister("tst")
     # v2.0：指标动态计算（无 indicator 表），rs_pct 由横截面收益排名得出，不再手工灌入。
     # rs 入参保留以兼容调用签名（涨幅高者横截面 RS 自然更高，与原 rs 排序意图一致）。
     _ = rs

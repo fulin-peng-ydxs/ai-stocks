@@ -12,6 +12,7 @@
                total_share, float_share, industry
 - index_bar:   index_code, trade_date, open, high, low, close, volume, amount
 - calendar:    trade_date, is_open
+- st_status:   code, trade_date, is_st, trade_status
 - delist_list: code, name, delist_date
 
 复权约定：daily_bar 返回**不复权**原值；复权因子单列 adj_factor。
@@ -206,8 +207,13 @@ class DataSource(ABC):
         """全市场行业分类。列：code,industry。"""
         raise NotImplementedError(f"{self.name} 不支持 industry 能力")
 
+    def get_st_status(self, code: str, start: date, end: date) -> pd.DataFrame:
+        """每日点时 ST 状态。列：code,trade_date,is_st,trade_status。"""
+        raise NotImplementedError(f"{self.name} 不支持 st_status 能力")
+
     # ── 能力声明（供编排层按能力选源，见 IngestionService._source_for）──
-    # 约定能力名：daily/index/calendar/stock_list/valuation/basic_dates/industry/delisted/adj_factor
+    # 约定能力名：daily/index/calendar/stock_list/valuation/basic_dates/industry/delisted/
+    # adj_factor/st_status
     def supports(self, capability: str) -> bool:
         """是否支持某能力。"""
         return capability in getattr(self, "capabilities", set())

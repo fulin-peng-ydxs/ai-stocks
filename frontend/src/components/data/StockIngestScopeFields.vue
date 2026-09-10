@@ -38,8 +38,8 @@ function changeRecipe(recipe: StockIngestRecipe) {
     recipe,
     scope: stockIngestSupportsCodes(recipe) ? props.modelValue.scope : 'all',
     codes: stockIngestSupportsCodes(recipe) ? props.modelValue.codes : [],
-    date_start: recipe === 'range_refetch' ? props.modelValue.date_start : '',
-    date_end: recipe === 'range_refetch' ? props.modelValue.date_end : '',
+    date_start: ['range_refetch', 'st_status_refresh'].includes(recipe) ? props.modelValue.date_start : '',
+    date_end: ['range_refetch', 'st_status_refresh'].includes(recipe) ? props.modelValue.date_end : '',
     years: stockIngestSupportsYears(recipe) ? props.modelValue.years : null,
     concurrency: stockIngestSupportsConcurrency(recipe) ? props.modelValue.concurrency : null,
     force_current_day: recipe === 'daily_update' ? props.modelValue.force_current_day : false,
@@ -88,11 +88,12 @@ function changeRecipe(recipe: StockIngestRecipe) {
     />
   </el-form-item>
 
-  <template v-if="modelValue.recipe === 'range_refetch'">
+  <template v-if="modelValue.recipe === 'range_refetch' || modelValue.recipe === 'st_status_refresh'">
     <el-form-item label="起始日期">
       <TradeDatePicker
         :model-value="modelValue.date_start"
-        placeholder="必填，仅可选交易日"
+        :placeholder="modelValue.recipe === 'st_status_refresh' ? '留空=全部已有历史' : '必填，仅可选交易日'"
+        :clearable="modelValue.recipe === 'st_status_refresh'"
         @update:model-value="patch({ date_start: $event || '' })"
       />
     </el-form-item>

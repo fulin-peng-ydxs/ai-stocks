@@ -809,6 +809,19 @@ def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
             codes=codes, years=normalized.get("years"), concurrency=concurrency, ctx=ctx)
     elif recipe == "valuation_gaps":
         result = ing.ingest_valuation_gaps(codes=codes, concurrency=concurrency, ctx=ctx)
+    elif recipe == "st_status_refresh":
+        result = ing.refresh_st_status(
+            codes=codes,
+            start=(
+                _date.fromisoformat(normalized["date_start"])
+                if normalized.get("date_start") else None
+            ),
+            end=(
+                _date.fromisoformat(normalized["date_end"])
+                if normalized.get("date_end") else None
+            ),
+            ctx=ctx,
+        )
     elif recipe == "basic_refresh":
         rows = ing.enrich_basic_dates(ctx=ctx)
         result = {"target": rows, "ok": rows, "fail": 0, "rows": rows}
@@ -867,13 +880,13 @@ def _h_rebuild_price_factors(params: dict, ctx: TaskContext) -> dict:
 def _h_verify(params: dict, ctx: TaskContext) -> dict:
     """数据质检（与定时/手动质检同一方法 scan_quality_issues，口径一致）。
 
-    四层统一扫描写质量台账（幂等：覆盖上轮未解决的 L2/L3/L4 自动问题）：
+    四层 + ST 点时事实统一扫描写质量台账（幂等覆盖自动问题）：
     L2 字段契约（市值缺失）/ L3 正确性（异常涨跌、复权跳变）/ L4 覆盖鲜活（缺口、滞后）。
     L1 入库闸门由采集即时记录。停牌（已确认）不计入缺口。
     """
     from backend.services.data_report import DataIntegrityReport
     ctx.progress(0.3, "全市场四层数据质检中…")
-    ctx.log("数据质检：扫描市值缺失 / 异常涨跌 / 复权跳变 / 缺口 / 滞后，写入质量台账")
+    ctx.log("数据质检：扫描市值 / 行情 / 复权 / 覆盖鲜活 / ST 点时事实，写入质量台账")
     rep = DataIntegrityReport()
     q = rep.scan_quality_issues()
     # 市场指数与板块维度同一质检任务内扫描，统一进入问题台账与恢复闭环。
@@ -882,7 +895,8 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
     base_count = sum(int(q.get(k, 0)) for k in
             ("abnormal_change_rows", "price_volume_mismatch_rows", "adj_jump_rows",
              "mv_missing_rows", "mv_gap_rows",
-             "data_gap_rows", "stale_rows"))
+             "data_gap_rows", "stale_rows", "st_status_missing_rows",
+             "st_status_approximate_rows", "st_status_mismatch_rows"))
     market_index = q.get("market_index") or {}
     b = q.get("board") or {}
     n = base_count + sum(int(v) for v in market_index.values()) + sum(int(v) for v in b.values())
@@ -891,6 +905,9 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
             f"复权跳变 {q.get('adj_jump_rows', 0)}、"
             f"市值缺失 {q.get('mv_missing_rows', 0)}、市值缺口 {q.get('mv_gap_rows', 0)}、"
             f"缺口 {q.get('data_gap_rows', 0)}、滞后 {q.get('stale_rows', 0)}、"
+            f"ST缺失 {q.get('st_status_missing_rows', 0)}、"
+            f"ST非权威 {q.get('st_status_approximate_rows', 0)}、"
+            f"ST投影不一致 {q.get('st_status_mismatch_rows', 0)}、"
             f"市场指数缺口 {market_index.get('index_gap', 0)}、"
             f"板块指数缺口 {b.get('index_gap', 0)}")
     return {"message": f"质检完成：发现 {n} 项问题" if n else "质检完成：未发现新问题", "quality": q}
@@ -1156,6 +1173,18 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
                 ing.ingest_one_daily(code, lo, hi, ctx=ctx)
             else:
                 note = "无行情可重算"
+        elif issue_type in (
+            "st_status_missing", "st_status_approximate", "st_status_mismatch"
+        ):
+            ctx.log(f"恢复(ST 点时事实)：刷新 {code} 的全部已有日线区间")
+            res = ing.refresh_st_status(codes=[str(code)], ctx=ctx)
+            if int(res.get("fail") or 0):
+                raise RuntimeError(f"ST 状态刷新失败：{res.get('failures')}")
+            affected = [
+                pd.Timestamp(value).date()
+                for value in res.get("changed_date_values", [])
+            ]
+            note = f"刷新 ST 事实 {res.get('rows', 0)} 行"
         elif issue_type == "market_index_gap":
             repair_start, repair_end = _market_index_trailing_gap_range(c, str(code), td)
             if repair_start is None:

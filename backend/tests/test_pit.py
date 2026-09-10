@@ -34,6 +34,12 @@ def _seed(c):
     c.execute(
         "INSERT INTO stock_basic (code, name, board, price_limit_pct) VALUES ('AAA.SH','测试A','主板',0.10)"
     )
+    c.execute(
+        "INSERT INTO stock_st_status_daily "
+        "(code,trade_date,is_st,source,source_ref,quality,captured_at,updated_at) "
+        "SELECT code,trade_date,FALSE,'test_fixture','test_pit','accurate',"
+        "CURRENT_TIMESTAMP,CURRENT_TIMESTAMP FROM daily_bar WHERE code='AAA.SH'"
+    )
     # 市值
     mdf = pd.DataFrame(
         [{"code": "AAA.SH", "trade_date": d, "float_mv": 1.0e10, "total_mv": 1.0e10} for d in dates]

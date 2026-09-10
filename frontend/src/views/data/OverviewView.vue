@@ -33,7 +33,7 @@ const router = useRouter()
 const settingsOpen = ref(false)
 const overviewDefaults = {
   focusLayer: 'all' as 'all' | 'L12' | 'L34',
-  kpi: { latestTradeDate: true, codes: true, barRows: true, board: true, score: true, quality: true, gaps: true },
+  kpi: { latestTradeDate: true, codes: true, barRows: true, stStatus: true, board: true, score: true, quality: true, gaps: true },
 }
 const { settings, isDirty, reset } = usePageSettings('data-overview', overviewDefaults)
 
@@ -294,6 +294,13 @@ function goLayer(k: string, row: any) {
   }
 }
 
+function gotoStRefresh() {
+  router.push({ path: '/data/ingest', query: { task_type: 'stock_ingest', recipe: 'st_status_refresh' } })
+}
+function stPublicationLabel(status?: 'refreshing' | 'ready' | 'failed'): string {
+  return status === 'refreshing' ? '刷新中' : status === 'failed' ? '失败' : status === 'ready' ? '就绪' : '未执行'
+}
+
 async function load() {
   loading.value = true
   error.value = ''
@@ -491,6 +498,19 @@ onMounted(load)
           <el-card v-if="settings.kpi.barRows" shadow="never" class="stat">
             <div class="stat-label">日线总行数 <HelpHint text="daily_bar 日线行情总记录数（全市场×历史交易日）" /></div>
             <div class="stat-val">{{ ov?.bar_rows?.toLocaleString() ?? '—' }}</div>
+          </el-card>
+          <el-card
+            v-if="settings.kpi.stStatus"
+            shadow="never"
+            class="stat clickable"
+            data-testid="overview-st-status-card"
+            @click="gotoStRefresh"
+          >
+            <div class="stat-label">ST 点时事实 <HelpHint text="权威 ST 逐日事实覆盖 daily_bar 的比例；缺失或非权威时筛选、评分、回测和涨跌停业务会拒绝运行" @click.stop /></div>
+            <div class="stat-val" :class="{ danger: !ov?.st_status.ready }">{{ ov?.st_status.coverage_rate ?? '—' }}<span class="sub">%</span></div>
+            <div class="stat-foot" v-if="ov?.st_status">
+              权威 {{ ov.st_status.accurate.toLocaleString() }} / {{ ov.st_status.expected.toLocaleString() }} · 缺失 {{ ov.st_status.missing }} · 非权威 {{ ov.st_status.approximate }} · 发布 {{ stPublicationLabel(ov.st_status.refresh_state?.status) }}
+            </div>
           </el-card>
           <el-card
             v-if="settings.kpi.board"
@@ -1034,6 +1054,7 @@ onMounted(load)
           <PageToggleRow v-model="settings.kpi.latestTradeDate" label="最新交易日" />
           <PageToggleRow v-model="settings.kpi.codes" label="在市 / 退市" />
           <PageToggleRow v-model="settings.kpi.barRows" label="日线总行数" />
+          <PageToggleRow v-model="settings.kpi.stStatus" label="ST 点时事实" />
           <PageToggleRow v-model="settings.kpi.board" label="板块数据" />
           <PageToggleRow v-model="settings.kpi.score" label="全局质量评分" />
           <PageToggleRow v-model="settings.kpi.quality" label="未解决质检" />

@@ -206,7 +206,10 @@ def preview_conditions(body: dict) -> ApiResponse:
     if snap.empty:
         return ok({"run_date": str(run_date), "hit": 0, "list": []})
     snap = snap.set_index("code")
-    st = set(c.query_df("SELECT code FROM stock_basic WHERE name LIKE '%ST%'")["code"])
+    from backend.services.stock_st_status import StockSTStatusService
+
+    statuses = StockSTStatusService(c).status_map(run_date, snap.index.astype(str).tolist())
+    st = {code for code, is_st in statuses.items() if is_st}
     snap = snap[~snap.index.isin(st)]
     try:
         eng.attach_columns(snap, collect_indicators(tree), run_date)

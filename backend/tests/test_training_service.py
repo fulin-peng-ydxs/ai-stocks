@@ -61,6 +61,14 @@ def test_training_effective_price_limit_switches_main_board_st(market, pg):
         "INSERT INTO stock_basic (code, name, price_limit_pct) VALUES "
         "('STX.SH','*ST测试',0.10)"
     )
+    market.execute(
+        "INSERT INTO stock_st_status_daily "
+        "(code,trade_date,is_st,source,source_ref,quality,captured_at,updated_at) VALUES "
+        "('STX.SH',DATE '2026-07-03',TRUE,'baostock',"
+        "'query_history_k_data_plus:isST','accurate',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),"
+        "('STX.SH',DATE '2026-07-06',TRUE,'baostock',"
+        "'query_history_k_data_plus:isST','accurate',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
+    )
     svc = TrainingService(market, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
     assert svc._effective_price_limit_pct("STX.SH", date(2026, 7, 3), 0.10) == 0.05
     assert svc._effective_price_limit_pct("STX.SH", date(2026, 7, 6), 0.10) == 0.10

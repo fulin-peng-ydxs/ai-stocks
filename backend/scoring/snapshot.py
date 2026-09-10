@@ -44,7 +44,10 @@ def score_day(c, run_date: date, profile: dict) -> pd.DataFrame:
     if snap.empty:
         return pd.DataFrame(columns=_COLS)
     snap = snap.set_index("code")
-    st = set(c.query_df("SELECT code FROM stock_basic WHERE name LIKE '%ST%'")["code"])
+    from backend.services.stock_st_status import StockSTStatusService
+
+    statuses = StockSTStatusService(c).status_map(run_date, snap.index.astype(str).tolist())
+    st = {code for code, is_st in statuses.items() if is_st}
     snap = snap[~snap.index.isin(st)]
     if snap.empty:
         return pd.DataFrame(columns=_COLS)

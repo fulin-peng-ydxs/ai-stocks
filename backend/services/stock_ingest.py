@@ -15,6 +15,7 @@ STOCK_INGEST_RECIPES = (
     "valuation_gaps",
     "basic_refresh",
     "delisted_history",
+    "st_status_refresh",
 )
 
 STOCK_INGEST_RECIPE_LABELS = {
@@ -25,6 +26,7 @@ STOCK_INGEST_RECIPE_LABELS = {
     "valuation_gaps": "市值缺口修复",
     "basic_refresh": "基础资料刷新",
     "delisted_history": "退市股历史补全",
+    "st_status_refresh": "ST状态刷新",
 }
 
 _COMMON_FIELDS = {
@@ -33,6 +35,7 @@ _COMMON_FIELDS = {
 _CODE_RECIPES = {
     "daily_update", "history_backfill", "range_refetch",
     "valuation_history", "valuation_gaps",
+    "st_status_refresh",
 }
 _YEAR_RECIPES = {"history_backfill", "valuation_history", "delisted_history"}
 _CONCURRENCY_RECIPES = {
@@ -85,19 +88,23 @@ def normalize_stock_ingest_params(params: dict | None) -> dict:
             raise ValueError("指定股票时 codes 必须是非空数组")
         out["codes"] = normalize_stock_codes(codes)
 
-    if recipe == "range_refetch":
+    if recipe in {"range_refetch", "st_status_refresh"}:
         start_raw = raw.get("date_start")
-        if not start_raw:
+        if recipe == "range_refetch" and not start_raw:
             raise ValueError("日期区间重采必须填写起始日期")
-        try:
-            start = date.fromisoformat(str(start_raw))
-            end = date.fromisoformat(str(raw.get("date_end") or start_raw))
-        except ValueError as exc:
-            raise ValueError("采集日期须使用 YYYY-MM-DD 格式") from exc
-        if end < start:
-            raise ValueError("结束日期不得早于起始日期")
-        out["date_start"] = start.isoformat()
-        out["date_end"] = end.isoformat()
+        if not start_raw:
+            if raw.get("date_end") is not None:
+                raise ValueError("ST状态刷新填写结束日期时也必须填写起始日期")
+        else:
+            try:
+                start = date.fromisoformat(str(start_raw))
+                end = date.fromisoformat(str(raw.get("date_end") or start_raw))
+            except ValueError as exc:
+                raise ValueError("采集日期须使用 YYYY-MM-DD 格式") from exc
+            if end < start:
+                raise ValueError("结束日期不得早于起始日期")
+            out["date_start"] = start.isoformat()
+            out["date_end"] = end.isoformat()
     elif raw.get("date_start") is not None or raw.get("date_end") is not None:
         raise ValueError(f"{STOCK_INGEST_RECIPE_LABELS[recipe]}不支持日期区间参数")
 

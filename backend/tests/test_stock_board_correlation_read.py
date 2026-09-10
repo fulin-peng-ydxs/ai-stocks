@@ -381,6 +381,13 @@ def test_stock_list_attaches_one_batch_for_returned_page(monkeypatch):
             "('600000.SH',?,10.5,10.0)",
             [as_of],
         )
+        market.execute(
+            "INSERT INTO stock_st_status_daily "
+            "(code,trade_date,is_st,source,source_ref,quality,captured_at,updated_at) "
+            "VALUES ('600000.SH',?,FALSE,'baostock','query_history_k_data_plus:isST',"
+            "'accurate',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+            [as_of],
+        )
         counting = _CountingClient(market)
         monkeypatch.setattr("backend.api.stocks.get_client", lambda: counting)
         monkeypatch.setattr("backend.api.stocks.get_current_context", lambda: None)
@@ -427,7 +434,7 @@ def test_screen_results_attach_summary_without_changing_score_order():
         service.c = market
         service.engine = _ScreenEngine()
         service.model = _ScoreModel()
-        service._st_codes = lambda: set()
+        service._st_codes = lambda _run_date, _codes: set()
 
         current = service.screen_scored(as_of, expression={"type": "expr"})
         historical = service.screen_scored(date(2026, 8, 27), expression={"type": "expr"})

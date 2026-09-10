@@ -112,6 +112,27 @@ class DataVerifier:
         )
         self._check("无重复 (code,trade_date)", dup == 0, f"重复 {dup}")
 
+        st_missing = self._count(
+            "SELECT count(*) FROM daily_bar b LEFT JOIN stock_st_status_daily st "
+            "ON st.code=b.code AND st.trade_date=b.trade_date "
+            "WHERE st.code IS NULL OR st.quality<>'accurate'"
+        )
+        self._check(
+            "日线均有权威 ST 点时事实",
+            st_missing == 0,
+            f"缺失或非权威 {st_missing}",
+        )
+        st_mismatch = self._count(
+            "SELECT count(*) FROM daily_bar b JOIN stock_st_status_daily st "
+            "ON st.code=b.code AND st.trade_date=b.trade_date "
+            "WHERE b.is_st IS DISTINCT FROM st.is_st"
+        )
+        self._check(
+            "daily_bar ST 过渡投影与唯一事实一致",
+            st_mismatch == 0,
+            f"不一致 {st_mismatch}",
+        )
+
     def check_calendar_readiness(self, *, as_of: date | None = None) -> None:
         """检查生命周期下一开市日与跨年覆盖；缺失只报告，不推算交易日。"""
         self._cur_group = "F. 运行就绪度"
@@ -158,13 +179,21 @@ class DataVerifier:
             "OR COALESCE(adj_factor_clean, adj_factor)<=0")
         self._check("复权因子为正", bad_factor == 0, f"异常因子 {bad_factor}")
 
-        # 涨跌幅越界（按板块口径；不套用当前 ST 状态——见 add_markers 的 ST 时变说明）。
-        # 残留越界 = 新股上市初期宽涨跌幅 / 退市整理期 / 极少数待核，比例应 <0.1%。
+        # 涨跌幅越界：逐日 ST 事实 + 统一市场规则（包含主板 2026-07-06 切换）。
+        from backend.market_rules import price_limit_pct_sql
+
+        limit_sql = price_limit_pct_sql("sb.price_limit_pct", "st.is_st", "b.trade_date")
         over = self._count(
             "SELECT count(*) FROM daily_bar b JOIN stock_basic sb ON sb.code=b.code "
-            "WHERE b.pre_close>0 AND abs(b.close/b.pre_close-1) > COALESCE(sb.price_limit_pct,0.10)+0.005"
+            "JOIN stock_st_status_daily st "
+            "ON st.code=b.code AND st.trade_date=b.trade_date AND st.quality='accurate' "
+            f"WHERE b.pre_close>0 AND abs(b.close/b.pre_close-1) > ({limit_sql})+0.005"
         )
-        total = self._count("SELECT count(*) FROM daily_bar WHERE pre_close>0")
+        total = self._count(
+            "SELECT count(*) FROM daily_bar b JOIN stock_st_status_daily st "
+            "ON st.code=b.code AND st.trade_date=b.trade_date AND st.quality='accurate' "
+            "WHERE b.pre_close>0"
+        )
         self._check(
             "涨跌幅越界比例极低（<0.1%，余为新股/退市/复牌）",
             over / max(total, 1) < 0.001,

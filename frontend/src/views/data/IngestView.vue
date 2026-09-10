@@ -187,6 +187,7 @@ const PHASE_LABEL: Record<string, string> = {
   board_bar: '板块指数',
   board_fund_flow: '板块资金流',
   delisted_history: '退市股历史',
+  st_status: 'ST 状态',
   stock_basic: '基础资料',
   read_candidates: '读取候选',
   load_prices: '加载行情',

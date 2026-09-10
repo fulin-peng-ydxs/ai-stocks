@@ -92,6 +92,7 @@ def _dig_config_value(dump: dict, path: str):
 @router.get("/overview", response_model=ApiResponse, dependencies=_OVERVIEW)
 def overview() -> ApiResponse:
     from backend.services.data_report import DataIntegrityReport
+    from backend.services.stock_st_status import StockSTStatusService
     rep = DataIntegrityReport()
     ov = rep.overview()
     qm = rep.quality_model()   # M2.9：质量评分 + 分层达标 + 缺口（一次扫描，避免双扫）
@@ -109,6 +110,7 @@ def overview() -> ApiResponse:
         "codes": {"active": ov["stock_basic_live"], "delisted": ov["stock_basic_delisted"]},
         "bar_rows": ov["row_counts"]["daily_bar"],
         "board": board,
+        "st_status": StockSTStatusService(c).coverage(),
         "quality": {"open": int(sum(by_sev.values())), "by_severity": by_sev,
                     "score": qm["score"], "by_layer": qm["by_layer"]},
         "gaps": qm["gaps"],

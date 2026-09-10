@@ -83,6 +83,7 @@ class BacktestService:
                      detail: str = "", finished: bool = False,
                      versions: dict | None = None, signature: str | None = None) -> None:
         v = versions or {}
+        stored_params = {**params, "_data_versions": v}
         # 状态转换用 UPDATE（同一条 run：running → done/failed），不再「先 DELETE 再 INSERT」。
         # 唯一性由 _new_id 保证；同条件去重由 _purge_signature 负责，不靠删除承担 ID 生成。
         updated = self.pg.execute(
@@ -90,7 +91,7 @@ class BacktestService:
             "score_profile_version=%s, profile_version=%s, trade_profile_version=%s, signature=%s "
             "WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
             [status, detail, datetime.now() if finished else None,
-             json.dumps(params, ensure_ascii=False, default=str),
+             json.dumps(stored_params, ensure_ascii=False, default=str),
              v.get("score_profile_version"), v.get("profile_version"), v.get("trade_profile_version"), signature,
              run_id, *self._op])
         if updated:
@@ -107,7 +108,7 @@ class BacktestService:
              v.get("score_profile_version"), v.get("profile_version"), v.get("trade_profile_version"), signature,
              date.fromisoformat(params["date_start"]) if isinstance(params["date_start"], str) else params["date_start"],
              date.fromisoformat(params["date_end"]) if isinstance(params["date_end"], str) else params["date_end"],
-             json.dumps(params, ensure_ascii=False, default=str), status, detail,
+             json.dumps(stored_params, ensure_ascii=False, default=str), status, detail,
              datetime.now(), datetime.now() if finished else None],
         )
 
@@ -225,6 +226,15 @@ class BacktestService:
             out["profile_version"] = int(screen_profile["version"])
         elif params.get("profile_id"):
             out["profile_version"] = None
+        from backend.services.stock_st_status import StockSTStatusService
+
+        start = params.get("date_start")
+        end = params.get("date_end")
+        start_date = pd.Timestamp(start).date() if start else None
+        end_date = pd.Timestamp(end).date() if end else None
+        out["st_data_version"] = StockSTStatusService(self.c).dataset_version(
+            start_date, end_date
+        )
         return out
 
     def _signature(self, kind: str, params: dict, versions: dict) -> str:

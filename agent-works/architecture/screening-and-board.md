@@ -35,7 +35,7 @@
 ### 评分快照惰性物化与失效（`backend/scoring/snapshot.py`）
 - 物化键 = `(tenant_id, owner_user_id, profile_id, profile_version, trade_date)`——**含方案 owner 归属维度**（`snapshot.py:113-115/121-123` 读缓存 WHERE 强制带 `tenant_id + owner_user_id`，物化时 `board.py:201-204` 把二者设为**方案 owner**）。`get_board`（snapshot.py:67）：meta 命中且未 stale → 直接读 `score_snapshot` 缓存；否则 `_materialize` 当场重算（`score_day` 全市场排除 ST 打分降序排名）覆盖明细 + 写 meta(stale=false)。
 - **榜单结果的共享语义（区别于「资产复用」）**：榜单不是可拥有的资产，没有「我的榜单」、**无复制/复用入口**。其结果是**一份物理快照，落在方案 owner 的缓存槽**（不属任何查看者）；凡对该评分方案有可见性（`get_visible`）且具 `board:view` 权限的人，对同一 `(方案,版本,交易日)` **共读这同一份快照**——首个请求者触发物化（`materialized`），后续命中同一份缓存（`cached`）。「所有人可见」受方案可见性约束：public 方案才接近全员共享，tenant 限同租户，private 仅 owner。
-- `score_day`（snapshot.py:25）口径与回测 `_decision_data`、`/board/compute` 一致：`wide_snapshot` 单日 → 排除名称含 ST → `attach_columns` 补表达式型指标列 → `ScoreProfileModel` 打分。
+- `score_day`（snapshot.py:25）口径与回测 `_decision_data`、`/board/compute` 一致：`wide_snapshot` 单日 → 按准确点时事实排除当日 ST → `attach_columns` 补表达式型指标列 → `ScoreProfileModel` 打分；事实未就绪时统一失败关闭。
 - 失效触发器（只标 meta、不重算，便宜）：
   - `mark_stale_dates`（snapshot.py:116）：指定交易日的所有方案版本标 stale。
   - `mark_stale_all`（snapshot.py:131）：全量标 stale。
@@ -163,11 +163,11 @@ flowchart LR
 
 | 场景 | 默认硬性规则 | 不默认做的过滤 |
 |------|--------------|----------------|
-| 策略筛选页 `/screen/run` | 取运行日当日 `wide_snapshot`，即当日有日线且指标快照可计算的股票；页面/API 默认 `exclude_st=true`，按当前名称含 `ST` 排除，用户可关闭后只标记 ST | 不套用训练股票池的板块、上市天数、流通市值、一字涨停过滤；这些需要用户写入筛选条件 |
-| 每日榜单 / 评分试算 | 取运行日当日 `wide_snapshot`，按评分方案打分；强制排除当前名称含 `ST` 的股票；TopN 只限制返回/展示数量 | 不默认过滤市值、板块、上市天数、一字涨停 |
-| 买卖指标预览 | 对运行日全市场 `wide_snapshot` 评估买/卖条件树；预览强制排除当前名称含 `ST` 的股票 | 买卖方案本身不保存独立股票池，也不默认过滤市值、板块、上市天数、一字涨停 |
+| 策略筛选页 `/screen/run` | 取运行日当日 `wide_snapshot`，即当日有日线且指标快照可计算的股票；页面/API 默认 `exclude_st=true`，按当日准确点时事实排除，用户可关闭后只标记 ST | 不套用训练股票池的板块、上市天数、流通市值、一字涨停过滤；这些需要用户写入筛选条件 |
+| 每日榜单 / 评分试算 | 取运行日当日 `wide_snapshot`，按评分方案打分；按准确点时事实强制排除当日 ST；TopN 只限制返回/展示数量 | 不默认过滤市值、板块、上市天数、一字涨停 |
+| 买卖指标预览 | 对运行日全市场 `wide_snapshot` 评估买/卖条件树；预览按准确点时事实强制排除当日 ST | 买卖方案本身不保存独立股票池，也不默认过滤市值、板块、上市天数、一字涨停 |
 
-这里的 ST 口径都是“当前名称含 ST”的近似，不是历史点时 ST 时间线。训练模块的随机池另走 `MarketRepository.get_universe_asof`，默认规则更窄，见 [market-sense-training.md](market-sense-training.md)。
+上述入口与训练模块的随机池共用 `stock_st_status_daily` 点时事实及发布门；筛选、评分、预览之间不再存在名称推断的平行口径。训练股票池另有更窄的板块、上市天数等规则，见 [market-sense-training.md](market-sense-training.md)。
 
 ### 5. 与其它模块的关联关系
 
@@ -182,7 +182,7 @@ flowchart LR
 
 - **跑一次筛选**：前端用条件行拼 AST → `POST /screen/run`（profile_id 或临时 expression）→ `validate_ast` → `ScreenEngine.run_ast` 出命中 → `screen_scored` 对命中票 `ScoreModel` 打分、排/标 ST、按综合分降序返回。`run_profile` 路径会把命中落 `screen_result`（支持任意历史交易日点时回溯）。
 - **出每日榜单**：前端选方案/日期/TopN → `POST /score-profiles/run`（或 `/board/compute?score_profile_id`）→ 已保存方案走 `get_board`（命中即用缓存，未命中/失效惰性物化）；未保存的 inline items 无版本键，`score_day` 实时算不入库。
-- **ST 排除口径**：每日榜单强制排除当前名称含 `ST` 的股票；筛选页默认 `exclude_st=true`（前端默认值与后端默认值一致），可关闭后结果只标记 `is_st`。该口径不是点时 ST，历史回溯存在当前名称偏差，风险见下表。
+- **ST 排除口径**：每日榜单按准确点时事实强制排除当日 ST；筛选页默认 `exclude_st=true`（前端默认值与后端默认值一致），可关闭后结果仍按当日事实标记 `is_st`。缺失、非权威或刷新未发布都会阻断业务，不降级为名称推断。
 - **评分快照生成与失效**：
   - 生成：首次请求某 `(日期,方案,版本)` 触发 `_materialize` → 落 `score_snapshot` 明细 + meta(stale=false)。
   - 失效：只有「每日榜单失效」结果维护任务按用户选择的最新交易日、固定交易日或全部快照调用 `mark_stale_dates/mark_stale_all`；采集、补数、修复不再隐式标记。
@@ -195,7 +195,7 @@ flowchart LR
 
 | 等级 | 风险点 | 影响 | 建议 |
 |------|--------|------|------|
-| <span style="color:#dc2626">●</span> 高 | ST 判定无点时时间线 | 历史回溯会按当前名称含 ST 排除，造成点时偏差（snapshot.py:38、screen_score.py:201） | 回测解释中标注该限制；后续接入 ST 历史时间线 |
+| <span style="color:#f59e0b">●</span> 中 | ST 第三方事实源临时不可用或发生纠错 | 刷新批次失败时筛选、榜单和预览暂不可运行；历史结果可能需重算 | 依赖批次门禁、自动重连/续跑、变更历史及评分快照失效闭环恢复 |
 | <span style="color:#f59e0b">●</span> 中 | expr 叶子逐股串行求值 | 全市场筛选随股票数线性变慢（engine.py:74） | 常用逻辑沉淀为指标，减少临时 expr |
 | <span style="color:#f59e0b">●</span> 中 | 评分快照失效依赖数据任务触发 | 绕过任务直接改库可能读到陈旧榜单 | 行情变更统一走数据任务，避免手工改库 |
 | <span style="color:#f59e0b">●</span> 中 | 评分指标周期受限 | 非预设 `ma/hhv` 周期会抛错 | 用表达式型指标绕行，后续扩展任意周期 |

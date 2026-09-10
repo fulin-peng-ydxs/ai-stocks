@@ -85,7 +85,7 @@
 - 节点 `{"op":"AND"|"OR","children":[...]}`，叶子 `{"indicator","params","cmp","value"}`，`cmp ∈ ==/!=/>/>=/</<=/between`（`_CMP`，trade_profile.py:25-33）。
 - `backstop` 兜底 `{take_profit, stop_loss, max_hold_days}` 可空；校验要求"卖出条件树与兜底至少配一个"（`validate_trade_profile`，trade_profile.py:89-100）。
 - 内置默认「趋势买卖」方案：买入条件为多头排列 `bull_arrange == true` 且放量突破 `is_vol_breakout == true`；卖出条件为跌破 20 日均线；兜底为止盈 20%、止损 8%、最长持仓 30 日。
-- 买卖方案本身只定义买入/卖出信号，不保存独立股票池。预览接口按运行日全市场 `wide_snapshot` 评估条件，并强制排除当前名称含 `ST` 的股票；市值、板块、上市天数、一字涨停等过滤需要写入买入条件或由回测筛选方案承接。
+- 买卖方案本身只定义买入/卖出信号，不保存独立股票池。预览接口按运行日全市场 `wide_snapshot` 评估条件，并按 `stock_st_status_daily` 准确点时事实强制排除当日 ST；事实未就绪时拒绝预览。市值、板块、上市天数、一字涨停等过滤需要写入买入条件或由回测筛选方案承接。
 
 ### 涉及的 API
 

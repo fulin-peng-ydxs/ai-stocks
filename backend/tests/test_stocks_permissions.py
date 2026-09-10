@@ -56,6 +56,13 @@ def test_list_stocks_without_group_permission_does_not_read_or_create_groups(
         "VALUES (?,?,?,?,?,?,?,?,?)",
         [code, date(2024, 1, 2), 10.0, 10.5, 9.9, 10.2, 10.0, 1000, 10200.0],
     )
+    market.execute(
+        "INSERT INTO stock_st_status_daily "
+        "(code,trade_date,is_st,source,source_ref,quality,captured_at,updated_at) "
+        "VALUES (?,DATE '2024-01-02',FALSE,'baostock',"
+        "'query_history_k_data_plus:isST','accurate',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+        [code],
+    )
     pg.execute(
         "INSERT INTO sys_tenant (id,name,status) VALUES (%s,%s,'active')",
         [tenant_id, tenant_id],

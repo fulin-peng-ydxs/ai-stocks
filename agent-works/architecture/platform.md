@@ -24,10 +24,10 @@
 - **表与目录分工**：
   - PostgreSQL 任务基础设施表：`async_task`（任务状态/进度/JSONB 结果）、`task_log`（实时日志，按 `seq` 增量拉、每任务保留最近 2000 条）、`scheduled_job`（调度定义）、`scheduled_trigger_event`（依赖/重试事件）。DuckDB 同名旧表只作为迁移与受控回滚源冻结保留。
   - DuckDB 运维与行情表：`data_update_log`、`data_dimension_registry`、`data_source_provenance` 及各行情/快照事实。
-  - 连板天梯数据边界：DuckDB 保存 `stock_st_status_*`、`limit_ladder_snapshot*` 行情分析事实，快照按完整性门禁与不可变版本原子发布，失败或失效不删除旧成功版本。`limit_ladder_invalidate` 由用户手动或调度显式将选定交易日及之后的快照标记失效，先写 `limit_ladder_invalidation_outbox` 再处理失效；采集、补数、修复、ST 与板块变化不再触发该链路。查询在读快照前重试结果任务留下的 pending，并在快照失效时按需创建内部 `limit_ladder_recompute`。PG 保存日期协调账本与可靠审计 outbox，不与 DuckDB 跨库 JOIN。完整业务架构见 [limit-ladder.md](limit-ladder.md)。
+  - 连板天梯数据边界：DuckDB 保存 `stock_st_status_*`、`limit_ladder_snapshot*` 行情分析事实，快照按完整性门禁与不可变版本原子发布，失败或失效不删除旧成功版本。`limit_ladder_invalidate` 由用户手动或调度显式将选定交易日及之后的快照标记失效，先写 `limit_ladder_invalidation_outbox` 再处理失效；普通采集、补数和板块变化不隐式触发该链路，但“ST状态刷新”会按事实变更日期请求失效。查询在读快照前重试结果任务留下的 pending，并在快照失效时按需创建内部 `limit_ladder_recompute`。PG 保存日期协调账本与可靠审计 outbox，不与 DuckDB 跨库 JOIN。完整业务架构见 [limit-ladder.md](limit-ladder.md)。
   - PostgreSQL 配置与用户偏好表：`app_config`（系统设置覆盖层）、`layout_preset`、`layout_page_config`、`layout_field_policy`、`layout_user_config`、`user_preference`；边界见 [environment-configuration.md](environment-configuration.md)。
   - 业务表（行情/方案/结果/回测/快照）由各业务模块拥有，但**统一经 `MarketRepository.upsert` 与点时查询闸门读写**，主键登记在 `repository._PK`。
-  - 双库资产目录：`backend/storage/catalog.py` 从 DuckDB `main` 和 PostgreSQL `public` 自动发现全部物理表、字段、主外键、默认值、可空性与估算行数，再叠加中文业务注解。当前迁移完成态为 DuckDB 26 张当前事实表、PG 59 张当前事实表、DuckDB 28 张默认隐藏的 `legacy_readonly` 旧表；新发现但未注解的表以 `unregistered` 暴露。任务运行态和平台布局表分别复用既有迁移路由/marker，受控回滚后事实源随真实路由切换。
+  - 双库资产目录：`backend/storage/catalog.py` 从 DuckDB `main` 和 PostgreSQL `public` 自动发现全部物理表、字段、主外键、默认值、可空性与估算行数，再叠加中文业务注解。当前迁移完成态为 DuckDB 27 张当前事实表、PG 59 张当前事实表、DuckDB 28 张默认隐藏的 `legacy_readonly` 旧表；新发现但未注解的表以 `unregistered` 暴露。任务运行态和平台布局表分别复用既有迁移路由/marker，受控回滚后事实源随真实路由切换。
   - 目录约定：DuckDB 单文件、parquet、导出、日志路径在 `PathsConfig`（`backend/config/settings.py:31`），相对路径按项目根 `PROJECT_ROOT` 解析为绝对路径。
 
 - **被上层共用的能力**：点时闸门被选股/打分/回测/个股查询统一调用，保证全系统同一套"防未来/防幸存者"口径；异步任务底座被数据采集/补数/重算/质检/修复/基础信息刷新/审计清理复用同一套执行/日志/续跑/取消语义；定时调度只是任务底座的触发器（到点→`create` 一条 `async_task`），与手动任务同一执行通道；运行期配置读取和覆盖规则见 [environment-configuration.md](environment-configuration.md)。

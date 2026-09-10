@@ -12,8 +12,6 @@ from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
 
 LADDER_DUCK_TABLES = {
-    "stock_st_status_daily",
-    "stock_st_status_history",
     "limit_ladder_snapshot_state",
     "limit_ladder_snapshot",
     "limit_ladder_snapshot_stock",
@@ -21,6 +19,11 @@ LADDER_DUCK_TABLES = {
     "limit_ladder_snapshot_aggregate",
     "limit_ladder_snapshot_window_metric",
     "limit_ladder_invalidation_outbox",
+}
+ST_REFERENCE_TABLES = {
+    "stock_st_status_daily",
+    "stock_st_status_history",
+    "stock_st_status_refresh_state",
 }
 LADDER_PG_TABLES = {"limit_ladder_task_ledger", "limit_ladder_audit_outbox"}
 
@@ -43,16 +46,16 @@ def test_dual_catalog_discovers_all_current_and_legacy_tables(catalog_env):
     active = [item for item in tables if item["lifecycle"] == "active"]
     legacy = [item for item in tables if item["lifecycle"] == "legacy_readonly"]
 
-    assert payload["summary"]["duckdb"]["active_tables"] == 26
+    assert payload["summary"]["duckdb"]["active_tables"] == 27
     assert payload["summary"]["duckdb"]["legacy_tables"] == 28
     assert payload["summary"]["duckdb"]["unregistered_tables"] == 0
     assert payload["summary"]["postgres"]["active_tables"] == 59
     assert payload["summary"]["postgres"]["legacy_tables"] == 0
     assert payload["summary"]["postgres"]["unregistered_tables"] == 0
-    assert len(active) == 85
+    assert len(active) == 86
     assert len(legacy) == 28
     assert all(item["metadata_complete"] for item in active)
-    assert len({item["key"] for item in tables}) == 113
+    assert len({item["key"] for item in tables}) == 114
 
     duck_ladder = {
         item["table"] for item in tables
@@ -64,6 +67,13 @@ def test_dual_catalog_discovers_all_current_and_legacy_tables(catalog_env):
     }
     assert duck_ladder == LADDER_DUCK_TABLES
     assert pg_ladder == LADDER_PG_TABLES
+    assert {
+        item["table"]
+        for item in tables
+        if item["database"] == "duckdb"
+        and item["category"] == "行情参考"
+        and item["table"].startswith("stock_st_status_")
+    } == ST_REFERENCE_TABLES
 
 
 def test_runtime_and_config_tables_follow_existing_storage_routes():

@@ -24,6 +24,8 @@ describe('taskDisplayLabel', () => {
       .toBe('个股采集·日常同步')
     expect(taskDisplayLabel('stock_ingest', { recipe: 'valuation_gaps' }))
       .toBe('个股采集·市值缺口修复')
+    expect(taskDisplayLabel('stock_ingest', { recipe: 'st_status_refresh' }))
+      .toBe('个股采集·ST状态刷新')
     expect(taskDisplayLabel('stock_board_correlation', { codes: ['600000.SH'], force: true }))
       .toBe('走势相关重算·最新完整交易日·指定 1 只')
     expect(taskDisplayLabel('stock_board_correlation', { force: false }))
@@ -63,6 +65,15 @@ describe('taskDisplayLabel', () => {
     expect(RECOVER_ACTION_LABEL.price_volume_mismatch).toBe('重采该日')
     expect(taskDisplayLabel('fix', { issue_type: 'price_volume_mismatch' }))
       .toBe('质检问题恢复·行情·价量口径错配')
+  })
+
+  it('ST 质量类型统一进入专属层并指向刷新恢复', () => {
+    expect(ISSUE_TYPES_ACTIVE).toEqual(expect.arrayContaining([
+      'st_status_missing', 'st_status_approximate', 'st_status_mismatch',
+    ]))
+    expect(RECOVER_ACTION_LABEL.st_status_missing).toBe('刷新ST状态')
+    expect(taskDisplayLabel('fix', { issue_type: 'st_status_mismatch' }))
+      .toBe('质检问题恢复·ST状态·日线投影不一致')
   })
 
   it('三类结果维护复用同一字段组件，相关性五阶段标签完整接线', () => {

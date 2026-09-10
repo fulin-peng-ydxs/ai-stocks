@@ -57,11 +57,15 @@ class BacktestEngine:
         返回 {(code, Timestamp): row}，row 含 open_raw/pre_close_raw/open_hfq/close_hfq/pct/below_ma。
         lo 需向前预留 ma_period 个交易日缓冲以算均线。
         """
+        from backend.services.stock_st_status import StockSTStatusService
+
+        StockSTStatusService(self.c).assert_published()
         bars = self.c.query_df(
             "SELECT b.code, b.trade_date, b.open, b.pre_close, b.close, "
             "       COALESCE(b.adj_factor_clean, b.adj_factor) AS adj_factor, "
-            "       sb.price_limit_pct, sb.name "
+            "       sb.price_limit_pct, st.is_st, st.quality AS st_quality "
             "FROM daily_bar b JOIN stock_basic sb ON sb.code=b.code "
+            "LEFT JOIN stock_st_status_daily st ON st.code=b.code AND st.trade_date=b.trade_date "
             "WHERE b.trade_date BETWEEN ? AND ? ORDER BY b.code, b.trade_date",
             [lo, hi],
         )
@@ -71,15 +75,21 @@ class BacktestEngine:
         af = bars["adj_factor"].fillna(1.0)
         bars["open_hfq"] = bars["open"] * af
         bars["close_hfq"] = bars["close"] * af
-        # ST 涨跌幅按交易日规则切换：主板 ST 2026-07-06 起 5%→10%，创业/科创 ST 仍为 20%。
-        is_st = bars["name"].fillna("").str.contains("ST")
+        missing_st = bars["is_st"].isna() | (bars["st_quality"] != "accurate")
+        if missing_st.any():
+            bad = bars.loc[missing_st, ["code", "trade_date"]].head(5)
+            raise RuntimeError(
+                f"回测区间 ST 点时事实未就绪（{int(missing_st.sum())} 行），示例 "
+                f"{bad.to_dict('records')}；请先运行 ST状态刷新"
+            )
+        # ST 涨跌幅按交易日规则切换：主板 ST 2026-07-06 起 5%→10%，创业/科创仍为20%。
         bars["pct"] = [
             price_limit_pct_for(
                 None if pd.isna(t.price_limit_pct) else float(t.price_limit_pct),
-                bool(st),
+                bool(t.is_st),
                 t.trade_date,
             )
-            for t, st in zip(bars.itertuples(index=False), is_st, strict=True)
+            for t in bars.itertuples(index=False)
         ]
         # below_ma：close_hfq < MA(close_hfq, ma_period)（后向、点时安全、基准一致）
         bars["ma"] = bars.groupby("code")["close_hfq"].transform(
@@ -97,10 +107,14 @@ class BacktestEngine:
         if snap.empty:
             return {}
         snap["trade_date"] = pd.to_datetime(snap["trade_date"])
-        # 榜单口径：排除 ST
-        st = set(self.c.query_df("SELECT code FROM stock_basic WHERE name LIKE '%ST%'")["code"])
         by_day: dict = {}
         for d, g in snap.groupby("trade_date", sort=False):
+            from backend.services.stock_st_status import StockSTStatusService
+
+            statuses = StockSTStatusService(self.c).status_map(
+                pd.Timestamp(d).date(), g["code"].astype(str).tolist()
+            )
+            st = {code for code, value in statuses.items() if value}
             g = g[~g["code"].isin(st)]
             if g.empty:
                 continue
@@ -203,14 +217,22 @@ class BacktestEngine:
         items: list[dict] = list(score_profile.get("items", [])) if score_profile else []
         items += collect_indicators(buy_tree or {}) + collect_indicators(sell_tree or {})
         snap = self._attach_range_exprs(snap, items, lo, hi)
-        st = set(self.c.query_df("SELECT code FROM stock_basic WHERE name LIKE '%ST%'")["code"])
         # 评分（排除 ST 作为选股 universe）
         scorer = ScoreProfileModel(score_profile) if score_profile else self.model
         snap_idx = snap.set_index("code")
         scored = scorer.score(snap_idx)
         sc = pd.DataFrame({"code": snap_idx.index, "trade_date": snap["trade_date"].values,
                            "total_score": scored["total_score"].values, "grade": scored["grade"].values})
-        sc = sc[~sc["code"].isin(st)]
+        kept = []
+        from backend.services.stock_st_status import StockSTStatusService
+
+        st_service = StockSTStatusService(self.c)
+        for day, group in sc.groupby("trade_date", sort=False):
+            statuses = st_service.status_map(
+                pd.Timestamp(day).date(), group["code"].astype(str).tolist()
+            )
+            kept.append(group[~group["code"].map(statuses).astype(bool)])
+        sc = pd.concat(kept, ignore_index=True) if kept else sc.iloc[0:0]
         S = {d: g.sort_values("total_score", ascending=False).reset_index(drop=True)[["code", "total_score", "grade"]]
              for d, g in sc.groupby("trade_date", sort=False)}
         buy_hits = self._tree_hits(snap, buy_tree) if buy_tree else {}

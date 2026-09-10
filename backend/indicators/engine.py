@@ -183,10 +183,12 @@ class IndicatorEngine:
         with self.c.temp_view(frame, prefix="ind_wide") as name:
             df = self.c.query_df(
                 f"SELECT i.*, b.open, b.high, b.low, b.close, b.pre_close, b.volume, "
-                f"       b.amount, b.turnover_rate, b.is_st, b.limit_status, b.is_one_word, "
+                f"       b.amount, b.turnover_rate, st.is_st, b.limit_status, b.is_one_word, "
                 f"       m.float_mv, m.total_mv "
                 f"FROM {name} i "
                 f"JOIN daily_bar b ON b.code=i.code AND b.trade_date=i.trade_date "
+                f"LEFT JOIN stock_st_status_daily st "
+                f"  ON st.code=i.code AND st.trade_date=i.trade_date AND st.quality='accurate' "
                 f"LEFT JOIN daily_metrics m ON m.code=i.code AND m.trade_date=i.trade_date"
             )
         return df

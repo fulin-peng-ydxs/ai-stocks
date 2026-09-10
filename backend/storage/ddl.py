@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS daily_bar (
     adj_factor    DOUBLE,        -- 复权因子（源端反推：后复权收盘÷不复权收盘，含舍入噪声，留作审计/后复权）
     adj_factor_clean DOUBLE,     -- 去抖后干净因子（分段恒定，K线前复权/后复权用此列；为空回落 adj_factor）
     turnover_rate DOUBLE,        -- 换手率(%)
-    is_st         BOOLEAN,       -- 当日是否 ST（尽力而为）
+    is_st         BOOLEAN,       -- 过渡物化投影；唯一事实为 stock_st_status_daily
     is_suspended  BOOLEAN,       -- 当日是否停牌
     limit_status  TINYINT,       -- 0 正常 / 1 涨停 / -1 跌停
     is_one_word   BOOLEAN,       -- 是否一字板
@@ -888,6 +888,19 @@ CREATE TABLE IF NOT EXISTS stock_st_status_history (
 );
 """
 
+DDL_STOCK_ST_STATUS_REFRESH_STATE = """
+CREATE TABLE IF NOT EXISTS stock_st_status_refresh_state (
+    scope_key    VARCHAR PRIMARY KEY,
+    status       VARCHAR NOT NULL CHECK (status IN ('refreshing', 'ready', 'failed')),
+    task_id      VARCHAR,
+    target_count INTEGER NOT NULL DEFAULT 0,
+    date_start   DATE,
+    date_end     DATE,
+    last_error   VARCHAR,
+    updated_at   TIMESTAMP NOT NULL
+);
+"""
+
 DDL_LIMIT_LADDER_SNAPSHOT_STATE = """
 CREATE TABLE IF NOT EXISTS limit_ladder_snapshot_state (
     trade_date           DATE PRIMARY KEY,
@@ -992,6 +1005,7 @@ CREATE TABLE IF NOT EXISTS limit_ladder_invalidation_outbox (
 M_LIMIT_LADDER_TABLES: dict[str, str] = {
     "stock_st_status_daily": DDL_STOCK_ST_STATUS_DAILY,
     "stock_st_status_history": DDL_STOCK_ST_STATUS_HISTORY,
+    "stock_st_status_refresh_state": DDL_STOCK_ST_STATUS_REFRESH_STATE,
     "limit_ladder_snapshot_state": DDL_LIMIT_LADDER_SNAPSHOT_STATE,
     "limit_ladder_snapshot": DDL_LIMIT_LADDER_SNAPSHOT,
     "limit_ladder_snapshot_stock": DDL_LIMIT_LADDER_SNAPSHOT_STOCK,

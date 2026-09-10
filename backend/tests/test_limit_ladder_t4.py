@@ -52,6 +52,23 @@ def _bar(code: str, trade_date: date, *, close: float = 10.0, amount: float = 10
     }
 
 
+def _upsert_bars(market, frame: pd.DataFrame) -> None:
+    MarketRepository(market).upsert_daily_bar(frame)
+    StockSTStatusService(market).upsert_facts([
+        StockSTStatusFact(
+            code=str(row["code"]),
+            trade_date=pd.Timestamp(row["trade_date"]).date(),
+            status=PointInTimeSTStatus(
+                is_st=bool(row.get("is_st", False)),
+                source="test_fixture",
+                source_ref="test_limit_ladder_t4",
+                quality=STStatusQuality.ACCURATE,
+            ),
+        )
+        for row in frame.to_dict("records")
+    ], change_reason="test_fixture", captured_at=datetime.now(UTC))
+
+
 def _log_terminal(market, trade_date: date, status: str, run_id: str, moment: datetime) -> None:
     detail = json.dumps({
         "kind": "market_day_terminal",
@@ -93,7 +110,7 @@ def test_gate_closes_pool_with_valid_bar_and_confirmed_suspension(market):
         ("600002.SH", "乙公司", "主板", date(2020, 1, 1), "软件", 0.10),
         ("600003.SH", "丙公司", "主板", date(2020, 1, 1), "银行", 0.10),
     ])
-    MarketRepository(market).upsert_daily_bar(pd.DataFrame([_bar("600001.SH", trade_date)]))
+    _upsert_bars(market, pd.DataFrame([_bar("600001.SH", trade_date)]))
     market.execute(
         "INSERT INTO stock_suspension (code,trade_date,confirmed_at) VALUES (?,?,current_timestamp)",
         ["600002.SH", trade_date],
@@ -105,7 +122,7 @@ def test_gate_closes_pool_with_valid_bar_and_confirmed_suspension(market):
     assert coverage.missing_count == 1
     assert coverage.reason_codes == ("MISSING_BAR_OR_SUSPENSION",)
 
-    MarketRepository(market).upsert_daily_bar(pd.DataFrame([_bar("600003.SH", trade_date)]))
+    _upsert_bars(market, pd.DataFrame([_bar("600003.SH", trade_date)]))
     ready = LimitLadderSnapshotService(market).check_coverage(trade_date)
     assert ready.ready is True
     assert ready.ingest_terminal_status == "unknown"
@@ -117,7 +134,7 @@ def test_gate_uses_latest_structured_terminal_and_ignores_legacy_detail(market):
     _seed_basic(market, [
         ("600001.SH", "甲公司", "主板", date(2020, 1, 1), "软件", 0.10),
     ])
-    MarketRepository(market).upsert_daily_bar(pd.DataFrame([_bar("600001.SH", trade_date)]))
+    _upsert_bars(market, pd.DataFrame([_bar("600001.SH", trade_date)]))
     _log_terminal(
         market, trade_date, "failed", "failed-run", datetime(2026, 8, 28, 18, 0, tzinfo=UTC)
     )
@@ -153,7 +170,7 @@ def test_gate_accepts_confirmed_suspensions_from_partial_ingest(market):
         ("600001.SH", "甲公司", "主板", date(2020, 1, 1), "软件", 0.10),
         ("600002.SH", "乙公司", "主板", date(2020, 1, 1), "软件", 0.10),
     ])
-    MarketRepository(market).upsert_daily_bar(pd.DataFrame([_bar("600001.SH", trade_date)]))
+    _upsert_bars(market, pd.DataFrame([_bar("600001.SH", trade_date)]))
     market.execute(
         "INSERT INTO stock_suspension (code,trade_date,confirmed_at) "
         "VALUES (?,?,current_timestamp)",
@@ -179,7 +196,7 @@ def test_gate_fingerprint_ignores_explicit_future_concepts(market):
     _seed_basic(market, [
         ("600001.SH", "甲公司", "主板", date(2020, 1, 1), "软件", 0.10),
     ])
-    MarketRepository(market).upsert_daily_bar(pd.DataFrame([_bar("600001.SH", trade_date)]))
+    _upsert_bars(market, pd.DataFrame([_bar("600001.SH", trade_date)]))
     market.execute(
         "INSERT INTO board_dict (board_code,name,board_type) VALUES ('C1','未来概念','concept')"
     )
@@ -205,7 +222,7 @@ def test_legal_empty_snapshot_is_published_and_repeat_creates_immutable_version(
     _seed_basic(market, [
         ("600001.SH", "甲公司", "主板", date(2020, 1, 1), "软件", 0.10),
     ])
-    MarketRepository(market).upsert_daily_bar(pd.DataFrame([_bar("600001.SH", trade_date)]))
+    _upsert_bars(market, pd.DataFrame([_bar("600001.SH", trade_date)]))
     service = LimitLadderSnapshotService(market)
     first = service.materialize(trade_date, task_id="task-1")
     second = service.materialize(trade_date, task_id="task-2")
@@ -230,7 +247,7 @@ def test_failed_recompute_keeps_last_success_pointer(market, monkeypatch):
     _seed_basic(market, [
         ("600001.SH", "甲公司", "主板", date(2020, 1, 1), "软件", 0.10),
     ])
-    MarketRepository(market).upsert_daily_bar(
+    _upsert_bars(market,
         pd.DataFrame([_bar("600001.SH", trade_date, close=11.0)])
     )
     service = LimitLadderSnapshotService(market)
@@ -261,7 +278,7 @@ def test_publication_transaction_rolls_back_partial_version(tmp_path, monkeypatc
     _seed_basic(client, [
         ("600001.SH", "甲公司", "主板", date(2020, 1, 1), "软件", 0.10),
     ])
-    MarketRepository(client).upsert_daily_bar(pd.DataFrame([_bar("600001.SH", trade_date)]))
+    _upsert_bars(client, pd.DataFrame([_bar("600001.SH", trade_date)]))
     service = LimitLadderSnapshotService(client)
     succeeded = service.materialize(trade_date, task_id="task-ok")
 
@@ -337,7 +354,7 @@ def test_unknown_list_date_is_excluded_from_point_in_time_pool(market):
         ("600001.SH", "已知", "主板", date(2020, 1, 1), "软件", 0.10),
         ("600002.SH", "未知", "主板", None, "软件", 0.10),
     ])
-    MarketRepository(market).upsert_daily_bar(
+    _upsert_bars(market,
         pd.DataFrame([_bar("600001.SH", trade_date)])
     )
 
@@ -412,7 +429,7 @@ def test_coverage_fingerprint_tracks_published_one_word_and_industry_dictionary(
     _seed_basic(market, [
         ("600001.SH", "甲公司", "主板", date(2020, 1, 1), "软件", 0.10),
     ])
-    MarketRepository(market).upsert_daily_bar(
+    _upsert_bars(market,
         pd.DataFrame([{**_bar("600001.SH", trade_date, close=11.0), "is_one_word": False}])
     )
     market.execute(

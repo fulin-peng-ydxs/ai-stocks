@@ -542,15 +542,24 @@ class DataIntegrityReport:
         verify 占用异步写任务全局槽位，避免其他数据任务并发写。
         """
         from backend.dataquality.checker import SCAN_ISSUE_TYPES
+        from backend.market_rules import limit_prices, price_limit_pct_sql, round_price_to_cent
+
+        effective_limit = price_limit_pct_sql(
+            "sb.price_limit_pct",
+            "st.quality='accurate' AND st.is_st",
+            "b.trade_date",
+        )
         # L3 异常涨跌幅：耗时扫描均在事务外完成，每条 SQL 结束即释放
         # 共享连接锁，任务状态/日志轮询可在查询间隙进入。
         df = self.c.query_df(
-            """
+            f"""
             SELECT *
             FROM (
                 SELECT b.code, b.trade_date, b.close, b.pre_close,
                        abs(b.close / b.pre_close - 1) AS chg,
                        COALESCE(sb.price_limit_pct, 0.10) AS lim,
+                       st.is_st,st.quality AS st_quality,
+                       {effective_limit} AS effective_lim,
                        sb.name,
                        sb.delist_date,
                        b.trade_date - lag(b.trade_date) OVER (PARTITION BY b.code ORDER BY b.trade_date)
@@ -563,16 +572,16 @@ class DataIntegrityReport:
                            ELSE NULL
                        END AS listing_trade_seq
                 FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code = b.code
+                LEFT JOIN stock_st_status_daily st
+                  ON st.code=b.code AND st.trade_date=b.trade_date
                 WHERE b.pre_close IS NOT NULL AND b.pre_close > 0
             ) t
             """)
         df = df[self._active_l3_mask(df)]
-        from backend.market_rules import limit_prices, round_price_to_cent
-
-        candidates = df[df["chg"] > df["lim"].astype(float) - 0.002]
+        candidates = df[df["chg"] > df["effective_lim"] - 0.002]
         ab_rows = []
         for _, row in candidates.iterrows():
-            up, down = limit_prices(float(row["pre_close"]), float(row["lim"]))
+            up, down = limit_prices(float(row["pre_close"]), float(row["effective_lim"]))
             close = round_price_to_cent(float(row["close"]))
             if down - 0.011 <= close <= up + 0.011:
                 continue
@@ -630,9 +639,10 @@ class DataIntegrityReport:
                 rows.append({"code": code, "trade_date": r["mv_gap_hi"], "issue_type": "mv_gap",
                              "detail": f"近{gap_window_days}个交易日内 {int(r['mv_gap_days'])} 天市值字段缺口"
                                        f"（需补市值）：{r['mv_detail']}"})
+        st_rows = self._collect_st_status_issues()
+        issue_rows = ab_rows + price_volume_rows + adj_rows + rows + st_rows
         # 仅台账替换使用短事务：失败回滚保留旧问题，计算期间不锁住轮询。
         with self.c.transaction():
-            issue_rows = ab_rows + price_volume_rows + adj_rows + rows
             self._upsert_scan_issues(issue_rows, SCAN_ISSUE_TYPES)
         active_rows = self.c.query_df(
             f"SELECT issue_type, count(*) AS n FROM data_quality_issue WHERE status='open' "
@@ -652,7 +662,56 @@ class DataIntegrityReport:
             "mv_gap_rows": inserted_counts["mv_gap"],
             "data_gap_rows": inserted_counts["data_gap"],
             "stale_rows": inserted_counts["stale"],
+            "st_status_missing_rows": inserted_counts["st_status_missing"],
+            "st_status_approximate_rows": inserted_counts["st_status_approximate"],
+            "st_status_mismatch_rows": inserted_counts["st_status_mismatch"],
         }
+
+    def _collect_st_status_issues(self) -> list[dict]:
+        """Aggregate ST contract failures per stock instead of flooding one issue per day."""
+        checks = (
+            (
+                "st_status_missing",
+                "st.code IS NULL",
+                "缺少权威 ST 点时事实",
+            ),
+            (
+                "st_status_approximate",
+                "st.code IS NOT NULL AND st.quality<>'accurate'",
+                "ST 点时事实仍为非权威兼容值",
+            ),
+            (
+                "st_status_mismatch",
+                "st.code IS NOT NULL AND b.is_st IS DISTINCT FROM st.is_st",
+                "daily_bar 过渡投影与 ST 唯一事实不一致",
+            ),
+        )
+        result: list[dict] = []
+        for issue_type, predicate, label in checks:
+            frame = self.c.query_df(
+                f"""
+                SELECT b.code,min(b.trade_date) AS lo,max(b.trade_date) AS hi,count(*) AS n
+                FROM daily_bar b
+                LEFT JOIN stock_st_status_daily st
+                  ON st.code=b.code AND st.trade_date=b.trade_date
+                WHERE {predicate}
+                GROUP BY b.code
+                """
+            )
+            for row in frame.to_dict("records"):
+                result.append(
+                    {
+                        "code": row["code"],
+                        "trade_date": row["hi"],
+                        "issue_type": issue_type,
+                        "detail": (
+                            f"{label}：{int(row['n'])} 日，"
+                            f"范围 {str(row['lo'])[:10]}~{str(row['hi'])[:10]}；"
+                            "运行个股采集“ST状态刷新”修复"
+                        ),
+                    }
+                )
+        return result
 
     # ── 市场基准指数质检 ─────────────────────────────────────
     def scan_market_index_quality(self, gap_window_days: int = GAP_WINDOW_DAYS) -> dict:
@@ -1067,6 +1126,27 @@ class DataIntegrityReport:
                 [code, trade_date],
             )
             return int(invalid) == 0
+        if issue_type == "st_status_missing":
+            return int(self._scalar(
+                "SELECT count(*) FROM daily_bar b LEFT JOIN stock_st_status_daily st "
+                "ON st.code=b.code AND st.trade_date=b.trade_date "
+                "WHERE b.code=? AND st.code IS NULL",
+                [code],
+            )) == 0
+        if issue_type == "st_status_approximate":
+            return int(self._scalar(
+                "SELECT count(*) FROM daily_bar b JOIN stock_st_status_daily st "
+                "ON st.code=b.code AND st.trade_date=b.trade_date "
+                "WHERE b.code=? AND st.quality<>'accurate'",
+                [code],
+            )) == 0
+        if issue_type == "st_status_mismatch":
+            return int(self._scalar(
+                "SELECT count(*) FROM daily_bar b JOIN stock_st_status_daily st "
+                "ON st.code=b.code AND st.trade_date=b.trade_date "
+                "WHERE b.code=? AND b.is_st IS DISTINCT FROM st.is_st",
+                [code],
+            )) == 0
         if issue_type == "abnormal_change":
             if trade_date is None:
                 return False
@@ -1076,6 +1156,7 @@ class DataIntegrityReport:
                 FROM (
                     SELECT b.trade_date, b.close, b.pre_close,
                            COALESCE(sb.price_limit_pct,0.10) lim,
+                           st.is_st,st.quality AS st_quality,
                            sb.name,
                            sb.delist_date,
                            b.trade_date - lag(b.trade_date) OVER (PARTITION BY b.code ORDER BY b.trade_date)
@@ -1088,6 +1169,8 @@ class DataIntegrityReport:
                                ELSE NULL
                            END AS listing_trade_seq
                     FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code=b.code
+                    LEFT JOIN stock_st_status_daily st
+                      ON st.code=b.code AND st.trade_date=b.trade_date
                     WHERE b.code=? AND b.pre_close>0
                 ) t
                 WHERE trade_date=?
@@ -1097,9 +1180,16 @@ class DataIntegrityReport:
             r = df.iloc[0]
             if not bool(self._active_l3_mask(df).iloc[0]):
                 return True
-            from backend.market_rules import limit_prices, round_price_to_cent
+            if pd.isna(r["is_st"]) or r["st_quality"] != "accurate":
+                return False
+            from backend.market_rules import (
+                limit_prices,
+                price_limit_pct_for,
+                round_price_to_cent,
+            )
 
-            up, down = limit_prices(float(r["pre_close"]), float(r["lim"]))
+            pct = price_limit_pct_for(float(r["lim"]), bool(r["is_st"]), r["trade_date"])
+            up, down = limit_prices(float(r["pre_close"]), pct)
             close = round_price_to_cent(float(r["close"]))
             return down - 0.011 <= close <= up + 0.011
         if issue_type == "adj_jump":

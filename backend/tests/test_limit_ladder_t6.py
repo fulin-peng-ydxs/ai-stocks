@@ -20,6 +20,8 @@ from backend.indicators.stock_board_correlation import ALGORITHM_VERSION
 from backend.services.async_task import ConcurrentTaskError
 from backend.services.limit_ladder_query import LimitLadderFilters, LimitLadderQueryService
 from backend.services.limit_ladder_snapshot import RULE_VERSION, LimitLadderSnapshotService
+from backend.limit_ladder.rules import PointInTimeSTStatus, STStatusQuality
+from backend.services.stock_st_status import StockSTStatusFact, StockSTStatusService
 from backend.storage.repository import MarketRepository
 
 
@@ -94,6 +96,19 @@ def _seed_ladder(market):
                 }
             )
     MarketRepository(market).upsert_daily_bar(pd.DataFrame(bars))
+    StockSTStatusService(market).upsert_facts([
+        StockSTStatusFact(
+            code=row["code"],
+            trade_date=row["trade_date"],
+            status=PointInTimeSTStatus(
+                is_st=False,
+                source="test_fixture",
+                source_ref="test_limit_ladder_t6",
+                quality=STStatusQuality.ACCURATE,
+            ),
+        )
+        for row in bars
+    ], change_reason="test_fixture", captured_at=datetime.now(UTC))
     market.execute(
         "INSERT INTO board_dict (board_code,name,board_type) VALUES "
         "('C001','人工智能','concept'),('C002','机器人','concept'),"
