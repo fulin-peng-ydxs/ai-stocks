@@ -92,6 +92,8 @@ describe('taskDisplayLabel', () => {
     expect(ingest).toContain('<ResultMaintenanceTaskFields')
     expect(ingest).toContain('buildResultMaintenanceTaskParams(resultType.value, resultForm.value)')
     expect(ingest).toContain("route.path !== '/data/ingest'")
+    expect(ingest).toContain("queryTaskType === 'stock_ingest' && requestedRecipe")
+    expect(ingest).toContain("q.task_type === 'stock_ingest' && typeof q.recipe === 'string'")
     expect(ingest).not.toContain('本次只按以上参数立即执行')
     expect(ingest).not.toContain('manual-result-execution-scope')
     expect(ingest.match(/>手动执行<\/el-button>/g)).toHaveLength(5)

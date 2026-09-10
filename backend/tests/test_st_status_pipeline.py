@@ -1,19 +1,21 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
+from typing import ClassVar
 
 import pandas as pd
 import pytest
+from baostock.common import context
 
 from backend.common.exceptions import DataSourceError
 from backend.datasource.baostock_source import BaostockSource, _collect
 from backend.limit_ladder.rules import PointInTimeSTStatus, STStatusQuality
 from backend.services.ingest import IngestionService
 from backend.services.stock_st_status import (
-    STStatusNotReadyError,
     StockSTStatusFact,
     StockSTStatusService,
+    STStatusNotReadyError,
 )
 
 
@@ -49,7 +51,7 @@ def test_baostock_collect_rejects_rows_truncated_by_midstream_failure():
     class Result:
         error_code = "0"
         error_msg = ""
-        fields = ["date"]
+        fields: ClassVar[list[str]] = ["date"]
         step = 0
 
         def next(self):
@@ -82,11 +84,9 @@ def test_baostock_query_failure_invalidates_socket_before_retry(monkeypatch):
     class Result:
         error_code = "10002007"
         error_msg = "网络接收错误"
-        fields = []
+        fields: ClassVar[list[str]] = []
 
     sock = Socket()
-    import baostock.common.context as context
-
     monkeypatch.setattr(context, "default_socket", sock, raising=False)
     with pytest.raises(DataSourceError, match="网络接收错误"):
         source._query_frame(lambda: Result())
@@ -160,6 +160,23 @@ def test_st_coverage_and_daily_projection_are_observable(market):
     assert service.sync_daily_bar_projection([day]) == 1
     row = market.query_df("SELECT is_st FROM daily_bar").iloc[0]
     assert bool(row["is_st"]) is False
+
+
+def test_st_dataset_version_preserves_subsecond_fact_changes(market):
+    day = date(2026, 7, 3)
+    market.execute(
+        "INSERT INTO daily_bar (code,trade_date,close,pre_close,is_st) "
+        "VALUES ('600001.SH',?,10,9.5,FALSE)",
+        [day],
+    )
+    service = StockSTStatusService(market)
+    service.upsert_facts(
+        [_fact("600001.SH", day, False)],
+        change_reason="seed",
+        captured_at=datetime(2026, 7, 4, 8, 0, 0, 123456, tzinfo=UTC).replace(tzinfo=None),
+    )
+
+    assert "2026-07-04T08:00:00.123456" in service.dataset_version(day, day)
 
 
 def test_set_based_marker_rebuild_applies_main_board_st_cutoff(market):
@@ -318,7 +335,7 @@ def test_st_refresh_resume_skips_completed_codes(market, monkeypatch):
 
     class Context:
         tid = "resume-task"
-        checkpoint = {"st_done_codes": ["600001.SH"]}
+        checkpoint: ClassVar[dict[str, list[str]]] = {"st_done_codes": ["600001.SH"]}
 
         def set_checkpoint(self, **values):
             self.checkpoint.update(values)
@@ -344,3 +361,37 @@ def test_st_refresh_resume_skips_completed_codes(market, monkeypatch):
     assert fetched == ["000001.SZ"]
     assert result["ok"] == 2
     assert set(ctx.checkpoint["st_done_codes"]) == {"600001.SH", "000001.SZ"}
+
+
+def test_st_refresh_includes_listed_stock_without_daily_bars(market, monkeypatch):
+    market_day = date(2026, 7, 6)
+    list_day = date(2026, 7, 1)
+    market.execute(
+        "INSERT INTO daily_bar (code,trade_date,close,pre_close) "
+        "VALUES ('600001.SH',?,10,9)",
+        [market_day],
+    )
+    market.execute(
+        "INSERT INTO stock_basic (code,list_date,price_limit_pct) "
+        "VALUES ('600002.SH',?,0.10)",
+        [list_day],
+    )
+    ingest = IngestionService.__new__(IngestionService)
+    ingest.c = market
+    ingest.repo = SimpleNamespace(c=market, log_update=lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        ingest, "_source_for", lambda _capability: SimpleNamespace(name="baostock")
+    )
+    fetched: list[tuple[str, date, date]] = []
+
+    def accurate(code, _dates, **kwargs):
+        fetched.append((code, kwargs["fetch_start"], kwargs["fetch_end"]))
+        return []
+
+    monkeypatch.setattr(ingest, "_accurate_st_facts", accurate)
+
+    result = ingest._refresh_st_status_impl(codes=["600002.SH"])
+
+    assert result["target"] == 1
+    assert result["ok"] == 1
+    assert fetched == [("600002.SH", list_day, market_day)]

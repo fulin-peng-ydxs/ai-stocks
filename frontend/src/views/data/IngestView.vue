@@ -35,9 +35,11 @@ import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
 import type { AppRowAction } from '@/components/rowActions'
 import {
+  STOCK_INGEST_RECIPE_LABEL,
   buildStockIngestParams,
   createStockIngestForm,
   type StockIngestFormValue,
+  type StockIngestRecipe,
 } from '@/utils/stockIngest'
 import {
   buildResultMaintenanceTaskParams,
@@ -340,6 +342,13 @@ function openIngestExecution(type: 'stock_ingest' | 'board') {
   optDlg.value = true
 }
 
+function hasExecutionQuery(q: typeof route.query): boolean {
+  return q.task_type === 'board'
+    || isResultMaintenanceTask(String(q.task_type || ''))
+    || (q.task_type === 'stock_ingest' && typeof q.recipe === 'string')
+    || (typeof q.code === 'string' && !!q.code)
+}
+
 // 从概览/质量页带 ?code=&start=&end= 跳来 → 预填「指定日期采集」对话框（重采该股缺口区间）
 function openFromQuery() {
   const q = route.query
@@ -354,6 +363,26 @@ function openFromQuery() {
     optForm.value = defaultOptionForm()
     optForm.value.mode = q.mode === 'backfill' ? 'backfill' : 'update'
     codeOptions.value = []
+    optDlg.value = true
+    return
+  }
+  const requestedRecipe = typeof q.recipe === 'string'
+    && Object.prototype.hasOwnProperty.call(STOCK_INGEST_RECIPE_LABEL, q.recipe)
+    ? q.recipe as StockIngestRecipe
+    : null
+  if (queryTaskType === 'stock_ingest' && requestedRecipe) {
+    const code = typeof q.code === 'string' ? q.code : ''
+    const start = typeof q.start === 'string' ? q.start : ''
+    const end = typeof q.end === 'string' ? q.end : start
+    optType.value = 'stock_ingest'
+    optForm.value = defaultOptionForm()
+    optForm.value.stock = createStockIngestForm({
+      recipe: requestedRecipe,
+      scope: code ? 'selected' : 'all',
+      codes: code ? [code] : [],
+      date_start: start,
+      date_end: end,
+    })
     optDlg.value = true
     return
   }
@@ -706,7 +735,10 @@ onMounted(async () => {
   else if (settings.taskStatus === 'failed') taskFilter.value.status = 'failed'
   if (settings.logStatus === 'failed') logFilter.value.status = 'failed'
   await load()
-  openFromQuery()
+  if (hasExecutionQuery(route.query)) {
+    openFromQuery()
+    await router.replace({ query: {} }).catch(() => {})
+  }
   pageInitialized = true
 })
 
@@ -720,8 +752,7 @@ watch(
     // 避免“配置调度”跳转时在后台误开手动执行弹窗，返回后才突然显示。
     if (!pageInitialized || route.path !== '/data/ingest') return
     // 仅当 query 实际带本次跳转参数时弹框；避免页面内其他 query 变化误弹
-    if (q.task_type === 'board' || isResultMaintenanceTask(String(q.task_type || ''))
-      || (typeof q.code === 'string' && q.code)) {
+    if (hasExecutionQuery(q)) {
       openFromQuery()
       router.replace({ query: {} }).catch(() => {})
     }

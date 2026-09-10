@@ -514,11 +514,36 @@ class StockSTStatusService:
     def dataset_version(self, start: date | None = None, end: date | None = None) -> str:
         """Stable signature material for reproducible backtests."""
         coverage = self.coverage(start, end)
+        where = []
+        params: list = []
+        if start is not None:
+            where.append("b.trade_date>=?")
+            params.append(start)
+        if end is not None:
+            where.append("b.trade_date<=?")
+            params.append(end)
+        clause = f"WHERE {' AND '.join(where)}" if where else ""
+        version_row = self.c.query_df(
+            f"""
+            SELECT max(st.updated_at) AS updated_at
+            FROM daily_bar b
+            LEFT JOIN stock_st_status_daily st
+              ON st.code=b.code AND st.trade_date=b.trade_date
+            {clause}
+            """,
+            params,
+        ).iloc[0]
+        updated_at = version_row["updated_at"]
+        precise_updated_at = (
+            "none" if pd.isna(updated_at) else pd.Timestamp(updated_at).isoformat()
+        )
+        refresh_state = coverage.get("refresh_state") or {}
         return ":".join(
             [
-                str(coverage["updated_at"] or "none"),
+                precise_updated_at,
                 str(coverage["expected"]),
                 str(coverage["accurate"]),
                 str(coverage["missing"]),
+                str(refresh_state.get("status") or "unpublished"),
             ]
         )

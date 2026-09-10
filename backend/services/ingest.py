@@ -2052,13 +2052,29 @@ class IngestionService:
         operation is serial because baostock owns a process-global session. A source failure
         never falls back to the current name and is returned as a resumable per-code failure.
         """
+        market_hi_raw = self.c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]
+        market_hi = None if pd.isna(market_hi_raw) else pd.Timestamp(market_hi_raw).date()
         spans = self.repo.c.query_df(
             """
-            SELECT b.code,min(b.trade_date) AS lo,max(b.trade_date) AS hi,
+            WITH target_codes AS (
+                SELECT DISTINCT code FROM daily_bar
+                UNION
+                SELECT code FROM stock_basic
+                WHERE list_date IS NOT NULL AND list_date<=?
+            )
+            SELECT target.code,
+                   COALESCE(min(b.trade_date),sb.list_date) AS lo,
+                   COALESCE(max(b.trade_date),LEAST(COALESCE(sb.delist_date,?),?)) AS hi,
                    sb.delist_date,COALESCE(sb.price_limit_pct,0.10) AS price_limit_pct
-            FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code=b.code
-            GROUP BY b.code,sb.delist_date,sb.price_limit_pct ORDER BY b.code
-            """
+            FROM target_codes target
+            LEFT JOIN daily_bar b ON b.code=target.code
+            LEFT JOIN stock_basic sb ON sb.code=target.code
+            GROUP BY target.code,sb.list_date,sb.delist_date,sb.price_limit_pct
+            HAVING COALESCE(min(b.trade_date),sb.list_date) IS NOT NULL
+               AND COALESCE(max(b.trade_date),LEAST(COALESCE(sb.delist_date,?),?)) IS NOT NULL
+            ORDER BY target.code
+            """,
+            [market_hi, market_hi, market_hi, market_hi, market_hi],
         )
         if codes:
             spans = spans[spans["code"].isin(set(codes))]
@@ -2078,8 +2094,6 @@ class IngestionService:
         failures: list[dict] = []
         total = len(all_target)
         completed_before = len(done_codes)
-        market_hi_raw = self.c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]
-        market_hi = None if pd.isna(market_hi_raw) else pd.Timestamp(market_hi_raw).date()
         if ctx:
             ctx.set_phase(
                 "st_status", phase_total=total, phase_done=completed_before, current_item=None
