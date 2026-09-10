@@ -3,6 +3,7 @@ import {
   buildStockIngestParams,
   createStockIngestForm,
   isHeavyStockIngestRecipe,
+  STOCK_INGEST_RECIPE_OPTIONS,
   stockIngestFormFromTask,
   stockIngestSummary,
 } from '@/utils/stockIngest'
@@ -69,6 +70,9 @@ describe('stock ingest shared form contract', () => {
     const full = createStockIngestForm({ recipe: 'st_status_refresh' })
     expect(buildStockIngestParams(full)).toEqual({ params: { recipe: 'st_status_refresh' } })
     expect(isHeavyStockIngestRecipe('st_status_refresh')).toBe(true)
+    const option = STOCK_INGEST_RECIPE_OPTIONS.find((item) => item.value === 'st_status_refresh')
+    expect(option?.description).toContain('下游结果由用户另行维护')
+    expect(option?.description).not.toContain('失效受影响结果')
 
     const scoped = createStockIngestForm({
       recipe: 'st_status_refresh', scope: 'selected', codes: ['601919.SH'],

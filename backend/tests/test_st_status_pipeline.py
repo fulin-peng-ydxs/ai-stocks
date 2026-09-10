@@ -386,7 +386,7 @@ def test_st_refresh_includes_listed_stock_without_daily_bars(market, monkeypatch
 
     def accurate(code, _dates, **kwargs):
         fetched.append((code, kwargs["fetch_start"], kwargs["fetch_end"]))
-        return []
+        return [_fact(code, market_day, False)]
 
     monkeypatch.setattr(ingest, "_accurate_st_facts", accurate)
 
@@ -394,4 +394,102 @@ def test_st_refresh_includes_listed_stock_without_daily_bars(market, monkeypatch
 
     assert result["target"] == 1
     assert result["ok"] == 1
+    assert result["rows"] == 1
     assert fetched == [("600002.SH", list_day, market_day)]
+
+
+def test_st_refresh_ignores_stale_checkpoint_codes_outside_current_target(
+    market, monkeypatch
+):
+    day = date(2026, 7, 6)
+    market.execute(
+        "INSERT INTO daily_bar (code,trade_date,close,pre_close) "
+        "VALUES ('600001.SH',?,10,9)",
+        [day],
+    )
+    ingest = IngestionService.__new__(IngestionService)
+    ingest.c = market
+    ingest.repo = SimpleNamespace(c=market, log_update=lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        ingest, "_source_for", lambda _capability: SimpleNamespace(name="baostock")
+    )
+    monkeypatch.setattr(
+        ingest,
+        "_accurate_st_facts",
+        lambda *_args, **_kwargs: [_fact("600001.SH", day, False)],
+    )
+
+    ctx = SimpleNamespace(
+        tid="resume-task",
+        checkpoint={"st_done_codes": ["999999.SZ"]},
+        set_checkpoint=lambda **_kwargs: None,
+        set_phase=lambda *_args, **_kwargs: None,
+        check_cancel=lambda: None,
+        log=lambda *_args, **_kwargs: None,
+        flush=lambda: None,
+        progress=lambda *_args, **_kwargs: None,
+    )
+
+    result = ingest._refresh_st_status_impl(ctx=ctx)
+
+    assert result["target"] == 1
+    assert result["ok"] == 1
+
+
+def test_refresh_publication_target_count_uses_actual_target_set(market, monkeypatch):
+    market_day = date(2026, 7, 6)
+    market.execute(
+        "INSERT INTO daily_bar (code,trade_date,close,pre_close) "
+        "VALUES ('600001.SH',?,10,9)",
+        [market_day],
+    )
+    market.execute(
+        "INSERT INTO stock_basic (code,list_date,price_limit_pct) "
+        "VALUES ('600002.SH','2026-07-01',0.10)"
+    )
+    StockSTStatusService(market).upsert_facts(
+        [_fact("600001.SH", market_day, False)], change_reason="seed"
+    )
+    ingest = IngestionService.__new__(IngestionService)
+    ingest.c = market
+    monkeypatch.setattr(
+        ingest,
+        "_refresh_st_status_impl",
+        lambda **kwargs: {"target": 2, "ok": 2, "fail": 0},
+    )
+
+    result = ingest.refresh_st_status()
+
+    assert result["publication_status"] == "ready"
+    assert StockSTStatusService(market).refresh_state()["target_count"] == 2
+
+
+def test_st_refresh_reports_changes_without_invalidating_downstream_results(
+    market, monkeypatch
+):
+    day = date(2026, 7, 6)
+    market.execute(
+        "INSERT INTO daily_bar (code,trade_date,close,pre_close) "
+        "VALUES ('600001.SH',?,10,9)",
+        [day],
+    )
+    ingest = IngestionService.__new__(IngestionService)
+    ingest.c = market
+    ingest.repo = SimpleNamespace(c=market, log_update=lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        ingest, "_source_for", lambda _capability: SimpleNamespace(name="baostock")
+    )
+    monkeypatch.setattr(
+        ingest,
+        "_accurate_st_facts",
+        lambda *_args, **_kwargs: [_fact("600001.SH", day, True)],
+    )
+
+    result = ingest._refresh_st_status_impl(codes=["600001.SH"])
+
+    assert result["changed_date_values"] == [str(day)]
+    assert "invalidated" not in result
+    assert result["downstream_results_untouched"] is True
+    assert market.query_df(
+        "SELECT count(*) AS n FROM limit_ladder_invalidation_outbox"
+    ).iloc[0]["n"] == 0

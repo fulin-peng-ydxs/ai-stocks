@@ -511,7 +511,7 @@ onMounted(load)
             @keydown.space.prevent="gotoStRefresh"
           >
             <div class="stat-label">ST 点时事实 <HelpHint text="权威 ST 逐日事实覆盖 daily_bar 的比例；缺失或非权威时筛选、评分、回测和涨跌停业务会拒绝运行" @click.stop /></div>
-            <div class="stat-val" :class="{ danger: !ov?.st_status.ready }">{{ ov?.st_status.coverage_rate ?? '—' }}<span class="sub">%</span></div>
+            <div class="stat-val" :class="{ danger: ov?.st_status?.ready === false }">{{ ov?.st_status?.coverage_rate ?? '—' }}<span class="sub">%</span></div>
             <div class="stat-foot" v-if="ov?.st_status">
               权威 {{ ov.st_status.accurate.toLocaleString() }} / {{ ov.st_status.expected.toLocaleString() }} · 缺失 {{ ov.st_status.missing }} · 非权威 {{ ov.st_status.approximate }} · 发布 {{ stPublicationLabel(ov.st_status.refresh_state?.status) }}
             </div>

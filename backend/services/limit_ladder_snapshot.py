@@ -777,10 +777,11 @@ class LimitLadderSnapshotService:
             high = float(fact.get("high"))
             low = float(fact.get("low"))
             close = float(fact.get("close"))
-            pre_close = float(fact.get("pre_close"))
         except (TypeError, ValueError):
             return False
-        values = (open_price, high, low, close, pre_close)
+        # IPO 无涨跌幅限制期允许 pre_close 为空；是否必须有有效昨收由后续统一
+        # 市场规则判定。这里仅校验当日本身的 OHLC，避免在识别 IPO 规则之前误拦截。
+        values = (open_price, high, low, close)
         return (
             all(math.isfinite(value) and value > 0 for value in values)
             and high >= max(open_price, close, low)

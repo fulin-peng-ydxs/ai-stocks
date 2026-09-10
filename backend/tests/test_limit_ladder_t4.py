@@ -190,6 +190,40 @@ def test_gate_accepts_confirmed_suspensions_from_partial_ingest(market):
     assert coverage.reason_codes == ()
 
 
+def test_gate_accepts_no_pre_close_during_ipo_no_limit_window(market):
+    trade_date = date(2026, 9, 9)
+    _seed_calendar(market, trade_date)
+    _seed_basic(market, [
+        ("301699.SZ", "洛轴股份", "创业板", trade_date, "通用设备", 0.20),
+    ])
+    bar = _bar("301699.SZ", trade_date, close=31.99)
+    bar.update({"open": 30.0, "high": 36.66, "low": 30.0, "pre_close": None})
+    _upsert_bars(market, pd.DataFrame([bar]))
+
+    coverage = LimitLadderSnapshotService(market).check_coverage(trade_date)
+
+    assert coverage.ready is True
+    assert coverage.valid_bar_count == 1
+    assert coverage.invalid_bar_count == 0
+
+
+def test_gate_still_rejects_missing_pre_close_on_ordinary_limit_day(market):
+    trade_date = date(2026, 9, 9)
+    _seed_calendar(market, trade_date)
+    _seed_basic(market, [
+        ("600001.SH", "普通股票", "主板", date(2020, 1, 1), "制造", 0.10),
+    ])
+    bar = _bar("600001.SH", trade_date, close=10.0)
+    bar["pre_close"] = None
+    _upsert_bars(market, pd.DataFrame([bar]))
+
+    coverage = LimitLadderSnapshotService(market).check_coverage(trade_date)
+
+    assert coverage.ready is False
+    assert coverage.invalid_bar_count == 1
+    assert coverage.reason_codes == ("INVALID_DAILY_BAR",)
+
+
 def test_gate_fingerprint_ignores_explicit_future_concepts(market):
     trade_date = date(2026, 8, 28)
     _seed_calendar(market, trade_date)

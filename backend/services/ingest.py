@@ -1990,9 +1990,8 @@ class IngestionService:
         """Run one published ST refresh batch and fail closed on partial/cancelled runs."""
         st_service = StockSTStatusService(self.c)
         previous_state = st_service.refresh_state()
-        target_count = len(codes) if codes else int(self.c.query_df(
-            "SELECT count(DISTINCT code) AS n FROM daily_bar"
-        ).iloc[0]["n"])
+        market_hi, spans = self._st_refresh_spans(codes)
+        target_count = len(spans)
         st_service.begin_refresh(
             task_id=getattr(ctx, "tid", None),
             target_count=target_count,
@@ -2000,7 +1999,13 @@ class IngestionService:
             end=end,
         )
         try:
-            result = self._refresh_st_status_impl(codes=codes, start=start, end=end, ctx=ctx)
+            result = self._refresh_st_status_impl(
+                codes=codes,
+                start=start,
+                end=end,
+                ctx=ctx,
+                prepared_spans=(market_hi, spans),
+            )
         except Exception as exc:
             st_service.finish_refresh(ready=False, error=str(exc))
             raise
@@ -2039,22 +2044,17 @@ class IngestionService:
         result["coverage"] = st_service.coverage(start, end)
         return result
 
-    def _refresh_st_status_impl(
-        self,
-        codes: list[str] | None = None,
-        start: date | None = None,
-        end: date | None = None,
-        ctx=None,
-    ) -> dict:
-        """Backfill canonical ST facts from baostock and refresh every derived consumer.
-
-        With no date range the stored daily-bar span of each selected security is used. The
-        operation is serial because baostock owns a process-global session. A source failure
-        never falls back to the current name and is returned as a resumable per-code failure.
-        """
+    def _st_refresh_spans(
+        self, codes: list[str] | None = None
+    ) -> tuple[date | None, pd.DataFrame]:
+        """Resolve the exact ST refresh target set once for state and execution."""
         market_hi_raw = self.c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]
         market_hi = None if pd.isna(market_hi_raw) else pd.Timestamp(market_hi_raw).date()
-        spans = self.repo.c.query_df(
+        if market_hi is None:
+            return None, pd.DataFrame(
+                columns=["code", "lo", "hi", "delist_date", "price_limit_pct"]
+            )
+        spans = self.c.query_df(
             """
             WITH target_codes AS (
                 SELECT DISTINCT code FROM daily_bar
@@ -2078,10 +2078,33 @@ class IngestionService:
         )
         if codes:
             spans = spans[spans["code"].isin(set(codes))]
+        return market_hi, spans.reset_index(drop=True)
+
+    def _refresh_st_status_impl(
+        self,
+        codes: list[str] | None = None,
+        start: date | None = None,
+        end: date | None = None,
+        ctx=None,
+        prepared_spans: tuple[date | None, pd.DataFrame] | None = None,
+    ) -> dict:
+        """Backfill canonical ST facts from baostock and publish their daily projection.
+
+        With no date range each selected security uses its listing-to-latest-market span,
+        bounded by delisting when applicable. The operation is serial because baostock owns a
+        process-global session. A source failure never falls back to the current name and is
+        returned as a resumable per-code failure. This source task reports changed dates but
+        never mutates downstream result lifecycle state.
+        """
+        market_hi, spans = prepared_spans or self._st_refresh_spans(codes)
         all_target = spans.to_dict("records")
-        done_codes = {
+        target_codes = {str(item["code"]) for item in all_target}
+        checkpoint_done_codes = {
             str(code) for code in (getattr(ctx, "checkpoint", {}).get("st_done_codes") or [])
         }
+        # A resumed task may see a changed target set after stock metadata is corrected.
+        # Count and skip only checkpoints that still belong to this run's resolved target.
+        done_codes = checkpoint_done_codes & target_codes
         target = [item for item in all_target if str(item["code"]) not in done_codes]
         source = self._source_for("st_status")
         st_service = StockSTStatusService(self.c)
@@ -2101,12 +2124,13 @@ class IngestionService:
             ctx.log(
                 f"▶ 开始 ST 状态刷新：{total} 只，已完成 {completed_before} 只，"
                 f"本轮待处理 {len(target)} 只，源 {source.name}，"
-                f"范围 {'指定区间' if start or end else '各股全部已有日线'}（串行）"
+                f"范围 {'指定区间' if start or end else '各股上市日至市场最新日'}（串行）"
             )
             ctx.flush()
         for index, item in enumerate(target, completed_before + 1):
             code = str(item["code"])
-            lo = max(pd.Timestamp(item["lo"]).date(), start) if start else pd.Timestamp(item["lo"]).date()
+            item_lo = pd.Timestamp(item["lo"]).date()
+            lo = max(item_lo, start) if start else item_lo
             stored_hi = pd.Timestamp(item["hi"]).date()
             delist = None if pd.isna(item.get("delist_date")) else pd.Timestamp(item["delist_date"]).date()
             natural_hi = min(market_hi or stored_hi, delist) if delist else (market_hi or stored_hi)
@@ -2159,8 +2183,8 @@ class IngestionService:
                     )
             except Exception as exc:  # noqa: BLE001 - per-code resumable boundary
                 if ctx and changed_for_code:
-                    # Facts may already be committed when marker recomputation fails. Preserve
-                    # their dates so a resumed task still invalidates every affected consumer.
+                    # Facts may already be committed when checkpoint persistence fails. Preserve
+                    # their dates so a resumed task still reports every affected source date.
                     ctx.set_checkpoint(
                         st_done_codes=sorted(done_codes),
                         st_changed_dates=sorted(str(day) for day in changed_dates),
@@ -2187,21 +2211,6 @@ class IngestionService:
             st_service.rebuild_daily_bar_markers(codes=codes, start=start, end=end)
             if fail == 0 else 0
         )
-        invalidated = {"ladder": 0, "score": 0}
-        if changed:
-            from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
-
-            invalidated["ladder"] = LimitLadderSnapshotService(self.c).request_invalidation(
-                changed, reason="ST 点时事实刷新"
-            )
-            try:
-                from backend.scoring.snapshot import ScoreSnapshotRepo
-
-                invalidated["score"] = ScoreSnapshotRepo(self.c).mark_stale_dates(changed)
-            except Exception as exc:  # noqa: BLE001 - PG unavailability must stay visible
-                log.warning("ST 刷新后评分快照失效失败: %s", exc)
-                failures.append({"code": "score_snapshot", "error": str(exc)[:500]})
-                fail += 1
         result = {
             "target": total,
             "ok": completed_before + ok,
@@ -2211,7 +2220,7 @@ class IngestionService:
             "changed_date_values": [str(day) for day in changed],
             "touched_dates": len(touched),
             "projection_rows": projection_rows,
-            "invalidated": invalidated,
+            "downstream_results_untouched": True,
             "failures": failures[:50],
             "coverage": st_service.coverage(start, end),
         }
@@ -2221,9 +2230,13 @@ class IngestionService:
             json.dumps(result, ensure_ascii=False, default=str),
         )
         if ctx:
+            changed_scope = (
+                f"{changed[0]}~{changed[-1]}" if changed else "无事实变化"
+            )
             ctx.log(
                 f"■ ST 状态刷新完成：成功 {ok}、失败 {fail}、事实 {rows} 行、"
-                f"影响 {len(changed)} 个交易日"
+                f"影响 {len(changed)} 个交易日（{changed_scope}）；"
+                "未修改评分、天梯等下游结果，由用户或显式调度决定是否维护"
             )
         return result
 
