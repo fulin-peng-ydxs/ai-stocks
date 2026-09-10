@@ -565,6 +565,25 @@ def cmd_verify_data(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_verify_catalog(_: argparse.Namespace) -> int:
+    """校验双库物理发现、业务元数据和字段说明契约。"""
+    import json
+
+    from backend.storage.catalog import (
+        build_catalog_payload,
+        catalog_contract_report,
+    )
+
+    try:
+        payload = build_catalog_payload(database="all", include_legacy=True)
+        report = catalog_contract_report(payload["tables"])
+    except Exception as exc:  # noqa: BLE001 -- 任一数据库失败都必须 fail-closed
+        print(f"数据资产目录校验失败：{exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    return 0 if report["ok"] else 1
+
+
 def cmd_delisted(args: argparse.Namespace) -> int:
     from backend.services import IngestionService
 
@@ -748,6 +767,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_vf = sub.add_parser("verify-data", help="数据正确性+完整性系统性核查（M1）")
     p_vf.add_argument("--no-cross", action="store_true", help="跳过独立数据源交叉验证（不联网）")
     p_vf.set_defaults(func=cmd_verify_data)
+    sub.add_parser(
+        "verify-catalog",
+        help="校验双库表发现、业务元数据、鲜活度/质量策略与字段说明",
+    ).set_defaults(func=cmd_verify_catalog)
     p_daily = sub.add_parser("daily", help="一键日常流程：更新行情(含补市值)→板块采集→数据质检→（可选）数据体检")
     p_daily.add_argument("--skip-update", action="store_true", help="跳过增量更新（数据已最新时，最省时）")
     p_daily.add_argument("--skip-board", action="store_true", help="跳过板块采集步骤（板块独立于行情更新）")

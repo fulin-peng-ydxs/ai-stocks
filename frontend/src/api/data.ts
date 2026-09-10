@@ -48,6 +48,19 @@ export function getOverview(): Promise<Overview> {
 export type CatalogDatabase = 'duckdb' | 'postgres'
 export type CatalogLifecycle = 'active' | 'legacy_readonly' | 'unregistered'
 export type CatalogCountMode = 'estimated' | 'exact' | 'unavailable'
+export type CatalogMetadataSource = 'explicit' | 'database_comment' | 'glossary' | 'generated' | 'fallback'
+export interface CatalogFreshnessPolicy {
+  mode: 'not_applicable' | 'direct' | 'snapshot' | 'snapshot_child'
+  column: string | null
+  baseline: string | null
+  comparison: 'equal' | 'not_before' | null
+}
+export interface CatalogQualityPolicy {
+  mode: 'not_applicable' | 'issue_types' | 'all_issues' | 'pending_outbox'
+  issue_types: string[]
+  status_column: string | null
+  pending_value: string | null
+}
 export interface CatalogField {
   name: string
   type: string
@@ -57,6 +70,9 @@ export interface CatalogField {
   default: string | null
   primary_key: boolean
   references: string | null
+  name_source: CatalogMetadataSource
+  description_source: CatalogMetadataSource
+  metadata_complete: boolean
 }
 export interface CatalogTable {
   key: string
@@ -69,8 +85,11 @@ export interface CatalogTable {
   lifecycle: CatalogLifecycle
   source_of_truth: CatalogDatabase
   metadata_complete: boolean
+  metadata_issues: string[]
   ownership_scope: string
   data_source: string
+  freshness_policy: CatalogFreshnessPolicy | null
+  quality_policy: CatalogQualityPolicy | null
   row_count: number | null
   row_count_mode: CatalogCountMode
   rows: number | null
@@ -79,7 +98,7 @@ export interface CatalogTable {
   fresh: boolean | null
   fields: CatalogField[]
   relations: string[]
-  open_issues: number
+  open_issues: number | null
   measured_at: string | null
 }
 export interface CatalogDatabaseSummary {

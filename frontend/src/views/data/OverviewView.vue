@@ -242,6 +242,41 @@ const LIFECYCLE_LABEL: Record<string, string> = {
   legacy_readonly: '迁移旧表',
   unregistered: '待登记',
 }
+const METADATA_SOURCE_LABEL: Record<string, string> = {
+  explicit: '表级注解',
+  database_comment: '数据库注释',
+  glossary: '公共词典',
+  generated: '命名规则生成',
+  fallback: '待补充',
+}
+
+function freshnessPolicyLabel(row: CatalogTable): string {
+  const policy = row.freshness_policy
+  if (!policy || policy.mode === 'not_applicable') return '不适用'
+  if (policy.mode === 'snapshot_child') return '关联有效快照业务日'
+  const comparison = policy.comparison === 'not_before' ? '不早于' : '等于'
+  return `${policy.column || '业务日'} ${comparison} 全局最新交易日`
+}
+
+function qualityPolicyLabel(row: CatalogTable): string {
+  const policy = row.quality_policy
+  if (!policy || policy.mode === 'not_applicable') return '未纳入表级质检'
+  if (policy.mode === 'all_issues') return '全部未解决质量问题'
+  if (policy.mode === 'pending_outbox') return '待投递事件数'
+  return `${policy.issue_types.length} 类质量规则`
+}
+
+function fieldMetadataSource(field: CatalogTable['fields'][number]): string {
+  const name = METADATA_SOURCE_LABEL[field.name_source] ?? field.name_source
+  const description = METADATA_SOURCE_LABEL[field.description_source]
+    ?? field.description_source
+  return `中文名：${name}；说明：${description}`
+}
+
+function formatQualityIssues(row: CatalogTable): string {
+  if (row.open_issues == null) return '—'
+  return row.open_issues > 0 ? `${row.open_issues} 待处理` : '0'
+}
 
 // 表级质量徽章：纳入鲜活度（最新时间空/滞后 → 不再误判"正常"）。
 function tableFreshness(row: CatalogTable): { type: string; text: string } {
@@ -705,7 +740,17 @@ onMounted(load)
                         <div><b>事实源</b><span>{{ databaseLabel(row.source_of_truth) }}</span></div>
                         <div><b>生命周期</b><span>{{ LIFECYCLE_LABEL[row.lifecycle] }}</span></div>
                         <div><b>关联关系</b><span>{{ row.relations?.join('；') || '—' }}</span></div>
+                        <div><b>鲜活度策略</b><span>{{ freshnessPolicyLabel(row) }}</span></div>
+                        <div><b>质量策略</b><span>{{ qualityPolicyLabel(row) }}</span></div>
                       </div>
+                      <AppStatusNotice
+                        v-if="row.metadata_issues?.length"
+                        class="asset-local-error"
+                        title="业务元数据尚未完成登记"
+                        :description="row.metadata_issues.join('；')"
+                        tone="warning"
+                        size="compact"
+                      />
                       <div class="asset-count-action">
                         <el-button
                           size="small"
@@ -734,6 +779,9 @@ onMounted(load)
                           <template #default="scope">{{ scope.row.primary_key ? '是' : '—' }}</template>
                         </AppTableColumn>
                         <AppTableColumn label="外键" prop="references" />
+                        <AppTableColumn label="元数据来源">
+                          <template #default="scope">{{ fieldMetadataSource(scope.row) }}</template>
+                        </AppTableColumn>
                         <AppTableColumn label="说明" prop="desc" />
                       </AppDataTable>
                     </div>
@@ -811,9 +859,19 @@ onMounted(load)
                   role="status"
                   align="right"
                 >
+                  <template #header>
+                    <span>质量问题</span>
+                    <HelpTip title="质量问题怎么统计？" :width="400">
+                      <HelpTipItem question="0 和 — 有什么区别">
+                        <ul>
+                          <li>0 表示该表已纳入质量规则且当前没有待处理问题；— 表示该表不适用或尚未纳入表级质检，不能解释为质量正常。</li>
+                        </ul>
+                      </HelpTipItem>
+                    </HelpTip>
+                  </template>
                   <template #default="{ row }">
-                    <span :class="{ 'txt-warn': row.open_issues > 0 }">
-                      {{ row.open_issues > 0 ? `${row.open_issues} 待处理` : '0' }}
+                    <span :class="{ 'txt-warn': row.open_issues != null && row.open_issues > 0 }">
+                      {{ formatQualityIssues(row) }}
                     </span>
                   </template>
                 </AppTableColumn>

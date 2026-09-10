@@ -12,12 +12,24 @@
 
 ### 双库数据资产目录（`backend/storage/catalog.py`）
 
-- `GET /api/data/catalog` 面向系统管理员自动发现 DuckDB `main` 与 PostgreSQL `public` 的物理表和字段，并在服务层合并；两库之间不执行跨库 JOIN。当前迁移完成态包含 86 张当前事实表（DuckDB 27、PostgreSQL 59）和 28 张默认隐藏的 DuckDB 迁移旧表。
-- 系统目录提供原生类型、可空性、默认值、主键和外键；代码只维护中文名、用途、业务分类、归属范围、数据源和关系等业务注解。未登记的新物理表仍以 `unregistered` 展示，不能因缺注解而消失。ST 当前事实、变更历史和刷新发布状态均归“行情参考”。
+- `GET /api/data/catalog` 面向系统管理员自动发现 DuckDB `main` 与 PostgreSQL `public` 的物理表和字段，并在服务层合并；两库之间不执行跨库 JOIN。当前迁移完成态包含 87 张当前事实表（DuckDB 28、PostgreSQL 59）和 28 张默认隐藏的 DuckDB 迁移旧表。
+- 系统目录提供原生类型、可空性、默认值、主键、外键和数据库列注释；代码维护中文名、用途、业务分类、归属范围、数据源、关系、鲜活度策略与质量策略。字段中文名和说明按“表级显式注解 → 数据库列注释/公共词典 → 命名规则生成”解析，并返回来源；任何未识别字段保留为 `fallback`，由目录契约阻断。未登记的新物理表仍以 `unregistered` 展示，不能因缺注解而消失。
 - 列表行数使用数据库系统目录的快速估算；只有明确指定 `database + table` 时才允许单表 `COUNT(*)` 精确统计。表名先通过发现结果白名单校验；DuckDB 只报告数据库文件总大小，PostgreSQL 另报告表及索引空间。
 - 生命周期为 `active | legacy_readonly | unregistered`。任务运行态复用 `task_runtime_backend()`，平台布局配置复用配置迁移路由函数；受控回滚后事实源和旧表状态随真实 marker 自动切换，不维护第二套路由判断。
-- 连板天梯的 7 张 DuckDB 分析事实表、ST 的 4 张行情参考表与 2 张 PG 协调表全部进入目录。四张快照子表分别通过 `snapshot_id` 关联当前有效快照取得最新业务日；ST 日期修订账本展示修订日期范围，失效 outbox 展示更新时间与 pending 数，二者都不套用行情鲜活度。
+- 连板天梯的 7 张 DuckDB 分析事实表、ST 的 4 张行情参考表与 2 张 PG 协调表全部进入目录。四张快照子表分别通过 `snapshot_id` 关联当前有效快照取得最新业务日；ST 日期修订账本展示修订日期范围并按全局最新交易日判鲜活，ST 刷新发布状态、变更历史和失效 outbox 只展示自身更新时间，明确不套用行情鲜活度。
 - `GET /api/data/dimensions` 继续保存股东数据、筹码分布等尚无物理表的规划维度；前端将其单列为“规划中”，不与物理表统计混用。
+
+#### 新增或修改表的固定接入流程
+
+1. 先按事实用途确定数据库：全市场行情、参考和分析事实进入 DuckDB；租户/用户资产、权限、平台配置、任务、日志、调度和审计进入 PostgreSQL。跨库需求在服务层分开查询后合并，不能为方便查询复制事实源或跨库 JOIN。
+2. 只在对应的 `backend/storage/ddl.py` 或 `backend/storage/pg_ddl.py` 声明表、主键、外键、默认值和索引；不得直接在共享数据库手工建表。需要用户私有归属的 PG 表同时满足 `tenant_id + owner_user_id` 及全链路归属条件。
+3. 在 `backend/storage/catalog.py` 登记表级业务元数据：中文名、具体用途、业务分类、归属范围、数据来源和人类可读关系。禁止用“某领域当前事实表”一类模板说明代替实际用途。
+4. DuckDB 表必须显式登记 `FreshnessPolicy` 和 `QualityPolicy`，即使不适用也写 `not_applicable`。鲜活度只回答数据是否追平业务基准；质量问题只统计已配置规则。`open_issues=null` 表示未纳入/不适用，页面显示“—”；`open_issues=0` 才表示已检查且当前零问题。PG 表默认显式声明两者不适用。
+5. 字段结构由数据库自动发现。字段中文名或说明优先写进表级显式注解或数据库列注释；通用命名可复用 `catalog_metadata.py` 公共词典。不能识别的新 token 不得继续显示英文并冒充完整元数据。
+6. 同步领域服务、仓储、权限/租户边界和对应测试；如果表属于规划维度落地，还要把 `data_dimension_registry` 从 `planned` 调整为真实覆盖状态。仅有规划、尚无物理表时仍只登记维度，不注册虚构表。
+7. 合并前运行 `python -m backend.cli verify-catalog`。该命令会直连 DuckDB，后端正在持有文件锁时先按 `./start.sh status`、`./start.sh stop` 停服，校验后恢复原运行状态。门禁同时检查 DuckDB/PG 可连接、DDL 与物理表集合一致、所有表均有业务元数据和显式策略、全部字段都有中文名与说明；任何一项失败均返回非零退出码，标准后端目录测试也会因新增 DDL 表漏登记而失败。
+
+修改既有表同样执行第 2、4、5、6、7 步。目录 API 在运行时仍会暴露意外物理表并标记 `unregistered`，但这只是可观测兜底，不代表允许带遗漏发布。
 
 ### 入库清洗与复权口径（`backend/dataquality/checker.py`、`storage/repository.py`）
 - **L1 入库闸门** `sanitize_bars`：收盘价空/≤0 的行直接丢弃（记 `null_close`）；开高低缺失/≤0 用收盘价回填（记 `ohl_repaired`）；零成交量补 0。坏行入库即拦截/标记，不进下游。

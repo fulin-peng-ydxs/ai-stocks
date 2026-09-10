@@ -9,11 +9,20 @@ from __future__ import annotations
 
 import os
 import re
+from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Any, Literal
 
 import pandas as pd
 
+from backend.storage.catalog_metadata import (
+    FRESHNESS_NOT_APPLICABLE,
+    QUALITY_NOT_APPLICABLE,
+    FreshnessPolicy,
+    QualityPolicy,
+    TableAssetMeta,
+    resolve_field_metadata,
+)
 from backend.storage.duckdb_client import DuckDBClient, get_client
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
@@ -177,7 +186,7 @@ TABLE_CATALOG: dict[str, dict] = {
         "relations": ["board_member/board_bar/board_fund_flow 经 board_code 关联"],
         "fields": [
             {"name": "board_code", "type": "VARCHAR", "name_cn": "板块代码", "desc": "同花顺路径 code（主键）"},
-            {"name": "app_code", "type": "VARCHAR", "name_cn": "App代码", "desc": "同花顺 App clid"},
+            {"name": "app_code", "type": "VARCHAR", "name_cn": "应用代码", "desc": "同花顺应用侧 clid"},
             {"name": "name", "type": "VARCHAR", "name_cn": "板块名", "desc": ""},
             {"name": "board_type", "type": "VARCHAR", "name_cn": "板块类型", "desc": "concept / industry"},
             {"name": "member_count", "type": "BIGINT", "name_cn": "最近完整快照返回数", "desc": "最近一次完整成分快照返回的成员数量；行情统计另用 board_member 历史累计关系"},
@@ -499,6 +508,22 @@ _DUCK_CATEGORY_OVERRIDES = {
     "stock_board_correlation_state": "走势关联",
 }
 
+_DUCK_CORE_SOURCES = {
+    "stock_basic": "AKShare / baostock",
+    "daily_bar": "AKShare / baostock",
+    "daily_metrics": "日线行情与股本衍生",
+    "index_bar": "AKShare",
+    "trade_calendar": "AKShare",
+    "data_update_log": "数据采集任务",
+    "data_quality_issue": "数据质检任务",
+    "board_dict": "同花顺公开接口",
+    "board_member": "同花顺公开接口",
+    "board_bar": "同花顺公开接口",
+    "board_fund_flow": "同花顺公开接口",
+    "stock_board_correlation": "个股走势关联计算",
+    "stock_board_correlation_state": "个股走势关联计算",
+}
+
 _PG_META_GROUPS: tuple[tuple[str, str, dict[str, str]], ...] = (
     ("身份与权限", "platform_global", {
         "sys_tenant": "租户",
@@ -581,6 +606,68 @@ _PG_META_GROUPS: tuple[tuple[str, str, dict[str, str]], ...] = (
     }),
 )
 
+_PG_TABLE_PURPOSES: dict[str, str] = {
+    "sys_tenant": "保存租户主体、状态和基础配置，是租户隔离的根实体。",
+    "sys_user": "保存登录用户、所属租户、账号状态与权限版本。",
+    "sys_role": "定义租户角色及系统角色，用于聚合菜单和功能点授权。",
+    "sys_menu": "保存运行时菜单树、路由、可见性和排序配置。",
+    "sys_resource": "登记受控 API 与按钮功能点，是权限校验的资源事实源。",
+    "sys_user_role": "维护用户与角色的多对多授权关系。",
+    "sys_role_menu": "维护角色可见菜单关系。",
+    "sys_role_resource": "维护角色与功能点的授权关系。",
+    "screen_profile": "保存筛选方案当前身份、可见范围和版本指针。",
+    "screen_profile_version": "保存筛选方案不可变版本及筛选规则快照。",
+    "score_profile": "保存评分方案当前身份、可见范围和版本指针。",
+    "score_profile_version": "保存评分方案不可变版本及评分配置快照。",
+    "trade_profile": "保存买卖方案当前身份、可见范围和版本指针。",
+    "trade_profile_version": "保存买卖方案不可变版本及买卖规则快照。",
+    "screen_result": "保存指定筛选方案与交易日产生的逐股筛选结果。",
+    "score_result": "保存指定评分方案与交易日产生的逐股评分结果。",
+    "stock_group": "保存用户股票分组及其可见范围。",
+    "stock_group_member": "保存股票分组与股票代码的成员关系。",
+    "board_watchlist": "保存用户关注的板块列表和排序。",
+    "trade_discipline_rule": "保存交易纪律规则主体、发布状态和当前版本指针。",
+    "trade_discipline_rule_name_claim": "占用交易纪律规则名称，避免并发创建重名规则。",
+    "trade_discipline_rule_version": "保存交易纪律规则的不可变发布版本。",
+    "trade_discipline_stock_rule": "保存规则版本中针对个股的约束。",
+    "trade_discipline_action_subtype": "定义交易动作子类型及展示属性。",
+    "trade_discipline_action_rule": "保存规则版本允许或限制的交易动作。",
+    "trade_discipline_rule_draft": "保存尚未发布的交易纪律规则草稿。",
+    "trade_discipline_draft_stock_rule": "保存草稿中的个股约束。",
+    "trade_discipline_draft_action_rule": "保存草稿中的交易动作约束。",
+    "trade_discipline_rule_activation": "记录规则启用、停用和生效日期历史。",
+    "trade_discipline_checkin": "保存用户每日交易纪律打卡主体。",
+    "trade_discipline_checkin_revision": "保存打卡内容的不可变修订记录。",
+    "trade_discipline_reason": "保存用户维护的交易原因字典。",
+    "trade_discipline_violation": "保存打卡中识别出的纪律违规明细。",
+    "trade_discipline_operation": "记录交易纪律业务操作和状态变化。",
+    "backtest_run": "保存回测任务参数、状态、归属和复用来源。",
+    "backtest_trade": "保存回测运行产生的逐笔模拟成交。",
+    "backtest_equity": "保存回测运行的逐日权益曲线。",
+    "backtest_metrics": "保存回测运行汇总收益与风险指标。",
+    "score_snapshot": "保存榜单读取使用的逐股评分结果快照。",
+    "score_snapshot_meta": "保存评分快照版本、生成状态和失效信息。",
+    "training_session": "保存盘感训练会话的规则、范围和汇总状态。",
+    "training_round": "保存训练会话中的逐回合决策与结果。",
+    "training_trade": "保存训练回合内的模拟交易记录。",
+    "layout_preset": "保存平台布局预设及版本化配置。",
+    "layout_page_config": "保存页面级布局和组件配置。",
+    "layout_field_policy": "定义组件配置字段允许写入的配置层级。",
+    "app_config": "保存平台级运行配置及迁移标记。",
+    "dict_type": "定义平台数据字典类型。",
+    "dict_item": "保存数据字典类型下的可维护选项。",
+    "layout_user_config": "保存用户在单页面上的个性化布局覆盖。",
+    "user_preference": "保存跨页面共享的用户偏好。",
+    "storage_migration": "记录存储迁移 marker、状态和执行摘要。",
+    "async_task": "保存异步任务状态、进度、检查点和取消请求。",
+    "task_log": "保存异步任务的结构化运行日志。",
+    "scheduled_job": "保存定时任务定义、频率和启停状态。",
+    "scheduled_trigger_event": "记录调度触发、派发和执行关联。",
+    "audit_log": "保存平台权限和关键业务操作审计记录。",
+    "limit_ladder_task_ledger": "协调连板天梯任务的幂等执行、重试和终态。",
+    "limit_ladder_audit_outbox": "可靠投递连板天梯状态变化的审计事件。",
+}
+
 _PG_TABLE_META: dict[str, dict[str, Any]] = {}
 for _category, _scope, _names in _PG_META_GROUPS:
     for _table, _name_cn in _names.items():
@@ -588,16 +675,16 @@ for _category, _scope, _names in _PG_META_GROUPS:
             "name_cn": _name_cn,
             "category": _category,
             "ownership_scope": _scope,
-            "purpose": f"{_name_cn}，属于{_category}领域的 PostgreSQL 当前事实表。",
+            "purpose": _PG_TABLE_PURPOSES.get(_table, ""),
             "source": "业务服务",
         }
 
 _COMMON_FIELD_META: dict[str, tuple[str, str]] = {
-    "tenant_id": ("租户 ID", "数据所属租户"),
-    "owner_user_id": ("所有者用户 ID", "用户资产真实所有者"),
+    "tenant_id": ("租户标识", "数据所属租户"),
+    "owner_user_id": ("所有者用户标识", "用户资产真实所有者"),
     "created_at": ("创建时间", "记录创建时间"),
     "updated_at": ("更新时间", "记录最近更新时间"),
-    "fix_task_id": ("修复任务 ID", "进入修复中状态时绑定的异步任务"),
+    "fix_task_id": ("修复任务标识", "进入修复中状态时绑定的异步任务"),
     "ignore_scope": ("忽略范围", "仅本次 occurrence / 整体 object"),
     "ignore_active": ("忽略是否生效", "当前忽略规则是否仍在生效"),
     "source": ("数据来源", "产生该记录的数据来源"),
@@ -606,37 +693,96 @@ _COMMON_FIELD_META: dict[str, tuple[str, str]] = {
     "net_ratio": ("净流入占比", "净流入相对成交规模的比例"),
 }
 
-_DIRECT_LATEST_COLUMNS: dict[str, str] = {
-    "daily_bar": "trade_date",
-    "daily_metrics": "trade_date",
-    "index_bar": "trade_date",
-    "trade_calendar": "trade_date",
-    "data_update_log": "updated_at",
-    "data_quality_issue": "detected_at",
-    "data_source_provenance": "fetched_at",
-    "board_dict": "last_seen_at",
-    "board_member": "first_seen_date",
-    "board_bar": "trade_date",
-    "board_fund_flow": "snapshot_date",
-    "stock_board_correlation": "as_of_date",
-    "stock_board_correlation_state": "as_of_date",
-    "stock_st_status_daily": "trade_date",
-    "stock_st_status_history": "changed_at",
-    "stock_st_status_refresh_state": "updated_at",
-    "stock_st_status_date_revision": "trade_date",
-    "limit_ladder_snapshot_state": "trade_date",
-    "limit_ladder_snapshot": "trade_date",
-    "limit_ladder_invalidation_outbox": "updated_at",
+_DUCK_FRESHNESS_POLICIES: dict[str, FreshnessPolicy] = {
+    "stock_basic": FRESHNESS_NOT_APPLICABLE,
+    "daily_bar": FreshnessPolicy("direct", "trade_date", "latest_trade_date", "equal"),
+    "daily_metrics": FreshnessPolicy("direct", "trade_date", "latest_trade_date", "equal"),
+    "index_bar": FreshnessPolicy("direct", "trade_date", "latest_trade_date", "equal"),
+    "trade_calendar": FreshnessPolicy("not_applicable", "trade_date"),
+    "data_update_log": FreshnessPolicy("not_applicable", "updated_at"),
+    "data_quality_issue": FreshnessPolicy("not_applicable", "detected_at"),
+    "board_dict": FreshnessPolicy("not_applicable", "last_seen_at"),
+    "board_member": FreshnessPolicy("not_applicable", "first_seen_date"),
+    "board_bar": FreshnessPolicy("direct", "trade_date", "latest_trade_date", "not_before"),
+    "board_fund_flow": FreshnessPolicy(
+        "direct", "snapshot_date", "latest_trade_date", "not_before"
+    ),
+    "stock_board_correlation": FreshnessPolicy(
+        "direct", "as_of_date", "latest_trade_date", "equal"
+    ),
+    "stock_board_correlation_state": FreshnessPolicy(
+        "direct", "as_of_date", "latest_trade_date", "equal"
+    ),
+    "data_dimension_registry": FRESHNESS_NOT_APPLICABLE,
+    "data_source_provenance": FreshnessPolicy("not_applicable", "fetched_at"),
+    "indicator_def": FRESHNESS_NOT_APPLICABLE,
+    "stock_suspension": FreshnessPolicy("not_applicable", "confirmed_at"),
+    "stock_st_status_daily": FreshnessPolicy(
+        "direct", "trade_date", "latest_trade_date", "equal"
+    ),
+    "stock_st_status_history": FreshnessPolicy("not_applicable", "changed_at"),
+    "stock_st_status_refresh_state": FreshnessPolicy("not_applicable", "updated_at"),
+    "stock_st_status_date_revision": FreshnessPolicy(
+        "direct", "trade_date", "latest_trade_date", "equal"
+    ),
+    "limit_ladder_snapshot_state": FreshnessPolicy(
+        "snapshot", "trade_date", "latest_trade_date", "equal"
+    ),
+    "limit_ladder_snapshot": FreshnessPolicy(
+        "snapshot", "trade_date", "latest_trade_date", "equal"
+    ),
+    "limit_ladder_snapshot_stock": FreshnessPolicy(
+        "snapshot_child", baseline="latest_trade_date", comparison="equal"
+    ),
+    "limit_ladder_snapshot_concept": FreshnessPolicy(
+        "snapshot_child", baseline="latest_trade_date", comparison="equal"
+    ),
+    "limit_ladder_snapshot_aggregate": FreshnessPolicy(
+        "snapshot_child", baseline="latest_trade_date", comparison="equal"
+    ),
+    "limit_ladder_snapshot_window_metric": FreshnessPolicy(
+        "snapshot_child", baseline="latest_trade_date", comparison="equal"
+    ),
+    "limit_ladder_invalidation_outbox": FreshnessPolicy("not_applicable", "updated_at"),
 }
 
-_FRESH_TABLES = {
-    "daily_bar", "daily_metrics", "index_bar", "board_bar", "board_fund_flow",
-    "stock_board_correlation", "stock_board_correlation_state", "stock_st_status_daily",
-    "stock_st_status_refresh_state",
-    "stock_st_status_date_revision",
-    "limit_ladder_snapshot_state", "limit_ladder_snapshot", "limit_ladder_snapshot_stock",
-    "limit_ladder_snapshot_concept", "limit_ladder_snapshot_aggregate",
-    "limit_ladder_snapshot_window_metric",
+_DUCK_QUALITY_POLICIES: dict[str, QualityPolicy] = {
+    "stock_basic": QUALITY_NOT_APPLICABLE,
+    "daily_bar": QualityPolicy("issue_types", (
+        "null_close", "ohl_repaired", "abnormal_change", "price_volume_mismatch",
+        "adj_jump", "data_gap", "stale",
+    )),
+    "daily_metrics": QualityPolicy("issue_types", ("mv_missing", "mv_gap")),
+    "index_bar": QualityPolicy("issue_types", _MARKET_INDEX_ISSUES),
+    "trade_calendar": QUALITY_NOT_APPLICABLE,
+    "data_update_log": QUALITY_NOT_APPLICABLE,
+    "data_quality_issue": QualityPolicy("all_issues"),
+    "board_dict": QualityPolicy("issue_types", _BOARD_ISSUES_BY_TABLE["board_dict"]),
+    "board_member": QualityPolicy("issue_types", _BOARD_ISSUES_BY_TABLE["board_member"]),
+    "board_bar": QualityPolicy("issue_types", _BOARD_ISSUES_BY_TABLE["board_bar"]),
+    "board_fund_flow": QualityPolicy("issue_types", _BOARD_ISSUES_BY_TABLE["board_fund_flow"]),
+    "stock_board_correlation": QUALITY_NOT_APPLICABLE,
+    "stock_board_correlation_state": QUALITY_NOT_APPLICABLE,
+    "data_dimension_registry": QUALITY_NOT_APPLICABLE,
+    "data_source_provenance": QUALITY_NOT_APPLICABLE,
+    "indicator_def": QUALITY_NOT_APPLICABLE,
+    "stock_suspension": QUALITY_NOT_APPLICABLE,
+    "stock_st_status_daily": QualityPolicy(
+        "issue_types",
+        ("st_status_missing", "st_status_approximate", "st_status_mismatch"),
+    ),
+    "stock_st_status_history": QUALITY_NOT_APPLICABLE,
+    "stock_st_status_refresh_state": QUALITY_NOT_APPLICABLE,
+    "stock_st_status_date_revision": QUALITY_NOT_APPLICABLE,
+    "limit_ladder_snapshot_state": QUALITY_NOT_APPLICABLE,
+    "limit_ladder_snapshot": QUALITY_NOT_APPLICABLE,
+    "limit_ladder_snapshot_stock": QUALITY_NOT_APPLICABLE,
+    "limit_ladder_snapshot_concept": QUALITY_NOT_APPLICABLE,
+    "limit_ladder_snapshot_aggregate": QUALITY_NOT_APPLICABLE,
+    "limit_ladder_snapshot_window_metric": QUALITY_NOT_APPLICABLE,
+    "limit_ladder_invalidation_outbox": QualityPolicy(
+        "pending_outbox", status_column="status", pending_value="pending"
+    ),
 }
 
 _LADDER_CHILD_TABLES = {
@@ -645,6 +791,84 @@ _LADDER_CHILD_TABLES = {
     "limit_ladder_snapshot_aggregate",
     "limit_ladder_snapshot_window_metric",
 }
+
+_DUCK_PLATFORM_TABLES = {"data_update_log", "data_quality_issue"}
+
+
+def _table_name_cn(database: str, table: str) -> str:
+    if database == "postgres":
+        return str(_PG_TABLE_META.get(table, {}).get("name_cn", table))
+    raw = (
+        TABLE_CATALOG.get(table)
+        or _DUCK_EXTRA_META.get(table)
+        or _PG_TABLE_META.get(table)
+        or {}
+    )
+    return str(raw.get("name_cn", table))
+
+
+def _table_asset_meta(
+    database: Literal["duckdb", "postgres"],
+    table: str,
+    *,
+    legacy_truth: str | None = None,
+) -> tuple[TableAssetMeta | None, list[str]]:
+    """构造表级强类型元数据，并返回缺失契约项。"""
+    issues: list[str] = []
+    if database == "postgres":
+        raw = _PG_TABLE_META.get(table)
+        freshness = FRESHNESS_NOT_APPLICABLE
+        quality = QUALITY_NOT_APPLICABLE
+    else:
+        raw = TABLE_CATALOG.get(table) or _DUCK_EXTRA_META.get(table)
+        freshness = _DUCK_FRESHNESS_POLICIES.get(table)
+        quality = _DUCK_QUALITY_POLICIES.get(table)
+        if raw is None and legacy_truth:
+            pg_meta = _PG_TABLE_META.get(table)
+            if pg_meta:
+                raw = {
+                    **pg_meta,
+                    "purpose": (
+                        f"{pg_meta['name_cn']}的 DuckDB 迁移旧表；当前事实源为 "
+                        f"{legacy_truth}，仅供受控回滚或历史核验。"
+                    ),
+                    "source": "历史迁移存量",
+                }
+                freshness = FRESHNESS_NOT_APPLICABLE
+                quality = QUALITY_NOT_APPLICABLE
+    if raw is None:
+        return None, ["缺少表级业务元数据"]
+    if freshness is None:
+        issues.append("未声明鲜活度策略")
+    if quality is None:
+        issues.append("未声明质量策略")
+    required = {
+        "name_cn": raw.get("name_cn"),
+        "category": raw.get("category") or _DUCK_CATEGORY_OVERRIDES.get(table),
+        "purpose": raw.get("purpose"),
+        "ownership_scope": raw.get("ownership_scope") or (
+            "platform_global" if table in _DUCK_PLATFORM_TABLES else "market_global"
+        ),
+        "data_source": raw.get("source") or _DUCK_CORE_SOURCES.get(table),
+    }
+    for key, value in required.items():
+        if not isinstance(value, str) or not value.strip():
+            issues.append(f"缺少 {key}")
+    if issues:
+        return None, issues
+    assert freshness is not None and quality is not None
+    return TableAssetMeta(
+        database=database,
+        table=table,
+        name_cn=str(required["name_cn"]),
+        category=str(required["category"]),
+        purpose=str(required["purpose"]),
+        ownership_scope=str(required["ownership_scope"]),
+        data_source=str(required["data_source"]),
+        relations=tuple(str(item) for item in raw.get("relations", [])),
+        freshness=freshness,
+        quality=quality,
+    ), []
 
 _RUNTIME_TABLES = {"async_task", "task_log", "scheduled_job", "scheduled_trigger_event"}
 _LAYOUT_PLATFORM_TABLES = {
@@ -705,7 +929,7 @@ def _duck_schema(client: DuckDBClient) -> tuple[list[dict], dict[str, list[dict]
         "WHERE schema_name='main' AND internal=false ORDER BY table_name"
     ).to_dict("records")
     columns = client.query_df(
-        "SELECT table_name,column_name,column_index,data_type,is_nullable,column_default "
+        "SELECT table_name,column_name,column_index,data_type,is_nullable,column_default,comment "
         "FROM duckdb_columns() WHERE schema_name='main' AND internal=false "
         "ORDER BY table_name,column_index"
     ).to_dict("records")
@@ -731,16 +955,27 @@ def _duck_schema(client: DuckDBClient) -> tuple[list[dict], dict[str, list[dict]
         table = str(item["table_name"])
         name = str(item["column_name"])
         annotation = _field_annotations(table).get(name, {})
-        common_cn, common_desc = _COMMON_FIELD_META.get(name, (name, ""))
+        common_cn, common_desc = _COMMON_FIELD_META.get(name, (None, None))
+        reference = references.get((table, name))
+        resolved = resolve_field_metadata(
+            name=name,
+            table_name_cn=_table_name_cn("duckdb", table),
+            explicit_name=annotation.get("name_cn"),
+            explicit_desc=annotation.get("desc"),
+            database_comment=_clean(item.get("comment")),
+            primary_key=name in primary.get(table, set()),
+            reference=reference,
+            glossary_name=common_cn,
+            glossary_desc=common_desc,
+        )
         fields.setdefault(table, []).append({
             "name": name,
-            "name_cn": annotation.get("name_cn", common_cn),
             "type": str(item["data_type"]),
             "nullable": bool(item["is_nullable"]),
             "default": _clean(item.get("column_default")),
             "primary_key": name in primary.get(table, set()),
-            "references": references.get((table, name)),
-            "desc": annotation.get("desc", common_desc),
+            "references": reference,
+            **resolved,
         })
     estimates = {
         str(item["table_name"]): int(item["estimated_size"] or 0) for item in tables
@@ -756,24 +991,35 @@ def _pg_schema(client: PostgresClient) -> tuple[list[dict], dict[str, list[dict]
         "WHERE n.nspname='public' AND c.relkind='r' ORDER BY c.relname"
     ).to_dict("records")
     columns = client.query_df(
-        "SELECT table_name,column_name,ordinal_position,data_type,is_nullable,column_default "
-        "FROM information_schema.columns WHERE table_schema='public' "
-        "ORDER BY table_name,ordinal_position"
+        "SELECT cols.table_name,cols.column_name,cols.ordinal_position,cols.data_type,"
+        "cols.is_nullable,cols.column_default,descr.description AS column_comment "
+        "FROM information_schema.columns cols "
+        "JOIN pg_namespace ns ON ns.nspname=cols.table_schema "
+        "JOIN pg_class rel ON rel.relnamespace=ns.oid AND rel.relname=cols.table_name "
+        "LEFT JOIN pg_description descr ON descr.objoid=rel.oid "
+        "AND descr.objsubid=cols.ordinal_position "
+        "WHERE cols.table_schema='public' ORDER BY cols.table_name,cols.ordinal_position"
     ).to_dict("records")
     constraints = client.query_df(
-        "SELECT tc.table_name,tc.constraint_type,kcu.column_name,ccu.table_name AS foreign_table,"
-        "ccu.column_name AS foreign_column FROM information_schema.table_constraints tc "
-        "JOIN information_schema.key_column_usage kcu ON tc.constraint_name=kcu.constraint_name "
-        "AND tc.table_schema=kcu.table_schema LEFT JOIN information_schema.constraint_column_usage ccu "
-        "ON tc.constraint_name=ccu.constraint_name AND tc.table_schema=ccu.table_schema "
-        "WHERE tc.table_schema='public' AND tc.constraint_type IN ('PRIMARY KEY','FOREIGN KEY')"
+        "SELECT rel.relname AS table_name,con.contype,attr.attname AS column_name,"
+        "foreign_rel.relname AS foreign_table,foreign_attr.attname AS foreign_column "
+        "FROM pg_constraint con JOIN pg_class rel ON rel.oid=con.conrelid "
+        "JOIN pg_namespace ns ON ns.oid=rel.relnamespace "
+        "JOIN LATERAL unnest(con.conkey) WITH ORDINALITY local_key(attnum,ord) ON true "
+        "JOIN pg_attribute attr ON attr.attrelid=rel.oid AND attr.attnum=local_key.attnum "
+        "LEFT JOIN pg_class foreign_rel ON foreign_rel.oid=con.confrelid "
+        "LEFT JOIN LATERAL unnest(con.confkey) WITH ORDINALITY foreign_key(attnum,ord) "
+        "ON foreign_key.ord=local_key.ord "
+        "LEFT JOIN pg_attribute foreign_attr ON foreign_attr.attrelid=foreign_rel.oid "
+        "AND foreign_attr.attnum=foreign_key.attnum "
+        "WHERE ns.nspname='public' AND con.contype IN ('p','f')"
     ).to_dict("records")
     primary: dict[str, set[str]] = {}
     references: dict[tuple[str, str], str] = {}
     for item in constraints:
         table = str(item["table_name"])
         name = str(item["column_name"])
-        if item["constraint_type"] == "PRIMARY KEY":
+        if item["contype"] == "p":
             primary.setdefault(table, set()).add(name)
         elif item.get("foreign_table"):
             references[(table, name)] = f"{item['foreign_table']}.{item['foreign_column']}"
@@ -781,16 +1027,27 @@ def _pg_schema(client: PostgresClient) -> tuple[list[dict], dict[str, list[dict]
     for item in columns:
         table = str(item["table_name"])
         name = str(item["column_name"])
-        common_cn, common_desc = _COMMON_FIELD_META.get(name, (name, ""))
+        common_cn, common_desc = _COMMON_FIELD_META.get(name, (None, None))
+        reference = references.get((table, name))
+        resolved = resolve_field_metadata(
+            name=name,
+            table_name_cn=_table_name_cn("postgres", table),
+            explicit_name=None,
+            explicit_desc=None,
+            database_comment=_clean(item.get("column_comment")),
+            primary_key=name in primary.get(table, set()),
+            reference=reference,
+            glossary_name=common_cn,
+            glossary_desc=common_desc,
+        )
         fields.setdefault(table, []).append({
             "name": name,
-            "name_cn": common_cn,
             "type": str(item["data_type"]).upper(),
             "nullable": str(item["is_nullable"]).upper() == "YES",
             "default": _clean(item.get("column_default")),
             "primary_key": name in primary.get(table, set()),
-            "references": references.get((table, name)),
-            "desc": common_desc,
+            "references": reference,
+            **resolved,
         })
     estimates = {
         str(item["table_name"]): int(item["estimated_rows"] or 0) for item in tables
@@ -800,15 +1057,16 @@ def _pg_schema(client: PostgresClient) -> tuple[list[dict], dict[str, list[dict]
 
 def _duck_runtime_metrics(
     client: DuckDBClient, tables: set[str]
-) -> tuple[dict, dict, str | None, dict[str, bool]]:
+) -> tuple[dict, dict[str, int | None], str | None, dict[str, bool]]:
     latest: dict[str, str | None] = {table: None for table in tables}
     global_latest: str | None = None
     if "daily_bar" in tables:
         value = client.query_df("SELECT max(trade_date) AS value FROM daily_bar").iloc[0]["value"]
         global_latest = None if _clean(value) is None else str(pd.Timestamp(value).date())
     selections = [
-        f"(SELECT max({column}) FROM {table}) AS {table}"
-        for table, column in _DIRECT_LATEST_COLUMNS.items() if table in tables
+        f'(SELECT max("{policy.column}") FROM "{table}") AS "{table}"'
+        for table, policy in _DUCK_FRESHNESS_POLICIES.items()
+        if table in tables and policy.column
     ]
     if selections:
         row = client.query_df("SELECT " + ",".join(selections)).iloc[0]
@@ -839,20 +1097,28 @@ def _duck_runtime_metrics(
             value = item.get("value")
             latest[str(item["table_name"])] = None if _clean(value) is None else str(value)
         latest["limit_ladder_snapshot_state"] = latest.get("limit_ladder_snapshot")
-    issues: dict[str, int] = {table: 0 for table in tables}
+    issues: dict[str, int | None] = {table: None for table in tables}
     if "data_quality_issue" in tables:
         issue_rows = client.query_df(
             "SELECT issue_type,count(*) AS n FROM data_quality_issue "
             "WHERE status IN ('open','fixing') GROUP BY issue_type"
         ).to_dict("records")
         issue_counts = {str(item["issue_type"]): int(item["n"]) for item in issue_rows}
-        issues["data_quality_issue"] = sum(issue_counts.values())
-        issues["index_bar"] = sum(issue_counts.get(key, 0) for key in _MARKET_INDEX_ISSUES)
-        for table, issue_types in _BOARD_ISSUES_BY_TABLE.items():
-            issues[table] = sum(issue_counts.get(key, 0) for key in issue_types)
-    if "limit_ladder_invalidation_outbox" in tables:
-        issues["limit_ladder_invalidation_outbox"] = int(client.query_df(
-            "SELECT count(*) AS n FROM limit_ladder_invalidation_outbox WHERE status='pending'"
+        for table, policy in _DUCK_QUALITY_POLICIES.items():
+            if table not in tables:
+                continue
+            if policy.mode == "all_issues":
+                issues[table] = sum(issue_counts.values())
+            elif policy.mode == "issue_types":
+                issues[table] = sum(issue_counts.get(key, 0) for key in policy.issue_types)
+    for table, policy in _DUCK_QUALITY_POLICIES.items():
+        if table not in tables or policy.mode != "pending_outbox":
+            continue
+        assert policy.status_column and policy.pending_value
+        issues[table] = int(client.query_df(
+            f'SELECT coalesce(sum(CASE WHEN "{policy.status_column}"=? '
+            f'THEN 1 ELSE 0 END),0) AS n FROM "{table}"',
+            [policy.pending_value],
         ).iloc[0]["n"])
     fresh_overrides: dict[str, bool] = {}
     if "index_bar" in tables:
@@ -880,12 +1146,13 @@ def _duck_runtime_metrics(
 
 
 def _freshness(table: str, latest_time: str | None, global_latest: str | None) -> bool | None:
-    if table not in _FRESH_TABLES:
+    policy = _DUCK_FRESHNESS_POLICIES.get(table)
+    if policy is None or policy.mode == "not_applicable":
         return None
     if latest_time is None or global_latest is None:
         return False
     latest_date = str(pd.Timestamp(latest_time).date())
-    if table in {"board_bar", "board_fund_flow"}:
+    if policy.comparison == "not_before":
         return latest_date >= global_latest
     return latest_date == global_latest
 
@@ -913,6 +1180,16 @@ def _lifecycle(database: str, table: str, overlap: set[str], task_backend: str,
     elif table in _LAYOUT_PLATFORM_TABLES:
         truth = layout_backend
     return ("active", truth) if database == truth else ("legacy_readonly", truth)
+
+
+def _relations(meta: TableAssetMeta | None, fields: list[dict]) -> list[str]:
+    result = list(meta.relations if meta else ())
+    result.extend(
+        f"{field['name']} → {field['references']}"
+        for field in fields
+        if field.get("references")
+    )
+    return list(dict.fromkeys(result))
 
 
 def _validate_options(database: str, count_mode: str, table: str | None) -> None:
@@ -968,33 +1245,37 @@ def build_catalog(
             lifecycle, truth = _lifecycle("duckdb", name, overlap, task_backend, layout_backend)
             if lifecycle == "legacy_readonly" and not include_legacy:
                 continue
-            base = TABLE_CATALOG.get(name) or _DUCK_EXTRA_META.get(name)
-            if base is None and name in overlap:
-                pg_meta = _PG_TABLE_META.get(name, {})
-                base = {
-                    **pg_meta,
-                    "purpose": (
-                        f"{pg_meta.get('name_cn', name)}的 DuckDB 迁移旧表；"
-                        f"当前事实源为 {truth}，仅供受控回滚或历史核验。"
-                    ),
-                    "source": "历史迁移存量",
-                }
-            metadata_complete = base is not None
-            meta = base or {}
+            meta, metadata_issues = _table_asset_meta(
+                "duckdb",
+                name,
+                legacy_truth=truth if name in overlap else None,
+            )
+            fields = duck_fields.get(name, [])
+            incomplete_fields = [
+                field["name"] for field in fields if not field.get("metadata_complete")
+            ]
+            if incomplete_fields:
+                metadata_issues.append(
+                    f"字段元数据待补充: {', '.join(incomplete_fields)}"
+                )
+            metadata_complete = meta is not None and not metadata_issues
             row_count = exact_count if count_mode == "exact" else estimates.get(name)
             rows.append({
                 "key": f"duckdb:main:{name}",
                 "database": "duckdb",
                 "schema": "main",
                 "table": name,
-                "name_cn": meta.get("name_cn", name),
-                "category": meta.get("category", _DUCK_CATEGORY_OVERRIDES.get(name, "未登记")),
-                "purpose": meta.get("purpose", "物理表已发现，业务元数据待补充。"),
-                "lifecycle": lifecycle if metadata_complete else "unregistered",
+                "name_cn": meta.name_cn if meta else name,
+                "category": meta.category if meta else "未登记",
+                "purpose": meta.purpose if meta else "物理表已发现，业务元数据待补充。",
+                "lifecycle": lifecycle if meta is not None else "unregistered",
                 "source_of_truth": truth,
                 "metadata_complete": metadata_complete,
-                "ownership_scope": meta.get("ownership_scope", "market_global"),
-                "data_source": meta.get("source", "—"),
+                "metadata_issues": metadata_issues,
+                "ownership_scope": meta.ownership_scope if meta else "market_global",
+                "data_source": meta.data_source if meta else "—",
+                "freshness_policy": asdict(meta.freshness) if meta else None,
+                "quality_policy": asdict(meta.quality) if meta else None,
                 "row_count": row_count,
                 "row_count_mode": count_mode if row_count is not None else "unavailable",
                 "rows": row_count,
@@ -1003,9 +1284,9 @@ def build_catalog(
                 "fresh": fresh_overrides.get(
                     name, _freshness(name, latest.get(name), global_latest)
                 ),
-                "open_issues": issues.get(name, 0),
-                "fields": duck_fields.get(name, []),
-                "relations": meta.get("relations", []),
+                "open_issues": issues.get(name),
+                "fields": fields,
+                "relations": _relations(meta, fields),
                 "measured_at": (
                     datetime.now(UTC).isoformat() if count_mode == "exact" else None
                 ),
@@ -1035,32 +1316,42 @@ def build_catalog(
             lifecycle, truth = _lifecycle("postgres", name, overlap, task_backend, layout_backend)
             if lifecycle == "legacy_readonly" and not include_legacy:
                 continue
-            meta = _PG_TABLE_META.get(name)
-            metadata_complete = meta is not None
-            meta = meta or {}
+            meta, metadata_issues = _table_asset_meta("postgres", name)
+            fields = pg_fields.get(name, [])
+            incomplete_fields = [
+                field["name"] for field in fields if not field.get("metadata_complete")
+            ]
+            if incomplete_fields:
+                metadata_issues.append(
+                    f"字段元数据待补充: {', '.join(incomplete_fields)}"
+                )
+            metadata_complete = meta is not None and not metadata_issues
             row_count = exact_count if count_mode == "exact" else estimates.get(name)
             rows.append({
                 "key": f"postgres:public:{name}",
                 "database": "postgres",
                 "schema": "public",
                 "table": name,
-                "name_cn": meta.get("name_cn", name),
-                "category": meta.get("category", "未登记"),
-                "purpose": meta.get("purpose", "物理表已发现，业务元数据待补充。"),
-                "lifecycle": lifecycle if metadata_complete else "unregistered",
+                "name_cn": meta.name_cn if meta else name,
+                "category": meta.category if meta else "未登记",
+                "purpose": meta.purpose if meta else "物理表已发现，业务元数据待补充。",
+                "lifecycle": lifecycle if meta is not None else "unregistered",
                 "source_of_truth": truth,
                 "metadata_complete": metadata_complete,
-                "ownership_scope": meta.get("ownership_scope", "platform_global"),
-                "data_source": meta.get("source", "业务服务"),
+                "metadata_issues": metadata_issues,
+                "ownership_scope": meta.ownership_scope if meta else "platform_global",
+                "data_source": meta.data_source if meta else "业务服务",
+                "freshness_policy": asdict(meta.freshness) if meta else None,
+                "quality_policy": asdict(meta.quality) if meta else None,
                 "row_count": row_count,
                 "row_count_mode": count_mode if row_count is not None else "unavailable",
                 "rows": row_count,
                 "storage_bytes": sizes.get(name),
                 "latest_time": None,
                 "fresh": None,
-                "open_issues": 0,
-                "fields": pg_fields.get(name, []),
-                "relations": [],
+                "open_issues": None,
+                "fields": fields,
+                "relations": _relations(meta, fields),
                 "measured_at": (
                     datetime.now(UTC).isoformat() if count_mode == "exact" else None
                 ),
@@ -1132,3 +1423,71 @@ def build_catalog_payload(
         summary["postgres"]["database_name"] = str(database["name"])
         summary["postgres"]["database_size_bytes"] = int(database["size"])
     return {"summary": summary, "tables": tables}
+
+
+def catalog_contract_report(tables: list[dict]) -> dict[str, Any]:
+    """校验全量目录与 DDL、表级策略及字段说明契约。"""
+    violations: list[str] = []
+    keys = [str(item["key"]) for item in tables]
+    if len(keys) != len(set(keys)):
+        violations.append("发现重复的 database:schema:table 目录键")
+
+    expected_duck, expected_pg = _duck_table_sets()
+    discovered = {
+        "duckdb": {str(item["table"]) for item in tables if item["database"] == "duckdb"},
+        "postgres": {
+            str(item["table"]) for item in tables if item["database"] == "postgres"
+        },
+    }
+    for database, expected in (("duckdb", expected_duck), ("postgres", expected_pg)):
+        missing = sorted(expected - discovered[database])
+        extra = sorted(discovered[database] - expected)
+        if missing:
+            violations.append(f"{database} DDL 表未被物理发现: {', '.join(missing)}")
+        if extra:
+            violations.append(f"{database} 存在未纳入 DDL 的物理表: {', '.join(extra)}")
+
+    field_total = 0
+    field_complete = 0
+    for item in tables:
+        identity = f"{item['database']}.{item['schema']}.{item['table']}"
+        field_names = {str(field["name"]) for field in item.get("fields", [])}
+        if not item.get("metadata_complete"):
+            detail = "；".join(item.get("metadata_issues") or ["原因未登记"])
+            violations.append(f"{identity} 业务元数据不完整: {detail}")
+        freshness = item.get("freshness_policy")
+        if freshness is None:
+            violations.append(f"{identity} 未显式声明鲜活度策略")
+        else:
+            if freshness.get("column") and freshness["column"] not in field_names:
+                violations.append(
+                    f"{identity} 鲜活度字段不存在: {freshness['column']}"
+                )
+            if freshness.get("mode") in {"direct", "snapshot", "snapshot_child"} and (
+                not freshness.get("baseline") or not freshness.get("comparison")
+            ):
+                violations.append(f"{identity} 鲜活度比较基准未完整声明")
+            if freshness.get("mode") in {"direct", "snapshot"} and not freshness.get("column"):
+                violations.append(f"{identity} 鲜活度业务时间字段未声明")
+        quality = item.get("quality_policy")
+        if quality is None:
+            violations.append(f"{identity} 未显式声明质量策略")
+        elif quality.get("mode") == "issue_types" and not quality.get("issue_types"):
+            violations.append(f"{identity} 质量问题类型集合为空")
+        elif quality.get("mode") == "pending_outbox":
+            status_column = quality.get("status_column")
+            if not status_column or status_column not in field_names or not quality.get("pending_value"):
+                violations.append(f"{identity} outbox 待处理统计字段未完整声明")
+        for field in item.get("fields", []):
+            field_total += 1
+            if field.get("metadata_complete"):
+                field_complete += 1
+            else:
+                violations.append(f"{identity}.{field['name']} 缺少中文名或说明")
+    return {
+        "ok": not violations,
+        "violations": violations,
+        "table_count": len(tables),
+        "field_count": field_total,
+        "field_metadata_complete": field_complete,
+    }

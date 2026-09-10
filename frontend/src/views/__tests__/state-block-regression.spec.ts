@@ -602,7 +602,7 @@ describe('代表性页面四态回归', () => {
     })
     ;(dataApi.getCatalog as ReturnType<typeof vi.fn>).mockResolvedValue({
       summary: {
-        duckdb: { active_tables: 26, legacy_tables: 28, unregistered_tables: 0, database_size_bytes: 1 },
+        duckdb: { active_tables: 28, legacy_tables: 28, unregistered_tables: 0, database_size_bytes: 1 },
         postgres: { active_tables: 59, legacy_tables: 0, unregistered_tables: 0, database_size_bytes: 2 },
       },
       tables: [
@@ -649,6 +649,12 @@ describe('代表性页面四态回归', () => {
     expect(labels()).toContain('表及索引空间')
     expect(labels()).not.toContain('鲜活度')
 
+    expect((wrapper.vm as any).formatQualityIssues({ open_issues: null })).toBe('—')
+    expect((wrapper.vm as any).formatQualityIssues({ open_issues: 0 })).toBe('0')
+    expect((wrapper.vm as any).fieldMetadataSource({
+      name_source: 'glossary', description_source: 'generated',
+    })).toBe('中文名：公共词典；说明：命名规则生成')
+
     ;(wrapper.vm as any).assetMode = 'planned'
     await wrapper.vm.$nextTick()
     expect((wrapper.vm as any).displayedAssets.map((item: any) => item.name_cn))
@@ -677,7 +683,7 @@ describe('代表性页面四态回归', () => {
     ;(dataApi.getCatalog as ReturnType<typeof vi.fn>).mockImplementation(
       ({ include_legacy }: { include_legacy?: boolean } = {}) => Promise.resolve({
         summary: {
-          duckdb: { active_tables: 26, legacy_tables: 28, unregistered_tables: 0, database_size_bytes: 1 },
+          duckdb: { active_tables: 28, legacy_tables: 28, unregistered_tables: 0, database_size_bytes: 1 },
           postgres: { active_tables: 59, legacy_tables: 0, unregistered_tables: 0, database_size_bytes: 2 },
         },
         tables: include_legacy ? [current, legacy] : [current],

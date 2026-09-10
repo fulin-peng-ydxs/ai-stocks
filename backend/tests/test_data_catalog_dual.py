@@ -7,7 +7,11 @@ import re
 import pytest
 
 import backend.storage.catalog as catalog_mod
-from backend.storage.catalog import build_catalog, build_catalog_payload
+from backend.storage.catalog import (
+    build_catalog,
+    build_catalog_payload,
+    catalog_contract_report,
+)
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
 
@@ -113,9 +117,91 @@ def test_catalog_fields_come_from_schema_and_cover_known_drift(catalog_env):
     assert {"source", "member_history_start_date", "last_seen_at", "updated_at"} <= board_fields
     assert "net_ratio" in fund_fields
     assert all(
-        {"nullable", "default", "primary_key", "references"} <= set(field)
+        {
+            "nullable", "default", "primary_key", "references", "name_source",
+            "description_source", "metadata_complete",
+        } <= set(field)
         for item in rows for field in item["fields"]
     )
+
+
+def test_catalog_contract_is_complete_and_policies_are_explicit(catalog_env):
+    duck, pg = catalog_env
+    tables = build_catalog_payload(
+        client=duck,
+        pg_client=pg,
+        database="all",
+        include_legacy=True,
+    )["tables"]
+    report = catalog_contract_report(tables)
+
+    assert report["ok"] is True
+    assert report["field_count"] == report["field_metadata_complete"]
+    assert all(item["freshness_policy"] for item in tables)
+    assert all(item["quality_policy"] for item in tables)
+    assert all(
+        field["name_source"] != "fallback" and field["description_source"] != "fallback"
+        for item in tables for field in item["fields"]
+    )
+
+
+def test_new_ddl_table_without_business_metadata_is_rejected(catalog_env, monkeypatch):
+    duck, pg = catalog_env
+    duck.execute("CREATE TABLE future_asset (id BIGINT PRIMARY KEY, trade_date DATE)")
+    expected_duck, expected_pg = catalog_mod._duck_table_sets()
+    monkeypatch.setattr(
+        catalog_mod,
+        "_duck_table_sets",
+        lambda: (expected_duck | {"future_asset"}, expected_pg),
+    )
+
+    tables = build_catalog_payload(
+        client=duck,
+        pg_client=pg,
+        database="all",
+        include_legacy=True,
+    )["tables"]
+    future = next(item for item in tables if item["table"] == "future_asset")
+    report = catalog_contract_report(tables)
+
+    assert future["lifecycle"] == "unregistered"
+    assert future["metadata_complete"] is False
+    assert "缺少表级业务元数据" in future["metadata_issues"]
+    assert report["ok"] is False
+    assert any("future_asset 业务元数据不完整" in item for item in report["violations"])
+
+
+def test_manual_physical_table_outside_ddl_is_rejected(catalog_env):
+    duck, pg = catalog_env
+    duck.execute("CREATE TABLE manual_asset (id BIGINT PRIMARY KEY)")
+
+    tables = build_catalog_payload(
+        client=duck,
+        pg_client=pg,
+        database="all",
+        include_legacy=True,
+    )["tables"]
+    report = catalog_contract_report(tables)
+
+    assert report["ok"] is False
+    assert any("未纳入 DDL" in item and "manual_asset" in item for item in report["violations"])
+
+
+def test_not_applicable_quality_is_not_reported_as_zero(catalog_env):
+    duck, pg = catalog_env
+    rows = build_catalog(duck, pg_client=pg, database="duckdb")
+    by_table = {item["table"]: item for item in rows}
+
+    assert by_table["stock_basic"]["quality_policy"]["mode"] == "not_applicable"
+    assert by_table["stock_basic"]["open_issues"] is None
+    assert by_table["daily_bar"]["quality_policy"]["mode"] == "issue_types"
+    assert by_table["daily_bar"]["open_issues"] == 0
+    assert set(by_table["stock_st_status_daily"]["quality_policy"]["issue_types"]) == {
+        "st_status_missing",
+        "st_status_approximate",
+        "st_status_mismatch",
+    }
+    assert by_table["stock_st_status_refresh_state"]["fresh"] is None
 
 
 def test_ladder_child_latest_date_requires_own_valid_snapshot_rows(catalog_env):
