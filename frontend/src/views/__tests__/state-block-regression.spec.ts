@@ -632,6 +632,19 @@ describe('代表性页面四态回归', () => {
     })
 
     const wrapper = await mountView(OverviewView)
+    const toolbarHtml = wrapper.get('[data-testid="overview-assets-toolbar"]').html()
+    const toolbarControlOrder = [
+      'overview-asset-mode',
+      'overview-asset-category',
+      'overview-asset-legacy',
+      'overview-asset-search',
+      'overview-asset-reset-filters',
+    ].map((testId) => toolbarHtml.indexOf(testId))
+    expect(toolbarControlOrder.every((position) => position >= 0)).toBe(true)
+    expect(toolbarControlOrder).toEqual([...toolbarControlOrder].sort((a, b) => a - b))
+    expect(wrapper.get('[data-testid="overview-asset-reset-filters"]').attributes('disabled'))
+      .toBeDefined()
+
     const labels = () => wrapper.findAllComponents({ name: 'AppTableColumn' })
       .map((column) => column.props('label')).filter(Boolean)
     expect(labels()).toContain('数据库')
@@ -660,6 +673,13 @@ describe('代表性页面四态回归', () => {
     expect((wrapper.vm as any).displayedAssets.map((item: any) => item.name_cn))
       .toEqual(['股东数据', '筹码分布'])
     expect(labels()).not.toContain('物理表')
+
+    await wrapper.get('[data-testid="overview-asset-reset-filters"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).assetMode).toBe('all')
+    expect((wrapper.vm as any).assetCategory).toBe('')
+    expect((wrapper.vm as any).assetKeyword).toBe('')
+    expect((wrapper.vm as any).showLegacyAssets).toBe(false)
   })
 
   it('数据资产旧表默认隐藏，开启后允许同名双库表并存并支持筛选', async () => {

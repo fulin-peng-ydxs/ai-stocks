@@ -165,6 +165,13 @@ const displayedAssets = computed(() => {
   })
 })
 
+const hasAssetFilters = computed(() => (
+  assetMode.value !== 'all'
+  || assetCategory.value !== ''
+  || assetKeyword.value.trim() !== ''
+  || showLegacyAssets.value
+))
+
 watch(assetMode, () => { assetCategory.value = '' })
 
 async function loadCatalog(includeLegacy = showLegacyAssets.value) {
@@ -187,6 +194,16 @@ async function toggleLegacyAssets(value: boolean) {
   const previous = showLegacyAssets.value
   showLegacyAssets.value = value
   if (!await loadCatalog(value)) showLegacyAssets.value = previous
+}
+
+async function resetAssetFilters() {
+  if (!hasAssetFilters.value) return
+  // 旧表开关改变目录请求范围；先确保默认目录加载成功，失败时完整保留当前筛选态。
+  if (showLegacyAssets.value && !await loadCatalog(false)) return
+  assetMode.value = 'all'
+  assetCategory.value = ''
+  assetKeyword.value = ''
+  showLegacyAssets.value = false
 }
 
 async function loadExactCount(row: CatalogTable) {
@@ -646,13 +663,9 @@ onMounted(load)
                     v-model="assetMode"
                     :options="assetModeOptions"
                     aria-label="数据资产数据库场景"
-                    data-testid="overview-asset-mode"
-                  />
-                  <AppSearchInput
-                    v-model="assetKeyword"
-                    class="asset-search"
-                    placeholder="搜索中文名、表名或用途"
-                    :debounce-ms="150"
+                    test-id="overview-asset-mode"
+                    size="small"
+                    tone="primary"
                   />
                   <AppFilterSelect
                     v-model="assetCategory"
@@ -661,6 +674,7 @@ onMounted(load)
                     :multiple="false"
                     placeholder="业务分类"
                     aria-label="数据资产业务分类"
+                    data-testid="overview-asset-category"
                   />
                   <label v-if="assetMode === 'all' || assetMode === 'duckdb'" class="asset-legacy-toggle">
                     <span>查看迁移旧表</span>
@@ -671,6 +685,22 @@ onMounted(load)
                       @change="toggleLegacyAssets(Boolean($event))"
                     />
                   </label>
+                  <AppSearchInput
+                    v-model="assetKeyword"
+                    class="asset-search"
+                    placeholder="搜索中文名、表名或用途"
+                    :debounce-ms="150"
+                    size="small"
+                    data-testid="overview-asset-search"
+                  />
+                  <el-button
+                    size="small"
+                    :disabled="!hasAssetFilters"
+                    data-testid="overview-asset-reset-filters"
+                    @click="resetAssetFilters"
+                  >
+                    重置筛选
+                  </el-button>
                 </template>
                 <template #description>
                   {{ assetMode === 'planned'
