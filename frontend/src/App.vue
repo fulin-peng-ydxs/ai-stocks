@@ -659,7 +659,7 @@ async function onLogout() {
             <div class="theme-card-head">
               <div>
                 <div class="theme-card-title">界面比例</div>
-                <div class="theme-card-sub">按当前屏幕容量整体缩放字体、控件与内容密度</div>
+                <div class="theme-card-sub">100% 为原始设计尺寸；自动模式小屏缩小、大屏放大</div>
               </div>
               <output class="display-scale-value" aria-live="polite">{{ displayScalePercent }}%</output>
             </div>
@@ -684,7 +684,7 @@ async function onLogout() {
                 :min="DISPLAY_SCALE_MIN"
                 :max="DISPLAY_SCALE_MAX"
                 :step="1"
-                :show-tooltip="true"
+                :show-tooltip="false"
                 aria-label="调整界面比例"
                 data-testid="appearance-display-scale-slider"
                 @input="setDisplayScalePercent"

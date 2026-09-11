@@ -58,6 +58,9 @@ describe('字体与间距设计契约', () => {
     expect(globalCss).toContain('transform: scale(var(--app-display-scale')
     expect(globalCss).not.toContain('zoom: var(--app-display-scale')
     expect(globalCss).toContain("body > [id^='el-popper-container-'] > .el-popper")
+    expect(globalCss).toMatch(
+      /body > \[id\^='el-popper-container-'\] > \.el-popper\s*\{\s*scale:\s*1;/,
+    )
     expect(globalCss).toContain('scale: var(--app-display-scale')
     expect(design).toContain('自动界面比例先按当前屏幕有效逻辑面积连续确定整套 UI 的视觉尺度')
     expect(pageTemplate).toContain('| 全局界面比例 |')

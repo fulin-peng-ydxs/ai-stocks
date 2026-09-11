@@ -33,10 +33,14 @@ body {
 }
 
 /*
- * Element Plus 的坐标型浮层默认挂到 body。它们必须留在浏览器坐标系中计算位置，
- * 但自身视觉尺寸仍跟随应用比例；独立 scale 不覆盖 Popper 写入的 translate transform。
+ * Element Plus 的坐标型浮层默认挂到 body。Popper 的位置由触发器视口坐标计算，
+ * 因此自身不得再次 scale；否则触发器位于已缩放抽屉或 #app 时会混用两个坐标系。
+ * Dialog、Drawer 等非锚点浮层不依赖触发器坐标，可以继续同步应用比例。
  */
-body > [id^='el-popper-container-'] > .el-popper,
+body > [id^='el-popper-container-'] > .el-popper {
+  scale: 1;
+}
+
 body > .el-message,
 body > .el-notification,
 body > .el-overlay .el-dialog,
@@ -44,47 +48,21 @@ body > .el-overlay .el-message-box,
 body > .el-overlay .el-drawer {
   scale: var(--app-display-scale, 1);
 }
-body > [id^='el-popper-container-'] > .el-popper[data-popper-placement^='top'] {
-  transform-origin: center bottom;
-}
-body > [id^='el-popper-container-'] > .el-popper[data-popper-placement^='bottom'] {
-  transform-origin: center top;
-}
-body > [id^='el-popper-container-'] > .el-popper[data-popper-placement^='left'] {
-  transform-origin: right center;
-}
-body > [id^='el-popper-container-'] > .el-popper[data-popper-placement^='right'] {
-  transform-origin: left center;
-}
-body > [id^='el-popper-container-'] > .el-popper[data-popper-placement='top-start'] {
-  transform-origin: left bottom;
-}
-body > [id^='el-popper-container-'] > .el-popper[data-popper-placement='top-end'] {
-  transform-origin: right bottom;
-}
-body > [id^='el-popper-container-'] > .el-popper[data-popper-placement='bottom-start'] {
-  transform-origin: left top;
-}
-body > [id^='el-popper-container-'] > .el-popper[data-popper-placement='bottom-end'] {
-  transform-origin: right top;
-}
-body > [id^='el-popper-container-'] > .el-popper[data-popper-placement='left-start'] {
-  transform-origin: right top;
-}
-body > [id^='el-popper-container-'] > .el-popper[data-popper-placement='left-end'] {
-  transform-origin: right bottom;
-}
-body > [id^='el-popper-container-'] > .el-popper[data-popper-placement='right-start'] {
-  transform-origin: left top;
-}
-body > [id^='el-popper-container-'] > .el-popper[data-popper-placement='right-end'] {
-  transform-origin: left bottom;
-}
 body > .el-message { transform-origin: center top; }
 body > .el-notification { transform-origin: right top; }
 body > .el-overlay .el-dialog,
 body > .el-overlay .el-message-box { transform-origin: center center; }
 body > .el-overlay .el-drawer { transform-origin: right top; }
+
+/*
+ * HelpHint 可能承载长文。其 Popper 挂在 body 并保持视口坐标，最大宽度直接按
+ * 当前视口约束，避免长文案撑成横跨页面的单行气泡。
+ */
+body > [id^='el-popper-container-'] > .help-hint-popper {
+  width: max-content;
+  max-width: min(360px, calc(100vw - 24px));
+  white-space: normal;
+}
 
 /* 表格内标签统一使用 24px 紧凑几何和居中基线；业务颜色由各标签组件决定。 */
 .app-table-tag-shell {

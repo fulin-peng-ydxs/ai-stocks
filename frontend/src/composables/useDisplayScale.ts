@@ -12,9 +12,10 @@ export const DISPLAY_SCALE_MIN = 50
 export const DISPLAY_SCALE_MAX = 150
 export const DISPLAY_SCALE_DEFAULT = 100
 
-const AUTO_SCALE_MIN = 82
-const AUTO_SCALE_REFERENCE_AREA = 1920 * 1080
-const AUTO_SCALE_DENSITY_EXPONENT = 0.15
+const AUTO_SCALE_MIN = 90
+const AUTO_SCALE_MAX = 110
+const AUTO_SCALE_REFERENCE_AREA = 2560 * 1440
+const AUTO_SCALE_RESPONSIVE_EXPONENT = 0.08
 
 export interface DisplayScaleArea {
   width: number
@@ -48,8 +49,9 @@ function readAvailableScreenArea(): DisplayScaleArea {
 }
 
 /**
- * 以操作系统已经折算后的屏幕可用 CSS 面积估算信息容量：常规桌面保持 100%，
- * 更大的工作屏连续提高信息密度，但采用低指数曲线并设置阅读下限，避免高分屏骤缩。
+ * 以操作系统已经折算后的屏幕可用 CSS 面积估算舒适显示比例：2560×1440 可用面积对应
+ * 原始设计尺寸 100%，更小屏幕缩小以保留总览，更大屏幕放大以改善远距离阅读。
+ * 低指数曲线和双向边界避免尺寸变化被过度放大。
  * DPR、物理像素和浏览器页级缩放不参与目标比例计算。
  */
 export function calculateAutoDisplayScalePercent(
@@ -62,10 +64,11 @@ export function calculateAutoDisplayScalePercent(
   }
 
   const availableArea = width * height
-  if (availableArea <= AUTO_SCALE_REFERENCE_AREA) return DISPLAY_SCALE_DEFAULT
-
-  const scale = Math.pow(AUTO_SCALE_REFERENCE_AREA / availableArea, AUTO_SCALE_DENSITY_EXPONENT)
-  return Math.max(AUTO_SCALE_MIN, Math.min(DISPLAY_SCALE_DEFAULT, Math.round(scale * 100)))
+  const scale = Math.pow(
+    availableArea / AUTO_SCALE_REFERENCE_AREA,
+    AUTO_SCALE_RESPONSIVE_EXPONENT,
+  )
+  return Math.max(AUTO_SCALE_MIN, Math.min(AUTO_SCALE_MAX, Math.round(scale * 100)))
 }
 
 function normalizePreference(value: unknown): DisplayScalePreference | undefined {

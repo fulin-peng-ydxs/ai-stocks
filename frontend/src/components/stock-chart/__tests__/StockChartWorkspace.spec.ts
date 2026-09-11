@@ -68,7 +68,7 @@ vi.stubGlobal('ResizeObserver', ResizeObserverMock)
 const clientWidthDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
 const clientHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight')
 let mockClientWidth = 640
-let mockClientHeight = 240
+let mockClientHeight = 800
 
 beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
@@ -158,6 +158,7 @@ function pointerEvent(type: string, pointerId: number, clientY: number): Event {
 
 describe('StockChartWorkspace', () => {
   it('紧凑双图高度仍保留 K 线和量能，并对过小请求执行安全下限', async () => {
+    mockClientHeight = 480
     const compact = await mountWorkspace({
       slot2: 'volume',
       slot3: 'hidden',
@@ -192,7 +193,7 @@ describe('StockChartWorkspace', () => {
     echartsMock.disconnect.mockClear()
     ResizeObserverMock.instances.length = 0
     mockClientWidth = 640
-    mockClientHeight = 240
+    mockClientHeight = 800
   })
 
   it('默认创建三幅独立图、唯一联动 group，并把日期轴 slider 放在底图', async () => {
@@ -431,6 +432,31 @@ describe('StockChartWorkspace', () => {
     expect(committed).toEqual(draft)
   })
 
+  it('成长型紧凑外壳按实际高度释放拖动空间，仅在真实最低高度锁定', async () => {
+    mockClientHeight = 900
+    const wrapper = await mountWorkspace({ minHeight: 384 })
+    const separator = wrapper.find('[role="separator"]')
+
+    expect(wrapper.attributes('data-min-height')).toBe('518')
+    expect(separator.attributes('aria-valuenow')).toBe('60')
+    expect(Number(separator.attributes('aria-valuemax'))).toBeGreaterThan(60)
+
+    await separator.trigger('pointerdown', { pointerId: 17, clientY: 100 })
+    window.dispatchEvent(pointerEvent('pointermove', 17, 160))
+    window.dispatchEvent(pointerEvent('pointerup', 17, 160))
+    await nextTick()
+
+    const committed = wrapper.emitted('ratioCommit')?.at(-1)?.[0] as number[]
+    expect(committed[0]).toBeGreaterThan(0.6)
+
+    mockClientHeight = 518
+    ResizeObserverMock.instances[0]?.trigger()
+    await nextTick()
+
+    expect(separator.attributes('aria-valuenow')).toBe('50')
+    expect(separator.attributes('aria-valuemax')).toBe('50')
+  })
+
   it('pointermove 只发草稿，pointercancel 作为终态仅提交一次并触发 resize', async () => {
     const wrapper = await mountWorkspace()
     const separator = wrapper.find('[role="separator"]')
@@ -522,7 +548,7 @@ describe('StockChartWorkspace', () => {
     expect(ResizeObserverMock.instances).toHaveLength(1)
 
     mockClientWidth = 640
-    mockClientHeight = 240
+    mockClientHeight = 800
     ResizeObserverMock.instances[0].trigger()
     await nextTick()
 

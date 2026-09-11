@@ -136,6 +136,7 @@ const statusPalette = useStatusColorPalette()
 const activeIndex = ref<number | null>(null)
 const liveRatios = ref<number[]>([])
 const zoomRange = ref<ZoomRange>(normalizeZoomRange(props.zoomStart, props.zoomEnd))
+const workspaceHeight = ref(0)
 let resizeObserver: ResizeObserver | null = null
 let active = true
 
@@ -338,13 +339,18 @@ function resizeCharts(): void {
 
 function onWorkspaceResize(): void {
   if (!active) return
-  const hasPendingVisibleChart = panels.value.some((panel) => {
-    const element = chartElements.get(panel.key)
-    const chart = charts.get(panel.key)
-    return Boolean(element && hasRenderableSize(element) && (!chart || chart.isDisposed()))
+  workspaceHeight.value = workspaceEl.value?.clientHeight ?? 0
+  // 高度变化会先更新面板最低比例；等待 DOM 完成重排后再让画布读取最终尺寸。
+  void nextTick(() => {
+    if (!active) return
+    const hasPendingVisibleChart = panels.value.some((panel) => {
+      const element = chartElements.get(panel.key)
+      const chart = charts.get(panel.key)
+      return Boolean(element && hasRenderableSize(element) && (!chart || chart.isDisposed()))
+    })
+    if (hasPendingVisibleChart) syncCharts()
+    else resizeCharts()
   })
-  if (hasPendingVisibleChart) syncCharts()
-  else resizeCharts()
 }
 
 function disposeCharts(): void {
@@ -355,6 +361,7 @@ function disposeCharts(): void {
 
 function observeResize(): void {
   if (!workspaceEl.value || resizeObserver) return
+  workspaceHeight.value = workspaceEl.value.clientHeight
   resizeObserver = new ResizeObserver(onWorkspaceResize)
   resizeObserver.observe(workspaceEl.value)
 }
@@ -365,7 +372,7 @@ function stopObservingResize(): void {
 }
 
 function availableHeight(): number {
-  const height = workspaceEl.value?.clientHeight || effectiveMinHeight.value
+  const height = workspaceHeight.value || workspaceEl.value?.clientHeight || effectiveMinHeight.value
   return Math.max(
     panels.value.reduce((total, panel) => total + panelMinHeight(panel.type), 0),
     height - (panels.value.length - 1) * SPLITTER_SIZE,
@@ -373,9 +380,8 @@ function availableHeight(): number {
 }
 
 function minimumRatios(): number[] {
-  // 以工作区允许的最小高度计算约束，确保历史保存占比在紧凑模式下也不会挤掉量能。
-  const available = effectiveMinHeight.value
-    - Math.max(0, panels.value.length - 1) * SPLITTER_SIZE
+  // 最低像素高度必须投影到当前真实空间；用声明下限会在成长型容器中把比例永久锁死。
+  const available = availableHeight()
   return panels.value.map((panel) => panelMinHeight(panel.type) / available)
 }
 
@@ -469,12 +475,17 @@ function separatorValue(index: number): number {
 }
 
 function separatorMin(index: number): number {
-  return Math.ceil(minimumRatios().slice(0, index + 1).reduce((sum, value) => sum + value, 0) * 100)
+  const value = minimumRatios().slice(0, index + 1).reduce((sum, ratio) => sum + ratio, 0)
+  return Math.ceil(value * 100 - Number.EPSILON * 100)
 }
 
 function separatorMax(index: number): number {
-  return Math.floor(
-    (1 - minimumRatios().slice(index + 1).reduce((sum, value) => sum + value, 0)) * 100,
+  const value = 1 - minimumRatios()
+    .slice(index + 1)
+    .reduce((sum, ratio) => sum + ratio, 0)
+  return Math.max(
+    separatorMin(index),
+    Math.floor(value * 100 + 1e-8),
   )
 }
 

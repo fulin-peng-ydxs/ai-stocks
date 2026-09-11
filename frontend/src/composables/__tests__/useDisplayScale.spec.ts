@@ -50,12 +50,14 @@ describe('应用显示比例', () => {
     prefApi.saveUserPreference.mockResolvedValue({})
   })
 
-  it('自动模式按屏幕有效逻辑面积连续调节，并为常规屏和超大屏保留阅读边界', () => {
-    expect(calculateAutoDisplayScalePercent({ width: 1366, height: 768 })).toBe(100)
-    expect(calculateAutoDisplayScalePercent({ width: 1800, height: 1169 })).toBe(100)
-    expect(calculateAutoDisplayScalePercent({ width: 2560, height: 1440 })).toBe(92)
-    expect(calculateAutoDisplayScalePercent({ width: 3360, height: 1890 })).toBe(85)
-    expect(calculateAutoDisplayScalePercent({ width: 7680, height: 4320 })).toBe(82)
+  it('自动模式按屏幕有效逻辑面积双向连续调节，并保留可读边界', () => {
+    expect(calculateAutoDisplayScalePercent({ width: 1366, height: 768 })).toBe(90)
+    expect(calculateAutoDisplayScalePercent({ width: 1800, height: 1169 })).toBe(96)
+    expect(calculateAutoDisplayScalePercent({ width: 1920, height: 1080 })).toBe(96)
+    expect(calculateAutoDisplayScalePercent({ width: 2560, height: 1440 })).toBe(100)
+    expect(calculateAutoDisplayScalePercent({ width: 3360, height: 1890 })).toBe(104)
+    expect(calculateAutoDisplayScalePercent({ width: 7680, height: 4320 })).toBe(110)
+    expect(calculateAutoDisplayScalePercent({ width: 800, height: 600 })).toBe(90)
     expect(calculateAutoDisplayScalePercent({ width: 0, height: 0 })).toBe(100)
   })
 
@@ -70,7 +72,9 @@ describe('应用显示比例', () => {
     expect(document.documentElement.style.getPropertyValue('--app-display-scale')).toBe(
       String(calculateAutoDisplayScalePercent() / 100),
     )
-    expect(document.documentElement.style.getPropertyValue('--app-display-scale-inverse')).toBe('1')
+    expect(document.documentElement.style.getPropertyValue('--app-display-scale-inverse')).toBe(
+      String(1 / 0.96),
+    )
     expect(document.documentElement.dataset.displayResolution).toBe('high')
   })
 
@@ -103,12 +107,12 @@ describe('应用显示比例', () => {
     vi.useFakeTimers()
     setScreenArea(3360, 1890)
     initDisplayScale()
-    expect(useDisplayScale().effectivePercent.value).toBe(85)
+    expect(useDisplayScale().effectivePercent.value).toBe(104)
 
     setScreenArea(1800, 1169)
     window.dispatchEvent(new Event('resize'))
     vi.advanceTimersByTime(130)
-    expect(useDisplayScale().effectivePercent.value).toBe(100)
+    expect(useDisplayScale().effectivePercent.value).toBe(96)
 
     setCustomDisplayScalePercent(117)
     setScreenArea(3360, 1890)
@@ -121,13 +125,13 @@ describe('应用显示比例', () => {
     vi.useFakeTimers()
     setScreenArea(1800, 1169)
     initDisplayScale()
-    expect(useDisplayScale().effectivePercent.value).toBe(100)
+    expect(useDisplayScale().effectivePercent.value).toBe(96)
 
     setScreenArea(3360, 1890)
     window.dispatchEvent(new Event('focus'))
     vi.advanceTimersByTime(130)
 
-    expect(useDisplayScale().effectivePercent.value).toBe(85)
+    expect(useDisplayScale().effectivePercent.value).toBe(104)
   })
 
   it('登录后复用全局用户偏好通道保存并恢复设置', async () => {
