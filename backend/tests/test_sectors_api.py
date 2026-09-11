@@ -262,13 +262,18 @@ def test_get_sector_not_found(c):
 
 
 def test_get_bars_range(c):
-    """指数区间序列（原值）。"""
+    """指数区间序列首根使用区间外上一交易点收盘作为前收。"""
     svc = _svc(c)
     bars = svc.get_bars("309121", date(2026, 8, 4), date(2026, 8, 7))
     assert len(bars) == 4
     assert bars[0]["trade_date"] == "2026-08-04"
     assert bars[0]["close"] == pytest.approx(105.0)
+    assert bars[0]["pre_close"] == pytest.approx(100.0)
+    assert bars[1]["pre_close"] == pytest.approx(105.0)
     assert bars[-1]["close"] == pytest.approx(115.0)
+
+    earliest = svc.get_bars("309121", date(2026, 8, 3), date(2026, 8, 3))
+    assert earliest[0]["pre_close"] is None
 
 
 def test_get_bar_indicators_reuses_macd_definition_and_keeps_nullable_warmup(c):

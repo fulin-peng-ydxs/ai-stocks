@@ -371,14 +371,19 @@ class BoardQueryService:
     # ── 指数区间序列 ─────────────────────────────────────────
 
     def get_bars(self, code: str, start: date, end: date) -> list[dict]:
-        """板块指数区间序列（原值）。"""
+        """板块指数区间序列（原值），首根同时携带区间外上一交易点收盘。"""
         df = self.c.query_df(
-            "SELECT trade_date, open, high, low, close, volume, amount FROM board_bar "
-            "WHERE board_code = ? AND trade_date >= ? AND trade_date <= ? "
-            "ORDER BY trade_date", [code, start, end])
+            "SELECT trade_date, open, high, low, close, pre_close, volume, amount FROM ("
+            "SELECT trade_date, open, high, low, close, "
+            "       lag(close) OVER (ORDER BY trade_date) AS pre_close, volume, amount "
+            "FROM board_bar WHERE board_code = ? AND trade_date <= ?"
+            ") history WHERE trade_date >= ? ORDER BY trade_date",
+            [code, end, start],
+        )
         return [
             {"trade_date": str(pd.Timestamp(r["trade_date"]).date()),
              "open": r["open"], "high": r["high"], "low": r["low"], "close": r["close"],
+             "pre_close": None if pd.isna(r["pre_close"]) else float(r["pre_close"]),
              "volume": r["volume"], "amount": r["amount"]}
             for _, r in df.iterrows()
         ]

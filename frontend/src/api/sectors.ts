@@ -76,6 +76,8 @@ export interface SectorBar {
   high: number
   low: number
   close: number
+  /** 板块 K 线接口返回真实上一交易点收盘；市场基准等轻量序列可不提供。 */
+  pre_close?: number | null
   volume: number
   amount: number
 }

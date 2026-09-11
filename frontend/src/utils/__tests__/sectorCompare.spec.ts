@@ -10,8 +10,8 @@ import {
 } from '@/utils/sectorCompare'
 import type { SectorBar } from '@/api/sectors'
 
-function bar(trade_date: string, close: number): SectorBar {
-  return { trade_date, open: close, high: close, low: close, close, volume: 1, amount: 1 }
+function bar(trade_date: string, close: number, pre_close?: number | null): SectorBar {
+  return { trade_date, open: close, high: close, low: close, close, pre_close, volume: 1, amount: 1 }
 }
 
 describe('metricSeries（区间累计涨跌幅）', () => {
@@ -69,12 +69,17 @@ describe('metricKind', () => {
 })
 
 describe('板块图表适配与展示格式', () => {
-  it('两页共享同一原始指数到工作区映射，并只使用前一交易点作前收', () => {
-    const rows = [bar('2026-08-04', 100), bar('2026-08-05', 105)]
+  it('两页共享同一原始指数到工作区映射，首根优先使用接口返回的区间外前收', () => {
+    const rows = [bar('2026-08-04', 100, 98), bar('2026-08-05', 105, 100)]
     expect(toBoardChartBars(rows)).toEqual([
-      expect.objectContaining({ date: '2026-08-04', close: 100, pre_close: null }),
+      expect.objectContaining({ date: '2026-08-04', close: 100, pre_close: 98 }),
       expect.objectContaining({ date: '2026-08-05', close: 105, pre_close: 100 }),
     ])
+  })
+
+  it('兼容不带前收的轻量序列，后续点仍回落到前一收盘', () => {
+    const rows = [bar('2026-08-04', 100), bar('2026-08-05', 105)]
+    expect(toBoardChartBars(rows).map((item) => item.pre_close)).toEqual([null, 100])
   })
 
   it('百分比、资金流和涨跌样式统一处理空值、非有限值与正负号', () => {

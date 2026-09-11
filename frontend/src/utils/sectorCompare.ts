@@ -47,7 +47,7 @@ export const COMPARE_RANGE_OPTIONS: CompareRangeOption[] = [
   { label: '全部', value: ALL_DAYS },
 ]
 
-/** 板块原始连续指数转换为共享行情工作区契约；前收只取序列内上一交易点。 */
+/** 板块原始连续指数转换为共享行情工作区契约；优先消费接口返回的区间外前收。 */
 export function toBoardChartBars(bars: readonly SectorBar[]): Bar[] {
   return bars.map((bar, index, source) => ({
     date: bar.trade_date,
@@ -55,7 +55,7 @@ export function toBoardChartBars(bars: readonly SectorBar[]): Bar[] {
     high: bar.high,
     low: bar.low,
     close: bar.close,
-    pre_close: index > 0 ? source[index - 1]!.close : null,
+    pre_close: bar.pre_close ?? (index > 0 ? source[index - 1]!.close : null),
     volume: bar.volume,
     amount: bar.amount,
     turnover_rate: null,
