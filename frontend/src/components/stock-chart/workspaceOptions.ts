@@ -271,6 +271,7 @@ interface OptionContext {
   markers?: readonly TradeMarker[]
   buyMarkerColor?: string
   sellMarkerColor?: string
+  clickableCandles?: boolean
 }
 
 /** 买卖点 markPoint：买=蓝▲置于最低价下方，卖=橙▼置于最高价上方（语义色由组件按主题传入）。 */
@@ -412,6 +413,7 @@ export function buildKlineOption(context: OptionContext) {
       {
         name: 'K线',
         type: 'candlestick',
+        cursor: context.clickableCandles ? 'pointer' : 'default',
         barWidth: KLINE_BAR_WIDTH,
         barMaxWidth: 18,
         data: bars.map((bar) => [bar.open, bar.close, bar.low, bar.high]),

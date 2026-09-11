@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 from datetime import date, timedelta
 
@@ -249,7 +250,7 @@ def index_to_sina_symbol(index_code: str) -> str:
 class AKShareSource(DataSource):
     name = "akshare"
     # 新浪日线/指数/日历/列表 + 东财市值（valuation 单只历史）
-    capabilities = {"daily", "index", "calendar", "stock_list", "valuation"}
+    capabilities = {"daily", "index", "calendar", "stock_list", "valuation", "intraday_1m"}
 
     def __init__(self) -> None:
         # 读"生效配置"(YAML ⊕ 前端 app_config 覆盖)，让前端改「请求限流/超时/重试」
@@ -293,6 +294,65 @@ class AKShareSource(DataSource):
                 }
             ]
         )
+
+    def get_intraday_1m(self, code: str, provider: str = "sina") -> pd.DataFrame:
+        """读取免费源的近期 1 分钟不复权窗口，并归一为统一字段。"""
+        code6 = code.split(".")[0]
+        timeout = get_settings().intraday.request_timeout_sec
+        if provider == "sina":
+            url = "https://quotes.sina.cn/cn/api/jsonp_v2.php/=/CN_MarketDataService.getKLineData"
+            response = requests.get(
+                url,
+                params={
+                    "symbol": to_sina_symbol(code6),
+                    "scale": "1",
+                    "ma": "no",
+                    "datalen": "1970",
+                },
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            text = response.text
+            try:
+                payload = json.loads(text.split("=(", 1)[1].rsplit(");", 1)[0])
+            except (IndexError, json.JSONDecodeError) as exc:
+                raise ValueError("新浪分钟行情响应格式异常") from exc
+            frame = pd.DataFrame(payload)
+            if frame.empty:
+                return pd.DataFrame(
+                    columns=["timestamp", "open", "high", "low", "close", "volume", "amount"]
+                )
+            frame = frame.rename(columns={"day": "timestamp"})
+        elif provider == "eastmoney":
+            frame = ak.stock_zh_a_hist_min_em(
+                symbol=code6,
+                start_date="1979-09-01 00:00:00",
+                end_date="2222-01-01 23:59:59",
+                period="1",
+                adjust="",
+            ).rename(
+                columns={
+                    "时间": "timestamp",
+                    "开盘": "open",
+                    "最高": "high",
+                    "最低": "low",
+                    "收盘": "close",
+                    "成交量": "volume",
+                    "成交额": "amount",
+                }
+            )
+        else:
+            raise ValueError(f"未知分钟行情源: {provider}")
+
+        required = ["timestamp", "open", "high", "low", "close", "volume", "amount"]
+        if not set(required).issubset(frame.columns):
+            raise ValueError(f"{provider} 分钟行情缺失必要字段")
+        out = frame[required].copy()
+        out["timestamp"] = pd.to_datetime(out["timestamp"], errors="coerce")
+        for field in required[1:]:
+            out[field] = pd.to_numeric(out[field], errors="coerce")
+        out = out.dropna(subset=required).sort_values("timestamp")
+        return out.drop_duplicates(subset=["timestamp"], keep="last").reset_index(drop=True)
 
     # ── 日线（新浪：不复权 + 后复权 → 现算复权因子）──
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)

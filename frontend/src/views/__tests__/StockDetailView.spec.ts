@@ -100,6 +100,7 @@ vi.mock('@/api/stocks', () => ({
   getBars: vi.fn(),
   getIndicators: vi.fn(),
   getTradeEval: vi.fn(),
+  getIntraday: vi.fn(),
   listStocks: vi.fn(),
 }))
 
@@ -132,8 +133,9 @@ const StockChartWorkspaceStub = defineComponent({
     'adjustLabel',
     'macdState',
     'macdError',
+    'enableIntradayDrilldown',
   ],
-  emits: ['retryMacd', 'ratioDraft', 'ratioCommit'],
+  emits: ['retryMacd', 'ratioDraft', 'ratioCommit', 'barClick'],
   setup(props, { emit }) {
     return () => h('section', {
       'data-testid': 'stock-chart-workspace',
@@ -148,6 +150,10 @@ const StockChartWorkspaceStub = defineComponent({
         'data-testid': 'retry-macd',
         onClick: () => emit('retryMacd'),
       }, '重试 MACD'),
+      h('button', {
+        'data-testid': 'open-intraday',
+        onClick: () => emit('barClick', '2026-08-07'),
+      }, '打开分时'),
       h('button', {
         'data-testid': 'ratio-draft',
         onClick: () => emit('ratioDraft', [0.5, 0.3, 0.2]),
@@ -346,6 +352,12 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
       },
       StockChartRegion: StockChartRegionStub,
       StockChartWorkspace: StockChartWorkspaceStub,
+      StockIntradayDialog: {
+        name: 'StockIntradayDialog',
+        props: ['modelValue', 'code', 'name', 'tradeDate', 'requestKey'],
+        emits: ['update:modelValue'],
+        template: '<div data-testid="intraday-dialog" :data-open="modelValue" :data-date="tradeDate" />',
+      },
       StockChartSettingSection: false,
       AppStateBlock: AppStateBlockStub,
       KlineRangeSelect: KlineRangeSelectStub,
@@ -570,6 +582,7 @@ describe('StockDetailView 三图数据协调', () => {
     expect(workspace.props('macdState')).toBe('ready')
     expect(workspace.props('adjustLabel')).toBe('前复权')
     expect(workspace.props('minHeight')).toBe(650)
+    expect(workspace.props('enableIntradayDrilldown')).toBe('')
     expect(wrapper.get('[data-testid="stock-detail-chart-region"]').attributes('data-configured-height'))
       .toBe('650')
     expect(wrapper.text()).toContain('12.34')
@@ -579,6 +592,18 @@ describe('StockDetailView 三图数据协调', () => {
       undefined,
       expect.any(AbortSignal),
     )
+  })
+
+  it('点击个股详情日 K 后把交易日传入共享分时弹窗', async () => {
+    const wrapper = await mountView()
+    await emitTradeReady(wrapper)
+
+    await wrapper.get('[data-testid="open-intraday"]').trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.get('[data-testid="intraday-dialog"]')
+    expect(dialog.attributes('data-open')).toBe('true')
+    expect(dialog.attributes('data-date')).toBe('2026-08-07')
   })
 
   it('手动刷新保留当前股票和方案并同步行情、指标、报价与买卖评估', async () => {

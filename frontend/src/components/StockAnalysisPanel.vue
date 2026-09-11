@@ -14,7 +14,9 @@ import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import StockCompareChart from '@/components/StockCompareChart.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
+import StockIntradayDialog from '@/components/stock-chart/StockIntradayDialog.vue'
 import { ALL_DAYS } from '@/composables/useKlinePrefs'
+import { useStockIntradayDrilldown } from '@/composables/useStockIntradayDrilldown'
 import { STOCK_COMPARE_RANGES } from '@/composables/useStockAnalysisSession'
 import type { AuxiliaryChartType } from '@/composables/useStockChartPreferences'
 import { getErrorMessage } from '@/utils/error'
@@ -95,6 +97,12 @@ const klineIndicators = ref<IndicatorRow[]>([])
 const indicatorError = ref('')
 let requestVersion = 0
 let controller: AbortController | null = null
+const {
+  intradayOpen,
+  intradayTradeDate,
+  intradayRequestKey,
+  openIntraday,
+} = useStockIntradayDrilldown(() => props.active?.code)
 
 const compareSeries = computed(() => props.items
   .filter((item) => barsByCode.value[item.code]?.length)
@@ -490,9 +498,11 @@ onBeforeUnmount(() => {
         :zoom-start="0"
         :zoom-end="100"
         aria-label="股票K线多图联动工作区"
+        enable-intraday-drilldown
         @ratio-draft="emit('ratioDraft', $event)"
         @ratio-commit="emit('ratioCommit', $event)"
         @retry-macd="loadKline"
+        @bar-click="openIntraday"
       />
     </div>
 
@@ -515,6 +525,14 @@ onBeforeUnmount(() => {
         重试失败股票
       </el-button>
     </footer>
+    <StockIntradayDialog
+      v-if="active"
+      v-model="intradayOpen"
+      :code="active.code"
+      :name="active.name"
+      :trade-date="intradayTradeDate"
+      :request-key="intradayRequestKey"
+    />
   </section>
 </template>
 

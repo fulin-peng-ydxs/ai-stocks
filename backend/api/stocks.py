@@ -14,6 +14,7 @@ from backend.auth.context import get_current_context
 from backend.auth.deps import require_perm, require_system_perm
 from backend.groups.stock_group import StockGroupRepo
 from backend.indicators.engine import _IND_COLS
+from backend.services.intraday_quotes import IntradayQuoteService, IntradayServiceUnavailable
 from backend.services.market_benchmark import MarketBenchmarkService
 from backend.services.stock_board_correlation import StockBoardCorrelationService
 from backend.storage import get_read_client as get_client
@@ -263,6 +264,19 @@ def stock_bars(code: str, adjust: str = "qfq", lookback: int = 250,
         "turnover_rate": _f(r["turnover_rate"], 2),   # 换手率 %
     } for _, r in df.iterrows()]
     return ok({"code": code, "name": name, "adjust": adjust, "bars": out})
+
+
+@router.get(
+    "/stocks/{code}/intraday",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_perm("stocks:view"))],
+)
+def stock_intraday(code: str, trade_date: date) -> ApiResponse:
+    """按需返回近期交易日的 1 分钟不复权分时；只读本地门禁，源数据仅缓存 Redis。"""
+    try:
+        return ok(IntradayQuoteService().get(code, trade_date))
+    except IntradayServiceUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get(

@@ -9,6 +9,7 @@ vi.mock('@/api/stocks', () => ({
   getBars: vi.fn(),
   getStockBenchmarkBars: vi.fn(),
   getIndicators: vi.fn(),
+  getIntraday: vi.fn(),
 }))
 
 const bar = {
@@ -47,7 +48,8 @@ function mountPanel(overrides: Record<string, unknown> = {}) {
       plugins: [ElementPlus],
       stubs: {
         StockCompareChart: { name: 'StockCompareChart', props: ['series', 'activeCode', 'benchmark', 'calendar', 'metric', 'rangeDays'], template: '<div class="stock-compare-chart-stub" />' },
-        StockChartWorkspace: { name: 'StockChartWorkspace', props: ['bars', 'indicators'], template: '<div class="stock-chart-workspace-stub" />' },
+        StockChartWorkspace: { name: 'StockChartWorkspace', props: { bars: Array, indicators: Array, enableIntradayDrilldown: Boolean }, emits: ['barClick'], template: '<button class="stock-chart-workspace-stub" @click="$emit(\'barClick\', \'2026-08-07\')" />' },
+        StockIntradayDialog: { name: 'StockIntradayDialog', props: ['modelValue', 'code', 'name', 'tradeDate'], emits: ['update:modelValue'], template: '<div class="intraday-dialog-stub" :data-open="modelValue" :data-date="tradeDate" />' },
         KlineRangeSelect: true,
       },
     },
@@ -109,6 +111,22 @@ describe('StockAnalysisPanel', () => {
     )
     expect(chart.props('series')).toHaveLength(2)
     expect(wrapper.find('[data-testid="stock-analysis-retry-partial"]').exists()).toBe(false)
+  })
+
+  it('K线模式启用分时下钻并把蜡烛日期交给共享弹窗', async () => {
+    const wrapper = mountPanel({ mode: 'kline' })
+    await flushPromises()
+    const workspace = wrapper.findComponent({ name: 'StockChartWorkspace' })
+    expect(workspace.props('enableIntradayDrilldown')).toBe(true)
+
+    await workspace.trigger('click')
+    const dialog = wrapper.findComponent({ name: 'StockIntradayDialog' })
+    expect(dialog.props()).toMatchObject({
+      modelValue: true,
+      code: '000001.SZ',
+      name: '平安银行',
+      tradeDate: '2026-08-07',
+    })
   })
 
   it('加载统一市场日历，并将 30/60 日指标切换作为页面会话事件发出', async () => {

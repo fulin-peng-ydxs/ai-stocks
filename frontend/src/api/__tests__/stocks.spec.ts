@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import http from '@/api/client'
 import {
   getIndicators,
+  getIntraday,
   getStockBenchmarkBars,
   getStockBoardMembership,
   getStockMembershipOptions,
@@ -49,6 +50,23 @@ describe('getIndicators', () => {
     expect(http.get).toHaveBeenCalledWith('/stocks/600000.SH/indicators', {
       params: undefined,
       signal: undefined,
+      skipGlobalError: true,
+    })
+  })
+})
+
+describe('getIntraday', () => {
+  beforeEach(() => {
+    vi.mocked(http.get).mockReset()
+  })
+
+  it('编码股票并透传日期、取消信号和局部错误处理', () => {
+    const controller = new AbortController()
+    getIntraday('002251.SZ', '2026-09-10', controller.signal)
+
+    expect(http.get).toHaveBeenCalledWith('/stocks/002251.SZ/intraday', {
+      params: { trade_date: '2026-09-10' },
+      signal: controller.signal,
       skipGlobalError: true,
     })
   })

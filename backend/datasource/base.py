@@ -14,6 +14,7 @@
 - calendar:    trade_date, is_open
 - st_status:   code, trade_date, is_st, trade_status
 - delist_list: code, name, delist_date
+- intraday_1m: timestamp, open, high, low, close, volume, amount
 
 复权约定：daily_bar 返回**不复权**原值；复权因子单列 adj_factor。
 日期列统一为 datetime.date 或可被 to_date 解析的字符串。
@@ -210,6 +211,10 @@ class DataSource(ABC):
     def get_st_status(self, code: str, start: date, end: date) -> pd.DataFrame:
         """每日点时 ST 状态。列：code,trade_date,is_st,trade_status。"""
         raise NotImplementedError(f"{self.name} 不支持 st_status 能力")
+
+    def get_intraday_1m(self, code: str, provider: str = "sina") -> pd.DataFrame:
+        """近期 1 分钟不复权行情窗口；不支持时显式报错。"""
+        raise NotImplementedError(f"{self.name} 不支持 intraday_1m 能力")
 
     # ── 能力声明（供编排层按能力选源，见 IngestionService._source_for）──
     # 约定能力名：daily/index/calendar/stock_list/valuation/basic_dates/industry/delisted/

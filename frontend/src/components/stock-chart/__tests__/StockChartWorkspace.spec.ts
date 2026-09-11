@@ -223,6 +223,25 @@ describe('StockChartWorkspace', () => {
     expect(latestOptions[2].dataZoom).toHaveLength(2)
   })
 
+  it('仅在显式启用后响应日K蜡烛单击，并忽略均线与辅助图', async () => {
+    const disabled = await mountWorkspace()
+    echartsMock.instances[0].emit('click', { seriesType: 'candlestick', dataIndex: 2 })
+    expect(disabled.emitted('barClick')).toBeUndefined()
+    disabled.unmount()
+    echartsMock.instances.length = 0
+
+    const enabled = await mountWorkspace({ enableIntradayDrilldown: true })
+    const [kline, volume] = echartsMock.instances
+    kline.emit('click', { seriesType: 'line', dataIndex: 2 })
+    volume.emit('click', { seriesType: 'bar', dataIndex: 2 })
+    expect(enabled.emitted('barClick')).toBeUndefined()
+
+    kline.emit('click', { seriesType: 'candlestick', dataIndex: 2 })
+    expect(enabled.emitted('barClick')).toEqual([['2026-06-03']])
+    const option = kline.setOption.mock.calls.at(-1)?.[0]
+    expect(option.series[0].cursor).toBe('pointer')
+  })
+
   it('空数据标题仍从共享 MA/VMA 定义生成', async () => {
     const wrapper = await mountWorkspace({ bars: [], indicators: [] })
     const labels = (selector: string) => wrapper.findAll(selector).map(

@@ -82,6 +82,31 @@ export interface Bars {
   bars: Bar[]
 }
 
+export interface IntradayPoint {
+  time: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+  amount: number
+  average_price: number | null
+}
+
+export interface StockIntraday {
+  code: string
+  name: string | null
+  trade_date: string
+  frequency: '1m'
+  status: 'ready' | 'partial' | 'out_of_range' | 'no_data'
+  source: 'sina' | 'eastmoney' | null
+  fetched_at: string | null
+  supported_start: string | null
+  supported_end: string | null
+  pre_close: number | null
+  points: IntradayPoint[]
+}
+
 export interface StockBenchmarkBars {
   index_code: string
   name: string
@@ -139,6 +164,18 @@ export function getBars(
   signal?: AbortSignal,
 ): Promise<Bars> {
   return http.get(`/stocks/${code}/bars`, { params, signal })
+}
+
+export function getIntraday(
+  code: string,
+  tradeDate: string,
+  signal?: AbortSignal,
+): Promise<StockIntraday> {
+  return http.get(`/stocks/${encodeURIComponent(code)}/intraday`, {
+    params: { trade_date: tradeDate },
+    signal,
+    skipGlobalError: true,
+  } as AppRequestConfig)
 }
 
 export function getStockBenchmarkBars(

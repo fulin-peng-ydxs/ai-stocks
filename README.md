@@ -80,7 +80,7 @@
 | 🧮 **策略筛选** | `ScreenView` | `/api/screen*`, `/api/profiles` | 统一条件构建器（AND/OR 树，叶子可选指标条件或表达式，同一份 AST）；方案可存、版本回看、按权限公开和复制 | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
 | 🧪 **回测验证** | `BacktestView` | `/api/backtest/*` | ①策略回测：净值/绩效/逐笔成交（含卖出原因）；②评分验证：分层命中率与超额命中率；历史记录可按权限公开，公开记录可复用参数重跑 | [backtest.md](agent-works/architecture/backtest.md) |
 | ✅ **交易纪律** | `TradeDisciplineView`（`/trade-discipline`） | `/api/trade-discipline/*` | 维护私人交易规则和不可变版本，按真实交易日完成履约打卡、操作记录、历史修订；用户中心支持查看待办和快捷无操作履约 | [trade-discipline.md](agent-works/architecture/trade-discipline.md) |
-| 🔍 **个股与分组** | `StocksView` / `StockDetailView` | `/api/stocks/*`, `/api/stock-groups` | 服务端排序分页与跨页分组；查询页可在共享工作台中做多股走势对比和 K 线分析；详情页提供指标快照、买卖方案信号与连续翻看 | [stocks-and-groups.md](agent-works/architecture/stocks-and-groups.md) |
+| 🔍 **个股与分组** | `StocksView` / `StockDetailView` | `/api/stocks/*`, `/api/stock-groups` | 服务端排序分页与跨页分组；查询页可在共享工作台中做多股走势对比和 K 线分析；详情页及共享分析面板可从近期日 K 下钻价格/均价/量能分时 | [stocks-and-groups.md](agent-works/architecture/stocks-and-groups.md) / [stock-intraday.md](agent-works/architecture/stock-intraday.md) |
 | 🧭 **走势板块关联** | `StocksView` / `BoardView` / `ScreenView` / `LimitLadderView` / `ScheduleView` | `/api/stocks/*`, `/api/board/run`, `/api/screen/run`, `/api/limit-ladder/*`, `/api/data/*` | 在累计行业/概念候选中按市场中性化相关性选出当前冠军；页面统一展示相关度、有效样本和截止日，管理员通过任务与调度维护结果 | [stock-board-correlation.md](agent-works/architecture/stock-board-correlation.md) |
 | ⚙️ **配置管理** | `ConfigView`（`/system/config/{score,trade,tech,system}`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 四个子页：评分规则（可公开/复制/版本回看）/ 买卖指标（买入+卖出+兜底，可公开/复制）/ 技术指标（注册表）/ 系统设置（数据源、回测成本、认证与审计白名单） | [config-definitions.md](agent-works/architecture/config-definitions.md) |
 | 🎨 **布局配置** | `views/layout/{Presets,Pages,Components}`（`/system/layout/*`） | `/api/layout/*` | 可配置布局系统的产品化工作台 3 子页：预设管理（全局风格 token / 预设×组件默认 / 响应式默认）、页面布局（左预览右配置 + `default→preset→page→user` 四层来源追踪）、系统组件（组件能力目录 + 字段开放策略 + 页面 slot 自动继承覆盖） | [DESIGN.md](DESIGN.md) |
@@ -190,9 +190,9 @@ start.sh          后端启停脚本（dev/prod，见 §5.1）
 ## 4. 技术栈
 
 - **后端**：Python 3.11+（本机 3.12）/ FastAPI / Uvicorn / pandas + numpy / APScheduler / pydantic-settings
-- **持久层**：DuckDB（行情，嵌入式列存）+ PostgreSQL ≥14（用户资产/平台配置/任务运行态，psycopg3 同步）+ Redis ≥6（短状态）；后端启动期三库连通性自检
+- **持久层**：DuckDB（行情，嵌入式列存）+ PostgreSQL ≥14（用户资产/平台配置/任务运行态，psycopg3 同步）+ Redis ≥6（会话、安全短状态及按需分钟行情 12 小时缓存）；后端启动期三库连通性自检
 - **前端**：Vue 3 + TypeScript + Element Plus + ECharts + Pinia + Vue Router + Vite
-- **数据源**：AKShare（新浪 / 东财系）+ baostock（退市股历史、复权因子兜底）
+- **数据源**：AKShare（新浪 / 东财系）+ baostock（退市股历史、复权因子兜底）；分时仅按需读取新浪近期 1 分钟窗口、东财近 5 日兜底，不复权、不落库、不承诺任意历史日期
 - 依赖清单见 [`requirements.txt`](requirements.txt) / [`pyproject.toml`](pyproject.toml)
 
 ---
@@ -419,6 +419,7 @@ python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB
 | [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) | 登录鉴权、系统菜单、细粒度权限、多租户资产隔离和公开资产可见性的当前技术架构 |
 | [environment-configuration.md](agent-works/architecture/environment-configuration.md) | 环境变量、变量文件、YAML 基线、PG/DuckDB `app_config` 边界和配置生效规则 |
 | [stock-board-correlation.md](agent-works/architecture/stock-board-correlation.md) | 行业/概念走势冠军的算法口径、有效样本含义、任务落表、页面读取和风险边界 |
+| [stock-intraday.md](agent-works/architecture/stock-intraday.md) | 日 K 下钻近期分时的数据口径、Redis 缓存、源站并发保护、页面状态与运维边界 |
 | [limit-ladder.md](agent-works/architecture/limit-ladder.md) | 连板天梯的涨停/ST 口径、快照 v2、任务协调、页面/API、权限、部署与风险边界 |
 | [st-status.md](agent-works/architecture/st-status.md) | ST 点时事实的采集、批次发布、质检、修复、业务门禁与涨跌停截止点 |
 | [multi-tenant-rbac](agent-works/multi-tenant-rbac/) | 系统菜单、权限、多租户相关需求与落地记录 |

@@ -61,6 +61,19 @@ class DataSourceConfig(BaseModel):
     update_concurrency: int = 1     # 增量更新并发线程数（>1 提速；每线程独立限流，总速≈N×rate_limit）
 
 
+class IntradayConfig(BaseModel):
+    """按需分钟行情：免费近期源、Redis 短缓存与跨进程源站保护。"""
+
+    enabled: bool = True
+    supported_trade_days: int = Field(default=8, ge=1, le=30)
+    cache_ttl_sec: int = Field(default=43_200, ge=60, le=86_400)
+    negative_ttl_sec: int = Field(default=60, ge=1, le=600)
+    source_min_interval_sec: float = Field(default=2.0, ge=0.1, le=60)
+    source_concurrency: int = Field(default=1, ge=1, le=1)
+    request_timeout_sec: float = Field(default=15.0, ge=1, le=60)
+    lock_wait_sec: float = Field(default=20.0, ge=1, le=60)
+
+
 class UniverseConfig(BaseModel):
     boards: list[str] = Field(default_factory=lambda: ["主板", "创业板", "科创板"])
     include_bse: bool = False
@@ -278,6 +291,7 @@ class Settings(BaseModel):
     paths: PathsConfig = Field(default_factory=PathsConfig)
     duckdb: DuckDBConfig = Field(default_factory=DuckDBConfig)
     datasource: DataSourceConfig = Field(default_factory=DataSourceConfig)
+    intraday: IntradayConfig = Field(default_factory=IntradayConfig)
     universe: UniverseConfig = Field(default_factory=UniverseConfig)
     price_limit: PriceLimitConfig = Field(default_factory=PriceLimitConfig)
     indicators: IndicatorsConfig = Field(default_factory=IndicatorsConfig)

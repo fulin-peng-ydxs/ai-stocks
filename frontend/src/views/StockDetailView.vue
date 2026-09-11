@@ -36,6 +36,7 @@ import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import StockChartRegion from '@/components/stock-chart/StockChartRegion.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
+import StockIntradayDialog from '@/components/stock-chart/StockIntradayDialog.vue'
 import type { MacdPanelState } from '@/components/stock-chart/workspaceOptions'
 import { useStockSet } from '@/stores/stockSet'
 import { useAuthStore } from '@/stores/auth'
@@ -43,6 +44,7 @@ import { hasPermission } from '@/utils/permission'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
 import { formatMoney } from '@/utils/money'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useStockIntradayDrilldown } from '@/composables/useStockIntradayDrilldown'
 import { useDebouncedQuery } from '@/composables/useDebouncedQuery'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
@@ -206,6 +208,12 @@ const { validDefault: klineDefault } = useKlinePrefs()
 const viewDays = ref(klineDefault.value)
 const bars = ref<Bar[]>([])
 const name = ref('')
+const {
+  intradayOpen,
+  intradayTradeDate,
+  intradayRequestKey,
+  openIntraday,
+} = useStockIntradayDrilldown(code)
 const latestQuote = ref<Bar | null>(null)
 const latest = ref<IndicatorRow | null>(null)
 
@@ -964,9 +972,11 @@ onBeforeUnmount(() => {
             :zoom-start="0"
             :zoom-end="100"
             :min-height="contentHeight"
+            enable-intraday-drilldown
             @ratio-draft="chartPreferences.handleRatioDraft"
             @ratio-commit="chartPreferences.handleRatioCommit"
             @retry-macd="loadIndicators"
+            @bar-click="openIntraday"
           />
         </StockChartRegion>
 
@@ -1139,6 +1149,13 @@ onBeforeUnmount(() => {
         </PageSettingSection>
       </template>
     </PageSettingsDrawer>
+    <StockIntradayDialog
+      v-model="intradayOpen"
+      :code="code"
+      :name="name"
+      :trade-date="intradayTradeDate"
+      :request-key="intradayRequestKey"
+    />
     </template>
   </LayoutHost>
 </template>

@@ -81,6 +81,7 @@ const props = withDefaults(defineProps<{
   zoomEnd?: number
   minHeight?: number
   ariaLabel?: string
+  enableIntradayDrilldown?: boolean
 }>(), {
   warmupBars: () => [],
   indicators: () => [],
@@ -95,12 +96,14 @@ const props = withDefaults(defineProps<{
   zoomEnd: 100,
   minHeight: WORKSPACE_MIN_HEIGHT,
   ariaLabel: '行情多图联动工作区',
+  enableIntradayDrilldown: false,
 })
 
 const emit = defineEmits<{
   ratioDraft: [ratios: number[]]
   ratioCommit: [ratios: number[]]
   retryMacd: []
+  barClick: [tradeDate: string]
 }>()
 
 const groupId = nextStockChartWorkspaceGroupId()
@@ -180,10 +183,18 @@ function chartOption(panel: PanelDescriptor, isBottom: boolean) {
     markers: props.markers,
     buyMarkerColor: statusPalette.value.primary,
     sellMarkerColor: statusPalette.value.warning,
+    clickableCandles: props.enableIntradayDrilldown,
   }
   if (panel.type === 'kline') return buildKlineOption(context)
   if (panel.type === 'volume') return buildVolumeOption(context)
   return buildMacdOption(context)
+}
+
+function onChartClick(event: { seriesType?: string; dataIndex?: number }): void {
+  if (!props.enableIntradayDrilldown || event.seriesType !== 'candlestick') return
+  if (typeof event.dataIndex !== 'number') return
+  const tradeDate = rows.value[event.dataIndex]?.bar.date
+  if (tradeDate) emit('barClick', tradeDate)
 }
 
 function onAxisPointer(event: {
@@ -270,6 +281,7 @@ function syncCharts(): void {
         onDataZoom(panel.key, event as DataZoomEvent)
       })
       chart.on('globalout', () => { activeIndex.value = null })
+      if (panel.type === 'kline') chart.on('click', onChartClick)
       charts.set(panel.key, chart)
     }
     chart.group = groupId
