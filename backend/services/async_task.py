@@ -964,7 +964,7 @@ def _h_audit_cleanup(params: dict, ctx: TaskContext) -> dict:
 
 
 def _h_enrich_basic(params: dict, ctx: TaskContext) -> dict:
-    """刷新上市/退市标记（含行业），并可选灌退市股历史（防幸存者偏差）。
+    """刷新基础资料（上市/退市日及行业），并可选灌退市股历史（防幸存者偏差）。
 
     退市标记 stock_basic.delist_date 仅在此刷新；而增量更新靠 `delist_date IS NULL` 选标的，
     故须定期跑本任务——否则新退市股的 delist_date 恒为 NULL，会被增量当在市股反复采集
@@ -977,7 +977,7 @@ def _h_enrich_basic(params: dict, ctx: TaskContext) -> dict:
     from backend.services.ingest import IngestionService
     ing = IngestionService()
     ctx.log("阶段 1/2：刷新股票基础信息、上市/退市日、行业")
-    ctx.progress(0.1, "刷新上市/退市标记（含退市打标）…")
+    ctx.progress(0.1, "刷新基础资料（上市/退市日及行业）…")
     n = ing.enrich_basic_dates(ctx=ctx)
     ctx.log(f"已刷新基础信息 {n} 只（含退市股打标 delist_date）")
     res: dict = {"basic_rows": n}

@@ -108,6 +108,9 @@ class DataIntegrityReport:
             "SELECT (SELECT max(trade_date) FROM daily_bar) latest, "
             "(SELECT count(*) FROM daily_bar) bars, "
             "(SELECT count(*) FROM daily_metrics) metrics, "
+            "(SELECT count(*) FROM stock_basic) basics, "
+            "(SELECT COALESCE(bit_xor(hash(code, name, list_date, delist_date)), 0) "
+            "   FROM stock_basic) basicsig, "
             "(SELECT count(*) FROM data_quality_issue WHERE status='open' "
             "   AND issue_type NOT IN ('market_index_gap','market_index_gap_daily',"
             "'market_index_invalid','board_index_gap','board_index_gap_daily','board_member_incomplete',"
@@ -118,7 +121,8 @@ class DataIntegrityReport:
         # metrics/mvnull 纳入签名：L2 依赖逐日市值缺口，补市值后（bars/issues 可能没变）
         # 须让缓存失效；metrics 变化覆盖 daily_metrics 整行缺失被补齐的场景。
         key = (id(self.c), str(sig["latest"]), int(sig["bars"]),
-               int(sig["metrics"]), int(sig["openi"]), int(sig["susp"]),
+               int(sig["metrics"]), int(sig["basics"]), int(sig["basicsig"]),
+               int(sig["openi"]), int(sig["susp"]),
                int(sig["mvnull"]), int(window_days))
         if _FRAME_CACHE["key"] == key and _FRAME_CACHE["frame"] is not None:
             return _FRAME_CACHE["frame"], _FRAME_CACHE["latest"]
@@ -184,7 +188,6 @@ class DataIntegrityReport:
         susp_map: dict[str, set] = {c: set(pd.Timestamp(d).date() for d in g["trade_date"])
                                     for c, g in susp.groupby("code", sort=False)}
         rows = []
-        win_first = str(win[0]) if win else None
         # 列向量迭代（避免 pandas iterrows 在 5000+ 行上的高开销）
         for code, name, ld_raw in zip(stocks["code"].tolist(), stocks["name"].tolist(),
                                       stocks["list_date"].tolist()):
@@ -219,12 +222,15 @@ class DataIntegrityReport:
                     "mv_gap_lo": str(mvg_lo) if mvg_lo else None,
                     "mv_gap_hi": str(mvg_hi) if mvg_hi else None,
                     "l1_open": l1, "l3_open": l3, "open_total": tot}
-            if min_bar is None:  # 从未有行情：整窗待采集（计为滞后，不细分内部缺口）
-                rows.append({**base, "latest_date": None, "is_fresh": False,
-                             "gap_days": 0, "gap_lo": None, "gap_hi": None,
-                             "stale_days": len(win), "stale_lo": win_first})
-                continue
             ld = None if ld_raw is None or pd.isna(ld_raw) else pd.Timestamp(ld_raw).date()
+            if min_bar is None:  # 从未有行情：只从上市日起计滞后，不细分内部缺口
+                stale_days = [d for d in win if ld is None or d >= ld]
+                rows.append({**base, "latest_date": None,
+                             "is_fresh": len(stale_days) == 0,
+                             "gap_days": 0, "gap_lo": None, "gap_hi": None,
+                             "stale_days": len(stale_days),
+                             "stale_lo": str(stale_days[0]) if stale_days else None})
+                continue
             span_lo = max(min_bar, ld) if ld else min_bar
             lo = max(span_lo, win_lo)
             have = bar_map.get(code, set())

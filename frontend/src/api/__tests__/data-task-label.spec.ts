@@ -15,6 +15,7 @@ describe('taskDisplayLabel', () => {
     expect(taskDisplayLabel('fix', { issue_type: 'data_gap' }))
       .toBe('质检问题恢复·行情·近端缺某日')
     expect(taskDisplayLabel('verify')).toBe('数据质检')
+    expect(taskDisplayLabel('enrich_basic')).toBe('基础资料刷新')
     expect(taskDisplayLabel('board', { mode: 'update' })).toBe('板块采集·增量')
     expect(taskDisplayLabel('board', { mode: 'backfill' })).toBe('板块采集·全量回填')
     expect(taskDisplayLabel('board', {

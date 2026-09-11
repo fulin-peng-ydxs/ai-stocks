@@ -80,6 +80,41 @@ def test_quality_model_score_and_layers(client):
     assert qm["gaps"]["stocks_with_gap"] == 1 and qm["gaps"]["latest_trade_date"] == "2024-01-05"
 
 
+def test_quality_cache_invalidates_when_basic_stock_is_added(client):
+    """基础资料新增股票后，立即质检不能复用新增前的覆盖帧。"""
+    _seed(client)
+    rep = DataIntegrityReport(client)
+    rep.quality_model()  # 先建立不含新股的缓存
+
+    client.execute(
+        "INSERT INTO stock_basic (code, name, list_date, delist_date, price_limit_pct) "
+        "VALUES ('NEW.SH', '新上市', DATE '2024-01-05', NULL, 0.10)"
+    )
+
+    rep.scan_quality_issues()
+    issues = client.query_df(
+        "SELECT issue_type, detail FROM data_quality_issue "
+        "WHERE code='NEW.SH' AND status='open' ORDER BY issue_type"
+    )
+
+    assert issues["issue_type"].tolist() == ["mv_missing", "stale"]
+    assert "滞后 1 个交易日" in issues.loc[issues["issue_type"] == "stale", "detail"].iloc[0]
+
+
+def test_never_loaded_stock_staleness_starts_at_listing_date(client):
+    """从未有行情的新股只统计上市后的开市日，不能误报整个质量窗口。"""
+    _seed(client)
+    client.execute(
+        "INSERT INTO stock_basic (code, name, list_date, delist_date, price_limit_pct) "
+        "VALUES ('NEW.SH', '新上市', DATE '2024-01-04', NULL, 0.10)"
+    )
+
+    rows = {row["code"]: row for row in DataIntegrityReport(client).stock_quality()["list"]}
+
+    assert rows["NEW.SH"]["layers"]["L4"]["stale_days"] == 2
+    assert rows["NEW.SH"]["layers"]["L4"]["stale_lo"] == "2024-01-04"
+
+
 def test_quality_model_l1l3_from_issues(client):
     _seed(client)
     # 给 A 注入一条未解决 L3（复权跳变）→ A 的 L3 不达标，全绿数降为 0

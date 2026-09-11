@@ -55,7 +55,7 @@
 `_valuation_one` 只写 `daily_bar` 已有交易日（杜绝游离行）；`total_mv` 覆盖写、`float_mv` 仅空缺回填（日线已写的更准值不覆盖）；最新总/流通股本写回 `stock_basic`。
 
 ### 个股四层与指数/板块独立质检（`backend/services/data_report.py`、`dataquality/checker.py`）
-统一口径 `_coverage_frame`（全市场一次扫描 + 数据变更签名内存缓存），概览/逐股/质检三处共用同一份，保证数字一致。
+统一口径 `_coverage_frame`（全市场一次扫描 + 数据变更签名内存缓存），概览/逐股/质检三处共用同一份，保证数字一致。缓存签名覆盖行情、市值、基础资料、问题台账和停牌事实；基础资料新增股票或变更上市/退市边界后，立即质检必须重新扫描，不能沿用旧股票池。
 
 | 层 | issue_type | 判定 | 粒度 |
 |----|-----------|------|------|
@@ -64,7 +64,7 @@
 | | `mv_gap` | 近 90 交易日逐日市值字段缺口（`total_mv`/`float_mv` 任一为空或缺行） | code 聚合（detail 写区间）|
 | L3 正确性 | `abnormal_change` | `\|涨跌\|>逐日板块/ST 上限` 且收盘分价越过合法边界 | 逐(code,日) |
 | | `adj_jump` | 相邻日前复权价跳变>50% | 逐(code,日) |
-| L4 覆盖鲜活 | `data_gap` / `stale` | 近 90 交易日内部缺口/尾部滞后（扣已确认停牌） | 整股 |
+| L4 覆盖鲜活 | `data_gap` / `stale` | 近 90 交易日内部缺口/尾部滞后（扣已确认停牌）；从未有行情的股票从上市日起计 `stale` | 整股 |
 | ST 点时事实 | `st_status_missing` / `st_status_approximate` / `st_status_mismatch` | 缺事实、非权威或日线投影不同步 | code 聚合（detail 写区间） |
 
 市场指数不混入个股 L1-L4 评分，但使用同一 `data_quality_issue` 台账和修复状态机。对当前配置的每只基准指数分别检查：`market_index_gap` 表示未追平全局最新交易日，`market_index_gap_daily` 表示近端某个开市日缺失，`market_index_invalid` 表示非开市日数据、OHLC 非正/越界或成交量额为负。数据目录的 `index_bar` 鲜活度同样要求每只已配置指数都不落后，不再被全表单个最新值掩盖。
