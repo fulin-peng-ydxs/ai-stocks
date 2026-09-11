@@ -233,10 +233,4 @@ onBeforeUnmount(() => controller?.abort())
   }
 }
 
-@media (max-width: 640px) {
-  .stock-intraday-dialog__summary {
-    grid-auto-flow: row;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 </style>

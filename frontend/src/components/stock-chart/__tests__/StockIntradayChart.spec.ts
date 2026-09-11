@@ -54,7 +54,7 @@ const points: IntradayPoint[] = [
     high: 10.2,
     low: 9.9,
     close: 10.1,
-    volume: 1_000,
+    volume: 10,
     amount: 10_100,
     average_price: 10.1,
   },
@@ -75,6 +75,9 @@ describe('StockIntradayChart', () => {
     expect(headers[0].text()).toContain('均价')
     expect(headers[1].text()).toBe('量能')
     expect(headers[1].attributes('style')).toContain('top:')
+    expect(headers[1].classes()).toContain('is-divided')
+    expect(wrapper.classes()).toContain('app-stock-chart-frame')
+    expect(wrapper.findAll('.stock-chart-legend__marker')).toHaveLength(2)
 
     const option = echartsMock.setOption.mock.calls.at(-1)?.[0] as Record<string, unknown>
     expect(option.legend).toBeUndefined()

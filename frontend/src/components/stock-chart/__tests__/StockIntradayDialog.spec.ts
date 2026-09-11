@@ -20,7 +20,7 @@ const ready = {
   pre_close: 3.55,
   points: [{
     time: '09:31', open: 3.6, high: 3.62, low: 3.59, close: 3.61,
-    volume: 1000, amount: 3610, average_price: 3.61,
+    volume: 10, amount: 3610, average_price: 3.61,
   }],
 }
 

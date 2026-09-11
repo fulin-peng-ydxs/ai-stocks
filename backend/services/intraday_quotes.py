@@ -20,6 +20,7 @@ from backend.storage import get_read_client, get_redis_client
 log = get_logger("services.intraday_quotes")
 
 _CACHE_PREFIX = "market:intraday:1m"
+_CACHE_VERSION = 2
 _MAX_CACHE_BYTES = 2 * 1024 * 1024
 _EXPECTED_SESSION_TIMES = frozenset(
     pd.date_range("2000-01-01 09:31", periods=120, freq="min").strftime("%H:%M")
@@ -258,7 +259,7 @@ class IntradayQuoteService:
                 continue
             try:
                 payload = json.loads(raw)
-                if payload.get("v") == 1 and isinstance(payload.get("rows"), list):
+                if payload.get("v") == _CACHE_VERSION and isinstance(payload.get("rows"), list):
                     result[provider] = payload
             except (TypeError, ValueError):
                 log.warning("忽略损坏的分时缓存 code=%s source=%s", code, provider)
@@ -283,12 +284,12 @@ class IntradayQuoteService:
                         float(row.high),
                         float(row.low),
                         float(row.close),
-                        int(row.volume),
+                        float(row.volume),
                         float(row.amount),
                     ]
                 )
         return {
-            "v": 1,
+            "v": _CACHE_VERSION,
             "source": provider,
             "fetched_at": datetime.now(UTC).isoformat(),
             "rows": rows,
@@ -308,7 +309,7 @@ class IntradayQuoteService:
             cached.values(), key=lambda item: str(item.get("fetched_at") or ""), default={}
         )
         return {
-            "v": 1,
+            "v": _CACHE_VERSION,
             "source": newest.get("source"),
             "fetched_at": newest.get("fetched_at"),
             "rows": [],
@@ -317,14 +318,14 @@ class IntradayQuoteService:
     @staticmethod
     def _points(rows: list[list]) -> list[dict]:
         amount_sum = 0.0
-        volume_sum = 0
+        volume_sum = 0.0
         points: list[dict] = []
         for timestamp, open_, high, low, close, volume, amount in rows:
-            volume_int = int(volume)
+            volume_lots = float(volume)
             amount_value = float(amount)
-            volume_sum += max(volume_int, 0)
+            volume_sum += max(volume_lots, 0.0)
             amount_sum += max(amount_value, 0.0)
-            average = amount_sum / volume_sum if volume_sum > 0 else None
+            average = amount_sum / (volume_sum * 100) if volume_sum > 0 else None
             points.append(
                 {
                     "time": timestamp[11:16],
@@ -332,7 +333,7 @@ class IntradayQuoteService:
                     "high": round(float(high), 4),
                     "low": round(float(low), 4),
                     "close": round(float(close), 4),
-                    "volume": volume_int,
+                    "volume": round(volume_lots, 2),
                     "amount": round(amount_value, 2),
                     "average_price": None if average is None else round(average, 4),
                 }

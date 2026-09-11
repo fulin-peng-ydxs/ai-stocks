@@ -94,7 +94,7 @@ def _frame(trade_date: date = date(2026, 9, 10), rows: int = 240) -> pd.DataFram
             "high": [3.62 + index * 0.001 for index in range(rows)],
             "low": [3.59 + index * 0.001 for index in range(rows)],
             "close": [3.61 + index * 0.001 for index in range(rows)],
-            "volume": [1000] * rows,
+            "volume": [10] * rows,
             "amount": [(3.60 + index * 0.001) * 1000 for index in range(rows)],
         }
     )
@@ -160,12 +160,32 @@ def test_first_fetch_maps_points_and_followup_date_uses_same_window_cache() -> N
     assert current["status"] == "ready"
     assert current["source"] == "sina"
     assert current["pre_close"] == 3.55
+    assert current["points"][0]["volume"] == 10
     assert current["points"][1]["average_price"] == pytest.approx(3.6005)
     assert previous["status"] == "ready"
     assert calls == ["sina"]
     raw = cache.get("market:intraday:1m:window:sina:002251.SZ")
-    assert raw is not None and json.loads(raw)["v"] == 1
+    assert raw is not None and json.loads(raw)["v"] == 2
     assert "average_price" not in raw
+
+
+def test_legacy_share_unit_cache_is_ignored_and_replaced_with_lot_unit_cache() -> None:
+    calls: list[str] = []
+    cache = _Redis()
+    key = "market:intraday:1m:window:sina:002251.SZ"
+    cache.set(
+        key,
+        json.dumps({"v": 1, "source": "sina", "fetched_at": "2026-09-10T00:00:00Z", "rows": []}),
+        ex=43_200,
+    )
+    service = _service(cache, lambda: _Source(calls))
+
+    result = service.get("002251.SZ", date(2026, 9, 10))
+
+    assert result["status"] == "ready"
+    assert result["points"][0]["volume"] == 10
+    assert calls == ["sina"]
+    assert json.loads(cache.get(key))["v"] == 2
 
 
 def test_partial_points_are_preserved_without_fill() -> None:

@@ -479,6 +479,22 @@ html.dark {
   font-weight: var(--app-font-weight-strong);
 }
 
+/* 股票画布共享外壳：日 K 工作区与分时双图区保持同一边框、圆角和表面。 */
+.app-stock-chart-frame {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-bg-color);
+}
+
+@media (max-width: 640px) {
+  .app-metric-group {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* 金融涨跌与弱化文字语义类：颜色唯一事实源 = LAYOUT_PRESETS token，页面禁止再私有定义同一色。 */
 .up { color: var(--market-up-color); }
 .down { color: var(--market-down-color); }

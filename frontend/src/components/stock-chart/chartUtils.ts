@@ -133,6 +133,51 @@ export function formatVolume(shares: number | null | undefined): string {
   return `${lots.toFixed(0)}手`
 }
 
+/** 分钟行情统一以手传输，不再沿用日线“股转手”的格式化入口。 */
+export function formatVolumeLots(lots: number | null | undefined): string {
+  if (lots == null || !Number.isFinite(lots)) return '--'
+  if (Math.abs(lots) >= 1e8) return `${(lots / 1e8).toFixed(2)}亿手`
+  if (Math.abs(lots) >= 1e4) return `${(lots / 1e4).toFixed(2)}万手`
+  return `${Number.isInteger(lots) ? lots.toFixed(0) : lots.toFixed(2)}手`
+}
+
+interface StockVolumeDatum {
+  open: number | null
+  close: number
+  volume: number
+}
+
+interface StockVolumeBarSeriesInput {
+  data: readonly StockVolumeDatum[]
+  theme: Pick<StockChartTheme, 'up' | 'down' | 'label'>
+  name?: string
+  barWidth?: string
+  barMaxWidth?: number
+  xAxisIndex?: number
+  yAxisIndex?: number
+}
+
+/** 日线与分时共用的量能柱构造，统一涨跌判定、序列名称和柱形参数入口。 */
+export function buildStockVolumeBarSeries(input: StockVolumeBarSeriesInput) {
+  return {
+    name: input.name ?? '量能',
+    type: 'bar' as const,
+    ...(input.xAxisIndex == null ? {} : { xAxisIndex: input.xAxisIndex }),
+    ...(input.yAxisIndex == null ? {} : { yAxisIndex: input.yAxisIndex }),
+    ...(input.barWidth == null ? {} : { barWidth: input.barWidth }),
+    ...(input.barMaxWidth == null ? {} : { barMaxWidth: input.barMaxWidth }),
+    data: input.data.map((item, index) => {
+      const reference = item.open != null && item.open > 0
+        ? item.open
+        : input.data[index - 1]?.close
+      const color = reference == null
+        ? input.theme.label
+        : item.close >= reference ? input.theme.up : input.theme.down
+      return { value: item.volume, itemStyle: { color } }
+    }),
+  }
+}
+
 export function formatChartNumber(value: number | null | undefined, digits = 2): string {
   return formatMoney(value, { digits, empty: '--' })
 }

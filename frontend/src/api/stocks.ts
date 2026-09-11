@@ -88,7 +88,7 @@ export interface IntradayPoint {
   high: number
   low: number
   close: number
-  volume: number
+  volume: number // 手；1 手 = 100 股，两个分钟源在后端适配层统一
   amount: number
   average_price: number | null
 }

@@ -1,7 +1,13 @@
 import type { EChartsOption } from 'echarts'
 import type { IntradayPoint } from '@/api/stocks'
 import { formatMarketPercent } from '@/utils/marketValue'
-import { formatAmount, formatChartNumber, formatVolume, type StockChartTheme } from './chartUtils'
+import {
+  buildStockVolumeBarSeries,
+  formatAmount,
+  formatChartNumber,
+  formatVolumeLots,
+  type StockChartTheme,
+} from './chartUtils'
 
 export interface IntradayOptionInput {
   points: IntradayPoint[]
@@ -85,10 +91,6 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
   const times = points.map((point) => point.time)
   const closes = points.map((point) => point.close)
   const averages = points.map((point) => point.average_price)
-  const volumes = points.map((point) => ({
-    value: point.volume,
-    itemStyle: { color: point.close >= point.open ? theme.up : theme.down },
-  }))
   const priceExtent = symmetricPriceExtent(points, preClose)
   const panelLayout = intradayPanelLayout(chartHeight)
   const middayIndex = times.indexOf('11:30')
@@ -122,7 +124,7 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
             theme.label,
           )
           + tooltipRow('均价', formatChartNumber(point.average_price, 2), theme.series.kline.ma5, theme.label)
-          + tooltipRow('成交量', formatVolume(point.volume), theme.text, theme.label)
+          + tooltipRow('成交量', formatVolumeLots(point.volume), theme.text, theme.label)
           + tooltipRow('成交额', formatAmount(point.amount), theme.text, theme.label)
           + '</div>'
       },
@@ -206,8 +208,8 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         scale: true,
         ...priceExtent,
         axisLabel: { color: theme.label, formatter: (value: number) => value.toFixed(2) },
-        axisLine: { show: true, lineStyle: { color: theme.axis } },
-        splitLine: { lineStyle: { color: theme.split, type: 'dashed' } },
+        axisLine: { show: false },
+        splitLine: { lineStyle: { color: theme.split } },
       },
       {
         type: 'value',
@@ -224,7 +226,7 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
             return formatMarketPercent(percentage)
           },
         },
-        axisLine: { show: true, lineStyle: { color: theme.axis } },
+        axisLine: { show: false },
         splitLine: { show: false },
       },
       {
@@ -232,9 +234,10 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         gridIndex: 1,
         position: 'left',
         min: 0,
-        axisLabel: { color: theme.label, formatter: (value: number) => formatVolume(value) },
-        axisLine: { show: true, lineStyle: { color: theme.axis } },
-        splitLine: { show: false },
+        splitNumber: 2,
+        axisLabel: { color: theme.label, formatter: (value: number) => formatVolumeLots(value) },
+        axisLine: { show: false },
+        splitLine: { lineStyle: { color: theme.split } },
       },
     ],
     series: [
@@ -267,14 +270,14 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         lineStyle: { color: theme.series.kline.ma5, width: 1.2 },
         itemStyle: { color: theme.series.kline.ma5 },
       },
-      {
+      buildStockVolumeBarSeries({
+        data: points,
+        theme,
         name: '成交量',
-        type: 'bar',
         xAxisIndex: 1,
         yAxisIndex: 2,
-        data: volumes,
         barMaxWidth: 5,
-      },
+      }),
     ],
   }
 }

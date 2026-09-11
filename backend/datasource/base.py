@@ -15,6 +15,7 @@
 - st_status:   code, trade_date, is_st, trade_status
 - delist_list: code, name, delist_date
 - intraday_1m: timestamp, open, high, low, close, volume, amount
+               （volume 固定为手，1 手 = 100 股；amount 固定为元）
 
 复权约定：daily_bar 返回**不复权**原值；复权因子单列 adj_factor。
 日期列统一为 datetime.date 或可被 to_date 解析的字符串。

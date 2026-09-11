@@ -15,6 +15,7 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import { useStatusColorPalette } from '@/components/chartTheme'
 import type { AuxiliaryChartType, ChartType } from '@/composables/useStockChartPreferences'
 import StockChartPanelHeader from './StockChartPanelHeader.vue'
+import type { StockChartLegendItem } from './StockChartLegend.vue'
 import {
   KLINE_MA_DEFINITIONS,
   VOLUME_MA_DEFINITIONS,
@@ -54,6 +55,22 @@ interface PanelDescriptor {
 interface Metric {
   label: string
   value: string
+}
+
+function metricMarker(type: ChartType, label: string): 'line' | 'bar' {
+  return (type === 'macd' && label === 'MACD') || (type === 'volume' && label === '总量')
+    ? 'bar'
+    : 'line'
+}
+
+function panelLegendItems(type: ChartType): StockChartLegendItem[] {
+  return panelMetrics(type).map((metric) => ({
+    key: metric.label,
+    label: metric.label,
+    value: metric.value,
+    color: metricColor(type, metric),
+    marker: metricMarker(type, metric.label),
+  }))
 }
 
 interface ZoomRange {
@@ -516,7 +533,7 @@ onBeforeUnmount(() => {
 <template>
   <section
     ref="workspaceEl"
-    class="stock-chart-workspace"
+    class="stock-chart-workspace app-stock-chart-frame"
     :style="{ minHeight: `${effectiveMinHeight}px` }"
     :data-min-height="effectiveMinHeight"
     :data-zoom-start="zoomRange.start"
@@ -530,17 +547,11 @@ onBeforeUnmount(() => {
         :style="panelStyle(panel, index)"
         :data-panel-key="panel.key"
       >
-        <StockChartPanelHeader :title="panelTitle(panel.type, adjustLabel)">
-          <div class="stock-chart-panel__metrics">
-            <span
-              v-for="metric in panelMetrics(panel.type)"
-              :key="metric.label"
-              class="stock-chart-panel__metric"
-              :style="{ color: metricColor(panel.type, metric) }"
-            >
-              {{ metric.label }} <b>{{ metric.value }}</b>
-            </span>
-          </div>
+        <StockChartPanelHeader
+          :title="panelTitle(panel.type, adjustLabel)"
+          :items="panelLegendItems(panel.type)"
+          :legend-label="`${panelTitle(panel.type, adjustLabel)}图例与当前值`"
+        >
           <template #tail>
             <time v-if="panel.type === 'kline' && rows.length" class="stock-chart-panel__date">
               {{ rows[metricIndex]?.bar.date }}
@@ -596,10 +607,6 @@ onBeforeUnmount(() => {
   width: 100%;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--el-border-radius-base);
 }
 
 .stock-chart-panel {
@@ -608,27 +615,6 @@ onBeforeUnmount(() => {
   flex-direction: column;
   overflow: hidden;
   background: var(--el-bg-color);
-}
-
-.stock-chart-panel__metrics {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-3);
-  overflow: hidden;
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-micro);
-  white-space: nowrap;
-}
-
-.stock-chart-panel__metric b {
-  font-weight: var(--app-font-weight-section);
-}
-
-.stock-chart-panel__metric {
-  max-width: 112px;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .stock-chart-panel__date {
@@ -694,11 +680,7 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1180px) {
-  .stock-chart-panel__metrics {
-    gap: var(--app-space-2);
-  }
-
-  .stock-chart-panel__metric:nth-child(n + 4) {
+  .stock-chart-panel :deep(.stock-chart-legend__item:nth-child(n + 4)) {
     display: none;
   }
 }

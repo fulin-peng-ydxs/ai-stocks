@@ -244,14 +244,15 @@ describe('StockChartWorkspace', () => {
 
   it('空数据标题仍从共享 MA/VMA 定义生成', async () => {
     const wrapper = await mountWorkspace({ bars: [], indicators: [] })
-    const labels = (selector: string) => wrapper.findAll(selector).map(
-      (metric) => metric.text().replace(/\s+--$/, ''),
-    )
+    const labels = (selector: string) => wrapper.findAll(selector).map((label) => label.text())
 
-    expect(labels('.stock-chart-panel--kline .stock-chart-panel__metric'))
+    expect(labels('.stock-chart-panel--kline .stock-chart-legend__label'))
       .toEqual(KLINE_MA_DEFINITIONS.map(({ label }) => label))
-    expect(labels('.stock-chart-panel--volume .stock-chart-panel__metric'))
+    expect(labels('.stock-chart-panel--volume .stock-chart-legend__label'))
       .toEqual(['总量', ...VOLUME_MA_DEFINITIONS.map(({ label }) => label)])
+
+    expect(wrapper.classes()).toContain('app-stock-chart-frame')
+    expect(wrapper.findAll('.stock-chart-legend__marker').length).toBeGreaterThan(0)
 
     wrapper.unmount()
   })

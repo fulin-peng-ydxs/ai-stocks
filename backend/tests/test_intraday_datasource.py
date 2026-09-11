@@ -64,41 +64,38 @@ def test_sina_intraday_uses_unadjusted_one_minute_window_and_normalizes_fields(m
         "high": 3.62,
         "low": 3.59,
         "close": 3.61,
-        "volume": 1000,
+        "volume": 10,
         "amount": 3610,
     }
 
 
 def test_eastmoney_intraday_is_one_minute_unadjusted_fallback(monkeypatch) -> None:
-    calls: list[dict] = []
+    calls: list[tuple[str, dict, float]] = []
 
-    def fake_fetch(**kwargs):
-        calls.append(kwargs)
-        return pd.DataFrame(
-            [
-                {
-                    "时间": "2026-09-10 09:31:00",
-                    "开盘": 3.6,
-                    "收盘": 3.61,
-                    "最高": 3.62,
-                    "最低": 3.59,
-                    "成交量": 1000,
-                    "成交额": 3610,
-                    "均价": 3.61,
+    class Response:
+        @staticmethod
+        def raise_for_status() -> None:
+            return None
+
+        @staticmethod
+        def json() -> dict:
+            return {
+                "data": {
+                    "trends": ["2026-09-10 09:31,3.60,3.61,3.62,3.59,1000,361000,3.61"]
                 }
-            ]
-        )
+            }
 
-    monkeypatch.setattr("backend.datasource.akshare_source.ak.stock_zh_a_hist_min_em", fake_fetch)
+    def fake_get(url, *, params, timeout):
+        calls.append((url, params, timeout))
+        return Response()
+
+    monkeypatch.setattr("backend.datasource.akshare_source.requests.get", fake_get)
     result = _source().get_intraday_1m("002251.SZ", "eastmoney")
 
-    assert calls == [
-        {
-            "symbol": "002251",
-            "start_date": "1979-09-01 00:00:00",
-            "end_date": "2222-01-01 23:59:59",
-            "period": "1",
-            "adjust": "",
-        }
-    ]
+    assert calls[0][0].endswith("/api/qt/stock/trends2/get")
+    assert calls[0][1]["secid"] == "0.002251"
+    assert calls[0][1]["ndays"] == "5"
+    assert calls[0][2] == 15
     assert result.iloc[0]["close"] == 3.61
+    assert result.iloc[0]["volume"] == 1000
+    assert result.iloc[0]["amount"] == 361000

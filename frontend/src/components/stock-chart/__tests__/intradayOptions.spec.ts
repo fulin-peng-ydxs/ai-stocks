@@ -28,9 +28,9 @@ const theme: StockChartTheme = {
 }
 
 const points: IntradayPoint[] = [
-  { time: '09:31', open: 10, high: 10.2, low: 9.9, close: 10.1, volume: 1000, amount: 10_100, average_price: 10.1 },
-  { time: '11:30', open: 10.1, high: 10.2, low: 10, close: 10.15, volume: 1500, amount: 15_225, average_price: 10.12 },
-  { time: '13:01', open: 10.2, high: 10.2, low: 10, close: 10, volume: 2000, amount: 20_000, average_price: 10.03 },
+  { time: '09:31', open: 10, high: 10.2, low: 9.9, close: 10.1, volume: 10, amount: 10_100, average_price: 10.1 },
+  { time: '11:30', open: 10.1, high: 10.2, low: 10, close: 10.15, volume: 15, amount: 15_225, average_price: 10.12 },
+  { time: '13:01', open: 10.2, high: 10.2, low: 10, close: 10, volume: 20, amount: 20_000, average_price: 10.03 },
 ]
 
 describe('buildIntradayOption', () => {
@@ -52,6 +52,10 @@ describe('buildIntradayOption', () => {
     expect(option.yAxis.map((axis: { position: string }) => axis.position))
       .toEqual(['left', 'right', 'left'])
     expect(option.yAxis[1].axisLabel.formatter(9.8)).toBe('0.00%')
+    expect(option.yAxis.every((axis: { axisLine: { show: boolean } }) => !axis.axisLine.show))
+      .toBe(true)
+    expect(option.yAxis[0].splitLine.lineStyle).toEqual({ color: '#split' })
+    expect(option.yAxis[2].splitLine.lineStyle).toEqual({ color: '#split' })
     expect(option.series.map((series: { name: string }) => series.name)).toEqual(['价格', '均价', '成交量'])
     expect(option.series[0].lineStyle.color).toBe('#blue')
     expect(option.series[0].markLine).toMatchObject({
@@ -61,6 +65,7 @@ describe('buildIntradayOption', () => {
     expect(option.series[1].lineStyle.color).toBe('#orange')
     expect(option.series[2].data.map((item: any) => item.itemStyle.color))
       .toEqual(['#red', '#red', '#green'])
+    expect(option.yAxis[2].axisLabel.formatter(15_000)).toBe('1.50万手')
     expect(option.axisPointer.link).toEqual([{ xAxisIndex: [0, 1] }])
     expect(option.legend).toBeUndefined()
     expect(option.title).toBeUndefined()
@@ -76,6 +81,18 @@ describe('buildIntradayOption', () => {
       zoom.start === 25 && zoom.end === 75
     ))).toBe(true)
     expect((option.yAxis[0].min + option.yAxis[0].max) / 2).toBeCloseTo(9.8)
+  })
+
+  it('缺失有效分钟开盘价时按上一分钟收盘判断量柱，首点使用中性色', () => {
+    const fallbackPoints = points.map((point, index) => ({
+      ...point,
+      open: 0,
+      close: index === 1 ? 10.05 : point.close,
+    }))
+    const option = buildIntradayOption({ points: fallbackPoints, preClose: 10, theme }) as any
+
+    expect(option.series[2].data.map((item: any) => item.itemStyle.color))
+      .toEqual(['#label', '#green', '#green'])
   })
 
   it('按画布高度为共享标题栏预留固定空间，并保持紧凑双图间距', () => {

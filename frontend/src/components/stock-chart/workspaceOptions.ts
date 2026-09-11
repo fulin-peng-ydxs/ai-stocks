@@ -2,6 +2,7 @@ import type { Bar, IndicatorRow } from '@/api/stocks'
 import type { ChartType } from '@/composables/useStockChartPreferences'
 import { formatMarketPercent } from '@/utils/marketValue'
 import {
+  buildStockVolumeBarSeries,
   formatChartAxisNumber,
   formatChartNumber,
   formatVolume,
@@ -506,16 +507,12 @@ export function buildVolumeOption(context: OptionContext) {
       splitLine: { lineStyle: { color: context.theme.split } },
     },
     series: [
-      {
-        name: '量能',
-        type: 'bar',
+      buildStockVolumeBarSeries({
+        data: bars,
+        theme: context.theme,
         barWidth: VOLUME_BAR_WIDTH,
         barMaxWidth: 12,
-        data: bars.map((bar) => ({
-          value: bar.volume,
-          itemStyle: { color: bar.close >= bar.open ? context.theme.up : context.theme.down },
-        })),
-      },
+      }),
       ...VOLUME_MA_DEFINITIONS.map((definition) => ({
         name: definition.seriesName,
         type: 'line',
