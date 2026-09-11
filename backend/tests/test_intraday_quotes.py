@@ -28,7 +28,10 @@ class _Market:
                 {"trade_date": [self.latest - timedelta(days=index) for index in range(8)]}
             )
         if "SELECT pre_close" in sql:
-            return pd.DataFrame({"pre_close": [3.55]}) if self.has_bar else pd.DataFrame()
+            return (
+                pd.DataFrame({"pre_close": [3.55], "turnover_rate": [6.8]})
+                if self.has_bar else pd.DataFrame()
+            )
         raise AssertionError(sql)
 
 
@@ -160,6 +163,7 @@ def test_first_fetch_maps_points_and_followup_date_uses_same_window_cache() -> N
     assert current["status"] == "ready"
     assert current["source"] == "sina"
     assert current["pre_close"] == 3.55
+    assert current["turnover_rate"] == 6.8
     assert current["points"][0]["volume"] == 10
     assert current["points"][1]["average_price"] == pytest.approx(3.6005)
     assert previous["status"] == "ready"

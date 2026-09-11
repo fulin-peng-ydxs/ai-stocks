@@ -103,6 +103,7 @@ class IntradayQuoteService:
             "supported_start": str(dates[0]) if dates else None,
             "supported_end": str(dates[-1]) if dates else None,
             "pre_close": None,
+            "turnover_rate": None,
             "points": [],
         }
         if name is None:
@@ -112,7 +113,8 @@ class IntradayQuoteService:
             metadata["status"] = "out_of_range"
             return metadata
         bar_df = self.market.query_df(
-            "SELECT pre_close FROM daily_bar WHERE code = ? AND trade_date = ? LIMIT 1",
+            "SELECT pre_close, turnover_rate FROM daily_bar "
+            "WHERE code = ? AND trade_date = ? LIMIT 1",
             [code, trade_date],
         )
         if bar_df.empty:
@@ -120,6 +122,10 @@ class IntradayQuoteService:
             return metadata
         value = bar_df.iloc[0]["pre_close"]
         metadata["pre_close"] = None if value is None or pd.isna(value) else float(value)
+        turnover = bar_df.iloc[0]["turnover_rate"]
+        metadata["turnover_rate"] = (
+            None if turnover is None or pd.isna(turnover) else float(turnover)
+        )
         return metadata
 
     def _load_or_fetch_window(self, code: str) -> dict:

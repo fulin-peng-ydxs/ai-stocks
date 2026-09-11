@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { TrendCharts } from '@element-plus/icons-vue'
-import AppIconButton from '@/components/AppIconButton.vue'
+import ComparePinButton from '@/components/ComparePinButton.vue'
 
 withDefaults(defineProps<{
   code?: string
@@ -19,16 +18,12 @@ const emit = defineEmits<{
 
 <template>
   <div class="stock-analysis-name-cell">
-    <AppIconButton
+    <ComparePinButton
       v-if="code"
-      :class="{ 'stock-analysis-pin--active': pinned }"
+      :active="pinned"
       :label="`${pinned ? '移出' : '加入'}走势对比：${name || code}`"
-      size="xs"
-      :native-title="false"
-      @click.stop="emit('toggle')"
-    >
-      <el-icon><TrendCharts /></el-icon>
-    </AppIconButton>
+      @toggle="emit('toggle')"
+    />
     <span>{{ name || '—' }}</span>
     <slot />
   </div>
@@ -40,9 +35,5 @@ const emit = defineEmits<{
   align-items: center;
   gap: var(--app-space-2);
   min-width: 0;
-}
-.stock-analysis-pin--active {
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
 }
 </style>

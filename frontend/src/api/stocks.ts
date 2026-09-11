@@ -104,6 +104,7 @@ export interface StockIntraday {
   supported_start: string | null
   supported_end: string | null
   pre_close: number | null
+  turnover_rate: number | null
   points: IntradayPoint[]
 }
 

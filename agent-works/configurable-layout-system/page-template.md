@@ -144,7 +144,7 @@
 - RBAC 接入结论：是否触发 [system-rbac-tenant.md](../architecture/system-rbac-tenant.md)“新页面接入菜单和权限”；涉及项：
 - 测试：
 - 按钮契约：命令按钮 / 图标按钮选型、每组主按钮数量、loading / disabled / focus 状态：
-- 字体与间距契约：是否消费 typography/spacing token；紧凑指标组是否复用全局 metric 语义类并保持标签/数值行对齐、固定容量和整项响应式降级；是否存在合理特例、是否影响低宽度文本溢出：
+- 字体与间距契约：是否消费 typography/spacing token；行情摘要是否复用 `StockQuoteSummary`，保持垂直居中的主值列、两列最多四行的信息、自适应列宽和紧凑列间距；是否存在合理特例、是否影响低宽度文本溢出：
 
 ### 验收
 - cd frontend && npm test

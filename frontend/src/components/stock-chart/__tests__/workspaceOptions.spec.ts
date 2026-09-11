@@ -377,16 +377,35 @@ describe('workspaceOptions', () => {
     }
     const tooltipElement = {} as HTMLElement
     expect(tooltip.position([40, 100], [], tooltipElement, null, size)).toEqual([72, 6])
-    expect(tooltip.position([80, 100], [], tooltipElement, null, size)).toEqual([372, 6])
-    expect(tooltip.position([220, 100], [], tooltipElement, null, size)).toEqual([372, 6])
+    expect(tooltip.position([80, 100], [], tooltipElement, null, size)).toEqual([72, 6])
+    expect(tooltip.position(
+      [80, 100], [{ seriesType: 'line', dataIndex: 0 }], tooltipElement, null, size,
+    )).toEqual([72, 6])
+    expect(tooltip.position(
+      [80, 100], [{ seriesType: 'candlestick', dataIndex: 0 }], tooltipElement, null, size,
+    )).toEqual([72, 6])
     expect(tooltip.position([240, 100], [], tooltipElement, null, size)).toEqual([72, 6])
     expect(tooltip.position([480, 100], [], tooltipElement, null, size)).toEqual([72, 6])
+    expect(tooltip.position(
+      [40, 100], [], tooltipElement, { x: 68, y: 20, width: 12, height: 80 }, size,
+    )).toEqual([72, 6])
+    expect(tooltip.position(
+      [80, 100], [], tooltipElement, { x: 68, y: 20, width: 12, height: 80 }, size,
+    )).toEqual([372, 6])
+    expect(tooltip.position(
+      [80, 100], [], tooltipElement, { x: 68, y: 260, width: 12, height: 20 }, size,
+    )).toEqual([72, 6])
     expect(tooltip.transitionDuration).toBe(0)
     expect(tooltip.extraCssText).toContain('opacity .14s ease')
-    expect(content).toContain('width:156px')
-    for (const field of ['时间', '开盘', '收盘', '最高', '最低', '涨幅', '振幅', '成交量', '成交额', '换手率']) {
+    expect(content).toContain('width:max-content')
+    expect(content).toContain('font-size:18px')
+    expect(content).toContain('display:flex;align-items:stretch;gap:8px')
+    expect(content).toContain('align-items:center;justify-content:center;align-self:stretch')
+    expect(content).toContain('border-right:1px solid #ddd')
+    for (const field of ['时间', '开盘', '最高', '最低', '涨幅', '振幅', '成交量', '成交额', '换手率']) {
       expect(content).toContain(`>${field}<`)
     }
+    expect(content).not.toContain('>收盘<')
     for (const value of [
       '2026-07-22',
       '9.80',
@@ -401,11 +420,13 @@ describe('workspaceOptions', () => {
     ]) {
       expect(content).toContain(`>${value}<`)
     }
-    expect(content).toContain('style="color:#up">10.00</span>')
+    expect(content).toContain('color:#up;font-size:18px')
     expect(content).toContain('style="color:#up">+1.01%</span>')
     expect(content).toContain('style="color:#down">9.80</span>')
     expect(content).toContain('style="color:#up">10.40</span>')
     expect(content).toContain('style="color:#down">9.50</span>')
+    expect(content.indexOf('>开盘<')).toBeLessThan(content.indexOf('>最高<'))
+    expect(content.indexOf('>最高<')).toBeLessThan(content.indexOf('>最低<'))
     expect((buildVolumeOption(context).tooltip as { showContent?: boolean }).showContent)
       .toBe(false)
     const macdTooltip = buildMacdOption(context).tooltip as {
@@ -432,7 +453,7 @@ describe('workspaceOptions', () => {
     const downContent = (downOption.tooltip.formatter as (
       params: Array<{ dataIndex: number }>,
     ) => string)([{ dataIndex: 0 }])
-    expect(downContent).toContain('style="color:#down">9.80</span>')
+    expect(downContent).toContain('color:#down;font-size:18px')
     expect(downContent).toContain('style="color:#down">-2.00%</span>')
   })
 

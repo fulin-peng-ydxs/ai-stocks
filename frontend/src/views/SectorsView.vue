@@ -9,6 +9,7 @@ import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import ComparePinButton from '@/components/ComparePinButton.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import CompareQueueRail from '@/components/CompareQueueRail.vue'
@@ -961,13 +962,12 @@ onMounted(async () => {
                   >
                     <el-icon><StarFilled v-if="isWatchlisted(row.board_code)" /><Star v-else /></el-icon>
                   </AppIconButton>
-                  <el-checkbox
+                  <ComparePinButton
                     :disabled="row.available === false"
-                    :model-value="isPinned(row.board_code)"
-                    :aria-label="`${isPinned(row.board_code) ? '移出' : '加入'}对比：${row.name}`"
-                    :data-testid="row?.board_code ? `sectors-pin-${row.board_code}` : undefined"
-                    @click.stop
-                    @change="(checked: boolean) => togglePinned(row, checked)"
+                    :active="isPinned(row.board_code)"
+                    :label="`${isPinned(row.board_code) ? '移出' : '加入'}走势对比：${row.name}`"
+                    :test-id="row?.board_code ? `sectors-pin-${row.board_code}` : undefined"
+                    @toggle="togglePinned(row, !isPinned(row.board_code))"
                   />
                   <div class="sector-name-copy">
                     <el-button

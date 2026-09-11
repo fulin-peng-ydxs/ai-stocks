@@ -193,6 +193,33 @@ function setChartElement(key: WorkspacePanelKey, element: unknown): void {
 }
 
 function chartOption(panel: PanelDescriptor, isBottom: boolean) {
+  const chart = charts.get(panel.key)
+  const candlestickRect = (params: unknown) => {
+    if (!chart || chart.isDisposed()) return null
+    const items = Array.isArray(params) ? params : [params]
+    const item = items.find((entry) => (
+      (entry as { seriesType?: string })?.seriesType === 'candlestick'
+    )) as { dataIndex?: number } | undefined
+    if (typeof item?.dataIndex !== 'number') return null
+    const bar = rows.value[item.dataIndex]?.bar
+    if (!bar) return null
+    const highPoint = chart.convertToPixel(
+      { xAxisIndex: 0, yAxisIndex: 0 },
+      [item.dataIndex, bar.high],
+    )
+    const lowPoint = chart.convertToPixel(
+      { xAxisIndex: 0, yAxisIndex: 0 },
+      [item.dataIndex, bar.low],
+    )
+    if (!Array.isArray(highPoint) || !Array.isArray(lowPoint)) return null
+    if (![highPoint[0], highPoint[1], lowPoint[1]].every(Number.isFinite)) return null
+    return {
+      x: Number(highPoint[0]) - 9,
+      y: Math.min(Number(highPoint[1]), Number(lowPoint[1])),
+      width: 18,
+      height: Math.max(1, Math.abs(Number(lowPoint[1]) - Number(highPoint[1]))),
+    }
+  }
   const context = {
     rows: rows.value,
     warmupBars: props.warmupBars,
@@ -204,6 +231,7 @@ function chartOption(panel: PanelDescriptor, isBottom: boolean) {
     buyMarkerColor: statusPalette.value.primary,
     sellMarkerColor: statusPalette.value.warning,
     clickableCandles: props.enableIntradayDrilldown,
+    candlestickRect,
   }
   if (panel.type === 'kline') return buildKlineOption(context)
   if (panel.type === 'volume') return buildVolumeOption(context)

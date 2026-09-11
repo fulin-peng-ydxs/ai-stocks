@@ -18,6 +18,7 @@ const ready = {
   supported_start: '2026-09-01',
   supported_end: '2026-09-10',
   pre_close: 3.55,
+  turnover_rate: 6.8,
   points: [{
     time: '09:31', open: 3.6, high: 3.62, low: 3.59, close: 3.61,
     volume: 10, amount: 3610, average_price: 3.61,
@@ -86,11 +87,14 @@ describe('StockIntradayDialog', () => {
     const chart = wrapper.findComponent(ChartStub)
     expect(chart.props('points')).toEqual(ready.points)
     expect(chart.props('preClose')).toBe(3.55)
-    expect(wrapper.text()).toContain('收盘3.61')
-    expect(wrapper.find('.stock-intraday-dialog__summary .app-metric-value--primary').text()).toBe('3.61')
-    expect(wrapper.find('.stock-intraday-dialog__summary .app-metric-value--strong').text()).toBe('+1.69%')
-    expect(wrapper.findAll('.stock-intraday-dialog__summary .app-metric-item')).toHaveLength(4)
-    expect(wrapper.text()).toContain('高 / 低3.62 / 3.59')
+    expect(wrapper.find('.stock-quote-summary__hero dd').text()).toBe('3.61')
+    expect(wrapper.text()).not.toContain('收盘')
+    expect(wrapper.find('.stock-quote-summary__hero dd').classes()).toContain('is-up')
+    expect(wrapper.findAll('.stock-quote-summary__column')).toHaveLength(4)
+    expect(wrapper.text()).toContain('开盘3.60最高3.62')
+    expect(wrapper.text()).toContain('最低3.59涨幅+1.69%')
+    expect(wrapper.text()).toContain('振幅0.85%换手率6.80%')
+    expect(wrapper.text()).toContain('成交量10手')
     expect(wrapper.text()).toContain('成交额3,610')
   })
 

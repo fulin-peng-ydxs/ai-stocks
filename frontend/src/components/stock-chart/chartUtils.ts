@@ -5,6 +5,7 @@ import {
   echartsTheme,
   type EChartsTheme,
 } from '@/components/chartTheme'
+import { stockQuoteSummaryHtml, type StockQuoteTone } from './stockQuoteSummary'
 
 export interface StockChartSeriesPalette {
   kline: {
@@ -214,30 +215,53 @@ export function stockChartAxisPointerIndex(
   return null
 }
 
-type KlineTooltipPalette = Pick<StockChartTheme, 'text' | 'label' | 'up' | 'down'>
+type KlineTooltipPalette = Pick<
+  StockChartTheme,
+  'text' | 'label' | 'up' | 'down' | 'tooltipBorder'
+>
 
-function tooltipRow(label: string, value: string, palette: KlineTooltipPalette, color?: string) {
-  return `<div style="display:flex;justify-content:space-between;gap:18px">`
-    + `<span style="color:${palette.label}">${label}</span>`
-    + `<span style="color:${color ?? palette.text}">${value}</span>`
-    + '</div>'
-}
-
-interface TooltipPositionSize {
+export interface TooltipPositionSize {
   contentSize: [number, number]
   viewSize: [number, number]
 }
 
-/** 行情浮层默认停靠左侧，仅在光标进入其实际占用区时换到右侧。 */
+export interface TooltipTargetRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+function tooltipTargetRect(value: unknown): TooltipTargetRect | null {
+  const rect = value as Partial<TooltipTargetRect> | null
+  if (!rect || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)) return null
+  return rect as TooltipTargetRect
+}
+
+function overlapArea(
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  rect: TooltipTargetRect | null,
+): number {
+  if (!rect) return 0
+  const overlapWidth = Math.max(0, Math.min(left + width, rect.x + rect.width) - Math.max(left, rect.x))
+  const overlapHeight = Math.max(0, Math.min(top + height, rect.y + rect.height) - Math.max(top, rect.y))
+  return overlapWidth * overlapHeight
+}
+
+/** 保留光标避让，并在浮层覆盖当前蜡烛实体时选择重叠更少的一侧。 */
 export function obstructionAwareTooltipPosition(
   point: number[],
   _params: unknown,
   _dom: HTMLElement,
-  _rect: unknown,
+  rectValue: unknown,
   size: TooltipPositionSize,
 ): [number, number] {
   const horizontalInset = 8
   const axisGutter = 64
+  const tooltipTop = 6
   const contentWidth = Math.min(
     size.contentSize[0],
     Math.max(0, size.viewSize[0] - (axisGutter + horizontalInset) * 2),
@@ -251,54 +275,47 @@ export function obstructionAwareTooltipPosition(
     size.viewSize[0] - axisGutter - horizontalInset - contentWidth,
   )
   const overlapsLeftDock = point[0] >= leftDock && point[0] <= leftDock + contentWidth
-  return [overlapsLeftDock ? rightDockLeft : leftDock, 6]
+  const targetRect = tooltipTargetRect(rectValue)
+  const leftArea = overlapArea(
+    leftDock, tooltipTop, contentWidth, size.contentSize[1], targetRect,
+  )
+  const coversCandlestick = targetRect ? leftArea > 0 : false
+  if (!overlapsLeftDock || !coversCandlestick) return [leftDock, tooltipTop]
+
+  const rightArea = overlapArea(
+    rightDockLeft, tooltipTop, contentWidth, size.contentSize[1], targetRect,
+  )
+  return [rightArea <= leftArea ? rightDockLeft : leftDock, tooltipTop]
 }
 
-function priceDirectionColor(
+function priceDirectionTone(
   value: number | null | undefined,
   reference: number | null | undefined,
-  palette: KlineTooltipPalette,
-): string {
-  if (value == null || reference == null || value === reference) return palette.text
-  return value > reference ? palette.up : palette.down
+): StockQuoteTone {
+  if (value == null || reference == null || value === reference) return 'neutral'
+  return value > reference ? 'up' : 'down'
 }
 
-/** K线详情统一格式：固定字段、A股涨跌色和紧凑双列布局由新旧图表共同复用。 */
+/** K线详情统一格式：日期单独成行，行情字段按每列三项横向排布。 */
 export function klineTooltipHtml(bar: Bar, palette: KlineTooltipPalette): string {
   const pct = bar.pre_close ? ((bar.close - bar.pre_close) / bar.pre_close) * 100 : null
   const amplitude = bar.pre_close ? ((bar.high - bar.low) / bar.pre_close) * 100 : null
-  const directionColor = pct == null || pct === 0
-    ? palette.text
-    : pct > 0 ? palette.up : palette.down
   const pctText = pct == null ? '--' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
 
-  return '<div style="width:156px;box-sizing:border-box;line-height:1.6">'
-    + tooltipRow('时间', bar.date, palette)
-    + tooltipRow(
-      '开盘', formatChartNumber(bar.open), palette,
-      priceDirectionColor(bar.open, bar.pre_close, palette),
-    )
-    + tooltipRow('收盘', formatChartNumber(bar.close), palette, directionColor)
-    + tooltipRow(
-      '最高', formatChartNumber(bar.high), palette,
-      priceDirectionColor(bar.high, bar.pre_close, palette),
-    )
-    + tooltipRow(
-      '最低', formatChartNumber(bar.low), palette,
-      priceDirectionColor(bar.low, bar.pre_close, palette),
-    )
-    + tooltipRow('涨幅', pctText, palette, directionColor)
-    + tooltipRow(
-      '振幅',
-      amplitude == null ? '--' : `${amplitude.toFixed(2)}%`,
-      palette,
-    )
-    + tooltipRow('成交量', formatVolume(bar.volume), palette)
-    + tooltipRow('成交额', formatAmount(bar.amount), palette)
-    + tooltipRow(
-      '换手率',
-      bar.turnover_rate == null ? '--' : `${bar.turnover_rate.toFixed(2)}%`,
-      palette,
-    )
-    + '</div>'
+  const tone: StockQuoteTone = pct == null || pct === 0 ? 'neutral' : pct > 0 ? 'up' : 'down'
+  return stockQuoteSummaryHtml({
+    time: bar.date,
+    hero: { label: '', value: formatChartNumber(bar.close), tone },
+    rowsPerColumn: 4,
+    metrics: [
+      { label: '开盘', value: formatChartNumber(bar.open), tone: priceDirectionTone(bar.open, bar.pre_close) },
+      { label: '最高', value: formatChartNumber(bar.high), tone: priceDirectionTone(bar.high, bar.pre_close) },
+      { label: '最低', value: formatChartNumber(bar.low), tone: priceDirectionTone(bar.low, bar.pre_close) },
+      { label: '涨幅', value: pctText, tone },
+      { label: '振幅', value: amplitude == null ? '--' : `${amplitude.toFixed(2)}%` },
+      { label: '换手率', value: bar.turnover_rate == null ? '--' : `${bar.turnover_rate.toFixed(2)}%` },
+      { label: '成交量', value: formatVolume(bar.volume) },
+      { label: '成交额', value: formatAmount(bar.amount) },
+    ],
+  }, { ...palette, border: palette.tooltipBorder })
 }

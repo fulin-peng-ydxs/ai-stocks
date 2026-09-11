@@ -21,6 +21,7 @@ import StockAnalysisNameCell from '@/components/StockAnalysisNameCell.vue'
 import RelatedBoardCell from '@/components/RelatedBoardCell.vue'
 import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
 import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.vue'
+import StockGroupBatchActions from '@/components/StockGroupBatchActions.vue'
 import {
   getStockMembershipOptions,
   listStocks,
@@ -29,12 +30,9 @@ import {
   type StockMembershipOption,
 } from '@/api/stocks'
 import {
-  addMembers,
-  createGroup,
   deleteGroup,
   getGroup,
   listGroups,
-  removeMembers,
   updateGroup,
   type GroupDetail,
   type GroupMember,
@@ -54,6 +52,7 @@ import { hasPermission } from '@/utils/permission'
 import { useTradeDates } from '@/composables/useTradeDates'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
+import { useStockBatchSelection, type StockBatchItem } from '@/composables/useStockBatchSelection'
 import { useStockAnalysisSession } from '@/composables/useStockAnalysisSession'
 import {
   composeComponentRuntimeValueOf,
@@ -597,17 +596,7 @@ function tagStyle(color?: string) {
 }
 
 // ── 持久化选择「购物车」：跨分页 / 跨搜索累积 ──
-const cart = ref<{ code: string; name: string | null }[]>([])
-const cartSet = computed(() => new Set(cart.value.map((c) => c.code)))
-const cartCodes = computed(() => cart.value.map((c) => c.code))
-function inCart(code: string): boolean {
-  return cartSet.value.has(code)
-}
-function toggle(row: { code: string; name: string | null }) {
-  const i = cart.value.findIndex((c) => c.code === row.code)
-  if (i >= 0) cart.value.splice(i, 1)
-  else cart.value.push({ code: row.code, name: row.name })
-}
+const cart = ref<StockBatchItem[]>([])
 type StockAnalysisRow = { code: string; name: string | null; last_date?: string | null }
 const curRows = computed<StockAnalysisRow[]>(() =>
   inGroupMode.value ? groupRows.value : rows.value,
@@ -648,16 +637,13 @@ function openActiveAnalysisDetail(): void {
   if (activeAnalysisCode.value) enterDetail(activeAnalysisCode.value)
 }
 
-const allCurChecked = computed(() => curRows.value.length > 0 && curRows.value.every((r) => inCart(r.code)))
-const someCurChecked = computed(() => curRows.value.some((r) => inCart(r.code)) && !allCurChecked.value)
-function toggleAllCur(val: boolean) {
-  if (val) {
-    for (const r of curRows.value) if (!inCart(r.code)) cart.value.push({ code: r.code, name: r.name })
-  } else {
-    const codes = new Set(curRows.value.map((r) => r.code))
-    cart.value = cart.value.filter((c) => !codes.has(c.code))
-  }
-}
+const {
+  isSelected: inCart,
+  toggle,
+  allCurrentSelected: allCurChecked,
+  someCurrentSelected: someCurChecked,
+  toggleAllCurrent: toggleAllCur,
+} = useStockBatchSelection(curRows, cart)
 
 // ── 进入详情：设置“当前集合” ──
 function activeItems(): { code: string; name?: string | null }[] {
@@ -740,69 +726,13 @@ function viewCartOneByOne() {
   router.push(`/stocks/${cart.value[0].code}`)
 }
 
-// ── 存为新分组 ──
-const createVisible = ref(false)
-const createForm = ref<{ name: string; group_date: string; description: string; color: string }>({ name: '', group_date: '', description: '', color: '#73757d' })
-const creating = ref(false)
-function openCreate() {
-  if (!cartCodes.value.length) return ElMessage.warning('请先勾选股票')
-  createForm.value = { name: '', group_date: dataMax.value || '', description: '', color: '#73757d' }
-  createVisible.value = true
-}
-async function doCreate() {
-  if (!createForm.value.name.trim()) return ElMessage.warning('请输入分组名')
-  creating.value = true
-  try {
-    const r = await createGroup({
-      name: createForm.value.name.trim(),
-      group_date: createForm.value.group_date || undefined,
-      description: createForm.value.description,
-      color: createForm.value.color,
-      codes: cartCodes.value,
-    })
-    ElMessage.success(`已创建分组（${cartCodes.value.length} 只）`)
-    createVisible.value = false
-    cart.value = []
-    await reloadGroups()
-    activeGid.value = r.id
-  } finally {
-    creating.value = false
-  }
-}
-
-// ── 加入已有分组 ──
-const addVisible = ref(false)
-const addTargetGid = ref('')
-const addDate = ref('')
-const adding = ref(false)
-function openAddTo() {
-  if (!cartCodes.value.length) return ElMessage.warning('请先勾选股票')
-  addTargetGid.value = groups.value[0]?.id ?? ''
-  addDate.value = dataMax.value || ''
-  addVisible.value = true
-}
-async function doAddTo() {
-  if (!addTargetGid.value) return ElMessage.warning('请选择目标分组')
-  adding.value = true
-  try {
-    const r = await addMembers(addTargetGid.value, cartCodes.value, addDate.value || undefined)
-    ElMessage.success(`已加入 ${r.added} 只`)
-    addVisible.value = false
-    cart.value = []
-    await reloadGroups()
-    if (activeGid.value === addTargetGid.value) await loadGroupDetail()
-  } finally {
-    adding.value = false
-  }
-}
-
-// ── 从分组移出 ──
-async function removeFromGroup() {
-  if (!inGroupMode.value || !cartCodes.value.length) return
-  await removeMembers(activeGid.value, cartCodes.value)
-  ElMessage.success(`已移出 ${cartCodes.value.length} 只`)
-  cart.value = []
-  await Promise.all([reloadGroups(), loadGroupDetail()])
+async function onBatchGroupsChanged(
+  groupId: string,
+  action: 'create' | 'add' | 'remove',
+): Promise<void> {
+  await reloadGroups()
+  if (inGroupMode.value && activeGid.value === groupId) await loadGroupDetail()
+  else if (!inGroupMode.value && action === 'create') activeGid.value = groupId
 }
 
 // ── 编辑 / 删除分组 ──
@@ -1220,79 +1150,18 @@ onMounted(async () => {
     </template>
 
     <template #footer>
-    <!-- 多选购物车条：固定底部（footer 区），选择跨分页/跨搜索累积 -->
-    <el-card v-if="cart.length" shadow="never" class="cart-card">
-      <div class="cart-row">
-        <div class="cart-info">
-          <span class="cart-n">已选 <b>{{ cart.length }}</b> 只</span>
-          <div class="chips">
-            <el-tag v-for="c in cart.slice(0, 30)" :key="c.code" size="small" closable @close="toggle(c)" class="chip">
-              {{ c.name || c.code }}
-            </el-tag>
-            <span v-if="cart.length > 30" class="more">… 等 {{ cart.length }} 只</span>
-          </div>
-        </div>
-        <div class="cart-ops">
-          <el-button size="small" type="primary" @click="viewCartOneByOne">逐个查看</el-button>
-          <template v-if="inGroupMode">
-            <el-button v-permission="'stock-group:member-update'" size="small" type="danger" plain @click="removeFromGroup">从本组移出</el-button>
-          </template>
-          <template v-else>
-            <el-button v-permission="'stock-group:create'" size="small" @click="openCreate">存为新分组</el-button>
-            <el-button v-permission="'stock-group:member-update'" size="small" @click="openAddTo">加入已有分组</el-button>
-          </template>
-          <el-button size="small" text @click="cart = []">清空</el-button>
-        </div>
-      </div>
-    </el-card>
+    <StockGroupBatchActions
+      v-model="cart"
+      :groups="groups"
+      :default-date="dataMax || ''"
+      :mode="inGroupMode ? 'remove' : 'assign'"
+      :active-group-id="activeGid"
+      @view="viewCartOneByOne"
+      @changed="onBatchGroupsChanged"
+    />
     </template>
 
     <template #overlays>
-    <!-- 存为新分组 -->
-    <el-dialog v-model="createVisible" title="存为新分组" width="460px">
-      <el-form label-width="80px">
-        <el-form-item label="分组名">
-          <el-input v-model="createForm.name" placeholder="如：5月观察龙头" maxlength="30" show-word-limit />
-        </el-form-item>
-        <el-form-item label="建组日期">
-          <TradeDatePicker v-model="createForm.group_date" placeholder="默认最新交易日" clearable style="width: 200px" />
-          <span class="f-hint">这批股票加入日期默认 = 建组日期（涨幅基准）</span>
-        </el-form-item>
-        <el-form-item label="分组说明">
-          <el-input v-model="createForm.description" type="textarea" :rows="2" placeholder="可选" />
-        </el-form-item>
-        <el-form-item label="颜色">
-          <el-color-picker v-model="createForm.color" :predefine="['#f66055', '#f58a07', '#1677ff', '#0ea968', '#73757d', '#b882ff']" />
-          <span class="f-hint">用于列表标签和分组状态识别</span>
-        </el-form-item>
-      </el-form>
-      <div class="f-codes">将加入 {{ cartCodes.length }} 只：{{ cart.slice(0, 8).map(c => c.name || c.code).join('、') }}{{ cart.length > 8 ? ' …' : '' }}</div>
-      <template #footer>
-        <el-button @click="createVisible = false">取消</el-button>
-        <el-button v-permission="'stock-group:create'" type="primary" :loading="creating" @click="doCreate">创建</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 加入已有分组 -->
-    <el-dialog v-model="addVisible" title="加入已有分组" width="440px">
-      <el-form label-width="80px">
-        <el-form-item label="目标分组">
-          <el-select v-model="addTargetGid" filterable style="width: 100%">
-            <el-option v-for="g in groups" :key="g.id" :value="g.id" :label="`${g.name}（${g.member_count}）`" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="加入日期">
-          <TradeDatePicker v-model="addDate" placeholder="默认最新交易日" clearable style="width: 200px" />
-          <span class="f-hint">作为这批股票的涨幅基准</span>
-        </el-form-item>
-      </el-form>
-      <div class="f-codes">将加入 {{ cartCodes.length }} 只（已在组内的保留原加入日期）</div>
-      <template #footer>
-        <el-button @click="addVisible = false">取消</el-button>
-        <el-button v-permission="'stock-group:member-update'" type="primary" :loading="adding" @click="doAddTo">加入</el-button>
-      </template>
-    </el-dialog>
-
     <!-- 编辑分组 -->
     <el-dialog v-model="editVisible" title="编辑分组" width="460px">
       <el-form label-width="80px">
@@ -1454,58 +1323,5 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.cart-card {
-  border: 1px solid var(--el-color-primary-light-7);
-  flex: 0 0 auto;
-}
-.cart-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--app-space-4);
-  flex-wrap: wrap;
-}
-.cart-info {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--app-space-3);
-  flex: 1;
-  min-width: 260px;
-}
-.cart-n {
-  font-size: var(--app-font-size-table);
-  white-space: nowrap;
-  padding-top: 2px;
-}
-.cart-n b {
-  color: var(--market-up-color);
-  font-size: var(--app-font-size-data);
-}
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--app-space-control-gap);
-  max-height: 64px;
-  overflow: auto;
-}
-.chip {
-  cursor: default;
-}
-.more {
-  color: var(--app-muted-text);
-  font-size: var(--app-font-size-caption);
-  align-self: center;
-}
-.cart-ops {
-  display: flex;
-  gap: var(--app-space-2);
-  align-items: center;
-  flex-shrink: 0;
-}
-.f-codes {
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-caption);
-  margin-top: 4px;
 }
 </style>

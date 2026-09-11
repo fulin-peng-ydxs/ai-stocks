@@ -12,6 +12,8 @@ import {
   obstructionAwareTooltipPosition,
   VOLUME_MA_DEFINITIONS,
   type StockChartTheme,
+  type TooltipPositionSize,
+  type TooltipTargetRect,
 } from './chartUtils'
 
 export type WorkspacePanelKey = 'kline' | 'slot2' | 'slot3'
@@ -276,6 +278,7 @@ interface OptionContext {
   buyMarkerColor?: string
   sellMarkerColor?: string
   clickableCandles?: boolean
+  candlestickRect?: (params: unknown) => TooltipTargetRect | null
 }
 
 /** 买卖点 markPoint：买=蓝▲置于最低价下方，卖=橙▼置于最高价上方（语义色由组件按主题传入）。 */
@@ -408,7 +411,19 @@ export function buildKlineOption(context: OptionContext) {
       confine: true,
       transitionDuration: 0,
       extraCssText: 'transition:opacity .14s ease,visibility .14s ease;',
-      position: obstructionAwareTooltipPosition,
+      position: (
+        point: number[],
+        params: unknown,
+        dom: HTMLElement,
+        rect: unknown,
+        size: TooltipPositionSize,
+      ) => obstructionAwareTooltipPosition(
+        point,
+        params,
+        dom,
+        rect ?? context.candlestickRect?.(params),
+        size,
+      ),
       formatter: (params: unknown) => {
         const list = Array.isArray(params) ? params : [params]
         const index = (list[0] as { dataIndex?: unknown } | undefined)?.dataIndex

@@ -71,6 +71,7 @@ Key Characteristics：
 - 金融涨跌使用 `--market-up-color` / `--market-down-color`，不要在页面里直接写红绿 hex。
 - `StockChartWorkspace` 及个股详情股票画布通过 `stock-chart/chartUtils.ts::stockChartTheme()` 读取 CSS 语义色；该工作区的 MACD 正柱与金叉使用 `--market-up-color`，负柱与死叉使用 `--market-down-color`。交叉事件使用贴近当日 DIFF 点的“金叉/死叉”标签表达，标签只保留连接事件点的短三角指针，不显示贯穿面板的长引导线或独立圆形锚点；不得只依赖红绿颜色，也不为金叉新增独立金色 token。信号标签使用主题中性表面和高对比中性文字，方向色只用于轮廓和短指针；信号 item 悬停必须显示类型与完整交易日期。
 - 股票 MA/VMA/MACD 折线的序列身份色统一以 `stock-chart/chartUtils.ts::trainingChartSeriesPalette()` 为事实源：MA5/VMA5/DIFF 使用橙色 `#e28a35`，MA10/VMA10/DEA 使用蓝色 `#418af5`，MA20 浅色使用洋红 `#9f3793`、暗色使用 `#c53c92`，MA30 使用青色 `#56c3df`，MA60 使用橙红 `#e56023`。K线和量能均线的周期、标题、ECharts 名称与色板键分别由 `KLINE_MA_DEFINITIONS`、`VOLUME_MA_DEFINITIONS` 唯一声明，序列、有数据标题和空数据标题必须共同消费，不得复制周期数组、标签映射或颜色。盘感训练、回测和个股详情必须共同消费该色板；序列色只表达指标身份，不表达涨跌方向。K 线 tooltip 的收盘与涨幅才按相对昨收使用涨跌色，平盘保持中性。
+- K 线 tooltip 左右切换必须同时满足光标进入当前浮层水平占用区、浮层与当前蜡烛高低价像素矩形发生二维重叠；蜡烛矩形由当前 ECharts 实例实时换算。任一条件不成立或无法取得像素矩形时保持左侧，禁止仅凭光标位置或 candlestick 参数猜测遮挡。
 - `StockChartWorkspace` 的 Canvas 不会随 CSS 变量自动重绘；必须只通过 `stock-chart/useStockChartTheme.ts::useStockChartTheme()` 消费响应式股票画布主题，不得自行组合 `useTheme`、`useLayoutPreset`、`themeRevision` 和 `stockChartTheme()`。该入口统一覆盖明暗切换、预设 key 切换和当前预设同 key 后端覆盖更新。本条适用于个股详情、板块行情、盘感训练和回测的股票画布；其它图表不会自动继承，扩大适用范围时必须同步完成运行时改造和独立回归。
 - `StockIntradayChart` 与日 K 共用上述股票画布主题：价格使用主题主色，均价复用 MA5 身份色，昨收使用中性虚线并以 `0%` 标注；分钟成交量统一以手展示，量能标题同步展示当前全部分钟点之和，量柱优先按有效分钟开收方向取金融涨跌色，源端开盘为零时按上一分钟收盘判断，首点无法判断时使用中性色。价格与量能数值轴固定在左侧，价格区右轴按昨收映射涨跌幅；共享十字光标 tooltip 继续展示分钟明细，不另做指标卡或页面私有色板。日 K 与分时必须共同消费 `app-stock-chart-frame` 外框、`StockChartPanelHeader` 标题栏、`StockChartLegend` 图例项、`StockChartPanelDivider` 面板分隔和 `buildStockVolumeBarSeries()` 量柱构造；折线统一使用短线标识，柱状序列统一使用小柱标识，标签使用中性文字、当前值使用序列身份色。分时上图标题为“分时”并承载价格/均价图例，下图标题为“量能”，两图之间使用独立的 8px 双边框分隔区，不允许拿上下绘图区的边界网格线冒充分隔线；标题栏是图表容器的 DOM 结构，不得通过 ECharts `title`、`graphic` 或页面私有边线仿制。标题栏与绘图区保留紧凑安全间距，量能图区顶部留白不得小于 12px；分时两个横轴不重复绘制坐标轴边线，价格与量能纵轴网格不显示最小值和最大值边界线，底部时间轴只显示 `09:30`、`11:30`、`15:00` 三个市场时点，不把午休两端拼成复合标签。涨跌停边界不得额外扩展纵轴造成顶部无意义留白。
 - 非股票 ECharts 统一通过 `components/chartTheme.ts::useEChartsTheme()` 消费画布背景、坐标、文字、tooltip 和序列语义色；该入口与股票主题共同复用 `useResponsiveEChartsTheme()`，覆盖明暗、预设 key 和同 key 后端覆盖更新。`EquityChart`、`GrowthChart` 已纳入，不再作为固定明暗色板例外；新增 Canvas 主题消费者不得只监听 `isDark` 或在组件内维护第二套基础色板。
@@ -132,7 +133,7 @@ Key Characteristics：
 - 按钮、标签、抽屉标题、表格控件中的文字不得溢出容器。
 - 金融数字按列右对齐或按业务组件一致处理，避免同列数字参差。
 - 同一行并列的对象识别块、摘要组、状态块等同层信息块，外层默认在交叉轴居中；表单和工具栏继续遵守各自的控件基线规则。只有明确包含多行标题/说明、且右侧操作需要钉住首行的页面页头使用顶部对齐。不得把页面页头的顶部对齐规则套用到单行摘要或指标组。
-- 紧凑指标组统一消费 `.app-metric-group`、`.app-metric-item`、`.app-metric-label`、`.app-metric-value`：指标项由标签行和数值行组成，同组标签共享一条行基线、数值共享一条行基线；数字使用等宽数字，内容单行省略且不得按实时内容自动扩列。组内只允许一个 `--primary` 主数值，次强数值使用 `--strong`，其余保持默认层级。窄宽度下按完整指标项整体换行或整组换行，不得拆散标签和值。
+- 行情摘要统一消费 `StockQuoteSummary` 与 `stockQuoteSummaryHtml()`：无标签最新价主列垂直居中，并以主题边框和信息列分隔；列宽由内容自动撑开，禁止固定像素列宽。调用方通过 `rowsPerColumn` 决定每列行数，K 线每列四行，分时每列两行；开盘位于信息首项。K 线浮层与分时弹窗顶部共享同一字段分组模型，不再使用全局 `.app-metric-*` 等宽指标网格。
 - 股票代码、配置 key、日志字段、接口路径等技术标识可使用 `--app-font-family-mono`，但仅限值本身，不把整段说明改成等宽体。
 
 ### 3.1 Spacing & Rhythm Rules

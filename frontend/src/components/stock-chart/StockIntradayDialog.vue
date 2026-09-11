@@ -4,8 +4,10 @@ import { getIntraday, type StockIntraday } from '@/api/stocks'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import { getErrorMessage } from '@/utils/error'
-import { formatAmount, formatChartNumber } from './chartUtils'
+import { formatAmount, formatChartNumber, formatVolumeLots } from './chartUtils'
 import StockIntradayChart from './StockIntradayChart.vue'
+import StockQuoteSummary from './StockQuoteSummary.vue'
+import type { StockQuoteSummaryModel, StockQuoteTone } from './stockQuoteSummary'
 
 const props = defineProps<{
   modelValue: boolean
@@ -33,24 +35,37 @@ const rangeDescription = computed(() => {
     ? `免费分钟源当前仅支持本地最近交易日（${start} 至 ${end}）`
     : '免费分钟源当前仅支持本地最近 8 个交易日'
 })
-const summary = computed(() => {
+const summary = computed<StockQuoteSummaryModel | null>(() => {
   if (!data.value || !['ready', 'partial'].includes(data.value.status) || !data.value.points.length) {
     return null
   }
   const points = data.value.points
   const last = points.at(-1)!
+  const open = points[0]!.open
   const high = Math.max(...points.map((point) => point.high))
   const low = Math.min(...points.map((point) => point.low))
+  const volume = points.reduce((total, point) => total + point.volume, 0)
   const amount = points.reduce((total, point) => total + point.amount, 0)
   const pct = data.value.pre_close && data.value.pre_close > 0
     ? ((last.close / data.value.pre_close) - 1) * 100
     : null
+  const tone: StockQuoteTone = pct == null || pct === 0 ? 'neutral' : pct > 0 ? 'up' : 'down'
+  const amplitude = data.value.pre_close && data.value.pre_close > 0
+    ? ((high - low) / data.value.pre_close) * 100
+    : null
   return {
-    close: formatChartNumber(last.close, 2),
-    pct: pct == null ? '--' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`,
-    tone: pct == null || pct === 0 ? 'flat' : pct > 0 ? 'up' : 'down',
-    highLow: `${formatChartNumber(high, 2)} / ${formatChartNumber(low, 2)}`,
-    amount: formatAmount(amount),
+    hero: { label: '', value: formatChartNumber(last.close, 2), tone },
+    rowsPerColumn: 2,
+    metrics: [
+      { label: '开盘', value: formatChartNumber(open, 2) },
+      { label: '最高', value: formatChartNumber(high, 2) },
+      { label: '最低', value: formatChartNumber(low, 2) },
+      { label: '涨幅', value: pct == null ? '--' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`, tone },
+      { label: '振幅', value: amplitude == null ? '--' : `${amplitude.toFixed(2)}%` },
+      { label: '换手率', value: data.value.turnover_rate == null ? '--' : `${data.value.turnover_rate.toFixed(2)}%` },
+      { label: '成交量', value: formatVolumeLots(volume) },
+      { label: '成交额', value: formatAmount(amount) },
+    ],
   }
 })
 
@@ -114,24 +129,7 @@ onBeforeUnmount(() => controller?.abort())
           <strong>{{ name || code }}</strong>
           <span>{{ code }} · {{ tradeDate }}</span>
         </div>
-        <dl v-if="summary" class="stock-intraday-dialog__summary app-metric-group">
-          <div class="app-metric-item">
-            <dt class="app-metric-label">收盘</dt>
-            <dd :class="[`is-${summary.tone}`, 'app-metric-value', 'app-metric-value--primary']">{{ summary.close }}</dd>
-          </div>
-          <div class="app-metric-item">
-            <dt class="app-metric-label">涨跌幅</dt>
-            <dd :class="[`is-${summary.tone}`, 'app-metric-value', 'app-metric-value--strong']">{{ summary.pct }}</dd>
-          </div>
-          <div class="app-metric-item">
-            <dt class="app-metric-label">高 / 低</dt>
-            <dd class="app-metric-value">{{ summary.highLow }}</dd>
-          </div>
-          <div class="app-metric-item">
-            <dt class="app-metric-label">成交额</dt>
-            <dd class="app-metric-value">{{ summary.amount }}</dd>
-          </div>
-        </dl>
+        <StockQuoteSummary v-if="summary" class="stock-intraday-dialog__summary" :summary="summary" />
       </div>
     </template>
     <AppStateBlock
@@ -208,15 +206,6 @@ onBeforeUnmount(() => controller?.abort())
 
 .stock-intraday-dialog__summary {
   flex: 0 0 auto;
-  grid-template-columns: 96px 104px 136px 104px;
-}
-
-.stock-intraday-dialog__summary dd.is-up {
-  color: var(--market-up-color);
-}
-
-.stock-intraday-dialog__summary dd.is-down {
-  color: var(--market-down-color);
 }
 
 @media (max-width: 960px) {

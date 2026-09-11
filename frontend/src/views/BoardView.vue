@@ -28,12 +28,14 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.vue'
+import StockGroupBatchActions from '@/components/StockGroupBatchActions.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useMarketMasterWidthRuntime } from '@/composables/useMarketMasterWidthRuntime'
 import { useTradeDates } from '@/composables/useTradeDates'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
+import { useStockBatchSelection, type StockBatchItem } from '@/composables/useStockBatchSelection'
 import { useStockAnalysisSession } from '@/composables/useStockAnalysisSession'
 import { useUserPreference } from '@/composables/useUserPreference'
 import {
@@ -60,6 +62,7 @@ import {
   type PriceCompareMetric,
 } from '@/utils/marketCompare'
 import { getApiErrorCode, getErrorMessage } from '@/utils/error'
+import { listGroups, type GroupSummary } from '@/api/stockGroup'
 
 // 列表页布局（原型 A）：操作区=头部（标题+控件），主内容区=榜单表格（撑满·表体内滚）。
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
@@ -365,6 +368,27 @@ const displayRows = computed(() => {
   else list.sort((a, b) => b.total_score - a.total_score)
   return list
 })
+const selectedStocks = ref<StockBatchItem[]>([])
+const groups = ref<GroupSummary[]>([])
+const {
+  isSelected: isBatchSelected,
+  toggle: toggleBatchSelected,
+  allCurrentSelected,
+  someCurrentSelected,
+  toggleAllCurrent,
+} = useStockBatchSelection(displayRows, selectedStocks)
+
+async function loadGroups(): Promise<void> {
+  if (!hasPermission(auth.role, auth.permissions, 'stock-group:view')) {
+    groups.value = []
+    return
+  }
+  try {
+    groups.value = await listGroups()
+  } catch {
+    groups.value = []
+  }
+}
 const analysisSourceItems = computed(() => displayRows.value)
 const analysisRefreshRevision = ref(0)
 const {
@@ -525,6 +549,18 @@ function gotoStock(row: ScoreRunRow) {
   router.push(`/stocks/${row.code}`)
 }
 
+function viewSelectedStocks(): void {
+  const first = selectedStocks.value[0]
+  if (!first) return
+  stockSet.setSet('list', selectedStocks.value, '每日榜单勾选集', '', {
+    total: selectedStocks.value.length,
+    loadedPages: [1],
+    pageSize: selectedStocks.value.length,
+    returnPath: '/board',
+  })
+  router.push(`/stocks/${first.code}`)
+}
+
 function exportCsv() {
   if (!rows.value.length) return
   const headers = ['排名', '代码', '名称', '板块', '综合分', '评级', ...subKeys.value.map((k) => nameOf(k))]
@@ -539,10 +575,12 @@ onMounted(async () => {
   loading.value = true
   error.value = ''
   try {
+    await auth.ensureLoaded().catch(() => undefined)
     // 日期与指标并行加载；先显示数据最新交易日，再与选择器 ready 汇合，避免首屏重复请求。
     const [registryResult] = await Promise.all([
       getIndicatorRegistry(true),
       ensureTradeDatesLoaded(),
+      loadGroups(),
     ])
     registry.value = registryResult.items
     syncingRunDate.value = true
@@ -685,10 +723,30 @@ onMounted(async () => {
         :border="tableBorder('table')"
         :default-sort="elementDefaultSort"
         :row-class-name="boardAnalysisRowClass"
+        row-key="code"
         clickable
         @sort-change="onTableSortChange"
         @row-click="handleBoardRowClick"
       >
+        <AppTableColumn role="structural">
+          <template #header>
+            <el-checkbox
+              :model-value="allCurrentSelected"
+              :indeterminate="someCurrentSelected"
+              aria-label="选择当前榜单全部股票"
+              @change="toggleAllCurrent"
+            />
+          </template>
+          <template #default="{ row }">
+            <span @click.stop>
+              <el-checkbox
+                :model-value="isBatchSelected(row.code)"
+                :aria-label="`${isBatchSelected(row.code) ? '取消选择' : '选择'}：${row.name || row.code}`"
+                @change="() => toggleBatchSelected(row)"
+              />
+            </span>
+          </template>
+        </AppTableColumn>
         <AppTableColumn label="#" prop="rank" sortable :sort-by="(r:any)=>r.rank">
           <template #default="{ row }">{{ row.rank }}</template>
         </AppTableColumn>
@@ -759,6 +817,16 @@ onMounted(async () => {
         />
       </template>
     </MarketMasterDetailWorkspace>
+    </template>
+
+    <template #footer>
+      <StockGroupBatchActions
+        v-model="selectedStocks"
+        :groups="groups"
+        :default-date="runDate || dataMax || ''"
+        @view="viewSelectedStocks"
+        @changed="loadGroups"
+      />
     </template>
 
     <template #overlays>
