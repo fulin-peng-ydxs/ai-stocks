@@ -9,6 +9,10 @@ body,
   padding: 0;
   height: 100%;
 }
+html,
+body {
+  overflow: hidden;
+}
 body {
   background: var(--el-bg-color-page);
   color: var(--el-text-color-primary);
@@ -17,6 +21,70 @@ body {
   line-height: var(--app-line-height-body);
   text-rendering: optimizeLegibility;
 }
+#app {
+  /*
+   * 只缩放应用画布，并用倒数尺寸补回布局空间。body 必须保持浏览器原始坐标系，
+   * 否则 ECharts 指针事件和挂到 body 的 Element Plus 浮层会产生比例相关偏移。
+   */
+  width: calc(100% * var(--app-display-scale-inverse, 1));
+  height: calc(100% * var(--app-display-scale-inverse, 1));
+  transform: scale(var(--app-display-scale, 1));
+  transform-origin: top left;
+}
+
+/*
+ * Element Plus 的坐标型浮层默认挂到 body。它们必须留在浏览器坐标系中计算位置，
+ * 但自身视觉尺寸仍跟随应用比例；独立 scale 不覆盖 Popper 写入的 translate transform。
+ */
+body > [id^='el-popper-container-'] > .el-popper,
+body > .el-message,
+body > .el-notification,
+body > .el-overlay .el-dialog,
+body > .el-overlay .el-message-box,
+body > .el-overlay .el-drawer {
+  scale: var(--app-display-scale, 1);
+}
+body > [id^='el-popper-container-'] > .el-popper[data-popper-placement^='top'] {
+  transform-origin: center bottom;
+}
+body > [id^='el-popper-container-'] > .el-popper[data-popper-placement^='bottom'] {
+  transform-origin: center top;
+}
+body > [id^='el-popper-container-'] > .el-popper[data-popper-placement^='left'] {
+  transform-origin: right center;
+}
+body > [id^='el-popper-container-'] > .el-popper[data-popper-placement^='right'] {
+  transform-origin: left center;
+}
+body > [id^='el-popper-container-'] > .el-popper[data-popper-placement='top-start'] {
+  transform-origin: left bottom;
+}
+body > [id^='el-popper-container-'] > .el-popper[data-popper-placement='top-end'] {
+  transform-origin: right bottom;
+}
+body > [id^='el-popper-container-'] > .el-popper[data-popper-placement='bottom-start'] {
+  transform-origin: left top;
+}
+body > [id^='el-popper-container-'] > .el-popper[data-popper-placement='bottom-end'] {
+  transform-origin: right top;
+}
+body > [id^='el-popper-container-'] > .el-popper[data-popper-placement='left-start'] {
+  transform-origin: right top;
+}
+body > [id^='el-popper-container-'] > .el-popper[data-popper-placement='left-end'] {
+  transform-origin: right bottom;
+}
+body > [id^='el-popper-container-'] > .el-popper[data-popper-placement='right-start'] {
+  transform-origin: left top;
+}
+body > [id^='el-popper-container-'] > .el-popper[data-popper-placement='right-end'] {
+  transform-origin: left bottom;
+}
+body > .el-message { transform-origin: center top; }
+body > .el-notification { transform-origin: right top; }
+body > .el-overlay .el-dialog,
+body > .el-overlay .el-message-box { transform-origin: center center; }
+body > .el-overlay .el-drawer { transform-origin: right top; }
 
 /* 表格内标签统一使用 24px 紧凑几何和居中基线；业务颜色由各标签组件决定。 */
 .app-table-tag-shell {
@@ -50,6 +118,8 @@ body {
 }
 
 :root {
+  --app-display-scale: 1;
+  --app-display-scale-inverse: 1;
   --app-font-family-base: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable',
     'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
   --app-font-family-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -184,6 +254,12 @@ body {
     --app-table-content-font-size: var(--app-font-size-body);
     --app-table-content-line-height: var(--app-line-height-body);
   }
+}
+
+/* 应用缩放后的有效像素密度也要进入表格清晰度判断。 */
+html[data-display-resolution='low'] {
+  --app-table-content-font-size: var(--app-font-size-body);
+  --app-table-content-line-height: var(--app-line-height-body);
 }
 
 /* ── 全站自适应布局契约 ──

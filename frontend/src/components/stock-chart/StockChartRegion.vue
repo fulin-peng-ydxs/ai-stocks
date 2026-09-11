@@ -54,9 +54,9 @@ function measure(): void {
   const root = rootEl.value
   const header = headerEl.value
   const body = bodyEl.value
-  headerHeight.value = Math.max(0, Math.round(header?.getBoundingClientRect().height ?? 0))
+  headerHeight.value = Math.max(0, header?.offsetHeight ?? 0)
   frameHeight.value = root ? Math.max(0, root.offsetHeight - root.clientHeight) : 0
-  const measured = Math.round(body?.getBoundingClientRect().height ?? 0)
+  const measured = body?.clientHeight ?? 0
   measuredContentHeight.value = measured > 0 ? measured : 0
 }
 

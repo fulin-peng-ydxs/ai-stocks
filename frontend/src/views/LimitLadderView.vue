@@ -41,6 +41,7 @@ import {
   useStockChartComponentConfig,
 } from '@/composables/useStockChartComponentConfig'
 import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
+import { viewportDeltaToLayoutPixels } from '@/utils/displayScaleGeometry'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -305,8 +306,13 @@ async function restoreScrollAnchor(code: string): Promise<void> {
   if (!card || !scrollRegion) return
   const cardRect = card.getBoundingClientRect()
   const regionRect = scrollRegion.getBoundingClientRect()
-  const centeredOffset = Math.max((scrollRegion.clientHeight - cardRect.height) / 2, 0)
-  scrollRegion.scrollTop += cardRect.top - regionRect.top - centeredOffset
+  const centeredOffset = Math.max((scrollRegion.clientHeight - card.offsetHeight) / 2, 0)
+  const layoutOffset = viewportDeltaToLayoutPixels(
+    cardRect.top - regionRect.top,
+    scrollRegion,
+    'y',
+  )
+  scrollRegion.scrollTop += layoutOffset - centeredOffset
 }
 
 async function reconcileAnalysisContext(): Promise<void> {

@@ -14,6 +14,7 @@ import type { Bar, IndicatorRow } from '@/api/stocks'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { useStatusColorPalette } from '@/components/chartTheme'
 import type { AuxiliaryChartType, ChartType } from '@/composables/useStockChartPreferences'
+import { viewportDeltaToLayoutPixels } from '@/utils/displayScaleGeometry'
 import StockChartPanelDivider from './StockChartPanelDivider.vue'
 import StockChartPanelHeader from './StockChartPanelHeader.vue'
 import type { StockChartLegendItem } from './StockChartLegend.vue'
@@ -364,7 +365,7 @@ function stopObservingResize(): void {
 }
 
 function availableHeight(): number {
-  const height = workspaceEl.value?.getBoundingClientRect().height || effectiveMinHeight.value
+  const height = workspaceEl.value?.clientHeight || effectiveMinHeight.value
   return Math.max(
     panels.value.reduce((total, panel) => total + panelMinHeight(panel.type), 0),
     height - (panels.value.length - 1) * SPLITTER_SIZE,
@@ -411,9 +412,14 @@ function applyRatioChange(separatorIndex: number, delta: number): number[] {
 
 function onPointerMove(event: PointerEvent): void {
   if (!drag || event.pointerId !== drag.pointerId) return
+  const layoutDelta = viewportDeltaToLayoutPixels(
+    event.clientY - drag.startY,
+    workspaceEl.value,
+    'y',
+  )
   applyRatioChange(
     drag.separatorIndex,
-    (event.clientY - drag.startY) / availableHeight(),
+    layoutDelta / availableHeight(),
   )
 }
 

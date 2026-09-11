@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import ElementPlus from 'element-plus'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 
@@ -15,6 +15,10 @@ function pointerEvent(type: string, pointerId: number, clientX: number): Event {
 }
 
 describe('MarketMasterDetailWorkspace', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('compact 模式只渲染列表并隐藏无效的分析收展入口', () => {
     const wrapper = mount(MarketMasterDetailWorkspace, {
       props: {
@@ -67,6 +71,7 @@ describe('MarketMasterDetailWorkspace', () => {
 
   it('指针拖动按详情最小宽度钳制，卸载时清理全局拖动态', async () => {
     const originalRect = HTMLElement.prototype.getBoundingClientRect
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1100)
     HTMLElement.prototype.getBoundingClientRect = () => ({ width: 1100 } as DOMRect)
     const wrapper = mount(MarketMasterDetailWorkspace, {
       props: {
@@ -94,6 +99,7 @@ describe('MarketMasterDetailWorkspace', () => {
 
   it('未配置个人默认值时使用可用空间内的最大列表宽度并上报会话值', async () => {
     const originalRect = HTMLElement.prototype.getBoundingClientRect
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1100)
     HTMLElement.prototype.getBoundingClientRect = () => ({ width: 1100 } as DOMRect)
     const wrapper = mount(MarketMasterDetailWorkspace, {
       props: { analysisVisible: true, eyebrow: 'TEST', title: '测试列表' },
@@ -107,5 +113,30 @@ describe('MarketMasterDetailWorkspace', () => {
 
     wrapper.unmount()
     HTMLElement.prototype.getBoundingClientRect = originalRect
+  })
+
+  it('缩放后把视口指针位移换算为布局像素，分隔条始终跟随鼠标', async () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1100)
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(1100)
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ width: 880 } as DOMRect)
+    const wrapper = mount(MarketMasterDetailWorkspace, {
+      props: {
+        analysisVisible: true,
+        eyebrow: 'TEST',
+        title: '测试列表',
+        defaultMasterWidth: 480,
+      },
+      slots: { list: '<div>列表</div>', analysis: '<div>分析</div>' },
+      global: { plugins: [ElementPlus] },
+    })
+
+    const separator = wrapper.get('[role="separator"]')
+    await separator.trigger('pointerdown', { pointerId: 8, clientX: 480 })
+    window.dispatchEvent(pointerEvent('pointermove', 8, 580))
+    await nextTick()
+
+    expect(separator.attributes('aria-valuenow')).toBe('605')
+    wrapper.unmount()
   })
 })

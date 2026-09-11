@@ -11,11 +11,13 @@ import router from './router'
 import { permission } from './directives/permission'
 import { initTheme } from './composables/useTheme'
 import { initAppNavigation } from './composables/useAppNavigation'
+import { initDisplayScale } from './composables/useDisplayScale'
 import { initLayoutPreset } from './layout'
 
 initTheme() // 挂载前确定主题，避免闪烁
 initLayoutPreset() // 挂载前应用内置预设 token（首屏不闪烁）
 initAppNavigation() // 挂载前恢复导航布局，避免侧栏/顶栏切换闪烁
+initDisplayScale() // 挂载前恢复应用显示比例，避免首屏先按 100% 渲染后跳变
 
 const app = createApp(App)
 app.use(createPinia())

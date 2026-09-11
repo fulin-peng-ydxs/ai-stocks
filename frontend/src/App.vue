@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Calendar, Clock, Close, Refresh, Select } from '@element-plus/icons-vue'
+import { Calendar, Clock, Close, Minus, Plus, Refresh, Select } from '@element-plus/icons-vue'
 import { useTheme, type ThemeMode } from '@/composables/useTheme'
 import {
   useAppNavigation,
@@ -9,6 +9,12 @@ import {
 } from '@/composables/useAppNavigation'
 import { migrateLocalPreferencesToRemote } from '@/composables/usePreferenceMigration'
 import { syncDrawerPreferences } from '@/composables/useDrawerPreferences'
+import {
+  DISPLAY_SCALE_MAX,
+  DISPLAY_SCALE_MIN,
+  useDisplayScale,
+  type DisplayScaleMode,
+} from '@/composables/useDisplayScale'
 import { resetWorkspaceTabs } from '@/composables/useWorkspaceTabs'
 import {
   confirmAll,
@@ -44,6 +50,14 @@ import TradeDisciplineQuickCard from '@/components/trade-discipline/TradeDiscipl
 
 const { isDark, themeMode, setThemeMode, syncThemePreference } = useTheme()
 const { navigationMode, setNavigationMode, syncNavigationPreference } = useAppNavigation()
+const {
+  mode: displayScaleMode,
+  effectivePercent: displayScalePercent,
+  setMode: setDisplayScaleMode,
+  setCustomPercent: setDisplayScalePercent,
+  reset: resetDisplayScale,
+  syncPreference: syncDisplayScalePreference,
+} = useDisplayScale()
 const { activePresetKey, options: presetOptions, setLayoutPreset } = useLayoutPreset()
 const userDrawerVisible = ref(false)
 const appearanceDrawerVisible = ref(false)
@@ -158,11 +172,20 @@ const themeModeOptions: Array<{ value: ThemeMode; label: string }> = [
   { value: 'dark', label: '夜间' },
   { value: 'system', label: '跟随系统' },
 ]
+const displayScaleModeOptions: Array<{ value: DisplayScaleMode; label: string }> = [
+  { value: 'auto', label: '自适应' },
+  { value: 'custom', label: '自定义' },
+]
 
 async function syncGlobalPreferences() {
   if (!auth.isLoggedIn) return
   await migrateLocalPreferencesToRemote()
-  await Promise.all([syncThemePreference(), syncNavigationPreference(), syncDrawerPreferences()])
+  await Promise.all([
+    syncThemePreference(),
+    syncNavigationPreference(),
+    syncDrawerPreferences(),
+    syncDisplayScalePreference(),
+  ])
 }
 
 function formatNumber(value: number | null | undefined): string {
@@ -208,6 +231,15 @@ const themeModeModel = computed<ThemeMode>({
   get: () => themeMode.value,
   set: (mode) => { if (themeMode.value !== mode) setThemeMode(mode) },
 })
+
+const displayScaleModeModel = computed<DisplayScaleMode>({
+  get: () => displayScaleMode.value,
+  set: (value) => setDisplayScaleMode(value),
+})
+
+function nudgeDisplayScale(delta: number): void {
+  setDisplayScalePercent(displayScalePercent.value + delta)
+}
 
 function selectPreset(key: string) {
   setLayoutPreset(key)
@@ -615,7 +647,7 @@ async function onLogout() {
         <header class="drawer-head drawer-head--appearance">
           <div>
             <div class="drawer-title">视觉环境</div>
-            <div class="drawer-subtitle">选择阅读光线与导航方式</div>
+            <div class="drawer-subtitle">调整界面比例、阅读光线与导航方式</div>
           </div>
           <AppIconButton class="drawer-close" label="关闭视觉环境" size="sm" @click="appearanceDrawerVisible = false">
             <el-icon><Close /></el-icon>
@@ -623,6 +655,55 @@ async function onLogout() {
         </header>
 
         <div class="drawer-body">
+          <section class="theme-card">
+            <div class="theme-card-head">
+              <div>
+                <div class="theme-card-title">界面比例</div>
+                <div class="theme-card-sub">按当前屏幕容量整体缩放字体、控件与内容密度</div>
+              </div>
+              <output class="display-scale-value" aria-live="polite">{{ displayScalePercent }}%</output>
+            </div>
+            <PageSegmented
+              v-model="displayScaleModeModel"
+              aria-label="界面比例模式"
+              test-id="appearance-display-scale-mode"
+              :options="displayScaleModeOptions"
+            />
+            <div class="display-scale-control">
+              <AppIconButton
+                label="缩小界面"
+                size="sm"
+                :disabled="displayScalePercent <= DISPLAY_SCALE_MIN"
+                @click="nudgeDisplayScale(-1)"
+              >
+                <el-icon><Minus /></el-icon>
+              </AppIconButton>
+              <el-slider
+                class="display-scale-slider"
+                :model-value="displayScalePercent"
+                :min="DISPLAY_SCALE_MIN"
+                :max="DISPLAY_SCALE_MAX"
+                :step="1"
+                :show-tooltip="true"
+                aria-label="调整界面比例"
+                data-testid="appearance-display-scale-slider"
+                @input="setDisplayScalePercent"
+              />
+              <AppIconButton
+                label="放大界面"
+                size="sm"
+                :disabled="displayScalePercent >= DISPLAY_SCALE_MAX"
+                @click="nudgeDisplayScale(1)"
+              >
+                <el-icon><Plus /></el-icon>
+              </AppIconButton>
+            </div>
+            <div class="display-scale-foot">
+              <span>{{ displayScaleMode === 'auto' ? `已按当前屏幕自动调整为 ${displayScalePercent}%` : '已使用自定义比例' }}</span>
+              <el-button link type="primary" @click="resetDisplayScale">恢复100%</el-button>
+            </div>
+          </section>
+
           <section class="theme-card">
             <div class="theme-card-head">
               <div>
@@ -720,7 +801,7 @@ async function onLogout() {
 
 <style scoped>
 .app {
-  height: 100vh;
+  height: 100%;
   flex-direction: column;
   background: var(--el-bg-color-page);
 }
@@ -1267,6 +1348,37 @@ button.topbar-status:focus-visible {
   margin-top: 1px;
   font-size: var(--app-font-size-caption);
   color: var(--page-settings-text-muted);
+}
+.display-scale-value {
+  flex: none;
+  color: var(--page-settings-accent);
+  font-family: var(--app-font-family-mono);
+  font-size: var(--app-font-size-data);
+  font-weight: var(--app-font-weight-strong);
+  line-height: var(--app-line-height-data);
+  font-variant-numeric: tabular-nums;
+}
+.display-scale-control {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-3);
+}
+.display-scale-slider {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.display-scale-foot {
+  min-height: var(--app-control-height-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-3);
+  color: var(--page-settings-text-muted);
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
+}
+.display-scale-foot .el-button {
+  flex: none;
 }
 .theme-list {
   display: flex;

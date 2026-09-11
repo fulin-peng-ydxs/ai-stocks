@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
+import { viewportDeltaToLayoutPixels } from '@/utils/displayScaleGeometry'
 
 const MASTER_MIN_WIDTH = 360
 const MASTER_MAX_WIDTH = 1200
@@ -65,13 +66,18 @@ const effectiveMasterWidth = computed(() => clampSessionWidth(masterWidth.value)
 watch(effectiveMasterWidth, (value) => emit('masterWidthChange', value), { immediate: true })
 
 function updateWorkspaceWidth(): void {
-  workspaceWidth.value = workspaceEl.value?.getBoundingClientRect().width ?? 0
+  workspaceWidth.value = workspaceEl.value?.clientWidth ?? 0
   masterWidth.value = clampSessionWidth(masterWidth.value)
 }
 
 function onPointerMove(event: PointerEvent): void {
   if (!drag || event.pointerId !== drag.pointerId) return
-  masterWidth.value = clampSessionWidth(drag.startWidth + event.clientX - drag.startX)
+  const layoutDelta = viewportDeltaToLayoutPixels(
+    event.clientX - drag.startX,
+    workspaceEl.value,
+    'x',
+  )
+  masterWidth.value = clampSessionWidth(drag.startWidth + layoutDelta)
 }
 
 function finishDrag(event?: PointerEvent): void {

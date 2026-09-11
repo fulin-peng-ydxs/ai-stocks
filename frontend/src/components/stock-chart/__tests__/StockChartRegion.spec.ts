@@ -15,10 +15,6 @@ class ResizeObserverMock {
   disconnect() {}
 }
 
-function rect(height: number): DOMRect {
-  return { x: 0, y: 0, width: 800, height, top: 0, right: 800, bottom: height, left: 0, toJSON: () => ({}) }
-}
-
 describe('StockChartRegion', () => {
   beforeEach(() => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
@@ -31,10 +27,16 @@ describe('StockChartRegion', () => {
   })
 
   it('按实际标题高度从外层总高度自动得到工作区可用高度', async () => {
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      if (this.classList.contains('stock-chart-region__header')) return rect(80)
-      if (this.classList.contains('stock-chart-region__body')) return rect(620)
-      return rect(700)
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('stock-chart-region__header')) return 80
+      if (this.classList.contains('stock-chart-region__body')) return 620
+      if (this.classList.contains('stock-chart-region')) return 700
+      return 0
+    })
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('stock-chart-region__body')) return 620
+      if (this.classList.contains('stock-chart-region')) return 700
+      return 0
     })
     const wrapper = mount(StockChartRegion, {
       props: { totalHeight: 700, slot2: 'hidden', slot3: 'hidden' },
@@ -58,10 +60,16 @@ describe('StockChartRegion', () => {
   })
 
   it('三图内容达到硬下限时自动扩展外层而不裁切底部图表', async () => {
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      if (this.classList.contains('stock-chart-region__header')) return rect(80)
-      if (this.classList.contains('stock-chart-region__body')) return rect(518)
-      return rect(598)
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('stock-chart-region__header')) return 80
+      if (this.classList.contains('stock-chart-region__body')) return 518
+      if (this.classList.contains('stock-chart-region')) return 598
+      return 0
+    })
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('stock-chart-region__body')) return 518
+      if (this.classList.contains('stock-chart-region')) return 598
+      return 0
     })
     const wrapper = mount(StockChartRegion, {
       props: { totalHeight: 560, slot2: 'volume', slot3: 'macd' },
