@@ -137,6 +137,12 @@ export function formatChartNumber(value: number | null | undefined, digits = 2):
   return formatMoney(value, { digits, empty: '--' })
 }
 
+/** 坐标轴统一精度，并把舍入后等于零的微小负值归一为正零。 */
+export function formatChartAxisNumber(value: number, digits = 2): string {
+  const zeroThreshold = 0.5 * 10 ** -digits
+  return formatChartNumber(Math.abs(value) < zeroThreshold ? 0 : value, digits)
+}
+
 type KlineTooltipPalette = Pick<StockChartTheme, 'text' | 'label' | 'up' | 'down'>
 
 function tooltipRow(label: string, value: string, palette: KlineTooltipPalette, color?: string) {
@@ -144,6 +150,30 @@ function tooltipRow(label: string, value: string, palette: KlineTooltipPalette, 
     + `<span style="color:${palette.label}">${label}</span>`
     + `<span style="color:${color ?? palette.text}">${value}</span>`
     + '</div>'
+}
+
+interface TooltipPositionSize {
+  contentSize: [number, number]
+  viewSize: [number, number]
+}
+
+/** 行情浮层固定靠光标反侧展示，避免覆盖正在查看的蜡烛。 */
+export function oppositeSideTooltipPosition(
+  point: number[],
+  _params: unknown,
+  _dom: HTMLElement,
+  _rect: unknown,
+  size: TooltipPositionSize,
+): [number, number] {
+  const horizontalInset = 8
+  const contentWidth = Math.min(
+    size.contentSize[0],
+    Math.max(0, size.viewSize[0] - horizontalInset * 2),
+  )
+  const left = point[0] <= size.viewSize[0] / 2
+    ? size.viewSize[0] - contentWidth - horizontalInset
+    : horizontalInset
+  return [Math.max(horizontalInset, left), 6]
 }
 
 function priceDirectionColor(
@@ -164,7 +194,7 @@ export function klineTooltipHtml(bar: Bar, palette: KlineTooltipPalette): string
     : pct > 0 ? palette.up : palette.down
   const pctText = pct == null ? '--' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
 
-  return '<div style="min-width:150px;line-height:1.6">'
+  return '<div style="width:156px;box-sizing:border-box;line-height:1.6">'
     + tooltipRow('时间', bar.date, palette)
     + tooltipRow(
       '开盘', formatChartNumber(bar.open), palette,

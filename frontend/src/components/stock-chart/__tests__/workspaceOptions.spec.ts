@@ -258,7 +258,9 @@ describe('workspaceOptions', () => {
       zoomStart: 0,
       zoomEnd: 100,
     }
-    const klineSeries = buildKlineOption(context).series.slice(1) as Array<{
+    const klineSeries = buildKlineOption(context).series.slice(1).filter(
+      (series) => series.name !== '__price_axis_sync__',
+    ) as Array<{
       name: string
       lineStyle: { color: string }
     }>
@@ -292,7 +294,43 @@ describe('workspaceOptions', () => {
     expect(panelMetricColor(theme, 'macd', 'MACD', 0.2)).toBe(theme.up)
   })
 
-  it('仅 K线显示固定左上角行情 tooltip，并用涨跌语义色突出收盘与涨幅', () => {
+  it('统一图表数值轴左置，K线右轴按最新昨收映射涨跌幅', () => {
+    const rows = alignStockChartRows([
+      { ...bar('2026-07-21', 9.8), pre_close: 9.7 },
+      { ...bar('2026-07-22', 10), pre_close: 9.9 },
+    ], [])
+    const context = {
+      rows,
+      warmupBars: [],
+      theme,
+      isBottom: false,
+      zoomStart: 0,
+      zoomEnd: 100,
+    }
+    const kline = buildKlineOption(context) as any
+    const volume = buildVolumeOption(context) as any
+    const macd = buildMacdOption(context) as any
+
+    expect(kline.grid).toMatchObject({ left: 64, right: 64 })
+    expect(kline.yAxis.map((axis: { position: string }) => axis.position))
+      .toEqual(['left', 'right'])
+    expect(kline.yAxis[1].axisLabel.formatter(9.9)).toBe('0.00%')
+    expect(kline.yAxis[1].axisLabel.formatter(10.89)).toBe('+10.00%')
+    expect(kline.series.at(-1)).toMatchObject({
+      name: '__price_axis_sync__',
+      yAxisIndex: 1,
+      silent: true,
+      z: -10,
+      itemStyle: { opacity: 0 },
+    })
+    expect(volume.yAxis.position).toBe('left')
+    expect(macd.yAxis.position).toBe('left')
+    expect(kline.yAxis[0].axisLabel.formatter(4.2)).toBe('4.20')
+    expect(macd.yAxis.axisLabel.formatter(0.280109715605261)).toBe('0.28')
+    expect(macd.yAxis.axisLabel.formatter(-0.0001)).toBe('0.00')
+  })
+
+  it('仅 K线显示定宽行情 tooltip，自动避开当前蜡烛并用涨跌色突出关键值', () => {
     const rows = alignStockChartRows([bar('2026-07-22', 10)], [])
     const context = {
       rows,
@@ -304,12 +342,25 @@ describe('workspaceOptions', () => {
     }
     const option = buildKlineOption(context)
     const tooltip = option.tooltip as {
-      position: () => number[]
+      position: (
+        point: number[],
+        params: unknown,
+        dom: HTMLElement,
+        rect: unknown,
+        size: { contentSize: [number, number]; viewSize: [number, number] },
+      ) => number[]
       formatter: (params: Array<{ dataIndex: number }>) => string
     }
     const content = tooltip.formatter([{ dataIndex: 0 }])
 
-    expect(tooltip.position()).toEqual([10, 6])
+    const size = {
+      contentSize: [156, 200] as [number, number],
+      viewSize: [600, 320] as [number, number],
+    }
+    const tooltipElement = {} as HTMLElement
+    expect(tooltip.position([80, 100], [], tooltipElement, null, size)).toEqual([436, 6])
+    expect(tooltip.position([480, 100], [], tooltipElement, null, size)).toEqual([8, 6])
+    expect(content).toContain('width:156px')
     for (const field of ['时间', '开盘', '收盘', '最高', '最低', '涨幅', '振幅', '成交量', '成交额', '换手率']) {
       expect(content).toContain(`>${field}<`)
     }

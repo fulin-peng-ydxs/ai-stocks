@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { IntradayPoint } from '@/api/stocks'
-import { buildIntradayOption } from '@/components/stock-chart/intradayOptions'
+import {
+  buildIntradayOption,
+  intradayPanelLayout,
+} from '@/components/stock-chart/intradayOptions'
 import type { StockChartTheme } from '@/components/stock-chart/chartUtils'
 
 const theme: StockChartTheme = {
@@ -26,30 +29,45 @@ const theme: StockChartTheme = {
 
 const points: IntradayPoint[] = [
   { time: '09:31', open: 10, high: 10.2, low: 9.9, close: 10.1, volume: 1000, amount: 10_100, average_price: 10.1 },
+  { time: '11:30', open: 10.1, high: 10.2, low: 10, close: 10.15, volume: 1500, amount: 15_225, average_price: 10.12 },
   { time: '13:01', open: 10.2, high: 10.2, low: 10, close: 10, volume: 2000, amount: 20_000, average_price: 10.03 },
 ]
 
 describe('buildIntradayOption', () => {
-  it('固定为双绘图区、三序列、右轴，并复用股票主题色', () => {
+  it('固定为双绘图区、三序列、价格双轴与量能左轴，并复用股票主题色', () => {
     const option = buildIntradayOption({
       points,
       preClose: 9.8,
       theme,
+      chartHeight: 560,
       zoomStart: 25,
       zoomEnd: 75,
     }) as any
 
     expect(option.grid).toHaveLength(2)
-    expect(option.yAxis).toHaveLength(2)
-    expect(option.yAxis.every((axis: { position: string }) => axis.position === 'right')).toBe(true)
+    expect(option.grid.every((grid: { left: number; right: number }) => (
+      grid.left === 64 && grid.right === 64
+    ))).toBe(true)
+    expect(option.yAxis).toHaveLength(3)
+    expect(option.yAxis.map((axis: { position: string }) => axis.position))
+      .toEqual(['left', 'right', 'left'])
+    expect(option.yAxis[1].axisLabel.formatter(9.8)).toBe('0.00%')
     expect(option.series.map((series: { name: string }) => series.name)).toEqual(['价格', '均价', '成交量'])
     expect(option.series[0].lineStyle.color).toBe('#blue')
-    expect(option.series[0].markLine.data).toEqual([{ yAxis: 9.8 }])
+    expect(option.series[0].markLine).toMatchObject({
+      label: { formatter: '0%' },
+      data: [{ yAxis: 9.8 }],
+    })
     expect(option.series[1].lineStyle.color).toBe('#orange')
-    expect(option.series[2].data.map((item: any) => item.itemStyle.color)).toEqual(['#red', '#green'])
+    expect(option.series[2].data.map((item: any) => item.itemStyle.color))
+      .toEqual(['#red', '#red', '#green'])
     expect(option.axisPointer.link).toEqual([{ xAxisIndex: [0, 1] }])
-    expect(option.legend.data).toEqual(['价格', '均价'])
-    expect(option.xAxis[1].axisLabel.formatter('11:30')).toBe('11:30 / 13:01')
+    expect(option.legend).toBeUndefined()
+    expect(option.title).toBeUndefined()
+    expect(option.graphic).toBeUndefined()
+    expect(option.xAxis[1].axisLabel.formatter('09:31', 0)).toBe('09:30')
+    expect(option.xAxis[1].axisLabel.formatter('11:30', 1)).toBe('11:30')
+    expect(option.xAxis[1].axisLabel.formatter('13:01', 2)).toBe('15:00')
     expect(option.dataZoom.map((zoom: { type: string }) => zoom.type)).toEqual(['inside', 'slider'])
     expect(option.dataZoom.every((zoom: { xAxisIndex: number[] }) => (
       zoom.xAxisIndex.join(',') === '0,1'
@@ -60,12 +78,38 @@ describe('buildIntradayOption', () => {
     expect((option.yAxis[0].min + option.yAxis[0].max) / 2).toBeCloseTo(9.8)
   })
 
+  it('按画布高度为共享标题栏预留固定空间，并保持紧凑双图间距', () => {
+    const compact = intradayPanelLayout(340)
+    const spacious = intradayPanelLayout(560)
+
+    expect(compact.priceTop).toBe(40)
+    expect(spacious.priceTop).toBe(40)
+    expect(compact.volumeTop - compact.volumeHeaderTop).toBe(40)
+    expect(spacious.volumeTop - spacious.volumeHeaderTop).toBe(40)
+    expect(compact.volumeHeaderTop - (compact.priceTop + compact.priceHeight)).toBe(8)
+    expect(spacious.volumeHeaderTop - (spacious.priceTop + spacious.priceHeight)).toBe(8)
+  })
+
+  it('涨跌停边界不额外扩展纵轴，避免顶部留下无意义空段', () => {
+    const limitPoints = points.map((point, index) => ({
+      ...point,
+      close: index === points.length - 1 ? 11 : point.close,
+      average_price: index === points.length - 1 ? 10.5 : point.average_price,
+    }))
+    const option = buildIntradayOption({ points: limitPoints, preClose: 10, theme }) as any
+
+    expect(option.yAxis[0].min).toBe(9)
+    expect(option.yAxis[0].max).toBe(11)
+    expect(option.yAxis[1].min).toBe(9)
+    expect(option.yAxis[1].max).toBe(11)
+  })
+
   it('悬浮提示包含相对昨收涨跌幅且午休不补点', () => {
     const option = buildIntradayOption({ points, preClose: 10, theme }) as any
     const html = option.tooltip.formatter([{ dataIndex: 0 }])
 
     expect(html).toContain('+1.00%')
     expect(html).toContain('成交量')
-    expect(option.xAxis[0].data).toEqual(['09:31', '13:01'])
+    expect(option.xAxis[0].data).toEqual(['09:31', '11:30', '13:01'])
   })
 })

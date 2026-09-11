@@ -1,13 +1,48 @@
 import type { EChartsOption } from 'echarts'
 import type { IntradayPoint } from '@/api/stocks'
+import { formatMarketPercent } from '@/utils/marketValue'
 import { formatAmount, formatChartNumber, formatVolume, type StockChartTheme } from './chartUtils'
 
 export interface IntradayOptionInput {
   points: IntradayPoint[]
   preClose: number | null
   theme: StockChartTheme
+  chartHeight?: number
   zoomStart?: number
   zoomEnd?: number
+}
+
+interface IntradayPanelLayout {
+  priceTop: number
+  priceHeight: number
+  volumeHeaderTop: number
+  volumeTop: number
+  volumeBottom: number
+}
+
+/**
+ * 为共享 DOM 面板标题栏预留空间，并按实际画布高度压缩空隙。
+ * 单实例布局保证价格、量能仍共享十字光标和缩放窗口。
+ */
+export function intradayPanelLayout(chartHeight = 560): IntradayPanelLayout {
+  const height = Math.max(340, chartHeight)
+  const panelHeaderHeight = 32
+  const plotInset = 8
+  const priceTop = panelHeaderHeight + plotInset
+  const volumeBottom = 48
+  const plotHeight = Math.max(
+    180,
+    height - priceTop - volumeBottom - panelHeaderHeight - (plotInset * 2),
+  )
+  const priceHeight = Math.round(plotHeight * 0.66)
+  const volumeHeaderTop = priceTop + priceHeight + plotInset
+  return {
+    priceTop,
+    priceHeight,
+    volumeHeaderTop,
+    volumeTop: volumeHeaderTop + panelHeaderHeight + plotInset,
+    volumeBottom,
+  }
 }
 
 function symmetricPriceExtent(
@@ -21,7 +56,10 @@ function symmetricPriceExtent(
     preClose * 0.005,
     ...prices.map((value) => Math.abs(value - preClose)),
   )
-  const padded = distance * 1.08
+  const deviationRate = distance / preClose
+  const reachesPriceLimit = [0.05, 0.1, 0.2, 0.3]
+    .some((limit) => Math.abs(deviationRate - limit) <= 0.0025)
+  const padded = distance * (reachesPriceLimit ? 1 : 1.08)
   return {
     min: Number((preClose - padded).toFixed(4)),
     max: Number((preClose + padded).toFixed(4)),
@@ -36,7 +74,14 @@ function tooltipRow(label: string, value: string, color: string, labelColor: str
 }
 
 export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
-  const { points, preClose, theme, zoomStart = 0, zoomEnd = 100 } = input
+  const {
+    points,
+    preClose,
+    theme,
+    chartHeight = 560,
+    zoomStart = 0,
+    zoomEnd = 100,
+  } = input
   const times = points.map((point) => point.time)
   const closes = points.map((point) => point.close)
   const averages = points.map((point) => point.average_price)
@@ -45,17 +90,14 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
     itemStyle: { color: point.close >= point.open ? theme.up : theme.down },
   }))
   const priceExtent = symmetricPriceExtent(points, preClose)
+  const panelLayout = intradayPanelLayout(chartHeight)
+  const middayIndex = times.indexOf('11:30')
+  const lastTimeIndex = times.length - 1
 
   return {
     animation: false,
     backgroundColor: theme.background,
     axisPointer: { link: [{ xAxisIndex: [0, 1] }], label: { backgroundColor: theme.muted } },
-    legend: {
-      data: ['价格', '均价'],
-      left: 16,
-      top: 0,
-      textStyle: { color: theme.label },
-    },
     tooltip: {
       trigger: 'axis',
       confine: true,
@@ -86,8 +128,18 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
       },
     },
     grid: [
-      { left: 16, right: 70, top: 28, height: '54%' },
-      { left: 16, right: 70, top: '69%', bottom: 48 },
+      {
+        left: 64,
+        right: 64,
+        top: panelLayout.priceTop,
+        height: panelLayout.priceHeight,
+      },
+      {
+        left: 64,
+        right: 64,
+        top: panelLayout.volumeTop,
+        bottom: panelLayout.volumeBottom,
+      },
     ],
     dataZoom: [
       {
@@ -134,10 +186,14 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         axisLabel: {
           color: theme.label,
           interval: (index: number) => {
-            const time = times[index]
-            return time === '09:31' || time === '11:30' || time === '15:00'
+            return index === 0 || index === middayIndex || index === lastTimeIndex
           },
-          formatter: (value: string) => value === '11:30' ? '11:30 / 13:01' : value,
+          formatter: (_value: string, index: number) => {
+            if (index === 0) return '09:30'
+            if (index === middayIndex) return '11:30'
+            if (index === lastTimeIndex) return '15:00'
+            return ''
+          },
         },
         axisTick: { show: false },
       },
@@ -146,7 +202,7 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
       {
         type: 'value',
         gridIndex: 0,
-        position: 'right',
+        position: 'left',
         scale: true,
         ...priceExtent,
         axisLabel: { color: theme.label, formatter: (value: number) => value.toFixed(2) },
@@ -155,8 +211,26 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
       },
       {
         type: 'value',
-        gridIndex: 1,
+        gridIndex: 0,
         position: 'right',
+        scale: true,
+        ...priceExtent,
+        axisLabel: {
+          show: preClose != null && preClose > 0,
+          color: theme.label,
+          formatter: (value: number) => {
+            if (preClose == null || preClose <= 0) return '--'
+            const percentage = ((value / preClose) - 1) * 100
+            return formatMarketPercent(percentage)
+          },
+        },
+        axisLine: { show: true, lineStyle: { color: theme.axis } },
+        splitLine: { show: false },
+      },
+      {
+        type: 'value',
+        gridIndex: 1,
+        position: 'left',
         min: 0,
         axisLabel: { color: theme.label, formatter: (value: number) => formatVolume(value) },
         axisLine: { show: true, lineStyle: { color: theme.axis } },
@@ -177,7 +251,7 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         markLine: preClose == null ? undefined : {
           symbol: ['none', 'none'],
           silent: true,
-          label: { show: true, position: 'insideEndTop', formatter: '昨收', color: theme.label },
+          label: { show: true, position: 'insideEndTop', formatter: '0%', color: theme.label },
           lineStyle: { color: theme.muted, type: 'dashed', width: 1 },
           data: [{ yAxis: preClose }],
         },
@@ -197,7 +271,7 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         name: '成交量',
         type: 'bar',
         xAxisIndex: 1,
-        yAxisIndex: 1,
+        yAxisIndex: 2,
         data: volumes,
         barMaxWidth: 5,
       },

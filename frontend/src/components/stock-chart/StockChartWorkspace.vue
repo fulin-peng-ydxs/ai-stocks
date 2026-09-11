@@ -14,6 +14,7 @@ import type { Bar, IndicatorRow } from '@/api/stocks'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { useStatusColorPalette } from '@/components/chartTheme'
 import type { AuxiliaryChartType, ChartType } from '@/composables/useStockChartPreferences'
+import StockChartPanelHeader from './StockChartPanelHeader.vue'
 import {
   KLINE_MA_DEFINITIONS,
   VOLUME_MA_DEFINITIONS,
@@ -529,8 +530,7 @@ onBeforeUnmount(() => {
         :style="panelStyle(panel, index)"
         :data-panel-key="panel.key"
       >
-        <header class="stock-chart-panel__header">
-          <strong class="stock-chart-panel__title">{{ panelTitle(panel.type, adjustLabel) }}</strong>
+        <StockChartPanelHeader :title="panelTitle(panel.type, adjustLabel)">
           <div class="stock-chart-panel__metrics">
             <span
               v-for="metric in panelMetrics(panel.type)"
@@ -541,10 +541,12 @@ onBeforeUnmount(() => {
               {{ metric.label }} <b>{{ metric.value }}</b>
             </span>
           </div>
-          <time v-if="panel.type === 'kline' && rows.length" class="stock-chart-panel__date">
-            {{ rows[metricIndex]?.bar.date }}
-          </time>
-        </header>
+          <template #tail>
+            <time v-if="panel.type === 'kline' && rows.length" class="stock-chart-panel__date">
+              {{ rows[metricIndex]?.bar.date }}
+            </time>
+          </template>
+        </StockChartPanelHeader>
         <div class="stock-chart-panel__body">
           <div
             :ref="(element) => setChartElement(panel.key, element)"
@@ -608,24 +610,6 @@ onBeforeUnmount(() => {
   background: var(--el-bg-color);
 }
 
-.stock-chart-panel__header {
-  flex: 0 0 auto;
-  min-height: 32px;
-  padding: 5px var(--app-space-3);
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-3);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  font-variant-numeric: tabular-nums;
-}
-
-.stock-chart-panel__title {
-  flex: 0 0 auto;
-  color: var(--el-text-color-primary);
-  font-size: var(--app-font-size-table);
-  font-weight: var(--app-font-weight-section);
-}
-
 .stock-chart-panel__metrics {
   min-width: 0;
   display: flex;
@@ -639,6 +623,12 @@ onBeforeUnmount(() => {
 
 .stock-chart-panel__metric b {
   font-weight: var(--app-font-weight-section);
+}
+
+.stock-chart-panel__metric {
+  max-width: 112px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .stock-chart-panel__date {
@@ -704,10 +694,6 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1180px) {
-  .stock-chart-panel__header {
-    gap: var(--app-space-2);
-  }
-
   .stock-chart-panel__metrics {
     gap: var(--app-space-2);
   }

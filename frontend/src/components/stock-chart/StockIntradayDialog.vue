@@ -114,22 +114,22 @@ onBeforeUnmount(() => controller?.abort())
           <strong>{{ name || code }}</strong>
           <span>{{ code }} · {{ tradeDate }}</span>
         </div>
-        <dl v-if="summary" class="stock-intraday-dialog__summary">
-          <div>
-            <dt>收盘</dt>
-            <dd :class="`is-${summary.tone}`">{{ summary.close }}</dd>
+        <dl v-if="summary" class="stock-intraday-dialog__summary app-metric-group">
+          <div class="app-metric-item">
+            <dt class="app-metric-label">收盘</dt>
+            <dd :class="[`is-${summary.tone}`, 'app-metric-value', 'app-metric-value--primary']">{{ summary.close }}</dd>
           </div>
-          <div>
-            <dt>涨跌幅</dt>
-            <dd :class="`is-${summary.tone}`">{{ summary.pct }}</dd>
+          <div class="app-metric-item">
+            <dt class="app-metric-label">涨跌幅</dt>
+            <dd :class="[`is-${summary.tone}`, 'app-metric-value', 'app-metric-value--strong']">{{ summary.pct }}</dd>
           </div>
-          <div>
-            <dt>高 / 低</dt>
-            <dd>{{ summary.highLow }}</dd>
+          <div class="app-metric-item">
+            <dt class="app-metric-label">高 / 低</dt>
+            <dd class="app-metric-value">{{ summary.highLow }}</dd>
           </div>
-          <div>
-            <dt>成交额</dt>
-            <dd>{{ summary.amount }}</dd>
+          <div class="app-metric-item">
+            <dt class="app-metric-label">成交额</dt>
+            <dd class="app-metric-value">{{ summary.amount }}</dd>
           </div>
         </dl>
       </div>
@@ -181,7 +181,7 @@ onBeforeUnmount(() => controller?.abort())
 .stock-intraday-dialog__header {
   display: flex;
   min-width: 0;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: var(--app-space-5);
   padding-right: var(--app-space-5);
@@ -202,35 +202,13 @@ onBeforeUnmount(() => controller?.abort())
   line-height: var(--app-line-height-page-title);
 }
 
-.stock-intraday-dialog__identity span,
-.stock-intraday-dialog__summary dt {
+.stock-intraday-dialog__identity span {
   color: var(--el-text-color-secondary);
 }
 
 .stock-intraday-dialog__summary {
-  display: grid;
-  flex: 0 1 560px;
-  grid-template-columns: repeat(4, minmax(max-content, 1fr));
-  gap: var(--app-space-5);
-  margin: 0;
-}
-
-.stock-intraday-dialog__summary div {
-  min-width: 0;
-}
-
-.stock-intraday-dialog__summary dt {
-  margin-bottom: var(--app-space-1);
-  font-size: var(--app-font-size-caption);
-  font-weight: var(--app-font-weight-section);
-}
-
-.stock-intraday-dialog__summary dd {
-  margin: 0;
-  color: var(--el-text-color-primary);
-  font-size: var(--app-font-size-data);
-  font-weight: var(--app-font-weight-section);
-  white-space: nowrap;
+  flex: 0 0 auto;
+  grid-template-columns: 96px 104px 136px 104px;
 }
 
 .stock-intraday-dialog__summary dd.is-up {
@@ -252,6 +230,13 @@ onBeforeUnmount(() => controller?.abort())
     width: 100%;
     flex-basis: auto;
     gap: var(--app-space-2);
+  }
+}
+
+@media (max-width: 640px) {
+  .stock-intraday-dialog__summary {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

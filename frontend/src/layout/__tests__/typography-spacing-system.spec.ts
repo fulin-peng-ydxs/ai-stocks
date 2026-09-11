@@ -54,6 +54,15 @@ describe('字体与间距设计契约', () => {
     expect(globalCss).toContain('--app-space-control-gap')
     expect(globalCss).toMatch(/\.page-head\s*\{[\s\S]*?align-items:\s*flex-start/)
     expect(globalCss).toContain('.app-page-title')
+    expect(globalCss).toContain('--app-font-size-kpi-xl')
+    expect(globalCss).toContain('.app-metric-group')
+    expect(globalCss).toContain('.app-metric-item')
+    expect(globalCss).toContain('.app-metric-value--primary')
+    expect(globalCss).toMatch(/\.app-metric-group\s*\{[\s\S]*?align-items:\s*center/)
+    expect(globalCss).toMatch(/\.app-metric-item\s*\{[\s\S]*?grid-template-rows:/)
+    expect(design).toContain('同一行并列的对象识别块、摘要组、状态块等同层信息块')
+    expect(design).toContain('紧凑指标组统一消费')
+    expect(pageTemplate).toContain('紧凑指标组是否复用全局 metric 语义类')
     expect(globalCss).toContain('.app-cluster-md')
     expect(design).toContain('### 3.2 Inline Information Unit Rules')
     expect(design).toContain('明显不是同一个连贯内容单位的信息不得直接相邻')
@@ -222,6 +231,10 @@ describe('字体与间距设计契约', () => {
       'app-micro-text',
       'app-data-text',
       'app-data-emphasis',
+      'app-metric-group',
+      'app-metric-item',
+      'app-metric-label',
+      'app-metric-value',
     ]
     const sources = sourceFiles(SRC_DIR)
       .filter((file) => relative(SRC_DIR, file) !== 'styles/global.css')

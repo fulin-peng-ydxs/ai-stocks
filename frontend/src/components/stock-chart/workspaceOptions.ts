@@ -1,11 +1,14 @@
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import type { ChartType } from '@/composables/useStockChartPreferences'
+import { formatMarketPercent } from '@/utils/marketValue'
 import {
+  formatChartAxisNumber,
   formatChartNumber,
   formatVolume,
   KLINE_MA_DEFINITIONS,
   klineTooltipHtml,
   movingAverage,
+  oppositeSideTooltipPosition,
   VOLUME_MA_DEFINITIONS,
   type StockChartTheme,
 } from './chartUtils'
@@ -311,7 +314,7 @@ function commonAxes(context: OptionContext, showPointerDate: boolean) {
   const dates = context.rows.map((row) => row.bar.date)
   return {
     grid: {
-      left: 8,
+      left: 64,
       right: 64,
       top: 8,
       bottom: context.isBottom ? BOTTOM_GRID_HEIGHT : 8,
@@ -386,6 +389,10 @@ function commonOption(context: OptionContext, showPointerDate: boolean) {
 export function buildKlineOption(context: OptionContext) {
   const bars = context.rows.map((row) => row.bar)
   const allCloses = [...context.warmupBars, ...bars].map((bar) => bar.close)
+  const referencePrice = [...bars]
+    .reverse()
+    .find((bar) => bar.pre_close != null && Number.isFinite(bar.pre_close) && bar.pre_close > 0)
+    ?.pre_close ?? null
   const base = commonOption(context, true)
   return {
     ...base,
@@ -393,7 +400,7 @@ export function buildKlineOption(context: OptionContext) {
       ...base.tooltip,
       className: 'stock-chart-kline-tooltip',
       confine: true,
-      position: () => [10, 6],
+      position: oppositeSideTooltipPosition,
       formatter: (params: unknown) => {
         const list = Array.isArray(params) ? params : [params]
         const index = (list[0] as { dataIndex?: unknown } | undefined)?.dataIndex
@@ -402,13 +409,34 @@ export function buildKlineOption(context: OptionContext) {
         return row ? klineTooltipHtml(row.bar, context.theme) : ''
       },
     },
-    yAxis: {
-      scale: true,
-      position: 'right',
-      axisLine: { show: false },
-      axisLabel: { color: context.theme.label, fontSize: 10 },
-      splitLine: { lineStyle: { color: context.theme.split } },
-    },
+    yAxis: [
+      {
+        scale: true,
+        position: 'left',
+        axisLine: { show: false },
+        axisLabel: {
+          color: context.theme.label,
+          fontSize: 10,
+          formatter: (value: number) => formatChartAxisNumber(value, 2),
+        },
+        splitLine: { lineStyle: { color: context.theme.split } },
+      },
+      {
+        scale: true,
+        position: 'right',
+        axisLine: { show: false },
+        axisLabel: {
+          color: context.theme.label,
+          fontSize: 10,
+          formatter: (value: number) => {
+            if (referencePrice == null) return '--'
+            const percentage = ((value / referencePrice) - 1) * 100
+            return formatMarketPercent(percentage)
+          },
+        },
+        splitLine: { show: false },
+      },
+    ],
     series: [
       {
         name: 'K线',
@@ -443,6 +471,17 @@ export function buildKlineOption(context: OptionContext) {
           z: 3,
         }
       }),
+      {
+        name: '__price_axis_sync__',
+        type: 'candlestick',
+        yAxisIndex: 1,
+        data: bars.map((bar) => [bar.open, bar.close, bar.low, bar.high]),
+        silent: true,
+        z: -10,
+        tooltip: { show: false },
+        itemStyle: { opacity: 0, borderWidth: 0 },
+        emphasis: { disabled: true },
+      },
     ],
   }
 }
@@ -456,7 +495,7 @@ export function buildVolumeOption(context: OptionContext) {
     tooltip: { ...base.tooltip, showContent: false },
     yAxis: {
       scale: true,
-      position: 'right',
+      position: 'left',
       splitNumber: 2,
       axisLine: { show: false },
       axisLabel: {
@@ -507,9 +546,13 @@ export function buildMacdOption(context: OptionContext) {
       scale: true,
       min: ({ min }: { min: number }) => Math.min(0, min),
       max: ({ max }: { max: number }) => Math.max(0, max),
-      position: 'right',
+      position: 'left',
       axisLine: { show: false },
-      axisLabel: { color: context.theme.label, fontSize: 10 },
+      axisLabel: {
+        color: context.theme.label,
+        fontSize: 10,
+        formatter: (value: number) => formatChartAxisNumber(value, 2),
+      },
       splitLine: { lineStyle: { color: context.theme.split } },
     },
     series: [
