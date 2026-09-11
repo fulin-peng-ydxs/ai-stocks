@@ -557,7 +557,7 @@ function onSubmit() {
 .login-brand {
   position: relative;
   min-width: 0;
-  padding: 38px clamp(36px, 5vw, 76px) 34px;
+  padding: 38px clamp(36px, 5cqw, 76px) 34px;
   background: var(--login-panel-bg);
   color: var(--login-brand-text);
   overflow: hidden;
@@ -714,7 +714,7 @@ function onSubmit() {
 .mr-value {
   color: var(--login-brand-text);
   font-family: var(--app-font-family-mono);
-  font-size: clamp(24px, 1.9vw, 30px);
+  font-size: clamp(24px, 1.9cqw, 30px);
   font-weight: 600;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -786,7 +786,7 @@ function onSubmit() {
 .login-brand-copy {
   position: absolute;
   z-index: 2;
-  left: clamp(36px, 5vw, 76px);
+  left: clamp(36px, 5cqw, 76px);
   bottom: 132px;
 }
 .login-eyebrow {
@@ -803,7 +803,7 @@ function onSubmit() {
   margin: 18px 0 16px;
   color: var(--login-brand-text);
   font-family: 'Songti SC', STSong, 'SimSun', serif;
-  font-size: clamp(42px, 4.5vw, 70px);
+  font-size: clamp(42px, 4.5cqw, 70px);
   font-weight: 600;
   letter-spacing: 0.02em;
   line-height: 1.18;
@@ -852,7 +852,7 @@ function onSubmit() {
   align-items: center;
   justify-content: center;
   min-height: 0;
-  padding: 72px clamp(34px, 4vw, 64px) 48px;
+  padding: 72px clamp(34px, 4cqw, 64px) 48px;
   overflow-y: auto;
   background:
     radial-gradient(circle at 85% 0, color-mix(in srgb, var(--login-accent) 12%, transparent), transparent 28%),
@@ -1187,7 +1187,7 @@ function onSubmit() {
 
 @keyframes track-flow { to { stroke-dashoffset: -160; } }
 
-@media (max-width: 980px) {
+@container app-viewport (max-width: 980px) {
   .login-shell {
     grid-template-columns: 1fr;
   }
@@ -1223,7 +1223,7 @@ function onSubmit() {
   }
 }
 
-@media (max-width: 520px) {
+@container app-viewport (max-width: 520px) {
   .login-brand { padding: 18px; }
   .login-auth { padding: 80px 12px 14px; }
   .login-card {
@@ -1234,7 +1234,7 @@ function onSubmit() {
   .login-controls { top: 20px; right: 18px; }
 }
 
-@media (max-height: 720px) and (min-width: 981px) {
+@container app-viewport (max-height: 720px) and (min-width: 981px) {
   .login-auth { align-items: flex-start; padding-top: 48px; }
   .login-card { padding-top: 28px; padding-bottom: 24px; }
   .login-tabs { margin-top: 18px; margin-bottom: 16px; }
@@ -1264,14 +1264,14 @@ function onSubmit() {
   .login-system-state span { background: Highlight; }
 }
 
-@media (max-width: 360px) {
+@container app-viewport (max-width: 360px) {
   .login-card { padding-inline: 16px; }
   .login-captcha-img { width: 92px; }
   .login-rowbetween { gap: var(--app-space-2); }
   .login-footnote { letter-spacing: 0.04em; }
 }
 
-@media (max-height: 620px) and (max-width: 980px) {
+@container app-viewport (max-height: 620px) and (max-width: 980px) {
   .login-auth { align-items: flex-start; }
   .login-card { margin-top: 0; }
 }

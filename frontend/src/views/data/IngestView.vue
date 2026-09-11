@@ -1269,7 +1269,7 @@ watch(
 :deep(.row-partial) { background: var(--el-color-warning-light-9); }
 .fail-detail { color: var(--app-danger-text); }
 .partial-detail { color: var(--app-warning-text); }
-@media (max-width: 1280px) { .ingest-bottom { min-height: 520px; } }
+@container app-viewport (max-width: 1280px) { .ingest-bottom { min-height: 520px; } }
 </style>
 
 <!-- PageDrawer 经 teleport 挂到 LayoutHost 内容区，scoped 作用域属性不会带到抽屉根，

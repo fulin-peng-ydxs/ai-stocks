@@ -1341,7 +1341,7 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-secondary);
 }
 
-@media (max-width: 1180px) {
+@container app-viewport (max-width: 1180px) {
   .page-head {
     align-items: flex-start;
   }

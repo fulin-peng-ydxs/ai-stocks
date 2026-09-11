@@ -117,8 +117,8 @@ onBeforeUnmount(() => controller?.abort())
   <el-dialog
     :model-value="modelValue"
     :title="title"
-    width="min(92vw, 1040px)"
-    top="5vh"
+    width="min(92cqw, 1040px)"
+    top="5cqh"
     destroy-on-close
     data-testid="stock-intraday-dialog"
     @close="close"
@@ -208,7 +208,7 @@ onBeforeUnmount(() => controller?.abort())
   flex: 0 0 auto;
 }
 
-@media (max-width: 960px) {
+@container app-viewport (max-width: 960px) {
   .stock-intraday-dialog__header {
     align-items: flex-start;
     flex-direction: column;

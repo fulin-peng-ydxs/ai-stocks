@@ -1592,7 +1592,7 @@ onMounted(async () => {
   color: var(--page-settings-text-subtle);
   font-size: var(--app-font-size-body);
 }
-@media (max-width: 1180px) {
+@container app-viewport (max-width: 1180px) {
   .page-subtitle {
     display: none;
   }
@@ -1600,7 +1600,7 @@ onMounted(async () => {
     display: none;
   }
 }
-@media (max-height: 700px) {
+@container app-viewport (max-height: 700px) {
   .chart-head {
     min-height: 60px;
   }

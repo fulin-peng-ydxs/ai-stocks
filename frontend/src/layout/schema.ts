@@ -85,6 +85,7 @@ export interface PresetComponentDefaults {
 }
 
 export interface PresetResponsiveDefaults {
+  autoScaleResponsiveExponent: number
   pageGap: number
   reflowBreakpoint: number
 }

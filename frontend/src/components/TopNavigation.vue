@@ -283,7 +283,7 @@ function descendantLeaves(
 .secondary-entry.is-active .secondary-entry-icon {
   color: var(--chrome-menu-icon-active-color);
 }
-@media (max-width: 960px) {
+@container app-viewport (max-width: 960px) {
   .top-navigation.is-primary { padding-inline: 2px; }
   .primary-entry { padding-inline: 9px; }
   .primary-entry::after { left: 9px; right: 9px; }

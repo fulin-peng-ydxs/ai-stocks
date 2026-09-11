@@ -153,7 +153,7 @@ onBeforeUnmount(() => {
 .stock-intraday-chart {
   position: relative;
   width: 100%;
-  height: min(64vh, 560px);
+  height: min(64cqh, 560px);
   min-height: 380px;
 }
 
@@ -177,9 +177,9 @@ onBeforeUnmount(() => {
   left: 0;
 }
 
-@media (max-width: 960px) {
+@container app-viewport (max-width: 960px) {
   .stock-intraday-chart {
-    height: 58vh;
+    height: 58cqh;
     min-height: 340px;
   }
 }

@@ -31,7 +31,7 @@ import {
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
-import { useMediaQuery } from '@/composables/useMediaQuery'
+import { useLayoutViewport } from '@/composables/useLayoutViewport'
 import { useMarketMasterWidthRuntime } from '@/composables/useMarketMasterWidthRuntime'
 import { useAsyncResultPolling } from '@/composables/useAsyncResultPolling'
 import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
@@ -82,8 +82,9 @@ const stockSet = useStockSet()
 const settingsOpen = ref(false)
 const ladderHost = ref<HTMLElement | null>(null)
 const analysisDrawerOpen = ref(false)
-const isNarrowViewport = useMediaQuery('(max-width: 768px)')
-const isLowHeightViewport = useMediaQuery('(max-height: 700px)')
+const layoutViewport = useLayoutViewport()
+const isNarrowViewport = computed(() => layoutViewport.width.value > 0 && layoutViewport.width.value <= 768)
+const isLowHeightViewport = computed(() => layoutViewport.height.value > 0 && layoutViewport.height.value <= 700)
 const tradeDate = ref<string | null>(
   typeof route.query.date === 'string' ? route.query.date : null,
 )

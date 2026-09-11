@@ -69,6 +69,12 @@ vi.mock('@/api/scoreProfile', () => ({
   getIndicatorRegistry: vi.fn(),
   listScoreProfiles: vi.fn(),
 }))
+vi.mock('@/api/stockGroup', () => ({
+  listGroups: vi.fn().mockResolvedValue([]),
+  addMembers: vi.fn(),
+  createGroup: vi.fn(),
+  removeMembers: vi.fn(),
+}))
 vi.mock('@/api/board', () => ({
   listBoardProfiles: vi.fn(),
   runBoardProfile: vi.fn(),

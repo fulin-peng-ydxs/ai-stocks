@@ -93,7 +93,7 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 - Python `>=3.11`，本机常用 3.12；Ruff `line-length = 100`、`target-version = py311`。
 - Node.js 建议 20 LTS；前端锁文件为 npm lockfile v3。
 - 后端关键版本：FastAPI `>=0.110`、DuckDB `>=0.10`、PostgreSQL `>=14`、Redis `>=6`、pandas `>=2.2`、pytest `>=8.0`。
-- 前端关键版本：Vue `^3.4`、Vite `^5.2`、TypeScript `^5.4`、Vitest `^1.6`、Element Plus `^2.7`。
+- 前端关键版本：Vue `^3.4`、Vite `^5.2`、TypeScript `^5.4`、Vitest `^1.6`、Element Plus `2.14.1`。
 - 本地开发需先启动 PostgreSQL 与 Redis；生产/集成必须按 `agent-works/architecture/environment-configuration.md` 完成密钥、管理员初始密码和 PG/Redis 连接配置。
 
 ## 编码与测试
@@ -116,7 +116,7 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 
 - 除命令、代码、日志和原文外，面向用户输出使用简体中文。
 - 改代码前先读同类实现并优先复用；偏离既有分层、命名、返回结构、异常、日志或配置方式时说明理由。
-- 最近一次 `git pull` 操作时间：2026-09-12 02:44:46 CST。
+- 最近一次 `git pull` 操作时间：2026-09-12 04:47:00 CST。
 - 技术方案、交互设计或关键业务规则不确定时，先给推荐方案与理由让用户确认。
 - 不在用户未要求时提交或推送；提交信息使用中文语义化风格，例如 `Agent 新增(基础功能): ...`。
 - 不提交 `data/` 本地数据库、`logs/`、个人环境配置或密钥。`prod` 绑定 `0.0.0.0:8000`，公网部署必须配合反向代理、TLS、限流和运维访问控制。

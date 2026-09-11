@@ -64,7 +64,7 @@ defineProps<{
 }
 .trade-direction-group__body { min-width: 0; }
 
-@media (max-width: 1100px) {
+@container app-viewport (max-width: 1100px) {
   .trade-direction-group-grid { grid-template-columns: minmax(0, 1fr); }
 }
 </style>

@@ -31,7 +31,7 @@ export function stockQuoteSummaryHtml(summary: StockQuoteSummaryModel, palette: 
   const time = summary.time
     ? `<div style="display:flex;justify-content:space-between;margin-bottom:3px;color:${palette.label}"><span>时间</span><span style="color:${palette.text}">${summary.time}</span></div>`
     : ''
-  return '<div style="width:max-content;max-width:calc(100vw - 32px);box-sizing:border-box;line-height:1.55">'
+  return '<div style="width:max-content;max-width:calc(100cqw - 32px);box-sizing:border-box;line-height:1.55">'
     + time + '<div style="display:flex;align-items:stretch;gap:8px">'
     + `<div style="display:flex;align-items:center;justify-content:center;align-self:stretch;padding-right:8px;border-right:1px solid ${palette.border};text-align:center">`
     + (summary.hero.label ? `<div style="color:${palette.label};font-size:11px">${summary.hero.label}</div>` : '')

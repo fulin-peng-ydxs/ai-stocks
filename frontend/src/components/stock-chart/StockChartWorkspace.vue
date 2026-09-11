@@ -678,7 +678,7 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--el-bg-color) 94%, transparent);
 }
 
-@media (max-width: 1180px) {
+@container app-viewport (max-width: 1180px) {
   .stock-chart-panel :deep(.stock-chart-legend__item:nth-child(n + 4)) {
     display: none;
   }

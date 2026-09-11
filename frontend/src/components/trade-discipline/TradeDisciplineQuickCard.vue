@@ -211,7 +211,7 @@ async function quickSubmit(ruleId: string, ruleName: string): Promise<void> {
 .quick-rule-actions { margin-top: var(--app-space-2); display: flex; justify-content: flex-end; gap: var(--app-space-1); }
 .quick-rule-actions :deep(.el-button + .el-button) { margin-left: 0; }
 .quick-rule-error { margin-top: var(--app-space-2); color: var(--el-color-danger); font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); }
-@media (max-width: 520px) {
+@container app-viewport (max-width: 520px) {
   .quick-head { align-items: flex-start; }
   .quick-rule-actions { justify-content: flex-start; flex-wrap: wrap; }
 }

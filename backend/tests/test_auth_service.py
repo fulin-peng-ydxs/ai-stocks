@@ -181,7 +181,8 @@ def test_public_config(auth_env):
     )
     for preset in cfg["appearance_presets"]:
         assert {"key", "name", "description", "config"} <= set(preset)
-        assert all(allowed.fullmatch(key) for key in preset["config"]["values"])
+        assert all(allowed.fullmatch(key) or key == "responsiveDefaults.autoScaleResponsiveExponent"
+                   for key in preset["config"]["values"])
 
 
 def test_captcha_issue(auth_env):

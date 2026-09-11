@@ -177,7 +177,7 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
 .rule-master__management.is-success { color: var(--el-color-success); }
 .rule-master__management.is-danger { color: var(--app-danger-text); }
 .rule-master__management.is-warning { color: var(--app-warning-text); }
-@media (max-width: 1100px) {
+@container app-viewport (max-width: 1100px) {
   .rule-master { width: 100%; max-height: 210px; }
 }
 </style>

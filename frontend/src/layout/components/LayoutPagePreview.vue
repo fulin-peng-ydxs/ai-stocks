@@ -295,7 +295,7 @@ function parentLabel(s: SlotSpec): string | null {
   flex-wrap: wrap;
   gap: var(--app-space-1);
 }
-@media (max-width: 980px) {
+@container app-viewport (max-width: 980px) {
   .rs-grid {
     grid-template-columns: 1fr;
   }
@@ -425,7 +425,7 @@ function parentLabel(s: SlotSpec): string | null {
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
 }
-@media (max-width: 980px) {
+@container app-viewport (max-width: 980px) {
   .preview-body {
     grid-template-columns: 1fr;
   }

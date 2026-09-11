@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearAuth, writeAuth } from '@/api/authToken'
 import {
   calculateAutoDisplayScalePercent,
   initDisplayScale,
+  setAutoScaleResponsiveExponent,
   resetDisplayScaleForTests,
   setCustomDisplayScalePercent,
   setDisplayScaleMode,
@@ -38,6 +39,7 @@ function login(): void {
 }
 
 describe('应用显示比例', () => {
+  afterEach(() => { resetDisplayScaleForTests(); vi.useRealTimers() })
   beforeEach(() => {
     vi.useRealTimers()
     vi.clearAllMocks()
@@ -52,14 +54,37 @@ describe('应用显示比例', () => {
 
   it('自动模式按屏幕有效逻辑面积双向连续调节，并保留可读边界', () => {
     expect(calculateAutoDisplayScalePercent({ width: 1366, height: 768 })).toBe(90)
-    expect(calculateAutoDisplayScalePercent({ width: 1800, height: 1169 })).toBe(96)
-    expect(calculateAutoDisplayScalePercent({ width: 1920, height: 1080 })).toBe(96)
+    expect(calculateAutoDisplayScalePercent({ width: 1800, height: 1169 })).toBe(95)
+    expect(calculateAutoDisplayScalePercent({ width: 1920, height: 1080 })).toBe(94)
     expect(calculateAutoDisplayScalePercent({ width: 2560, height: 1440 })).toBe(100)
-    expect(calculateAutoDisplayScalePercent({ width: 3360, height: 1890 })).toBe(104)
+    expect(calculateAutoDisplayScalePercent({ width: 3360, height: 1890 })).toBe(106)
     expect(calculateAutoDisplayScalePercent({ width: 7680, height: 4320 })).toBe(110)
     expect(calculateAutoDisplayScalePercent({ width: 800, height: 600 })).toBe(90)
     expect(calculateAutoDisplayScalePercent({ width: 0, height: 0 })).toBe(100)
   })
+
+  it('指数动态更新自动策略，零值有效且手动比例不受影响', () => {
+    initDisplayScale()
+    expect(useDisplayScale().effectivePercent.value).toBe(94)
+    setAutoScaleResponsiveExponent(0)
+    expect(useDisplayScale().effectivePercent.value).toBe(100)
+    setAutoScaleResponsiveExponent(0.08)
+    expect(useDisplayScale().effectivePercent.value).toBe(96)
+    setCustomDisplayScalePercent(125)
+    setAutoScaleResponsiveExponent(1)
+    expect(useDisplayScale().effectivePercent.value).toBe(125)
+    setDisplayScaleMode('auto')
+    expect(useDisplayScale().effectivePercent.value).toBe(90)
+  })
+
+  it.each([undefined, null, true, '0.2', NaN, Infinity, -0.1, 1.1])(
+    '非法或缺失指数 %s 回退默认值', (value) => {
+      initDisplayScale()
+      setAutoScaleResponsiveExponent(0)
+      setAutoScaleResponsiveExponent(value)
+      expect(useDisplayScale().effectivePercent.value).toBe(94)
+    },
+  )
 
   it('挂载前恢复自动比例并写入全局缩放事实源', () => {
     setDpr(2)
@@ -73,7 +98,7 @@ describe('应用显示比例', () => {
       String(calculateAutoDisplayScalePercent() / 100),
     )
     expect(document.documentElement.style.getPropertyValue('--app-display-scale-inverse')).toBe(
-      String(1 / 0.96),
+      String(1 / 0.94),
     )
     expect(document.documentElement.dataset.displayResolution).toBe('high')
   })
@@ -107,12 +132,12 @@ describe('应用显示比例', () => {
     vi.useFakeTimers()
     setScreenArea(3360, 1890)
     initDisplayScale()
-    expect(useDisplayScale().effectivePercent.value).toBe(104)
+    expect(useDisplayScale().effectivePercent.value).toBe(106)
 
     setScreenArea(1800, 1169)
     window.dispatchEvent(new Event('resize'))
     vi.advanceTimersByTime(130)
-    expect(useDisplayScale().effectivePercent.value).toBe(96)
+    expect(useDisplayScale().effectivePercent.value).toBe(95)
 
     setCustomDisplayScalePercent(117)
     setScreenArea(3360, 1890)
@@ -125,13 +150,30 @@ describe('应用显示比例', () => {
     vi.useFakeTimers()
     setScreenArea(1800, 1169)
     initDisplayScale()
-    expect(useDisplayScale().effectivePercent.value).toBe(96)
+    expect(useDisplayScale().effectivePercent.value).toBe(95)
 
     setScreenArea(3360, 1890)
     window.dispatchEvent(new Event('focus'))
     vi.advanceTimersByTime(130)
 
-    expect(useDisplayScale().effectivePercent.value).toBe(104)
+    expect(useDisplayScale().effectivePercent.value).toBe(106)
+  })
+
+  it('跨屏没有窗口事件时仍补算，并在隐藏期间跳过探测', () => {
+    vi.useFakeTimers()
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+    initDisplayScale()
+    expect(useDisplayScale().effectivePercent.value).toBe(94)
+    setScreenArea(3360, 1890)
+    vi.advanceTimersByTime(1500)
+    expect(useDisplayScale().effectivePercent.value).toBe(106)
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    setScreenArea(1366, 768)
+    vi.advanceTimersByTime(1500)
+    expect(useDisplayScale().effectivePercent.value).toBe(106)
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+    vi.advanceTimersByTime(1500)
+    expect(useDisplayScale().effectivePercent.value).toBe(90)
   })
 
   it('登录后复用全局用户偏好通道保存并恢复设置', async () => {

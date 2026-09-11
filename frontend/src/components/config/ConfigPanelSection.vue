@@ -230,7 +230,7 @@ function toggle() {
   display: none;
 }
 
-@media (max-width: 720px) {
+@container app-viewport (max-width: 720px) {
   .is-level-2 > .config-panel-section__head::after {
     min-width: 28px;
   }

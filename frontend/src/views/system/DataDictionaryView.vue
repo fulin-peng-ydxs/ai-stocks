@@ -870,7 +870,7 @@ html[data-layout-mode='dark'] .dict-type-status {
   border: 1px solid var(--el-border-color);
   border-radius: 3px;
 }
-@media (max-width: 980px) {
+@container app-viewport (max-width: 980px) {
   .dict-page-head {
     flex-direction: column;
   }

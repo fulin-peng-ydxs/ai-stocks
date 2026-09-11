@@ -288,7 +288,7 @@ function collapsed(key: string): boolean {
   padding-inline: 14px;
 }
 
-@media (max-width: 720px) {
+@container app-viewport (max-width: 720px) {
   .config-group-form {
     grid-template-columns: minmax(0, 1fr);
   }

@@ -694,7 +694,7 @@ onMounted(async () => {
   display: inline;
   font-style: normal;
 }
-@media (max-width: 1120px) {
+@container app-viewport (max-width: 1120px) {
   .metric-strip { grid-template-columns: repeat(4, minmax(132px, 1fr)); }
 }
 </style>

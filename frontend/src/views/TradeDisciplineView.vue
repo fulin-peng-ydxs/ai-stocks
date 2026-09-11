@@ -769,11 +769,11 @@ watch(tradeDisciplineChangeVersion, async () => {
 .rule-facts dd { margin: var(--app-space-1) 0 0; color: var(--el-text-color-primary); font-weight: var(--app-font-weight-section); }
 .readonly-note { margin-top: var(--app-space-4); color: var(--el-color-warning); }
 .history-panel { display: flex; }
-@media (max-width: 1100px) {
+@container app-viewport (max-width: 1100px) {
   .master-detail-shell { grid-template-columns: minmax(0, 1fr); overflow: auto; }
   .panel-detail { min-width: 0; overflow: visible; }
 }
-@media (max-width: 900px) {
+@container app-viewport (max-width: 900px) {
   .page-head,
   .discipline-rail { flex-direction: column; align-items: stretch; }
   .page-head-actions { justify-content: flex-end; }

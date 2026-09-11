@@ -153,12 +153,12 @@ const stripStyle = computed(() => ({
 .market-metric--lead.market-metric--active {
   background: color-mix(in srgb, var(--el-color-primary-light-9) 70%, transparent);
 }
-@media (max-width: 1180px) {
+@container app-viewport (max-width: 1180px) {
   .market-metric-strip {
     grid-template-columns: repeat(3, minmax(84px, 1fr)) !important;
   }
 }
-@media (max-height: 700px) {
+@container app-viewport (max-height: 700px) {
   .market-metric-strip {
     display: none;
   }

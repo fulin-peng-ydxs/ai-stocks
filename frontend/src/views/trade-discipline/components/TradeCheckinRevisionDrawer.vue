@@ -262,7 +262,7 @@ watch(
 .operation-section { min-width: 0; }
 .drawer-actions { justify-content: flex-end; }
 .drawer-actions span { margin-right: auto; }
-@media (max-width: 760px) {
+@container app-viewport (max-width: 760px) {
   .detail-hero, .revision-switcher { align-items: stretch; flex-direction: column; }
   .hero-facts { justify-content: flex-start; }
   .revision-switcher :deep(.app-filter-select) { width: 100%; }

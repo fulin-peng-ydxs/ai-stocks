@@ -639,7 +639,7 @@ onBeforeUnmount(() => {
 .stock-analysis-footer > span {
   flex: 1 1 auto;
 }
-@media (max-width: 1180px) {
+@container app-viewport (max-width: 1180px) {
   .stock-analysis-head {
     align-items: flex-start;
     flex-direction: column;
@@ -655,7 +655,7 @@ onBeforeUnmount(() => {
     display: none;
   }
 }
-@media (max-height: 700px) {
+@container app-viewport (max-height: 700px) {
   .stock-analysis-head {
     min-height: 60px;
   }

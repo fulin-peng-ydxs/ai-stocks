@@ -2296,7 +2296,7 @@ async function openTradeChart(row: TradeRow) {
 
     <template #overlays>
     <!-- 交易明细 → 内嵌 K 线（买卖点标注，蓝▲买/橙▼卖），不跳转 -->
-    <el-dialog v-model="chartDlg" :title="`${dlgName || ''} ${dlgCode}　交易回放`" width="90%" top="5vh">
+    <el-dialog v-model="chartDlg" :title="`${dlgName || ''} ${dlgCode}　交易回放`" width="90%" top="5cqh">
       <div v-loading="dlgLoading">
         <!-- 左上角：本笔交易摘要（收益率/买入金额/卖出金额/股数）-->
         <div v-if="dlgSummary" class="dlg-summary">
@@ -2404,7 +2404,7 @@ async function openTradeChart(row: TradeRow) {
     </el-dialog>
 
     <!-- 查看买入当日的每日榜单（全市场评分 Top 50，高亮本笔买入的票）-->
-    <el-dialog v-model="boardDlg" class="board-dlg" :title="`${boardDate}（选股信号日）每日榜单 · 全市场评分 Top 50`" width="640px" top="6vh">
+    <el-dialog v-model="boardDlg" class="board-dlg" :title="`${boardDate}（选股信号日）每日榜单 · 全市场评分 Top 50`" width="640px" top="6cqh">
       <div>
         <div class="dlg-hint" style="margin-bottom:8px">
           这是<b>选股信号日</b>（买入日的前一交易日）全市场按评分排序的榜单；<b class="bd-hit-legend">高亮行</b>=本笔买入的票，能看清它在大盘里的相对位置。
@@ -2633,7 +2633,7 @@ async function openTradeChart(row: TradeRow) {
 .legend-line { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 8px; }
 .clickable :deep(.el-table__row) { cursor: pointer; }
 
-@media (max-width: 720px) {
+@container app-viewport (max-width: 720px) {
   .page-head {
     align-items: flex-start;
     flex-direction: column;
@@ -2653,7 +2653,7 @@ async function openTradeChart(row: TradeRow) {
   }
 }
 
-@media (max-width: 480px) {
+@container app-viewport (max-width: 480px) {
   .form-card :deep(.el-card__body) {
     padding: 12px;
   }

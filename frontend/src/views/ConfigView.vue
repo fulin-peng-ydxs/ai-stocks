@@ -2364,7 +2364,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   font-style: normal;
   color: var(--el-text-color-secondary);
 }
-@media (max-width: 980px) {
+@container app-viewport (max-width: 980px) {
   .sys-tab-toolbar {
     align-items: stretch;
     flex-direction: column;

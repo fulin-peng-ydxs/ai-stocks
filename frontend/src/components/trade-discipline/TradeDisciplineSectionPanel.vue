@@ -43,7 +43,7 @@ defineProps<{
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
 }
-@media (max-width: 760px) {
+@container app-viewport (max-width: 760px) {
   .trade-discipline-section-panel__head { align-items: stretch; flex-direction: column; }
 }
 </style>

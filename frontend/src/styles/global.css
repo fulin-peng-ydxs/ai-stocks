@@ -22,6 +22,7 @@ body {
   text-rendering: optimizeLegibility;
 }
 #app {
+  container: app-viewport / size;
   /*
    * 只缩放应用画布，并用倒数尺寸补回布局空间。body 必须保持浏览器原始坐标系，
    * 否则 ECharts 指针事件和挂到 body 的 Element Plus 浮层会产生比例相关偏移。
@@ -41,18 +42,35 @@ body > [id^='el-popper-container-'] > .el-popper {
   scale: 1;
 }
 
-body > .el-message,
-body > .el-notification,
-body > .el-overlay .el-dialog,
-body > .el-overlay .el-message-box,
-body > .el-overlay .el-drawer {
-  scale: var(--app-display-scale, 1);
+/* 独立遮罩与应用根使用相同的布局画布，整屏抽屉和弹窗上限才能随比例补偿。 */
+body > .el-overlay {
+  container: app-viewport / size;
+  width: calc(100% * var(--app-display-scale-inverse, 1));
+  height: calc(100% * var(--app-display-scale-inverse, 1));
+  transform: scale(var(--app-display-scale, 1));
+  transform-origin: top left;
 }
-body > .el-message { transform-origin: center top; }
-body > .el-notification { transform-origin: right top; }
-body > .el-overlay .el-dialog,
-body > .el-overlay .el-message-box { transform-origin: center center; }
-body > .el-overlay .el-drawer { transform-origin: right top; }
+/* Element Plus 默认 overlay-dialog 使用 vh；在缩放画布内应服从父遮罩。 */
+.el-overlay-dialog {
+  height: 100%;
+}
+/* 库默认的 vh 上边距同样需要布局口径，固定宽度的业务浮层不得超出窄画布。 */
+.el-dialog {
+  --el-dialog-margin-top: 15cqh;
+  max-width: calc(100% - 32px);
+}
+.el-dialog.is-fullscreen {
+  max-width: 100%;
+}
+.el-drawer {
+  max-width: 100%;
+  max-height: 100%;
+}
+/* 消息队列按视口像素堆叠，保持其自身比例，避免动态缩放时偏移和相互覆盖。 */
+body > .el-message,
+body > .el-notification {
+  scale: 1;
+}
 
 /*
  * HelpHint 可能承载长文。其 Popper 挂在 body 并保持视口坐标，最大宽度直接按

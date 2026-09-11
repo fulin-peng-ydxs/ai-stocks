@@ -165,7 +165,7 @@ async function close(key: string) {
   color: var(--el-color-danger);
 }
 .workspace-tab-close .el-icon { font-size: var(--app-font-size-micro); }
-@media (max-width: 720px) {
+@container app-viewport (max-width: 720px) {
   .workspace-tabs { padding-inline: 10px; }
   .workspace-tabs-label { display: none; }
 }

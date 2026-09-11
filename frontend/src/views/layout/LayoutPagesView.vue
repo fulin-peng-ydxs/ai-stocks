@@ -1008,7 +1008,7 @@ onMounted(async () => {
 .user-input {
   width: 140px;
 }
-@media (max-width: 980px) {
+@container app-viewport (max-width: 980px) {
   .tab-head {
     align-items: stretch;
     flex-direction: column;

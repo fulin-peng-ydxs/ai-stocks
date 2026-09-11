@@ -71,7 +71,7 @@ defineProps<{
   font-weight: var(--app-font-weight-section);
 }
 
-@media (max-width: 1180px) {
+@container app-viewport (max-width: 1180px) {
   .stock-chart-legend {
     gap: var(--app-space-2);
   }

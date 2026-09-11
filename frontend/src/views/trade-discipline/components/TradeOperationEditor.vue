@@ -381,11 +381,11 @@ defineExpose({ expandOperation })
 .operation-grid :deep(.el-form-item__content) { display: block; }
 .operation-note { margin-bottom: 0; }
 .field-error { display: block; margin-top: var(--app-space-1); color: var(--el-color-danger); }
-@media (max-width: 1180px) {
+@container app-viewport (max-width: 1180px) {
   .operation-field--stock, .operation-field--time { grid-column: span 12; }
   .operation-field--rule, .operation-field--amount { grid-column: span 6; }
 }
-@media (max-width: 760px) {
+@container app-viewport (max-width: 760px) {
   .operation-grid { grid-template-columns: 1fr; }
   .operation-field, .operation-note { grid-column: auto; }
 }

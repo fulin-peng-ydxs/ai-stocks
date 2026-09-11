@@ -1,4 +1,11 @@
 <script setup lang="ts">
+import HelpHint from '@/components/HelpHint.vue'
+import {
+  AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT,
+  AUTO_SCALE_RESPONSIVE_EXPONENT_MIN,
+  AUTO_SCALE_RESPONSIVE_EXPONENT_MAX,
+  normalizeAutoScaleExponent,
+} from '@/layout/displayScalePolicy'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 /**
@@ -74,6 +81,7 @@ const presetForm = reactive({
   pageSize: 20, // 预设×组件默认：data-table 默认分页
   // 响应式默认（受控枚举）
   reflowBreakpoint: 1024,
+  autoScaleResponsiveExponent: AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT,
   // 视觉 token：颜色按模式两套 + 形态密度共用
   light: {} as TokenMap,
   dark: {} as TokenMap,
@@ -98,6 +106,7 @@ function presetToForm(row?: LayoutPresetRecord) {
   presetForm.drawerSize = String(values['componentDefaults.drawerSize'] ?? 'md')
   presetForm.pageSize = Number(values['componentFieldDefaults.data-table.pageSize'] ?? 20)
   presetForm.reflowBreakpoint = Number(values['responsiveDefaults.reflowBreakpoint'] ?? 1024)
+  presetForm.autoScaleResponsiveExponent = normalizeAutoScaleExponent(values['responsiveDefaults.autoScaleResponsiveExponent'])
   // token 回显：以前端内置预设该模式 token 为底（保证编辑内置时看到真实颜色），叠加后端覆盖。
   const base = getLayoutPreset(row?.key)
   for (const mode of ['light', 'dark'] as ThemeMode[]) {
@@ -121,6 +130,7 @@ function presetFormValues(): LayoutOverlayValues {
     'componentDefaults.drawerSize': presetForm.drawerSize,
     'componentFieldDefaults.data-table.pageSize': Number(presetForm.pageSize),
     'responsiveDefaults.reflowBreakpoint': Number(presetForm.reflowBreakpoint),
+    'responsiveDefaults.autoScaleResponsiveExponent': normalizeAutoScaleExponent(presetForm.autoScaleResponsiveExponent),
   }
   for (const { key } of COLOR_KEYS) {
     out[`tokens.light.${key}`] = presetForm.light[key]
@@ -408,6 +418,21 @@ onMounted(reloadPresets)
                 <el-option v-for="bp in REFLOW_BREAKPOINTS" :key="bp" :label="`${bp}px`" :value="bp" />
               </el-select>
             </el-form-item>
+            <el-form-item>
+              <template #label>
+                自动缩放激进程度
+                <HelpHint text="默认 0.10，范围 0～1。数值越大，小屏缩小、大屏放大的幅度越明显；0 表示自动保持 100%。启用当前预设并选择自动比例时生效，自动比例仍限制在 90%～110%，手动比例不受影响。" />
+              </template>
+              <el-input-number
+                v-model="presetForm.autoScaleResponsiveExponent"
+                aria-label="自动缩放激进程度"
+                :min="AUTO_SCALE_RESPONSIVE_EXPONENT_MIN"
+                :max="AUTO_SCALE_RESPONSIVE_EXPONENT_MAX"
+                :step="0.01"
+                :precision="2"
+                controls-position="right"
+              />
+            </el-form-item>
             <el-form-item label="筛选区默认展开">
               <el-switch v-model="presetForm.filterDefaultExpanded" />
             </el-form-item>
@@ -505,7 +530,7 @@ onMounted(reloadPresets)
   font-weight: var(--app-font-weight-section);
 }
 .preset-form {
-  max-height: 62vh;
+  max-height: 62cqh;
   overflow: auto;
   padding-right: 4px;
 }
@@ -541,7 +566,7 @@ onMounted(reloadPresets)
 .button-row {
   margin-top: 10px;
 }
-@media (max-width: 980px) {
+@container app-viewport (max-width: 980px) {
   .ie-grid {
     grid-template-columns: 1fr;
   }

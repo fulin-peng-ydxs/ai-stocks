@@ -1249,7 +1249,7 @@ onMounted(load)
 .txt-warn { color: var(--app-warning-text); font-weight: var(--app-font-weight-section); }
 .pager { display: flex; justify-content: flex-end; margin-top: 12px; }
 
-@media (max-width: 760px) {
+@container app-viewport (max-width: 760px) {
   .asset-search,
   .asset-category { width: 100%; }
   .asset-detail-grid { grid-template-columns: 1fr; }
@@ -1550,7 +1550,7 @@ onMounted(load)
   font-size: var(--app-font-size-table);
 }
 
-@media (max-height: 700px) {
+@container app-viewport (max-height: 700px) {
   .stat :deep(.el-card__body) { padding: 7px 6px; }
   .stat-label { font-size: var(--app-font-size-caption); }
   .stat-val { margin-top: 1px; font-size: var(--app-font-size-body); line-height: var(--app-line-height-compact); }
@@ -1565,7 +1565,7 @@ onMounted(load)
   .overview-tabs :deep(.el-tabs__header) { margin-bottom: 5px; }
 }
 
-@media (max-width: 1100px) {
+@container app-viewport (max-width: 1100px) {
   .board-hero {
     grid-template-columns: 1fr;
   }

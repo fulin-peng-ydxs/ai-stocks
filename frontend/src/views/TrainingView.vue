@@ -1085,5 +1085,5 @@ onBeforeUnmount(detachKeyboard)
 
 .up { color: var(--el-color-danger); }
 .down { color: var(--el-color-success); }
-@media (max-width: 1100px) { .round-grid { grid-template-columns: 1fr; } }
+@container app-viewport (max-width: 1100px) { .round-grid { grid-template-columns: 1fr; } }
 </style>

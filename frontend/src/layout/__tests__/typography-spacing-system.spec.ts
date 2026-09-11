@@ -61,7 +61,9 @@ describe('字体与间距设计契约', () => {
     expect(globalCss).toMatch(
       /body > \[id\^='el-popper-container-'\] > \.el-popper\s*\{\s*scale:\s*1;/,
     )
-    expect(globalCss).toContain('scale: var(--app-display-scale')
+    expect(globalCss).toContain('container: app-viewport / size')
+    expect(globalCss).toContain('--el-dialog-margin-top: 15cqh')
+    expect(globalCss).toContain('max-width: calc(100% - 32px)')
     expect(design).toContain('自动界面比例先按当前屏幕有效逻辑面积连续确定整套 UI 的视觉尺度')
     expect(pageTemplate).toContain('| 全局界面比例 |')
     expect(globalCss).toMatch(/\.page-head\s*\{[\s\S]*?align-items:\s*flex-start/)
@@ -74,6 +76,18 @@ describe('字体与间距设计契约', () => {
     expect(design).toContain('明显不是同一个连贯内容单位的信息不得直接相邻')
     expect(globalCss).toContain('.app-inline-info')
     expect(globalCss).toContain('.app-inline-info--nowrap')
+  })
+
+  it('布局尺寸断点统一使用缩放后的容器，不混用原始视口媒体查询', () => {
+    const violations: string[] = []
+    for (const file of sourceFiles(SRC_DIR)) {
+      for (const css of styleBlocks(file)) {
+        if (/@media[^{}]*\((?:min|max)-(?:width|height)\s*:/.test(css)) {
+          violations.push(relative(SRC_DIR, file))
+        }
+      }
+    }
+    expect(violations).toEqual([])
   })
 
   it('独立行内信息使用全局信息组，标签不以页面私有固定边距修补', () => {

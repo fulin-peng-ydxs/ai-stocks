@@ -1013,7 +1013,7 @@ onBeforeUnmount(stopTimer)
   line-height: var(--app-line-height-reading);
   white-space: pre-wrap;
 }
-@media (max-width: 980px) {
+@container app-viewport (max-width: 980px) {
   .audit-summary {
     grid-template-columns: repeat(2, minmax(150px, 1fr));
   }
@@ -1024,7 +1024,7 @@ onBeforeUnmount(stopTimer)
     justify-content: flex-start;
   }
 }
-@media (max-width: 720px) {
+@container app-viewport (max-width: 720px) {
   .detail-grid {
     grid-template-columns: 1fr;
   }

@@ -279,6 +279,8 @@ python -m backend.cli rebuild-price-factors  # 干净复权因子 / pre_close / 
 python -m backend.cli verify-data        # 数据正确性 + 完整性核查
 ```
 
+前端依赖安装会校验并应用 `frontend/patches/` 中的兼容补丁，不应跳过安装脚本。升级带补丁的依赖时，须同步锁定版本、补丁和真实组件交互验证；版本失配会中断安装。
+
 首次准备的依赖关系如下，顺序不要反：
 
 ```mermaid

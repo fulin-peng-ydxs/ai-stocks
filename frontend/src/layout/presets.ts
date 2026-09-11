@@ -1,3 +1,4 @@
+import { AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT } from './displayScalePolicy'
 import type { LayoutPreset, LayoutPresetKey, PresetTokens, StyleTokenConfig, ThemeMode } from './schema'
 import {
   hasDistinctTextHierarchy,
@@ -47,7 +48,7 @@ export const LAYOUT_PRESETS: Record<LayoutPresetKey, LayoutPreset> = {
       },
     ),
     componentDefaults: { density: 'standard', tableSize: 'standard', filterDefaultExpanded: true, drawerSize: 'md' },
-    responsiveDefaults: { pageGap: 14, reflowBreakpoint: 1024 },
+    responsiveDefaults: { pageGap: 14, reflowBreakpoint: 1024, autoScaleResponsiveExponent: AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT },
   },
 }
 

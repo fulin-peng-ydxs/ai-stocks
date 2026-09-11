@@ -1674,7 +1674,7 @@ button.topbar-status:focus-visible {
   font-size: var(--app-font-size-body);
 }
 
-@media (max-width: 720px) {
+@container app-viewport (max-width: 720px) {
   .topbar {
     padding: 0;
   }

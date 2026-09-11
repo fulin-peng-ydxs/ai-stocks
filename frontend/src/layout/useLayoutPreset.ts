@@ -1,3 +1,5 @@
+import { setAutoScaleResponsiveExponent } from '@/composables/useDisplayScale'
+import { normalizeAutoScaleExponent } from './displayScalePolicy'
 import { computed, ref, watch } from 'vue'
 import { DEFAULT_LAYOUT_PRESET, getLayoutPreset, LAYOUT_PRESETS } from './presets'
 import {
@@ -211,11 +213,19 @@ export function getRuntimeLayoutPreset(key: string | null | undefined): LayoutPr
       dark: mergeTokens(base.tokens.dark, overrides, 'dark'),
     },
     componentDefaults: componentDefaultsFor(base.componentDefaults, overrides),
+    responsiveDefaults: {
+      ...base.responsiveDefaults,
+      autoScaleResponsiveExponent: normalizeAutoScaleExponent(
+        overrides['responsiveDefaults.autoScaleResponsiveExponent']
+          ?? base.responsiveDefaults.autoScaleResponsiveExponent,
+      ),
+    },
   }
 }
 
 function applyPreset(key: string) {
   const preset = getRuntimeLayoutPreset(key)
+  setAutoScaleResponsiveExponent(preset.responsiveDefaults.autoScaleResponsiveExponent)
   const root = document.documentElement
   // 按当前白天/夜间模式取对应 token 集（M9：预设 × 明暗二维）
   const mode = isDark.value ? 'dark' : 'light'

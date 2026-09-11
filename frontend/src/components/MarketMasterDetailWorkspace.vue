@@ -281,7 +281,7 @@ onBeforeUnmount(() => {
 :deep(.el-table__row.stock-analysis-row--active > td:first-child) {
   box-shadow: inset 3px 0 0 var(--el-color-primary);
 }
-@media (max-width: 1180px) {
+@container app-viewport (max-width: 1180px) {
   .market-list-actions > span {
     display: none;
   }

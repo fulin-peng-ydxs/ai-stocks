@@ -158,7 +158,7 @@ const live = computed(() => props.tone === 'error' ? 'assertive' : 'polite')
   gap: var(--app-space-2);
 }
 
-@media (max-width: 720px) {
+@container app-viewport (max-width: 720px) {
   .app-status-notice:not(.app-status-notice--inline) {
     flex-wrap: wrap;
   }

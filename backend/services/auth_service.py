@@ -543,7 +543,7 @@ class AuthService:
         """登录页公开配置（无需 token）：认证开关和登录前可消费的外观预设。
 
         前端在 login_captcha_enabled 开启后直接展示图形码；captcha_after_fails 仍作为
-        后端强制要求图形码的失败次数兜底。外观预设只公开启用项的语义强调色，
+        后端强制要求图形码的失败次数兜底。外观预设只公开启用项的语义强调色和自动缩放指数，
         不下发页面、组件或其他平台布局配置。
         """
         appearance_presets: list[dict] = []
@@ -556,7 +556,10 @@ class AuthService:
                 public_values = {
                     key: value
                     for key, value in values.items()
-                    if _PUBLIC_APPEARANCE_TOKEN_RE.fullmatch(key)
+                    if (
+                        _PUBLIC_APPEARANCE_TOKEN_RE.fullmatch(key)
+                        or key == "responsiveDefaults.autoScaleResponsiveExponent"
+                    )
                     and isinstance(value, (str, int, float, bool))
                 }
                 appearance_presets.append(

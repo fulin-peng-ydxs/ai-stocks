@@ -182,7 +182,7 @@ const emit = defineEmits<{ toggle: [] }>()
   .app-summary-disclosure-card__chevron { transition: none; }
 }
 
-@media (max-width: 760px) {
+@container app-viewport (max-width: 760px) {
   .app-summary-disclosure-card__bar { flex-direction: column; }
   .app-summary-disclosure-card__tools {
     min-height: 36px;

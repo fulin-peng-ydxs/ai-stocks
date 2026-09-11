@@ -1,3 +1,4 @@
+import { AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT, normalizeAutoScaleExponent } from '@/layout/displayScalePolicy'
 import { computed, ref } from 'vue'
 import { createGlobalPreferenceSync } from './useGlobalPreferenceSync'
 
@@ -15,7 +16,13 @@ export const DISPLAY_SCALE_DEFAULT = 100
 const AUTO_SCALE_MIN = 90
 const AUTO_SCALE_MAX = 110
 const AUTO_SCALE_REFERENCE_AREA = 2560 * 1440
-const AUTO_SCALE_RESPONSIVE_EXPONENT = 0.08
+let responsiveExponent = AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT
+
+/** 预设策略只调整自动模式，不改写用户的模式或手动比例。 */
+export function setAutoScaleResponsiveExponent(value: unknown): void {
+  responsiveExponent = normalizeAutoScaleExponent(value)
+  if (initialized) refreshAutoPercent()
+}
 
 export interface DisplayScaleArea {
   width: number
@@ -32,6 +39,8 @@ const effectivePercent = computed(() => (
 
 let initialized = false
 let resizeTimer: number | undefined
+let screenTimer: number | undefined
+let lastScreenSignature = ''
 
 function clampPercent(value: unknown, fallback = DISPLAY_SCALE_DEFAULT): number {
   const numeric = Number(value)
@@ -56,6 +65,7 @@ function readAvailableScreenArea(): DisplayScaleArea {
  */
 export function calculateAutoDisplayScalePercent(
   area: DisplayScaleArea = readAvailableScreenArea(),
+  exponent: number = responsiveExponent,
 ): number {
   const width = Number(area.width)
   const height = Number(area.height)
@@ -66,7 +76,7 @@ export function calculateAutoDisplayScalePercent(
   const availableArea = width * height
   const scale = Math.pow(
     availableArea / AUTO_SCALE_REFERENCE_AREA,
-    AUTO_SCALE_RESPONSIVE_EXPONENT,
+    normalizeAutoScaleExponent(exponent),
   )
   return Math.max(AUTO_SCALE_MIN, Math.min(AUTO_SCALE_MAX, Math.round(scale * 100)))
 }
@@ -150,6 +160,16 @@ function onViewportChange(): void {
   }, 120)
 }
 
+// 浏览器把窗口移到相同 DPR 的屏幕时不保证产生 resize/focus；只比较廉价屏幕属性。
+function checkScreenChange(): void {
+  if (document.hidden) return
+  const area = readAvailableScreenArea()
+  const signature = `${area.width}:${area.height}:${window.devicePixelRatio || 1}`
+  if (signature === lastScreenSignature) return
+  lastScreenSignature = signature
+  refreshAutoPercent()
+}
+
 function onVisibilityChange(): void {
   if (!document.hidden) onViewportChange()
 }
@@ -164,6 +184,8 @@ export function initDisplayScale(): void {
     window.addEventListener('focus', onViewportChange)
     window.addEventListener('pageshow', onViewportChange)
     document.addEventListener('visibilitychange', onVisibilityChange)
+    checkScreenChange()
+    screenTimer = window.setInterval(checkScreenChange, 1500)
     initialized = true
   }
 }
@@ -194,6 +216,9 @@ export async function syncDisplayScalePreference(): Promise<void> {
 }
 
 export function resetDisplayScaleForTests(): void {
+  if (screenTimer) window.clearInterval(screenTimer)
+  screenTimer = undefined
+  lastScreenSignature = ''
   if (resizeTimer) window.clearTimeout(resizeTimer)
   resizeTimer = undefined
   if (initialized) {
@@ -203,6 +228,7 @@ export function resetDisplayScaleForTests(): void {
     document.removeEventListener('visibilitychange', onVisibilityChange)
   }
   initialized = false
+  responsiveExponent = AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT
   preferenceSync.resetForTests()
   mode.value = 'auto'
   customPercent.value = DISPLAY_SCALE_DEFAULT

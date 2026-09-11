@@ -8,6 +8,7 @@ PageLayout 声明提供，后端负责最终守门：schema 版本、路径白�
 from __future__ import annotations
 
 import json
+import math
 import re
 import threading
 from datetime import datetime
@@ -562,6 +563,15 @@ def _normalize_preset_responsive(path: str, value: Any) -> int | float:
     parts = path.split(".")
     if len(parts) == 2:
         key = parts[1]
+        if key == "autoScaleResponsiveExponent":
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not 0 <= value <= 1
+                or not math.isfinite(value)
+            ):
+                raise LayoutConfigValidationError(f"{path} 需为 0～1 的有限数值")
+            return float(value)
         if key == "reflowBreakpoint":
             try:
                 num = int(value)
