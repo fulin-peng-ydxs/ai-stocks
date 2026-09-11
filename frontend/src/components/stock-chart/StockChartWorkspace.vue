@@ -14,6 +14,7 @@ import type { Bar, IndicatorRow } from '@/api/stocks'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { useStatusColorPalette } from '@/components/chartTheme'
 import type { AuxiliaryChartType, ChartType } from '@/composables/useStockChartPreferences'
+import StockChartPanelDivider from './StockChartPanelDivider.vue'
 import StockChartPanelHeader from './StockChartPanelHeader.vue'
 import type { StockChartLegendItem } from './StockChartLegend.vue'
 import {
@@ -582,9 +583,9 @@ onBeforeUnmount(() => {
         </div>
       </article>
 
-      <div
+      <StockChartPanelDivider
         v-if="index < panels.length - 1"
-        class="stock-chart-splitter"
+        interactive
         role="separator"
         tabindex="0"
         aria-orientation="horizontal"
@@ -595,9 +596,7 @@ onBeforeUnmount(() => {
         :data-separator-index="index"
         @pointerdown="startDrag($event, index)"
         @keydown="onSeparatorKeydown($event, index)"
-      >
-        <span aria-hidden="true" />
-      </div>
+      />
     </template>
   </section>
 </template>
@@ -643,54 +642,12 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--el-bg-color) 94%, transparent);
 }
 
-.stock-chart-splitter {
-  position: relative;
-  z-index: 2;
-  flex: 0 0 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: row-resize;
-  touch-action: none;
-  background: var(--el-bg-color);
-  border-top: 1px solid var(--el-border-color-lighter);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  outline: none;
-}
-
-.stock-chart-splitter > span {
-  width: 42px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--el-border-color);
-}
-
-.stock-chart-splitter:hover,
-.stock-chart-splitter:focus-visible {
-  background: var(--el-color-primary-light-9);
-}
-
-.stock-chart-splitter:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--el-color-primary);
-}
-
-.stock-chart-splitter:hover > span,
-.stock-chart-splitter:focus-visible > span {
-  background: var(--el-color-primary);
-}
-
 @media (max-width: 1180px) {
   .stock-chart-panel :deep(.stock-chart-legend__item:nth-child(n + 4)) {
     display: none;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .stock-chart-splitter,
-  .stock-chart-splitter > span {
-    transition: none;
-  }
-}
 </style>
 
 <style>

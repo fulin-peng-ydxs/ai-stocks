@@ -9,7 +9,7 @@ import {
   KLINE_MA_DEFINITIONS,
   klineTooltipHtml,
   movingAverage,
-  oppositeSideTooltipPosition,
+  obstructionAwareTooltipPosition,
   VOLUME_MA_DEFINITIONS,
   type StockChartTheme,
 } from './chartUtils'
@@ -401,7 +401,9 @@ export function buildKlineOption(context: OptionContext) {
       ...base.tooltip,
       className: 'stock-chart-kline-tooltip',
       confine: true,
-      position: oppositeSideTooltipPosition,
+      transitionDuration: 0,
+      extraCssText: 'transition:opacity .14s ease,visibility .14s ease;',
+      position: obstructionAwareTooltipPosition,
       formatter: (params: unknown) => {
         const list = Array.isArray(params) ? params : [params]
         const index = (list[0] as { dataIndex?: unknown } | undefined)?.dataIndex

@@ -202,8 +202,8 @@ interface TooltipPositionSize {
   viewSize: [number, number]
 }
 
-/** 行情浮层固定靠光标反侧展示，避免覆盖正在查看的蜡烛。 */
-export function oppositeSideTooltipPosition(
+/** 行情浮层默认停靠左侧，仅在光标进入其实际占用区时换到右侧。 */
+export function obstructionAwareTooltipPosition(
   point: number[],
   _params: unknown,
   _dom: HTMLElement,
@@ -211,14 +211,21 @@ export function oppositeSideTooltipPosition(
   size: TooltipPositionSize,
 ): [number, number] {
   const horizontalInset = 8
+  const axisGutter = 64
   const contentWidth = Math.min(
     size.contentSize[0],
-    Math.max(0, size.viewSize[0] - horizontalInset * 2),
+    Math.max(0, size.viewSize[0] - (axisGutter + horizontalInset) * 2),
   )
-  const left = point[0] <= size.viewSize[0] / 2
-    ? size.viewSize[0] - contentWidth - horizontalInset
-    : horizontalInset
-  return [Math.max(horizontalInset, left), 6]
+  const leftDock = Math.min(
+    axisGutter + horizontalInset,
+    Math.max(horizontalInset, size.viewSize[0] - contentWidth - horizontalInset),
+  )
+  const rightDockLeft = Math.max(
+    leftDock,
+    size.viewSize[0] - axisGutter - horizontalInset - contentWidth,
+  )
+  const overlapsLeftDock = point[0] >= leftDock && point[0] <= leftDock + contentWidth
+  return [overlapsLeftDock ? rightDockLeft : leftDock, 6]
 }
 
 function priceDirectionColor(

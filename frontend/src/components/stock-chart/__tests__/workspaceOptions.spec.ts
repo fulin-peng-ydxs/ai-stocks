@@ -342,6 +342,8 @@ describe('workspaceOptions', () => {
     }
     const option = buildKlineOption(context)
     const tooltip = option.tooltip as {
+      transitionDuration: number
+      extraCssText: string
       position: (
         point: number[],
         params: unknown,
@@ -358,8 +360,13 @@ describe('workspaceOptions', () => {
       viewSize: [600, 320] as [number, number],
     }
     const tooltipElement = {} as HTMLElement
-    expect(tooltip.position([80, 100], [], tooltipElement, null, size)).toEqual([436, 6])
-    expect(tooltip.position([480, 100], [], tooltipElement, null, size)).toEqual([8, 6])
+    expect(tooltip.position([40, 100], [], tooltipElement, null, size)).toEqual([72, 6])
+    expect(tooltip.position([80, 100], [], tooltipElement, null, size)).toEqual([372, 6])
+    expect(tooltip.position([220, 100], [], tooltipElement, null, size)).toEqual([372, 6])
+    expect(tooltip.position([240, 100], [], tooltipElement, null, size)).toEqual([72, 6])
+    expect(tooltip.position([480, 100], [], tooltipElement, null, size)).toEqual([72, 6])
+    expect(tooltip.transitionDuration).toBe(0)
+    expect(tooltip.extraCssText).toContain('opacity .14s ease')
     expect(content).toContain('width:156px')
     for (const field of ['时间', '开盘', '收盘', '最高', '最低', '涨幅', '振幅', '成交量', '成交额', '换手率']) {
       expect(content).toContain(`>${field}<`)

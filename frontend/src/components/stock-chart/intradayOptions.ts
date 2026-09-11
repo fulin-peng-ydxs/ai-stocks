@@ -21,6 +21,7 @@ export interface IntradayOptionInput {
 interface IntradayPanelLayout {
   priceTop: number
   priceHeight: number
+  dividerTop: number
   volumeHeaderTop: number
   volumeTop: number
   volumeBottom: number
@@ -33,20 +34,23 @@ interface IntradayPanelLayout {
 export function intradayPanelLayout(chartHeight = 560): IntradayPanelLayout {
   const height = Math.max(340, chartHeight)
   const panelHeaderHeight = 32
-  const plotInset = 8
-  const priceTop = panelHeaderHeight + plotInset
+  const pricePlotInset = 8
+  const volumePlotInset = 12
+  const priceTop = panelHeaderHeight + pricePlotInset
   const volumeBottom = 48
   const plotHeight = Math.max(
     180,
-    height - priceTop - volumeBottom - panelHeaderHeight - (plotInset * 2),
+    height - priceTop - volumeBottom - panelHeaderHeight - pricePlotInset - volumePlotInset,
   )
   const priceHeight = Math.round(plotHeight * 0.66)
-  const volumeHeaderTop = priceTop + priceHeight + plotInset
+  const dividerTop = priceTop + priceHeight
+  const volumeHeaderTop = dividerTop + pricePlotInset
   return {
     priceTop,
     priceHeight,
+    dividerTop,
     volumeHeaderTop,
-    volumeTop: volumeHeaderTop + panelHeaderHeight + plotInset,
+    volumeTop: volumeHeaderTop + panelHeaderHeight + volumePlotInset,
     volumeBottom,
   }
 }
@@ -174,7 +178,7 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         gridIndex: 0,
         data: times,
         boundaryGap: false,
-        axisLine: { lineStyle: { color: theme.axis } },
+        axisLine: { show: false },
         axisLabel: { show: false },
         axisTick: { show: false },
         splitLine: { show: false },
@@ -184,7 +188,7 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         gridIndex: 1,
         data: times,
         boundaryGap: true,
-        axisLine: { lineStyle: { color: theme.axis } },
+        axisLine: { show: false },
         axisLabel: {
           color: theme.label,
           interval: (index: number) => {
@@ -209,7 +213,11 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         ...priceExtent,
         axisLabel: { color: theme.label, formatter: (value: number) => value.toFixed(2) },
         axisLine: { show: false },
-        splitLine: { lineStyle: { color: theme.split } },
+        splitLine: {
+          showMinLine: false,
+          showMaxLine: false,
+          lineStyle: { color: theme.split },
+        },
       },
       {
         type: 'value',
@@ -237,7 +245,11 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         splitNumber: 2,
         axisLabel: { color: theme.label, formatter: (value: number) => formatVolumeLots(value) },
         axisLine: { show: false },
-        splitLine: { lineStyle: { color: theme.split } },
+        splitLine: {
+          showMinLine: false,
+          showMaxLine: false,
+          lineStyle: { color: theme.split },
+        },
       },
     ],
     series: [

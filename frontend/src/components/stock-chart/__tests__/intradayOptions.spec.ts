@@ -54,8 +54,12 @@ describe('buildIntradayOption', () => {
     expect(option.yAxis[1].axisLabel.formatter(9.8)).toBe('0.00%')
     expect(option.yAxis.every((axis: { axisLine: { show: boolean } }) => !axis.axisLine.show))
       .toBe(true)
+    expect(option.xAxis.every((axis: { axisLine: { show: boolean } }) => !axis.axisLine.show))
+      .toBe(true)
     expect(option.yAxis[0].splitLine.lineStyle).toEqual({ color: '#split' })
     expect(option.yAxis[2].splitLine.lineStyle).toEqual({ color: '#split' })
+    expect(option.yAxis[0].splitLine).toMatchObject({ showMinLine: false, showMaxLine: false })
+    expect(option.yAxis[2].splitLine).toMatchObject({ showMinLine: false, showMaxLine: false })
     expect(option.series.map((series: { name: string }) => series.name)).toEqual(['价格', '均价', '成交量'])
     expect(option.series[0].lineStyle.color).toBe('#blue')
     expect(option.series[0].markLine).toMatchObject({
@@ -101,10 +105,12 @@ describe('buildIntradayOption', () => {
 
     expect(compact.priceTop).toBe(40)
     expect(spacious.priceTop).toBe(40)
-    expect(compact.volumeTop - compact.volumeHeaderTop).toBe(40)
-    expect(spacious.volumeTop - spacious.volumeHeaderTop).toBe(40)
+    expect(compact.volumeTop - compact.volumeHeaderTop).toBe(44)
+    expect(spacious.volumeTop - spacious.volumeHeaderTop).toBe(44)
     expect(compact.volumeHeaderTop - (compact.priceTop + compact.priceHeight)).toBe(8)
     expect(spacious.volumeHeaderTop - (spacious.priceTop + spacious.priceHeight)).toBe(8)
+    expect(compact.dividerTop).toBe(compact.priceTop + compact.priceHeight)
+    expect(spacious.dividerTop).toBe(spacious.priceTop + spacious.priceHeight)
   })
 
   it('涨跌停边界不额外扩展纵轴，避免顶部留下无意义空段', () => {

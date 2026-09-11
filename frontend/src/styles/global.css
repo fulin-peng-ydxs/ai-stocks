@@ -488,6 +488,12 @@ html.dark {
   background: var(--el-bg-color);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .stock-chart-kline-tooltip {
+    transition: none !important;
+  }
+}
+
 @media (max-width: 640px) {
   .app-metric-group {
     grid-auto-flow: row;

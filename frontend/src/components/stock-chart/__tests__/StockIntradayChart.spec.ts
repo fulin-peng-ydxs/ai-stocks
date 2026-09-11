@@ -73,11 +73,15 @@ describe('StockIntradayChart', () => {
     expect(headers[0].text()).toContain('分时')
     expect(headers[0].text()).toContain('价格')
     expect(headers[0].text()).toContain('均价')
-    expect(headers[1].text()).toBe('量能')
+    expect(headers[1].text()).toContain('量能')
+    expect(headers[1].text()).toContain('总量10手')
     expect(headers[1].attributes('style')).toContain('top:')
-    expect(headers[1].classes()).toContain('is-divided')
+    expect(headers[1].classes()).not.toContain('is-divided')
+    expect(wrapper.find('.stock-intraday-chart__divider').exists()).toBe(true)
+    expect(wrapper.find('.stock-intraday-chart__divider').attributes('style')).toContain('top:')
     expect(wrapper.classes()).toContain('app-stock-chart-frame')
-    expect(wrapper.findAll('.stock-chart-legend__marker')).toHaveLength(2)
+    expect(wrapper.findAll('.stock-chart-legend__marker')).toHaveLength(3)
+    expect(headers[1].find('.stock-chart-legend__marker').classes()).toContain('is-bar')
 
     const option = echartsMock.setOption.mock.calls.at(-1)?.[0] as Record<string, unknown>
     expect(option.legend).toBeUndefined()

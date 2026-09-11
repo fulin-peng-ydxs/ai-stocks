@@ -3,8 +3,10 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import type { IntradayPoint } from '@/api/stocks'
 import { hasRenderableChartSize } from '@/components/chartTheme'
+import StockChartPanelDivider from './StockChartPanelDivider.vue'
 import StockChartPanelHeader from './StockChartPanelHeader.vue'
 import type { StockChartLegendItem } from './StockChartLegend.vue'
+import { formatVolumeLots } from './chartUtils'
 import { buildIntradayOption, intradayPanelLayout } from './intradayOptions'
 import { useStockChartTheme } from './useStockChartTheme'
 
@@ -15,10 +17,23 @@ const props = defineProps<{
 
 const chartEl = ref<HTMLElement | null>(null)
 const volumeHeaderTop = ref(0)
+const dividerTop = ref(0)
 const theme = useStockChartTheme()
 const legendItems = computed<StockChartLegendItem[]>(() => [
   { key: 'price', label: '价格', color: theme.value.focus, marker: 'line' },
   { key: 'average', label: '均价', color: theme.value.series.kline.ma5, marker: 'line' },
+])
+const volumeTotal = computed(() => props.points.reduce((total, point) => {
+  return Number.isFinite(point.volume) && point.volume > 0 ? total + point.volume : total
+}, 0))
+const volumeLegendItems = computed<StockChartLegendItem[]>(() => [
+  {
+    key: 'volume-total',
+    label: '总量',
+    value: formatVolumeLots(volumeTotal.value),
+    color: theme.value.label,
+    marker: 'bar',
+  },
 ])
 let chart: echarts.ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
@@ -40,6 +55,7 @@ function render(): void {
   if (!chartEl.value || !hasRenderableChartSize(chartEl.value)) return
   const panelLayout = intradayPanelLayout(chartEl.value.clientHeight)
   volumeHeaderTop.value = panelLayout.volumeHeaderTop
+  dividerTop.value = panelLayout.dividerTop
   if (!chart || chart.isDisposed()) {
     chart = echarts.init(chartEl.value)
     chart.on('datazoom', onDataZoom)
@@ -85,11 +101,17 @@ onBeforeUnmount(() => {
       legend-label="分时图图例"
     />
     <div ref="chartEl" class="stock-intraday-chart__canvas" />
+    <StockChartPanelDivider
+      class="stock-intraday-chart__divider"
+      :style="{ top: `${dividerTop}px` }"
+      aria-hidden="true"
+    />
     <StockChartPanelHeader
       title="量能"
       class="stock-intraday-chart__header stock-intraday-chart__header--volume"
       :style="{ top: `${volumeHeaderTop}px` }"
-      divided
+      :items="volumeLegendItems"
+      legend-label="分钟成交量汇总"
     />
   </div>
 </template>
@@ -114,6 +136,12 @@ onBeforeUnmount(() => {
   right: 0;
   left: 0;
   pointer-events: none;
+}
+
+.stock-intraday-chart__divider {
+  position: absolute;
+  right: 0;
+  left: 0;
 }
 
 @media (max-width: 960px) {
