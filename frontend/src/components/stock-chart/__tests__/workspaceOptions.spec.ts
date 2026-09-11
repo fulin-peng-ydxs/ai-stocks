@@ -294,7 +294,7 @@ describe('workspaceOptions', () => {
     expect(panelMetricColor(theme, 'macd', 'MACD', 0.2)).toBe(theme.up)
   })
 
-  it('统一图表数值轴左置，K线右轴按最新昨收映射涨跌幅', () => {
+  it('统一图表数值轴左置，K线右轴按查询区间首根前收映射区间涨跌幅', () => {
     const rows = alignStockChartRows([
       { ...bar('2026-07-21', 9.8), pre_close: 9.7 },
       { ...bar('2026-07-22', 10), pre_close: 9.9 },
@@ -314,8 +314,8 @@ describe('workspaceOptions', () => {
     expect(kline.grid).toMatchObject({ left: 64, right: 64 })
     expect(kline.yAxis.map((axis: { position: string }) => axis.position))
       .toEqual(['left', 'right'])
-    expect(kline.yAxis[1].axisLabel.formatter(9.9)).toBe('0.00%')
-    expect(kline.yAxis[1].axisLabel.formatter(10.89)).toBe('+10.00%')
+    expect(kline.yAxis[1].axisLabel.formatter(9.7)).toBe('0.00%')
+    expect(kline.yAxis[1].axisLabel.formatter(10.67)).toBe('+10.00%')
     expect(kline.series.at(-1)).toMatchObject({
       name: '__price_axis_sync__',
       yAxisIndex: 1,
@@ -328,6 +328,22 @@ describe('workspaceOptions', () => {
     expect(kline.yAxis[0].axisLabel.formatter(4.2)).toBe('4.20')
     expect(macd.yAxis.axisLabel.formatter(0.280109715605261)).toBe('0.28')
     expect(macd.yAxis.axisLabel.formatter(-0.0001)).toBe('0.00')
+  })
+
+  it('区间首根缺少前收时使用预热区最后收盘作为右轴基准', () => {
+    const first = { ...bar('2026-07-21', 9.8), pre_close: null }
+    const rows = alignStockChartRows([first, bar('2026-07-22', 10)], [])
+    const context = {
+      rows,
+      warmupBars: [bar('2026-07-20', 9.7)],
+      theme,
+      isBottom: false,
+      zoomStart: 0,
+      zoomEnd: 100,
+    }
+
+    const kline = buildKlineOption(context) as any
+    expect(kline.yAxis[1].axisLabel.formatter(9.7)).toBe('0.00%')
   })
 
   it('仅 K线显示定宽行情 tooltip，自动避开当前蜡烛并用涨跌色突出关键值', () => {

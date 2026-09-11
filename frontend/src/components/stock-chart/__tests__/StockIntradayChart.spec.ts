@@ -58,6 +58,16 @@ const points: IntradayPoint[] = [
     amount: 10_100,
     average_price: 10.1,
   },
+  {
+    time: '09:32',
+    open: 10.1,
+    high: 10.25,
+    low: 10.05,
+    close: 10.2,
+    volume: 20,
+    amount: 20_400,
+    average_price: 10.17,
+  },
 ]
 
 describe('StockIntradayChart', () => {
@@ -71,10 +81,10 @@ describe('StockIntradayChart', () => {
     const headers = wrapper.findAll('.stock-chart-panel__header')
     expect(headers).toHaveLength(2)
     expect(headers[0].text()).toContain('分时')
-    expect(headers[0].text()).toContain('价格')
-    expect(headers[0].text()).toContain('均价')
+    expect(headers[0].text()).toContain('价格10.20')
+    expect(headers[0].text()).toContain('均价10.17')
     expect(headers[1].text()).toContain('量能')
-    expect(headers[1].text()).toContain('总量10手')
+    expect(headers[1].text()).toContain('总量30手')
     expect(headers[1].attributes('style')).toContain('top:')
     expect(headers[1].classes()).not.toContain('is-divided')
     expect(wrapper.find('.stock-intraday-chart__divider').exists()).toBe(true)
@@ -87,6 +97,20 @@ describe('StockIntradayChart', () => {
     expect(option.legend).toBeUndefined()
     expect(option.title).toBeUndefined()
     expect(option.graphic).toBeUndefined()
+
+    const pointerHandler = echartsMock.on.mock.calls
+      .find(([event]) => event === 'updateAxisPointer')?.[1]
+    expect(pointerHandler).toBeTypeOf('function')
+    pointerHandler({ seriesDataIndices: [{ dataIndex: 0 }] })
+    await nextTick()
+    expect(headers[0].text()).toContain('价格10.10')
+    expect(headers[0].text()).toContain('均价10.10')
+
+    const globalOutHandler = echartsMock.on.mock.calls
+      .find(([event]) => event === 'globalout')?.[1]
+    globalOutHandler()
+    await nextTick()
+    expect(headers[0].text()).toContain('价格10.20')
     wrapper.unmount()
   })
 })

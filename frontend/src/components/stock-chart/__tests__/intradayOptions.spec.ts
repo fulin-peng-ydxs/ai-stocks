@@ -52,6 +52,14 @@ describe('buildIntradayOption', () => {
     expect(option.yAxis.map((axis: { position: string }) => axis.position))
       .toEqual(['left', 'right', 'left'])
     expect(option.yAxis[1].axisLabel.formatter(9.8)).toBe('0.00%')
+    expect(option.yAxis[0].axisLabel).toMatchObject({
+      showMinLabel: false,
+      showMaxLabel: false,
+    })
+    expect(option.yAxis[1].axisLabel).toMatchObject({
+      showMinLabel: false,
+      showMaxLabel: false,
+    })
     expect(option.yAxis.every((axis: { axisLine: { show: boolean } }) => !axis.axisLine.show))
       .toBe(true)
     expect(option.xAxis.every((axis: { axisLine: { show: boolean } }) => !axis.axisLine.show))

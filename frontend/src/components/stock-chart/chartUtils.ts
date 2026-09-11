@@ -188,6 +188,32 @@ export function formatChartAxisNumber(value: number, digits = 2): string {
   return formatChartNumber(Math.abs(value) < zeroThreshold ? 0 : value, digits)
 }
 
+export interface StockChartAxisPointerEvent {
+  axesInfo?: Array<{ value?: string | number }>
+  seriesDataIndices?: Array<{ dataIndex?: number }>
+}
+
+/** 日线与分时共享光标索引解析，兼容 ECharts 返回序列索引、类目值或数值索引。 */
+export function stockChartAxisPointerIndex(
+  event: StockChartAxisPointerEvent,
+  categories: readonly string[],
+): number | null {
+  if (!categories.length) return null
+  const seriesIndex = event.seriesDataIndices?.[0]?.dataIndex
+  if (typeof seriesIndex === 'number' && Number.isFinite(seriesIndex)) {
+    return Math.max(0, Math.min(Math.round(seriesIndex), categories.length - 1))
+  }
+  const value = event.axesInfo?.[0]?.value
+  if (typeof value === 'string') {
+    const index = categories.indexOf(value)
+    return index >= 0 ? index : null
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.min(Math.round(value), categories.length - 1))
+  }
+  return null
+}
+
 type KlineTooltipPalette = Pick<StockChartTheme, 'text' | 'label' | 'up' | 'down'>
 
 function tooltipRow(label: string, value: string, palette: KlineTooltipPalette, color?: string) {

@@ -211,7 +211,12 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         position: 'left',
         scale: true,
         ...priceExtent,
-        axisLabel: { color: theme.label, formatter: (value: number) => value.toFixed(2) },
+        axisLabel: {
+          color: theme.label,
+          showMinLabel: false,
+          showMaxLabel: false,
+          formatter: (value: number) => value.toFixed(2),
+        },
         axisLine: { show: false },
         splitLine: {
           showMinLine: false,
@@ -227,6 +232,8 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         ...priceExtent,
         axisLabel: {
           show: preClose != null && preClose > 0,
+          showMinLabel: false,
+          showMaxLabel: false,
           color: theme.label,
           formatter: (value: number) => {
             if (preClose == null || preClose <= 0) return '--'

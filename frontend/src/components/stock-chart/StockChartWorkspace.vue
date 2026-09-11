@@ -21,6 +21,7 @@ import {
   KLINE_MA_DEFINITIONS,
   VOLUME_MA_DEFINITIONS,
   nextStockChartWorkspaceGroupId,
+  stockChartAxisPointerIndex,
 } from './chartUtils'
 import { useStockChartTheme } from './useStockChartTheme'
 import {
@@ -220,18 +221,8 @@ function onAxisPointer(event: {
   axesInfo?: Array<{ value?: string | number }>
   seriesDataIndices?: Array<{ dataIndex?: number }>
 }): void {
-  const seriesIndex = event.seriesDataIndices?.[0]?.dataIndex
-  if (typeof seriesIndex === 'number') {
-    activeIndex.value = seriesIndex
-    return
-  }
-  const value = event.axesInfo?.[0]?.value
-  if (typeof value === 'string') {
-    const index = rows.value.findIndex((row) => row.bar.date === value)
-    if (index >= 0) activeIndex.value = index
-  } else if (typeof value === 'number') {
-    activeIndex.value = Math.max(0, Math.min(Math.round(value), lastIndex.value))
-  }
+  const index = stockChartAxisPointerIndex(event, rows.value.map((row) => row.bar.date))
+  if (index != null) activeIndex.value = index
 }
 
 function normalizeZoomRange(start: number, end: number): ZoomRange {

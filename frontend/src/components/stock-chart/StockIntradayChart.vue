@@ -6,7 +6,11 @@ import { hasRenderableChartSize } from '@/components/chartTheme'
 import StockChartPanelDivider from './StockChartPanelDivider.vue'
 import StockChartPanelHeader from './StockChartPanelHeader.vue'
 import type { StockChartLegendItem } from './StockChartLegend.vue'
-import { formatVolumeLots } from './chartUtils'
+import {
+  formatChartNumber,
+  formatVolumeLots,
+  stockChartAxisPointerIndex,
+} from './chartUtils'
 import { buildIntradayOption, intradayPanelLayout } from './intradayOptions'
 import { useStockChartTheme } from './useStockChartTheme'
 
@@ -19,9 +23,27 @@ const chartEl = ref<HTMLElement | null>(null)
 const volumeHeaderTop = ref(0)
 const dividerTop = ref(0)
 const theme = useStockChartTheme()
+const activeIndex = ref<number | null>(null)
+const metricPoint = computed(() => {
+  const fallbackIndex = props.points.length - 1
+  const index = activeIndex.value == null ? fallbackIndex : activeIndex.value
+  return index >= 0 ? props.points[index] : undefined
+})
 const legendItems = computed<StockChartLegendItem[]>(() => [
-  { key: 'price', label: '价格', color: theme.value.focus, marker: 'line' },
-  { key: 'average', label: '均价', color: theme.value.series.kline.ma5, marker: 'line' },
+  {
+    key: 'price',
+    label: '价格',
+    value: formatChartNumber(metricPoint.value?.close),
+    color: theme.value.focus,
+    marker: 'line',
+  },
+  {
+    key: 'average',
+    label: '均价',
+    value: formatChartNumber(metricPoint.value?.average_price),
+    color: theme.value.series.kline.ma5,
+    marker: 'line',
+  },
 ])
 const volumeTotal = computed(() => props.points.reduce((total, point) => {
   return Number.isFinite(point.volume) && point.volume > 0 ? total + point.volume : total
@@ -51,6 +73,14 @@ function onDataZoom(event: unknown): void {
   if (typeof payload.end === 'number') zoomEnd = payload.end
 }
 
+function onAxisPointer(event: unknown): void {
+  const index = stockChartAxisPointerIndex(
+    event as Parameters<typeof stockChartAxisPointerIndex>[0],
+    props.points.map((point) => point.time),
+  )
+  if (index != null) activeIndex.value = index
+}
+
 function render(): void {
   if (!chartEl.value || !hasRenderableChartSize(chartEl.value)) return
   const panelLayout = intradayPanelLayout(chartEl.value.clientHeight)
@@ -59,6 +89,8 @@ function render(): void {
   if (!chart || chart.isDisposed()) {
     chart = echarts.init(chartEl.value)
     chart.on('datazoom', onDataZoom)
+    chart.on('updateAxisPointer', onAxisPointer)
+    chart.on('globalout', () => { activeIndex.value = null })
   }
   chart.setOption(buildIntradayOption({
     points: props.points,
@@ -72,6 +104,7 @@ function render(): void {
 }
 
 watch([() => props.points, () => props.preClose, theme], async () => {
+  activeIndex.value = null
   await nextTick()
   render()
 }, { deep: true })

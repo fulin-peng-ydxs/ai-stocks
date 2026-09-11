@@ -390,10 +390,15 @@ function commonOption(context: OptionContext, showPointerDate: boolean) {
 export function buildKlineOption(context: OptionContext) {
   const bars = context.rows.map((row) => row.bar)
   const allCloses = [...context.warmupBars, ...bars].map((bar) => bar.close)
-  const referencePrice = [...bars]
-    .reverse()
-    .find((bar) => bar.pre_close != null && Number.isFinite(bar.pre_close) && bar.pre_close > 0)
-    ?.pre_close ?? null
+  const firstPreClose = bars[0]?.pre_close
+  const warmupClose = context.warmupBars.at(-1)?.close
+  const referencePrice = firstPreClose != null
+    && Number.isFinite(firstPreClose)
+    && firstPreClose > 0
+    ? firstPreClose
+    : warmupClose != null && Number.isFinite(warmupClose) && warmupClose > 0
+      ? warmupClose
+      : null
   const base = commonOption(context, true)
   return {
     ...base,
