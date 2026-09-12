@@ -50,6 +50,7 @@ class ResizeObserverMock {
   static instances: ResizeObserverMock[] = []
 
   observe = vi.fn()
+  unobserve = vi.fn()
   disconnect = vi.fn()
   private readonly callback: ResizeObserverCallback
 
@@ -193,9 +194,9 @@ describe('StockChartWorkspace', () => {
       fitAvailableHeight: true,
     })
 
-    expect(wrapper.attributes('data-min-height')).toBe('226')
+    expect(wrapper.attributes('data-min-height')).toBe('234')
     expect(wrapper.find('.stock-chart-panel--kline').attributes('style')).toContain('min-height: 150px')
-    expect(wrapper.find('.stock-chart-panel--volume').attributes('style')).toContain('min-height: 68px')
+    expect(wrapper.find('.stock-chart-panel--volume').attributes('style')).toContain('min-height: 76px')
     wrapper.unmount()
   })
 
@@ -240,6 +241,22 @@ describe('StockChartWorkspace', () => {
     expect(latestOptions[0].dataZoom).toHaveLength(1)
     expect(latestOptions[1].dataZoom).toHaveLength(1)
     expect(latestOptions[2].dataZoom).toHaveLength(2)
+  })
+
+  it('所有消费页面都按底部画布真实高度统一收展可视滑动条', async () => {
+    mockClientHeight = 60
+    const wrapper = await mountWorkspace({ fitAvailableHeight: true })
+    const bottomChart = echartsMock.instances[2]
+
+    expect(bottomChart.setOption.mock.calls.at(-1)?.[0].dataZoom).toHaveLength(1)
+
+    mockClientHeight = 120
+    ResizeObserverMock.instances[0]?.trigger()
+    await nextTick()
+    await nextTick()
+
+    expect(bottomChart.setOption.mock.calls.at(-1)?.[0].dataZoom).toHaveLength(2)
+    wrapper.unmount()
   })
 
   it('只在 K 线标题尾部承载调用方提供的工作区操作', async () => {
@@ -544,7 +561,7 @@ describe('StockChartWorkspace', () => {
     await nextTick()
     expect(echartsMock.init).toHaveBeenCalledTimes(3)
     expect(ResizeObserverMock.instances).toHaveLength(1)
-    expect(ResizeObserverMock.instances[0].observe).toHaveBeenCalledTimes(1)
+    expect(ResizeObserverMock.instances[0].observe).toHaveBeenCalledTimes(4)
 
     visible.value = false
     await nextTick()
@@ -562,7 +579,7 @@ describe('StockChartWorkspace', () => {
     )).toBe(true)
     expect(ResizeObserverMock.instances).toHaveLength(2)
     expect(ResizeObserverMock.instances[0].disconnect).toHaveBeenCalledTimes(1)
-    expect(ResizeObserverMock.instances[1].observe).toHaveBeenCalledTimes(1)
+    expect(ResizeObserverMock.instances[1].observe).toHaveBeenCalledTimes(4)
 
     wrapper.unmount()
     expect(ResizeObserverMock.instances[1].disconnect).toHaveBeenCalledTimes(1)

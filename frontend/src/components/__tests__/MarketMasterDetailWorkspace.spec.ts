@@ -72,7 +72,7 @@ describe('MarketMasterDetailWorkspace', () => {
     expect(separator.attributes('aria-valuenow')).toBe('1100')
   })
 
-  it('指针拖动按详情最小宽度钳制，卸载时清理全局拖动态', async () => {
+  it('指针拖动按共享比例上限钳制，卸载时清理全局拖动态', async () => {
     const originalRect = HTMLElement.prototype.getBoundingClientRect
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1100)
     HTMLElement.prototype.getBoundingClientRect = () => ({ width: 1100 } as DOMRect)
@@ -92,8 +92,8 @@ describe('MarketMasterDetailWorkspace', () => {
     window.dispatchEvent(pointerEvent('pointermove', 7, 900))
     await nextTick()
 
-    expect(separator.attributes('aria-valuemax')).toBe('848')
-    expect(separator.attributes('aria-valuenow')).toBe('848')
+    expect(separator.attributes('aria-valuemax')).toBe('770')
+    expect(separator.attributes('aria-valuenow')).toBe('770')
     expect(document.body.classList.contains('app-split-workspace-is-resizing')).toBe(true)
     wrapper.unmount()
     HTMLElement.prototype.getBoundingClientRect = originalRect
@@ -148,7 +148,7 @@ describe('MarketMasterDetailWorkspace', () => {
     wrapper.unmount()
   })
 
-  it('宽屏响应式默认值保持约 45% 且只受详情最小宽度约束', async () => {
+  it('宽屏响应式默认值保持约 45% 且拖动边界遵守共享比例约束', async () => {
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(4000)
     const wrapper = mount(MarketMasterDetailWorkspace, {
       props: {
@@ -163,7 +163,7 @@ describe('MarketMasterDetailWorkspace', () => {
     await nextTick()
 
     expect(wrapper.get('[role="separator"]').attributes('aria-valuenow')).toBe('1800')
-    expect(wrapper.get('[role="separator"]').attributes('aria-valuemax')).toBe('3748')
+    expect(wrapper.get('[role="separator"]').attributes('aria-valuemax')).toBe('2800')
     wrapper.unmount()
   })
 

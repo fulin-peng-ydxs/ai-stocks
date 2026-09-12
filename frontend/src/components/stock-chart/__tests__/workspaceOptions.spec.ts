@@ -4,6 +4,7 @@ import {
   adjustAdjacentRatios,
   alignStockChartRows,
   BOTTOM_GRID_HEIGHT,
+  AXIS_ONLY_BOTTOM_GRID_HEIGHT,
   buildKlineOption,
   buildMacdOption,
   buildVolumeOption,
@@ -219,6 +220,21 @@ describe('workspaceOptions', () => {
       bottom: 4,
       height: 14,
     })
+  })
+
+  it('底部画布不足时统一隐藏可视滑动条并保留日期轴空间', () => {
+    const option = buildVolumeOption({
+      rows: alignStockChartRows([bar('2026-07-21')], []),
+      warmupBars: [],
+      theme,
+      isBottom: true,
+      panelHeight: 44,
+      zoomStart: 0,
+      zoomEnd: 100,
+    })
+
+    expect(option.grid).toMatchObject({ top: 8, bottom: AXIS_ONLY_BOTTOM_GRID_HEIGHT })
+    expect(option.dataZoom).toHaveLength(1)
   })
 
   it('K线、量能和 MACD 柱宽按主图到辅助图明显递减', () => {

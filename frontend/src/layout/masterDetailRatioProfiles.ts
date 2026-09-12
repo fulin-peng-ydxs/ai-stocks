@@ -7,6 +7,9 @@ import {
 
 export const MASTER_DETAIL_PROFILE_MATCH_TOLERANCE = SIZE_PROFILE_MATCH_TOLERANCE
 export const MASTER_DETAIL_PROFILE_MERGE_TOLERANCE = SIZE_PROFILE_MERGE_TOLERANCE
+export const MASTER_DETAIL_RATIO_MIN = 30
+export const MASTER_DETAIL_RATIO_MAX = 70
+export const MASTER_DETAIL_RATIO_DEFAULT = 45
 
 export interface MasterDetailRatioProfile {
   width: number
@@ -34,7 +37,13 @@ export function normalizeMasterDetailRatioProfiles(value: unknown): MasterDetail
     if (!item || typeof item !== 'object') return []
     const width = finiteRounded((item as { width?: unknown }).width)
     const ratio = finiteRounded((item as { ratio?: unknown }).ratio)
-    if (width === undefined || width <= 0 || ratio === undefined || ratio < 30 || ratio > 70) return []
+    if (
+      width === undefined
+      || width <= 0
+      || ratio === undefined
+      || ratio < MASTER_DETAIL_RATIO_MIN
+      || ratio > MASTER_DETAIL_RATIO_MAX
+    ) return []
     return [{ width, ratio }]
   })
   return {
@@ -63,7 +72,13 @@ export function upsertMasterDetailRatioProfile(
   const normalized = normalizeMasterDetailRatioProfiles(value)
   const width = finiteRounded(sample.width)
   const ratio = finiteRounded(sample.ratio)
-  if (width === undefined || width <= 0 || ratio === undefined || ratio < 30 || ratio > 70) return normalized
+  if (
+    width === undefined
+    || width <= 0
+    || ratio === undefined
+    || ratio < MASTER_DETAIL_RATIO_MIN
+    || ratio > MASTER_DETAIL_RATIO_MAX
+  ) return normalized
   const nearest = normalized.profiles
     .map((profile, index) => ({ index, distance: sizeProfileDistance({ width }, profile) }))
     .sort((left, right) => left.distance - right.distance)[0]

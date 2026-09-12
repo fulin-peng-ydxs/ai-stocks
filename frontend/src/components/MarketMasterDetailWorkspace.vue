@@ -57,7 +57,6 @@ defineExpose({ openCompactAnalysis, closeCompactAnalysis })
     :primary-only-min-width="640"
     :secondary-drawer-title="analysisDrawerTitle || '走势分析'"
     separator-label="调整列表与走势分析宽度"
-    drawer-class="market-master-detail-analysis-drawer"
     :test-id-prefix="testIdPrefix"
     splitter-test-id="market-master-detail-splitter"
     :secondary-drawer-test-id="`${testIdPrefix}-analysis-drawer`"
@@ -161,16 +160,5 @@ defineExpose({ openCompactAnalysis, closeCompactAnalysis })
   .market-list-actions > span {
     display: none;
   }
-}
-</style>
-
-<style>
-.market-master-detail-analysis-drawer .el-drawer__body {
-  display: flex;
-  min-height: 0;
-  padding: var(--app-space-3);
-}
-.market-master-detail-analysis-drawer .stock-analysis-panel {
-  flex: 1 1 auto;
 }
 </style>

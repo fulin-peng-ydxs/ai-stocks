@@ -14,6 +14,11 @@ import {
   createDefaultStockChartPreferences,
   normalizeStockChartPreferences,
 } from '@/composables/useStockChartPreferences'
+import {
+  MASTER_DETAIL_RATIO_DEFAULT,
+  MASTER_DETAIL_RATIO_MAX,
+  MASTER_DETAIL_RATIO_MIN,
+} from './masterDetailRatioProfiles'
 
 /** 可覆盖层级（不含 default：default 即 slot.config 代码默认）。 */
 export type ComponentConfigLayer = 'preset' | 'page' | 'user'
@@ -136,9 +141,9 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       label: '左栏默认占比',
       control: 'int',
       layers: ['preset', 'page', 'user'],
-      min: 30,
-      max: 70,
-      default: 45,
+      min: MASTER_DETAIL_RATIO_MIN,
+      max: MASTER_DETAIL_RATIO_MAX,
+      default: MASTER_DETAIL_RATIO_DEFAULT,
       highFrequency: true,
       help: '没有匹配的尺寸比例档案时，左栏按工作台容器宽度使用该默认占比。',
       applicability: 'explicit',

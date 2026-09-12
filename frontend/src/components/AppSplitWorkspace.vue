@@ -5,12 +5,12 @@ import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue
 import { viewportDeltaToLayoutPixels } from '@/utils/displayScaleGeometry'
 import {
   closestMasterDetailRatioProfile,
+  MASTER_DETAIL_RATIO_DEFAULT,
+  MASTER_DETAIL_RATIO_MAX,
+  MASTER_DETAIL_RATIO_MIN,
   type MasterDetailRatioSample,
 } from '@/layout/masterDetailRatioProfiles'
 
-const RATIO_MIN = 30
-const RATIO_MAX = 70
-const RATIO_DEFAULT = 45
 const SPLITTER_WIDTH = 12
 const KEYBOARD_STEP = 16
 
@@ -31,7 +31,7 @@ const props = withDefaults(defineProps<{
   secondaryDrawerTestId?: string
 }>(), {
   compact: false,
-  defaultPrimaryRatio: RATIO_DEFAULT,
+  defaultPrimaryRatio: MASTER_DETAIL_RATIO_DEFAULT,
   primaryMinWidth: 360,
   primaryOnlyMinWidth: 360,
   secondaryMinWidth: 240,
@@ -65,8 +65,8 @@ const matchedProfile = computed(() => closestMasterDetailRatioProfile(
 ))
 
 function clampRatio(value: number): number {
-  const finite = Number.isFinite(value) ? Math.round(value) : RATIO_DEFAULT
-  return Math.min(RATIO_MAX, Math.max(RATIO_MIN, finite))
+  const finite = Number.isFinite(value) ? Math.round(value) : MASTER_DETAIL_RATIO_DEFAULT
+  return Math.min(MASTER_DETAIL_RATIO_MAX, Math.max(MASTER_DETAIL_RATIO_MIN, finite))
 }
 
 const configuredPrimaryRatio = computed(() => clampRatio(
@@ -78,16 +78,21 @@ const compactSecondaryOpen = ref(false)
 const autoCompact = computed(() => props.compact || (
   workspaceWidth.value > 0 && workspaceWidth.value <= props.compactMaxWidth
 ))
+const currentMinWidth = computed(() => workspaceWidth.value
+  ? Math.max(
+      props.primaryMinWidth,
+      Math.round(workspaceWidth.value * MASTER_DETAIL_RATIO_MIN / 100),
+    )
+  : props.primaryMinWidth)
 const currentMaxWidth = computed(() => {
-  if (!workspaceWidth.value) return props.primaryMinWidth
-  return Math.max(
-    props.primaryMinWidth,
-    workspaceWidth.value - props.secondaryMinWidth - SPLITTER_WIDTH,
-  )
+  if (!workspaceWidth.value) return currentMinWidth.value
+  const contentSafeMax = workspaceWidth.value - props.secondaryMinWidth - SPLITTER_WIDTH
+  const ratioMax = Math.round(workspaceWidth.value * MASTER_DETAIL_RATIO_MAX / 100)
+  return Math.max(currentMinWidth.value, Math.min(contentSafeMax, ratioMax))
 })
 
 function clampSessionWidth(value: number): number {
-  return Math.min(currentMaxWidth.value, Math.max(props.primaryMinWidth, Math.round(value)))
+  return Math.min(currentMaxWidth.value, Math.max(currentMinWidth.value, Math.round(value)))
 }
 
 function responsivePrimaryWidth(ratio: number): number {
@@ -112,6 +117,10 @@ const workspaceStyle = computed(() => ({
       ? props.primaryMinWidth + SPLITTER_WIDTH + props.secondaryMinWidth
       : props.primaryOnlyMinWidth}px`,
 }))
+const drawerClassName = computed(() => [
+  'app-split-workspace-drawer',
+  props.drawerClass === 'app-split-workspace-drawer' ? '' : props.drawerClass,
+].filter(Boolean).join(' '))
 const effectivePrimaryWidth = computed(() => clampSessionWidth(primaryWidth.value))
 const effectivePrimaryRatio = computed(() => workspaceWidth.value
   ? clampRatio(effectivePrimaryWidth.value / workspaceWidth.value * 100)
@@ -182,7 +191,7 @@ function onSeparatorKeydown(event: KeyboardEvent): void {
   let next: number | undefined
   if (event.key === 'ArrowLeft') next = primaryWidth.value - KEYBOARD_STEP
   if (event.key === 'ArrowRight') next = primaryWidth.value + KEYBOARD_STEP
-  if (event.key === 'Home') next = props.primaryMinWidth
+  if (event.key === 'Home') next = currentMinWidth.value
   if (event.key === 'End') next = currentMaxWidth.value
   if (next === undefined) return
   event.preventDefault()
@@ -253,7 +262,7 @@ onBeforeUnmount(() => {
       tabindex="0"
       aria-orientation="vertical"
       :aria-label="separatorLabel"
-      :aria-valuemin="primaryMinWidth"
+      :aria-valuemin="currentMinWidth"
       :aria-valuemax="currentMaxWidth"
       :aria-valuenow="clampSessionWidth(primaryWidth)"
       :data-testid="splitterTestId || `${testIdPrefix}-splitter`"
@@ -274,11 +283,13 @@ onBeforeUnmount(() => {
     v-model="compactSecondaryOpen"
     :title="secondaryDrawerTitle"
     size="full"
-    :modal-class="drawerClass"
+    :modal-class="drawerClassName"
     :data-testid="secondaryDrawerTestId || `${testIdPrefix}-secondary-drawer`"
     @closed="emit('compactSecondaryClose')"
   >
-    <slot name="secondary" />
+    <div class="app-split-workspace__drawer-secondary">
+      <slot name="secondary" />
+    </div>
   </PageDrawer>
 </template>
 
@@ -301,7 +312,15 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 .app-split-workspace__primary > :deep(*),
-.app-split-workspace__secondary > :deep(*) {
+.app-split-workspace__secondary > :deep(*),
+.app-split-workspace__drawer-secondary > :deep(*) {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.app-split-workspace__drawer-secondary {
+  display: flex;
   flex: 1 1 auto;
   width: 100%;
   min-width: 0;

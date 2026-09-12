@@ -41,7 +41,8 @@ export interface SignalDatum {
 export const KLINE_MIN_HEIGHT = 250
 export const AUXILIARY_MIN_HEIGHT = 126
 export const FIT_KLINE_MIN_HEIGHT = 150
-export const FIT_AUXILIARY_MIN_HEIGHT = 68
+// 32px 标题 + 8px 顶边界 + 24px 日期轴 + 12px 最小绘图区。
+export const FIT_AUXILIARY_MIN_HEIGHT = 76
 export const WORKSPACE_MIN_HEIGHT = 650
 export const SPLITTER_SIZE = 8
 export const KEYBOARD_RATIO_STEP = 0.02
@@ -49,6 +50,8 @@ export const KLINE_BAR_WIDTH = '72%'
 export const VOLUME_BAR_WIDTH = '44%'
 export const MACD_BAR_WIDTH = '24%'
 export const BOTTOM_GRID_HEIGHT = 52
+export const AXIS_ONLY_BOTTOM_GRID_HEIGHT = 24
+export const VISIBLE_SLIDER_MIN_CANVAS_HEIGHT = 84
 
 export function alignStockChartRows(
   bars: readonly Bar[],
@@ -280,6 +283,7 @@ interface OptionContext {
   warmupBars: readonly Bar[]
   theme: StockChartTheme
   isBottom: boolean
+  panelHeight?: number
   zoomStart: number
   zoomEnd: number
   markers?: readonly TradeMarker[]
@@ -287,6 +291,13 @@ interface OptionContext {
   sellMarkerColor?: string
   clickableCandles?: boolean
   candlestickRect?: (params: unknown) => TooltipTargetRect | null
+}
+
+/** 所有股票图表按真实画布高度统一决定是否容纳可视缩放条。 */
+export function stockChartVisibleSlider(panelHeight?: number): boolean {
+  return !Number.isFinite(panelHeight)
+    || Number(panelHeight) <= 0
+    || Number(panelHeight) >= VISIBLE_SLIDER_MIN_CANVAS_HEIGHT
 }
 
 /** 买卖点 markPoint：买=蓝▲置于最低价下方，卖=橙▼置于最高价上方（语义色由组件按主题传入）。 */
@@ -324,12 +335,15 @@ function buildTradeMarkPoints(context: OptionContext) {
 
 function commonAxes(context: OptionContext, showPointerDate: boolean) {
   const dates = context.rows.map((row) => row.bar.date)
+  const showSlider = context.isBottom && stockChartVisibleSlider(context.panelHeight)
   return {
     grid: {
       left: 64,
       right: 64,
       top: 8,
-      bottom: context.isBottom ? BOTTOM_GRID_HEIGHT : 8,
+      bottom: context.isBottom
+        ? (showSlider ? BOTTOM_GRID_HEIGHT : AXIS_ONLY_BOTTOM_GRID_HEIGHT)
+        : 8,
     },
     xAxis: {
       type: 'category',
@@ -359,7 +373,7 @@ function commonAxes(context: OptionContext, showPointerDate: boolean) {
         start: context.zoomStart,
         end: context.zoomEnd,
       },
-      ...(context.isBottom
+      ...(showSlider
         ? [{
             type: 'slider',
             xAxisIndex: 0,

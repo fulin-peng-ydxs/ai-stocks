@@ -63,7 +63,7 @@ describe('自适应策略摘要（P8）', () => {
       new URL('../../components/AppSplitWorkspace.vue', import.meta.url),
       'utf8',
     )
-    expect(splitWorkspace).toContain('const RATIO_DEFAULT = 45')
+    expect(splitWorkspace).toContain('MASTER_DETAIL_RATIO_DEFAULT')
     expect(splitWorkspace).toContain('primaryMinWidth: 360')
     expect(splitWorkspace).toContain('secondaryMinWidth: 240')
     expect(splitWorkspace).toContain('compactMaxWidth: 720')

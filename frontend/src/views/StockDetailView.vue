@@ -56,6 +56,7 @@ import { useMarketMasterRatioRuntime } from '@/composables/useMarketMasterRatioR
 import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
+import { MASTER_DETAIL_RATIO_DEFAULT } from '@/layout/masterDetailRatioProfiles'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
 const route = useRoute()
@@ -66,6 +67,10 @@ const settingsOpen = ref(false)
 
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
 const detailLayout = getPageLayout('stock-detail')
+const detailWorkspaceDefaultRatio = Number(
+  detailLayout.slots.find((slot) => slot.id === 'workspace')?.config?.masterRatio
+    ?? MASTER_DETAIL_RATIO_DEFAULT,
+)
 const {
   effective: detailEffective,
   knobs: layoutKnobs,
@@ -968,11 +973,10 @@ onBeforeUnmount(() => {
           class="stock-detail-workspace"
           data-testid="stock-detail-workspace"
           :secondary-visible="showAuxiliary"
-          :default-primary-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 65)"
+          :default-primary-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? detailWorkspaceDefaultRatio)"
           :primary-ratio-profiles="componentValueOf('workspace', 'masterRatioProfiles')"
           secondary-drawer-title="个股辅助信息"
           separator-label="调整图表与辅助信息宽度"
-          drawer-class="stock-detail-auxiliary-drawer"
           test-id-prefix="stock-detail"
           @update:secondary-visible="auxiliaryVisible = $event"
           @primary-ratio-change="setCurrentMasterRatio"
@@ -1425,13 +1429,5 @@ onBeforeUnmount(() => {
     width: 100%;
     justify-content: flex-end;
   }
-}
-</style>
-
-<style>
-.stock-detail-auxiliary-drawer .el-drawer__body {
-  display: flex;
-  min-height: 0;
-  padding: var(--app-space-3);
 }
 </style>

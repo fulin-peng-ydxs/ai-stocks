@@ -2,10 +2,9 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import ElementPlus from 'element-plus'
 import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
+import PageDrawer from '@/components/PageDrawer.vue'
 
 function pointerEvent(type: string, pointerId: number, clientX: number): Event {
   const event = new Event(type)
@@ -44,6 +43,10 @@ describe('AppSplitWorkspace', () => {
 
     await separator.trigger('keydown', { key: 'ArrowLeft' })
     expect(separator.attributes('aria-valuenow')).toBe('764')
+    await separator.trigger('keydown', { key: 'Home' })
+    expect(separator.attributes('aria-valuenow')).toBe('360')
+    await separator.trigger('keydown', { key: 'End' })
+    expect(separator.attributes('aria-valuenow')).toBe('840')
     await separator.trigger('dblclick')
     expect(separator.attributes('aria-valuenow')).toBe('780')
     wrapper.unmount()
@@ -59,7 +62,7 @@ describe('AppSplitWorkspace', () => {
     window.dispatchEvent(pointerEvent('pointermove', 3, 1200))
     await nextTick()
 
-    expect(separator.attributes('aria-valuenow')).toBe('948')
+    expect(separator.attributes('aria-valuenow')).toBe('840')
     expect(wrapper.emitted('primaryRatioSampleChange')?.at(-1)).toEqual([
       { width: 1200, ratio: 70 },
     ])
@@ -100,14 +103,22 @@ describe('AppSplitWorkspace', () => {
     wrapper.unmount()
   })
 
-  it('两栏容器分别隐藏溢出，并让插槽根节点填满所属栏位', () => {
+  it('两栏和抽屉都通过共享容器承载插槽内容', async () => {
     const wrapper = mountWorkspace()
     expect(wrapper.find('.app-split-workspace__primary').exists()).toBe(true)
     expect(wrapper.find('.app-split-workspace__secondary').exists()).toBe(true)
     expect(wrapper.get('.app-split-workspace').attributes('style')).toContain('grid-template-columns')
-    const source = readFileSync(resolve(process.cwd(), 'src/components/AppSplitWorkspace.vue'), 'utf8')
-    expect(source).toContain('.app-split-workspace__primary > :deep(*)')
-    expect(source).toMatch(/flex:\s*1 1 auto;[\s\S]*width:\s*100%;/)
     wrapper.unmount()
+
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(700)
+    const compact = mountWorkspace({ drawerClass: 'business-drawer' })
+    await nextTick()
+    expect((compact.vm as unknown as { openCompactSecondary: () => boolean }).openCompactSecondary())
+      .toBe(true)
+    await nextTick()
+    expect(compact.find('.app-split-workspace__drawer-secondary').exists()).toBe(true)
+    expect(compact.getComponent(PageDrawer).props('modalClass'))
+      .toBe('app-split-workspace-drawer business-drawer')
+    compact.unmount()
   })
 })

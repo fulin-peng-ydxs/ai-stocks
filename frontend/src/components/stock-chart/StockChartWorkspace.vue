@@ -44,6 +44,7 @@ import {
   panelMinHeight,
   panelTitle,
   stockChartWorkspaceMinHeight,
+  stockChartVisibleSlider,
   volumeMetrics,
   type MacdPanelState,
   type TradeMarker,
@@ -144,6 +145,7 @@ const zoomRange = ref<ZoomRange>(normalizeZoomRange(props.zoomStart, props.zoomE
 const workspaceHeight = ref(0)
 let resizeObserver: ResizeObserver | null = null
 let active = true
+let bottomSliderVisible: boolean | undefined
 
 const panels = computed<PanelDescriptor[]>(() => {
   const next: PanelDescriptor[] = [{ key: 'kline', type: 'kline' }]
@@ -202,12 +204,21 @@ function metricColor(type: ChartType, metric: Metric): string {
 }
 
 function setChartElement(key: WorkspacePanelKey, element: unknown): void {
-  if (element instanceof HTMLElement) chartElements.set(key, element)
-  else chartElements.delete(key)
+  const previous = chartElements.get(key)
+  if (previous === element) return
+  if (previous && previous !== element) resizeObserver?.unobserve(previous)
+  if (element instanceof HTMLElement) {
+    chartElements.set(key, element)
+    resizeObserver?.observe(element)
+  } else {
+    chartElements.delete(key)
+  }
 }
 
 function chartOption(panel: PanelDescriptor, isBottom: boolean) {
   const chart = charts.get(panel.key)
+  const panelHeight = chartElements.get(panel.key)?.clientHeight
+  if (isBottom) bottomSliderVisible = stockChartVisibleSlider(panelHeight)
   const candlestickRect = (params: unknown) => {
     if (!chart || chart.isDisposed()) return null
     const items = Array.isArray(params) ? params : [params]
@@ -239,6 +250,7 @@ function chartOption(panel: PanelDescriptor, isBottom: boolean) {
     warmupBars: props.warmupBars,
     theme: theme.value,
     isBottom,
+    panelHeight,
     zoomStart: zoomRange.value.start,
     zoomEnd: zoomRange.value.end,
     markers: props.markers,
@@ -360,8 +372,18 @@ function onWorkspaceResize(): void {
       const chart = charts.get(panel.key)
       return Boolean(element && hasRenderableSize(element) && (!chart || chart.isDisposed()))
     })
-    if (hasPendingVisibleChart) syncCharts()
-    else resizeCharts()
+    if (hasPendingVisibleChart) {
+      syncCharts()
+      return
+    }
+    resizeCharts()
+    const bottomPanel = panels.value.at(-1)
+    const bottomElement = bottomPanel ? chartElements.get(bottomPanel.key) : undefined
+    const nextSliderVisible = stockChartVisibleSlider(bottomElement?.clientHeight)
+    if (!bottomPanel || nextSliderVisible === bottomSliderVisible) return
+    const chart = charts.get(bottomPanel.key)
+    if (!chart || chart.isDisposed()) return
+    chart.setOption(chartOption(bottomPanel, true), true)
   })
 }
 
@@ -369,6 +391,7 @@ function disposeCharts(): void {
   echarts.disconnect(groupId)
   charts.forEach((chart) => chart.dispose())
   charts.clear()
+  bottomSliderVisible = undefined
 }
 
 function observeResize(): void {
@@ -376,6 +399,7 @@ function observeResize(): void {
   workspaceHeight.value = workspaceEl.value.clientHeight
   resizeObserver = new ResizeObserver(onWorkspaceResize)
   resizeObserver.observe(workspaceEl.value)
+  chartElements.forEach((element) => resizeObserver?.observe(element))
 }
 
 function stopObservingResize(): void {
