@@ -6,7 +6,10 @@ import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue
 import { viewportDeltaToLayoutPixels } from '@/utils/displayScaleGeometry'
 
 const MASTER_MIN_WIDTH = 360
-const MASTER_MAX_WIDTH = 1200
+const MASTER_MAX_WIDTH = 1600
+const MASTER_RATIO_MIN = 30
+const MASTER_RATIO_MAX = 70
+const MASTER_RATIO_DEFAULT = 45
 const DETAIL_MIN_WIDTH = 240
 const SPLITTER_WIDTH = 12
 const KEYBOARD_STEP = 16
@@ -18,13 +21,13 @@ const props = defineProps<{
   title: string
   meta?: string
   listAriaLabel?: string
-  defaultMasterWidth?: number
+  defaultMasterRatio?: number
   testIdPrefix?: string
 }>()
 
 const emit = defineEmits<{
   'update:analysisVisible': [visible: boolean]
-  masterWidthChange: [width: number]
+  masterRatioChange: [ratio: number]
 }>()
 
 function toggleAnalysis(): void {
@@ -35,15 +38,20 @@ const renderAnalysis = computed(() => props.analysisVisible && !props.compact)
 const testIdPrefix = computed(() => props.testIdPrefix || 'market')
 const workspaceEl = ref<HTMLElement | null>(null)
 const workspaceWidth = ref(0)
-const configuredMasterWidth = computed(() => clampWidth(props.defaultMasterWidth ?? MASTER_MAX_WIDTH))
+const configuredMasterRatio = computed(() => clampRatio(props.defaultMasterRatio ?? MASTER_RATIO_DEFAULT))
+const sessionAdjusted = ref(false)
 // 抽屉配置只提供默认值；分隔条始终只改当前会话值，不反写持久层。
-const masterWidth = useDefaultedSessionValue(configuredMasterWidth)
+const configuredMasterWidth = computed(() => responsiveMasterWidth(configuredMasterRatio.value))
+const masterWidth = useDefaultedSessionValue(configuredMasterWidth, {
+  shouldSync: () => !sessionAdjusted.value,
+  onSynced: () => { sessionAdjusted.value = false },
+})
 let resizeObserver: ResizeObserver | null = null
 let drag: { pointerId: number; startX: number; startWidth: number } | null = null
 
-function clampWidth(value: number): number {
-  const finite = Number.isFinite(value) ? Math.round(value) : MASTER_MAX_WIDTH
-  return Math.min(MASTER_MAX_WIDTH, Math.max(MASTER_MIN_WIDTH, finite))
+function clampRatio(value: number): number {
+  const finite = Number.isFinite(value) ? Math.round(value) : MASTER_RATIO_DEFAULT
+  return Math.min(MASTER_RATIO_MAX, Math.max(MASTER_RATIO_MIN, finite))
 }
 
 const currentMaxWidth = computed(() => {
@@ -58,16 +66,31 @@ function clampSessionWidth(value: number): number {
   return Math.min(currentMaxWidth.value, Math.max(MASTER_MIN_WIDTH, Math.round(value)))
 }
 
+function responsiveMasterWidth(ratio: number): number {
+  if (!workspaceWidth.value) return 1200
+  return clampSessionWidth(workspaceWidth.value * ratio / 100)
+}
+
+function resetMasterWidth(): void {
+  sessionAdjusted.value = false
+  masterWidth.value = configuredMasterWidth.value
+}
+
 const workspaceStyle = computed(() => renderAnalysis.value
   ? { gridTemplateColumns: `${clampSessionWidth(masterWidth.value)}px ${SPLITTER_WIDTH}px minmax(${DETAIL_MIN_WIDTH}px, 1fr)` }
   : undefined)
 const effectiveMasterWidth = computed(() => clampSessionWidth(masterWidth.value))
+const effectiveMasterRatio = computed(() => workspaceWidth.value
+  ? clampRatio(effectiveMasterWidth.value / workspaceWidth.value * 100)
+  : configuredMasterRatio.value)
 
-watch(effectiveMasterWidth, (value) => emit('masterWidthChange', value), { immediate: true })
+watch(effectiveMasterRatio, (value) => emit('masterRatioChange', value), { immediate: true })
 
 function updateWorkspaceWidth(): void {
   workspaceWidth.value = workspaceEl.value?.clientWidth ?? 0
-  masterWidth.value = clampSessionWidth(masterWidth.value)
+  masterWidth.value = !sessionAdjusted.value
+    ? configuredMasterWidth.value
+    : clampSessionWidth(masterWidth.value)
 }
 
 function onPointerMove(event: PointerEvent): void {
@@ -77,6 +100,7 @@ function onPointerMove(event: PointerEvent): void {
     workspaceEl.value,
     'x',
   )
+  sessionAdjusted.value = true
   masterWidth.value = clampSessionWidth(drag.startWidth + layoutDelta)
 }
 
@@ -107,8 +131,11 @@ function onSeparatorKeydown(event: KeyboardEvent): void {
   if (event.key === 'End') next = currentMaxWidth.value
   if (next === undefined) return
   event.preventDefault()
+  sessionAdjusted.value = true
   masterWidth.value = clampSessionWidth(next)
 }
+
+watch(() => props.defaultMasterRatio, resetMasterWidth)
 
 onMounted(() => {
   updateWorkspaceWidth()
@@ -169,7 +196,7 @@ onBeforeUnmount(() => {
       data-testid="market-master-detail-splitter"
       @pointerdown="startDrag"
       @keydown="onSeparatorKeydown"
-      @dblclick="masterWidth = configuredMasterWidth"
+      @dblclick="resetMasterWidth"
     >
       <span aria-hidden="true" />
     </div>
@@ -181,7 +208,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .market-master-detail {
   display: grid;
-  grid-template-columns: 1200px 12px minmax(240px, 1fr);
+  grid-template-columns: minmax(360px, 45%) 12px minmax(240px, 1fr);
   gap: 0;
   min-width: 612px;
   min-height: 0;

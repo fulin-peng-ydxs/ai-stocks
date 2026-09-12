@@ -27,7 +27,7 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
-import { useMarketMasterWidthRuntime } from '@/composables/useMarketMasterWidthRuntime'
+import { useMarketMasterRatioRuntime } from '@/composables/useMarketMasterRatioRuntime'
 import SectorCompareChart from '@/components/SectorCompareChart.vue'
 import type { CrossSectionDatum } from '@/components/SectorCompareChart.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
@@ -145,7 +145,7 @@ const drawerConfig = {
   componentLayerValuesOf,
   componentAllowedLayers,
 }
-const { setCurrentMasterWidth, componentRuntimeValueOf: masterRuntimeValueOf } = useMarketMasterWidthRuntime()
+const { setCurrentMasterRatio, componentRuntimeValueOf: masterRuntimeValueOf } = useMarketMasterRatioRuntime()
 const chartPreferences = useStockChartComponentConfig({
   componentValueOf,
   setComponentKnob,
@@ -913,8 +913,8 @@ onMounted(async () => {
         :title="marketDate || tradeDate || '最新交易日'"
         :meta="`${total} 个${listScope === 'watchlist' ? '自选' : '板块'}`"
         list-aria-label="板块强弱排行"
-        :default-master-width="Number(componentValueOf('workspace', 'masterWidth') ?? 1200)"
-        @master-width-change="setCurrentMasterWidth"
+        :default-master-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 45)"
+        @master-ratio-change="setCurrentMasterRatio"
         test-id-prefix="sectors"
         data-testid="sectors-workspace"
       >

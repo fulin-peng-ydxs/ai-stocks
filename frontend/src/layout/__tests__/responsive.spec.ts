@@ -64,10 +64,18 @@ describe('自适应策略摘要（P8）', () => {
       'utf8',
     )
     expect(workspace).toContain('const MASTER_MIN_WIDTH = 360')
-    expect(workspace).toContain('const MASTER_MAX_WIDTH = 1200')
+    expect(workspace).toContain('const MASTER_MAX_WIDTH = 1600')
+    expect(workspace).toContain('const MASTER_RATIO_DEFAULT = 45')
     expect(workspace).toContain('const DETAIL_MIN_WIDTH = 240')
-    expect(workspace).toContain('grid-template-columns: 1200px 12px minmax(240px, 1fr)')
+    expect(workspace).toContain('grid-template-columns: minmax(360px, 45%) 12px minmax(240px, 1fr)')
     expect(workspace).toContain('min-width: 612px')
+
+    const analysisPanel = readFileSync(
+      new URL('../../components/StockAnalysisPanel.vue', import.meta.url),
+      'utf8',
+    )
+    expect(analysisPanel).toContain('container-type: inline-size')
+    expect(analysisPanel).toContain('@container (max-width: 700px)')
   })
 
   it('嵌套/overlay slot 不进响应式摘要（只看顶层主区）', () => {

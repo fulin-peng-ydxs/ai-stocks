@@ -31,7 +31,7 @@ import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.
 import StockGroupBatchActions from '@/components/StockGroupBatchActions.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
-import { useMarketMasterWidthRuntime } from '@/composables/useMarketMasterWidthRuntime'
+import { useMarketMasterRatioRuntime } from '@/composables/useMarketMasterRatioRuntime'
 import { useTradeDates } from '@/composables/useTradeDates'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
@@ -88,7 +88,7 @@ const {
 
 // 设置抽屉由 PageSettingsDrawer 按元数据渲染；workspace 宽度、表格与图表均归入本页组件设置。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
-const { setCurrentMasterWidth, componentRuntimeValueOf: masterRuntimeValueOf } = useMarketMasterWidthRuntime()
+const { setCurrentMasterRatio, componentRuntimeValueOf: masterRuntimeValueOf } = useMarketMasterRatioRuntime()
 const chartPreferences = useStockChartComponentConfig({
   componentValueOf,
   setComponentKnob,
@@ -704,8 +704,8 @@ onMounted(async () => {
       :title="runDate || '最新交易日'"
       :meta="boardListMeta"
       list-aria-label="每日榜单结果"
-      :default-master-width="Number(componentValueOf('workspace', 'masterWidth') ?? 1200)"
-      @master-width-change="setCurrentMasterWidth"
+      :default-master-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 45)"
+      @master-ratio-change="setCurrentMasterRatio"
       data-testid="board-market-workspace"
     >
       <template #list>

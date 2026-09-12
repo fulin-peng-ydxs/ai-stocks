@@ -129,7 +129,7 @@ const REGISTRY: PageRegistryEntry[] = [
     componentMeta: {
       workspace: {
         fieldApplicability: {
-          masterWidth: { enabled: true },
+          masterRatio: { enabled: true },
         },
       },
     },
@@ -159,7 +159,7 @@ const REGISTRY: PageRegistryEntry[] = [
     componentMeta: {
       workspace: {
         fieldApplicability: {
-          masterWidth: { enabled: true },
+          masterRatio: { enabled: true },
         },
       },
       table: {
@@ -251,7 +251,7 @@ const REGISTRY: PageRegistryEntry[] = [
     componentMeta: {
       workspace: {
         fieldApplicability: {
-          masterWidth: { enabled: true },
+          masterRatio: { enabled: true },
         },
       },
       table: {
@@ -595,7 +595,7 @@ const REGISTRY: PageRegistryEntry[] = [
     componentMeta: {
       content: {
         fieldApplicability: {
-          masterWidth: { enabled: false, reason: '角色权限页使用独立树表布局，尚未接入行情主从工作台' },
+          masterRatio: { enabled: false, reason: '角色权限页使用独立树表布局，尚未接入行情主从工作台' },
         },
       },
     },
@@ -659,7 +659,7 @@ const REGISTRY: PageRegistryEntry[] = [
     componentMeta: {
       content: {
         fieldApplicability: {
-          masterWidth: { enabled: false, reason: '菜单编辑页的左树右表单由业务页自主编排，不消费行情主从工作台' },
+          masterRatio: { enabled: false, reason: '菜单编辑页的左树右表单由业务页自主编排，不消费行情主从工作台' },
         },
       },
       resourceTable: {
@@ -741,7 +741,7 @@ const REGISTRY: PageRegistryEntry[] = [
     componentMeta: {
       workspace: {
         fieldApplicability: {
-          masterWidth: { enabled: false, reason: '数据字典页的左导航右表格由业务页自主编排，不消费行情主从工作台' },
+          masterRatio: { enabled: false, reason: '数据字典页的左导航右表格由业务页自主编排，不消费行情主从工作台' },
         },
       },
       itemTable: {
@@ -1023,7 +1023,7 @@ const REGISTRY: PageRegistryEntry[] = [
     componentMeta: {
       workspace: {
         fieldApplicability: {
-          masterWidth: { enabled: true },
+          masterRatio: { enabled: true },
         },
       },
       table: {

@@ -345,7 +345,7 @@ npm run scaffold-page -- --pageKey my-list --label "列表页" --archetype list 
 npm run scaffold-page -- --pageKey my-master-detail --label "主从页" --archetype master-detail --route /my-master-detail --view MyMasterDetailView
 ```
 
-结构：`action:filter-bar` + `main:data-table` + `main:detail`。适合左侧列表、右侧详情；两栏各自承载滚动，不把详情塞进弹窗替代主流程。行情列表+分析图表必须复用 `MarketMasterDetailWorkspace`；需开放列表宽度时，registry 的 `master-detail` slot 显式启用 `masterWidth`，通过 `PageSettingsDrawer.businessComponentSlotIds` 将其和相关分析默认项归在业务选项，页面只把抽屉默认值传给工作台，主区拖动不自动反写持久层；需要长期沿用时由抽屉显式采用页面当前宽度。
+结构：`action:filter-bar` + `main:data-table` + `main:detail`。适合左侧列表、右侧详情；两栏各自承载滚动，不把详情塞进弹窗替代主流程。行情列表+分析图表必须复用 `MarketMasterDetailWorkspace`；列表按工作台容器的 `masterRatio` 连续计算，系统默认 `45%`、允许配置 `30%–70%`，仅在绝对下限 `360px`、上限 `1600px` 或详情至少 `240px` 的安全边界触发时偏离配置比例。列表空间不足由表格内部横向滚动承接，禁止通过额外首选宽度挤压详情区。主区拖动只修改会话比例，不自动反写持久层；需要长期沿用时由抽屉显式采用页面当前比例，换屏后继续按该比例计算；双击分隔条恢复配置比例。历史 `masterWidth` 固定像素值只允许兼容读取，不再作为页面分栏依据。
 
 ### 9.3 dashboard
 

@@ -541,6 +541,7 @@ onBeforeUnmount(() => {
   display: flex;
   position: relative;
   flex-direction: column;
+  container-type: inline-size;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -651,6 +652,20 @@ onBeforeUnmount(() => {
   .stock-analysis-identity p {
     display: none;
   }
+  .stock-benchmark-control > span {
+    display: none;
+  }
+}
+@container (max-width: 700px) {
+  .stock-analysis-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .stock-analysis-controls {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .stock-analysis-identity p,
   .stock-benchmark-control > span {
     display: none;
   }

@@ -398,7 +398,29 @@ def test_component_config_ownership_boundary(client):
     with pytest.raises(LayoutConfigValidationError, match="不能大于"):
         repo.set_user_config(
             "stocks",
-            {"values": {"slots.workspace.config.masterWidth": 1201}},
+            {"values": {"slots.workspace.config.masterWidth": 1601}},
+            user_id="u1",
+            layout=workspace_layout,
+        )
+
+    saved = repo.set_user_config(
+        "stocks",
+        {"values": {"slots.workspace.config.masterRatio": 45}},
+        user_id="u1",
+        layout=workspace_layout,
+    )
+    assert saved["config"]["values"]["slots.workspace.config.masterRatio"] == 45
+    with pytest.raises(LayoutConfigValidationError, match="不能小于"):
+        repo.set_user_config(
+            "stocks",
+            {"values": {"slots.workspace.config.masterRatio": 29}},
+            user_id="u1",
+            layout=workspace_layout,
+        )
+    with pytest.raises(LayoutConfigValidationError, match="不能大于"):
+        repo.set_user_config(
+            "stocks",
+            {"values": {"slots.workspace.config.masterRatio": 71}},
             user_id="u1",
             layout=workspace_layout,
         )

@@ -511,13 +511,13 @@ export const COMPONENT_CATALOG: Record<ComponentKind, ComponentMeta> = {
   'master-detail': meta('master-detail', {
     category: 'complex',
     label: '主从组合',
-    description: '左列表右详情的复合结构；行情工作台支持会话级拖动分栏，并由页面设置管理默认列表宽度。',
+    description: '左列表右详情的复合结构；行情工作台按容器比例分栏，支持会话级拖动，并由页面设置管理默认占比。',
     minW: 720,
     minH: 320,
     defaultScroll: 'none',
     canGrowMain: false,
     reflowable: false,
-    configCapabilities: ['masterWidth'],
+    configCapabilities: ['masterRatio'],
   }),
   tabs: meta('tabs', {
     category: 'complex',

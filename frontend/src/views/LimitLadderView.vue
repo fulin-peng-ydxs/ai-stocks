@@ -32,7 +32,7 @@ import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import { useLayoutViewport } from '@/composables/useLayoutViewport'
-import { useMarketMasterWidthRuntime } from '@/composables/useMarketMasterWidthRuntime'
+import { useMarketMasterRatioRuntime } from '@/composables/useMarketMasterRatioRuntime'
 import { useAsyncResultPolling } from '@/composables/useAsyncResultPolling'
 import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
 import { useStockAnalysisSession } from '@/composables/useStockAnalysisSession'
@@ -224,7 +224,7 @@ const drawerConfig = {
   componentLayerValuesOf,
   componentAllowedLayers,
 }
-const { setCurrentMasterWidth, componentRuntimeValueOf: masterRuntimeValueOf } = useMarketMasterWidthRuntime()
+const { setCurrentMasterRatio, componentRuntimeValueOf: masterRuntimeValueOf } = useMarketMasterRatioRuntime()
 const chartPreferences = useStockChartComponentConfig({
   slotId: 'analysis',
   componentValueOf,
@@ -732,8 +732,8 @@ onBeforeUnmount(() => {
         title="涨停梯队"
         :meta="workspaceMeta"
         list-aria-label="连板天梯分层"
-        :default-master-width="Number(componentValueOf('workspace', 'masterWidth') ?? 1200)"
-        @master-width-change="setCurrentMasterWidth"
+        :default-master-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 45)"
+        @master-ratio-change="setCurrentMasterRatio"
         data-testid="limit-ladder-workspace"
       >
         <template #list>

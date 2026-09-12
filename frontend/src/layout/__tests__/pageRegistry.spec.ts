@@ -843,23 +843,23 @@ describe('组件消费关系与配置一致性（P4）', () => {
     expect(applicableComponentFields(sectorWorkbench, 'chart').map((field) => field.key)).not.toContain('minHeight')
   })
 
-  it('行情主从工作台统一在组件设置消费默认宽度，主区拖动不反写配置层', () => {
+  it('行情主从工作台统一在组件设置消费默认比例，主区拖动不反写配置层', () => {
     for (const pageKey of ['stocks', 'board', 'limit-ladder', 'sectors']) {
       const entry = getPageEntry(pageKey)!
-      expect(applicableComponentFields(entry, 'workspace').map((field) => field.key)).toContain('masterWidth')
+      expect(applicableComponentFields(entry, 'workspace').map((field) => field.key)).toContain('masterRatio')
       const source = sourceForPage(pageKey)
       expect(source).toContain('<MarketMasterDetailWorkspace')
-      expect(source).toContain("componentValueOf('workspace', 'masterWidth')")
+      expect(source).toContain("componentValueOf('workspace', 'masterRatio')")
       expect(source).not.toContain('business-component-slot-ids')
       expect(source).toContain(':component-runtime-value-of="componentRuntimeValueOf"')
-      expect(source).toContain('@master-width-change="setCurrentMasterWidth"')
+      expect(source).toContain('@master-ratio-change="setCurrentMasterRatio"')
     }
 
     const workspaceSource = readFileSync(
       new URL('../../components/MarketMasterDetailWorkspace.vue', import.meta.url),
       'utf8',
     )
-    expect(workspaceSource).toContain('useDefaultedSessionValue(configuredMasterWidth)')
+    expect(workspaceSource).toContain('useDefaultedSessionValue(configuredMasterWidth, {')
     expect(workspaceSource).not.toContain('setComponentKnob')
   })
 

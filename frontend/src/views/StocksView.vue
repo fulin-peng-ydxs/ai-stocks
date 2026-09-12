@@ -45,7 +45,7 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
-import { useMarketMasterWidthRuntime } from '@/composables/useMarketMasterWidthRuntime'
+import { useMarketMasterRatioRuntime } from '@/composables/useMarketMasterRatioRuntime'
 import { useStockSet, type StockListState } from '@/stores/stockSet'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
@@ -134,7 +134,7 @@ const {
 
 // 设置抽屉由 PageSettingsDrawer 按元数据渲染；workspace 宽度、表格与图表均归入本页组件设置。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
-const { setCurrentMasterWidth, componentRuntimeValueOf: masterRuntimeValueOf } = useMarketMasterWidthRuntime()
+const { setCurrentMasterRatio, componentRuntimeValueOf: masterRuntimeValueOf } = useMarketMasterRatioRuntime()
 const chartPreferences = useStockChartComponentConfig({
   componentValueOf,
   setComponentKnob,
@@ -960,8 +960,8 @@ onMounted(async () => {
       :title="analysisListTitle"
       :meta="analysisListMeta"
       list-aria-label="个股行情列表"
-      :default-master-width="Number(componentValueOf('workspace', 'masterWidth') ?? 1200)"
-      @master-width-change="setCurrentMasterWidth"
+      :default-master-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 45)"
+      @master-ratio-change="setCurrentMasterRatio"
       data-testid="stocks-market-workspace"
     >
       <template #list>

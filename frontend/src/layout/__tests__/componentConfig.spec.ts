@@ -54,7 +54,7 @@ describe('组件字段元数据', () => {
     ])
     expect((COMPONENT_FIELD_DEFS['data-table'] ?? []).map((d) => d.key).sort()).toEqual(['border', 'defaultSort', 'hiddenColumns', 'pageSize'])
     expect((COMPONENT_FIELD_DEFS['wide-table'] ?? []).map((d) => d.key).sort()).toEqual(['border', 'defaultSort', 'hiddenColumns', 'pageSize'])
-    expect((COMPONENT_FIELD_DEFS['master-detail'] ?? []).map((d) => d.key)).toEqual(['masterWidth'])
+    expect((COMPONENT_FIELD_DEFS['master-detail'] ?? []).map((d) => d.key)).toEqual(['masterRatio'])
     expect((COMPONENT_FIELD_DEFS['settings-drawer'] ?? []).map((d) => d.key).sort()).toEqual([
       'bodyScroll',
       'collapsibleSections',
@@ -104,12 +104,12 @@ describe('组件字段元数据', () => {
     expect(coerceComponentValue(chartHeight, 560)).toBe(560)
     expect(() => coerceComponentValue(chartHeight, 479)).toThrow()
     expect(() => coerceComponentValue(chartHeight, 901)).toThrow()
-    const masterWidth = getComponentFieldDef('master-detail', 'masterWidth')!
-    expect(masterWidth.default).toBe(1200)
-    expect(coerceComponentValue(masterWidth, 480)).toBe(480)
-    expect(() => coerceComponentValue(masterWidth, 359)).toThrow()
-    expect(coerceComponentValue(masterWidth, 1200)).toBe(1200)
-    expect(() => coerceComponentValue(masterWidth, 1201)).toThrow()
+    const masterRatio = getComponentFieldDef('master-detail', 'masterRatio')!
+    expect(masterRatio.default).toBe(45)
+    expect(coerceComponentValue(masterRatio, 45)).toBe(45)
+    expect(() => coerceComponentValue(masterRatio, 29)).toThrow()
+    expect(coerceComponentValue(masterRatio, 70)).toBe(70)
+    expect(() => coerceComponentValue(masterRatio, 71)).toThrow()
   })
 
   it('数值消费统一使用字段值域，并以 slot 默认值安全兜底', () => {

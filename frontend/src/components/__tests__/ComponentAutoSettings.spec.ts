@@ -15,7 +15,7 @@ vi.mock('@/layout/pageRegistry', () => ({
         { key: 'minHeight', layers: ['page', 'user'] },
         { key: 'stockChart', layers: ['page', 'user'] },
       ],
-      'master-demo': [{ key: 'masterWidth', layers: ['preset', 'page', 'user'] }],
+      'master-demo': [{ key: 'masterRatio', layers: ['preset', 'page', 'user'] }],
       'system-config': [
         { key: 'bodyScroll', layers: ['preset', 'page'] },
         { key: 'defaultCollapsed', layers: ['preset', 'page', 'user'] },
@@ -106,8 +106,8 @@ vi.mock('@/layout/componentConfig', () => {
       ? { key: 'stockChart', label: '图表组合与内部比例', control: 'object', layers: ['page', 'user'] }
       : field === 'minHeight'
       ? { key: 'minHeight', label: '图表区域高度', control: 'int', layers: ['page', 'user'], min: 480, max: 900, default: 560 }
-      : field === 'masterWidth'
-        ? { key: 'masterWidth', label: '列表默认宽度', control: 'int', layers: ['preset', 'page', 'user'], min: 360, max: 1200, default: 1200, runtimeValueActionLabel: '使用页面当前宽度' }
+      : field === 'masterRatio'
+        ? { key: 'masterRatio', label: '列表默认占比', control: 'int', layers: ['preset', 'page', 'user'], min: 30, max: 70, default: 45, runtimeValueActionLabel: '使用页面当前比例' }
       : field === 'border'
       ? { key: 'border', label: '显示表格边框', control: 'bool', layers: ['page'], default: false }
       : field === 'bodyScroll'
@@ -120,7 +120,7 @@ vi.mock('@/layout/componentConfig', () => {
       const fields = kind === 'chart'
         ? ['minHeight', 'stockChart']
         : kind === 'master-detail'
-          ? ['masterWidth']
+          ? ['masterRatio']
         : kind === 'config-panel'
           ? ['defaultCollapsed']
           : kind === 'settings-drawer'
@@ -328,14 +328,14 @@ function mountChartDemo() {
   return { wrapper, setComponentKnob }
 }
 
-function mountMasterDemo(runtimeWidth?: number) {
+function mountMasterDemo(runtimeRatio?: number) {
   const setComponentKnob = vi.fn()
   const wrapper = mount(ComponentAutoSettings as Component, {
     props: {
       pageKey: 'master-demo',
-      runtimeValueOf: vi.fn(() => runtimeWidth),
+      runtimeValueOf: vi.fn(() => runtimeRatio),
       config: {
-        componentValueOf: vi.fn(() => 1200),
+        componentValueOf: vi.fn(() => 45),
         setComponentKnob,
       },
     },
@@ -422,17 +422,17 @@ describe('ComponentAutoSettings', () => {
     expect(setComponentKnob).not.toHaveBeenCalled()
   })
 
-  it('行情工作台可采用页面当前宽度作为持久化默认值', async () => {
-    const { wrapper, setComponentKnob } = mountMasterDemo(772)
+  it('行情工作台可采用页面当前比例作为持久化默认值', async () => {
+    const { wrapper, setComponentKnob } = mountMasterDemo(48)
 
-    await wrapper.get('[data-testid="component-workspace-masterWidth-use-runtime"]').trigger('click')
+    await wrapper.get('[data-testid="component-workspace-masterRatio-use-runtime"]').trigger('click')
 
-    expect(setComponentKnob).toHaveBeenCalledWith('workspace', 'masterWidth', 772)
+    expect(setComponentKnob).toHaveBeenCalledWith('workspace', 'masterRatio', 48)
   })
 
-  it('页面当前宽度尚未上报时禁用采用入口', () => {
+  it('页面当前比例尚未上报时禁用采用入口', () => {
     const { wrapper } = mountMasterDemo()
-    expect(wrapper.get('[data-testid="component-workspace-masterWidth-use-runtime"]').attributes('disabled'))
+    expect(wrapper.get('[data-testid="component-workspace-masterRatio-use-runtime"]').attributes('disabled'))
       .toBeDefined()
   })
 
