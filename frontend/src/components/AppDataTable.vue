@@ -207,7 +207,7 @@ const emit = defineEmits<{
 
 .app-data-table--embedded {
   height: auto;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
 }
 
 .app-data-table--framed {

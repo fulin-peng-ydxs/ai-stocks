@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { defineComponent, h } from 'vue'
 import ElementPlus from 'element-plus'
 import AppDataTable from '@/components/AppDataTable.vue'
+import appDataTableSource from '@/components/AppDataTable.vue?raw'
 
 const ElTableStub = defineComponent({
   name: 'ElTable',
@@ -136,5 +137,11 @@ describe('AppDataTable', () => {
     expect(wrapper.classes()).toContain('app-data-table--embedded')
     expect(wrapper.classes()).not.toContain('app-data-table--fill')
     expect(wrapper.find('.el-table').attributes('data-scrollbar-always-on')).toBe('false')
+  })
+
+  it('嵌入式表格保持内容自然高度，不被父级纵向压缩', () => {
+    const embeddedRule = appDataTableSource.match(/\.app-data-table--embedded \{([^}]*)\}/)?.[1] ?? ''
+    expect(embeddedRule).toContain('height: auto')
+    expect(embeddedRule).toContain('flex: 0 0 auto')
   })
 })

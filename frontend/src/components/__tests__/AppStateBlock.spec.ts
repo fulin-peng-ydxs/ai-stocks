@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { defineComponent, h } from 'vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import appStateBlockSource from '@/components/AppStateBlock.vue?raw'
 
 const ElSkeletonStub = defineComponent({
   name: 'ElSkeleton',
@@ -148,5 +149,15 @@ describe('AppStateBlock', () => {
     expect(wrapper.find('.app-state-block__permission-icon').exists()).toBe(true)
     expect(wrapper.classes()).toContain('app-state-block--error')
     expect(wrapper.classes()).toContain('app-state-block--permission')
+  })
+
+  it('默认大尺寸空态与异常态占满可用区域并居中', () => {
+    const defaultRule = appStateBlockSource.match(/\.app-state-block--default \{([^}]*)\}/)?.[1] || ''
+    expect(defaultRule).toContain('align-items: center')
+    expect(defaultRule).toContain('justify-content: center')
+    expect(appStateBlockSource).toContain('.app-state-block--default.app-state-block--empty')
+    expect(appStateBlockSource).toContain('.app-state-block--default.app-state-block--error')
+    expect(appStateBlockSource).toContain('height: 100%')
+    expect(appStateBlockSource).toContain('flex: 1 1 auto')
   })
 })

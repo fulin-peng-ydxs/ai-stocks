@@ -114,7 +114,7 @@ describe('StockIntradayDialog', () => {
     await flushPromises()
 
     expect(wrapper.findComponent(ChartStub).exists()).toBe(true)
-    expect(wrapper.findComponent(NoticeStub).props('tone')).toBe('warning')
+    expect(wrapper.findComponent(NoticeStub).props('tone')).toBe('info')
     expect(wrapper.html()).toContain('免费源返回的分钟点可能不完整')
   })
 

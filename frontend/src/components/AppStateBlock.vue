@@ -155,6 +155,12 @@ const defaultDescription = computed(() => {
   justify-content: center;
 }
 
+.app-state-block--default.app-state-block--empty,
+.app-state-block--default.app-state-block--error {
+  height: 100%;
+  flex: 1 1 auto;
+}
+
 .app-state-block--compact {
   min-height: 120px;
 }

@@ -162,7 +162,7 @@ onBeforeUnmount(() => controller?.abort())
       <AppStatusNotice
         v-if="data.status === 'partial'"
         class="stock-intraday-dialog__notice"
-        tone="warning"
+        tone="info"
         title="免费源返回的分钟点可能不完整，图中仅展示真实数据"
         description="可继续查看现有分时；缺失分钟不会补造价格或成交量"
       />
