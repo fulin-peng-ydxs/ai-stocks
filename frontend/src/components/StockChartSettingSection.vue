@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import PageSegmented from '@/components/PageSegmented.vue'
+import PageSettingsApplyButton from '@/components/PageSettingsApplyButton.vue'
 import type {
   AuxiliaryChartSlot,
   AuxiliaryChartType,
@@ -148,10 +149,11 @@ watch(
         </div>
         <div class="ratio-summary">合计 {{ ratioTotal }}%</div>
         <div class="ratio-actions">
-          <el-button
-            :data-testid="`${testIdPrefix || 'chart'}-save-current-ratios`"
+          <PageSettingsApplyButton
+            label="使用页面当前比例"
+            :test-id="`${testIdPrefix || 'chart'}-save-current-ratios`"
             @click="useCurrentRatios"
-          >使用页面当前比例</el-button>
+          />
         </div>
       </template>
     </div>
@@ -218,9 +220,4 @@ watch(
   display: flex;
 }
 
-.ratio-actions :deep(.el-button) {
-  width: 100%;
-  min-width: 0;
-  margin-left: 0;
-}
 </style>

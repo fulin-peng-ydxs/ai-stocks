@@ -64,9 +64,10 @@ describe('自适应策略摘要（P8）', () => {
       'utf8',
     )
     expect(workspace).toContain('const MASTER_MIN_WIDTH = 360')
-    expect(workspace).toContain('const MASTER_MAX_WIDTH = 1600')
     expect(workspace).toContain('const MASTER_RATIO_DEFAULT = 45')
     expect(workspace).toContain('const DETAIL_MIN_WIDTH = 240')
+    expect(workspace).toContain('const COMPACT_MAX_WIDTH = 720')
+    expect(workspace).toContain('closestMasterDetailRatioProfile')
     expect(workspace).toContain('grid-template-columns: minmax(360px, 45%) 12px minmax(240px, 1fr)')
     expect(workspace).toContain('min-width: 612px')
 

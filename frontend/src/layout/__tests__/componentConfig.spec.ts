@@ -54,7 +54,10 @@ describe('组件字段元数据', () => {
     ])
     expect((COMPONENT_FIELD_DEFS['data-table'] ?? []).map((d) => d.key).sort()).toEqual(['border', 'defaultSort', 'hiddenColumns', 'pageSize'])
     expect((COMPONENT_FIELD_DEFS['wide-table'] ?? []).map((d) => d.key).sort()).toEqual(['border', 'defaultSort', 'hiddenColumns', 'pageSize'])
-    expect((COMPONENT_FIELD_DEFS['master-detail'] ?? []).map((d) => d.key)).toEqual(['masterRatio'])
+    expect((COMPONENT_FIELD_DEFS['master-detail'] ?? []).map((d) => d.key)).toEqual([
+      'masterRatio',
+      'masterRatioProfiles',
+    ])
     expect((COMPONENT_FIELD_DEFS['settings-drawer'] ?? []).map((d) => d.key).sort()).toEqual([
       'bodyScroll',
       'collapsibleSections',

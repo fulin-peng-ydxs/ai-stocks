@@ -8,7 +8,6 @@ import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
-import PageDrawer from '@/components/PageDrawer.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -81,7 +80,10 @@ const auth = useAuthStore()
 const stockSet = useStockSet()
 const settingsOpen = ref(false)
 const ladderHost = ref<HTMLElement | null>(null)
-const analysisDrawerOpen = ref(false)
+const marketWorkspaceRef = ref<{
+  openCompactAnalysis: () => boolean
+  closeCompactAnalysis: () => void
+} | null>(null)
 const layoutViewport = useLayoutViewport()
 const isNarrowViewport = computed(() => layoutViewport.width.value > 0 && layoutViewport.width.value <= 768)
 const isLowHeightViewport = computed(() => layoutViewport.height.value > 0 && layoutViewport.height.value <= 700)
@@ -224,7 +226,11 @@ const drawerConfig = {
   componentLayerValuesOf,
   componentAllowedLayers,
 }
-const { setCurrentMasterRatio, componentRuntimeValueOf: masterRuntimeValueOf } = useMarketMasterRatioRuntime()
+const {
+  setCurrentMasterRatio,
+  setCurrentMasterRatioSample,
+  componentRuntimeValueOf: masterRuntimeValueOf,
+} = useMarketMasterRatioRuntime()
 const chartPreferences = useStockChartComponentConfig({
   slotId: 'analysis',
   componentValueOf,
@@ -324,7 +330,7 @@ async function reconcileAnalysisContext(): Promise<void> {
 
   if (!analysisSourceItems.value.length) {
     clearAnalysisSelection()
-    analysisDrawerOpen.value = false
+    marketWorkspaceRef.value?.closeCompactAnalysis()
   }
   const anchor = queryText(route.query.anchor)
   if (anchor && analysisSourceItems.value.some((item) => item.code === anchor)) {
@@ -486,7 +492,7 @@ async function setTradeDate(next: string | null): Promise<void> {
   filters.value = { ...filters.value, hotspotType: null, hotspotKey: null }
   result.value = null
   clearAnalysisSelection()
-  analysisDrawerOpen.value = false
+  marketWorkspaceRef.value?.closeCompactAnalysis()
   await syncUrl()
   await loadLadder()
 }
@@ -517,8 +523,7 @@ async function exportCsv(): Promise<void> {
 
 async function selectStock(stock: LimitLadderStock): Promise<void> {
   selectAnalysisItem(stock)
-  if (isNarrowViewport.value) analysisDrawerOpen.value = true
-  else analysisPanelVisible.value = true
+  if (!marketWorkspaceRef.value?.openCompactAnalysis()) analysisPanelVisible.value = true
   await syncUrl()
 }
 
@@ -547,14 +552,6 @@ async function openActiveAnalysisDetail(): Promise<void> {
 }
 
 watch(preference, () => applyAnalysisDefaults(normalizeLimitLadderPreference(preference)), { deep: true })
-
-watch(isNarrowViewport, (narrow) => {
-  if (!narrow) analysisDrawerOpen.value = false
-})
-
-watch(analysisDrawerOpen, (open) => {
-  if (!open) void restoreScrollAnchor(activeAnalysisCode.value)
-})
 
 watch(
   () => route.query,
@@ -726,14 +723,18 @@ onBeforeUnmount(() => {
       />
       <MarketMasterDetailWorkspace
         v-else
+        ref="marketWorkspaceRef"
         v-model:analysis-visible="analysisPanelVisible"
-        :compact="isNarrowViewport"
         eyebrow="LIMIT LADDER"
         title="涨停梯队"
         :meta="workspaceMeta"
         list-aria-label="连板天梯分层"
         :default-master-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 45)"
+        :master-ratio-profiles="componentValueOf('workspace', 'masterRatioProfiles')"
+        analysis-drawer-title="股票走势分析"
         @master-ratio-change="setCurrentMasterRatio"
+        @master-ratio-sample-change="setCurrentMasterRatioSample"
+        @compact-analysis-close="restoreScrollAnchor(activeAnalysisCode)"
         data-testid="limit-ladder-workspace"
       >
         <template #list>
@@ -790,37 +791,6 @@ onBeforeUnmount(() => {
     </template>
 
     <template #overlays>
-      <PageDrawer
-        v-if="isNarrowViewport"
-        v-model="analysisDrawerOpen"
-        title="股票走势分析"
-        size="full"
-        modal-class="limit-ladder-analysis-drawer"
-        data-testid="limit-ladder-analysis-drawer"
-      >
-        <StockAnalysisPanel
-          v-model:mode="chartMode"
-          v-model:compare-range="compareRange"
-          v-model:compare-metric="compareMetric"
-          v-model:benchmark-code="benchmarkCode"
-          v-model:kline-range="klineRange"
-          :active="activeAnalysisItem"
-          :items="analysisItems"
-          :compare-metrics="visibleCompareMetrics"
-          :adjust-mode="adjustMode"
-          :end-date="tradeDate"
-          :slot2="chartPreferences.preferences.value.slot2"
-          :slot3="chartPreferences.preferences.value.slot3"
-          :height-ratios="chartPreferences.currentRatios.value"
-          :refresh-revision="analysisRefreshRevision"
-          :can-open-detail="canViewStockDetail"
-          @activate="activateAnalysisItem"
-          @remove="removeAnalysisItem"
-          @open-detail="openActiveAnalysisDetail"
-          @ratio-draft="chartPreferences.handleRatioDraft"
-          @ratio-commit="chartPreferences.handleRatioCommit"
-        />
-      </PageDrawer>
       <PageSettingsDrawer
         v-model="settingsOpen"
         title="连板天梯"
@@ -954,16 +924,5 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--app-space-1);
-}
-</style>
-
-<style>
-.limit-ladder-analysis-drawer .el-drawer__body {
-  display: flex;
-  min-height: 0;
-  padding: var(--app-space-3);
-}
-.limit-ladder-analysis-drawer .stock-analysis-panel {
-  flex: 1 1 auto;
 }
 </style>

@@ -517,7 +517,7 @@ export const COMPONENT_CATALOG: Record<ComponentKind, ComponentMeta> = {
     defaultScroll: 'none',
     canGrowMain: false,
     reflowable: false,
-    configCapabilities: ['masterRatio'],
+    configCapabilities: ['masterRatio', 'masterRatioProfiles'],
   }),
   tabs: meta('tabs', {
     category: 'complex',

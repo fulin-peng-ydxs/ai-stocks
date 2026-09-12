@@ -398,8 +398,34 @@ def test_component_config_ownership_boundary(client):
     with pytest.raises(LayoutConfigValidationError, match="不能大于"):
         repo.set_user_config(
             "stocks",
-            {"values": {"slots.workspace.config.masterWidth": 1601}},
+            {"values": {"slots.workspace.config.masterWidth": 1201}},
             user_id="u1",
+            layout=workspace_layout,
+        )
+
+    profiles = {"profiles": [{"width": 1280, "ratio": 52}, {"width": 1920, "ratio": 46}]}
+    saved = repo.set_user_config(
+        "stocks",
+        {"values": {"slots.workspace.config.masterRatioProfiles": profiles}},
+        user_id="u1",
+        layout=workspace_layout,
+    )
+    assert saved["config"]["values"]["slots.workspace.config.masterRatioProfiles"] == profiles
+    with pytest.raises(LayoutConfigValidationError, match="ratio 需为 30～70"):
+        repo.set_user_config(
+            "stocks",
+            {"values": {
+                "slots.workspace.config.masterRatioProfiles": {
+                    "profiles": [{"width": 1280, "ratio": 80}],
+                },
+            }},
+            user_id="u1",
+            layout=workspace_layout,
+        )
+    with pytest.raises(LayoutConfigValidationError, match="不允许在 page 层覆盖"):
+        repo.set_page_config(
+            "stocks",
+            {"values": {"slots.workspace.config.masterRatioProfiles": profiles}},
             layout=workspace_layout,
         )
 

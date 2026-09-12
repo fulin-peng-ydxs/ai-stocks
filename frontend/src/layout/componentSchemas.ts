@@ -148,7 +148,7 @@ const COMPONENT_CONFIG_SHAPES: Partial<Record<ComponentKind, ConfigShape>> = {
   'settings-drawer': { ...overlayShape, sections: 'string[]', collapsibleSections: 'bool', defaultCollapsed: 'string[]' },
   'side-panel': overlayShape,
 
-  'master-detail': { masterWidth: 'int', masterRatio: 'int', detailMinWidth: 'int', collapseAt: 'int' },
+  'master-detail': { masterWidth: 'int', masterRatio: 'int', masterRatioProfiles: 'object', detailMinWidth: 'int', collapseAt: 'int' },
   tabs: { stickyTabBar: 'bool', defaultActive: 'string', remember: 'bool', independentLayout: 'bool' },
   collapse: { accordion: 'bool', defaultActive: 'string[]' },
   steps: { active: 'int', direction: ['horizontal', 'vertical'], stickyNav: 'bool' },

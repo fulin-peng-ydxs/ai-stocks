@@ -15,8 +15,10 @@ import { ElInput, ElInputNumber } from 'element-plus'
 import AppRowActions from './AppRowActions.vue'
 import SettingsGroup from './SettingsGroup.vue'
 import PageSegmented from './PageSegmented.vue'
+import PageSettingsApplyButton from './PageSettingsApplyButton.vue'
 import PageToggleRow from './PageToggleRow.vue'
 import StockChartSettingSection from './StockChartSettingSection.vue'
+import MasterDetailRatioProfileSettings from './MasterDetailRatioProfileSettings.vue'
 import SourceTag from './SourceTag.vue'
 import {
   componentMetaForSlot,
@@ -37,6 +39,7 @@ import {
   visibleChartTypes,
 } from '@/composables/useStockChartPreferences'
 import type { AppRowAction } from './rowActions'
+import type { MasterDetailRatioSample } from '@/layout/masterDetailRatioProfiles'
 
 interface ComponentConfigAccess {
   componentValueOf: (slotId: string, field: string) => unknown
@@ -175,6 +178,16 @@ function numVal(slotId: string, field: string, fallback: number): number {
 function runtimeNumber(slotId: string, field: string): number | undefined {
   const value = props.runtimeValueOf?.(slotId, field)
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+function masterRatioSample(slotId: string): MasterDetailRatioSample | undefined {
+  const value = props.runtimeValueOf?.(slotId, 'masterRatioProfiles')
+  if (!value || typeof value !== 'object') return undefined
+  const width = (value as { width?: unknown }).width
+  const ratio = (value as { ratio?: unknown }).ratio
+  return typeof width === 'number' && Number.isFinite(width) && width > 0
+    && typeof ratio === 'number' && Number.isFinite(ratio)
+    ? { width: Math.round(width), ratio: Math.round(ratio) }
+    : undefined
 }
 function numericFieldDefs(slot: AutoSlot): ComponentFieldDef[] {
   return slot.fields
@@ -531,13 +544,19 @@ function setSort(slotId: string, field: string, order: string): void {
             if (value != null) config.setComponentKnob(s.slotId, field.key, value)
           }"
         />
-        <el-button
+        <MasterDetailRatioProfileSettings
+          v-if="field.key === 'masterRatio' && s.fields.includes('masterRatioProfiles')"
+          :model-value="config.componentValueOf(s.slotId, 'masterRatioProfiles')"
+          :current-sample="masterRatioSample(s.slotId)"
+          @update:model-value="(value) => config.setComponentKnob(s.slotId, 'masterRatioProfiles', value)"
+        />
+        <PageSettingsApplyButton
           v-if="layer === 'user' && field.runtimeValueActionLabel"
-          class="ca-runtime-action"
           :disabled="runtimeNumber(s.slotId, field.key) == null"
-          :data-testid="`component-${s.slotId}-${field.key}-use-runtime`"
+          :label="field.runtimeValueActionLabel"
+          :test-id="`component-${s.slotId}-${field.key}-use-runtime`"
           @click="config.setComponentKnob(s.slotId, field.key, runtimeNumber(s.slotId, field.key))"
-        >{{ field.runtimeValueActionLabel }}</el-button>
+        />
         <span v-if="field.help" class="ca-help">{{ field.help }}</span>
       </div>
 
@@ -732,10 +751,6 @@ function setSort(slotId: string, field: string, order: string): void {
 }
 .ca-number {
   width: 100%;
-}
-.ca-runtime-action {
-  width: 100%;
-  margin-left: 0;
 }
 .ca-help {
   color: var(--page-settings-text-subtle);

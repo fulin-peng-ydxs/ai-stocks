@@ -145,7 +145,12 @@ const drawerConfig = {
   componentLayerValuesOf,
   componentAllowedLayers,
 }
-const { setCurrentMasterRatio, componentRuntimeValueOf: masterRuntimeValueOf } = useMarketMasterRatioRuntime()
+const {
+  setCurrentMasterRatio,
+  setCurrentMasterRatioSample,
+  componentRuntimeValueOf: masterRuntimeValueOf,
+} = useMarketMasterRatioRuntime()
+const marketWorkspaceRef = ref<{ openCompactAnalysis: () => boolean } | null>(null)
 const chartPreferences = useStockChartComponentConfig({
   componentValueOf,
   setComponentKnob,
@@ -492,6 +497,7 @@ function removeCompared(code: string): void {
 }
 function selectRow(row: SectorRow): void {
   if (row.available === false) return
+  marketWorkspaceRef.value?.openCompactAnalysis()
   boardLookup.value = { ...boardLookup.value, [row.board_code]: row }
   if (activeCode.value === row.board_code) return
   applyQueue(activateCompareCode(currentQueue(), row.board_code, COMPARE_MAX))
@@ -908,13 +914,17 @@ onMounted(async () => {
       />
       <MarketMasterDetailWorkspace
         v-else
+        ref="marketWorkspaceRef"
         v-model:analysis-visible="analysisPanelVisible"
         eyebrow="强弱排行"
         :title="marketDate || tradeDate || '最新交易日'"
         :meta="`${total} 个${listScope === 'watchlist' ? '自选' : '板块'}`"
         list-aria-label="板块强弱排行"
         :default-master-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 45)"
+        :master-ratio-profiles="componentValueOf('workspace', 'masterRatioProfiles')"
+        analysis-drawer-title="板块走势分析"
         @master-ratio-change="setCurrentMasterRatio"
+        @master-ratio-sample-change="setCurrentMasterRatioSample"
         test-id-prefix="sectors"
         data-testid="sectors-workspace"
       >

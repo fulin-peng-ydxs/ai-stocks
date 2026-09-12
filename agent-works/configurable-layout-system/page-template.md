@@ -345,7 +345,7 @@ npm run scaffold-page -- --pageKey my-list --label "列表页" --archetype list 
 npm run scaffold-page -- --pageKey my-master-detail --label "主从页" --archetype master-detail --route /my-master-detail --view MyMasterDetailView
 ```
 
-结构：`action:filter-bar` + `main:data-table` + `main:detail`。适合左侧列表、右侧详情；两栏各自承载滚动，不把详情塞进弹窗替代主流程。行情列表+分析图表必须复用 `MarketMasterDetailWorkspace`；列表按工作台容器的 `masterRatio` 连续计算，系统默认 `45%`、允许配置 `30%–70%`，仅在绝对下限 `360px`、上限 `1600px` 或详情至少 `240px` 的安全边界触发时偏离配置比例。列表空间不足由表格内部横向滚动承接，禁止通过额外首选宽度挤压详情区。主区拖动只修改会话比例，不自动反写持久层；需要长期沿用时由抽屉显式采用页面当前比例，换屏后继续按该比例计算；双击分隔条恢复配置比例。历史 `masterWidth` 固定像素值只允许兼容读取，不再作为页面分栏依据。
+结构：`action:filter-bar` + `main:data-table` + `main:detail`。适合左侧列表、右侧详情；两栏各自承载滚动，不把详情塞进弹窗替代主流程。行情列表+分析图表必须复用 `MarketMasterDetailWorkspace`；列表按工作台容器的 `masterRatio` 连续计算，系统默认 `45%`、允许配置 `30%–70%`，仅在列表至少 `360px` 或详情至少 `240px` 的真实内容安全边界触发时偏离配置比例，不设置列表固定像素上限。工作区布局宽度不超过 `720px` 时统一退化为列表单区，选择对象后由工作台的全屏抽屉承载详情或分析，页面不得私建紧凑抽屉。主区拖动只修改会话比例；“使用页面当前比例”保存当前工作区宽度与比例，同页同用户可保存多项，当前宽度在档案 `±15%` 范围内时使用最近项，`5%` 内重复保存更新原项，无匹配时回退默认比例；双击分隔条恢复当前匹配或默认比例。设置抽屉只保留默认占比和紧随其后的共享主色采用按钮，不直接展示档案与匹配算法。历史 `masterWidth` 固定像素值只允许兼容读取，不再作为页面分栏依据。
 
 ### 9.3 dashboard
 

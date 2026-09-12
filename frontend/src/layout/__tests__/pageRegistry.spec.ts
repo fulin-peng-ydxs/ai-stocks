@@ -847,12 +847,15 @@ describe('组件消费关系与配置一致性（P4）', () => {
     for (const pageKey of ['stocks', 'board', 'limit-ladder', 'sectors']) {
       const entry = getPageEntry(pageKey)!
       expect(applicableComponentFields(entry, 'workspace').map((field) => field.key)).toContain('masterRatio')
+      expect(applicableComponentFields(entry, 'workspace').map((field) => field.key)).toContain('masterRatioProfiles')
       const source = sourceForPage(pageKey)
       expect(source).toContain('<MarketMasterDetailWorkspace')
       expect(source).toContain("componentValueOf('workspace', 'masterRatio')")
+      expect(source).toContain("componentValueOf('workspace', 'masterRatioProfiles')")
       expect(source).not.toContain('business-component-slot-ids')
       expect(source).toContain(':component-runtime-value-of="componentRuntimeValueOf"')
       expect(source).toContain('@master-ratio-change="setCurrentMasterRatio"')
+      expect(source).toContain('@master-ratio-sample-change="setCurrentMasterRatioSample"')
     }
 
     const workspaceSource = readFileSync(

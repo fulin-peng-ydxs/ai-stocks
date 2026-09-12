@@ -88,7 +88,12 @@ const {
 
 // 设置抽屉由 PageSettingsDrawer 按元数据渲染；workspace 宽度、表格与图表均归入本页组件设置。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
-const { setCurrentMasterRatio, componentRuntimeValueOf: masterRuntimeValueOf } = useMarketMasterRatioRuntime()
+const {
+  setCurrentMasterRatio,
+  setCurrentMasterRatioSample,
+  componentRuntimeValueOf: masterRuntimeValueOf,
+} = useMarketMasterRatioRuntime()
+const marketWorkspaceRef = ref<{ openCompactAnalysis: () => boolean } | null>(null)
 const chartPreferences = useStockChartComponentConfig({
   componentValueOf,
   setComponentKnob,
@@ -409,6 +414,10 @@ const boardListMeta = computed(() => (
 ))
 
 function handleBoardRowClick(item: ScoreRunRow): void {
+  if (marketWorkspaceRef.value?.openCompactAnalysis()) {
+    selectAnalysisItem(item)
+    return
+  }
   if (analysisPanelVisible.value) selectAnalysisItem(item)
   else gotoStock(item)
 }
@@ -698,6 +707,7 @@ onMounted(async () => {
       @retry="load"
     />
     <MarketMasterDetailWorkspace
+      ref="marketWorkspaceRef"
       v-else
       v-model:analysis-visible="analysisPanelVisible"
       eyebrow="评分榜单"
@@ -705,7 +715,10 @@ onMounted(async () => {
       :meta="boardListMeta"
       list-aria-label="每日榜单结果"
       :default-master-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 45)"
+      :master-ratio-profiles="componentValueOf('workspace', 'masterRatioProfiles')"
+      analysis-drawer-title="股票走势分析"
       @master-ratio-change="setCurrentMasterRatio"
+      @master-ratio-sample-change="setCurrentMasterRatioSample"
       data-testid="board-market-workspace"
     >
       <template #list>

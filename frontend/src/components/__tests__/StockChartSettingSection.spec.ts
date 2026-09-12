@@ -37,7 +37,8 @@ describe('StockChartSettingSection', () => {
     const wrapper = mountSection()
 
     const useCurrentButton = wrapper.get('[data-testid="chart-test-save-current-ratios"]')
-    expect(useCurrentButton.classes()).not.toContain('el-button--primary')
+    expect(useCurrentButton.classes()).toContain('el-button--primary')
+    expect(useCurrentButton.classes()).toContain('is-plain')
     await useCurrentButton.trigger('click')
     const inputs = wrapper.findAllComponents({ name: 'ElInputNumber' })
     expect(inputs.map((input) => input.props('modelValue'))).toEqual([50, 30, 20])

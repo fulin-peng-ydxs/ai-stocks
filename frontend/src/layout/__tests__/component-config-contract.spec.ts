@@ -23,6 +23,8 @@ import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 const BACKEND_LAYOUT_CONFIG = readFileSync(
   new URL('../../../../backend/storage/layout_config.py', import.meta.url), 'utf-8',
 )
+// 固定像素 masterWidth 仅供旧客户端请求校验；当前前端不再登记或消费该字段。
+const LEGACY_BACKEND_ONLY_FIELDS = new Set(['masterWidth'])
 
 function pythonBlock(name: string): string {
   const start = BACKEND_LAYOUT_CONFIG.indexOf(`${name}:`)
@@ -39,7 +41,9 @@ function quotedValues(source: string): string[] {
 function backendFieldsByKind(): Record<string, string[]> {
   const result: Record<string, string[]> = {}
   for (const match of pythonBlock('COMPONENT_CONFIG_FIELDS_BY_KIND').matchAll(/^    "([^"]+)":\s*\{([^}]*)\},/gm)) {
-    result[match[1]!] = quotedValues(match[2]!).sort()
+    result[match[1]!] = quotedValues(match[2]!)
+      .filter((field) => !LEGACY_BACKEND_ONLY_FIELDS.has(field))
+      .sort()
   }
   return result
 }
@@ -64,6 +68,7 @@ function backendFieldRules(): Record<string, BackendFieldRule> {
     if (!type || layers == null) continue
     const min = /"min":\s*(\d+)/.exec(body)?.[1]
     const max = /"max":\s*(\d+)/.exec(body)?.[1]
+    if (LEGACY_BACKEND_ONLY_FIELDS.has(match[1]!)) continue
     result[match[1]!] = {
       type,
       layers: quotedValues(layers).sort(),
@@ -96,6 +101,7 @@ describe('组件配置字段注册契约', () => {
   it('每个受控字段都有统一抽屉渲染策略', () => {
     const specialized = new Set([
       'defaultSort', 'pageSize', 'defaultActive', 'hiddenColumns', 'defaultCollapsed', 'stockChart',
+      'masterRatioProfiles',
     ])
     const unsupported: string[] = []
     for (const [kind, defs] of Object.entries(COMPONENT_FIELD_DEFS)) {

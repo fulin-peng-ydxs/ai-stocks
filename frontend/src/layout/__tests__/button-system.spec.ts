@@ -75,6 +75,21 @@ describe('全站按钮与图标操作契约', () => {
     }
   })
 
+  it('设置抽屉采用当前页面值统一复用主色朴素按钮', () => {
+    const design = read(join(PROJECT_DIR, 'DESIGN.md'))
+    const applyButton = read(join(SRC_DIR, 'components/PageSettingsApplyButton.vue'))
+
+    expect(design).toContain('统一复用 `PageSettingsApplyButton`')
+    expect(applyButton).toContain('type="primary"')
+    expect(applyButton).toContain('plain')
+    for (const file of [
+      'components/MasterDetailRatioProfileSettings.vue',
+      'components/StockChartSettingSection.vue',
+    ]) {
+      expect(read(join(SRC_DIR, file)), file).toContain('PageSettingsApplyButton')
+    }
+  })
+
   it('列表普通操作与禁用态使用不同文本层级', () => {
     const rowActions = read(join(SRC_DIR, 'components/AppRowActions.vue'))
 

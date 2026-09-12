@@ -60,8 +60,9 @@ COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
     "minHeight": {"type": "int", "layers": {"page", "user"}, "min": 480, "max": 900},
     "stockChart": {"type": "object", "layers": {"page", "user"}},
     # 兼容历史配置读取；新页面配置统一写 masterRatio，避免跨屏固定像素导致分栏失衡。
-    "masterWidth": {"type": "int", "layers": {"preset", "page", "user"}, "min": 360, "max": 1600},
+    "masterWidth": {"type": "int", "layers": {"preset", "page", "user"}, "min": 360, "max": 1200},
     "masterRatio": {"type": "int", "layers": {"preset", "page", "user"}, "min": 30, "max": 70},
+    "masterRatioProfiles": {"type": "object", "layers": {"user"}},
     "defaultActive": {"type": "str", "layers": {"page", "user"}},
     "size": {"type": "enum", "layers": {"preset", "page", "user"}, "options": {"sm", "md", "lg"}},
     "bodyScroll": {"type": "bool", "layers": {"preset", "page"}},
@@ -78,7 +79,7 @@ COMPONENT_CONFIG_FIELDS_BY_KIND: dict[str, set[str]] = {
     "data-table": {"border", "pageSize", "defaultSort", "hiddenColumns"},
     "wide-table": {"border", "pageSize", "defaultSort", "hiddenColumns"},
     "chart": {"minHeight", "stockChart"},
-    "master-detail": {"masterWidth", "masterRatio"},
+    "master-detail": {"masterWidth", "masterRatio", "masterRatioProfiles"},
     "tabs": {"defaultActive"},
     "settings-drawer": {"size", "bodyScroll", "collapsibleSections", "defaultCollapsed"},
     "config-panel": {"collapsibleSections", "defaultCollapsed", "showGroupDescription", "showSectionDescription"},
@@ -383,8 +384,35 @@ def _normalize_component_value(field: str, value: Any, layer: str | None) -> Any
             raise LayoutConfigValidationError(f"组件配置 {field} 需为对象")
         if field == "stockChart":
             return _normalize_stock_chart(value)
+        if field == "masterRatioProfiles":
+            return _normalize_master_ratio_profiles(value)
         return value
     raise LayoutConfigValidationError(f"组件配置 {field} 类型未知")
+
+
+def _normalize_master_ratio_profiles(value: dict[str, Any]) -> dict[str, Any]:
+    """尺寸比例档案只接受有限、可排序的工作区宽度与比例，避免任意对象进入用户配置。"""
+    profiles = value.get("profiles")
+    if not isinstance(profiles, list):
+        raise LayoutConfigValidationError("组件配置 masterRatioProfiles.profiles 需为数组")
+    if len(profiles) > 50:
+        raise LayoutConfigValidationError("组件配置 masterRatioProfiles 最多保存 50 项")
+    normalized: list[dict[str, int]] = []
+    seen: set[int] = set()
+    for item in profiles:
+        if not isinstance(item, dict) or set(item) != {"width", "ratio"}:
+            raise LayoutConfigValidationError("尺寸比例档案只允许 width 与 ratio")
+        width = item.get("width")
+        ratio = item.get("ratio")
+        if isinstance(width, bool) or not isinstance(width, int) or not 1 <= width <= 100_000:
+            raise LayoutConfigValidationError("尺寸比例档案 width 需为 1～100000 的整数")
+        if isinstance(ratio, bool) or not isinstance(ratio, int) or not 30 <= ratio <= 70:
+            raise LayoutConfigValidationError("尺寸比例档案 ratio 需为 30～70 的整数")
+        if width in seen:
+            raise LayoutConfigValidationError("尺寸比例档案 width 不能重复")
+        seen.add(width)
+        normalized.append({"width": width, "ratio": ratio})
+    return {"profiles": sorted(normalized, key=lambda item: item["width"])}
 
 
 def _normalize_stock_chart(value: dict[str, Any]) -> dict[str, Any]:

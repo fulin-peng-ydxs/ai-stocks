@@ -15,7 +15,10 @@ vi.mock('@/layout/pageRegistry', () => ({
         { key: 'minHeight', layers: ['page', 'user'] },
         { key: 'stockChart', layers: ['page', 'user'] },
       ],
-      'master-demo': [{ key: 'masterRatio', layers: ['preset', 'page', 'user'] }],
+      'master-demo': [
+        { key: 'masterRatio', layers: ['preset', 'page', 'user'] },
+        { key: 'masterRatioProfiles', layers: ['user'] },
+      ],
       'system-config': [
         { key: 'bodyScroll', layers: ['preset', 'page'] },
         { key: 'defaultCollapsed', layers: ['preset', 'page', 'user'] },
@@ -107,7 +110,9 @@ vi.mock('@/layout/componentConfig', () => {
       : field === 'minHeight'
       ? { key: 'minHeight', label: '图表区域高度', control: 'int', layers: ['page', 'user'], min: 480, max: 900, default: 560 }
       : field === 'masterRatio'
-        ? { key: 'masterRatio', label: '列表默认占比', control: 'int', layers: ['preset', 'page', 'user'], min: 30, max: 70, default: 45, runtimeValueActionLabel: '使用页面当前比例' }
+        ? { key: 'masterRatio', label: '列表默认占比', control: 'int', layers: ['preset', 'page', 'user'], min: 30, max: 70, default: 45 }
+      : field === 'masterRatioProfiles'
+        ? { key: 'masterRatioProfiles', label: '尺寸比例档案', control: 'object', layers: ['user'], default: { profiles: [] } }
       : field === 'border'
       ? { key: 'border', label: '显示表格边框', control: 'bool', layers: ['page'], default: false }
       : field === 'bodyScroll'
@@ -120,7 +125,7 @@ vi.mock('@/layout/componentConfig', () => {
       const fields = kind === 'chart'
         ? ['minHeight', 'stockChart']
         : kind === 'master-detail'
-          ? ['masterRatio']
+          ? ['masterRatio', 'masterRatioProfiles']
         : kind === 'config-panel'
           ? ['defaultCollapsed']
           : kind === 'settings-drawer'
@@ -333,9 +338,15 @@ function mountMasterDemo(runtimeRatio?: number) {
   const wrapper = mount(ComponentAutoSettings as Component, {
     props: {
       pageKey: 'master-demo',
-      runtimeValueOf: vi.fn(() => runtimeRatio),
+      runtimeValueOf: vi.fn((_slotId: string, field: string) => (
+        field === 'masterRatioProfiles' && runtimeRatio
+          ? { width: 1920, ratio: runtimeRatio }
+          : runtimeRatio
+      )),
       config: {
-        componentValueOf: vi.fn(() => 45),
+        componentValueOf: vi.fn((_slotId: string, field: string) => (
+          field === 'masterRatioProfiles' ? { profiles: [] } : 45
+        )),
         setComponentKnob,
       },
     },
@@ -344,6 +355,11 @@ function mountMasterDemo(runtimeRatio?: number) {
         SettingsGroup: { template: '<section><slot /></section>' },
         SourceTag: true,
         AppRowActions: true,
+        MasterDetailRatioProfileSettings: {
+          props: ['modelValue', 'currentSample'],
+          emits: ['update:modelValue'],
+          template: '<button data-testid="master-ratio-profile-save-current" :disabled="!currentSample" @click="$emit(\'update:modelValue\', { profiles: [currentSample] })">使用页面当前比例</button>',
+        },
         ElInputNumber: true,
         ElButton: {
           props: ['disabled'],
@@ -422,17 +438,19 @@ describe('ComponentAutoSettings', () => {
     expect(setComponentKnob).not.toHaveBeenCalled()
   })
 
-  it('行情工作台可采用页面当前比例作为持久化默认值', async () => {
+  it('行情工作台可把页面当前宽度与比例保存为尺寸档案', async () => {
     const { wrapper, setComponentKnob } = mountMasterDemo(48)
 
-    await wrapper.get('[data-testid="component-workspace-masterRatio-use-runtime"]').trigger('click')
+    await wrapper.get('[data-testid="master-ratio-profile-save-current"]').trigger('click')
 
-    expect(setComponentKnob).toHaveBeenCalledWith('workspace', 'masterRatio', 48)
+    expect(setComponentKnob).toHaveBeenCalledWith('workspace', 'masterRatioProfiles', {
+      profiles: [{ width: 1920, ratio: 48 }],
+    })
   })
 
   it('页面当前比例尚未上报时禁用采用入口', () => {
     const { wrapper } = mountMasterDemo()
-    expect(wrapper.get('[data-testid="component-workspace-masterRatio-use-runtime"]').attributes('disabled'))
+    expect(wrapper.get('[data-testid="master-ratio-profile-save-current"]').attributes('disabled'))
       .toBeDefined()
   })
 

@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useAttrs, watch } from 'vue'
 import { DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import PageDrawer from '@/components/PageDrawer.vue'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { viewportDeltaToLayoutPixels } from '@/utils/displayScaleGeometry'
+import {
+  closestMasterDetailRatioProfile,
+  type MasterDetailRatioSample,
+} from '@/layout/masterDetailRatioProfiles'
 
 const MASTER_MIN_WIDTH = 360
-const MASTER_MAX_WIDTH = 1600
 const MASTER_RATIO_MIN = 30
 const MASTER_RATIO_MAX = 70
 const MASTER_RATIO_DEFAULT = 45
 const DETAIL_MIN_WIDTH = 240
 const SPLITTER_WIDTH = 12
 const KEYBOARD_STEP = 16
+const COMPACT_MAX_WIDTH = 720
 
 const props = defineProps<{
   analysisVisible: boolean
@@ -22,24 +27,40 @@ const props = defineProps<{
   meta?: string
   listAriaLabel?: string
   defaultMasterRatio?: number
+  masterRatioProfiles?: unknown
+  analysisDrawerTitle?: string
   testIdPrefix?: string
 }>()
+defineOptions({ inheritAttrs: false })
+const attrs = useAttrs()
 
 const emit = defineEmits<{
   'update:analysisVisible': [visible: boolean]
   masterRatioChange: [ratio: number]
+  masterRatioSampleChange: [sample: MasterDetailRatioSample | undefined]
+  compactAnalysisClose: []
 }>()
 
 function toggleAnalysis(): void {
   emit('update:analysisVisible', !props.analysisVisible)
 }
 
-const renderAnalysis = computed(() => props.analysisVisible && !props.compact)
 const testIdPrefix = computed(() => props.testIdPrefix || 'market')
 const workspaceEl = ref<HTMLElement | null>(null)
 const workspaceWidth = ref(0)
-const configuredMasterRatio = computed(() => clampRatio(props.defaultMasterRatio ?? MASTER_RATIO_DEFAULT))
+const matchedProfile = computed(() => closestMasterDetailRatioProfile(
+  props.masterRatioProfiles,
+  workspaceWidth.value,
+))
+const configuredMasterRatio = computed(() => clampRatio(
+  matchedProfile.value?.ratio ?? props.defaultMasterRatio ?? MASTER_RATIO_DEFAULT,
+))
 const sessionAdjusted = ref(false)
+const sessionAdjustedAtWidth = ref(0)
+const compactAnalysisOpen = ref(false)
+const autoCompact = computed(() => props.compact || (
+  workspaceWidth.value > 0 && workspaceWidth.value <= COMPACT_MAX_WIDTH
+))
 // 抽屉配置只提供默认值；分隔条始终只改当前会话值，不反写持久层。
 const configuredMasterWidth = computed(() => responsiveMasterWidth(configuredMasterRatio.value))
 const masterWidth = useDefaultedSessionValue(configuredMasterWidth, {
@@ -55,11 +76,8 @@ function clampRatio(value: number): number {
 }
 
 const currentMaxWidth = computed(() => {
-  if (!workspaceWidth.value) return MASTER_MAX_WIDTH
-  return Math.max(
-    MASTER_MIN_WIDTH,
-    Math.min(MASTER_MAX_WIDTH, workspaceWidth.value - DETAIL_MIN_WIDTH - SPLITTER_WIDTH),
-  )
+  if (!workspaceWidth.value) return MASTER_MIN_WIDTH
+  return Math.max(MASTER_MIN_WIDTH, workspaceWidth.value - DETAIL_MIN_WIDTH - SPLITTER_WIDTH)
 })
 
 function clampSessionWidth(value: number): number {
@@ -73,9 +91,11 @@ function responsiveMasterWidth(ratio: number): number {
 
 function resetMasterWidth(): void {
   sessionAdjusted.value = false
+  sessionAdjustedAtWidth.value = 0
   masterWidth.value = configuredMasterWidth.value
 }
 
+const renderAnalysis = computed(() => props.analysisVisible && !autoCompact.value)
 const workspaceStyle = computed(() => renderAnalysis.value
   ? { gridTemplateColumns: `${clampSessionWidth(masterWidth.value)}px ${SPLITTER_WIDTH}px minmax(${DETAIL_MIN_WIDTH}px, 1fr)` }
   : undefined)
@@ -84,10 +104,26 @@ const effectiveMasterRatio = computed(() => workspaceWidth.value
   ? clampRatio(effectiveMasterWidth.value / workspaceWidth.value * 100)
   : configuredMasterRatio.value)
 
+const currentRatioSample = computed<MasterDetailRatioSample | undefined>(() => (
+  autoCompact.value || !workspaceWidth.value
+    ? undefined
+    : { width: workspaceWidth.value, ratio: effectiveMasterRatio.value }
+))
+
 watch(effectiveMasterRatio, (value) => emit('masterRatioChange', value), { immediate: true })
+watch(currentRatioSample, (value) => emit('masterRatioSampleChange', value), { immediate: true })
 
 function updateWorkspaceWidth(): void {
-  workspaceWidth.value = workspaceEl.value?.clientWidth ?? 0
+  const nextWidth = workspaceEl.value?.clientWidth ?? 0
+  if (
+    sessionAdjusted.value
+    && sessionAdjustedAtWidth.value > 0
+    && Math.abs(nextWidth - sessionAdjustedAtWidth.value) / sessionAdjustedAtWidth.value > 0.15
+  ) {
+    sessionAdjusted.value = false
+    sessionAdjustedAtWidth.value = 0
+  }
+  workspaceWidth.value = nextWidth
   masterWidth.value = !sessionAdjusted.value
     ? configuredMasterWidth.value
     : clampSessionWidth(masterWidth.value)
@@ -101,6 +137,7 @@ function onPointerMove(event: PointerEvent): void {
     'x',
   )
   sessionAdjusted.value = true
+  sessionAdjustedAtWidth.value = workspaceWidth.value
   masterWidth.value = clampSessionWidth(drag.startWidth + layoutDelta)
 }
 
@@ -132,10 +169,26 @@ function onSeparatorKeydown(event: KeyboardEvent): void {
   if (next === undefined) return
   event.preventDefault()
   sessionAdjusted.value = true
+  sessionAdjustedAtWidth.value = workspaceWidth.value
   masterWidth.value = clampSessionWidth(next)
 }
 
-watch(() => props.defaultMasterRatio, resetMasterWidth)
+watch([() => props.defaultMasterRatio, () => props.masterRatioProfiles], resetMasterWidth, { deep: true })
+watch(autoCompact, (compact) => {
+  if (!compact) compactAnalysisOpen.value = false
+})
+
+function openCompactAnalysis(): boolean {
+  if (!autoCompact.value) return false
+  compactAnalysisOpen.value = true
+  return true
+}
+
+function closeCompactAnalysis(): void {
+  compactAnalysisOpen.value = false
+}
+
+defineExpose({ openCompactAnalysis, closeCompactAnalysis })
 
 onMounted(() => {
   updateWorkspaceWidth()
@@ -154,9 +207,13 @@ onBeforeUnmount(() => {
 
 <template>
   <div
+    v-bind="attrs"
     ref="workspaceEl"
     class="market-master-detail"
-    :class="{ 'market-master-detail--list-only': !renderAnalysis }"
+    :class="{
+      'market-master-detail--list-only': !renderAnalysis,
+      'market-master-detail--compact': autoCompact,
+    }"
     :style="workspaceStyle"
   >
     <section class="market-list-panel" :aria-label="listAriaLabel || title">
@@ -168,7 +225,7 @@ onBeforeUnmount(() => {
         <div class="market-list-actions">
           <span v-if="meta" class="app-caption-text">{{ meta }}</span>
           <AppIconButton
-            v-if="!compact"
+            v-if="!autoCompact"
             :label="analysisVisible ? '收起走势分析，仅看列表' : '显示走势分析'"
             :data-testid="analysisVisible ? `${testIdPrefix}-hide-analysis` : `${testIdPrefix}-show-analysis`"
             :native-title="false"
@@ -203,6 +260,18 @@ onBeforeUnmount(() => {
 
     <slot v-if="renderAnalysis" name="analysis" />
   </div>
+
+  <PageDrawer
+    v-if="autoCompact"
+    v-model="compactAnalysisOpen"
+    :title="analysisDrawerTitle || '走势分析'"
+    size="full"
+    modal-class="market-master-detail-analysis-drawer"
+    :data-testid="`${testIdPrefix}-analysis-drawer`"
+    @closed="emit('compactAnalysisClose')"
+  >
+    <slot name="analysis" />
+  </PageDrawer>
 </template>
 
 <style scoped>
@@ -250,6 +319,10 @@ onBeforeUnmount(() => {
 .market-master-detail--list-only {
   grid-template-columns: minmax(0, 1fr);
   min-width: 640px;
+}
+.market-master-detail--compact {
+  min-width: 0;
+  overflow-x: hidden;
 }
 .market-list-panel {
   display: flex;
@@ -317,6 +390,17 @@ onBeforeUnmount(() => {
   .market-master-detail__splitter::before {
     transition: none;
   }
+}
+</style>
+
+<style>
+.market-master-detail-analysis-drawer .el-drawer__body {
+  display: flex;
+  min-height: 0;
+  padding: var(--app-space-3);
+}
+.market-master-detail-analysis-drawer .stock-analysis-panel {
+  flex: 1 1 auto;
 }
 </style>
 
