@@ -101,6 +101,7 @@ const props = withDefaults(defineProps<{
   zoomStart?: number
   zoomEnd?: number
   minHeight?: number
+  fitAvailableHeight?: boolean
   ariaLabel?: string
   enableIntradayDrilldown?: boolean
 }>(), {
@@ -115,7 +116,7 @@ const props = withDefaults(defineProps<{
   macdError: '请检查网络或稍后重试',
   zoomStart: 0,
   zoomEnd: 100,
-  minHeight: WORKSPACE_MIN_HEIGHT,
+  fitAvailableHeight: false,
   ariaLabel: '行情多图联动工作区',
   enableIntradayDrilldown: false,
 })
@@ -125,6 +126,10 @@ const emit = defineEmits<{
   ratioCommit: [ratios: number[]]
   retryMacd: []
   barClick: [tradeDate: string]
+}>()
+
+defineSlots<{
+  'header-actions'?: () => unknown
 }>()
 
 const groupId = nextStockChartWorkspaceGroupId()
@@ -147,9 +152,16 @@ const panels = computed<PanelDescriptor[]>(() => {
   return next
 })
 const effectiveMinHeight = computed(() => {
-  const panelFloor = stockChartWorkspaceMinHeight(panels.value.map((panel) => panel.type))
+  const panelFloor = stockChartWorkspaceMinHeight(
+    panels.value.map((panel) => panel.type),
+    props.fitAvailableHeight,
+  )
   const requested = Number(props.minHeight)
-  return Math.max(panelFloor, Number.isFinite(requested) && requested > 0 ? requested : 0)
+  const fallback = props.fitAvailableHeight ? 0 : WORKSPACE_MIN_HEIGHT
+  return Math.max(
+    panelFloor,
+    Number.isFinite(requested) && requested > 0 ? requested : fallback,
+  )
 })
 const rows = computed(() => alignStockChartRows(props.bars, props.indicators))
 const ratios = computed(() => constrainWorkspaceRatios(
@@ -374,22 +386,26 @@ function stopObservingResize(): void {
 function availableHeight(): number {
   const height = workspaceHeight.value || workspaceEl.value?.clientHeight || effectiveMinHeight.value
   return Math.max(
-    panels.value.reduce((total, panel) => total + panelMinHeight(panel.type), 0),
+    panels.value.reduce((total, panel) => total + panelMinimumHeight(panel.type), 0),
     height - (panels.value.length - 1) * SPLITTER_SIZE,
   )
+}
+
+function panelMinimumHeight(type: ChartType): number {
+  return panelMinHeight(type, props.fitAvailableHeight)
 }
 
 function minimumRatios(): number[] {
   // 最低像素高度必须投影到当前真实空间；用声明下限会在成长型容器中把比例永久锁死。
   const available = availableHeight()
-  return panels.value.map((panel) => panelMinHeight(panel.type) / available)
+  return panels.value.map((panel) => panelMinimumHeight(panel.type) / available)
 }
 
 function panelStyle(panel: PanelDescriptor, index: number) {
   return {
     flexGrow: ratios.value[index],
     flexBasis: '0px',
-    minHeight: `${panelMinHeight(panel.type)}px`,
+    minHeight: `${panelMinimumHeight(panel.type)}px`,
   }
 }
 
@@ -593,6 +609,7 @@ onBeforeUnmount(() => {
             <time v-if="panel.type === 'kline' && rows.length" class="stock-chart-panel__date">
               {{ rows[metricIndex]?.bar.date }}
             </time>
+            <slot v-if="panel.type === 'kline'" name="header-actions" />
           </template>
         </StockChartPanelHeader>
         <div class="stock-chart-panel__body">

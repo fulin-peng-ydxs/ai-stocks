@@ -119,7 +119,10 @@ function indicators(source: Bar[]): IndicatorRow[] {
   }))
 }
 
-async function mountWorkspace(extraProps: Record<string, unknown> = {}) {
+async function mountWorkspace(
+  extraProps: Record<string, unknown> = {},
+  slots: Record<string, string> = {},
+) {
   const source = bars()
   const wrapper = mount(StockChartWorkspace, {
     props: {
@@ -127,6 +130,7 @@ async function mountWorkspace(extraProps: Record<string, unknown> = {}) {
       indicators: indicators(source),
       ...extraProps,
     },
+    slots,
     global: {
       stubs: {
         AppStateBlock: {
@@ -181,6 +185,20 @@ describe('StockChartWorkspace', () => {
     clamped.unmount()
   })
 
+  it('视口填充模式使用紧凑面板下限，低高度工作台不再被固定详情高度顶出', async () => {
+    mockClientHeight = 300
+    const wrapper = await mountWorkspace({
+      slot2: 'volume',
+      slot3: 'hidden',
+      fitAvailableHeight: true,
+    })
+
+    expect(wrapper.attributes('data-min-height')).toBe('226')
+    expect(wrapper.find('.stock-chart-panel--kline').attributes('style')).toContain('min-height: 150px')
+    expect(wrapper.find('.stock-chart-panel--volume').attributes('style')).toContain('min-height: 68px')
+    wrapper.unmount()
+  })
+
   const { isDark } = useTheme()
 
   beforeEach(() => {
@@ -222,6 +240,17 @@ describe('StockChartWorkspace', () => {
     expect(latestOptions[0].dataZoom).toHaveLength(1)
     expect(latestOptions[1].dataZoom).toHaveLength(1)
     expect(latestOptions[2].dataZoom).toHaveLength(2)
+  })
+
+  it('只在 K 线标题尾部承载调用方提供的工作区操作', async () => {
+    const wrapper = await mountWorkspace({}, {
+      'header-actions': '<button data-testid="header-action">收起辅助信息</button>',
+    })
+
+    expect(wrapper.findAll('[data-testid="header-action"]')).toHaveLength(1)
+    expect(wrapper.find('.stock-chart-panel--kline [data-testid="header-action"]').exists())
+      .toBe(true)
+    wrapper.unmount()
   })
 
   it('仅在显式启用后响应日K蜡烛单击，并忽略均线与辅助图', async () => {

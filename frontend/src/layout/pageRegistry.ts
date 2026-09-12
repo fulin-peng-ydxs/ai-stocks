@@ -791,19 +791,35 @@ const REGISTRY: PageRegistryEntry[] = [
     pageKey: 'stock-detail',
     label: '个股详情',
     path: '/stocks/:code',
-    archetype: 'detail',
-    responsiveProfile: 'single-column',
+    archetype: 'master-detail',
+    responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
+    componentMeta: {
+      workspace: {
+        fieldApplicability: {
+          masterRatio: { enabled: true },
+          masterRatioProfiles: { enabled: true },
+        },
+      },
+      chart: {
+        fieldApplicability: {
+          minHeight: { enabled: false, reason: '详情图表随双栏工作区可用高度成长，不使用固定区域高度' },
+        },
+      },
+    },
     layout: {
       pageKey: 'stock-detail',
-      archetype: 'detail',
+      archetype: 'master-detail',
       hasActionRegion: true,
       density: 'standard',
       responsive: singleColumn(),
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
-        { id: 'detail', component: 'detail', region: 'main', order: 1 },
-        { id: 'chart', component: 'chart', region: 'main', parentId: 'detail', label: '个股行情', order: 1, config: { minHeight: 650, stockChart: createDefaultStockChartPreferences() } },
+        { id: 'workspace', component: 'master-detail', region: 'main', minH: 360, label: '个股详情双栏工作台', order: 1, config: { masterRatio: 65, masterRatioProfiles: { profiles: [] } } },
+        { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '个股行情', order: 1, config: { stockChart: createDefaultStockChartPreferences() } },
+        { id: 'indicatorSnapshot', component: 'section', region: 'main', parentId: 'workspace', label: '最新指标快照', order: 2 },
+        { id: 'tradeEvaluation', component: 'section', region: 'main', parentId: 'workspace', label: '买卖信号评估', order: 3 },
+        { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
       ],
       editable: [densityKnob()],
     },

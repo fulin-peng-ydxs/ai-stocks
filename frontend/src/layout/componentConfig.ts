@@ -133,14 +133,14 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
   'master-detail': [
     {
       key: 'masterRatio',
-      label: '列表默认占比',
+      label: '左栏默认占比',
       control: 'int',
       layers: ['preset', 'page', 'user'],
       min: 30,
       max: 70,
       default: 45,
       highFrequency: true,
-      help: '没有匹配的尺寸比例档案时，按工作台容器宽度使用该默认占比。',
+      help: '没有匹配的尺寸比例档案时，左栏按工作台容器宽度使用该默认占比。',
       applicability: 'explicit',
     },
     {

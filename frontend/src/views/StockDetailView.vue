@@ -10,7 +10,7 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, ArrowRight, Close } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Close, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import {
   getBars,
   getIndicators,
@@ -34,7 +34,7 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
-import StockChartRegion from '@/components/stock-chart/StockChartRegion.vue'
+import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import StockIntradayDialog from '@/components/stock-chart/StockIntradayDialog.vue'
 import type { MacdPanelState } from '@/components/stock-chart/workspaceOptions'
@@ -48,11 +48,14 @@ import { useStockIntradayDrilldown } from '@/composables/useStockIntradayDrilldo
 import { useDebouncedQuery } from '@/composables/useDebouncedQuery'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
-import { useStockChartComponentConfig } from '@/composables/useStockChartComponentConfig'
+import {
+  composeComponentRuntimeValueOf,
+  useStockChartComponentConfig,
+} from '@/composables/useStockChartComponentConfig'
+import { useMarketMasterRatioRuntime } from '@/composables/useMarketMasterRatioRuntime'
 import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
-import { resolveComponentNumberValue } from '@/layout/componentConfig'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
 const route = useRoute()
@@ -79,19 +82,8 @@ const {
   saveRemoteUserConfig, remoteSaveError,
 } = useRemoteLayoutConfig(detailLayout)
 
-// 抽屉的布局与图表区域高度由 PageSettingsDrawer 按 pageRegistry 元数据统一渲染。
+// 抽屉的布局、分栏比例与图表组合由 PageSettingsDrawer 按 pageRegistry 元数据统一渲染。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
-const chartDefaultHeight = Number(
-  detailLayout.slots.find((slot) => slot.id === 'chart')?.config?.minHeight,
-)
-const configuredChartHeight = computed(() => {
-  return resolveComponentNumberValue(
-    'chart',
-    'minHeight',
-    componentValueOf('chart', 'minHeight'),
-    chartDefaultHeight,
-  )
-})
 const detailDefaults = {
   adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
   showTradeCard: true,
@@ -114,6 +106,18 @@ const chartPreferences = useStockChartComponentConfig({
   setComponentKnob,
   hydrated: remoteHydrated,
 })
+const {
+  setCurrentMasterRatio,
+  setCurrentMasterRatioSample,
+  componentRuntimeValueOf: masterRuntimeValueOf,
+} = useMarketMasterRatioRuntime()
+const componentRuntimeValueOf = composeComponentRuntimeValueOf(
+  masterRuntimeValueOf,
+  chartPreferences.componentRuntimeValueOf,
+)
+const splitWorkspaceRef = ref<InstanceType<typeof AppSplitWorkspace> | null>(null)
+const splitCompact = ref(false)
+const auxiliaryVisible = ref(true)
 useLegacyStockChartPreferenceMigration({
   pageKey: 'stock-detail', componentSourceOf, setComponentKnob, whenRemoteHydrated,
   saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
@@ -138,6 +142,18 @@ const canEvaluateTrades = computed(() => (
 const canUseTradeEvaluation = computed(() => (
   canViewTradeProfiles.value && canEvaluateTrades.value
 ))
+const hasAuxiliaryContent = computed(() => (
+  settings.showIndicatorSnapshot || (settings.showTradeCard && canUseTradeEvaluation.value)
+))
+const showAuxiliary = computed(() => auxiliaryVisible.value && hasAuxiliaryContent.value)
+
+function toggleAuxiliaryPanel(): void {
+  if (splitWorkspaceRef.value?.openCompactSecondary()) {
+    auxiliaryVisible.value = true
+    return
+  }
+  auxiliaryVisible.value = !auxiliaryVisible.value
+}
 const setIndex = computed(() => stockSet.indexOf(code.value))
 const inSet = computed(() => setIndex.value >= 0)
 const prevCode = computed(() => stockSet.neighbor(code.value, -1))
@@ -947,16 +963,23 @@ onBeforeUnmount(() => {
         title="正在加载个股行情…"
       />
       <div v-show="!barsLoading || bars.length" class="stock-detail-ready">
-        <StockChartRegion
-          v-slot="{ contentHeight }"
-          class="detail-chart-region"
-          data-testid="stock-detail-chart-region"
-          :total-height="configuredChartHeight"
-          :slot2="chartPreferences.preferences.value.slot2"
-          :slot3="chartPreferences.preferences.value.slot3"
-          grow
-          aria-label="个股行情图表区域"
+        <AppSplitWorkspace
+          ref="splitWorkspaceRef"
+          class="stock-detail-workspace"
+          data-testid="stock-detail-workspace"
+          :secondary-visible="showAuxiliary"
+          :default-primary-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 65)"
+          :primary-ratio-profiles="componentValueOf('workspace', 'masterRatioProfiles')"
+          secondary-drawer-title="个股辅助信息"
+          separator-label="调整图表与辅助信息宽度"
+          drawer-class="stock-detail-auxiliary-drawer"
+          test-id-prefix="stock-detail"
+          @update:secondary-visible="auxiliaryVisible = $event"
+          @primary-ratio-change="setCurrentMasterRatio"
+          @primary-ratio-sample-change="setCurrentMasterRatioSample"
+          @compact-change="splitCompact = $event"
         >
+          <template #primary>
           <StockChartWorkspace
             class="detail-chart-workspace"
             v-loading="barsLoading && bars.length > 0"
@@ -971,37 +994,55 @@ onBeforeUnmount(() => {
             :macd-error="indicatorError"
             :zoom-start="0"
             :zoom-end="100"
-            :min-height="contentHeight"
+            fit-available-height
             enable-intraday-drilldown
             @ratio-draft="chartPreferences.handleRatioDraft"
             @ratio-commit="chartPreferences.handleRatioCommit"
             @retry-macd="loadIndicators"
             @bar-click="openIntraday"
-          />
-        </StockChartRegion>
+          >
+            <template #header-actions>
+              <AppIconButton
+                v-if="hasAuxiliaryContent"
+                :label="splitCompact ? '查看辅助信息' : (showAuxiliary ? '收起辅助信息，仅看图表' : '显示辅助信息')"
+                data-testid="stock-detail-toggle-auxiliary"
+                size="sm"
+                :native-title="false"
+                @click="toggleAuxiliaryPanel"
+              >
+                <el-icon>
+                  <DArrowRight v-if="showAuxiliary && !splitCompact" />
+                  <DArrowLeft v-else />
+                </el-icon>
+              </AppIconButton>
+            </template>
+          </StockChartWorkspace>
+          </template>
 
-      <el-card
-        v-if="settings.showIndicatorSnapshot"
-        data-testid="stock-indicator-snapshot-card"
-        shadow="never"
-        class="ind-card"
-        header="最新指标快照"
-      >
-        <el-descriptions :column="4" border size="small">
-          <el-descriptions-item v-for="f in visibleIndicatorFields" :key="f.key" :label="f.label">
-            {{ latest ? fmt(latest[f.key]) : '—' }}
-          </el-descriptions-item>
-        </el-descriptions>
-        <p class="note">注：RS 相对强度为全市场横截面指标，个股单独查询不计算；请在策略筛选/每日榜单中查看。</p>
-      </el-card>
+          <template #secondary>
+          <aside class="stock-detail-auxiliary" aria-label="个股辅助信息">
+            <el-card
+              v-if="settings.showIndicatorSnapshot"
+              data-testid="stock-indicator-snapshot-card"
+              shadow="never"
+              class="ind-card"
+              header="最新指标快照"
+            >
+              <el-descriptions :column="2" border size="small">
+                <el-descriptions-item v-for="f in visibleIndicatorFields" :key="f.key" :label="f.label">
+                  {{ latest ? fmt(latest[f.key]) : '—' }}
+                </el-descriptions-item>
+              </el-descriptions>
+              <p class="note">注：RS 相对强度为全市场横截面指标，个股单独查询不计算；请在策略筛选/每日榜单中查看。</p>
+            </el-card>
 
-      <!-- 买卖指标方案评估 -->
-      <el-card
-        v-if="settings.showTradeCard && canUseTradeEvaluation"
-        data-testid="stock-trade-eval-card"
-        shadow="never"
-        class="trade-card"
-      >
+            <!-- 买卖指标方案评估 -->
+            <el-card
+              v-if="settings.showTradeCard && canUseTradeEvaluation"
+              data-testid="stock-trade-eval-card"
+              shadow="never"
+              class="trade-card"
+            >
         <template #header>
           <div class="trade-head">
             <span>买卖信号评估</span>
@@ -1016,7 +1057,7 @@ onBeforeUnmount(() => {
               view-permission="trade-profile:view"
               placeholder="选我的买卖方案（可选）"
               test-id="stock-trade-select"
-              style="width: 300px"
+              class="trade-profile-select"
               @update:model-value="onTradeSelect"
               @loaded="onTradeLoaded"
               @ready="onTradeReady"
@@ -1091,7 +1132,10 @@ onBeforeUnmount(() => {
             <p class="note">点时安全：仅用 ≤ 当日数据求值。兜底止盈止损需结合持仓成本，在回测验证中生效。</p>
           </div>
         </div>
-      </el-card>
+            </el-card>
+          </aside>
+          </template>
+        </AppSplitWorkspace>
       </div>
     </template>
     </div>
@@ -1105,7 +1149,7 @@ onBeforeUnmount(() => {
       page-key="stock-detail"
       :config="drawerConfig"
       :business-visible="true"
-      :component-runtime-value-of="chartPreferences.componentRuntimeValueOf"
+      :component-runtime-value-of="componentRuntimeValueOf"
       @reset="resetDetailSettings"
     >
       <template #business>
@@ -1162,20 +1206,43 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .stock-detail-main {
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .stock-detail-ready {
   min-height: 0;
-  flex: 1 0 auto;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.stock-detail-workspace {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .detail-chart-workspace {
+  width: 100%;
   height: 100%;
+}
+
+.stock-detail-auxiliary {
+  box-sizing: border-box;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--app-space-3);
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding-right: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .page-head {
@@ -1291,7 +1358,8 @@ onBeforeUnmount(() => {
 }
 .ind-card,
 .trade-card {
-  margin-top: 16px;
+  flex: 0 0 auto;
+  margin: 0;
 }
 .note {
   margin: 10px 0 0;
@@ -1303,6 +1371,10 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: var(--app-space-3);
   flex-wrap: wrap;
+}
+.trade-profile-select {
+  flex: 1 1 240px;
+  min-width: 0;
 }
 .hint {
   color: var(--el-text-color-secondary);
@@ -1316,11 +1388,10 @@ onBeforeUnmount(() => {
 .cond-cols {
   display: flex;
   gap: var(--app-space-6);
-  flex-wrap: wrap;
+  flex-direction: column;
 }
 .cond-col {
-  flex: 1;
-  min-width: 240px;
+  min-width: 0;
 }
 .cond-title {
   font-weight: var(--app-font-weight-section);
@@ -1354,5 +1425,13 @@ onBeforeUnmount(() => {
     width: 100%;
     justify-content: flex-end;
   }
+}
+</style>
+
+<style>
+.stock-detail-auxiliary-drawer .el-drawer__body {
+  display: flex;
+  min-height: 0;
+  padding: var(--app-space-3);
 }
 </style>

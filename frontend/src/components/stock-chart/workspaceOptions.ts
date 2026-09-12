@@ -40,6 +40,8 @@ export interface SignalDatum {
 
 export const KLINE_MIN_HEIGHT = 250
 export const AUXILIARY_MIN_HEIGHT = 126
+export const FIT_KLINE_MIN_HEIGHT = 150
+export const FIT_AUXILIARY_MIN_HEIGHT = 68
 export const WORKSPACE_MIN_HEIGHT = 650
 export const SPLITTER_SIZE = 8
 export const KEYBOARD_RATIO_STEP = 0.02
@@ -56,13 +58,19 @@ export function alignStockChartRows(
   return bars.map((bar) => ({ bar, indicator: byDate.get(bar.date) }))
 }
 
-export function panelMinHeight(type: ChartType): number {
+export function panelMinHeight(type: ChartType, fitAvailableHeight = false): number {
+  if (fitAvailableHeight) {
+    return type === 'kline' ? FIT_KLINE_MIN_HEIGHT : FIT_AUXILIARY_MIN_HEIGHT
+  }
   return type === 'kline' ? KLINE_MIN_HEIGHT : AUXILIARY_MIN_HEIGHT
 }
 
 /** 股票多图工作区在当前图表组合下不可压缩的内容高度。 */
-export function stockChartWorkspaceMinHeight(types: readonly ChartType[]): number {
-  return types.reduce((total, type) => total + panelMinHeight(type), 0)
+export function stockChartWorkspaceMinHeight(
+  types: readonly ChartType[],
+  fitAvailableHeight = false,
+): number {
+  return types.reduce((total, type) => total + panelMinHeight(type, fitAvailableHeight), 0)
     + Math.max(0, types.length - 1) * SPLITTER_SIZE
 }
 

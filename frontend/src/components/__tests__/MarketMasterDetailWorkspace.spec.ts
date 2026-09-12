@@ -39,7 +39,7 @@ describe('MarketMasterDetailWorkspace', () => {
     expect(wrapper.find('[data-testid="analysis-slot"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="market-hide-analysis"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="market-show-analysis"]').exists()).toBe(false)
-    expect(wrapper.get('.market-master-detail').classes()).toContain('market-master-detail--list-only')
+    expect(wrapper.get('.market-master-detail').classes()).toContain('app-split-workspace--primary-only')
   })
 
   it('抽屉默认比例单向投影到会话，键盘拖动不反写 props', async () => {
@@ -94,10 +94,10 @@ describe('MarketMasterDetailWorkspace', () => {
 
     expect(separator.attributes('aria-valuemax')).toBe('848')
     expect(separator.attributes('aria-valuenow')).toBe('848')
-    expect(document.body.classList.contains('market-master-detail-is-resizing')).toBe(true)
+    expect(document.body.classList.contains('app-split-workspace-is-resizing')).toBe(true)
     wrapper.unmount()
     HTMLElement.prototype.getBoundingClientRect = originalRect
-    expect(document.body.classList.contains('market-master-detail-is-resizing')).toBe(false)
+    expect(document.body.classList.contains('app-split-workspace-is-resizing')).toBe(false)
   })
 
   it('响应式默认值按容器比例计算并保留两侧最小宽度', async () => {
@@ -224,7 +224,7 @@ describe('MarketMasterDetailWorkspace', () => {
     })
     await nextTick()
 
-    expect(wrapper.get('.market-master-detail').classes()).toContain('market-master-detail--compact')
+    expect(wrapper.get('.market-master-detail').classes()).toContain('app-split-workspace--compact')
     expect(wrapper.find('[role="separator"]').exists()).toBe(false)
     expect(wrapper.emitted('masterRatioSampleChange')?.at(-1)).toEqual([undefined])
     expect((wrapper.vm as unknown as { openCompactAnalysis: () => boolean }).openCompactAnalysis()).toBe(true)

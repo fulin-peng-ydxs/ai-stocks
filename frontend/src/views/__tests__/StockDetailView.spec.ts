@@ -130,13 +130,14 @@ const StockChartWorkspaceStub = defineComponent({
     'slot3',
     'heightRatios',
     'minHeight',
+    'fitAvailableHeight',
     'adjustLabel',
     'macdState',
     'macdError',
     'enableIntradayDrilldown',
   ],
   emits: ['retryMacd', 'ratioDraft', 'ratioCommit', 'barClick'],
-  setup(props, { emit }) {
+  setup(props, { emit, slots }) {
     return () => h('section', {
       'data-testid': 'stock-chart-workspace',
       'data-min-height': props.minHeight,
@@ -146,6 +147,7 @@ const StockChartWorkspaceStub = defineComponent({
       h('span', { 'data-testid': 'workspace-close' },
         String((props.bars as Bar[] | undefined)?.at(-1)?.close ?? '')),
       h('span', { 'data-testid': 'workspace-macd-error' }, String(props.macdError || '')),
+      slots['header-actions']?.(),
       h('button', {
         'data-testid': 'retry-macd',
         onClick: () => emit('retryMacd'),
@@ -166,15 +168,18 @@ const StockChartWorkspaceStub = defineComponent({
   },
 })
 
-const StockChartRegionStub = defineComponent({
-  name: 'StockChartRegion',
-  props: ['totalHeight', 'slot2', 'slot3'],
-  setup(props, { slots }) {
-    return () => h('section', {
-      'data-testid': 'stock-detail-chart-region',
-      'data-configured-height': props.totalHeight,
-      'data-content-height': props.totalHeight,
-    }, slots.default?.({ contentHeight: Number(props.totalHeight) }))
+const AppSplitWorkspaceStub = defineComponent({
+  name: 'AppSplitWorkspace',
+  props: ['secondaryVisible', 'defaultPrimaryRatio', 'primaryRatioProfiles'],
+  emits: ['update:secondaryVisible', 'primaryRatioChange', 'primaryRatioSampleChange'],
+  setup(props, { expose, slots }) {
+    expose({ openCompactSecondary: () => false, closeCompactSecondary: () => undefined })
+    return () => h('section', { 'data-testid': 'stock-detail-workspace' }, [
+      h('div', { 'data-testid': 'stock-detail-primary' }, slots.primary?.({ compact: false })),
+      props.secondaryVisible
+        ? h('div', { 'data-testid': 'stock-detail-secondary' }, slots.secondary?.())
+        : null,
+    ])
   },
 })
 
@@ -350,7 +355,7 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
       LayoutHost: {
         template: '<main><slot name="action"/><slot name="main"/><slot name="overlays"/></main>',
       },
-      StockChartRegion: StockChartRegionStub,
+      AppSplitWorkspace: AppSplitWorkspaceStub,
       StockChartWorkspace: StockChartWorkspaceStub,
       StockIntradayDialog: {
         name: 'StockIntradayDialog',
@@ -366,6 +371,11 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
       PageSettingSection: { template: '<section><slot/></section>' },
       PageSegmented: PageSegmentedStub,
       PageToggleRow: PageToggleRowStub,
+      PageSettingsApplyButton: {
+        props: ['testId', 'disabled'],
+        emits: ['click'],
+        template: '<button :data-testid="testId" :disabled="disabled" @click="$emit(\'click\')"><slot /></button>',
+      },
       KlineSettingSection: true,
       ElSelect: ElSelectStub,
       ElOption: {
@@ -581,10 +591,13 @@ describe('StockDetailView 三图数据协调', () => {
     expect(workspace.props('slot3')).toBe('macd')
     expect(workspace.props('macdState')).toBe('ready')
     expect(workspace.props('adjustLabel')).toBe('前复权')
-    expect(workspace.props('minHeight')).toBe(650)
+    expect(workspace.props('minHeight')).toBeUndefined()
+    expect(workspace.props('fitAvailableHeight')).toBe('')
     expect(workspace.props('enableIntradayDrilldown')).toBe('')
-    expect(wrapper.get('[data-testid="stock-detail-chart-region"]').attributes('data-configured-height'))
-      .toBe('650')
+    expect(wrapper.get('[data-testid="stock-detail-primary"]').findComponent(StockChartWorkspaceStub).exists())
+      .toBe(true)
+    expect(wrapper.get('[data-testid="stock-detail-secondary"]').find('[data-testid="stock-indicator-snapshot-card"]').exists())
+      .toBe(true)
     expect(wrapper.text()).toContain('12.34')
     expect(stocksApi.getTradeEval).toHaveBeenCalledWith(
       '600000.SH',
@@ -832,6 +845,41 @@ describe('StockDetailView 三图数据协调', () => {
 
     expect(pageSettingsState.current.showIndicatorSnapshot).toBe(true)
     expect(wrapper.find('[data-testid="stock-indicator-snapshot-card"]').exists()).toBe(true)
+  })
+
+  it('辅助卡全部隐藏时图表恢复单栏，重新启用后恢复右栏', async () => {
+    const wrapper = await mountView()
+    const split = wrapper.findComponent(AppSplitWorkspaceStub)
+
+    expect(split.props('defaultPrimaryRatio')).toBe(65)
+    expect(split.props('secondaryVisible')).toBe(true)
+    await wrapper.get('[data-testid="stock-detail-toggle-indicator-snapshot"]').trigger('click')
+    await wrapper.get('[data-testid="stock-detail-toggle-trade-card"]').trigger('click')
+    await nextTick()
+
+    expect(split.props('secondaryVisible')).toBe(false)
+    expect(wrapper.find('[data-testid="stock-detail-secondary"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="stock-detail-toggle-auxiliary"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="stock-detail-toggle-indicator-snapshot"]').trigger('click')
+    await nextTick()
+    expect(split.props('secondaryVisible')).toBe(true)
+    expect(wrapper.find('[data-testid="stock-indicator-snapshot-card"]').exists()).toBe(true)
+  })
+
+  it('辅助栏收展入口沿用主从工作台双箭头语义', async () => {
+    const wrapper = await mountView()
+    const toggle = wrapper.get('[data-testid="stock-detail-toggle-auxiliary"]')
+
+    expect(wrapper.get('[data-testid="stock-detail-primary"]')
+      .find('[data-testid="stock-detail-toggle-auxiliary"]').exists()).toBe(true)
+    expect(wrapper.find('.page-head-actions [data-testid="stock-detail-toggle-auxiliary"]').exists())
+      .toBe(false)
+    expect(toggle.attributes('label')).toBe('收起辅助信息，仅看图表')
+    await toggle.trigger('click')
+    await nextTick()
+
+    expect(toggle.attributes('label')).toBe('显示辅助信息')
   })
 
   it('MACD 局部失败保留行情和快照，局部重试不刷新行情', async () => {

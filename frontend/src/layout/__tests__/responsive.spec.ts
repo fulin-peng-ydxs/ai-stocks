@@ -59,17 +59,23 @@ describe('自适应策略摘要（P8）', () => {
   })
 
   it('股票主从工作台为可拖动三列布局，最小宽度覆盖列表、分隔条和分析区', () => {
-    const workspace = readFileSync(
+    const splitWorkspace = readFileSync(
+      new URL('../../components/AppSplitWorkspace.vue', import.meta.url),
+      'utf8',
+    )
+    expect(splitWorkspace).toContain('const RATIO_DEFAULT = 45')
+    expect(splitWorkspace).toContain('primaryMinWidth: 360')
+    expect(splitWorkspace).toContain('secondaryMinWidth: 240')
+    expect(splitWorkspace).toContain('compactMaxWidth: 720')
+    expect(splitWorkspace).toContain('closestMasterDetailRatioProfile')
+    expect(splitWorkspace).toContain('gridTemplateColumns: renderSecondary.value')
+    expect(splitWorkspace).toContain('props.primaryMinWidth + SPLITTER_WIDTH + props.secondaryMinWidth')
+
+    const marketWorkspace = readFileSync(
       new URL('../../components/MarketMasterDetailWorkspace.vue', import.meta.url),
       'utf8',
     )
-    expect(workspace).toContain('const MASTER_MIN_WIDTH = 360')
-    expect(workspace).toContain('const MASTER_RATIO_DEFAULT = 45')
-    expect(workspace).toContain('const DETAIL_MIN_WIDTH = 240')
-    expect(workspace).toContain('const COMPACT_MAX_WIDTH = 720')
-    expect(workspace).toContain('closestMasterDetailRatioProfile')
-    expect(workspace).toContain('grid-template-columns: minmax(360px, 45%) 12px minmax(240px, 1fr)')
-    expect(workspace).toContain('min-width: 612px')
+    expect(marketWorkspace).toContain("import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'")
 
     const analysisPanel = readFileSync(
       new URL('../../components/StockAnalysisPanel.vue', import.meta.url),
