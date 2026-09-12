@@ -59,6 +59,10 @@ import { hasPermission } from '@/utils/permission'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
 import { formatCompactMoneyYuan } from '@/utils/money'
 import { stockGroupTagStyle } from '@/utils/stockGroupPresentation'
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useStockIntradayDrilldown } from '@/composables/useStockIntradayDrilldown'
 import { useDebouncedQuery } from '@/composables/useDebouncedQuery'
@@ -979,7 +983,6 @@ onBeforeUnmount(() => {
     <template v-else>
       <MarketDetailHero
         class="stock-detail-hero"
-        eyebrow="STOCK INTELLIGENCE"
         :title="name || quoteSummaryData?.name || code"
         :code="code"
         subtitle="价格趋势、技术状态与所属板块联动观察"
@@ -1067,6 +1070,8 @@ onBeforeUnmount(() => {
               collapse-tags-tooltip
               :max-collapse-tags="2"
               size="small"
+              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
               class="stock-context__group-select"
               placeholder="选择分组"
               :loading="groupOpsLoading"

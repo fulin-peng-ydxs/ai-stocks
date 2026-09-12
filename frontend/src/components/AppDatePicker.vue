@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import type { Placement } from 'element-plus'
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 
 defineOptions({ inheritAttrs: false })
 
@@ -9,8 +13,8 @@ withDefaults(defineProps<{
   /** 只在下方左右对齐间回退，避免空间计算把日期面板翻到页面上方。 */
   fallbackPlacements?: Placement[]
 }>(), {
-  placement: 'bottom-start',
-  fallbackPlacements: () => ['bottom-start', 'bottom-end'],
+  placement: APP_BOTTOM_FLOATING_PLACEMENT,
+  fallbackPlacements: () => [...APP_BOTTOM_FLOATING_FALLBACKS],
 })
 </script>
 

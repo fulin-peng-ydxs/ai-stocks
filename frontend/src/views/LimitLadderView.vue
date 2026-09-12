@@ -725,7 +725,6 @@ onBeforeUnmount(() => {
         v-else
         ref="marketWorkspaceRef"
         v-model:analysis-visible="analysisPanelVisible"
-        eyebrow="LIMIT LADDER"
         title="涨停梯队"
         :meta="workspaceMeta"
         list-aria-label="连板天梯分层"

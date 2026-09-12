@@ -2,6 +2,10 @@
 import { ref, watch } from 'vue'
 import { getStockQuality } from '@/api/data'
 import { getErrorMessage } from '@/utils/error'
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 
 const props = withDefaults(defineProps<{
   modelValue: string[]
@@ -112,6 +116,8 @@ watch(
       :placeholder="placeholder"
       :aria-label="ariaLabel"
       :data-testid="testId"
+      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
       style="width: 100%"
       @update:model-value="emitValue($event as string[])"
     >

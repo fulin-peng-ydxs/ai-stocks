@@ -1,6 +1,5 @@
 <script setup lang="ts">
 withDefaults(defineProps<{
-  eyebrow: string
   title: string
   code: string
   subtitle?: string
@@ -23,7 +22,6 @@ defineSlots<{
   <section class="market-detail-hero" :class="`market-detail-hero--aside-${asideAlign}`">
     <div class="market-detail-hero__main">
       <div class="market-detail-hero__copy">
-        <div class="market-detail-hero__eyebrow">{{ eyebrow }}</div>
         <div class="market-detail-hero__title-row">
           <h2 class="app-page-title">{{ title }}</h2>
           <slot name="badges" />
@@ -78,18 +76,10 @@ defineSlots<{
   gap: var(--app-space-3);
 }
 
-.market-detail-hero__eyebrow {
-  color: var(--el-color-primary);
-  font-size: var(--app-font-size-micro);
-  font-weight: var(--app-font-weight-strong);
-  letter-spacing: 0.14em;
-}
-
 .market-detail-hero__title-row {
   display: flex;
   align-items: center;
   gap: var(--app-space-2);
-  margin-top: var(--app-space-1);
 }
 
 .market-detail-hero__code {

@@ -125,12 +125,64 @@ describe('字体与间距设计契约', () => {
       .map((file) => relative(SRC_DIR, file))
     const appDatePicker = read(join(SRC_DIR, 'components/AppDatePicker.vue'))
     const tradeDatePicker = read(join(SRC_DIR, 'components/TradeDatePicker.vue'))
+    const floatingPlacement = read(join(SRC_DIR, 'utils/floatingPlacement.ts'))
 
     expect(directDatePickers).toEqual([])
-    expect(appDatePicker).toContain("placement: 'bottom-start'")
-    expect(appDatePicker).toContain("fallbackPlacements: () => ['bottom-start', 'bottom-end']")
+    expect(floatingPlacement).toContain("APP_BOTTOM_FLOATING_PLACEMENT: Placement = 'bottom-start'")
+    expect(floatingPlacement).toContain("['bottom-start', 'bottom-end']")
+    expect(appDatePicker).toContain('placement: APP_BOTTOM_FLOATING_PLACEMENT')
+    expect(appDatePicker).toContain('fallbackPlacements: () => [...APP_BOTTOM_FLOATING_FALLBACKS]')
     expect(tradeDatePicker).toContain("import AppDatePicker from '@/components/AppDatePicker.vue'")
     expect(tradeDatePicker).toContain('<AppDatePicker')
+
+    const duplicatedFallbacks = sourceFiles(SRC_DIR)
+      .filter((file) => file.endsWith('.vue'))
+      .filter((file) => /\[['"]bottom-start['"]\s*,\s*['"]bottom-end['"]\]/.test(read(file)))
+      .map((file) => relative(SRC_DIR, file))
+    expect(duplicatedFallbacks).toEqual([])
+  })
+
+  it('关键共享下拉与个股分组选择器复用触发器下方定位契约', () => {
+    const consumers = [
+      'components/AppFilterSelect.vue',
+      'components/KlineRangeSelect.vue',
+      'components/data/StockCodeMultiSelect.vue',
+      'views/trade-discipline/components/StockOptionSelect.vue',
+      'views/StockDetailView.vue',
+    ]
+
+    for (const file of consumers) {
+      const source = read(join(SRC_DIR, file))
+      expect(source, file).toContain('APP_BOTTOM_FLOATING_PLACEMENT')
+      expect(source, file).toContain('APP_BOTTOM_FLOATING_FALLBACKS')
+    }
+  })
+
+  it('不使用英文装饰性 eyebrow、kicker 或工作区标题', () => {
+    const forbidden = [
+      'STOCK INTELLIGENCE',
+      'SECTOR INTELLIGENCE',
+      'LIMIT LADDER',
+      'MARKET INTELLIGENCE',
+      'PRIVATE ACCESS',
+      'SYSTEM ONLINE',
+      '>WORKSPACE<',
+    ]
+    const source = sourceFiles(SRC_DIR)
+      .filter((file) => file.endsWith('.vue'))
+      .map((file) => read(file))
+      .join('\n')
+
+    for (const text of forbidden) expect(source).not.toContain(text)
+  })
+
+  it('所属板块标签只对涨跌幅使用金融色，名称保持中性', () => {
+    const source = read(join(SRC_DIR, 'components/MarketBoardTag.vue'))
+
+    expect(source).toContain('--el-tag-text-color: var(--el-text-color-regular)')
+    expect(source).toContain('.market-board-tag.is-up .market-board-tag__pct')
+    expect(source).toContain('.market-board-tag.is-down .market-board-tag__pct')
+    expect(source).not.toMatch(/\.market-board-tag\.is-(?:up|down)\s*\{[^}]*--el-tag-text-color/s)
   })
 
   it('登录页右侧光晕由当前预设强调色推导，避免单套预设漏覆盖', () => {

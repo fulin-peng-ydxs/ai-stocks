@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { onUnmounted, ref, watch } from 'vue'
 import { searchTradeDisciplineStocks, type StockOption } from '@/api/tradeDiscipline'
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 
 const props = defineProps<{
   modelValue: StockOption | null
@@ -93,6 +97,8 @@ onUnmounted(() => {
       :loading="loading"
       :disabled="disabled"
       :clearable="clearable"
+      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
       popper-class="stock-option-select-popper"
       placeholder="输入代码或名称搜索"
       no-data-text="没有匹配股票"

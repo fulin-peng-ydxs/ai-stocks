@@ -381,7 +381,6 @@ onMounted(async () => {
       />
       <div v-else class="sector-detail" v-loading="detailLoading && !!detail" data-testid="sector-detail-page">
         <MarketDetailHero
-          eyebrow="SECTOR INTELLIGENCE"
           :title="detail?.name || code"
           :code="code"
           subtitle="指数趋势与历史成员强弱联动观察"

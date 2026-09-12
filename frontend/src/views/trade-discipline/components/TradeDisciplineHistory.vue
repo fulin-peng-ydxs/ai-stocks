@@ -165,9 +165,9 @@ defineExpose({ reload: load })
       <AppControlRow class="filter-row" aria-label="履约历史筛选">
         <AppControlItem class="date-filter">
           <div class="date-range" aria-label="交易日期范围">
-            <TradeDatePicker :model-value="query.date_from || null" clearable placement="bottom-start" :fallback-placements="['bottom-start']" placeholder="开始交易日" @update:model-value="updateQuery({ date_from: $event || undefined })" />
+            <TradeDatePicker :model-value="query.date_from || null" clearable placeholder="开始交易日" @update:model-value="updateQuery({ date_from: $event || undefined })" />
             <span>至</span>
-            <TradeDatePicker :model-value="query.date_to || null" clearable placement="bottom-start" :fallback-placements="['bottom-start']" placeholder="结束交易日" @update:model-value="updateQuery({ date_to: $event || undefined })" />
+            <TradeDatePicker :model-value="query.date_to || null" clearable placeholder="结束交易日" @update:model-value="updateQuery({ date_to: $event || undefined })" />
           </div>
         </AppControlItem>
         <AppFilterSelect class="rule-filter" data-testid="history-rule-filter" :model-value="query.rule_id || ''" :options="ruleOptions" :multiple="false" placeholder="全部规则" @change="updateQuery({ rule_id: String($event) || undefined })" />

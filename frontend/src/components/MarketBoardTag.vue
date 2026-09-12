@@ -51,6 +51,7 @@ const tagClass = computed(() => ({
 
 .market-board-tag {
   max-width: 100%;
+  --el-tag-text-color: var(--el-text-color-regular);
 }
 
 .market-board-tag :deep(.el-tag__content) {
@@ -58,16 +59,6 @@ const tagClass = computed(() => ({
   min-width: 0;
   align-items: center;
   gap: var(--app-space-control-gap);
-}
-
-.market-board-tag.is-up {
-  --el-tag-bg-color: color-mix(in srgb, var(--market-up-color) 7%, var(--el-bg-color));
-  --el-tag-text-color: var(--market-up-color);
-}
-
-.market-board-tag.is-down {
-  --el-tag-bg-color: color-mix(in srgb, var(--market-down-color) 7%, var(--el-bg-color));
-  --el-tag-text-color: var(--market-down-color);
 }
 
 .market-board-tag.is-related {
@@ -94,6 +85,14 @@ const tagClass = computed(() => ({
 .market-board-tag__pct {
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
+}
+
+.market-board-tag.is-up .market-board-tag__pct {
+  color: var(--market-up-color);
+}
+
+.market-board-tag.is-down .market-board-tag__pct {
+  color: var(--market-down-color);
 }
 
 .market-board-tag__badge {

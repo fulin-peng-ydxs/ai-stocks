@@ -8,7 +8,7 @@ import type { MasterDetailRatioSample } from '@/layout/masterDetailRatioProfiles
 const props = defineProps<{
   analysisVisible: boolean
   compact?: boolean
-  eyebrow: string
+  eyebrow?: string
   title: string
   meta?: string
   listAriaLabel?: string
@@ -69,7 +69,7 @@ defineExpose({ openCompactAnalysis, closeCompactAnalysis })
       <section class="market-list-panel" :aria-label="listAriaLabel || title">
         <header class="market-list-head">
           <div>
-            <div class="market-panel-eyebrow">{{ eyebrow }}</div>
+            <div v-if="eyebrow" class="market-panel-eyebrow">{{ eyebrow }}</div>
             <h3 class="app-section-title">{{ title }}</h3>
           </div>
           <div class="market-list-actions">

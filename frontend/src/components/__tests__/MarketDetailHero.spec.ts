@@ -23,7 +23,7 @@ const RouterLinkStub = {
 describe('MarketDetailHero', () => {
   it('以同一结构承载身份、摘要、元信息与上下文操作', () => {
     const wrapper = mount(MarketDetailHero, {
-      props: { eyebrow: 'STOCK INTELLIGENCE', title: '浦发银行', code: '600000.SH' },
+      props: { title: '浦发银行', code: '600000.SH' },
       slots: {
         badges: '<span>主板</span>',
         summary: '<div>行情摘要</div>',
@@ -36,15 +36,16 @@ describe('MarketDetailHero', () => {
     expect(wrapper.text()).toContain('主板')
     expect(wrapper.text()).toContain('行情摘要')
     expect(wrapper.text()).toContain('下一只')
+    expect(wrapper.find('.market-detail-hero__eyebrow').exists()).toBe(false)
   })
 
   it('只在消费页显式指定时把摘要靠左排列', () => {
     const normal = mount(MarketDetailHero, {
-      props: { eyebrow: 'SECTOR', title: '银行', code: '881001' },
+      props: { title: '银行', code: '881001' },
       slots: { summary: '<div>摘要</div>' },
     })
     const aligned = mount(MarketDetailHero, {
-      props: { eyebrow: 'STOCK', title: '浦发银行', code: '600000.SH', asideAlign: 'start' },
+      props: { title: '浦发银行', code: '600000.SH', asideAlign: 'start' },
       slots: { summary: '<div>摘要</div>' },
     })
 

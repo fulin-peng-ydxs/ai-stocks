@@ -118,6 +118,7 @@ vi.mock('@/api/tradeProfile', () => ({
 }))
 
 import * as stocksApi from '@/api/stocks'
+import * as stockGroupApi from '@/api/stockGroup'
 import * as tradeProfileApi from '@/api/tradeProfile'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import StockDetailView from '@/views/StockDetailView.vue'
@@ -290,7 +291,7 @@ const KlineRangeSelectStub = defineComponent({
 
 const ElSelectStub = defineComponent({
   name: 'ElSelect',
-  props: ['modelValue'],
+  props: ['modelValue', 'placement', 'fallbackPlacements'],
   emits: ['update:modelValue', 'change', 'visible-change', 'end-reached'],
   setup(props, { slots }) {
     return () => h('div', {
@@ -532,6 +533,7 @@ function setDefaultApiResponses() {
     trade_date: '2026-07-23',
     list: [],
   })
+  vi.mocked(stockGroupApi.listGroups).mockResolvedValue([])
   vi.mocked(tradeProfileApi.listTradeProfiles).mockResolvedValue([
     {
       id: 'trade-1',
@@ -733,6 +735,20 @@ describe('StockDetailView 三图数据协调', () => {
     expect(wrapper.find('[data-testid="stock-group-select"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="stock-trade-eval-card"]').exists()).toBe(false)
     expect(wrapper.findComponent(StockChartWorkspaceStub).exists()).toBe(true)
+  })
+
+  it('所属分组下拉固定在触发器下方，不回退到页面上方', async () => {
+    const wrapper = await mountView([
+      'stocks:view',
+      'stock-group:view',
+      'stock-group:member-update',
+    ])
+    const select = wrapper.findAllComponents(ElSelectStub)
+      .find((item) => item.attributes('data-testid') === 'stock-group-select')
+
+    expect(select?.exists()).toBe(true)
+    expect(select?.props('placement')).toBe('bottom-start')
+    expect(select?.props('fallbackPlacements')).toEqual(['bottom-start', 'bottom-end'])
   })
 
   it('初次行情普通错误显示可重试错误态，重试成功后恢复工作区', async () => {

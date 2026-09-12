@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 
 export interface AppFilterSelectOption {
   value: string
@@ -162,6 +166,8 @@ watch(
       :collapse-tags-tooltip="multiple && collapseTags"
       :max-collapse-tags="effectiveMaxCollapseTags"
       :fit-input-width="true"
+      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
       :disabled="disabled"
       :placeholder="placeholder"
       :aria-label="ariaLabel || placeholder"

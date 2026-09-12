@@ -41,7 +41,6 @@ async function close(key: string) {
 
 <template>
   <div v-if="workspaceTabs.length" class="workspace-tabs" aria-label="已打开页面">
-    <span class="workspace-tabs-label" aria-hidden="true">WORKSPACE</span>
     <div ref="rail" class="workspace-tabs-rail" role="tablist">
       <div
         v-for="tab in workspaceTabs"
@@ -81,13 +80,6 @@ async function close(key: string) {
   display: flex;
   align-items: center;
   gap: var(--app-space-3);
-}
-.workspace-tabs-label {
-  flex: none;
-  color: var(--chrome-text-muted);
-  font-size: var(--app-icon-size-xs);
-  font-weight: var(--app-font-weight-strong);
-  letter-spacing: .14em;
 }
 .workspace-tabs-rail {
   min-width: 0;
@@ -167,6 +159,5 @@ async function close(key: string) {
 .workspace-tab-close .el-icon { font-size: var(--app-font-size-micro); }
 @container app-viewport (max-width: 720px) {
   .workspace-tabs { padding-inline: 10px; }
-  .workspace-tabs-label { display: none; }
 }
 </style>

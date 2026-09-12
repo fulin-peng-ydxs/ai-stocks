@@ -276,7 +276,6 @@ function onSubmit() {
             <li>点时回测验证</li>
           </ul>
         </div>
-        <div class="login-system-state"><span />SYSTEM ONLINE</div>
       </header>
 
       <div class="market-stage" aria-hidden="true">
@@ -325,7 +324,6 @@ function onSubmit() {
       </div>
 
       <div class="login-brand-copy">
-        <div class="login-eyebrow"><span>MARKET INTELLIGENCE</span><i /></div>
         <h1>看见趋势，<br /><em>先于共识。</em></h1>
         <p>为趋势交易者构建的每日复盘与龙头研究系统。</p>
       </div>
@@ -337,18 +335,18 @@ function onSubmit() {
             <span class="t-item"><em>SZ 399001</em>深证成指<b class="up">10,562.4 ▲0.68%</b></span>
             <span class="t-item"><em>SZ 399006</em>创业板指<b class="down">2,118.9 ▼0.15%</b></span>
             <span class="t-item"><em>SH 000688</em>科创 50<b class="up">986.52 ▲1.03%</b></span>
-            <span class="t-item"><em>LEAD</em>龙头梯队<b class="up">42只 ▲6</b></span>
-            <span class="t-item"><em>ADV</em>晋级率<b class="up">38.2% ▲2.1</b></span>
-            <span class="t-item"><em>TREND</em>趋势强度<b class="down">71 ▼3</b></span>
+            <span class="t-item">龙头梯队<b class="up">42只 ▲6</b></span>
+            <span class="t-item">晋级率<b class="up">38.2% ▲2.1</b></span>
+            <span class="t-item">趋势强度<b class="down">71 ▼3</b></span>
           </div>
           <div class="ticker-group">
             <span class="t-item"><em>SH 000001</em>上证指数<b class="up">3,247.18 ▲0.42%</b></span>
             <span class="t-item"><em>SZ 399001</em>深证成指<b class="up">10,562.4 ▲0.68%</b></span>
             <span class="t-item"><em>SZ 399006</em>创业板指<b class="down">2,118.9 ▼0.15%</b></span>
             <span class="t-item"><em>SH 000688</em>科创 50<b class="up">986.52 ▲1.03%</b></span>
-            <span class="t-item"><em>LEAD</em>龙头梯队<b class="up">42只 ▲6</b></span>
-            <span class="t-item"><em>ADV</em>晋级率<b class="up">38.2% ▲2.1</b></span>
-            <span class="t-item"><em>TREND</em>趋势强度<b class="down">71 ▼3</b></span>
+            <span class="t-item">龙头梯队<b class="up">42只 ▲6</b></span>
+            <span class="t-item">晋级率<b class="up">38.2% ▲2.1</b></span>
+            <span class="t-item">趋势强度<b class="down">71 ▼3</b></span>
           </div>
         </div>
       </div>
@@ -378,7 +376,6 @@ function onSubmit() {
       </div>
 
       <div class="login-card" data-testid="login-card-surface">
-        <div class="login-card-kicker"><span>PRIVATE ACCESS</span><i>01</i></div>
         <div class="login-card-title">
           <h2>{{ mode === 'login' ? '欢迎回来' : '创建研究账户' }}</h2>
           <p>{{ mode === 'login' ? '进入你的市场研究工作台' : '开启专业、专注的每日复盘' }}</p>
@@ -393,7 +390,7 @@ function onSubmit() {
 
         <div class="login-field-block">
           <label class="login-field" :class="{ 'is-error': errors.account }">
-            <span class="field-label">ACCOUNT</span>
+            <span class="field-label">账号</span>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
             </svg>
@@ -405,7 +402,7 @@ function onSubmit() {
 
         <div class="login-field-block">
           <label class="login-field" :class="{ 'is-error': errors.password }">
-            <span class="field-label">PASSWORD</span>
+            <span class="field-label">密码</span>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
             </svg>
@@ -423,7 +420,7 @@ function onSubmit() {
 
         <div v-if="mode === 'register'" class="login-field-block">
           <label class="login-field" :class="{ 'is-error': errors.confirm }">
-            <span class="field-label">CONFIRM</span>
+            <span class="field-label">确认密码</span>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
             </svg>
@@ -435,7 +432,7 @@ function onSubmit() {
 
         <div v-if="mode === 'register'" class="login-field-block">
           <label class="login-field" :class="{ 'is-error': errors.email }">
-            <span class="field-label">EMAIL</span>
+            <span class="field-label">邮箱</span>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
             </svg>
@@ -447,7 +444,7 @@ function onSubmit() {
 
         <div v-if="mode === 'register' && cfg.requireEmailCode" class="login-field-block">
           <label class="login-field login-emailcode" :class="{ 'is-error': errors.emailCode }">
-            <span class="field-label">VERIFY</span>
+            <span class="field-label">邮箱验证码</span>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
             </svg>
@@ -467,7 +464,7 @@ function onSubmit() {
           <div class="login-field-block">
             <div class="login-captcha-row">
               <label class="login-field dashed" :class="{ 'is-error': errors.captcha }">
-                <span class="field-label">CAPTCHA</span>
+                <span class="field-label">图形验证码</span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M12 3v18M3 12h18" />
                 </svg>
@@ -597,24 +594,6 @@ function onSubmit() {
 .login-logo {
   display: flex;
   align-items: center;
-}
-.login-system-state {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-2);
-  color: var(--login-brand-muted);
-  font-family: var(--app-font-family-mono);
-  font-size: var(--app-font-size-tiny);
-  letter-spacing: 0.14em;
-  white-space: nowrap;
-  flex: none;
-}
-.login-system-state span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--login-success);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--login-success) 56%, transparent);
 }
 .market-stage {
   position: absolute;
@@ -789,18 +768,8 @@ function onSubmit() {
   left: clamp(36px, 5cqw, 76px);
   bottom: 132px;
 }
-.login-eyebrow {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-4);
-  color: var(--login-track);
-  font-family: var(--app-font-family-mono);
-  font-size: var(--app-font-size-tiny);
-  letter-spacing: 0.18em;
-}
-.login-eyebrow i { width: 50px; height: 1px; background: color-mix(in srgb, var(--login-track) 56%, transparent); }
 .login-brand-copy h1 {
-  margin: 18px 0 16px;
+  margin: 0 0 16px;
   color: var(--login-brand-text);
   font-family: 'Songti SC', STSong, 'SimSun', serif;
   font-size: clamp(42px, 4.5cqw, 70px);
@@ -929,18 +898,8 @@ function onSubmit() {
   height: 2px;
   background: linear-gradient(90deg, var(--login-accent), transparent);
 }
-.login-card-kicker {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--login-accent-readable);
-  font-family: var(--app-font-family-mono);
-  font-size: var(--app-icon-size-xs);
-  letter-spacing: 0.18em;
-}
-.login-card-kicker i { color: var(--login-text-muted); font-style: normal; }
 .login-card-title h2 {
-  margin: 18px 0 6px;
+  margin: 0 0 6px;
   color: var(--login-text);
   font-family: 'Songti SC', STSong, 'SimSun', serif;
   font-size: 29px;
@@ -1198,7 +1157,6 @@ function onSubmit() {
   }
   .login-brand::after { display: none; }
   .login-brand-head { align-items: flex-start; }
-  .login-system-state { display: none; }
   .login-brand-copy,
   .login-brand-points,
   .market-readout,
@@ -1260,8 +1218,7 @@ function onSubmit() {
   .login-card,
   .login-field,
   .login-tabs { border: 1px solid CanvasText; }
-  .login-security i,
-  .login-system-state span { background: Highlight; }
+  .login-security i { background: Highlight; }
 }
 
 @container app-viewport (max-width: 360px) {
