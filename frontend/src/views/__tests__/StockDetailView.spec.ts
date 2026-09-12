@@ -279,7 +279,7 @@ const AppStateBlockStub = defineComponent({
 
 const KlineRangeSelectStub = defineComponent({
   name: 'KlineRangeSelect',
-  props: ['modelValue'],
+  props: ['modelValue', 'width'],
   emits: ['update:modelValue'],
   setup(_props, { emit }) {
     return () => h('button', {
@@ -984,6 +984,16 @@ describe('StockDetailView 三图数据协调', () => {
     expect(toggle.attributes('label')).toBe('显示辅助信息')
   })
 
+  it('K 线范围与图表操作共置于 K 线标题行', async () => {
+    const wrapper = await mountView()
+    const primary = wrapper.get('[data-testid="stock-detail-primary"]')
+    const pageActions = wrapper.get('.page-head-actions')
+
+    expect(primary.findComponent(KlineRangeSelectStub).exists()).toBe(true)
+    expect(pageActions.findComponent(KlineRangeSelectStub).exists()).toBe(false)
+    expect(wrapper.findComponent(KlineRangeSelectStub).props('width')).toBe('112px')
+  })
+
   it('MACD 局部失败保留行情和快照，局部重试不刷新行情', async () => {
     const wrapper = await mountView()
     const oldSnapshot = wrapper.text()
@@ -1451,6 +1461,8 @@ describe('StockDetailView 三图数据协调', () => {
     await flushPromises()
     wrapper.get('[data-testid="stock-detail-back"]').trigger('click')
     expect(pushSpy).toHaveBeenCalledWith('/board')
+    expect(wrapper.get('[data-testid="stock-detail-back"]').attributes('aria-label'))
+      .toBe('返回每日榜单')
     wrapper.unmount()
 
     // 场景2：直接从菜单/链接进入（code 不在集合中）→ 残留 returnPath 不生效，归位列表
@@ -1466,6 +1478,8 @@ describe('StockDetailView 三图数据协调', () => {
     await flushPromises()
     wrapper2.get('[data-testid="stock-detail-back"]').trigger('click')
     expect(pushSpy).toHaveBeenCalledWith('/stocks?restore=1')
+    expect(wrapper2.get('[data-testid="stock-detail-back"]').attributes('aria-label'))
+      .toBe('返回个股查询')
     wrapper2.unmount()
   })
 

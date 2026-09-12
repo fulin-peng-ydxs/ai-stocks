@@ -57,6 +57,7 @@ import { useStockSet } from '@/stores/stockSet'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
+import { detailReturnLabel, trustedDetailReturnPath } from '@/utils/detailReturnNavigation'
 import { formatCompactMoneyYuan } from '@/utils/money'
 import { stockGroupTagStyle } from '@/utils/stockGroupPresentation'
 import {
@@ -201,10 +202,16 @@ const nextLabel = computed(() => neighborLabel(nextCode.value, '下一只'))
 function gotoCode(c: string | null) {
   if (c && c !== '__more__' && c !== code.value) router.push(`/stocks/${c}`)
 }
+const returnLocation = computed(() => (
+  inSet.value
+    ? (trustedDetailReturnPath(stockSet.returnPath) || '/stocks?restore=1')
+    : '/stocks?restore=1'
+))
+const returnLabel = computed(() => detailReturnLabel(returnLocation.value, '返回个股查询'))
 function returnToCollection() {
   // returnPath 由来源页（榜单/板块等）进详情时写入，仅在当前 code 仍属于该集合时可信；
   // 直接从菜单/标签/链接进入（code 不在集合中）时用残留 returnPath 会错回旧来源页，统一归位列表。
-  router.push(inSet.value ? (stockSet.returnPath || '/stocks?restore=1') : '/stocks?restore=1')
+  router.push(returnLocation.value)
 }
 const collectionTotal = computed(() => stockSet.total || stockSet.items.length)
 const collectionTotalPages = computed(() => Math.max(1, Math.ceil(collectionTotal.value / Math.max(stockSet.pageSize || 20, 1))))
@@ -944,17 +951,21 @@ onBeforeUnmount(() => {
     <template #action>
     <div class="lh-action detail-action">
       <div class="detail-nav">
-        <el-button text data-testid="stock-detail-back" @click="returnToCollection">
+        <el-button
+          text
+          :aria-label="returnLabel"
+          data-testid="stock-detail-back"
+          @click="returnToCollection"
+        >
           <template #icon><el-icon><ArrowLeft /></el-icon></template>
-          返回
+          {{ returnLabel }}
         </el-button>
-        <div class="detail-actions">
+        <div class="page-head-actions detail-actions">
           <el-button
             data-testid="stock-detail-refresh"
             :loading="barsLoading || indicatorLoading || quoteLoading || membershipLoading || tradeLoading"
             @click="refreshStockDetail"
           >刷新</el-button>
-          <KlineRangeSelect v-model="viewDays" test-id="stock-detail-range" />
           <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
         </div>
       </div>
@@ -1148,6 +1159,11 @@ onBeforeUnmount(() => {
             @active-bar-change="chartActiveBar = $event"
           >
             <template #header-actions>
+              <KlineRangeSelect
+                v-model="viewDays"
+                width="112px"
+                test-id="stock-detail-range"
+              />
               <AppIconButton
                 v-if="hasAuxiliaryContent"
                 :label="splitCompact ? '查看辅助信息' : (showAuxiliary ? '收起辅助信息，仅看图表' : '显示辅助信息')"

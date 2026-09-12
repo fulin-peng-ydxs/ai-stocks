@@ -1,6 +1,7 @@
 import type { LocationQuery, LocationQueryRaw } from 'vue-router'
 import type { BoardType, SectorSortField } from '@/api/sectors'
 import { normalizeMarketBenchmarkCode } from '@/utils/marketBenchmarks'
+import { detailReturnLabel, trustedDetailReturnPath } from '@/utils/detailReturnNavigation'
 
 export interface SectorSourceQuery {
   type?: BoardType
@@ -36,12 +37,10 @@ const SORT_FIELDS: readonly SectorSortField[] = [
   'up_count',
 ]
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-const TRUSTED_SECTOR_RETURN_RE = /^\/(?:limit-ladder|board|screen)(?:\?|$)|^\/stocks(?:\/[^/?#]+)?(?:\?|$)/
-
 /** 板块详情只接受已知业务列表作为返回来源，避免形成开放重定向。 */
 export function trustedSectorReturnPath(value: unknown): string | undefined {
-  if (typeof value !== 'string' || value.length > 2000) return undefined
-  return TRUSTED_SECTOR_RETURN_RE.test(value) ? value : undefined
+  const path = trustedDetailReturnPath(value)
+  return path?.startsWith('/sectors') ? undefined : path
 }
 
 /** 所有“走势板块”入口共用同一详情地址结构，禁止消费组件各自拼 return_to。 */
@@ -56,12 +55,7 @@ export function sectorDetailLocation(boardCode: string, returnPath?: string) {
 /** 详情页返回按钮按可信来源展示明确文案，未识别来源统一回到板块行情。 */
 export function sectorReturnLabel(raw: LocationQuery): string {
   const returnPath = trustedSectorReturnPath(raw.return_to)
-  if (returnPath?.startsWith('/limit-ladder')) return '返回连板天梯'
-  if (returnPath?.startsWith('/stocks/')) return '返回个股详情'
-  if (returnPath?.startsWith('/stocks')) return '返回个股查询'
-  if (returnPath?.startsWith('/board')) return '返回每日榜单'
-  if (returnPath?.startsWith('/screen')) return '返回策略筛选'
-  return '返回板块行情'
+  return detailReturnLabel(returnPath, '返回板块行情')
 }
 
 /** 详情页与列表页共用来源参数白名单，非法字段逐项丢弃。 */
