@@ -39,7 +39,6 @@ import PageToggleRow from '@/components/PageToggleRow.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import MarketDetailHero from '@/components/MarketDetailHero.vue'
-import MarketBoardTag from '@/components/MarketBoardTag.vue'
 import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
 import StockBoardMembershipPanel from '@/components/StockBoardMembershipPanel.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
@@ -59,7 +58,7 @@ import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
 import { formatCompactMoneyYuan } from '@/utils/money'
-import { sectorDetailLocation } from '@/utils/sectorNavigation'
+import { stockGroupTagStyle } from '@/utils/stockGroupPresentation'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useStockIntradayDrilldown } from '@/composables/useStockIntradayDrilldown'
 import { useDebouncedQuery } from '@/composables/useDebouncedQuery'
@@ -293,15 +292,6 @@ const latestChange = computed(() => {
 const quoteTone = computed<StockQuoteTone>(() => (
   latestPct.value == null || latestPct.value === 0 ? 'neutral' : latestPct.value > 0 ? 'up' : 'down'
 ))
-const relatedIndustry = computed(() => {
-  const related = boardMembership.value?.related_boards
-  const winner = related && !related.unavailable_reason ? related.industry : null
-  if (!winner) return null
-  const membership = boardMembership.value?.industries.find(
-    (item) => item.board_code === winner.board_code,
-  )
-  return { boardCode: winner.board_code, name: winner.name, pct: membership?.pct_chg ?? null }
-})
 const headerSummary = computed<StockQuoteSummaryModel | null>(() => {
   const quote = quoteSummaryData.value
   if (!quote) return null
@@ -726,10 +716,6 @@ const selectedGroups = computed(() => selectedGroupIds.value.map((id) => {
 const visibleSelectedGroups = computed(() => selectedGroups.value.slice(0, 2))
 const hiddenSelectedGroupCount = computed(() => Math.max(0, selectedGroups.value.length - visibleSelectedGroups.value.length))
 let syncingGroupSelect = false
-function tagStyle(color?: string) {
-  const c = color || '#73757d'
-  return { color: c, borderColor: c, backgroundColor: `${c}14` }
-}
 async function loadGroups() {
   // 次级加载按自身 view 码优雅降级：无 stock-group:view 的部分授权角色不拉分组、也不因此 403 卡住详情页主体
   // （K 线/指标/交易评估仍可用）。默认业务角色含该码不受影响。与 StocksView.reloadGroups 同口径。
@@ -1004,26 +990,12 @@ onBeforeUnmount(() => {
           <span v-if="quoteSummaryData?.is_st" class="stock-type stock-type--risk">ST</span>
         </template>
         <template #summary>
-          <div v-if="headerSummary" class="stock-detail-summary">
-            <StockQuoteSummary
-              :summary="headerSummary"
-              data-testid="stock-latest-quote"
-            />
-            <div class="stock-detail-summary__industry">
-              <span class="stock-detail-summary__industry-label">所属行业</span>
-              <MarketBoardTag
-                v-if="relatedIndustry"
-                :name="relatedIndustry.name"
-                :pct-chg="relatedIndustry.pct"
-                related
-                :to="canViewSectors
-                  ? sectorDetailLocation(relatedIndustry.boardCode, route.fullPath)
-                  : undefined"
-                data-testid="stock-summary-industry"
-              />
-              <span v-else class="app-caption-text">—</span>
-            </div>
-          </div>
+          <StockQuoteSummary
+            v-if="headerSummary"
+            :summary="headerSummary"
+            column-gap="relaxed"
+            data-testid="stock-latest-quote"
+          />
           <span v-else class="app-caption-text">
             {{ quoteLoading ? '行情摘要加载中…' : '行情摘要暂不可用' }}
           </span>
@@ -1108,7 +1080,7 @@ onBeforeUnmount(() => {
                   size="small"
                   closable
                   :disable-transitions="true"
-                  :style="tagStyle(g.color)"
+                  :style="stockGroupTagStyle(g.color)"
                   @close.stop="removeSelectedGroup(g.id)"
                 >{{ g.name }}</el-tag>
                 <el-tag v-if="hiddenSelectedGroupCount" class="group-select-tag more" size="small">
@@ -1197,7 +1169,6 @@ onBeforeUnmount(() => {
               :error="membershipError"
               :can-navigate="canViewSectors"
               :return-path="route.fullPath"
-              :show-industries="false"
               @retry="loadBoardMembership"
             />
             <el-card
@@ -1414,29 +1385,6 @@ onBeforeUnmount(() => {
 .detail-chart-workspace {
   width: 100%;
   height: 100%;
-}
-
-.stock-detail-summary {
-  display: flex;
-  min-width: 0;
-  align-items: stretch;
-  gap: var(--app-space-3);
-}
-
-.stock-detail-summary__industry {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: var(--app-space-2);
-  padding-left: var(--app-space-3);
-  border-left: 1px solid var(--el-border-color);
-}
-
-.stock-detail-summary__industry-label {
-  flex: 0 0 auto;
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-caption);
-  font-weight: var(--app-font-weight-section);
 }
 
 .stock-detail-auxiliary {

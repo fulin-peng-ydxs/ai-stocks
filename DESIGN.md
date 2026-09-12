@@ -134,7 +134,7 @@ Key Characteristics：
 - 按钮、标签、抽屉标题、表格控件中的文字不得溢出容器。
 - 金融数字按列右对齐或按业务组件一致处理，避免同列数字参差。
 - 同一行并列的对象识别块、摘要组、状态块等同层信息块，外层默认在交叉轴居中；表单和工具栏继续遵守各自的控件基线规则。只有明确包含多行标题/说明、且右侧操作需要钉住首行的页面页头使用顶部对齐。不得把页面页头的顶部对齐规则套用到单行摘要或指标组。
-- 行情摘要统一消费 `StockQuoteSummary` 与 `stockQuoteSummaryHtml()`：无标签最新价主列垂直居中，可在主值下展示涨跌额与涨跌幅辅助行，并以主题边框和信息列分隔；列宽由内容自动撑开，禁止固定像素列宽。调用方通过 `rowsPerColumn` 决定每列行数，K 线和个股详情头部每列四行，分时每列两行；开盘位于信息首项。所属行业等对象关系不得混入行情数值字段，个股详情应在摘要旁使用独立领域标签表达。K 线浮层、分时弹窗顶部与个股详情共享同一字段分组模型，不再使用全局 `.app-metric-*` 等宽指标网格；个股详情仅关闭 K 线内容浮层，仍保留十字光标、标题联动、缩放与分时下钻，其他消费者默认开启。
+- 行情摘要统一消费 `StockQuoteSummary` 与 `stockQuoteSummaryHtml()`：无标签最新价主列垂直居中，可在主值下展示涨跌额与涨跌幅辅助行，并以主题边框和信息列分隔；列宽由内容自动撑开，禁止固定像素列宽。调用方通过 `rowsPerColumn` 决定每列行数，通过 `columnGap=standard|relaxed` 选择标准或宽松列距，默认 `standard` 以保持既有消费者不变；个股详情显式使用 `relaxed`。K 线和个股详情头部每列四行，分时每列两行；开盘位于信息首项。所属行业等对象关系不得混入行情数值字段，统一由所属板块面板承载。K 线浮层、分时弹窗顶部与个股详情共享同一字段分组模型，不再使用全局 `.app-metric-*` 等宽指标网格；个股详情仅关闭 K 线内容浮层，仍保留十字光标、标题联动、缩放与分时下钻，其他消费者默认开启。
 - 股票代码、配置 key、日志字段、接口路径等技术标识可使用 `--app-font-family-mono`，但仅限值本身，不把整段说明改成等宽体。
 
 ### 3.1 Spacing & Rhythm Rules
@@ -168,6 +168,26 @@ Key Characteristics：
 - 主文本后附状态、分类、来源、板块或其他独立标签时，必须使用 `.app-inline-info` 包裹；默认间距为 `--app-space-control-gap`（6px），主信息与次级元信息需要更明显分组时叠加 `.app-inline-info--md` 使用 8px。
 - 时间、对象名称等主信息与紧随标签在表格中需要保持一行时叠加 `.app-inline-info--nowrap`；主文本必须允许省略，标签 `flex: none` 保持完整。普通内容区允许容器自然换行，换行后仍保留统一 gap。
 - 图标与文字、标签与标签、正文与状态标签均通过容器 `gap` 分隔；禁止依赖模板换行、普通空格、`&nbsp;`、相邻节点间的源码空白或页面私有固定值 `margin-left/right` 修补。用于两端对齐的 `margin-left: auto` 不属于间距修补，可在明确布局容器内保留。
+
+### 3.3 Tag, Badge & Chip Rules
+
+标签体系采用“Element Plus 基础几何 + 全局场景约束 + 领域组件”，不创建只转发 `el-tag` 属性的万能 `AppTag`：
+
+| 类型 | 几何 | 使用边界 |
+|---|---|---|
+| 紧凑标签 | `el-tag size="small"`，20px | 资产属性、选择结果、极紧凑状态；不得承载多项复合业务数据 |
+| 标准业务标签 | Element Plus 默认尺寸，24px | 行业、概念以及普通内容区中的对象关系；默认宽度随内容 |
+| 表格标签 | `.app-table-tag-shell`，统一24px | 表格内评级、走势冠军等有边界内容；负责基线、内部收缩和省略 |
+| 强调标签 | `el-tag size="large"`，32px | 仅用于低密度区域的单一强状态，不进入普通表格、筛选栏或密集摘要 |
+| 微型 badge | `--app-font-size-micro`，不单独承担主体信息 | “最相关”等依附于主体标签的弱角标 |
+| chip | 领域组件定义的自适应胶囊 | 评分拆分、对比队列、已选对象等复合或可操作单元；不得伪装成普通状态标签 |
+
+- 多标签容器使用 `display:flex + flex-wrap` 和 `--app-space-control-gap`；标签保持内容宽度及 `max-width:100%`，禁止 `1fr`、`width:100%` 或页面私有固定宽度把标签拉成卡片。
+- 标签正文使用 `--app-font-size-caption`；11px 只用于依附角标，业务主体不得低于12px。名称过长时在标签内部使用原生省略，并由 `AppOverflowTooltipHost` 承接完整内容。
+- 分类和对象关系默认使用 `effect="plain"`；只有评级、危险或已确认状态等明确语义才使用 `light` / `dark` 强调，页面不得仅为装饰改变 effect。
+- 金融涨跌只使用 `--market-up-color` / `--market-down-color`；系统状态优先使用 Element Plus `type`；字典自定义色消费 `dictTagStyle()`；股票分组颜色消费 `stockGroupTagStyle()`、`DEFAULT_STOCK_GROUP_COLOR` 和 `STOCK_GROUP_COLOR_PRESETS`，页面不得复制颜色数组或透明背景算法。
+- 同一稳定业务语义第二次出现时必须抽领域组件；页面可直接使用 `el-tag` 的情况仅限一次性局部状态、选择结果或组件库原生交互标签。领域组件只收口同一变化原因，不强行合并业务生命周期不同的标签。
+- 当前领域入口：行业/概念使用 `MarketBoardTag`，表格走势冠军使用 `RelatedBoardCell`，综合评级使用 `ScoreGradeTag`，资产范围使用 `AssetVisibilityTag`，系统内置使用 `SystemBuiltinTag`，分项评分使用 `SubScoreChips`。
 - 标签只承载需要快速扫描、筛选或判断的离散属性（状态、分类、来源、权限）；普通说明、时间和连续句子使用正文或弱文本，不得为了分隔而全部标签化。
 - Element Plus Select、Popover、Tooltip 等 Teleport 浮层中的复合选项必须声明唯一 `popper-class`，通过该全局边界设置行内布局与 gap；不得使用无法命中 `body` 下浮层的 scoped 后代选择器。
 
@@ -257,8 +277,8 @@ Key Characteristics：
 | `StockIntradayDialog` / `StockIntradayChart` | `frontend/src/components/stock-chart/StockIntradayDialog.vue`、`frontend/src/components/stock-chart/StockIntradayChart.vue` | 日 K 蜡烛下钻的共享分时弹窗与双绘图区，统一按需请求、取消/迟到响应、范围/空/错误/部分状态、行情摘要、价格/均价/昨收和分钟量能联动 | 无直接系统组件种类；作为股票画布的按需覆盖层 | 只在个股详情与 `StockAnalysisPanel` 的 K 线模式启用；板块、盘感训练和回测消费者保持关闭。`StockChartWorkspace` 默认不得响应点击，只有显式开启时才为 candlestick 提供点击光标并发出交易日，均线、量能、MACD 与缩放不得触发。弹窗顶部统一展示股票身份、突出收盘，并辅助展示涨跌幅、高/低和成交额；身份与指标组垂直居中，指标内部统一标签行和数值行基线，四个指标使用紧凑固定列宽，禁止按内容任意拉开间距；主体只包含价格/均价/昨收和分钟成交量两个绘图区，外框、上下分隔、标题和图例复用股票画布公共入口，分时图例中的价格与均价默认显示最后一个真实分钟点，悬浮时联动显示光标所在分钟值；并统一预留 64px 左右轴边界，价格左轴显示价格、右轴按昨收显示涨跌幅，量能数值轴在左侧且单位固定为手，昨收位于价格轴正中且只标 `0%`，价格轴不得同时显示精确边界标签与内部自动刻度，共享时间轴与十字光标，午休不补假点；内容缩放与底部可见缩放条必须同步两图并在主题/尺寸重绘后保留范围。`ready` 展示、`partial` 保留真实点并复用 `AppStatusNotice` 横向警告，`out_of_range`/`no_data` 用 `AppStateBlock`，503 就地重试；打开才请求，关闭、切股、换日和重复点击必须取消或隔离旧响应，不自动轮询 |
 | `StockChartRegion` | `frontend/src/components/stock-chart/StockChartRegion.vue` | 固定高度股票图表的外层区域，统一接收组件实例总高度、测量可选标题区并把剩余可用高度传给工作区 | `chart.minHeight` + `chart.stockChart` 的当前组合 | 板块详情和盘感训练等声明固定图表高度的页面统一消费；页面只传外层总高度及当前图表组合，禁止再手工减标题高度或把总高度直接当工作区高度；容器根据真实标题高度和边框自动计算内容高度，可见面板硬下限不足时扩展外层而不得裁切；主从工作台随剩余空间成长，不使用本容器 |
 | `MarketDetailHero` | `frontend/src/components/MarketDetailHero.vue` | 行情详情页的对象身份、摘要、元信息与上下文操作头部 | 无直接系统组件种类；承载详情页头部内容 | 板块详情与个股详情共同消费；对象身份使用属性，状态标签、操作、行情摘要、元信息和上下文条分别进入具名插槽，页面不得复制 hero 外壳、背景、间距或响应式规则；默认保持两端布局，摘要需要紧随身份区时显式使用 `asideAlign="start"`，不得以页面深层选择器覆盖共享布局 |
-| `MarketBoardTag` | `frontend/src/components/MarketBoardTag.vue` | 行业与概念名称、同日涨跌和走势相关性的统一领域标签 | 无直接系统组件种类；内部消费 Element Plus 默认尺寸 `el-tag` | 个股详情摘要的相关行业与辅助栏概念共同消费；使用默认 24px 控件档，宽度随内容且允许外层换行，不使用等宽网格或固定宽度；统一涨跌主题色、相关标记、内容省略、键盘焦点和可选板块详情地址 |
-| `StockBoardMembershipPanel` | `frontend/src/components/StockBoardMembershipPanel.vue` | 个股所属行业与概念的分组行情标签，统一同日涨跌、走势冠军标记和权限感知导航 | `section` | 个股详情辅助栏只展示概念，走势最相关行业进入行情摘要且不重复展示；接口必须批量返回个股行情日对应的板块涨跌幅，无同日行情保持空值；板块项统一消费 `MarketBoardTag`，由容器自然换行，不使用 `1fr` 拉满或页面私有固定宽度；有 `sectors:view` 时才进入板块详情并携带可信返回地址 |
+| `MarketBoardTag` | `frontend/src/components/MarketBoardTag.vue` | 行业与概念名称、同日涨跌和走势相关性的统一领域标签 | 无直接系统组件种类；内部消费 Element Plus 默认尺寸 `el-tag` | 个股详情所属板块面板中的相关行业与概念共同消费；使用默认 24px 控件档，宽度随内容且允许外层换行，不使用等宽网格或固定宽度；统一涨跌主题色、相关标记、内容省略、键盘焦点和可选板块详情地址 |
+| `StockBoardMembershipPanel` | `frontend/src/components/StockBoardMembershipPanel.vue` | 个股所属板块行情标签，统一同日涨跌、走势冠军标记和权限感知导航 | `section` | 走势最相关行业标签位于卡片标题旁，其余概念标签直接在正文自然换行，不显示“所属行业”“所属概念”分组字样；接口必须批量返回个股行情日对应的板块涨跌幅，无同日行情保持空值；板块项统一消费 `MarketBoardTag`，不使用 `1fr` 拉满或页面私有固定宽度；有 `sectors:view` 时才进入板块详情并携带可信返回地址 |
 | `AppSplitWorkspace` | `frontend/src/components/AppSplitWorkspace.vue` | 通用左右分栏工作区，统一比例计算、尺寸档案、可访问分隔条、单栏回退和窄屏全屏抽屉 | 作为 `master-detail` 的内部真实组件，消费 `masterRatio`、`masterRatioProfiles` | `MarketMasterDetailWorkspace` 与个股详情共同消费；业务标题、列表、图表和辅助卡均由调用方插槽提供。默认允许 `30%–70%`，实际栏宽、上报比例与持久化样本必须一致，并仅在内容安全宽度冲突时偏离比例边界；两栏各自承接滚动；工作区不超过 `720px` 时只渲染主栏，次栏由调用方操作打开共享全屏抽屉，抽屉填充容器和基础内边距由组件统一提供；页面禁止复制 ResizeObserver、拖拽、键盘调整、比例档案或抽屉基础样式 |
 | `MarketMasterDetailWorkspace` | `frontend/src/components/MarketMasterDetailWorkspace.vue` | 行情列表与走势分析区的双栏业务外壳；基于 `AppSplitWorkspace` 补充列表头和分析区收展，保留既有公开属性、事件与紧凑抽屉控制接口 | `master-detail.masterRatio`、`master-detail.masterRatioProfiles` | 个股查询、每日榜单、连板天梯、板块行情共同消费；列表按工作台容器的配置比例连续计算，系统默认 `45%`、允许配置 `30%–70%`，仅在列表至少 `360px` 或分析区至少 `240px` 的真实内容安全边界触发时偏离配置比例，不设置列表固定像素上限；工作区自身布局宽度不超过 `720px` 时统一退化为列表单区，选择对象后由共享全屏抽屉承载分析区，页面不得再维护私有紧凑抽屉。用户拖动和键盘调整只改会话值；“使用页面当前比例”同步更新 `masterRatio` 并保存 `{width, ratio}` 尺寸档案，上方默认占比必须立即回显，同页同用户可保存多项，当前宽度在档案宽度 `±15%` 内时取相对差最小者，`5%` 内重复保存更新原项，无匹配时回退 `masterRatio`；明显换屏后重新匹配，双击分隔条恢复当前匹配或默认比例。历史 `masterWidth` 只兼容读取、不参与布局；列表空间不足由内部横向滚动承接；个股类页面继续通过共享选择状态维护当前观察与对比队列，禁止复制页面私有状态机 |
 | `MarketCompareMetricStrip` | `frontend/src/components/MarketCompareMetricStrip.vue` | 行情走势对比的指标摘要与切换条；单项固定为指标名称在上、指标值在下并左对齐，统一激活态、涨跌语义色、键盘按钮语义和紧凑视口降级 | 无直接系统组件种类；由行情分析区承载 | 板块行情、个股查询、每日榜单共同消费；消费页只提供指标元数据和值，不复制指标条结构或样式；个股页面只接累计及 5/10/20/30/60 日涨跌，不接板块资金流、成员涨跌或领涨股口径 |

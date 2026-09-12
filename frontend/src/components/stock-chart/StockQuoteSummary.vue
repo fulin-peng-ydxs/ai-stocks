@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { StockQuoteSummaryModel } from './stockQuoteSummary'
-const props = defineProps<{ summary: StockQuoteSummaryModel }>()
+const props = withDefaults(defineProps<{
+  summary: StockQuoteSummaryModel
+  columnGap?: 'standard' | 'relaxed'
+}>(), {
+  columnGap: 'standard',
+})
 const columns = computed(() => {
   const rows = Math.max(1, Math.floor(props.summary.rowsPerColumn))
   return Array.from(
@@ -12,7 +17,7 @@ const columns = computed(() => {
 </script>
 
 <template>
-  <dl class="stock-quote-summary">
+  <dl class="stock-quote-summary" :class="`stock-quote-summary--gap-${columnGap}`">
     <div class="stock-quote-summary__hero">
       <dt v-if="summary.hero.label">{{ summary.hero.label }}</dt>
       <div class="stock-quote-summary__hero-values">
@@ -37,6 +42,7 @@ const columns = computed(() => {
 
 <style scoped>
 .stock-quote-summary { display: flex; align-items: stretch; gap: var(--app-space-2); margin: 0; font-variant-numeric: tabular-nums; }
+.stock-quote-summary--gap-relaxed { gap: var(--app-space-3); }
 .stock-quote-summary__hero { display: flex; align-items: center; justify-content: center; align-self: stretch; padding-right: var(--app-space-2); border-right: 1px solid var(--el-border-color); text-align: center; }
 .stock-quote-summary__hero-values { display: flex; flex-direction: column; align-items: center; }
 .stock-quote-summary__hero-details { display: flex; gap: var(--app-space-2); margin-top: 2px; font-size: var(--app-font-size-caption); white-space: nowrap; }

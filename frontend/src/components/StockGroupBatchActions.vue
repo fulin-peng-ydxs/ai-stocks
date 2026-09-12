@@ -9,6 +9,10 @@ import {
   type GroupSummary,
 } from '@/api/stockGroup'
 import type { StockBatchItem } from '@/composables/useStockBatchSelection'
+import {
+  DEFAULT_STOCK_GROUP_COLOR,
+  STOCK_GROUP_COLOR_PRESETS,
+} from '@/utils/stockGroupPresentation'
 
 const props = withDefaults(defineProps<{
   groups: GroupSummary[]
@@ -28,7 +32,9 @@ const emit = defineEmits<{
 }>()
 
 const createVisible = ref(false)
-const createForm = ref({ name: '', group_date: '', description: '', color: '#73757d' })
+const createForm = ref({
+  name: '', group_date: '', description: '', color: DEFAULT_STOCK_GROUP_COLOR,
+})
 const creating = ref(false)
 const addVisible = ref(false)
 const addTargetGid = ref('')
@@ -38,7 +44,7 @@ const adding = ref(false)
 function openCreate(): void {
   if (!selected.value.length) return
   createForm.value = {
-    name: '', group_date: props.defaultDate, description: '', color: '#73757d',
+    name: '', group_date: props.defaultDate, description: '', color: DEFAULT_STOCK_GROUP_COLOR,
   }
   createVisible.value = true
 }
@@ -156,7 +162,7 @@ async function removeFromGroup(): Promise<void> {
         <el-input v-model="createForm.description" type="textarea" :rows="2" placeholder="可选" />
       </el-form-item>
       <el-form-item label="颜色">
-        <el-color-picker v-model="createForm.color" :predefine="['#f66055', '#f58a07', '#1677ff', '#0ea968', '#73757d', '#b882ff']" />
+        <el-color-picker v-model="createForm.color" :predefine="STOCK_GROUP_COLOR_PRESETS" />
         <span class="stock-batch-hint">用于列表标签和分组状态识别</span>
       </el-form-item>
     </el-form>

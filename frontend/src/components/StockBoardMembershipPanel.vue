@@ -11,29 +11,16 @@ const props = withDefaults(defineProps<{
   error?: string
   canNavigate?: boolean
   returnPath?: string
-  showIndustries?: boolean
 }>(), {
   membership: null,
   loading: false,
   error: '',
   canNavigate: false,
   returnPath: '',
-  showIndustries: true,
 })
 
 const emit = defineEmits<{ retry: [] }>()
-interface MembershipGroup {
-  key: 'industry' | 'concept'
-  label: string
-  items: BoardMembershipItem[]
-}
-
-const groups = computed<MembershipGroup[]>(() => [
-  ...(props.showIndustries
-    ? [{ key: 'industry' as const, label: '所属行业', items: props.membership?.industries ?? [] }]
-    : []),
-  { key: 'concept', label: '所属概念', items: props.membership?.concepts ?? [] },
-])
+const concepts = computed(() => props.membership?.concepts ?? [])
 
 function winnerCode(type: 'industry' | 'concept'): string | null {
   const related = props.membership?.related_boards
@@ -45,6 +32,17 @@ function isWinner(type: 'industry' | 'concept', item: BoardMembershipItem): bool
   return item.board_code === winnerCode(type)
 }
 
+const relatedIndustry = computed<BoardMembershipItem | null>(() => {
+  const code = winnerCode('industry')
+  if (!code) return null
+  const membership = props.membership?.industries.find((item) => item.board_code === code)
+  if (membership) return membership
+  const winner = props.membership?.related_boards?.industry
+  return winner
+    ? { board_code: winner.board_code, name: winner.name, board_type: 'industry', pct_chg: null }
+    : null
+})
+
 </script>
 
 <template>
@@ -52,6 +50,17 @@ function isWinner(type: 'industry' | 'concept', item: BoardMembershipItem): bool
     <template #header>
       <div class="stock-board-membership__head">
         <span>所属板块</span>
+        <MarketBoardTag
+          v-if="relatedIndustry"
+          :name="relatedIndustry.name"
+          :pct-chg="relatedIndustry.pct_chg"
+          related
+          :to="canNavigate
+            ? sectorDetailLocation(relatedIndustry.board_code, returnPath)
+            : undefined"
+          class="stock-board-membership__featured"
+          data-testid="stock-board-related-industry"
+        />
       </div>
     </template>
 
@@ -70,22 +79,19 @@ function isWinner(type: 'industry' | 'concept', item: BoardMembershipItem): bool
       size="compact"
       title="正在加载所属板块…"
     />
-    <div v-else class="stock-board-membership__groups" v-loading="loading && !!membership">
-      <section v-for="group in groups" :key="group.key" class="stock-board-membership__group">
-        <h4>{{ group.label }}</h4>
-        <div v-if="group.items.length" class="stock-board-membership__grid">
-          <MarketBoardTag
-            v-for="item in group.items"
-            :key="item.board_code"
-            :name="item.name"
-            :pct-chg="item.pct_chg"
-            :related="isWinner(group.key, item)"
-            :to="canNavigate ? sectorDetailLocation(item.board_code, returnPath) : undefined"
-            :data-testid="`stock-board-${item.board_code}`"
-          />
-        </div>
-        <span v-else class="stock-board-membership__empty">暂无{{ group.label }}</span>
-      </section>
+    <div v-else class="stock-board-membership__body" v-loading="loading && !!membership">
+      <div v-if="concepts.length" class="stock-board-membership__grid">
+        <MarketBoardTag
+          v-for="item in concepts"
+          :key="item.board_code"
+          :name="item.name"
+          :pct-chg="item.pct_chg"
+          :related="isWinner('concept', item)"
+          :to="canNavigate ? sectorDetailLocation(item.board_code, returnPath) : undefined"
+          :data-testid="`stock-board-${item.board_code}`"
+        />
+      </div>
+      <span v-else class="stock-board-membership__empty">暂无其他板块</span>
     </div>
   </el-card>
 </template>
@@ -98,19 +104,13 @@ function isWinner(type: 'industry' | 'concept', item: BoardMembershipItem): bool
 .stock-board-membership__head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
   gap: var(--app-space-2);
 }
 
-.stock-board-membership__groups {
-  display: grid;
-  gap: var(--app-space-3);
-}
-
-.stock-board-membership__group h4 {
-  margin: 0 0 var(--app-space-2);
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-caption);
-  font-weight: var(--app-font-weight-section);
+.stock-board-membership__featured {
+  margin-left: auto;
 }
 
 .stock-board-membership__grid {

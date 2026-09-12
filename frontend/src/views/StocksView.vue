@@ -74,6 +74,11 @@ import {
   PRICE_COMPARE_METRIC_ORDER,
   type PriceCompareMetric,
 } from '@/utils/marketCompare'
+import {
+  DEFAULT_STOCK_GROUP_COLOR,
+  STOCK_GROUP_COLOR_PRESETS,
+  stockGroupTagStyle,
+} from '@/utils/stockGroupPresentation'
 
 const router = useRouter()
 const route = useRoute()
@@ -591,15 +596,6 @@ function pctClass(v: number | null | undefined): string {
   if (v === null || v === undefined) return 'muted'
   return v > 0 ? 'up' : v < 0 ? 'down' : ''
 }
-function tagStyle(color?: string) {
-  const c = color || '#73757d'
-  return {
-    color: c,
-    borderColor: c,
-    backgroundColor: `${c}14`,
-  }
-}
-
 // ── 持久化选择「购物车」：跨分页 / 跨搜索累积 ──
 const cart = ref<StockBatchItem[]>([])
 type StockAnalysisRow = { code: string; name: string | null; last_date?: string | null }
@@ -746,10 +742,17 @@ async function onBatchGroupsChanged(
 
 // ── 编辑 / 删除分组 ──
 const editVisible = ref(false)
-const editForm = ref<{ name: string; group_date: string; description: string; color: string }>({ name: '', group_date: '', description: '', color: '#73757d' })
+const editForm = ref<{ name: string; group_date: string; description: string; color: string }>({
+  name: '', group_date: '', description: '', color: DEFAULT_STOCK_GROUP_COLOR,
+})
 function openEdit() {
   if (!groupDetail.value) return
-  editForm.value = { name: groupDetail.value.name, group_date: groupDetail.value.group_date || '', description: groupDetail.value.description || '', color: groupDetail.value.color || '#73757d' }
+  editForm.value = {
+    name: groupDetail.value.name,
+    group_date: groupDetail.value.group_date || '',
+    description: groupDetail.value.description || '',
+    color: groupDetail.value.color || DEFAULT_STOCK_GROUP_COLOR,
+  }
   editVisible.value = true
 }
 async function doEdit() {
@@ -1097,7 +1100,7 @@ onMounted(async () => {
                   size="small"
                   effect="plain"
                   class="box-tag"
-                  :style="tagStyle(g.color)"
+                  :style="stockGroupTagStyle(g.color)"
                   role="button"
                   tabindex="0"
                   :aria-label="`查看分组：${g.name}`"
@@ -1182,7 +1185,11 @@ onMounted(async () => {
         <el-form-item label="建组日期"><TradeDatePicker v-model="editForm.group_date" clearable style="width: 200px" /></el-form-item>
         <el-form-item label="分组说明"><el-input v-model="editForm.description" type="textarea" :rows="2" /></el-form-item>
         <el-form-item label="颜色">
-          <el-color-picker v-model="editForm.color" :disabled="groupDetail?.is_default" :predefine="['#f66055', '#f58a07', '#1677ff', '#0ea968', '#73757d', '#b882ff']" />
+          <el-color-picker
+            v-model="editForm.color"
+            :disabled="groupDetail?.is_default"
+            :predefine="STOCK_GROUP_COLOR_PRESETS"
+          />
           <span class="f-hint">{{ groupDetail?.is_default ? '默认自选固定为红色' : '用于列表标签和分组状态识别' }}</span>
         </el-form-item>
       </el-form>

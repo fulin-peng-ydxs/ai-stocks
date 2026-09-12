@@ -380,24 +380,15 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
         props: ['eyebrow', 'title', 'code', 'subtitle', 'asideAlign'],
         template: '<section :data-aside-align="asideAlign"><span>{{ title }}</span><span>{{ code }}</span><slot name="badges"/><slot name="summary"/><slot name="meta"/><slot name="footer"/></section>',
       },
-      MarketBoardTag: {
-        name: 'MarketBoardTag',
-        props: {
-          name: String,
-          pctChg: Number,
-          related: Boolean,
-          to: Object,
-        },
-        template: '<span>{{ name }}</span>',
-      },
       StockQuoteSummary: {
-        props: ['summary'],
+        name: 'StockQuoteSummary',
+        props: ['summary', 'columnGap'],
         template: '<div data-testid="stock-latest-quote">{{ summary.hero.value }}:{{ summary.hero.tone }} {{ summary.hero.details?.map((item) => item.value).join(" ") }} {{ summary.metrics.map((item) => `${item.label}:${item.value}:${item.tone || "neutral"}`).join(" ") }}</div>',
       },
       StockBoardMembershipPanel: {
         name: 'StockBoardMembershipPanel',
-        props: ['showIndustries'],
-        template: '<section data-testid="stock-board-membership-panel" :data-show-industries="String(showIndustries)" />',
+        props: ['membership'],
+        template: '<section data-testid="stock-board-membership-panel" />',
       },
       StockIntradayDialog: {
         name: 'StockIntradayDialog',
@@ -648,8 +639,7 @@ describe('StockDetailView 三图数据协调', () => {
     expect(workspace.props('fitAvailableHeight')).toBe('')
     expect(workspace.props('enableIntradayDrilldown')).toBe('')
     expect(workspace.props('showKlineTooltip')).toBe(false)
-    expect(wrapper.get('[data-testid="stock-board-membership-panel"]')
-      .attributes('data-show-industries')).toBe('false')
+    expect(wrapper.find('[data-testid="stock-board-membership-panel"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="stock-detail-primary"]').findComponent(StockChartWorkspaceStub).exists())
       .toBe(true)
     expect(wrapper.get('[data-testid="stock-detail-secondary"]').find('[data-testid="stock-indicator-snapshot-card"]').exists())
@@ -675,7 +665,7 @@ describe('StockDetailView 三图数据协调', () => {
     expect(dialog.attributes('data-date')).toBe('2026-08-07')
   })
 
-  it('行情摘要左对齐，展示最相关行业并随 K 线光标切换行情和涨跌颜色', async () => {
+  it('行情摘要保持纯行情字段并随 K 线光标切换数值和涨跌颜色', async () => {
     vi.mocked(stocksApi.getStockBoardMembership).mockResolvedValueOnce({
       code: '600000.SH',
       membership_scope: 'cumulative',
@@ -701,11 +691,7 @@ describe('StockDetailView 三图数据协调', () => {
     expect(hero.exists()).toBe(true)
     expect(wrapper.get('[data-testid="stock-latest-quote"]').text()).toContain('10.50')
     expect(wrapper.get('[data-testid="stock-latest-quote"]').text()).not.toContain('所属行业')
-    expect(wrapper.getComponent({ name: 'MarketBoardTag' }).props()).toMatchObject({
-      name: '银行',
-      pctChg: 2,
-      related: true,
-    })
+    expect(wrapper.getComponent({ name: 'StockQuoteSummary' }).props('columnGap')).toBe('relaxed')
 
     await wrapper.get('[data-testid="activate-kline-bar"]').trigger('click')
     await nextTick()

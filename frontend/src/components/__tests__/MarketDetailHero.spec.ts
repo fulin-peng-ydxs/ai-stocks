@@ -79,6 +79,20 @@ describe('StockQuoteSummary', () => {
     expect(wrapper.get('.stock-quote-summary__hero-details').text()).toBe('+2.00%')
     expect(wrapper.find('.stock-quote-summary__metric dd').classes()).toContain('is-down')
   })
+
+  it('只在显式配置时放宽列间距', () => {
+    const summary = {
+      hero: { label: '', value: '10.20', tone: 'up' as const },
+      rowsPerColumn: 4,
+      metrics: [{ label: '开盘', value: '10.00' }],
+    }
+    const standard = mount(StockQuoteSummary, { props: { summary } })
+    const relaxed = mount(StockQuoteSummary, { props: { summary, columnGap: 'relaxed' } })
+
+    expect(standard.classes()).toContain('stock-quote-summary--gap-standard')
+    expect(standard.classes()).not.toContain('stock-quote-summary--gap-relaxed')
+    expect(relaxed.classes()).toContain('stock-quote-summary--gap-relaxed')
+  })
 })
 
 describe('StockBoardMembershipPanel', () => {
@@ -100,7 +114,7 @@ describe('StockBoardMembershipPanel', () => {
     },
   }
 
-  it('分组展示同日涨幅并标记走势最相关板块', () => {
+  it('标题旁展示最相关行业，正文直接展示概念标签', () => {
     const wrapper = mount(StockBoardMembershipPanel, {
       props: { membership, canNavigate: false },
       global: {
@@ -114,10 +128,12 @@ describe('StockBoardMembershipPanel', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('所属行业')
+    expect(wrapper.text()).not.toContain('所属行业')
+    expect(wrapper.text()).not.toContain('所属概念')
     expect(wrapper.text()).toContain('+2.00%')
     expect(wrapper.text()).toContain('-1.50%')
-    const industry = wrapper.get('[data-testid="stock-board-881001"]')
+    const industry = wrapper.get('[data-testid="stock-board-related-industry"]')
+    expect(industry.classes()).toContain('stock-board-membership__featured')
     expect(industry.get('.market-board-tag').classes()).toContain('is-related')
     expect(industry.getComponent(ElTagStub).props()).toMatchObject({
       size: 'default',
@@ -126,9 +142,9 @@ describe('StockBoardMembershipPanel', () => {
     expect(wrapper.text()).toContain('最相关')
   })
 
-  it('可把行业移出右栏，板块标签按内容自然换行而不拉满', () => {
+  it('概念标签按内容自然换行而不增加分组标题', () => {
     const wrapper = mount(StockBoardMembershipPanel, {
-      props: { membership, showIndustries: false },
+      props: { membership },
       global: {
         stubs: {
           ElCard: ElCardStub,
@@ -141,7 +157,7 @@ describe('StockBoardMembershipPanel', () => {
     })
 
     expect(wrapper.text()).not.toContain('所属行业')
-    expect(wrapper.text()).toContain('所属概念')
+    expect(wrapper.text()).not.toContain('所属概念')
     expect(wrapper.find('.stock-board-membership__grid').exists()).toBe(true)
   })
 
