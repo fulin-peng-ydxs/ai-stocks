@@ -509,6 +509,8 @@ Key Characteristics：
 
 用户层以 PostgreSQL 为权威：页面布局和组件字段写入真实 pageKey 的 `layout_user_config`，页面业务偏好、主题、导航模式、界面比例、K 线偏好和跨页面设置抽屉偏好写入 `user_preference`。回测日期、方案选择和当次运行参数只属于会话态，不得写入用户偏好。localStorage 只允许作为未登录/离线 fallback、旧偏好迁移源和登录前主题读取，不得作为登录用户配置权威，也不得保存页面查询现场。列表进入详情再返回所需的现场统一使用按租户和用户隔离的 sessionStorage：刷新可恢复，返回页消费一次，关闭 Tab、退出登录或切换身份后清理。
 
+页面状态生命周期统一按语义选择入口：抽屉默认值投影到当前 Vue 实例时使用 `useDefaultedSessionValue`，由 KeepAlive 保留的只是该实例内存，刷新或实例重建后重新应用默认；需要分享、前进后退或刷新复现的查询状态写入 URL；确需跨路由返回且不适合暴露在 URL 的一次性现场使用 `utils/pageSessionStorage.ts`，页面不得直接调用 localStorage/sessionStorage。`pageSessionStorage` 统一负责 page namespace、租户/用户隔离、旧键迁移和退出/身份切换清理，业务 Store 只负责状态结构及消费时机。
+
 ### 5.1 新建或改造页面
 
 新页面和布局改造必须先选择原型，再声明 slot、组件种类、滚动归属、`growMain` 和配置字段。优先使用脚手架生成骨架；需要手写时也必须从 `pageRegistry.ts` 的 `PageLayout` 单一事实源开始，不从旧页面复制临时 CSS。

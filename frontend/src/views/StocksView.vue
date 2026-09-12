@@ -44,6 +44,7 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useMarketMasterRatioRuntime } from '@/composables/useMarketMasterRatioRuntime'
 import { useStockSet, type StockListState } from '@/stores/stockSet'
@@ -228,10 +229,19 @@ const membershipOptions = computed(() => {
     }
   })
 })
-const excludeSt = ref(Boolean(settings.excludeSt))        // 默认排除 ST
+const excludeSt = useDefaultedSessionValue(computed(() => Boolean(settings.excludeSt)), {
+  shouldSync: () => !restoringListState && board.value !== 'ST' && board.value !== '退市',
+  onSynced: () => { void searchCurrentView() },
+})
 const tradeDate = ref('')          // 交易日期（默认最新，展示当日涨跌幅）
-const sortBy = ref(defaultSortBy.value)      // 服务端排序字段（默认涨跌幅，初值取组件配置默认排序）
-const sortOrder = ref<'asc' | 'desc'>(defaultSortOrder.value)  // 默认正序
+const sortBy = useDefaultedSessionValue(defaultSortBy, {
+  shouldSync: () => !restoringListState && !inGroupMode.value,
+  onSynced: () => { void search() },
+})
+const sortOrder = useDefaultedSessionValue(defaultSortOrder, {
+  shouldSync: () => !restoringListState && !inGroupMode.value,
+  onSynced: () => { void search() },
+})
 const page = ref(1)
 const {
   defaultPageSize: defaultSize,
@@ -262,40 +272,6 @@ watch(tradeDate, () => {
   if (restoringListState) return
   clearAnalysisSelection()
   searchCurrentView()
-})
-watch(() => settings.excludeSt, (value) => {
-  if (restoringListState) return
-  if (board.value === 'ST' || board.value === '退市') return
-  excludeSt.value = Boolean(value)
-  searchCurrentView()
-})
-watch(defaultSortBy, (value) => {
-  if (restoringListState) return
-  if (inGroupMode.value) return
-  if (sortBy.value === String(value)) return
-  sortBy.value = String(value)
-  search()
-})
-watch(defaultSortOrder, (value) => {
-  if (restoringListState) return
-  if (inGroupMode.value) return
-  if (sortOrder.value === value) return
-  sortOrder.value = value
-  search()
-})
-watch(groupDefaultSortBy, (value) => {
-  if (restoringListState) return
-  if (!inGroupMode.value) return
-  if (groupSortBy.value === String(value)) return
-  groupSortBy.value = String(value)
-  groupSearch()
-})
-watch(groupDefaultSortOrder, (value) => {
-  if (restoringListState) return
-  if (!inGroupMode.value) return
-  if (groupSortOrder.value === value) return
-  groupSortOrder.value = value
-  groupSearch()
 })
 
 const stockListRequest = createLatestRequestGuard()
@@ -374,8 +350,14 @@ const groupError = ref('')
 const groupListError = ref('')
 const inGroupMode = computed(() => !!activeGid.value)
 const groupPage = ref(1)
-const groupSortBy = ref(groupDefaultSortBy.value)
-const groupSortOrder = ref<'asc' | 'desc'>(groupDefaultSortOrder.value)
+const groupSortBy = useDefaultedSessionValue(groupDefaultSortBy, {
+  shouldSync: () => !restoringListState && inGroupMode.value,
+  onSynced: () => { void groupSearch() },
+})
+const groupSortOrder = useDefaultedSessionValue(groupDefaultSortOrder, {
+  shouldSync: () => !restoringListState && inGroupMode.value,
+  onSynced: () => { void groupSearch() },
+})
 const groupTotal = computed(() => groupDetail.value?.members.total ?? 0)
 const lastActiveGid = ref('')
 let groupLoadRevision = 0
@@ -448,15 +430,17 @@ watch(activeGid, async (gid) => {
   }
   await loadGroupDetail()
 })
-watch(() => settings.defaultView, async (value) => {
-  if (restoringListState) return
-  if (value === 'group') {
-    changeView('group')
-  } else if (activeGid.value) {
-    changeView('list')
-  } else {
-    await load()
-  }
+useDefaultedSessionValue(computed(() => settings.defaultView), {
+  shouldSync: () => !restoringListState,
+  onSynced: async (value) => {
+    if (value === 'group') {
+      changeView('group')
+    } else if (activeGid.value) {
+      changeView('list')
+    } else {
+      await load()
+    }
+  },
 })
 const currentView = computed<'list' | 'group'>(() => (inGroupMode.value ? 'group' : 'list'))
 const viewOptions = [

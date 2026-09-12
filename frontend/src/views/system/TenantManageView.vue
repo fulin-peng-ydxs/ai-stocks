@@ -22,6 +22,7 @@ import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useTableSort } from '@/composables/useTableSort'
@@ -78,8 +79,11 @@ const { pageSize: size, changePageSize } = useComponentPageSizeSession({
   resetPage: () => { page.value = 1 },
   reload: () => load(),
 })
-const filters = ref<{ status: string; q: string }>({ status: '', q: '' })
 const defaultFilterStatus = computed(() => settings.defaultStatus === 'active' ? 'active' : '')
+const filters = ref<{ status: string; q: string }>({ status: defaultFilterStatus.value, q: '' })
+useDefaultedSessionValue(defaultFilterStatus, {
+  onSynced: (value) => { filters.value.status = value },
+})
 const hasQueryFilters = computed(() => (
   filters.value.status !== defaultFilterStatus.value || filters.value.q.trim() !== ''
 ))
@@ -274,11 +278,9 @@ async function save() {
 }
 
 onMounted(async () => {
-  filters.value.status = settings.defaultStatus === 'active' ? 'active' : ''
   void loadUserStatusDictItems()
   await load()
 })
-watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'active' ? 'active' : '' })
 </script>
 
 <template>

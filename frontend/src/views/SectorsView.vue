@@ -216,9 +216,23 @@ const marketDate = ref<string | null>(null)
 let restoring = true
 // 五个筛选/图表口径均为单向：抽屉默认值 → 会话 ref；主区改动只进会话态，不写回默认。
 // URL query/分享链接恢复也只写会话 ref（restoring 区间），不触碰抽屉默认。见 DESIGN「设置抽屉」单向默认机制。
-const boardType = ref<BoardType | ''>(settings.defaultType === 'concept' || settings.defaultType === 'industry' ? settings.defaultType : '')
+const configuredBoardType = computed<BoardType | ''>(() => (
+  settings.defaultType === 'concept' || settings.defaultType === 'industry' ? settings.defaultType : ''
+))
+const boardType = useDefaultedSessionValue(configuredBoardType, {
+  shouldSync: () => !restoring,
+  onSynced: () => { search() },
+})
 // listScope 单向：会话 ref 初始化自默认；无自选权限的守卫在使用处（列表查询/展示），初始化不读 canViewWatchlist 避免 TDZ。
-const listScope = ref<'all' | 'watchlist'>(settings.defaultScope)
+const configuredListScope = computed<'all' | 'watchlist'>(() => (
+  settings.defaultScope === 'watchlist' ? 'watchlist' : 'all'
+))
+const listScope = useDefaultedSessionValue(configuredListScope, {
+  shouldSync: () => !restoring && (
+    configuredListScope.value !== 'watchlist' || canViewWatchlist.value
+  ),
+  onSynced: () => { changeListScope() },
+})
 const keyword = ref('')
 const page = ref(1)
 const {
@@ -460,11 +474,8 @@ async function loadChart(): Promise<void> {
 }
 
 // 走势分析区显隐单向：抽屉默认值 → 会话 ref；主区「》」收起/展开只进会话态，不写回默认。
-const analysisPanelVisible = ref(settings.showAnalysisPanel !== false)
-// 抽屉改默认值 → 同步会话；主区收展只改会话 ref，两者统一触发副作用。
-watch(() => settings.showAnalysisPanel, (visible) => {
-  analysisPanelVisible.value = visible !== false
-})
+const analysisPanelVisible = useDefaultedSessionValue(computed(() => settings.showAnalysisPanel !== false))
+// 抽屉默认和主区会话变化统一触发副作用。
 watch(analysisPanelVisible, applyAnalysisPanelSideEffect)
 /** 收起分析区时保留观察对象与对比队列；再次展开后按当前筛选状态刷新走势。 */
 function applyAnalysisPanelSideEffect(visible: boolean): void {
@@ -621,9 +632,7 @@ function onDateChange(): void {
 }
 
 const defaultBoardType = computed<BoardType | ''>(() => (
-  settings.defaultType === 'concept' || settings.defaultType === 'industry'
-    ? settings.defaultType
-    : ''
+  configuredBoardType.value
 ))
 const defaultListScope = computed<'all' | 'watchlist'>(() => (
   canViewWatchlist.value && settings.defaultScope === 'watchlist' ? 'watchlist' : 'all'

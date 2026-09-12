@@ -46,6 +46,7 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useTableSort } from '@/composables/useTableSort'
 import { getSettingsView, resetSettings, saveSettings, type MailStatus, type SettingGroup } from '@/api/data'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
@@ -137,8 +138,7 @@ const sysSaving = ref(false)
 const sysSaveError = ref(false)
 // 系统设置分组页签单向：组件配置层默认值（sysTabs.defaultActive）→ 会话 ref；页面切换不写回配置层。
 const sysTabDefault = computed<string>(() => (componentValueOf('sysTabs', 'defaultActive') as string) || 'access')
-const activeSysTab = ref(sysTabDefault.value)
-watch(sysTabDefault, (value) => { activeSysTab.value = value })
+const activeSysTab = useDefaultedSessionValue(sysTabDefault)
 interface SystemGroupTab {
   key: string
   label: string

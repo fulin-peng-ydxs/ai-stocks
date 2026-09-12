@@ -29,6 +29,7 @@ import { getAuditDetail, getAuditSummary, listAuditLogs, type AuditLog, type Aud
 import { getPublicDictItems } from '@/api/dict'
 import { listTenants } from '@/api/tenant'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useTableSort } from '@/composables/useTableSort'
@@ -102,7 +103,7 @@ const { settings, isDirty: bizDirty, reset: resetBiz } = usePageSettings(pageKey
   autoRefreshEnabled: false,
 })
 const settingsOpen = ref(false)
-const autoRefreshEnabled = ref(settings.autoRefreshEnabled)
+const autoRefreshEnabled = useDefaultedSessionValue(computed(() => settings.autoRefreshEnabled))
 const filters = reactive({
   start_time: '',
   end_time: '',
@@ -472,9 +473,6 @@ function stopTimer() {
 }
 
 watch(autoRefreshEnabled, startTimer)
-watch(() => settings.autoRefreshEnabled, (value) => {
-  autoRefreshEnabled.value = value
-})
 
 onMounted(async () => {
   await Promise.all([loadDictOptions(), loadTenantOptions()])

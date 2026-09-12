@@ -1200,6 +1200,37 @@ describe('组件消费关系与配置一致性（P4）', () => {
     ).toEqual([])
   })
 
+  it('页面默认值投影统一使用 useDefaultedSessionValue，不保留 ref + watcher 私有实现', () => {
+    const violations: string[] = []
+    for (const entry of PAGE_REGISTRY) {
+      const source = sourceForPage(entry.pageKey)
+      if (!source) continue
+      const directPreferenceRef = /\bref(?:<[^>]+>)?\(\s*(?:Boolean|Number|String)?\(?\s*(?:settings|cfg)\./
+      const directKnownDefaultRef = /\bref(?:<[^>]+>)?\(\s*(?:klineDefault|defaultKlineRange|workspaceTabDefault|sysTabDefault)\.value\s*\)/
+      const directPreferenceWatcher = /watch\(\s*\(\)\s*=>\s*(?:settings|cfg)\.[^,]+,\s*\([^)]*\)\s*=>\s*\{?\s*[\w.]+\.value\s*=/
+      if (directPreferenceRef.test(source)) violations.push(`${entry.pageKey}: ref(settings/cfg.*)`)
+      if (directKnownDefaultRef.test(source)) violations.push(`${entry.pageKey}: ref(default.value)`)
+      if (directPreferenceWatcher.test(source)) violations.push(`${entry.pageKey}: settings watcher 手工回填会话 ref`)
+    }
+    expect(
+      violations,
+      `默认值到主区会话态必须复用 useDefaultedSessionValue：\n${violations.join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('页面不得直接读写浏览器存储，会话与偏好必须经过共享生命周期入口', () => {
+    const violations: string[] = []
+    for (const entry of PAGE_REGISTRY) {
+      const source = sourceForPage(entry.pageKey)
+      if (!source) continue
+      if (/\b(?:localStorage|sessionStorage)\s*\./.test(source)) violations.push(entry.pageKey)
+    }
+    expect(
+      violations,
+      `页面不得私有化浏览器存储，请使用 usePageSettings、pageSessionStorage 或专用共享 composable：\n${violations.join('\n')}`,
+    ).toEqual([])
+  })
+
   it('页面不得直接创建私有持久化通道，长期偏好必须进入可审查的页面设置或专用共享契约', () => {
     const violations: string[] = []
     for (const entry of PAGE_REGISTRY) {

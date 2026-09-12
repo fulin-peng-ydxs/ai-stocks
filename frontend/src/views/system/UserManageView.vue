@@ -20,6 +20,7 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useTableSort } from '@/composables/useTableSort'
@@ -148,9 +149,12 @@ const { pageSize: size, changePageSize } = useComponentPageSizeSession({
   resetPage: () => { page.value = 1 },
   reload: () => load(),
 })
-const filters = ref<{ tenant: string; role: string; status: string; q: string }>(
-  { tenant: '', role: '', status: '', q: '' })
 const defaultFilterStatus = computed(() => settings.defaultStatus === 'active' ? 'active' : '')
+const filters = ref<{ tenant: string; role: string; status: string; q: string }>(
+  { tenant: '', role: '', status: defaultFilterStatus.value, q: '' })
+useDefaultedSessionValue(defaultFilterStatus, {
+  onSynced: (value) => { filters.value.status = value },
+})
 const hasQueryFilters = computed(() => (
   filters.value.tenant !== ''
   || filters.value.role !== ''
@@ -430,14 +434,12 @@ function userRowActions(row: AdminUser): AppRowAction[] {
 }
 
 onMounted(async () => {
-  filters.value.status = settings.defaultStatus === 'active' ? 'active' : ''
   // 租户管理页「查看用户」跳转带 ?tenant=<id>：system 预置租户筛选（tenant_admin 无越权、忽略）。
   const qTenant = route.query.tenant
   if (isSystem.value && typeof qTenant === 'string' && qTenant) filters.value.tenant = qTenant
   void Promise.all([loadRoleTypeDictItems(), loadUserStatusDictItems()])
   await Promise.all([loadDependencies(), load()])
 })
-watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'active' ? 'active' : '' })
 </script>
 
 <template>

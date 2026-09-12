@@ -43,6 +43,7 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useStockSet } from '@/stores/stockSet'
 import { downloadCsv } from '@/utils/csv'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
@@ -397,7 +398,7 @@ function newProfile() {
 
 // ── 运行 / 结果 ──
 const runDate = ref('')
-const excludeSt = ref(Boolean(settings.excludeSt))
+const excludeSt = useDefaultedSessionValue(computed(() => Boolean(settings.excludeSt)))
 const loading = ref(false)
 const resultError = ref('')
 const result = ref<{ date: string; count: number; hits: ScreenHit[] } | null>(null)
@@ -421,10 +422,6 @@ function gotoStock(row: ScreenHit) {
   })
   router.push(`/stocks/${row.code}`)
 }
-
-watch(() => settings.excludeSt, (value) => {
-  excludeSt.value = Boolean(value)
-})
 
 let runSequence = 0
 async function runScreenResults(background = false) {

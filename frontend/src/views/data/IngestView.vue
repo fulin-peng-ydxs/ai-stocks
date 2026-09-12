@@ -26,6 +26,7 @@ import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
 import ResultMaintenanceTaskFields from '@/components/data/ResultMaintenanceTaskFields.vue'
 import StockIngestScopeFields from '@/components/data/StockIngestScopeFields.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useTableSort } from '@/composables/useTableSort'
 import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
@@ -84,8 +85,7 @@ type IngestWorkspaceTab = 'tasks' | 'logs'
 const workspaceTabDefault = computed<IngestWorkspaceTab>(() => (
   componentValueOf('workspace', 'defaultActive') === 'logs' ? 'logs' : 'tasks'
 ))
-const activeWorkspaceTab = ref<IngestWorkspaceTab>(workspaceTabDefault.value)
-watch(workspaceTabDefault, (value) => { activeWorkspaceTab.value = value })
+const activeWorkspaceTab = useDefaultedSessionValue(workspaceTabDefault)
 const loading = ref(false)
 
 // ── 任务中心：服务端分页 / 排序 / 筛选（M2.9.5）──
@@ -101,10 +101,13 @@ const { pageSize: taskSize, changePageSize: changeTaskPageSize } = useComponentP
   },
   reload: loadTasks,
 })
-const taskFilter = ref<{ status: string; task_type: string }>({ status: '', task_type: '' })
 const defaultTaskStatus = computed(() => (
   settings.taskStatus === 'active' ? 'running' : settings.taskStatus === 'failed' ? 'failed' : ''
 ))
+const taskFilter = ref<{ status: string; task_type: string }>({
+  status: defaultTaskStatus.value,
+  task_type: '',
+})
 const hasTaskFilters = computed(() => (
   taskFilter.value.status !== defaultTaskStatus.value || taskFilter.value.task_type !== ''
 ))
@@ -139,8 +142,11 @@ const { pageSize: logSize, changePageSize: changeLogPageSize } = useComponentPag
   reload: loadLogs,
 })
 const logTables = ref<string[]>([])
-const logFilter = ref<{ status: string; table_name: string }>({ status: '', table_name: '' })
 const defaultLogStatus = computed(() => settings.logStatus === 'failed' ? 'failed' : '')
+const logFilter = ref<{ status: string; table_name: string }>({
+  status: defaultLogStatus.value,
+  table_name: '',
+})
 const hasLogFilters = computed(() => (
   logFilter.value.status !== defaultLogStatus.value || logFilter.value.table_name !== ''
 ))
@@ -609,26 +615,21 @@ function correlationBenchmarkText(): string {
   return items.join(' · ') || '—'
 }
 // autoScroll 单向：抽屉默认值 → 会话 ref；日志抽屉复选框改动只进会话态，不写回默认。
-const autoScroll = ref(Boolean(settings.autoScroll))
-watch(() => settings.autoScroll, (value) => { autoScroll.value = Boolean(value) })
-function applyTaskPrefs() {
-  taskFilter.value.status = settings.taskStatus === 'active'
-    ? 'running'
-    : settings.taskStatus === 'failed'
-      ? 'failed'
-      : ''
+const autoScroll = useDefaultedSessionValue(computed(() => Boolean(settings.autoScroll)))
+function applyTaskPrefs(status = defaultTaskStatus.value) {
+  taskFilter.value.status = status
   taskPage.value = 1
   // 远端偏好可能在首屏任务已返回后才完成 hydration；此时重新套用默认筛选属于后台刷新，
   // 不应把已经可读的任务表重新盖上 loading。首次尚无数据时仍保留完整加载态。
   void loadTasks(tasks.value.length > 0)
 }
-function applyLogPrefs() {
-  logFilter.value.status = settings.logStatus === 'failed' ? 'failed' : ''
+function applyLogPrefs(status = defaultLogStatus.value) {
+  logFilter.value.status = status
   logPage.value = 1
   loadLogs()
 }
-watch(() => settings.taskStatus, () => { applyTaskPrefs() })
-watch(() => settings.logStatus, () => { applyLogPrefs() })
+useDefaultedSessionValue(defaultTaskStatus, { onSynced: applyTaskPrefs })
+useDefaultedSessionValue(defaultLogStatus, { onSynced: applyLogPrefs })
 const logBody = ref<HTMLElement | null>(null)
 let logTimer: number | undefined
 let lastSeq = 0
@@ -731,9 +732,6 @@ onUnmounted(stopBackgroundWork)
 onMounted(async () => {
   pageActive = true
   startNowTimer()
-  if (settings.taskStatus === 'active') taskFilter.value.status = 'running'
-  else if (settings.taskStatus === 'failed') taskFilter.value.status = 'failed'
-  if (settings.logStatus === 'failed') logFilter.value.status = 'failed'
   await load()
   if (hasExecutionQuery(route.query)) {
     openFromQuery()

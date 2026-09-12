@@ -22,6 +22,7 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
@@ -60,8 +61,7 @@ const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, component
 const workspaceTabDefault = computed<'assets' | 'stocks' | 'board'>(() =>
   (componentValueOf('workspace', 'defaultActive') as 'assets' | 'stocks' | 'board') || 'assets',
 )
-const activeWorkspaceTab = ref(workspaceTabDefault.value)
-watch(workspaceTabDefault, (value) => { activeWorkspaceTab.value = value })
+const activeWorkspaceTab = useDefaultedSessionValue(workspaceTabDefault)
 function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
 }

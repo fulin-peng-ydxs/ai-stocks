@@ -32,6 +32,7 @@ import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import { useStockChartComponentConfig } from '@/composables/useStockChartComponentConfig'
 import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import { useTableSort } from '@/composables/useTableSort'
@@ -72,22 +73,16 @@ const { settings: cfg, isDirty, reset } = usePageSettings('training', {
   amountWanPresetStr: '1,10,20',
 })
 // 主区只操作本次训练会话；cfg 仅承载设置抽屉里的长期默认，主区不反写。
+const sessionMode = useDefaultedSessionValue(computed(() => cfg.mode))
+const sessionBoards = useDefaultedSessionValue(computed(() => [...cfg.boards]))
+const sessionOrderMode = useDefaultedSessionValue(computed(() => cfg.orderMode))
 const sessionConfig = reactive({
-  mode: cfg.mode,
+  mode: sessionMode,
   range_start: null as string | null,
   range_end: null as string | null,
-  boards: [...cfg.boards],
-  orderMode: cfg.orderMode,
+  boards: sessionBoards,
+  orderMode: sessionOrderMode,
 })
-watch(
-  () => [cfg.mode, cfg.boards, cfg.orderMode] as const,
-  () => {
-    sessionConfig.mode = cfg.mode
-    sessionConfig.boards = [...cfg.boards]
-    sessionConfig.orderMode = cfg.orderMode
-  },
-  { deep: true },
-)
 const settingsOpen = ref(false)
 
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
@@ -152,7 +147,7 @@ const configuredChartHeight = computed(() => {
 // K 线显示范围：选项与默认值来自全局偏好（抽屉里可配，跨页同步）；
 // 单向：主区切换只进会话态，不写回全局默认范围。
 const { validDefault: klineDefault } = useKlinePrefs()
-const viewDays = ref(klineDefault.value)
+const viewDays = useDefaultedSessionValue(klineDefault)
 
 // 预设解析
 function parseList(s: string): number[] {

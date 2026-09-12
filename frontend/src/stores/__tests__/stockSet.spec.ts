@@ -110,15 +110,29 @@ describe('stockSet group context cleanup', () => {
     expect(JSON.parse(sessionStorage.getItem(stockSetSessionStorageKey()) || '{}').listState).toBeNull()
   })
 
+  it('migrates the previous identity-scoped stock session key', () => {
+    sessionStorage.setItem('ai-stocks:stockSet:v2:anonymous:anonymous', JSON.stringify({
+      source: 'list',
+      label: '旧查询结果',
+      items: [{ code: '000001.SZ' }],
+    }))
+
+    const stockSet = useStockSet()
+
+    expect(stockSet.label).toBe('旧查询结果')
+    expect(sessionStorage.getItem('ai-stocks:stockSet:v2:anonymous:anonymous')).toBeNull()
+    expect(JSON.parse(sessionStorage.getItem(stockSetSessionStorageKey()) || '{}').label).toBe('旧查询结果')
+  })
+
   it('removes every identity-scoped stock session on an identity reset', () => {
-    sessionStorage.setItem('ai-stocks:stockSet:v2:tenant-a:user-a', '{}')
-    sessionStorage.setItem('ai-stocks:stockSet:v2:tenant-b:user-b', '{}')
+    sessionStorage.setItem('ai-stocks:page-session:v1:stock-set:tenant-a:user-a', '{}')
+    sessionStorage.setItem('ai-stocks:page-session:v1:stock-set:tenant-b:user-b', '{}')
     sessionStorage.setItem('unrelated', 'keep')
 
     const stockSet = useStockSet()
     stockSet.resetSession(true)
 
-    expect(Object.keys(sessionStorage).filter((key) => key.startsWith('ai-stocks:stockSet:v2:'))).toEqual([])
+    expect(Object.keys(sessionStorage).filter((key) => key.startsWith('ai-stocks:page-session:v1:'))).toEqual([])
     expect(sessionStorage.getItem('unrelated')).toBe('keep')
   })
 })

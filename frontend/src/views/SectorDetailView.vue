@@ -33,6 +33,7 @@ import {
   useKlinePrefs,
 } from '@/composables/useKlinePrefs'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useStockChartComponentConfig } from '@/composables/useStockChartComponentConfig'
 import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
@@ -119,7 +120,7 @@ const normalizeMemberPageSize = (value: unknown) => {
 const MEMBER_SORT_FIELDS = ['pct', 'code'] as const
 const { validDefault: defaultKlineRange } = useKlinePrefs()
 // K 线范围单向：全局偏好默认范围 → 会话 ref；主区切换不写回全局默认。
-const viewDays = ref(defaultKlineRange.value)
+const viewDays = useDefaultedSessionValue(defaultKlineRange)
 const {
   sortBy,
   sortOrder,

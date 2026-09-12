@@ -54,6 +54,7 @@ import {
   type BacktestRunSummary,
 } from '@/components/asset-search/types'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useStockChartComponentConfig } from '@/composables/useStockChartComponentConfig'
 import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
 import { useTradeDates } from '@/composables/useTradeDates'
@@ -156,7 +157,9 @@ function onTradeSortChange({ prop }: { prop: string; order: string | null }): vo
   tradeSortSession.value = TRADE_SORT_PROPS[prop] ?? 'entry'
 }
 
-const kind = ref<'strategy' | 'score_check'>(settings.kind)
+const kind = useDefaultedSessionValue(computed<'strategy' | 'score_check'>(() => (
+  settings.kind === 'score_check' ? 'score_check' : 'strategy'
+)))
 const DEFAULT_DATE_START = '2024-01-01'
 const DEFAULT_DATE_END = '2024-12-31'
 const DEFAULT_INDUSTRY_PCT = 20
@@ -165,13 +168,13 @@ const dateEnd = ref(DEFAULT_DATE_END)
 const profileId = ref<string>('')      // 筛选方案（候选池），空=全市场候选
 const scoreProfileId = ref<string>('') // 评分方案（排序/验证）
 const tradeProfileId = ref<string>('') // 买卖方案（买/卖/兜底）
-const topN = ref(Number(settings.topN))
-const initCap = ref(Number(settings.initCap))
+const topN = useDefaultedSessionValue(computed(() => Number(settings.topN)))
+const initCap = useDefaultedSessionValue(computed(() => Number(settings.initCap)))
 const industryOn = ref(false)
 const industryPct = ref(DEFAULT_INDUSTRY_PCT) // 单行业持仓上限 %
 // 基准指数选择（净值图虚线对比）：默认中证 500（与板块行情同款设置），可切换其它指数；fetch 结果注入 EquityChart。
 // 单向：抽屉「默认对比指数」→ 会话 ref；主区改动只进会话态，不写回默认。
-const benchChoice = ref<string>(settings.benchmarkCode)
+const benchChoice = useDefaultedSessionValue(computed(() => String(settings.benchmarkCode)))
 const benchmarkEquity = ref<BenchmarkEquity | null>(null)
 let benchRequestVersion = 0
 async function loadBenchmarkEquity() {
@@ -334,7 +337,9 @@ const runTime = ref('')          // 当前展示结果的回测运行时间（�
 const fromHistory = ref(false)   // 当前结果是否来自加载历史
 
 // 稳健性测试展开态单向：抽屉默认值 → 会话 ref；折叠面板点击只进会话态，不写回默认。
-const robustPanels = ref<string[]>(settings.robustExpanded ? ['robust'] : [])
+const robustPanels = useDefaultedSessionValue(computed<string[]>(() => (
+  settings.robustExpanded ? ['robust'] : []
+)))
 const tradeRows = computed(() => {
   const list = [...(strat.value?.trades ?? [])]
   if (tradeSort.value === 'return') list.sort((a, b) => b.return_pct - a.return_pct)
@@ -560,11 +565,6 @@ watch(
   },
   { flush: 'sync' },
 )
-watch(() => settings.kind, (value) => { kind.value = value })
-watch(() => settings.topN, (value) => { topN.value = Number(value) })
-watch(() => settings.initCap, (value) => { initCap.value = Number(value) })
-// 抽屉「默认对比指数」→ 会话 ref 单向同步（改抽屉即同步主区并触发重拉）；主区改动不写回。
-watch(() => settings.benchmarkCode, (value) => { if (benchChoice.value !== value) benchChoice.value = value })
 // 基准选择切换 → 重新拉指数曲线；无有效对比（不对比/无结果）时置空回退默认实线。
 watch(benchChoice, () => { benchmarkEquity.value = null; loadBenchmarkEquity() })
 // 新回测结果出现（日期区间可能变化）→ 按当前区间重拉基准曲线；不覆盖用户的选择。
@@ -572,8 +572,6 @@ watch(strat, (s) => {
   if (s) loadBenchmarkEquity()
   else benchmarkEquity.value = null
 })
-// 抽屉「默认展开稳健性测试」→ 会话 ref 单向同步；面板点击不写回默认。
-watch(() => settings.robustExpanded, (value) => { robustPanels.value = value ? ['robust'] : [] })
 // 程序化改参（运行/载入历史）后清脏：等参数 watcher 跑完再置 false
 function clearDirtySoon() {
   nextTick(() => { dirty.value = false; loadingRun.value = false })

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { writeAuth } from '@/api/authToken'
 import * as authApi from '@/api/auth'
+import { writePageSession } from '@/utils/pageSessionStorage'
 import { useAuthStore } from '../auth'
 import { stockSetSessionStorageKey, useStockSet } from '../stockSet'
 
@@ -35,6 +36,7 @@ describe('auth store', () => {
     auth.refreshToken = 'old-refresh'
     const stockSet = useStockSet()
     stockSet.setSet('list', [{ code: '000001.SZ' }], '查询结果')
+    writePageSession('another-page', { keyword: '待清理' })
     expect(sessionStorage.getItem(stockSetSessionStorageKey())).not.toBeNull()
 
     await auth.logout()
@@ -42,6 +44,6 @@ describe('auth store', () => {
     expect(authApi.logout).toHaveBeenCalledWith('new-refresh')
     expect(auth.refreshToken).toBe('')
     expect(stockSet.items).toEqual([])
-    expect(Object.keys(sessionStorage).filter((key) => key.startsWith('ai-stocks:stockSet:v2:'))).toEqual([])
+    expect(Object.keys(sessionStorage).filter((key) => key.startsWith('ai-stocks:page-session:v1:'))).toEqual([])
   })
 })

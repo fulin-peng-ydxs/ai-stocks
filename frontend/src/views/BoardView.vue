@@ -31,6 +31,7 @@ import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.
 import StockGroupBatchActions from '@/components/StockGroupBatchActions.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useMarketMasterRatioRuntime } from '@/composables/useMarketMasterRatioRuntime'
 import { useTradeDates } from '@/composables/useTradeDates'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
@@ -114,8 +115,6 @@ const stockSet = useStockSet()
 const loading = ref(true)
 const error = ref('')
 const runDate = ref<string>('')
-// topN 单向：抽屉默认值 → 页面会话 ref；主区改动只进会话态，不写回默认（DESIGN「设置抽屉」单向默认机制）。
-const topN = ref(50)
 const rows = ref<ScoreRunRow[]>([])
 const syncingRunDate = ref(false)
 const settingsOpen = ref(false)
@@ -135,7 +134,13 @@ const boardDefaults = {
   adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
 }
 const { settings, isDirty, reset } = usePageSettings('board', boardDefaults)
-topN.value = Number(settings.topN)
+const configuredTopN = computed(() => Number(settings.topN))
+const topN = useDefaultedSessionValue(configuredTopN, {
+  onSynced: () => {
+    clearAnalysisSelection()
+    if (profileRef.value) void load()
+  },
+})
 const { validDefault: klineDefaultRange } = useKlinePrefs()
 const {
   analysisPanelVisible,
@@ -444,12 +449,6 @@ watch(runDate, () => {
   if (!profileRef.value || syncingRunDate.value) return
   clearAnalysisSelection()
   load()
-})
-// topN 单向：抽屉默认值 → 会话 ref；主区改动只进会话态，不写回默认。
-watch(() => settings.topN, (value) => {
-  topN.value = Number(value)
-  clearAnalysisSelection()
-  if (profileRef.value) load()
 })
 
 function onTopNChange(): void {

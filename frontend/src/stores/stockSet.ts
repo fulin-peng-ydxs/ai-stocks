@@ -5,6 +5,13 @@ import { defineStore } from 'pinia'
 import { readAuth } from '@/api/authToken'
 import type { StockListParams } from '@/api/stocks'
 import type { GroupMembersParams } from '@/api/stockGroup'
+import {
+  clearAllPageSessions,
+  pageSessionStorageKey,
+  readPageSession,
+  removePageSession,
+  writePageSession,
+} from '@/utils/pageSessionStorage'
 
 export interface SetItem {
   code: string
@@ -47,7 +54,8 @@ interface State {
   listState: StockListState | null
 }
 
-const STORAGE_PREFIX = 'ai-stocks:stockSet:v2'
+const SESSION_NAMESPACE = 'stock-set'
+const LEGACY_SESSION_PREFIX = 'ai-stocks:stockSet:v2'
 const LEGACY_LOCAL_STORAGE_KEY = 'ai-stocks:stockSet'
 let activeStorageKey = ''
 
@@ -59,10 +67,12 @@ function emptyState(): State {
 }
 
 export function stockSetSessionStorageKey(): string {
+  return pageSessionStorageKey(SESSION_NAMESPACE)
+}
+
+function legacySessionStorageKey(): string {
   const auth = readAuth()
-  const tenantId = auth.tenant?.id || 'anonymous'
-  const userId = auth.user?.id || 'anonymous'
-  return `${STORAGE_PREFIX}:${tenantId}:${userId}`
+  return `${LEGACY_SESSION_PREFIX}:${auth.tenant?.id || 'anonymous'}:${auth.user?.id || 'anonymous'}`
 }
 
 function clearLegacyLocalState(): void {
@@ -77,9 +87,8 @@ function load(key = stockSetSessionStorageKey()): State {
   activeStorageKey = key
   clearLegacyLocalState()
   try {
-    const raw = sessionStorage.getItem(key)
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<State>
+    const parsed = readPageSession<Partial<State>>(SESSION_NAMESPACE, [legacySessionStorageKey()])
+    if (parsed) {
       const query = parsed.query && !('kind' in parsed.query)
         ? { kind: 'stocks' as const, params: parsed.query as unknown as StockListParams }
         : parsed.query ?? null
@@ -117,11 +126,7 @@ export const useStockSet = defineStore('stockSet', {
     },
     _persist() {
       this._ensureIdentity()
-      try {
-        sessionStorage.setItem(activeStorageKey, JSON.stringify(this.$state))
-      } catch {
-        /* ignore */
-      }
+      writePageSession(SESSION_NAMESPACE, this.$state)
     },
     setSet(
       source: 'group' | 'list',
@@ -219,12 +224,9 @@ export const useStockSet = defineStore('stockSet', {
       Object.assign(this, emptyState())
       try {
         if (clearAllIdentities) {
-          for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
-            const key = sessionStorage.key(index)
-            if (key?.startsWith(`${STORAGE_PREFIX}:`)) sessionStorage.removeItem(key)
-          }
+          clearAllPageSessions([`${LEGACY_SESSION_PREFIX}:`])
         } else {
-          sessionStorage.removeItem(activeStorageKey || stockSetSessionStorageKey())
+          removePageSession(SESSION_NAMESPACE, [legacySessionStorageKey()])
         }
       } catch {
         /* ignore */

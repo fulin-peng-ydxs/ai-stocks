@@ -65,6 +65,7 @@ import {
   APP_BOTTOM_FLOATING_PLACEMENT,
 } from '@/utils/floatingPlacement'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useStockIntradayDrilldown } from '@/composables/useStockIntradayDrilldown'
 import { useDebouncedQuery } from '@/composables/useDebouncedQuery'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
@@ -270,7 +271,7 @@ const membershipError = ref('')
 // 显示范围（缩放）单向：全局 K 线偏好默认范围 → 会话 ref；主区切换不写回全局默认。
 // 数据始终全量加载，可自由拖动看全部
 const { validDefault: klineDefault } = useKlinePrefs()
-const viewDays = ref(klineDefault.value)
+const viewDays = useDefaultedSessionValue(klineDefault)
 const bars = ref<Bar[]>([])
 const name = ref('')
 const {
