@@ -6,7 +6,7 @@
 
 <style scoped>
 .system-builtin-tag {
-  --el-tag-bg-color: var(--el-fill-color-light);
+  --el-tag-bg-color: var(--app-section-bg);
   --el-tag-border-color: var(--el-border-color);
   --el-tag-text-color: var(--el-text-color-secondary);
   flex: none;

@@ -29,6 +29,7 @@ import {
 import { addMembers, getGroup, listGroups, removeMembers, type GroupSummary } from '@/api/stockGroup'
 import { browseTradeProfiles, copyTradeProfile, listTradeProfiles, type TradeProfileSummary } from '@/api/tradeProfile'
 import AppIconButton from '@/components/AppIconButton.vue'
+import AppWorkspacePane from '@/components/AppWorkspacePane.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -1136,30 +1137,13 @@ onBeforeUnmount(() => {
           @compact-change="splitCompact = $event"
         >
           <template #primary>
-          <StockChartWorkspace
-            class="detail-chart-workspace"
-            v-loading="barsLoading && bars.length > 0"
-            :bars="displayBars"
-            :warmup-bars="warmupBars"
-            :indicators="indicatorRows"
-            :slot2="chartPreferences.preferences.value.slot2"
-            :slot3="chartPreferences.preferences.value.slot3"
-            :height-ratios="chartPreferences.currentRatios.value"
-            :adjust-label="adjustLabel"
-            :macd-state="macdState"
-            :macd-error="indicatorError"
-            :zoom-start="0"
-            :zoom-end="100"
-            fit-available-height
-            enable-intraday-drilldown
-            :show-kline-tooltip="false"
-            @ratio-draft="chartPreferences.handleRatioDraft"
-            @ratio-commit="chartPreferences.handleRatioCommit"
-            @retry-macd="loadIndicators"
-            @bar-click="openIntraday"
-            @active-bar-change="chartActiveBar = $event"
+          <AppWorkspacePane
+            title="行情走势"
+            aria-label="个股行情走势"
+            primary
+            data-testid="stock-detail-chart-panel"
           >
-            <template #header-actions>
+            <template #actions>
               <KlineRangeSelect
                 v-model="viewDays"
                 width="112px"
@@ -1179,11 +1163,40 @@ onBeforeUnmount(() => {
                 </el-icon>
               </AppIconButton>
             </template>
-          </StockChartWorkspace>
+            <StockChartWorkspace
+              class="detail-chart-workspace"
+              v-loading="barsLoading && bars.length > 0"
+              :bars="displayBars"
+              :warmup-bars="warmupBars"
+              :indicators="indicatorRows"
+              :slot2="chartPreferences.preferences.value.slot2"
+              :slot3="chartPreferences.preferences.value.slot3"
+              :height-ratios="chartPreferences.currentRatios.value"
+              :adjust-label="adjustLabel"
+              :macd-state="macdState"
+              :macd-error="indicatorError"
+              :zoom-start="0"
+              :zoom-end="100"
+              fit-available-height
+              enable-intraday-drilldown
+              :show-kline-tooltip="false"
+              @ratio-draft="chartPreferences.handleRatioDraft"
+              @ratio-commit="chartPreferences.handleRatioCommit"
+              @retry-macd="loadIndicators"
+              @bar-click="openIntraday"
+              @active-bar-change="chartActiveBar = $event"
+            />
+          </AppWorkspacePane>
           </template>
 
           <template #secondary>
-          <aside class="stock-detail-auxiliary" aria-label="个股辅助信息">
+          <AppWorkspacePane
+            title="分析概览"
+            aria-label="个股分析概览"
+            :header-visible="!splitCompact"
+            data-testid="stock-detail-auxiliary-panel"
+          >
+          <aside class="stock-detail-auxiliary">
             <StockBoardMembershipPanel
               v-if="settings.showRelatedBoards"
               :membership="boardMembership"
@@ -1306,6 +1319,7 @@ onBeforeUnmount(() => {
         </div>
             </el-card>
           </aside>
+          </AppWorkspacePane>
           </template>
         </AppSplitWorkspace>
       </div>
@@ -1405,8 +1419,9 @@ onBeforeUnmount(() => {
 }
 
 .detail-chart-workspace {
+  flex: 1 1 auto;
   width: 100%;
-  height: 100%;
+  min-height: 0;
 }
 
 .stock-detail-auxiliary {
@@ -1418,7 +1433,7 @@ onBeforeUnmount(() => {
   width: 100%;
   min-width: 0;
   min-height: 0;
-  padding-right: 2px;
+  padding: var(--app-space-3);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -1469,7 +1484,7 @@ onBeforeUnmount(() => {
 .group-select-tag.more {
   color: var(--el-text-color-secondary);
   border-color: var(--el-border-color);
-  background: var(--el-fill-color-light);
+  background: var(--app-section-bg);
 }
 .color-dot {
   width: 9px;

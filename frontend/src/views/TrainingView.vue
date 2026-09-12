@@ -1018,7 +1018,7 @@ onBeforeUnmount(detachKeyboard)
 .run-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--app-space-2); overflow: auto; padding-right: 2px; }
 .chart-block { flex: 0 0 auto; }
 .training-chart-workspace { height: 100%; }
-.action-panel { flex: 0 0 auto; background: var(--el-fill-color-light); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: var(--app-space-2); }
+.action-panel { flex: 0 0 auto; background: var(--app-section-bg); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: var(--app-space-2); }
 .acct { display: flex; gap: var(--app-space-5); flex-wrap: wrap; }
 .acct-item { display: flex; flex-direction: column; }
 .acct-item label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
@@ -1045,7 +1045,7 @@ onBeforeUnmount(detachKeyboard)
 /* 结算：固定块（KPI/评分规则/回合卡）自然高，整局复盘卡吃满剩余高度；余量不足时整区滚动兜底 */
 .result-body { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: var(--app-space-3); padding-right: 2px; }
 .kpi-row { display: flex; gap: var(--app-space-3); flex-wrap: wrap; }
-.kpi { flex: 1 1 120px; background: var(--el-fill-color-light); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: var(--app-space-1); }
+.kpi { flex: 1 1 120px; background: var(--app-section-bg); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: var(--app-space-1); }
 .kpi label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .kpi b { font-size: var(--app-font-size-page-title-sm); font-variant-numeric: tabular-nums; }
 .score-rule-card { flex: 0 0 auto; }

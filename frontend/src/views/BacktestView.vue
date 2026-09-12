@@ -2528,7 +2528,7 @@ async function openTradeChart(row: TradeRow) {
 .dlg-summary {
   display: flex; flex-wrap: wrap; gap: var(--app-space-2) var(--app-space-5); align-items: center;
   padding: 10px 14px; margin-bottom: 10px; border-radius: 8px;
-  background: var(--el-fill-color-light);
+  background: var(--app-section-bg);
 }
 .ds-item { display: flex; flex-direction: column; }
 .ds-item.ds-span { margin-left: auto; }
@@ -2617,7 +2617,7 @@ async function openTradeChart(row: TradeRow) {
 .bench-choice :deep(.app-filter-select) { width: 120px; }
 .export-btn { margin-left: auto; }
 .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--app-space-3); }
-.metric { background: var(--el-fill-color-light); border-radius: 8px; padding: 12px 14px; }
+.metric { background: var(--app-section-bg); border-radius: 8px; padding: 12px 14px; }
 .m-label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .m-hint { margin-left: 3px; cursor: help; }
 .m-val { font-size: var(--app-font-size-page-title-sm); font-weight: var(--app-font-weight-strong); font-variant-numeric: tabular-nums; margin-top: 4px; }
@@ -2671,7 +2671,7 @@ async function openTradeChart(row: TradeRow) {
   padding: 2px 6px;
   border: 1px dashed var(--el-border-color);
   border-radius: var(--layout-control-radius, 6px);
-  background: var(--el-fill-color-light);
+  background: var(--app-section-bg);
   white-space: nowrap;
 }
 .temp-readonly-chip-prefix {

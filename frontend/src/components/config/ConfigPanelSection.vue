@@ -104,7 +104,7 @@ function toggle() {
 .is-level-1 > .config-panel-section__head {
   min-height: 48px;
   padding: 11px 14px;
-  background: color-mix(in srgb, var(--el-fill-color-light) 58%, transparent);
+  background: color-mix(in srgb, var(--app-section-bg) 58%, transparent);
 }
 
 .is-level-1 > .config-panel-section__body {

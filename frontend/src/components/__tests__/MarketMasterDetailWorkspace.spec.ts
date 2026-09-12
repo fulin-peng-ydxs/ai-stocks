@@ -36,6 +36,10 @@ describe('MarketMasterDetailWorkspace', () => {
     })
 
     expect(wrapper.get('[data-testid="list-slot"]').text()).toBe('列表')
+    expect(wrapper.get('.app-workspace-pane__header').text()).toContain('测试列表')
+    expect(wrapper.get('.app-workspace-pane__eyebrow').text()).toBe('TEST')
+    expect(wrapper.get('.app-workspace-pane__header').classes())
+      .toContain('app-workspace-pane__header--primary')
     expect(wrapper.find('[data-testid="analysis-slot"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="market-hide-analysis"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="market-show-analysis"]').exists()).toBe(false)

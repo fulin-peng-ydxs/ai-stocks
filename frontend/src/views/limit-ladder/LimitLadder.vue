@@ -409,7 +409,7 @@ function resetFilters(): void {
   min-width: min(100%, 220px);
   border: 1px solid var(--el-border-color);
   border-radius: var(--layout-card-radius);
-  background: color-mix(in srgb, var(--el-fill-color-light) 34%, var(--el-bg-color));
+  background: color-mix(in srgb, var(--app-section-bg) 34%, var(--el-bg-color));
 }
 .limit-ladder__layer-head {
   display: flex;

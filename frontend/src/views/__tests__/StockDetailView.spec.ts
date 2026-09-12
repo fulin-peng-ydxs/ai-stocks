@@ -300,6 +300,27 @@ const ElSelectStub = defineComponent({
   },
 })
 
+const AppWorkspacePaneStub = defineComponent({
+  name: 'AppWorkspacePane',
+  inheritAttrs: false,
+  props: {
+    title: { type: String, required: true },
+    headerVisible: { type: Boolean, default: true },
+    primary: { type: Boolean, default: false },
+  },
+  setup(props, { attrs, slots }) {
+    return () => h('section', attrs, [
+      props.headerVisible
+        ? h('header', { class: 'app-workspace-pane__header' }, [
+            h('h3', props.title),
+            slots.actions?.(),
+          ])
+        : null,
+      h('div', { class: 'app-workspace-pane__body' }, slots.default?.()),
+    ])
+  },
+})
+
 function bar(date: string, close: number): Bar {
   return {
     date,
@@ -376,6 +397,7 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
         template: '<main><slot name="action"/><slot name="main"/><slot name="overlays"/></main>',
       },
       AppSplitWorkspace: AppSplitWorkspaceStub,
+      AppWorkspacePane: AppWorkspacePaneStub,
       StockChartWorkspace: StockChartWorkspaceStub,
       MarketDetailHero: {
         props: ['eyebrow', 'title', 'code', 'subtitle', 'asideAlign'],
@@ -984,14 +1006,21 @@ describe('StockDetailView 三图数据协调', () => {
     expect(toggle.attributes('label')).toBe('显示辅助信息')
   })
 
-  it('K 线范围与图表操作共置于 K 线标题行', async () => {
+  it('左右栏具有统一栏头，K 线范围置于行情栏操作区', async () => {
     const wrapper = await mountView()
     const primary = wrapper.get('[data-testid="stock-detail-primary"]')
     const pageActions = wrapper.get('.page-head-actions')
+    const chartPanel = wrapper.get('[data-testid="stock-detail-chart-panel"]')
+    const auxiliaryPanel = wrapper.get('[data-testid="stock-detail-auxiliary-panel"]')
+    const panes = wrapper.findAllComponents(AppWorkspacePaneStub)
 
     expect(primary.findComponent(KlineRangeSelectStub).exists()).toBe(true)
     expect(pageActions.findComponent(KlineRangeSelectStub).exists()).toBe(false)
     expect(wrapper.findComponent(KlineRangeSelectStub).props('width')).toBe('112px')
+    expect(chartPanel.get('.app-workspace-pane__header').text()).toContain('行情走势')
+    expect(auxiliaryPanel.get('.app-workspace-pane__header').text()).toContain('分析概览')
+    expect(panes[0]?.props('primary')).toBe(true)
+    expect(panes[1]?.props('primary')).toBe(false)
   })
 
   it('MACD 局部失败保留行情和快照，局部重试不刷新行情', async () => {

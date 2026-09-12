@@ -244,6 +244,7 @@ function applyPreset(key: string) {
   root.style.setProperty('--el-bg-color', t.surfaceBg)
   root.style.setProperty('--el-bg-color-overlay', t.surfaceBg)
   root.style.setProperty('--el-fill-color-blank', t.surfaceBg)
+  root.style.setProperty('--app-section-bg', t.surfaceHover)
   root.style.setProperty('--el-fill-color-light', t.surfaceHover)
   root.style.setProperty('--el-fill-color-lighter', rgbaFromHex(t.border, mode === 'dark' ? 0.46 : 0.34))
   root.style.setProperty('--el-fill-color-extra-light', rgbaFromHex(t.surfaceHover, mode === 'dark' ? 0.72 : 0.58))

@@ -182,6 +182,7 @@ body > [id^='el-popper-container-'] > .help-hint-popper {
   --el-bg-color: #ffffff;
   --el-bg-color-overlay: #ffffff;
   --el-fill-color-blank: #ffffff;
+  --app-section-bg: #f3f3f3;
   --chrome-bg: #fcfcfc;
   --chrome-bg-soft: #ffffff;
   --chrome-bg-soft-hover: #f3f3f3;
@@ -374,6 +375,7 @@ html.dark {
   --el-bg-color: #171717;
   --el-bg-color-overlay: #171717;
   --el-fill-color-blank: #171717;
+  --app-section-bg: #292929;
   --el-text-color-primary: #f4f4f4;
   --el-text-color-regular: #d2d2d2;
   --el-border-color: #353535;
@@ -646,6 +648,10 @@ html[data-layout-preset] .el-card {
 }
 html[data-layout-preset] .el-card__body {
   padding: var(--layout-card-padding);
+}
+/* 有边框描述表的标签格属于常驻信息分区，不借用 hover 状态的 Element token。 */
+.el-descriptions__label.el-descriptions__cell.is-bordered-label {
+  background-color: var(--app-section-bg);
 }
 html[data-layout-preset] .el-table {
   --el-table-bg-color: var(--el-bg-color);

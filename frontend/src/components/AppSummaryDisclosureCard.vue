@@ -113,7 +113,7 @@ const emit = defineEmits<{ toggle: [] }>()
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  background: color-mix(in srgb, var(--el-fill-color-light) 68%, var(--el-bg-color));
+  background: color-mix(in srgb, var(--app-section-bg) 68%, var(--el-bg-color));
   color: var(--el-text-color-secondary);
   display: inline-flex;
   align-items: center;

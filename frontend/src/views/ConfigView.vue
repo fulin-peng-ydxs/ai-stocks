@@ -2161,7 +2161,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--el-text-color-secondary);
-  background: var(--el-fill-color-light);
+  background: var(--app-section-bg);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 10px;
   padding: 1px 8px;
@@ -2184,7 +2184,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .ast {
   margin: 8px 0 0;
   padding: 10px 12px;
-  background: var(--el-fill-color-light);
+  background: var(--app-section-bg);
   border-radius: 6px;
   font-size: var(--app-font-size-caption);
   color: var(--el-text-color-regular);
@@ -2254,7 +2254,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 }
 .subchip {
   display: inline-block;
-  background: var(--el-fill-color-light);
+  background: var(--app-section-bg);
   border-radius: 4px;
   padding: 1px 6px;
   margin: 0 4px 2px 0;
@@ -2294,7 +2294,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 }
 .expr {
   font-family: var(--app-font-family-mono);
-  background: var(--el-fill-color-light);
+  background: var(--app-section-bg);
   border-radius: 4px;
   padding: 1px 6px;
   font-size: var(--app-font-size-caption);

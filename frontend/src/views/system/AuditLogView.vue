@@ -1004,7 +1004,7 @@ onBeforeUnmount(stopTimer)
   overflow: auto;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
-  background: var(--el-fill-color-light);
+  background: var(--app-section-bg);
   padding: 10px;
   color: var(--el-text-color-regular);
   font-size: var(--app-font-size-caption);

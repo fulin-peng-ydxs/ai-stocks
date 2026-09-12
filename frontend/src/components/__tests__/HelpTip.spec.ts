@@ -16,7 +16,7 @@ function vueFiles(dir: string): string[] {
 
 describe('HelpTip 主题样式契约', () => {
   it('提示图标和正文只消费预设语义 token，不维护私有 hex 色板', () => {
-    expect(style).toContain('var(--el-fill-color-light)')
+    expect(style).toContain('var(--app-section-bg)')
     expect(style).toContain('var(--el-border-color)')
     expect(style).toContain('var(--el-text-color-regular)')
     expect(style).toContain('var(--el-color-primary)')

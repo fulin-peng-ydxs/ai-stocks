@@ -251,7 +251,7 @@ function parentLabel(s: SlotSpec): string | null {
 .resp-summary {
   border: 1px solid var(--el-border-color);
   border-radius: 6px;
-  background: var(--el-fill-color-light);
+  background: var(--app-section-bg);
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
@@ -313,7 +313,7 @@ function parentLabel(s: SlotSpec): string | null {
 .device-frame {
   border: 1px solid var(--el-border-color);
   border-radius: 8px;
-  background: var(--el-fill-color-light);
+  background: var(--app-section-bg);
   padding: 12px;
   display: flex;
   flex-direction: column;

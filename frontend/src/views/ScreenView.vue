@@ -1035,7 +1035,7 @@ onMounted(initializeScreen)
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--el-text-color-secondary);
-  background: var(--el-fill-color-light);
+  background: var(--app-section-bg);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 10px;
   padding: 1px 8px;
@@ -1092,7 +1092,7 @@ onMounted(initializeScreen)
 .ast {
   margin: 12px 0 0;
   padding: 10px 12px;
-  background: var(--el-fill-color-light);
+  background: var(--app-section-bg);
   border-radius: 6px;
   font-size: var(--app-font-size-caption);
   color: var(--el-text-color-regular);

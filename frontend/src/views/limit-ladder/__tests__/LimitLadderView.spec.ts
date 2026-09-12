@@ -86,9 +86,23 @@ const stubs = {
   LayoutHost: {
     template: '<main><slot name="action"/><slot name="main"/><slot name="overlays"/></main>',
   },
-  MarketMasterDetailWorkspace: {
-    template: '<section><slot name="list"/><slot name="analysis"/></section>',
-  },
+  MarketMasterDetailWorkspace: defineComponent({
+    name: 'MarketMasterDetailWorkspace',
+    props: {
+      eyebrow: { type: String, default: '' },
+      title: { type: String, required: true },
+    },
+    setup(props, { expose, slots }) {
+      expose({
+        openCompactAnalysis: () => false,
+        closeCompactAnalysis: () => undefined,
+      })
+      return () => h('section', {
+        'data-eyebrow': props.eyebrow,
+        'data-title': props.title,
+      }, [slots.list?.(), slots.analysis?.()])
+    },
+  }),
   LimitLadder: LimitLadderStub,
   StockAnalysisPanel: true,
   PageDrawer: true,
@@ -212,6 +226,15 @@ afterEach(() => {
 })
 
 describe('LimitLadderView polling deadline', () => {
+  it('列表栏复用统一层级，以业务名为蓝色辅助行、日期为主标题', async () => {
+    vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(readyResult())
+    const wrapper = await mountView()
+
+    const workspace = wrapper.get('[data-testid="limit-ladder-workspace"]')
+    expect(workspace.attributes('data-eyebrow')).toBe('涨停梯队')
+    expect(workspace.attributes('data-title')).toBe('2026-08-28')
+  })
+
   it('有权限时保留重算当日并按所选日期提交', async () => {
     vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(readyResult())
     vi.mocked(limitLadderApi.recomputeLimitLadder).mockResolvedValue({

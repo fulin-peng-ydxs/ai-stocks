@@ -79,6 +79,16 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     }
   })
 
+  it('常驻信息分区使用独立语义变量并覆盖描述表标签格', () => {
+    const globalCss = readFileSync(join(SRC_DIR, 'styles/global.css'), 'utf8')
+
+    expect(globalCss).toContain('--app-section-bg: #f3f3f3')
+    expect(globalCss).toContain('--app-section-bg: #292929')
+    expect(globalCss).toMatch(
+      /\.el-descriptions__label\.el-descriptions__cell\.is-bordered-label\s*\{\s*background-color:\s*var\(--app-section-bg\)/,
+    )
+  })
+
   it('白天模式文字在浅底上保持深色（对比度基本盘）', () => {
     for (const preset of Object.values(LAYOUT_PRESETS)) {
       const bg = luminance(preset.tokens.light.surfaceBg)

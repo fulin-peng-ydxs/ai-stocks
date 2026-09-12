@@ -68,7 +68,7 @@ const stripStyle = computed(() => ({
   flex: 0 0 auto;
   overflow-x: auto;
   border-bottom: 1px solid var(--el-border-color-lighter);
-  background: color-mix(in srgb, var(--el-fill-color-light) 54%, var(--el-bg-color));
+  background: color-mix(in srgb, var(--app-section-bg) 54%, var(--el-bg-color));
 }
 .market-metric {
   box-sizing: border-box;

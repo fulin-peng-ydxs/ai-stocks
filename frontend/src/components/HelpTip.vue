@@ -36,7 +36,7 @@ defineProps<{ title?: string; width?: number; testId?: string }>()
   height: 16px;
   margin-left: 6px;
   border-radius: 50%;
-  background: var(--el-fill-color-light);
+  background: var(--app-section-bg);
   border: 1px solid var(--el-border-color);
   color: var(--el-text-color-regular);
   font-size: var(--app-font-size-micro);

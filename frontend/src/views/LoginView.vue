@@ -521,7 +521,7 @@ function onSubmit() {
   --login-accent-strong: var(--el-color-primary-dark-2, #1264d9);
   --login-accent-readable: var(--login-accent-strong);
   --login-accent-text: #ffffff;
-  --login-captcha-bg: var(--el-fill-color-light, #f3f3f3);
+  --login-captcha-bg: var(--app-section-bg, #f3f3f3);
   --login-toggle-bg: color-mix(in srgb, var(--login-card-opaque-bg) 88%, transparent);
   --login-divider: var(--el-border-color, #e5e5e5);
   --login-shadow: var(--shell-surface-shadow, rgba(20, 24, 32, 0.1));

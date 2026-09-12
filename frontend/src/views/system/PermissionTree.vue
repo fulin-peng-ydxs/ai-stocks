@@ -144,7 +144,7 @@ const resourceStats = computed(() => {
   gap: var(--app-space-2);
   min-height: 40px;
   padding: 7px 12px;
-  background: var(--el-fill-color-light);
+  background: var(--app-section-bg);
   font-size: var(--app-font-size-table);
   font-weight: var(--app-font-weight-section);
 }

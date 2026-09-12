@@ -725,7 +725,8 @@ onBeforeUnmount(() => {
         v-else
         ref="marketWorkspaceRef"
         v-model:analysis-visible="analysisPanelVisible"
-        title="涨停梯队"
+        eyebrow="涨停梯队"
+        :title="tradeDate || '最新交易日'"
         :meta="workspaceMeta"
         list-aria-label="连板天梯分层"
         :default-master-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 45)"

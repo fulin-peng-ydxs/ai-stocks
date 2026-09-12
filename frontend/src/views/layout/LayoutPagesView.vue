@@ -983,7 +983,7 @@ onMounted(async () => {
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
   padding: 10px 12px;
-  background: var(--el-fill-color-light);
+  background: var(--app-section-bg);
 }
 .diag-main {
   font-weight: var(--app-font-weight-section);
