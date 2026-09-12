@@ -1,6 +1,8 @@
 // 个股详情「当前集合」导航 store —— 列表→详情→上一个/下一个 共享同一批股票。
-// 集合来源：选中的分组（group）/ 列表的临时勾选或当前页（list）。localStorage 持久化，刷新不丢。
+// 集合来源：选中的分组（group）/ 列表的临时勾选或当前页（list）。
+// 只保留在当前浏览器 Tab 会话，刷新不丢，关闭 Tab、退出登录或切换身份后清理。
 import { defineStore } from 'pinia'
+import { readAuth } from '@/api/authToken'
 import type { StockListParams } from '@/api/stocks'
 import type { GroupMembersParams } from '@/api/stockGroup'
 
@@ -45,11 +47,37 @@ interface State {
   listState: StockListState | null
 }
 
-const KEY = 'ai-stocks:stockSet'
+const STORAGE_PREFIX = 'ai-stocks:stockSet:v2'
+const LEGACY_LOCAL_STORAGE_KEY = 'ai-stocks:stockSet'
+let activeStorageKey = ''
 
-function load(): State {
+function emptyState(): State {
+  return {
+    source: '', label: '', returnPath: '', groupId: '', items: [], query: null,
+    total: 0, loadedPages: [], pageSize: 20, listState: null,
+  }
+}
+
+export function stockSetSessionStorageKey(): string {
+  const auth = readAuth()
+  const tenantId = auth.tenant?.id || 'anonymous'
+  const userId = auth.user?.id || 'anonymous'
+  return `${STORAGE_PREFIX}:${tenantId}:${userId}`
+}
+
+function clearLegacyLocalState(): void {
   try {
-    const raw = localStorage.getItem(KEY)
+    localStorage.removeItem(LEGACY_LOCAL_STORAGE_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
+function load(key = stockSetSessionStorageKey()): State {
+  activeStorageKey = key
+  clearLegacyLocalState()
+  try {
+    const raw = sessionStorage.getItem(key)
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<State>
       const query = parsed.query && !('kind' in parsed.query)
@@ -71,7 +99,7 @@ function load(): State {
   } catch {
     /* ignore */
   }
-  return { source: '', label: '', returnPath: '', groupId: '', items: [], query: null, total: 0, loadedPages: [], pageSize: 20, listState: null }
+  return emptyState()
 }
 
 export const useStockSet = defineStore('stockSet', {
@@ -82,9 +110,15 @@ export const useStockSet = defineStore('stockSet', {
     indexOf: (s) => (code: string) => s.items.findIndex((i) => i.code === code),
   },
   actions: {
+    _ensureIdentity() {
+      const key = stockSetSessionStorageKey()
+      if (key === activeStorageKey) return
+      Object.assign(this, load(key))
+    },
     _persist() {
+      this._ensureIdentity()
       try {
-        localStorage.setItem(KEY, JSON.stringify(this.$state))
+        sessionStorage.setItem(activeStorageKey, JSON.stringify(this.$state))
       } catch {
         /* ignore */
       }
@@ -102,6 +136,7 @@ export const useStockSet = defineStore('stockSet', {
         returnPath?: string
       },
     ) {
+      this._ensureIdentity()
       this.source = source
       this.items = items
       this.label = label
@@ -114,14 +149,25 @@ export const useStockSet = defineStore('stockSet', {
       this._persist()
     },
     setListState(state: StockListState) {
+      this._ensureIdentity()
       this.listState = state
       this._persist()
     },
     clearListState() {
+      this._ensureIdentity()
       this.listState = null
       this._persist()
     },
+    consumeListState(): StockListState | null {
+      this._ensureIdentity()
+      const snapshot = this.listState
+      if (!snapshot) return null
+      this.listState = null
+      this._persist()
+      return snapshot
+    },
     appendPage(items: SetItem[], page: number) {
+      this._ensureIdentity()
       const seen = new Set(this.items.map((i) => i.code))
       const incoming = items.filter((it) => !seen.has(it.code))
       const minPage = this.loadedPages.length ? Math.min(...this.loadedPages) : page
@@ -134,6 +180,7 @@ export const useStockSet = defineStore('stockSet', {
       this._persist()
     },
     mergeItemsNear(items: SetItem[], anchorCode: string) {
+      this._ensureIdentity()
       const seen = new Set(this.items.map((i) => i.code))
       const incoming = items.filter((it) => !seen.has(it.code))
       if (!incoming.length) return
@@ -143,10 +190,12 @@ export const useStockSet = defineStore('stockSet', {
       this._persist()
     },
     setTotal(total: number) {
+      this._ensureIdentity()
       this.total = total
       this._persist()
     },
     clearGroupContext() {
+      this._ensureIdentity()
       const hasGroupContext = this.source === 'group' || this.groupId || this.query?.kind === 'group'
       if (!hasGroupContext) return false
       this.source = ''
@@ -162,16 +211,26 @@ export const useStockSet = defineStore('stockSet', {
       return true
     },
     clear() {
-      this.source = ''
-      this.label = ''
-      this.returnPath = ''
-      this.groupId = ''
-      this.items = []
-      this.query = null
-      this.total = 0
-      this.loadedPages = []
-      this.pageSize = 20
+      this._ensureIdentity()
+      Object.assign(this, emptyState())
       this._persist()
+    },
+    resetSession(clearAllIdentities = false) {
+      Object.assign(this, emptyState())
+      try {
+        if (clearAllIdentities) {
+          for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+            const key = sessionStorage.key(index)
+            if (key?.startsWith(`${STORAGE_PREFIX}:`)) sessionStorage.removeItem(key)
+          }
+        } else {
+          sessionStorage.removeItem(activeStorageKey || stockSetSessionStorageKey())
+        }
+      } catch {
+        /* ignore */
+      }
+      clearLegacyLocalState()
+      activeStorageKey = stockSetSessionStorageKey()
     },
     // 返回相对 code 的前/后一个 code（无则 null）
     neighbor(code: string, dir: -1 | 1): string | null {

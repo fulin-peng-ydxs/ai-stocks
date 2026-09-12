@@ -16,6 +16,8 @@ import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
+import PageSegmented from '@/components/PageSegmented.vue'
+import PageSettingSection from '@/components/PageSettingSection.vue'
 import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
@@ -425,7 +427,16 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
         page-key="tenant-manage"
         :config="drawerConfig"
         @reset="reset(); resetLayout()"
-      />
+      >
+        <template #business>
+          <PageSettingSection title="默认状态筛选" desc="设置每次进入租户管理时的初始查询范围。">
+            <PageSegmented v-model="settings.defaultStatus" aria-label="状态筛选" :options="[
+              { label: '全部', value: 'all' },
+              { label: '仅启用', value: 'active' },
+            ]" />
+          </PageSettingSection>
+        </template>
+      </PageSettingsDrawer>
     </template>
   </LayoutHost>
 </template>

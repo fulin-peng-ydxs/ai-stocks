@@ -61,8 +61,6 @@ const phase = computed<'config' | 'running' | 'result'>(() => {
 // ── 页面设置（开局参数 + 快捷下单预设，均持久化）──
 const { settings: cfg, isDirty, reset } = usePageSettings('training', {
   mode: 'single' as 'single' | 'multi',
-  range_start: null as string | null,
-  range_end: null as string | null,
   n_rounds: 5,
   window_days: 20,
   initial_capital: 100000,
@@ -76,17 +74,15 @@ const { settings: cfg, isDirty, reset } = usePageSettings('training', {
 // 主区只操作本次训练会话；cfg 仅承载设置抽屉里的长期默认，主区不反写。
 const sessionConfig = reactive({
   mode: cfg.mode,
-  range_start: cfg.range_start,
-  range_end: cfg.range_end,
+  range_start: null as string | null,
+  range_end: null as string | null,
   boards: [...cfg.boards],
   orderMode: cfg.orderMode,
 })
 watch(
-  () => [cfg.mode, cfg.range_start, cfg.range_end, cfg.boards, cfg.orderMode] as const,
+  () => [cfg.mode, cfg.boards, cfg.orderMode] as const,
   () => {
     sessionConfig.mode = cfg.mode
-    sessionConfig.range_start = cfg.range_start
-    sessionConfig.range_end = cfg.range_end
     sessionConfig.boards = [...cfg.boards]
     sessionConfig.orderMode = cfg.orderMode
   },

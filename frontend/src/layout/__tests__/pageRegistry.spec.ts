@@ -189,6 +189,39 @@ function pageSettingsFields(source: string, fileName: string): { fields: string[
   return { fields, aliases: [...aliases] }
 }
 
+/** 设置抽屉业务段内通过可写 computed 间接编辑的持久化字段。 */
+function computedPageSettingsFieldsInBusiness(
+  source: string,
+  fileName: string,
+  aliases: string[],
+  business: string,
+): Set<string> {
+  const sourceFile = ts.createSourceFile(fileName, scriptOf(source), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const result = new Set<string>()
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name) || !declaration.initializer) continue
+      const model = declaration.name.text
+      if (!new RegExp(`v-model(?:[:.][^=\\s]+)*\\s*=\\s*["']${model}["']`).test(business)) continue
+      const visit = (node: ts.Node): void => {
+        if (
+          ts.isBinaryExpression(node)
+          && node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+          && ts.isPropertyAccessExpression(node.left)
+          && ts.isIdentifier(node.left.expression)
+          && aliases.includes(node.left.expression.text)
+        ) {
+          result.add(node.left.name.text)
+        }
+        ts.forEachChild(node, visit)
+      }
+      visit(declaration.initializer)
+    }
+  }
+  return result
+}
+
 /** 找出页面脚本对 useRemoteLayoutConfig 返回写方法的真实调用，覆盖解构别名和对象属性调用。 */
 function directComponentKnobWrites(source: string, fileName: string): string[] {
   const sourceFile = ts.createSourceFile(fileName, scriptOf(source), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
@@ -1105,6 +1138,34 @@ describe('组件消费关系与配置一致性（P4）', () => {
           consumed,
           `${entry.pageKey} 的 usePageSettings defaults 字段 '${field}' 未被任何地方消费（${aliases.join('/')}），`
           + `属静默持久化死项——要么接进抽屉业务段，要么从 defaults 移除`,
+        ).toBe(true)
+      }
+    }
+  })
+
+  it('业务偏好必须在设置抽屉提供写入入口，不得把会话字段混入持久化载荷', () => {
+    for (const entry of PAGE_REGISTRY) {
+      const source = sourceForPage(entry.pageKey)
+      if (!source || !source.includes('usePageSettings(')) continue
+      const { fields, aliases } = pageSettingsFields(source, `${entry.pageKey}.vue`)
+      if (!fields.length) continue
+      const business = [...source.matchAll(
+        /<template\s+#business\b[^>]*>([\s\S]*?)<\/PageSettingsDrawer>/g,
+      )].map((match) => match[1]).join('\n')
+      const computedFields = computedPageSettingsFieldsInBusiness(
+        source,
+        `${entry.pageKey}.vue`,
+        aliases,
+        business,
+      )
+      for (const field of fields) {
+        const directModel = aliases.some((alias) => new RegExp(
+          `v-model(?:[:.][^=\\s]+)*\\s*=\\s*["'][^"']*\\b${alias}\\.${field}\\b`,
+        ).test(business))
+        expect(
+          directModel || computedFields.has(field),
+          `${entry.pageKey} 的持久化字段 '${field}' 没有设置抽屉写入入口；`
+          + '会话字段应移出 usePageSettings，长期默认应补全抽屉闭环',
         ).toBe(true)
       }
     }

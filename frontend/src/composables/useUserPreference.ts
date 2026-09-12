@@ -41,7 +41,12 @@ export function replaceReactive<T extends Record<string, unknown>>(target: T, so
 function readLocal<T>(key: string, defaults: T): T {
   try {
     const raw = localStorage.getItem(key)
-    return mergePreferenceDefaults(defaults, raw ? JSON.parse(raw) : undefined)
+    const saved = raw ? JSON.parse(raw) : undefined
+    const normalized = mergePreferenceDefaults(defaults, saved)
+    if (raw && JSON.stringify(saved) !== JSON.stringify(normalized)) {
+      localStorage.setItem(key, JSON.stringify(normalized))
+    }
+    return normalized
   } catch {
     return clone(defaults)
   }
@@ -113,9 +118,13 @@ export function useUserPreference<T extends object>(options: UseUserPreferenceOp
       })
       const remote = res.items[0]?.value
       if (!dirtyBeforeHydrate && remote !== undefined) {
+        const normalized = mergePreferenceDefaults(options.defaults, remote)
+        const remoteNeedsCleanup = JSON.stringify(remote) !== JSON.stringify(normalized)
         applyingRemote = true
-        replaceReactive(value as Record<string, unknown>, mergePreferenceDefaults(options.defaults, remote) as Record<string, unknown>)
+        replaceReactive(value as Record<string, unknown>, normalized as Record<string, unknown>)
         applyingRemote = false
+        // defaults 是当前偏好 schema；字段下线后顺手清理 PG 旧载荷，避免隐藏会话字段长期残留。
+        if (remoteNeedsCleanup) await saveRemoteNow()
       } else if (dirtyBeforeHydrate) {
         await saveRemoteNow()
       }
@@ -142,10 +151,10 @@ export function useUserPreference<T extends object>(options: UseUserPreferenceOp
     value,
     () => {
       persistLocal()
-      if (!hydrated.value) dirtyBeforeHydrate = true
+      if (!hydrated.value && !applyingRemote) dirtyBeforeHydrate = true
       if (!applyingRemote && hydrated.value) scheduleRemoteSave()
     },
-    { deep: true },
+    { deep: true, flush: 'sync' },
   )
 
   const isDirty = computed(() => JSON.stringify(value) !== JSON.stringify(options.defaults))

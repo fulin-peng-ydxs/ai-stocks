@@ -12,6 +12,7 @@ import {
   type AuthSnapshot,
 } from '@/api/authToken'
 import * as authApi from '@/api/auth'
+import { useStockSet } from '@/stores/stockSet'
 import { collectMenuPaths, firstMenuPath, type MenuTreeNode } from '@/utils/permission'
 
 // /me 拉取状态：SideMenu/守卫据此区分「加载中」与「加载失败」，失败时 fail-closed（不露全量菜单）。
@@ -56,6 +57,8 @@ export const useAuthStore = defineStore('auth', {
     },
 
     _applyLogin(data: authApi.LoginResult) {
+      // 登录可能在同一 Tab 切换身份，禁止复用上一身份的列表/分组现场。
+      useStockSet().resetSession(true)
       this.accessToken = data.access_token
       this.refreshToken = data.refresh_token
       this.user = {
@@ -140,6 +143,7 @@ export const useAuthStore = defineStore('auth', {
     },
 
     clearLocal() {
+      useStockSet().resetSession(true)
       this.accessToken = ''
       this.refreshToken = ''
       this.user = null

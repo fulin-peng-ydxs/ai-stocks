@@ -785,8 +785,9 @@ onMounted(async () => {
     auth.ensureLoaded().catch(() => undefined),
   ])
   await Promise.all([reloadGroups(), loadMembershipOptions()])
-  const restore = route.query.restore === '1' ? stockSet.listState : null
+  const restore = route.query.restore === '1' ? stockSet.consumeListState() : null
   if (restore) {
+    // 返回现场已由 store 原子消费，避免后续刷新重复覆盖当前页状态。
     restoringListState = true
     q.value = restore.mode === 'group' ? (restore.groupQ || restore.q) : restore.q
     board.value = restore.board

@@ -64,6 +64,27 @@ describe('useUserPreference', () => {
     expect(prefApi.listUserPreferences).not.toHaveBeenCalled()
   })
 
+  it('本地 fallback 含已下线字段时按当前 defaults 就地清理', async () => {
+    localStorage.setItem('pref:training', JSON.stringify({
+      mode: 'single',
+      range_start: '2025-01-01',
+      range_end: '2025-12-31',
+    }))
+
+    const pref = useUserPreference({
+      scope: 'page',
+      pageKey: 'training',
+      prefKey: 'settings',
+      defaults: { mode: 'single' },
+      localStorageKey: 'pref:training',
+    })
+    await pref.whenHydrated()
+
+    expect(pref.value).toEqual({ mode: 'single' })
+    expect(JSON.parse(localStorage.getItem('pref:training') || '{}')).toEqual({ mode: 'single' })
+    expect(prefApi.listUserPreferences).not.toHaveBeenCalled()
+  })
+
   it('登录后远端偏好覆盖本地 fallback', async () => {
     login()
     localStorage.setItem('pref:test', JSON.stringify({ density: 'compact' }))
@@ -82,6 +103,29 @@ describe('useUserPreference', () => {
 
     expect(pref.value.density).toBe('comfortable')
     expect(JSON.parse(localStorage.getItem('pref:test') || '{}')).toEqual({ density: 'comfortable' })
+  })
+
+  it('远端旧偏好含已下线字段时按当前 defaults 清理并回写', async () => {
+    login()
+    prefApi.listUserPreferences.mockResolvedValue({
+      items: [{ value: { mode: 'single', range_start: '2025-01-01', range_end: '2025-12-31' } }],
+    })
+
+    const pref = useUserPreference({
+      scope: 'page',
+      pageKey: 'training',
+      prefKey: 'settings',
+      defaults: { mode: 'single' },
+      localStorageKey: 'pref:training',
+    })
+    await pref.whenHydrated()
+
+    expect(pref.value).toEqual({ mode: 'single' })
+    expect(prefApi.saveUserPreference).toHaveBeenCalledTimes(1)
+    expect(prefApi.saveUserPreference).toHaveBeenCalledWith(expect.objectContaining({
+      pageKey: 'training',
+      value: { mode: 'single' },
+    }))
   })
 
   it('whenHydrated 等待远端偏好完成后再放行页面初始化', async () => {
