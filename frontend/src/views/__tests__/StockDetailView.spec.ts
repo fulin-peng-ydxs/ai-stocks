@@ -305,6 +305,7 @@ const AppWorkspacePaneStub = defineComponent({
   inheritAttrs: false,
   props: {
     title: { type: String, required: true },
+    eyebrow: { type: String, default: '' },
     headerVisible: { type: Boolean, default: true },
     primary: { type: Boolean, default: false },
   },
@@ -312,6 +313,7 @@ const AppWorkspacePaneStub = defineComponent({
     return () => h('section', attrs, [
       props.headerVisible
         ? h('header', { class: 'app-workspace-pane__header' }, [
+            props.eyebrow ? h('div', { class: 'app-workspace-pane__eyebrow' }, props.eyebrow) : null,
             h('h3', props.title),
             slots.actions?.(),
           ])
@@ -1018,7 +1020,8 @@ describe('StockDetailView 三图数据协调', () => {
     expect(pageActions.findComponent(KlineRangeSelectStub).exists()).toBe(false)
     expect(wrapper.findComponent(KlineRangeSelectStub).props('width')).toBe('112px')
     expect(chartPanel.get('.app-workspace-pane__header').text()).toContain('行情走势')
-    expect(auxiliaryPanel.get('.app-workspace-pane__header').text()).toContain('分析概览')
+    expect(auxiliaryPanel.get('.app-workspace-pane__eyebrow').text()).toBe('分析概览')
+    expect(auxiliaryPanel.get('.app-workspace-pane__header h3').text()).toBe('2026-07-23')
     expect(panes[0]?.props('primary')).toBe(true)
     expect(panes[1]?.props('primary')).toBe(false)
   })

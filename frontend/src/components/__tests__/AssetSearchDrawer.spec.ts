@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import { nextTick } from 'vue'
 import AssetSearchDrawer from '@/components/asset-search/AssetSearchDrawer.vue'
+import PageDrawer from '@/components/PageDrawer.vue'
 import { useAuthStore } from '@/stores/auth'
 import type {
   AssetBrowseParams,
@@ -91,6 +92,12 @@ describe('AssetSearchDrawer', () => {
     expect(text).toContain('系统内置')
     expect(text).toContain('加载查看')
     expect(text).toContain('复制为我的')
+    wrapper.unmount()
+  })
+
+  it('统一使用 xl 语义宽度，避免资产浏览抽屉过度遮挡上下文', () => {
+    const { wrapper } = mountDrawer({ modelValue: false })
+    expect(wrapper.findComponent(PageDrawer).props('size')).toBe('xl')
     wrapper.unmount()
   })
 

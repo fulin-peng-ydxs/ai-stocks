@@ -1115,10 +1115,21 @@ const REGISTRY: PageRegistryEntry[] = [
     pageKey: 'sectors-detail',
     label: '板块详情',
     path: '/sectors/:code',
-    archetype: 'detail',
-    responsiveProfile: 'single-column',
+    archetype: 'master-detail',
+    responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
     componentMeta: {
+      workspace: {
+        fieldApplicability: {
+          masterRatio: { enabled: true },
+          masterRatioProfiles: { enabled: true },
+        },
+      },
+      chart: {
+        fieldApplicability: {
+          minHeight: { enabled: false, reason: '详情图表随双栏工作区可用高度成长，不使用固定区域高度' },
+        },
+      },
       memberTable: {
         columns: [
           { key: 'code', label: '代码' },
@@ -1135,15 +1146,16 @@ const REGISTRY: PageRegistryEntry[] = [
     },
     layout: {
       pageKey: 'sectors-detail',
-      archetype: 'detail',
+      archetype: 'master-detail',
       hasActionRegion: true,
       density: 'standard',
       responsive: singleColumn(),
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
-        { id: 'detail', component: 'detail', region: 'main', label: '板块详情', order: 1 },
-        { id: 'chart', component: 'chart', region: 'main', parentId: 'detail', label: '板块指数', order: 1, config: { minHeight: 560, stockChart: createDefaultStockChartPreferences() } },
-        { id: 'memberTable', component: 'data-table', region: 'main', parentId: 'detail', label: '成分股', order: 2, config: { pagination: true, defaultSort: 'pct:desc', pageSize: 20 } },
+        { id: 'workspace', component: 'master-detail', region: 'main', minH: 360, label: '板块详情双栏工作台', order: 1, config: { masterRatio: 65, masterRatioProfiles: { profiles: [] } } },
+        { id: 'summary', component: 'section', region: 'main', parentId: 'workspace', label: '板块行情摘要', order: 1 },
+        { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '板块走势', order: 1, config: { stockChart: createDefaultStockChartPreferences() } },
+        { id: 'memberTable', component: 'data-table', region: 'main', parentId: 'workspace', label: '成分股', order: 2, config: { pagination: true, defaultSort: 'pct:desc', pageSize: 20 } },
       ],
       editable: [densityKnob()],
     },

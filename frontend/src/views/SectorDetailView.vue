@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { ArrowLeft, Star, StarFilled } from '@element-plus/icons-vue'
+import { ArrowLeft, DArrowLeft, DArrowRight, Star, StarFilled } from '@element-plus/icons-vue'
 import { ElMessage, type Sort } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import type { Bar, IndicatorRow } from '@/api/stocks'
@@ -17,14 +17,15 @@ import {
 } from '@/api/sectors'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
+import AppWorkspacePane from '@/components/AppWorkspacePane.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import MarketDetailHero from '@/components/MarketDetailHero.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
-import StockChartRegion from '@/components/stock-chart/StockChartRegion.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import {
@@ -35,13 +36,17 @@ import {
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
-import { useStockChartComponentConfig } from '@/composables/useStockChartComponentConfig'
+import {
+  composeComponentRuntimeValueOf,
+  useStockChartComponentConfig,
+} from '@/composables/useStockChartComponentConfig'
+import { useMarketMasterRatioRuntime } from '@/composables/useMarketMasterRatioRuntime'
 import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
 import { useTableSort } from '@/composables/useTableSort'
 import { useTradeDates } from '@/composables/useTradeDates'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
-import { resolveComponentNumberValue } from '@/layout/componentConfig'
+import { MASTER_DETAIL_RATIO_DEFAULT } from '@/layout/masterDetailRatioProfiles'
 import { useAuthStore } from '@/stores/auth'
 import { useStockSet } from '@/stores/stockSet'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
@@ -73,6 +78,10 @@ const returnLabel = computed(() => sectorReturnLabel(route.query))
 const settingsOpen = ref(false)
 
 const layout = getPageLayout('sectors-detail')
+const workspaceDefaultRatio = Number(
+  layout.slots.find((slot) => slot.id === 'workspace')?.config?.masterRatio
+    ?? MASTER_DETAIL_RATIO_DEFAULT,
+)
 const {
   effective,
   knobs: layoutKnobs,
@@ -98,7 +107,7 @@ const drawerConfig = {
   setComponentKnob,
   componentSourceOf,
   componentLayerValuesOf,
-componentAllowedLayers,
+  componentAllowedLayers,
 }
 
 const chartPreferences = useStockChartComponentConfig({
@@ -106,6 +115,18 @@ const chartPreferences = useStockChartComponentConfig({
   setComponentKnob,
   hydrated: remoteHydrated,
 })
+const {
+  setCurrentMasterRatio,
+  setCurrentMasterRatioSample,
+  componentRuntimeValueOf: masterRuntimeValueOf,
+} = useMarketMasterRatioRuntime()
+const componentRuntimeValueOf = composeComponentRuntimeValueOf(
+  masterRuntimeValueOf,
+  chartPreferences.componentRuntimeValueOf,
+)
+const splitWorkspaceRef = ref<InstanceType<typeof AppSplitWorkspace> | null>(null)
+const splitCompact = ref(false)
+const memberPanelVisible = ref(true)
 useLegacyStockChartPreferenceMigration({
   pageKey: 'sectors-detail', componentSourceOf, setComponentKnob, whenRemoteHydrated,
   saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
@@ -135,15 +156,6 @@ const {
 const hiddenColumns = computed<string[]>(() =>
   (componentValueOf('memberTable', 'hiddenColumns') as string[]) ?? [],
 )
-const chartDefaultHeight = Number(
-  layout.slots.find((slot) => slot.id === 'chart')?.config?.minHeight,
-)
-const configuredChartHeight = computed(() => resolveComponentNumberValue(
-  'chart',
-  'minHeight',
-  componentValueOf('chart', 'minHeight'),
-  chartDefaultHeight,
-))
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
 }
@@ -314,6 +326,14 @@ function resetSettings(): void {
   resetLayout()
 }
 
+function toggleMemberPanel(): void {
+  if (splitCompact.value) {
+    splitWorkspaceRef.value?.openCompactSecondary()
+    return
+  }
+  memberPanelVisible.value = !memberPanelVisible.value
+}
+
 watch([sortBy, sortOrder], () => {
   if (!initialized) return
   memberPage.value = 1
@@ -421,101 +441,126 @@ onMounted(async () => {
           <div class="metric metric--leader"><span>成员领涨</span><strong>{{ detail?.leader_stock || '—' }} <em :class="pctClass(detail?.leader_pct)">{{ fmtPct(detail?.leader_pct) }}</em></strong></div>
         </section>
 
-        <StockChartRegion
-          class="content-panel chart-section"
-          data-testid="sector-detail-chart-section"
-          :total-height="configuredChartHeight"
-          :slot2="chartPreferences.preferences.value.slot2"
-          :slot3="chartPreferences.preferences.value.slot3"
-          aria-label="板块指数图表区域"
+        <AppSplitWorkspace
+          ref="splitWorkspaceRef"
+          class="sector-detail-workspace"
+          data-testid="sector-detail-workspace"
+          :secondary-visible="memberPanelVisible"
+          :default-primary-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? workspaceDefaultRatio)"
+          :primary-ratio-profiles="componentValueOf('workspace', 'masterRatioProfiles')"
+          secondary-drawer-title="板块成分股"
+          separator-label="调整板块走势与成分股宽度"
+          test-id-prefix="sector-detail"
+          @update:secondary-visible="memberPanelVisible = $event"
+          @primary-ratio-change="setCurrentMasterRatio"
+          @primary-ratio-sample-change="setCurrentMasterRatioSample"
+          @compact-change="splitCompact = $event"
         >
-          <template #header>
-            <header class="section-head">
-              <div>
-                <h3 class="app-section-title">板块指数</h3>
-                <p class="app-caption-text">原始连续指数 · 开高低收与量能</p>
+          <template #primary>
+            <AppWorkspacePane
+              title="板块走势"
+              aria-label="板块指数走势"
+              primary
+              data-testid="sector-detail-chart-section"
+            >
+              <template #actions>
+                <KlineRangeSelect v-model="viewDays" width="112px" test-id="sector-detail-range" />
+                <AppIconButton
+                  :label="splitCompact ? '查看成分股' : (memberPanelVisible ? '收起成分股，仅看走势' : '显示成分股')"
+                  data-testid="sector-detail-toggle-members"
+                  size="sm"
+                  :native-title="false"
+                  @click="toggleMemberPanel"
+                >
+                  <el-icon>
+                    <DArrowRight v-if="memberPanelVisible && !splitCompact" />
+                    <DArrowLeft v-else />
+                  </el-icon>
+                </AppIconButton>
+              </template>
+              <div class="chart-stage" v-loading="chartLoading && bars.length > 0">
+                <AppStateBlock v-if="chartError" state="error" size="compact" title="指数走势加载失败" :description="chartError" retry @retry="loadChart" />
+                <AppStateBlock v-else-if="chartLoading && !bars.length" state="loading" size="compact" title="正在加载指数走势…" />
+                <AppStateBlock v-else-if="!bars.length" state="empty" size="compact" title="暂无指数走势" description="请先运行板块指数采集，或切换交易日期" />
+                <StockChartWorkspace
+                  v-else
+                  class="sector-chart-workspace"
+                  :bars="bars"
+                  :indicators="indicators"
+                  :slot2="chartPreferences.preferences.value.slot2"
+                  :slot3="chartPreferences.preferences.value.slot3"
+                  :height-ratios="chartPreferences.currentRatios.value"
+                  adjust-label="原始连续指数"
+                  :zoom-start="0"
+                  :zoom-end="100"
+                  fit-available-height
+                  aria-label="板块指数 K 线与量能联动工作区"
+                  @ratio-draft="chartPreferences.handleRatioDraft"
+                  @ratio-commit="chartPreferences.handleRatioCommit"
+                />
               </div>
-              <KlineRangeSelect v-model="viewDays" width="112px" test-id="sector-detail-range" />
-            </header>
+            </AppWorkspacePane>
           </template>
-          <template #default="{ contentHeight }">
-            <div class="chart-stage" v-loading="chartLoading && bars.length > 0">
-              <AppStateBlock v-if="chartError" state="error" size="compact" title="指数走势加载失败" :description="chartError" retry @retry="loadChart" />
-              <AppStateBlock v-else-if="chartLoading && !bars.length" state="loading" size="compact" title="正在加载指数走势…" />
-              <AppStateBlock v-else-if="!bars.length" state="empty" size="compact" title="暂无指数走势" description="请先运行板块指数采集，或切换交易日期" />
-              <StockChartWorkspace
+          <template #secondary>
+            <AppWorkspacePane
+              :title="memberTradeDate || detail?.trade_date || '最新交易日'"
+              eyebrow="成分股"
+              aria-label="板块成分股"
+              :header-visible="!splitCompact"
+              data-testid="sector-detail-member-section"
+            >
+              <template #actions>
+                <span class="permission-hint">
+                  {{ memberTotal }} 条 · {{ canViewStocks ? '点击查看行情' : '无个股查看权限' }}
+                </span>
+              </template>
+              <AppStateBlock v-if="memberError" state="error" size="compact" title="成分股加载失败" :description="memberError" retry @retry="loadMembers" />
+              <AppDataTable
                 v-else
-                class="sector-chart-workspace"
-                :bars="bars"
-                :indicators="indicators"
-                :slot2="chartPreferences.preferences.value.slot2"
-                :slot3="chartPreferences.preferences.value.slot3"
-                :height-ratios="chartPreferences.currentRatios.value"
-                adjust-label="原始连续指数"
-                :min-height="contentHeight"
-                :zoom-start="0"
-                :zoom-end="100"
-                aria-label="板块指数 K 线与量能联动工作区"
-                @ratio-draft="chartPreferences.handleRatioDraft"
-                @ratio-commit="chartPreferences.handleRatioCommit"
-              />
-            </div>
+                :data="members"
+                :loading="memberLoading"
+                row-key="code"
+                :default-sort="elementDefaultSort"
+                :border="tableBorder('memberTable')"
+                :clickable="canViewStocks"
+                aria-label="板块历史成分股"
+                :pagination="{ currentPage: memberPage, pageSize: memberSize, total: memberTotal, pageSizes: MEMBER_PAGE_SIZES, small: true }"
+                @row-click="openStock"
+                @sort-change="(value: Sort) => onSortChange(value)"
+                @page-change="(value: number) => { memberPage = value; void loadMembers() }"
+                @size-change="changeMemberSize"
+              >
+                <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" role="code" sortable="custom">
+                  <template #default="{ row }">
+                    <el-tooltip :disabled="canViewStocks" content="无个股行情查看权限" placement="top">
+                      <span
+                        :class="{ 'stock-link': canViewStocks, 'stock-disabled': !canViewStocks }"
+                        :data-testid="row?.code ? `sector-member-${row.code}` : undefined"
+                      >{{ row.code }}</span>
+                    </el-tooltip>
+                  </template>
+                </AppTableColumn>
+                <AppTableColumn v-if="colVisible('name')" label="名称" prop="name" role="name">
+                  <template #default="{ row }">
+                    <el-tooltip :disabled="canViewStocks" content="无个股行情查看权限" placement="top">
+                      <strong :class="{ 'stock-link': canViewStocks, 'stock-disabled': !canViewStocks }">{{ row.name || '—' }}</strong>
+                    </el-tooltip>
+                  </template>
+                </AppTableColumn>
+                <AppTableColumn v-if="colVisible('price')" label="现价" prop="close" role="number" align="right">
+                  <template #default="{ row }"><span class="app-data-text">{{ fmtNumber(row.close) }}</span></template>
+                </AppTableColumn>
+                <AppTableColumn v-if="colVisible('pct')" label="涨跌幅" prop="pct" role="number" align="right" sortable="custom">
+                  <template #default="{ row }"><strong class="app-data-text" :class="pctClass(row.pct_chg)">{{ fmtPct(row.pct_chg) }}</strong></template>
+                </AppTableColumn>
+                <AppTableColumn v-if="colVisible('turnover')" label="换手率" prop="turnover_rate" role="number" align="right">
+                  <template #default="{ row }"><span class="app-data-text">{{ fmtPct(row.turnover_rate) }}</span></template>
+                </AppTableColumn>
+                <template #empty>暂无成分股数据，请先运行板块成分采集</template>
+              </AppDataTable>
+            </AppWorkspacePane>
           </template>
-        </StockChartRegion>
-
-        <section class="content-panel member-section" data-testid="sector-detail-member-section">
-          <header class="section-head">
-            <div>
-              <h3 class="app-section-title">历史成分股</h3>
-              <p class="app-caption-text">{{ memberTradeDate || detail?.trade_date || '最新交易日' }} · {{ memberTotal }} 条成分关系</p>
-            </div>
-            <span class="permission-hint">{{ canViewStocks ? '点击成分股进入个股行情' : '当前账号无个股行情查看权限' }}</span>
-          </header>
-          <AppStateBlock v-if="memberError" state="error" size="compact" title="成分股加载失败" :description="memberError" retry @retry="loadMembers" />
-          <AppDataTable
-            v-else
-            :data="members"
-            :loading="memberLoading"
-            row-key="code"
-            :default-sort="elementDefaultSort"
-            :border="tableBorder('memberTable')"
-            :clickable="canViewStocks"
-            aria-label="板块历史成分股"
-            :pagination="{ currentPage: memberPage, pageSize: memberSize, total: memberTotal, pageSizes: MEMBER_PAGE_SIZES, small: true }"
-            @row-click="openStock"
-            @sort-change="(value: Sort) => onSortChange(value)"
-            @page-change="(value: number) => { memberPage = value; void loadMembers() }"
-            @size-change="changeMemberSize"
-          >
-            <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" role="code" sortable="custom">
-              <template #default="{ row }">
-                <el-tooltip :disabled="canViewStocks" content="无个股行情查看权限" placement="top">
-                  <span
-                    :class="{ 'stock-link': canViewStocks, 'stock-disabled': !canViewStocks }"
-                    :data-testid="row?.code ? `sector-member-${row.code}` : undefined"
-                  >{{ row.code }}</span>
-                </el-tooltip>
-              </template>
-            </AppTableColumn>
-            <AppTableColumn v-if="colVisible('name')" label="名称" prop="name" role="name">
-              <template #default="{ row }">
-                <el-tooltip :disabled="canViewStocks" content="无个股行情查看权限" placement="top">
-                  <strong :class="{ 'stock-link': canViewStocks, 'stock-disabled': !canViewStocks }">{{ row.name || '—' }}</strong>
-                </el-tooltip>
-              </template>
-            </AppTableColumn>
-            <AppTableColumn v-if="colVisible('price')" label="现价" prop="close" role="number" align="right">
-              <template #default="{ row }"><span class="app-data-text">{{ fmtNumber(row.close) }}</span></template>
-            </AppTableColumn>
-            <AppTableColumn v-if="colVisible('pct')" label="涨跌幅" prop="pct" role="number" align="right" sortable="custom">
-              <template #default="{ row }"><strong class="app-data-text" :class="pctClass(row.pct_chg)">{{ fmtPct(row.pct_chg) }}</strong></template>
-            </AppTableColumn>
-            <AppTableColumn v-if="colVisible('turnover')" label="换手率" prop="turnover_rate" role="number" align="right">
-              <template #default="{ row }"><span class="app-data-text">{{ fmtPct(row.turnover_rate) }}</span></template>
-            </AppTableColumn>
-            <template #empty>暂无成分股数据，请先运行板块成分采集</template>
-          </AppDataTable>
-        </section>
+        </AppSplitWorkspace>
       </div>
     </template>
 
@@ -527,7 +572,7 @@ onMounted(async () => {
         :dirty="pageDirty"
         :config="drawerConfig"
         :business-visible="true"
-        :component-runtime-value-of="chartPreferences.componentRuntimeValueOf"
+        :component-runtime-value-of="componentRuntimeValueOf"
         @reset="resetSettings"
       >
         <template #business>
@@ -541,13 +586,11 @@ onMounted(async () => {
 <style scoped>
 .detail-action,
 .detail-nav,
-.detail-actions,
-.section-head {
+.detail-actions {
   display: flex;
   align-items: center;
 }
-.detail-nav,
-.section-head {
+.detail-nav {
   justify-content: space-between;
   gap: var(--app-space-3);
   width: 100%;
@@ -562,20 +605,15 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: var(--app-space-3);
-  min-width: 860px;
+  min-width: 0;
   min-height: 0;
   height: 100%;
-  overflow: auto;
+  overflow: hidden;
 }
-.metric-strip,
-.content-panel {
+.metric-strip {
   border: 1px solid var(--el-border-color);
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
-}
-.section-head p {
-  margin: var(--app-space-1) 0 0;
-  color: var(--el-text-color-secondary);
 }
 .sector-type {
   padding: 3px 8px;
@@ -624,29 +662,20 @@ onMounted(async () => {
   font-size: var(--app-font-size-caption);
   font-style: normal;
 }
-.content-panel {
-  display: flex;
-  flex-direction: column;
+.sector-detail-workspace {
+  flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
-}
-.chart-section {
-  flex: 0 0 560px;
-}
-.member-section {
-  flex: 1 0 420px;
-}
-.section-head {
-  flex: 0 0 auto;
-  padding: var(--app-space-3) var(--app-space-4);
-  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .chart-stage {
+  display: flex;
+  flex: 1 1 auto;
   height: 100%;
   min-height: 0;
 }
 .sector-chart-workspace {
-  height: 100%;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
   border: 0;
   border-radius: 0;
 }

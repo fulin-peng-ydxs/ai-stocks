@@ -105,6 +105,24 @@ describe('AssetProfileSelect', () => {
     wrapper.unmount()
   })
 
+  it('从选择器打开搜索抽屉前先收起下拉浮层，避免两个浮层重叠', async () => {
+    const { wrapper } = mountSelect({ fetchMine: async () => [] })
+    await flush()
+    const select = wrapper.findComponent({ name: 'ElSelect' })
+    const blur = vi.spyOn(select.vm as unknown as { blur: () => void }, 'blur')
+
+    await wrapper.find('[data-testid="asset-profile-select-select"]').trigger('click')
+    await flush()
+    const emptySearch = document.querySelector<HTMLElement>('[data-testid="asset-profile-select-empty-search"]')
+    expect(emptySearch).not.toBeNull()
+    emptySearch!.click()
+    await flush()
+
+    expect(blur).toHaveBeenCalledTimes(1)
+    expect(wrapper.findComponent(AssetSearchDrawer).props('modelValue')).toBe(true)
+    wrapper.unmount()
+  })
+
   it('首次加载失败时错误态接管选择器，不与空选择框并存', async () => {
     const fetchMine = vi.fn().mockRejectedValueOnce(new Error('网络异常'))
     const { wrapper } = mountSelect({ fetchMine })

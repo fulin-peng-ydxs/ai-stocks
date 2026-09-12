@@ -849,13 +849,14 @@ describe('组件消费关系与配置一致性（P4）', () => {
     expect(sourceForPage('stock-detail')).not.toContain("componentValueOf('chart', 'minHeight')")
     expect(sourceForPage('stock-detail')).not.toContain('<StockChartRegion')
 
-    expect(applicableComponentFields(sectorDetail, 'chart').map((field) => field.key)).toContain('minHeight')
+    expect(applicableComponentFields(sectorDetail, 'chart').map((field) => field.key)).not.toContain('minHeight')
     expect(sectorDetail.layout.slots.find((slot) => slot.id === 'chart')).toMatchObject({
       component: 'chart',
-      parentId: 'detail',
-      config: { minHeight: 560 },
+      parentId: 'workspace',
     })
-    expect(sourceForPage('sectors-detail')).toContain("componentValueOf('chart', 'minHeight')")
+    expect(sourceForPage('sectors-detail')).not.toContain("componentValueOf('chart', 'minHeight')")
+    expect(sourceForPage('sectors-detail')).not.toContain('<StockChartRegion')
+    expect(sourceForPage('sectors-detail')).toContain('fit-available-height')
 
     expect(applicableComponentFields(training, 'chart').map((field) => field.key)).toContain('minHeight')
     expect(training.layout.slots.find((slot) => slot.id === 'chart')).toMatchObject({
@@ -863,14 +864,12 @@ describe('组件消费关系与配置一致性（P4）', () => {
       config: { minHeight: 650 },
     })
 
-    for (const pageKey of ['sectors-detail', 'training']) {
-      const source = sourceForPage(pageKey)
-      expect(source).toContain("import StockChartRegion from '@/components/stock-chart/StockChartRegion.vue'")
-      expect(source).toContain('<StockChartRegion')
-      expect(source).toContain(':total-height="configuredChartHeight"')
-      expect(source).toContain(':min-height="contentHeight"')
-      expect(source).not.toMatch(/configuredChartHeight(?:\.value)?\s*-/)
-    }
+    const trainingSource = sourceForPage('training')
+    expect(trainingSource).toContain("import StockChartRegion from '@/components/stock-chart/StockChartRegion.vue'")
+    expect(trainingSource).toContain('<StockChartRegion')
+    expect(trainingSource).toContain(':total-height="configuredChartHeight"')
+    expect(trainingSource).toContain(':min-height="contentHeight"')
+    expect(trainingSource).not.toMatch(/configuredChartHeight(?:\.value)?\s*-/)
 
     expect(sectorWorkbench.layout.slots.find((slot) => slot.id === 'chart')?.component).toBe('chart')
     expect(applicableComponentFields(sectorWorkbench, 'chart').map((field) => field.key)).not.toContain('minHeight')
@@ -891,15 +890,17 @@ describe('组件消费关系与配置一致性（P4）', () => {
       expect(source).toContain('@master-ratio-sample-change="setCurrentMasterRatioSample"')
     }
 
-    const detailSource = sourceForPage('stock-detail')
-    expect(applicableComponentFields(getPageEntry('stock-detail')!, 'workspace').map((field) => field.key))
-      .toEqual(expect.arrayContaining(['masterRatio', 'masterRatioProfiles']))
-    expect(detailSource).toContain('<AppSplitWorkspace')
-    expect(detailSource).toContain("componentValueOf('workspace', 'masterRatio')")
-    expect(detailSource).toContain("componentValueOf('workspace', 'masterRatioProfiles')")
-    expect(detailSource).toContain(':component-runtime-value-of="componentRuntimeValueOf"')
-    expect(detailSource).toContain('@primary-ratio-change="setCurrentMasterRatio"')
-    expect(detailSource).toContain('@primary-ratio-sample-change="setCurrentMasterRatioSample"')
+    for (const pageKey of ['stock-detail', 'sectors-detail']) {
+      const detailSource = sourceForPage(pageKey)
+      expect(applicableComponentFields(getPageEntry(pageKey)!, 'workspace').map((field) => field.key))
+        .toEqual(expect.arrayContaining(['masterRatio', 'masterRatioProfiles']))
+      expect(detailSource).toContain('<AppSplitWorkspace')
+      expect(detailSource).toContain("componentValueOf('workspace', 'masterRatio')")
+      expect(detailSource).toContain("componentValueOf('workspace', 'masterRatioProfiles')")
+      expect(detailSource).toContain(':component-runtime-value-of="componentRuntimeValueOf"')
+      expect(detailSource).toContain('@primary-ratio-change="setCurrentMasterRatio"')
+      expect(detailSource).toContain('@primary-ratio-sample-change="setCurrentMasterRatioSample"')
+    }
 
     const workspaceSource = readFileSync(
       new URL('../../components/AppSplitWorkspace.vue', import.meta.url),

@@ -285,6 +285,12 @@ const quoteSummaryData = ref<StockQuoteSummaryData | null>(null)
 const chartActiveBar = ref<Bar | null>(null)
 const boardMembership = ref<StockBoardMembership | null>(null)
 const latest = ref<IndicatorRow | null>(null)
+const analysisDate = computed(() => (
+  quoteSummaryData.value?.trade_date
+  ?? latest.value?.trade_date
+  ?? bars.value.at(-1)?.date
+  ?? '最新交易日'
+))
 
 // 始终至少加载 5 年数据保证 MA60/MA120 有足够热身窗口，displayBars 控制图表可见范围
 const MIN_HISTORY_DAYS = 1250
@@ -1191,7 +1197,8 @@ onBeforeUnmount(() => {
 
           <template #secondary>
           <AppWorkspacePane
-            title="分析概览"
+            :title="analysisDate"
+            eyebrow="分析概览"
             aria-label="个股分析概览"
             :header-visible="!splitCompact"
             data-testid="stock-detail-auxiliary-panel"

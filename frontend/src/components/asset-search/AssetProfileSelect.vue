@@ -5,7 +5,7 @@
 // 成功后刷新「我的」并选中新资产。五页选择器实例统一消费本组件，不允许页面私有同类逻辑。
 // 权限态（§307）：配置 viewPermission 后，无权限角色不渲染搜索入口与复制引导，
 // 不调用 browse（避免 403），抽屉内显示「无权限查看」无权态——不把无权伪装成空态。
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Search, Close } from '@element-plus/icons-vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
@@ -91,6 +91,7 @@ const loadingMine = ref(false)
 const errorMine = ref('')
 const drawerOpen = ref(false)
 const drawerRef = ref<InstanceType<typeof AssetSearchDrawer> | null>(null)
+const selectRef = ref<{ blur: () => void } | null>(null)
 const auth = useAuthStore()
 
 // 是否可打开搜索抽屉浏览公开资产；未配置 viewPermission 时默认可浏览
@@ -143,6 +144,13 @@ onMounted(() => {
 })
 
 function openSearch(source?: AssetBrowseSource) {
+  // 搜索入口可能位于 el-select 的空态浮层中。先结束选择器交互，再打开抽屉，
+  // 避免 teleport 到页面容器的两个浮层同时可见、层级互相覆盖。
+  if (selectRef.value) {
+    selectRef.value.blur()
+    void nextTick(() => drawerRef.value?.openWith(source))
+    return
+  }
   drawerRef.value?.openWith(source)
 }
 
@@ -252,6 +260,7 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
       />
       <template v-else>
         <el-select
+          ref="selectRef"
           v-model="inner"
           class="asset-profile-select__select"
           :placeholder="placeholder || `选我的${assetLabel}（可选）`"
