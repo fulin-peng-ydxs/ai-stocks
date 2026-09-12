@@ -21,8 +21,11 @@ describe('MasterDetailRatioProfileSettings', () => {
     expect(wrapper.text()).toBe('使用页面当前比例')
 
     await wrapper.get('[data-testid="master-ratio-profile-save-current"]').trigger('click')
-    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([{
-      profiles: [{ width: 1280, ratio: 50 }, { width: 1840, ratio: 46 }],
+    expect(wrapper.emitted('apply')?.at(-1)).toEqual([{
+      ratio: 46,
+      profiles: {
+        profiles: [{ width: 1280, ratio: 50 }, { width: 1840, ratio: 46 }],
+      },
     }])
   })
 

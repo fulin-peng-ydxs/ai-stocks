@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import type { Component } from 'vue'
+import { nextTick, reactive, type Component } from 'vue'
 import ComponentAutoSettings from '@/components/ComponentAutoSettings.vue'
 
 vi.mock('@/layout/pageRegistry', () => ({
@@ -334,7 +334,13 @@ function mountChartDemo() {
 }
 
 function mountMasterDemo(runtimeRatio?: number) {
-  const setComponentKnob = vi.fn()
+  const values = reactive<Record<string, unknown>>({
+    masterRatio: 45,
+    masterRatioProfiles: { profiles: [] },
+  })
+  const setComponentKnob = vi.fn((_slotId: string, field: string, value: unknown) => {
+    values[field] = value
+  })
   const wrapper = mount(ComponentAutoSettings as Component, {
     props: {
       pageKey: 'master-demo',
@@ -344,9 +350,7 @@ function mountMasterDemo(runtimeRatio?: number) {
           : runtimeRatio
       )),
       config: {
-        componentValueOf: vi.fn((_slotId: string, field: string) => (
-          field === 'masterRatioProfiles' ? { profiles: [] } : 45
-        )),
+        componentValueOf: vi.fn((_slotId: string, field: string) => values[field]),
         setComponentKnob,
       },
     },
@@ -357,10 +361,13 @@ function mountMasterDemo(runtimeRatio?: number) {
         AppRowActions: true,
         MasterDetailRatioProfileSettings: {
           props: ['modelValue', 'currentSample'],
-          emits: ['update:modelValue'],
-          template: '<button data-testid="master-ratio-profile-save-current" :disabled="!currentSample" @click="$emit(\'update:modelValue\', { profiles: [currentSample] })">使用页面当前比例</button>',
+          emits: ['apply'],
+          template: '<button data-testid="master-ratio-profile-save-current" :disabled="!currentSample" @click="$emit(\'apply\', { ratio: currentSample.ratio, profiles: { profiles: [currentSample] } })">使用页面当前比例</button>',
         },
-        ElInputNumber: true,
+        ElInputNumber: {
+          props: ['modelValue'],
+          template: '<div class="number-stub" :data-value="modelValue" />',
+        },
         ElButton: {
           props: ['disabled'],
           template: '<button :disabled="disabled"><slot /></button>',
@@ -438,14 +445,18 @@ describe('ComponentAutoSettings', () => {
     expect(setComponentKnob).not.toHaveBeenCalled()
   })
 
-  it('行情工作台可把页面当前宽度与比例保存为尺寸档案', async () => {
+  it('行情工作台采用页面当前比例时同步更新默认占比与尺寸档案', async () => {
     const { wrapper, setComponentKnob } = mountMasterDemo(48)
+    expect(wrapper.get('.number-stub').attributes('data-value')).toBe('45')
 
     await wrapper.get('[data-testid="master-ratio-profile-save-current"]').trigger('click')
+    await nextTick()
 
-    expect(setComponentKnob).toHaveBeenCalledWith('workspace', 'masterRatioProfiles', {
+    expect(setComponentKnob).toHaveBeenNthCalledWith(1, 'workspace', 'masterRatio', 48)
+    expect(setComponentKnob).toHaveBeenNthCalledWith(2, 'workspace', 'masterRatioProfiles', {
       profiles: [{ width: 1920, ratio: 48 }],
     })
+    expect(wrapper.get('.number-stub').attributes('data-value')).toBe('48')
   })
 
   it('页面当前比例尚未上报时禁用采用入口', () => {

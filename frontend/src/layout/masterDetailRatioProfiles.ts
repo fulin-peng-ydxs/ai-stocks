@@ -1,5 +1,12 @@
-export const MASTER_DETAIL_PROFILE_MATCH_TOLERANCE = 0.15
-export const MASTER_DETAIL_PROFILE_MERGE_TOLERANCE = 0.05
+import {
+  closestSizeProfile,
+  SIZE_PROFILE_MATCH_TOLERANCE,
+  SIZE_PROFILE_MERGE_TOLERANCE,
+  sizeProfileDistance,
+} from './sizeProfileMatching'
+
+export const MASTER_DETAIL_PROFILE_MATCH_TOLERANCE = SIZE_PROFILE_MATCH_TOLERANCE
+export const MASTER_DETAIL_PROFILE_MERGE_TOLERANCE = SIZE_PROFILE_MERGE_TOLERANCE
 
 export interface MasterDetailRatioProfile {
   width: number
@@ -36,20 +43,17 @@ export function normalizeMasterDetailRatioProfiles(value: unknown): MasterDetail
   }
 }
 
-function relativeDistance(currentWidth: number, profileWidth: number): number {
-  return Math.abs(currentWidth - profileWidth) / profileWidth
-}
-
 export function closestMasterDetailRatioProfile(
   value: unknown,
   currentWidth: number,
   tolerance = MASTER_DETAIL_PROFILE_MATCH_TOLERANCE,
 ): MasterDetailRatioProfile | undefined {
   if (!Number.isFinite(currentWidth) || currentWidth <= 0) return undefined
-  return normalizeMasterDetailRatioProfiles(value).profiles
-    .map((profile) => ({ profile, distance: relativeDistance(currentWidth, profile.width) }))
-    .filter((candidate) => candidate.distance <= tolerance)
-    .sort((left, right) => left.distance - right.distance || left.profile.width - right.profile.width)[0]?.profile
+  return closestSizeProfile(
+    normalizeMasterDetailRatioProfiles(value).profiles,
+    { width: currentWidth },
+    tolerance,
+  )
 }
 
 export function upsertMasterDetailRatioProfile(
@@ -61,7 +65,7 @@ export function upsertMasterDetailRatioProfile(
   const ratio = finiteRounded(sample.ratio)
   if (width === undefined || width <= 0 || ratio === undefined || ratio < 30 || ratio > 70) return normalized
   const nearest = normalized.profiles
-    .map((profile, index) => ({ index, distance: relativeDistance(width, profile.width) }))
+    .map((profile, index) => ({ index, distance: sizeProfileDistance({ width }, profile) }))
     .sort((left, right) => left.distance - right.distance)[0]
   const profiles = [...normalized.profiles]
   if (nearest && nearest.distance <= MASTER_DETAIL_PROFILE_MERGE_TOLERANCE) {

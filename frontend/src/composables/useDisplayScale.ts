@@ -1,4 +1,10 @@
 import { AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT, normalizeAutoScaleExponent } from '@/layout/displayScalePolicy'
+import {
+  closestDisplayScaleProfile,
+  normalizeDisplayScaleProfiles,
+  upsertDisplayScaleProfile,
+  type DisplayScaleProfile,
+} from '@/layout/displayScaleProfiles'
 import { computed, ref } from 'vue'
 import { createGlobalPreferenceSync } from './useGlobalPreferenceSync'
 
@@ -7,6 +13,7 @@ export type DisplayScaleMode = 'auto' | 'custom'
 interface DisplayScalePreference {
   mode: DisplayScaleMode
   customPercent: number
+  customProfiles: DisplayScaleProfile[]
 }
 
 export const DISPLAY_SCALE_MIN = 50
@@ -21,7 +28,7 @@ let responsiveExponent = AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT
 /** 预设策略只调整自动模式，不改写用户的模式或手动比例。 */
 export function setAutoScaleResponsiveExponent(value: unknown): void {
   responsiveExponent = normalizeAutoScaleExponent(value)
-  if (initialized) refreshAutoPercent()
+  if (initialized) refreshScaleForScreen()
 }
 
 export interface DisplayScaleArea {
@@ -32,9 +39,16 @@ export interface DisplayScaleArea {
 const STORAGE_KEY = 'ai-stocks-display-scale'
 const mode = ref<DisplayScaleMode>('auto')
 const customPercent = ref(DISPLAY_SCALE_DEFAULT)
+const customProfiles = ref<DisplayScaleProfile[]>([])
 const autoPercent = ref(DISPLAY_SCALE_DEFAULT)
+const currentScreenArea = ref<DisplayScaleArea>({ width: 0, height: 0 })
+const matchedCustomProfile = computed(() => (
+  closestDisplayScaleProfile(customProfiles.value, currentScreenArea.value)
+))
 const effectivePercent = computed(() => (
-  mode.value === 'auto' ? autoPercent.value : customPercent.value
+  mode.value === 'auto'
+    ? autoPercent.value
+    : matchedCustomProfile.value?.percent ?? customPercent.value
 ))
 
 let initialized = false
@@ -88,6 +102,7 @@ function normalizePreference(value: unknown): DisplayScalePreference | undefined
   return {
     mode: raw.mode,
     customPercent: clampPercent(raw.customPercent),
+    customProfiles: normalizeDisplayScaleProfiles(raw.customProfiles),
   }
 }
 
@@ -105,6 +120,7 @@ function persistLocal(): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       mode: mode.value,
       customPercent: customPercent.value,
+      customProfiles: customProfiles.value,
     } satisfies DisplayScalePreference))
   } catch {
     // 隐私模式或禁用站点存储时，显示比例仍应在当前会话生效。
@@ -129,21 +145,28 @@ function applyScale(): void {
   if (changed) window.requestAnimationFrame?.(() => window.dispatchEvent(new Event('resize')))
 }
 
-function refreshAutoPercent(): void {
-  autoPercent.value = calculateAutoDisplayScalePercent()
-  // 自定义模式跨显示器时，清晰度分级也需要重新计算。
+function refreshScaleForScreen(): void {
+  currentScreenArea.value = readAvailableScreenArea()
+  autoPercent.value = calculateAutoDisplayScalePercent(currentScreenArea.value)
+  // 自定义模式会按当前显示器尺寸重新匹配档案；两种模式都需刷新清晰度分级。
   applyScale()
 }
 
 const preferenceSync = createGlobalPreferenceSync<DisplayScalePreference>({
   prefKey: 'display-scale',
   debounceMs: 250,
-  snapshot: () => ({ mode: mode.value, customPercent: customPercent.value }),
+  schemaVersion: 2,
+  snapshot: () => ({
+    mode: mode.value,
+    customPercent: customPercent.value,
+    customProfiles: customProfiles.value,
+  }),
   normalize: normalizePreference,
   applyRemote(value) {
     mode.value = value.mode
     customPercent.value = value.customPercent
-    refreshAutoPercent()
+    customProfiles.value = value.customProfiles
+    refreshScaleForScreen()
   },
   persistLocal,
 })
@@ -156,7 +179,7 @@ function onViewportChange(): void {
   if (resizeTimer) window.clearTimeout(resizeTimer)
   resizeTimer = window.setTimeout(() => {
     resizeTimer = undefined
-    refreshAutoPercent()
+    refreshScaleForScreen()
   }, 120)
 }
 
@@ -167,7 +190,7 @@ function checkScreenChange(): void {
   const signature = `${area.width}:${area.height}:${window.devicePixelRatio || 1}`
   if (signature === lastScreenSignature) return
   lastScreenSignature = signature
-  refreshAutoPercent()
+  refreshScaleForScreen()
 }
 
 function onVisibilityChange(): void {
@@ -178,7 +201,8 @@ export function initDisplayScale(): void {
   const saved = readLocal()
   mode.value = saved?.mode ?? 'auto'
   customPercent.value = saved?.customPercent ?? DISPLAY_SCALE_DEFAULT
-  refreshAutoPercent()
+  customProfiles.value = saved?.customProfiles ?? []
+  refreshScaleForScreen()
   if (!initialized) {
     window.addEventListener('resize', onViewportChange)
     window.addEventListener('focus', onViewportChange)
@@ -193,15 +217,29 @@ export function initDisplayScale(): void {
 export function setDisplayScaleMode(value: DisplayScaleMode): void {
   if (value !== 'auto' && value !== 'custom') return
   if (value === 'custom' && mode.value === 'auto') {
-    customPercent.value = autoPercent.value
+    const area = readAvailableScreenArea()
+    currentScreenArea.value = area
+    if (!closestDisplayScaleProfile(customProfiles.value, area)) {
+      customPercent.value = autoPercent.value
+      customProfiles.value = upsertDisplayScaleProfile(customProfiles.value, {
+        ...area,
+        percent: customPercent.value,
+      })
+    }
   }
   mode.value = value
-  refreshAutoPercent()
+  refreshScaleForScreen()
   schedulePersist()
 }
 
 export function setCustomDisplayScalePercent(value: unknown): void {
   customPercent.value = clampPercent(value, customPercent.value)
+  const area = readAvailableScreenArea()
+  currentScreenArea.value = area
+  customProfiles.value = upsertDisplayScaleProfile(customProfiles.value, {
+    ...area,
+    percent: customPercent.value,
+  })
   mode.value = 'custom'
   applyScale()
   schedulePersist()
@@ -232,7 +270,9 @@ export function resetDisplayScaleForTests(): void {
   preferenceSync.resetForTests()
   mode.value = 'auto'
   customPercent.value = DISPLAY_SCALE_DEFAULT
+  customProfiles.value = []
   autoPercent.value = DISPLAY_SCALE_DEFAULT
+  currentScreenArea.value = { width: 0, height: 0 }
   document.documentElement.style.removeProperty('--app-display-scale')
   document.documentElement.style.removeProperty('--app-display-scale-inverse')
   delete document.documentElement.dataset.displayScaleMode
@@ -244,6 +284,7 @@ export function useDisplayScale() {
   return {
     mode,
     customPercent,
+    customProfiles,
     autoPercent,
     effectivePercent,
     setMode: setDisplayScaleMode,

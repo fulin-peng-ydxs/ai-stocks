@@ -169,7 +169,7 @@
 | 业务域内复用组件 | 组件文件、DESIGN 真实复用组件清单、明确业务边界与消费页面；仅在需要布局配置时登记系统组件 kind | 组件/消费页测试、build、对应业务页面交互验收 |
 | 按钮 / 图标操作体系 | `global.css` 控件 token、`AppIconButton`、DESIGN 按钮规范；确需新增专用原生按钮时同步契约允许项和理由 | `button-system.spec.ts`、组件测试、build、顶栏与操作区视觉验收 |
 | 字体 / 间距体系 | `global.css` typography/spacing token、DESIGN 排版与节奏规范；新增语义层级时同步 token、文档和消费点 | 相关样式契约测试、build、关键页面视觉验收 |
-| 全局界面比例 | `useDisplayScale`、`useLayoutViewport`、`displayScaleGeometry`、根画布与独立遮罩、视觉环境入口和 DESIGN；偏好复用 `useGlobalPreferenceSync`；自动缩放指数由预设管理、后端校验、登录公开白名单和运行时缓存共同承接，默认 0.10；尺寸断点使用 `app-viewport`，第三方坐标补丁随安装校验 | composable/坐标换算和真实组件交互单测、尺寸断点契约、build、分隔条/图表/滚动恢复与 Teleport 浮层视觉验收 |
+| 全局界面比例 | `useDisplayScale`、`displayScaleProfiles`、`sizeProfileMatching`、`useLayoutViewport`、`displayScaleGeometry`、根画布与独立遮罩、视觉环境入口和 DESIGN；偏好复用 `useGlobalPreferenceSync`；自动缩放指数由预设管理、后端校验、登录公开白名单和运行时缓存共同承接，默认 0.10；自定义比例按显示器可用 CSS 宽高保存个人尺寸档案，并与主从工作台复用尺寸匹配容差及距离工具；尺寸断点使用 `app-viewport`，第三方坐标补丁随安装校验 | composable/尺寸档案/坐标换算和真实组件交互单测、尺寸断点契约、build、分隔条/图表/滚动恢复与 Teleport 浮层视觉验收 |
 | 品牌字标 / 主题强调色 | `BrandMark.vue`、`useLayoutPreset.ts`、登录页与应用外壳消费点、DESIGN 品牌规则；不得新增场景变体或消费侧颜色覆盖 | `BrandMark.spec.ts`、`useLayoutPreset.spec.ts`、build、登录页与工作台同模式同预设视觉验收 |
 | 页面抽屉 | `#overlays`、`PageDrawer` / `PageSettingsDrawer`、唯一浮层类；新增公共能力时同步 DESIGN 组件清单 | `PageDrawer.spec.ts`、`layout-contract.spec.ts`、页面与顶部栏边界、正文内滚、关闭行为 |
 | 纯业务偏好 | `usePageSettings` / 页面业务态，放入「业务选项」并标注「页面记忆」 | 业务行为验证、必要时 build |
@@ -345,7 +345,7 @@ npm run scaffold-page -- --pageKey my-list --label "列表页" --archetype list 
 npm run scaffold-page -- --pageKey my-master-detail --label "主从页" --archetype master-detail --route /my-master-detail --view MyMasterDetailView
 ```
 
-结构：`action:filter-bar` + `main:data-table` + `main:detail`。适合左侧列表、右侧详情；两栏各自承载滚动，不把详情塞进弹窗替代主流程。行情列表+分析图表必须复用 `MarketMasterDetailWorkspace`；列表按工作台容器的 `masterRatio` 连续计算，系统默认 `45%`、允许配置 `30%–70%`，仅在列表至少 `360px` 或详情至少 `240px` 的真实内容安全边界触发时偏离配置比例，不设置列表固定像素上限。工作区布局宽度不超过 `720px` 时统一退化为列表单区，选择对象后由工作台的全屏抽屉承载详情或分析，页面不得私建紧凑抽屉。主区拖动只修改会话比例；“使用页面当前比例”保存当前工作区宽度与比例，同页同用户可保存多项，当前宽度在档案 `±15%` 范围内时使用最近项，`5%` 内重复保存更新原项，无匹配时回退默认比例；双击分隔条恢复当前匹配或默认比例。设置抽屉只保留默认占比和紧随其后的共享主色采用按钮，不直接展示档案与匹配算法。历史 `masterWidth` 固定像素值只允许兼容读取，不再作为页面分栏依据。
+结构：`action:filter-bar` + `main:data-table` + `main:detail`。适合左侧列表、右侧详情；两栏各自承载滚动，不把详情塞进弹窗替代主流程。行情列表+分析图表必须复用 `MarketMasterDetailWorkspace`；列表按工作台容器的 `masterRatio` 连续计算，系统默认 `45%`、允许配置 `30%–70%`，仅在列表至少 `360px` 或详情至少 `240px` 的真实内容安全边界触发时偏离配置比例，不设置列表固定像素上限。工作区布局宽度不超过 `720px` 时统一退化为列表单区，选择对象后由工作台的全屏抽屉承载详情或分析，页面不得私建紧凑抽屉。主区拖动只修改会话比例；“使用页面当前比例”同时更新默认占比并保存当前工作区宽度与比例，同页同用户可保存多项，当前宽度在档案 `±15%` 范围内时使用最近项，`5%` 内重复保存更新原项，无匹配时回退默认比例；双击分隔条恢复当前匹配或默认比例。设置抽屉只保留默认占比和紧随其后的共享主色采用按钮，不直接展示档案与匹配算法。历史 `masterWidth` 固定像素值只允许兼容读取，不再作为页面分栏依据。
 
 ### 9.3 dashboard
 

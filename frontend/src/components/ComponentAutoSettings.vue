@@ -39,7 +39,10 @@ import {
   visibleChartTypes,
 } from '@/composables/useStockChartPreferences'
 import type { AppRowAction } from './rowActions'
-import type { MasterDetailRatioSample } from '@/layout/masterDetailRatioProfiles'
+import type {
+  MasterDetailRatioProfilesConfig,
+  MasterDetailRatioSample,
+} from '@/layout/masterDetailRatioProfiles'
 
 interface ComponentConfigAccess {
   componentValueOf: (slotId: string, field: string) => unknown
@@ -188,6 +191,13 @@ function masterRatioSample(slotId: string): MasterDetailRatioSample | undefined 
     && typeof ratio === 'number' && Number.isFinite(ratio)
     ? { width: Math.round(width), ratio: Math.round(ratio) }
     : undefined
+}
+function applyMasterRatioSample(
+  slotId: string,
+  value: { profiles: MasterDetailRatioProfilesConfig; ratio: number },
+): void {
+  props.config.setComponentKnob(slotId, 'masterRatio', value.ratio)
+  props.config.setComponentKnob(slotId, 'masterRatioProfiles', value.profiles)
 }
 function numericFieldDefs(slot: AutoSlot): ComponentFieldDef[] {
   return slot.fields
@@ -548,7 +558,7 @@ function setSort(slotId: string, field: string, order: string): void {
           v-if="field.key === 'masterRatio' && s.fields.includes('masterRatioProfiles')"
           :model-value="config.componentValueOf(s.slotId, 'masterRatioProfiles')"
           :current-sample="masterRatioSample(s.slotId)"
-          @update:model-value="(value) => config.setComponentKnob(s.slotId, 'masterRatioProfiles', value)"
+          @apply="(value) => applyMasterRatioSample(s.slotId, value)"
         />
         <PageSettingsApplyButton
           v-if="layer === 'user' && field.runtimeValueActionLabel"

@@ -12,12 +12,15 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'update:modelValue': [value: MasterDetailRatioProfilesConfig]
+  apply: [value: { profiles: MasterDetailRatioProfilesConfig; ratio: number }]
 }>()
 
 function saveCurrent(): void {
   if (!props.currentSample) return
-  emit('update:modelValue', upsertMasterDetailRatioProfile(props.modelValue, props.currentSample))
+  emit('apply', {
+    profiles: upsertMasterDetailRatioProfile(props.modelValue, props.currentSample),
+    ratio: props.currentSample.ratio,
+  })
 }
 </script>
 

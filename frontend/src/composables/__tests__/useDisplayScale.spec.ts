@@ -113,6 +113,7 @@ describe('应用显示比例', () => {
     expect(JSON.parse(localStorage.getItem('ai-stocks-display-scale') || '{}')).toEqual({
       mode: 'custom',
       customPercent: 73,
+      customProfiles: [{ width: 1920, height: 1080, percent: 73 }],
     })
 
     setDisplayScaleMode('auto')
@@ -126,6 +127,17 @@ describe('应用显示比例', () => {
 
     expect(useDisplayScale().mode.value).toBe('custom')
     expect(useDisplayScale().effectivePercent.value).toBe(calculateAutoDisplayScalePercent())
+  })
+
+  it('临时切到自动后再回自定义会恢复当前尺寸的既有档案', () => {
+    initDisplayScale()
+    setCustomDisplayScalePercent(83)
+    setDisplayScaleMode('auto')
+    expect(useDisplayScale().effectivePercent.value).toBe(94)
+
+    setDisplayScaleMode('custom')
+
+    expect(useDisplayScale().effectivePercent.value).toBe(83)
   })
 
   it('窗口跨屏后重算自动比例，但不覆盖用户自定义比例', () => {
@@ -144,6 +156,33 @@ describe('应用显示比例', () => {
     window.dispatchEvent(new Event('resize'))
     vi.advanceTimersByTime(130)
     expect(useDisplayScale().effectivePercent.value).toBe(117)
+  })
+
+  it('自定义模式按显示器可用尺寸保存并自动采用最近档案', () => {
+    vi.useFakeTimers()
+    initDisplayScale()
+    setCustomDisplayScalePercent(82)
+
+    setScreenArea(3360, 1890)
+    window.dispatchEvent(new Event('resize'))
+    vi.advanceTimersByTime(130)
+    expect(useDisplayScale().effectivePercent.value).toBe(82)
+    setCustomDisplayScalePercent(112)
+
+    setScreenArea(1920, 1080)
+    window.dispatchEvent(new Event('resize'))
+    vi.advanceTimersByTime(130)
+    expect(useDisplayScale().effectivePercent.value).toBe(82)
+
+    setScreenArea(1900, 1060)
+    window.dispatchEvent(new Event('resize'))
+    vi.advanceTimersByTime(130)
+    expect(useDisplayScale().effectivePercent.value).toBe(82)
+
+    setScreenArea(2560, 1440)
+    window.dispatchEvent(new Event('resize'))
+    vi.advanceTimersByTime(130)
+    expect(useDisplayScale().effectivePercent.value).toBe(112)
   })
 
   it('同尺寸跨屏未触发 resize 时，在窗口重新获得焦点后补算自动比例', () => {
@@ -190,5 +229,46 @@ describe('应用显示比例', () => {
     expect(document.documentElement.style.getPropertyValue('--app-display-scale-inverse')).toBe(
       String(1 / 0.76),
     )
+  })
+
+  it('登录后恢复当前显示器最接近的自定义比例档案', async () => {
+    login()
+    prefApi.listUserPreferences.mockResolvedValue({
+      items: [{
+        value: {
+          mode: 'custom',
+          customPercent: 100,
+          customProfiles: [
+            { width: 1920, height: 1080, percent: 84 },
+            { width: 3360, height: 1890, percent: 108 },
+          ],
+        },
+      }],
+    })
+
+    await syncDisplayScalePreference()
+
+    expect(useDisplayScale().effectivePercent.value).toBe(84)
+  })
+
+  it('登录用户调整滑块时把当前尺寸档案写入全局偏好', async () => {
+    vi.useFakeTimers()
+    login()
+    initDisplayScale()
+
+    setCustomDisplayScalePercent(86)
+    vi.advanceTimersByTime(260)
+    await Promise.resolve()
+
+    expect(prefApi.saveUserPreference).toHaveBeenCalledWith(expect.objectContaining({
+      scope: 'global',
+      prefKey: 'display-scale',
+      schemaVersion: 2,
+      value: {
+        mode: 'custom',
+        customPercent: 86,
+        customProfiles: [{ width: 1920, height: 1080, percent: 86 }],
+      },
+    }))
   })
 })
