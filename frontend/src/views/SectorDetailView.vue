@@ -497,6 +497,7 @@ onMounted(async () => {
                   aria-label="板块指数 K 线与量能联动工作区"
                   @ratio-draft="chartPreferences.handleRatioDraft"
                   @ratio-commit="chartPreferences.handleRatioCommit"
+                  @workspace-resize="chartPreferences.handleWorkspaceResize"
                 />
               </div>
             </AppWorkspacePane>

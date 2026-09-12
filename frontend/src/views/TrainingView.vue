@@ -675,6 +675,7 @@ onBeforeUnmount(detachKeyboard)
               :aria-label="'训练 K 线（盲测）工作区'"
               @ratio-draft="chartPreferences.handleRatioDraft"
               @ratio-commit="chartPreferences.handleRatioCommit"
+              @workspace-resize="chartPreferences.handleWorkspaceResize"
             />
           </StockChartRegion>
         </div>
@@ -861,6 +862,7 @@ onBeforeUnmount(detachKeyboard)
                   :aria-label="'结算回看 K 线工作区'"
                   @ratio-draft="chartPreferences.handleRatioDraft"
                   @ratio-commit="chartPreferences.handleRatioCommit"
+                  @workspace-resize="chartPreferences.handleWorkspaceResize"
                 />
               </StockChartRegion>
             </div>

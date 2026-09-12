@@ -244,4 +244,45 @@ describe('useStockChartPreferences draft state', () => {
     await nextTick()
     expect(raw.value.slot2).toBe('volume')
   })
+
+  it('工作区尺寸命中档案时应用最近比例，换到无匹配尺寸时回退默认比例', async () => {
+    const initial = createDefaultStockChartPreferences()
+    initial.heightRatioProfiles['kline|volume|macd'] = [
+      { width: 1280, height: 720, ratios: [0.5, 0.3, 0.2] },
+      { width: 1600, height: 900, ratios: [0.55, 0.25, 0.2] },
+    ]
+    const persisted = ref(initial)
+    const source = computed({
+      get: () => persisted.value,
+      set: (value) => { persisted.value = value },
+    })
+    const model = useStockChartPreferences(source, ref(true))
+
+    model.setWorkspaceSize({ width: 1300, height: 700 })
+    expect(model.currentRatios.value).toEqual([0.5, 0.3, 0.2])
+
+    model.setWorkspaceSize({ width: 900, height: 500 })
+    expect(model.currentRatios.value).toEqual([0.6, 0.2, 0.2])
+  })
+
+  it('采用当前比例时同时生成当前组合的宽高档案，其他组合保持隔离', () => {
+    const persisted = ref(createDefaultStockChartPreferences())
+    const source = computed({
+      get: () => persisted.value,
+      set: (value) => { persisted.value = value },
+    })
+    const model = useStockChartPreferences(source, ref(true))
+    model.setWorkspaceSize({ width: 1280, height: 720 })
+    model.updateRatioDraft([0.5, 0.3, 0.2])
+    model.commitRatioDraft()
+
+    const next = model.preferencesWithCurrentRatioProfile()
+    expect(next.heightRatios['kline|volume|macd']).toEqual([0.5, 0.3, 0.2])
+    expect(next.heightRatioProfiles['kline|volume|macd']).toEqual([{
+      width: 1280,
+      height: 720,
+      ratios: [0.5, 0.3, 0.2],
+    }])
+    expect(next.heightRatioProfiles['kline|volume']).toEqual([])
+  })
 })

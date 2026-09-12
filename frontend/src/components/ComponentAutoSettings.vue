@@ -278,6 +278,15 @@ function setStockChartRatios(slotId: string, ratios: number[]): void {
     },
   })
 }
+
+function applyStockChartCurrentRatios(slotId: string): void {
+  const runtime = props.runtimeValueOf?.(slotId, 'stockChart')
+  props.config.setComponentKnob(
+    slotId,
+    'stockChart',
+    normalizeStockChartPreferences(runtime ?? stockChartValue(slotId)),
+  )
+}
 function boolVal(slotId: string, field: string, fallback: boolean): boolean {
   const v = props.config.componentValueOf(slotId, field)
   return typeof v === 'boolean' ? v : fallback
@@ -384,6 +393,7 @@ function setSort(slotId: string, field: string, order: string): void {
           :test-id-prefix="`component-${s.slotId}-stock-chart`"
           @change="(slot, value) => setStockChartSlot(s.slotId, slot, value)"
           @save-default-ratios="(ratios) => setStockChartRatios(s.slotId, ratios)"
+          @apply-current-ratios="applyStockChartCurrentRatios(s.slotId)"
         />
       </div>
 

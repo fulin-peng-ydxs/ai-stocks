@@ -42,17 +42,14 @@ export function useStockChartComponentConfig(access: StockChartComponentConfigAc
     preferences.commitRatioDraft()
   }
 
+  function handleWorkspaceResize(size: { width: number; height: number }): void {
+    preferences.setWorkspaceSize(size)
+  }
+
   /** 设置抽屉可据此将工作区当前拖动比例保存为该组件实例的默认比例。 */
   const componentRuntimeValueOf: ComponentRuntimeValueOf = (candidateSlotId, field) => {
     if (candidateSlotId !== slotId || field !== 'stockChart') return undefined
-    const value = preferences.preferences.value
-    return {
-      ...value,
-      heightRatios: {
-        ...value.heightRatios,
-        [preferences.compositionKey.value]: [...preferences.currentRatios.value],
-      },
-    }
+    return preferences.preferencesWithCurrentRatioProfile()
   }
 
   return {
@@ -60,6 +57,7 @@ export function useStockChartComponentConfig(access: StockChartComponentConfigAc
     setAuxiliaryChart,
     handleRatioDraft,
     handleRatioCommit,
+    handleWorkspaceResize,
     componentRuntimeValueOf,
   }
 }

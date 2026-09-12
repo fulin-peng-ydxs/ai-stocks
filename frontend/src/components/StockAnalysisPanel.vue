@@ -66,6 +66,7 @@ const emit = defineEmits<{
   openDetail: []
   ratioDraft: [ratios: number[]]
   ratioCommit: [ratios: number[]]
+  workspaceResize: [size: { width: number; height: number }]
 }>()
 
 const MODE_OPTIONS: { label: string; value: 'compare' | 'kline' }[] = [
@@ -501,6 +502,7 @@ onBeforeUnmount(() => {
         enable-intraday-drilldown
         @ratio-draft="emit('ratioDraft', $event)"
         @ratio-commit="emit('ratioCommit', $event)"
+        @workspace-resize="emit('workspaceResize', $event)"
         @retry-macd="loadKline"
         @bar-click="openIntraday"
       />

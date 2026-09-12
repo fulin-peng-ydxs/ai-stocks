@@ -130,6 +130,7 @@ const emit = defineEmits<{
   retryMacd: []
   barClick: [tradeDate: string]
   activeBarChange: [bar: Bar | null]
+  workspaceResize: [size: { width: number; height: number }]
 }>()
 
 defineSlots<{
@@ -149,6 +150,7 @@ const workspaceHeight = ref(0)
 let resizeObserver: ResizeObserver | null = null
 let active = true
 let bottomSliderVisible: boolean | undefined
+let lastWorkspaceSize = ''
 
 const panels = computed<PanelDescriptor[]>(() => {
   const next: PanelDescriptor[] = [{ key: 'kline', type: 'kline' }]
@@ -375,7 +377,14 @@ function resizeCharts(): void {
 
 function onWorkspaceResize(): void {
   if (!active) return
-  workspaceHeight.value = workspaceEl.value?.clientHeight ?? 0
+  const width = workspaceEl.value?.clientWidth ?? 0
+  const height = workspaceEl.value?.clientHeight ?? 0
+  workspaceHeight.value = height
+  const signature = `${width}:${height}`
+  if (width > 0 && height > 0 && signature !== lastWorkspaceSize) {
+    lastWorkspaceSize = signature
+    emit('workspaceResize', { width, height })
+  }
   // 高度变化会先更新面板最低比例；等待 DOM 完成重排后再让画布读取最终尺寸。
   void nextTick(() => {
     if (!active) return
@@ -409,6 +418,7 @@ function disposeCharts(): void {
 function observeResize(): void {
   if (!workspaceEl.value || resizeObserver) return
   workspaceHeight.value = workspaceEl.value.clientHeight
+  onWorkspaceResize()
   resizeObserver = new ResizeObserver(onWorkspaceResize)
   resizeObserver.observe(workspaceEl.value)
   chartElements.forEach((element) => resizeObserver?.observe(element))

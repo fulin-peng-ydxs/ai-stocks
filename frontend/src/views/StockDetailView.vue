@@ -1188,6 +1188,7 @@ onBeforeUnmount(() => {
               :show-kline-tooltip="false"
               @ratio-draft="chartPreferences.handleRatioDraft"
               @ratio-commit="chartPreferences.handleRatioCommit"
+              @workspace-resize="chartPreferences.handleWorkspaceResize"
               @retry-macd="loadIndicators"
               @bar-click="openIntraday"
               @active-bar-change="chartActiveBar = $event"

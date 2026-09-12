@@ -1,4 +1,10 @@
 import { computed, ref, watch, type Ref, type WritableComputedRef } from 'vue'
+import {
+  closestStockChartRatioProfile,
+  normalizeStockChartRatioProfiles,
+  upsertStockChartRatioProfile,
+  type StockChartRatioProfile,
+} from '@/layout/stockChartRatioProfiles'
 
 export type ChartType = 'kline' | 'volume' | 'macd'
 export type AuxiliaryChartType = Exclude<ChartType, 'kline'> | 'hidden'
@@ -14,6 +20,7 @@ export interface StockChartPreferences {
   slot2: AuxiliaryChartType
   slot3: AuxiliaryChartType
   heightRatios: Record<ChartCompositionKey, number[]>
+  heightRatioProfiles: Record<ChartCompositionKey, StockChartRatioProfile[]>
 }
 
 const AUXILIARY_TYPES: readonly AuxiliaryChartType[] = ['volume', 'macd', 'hidden']
@@ -52,6 +59,9 @@ export function createDefaultStockChartPreferences(): StockChartPreferences {
     heightRatios: Object.fromEntries(
       COMPOSITION_KEYS.map((key) => [key, cloneDefaultRatios(key)]),
     ) as Record<ChartCompositionKey, number[]>,
+    heightRatioProfiles: Object.fromEntries(
+      COMPOSITION_KEYS.map((key) => [key, [] as StockChartRatioProfile[]]),
+    ) as Record<ChartCompositionKey, StockChartRatioProfile[]>,
   }
 }
 
@@ -86,6 +96,7 @@ export function normalizeStockChartPreferences(value: unknown): StockChartPrefer
   // 存量重复值无法判断最后修改的是哪个槽位，按需求回到完整默认组合。
   const hasDuplicate = slot2Valid && slot3Valid && slot2 !== 'hidden' && slot2 === slot3
   const ratios = isRecord(value.heightRatios) ? value.heightRatios : {}
+  const ratioProfiles = isRecord(value.heightRatioProfiles) ? value.heightRatioProfiles : {}
 
   return {
     slot2: hasDuplicate ? defaults.slot2 : slot2,
@@ -93,6 +104,12 @@ export function normalizeStockChartPreferences(value: unknown): StockChartPrefer
     heightRatios: Object.fromEntries(
       COMPOSITION_KEYS.map((key) => [key, normalizeHeightRatios(ratios[key], key)]),
     ) as Record<ChartCompositionKey, number[]>,
+    heightRatioProfiles: Object.fromEntries(
+      COMPOSITION_KEYS.map((key) => [
+        key,
+        normalizeStockChartRatioProfiles(ratioProfiles[key], cloneDefaultRatios(key).length),
+      ]),
+    ) as Record<ChartCompositionKey, StockChartRatioProfile[]>,
   }
 }
 
@@ -144,6 +161,8 @@ export function useStockChartPreferences(
   let defaultsHydrated = false
   const draftKey = ref<ChartCompositionKey | null>(null)
   const draftRatios = ref<number[] | null>(null)
+  const workspaceSize = ref<{ width: number; height: number } | null>(null)
+  const activeSizeContext = new Map<ChartCompositionKey, string>()
   const defaultRatios = computed(() => (
     [...normalized.value.heightRatios[composition.value]]
   ))
@@ -197,6 +216,53 @@ export function useStockChartPreferences(
     if (!samePreferences(source.value, next)) source.value = next
   }
 
+  function setWorkspaceSize(value: { width: number; height: number }): void {
+    const width = Math.round(Number(value.width))
+    const height = Math.round(Number(value.height))
+    if (width <= 0 || height <= 0 || !Number.isFinite(width) || !Number.isFinite(height)) return
+    workspaceSize.value = { width, height }
+    applyWorkspaceProfile()
+  }
+
+  function applyWorkspaceProfile(force = false): void {
+    if (!hydrated.value || !workspaceSize.value) return
+    const key = composition.value
+    const profile = closestStockChartRatioProfile(
+      normalized.value.heightRatioProfiles[key],
+      workspaceSize.value,
+      normalized.value.heightRatios[key].length,
+    )
+    const context = profile ? `${profile.width}:${profile.height}` : 'default'
+    const previous = activeSizeContext.get(key)
+    activeSizeContext.set(key, context)
+    if (!force && (previous === context || (previous === undefined && sessionOverrideKeys.has(key)))) return
+    sessionRatios.value = {
+      ...sessionRatios.value,
+      [key]: [...(profile?.ratios ?? normalized.value.heightRatios[key])],
+    }
+    sessionOverrideKeys.delete(key)
+    clearDraft()
+  }
+
+  function preferencesWithCurrentRatioProfile(): StockChartPreferences {
+    const preferences = normalizeStockChartPreferences(source.value)
+    const key = composition.value
+    const ratios = normalizeHeightRatios(currentRatios.value, key)
+    return {
+      ...preferences,
+      heightRatios: { ...preferences.heightRatios, [key]: ratios },
+      heightRatioProfiles: workspaceSize.value
+        ? {
+            ...preferences.heightRatioProfiles,
+            [key]: upsertStockChartRatioProfile(preferences.heightRatioProfiles[key], {
+              ...workspaceSize.value,
+              ratios,
+            }),
+          }
+        : preferences.heightRatioProfiles,
+    }
+  }
+
   function commitRatioDraft(): void {
     if (draftKey.value && draftRatios.value && draftKey.value === composition.value) {
       sessionRatios.value = {
@@ -211,8 +277,12 @@ export function useStockChartPreferences(
   // 远端默认完成水合时只初始化尚未被用户操作的组合；水合后的抽屉编辑或重置仅同步
   // 实际变化的默认组合，不能顺带清除其它组合在本次会话里的临时比例。
   watch(
-    [() => JSON.stringify(normalized.value.heightRatios), hydrated],
-    ([, isHydrated]) => {
+    [
+      () => JSON.stringify(normalized.value.heightRatios),
+      () => JSON.stringify(normalized.value.heightRatioProfiles),
+      hydrated,
+    ],
+    ([, , isHydrated]) => {
       if (!isHydrated) return
       clearDraft()
       const nextDefaults = cloneHeightRatios(normalized.value.heightRatios)
@@ -227,6 +297,7 @@ export function useStockChartPreferences(
       defaultsSnapshot = nextDefaults
       defaultsHydrated = true
       sessionRatios.value = nextSession
+      applyWorkspaceProfile(true)
     },
     { immediate: true },
   )
@@ -242,6 +313,11 @@ export function useStockChartPreferences(
     { deep: true, immediate: true },
   )
 
+  watch(composition, () => {
+    clearDraft()
+    applyWorkspaceProfile()
+  })
+
   return {
     preferences: normalized,
     visibleTypes: computed(() => visibleChartTypes(normalized.value)),
@@ -255,6 +331,9 @@ export function useStockChartPreferences(
     commitRatioDraft,
     cancelRatioDraft: clearDraft,
     setDefaultHeightRatios,
+    workspaceSize,
+    setWorkspaceSize,
+    preferencesWithCurrentRatioProfile,
   }
 }
 

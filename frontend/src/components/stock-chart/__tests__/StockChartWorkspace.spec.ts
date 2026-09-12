@@ -258,6 +258,18 @@ describe('StockChartWorkspace', () => {
     wrapper.unmount()
   })
 
+  it('挂载与尺寸变化时向统一偏好层报告图表工作区实际宽高', async () => {
+    const wrapper = await mountWorkspace()
+    expect(wrapper.emitted('workspaceResize')?.at(-1)?.[0]).toEqual({ width: 640, height: 800 })
+
+    mockClientWidth = 1280
+    mockClientHeight = 720
+    ResizeObserverMock.instances[0]?.trigger()
+    await nextTick()
+    expect(wrapper.emitted('workspaceResize')?.at(-1)?.[0]).toEqual({ width: 1280, height: 720 })
+    wrapper.unmount()
+  })
+
   it('所有消费页面都按底部画布真实高度统一收展可视滑动条', async () => {
     mockClientHeight = 60
     const wrapper = await mountWorkspace({ fitAvailableHeight: true })

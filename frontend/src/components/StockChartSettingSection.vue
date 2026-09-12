@@ -20,6 +20,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   change: [slot: AuxiliaryChartSlot, value: string | number | boolean]
   saveDefaultRatios: [ratios: number[]]
+  applyCurrentRatios: []
 }>()
 
 const auxiliaryChartOptions = [
@@ -89,7 +90,8 @@ function updateRatio(index: number, value: number | undefined): void {
 }
 
 function useCurrentRatios(): void {
-  persistRatios(toPercentages(props.currentRatios))
+  ratioDraft.value = toPercentages(props.currentRatios)
+  emit('applyCurrentRatios')
 }
 
 watch(

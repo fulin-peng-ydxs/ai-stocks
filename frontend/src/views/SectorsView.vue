@@ -1294,6 +1294,7 @@ onMounted(async () => {
               aria-label="板块指数多图联动工作区"
               @ratio-draft="chartPreferences.handleRatioDraft"
               @ratio-commit="chartPreferences.handleRatioCommit"
+              @workspace-resize="chartPreferences.handleWorkspaceResize"
             />
           </div>
 

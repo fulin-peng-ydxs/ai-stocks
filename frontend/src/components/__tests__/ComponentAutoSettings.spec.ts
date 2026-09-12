@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick, reactive, type Component } from 'vue'
 import ComponentAutoSettings from '@/components/ComponentAutoSettings.vue'
+import { createDefaultStockChartPreferences } from '@/composables/useStockChartPreferences'
 
 vi.mock('@/layout/pageRegistry', () => ({
   componentMetaForSlot: (entry: any, slot: any) => entry.componentMeta?.[slot.id] ?? {},
@@ -278,11 +279,28 @@ function mountConfigPanelDemo() {
   return { wrapper, setComponentKnob }
 }
 
-function mountChartDemo() {
+function mountChartDemo(withRuntime = false) {
   const setComponentKnob = vi.fn()
   const wrapper = mount(ComponentAutoSettings as Component, {
     props: {
       pageKey: 'chart-demo',
+      runtimeValueOf: withRuntime
+        ? vi.fn(() => ({
+            ...createDefaultStockChartPreferences(),
+            heightRatios: {
+              ...createDefaultStockChartPreferences().heightRatios,
+              'kline|volume|macd': [0.5, 0.3, 0.2],
+            },
+            heightRatioProfiles: {
+              ...createDefaultStockChartPreferences().heightRatioProfiles,
+              'kline|volume|macd': [{
+                width: 1280,
+                height: 720,
+                ratios: [0.5, 0.3, 0.2],
+              }],
+            },
+          }))
+        : undefined,
       config: {
         componentValueOf: vi.fn((_slotId: string, field: string) => (
           field === 'stockChart'
@@ -324,8 +342,8 @@ function mountChartDemo() {
         ElEmpty: true,
         StockChartSettingSection: {
           props: ['slot2', 'slot3', 'defaultRatios', 'currentRatios'],
-          emits: ['change', 'saveDefaultRatios'],
-          template: '<div><button class="stock-chart-stub" @click="$emit(\'change\', \'slot2\', \'macd\')">chart</button><button class="stock-chart-current-stub" @click="$emit(\'change\', \'slot2\', \'volume\')">current</button></div>',
+          emits: ['change', 'saveDefaultRatios', 'applyCurrentRatios'],
+          template: '<div><button class="stock-chart-stub" @click="$emit(\'change\', \'slot2\', \'macd\')">chart</button><button class="stock-chart-current-stub" @click="$emit(\'change\', \'slot2\', \'volume\')">current</button><button class="stock-chart-apply-stub" @click="$emit(\'applyCurrentRatios\')">apply</button></div>',
         },
       },
     },
@@ -443,6 +461,28 @@ describe('ComponentAutoSettings', () => {
     const { wrapper, setComponentKnob } = mountChartDemo()
     await wrapper.find('.stock-chart-current-stub').trigger('click')
     expect(setComponentKnob).not.toHaveBeenCalled()
+  })
+
+  it('采用页面当前图表比例时原子写回默认比例与当前尺寸档案', async () => {
+    const { wrapper, setComponentKnob } = mountChartDemo(true)
+    await wrapper.find('.stock-chart-apply-stub').trigger('click')
+
+    expect(setComponentKnob).toHaveBeenCalledWith(
+      'chart',
+      'stockChart',
+      expect.objectContaining({
+        heightRatios: expect.objectContaining({
+          'kline|volume|macd': [0.5, 0.3, 0.2],
+        }),
+        heightRatioProfiles: expect.objectContaining({
+          'kline|volume|macd': [{
+            width: 1280,
+            height: 720,
+            ratios: [0.5, 0.3, 0.2],
+          }],
+        }),
+      }),
+    )
   })
 
   it('行情工作台采用页面当前比例时同步更新默认占比与尺寸档案', async () => {

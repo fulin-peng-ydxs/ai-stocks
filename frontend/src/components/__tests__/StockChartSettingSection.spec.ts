@@ -42,7 +42,8 @@ describe('StockChartSettingSection', () => {
     await useCurrentButton.trigger('click')
     const inputs = wrapper.findAllComponents({ name: 'ElInputNumber' })
     expect(inputs.map((input) => input.props('modelValue'))).toEqual([50, 30, 20])
-    expect(wrapper.emitted('saveDefaultRatios')?.at(-1)).toEqual([[0.5, 0.3, 0.2]])
+    expect(wrapper.emitted('applyCurrentRatios')).toHaveLength(1)
+    expect(wrapper.emitted('saveDefaultRatios')).toBeUndefined()
     expect(wrapper.find('[data-testid="chart-test-save-default-ratios"]').exists()).toBe(false)
   })
 

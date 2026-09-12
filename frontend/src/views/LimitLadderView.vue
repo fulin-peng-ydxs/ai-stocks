@@ -785,6 +785,7 @@ onBeforeUnmount(() => {
             @open-detail="openActiveAnalysisDetail"
             @ratio-draft="chartPreferences.handleRatioDraft"
             @ratio-commit="chartPreferences.handleRatioCommit"
+            @workspace-resize="chartPreferences.handleWorkspaceResize"
           />
         </template>
       </MarketMasterDetailWorkspace>

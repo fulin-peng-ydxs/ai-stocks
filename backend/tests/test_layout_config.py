@@ -515,6 +515,37 @@ def test_stock_chart_component_config_validates_instance_and_ratio_contract(clie
     )
     assert saved["config"]["values"]["slots.chart.config.stockChart"] == valid
 
+    with_profiles = json.loads(json.dumps(valid))
+    with_profiles["heightRatioProfiles"] = {
+        "kline": [],
+        "kline|volume": [],
+        "kline|macd": [],
+        "kline|volume|macd": [
+            {"width": 1280, "height": 720, "ratios": [0.5, 0.3, 0.2]},
+            {"width": 1600, "height": 900, "ratios": [0.55, 0.25, 0.2]},
+        ],
+        "kline|macd|volume": [],
+    }
+    saved_profiles = repo.set_user_config(
+        "stocks",
+        {"values": {"slots.chart.config.stockChart": with_profiles}},
+        user_id="u1",
+        layout=layout,
+    )
+    assert saved_profiles["config"]["values"]["slots.chart.config.stockChart"] == with_profiles
+
+    duplicate_size = json.loads(json.dumps(with_profiles))
+    duplicate_size["heightRatioProfiles"]["kline|volume|macd"].append(
+        {"width": 1280, "height": 720, "ratios": [0.6, 0.2, 0.2]}
+    )
+    with pytest.raises(LayoutConfigValidationError, match="宽高组合不能重复"):
+        repo.set_user_config(
+            "stocks",
+            {"values": {"slots.chart.config.stockChart": duplicate_size}},
+            user_id="u1",
+            layout=layout,
+        )
+
     duplicate = {**valid, "slot3": "volume"}
     with pytest.raises(LayoutConfigValidationError, match="辅助图不能重复"):
         repo.set_user_config(

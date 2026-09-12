@@ -2355,6 +2355,7 @@ async function openTradeChart(row: TradeRow) {
           aria-label="回测交易 K 线多图联动工作区"
           @ratio-draft="chartPreferences.handleRatioDraft"
           @ratio-commit="chartPreferences.handleRatioCommit"
+          @workspace-resize="chartPreferences.handleWorkspaceResize"
           @retry-macd="loadDialogIndicators"
         />
         <div class="dlg-tbl-title">本股交易明细 + 卖出后表现（看卖得对不对）</div>

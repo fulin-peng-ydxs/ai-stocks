@@ -447,7 +447,65 @@ def _normalize_stock_chart(value: dict[str, Any]) -> dict[str, Any]:
         if abs(total - 1.0) > 1e-6:
             raise LayoutConfigValidationError(f"组件配置 stockChart 的 {key} 高度比例之和必须为 1")
         normalized_ratios[key] = [float(item) / total for item in items]
-    return {"slot2": slot2, "slot3": slot3, "heightRatios": normalized_ratios}
+    normalized = {"slot2": slot2, "slot3": slot3, "heightRatios": normalized_ratios}
+    # 旧配置没有尺寸档案字段，继续原样兼容；新配置按图表组合分别保存工作区宽高与比例。
+    raw_profiles = value.get("heightRatioProfiles")
+    if raw_profiles is None:
+        return normalized
+    if not isinstance(raw_profiles, dict) or set(raw_profiles) != set(expected_lengths):
+        raise LayoutConfigValidationError("组件配置 stockChart 的尺寸比例档案组合不完整")
+    normalized_profiles: dict[str, list[dict[str, Any]]] = {}
+    for key, length in expected_lengths.items():
+        profiles = raw_profiles.get(key)
+        if not isinstance(profiles, list) or len(profiles) > 50:
+            raise LayoutConfigValidationError(f"组件配置 stockChart 的 {key} 尺寸比例档案非法")
+        seen: set[tuple[int, int]] = set()
+        normalized_items: list[dict[str, Any]] = []
+        for profile in profiles:
+            if not isinstance(profile, dict) or set(profile) != {"width", "height", "ratios"}:
+                raise LayoutConfigValidationError("图表尺寸比例档案只允许 width、height 与 ratios")
+            width = profile.get("width")
+            height = profile.get("height")
+            profile_ratios = profile.get("ratios")
+            if (
+                isinstance(width, bool)
+                or not isinstance(width, int)
+                or not 1 <= width <= 100_000
+                or isinstance(height, bool)
+                or not isinstance(height, int)
+                or not 1 <= height <= 100_000
+            ):
+                raise LayoutConfigValidationError("图表尺寸比例档案宽高需为 1～100000 的整数")
+            if (
+                not isinstance(profile_ratios, list)
+                or len(profile_ratios) != length
+                or any(
+                    isinstance(item, bool)
+                    or not isinstance(item, (int, float))
+                    or not math.isfinite(item)
+                    or item <= 0
+                    for item in profile_ratios
+                )
+            ):
+                raise LayoutConfigValidationError(f"图表尺寸比例档案 {key} 的高度比例非法")
+            total = float(sum(profile_ratios))
+            if not math.isfinite(total) or abs(total - 1.0) > 1e-6:
+                raise LayoutConfigValidationError(f"图表尺寸比例档案 {key} 的高度比例之和必须为 1")
+            size = (width, height)
+            if size in seen:
+                raise LayoutConfigValidationError("图表尺寸比例档案的宽高组合不能重复")
+            seen.add(size)
+            normalized_items.append({
+                "width": width,
+                "height": height,
+                "ratios": [float(item) / total for item in profile_ratios],
+            })
+        normalized_profiles[key] = sorted(
+            normalized_items,
+            key=lambda item: (item["width"], item["height"]),
+        )
+    normalized["heightRatioProfiles"] = normalized_profiles
+    return normalized
 
 
 def _normalize_path_value(path: str, value: Any, layer: str | None = None) -> Any:
