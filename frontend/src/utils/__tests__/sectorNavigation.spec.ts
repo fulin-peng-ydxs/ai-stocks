@@ -118,6 +118,7 @@ describe('sectorListLocation', () => {
   it.each([
     '/limit-ladder?window=20&selected=600001.SH',
     '/stocks?restore=1&page=3',
+    '/stocks/600000.SH',
     '/board?date=2026-09-02',
     '/screen?profile_ref=opaque',
   ])('允许返回可信业务列表完整路径：%s', (returnTo) => {
@@ -130,7 +131,6 @@ describe('sectorListLocation', () => {
       query: {},
     })
     expect(trustedSectorReturnPath('/admin?next=/stocks')).toBeUndefined()
-    expect(trustedSectorReturnPath('/stocks/600000.SH')).toBeUndefined()
   })
 })
 
@@ -151,6 +151,7 @@ describe('sectorReturnLabel', () => {
   it.each([
     ['/limit-ladder?window=20', '返回连板天梯'],
     ['/stocks?page=3', '返回个股查询'],
+    ['/stocks/600000.SH', '返回个股详情'],
     ['/board?date=2026-09-02', '返回每日榜单'],
     ['/screen?profile_ref=opaque', '返回策略筛选'],
   ])('按可信来源 %s 展示 %s', (returnTo, label) => {

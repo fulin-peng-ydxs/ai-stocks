@@ -259,7 +259,11 @@ def test_membership_options_and_stock_list_filter_api(monkeypatch):
 
 
 def test_related_boards_route_exposes_stocks_view_and_returns_401_403(monkeypatch):
-    paths = ("/api/stocks/{code}/related-boards", "/api/stocks/membership-options")
+    paths = (
+        "/api/stocks/{code}/related-boards",
+        "/api/stocks/{code}/quote-summary",
+        "/api/stocks/membership-options",
+    )
     for path in paths:
         route_item = next(item for item in router.routes if item.path == path)
         dependency = next(
@@ -283,6 +287,7 @@ def test_related_boards_route_exposes_stocks_view_and_returns_401_403(monkeypatc
 
     monkeypatch.setattr("backend.auth.deps.get_current_context", lambda: None)
     assert client.get("/api/stocks/600000.SH/related-boards").status_code == 401
+    assert client.get("/api/stocks/600000.SH/quote-summary").status_code == 401
     assert client.get("/api/stocks/membership-options").status_code == 401
 
     context = AuthContext(
@@ -292,6 +297,7 @@ def test_related_boards_route_exposes_stocks_view_and_returns_401_403(monkeypatc
     )
     monkeypatch.setattr("backend.auth.deps.get_current_context", lambda: context)
     assert client.get("/api/stocks/600000.SH/related-boards").status_code == 403
+    assert client.get("/api/stocks/600000.SH/quote-summary").status_code == 403
     assert client.get("/api/stocks/membership-options").status_code == 403
 
 
@@ -333,6 +339,29 @@ def test_related_boards_api_fail_closed_when_as_of_behind_latest(monkeypatch):
         assert rb["unavailable_reason"] == "as_of_mismatch"
         assert rb["industry"] is None
         assert rb["concept"] is None
+
+
+def test_membership_market_change_uses_exact_business_date_without_fallback():
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_memberships(market)
+        market.execute(
+            "INSERT INTO board_bar (board_code,trade_date,close) VALUES "
+            "('881002',DATE '2026-08-28',100),"
+            "('881002',DATE '2026-08-29',102),"
+            "('301002',DATE '2026-08-28',95)"
+        )
+
+        result = StockBoardCorrelationService(market).get_membership_with_market(
+            "600000.SH", date(2026, 8, 29)
+        )
+
+        assert result["trade_date"] == "2026-08-29"
+        industries = {item["board_code"]: item["pct_chg"] for item in result["industries"]}
+        concepts = {item["board_code"]: item["pct_chg"] for item in result["concepts"]}
+        assert industries["881002"] == 2.0
+        assert industries["881001"] is None
+        assert concepts["301002"] is None
 
 
 def test_resolve_data_family_maxima_exposes_three_families():

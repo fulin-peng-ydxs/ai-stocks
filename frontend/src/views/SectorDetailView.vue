@@ -21,6 +21,7 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
+import MarketDetailHero from '@/components/MarketDetailHero.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import StockChartRegion from '@/components/stock-chart/StockChartRegion.vue'
@@ -379,32 +380,33 @@ onMounted(async () => {
         title="正在加载板块详情…"
       />
       <div v-else class="sector-detail" v-loading="detailLoading && !!detail" data-testid="sector-detail-page">
-        <section class="hero-panel">
-          <div class="hero-copy">
-            <div class="hero-kicker">SECTOR INTELLIGENCE</div>
-            <div class="hero-title-row">
-              <h2 class="app-page-title">{{ detail?.name || code }}</h2>
-              <span v-if="detail" class="sector-type">
-                {{ detail.board_type === 'concept' ? '概念板块' : '行业板块' }}
-              </span>
-              <span class="sector-code">{{ code }}</span>
-              <AppIconButton
-                v-if="canUpdateWatchlist"
-                v-permission="'sector-watchlist:update'"
-                :label="watchlisted ? '移出板块自选' : '加入板块自选'"
-                :loading="watchlistBusy"
-                :class="{ 'watchlist-active': watchlisted }"
-                @click="toggleWatchlist"
-              >
-                <el-icon><StarFilled v-if="watchlisted" /><Star v-else /></el-icon>
-              </AppIconButton>
-            </div>
-            <p class="page-subtitle">指数趋势与历史成员强弱联动观察</p>
-          </div>
-          <div class="hero-date app-caption-text">
+        <MarketDetailHero
+          eyebrow="SECTOR INTELLIGENCE"
+          :title="detail?.name || code"
+          :code="code"
+          subtitle="指数趋势与历史成员强弱联动观察"
+        >
+          <template #badges>
+            <span v-if="detail" class="sector-type">
+              {{ detail.board_type === 'concept' ? '概念板块' : '行业板块' }}
+            </span>
+          </template>
+          <template #actions>
+            <AppIconButton
+              v-if="canUpdateWatchlist"
+              v-permission="'sector-watchlist:update'"
+              :label="watchlisted ? '移出板块自选' : '加入板块自选'"
+              :loading="watchlistBusy"
+              :class="{ 'watchlist-active': watchlisted }"
+              @click="toggleWatchlist"
+            >
+              <el-icon><StarFilled v-if="watchlisted" /><Star v-else /></el-icon>
+            </AppIconButton>
+          </template>
+          <template #meta>
             行情 {{ detail?.trade_date || '—' }} · 资金 {{ detail?.fund_flow_date || '—' }}
-          </div>
-        </section>
+          </template>
+        </MarketDetailHero>
 
         <section class="metric-strip" aria-label="板块关键指标">
           <div class="metric metric--primary">
@@ -540,7 +542,6 @@ onMounted(async () => {
 .detail-action,
 .detail-nav,
 .detail-actions,
-.hero-title-row,
 .section-head {
   display: flex;
   align-items: center;
@@ -551,8 +552,7 @@ onMounted(async () => {
   gap: var(--app-space-3);
   width: 100%;
 }
-.detail-actions,
-.hero-title-row {
+.detail-actions {
   gap: var(--app-space-2);
 }
 .detail-date {
@@ -567,32 +567,12 @@ onMounted(async () => {
   height: 100%;
   overflow: auto;
 }
-.hero-panel,
 .metric-strip,
 .content-panel {
   border: 1px solid var(--el-border-color);
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
 }
-.hero-panel {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--app-space-4);
-  padding: var(--app-space-3) var(--app-space-4);
-  background: color-mix(in srgb, var(--el-color-primary-light-9) 42%, var(--el-bg-color));
-}
-.hero-kicker {
-  color: var(--el-color-primary);
-  font-size: var(--app-font-size-micro);
-  font-weight: var(--app-font-weight-strong);
-  letter-spacing: 0.14em;
-}
-.hero-title-row {
-  margin-top: var(--app-space-1);
-}
-.hero-copy p,
 .section-head p {
   margin: var(--app-space-1) 0 0;
   color: var(--el-text-color-secondary);
@@ -604,11 +584,6 @@ onMounted(async () => {
   background: var(--el-color-primary-light-9);
   font-size: var(--app-font-size-caption);
   font-weight: var(--app-font-weight-strong);
-}
-.sector-code {
-  color: var(--el-text-color-secondary);
-  font-family: var(--app-font-family-mono);
-  font-size: var(--app-font-size-caption);
 }
 .watchlist-active {
   color: var(--el-color-primary);

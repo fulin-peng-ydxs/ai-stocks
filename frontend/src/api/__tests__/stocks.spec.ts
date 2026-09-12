@@ -6,6 +6,7 @@ import {
   getIntraday,
   getStockBenchmarkBars,
   getStockBoardMembership,
+  getStockQuoteSummary,
   getStockMembershipOptions,
   listStocks,
 } from '@/api/stocks'
@@ -94,10 +95,31 @@ describe('getStockBoardMembership', () => {
     vi.mocked(http.get).mockReset()
   })
 
-  it('编码股票代码并请求累计行业概念归属', () => {
-    getStockBoardMembership('600000.SH')
+  it('编码股票代码并透传行情日、取消信号和局部错误处理', () => {
+    const controller = new AbortController()
+    getStockBoardMembership('600000.SH', '2026-09-10', controller.signal)
 
-    expect(http.get).toHaveBeenCalledWith('/stocks/600000.SH/related-boards')
+    expect(http.get).toHaveBeenCalledWith('/stocks/600000.SH/related-boards', {
+      params: { business_date: '2026-09-10' },
+      signal: controller.signal,
+      skipGlobalError: true,
+    })
+  })
+})
+
+describe('getStockQuoteSummary', () => {
+  beforeEach(() => {
+    vi.mocked(http.get).mockReset()
+  })
+
+  it('编码股票代码并请求详情头部行情摘要', () => {
+    const controller = new AbortController()
+    getStockQuoteSummary('600000.SH', controller.signal)
+
+    expect(http.get).toHaveBeenCalledWith('/stocks/600000.SH/quote-summary', {
+      signal: controller.signal,
+      skipGlobalError: true,
+    })
   })
 })
 

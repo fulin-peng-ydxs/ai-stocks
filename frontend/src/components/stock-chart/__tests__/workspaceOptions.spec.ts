@@ -20,6 +20,7 @@ import {
 } from '@/components/stock-chart/workspaceOptions'
 import {
   KLINE_MA_DEFINITIONS,
+  stockVolumeRatioAt,
   VOLUME_MA_DEFINITIONS,
   type StockChartTheme,
 } from '@/components/stock-chart/chartUtils'
@@ -56,6 +57,18 @@ const theme: StockChartTheme = {
   },
   focus: '#focus',
 }
+
+describe('stockVolumeRatioAt', () => {
+  it('使用光标日前五个有效成交量，零成交不计入样本', () => {
+    const source = [0, 100, 200, 300, 400, 500, 600].map((volume, index) => ({
+      ...bar(`2026-07-${String(index + 1).padStart(2, '0')}`, 10 + index),
+      volume,
+    }))
+
+    expect(stockVolumeRatioAt(source, '2026-07-07')).toBe(2)
+    expect(stockVolumeRatioAt(source, '2026-07-06')).toBeNull()
+  })
+})
 
 function bar(date: string, close = 10): Bar {
   return {
@@ -471,6 +484,24 @@ describe('workspaceOptions', () => {
     ) => string)([{ dataIndex: 0 }])
     expect(downContent).toContain('color:#down;font-size:18px')
     expect(downContent).toContain('style="color:#down">-2.00%</span>')
+  })
+
+  it('允许消费页只关闭 K线内容浮层并保留轴指针', () => {
+    const option = buildKlineOption({
+      rows: alignStockChartRows([bar('2026-07-22', 10)], []),
+      warmupBars: [],
+      theme,
+      isBottom: false,
+      showKlineTooltip: false,
+      zoomStart: 0,
+      zoomEnd: 100,
+    })
+
+    expect(option.tooltip).toMatchObject({
+      showContent: false,
+      trigger: 'axis',
+      axisPointer: { type: 'cross' },
+    })
   })
 
   it('买卖点标注渲染到 K 线 markPoint，买=蓝▲置于最低价下方、卖=橙▼置于最高价上方', () => {

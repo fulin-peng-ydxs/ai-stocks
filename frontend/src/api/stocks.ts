@@ -41,17 +41,24 @@ export interface BoardMembershipItem {
   board_code: string
   name: string
   board_type: 'industry' | 'concept'
+  pct_chg: number | null
 }
 
 export interface StockBoardMembership {
   code: string
   membership_scope: 'cumulative'
   membership_updated_at: string | null
+  trade_date: string | null
   industries: BoardMembershipItem[]
   concepts: BoardMembershipItem[]
+  related_boards: StockRelatedBoards | null
 }
 
-export type StockMembershipOption = BoardMembershipItem
+export interface StockMembershipOption {
+  board_code: string
+  name: string
+  board_type: 'industry' | 'concept'
+}
 
 export interface StockMembershipOptions {
   list: StockMembershipOption[]
@@ -155,8 +162,49 @@ export function getStockMembershipOptions(): Promise<StockMembershipOptions> {
   return http.get('/stocks/membership-options')
 }
 
-export function getStockBoardMembership(code: string): Promise<StockBoardMembership> {
-  return http.get(`/stocks/${encodeURIComponent(code)}/related-boards`)
+export function getStockBoardMembership(
+  code: string,
+  businessDate?: string,
+  signal?: AbortSignal,
+): Promise<StockBoardMembership> {
+  return http.get(`/stocks/${encodeURIComponent(code)}/related-boards`, {
+    params: { business_date: businessDate },
+    signal,
+    skipGlobalError: true,
+  } as AppRequestConfig)
+}
+
+export interface StockQuoteSummary {
+  code: string
+  name: string | null
+  board: string | null
+  industry: string | null
+  is_st: boolean | null
+  trade_date: string | null
+  open: number | null
+  high: number | null
+  low: number | null
+  close: number | null
+  pre_close: number | null
+  volume: number | null
+  amount: number | null
+  turnover_rate: number | null
+  volume_ratio: number | null
+  total_mv: number | null
+  float_mv: number | null
+  total_share: number | null
+  float_share: number | null
+  pe_ttm: number | null
+}
+
+export function getStockQuoteSummary(
+  code: string,
+  signal?: AbortSignal,
+): Promise<StockQuoteSummary> {
+  return http.get(`/stocks/${encodeURIComponent(code)}/quote-summary`, {
+    signal,
+    skipGlobalError: true,
+  } as AppRequestConfig)
 }
 
 export function getBars(

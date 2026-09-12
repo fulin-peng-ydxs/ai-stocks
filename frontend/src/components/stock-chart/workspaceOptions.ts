@@ -290,6 +290,7 @@ interface OptionContext {
   buyMarkerColor?: string
   sellMarkerColor?: string
   clickableCandles?: boolean
+  showKlineTooltip?: boolean
   candlestickRect?: (params: unknown) => TooltipTargetRect | null
 }
 
@@ -429,6 +430,7 @@ export function buildKlineOption(context: OptionContext) {
     ...base,
     tooltip: {
       ...base.tooltip,
+      showContent: context.showKlineTooltip !== false,
       className: 'stock-chart-kline-tooltip',
       confine: true,
       transitionDuration: 0,

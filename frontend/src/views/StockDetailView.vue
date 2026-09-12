@@ -14,12 +14,16 @@ import { ArrowLeft, ArrowRight, Close, DArrowLeft, DArrowRight } from '@element-
 import {
   getBars,
   getIndicators,
+  getStockBoardMembership,
+  getStockQuoteSummary,
   getTradeEval,
   listStocks,
   type Bar,
   type IndicatorField,
   type IndicatorRow,
+  type StockBoardMembership,
   type StockBasic,
+  type StockQuoteSummary as StockQuoteSummaryData,
   type TradeEval,
 } from '@/api/stocks'
 import { addMembers, getGroup, listGroups, removeMembers, type GroupSummary } from '@/api/stockGroup'
@@ -34,15 +38,28 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
+import MarketDetailHero from '@/components/MarketDetailHero.vue'
+import MarketBoardTag from '@/components/MarketBoardTag.vue'
 import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
+import StockBoardMembershipPanel from '@/components/StockBoardMembershipPanel.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import StockIntradayDialog from '@/components/stock-chart/StockIntradayDialog.vue'
+import StockQuoteSummary from '@/components/stock-chart/StockQuoteSummary.vue'
+import {
+  formatAmount,
+  formatChartNumber,
+  formatShares,
+  priceDirectionTone,
+  stockVolumeRatioAt,
+} from '@/components/stock-chart/chartUtils'
+import type { StockQuoteSummaryModel, StockQuoteTone } from '@/components/stock-chart/stockQuoteSummary'
 import type { MacdPanelState } from '@/components/stock-chart/workspaceOptions'
 import { useStockSet } from '@/stores/stockSet'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
-import { formatMoney } from '@/utils/money'
+import { formatCompactMoneyYuan } from '@/utils/money'
+import { sectorDetailLocation } from '@/utils/sectorNavigation'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useStockIntradayDrilldown } from '@/composables/useStockIntradayDrilldown'
 import { useDebouncedQuery } from '@/composables/useDebouncedQuery'
@@ -93,6 +110,7 @@ const detailDefaults = {
   adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
   showTradeCard: true,
   showIndicatorSnapshot: true,
+  showRelatedBoards: true,
   showNav: true,
   indicators: {
     ma20: true,
@@ -138,17 +156,24 @@ function resetDetailSettings(): void {
 const stockSet = useStockSet()
 const auth = useAuthStore()
 const canViewGroups = computed(() => hasPermission(auth.role, auth.permissions, 'stock-group:view'))
+const canUpdateGroups = computed(() => (
+  canViewGroups.value
+  && hasPermission(auth.role, auth.permissions, 'stock-group:member-update')
+))
 const canViewTradeProfiles = computed(() => (
   hasPermission(auth.role, auth.permissions, 'trade-profile:view')
 ))
 const canEvaluateTrades = computed(() => (
   hasPermission(auth.role, auth.permissions, 'stocks:trade-eval')
 ))
+const canViewSectors = computed(() => hasPermission(auth.role, auth.permissions, 'sectors:view'))
 const canUseTradeEvaluation = computed(() => (
   canViewTradeProfiles.value && canEvaluateTrades.value
 ))
 const hasAuxiliaryContent = computed(() => (
-  settings.showIndicatorSnapshot || (settings.showTradeCard && canUseTradeEvaluation.value)
+  settings.showRelatedBoards
+  || settings.showIndicatorSnapshot
+  || (settings.showTradeCard && canUseTradeEvaluation.value)
 ))
 const showAuxiliary = computed(() => auxiliaryVisible.value && hasAuxiliaryContent.value)
 
@@ -163,6 +188,13 @@ const setIndex = computed(() => stockSet.indexOf(code.value))
 const inSet = computed(() => setIndex.value >= 0)
 const prevCode = computed(() => stockSet.neighbor(code.value, -1))
 const nextCode = computed(() => stockSet.neighbor(code.value, 1))
+function neighborLabel(target: string | null, direction: '上一只' | '下一只'): string {
+  if (!target) return direction
+  const item = stockSet.items.find((candidate) => candidate.code === target)
+  return `${direction} · ${item?.name || target}`
+}
+const prevLabel = computed(() => neighborLabel(prevCode.value, '上一只'))
+const nextLabel = computed(() => neighborLabel(nextCode.value, '下一只'))
 function gotoCode(c: string | null) {
   if (c && c !== '__more__' && c !== code.value) router.push(`/stocks/${c}`)
 }
@@ -223,6 +255,8 @@ const indicatorLoading = ref(true)
 const indicatorError = ref('')
 const indicatorRows = ref<IndicatorRow[]>([])
 const quoteLoading = ref(true)
+const membershipLoading = ref(true)
+const membershipError = ref('')
 // 显示范围（缩放）单向：全局 K 线偏好默认范围 → 会话 ref；主区切换不写回全局默认。
 // 数据始终全量加载，可自由拖动看全部
 const { validDefault: klineDefault } = useKlinePrefs()
@@ -235,7 +269,9 @@ const {
   intradayRequestKey,
   openIntraday,
 } = useStockIntradayDrilldown(code)
-const latestQuote = ref<Bar | null>(null)
+const quoteSummaryData = ref<StockQuoteSummaryData | null>(null)
+const chartActiveBar = ref<Bar | null>(null)
+const boardMembership = ref<StockBoardMembership | null>(null)
 const latest = ref<IndicatorRow | null>(null)
 
 // 始终至少加载 5 年数据保证 MA60/MA120 有足够热身窗口，displayBars 控制图表可见范围
@@ -245,11 +281,83 @@ const chartLookback = computed(() => viewDays.value >= 99999 ? 6000 : Math.max(v
 const displayBars = computed(() => viewDays.value >= 99999 ? bars.value : bars.value.slice(-viewDays.value))
 const warmupBars = computed(() => viewDays.value >= 99999 ? [] : bars.value.slice(0, -viewDays.value || undefined))
 const latestPct = computed(() => {
-  const b = latestQuote.value
-  if (!b?.pre_close || b.pre_close <= 0) return null
+  const b = chartActiveBar.value ?? quoteSummaryData.value
+  if (b?.close == null || !b.pre_close || b.pre_close <= 0) return null
   return ((b.close / b.pre_close) - 1) * 100
 })
-const latestClose = computed(() => latestQuote.value?.close ?? null)
+const latestChange = computed(() => {
+  const b = chartActiveBar.value ?? quoteSummaryData.value
+  if (b?.close == null || b.pre_close == null) return null
+  return b.close - b.pre_close
+})
+const quoteTone = computed<StockQuoteTone>(() => (
+  latestPct.value == null || latestPct.value === 0 ? 'neutral' : latestPct.value > 0 ? 'up' : 'down'
+))
+const relatedIndustry = computed(() => {
+  const related = boardMembership.value?.related_boards
+  const winner = related && !related.unavailable_reason ? related.industry : null
+  if (!winner) return null
+  const membership = boardMembership.value?.industries.find(
+    (item) => item.board_code === winner.board_code,
+  )
+  return { boardCode: winner.board_code, name: winner.name, pct: membership?.pct_chg ?? null }
+})
+const headerSummary = computed<StockQuoteSummaryModel | null>(() => {
+  const quote = quoteSummaryData.value
+  if (!quote) return null
+  const bar = chartActiveBar.value
+  const close = bar?.close ?? quote.close
+  const preClose = bar?.pre_close ?? quote.pre_close
+  const volumeRatio = bar ? stockVolumeRatioAt(bars.value, bar.date) : quote.volume_ratio
+  return {
+    hero: {
+      label: '',
+      value: formatChartNumber(close, 2, '—'),
+      tone: quoteTone.value,
+      details: [
+        {
+          label: '涨跌额',
+          value: latestChange.value == null
+            ? '—'
+            : `${latestChange.value > 0 ? '+' : ''}${latestChange.value.toFixed(2)}`,
+          tone: quoteTone.value,
+        },
+        { label: '涨跌幅', value: fmtPct(latestPct.value), tone: quoteTone.value },
+      ],
+    },
+    rowsPerColumn: 4,
+    metrics: [
+      {
+        label: '开盘',
+        value: formatChartNumber(bar?.open ?? quote.open, 2, '—'),
+        tone: priceDirectionTone(bar?.open ?? quote.open, preClose),
+      },
+      {
+        label: '最高',
+        value: formatChartNumber(bar?.high ?? quote.high, 2, '—'),
+        tone: priceDirectionTone(bar?.high ?? quote.high, preClose),
+      },
+      {
+        label: '最低',
+        value: formatChartNumber(bar?.low ?? quote.low, 2, '—'),
+        tone: priceDirectionTone(bar?.low ?? quote.low, preClose),
+      },
+      { label: '量比', value: volumeRatio == null ? '—' : volumeRatio.toFixed(2) },
+      { label: '总市值', value: formatCompactMoneyYuan(quote.total_mv) },
+      { label: '流通市值', value: formatCompactMoneyYuan(quote.float_mv) },
+      { label: '市盈率', value: '—' },
+      {
+        label: '换手率',
+        value: (bar?.turnover_rate ?? quote.turnover_rate) == null
+          ? '—'
+          : `${(bar?.turnover_rate ?? quote.turnover_rate)!.toFixed(2)}%`,
+      },
+      { label: '成交额', value: formatAmount(bar?.amount ?? quote.amount, '—') },
+      { label: '流通股', value: formatShares(quote.float_share, '—') },
+      { label: '总股本', value: formatShares(quote.total_share, '—') },
+    ],
+  }
+})
 
 // 个股详情页展示的关键指标（取最新一日）
 const INDICATOR_FIELDS = [
@@ -300,11 +408,6 @@ function fmtPct(v: number | null | undefined): string {
   if (v === null || v === undefined) return '--'
   return (v > 0 ? '+' : '') + v.toFixed(2) + '%'
 }
-function pctClass(v: number | null | undefined): string {
-  if (v === null || v === undefined) return 'muted'
-  return v > 0 ? 'up' : v < 0 ? 'down' : ''
-}
-
 // ── 买卖指标方案评估（v2.0：替代固定买点引擎）──
 // R3/R5/R7/R10：方案选择统一走 AssetProfileSelect——下拉只加载「我的」source=mine 纯 owner，
 // 「搜索」入口打开共享搜索抽屉（系统内置/租户公开/全体公开）；「加载查看」注入临时只读项
@@ -355,6 +458,7 @@ function createRequestChannel(): RequestChannel {
 const barsRequest = createRequestChannel()
 const indicatorRequest = createRequestChannel()
 const quoteRequest = createRequestChannel()
+const membershipRequest = createRequestChannel()
 const tradeRequest = createRequestChannel()
 
 function beginRequest(channel: RequestChannel) {
@@ -383,12 +487,14 @@ function cancelDetailRequests(): void {
   cancelRequest(barsRequest)
   cancelRequest(indicatorRequest)
   cancelRequest(quoteRequest)
+  cancelRequest(membershipRequest)
   cancelRequest(tradeRequest)
 }
 
 let resumeBarsRequest = false
 let resumeIndicatorRequest = false
 let resumeQuoteRequest = false
+let resumeMembershipRequest = false
 let resumeTradeRequest = false
 
 function isAbort(e: unknown): boolean {
@@ -450,15 +556,18 @@ async function loadBars() {
       name.value = ''
       indicatorRows.value = []
       latest.value = null
-      latestQuote.value = null
+      quoteSummaryData.value = null
+      boardMembership.value = null
       tradeEval.value = null
       indicatorError.value = ''
       tradeError.value = ''
       cancelRequest(indicatorRequest)
       cancelRequest(quoteRequest)
+      cancelRequest(membershipRequest)
       cancelRequest(tradeRequest)
       indicatorLoading.value = false
       quoteLoading.value = false
+      membershipLoading.value = false
       tradeLoading.value = false
     }
     barsError.value = getErrorMessage(e, '个股行情加载失败')
@@ -496,26 +605,63 @@ async function loadIndicators() {
   }
 }
 
-async function loadLatestQuote() {
+async function loadLatestQuote(): Promise<string | null | undefined> {
+  const requestedCode = code.value
   const { controller, sequence } = beginRequest(quoteRequest)
   quoteLoading.value = true
   try {
-    const result = await getBars(
-      code.value,
-      { adjust: '', lookback: 1 },
-      controller.signal,
-    )
-    if (!isCurrentRequest(quoteRequest, controller, sequence)) return
-    latestQuote.value = result.bars.at(-1) ?? null
+    const result = await getStockQuoteSummary(requestedCode, controller.signal)
+    if (!isCurrentRequest(quoteRequest, controller, sequence)) return undefined
+    quoteSummaryData.value = result
+    if (result.name) name.value = result.name
+    return result.trade_date
   } catch (e) {
     if (!isAbort(e) && isCurrentRequest(quoteRequest, controller, sequence)) {
-      latestQuote.value = null
+      quoteSummaryData.value = null
+      return null
     }
+    return undefined
   } finally {
     if (isCurrentRequest(quoteRequest, controller, sequence)) {
       quoteLoading.value = false
       quoteRequest.controller = null
     }
+  }
+}
+
+async function loadBoardMembership(
+  businessDate = quoteSummaryData.value?.trade_date ?? undefined,
+): Promise<void> {
+  const requestedCode = code.value
+  const { controller, sequence } = beginRequest(membershipRequest)
+  membershipLoading.value = true
+  membershipError.value = ''
+  try {
+    const result = await getStockBoardMembership(
+      requestedCode,
+      businessDate ?? undefined,
+      controller.signal,
+    )
+    if (isCurrentRequest(membershipRequest, controller, sequence)) {
+      boardMembership.value = result
+    }
+  } catch (e) {
+    if (!isAbort(e) && isCurrentRequest(membershipRequest, controller, sequence)) {
+      boardMembership.value = null
+      membershipError.value = getErrorMessage(e, '所属板块加载失败')
+    }
+  } finally {
+    if (isCurrentRequest(membershipRequest, controller, sequence)) {
+      membershipLoading.value = false
+      membershipRequest.controller = null
+    }
+  }
+}
+
+async function loadQuoteContext(): Promise<void> {
+  const businessDate = await loadLatestQuote()
+  if (businessDate !== undefined && !barsPermissionDenied.value) {
+    await loadBoardMembership(businessDate ?? undefined)
   }
 }
 
@@ -526,7 +672,7 @@ async function reloadRangeData() {
 async function refreshStockDetail(): Promise<void> {
   await Promise.all([
     reloadRangeData(),
-    loadLatestQuote(),
+    loadQuoteContext(),
     loadGroups(),
     loadStockGroups(),
     tradeId.value ? evalTrade() : Promise.resolve(),
@@ -561,7 +707,7 @@ onMounted(async () => {
   clearUnauthorizedGroupSet()
   await Promise.all([
     reloadRangeData(),
-    loadLatestQuote(),
+    loadQuoteContext(),
     loadGroups(),
     loadStockGroups(),
   ])
@@ -776,22 +922,25 @@ onDeactivated(() => {
   resumeBarsRequest = barsLoading.value
   resumeIndicatorRequest = indicatorLoading.value
   resumeQuoteRequest = quoteLoading.value
+  resumeMembershipRequest = membershipLoading.value
   resumeTradeRequest = tradeLoading.value
   cancelDetailRequests()
   barsLoading.value = false
   indicatorLoading.value = false
   quoteLoading.value = false
+  membershipLoading.value = false
   tradeLoading.value = false
 })
 
 onActivated(() => {
   if (resumeBarsRequest) void loadBars()
   if (resumeIndicatorRequest) void loadIndicators()
-  if (resumeQuoteRequest) void loadLatestQuote()
+  if (resumeQuoteRequest || resumeMembershipRequest) void loadQuoteContext()
   if (resumeTradeRequest) void evalTrade()
   resumeBarsRequest = false
   resumeIndicatorRequest = false
   resumeQuoteRequest = false
+  resumeMembershipRequest = false
   resumeTradeRequest = false
 })
 
@@ -803,147 +952,27 @@ onBeforeUnmount(() => {
 <template>
   <LayoutHost :layout="detailEffective">
     <template #action>
-    <div class="lh-action">
-    <div class="page-head">
-      <div class="title">
+    <div class="lh-action detail-action">
+      <div class="detail-nav">
         <el-button text data-testid="stock-detail-back" @click="returnToCollection">
           <template #icon><el-icon><ArrowLeft /></el-icon></template>
           返回
         </el-button>
-        <h2 class="app-page-title">{{ name || '—' }}</h2>
-        <span class="code-sub">{{ code }}</span>
-        <span
-          class="quote-sub"
-          data-testid="stock-latest-quote"
-          :class="pctClass(latestPct)"
-        >
-          {{ formatMoney(latestClose, { empty: '--' }) }}
-          {{ fmtPct(latestPct) }}
-        </span>
-        <el-select
-          v-if="canViewGroups && !barsPermissionDenied"
-          v-permission="'stock-group:member-update'"
-          data-testid="stock-group-select"
-          v-model="selectedGroupIds"
-          multiple
-          filterable
-          collapse-tags
-          collapse-tags-tooltip
-          :max-collapse-tags="2"
-          size="small"
-          placeholder="所属分组"
-          style="width: 260px"
-          :loading="groupOpsLoading"
-          @change="onGroupsChange"
-        >
-          <template #tag>
-            <el-tag
-              v-for="g in visibleSelectedGroups"
-              :key="g.id"
-              class="group-select-tag"
-              size="small"
-              closable
-              :disable-transitions="true"
-              :style="tagStyle(g.color)"
-              @close.stop="removeSelectedGroup(g.id)"
-            >
-              {{ g.name }}
-            </el-tag>
-            <el-tag
-              v-if="hiddenSelectedGroupCount"
-              class="group-select-tag more"
-              size="small"
-              :disable-transitions="true"
-            >
-              +{{ hiddenSelectedGroupCount }}
-            </el-tag>
-          </template>
-          <el-option
-            v-for="g in groups"
-            :key="g.id"
-            :value="g.id"
-            :label="g.name"
-          >
-            <span class="group-option">
-              <span class="color-dot" :style="{ backgroundColor: g.color }" />
-              <span>{{ g.name }}（{{ g.member_count }}）</span>
-            </span>
-          </el-option>
-        </el-select>
-      </div>
-      <div class="page-head-actions">
-        <div class="ops">
+        <div class="detail-actions">
           <el-button
             data-testid="stock-detail-refresh"
-            :loading="barsLoading || indicatorLoading || quoteLoading || tradeLoading"
+            :loading="barsLoading || indicatorLoading || quoteLoading || membershipLoading || tradeLoading"
             @click="refreshStockDetail"
           >刷新</el-button>
           <KlineRangeSelect v-model="viewDays" test-id="stock-detail-range" />
+          <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
         </div>
-        <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
-    </div>
     </div>
     </template>
 
     <template #main>
     <div class="stock-detail-main">
-    <!-- 通用集合导航条 -->
-    <div
-      v-if="settings.showNav && stockSet.has"
-      class="nav-bar"
-      data-testid="stock-set-navigation"
-    >
-      <span class="nav-label">
-        {{ stockSet.label }}
-        <span v-if="inSet" class="nav-pos">{{ setIndex + 1 }}/{{ collectionTotal }}</span>
-        <span v-else class="nav-pos muted">不在集合内 · 共 {{ collectionTotal }} 只</span>
-      </span>
-      <el-button-group class="nav-btns">
-        <el-button size="small" :loading="setLoading" :disabled="!prevCode && !canLoadPrev" @click="gotoNeighbor(-1)">
-          <template #icon><el-icon><ArrowLeft /></el-icon></template>
-          上一个
-        </el-button>
-        <el-button size="small" :loading="setLoading" :disabled="!nextCode && !canLoadNext" @click="gotoNeighbor(1)">
-          下一个
-          <el-icon class="el-icon--right"><ArrowRight /></el-icon>
-        </el-button>
-      </el-button-group>
-      <el-select
-        data-testid="stock-set-select"
-        :model-value="code"
-        placeholder="从集合中选择"
-        filterable
-        remote
-        clearable
-        reserve-keyword
-        size="small"
-        style="width: 260px"
-        :remote-method="onCollectionSearch"
-        :loading="dropdownLoading"
-        @change="onCollectionSelect"
-        @visible-change="onCollectionVisibleChange"
-        @end-reached="onCollectionEndReached"
-      >
-        <el-option
-          v-for="(it, i) in dropdownOptions"
-          :key="it.code"
-          :value="it.code"
-          :label="`${i + 1}. ${it.name || ''} ${it.code}`"
-        />
-        <el-option
-          v-if="dropdownHasMore"
-          key="__more__"
-          value="__more__"
-          disabled
-          :label="dropdownLoading ? '加载中...' : '向下滚动加载更多'"
-        />
-      </el-select>
-      <AppIconButton label="退出集合" size="sm" tone="default" @click="stockSet.clear()">
-        <el-icon><Close /></el-icon>
-      </AppIconButton>
-    </div>
-
     <AppStateBlock
       v-if="barsPermissionDenied || barsError"
       state="error"
@@ -962,6 +991,140 @@ onBeforeUnmount(() => {
     />
 
     <template v-else>
+      <MarketDetailHero
+        class="stock-detail-hero"
+        eyebrow="STOCK INTELLIGENCE"
+        :title="name || quoteSummaryData?.name || code"
+        :code="code"
+        subtitle="价格趋势、技术状态与所属板块联动观察"
+        aside-align="start"
+      >
+        <template #badges>
+          <span v-if="quoteSummaryData?.board" class="stock-type">{{ quoteSummaryData.board }}</span>
+          <span v-if="quoteSummaryData?.is_st" class="stock-type stock-type--risk">ST</span>
+        </template>
+        <template #summary>
+          <div v-if="headerSummary" class="stock-detail-summary">
+            <StockQuoteSummary
+              :summary="headerSummary"
+              data-testid="stock-latest-quote"
+            />
+            <div class="stock-detail-summary__industry">
+              <span class="stock-detail-summary__industry-label">所属行业</span>
+              <MarketBoardTag
+                v-if="relatedIndustry"
+                :name="relatedIndustry.name"
+                :pct-chg="relatedIndustry.pct"
+                related
+                :to="canViewSectors
+                  ? sectorDetailLocation(relatedIndustry.boardCode, route.fullPath)
+                  : undefined"
+                data-testid="stock-summary-industry"
+              />
+              <span v-else class="app-caption-text">—</span>
+            </div>
+          </div>
+          <span v-else class="app-caption-text">
+            {{ quoteLoading ? '行情摘要加载中…' : '行情摘要暂不可用' }}
+          </span>
+        </template>
+        <template v-if="(settings.showNav && stockSet.has) || (canUpdateGroups && !barsPermissionDenied)" #footer>
+          <div
+            v-if="settings.showNav && stockSet.has"
+            class="stock-context__collection"
+            data-testid="stock-set-navigation"
+          >
+            <span class="nav-label">
+              {{ stockSet.label }}
+              <span v-if="inSet" class="nav-pos">{{ setIndex + 1 }}/{{ collectionTotal }}</span>
+              <span v-else class="nav-pos muted">不在集合内 · 共 {{ collectionTotal }} 只</span>
+            </span>
+            <el-button-group class="nav-btns">
+              <el-button size="small" :loading="setLoading" :disabled="!prevCode && !canLoadPrev" @click="gotoNeighbor(-1)">
+                <template #icon><el-icon><ArrowLeft /></el-icon></template>
+                {{ prevLabel }}
+              </el-button>
+              <el-button size="small" :loading="setLoading" :disabled="!nextCode && !canLoadNext" @click="gotoNeighbor(1)">
+                {{ nextLabel }}
+                <el-icon class="el-icon--right"><ArrowRight /></el-icon>
+              </el-button>
+            </el-button-group>
+            <el-select
+              data-testid="stock-set-select"
+              :model-value="code"
+              placeholder="从集合中选择"
+              filterable
+              remote
+              clearable
+              reserve-keyword
+              size="small"
+              class="stock-context__select"
+              :remote-method="onCollectionSearch"
+              :loading="dropdownLoading"
+              @change="onCollectionSelect"
+              @visible-change="onCollectionVisibleChange"
+              @end-reached="onCollectionEndReached"
+            >
+              <el-option
+                v-for="(it, i) in dropdownOptions"
+                :key="it.code"
+                :value="it.code"
+                :label="`${i + 1}. ${it.name || ''} ${it.code}`"
+              />
+              <el-option
+                v-if="dropdownHasMore"
+                key="__more__"
+                value="__more__"
+                disabled
+                :label="dropdownLoading ? '加载中...' : '向下滚动加载更多'"
+              />
+            </el-select>
+            <AppIconButton label="退出集合" size="sm" tone="default" @click="stockSet.clear()">
+              <el-icon><Close /></el-icon>
+            </AppIconButton>
+          </div>
+          <div v-if="canUpdateGroups && !barsPermissionDenied" class="stock-context__groups">
+            <span class="stock-context__label">所属分组</span>
+            <el-select
+              v-model="selectedGroupIds"
+              v-permission="'stock-group:member-update'"
+              data-testid="stock-group-select"
+              multiple
+              filterable
+              collapse-tags
+              collapse-tags-tooltip
+              :max-collapse-tags="2"
+              size="small"
+              class="stock-context__group-select"
+              placeholder="选择分组"
+              :loading="groupOpsLoading"
+              @change="onGroupsChange"
+            >
+              <template #tag>
+                <el-tag
+                  v-for="g in visibleSelectedGroups"
+                  :key="g.id"
+                  class="group-select-tag"
+                  size="small"
+                  closable
+                  :disable-transitions="true"
+                  :style="tagStyle(g.color)"
+                  @close.stop="removeSelectedGroup(g.id)"
+                >{{ g.name }}</el-tag>
+                <el-tag v-if="hiddenSelectedGroupCount" class="group-select-tag more" size="small">
+                  +{{ hiddenSelectedGroupCount }}
+                </el-tag>
+              </template>
+              <el-option v-for="g in groups" :key="g.id" :value="g.id" :label="g.name">
+                <span class="group-option">
+                  <span class="color-dot" :style="{ backgroundColor: g.color }" />
+                  <span>{{ g.name }}（{{ g.member_count }}）</span>
+                </span>
+              </el-option>
+            </el-select>
+          </div>
+        </template>
+      </MarketDetailHero>
       <AppStateBlock
         v-if="barsLoading && !bars.length"
         state="loading"
@@ -1000,10 +1163,12 @@ onBeforeUnmount(() => {
             :zoom-end="100"
             fit-available-height
             enable-intraday-drilldown
+            :show-kline-tooltip="false"
             @ratio-draft="chartPreferences.handleRatioDraft"
             @ratio-commit="chartPreferences.handleRatioCommit"
             @retry-macd="loadIndicators"
             @bar-click="openIntraday"
+            @active-bar-change="chartActiveBar = $event"
           >
             <template #header-actions>
               <AppIconButton
@@ -1025,6 +1190,16 @@ onBeforeUnmount(() => {
 
           <template #secondary>
           <aside class="stock-detail-auxiliary" aria-label="个股辅助信息">
+            <StockBoardMembershipPanel
+              v-if="settings.showRelatedBoards"
+              :membership="boardMembership"
+              :loading="membershipLoading"
+              :error="membershipError"
+              :can-navigate="canViewSectors"
+              :return-path="route.fullPath"
+              :show-industries="false"
+              @retry="loadBoardMembership"
+            />
             <el-card
               v-if="settings.showIndicatorSnapshot"
               data-testid="stock-indicator-snapshot-card"
@@ -1184,6 +1359,11 @@ onBeforeUnmount(() => {
         <PageSettingSection title="辅助模块">
           <PageToggleRow v-model="settings.showNav" label="显示集合导航条" />
           <PageToggleRow
+            v-model="settings.showRelatedBoards"
+            label="显示所属板块"
+            test-id="stock-detail-toggle-related-boards"
+          />
+          <PageToggleRow
             v-model="settings.showIndicatorSnapshot"
             label="显示最新指标快照"
             test-id="stock-detail-toggle-indicator-snapshot"
@@ -1214,6 +1394,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  gap: var(--app-space-3);
   overflow: hidden;
 }
 
@@ -1235,6 +1416,29 @@ onBeforeUnmount(() => {
   height: 100%;
 }
 
+.stock-detail-summary {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  gap: var(--app-space-3);
+}
+
+.stock-detail-summary__industry {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--app-space-2);
+  padding-left: var(--app-space-3);
+  border-left: 1px solid var(--el-border-color);
+}
+
+.stock-detail-summary__industry-label {
+  flex: 0 0 auto;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+  font-weight: var(--app-font-weight-section);
+}
+
 .stock-detail-auxiliary {
   box-sizing: border-box;
   display: flex;
@@ -1249,37 +1453,37 @@ onBeforeUnmount(() => {
   overscroll-behavior: contain;
 }
 
-.page-head {
+.detail-action,
+.detail-nav,
+.detail-actions,
+.stock-context__collection,
+.stock-context__groups {
   display: flex;
+  align-items: center;
+}
+
+.detail-nav {
   justify-content: space-between;
-  align-items: flex-start;
   gap: var(--app-space-3);
-  flex-wrap: wrap;
+  width: 100%;
 }
-.title {
-  min-width: 0;
-  flex: 1 1 auto;
-  display: flex;
-  align-items: center;
+
+.detail-actions {
   gap: var(--app-space-2);
-  flex-wrap: wrap;
 }
-.code-sub {
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-body);
-  font-variant-numeric: tabular-nums;
-}
-.quote-sub {
-  font-size: var(--app-font-size-body);
+
+.stock-type {
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  font-size: var(--app-font-size-caption);
   font-weight: var(--app-font-weight-strong);
-  font-variant-numeric: tabular-nums;
 }
-.page-head-actions {
-  margin-left: auto;
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-2);
+
+.stock-type--risk {
+  color: var(--market-up-color);
+  background: color-mix(in srgb, var(--market-up-color) 10%, transparent);
 }
 .group-option {
   display: inline-flex;
@@ -1303,10 +1507,6 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   flex: 0 0 auto;
 }
-.ops {
-  display: flex;
-  gap: var(--app-space-2);
-}
 .setting-item {
   display: flex;
   flex-direction: column;
@@ -1316,49 +1516,40 @@ onBeforeUnmount(() => {
   font-size: var(--app-font-size-body);
   color: var(--page-settings-text-subtle);
 }
-.nav-bar {
-  display: flex;
-  align-items: center;
+.stock-context__collection {
+  min-width: 0;
+  flex: 1 1 620px;
   gap: var(--app-space-3);
-  padding: 8px 12px;
-  margin-bottom: 14px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
   flex-wrap: wrap;
 }
 .nav-label {
   font-size: var(--app-font-size-table);
   font-weight: var(--app-font-weight-section);
   color: var(--el-text-color-regular);
-  flex: 1;
+  flex: 0 0 auto;
+}
+.stock-context__select {
+  width: min(240px, 30cqw);
+}
+.stock-context__groups {
+  min-width: 0;
+  flex: 1 1 300px;
+  justify-content: flex-end;
+  gap: var(--app-space-2);
+}
+.stock-context__label {
+  flex: 0 0 auto;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+}
+.stock-context__group-select {
+  width: min(260px, 32cqw);
 }
 .nav-pos {
   font-weight: var(--app-font-weight-regular);
-  margin-left: 6px;
+  margin-left: var(--app-space-control-gap);
   color: var(--el-text-color-secondary);
   font-variant-numeric: tabular-nums;
-}
-.group-card {
-  margin-top: 16px;
-}
-.group-edit-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--app-space-3);
-  flex-wrap: wrap;
-}
-.group-tags,
-.group-add {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-2);
-  flex-wrap: wrap;
-}
-.box-tag {
-  border-radius: 4px;
-  font-weight: var(--app-font-weight-section);
 }
 .ind-card,
 .trade-card {
@@ -1416,18 +1607,14 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-secondary);
 }
 
-@container app-viewport (max-width: 1180px) {
-  .page-head {
-    align-items: flex-start;
+@container app-viewport (max-width: 980px) {
+  .stock-context__groups {
+    justify-content: flex-start;
   }
 
-  .title {
-    flex-basis: 100%;
-  }
-
-  .page-head-actions {
-    width: 100%;
-    justify-content: flex-end;
+  .stock-context__select,
+  .stock-context__group-select {
+    width: min(100%, 320px);
   }
 }
 </style>

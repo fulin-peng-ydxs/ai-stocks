@@ -36,7 +36,7 @@ const SORT_FIELDS: readonly SectorSortField[] = [
   'up_count',
 ]
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-const TRUSTED_SECTOR_RETURN_RE = /^\/(?:limit-ladder|stocks|board|screen)(?:\?|$)/
+const TRUSTED_SECTOR_RETURN_RE = /^\/(?:limit-ladder|board|screen)(?:\?|$)|^\/stocks(?:\/[^/?#]+)?(?:\?|$)/
 
 /** 板块详情只接受已知业务列表作为返回来源，避免形成开放重定向。 */
 export function trustedSectorReturnPath(value: unknown): string | undefined {
@@ -57,6 +57,7 @@ export function sectorDetailLocation(boardCode: string, returnPath?: string) {
 export function sectorReturnLabel(raw: LocationQuery): string {
   const returnPath = trustedSectorReturnPath(raw.return_to)
   if (returnPath?.startsWith('/limit-ladder')) return '返回连板天梯'
+  if (returnPath?.startsWith('/stocks/')) return '返回个股详情'
   if (returnPath?.startsWith('/stocks')) return '返回个股查询'
   if (returnPath?.startsWith('/board')) return '返回每日榜单'
   if (returnPath?.startsWith('/screen')) return '返回策略筛选'

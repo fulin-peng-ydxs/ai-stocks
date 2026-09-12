@@ -101,6 +101,8 @@ vi.mock('@/api/stocks', () => ({
   getIndicators: vi.fn(),
   getTradeEval: vi.fn(),
   getIntraday: vi.fn(),
+  getStockBoardMembership: vi.fn(),
+  getStockQuoteSummary: vi.fn(),
   listStocks: vi.fn(),
 }))
 
@@ -135,14 +137,16 @@ const StockChartWorkspaceStub = defineComponent({
     'macdState',
     'macdError',
     'enableIntradayDrilldown',
+    'showKlineTooltip',
   ],
-  emits: ['retryMacd', 'ratioDraft', 'ratioCommit', 'barClick'],
+  emits: ['retryMacd', 'ratioDraft', 'ratioCommit', 'barClick', 'activeBarChange'],
   setup(props, { emit, slots }) {
     return () => h('section', {
       'data-testid': 'stock-chart-workspace',
       'data-min-height': props.minHeight,
       'data-macd-state': props.macdState,
       'data-adjust-label': props.adjustLabel,
+      'data-show-kline-tooltip': String(props.showKlineTooltip),
     }, [
       h('span', { 'data-testid': 'workspace-close' },
         String((props.bars as Bar[] | undefined)?.at(-1)?.close ?? '')),
@@ -156,6 +160,10 @@ const StockChartWorkspaceStub = defineComponent({
         'data-testid': 'open-intraday',
         onClick: () => emit('barClick', '2026-08-07'),
       }, '打开分时'),
+      h('button', {
+        'data-testid': 'activate-kline-bar',
+        onClick: () => emit('activeBarChange', bar('2026-07-22', 9.5)),
+      }, '联动行情摘要'),
       h('button', {
         'data-testid': 'ratio-draft',
         onClick: () => emit('ratioDraft', [0.5, 0.3, 0.2]),
@@ -305,6 +313,17 @@ function bar(date: string, close: number): Bar {
   }
 }
 
+function quote(close: number, name = '浦发银行'): Awaited<ReturnType<typeof stocksApi.getStockQuoteSummary>> {
+  return {
+    code: '600000.SH', name, board: '主板', industry: '银行', is_st: false,
+    trade_date: '2026-07-23', open: close - 0.4, high: close + 0.3, low: close - 0.5,
+    close, pre_close: close - 1, volume: 100_000, amount: 1_000_000,
+    turnover_rate: 1, volume_ratio: 1.2, total_mv: 10_000_000_000,
+    float_mv: 8_000_000_000, total_share: 1_000_000_000,
+    float_share: 800_000_000, pe_ttm: null,
+  }
+}
+
 function indicator(date: string, ma20 = 12.34): IndicatorRow {
   return {
     trade_date: date,
@@ -357,6 +376,29 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
       },
       AppSplitWorkspace: AppSplitWorkspaceStub,
       StockChartWorkspace: StockChartWorkspaceStub,
+      MarketDetailHero: {
+        props: ['eyebrow', 'title', 'code', 'subtitle', 'asideAlign'],
+        template: '<section :data-aside-align="asideAlign"><span>{{ title }}</span><span>{{ code }}</span><slot name="badges"/><slot name="summary"/><slot name="meta"/><slot name="footer"/></section>',
+      },
+      MarketBoardTag: {
+        name: 'MarketBoardTag',
+        props: {
+          name: String,
+          pctChg: Number,
+          related: Boolean,
+          to: Object,
+        },
+        template: '<span>{{ name }}</span>',
+      },
+      StockQuoteSummary: {
+        props: ['summary'],
+        template: '<div data-testid="stock-latest-quote">{{ summary.hero.value }}:{{ summary.hero.tone }} {{ summary.hero.details?.map((item) => item.value).join(" ") }} {{ summary.metrics.map((item) => `${item.label}:${item.value}:${item.tone || "neutral"}`).join(" ") }}</div>',
+      },
+      StockBoardMembershipPanel: {
+        name: 'StockBoardMembershipPanel',
+        props: ['showIndustries'],
+        template: '<section data-testid="stock-board-membership-panel" :data-show-industries="String(showIndustries)" />',
+      },
       StockIntradayDialog: {
         name: 'StockIntradayDialog',
         props: ['modelValue', 'code', 'name', 'tradeDate', 'requestKey'],
@@ -470,6 +512,16 @@ function setDefaultApiResponses() {
     code: '600000.SH',
     indicators: [indicator('2026-07-22'), indicator('2026-07-23')],
   })
+  vi.mocked(stocksApi.getStockQuoteSummary).mockResolvedValue(quote(10.5))
+  vi.mocked(stocksApi.getStockBoardMembership).mockResolvedValue({
+    code: '600000.SH',
+    membership_scope: 'cumulative',
+    membership_updated_at: '2026-07-23T18:00:00',
+    trade_date: '2026-07-23',
+    industries: [],
+    concepts: [],
+    related_boards: null,
+  })
   vi.mocked(stocksApi.getTradeEval).mockResolvedValue({
     code: '600000.SH',
     date: '2026-07-23',
@@ -566,10 +618,11 @@ describe('StockDetailView 三图数据协调', () => {
       { adjust: 'qfq', lookback: 1250 },
       expect.any(AbortSignal),
     )
-    expect(stocksApi.getBars).toHaveBeenCalledWith(
-      '600000.SH',
-      { adjust: '', lookback: 1 },
-      expect.any(AbortSignal),
+    expect(stocksApi.getStockQuoteSummary).toHaveBeenCalledWith(
+      '600000.SH', expect.any(AbortSignal),
+    )
+    expect(stocksApi.getStockBoardMembership).toHaveBeenCalledWith(
+      '600000.SH', '2026-07-23', expect.any(AbortSignal),
     )
     expect(stocksApi.getIndicators).toHaveBeenCalledWith(
       '600000.SH',
@@ -594,6 +647,9 @@ describe('StockDetailView 三图数据协调', () => {
     expect(workspace.props('minHeight')).toBeUndefined()
     expect(workspace.props('fitAvailableHeight')).toBe('')
     expect(workspace.props('enableIntradayDrilldown')).toBe('')
+    expect(workspace.props('showKlineTooltip')).toBe(false)
+    expect(wrapper.get('[data-testid="stock-board-membership-panel"]')
+      .attributes('data-show-industries')).toBe('false')
     expect(wrapper.get('[data-testid="stock-detail-primary"]').findComponent(StockChartWorkspaceStub).exists())
       .toBe(true)
     expect(wrapper.get('[data-testid="stock-detail-secondary"]').find('[data-testid="stock-indicator-snapshot-card"]').exists())
@@ -619,19 +675,64 @@ describe('StockDetailView 三图数据协调', () => {
     expect(dialog.attributes('data-date')).toBe('2026-08-07')
   })
 
+  it('行情摘要左对齐，展示最相关行业并随 K 线光标切换行情和涨跌颜色', async () => {
+    vi.mocked(stocksApi.getStockBoardMembership).mockResolvedValueOnce({
+      code: '600000.SH',
+      membership_scope: 'cumulative',
+      membership_updated_at: '2026-07-23T18:00:00',
+      trade_date: '2026-07-23',
+      industries: [
+        { board_code: '881001', name: '银行', board_type: 'industry', pct_chg: 2 },
+      ],
+      concepts: [],
+      related_boards: {
+        as_of_date: '2026-07-23',
+        benchmark: { code: '000001.SH', name: '上证指数', fallback: false },
+        industry: {
+          board_code: '881001', name: '银行', score: 0.8, corr_20: 0.8, corr_60: 0.8,
+          sample_20: 20, sample_60: 60, confidence: 'high',
+        },
+        concept: null,
+      },
+    })
+    const wrapper = await mountView()
+    const hero = wrapper.find('[data-aside-align="start"]')
+
+    expect(hero.exists()).toBe(true)
+    expect(wrapper.get('[data-testid="stock-latest-quote"]').text()).toContain('10.50')
+    expect(wrapper.get('[data-testid="stock-latest-quote"]').text()).not.toContain('所属行业')
+    expect(wrapper.getComponent({ name: 'MarketBoardTag' }).props()).toMatchObject({
+      name: '银行',
+      pctChg: 2,
+      related: true,
+    })
+
+    await wrapper.get('[data-testid="activate-kline-bar"]').trigger('click')
+    await nextTick()
+
+    const summary = wrapper.get('[data-testid="stock-latest-quote"]').text()
+    expect(summary).toContain('9.50:up')
+    expect(summary).toContain('开盘:9.40:neutral')
+    expect(wrapper.text()).not.toContain('行情 2026-07-22')
+  })
+
   it('手动刷新保留当前股票和方案并同步行情、指标、报价与买卖评估', async () => {
     const wrapper = await mountView()
     await emitTradeReady(wrapper)
     vi.mocked(stocksApi.getBars).mockClear()
     vi.mocked(stocksApi.getIndicators).mockClear()
+    vi.mocked(stocksApi.getStockQuoteSummary).mockClear()
+    vi.mocked(stocksApi.getStockBoardMembership).mockClear()
     vi.mocked(stocksApi.getTradeEval).mockClear()
 
     const refresh = wrapper.get('[data-testid="stock-detail-refresh"]')
     await refresh.trigger('click')
     await flushPromises()
 
-    expect(stocksApi.getBars).toHaveBeenCalledTimes(2)
+    expect(stocksApi.getBars).toHaveBeenCalledTimes(1)
     expect(stocksApi.getIndicators).toHaveBeenCalledTimes(1)
+    expect(stocksApi.getStockQuoteSummary).toHaveBeenCalledTimes(1)
+    expect(stocksApi.getStockBoardMembership).toHaveBeenCalledTimes(1)
     expect(stocksApi.getTradeEval).toHaveBeenCalledWith(
       '600000.SH', 'avr_trade_1', undefined, expect.any(AbortSignal),
     )
@@ -716,6 +817,7 @@ describe('StockDetailView 三图数据协调', () => {
     const initialBars = vi.mocked(stocksApi.getBars).mock.calls.length
     const initialIndicators = vi.mocked(stocksApi.getIndicators).mock.calls.length
     const initialTrade = vi.mocked(stocksApi.getTradeEval).mock.calls.length
+    const initialQuote = vi.mocked(stocksApi.getStockQuoteSummary).mock.calls.length
 
     pageSettingsState.current.adjustMode = 'hfq'
     await nextTick()
@@ -736,10 +838,7 @@ describe('StockDetailView 三图数据协调', () => {
       expect.any(AbortSignal),
     )
     expect(stocksApi.getTradeEval).toHaveBeenCalledTimes(initialTrade)
-    const quoteCalls = vi.mocked(stocksApi.getBars).mock.calls.filter(
-      ([, params]) => params?.lookback === 1,
-    )
-    expect(quoteCalls).toHaveLength(1)
+    expect(stocksApi.getStockQuoteSummary).toHaveBeenCalledTimes(initialQuote)
 
     const barsAfterRange = vi.mocked(stocksApi.getBars).mock.calls.length
     const indicatorsAfterRange = vi.mocked(stocksApi.getIndicators).mock.calls.length
@@ -855,6 +954,7 @@ describe('StockDetailView 三图数据协调', () => {
     expect(split.props('secondaryVisible')).toBe(true)
     await wrapper.get('[data-testid="stock-detail-toggle-indicator-snapshot"]').trigger('click')
     await wrapper.get('[data-testid="stock-detail-toggle-trade-card"]').trigger('click')
+    await wrapper.get('[data-testid="stock-detail-toggle-related-boards"]').trigger('click')
     await nextTick()
 
     expect(split.props('secondaryVisible')).toBe(false)
@@ -1104,7 +1204,7 @@ describe('StockDetailView 三图数据协调', () => {
     let state = wrapper.findComponent(AppStateBlockStub)
     expect(state.props('variant')).toBe('permission')
     expect(wrapper.findComponent(StockChartWorkspaceStub).exists()).toBe(false)
-    expect(wrapper.get('[data-testid="stock-latest-quote"]').text()).toContain('--')
+    expect(wrapper.find('[data-testid="stock-latest-quote"]').exists()).toBe(false)
 
     const pending = deferred<Awaited<ReturnType<typeof stocksApi.getBars>>>()
     vi.mocked(stocksApi.getBars).mockImplementationOnce(() => pending.promise)
@@ -1125,29 +1225,21 @@ describe('StockDetailView 三图数据协调', () => {
   })
 
   it('报价失败只清空报价，不影响行情、指标和工作区', async () => {
-    vi.mocked(stocksApi.getBars).mockImplementation(async (_code, params) => {
-      if (params?.lookback === 1) throw new Error('报价服务超时')
-      return {
-        code: '600000.SH',
-        name: '浦发银行',
-        adjust: params?.adjust || '',
-        bars: [bar('2026-07-23', 10.5)],
-      }
-    })
+    vi.mocked(stocksApi.getStockQuoteSummary).mockRejectedValueOnce(new Error('报价服务超时'))
 
     const wrapper = await mountView()
 
     expect(wrapper.findComponent(StockChartWorkspaceStub).exists()).toBe(true)
-    expect(wrapper.get('[data-testid="stock-latest-quote"]').text()).toContain('--')
+    expect(wrapper.find('[data-testid="stock-latest-quote"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('12.34')
     expect(wrapper.findComponent(AppStateBlockStub).exists()).toBe(false)
   })
 
-  it('KeepAlive 停用会取消四个在途通道，激活后恢复且旧报价不会覆盖新结果', async () => {
+  it('KeepAlive 停用会取消五个在途通道，激活后恢复且旧报价不会覆盖新结果', async () => {
     const oldBars = deferred<Awaited<ReturnType<typeof stocksApi.getBars>>>()
     const newBars = deferred<Awaited<ReturnType<typeof stocksApi.getBars>>>()
-    const oldQuote = deferred<Awaited<ReturnType<typeof stocksApi.getBars>>>()
-    const newQuote = deferred<Awaited<ReturnType<typeof stocksApi.getBars>>>()
+    const oldQuote = deferred<Awaited<ReturnType<typeof stocksApi.getStockQuoteSummary>>>()
+    const newQuote = deferred<Awaited<ReturnType<typeof stocksApi.getStockQuoteSummary>>>()
     const oldIndicators = deferred<Awaited<ReturnType<typeof stocksApi.getIndicators>>>()
     const newIndicators = deferred<Awaited<ReturnType<typeof stocksApi.getIndicators>>>()
     const oldTrade = deferred<Awaited<ReturnType<typeof stocksApi.getTradeEval>>>()
@@ -1157,13 +1249,13 @@ describe('StockDetailView 三图数据协调', () => {
     let indicatorCalls = 0
     let tradeCalls = 0
 
-    vi.mocked(stocksApi.getBars).mockImplementation((_code, params) => {
-      if (params?.lookback === 1) {
-        quoteCalls += 1
-        return quoteCalls === 1 ? oldQuote.promise : newQuote.promise
-      }
+    vi.mocked(stocksApi.getBars).mockImplementation(() => {
       barsCalls += 1
       return barsCalls === 1 ? oldBars.promise : newBars.promise
+    })
+    vi.mocked(stocksApi.getStockQuoteSummary).mockImplementation(() => {
+      quoteCalls += 1
+      return quoteCalls === 1 ? oldQuote.promise : newQuote.promise
     })
     vi.mocked(stocksApi.getIndicators).mockImplementation(() => {
       indicatorCalls += 1
@@ -1184,12 +1276,8 @@ describe('StockDetailView 三图数据协调', () => {
     expect(indicatorCalls).toBe(1)
     expect(tradeCalls).toBe(1)
 
-    const firstBarsSignal = vi.mocked(stocksApi.getBars).mock.calls.find(
-      ([, params]) => params?.lookback !== 1,
-    )?.[2]
-    const firstQuoteSignal = vi.mocked(stocksApi.getBars).mock.calls.find(
-      ([, params]) => params?.lookback === 1,
-    )?.[2]
+    const firstBarsSignal = vi.mocked(stocksApi.getBars).mock.calls[0][2]
+    const firstQuoteSignal = vi.mocked(stocksApi.getStockQuoteSummary).mock.calls[0][1]
     const firstIndicatorSignal = vi.mocked(stocksApi.getIndicators).mock.calls[0][2]
     const firstTradeSignal = vi.mocked(stocksApi.getTradeEval).mock.calls[0][3]
 
@@ -1214,12 +1302,7 @@ describe('StockDetailView 三图数据协调', () => {
       adjust: 'qfq',
       bars: [bar('2026-07-23', 20)],
     })
-    newQuote.resolve({
-      code: '600000.SH',
-      name: '浦发银行',
-      adjust: '',
-      bars: [bar('2026-07-23', 21)],
-    })
+    newQuote.resolve(quote(21))
     newIndicators.resolve({
       code: '600000.SH',
       indicators: [indicator('2026-07-23', 20.2)],
@@ -1248,12 +1331,7 @@ describe('StockDetailView 三图数据协调', () => {
       adjust: 'qfq',
       bars: [bar('2026-07-22', 5)],
     })
-    oldQuote.resolve({
-      code: '600000.SH',
-      name: '旧报价',
-      adjust: '',
-      bars: [bar('2026-07-22', 5)],
-    })
+    oldQuote.resolve(quote(5, '旧报价'))
     oldIndicators.resolve({
       code: '600000.SH',
       indicators: [indicator('2026-07-22', 5.2)],

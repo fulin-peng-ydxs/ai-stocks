@@ -105,6 +105,7 @@ const props = withDefaults(defineProps<{
   fitAvailableHeight?: boolean
   ariaLabel?: string
   enableIntradayDrilldown?: boolean
+  showKlineTooltip?: boolean
 }>(), {
   warmupBars: () => [],
   indicators: () => [],
@@ -120,6 +121,7 @@ const props = withDefaults(defineProps<{
   fitAvailableHeight: false,
   ariaLabel: '行情多图联动工作区',
   enableIntradayDrilldown: false,
+  showKlineTooltip: true,
 })
 
 const emit = defineEmits<{
@@ -127,6 +129,7 @@ const emit = defineEmits<{
   ratioCommit: [ratios: number[]]
   retryMacd: []
   barClick: [tradeDate: string]
+  activeBarChange: [bar: Bar | null]
 }>()
 
 defineSlots<{
@@ -257,6 +260,7 @@ function chartOption(panel: PanelDescriptor, isBottom: boolean) {
     buyMarkerColor: statusPalette.value.primary,
     sellMarkerColor: statusPalette.value.warning,
     clickableCandles: props.enableIntradayDrilldown,
+    showKlineTooltip: props.showKlineTooltip,
     candlestickRect,
   }
   if (panel.type === 'kline') return buildKlineOption(context)
@@ -276,7 +280,15 @@ function onAxisPointer(event: {
   seriesDataIndices?: Array<{ dataIndex?: number }>
 }): void {
   const index = stockChartAxisPointerIndex(event, rows.value.map((row) => row.bar.date))
-  if (index != null) activeIndex.value = index
+  if (index == null || index === activeIndex.value) return
+  activeIndex.value = index
+  emit('activeBarChange', rows.value[index]?.bar ?? null)
+}
+
+function clearActiveBar(): void {
+  if (activeIndex.value == null) return
+  activeIndex.value = null
+  emit('activeBarChange', null)
 }
 
 function normalizeZoomRange(start: number, end: number): ZoomRange {
@@ -344,7 +356,7 @@ function syncCharts(): void {
       chart.on('datazoom', (event: unknown) => {
         onDataZoom(panel.key, event as DataZoomEvent)
       })
-      chart.on('globalout', () => { activeIndex.value = null })
+      chart.on('globalout', clearActiveBar)
       if (panel.type === 'kline') chart.on('click', onChartClick)
       charts.set(panel.key, chart)
     }
@@ -574,7 +586,7 @@ watch(
   [panels, rows, () => props.warmupBars, () => props.macdState, () => props.markers, theme,
   ],
   async () => {
-    activeIndex.value = null
+    clearActiveBar()
     if (!drag) liveRatios.value = []
     await nextTick()
     syncCharts()

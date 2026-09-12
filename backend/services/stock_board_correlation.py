@@ -755,6 +755,45 @@ class StockBoardCorrelationService:
         normalized = normalize_stock_code(code)
         return self.get_memberships([normalized])[normalized]
 
+    def get_membership_with_market(
+        self,
+        code: object,
+        business_date: date | None,
+    ) -> dict[str, object]:
+        """返回累计归属，并批量附加指定业务日的板块涨跌幅。"""
+        membership: dict[str, object] = dict(self.get_membership(code))
+        membership["trade_date"] = str(business_date) if business_date else None
+        groups = [
+            *membership.get("industries", []),
+            *membership.get("concepts", []),
+        ]
+        board_codes = sorted({str(item["board_code"]) for item in groups})
+        pct_by_code: dict[str, float | None] = {}
+        if business_date is not None and board_codes:
+            placeholders = ",".join("?" for _ in board_codes)
+            rows = self.c.query_df(
+                "SELECT current.board_code, current.close, "
+                "       (SELECT previous.close FROM board_bar previous "
+                "        WHERE previous.board_code=current.board_code "
+                "          AND previous.trade_date<current.trade_date "
+                "        ORDER BY previous.trade_date DESC LIMIT 1) AS pre_close "
+                "FROM board_bar current "
+                f"WHERE current.trade_date=? AND current.board_code IN ({placeholders})",
+                [business_date, *board_codes],
+            )
+            for row in rows.to_dict("records"):
+                close = row.get("close")
+                pre_close = row.get("pre_close")
+                pct_by_code[str(row["board_code"])] = (
+                    round((float(close) / float(pre_close) - 1) * 100, 2)
+                    if close is not None and pre_close is not None
+                    and not pd.isna(close) and not pd.isna(pre_close) and float(pre_close) > 0
+                    else None
+                )
+        for item in groups:
+            item["pct_chg"] = pct_by_code.get(str(item["board_code"]))
+        return membership
+
     def get_memberships(
         self,
         codes: Iterable[object],

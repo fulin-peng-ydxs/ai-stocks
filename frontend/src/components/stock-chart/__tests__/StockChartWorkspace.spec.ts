@@ -243,6 +243,21 @@ describe('StockChartWorkspace', () => {
     expect(latestOptions[2].dataZoom).toHaveLength(2)
   })
 
+  it('向消费页报告当前光标 K 线，离开图表后恢复最新行情', async () => {
+    const source = bars()
+    const wrapper = await mountWorkspace()
+    const kline = echartsMock.instances[0]
+
+    kline.emit('updateAxisPointer', { seriesDataIndices: [{ dataIndex: 6 }] })
+    await nextTick()
+    expect(wrapper.emitted('activeBarChange')?.at(-1)?.[0]).toEqual(source[6])
+
+    kline.emit('globalout', {})
+    await nextTick()
+    expect(wrapper.emitted('activeBarChange')?.at(-1)?.[0]).toBeNull()
+    wrapper.unmount()
+  })
+
   it('所有消费页面都按底部画布真实高度统一收展可视滑动条', async () => {
     mockClientHeight = 60
     const wrapper = await mountWorkspace({ fitAvailableHeight: true })

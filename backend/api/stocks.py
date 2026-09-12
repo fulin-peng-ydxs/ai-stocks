@@ -17,6 +17,7 @@ from backend.indicators.engine import _IND_COLS
 from backend.services.intraday_quotes import IntradayQuoteService, IntradayServiceUnavailable
 from backend.services.market_benchmark import MarketBenchmarkService
 from backend.services.stock_board_correlation import StockBoardCorrelationService
+from backend.services.stock_quote_summary import StockQuoteSummaryService
 from backend.storage import get_read_client as get_client
 from backend.storage.repository import MarketRepository
 
@@ -229,13 +230,26 @@ def stock_related_boards(code: str, business_date: date | None = None) -> ApiRes
             if latest is not None and not pd.isna(latest):
                 business_date = pd.Timestamp(latest).date()
         service = StockBoardCorrelationService(client)
-        membership = service.get_membership(code)
+        membership = service.get_membership_with_market(code, business_date)
         membership["related_boards"] = service.get_related_boards(
             [code], business_date, schedule_missing=requested_business_date
         )[membership["code"]]
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ok(membership)
+
+
+@router.get(
+    "/stocks/{code}/quote-summary",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_perm("stocks:view"))],
+)
+def stock_quote_summary(code: str) -> ApiResponse:
+    """返回个股详情头部所需的最新收盘行情、市值与股本。"""
+    try:
+        return ok(StockQuoteSummaryService(get_client()).get(code))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/stocks/{code}/bars", response_model=ApiResponse,
