@@ -2,6 +2,7 @@
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
+import AppPagination from '@/components/AppPagination.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import StockCodeMultiSelect from '@/components/data/StockCodeMultiSelect.vue'
@@ -983,10 +984,14 @@ onMounted(load)
                   </AppTableColumn>
                 </AppDataTable>
                 <div class="pager">
-                  <el-pagination layout="total, sizes, prev, pager, next" :total="sq?.total ?? 0"
-                                 :current-page="sqPage" :page-size="sqSize" :page-sizes="PAGE_SIZE_OPTIONS" background
-                                 @current-change="(p: number) => { sqPage = p; loadSq() }"
-                                 @size-change="changeSqSize" />
+                  <AppPagination
+                    :total="sq?.total ?? 0"
+                    :current-page="sqPage"
+                    :page-size="sqSize"
+                    :page-sizes="PAGE_SIZE_OPTIONS"
+                    @current-change="(p: number) => { sqPage = p; loadSq() }"
+                    @size-change="changeSqSize"
+                  />
                 </div>
               </template>
             </div>

@@ -10,7 +10,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { PAGE_DRAWER_WIDTHS } from '@/components/pageDrawerSize'
 
-const VIEWS_DIR = resolve(process.cwd(), 'src/views')
+const SOURCE_DIR = resolve(process.cwd(), 'src')
+const VIEWS_DIR = resolve(SOURCE_DIR, 'views')
 const APP_SOURCE = readFileSync(resolve(process.cwd(), 'src/App.vue'), 'utf8')
 const GLOBAL_CSS = readFileSync(resolve(process.cwd(), 'src/styles/global.css'), 'utf8')
 const ADAPTIVE_GROW_SOURCE = readFileSync(
@@ -34,6 +35,7 @@ const HANDWRITTEN_LAYOUT = /class="[^"]*\bv-(?:page|grow|scroll)\b/
 const SCAFFOLD_PLACEHOLDER = /\bdata-scaffold-placeholder\b/
 const PRIVATE_DEFAULT_FILTER_SECTION = /<PageSettingSection\b[^>]*\btitle=["']默认筛选["']/
 const VIEWPORT_DRAWER = /<(?:el-drawer|ElDrawer)\b/
+const DIRECT_PAGINATION = /<(?:el-pagination|ElPagination)\b/
 const PAGE_DRAWER = /<PageDrawer\b[\s\S]*?>/g
 const DRAWER_SIZE_KEYS = Object.keys(PAGE_DRAWER_WIDTHS)
 const CONTROLLED_DRAWER_SIZE = new RegExp(`\\bsize\\s*=\\s*["'](?:${DRAWER_SIZE_KEYS.join('|')})["']`)
@@ -121,6 +123,17 @@ describe('布局契约守卫（M6）', () => {
     expect(
       offenders,
       `以下页面直接使用了 <el-drawer>，应改用页面边界组件 <PageDrawer>：\n${offenders.join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('分页必须统一使用 AppPagination，不得复制底层分页器和响应式逻辑', () => {
+    const offenders = vueFiles(SOURCE_DIR)
+      .filter((file) => !file.endsWith('/components/AppPagination.vue'))
+      .filter((file) => DIRECT_PAGINATION.test(readFileSync(file, 'utf8')))
+      .map((file) => relative(SOURCE_DIR, file).split('\\').join('/'))
+    expect(
+      offenders,
+      `以下组件直接使用了 <el-pagination>，应统一改用 <AppPagination>：\n${offenders.join('\n')}`,
     ).toEqual([])
   })
 

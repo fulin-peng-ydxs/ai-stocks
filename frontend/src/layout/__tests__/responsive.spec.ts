@@ -82,7 +82,14 @@ describe('自适应策略摘要（P8）', () => {
       'utf8',
     )
     expect(analysisPanel).toContain('container-type: inline-size')
-    expect(analysisPanel).toContain('@container (max-width: 700px)')
+    expect(analysisPanel).toContain("import MarketAnalysisHeader from '@/components/MarketAnalysisHeader.vue'")
+
+    const analysisHeader = readFileSync(
+      new URL('../../components/MarketAnalysisHeader.vue', import.meta.url),
+      'utf8',
+    )
+    expect(analysisHeader).toContain('container-type: inline-size')
+    expect(analysisHeader).toContain('@container (max-width: 820px)')
   })
 
   it('嵌套/overlay slot 不进响应式摘要（只看顶层主区）', () => {
