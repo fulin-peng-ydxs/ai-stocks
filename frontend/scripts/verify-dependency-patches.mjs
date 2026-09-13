@@ -13,7 +13,8 @@ for (const file of readdirSync(join(root, 'patches'))) {
   const expected = match[3]
   const installed = JSON.parse(readFileSync(join(root, 'node_modules', name, 'package.json'), 'utf8'))
   const declared = manifest.dependencies?.[name] ?? manifest.devDependencies?.[name]
-  if (installed.version !== expected || declared !== expected) {
+  const declaredVersion = declared?.match(/^npm:.+@([^@]+)$/)?.[1] ?? declared
+  if (installed.version !== expected || declaredVersion !== expected) {
     throw new Error(`${name} 补丁版本 ${expected} 与声明 ${declared} / 安装 ${installed.version} 不一致`)
   }
 }

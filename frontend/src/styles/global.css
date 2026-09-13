@@ -33,14 +33,7 @@ body {
   transform-origin: top left;
 }
 
-/*
- * Element Plus 的坐标型浮层默认挂到 body。Popper 的位置由触发器视口坐标计算，
- * 因此自身不得再次 scale；否则触发器位于已缩放抽屉或 #app 时会混用两个坐标系。
- * Dialog、Drawer 等非锚点浮层不依赖触发器坐标，可以继续同步应用比例。
- */
-body > [id^='el-popper-container-'] > .el-popper {
-  scale: 1;
-}
+/* Element Plus 的共享 Popper 容器由应用入口移入 #app，与触发器共用缩放坐标系。 */
 
 /* 独立遮罩与应用根使用相同的布局画布，整屏抽屉和弹窗上限才能随比例补偿。 */
 body > .el-overlay {
@@ -73,12 +66,12 @@ body > .el-notification {
 }
 
 /*
- * HelpHint 可能承载长文。其 Popper 挂在 body 并保持视口坐标，最大宽度直接按
- * 当前视口约束，避免长文案撑成横跨页面的单行气泡。
+ * HelpHint 可能承载长文。其 Popper 位于应用缩放容器内，最大宽度按应用容器
+ * 的布局视口约束，避免比例放大后超出实际屏幕。
  */
-body > [id^='el-popper-container-'] > .help-hint-popper {
+[id^='el-popper-container-'] > .help-hint-popper {
   width: max-content;
-  max-width: min(360px, calc(100vw - 24px));
+  max-width: min(360px, calc(100cqw - 24px));
   white-space: normal;
 }
 

@@ -107,6 +107,6 @@ function clear() {
 .ip-empty { grid-column: 1 / -1; min-height: 72px; }
 
 :global(.icon-picker-pop) {
-  max-width: calc(100vw - 32px);
+  max-width: calc(100cqw - 32px);
 }
 </style>

@@ -57,10 +57,20 @@ describe('字体与间距设计契约', () => {
     expect(globalCss).toContain('width: calc(100% * var(--app-display-scale-inverse')
     expect(globalCss).toContain('transform: scale(var(--app-display-scale')
     expect(globalCss).not.toContain('zoom: var(--app-display-scale')
-    expect(globalCss).toContain("body > [id^='el-popper-container-'] > .el-popper")
-    expect(globalCss).toMatch(
-      /body > \[id\^='el-popper-container-'\] > \.el-popper\s*\{\s*scale:\s*1;/,
+    expect(globalCss).not.toContain("body > [id^='el-popper-container-'] > .el-popper")
+    expect(globalCss).not.toMatch(/\.el-popper\s*\{\s*scale:\s*1;/)
+    expect(read(join(SRC_DIR, 'utils/elementPlusPopperContainer.ts'))).toContain(
+      'appRoot.append(container)',
     )
+    expect(globalCss).toContain('max-width: min(360px, calc(100cqw - 24px))')
+    expect(read(join(SRC_DIR, 'components/IconPicker.vue'))).toContain(
+      'max-width: calc(100cqw - 32px)',
+    )
+    const packageJson = JSON.parse(read(join(FRONTEND_DIR, 'package.json')))
+    expect(packageJson.dependencies['@popperjs/core']).toBe('npm:@sxzz/popperjs-es@2.11.8')
+    const popperPatch = read(join(FRONTEND_DIR, 'patches/@popperjs+core+2.11.8.patch'))
+    expect(popperPatch).toContain('function Qn(e,t)')
+    expect(popperPatch).toContain('o=e.offsetWidth>0&&r.width/e.offsetWidth||1')
     expect(globalCss).toContain('container: app-viewport / size')
     expect(globalCss).toContain('--el-dialog-margin-top: 15cqh')
     expect(globalCss).toContain('max-width: calc(100% - 32px)')

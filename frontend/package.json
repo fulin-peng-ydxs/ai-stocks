@@ -20,6 +20,7 @@
     "postinstall": "node scripts/verify-dependency-patches.mjs && patch-package --error-on-fail"
   },
   "dependencies": {
+    "@popperjs/core": "npm:@sxzz/popperjs-es@2.11.8",
     "axios": "^1.7.2",
     "echarts": "^5.5.0",
     "element-plus": "2.14.1",
