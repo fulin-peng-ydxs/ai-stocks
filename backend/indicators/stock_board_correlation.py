@@ -32,6 +32,7 @@ REQUIRED_BENCHMARKS = frozenset(
 )
 
 BoardType = Literal["industry", "concept"]
+EmptyReasonCode = Literal["no_candidates", "insufficient_samples", "invalid_correlation"]
 PriceSeries = Mapping[date, float | int | None]
 ReturnSeries = Mapping[date, float]
 
@@ -63,6 +64,13 @@ class CorrelationWinner:
 
 
 @dataclass(frozen=True)
+class CorrelationEmptyReason:
+    code: EmptyReasonCode
+    max_sample_20: int | None = None
+    max_sample_60: int | None = None
+
+
+@dataclass(frozen=True)
 class StockCorrelationResult:
     code: str
     as_of_date: date
@@ -71,6 +79,8 @@ class StockCorrelationResult:
     benchmark_fallback: bool
     industry: CorrelationWinner | None
     concept: CorrelationWinner | None
+    industry_empty_reason: CorrelationEmptyReason | None = None
+    concept_empty_reason: CorrelationEmptyReason | None = None
 
 
 def _as_date(value: object) -> date:
@@ -222,6 +232,18 @@ def _window_correlation(
     return correlation, len(common_dates)
 
 
+def _common_sample_count(
+    stock_returns: Mapping[date, float],
+    board_returns: Mapping[date, float],
+    benchmark_returns: Mapping[date, float],
+    window_dates: Sequence[date],
+) -> int:
+    return sum(
+        day in stock_returns and day in board_returns and day in benchmark_returns
+        for day in window_dates
+    )
+
+
 def _candidate_result(
     candidate: CandidateRef,
     stock_returns: Mapping[date, float],
@@ -323,6 +345,8 @@ def calculate_stock_correlations(
 
     stock_returns = build_market_returns(stock_closes, calendar)
     by_type: dict[BoardType, list[CorrelationWinner]] = {"industry": [], "concept": []}
+    samples_by_type: dict[BoardType, list[tuple[int, int]]] = {"industry": [], "concept": []}
+    eligible_but_invalid: dict[BoardType, bool] = {"industry": False, "concept": False}
     seen: set[tuple[BoardType, str]] = set()
     for candidate in candidates:
         key = (candidate.board_type, candidate.board_code)
@@ -331,7 +355,21 @@ def calculate_stock_correlations(
         seen.add(key)
         candidate_returns = prepared_board_returns.get(candidate.board_code)
         if candidate_returns is None:
+            samples_by_type[candidate.board_type].append((0, 0))
             continue
+        sample_20 = _common_sample_count(
+            stock_returns,
+            candidate_returns,
+            mapped_returns,
+            interval_dates[-SHORT_WINDOW:],
+        )
+        sample_60 = _common_sample_count(
+            stock_returns,
+            candidate_returns,
+            mapped_returns,
+            interval_dates,
+        )
+        samples_by_type[candidate.board_type].append((sample_20, sample_60))
         result = _candidate_result(
             candidate,
             stock_returns,
@@ -341,6 +379,28 @@ def calculate_stock_correlations(
         )
         if result is not None:
             by_type[candidate.board_type].append(result)
+        elif sample_20 >= MIN_SHORT_SAMPLES and sample_60 >= MIN_LONG_SAMPLES:
+            eligible_but_invalid[candidate.board_type] = True
+
+    winners = {
+        board_type: pick_correlation_winner(by_type[board_type])
+        for board_type in ("industry", "concept")
+    }
+
+    def empty_reason(board_type: BoardType) -> CorrelationEmptyReason | None:
+        if winners[board_type] is not None:
+            return None
+        samples = samples_by_type[board_type]
+        if not samples:
+            return CorrelationEmptyReason("no_candidates")
+        max_sample_20 = max(item[0] for item in samples)
+        max_sample_60 = max(item[1] for item in samples)
+        code: EmptyReasonCode = (
+            "invalid_correlation"
+            if eligible_but_invalid[board_type]
+            else "insufficient_samples"
+        )
+        return CorrelationEmptyReason(code, max_sample_20, max_sample_60)
 
     return StockCorrelationResult(
         code=code,
@@ -348,6 +408,8 @@ def calculate_stock_correlations(
         algorithm_version=ALGORITHM_VERSION,
         benchmark_code=mapped_benchmark,
         benchmark_fallback=fallback,
-        industry=pick_correlation_winner(by_type["industry"]),
-        concept=pick_correlation_winner(by_type["concept"]),
+        industry=winners["industry"],
+        concept=winners["concept"],
+        industry_empty_reason=empty_reason("industry"),
+        concept_empty_reason=empty_reason("concept"),
     )

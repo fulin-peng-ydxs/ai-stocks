@@ -279,6 +279,12 @@ TABLE_CATALOG: dict[str, dict] = {
             {"name": "benchmark_fallback", "type": "BOOLEAN", "name_cn": "是否回退基准", "desc": "是否整股回退上证指数"},
             {"name": "has_industry_champion", "type": "BOOLEAN", "name_cn": "有行业冠军", "desc": "FALSE 可表示合法空结果"},
             {"name": "has_concept_champion", "type": "BOOLEAN", "name_cn": "有概念冠军", "desc": "FALSE 可表示合法空结果"},
+            {"name": "industry_empty_reason", "type": "VARCHAR", "name_cn": "行业空结果原因", "desc": "无行业冠军时的结构化原因码；历史未重算数据可为空"},
+            {"name": "industry_max_sample_20", "type": "INTEGER", "name_cn": "行业20日最高样本", "desc": "行业候选在20日窗口内共同有效样本数的最高值"},
+            {"name": "industry_max_sample_60", "type": "INTEGER", "name_cn": "行业60日最高样本", "desc": "行业候选在60日窗口内共同有效样本数的最高值"},
+            {"name": "concept_empty_reason", "type": "VARCHAR", "name_cn": "概念空结果原因", "desc": "无概念冠军时的结构化原因码；历史未重算数据可为空"},
+            {"name": "concept_max_sample_20", "type": "INTEGER", "name_cn": "概念20日最高样本", "desc": "概念候选在20日窗口内共同有效样本数的最高值"},
+            {"name": "concept_max_sample_60", "type": "INTEGER", "name_cn": "概念60日最高样本", "desc": "概念候选在60日窗口内共同有效样本数的最高值"},
         ],
     },
 }

@@ -23,7 +23,7 @@ R1-R10 已完成，最终算法版本为 `stock-board-correlation-v2`。
 - 板块及基准收益按唯一代码预计算，避免按约五万候选关系重复构造相同收益序列。
 - `stock_board_correlation` 已注册为 DuckDB 写互斥异步任务和可调度类型，支持全市场/指定股票、`force`、阶段取消、失败重试和五阶段可观测日志，不支持不完整结果续跑。
 - `/api/stocks`、分组明细、`/api/board/run` 和筛选结果各在最终代码集合形成后执行一次批量摘要读取；`/api/board/compute` 和回测历史决策链路未接入。
-- `RelatedBoardCell` 被股票普通表、分组表、榜单表和筛选表共同消费，统一空值、悬浮指标、低可信提示和权限感知跳转；列名统一为“行业走势”“概念走势”，冠军名称用小号朴素标签展示，非等待缺失统一显示“—”，浮层保留 20/60 日有效样本数但不额外展示定义提示。表格与连板天梯共同使用 `useAsyncResultPolling` 的绝对超时、串行请求、迟到响应和卸载清理。
+- `RelatedBoardCell` 被股票普通表、分组表、榜单表和筛选表共同消费，统一空值、悬浮指标、低可信提示和权限感知跳转；列名统一为“行业走势”“概念走势”，冠军名称用小号朴素标签展示，非等待缺失统一显示“—”。状态快照保存无候选、样本不足或相关度无效的结构化原因，`RelatedBoardEmptyValue` 被表格单元格与连板天梯共同消费，仅在原因存在时为“—”提供悬浮和键盘聚焦说明。表格与连板天梯共同使用 `useAsyncResultPolling` 的绝对超时、串行请求、迟到响应和卸载清理。
 - `StockCodeMultiSelect` 被个股采集、数据概览和相关性调度共同消费，统一远程搜索、批量粘贴、大小写规范化、去重、候选错误和竞态处理。
 - 结构体检、纯算法基准、1/50/200 只读取基准、PG + DuckDB 安全 E2E 夹具、三视口真实后端页面回归和完整设计门禁已落地。
 - T11 历次第三方复审修复了基准目标日、重复收益计算、旧版本标识、股票多选占位、runner 停止态、榜单/筛选接口伪造和验收状态失真问题。
@@ -36,6 +36,7 @@ R1-R10 已完成，最终算法版本为 `stock-board-correlation-v2`。
 - `backend/services/async_task.py`、`backend/scheduler/scheduler.py`：任务、互斥、调度和日志。
 - `backend/storage/ddl.py`、`backend/services/data_verify.py`：结构和持续体检。
 - `frontend/src/components/RelatedBoardCell.vue`：三页面统一展示单元。
+- `frontend/src/components/RelatedBoardEmptyValue.vue`：表格与天梯统一的可解释空值。
 - `frontend/src/components/data/StockCodeMultiSelect.vue`：三处业务表单共享股票选择。
 - `frontend/src/views/StocksView.vue`、`BoardView.vue`、`ScreenView.vue`、`data/ScheduleView.vue`：用户读取入口和管理员配置入口。
 - `backend/devtools/benchmark_stock_board_correlation*.py`、`backend/devtools/e2e_stock_board_correlation.py`：可复现性能与端到端夹具。

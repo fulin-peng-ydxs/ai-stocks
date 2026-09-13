@@ -241,6 +241,10 @@ def test_stock_or_candidate_shortage_does_not_trigger_benchmark_fallback_or_expa
         assert result.benchmark_code == "399001.SZ"
         assert result.benchmark_fallback is False
         assert result.industry is None
+        assert result.industry_empty_reason is not None
+        assert result.industry_empty_reason.code == "insufficient_samples"
+        assert result.industry_empty_reason.max_sample_20 == 14
+        assert result.industry_empty_reason.max_sample_60 == 54
 
 
 def test_constant_neutral_series_is_invalid_and_confidence_boundaries_are_fixed():
@@ -256,6 +260,8 @@ def test_constant_neutral_series_is_invalid_and_confidence_boundaries_are_fixed(
     )
 
     assert result.industry is None
+    assert result.industry_empty_reason is not None
+    assert result.industry_empty_reason.code == "invalid_correlation"
     nonfinite = calculate_stock_correlations(
         code="600000.SH",
         board="主板",
@@ -276,6 +282,10 @@ def test_constant_neutral_series_is_invalid_and_confidence_boundaries_are_fixed(
         benchmark_closes={"000001.SH": benchmark},
     )
     assert empty.industry is None and empty.concept is None
+    assert empty.industry_empty_reason is not None
+    assert empty.industry_empty_reason.code == "no_candidates"
+    assert empty.concept_empty_reason is not None
+    assert empty.concept_empty_reason.code == "no_candidates"
     assert winsorized_pearson([1.0] * 15, list(range(15))) is None
     assert classify_confidence(50, 0.70, 0.8, 0.7) == "high"
     assert classify_confidence(49, 0.70, 0.8, 0.7) == "medium"

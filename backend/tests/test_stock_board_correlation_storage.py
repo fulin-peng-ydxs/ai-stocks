@@ -39,6 +39,12 @@ def test_init_db_creates_correlation_tables_idempotently():
             "has_industry_champion",
             "has_concept_champion",
             "algorithm_version",
+            "industry_empty_reason",
+            "industry_max_sample_20",
+            "industry_max_sample_60",
+            "concept_empty_reason",
+            "concept_max_sample_20",
+            "concept_max_sample_60",
         } <= set(state_info["name"])
 
 
@@ -50,6 +56,28 @@ def test_read_only_init_skips_ddl_and_keeps_existing_tables(tmp_path):
     with DuckDBClient(db_path=db_path, read_only=True) as reader:
         assert init_db(reader) == []
         assert EXPECTED_TABLES <= set(list_tables(reader))
+
+
+@pytest.mark.parametrize(
+    ("column", "value"),
+    [
+        ("industry_empty_reason", "unknown"),
+        ("industry_max_sample_20", 21),
+        ("concept_max_sample_60", 61),
+    ],
+)
+def test_state_table_rejects_invalid_empty_reason_diagnostics(column, value):
+    with DuckDBClient(db_path=":memory:") as client:
+        init_db(client)
+        with pytest.raises(duckdb.ConstraintException):
+            client.conn.execute(
+                "INSERT INTO stock_board_correlation_state "
+                "(code,as_of_date,computed_at,algorithm_version,benchmark_code,"
+                "benchmark_fallback,has_industry_champion,has_concept_champion,"
+                f"{column}) VALUES ('600000.SH',DATE '2026-08-28',current_timestamp,"
+                "'v1','000001.SH',false,false,false,?)",
+                [value],
+            )
 
 
 def test_init_db_migrates_old_current_state_primary_keys_and_preserves_rows():
@@ -73,7 +101,9 @@ def test_init_db_migrates_old_current_state_primary_keys_and_preserves_rows():
             "'000001.SH',false,DATE '2026-08-28',TIMESTAMP '2026-08-29 16:00:00','v1')"
         )
         client.execute(
-            "INSERT INTO stock_board_correlation_state VALUES "
+            "INSERT INTO stock_board_correlation_state "
+            "(code,as_of_date,computed_at,algorithm_version,benchmark_code,"
+            "benchmark_fallback,has_industry_champion,has_concept_champion) VALUES "
             "('600000.SH',DATE '2026-08-28',TIMESTAMP '2026-08-29 16:00:00',"
             "'v1','000001.SH',false,true,false)"
         )
@@ -171,7 +201,9 @@ def test_correlation_tables_are_registered_in_catalog():
             "'000001.SH', false, DATE '2026-08-28', TIMESTAMP '2026-08-29 16:00:00', 'v1')"
         )
         client.execute(
-            "INSERT INTO stock_board_correlation_state VALUES "
+            "INSERT INTO stock_board_correlation_state "
+            "(code,as_of_date,computed_at,algorithm_version,benchmark_code,"
+            "benchmark_fallback,has_industry_champion,has_concept_champion) VALUES "
             "('600000.SH', DATE '2026-08-28', TIMESTAMP '2026-08-29 16:00:00', "
             "'v1', '000001.SH', false, true, false)"
         )

@@ -217,10 +217,11 @@ def test_range_replacement_keeps_other_stock_and_legal_empty_clears_old_winners(
         == 0
     )
     state = client.conn.execute(
-        "SELECT has_industry_champion,has_concept_champion "
+        "SELECT has_industry_champion,has_concept_champion,"
+        "industry_empty_reason,concept_empty_reason "
         "FROM stock_board_correlation_state WHERE code='600000.SH'"
     ).fetchone()
-    assert state == (False, False)
+    assert state == (False, False, "no_candidates", "no_candidates")
     assert (
         client.conn.execute(
             "SELECT * FROM stock_board_correlation WHERE code='000001.SZ'"
@@ -403,7 +404,10 @@ def test_full_scope_cleans_target_day_out_of_pool_rows_then_skips(market):
     service = StockBoardCorrelationService(client)
     service.compute_and_replace(force=True)
     client.execute(
-        "INSERT INTO stock_board_correlation_state VALUES ('600999.SH',?,?,?,?,?,?,?)",
+        "INSERT INTO stock_board_correlation_state "
+        "(code,as_of_date,computed_at,algorithm_version,benchmark_code,"
+        "benchmark_fallback,has_industry_champion,has_concept_champion) "
+        "VALUES ('600999.SH',?,?,?,?,?,?,?)",
         [dates[-1], _computed_at(10), ALGORITHM_VERSION, "000001.SH", False, False, False],
     )
 

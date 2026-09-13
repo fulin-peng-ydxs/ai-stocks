@@ -231,7 +231,9 @@ def test_board_run_reads_fresh_public_snapshot_only(
             "('T3B_BOARD','测试行业','industry')"
         )
         c.execute(
-            "INSERT INTO stock_board_correlation_state VALUES "
+            "INSERT INTO stock_board_correlation_state "
+            "(code,as_of_date,computed_at,algorithm_version,benchmark_code,"
+            "benchmark_fallback,has_industry_champion,has_concept_champion) VALUES "
             "('600099.SH',?,TIMESTAMP '2099-01-02 10:00:00','stock-board-correlation-v2',"
             "'000001.SH',false,true,false)",
             [_PUB_DATE],

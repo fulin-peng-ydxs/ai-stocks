@@ -87,7 +87,9 @@ def seed_read_fixture(client: DuckDBClient, stock_count: int = DEFAULT_STOCKS) -
         ],
     )
     client.conn.executemany(
-        "INSERT INTO stock_board_correlation_state VALUES "
+        "INSERT INTO stock_board_correlation_state "
+        "(code,as_of_date,computed_at,algorithm_version,benchmark_code,"
+        "benchmark_fallback,has_industry_champion,has_concept_champion) VALUES "
         "(?, ?, TIMESTAMP '2026-08-29 10:00:00', 'stock-board-correlation-v2', "
         "'000001.SH', false, true, true)",
         [(code, AS_OF_DATE) for code in codes],

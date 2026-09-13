@@ -37,6 +37,12 @@ CREATE TABLE IF NOT EXISTS stock_board_correlation_state (
     benchmark_fallback      BOOLEAN NOT NULL DEFAULT FALSE, -- 是否整股回退上证指数
     has_industry_champion   BOOLEAN NOT NULL DEFAULT FALSE, -- 是否存在行业冠军
     has_concept_champion    BOOLEAN NOT NULL DEFAULT FALSE, -- 是否存在概念冠军
+    industry_empty_reason   VARCHAR CHECK (industry_empty_reason IS NULL OR industry_empty_reason IN ('no_candidates', 'insufficient_samples', 'invalid_correlation')), -- 行业无冠军原因码
+    industry_max_sample_20  INTEGER CHECK (industry_max_sample_20 IS NULL OR industry_max_sample_20 BETWEEN 0 AND 20), -- 行业候选20日共同样本最高值
+    industry_max_sample_60  INTEGER CHECK (industry_max_sample_60 IS NULL OR industry_max_sample_60 BETWEEN 0 AND 60), -- 行业候选60日共同样本最高值
+    concept_empty_reason    VARCHAR CHECK (concept_empty_reason IS NULL OR concept_empty_reason IN ('no_candidates', 'insufficient_samples', 'invalid_correlation')), -- 概念无冠军原因码
+    concept_max_sample_20   INTEGER CHECK (concept_max_sample_20 IS NULL OR concept_max_sample_20 BETWEEN 0 AND 20), -- 概念候选20日共同样本最高值
+    concept_max_sample_60   INTEGER CHECK (concept_max_sample_60 IS NULL OR concept_max_sample_60 BETWEEN 0 AND 60), -- 概念候选60日共同样本最高值
     PRIMARY KEY (code, as_of_date)
 );
 

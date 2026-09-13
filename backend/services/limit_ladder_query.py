@@ -300,6 +300,12 @@ class LimitLadderQueryService:
                     "snapshot_concepts": concepts.get(code, []),
                     "latest_related_industry": related.get(code, {}).get("industry"),
                     "latest_related_concept": related.get(code, {}).get("concept"),
+                    "latest_related_industry_empty_reason": related.get(code, {}).get(
+                        "industry_empty_reason"
+                    ),
+                    "latest_related_concept_empty_reason": related.get(code, {}).get(
+                        "concept_empty_reason"
+                    ),
                 }
             )
         visible = self._filter(enriched, filters)
@@ -511,7 +517,7 @@ class LimitLadderQueryService:
             return {}, "ready"
         try:
             summaries = StockBoardCorrelationService(self.c).get_related_boards(codes, trade_date)
-            result: dict[str, dict[str, dict[str, str]]] = {}
+            result: dict[str, dict[str, Any]] = {}
             missing = False
             pending = False
             for code, summary in summaries.items():
@@ -527,6 +533,11 @@ class LimitLadderQueryService:
                 for board_type in ("industry", "concept"):
                     winner = summary.get(board_type)
                     if winner is None:
+                        empty_reason = summary.get(f"{board_type}_empty_reason")
+                        if empty_reason is not None:
+                            result.setdefault(code, {})[
+                                f"{board_type}_empty_reason"
+                            ] = empty_reason
                         continue
                     result.setdefault(code, {})[board_type] = {
                         "board_code": str(winner["board_code"]),

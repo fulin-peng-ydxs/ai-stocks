@@ -154,7 +154,9 @@ def test_group_page_attaches_related_boards_by_each_members_last_date(repo):
         "INSERT INTO board_dict (board_code,name,board_type) VALUES ('881001','银行','industry')"
     )
     repo.mkt.execute(
-        "INSERT INTO stock_board_correlation_state VALUES "
+        "INSERT INTO stock_board_correlation_state "
+        "(code,as_of_date,computed_at,algorithm_version,benchmark_code,"
+        "benchmark_fallback,has_industry_champion,has_concept_champion) VALUES "
         "('600000.SH',?,TIMESTAMP '2026-08-29 10:00:00','stock-board-correlation-v2',"
         "'000001.SH',false,true,false)",
         [as_of],

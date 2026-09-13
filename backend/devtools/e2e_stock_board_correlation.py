@@ -528,7 +528,9 @@ def seed_stock_board_correlation(
             ],
         )
         client.conn.executemany(
-            "INSERT INTO stock_board_correlation_state VALUES "
+            "INSERT INTO stock_board_correlation_state "
+            "(code,as_of_date,computed_at,algorithm_version,benchmark_code,"
+            "benchmark_fallback,has_industry_champion,has_concept_champion) VALUES "
             "(?,?,?,'stock-board-correlation-v2','000001.SH',false,true,true)",
             [(code, target_date, computed_at) for code in STOCK_CODES],
         )

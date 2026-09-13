@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import type { LimitLadderStock, LimitLadderWindow } from '@/api/limitLadder'
 import { formatMarketPercent, marketValueClass } from '@/utils/marketValue'
 import { sectorDetailLocation } from '@/utils/sectorNavigation'
+import RelatedBoardEmptyValue from '@/components/RelatedBoardEmptyValue.vue'
 
 const props = defineProps<{
   stock: LimitLadderStock
@@ -25,7 +26,7 @@ const shortHistory = computed(() => (
 const windowLimitUpDays = computed(() => props.stock.window_limit_up_days)
 const hasMultipleLimitUps = computed(() => (windowLimitUpDays.value ?? 0) > 1)
 const relatedIndustryName = computed(() => (
-  props.stock.latest_related_industry?.board_name || '未分类'
+  props.stock.latest_related_industry?.board_name || ''
 ))
 
 function selectCard(): void {
@@ -82,8 +83,13 @@ function selectCard(): void {
     <footer class="limit-ladder-card__foot">
       <span>{{ stock.board }}</span>
       <span aria-hidden="true">·</span>
-      <span class="limit-ladder-card__industry" :title="relatedIndustryName" data-testid="limit-ladder-related-industry">
-        {{ relatedIndustryName }}
+      <span class="limit-ladder-card__industry" :title="relatedIndustryName || undefined" data-testid="limit-ladder-related-industry">
+        <template v-if="relatedIndustryName">{{ relatedIndustryName }}</template>
+        <RelatedBoardEmptyValue
+          v-else
+          :reason="stock.latest_related_industry_empty_reason"
+          aria-label="暂无行业走势"
+        />
       </span>
       <span aria-hidden="true">·</span>
       <span v-if="stock.latest_related_concept" class="limit-ladder-card__concept">
@@ -97,7 +103,11 @@ function selectCard(): void {
         >{{ stock.latest_related_concept.board_name }} ↗</RouterLink>
         <span v-else :title="stock.latest_related_concept.board_name">{{ stock.latest_related_concept.board_name }}</span>
       </span>
-      <span v-else class="limit-ladder-card__empty">暂无相关概念</span>
+      <RelatedBoardEmptyValue
+        v-else
+        :reason="stock.latest_related_concept_empty_reason"
+        aria-label="暂无概念走势"
+      />
     </footer>
   </article>
 </template>

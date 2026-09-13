@@ -25,7 +25,9 @@ def _seed_supported_result(client: DuckDBClient) -> None:
         "VALUES ('000001.SH',DATE '2026-08-28',3000)"
     )
     client.execute(
-        "INSERT INTO stock_board_correlation_state VALUES "
+        "INSERT INTO stock_board_correlation_state "
+        "(code,as_of_date,computed_at,algorithm_version,benchmark_code,"
+        "benchmark_fallback,has_industry_champion,has_concept_champion) VALUES "
         "('600000.SH',DATE '2026-08-28',TIMESTAMP '2026-08-29 10:00:00',"
         "'stock-board-correlation-v2','000001.SH',false,true,false)"
     )
@@ -116,7 +118,9 @@ def test_historical_old_champion_is_not_treated_as_latest_when_current_type_is_e
         init_db(client)
         _seed_supported_result(client)
         client.execute(
-            "INSERT INTO stock_board_correlation_state VALUES "
+            "INSERT INTO stock_board_correlation_state "
+            "(code,as_of_date,computed_at,algorithm_version,benchmark_code,"
+            "benchmark_fallback,has_industry_champion,has_concept_champion) VALUES "
             "('600000.SH',DATE '2026-08-29',TIMESTAMP '2026-08-30 10:00:00',"
             "'stock-board-correlation-v2','000001.SH',false,false,false)"
         )

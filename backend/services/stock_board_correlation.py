@@ -68,11 +68,22 @@ class RelatedBoardBenchmark(TypedDict):
     fallback: bool
 
 
+class RelatedBoardEmptyReason(TypedDict):
+    code: Literal["no_candidates", "insufficient_samples", "invalid_correlation"]
+    message: str
+    max_sample_20: int | None
+    required_sample_20: int
+    max_sample_60: int | None
+    required_sample_60: int
+
+
 class StockRelatedBoards(TypedDict, total=False):
     as_of_date: str | None
     benchmark: RelatedBoardBenchmark
     industry: RelatedBoardWinner | None
     concept: RelatedBoardWinner | None
+    industry_empty_reason: RelatedBoardEmptyReason | None
+    concept_empty_reason: RelatedBoardEmptyReason | None
     unavailable_reason: Literal["as_of_mismatch", "first_load_pending"]
 
 
@@ -541,6 +552,36 @@ class StockBoardCorrelationService:
                     "benchmark_fallback": result.benchmark_fallback,
                     "has_industry_champion": result.industry is not None,
                     "has_concept_champion": result.concept is not None,
+                    "industry_empty_reason": (
+                        result.industry_empty_reason.code
+                        if result.industry_empty_reason is not None
+                        else None
+                    ),
+                    "industry_max_sample_20": (
+                        result.industry_empty_reason.max_sample_20
+                        if result.industry_empty_reason is not None
+                        else None
+                    ),
+                    "industry_max_sample_60": (
+                        result.industry_empty_reason.max_sample_60
+                        if result.industry_empty_reason is not None
+                        else None
+                    ),
+                    "concept_empty_reason": (
+                        result.concept_empty_reason.code
+                        if result.concept_empty_reason is not None
+                        else None
+                    ),
+                    "concept_max_sample_20": (
+                        result.concept_empty_reason.max_sample_20
+                        if result.concept_empty_reason is not None
+                        else None
+                    ),
+                    "concept_max_sample_60": (
+                        result.concept_empty_reason.max_sample_60
+                        if result.concept_empty_reason is not None
+                        else None
+                    ),
                 }
             )
             for expected_type, winner in (
@@ -599,6 +640,12 @@ class StockBoardCorrelationService:
             "benchmark_fallback",
             "has_industry_champion",
             "has_concept_champion",
+            "industry_empty_reason",
+            "industry_max_sample_20",
+            "industry_max_sample_60",
+            "concept_empty_reason",
+            "concept_max_sample_20",
+            "concept_max_sample_60",
         ]
         champion_columns = [
             "code",
@@ -1014,6 +1061,9 @@ class StockBoardCorrelationService:
         """按每个 code 请求的业务日期取该日快照；未启用日期保护时取每 code 最新快照。"""
         base_select = (
             "SELECT s.code, s.as_of_date, s.benchmark_code, s.benchmark_fallback, "
+            "       s.industry_empty_reason, s.industry_max_sample_20, "
+            "       s.industry_max_sample_60, s.concept_empty_reason, "
+            "       s.concept_max_sample_20, s.concept_max_sample_60, "
             "       c.board_type, c.board_code, c.score, c.corr_20, c.corr_60, "
             "       c.sample_20, c.sample_60, c.confidence, bd.name AS board_name "
             "FROM stock_board_correlation_state s "
@@ -1077,6 +1127,10 @@ class StockBoardCorrelationService:
                     "industry": None,
                     "concept": None,
                 }
+                for board_type in ("industry", "concept"):
+                    empty_reason = self._related_board_empty_reason(row, board_type)
+                    if empty_reason is not None:
+                        summary[f"{board_type}_empty_reason"] = empty_reason
                 result[code] = summary
             board_type = row.get("board_type")
             board_name = row.get("board_name")
@@ -1110,6 +1164,43 @@ class StockBoardCorrelationService:
                         ),
                     }
         return result
+
+    @staticmethod
+    def _related_board_empty_reason(
+        row: Mapping[str, Any],
+        board_type: Literal["industry", "concept"],
+    ) -> RelatedBoardEmptyReason | None:
+        value = row.get(f"{board_type}_empty_reason")
+        if value is None or pd.isna(value):
+            return None
+        code = str(value)
+        sample_20_value = row.get(f"{board_type}_max_sample_20")
+        sample_60_value = row.get(f"{board_type}_max_sample_60")
+        sample_20 = (
+            None if sample_20_value is None or pd.isna(sample_20_value) else int(sample_20_value)
+        )
+        sample_60 = (
+            None if sample_60_value is None or pd.isna(sample_60_value) else int(sample_60_value)
+        )
+        if code == "no_candidates":
+            message = "该业务日没有可计算的候选板块"
+        elif code == "insufficient_samples":
+            message = (
+                f"共同有效样本不足：20 日最高 {sample_20 or 0}/{MIN_SHORT_SAMPLES}，"
+                f"60 日最高 {sample_60 or 0}/{MIN_LONG_SAMPLES}"
+            )
+        elif code == "invalid_correlation":
+            message = "候选走势缺少有效波动，无法计算相关度"
+        else:
+            return None
+        return {
+            "code": code,
+            "message": message,
+            "max_sample_20": sample_20,
+            "required_sample_20": MIN_SHORT_SAMPLES,
+            "max_sample_60": sample_60,
+            "required_sample_60": MIN_LONG_SAMPLES,
+        }
 
     def attach_related_boards(
         self,

@@ -134,13 +134,14 @@ board_neutral_t = board_return_t - benchmark_return_t
 
 ### `stock_board_correlation_state`
 
-每只成功处理的股票在每个交易日一行，即使行业和概念都没有冠军也会写入。主键为 `(code, as_of_date)`；`has_industry_champion/has_concept_champion` 表示两种冠军是否存在，支撑合法空结果、日期保护和版本重算判断。
+每只成功处理的股票在每个交易日一行，即使行业和概念都没有冠军也会写入。主键为 `(code, as_of_date)`；`has_industry_champion/has_concept_champion` 表示两种冠军是否存在，支撑合法空结果、日期保护和版本重算判断。`industry/concept_empty_reason` 保存 `no_candidates | insufficient_samples | invalid_correlation`，对应的 `*_max_sample_20/60` 保存该类型候选共同有效样本的最高值；有冠军时这些字段为空。
 
-两张表都是可重算派生的每日快照，保存各交易日冠军，不保存全部候选相关性或逐股空结果原因。正向与回滚 SQL 位于：
+两张表都是可重算派生的每日快照，保存各交易日冠军；状态表同时保存无冠军时的结构化原因和候选最高共同样本数，但不保存全部候选相关性。正向与回滚 SQL 位于：
 
 - `agent-works/stock-board-correlation/create-stock-board-correlation.sql`
 - `agent-works/stock-board-correlation/migrate-as-of-snapshot-pk.sql`
 - `agent-works/stock-board-correlation/migrate-board-member-first-seen-date.sql`
+- `agent-works/stock-board-correlation/add-empty-result-reasons.sql`
 - `agent-works/stock-board-correlation/rollback-stock-board-correlation.sql`
 
 应用初始化会检测旧版冠军表和状态表主键，并在一个事务内迁移为按日主键；`board_member.first_seen_date` 通过幂等迁移补列。单独 SQL 保留给受控发布、演练和人工核验。
@@ -171,7 +172,7 @@ board_neutral_t = board_return_t - benchmark_return_t
 - 页面业务日期没有同日当前版本结果快照，且首次任务未能创建或同数据水位任务已经失败，此时返回 `as_of_mismatch`，页面仍统一显示“—”。
 - 已成功创建该业务日首次任务且任务仍为 `pending/running` 时返回 `first_load_pending`，页面显示“计算中”。
 
-每日状态表不保存逐股空结果原因。页面只能区分业务日期快照缺失和普通无冠军，不能从 `has_*_champion=false` 反推出具体缺数来源；若产品需要展示原因，需要新增持久化字段和接口契约。
+每日状态表按行业、概念分别保存 `no_candidates`、`insufficient_samples` 或 `invalid_correlation`，样本不足时同时保存 20/60 日候选最高共同样本数。API 将其组装为结构化原因和统一说明；页面仍显示“—”，仅在原因真实存在时通过悬浮或键盘聚焦解释。历史未重算行允许原因为空，页面不得根据 `has_*_champion=false` 自行推测。
 
 结构体检按算法的共同有效样本口径判定：个股或冠军板块未覆盖结果目标日时显示 `WARN` 标记，右侧保留未覆盖数量，口径说明通过标记悬浮层展示；该日期差异不据此否定已经满足 15/40 门槛的结果，样本低于门槛仍判失败。基准指数必须有目标日有效收盘，其目标日缺失继续判失败。
 
@@ -214,6 +215,6 @@ AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:stock-board-correlation
 | 中 | `board_member` 只有首次观察日，没有移出时间线 | 已退出板块的股票仍可能参与候选比较 | `NULL` 兼容全部历史，明确首次观察日晚于目标日则排除；页面不宣称当前主营或有效归属 |
 | 中 | 基准或行情缺口降低共同有效样本 | 候选无冠军或可信度降低 | 相邻日不桥接、15/40 门槛、基准整股回退、上证不足整批失败 |
 | 中 | 业务日当前版本无快照 | 首次读取需等待后台任务，失败时该业务日仍无结果 | GET 按数据水位幂等创建指定日期、指定范围的异步首次任务；同水位失败不循环，上游补数后可再尝试，也可由结果维护或用户调度重算 |
-| 中 | 每日状态不保存空结果原因 | 页面只能显示“—”，运维诊断需查候选和行情 | 技术文档明确边界；若要展示原因需独立扩展数据契约 |
+| 低 | 历史未重算状态没有空结果原因 | 页面仍显示“—”，但该日期无法悬浮解释 | 保持 NULL 兼容并在需要时按目标日重算，不从布尔状态推测 |
 | 中 | 生产并发与硬件不同于本地验证 | 全量任务窗口或读取尾延迟可能变化 | DuckDB 写互斥、内存计算、短事务切换；生产首轮继续观察 |
 | 低 | 负相关候选仍可成为相对冠军 | 用户可能误读为强同向关联 | 页面显示带符号相关度并将结果标为低可信；文档明确解释 |

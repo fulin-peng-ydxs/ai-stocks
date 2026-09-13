@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import { sectorDetailLocation } from '@/utils/sectorNavigation'
 import type { RelatedBoardWinner, StockRelatedBoards } from '@/types/relatedBoards'
+import RelatedBoardEmptyValue from '@/components/RelatedBoardEmptyValue.vue'
 
 const props = withDefaults(defineProps<{
   summary?: StockRelatedBoards | null
@@ -23,6 +24,12 @@ const board = computed<RelatedBoardWinner | null>(() => {
 })
 const asOfDate = computed(() => props.summary?.as_of_date ?? null)
 const unavailableReason = computed(() => props.summary?.unavailable_reason ?? null)
+const emptyReason = computed(() => {
+  if (unavailableReason.value) return null
+  return props.boardType === 'industry'
+    ? props.summary?.industry_empty_reason ?? null
+    : props.summary?.concept_empty_reason ?? null
+})
 const canNavigate = computed(() => Boolean(
   board.value
   && auth
@@ -94,12 +101,12 @@ function formatCorrelation(value: number): string {
     >计算中</span>
   </el-tooltip>
 
-  <span
+  <RelatedBoardEmptyValue
     v-else
-    class="related-board-cell__empty"
-    aria-label="暂无走势板块"
-    :data-testid="testId"
-  >—</span>
+    :reason="emptyReason"
+    :aria-label="`暂无${boardType === 'industry' ? '行业' : '概念'}走势`"
+    :test-id="testId"
+  />
 </template>
 
 <style scoped>
@@ -136,10 +143,6 @@ function formatCorrelation(value: number): string {
 
 .related-board-cell__empty {
   color: var(--app-placeholder-text);
-}
-
-.related-board-cell__empty--explained {
-  cursor: help;
 }
 
 .related-board-cell__empty--pending {

@@ -34,11 +34,13 @@ def _seed_summary(client: DuckDBClient, *, as_of: date = date(2026, 8, 28)) -> N
     client.execute(
         "INSERT INTO stock_board_correlation_state "
         "(code,as_of_date,computed_at,algorithm_version,benchmark_code,benchmark_fallback,"
-        "has_industry_champion,has_concept_champion) VALUES "
+        "has_industry_champion,has_concept_champion,industry_empty_reason,"
+        "industry_max_sample_20,industry_max_sample_60,concept_empty_reason,"
+        "concept_max_sample_20,concept_max_sample_60) VALUES "
         "('600000.SH',?,TIMESTAMP '2026-08-29 10:00:00','stock-board-correlation-v2',"
-        "'399001.SZ',false,true,true),"
+        "'399001.SZ',false,true,true,NULL,NULL,NULL,NULL,NULL,NULL),"
         "('000001.SZ',?,TIMESTAMP '2026-08-29 10:00:00','stock-board-correlation-v2',"
-        "'000001.SH',true,false,false)",
+        "'000001.SH',true,false,false,'insufficient_samples',14,54,'no_candidates',NULL,NULL)",
         [as_of, as_of],
     )
     client.execute(
@@ -98,6 +100,26 @@ def test_batch_summary_reads_per_day_snapshot(monkeypatch):
         # 000001.SZ 虽已有 08-28 快照，请求 08-27 缺档仍按日期进入首次计算。
         assert result["000001.SZ"]["unavailable_reason"] == "first_load_pending"
         assert result["000001.SZ"]["as_of_date"] is None
+
+
+def test_latest_summary_exposes_structured_empty_reason_without_changing_cell_value():
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_summary(market)
+
+        result = StockBoardCorrelationService(market).get_related_boards(["000001.SZ"])
+
+        summary = result["000001.SZ"]
+        assert summary["industry"] is None
+        assert summary["industry_empty_reason"] == {
+            "code": "insufficient_samples",
+            "message": "共同有效样本不足：20 日最高 14/15，60 日最高 54/40",
+            "max_sample_20": 14,
+            "required_sample_20": 15,
+            "max_sample_60": 54,
+            "required_sample_60": 40,
+        }
+        assert summary["concept_empty_reason"]["message"] == "该业务日没有可计算的候选板块"
 
 
 def test_missing_daily_snapshot_enqueues_one_deduplicated_first_load_task(monkeypatch):
@@ -314,7 +336,9 @@ def test_batch_summary_query_count_does_not_grow_with_rows(count):
     with DuckDBClient(db_path=":memory:") as market:
         init_db(market)
         market.conn.executemany(
-            "INSERT INTO stock_board_correlation_state VALUES "
+            "INSERT INTO stock_board_correlation_state "
+            "(code,as_of_date,computed_at,algorithm_version,benchmark_code,"
+            "benchmark_fallback,has_industry_champion,has_concept_champion) VALUES "
             "(?, ?, TIMESTAMP '2026-08-29 10:00:00', 'stock-board-correlation-v2', "
             "'000001.SH', false, false, false)",
             [(code, as_of) for code in codes],

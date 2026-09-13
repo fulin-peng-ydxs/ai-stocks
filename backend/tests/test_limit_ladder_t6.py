@@ -122,10 +122,13 @@ def _seed_ladder(market):
         """
         INSERT INTO stock_board_correlation_state (
             code,as_of_date,computed_at,algorithm_version,benchmark_code,
-            benchmark_fallback,has_industry_champion,has_concept_champion
+            benchmark_fallback,has_industry_champion,has_concept_champion,
+            industry_empty_reason,industry_max_sample_20,industry_max_sample_60,
+            concept_empty_reason,concept_max_sample_20,concept_max_sample_60
         ) VALUES
-          ('600001.SH',?,current_timestamp,?,'000300.SH',false,true,true),
-          ('600002.SH',?,current_timestamp,?,'000300.SH',false,false,false)
+          ('600001.SH',?,current_timestamp,?,'000300.SH',false,true,true,NULL,NULL,NULL,NULL,NULL,NULL),
+          ('600002.SH',?,current_timestamp,?,'000300.SH',false,false,false,
+           'insufficient_samples',14,54,'no_candidates',NULL,NULL)
         """,
         [trade_date, ALGORITHM_VERSION, trade_date, ALGORITHM_VERSION],
     )
@@ -172,6 +175,12 @@ def test_query_keeps_stock_level_short_history_and_separates_concepts(market):
         "board_name": "数字服务",
         "as_of_date": trade_date.isoformat(),
     }
+    assert short["latest_related_industry_empty_reason"]["message"] == (
+        "共同有效样本不足：20 日最高 14/15，60 日最高 54/40"
+    )
+    assert short["latest_related_concept_empty_reason"]["message"] == (
+        "该业务日没有可计算的候选板块"
+    )
     assert data["hotspots"]["industry"] == [
         {"group_key": "I900", "group_name": "数字服务", "stock_count": 1},
         {"group_key": "__unclassified__", "group_name": "未分类", "stock_count": 1},
@@ -281,7 +290,9 @@ def test_query_does_not_resurrect_old_concept_after_same_day_legal_empty(market)
     trade_date = _seed_ladder(market)
     prior_date = trade_date - timedelta(days=1)
     market.execute(
-        "INSERT INTO stock_board_correlation_state VALUES "
+        "INSERT INTO stock_board_correlation_state "
+        "(code,as_of_date,computed_at,algorithm_version,benchmark_code,"
+        "benchmark_fallback,has_industry_champion,has_concept_champion) VALUES "
         "('600002.SH',?,current_timestamp,?,'000300.SH',false,false,true)",
         [prior_date, ALGORITHM_VERSION],
     )

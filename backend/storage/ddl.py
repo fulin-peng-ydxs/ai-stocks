@@ -838,6 +838,12 @@ CREATE TABLE IF NOT EXISTS stock_board_correlation_state (
     benchmark_fallback      BOOLEAN NOT NULL DEFAULT FALSE,
     has_industry_champion   BOOLEAN NOT NULL DEFAULT FALSE,
     has_concept_champion    BOOLEAN NOT NULL DEFAULT FALSE,
+    industry_empty_reason   VARCHAR CHECK (industry_empty_reason IS NULL OR industry_empty_reason IN ('no_candidates', 'insufficient_samples', 'invalid_correlation')),
+    industry_max_sample_20  INTEGER CHECK (industry_max_sample_20 IS NULL OR industry_max_sample_20 BETWEEN 0 AND 20),
+    industry_max_sample_60  INTEGER CHECK (industry_max_sample_60 IS NULL OR industry_max_sample_60 BETWEEN 0 AND 60),
+    concept_empty_reason    VARCHAR CHECK (concept_empty_reason IS NULL OR concept_empty_reason IN ('no_candidates', 'insufficient_samples', 'invalid_correlation')),
+    concept_max_sample_20   INTEGER CHECK (concept_max_sample_20 IS NULL OR concept_max_sample_20 BETWEEN 0 AND 20),
+    concept_max_sample_60   INTEGER CHECK (concept_max_sample_60 IS NULL OR concept_max_sample_60 BETWEEN 0 AND 60),
     PRIMARY KEY (code, as_of_date)
 );
 """
@@ -1081,6 +1087,30 @@ _DIMENSION_SEED: list[tuple] = [
 
 # 轻量迁移：给已存在的旧表补列（CREATE TABLE IF NOT EXISTS 不会改既有表结构）
 _MIGRATIONS: list[str] = [
+    (
+        "ALTER TABLE stock_board_correlation_state ADD COLUMN IF NOT EXISTS "
+        "industry_empty_reason VARCHAR"
+    ),
+    (
+        "ALTER TABLE stock_board_correlation_state ADD COLUMN IF NOT EXISTS "
+        "industry_max_sample_20 INTEGER"
+    ),
+    (
+        "ALTER TABLE stock_board_correlation_state ADD COLUMN IF NOT EXISTS "
+        "industry_max_sample_60 INTEGER"
+    ),
+    (
+        "ALTER TABLE stock_board_correlation_state ADD COLUMN IF NOT EXISTS "
+        "concept_empty_reason VARCHAR"
+    ),
+    (
+        "ALTER TABLE stock_board_correlation_state ADD COLUMN IF NOT EXISTS "
+        "concept_max_sample_20 INTEGER"
+    ),
+    (
+        "ALTER TABLE stock_board_correlation_state ADD COLUMN IF NOT EXISTS "
+        "concept_max_sample_60 INTEGER"
+    ),
     "DROP INDEX IF EXISTS idx_limit_ladder_snapshot_date",
     (
         "ALTER TABLE limit_ladder_snapshot ADD COLUMN IF NOT EXISTS "
@@ -1268,6 +1298,8 @@ def _migrate_stock_board_correlation_snapshot_keys(client: DuckDBClient) -> None
             )
             client.conn.execute(
                 "INSERT INTO stock_board_correlation_state_pk_new "
+                "(code,as_of_date,computed_at,algorithm_version,benchmark_code,"
+                "benchmark_fallback,has_industry_champion,has_concept_champion) "
                 "SELECT code,as_of_date,computed_at,algorithm_version,benchmark_code,"
                 "benchmark_fallback,has_industry_champion,has_concept_champion "
                 "FROM stock_board_correlation_state"

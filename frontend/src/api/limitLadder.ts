@@ -1,5 +1,6 @@
 import http, { type AppRequestConfig } from './client'
 import { getAccessToken } from './authToken'
+import type { RelatedBoardEmptyReason } from '@/types/relatedBoards'
 
 export const LIMIT_LADDER_WINDOWS = [10, 20, 31, 60] as const
 export type LimitLadderWindow = typeof LIMIT_LADDER_WINDOWS[number]
@@ -56,6 +57,8 @@ export interface LimitLadderStock {
   snapshot_concepts: LimitLadderConcept[]
   latest_related_industry: LimitLadderRelatedBoard | null
   latest_related_concept: LimitLadderRelatedBoard | null
+  latest_related_industry_empty_reason?: RelatedBoardEmptyReason | null
+  latest_related_concept_empty_reason?: RelatedBoardEmptyReason | null
 }
 
 export interface LimitLadderLayer {

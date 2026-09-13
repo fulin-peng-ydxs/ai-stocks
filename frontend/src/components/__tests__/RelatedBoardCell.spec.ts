@@ -221,7 +221,33 @@ describe('RelatedBoardCell', () => {
 
     expect(wrapper.text()).toBe('—')
     expect(wrapper.find('.tooltip-stub').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="empty-related-board"]').attributes('aria-label')).toBe('暂无走势板块')
+    expect(wrapper.get('[data-testid="empty-related-board"]').attributes('aria-label')).toBe('暂无概念走势')
+  })
+
+  it('已记录空结果原因时仍显示破折号，并通过悬浮和聚焦解释', () => {
+    const wrapper = mountCell({
+      summary: {
+        ...summary('high'),
+        concept: null,
+        concept_empty_reason: {
+          code: 'insufficient_samples',
+          message: '共同有效样本不足：20 日最高 14/15，60 日最高 54/40',
+          max_sample_20: 14,
+          required_sample_20: 15,
+          max_sample_60: 54,
+          required_sample_60: 40,
+        },
+      },
+      boardType: 'concept',
+      testId: 'explained-empty-related-board',
+    })
+
+    expect(wrapper.text()).toBe('—')
+    expect(wrapper.get('.tooltip-stub').attributes('data-content'))
+      .toBe('共同有效样本不足：20 日最高 14/15，60 日最高 54/40')
+    expect(wrapper.get('[data-testid="explained-empty-related-board"]').attributes('tabindex')).toBe('0')
+    expect(wrapper.get('[data-testid="explained-empty-related-board"]').attributes('aria-label'))
+      .toContain('暂无概念走势，原因：共同有效样本不足')
   })
 
   it('日期无结果与合法空结果统一只显示破折号', () => {
@@ -232,7 +258,7 @@ describe('RelatedBoardCell', () => {
 
     expect(wrapper.text()).toBe('—')
     expect(wrapper.find('.tooltip-stub').exists()).toBe(false)
-    expect(wrapper.get('.related-board-cell__empty').attributes('aria-label')).toBe('暂无走势板块')
+    expect(wrapper.get('.related-board-empty-value').attributes('aria-label')).toBe('暂无行业走势')
   })
 
   it('首次计算任务创建后显示明确的计算中状态', () => {

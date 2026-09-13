@@ -62,6 +62,31 @@ describe('LimitLadderCard', () => {
     expect(wrapper.get('.limit-ladder-card__window-stat b').classes()).not.toContain('is-multiple')
   })
 
+  it('无走势冠军时统一显示破折号，有原因时支持聚焦查看', () => {
+    const emptyStock: LimitLadderStock = {
+      ...stock,
+      latest_related_industry: null,
+      latest_related_concept: null,
+      latest_related_industry_empty_reason: {
+        code: 'insufficient_samples',
+        message: '共同有效样本不足：20 日最高 14/15，60 日最高 54/40',
+        max_sample_20: 14,
+        required_sample_20: 15,
+        max_sample_60: 54,
+        required_sample_60: 40,
+      },
+      latest_related_concept_empty_reason: null,
+    }
+    const wrapper=mount(LimitLadderCard,{props:{stock:emptyStock,window:31,canViewSectors:false},global:{plugins:[ElementPlus,router()]}})
+
+    expect(wrapper.get('[data-testid="limit-ladder-related-industry"]').text()).toBe('—')
+    expect(wrapper.get('.related-board-empty-value--explained').attributes('tabindex')).toBe('0')
+    expect(wrapper.get('.related-board-empty-value--explained').attributes('aria-label'))
+      .toContain('暂无行业走势，原因：共同有效样本不足')
+    expect(wrapper.find('.limit-ladder-card__empty').exists()).toBe(false)
+    expect(wrapper.findAll('.related-board-empty-value').map((item) => item.text())).toEqual(['—', '—'])
+  })
+
   it('概念点击只跳板块，不触发卡片选择；无权限时退化只读', async () => {
     const wrapper=mount(LimitLadderCard,{props:{stock,window:31,canViewSectors:true},global:{plugins:[ElementPlus,router()]}})
     await wrapper.get('[data-testid="limit-ladder-related-600001.SH"]').trigger('click')
