@@ -783,18 +783,19 @@ onMounted(load)
                         size="compact"
                       />
                       <div class="asset-count-action">
-                        <el-button
-                          size="small"
-                          :loading="exactLoading[row.key]"
-                          data-testid="overview-asset-exact-count"
-                          @click="loadExactCount(row)"
-                        >精确统计行数</el-button>
                         <span v-if="row.row_count_mode === 'exact' && row.measured_at" class="hint">
                           统计于 {{ row.measured_at.slice(0, 19) }}
                         </span>
                         <span v-if="exactErrors[row.key]" class="asset-count-error" role="alert">
                           {{ exactErrors[row.key] }}；已保留估算值
                         </span>
+                        <el-button
+                          class="asset-count-button"
+                          size="small"
+                          :loading="exactLoading[row.key]"
+                          data-testid="overview-asset-exact-count"
+                          @click="loadExactCount(row)"
+                        >精确统计行数</el-button>
                       </div>
                       <AppDataTable v-if="row.fields?.length" :data="row.fields" size="small" class="fld-tbl" embedded>
                         <AppTableColumn label="字段" prop="name" />
@@ -1236,6 +1237,7 @@ onMounted(load)
   gap: var(--app-space-2);
   margin-top: var(--app-space-3);
 }
+.asset-count-button { margin-left: auto; }
 .asset-count-error { color: var(--el-color-danger); font-size: var(--app-font-size-caption); }
 .asset-fact-source {
   display: block;
