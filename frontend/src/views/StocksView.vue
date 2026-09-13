@@ -758,6 +758,10 @@ function openEdit() {
   editVisible.value = true
 }
 async function doEdit() {
+  if (!editForm.value.name.trim()) {
+    ElMessage.warning('请填写分组名')
+    return
+  }
   await updateGroup(activeGid.value, {
     name: editForm.value.name.trim(),
     group_date: editForm.value.group_date || undefined,
@@ -1203,7 +1207,7 @@ onMounted(async () => {
     <!-- 编辑分组 -->
     <el-dialog v-model="editVisible" title="编辑分组" width="460px">
       <el-form label-width="80px">
-        <el-form-item label="分组名"><el-input v-model="editForm.name" maxlength="30" show-word-limit /></el-form-item>
+        <el-form-item label="分组名" required><el-input v-model="editForm.name" maxlength="30" show-word-limit /></el-form-item>
         <el-form-item label="建组日期"><TradeDatePicker v-model="editForm.group_date" clearable style="width: 200px" /></el-form-item>
         <el-form-item label="分组说明"><el-input v-model="editForm.description" type="textarea" :rows="2" /></el-form-item>
         <el-form-item label="颜色">

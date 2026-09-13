@@ -592,17 +592,17 @@ onMounted(async () => {
       <!-- 新建 / 编辑用户 -->
       <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑用户' : '新建用户'" width="520px">
         <el-form label-width="76px">
-          <el-form-item label="账号">
+          <el-form-item label="账号" :required="!isEdit">
             <el-input v-model="form.account" :disabled="isEdit" placeholder="账号唯一，创建后不可改" />
           </el-form-item>
-          <el-form-item v-if="!isEdit" label="初始密码">
+          <el-form-item v-if="!isEdit" label="初始密码" required>
             <el-input v-model="form.password" type="password" show-password
                       placeholder="≥8 位，含字母与数字" />
           </el-form-item>
           <el-form-item label="邮箱">
             <el-input v-model="form.email" placeholder="选填" />
           </el-form-item>
-          <el-form-item label="角色">
+          <el-form-item label="角色" :required="!protectedRoleNames.length">
             <el-select v-model="form.roleIds" multiple placeholder="可多选，权限取并集"
                        style="width: 100%">
               <el-option
@@ -629,7 +629,7 @@ onMounted(async () => {
               {{ tenantName(form.tenantId) }}<span class="muted">（{{ isEdit ? '归属不可改' : '限本租户' }}）</span>
             </span>
           </el-form-item>
-          <el-form-item label="状态">
+          <el-form-item label="状态" :required="!editingSelf">
             <el-radio-group v-model="form.status" :disabled="editingSelf">
               <el-radio-button v-for="item in userStatusOptions" :key="item.code" :value="item.code">
                 {{ item.label }}
@@ -649,11 +649,11 @@ onMounted(async () => {
           <el-form-item label="账号">
             <span>{{ resetTarget?.account }}</span>
           </el-form-item>
-          <el-form-item label="新密码">
+          <el-form-item label="新密码" required>
             <el-input v-model="resetForm.pwd" type="password" show-password
                       placeholder="≥8 位，含字母与数字" />
           </el-form-item>
-          <el-form-item label="确认">
+          <el-form-item label="确认" required>
             <el-input v-model="resetForm.confirm" type="password" show-password placeholder="再次输入" />
           </el-form-item>
         </el-form>

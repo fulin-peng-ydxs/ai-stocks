@@ -1397,7 +1397,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           <section class="editor editor-score">
             <div class="ed-head app-cluster-md">
               <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
-              <span v-if="editId && !isNew" class="id-badge mono">{{ editId }}</span>
               <span v-if="curVersion && !isNew" class="ver-badge" title="点击查看历史版本" @click="openScoreVersions">v{{ curVersion }}</span>
               <AssetVisibilityActions
                 v-if="!isNew"
@@ -1666,19 +1665,19 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         <!-- 新建自定义指标 -->
         <el-dialog v-model="defDialog" title="新建自定义指标" width="560px">
           <el-form label-width="92px" size="small">
-            <el-form-item label="标识(英文)">
+            <el-form-item label="标识(英文)" required>
               <el-input v-model="defForm.key" placeholder="如 consec_up3" />
             </el-form-item>
-            <el-form-item label="中文名">
+            <el-form-item label="中文名" required>
               <el-input v-model="defForm.name_cn" placeholder="如 连续上涨" />
             </el-form-item>
-            <el-form-item label="类型">
+            <el-form-item label="类型" required>
               <el-radio-group v-model="defForm.dtype">
                 <el-radio-button value="bool">布尔</el-radio-button>
                 <el-radio-button value="number">数值</el-radio-button>
               </el-radio-group>
             </el-form-item>
-            <el-form-item label="表达式">
+            <el-form-item label="表达式" required>
               <el-input
                 v-model="defForm.expression"
                 type="textarea"
@@ -1760,7 +1759,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           <section class="editor">
             <div class="ed-head app-cluster-md">
               <el-input v-model="tEditName" :disabled="tReadonly" placeholder="方案名称" style="width: 190px" />
-              <span v-if="tEditId && !tIsNew" class="id-badge mono">{{ tEditId }}</span>
               <span v-if="tCurVersion && !tIsNew" class="ver-badge" title="点击查看历史版本" @click="openTradeVersions">v{{ tCurVersion }}</span>
               <AssetVisibilityActions
                 v-if="!tIsNew"
@@ -2165,18 +2163,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 }
 .ver-badge:hover {
   background: var(--el-color-primary-light-7);
-}
-.id-badge {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--el-text-color-secondary);
-  background: var(--app-section-bg);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-  padding: 1px 8px;
-  font-size: var(--app-font-size-caption);
 }
 .mono {
   font-family: var(--app-font-family-mono);

@@ -150,37 +150,57 @@ def test_tree_for_system(client, env):
 
 def test_create_leaf_and_group(client, env):
     r = client.post("/api/menus", json={
+        "code": "temp_group_" + uuid.uuid4().hex[:6],
         "title": "Temp Group", "type": "group", "visible": "system"},
         headers=env.sys_headers())
     assert r.status_code == 200 and r.json()["code"] == 0
     gid = r.json()["data"]["id"]
-    assert gid == "menu_temp_group"
-    assert r.json()["data"]["code"] == gid
+    assert len(gid) == 32 and all(ch in "0123456789abcdef" for ch in gid)
+    assert r.json()["data"]["code"].startswith("temp_group_")
+    assert r.json()["data"]["code"] != gid
     assert r.json()["data"]["route_path"] is None   # group 无路由
     try:
         r2 = client.post("/api/menus", json={
-            "parentId": gid, "title": "Temp Leaf", "type": "leaf",
+            "parentId": gid, "code": "temp_leaf_" + uuid.uuid4().hex[:6],
+            "title": "Temp Leaf", "type": "leaf",
             "routePath": "/temp-leaf-" + uuid.uuid4().hex[:6], "icon": "Setting"}, headers=env.sys_headers())
         assert r2.json()["data"]["parent_id"] == gid and r2.json()["data"]["icon"] == "Setting"
-        assert r2.json()["data"]["id"] == "menu_temp_leaf"
+        assert len(r2.json()["data"]["id"]) == 32
+        assert r2.json()["data"]["code"].startswith("temp_leaf_")
         client.delete(f"/api/menus/{r2.json()['data']['id']}", headers=env.sys_headers())
     finally:
         client.delete(f"/api/menus/{gid}", headers=env.sys_headers())
 
 
-def test_create_menu_auto_code_deduplicates(client, env):
-    r1 = client.post("/api/menus", json={
-        "title": "报表中心", "type": "group", "visible": "system"},
-        headers=env.sys_headers()).json()["data"]
-    r2 = client.post("/api/menus", json={
-        "title": "报表中心", "type": "group", "visible": "system"},
-        headers=env.sys_headers()).json()["data"]
+def test_create_menu_requires_code(client, env):
+    r = client.post(
+        "/api/menus",
+        json={"code": "", "title": "缺少编码", "type": "group", "visible": "system"},
+        headers=env.sys_headers(),
+    )
+    assert r.json()["code"] == 4000
+    assert r.json()["msg"] == "请填写菜单编码"
+
+
+def test_create_menu_normalizes_and_validates_code(client, env):
+    marker = uuid.uuid4().hex[:6]
+    created = client.post(
+        "/api/menus",
+        json={"code": f"  REPORT_{marker.upper()}  ", "title": "手填编码", "type": "group"},
+        headers=env.sys_headers(),
+    ).json()["data"]
     try:
-        assert r1["id"] == "menu_report_center"
-        assert r2["id"] == "menu_report_center_2"
+        assert created["code"] == f"report_{marker}"
+        assert created["id"] != created["code"]
     finally:
-        client.delete(f"/api/menus/{r2['id']}", headers=env.sys_headers())
-        client.delete(f"/api/menus/{r1['id']}", headers=env.sys_headers())
+        client.delete(f"/api/menus/{created['id']}", headers=env.sys_headers())
+
+    rejected = client.post(
+        "/api/menus",
+        json={"code": "非法 编码", "title": "非法编码", "type": "group"},
+        headers=env.sys_headers(),
+    )
+    assert rejected.json()["code"] == 4000
 
 
 def test_create_duplicate_code_rejected(client, env):

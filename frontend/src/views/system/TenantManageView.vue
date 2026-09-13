@@ -396,7 +396,7 @@ onMounted(async () => {
     <template #overlays>
       <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑租户' : '新建租户'" width="460px">
         <el-form label-width="88px">
-          <el-form-item label="租户名">
+          <el-form-item label="租户名" required>
             <el-input v-model="form.name" placeholder="全局唯一" />
           </el-form-item>
           <el-form-item v-if="isEdit" label="租户 ID">
@@ -408,7 +408,7 @@ onMounted(async () => {
               <el-option v-for="u in tenantUsers" :key="u.id" :label="u.account" :value="u.id" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="!isEdit" label="状态">
+          <el-form-item v-if="!isEdit" label="状态" required>
             <el-radio-group v-model="form.status">
               <el-radio-button v-for="item in tenantStatusOptions" :key="item.code" :value="item.code">
                 {{ item.label }}

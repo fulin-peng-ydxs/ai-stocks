@@ -194,7 +194,7 @@ flowchart LR
   - 重算：下次 `get_board` 读到 meta 缺失或 stale → 当场重算覆盖、meta 置 false 再返回；每日榜单页的「重算当日」是显式用户动作，只精确标记所选 `(日期,方案,版本,tenant,owner)` 后在同一请求刷新，不属于采集或数据变化联动。
   - 权限：普通用户的「重算当日」必须同时满足 `board:compute` 与方案 owner；公开/租户可见的他人方案共读 owner 快照但不能被查看者强制覆盖。system 管理员可维护可见方案及平台预设。前后端均执行该边界，后端为最终事实源。
 - **方案版本化**：`ProfileRepo.save` / `ScoreProfileRepo.save` 仅在名称或内容实质变更时 version+1 并归档历史版本（内容未变返回原版本，避免重复 seed 致版本虚增）。
-- **方案 id 自动生成**：三类方案的 `save`/`save_with_id` 均接受空 `pid`——新建时由 `_make_id(name)` 用 `prefixed_readable_id(name, prefix="screen_")` 派生可读 id，撞库追加 `_2/_3…` 后缀（[profile.py:271](backend/screening/profile.py:271)、[profile.py:280](backend/screening/profile.py:280)）；`save_with_id` 返回 `(id, version)` 供 API 在新建响应里回传真实 id，前端据此把「编辑器身份」绑到新方案上。名称必填，空名 `save` 抛 `ValueError`。
+- **方案 id 自动生成**：三类方案不设业务编码；`save`/`save_with_id` 接受空 `pid`，新建和复制时由后端生成 32 位 UUIDv4 十六进制内部 `id`，名称不参与身份生成。`save_with_id` 返回 `(id, version)` 供 API 绑定新方案；页面不展示内部 `id`。存量可读 `id` 继续兼容，避免改写版本、快照和回测引用。名称必填，空名 `save` 抛 `ValueError`。
 
 ## 风险事项
 

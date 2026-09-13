@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from backend.common.ids import uuid_hex_id
 from backend.common.logging import get_logger
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
@@ -53,7 +54,11 @@ class MenuRepository:
         return self._row(df.iloc[0].to_dict()) if not df.empty else None
 
     def get_by_code(self, code: str) -> dict | None:
-        df = self.pg.query_df(f"SELECT {_MENU_COLS} FROM sys_menu WHERE code = %s", [code])
+        df = self.pg.query_df(
+            f"SELECT {_MENU_COLS} FROM sys_menu "
+            "WHERE lower(btrim(code)) = lower(btrim(%s))",
+            [code],
+        )
         return self._row(df.iloc[0].to_dict()) if not df.empty else None
 
     def route_exists(self, route_path: str, *, exclude_id: str | None = None) -> bool:
@@ -97,7 +102,8 @@ class MenuRepository:
     def create(self, *, parent_id: str | None, code: str, title: str, type: str,
                route_path: str | None, icon: str | None, visible: str,
                sort: int | None) -> str:
-        menu_id = code
+        # 新建菜单的数据库身份与业务编码分离；存量内置菜单仍兼容历史 id=code。
+        menu_id = uuid_hex_id()
         self.pg.execute(
             "INSERT INTO sys_menu "
             "(id, parent_id, code, title, type, route_path, icon, sort, visible, is_builtin, created_at) "

@@ -318,6 +318,9 @@ function validateForPublish(): boolean {
   if (!form.value.name?.trim()) return warn('发布前请填写规则名称')
   if (totalCapitalUnits.value <= 0n) return warn('发布前请填写大于 0 的总本金')
   if (!enabledStockRules.value.length) return warn('发布前至少启用一条选股规则')
+  if (form.value.stock_rules.some((item) => !item.name?.trim() || !item.content?.trim())) {
+    return warn('选股规则名称和内容不能为空')
+  }
   if (capitalExceeded.value) {
     const excess = formatMoney(formatMinorUnits(-remainingCapitalUnits.value))
     return warn(`启用选股规则合计超出本金 ${excess} 元`)
@@ -328,6 +331,11 @@ function validateForPublish(): boolean {
   const actions = form.value.action_rules.filter((item) => item.enabled)
   if (!actions.some((item) => item.action_type === 'buy')) return warn('发布前至少启用一条买入规则')
   if (!actions.some((item) => item.action_type === 'sell')) return warn('发布前至少启用一条卖出规则')
+  if (form.value.action_rules.some((item) => (
+    !item.name?.trim() || !item.action_type || !item.action_subtype?.trim() || !item.content?.trim()
+  ))) {
+    return warn('买卖规则名称、类型和内容不能为空')
+  }
   return true
 }
 
@@ -593,10 +601,10 @@ defineExpose({
 
       <el-form class="rule-editor__form" label-position="top" :disabled="!editing || !canManage">
         <div class="rule-editor__base">
-          <el-form-item label="规则名称">
+          <el-form-item label="规则名称" :required="editing && canManage">
             <el-input v-model="form.name" data-testid="rule-name-input" maxlength="80" placeholder="例如：趋势突破纪律" />
           </el-form-item>
-          <el-form-item label="总本金（元）">
+          <el-form-item label="总本金（元）" :required="editing && canManage">
             <FixedDecimalInput v-model="form.capital" grouped data-testid="rule-capital-input" />
           </el-form-item>
           <div class="capital-meter" :class="{ danger: capitalExceeded }">
@@ -632,9 +640,9 @@ defineExpose({
                 <AppIconButton v-permission="'trade-discipline:rule-manage'" label="删除选股规则" size="sm" tone="danger" @click="removeStock(index)"><Delete /></AppIconButton>
               </template>
               <div class="rule-card-form rule-card-form--stock">
-                <el-form-item label="规则名称"><el-input v-model="item.name" data-testid="stock-rule-name-input" maxlength="80" /></el-form-item>
-                <el-form-item label="资金上限（元）"><FixedDecimalInput v-model="item.max_capital" grouped data-testid="stock-rule-capital-input" /></el-form-item>
-                <el-form-item class="rule-card-form__content" label="规则内容"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
+                <el-form-item label="规则名称" :required="editing && canManage"><el-input v-model="item.name" data-testid="stock-rule-name-input" maxlength="80" /></el-form-item>
+                <el-form-item label="资金上限（元）" :required="editing && canManage && item.enabled"><FixedDecimalInput v-model="item.max_capital" grouped data-testid="stock-rule-capital-input" /></el-form-item>
+                <el-form-item class="rule-card-form__content" label="规则内容" :required="editing && canManage"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
               </div>
             </RuleSummaryCard>
           </div>
@@ -675,8 +683,8 @@ defineExpose({
                     <AppIconButton v-permission="'trade-discipline:rule-manage'" label="删除买卖规则" size="sm" tone="danger" @click="removeAction(index)"><Delete /></AppIconButton>
                   </template>
                   <div class="rule-card-form rule-card-form--action">
-                    <el-form-item label="规则名称"><el-input v-model="item.name" data-testid="action-rule-name-input" maxlength="80" /></el-form-item>
-                    <el-form-item>
+                    <el-form-item label="规则名称" :required="editing && canManage"><el-input v-model="item.name" data-testid="action-rule-name-input" maxlength="80" /></el-form-item>
+                    <el-form-item :required="editing && canManage">
                       <template #label>
                         类型
                         <HelpTip title="类型说明" :width="360" test-id="action-rule-type-help">
@@ -706,7 +714,7 @@ defineExpose({
                         </el-option>
                       </el-select>
                     </el-form-item>
-                    <el-form-item class="rule-card-form__content" label="规则内容"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
+                    <el-form-item class="rule-card-form__content" label="规则内容" :required="editing && canManage"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
                   </div>
                 </RuleSummaryCard>
               </div>

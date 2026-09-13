@@ -10,6 +10,7 @@ system-only 码不可授 / 授权后关联用户 perm_ver 自增(即时失效)�
 
 from __future__ import annotations
 
+import re
 import uuid
 
 import pytest
@@ -148,16 +149,20 @@ def test_assignable_tenant_admin_uses_platform_policy(client, env):
 # ── CRUD ──
 
 def test_create_update_delete_custom_role(client, env):
+    marker = uuid.uuid4().hex[:6]
+    code = "custom_analyst_" + marker
     r = client.post("/api/roles", json={
-        "name": "Custom Analyst",
+        "code": code,
+        "name": "Custom Analyst " + marker,
         "description": "d",
         "tenantAssignable": True,
     },
                     headers=env.sys_headers())
     assert r.status_code == 200 and r.json()["code"] == 0
     rid = r.json()["data"]["id"]
-    assert rid == "role_custom_analyst"
-    assert r.json()["data"]["code"] == rid
+    assert re.fullmatch(r"[0-9a-f]{32}", rid)
+    assert r.json()["data"]["code"] == code
+    assert r.json()["data"]["code"] != rid
     assert r.json()["data"]["tenant_assignable"] is True
     # 编辑
     r2 = client.put(f"/api/roles/{rid}", json={
@@ -186,12 +191,17 @@ def test_legacy_update_payload_preserves_tenant_assignment_policy(client, env):
 
 
 def test_create_duplicate_normalized_name_rejected(client, env):
-    body = {"name": "数据分析员"}
+    marker = uuid.uuid4().hex[:6]
+    body = {"code": f"data_analyst_{marker}", "name": "数据分析员"}
     r1 = client.post("/api/roles", json=body, headers=env.sys_headers()).json()["data"]
     try:
-        assert r1["id"] == "role_data_analyst"
+        assert re.fullmatch(r"[0-9a-f]{32}", r1["id"])
+        assert r1["code"] == body["code"]
         r2 = client.post(
-            "/api/roles", json={"name": "  数据分析员  "}, headers=env.sys_headers())
+            "/api/roles",
+            json={"code": f"other_{marker}", "name": "  数据分析员  "},
+            headers=env.sys_headers(),
+        )
         assert r2.json()["code"] == 4000
         assert r2.json()["msg"] == "角色名称已存在"
     finally:
@@ -201,10 +211,14 @@ def test_create_duplicate_normalized_name_rejected(client, env):
 def test_update_duplicate_normalized_name_rejected(client, env):
     marker = uuid.uuid4().hex[:6]
     first = client.post(
-        "/api/roles", json={"name": f"Analyst {marker}"}, headers=env.sys_headers()
+        "/api/roles",
+        json={"code": f"analyst_{marker}", "name": f"Analyst {marker}"},
+        headers=env.sys_headers(),
     ).json()["data"]
     second = client.post(
-        "/api/roles", json={"name": f"Observer {marker}"}, headers=env.sys_headers()
+        "/api/roles",
+        json={"code": f"observer_{marker}", "name": f"Observer {marker}"},
+        headers=env.sys_headers(),
     ).json()["data"]
     try:
         r = client.put(
@@ -238,6 +252,40 @@ def test_create_builtin_code_rejected(client, env):
     r = client.post("/api/roles", json={"code": ROLE_NORMAL, "name": "撞内置"},
                     headers=env.sys_headers())
     assert r.json()["code"] == 4000
+
+
+def test_create_role_requires_code(client, env):
+    r = client.post(
+        "/api/roles",
+        json={"code": "", "name": "缺少角色码 " + uuid.uuid4().hex[:6]},
+        headers=env.sys_headers(),
+    )
+    assert r.json()["code"] == 4000
+    assert r.json()["msg"] == "请填写角色码"
+
+
+def test_create_explicit_code_and_reject_invalid_code(client, env):
+    marker = uuid.uuid4().hex[:6]
+    code = f"analyst_{marker}"
+    created = client.post(
+        "/api/roles",
+        json={"code": code.upper(), "name": f"分析员 {marker}"},
+        headers=env.sys_headers(),
+    ).json()["data"]
+    try:
+        assert created["code"] == code
+        assert re.fullmatch(r"[0-9a-f]{32}", created["id"])
+        assert created["id"] != created["code"]
+    finally:
+        env.pg.execute("DELETE FROM sys_role WHERE id=%s", [created["id"]])
+
+    rejected = client.post(
+        "/api/roles",
+        json={"code": "invalid code", "name": f"非法角色码 {marker}"},
+        headers=env.sys_headers(),
+    )
+    assert rejected.json()["code"] == 4000
+    assert rejected.json()["msg"].startswith("角色码须以字母开头")
 
 
 # ── 内置保护 / 超管锁定 ──

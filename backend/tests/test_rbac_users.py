@@ -63,6 +63,10 @@ def env(pg):
         made["role"].append(role_id)
         return role_id
 
+    def track_role(role_id: str):
+        made["role"].append(role_id)
+        return role_id
+
     def sys_headers():
         pv = int(pg.query_df("SELECT perm_ver FROM sys_user WHERE id='admin'").iloc[0]["perm_ver"])
         return _tok("admin", "default", pv)
@@ -72,6 +76,7 @@ def env(pg):
         mk_tenant=mk_tenant,
         mk_user=mk_user,
         mk_role=mk_role,
+        track_role=track_role,
         sys_headers=sys_headers,
         pg=pg,
     )
@@ -382,6 +387,31 @@ def test_system_create_and_list(client, env):
     assert r.status_code == 200 and r.json()["code"] == 0
     created = r.json()["data"]
     assert created["tenant_id"] == tid and ROLE_NORMAL in created["roles"]
+
+
+def test_system_assigns_uuid_role_by_id_and_user_exposes_role_code(client, env):
+    marker = uuid.uuid4().hex[:6]
+    role = client.post(
+        "/api/roles",
+        json={"code": f"reviewer_{marker}", "name": f"复核员 {marker}"},
+        headers=env.sys_headers(),
+    ).json()["data"]
+    env.track_role(role["id"])
+    assert role["id"] != role["code"]
+    tid = env.mk_tenant()
+    response = client.post(
+        "/api/users",
+        json={
+            "account": "uuid_role_user_" + marker,
+            "password": "GoodPass1",
+            "roleIds": [role["id"]],
+            "tenantId": tid,
+        },
+        headers=env.sys_headers(),
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["roles"] == [role["code"]]
+    assert response.json()["data"]["role_code"] == role["code"]
 
 
 def test_system_can_create_another_system_admin(client, env):

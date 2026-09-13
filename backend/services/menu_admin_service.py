@@ -19,9 +19,10 @@
 from __future__ import annotations
 
 from backend.auth import perm_resolver
-from backend.common.exceptions import ForbiddenError, NotFoundError, ValidationError
-from backend.common.ids import prefixed_readable_id
+from backend.common.exceptions import ForbiddenError, NotFoundError, StorageError, ValidationError
+from backend.common.ids import is_business_code
 from backend.common.logging import get_logger
+from backend.storage.db_errors import unique_violation_constraint
 from backend.storage.menu_repository import MenuRepository
 
 log = get_logger("services.menu_admin")
@@ -49,15 +50,25 @@ class MenuAdminService:
         if not title:
             raise ValidationError("请填写菜单标题")
         if not code:
-            code = self._make_menu_code(title)
+            raise ValidationError("请填写菜单编码")
+        code = code.lower()
+        if not is_business_code(code):
+            raise ValidationError("菜单编码须以字母开头，且只能包含小写字母、数字、下划线、冒号或短横线")
         if self.menus.get_by_code(code):
-            raise ValidationError("菜单标识已存在")
+            raise ValidationError("菜单编码已存在")
         route_path = self._normalize_route(type, route_path, exclude_id=None)
         if parent_id and self.menus.get(parent_id) is None:
             raise ValidationError("上级菜单不存在")
-        mid = self.menus.create(
-            parent_id=parent_id, code=code, title=title, type=type,
-            route_path=route_path, icon=icon, visible=visible, sort=sort)
+        try:
+            mid = self.menus.create(
+                parent_id=parent_id, code=code, title=title, type=type,
+                route_path=route_path, icon=icon, visible=visible, sort=sort)
+        except StorageError as exc:
+            if unique_violation_constraint(exc) in {
+                "sys_menu_code_key", "uq_sys_menu_code_normalized",
+            }:
+                raise ValidationError("菜单编码已存在") from exc
+            raise
         log.info("菜单管理：新建菜单 %s(%s) type=%s parent=%s", mid, code, type, parent_id)
         return self.menus.get(mid)  # type: ignore[return-value]
 
@@ -211,12 +222,3 @@ class MenuAdminService:
     def _check_visible(visible: str) -> None:
         if visible not in _VALID_VISIBLE:
             raise ValidationError(f"无效的可见性：{visible}")
-
-    def _make_menu_code(self, title: str) -> str:
-        base = prefixed_readable_id(title, prefix="menu_")
-        code = base
-        seq = 2
-        while self.menus.get(code) or self.menus.get_by_code(code):
-            code = f"{base}_{seq}"
-            seq += 1
-        return code

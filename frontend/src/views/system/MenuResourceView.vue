@@ -235,10 +235,13 @@ function openCreateChild(node?: MenuNode) {
 async function saveCreateMenu() {
   const f = menuCreateForm.value
   if (!f.title.trim()) { ElMessage.warning('请填写菜单标题'); return }
+  if (!f.code.trim()) { ElMessage.warning('请填写菜单编码'); return }
+  if (f.type === 'leaf' && !f.routePath.trim()) { ElMessage.warning('请填写菜单路由'); return }
   menuSaving.value = true
   try {
     const m = await createMenu({
       parentId: f.parentId,
+      code: f.code.trim().toLowerCase(),
       title: f.title.trim(),
       type: f.type,
       routePath: f.type === 'group' ? null : (f.routePath.trim() || null),
@@ -545,7 +548,7 @@ onMounted(() => { loadTree() })
                   <SystemBuiltinTag v-if="activeMenu.is_builtin" />
                 </h2>
                 <div class="mmeta">
-                  标识 {{ activeMenu.code }}
+                  菜单编码 {{ activeMenu.code }}
                 </div>
               </div>
               <div class="page-head-actions">
@@ -738,22 +741,29 @@ onMounted(() => { loadTree() })
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="标题">
+          <el-form-item label="标题" required>
             <el-input v-model="menuCreateForm.title" placeholder="如：每日榜单" />
           </el-form-item>
-          <el-form-item label="类型">
+          <el-form-item label="菜单编码" required>
+            <el-input
+              v-model="menuCreateForm.code"
+              class="mono"
+              placeholder="必填，创建后不可修改"
+            />
+          </el-form-item>
+          <el-form-item label="类型" required>
             <el-select v-model="menuCreateForm.type">
               <el-option label="叶子（可导航）" value="leaf" />
               <el-option label="分组（不导航）" value="group" />
             </el-select>
           </el-form-item>
-          <el-form-item label="路由" v-if="menuCreateForm.type !== 'group'">
+          <el-form-item label="路由" v-if="menuCreateForm.type !== 'group'" required>
             <el-input v-model="menuCreateForm.routePath" class="mono" placeholder="如 /board（须与前端已注册路由对应）" />
           </el-form-item>
           <el-form-item label="图标">
             <IconPicker v-model="menuCreateForm.icon" />
           </el-form-item>
-          <el-form-item label="可见性">
+          <el-form-item label="可见性" required>
             <el-select v-model="menuCreateForm.visible">
               <el-option label="登录可见" value="login" />
               <el-option label="仅系统管理员" value="system" />

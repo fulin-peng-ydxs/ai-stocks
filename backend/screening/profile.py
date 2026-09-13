@@ -12,7 +12,7 @@ import json
 from datetime import datetime
 
 from backend.auth.context import get_current_owner
-from backend.common.ids import prefixed_readable_id
+from backend.common.ids import uuid_hex_id
 from backend.common.logging import get_logger
 from backend.screening.condition import validate_ast
 from backend.screening.presets import PRESET_PROFILES
@@ -274,13 +274,9 @@ class ProfileRepo:
         return result
 
     def _make_id(self, name: str) -> str:
-        base = prefixed_readable_id(name, prefix="screen_")
-        new_id = base
-        seq = 2
-        while self.get(new_id):
-            new_id = f"{base}_{seq}"
-            seq += 1
-        return new_id
+        """生成与方案名称无关的内部身份；name 参数保留以稳定私有调用接口。"""
+        del name
+        return uuid_hex_id()
 
     def save_with_id(self, pid: str | None, name: str, expression: dict, params: dict | None = None,
                      is_preset: bool = False) -> tuple[str, int]:

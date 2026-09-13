@@ -715,7 +715,7 @@ onMounted(() => {
         <el-form-item label="股票">
           <span>{{ delistRow?.code }} {{ delistRow?.name }}</span>
         </el-form-item>
-        <el-form-item label="退市日期">
+        <el-form-item label="退市日期" required>
           <AppDatePicker v-model="delistDate" type="date" value-format="YYYY-MM-DD"
                          format="YYYY年MM月DD日" placeholder="该股最后有效交易日" />
         </el-form-item>

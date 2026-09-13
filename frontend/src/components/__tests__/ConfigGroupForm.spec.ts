@@ -77,6 +77,13 @@ describe('ConfigGroupForm', () => {
     expect(helpTexts.some((text) => text.includes('允许范围：1 - 10'))).toBe(true)
   })
 
+  it('数值和枚举配置显示必填标记语义，开关不误标', () => {
+    const wrapper = mountForm()
+    const items = wrapper.findAll('.form-item')
+    expect(items[0].attributes('required')).toBeDefined()
+    expect(items[1].attributes('required')).toBe('false')
+  })
+
   it('按 config-panel 行为控制折叠态和说明展示', () => {
     const wrapper = mountForm({
       sections: [

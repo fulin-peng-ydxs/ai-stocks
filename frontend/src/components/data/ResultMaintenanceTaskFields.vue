@@ -33,7 +33,7 @@ function patch(value: Partial<ResultMaintenanceTaskForm>) {
 </script>
 
 <template>
-  <el-form-item label="目标范围">
+  <el-form-item label="目标范围" required>
     <PageSegmented
       :model-value="modelValue.target_mode"
       :options="targetOptions"
@@ -43,7 +43,7 @@ function patch(value: Partial<ResultMaintenanceTaskForm>) {
       @update:model-value="patch({ target_mode: $event as ResultTargetMode })"
     />
   </el-form-item>
-  <el-form-item v-if="modelValue.target_mode === 'fixed'" label="固定日期">
+  <el-form-item v-if="modelValue.target_mode === 'fixed'" label="固定日期" required>
     <div class="app-inline-info app-inline-info--fill">
       <TradeDatePicker
         :model-value="modelValue.trade_date"
@@ -57,7 +57,7 @@ function patch(value: Partial<ResultMaintenanceTaskForm>) {
     </div>
   </el-form-item>
   <template v-if="taskType === 'stock_board_correlation'">
-    <el-form-item label="股票范围">
+    <el-form-item label="股票范围" required>
       <PageSegmented
         :model-value="modelValue.stock_scope"
         :options="[{ label: '全市场', value: 'all' }, { label: '指定股票', value: 'selected' }]"
@@ -67,7 +67,7 @@ function patch(value: Partial<ResultMaintenanceTaskForm>) {
         @update:model-value="patch({ stock_scope: $event as 'all' | 'selected' })"
       />
     </el-form-item>
-    <el-form-item v-if="modelValue.stock_scope === 'selected'" label="指定股票">
+    <el-form-item v-if="modelValue.stock_scope === 'selected'" label="指定股票" required>
       <StockCodeMultiSelect
         :model-value="modelValue.codes"
         :test-id="`${testIdPrefix}-codes`"

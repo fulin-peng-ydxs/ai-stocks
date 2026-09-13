@@ -44,15 +44,15 @@ def test_screen_profile_isolation_and_same_id(pg):
 
 
 def test_screen_profile_save_with_id_auto_generates(pg):
-    """新建时 id 为空由名称自动生成（与评分/买卖一致）；显式传 id 仍走原语义。"""
+    """新建时 id 为空生成 UUID（与评分/买卖一致）；显式传旧 id 仍兼容。"""
     repo = ProfileRepo(pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
     pid, v = repo.save_with_id(None, "自动生成方案", _EXPR)
-    assert pid.startswith("screen_") and v == 1
+    assert len(pid) == 32 and all(ch in "0123456789abcdef" for ch in pid) and v == 1
     got = repo.get(pid)
     assert got is not None and got["name"] == "自动生成方案"
-    # 同名再存 → 撞库自动后缀
+    # 名称不参与内部身份，同名方案仍获得不同 UUID。
     pid2, v2 = repo.save_with_id(None, "自动生成方案", _EXPR)
-    assert pid2 != pid and pid2.startswith("screen_") and v2 == 1
+    assert len(pid2) == 32 and pid2 != pid and v2 == 1
     # 明确传 id 仍走原语义
     assert repo.save_with_id("fixed_id", "固定标识", _EXPR)[0] == "fixed_id"
     try:
@@ -63,4 +63,3 @@ def test_screen_profile_save_with_id_auto_generates(pg):
         pg.execute("DELETE FROM screen_profile WHERE id='fixed_id' AND owner_user_id=%s", [TEST_OWNER])
     except Exception:
         pass
-

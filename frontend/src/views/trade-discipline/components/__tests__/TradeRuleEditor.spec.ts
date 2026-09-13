@@ -184,6 +184,27 @@ describe('TradeRuleEditor', () => {
     expect(api.get).toHaveBeenCalledTimes(2)
   })
 
+  it('必填标记覆盖发布校验字段，明细缺失时不保存也不发布', async () => {
+    const wrapper = await mountEditor()
+    const baseRequiredLabels = wrapper.findAll('.el-form-item.is-required .el-form-item__label')
+      .map((item) => item.text())
+    expect(baseRequiredLabels).toEqual(expect.arrayContaining(['规则名称', '总本金（元）']))
+
+    await wrapper.get('[data-testid="stock-rule-card"] [data-testid="rule-card-toggle"]').trigger('click')
+    const stockRequiredLabels = wrapper.findAll('.el-form-item.is-required .el-form-item__label')
+      .map((item) => item.text())
+    expect(stockRequiredLabels).toEqual(expect.arrayContaining([
+      '规则名称', '资金上限（元）', '规则内容',
+    ]))
+
+    await wrapper.get('[data-testid="stock-rule-name-input"]').setValue('')
+    await wrapper.get('.rule-editor__footer .el-button:last-child').trigger('click')
+    await flushPromises()
+
+    expect(api.save).not.toHaveBeenCalled()
+    expect(api.publish).not.toHaveBeenCalled()
+  })
+
   it('放弃已保存草稿后重新读取双状态详情', async () => {
     api.discard.mockResolvedValue({})
     vi.spyOn(ElMessageBox, 'confirm').mockResolvedValueOnce('confirm' as any)

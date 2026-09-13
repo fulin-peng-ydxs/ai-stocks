@@ -49,7 +49,7 @@ function changeRecipe(recipe: StockIngestRecipe) {
 </script>
 
 <template>
-  <el-form-item label="采集方案">
+  <el-form-item label="采集方案" required>
     <el-select
       :model-value="modelValue.recipe"
       :data-testid="`${testIdPrefix}-recipe`"
@@ -68,7 +68,7 @@ function changeRecipe(recipe: StockIngestRecipe) {
     </el-select>
   </el-form-item>
 
-  <el-form-item v-if="supportsCodes" label="股票范围">
+  <el-form-item v-if="supportsCodes" label="股票范围" required>
     <PageSegmented
       :model-value="modelValue.scope"
       :options="[{ label: '全市场', value: 'all' }, { label: '指定股票', value: 'selected' }]"
@@ -79,7 +79,7 @@ function changeRecipe(recipe: StockIngestRecipe) {
     />
   </el-form-item>
 
-  <el-form-item v-if="supportsCodes && modelValue.scope === 'selected'" label="指定股票">
+  <el-form-item v-if="supportsCodes && modelValue.scope === 'selected'" label="指定股票" required>
     <StockCodeMultiSelect
       :model-value="modelValue.codes"
       :test-id="`${testIdPrefix}-codes`"
@@ -89,7 +89,7 @@ function changeRecipe(recipe: StockIngestRecipe) {
   </el-form-item>
 
   <template v-if="modelValue.recipe === 'range_refetch' || modelValue.recipe === 'st_status_refresh'">
-    <el-form-item label="起始日期">
+    <el-form-item label="起始日期" :required="modelValue.recipe === 'range_refetch'">
       <TradeDatePicker
         :model-value="modelValue.date_start"
         :placeholder="modelValue.recipe === 'st_status_refresh' ? '留空=全部已有历史' : '必填，仅可选交易日'"

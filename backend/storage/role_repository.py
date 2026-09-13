@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from backend.auth.constants import EXPLICIT_SYSTEM_ONLY_RESOURCE_CODES
+from backend.common.ids import uuid_hex_id
 from backend.common.logging import get_logger
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
@@ -95,8 +96,8 @@ class RoleRepository:
 
     def create(self, *, code: str, name: str, description: str | None,
                tenant_assignable: bool) -> str:
-        """新建自定义角色（kind=custom、is_builtin=false）。唯一性由 UNIQUE(code) 兜底。返回 id。"""
-        role_id = code
+        """新建 UUID 主键的自定义角色；code 是独立且稳定的业务标识。"""
+        role_id = uuid_hex_id()
         self.pg.execute(
             "INSERT INTO sys_role "
             "(id, code, name, kind, is_builtin, is_locked, tenant_assignable, description, created_at) "

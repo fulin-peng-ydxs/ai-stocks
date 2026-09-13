@@ -29,7 +29,7 @@ def _ctx():
 
 
 class RoleCreate(BaseModel):
-    code: str | None = None
+    code: str
     name: str
     description: str | None = None
     tenantAssignable: bool = False

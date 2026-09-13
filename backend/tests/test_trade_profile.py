@@ -108,18 +108,20 @@ def test_repo_crud_version(market, pg):
     assert repo.get("t1") is None
 
 
-def test_repo_save_with_id_generates_from_name(market, pg):
+def test_repo_save_with_id_generates_uuid(market, pg):
     IndicatorDefRepo(market).seed_builtins()
     repo = TradeProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
     buy = {"op": "AND", "children": [{"indicator": "bull_arrange", "cmp": "==", "value": True}]}
     sell = {"op": "OR", "children": [{"indicator": "ma_bias", "params": {"n": 20}, "cmp": "<", "value": 0}]}
     pid, v1 = repo.save_with_id(None, "趋势买卖", buy, sell, {"stop_loss": 0.08})
+    pid2: str | None = None
     try:
-        assert pid == "trade_trend_trade"
+        assert len(pid) == 32 and all(ch in "0123456789abcdef" for ch in pid)
         assert v1 == 1
         assert repo.get(pid)["name"] == "趋势买卖"
         pid2, _ = repo.save_with_id(None, "趋势买卖", buy, sell, {"stop_loss": 0.08})
-        assert pid2 == "trade_trend_trade_2"
+        assert len(pid2) == 32 and pid2 != pid
     finally:
         repo.delete(pid)
-        repo.delete("trade_trend_trade_2")
+        if pid2:
+            repo.delete(pid2)

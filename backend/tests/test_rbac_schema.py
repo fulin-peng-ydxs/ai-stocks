@@ -444,6 +444,7 @@ def test_identity_master_data_has_normalized_unique_indexes(pg):
             "uq_sys_tenant_name_normalized",
             "uq_sys_role_name_normalized",
             "uq_sys_role_code_normalized",
+            "uq_sys_menu_code_normalized",
             "uq_sys_user_account_normalized",
             "uq_sys_user_email_normalized",
         ]],
@@ -452,6 +453,7 @@ def test_identity_master_data_has_normalized_unique_indexes(pg):
         "uq_sys_tenant_name_normalized",
         "uq_sys_role_name_normalized",
         "uq_sys_role_code_normalized",
+        "uq_sys_menu_code_normalized",
         "uq_sys_user_account_normalized",
         "uq_sys_user_email_normalized",
     }

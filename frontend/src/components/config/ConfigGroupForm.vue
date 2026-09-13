@@ -140,6 +140,7 @@ function collapsed(key: string): boolean {
         <el-form-item
           v-for="field in block.fields"
           :key="field.path"
+          :required="!disabled && (field.type === 'enum' || field.type === 'int' || field.type === 'number')"
           :class="{ 'is-invalid': isInvalid(field.path) }"
         >
           <template #label>

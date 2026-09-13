@@ -290,15 +290,33 @@ function buildPayload(): ScheduledJobInput | null {
   if (form.trigger_mode === 'dependency' && !form.dependency_job_id) {
     ElMessage.warning('请选择上游任务'); return null
   }
+  if (form.trigger_mode === 'dependency'
+    && (!Number.isInteger(form.dependency_delay_value) || form.dependency_delay_value < 0)) {
+    ElMessage.warning('触发延迟必须是非负整数'); return null
+  }
   const fc: Record<string, unknown> = {}
+  if (form.trigger_mode === 'time' && form.freq_type !== 'cron' && !form.time) {
+    ElMessage.warning('请选择执行时间'); return null
+  }
   if (form.trigger_mode === 'time' && form.freq_type === 'daily') fc.time = form.time
   else if (form.trigger_mode === 'time' && form.freq_type === 'weekly') {
     if (!form.weekdays.length) { ElMessage.warning('每周任务请至少选一个星期'); return null }
     fc.weekdays = [...form.weekdays].sort((a, b) => a - b); fc.time = form.time
-  } else if (form.trigger_mode === 'time' && form.freq_type === 'monthly') { fc.day = form.day; fc.time = form.time }
+  } else if (form.trigger_mode === 'time' && form.freq_type === 'monthly') {
+    if (!Number.isInteger(form.day) || form.day < 1 || form.day > 28) {
+      ElMessage.warning('每月执行日必须是 1–28 的整数'); return null
+    }
+    fc.day = form.day; fc.time = form.time
+  }
   else if (form.trigger_mode === 'time' && form.freq_type === 'cron') {
     if (!form.cron.trim()) { ElMessage.warning('请填写 cron 表达式'); return null }
     fc.cron = form.cron.trim()
+  }
+  if (form.retry_enabled && (
+    !Number.isInteger(form.retry_delay_value) || form.retry_delay_value < 0
+    || !Number.isInteger(form.max_retries) || form.max_retries < 1 || form.max_retries > 20
+  )) {
+    ElMessage.warning('重试延迟须为非负整数，最大重试须为 1–20 的整数'); return null
   }
   return {
     name: form.name.trim(), task_type: form.task_type, params,
@@ -842,7 +860,7 @@ onActivated(openResultScheduleFromIntent)
     <!-- 新建/编辑对话框 -->
     <el-dialog v-model="dlg" :title="dlgTitle" width="520px" data-testid="schedule-dialog">
       <el-form label-width="92px">
-        <el-form-item label="任务名称">
+        <el-form-item label="任务名称" required>
           <el-input
             v-model="form.name"
             data-testid="schedule-name"
@@ -851,7 +869,7 @@ onActivated(openResultScheduleFromIntent)
             show-word-limit
           />
         </el-form-item>
-        <el-form-item label="任务类型">
+        <el-form-item label="任务类型" required>
           <el-select
             v-model="form.task_type"
             data-testid="schedule-task-type"
@@ -862,7 +880,7 @@ onActivated(openResultScheduleFromIntent)
           </el-select>
         </el-form-item>
         <!-- 按类型的动态参数 -->
-        <el-form-item v-if="form.task_type === 'fix'" label="问题类型">
+        <el-form-item v-if="form.task_type === 'fix'" label="问题类型" required>
           <div class="app-inline-info app-inline-info--fill">
             <el-select v-model="form.issue_type" data-testid="schedule-issue-type" style="width: 100%">
               <el-option
@@ -900,33 +918,33 @@ onActivated(openResultScheduleFromIntent)
           class="form-section-divider"
           data-testid="schedule-trigger-divider"
         >触发方式</el-divider>
-        <el-form-item label="触发方式">
+        <el-form-item label="触发方式" required>
           <PageSegmented v-model="form.trigger_mode" :options="TRIGGER_MODE_OPTIONS" test-id="schedule-trigger-mode" aria-label="触发方式" />
         </el-form-item>
         <template v-if="form.trigger_mode === 'time'">
-        <el-form-item label="频率">
+        <el-form-item label="频率" required>
           <PageSegmented v-model="form.freq_type" :options="FREQ_OPTIONS" aria-label="频率" />
         </el-form-item>
-        <el-form-item v-if="form.freq_type === 'weekly'" label="星期">
+        <el-form-item v-if="form.freq_type === 'weekly'" label="星期" required>
           <el-checkbox-group v-model="form.weekdays">
             <el-checkbox-button v-for="w in WEEKDAYS" :key="w.value" :value="w.value">{{ w.label }}</el-checkbox-button>
           </el-checkbox-group>
         </el-form-item>
-        <el-form-item v-if="form.freq_type === 'monthly'" label="每月几号">
+        <el-form-item v-if="form.freq_type === 'monthly'" label="每月几号" required>
           <div class="app-inline-info">
             <el-input-number v-model="form.day" :min="1" :max="28" />
             <span class="app-caption-text">1–28（避开月末不确定）</span>
           </div>
         </el-form-item>
-        <el-form-item v-if="form.freq_type === 'cron'" label="cron 表达式">
+        <el-form-item v-if="form.freq_type === 'cron'" label="cron 表达式" required>
           <el-input v-model="form.cron" placeholder="分 时 日 月 周，如 30 15 * * 1-5" />
         </el-form-item>
-        <el-form-item v-if="form.freq_type !== 'cron'" label="执行时间">
+        <el-form-item v-if="form.freq_type !== 'cron'" label="执行时间" required>
           <el-time-picker v-model="form.time" value-format="HH:mm" format="HH:mm" placeholder="HH:mm" :clearable="false" />
         </el-form-item>
         </template>
         <template v-else>
-          <el-form-item label="上游任务">
+          <el-form-item label="上游任务" required>
             <el-select
               v-model="form.dependency_job_id"
               data-testid="schedule-dependency-job"
@@ -942,13 +960,13 @@ onActivated(openResultScheduleFromIntent)
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="结果条件">
+          <el-form-item label="结果条件" required>
             <div class="app-inline-info">
               <PageSegmented v-model="form.dependency_condition" :options="CONDITION_OPTIONS" test-id="schedule-dependency-condition" aria-label="依赖结果条件" />
               <span class="app-caption-text">“完成后”包含成功和失败；人工终止不会触发</span>
             </div>
           </el-form-item>
-          <el-form-item label="触发延迟">
+          <el-form-item label="触发延迟" required>
             <el-input-number v-model="form.dependency_delay_value" data-testid="schedule-dependency-delay" :min="0" :precision="0" />
             <el-select v-model="form.dependency_delay_unit" data-testid="schedule-dependency-delay-unit" class="delay-unit-select">
               <el-option v-for="item in DELAY_UNIT_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
@@ -964,7 +982,7 @@ onActivated(openResultScheduleFromIntent)
           </div>
         </el-form-item>
         <template v-if="form.retry_enabled">
-          <el-form-item label="循环条件">
+          <el-form-item label="循环条件" required>
             <div class="app-inline-info">
               <PageSegmented v-model="form.retry_condition" :options="CONDITION_OPTIONS" test-id="schedule-retry-condition" aria-label="循环结果条件" />
               <span v-if="form.retry_condition === 'completion'" class="app-caption-text warn-hint">
@@ -972,13 +990,13 @@ onActivated(openResultScheduleFromIntent)
               </span>
             </div>
           </el-form-item>
-          <el-form-item label="重试延迟">
+          <el-form-item label="重试延迟" required>
             <el-input-number v-model="form.retry_delay_value" data-testid="schedule-retry-delay" :min="0" :precision="0" />
             <el-select v-model="form.retry_delay_unit" data-testid="schedule-retry-delay-unit" class="delay-unit-select">
               <el-option v-for="item in DELAY_UNIT_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
             </el-select>
           </el-form-item>
-          <el-form-item label="最大重试">
+          <el-form-item label="最大重试" required>
             <div class="app-inline-info">
               <el-input-number v-model="form.max_retries" data-testid="schedule-max-retries" :min="1" :max="20" :precision="0" />
               <span class="app-caption-text">不含首次执行；最多 20 次</span>

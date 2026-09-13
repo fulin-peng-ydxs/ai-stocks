@@ -23,13 +23,12 @@ from backend.auth import perm_resolver
 from backend.auth.constants import BUILTIN_ROLES
 from backend.auth.context import AuthContext
 from backend.common.exceptions import ForbiddenError, NotFoundError, StorageError, ValidationError
-from backend.common.ids import prefixed_readable_id
+from backend.common.ids import is_business_code
 from backend.common.logging import get_logger
 from backend.storage.db_errors import unique_violation_constraint
 from backend.storage.role_repository import RoleRepository
 
 log = get_logger("services.role_admin")
-
 
 class RoleAdminService:
     def __init__(self, roles: RoleRepository | None = None):
@@ -51,11 +50,13 @@ class RoleAdminService:
         if not name:
             raise ValidationError("请填写角色名称")
         if not code:
-            code = self._make_role_code(name)
+            raise ValidationError("请填写角色码")
+        if not is_business_code(code):
+            raise ValidationError("角色码须以字母开头，且只能包含小写字母、数字、下划线、冒号或短横线")
         if self.roles.get_by_name(name):
             raise ValidationError("角色名称已存在")
         if code in BUILTIN_ROLES or self.roles.get_by_code(code):
-            raise ValidationError("角色标识已存在")
+            raise ValidationError("角色码已存在")
         try:
             rid = self.roles.create(
                 code=code,
@@ -68,7 +69,7 @@ class RoleAdminService:
             if constraint == "uq_sys_role_name_normalized":
                 raise ValidationError("角色名称已存在") from exc
             if constraint in {"sys_role_pkey", "sys_role_code_key", "uq_sys_role_code_normalized"}:
-                raise ValidationError("角色标识已存在") from exc
+                raise ValidationError("角色码已存在") from exc
             raise
         log.info("角色管理：新建自定义角色 %s(%s)", rid, code)
         return self.roles.get(rid)  # type: ignore[return-value]
@@ -152,12 +153,3 @@ class RoleAdminService:
         if role is None:
             raise NotFoundError("角色不存在")
         return role
-
-    def _make_role_code(self, name: str) -> str:
-        base = prefixed_readable_id(name, prefix="role_")
-        code = base
-        seq = 2
-        while code in BUILTIN_ROLES or self.roles.get_by_code(code) or self.roles.get(code):
-            code = f"{base}_{seq}"
-            seq += 1
-        return code

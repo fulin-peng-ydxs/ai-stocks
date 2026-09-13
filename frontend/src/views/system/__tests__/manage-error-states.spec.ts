@@ -109,6 +109,69 @@ describe('角色页 loadAll error+retry 闭环', () => {
     expect(normalizedText('.rname')).toBe('系统管理员系统内置')
   })
 
+  it('新建角色允许填写独立角色码并透传接口', async () => {
+    const created = {
+      id: '0123456789abcdef0123456789abcdef',
+      code: 'risk_reviewer',
+      name: '风险复核员',
+      description: null,
+      kind: 'custom',
+      is_builtin: false,
+      is_locked: false,
+      tenant_assignable: true,
+      member_count: 0,
+    }
+    ;(menuApi.listMenus as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(menuApi.listResources as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(roleApi.listRoles as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([created])
+    ;(roleApi.createRole as ReturnType<typeof vi.fn>).mockResolvedValue(created)
+    ;(roleApi.getRoleGrants as ReturnType<typeof vi.fn>).mockResolvedValue({
+      menu_ids: [],
+      resource_ids: [],
+    })
+    const w = await mountView(RoleManageView)
+    const vm = w.vm as unknown as {
+      openCreate: () => void
+      saveRole: () => Promise<void>
+      roleForm: { code: string; name: string; description: string; tenantAssignable: boolean }
+    }
+    vm.openCreate()
+    await w.vm.$nextTick()
+    const requiredLabels = w.findAll('.el-form-item.is-required .el-form-item__label')
+      .map((item) => item.text())
+    expect(requiredLabels).toEqual(expect.arrayContaining(['角色名', '角色码']))
+    vm.roleForm.code = 'risk_reviewer'
+    vm.roleForm.name = '风险复核员'
+    vm.roleForm.tenantAssignable = true
+    await vm.saveRole()
+
+    expect(roleApi.createRole).toHaveBeenCalledWith({
+      code: 'risk_reviewer',
+      name: '风险复核员',
+      description: null,
+      tenantAssignable: true,
+    })
+  })
+
+  it('新建角色未填写角色码时不提交', async () => {
+    ;(menuApi.listMenus as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(menuApi.listResources as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(roleApi.listRoles as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    const w = await mountView(RoleManageView)
+    const vm = w.vm as unknown as {
+      openCreate: () => void
+      saveRole: () => Promise<void>
+      roleForm: { code: string; name: string }
+    }
+    vm.openCreate()
+    vm.roleForm.name = '风险复核员'
+    await vm.saveRole()
+
+    expect(roleApi.createRole).not.toHaveBeenCalled()
+  })
+
   it('菜单/资源成功但角色列表失败 → 进错误态（回归：loadRoles 曾在 catch 外）', async () => {
     ;(menuApi.listMenus as ReturnType<typeof vi.fn>).mockResolvedValue([])
     ;(menuApi.listResources as ReturnType<typeof vi.fn>).mockResolvedValue([])
@@ -132,6 +195,69 @@ describe('角色页 loadAll error+retry 闭环', () => {
 
 describe('菜单页 loadResources error+retry 闭环', () => {
   beforeEach(() => { vi.clearAllMocks() })
+
+  it('新建菜单填写独立菜单编码并透传接口', async () => {
+    const created = { ...MENU, id: '0123456789abcdef0123456789abcdef', code: 'daily_report' }
+    ;(menuApi.listMenus as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([created])
+    ;(menuApi.listResources as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(menuApi.createMenu as ReturnType<typeof vi.fn>).mockResolvedValue(created)
+
+    const w = await mountView(MenuResourceView)
+    const vm = w.vm as unknown as {
+      openCreateRoot: () => void
+      saveCreateMenu: () => Promise<void>
+      menuCreateForm: {
+        code: string
+        title: string
+        type: string
+        routePath: string
+        icon: string | null
+        visible: string
+        parentId: string | null
+      }
+    }
+    vm.openCreateRoot()
+    await w.vm.$nextTick()
+    const requiredLabels = w.findAll('.el-form-item.is-required .el-form-item__label')
+      .map((item) => item.text())
+    expect(requiredLabels).toEqual(expect.arrayContaining(['标题', '菜单编码', '类型', '可见性']))
+    vm.menuCreateForm.code = 'daily_report'
+    vm.menuCreateForm.title = '日报中心'
+    await vm.saveCreateMenu()
+
+    expect(menuApi.createMenu).toHaveBeenCalledWith({
+      parentId: null,
+      code: 'daily_report',
+      title: '日报中心',
+      type: 'group',
+      routePath: null,
+      icon: null,
+      visible: 'login',
+    })
+  })
+
+  it('新建菜单未填写菜单编码时不提交', async () => {
+    ;(menuApi.listMenus as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(menuApi.listResources as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    const w = await mountView(MenuResourceView)
+    const vm = w.vm as unknown as {
+      openCreateRoot: () => void
+      saveCreateMenu: () => Promise<void>
+      menuCreateForm: { code: string; title: string; type: string }
+    }
+    vm.openCreateRoot()
+    vm.menuCreateForm.type = 'leaf'
+    await w.vm.$nextTick()
+    const requiredLabels = w.findAll('.el-form-item.is-required .el-form-item__label')
+      .map((item) => item.text())
+    expect(requiredLabels).toContain('路由')
+    vm.menuCreateForm.title = '日报中心'
+    await vm.saveCreateMenu()
+
+    expect(menuApi.createMenu).not.toHaveBeenCalled()
+  })
 
   it('系统内置标签展示在菜单名称后；功能码行不再重复打内置标签', async () => {
     ;(menuApi.listMenus as ReturnType<typeof vi.fn>).mockResolvedValue([

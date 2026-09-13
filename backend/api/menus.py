@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api", tags=["menus"], dependencies=[Depends(require_
 
 class MenuCreate(BaseModel):
     parentId: str | None = None
-    code: str | None = None
+    code: str
     title: str
     type: str = "leaf"                # group | leaf
     routePath: str | None = None
@@ -85,7 +85,7 @@ def reorder_menus(body: ReorderBody) -> ApiResponse:
     return ok(tree, msg="排序已保存")
 
 
-# menu_id 用 :path 转换器：内置菜单 seed id=code 含斜杠（如 /screen、/system/users），
+# menu_id 用 :path 转换器：存量内置菜单 seed id=code 含斜杠（如 /screen、/system/users），
 # 普通 str 段无法匹配（会 404/405）；:path 可捕获且不与 /menus/reorder(POST) 冲突（方法不同、
 # 且该前缀下无其它子资源）。前端 `/api/menus/${id}` 对含斜杠 id 天然形成路径。
 @router.put("/menus/{menu_id:path}", response_model=ApiResponse)

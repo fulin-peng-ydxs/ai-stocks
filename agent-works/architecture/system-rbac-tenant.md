@@ -195,7 +195,7 @@ flowchart LR
 | 操作 | 入口与守卫 | 服务层规则 | 联动 |
 |------|------------|------------|------|
 | 查询 | `GET /api/roles`，`require_system`；`GET /api/roles/assignable`，`require_perm("user:list")` | 角色管理页 system-only；用户页角色下拉按调用者分流，system 可取全部角色，租户管理员只取 `tenant_assignable=true` 的非 system 角色 | 无写联动 |
-| 新增 | `POST /api/roles`，`require_system` | 只能创建 custom 角色；code 为空时按名称生成；code 不能撞内置或现有角色；默认不向租户开放，也可在创建时显式开启 | 写 `sys_role` |
+| 新增 | `POST /api/roles`，`require_system` | 只能创建 custom 角色；新角色 ID 为 32 位小写无连字符 UUIDv4；角色码由平台必填，不根据名称自动生成，统一转小写，须符合稳定编码格式且不能撞内置或现有角色；默认不向租户开放，也可在创建时显式开启 | 写 `sys_role`；存量角色 ID 不迁移 |
 | 更新 | `PUT /api/roles/{id}`，`require_system` | system 超管锁定角色不可改；可改名称、描述和 `tenant_assignable`，不改 code/kind；system 始终不可下放 | 写 `sys_role`；关闭下放不撤销存量用户角色 |
 | 授权 | `PUT /api/roles/{id}/perms`，`require_system` | 锁定角色不可授权；菜单和功能点 id 必须存在；system-only 功能点不能授给非 system 角色；基线共享读码不持久化到角色授权 | 替换 `sys_role_menu` 和 `sys_role_resource`，并与该角色成员 `perm_ver` 自增同事务 |
 | 删除 | `DELETE /api/roles/{id}`，`require_system` | 内置角色不可删；仍有用户成员时不可删 | 删除 `sys_role`；`sys_role_menu` / `sys_role_resource` 由 FK cascade 清理；因无成员才允许删除，不需要踢用户 |
@@ -215,7 +215,7 @@ flowchart LR
 | 操作 | 入口与守卫 | 服务层规则 | 联动 |
 |------|------------|------------|------|
 | 菜单查询 | `GET /api/menus`，`require_system` | 返回整棵平台菜单树，角色页和菜单页共用 | 无写联动 |
-| 菜单新增 | `POST /api/menus`，`require_system` | `type` 为 group/leaf；`visible` 为 login/system；code 全局唯一；leaf 必须有唯一 route；parent 必须存在 | 写 `sys_menu`；新节点尚无授权引用，不失效用户 |
+| 菜单新增 | `POST /api/menus`，`require_system` | `id` 由后端生成 UUID；菜单编码由平台必填，不根据标题自动生成，统一转小写、全局唯一且创建后不可改；`route_path` 只承载叶子路由；`type` 为 group/leaf；`visible` 为 login/system；parent 必须存在 | 写 `sys_menu`；新节点尚无授权引用，不失效用户；存量内置菜单继续兼容历史 `id=code/route` |
 | 菜单更新 | `PUT /api/menus/{id}`，`require_system` | 标题必填；route 唯一；移动时目标父不能是自身或子孙 | 可见性变化或移动节点时，先计算引用该菜单及子树的用户，再与菜单写入和 `perm_ver` 自增同事务；纯标题、图标、route 展示修改不失效 |
 | 菜单排序 / 移动 | `POST /api/menus/reorder`，`require_system` | 每个节点必须存在；parent 变化同样做防成环校验 | 纯排序不失效；移动节点会按被移动子树计算受影响用户并自增 `perm_ver` |
 | 菜单删除 | `DELETE /api/menus/{id}`，`require_system` | 内置菜单不可删；有子节点不可删；菜单下还有功能点不可删 | 删除前计算引用该菜单及子树的用户；删除 `sys_menu`，`sys_role_menu` 级联清理，并与 `perm_ver` 自增同事务 |

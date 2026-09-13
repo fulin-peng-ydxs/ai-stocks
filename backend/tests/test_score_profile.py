@@ -132,19 +132,21 @@ def test_repo_save_get_version_delete(market, pg):
     assert repo.get("p1") is None
 
 
-def test_repo_save_with_id_generates_from_name(market, pg):
+def test_repo_save_with_id_generates_uuid(market, pg):
     repo = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
     items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
     pid, v1 = repo.save_with_id(None, "趋势评分", items)
+    pid2: str | None = None
     try:
-        assert pid == "score_trend_score"
+        assert len(pid) == 32 and all(ch in "0123456789abcdef" for ch in pid)
         assert v1 == 1
         assert repo.get(pid)["name"] == "趋势评分"
         pid2, _ = repo.save_with_id(None, "趋势评分", items)
-        assert pid2 == "score_trend_score_2"
+        assert len(pid2) == 32 and pid2 != pid
     finally:
         repo.delete(pid)
-        repo.delete("score_trend_score_2")
+        if pid2:
+            repo.delete(pid2)
 
 
 def test_repo_validate_rejects_bad_profile(market, pg):

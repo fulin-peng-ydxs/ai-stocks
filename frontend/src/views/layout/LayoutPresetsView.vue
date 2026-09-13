@@ -174,8 +174,23 @@ function openEditPreset(row: LayoutPresetRecord) {
 }
 
 async function submitPreset() {
-  if (!presetForm.key || !presetForm.name) {
+  if (!presetForm.key.trim() || !presetForm.name.trim()) {
     ElMessage.warning('请填写预设标识和名称')
+    return
+  }
+  const enumValues = [presetForm.density, presetForm.tableSize, presetForm.drawerSize]
+  const numberValues = [
+    presetForm.pageSize,
+    presetForm.reflowBreakpoint,
+    presetForm.autoScaleResponsiveExponent,
+    ...SHAPE_KEYS.map(({ key }) => presetForm.shared[key]),
+  ]
+  const colorsComplete = COLOR_KEYS.every(({ key }) => (
+    Boolean(presetForm.light[key]) && Boolean(presetForm.dark[key])
+  ))
+  if (enumValues.some((value) => !value) || numberValues.some((value) => !Number.isFinite(Number(value)))
+    || !colorsComplete) {
+    ElMessage.warning('请补全布局预设中的必填配置')
     return
   }
   const values = presetFormValues()
@@ -376,10 +391,10 @@ onMounted(reloadPresets)
       <el-dialog v-model="presetDialog" width="720px" title="布局预设">
         <el-form label-position="top" class="preset-form">
           <div class="form-grid">
-            <el-form-item label="标识">
+            <el-form-item label="标识" :required="!presetForm.is_builtin">
               <el-input v-model="presetForm.key" :disabled="presetForm.is_builtin" />
             </el-form-item>
-            <el-form-item label="名称">
+            <el-form-item label="名称" required>
               <el-input v-model="presetForm.name" />
             </el-form-item>
           </div>
@@ -389,36 +404,36 @@ onMounted(reloadPresets)
 
           <div class="form-section-title">组件默认策略</div>
           <div class="form-grid three">
-            <el-form-item label="密度">
+            <el-form-item label="密度" required>
               <el-select v-model="presetForm.density">
                 <el-option label="紧凑" value="compact" />
                 <el-option label="标准" value="standard" />
                 <el-option label="宽松" value="comfortable" />
               </el-select>
             </el-form-item>
-            <el-form-item label="表格密度">
+            <el-form-item label="表格密度" required>
               <el-select v-model="presetForm.tableSize">
                 <el-option label="紧凑" value="compact" />
                 <el-option label="标准" value="standard" />
                 <el-option label="宽松" value="comfortable" />
               </el-select>
             </el-form-item>
-            <el-form-item label="抽屉尺寸">
+            <el-form-item label="抽屉尺寸" required>
               <el-select v-model="presetForm.drawerSize">
                 <el-option label="小" value="sm" />
                 <el-option label="中" value="md" />
                 <el-option label="大" value="lg" />
               </el-select>
             </el-form-item>
-            <el-form-item label="表格默认分页(data-table)">
+            <el-form-item label="表格默认分页(data-table)" required>
               <el-input-number v-model="presetForm.pageSize" :min="10" :max="500" :step="10" controls-position="right" />
             </el-form-item>
-            <el-form-item label="重排断点(响应式默认)">
+            <el-form-item label="重排断点(响应式默认)" required>
               <el-select v-model="presetForm.reflowBreakpoint">
                 <el-option v-for="bp in REFLOW_BREAKPOINTS" :key="bp" :label="`${bp}px`" :value="bp" />
               </el-select>
             </el-form-item>
-            <el-form-item>
+            <el-form-item required>
               <template #label>
                 自动缩放激进程度
                 <HelpHint text="默认 0.10，范围 0～1。数值越大，小屏缩小、大屏放大的幅度越明显；0 表示自动保持 100%。启用当前预设并选择自动比例时生效，自动比例仍限制在 90%～110%，手动比例不受影响。" />
@@ -442,14 +457,14 @@ onMounted(reloadPresets)
           <el-tabs v-model="tokenTab">
             <el-tab-pane label="白天" name="light">
               <div class="form-grid three">
-                <el-form-item v-for="c in COLOR_KEYS" :key="c.key" :label="c.label">
+                <el-form-item v-for="c in COLOR_KEYS" :key="c.key" :label="c.label" required>
                   <el-color-picker v-model="presetForm.light[c.key]" />
                 </el-form-item>
               </div>
             </el-tab-pane>
             <el-tab-pane label="夜间" name="dark">
               <div class="form-grid three">
-                <el-form-item v-for="c in COLOR_KEYS" :key="c.key" :label="c.label">
+                <el-form-item v-for="c in COLOR_KEYS" :key="c.key" :label="c.label" required>
                   <el-color-picker v-model="presetForm.dark[c.key]" />
                 </el-form-item>
               </div>
@@ -458,7 +473,7 @@ onMounted(reloadPresets)
 
           <div class="form-section-title">形态 / 密度（明暗共用）</div>
           <div class="form-grid three">
-            <el-form-item v-for="s in SHAPE_KEYS" :key="s.key" :label="s.label">
+            <el-form-item v-for="s in SHAPE_KEYS" :key="s.key" :label="s.label" required>
               <el-input-number v-model="presetForm.shared[s.key]" :min="0" :max="s.max" controls-position="right" />
             </el-form-item>
           </div>

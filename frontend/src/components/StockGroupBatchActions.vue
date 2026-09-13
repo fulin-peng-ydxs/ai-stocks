@@ -151,7 +151,7 @@ async function removeFromGroup(): Promise<void> {
 
   <el-dialog v-model="createVisible" title="存为新分组" width="460px">
     <el-form label-width="80px">
-      <el-form-item label="分组名">
+      <el-form-item label="分组名" required>
         <el-input v-model="createForm.name" placeholder="如：5月观察龙头" maxlength="30" show-word-limit />
       </el-form-item>
       <el-form-item label="建组日期">
@@ -177,7 +177,7 @@ async function removeFromGroup(): Promise<void> {
 
   <el-dialog v-model="addVisible" title="加入已有分组" width="440px">
     <el-form label-width="80px">
-      <el-form-item label="目标分组">
+      <el-form-item label="目标分组" required>
         <el-select v-model="addTargetGid" filterable style="width: 100%">
           <el-option v-for="group in groups" :key="group.id" :value="group.id" :label="`${group.name}（${group.member_count}）`" />
         </el-select>

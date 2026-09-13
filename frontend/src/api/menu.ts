@@ -43,13 +43,12 @@ export function listResources(menuId?: string): Promise<Resource[]> {
 }
 
 // ── 菜单写接口（T13）──
-// 注：内置菜单 seed id=code 含斜杠（如 /screen、/system/users），后端用 `{menu_id:path}` 转换器捕获。
+// 注：存量内置菜单 seed id=code 含斜杠（如 /screen、/system/users），后端用 `{menu_id:path}` 转换器捕获。
 // **必须 encodeURIComponent(id)**：直接插值 `/menus/${'/board'}` 会得双斜杠 `/menus//board`，
 // 浏览器/fetch 规范化后丢掉前导斜杠 → 后端收 `board` 匹配不到（实测「菜单不存在」）；
 // 编码为 `%2Fboard` 后 :path 解码回 `/board` 才命中（实测通过）。对 uuid 自定义 id 编码为恒等，两者皆安全。
 export interface MenuWrite {
   parentId?: string | null
-  code?: string // 仅创建需要；创建后不可改
   title: string
   type: string // group | leaf
   routePath?: string | null
@@ -58,7 +57,11 @@ export interface MenuWrite {
   sort?: number | null
 }
 
-export function createMenu(body: MenuWrite): Promise<MenuNode> {
+export interface MenuCreateWrite extends MenuWrite {
+  code: string // 必填业务编码，创建后不可改
+}
+
+export function createMenu(body: MenuCreateWrite): Promise<MenuNode> {
   return http.post('/menus', body)
 }
 

@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS sys_role (
 
 DDL_SYS_MENU = """
 CREATE TABLE IF NOT EXISTS sys_menu (
-    id          TEXT PRIMARY KEY,
+    id          TEXT PRIMARY KEY,                  -- 新建使用 UUID；存量内置菜单兼容历史稳定 id
     parent_id   TEXT,
     code        TEXT NOT NULL,
     title       TEXT NOT NULL,
@@ -184,7 +184,7 @@ CREATE TABLE IF NOT EXISTS sys_role_resource (
 
 DDL_SCREEN_PROFILE = f"""
 CREATE TABLE IF NOT EXISTS screen_profile (
-    id          TEXT,
+    id          TEXT,                              -- 内部 UUID；不承担业务编码
 {_OWN}    name        TEXT,
     version     INTEGER,
     expression  TEXT,
@@ -213,7 +213,7 @@ CREATE TABLE IF NOT EXISTS screen_profile_version (
 
 DDL_SCORE_PROFILE = f"""
 CREATE TABLE IF NOT EXISTS score_profile (
-    id               TEXT,
+    id               TEXT,                         -- 内部 UUID；不承担业务编码
 {_OWN}    name             TEXT,
     version          INTEGER,
     items            TEXT,
@@ -243,7 +243,7 @@ CREATE TABLE IF NOT EXISTS score_profile_version (
 
 DDL_TRADE_PROFILE = f"""
 CREATE TABLE IF NOT EXISTS trade_profile (
-    id          TEXT,
+    id          TEXT,                              -- 内部 UUID；不承担业务编码
 {_OWN}    name        TEXT,
     version     INTEGER,
     buy_tree    TEXT,
@@ -1846,6 +1846,14 @@ def _upgrade_identity_uniqueness(client: PostgresClient) -> None:
             ),
         ),
         (
+            "菜单编码",
+            (
+                "SELECT count(*) AS n FROM ("
+                "SELECT lower(btrim(code)) FROM sys_menu "
+                "GROUP BY lower(btrim(code)) HAVING count(*) > 1) d"
+            ),
+        ),
+        (
             "用户账号",
             (
                 "SELECT count(*) AS n FROM ("
@@ -1898,6 +1906,10 @@ def _upgrade_identity_uniqueness(client: PostgresClient) -> None:
         cur.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_sys_role_code_normalized "
             "ON sys_role ((lower(btrim(code))))"
+        )
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_sys_menu_code_normalized "
+            "ON sys_menu ((lower(btrim(code))))"
         )
         cur.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_sys_user_account_normalized "

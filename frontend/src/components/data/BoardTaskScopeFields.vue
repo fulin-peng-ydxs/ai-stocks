@@ -40,7 +40,7 @@ const includesMembers = computed(() => props.stages.includes('members'))
 </script>
 
 <template>
-  <el-form-item label="采集模式">
+  <el-form-item label="采集模式" required>
     <div class="app-inline-info">
       <PageSegmented
         :model-value="mode"
@@ -55,7 +55,7 @@ const includesMembers = computed(() => props.stages.includes('members'))
       <span class="app-caption-text">增量按各板块最新指数日期续采，全量回填扩展指数历史；两种模式都刷新资金流五个周期</span>
     </div>
   </el-form-item>
-  <el-form-item label="板块类型">
+  <el-form-item label="板块类型" required>
     <PageSegmented
       :model-value="boardType"
       :test-id="`${testIdPrefix}-type`"
@@ -64,7 +64,7 @@ const includesMembers = computed(() => props.stages.includes('members'))
       @update:model-value="$emit('update:boardType', $event as BoardTypeScope)"
     />
   </el-form-item>
-  <el-form-item label="采集内容">
+  <el-form-item label="采集内容" required>
     <div class="app-inline-info">
       <el-checkbox-group
         :model-value="stages"

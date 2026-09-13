@@ -694,7 +694,6 @@ onMounted(initializeScreen)
         <section class="editor editor-screen">
           <div class="ed-head app-cluster-md">
             <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
-            <span v-if="editId && !isNew" class="id-badge mono">{{ editId }}</span>
             <span
               v-if="curVersion && !isNew"
               class="ver-badge"
@@ -1028,21 +1027,6 @@ onMounted(initializeScreen)
 }
 .ver-badge:hover {
   background: var(--el-color-primary-light-7);
-}
-.id-badge {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--el-text-color-secondary);
-  background: var(--app-section-bg);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-  padding: 1px 8px;
-  font-size: var(--app-font-size-caption);
-}
-.mono {
-  font-family: var(--app-font-family-mono);
 }
 .hint {
   color: var(--app-muted-text);

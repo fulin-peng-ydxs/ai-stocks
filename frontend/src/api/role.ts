@@ -25,7 +25,7 @@ export function listRoles(): Promise<Role[]> {
 }
 
 export function createRole(payload: {
-  code?: string | null
+  code: string
   name: string
   description?: string | null
   tenantAssignable?: boolean

@@ -630,10 +630,10 @@ onMounted(loadAll)
     <template #overlays>
       <el-dialog v-model="typeDialogOpen" :title="typeDialogMode === 'create' ? '新建字典类型' : '编辑字典类型'" width="520px">
         <el-form label-width="92px">
-          <el-form-item label="类型 code">
+          <el-form-item label="类型 code" :required="typeDialogMode === 'create'">
             <el-input v-model="typeForm.code" :disabled="typeDialogMode === 'edit'" placeholder="如 user_status" />
           </el-form-item>
-          <el-form-item label="类型名称">
+          <el-form-item label="类型名称" required>
             <el-input v-model="typeForm.name" placeholder="如 用户状态" />
           </el-form-item>
           <el-form-item label="排序">
@@ -657,10 +657,10 @@ onMounted(loadAll)
           <el-form-item label="类型 code">
             <el-input v-model="itemForm.type_code" disabled />
           </el-form-item>
-          <el-form-item label="item code">
+          <el-form-item label="item code" :required="itemDialogMode === 'create'">
             <el-input v-model="itemForm.code" :disabled="itemDialogMode === 'edit'" placeholder="如 active" />
           </el-form-item>
-          <el-form-item label="名称">
+          <el-form-item label="名称" required>
             <el-input v-model="itemForm.label" placeholder="如 启用" />
           </el-form-item>
           <el-form-item label="颜色">

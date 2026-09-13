@@ -221,10 +221,15 @@ function openEditRole() {
 }
 async function saveRole() {
   if (!roleForm.value.name.trim()) { ElMessage.warning('请填写角色名称'); return }
+  if (dialogMode.value === 'create' && !roleForm.value.code.trim()) {
+    ElMessage.warning('请填写角色码')
+    return
+  }
   roleSaving.value = true
   try {
     if (dialogMode.value === 'create') {
       const r = await createRole({
+        code: roleForm.value.code.trim().toLowerCase(),
         name: roleForm.value.name.trim(),
         description: roleForm.value.description.trim() || null,
         tenantAssignable: roleForm.value.tenantAssignable,
@@ -411,12 +416,18 @@ onMounted(loadAll)
     <template #overlays>
       <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新建角色' : '编辑角色'" width="420px">
         <el-form label-width="72px">
-          <el-form-item label="角色名">
+          <el-form-item label="角色名" required>
             <el-input v-model="roleForm.name" placeholder="如：数据分析员" />
           </el-form-item>
-          <el-form-item v-if="dialogMode === 'edit'" label="角色码">
-            <el-input v-model="roleForm.code" disabled
-                      placeholder="系统生成，创建后不可改" />
+          <el-form-item label="角色码" :required="dialogMode === 'create'">
+            <el-input
+              v-model="roleForm.code"
+              :disabled="dialogMode === 'edit'"
+              placeholder="必填，创建后不可修改"
+            />
+            <div v-if="dialogMode === 'create'" class="form-help">
+              以字母开头，可使用小写字母、数字、下划线、冒号或短横线。
+            </div>
           </el-form-item>
           <el-form-item label="描述">
             <el-input v-model="roleForm.description" placeholder="可选" />

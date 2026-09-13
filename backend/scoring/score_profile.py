@@ -18,7 +18,7 @@ from datetime import datetime
 import pandas as pd
 
 from backend.auth.context import get_current_owner
-from backend.common.ids import prefixed_readable_id
+from backend.common.ids import uuid_hex_id
 from backend.common.logging import get_logger
 from backend.config import get_effective_settings
 from backend.services.asset_visibility import (
@@ -250,13 +250,9 @@ class ScoreProfileRepo:
         return out
 
     def _make_id(self, name: str) -> str:
-        base = prefixed_readable_id(name, prefix="score_")
-        pid = base
-        seq = 2
-        while self.get(pid):
-            pid = f"{base}_{seq}"
-            seq += 1
-        return pid
+        """生成与方案名称无关的内部身份；name 参数保留以稳定私有调用接口。"""
+        del name
+        return uuid_hex_id()
 
     def save(self, pid: str | None, name: str, items: list[dict],
              grade_thresholds: dict | None = None, is_preset: bool = False) -> int:
