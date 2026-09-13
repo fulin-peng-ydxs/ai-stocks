@@ -6,10 +6,12 @@ const props = withDefaults(defineProps<{
   name: string
   pctChg?: number | null
   related?: boolean
+  showRelatedLabel?: boolean
   to?: RouteLocationRaw
 }>(), {
   pctChg: null,
   related: false,
+  showRelatedLabel: true,
   to: undefined,
 })
 
@@ -36,7 +38,7 @@ const tagClass = computed(() => ({
     <el-tag size="default" effect="plain" class="market-board-tag" :class="tagClass">
       <span class="market-board-tag__name">{{ name }}</span>
       <span class="market-board-tag__pct">{{ pctText }}</span>
-      <span v-if="related" class="market-board-tag__badge">最相关</span>
+      <span v-if="related && showRelatedLabel" class="market-board-tag__badge">最相关</span>
     </el-tag>
   </component>
 </template>

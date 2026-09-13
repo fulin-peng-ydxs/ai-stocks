@@ -14,8 +14,8 @@ const OVERFLOW_TOOLTIP_EXCLUSION_SELECTOR = [
 export function isNativeEllipsisOverflow(element: HTMLElement): boolean {
   const style = getComputedStyle(element)
   if (!style.textOverflow.split(/\s+/).includes('ellipsis')) return false
+  // 单行省略只发生在横向；字体行盒取整可能让 scrollHeight 略高，不能据此弹出重复提示。
   return element.scrollWidth > element.clientWidth + OVERFLOW_TOLERANCE_PX
-    || element.scrollHeight > element.clientHeight + OVERFLOW_TOLERANCE_PX
 }
 
 function isWithinTooltipExclusion(element: HTMLElement): boolean {

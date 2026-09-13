@@ -27,6 +27,10 @@ describe('全局省略悬浮目标判定', () => {
     setBox(element, 100, 100)
     expect(isNativeEllipsisOverflow(element)).toBe(false)
 
+    Object.defineProperty(element, 'clientHeight', { value: 20, configurable: true })
+    Object.defineProperty(element, 'scrollHeight', { value: 21, configurable: true })
+    expect(isNativeEllipsisOverflow(element)).toBe(false)
+
     setBox(element, 100, 140)
     expect(isNativeEllipsisOverflow(element)).toBe(true)
   })

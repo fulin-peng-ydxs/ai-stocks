@@ -20,7 +20,6 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{ retry: [] }>()
-const concepts = computed(() => props.membership?.concepts ?? [])
 
 function winnerCode(type: 'industry' | 'concept'): string | null {
   const related = props.membership?.related_boards
@@ -31,6 +30,16 @@ function winnerCode(type: 'industry' | 'concept'): string | null {
 function isWinner(type: 'industry' | 'concept', item: BoardMembershipItem): boolean {
   return item.board_code === winnerCode(type)
 }
+
+const concepts = computed(() => {
+  const items = props.membership?.concepts ?? []
+  const winner = winnerCode('concept')
+  if (!winner) return items
+
+  const winnerIndex = items.findIndex((item) => item.board_code === winner)
+  if (winnerIndex <= 0) return items
+  return [items[winnerIndex]!, ...items.slice(0, winnerIndex), ...items.slice(winnerIndex + 1)]
+})
 
 const relatedIndustry = computed<BoardMembershipItem | null>(() => {
   const code = winnerCode('industry')
@@ -55,6 +64,7 @@ const relatedIndustry = computed<BoardMembershipItem | null>(() => {
           :name="relatedIndustry.name"
           :pct-chg="relatedIndustry.pct_chg"
           related
+          :show-related-label="false"
           :to="canNavigate
             ? sectorDetailLocation(relatedIndustry.board_code, returnPath)
             : undefined"

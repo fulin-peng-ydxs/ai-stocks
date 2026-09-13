@@ -103,7 +103,11 @@ describe('StockBoardMembershipPanel', () => {
     membership_updated_at: '2026-09-10T18:00:00',
     trade_date: '2026-09-10',
     industries: [{ board_code: '881001', name: '银行', board_type: 'industry', pct_chg: 2 }],
-    concepts: [{ board_code: '301001', name: '中特估', board_type: 'concept', pct_chg: -1.5 }],
+    concepts: [
+      { board_code: '301002', name: '国企改革', board_type: 'concept', pct_chg: 0.5 },
+      { board_code: '301001', name: '中特估', board_type: 'concept', pct_chg: -1.5 },
+      { board_code: '301003', name: '央企改革', board_type: 'concept', pct_chg: 0.2 },
+    ],
     related_boards: {
       as_of_date: '2026-09-10',
       benchmark: { code: '000001.SH', name: '上证指数', fallback: false },
@@ -111,11 +115,14 @@ describe('StockBoardMembershipPanel', () => {
         board_code: '881001', name: '银行', score: 0.8, corr_20: 0.8, corr_60: 0.8,
         sample_20: 20, sample_60: 60, confidence: 'high',
       },
-      concept: null,
+      concept: {
+        board_code: '301001', name: '中特估', score: 0.7, corr_20: 0.7, corr_60: 0.7,
+        sample_20: 20, sample_60: 60, confidence: 'high',
+      },
     },
   }
 
-  it('标题旁展示最相关行业，正文直接展示概念标签', () => {
+  it('标题旁只展示最相关行业值，正文直接展示概念标签', () => {
     const wrapper = mount(StockBoardMembershipPanel, {
       props: { membership, canNavigate: false },
       global: {
@@ -136,11 +143,18 @@ describe('StockBoardMembershipPanel', () => {
     const industry = wrapper.get('[data-testid="stock-board-related-industry"]')
     expect(industry.classes()).toContain('stock-board-membership__featured')
     expect(industry.get('.market-board-tag').classes()).toContain('is-related')
+    expect(industry.find('.market-board-tag__badge').exists()).toBe(false)
+    expect(industry.text()).not.toContain('最相关')
+    expect(wrapper.get('[data-testid="stock-board-301001"] .market-board-tag__badge').text())
+      .toBe('最相关')
+    expect(wrapper.get('.stock-board-membership__grid')
+      .findAll('.market-board-tag__link')
+      .map((tag) => tag.attributes('data-testid')))
+      .toEqual(['stock-board-301001', 'stock-board-301002', 'stock-board-301003'])
     expect(industry.getComponent(ElTagStub).props()).toMatchObject({
       size: 'default',
       effect: 'plain',
     })
-    expect(wrapper.text()).toContain('最相关')
   })
 
   it('概念标签按内容自然换行而不增加分组标题', () => {
