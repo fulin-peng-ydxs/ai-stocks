@@ -166,15 +166,24 @@ def get_sector_bars(
 def get_sector_members(
     code: str,
     trade_date: date | None = Query(None),
+    keyword: str | None = Query(None, max_length=50),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=200),
     sort_by: str = Query("pct"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
 ) -> ApiResponse:
-    """成分股统一分页（size 默认 20，页面可配 10/20/30/50）。"""
+    """成分股代码/名称搜索与统一分页（size 默认 20，页面可配 10/20/30/50）。"""
     if sort_by not in MEMBER_SORT_FIELDS:
         raise _bad_params(
             f"不支持的成分股排序字段: {sort_by}（可选 {list(MEMBER_SORT_FIELDS)}）"
         )
-    data = BoardQueryService().get_members(code, trade_date, page, size, sort_by, order)
+    data = BoardQueryService().get_members(
+        code,
+        trade_date=trade_date,
+        page=page,
+        size=size,
+        sort_by=sort_by,
+        order=order,
+        keyword=keyword,
+    )
     return ok(data)

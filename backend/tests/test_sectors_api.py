@@ -333,7 +333,7 @@ def test_get_members_paginated(c):
 
 
 def test_get_members_supports_server_sort(c):
-    """成分股分页排序由服务端完成，pct/code 均保持稳定次序。"""
+    """成分股分页排序由服务端完成，pct/price/code 均保持稳定次序。"""
     svc = _svc(c)
     pct_rows = svc.get_members("309121", sort_by="pct", order="desc")["list"]
     assert pct_rows[0]["pct_chg"] >= pct_rows[1]["pct_chg"]
@@ -342,6 +342,26 @@ def test_get_members_supports_server_sort(c):
     assert [row["code"] for row in code_rows] == sorted(
         [row["code"] for row in code_rows], reverse=True
     )
+
+    price_rows = svc.get_members("309121", sort_by="price", order="asc")["list"]
+    assert [row["close"] for row in price_rows] == [8.0, 10.0]
+
+
+@pytest.mark.parametrize(
+    ("keyword", "expected_code"),
+    [("000001", "000001.SZ"), ("万科", "000002.SZ")],
+)
+def test_get_members_filters_by_code_or_name(c, keyword, expected_code):
+    """代码或名称关键字在服务端过滤，并同步返回过滤后的总数。"""
+    result = _svc(c).get_members("309121", keyword=keyword)
+
+    assert result["total"] == 1
+    assert [row["code"] for row in result["list"]] == [expected_code]
+
+
+def test_get_members_treats_like_wildcards_as_literals(c):
+    """搜索内容中的 SQL LIKE 通配符按普通字符处理。"""
+    assert _svc(c).get_members("309121", keyword="%_")["total"] == 0
 
 
 def test_get_members_empty_board(c):

@@ -16,7 +16,9 @@ import {
   type SectorMemberSortField,
 } from '@/api/sectors'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -48,15 +50,17 @@ import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { MASTER_DETAIL_RATIO_DEFAULT } from '@/layout/masterDetailRatioProfiles'
 import { useAuthStore } from '@/stores/auth'
+import { useSectorsSessionStore } from '@/stores/sectorsSession'
 import { useStockSet } from '@/stores/stockSet'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
 import { hasPermission } from '@/utils/permission'
 import { formatMoney } from '@/utils/money'
+import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import {
-  sanitizeSectorSourceQuery,
+  sectorDetailLocation,
   sectorListLocation,
   sectorReturnLabel,
-  toLocationQuery,
+  trustedSectorReturnPath,
 } from '@/utils/sectorNavigation'
 import {
   formatSectorInflow,
@@ -68,13 +72,14 @@ import {
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const sectorsSession = useSectorsSessionStore()
 const stockSet = useStockSet()
 const { dataMin, dataMax, ensureLoaded } = useTradeDates()
 // 工作标签按 path 缓存独立实例；返回列表后全局 route.params 已无 code，详情实例仍须固定自身 code。
 const code = ref(String(route.params.code || ''))
-const sourceQuery = computed(() => sanitizeSectorSourceQuery(route.query))
-const returnLocation = computed(() => sectorListLocation(route.query))
-const returnLabel = computed(() => sectorReturnLabel(route.query))
+const sourceReturnPath = ref(trustedSectorReturnPath(route.query.return_to) ?? '')
+const returnLocation = computed(() => sectorListLocation(sourceReturnPath.value))
+const returnLabel = computed(() => sectorReturnLabel(sourceReturnPath.value))
 const settingsOpen = ref(false)
 
 const layout = getPageLayout('sectors-detail')
@@ -137,7 +142,7 @@ const normalizeMemberPageSize = (value: unknown) => {
   const numeric = Number(value)
   return MEMBER_PAGE_SIZES.includes(numeric) ? numeric : 20
 }
-const MEMBER_SORT_FIELDS = ['pct', 'code'] as const
+const MEMBER_SORT_FIELDS = ['pct', 'price', 'code'] as const
 const { validDefault: defaultKlineRange } = useKlinePrefs()
 // K 线范围单向：全局偏好默认范围 → 会话 ref；主区切换不写回全局默认。
 const viewDays = useDefaultedSessionValue(defaultKlineRange)
@@ -163,7 +168,7 @@ function tableBorder(slotId: string): boolean {
 }
 
 const detail = ref<SectorDetail | null>(null)
-const tradeDate = ref<string | null>(sourceQuery.value.date ?? '')
+const tradeDate = ref<string | null>('')
 const detailLoading = ref(false)
 const detailError = ref('')
 const forbidden = ref(false)
@@ -174,6 +179,7 @@ const chartError = ref('')
 const members = ref<SectorMember[]>([])
 const memberTotal = ref(0)
 const memberPage = ref(1)
+const memberKeyword = ref('')
 const { pageSize: memberSize, changePageSize: changeMemberSize } = useComponentPageSizeSession({
   resolveDefault: () => componentValueOf('memberTable', 'pageSize'),
   normalize: normalizeMemberPageSize,
@@ -190,6 +196,26 @@ const watchlisted = ref(false)
 const watchlistBusy = ref(false)
 let requestVersion = 0
 let initialized = false
+
+function persistDetailReturnState(): void {
+  if (!initialized) return
+  sectorsSession.saveDetailReturnState({
+    boardCode: code.value,
+    tradeDate: tradeDate.value,
+    memberKeyword: memberKeyword.value.trim().slice(0, 50),
+    memberPage: memberPage.value,
+    memberSize: memberSize.value,
+    memberSortBy: sortBy.value,
+    memberSortOrder: sortOrder.value,
+    viewDays: viewDays.value,
+    returnPath: sourceReturnPath.value,
+  })
+}
+
+async function cleanDetailUrl(): Promise<void> {
+  const target = sectorDetailLocation(code.value, sourceReturnPath.value)
+  if (router.resolve(target).fullPath !== route.fullPath) await router.replace(target)
+}
 
 const canViewStocks = computed(() => hasPermission(auth.role, auth.permissions, 'stocks:view'))
 const canViewWatchlist = computed(() =>
@@ -238,17 +264,22 @@ async function loadChart(): Promise<void> {
   }
 }
 
+const memberRequest = createLatestRequestGuard()
 async function loadMembers(): Promise<void> {
+  const requestId = memberRequest.begin()
+  persistDetailReturnState()
   memberLoading.value = true
   memberError.value = ''
   try {
     const data = await getSectorMembers(code.value, {
       trade_date: tradeDate.value || undefined,
+      keyword: memberKeyword.value.trim() || undefined,
       page: memberPage.value,
       size: memberSize.value,
       sort_by: sortBy.value,
       order: sortOrder.value,
     })
+    if (!memberRequest.isCurrent(requestId)) return
     members.value = data.list
     memberTotal.value = data.total
     memberTradeDate.value = data.trade_date
@@ -258,10 +289,16 @@ async function loadMembers(): Promise<void> {
       await loadMembers()
     }
   } catch (error) {
+    if (!memberRequest.isCurrent(requestId)) return
     memberError.value = getErrorMessage(error, '成分股加载失败')
   } finally {
-    memberLoading.value = false
+    if (memberRequest.isCurrent(requestId)) memberLoading.value = false
   }
+}
+
+function searchMembers(): void {
+  memberPage.value = 1
+  void loadMembers()
 }
 
 async function loadAll(): Promise<void> {
@@ -280,12 +317,13 @@ function returnToSource(): void {
 }
 function openStock(row: SectorMember): void {
   if (!canViewStocks.value) return
+  persistDetailReturnState()
   const items = members.value.map((member) => ({ code: member.code, name: member.name }))
   stockSet.setSet('list', items, `${detail.value?.name || code.value}成分股`, '', {
     total: items.length,
     loadedPages: [1],
     pageSize: Math.max(items.length, 1),
-    returnPath: route.fullPath,
+    returnPath: `/sectors/${encodeURIComponent(code.value)}?restore=1`,
   })
   void router.push(`/stocks/${encodeURIComponent(row.code)}`)
 }
@@ -336,23 +374,63 @@ function toggleMemberPanel(): void {
 watch([sortBy, sortOrder], () => {
   if (!initialized) return
   memberPage.value = 1
+  persistDetailReturnState()
   void loadMembers()
 })
 watch(viewDays, () => {
   if (!initialized) return
+  persistDetailReturnState()
   void loadChart()
 })
-watch(tradeDate, (value) => {
+watch(tradeDate, () => {
   if (!initialized) return
-  const next = { ...sourceQuery.value, ...(value ? { date: value } : {}) }
-  void router.replace({ path: route.path, query: toLocationQuery(next) })
   memberPage.value = 1
+  persistDetailReturnState()
   void loadAll()
 })
+
+watch(
+  () => [route.path, route.query.restore] as const,
+  ([path, restore]) => {
+    if (!initialized || !path.startsWith('/sectors/') || String(route.params.code || '') !== code.value || restore !== '1') return
+    const restored = sectorsSession.consumeDetailReturnState(code.value)
+    if (restored?.returnPath) sourceReturnPath.value = restored.returnPath
+    void cleanDetailUrl()
+  },
+)
+
 onMounted(async () => {
   await ensureLoaded().catch(() => undefined)
-  if (!tradeDate.value) tradeDate.value = dataMax.value || ''
+  // 只有从个股显式返回才恢复一次性详情现场；普通进入或刷新按页面默认值初始化。
+  const restored = route.query.restore === '1'
+    ? sectorsSession.consumeDetailReturnState(code.value)
+    : null
+  if (restored) {
+    tradeDate.value = typeof restored.tradeDate === 'string' ? restored.tradeDate : dataMax.value || ''
+    memberKeyword.value = typeof restored.memberKeyword === 'string'
+      ? restored.memberKeyword.slice(0, 50)
+      : ''
+    memberPage.value = Number.isInteger(restored.memberPage) && restored.memberPage > 0
+      ? restored.memberPage
+      : 1
+    memberSize.value = normalizeMemberPageSize(restored.memberSize)
+    if ((MEMBER_SORT_FIELDS as readonly string[]).includes(restored.memberSortBy)) {
+      onSortChange({
+        prop: restored.memberSortBy,
+        order: restored.memberSortOrder === 'asc' ? 'ascending' : 'descending',
+      })
+    }
+    viewDays.value = Number.isFinite(restored.viewDays) && restored.viewDays > 0
+      ? restored.viewDays
+      : defaultKlineRange.value
+    sourceReturnPath.value = trustedSectorReturnPath(route.query.return_to)
+      ?? trustedSectorReturnPath(restored.returnPath)
+      ?? ''
+  } else {
+    tradeDate.value = dataMax.value || ''
+  }
   initialized = true
+  await cleanDetailUrl()
   await Promise.all([loadAll(), loadWatchlistState()])
 })
 </script>
@@ -513,6 +591,16 @@ onMounted(async () => {
                   {{ memberTotal }} 条 · {{ canViewStocks ? '点击查看行情' : '无个股查看权限' }}
                 </span>
               </template>
+              <AppControlRow class="member-filter-row" aria-label="成分股筛选">
+                <AppSearchInput
+                  v-model="memberKeyword"
+                  class="app-control-width-long"
+                  placeholder="代码 / 名称"
+                  maxlength="50"
+                  data-testid="sector-member-keyword"
+                  @search="searchMembers"
+                />
+              </AppControlRow>
               <AppStateBlock v-if="memberError" state="error" size="compact" title="成分股加载失败" :description="memberError" retry @retry="loadMembers" />
               <AppDataTable
                 v-else
@@ -546,7 +634,7 @@ onMounted(async () => {
                     </el-tooltip>
                   </template>
                 </AppTableColumn>
-                <AppTableColumn v-if="colVisible('price')" label="现价" prop="close" role="number" align="right">
+                <AppTableColumn v-if="colVisible('price')" label="现价" prop="price" role="number" align="right" sortable="custom">
                   <template #default="{ row }"><span class="app-data-text">{{ fmtNumber(row.close) }}</span></template>
                 </AppTableColumn>
                 <AppTableColumn v-if="colVisible('pct')" label="涨跌幅" prop="pct" role="number" align="right" sortable="custom">
@@ -555,7 +643,9 @@ onMounted(async () => {
                 <AppTableColumn v-if="colVisible('turnover')" label="换手率" prop="turnover_rate" role="number" align="right">
                   <template #default="{ row }"><span class="app-data-text">{{ fmtPct(row.turnover_rate) }}</span></template>
                 </AppTableColumn>
-                <template #empty>暂无成分股数据，请先运行板块成分采集</template>
+                <template #empty>
+                  {{ memberKeyword.trim() ? '没有匹配的成分股，请更换代码或名称' : '暂无成分股数据，请先运行板块成分采集' }}
+                </template>
               </AppDataTable>
             </AppWorkspacePane>
           </template>
@@ -681,6 +771,11 @@ onMounted(async () => {
 .permission-hint {
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
+}
+.member-filter-row {
+  flex: 0 0 auto;
+  padding: var(--app-space-3) var(--app-space-4);
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .stock-link {
   color: var(--el-color-primary);

@@ -1140,6 +1140,7 @@ const REGISTRY: PageRegistryEntry[] = [
         ],
         sortFields: [
           { key: 'pct', label: '涨跌幅' },
+          { key: 'price', label: '现价' },
           { key: 'code', label: '代码' },
         ],
       },

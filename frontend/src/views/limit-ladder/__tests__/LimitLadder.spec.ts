@@ -38,7 +38,7 @@ function router() {
 
 describe('LimitLadderCard', () => {
   it('展示精简卡片、走势相关行业和动态窗口统计', () => {
-    const wrapper=mount(LimitLadderCard,{props:{stock,window:31,canViewSectors:true,returnPath:'/limit-ladder?window=31&selected=600001.SH'},global:{plugins:[ElementPlus,router()]}})
+    const wrapper=mount(LimitLadderCard,{props:{stock,window:31,canViewSectors:true,returnPath:'/limit-ladder?restore=1'},global:{plugins:[ElementPlus,router()]}})
     expect(wrapper.text()).toContain('甲软件')
     expect(wrapper.text()).toContain('600001.SH')
     expect(wrapper.text()).toContain('31 日 3 板')
@@ -53,7 +53,7 @@ describe('LimitLadderCard', () => {
     expect(wrapper.get('.limit-ladder-card__identity strong').attributes('title')).toBe('甲软件')
     expect(wrapper.get('[data-testid="limit-ladder-related-industry"]').attributes('title')).toBe('数字服务')
     expect(wrapper.get('[data-testid="limit-ladder-related-600001.SH"]').attributes('title')).toBe('机器人')
-    expect(wrapper.get('[data-testid="limit-ladder-related-600001.SH"]').attributes('href')).toBe('/sectors/C002?return_to=/limit-ladder?window=31%26selected=600001.SH')
+    expect(wrapper.get('[data-testid="limit-ladder-related-600001.SH"]').attributes('href')).toBe('/sectors/C002?return_to=/limit-ladder?restore=1')
   })
 
   it('X 日 N 板仅在 N 大于 1 时强调数字', () => {

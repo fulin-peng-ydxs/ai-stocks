@@ -10,7 +10,7 @@ export type SectorSortField =
   | 'up_count'
 export type SortOrder = 'asc' | 'desc'
 export type BoardType = 'concept' | 'industry'
-export type SectorMemberSortField = 'pct' | 'code'
+export type SectorMemberSortField = 'pct' | 'price' | 'code'
 
 /** 板块列表行（涨幅 pct_* 从 board_bar 计算；各周期净流入严格匹配同一行情截面日）。 */
 export interface SectorRow {
@@ -178,6 +178,7 @@ export function getSectorMembers(
   code: string,
   params?: {
     trade_date?: string
+    keyword?: string
     page?: number
     size?: number
     sort_by?: SectorMemberSortField

@@ -54,7 +54,7 @@ DailyPipeline.run()
 
 ```
 「最新行情」→「板块行情」 → 板块列表页
-  ├─ 概念/行业分段 + 主排序周期(今日/5日/10日/20日, 仅控制涨跌幅主排序) + 资金流列(固定即时净流入+数据日)
+  ├─ 全市场/自选 + 全部/概念/行业筛选 + 列头排序 + 资金流列（即时净流入及数据日）
   ├─ 点行切换观察板块 → 当前观察区“查看详情” → 板块详情页
   │    ├─ 板块指数走势图(周期切换)
   │    ├─ 统计卡(最近快照返回数/累计成员涨跌/即时净流入/累计成员领涨)
@@ -121,7 +121,7 @@ DailyPipeline.run()
   - 摘要卡：板块名称、类型标签（概念/行业）、**路径 code + App code(clid)**、最近完整快照返回数、今日涨幅、**累计成员上涨/下跌家数**、即时净流入（含数据日）、**累计成员领涨股及涨幅**。
   - 日期口径：行情日期统一控制板块涨幅、累计成员涨跌、领涨统计和资金流；资金流只取同日快照，匹配不到返回空且不回退。最近完整快照返回数不随历史日期回溯。系统不保存逐日成员快照，不承诺“当日成员集合”。
   - 指数走势图：ECharts，经 `components/chartTheme.ts::useEChartsTheme()` 消费主题；周期切换（近1月/3月/半年/1年），原始连续指数。
-  - 成分股表：`AppDataTable`（embedded），代码/名称/现价/涨跌幅/换手，按涨幅排序，**统一分页（无 TopN 展开/收起）**；有 `stocks:view` 时点击跳个股，无权限时名称禁用 + hover 提示，不跳转。
+  - 成分股表：`AppDataTable`（embedded），代码/名称/现价/涨跌幅/换手，支持代码或名称搜索以及代码、现价、涨跌幅服务端排序，默认按涨跌幅降序，**统一分页（无 TopN 展开/收起）**；有 `stocks:view` 时点击跳个股，无权限时名称禁用 + hover 提示，不跳转。
 - **联动**：详情返回列表保留筛选态；成分股跳 `/stocks/:code` 复用 `stocks:view`。
 
 ### 权限边界
@@ -157,7 +157,7 @@ DailyPipeline.run()
 
 | # | 确认项 | 处理 |
 |---|---|---|
-| 1 | 列表默认排序 | 今日涨幅（情绪主线）为默认主排序周期，5日/10日/20日可切换 |
+| 1 | 列表默认排序 | 默认今日涨幅降序；5日/10日/20日等指标直接通过对应列头切换排序 |
 | 2 | 概念375个分页 | 服务端分页（复用 `AppPagination`），配合搜索框 |
 | 3 | 详情页成分股展示 | 统一分页（`AppPagination` 默认每页 20，抽屉可配），用户要求改项目统一模式 |
 | 4 | 板块字典最近快照返回数 | 完整快照时刷新 `member_count/member_snapshot_at`；列表/详情明确标为最近完整快照返回数，成分明细接口 `total`、涨跌家数和领涨股使用只进不出累计关系 |
@@ -197,7 +197,7 @@ DailyPipeline.run()
 - **数据源封装**：依据 research.md 附录，单独封装 `ThsBoardSource`（`backend/datasource/ths_board.py`），**直连同花顺 `q.10jqka.com.cn` / `data.10jqka.com.cn`，不走 akshare 公开函数**（akshare 仅调研验证用）；复用 `base.py` 的 `rate_limited`/`with_retry`，内部处理 `v_cookie()`（复用 akshare 打包的 ths.js 反爬脚本）与 AJAX 翻页；不进 `_source_for` 选源链，由 `IngestionService` 直接持有。
 - **页面架构**：严格按 DESIGN.md，新增页面走 `LayoutHost` + pageRegistry + page-template 闭环（用户红线）。
 - **权限边界**：采集侧 system-only（数据管理菜单 `visible=system`）；展示侧 `sectors:view` 进 `BUSINESS_RESOURCE_CODES` 业务授权集合（非登录基线），新库 seed 授予 normal/tenant_admin，既有库一次性回填 + bump `perm_ver`（依据 auth/constants.py + system-rbac-tenant.md）。
-- **页面配置契约**：业务偏好走 `usePageSettings`（`scope='page' + pref_key='settings'` 单个对象，对齐 usePageSettings.ts）；表格字段走 `layout_user_config`；`responsiveProfile` 用 `single-column`（pageRegistry 枚举，非 list/detail）；两页 `supportsPageSettings !== false` → `overlay:settings-drawer` 自动补登；偏好优先级 `URL query > 已保存偏好 > 默认值`。
+- **页面配置契约**：业务偏好走 `usePageSettings`（`scope='page' + pref_key='settings'` 单个对象，对齐 usePageSettings.ts）；表格字段走 `layout_user_config`；`responsiveProfile` 用 `single-column`（pageRegistry 枚举，非 list/detail）；两页 `supportsPageSettings !== false` → `overlay:settings-drawer` 自动补登。抽屉保存值即时投影当前页面并作为后续默认，列表/详情返回现场走按身份与当前 Tab 隔离的 `sectorsSession`，普通页面状态不写 URL。
 - **现行恢复事务**：候选恢复机制已废弃。完整成分快照落库、`member_count/member_snapshot_at` 刷新和活跃 `board_member_incomplete` 收敛在同一 DuckDB 事务中；指数缺口和资金流未匹配通过异步 fix 重采后复检，只有复检通过才 resolved。PG 审计仍为 best-effort，不引入 outbox。
 
 ## 11. 后续建议

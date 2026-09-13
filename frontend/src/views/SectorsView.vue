@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { ElMessage, type Sort } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import { Star, StarFilled } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -33,7 +33,7 @@ import SectorCompareChart from '@/components/SectorCompareChart.vue'
 import type { CrossSectionDatum } from '@/components/SectorCompareChart.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
-import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
+import { normalizePageSize, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import {
   activateCompareCode,
   removeCompareCode,
@@ -88,17 +88,15 @@ import { useTradeDates } from '@/composables/useTradeDates'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useSectorsSessionStore } from '@/stores/sectorsSession'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
 import { hasPermission } from '@/utils/permission'
-import {
-  resolveSectorListState,
-  sanitizeSectorSourceQuery,
-  toLocationQuery,
-} from '@/utils/sectorNavigation'
+import { sectorDetailLocation } from '@/utils/sectorNavigation'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const sectorsSession = useSectorsSessionStore()
 const { dataMin, dataMax, ensureLoaded } = useTradeDates()
 const settingsOpen = ref(false)
 
@@ -212,10 +210,11 @@ const loadError = ref('')
 const forbidden = ref(false)
 const tradeDate = ref<string | null>('')
 const marketDate = ref<string | null>(null)
-// 首屏先等待持久化默认值水合，再恢复 URL 会话态；期间禁止默认值 watcher 发起抢跑请求。
+// 首屏先等待持久化默认值水合，再按一次性 restore 标记恢复当前 Tab 现场；期间禁止 watcher 抢跑。
 let restoring = true
+const pageInitialized = ref(false)
 // 五个筛选/图表口径均为单向：抽屉默认值 → 会话 ref；主区改动只进会话态，不写回默认。
-// URL query/分享链接恢复也只写会话 ref（restoring 区间），不触碰抽屉默认。见 DESIGN「设置抽屉」单向默认机制。
+// 详情返回现场由当前 Tab 的 sectorsSession 恢复，不再把普通页面状态写入 URL。
 const configuredBoardType = computed<BoardType | ''>(() => (
   settings.defaultType === 'concept' || settings.defaultType === 'industry' ? settings.defaultType : ''
 ))
@@ -274,6 +273,7 @@ function applyQueue(next: CompareQueueState): void {
   queueCodes.value = [...next.queueCodes]
   pinnedCodes.value = [...next.pinnedCodes]
   activeCode.value = next.activeCode
+  persistListReturnState()
 }
 const { validDefault: klineDefaultRange } = useKlinePrefs()
 // K 线范围单向：全局偏好默认范围 → 会话 ref；主区切换不写回全局默认。
@@ -476,7 +476,10 @@ async function loadChart(): Promise<void> {
 // 走势分析区显隐单向：抽屉默认值 → 会话 ref；主区「》」收起/展开只进会话态，不写回默认。
 const analysisPanelVisible = useDefaultedSessionValue(computed(() => settings.showAnalysisPanel !== false))
 // 抽屉默认和主区会话变化统一触发副作用。
-watch(analysisPanelVisible, applyAnalysisPanelSideEffect)
+watch(analysisPanelVisible, (visible) => {
+  persistListReturnState()
+  applyAnalysisPanelSideEffect(visible)
+})
 /** 收起分析区时保留观察对象与对比队列；再次展开后按当前筛选状态刷新走势。 */
 function applyAnalysisPanelSideEffect(visible: boolean): void {
   if (visible) {
@@ -485,6 +488,38 @@ function applyAnalysisPanelSideEffect(visible: boolean): void {
   }
   chartRequestVersion += 1
   chartLoading.value = false
+}
+
+function persistListReturnState(): void {
+  if (!pageInitialized.value || restoring) return
+  sectorsSession.saveListReturnState({
+    tradeDate: tradeDate.value,
+    boardType: boardType.value,
+    listScope: listScope.value,
+    keyword: keyword.value.trim().slice(0, 50),
+    sortBy: sortBy.value,
+    sortOrder: sortOrder.value,
+    page: page.value,
+    size: size.value,
+    chartMode: chartMode.value,
+    benchmarkCode: benchmarkCode.value,
+    compareMetric: compareMetric.value,
+    compareWindow: compareWindow.value,
+    rangeDays: rangeDays.value,
+    analysisPanelVisible: analysisPanelVisible.value,
+    activeCode: activeCode.value,
+    pinnedCodes: pinnedCodes.value,
+    queueCodes: queueCodes.value,
+    queueRows: queueCodes.value
+      .map((code) => boardLookup.value[code])
+      .filter((row): row is SectorRow => Boolean(row)),
+  })
+}
+
+async function cleanPageUrl(): Promise<void> {
+  if (route.path === '/sectors' && route.fullPath !== '/sectors') {
+    await router.replace('/sectors')
+  }
 }
 
 function isPinned(code: string): boolean {
@@ -564,7 +599,7 @@ async function toggleWatchlist(row: SectorRow): Promise<void> {
 const sectorListRequest = createLatestRequestGuard()
 async function load(options: { deferChart?: boolean } = {}): Promise<void> {
   const requestId = sectorListRequest.begin()
-  syncSourceQuery()
+  persistListReturnState()
   loading.value = true
   loadError.value = ''
   forbidden.value = false
@@ -670,6 +705,7 @@ watch([sortBy, sortOrder], () => {
 })
 watch([rangeDays, chartMode, benchmarkCode, compareMetric, compareWindow], () => {
   if (restoring) return
+  persistListReturnState()
   void loadChart()
 })
 // 抽屉里把当前指标从展示列表移除时，回退到首个可见指标，保持图与头部一致。
@@ -680,44 +716,10 @@ watch(visibleCompareMetrics, (list) => {
   }
 })
 
-function sourceQuery() {
-  return {
-    ...(boardType.value ? { type: boardType.value } : {}),
-    ...(sortBy.value !== 'pct_today' ? { sort: sortBy.value } : {}),
-    ...(sortOrder.value !== 'desc' ? { order: sortOrder.value } : {}),
-    ...(keyword.value.trim() ? { keyword: keyword.value.trim().slice(0, 50) } : {}),
-    ...(page.value > 1 ? { page: String(page.value) } : {}),
-    ...(listScope.value === 'watchlist' ? { scope: 'watchlist' as const } : {}),
-    ...(tradeDate.value ? { date: tradeDate.value } : {}),
-  }
-}
-let sourceQueryNavigation: Promise<void> = Promise.resolve()
-let leavingForDetail = false
-function syncSourceQuery(): void {
-  if (restoring || leavingForDetail) return
-  const query = toLocationQuery(sourceQuery())
-  sourceQueryNavigation = sourceQueryNavigation
-    .then(async () => {
-      if (leavingForDetail || route.path !== '/sectors') return
-      const target = { path: '/sectors', query }
-      if (router.resolve(target).fullPath === route.fullPath) return
-      await router.replace(target)
-    })
-    .catch(() => undefined)
-}
 async function openDetail(): Promise<void> {
   if (!activeCode.value || activeRow.value?.available === false) return
-  leavingForDetail = true
-  try {
-    await sourceQueryNavigation
-    if (route.path !== '/sectors') return
-    await router.push({
-      path: `/sectors/${encodeURIComponent(activeCode.value)}`,
-      query: toLocationQuery(sourceQuery()),
-    })
-  } finally {
-    leavingForDetail = false
-  }
+  persistListReturnState()
+  await router.push(sectorDetailLocation(activeCode.value))
 }
 
 const fmtPct = formatSectorPercent
@@ -793,33 +795,87 @@ function selectCompareMetric(value: string): void {
   compareMetric.value = metric
 }
 
+watch(
+  () => [route.path, route.query.restore] as const,
+  ([path, restore]) => {
+    if (!pageInitialized.value || path !== '/sectors' || restore !== '1') return
+    // KeepAlive 返回时页面实例已保留现场，只消费持久化副本并清理一次性标记。
+    sectorsSession.consumeListReturnState()
+    void cleanPageUrl()
+  },
+)
+
 onMounted(async () => {
   await Promise.all([whenHydrated(), whenRemoteHydrated()])
   size.value = configuredPageSize.value
   await ensureLoaded().catch(() => undefined)
-  const resolved = resolveSectorListState(route.query, settings, canViewWatchlist.value)
-  const query = resolved.query
+  // 只有显式详情返回才恢复一次性现场；普通进入或刷新重新应用抽屉保存的默认值。
+  const restored = route.query.restore === '1'
+    ? sectorsSession.consumeListReturnState()
+    : null
   restoring = true
-  if (!tradeDate.value) tradeDate.value = dataMax.value || ''
-  boardType.value = resolved.boardType
-  listScope.value = resolved.listScope
-  chartMode.value = resolved.chartMode
-  benchmarkCode.value = resolved.benchmarkCode
-  compareMetric.value = sanitizeCompareMetric(settings.defaultCompareMetric)
+  tradeDate.value = typeof restored?.tradeDate === 'string' ? restored.tradeDate : dataMax.value || ''
+  boardType.value = restored && (
+    restored.boardType === 'concept' || restored.boardType === 'industry' || restored.boardType === ''
+  ) ? restored.boardType : configuredBoardType.value
+  const defaultScope = configuredListScope.value === 'watchlist' && canViewWatchlist.value
+    ? 'watchlist'
+    : 'all'
+  listScope.value = restored
+    ? (restored.listScope === 'watchlist' && canViewWatchlist.value ? 'watchlist' : 'all')
+    : defaultScope
+  chartMode.value = restored?.chartMode === 'kline' ? 'kline' : configuredChartMode.value
+  benchmarkCode.value = restored
+    ? normalizeMarketBenchmarkCode(restored.benchmarkCode)
+    : configuredBenchmarkCode.value
+  compareMetric.value = sanitizeCompareMetric(restored?.compareMetric ?? settings.defaultCompareMetric)
+  compareWindow.value = COMPARE_RANGE_OPTIONS.some((option) => option.value === restored?.compareWindow)
+    ? restored!.compareWindow
+    : configuredCompareWindow.value
+  rangeDays.value = restored && Number.isFinite(restored.rangeDays) && restored.rangeDays > 0
+    ? restored.rangeDays
+    : klineDefaultRange.value
+  analysisPanelVisible.value = typeof restored?.analysisPanelVisible === 'boolean'
+    ? restored.analysisPanelVisible
+    : settings.showAnalysisPanel !== false
   // 默认指标若被移出展示列表，回退到首个可见指标，避免图与头部高亮脱节。
   if (!visibleCompareMetrics.value.includes(compareMetric.value)) {
     compareMetric.value = visibleCompareMetrics.value[0] ?? 'cum'
   }
-  if (query.date) tradeDate.value = query.date
-  keyword.value = resolved.keyword
-  page.value = resolved.page
-  if (query.sort) {
+  keyword.value = typeof restored?.keyword === 'string' ? restored.keyword.slice(0, 50) : ''
+  page.value = Number.isInteger(restored?.page) && Number(restored?.page) > 0
+    ? Number(restored?.page)
+    : 1
+  size.value = restored ? normalizePageSize(restored.size, configuredPageSize.value) : configuredPageSize.value
+  if (restored && (SORTABLE_FIELDS as readonly string[]).includes(restored.sortBy)) {
     onTableSortChange({
-      prop: query.sort,
-      order: (query.order ?? 'desc') === 'desc' ? 'descending' : 'ascending',
+      prop: restored.sortBy,
+      order: restored.sortOrder === 'asc' ? 'ascending' : 'descending',
+    })
+  }
+  if (restored) {
+    boardLookup.value = Object.fromEntries(
+      (Array.isArray(restored.queueRows) ? restored.queueRows : [])
+        .filter((row) => row && typeof row.board_code === 'string')
+        .map((row) => [row.board_code, row]),
+    )
+    const queueCodes = Array.isArray(restored.queueCodes)
+      ? restored.queueCodes.filter((value): value is string => typeof value === 'string').slice(0, COMPARE_MAX)
+      : []
+    const pinnedCodes = Array.isArray(restored.pinnedCodes)
+      ? restored.pinnedCodes
+          .filter((value): value is string => typeof value === 'string' && queueCodes.includes(value))
+          .slice(0, COMPARE_MAX)
+      : []
+    applyQueue({
+      activeCode: typeof restored.activeCode === 'string' ? restored.activeCode : '',
+      pinnedCodes,
+      queueCodes,
     })
   }
   restoring = false
+  pageInitialized.value = true
+  await cleanPageUrl()
   await loadWatchlist()
   void load()
 })

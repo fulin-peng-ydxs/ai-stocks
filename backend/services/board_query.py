@@ -53,6 +53,7 @@ SORT_FIELDS = ("pct_today", "pct_5d", "pct_10d", "pct_20d",
 # 成分股表只开放页面真实消费的稳定字段码；SQL 表达式固定映射，禁止透传参数。
 MEMBER_SORT_FIELDS = {
     "code": "m.code",
+    "price": "b.close",
     "pct": (
         "CASE WHEN b.pre_close IS NOT NULL AND b.pre_close <> 0 "
         "THEN (b.close / b.pre_close - 1) * 100 END"
@@ -416,14 +417,33 @@ class BoardQueryService:
 
     def get_members(self, code: str, trade_date: date | None = None,
                     page: int = 1, size: int = 20, sort_by: str = "pct",
-                    order: str = "desc") -> dict:
-        """历史累计成分股分页：累计关系 + 该交易日现价/涨跌幅/换手（个股行情表同库关联）。
+                    order: str = "desc", keyword: str | None = None) -> dict:
+        """历史累计成分股分页：支持代码/名称搜索及行情字段服务端排序。
 
         返回 {"list": [{code, name, close, pct_chg, turnover_rate}], "total": n}。
         """
         bar_date = trade_date or self._latest_bar_date()
+        where_sql = "m.board_code = ?"
+        where_params: list[str] = [code]
+        normalized_keyword = keyword.strip() if keyword else ""
+        if normalized_keyword:
+            escaped = (normalized_keyword.replace("\\", "\\\\")
+                       .replace("%", "\\%").replace("_", "\\_"))
+            pattern = f"%{escaped}%"
+            where_sql += (
+                " AND (m.code ILIKE ? ESCAPE '\\' "
+                "OR coalesce(sb.name, '') ILIKE ? ESCAPE '\\')"
+            )
+            where_params.extend([pattern, pattern])
         total = int(self.c.query_df(
-            "SELECT count(*) AS n FROM board_member WHERE board_code=?", [code]).iloc[0]["n"])
+            f"""
+            SELECT count(*) AS n
+            FROM board_member m
+            LEFT JOIN stock_basic sb ON sb.code = m.code
+            WHERE {where_sql}
+            """,
+            where_params,
+        ).iloc[0]["n"])
         if total == 0:
             return {"list": [], "total": 0, "trade_date": str(bar_date) if bar_date else None}
         cond = "b.trade_date = ?" if bar_date is not None else "1=0"
@@ -435,10 +455,11 @@ class BoardQueryService:
             FROM board_member m
             LEFT JOIN stock_basic sb ON sb.code = m.code
             LEFT JOIN daily_bar b ON b.code = m.code AND {cond}
-            WHERE m.board_code = ?
+            WHERE {where_sql}
             ORDER BY {sort_expr} {sort_order} NULLS LAST, m.code ASC
             LIMIT ? OFFSET ?
-            """, ([bar_date] if bar_date is not None else []) + [code, size, (page - 1) * size])
+            """, ([bar_date] if bar_date is not None else [])
+            + where_params + [size, (page - 1) * size])
         rows = []
         for _, r in df.iterrows():
             rows.append({

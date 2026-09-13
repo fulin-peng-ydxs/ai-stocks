@@ -144,7 +144,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 | 页面功能点 | 对应需求编号 | 需求交互要点 | 技术实现 | 涉及组件/模块 | 数据/API | 状态与异常处理 | 对应任务 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 板块列表筛选（7.1.1） | R7、R10 | 默认全部板块 + 今日涨幅降序；切类型/排序/搜索（≤50 字符防抖） | action 区板块类型 `el-select`（全部/概念/行业）+ `TradeDatePicker` + `el-input` 防抖 + 查询主命令按钮；筛选态写 URL query（`type/sort/order/keyword/page`，`type` 为全部时省略）；偏好优先级 URL query > 已保存偏好 > 默认值 | SectorsView.vue、AppControlRow、TradeDatePicker、usePageSettings | `GET /api/sectors`（白名单参数） | 加载 `v-loading`；空态引导去采集页；错误 AppStateBlock 重试；无权限 permission 态 | T11 |
+| 板块列表筛选（7.1.1） | R7、R10 | 默认全部板块 + 今日涨幅降序；切类型/排序/搜索（≤50 字符） | action 区 `PageSegmented`（全部/概念/行业）+ `TradeDatePicker` + `AppSearchInput`；抽屉用户配置即时投影会话默认，列表普通状态进入 `sectorsSession`，不写 URL | SectorsView.vue、AppControlRow、TradeDatePicker、AppSearchInput、usePageSettings、sectorsSession | `GET /api/sectors`（白名单参数） | 加载 `v-loading`；空态引导去采集页；错误 AppStateBlock 重试；无权限 permission 态 | T11 |
 | 板块排行与观察联动（7.1.2） | R7 | 列头排序、服务端分页、点行切换当前板块、勾选附加对比、列显隐、宽表横向滚动、收起/展开走势分析、标题说明 | `AppDataTable(kind=wide-table)` + AppPagination 与右侧走势图组成 master-detail；列宽由全局 `AppTableColumn` 根据语义、表头长度、排序控件、同行元信息与主内容前置控件推导，资金日期使用标准 `header-meta` 同行表头；`defaultSort/pageSize/hiddenColumns` 走 `componentValueOf('table', ...)`；每个 `componentMeta.columns` 候选必须进入真实显隐判断；分析区展开状态走 `usePageSettings`；切换按钮固定在排行标题右上角；说明复用 `HelpTip`；「查看详情」位于当前观察身份区 | AppDataTable、AppTableColumn、AppPagination、SectorCompareChart、HelpTip、pageRegistry `sectors` | `GET /api/sectors` | 空值列显示「—」；资金流列标注数据日期；表头不换行并与主内容对齐；列超宽时滚动条常显且可真实横移；分页越界回落；收起不清空观察和对比状态 | T11 |
 
 组件资产闭环（P1）：
@@ -161,8 +161,8 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 板块摘要卡（7.2.1） | R8、R14 | 名称/类型/最近快照返回数/今日涨幅/累计成员涨跌家数/即时净流入(含数据日期)/累计成员领涨股及涨幅；随路由 code 刷新 | 摘要区（DESIGN 统计项语义）；涨幅与净流入分别标注各自数据日期；领涨股按行情截面日历史累计关系涨幅第一计算 | SectorDetailView.vue | `GET /api/sectors/{code}` | 板块不存在 → error 态「板块不存在或数据未采集」；空值显示「—」 | T12 |
 | 板块指数走势图（7.2.2） | R8、R11 | 默认近 120 日；范围与个股统一；横向缩放限制在当前周期；走势默认对比中证 500，可切沪深 300、上证指数、科创 50、深证成指、创业板指或不对比；**多口径对比（2026-08-13 修订）**：头部指标槽点击切换，趋势指标折线、截面指标柱状，累计涨跌双基期；K 线高度可调整 | 列表/详情复用 `klineRangeQueryStart` 预取并按交易点精确截断，板块走势与指数基准共享截断日期；`SectorCompareChart` 按 `metric` 折线/柱状两分支，趋势指标以虚线区分市场指数并在 tooltip 计算超额涨跌，截面指标柱状且不叠加指数；累计·近一年基期强制 250 交易日区间；指标口径纯函数在 `utils/sectorCompare.ts`；详情复用 `StockChartWorkspace` + `KlineRangeSelect` + `useStockChartPreferences`，K 线与量能联动，高度比例单独持久化 | SectorsView.vue、SectorDetailView.vue、StockChartWorkspace、SectorCompareChart、KlineRangeSelect、AppFilterSelect | `GET /api/sectors/{code}/bars`、`GET /api/sectors/benchmarks/{index_code}/bars` | 板块走势失败进入图表错误态；基准失败降级显示板块走势并在图表脚注明 | T12 |
-| 历史累计成分股表（7.2.3） | R8、R9、R13 | 统一分页（默认 20，抽屉可配 10/20/30/50）；列头排序（默认涨跌幅降序）；有 `stocks:view` 点行跳 `/stocks/:code`，无权限行禁用 + hover 提示；从个股返回原板块详情 | AppDataTable（嵌套 slot `memberTable`，parentId=detail）+ AppPagination；进入个股前通过共享 `stockSet` 写入当前累计关系结果页集合及 `route.fullPath` 返回地址，覆盖其它页面遗留集合；`componentValueOf('memberTable', ...)` 消费 pageSize/defaultSort/hiddenColumns | AppDataTable、AppPagination、stockSet、pageRegistry `sectors-detail` | `GET /api/sectors/{code}/members?page=&size=`（size 默认 20） | 空态/错误重试；直接访问 `/stocks/:code` 路由守卫 fail-closed（现有机制） | T12 |
-| 返回列表保留筛选态（R8） | R8 | 面包屑/返回按钮始终 `router.replace` 显式跳列表并带白名单校验后的来源 query；无/非法来源 query 落默认；不使用 `router.back()`；浏览器原生后退按 history 还原 | 列表 URL query 承载筛选态；进详情时来源 query 透传进详情 URL；返回前白名单校验（`type/sort/order/keyword/page`） | vue-router、SectorsView/SectorDetailView | - | 非法 query 逐字段丢弃落默认 | T12 |
+| 历史累计成分股表（7.2.3） | R8、R9、R13 | 统一分页（默认 20，抽屉可配 10/20/30/50）；支持代码或名称搜索；列头排序（默认涨跌幅降序，支持现价/代码）；有 `stocks:view` 点行跳 `/stocks/:code`，无权限行禁用 + hover 提示；从个股返回原板块详情 | AppDataTable（嵌套 slot `memberTable`，parentId=detail）+ AppPagination；进入个股前通过共享 `stockSet` 写入当前结果页集合，通过 `sectorsSession` 保存详情日期、范围、搜索、排序和分页，只把 `/sectors/:code?restore=1` 作为返回地址 | AppDataTable、AppPagination、stockSet、sectorsSession、pageRegistry `sectors-detail` | `GET /api/sectors/{code}/members?keyword=&page=&size=`（size 默认 20） | 空态/错误重试；直接访问 `/stocks/:code` 路由守卫 fail-closed（现有机制） | T12 |
+| 返回列表保留筛选态（R8） | R8 | 返回按钮显式恢复列表当前 Tab 现场；普通筛选、排序、日期、分页、观察对象和对比队列不进入 URL；不使用 `router.back()` | 列表与详情复用 `sectorsSession`；同模块返回只传一次性 `restore=1` 并立即清理，跨模块仅保留可信 `return_to` | vue-router、SectorsView、SectorDetailView、sectorsSession、pageSessionStorage | - | 会话缺失时落用户配置默认；非法 `return_to` 回落板块列表 | T12 |
 
 组件资产闭环（P2）：
 
@@ -192,7 +192,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 | 必须实现 | R5 | 板块采集异步任务（`board` 进任务中心） | TASK_TYPES/WRITE_TASK_TYPES/TASK_CAPABILITIES 注册 + `_h_board` + 按字典类型/板块/资金流周期 checkpoint + 任务中文标签 | T5 | 已完成 | 一致 | T5 已落地；部分失败保留 checkpoint，失败任务可续跑 |
 | 必须实现 | R6 | 板块维度注册 + 数据概览可见 | `_DIMENSION_SEED` 加 `board` 维度行（tables=4 表）+ 数据管理概览板块统计卡 | T3 + 本轮复核修复 | 已完成 | 一致 | 除维度行外，概览已展示表行数、概念/行业数、成分/指数/资金流覆盖、最新日期、未闭环问题和最近更新 |
 | 必须实现 | R7 | 板块行情列表页 `/sectors` | SectorsView（筛选/主表/分页/列显隐/列头排序语义）+ `/api/sectors` | T8、T11 | 已完成 | 一致 | T8 `/api/sectors` 列表接口 + T11 SectorsView 页面均已落地；分页走全局 `PAGE_SIZE_OPTIONS`（2026-08-11 纠偏） |
-| 必须实现 | R8 | 板块详情页 `/sectors/:code` + 返回保留筛选态 | SectorDetailView（摘要/走势图/成分股表）+ URL query 筛选态承载与显式返回 + 详情 3 接口 | T8、T12 | 已完成 | 一致 | T8 接口与 T12 页面均已落地，显式返回、浏览器历史和菜单最近详情恢复已覆盖 |
+| 必须实现 | R8 | 板块详情页 `/sectors/:code` + 返回保留筛选态 | SectorDetailView（摘要/走势图/成分股表）+ 当前 Tab 会话现场与显式返回 + 详情 3 接口 | T8、T12 | 已完成 | 一致 | T8 接口与 T12 页面均已落地，列表/详情现场由 `sectorsSession` 恢复，跨模块只保留可信返回目标 |
 | 必须实现 | R9 | 成分股跳转个股详情（权限感知） | `hasPermission('stocks:view')` 行可点性 + 禁用态 hover 提示 + 直接访问 fail-closed 验证 | T12、T14、T15 | 已完成 | 一致 | T14 新增 `debug_sectors_only` 最小权限身份，真实浏览器验证成分股禁用且直达个股路由 fail-closed |
 | 必须实现 | R10 | 板块搜索 | 自由文本搜索框（el-input 防抖）+ 服务端 `keyword` 参数 + 无结果空态 | T8、T11 | 已完成 | 一致 | T8 服务端 keyword + T11 搜索框（≤50 字符防抖）均已落地 |
 | 可选增强 | R11 | 统一 K 线范围与高度拖拽 | 全局范围选项 + 行情多图工作区 + 高度比例持久化 | T12 | 已完成 | 一致 | 本次纳入 |
@@ -371,8 +371,8 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 依赖：T8（接口）、T10a（常量 + seed）；开工前先按 page-template.md §1 把原型/组件选型结论同步用户（本计划 §4 已给推荐与理由）
 - 涉及文件/模块：`frontend/src/views/SectorsView.vue`（新增，优先 `npm run scaffold-page -- --pageKey sectors --label 板块行情 --archetype list`）、`frontend/src/router/index.ts`（`/sectors`）、[pageRegistry.ts](../../frontend/src/layout/pageRegistry.ts)（`sectors` pageKey：slots/config/componentMeta sortFields）、`frontend/src/api/sectors.ts`（新增 API 封装）、[DESIGN.md](../../DESIGN.md)（page-registry 区块登记）
 - 目标：R7、R10 + R22/R23 列表页部分，逐项承接 §4.1 功能点表与原型区域。
-- 操作：action 区全市场/自选、板块类型、交易日、搜索防抖与查询主命令；排序走列头；筛选态写 URL query；进详情携带来源 query；业务默认项由 `usePageSettings('sectors')` 承载，表格字段由 `componentValueOf('table', ...)` 承载；四态与权限态完整。
-- 产出：页面 + 路由 + registry 登记 + API 封装 + Vitest（筛选态还原、偏好优先级 URL>保存>默认、非法值回落）。
+- 操作：action 区全市场/自选、板块类型、交易日、搜索防抖与查询主命令；排序走列头；普通页面状态写当前 Tab 的 `sectorsSession`，详情返回只用一次性 `restore=1`；业务默认项由 `usePageSettings('sectors')` 承载，表格字段由 `componentValueOf('table', ...)` 承载；四态与权限态完整。
+- 产出：页面 + 路由 + registry 登记 + API 封装 + Vitest（会话现场还原、保存偏好投影、非法值回落与 URL 状态拦截）。
 - 影响范围：新增页面与菜单可见入口；无既有页面变化。
 - 边界与异常：搜索关键字 ≤50 字符；空值列「—」；窄视口主表内滚。
 - 验证方式：Vitest + `npm test`（pageRegistry 契约）+ Playwright（T15）。

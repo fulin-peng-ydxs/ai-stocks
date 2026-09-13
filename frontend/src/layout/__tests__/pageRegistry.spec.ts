@@ -1259,6 +1259,19 @@ describe('组件消费关系与配置一致性（P4）', () => {
     expect(source).not.toContain('filtersToRouteQuery(')
   })
 
+  it('板块行情返回现场必须走当前 Tab 会话，普通筛选、排序和日期不得回写 URL', () => {
+    const listSource = sourceForPage('sectors')
+    const detailSource = sourceForPage('sectors-detail')
+    expect(listSource).toContain('useSectorsSessionStore()')
+    expect(listSource).toContain('saveListReturnState({')
+    expect(listSource).not.toContain('syncSourceQuery')
+    expect(listSource).not.toContain('sourceQuery()')
+    expect(listSource).not.toContain('resolveSectorListState(')
+    expect(detailSource).toContain('saveDetailReturnState({')
+    expect(detailSource).not.toContain('sanitizeSectorSourceQuery(')
+    expect(detailSource).not.toContain('router.replace({ path: route.path, query:')
+  })
+
   it('页面不得直接读写浏览器存储，会话与偏好必须经过共享生命周期入口', () => {
     const violations: string[] = []
     for (const entry of PAGE_REGISTRY) {

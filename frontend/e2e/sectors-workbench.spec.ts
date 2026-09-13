@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import { loginAsDebugUser, saveUserPreference } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
@@ -7,6 +7,14 @@ import { openPageAndWaitForHeading } from './helpers/navigation'
 import { requireSeededSectors } from './helpers/sectorData'
 
 const API_URL = process.env.E2E_API_URL || DEFAULT_E2E_API_URL
+
+async function openFilteredSectors(page: Page, keyword = 'E2E板块'): Promise<void> {
+  await openPageAndWaitForHeading(page, '/sectors', '板块行情')
+  const input = page.getByTestId('sectors-keyword').getByRole('textbox')
+  await input.fill(keyword)
+  await input.press('Enter')
+  await expect(page).toHaveURL(/\/sectors$/)
+}
 
 test.describe('板块行情工作台', () => {
   test('首屏加载排行与走势，并支持自选、行选中、对比和 K 线联动', async ({ page, request }, testInfo) => {
@@ -47,11 +55,7 @@ test.describe('板块行情工作台', () => {
     })
 
     try {
-      await openPageAndWaitForHeading(
-        page,
-        '/sectors?keyword=E2E板块&sort=pct_today&order=desc',
-        '板块行情',
-      )
+      await openFilteredSectors(page)
       await expect(page.getByTestId('sectors-workspace')).toBeVisible({ timeout: 20_000 })
       await expect(page.getByTestId('sectors-chart-title')).toHaveText(boards[0]!.name)
       const compareChart = page.getByTestId('sectors-compare-chart')
@@ -242,7 +246,7 @@ test.describe('板块行情工作台', () => {
       await expect(page.getByTestId('sector-detail-page')).toBeVisible()
 
       await page.getByTestId('sector-detail-back').click()
-      await expect(page).toHaveURL(/\/sectors(?:\?|$)/)
+      await expect(page).toHaveURL(/\/sectors$/)
       await expect(page.getByTestId('sectors-workspace')).toBeVisible()
       await page.waitForTimeout(300)
       expect(sectorApi404s).toEqual([])
@@ -277,7 +281,7 @@ test.describe('板块行情工作台', () => {
 
     const sample = (await requireSeededSectors(request, auth.accessToken))[0]!
 
-    await openPageAndWaitForHeading(page, '/sectors?keyword=E2E板块', '板块行情')
+    await openFilteredSectors(page)
     await expect(page.getByTestId('sectors-workspace')).toBeVisible({ timeout: 20_000 })
     // 固定账号可能保留其它回归写入的 pageSize/hiddenColumns，先恢复页面默认再验收。
     await page.getByTestId('page-settings-trigger').click()
@@ -477,7 +481,7 @@ test.describe('板块行情工作台', () => {
       })
     })
 
-    await openPageAndWaitForHeading(page, '/sectors?keyword=E2E板块', '板块行情')
+    await openFilteredSectors(page)
     await expect(page.getByText('没有匹配板块，换个关键词试试', { exact: true })).toBeVisible()
 
     mode = 'error'
