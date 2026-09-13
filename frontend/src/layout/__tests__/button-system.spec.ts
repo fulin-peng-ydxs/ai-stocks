@@ -48,11 +48,21 @@ describe('全站按钮与图标操作契约', () => {
     expect(design).toContain('文字 `13px / --app-font-weight-section`')
     expect(design).toContain('纯图标异步操作必须使用 `AppIconButton` 的 `loading`')
     expect(design).toContain('选择态勾选标记也使用 Element Plus 图标或项目 SVG')
+    expect(design).toContain('控件宽度不按组件类型强制等宽')
+    expect(design).toContain('新增或修改控件禁止匿名内联固定宽度')
     expect(pageTemplate).toContain('### 控件与操作规范')
     expect(pageTemplate).toContain('纯图标操作：使用 `AppIconButton`')
     expect(pageTemplate).toContain('异步纯图标操作使用 `:loading`')
+    expect(pageTemplate).toContain('.app-control-width-compact/short/medium/long/wide/fill')
     expect(globalCss).toContain('--app-control-height-md: 32px')
+    expect(globalCss).toContain('--app-control-width-compact: 96px')
+    expect(globalCss).toContain('--app-control-width-wide: 300px')
+    expect(globalCss).toMatch(/\.app-control-width-fill\s*\{[\s\S]*?--app-control-inline-width:\s*100%;[\s\S]*?min-width:\s*0;/)
     expect(globalCss).toContain('--app-button-font-weight: var(--app-font-weight-section)')
+
+    for (const file of ['components/AppSearchInput.vue', 'components/AppFilterSelect.vue']) {
+      expect(read(join(SRC_DIR, file)), file).toContain('width: var(--app-control-inline-width, 100%)')
+    }
 
     const sectionFontWeight = globalCss.match(/--app-font-weight-section:\s*([^;]+);/)?.[1].trim()
     const frontMatterButtonFontWeight = design
@@ -60,6 +70,17 @@ describe('全站按钮与图标操作契约', () => {
       .trim()
 
     expect(frontMatterButtonFontWeight).toBe(sectionFontWeight)
+  })
+
+  it('必须与禁止章节只保留系统级原则，组件实现细节由对应章节和清单承载', () => {
+    const design = read(join(PROJECT_DIR, 'DESIGN.md'))
+    const topLevelRules = design.match(/### 7\.1 必须遵守[\s\S]*?(?=### 7\.3 组件特性配置治理)/)?.[0] ?? ''
+
+    expect(topLevelRules).not.toMatch(/AppFilterSelect|AppIconButton|HelpTip|HelpHint/)
+    expect(topLevelRules).not.toMatch(/multiple=false|allowCreate|3 个标签|已选 N/)
+    expect(design).toContain('默认多选、可搜索、可清空')
+    expect(design).toContain('纯图标操作统一使用 `AppIconButton`')
+    expect(design).toContain('单块纯文本说明优先进入 `HelpHint`')
   })
 
   it('应用外壳、页面设置和配置编辑器共同消费 AppIconButton', () => {

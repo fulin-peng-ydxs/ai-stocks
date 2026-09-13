@@ -167,6 +167,11 @@ body > .el-notification {
   --app-control-height-sm: 28px;
   --app-control-height-md: 32px;
   --app-control-height-lg: 36px;
+  --app-control-width-compact: 96px;
+  --app-control-width-short: 140px;
+  --app-control-width-medium: 180px;
+  --app-control-width-long: 220px;
+  --app-control-width-wide: 300px;
   --app-button-padding-x: 12px;
   --app-button-font-size: var(--app-font-size-table);
   --app-button-font-weight: var(--app-font-weight-section);
@@ -674,6 +679,26 @@ html[data-layout-preset] .el-button,
 html[data-layout-preset] .el-input__wrapper,
 html[data-layout-preset] .el-select__wrapper {
   border-radius: var(--layout-control-radius);
+}
+/* 控件宽度按内容容量选择语义档位；自定义属性也供共享组件内部的根样式消费。 */
+.app-control-width-compact { --app-control-inline-width: var(--app-control-width-compact); }
+.app-control-width-short { --app-control-inline-width: var(--app-control-width-short); }
+.app-control-width-medium { --app-control-inline-width: var(--app-control-width-medium); }
+.app-control-width-long { --app-control-inline-width: var(--app-control-width-long); }
+.app-control-width-wide { --app-control-inline-width: var(--app-control-width-wide); }
+.app-control-width-compact,
+.app-control-width-short,
+.app-control-width-medium,
+.app-control-width-long,
+.app-control-width-wide {
+  /* 显式语义工具类必须覆盖 Element Plus 日期控件等更高特异性的默认宽度。 */
+  width: var(--app-control-inline-width) !important;
+  max-width: 100%;
+}
+.app-control-width-fill {
+  --app-control-inline-width: 100%;
+  width: var(--app-control-inline-width) !important;
+  min-width: 0;
 }
 /* 全站命令按钮契约：业务按钮继续复用 Element Plus，尺寸、字重、图标和状态反馈统一在此收口。 */
 html[data-layout-preset] .el-button {

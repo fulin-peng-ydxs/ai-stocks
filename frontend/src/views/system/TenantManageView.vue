@@ -322,10 +322,10 @@ onMounted(async () => {
 
         <el-card shadow="never" class="filter-card">
           <AppControlRow>
-            <el-select v-model="filters.status" placeholder="状态：全部" clearable style="width: 140px">
+            <el-select v-model="filters.status" placeholder="状态：全部" clearable class="app-control-width-short">
               <el-option v-for="item in tenantStatusOptions" :key="item.code" :label="item.label" :value="item.code" />
             </el-select>
-            <AppSearchInput v-model="filters.q" placeholder="搜索租户名 / ID" style="width: 220px" @search="search" />
+            <AppSearchInput v-model="filters.q" placeholder="搜索租户名 / ID" class="app-control-width-long" @search="search" />
             <el-button data-testid="tenant-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
           </AppControlRow>
         </el-card>

@@ -487,16 +487,16 @@ onMounted(async () => {
         <el-card shadow="never" class="filter-card">
           <AppControlRow>
             <el-select v-if="isSystem" v-model="filters.tenant" placeholder="租户：全部" clearable
-                       :loading="dependencyLoading" style="width: 180px" @change="search">
+                       :loading="dependencyLoading" class="app-control-width-medium" @change="search">
               <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
             </el-select>
-            <el-select v-model="filters.role" :loading="dependencyLoading" placeholder="角色：全部" clearable style="width: 170px" @change="search">
+            <el-select v-model="filters.role" :loading="dependencyLoading" placeholder="角色：全部" clearable class="app-control-width-medium" @change="search">
               <el-option v-for="r in assignableRoles" :key="r.id" :label="r.name" :value="r.code" />
             </el-select>
-            <el-select v-model="filters.status" placeholder="状态：全部" clearable style="width: 140px" @change="search">
+            <el-select v-model="filters.status" placeholder="状态：全部" clearable class="app-control-width-short" @change="search">
               <el-option v-for="item in userStatusOptions" :key="item.code" :label="item.label" :value="item.code" />
             </el-select>
-            <AppSearchInput v-model="filters.q" placeholder="搜索账号 / 邮箱" style="width: 220px" @search="search" />
+            <AppSearchInput v-model="filters.q" placeholder="搜索账号 / 邮箱" class="app-control-width-long" @search="search" />
             <el-button data-testid="user-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
           </AppControlRow>
         </el-card>

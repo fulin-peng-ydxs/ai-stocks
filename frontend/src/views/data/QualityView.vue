@@ -574,12 +574,12 @@ onMounted(() => {
     <el-card shadow="never" class="filter-card">
     <AppControlRow class="filter-row">
       <AppFilterSelect v-model="filters.status" :options="statusFilterOptions"
-                       placeholder="状态" style="width: 240px" @change="applyFilter" />
+                       placeholder="状态" class="app-control-width-long" @change="applyFilter" />
       <AppFilterSelect v-model="filters.severity" :options="severityFilterOptions"
-                       placeholder="严重度" style="width: 200px" @change="applyFilter" />
+                       placeholder="严重度" class="app-control-width-long" @change="applyFilter" />
       <AppFilterSelect v-model="filters.issue_type" :options="issueTypeFilterOptions"
-                       placeholder="问题类型" style="width: 280px" @change="applyFilter" />
-      <AppSearchInput v-model="filters.code" placeholder="股票/板块代码或名称" style="width: 210px" @search="applyFilter" />
+                       placeholder="问题类型" class="app-control-width-wide" @change="applyFilter" />
+      <AppSearchInput v-model="filters.code" placeholder="股票/板块代码或名称" class="app-control-width-long" @search="applyFilter" />
       <el-button data-testid="quality-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
       <div class="summary app-inline-info">
         <el-tag

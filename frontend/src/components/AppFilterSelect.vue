@@ -209,7 +209,7 @@ watch(
 
 <style scoped>
 .app-filter-select {
-  width: 100%;
+  width: var(--app-control-inline-width, 100%);
   min-width: 0;
 }
 .app-filter-select__control {

@@ -860,12 +860,12 @@ watch(
           <AppTabToolbar label="任务中心操作栏" data-testid="ingest-tasks-toolbar">
             <template #actions>
               <el-select v-model="taskFilter.task_type" data-testid="task-type-filter"
-                         placeholder="类型" clearable size="small" style="width: 180px"
+                         placeholder="类型" clearable size="small" class="app-control-width-medium"
                          @change="() => { taskPage = 1; loadTasks() }">
                 <el-option v-for="o in TASK_TYPE_OPTIONS" :key="o.v" :label="o.l" :value="o.v" />
               </el-select>
               <el-select v-model="taskFilter.status" data-testid="task-status-filter"
-                         placeholder="状态" clearable size="small" style="width: 110px"
+                         placeholder="状态" clearable size="small" class="app-control-width-short"
                          @change="() => { taskPage = 1; loadTasks() }">
                 <el-option v-for="o in TASK_STATUS_OPTIONS" :key="o.v" :label="o.l" :value="o.v" />
               </el-select>
@@ -963,11 +963,11 @@ watch(
             <div class="app-workspace-panel" data-testid="ingest-log-panel">
           <AppTabToolbar label="采集日志操作栏" data-testid="ingest-logs-toolbar">
             <template #actions>
-              <el-select v-model="logFilter.table_name" placeholder="目标表" clearable size="small" style="width: 140px"
+              <el-select v-model="logFilter.table_name" placeholder="目标表" clearable size="small" class="app-control-width-short"
                          @change="() => { logPage = 1; loadLogs() }">
                 <el-option v-for="t in logTables" :key="t" :label="t" :value="t" />
               </el-select>
-              <el-select v-model="logFilter.status" placeholder="结果" clearable size="small" style="width: 100px"
+              <el-select v-model="logFilter.status" placeholder="结果" clearable size="small" class="app-control-width-compact"
                          @change="() => { logPage = 1; loadLogs() }">
                 <el-option label="成功" value="success" />
                 <el-option label="失败" value="failed" />

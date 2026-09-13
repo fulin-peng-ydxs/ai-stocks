@@ -70,7 +70,7 @@ function scheduleQuery(next: string): void {
 
 <style scoped>
 .app-search-input {
-  width: 100%;
+  width: var(--app-control-inline-width, 100%);
   min-width: 0;
 }
 .app-search-input__icon {

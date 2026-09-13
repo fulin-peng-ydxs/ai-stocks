@@ -888,8 +888,8 @@ onMounted(async () => {
           tone="primary"
           @update:model-value="onViewChange"
         />
-        <TradeDatePicker v-model="tradeDate" placeholder="交易日期" clearable style="width: 180px" />
-        <el-select v-model="board" placeholder="全部板块" style="width: 130px" clearable @change="searchCurrentView">
+        <TradeDatePicker v-model="tradeDate" placeholder="交易日期" clearable class="app-control-width-medium" />
+        <el-select v-model="board" placeholder="全部板块" class="app-control-width-short" clearable @change="searchCurrentView">
           <el-option label="主板" value="主板" />
           <el-option label="创业板" value="创业板" />
           <el-option label="科创板" value="科创板" />
@@ -903,10 +903,10 @@ onMounted(async () => {
           :disabled="membershipOptionsLoading || !!membershipOptionsError"
           placeholder="所属行业 / 概念"
           aria-label="所属行业或概念"
-          style="width: 220px"
+          class="app-control-width-long"
           @change="searchCurrentView"
         />
-        <AppSearchInput v-model="q" placeholder="代码 / 名称" style="width: 220px" @search="searchCurrentView" />
+        <AppSearchInput v-model="q" placeholder="代码 / 名称" class="app-control-width-long" @search="searchCurrentView" />
         <el-button data-testid="stocks-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
       </AppControlRow>
     </el-card>
