@@ -38,10 +38,12 @@ import {
   setAuxiliaryChartType,
   visibleChartTypes,
 } from '@/composables/useStockChartPreferences'
+import { upsertStockChartRatioProfile } from '@/layout/stockChartRatioProfiles'
 import type { AppRowAction } from './rowActions'
-import type {
-  MasterDetailRatioProfilesConfig,
-  MasterDetailRatioSample,
+import {
+  upsertMasterDetailRatioProfile,
+  type MasterDetailRatioProfilesConfig,
+  type MasterDetailRatioSample,
 } from '@/layout/masterDetailRatioProfiles'
 
 interface ComponentConfigAccess {
@@ -182,6 +184,13 @@ function runtimeNumber(slotId: string, field: string): number | undefined {
   const value = props.runtimeValueOf?.(slotId, field)
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
+function numericFieldValue(slotId: string, field: ComponentFieldDef): number {
+  if (field.key === 'masterRatio') {
+    const currentRatio = runtimeNumber(slotId, field.key)
+    if (currentRatio !== undefined) return currentRatio
+  }
+  return numVal(slotId, field.key, Number(field.default ?? field.min ?? 0))
+}
 function masterRatioSample(slotId: string): MasterDetailRatioSample | undefined {
   const value = props.runtimeValueOf?.(slotId, 'masterRatioProfiles')
   if (!value || typeof value !== 'object') return undefined
@@ -190,6 +199,16 @@ function masterRatioSample(slotId: string): MasterDetailRatioSample | undefined 
   return typeof width === 'number' && Number.isFinite(width) && width > 0
     && typeof ratio === 'number' && Number.isFinite(ratio)
     ? { width: Math.round(width), ratio: Math.round(ratio) }
+    : undefined
+}
+function stockChartRatioSample(slotId: string): { width: number; height: number } | undefined {
+  const value = props.runtimeValueOf?.(slotId, 'stockChartRatioSample')
+  if (!value || typeof value !== 'object') return undefined
+  const width = (value as { width?: unknown }).width
+  const height = (value as { height?: unknown }).height
+  return typeof width === 'number' && Number.isFinite(width) && width > 0
+    && typeof height === 'number' && Number.isFinite(height) && height > 0
+    ? { width: Math.round(width), height: Math.round(height) }
     : undefined
 }
 function applyMasterRatioSample(
@@ -248,7 +267,8 @@ function stockChartTypes(slotId: string) {
 }
 
 function stockChartCurrentRatios(slotId: string): number[] {
-  const runtime = props.runtimeValueOf?.(slotId, 'stockChart')
+  const runtime = props.runtimeValueOf?.(slotId, 'stockChartConfigured')
+    ?? props.runtimeValueOf?.(slotId, 'stockChart')
   const value = normalizeStockChartPreferences(runtime ?? stockChartValue(slotId))
   return value.heightRatios[chartCompositionKey(value)]
 }
@@ -270,12 +290,22 @@ function setStockChartSlot(
 function setStockChartRatios(slotId: string, ratios: number[]): void {
   const value = stockChartValue(slotId)
   const key = chartCompositionKey(value)
+  const sample = stockChartRatioSample(slotId)
   props.config.setComponentKnob(slotId, 'stockChart', {
     ...value,
     heightRatios: {
       ...value.heightRatios,
       [key]: ratios,
     },
+    heightRatioProfiles: sample
+      ? {
+          ...value.heightRatioProfiles,
+          [key]: upsertStockChartRatioProfile(value.heightRatioProfiles[key], {
+            ...sample,
+            ratios,
+          }),
+        }
+      : value.heightRatioProfiles,
   })
 }
 
@@ -285,6 +315,20 @@ function applyStockChartCurrentRatios(slotId: string): void {
     slotId,
     'stockChart',
     normalizeStockChartPreferences(runtime ?? stockChartValue(slotId)),
+  )
+}
+function setNumericField(slot: AutoSlot, field: ComponentFieldDef, value: number): void {
+  props.config.setComponentKnob(slot.slotId, field.key, value)
+  if (field.key !== 'masterRatio' || !slot.fields.includes('masterRatioProfiles')) return
+  const sample = masterRatioSample(slot.slotId)
+  if (!sample) return
+  props.config.setComponentKnob(
+    slot.slotId,
+    'masterRatioProfiles',
+    upsertMasterDetailRatioProfile(
+      props.config.componentValueOf(slot.slotId, 'masterRatioProfiles'),
+      { ...sample, ratio: Math.round(value) },
+    ),
   )
 }
 function boolVal(slotId: string, field: string, fallback: boolean): boolean {
@@ -390,6 +434,7 @@ function setSort(slotId: string, field: string, order: string): void {
           :chart-types="stockChartTypes(s.slotId)"
           :default-ratios="stockChartValue(s.slotId).heightRatios[chartCompositionKey(stockChartValue(s.slotId))]"
           :current-ratios="stockChartCurrentRatios(s.slotId)"
+          :can-apply-current-ratios="Boolean(stockChartRatioSample(s.slotId))"
           :test-id-prefix="`component-${s.slotId}-stock-chart`"
           @change="(slot, value) => setStockChartSlot(s.slotId, slot, value)"
           @save-default-ratios="(ratios) => setStockChartRatios(s.slotId, ratios)"
@@ -554,14 +599,14 @@ function setSort(slotId: string, field: string, order: string): void {
         <el-input-number
           class="ca-number"
           :data-testid="`component-${s.slotId}-${field.key}`"
-          :model-value="numVal(s.slotId, field.key, Number(field.default ?? field.min ?? 0))"
+          :model-value="numericFieldValue(s.slotId, field)"
           :min="field.min"
           :max="field.max"
           :step="field.control === 'int' ? 10 : 0.1"
           :precision="field.control === 'int' ? 0 : undefined"
           controls-position="right"
           @update:model-value="(value: number | undefined) => {
-            if (value != null) config.setComponentKnob(s.slotId, field.key, value)
+            if (value != null) setNumericField(s, field, value)
           }"
         />
         <MasterDetailRatioProfileSettings

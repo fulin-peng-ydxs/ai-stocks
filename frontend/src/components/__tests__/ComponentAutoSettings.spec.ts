@@ -285,21 +285,30 @@ function mountChartDemo(withRuntime = false) {
     props: {
       pageKey: 'chart-demo',
       runtimeValueOf: withRuntime
-        ? vi.fn(() => ({
-            ...createDefaultStockChartPreferences(),
-            heightRatios: {
-              ...createDefaultStockChartPreferences().heightRatios,
-              'kline|volume|macd': [0.5, 0.3, 0.2],
-            },
-            heightRatioProfiles: {
-              ...createDefaultStockChartPreferences().heightRatioProfiles,
-              'kline|volume|macd': [{
-                width: 1280,
-                height: 720,
-                ratios: [0.5, 0.3, 0.2],
-              }],
-            },
-          }))
+        ? vi.fn((_slotId: string, field: string) => {
+            if (field === 'stockChartRatioSample') {
+              return { width: 1280, height: 720, ratios: [0.5, 0.3, 0.2] }
+            }
+            if (field === 'stockChartConfigured') {
+              return createDefaultStockChartPreferences()
+            }
+            if (field !== 'stockChart') return undefined
+            return {
+              ...createDefaultStockChartPreferences(),
+              heightRatios: {
+                ...createDefaultStockChartPreferences().heightRatios,
+                'kline|volume|macd': [0.5, 0.3, 0.2],
+              },
+              heightRatioProfiles: {
+                ...createDefaultStockChartPreferences().heightRatioProfiles,
+                'kline|volume|macd': [{
+                  width: 1280,
+                  height: 720,
+                  ratios: [0.5, 0.3, 0.2],
+                }],
+              },
+            }
+          })
         : undefined,
       config: {
         componentValueOf: vi.fn((_slotId: string, field: string) => (
@@ -341,9 +350,9 @@ function mountChartDemo(withRuntime = false) {
         ElCheckbox: true,
         ElEmpty: true,
         StockChartSettingSection: {
-          props: ['slot2', 'slot3', 'defaultRatios', 'currentRatios'],
+          props: ['slot2', 'slot3', 'defaultRatios', 'currentRatios', 'canApplyCurrentRatios'],
           emits: ['change', 'saveDefaultRatios', 'applyCurrentRatios'],
-          template: '<div><button class="stock-chart-stub" @click="$emit(\'change\', \'slot2\', \'macd\')">chart</button><button class="stock-chart-current-stub" @click="$emit(\'change\', \'slot2\', \'volume\')">current</button><button class="stock-chart-apply-stub" @click="$emit(\'applyCurrentRatios\')">apply</button></div>',
+          template: '<div><button class="stock-chart-stub" :data-current-ratios="currentRatios.join(\'|\')" @click="$emit(\'change\', \'slot2\', \'macd\')">chart</button><button class="stock-chart-current-stub" @click="$emit(\'change\', \'slot2\', \'volume\')">current</button><button class="stock-chart-ratio-stub" @click="$emit(\'saveDefaultRatios\', [0.52, 0.28, 0.2])">ratio</button><button class="stock-chart-apply-stub" :disabled="!canApplyCurrentRatios" @click="$emit(\'applyCurrentRatios\')">apply</button></div>',
         },
       },
     },
@@ -354,7 +363,9 @@ function mountChartDemo(withRuntime = false) {
 function mountMasterDemo(runtimeRatio?: number) {
   const values = reactive<Record<string, unknown>>({
     masterRatio: 45,
-    masterRatioProfiles: { profiles: [] },
+    masterRatioProfiles: {
+      profiles: runtimeRatio ? [{ width: 1920, ratio: runtimeRatio }] : [],
+    },
   })
   const setComponentKnob = vi.fn((_slotId: string, field: string, value: unknown) => {
     values[field] = value
@@ -384,7 +395,8 @@ function mountMasterDemo(runtimeRatio?: number) {
         },
         ElInputNumber: {
           props: ['modelValue'],
-          template: '<div class="number-stub" :data-value="modelValue" />',
+          emits: ['update:modelValue'],
+          template: '<button class="number-stub" :data-value="modelValue" @click="$emit(\'update:modelValue\', 50)" />',
         },
         ElButton: {
           props: ['disabled'],
@@ -485,9 +497,38 @@ describe('ComponentAutoSettings', () => {
     )
   })
 
+  it('图表会话拖动后抽屉仍回显已配置基线，采用按钮继续读取拖动值', () => {
+    const { wrapper } = mountChartDemo(true)
+
+    expect(wrapper.find('.stock-chart-stub').attributes('data-current-ratios'))
+      .toBe('0.6|0.2|0.2')
+  })
+
+  it('直接编辑图表比例时同步更新当前工作区尺寸档案', async () => {
+    const { wrapper, setComponentKnob } = mountChartDemo(true)
+    await wrapper.find('.stock-chart-ratio-stub').trigger('click')
+
+    expect(setComponentKnob).toHaveBeenCalledWith(
+      'chart',
+      'stockChart',
+      expect.objectContaining({
+        heightRatios: expect.objectContaining({
+          'kline|volume|macd': [0.52, 0.28, 0.2],
+        }),
+        heightRatioProfiles: expect.objectContaining({
+          'kline|volume|macd': [{
+            width: 1280,
+            height: 720,
+            ratios: [0.52, 0.28, 0.2],
+          }],
+        }),
+      }),
+    )
+  })
+
   it('行情工作台采用页面当前比例时同步更新默认占比与尺寸档案', async () => {
     const { wrapper, setComponentKnob } = mountMasterDemo(48)
-    expect(wrapper.get('.number-stub').attributes('data-value')).toBe('45')
+    expect(wrapper.get('.number-stub').attributes('data-value')).toBe('48')
 
     await wrapper.get('[data-testid="master-ratio-profile-save-current"]').trigger('click')
     await nextTick()
@@ -497,6 +538,22 @@ describe('ComponentAutoSettings', () => {
       profiles: [{ width: 1920, ratio: 48 }],
     })
     expect(wrapper.get('.number-stub').attributes('data-value')).toBe('48')
+  })
+
+  it('行情工作台按尺寸档案或安全边界调整后回显页面实际比例', () => {
+    const { wrapper } = mountMasterDemo(43)
+
+    expect(wrapper.get('.number-stub').attributes('data-value')).toBe('43')
+  })
+
+  it('直接编辑列表占比时同步更新当前宽度档案，避免旧档案覆盖新值', async () => {
+    const { wrapper, setComponentKnob } = mountMasterDemo(48)
+    await wrapper.get('.number-stub').trigger('click')
+
+    expect(setComponentKnob).toHaveBeenNthCalledWith(1, 'workspace', 'masterRatio', 50)
+    expect(setComponentKnob).toHaveBeenNthCalledWith(2, 'workspace', 'masterRatioProfiles', {
+      profiles: [{ width: 1920, ratio: 50 }],
+    })
   })
 
   it('页面当前比例尚未上报时禁用采用入口', () => {

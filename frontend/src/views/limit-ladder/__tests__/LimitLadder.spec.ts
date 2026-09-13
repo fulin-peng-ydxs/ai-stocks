@@ -6,6 +6,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { DEFAULT_LIMIT_LADDER_FILTERS, type LimitLadderResult, type LimitLadderStock } from '@/api/limitLadder'
 import LadderHotspots from '@/views/limit-ladder/LadderHotspots.vue'
 import LimitLadder from '@/views/limit-ladder/LimitLadder.vue'
+import limitLadderSource from '@/views/limit-ladder/LimitLadder.vue?raw'
 import LimitLadderCard from '@/views/limit-ladder/LimitLadderCard.vue'
 
 const stock: LimitLadderStock = {
@@ -90,6 +91,19 @@ describe('LimitLadderCard', () => {
     expect(wrapper.attributes('aria-current')).toBe('true')
     expect(wrapper.get('.limit-ladder-card__select').attributes('aria-current')).toBe('true')
     expect(wrapper.attributes('data-stock-code')).toBe(stock.code)
+  })
+})
+
+describe('LimitLadder layout', () => {
+  it('结果区与内容体共同成长，使大尺寸状态块按完整可用区域居中', () => {
+    const contentRule = limitLadderSource.match(/\.limit-ladder__content \{([^}]*)\}/)?.[1] ?? ''
+    const bodyRule = limitLadderSource.match(/\.limit-ladder__body \{([^}]*)\}/)?.[1] ?? ''
+
+    expect(contentRule).toContain('display: flex')
+    expect(contentRule).toContain('flex-direction: column')
+    expect(bodyRule).toContain('flex: 1 0 auto')
+    expect(bodyRule).toContain('flex-direction: column')
+    expect(bodyRule).toContain('width: 100%')
   })
 })
 

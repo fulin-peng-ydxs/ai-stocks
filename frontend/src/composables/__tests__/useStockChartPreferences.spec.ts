@@ -285,4 +285,25 @@ describe('useStockChartPreferences draft state', () => {
     }])
     expect(next.heightRatioProfiles['kline|volume']).toEqual([])
   })
+
+  it('保存入口优先采用工作区上报的实际受约束比例', () => {
+    const persisted = ref(createDefaultStockChartPreferences())
+    const source = computed({
+      get: () => persisted.value,
+      set: (value) => { persisted.value = value },
+    })
+    const model = useStockChartPreferences(source, ref(true))
+
+    const next = model.preferencesWithCurrentRatioProfile({
+      width: 960,
+      height: 320,
+      ratios: [0.5, 0.25, 0.25],
+    })
+    expect(next.heightRatios['kline|volume|macd']).toEqual([0.5, 0.25, 0.25])
+    expect(next.heightRatioProfiles['kline|volume|macd']).toEqual([{
+      width: 960,
+      height: 320,
+      ratios: [0.5, 0.25, 0.25],
+    }])
+  })
 })

@@ -886,7 +886,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
       expect(source).toContain("componentValueOf('workspace', 'masterRatioProfiles')")
       expect(source).not.toContain('business-component-slot-ids')
       expect(source).toContain(':component-runtime-value-of="componentRuntimeValueOf"')
-      expect(source).toContain('@master-ratio-change="setCurrentMasterRatio"')
+      expect(source).not.toContain('@master-ratio-change="setCurrentMasterRatio"')
       expect(source).toContain('@master-ratio-sample-change="setCurrentMasterRatioSample"')
     }
 
@@ -898,7 +898,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
       expect(detailSource).toContain("componentValueOf('workspace', 'masterRatio')")
       expect(detailSource).toContain("componentValueOf('workspace', 'masterRatioProfiles')")
       expect(detailSource).toContain(':component-runtime-value-of="componentRuntimeValueOf"')
-      expect(detailSource).toContain('@primary-ratio-change="setCurrentMasterRatio"')
+      expect(detailSource).not.toContain('@primary-ratio-change="setCurrentMasterRatio"')
       expect(detailSource).toContain('@primary-ratio-sample-change="setCurrentMasterRatioSample"')
     }
 

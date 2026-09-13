@@ -141,7 +141,6 @@ const {
 // 设置抽屉由 PageSettingsDrawer 按元数据渲染；workspace 宽度、表格与图表均归入本页组件设置。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
 const {
-  setCurrentMasterRatio,
   setCurrentMasterRatioSample,
   componentRuntimeValueOf: masterRuntimeValueOf,
 } = useMarketMasterRatioRuntime()
@@ -961,7 +960,6 @@ onMounted(async () => {
       :default-master-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 45)"
       :master-ratio-profiles="componentValueOf('workspace', 'masterRatioProfiles')"
       analysis-drawer-title="股票走势分析"
-      @master-ratio-change="setCurrentMasterRatio"
       @master-ratio-sample-change="setCurrentMasterRatioSample"
       data-testid="stocks-market-workspace"
     >

@@ -15,6 +15,7 @@ import PageSegmented from '@/components/PageSegmented.vue'
 import StockCompareChart from '@/components/StockCompareChart.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import StockIntradayDialog from '@/components/stock-chart/StockIntradayDialog.vue'
+import type { StockChartWorkspaceSample } from '@/components/stock-chart/workspaceOptions'
 import { ALL_DAYS } from '@/composables/useKlinePrefs'
 import { useStockIntradayDrilldown } from '@/composables/useStockIntradayDrilldown'
 import { STOCK_COMPARE_RANGES } from '@/composables/useStockAnalysisSession'
@@ -66,7 +67,7 @@ const emit = defineEmits<{
   openDetail: []
   ratioDraft: [ratios: number[]]
   ratioCommit: [ratios: number[]]
-  workspaceResize: [size: { width: number; height: number }]
+  workspaceResize: [sample: StockChartWorkspaceSample | undefined]
 }>()
 
 const MODE_OPTIONS: { label: string; value: 'compare' | 'kline' }[] = [

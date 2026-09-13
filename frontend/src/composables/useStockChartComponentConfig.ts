@@ -1,10 +1,15 @@
-import { computed, isRef, ref, type Ref, type WritableComputedRef } from 'vue'
+import { computed, isRef, ref, watch, type Ref, type WritableComputedRef } from 'vue'
+import {
+  constrainWorkspaceRatios,
+  type StockChartWorkspaceSample,
+} from '@/components/stock-chart/workspaceOptions'
 import {
   normalizeStockChartPreferences,
   useStockChartPreferences,
   type AuxiliaryChartSlot,
   type StockChartPreferences,
 } from '@/composables/useStockChartPreferences'
+import type { StockChartRatioSample } from '@/layout/stockChartRatioProfiles'
 
 interface StockChartComponentConfigAccess {
   slotId?: string
@@ -28,6 +33,25 @@ export function useStockChartComponentConfig(access: StockChartComponentConfigAc
   // 页面单测或离线壳可能只提供基础组件访问器；缺少远端水合 ref 时按已就绪处理。
   const hydrated = isRef(access.hydrated) ? access.hydrated : ref(true)
   const preferences = useStockChartPreferences(source, hydrated)
+  const workspaceSample = ref<StockChartRatioSample | null>(null)
+  const workspaceMeasurement = ref<StockChartWorkspaceSample | null>(null)
+  const configuredWorkspaceSample = ref<StockChartRatioSample | null>(null)
+
+  function refreshConfiguredWorkspaceSample(): void {
+    const sample = workspaceMeasurement.value
+    if (!sample) {
+      configuredWorkspaceSample.value = null
+      return
+    }
+    configuredWorkspaceSample.value = {
+      width: sample.width,
+      height: sample.height,
+      ratios: constrainWorkspaceRatios(
+        preferences.configuredRatios.value,
+        sample.minimumRatios,
+      ),
+    }
+  }
 
   function setAuxiliaryChart(slot: AuxiliaryChartSlot, value: string | number | boolean): void {
     preferences.setSlotType(slot, value)
@@ -42,14 +66,42 @@ export function useStockChartComponentConfig(access: StockChartComponentConfigAc
     preferences.commitRatioDraft()
   }
 
-  function handleWorkspaceResize(size: { width: number; height: number }): void {
-    preferences.setWorkspaceSize(size)
+  function handleWorkspaceResize(sample?: StockChartWorkspaceSample): void {
+    if (!sample) {
+      workspaceMeasurement.value = null
+      workspaceSample.value = null
+      configuredWorkspaceSample.value = null
+      return
+    }
+    workspaceMeasurement.value = {
+      ...sample,
+      ratios: [...sample.ratios],
+      minimumRatios: [...sample.minimumRatios],
+    }
+    workspaceSample.value = {
+      width: sample.width,
+      height: sample.height,
+      ratios: [...sample.ratios],
+    }
+    preferences.setWorkspaceSize(sample)
+    refreshConfiguredWorkspaceSample()
   }
 
-  /** 设置抽屉可据此将工作区当前拖动比例保存为该组件实例的默认比例。 */
+  watch(preferences.configuredRatios, refreshConfiguredWorkspaceSample, { deep: true })
+
+  /** 抽屉分别读取已配置基线和当前拖动样本；离开工作区后不保留过期样本。 */
   const componentRuntimeValueOf: ComponentRuntimeValueOf = (candidateSlotId, field) => {
-    if (candidateSlotId !== slotId || field !== 'stockChart') return undefined
-    return preferences.preferencesWithCurrentRatioProfile()
+    if (candidateSlotId !== slotId) return undefined
+    if (field === 'stockChart') {
+      return preferences.preferencesWithCurrentRatioProfile(workspaceSample.value ?? undefined)
+    }
+    if (field === 'stockChartConfigured') {
+      return preferences.preferencesWithCurrentRatioProfile(
+        configuredWorkspaceSample.value ?? undefined,
+      )
+    }
+    if (field === 'stockChartRatioSample') return workspaceSample.value ?? undefined
+    return undefined
   }
 
   return {

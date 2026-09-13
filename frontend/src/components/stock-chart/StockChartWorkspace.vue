@@ -49,6 +49,7 @@ import {
   type MacdPanelState,
   type TradeMarker,
   type WorkspacePanelKey,
+  type StockChartWorkspaceSample,
 } from './workspaceOptions'
 
 interface PanelDescriptor {
@@ -130,7 +131,7 @@ const emit = defineEmits<{
   retryMacd: []
   barClick: [tradeDate: string]
   activeBarChange: [bar: Bar | null]
-  workspaceResize: [size: { width: number; height: number }]
+  workspaceResize: [sample: StockChartWorkspaceSample | undefined]
 }>()
 
 defineSlots<{
@@ -150,7 +151,8 @@ const workspaceHeight = ref(0)
 let resizeObserver: ResizeObserver | null = null
 let active = true
 let bottomSliderVisible: boolean | undefined
-let lastWorkspaceSize = ''
+let lastWorkspaceState = ''
+let workspaceReportedAvailable = false
 
 const panels = computed<PanelDescriptor[]>(() => {
   const next: PanelDescriptor[] = [{ key: 'kline', type: 'kline' }]
@@ -380,10 +382,24 @@ function onWorkspaceResize(): void {
   const width = workspaceEl.value?.clientWidth ?? 0
   const height = workspaceEl.value?.clientHeight ?? 0
   workspaceHeight.value = height
-  const signature = `${width}:${height}`
-  if (width > 0 && height > 0 && signature !== lastWorkspaceSize) {
-    lastWorkspaceSize = signature
-    emit('workspaceResize', { width, height })
+  const effectiveRatios = ratios.value.map((value) => Number(value.toFixed(6)))
+  const effectiveMinimumRatios = minimumRatios()
+    .map((value) => Number(value.toFixed(6)))
+  const signature = [
+    width,
+    height,
+    effectiveRatios.join(':'),
+    effectiveMinimumRatios.join(':'),
+  ].join('|')
+  if (width > 0 && height > 0 && signature !== lastWorkspaceState) {
+    lastWorkspaceState = signature
+    workspaceReportedAvailable = true
+    emit('workspaceResize', {
+      width,
+      height,
+      ratios: effectiveRatios,
+      minimumRatios: effectiveMinimumRatios,
+    })
   }
   // 高度变化会先更新面板最低比例；等待 DOM 完成重排后再让画布读取最终尺寸。
   void nextTick(() => {
@@ -406,6 +422,13 @@ function onWorkspaceResize(): void {
     if (!chart || chart.isDisposed()) return
     chart.setOption(chartOption(bottomPanel, true), true)
   })
+}
+
+function reportWorkspaceUnavailable(): void {
+  lastWorkspaceState = ''
+  if (!workspaceReportedAvailable) return
+  workspaceReportedAvailable = false
+  emit('workspaceResize', undefined)
 }
 
 function disposeCharts(): void {
@@ -580,6 +603,9 @@ watch(
   },
   { deep: true },
 )
+watch(ratios, () => {
+  void nextTick(onWorkspaceResize)
+}, { deep: true })
 watch(
   [() => props.zoomStart, () => props.zoomEnd],
   ([start, end]) => {
@@ -618,11 +644,13 @@ onActivated(async () => {
 onDeactivated(() => {
   active = false
   if (drag) finishDrag()
+  reportWorkspaceUnavailable()
   stopObservingResize()
   disposeCharts()
 })
 onBeforeUnmount(() => {
   if (drag) finishDrag()
+  reportWorkspaceUnavailable()
   stopObservingResize()
   disposeCharts()
   chartElements.clear()

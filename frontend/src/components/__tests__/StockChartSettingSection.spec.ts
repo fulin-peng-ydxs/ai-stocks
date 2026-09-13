@@ -33,6 +33,14 @@ describe('StockChartSettingSection', () => {
     expect(wrapper.text()).toContain('合计 100%')
   })
 
+  it('工作区存在时回显尺寸档案与安全约束后的配置基线', () => {
+    const wrapper = mountSection()
+    const inputs = wrapper.findAllComponents({ name: 'ElInputNumber' })
+
+    expect(wrapper.text()).toContain('已配置高度比例')
+    expect(inputs.map((input) => input.props('modelValue'))).toEqual([50, 30, 20])
+  })
+
   it('使用页面当前比例时直接采用并保存', async () => {
     const wrapper = mountSection()
 
@@ -95,5 +103,16 @@ describe('StockChartSettingSection', () => {
     expect(wrapper.text()).toContain('K线 100%（单图无需配置）')
     expect(wrapper.find('[data-testid="chart-test-save-default-ratios"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="chart-test-save-current-ratios"]').exists()).toBe(false)
+  })
+
+  it('没有真实图表工作区尺寸时禁用采用入口，避免假保存', async () => {
+    const wrapper = mountSection()
+    await wrapper.setProps({ canApplyCurrentRatios: false })
+
+    const inputs = wrapper.findAllComponents({ name: 'ElInputNumber' })
+    expect(wrapper.text()).toContain('默认高度比例')
+    expect(inputs.map((input) => input.props('modelValue'))).toEqual([60, 20, 20])
+    expect(wrapper.get('[data-testid="chart-test-save-current-ratios"]').attributes('disabled'))
+      .toBeDefined()
   })
 })

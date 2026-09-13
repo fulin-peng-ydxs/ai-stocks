@@ -4,7 +4,7 @@ import { DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
 import AppWorkspacePane from '@/components/AppWorkspacePane.vue'
-import type { MasterDetailRatioSample } from '@/layout/masterDetailRatioProfiles'
+import type { MasterDetailRatioRuntimeSample } from '@/layout/masterDetailRatioProfiles'
 
 const props = defineProps<{
   analysisVisible: boolean
@@ -24,7 +24,7 @@ const attrs = useAttrs()
 const emit = defineEmits<{
   'update:analysisVisible': [visible: boolean]
   masterRatioChange: [ratio: number]
-  masterRatioSampleChange: [sample: MasterDetailRatioSample | undefined]
+  masterRatioSampleChange: [sample: MasterDetailRatioRuntimeSample | undefined]
   compactAnalysisClose: []
 }>()
 

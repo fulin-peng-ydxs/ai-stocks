@@ -122,7 +122,11 @@ describe('MarketMasterDetailWorkspace', () => {
 
     expect(wrapper.get('[role="separator"]').attributes('aria-valuenow')).toBe('495')
     expect(wrapper.emitted('masterRatioChange')?.at(-1)).toEqual([45])
-    expect(wrapper.emitted('masterRatioSampleChange')?.at(-1)).toEqual([{ width: 1100, ratio: 45 }])
+    expect(wrapper.emitted('masterRatioSampleChange')?.at(-1)).toEqual([{
+      width: 1100,
+      ratio: 45,
+      configuredRatio: 45,
+    }])
 
     wrapper.unmount()
     HTMLElement.prototype.getBoundingClientRect = originalRect

@@ -8,7 +8,7 @@ import {
   MASTER_DETAIL_RATIO_DEFAULT,
   MASTER_DETAIL_RATIO_MAX,
   MASTER_DETAIL_RATIO_MIN,
-  type MasterDetailRatioSample,
+  type MasterDetailRatioRuntimeSample,
 } from '@/layout/masterDetailRatioProfiles'
 
 const SPLITTER_WIDTH = 12
@@ -47,7 +47,7 @@ const attrs = useAttrs()
 const emit = defineEmits<{
   'update:secondaryVisible': [visible: boolean]
   primaryRatioChange: [ratio: number]
-  primaryRatioSampleChange: [sample: MasterDetailRatioSample | undefined]
+  primaryRatioSampleChange: [sample: MasterDetailRatioRuntimeSample | undefined]
   compactChange: [compact: boolean]
   compactSecondaryClose: []
 }>()
@@ -102,6 +102,9 @@ function responsivePrimaryWidth(ratio: number): number {
 
 // 配置只提供默认比例；分隔条操作始终停留在当前会话，显式保存由页面设置承接。
 const configuredPrimaryWidth = computed(() => responsivePrimaryWidth(configuredPrimaryRatio.value))
+const configuredEffectivePrimaryRatio = computed(() => workspaceWidth.value
+  ? clampRatio(configuredPrimaryWidth.value / workspaceWidth.value * 100)
+  : configuredPrimaryRatio.value)
 const primaryWidth = useDefaultedSessionValue(configuredPrimaryWidth, {
   shouldSync: () => !sessionAdjusted.value,
   onSynced: () => { sessionAdjusted.value = false },
@@ -125,10 +128,14 @@ const effectivePrimaryWidth = computed(() => clampSessionWidth(primaryWidth.valu
 const effectivePrimaryRatio = computed(() => workspaceWidth.value
   ? clampRatio(effectivePrimaryWidth.value / workspaceWidth.value * 100)
   : configuredPrimaryRatio.value)
-const currentRatioSample = computed<MasterDetailRatioSample | undefined>(() => (
+const currentRatioSample = computed<MasterDetailRatioRuntimeSample | undefined>(() => (
   autoCompact.value || !workspaceWidth.value
     ? undefined
-    : { width: workspaceWidth.value, ratio: effectivePrimaryRatio.value }
+    : {
+        width: workspaceWidth.value,
+        ratio: effectivePrimaryRatio.value,
+        configuredRatio: configuredEffectivePrimaryRatio.value,
+      }
 ))
 
 let resizeObserver: ResizeObserver | null = null

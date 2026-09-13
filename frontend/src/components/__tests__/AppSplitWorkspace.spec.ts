@@ -64,7 +64,7 @@ describe('AppSplitWorkspace', () => {
 
     expect(separator.attributes('aria-valuenow')).toBe('840')
     expect(wrapper.emitted('primaryRatioSampleChange')?.at(-1)).toEqual([
-      { width: 1200, ratio: 70 },
+      { width: 1200, ratio: 70, configuredRatio: 65 },
     ])
     window.dispatchEvent(pointerEvent('pointerup', 3, 1200))
     expect(document.body.classList.contains('app-split-workspace-is-resizing')).toBe(false)

@@ -146,7 +146,6 @@ const drawerConfig = {
   componentAllowedLayers,
 }
 const {
-  setCurrentMasterRatio,
   setCurrentMasterRatioSample,
   componentRuntimeValueOf: masterRuntimeValueOf,
 } = useMarketMasterRatioRuntime()
@@ -932,7 +931,6 @@ onMounted(async () => {
         :default-master-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 45)"
         :master-ratio-profiles="componentValueOf('workspace', 'masterRatioProfiles')"
         analysis-drawer-title="板块走势分析"
-        @master-ratio-change="setCurrentMasterRatio"
         @master-ratio-sample-change="setCurrentMasterRatioSample"
         test-id-prefix="sectors"
         data-testid="sectors-workspace"

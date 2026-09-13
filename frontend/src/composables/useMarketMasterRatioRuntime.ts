@@ -1,5 +1,8 @@
 import { ref } from 'vue'
-import type { MasterDetailRatioSample } from '@/layout/masterDetailRatioProfiles'
+import type {
+  MasterDetailRatioRuntimeSample,
+  MasterDetailRatioSample,
+} from '@/layout/masterDetailRatioProfiles'
 
 /**
  * 汇总行情主从工作台的会话分栏比例，供共享设置抽屉读取“页面当前比例”。
@@ -13,9 +16,11 @@ export function useMarketMasterRatioRuntime() {
     if (Number.isFinite(value)) currentMasterRatio.value = Math.round(value)
   }
 
-  function setCurrentMasterRatioSample(value: MasterDetailRatioSample | undefined): void {
+  function setCurrentMasterRatioSample(value: MasterDetailRatioRuntimeSample | undefined): void {
     currentMasterRatioSample.value = value
-    if (value) setCurrentMasterRatio(value.ratio)
+      ? { width: value.width, ratio: value.ratio }
+      : undefined
+    if (value) setCurrentMasterRatio(value.configuredRatio)
   }
 
   function componentRuntimeValueOf(slotId: string, field: string): unknown {
@@ -26,9 +31,6 @@ export function useMarketMasterRatioRuntime() {
   }
 
   return {
-    currentMasterRatio,
-    currentMasterRatioSample,
-    setCurrentMasterRatio,
     setCurrentMasterRatioSample,
     componentRuntimeValueOf,
   }

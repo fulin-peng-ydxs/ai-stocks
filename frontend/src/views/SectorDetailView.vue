@@ -116,7 +116,6 @@ const chartPreferences = useStockChartComponentConfig({
   hydrated: remoteHydrated,
 })
 const {
-  setCurrentMasterRatio,
   setCurrentMasterRatioSample,
   componentRuntimeValueOf: masterRuntimeValueOf,
 } = useMarketMasterRatioRuntime()
@@ -452,7 +451,6 @@ onMounted(async () => {
           separator-label="调整板块走势与成分股宽度"
           test-id-prefix="sector-detail"
           @update:secondary-visible="memberPanelVisible = $event"
-          @primary-ratio-change="setCurrentMasterRatio"
           @primary-ratio-sample-change="setCurrentMasterRatioSample"
           @compact-change="splitCompact = $event"
         >

@@ -138,7 +138,7 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
   'master-detail': [
     {
       key: 'masterRatio',
-      label: '左栏默认占比',
+      label: '左栏占比',
       control: 'int',
       layers: ['preset', 'page', 'user'],
       min: MASTER_DETAIL_RATIO_MIN,

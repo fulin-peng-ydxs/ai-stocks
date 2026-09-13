@@ -344,7 +344,9 @@ function resetFilters(): void {
 }
 .limit-ladder__checks :deep(.el-checkbox) { margin: 0; }
 .limit-ladder__content {
+  display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
@@ -389,7 +391,14 @@ function resetFilters(): void {
   justify-content: flex-end;
   gap: var(--app-space-2);
 }
-.limit-ladder__body { padding: var(--app-space-4); }
+.limit-ladder__body {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex: 1 0 auto;
+  flex-direction: column;
+  padding: var(--app-space-4);
+}
 .limit-ladder__empty-copy {
   display: grid;
   gap: var(--app-space-1);

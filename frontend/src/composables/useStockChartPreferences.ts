@@ -4,6 +4,7 @@ import {
   normalizeStockChartRatioProfiles,
   upsertStockChartRatioProfile,
   type StockChartRatioProfile,
+  type StockChartRatioSample,
 } from '@/layout/stockChartRatioProfiles'
 
 export type ChartType = 'kline' | 'volume' | 'macd'
@@ -171,6 +172,17 @@ export function useStockChartPreferences(
       ? [...draftRatios.value]
       : [...sessionRatios.value[composition.value]]
   ))
+  const configuredRatios = computed(() => {
+    const key = composition.value
+    const profile = workspaceSize.value
+      ? closestStockChartRatioProfile(
+          normalized.value.heightRatioProfiles[key],
+          workspaceSize.value,
+          normalized.value.heightRatios[key].length,
+        )
+      : undefined
+    return [...(profile?.ratios ?? normalized.value.heightRatios[key])]
+  })
 
   function clearDraft(): void {
     draftKey.value = null
@@ -244,18 +256,22 @@ export function useStockChartPreferences(
     clearDraft()
   }
 
-  function preferencesWithCurrentRatioProfile(): StockChartPreferences {
+  function preferencesWithCurrentRatioProfile(
+    sample?: StockChartRatioSample,
+  ): StockChartPreferences {
     const preferences = normalizeStockChartPreferences(source.value)
     const key = composition.value
-    const ratios = normalizeHeightRatios(currentRatios.value, key)
+    const ratios = normalizeHeightRatios(sample?.ratios ?? currentRatios.value, key)
+    const size = sample ?? workspaceSize.value
     return {
       ...preferences,
       heightRatios: { ...preferences.heightRatios, [key]: ratios },
-      heightRatioProfiles: workspaceSize.value
+      heightRatioProfiles: size
         ? {
             ...preferences.heightRatioProfiles,
             [key]: upsertStockChartRatioProfile(preferences.heightRatioProfiles[key], {
-              ...workspaceSize.value,
+              width: size.width,
+              height: size.height,
               ratios,
             }),
           }
@@ -323,6 +339,7 @@ export function useStockChartPreferences(
     visibleTypes: computed(() => visibleChartTypes(normalized.value)),
     compositionKey: composition,
     defaultRatios,
+    configuredRatios,
     currentRatios,
     draftRatios,
     setSlotType,

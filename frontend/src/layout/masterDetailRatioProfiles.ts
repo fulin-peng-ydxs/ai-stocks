@@ -25,6 +25,11 @@ export interface MasterDetailRatioSample {
   ratio: number
 }
 
+/** 页面运行时样本：ratio 是当前会话值，configuredRatio 是未采用临时拖动的生效基线。 */
+export interface MasterDetailRatioRuntimeSample extends MasterDetailRatioSample {
+  configuredRatio: number
+}
+
 function finiteRounded(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : undefined
 }

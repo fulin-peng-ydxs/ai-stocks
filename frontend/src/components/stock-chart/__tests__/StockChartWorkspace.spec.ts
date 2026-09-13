@@ -260,13 +260,40 @@ describe('StockChartWorkspace', () => {
 
   it('挂载与尺寸变化时向统一偏好层报告图表工作区实际宽高', async () => {
     const wrapper = await mountWorkspace()
-    expect(wrapper.emitted('workspaceResize')?.at(-1)?.[0]).toEqual({ width: 640, height: 800 })
+    expect(wrapper.emitted('workspaceResize')?.at(-1)?.[0]).toEqual(expect.objectContaining({
+      width: 640,
+      height: 800,
+      ratios: [0.6, 0.2, 0.2],
+      minimumRatios: expect.any(Array),
+    }))
 
     mockClientWidth = 1280
     mockClientHeight = 720
     ResizeObserverMock.instances[0]?.trigger()
     await nextTick()
-    expect(wrapper.emitted('workspaceResize')?.at(-1)?.[0]).toEqual({ width: 1280, height: 720 })
+    expect(wrapper.emitted('workspaceResize')?.at(-1)?.[0]).toEqual(expect.objectContaining({
+      width: 1280,
+      height: 720,
+      ratios: [0.6, 0.2, 0.2],
+      minimumRatios: expect.any(Array),
+    }))
+    wrapper.unmount()
+    expect(wrapper.emitted('workspaceResize')?.at(-1)?.[0]).toBeUndefined()
+  })
+
+  it('低高度触发安全约束时上报页面实际显示比例而非原始配置比例', async () => {
+    mockClientHeight = 300
+    const wrapper = await mountWorkspace({ fitAvailableHeight: true })
+    const sample = wrapper.emitted('workspaceResize')?.at(-1)?.[0] as {
+      ratios: number[]
+    }
+    const separators = wrapper.findAll('[role="separator"]')
+
+    expect(sample.ratios).not.toEqual([0.6, 0.2, 0.2])
+    expect(Math.round(sample.ratios[0] * 100))
+      .toBe(Number(separators[0].attributes('aria-valuenow')))
+    expect(Math.round((sample.ratios[0] + sample.ratios[1]) * 100))
+      .toBe(Number(separators[1].attributes('aria-valuenow')))
     wrapper.unmount()
   })
 

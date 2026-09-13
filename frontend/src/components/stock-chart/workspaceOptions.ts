@@ -19,6 +19,13 @@ import {
 export type WorkspacePanelKey = 'kline' | 'slot2' | 'slot3'
 export type MacdPanelState = 'ready' | 'loading' | 'insufficient' | 'error'
 
+export interface StockChartWorkspaceSample {
+  width: number
+  height: number
+  ratios: number[]
+  minimumRatios: number[]
+}
+
 export interface AlignedStockChartRow {
   bar: Bar
   indicator?: IndicatorRow

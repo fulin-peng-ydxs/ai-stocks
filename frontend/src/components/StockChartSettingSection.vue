@@ -8,14 +8,17 @@ import type {
   ChartType,
 } from '@/composables/useStockChartPreferences'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   slot2: AuxiliaryChartType
   slot3: AuxiliaryChartType
   chartTypes: ChartType[]
   defaultRatios: number[]
   currentRatios: number[]
+  canApplyCurrentRatios?: boolean
   testIdPrefix?: string
-}>()
+}>(), {
+  canApplyCurrentRatios: true,
+})
 
 const emit = defineEmits<{
   change: [slot: AuxiliaryChartSlot, value: string | number | boolean]
@@ -95,8 +98,17 @@ function useCurrentRatios(): void {
 }
 
 watch(
-  () => props.defaultRatios,
-  (ratios) => { ratioDraft.value = toPercentages(ratios) },
+  [
+    () => props.defaultRatios,
+    () => props.currentRatios,
+    () => props.chartTypes,
+    () => props.canApplyCurrentRatios,
+  ],
+  () => {
+    const currentAvailable = props.canApplyCurrentRatios !== false
+      && props.currentRatios.length === props.chartTypes.length
+    ratioDraft.value = toPercentages(currentAvailable ? props.currentRatios : props.defaultRatios)
+  },
   { immediate: true, deep: true },
 )
 </script>
@@ -129,7 +141,7 @@ watch(
       />
     </div>
     <div class="ratio-setting">
-      <div class="setting-label">默认高度比例</div>
+      <div class="setting-label">{{ canApplyCurrentRatios === false ? '默认高度比例' : '已配置高度比例' }}</div>
       <div class="ratio-composition">当前组合：{{ chartTypes.map((type) => chartTypeLabels[type]).join(' / ') }}</div>
       <div v-if="chartTypes.length === 1" class="fixed-chart-value">K线 100%（单图无需配置）</div>
       <template v-else>
@@ -143,7 +155,7 @@ watch(
               :step="1"
               :precision="0"
               controls-position="right"
-              :aria-label="`${chartTypeLabels[type]}默认高度百分比`"
+              :aria-label="`${chartTypeLabels[type]}${canApplyCurrentRatios === false ? '默认' : '已配置'}高度百分比`"
               @update:model-value="updateRatio(index, $event)"
             />
             <span>%</span>
@@ -153,6 +165,7 @@ watch(
         <div class="ratio-actions">
           <PageSettingsApplyButton
             label="使用页面当前比例"
+            :disabled="canApplyCurrentRatios === false"
             :test-id="`${testIdPrefix || 'chart'}-save-current-ratios`"
             @click="useCurrentRatios"
           />
