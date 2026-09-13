@@ -67,7 +67,7 @@ const phase = computed<'config' | 'running' | 'result'>(() => {
 })
 
 // ── 页面设置（开局参数 + 快捷下单预设，均持久化）──
-const { settings: cfg, isDirty, reset } = usePageSettings('training', {
+const { settings, isDirty, reset } = usePageSettings('training', {
   mode: 'single' as 'single' | 'multi',
   n_rounds: 5,
   window_days: 20,
@@ -79,10 +79,10 @@ const { settings: cfg, isDirty, reset } = usePageSettings('training', {
   handsPresetStr: '1,10,20',
   amountWanPresetStr: '1,10,20',
 })
-// 主区只操作本次训练会话；cfg 仅承载设置抽屉里的长期默认，主区不反写。
-const sessionMode = useDefaultedSessionValue(computed(() => cfg.mode))
-const sessionBoards = useDefaultedSessionValue(computed(() => [...cfg.boards]))
-const sessionOrderMode = useDefaultedSessionValue(computed(() => cfg.orderMode))
+// 主区只操作本次训练会话；settings 仅承载设置抽屉里的长期默认，主区不反写。
+const sessionMode = useDefaultedSessionValue(computed(() => settings.mode))
+const sessionBoards = useDefaultedSessionValue(computed(() => [...settings.boards]))
+const sessionOrderMode = useDefaultedSessionValue(computed(() => settings.orderMode))
 const sessionConfig = reactive({
   mode: sessionMode,
   range_start: null as string | null,
@@ -160,8 +160,8 @@ const viewDays = useDefaultedSessionValue(klineDefault)
 function parseList(s: string): number[] {
   return (s || '').split(/[,，\s]+/).map(Number).filter((n) => n > 0 && Number.isFinite(n))
 }
-const handsPresets = computed(() => parseList(cfg.handsPresetStr))
-const amountPresets = computed(() => parseList(cfg.amountWanPresetStr).map((w) => w * 10000))
+const handsPresets = computed(() => parseList(settings.handsPresetStr))
+const amountPresets = computed(() => parseList(settings.amountWanPresetStr).map((w) => w * 10000))
 
 // ── 历史 & 成长 ──
 const history = reactive({ list: [] as SessionRow[], total: 0, page: 1, sort_by: 'created_at', sort_order: 'desc' })
@@ -276,12 +276,12 @@ watch(() => sessionConfig.orderMode, () => { order.qty = isAmount.value ? 0 : 1 
 async function start() {
   loading.value = true
   try {
-    const filters: Record<string, unknown> = { exclude_st: cfg.exclude_st }
+    const filters: Record<string, unknown> = { exclude_st: settings.exclude_st }
     if (sessionConfig.boards.length) filters.boards = [...sessionConfig.boards]
     view.value = await startSession({
       mode: sessionConfig.mode, range_start: sessionConfig.range_start, range_end: sessionConfig.range_end,
-      n_rounds: cfg.n_rounds, window_days: cfg.window_days,
-      initial_capital: cfg.initial_capital, fee_enabled: cfg.fee_enabled, filters,
+      n_rounds: settings.n_rounds, window_days: settings.window_days,
+      initial_capital: settings.initial_capital, fee_enabled: settings.fee_enabled, filters,
     })
   } catch (e) {
     ElMessage.error((e as Error).message || '开局失败')
@@ -910,7 +910,7 @@ onBeforeUnmount(detachKeyboard)
         <div class="setting-item">
           <div class="setting-label">训练模式</div>
           <PageSegmented
-            v-model="cfg.mode"
+            v-model="settings.mode"
             aria-label="训练模式"
             :options="[
               { label: '单只随机', value: 'single' },
@@ -920,22 +920,22 @@ onBeforeUnmount(detachKeyboard)
         </div>
         <div class="setting-item">
           <div class="setting-label">板块</div>
-          <AppFilterSelect v-model="cfg.boards" :options="boardOptions"
+          <AppFilterSelect v-model="settings.boards" :options="boardOptions"
                            :filterable="false" :max-collapse-tags="2"
                            placeholder="不限（全部板块）" style="width:220px" />
         </div>
-        <div v-if="cfg.mode === 'multi'" class="setting-item">
+        <div v-if="settings.mode === 'multi'" class="setting-item">
           <div class="setting-label">回合数（只）</div>
-          <el-input-number v-model="cfg.n_rounds" :min="1" :max="20" size="small" style="width:140px" />
+          <el-input-number v-model="settings.n_rounds" :min="1" :max="20" size="small" style="width:140px" />
         </div>
         <div class="setting-item">
           <div class="setting-label">每回合连续交易日</div>
-          <el-input-number v-model="cfg.window_days" :min="5" :max="60" size="small" style="width:140px" />
+          <el-input-number v-model="settings.window_days" :min="5" :max="60" size="small" style="width:140px" />
         </div>
         <div class="setting-item">
           <div class="setting-label">初始资金（元）</div>
           <el-input-number
-            v-model="cfg.initial_capital"
+            v-model="settings.initial_capital"
             :min="10000"
             :step="10000"
             :formatter="formatMoneyInput"
@@ -951,7 +951,7 @@ onBeforeUnmount(detachKeyboard)
       <PageSettingSection title="选股范围" desc="控制随机选股时的股票池过滤条件。">
         <div class="setting-item">
           <div class="setting-label">排除 ST</div>
-          <el-switch v-model="cfg.exclude_st" />
+          <el-switch v-model="settings.exclude_st" />
         </div>
         <div class="setting-item">
           <div class="setting-label">
@@ -964,21 +964,21 @@ onBeforeUnmount(detachKeyboard)
               </HelpTipItem>
             </HelpTip>
           </div>
-          <el-switch v-model="cfg.fee_enabled" />
+          <el-switch v-model="settings.fee_enabled" />
         </div>
       </PageSettingSection>
       <PageSettingSection title="快捷下单" desc="配置下单方式与一键预设，训练时直接点选快速买卖。">
         <div class="setting-item">
           <div class="setting-label">默认下单方式</div>
-          <PageSegmented v-model="cfg.orderMode" aria-label="默认下单方式" :options="[{ label: '按手数', value: 'hands' }, { label: '按金额', value: 'amount' }]" />
+          <PageSegmented v-model="settings.orderMode" aria-label="默认下单方式" :options="[{ label: '按手数', value: 'hands' }, { label: '按金额', value: 'amount' }]" />
         </div>
         <div class="setting-item col">
           <div class="setting-label">手数预设（逗号分隔）</div>
-          <el-input v-model="cfg.handsPresetStr" placeholder="1,10,20" />
+          <el-input v-model="settings.handsPresetStr" placeholder="1,10,20" />
         </div>
         <div class="setting-item col">
           <div class="setting-label">金额预设（万，逗号分隔）</div>
-          <el-input v-model="cfg.amountWanPresetStr" placeholder="1,10,20" />
+          <el-input v-model="settings.amountWanPresetStr" placeholder="1,10,20" />
         </div>
       </PageSettingSection>
       </template>

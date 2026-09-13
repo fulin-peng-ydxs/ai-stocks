@@ -7,6 +7,11 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import ElementPlus, { ElMessage, ElMessageBox } from 'element-plus'
 import type { LimitLadderResult } from '@/api/limitLadder'
 import { useAuthStore } from '@/stores/auth'
+import { useLimitLadderSessionStore } from '@/stores/limitLadderSession'
+
+const pageSettingsHarness = vi.hoisted(() => ({
+  settings: null as Record<string, unknown> | null,
+}))
 
 vi.mock('@/api/limitLadder', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/limitLadder')>()
@@ -20,17 +25,21 @@ vi.mock('@/api/limitLadder', async (importOriginal) => {
 })
 
 vi.mock('@/composables/usePageSettings', () => ({
-  usePageSettings: (_pageKey: string, defaults: Record<string, unknown>) => ({
-    settings: reactive(structuredClone(defaults)),
-    isDirty: ref(false),
-    reset: vi.fn(),
-    hydrated: ref(true),
-    whenHydrated: () => Promise.resolve(),
-    remoteError: ref(false),
-    saving: ref(false),
-    saveError: ref(false),
-    save: vi.fn(),
-  }),
+  usePageSettings: (_pageKey: string, defaults: Record<string, unknown>) => {
+    const settings = reactive(structuredClone(defaults))
+    pageSettingsHarness.settings = settings
+    return {
+      settings,
+      isDirty: ref(false),
+      reset: vi.fn(),
+      hydrated: ref(true),
+      whenHydrated: () => Promise.resolve(),
+      remoteError: ref(false),
+      saving: ref(false),
+      saveError: ref(false),
+      save: vi.fn(),
+    }
+  },
 }))
 
 vi.mock('@/composables/useRemoteLayoutConfig', () => ({
@@ -69,6 +78,9 @@ const LimitLadderStub = defineComponent({
     error: { type: String, default: '' },
     forbidden: { type: Boolean, default: false },
     loading: { type: Boolean, default: false },
+    filters: { type: Object, default: () => ({}) },
+    cardSort: { type: String, default: '' },
+    cardSortOrder: { type: String, default: '' },
   },
   setup(props) {
     return () => h('section', {
@@ -78,6 +90,9 @@ const LimitLadderStub = defineComponent({
       'data-error': props.error,
       'data-forbidden': String(props.forbidden),
       'data-loading': String(props.loading),
+      'data-filters': JSON.stringify(props.filters),
+      'data-card-sort': props.cardSort,
+      'data-card-sort-order': props.cardSortOrder,
     })
   },
 })
@@ -163,7 +178,10 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-async function mountView() {
+async function mountView(
+  initialPath = '/limit-ladder?date=2026-08-28',
+  prepare?: () => void,
+) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -171,7 +189,7 @@ async function mountView() {
       { path: '/stocks/:code', component: { template: '<div />' } },
     ],
   })
-  await router.push('/limit-ladder?date=2026-08-28')
+  await router.push(initialPath)
   await router.isReady()
 
   const pinia = createPinia()
@@ -180,6 +198,7 @@ async function mountView() {
   auth.role = 'system'
   auth.permissions = ['limit-ladder:view', 'limit-ladder:recompute']
   auth.menusStatus = 'ready'
+  prepare?.()
 
   const wrapper = shallowMount(LimitLadderView as Component, {
     global: {
@@ -201,6 +220,8 @@ beforeEach(() => {
   vi.useFakeTimers()
   vi.clearAllMocks()
   localStorage.clear()
+  sessionStorage.clear()
+  pageSettingsHarness.settings = null
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
     value: vi.fn(() => ({
@@ -226,6 +247,67 @@ afterEach(() => {
 })
 
 describe('LimitLadderView polling deadline', () => {
+  it('清理历史查询参数，业务默认修改后即时投影到当前筛选和层内排序', async () => {
+    vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(readyResult())
+    const wrapper = await mountView()
+
+    expect(wrapper.vm.$route.fullPath).toBe('/limit-ladder')
+    const settings = pageSettingsHarness.settings!
+    settings.cardSort = 'industry'
+    settings.cardSortOrder = 'asc'
+    settings.window = 20
+    settings.boards = ['main', 'gem']
+    settings.ignoreSt = false
+    await flushPromises()
+
+    const state = stateProbe(wrapper)
+    expect(state.attributes('data-card-sort')).toBe('industry')
+    expect(state.attributes('data-card-sort-order')).toBe('asc')
+    expect(JSON.parse(state.attributes('data-filters') ?? '{}')).toMatchObject({
+      window: 20,
+      boards: ['main', 'gem'],
+      ignoreSt: false,
+    })
+    expect(limitLadderApi.getLimitLadder).toHaveBeenLastCalledWith(
+      '2026-08-28',
+      expect.objectContaining({ window: 20, boards: ['main', 'gem'], ignoreSt: false }),
+    )
+  })
+
+  it('详情返回只通过当前 Tab 会话恢复现场并清理一次性 URL 标记', async () => {
+    vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(readyResult())
+    const wrapper = await mountView('/limit-ladder?restore=1', () => {
+      useLimitLadderSessionStore().saveReturnState({
+        tradeDate: '2026-08-28',
+        filters: {
+          window: 60,
+          boards: ['gem'],
+          ignoreSt: false,
+          oneWordOnly: true,
+          keyword: '测试',
+          hotspotType: null,
+          hotspotKey: null,
+        },
+        cardSort: 'industry',
+        cardSortOrder: 'asc',
+        selectedCode: '',
+        anchorCode: '',
+      })
+    })
+
+    expect(wrapper.vm.$route.fullPath).toBe('/limit-ladder')
+    const state = stateProbe(wrapper)
+    expect(state.attributes('data-card-sort')).toBe('industry')
+    expect(state.attributes('data-card-sort-order')).toBe('asc')
+    expect(JSON.parse(state.attributes('data-filters') ?? '{}')).toMatchObject({
+      window: 60,
+      boards: ['gem'],
+      ignoreSt: false,
+      oneWordOnly: true,
+      keyword: '测试',
+    })
+  })
+
   it('列表栏复用统一层级，以业务名为蓝色辅助行、日期为主标题', async () => {
     vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(readyResult())
     const wrapper = await mountView()
@@ -282,8 +364,8 @@ describe('LimitLadderView polling deadline', () => {
     vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(readyResult())
 
     const wrapper = await mountView()
-    expect(stateProbe(wrapper).attributes('data-loading')).toBe('true')
-    expect(stateProbe(wrapper).attributes('data-business-code')).toBe('')
+    expect(wrapper.get('app-state-block-stub').attributes('state')).toBe('loading')
+    expect(wrapper.find('[data-testid="limit-ladder-state-probe"]').exists()).toBe(false)
 
     datesRequest.resolve({
       dates: ['2026-08-28'],

@@ -73,7 +73,7 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
     },
   }))
 
-  await page.goto(`/limit-ladder?date=${tradeDate}&window=31&boards=main,star,gem&ignore_st=1`)
+  await page.goto('/limit-ladder')
   await expect(page.getByText('完整工作台')).toHaveCount(0)
   const boardFilter = page.getByTestId('limit-ladder-boards')
   await expect(boardFilter.getByText('主板', { exact: true })).toBeVisible()
@@ -128,7 +128,7 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   await expect(page.getByTestId('limit-ladder-recompute')).not.toHaveClass(/el-button--warning/)
   await page.getByTestId('limit-ladder-card-sort').locator('.el-select__wrapper').click()
   await page.getByRole('option', { name: '累计涨幅' }).click()
-  await expect(page).toHaveURL(/card_sort=return/)
+  await expect(page).toHaveURL(/\/limit-ladder$/)
   await expect(page.getByTestId('limit-ladder-card-sort')).toContainText('累计涨幅')
 
   const card = page.getByTestId(`limit-ladder-card-${stock.code}`)
@@ -212,7 +212,7 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   const relatedHref = await page.getByTestId(`limit-ladder-related-${stock.code}`).getAttribute('href')
   expect(relatedHref).toContain(`/sectors/${stock.latest_related_concept.board_code}?return_to=`)
   expect(decodeURIComponent(String(relatedHref).split('return_to=')[1]))
-    .toBe(`${ladderUrlBeforeSector.pathname}${ladderUrlBeforeSector.search}`)
+    .toBe('/limit-ladder?restore=1')
   await page.getByTestId(`limit-ladder-related-${stock.code}`).click()
   await expect(page).toHaveURL(new RegExp(`/sectors/${stock.latest_related_concept.board_code}`))
   await expect(page.getByTestId('sector-detail-back')).toHaveText('返回连板天梯')
@@ -228,8 +228,7 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
   })
   expect(benchmarkOverflow).toBeLessThanOrEqual(1)
   await expect(page.getByTestId('stock-analysis-open-detail')).toBeVisible()
-  await expect(page).toHaveURL(new RegExp(`selected=${stock.code.replace('.', '\\.')}`))
-  await expect(page).toHaveURL(new RegExp(`anchor=${stock.code.replace('.', '\\.')}`))
+  await expect(page).toHaveURL(/\/limit-ladder$/)
   await expect(page.locator('.ladder-hotspots__chip')).toHaveCount(8)
   const lowHeightLayout = await page.evaluate(() => {
     const scrollRegion = document.querySelector<HTMLElement>('[data-testid="limit-ladder-scroll-region"]')!
@@ -275,14 +274,10 @@ test('桌面分析、详情返回与 1100×620 低高度上下文保持', async 
     { code: stock.code, name: stock.name },
     ...firstBoardStocks.map(({ code, name }) => ({ code, name })),
   ])
-  expect(new URL(stored.returnPath, page.url()).searchParams.get('window')).toBe('31')
-  expect(new URL(stored.returnPath, page.url()).searchParams.get('date')).toBe(tradeDate)
-  expect(stored.returnPath).toContain(`selected=${stock.code}`)
-  expect(stored.returnPath).toContain(`anchor=${stock.code}`)
+  expect(stored.returnPath).toBe('/limit-ladder?restore=1')
 
   await page.getByTestId('stock-detail-back').click()
-  await expect(page).toHaveURL(new RegExp(`/limit-ladder\\?.*selected=${stock.code.replace('.', '\\.')}`))
-  await expect(page).toHaveURL(new RegExp(`anchor=${stock.code.replace('.', '\\.')}`))
+  await expect(page).toHaveURL(/\/limit-ladder$/)
   const restoredCard = page.getByTestId(`limit-ladder-card-${stock.code}`)
   await expect(restoredCard).toHaveAttribute('aria-current', 'true')
   await expect(restoredCard).toBeInViewport()
@@ -299,7 +294,7 @@ test('768×1024 使用页面边界内全宽分析抽屉并可返回原卡片', a
   await loginAsDebugUser(page, request, 'debug_system')
   await installDeterministicLimitLadder(page)
 
-  await page.goto(`/limit-ladder?date=${tradeDate}&window=31&boards=main,star,gem&ignore_st=1`)
+  await page.goto('/limit-ladder')
   await page.getByTestId(`limit-ladder-card-select-${stock.code}`).click()
   const drawer = page.getByTestId('limit-ladder-analysis-drawer')
   await expect(drawer).toBeVisible()

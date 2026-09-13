@@ -45,7 +45,7 @@ async function readPreference(
   })
 }
 
-test('个人默认修改即保存、走势图同步、URL 覆盖和恢复默认', async ({ page, request }, testInfo: TestInfo) => {
+test('个人默认修改即保存并同步当前页面、详情现场独立于 URL、恢复默认', async ({ page, request }, testInfo: TestInfo) => {
   test.setTimeout(90_000)
   test.skip(
     testInfo.project.name !== 'chromium-standard',
@@ -65,7 +65,7 @@ test('个人默认修改即保存、走势图同步、URL 覆盖和恢复默认'
   try {
     await page.goto('/limit-ladder')
     await expect(page.getByTestId('limit-ladder-main')).toBeVisible()
-    await expect(page).toHaveURL(/window=31/)
+    await expect(page).toHaveURL(/\/limit-ladder$/)
 
     await openBusinessSettings(page)
     await page.getByTestId('limit-ladder-default-window-20').click()
@@ -85,6 +85,11 @@ test('个人默认修改即保存、走势图同步、URL 覆盖和恢复默认'
       .not.toHaveClass(/is-checked/)
     await expect(page.getByTestId('limit-ladder-default-card-sort-order-asc'))
       .toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('limit-ladder-window-20'))
+      .toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('limit-ladder-ignore-st')).not.toBeChecked()
+    await expect(page.getByTestId('limit-ladder-boards')).not.toContainText('科创板')
+    await expect(page).toHaveURL(/\/limit-ladder$/)
 
     const screenshotPath = testInfo.outputPath('limit-ladder-preference-auto-save.png')
     await page.screenshot({ path: screenshotPath, fullPage: true })
@@ -104,23 +109,27 @@ test('个人默认修改即保存、走势图同步、URL 覆盖和恢复默认'
     await page.getByRole('button', { name: '关闭页面设置' }).click()
 
     await page.goto('/limit-ladder')
-    await expect(page).toHaveURL(/window=20/)
-    await expect(page).toHaveURL(/boards=main,gem/)
-    await expect(page).toHaveURL(/ignore_st=0/)
-    await expect(page).toHaveURL(/card_order=asc/)
+    await expect(page).toHaveURL(/\/limit-ladder$/)
+    await expect(page.getByTestId('limit-ladder-window-20'))
+      .toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('limit-ladder-ignore-st')).not.toBeChecked()
+    await expect(page.getByTestId('limit-ladder-boards')).not.toContainText('科创板')
     await expect(page.getByTestId('market-show-analysis')).toBeVisible()
     await page.getByTestId('market-show-analysis').click()
     await expect(page.getByTestId('stock-analysis-benchmark')).toContainText('沪深 300')
 
     await page.goto('/limit-ladder?window=60&boards=star&ignore_st=1')
-    await expect(page.getByTestId('limit-ladder-window-60')).toHaveAttribute('aria-pressed', 'true')
-    await expect(page.getByTestId('limit-ladder-ignore-st')).toBeChecked()
+    await expect(page).toHaveURL(/\/limit-ladder$/)
+    await expect(page.getByTestId('limit-ladder-window-20'))
+      .toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('limit-ladder-ignore-st')).not.toBeChecked()
 
     await openBusinessSettings(page)
     await page.getByTestId('page-settings-reset').click()
-    await expect(page).toHaveURL(/window=31/)
-    await expect(page).not.toHaveURL(/boards=/)
-    await expect(page).not.toHaveURL(/ignore_st=/)
+    await expect(page).toHaveURL(/\/limit-ladder$/)
+    await expect(page.getByTestId('limit-ladder-window-31'))
+      .toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('limit-ladder-ignore-st')).toBeChecked()
     await expect(page.getByTestId('market-show-analysis')).toBeVisible()
     await expect.poll(() => readPreference(request, auth)).toEqual(defaultPreference)
     expect(consoleIssues).toEqual([])

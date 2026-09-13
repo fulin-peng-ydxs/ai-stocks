@@ -17,8 +17,6 @@ import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
 import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.vue'
 import {
   exportLimitLadder,
-  filtersFromRouteQuery,
-  filtersToRouteQuery,
   getLimitLadder,
   listLimitLadderTradeDates,
   normalizeLimitLadderFilters,
@@ -28,6 +26,7 @@ import {
   type LimitLadderStock,
 } from '@/api/limitLadder'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import { useLayoutViewport } from '@/composables/useLayoutViewport'
@@ -44,6 +43,7 @@ import { viewportDeltaToLayoutPixels } from '@/utils/displayScaleGeometry'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useLimitLadderSessionStore } from '@/stores/limitLadderSession'
 import { useStockSet } from '@/stores/stockSet'
 import { hasPermission } from '@/utils/permission'
 import {
@@ -66,7 +66,6 @@ import {
   DEFAULT_LIMIT_LADDER_CARD_SORT,
   DEFAULT_LIMIT_LADDER_CARD_SORT_ORDER,
   LIMIT_LADDER_CARD_SORT_OPTIONS,
-  defaultLimitLadderCardSortOrder,
   normalizeLimitLadderCardSort,
   normalizeLimitLadderCardSortOrder,
   sortLimitLadderLayers,
@@ -77,6 +76,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const limitLadderSession = useLimitLadderSessionStore()
 const stockSet = useStockSet()
 const settingsOpen = ref(false)
 const ladderHost = ref<HTMLElement | null>(null)
@@ -87,17 +87,7 @@ const marketWorkspaceRef = ref<{
 const layoutViewport = useLayoutViewport()
 const isNarrowViewport = computed(() => layoutViewport.width.value > 0 && layoutViewport.width.value <= 768)
 const isLowHeightViewport = computed(() => layoutViewport.height.value > 0 && layoutViewport.height.value <= 700)
-const tradeDate = ref<string | null>(
-  typeof route.query.date === 'string' ? route.query.date : null,
-)
-const filters = ref<LimitLadderFilters>(filtersFromRouteQuery(route.query))
-const cardSort = ref<LimitLadderCardSort>(normalizeLimitLadderCardSort(route.query.card_sort))
-const cardSortOrder = ref<LimitLadderCardSortOrder>(
-  normalizeLimitLadderCardSortOrder(
-    route.query.card_order,
-    defaultLimitLadderCardSortOrder(cardSort.value),
-  ),
-)
+const tradeDate = ref<string | null>(null)
 const result = ref<LimitLadderResult | null>(null)
 // 首次请求前还要等待个人偏好和交易日列表，期间必须保持加载态，避免把 result=null
 // 短暂渲染成“无可用快照”的业务失败态。
@@ -108,19 +98,68 @@ const noTradeDates = ref(false)
 const exporting = ref(false)
 const recomputing = ref(false)
 const analysisRefreshRevision = ref(0)
+const pageInitialized = ref(false)
+const restoringPageSession = ref(true)
+const pendingSelectedCode = ref('')
+const pendingAnchorCode = ref('')
 let requestSequence = 0
-let syncingRoute = false
 
 const {
-  settings: preference,
-  isDirty: preferenceDirty,
-  reset: resetPreference,
-  hydrated: preferenceHydrated,
-  whenHydrated: whenPreferenceHydrated,
-  remoteError: preferenceRemoteError,
-  saveError: preferenceSaveError,
-  save: savePreference,
+  settings,
+  isDirty: pageSettingsDirty,
+  reset: resetPageSettings,
+  whenHydrated: whenPageSettingsHydrated,
+  remoteError: pageSettingsRemoteError,
+  saveError: pageSettingsSaveError,
+  save: savePageSettings,
 } = usePageSettings('limit-ladder', DEFAULT_LIMIT_LADDER_PREFERENCE)
+
+const normalizedSettings = computed(() => normalizeLimitLadderPreference(settings))
+const filterWindow = useDefaultedSessionValue(
+  computed(() => normalizedSettings.value.window),
+  { shouldSync: () => !restoringPageSession.value, onSynced: scheduleDefaultFilterReload },
+)
+const filterBoards = useDefaultedSessionValue(
+  computed(() => [...normalizedSettings.value.boards]),
+  { shouldSync: () => !restoringPageSession.value, onSynced: scheduleDefaultFilterReload },
+)
+const filterIgnoreSt = useDefaultedSessionValue(
+  computed(() => normalizedSettings.value.ignoreSt),
+  { shouldSync: () => !restoringPageSession.value, onSynced: scheduleDefaultFilterReload },
+)
+const filterOneWordOnly = ref(false)
+const filterKeyword = ref('')
+const filterHotspotType = ref<LimitLadderFilters['hotspotType']>(null)
+const filterHotspotKey = ref<string | null>(null)
+const filters = computed<LimitLadderFilters>({
+  get: () => normalizeLimitLadderFilters({
+    window: filterWindow.value,
+    boards: filterBoards.value,
+    ignoreSt: filterIgnoreSt.value,
+    oneWordOnly: filterOneWordOnly.value,
+    keyword: filterKeyword.value,
+    hotspotType: filterHotspotType.value,
+    hotspotKey: filterHotspotKey.value,
+  }),
+  set: (value) => {
+    const normalized = normalizeLimitLadderFilters(value)
+    filterWindow.value = normalized.window
+    filterBoards.value = [...normalized.boards]
+    filterIgnoreSt.value = normalized.ignoreSt
+    filterOneWordOnly.value = normalized.oneWordOnly
+    filterKeyword.value = normalized.keyword
+    filterHotspotType.value = normalized.hotspotType
+    filterHotspotKey.value = normalized.hotspotKey
+  },
+})
+const cardSort = useDefaultedSessionValue(
+  computed(() => normalizeLimitLadderCardSort(normalizedSettings.value.cardSort)),
+  { shouldSync: () => !restoringPageSession.value, onSynced: persistReturnState },
+)
+const cardSortOrder = useDefaultedSessionValue(
+  computed(() => normalizeLimitLadderCardSortOrder(normalizedSettings.value.cardSortOrder)),
+  { shouldSync: () => !restoringPageSession.value, onSynced: persistReturnState },
+)
 
 const analysisDefaults = reactive({
   defaultChartMode: 'compare' as 'compare' | 'kline',
@@ -142,10 +181,10 @@ const {
   visibleCompareMetrics,
   klineRange,
 } = useStockAnalysisSession(analysisDefaults, klineDefaultRange)
-function effectivePreference(): LimitLadderPreferenceV1 {
-  return preferenceRemoteError.value
+function effectiveSettings(): LimitLadderPreferenceV1 {
+  return pageSettingsRemoteError.value
     ? normalizeLimitLadderPreference(DEFAULT_LIMIT_LADDER_PREFERENCE)
-    : normalizeLimitLadderPreference(preference)
+    : normalizeLimitLadderPreference(settings)
 }
 
 function applyAnalysisDefaults(value: LimitLadderPreferenceV1): void {
@@ -189,7 +228,7 @@ const {
 const workspaceMeta = computed(() => result.value?.has_snapshot
   ? `${result.value.summary.stock_count} 只 · ${filters.value.window} 日口径`
   : '等待快照')
-const ladderReturnPath = computed(() => route.fullPath)
+const ladderReturnPath = '/limit-ladder?restore=1'
 const compactHotspots = computed(() => (
   isLowHeightViewport.value && analysisPanelVisible.value && !isNarrowViewport.value
 ))
@@ -246,20 +285,23 @@ useLegacyStockChartPreferenceMigration({
 })
 
 async function applySystemDefaults(): Promise<void> {
+  restoringPageSession.value = true
   filters.value = filtersFromLimitLadderPreference(DEFAULT_LIMIT_LADDER_PREFERENCE)
   cardSort.value = DEFAULT_LIMIT_LADDER_CARD_SORT
   cardSortOrder.value = DEFAULT_LIMIT_LADDER_CARD_SORT_ORDER
   applyAnalysisDefaults(DEFAULT_LIMIT_LADDER_PREFERENCE)
-  await syncUrl()
+  await nextTick()
+  restoringPageSession.value = false
+  persistReturnState()
   await loadLadder()
 }
 
 async function resetAllSettings(): Promise<void> {
-  resetPreference()
+  resetPageSettings()
   resetAll()
-  await savePreference()
+  await savePageSettings()
   await applySystemDefaults()
-  if (preferenceSaveError.value) {
+  if (pageSettingsSaveError.value) {
     ElMessage.error('默认偏好已在本机恢复，远端保存失败，请稍后重试')
     return
   }
@@ -278,26 +320,34 @@ function isPermissionError(value: unknown): boolean {
   return (value as { response?: { status?: number } })?.response?.status === 403
 }
 
-async function syncUrl(): Promise<void> {
-  syncingRoute = true
-  try {
-    await router.replace({
-      query: {
-        ...filtersToRouteQuery(filters.value),
-        ...(tradeDate.value ? { date: tradeDate.value } : {}),
-        ...(activeAnalysisCode.value ? { selected: activeAnalysisCode.value } : {}),
-        ...(activeAnalysisCode.value ? { anchor: activeAnalysisCode.value } : {}),
-        card_sort: cardSort.value,
-        card_order: cardSortOrder.value,
-      },
-    })
-  } finally {
-    syncingRoute = false
-  }
+function persistReturnState(): void {
+  if (!pageInitialized.value || restoringPageSession.value) return
+  limitLadderSession.saveReturnState({
+    tradeDate: tradeDate.value,
+    filters: filters.value,
+    cardSort: cardSort.value,
+    cardSortOrder: cardSortOrder.value,
+    selectedCode: activeAnalysisCode.value,
+    anchorCode: activeAnalysisCode.value,
+  })
 }
 
-function queryText(value: unknown): string {
-  return typeof value === 'string' ? value : ''
+let defaultFilterReloadScheduled = false
+function scheduleDefaultFilterReload(): void {
+  if (!pageInitialized.value || restoringPageSession.value) return
+  persistReturnState()
+  if (defaultFilterReloadScheduled) return
+  defaultFilterReloadScheduled = true
+  void nextTick(async () => {
+    defaultFilterReloadScheduled = false
+    await loadLadder()
+  })
+}
+
+async function cleanPageUrl(): Promise<void> {
+  if (route.path === '/limit-ladder' && route.fullPath !== '/limit-ladder') {
+    await router.replace('/limit-ladder')
+  }
 }
 
 async function restoreScrollAnchor(code: string): Promise<void> {
@@ -323,17 +373,21 @@ async function restoreScrollAnchor(code: string): Promise<void> {
 
 async function reconcileAnalysisContext(): Promise<void> {
   await nextTick()
-  const requestedCode = queryText(route.query.selected)
+  const requestedCode = pendingSelectedCode.value
   const requestedItem = analysisSourceItems.value.find((item) => item.code === requestedCode)
-  if (requestedItem) selectAnalysisItem(requestedItem)
+  if (requestedItem) {
+    selectAnalysisItem(requestedItem)
+    pendingSelectedCode.value = ''
+  }
 
   if (!analysisSourceItems.value.length) {
     clearAnalysisSelection()
     marketWorkspaceRef.value?.closeCompactAnalysis()
   }
-  const anchor = queryText(route.query.anchor)
+  const anchor = pendingAnchorCode.value
   if (anchor && analysisSourceItems.value.some((item) => item.code === anchor)) {
     await restoreScrollAnchor(anchor)
+    pendingAnchorCode.value = ''
   }
 }
 
@@ -416,7 +470,7 @@ async function requestLadder(background: boolean): Promise<void> {
     if (!background) loading.value = false
     await reconcileAnalysisContext()
     if (sequence !== requestSequence) return
-    if (activeAnalysisCode.value !== queryText(route.query.selected)) await syncUrl()
+    persistReturnState()
   } catch (value) {
     if (sequence !== requestSequence) return
     if (isPermissionError(value)) {
@@ -481,7 +535,7 @@ async function retryLadder(): Promise<void> {
 
 async function setFilters(next: LimitLadderFilters): Promise<void> {
   filters.value = normalizeLimitLadderFilters(next)
-  await syncUrl()
+  persistReturnState()
   await loadLadder()
 }
 
@@ -492,13 +546,13 @@ async function setTradeDate(next: string | null): Promise<void> {
   result.value = null
   clearAnalysisSelection()
   marketWorkspaceRef.value?.closeCompactAnalysis()
-  await syncUrl()
+  persistReturnState()
   await loadLadder()
 }
 
 async function setCardSort(next: LimitLadderCardSort): Promise<void> {
   cardSort.value = normalizeLimitLadderCardSort(next)
-  await syncUrl()
+  persistReturnState()
 }
 
 async function exportCsv(): Promise<void> {
@@ -523,60 +577,42 @@ async function exportCsv(): Promise<void> {
 async function selectStock(stock: LimitLadderStock): Promise<void> {
   selectAnalysisItem(stock)
   if (!marketWorkspaceRef.value?.openCompactAnalysis()) analysisPanelVisible.value = true
-  await syncUrl()
+  persistReturnState()
 }
 
 async function activateAnalysisItem(code: string): Promise<void> {
   activateAnalysisCode(code)
-  await syncUrl()
+  persistReturnState()
 }
 
 async function removeAnalysisItem(code: string): Promise<void> {
   removeAnalysisCode(code)
-  await syncUrl()
+  persistReturnState()
 }
 
 async function openActiveAnalysisDetail(): Promise<void> {
   const active = activeAnalysisItem.value
   if (!canViewStockDetail.value || !active) return
   const items = analysisSourceItems.value.map((item) => ({ code: item.code, name: item.name }))
-  await syncUrl()
+  persistReturnState()
   stockSet.setSet('list', items, '连板天梯', '', {
     total: items.length,
     loadedPages: items.length ? [1] : [],
     pageSize: Math.max(items.length, 1),
-    returnPath: route.fullPath,
+    returnPath: ladderReturnPath,
   })
   await router.push(`/stocks/${active.code}`)
 }
 
-watch(preference, () => applyAnalysisDefaults(normalizeLimitLadderPreference(preference)), { deep: true })
+watch(settings, () => applyAnalysisDefaults(normalizeLimitLadderPreference(settings)), { deep: true })
 
 watch(
-  () => route.query,
-  (query) => {
-    if (syncingRoute) return
-    const nextDate = typeof query.date === 'string' ? query.date : tradeDate.value
-    const nextFilters = filtersFromRouteQuery(
-      query,
-      filtersFromLimitLadderPreference(effectivePreference()),
-    )
-    const changed = nextDate !== tradeDate.value
-      || JSON.stringify(nextFilters) !== JSON.stringify(filters.value)
-    cardSort.value = normalizeLimitLadderCardSort(query.card_sort ?? cardSort.value)
-    cardSortOrder.value = normalizeLimitLadderCardSortOrder(
-      query.card_order,
-      query.card_sort === undefined
-        ? cardSortOrder.value
-        : defaultLimitLadderCardSortOrder(cardSort.value),
-    )
-    if (!changed) {
-      void reconcileAnalysisContext()
-      return
-    }
-    tradeDate.value = nextDate
-    filters.value = nextFilters
-    void loadLadder()
+  () => [route.path, route.query.restore] as const,
+  ([path, restore]) => {
+    if (!pageInitialized.value || path !== '/limit-ladder' || restore !== '1') return
+    // KeepAlive 返回时页面实例本身已经保留现场，只消费持久化副本并清理一次性标记。
+    limitLadderSession.consumeReturnState()
+    void cleanPageUrl()
   },
 )
 
@@ -586,36 +622,42 @@ async function initializePage(): Promise<void> {
   forbidden.value = false
   noTradeDates.value = false
   try {
-    await whenPreferenceHydrated()
-    const savedPreference = effectivePreference()
-    applyAnalysisDefaults(savedPreference)
-    cardSort.value = normalizeLimitLadderCardSort(route.query.card_sort ?? savedPreference.cardSort)
+    await whenPageSettingsHydrated()
+    const savedSettings = effectiveSettings()
+    applyAnalysisDefaults(savedSettings)
+    const restored = route.query.restore === '1'
+      ? limitLadderSession.consumeReturnState()
+      : null
+    filters.value = restored?.filters ?? filtersFromLimitLadderPreference(savedSettings)
+    cardSort.value = normalizeLimitLadderCardSort(restored?.cardSort ?? savedSettings.cardSort)
     cardSortOrder.value = normalizeLimitLadderCardSortOrder(
-      route.query.card_order,
-      route.query.card_sort === undefined
-        ? savedPreference.cardSortOrder
-        : defaultLimitLadderCardSortOrder(cardSort.value),
+      restored?.cardSortOrder ?? savedSettings.cardSortOrder,
     )
-    filters.value = filtersFromRouteQuery(
-      route.query,
-      filtersFromLimitLadderPreference(savedPreference),
-    )
-    analysisDefaults.showAnalysisPanel = savedPreference.showAnalysisPanel
+    pendingSelectedCode.value = restored?.selectedCode ?? ''
+    pendingAnchorCode.value = restored?.anchorCode ?? ''
+    analysisDefaults.showAnalysisPanel = savedSettings.showAnalysisPanel
     const dates = await listLimitLadderTradeDates()
-    if (!tradeDate.value) {
-      tradeDate.value = dates.latest_complete_date
-        || dates.latest_candidate_date
-        || dates.dates[0]
-        || null
-    }
+    const restoredDate = restored?.tradeDate
+    tradeDate.value = restoredDate && dates.dates.includes(restoredDate)
+      ? restoredDate
+      : dates.latest_complete_date || dates.latest_candidate_date || dates.dates[0] || null
     if (!tradeDate.value) {
       noTradeDates.value = true
       loading.value = false
+      pageInitialized.value = true
+      restoringPageSession.value = false
+      await cleanPageUrl()
       return
     }
-    await syncUrl()
+    await nextTick()
+    restoringPageSession.value = false
+    pageInitialized.value = true
+    await cleanPageUrl()
+    persistReturnState()
     await loadLadder()
   } catch (value) {
+    restoringPageSession.value = false
+    pageInitialized.value = true
     if (isPermissionError(value)) {
       result.value = null
       error.value = ''
@@ -688,7 +730,7 @@ onBeforeUnmount(() => {
               data-testid="limit-ladder-export"
               @click="exportCsv"
             >导出 CSV</el-button>
-            <PageSettingsTrigger :dirty="isDirty || preferenceDirty" @click="settingsOpen = true" />
+            <PageSettingsTrigger :dirty="isDirty || pageSettingsDirty" @click="settingsOpen = true" />
           </div>
         </div>
       </div>
@@ -793,7 +835,7 @@ onBeforeUnmount(() => {
       <PageSettingsDrawer
         v-model="settingsOpen"
         title="连板天梯"
-        :dirty="isDirty || preferenceDirty"
+        :dirty="isDirty || pageSettingsDirty"
         page-key="limit-ladder"
         :config="drawerConfig"
         :business-visible="true"
@@ -802,14 +844,14 @@ onBeforeUnmount(() => {
       >
         <template #business>
           <AppStatusNotice
-            v-if="preferenceRemoteError"
+            v-if="pageSettingsRemoteError"
             tone="warning"
             size="compact"
             title="个人偏好读取失败"
             description="当前使用系统默认，修改后会继续尝试同步"
           />
           <AppStatusNotice
-            v-else-if="preferenceSaveError"
+            v-else-if="pageSettingsSaveError"
             tone="warning"
             size="compact"
             title="默认偏好远端同步失败"
@@ -819,7 +861,7 @@ onBeforeUnmount(() => {
               <div class="setting-item">
                 <div class="setting-label">复权模式</div>
                 <PageSegmented
-                  v-model="preference.adjustMode"
+                  v-model="settings.adjustMode"
                   aria-label="复权模式"
                   :options="[
                     { label: '不复权', value: '' },
@@ -833,7 +875,7 @@ onBeforeUnmount(() => {
             <div class="setting-item">
               <div class="setting-label">统计窗口</div>
               <PageSegmented
-                v-model="preference.window"
+                v-model="settings.window"
                 :options="[
                   { label: '10 日', value: 10 },
                   { label: '20 日', value: 20 },
@@ -847,7 +889,7 @@ onBeforeUnmount(() => {
             <div class="setting-item">
               <div class="setting-label">纳入板块</div>
               <el-checkbox-group
-                v-model="preference.boards"
+                v-model="settings.boards"
                 class="board-preference-options"
                 aria-label="默认纳入板块"
                 data-testid="limit-ladder-default-boards"
@@ -858,14 +900,14 @@ onBeforeUnmount(() => {
               </el-checkbox-group>
             </div>
             <PageToggleRow
-              v-model="preference.ignoreSt"
+              v-model="settings.ignoreSt"
               label="默认忽略 ST"
               test-id="limit-ladder-default-ignore-st"
             />
             <div class="setting-item">
               <div class="setting-label">卡片层内排序</div>
               <el-select
-                v-model="preference.cardSort"
+                v-model="settings.cardSort"
                 data-testid="limit-ladder-default-card-sort"
               >
                 <el-option
@@ -879,7 +921,7 @@ onBeforeUnmount(() => {
             <div class="setting-item">
               <div class="setting-label">排序方向</div>
               <PageSegmented
-                v-model="preference.cardSortOrder"
+                v-model="settings.cardSortOrder"
                 :options="[
                   { label: '升序', value: 'asc' },
                   { label: '降序', value: 'desc' },
@@ -889,12 +931,12 @@ onBeforeUnmount(() => {
               />
             </div>
             <StockAnalysisDefaultFields
-              v-model:default-chart-mode="preference.defaultChartMode"
-              v-model:compare-range="preference.compareRange"
-              v-model:benchmark-code="preference.benchmarkCode"
-              v-model:compare-metrics="preference.compareMetrics"
-              v-model:default-compare-metric="preference.defaultCompareMetric"
-              v-model:show-analysis-panel="preference.showAnalysisPanel"
+              v-model:default-chart-mode="settings.defaultChartMode"
+              v-model:compare-range="settings.compareRange"
+              v-model:benchmark-code="settings.benchmarkCode"
+              v-model:compare-metrics="settings.compareMetrics"
+              v-model:default-compare-metric="settings.defaultCompareMetric"
+              v-model:show-analysis-panel="settings.showAnalysisPanel"
             />
           </PageSettingSection>
           <KlineSettingSection />

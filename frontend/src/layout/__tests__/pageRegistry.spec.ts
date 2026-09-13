@@ -53,6 +53,10 @@ function scriptOf(source: string): string {
   return source.match(/<script\b[^>]*\bsetup\b[^>]*>([\s\S]*?)<\/script>/)?.[1] ?? source
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 /** 解包 `as const` 等后缀断言后，收集数组字面量的字符串元素。 */
 function arrayLiteralStrings(initializer: ts.Expression | undefined): string[] {
   if (!initializer) return []
@@ -144,8 +148,8 @@ function topLevelKeys(object: ts.ObjectLiteralExpression): string[] {
 }
 
 /**
- * 解析页面 usePageSettings 的业务偏好 defaults 顶层字段 + settings 别名。
- * defaults 可能是内联对象字面量或 const 引用；别名来自 `const { settings: cfg } = ...` 解构。
+ * 解析页面 usePageSettings 的业务偏好 defaults 顶层字段及历史 settings 别名。
+ * defaults 可能是内联对象字面量或 const 引用。
  */
 function pageSettingsFields(source: string, fileName: string): { fields: string[]; aliases: string[] } {
   const script = scriptOf(source)
@@ -174,7 +178,7 @@ function pageSettingsFields(source: string, fileName: string): { fields: string[
           if (resolved) fields = topLevelKeys(resolved)
         }
       }
-      // 解构别名：const { settings: cfg } = usePageSettings(...)
+      // 兼容识别历史解构别名，供契约测试输出准确违规字段。
       if (ts.isVariableDeclaration(node.parent) && ts.isObjectBindingPattern(node.parent.name)) {
         for (const el of node.parent.name.elements) {
           if (ts.isIdentifier(el.name) && el.propertyName && ts.isIdentifier(el.propertyName) && el.propertyName.text === 'settings') {
@@ -1127,7 +1131,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
   it('业务偏好不静默持久化：usePageSettings defaults 的每个顶层字段必须被页面消费（含 computed/别名）', () => {
     // DESIGN「设置抽屉」节：defaults 里塞字段即持久化到 PG user_preference；若页面从不消费它，
     // 就是「未配置进抽屉却私自持久化」的死项。只查顶层字段（不展开 indicators/filters 等嵌套子 key，
-    // 父级被引用即视为消费）；settings 的解构别名（如 cfg）同样算消费入口。
+    // 父级被引用即视为消费）；历史 settings 解构别名同样算消费入口。
     for (const entry of PAGE_REGISTRY) {
       const source = sourceForPage(entry.pageKey)
       if (!source || !source.includes('usePageSettings(')) continue
@@ -1206,17 +1210,53 @@ describe('组件消费关系与配置一致性（P4）', () => {
     for (const entry of PAGE_REGISTRY) {
       const source = sourceForPage(entry.pageKey)
       if (!source) continue
-      const directPreferenceRef = /\bref(?:<[^>]+>)?\(\s*(?:Boolean|Number|String)?\(?\s*(?:settings|cfg)\./
+      const { aliases } = pageSettingsFields(source, `${entry.pageKey}.vue`)
+      const settingsAliasesPattern = aliases.map((alias) => escapeRegExp(alias)).join('|') || 'settings'
+      const directSettingsRef = new RegExp(
+        `\\bref(?:<[^>]+>)?\\(\\s*(?:Boolean|Number|String)?\\(?\\s*(?:${settingsAliasesPattern})\\.`,
+      )
       const directKnownDefaultRef = /\bref(?:<[^>]+>)?\(\s*(?:klineDefault|defaultKlineRange|workspaceTabDefault|sysTabDefault)\.value\s*\)/
-      const directPreferenceWatcher = /watch\(\s*\(\)\s*=>\s*(?:settings|cfg)\.[^,]+,\s*\([^)]*\)\s*=>\s*\{?\s*[\w.]+\.value\s*=/
-      if (directPreferenceRef.test(source)) violations.push(`${entry.pageKey}: ref(settings/cfg.*)`)
+      const directSettingsWatcher = new RegExp(
+        `watch\\(\\s*\\(\\)\\s*=>\\s*(?:${settingsAliasesPattern})\\.[^,]+,`
+        + '\\s*\\([^)]*\\)\\s*=>\\s*\\{?\\s*[\\w.]+\\.value\\s*=',
+      )
+      if (directSettingsRef.test(source)) violations.push(`${entry.pageKey}: ref(settings.*)`)
       if (directKnownDefaultRef.test(source)) violations.push(`${entry.pageKey}: ref(default.value)`)
-      if (directPreferenceWatcher.test(source)) violations.push(`${entry.pageKey}: settings watcher 手工回填会话 ref`)
+      if (directSettingsWatcher.test(source)) violations.push(`${entry.pageKey}: settings watcher 手工回填会话 ref`)
     }
     expect(
       violations,
       `默认值到主区会话态必须复用 useDefaultedSessionValue：\n${violations.join('\n')}`,
     ).toEqual([])
+  })
+
+  it('页面业务设置对象统一命名为 settings，不使用页面私有别名', () => {
+    const violations: string[] = []
+    for (const entry of PAGE_REGISTRY) {
+      const source = sourceForPage(entry.pageKey)
+      if (!source || !source.includes('usePageSettings(')) continue
+      const { aliases } = pageSettingsFields(source, `${entry.pageKey}.vue`)
+      for (const alias of aliases) {
+        if (alias !== 'settings') violations.push(`${entry.pageKey}: settings 被命名为 ${alias}`)
+      }
+    }
+    expect(
+      violations,
+      `usePageSettings 返回的业务设置对象统一使用 settings：\n${violations.join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('连板天梯业务默认必须即时投影到会话态，且普通页面状态不得回写 URL', () => {
+    const source = sourceForPage('limit-ladder')
+    expect(source).toContain('const filterWindow = useDefaultedSessionValue(')
+    expect(source).toContain('const filterBoards = useDefaultedSessionValue(')
+    expect(source).toContain('const filterIgnoreSt = useDefaultedSessionValue(')
+    expect(source).toContain('const cardSort = useDefaultedSessionValue(')
+    expect(source).toContain('const cardSortOrder = useDefaultedSessionValue(')
+    expect(source).toContain('onSynced: scheduleDefaultFilterReload')
+    expect(source).not.toMatch(/card_sort\s*:/)
+    expect(source).not.toMatch(/card_order\s*:/)
+    expect(source).not.toContain('filtersToRouteQuery(')
   })
 
   it('页面不得直接读写浏览器存储，会话与偏好必须经过共享生命周期入口', () => {
