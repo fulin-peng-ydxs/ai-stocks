@@ -24,9 +24,13 @@ const ElPopoverStub = defineComponent({
 
 const ElTooltipStub = defineComponent({
   name: 'ElTooltip',
-  props: ['content', 'trigger', 'placement'],
+  props: ['content', 'trigger', 'placement', 'popperClass'],
   setup(props, { slots }) {
-    return () => h('div', { class: 'tooltip-stub', 'data-content': props.content }, slots.default?.())
+    return () => h('div', {
+      class: 'tooltip-stub',
+      'data-content': props.content,
+      'data-popper-class': props.popperClass,
+    }, slots.default?.())
   },
 })
 
@@ -245,6 +249,8 @@ describe('RelatedBoardCell', () => {
     expect(wrapper.text()).toBe('—')
     expect(wrapper.get('.tooltip-stub').attributes('data-content'))
       .toBe('共同有效样本不足：20 日最高 14/15，60 日最高 54/40')
+    expect(wrapper.get('.tooltip-stub').attributes('data-popper-class'))
+      .toBe('app-wrapping-popper related-board-empty-tooltip')
     expect(wrapper.get('[data-testid="explained-empty-related-board"]').attributes('tabindex')).toBe('0')
     expect(wrapper.get('[data-testid="explained-empty-related-board"]').attributes('aria-label'))
       .toContain('暂无概念走势，原因：共同有效样本不足')

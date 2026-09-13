@@ -17,6 +17,7 @@ withDefaults(defineProps<{
     :content="reason.message"
     :trigger="['hover', 'focus']"
     placement="top"
+    popper-class="app-wrapping-popper related-board-empty-tooltip"
   >
     <span
       class="related-board-empty-value related-board-empty-value--explained"

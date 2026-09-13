@@ -66,10 +66,10 @@ body > .el-notification {
 }
 
 /*
- * HelpHint 可能承载长文。其 Popper 位于应用缩放容器内，最大宽度按应用容器
- * 的布局视口约束，避免比例放大后超出实际屏幕。
+ * 纯文本说明浮层可能承载长文。其 Popper 位于应用缩放容器内，最大宽度
+ * 按应用容器的布局视口约束，避免比例放大后横跨工作区。
  */
-[id^='el-popper-container-'] > .help-hint-popper {
+[id^='el-popper-container-'] > .app-wrapping-popper {
   width: max-content;
   max-width: min(360px, calc(100cqw - 24px));
   white-space: normal;

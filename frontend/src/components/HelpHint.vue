@@ -12,7 +12,7 @@ defineProps<{ text: string }>()
     :trigger="['hover', 'focus']"
     placement="top"
     effect="dark"
-    popper-class="help-hint-popper"
+    popper-class="app-wrapping-popper help-hint-popper"
     :show-after="80"
     :hide-after="0"
   >

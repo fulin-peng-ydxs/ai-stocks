@@ -62,6 +62,18 @@ function expectPopperAligned(trigger: Geometry, popper: Geometry, placement: str
   }
 }
 
+function expectTooltipArrowAligned(trigger: Geometry, arrow: Geometry, placement: string | null) {
+  const side = (placement ?? '').split('-')[0]
+  const tolerance = 6
+  if (side === 'top' || side === 'bottom') {
+    expect(Math.abs((arrow.left + arrow.right) / 2 - (trigger.left + trigger.right) / 2))
+      .toBeLessThanOrEqual(tolerance)
+  } else {
+    expect(Math.abs((arrow.top + arrow.bottom) / 2 - (trigger.top + trigger.bottom) / 2))
+      .toBeLessThanOrEqual(tolerance)
+  }
+}
+
 test('锚点浮层在 50%～150% 下同比缩放且点击、悬浮定位不漂移', async ({ page }) => {
   const consoleIssues = collectConsoleIssues(page)
   await page.goto('/e2e/fixtures/display-scale-popper-preview.html')
@@ -119,6 +131,22 @@ test('锚点浮层在 50%～150% 下同比缩放且点击、悬浮定位不漂�
     await page.mouse.move(0, 0)
     await expect(tooltipPopper).toBeHidden()
 
+    const longTooltipTarget = page.getByTestId('long-tooltip-target')
+    await longTooltipTarget.hover()
+    const longTooltipPopper = page.getByRole('tooltip', {
+      name: '共同有效样本不足：20 日最高 18/15，60 日最高 18/40',
+    })
+    await expect(longTooltipPopper).toBeVisible()
+    const longTooltipGeometry = await geometry(longTooltipPopper)
+    expect(longTooltipGeometry.width / longTooltipGeometry.layoutWidth).toBeCloseTo(scale, 1)
+    expectTooltipArrowAligned(
+      await geometry(longTooltipTarget),
+      await geometry(longTooltipPopper.locator('.el-popper__arrow')),
+      await longTooltipPopper.getAttribute('data-popper-placement'),
+    )
+    await page.mouse.move(0, 0)
+    await expect(longTooltipPopper).toBeHidden()
+
     const edgeSelect = page.getByTestId('edge-select')
     await edgeSelect.click()
     const edgeSelectPopper = page.locator('.el-select__popper:visible')
@@ -153,5 +181,25 @@ test('锚点浮层在 50%～150% 下同比缩放且点击、悬浮定位不漂�
     await expect(bottomSelectPopper).toBeHidden()
   }
 
+  expect(consoleIssues).toEqual([])
+})
+
+test('相邻空值提示在 98% 下分别对齐自己的触发点', async ({ page }) => {
+  const consoleIssues = collectConsoleIssues(page)
+  await page.goto('/e2e/fixtures/display-scale-popper-preview.html')
+  await page.getByTestId('scale-0.98').click()
+  const adjacentEmptyTargets = page.locator('.adjacent-tooltip-card .related-board-empty-value')
+  await expect(adjacentEmptyTargets).toHaveCount(2)
+  const conceptEmptyTarget = adjacentEmptyTargets.nth(1)
+  await conceptEmptyTarget.hover()
+  const adjacentTooltipPopper = page.getByRole('tooltip', {
+    name: '该业务日没有可计算的候选板块',
+  })
+  await expect(adjacentTooltipPopper).toBeVisible()
+  expectTooltipArrowAligned(
+    await geometry(conceptEmptyTarget),
+    await geometry(adjacentTooltipPopper.locator('.el-popper__arrow')),
+    await adjacentTooltipPopper.getAttribute('data-popper-placement'),
+  )
   expect(consoleIssues).toEqual([])
 })
