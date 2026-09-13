@@ -22,6 +22,7 @@ import {
   type TradeDisciplineRule,
 } from '@/api/tradeDiscipline'
 import StockOptionSelect from './StockOptionSelect.vue'
+import { formatDateTimeMinutes } from '@/utils/dateTime'
 
 const props = withDefaults(defineProps<{
   query: CheckinHistoryQuery
@@ -112,11 +113,6 @@ function resetFilters(): void {
 
 function openDetail(row: CheckinHistoryRow): void {
   emit('detail', row)
-}
-
-function formatTime(value: string | null | undefined): string {
-  if (!value) return '—'
-  return value.replace('T', ' ').replace(/\.\d+/, '').replace(/\+.*$/, '').slice(0, 16)
 }
 
 function colVisible(key: string): boolean {
@@ -226,7 +222,7 @@ defineExpose({ reload: load })
       <AppTableColumn v-if="colVisible('current_revision_no')" label="修订">
         <template #default="{ row }"><el-tag :type="row.status === 'amended' ? 'warning' : 'info'" effect="plain">r{{ row.current_revision_no }}{{ row.status === 'amended' ? ' · 已修正' : '' }}</el-tag></template>
       </AppTableColumn>
-      <AppTableColumn v-if="colVisible('updated_at')" prop="updated_at" label="最后更新"><template #default="{ row }">{{ formatTime(row.updated_at) }}</template></AppTableColumn>
+      <AppTableColumn v-if="colVisible('updated_at')" prop="updated_at" label="最后更新"><template #default="{ row }">{{ formatDateTimeMinutes(row.updated_at) }}</template></AppTableColumn>
       <template #empty>
         <div class="app-table-empty">
           <span class="app-table-empty__description">暂无符合条件的履约记录</span>

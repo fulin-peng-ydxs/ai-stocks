@@ -12,6 +12,7 @@ import {
   multiplyToMinorUnits,
 } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
+import { formatDateTimeMinutes } from '@/utils/dateTime'
 import {
   checkinAssessmentLabel,
   checkinAssessmentTagType,
@@ -105,9 +106,7 @@ function cardMeta(operation: CheckinOperation): string {
 }
 
 function cardPreview(operation: CheckinOperation): string {
-  const operatedAt = operation.operated_at
-    ? operation.operated_at.replace('T', ' ').slice(0, 16)
-    : '时间未填写'
+  const operatedAt = formatDateTimeMinutes(operation.operated_at, '时间未填写')
   return `${ruleName(operation, 'stock')} · ${ruleName(operation, 'action')} · ${operatedAt}`
 }
 

@@ -47,6 +47,7 @@ import AppIconButton from '@/components/AppIconButton.vue'
 import AppOverflowTooltipHost from '@/components/AppOverflowTooltipHost.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import TradeDisciplineQuickCard from '@/components/trade-discipline/TradeDisciplineQuickCard.vue'
+import { formatDateTimeMinutes } from '@/utils/dateTime'
 
 const { isDark, themeMode, setThemeMode, syncThemePreference } = useTheme()
 const { navigationMode, setNavigationMode, syncNavigationPreference } = useAppNavigation()
@@ -190,11 +191,6 @@ async function syncGlobalPreferences() {
 
 function formatNumber(value: number | null | undefined): string {
   return typeof value === 'number' ? numberFormatter.format(value) : '—'
-}
-
-function formatShortTime(value: string | null | undefined): string {
-  if (!value) return '—'
-  return value.slice(0, 16).replace('T', ' ')
 }
 
 function formatDateOnly(value: string | null | undefined): string {
@@ -464,7 +460,7 @@ async function onLogout() {
               <div v-if="recentUpdatePreview.length" class="topbar-update-list">
                 <div v-for="log in recentUpdatePreview" :key="`${log.table_name}-${log.updated_at}`" class="topbar-update">
                   <span class="topbar-update-table">{{ log.table_name }}</span>
-                  <span class="topbar-update-meta">{{ log.source }} · {{ formatShortTime(log.updated_at) }}</span>
+                  <span class="topbar-update-meta">{{ log.source }} · {{ formatDateTimeMinutes(log.updated_at) }}</span>
                 </div>
               </div>
               <div v-else class="topbar-empty">暂无最近更新</div>
@@ -540,7 +536,7 @@ async function onLogout() {
                 <span class="topbar-task-dot" :class="`is-${task.status}`" />
                 <div class="topbar-task-main">
                   <span class="topbar-task-title">{{ taskTypeLabel(task) }}</span>
-                  <span class="topbar-task-sub">{{ formatShortTime(task.updated_at) }}</span>
+                  <span class="topbar-task-sub">{{ formatDateTimeMinutes(task.updated_at) }}</span>
                 </div>
                 <span class="topbar-task-status">{{ taskStatusLabel(task.status) }}</span>
               </div>

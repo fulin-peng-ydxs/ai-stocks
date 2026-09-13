@@ -39,6 +39,7 @@ import { useAuthStore } from '@/stores/auth'
 import { dictTagStyleByCode } from '@/utils/dictColor'
 import { getErrorStatus } from '@/utils/error'
 import type { AppRowAction } from '@/components/rowActions'
+import { formatDateTimeSeconds } from '@/utils/dateTime'
 
 const pageKey = 'audit-log'
 const AUTO_REFRESH_MS = 30_000
@@ -229,11 +230,6 @@ function resultTagStyle(value: string | null | undefined) {
 
 function statusTagStyle(value: string | null | undefined) {
   return dictTagStyleByCode(statusOptions.value, value)
-}
-
-function formatTime(value: string | null | undefined): string {
-  if (!value) return '-'
-  return value.replace('T', ' ').replace(/\.\d+/, '').replace(/\+.*$/, '').slice(0, 19)
 }
 
 function formatDuration(value: number | null | undefined): string {
@@ -638,7 +634,7 @@ onBeforeUnmount(stopTimer)
           @size-change="changePageSize"
         >
           <AppTableColumn v-if="colVisible('event_time')" label="时间" prop="event_time" sortable="custom">
-            <template #default="{ row }">{{ formatTime(row.event_time) }}</template>
+            <template #default="{ row }">{{ formatDateTimeSeconds(row.event_time, '-') }}</template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('actor')" label="处理人">
             <template #default="{ row }">{{ actorText(row) }}</template>
@@ -710,7 +706,7 @@ onBeforeUnmount(stopTimer)
               <div class="detail-title">
                 <b>{{ targetText(activeDetail) }}</b>
                 <em v-if="targetDescription(activeDetail)">{{ targetDescription(activeDetail) }}</em>
-                <span>{{ formatTime(activeDetail.event_time) }} · {{ actorText(activeDetail) }}</span>
+                <span>{{ formatDateTimeSeconds(activeDetail.event_time, '-') }} · {{ actorText(activeDetail) }}</span>
               </div>
               <div class="detail-tags">
                 <el-tag :type="eventTagType(activeDetail.event_category)" :style="eventTagStyle(activeDetail.event_category)" effect="plain">{{ eventLabel(activeDetail) }}</el-tag>

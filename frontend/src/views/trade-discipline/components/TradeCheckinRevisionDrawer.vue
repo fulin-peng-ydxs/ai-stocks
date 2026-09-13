@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
+import { formatDateTimeSeconds } from '@/utils/dateTime'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
@@ -44,11 +45,6 @@ const revisionOptions = computed(() => {
 })
 const isCurrent = computed(() => selectedRevision.value === props.row?.current_revision_no)
 const ruleVersion = computed(() => detail.value?.rule_version)
-
-function formatTime(value: string | null | undefined): string {
-  if (!value) return '—'
-  return value.replace('T', ' ').replace(/\.\d+/, '').replace(/\+.*$/, '').slice(0, 19)
-}
 
 function sideText(value: CheckinOperation['side']): string {
   return value === 'buy' ? '买入' : '卖出'
@@ -155,7 +151,7 @@ watch(
           <div><dt>用户自评</dt><dd><el-tag :type="checkinAssessmentTagType(detail.assessment)" effect="plain">{{ checkinAssessmentLabel(detail.assessment) }}</el-tag></dd></div>
           <div><dt>操作状态</dt><dd>{{ detail.no_operation ? '今日无操作' : `${detail.operations.length} 笔操作` }}</dd></div>
           <div><dt>未履约原因</dt><dd>{{ detail.reason_name_snapshot || '—' }}</dd></div>
-          <div><dt>记录时间</dt><dd>{{ formatTime(detail.created_at || detail.amended_at || detail.submitted_at) }}</dd></div>
+          <div><dt>记录时间</dt><dd>{{ formatDateTimeSeconds(detail.created_at || detail.amended_at || detail.submitted_at) }}</dd></div>
         </dl>
         <div v-if="detail.violation_detail" class="text-snapshot"><strong>详细说明</strong><p>{{ detail.violation_detail }}</p></div>
         <div class="text-snapshot"><strong>复盘说明</strong><p>{{ detail.review_note || '—' }}</p></div>
@@ -188,7 +184,7 @@ watch(
           <AppTableColumn label="成交事实" role="description">
             <template #default="{ row }">价 {{ formatMoney(row.price, { digits: 4 }) }} · 量 {{ formatDecimalString(row.quantity, 4) }} · 额 {{ formatMoney(row.amount) }} · 费 {{ formatMoney(row.fee) }}</template>
           </AppTableColumn>
-          <AppTableColumn label="操作时间"><template #default="{ row }">{{ formatTime(row.operated_at) }}</template></AppTableColumn>
+          <AppTableColumn label="操作时间"><template #default="{ row }">{{ formatDateTimeSeconds(row.operated_at) }}</template></AppTableColumn>
           <AppTableColumn label="完整度">
             <template #default="{ row }"><el-tag :type="row.financial_complete ? 'success' : 'warning'" effect="plain">{{ row.financial_complete ? '完整' : '不完整' }}</el-tag></template>
           </AppTableColumn>

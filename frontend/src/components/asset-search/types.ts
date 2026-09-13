@@ -1,3 +1,5 @@
+import { formatDateTimeMinutes } from '@/utils/dateTime'
+
 // 资产搜索抽屉/选择器共享类型（R5/R7/R14）。
 // 方案类 summary 契约对齐后端 services/asset_visibility.py::summarize_asset_row；
 // 回测 summary 契约对齐 summarize_backtest_row（无 name/version/is_preset/updated_at）。
@@ -108,7 +110,6 @@ export function assetDisplaySource(
 }
 
 export function formatAssetTime(value?: string | null): string {
-  if (!value) return '—'
   // 后端为 ISO/「YYYY-MM-DD HH:MM:SS」字符串；列表只展示到分钟
-  return value.replace('T', ' ').slice(0, 16) || '—'
+  return formatDateTimeMinutes(value)
 }

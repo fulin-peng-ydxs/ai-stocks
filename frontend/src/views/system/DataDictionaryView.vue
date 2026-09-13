@@ -31,6 +31,7 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
 import { DICT_COLOR_PRESETS, dictColorSwatchStyle, dictTagStyle, normalizeDictColor } from '@/utils/dictColor'
 import type { AppRowAction } from '@/components/rowActions'
+import { formatDateTimeSeconds } from '@/utils/dateTime'
 
 const pageKey = 'data-dictionary'
 
@@ -136,11 +137,6 @@ function colVisible(key: string): boolean {
 }
 function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
-}
-
-function formatTime(value: string | null | undefined): string {
-  if (!value) return '-'
-  return value.replace('T', ' ').replace(/\.\d+/, '').replace(/\+.*$/, '').slice(0, 19)
 }
 
 function resetTypeForm(row?: DictType) {
@@ -608,7 +604,7 @@ onMounted(loadAll)
               </AppTableColumn>
               <AppTableColumn v-if="colVisible('remark')" label="备注" prop="remark" />
               <AppTableColumn v-if="colVisible('updated_at')" label="更新时间" prop="updated_at" sortable="custom">
-                <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
+                <template #default="{ row }">{{ formatDateTimeSeconds(row.updated_at, '-') }}</template>
               </AppTableColumn>
               <AppTableColumn label="操作" role="action" fixed="right">
                 <template #default="{ row }">

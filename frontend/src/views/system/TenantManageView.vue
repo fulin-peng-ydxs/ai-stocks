@@ -35,6 +35,7 @@ import {
 import { listUsers, type AdminUser } from '@/api/user'
 import { dictItemLabel, dictTagStyleByCode } from '@/utils/dictColor'
 import type { AppRowAction } from '@/components/rowActions'
+import { formatDateTimeSeconds } from '@/utils/dateTime'
 
 // 默认/平台租户 id：不可停用、不可删除（与后端 pg_ddl.DEFAULT_TENANT_ID 一致）。
 const DEFAULT_TENANT_ID = 'default'
@@ -159,10 +160,6 @@ async function resetQueryFilters(): Promise<void> {
   await nextTick()
   suppressFilterReload = false
   await load()
-}
-
-function fmtTime(v?: string | null): string {
-  return (v || '—').slice(0, 19).replace('T', ' ')
 }
 
 // ── 查看用户：跳用户管理并按该租户预置筛选 ──
@@ -381,7 +378,7 @@ onMounted(async () => {
             <template #default="{ row }">{{ row.user_count ?? 0 }}</template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('created')" label="创建时间" prop="created" sortable="custom">
-            <template #default="{ row }">{{ fmtTime(row.created_at) }}</template>
+            <template #default="{ row }">{{ formatDateTimeSeconds(row.created_at) }}</template>
           </AppTableColumn>
           <AppTableColumn label="操作" role="action" fixed="right">
             <template #default="{ row }">

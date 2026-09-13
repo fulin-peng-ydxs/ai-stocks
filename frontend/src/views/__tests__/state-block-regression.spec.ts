@@ -761,8 +761,6 @@ describe('代表性页面四态回归', () => {
     await (wrapper.vm as any).loadExactCount(estimated)
     await flushPromises()
     expect((wrapper.vm as any).formatRowCount((wrapper.vm as any).tables[0])).toBe('12')
-    expect((wrapper.vm as any).formatMeasuredAt('2026-09-09T01:02:03Z'))
-      .toBe('2026-09-09 01:02:03')
     await (wrapper.vm as any).loadExactCount({ ...estimated, row_count: 12, row_count_mode: 'exact' })
     await flushPromises()
     expect((wrapper.vm as any).tables[0].row_count).toBe(12)

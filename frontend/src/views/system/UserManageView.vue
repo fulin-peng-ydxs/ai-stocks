@@ -35,6 +35,7 @@ import { listTenants, type Tenant } from '@/api/tenant'
 import { dictItemLabel, dictTagStyleByCode } from '@/utils/dictColor'
 import { getErrorMessage } from '@/utils/error'
 import type { AppRowAction } from '@/components/rowActions'
+import { formatDateTimeSeconds } from '@/utils/dateTime'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -237,10 +238,6 @@ async function resetQueryFilters(): Promise<void> {
   await nextTick()
   suppressFilterReload = false
   await load()
-}
-
-function fmtTime(v?: string | null): string {
-  return (v || '—').slice(0, 19).replace('T', ' ')
 }
 
 // ── 新建 / 编辑弹窗 ──
@@ -569,10 +566,10 @@ onMounted(async () => {
             </template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('lastLogin')" label="最后登录" prop="lastLogin" sortable="custom">
-            <template #default="{ row }">{{ fmtTime(row.last_login_at) }}</template>
+            <template #default="{ row }">{{ formatDateTimeSeconds(row.last_login_at) }}</template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('created')" label="创建时间" prop="created" sortable="custom">
-            <template #default="{ row }">{{ fmtTime(row.created_at) }}</template>
+            <template #default="{ row }">{{ formatDateTimeSeconds(row.created_at) }}</template>
           </AppTableColumn>
           <AppTableColumn label="操作" role="action" fixed="right">
             <template #default="{ row }">

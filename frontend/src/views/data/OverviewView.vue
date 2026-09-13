@@ -30,6 +30,7 @@ import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { getErrorMessage } from '@/utils/error'
+import { formatDateTimeSeconds } from '@/utils/dateTime'
 
 const router = useRouter()
 const settingsOpen = ref(false)
@@ -233,10 +234,6 @@ function formatRowCount(row: CatalogTable): string {
   if (row.row_count == null) return '—'
   const value = row.row_count.toLocaleString('zh-CN')
   return row.row_count_mode === 'estimated' ? `约 ${value}` : value
-}
-
-function formatMeasuredAt(value: string): string {
-  return value.replace('T', ' ').slice(0, 19)
 }
 
 function formatBytes(value: number | null): string {
@@ -798,7 +795,7 @@ onMounted(load)
                           class="asset-count-status"
                         >
                           <span v-if="row.row_count_mode === 'exact' && row.measured_at" class="hint">
-                            统计于 {{ formatMeasuredAt(row.measured_at) }}
+                            统计于 {{ formatDateTimeSeconds(row.measured_at) }}
                           </span>
                           <span v-if="exactErrors[row.key]" class="asset-count-error" role="alert">
                             {{ exactErrors[row.key] }}；已保留估算值
