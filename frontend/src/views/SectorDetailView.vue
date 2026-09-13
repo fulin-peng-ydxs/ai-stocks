@@ -501,7 +501,7 @@ onMounted(async () => {
             </AppIconButton>
           </template>
           <template #meta>
-            行情 {{ detail?.trade_date || '—' }} · 资金 {{ detail?.fund_flow_date || '—' }}
+            行情 {{ detail?.trade_date || '—' }}
           </template>
         </MarketDetailHero>
 
