@@ -18,6 +18,7 @@ const emit = defineEmits<{
 
 <template>
   <div class="stock-analysis-name-cell">
+    <slot name="leading" />
     <ComparePinButton
       v-if="code"
       :active="pinned"

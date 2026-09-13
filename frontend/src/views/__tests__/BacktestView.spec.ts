@@ -7,6 +7,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ElementPlus, { ElMessage, ElMessageBox } from 'element-plus'
 import { defineComponent, h, nextTick, reactive, ref } from 'vue'
+import PageSegmented from '@/components/PageSegmented.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const pageSettingsState = vi.hoisted(() => ({ current: null as any }))
@@ -252,6 +253,23 @@ beforeEach(() => {
 })
 
 describe('BacktestView 金额格式契约', () => {
+  it('页面级模式切换独立于参数工具栏并复用 PageSegmented', async () => {
+    const wrapper = await mountView()
+    const rail = wrapper.get('.backtest-mode-rail')
+    const tabs = rail.findComponent(PageSegmented)
+
+    expect(tabs.props('tone')).toBe('primary')
+    expect(tabs.props('size')).toBe('small')
+    expect(tabs.props('testId')).toBe('backtest-kind-tabs')
+    expect(tabs.props('options')).toEqual([
+      { label: '策略回测', value: 'strategy' },
+      { label: '评分验证', value: 'score_check' },
+    ])
+    expect(wrapper.get('.form-row').findComponent(PageSegmented).exists()).toBe(false)
+    expect(wrapper.get('.form-row').findComponent({ name: 'ElRadioGroup' }).exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('本金输入统一显示和解析千分位', async () => {
     const wrapper = await mountView()
     const capitalInput = wrapper.findAllComponents({ name: 'ElInputNumber' })

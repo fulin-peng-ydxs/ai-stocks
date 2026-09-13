@@ -18,6 +18,13 @@ from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
 router = APIRouter(prefix="/api", tags=["scores"])
 
 
+def _current_user_stock_groups(c, pg, codes: list[str]) -> dict[str, list[dict]]:
+    """批量读取当前请求归属者的股票分组；调用方负责先校验分组查看权限。"""
+    from backend.groups.stock_group import StockGroupRepo
+
+    return StockGroupRepo(pg=pg, market=c).groups_for_codes(codes)
+
+
 def _board_by_profile(c, run_date: date, top: int, profile_ref_or_id: str) -> ApiResponse:
     """用评分方案对某日全市场打分排序（与回测 _decision_data 同口径）。
 
@@ -212,6 +219,12 @@ def board_run(body: dict) -> ApiResponse:
         "total_score": float(r["total_score"]), "grade": r["grade"],
         "sub_scores": _subs(r.get("sub_scores")),
     } for _, r in board.iterrows()]
+    # 自选分组属于当前请求用户的 PG 私有资产；仅在具备查看权限时按榜单代码批量读取，
+    # 与公共评分快照在服务层内存合并，避免跨库 JOIN 和前端逐行查询。
+    if ctx and (ctx.is_system or "stock-group:view" in ctx.resources):
+        groups_by_code = _current_user_stock_groups(c, pg, codes)
+        for row in rows:
+            row["groups"] = groups_by_code.get(row["code"], [])
     StockBoardCorrelationService(c).attach_related_boards(rows, run_date)
     return ok({
         "run_date": str(run_date),

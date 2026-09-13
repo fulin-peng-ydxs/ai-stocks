@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage, type Sort } from 'element-plus'
 import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
-import { ArrowRight, Star, StarFilled } from '@element-plus/icons-vue'
+import { Star, StarFilled } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
@@ -21,6 +21,7 @@ import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import MarketCompareMetricStrip from '@/components/MarketCompareMetricStrip.vue'
 import type { MarketMetricStripItem } from '@/components/MarketCompareMetricStrip.vue'
 import MarketBenchmarkSelect from '@/components/MarketBenchmarkSelect.vue'
+import MarketAnalysisHeader from '@/components/MarketAnalysisHeader.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
@@ -1153,36 +1154,28 @@ onMounted(async () => {
           aria-label="板块走势分析"
           data-testid="sectors-chart"
         >
-          <header class="panel-head chart-head">
-            <div class="chart-identity">
-              <div class="panel-eyebrow">当前观察</div>
-              <div class="chart-title-line">
-                <h3 class="chart-title" data-testid="sectors-chart-title">{{ activeRow?.name || '等待选择板块' }}</h3>
-                <span v-if="activeRow" class="board-code">{{ activeRow.board_code }}</span>
-                <el-button
-                  v-if="activeRow"
-                  link
-                  type="primary"
-                  class="detail-link"
-                  :disabled="activeRow.available === false"
-                  data-testid="sectors-open-detail"
-                  @click="openDetail"
-                >
-                  查看详情
-                  <el-icon class="el-icon--right"><ArrowRight /></el-icon>
-                </el-button>
-              </div>
-              <p>
+          <MarketAnalysisHeader
+            :title="activeRow?.name || '等待选择板块'"
+            :code="activeRow?.board_code"
+            :detail-visible="!!activeRow"
+            :detail-disabled="activeRow?.available === false"
+            title-test-id="sectors-chart-title"
+            detail-test-id="sectors-open-detail"
+            data-testid="sectors-chart-header"
+            @open-detail="openDetail"
+          >
+            <template #description>
+              <span>
                 {{ chartMode === 'compare' ? `与 ${Math.max(0, chartCodes.length - 1)} 个板块对比区间强弱` : '查看板块指数开高低收与量能' }}
                 <template v-if="activeRow?.leader_stock">
                   · 领涨 {{ activeRow.leader_stock }}
                   <strong :class="pctClass(activeRow.leader_pct)">{{ fmtPct(activeRow.leader_pct) }}</strong>
                 </template>
-              </p>
-            </div>
-            <div class="chart-head-actions">
+              </span>
+            </template>
+            <template #controls>
               <div v-if="chartMode === 'compare' && compareMetricKind === 'line'" class="benchmark-control">
-                <span>对比指数</span>
+                <span class="market-analysis-control-label">对比指数</span>
                 <MarketBenchmarkSelect
                   v-model="benchmarkCode"
                   width="120px"
@@ -1206,8 +1199,8 @@ onMounted(async () => {
                 size="small"
                 tone="primary"
               />
-            </div>
-          </header>
+            </template>
+          </MarketAnalysisHeader>
 
           <MarketCompareMetricStrip
             v-if="activeRow"
@@ -1442,15 +1435,6 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
 }
-.panel-head {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--app-space-3);
-  padding: var(--app-space-3) var(--app-space-4);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
 :deep(.el-table__row.sector-row--active > td.el-table__cell) {
   background: color-mix(in srgb, var(--el-color-primary-light-9) 72%, var(--el-bg-color));
 }
@@ -1508,52 +1492,8 @@ onMounted(async () => {
 .chart-panel {
   position: relative;
 }
-.chart-head {
-  min-height: 72px;
-}
-.chart-identity {
-  min-width: 0;
-}
-.chart-title-line {
-  display: flex;
-  align-items: baseline;
-  gap: var(--app-space-2);
-}
-.chart-title {
-  overflow: hidden;
-  margin: 0;
-  color: var(--el-text-color-primary);
-  font-size: var(--app-font-size-title-md);
-  line-height: var(--app-line-height-title-md);
-  font-weight: var(--app-font-weight-strong);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.board-code {
-  color: var(--el-text-color-placeholder);
-  font-family: var(--app-font-family-mono);
-  font-size: var(--app-font-size-micro);
-}
-.detail-link {
-  flex: 0 0 auto;
-  height: auto;
-  padding: 0;
-  font-size: var(--app-font-size-caption);
-}
-.chart-identity p {
-  margin: 0;
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-caption);
-  line-height: var(--app-line-height-caption);
-}
-.chart-identity p strong {
+.chart-panel :deep(.market-analysis-header__description strong) {
   font-variant-numeric: tabular-nums;
-}
-.chart-head-actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: var(--app-space-2);
 }
 .benchmark-control {
   display: flex;
@@ -1566,10 +1506,10 @@ onMounted(async () => {
 .benchmark-control :deep(.app-filter-select) {
   width: 124px;
 }
-.chart-head-actions :deep(.page-segmented) {
+.chart-panel :deep(.market-analysis-header__controls .page-segmented) {
   white-space: nowrap;
 }
-.chart-head-actions :deep(.seg-btn) {
+.chart-panel :deep(.market-analysis-header__controls .seg-btn) {
   min-width: 52px;
   font-variant-numeric: tabular-nums;
 }
@@ -1614,14 +1554,8 @@ onMounted(async () => {
   .page-subtitle {
     display: none;
   }
-  .chart-identity p {
-    display: none;
-  }
 }
 @container app-viewport (max-height: 700px) {
-  .chart-head {
-    min-height: 60px;
-  }
   .chart-footer {
     min-height: 36px;
     padding-block: var(--app-space-1);

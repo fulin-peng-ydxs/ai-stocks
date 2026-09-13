@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { ArrowRight } from '@element-plus/icons-vue'
 import type { Bar, IndicatorField, IndicatorRow } from '@/api/stocks'
 import { getBars, getIndicators } from '@/api/stocks'
 import { getStockBenchmarkBars } from '@/api/stocks'
@@ -11,6 +10,7 @@ import MarketBenchmarkSelect from '@/components/MarketBenchmarkSelect.vue'
 import type { MarketMetricStripItem } from '@/components/MarketCompareMetricStrip.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
+import MarketAnalysisHeader from '@/components/MarketAnalysisHeader.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import StockCompareChart from '@/components/StockCompareChart.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
@@ -349,29 +349,20 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="stock-analysis-panel" aria-label="股票走势分析" data-testid="stock-analysis-panel">
-    <header class="stock-analysis-head">
-      <div class="stock-analysis-identity">
-        <div class="stock-analysis-eyebrow">当前观察</div>
-        <div class="stock-analysis-title-line">
-          <h3>{{ active?.name || '等待选择股票' }}</h3>
-          <span v-if="active">{{ active.code }}</span>
-          <el-button
-            v-if="active && canOpenDetail"
-            link
-            type="primary"
-            class="stock-detail-link"
-            data-testid="stock-analysis-open-detail"
-            @click="emit('openDetail')"
-          >
-            查看详情
-            <el-icon class="el-icon--right"><ArrowRight /></el-icon>
-          </el-button>
-        </div>
-        <p>{{ mode === 'compare' ? `与 ${Math.max(0, items.length - 1)} 只股票比较区间走势` : `查看${adjustLabel}K线、量能与技术指标` }}</p>
-      </div>
-      <div class="stock-analysis-controls">
+    <MarketAnalysisHeader
+      :title="active?.name || '等待选择股票'"
+      :code="active?.code"
+      :detail-visible="!!active && canOpenDetail"
+      detail-test-id="stock-analysis-open-detail"
+      data-testid="stock-analysis-header"
+      @open-detail="emit('openDetail')"
+    >
+      <template #description>
+        {{ mode === 'compare' ? `与 ${Math.max(0, items.length - 1)} 只股票比较区间走势` : `查看${adjustLabel}K线、量能与技术指标` }}
+      </template>
+      <template #controls>
         <div v-if="mode === 'compare'" class="stock-benchmark-control">
-          <span>对比指数</span>
+          <span class="market-analysis-control-label">对比指数</span>
           <MarketBenchmarkSelect
             :model-value="benchmarkCode"
             width="160px"
@@ -404,8 +395,8 @@ onBeforeUnmount(() => {
           tone="primary"
           @update:model-value="updateMode"
         />
-      </div>
-    </header>
+      </template>
+    </MarketAnalysisHeader>
 
     <MarketCompareMetricStrip
       v-if="mode === 'compare' && active"
@@ -552,64 +543,6 @@ onBeforeUnmount(() => {
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
 }
-.stock-analysis-head {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--app-space-3);
-  min-height: 72px;
-  padding: var(--app-space-3) var(--app-space-4);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-.stock-analysis-identity {
-  min-width: 0;
-}
-.stock-analysis-eyebrow {
-  color: var(--el-color-primary);
-  font-size: var(--app-font-size-micro);
-  line-height: var(--app-line-height-micro);
-  font-weight: var(--app-font-weight-strong);
-  letter-spacing: 0.14em;
-}
-.stock-analysis-title-line {
-  display: flex;
-  align-items: baseline;
-  gap: var(--app-space-2);
-}
-.stock-analysis-title-line h3 {
-  overflow: hidden;
-  margin: 0;
-  color: var(--el-text-color-primary);
-  font-size: var(--app-font-size-title-md);
-  line-height: var(--app-line-height-title-md);
-  font-weight: var(--app-font-weight-strong);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.stock-analysis-title-line > span {
-  color: var(--el-text-color-placeholder);
-  font-family: var(--app-font-family-mono);
-  font-size: var(--app-font-size-micro);
-}
-.stock-detail-link {
-  flex: 0 0 auto;
-  height: auto;
-  padding: 0;
-  font-size: var(--app-font-size-caption);
-}
-.stock-analysis-identity p {
-  margin: 0;
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-caption);
-  line-height: var(--app-line-height-caption);
-}
-.stock-analysis-controls {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: var(--app-space-2);
-}
 .stock-benchmark-control {
   display: flex;
   align-items: center;
@@ -643,40 +576,7 @@ onBeforeUnmount(() => {
 .stock-analysis-footer > span {
   flex: 1 1 auto;
 }
-@container app-viewport (max-width: 1180px) {
-  .stock-analysis-head {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .stock-analysis-controls {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-  .stock-analysis-identity p {
-    display: none;
-  }
-  .stock-benchmark-control > span {
-    display: none;
-  }
-}
-@container (max-width: 700px) {
-  .stock-analysis-head {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .stock-analysis-controls {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-  .stock-analysis-identity p,
-  .stock-benchmark-control > span {
-    display: none;
-  }
-}
 @container app-viewport (max-height: 700px) {
-  .stock-analysis-head {
-    min-height: 60px;
-  }
   .stock-analysis-footer {
     min-height: 36px;
     padding-block: var(--app-space-1);

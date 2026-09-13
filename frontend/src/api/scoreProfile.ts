@@ -111,6 +111,7 @@ export interface ScoreRunRow {
   total_score: number
   grade: string
   sub_scores: Record<string, number>
+  groups?: { id: string; name: string; color: string; is_default: boolean }[]
   related_boards?: StockRelatedBoards | null
 }
 

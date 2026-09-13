@@ -82,6 +82,10 @@ const backtestDefaults = {
   // 对比指数（净值图虚线基准）：业务选项层持久化，与板块行情 SectorsView 同款设置；默认中证 500（与板块行情默认一致）。
   benchmarkCode: '000905.SH',
 }
+const BACKTEST_KIND_OPTIONS = [
+  { label: '策略回测', value: 'strategy' },
+  { label: '评分验证', value: 'score_check' },
+]
 const { settings, isDirty, reset } = usePageSettings('backtest', backtestDefaults)
 
 function resetBacktestSettings(): void {
@@ -1822,15 +1826,21 @@ async function openTradeChart(row: TradeRow) {
 
     <template #main>
     <div class="backtest-body">
+    <div class="backtest-mode-rail">
+      <PageSegmented
+        v-model="kind"
+        :options="BACKTEST_KIND_OPTIONS"
+        tone="primary"
+        size="small"
+        test-id="backtest-kind-tabs"
+        aria-label="回测验证模式"
+      />
+    </div>
     <el-card
       shadow="never"
       class="form-card"
     >
       <AppControlRow class="form-row" dense>
-        <el-radio-group v-model="kind">
-          <el-radio-button value="strategy">策略回测</el-radio-button>
-          <el-radio-button value="score_check">评分验证</el-radio-button>
-        </el-radio-group>
         <AppControlItem label="区间">
           <TradeDatePicker v-model="dateStart" placeholder="开始" style="width: 160px" />
         </AppControlItem>
@@ -2459,10 +2469,11 @@ async function openTradeChart(row: TradeRow) {
         <PageSettingSection title="默认参数">
           <div class="setting-item">
             <div class="setting-label">默认模式</div>
-            <PageSegmented v-model="settings.kind" aria-label="默认模式" :options="[
-              { label: '策略回测', value: 'strategy' },
-              { label: '评分验证', value: 'score_check' },
-            ]" />
+            <PageSegmented
+              v-model="settings.kind"
+              aria-label="默认模式"
+              :options="BACKTEST_KIND_OPTIONS"
+            />
           </div>
           <div class="setting-item">
             <div class="setting-label">Top N</div>
@@ -2555,6 +2566,15 @@ async function openTradeChart(row: TradeRow) {
   overflow: hidden;        /* 自身不滚：固定表单卡 + 内部 .results 区滚动 */
   display: flex;
   flex-direction: column;
+}
+.backtest-mode-rail {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-bottom: var(--app-space-3);
+}
+.backtest-mode-rail :deep(.page-segmented) {
+  min-width: 240px;
 }
 .sell-tag { margin: 1px 2px 1px 0; }
 .dlg-tbl-title { margin: 14px 0 6px; font-weight: var(--app-font-weight-section); font-size: var(--app-font-size-table); }
@@ -2653,6 +2673,10 @@ async function openTradeChart(row: TradeRow) {
 }
 
 @container app-viewport (max-width: 480px) {
+  .backtest-mode-rail :deep(.page-segmented) {
+    width: 100%;
+    min-width: 0;
+  }
   .form-card :deep(.el-card__body) {
     padding: 12px;
   }

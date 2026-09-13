@@ -22,6 +22,7 @@ import RelatedBoardCell from '@/components/RelatedBoardCell.vue'
 import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
 import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.vue'
 import StockGroupBatchActions from '@/components/StockGroupBatchActions.vue'
+import StockGroupFavoriteButton from '@/components/StockGroupFavoriteButton.vue'
 import {
   getStockMembershipOptions,
   listStocks,
@@ -78,6 +79,7 @@ import {
 import {
   DEFAULT_STOCK_GROUP_COLOR,
   STOCK_GROUP_COLOR_PRESETS,
+  isDefaultStockGroupMember,
   stockGroupTagStyle,
 } from '@/utils/stockGroupPresentation'
 
@@ -365,6 +367,11 @@ let restoringListState = true
 
 const auth = useAuthStore()
 const canViewGroups = computed(() => hasPermission(auth.role, auth.permissions, 'stock-group:view'))
+const canUpdateGroups = computed(() => hasPermission(
+  auth.role,
+  auth.permissions,
+  'stock-group:member-update',
+))
 const settingsComponentSlotIds = computed(() => (
   canViewGroups.value ? undefined : ['table', 'chart']
 ))
@@ -413,6 +420,18 @@ async function reloadGroups() {
   }
 }
 const defaultGroup = computed(() => groups.value.find((g) => g.is_default))
+function isDefaultFavorite(row: StockBasic): boolean {
+  return isDefaultStockGroupMember(row.groups)
+}
+function updateDefaultFavorite(row: StockBasic, active: boolean): void {
+  const group = defaultGroup.value
+  if (!group) return
+  const otherGroups = (row.groups ?? []).filter((item) => item.id !== group.id)
+  row.groups = active
+    ? [{ id: group.id, name: group.name, color: group.color, is_default: true }, ...otherGroups]
+    : otherGroups
+  group.member_count = Math.max(0, group.member_count + (active ? 1 : -1))
+}
 watch(activeGid, async (gid) => {
   cart.value = []   // 切换上下文清空选择
   if (!restoringListState) groupPage.value = 1
@@ -1056,7 +1075,14 @@ onMounted(async () => {
             </template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" sortable="custom" />
-          <AppTableColumn v-if="colVisible('name')" label="名称" prop="name" role="entity" :leading-controls="1" sortable="custom">
+          <AppTableColumn
+            v-if="colVisible('name')"
+            label="名称"
+            prop="name"
+            role="entity"
+            :leading-controls="canUpdateGroups && defaultGroup ? 2 : 1"
+            sortable="custom"
+          >
             <template #default="{ row }">
               <StockAnalysisNameCell
                 :code="row.code"
@@ -1064,6 +1090,18 @@ onMounted(async () => {
                 :pinned="isAnalysisPinned(row.code)"
                 @toggle="toggleAnalysisPinned(row)"
               >
+                <template #leading>
+                  <StockGroupFavoriteButton
+                    v-if="canUpdateGroups && defaultGroup && row?.code"
+                    :group-id="defaultGroup.id"
+                    :code="row.code"
+                    :name="row.name"
+                    :active="isDefaultFavorite(row)"
+                    :default-date="tradeDate || dataMax || ''"
+                    :data-testid="`stocks-favorite-${row.code}`"
+                    @changed="updateDefaultFavorite(row, $event)"
+                  />
+                </template>
                 <el-tag v-if="row.is_st" type="danger" size="small" effect="plain">ST</el-tag>
               </StockAnalysisNameCell>
             </template>

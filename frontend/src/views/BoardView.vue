@@ -29,6 +29,7 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.vue'
 import StockGroupBatchActions from '@/components/StockGroupBatchActions.vue'
+import StockGroupFavoriteButton from '@/components/StockGroupFavoriteButton.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
@@ -55,6 +56,7 @@ import {
   useRelatedBoardFirstLoad,
 } from '@/composables/useRelatedBoardFirstLoad'
 import { useStockSet } from '@/stores/stockSet'
+import { isDefaultStockGroupMember } from '@/utils/stockGroupPresentation'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
@@ -379,6 +381,11 @@ const displayRows = computed(() => {
 })
 const selectedStocks = ref<StockBatchItem[]>([])
 const groups = ref<GroupSummary[]>([])
+const defaultGroup = computed(() => groups.value.find((group) => group.is_default))
+const canUpdateDefaultGroup = computed(() => Boolean(
+  defaultGroup.value
+  && hasPermission(auth.role, auth.permissions, 'stock-group:member-update'),
+))
 const {
   isSelected: isBatchSelected,
   toggle: toggleBatchSelected,
@@ -397,6 +404,18 @@ async function loadGroups(): Promise<void> {
   } catch {
     groups.value = []
   }
+}
+function isDefaultFavorite(row: ScoreRunRow): boolean {
+  return isDefaultStockGroupMember(row.groups)
+}
+function updateDefaultFavorite(row: ScoreRunRow, active: boolean): void {
+  const group = defaultGroup.value
+  if (!group) return
+  const otherGroups = (row.groups ?? []).filter((item) => item.id !== group.id)
+  row.groups = active
+    ? [{ id: group.id, name: group.name, color: group.color, is_default: true }, ...otherGroups]
+    : otherGroups
+  group.member_count = Math.max(0, group.member_count + (active ? 1 : -1))
 }
 const analysisSourceItems = computed(() => displayRows.value)
 const analysisRefreshRevision = ref(0)
@@ -761,14 +780,33 @@ onMounted(async () => {
           <template #default="{ row }">{{ row.rank }}</template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" sortable />
-        <AppTableColumn v-if="colVisible('name')" label="名称" prop="name" role="entity" :leading-controls="1">
+        <AppTableColumn
+          v-if="colVisible('name')"
+          label="名称"
+          prop="name"
+          role="entity"
+          :leading-controls="canUpdateDefaultGroup ? 2 : 1"
+        >
           <template #default="{ row }">
             <StockAnalysisNameCell
               :code="row.code"
               :name="row.name"
               :pinned="isAnalysisPinned(row.code)"
               @toggle="toggleAnalysisPinned(row)"
-            />
+            >
+              <template #leading>
+                <StockGroupFavoriteButton
+                  v-if="canUpdateDefaultGroup && defaultGroup && row?.code"
+                  :group-id="defaultGroup.id"
+                  :code="row.code"
+                  :name="row.name"
+                  :active="isDefaultFavorite(row)"
+                  :default-date="runDate || dataMax || ''"
+                  :data-testid="`board-favorite-${row.code}`"
+                  @changed="updateDefaultFavorite(row, $event)"
+                />
+              </template>
+            </StockAnalysisNameCell>
           </template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('board')" label="板块" prop="board" />

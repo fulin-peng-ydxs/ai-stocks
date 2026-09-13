@@ -201,9 +201,21 @@ def test_board_run_reads_fresh_public_snapshot_only(
     """/board/run 对 fresh 快照直接读取，并按榜单日期批量附加冠军摘要。"""
     preset_id, _priv_id = public_preset
     ptid, pown = PUBLIC_BOARD_OWNER
-    uid, tid, rid = _mk_user(pg, codes=["board:view"])
+    uid, tid, rid = _mk_user(pg, codes=["board:view", "stock-group:view"])
     c = market
     monkeypatch.setattr("backend.api.board.get_client", lambda: c)
+    monkeypatch.setattr(
+        "backend.api.board._current_user_stock_groups",
+        lambda _c, _pg, codes: {
+            code: ([{
+                "id": "test-default-group",
+                "name": "自选",
+                "color": "#f56c6c",
+                "is_default": True,
+            }] if code == "600099.SH" else [])
+            for code in codes
+        },
+    )
     try:
         from backend.indicators.compute import build_params, param_hash
         ph = param_hash(build_params())
@@ -254,6 +266,7 @@ def test_board_run_reads_fresh_public_snapshot_only(
         assert data["list"][0]["code"] == "600099.SH"
         assert data["list"][0]["name"] == "测试榜一股"
         assert data["list"][0]["board"] == "主板"
+        assert data["list"][0]["groups"][0]["is_default"] is True
         assert data["list"][0]["related_boards"]["industry"]["name"] == "测试行业"
 
         c.execute(
