@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppTableColumn from '@/components/AppTableColumn.vue'
+import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -328,6 +329,10 @@ const allCategories = computed(() => {
   registry.value.forEach((d) => (d.categories ?? []).forEach((c) => s.add(c)))
   return sortCats([...s])
 })
+const categoryOptions = computed(() => allCategories.value.map((category) => ({
+  value: category,
+  label: category,
+})))
 const techRows = computed(() => {
   const q = techSearch.value.trim().toLowerCase()
   const rows = registry.value.map((d) => {
@@ -358,6 +363,9 @@ const techRows = computed(() => {
 async function onCategoriesChange(key: string, cats: string[]) {
   await setIndicatorCategories(key, cats)
   await reloadRegistry()
+}
+function onCategorySelectChange(key: string, value: string[] | string) {
+  return onCategoriesChange(key, Array.isArray(value) ? value : [value].filter(Boolean))
 }
 
 // 技术指标管理：启停 / 删除 / 新建自定义
@@ -1603,15 +1611,17 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           </AppTableColumn>
           <AppTableColumn prop="catOrder" label="分类" sortable="custom">
             <template #default="{ row }">
-              <el-select
+              <AppFilterSelect
                 :model-value="row.categories"
-                multiple filterable allow-create default-first-option
-                collapse-tags collapse-tags-tooltip :max-collapse-tags="3"
-                size="small" placeholder="加分类" style="width: 264px"
-                @change="(v: string[]) => onCategoriesChange(row.key, v)"
-              >
-                <el-option v-for="cat in allCategories" :key="cat" :label="cat" :value="cat" />
-              </el-select>
+                :options="categoryOptions"
+                :clearable="false"
+                allow-create
+                default-first-option
+                size="small"
+                placeholder="加分类"
+                aria-label="维护指标分类"
+                @change="(value) => onCategorySelectChange(row.key, value)"
+              />
             </template>
           </AppTableColumn>
           <AppTableColumn prop="typeLabel" label="类型" sortable="custom" />
@@ -1685,13 +1695,14 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               />
             </el-form-item>
             <el-form-item label="分类">
-              <el-select
+              <AppFilterSelect
                 v-model="defForm.categories"
-                multiple filterable allow-create default-first-option
-                placeholder="选择或输入新分类（可多个）" style="width: 100%"
-              >
-                <el-option v-for="cat in allCategories" :key="cat" :label="cat" :value="cat" />
-              </el-select>
+                :options="categoryOptions"
+                :clearable="false"
+                allow-create
+                default-first-option
+                placeholder="选择或输入分类"
+              />
             </el-form-item>
             <el-form-item label="参数">
               <div class="def-params">

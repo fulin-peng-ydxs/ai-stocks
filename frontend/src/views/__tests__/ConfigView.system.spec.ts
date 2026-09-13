@@ -7,6 +7,7 @@ import { ref, h, defineComponent, type Component } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import ConfigView from '@/views/ConfigView.vue'
 import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
+import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import HelpHint from '@/components/HelpHint.vue'
 import type { MailStatus, SettingGroup } from '@/api/data'
 
@@ -267,6 +268,34 @@ beforeEach(() => {
         params: [],
       },
     ],
+  })
+})
+
+describe('ConfigView tech tab', () => {
+  it('分类维护复用可创建的响应式选择器', async () => {
+    routeState.meta.configTab = 'tech'
+    ;(scoreApi.getIndicatorRegistry as ReturnType<typeof vi.fn>).mockResolvedValue({
+      items: [{
+        key: 'above_ma',
+        name_cn: '站上均线',
+        dtype: 'bool',
+        enabled: true,
+        params: [],
+        categories: ['趋势', '均线', '位置', '强度'],
+        desc: '测试指标',
+        is_builtin: true,
+      }],
+    })
+    const wrapper = await mountView('normal', ['indicator:registry'])
+
+    const select = wrapper.findAllComponents(AppFilterSelect)
+      .find((node) => node.props('ariaLabel') === '维护指标分类')
+    expect(select).toBeTruthy()
+    if (!select) throw new Error('未渲染指标分类选择器')
+    expect(select.props('allowCreate')).toBe(true)
+    expect(select.props('defaultFirstOption')).toBe(true)
+    expect(select.props('size')).toBe('small')
+    wrapper.unmount()
   })
 })
 

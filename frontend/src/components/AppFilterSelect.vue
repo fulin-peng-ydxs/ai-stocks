@@ -20,6 +20,9 @@ const props = withDefaults(defineProps<{
   collapseTags?: boolean
   collapseOnOverflow?: boolean
   maxCollapseTags?: number
+  allowCreate?: boolean
+  defaultFirstOption?: boolean
+  size?: 'large' | 'default' | 'small'
   disabled?: boolean
   ariaLabel?: string
 }>(), {
@@ -30,6 +33,9 @@ const props = withDefaults(defineProps<{
   collapseTags: true,
   collapseOnOverflow: true,
   maxCollapseTags: 3,
+  allowCreate: false,
+  defaultFirstOption: false,
+  size: 'default',
   disabled: false,
   ariaLabel: undefined,
 })
@@ -51,6 +57,7 @@ const normalizedMaxCollapseTags = computed(() => {
   return Number.isFinite(value) && value > 0 ? value : 1
 })
 const effectiveMaxCollapseTags = ref(normalizedMaxCollapseTags.value)
+const compactSummary = ref(false)
 let resizeObserver: ResizeObserver | null = null
 let recomputing = false
 let recomputeAgain = false
@@ -101,6 +108,7 @@ async function recomputeCollapseTags() {
       recomputeAgain = false
       const version = ++recomputeVersion
       let limit = normalizedMaxCollapseTags.value
+      compactSummary.value = false
       effectiveMaxCollapseTags.value = limit
       if (!props.multiple || !props.collapseTags || !props.collapseOnOverflow || toMulti(props.modelValue).length <= 1) {
         continue
@@ -109,6 +117,10 @@ async function recomputeCollapseTags() {
       while (version === recomputeVersion && limit > 1 && hasSelectionOverflow()) {
         limit -= 1
         effectiveMaxCollapseTags.value = limit
+        await nextTick()
+      }
+      if (version === recomputeVersion && limit === 1 && hasSelectionOverflow()) {
+        compactSummary.value = true
         await nextTick()
       }
     } while (recomputeAgain)
@@ -142,6 +154,9 @@ watch(
     props.collapseTags,
     props.collapseOnOverflow,
     props.maxCollapseTags,
+    props.allowCreate,
+    props.defaultFirstOption,
+    props.size,
   ],
   scheduleCollapseRecompute,
 )
@@ -154,6 +169,8 @@ watch(
     :class="{
       'app-filter-select--multiple': multiple,
       'app-filter-select--has-selection': multiple && hasSelection,
+      'app-filter-select--compact-summary': compactSummary,
+      [`app-filter-select--${size}`]: true,
     }"
   >
     <el-select
@@ -162,17 +179,24 @@ watch(
       :multiple="multiple"
       :clearable="clearable"
       :filterable="filterable"
+      :allow-create="allowCreate"
+      :default-first-option="defaultFirstOption"
       :collapse-tags="multiple && collapseTags"
       :collapse-tags-tooltip="multiple && collapseTags"
       :max-collapse-tags="effectiveMaxCollapseTags"
       :fit-input-width="true"
+      popper-class="app-filter-select-popper"
       :placement="APP_BOTTOM_FLOATING_PLACEMENT"
       :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+      :size="size"
       :disabled="disabled"
       :placeholder="placeholder"
       :aria-label="ariaLabel || placeholder"
       @change="onChange"
     >
+      <template v-if="compactSummary" #tag>
+        <span class="app-filter-select__summary">已选 {{ toMulti(modelValue).length }}</span>
+      </template>
       <el-option
         v-for="item in options"
         :key="item.value"
@@ -198,6 +222,12 @@ watch(
 .app-filter-select__control :deep(.el-select__wrapper) {
   height: var(--app-control-height-md);
 }
+.app-filter-select--small .app-filter-select__control :deep(.el-select__wrapper) {
+  height: var(--app-control-height-sm);
+}
+.app-filter-select--large .app-filter-select__control :deep(.el-select__wrapper) {
+  height: var(--app-control-height-lg);
+}
 .app-filter-select--multiple.app-filter-select--has-selection .app-filter-select__control :deep(.el-select__wrapper) {
   overflow: hidden;
 }
@@ -207,5 +237,15 @@ watch(
 /* Element Plus 的空值可搜索多选会让 selection 高度归零；此时裁剪会隐藏负层级占位文案。 */
 .app-filter-select--multiple.app-filter-select--has-selection .app-filter-select__control :deep(.el-select__selection) {
   overflow: hidden;
+}
+.app-filter-select__summary {
+  overflow: hidden;
+  min-width: 0;
+  padding: 0 var(--app-space-1);
+  color: var(--el-text-color-regular);
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

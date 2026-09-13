@@ -15,6 +15,7 @@ import {
   type CheckupStatus,
 } from '@/api/data'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppDatePicker from '@/components/AppDatePicker.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -39,6 +40,12 @@ import type { AppRowAction } from '@/components/rowActions'
 const route = useRoute()
 const router = useRouter()
 const settingsOpen = ref(false)
+const statusFilterOptions = Object.entries(ISSUE_STATUS_LABEL)
+  .map(([value, label]) => ({ value, label }))
+const severityFilterOptions = Object.entries(SEVERITY_LABEL)
+  .map(([value, label]) => ({ value, label }))
+const issueTypeFilterOptions = Object.entries(ISSUE_TYPE_LABEL)
+  .map(([value, label]) => ({ value, label }))
 // 默认筛选/隐藏已办属业务态偏好，保留 usePageSettings；默认排序与列显隐迁入组件配置层（plan.md §13.3）。
 const qualityDefaults = {
   defaultStatus: 'todo' as 'todo' | 'all' | 'open',
@@ -566,18 +573,12 @@ onMounted(() => {
 
     <el-card shadow="never" class="filter-card">
     <AppControlRow class="filter-row">
-      <el-select v-model="filters.status" placeholder="状态" multiple clearable collapse-tags
-                 collapse-tags-tooltip :max-collapse-tags="3" style="width: 240px" @change="applyFilter">
-        <el-option v-for="(l, k) in ISSUE_STATUS_LABEL" :key="k" :label="l" :value="k" />
-      </el-select>
-      <el-select v-model="filters.severity" placeholder="严重度" multiple clearable collapse-tags
-                 collapse-tags-tooltip :max-collapse-tags="3" style="width: 200px" @change="applyFilter">
-        <el-option v-for="(l, k) in SEVERITY_LABEL" :key="k" :label="l" :value="k" />
-      </el-select>
-      <el-select v-model="filters.issue_type" placeholder="问题类型" multiple clearable collapse-tags
-                 collapse-tags-tooltip :max-collapse-tags="3" style="width: 280px" @change="applyFilter">
-        <el-option v-for="(l, k) in ISSUE_TYPE_LABEL" :key="k" :label="l" :value="k" />
-      </el-select>
+      <AppFilterSelect v-model="filters.status" :options="statusFilterOptions"
+                       placeholder="状态" style="width: 240px" @change="applyFilter" />
+      <AppFilterSelect v-model="filters.severity" :options="severityFilterOptions"
+                       placeholder="严重度" style="width: 200px" @change="applyFilter" />
+      <AppFilterSelect v-model="filters.issue_type" :options="issueTypeFilterOptions"
+                       placeholder="问题类型" style="width: 280px" @change="applyFilter" />
       <AppSearchInput v-model="filters.code" placeholder="股票/板块代码或名称" style="width: 210px" @search="applyFilter" />
       <el-button data-testid="quality-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
       <div class="summary app-inline-info">

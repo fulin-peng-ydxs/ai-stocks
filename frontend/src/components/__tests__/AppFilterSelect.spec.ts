@@ -11,11 +11,16 @@ const ElSelectStub = defineComponent({
     multiple: { type: Boolean, default: false },
     clearable: { type: Boolean, default: false },
     filterable: { type: Boolean, default: false },
+    allowCreate: { type: Boolean, default: false },
+    defaultFirstOption: { type: Boolean, default: false },
     collapseTags: { type: Boolean, default: false },
     collapseTagsTooltip: { type: Boolean, default: false },
     maxCollapseTags: { type: Number, default: 1 },
     placeholder: { type: String, default: '' },
     ariaLabel: { type: String, default: '' },
+    size: { type: String, default: 'default' },
+    fitInputWidth: { type: Boolean, default: false },
+    popperClass: { type: String, default: '' },
   },
   emits: ['update:modelValue', 'change'],
   setup(props, { slots }) {
@@ -24,14 +29,19 @@ const ElSelectStub = defineComponent({
       'data-multiple': String(props.multiple),
       'data-clearable': String(props.clearable),
       'data-filterable': String(props.filterable),
+      'data-allow-create': String(props.allowCreate),
+      'data-default-first-option': String(props.defaultFirstOption),
       'data-collapse-tags': String(props.collapseTags),
       'data-collapse-tags-tooltip': String(props.collapseTagsTooltip),
       'data-max-collapse-tags': String(props.maxCollapseTags),
       'data-placeholder': props.placeholder,
       'data-aria-label': props.ariaLabel,
+      'data-size': props.size,
+      'data-fit-input-width': String(props.fitInputWidth),
+      'data-popper-class': props.popperClass,
     }, [
       h('div', { class: 'el-select__wrapper' }, [
-        h('div', { class: 'el-select__selection' }, slots.default?.()),
+        h('div', { class: 'el-select__selection' }, slots.tag?.({}) ?? slots.default?.()),
       ]),
     ])
   },
@@ -109,7 +119,9 @@ describe('AppFilterSelect', () => {
     Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
       configurable: true,
       get() {
-        return this.classList.contains('el-select__selection') ? 160 : 100
+        if (!this.classList.contains('el-select__selection')) return 100
+        const select = this.closest('.el-select')
+        return select?.getAttribute('data-max-collapse-tags') === '1' ? 90 : 160
       },
     })
     Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
@@ -131,6 +143,80 @@ describe('AppFilterSelect', () => {
     await nextTick()
 
     expect(wrapper.find('.el-select').attributes('data-max-collapse-tags')).toBe('1')
+  })
+
+  it('三个标签放不下但两个可用时停在两个标签', async () => {
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get() { return 100 },
+    })
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get() {
+        if (!this.classList.contains('el-select__selection')) return 100
+        const select = this.closest('.el-select')
+        return select?.getAttribute('data-max-collapse-tags') === '3' ? 160 : 90
+      },
+    })
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+      configurable: true,
+      get() { return 32 },
+    })
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get() { return 32 },
+    })
+
+    const wrapper = mountSelect(['a', 'b', 'c'])
+    await flushPromises()
+    await nextTick()
+    await nextTick()
+
+    expect(wrapper.get('.el-select').attributes('data-max-collapse-tags')).toBe('2')
+    expect(wrapper.get('.app-filter-select').classes()).not.toContain('app-filter-select--compact-summary')
+  })
+
+  it('单个标签和折叠计数仍溢出时降级为已选数量摘要', async () => {
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get() { return 80 },
+    })
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get() { return this.classList.contains('el-select__selection') ? 160 : 80 },
+    })
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+      configurable: true,
+      get() { return 32 },
+    })
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get() { return 32 },
+    })
+
+    const wrapper = mountSelect(['a', 'b', 'c'])
+    await flushPromises()
+    await nextTick()
+    await nextTick()
+
+    expect(wrapper.get('.app-filter-select').classes()).toContain('app-filter-select--compact-summary')
+    expect(wrapper.get('.app-filter-select__summary').text()).toBe('已选 3')
+  })
+
+  it('可创建模式、尺寸和弹层宽度策略统一传给底层选择器', async () => {
+    const wrapper = mountSelect([], {
+      allowCreate: true,
+      defaultFirstOption: true,
+      size: 'small',
+    })
+    await flushPromises()
+
+    const select = wrapper.get('.el-select')
+    expect(select.attributes('data-allow-create')).toBe('true')
+    expect(select.attributes('data-default-first-option')).toBe('true')
+    expect(select.attributes('data-size')).toBe('small')
+    expect(select.attributes('data-fit-input-width')).toBe('true')
+    expect(select.attributes('data-popper-class')).toBe('app-filter-select-popper')
   })
 
   it('业务单选场景可关闭多选和标签折叠', async () => {

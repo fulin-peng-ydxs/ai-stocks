@@ -18,6 +18,7 @@ import StockChartRegion from '@/components/stock-chart/StockChartRegion.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import { useStatusColorPalette } from '@/components/chartTheme'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
@@ -50,6 +51,12 @@ import type { Bar, IndicatorRow } from '@/api/stocks'
 import { getErrorMessage } from '@/utils/error'
 import { formatMoney, formatMoneyInput, parseMoneyInput } from '@/utils/money'
 import type { AppRowAction } from '@/components/rowActions'
+
+const boardOptions = [
+  { label: '主板', value: '主板' },
+  { label: '创业板', value: '创业板' },
+  { label: '科创板', value: '科创板' },
+]
 
 // ── 页面阶段：config(未开局) / running(训练中) / result(结算回看) ──
 const view = ref<(RunningView & Partial<DetailView>) | null>(null)
@@ -502,12 +509,9 @@ onBeforeUnmount(detachKeyboard)
             </div>
             <div class="cfg-item">
               <label>板块</label>
-              <el-select v-model="sessionConfig.boards" placeholder="不限（全部板块）" multiple clearable
-                         collapse-tags collapse-tags-tooltip :max-collapse-tags="2" style="width:220px">
-                <el-option label="主板" value="主板" />
-                <el-option label="创业板" value="创业板" />
-                <el-option label="科创板" value="科创板" />
-              </el-select>
+              <AppFilterSelect v-model="sessionConfig.boards" :options="boardOptions"
+                               :filterable="false" :max-collapse-tags="2"
+                               placeholder="不限（全部板块）" style="width:220px" />
             </div>
           </div>
           <div class="cfg-actions">
@@ -916,12 +920,9 @@ onBeforeUnmount(detachKeyboard)
         </div>
         <div class="setting-item">
           <div class="setting-label">板块</div>
-          <el-select v-model="cfg.boards" placeholder="不限（全部板块）" multiple clearable
-                     collapse-tags collapse-tags-tooltip :max-collapse-tags="2" style="width:220px">
-            <el-option label="主板" value="主板" />
-            <el-option label="创业板" value="创业板" />
-            <el-option label="科创板" value="科创板" />
-          </el-select>
+          <AppFilterSelect v-model="cfg.boards" :options="boardOptions"
+                           :filterable="false" :max-collapse-tags="2"
+                           placeholder="不限（全部板块）" style="width:220px" />
         </div>
         <div v-if="cfg.mode === 'multi'" class="setting-item">
           <div class="setting-label">回合数（只）</div>
