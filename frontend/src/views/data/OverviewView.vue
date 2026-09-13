@@ -1236,6 +1236,7 @@ onMounted(load)
   flex-wrap: wrap;
   gap: var(--app-space-2);
   margin-top: var(--app-space-3);
+  margin-bottom: var(--app-space-3);
 }
 .asset-count-button { margin-left: auto; }
 .asset-count-error { color: var(--el-color-danger); font-size: var(--app-font-size-caption); }
