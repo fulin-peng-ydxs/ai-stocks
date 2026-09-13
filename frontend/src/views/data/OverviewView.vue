@@ -235,6 +235,10 @@ function formatRowCount(row: CatalogTable): string {
   return row.row_count_mode === 'estimated' ? `约 ${value}` : value
 }
 
+function formatMeasuredAt(value: string): string {
+  return value.replace('T', ' ').slice(0, 19)
+}
+
 function formatBytes(value: number | null): string {
   if (value == null) return '—'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -789,12 +793,17 @@ onMounted(load)
                           data-testid="overview-asset-exact-count"
                           @click="loadExactCount(row)"
                         >精确统计行数</el-button>
-                        <span v-if="row.row_count_mode === 'exact' && row.measured_at" class="hint">
-                          统计于 {{ row.measured_at.slice(0, 19) }}
-                        </span>
-                        <span v-if="exactErrors[row.key]" class="asset-count-error" role="alert">
-                          {{ exactErrors[row.key] }}；已保留估算值
-                        </span>
+                        <div
+                          v-if="(row.row_count_mode === 'exact' && row.measured_at) || exactErrors[row.key]"
+                          class="asset-count-status"
+                        >
+                          <span v-if="row.row_count_mode === 'exact' && row.measured_at" class="hint">
+                            统计于 {{ formatMeasuredAt(row.measured_at) }}
+                          </span>
+                          <span v-if="exactErrors[row.key]" class="asset-count-error" role="alert">
+                            {{ exactErrors[row.key] }}；已保留估算值
+                          </span>
+                        </div>
                       </div>
                       <AppDataTable v-if="row.fields?.length" :data="row.fields" size="small" class="fld-tbl" embedded>
                         <AppTableColumn label="字段" prop="name" />
@@ -1236,6 +1245,16 @@ onMounted(load)
   gap: var(--app-space-2);
   margin-top: var(--app-space-3);
   margin-bottom: var(--app-space-3);
+}
+.asset-count-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--app-space-2);
+  min-width: 0;
+  margin-left: auto;
+  text-align: right;
 }
 .asset-count-error { color: var(--el-color-danger); font-size: var(--app-font-size-caption); }
 .asset-fact-source {
