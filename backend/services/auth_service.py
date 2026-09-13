@@ -18,6 +18,7 @@ import uuid
 from backend.auth import perm_resolver
 from backend.auth import session_store as ss
 from backend.auth.constants import STAGED_FRONTEND_MENU_CODES
+from backend.auth.identity import normalize_account, normalize_email
 from backend.auth.jwt_tokens import (
     TOKEN_ACCESS,
     TOKEN_REFRESH,
@@ -26,12 +27,13 @@ from backend.auth.jwt_tokens import (
     issue_refresh,
 )
 from backend.auth.security import check_strength, hash_password, verify_password
-from backend.common.exceptions import AuthError, RateLimitError, ValidationError
+from backend.common.exceptions import AuthError, RateLimitError, StorageError, ValidationError
 from backend.common.logging import get_logger
 from backend.common.mailer import MailError, send_email
 from backend.config import get_effective_settings
 from backend.devtools.environment_guard import e2e_login_rate_bypass_enabled
 from backend.services.audit_service import AuditService
+from backend.storage.db_errors import unique_violation_constraint
 from backend.storage.menu_repository import MenuRepository
 from backend.storage.tenant_repository import TenantRepository
 from backend.storage.user_repository import UserRepository
@@ -39,16 +41,9 @@ from backend.storage.user_repository import UserRepository
 log = get_logger("services.auth")
 
 _CAPTCHA_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # 去掉易混 O0I1L
-# 邮箱格式（宽松但可挡明显非法/注入）：本地部分@域名.顶级域，均不含空白/@。
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _PUBLIC_APPEARANCE_TOKEN_RE = re.compile(
     r"^tokens\.(?:light|dark)\.(?:primary|success|warning|danger)$"
 )
-
-
-def _normalize_email(email: str | None) -> str:
-    """规范化邮箱：去首尾空白 + 全小写。统一存储/校验/限流键口径，杜绝大小写或空白绕过。"""
-    return (email or "").strip().lower()
 
 
 class AuthService:
@@ -106,6 +101,7 @@ class AuthService:
     # ── 登录 / 登出 / 刷新 ──
     def login(self, account: str, password: str, *, ip: str = "unknown",
               captcha_id: str | None = None, captcha_code: str | None = None) -> dict:
+        account = normalize_account(account)
         # E2E 套件并发豁免（三重门控：环境白名单 + E2E_WRITE + E2E_LOGIN_BYPASS 环境变量，见 environment_guard）。
         # 全量 Playwright 三视口并行时多 worker 各自密集登录（同源 IP），不豁免会撞单 IP 限流。
         if not e2e_login_rate_bypass_enabled() and not ss.rate_limit_ok(
@@ -282,6 +278,7 @@ class AuthService:
     # ── 注册 ──
     def register(self, account: str, password: str, *, email: str | None = None,
                  email_code: str | None = None, ip: str = "unknown") -> dict:
+        account = normalize_account(account)
         if not ss.rate_limit_ok("register", ip, self.cfg.register_rate_per_hour, 3600):
             self._record_security(
                 event_type="rate_limit",
@@ -298,10 +295,7 @@ class AuthService:
             raise ValidationError("请填写账号")
         check_strength(password, self.cfg.min_password_len)
         # 邮箱规范化+校验：与 send_email_code 同口径，保证验证码键匹配、唯一性判定不被大小写绕过。
-        if email:
-            email = _normalize_email(email)
-            if not _EMAIL_RE.match(email):
-                raise ValidationError("邮箱格式不正确")
+        email = normalize_email(email)
         # 验证码只校验不消费（check）：门槛不通过直接拒；其余校验（账号/邮箱已存在）失败都不烧码，
         # 直到创建成功后才一次性消费——避免「有效验证码被非最终失败原因消耗」的业务断点。
         # 校验放在账号/邮箱存在性判断之前，保持「无有效码不泄露账号/邮箱是否存在」的防枚举口径不变。
@@ -323,7 +317,17 @@ class AuthService:
             raise ValidationError("账号已存在")
         if email and self.repo.get_by_email(email):
             raise ValidationError("邮箱已被注册")
-        user = self.repo.register_tenant_and_admin(account, email, hash_password(password))
+        try:
+            user = self.repo.register_tenant_and_admin(account, email, hash_password(password))
+        except StorageError as exc:
+            constraint = unique_violation_constraint(exc)
+            if constraint in {
+                "sys_user_account_key", "sys_user_pkey", "uq_sys_user_account_normalized"
+            }:
+                raise ValidationError("账号已存在") from exc
+            if constraint in {"idx_sys_user_email", "uq_sys_user_email_normalized"}:
+                raise ValidationError("邮箱已被注册") from exc
+            raise
         # 创建成功后再消费验证码（一次性、按值比较）；消费失败不影响注册（码 10 分钟自然过期）。
         if self.cfg.require_email_code and email and email_code:
             try:
@@ -456,11 +460,9 @@ class AuthService:
                 error_summary="邮箱验证码功能未启用",
             )
             raise ValidationError("邮箱验证码功能未启用")
-        email = _normalize_email(email)
-        if not email:
+        email = normalize_email(email)
+        if email is None:
             raise ValidationError("请填写邮箱")
-        if not _EMAIL_RE.match(email):
-            raise ValidationError("邮箱格式不正确")
         # 双维度限流：单邮箱（防对同一目标轰炸）+ 单 IP（防一个源对海量不同邮箱各发几次）。
         # email+IP 维度被这两者共同覆盖，不再单列（任一超限即拒）。任一 Redis 故障时 fail-open，
         # 但下方 save_email_code 为鉴权关键(@_critical)，Redis 不可用会在发信前 503 兜住。

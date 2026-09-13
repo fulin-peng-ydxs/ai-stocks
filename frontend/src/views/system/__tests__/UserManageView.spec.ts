@@ -101,6 +101,10 @@ const stubs = {
   AppPagination: true,
   ElTable: ElTableStub,
   ElTableColumn: ElTableColumnStub,
+  ElDialog: {
+    props: ['modelValue'],
+    template: '<div v-if="modelValue" class="dialog-stub"><slot/><slot name="footer"/></div>',
+  },
 }
 
 function mockHappyApis() {
@@ -125,8 +129,8 @@ function mockHappyApis() {
     total: 1,
   })
   ;(userApi.listAssignableRoles as ReturnType<typeof vi.fn>).mockResolvedValue([
-    { id: 'system', code: 'system', name: '系统管理员', kind: 'system', is_builtin: true, is_locked: true },
-    { id: 'normal', code: 'normal', name: '普通用户', kind: 'normal', is_builtin: true, is_locked: false },
+    { id: 'system', code: 'system', name: '系统管理员', kind: 'system', is_builtin: true, is_locked: true, tenant_assignable: false },
+    { id: 'normal', code: 'normal', name: '普通用户', kind: 'normal', is_builtin: true, is_locked: false, tenant_assignable: true },
   ])
   ;(tenantApi.listTenants as ReturnType<typeof vi.fn>).mockResolvedValue({
     items: [{ id: 'default', name: '默认租户', status: 'active' }],
@@ -278,5 +282,43 @@ describe('UserManageView 系统管理员保护', () => {
     })
     expect(buttons.map((button) => button.text())).toEqual(['编辑', '重置密码', '解锁', '更多'])
     expect(buttons.slice(0, 3).every((button) => button.attributes('disabled') !== undefined)).toBe(true)
+  })
+
+  it('租户管理员编辑用户时展示并保留平台保留角色', async () => {
+    const member = {
+      id: 'u-member',
+      tenant_id: 'default',
+      account: 'member',
+      email: null,
+      role_code: 'normal',
+      roles: ['normal', 'custom_reviewer'],
+      role_names: { normal: '普通用户', custom_reviewer: '复核员' },
+      status: 'active',
+      perm_ver: 0,
+      last_login_at: null,
+      created_at: null,
+    }
+    ;(userApi.listUsers as ReturnType<typeof vi.fn>).mockResolvedValue({
+      items: [member],
+      total: 1,
+    })
+    ;(userApi.updateUser as ReturnType<typeof vi.fn>).mockResolvedValue({})
+    const wrapper = await mountView('tenant_admin')
+
+    ;(wrapper.vm as unknown as { openEdit: (row: typeof member) => void }).openEdit(member)
+    await wrapper.vm.$nextTick()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('复核员')
+    expect(wrapper.text()).toContain('仅平台管理员可调整，本次保存会保留')
+    const save = wrapper.findAll('.dialog-stub button')
+      .find((button) => button.text() === '保存')!
+    await save.trigger('click')
+    await flushPromises()
+    expect(userApi.updateUser).toHaveBeenCalledWith('u-member', {
+      email: null,
+      roleIds: ['normal'],
+      status: 'active',
+    })
   })
 })

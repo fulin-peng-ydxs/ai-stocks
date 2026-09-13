@@ -1,6 +1,6 @@
 """多租户 RBAC 阶段三 · T6：角色管理 API（R11）。
 
-覆盖 §6.6：require_system 守卫(403) / assignable 分流(system 含 custom、tenant_admin 仅系统预设) /
+覆盖 §6.6：require_system 守卫(403) / assignable 分流(system 含全部、tenant_admin 读平台下放策略) /
 自定义角色 CRUD / 唯一 / 内置保护(不可删) / 超管锁定(不可改/不可授) / 授权保存(全选/清空) /
 system-only 码不可授 / 授权后关联用户 perm_ver 自增(即时失效)。
 
@@ -53,13 +53,15 @@ def env(pg):
         made["user"].append(uid)
         return uid
 
-    def mk_role(*, code=None):
+    def mk_role(*, code=None, tenant_assignable=False, kind="custom"):
         """直接落一个自定义角色（绕过 API，供 assignable/授权用例准备数据）。"""
         rid = "rr_" + uuid.uuid4().hex[:8]
         code = code or ("c_" + uuid.uuid4().hex[:6])
         pg.execute(
-            "INSERT INTO sys_role (id,code,name,kind,is_builtin,is_locked) "
-            "VALUES (%s,%s,%s,'custom',FALSE,FALSE)", [rid, code, code])
+            "INSERT INTO sys_role "
+            "(id,code,name,kind,is_builtin,is_locked,tenant_assignable) "
+            "VALUES (%s,%s,%s,%s,FALSE,FALSE,%s)",
+            [rid, code, code, kind, tenant_assignable])
         made["role"].append(rid)
         return rid
 
@@ -125,48 +127,95 @@ def test_assignable_system_includes_custom_and_system(client, env):
     assert ROLE_SYSTEM in {x["code"] for x in data}
 
 
-def test_assignable_tenant_admin_preset_only(client, env):
+def test_assignable_tenant_admin_uses_platform_policy(client, env):
     tid = env.mk_tenant()
     ta = env.mk_user(tid, ROLE_TENANT_ADMIN)
-    custom = env.mk_role()
+    hidden = env.mk_role()
+    delegated = env.mk_role(tenant_assignable=True)
+    system_kind = env.mk_role(tenant_assignable=True, kind="system")
     r = client.get("/api/roles/assignable", headers=_tok(ta, tid))
     assert r.status_code == 200
     data = r.json()["data"]
     ids = {x["id"] for x in data}
     kinds = {x["kind"] for x in data}
-    assert custom not in ids                               # 不含任何 custom
+    assert hidden not in ids                               # 未下放的 custom 不可分配
+    assert delegated in ids                                # 显式下放的 custom 可分配
+    assert system_kind not in ids                          # kind=system 即使误写 true 仍不下放
     assert ROLE_SYSTEM not in {x["code"] for x in data}    # 不含 system
-    assert kinds <= {"tenant_admin", "normal"}             # 仅租户级系统预设
+    assert "custom" in kinds
 
 
 # ── CRUD ──
 
 def test_create_update_delete_custom_role(client, env):
-    r = client.post("/api/roles", json={"name": "Custom Analyst", "description": "d"},
+    r = client.post("/api/roles", json={
+        "name": "Custom Analyst",
+        "description": "d",
+        "tenantAssignable": True,
+    },
                     headers=env.sys_headers())
     assert r.status_code == 200 and r.json()["code"] == 0
     rid = r.json()["data"]["id"]
     assert rid == "role_custom_analyst"
     assert r.json()["data"]["code"] == rid
+    assert r.json()["data"]["tenant_assignable"] is True
     # 编辑
-    r2 = client.put(f"/api/roles/{rid}", json={"name": "自定义B", "description": "d2"},
+    r2 = client.put(f"/api/roles/{rid}", json={
+        "name": "自定义B",
+        "description": "d2",
+        "tenantAssignable": False,
+    },
                     headers=env.sys_headers())
     assert r2.json()["data"]["name"] == "自定义B"
+    assert r2.json()["data"]["tenant_assignable"] is False
     # 删除
     r3 = client.delete(f"/api/roles/{rid}", headers=env.sys_headers())
     assert r3.status_code == 200 and r3.json()["code"] == 0
     assert env.pg.query_df("SELECT 1 FROM sys_role WHERE id=%s", [rid]).empty
 
 
-def test_create_role_auto_code_deduplicates(client, env):
+def test_legacy_update_payload_preserves_tenant_assignment_policy(client, env):
+    role_id = env.mk_role(tenant_assignable=True)
+    response = client.put(
+        f"/api/roles/{role_id}",
+        json={"name": "兼容更新 " + uuid.uuid4().hex[:6], "description": "legacy client"},
+        headers=env.sys_headers(),
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["tenant_assignable"] is True
+
+
+def test_create_duplicate_normalized_name_rejected(client, env):
     body = {"name": "数据分析员"}
     r1 = client.post("/api/roles", json=body, headers=env.sys_headers()).json()["data"]
-    r2 = client.post("/api/roles", json=body, headers=env.sys_headers()).json()["data"]
     try:
         assert r1["id"] == "role_data_analyst"
-        assert r2["id"] == "role_data_analyst_2"
+        r2 = client.post(
+            "/api/roles", json={"name": "  数据分析员  "}, headers=env.sys_headers())
+        assert r2.json()["code"] == 4000
+        assert r2.json()["msg"] == "角色名称已存在"
     finally:
-        env.pg.execute("DELETE FROM sys_role WHERE id IN (%s,%s)", [r1["id"], r2["id"]])
+        env.pg.execute("DELETE FROM sys_role WHERE id=%s", [r1["id"]])
+
+
+def test_update_duplicate_normalized_name_rejected(client, env):
+    marker = uuid.uuid4().hex[:6]
+    first = client.post(
+        "/api/roles", json={"name": f"Analyst {marker}"}, headers=env.sys_headers()
+    ).json()["data"]
+    second = client.post(
+        "/api/roles", json={"name": f"Observer {marker}"}, headers=env.sys_headers()
+    ).json()["data"]
+    try:
+        r = client.put(
+            f"/api/roles/{second['id']}",
+            json={"name": f"  ANALYST {marker}  "},
+            headers=env.sys_headers(),
+        )
+        assert r.json()["code"] == 4000
+        assert r.json()["msg"] == "角色名称已存在"
+    finally:
+        env.pg.execute("DELETE FROM sys_role WHERE id = ANY(%s)", [[first["id"], second["id"]]])
 
 
 def test_create_duplicate_code_rejected(client, env):
@@ -175,7 +224,11 @@ def test_create_duplicate_code_rejected(client, env):
     r1 = client.post("/api/roles", json=body, headers=env.sys_headers())
     assert r1.json()["code"] == 0
     try:
-        r2 = client.post("/api/roles", json=body, headers=env.sys_headers())
+        r2 = client.post(
+            "/api/roles",
+            json={"code": f"  {code.upper()}  ", "name": "另一个角色"},
+            headers=env.sys_headers(),
+        )
         assert r2.json()["code"] == 4000   # 标识已存在（业务软失败 200 + code）
     finally:
         env.pg.execute("DELETE FROM sys_role WHERE code=%s", [code])   # 清理 API 建的角色

@@ -262,6 +262,12 @@ const roleIdByCode = computed<Record<string, string>>(() => {
   for (const r of assignableRoles.value) m[r.code] = r.id
   return m
 })
+const protectedRoleNames = computed(() => {
+  if (!editing.value || isSystem.value) return []
+  return (editing.value.roles || [])
+    .filter((code) => !roleIdByCode.value[code])
+    .map((code) => editing.value?.role_names?.[code] || code)
+})
 
 function openCreate() {
   editing.value = null
@@ -277,7 +283,7 @@ function openEdit(row: AdminUser) {
   form.value = {
     account: row.account,
     email: row.email ?? '',
-    // 仅回填仍在当前操作者可分配集合内的角色，避免提交不可分配角色。
+    // 仅提交当前操作者可维护的角色；不可分配的存量角色由后端原样保留。
     roleIds: (row.roles || []).map((c) => roleIdByCode.value[c]).filter(Boolean),
     status: row.status,
     tenantId: row.tenant_id,
@@ -286,7 +292,10 @@ function openEdit(row: AdminUser) {
   dialogVisible.value = true
 }
 async function save() {
-  if (!form.value.roleIds.length) { ElMessage.warning('请至少选择一个角色'); return }
+  if (!form.value.roleIds.length && !protectedRoleNames.value.length) {
+    ElMessage.warning('请至少选择一个角色')
+    return
+  }
   saving.value = true
   try {
     if (isEdit.value && editing.value) {
@@ -458,7 +467,7 @@ onMounted(async () => {
                 </HelpTipItem>
                 <HelpTipItem question="角色如何分配">
                   <ul>
-                    <li>一个用户可关联多个角色，权限取并集；系统管理员可任命新的系统管理员，租户管理员只能分配租户级系统内置角色。</li>
+                    <li>一个用户可关联多个角色，权限取并集；租户管理员只能分配平台明确开放的角色，系统管理员角色不会开放。</li>
                   </ul>
                 </HelpTipItem>
                 <HelpTipItem question="租户管理员有哪些限制">
@@ -604,6 +613,12 @@ onMounted(async () => {
                 :disabled="editingOwnSystemRole && r.code === 'system'"
               />
             </el-select>
+          </el-form-item>
+          <el-form-item v-if="isEdit && protectedRoleNames.length" label="平台保留">
+            <span class="locked-field">
+              {{ protectedRoleNames.join('、') }}
+              <span class="muted">（仅平台管理员可调整，本次保存会保留）</span>
+            </span>
           </el-form-item>
           <el-form-item label="租户">
             <el-select v-if="isSystem && !isEdit" v-model="form.tenantId" placeholder="归属租户"

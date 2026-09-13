@@ -17,9 +17,10 @@
 from __future__ import annotations
 
 from backend.auth import perm_resolver
-from backend.common.exceptions import ForbiddenError, NotFoundError, ValidationError
+from backend.common.exceptions import ForbiddenError, NotFoundError, StorageError, ValidationError
 from backend.common.logging import get_logger
 from backend.services.asset_visibility import downgrade_owner_assets_to_private
+from backend.storage.db_errors import unique_violation_constraint
 from backend.storage.pg_ddl import DEFAULT_TENANT_ID
 from backend.storage.tenant_repository import TenantRepository
 from backend.storage.user_repository import UserRepository
@@ -49,7 +50,12 @@ class TenantAdminService:
             raise ValidationError("请填写租户名称")
         if self.tenants.get_by_name(name):
             raise ValidationError("租户名称已存在")
-        tid = self.tenants.create(name=name, status=status)
+        try:
+            tid = self.tenants.create(name=name, status=status)
+        except StorageError as exc:
+            if unique_violation_constraint(exc) == "uq_sys_tenant_name_normalized":
+                raise ValidationError("租户名称已存在") from exc
+            raise
         log.info("租户管理：新建租户 %s(%s)", tid, name)
         return self.tenants.get(tid)  # type: ignore[return-value]
 
@@ -67,14 +73,19 @@ class TenantAdminService:
             u = self.users.get_admin_view(admin_user_id)
             if u is None or u["tenant_id"] != tenant_id:
                 raise ValidationError("指定的管理员不属于该租户")
-        self.tenants.update(tenant_id, name=name, admin_user_id=admin_user_id)
+        try:
+            self.tenants.update(tenant_id, name=name, admin_user_id=admin_user_id)
+        except StorageError as exc:
+            if unique_violation_constraint(exc) == "uq_sys_tenant_name_normalized":
+                raise ValidationError("租户名称已存在") from exc
+            raise
         log.info("租户管理：编辑租户 %s name=%s admin=%s", tenant_id, name, admin_user_id)
         return self.tenants.get(tenant_id)  # type: ignore[return-value]
 
     # ── 启停 ──
     def set_status(self, tenant_id: str, status: str) -> dict:
         self._check_status(status)
-        cur = self._load(tenant_id)
+        self._load(tenant_id)
         if tenant_id == DEFAULT_TENANT_ID and status != "active":
             raise ForbiddenError("默认租户不可停用")
         # 停用即时踢下线：affected 写前算定（成员不因状态变更而变）；停用 + 成员 perm_ver 自增**同事务

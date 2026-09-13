@@ -66,6 +66,9 @@ def test_register_creates_tenant_admin(auth_env):
     acc, out = _register(svc, auth_env, ip=_ip())
     assert out["user"]["role"] == "tenant_admin"
     assert out["user"]["account"] == acc
+    assert re.fullmatch(r"[0-9a-f]{32}", out["user"]["id"])
+    assert re.fullmatch(r"[0-9a-f]{32}", out["user"]["tenant_id"])
+    assert out["user"]["id"] != out["user"]["tenant_id"]
     assert out["access_token"] and out["refresh_token"]
 
 
@@ -99,7 +102,7 @@ def test_login_success_and_wrong_password(auth_env):
     svc = AuthService()
     ip = _ip()
     acc, _ = _register(svc, auth_env, ip=ip)
-    out = svc.login(acc, "GoodPass1", ip=ip)
+    out = svc.login(f"  {acc.upper()}  ", "GoodPass1", ip=ip)
     assert out["user"]["account"] == acc and out["access_token"]
     with pytest.raises(AuthError):
         svc.login(acc, "WrongPass1", ip=ip)

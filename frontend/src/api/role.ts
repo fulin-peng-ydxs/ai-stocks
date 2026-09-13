@@ -9,6 +9,7 @@ export interface Role {
   kind: string // system | tenant_admin | normal | custom
   is_builtin: boolean
   is_locked: boolean
+  tenant_assignable: boolean
   description?: string | null
   member_count?: number
 }
@@ -23,11 +24,20 @@ export function listRoles(): Promise<Role[]> {
   return http.get('/roles')
 }
 
-export function createRole(payload: { code?: string | null; name: string; description?: string | null }): Promise<Role> {
+export function createRole(payload: {
+  code?: string | null
+  name: string
+  description?: string | null
+  tenantAssignable?: boolean
+}): Promise<Role> {
   return http.post('/roles', payload)
 }
 
-export function updateRole(roleId: string, payload: { name: string; description?: string | null }): Promise<Role> {
+export function updateRole(roleId: string, payload: {
+  name: string
+  description?: string | null
+  tenantAssignable: boolean
+}): Promise<Role> {
   return http.put(`/roles/${encodeURIComponent(roleId)}`, payload)
 }
 

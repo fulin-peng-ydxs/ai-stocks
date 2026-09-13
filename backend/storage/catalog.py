@@ -615,7 +615,7 @@ _PG_META_GROUPS: tuple[tuple[str, str, dict[str, str]], ...] = (
 _PG_TABLE_PURPOSES: dict[str, str] = {
     "sys_tenant": "保存租户主体、状态和基础配置，是租户隔离的根实体。",
     "sys_user": "保存登录用户、所属租户、账号状态与权限版本。",
-    "sys_role": "定义租户角色及系统角色，用于聚合菜单和功能点授权。",
+    "sys_role": "定义平台级角色、租户下放策略，并聚合菜单和功能点授权。",
     "sys_menu": "保存运行时菜单树、路由、可见性和排序配置。",
     "sys_resource": "登记受控 API 与按钮功能点，是权限校验的资源事实源。",
     "sys_user_role": "维护用户与角色的多对多授权关系。",
@@ -690,6 +690,7 @@ _COMMON_FIELD_META: dict[str, tuple[str, str]] = {
     "owner_user_id": ("所有者用户标识", "用户资产真实所有者"),
     "created_at": ("创建时间", "记录创建时间"),
     "updated_at": ("更新时间", "记录最近更新时间"),
+    "tenant_assignable": ("允许租户分配", "平台是否允许租户管理员为本租户用户分配该角色"),
     "fix_task_id": ("修复任务标识", "进入修复中状态时绑定的异步任务"),
     "ignore_scope": ("忽略范围", "仅本次 occurrence / 整体 object"),
     "ignore_active": ("忽略是否生效", "当前忽略规则是否仍在生效"),

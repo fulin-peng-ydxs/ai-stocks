@@ -126,7 +126,7 @@ def test_six_rbac_tables_exist(pg):
 
 def test_builtin_roles_seeded(pg):
     df = pg.query_df(
-        "SELECT code, name, kind, is_builtin, is_locked FROM sys_role "
+        "SELECT code, name, kind, is_builtin, is_locked, tenant_assignable FROM sys_role "
         "WHERE code = ANY(%s)",
         [[ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL]])
     by_code = {r["code"]: r for _, r in df.iterrows()}
@@ -135,9 +135,30 @@ def test_builtin_roles_seeded(pg):
     assert all(bool(r["is_builtin"]) for r in by_code.values())
     assert bool(by_code[ROLE_SYSTEM]["is_locked"]) is True
     assert bool(by_code[ROLE_TENANT_ADMIN]["is_locked"]) is False
+    assert bool(by_code[ROLE_SYSTEM]["tenant_assignable"]) is False
+    assert bool(by_code[ROLE_TENANT_ADMIN]["tenant_assignable"]) is True
+    assert bool(by_code[ROLE_NORMAL]["tenant_assignable"]) is True
     # kind 与 code 同名（系统内置）
     for code in (ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL):
         assert by_code[code]["kind"] == code
+
+
+def test_role_assignment_policy_upgrade_preserves_explicit_value(pg):
+    """升级只补 NULL，后续启动不可覆盖平台管理员已保存的下放策略。"""
+    original = bool(pg.query_df(
+        "SELECT tenant_assignable FROM sys_role WHERE id=%s", [ROLE_NORMAL]
+    ).iloc[0]["tenant_assignable"])
+    try:
+        pg.execute(
+            "UPDATE sys_role SET tenant_assignable=FALSE WHERE id=%s", [ROLE_NORMAL])
+        pg_ddl._upgrade_role_assignment_policy(pg)
+        value = pg.query_df(
+            "SELECT tenant_assignable FROM sys_role WHERE id=%s", [ROLE_NORMAL]
+        ).iloc[0]["tenant_assignable"]
+        assert bool(value) is False
+    finally:
+        pg.execute(
+            "UPDATE sys_role SET tenant_assignable=%s WHERE id=%s", [original, ROLE_NORMAL])
 
 
 def test_legacy_paid_role_is_migrated_to_normal_and_removed(pg):
@@ -413,6 +434,28 @@ def test_manual_menu_resource_sql_requires_explicit_gate_for_existing_row_overwr
 def test_seed_resource_codes_are_unique():
     codes = [r[1] for r in _SEED_RESOURCES]
     assert len(codes) == len(set(codes))
+
+
+def test_identity_master_data_has_normalized_unique_indexes(pg):
+    rows = pg.query_df(
+        "SELECT indexname,indexdef FROM pg_indexes WHERE schemaname=current_schema() "
+        "AND indexname = ANY(%s)",
+        [[
+            "uq_sys_tenant_name_normalized",
+            "uq_sys_role_name_normalized",
+            "uq_sys_role_code_normalized",
+            "uq_sys_user_account_normalized",
+            "uq_sys_user_email_normalized",
+        ]],
+    )
+    assert set(rows["indexname"]) == {
+        "uq_sys_tenant_name_normalized",
+        "uq_sys_role_name_normalized",
+        "uq_sys_role_code_normalized",
+        "uq_sys_user_account_normalized",
+        "uq_sys_user_email_normalized",
+    }
+    assert rows["indexdef"].str.contains("lower(btrim", regex=False).all()
 
 
 def test_resources_seeded_and_bound_to_menu(pg):

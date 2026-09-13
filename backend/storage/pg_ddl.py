@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS sys_role (
     kind        TEXT NOT NULL DEFAULT 'custom',   -- system|tenant_admin|normal（系统内置）| custom（自建）
     is_builtin  BOOLEAN NOT NULL DEFAULT FALSE,   -- 内置角色不可删
     is_locked   BOOLEAN NOT NULL DEFAULT FALSE,   -- 权限锁定（system 超管：全授权且不可改）
+    tenant_assignable BOOLEAN NOT NULL DEFAULT FALSE, -- 平台是否允许租户管理员为本租户用户分配
     description TEXT,
     created_at  TIMESTAMP DEFAULT now(),
     updated_at  TIMESTAMP,
@@ -1484,13 +1485,14 @@ _TRADE_DISCIPLINE_POINTER_CONSTRAINTS: tuple[str, ...] = (
 
 
 # ── RBAC seed 数据（内置角色 / 菜单树 / 功能点 / 默认授权；均可在角色管理页调整）──
-# 内置角色：id=code（稳定自然键，seed 幂等）。(code, name, kind, is_locked, description)
-_SEED_ROLES: tuple[tuple[str, str, str, bool, str], ...] = (
-    (ROLE_SYSTEM, "系统管理员", "system", True,
+# 内置角色：id=code（稳定自然键，seed 幂等）。
+# (code, name, kind, is_locked, tenant_assignable, description)
+_SEED_ROLES: tuple[tuple[str, str, str, bool, bool, str], ...] = (
+    (ROLE_SYSTEM, "系统管理员", "system", True, False,
      "平台超级管理员：拥有全部菜单与功能权限（锁定不可改）"),
-    (ROLE_TENANT_ADMIN, "租户管理员", "tenant_admin", False,
+    (ROLE_TENANT_ADMIN, "租户管理员", "tenant_admin", False, True,
      "本租户管理员：管理本租户用户，使用全部业务功能"),
-    (ROLE_NORMAL, "普通用户", "normal", False,
+    (ROLE_NORMAL, "普通用户", "normal", False, True,
      "普通用户：使用行情/筛选/回测/训练等业务功能"),
 )
 
@@ -1777,10 +1779,8 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     # 逻辑删除列（既有库补列，幂等；与 status 正交）
     client.execute("ALTER TABLE sys_user ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP")
     client.execute("ALTER TABLE sys_tenant ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP")
-    # email 部分唯一：允许多个 NULL（未填邮箱），非空则全局唯一
-    client.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_user_email "
-        "ON sys_user (email) WHERE email IS NOT NULL")
+    _upgrade_identity_uniqueness(client)
+    _upgrade_role_assignment_policy(client)
     seed_default_tenant(client)   # 先补 admin=system 的 role_code，供 seed_rbac 建 user_role 用
     seed_rbac(client)             # 内置角色/菜单树/功能点/默认授权 + 无角色存量用户补 user_role
     _remove_legacy_paid_role(client)
@@ -1795,6 +1795,119 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     client.execute(
         "ALTER TABLE score_snapshot_meta ADD COLUMN IF NOT EXISTS st_input_version TEXT")
     return created
+
+
+def _upgrade_role_assignment_policy(client: PostgresClient) -> None:
+    """补齐平台角色的租户可分配策略，且不覆盖平台管理员后续显式配置。
+
+    既有库首次加列时仅把 tenant_admin/normal 初始化为可下放；system 与存量自定义角色默认
+    不下放。后续启动因字段已非空，不会把管理页保存的值改回 seed 默认值。
+    """
+    client.execute("ALTER TABLE sys_role ADD COLUMN IF NOT EXISTS tenant_assignable BOOLEAN")
+    client.execute(
+        "UPDATE sys_role SET tenant_assignable = "
+        "CASE WHEN code = ANY(%s) THEN TRUE ELSE FALSE END "
+        "WHERE tenant_assignable IS NULL",
+        [[ROLE_TENANT_ADMIN, ROLE_NORMAL]],
+    )
+    client.execute("ALTER TABLE sys_role ALTER COLUMN tenant_assignable SET DEFAULT FALSE")
+    client.execute("ALTER TABLE sys_role ALTER COLUMN tenant_assignable SET NOT NULL")
+
+
+def _upgrade_identity_uniqueness(client: PostgresClient) -> None:
+    """统一身份主数据的规范化存储与数据库唯一约束。
+
+    名称重复无法安全自动判断哪一条应保留，邮箱更涉及身份归属，因此存量冲突一律在写库前
+    fail-closed，并只返回冲突组数量，不在日志中输出邮箱原文。
+    """
+    checks = (
+        (
+            "租户名称",
+            (
+                "SELECT count(*) AS n FROM ("
+                "SELECT lower(btrim(name)) FROM sys_tenant "
+                "GROUP BY lower(btrim(name)) HAVING count(*) > 1) d"
+            ),
+        ),
+        (
+            "角色名称",
+            (
+                "SELECT count(*) AS n FROM ("
+                "SELECT lower(btrim(name)) FROM sys_role "
+                "GROUP BY lower(btrim(name)) HAVING count(*) > 1) d"
+            ),
+        ),
+        (
+            "角色标识",
+            (
+                "SELECT count(*) AS n FROM ("
+                "SELECT lower(btrim(code)) FROM sys_role "
+                "GROUP BY lower(btrim(code)) HAVING count(*) > 1) d"
+            ),
+        ),
+        (
+            "用户账号",
+            (
+                "SELECT count(*) AS n FROM ("
+                "SELECT lower(btrim(account)) FROM sys_user "
+                "GROUP BY lower(btrim(account)) HAVING count(*) > 1) d"
+            ),
+        ),
+        (
+            "用户邮箱",
+            (
+                "SELECT count(*) AS n FROM ("
+                "SELECT lower(btrim(email)) FROM sys_user "
+                "WHERE nullif(btrim(email), '') IS NOT NULL "
+                "GROUP BY lower(btrim(email)) HAVING count(*) > 1) d"
+            ),
+        ),
+    )
+    conflicts = []
+    for label, sql in checks:
+        count = int(client.query_df(sql).iloc[0]["n"])
+        if count:
+            conflicts.append(f"{label} {count} 组")
+    if conflicts:
+        raise RuntimeError(
+            "身份主数据存在规范化重复，拒绝创建唯一索引；请先人工确认并清理："
+            + "、".join(conflicts)
+        )
+
+    with client.transaction() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE sys_tenant SET name=btrim(name) WHERE name<>btrim(name)")
+        cur.execute("UPDATE sys_role SET name=btrim(name) WHERE name<>btrim(name)")
+        cur.execute("UPDATE sys_role SET code=lower(btrim(code)) WHERE code<>lower(btrim(code))")
+        cur.execute(
+            "UPDATE sys_user SET account=lower(btrim(account)) "
+            "WHERE account<>lower(btrim(account))"
+        )
+        cur.execute("UPDATE sys_user SET email=NULL WHERE email IS NOT NULL AND btrim(email)=''")
+        cur.execute(
+            "UPDATE sys_user SET email=lower(btrim(email)) "
+            "WHERE email IS NOT NULL AND email<>lower(btrim(email))"
+        )
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_sys_tenant_name_normalized "
+            "ON sys_tenant ((lower(btrim(name))))"
+        )
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_sys_role_name_normalized "
+            "ON sys_role ((lower(btrim(name))))"
+        )
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_sys_role_code_normalized "
+            "ON sys_role ((lower(btrim(code))))"
+        )
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_sys_user_account_normalized "
+            "ON sys_user ((lower(btrim(account))))"
+        )
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_sys_user_email_normalized "
+            "ON sys_user ((lower(btrim(email)))) WHERE email IS NOT NULL"
+        )
+        cur.execute("DROP INDEX IF EXISTS idx_sys_user_email")
 
 
 def _protect_legacy_config_secrets(client: PostgresClient) -> None:
@@ -2330,11 +2443,12 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
     """
     client = client or get_pg_client()
     # 1) 内置角色（id=code）
-    for code, name, kind, is_locked, desc in _SEED_ROLES:
+    for code, name, kind, is_locked, tenant_assignable, desc in _SEED_ROLES:
         client.execute(
-            "INSERT INTO sys_role (id, code, name, kind, is_builtin, is_locked, description) "
-            "VALUES (%s, %s, %s, %s, TRUE, %s, %s) ON CONFLICT (id) DO NOTHING",
-            [code, code, name, kind, is_locked, desc])
+            "INSERT INTO sys_role "
+            "(id, code, name, kind, is_builtin, is_locked, tenant_assignable, description) "
+            "VALUES (%s, %s, %s, %s, TRUE, %s, %s, %s) ON CONFLICT (id) DO NOTHING",
+            [code, code, name, kind, is_locked, tenant_assignable, desc])
     # 2) 菜单树（父在子前）
     menu_rows = _flatten_menu_tree(_SEED_MENU_TREE)
     _seed_menu_rows(client, menu_rows, excluded_codes={_TRADE_DISCIPLINE_MENU_ID})

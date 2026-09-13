@@ -7,10 +7,9 @@ admin_user_id 指定该租户管理员（须属本租户）。列表附 user_cou
 
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
 
-from backend.common.ids import prefixed_readable_id
+from backend.common.ids import uuid_hex_id
 from backend.common.logging import get_logger
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
@@ -78,12 +77,12 @@ class TenantRepository:
         return self._row(df.iloc[0].to_dict()) if not df.empty else None
 
     def get_by_name(self, name: str) -> dict | None:
-        df = self.pg.query_df(f"SELECT {_TENANT_COLS} FROM sys_tenant WHERE name = %s", [name])
+        df = self.pg.query_df(
+            f"SELECT {_TENANT_COLS} FROM sys_tenant "
+            "WHERE lower(btrim(name)) = lower(btrim(%s))",
+            [name],
+        )
         return self._row(df.iloc[0].to_dict()) if not df.empty else None
-
-    def exists(self, tenant_id: str) -> bool:
-        df = self.pg.query_df("SELECT 1 FROM sys_tenant WHERE id = %s", [tenant_id])
-        return not df.empty
 
     def user_count(self, tenant_id: str) -> int:
         # 逻辑删除:已软删用户不计数,否则会挡住租户删除
@@ -93,14 +92,7 @@ class TenantRepository:
         return int(df.iloc[0]["n"])
 
     def create(self, *, name: str, status: str) -> str:
-        base = prefixed_readable_id(name, prefix="tenant_")
-        tenant_id = base
-        seq = 2
-        while self.exists(tenant_id):
-            tenant_id = f"{base}_{seq}"
-            seq += 1
-        if len(tenant_id) > 80:
-            tenant_id = "tenant_" + uuid.uuid4().hex[:12]
+        tenant_id = uuid_hex_id()
         self.pg.execute(
             "INSERT INTO sys_tenant (id, name, status, created_at) VALUES (%s, %s, %s, %s)",
             [tenant_id, name, status, datetime.now()])

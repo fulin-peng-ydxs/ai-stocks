@@ -34,7 +34,7 @@ def _tok(uid, tid, pv=0):
 @pytest.fixture()
 def env(pg):
     """临时租户/用户工厂（带 sys_user_role）+ teardown 清理。"""
-    made = {"user": [], "tenant": []}
+    made = {"user": [], "tenant": [], "role": []}
 
     def mk_tenant():
         tid = "tt_" + uuid.uuid4().hex[:8]
@@ -52,12 +52,29 @@ def env(pg):
         made["user"].append(uid)
         return uid
 
+    def mk_role(*, tenant_assignable: bool):
+        role_id = "rr_" + uuid.uuid4().hex[:8]
+        pg.execute(
+            "INSERT INTO sys_role "
+            "(id,code,name,kind,is_builtin,is_locked,tenant_assignable) "
+            "VALUES (%s,%s,%s,'custom',FALSE,FALSE,%s)",
+            [role_id, role_id, role_id, tenant_assignable],
+        )
+        made["role"].append(role_id)
+        return role_id
+
     def sys_headers():
         pv = int(pg.query_df("SELECT perm_ver FROM sys_user WHERE id='admin'").iloc[0]["perm_ver"])
         return _tok("admin", "default", pv)
 
     from types import SimpleNamespace
-    yield SimpleNamespace(mk_tenant=mk_tenant, mk_user=mk_user, sys_headers=sys_headers, pg=pg)
+    yield SimpleNamespace(
+        mk_tenant=mk_tenant,
+        mk_user=mk_user,
+        mk_role=mk_role,
+        sys_headers=sys_headers,
+        pg=pg,
+    )
 
     # 清理：先删本用例通过 API 新建的用户（按账号前缀），再删登记的用户/租户
     for uid in made["user"]:
@@ -65,6 +82,8 @@ def env(pg):
     for tid in made["tenant"]:
         pg.execute("DELETE FROM sys_user WHERE tenant_id=%s", [tid])   # API 新建的用户
         pg.execute("DELETE FROM sys_tenant WHERE id=%s", [tid])
+    for role_id in made["role"]:
+        pg.execute("DELETE FROM sys_role WHERE id=%s", [role_id])
 
 
 def _perm_ver(pg, uid):
@@ -283,13 +302,73 @@ def test_tenant_admin_cannot_delete_other_tenant_user(client, env):
 
 
 def test_tenant_admin_cannot_escalate_role_via_update(client, env):
-    """租户管理员编辑本租户用户时不能把角色越权提升为 system（走 _validate_roles → 403）。"""
+    """租户管理员编辑本租户用户时不能把角色越权提升为 system。"""
     tid = env.mk_tenant()
     ta = env.mk_user(tid, ROLE_TENANT_ADMIN)
     member = env.mk_user(tid, ROLE_NORMAL)
     r = client.put(f"/api/users/{member}", json={"roleIds": ["system"], "status": "active"},
                    headers=_tok(ta, tid))
     assert r.status_code == 403   # 不可分配 system 超管
+
+
+def test_tenant_admin_can_assign_platform_delegated_custom_role(client, env):
+    tid = env.mk_tenant()
+    tenant_admin = env.mk_user(tid, ROLE_TENANT_ADMIN)
+    delegated_role = env.mk_role(tenant_assignable=True)
+    account = "delegated_" + uuid.uuid4().hex[:8]
+
+    response = client.post(
+        "/api/users",
+        json={
+            "account": account,
+            "password": "GoodPass1",
+            "roleIds": [delegated_role],
+        },
+        headers=_tok(tenant_admin, tid),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["code"] == 0
+    assert response.json()["data"]["roles"] == [delegated_role]
+
+
+def test_tenant_admin_cannot_assign_non_delegated_custom_role(client, env):
+    tid = env.mk_tenant()
+    tenant_admin = env.mk_user(tid, ROLE_TENANT_ADMIN)
+    hidden_role = env.mk_role(tenant_assignable=False)
+
+    response = client.post(
+        "/api/users",
+        json={
+            "account": "hidden_" + uuid.uuid4().hex[:8],
+            "password": "GoodPass1",
+            "roleIds": [hidden_role],
+        },
+        headers=_tok(tenant_admin, tid),
+    )
+
+    assert response.status_code == 403
+
+
+def test_tenant_admin_update_preserves_existing_non_delegated_role(client, env):
+    """平台收回下放后，租管编辑用户不会因全量替换语义误删原有角色。"""
+    tid = env.mk_tenant()
+    tenant_admin = env.mk_user(tid, ROLE_TENANT_ADMIN)
+    member = env.mk_user(tid, ROLE_NORMAL)
+    protected_role = env.mk_role(tenant_assignable=False)
+    env.pg.execute(
+        "INSERT INTO sys_user_role (user_id,role_id) VALUES (%s,%s)",
+        [member, protected_role],
+    )
+
+    response = client.put(
+        f"/api/users/{member}",
+        json={"roleIds": [ROLE_NORMAL], "status": "active"},
+        headers=_tok(tenant_admin, tid),
+    )
+
+    assert response.status_code == 200
+    assert set(response.json()["data"]["roles"]) == {ROLE_NORMAL, protected_role}
 
 
 # ── 新建 / 多角色 / 唯一 ──
@@ -394,8 +473,69 @@ def test_create_duplicate_account_rejected(client, env):
     acc = "dup_" + uuid.uuid4().hex[:6]
     body = {"account": acc, "password": "GoodPass1", "roleIds": [ROLE_NORMAL], "tenantId": tid}
     assert client.post("/api/users", json=body, headers=env.sys_headers()).json()["code"] == 0
-    r2 = client.post("/api/users", json=body, headers=env.sys_headers())
+    r2 = client.post(
+        "/api/users", json={**body, "account": f"  {acc.upper()}  "},
+        headers=env.sys_headers())
     assert r2.json()["code"] == 4000   # 账号已存在（业务软失败 200 + code）
+    assert r2.json()["msg"] == "账号已存在"
+
+
+def test_email_is_normalized_and_globally_unique(client, env):
+    tid = env.mk_tenant()
+    marker = uuid.uuid4().hex[:8]
+    email = f"User-{marker}@Example.COM"
+    first = client.post("/api/users", json={
+        "account": f"mail_a_{marker}", "password": "GoodPass1",
+        "email": f"  {email}  ", "roleIds": [ROLE_NORMAL], "tenantId": tid,
+    }, headers=env.sys_headers())
+    assert first.json()["code"] == 0
+    assert first.json()["data"]["email"] == email.lower()
+
+    duplicate = client.post("/api/users", json={
+        "account": f"mail_b_{marker}", "password": "GoodPass1",
+        "email": email.lower(), "roleIds": [ROLE_NORMAL], "tenantId": tid,
+    }, headers=env.sys_headers())
+    assert duplicate.json()["code"] == 4000
+    assert duplicate.json()["msg"] == "邮箱已被注册"
+
+
+def test_update_duplicate_email_is_friendly_and_atomic(client, env):
+    tid = env.mk_tenant()
+    marker = uuid.uuid4().hex[:8]
+    first = client.post("/api/users", json={
+        "account": f"edit_a_{marker}", "password": "GoodPass1",
+        "email": f"first-{marker}@example.com", "roleIds": [ROLE_NORMAL], "tenantId": tid,
+    }, headers=env.sys_headers()).json()["data"]
+    second = client.post("/api/users", json={
+        "account": f"edit_b_{marker}", "password": "GoodPass1",
+        "email": f"second-{marker}@example.com", "roleIds": [ROLE_NORMAL], "tenantId": tid,
+    }, headers=env.sys_headers()).json()["data"]
+
+    r = client.put(f"/api/users/{second['id']}", json={
+        "email": f"  FIRST-{marker}@EXAMPLE.COM  ",
+        "roleIds": [ROLE_TENANT_ADMIN], "status": "disabled",
+    }, headers=env.sys_headers())
+    assert r.json()["code"] == 4000
+    assert r.json()["msg"] == "邮箱已被注册"
+    unchanged = env.pg.query_df(
+        "SELECT email,status FROM sys_user WHERE id=%s", [second["id"]]
+    ).iloc[0]
+    assert unchanged["email"] == second["email"]
+    assert unchanged["status"] == "active"
+    assert set(env.pg.query_df(
+        "SELECT role_id FROM sys_user_role WHERE user_id=%s", [second["id"]]
+    )["role_id"]) == {ROLE_NORMAL}
+    assert first["email"] != second["email"]
+
+
+def test_user_admin_rejects_invalid_email(client, env):
+    tid = env.mk_tenant()
+    r = client.post("/api/users", json={
+        "account": "invalid_mail_" + uuid.uuid4().hex[:8], "password": "GoodPass1",
+        "email": "not-an-email", "roleIds": [ROLE_NORMAL], "tenantId": tid,
+    }, headers=env.sys_headers())
+    assert r.json()["code"] == 4000
+    assert r.json()["msg"] == "邮箱格式不正确"
 
 
 def test_tenant_admin_cannot_assign_system_role(client, env):

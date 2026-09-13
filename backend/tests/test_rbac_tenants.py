@@ -9,6 +9,7 @@ default 租户的 admin），故无需还原 admin perm_ver。
 
 from __future__ import annotations
 
+import re
 import uuid
 
 import pytest
@@ -60,16 +61,22 @@ def env(pg):
         pv = int(pg.query_df("SELECT perm_ver FROM sys_user WHERE id='admin'").iloc[0]["perm_ver"])
         return _tok("admin", "default", pv)
 
+    def track_tenant(tenant_id):
+        made["tenant"].append(tenant_id)
+        return tenant_id
+
     from types import SimpleNamespace
-    yield SimpleNamespace(mk_tenant=mk_tenant, mk_user=mk_user, sys_headers=sys_headers, pg=pg)
+    yield SimpleNamespace(
+        mk_tenant=mk_tenant,
+        mk_user=mk_user,
+        track_tenant=track_tenant,
+        sys_headers=sys_headers,
+        pg=pg,
+    )
 
     for uid in made["user"]:
         pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
     for tid in made["tenant"]:
-        pg.execute("DELETE FROM sys_user WHERE tenant_id=%s", [tid])
-        pg.execute("DELETE FROM sys_tenant WHERE id=%s", [tid])
-    # 清 API 建的租户（tenant_ 前缀）
-    for tid in pg.query_df("SELECT id FROM sys_tenant WHERE id LIKE %s", ["tenant\\_%"])["id"].tolist():
         pg.execute("DELETE FROM sys_user WHERE tenant_id=%s", [tid])
         pg.execute("DELETE FROM sys_tenant WHERE id=%s", [tid])
 
@@ -93,8 +100,9 @@ def test_create_list_update(client, env):
     name = "tenant demo " + uuid.uuid4().hex[:6]
     r = client.post("/api/tenants", json={"name": name}, headers=env.sys_headers())
     assert r.status_code == 200 and r.json()["code"] == 0
-    tid = r.json()["data"]["id"]
-    assert tid == name.replace(" ", "_")
+    tid = env.track_tenant(r.json()["data"]["id"])
+    assert re.fullmatch(r"[0-9a-f]{32}", tid)
+    assert tid != name.replace(" ", "_")
     assert r.json()["data"]["created_at"]
     # 列表能查到
     lst = client.get(f"/api/tenants?q={name}", headers=env.sys_headers()).json()["data"]
@@ -108,24 +116,59 @@ def test_create_list_update(client, env):
 def test_list_tenants_sort_by_name(client, env):
     marker = uuid.uuid4().hex[:6]
     for name in [f"sort {marker} c", f"sort {marker} a", f"sort {marker} b"]:
-        assert client.post("/api/tenants", json={"name": name}, headers=env.sys_headers()).json()["code"] == 0
+        data = client.post(
+            "/api/tenants", json={"name": name}, headers=env.sys_headers()
+        ).json()
+        assert data["code"] == 0
+        env.track_tenant(data["data"]["id"])
     r = client.get(f"/api/tenants?q=sort {marker}&sort_by=name&sort_order=asc", headers=env.sys_headers())
     names = [tenant["name"] for tenant in r.json()["data"]["items"]]
     assert names == sorted(names)
 
 
-def test_create_tenant_known_chinese_terms(client, env):
-    r = client.post("/api/tenants", json={"name": "数据中心"}, headers=env.sys_headers())
+def test_create_tenant_id_does_not_derive_from_chinese_name(client, env):
+    name = "数据中心" + uuid.uuid4().hex[:6]
+    r = client.post("/api/tenants", json={"name": name}, headers=env.sys_headers())
     assert r.status_code == 200 and r.json()["code"] == 0
-    assert r.json()["data"]["id"] == "tenant_data_center"
+    tenant_id = env.track_tenant(r.json()["data"]["id"])
+    assert re.fullmatch(r"[0-9a-f]{32}", tenant_id)
+    assert "data_center" not in tenant_id
 
 
 def test_create_duplicate_name_rejected(client, env):
     name = "dup_" + uuid.uuid4().hex[:6]
-    assert client.post("/api/tenants", json={"name": name},
-                       headers=env.sys_headers()).json()["code"] == 0
-    r2 = client.post("/api/tenants", json={"name": name}, headers=env.sys_headers())
+    created = client.post(
+        "/api/tenants", json={"name": name}, headers=env.sys_headers()
+    ).json()
+    assert created["code"] == 0
+    env.track_tenant(created["data"]["id"])
+    r2 = client.post(
+        "/api/tenants", json={"name": f"  {name.upper()}  "}, headers=env.sys_headers())
     assert r2.json()["code"] == 4000
+    assert r2.json()["msg"] == "租户名称已存在"
+
+
+def test_update_duplicate_normalized_name_rejected(client, env):
+    marker = uuid.uuid4().hex[:6]
+    first = client.post(
+        "/api/tenants", json={"name": f"Alpha {marker}"}, headers=env.sys_headers()
+    ).json()["data"]
+    env.track_tenant(first["id"])
+    assert first["name"] == f"Alpha {marker}"
+    second = client.post(
+        "/api/tenants", json={"name": f"Beta {marker}"}, headers=env.sys_headers()
+    ).json()["data"]
+    env.track_tenant(second["id"])
+    r = client.put(
+        f"/api/tenants/{second['id']}",
+        json={"name": f"  ALPHA {marker}  "},
+        headers=env.sys_headers(),
+    )
+    assert r.json()["code"] == 4000
+    assert r.json()["msg"] == "租户名称已存在"
+    assert env.pg.query_df(
+        "SELECT name FROM sys_tenant WHERE id=%s", [second["id"]]
+    ).iloc[0]["name"] == f"Beta {marker}"
 
 
 def test_assign_admin_must_belong_to_tenant(client, env):
@@ -214,8 +257,8 @@ def test_disable_kicks_online_token(client, env):
 
 def test_login_rejected_when_tenant_disabled(client, env, monkeypatch):
     from backend.auth.security import hash_password
-    from backend.services.auth_service import AuthService
     from backend.common.exceptions import AuthError
+    from backend.services.auth_service import AuthService
     monkeypatch.setenv("AI_STOCKS_JWT_SECRET", _SECRET)
     tid = env.mk_tenant()
     acc_uid = env.mk_user(tid, ROLE_TENANT_ADMIN, password_hash=hash_password("GoodPass1"))

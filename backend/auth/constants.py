@@ -14,9 +14,6 @@ ROLE_NORMAL = "normal"               # 普通用户：阶段三用户管理页�
 # 内置系统预设角色（kind 同名）；自定义角色 kind='custom'、is_builtin=false
 BUILTIN_ROLES: tuple[str, ...] = (ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL)
 
-# 租户管理员可分配给本租户用户的系统预设角色；system 只能由系统管理员分配。
-ASSIGNABLE_PRESET_ROLES: tuple[str, ...] = (ROLE_TENANT_ADMIN, ROLE_NORMAL)
-
 # ── 登录基线资源码（stage4·R21 + config-storage-pg-migration T2）────────────────
 # baseline 登录基线码（baseline_locked）：全站共享读端点、当前用户自持久化偏好端点被多个页面或应用启动链路消费，
 # **所有已认证非 system 业务用户（有 ≥1 角色）恒可用、角色页不可反选**——**唯一权威**由

@@ -22,7 +22,7 @@ export interface UserListResult {
   total: number
 }
 
-/** 可分配角色（system 得全部角色；tenant_admin 仅得租户级系统预设）。 */
+/** 可分配角色（system 得全部角色；tenant_admin 仅得平台明确下放的非 system 角色）。 */
 export interface AssignableRole {
   id: string
   code: string
@@ -30,6 +30,7 @@ export interface AssignableRole {
   kind: string
   is_builtin: boolean
   is_locked: boolean
+  tenant_assignable: boolean
   description?: string | null
 }
 

@@ -28,6 +28,10 @@ RBAC 主数据落 PostgreSQL，核心表由 `backend/storage/pg_ddl.py` 创建�
 | `sys_role_menu` | 角色可见菜单 |
 | `sys_role_resource` | 角色可用功能点 |
 
+租户名称、平台角色名称和角色标识均按“去首尾空白后忽略大小写”全局唯一；账号与邮箱统一去首尾
+空白并转小写后全局唯一。服务层负责友好校验，PostgreSQL 表达式唯一索引负责并发和
+旁路写入兜底。软删除用户仍保留账号与邮箱占用，避免历史审计身份被新用户接管。
+
 `perm_resolver.resolve(user_id)` 是有效权限解析入口：system 角色拥有全量菜单和功能点；非 system 用户取所有角色菜单与功能点并集；无角色用户返回空权限。登录基线共享读码由后端在解析时强制并入，角色页不持久化这类基线授权。
 
 **system 判定认结构标记而非具体账号**：解析时以 `sys_role.code='system' OR sys_role.kind='system'` 识别系统角色（`backend/auth/constants.py` 的 `ROLE_SYSTEM` 是唯一角色常量），命中即短路返回全量菜单 + 全量功能点，不查 `sys_role_menu` / `sys_role_resource`。也就是说「系统角色」是一种结构化语义——把任一角色 `kind` 置为 `system` 即获得该特权，而非写死某个角色 ID 或账号；这是设计上唯一的固定特权边界，全系统没有其他按角色名 / 角色 ID 写死放行的分支。
@@ -190,9 +194,9 @@ flowchart LR
 
 | 操作 | 入口与守卫 | 服务层规则 | 联动 |
 |------|------------|------------|------|
-| 查询 | `GET /api/roles`，`require_system`；`GET /api/roles/assignable`，`require_perm("user:list")` | 角色管理页 system-only；用户页角色下拉按调用者分流，system 不返回 system 超管角色，租户管理员只拿系统预设可分配角色 | 无写联动 |
-| 新增 | `POST /api/roles`，`require_system` | 只能创建 custom 角色；code 为空时按名称生成；code 不能撞内置或现有角色 | 写 `sys_role` |
-| 更新 | `PUT /api/roles/{id}`，`require_system` | system 超管锁定角色不可改；只改名称和描述，不改 code/kind | 写 `sys_role` |
+| 查询 | `GET /api/roles`，`require_system`；`GET /api/roles/assignable`，`require_perm("user:list")` | 角色管理页 system-only；用户页角色下拉按调用者分流，system 可取全部角色，租户管理员只取 `tenant_assignable=true` 的非 system 角色 | 无写联动 |
+| 新增 | `POST /api/roles`，`require_system` | 只能创建 custom 角色；code 为空时按名称生成；code 不能撞内置或现有角色；默认不向租户开放，也可在创建时显式开启 | 写 `sys_role` |
+| 更新 | `PUT /api/roles/{id}`，`require_system` | system 超管锁定角色不可改；可改名称、描述和 `tenant_assignable`，不改 code/kind；system 始终不可下放 | 写 `sys_role`；关闭下放不撤销存量用户角色 |
 | 授权 | `PUT /api/roles/{id}/perms`，`require_system` | 锁定角色不可授权；菜单和功能点 id 必须存在；system-only 功能点不能授给非 system 角色；基线共享读码不持久化到角色授权 | 替换 `sys_role_menu` 和 `sys_role_resource`，并与该角色成员 `perm_ver` 自增同事务 |
 | 删除 | `DELETE /api/roles/{id}`，`require_system` | 内置角色不可删；仍有用户成员时不可删 | 删除 `sys_role`；`sys_role_menu` / `sys_role_resource` 由 FK cascade 清理；因无成员才允许删除，不需要踢用户 |
 
@@ -201,7 +205,7 @@ flowchart LR
 | 操作 | 入口与守卫 | 服务层规则 | 联动 |
 |------|------------|------------|------|
 | 查询 | `GET /api/tenants`，`require_system` | 只返回未软删租户；`user_count` 只统计未软删用户 | 无写联动 |
-| 新增 | `POST /api/tenants`，`require_system` | 名称全局唯一；创建时可选择 active 或 disabled | 写 `sys_tenant` |
+| 新增 | `POST /api/tenants`，`require_system` | ID 使用后端生成的 32 位小写无连字符 UUIDv4，与用户 ID 同口径且不从名称派生；名称全局唯一；创建时可选择 active 或 disabled | 写 `sys_tenant`；存量租户 ID 不迁移 |
 | 更新 | `PUT /api/tenants/{id}`，`require_system` | 名称全局唯一；`admin_user_id` 必须指向该租户内未软删用户 | 写租户名称和管理员关系 |
 | 停用 / 启用 | `POST /api/tenants/{id}/status`，`require_system` | `default` 租户不可停用；状态只能是 active/disabled | 停用时租户状态写入、租户内用户 `perm_ver` 自增和整租户非 private 资产下线同事务；启用只恢复租户状态，不自动重新公开资产 |
 | 删除 | `DELETE /api/tenants/{id}`，`require_system` | `default` 租户不可删；未软删用户数必须为 0；不要求先停用 | 逻辑删除 `sys_tenant.deleted_at`；整租户非 private 资产下线为 private；后续登录、刷新和请求鉴权把软删租户视为不存在 |

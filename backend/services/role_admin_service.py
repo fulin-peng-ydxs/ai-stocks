@@ -6,7 +6,7 @@
 业务规则（阶段三铁律）：
 - **内置保护**：is_builtin 角色不可删除（system/tenant_admin/normal）。
 - **超管锁定**：is_locked 角色（system 超管）名称/描述与授权均不可改（其权限由 perm_resolver 判全量）。
-- **唯一**：角色 code 全局唯一，且不得撞内置码。
+- **唯一**：平台角色名称与 code 均按去首尾空白、忽略大小写全局唯一，code 不得撞内置码。
 - **删除前置**：角色下仍有用户时不可删（避免 FK RESTRICT 直接抛库错，给友好提示）。
 - **system-only 码不可授**：require_system 硬守卫的功能码不能授予非 system 角色（授了也不生效，防误导）。
 - **授权即时生效（Codex 五轮 P1，原子化）**：改授权 → affected(该角色成员)写前算定 → **授权写入(conn) +
@@ -22,9 +22,10 @@ from __future__ import annotations
 from backend.auth import perm_resolver
 from backend.auth.constants import BUILTIN_ROLES
 from backend.auth.context import AuthContext
+from backend.common.exceptions import ForbiddenError, NotFoundError, StorageError, ValidationError
 from backend.common.ids import prefixed_readable_id
-from backend.common.exceptions import ForbiddenError, NotFoundError, ValidationError
 from backend.common.logging import get_logger
+from backend.storage.db_errors import unique_violation_constraint
 from backend.storage.role_repository import RoleRepository
 
 log = get_logger("services.role_admin")
@@ -39,32 +40,66 @@ class RoleAdminService:
         return self.roles.list_all()
 
     def assignable_roles(self, ctx: AuthContext) -> list[dict]:
-        """供用户管理页角色下拉；按调用者角色分流（system 含自建 custom，tenant_admin 仅系统预设）。"""
+        """供用户管理页角色下拉；system 可取全部，租户管理员读取平台下放策略。"""
         return self.roles.assignable(is_system=ctx.is_system)
 
     # ── 新建 ──
-    def create_role(self, *, code: str | None, name: str, description: str | None) -> dict:
-        code = (code or "").strip()
+    def create_role(self, *, code: str | None, name: str, description: str | None,
+                    tenant_assignable: bool = False) -> dict:
+        code = (code or "").strip().lower()
         name = (name or "").strip()
         if not name:
             raise ValidationError("请填写角色名称")
         if not code:
             code = self._make_role_code(name)
+        if self.roles.get_by_name(name):
+            raise ValidationError("角色名称已存在")
         if code in BUILTIN_ROLES or self.roles.get_by_code(code):
             raise ValidationError("角色标识已存在")
-        rid = self.roles.create(code=code, name=name, description=description)
+        try:
+            rid = self.roles.create(
+                code=code,
+                name=name,
+                description=description,
+                tenant_assignable=bool(tenant_assignable),
+            )
+        except StorageError as exc:
+            constraint = unique_violation_constraint(exc)
+            if constraint == "uq_sys_role_name_normalized":
+                raise ValidationError("角色名称已存在") from exc
+            if constraint in {"sys_role_pkey", "sys_role_code_key", "uq_sys_role_code_normalized"}:
+                raise ValidationError("角色标识已存在") from exc
+            raise
         log.info("角色管理：新建自定义角色 %s(%s)", rid, code)
         return self.roles.get(rid)  # type: ignore[return-value]
 
-    # ── 编辑（名称/描述）──
-    def update_role(self, role_id: str, *, name: str, description: str | None) -> dict:
+    # ── 编辑（名称/描述/租户可分配策略）──
+    def update_role(self, role_id: str, *, name: str, description: str | None,
+                    tenant_assignable: bool | None = None) -> dict:
         role = self._load(role_id)
         if role["is_locked"]:
             raise ForbiddenError("系统超级管理员角色已锁定，不可修改")
         name = (name or "").strip()
         if not name:
             raise ValidationError("请填写角色名称")
-        self.roles.update(role_id, name=name, description=description)
+        other = self.roles.get_by_name(name)
+        if other and other["id"] != role_id:
+            raise ValidationError("角色名称已存在")
+        try:
+            self.roles.update(
+                role_id,
+                name=name,
+                description=description,
+                tenant_assignable=(
+                    bool(role["tenant_assignable"])
+                    if tenant_assignable is None
+                    else bool(tenant_assignable)
+                ),
+            )
+        except StorageError as exc:
+            if unique_violation_constraint(exc) == "uq_sys_role_name_normalized":
+                raise ValidationError("角色名称已存在") from exc
+            raise
         log.info("角色管理：编辑角色 %s name=%s", role_id, name)
         return self.roles.get(role_id)  # type: ignore[return-value]
 

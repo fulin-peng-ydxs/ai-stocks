@@ -92,6 +92,7 @@ describe('角色页 loadAll error+retry 闭环', () => {
         kind: 'system',
         is_builtin: true,
         is_locked: true,
+        tenant_assignable: false,
         member_count: 2,
       },
     ])

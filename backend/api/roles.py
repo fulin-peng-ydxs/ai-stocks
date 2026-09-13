@@ -32,11 +32,14 @@ class RoleCreate(BaseModel):
     code: str | None = None
     name: str
     description: str | None = None
+    tenantAssignable: bool = False
 
 
 class RoleUpdate(BaseModel):
     name: str
     description: str | None = None
+    # None 兼容旧客户端：只编辑名称/描述时保留现有下放策略，不能静默改成 false。
+    tenantAssignable: bool | None = None
 
 
 class GrantsBody(BaseModel):
@@ -61,7 +64,11 @@ def list_roles() -> ApiResponse:
              dependencies=[Depends(require_system)])
 def create_role(body: RoleCreate) -> ApiResponse:
     r = RoleAdminService().create_role(
-        code=body.code, name=body.name, description=body.description)
+        code=body.code,
+        name=body.name,
+        description=body.description,
+        tenant_assignable=body.tenantAssignable,
+    )
     record_rbac_action(
         action="role_create",
         target_type="sys_role",
@@ -77,14 +84,23 @@ def create_role(body: RoleCreate) -> ApiResponse:
 def update_role(role_id: str, body: RoleUpdate) -> ApiResponse:
     svc = RoleAdminService()
     before = svc.roles.get(role_id)
-    r = svc.update_role(role_id, name=body.name, description=body.description)
+    r = svc.update_role(
+        role_id,
+        name=body.name,
+        description=body.description,
+        tenant_assignable=body.tenantAssignable,
+    )
     record_rbac_action(
         action="role_update",
         target_type="sys_role",
         target_id=role_id,
         target_label=r["name"],
         resource_code="role:update",
-        changes=AuditService.build_changes(before, r, fields=("name", "description")),
+        changes=AuditService.build_changes(
+            before,
+            r,
+            fields=("name", "description", "tenant_assignable"),
+        ),
     )
     return ok(r, msg="已保存")
 

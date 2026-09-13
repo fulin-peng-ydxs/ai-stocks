@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
+import uuid
 
 _CN_TERMS = {
     "数据": "data",
@@ -34,6 +35,11 @@ _CN_TERMS = {
     "回测": "backtest",
     "训练": "training",
 }
+
+
+def uuid_hex_id() -> str:
+    """生成不可读的 128-bit UUIDv4 标识，统一使用 32 位小写十六进制格式。"""
+    return uuid.uuid4().hex
 
 
 def _translate_known_cn(text: str) -> str:

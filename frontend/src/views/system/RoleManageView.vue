@@ -191,22 +191,32 @@ async function save() {
   } catch { /* system-only/不存在等由拦截器弹出 */ } finally { saving.value = false }
 }
 
-// ── 角色 新建 / 重命名 / 删除 ──
+// ── 角色 新建 / 编辑 / 删除 ──
 const dialogVisible = ref(false)
-const dialogMode = ref<'create' | 'rename'>('create')
-const roleForm = ref<{ code: string; name: string; description: string }>({ code: '', name: '', description: '' })
+const dialogMode = ref<'create' | 'edit'>('create')
+const roleForm = ref<{
+  code: string
+  name: string
+  description: string
+  tenantAssignable: boolean
+}>({ code: '', name: '', description: '', tenantAssignable: false })
 const roleSaving = ref(false)
 
 function openCreate() {
   dialogMode.value = 'create'
-  roleForm.value = { code: '', name: '', description: '' }
+  roleForm.value = { code: '', name: '', description: '', tenantAssignable: false }
   dialogVisible.value = true
 }
-function openRename() {
+function openEditRole() {
   const r = activeRole.value
   if (!r) return
-  dialogMode.value = 'rename'
-  roleForm.value = { code: r.code, name: r.name, description: r.description ?? '' }
+  dialogMode.value = 'edit'
+  roleForm.value = {
+    code: r.code,
+    name: r.name,
+    description: r.description ?? '',
+    tenantAssignable: r.tenant_assignable,
+  }
   dialogVisible.value = true
 }
 async function saveRole() {
@@ -217,13 +227,16 @@ async function saveRole() {
       const r = await createRole({
         name: roleForm.value.name.trim(),
         description: roleForm.value.description.trim() || null,
+        tenantAssignable: roleForm.value.tenantAssignable,
       })
       ElMessage.success('已创建')
       await loadRoles(true)
       await selectRole(r.id)
     } else {
       await updateRole(activeId.value, {
-        name: roleForm.value.name.trim(), description: roleForm.value.description.trim() || null,
+        name: roleForm.value.name.trim(),
+        description: roleForm.value.description.trim() || null,
+        tenantAssignable: roleForm.value.tenantAssignable,
       })
       ElMessage.success('已保存')
       await loadRoles(true)
@@ -285,6 +298,11 @@ onMounted(loadAll)
                 <HelpTipItem question="系统管理员如何授权">
                   <ul>
                     <li>系统管理员角色拥有全部菜单与功能点，页面仅展示已拥有且锁定；「仅系统管理员」资源不能授予其他角色。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="租户可以分配哪些角色">
+                  <ul>
+                    <li>平台管理员在角色编辑中显式开启“允许租户分配”；系统管理员角色始终不会下放。</li>
                   </ul>
                 </HelpTipItem>
               </HelpTip>
@@ -355,12 +373,13 @@ onMounted(loadAll)
               <div class="rmeta">
                 <template v-if="activeRole">
                   角色码 {{ activeRole.code }}<span v-if="activeRole.member_count != null"> · 关联用户 {{ activeRole.member_count }} 名</span>
+                  <span v-if="!activeIsSystemRole"> · {{ activeRole.tenant_assignable ? '允许租户分配' : '仅平台可分配' }}</span>
                   <span v-if="activeIsSystemRole" class="lock-note"> · 全量权限锁定，不可编辑</span>
                 </template>
               </div>
             </div>
             <div class="page-head-actions" v-if="activeRole">
-              <el-button v-if="!activeRole.is_locked" v-permission="'role:update'" size="small" @click="openRename">重命名</el-button>
+              <el-button v-if="!activeRole.is_locked" v-permission="'role:update'" size="small" @click="openEditRole">编辑</el-button>
               <el-button v-if="!activeRole.is_builtin" v-permission="'role:delete'" size="small" type="danger" plain
                          @click="removeRole">删除</el-button>
               <el-button size="small" :disabled="treeReadonly" @click="setAll(true)">全选</el-button>
@@ -390,17 +409,23 @@ onMounted(loadAll)
     </template>
 
     <template #overlays>
-      <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新建角色' : '重命名角色'" width="420px">
+      <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新建角色' : '编辑角色'" width="420px">
         <el-form label-width="72px">
           <el-form-item label="角色名">
             <el-input v-model="roleForm.name" placeholder="如：数据分析员" />
           </el-form-item>
-          <el-form-item v-if="dialogMode === 'rename'" label="角色码">
-            <el-input v-model="roleForm.code" :disabled="dialogMode === 'rename'"
+          <el-form-item v-if="dialogMode === 'edit'" label="角色码">
+            <el-input v-model="roleForm.code" disabled
                       placeholder="系统生成，创建后不可改" />
           </el-form-item>
           <el-form-item label="描述">
             <el-input v-model="roleForm.description" placeholder="可选" />
+          </el-form-item>
+          <el-form-item label="租户分配">
+            <div>
+              <el-switch v-model="roleForm.tenantAssignable" />
+              <div class="form-help">开启后，租户管理员可将此角色分配给本租户用户。</div>
+            </div>
           </el-form-item>
         </el-form>
         <template #footer>
@@ -425,6 +450,7 @@ onMounted(loadAll)
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-3); }
 .page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
 .rm-error { height: 100%; }
+.form-help { color: var(--el-text-color-secondary); font-size: var(--el-font-size-small); line-height: 1.5; }
 /* master-detail：窄视口体内横滚，右栏不被压垮 */
 .rm-split { height: 100%; display: flex; gap: var(--app-space-4); min-height: 0; overflow-x: auto; }
 .rm-col { border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-bg-color-overlay);
