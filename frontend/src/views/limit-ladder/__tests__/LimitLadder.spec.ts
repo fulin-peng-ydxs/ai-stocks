@@ -205,6 +205,7 @@ describe('LimitLadder', () => {
     expect(wrapper.emitted('update:cardSort')).toEqual([['industry']])
     expect(wrapper.emitted('update:cardSortOrder')).toEqual([['asc']])
     expect(wrapper.get('[data-testid="limit-ladder-boards"]').attributes('data-visible-tag-count')).toBe('2')
+    expect(wrapper.get('[data-testid="limit-ladder-boards"]').text()).toContain('全部板块')
     expect(wrapper.get('.app-control-row').element.lastElementChild?.classList).toContain('app-sort-control')
   })
 

@@ -22,6 +22,8 @@ const props = withDefaults(defineProps<{
   collapseTags?: boolean
   visibleTagCount?: number
   displayMode?: AppFilterSelectDisplayMode
+  /** 全部候选项恰好被选中时的优先摘要；传空字符串可关闭。 */
+  allSelectedLabel?: string
   allowCreate?: boolean
   defaultFirstOption?: boolean
   size?: 'large' | 'default' | 'small'
@@ -35,6 +37,7 @@ const props = withDefaults(defineProps<{
   collapseTags: true,
   visibleTagCount: 1,
   displayMode: 'tags',
+  allSelectedLabel: '全部选中',
   allowCreate: false,
   defaultFirstOption: false,
   size: 'default',
@@ -59,6 +62,14 @@ const normalizedVisibleTagCount = computed(() => {
   return Math.min(3, Math.max(1, value))
 })
 const selectedCount = computed(() => toMulti(props.modelValue).length)
+const isAllSelected = computed(() => {
+  if (!props.multiple || !props.allSelectedLabel.trim() || props.options.length === 0) return false
+
+  const optionValues = new Set(props.options.map(item => String(item.value)))
+  const selectedValues = new Set(toMulti(props.modelValue))
+  return optionValues.size === selectedValues.size
+    && [...optionValues].every(value => selectedValues.has(value))
+})
 
 const selected = computed<string[] | string>({
   get() {
@@ -95,6 +106,7 @@ function onChange(value: string[] | string) {
     }"
     :data-visible-tag-count="multiple ? normalizedVisibleTagCount : undefined"
     :data-display-mode="multiple ? displayMode : undefined"
+    :data-all-selected="multiple ? isAllSelected : undefined"
   >
     <el-select
       v-model="selected"
@@ -117,8 +129,11 @@ function onChange(value: string[] | string) {
       :aria-label="ariaLabel || placeholder"
       @change="onChange"
     >
-      <template v-if="multiple && displayMode === 'count' && hasSelection" #tag>
-        <span class="app-filter-select__count-summary">已选 {{ selectedCount }}</span>
+      <template v-if="multiple && isAllSelected" #tag>
+        <span class="app-filter-select__selection-summary">{{ allSelectedLabel }}</span>
+      </template>
+      <template v-else-if="multiple && displayMode === 'count' && hasSelection" #tag>
+        <span class="app-filter-select__selection-summary">已选 {{ selectedCount }}</span>
       </template>
       <el-option
         v-for="item in options"
@@ -174,7 +189,7 @@ function onChange(value: string[] | string) {
 .app-filter-select--multiple.app-filter-select--has-selection .app-filter-select__control :deep(.el-select__selection) {
   overflow: hidden;
 }
-.app-filter-select__count-summary {
+.app-filter-select__selection-summary {
   overflow: hidden;
   min-width: 0;
   padding: 0 var(--app-space-1);

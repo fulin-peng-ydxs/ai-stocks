@@ -101,12 +101,50 @@ describe('AppFilterSelect', () => {
   })
 
   it('count 模式只显示已选数量并使用独立紧凑容量', async () => {
-    const wrapper = mountSelect(['a', 'b', 'c'], { displayMode: 'count' })
+    const wrapper = mountSelect(['a', 'b'], { displayMode: 'count' })
     await flushPromises()
 
     expect(wrapper.get('.app-filter-select').attributes('data-display-mode')).toBe('count')
     expect(wrapper.get('.app-filter-select').classes()).toContain('app-filter-select--count')
-    expect(wrapper.get('.app-filter-select__count-summary').text()).toBe('已选 3')
+    expect(wrapper.get('.app-filter-select__selection-summary').text()).toBe('已选 2')
+  })
+
+  it('全部候选项被选中时默认优先显示全部选中', async () => {
+    const tagsMode = mountSelect(['c', 'a', 'b'], { visibleTagCount: 2 })
+    const countMode = mountSelect(['a', 'b', 'c'], { displayMode: 'count' })
+    await flushPromises()
+
+    expect(tagsMode.get('.app-filter-select').attributes('data-all-selected')).toBe('true')
+    expect(tagsMode.get('.app-filter-select__selection-summary').text()).toBe('全部选中')
+    expect(countMode.get('.app-filter-select__selection-summary').text()).toBe('全部选中')
+  })
+
+  it('支持自定义全选文案，空字符串可关闭优先摘要', async () => {
+    const customized = mountSelect(['a', 'b', 'c'], {
+      displayMode: 'count',
+      allSelectedLabel: '全部板块',
+    })
+    const disabled = mountSelect(['a', 'b', 'c'], {
+      displayMode: 'count',
+      allSelectedLabel: '',
+    })
+    await flushPromises()
+
+    expect(customized.get('.app-filter-select__selection-summary').text()).toBe('全部板块')
+    expect(disabled.get('.app-filter-select').attributes('data-all-selected')).toBe('false')
+    expect(disabled.get('.app-filter-select__selection-summary').text()).toBe('已选 3')
+  })
+
+  it('空候选、部分选中或包含额外值时保持原展示模式', async () => {
+    const empty = mountSelect([], { options: [], displayMode: 'count' })
+    const partial = mountSelect(['a', 'b'], { displayMode: 'count' })
+    const extra = mountSelect(['a', 'b', 'c', 'custom'], { displayMode: 'count' })
+    await flushPromises()
+
+    expect(empty.get('.app-filter-select').attributes('data-all-selected')).toBe('false')
+    expect(empty.find('.app-filter-select__selection-summary').exists()).toBe(false)
+    expect(partial.get('.app-filter-select__selection-summary').text()).toBe('已选 2')
+    expect(extra.get('.app-filter-select__selection-summary').text()).toBe('已选 4')
   })
 
   it('可见标签数限制在组件支持的 1 到 3 档', async () => {
