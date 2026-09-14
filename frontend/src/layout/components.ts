@@ -63,7 +63,7 @@ export const COMPONENT_CATALOG: Record<ComponentKind, ComponentMeta> = {
     defaultScroll: 'none',
     canGrowMain: false,
     reflowable: false,
-    configCapabilities: ['hasActionRegion', 'density'],
+    configCapabilities: ['hasActionRegion'],
   }),
   section: meta('section', {
     category: 'structure',
@@ -188,7 +188,7 @@ export const COMPONENT_CATALOG: Record<ComponentKind, ComponentMeta> = {
     defaultScroll: 'body-y',
     canGrowMain: true,
     reflowable: false,
-    configCapabilities: ['itemDensity', 'rowClick'],
+    configCapabilities: ['rowClick'],
   }),
   'description-list': meta('description-list', {
     category: 'display',
@@ -372,7 +372,7 @@ export const COMPONENT_CATALOG: Record<ComponentKind, ComponentMeta> = {
     defaultScroll: 'none',
     canGrowMain: false,
     reflowable: true,
-    configCapabilities: ['columns', 'autoFit', 'cardDensity'],
+    configCapabilities: ['columns', 'autoFit'],
   }),
   'metric-card': meta('metric-card', {
     category: 'analytics',

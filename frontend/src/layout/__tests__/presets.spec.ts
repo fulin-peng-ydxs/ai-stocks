@@ -42,7 +42,8 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
         expect(preset.tokens[mode].primary, `${preset.key}.${mode}`).toMatch(/^#/)
         expect(preset.tokens[mode].pageBg, `${preset.key}.${mode}`).toMatch(/^#/)
       }
-      expect(preset.componentDefaults.density).toMatch(/compact|standard|comfortable/)
+      expect(preset).not.toHaveProperty('componentDefaults')
+      expect(preset).not.toHaveProperty('responsiveDefaults')
     }
   })
 

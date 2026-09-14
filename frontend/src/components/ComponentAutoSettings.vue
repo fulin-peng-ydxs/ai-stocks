@@ -51,7 +51,7 @@ interface ComponentConfigAccess {
   /** 可选：只读当前编辑层显式覆盖值；不提供时用 componentValueOf 判定是否覆盖。 */
   componentOverrideOf?: (slotId: string, field: string) => unknown
   setComponentKnob: (slotId: string, field: string, value: unknown) => void
-  /** 可选：读字段生效来源层，用于展示来源徽标（default/preset/page/user）。 */
+  /** 可选：读字段生效来源层，用于展示来源徽标（default/page/user）。 */
   componentSourceOf?: (slotId: string, field: string) => ComponentConfigSource
   /** 可选：读字段逐层取值，用于来源 hover 展示。 */
   componentLayerValuesOf?: (slotId: string, field: string) => Partial<Record<ComponentConfigSource, unknown>>

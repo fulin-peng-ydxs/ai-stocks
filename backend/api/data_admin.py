@@ -929,6 +929,7 @@ def get_settings_view() -> ApiResponse:
     eff = get_effective_settings().model_dump()
     default = Settings.model_validate(_raw_yaml()).model_dump()  # yaml 基线（不含覆盖）
     repo = AppConfigRepo()
+    overrides = repo.get_overrides()
     override_keys = repo.get_override_keys()
     secret_statuses = repo.get_secret_statuses()
     groups = []
@@ -939,8 +940,12 @@ def get_settings_view() -> ApiResponse:
         for f in g["fields"]:
             if f.get("hidden_in_form"):
                 continue
-            val = _dig_config_value(eff, f["path"])
-            default_val = _dig_config_value(default, f["path"])
+            if f.get("app_config_only"):
+                default_val = f.get("default")
+                val = overrides.get(f["path"], default_val)
+            else:
+                val = _dig_config_value(eff, f["path"])
+                default_val = _dig_config_value(default, f["path"])
             # 敏感字段（password 型）不回显明文：value 与 default 都只返回「是否已设置」掩码，
             # 避免前端拿到 Cookie。前端保存时留空不提交（draft 等于掩码 → 不纳入 updates），
             # 因此不会误清空已存值。
@@ -1019,9 +1024,22 @@ def reset_settings(body: dict, request: Request) -> ApiResponse:
 
 def _effective_setting_values(keys: list[str]) -> dict:
     from backend.config import get_effective_settings
+    from backend.storage.app_config import CONFIG_GROUPS, AppConfigRepo
 
     data = get_effective_settings().model_dump()
-    return {key: _dig_config_value(data, key) for key in keys}
+    standalone_defaults = {
+        field["path"]: field.get("default")
+        for group in CONFIG_GROUPS
+        for field in group["fields"]
+        if field.get("app_config_only")
+    }
+    overrides = AppConfigRepo().get_overrides()
+    return {
+        key: overrides.get(key, standalone_defaults.get(key))
+        if key in standalone_defaults
+        else _dig_config_value(data, key)
+        for key in keys
+    }
 
 
 def _record_settings_audit(

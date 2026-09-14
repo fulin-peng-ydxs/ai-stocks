@@ -10,6 +10,7 @@ Web 表单改的参数写 `app_config` 表（点分路径 → JSON 值），sett
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime
 
 from backend.common.logging import get_logger
@@ -26,6 +27,9 @@ log = get_logger("storage.app_config")
 # 可覆盖配置分组与字段（点分路径对齐 backend.config.settings.Settings 结构）。
 # 这同时是 GET /api/data 系统设置表单的 schema（M2.8-D 复用）。
 CONFIG_GROUPS: list[dict] = [
+    {"key": "ui", "label": "界面显示", "desc": "控制所有用户共享的界面显示基线，不包含个人页面密度。", "fields": [
+        {"path": "ui.display.auto_scale_exponent", "label": "自动界面比例强度", "type": "number", "min": 0, "max": 1, "default": 0.10, "app_config_only": True, "desc": "按当前屏幕可用面积自动缩放的指数；0 表示保持 100%，自动结果仍限制在 90%～110%。"},
+    ]},
     {"key": "datasource", "label": "数据源", "desc": "控制公开行情数据源、采集并发和请求容错参数。", "fields": [
         {"path": "datasource.primary", "label": "主数据源", "type": "enum", "options": ["akshare", "baostock"], "desc": "日常采集优先使用的数据源。"},
         {"path": "datasource.fallback", "label": "备用数据源", "type": "enum", "options": ["akshare", "baostock"], "desc": "主数据源不可用时的备用来源。"},
@@ -88,6 +92,12 @@ SECRET_STATUS_USABLE = "usable"
 SECRET_STATUS_UNAVAILABLE = "unavailable"
 
 
+def get_field_meta(path: str) -> dict | None:
+    """返回可覆盖配置的字段元数据，未登记路径返回 None。"""
+    field = _FIELD_BY_PATH.get(path)
+    return dict(field) if field else None
+
+
 def is_sensitive_config_path(path: str) -> bool:
     """配置元数据驱动的敏感字段判定，供写库前审计脱敏复用。"""
     field = _FIELD_BY_PATH.get(str(path))
@@ -136,6 +146,8 @@ def _coerce(field: dict, value):
             num = int(value) if t == "int" else float(value)
         except (TypeError, ValueError):
             raise ConfigValidationError(f"{path} 需为{'整数' if t == 'int' else '数值'}")
+        if not math.isfinite(num):
+            raise ConfigValidationError(f"{path} 需为有限数值")
         if "min" in field and num < field["min"]:
             raise ConfigValidationError(f"{path} 不能小于 {field['min']}")
         if "max" in field and num > field["max"]:

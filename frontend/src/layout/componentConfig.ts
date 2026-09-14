@@ -7,7 +7,7 @@
  * （label / 控件 / 允许层级 / 取值域 / 默认值 / 是否高频），是产品化配置的单一事实源。
  *
  * 覆盖路径格式（与后端 layout_config 一致）：`slots.<slotId>.config.<field>`。
- * 合并优先级：slot.config（代码默认） < preset < page < user，仅允许各字段声明的层级覆盖。
+ * 合并优先级：slot.config（代码默认） < page < user，仅允许各字段声明的层级覆盖。
  */
 import type { ComponentKind, PageLayout, SlotSpec } from './schema'
 import {
@@ -21,7 +21,7 @@ import {
 } from './masterDetailRatioProfiles'
 
 /** 可覆盖层级（不含 default：default 即 slot.config 代码默认）。 */
-export type ComponentConfigLayer = 'preset' | 'page' | 'user'
+export type ComponentConfigLayer = 'page' | 'user'
 /** 含 default 的来源标记（用于来源追踪展示）。 */
 export type ComponentConfigSource = 'default' | ComponentConfigLayer
 /** user 层值的持久化目标；默认随页面布局保存，跨页面偏好走全局偏好。 */
@@ -101,13 +101,13 @@ export interface ComponentFieldApplicabilityResult {
 export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldDef[]>> = {
   'data-table': [
     { key: 'border', label: '显示表格边框', control: 'bool', layers: ['page'], default: false, highFrequency: true },
-    { key: 'pageSize', label: '默认分页大小', control: 'int', layers: ['preset', 'page', 'user'], min: 10, max: 200, default: 20, highFrequency: true, applicability: 'explicit' },
+    { key: 'pageSize', label: '默认分页大小', control: 'int', layers: ['page', 'user'], min: 10, max: 200, default: 20, highFrequency: true, applicability: 'explicit' },
     { key: 'defaultSort', label: '默认排序', control: 'string', layers: ['page', 'user'], applicability: 'sortFields', help: '字段:方向，如 score:desc（取值随页面而异）' },
     { key: 'hiddenColumns', label: '隐藏列', control: 'string[]', layers: ['page', 'user'], applicability: 'columns', help: '列 key 列表（随页面而异）' },
   ],
   'wide-table': [
     { key: 'border', label: '显示表格边框', control: 'bool', layers: ['page'], default: false, highFrequency: true },
-    { key: 'pageSize', label: '默认分页大小', control: 'int', layers: ['preset', 'page', 'user'], min: 10, max: 200, default: 50, highFrequency: true, applicability: 'explicit' },
+    { key: 'pageSize', label: '默认分页大小', control: 'int', layers: ['page', 'user'], min: 10, max: 200, default: 50, highFrequency: true, applicability: 'explicit' },
     { key: 'defaultSort', label: '默认排序', control: 'string', layers: ['page', 'user'], applicability: 'sortFields', help: '字段:方向，如 event_time:desc（取值随页面而异）' },
     { key: 'hiddenColumns', label: '隐藏列', control: 'string[]', layers: ['page', 'user'], applicability: 'columns', help: '列 key 列表（随页面而异）' },
   ],
@@ -140,7 +140,7 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       key: 'masterRatio',
       label: '左栏占比',
       control: 'int',
-      layers: ['preset', 'page', 'user'],
+      layers: ['page', 'user'],
       min: MASTER_DETAIL_RATIO_MIN,
       max: MASTER_DETAIL_RATIO_MAX,
       default: MASTER_DETAIL_RATIO_DEFAULT,
@@ -167,7 +167,7 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       key: 'size',
       label: '抽屉尺寸',
       control: 'enum',
-      layers: ['preset', 'page', 'user'],
+      layers: ['page', 'user'],
       userPersistence: 'global-preference',
       options: ['sm', 'md', 'lg'],
       optionLabels: { sm: '小', md: '中', lg: '大' },
@@ -179,7 +179,7 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       key: 'bodyScroll',
       label: '内容区滚动',
       control: 'bool',
-      layers: ['preset', 'page'],
+      layers: ['page'],
       default: true,
       highFrequency: true,
       help: '关闭后抽屉内容区不再独立滚动，仅适合短设置面板。',
@@ -188,7 +188,7 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       key: 'collapsibleSections',
       label: '允许折叠分组',
       control: 'bool',
-      layers: ['preset', 'page'],
+      layers: ['page'],
       default: true,
       highFrequency: true,
       help: '关闭后页面设置抽屉三段固定展开，不记录个人折叠态。',
@@ -197,7 +197,7 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       key: 'defaultCollapsed',
       label: '默认折叠段',
       control: 'string[]',
-      layers: ['preset', 'page', 'user'],
+      layers: ['page', 'user'],
       userPersistence: 'global-preference',
       options: ['layout', 'components', 'business'],
       optionLabels: { layout: '布局', components: '组件设置', business: '业务选项' },
@@ -211,7 +211,7 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       key: 'collapsibleSections',
       label: '允许折叠分组',
       control: 'bool',
-      layers: ['preset', 'page'],
+      layers: ['page'],
       default: true,
       highFrequency: true,
       help: '关闭后配置面板的组和分区固定展开。',
@@ -220,7 +220,7 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       key: 'defaultCollapsed',
       label: '默认折叠分区',
       control: 'string[]',
-      layers: ['preset', 'page', 'user'],
+      layers: ['page', 'user'],
       default: [],
       highFrequency: true,
       help: '控制配置面板的组和分区默认折叠；取值由页面登记的分区 key 决定。',
@@ -230,7 +230,7 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       key: 'showGroupDescription',
       label: '显示组说明',
       control: 'bool',
-      layers: ['preset', 'page', 'user'],
+      layers: ['page', 'user'],
       default: true,
       highFrequency: true,
       help: '控制配置组标题下方的说明文字是否明文显示。',
@@ -239,7 +239,7 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       key: 'showSectionDescription',
       label: '显示分区说明',
       control: 'bool',
-      layers: ['preset', 'page', 'user'],
+      layers: ['page', 'user'],
       default: true,
       highFrequency: true,
       help: '控制配置分区标题下方的说明文字是否明文显示。',
@@ -297,7 +297,7 @@ export function componentFieldApplicability(
   }
 }
 
-/** 取某组件实例自动继承的字段；可按四层中的目标层过滤。 */
+/** 取某组件实例自动继承的字段；可按页面或用户目标层过滤。 */
 export function getApplicableComponentFieldDefs(
   kind: ComponentKind,
   meta: ComponentSlotConfigMeta = {},
@@ -426,7 +426,7 @@ export interface ResolveComponentConfigOptions {
 }
 
 /**
- * 合并组件配置：slot.config（default） < preset < page < user。
+ * 合并组件配置：slot.config（default） < page < user。
  * 每个覆盖项都要求 (1) 路径合法 (2) slot 存在 (3) 字段已登记 (4) 该字段允许在该层覆盖 (5) 取值合法，
  * 否则丢弃并记录原因，绝不让非法/越权项污染有效配置。
  */

@@ -72,10 +72,10 @@ function toggle() {
   overflow: hidden;
 }
 .sg-l1 + .sg-l1 {
-  margin-top: 12px;
+  margin-top: var(--app-density-overlay-group-gap);
 }
 .sg-l1 > .sg-head {
-  padding: 11px 14px;
+  padding: var(--app-density-overlay-group-gap) var(--app-density-overlay-padding);
 }
 .sg-l1 > .sg-head:hover {
   background: var(--page-settings-seg-hover-bg);
@@ -86,7 +86,7 @@ function toggle() {
   color: var(--page-settings-text);
 }
 .sg-l1 > .sg-body {
-  padding: 2px 14px 14px;
+  padding: 2px var(--app-density-overlay-padding) var(--app-density-overlay-padding);
 }
 
 /* ── 第二层及更深：无卡片、标题虚下划线提示可点，字号递减 ───── */
@@ -94,8 +94,8 @@ function toggle() {
 .sg-l3 + .sg-l3,
 .sg-l2 + .sg-l3,
 .sg-l3 + .sg-l2 {
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: var(--app-density-overlay-group-gap);
+  padding-top: var(--app-density-overlay-group-gap);
   border-top: 1px solid var(--page-settings-section-border);
 }
 /* 深层标题作为"高于内容"的小标题：字号随层级递减但不低于正文(13px)，颜色加强以锚定其下控件。 */
@@ -127,7 +127,7 @@ function toggle() {
 }
 .sg-l2 > .sg-head,
 .sg-l3 > .sg-head {
-  margin-bottom: 10px;
+  margin-bottom: var(--app-density-overlay-group-gap);
 }
 .sg-head.sg-foldable {
   cursor: pointer;
@@ -170,6 +170,6 @@ function toggle() {
 .sg-body {
   display: flex;
   flex-direction: column;
-  gap: var(--app-space-2);
+  gap: var(--app-density-form-gap);
 }
 </style>

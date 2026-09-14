@@ -1,10 +1,10 @@
 /**
  * 应用层布局配置接线：在 useLayoutConfig（可移植布局核心）之上，
- * 挂载时拉取后端 page/user 两层配置并注入，使配置中心保存的「页面默认预设 +
- * 页面级覆盖」和当前用户的「布局/组件偏好」真正作用到页面渲染。
+ * 挂载时拉取后端 page/user 两层配置并注入，使页面级默认和当前用户的
+ * 「布局/组件偏好」真正作用到页面渲染。
  *
  * 分层（对齐 requirement §5.6 推荐节奏）：
- *   - 预设层 / 页面层：后端持久化（本 composable 接入）。
+ *   - 页面层：后端持久化（本 composable 接入）。
  *   - 用户层：PG 为权威；localStorage 仅作为离线 fallback 和迁移源。
  * 后端不可达或 403 时静默回落本地默认/缓存，页面照常渲染，不阻塞首屏。
  */
@@ -58,13 +58,13 @@ export function useRemoteLayoutConfig(base: PageLayout) {
   onMounted(async () => {
     let shouldFlushDirty = false
     try {
-      // effective 同时返回经过后端读取过滤的三层配置和当前字段开放策略；前端仍按
-      // default < preset < page < user 自主合并，以保留来源追踪和本地代码默认。
+      // effective 同时返回经过后端读取过滤的 page/user 配置和字段开放策略；
+      // 前端按 default < page < user 合并，以保留来源追踪和本地代码默认。
       const effective = await getEffectiveLayoutConfig(base.pageKey)
       config.applyComponentFieldPolicies(effective.componentFieldPolicies ?? [])
       const page = effective.layers.find((item) => item.layer === 'page')?.config
       const user = effective.layers.find((item) => item.layer === 'user')?.config
-      config.applyPageConfig({ presetKey: effective.presetKey, values: page?.values ?? {} })
+      config.applyPageConfig({ values: page?.values ?? {} })
       const applied = config.applyUserConfig(
         { schemaVersion: user?.schemaVersion, values: user?.values ?? {} },
         { preserveDirty: true },

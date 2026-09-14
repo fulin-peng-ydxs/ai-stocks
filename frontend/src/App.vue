@@ -13,6 +13,7 @@ import {
   DISPLAY_SCALE_MAX,
   DISPLAY_SCALE_MIN,
   useDisplayScale,
+  setAutoScaleResponsiveExponent,
   type DisplayScaleMode,
 } from '@/composables/useDisplayScale'
 import { resetWorkspaceTabs } from '@/composables/useWorkspaceTabs'
@@ -26,6 +27,7 @@ import {
   useLayoutPreset,
 } from '@/layout'
 import { listLayoutPresets } from '@/api/layout'
+import { getPublicConfig } from '@/api/auth'
 import {
   getDataStatus,
   listTasks,
@@ -307,8 +309,9 @@ async function refreshShellStatus() {
 
 async function loadPresetOverridesAfterAuth() {
   if (presetOverridesLoaded) return
-  const { presets } = await listLayoutPresets()
+  const [{ presets }, publicConfig] = await Promise.all([listLayoutPresets(), getPublicConfig()])
   setRuntimePresetSources(presets)
+  setAutoScaleResponsiveExponent(publicConfig.auto_scale_exponent)
   presetOverridesLoaded = true
 }
 

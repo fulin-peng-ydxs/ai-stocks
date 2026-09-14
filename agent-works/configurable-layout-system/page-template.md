@@ -32,7 +32,7 @@
 3. **消费已有受控字段**：登记 slot 后按 kind 自动继承字段。结构能力写 `slot.config`，安全候选写 `componentMeta`，明确例外写 `fieldApplicability` 与原因；页面必须读取并应用生效值，普通页面必须把 `componentAllowedLayers` 接入 `PageSettingsDrawer`。不得增加逐页面字段白名单。
 4. **没有匹配的系统组件种类**：如果新能力只负责真实 UI 复用，不需要进入布局配置、系统组件页、页面设置抽屉或页面布局编辑器，不新增 kind；如果需要这些平台能力，则按本文 §3“新组件种类”维护目录、schema、预览、页面 slot 和测试。
 5. **新开发真实 Vue 组件**：先判定页面私有业务片段、业务域复用组件或全局真实复用组件。形成稳定复用单元时维护 `DESIGN.md` 真实组件清单、至少一个实际消费点和组件/消费页测试；不要为了组件文件存在而机械新增系统 kind。
-6. **新增可配置属性**：只有属性会被页面设置、页面布局或预设真实消费时，才进入组件配置层；按本文 §3“新组件配置字段”同步 `COMPONENT_FIELD_DEFS`、前端 schema、后端字段和值域/归属规则、安全渲染器、页面实际效果、系统组件覆盖状态和测试。纯组件内部 props 不进入该契约。
+6. **新增可配置属性**：只有属性会被页面设置或页面布局真实消费时，才进入组件配置层；视觉预设不承载组件字段。按本文 §3“新组件配置字段”同步 `COMPONENT_FIELD_DEFS`、前端 schema、后端字段和值域/归属规则、安全渲染器、页面实际效果、系统组件覆盖状态和测试。纯组件内部 props 不进入该契约。
 
 最终判定覆盖五种：复用且登记已有 slot、复用但仅作为内部实现、复用已有真实组件并新增系统 kind/配置字段、新增真实组件但不新增系统 kind、新增真实组件并完成系统 kind/配置字段闭环。任何一种都必须在开发计划的“复用与新增判断”和“维护清单”中写明。
 
@@ -88,6 +88,7 @@
 规则入口：[DESIGN.md](../../DESIGN.md) §3「Typography Rules / Spacing & Rhythm Rules」。
 
 - 新增或复用的语义类 / token：
+- 页面密度：紧凑/标准/宽松是否由 `LayoutHost` 唯一提供，卡片、控件行、表单、表格和页面浮层是否共同消费 `--app-density-*`，且未改变字号或显式 small/large 层级：
 - 行内信息单元：非连续内容是否按 DESIGN §3.2 使用 ` · `、`.app-inline-info` 或 Teleport 浮层唯一 `popper-class`，且未用手工空格、`&nbsp;`、私有 `margin-left/right` 修补：
 - 排版或间距特例：
 - 页头容器对齐：`.page-head` / `.page-toolbar` 是否 `align-items: flex-start`（动作区钉标题顶）——禁止 `flex-end` / `center` 使抽屉触发钮跨页高度不一致；内嵌标题行 `.page-title-row` / `.title-row` 与右侧 `.page-head-actions` 不属此列。
@@ -107,7 +108,7 @@
 | 类型 | 字段 | 层级 | 落点 | 说明 |
 |---|---|---|---|---|
 | 布局旋钮 | density | page/user | editable | 信息密度 |
-| 组件设置 |  | preset/page/user | COMPONENT_FIELD_DEFS |  |
+| 组件设置 |  | page/user | COMPONENT_FIELD_DEFS |  |
 | 页面记忆 |  | usePageSettings | 业务选项 |  |
 
 ### 浮层设计
@@ -171,7 +172,7 @@
 | 业务域内复用组件 | 组件文件、DESIGN 真实复用组件清单、明确业务边界与消费页面；仅在需要布局配置时登记系统组件 kind | 组件/消费页测试、build、对应业务页面交互验收 |
 | 按钮 / 图标操作体系 | `global.css` 控件 token、`AppIconButton`、DESIGN 按钮规范；确需新增专用原生按钮时同步契约允许项和理由 | `button-system.spec.ts`、组件测试、build、顶栏与操作区视觉验收 |
 | 字体 / 间距体系 | `global.css` typography/spacing token、DESIGN 排版与节奏规范；新增语义层级时同步 token、文档和消费点 | 相关样式契约测试、build、关键页面视觉验收 |
-| 全局界面比例 | `useDisplayScale`、`displayScaleProfiles`、`sizeProfileMatching`、`useLayoutViewport`、`displayScaleGeometry`、根画布与独立遮罩、视觉环境入口和 DESIGN；偏好复用 `useGlobalPreferenceSync`；自动缩放指数由预设管理、后端校验、登录公开白名单和运行时缓存共同承接，默认 0.10；自定义比例按显示器可用 CSS 宽高保存个人尺寸档案，并与主从工作台复用尺寸匹配容差及距离工具；尺寸断点使用 `app-viewport`，第三方坐标补丁随安装校验 | composable/尺寸档案/坐标换算和真实组件交互单测、尺寸断点契约、build、分隔条/图表/滚动恢复与 Teleport 浮层视觉验收 |
+| 全局界面比例 | `useDisplayScale`、`displayScaleProfiles`、`sizeProfileMatching`、`useLayoutViewport`、`displayScaleGeometry`、根画布与独立遮罩、视觉环境入口和 DESIGN；偏好复用 `useGlobalPreferenceSync`；自动缩放指数由系统外观配置 `ui.display.auto_scale_exponent`、后端校验、登录公开白名单和运行时缓存共同承接，默认 0.10；自定义比例按显示器可用 CSS 宽高保存个人尺寸档案，并与主从工作台复用尺寸匹配容差及距离工具；尺寸断点使用 `app-viewport`，第三方坐标补丁随安装校验 | composable/尺寸档案/坐标换算和真实组件交互单测、尺寸断点契约、build、分隔条/图表/滚动恢复与 Teleport 浮层视觉验收 |
 | 品牌字标 / 主题强调色 | `BrandMark.vue`、`useLayoutPreset.ts`、登录页与应用外壳消费点、DESIGN 品牌规则；不得新增场景变体或消费侧颜色覆盖 | `BrandMark.spec.ts`、`useLayoutPreset.spec.ts`、build、登录页与工作台同模式同预设视觉验收 |
 | 页面抽屉 | `#overlays`、`PageDrawer` / `PageSettingsDrawer`、唯一浮层类；新增公共能力时同步 DESIGN 组件清单 | `PageDrawer.spec.ts`、`layout-contract.spec.ts`、页面与顶部栏边界、正文内滚、关闭行为 |
 | 纯业务偏好 | `usePageSettings` / 页面业务态，放入「业务选项」并标注「页面记忆」 | 业务行为验证、必要时 build |
@@ -217,7 +218,7 @@ const registryLayout: PageLayout = {
 
 ```ts
 // 页面运行时：必须从 registry 取布局并使用远端入口，不能直接 useLayoutConfig 绕过
-// preset/page/user 层与管理员字段策略。
+// page/user 层与管理员字段策略。
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 

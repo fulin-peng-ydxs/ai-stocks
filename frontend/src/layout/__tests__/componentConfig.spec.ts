@@ -79,15 +79,10 @@ describe('组件字段元数据', () => {
     const pageSize = getComponentFieldDef('data-table', 'pageSize')!
     expect(isLayerAllowed(pageSize, 'page')).toBe(true)
     expect(isLayerAllowed(pageSize, 'user')).toBe(true)
-    expect(isLayerAllowed(pageSize, 'preset')).toBe(true) // pageSize 已放开 preset 层（预设×组件默认）
-    const ds = getComponentFieldDef('data-table', 'defaultSort')!
-    expect(isLayerAllowed(ds, 'preset')).toBe(false) // defaultSort（页面专属枚举）仍仅 page/user
     const border = getComponentFieldDef('data-table', 'border')!
     expect(isLayerAllowed(border, 'page')).toBe(true)
     expect(isLayerAllowed(border, 'user')).toBe(false)
-    expect(isLayerAllowed(border, 'preset')).toBe(false)
     const bodyScroll = getComponentFieldDef('settings-drawer', 'bodyScroll')!
-    expect(isLayerAllowed(bodyScroll, 'preset')).toBe(true)
     expect(isLayerAllowed(bodyScroll, 'page')).toBe(true)
     expect(isLayerAllowed(bodyScroll, 'user')).toBe(false)
   })
@@ -175,29 +170,18 @@ describe('组件配置分层合并', () => {
     expect(r.source['slots.configPanel.config.showSectionDescription']).toBe('user')
   })
 
-  it('preset 层组件默认生效：pageSize 已放开 preset', () => {
+  it('border 仅 page 层覆盖生效，user 越权丢弃', () => {
     const r = resolveComponentConfig(layout, [
-      { layer: 'preset', overlay: { values: { 'slots.table.config.pageSize': 50 } } },
-    ])
-    expect(r.configBySlot.table.pageSize).toBe(50)
-    expect(r.source['slots.table.config.pageSize']).toBe('preset')
-  })
-
-  it('border 仅 page 层覆盖生效，user/preset 越权丢弃', () => {
-    const r = resolveComponentConfig(layout, [
-      { layer: 'preset', overlay: { values: { 'slots.table.config.border': true } } },
       { layer: 'page', overlay: { values: { 'slots.table.config.border': true } } },
       { layer: 'user', overlay: { values: { 'slots.table.config.border': false } } },
     ])
     expect(r.configBySlot.table.border).toBe(true)
     expect(r.source['slots.table.config.border']).toBe('page')
-    expect(r.dropped).toContainEqual({ layer: 'preset', path: 'slots.table.config.border', reason: 'layer.notAllowed' })
     expect(r.dropped).toContainEqual({ layer: 'user', path: 'slots.table.config.border', reason: 'layer.notAllowed' })
   })
 
-  it('settings-drawer 内容区滚动仅 preset/page 层生效，user 层越权丢弃', () => {
+  it('settings-drawer 内容区滚动仅 page 层生效，user 层越权丢弃', () => {
     const r = resolveComponentConfig(layout, [
-      { layer: 'preset', overlay: { values: { 'slots.settings.config.bodyScroll': false } } },
       { layer: 'page', overlay: { values: { 'slots.settings.config.bodyScroll': true } } },
       { layer: 'user', overlay: { values: { 'slots.settings.config.bodyScroll': false } } },
     ])
@@ -208,14 +192,6 @@ describe('组件配置分层合并', () => {
       path: 'slots.settings.config.bodyScroll',
       reason: 'layer.notAllowed',
     })
-  })
-
-  it('越权层级被丢弃：defaultSort 仅 page/user，preset 覆盖无效', () => {
-    const r = resolveComponentConfig(layout, [
-      { layer: 'preset', overlay: { values: { 'slots.table.config.defaultSort': 'x' } } },
-    ])
-    expect(r.configBySlot.table.defaultSort).toBe('score:desc') // 仍为 default
-    expect(r.dropped).toContainEqual({ layer: 'preset', path: 'slots.table.config.defaultSort', reason: 'layer.notAllowed' })
   })
 
   it('未知 slot / 未知字段 / 类型非法均丢弃', () => {

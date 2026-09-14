@@ -729,7 +729,7 @@ describe('页面注册表完整性', () => {
       expect(source, `${entry.pageKey} 必须真实渲染页面设置抽屉`).toContain('<PageSettingsDrawer')
       expect(
         source,
-        `${entry.pageKey} 必须把后端组件字段允许层级传给页面设置抽屉，避免四层策略只在配置中心生效`,
+        `${entry.pageKey} 必须把后端组件字段允许层级传给页面设置抽屉，避免分层策略只在配置中心生效`,
       ).toContain('componentAllowedLayers')
     }
   })

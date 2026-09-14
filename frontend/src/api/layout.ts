@@ -19,8 +19,6 @@ export interface LayoutPresetRecord {
   enabled: boolean
   is_builtin: boolean
   schemaVersion: number
-  referencedPages?: string[]
-  referenceCount?: number
   created_at?: string | null
   updated_at?: string | null
 }
@@ -45,8 +43,8 @@ export interface EffectiveLayoutConfig {
   presetKey: string | null
   schemaVersion: number
   values: LayoutOverlayValues
-  source: Record<string, 'preset' | 'page' | 'user'>
-  layers: { layer: 'preset' | 'page' | 'user'; config: LayoutOverride }[]
+  source: Record<string, 'page' | 'user'>
+  layers: { layer: 'page' | 'user'; config: LayoutOverride }[]
   componentFieldPolicies: FieldPolicyRecord[]
 }
 
@@ -138,8 +136,8 @@ export function getEffectiveLayoutConfig(pageKey: string, userId = 'local'): Pro
   return http.get(`/layout/effective/${encodeURIComponent(pageKey)}`, { params: { userId } })
 }
 
-/** 组件字段开放策略（P10）：元配置，描述某 (组件, 字段) 当前开放到哪几层（preset/page/user）。 */
-export type ComponentConfigLayer = 'preset' | 'page' | 'user'
+/** 组件字段开放策略（P10）：描述某 (组件, 字段) 当前开放到 page/user 中的哪几层。 */
+export type ComponentConfigLayer = 'page' | 'user'
 
 export interface FieldPolicyRecord {
   componentKind: string

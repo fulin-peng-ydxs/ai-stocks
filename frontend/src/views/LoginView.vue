@@ -17,6 +17,7 @@ import {
 } from '@/layout'
 import { useAuthStore } from '@/stores/auth'
 import { getCaptcha, getPublicConfig, sendEmailCode } from '@/api/auth'
+import { setAutoScaleResponsiveExponent } from '@/composables/useDisplayScale'
 import BrandMark from '@/components/BrandMark.vue'
 
 const auth = useAuthStore()
@@ -115,6 +116,7 @@ async function loadPublicConfig(syncCaptcha = true) {
     cfg.requireEmailCode = c.require_email_code
     cfg.loginCaptchaEnabled = c.login_captcha_enabled
     cfg.captchaAfterFails = c.captcha_after_fails
+    setAutoScaleResponsiveExponent(c.auto_scale_exponent)
     if (c.appearance_presets?.length) setRuntimePresetSources(c.appearance_presets)
     if (!cfg.loginCaptchaEnabled) {
       needCaptcha.value = false

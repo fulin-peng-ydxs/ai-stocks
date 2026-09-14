@@ -14,13 +14,11 @@ import AppDataTable from '@/components/AppDataTable.vue'
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
 import {
   getEffectiveLayoutConfig,
   getLayoutPageConfig,
   getLayoutUserConfig,
   listFieldPolicies,
-  listLayoutPresets,
   resetLayoutConfig,
   saveLayoutPageConfig,
   saveLayoutUserConfig,
@@ -30,13 +28,11 @@ import {
   type LayoutOverlayValue,
   type LayoutOverlayValues,
   type LayoutPageConfig,
-  type LayoutPresetRecord,
   type LayoutUserConfig,
 } from '@/api/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import ComponentAutoSettings from '@/components/ComponentAutoSettings.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
-import AppIconButton from '@/components/AppIconButton.vue'
 import LayoutPagePreview from '@/layout/components/LayoutPagePreview.vue'
 import {
   listManagedPages,
@@ -75,16 +71,11 @@ function onPreviewFocus(slotId: string) {
 const selectedUserId = ref('local')
 const selectedPage = computed<PageRegistryEntry>(() => getPageEntry(selectedPageKey.value) ?? managedPages[0])
 
-const presets = ref<LayoutPresetRecord[]>([])
-const presetLoadError = ref('')
-const presetOptions = computed(() => presets.value.filter((p) => p.enabled).map((p) => ({ label: p.name, value: p.key })))
-
 const pageConfig = ref<LayoutPageConfig | null>(null)
 const pageLoadError = ref('')
 // 页面配置表单值按页面 editable 白名单 + 组件配置路径动态承载（不硬编码字段）。
-const pageDraft = reactive<{ presetKey: string; values: LayoutOverlayValues }>({ presetKey: '', values: {} })
+const pageDraft = reactive<{ values: LayoutOverlayValues }>({ values: {} })
 const pageSaving = ref(false)
-const presetSyncing = ref(false)
 
 /** 设置/清除某个页面级旋钮草稿值；空值视为"不覆盖"。 */
 function setPageKnob(path: string, value: unknown): void {
@@ -106,24 +97,7 @@ function componentPathValues(values: LayoutOverlayValues): Record<string, Compon
   return out
 }
 
-const CFD_RE = /^componentFieldDefaults\.([^.]+)\.([^.]+)$/
-const pagePresetComponentValues = computed<Record<string, ComponentFieldValue>>(() => {
-  const preset = presets.value.find((p) => p.key === pageDraft.presetKey)
-  const raw = preset?.config.values ?? {}
-  const out: Record<string, ComponentFieldValue> = {}
-  for (const [path, value] of Object.entries(raw)) {
-    const match = CFD_RE.exec(path)
-    if (!match) continue
-    const [, kind, field] = match
-    for (const slot of selectedPage.value.layout.slots) {
-      if (slot.component === kind) out[componentConfigPath(slot.id, field)] = value as ComponentFieldValue
-    }
-  }
-  return out
-})
-
 const pageDefaultComponentResult = computed(() => resolveComponentConfig(selectedPage.value.layout, [
-  { layer: 'preset', overlay: { values: pagePresetComponentValues.value } },
   { layer: 'page', overlay: { values: componentPathValues(pageDraft.values) } },
 ], {
   metaBySlot: Object.fromEntries(selectedPage.value.layout.slots.map((slot) => [
@@ -197,7 +171,6 @@ function diagnosticValue(slot: SlotSpec, field: string): string {
 function diagnosticSource(slot: SlotSpec, field: string): string {
   const source = getPageComponentSource(slot.id, field)
   if (source === 'default') return '代码默认'
-  if (source === 'preset') return '页面预设'
   if (source === 'page') return '页面覆盖'
   return source
 }
@@ -300,20 +273,6 @@ const userConfig = ref<LayoutUserConfig | null>(null)
 const pageValidationErrors = ref<string[]>([])
 const userValidationErrors = ref<string[]>([])
 
-async function reloadPresets(notify = false) {
-  presetSyncing.value = true
-  presetLoadError.value = ''
-  try {
-    const data = await listLayoutPresets(true)
-    presets.value = data.presets
-    if (notify) ElMessage.success('预设已同步')
-  } catch (error) {
-    presetLoadError.value = getErrorMessage(error, '布局预设加载失败')
-  } finally {
-    presetSyncing.value = false
-  }
-}
-
 function pageDraftValues(): LayoutOverlayValues {
   // 回写：页面 editable 白名单内的 L2 旋钮 + 组件配置路径（slots.<id>.config.<field>）。空值视为"不覆盖"。
   const allowed = new Set(selectedPage.value.layout.editable.map((k) => k.path))
@@ -332,7 +291,6 @@ async function loadPageConfig(options: { clearCurrent?: boolean } = {}) {
   try {
     const cfg = await getLayoutPageConfig(selectedPageKey.value)
     pageConfig.value = cfg
-    pageDraft.presetKey = cfg.presetKey ?? ''
     for (const key of Object.keys(pageDraft.values)) delete pageDraft.values[key]
     const stored = cfg.config.values ?? {}
     for (const knob of selectedPage.value.layout.editable) {
@@ -348,16 +306,15 @@ async function loadPageConfig(options: { clearCurrent?: boolean } = {}) {
   }
 }
 
-const pageRegionError = computed(() => pageLoadError.value || presetLoadError.value || fieldPolicyError.value)
+const pageRegionError = computed(() => pageLoadError.value || fieldPolicyError.value)
 const pageRegionErrorTitle = computed(() => {
   if (pageLoadError.value) return pageConfig.value ? '页面布局配置刷新失败' : '页面布局配置加载失败'
-  if (presetLoadError.value) return '布局预设加载失败'
   return '组件字段策略加载失败'
 })
 
 /** 依赖任一失败时整区由 error 接管；重试统一恢复页面配置及其两个必要依赖。 */
 async function retryPageRegion() {
-  await Promise.all([loadPageConfig(), reloadPresets(), reloadFieldPolicies()])
+  await Promise.all([loadPageConfig(), reloadFieldPolicies()])
 }
 
 async function savePageConfig() {
@@ -372,7 +329,7 @@ async function savePageConfig() {
       return
     }
     pageConfig.value = await saveLayoutPageConfig(selectedPageKey.value, {
-      presetKey: pageDraft.presetKey || null,
+      presetKey: null,
       config: { values: pageDraftValues() },
       layout: selectedPage.value.layout as unknown as Record<string, unknown>,
     })
@@ -443,7 +400,7 @@ async function importConfig() {
         ElMessage.error(validation.errors[0] || '导入配置非法')
         return
       }
-      await saveLayoutPageConfig(page.pageKey, { presetKey: page.presetKey, config: page.config, layout })
+      await saveLayoutPageConfig(page.pageKey, { presetKey: null, config: page.config, layout })
       ElMessage.success('页面配置导入完成')
       await loadPageConfig()
       return
@@ -527,7 +484,6 @@ watch(selectedPageKey, async () => {
 
 onMounted(async () => {
   await reloadFieldPolicies()
-  await reloadPresets()
   await loadPageConfig({ clearCurrent: true })
 })
 </script>
@@ -580,7 +536,7 @@ onMounted(async () => {
               <el-descriptions :column="4" size="small" border class="meta-desc">
                 <el-descriptions-item label="原型">{{ selectedPage.archetype }}</el-descriptions-item>
                 <el-descriptions-item label="目标响应式策略">{{ responsiveProfileLabel(selectedPage.responsiveProfile) }}</el-descriptions-item>
-                <el-descriptions-item label="当前页面预设">{{ pageConfig?.presetKey || '继承全局' }}</el-descriptions-item>
+                <el-descriptions-item label="页面密度">{{ pageDraft.values.density || '标准（系统默认）' }}</el-descriptions-item>
                 <el-descriptions-item label="组件配置">{{ selectedPage.supportsComponentConfig ? '已纳入页面默认配置' : '暂未开放' }}</el-descriptions-item>
                 <el-descriptions-item label="组件槽位" :span="4">
                   <div class="slot-chips">
@@ -621,30 +577,11 @@ onMounted(async () => {
                 />
               </section>
 
-              <!-- 右：页面配置（默认预设 + 页面默认布局 + 组件特性配置 + 只读诊断，与左侧预览同屏一体）。 -->
+              <!-- 右：页面默认布局 + 组件特性配置 + 只读诊断，与左侧预览同屏一体。 -->
               <section class="plain-panel config-panel">
                 <div class="section-title">{{ selectedPage.label }} · 配置</div>
                 <div class="section-subtitle">{{ selectedPage.path }} · {{ selectedPage.pageKey }}</div>
                 <el-form label-position="top" class="config-form">
-                  <el-form-item label="默认预设">
-                    <div class="preset-picker-row">
-                      <el-select v-model="pageDraft.presetKey" class="preset-select" clearable>
-                        <el-option v-for="item in presetOptions" :key="item.value" :label="item.label" :value="item.value" />
-                      </el-select>
-                      <el-tooltip content="同步预设管理里的最新可选项和组件默认值" placement="top">
-                        <AppIconButton
-                          class="preset-sync-button"
-                          label="同步预设"
-                          variant="soft"
-                          :loading="presetSyncing"
-                          :native-title="false"
-                          @click="reloadPresets(true)"
-                        >
-                          <el-icon><Refresh /></el-icon>
-                        </AppIconButton>
-                      </el-tooltip>
-                    </div>
-                  </el-form-item>
                   <!-- 页面级旋钮按本页 editable 白名单动态渲染（不再手写字段）。 -->
                   <el-form-item v-for="knob in selectedPage.layout.editable" :key="knob.path" :label="knob.label">
                     <el-select
@@ -685,7 +622,7 @@ onMounted(async () => {
                 <!-- 组件特性配置（页面层）：复用与设置抽屉同一渲染器 ComponentAutoSettings（page 层、聚焦单 slot、按策略门控、可清除）。 -->
                 <template v-if="selectedPage.supportsComponentConfig">
                   <div class="cc-block-title">组件特性配置</div>
-                  <div class="section-subtitle">点击左侧预览里的某个 slot 后，这里展示代码默认、页面预设和页面覆盖合并后的页面默认值。个人偏好仍在各页面设置抽屉里调整。</div>
+                  <div class="section-subtitle">点击左侧预览里的某个 slot 后，这里展示代码默认与页面覆盖合并后的页面默认值。个人偏好仍在各页面设置抽屉里调整。</div>
                   <!-- 受约束宽度容器：还原共享渲染器在窄抽屉里的密度，避免分段控件在宽面板被拉爆/溢出。 -->
                   <div v-if="focusedSlotSpec" class="cc-cfg-host">
                     <div class="focused-slot-card">
@@ -922,7 +859,7 @@ onMounted(async () => {
   border: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
   border-radius: 6px;
-  padding: 14px;
+  padding: var(--app-density-card-padding);
 }
 .preview-panel,
 .config-panel,
@@ -944,19 +881,6 @@ onMounted(async () => {
 }
 .config-form {
   margin-top: 14px;
-}
-.preset-picker-row {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-2);
-  width: 100%;
-}
-.preset-select {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.preset-sync-button {
-  flex: 0 0 32px;
 }
 .preview-host {
   margin-top: 12px;

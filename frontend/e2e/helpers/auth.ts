@@ -11,6 +11,7 @@ import {
 
 const API_URL = process.env.E2E_API_URL || DEFAULT_E2E_API_URL
 const AUTH_STORAGE_KEY = 'ai-stocks-auth'
+const DISPLAY_SCALE_STORAGE_KEY = 'ai-stocks-display-scale'
 const debugAuthCache = new Map<string, E2EAuthSnapshot>()
 const execFileAsync = promisify(execFile)
 
@@ -133,6 +134,19 @@ export async function installAuthSnapshot(
   await page.addInitScript(([key, value]) => {
     window.localStorage.setItem(key, JSON.stringify(value))
   }, [AUTH_STORAGE_KEY, snapshot] as const)
+  // 页面布局 E2E 固定 100% 显示比例，避免系统自动比例与视口矩阵叠加后污染 CSS 几何断言。
+  // 自动比例策略由独立单测与 display-scale fixture 验证。
+  await page.addInitScript((key) => {
+    // Playwright 的虚拟 screen 默认小于设计参考屏；固定参考面积后，远端同步回 auto 模式
+    // 仍保持 100%，不会把布局像素断言整体缩成 90%。
+    Object.defineProperty(window.screen, 'availWidth', { configurable: true, value: 2560 })
+    Object.defineProperty(window.screen, 'availHeight', { configurable: true, value: 1440 })
+    window.localStorage.setItem(key, JSON.stringify({
+      mode: 'custom',
+      customPercent: 100,
+      customProfiles: [],
+    }))
+  }, DISPLAY_SCALE_STORAGE_KEY)
 }
 
 export async function expectBackendHealthy(request: APIRequestContext): Promise<void> {

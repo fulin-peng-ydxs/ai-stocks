@@ -24,10 +24,16 @@ const AUTO_SCALE_MIN = 90
 const AUTO_SCALE_MAX = 110
 const AUTO_SCALE_REFERENCE_AREA = 2560 * 1440
 let responsiveExponent = AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT
+const AUTO_SCALE_EXPONENT_CACHE_KEY = 'ai-stocks:auto-scale-exponent:v1'
 
-/** 预设策略只调整自动模式，不改写用户的模式或手动比例。 */
+/** 系统外观策略只调整自动模式，不改写用户的模式或手动比例。 */
 export function setAutoScaleResponsiveExponent(value: unknown): void {
   responsiveExponent = normalizeAutoScaleExponent(value)
+  try {
+    localStorage.setItem(AUTO_SCALE_EXPONENT_CACHE_KEY, String(responsiveExponent))
+  } catch {
+    // 站点存储不可用时仍保持当前会话生效。
+  }
   if (initialized) refreshScaleForScreen()
 }
 
@@ -198,6 +204,14 @@ function onVisibilityChange(): void {
 }
 
 export function initDisplayScale(): void {
+  try {
+    const cachedExponent = localStorage.getItem(AUTO_SCALE_EXPONENT_CACHE_KEY)
+    responsiveExponent = cachedExponent == null
+      ? AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT
+      : normalizeAutoScaleExponent(Number(cachedExponent))
+  } catch {
+    responsiveExponent = AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT
+  }
   const saved = readLocal()
   mode.value = saved?.mode ?? 'auto'
   customPercent.value = saved?.customPercent ?? DISPLAY_SCALE_DEFAULT

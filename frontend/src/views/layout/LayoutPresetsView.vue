@@ -1,17 +1,10 @@
 <script setup lang="ts">
-import HelpHint from '@/components/HelpHint.vue'
-import {
-  AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT,
-  AUTO_SCALE_RESPONSIVE_EXPONENT_MIN,
-  AUTO_SCALE_RESPONSIVE_EXPONENT_MAX,
-  normalizeAutoScaleExponent,
-} from '@/layout/displayScalePolicy'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 /**
  * 预设管理工作区（P4 布局平台 IA 重构）。
  *
- * 职责（plan.md §13.2）：管理全局风格预设、token、组件默认策略、引用关系与启停状态，
+ * 职责（plan.md §13.2）：管理全局视觉预设、token 与启停状态，
  * 以及预设维度的导入导出。页面/用户配置与校验报告归「页面布局」工作区，组件目录归「系统组件」。
  * 由原单页 LayoutConfigView 的「预设管理 + 导入导出(预设部分)」迁移而来，能力不丢失。
  */
@@ -38,21 +31,22 @@ import {
 import { getErrorMessage } from '@/utils/error'
 import type { AppRowAction } from '@/components/rowActions'
 
-// 可编辑 token 清单（颜色按白天/夜间各一套；形态/密度明暗共用）。label 给编辑器展示用。
+// 可编辑 token 清单（颜色按白天/夜间各一套；圆角明暗共用）。
 const COLOR_KEYS: { key: keyof StyleTokenConfig; label: string }[] = [
   { key: 'primary', label: '主色' },
   { key: 'success', label: '成功' },
   { key: 'warning', label: '警告' },
   { key: 'danger', label: '危险' },
+  { key: 'marketUp', label: '上涨' },
+  { key: 'marketDown', label: '下跌' },
+  { key: 'border', label: '边框' },
+  { key: 'borderStrong', label: '强调边框' },
 ]
 const SHAPE_KEYS: { key: keyof StyleTokenConfig; label: string; max: number }[] = [
   { key: 'cardRadius', label: '卡片圆角', max: 24 },
   { key: 'controlRadius', label: '控件圆角', max: 24 },
-  { key: 'pageGap', label: '页间距', max: 32 },
-  { key: 'cardPadding', label: '卡片内距', max: 32 },
-  { key: 'tableCellPaddingY', label: '表格行距', max: 24 },
 ]
-const REFLOW_BREAKPOINTS = [1024, 1100, 1280]
+const VISUAL_PRESET_PATH = /^tokens\.(?:light|dark)\.(?:primary|success|warning|danger|marketUp|marketDown|border|borderStrong|shadow)$|^tokens\.shared\.(?:cardRadius|controlRadius)$/
 
 const presetsLayout = getPageLayout('layout-presets')
 // 平台布局管理页不开放用户级组件配置；表格仍显式消费统一边框契约。
@@ -73,16 +67,7 @@ const presetForm = reactive({
   description: '',
   enabled: true,
   is_builtin: false,
-  // 组件默认策略
-  density: 'standard',
-  tableSize: 'standard',
-  filterDefaultExpanded: true,
-  drawerSize: 'md',
-  pageSize: 20, // 预设×组件默认：data-table 默认分页
-  // 响应式默认（受控枚举）
-  reflowBreakpoint: 1024,
-  autoScaleResponsiveExponent: AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT,
-  // 视觉 token：颜色按模式两套 + 形态密度共用
+  // 视觉 token：颜色按模式两套 + 圆角共用
   light: {} as TokenMap,
   dark: {} as TokenMap,
   shared: {} as Record<string, number>,
@@ -100,13 +85,6 @@ function presetToForm(row?: LayoutPresetRecord) {
   presetForm.description = row?.description ?? ''
   presetForm.enabled = row?.enabled ?? true
   presetForm.is_builtin = row?.is_builtin ?? false
-  presetForm.density = String(values['density'] ?? values['componentDefaults.density'] ?? 'standard')
-  presetForm.tableSize = String(values['componentDefaults.tableSize'] ?? presetForm.density)
-  presetForm.filterDefaultExpanded = Boolean(values['componentDefaults.filterDefaultExpanded'] ?? true)
-  presetForm.drawerSize = String(values['componentDefaults.drawerSize'] ?? 'md')
-  presetForm.pageSize = Number(values['componentFieldDefaults.data-table.pageSize'] ?? 20)
-  presetForm.reflowBreakpoint = Number(values['responsiveDefaults.reflowBreakpoint'] ?? 1024)
-  presetForm.autoScaleResponsiveExponent = normalizeAutoScaleExponent(values['responsiveDefaults.autoScaleResponsiveExponent'])
   // token 回显：以前端内置预设该模式 token 为底（保证编辑内置时看到真实颜色），叠加后端覆盖。
   const base = getLayoutPreset(row?.key)
   for (const mode of ['light', 'dark'] as ThemeMode[]) {
@@ -114,6 +92,7 @@ function presetToForm(row?: LayoutPresetRecord) {
     for (const { key } of COLOR_KEYS) {
       target[key] = String(values[`tokens.${mode}.${key}`] ?? base.tokens[mode][key])
     }
+    target.shadow = String(values[`tokens.${mode}.shadow`] ?? base.tokens[mode].shadow)
   }
   for (const { key } of SHAPE_KEYS) {
     presetForm.shared[key] = Number(values[`tokens.shared.${key}`] ?? base.tokens.light[key])
@@ -122,20 +101,13 @@ function presetToForm(row?: LayoutPresetRecord) {
 }
 
 function presetFormValues(): LayoutOverlayValues {
-  const out: LayoutOverlayValues = {
-    density: presetForm.density,
-    'componentDefaults.density': presetForm.density,
-    'componentDefaults.tableSize': presetForm.tableSize,
-    'componentDefaults.filterDefaultExpanded': presetForm.filterDefaultExpanded,
-    'componentDefaults.drawerSize': presetForm.drawerSize,
-    'componentFieldDefaults.data-table.pageSize': Number(presetForm.pageSize),
-    'responsiveDefaults.reflowBreakpoint': Number(presetForm.reflowBreakpoint),
-    'responsiveDefaults.autoScaleResponsiveExponent': normalizeAutoScaleExponent(presetForm.autoScaleResponsiveExponent),
-  }
+  const out: LayoutOverlayValues = {}
   for (const { key } of COLOR_KEYS) {
     out[`tokens.light.${key}`] = presetForm.light[key]
     out[`tokens.dark.${key}`] = presetForm.dark[key]
   }
+  out['tokens.light.shadow'] = presetForm.light.shadow
+  out['tokens.dark.shadow'] = presetForm.dark.shadow
   for (const { key } of SHAPE_KEYS) {
     out[`tokens.shared.${key}`] = Number(presetForm.shared[key])
   }
@@ -178,18 +150,11 @@ async function submitPreset() {
     ElMessage.warning('请填写预设标识和名称')
     return
   }
-  const enumValues = [presetForm.density, presetForm.tableSize, presetForm.drawerSize]
-  const numberValues = [
-    presetForm.pageSize,
-    presetForm.reflowBreakpoint,
-    presetForm.autoScaleResponsiveExponent,
-    ...SHAPE_KEYS.map(({ key }) => presetForm.shared[key]),
-  ]
+  const numberValues = SHAPE_KEYS.map(({ key }) => presetForm.shared[key])
   const colorsComplete = COLOR_KEYS.every(({ key }) => (
     Boolean(presetForm.light[key]) && Boolean(presetForm.dark[key])
-  ))
-  if (enumValues.some((value) => !value) || numberValues.some((value) => !Number.isFinite(Number(value)))
-    || !colorsComplete) {
+  )) && Boolean(presetForm.light.shadow) && Boolean(presetForm.dark.shadow)
+  if (numberValues.some((value) => !Number.isFinite(Number(value))) || !colorsComplete) {
     ElMessage.warning('请补全布局预设中的必填配置')
     return
   }
@@ -290,14 +255,32 @@ async function importPresets() {
       ElMessage.error('请导入预设类型（layout-presets）文件；页面/用户配置请在「页面布局」工作区导入')
       return
     }
-    for (const preset of parsed.presets ?? []) {
+    const incoming = Array.isArray(parsed.presets) ? parsed.presets : []
+    const discarded = incoming.reduce((total: number, preset: LayoutPresetRecord) => (
+      total + Object.keys(preset.config?.values ?? {}).filter((path) => !VISUAL_PRESET_PATH.test(path)).length
+    ), 0)
+    if (discarded > 0) {
+      try {
+        await ElMessageBox.confirm(
+          `检测到 ${discarded} 个旧版布局、密度或组件字段。它们已不属于视觉预设，导入时将被移除。`,
+          '兼容旧版预设',
+          { type: 'warning', confirmButtonText: '移除并导入' },
+        )
+      } catch {
+        return
+      }
+    }
+    for (const preset of incoming) {
+      const values = Object.fromEntries(
+        Object.entries(preset.config?.values ?? {}).filter(([path]) => VISUAL_PRESET_PATH.test(path)),
+      )
       await saveLayoutPreset({
         key: preset.key,
         name: preset.name,
         description: preset.description,
         enabled: preset.enabled,
         is_builtin: false,
-        config: preset.config,
+        config: { schemaVersion: preset.config?.schemaVersion, values },
       })
     }
     ElMessage.success('预设导入完成')
@@ -322,7 +305,7 @@ onMounted(reloadPresets)
         <div class="page-head">
           <div>
             <h2 class="app-page-title">预设管理</h2>
-            <p class="page-subtitle">管理全局风格预设、Token、组件默认策略与引用关系（共 {{ presetCount }} 套）。</p>
+            <p class="page-subtitle">管理颜色、圆角、边框与阴影等全局视觉预设（共 {{ presetCount }} 套）。</p>
           </div>
           <div class="page-head-actions">
             <el-button @click="importExportVisible = true">导入导出</el-button>
@@ -358,14 +341,8 @@ onMounted(reloadPresets)
             </template>
           </AppTableColumn>
           <AppTableColumn prop="description" label="说明" />
-          <AppTableColumn label="密度">
-            <template #default="{ row }">{{ row.config.values.density || row.config.values['componentDefaults.density'] || '-' }}</template>
-          </AppTableColumn>
-          <AppTableColumn label="引用页面">
-            <template #default="{ row }">
-              <span v-if="row.referenceCount">{{ row.referencedPages?.join('、') }}</span>
-              <span v-else class="muted">未引用</span>
-            </template>
+          <AppTableColumn label="卡片圆角">
+            <template #default="{ row }">{{ row.config.values['tokens.shared.cardRadius'] ?? '默认' }}</template>
           </AppTableColumn>
           <AppTableColumn label="状态">
             <template #default="{ row }">
@@ -402,57 +379,6 @@ onMounted(reloadPresets)
             <el-input v-model="presetForm.description" />
           </el-form-item>
 
-          <div class="form-section-title">组件默认策略</div>
-          <div class="form-grid three">
-            <el-form-item label="密度" required>
-              <el-select v-model="presetForm.density">
-                <el-option label="紧凑" value="compact" />
-                <el-option label="标准" value="standard" />
-                <el-option label="宽松" value="comfortable" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="表格密度" required>
-              <el-select v-model="presetForm.tableSize">
-                <el-option label="紧凑" value="compact" />
-                <el-option label="标准" value="standard" />
-                <el-option label="宽松" value="comfortable" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="抽屉尺寸" required>
-              <el-select v-model="presetForm.drawerSize">
-                <el-option label="小" value="sm" />
-                <el-option label="中" value="md" />
-                <el-option label="大" value="lg" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="表格默认分页(data-table)" required>
-              <el-input-number v-model="presetForm.pageSize" :min="10" :max="500" :step="10" controls-position="right" />
-            </el-form-item>
-            <el-form-item label="重排断点(响应式默认)" required>
-              <el-select v-model="presetForm.reflowBreakpoint">
-                <el-option v-for="bp in REFLOW_BREAKPOINTS" :key="bp" :label="`${bp}px`" :value="bp" />
-              </el-select>
-            </el-form-item>
-            <el-form-item required>
-              <template #label>
-                自动缩放激进程度
-                <HelpHint text="默认 0.10，范围 0～1。数值越大，小屏缩小、大屏放大的幅度越明显；0 表示自动保持 100%。启用当前预设并选择自动比例时生效，自动比例仍限制在 90%～110%，手动比例不受影响。" />
-              </template>
-              <el-input-number
-                v-model="presetForm.autoScaleResponsiveExponent"
-                aria-label="自动缩放激进程度"
-                :min="AUTO_SCALE_RESPONSIVE_EXPONENT_MIN"
-                :max="AUTO_SCALE_RESPONSIVE_EXPONENT_MAX"
-                :step="0.01"
-                :precision="2"
-                controls-position="right"
-              />
-            </el-form-item>
-            <el-form-item label="筛选区默认展开">
-              <el-switch v-model="presetForm.filterDefaultExpanded" />
-            </el-form-item>
-          </div>
-
           <div class="form-section-title">强调色 token（背景与边栏由明暗模式固定）</div>
           <el-tabs v-model="tokenTab">
             <el-tab-pane label="白天" name="light">
@@ -460,6 +386,7 @@ onMounted(reloadPresets)
                 <el-form-item v-for="c in COLOR_KEYS" :key="c.key" :label="c.label" required>
                   <el-color-picker v-model="presetForm.light[c.key]" />
                 </el-form-item>
+                <el-form-item label="阴影" required><el-input v-model="presetForm.light.shadow" /></el-form-item>
               </div>
             </el-tab-pane>
             <el-tab-pane label="夜间" name="dark">
@@ -467,11 +394,12 @@ onMounted(reloadPresets)
                 <el-form-item v-for="c in COLOR_KEYS" :key="c.key" :label="c.label" required>
                   <el-color-picker v-model="presetForm.dark[c.key]" />
                 </el-form-item>
+                <el-form-item label="阴影" required><el-input v-model="presetForm.dark.shadow" /></el-form-item>
               </div>
             </el-tab-pane>
           </el-tabs>
 
-          <div class="form-section-title">形态 / 密度（明暗共用）</div>
+          <div class="form-section-title">圆角（明暗共用）</div>
           <div class="form-grid three">
             <el-form-item v-for="s in SHAPE_KEYS" :key="s.key" :label="s.label" required>
               <el-input-number v-model="presetForm.shared[s.key]" :min="0" :max="s.max" controls-position="right" />
@@ -528,7 +456,7 @@ onMounted(reloadPresets)
   border: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
   border-radius: 6px;
-  padding: 14px;
+  padding: var(--app-density-card-padding);
 }
 .preset-list-panel {
   height: 100%;

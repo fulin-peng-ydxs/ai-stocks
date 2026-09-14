@@ -4,7 +4,7 @@ import { coerceEditableValue, validateLayout } from './validator'
 
 export const LAYOUT_CONFIG_SCHEMA_VERSION = 1
 
-export type LayoutConfigLayer = 'default' | 'preset' | 'page' | 'user'
+export type LayoutConfigLayer = 'default' | 'page' | 'user'
 export type LayoutOverlayValue = string | number | boolean
 export type LayoutOverlayValues = Record<string, LayoutOverlayValue>
 

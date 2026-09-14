@@ -199,7 +199,7 @@ describe('PageSettingsDrawer', () => {
       config: {
         ...current,
         componentAllowedLayers: (kind: string, field: string) =>
-          kind === 'settings-drawer' && field === 'size' ? ['preset', 'page'] : undefined,
+          kind === 'settings-drawer' && field === 'size' ? ['page'] : undefined,
       },
     })
 

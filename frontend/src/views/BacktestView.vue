@@ -1840,7 +1840,7 @@ async function openTradeChart(row: TradeRow) {
       shadow="never"
       class="form-card"
     >
-      <AppControlRow class="form-row" dense>
+      <AppControlRow class="form-row">
         <AppControlItem label="区间">
           <TradeDatePicker v-model="dateStart" placeholder="开始" style="width: 160px" />
         </AppControlItem>
@@ -2141,7 +2141,7 @@ async function openTradeChart(row: TradeRow) {
                   </HelpTip>
                 </span>
               </template>
-              <AppControlRow class="form-row robust-row" dense>
+              <AppControlRow class="form-row robust-row">
                 <el-radio-group v-model="robustMode" size="small">
                   <el-radio-button value="param_sweep">参数敏感性</el-radio-button>
                   <el-radio-button value="in_out_sample">样本内外</el-radio-button>

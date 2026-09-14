@@ -10,7 +10,6 @@ type ConfigShape = Record<string, 'string' | 'number' | 'int' | 'bool' | 'string
 
 const rowClick = ['none', 'select', 'open-detail', 'navigate']
 const resetMode = ['clear', 'defaults']
-const density = ['compact', 'standard', 'comfortable']
 const size = ['sm', 'md', 'lg', 'xl', 'fullscreen']
 const chartType = ['line', 'bar', 'area', 'pie', 'scatter', 'candlestick']
 
@@ -103,7 +102,7 @@ const COMPONENT_CONFIG_SHAPES: Partial<Record<ComponentKind, ConfigShape>> = {
   'data-table': tableShape,
   'wide-table': tableShape,
   'tree-table': { ...tableShape, defaultExpandAll: 'bool', rowKey: 'string' },
-  'simple-list': { itemDensity: density, rowClick },
+  'simple-list': { rowClick },
   'description-list': { columns: 'int', labelWidth: formShape.labelWidth },
 
   'filter-bar': controlRowShape,
@@ -133,7 +132,7 @@ const COMPONENT_CONFIG_SHAPES: Partial<Record<ComponentKind, ConfigShape>> = {
   'error-state': feedbackShape,
   skeleton: feedbackShape,
 
-  'kpi-grid': { columns: 'int', autoFit: 'bool', cardDensity: density },
+  'kpi-grid': { columns: 'int', autoFit: 'bool' },
   'metric-card': { trend: 'bool', precision: 'int' },
   'stat-strip': { items: 'string[]', wrap: 'bool' },
   chart: chartShape,
@@ -159,7 +158,7 @@ const COMPONENT_CONFIG_SHAPES: Partial<Record<ComponentKind, ConfigShape>> = {
   'anchor-nav': { sticky: 'bool', offset: 'int' },
   breadcrumb: { maxItems: 'int' },
 
-  'page-shell': { density },
+  'page-shell': {},
   section: { title: 'string', collapsible: 'bool' },
   'split-pane': { direction: ['horizontal', 'vertical'], primarySize: 'int', resizable: 'bool' },
   'slot-group': { gap: 'int', columns: 'int' },

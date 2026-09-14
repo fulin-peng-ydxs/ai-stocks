@@ -1,8 +1,8 @@
 """可配置布局系统持久化（agent-works/configurable-layout-system M4）。
 
-后端只保存受控覆盖层：预设层、页面层、用户层。页面实际结构仍由前端
-PageLayout 声明提供，后端负责最终守门：schema 版本、路径白名单、类型和值域、
-以及 validate 接口中传入 layout 时的组件存在性和尺寸下限。
+后端分别保存视觉预设与受控的页面、用户覆盖层。页面实际结构仍由前端
+PageLayout 声明提供，后端负责最终守门：schema 版本、路径白名单、类型和值域，
+以及 validate 接口中传入 layout 时的组件存在性和尺寸下限。视觉预设不参与布局合并。
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ LAYOUT_CONFIG_SCHEMA_VERSION = 1
 
 Density = Literal["compact", "standard", "comfortable"]
 ScrollOwnership = Literal["none", "body-y", "body-xy", "region"]
-LayoutConfigLayer = Literal["preset", "page", "user"]
+LayoutConfigLayer = Literal["page", "user"]
 
 DENSITIES = {"compact", "standard", "comfortable"}
 SCROLL_OWNERSHIPS = {"none", "body-y", "body-xy", "region"}
@@ -52,24 +52,23 @@ COMPONENT_CONFIG_PATH_RE = re.compile(r"^slots\.([A-Za-z0-9:_-]{1,80})\.config\.
 # 不预设无消费的字段。类型、层级和通用数值边界按字段名维护；组件专属静态值域另按
 # (component kind, field) 维护，避免同名字段在不同组件中的语义互相污染。
 COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
-    # pageSize 放开 preset 层：预设可设某组件种类的默认分页大小（预设×组件默认，P11/D4）。
     "border": {"type": "bool", "layers": {"page"}},
-    "pageSize": {"type": "int", "layers": {"preset", "page", "user"}, "min": 10, "max": 200},
+    "pageSize": {"type": "int", "layers": {"page", "user"}, "min": 10, "max": 200},
     "defaultSort": {"type": "str", "layers": {"page", "user"}},
     "hiddenColumns": {"type": "str_list", "layers": {"page", "user"}},
     "minHeight": {"type": "int", "layers": {"page", "user"}, "min": 480, "max": 900},
     "stockChart": {"type": "object", "layers": {"page", "user"}},
     # 兼容历史配置读取；新页面配置统一写 masterRatio，避免跨屏固定像素导致分栏失衡。
-    "masterWidth": {"type": "int", "layers": {"preset", "page", "user"}, "min": 360, "max": 1200},
-    "masterRatio": {"type": "int", "layers": {"preset", "page", "user"}, "min": 30, "max": 70},
+    "masterWidth": {"type": "int", "layers": {"page", "user"}, "min": 360, "max": 1200},
+    "masterRatio": {"type": "int", "layers": {"page", "user"}, "min": 30, "max": 70},
     "masterRatioProfiles": {"type": "object", "layers": {"user"}},
     "defaultActive": {"type": "str", "layers": {"page", "user"}},
-    "size": {"type": "enum", "layers": {"preset", "page", "user"}, "options": {"sm", "md", "lg"}},
-    "bodyScroll": {"type": "bool", "layers": {"preset", "page"}},
-    "collapsibleSections": {"type": "bool", "layers": {"preset", "page"}},
-    "defaultCollapsed": {"type": "str_list", "layers": {"preset", "page", "user"}},
-    "showGroupDescription": {"type": "bool", "layers": {"preset", "page", "user"}},
-    "showSectionDescription": {"type": "bool", "layers": {"preset", "page", "user"}},
+    "size": {"type": "enum", "layers": {"page", "user"}, "options": {"sm", "md", "lg"}},
+    "bodyScroll": {"type": "bool", "layers": {"page"}},
+    "collapsibleSections": {"type": "bool", "layers": {"page"}},
+    "defaultCollapsed": {"type": "str_list", "layers": {"page", "user"}},
+    "showGroupDescription": {"type": "bool", "layers": {"page", "user"}},
+    "showSectionDescription": {"type": "bool", "layers": {"page", "user"}},
 }
 
 # 组件种类 -> 允许的配置字段集合（与前端 COMPONENT_FIELD_DEFS 同口径）。
@@ -99,7 +98,7 @@ COMPONENT_CONFIG_USER_PERSISTENCE_BY_KIND_FIELD: dict[tuple[str, str], str] = {
 }
 
 
-ALL_COMPONENT_LAYERS = ("preset", "page", "user")
+ALL_COMPONENT_LAYERS = ("page", "user")
 
 
 def component_field_max_layers(kind: str, field: str) -> set[str] | None:
@@ -203,26 +202,11 @@ def _enforce_component_persistence_target(
             raise LayoutConfigValidationError(
                 f"{kind}.{field} 的 user 层应写入 {target}，不允许写入 layout_user_config"
             )
-TOKEN_COLOR_FIELDS = {
-    "primary",
-    "success",
-    "warning",
-    "danger",
-    "pageBg",
-    "surfaceBg",
-    "surfaceHover",
-    "border",
-    "borderStrong",
-    "text",
-    "textStrong",
-    "textMuted",
-    "activeBg",
-    "submenuBg",
+VISUAL_PRESET_COLOR_FIELDS = {
+    "primary", "success", "warning", "danger", "marketUp", "marketDown", "border", "borderStrong"
 }
-TOKEN_NUMBER_FIELDS = {"cardRadius", "controlRadius", "pageGap", "cardPadding", "tableCellPaddingY"}
+TOKEN_NUMBER_FIELDS = {"cardRadius", "controlRadius"}
 TOKEN_TEXT_FIELDS = {"shadow"}
-PRESET_DENSITY_FIELDS = {"density", "componentDefaults.density", "componentDefaults.tableSize"}
-MIN_TEXT_HIERARCHY_LUMINANCE_DELTA = 0.06
 
 # 后端只需要维护稳定的组件登记和最低尺寸，用于 /validate 的最终拒绝。
 # 组件专属 config 能力仍由前端 componentSchemas.ts 负责即时校验。
@@ -283,7 +267,7 @@ BUILTIN_PRESETS: list[dict[str, Any]] = [
         "key": "balanced",
         "name": "澄空蓝",
         "description": "蓝色强调信号与固定中性明暗表面构成的默认研究空间。",
-        "config": {"density": "standard"},
+        "config": {},
     },
 ]
 
@@ -298,6 +282,22 @@ LEGACY_BUILTIN_PRESET_MAP = {
 }
 
 _SINGLE_BLUE_PRESET_MARKER = "migration.layout_presets_single_blue_v1"
+_VISUAL_PRESET_SPLIT_MARKER = "migration.layout_preset_visual_split_v1"
+_AUTO_SCALE_CONFIG_PATH = "ui.display.auto_scale_exponent"
+
+# 旧预设编辑器唯一真实写入的组件字段是 data-table.pageSize。迁移目标是当时页面注册表中
+# 启用分页的 data-table slot；这是一次性历史快照，不作为后续页面登记或运行时事实源。
+_LEGACY_DATA_TABLE_PAGE_SIZE_TARGETS: dict[str, tuple[str, ...]] = {
+    "data-quality": ("table",),
+    "training": ("history",),
+    "trade-discipline": ("history",),
+    "user-manage": ("table",),
+    "tenant-manage": ("table",),
+    "data-dictionary": ("itemTable",),
+    "data-ingest": ("taskTable", "logTable"),
+    "data-overview": ("stockTable",),
+    "sectors-detail": ("memberTable",),
+}
 _PRESET_SEED_LOCK = threading.Lock()
 
 
@@ -562,19 +562,12 @@ def normalize_override(
     return {"schemaVersion": version, "values": _normalize_values(values, layer)}
 
 
-# 预设响应式默认（受控枚举，不开放任意断点 —— §6.4 红线）。
-PRESET_REFLOW_BREAKPOINTS = {1024, 1100, 1280}
-
-
 def _normalize_preset_token(path: str, value: Any) -> str | int | float:
-    """预设 token 路径：`tokens.<light|dark>.<颜色/阴影键>` 或 `tokens.shared.<形态/密度键>`。
-
-    颜色/阴影按白天/夜间分两套（M9 模型）；形态/密度（圆角/间距/行高）明暗共用。
-    """
+    """预设 token 路径：明暗颜色/阴影与明暗共用的圆角。"""
     parts = path.split(".")
     if len(parts) == 3:
         scope, token = parts[1], parts[2]
-        if scope in ("light", "dark") and token in TOKEN_COLOR_FIELDS:
+        if scope in ("light", "dark") and token in VISUAL_PRESET_COLOR_FIELDS:
             if not isinstance(value, str) or not value.strip():
                 raise LayoutConfigValidationError(f"{path} 不能为空")
             normalized = value.strip()
@@ -598,91 +591,8 @@ def _normalize_preset_token(path: str, value: Any) -> str | int | float:
     raise LayoutConfigValidationError(f"不支持的预设 token 路径: {path}")
 
 
-def _relative_luminance(hex_color: str) -> float:
-    channels = [int(hex_color[index : index + 2], 16) / 255 for index in (1, 3, 5)]
-    linear = [
-        channel / 12.92
-        if channel <= 0.03928
-        else ((channel + 0.055) / 1.055) ** 2.4
-        for channel in channels
-    ]
-    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
-
-
-def _validate_preset_text_hierarchy(values: dict[str, Any]) -> None:
-    for mode in ("light", "dark"):
-        text_path = f"tokens.{mode}.text"
-        text_muted_path = f"tokens.{mode}.textMuted"
-        has_text = text_path in values
-        has_text_muted = text_muted_path in values
-        if has_text != has_text_muted:
-            label = "白天" if mode == "light" else "夜间"
-            raise LayoutConfigValidationError(
-                f"{label}模式正文与弱化文字必须成对覆盖"
-            )
-        if not has_text:
-            continue
-        text = values[text_path]
-        text_muted = values[text_muted_path]
-        if not isinstance(text, str) or not isinstance(text_muted, str):
-            continue
-        delta = abs(_relative_luminance(text) - _relative_luminance(text_muted))
-        if delta < MIN_TEXT_HIERARCHY_LUMINANCE_DELTA:
-            label = "白天" if mode == "light" else "夜间"
-            raise LayoutConfigValidationError(
-                f"{label}模式正文与弱化文字的相对亮度差不能小于 0.06"
-            )
-
-
-def _normalize_preset_component_default(path: str, value: Any) -> Any:
-    """预设×组件默认：`componentFieldDefaults.<kind>.<field>`，字段须在该组件种类且允许 preset 层。"""
-    parts = path.split(".")
-    if len(parts) == 3:
-        kind, field = parts[1], parts[2]
-        maxl = component_field_max_layers(kind, field)
-        if maxl is None or "preset" not in maxl:
-            raise LayoutConfigValidationError(f"{kind}.{field} 不支持预设层默认")
-        return _normalize_component_value(field, value, "preset")
-    raise LayoutConfigValidationError(f"不支持的预设组件默认路径: {path}")
-
-
-def _normalize_preset_responsive(path: str, value: Any) -> int | float:
-    """预设响应式默认：`responsiveDefaults.<key>`，断点为受控枚举（不开放任意断点）。"""
-    parts = path.split(".")
-    if len(parts) == 2:
-        key = parts[1]
-        if key == "autoScaleResponsiveExponent":
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not 0 <= value <= 1
-                or not math.isfinite(value)
-            ):
-                raise LayoutConfigValidationError(f"{path} 需为 0～1 的有限数值")
-            return float(value)
-        if key == "reflowBreakpoint":
-            try:
-                num = int(value)
-            except (TypeError, ValueError):
-                raise LayoutConfigValidationError(f"{path} 需为整数")
-            if num not in PRESET_REFLOW_BREAKPOINTS:
-                raise LayoutConfigValidationError(f"{path} 仅允许 {sorted(PRESET_REFLOW_BREAKPOINTS)}")
-            return num
-        if key == "pageGap":
-            if isinstance(value, bool):
-                raise LayoutConfigValidationError(f"{path} 需为数值")
-            try:
-                num = float(value)
-            except (TypeError, ValueError):
-                raise LayoutConfigValidationError(f"{path} 需为数值")
-            if num < 0:
-                raise LayoutConfigValidationError(f"{path} 不能小于 0")
-            return int(num) if num.is_integer() else num
-    raise LayoutConfigValidationError(f"不支持的预设响应式路径: {path}")
-
-
 def normalize_preset_override(raw: dict[str, Any] | None, schema_version: int | None = None) -> dict[str, Any]:
-    """预设层允许布局覆盖 + 受控 token/组件默认策略。"""
+    """视觉预设只接受颜色、圆角和阴影 token。"""
     raw = raw or {}
     if not isinstance(raw, dict):
         raise LayoutConfigValidationError("config 必须是对象")
@@ -694,32 +604,10 @@ def normalize_preset_override(raw: dict[str, Any] | None, schema_version: int | 
         raise LayoutConfigValidationError("config.values 必须是对象")
     normalized: dict[str, str | int | float | bool] = {}
     for path, value in values.items():
-        if path in PRESET_DENSITY_FIELDS:
-            if value not in DENSITIES:
-                raise LayoutConfigValidationError(f"{path} 需为 compact/standard/comfortable")
-            normalized[path] = str(value)
-            continue
-        if path == "componentDefaults.filterDefaultExpanded":
-            if not isinstance(value, bool):
-                raise LayoutConfigValidationError(f"{path} 需为布尔值")
-            normalized[path] = value
-            continue
-        if path == "componentDefaults.drawerSize":
-            if value not in {"sm", "md", "lg"}:
-                raise LayoutConfigValidationError(f"{path} 需为 sm/md/lg")
-            normalized[path] = str(value)
-            continue
         if path.startswith("tokens."):
             normalized[path] = _normalize_preset_token(path, value)
             continue
-        if path.startswith("componentFieldDefaults."):
-            normalized[path] = _normalize_preset_component_default(path, value)
-            continue
-        if path.startswith("responsiveDefaults."):
-            normalized[path] = _normalize_preset_responsive(path, value)
-            continue
-        normalized[path] = _normalize_path_value(path, value, "preset")
-    _validate_preset_text_hierarchy(normalized)
+        raise LayoutConfigValidationError(f"视觉预设不支持配置字段: {path}")
     return {"schemaVersion": version, "values": normalized}
 
 
@@ -755,14 +643,34 @@ def validate_layout_payload(layout: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _visual_preset_values(raw_values: dict[str, Any]) -> dict[str, Any]:
+    """只保留且规范化视觉预设字段；历史脏值不再下发。"""
+    visual: dict[str, Any] = {}
+    for path, value in raw_values.items():
+        if not (
+            re.fullmatch(
+                r"tokens\.(?:light|dark)\.(?:primary|success|warning|danger|marketUp|marketDown|border|borderStrong|shadow)",
+                path,
+            )
+            or re.fullmatch(r"tokens\.shared\.(?:cardRadius|controlRadius)", path)
+        ):
+            continue
+        try:
+            visual[path] = _normalize_preset_token(path, value)
+        except LayoutConfigValidationError:
+            log.warning("已丢弃非法的历史视觉预设字段: %s", path)
+    return visual
+
+
 def _row_to_preset(row: Any) -> dict[str, Any]:
+    values = _visual_preset_values(_json_load(row["config"], {}))
     return {
         "key": row["key"],
         "name": row["name"],
         "description": row["description"] or "",
         "config": {
             "schemaVersion": int(row["schema_version"] or LAYOUT_CONFIG_SCHEMA_VERSION),
-            "values": _json_load(row["config"], {}),
+            "values": values,
         },
         "enabled": bool(row["enabled"]),
         "is_builtin": bool(row["is_builtin"]),
@@ -775,7 +683,7 @@ def _row_to_preset(row: Any) -> dict[str, Any]:
 class LayoutConfigRepo:
     """可配置布局持久化。
 
-    预设层、页面层和字段策略属平台配置，运行期落 PG；DuckDB 只作为配置迁移前的旧数据
+    视觉预设、页面层和字段策略属平台配置，运行期落 PG；DuckDB 只作为配置迁移前的旧数据
     只读回退源。用户层 layout_user_config 仍落 PG，按 user_id 隔离。
     """
 
@@ -881,6 +789,7 @@ class LayoutConfigRepo:
                 [_SINGLE_BLUE_PRESET_MARKER],
             )
             if not marker.empty:
+                self._migrate_visual_preset_split()
                 return 0
             pending_duckdb_layout = (
                 not self._config_storage_migrated() and self._has_pending_duckdb_platform_layout()
@@ -901,7 +810,70 @@ class LayoutConfigRepo:
                 "ON CONFLICT (key) DO NOTHING",
                 [_SINGLE_BLUE_PRESET_MARKER, '{"applied":true}', datetime.now()],
             )
+            self._migrate_visual_preset_split()
             return inserted
+
+    def _migrate_visual_preset_split(self) -> None:
+        """幂等拆分视觉预设，保留页面显式值并迁移已有组件默认。"""
+        marker = self.pg.query_df(
+            "SELECT 1 FROM app_config WHERE key=%s",
+            [_VISUAL_PRESET_SPLIT_MARKER],
+        )
+        if not marker.empty or not self._config_storage_migrated():
+            return
+        rows = self.pg.query_df("SELECT key, config, enabled, is_builtin FROM layout_preset")
+        auto_scale = 0.10
+        for _, row in rows.iterrows():
+            raw = _json_load(row["config"], {})
+            if bool(row["enabled"]) and bool(row["is_builtin"]):
+                candidate = raw.get("responsiveDefaults.autoScaleResponsiveExponent")
+                if isinstance(candidate, (int, float)) and not isinstance(candidate, bool) and 0 <= candidate <= 1:
+                    auto_scale = float(candidate)
+            legacy_page_size = raw.get("componentFieldDefaults.data-table.pageSize")
+            if (
+                isinstance(legacy_page_size, int)
+                and not isinstance(legacy_page_size, bool)
+                and 10 <= legacy_page_size <= 200
+            ):
+                page_rows = self.pg.query_df(
+                    "SELECT page_key, config FROM layout_page_config WHERE preset_key=%s",
+                    [row["key"]],
+                )
+                for _, page_row in page_rows.iterrows():
+                    page_key = str(page_row["page_key"])
+                    values = _json_load(page_row["config"], {})
+                    changed = False
+                    for slot_id in _LEGACY_DATA_TABLE_PAGE_SIZE_TARGETS.get(page_key, ()):
+                        path = f"slots.{slot_id}.config.pageSize"
+                        if path not in values:
+                            values[path] = legacy_page_size
+                            changed = True
+                    if changed:
+                        self.pg.execute(
+                            "UPDATE layout_page_config SET config=%s, updated_at=%s WHERE page_key=%s",
+                            [_json_dump(values), datetime.now(), page_key],
+                        )
+            visual = _visual_preset_values(raw)
+            if visual != raw:
+                self.pg.execute(
+                    "UPDATE layout_preset SET config=%s, updated_at=%s WHERE key=%s",
+                    [_json_dump(visual), datetime.now(), row["key"]],
+                )
+        # 预设已不再是页面布局层；解除历史页面引用，避免产生无消费的假关联。
+        self.pg.execute(
+            "UPDATE layout_page_config SET preset_key=NULL, updated_at=%s WHERE preset_key IS NOT NULL",
+            [datetime.now()],
+        )
+        self.pg.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s,%s,%s) "
+            "ON CONFLICT (key) DO NOTHING",
+            [_AUTO_SCALE_CONFIG_PATH, _json_dump(auto_scale), datetime.now()],
+        )
+        self.pg.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s,%s,%s) "
+            "ON CONFLICT (key) DO NOTHING",
+            [_VISUAL_PRESET_SPLIT_MARKER, '{"applied":true}', datetime.now()],
+        )
 
     def _apply_builtin_preset_migration(self) -> int:
         """一次性收敛为单一内置蓝色预设；自定义预设继续保留并可扩展。"""
@@ -958,7 +930,7 @@ class LayoutConfigRepo:
             df = self.c.query_df(sql, params)
         else:
             df = self.pg.query_df(sql, params)
-        return [self._with_references(_row_to_preset(r)) for _, r in df.iterrows()]
+        return [_row_to_preset(r) for _, r in df.iterrows()]
 
     def get_preset(self, key: str) -> dict[str, Any] | None:
         _validate_key("preset_key", key)
@@ -968,7 +940,7 @@ class LayoutConfigRepo:
             df = self.pg.query_df("SELECT * FROM layout_preset WHERE key=%s", [key])
         if df.empty:
             return None
-        return self._with_references(_row_to_preset(df.iloc[0]))
+        return _row_to_preset(df.iloc[0])
 
     def upsert_preset(
         self,
@@ -988,8 +960,6 @@ class LayoutConfigRepo:
         existing = self.get_preset(key)
         if existing and existing["is_builtin"] and not is_builtin:
             is_builtin = True
-        if existing and existing["enabled"] and not enabled and self._preset_ref_count(key) > 0:
-            raise LayoutConfigValidationError(f"预设已被页面引用，不能停用: {key}")
         now = datetime.now()
         created_at = now
         if existing and existing.get("created_at"):
@@ -1015,31 +985,7 @@ class LayoutConfigRepo:
             return
         if preset["is_builtin"]:
             raise LayoutConfigValidationError(f"内置预设不能删除: {key}")
-        if self._preset_ref_count(key) > 0:
-            raise LayoutConfigValidationError(f"预设已被页面引用，不能删除: {key}")
         self.pg.execute("DELETE FROM layout_preset WHERE key=%s", [key])
-
-    def _preset_ref_count(self, key: str) -> int:
-        if self._should_read_duckdb_layout("layout_page_config"):
-            return self._duck_layout_count("layout_page_config", "preset_key=?", [key])
-        return self._pg_layout_count("layout_page_config", "preset_key=%s", [key])
-
-    def _preset_ref_pages(self, key: str) -> list[str]:
-        if self._should_read_duckdb_layout("layout_page_config"):
-            df = self.c.query_df(
-                "SELECT page_key FROM layout_page_config WHERE preset_key=? ORDER BY page_key", [key]
-            )
-        else:
-            df = self.pg.query_df(
-                "SELECT page_key FROM layout_page_config WHERE preset_key=%s ORDER BY page_key", [key]
-            )
-        return df["page_key"].tolist()
-
-    def _with_references(self, preset: dict[str, Any]) -> dict[str, Any]:
-        pages = self._preset_ref_pages(preset["key"])
-        preset["referencedPages"] = pages
-        preset["referenceCount"] = len(pages)
-        return preset
 
     def get_page_config(self, page_key: str) -> dict[str, Any]:
         _validate_key("page_key", page_key)
@@ -1056,7 +1002,8 @@ class LayoutConfigRepo:
         r = df.iloc[0]
         return {
             "pageKey": page_key,
-            "presetKey": r["preset_key"] or None,
+            # 字段为旧客户端保留；视觉预设不再作为页面布局层。
+            "presetKey": None,
             "config": {
                 "schemaVersion": int(r["schema_version"] or LAYOUT_CONFIG_SCHEMA_VERSION),
                 "values": _json_load(r["config"], {}),
@@ -1075,10 +1022,7 @@ class LayoutConfigRepo:
         self._ensure_platform_layout_write_ready()
         _validate_key("page_key", page_key)
         if preset_key:
-            _validate_key("preset_key", preset_key)
-            preset = self.get_preset(preset_key)
-            if not preset or not preset["enabled"]:
-                raise LayoutConfigValidationError(f"预设不存在或已停用: {preset_key}")
+            raise LayoutConfigValidationError("视觉预设不再支持绑定页面，请在系统外观中切换")
         cfg = normalize_override(config, schema_version, layer="page")
         _enforce_component_ownership(cfg["values"], layout)
         self._enforce_field_policy(cfg["values"], layout, "page")
@@ -1088,7 +1032,7 @@ class LayoutConfigRepo:
             "ON CONFLICT (page_key) DO UPDATE SET "
             "preset_key=EXCLUDED.preset_key, config=EXCLUDED.config, "
             "schema_version=EXCLUDED.schema_version, updated_at=EXCLUDED.updated_at",
-            [page_key, preset_key, _json_dump(cfg["values"]), cfg["schemaVersion"], datetime.now()],
+            [page_key, None, _json_dump(cfg["values"]), cfg["schemaVersion"], datetime.now()],
         )
         return self.get_page_config(page_key)
 
@@ -1271,17 +1215,11 @@ class LayoutConfigRepo:
 
     def effective_config(self, page_key: str, user_id: str = DEFAULT_USER_ID) -> dict[str, Any]:
         page = self.get_page_config(page_key)
-        preset_key = page.get("presetKey")
-        preset = self.get_preset(preset_key) if preset_key else None
         user = self.get_user_config(page_key, user_id)
         values: dict[str, Any] = {}
         source: dict[str, str] = {}
         layers: list[dict[str, Any]] = []
-        for layer_name, cfg in (
-            ("preset", preset["config"] if preset else None),
-            ("page", page["config"]),
-            ("user", user["config"]),
-        ):
+        for layer_name, cfg in (("page", page["config"]), ("user", user["config"])):
             if not cfg:
                 continue
             layer_values = self._filter_effective_layer_values(cfg.get("values", {}), layer_name)
@@ -1295,12 +1233,12 @@ class LayoutConfigRepo:
         return {
             "pageKey": page_key,
             "userId": user_id,
-            "presetKey": preset_key,
+            "presetKey": None,
             "schemaVersion": LAYOUT_CONFIG_SCHEMA_VERSION,
             "values": values,
             "source": source,
             "layers": layers,
-            # 普通页面运行时需要同一份生效策略来过滤四层合并与抽屉字段；这里只返回
+            # 普通页面运行时需要同一份生效策略来过滤页面/用户两层与抽屉字段；这里只返回
             # 代码允许的组件字段及层级，不包含平台敏感配置。
             "componentFieldPolicies": self.list_field_policies(),
         }
@@ -1332,11 +1270,10 @@ class LayoutConfigRepo:
         if scope == "page":
             self._ensure_platform_layout_write_ready()
             cfg = self.get_page_config(page_key)
-            preset_key = cfg.get("presetKey")
             values = dict(cfg["config"]["values"])
             if path:
                 values.pop(path, None)
-                return self.set_page_config(page_key, {"values": values}, preset_key)
+                return self.set_page_config(page_key, {"values": values})
             self.pg.execute("DELETE FROM layout_page_config WHERE page_key=%s", [page_key])
             return self.get_page_config(page_key)
         if scope == "user":

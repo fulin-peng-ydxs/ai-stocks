@@ -1,17 +1,17 @@
 <script setup lang="ts">
 /**
- * 配置来源徽标——标注某项当前生效来自哪一层（default<preset<page<user 闭环可见，对应 Q2）。
+ * 配置来源徽标——标注某项当前生效来自哪一层（default<page<user）。
  * 默认层用弱化样式，被某层覆盖时高亮，让用户一眼看出"这个值是谁定的"。
  */
 import { computed } from 'vue'
 
-type Source = 'default' | 'preset' | 'page' | 'user'
+type Source = 'default' | 'page' | 'user'
 const props = defineProps<{
   source: Source
   values?: Partial<Record<Source, unknown>>
 }>()
-const LABELS: Record<Source, string> = { default: '默认', preset: '预设', page: '页面', user: '个人' }
-const ORDER: Source[] = ['default', 'preset', 'page', 'user']
+const LABELS: Record<Source, string> = { default: '默认', page: '页面', user: '个人' }
+const ORDER: Source[] = ['default', 'page', 'user']
 
 function formatValue(value: unknown): string {
   if (value === undefined) return '未设置'
@@ -51,7 +51,6 @@ const rows = computed(() =>
   color: var(--page-settings-text-muted);
 }
 /* 被某层覆盖：用主色描边提示"非代码默认"。 */
-.source-tag.is-preset,
 .source-tag.is-page,
 .source-tag.is-user {
   color: var(--page-settings-accent);

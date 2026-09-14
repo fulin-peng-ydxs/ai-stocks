@@ -39,11 +39,11 @@ Key Characteristics：
 - 明暗模式缩略图、外观预览和装饰性状态图形也必须使用冷白、亮蓝、深蓝与中性灰；不得用金黄、棕灰或泛黄色模拟“白天”，避免预览层与真实页面色彩语言脱节。
 - 页面首屏直接呈现业务工具，不做大 hero、不做营销式空白、不做卡片堆叠式装饰。
 - 所有业务页面通过布局系统组织，页面结构由 schema 和测试约束，不依赖临时 CSS 猜高度。
-- 视觉预设可以改变 token、密度和受控组件默认策略，但不能改变页面业务结构。
+- 视觉预设只改变白天/夜间语义色、边框、阴影和共享圆角，不改变页面密度、组件行为或业务结构。
 
 ## 2. Color Palette & Roles
 
-颜色以 Element Plus 变量、`global.css` 的 `--chrome-*` / `--page-settings-*` 变量和 `LAYOUT_PRESETS` 为事实源。**金融涨跌色（`--market-up-color` / `--market-down-color`）与状态/评分文本色（`--app-warning-text` / `--app-danger-text` / `--score-high-*` / `--score-mid-*`）唯一事实源是 `LAYOUT_PRESETS` 的 `marketUp` / `marketDown` / `success` / `warning` / `danger` token，由 `useLayoutPreset.applyPreset()` 统一写入，禁止在 `global.css`、页面或组件内平行硬编码第二套色值（含 Element/AntD 默认蓝绿橙红）。**内置视觉只保留 `balanced` 一个稳定 key，对外名称为“澄空蓝”；历史内置项统一迁移到该默认项。预设管理仍可新增自定义预设，启用项会自动进入外观抽屉并真实驱动强调色、形态和组件默认策略。
+颜色以 Element Plus 变量、`global.css` 的 `--chrome-*` / `--page-settings-*` 变量和 `LAYOUT_PRESETS` 为事实源。**金融涨跌色（`--market-up-color` / `--market-down-color`）与状态/评分文本色（`--app-warning-text` / `--app-danger-text` / `--score-high-*` / `--score-mid-*`）唯一事实源是 `LAYOUT_PRESETS` 的 `marketUp` / `marketDown` / `success` / `warning` / `danger` token，由 `useLayoutPreset.applyPreset()` 统一写入，禁止在 `global.css`、页面或组件内平行硬编码第二套色值（含 Element/AntD 默认蓝绿橙红）。**内置视觉只保留 `balanced` 一个稳定 key，对外名称为“澄空蓝”；历史内置项统一迁移到该默认项。预设管理仍可新增自定义预设，启用项会自动进入外观抽屉并真实驱动语义色、边框、阴影和共享圆角。
 
 | 角色 | 默认值 | 使用规则 |
 |---|---:|---|
@@ -79,7 +79,7 @@ Key Characteristics：
 - 分项评分徽章使用 `--score-high-*` / `--score-mid-*`，低分使用弱底色和占位文字色；评分热力格（`SubScoreBars`）、训练评级、买卖标记等**内联 style 颜色的组件统一经 `components/chartTheme.ts::useStatusColorPalette()` 消费当前生效 token**（强弱梯度=跌绿→成功→警示→危险→涨红；买卖=主色蓝/警示橙；评级 S/A/B/C/D=警示/成功/主色/中性/危险），不得在该组件内维护私有绿橙红色阶或 Element 默认色。
 - 页面提示、弱文本、占位文本优先使用 `--app-warning-text`、`--app-muted-text`、`--app-placeholder-text`；确属 Element Plus 标准状态时可直接用 `var(--el-color-*)`。
 - **颜色单一事实源**：任何状态/金融/评分/评级/买卖颜色只允许来自 `LAYOUT_PRESETS` token（经 `--el-color-*`、`--market-*`、`--app-*-text`、`--score-*` 或 `useStatusColorPalette()` 消费）；页面、组件、Canvas fallback 一律与 `balanced` 预设同值，禁止出现 `global.css` 或组件内平行硬编码的第二套色板。图表 fallback（`chartTheme.ts`/`chartUtils.ts`）也必须与预设当前值保持一致并随色板演进同步更新。
-- 普通操作文字与禁用操作文字分别使用 `text`、`textMuted`；二者按 WCAG 线性相对亮度计算的差值必须 `≥ 0.06`。这是文字层级阈值的唯一数值事实源，预设保存和运行时合并均须守卫。
+- 普通操作文字与禁用操作文字分别使用 `text`、`textMuted`；二者按 WCAG 线性相对亮度计算的差值必须 `≥ 0.06`。这是文字层级阈值的唯一数值事实源，内置 token 校验和运行时合并均须守卫；管理员预设不开放正文颜色。
 - 预设运行时必须同步覆盖 Element Plus 语义色的基础色、RGB 通道、`light-3/5/7/8/9` 与 `dark-2` 派生色；`error` 与项目危险色同源。按钮、链接、提示、分段控件、焦点和禁用态不得回退到组件库默认蓝绿橙红色阶。**金融涨跌色与状态/评分文本色不走 el 的 light-*/dark-2 派生，而是直接消费预设 `marketUp`/`marketDown`/`success`/`warning`/`danger` 主色（亮色模式该主色即为提彩后的鲜亮值），避免派生工艺造成哑光。**
 
 预设规则：
@@ -89,11 +89,11 @@ Key Characteristics：
 - 登录页恢复为修改前的全屏左右品牌布局：左侧承载品牌字标、趋势轨迹与“看见趋势，先于共识。”主视觉文案，右侧承载独立登录/注册卡片；页面结构、文案层级与交互以 `LoginView.vue` 的恢复版本为准。
 - 登录页可保留原有光晕、网格、轨迹、透明和模糊等品牌装饰，但装饰层不能改变 `themeSurfaces.ts` 和 `presets.ts` 定义的基础底色事实源；按钮、焦点、品牌强调、趋势轨迹、Logo 渐变和光晕必须消费当前运行时 `primary`，禁止遗留独立硬编码主题色。
 - 登录页与应用外壳的「复盘啦」必须直接复用 `BrandMark` 的同一几何、尺寸、渐变、文字与描边定义；组件不提供 `login/shell` 场景变体，消费容器不得覆盖 `--brand-*` 形成第二套字标。只有容器不足 `184×52px` 时允许按原始宽高比整体缩放。Logo 渐变由运行时 `primary` 派生，因此新增并启用颜色预设后，登录页与工作台会同步更新。
-- `balanced`（澄空蓝）使用鲜明蓝色信号；页面、边栏、卡片、悬停、边框和文字属于固定中性基础表面，只受明暗模式控制，禁止预设覆盖。预设允许覆盖 `primary/success/warning/danger`、共享形态、响应式默认和组件默认策略。
+- `balanced`（澄空蓝）使用鲜明蓝色信号；页面、边栏、卡片、悬停和文字属于固定中性基础表面，只受明暗模式控制。视觉预设只管理明暗语义色、边框、阴影和共享圆角，不得携带密度、间距、分页、抽屉、筛选状态、组件默认或响应式策略。
 - 外观抽屉必须保留视觉预设区：当前只有一套时显示唯一选中项；预设管理新增并启用自定义项后，无需改前端代码即可出现在抽屉并驱动运行时。登录页不提供预设管理入口。
-- 外观抽屉必须提供独立的「界面比例」：100% 表示设计 token 的原始尺寸，不表示某台屏幕的自动推荐值。`auto` 使用操作系统已经折算后的当前屏幕可用 CSS 宽高，以 `2560×1440` 可用面积作为原始设计尺寸的自动参考点，按面积的低指数连续曲线双向微调；指数由当前视觉预设的 `responsiveDefaults.autoScaleResponsiveExponent` 提供，在预设管理编辑，默认 `0.10`、范围 `0～1`、步长 `0.01`，`0` 表示自动保持 100%；缺项或非法运行时值回退默认，保存、切换、停用回退与首屏缓存恢复必须同步应用，手动模式和手动比例不随预设改变；小屏缩小以保留总览、大屏放大以改善远距离阅读，自动范围限制为 `90%~110%`。不得枚举设备型号、分辨率档位，也不得把物理像素、`devicePixelRatio` 或浏览器页级缩放当成目标比例。`custom` 允许在 `50%~150%` 内按 1% 连续微调，首次从自动切换时继承当前比例，避免视觉跳变；滑块调整自动保存当前显示器可用 CSS 宽高与比例档案，宽高均在档案 `±15%` 内时使用综合距离最近项，`5%` 内重复调整更新原项，无匹配时回退最近一次自定义比例，档案只属于当前用户且不直接暴露管理界面。「恢复100%」进入自定义 100% 并更新当前尺寸档案。该能力通过应用根级 `--app-display-scale` 与倒数画布尺寸，将 `#app` 以左上角为原点整体 `transform`，统一缩放字体、控件、间距、图表容器、应用内抽屉与锚点浮层；滑块不重复显示会遮挡模式选项的数值气泡。禁止在 `body` 使用 CSS `zoom`，避免 ECharts 指针坐标和 Teleport 浮层定位偏移。布局宽高、滚动量和组件配置必须使用 `client/offset` 布局像素；只有命中测试、指针位置和视口对齐使用 `getBoundingClientRect/clientX/clientY`，两套坐标相减后必须通过共享换算工具转回布局像素。缩放后必须触发依赖尺寸的画布重测；Tooltip、Popover、Select、DatePicker 等依赖触发器坐标的 Popper 浮层必须通过应用级唯一容器管理入口挂入 `#app`，与触发器共用缩放坐标系，浮层本体与箭头必须使用未缩放的 `offset` 布局尺寸，其防溢出与翻转计算必须先把浏览器视口裁剪矩形换算到该布局坐标系；禁止对 Popper 本身再次 `scale`，也禁止页面逐个关闭 Teleport，防止定位漂移或被滚动容器裁剪。Dialog、Drawer、MessageBox 的 body 级遮罩复用倒数尺寸与整体 transform，内部面板不得重复缩放；全屏抽屉高度和弹窗视口上限必须服从该画布。Message、Notification 按浏览器视口堆叠，保持 100% 自身比例。
+- 外观抽屉必须提供独立的「界面比例」：100% 表示设计 token 的原始尺寸，不表示某台屏幕的自动推荐值。`auto` 使用操作系统已经折算后的当前屏幕可用 CSS 宽高，以 `2560×1440` 可用面积作为原始设计尺寸的自动参考点，按面积的低指数连续曲线双向微调；指数由系统外观配置 `ui.display.auto_scale_exponent` 提供，默认 `0.10`、范围 `0～1`、步长 `0.01`，`0` 表示自动保持 100%；缺项或非法运行时值回退默认，保存与首屏缓存恢复必须同步应用，手动模式和手动比例不受该系统值变化影响；小屏缩小以保留总览、大屏放大以改善远距离阅读，自动范围限制为 `90%~110%`。不得枚举设备型号、分辨率档位，也不得把物理像素、`devicePixelRatio` 或浏览器页级缩放当成目标比例。`custom` 允许在 `50%~150%` 内按 1% 连续微调，首次从自动切换时继承当前比例，避免视觉跳变；滑块调整自动保存当前显示器可用 CSS 宽高与比例档案，宽高均在档案 `±15%` 内时使用综合距离最近项，`5%` 内重复调整更新原项，无匹配时回退最近一次自定义比例，档案只属于当前用户且不直接暴露管理界面。「恢复100%」进入自定义 100% 并更新当前尺寸档案。该能力通过应用根级 `--app-display-scale` 与倒数画布尺寸，将 `#app` 以左上角为原点整体 `transform`，统一缩放字体、控件、间距、图表容器、应用内抽屉与锚点浮层；滑块不重复显示会遮挡模式选项的数值气泡。禁止在 `body` 使用 CSS `zoom`，避免 ECharts 指针坐标和 Teleport 浮层定位偏移。布局宽高、滚动量和组件配置必须使用 `client/offset` 布局像素；只有命中测试、指针位置和视口对齐使用 `getBoundingClientRect/clientX/clientY`，两套坐标相减后必须通过共享换算工具转回布局像素。缩放后必须触发依赖尺寸的画布重测；Tooltip、Popover、Select、DatePicker 等依赖触发器坐标的 Popper 浮层必须通过应用级唯一容器管理入口挂入 `#app`，与触发器共用缩放坐标系，浮层本体与箭头必须使用未缩放的 `offset` 布局尺寸，其防溢出与翻转计算必须先把浏览器视口裁剪矩形换算到该布局坐标系；禁止对 Popper 本身再次 `scale`，也禁止页面逐个关闭 Teleport，防止定位漂移或被滚动容器裁剪。Dialog、Drawer、MessageBox 的 body 级遮罩复用倒数尺寸与整体 transform，内部面板不得重复缩放；全屏抽屉高度和弹窗视口上限必须服从该画布。Message、Notification 按浏览器视口堆叠，保持 100% 自身比例。
 - Popper 坐标换算的缩放因子必须取自它与触发器共用的变换祖先，不得用窄文字、图标或破折号本身的 `getBoundingClientRect / offsetWidth` 推算；小尺寸元素的取整误差会被误当成缩放比例，导致浮层按触发点位置成比例漂移。
-- 启用预设的名称、明暗语义强调色及自动缩放指数通过登录公开配置下发，并写入首屏安全缓存；登录页与工作台必须共同消费 `setRuntimePresetSources()`，不得各自解析或维护另一套预设。公开配置禁止携带页面、组件或其他平台布局字段。
+- 启用预设的名称与视觉 token、独立的自动缩放指数通过登录公开配置下发，并分别写入首屏安全缓存。登录页与工作台必须共同消费同一公开配置，不得各自解析或维护另一套。公开配置禁止携带页面、组件或响应式布局字段。
 - 调整基础表面必须同步维护 `light`、`dark`、`themeSurfaces.ts` 与 `presets.spec.ts`；调整预设能力必须验证后端目录、运行时选择和固定表面不受覆盖。
 - 页面设置抽屉保留 `32%` 黑色遮光层，用于明确浮层焦点和点击外部关闭边界；遮光层属于临时交互状态，不参与主题底色定义，抽屉内容面与页面常驻容器仍必须使用中性明暗表面。
 - `surfaceHover` 只用于 hover、选中或明确可操作控件状态；常驻的 KPI、指标标签格、查询摘要和配置分组等内部信息分区统一使用 `--app-section-bg`。该语义变量由主题运行时映射当前中性分区色，当前视觉值与 `surfaceHover` 同源但职责独立，页面不得直接借用悬停 token，也不得自行调深；图表画布、卡片主体和工作区内容面继续使用 `surfaceBg`。
@@ -114,7 +114,7 @@ Key Characteristics：
 | 页面标题 | `--app-font-size-page-title` 22px / 700 / 30px；紧凑页可用 20px | 页面主标题、工作台名称、配置中心一级标题 |
 | 分区标题 | `--app-font-size-section-title` 15px / 600 / 22px；抽屉或大面板可用 18px | 卡片标题、抽屉标题、配置组标题 |
 | 正文 | `--app-font-size-body` 14px / 400 / 22px | 表单、普通说明、主体内容 |
-| 表格正文 | 默认 `--app-font-size-table` 13px / 400 / 20px；`comfortable` 密度或不高于 `1.5dppx` 的低像素密度屏幕使用 14px / 22px | 数据表格、列表、密集参数行 |
+| 表格正文 | 默认 `--app-font-size-table` 13px / 400 / 20px；不高于 `1.5dppx` 的低像素密度屏幕使用 14px / 22px | 数据表格、列表、密集参数行 |
 | 辅助标签 | `--app-font-size-caption` 12px / 400 / 18px | 单位、提示、来源、次级说明、tag 内文 |
 | 微型标签 | `--app-font-size-micro` 11px / 400 / 16px | 顶栏弱标签、状态小字、空间极窄的 badge；禁止用于正文 |
 | 数字强调 | `--app-font-size-data` 16px / 600 / 24px；大 KPI 可用 `--app-font-size-kpi-lg` 26px / 700 / 32px；单组唯一主数值可用 `--app-font-size-kpi-xl` 32px / 700 / 38px | KPI、收益、评分、排名、需要横向比较的数字 |
@@ -152,6 +152,21 @@ Key Characteristics：
 | 卡片/面板内边距 | `--layout-card-padding` = 16px；密集面板可 12px | 高密表格容器可压缩但不得牺牲可读性 |
 | 大区块分隔 | 16px 或 24px | 独立业务块、KPI 到主表、说明组到表单 |
 | 空态/异常态 | 使用 `app-empty*` / `AppStateBlock` | 不自定义另一套图标、字号、间距 |
+
+页面密度是独立于视觉预设的系统契约，只调整空间，不改变字号、字重、颜色、图标与文字的 6px 内部间距或显式 `small` / `large` 的业务层级。三档矩阵为：
+
+| 语义变量 | 紧凑 | 标准 | 宽松 |
+|---|---:|---:|---:|
+| 页面/分区间距 | 8px | 12px | 16px |
+| 卡片/面板内距 | 12px | 16px | 24px |
+| 控件行/按钮组间距 | 6px | 8px | 12px |
+| 表单/设置项纵向间距 | 8px | 12px | 16px |
+| 默认控件高度 | 28px | 32px | 36px |
+| 默认按钮水平内距 | 10px | 12px | 14px |
+| 表格单元格上下内距 | 6px | 10px | 14px |
+| 页面浮层内距/分组间距 | 12px / 8px | 16px / 12px | 24px / 16px |
+
+矩阵由 `LayoutHost` 的有效 `density` 写入 `--app-density-*`，`--app-space-*` 始终是固定基础刻度。页面主体、页面设置抽屉与由页面触发的 Drawer/Dialog/Popover 共享密度；全局导航、消息通知和外观设置保持标准密度。页面不得编写私有 `.lh-density-*` 或表格密度规则。
 
 间距规则：
 
@@ -223,7 +238,7 @@ Key Characteristics：
 - 系统不会根据页面模板里的 Vue 标签自动推断系统组件 kind；`pageRegistry` 是组件实例登记事实源。页面把一个已有系统组件种类作为独立布局区、成长区、滚动区或可配置实例使用时，必须登记对应 slot；只作为另一个真实组件内部实现细节、且没有独立布局或配置语义的子组件不得登记假 slot。
 - 真实 UI 行为优先复用真实复用组件；当同类控件在两个及以上页面出现，或承载全局交互规则时，必须登记到下方“真实复用组件清单”。
 - 真实组件只有需要进入布局配置、系统组件页、页面设置抽屉或页面布局编辑器时，才新增或关联系统组件种类。
-- 新开发 Vue 组件时先判断它是页面私有业务片段、业务域复用组件还是全局真实复用组件；复用组件必须维护组件清单、消费页面和测试。只有需要被布局或组件配置体系识别时，才继续新增系统组件 kind；只有存在真实可消费的 Web 可配置属性时，才继续登记 `COMPONENT_FIELD_DEFS` 并完成四层配置闭环。
+- 新开发 Vue 组件时先判断它是页面私有业务片段、业务域复用组件还是全局真实复用组件；复用组件必须维护组件清单、消费页面和测试。只有需要被布局或组件配置体系识别时，才继续新增系统组件 kind；只有存在真实可消费的 Web 可配置属性时，才继续登记 `COMPONENT_FIELD_DEFS` 并完成代码默认、页面、用户三层配置闭环。
 - `COMPONENT_CATALOG` 是系统允许的组件种类与能力词汇表，允许先登记当前尚无页面消费者的 kind，供 schema、预览和后续布局选型复用；“假配置”指 `COMPONENT_FIELD_DEFS` 暴露了组件实例并未真实读取应用的 Web 字段。已有真实复用组件时仍禁止页面复制同类控件行为。
 
 系统组件页信息维护规则：
@@ -318,7 +333,7 @@ Key Characteristics：
 - 工作标签按路由路径保留页面组件实例、表单筛选与独立滚动位置，最多缓存 12 个；同一页面类型的不同详情路由必须拥有独立缓存身份，关闭标签或超过上限时同步销毁对应实例与滚动记录。**菜单记忆只记菜单主页自身的访问（含查询态），不记详情子路由**——再次点击某菜单永远回该菜单主页，详情现场只由工作标签恢复；避免从榜单/板块等来源进详情后，菜单记忆被劫持到详情路由。
 - **详情页返回键的来源必须可信**：个股/板块详情的返回键必须显示具体目标（如“返回每日榜单”），统一消费返回目标文案映射。以来源集合上下文（`stockSet.returnPath`）为目标时，仅当当前对象仍属于该集合才有效；从菜单、标签或直接链接进入（对象不在集合中）时禁用残留来源、归位默认列表。任何从列表/榜单/板块/筛选页跳进个股详情的入口都必须 `setSet` 写入本次来源路径与集合，不得依赖上一次进入的残留值。
 - 图表范围等只影响单个内容面板的操作放入该面板标题行，与标题、图例和当前数据上下文就近编组；不得因页面分栏而放到远离图表的页头操作区。
-- 导航布局、界面比例模式和手动比例都是独立用户偏好，不与明暗模式或颜色预设绑定；自动模式的计算指数由当前预设提供；外观抽屉中的主题缩略图只表达色彩和材质，不暗示固定导航结构或显示比例。
+- 导航布局、界面比例模式和手动比例都是独立用户偏好，不与明暗模式或颜色预设绑定；自动模式的计算指数由系统外观配置提供；外观抽屉中的主题缩略图只表达色彩和材质，不暗示固定导航结构或显示比例。
 - 双层顶栏的二级导航与侧栏模式的工作标签栏统一消费 `--chrome-context-bar-bg`：以固定中性 chrome 底色为主体，仅混入当前预设强调色形成轻量横向渐变；两处不得维护私有背景配方。
 - `.main` 必须保持 `overflow: clip` 和 flex 填充，禁止浏览器把隐藏外层变成可滚动容器；页面滚动由布局系统内部区域承载。
 - 菜单激活态使用主色边线和轻背景，不使用大面积高饱和底色。
@@ -505,12 +520,11 @@ Key Characteristics：
 
 所有业务页面走可配置布局系统：页面声明 `PageLayout`，通过 `<LayoutHost>` 渲染，不手写 `.v-page` / `.v-grow` / 视口高度。配置合并顺序固定为：
 
-`default < preset < page < user`
+`default < page < user`
 
 | 层 | 职责 | 维护入口 |
 |---|---|---|
 | `default` | 页面原型、slot、组件代码默认值 | `frontend/src/layout/pageRegistry.ts`、组件代码 |
-| `preset` | 风格 token、预设级组件默认、响应式默认枚举 | 系统管理 → 布局配置 → 预设管理 |
 | `page` | 单页面默认布局旋钮与组件默认值 | 系统管理 → 布局配置 → 页面布局 |
 | `user` | 当前登录用户的布局、组件和业务偏好 | 页面设置抽屉；PG `layout_user_config`、PG `user_preference` |
 
@@ -531,14 +545,14 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 ### 5.1.1 搜索/筛选行边框
 
-列表页的搜索/筛选交互行统一用卡片边框承载：`<el-card shadow="never" class="filter-card">` 包裹 `AppControlRow`，`filter-card` 使用全局样式（`margin-bottom: 0`，卡片体内边距 `var(--app-space-3) var(--app-space-4)`）。禁止搜索行裸 div 无边框散落在页面。工具栏/操作按钮行不强制套卡。
+列表页的搜索/筛选交互行统一用卡片边框承载：`<el-card shadow="never" class="filter-card">` 包裹 `AppControlRow`，`filter-card` 使用全局样式（`margin-bottom: 0`，卡片体内边距 `var(--app-density-card-padding)`）。禁止搜索行裸 div 无边框散落在页面。工具栏/操作按钮行不强制套卡。
 
 ### 5.1.2 页面间距承载
 
 页面标题行到主内容区的间距由布局系统统一承载，页面禁止叠加私有间距：
 
-- 操作区内块间距 = `.lh-action` 的 `gap: var(--app-space-3)`（12px）。
-- 页面级间距 = `.v-page` 的 `gap: var(--layout-page-gap)`，由预设 `pageGap`（默认 14px）运行时覆盖。
+- 操作区内块间距 = `.lh-action` 的 `gap: var(--app-density-section-gap)`，标准档 12px。
+- 页面级间距 = `.v-page` 的 `gap: var(--layout-page-gap)`，该变量是 `--app-density-page-gap` 的兼容别名，标准档 12px；视觉预设不得覆盖。
 - `.page-head` / `.page-title-row` / `.title-row` 等标题行选择器**禁止再声明 `margin-bottom` / `padding-bottom`**，否则与 `.lh-action` gap 叠加成双倍间距（曾出现 26px/28px）。标题行必须包在 `<div class="lh-action">` 内，间距交给 gap。
 - 页头容器（`.page-head` / `.page-toolbar`，以及页头同义换名宿主 `.audit-head` / `.dict-page-head`）统一 `align-items: flex-start`：动作按钮（按钮组、设置抽屉触发钮）与标题顶部平齐，锚定标题顶这条固定水平线，避免随副标题有无或长短浮动。禁止用 `flex-end` / `center` 让动作区随「标题+副标题」整块下沉或居中（曾造成跨页按钮高度不一致）。页头右侧子容器 `.page-head-actions`（承载 32px 控件组）保持 `align-items: center` 不变。内嵌 `HelpTip` 的标题行选择器 `.page-title-row` / `.title-row` 按 §3 保持 `align-items: center`，不在本条范围内。无页面标题的导航工具栏（如板块详情的 `.detail-nav`）不适用本条。该约束由 `typography-spacing-system.spec.ts` 强制。
 
@@ -635,7 +649,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 `slots.<slotId>.config.<field>`
 
-字段事实源为 `COMPONENT_FIELD_DEFS`。它描述组件 kind 真实支持的属性；页面只要登记该 kind 的 slot，就按 `default < preset < page < user` 自动继承适用字段，禁止再维护逐页字段白名单。新增字段必须同时满足：
+字段事实源为 `COMPONENT_FIELD_DEFS`。它描述组件 kind 真实支持的属性；页面只要登记该 kind 的 slot，就按 `default < page < user` 自动继承适用字段，禁止再维护逐页字段白名单。新增字段必须同时满足：
 
 - 字段在 `COMPONENT_FIELD_DEFS` 中声明 label、control、layers、默认值和值域。
 - `componentSchemas.ts` 接受该字段。
@@ -647,9 +661,9 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - `componentMeta.columns` 只声明列显隐候选，不负责生成业务表格列；每个候选 key 必须在消费页面进入真实显隐判断并控制对应列或列内业务片段。该正向消费关系由 `pageRegistry.spec.ts` 契约测试强制，禁止“设置里可勾选、页面没有可渲染节点”的假配置。
 - 页面实际读取并应用字段值。
 - 配置中心和设置抽屉共用 `ComponentAutoSettings`，且同时受字段代码最大层级与管理员当前开放策略限制。
-- 普通页面从 `/layout/effective/{pageKey}` 一次获取 preset/page/user 层和字段开放策略，前端结合本地 default 做四层合并；历史上已存但现策略禁止或实例不适用的值必须丢弃。
+- 普通页面从 `/layout/effective/{pageKey}` 一次获取 page/user 层和字段开放策略，前端结合本地 default 做三层合并；历史上已存但现策略禁止或实例不适用的值必须丢弃。
 - `useRemoteLayoutConfig` 返回的 `componentAllowedLayers` 必须传入 `PageSettingsDrawer`；页面脚手架和 `pageRegistry.spec.ts` 同时守卫该接线，禁止只在配置中心消费管理员策略。
-- 测试覆盖自动继承、实例适用性、四层合并、策略收紧、越权、类型和值域。
+- 测试覆盖自动继承、实例适用性、代码默认/页面/用户合并、策略收紧、越权、类型和值域。
 
 当前受控字段摘要：
 
@@ -658,19 +672,19 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | 组件 | 字段 | 层级 | 归属事实源 |
 |---|---|---|---|
 | `data-table` | `border` | page | 全部 `data-table` slot 自动继承；页面需实际消费 `tableBorder(slotId)` |
-| `data-table` | `pageSize` | preset/page/user | slot `config.pagination=true` 时自动启用 |
+| `data-table` | `pageSize` | page/user | slot `config.pagination=true` 时自动启用 |
 | `data-table` | `defaultSort` | page/user | 候选排序字段以 `componentMeta.sortFields` 为准 |
 | `data-table` | `hiddenColumns` | page/user | 候选列以 `componentMeta.columns` 为准 |
 | `wide-table` | `border` | page | 全部 `wide-table` slot 自动继承；页面需实际消费 `tableBorder(slotId)` |
-| `wide-table` | `pageSize` | preset/page/user | slot `config.pagination=true` 时自动启用 |
+| `wide-table` | `pageSize` | page/user | slot `config.pagination=true` 时自动启用 |
 | `wide-table` | `defaultSort` | page/user | 候选排序字段以 `componentMeta.sortFields` 为准 |
 | `wide-table` | `hiddenColumns` | page/user | 候选列以 `componentMeta.columns` 为准 |
 | `chart` | `minHeight` | page/user | 图表 slot 以 `config.minHeight` 明确开放；自适应高度的工作台通过 `fieldApplicability.minHeight` 明确关闭并说明原因 |
 | `tabs` | `defaultActive` | page/user | 仅在页面登记 tabs slot 且 `componentMeta.tabs` 提供候选时渲染 |
-| `settings-drawer` | `size`、`defaultCollapsed` | preset/page/user（全局偏好持久化） | `supportsPageSettings !== false` 的 registry 页面共享 `settings` overlay slot；具体 slotId 不作为存储判定条件 |
+| `settings-drawer` | `size`、`defaultCollapsed` | page/user（全局偏好持久化） | `supportsPageSettings !== false` 的 registry 页面共享 `settings` overlay slot；具体 slotId 不作为存储判定条件 |
 | `settings-drawer` | `bodyScroll`、`collapsibleSections` | preset/page | `supportsPageSettings !== false` 的 registry 页面共享 `settings` overlay slot |
 | `config-panel` | `collapsibleSections` | preset/page | `config-system.configPanel` |
-| `config-panel` | `defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | preset/page/user | `config-system.configPanel`；分区候选以 `componentMeta.collapseSections` 为准 |
+| `config-panel` | `defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | page/user | `config-system.configPanel`；分区候选以 `componentMeta.collapseSections` 为准 |
 
 `usePageSettings` 只保留页面业务态/页面记忆，不承载通用组件展示能力。
 `settings-drawer` 的用户层只允许 `size/defaultCollapsed`；字段元数据将其 `userPersistence` 标为 `global-preference`，跨页面个人值写入 `user_preference(global/settings-drawer)`。后端布局写接口按 `(component kind, field)` 反向拒绝这两项进入 `layout_user_config`，不绑定具体 pageKey 或 slotId。`bodyScroll/collapsibleSections` 只能由 preset/page 层控制。其他未声明 `userPersistence` 的 user 字段默认写页面布局用户层。

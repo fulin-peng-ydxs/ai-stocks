@@ -97,11 +97,11 @@ def test_builtin_presets_seed_and_custom_preset_roundtrip(client, monkeypatch):
 
     saved = repo.upsert_preset(
         key="dense-lab",
-        name="高密实验",
-        config={"values": {"density": "compact"}},
+        name="圆角实验",
+        config={"values": {"tokens.shared.cardRadius": 12}},
     )
-    assert saved["config"]["values"]["density"] == "compact"
-    assert repo.get_preset("dense-lab")["name"] == "高密实验"
+    assert saved["config"]["values"]["tokens.shared.cardRadius"] == 12
+    assert repo.get_preset("dense-lab")["name"] == "圆角实验"
 
     calls = {"execute": 0, "query": 0}
     original_execute = client.execute
@@ -149,14 +149,68 @@ def test_legacy_builtin_preset_reference_migrates_to_single_builtin_system(clien
 
     repo.seed_builtin_presets()
 
-    assert repo.get_page_config("board")["presetKey"] == "balanced"
+    assert repo.get_page_config("board")["presetKey"] is None
     assert repo.get_preset("finance") is None
 
     repo.upsert_preset(key="finance", name="用户自定义 Finance", config={"values": {}})
-    repo.set_page_config("stocks", preset_key="finance", config={"values": {}})
+    with pytest.raises(LayoutConfigValidationError, match="不再支持绑定页面"):
+        repo.set_page_config("stocks", preset_key="finance", config={"values": {}})
     repo.seed_builtin_presets()
-    assert repo.get_page_config("stocks")["presetKey"] == "finance"
+    assert repo.get_page_config("stocks")["presetKey"] is None
     assert repo.get_preset("finance")["is_builtin"] is False
+
+
+def test_visual_preset_split_migration_preserves_page_values_and_is_idempotent(client):
+    repo = LayoutConfigRepo(client)
+    legacy_values = {
+        "tokens.light.primary": "#123456",
+        "tokens.shared.pageGap": 14,
+        "componentDefaults.density": "compact",
+        "componentFieldDefaults.data-table.pageSize": 50,
+        "responsiveDefaults.autoScaleResponsiveExponent": 0.25,
+    }
+    repo.pg.execute(
+        "UPDATE layout_preset SET config=%s WHERE key=%s",
+        [json.dumps(legacy_values), "balanced"],
+    )
+    repo.pg.execute(
+        "INSERT INTO layout_page_config (page_key, preset_key, config, schema_version, updated_at) "
+        "VALUES (%s,%s,%s,%s,CURRENT_TIMESTAMP) "
+        "ON CONFLICT (page_key) DO UPDATE SET preset_key=EXCLUDED.preset_key, config=EXCLUDED.config",
+        [
+            "data-ingest",
+            "balanced",
+            json.dumps({"density": "comfortable", "slots.taskTable.config.pageSize": 100}),
+            1,
+        ],
+    )
+    repo.pg.execute(
+        "DELETE FROM app_config WHERE key IN (%s,%s)",
+        ["migration.layout_preset_visual_split_v1", "ui.display.auto_scale_exponent"],
+    )
+    repo.pg.execute(
+        "INSERT INTO app_config (key, value, updated_at) VALUES (%s,%s,CURRENT_TIMESTAMP) "
+        "ON CONFLICT (key) DO NOTHING",
+        ["migration.config_storage_pg_v1", '{"applied":true}'],
+    )
+
+    repo._migrate_visual_preset_split()
+    page = repo.get_page_config("data-ingest")
+    assert page["presetKey"] is None
+    assert page["config"]["values"]["density"] == "comfortable"
+    assert page["config"]["values"]["slots.taskTable.config.pageSize"] == 100
+    assert page["config"]["values"]["slots.logTable.config.pageSize"] == 50
+    assert repo.get_preset("balanced")["config"]["values"] == {
+        "tokens.light.primary": "#123456"
+    }
+    scale = repo.pg.query_df(
+        "SELECT value FROM app_config WHERE key=%s", ["ui.display.auto_scale_exponent"]
+    ).iloc[0]["value"]
+    assert json.loads(scale) == 0.25
+
+    before = repo.get_page_config("data-ingest")
+    repo._migrate_visual_preset_split()
+    assert repo.get_page_config("data-ingest")["config"] == before["config"]
 
 
 def test_pg_empty_reads_duckdb_layout_until_config_migration(client):
@@ -185,8 +239,8 @@ def test_pg_empty_reads_duckdb_layout_until_config_migration(client):
     repo = LayoutConfigRepo(client)
 
     assert any(p["key"] == "legacy-duck" for p in repo.list_presets(include_disabled=True))
-    assert repo.get_preset("legacy-duck")["config"]["values"]["density"] == "compact"
-    assert repo.get_page_config("duck-page")["presetKey"] == "legacy-duck"
+    assert repo.get_preset("legacy-duck")["config"]["values"] == {}
+    assert repo.get_page_config("duck-page")["presetKey"] is None
     policies = {(p["componentKind"], p["field"]): p for p in repo.list_field_policies()}
     assert policies[("data-table", "pageSize")]["allowedLayers"] == ["page"]
 
@@ -213,7 +267,7 @@ def test_duckdb_layout_fallback_survives_accidental_pg_write_before_migration(cl
 
         assert "legacy-duck" in keys
         assert "bad-pg" not in keys
-        assert repo.get_preset("legacy-duck")["config"]["values"]["density"] == "compact"
+        assert repo.get_preset("legacy-duck")["config"]["values"] == {}
         assert repo.get_preset("bad-pg") is None
     finally:
         pg.close()
@@ -238,32 +292,32 @@ def test_platform_layout_write_blocked_until_config_storage_migrated(client):
         repo.set_field_policy("data-table", "pageSize", ["page"])
 
 
-def test_preset_tokens_and_references(client):
+def test_visual_preset_tokens_are_independent_from_pages(client):
     repo = LayoutConfigRepo(client)
     repo.upsert_preset(
         key="custom-red",
         name="自定义红",
-        config={"values": {"tokens.light.primary": "#ef4444", "tokens.shared.pageGap": 10, "componentDefaults.drawerSize": "lg"}},
+        config={"values": {"tokens.light.primary": "#ef4444", "tokens.shared.cardRadius": 10}},
     )
-    repo.set_page_config("board", preset_key="custom-red", config={"density": "standard"})
+    repo.set_page_config("board", config={"values": {"density": "standard"}})
 
     preset = repo.get_preset("custom-red")
     assert preset["config"]["values"]["tokens.light.primary"] == "#ef4444"
-    assert preset["referencedPages"] == ["board"]
-    assert preset["referenceCount"] == 1
+    assert "referencedPages" not in preset
+    assert "referenceCount" not in preset
+    assert repo.get_page_config("board")["presetKey"] is None
 
 
 def test_page_user_effective_config_priority(client):
     repo = LayoutConfigRepo(client)
     repo.set_page_config(
         "board",
-        preset_key="balanced",
         config={"values": {"slots.table.minH": 360, "density": "standard"}},
     )
     repo.set_user_config("board", {"values": {"density": "comfortable"}}, user_id="u1")
 
     effective = repo.effective_config("board", user_id="u1")
-    assert effective["presetKey"] == "balanced"
+    assert effective["presetKey"] is None
     assert effective["values"]["slots.table.minH"] == 360
     assert effective["values"]["density"] == "comfortable"
     assert effective["source"]["density"] == "user"
@@ -275,11 +329,10 @@ def test_invalid_config_rejected(client):
     # 组件配置：未登记字段被拒
     with pytest.raises(LayoutConfigValidationError, match="未登记的组件配置项"):
         repo.set_page_config("board", {"values": {"slots.table.config.bogus": 1}})
-    # 组件配置：越权层级（defaultSort 仅 page/user，preset 层覆盖被拒；pageSize 已放开 preset）
-    with pytest.raises(LayoutConfigValidationError, match="不允许在 preset 层"):
+    # 视觉预设不再接受任何 slot 或组件配置。
+    with pytest.raises(LayoutConfigValidationError, match="视觉预设不支持"):
         repo.upsert_preset("cc-bad", "越权预设", config={"values": {"slots.table.config.defaultSort": "x"}})
-    # 组件配置：表格边框只允许页面级统一配置，禁止预设/个人层覆盖
-    with pytest.raises(LayoutConfigValidationError, match="不允许在 preset 层"):
+    with pytest.raises(LayoutConfigValidationError, match="视觉预设不支持"):
         repo.upsert_preset(
             "border-bad",
             "越权边框",
@@ -718,15 +771,14 @@ def test_config_panel_default_collapsed_accepts_section_keys(client):
     assert eff["values"]["slots.configPanel.config.showSectionDescription"] is False
 
 
-def test_referenced_preset_cannot_be_disabled_or_deleted(client):
+def test_visual_preset_can_be_disabled_or_deleted_without_page_references(client):
     repo = LayoutConfigRepo(client)
-    repo.upsert_preset("dense-lab", "高密实验", config={"density": "compact"})
-    repo.set_page_config("quality", preset_key="dense-lab", config={"density": "standard"})
-
-    with pytest.raises(LayoutConfigValidationError, match="不能停用"):
-        repo.upsert_preset("dense-lab", "高密实验", config={"density": "compact"}, enabled=False)
-    with pytest.raises(LayoutConfigValidationError, match="不能删除"):
-        repo.delete_preset("dense-lab")
+    config = {"values": {"tokens.shared.cardRadius": 12}}
+    repo.upsert_preset("dense-lab", "圆角实验", config=config)
+    repo.upsert_preset("dense-lab", "圆角实验", config=config, enabled=False)
+    assert repo.get_preset("dense-lab")["enabled"] is False
+    repo.delete_preset("dense-lab")
+    assert repo.get_preset("dense-lab") is None
 
 
 def test_validate_api_reports_layout_component_errors(client):
@@ -746,7 +798,7 @@ def test_validate_api_reports_layout_component_errors(client):
 
 
 def test_preset_per_mode_tokens_and_extras(client):
-    """P11：预设支持按模式 token（light/dark/shared）+ 预设×组件默认 + 响应式默认（受控枚举）。"""
+    """视觉预设只支持按模式颜色/阴影和共享圆角。"""
     repo = LayoutConfigRepo(client)
     saved = repo.upsert_preset(
         key="custom-x",
@@ -756,8 +808,7 @@ def test_preset_per_mode_tokens_and_extras(client):
                 "tokens.light.primary": "#123456",
                 "tokens.dark.primary": "#abcdef",
                 "tokens.shared.cardRadius": 8,
-                "componentFieldDefaults.data-table.pageSize": 50,
-                "responsiveDefaults.reflowBreakpoint": 1100,
+                "tokens.light.shadow": "rgba(0, 0, 0, 0.10)",
             }
         },
     )
@@ -765,12 +816,11 @@ def test_preset_per_mode_tokens_and_extras(client):
     assert v["tokens.light.primary"] == "#123456"
     assert v["tokens.dark.primary"] == "#abcdef"
     assert v["tokens.shared.cardRadius"] == 8
-    assert v["componentFieldDefaults.data-table.pageSize"] == 50
-    assert v["responsiveDefaults.reflowBreakpoint"] == 1100
+    assert v["tokens.light.shadow"] == "rgba(0, 0, 0, 0.10)"
 
 
 def test_preset_rejects_bad_extras(client):
-    """P11：非法模式/越界断点/非 preset 层字段被拒。"""
+    """非法视觉 token 和所有废弃布局字段都被拒绝。"""
     repo = LayoutConfigRepo(client)
     with pytest.raises(LayoutConfigValidationError, match="token 路径"):
         repo.upsert_preset("p1", "P1", config={"values": {"tokens.mid.primary": "#fff"}})
@@ -780,27 +830,15 @@ def test_preset_rejects_bad_extras(client):
             "非法颜色",
             config={"values": {"tokens.light.primary": "#fff"}},
         )
-    with pytest.raises(LayoutConfigValidationError, match="必须成对覆盖"):
+    with pytest.raises(LayoutConfigValidationError, match="token 路径"):
         repo.upsert_preset(
-            "partial-text",
-            "不完整文字层级",
+            "text-color",
+            "文字层级不可编辑",
             config={"values": {"tokens.dark.textMuted": "#c9d0d3"}},
         )
-    with pytest.raises(LayoutConfigValidationError, match="相对亮度差"):
-        repo.upsert_preset(
-            "flat-text",
-            "无文字层级",
-            config={
-                "values": {
-                    "tokens.dark.text": "#8899aa",
-                    "tokens.dark.textMuted": "#8899aa",
-                }
-            },
-        )
-    with pytest.raises(LayoutConfigValidationError, match="仅允许"):
+    with pytest.raises(LayoutConfigValidationError, match="视觉预设不支持"):
         repo.upsert_preset("p2", "P2", config={"values": {"responsiveDefaults.reflowBreakpoint": 999}})
-    # defaultSort 不允许 preset 层（仅 page/user）→ 预设组件默认拒绝
-    with pytest.raises(LayoutConfigValidationError, match="不支持预设层默认"):
+    with pytest.raises(LayoutConfigValidationError, match="视觉预设不支持"):
         repo.upsert_preset("p3", "P3", config={"values": {"componentFieldDefaults.data-table.defaultSort": "x"}})
 
 
@@ -810,8 +848,8 @@ def test_field_policy_table_and_defaults(client):
     repo = LayoutConfigRepo(client)
     policies = {(p["componentKind"], p["field"]): p for p in repo.list_field_policies()}
     page_size = policies[("data-table", "pageSize")]
-    assert page_size["maxLayers"] == ["preset", "page", "user"]
-    assert page_size["allowedLayers"] == ["preset", "page", "user"]
+    assert page_size["maxLayers"] == ["page", "user"]
+    assert page_size["allowedLayers"] == ["page", "user"]
     assert page_size["overridden"] is False
 
 
@@ -833,10 +871,10 @@ def test_field_policy_narrow_enforced_on_save(client):
     assert saved["config"]["values"]["slots.table.config.pageSize"] == 50
 
 
-def test_field_policy_exceed_max_rejected(client):
-    """P10：开放到代码最大集之外（defaultSort 最大集为 page/user，preset 越界）被拒。"""
+def test_field_policy_unknown_layer_rejected(client):
+    """P10：旧 preset 层已从字段策略枚举移除。"""
     repo = LayoutConfigRepo(client)
-    with pytest.raises(LayoutConfigValidationError, match="超出代码最大集"):
+    with pytest.raises(LayoutConfigValidationError, match="非法层级"):
         repo.set_field_policy("data-table", "defaultSort", ["preset"])
     with pytest.raises(LayoutConfigValidationError, match="开放层级不能为空"):
         repo.set_field_policy("data-table", "pageSize", [])
@@ -850,7 +888,7 @@ def test_field_policy_reset_restores_max(client):
     repo.set_field_policy("data-table", "pageSize", ["page"])
     reset = repo.reset_field_policy("data-table", "pageSize")
     assert reset["overridden"] is False
-    assert reset["allowedLayers"] == ["preset", "page", "user"]
+    assert reset["allowedLayers"] == ["page", "user"]
 
 
 def test_field_policy_api_roundtrip(client):
@@ -877,9 +915,17 @@ def test_field_policy_api_roundtrip(client):
 
 def test_layout_api_page_user_effective_roundtrip(client):
     api = TestClient(app)
-    r1 = api.post(
+    rejected = api.post(
         "/api/layout/pages/board",
         json={"presetKey": "balanced", "config": {"values": {"slots.table.minH": 420}}},
+        headers=_sys_headers(),
+    ).json()
+    assert rejected["code"] == 400
+    assert "不再支持绑定页面" in rejected["msg"]
+
+    r1 = api.post(
+        "/api/layout/pages/board",
+        json={"presetKey": None, "config": {"values": {"slots.table.minH": 420}}},
         headers=_sys_headers(),
     ).json()
     assert r1["code"] == 0

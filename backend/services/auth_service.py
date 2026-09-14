@@ -42,7 +42,8 @@ log = get_logger("services.auth")
 
 _CAPTCHA_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # 去掉易混 O0I1L
 _PUBLIC_APPEARANCE_TOKEN_RE = re.compile(
-    r"^tokens\.(?:light|dark)\.(?:primary|success|warning|danger)$"
+    r"^tokens\.(?:light|dark)\.(?:primary|success|warning|danger|marketUp|marketDown|border|borderStrong|shadow)$"
+    r"|^tokens\.shared\.(?:cardRadius|controlRadius)$"
 )
 
 
@@ -549,9 +550,15 @@ class AuthService:
         不下发页面、组件或其他平台布局配置。
         """
         appearance_presets: list[dict] = []
+        auto_scale_exponent = 0.10
         try:
             # 延迟导入，避免认证服务初始化与布局存储形成模块级耦合。
+            from backend.storage.app_config import AppConfigRepo
             from backend.storage.layout_config import LayoutConfigRepo
+
+            auto_scale_exponent = float(
+                AppConfigRepo().get_overrides().get("ui.display.auto_scale_exponent", 0.10)
+            )
 
             for preset in LayoutConfigRepo().list_presets():
                 values = preset.get("config", {}).get("values", {})
@@ -560,7 +567,6 @@ class AuthService:
                     for key, value in values.items()
                     if (
                         _PUBLIC_APPEARANCE_TOKEN_RE.fullmatch(key)
-                        or key == "responsiveDefaults.autoScaleResponsiveExponent"
                     )
                     and isinstance(value, (str, int, float, bool))
                 }
@@ -582,6 +588,7 @@ class AuthService:
             "require_email_code": self.cfg.require_email_code,
             "login_captcha_enabled": self.cfg.login_captcha_enabled,
             "captcha_after_fails": self.cfg.captcha_after_fails,
+            "auto_scale_exponent": auto_scale_exponent,
             "appearance_presets": appearance_presets,
         }
 

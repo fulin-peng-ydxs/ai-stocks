@@ -116,7 +116,7 @@ describe('useRemoteLayoutConfig', () => {
     }))
   })
 
-  it('whenRemoteHydrated 在四层生效配置与字段策略都处理完成后才解除等待', async () => {
+  it('whenRemoteHydrated 在页面/用户生效配置与字段策略都处理完成后才解除等待', async () => {
     const effectiveReq = deferred<ReturnType<typeof effectiveConfig>>()
     layoutApi.getEffectiveLayoutConfig.mockReturnValue(effectiveReq.promise)
     const { config } = mountHarness(makeLayout())

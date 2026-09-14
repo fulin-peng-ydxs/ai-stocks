@@ -44,4 +44,54 @@ describe('Element Plus Popper 缩放容器', () => {
 
     expect(document.querySelector('#external-overlay')?.parentElement).toBe(document.body)
   })
+
+  it('页面触发的 Teleport 浮层同步继承当前页面密度', async () => {
+    document.body.innerHTML = `
+      <div id="app">
+        <main class="v-page" style="--app-density-overlay-padding: 24px; --layout-table-cell-padding-y: 14px">
+          <button id="page-trigger">open</button>
+        </main>
+      </div>
+    `
+    const appRoot = document.querySelector<HTMLElement>('#app')!
+    cleanups.push(installElementPlusPopperContainer(appRoot))
+    const trigger = document.querySelector<HTMLButtonElement>('#page-trigger')!
+    trigger.focus()
+    trigger.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+
+    const container = document.createElement('div')
+    container.id = 'el-popper-container-density'
+    container.innerHTML = '<div class="el-popper"></div>'
+    document.body.append(container)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(container.querySelector<HTMLElement>('.el-popper')!.style.getPropertyValue(
+      '--app-density-overlay-padding',
+    )).toBe('24px')
+    expect(container.querySelector<HTMLElement>('.el-popper')!.style.getPropertyValue(
+      '--layout-table-cell-padding-y',
+    )).toBe('14px')
+  })
+
+  it('页面触发且直接 Teleport 到 body 的 Dialog 同步页面密度', async () => {
+    document.body.innerHTML = `
+      <div id="app">
+        <main class="v-page" style="--app-density-overlay-padding: 12px">
+          <button id="dialog-trigger">open</button>
+        </main>
+      </div>
+    `
+    const appRoot = document.querySelector<HTMLElement>('#app')!
+    cleanups.push(installElementPlusPopperContainer(appRoot))
+    document.querySelector<HTMLButtonElement>('#dialog-trigger')!.dispatchEvent(
+      new Event('pointerdown', { bubbles: true }),
+    )
+
+    const overlay = document.createElement('div')
+    overlay.className = 'el-overlay'
+    document.body.append(overlay)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(overlay.style.getPropertyValue('--app-density-overlay-padding')).toBe('12px')
+  })
 })

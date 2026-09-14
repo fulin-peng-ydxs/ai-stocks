@@ -31,6 +31,53 @@ function styleBlocks(file: string): string[] {
 }
 
 describe('字体与间距设计契约', () => {
+  it('三档页面密度使用唯一语义变量矩阵', () => {
+    const globalCss = read(join(SRC_DIR, 'styles/global.css'))
+    const expected = {
+      compact: [8, 8, 12, 6, 8, 28, 10, 6, 12, 8],
+      standard: [12, 12, 16, 8, 12, 32, 12, 10, 16, 12],
+      comfortable: [16, 16, 24, 12, 16, 36, 14, 14, 24, 16],
+    }
+    const variables = [
+      'page-gap', 'section-gap', 'card-padding', 'control-gap', 'form-gap',
+      'control-height', 'button-padding-x', 'table-cell-padding-y',
+      'overlay-padding', 'overlay-group-gap',
+    ]
+    for (const [density, values] of Object.entries(expected)) {
+      const block = globalCss.match(new RegExp(`\\.lh-density-${density} \\{([\\s\\S]*?)\\}`))?.[1] ?? ''
+      variables.forEach((variable, index) => {
+        expect(block).toContain(`--app-density-${variable}: ${values[index]}px`)
+      })
+      expect(block).toContain('--layout-page-gap: var(--app-density-page-gap)')
+      expect(block).toContain('--layout-card-padding: var(--app-density-card-padding)')
+      expect(block).toContain('--layout-table-cell-padding-y: var(--app-density-table-cell-padding-y)')
+      expect(block).not.toContain('font-size')
+    }
+  })
+
+  it('组件配置不得重新提供页面密度的平行入口', () => {
+    const schemas = read(join(SRC_DIR, 'layout/componentSchemas.ts'))
+    const catalog = read(join(SRC_DIR, 'layout/components.ts'))
+    for (const deprecated of ['itemDensity', 'cardDensity']) {
+      expect(schemas).not.toContain(deprecated)
+      expect(catalog).not.toContain(deprecated)
+    }
+    expect(schemas).not.toMatch(/'page-shell':\s*\{[^}]*density/)
+    expect(catalog).not.toMatch(/configCapabilities:\s*\[[^\]]*'density'/)
+  })
+
+  it('业务页和组件不得创建私有密度或平行表格密度规则', () => {
+    const violations: string[] = []
+    for (const file of sourceFiles(SRC_DIR)) {
+      if (file.endsWith('styles/global.css') || file.endsWith('layout/components/LayoutHost.vue')) continue
+      const source = read(file)
+      if (/\.lh-density-|\.page-table-compact/.test(source)) {
+        violations.push(relative(SRC_DIR, file))
+      }
+    }
+    expect(violations).toEqual([])
+  })
+
   it('DESIGN、页面模板和全局样式声明同一套字体/间距事实源', () => {
     const design = read(join(PROJECT_DIR, 'DESIGN.md'))
     const pageTemplate = read(join(PROJECT_DIR, 'agent-works/configurable-layout-system/page-template.md'))
@@ -349,8 +396,8 @@ describe('字体与间距设计契约', () => {
   it('页面标题行间距由布局系统承载，禁止 .page-head 叠加私有 margin/padding-bottom', () => {
     // 事故复盘：QualityView/BoardView 的 .page-head { margin-bottom: 14px } 与 .lh-action 的
     // gap(12px) 叠加成 26px，造成页面间距不一致。间距一律由布局系统承载：
-    //   - 操作区内块间距 = .lh-action gap(var(--app-space-3), 12px)
-    //   - 页面级间距 = .v-page gap(--layout-page-gap, 预设 pageGap=14px)
+    //   - 操作区内块间距 = .lh-action gap(--app-density-section-gap)
+    //   - 页面级间距 = .v-page gap(--app-density-page-gap)，标准档为 12px
     // 页面标题行(.page-head/.page-title-row/.title-row 等)禁止再声明 margin-bottom/padding-bottom。
     const violations: string[] = []
     for (const file of sourceFiles(SRC_DIR)) {

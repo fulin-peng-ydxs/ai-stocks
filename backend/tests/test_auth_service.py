@@ -180,12 +180,13 @@ def test_public_config(auth_env):
     assert isinstance(cfg["captcha_after_fails"], int) and cfg["captcha_after_fails"] >= 1
     assert cfg["appearance_presets"]
     allowed = re.compile(
-        r"^tokens\.(?:light|dark)\.(?:primary|success|warning|danger)$"
+        r"^tokens\.(?:light|dark)\.(?:primary|success|warning|danger|marketUp|marketDown|border|borderStrong|shadow)$"
+        r"|^tokens\.shared\.(?:cardRadius|controlRadius)$"
     )
     for preset in cfg["appearance_presets"]:
         assert {"key", "name", "description", "config"} <= set(preset)
-        assert all(allowed.fullmatch(key) or key == "responsiveDefaults.autoScaleResponsiveExponent"
-                   for key in preset["config"]["values"])
+        assert all(allowed.fullmatch(key) for key in preset["config"]["values"])
+    assert 0 <= cfg["auto_scale_exponent"] <= 1
 
 
 def test_captcha_issue(auth_env):

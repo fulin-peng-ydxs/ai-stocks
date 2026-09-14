@@ -4,7 +4,7 @@
 
 当前项目已经完成可配置布局系统产品化。本需求文档维护其稳定业务目标、边界和验收契约；页面开发的直接执行入口是 `DESIGN.md` 与同目录 `page-template.md`，运行时事实源是 `frontend/src/layout/`、`pageRegistry.ts` 和后端布局配置仓储。
 
-系统不是自由拖拽大屏，也不是只切换主题色，而是以“组件目录 + 布局原型 + 响应式规则 + 四层配置覆盖 + 字段开放策略 + 校验器 + AI 开发流程”为核心，让新页面开发稳定按以下模式推进：
+系统不是自由拖拽大屏，也不是只切换主题色，而是以“组件目录 + 布局原型 + 响应式规则 + 代码默认/页面/用户配置覆盖 + 字段开放策略 + 校验器 + AI 开发流程”为核心，让新页面开发稳定按以下模式推进：
 
 1. 选择页面原型。
 2. 选择组件清单。
@@ -45,7 +45,7 @@
 - [archetypes.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/archetypes.ts)：已有 `list`、`master-detail`、`dashboard`、`form`、`detail`、`workbench`、`wizard` 原型预设。
 - [validator.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/validator.ts)：已有 schema 层校验器，能校验组件下限、主表唯一、操作区一致性、响应式断点和可编辑白名单。
 - [LayoutHost.vue](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/components/LayoutHost.vue)：布局宿主消费 `PageLayout`，统一输出页面外壳、`VAdaptiveGrow`、`VMixedGrow`、整区滚动与响应式多列容器。
-- [useLayoutConfig.ts](../../frontend/src/layout/useLayoutConfig.ts)：四层配置合并内核；页面运行时统一由 `useRemoteLayoutConfig` 包装，登录用户配置以 PG 为权威，localStorage 仅作为受控 fallback 和旧值迁移源。
+- [useLayoutConfig.ts](../../frontend/src/layout/useLayoutConfig.ts)：代码默认/页面/用户配置合并内核；页面运行时统一由 `useRemoteLayoutConfig` 包装，登录用户配置以 PG 为权威，localStorage 仅作为受控 fallback 和旧值迁移源。
 - [componentConfig.ts](../../frontend/src/layout/componentConfig.ts)：`COMPONENT_FIELD_DEFS` 定义组件 Web 配置字段、开放层级、值域和适用性。
 - [ComponentAutoSettings.vue](../../frontend/src/components/ComponentAutoSettings.vue)：页面设置抽屉和页面布局编辑器共用的组件字段安全渲染器。
 
@@ -63,7 +63,7 @@
 当前前端已有两类用户设置入口，登录态均以后端持久化为权威：
 
 - [usePageSettings.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/composables/usePageSettings.ts)：页面业务偏好，消费 `useUserPreference` 并写入 PG `user_preference`；localStorage 仅作为未登录/接口失败 fallback 和旧值迁移源。
-- `useRemoteLayoutConfig`：一次读取 preset/page/user 层和组件字段开放策略，结合代码 default 完成四层合并；登录态用户层写入 PG `layout_user_config`，组件路径保存必须带真实 `PageLayout` 校验归属。
+- `useRemoteLayoutConfig`：一次读取 page/user 层和组件字段开放策略，结合代码 default 完成三层合并；登录态用户层写入 PG `layout_user_config`，组件路径保存必须带真实 `PageLayout` 校验归属。
 
 后端已有系统配置覆盖层：
 
@@ -78,7 +78,7 @@
 1. 新增真实组件时必须先复用同类实现，并判断它是内部实现、真实复用组件还是需要平台识别的系统组件 kind。
 2. 页面登记 slot 后按 kind 自动继承适用字段；页面只声明结构能力、候选元数据和带原因的明确例外，不得恢复逐页字段白名单。
 3. 新增组件字段必须同步前端字段定义与 schema、后端规则与实例归属、安全渲染、页面真实消费、系统组件覆盖状态和测试。
-4. 普通页面必须消费 effective 接口返回的字段策略；策略关闭或实例不适用的历史值不得进入四层合并。
+4. 普通页面必须消费 effective 接口返回的字段策略；策略关闭或实例不适用的历史值不得进入页面/用户合并。
 5. 新页面继续由脚手架、维护矩阵、页面登记测试、布局契约、构建和关键交互验收共同守卫。
 6. 视觉风格继续使用 `balanced` 稳定内置预设和管理员自定义预设，不重新增加散落 CSS 或历史内置 key。
 
@@ -91,7 +91,7 @@
 典型场景：
 
 - 在预设管理页启用 `balanced` 或管理员维护的自定义预设。
-- 为某个业务页面指定默认布局密度、表格分页大小、默认显示列。
+- 为某个业务页面指定默认页面密度、表格分页大小和默认显示列；这些都属于页面配置，不进入视觉预设。
 - 禁止普通用户修改某些关键布局项，例如主内容区策略、组件顺序。
 
 ### 3.2 普通业务用户
@@ -101,7 +101,7 @@
 典型场景：
 
 - 在榜单页隐藏不关心的列。
-- 把表格密度改为紧凑。
+- 把当前页面密度改为紧凑，表格、按钮、表单、卡片和页面浮层统一跟随。
 - 将默认分页从 20 改为 50。
 - 将搜索栏默认设为展开更多条件。
 
@@ -170,7 +170,7 @@
    - 新页面必须登记布局选型。
 
 7. 页面覆盖持续治理：
-   - 全部 registry 业务页面统一消费布局宿主和远端四层配置入口。
+   - 全部 registry 业务页面统一消费布局宿主和远端页面/用户配置入口。
    - 新增或改造页面必须做小屏、滚动、密度、四态和关键交互验证。
 
 ### 4.2 建议实现
@@ -201,7 +201,7 @@
 
 2. 任意 CSS 自定义输入。
    - 原因：用户输入任意 CSS 会绕过规范，造成不可控溢出、双滚动和主题污染。
-   - 未来条件：可开放 token 级变量，例如颜色、间距、圆角、密度档位，不能开放任意选择器。
+   - 可开放的预设 token 只包括语义颜色、边框、阴影和圆角，不能开放间距、密度或任意选择器。
 
 3. 布局模块自建平行权限体系。
    - 原因：项目已有统一 RBAC、租户与用户归属模型；布局配置必须复用请求上下文、系统权限和现有资产隔离，不另建角色或身份来源。
@@ -269,7 +269,7 @@
 
 对现有功能的影响：
 
-- 页面必须通过 `useRemoteLayoutConfig` 消费远端三层、字段策略和本地 default；`useLayoutConfig` 只作为该入口内部的四层合并内核。
+- 页面必须通过 `useRemoteLayoutConfig` 消费远端 page/user、字段策略和本地 default；`useLayoutConfig` 只作为该入口内部的三层合并内核。
 - `usePageSettings` 已纳入 PG 用户偏好骨架，后续页面业务偏好必须继续消费 `useUserPreference`，避免 L2 和 L3 两套入口割裂。
 
 ### 5.2 组件目录与组件共同特性
@@ -303,7 +303,7 @@
 - `order`：排序。
 - `visible`：是否显示，可支持表达式或权限控制。
 - `permission`：权限标识。
-- `styleTokens`：背景色、文字色、边框、圆角、阴影、间距、密度。
+- `styleTokens`：白天/夜间语义色、边框、圆角和阴影；间距与密度属于独立页面契约。
 - `minW`、`minH`：业务最低尺寸。
 - `idealW`、`idealH`：理想尺寸。
 - `maxW`、`maxH`：最大尺寸，主要用于弹窗、抽屉、侧栏。
@@ -486,24 +486,20 @@
 
 预设配置项：
 
-- 色彩 token：主色、成功、警告、危险、信息、背景、卡片、边框、文本。
-- 密度 token：页面 gap、卡片 padding、表格行高、表单项间距。
-- 形态 token：圆角、阴影、边框强度。
-- 组件默认策略：表格是否紧凑、筛选栏默认是否折叠、抽屉宽度档位。
-- 响应式默认策略：默认断点、默认列数、默认主区策略。
+- 色彩 token：主色、成功、警告、危险、金融涨跌色和边框。
+- 形态 token：共享圆角和阴影。
 
 校验规则：
 
-- 预设只能配置 token 和默认策略，不能删除页面业务组件。
+- 预设只能配置上述视觉 token，不得携带密度、间距、组件默认或响应式策略。
 - 颜色必须满足基础可读性要求。
-- 密度不能低于组件目录最低尺寸。
 - 暗色预设必须覆盖 Element Plus 关键变量，避免局部亮色块。
 
 ### 5.6 配置覆盖与持久化
 
 功能描述：
 
-代码 default 保留在版本控制中；允许 preset/page/user 层覆盖的布局、组件、响应式和风格字段必须按其开放层级持久化。最终生效配置按层合并。
+代码 default 保留在版本控制中；允许 page/user 层覆盖的布局、组件和响应式字段必须按其开放层级持久化。视觉 preset 独立承载颜色、圆角、边框和阴影，不参与页面配置合并。
 
 配置优先级：
 
@@ -535,7 +531,7 @@ API 需求：
 - `POST /api/layout/users/{pageKey}`：保存当前用户配置。
 - `POST /api/layout/validate`：校验配置。
 - `POST /api/layout/reset`：按范围重置预设、页面或用户配置。
-- `GET /api/layout/effective/{pageKey}`：返回 preset/page/user 分层配置、最终值/来源与当前组件字段开放策略；页面运行时结合代码 default 完成四层合并。
+- `GET /api/layout/effective/{pageKey}`：返回 page/user 分层配置、最终值/来源与当前组件字段开放策略；页面运行时结合代码 default 完成三层合并。
 
 校验规则：
 
@@ -579,7 +575,7 @@ API 需求：
 - number 使用数字输入，并显示最小最大值。
 - 复杂对象使用配置表或分组表单。
 - 非法配置不能保存。
-- 普通页面必须通过 `/layout/effective/{pageKey}` 一次获取 preset/page/user 层及组件字段开放策略，结合代码 default 完成四层合并。
+- 普通页面必须通过 `/layout/effective/{pageKey}` 一次获取 page/user 层及组件字段开放策略，结合代码 default 完成三层合并。
 - 页面登记组件 slot 后不得再维护逐页字段白名单；结构能力、候选元数据和明确例外共同决定实例适用性。
 - 历史已存但被管理员策略关闭或对当前实例不适用的值必须在运行时丢弃，写接口也必须拒绝。
 - 系统组件页必须展示每个字段在各消费页面 slot 的自动继承、策略关闭或不适用状态与原因。
@@ -657,17 +653,17 @@ interface EffectiveLayoutConfig {
   schemaVersion: number
   presetKey: string | null
   values: LayoutOverlayValues
-  source: Record<string, 'preset' | 'page' | 'user'>
-  layers: Array<{ layer: 'preset' | 'page' | 'user'; config: LayoutOverride }>
+  source: Record<string, 'page' | 'user'>
+  layers: Array<{ layer: 'page' | 'user'; config: LayoutOverride }>
   componentFieldPolicies: FieldPolicyRecord[]
 }
 ```
 
-前端再与代码 default 合并并生成完整来源链；`componentFieldPolicies` 同时约束普通页面渲染和写入，不能只在管理员配置中心展示。
+`presetKey` 仅为旧客户端保留且恒为 `null`。前端再与代码 default 合并并生成完整来源链；`componentFieldPolicies` 同时约束普通页面渲染和写入，不能只在管理员配置中心展示。
 
 ### 6.2 后端存储
 
-布局配置使用 PostgreSQL 专用表：`layout_preset`、`layout_page_config`、`layout_field_policy`、`layout_user_config`；`app_config` 继续只承载系统运行参数，不作为布局配置的临时或并行存储入口。用户归属统一来自请求上下文中的 `tenant_id + owner_user_id`。
+布局配置使用 PostgreSQL 专用表：`layout_preset`、`layout_page_config`、`layout_field_policy`、`layout_user_config`；`app_config` 只承载 `ui.display.auto_scale_exponent` 等系统运行参数，不作为页面布局覆盖的临时或并行存储入口。用户归属统一来自请求上下文中的 `tenant_id + owner_user_id`。
 
 ### 6.3 API 响应结构
 
@@ -693,7 +689,7 @@ interface EffectiveLayoutConfig {
 
 - 保存页面配置时，必须先校验合并后的 effective 配置。
 - 删除预设前，必须检查是否被页面引用。
-- 禁用预设后，引用页面应回落到默认预设。
+- 视觉预设可独立启停，不得与页面布局形成引用关系。
 - schema 升级时必须提供迁移函数或重置策略。
 
 ## 7. 交互体验要求
@@ -719,9 +715,8 @@ interface EffectiveLayoutConfig {
 ### 7.3 风格切换体验
 
 - 切换预设后不应导致页面结构丢失。
-- 切换预设只影响 token、密度和允许的默认表现。
-- 用户个人覆盖项仍保留，除非用户明确重置。
-- 如果用户覆盖与新预设冲突，提示冲突项并使用用户项优先。
+- 切换预设只影响语义色、边框、阴影和共享圆角。
+- 页面密度、分页、抽屉宽度、筛选状态、响应式结构和用户个人覆盖项均保持不变。
 
 ### 7.4 AI 开发体验
 
@@ -787,7 +782,7 @@ interface EffectiveLayoutConfig {
 
 ### 11.1 当前落地结论
 
-该需求已经完整落地：组件能力目录、七类页面原型、`LayoutHost`、四层合并、PG 持久化、字段开放策略、统一设置抽屉、三页布局配置工作台、页面脚手架和机器契约均已投入使用。后续工作属于持续治理，不得重新启用逐页字段白名单、页面私有 localStorage、平行配置表单或旧内置预设 key。
+该需求已经完整落地：组件能力目录、七类页面原型、`LayoutHost`、代码默认/页面/用户三层合并、PG 持久化、字段开放策略、统一设置抽屉、三页布局配置工作台、页面脚手架和机器契约均已投入使用。后续工作属于持续治理，不得重新启用逐页字段白名单、页面私有 localStorage、平行配置表单或旧内置预设 key。
 
 ### 11.2 已完成里程碑
 

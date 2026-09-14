@@ -1,16 +1,13 @@
-import { setAutoScaleResponsiveExponent } from '@/composables/useDisplayScale'
-import { normalizeAutoScaleExponent } from './displayScalePolicy'
 import { computed, ref, watch } from 'vue'
 import { DEFAULT_LAYOUT_PRESET, getLayoutPreset, LAYOUT_PRESETS } from './presets'
 import {
   blendHex,
   hasDistinctTextHierarchy,
   isHexColor,
-  isStyleColorTokenKey,
   rgbChannelsFromHex,
   rgbaFromHex,
 } from './themeSurfaces'
-import type { LayoutPreset, PresetComponentDefaults, StyleTokenConfig } from './schema'
+import type { LayoutPreset, StyleTokenConfig } from './schema'
 import { useTheme } from '@/composables/useTheme'
 
 const STORAGE_KEY = 'ai-stocks:layout-preset'
@@ -52,7 +49,11 @@ const PRESET_COLOR_KEYS = new Set<keyof StyleTokenConfig>([
   'danger',
   'marketUp',
   'marketDown',
+  'border',
+  'borderStrong',
 ])
+const PRESET_TEXT_KEYS = new Set<keyof StyleTokenConfig>(['shadow'])
+const PRESET_SHAPE_KEYS = new Set<keyof StyleTokenConfig>(['cardRadius', 'controlRadius'])
 
 function setCssVar(tokens: StyleTokenConfig, key: keyof StyleTokenConfig, cssName: string, unit = '') {
   document.documentElement.style.setProperty(cssName, `${tokens[key]}${unit}`)
@@ -87,7 +88,8 @@ function applyElementColorScale(
 
 /**
  * 内置 token 叠加后端预设。
- * 基础表面由明暗模式固定，预设只允许改变强调色和共享形态，避免主题色污染边栏与主画布。
+ * 基础表面由明暗模式固定；预设只改变语义色、边框、阴影和共享圆角，
+ * 不参与页面密度或布局策略。
  */
 function mergeTokens(base: StyleTokenConfig, ov: Record<string, RuntimePresetValue>, mode: 'light' | 'dark'): StyleTokenConfig {
   const m = { ...base } as Record<string, string | number>
@@ -96,13 +98,15 @@ function mergeTokens(base: StyleTokenConfig, ov: Record<string, RuntimePresetVal
   for (const [path, val] of Object.entries(ov)) {
     if (path.startsWith(modePrefix)) {
       const key = path.slice(modePrefix.length)
-      if (!PRESET_COLOR_KEYS.has(key as keyof StyleTokenConfig)) continue
+      if (!PRESET_COLOR_KEYS.has(key as keyof StyleTokenConfig)
+        && !PRESET_TEXT_KEYS.has(key as keyof StyleTokenConfig)) continue
       // 防御历史脏数据：颜色覆盖不合法时保留内置 token，禁止生成 NaN CSS 变量。
-      if (typeof val !== 'string' || (isStyleColorTokenKey(key) && !isHexColor(val))) continue
+      if (typeof val !== 'string' || (PRESET_COLOR_KEYS.has(key as keyof StyleTokenConfig) && !isHexColor(val))) continue
       m[key] = val
     }
     else if (path.startsWith(sharedPrefix) && typeof val === 'number' && Number.isFinite(val)) {
-      m[path.slice(sharedPrefix.length)] = val
+      const key = path.slice(sharedPrefix.length)
+      if (PRESET_SHAPE_KEYS.has(key as keyof StyleTokenConfig)) m[key] = val
     }
   }
   if (!hasDistinctTextHierarchy(String(m.text), String(m.textMuted))) {
@@ -174,29 +178,6 @@ function restoreRuntimePresetCache() {
   }
 }
 
-function componentDefaultsFor(
-  base: PresetComponentDefaults,
-  overrides: Record<string, RuntimePresetValue>,
-): PresetComponentDefaults {
-  const density = overrides['componentDefaults.density']
-  const tableSize = overrides['componentDefaults.tableSize']
-  const drawerSize = overrides['componentDefaults.drawerSize']
-  return {
-    density: ['compact', 'standard', 'comfortable'].includes(String(density))
-      ? density as PresetComponentDefaults['density']
-      : base.density,
-    tableSize: ['compact', 'standard', 'comfortable'].includes(String(tableSize))
-      ? tableSize as PresetComponentDefaults['tableSize']
-      : base.tableSize,
-    filterDefaultExpanded: typeof overrides['componentDefaults.filterDefaultExpanded'] === 'boolean'
-      ? overrides['componentDefaults.filterDefaultExpanded']
-      : base.filterDefaultExpanded,
-    drawerSize: ['sm', 'md', 'lg'].includes(String(drawerSize))
-      ? drawerSize as PresetComponentDefaults['drawerSize']
-      : base.drawerSize,
-  }
-}
-
 /** 将后端预设转换为真实可消费的运行时预设；自定义项以默认中性表面为基础。 */
 export function getRuntimeLayoutPreset(key: string | null | undefined): LayoutPreset {
   const resolvedKey = resolvePresetKey(key)
@@ -212,20 +193,11 @@ export function getRuntimeLayoutPreset(key: string | null | undefined): LayoutPr
       light: mergeTokens(base.tokens.light, overrides, 'light'),
       dark: mergeTokens(base.tokens.dark, overrides, 'dark'),
     },
-    componentDefaults: componentDefaultsFor(base.componentDefaults, overrides),
-    responsiveDefaults: {
-      ...base.responsiveDefaults,
-      autoScaleResponsiveExponent: normalizeAutoScaleExponent(
-        overrides['responsiveDefaults.autoScaleResponsiveExponent']
-          ?? base.responsiveDefaults.autoScaleResponsiveExponent,
-      ),
-    },
   }
 }
 
 function applyPreset(key: string) {
   const preset = getRuntimeLayoutPreset(key)
-  setAutoScaleResponsiveExponent(preset.responsiveDefaults.autoScaleResponsiveExponent)
   const root = document.documentElement
   // 按当前白天/夜间模式取对应 token 集（M9：预设 × 明暗二维）
   const mode = isDark.value ? 'dark' : 'light'
@@ -341,9 +313,6 @@ function applyPreset(key: string) {
 
   setCssVar(t, 'cardRadius', '--layout-card-radius', 'px')
   setCssVar(t, 'controlRadius', '--layout-control-radius', 'px')
-  setCssVar(t, 'pageGap', '--layout-page-gap', 'px')
-  setCssVar(t, 'cardPadding', '--layout-card-padding', 'px')
-  setCssVar(t, 'tableCellPaddingY', '--layout-table-cell-padding-y', 'px')
   // 必须在全部 CSS 变量写入后发布，避免画布消费者读到新版本号与旧 token 的中间态。
   themeRevision.value += 1
 }
@@ -403,22 +372,6 @@ export function setPresetOverrides(map: Record<string, Record<string, RuntimePre
 /** 取某预设某模式下「内置 + 后端覆盖」的有效 token（供预设管理页回显当前生效值）。 */
 export function effectivePresetTokens(key: string, mode: 'light' | 'dark'): StyleTokenConfig {
   return getRuntimeLayoutPreset(key).tokens[mode]
-}
-
-const CFD_RE = /^componentFieldDefaults\.([^.]+)\.([^.]+)$/
-
-/**
- * 取某预设的「预设×组件默认」：{ 组件种类 -> { 字段 -> 值 } }（来自后端覆盖 componentFieldDefaults.*）。
- * 供 useLayoutConfig 把预设组件默认展开成各 slot 的 preset 层组件配置覆盖（P11）。
- */
-export function presetComponentDefaults(key: string): Record<string, Record<string, string | number | boolean>> {
-  const ov = presetOverrides.value[resolvePresetKey(key)] ?? {}
-  const out: Record<string, Record<string, string | number | boolean>> = {}
-  for (const [path, val] of Object.entries(ov)) {
-    const m = CFD_RE.exec(path)
-    if (m) (out[m[1]] ??= {})[m[2]] = val
-  }
-  return out
 }
 
 export function useLayoutPreset() {

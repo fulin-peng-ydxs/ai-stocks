@@ -8,7 +8,7 @@
  * 页面结构与配置模型（详见 agent-works/configurable-layout-system/plan.md）：
  *   页面结构由 archetype + pageRegistry slots 声明，运行时不允许用户改写业务结构。
  *   布局参数走受限 editable 白名单；组件字段按 slot kind 自动继承，并受实例适用性与字段策略约束。
- *   两类配置统一按 default < preset < page < user 合并；usePageSettings 只承载页面业务记忆。
+ *   两类配置统一按 default < page < user 合并；usePageSettings 只承载页面业务记忆。
  */
 
 /** 页面布局原型（规范 §4 A~G）。弹窗/抽屉(H) 是覆盖层、不作为页面级原型，单独处理。 */
@@ -72,22 +72,6 @@ export interface StyleTokenConfig {
   cardRadius: number
   controlRadius: number
   shadow: string
-  pageGap: number
-  cardPadding: number
-  tableCellPaddingY: number
-}
-
-export interface PresetComponentDefaults {
-  density: Density
-  tableSize: Density
-  filterDefaultExpanded: boolean
-  drawerSize: 'sm' | 'md' | 'lg'
-}
-
-export interface PresetResponsiveDefaults {
-  autoScaleResponsiveExponent: number
-  pageGap: number
-  reflowBreakpoint: number
 }
 
 /** 主题模式：与 useTheme 的 html.dark 同源。预设 token 按模式提供两套（M9）。 */
@@ -101,8 +85,6 @@ export interface LayoutPreset {
   name: string
   description: string
   tokens: PresetTokens
-  componentDefaults: PresetComponentDefaults
-  responsiveDefaults: PresetResponsiveDefaults
 }
 
 /** 常见业务组件种类（规范 §3 目录的键）。最低尺寸/滚动/可否成主/可否重排见 components.ts。 */

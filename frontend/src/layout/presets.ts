@@ -1,4 +1,3 @@
-import { AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT } from './displayScalePolicy'
 import type { LayoutPreset, LayoutPresetKey, PresetTokens, StyleTokenConfig, ThemeMode } from './schema'
 import {
   hasDistinctTextHierarchy,
@@ -7,12 +6,12 @@ import {
   THEME_SURFACE_SPECS,
 } from './themeSurfaces'
 
-/** 模式无关的形态/密度 token（圆角、间距、行高）：白天/夜间共用。 */
-type SharedShape = Pick<StyleTokenConfig, 'cardRadius' | 'controlRadius' | 'pageGap' | 'cardPadding' | 'tableCellPaddingY'>
+/** 视觉预设只维护模式无关的圆角；页面密度由 LayoutHost 独立控制。 */
+type SharedShape = Pick<StyleTokenConfig, 'cardRadius' | 'controlRadius'>
 /** 模式相关 token（颜色 + 阴影）：白天/夜间各一套。 */
 type ModeColors = Omit<StyleTokenConfig, keyof SharedShape>
 
-/** 组装双模式 token：形态/密度共用，颜色/阴影按 light/dark 分开。 */
+/** 组装双模式 token：圆角共用，颜色/阴影按 light/dark 分开。 */
 function tokens(shape: SharedShape, light: ModeColors, dark: ModeColors): PresetTokens {
   return { light: { ...shape, ...light }, dark: { ...shape, ...dark } }
 }
@@ -23,7 +22,7 @@ export const LAYOUT_PRESETS: Record<LayoutPresetKey, LayoutPreset> = {
     name: '澄空蓝',
     description: '明亮蓝色信号与中性黑白表面构成的统一研究空间。',
     tokens: tokens(
-      { cardRadius: 10, controlRadius: 6, pageGap: 14, cardPadding: 18, tableCellPaddingY: 10 },
+      { cardRadius: 10, controlRadius: 6 },
       {
         primary: '#1677ff', success: '#0ea968', warning: '#f58a07', danger: '#f04438',
         marketUp: '#f66055', marketDown: '#1ec96e',
@@ -47,8 +46,6 @@ export const LAYOUT_PRESETS: Record<LayoutPresetKey, LayoutPreset> = {
         shadow: 'rgba(0, 0, 0, 0.42)',
       },
     ),
-    componentDefaults: { density: 'standard', tableSize: 'standard', filterDefaultExpanded: true, drawerSize: 'md' },
-    responsiveDefaults: { pageGap: 14, reflowBreakpoint: 1024, autoScaleResponsiveExponent: AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT },
   },
 }
 
@@ -84,9 +81,6 @@ export function validateLayoutPreset(preset: LayoutPreset): string[] {
       && !hasDistinctTextHierarchy(set.text, set.textMuted)) {
       issues.push(`${mode}.text 与 ${mode}.textMuted 的相对亮度差不足`)
     }
-  }
-  if (!['compact', 'standard', 'comfortable'].includes(preset.componentDefaults.density)) {
-    issues.push('componentDefaults.density 非法')
   }
   return issues
 }

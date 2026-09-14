@@ -6,7 +6,7 @@ defineProps<{ label: string }>()
 
 <template>
   <div class="app-tab-toolbar" role="toolbar" :aria-label="label">
-    <AppControlRow v-if="$slots.actions" class="app-tab-toolbar__actions" dense>
+    <AppControlRow v-if="$slots.actions" class="app-tab-toolbar__actions">
       <slot name="actions" />
     </AppControlRow>
     <div v-if="$slots.description" class="app-tab-toolbar__description">

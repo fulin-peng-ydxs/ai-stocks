@@ -3,6 +3,7 @@ import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
+import { normalizeStockChartPreferences } from '@/composables/useStockChartPreferences'
 
 const mocks = vi.hoisted(() => ({
   token: 'token',
@@ -65,7 +66,11 @@ describe('useLegacyStockChartPreferenceMigration', () => {
     }))
     await flushPromises()
 
-    expect(setComponentKnob).toHaveBeenCalledWith('chart', 'stockChart', legacyCharts)
+    expect(setComponentKnob).toHaveBeenCalledWith(
+      'chart',
+      'stockChart',
+      normalizeStockChartPreferences(legacyCharts),
+    )
     expect(saveRemoteUserConfig).toHaveBeenCalledOnce()
     expect(mocks.savePreference).toHaveBeenCalledWith(expect.objectContaining({
       pageKey: 'stocks',

@@ -211,6 +211,7 @@ const PageSettingsDrawerStub = defineComponent({
         chartTypes: visibleChartTypes(value),
         defaultRatios: value.heightRatios[key],
         currentRatios: runtime.heightRatios[key],
+        canApplyCurrentRatios: true,
         testIdPrefix: 'component-chart-stock-chart',
         onChange: (slot: 'slot2' | 'slot3', next: unknown) => config.setComponentKnob(
           'chart', 'stockChart', setAuxiliaryChartType(value, slot, next),
@@ -219,6 +220,7 @@ const PageSettingsDrawerStub = defineComponent({
           ...value,
           heightRatios: { ...value.heightRatios, [key]: ratios },
         }),
+        onApplyCurrentRatios: () => config.setComponentKnob('chart', 'stockChart', runtime),
       }),
       slots.business?.(),
       h('button', {
@@ -940,6 +942,13 @@ describe('StockDetailView 三图数据协调', () => {
         'kline|macd': [0.75, 0.25],
         'kline|volume|macd': [0.6, 0.2, 0.2],
         'kline|macd|volume': [0.6, 0.2, 0.2],
+      },
+      heightRatioProfiles: {
+        kline: [],
+        'kline|volume': [],
+        'kline|macd': [],
+        'kline|volume|macd': [],
+        'kline|macd|volume': [],
       },
     })
   })

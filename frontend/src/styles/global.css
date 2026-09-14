@@ -158,11 +158,22 @@ body > .el-notification {
   --app-space-5: 24px;
   --app-space-6: 32px;
   --app-space-control-gap: 6px;
+  /* 页面密度语义变量：默认标准档；LayoutHost 在页面根按 compact/standard/comfortable 覆盖。 */
+  --app-density-page-gap: 12px;
+  --app-density-section-gap: 12px;
+  --app-density-card-padding: 16px;
+  --app-density-control-gap: 8px;
+  --app-density-form-gap: 12px;
+  --app-density-control-height: 32px;
+  --app-density-button-padding-x: 12px;
+  --app-density-table-cell-padding-y: 10px;
+  --app-density-overlay-padding: 16px;
+  --app-density-overlay-group-gap: 12px;
   --layout-card-radius: 4px;
   --layout-control-radius: 6px;
-  --layout-page-gap: var(--app-space-3);
-  --layout-card-padding: var(--app-space-4);
-  --layout-table-cell-padding-y: 10px;
+  --layout-page-gap: var(--app-density-page-gap);
+  --layout-card-padding: var(--app-density-card-padding);
+  --layout-table-cell-padding-y: var(--app-density-table-cell-padding-y);
   --app-control-height-xs: 24px;
   --app-control-height-sm: 28px;
   --app-control-height-md: 32px;
@@ -272,7 +283,7 @@ html[data-display-resolution='low'] {
 .v-page > * { min-height: 0; }
 /* LayoutHost 操作区/单组件主区插槽要求单根；用 .lh-action 把多个固定块（工具栏 + 筛选条等）
    收进一个根容器，纵向自然排列、保留区块间距。 */
-.lh-action { display: flex; flex-direction: column; gap: var(--app-space-3); }
+.lh-action { display: flex; flex-direction: column; gap: var(--app-density-section-gap); }
 .v-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
 
 /* 全站空态规范：
@@ -446,7 +457,7 @@ html.dark {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--app-space-3);
+  gap: var(--app-density-section-gap);
   flex-wrap: wrap;
   width: 100%;
   min-width: 0;
@@ -455,7 +466,7 @@ html.dark {
 .page-head-actions {
   display: flex;
   align-items: center;
-  gap: var(--app-space-2);
+  gap: var(--app-density-control-gap);
   flex-wrap: wrap;
   justify-content: flex-end;
 }
@@ -538,13 +549,13 @@ html.dark {
   margin-bottom: 0;
 }
 .filter-card .el-card__body {
-  padding: var(--app-space-3) var(--app-space-4);
+  padding: var(--app-density-card-padding);
 }
 .app-stack-sm { display: flex; flex-direction: column; gap: var(--app-space-2); }
 .app-stack-md { display: flex; flex-direction: column; gap: var(--app-space-3); }
 .app-stack-lg { display: flex; flex-direction: column; gap: var(--app-space-4); }
 .app-cluster-sm { display: flex; align-items: center; gap: var(--app-space-control-gap); flex-wrap: wrap; }
-.app-cluster-md { display: flex; align-items: center; gap: var(--app-space-2); flex-wrap: wrap; }
+.app-cluster-md { display: flex; align-items: center; gap: var(--app-density-control-gap); flex-wrap: wrap; }
 .app-cluster-lg { display: flex; align-items: center; gap: var(--app-space-3); flex-wrap: wrap; }
 .app-inline-info {
   min-width: 0;
@@ -600,28 +611,54 @@ html.dark {
   flex-direction: column;
 }
 
-.page-table-compact .el-table__cell {
-  padding-top: 6px;
-  padding-bottom: 6px;
-}
-
-/* 布局密度（L2 可配置层，由 LayoutHost 在 .v-page 上挂 lh-density-*）：
-   统一控制整页区块间距与表格行高。standard=默认不覆盖。 */
+/* 页面密度（L2 可配置层）：只映射稳定的空间语义，不改变字号、字重和标签层级。 */
 .lh-density-compact {
-  gap: var(--app-space-2);
+  --app-density-page-gap: 8px;
+  --app-density-section-gap: 8px;
+  --app-density-card-padding: 12px;
+  --app-density-control-gap: 6px;
+  --app-density-form-gap: 8px;
+  --app-density-control-height: 28px;
+  --app-density-button-padding-x: 10px;
+  --app-density-table-cell-padding-y: 6px;
+  --app-density-overlay-padding: 12px;
+  --app-density-overlay-group-gap: 8px;
+  --layout-page-gap: var(--app-density-page-gap);
+  --layout-card-padding: var(--app-density-card-padding);
+  --layout-table-cell-padding-y: var(--app-density-table-cell-padding-y);
+  --el-component-size: var(--app-density-control-height);
 }
-.lh-density-compact .el-table__cell {
-  padding-top: 6px;
-  padding-bottom: 6px;
+.lh-density-standard {
+  --app-density-page-gap: 12px;
+  --app-density-section-gap: 12px;
+  --app-density-card-padding: 16px;
+  --app-density-control-gap: 8px;
+  --app-density-form-gap: 12px;
+  --app-density-control-height: 32px;
+  --app-density-button-padding-x: 12px;
+  --app-density-table-cell-padding-y: 10px;
+  --app-density-overlay-padding: 16px;
+  --app-density-overlay-group-gap: 12px;
+  --layout-page-gap: var(--app-density-page-gap);
+  --layout-card-padding: var(--app-density-card-padding);
+  --layout-table-cell-padding-y: var(--app-density-table-cell-padding-y);
+  --el-component-size: var(--app-density-control-height);
 }
 .lh-density-comfortable {
-  --app-table-content-font-size: var(--app-font-size-body);
-  --app-table-content-line-height: var(--app-line-height-body);
-  gap: var(--app-space-4);
-}
-.lh-density-comfortable .el-table__cell {
-  padding-top: 14px;
-  padding-bottom: 14px;
+  --app-density-page-gap: 16px;
+  --app-density-section-gap: 16px;
+  --app-density-card-padding: 24px;
+  --app-density-control-gap: 12px;
+  --app-density-form-gap: 16px;
+  --app-density-control-height: 36px;
+  --app-density-button-padding-x: 14px;
+  --app-density-table-cell-padding-y: 14px;
+  --app-density-overlay-padding: 24px;
+  --app-density-overlay-group-gap: 16px;
+  --layout-page-gap: var(--app-density-page-gap);
+  --layout-card-padding: var(--app-density-card-padding);
+  --layout-table-cell-padding-y: var(--app-density-table-cell-padding-y);
+  --el-component-size: var(--app-density-control-height);
 }
 
 /* 全局：所有列表统一不隔行变色（兜底，即使误带 stripe 也保持一致） */
@@ -680,6 +717,9 @@ html[data-layout-preset] .el-input__wrapper,
 html[data-layout-preset] .el-select__wrapper {
   border-radius: var(--layout-control-radius);
 }
+.v-page .el-form-item {
+  margin-bottom: var(--app-density-form-gap);
+}
 /* 控件宽度按内容容量选择语义档位；自定义属性也供共享组件内部的根样式消费。 */
 .app-control-width-compact { --app-control-inline-width: var(--app-control-width-compact); }
 .app-control-width-short { --app-control-inline-width: var(--app-control-width-short); }
@@ -702,8 +742,8 @@ html[data-layout-preset] .el-select__wrapper {
 }
 /* 全站命令按钮契约：业务按钮继续复用 Element Plus，尺寸、字重、图标和状态反馈统一在此收口。 */
 html[data-layout-preset] .el-button {
-  height: var(--app-control-height-md);
-  padding: 0 var(--app-button-padding-x);
+  height: var(--app-density-control-height, var(--app-control-height-md));
+  padding: 0 var(--app-density-button-padding-x, var(--app-button-padding-x));
   gap: var(--app-space-control-gap);
   font-size: var(--app-button-font-size);
   font-weight: var(--app-button-font-weight);

@@ -9,7 +9,7 @@ import AppDataTable from '@/components/AppDataTable.vue'
  * 专属配置能力、可覆盖范围（来自 componentConfig 受控字段）、以及当前消费该组件的页面/slot；
  * 详情抽屉含 LayoutComponentPreview 的默认/loading/empty/error 四态预览。
  *
- * 边界（§6.3.1）：本页查看组件目录元信息并管理字段可覆盖范围，不引入 default<preset<page<user 之外的新运行时层。
+ * 边界（§6.3.1）：本页查看组件目录元信息并管理 page/user 字段可覆盖范围。
  * 组件具体默认值分别在预设管理、页面布局、页面抽屉对应层编辑。
  */
 import { computed, onMounted, ref } from 'vue'
@@ -102,8 +102,8 @@ interface UsageCoverageRow {
   reason: string
 }
 
-const LAYER_LABELS: Record<string, string> = { preset: '预设', page: '页面', user: '个人' }
-const ALL_LAYERS: ComponentConfigLayer[] = ['preset', 'page', 'user']
+const LAYER_LABELS: Record<string, string> = { page: '页面', user: '个人' }
+const ALL_LAYERS: ComponentConfigLayer[] = ['page', 'user']
 
 // 可覆盖范围（后端 layout_field_policy）：键 `${kind}.${field}`。挂载后拉取，编辑即时刷新。
 const policyMap = ref<Map<string, FieldPolicyRecord>>(new Map())
@@ -557,7 +557,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
           <el-alert
             type="info"
             :closable="false"
-            title="边界：系统组件库只管理组件目录元信息与受控默认策略，不新增运行时优先级层（运行时仍为 default < preset < page < user）。"
+            title="边界：系统组件库只管理组件目录元信息与受控默认策略，不新增运行时优先级层（运行时为 default < page < user）。"
           />
         </div>
       </PageDrawer>
@@ -580,7 +580,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
   border: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
   border-radius: 6px;
-  padding: 8px 14px 14px;
+  padding: var(--app-density-card-padding);
 }
 .cat-title {
   font-size: var(--app-font-size-body);

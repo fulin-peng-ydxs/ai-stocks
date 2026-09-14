@@ -1,7 +1,7 @@
 /**
  * 布局配置覆盖链路（M3）。
  *
- * 合并优先级：系统代码默认 < 预设配置 < 页面配置 < 用户配置。
+ * 合并优先级：系统代码默认 < 页面配置 < 用户配置。
  * 用户层以 PG 为权威；localStorage 仅作为离线 fallback 与迁移源。
  */
 import { computed, reactive, ref, watch } from 'vue'
@@ -20,7 +20,6 @@ import {
   type MergeLayer,
 } from './merge'
 import { coerceEditableValue } from './validator'
-import { getRuntimeLayoutPreset, useLayoutPreset, presetComponentDefaults } from './useLayoutPreset'
 import {
   coerceComponentValue,
   componentFieldApplicability,
@@ -40,17 +39,12 @@ export interface UseLayoutConfigOptions {
   pageOverride?: LayoutOverride
   /** 页面级覆盖可写路径。缺省沿用 editable 白名单，后续管理员页面可扩展。 */
   pageAllowedPaths?: string[]
-  /** 测试或特殊页面可关闭预设层。 */
-  enablePresetLayer?: boolean
-  /** 页面默认预设 key（来自 layout_page_config.preset_key）；决定预设层的密度等默认。 */
-  presetKey?: string | null
-  /** 页面 registry 派生的组件实例候选与适用性；提供后四层合并会拒绝不适用字段。 */
+  /** 页面 registry 派生的组件实例候选与适用性；提供后页面/用户合并会拒绝不适用字段。 */
   componentMetaBySlot?: Record<string, ComponentSlotConfigMeta>
 }
 
-/** applyPageConfig 入参：后端页面配置（预设 key + 覆盖值）。 */
+/** applyPageConfig 入参：后端页面覆盖值。 */
 export interface PageConfigInput {
-  presetKey?: string | null
   values?: Record<string, unknown>
 }
 
@@ -143,14 +137,6 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
   const editablePaths = editablePathSet(base)
   const pageAllowedPaths = new Set(options.pageAllowedPaths ?? [...editablePaths])
   const slotKindById = new Map(base.slots.map((s) => [s.id, s.component as string]))
-  const { activePreset } = useLayoutPreset()
-
-  // 页面默认预设：来自后端 layout_page_config.preset_key。未配置时回落到全局当前预设（App.vue 用户选择）。
-  const pagePresetKey = ref<string | null | undefined>(options.presetKey)
-  const effectivePreset = computed(() =>
-    pagePresetKey.value ? getRuntimeLayoutPreset(pagePresetKey.value) : activePreset.value,
-  )
-
   const pageOverlay = reactive<Overlay>({ ...(options.pageOverride?.values ?? {}) })
   const userOverlay = reactive<Overlay>(readStoredOverlay(storageKey, knobs))
   const remoteUserHydrated = ref(false)
@@ -192,22 +178,8 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
     { deep: true },
   )
 
-  const presetOverride = computed<LayoutOverride | undefined>(() => {
-    if (options.enablePresetLayer === false) return undefined
-    const values: LayoutOverlayValues = {}
-    if (editablePaths.has('density')) values.density = effectivePreset.value.componentDefaults.density
-    return makeLayoutOverride(values)
-  })
-
   const mergeResult = computed(() => {
     const layers: MergeLayer[] = [
-      {
-        layer: 'preset',
-        override: presetOverride.value,
-        allowedPaths: editablePaths,
-        knobs,
-        dropMode: 'whole-layer',
-      },
       {
         layer: 'page',
         override: makeLayoutOverride({ ...pageOverlay }, options.pageOverride?.schemaVersion ?? LAYOUT_CONFIG_SCHEMA_VERSION),
@@ -231,25 +203,9 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
   const sourceMeta = computed(() => mergeResult.value.sourceMeta)
   const dropped = computed(() => mergeResult.value.dropped)
 
-  // 组件配置：slot.config（default） < preset < page < user。
-  // 预设层：把生效预设的「预设×组件默认」（componentFieldDefaults[kind]）展开到每个该种类 slot（P11）。
-  const presetComponentOverlay = computed<ComponentOverlay>(() => {
-    if (options.enablePresetLayer === false) return {}
-    const cfd = presetComponentDefaults(effectivePreset.value.key)
-    const values: ComponentOverlay = {}
-    for (const slot of base.slots) {
-      const defaults = cfd[slot.component as string]
-      if (!defaults) continue
-      for (const [field, val] of Object.entries(defaults)) {
-        values[`slots.${slot.id}.config.${field}`] = val as ComponentFieldValue
-      }
-    }
-    return values
-  })
-
+  // 组件配置：slot.config（default） < page < user。视觉预设不再承载组件策略。
   const componentResult = computed(() => {
     const layers: ComponentConfigLayerInput[] = [
-      { layer: 'preset', overlay: { values: { ...presetComponentOverlay.value } } },
       { layer: 'page', overlay: { values: { ...pageComponentOverlay } } },
       { layer: 'user', overlay: { values: { ...userComponentOverlay } } },
     ]
@@ -338,7 +294,7 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
     markUserPathDirty(path)
   }
 
-  function resetLayer(layer: Exclude<LayoutConfigLayer, 'default' | 'preset'>): void {
+  function resetLayer(layer: Exclude<LayoutConfigLayer, 'default'>): void {
     const target = layer === 'page' ? pageOverlay : userOverlay
     for (const key of Object.keys(target)) {
       delete target[key]
@@ -347,11 +303,10 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
   }
 
   /**
-   * 注入后端页面配置（layout_page_config）：替换页面层覆盖并切换页面默认预设。
+   * 注入后端页面配置（layout_page_config）：替换页面层覆盖。
    * 非法/越权项由 mergeLayoutConfig 在合并时按 allowedPaths + validateLayout 守门丢弃，页面不崩。
    */
   function applyPageConfig(input: PageConfigInput = {}): void {
-    if (input.presetKey !== undefined) pagePresetKey.value = input.presetKey
     for (const key of Object.keys(pageOverlay)) delete pageOverlay[key]
     for (const key of Object.keys(pageComponentOverlay)) delete pageComponentOverlay[key]
     // 后端页面配置的 values 同时含 L2 布局参数与组件配置，按路径分流到对应通道。
@@ -361,7 +316,7 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
     }
   }
 
-  /** 注入后端当前生效字段策略；组件抽屉、四层合并和写入口共同消费。 */
+  /** 注入后端当前生效字段策略；组件抽屉、页面/用户合并和写入口共同消费。 */
   function applyComponentFieldPolicies(policies: ComponentFieldPolicyInput[]): void {
     for (const key of Object.keys(componentFieldPolicies)) delete componentFieldPolicies[key]
     for (const policy of policies) {

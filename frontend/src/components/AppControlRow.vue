@@ -2,12 +2,10 @@
 withDefaults(defineProps<{
   align?: 'center' | 'start' | 'end' | 'baseline'
   justify?: 'start' | 'end' | 'between'
-  dense?: boolean
   fill?: boolean
 }>(), {
   align: 'center',
   justify: 'start',
-  dense: false,
   fill: false,
 })
 </script>
@@ -18,7 +16,7 @@ withDefaults(defineProps<{
     :class="[
       `is-align-${align}`,
       `is-justify-${justify}`,
-      { 'is-dense': dense, 'is-fill': fill },
+      { 'is-fill': fill },
     ]"
   >
     <slot />
@@ -29,11 +27,8 @@ withDefaults(defineProps<{
 .app-control-row {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--app-space-2);
+  gap: var(--app-density-control-gap, var(--app-space-2));
   min-width: 0;
-}
-.app-control-row.is-dense {
-  gap: var(--app-space-2);
 }
 .app-control-row.is-fill :deep(> *) {
   flex: 1 1 auto;

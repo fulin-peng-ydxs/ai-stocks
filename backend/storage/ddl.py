@@ -378,7 +378,7 @@ CREATE TABLE IF NOT EXISTS layout_user_config (
 
 # 字段开放策略（layout-config-productization P10）：管理员收紧/放开"某组件某字段可在哪几层覆盖"。
 # 是元配置（policy），不参与运行时值合并、不构成第五层优先级；缺行回落代码声明的最大开放集。
-# allowed_layers 存 JSON 数组（preset/page/user 的子集），且必须 ⊆ 代码最大集。
+# allowed_layers 存 JSON 数组（page/user 的子集），且必须 ⊆ 代码最大集。
 DDL_LAYOUT_FIELD_POLICY = """
 CREATE TABLE IF NOT EXISTS layout_field_policy (
     component_kind    VARCHAR,

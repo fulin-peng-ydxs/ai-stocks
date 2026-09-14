@@ -12,7 +12,7 @@
 - 已有 `list`、`master-detail`、`dashboard`、`form`、`detail`、`workbench`、`wizard` 页面原型。
 - 已有 `validateLayout`、`coerceEditableValue`、`assertLayout`。
 - 已有 `LayoutHost`、`VMixedGrow`、`VColumns` 渲染器。
-- `useRemoteLayoutConfig` 已统一接入 PG 权威配置、四层合并、来源追踪和字段策略；localStorage 仅作受控 fallback。
+- `useRemoteLayoutConfig` 已统一接入 PG 权威配置、代码默认/页面/用户合并、来源追踪和字段策略；localStorage 仅作受控 fallback。
 - 全部 registry 业务页面已接入 `LayoutHost`，页面登记和真实组件消费由机器契约守卫。
 
 当前实现已经从“布局规范代码化”底座升级为产品化布局系统，稳定能力包括：
@@ -49,7 +49,7 @@
    - 白名单、类型、范围、跨字段约束必须明确。
 
 3. 预设不改变页面业务结构。
-   - 预设只影响 token、密度、组件默认策略和响应式默认值。
+   - 视觉预设只影响语义色、边框、阴影和共享圆角；密度、组件行为和响应式结构归各自配置层。
    - 页面业务组件增删、组件顺序等结构调整归页面配置，且仅管理员可操作。
 
 4. 用户配置不突破布局红线。
@@ -65,7 +65,7 @@
 | M0 | 基线收口 | 同步需求、计划、登记当前已接入页面 | 已完成 |
 | M1 | 组件能力目录 | 将 `COMPONENT_CATALOG` 升级为完整组件能力目录 | 已完成 |
 | M2 | 风格预设系统 | 建立预设模型、token 映射和预设切换 | 已完成 |
-| M3 | 配置覆盖链路 | 实现 `default < preset < page < user` 合并和校验 | 已完成 |
+| M3 | 配置覆盖链路 | 实现 `default < page < user` 布局/组件合并和校验；视觉预设独立 | 已完成 |
 | M4 | 后端持久化 API | 新增布局配置表、仓储、API、后端校验 | 已完成 |
 | M5 | 独立布局配置页面 | 新增配置中心、预设管理、页面配置、导入导出 | 已完成 |
 | M6 | AI 开发稳定化 | 固化页面开发模板、校验报告、登记机制 | 已完成 |
@@ -84,7 +84,7 @@
    - 记录 `BoardView` 和 `QualityView` 的原型、组件清单、可编辑项。
 
 2. 固化完成后的稳定边界。
-   - 页面运行时统一通过 `useRemoteLayoutConfig` 获取 PG 权威配置、字段策略和四层来源；`useLayoutConfig` 作为内部合并内核，旧 localStorage 仅作为迁移源和受控 fallback。
+   - 页面运行时统一通过 `useRemoteLayoutConfig` 获取 PG 权威配置、字段策略和代码默认/页面/用户来源；`useLayoutConfig` 作为内部合并内核，旧 localStorage 仅作为迁移源和受控 fallback。
    - `COMPONENT_CATALOG` 是完整组件能力目录；Web 字段由 `COMPONENT_FIELD_DEFS` 定义并按 slot kind 自动继承。
    - 布局旋钮与组件字段分别由统一 schema 渲染器承载，页面不得另建私有配置表单或逐页字段白名单。
 
@@ -173,21 +173,16 @@
 
 ### 7.2 任务
 
-1. 新增预设类型。
-   - `LayoutPreset`
-   - `StyleTokenConfig`
-   - `PresetComponentDefaults`
-   - `PresetResponsiveDefaults`
+1. 视觉预设只保留 `LayoutPreset` 与 `StyleTokenConfig`，不承载组件、密度或响应式默认。
 
 2. 保留唯一稳定内置预设。
    - `balanced`：对外名称“澄空蓝”，作为代码默认和异常回退。
    - 其他风格由管理员在预设管理页新增、启用和维护，不扩张代码内置 key。
 
 3. 建立 token 映射。
-   - 色彩：主色、状态色、背景、卡片、边框、文字。
-   - 密度：页面 gap、卡片 padding、表格行高、表单间距。
-   - 形态：圆角、阴影、边框强度。
-   - 组件默认策略：表格密度、筛选栏折叠、抽屉宽度。
+   - 色彩：主色、状态色、金融涨跌色和边框色。
+   - 形态：圆角和阴影。
+   - 页面密度由 `LayoutHost` 的固定三档矩阵管理；分页、抽屉、筛选和响应式策略归各自事实源。
 
 4. 前端应用预设。
    - 在布局根或应用根挂预设 class 或 CSS 变量。
@@ -197,7 +192,7 @@
 5. 预设校验。
    - 预设不能删除页面业务组件。
    - token 类型必须合法。
-   - 密度不能突破组件最低尺寸。
+   - 视觉预设不能携带密度或任何布局/组件字段。
    - 颜色至少满足基础对比度要求。
 
 ### 7.3 主要文件
@@ -230,12 +225,12 @@
 
 1. 定义配置层。
    - 代码 default：`PageLayout`、布局 `editable`、`COMPONENT_FIELD_DEFS`。
-   - 远端覆盖：`LayoutOverride`，分别由 preset/page/user 记录承载。
+   - 远端覆盖：`LayoutOverride`，分别由 page/user 记录承载；视觉 preset 仅承载视觉 token。
    - `EffectiveLayoutConfig`
    - `FieldPolicyRecord`
 
 2. 建立统一运行时入口。
-   - `useLayoutConfig` 负责本地四层合并内核，`useRemoteLayoutConfig` 负责 effective 接口、字段策略和保存编排。
+   - `useLayoutConfig` 负责本地代码默认/页面/用户合并内核，`useRemoteLayoutConfig` 负责 effective 接口、字段策略和保存编排。
    - 通过 `sourceOf` / `layerValuesOf` 及组件对应访问器显示来源和逐层取值。
    - 支持按层重置。
    - 对旧 localStorage 值做兼容读取和非法项丢弃。
@@ -254,7 +249,7 @@
    - 页面结构字段仅管理员可调。
 
 5. 单测。
-   - 四层合并优先级。
+   - 代码默认、页面、用户三层合并优先级。
    - 用户配置覆盖页面配置。
    - 页面配置覆盖预设配置。
    - 非法用户配置丢弃但页面不崩。
@@ -524,7 +519,7 @@
 - 组件目录完整性。
 - 组件专属配置校验。
 - 预设 token 校验。
-- 四层配置合并。
+- 代码默认、页面、用户三层配置合并。
 - editable 权限和取值域。
 - schema version 兼容。
 

@@ -4,7 +4,11 @@ import { Close } from '@element-plus/icons-vue'
 import type { EditableKnob } from '@/layout/schema'
 import type { LayoutConfigLayer } from '@/layout/merge'
 import { applicableComponentFields, getPageEntry, type SlotConfigMeta } from '@/layout/pageRegistry'
-import { getComponentFieldDef } from '@/layout/componentConfig'
+import {
+  getComponentFieldDef,
+  type ComponentConfigLayer,
+  type ComponentConfigSource,
+} from '@/layout/componentConfig'
 import SettingsGroup from './SettingsGroup.vue'
 import ComponentAutoSettings from './ComponentAutoSettings.vue'
 import PageDrawer from './PageDrawer.vue'
@@ -23,9 +27,9 @@ export interface DrawerConfig {
   setKnob: (path: string, value: unknown) => void
   componentValueOf: (slotId: string, field: string) => unknown
   setComponentKnob: (slotId: string, field: string, value: unknown) => void
-  componentSourceOf?: (slotId: string, field: string) => 'default' | 'preset' | 'page' | 'user'
-  componentLayerValuesOf?: (slotId: string, field: string) => Partial<Record<'default' | 'preset' | 'page' | 'user', unknown>>
-  componentAllowedLayers?: (kind: string, field: string) => ('preset' | 'page' | 'user')[] | undefined
+  componentSourceOf?: (slotId: string, field: string) => ComponentConfigSource
+  componentLayerValuesOf?: (slotId: string, field: string) => Partial<Record<ComponentConfigSource, unknown>>
+  componentAllowedLayers?: (kind: string, field: string) => ComponentConfigLayer[] | undefined
 }
 
 const props = withDefaults(defineProps<{
@@ -327,7 +331,7 @@ function handleReset(): void {
   padding: 0;
 }
 :global(.page-settings-drawer .el-drawer__body) {
-  padding: 14px;
+  padding: var(--app-density-overlay-group-gap);
   display: flex;
   align-items: stretch;
   min-height: 0;
@@ -349,7 +353,7 @@ function handleReset(): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
+  padding: var(--app-density-overlay-padding);
   border-bottom: 1px solid var(--page-settings-divider);
 }
 .ps-title {
@@ -378,18 +382,19 @@ function handleReset(): void {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 14px 16px;
+  padding: var(--app-density-overlay-padding);
 }
 .ps-body.is-scroll-disabled {
   overflow: hidden;
 }
 .ps-sync-state {
-  margin-bottom: 10px;
+  margin-bottom: var(--app-density-overlay-group-gap);
 }
 /* 三段结构已抽到 SettingsGroup.vue（level 1 卡片 + 折叠 + 比例标题），此处不再重复样式。 */
 .ps-footer {
   flex: none;
-  padding: 12px 16px 14px;
+  padding: var(--app-density-overlay-group-gap) var(--app-density-overlay-padding)
+    var(--app-density-overlay-padding);
   border-top: 1px solid var(--page-settings-divider);
 }
 .ps-reset {
