@@ -80,21 +80,26 @@ COMPONENT_CONFIG_FIELDS_BY_KIND: dict[str, set[str]] = {
     "chart": {"minHeight", "stockChart"},
     "master-detail": {"masterWidth", "masterRatio", "masterRatioProfiles"},
     "tabs": {"defaultActive"},
-    "settings-drawer": {"size", "bodyScroll", "collapsibleSections", "defaultCollapsed"},
+    "settings-drawer": {"size", "bodyScroll"},
     "config-panel": {"collapsibleSections", "defaultCollapsed", "showGroupDescription", "showSectionDescription"},
 }
 
 # 同名字段可能因组件种类拥有不同静态值域；动态页面值域不在此表硬编码。
 COMPONENT_CONFIG_OPTIONS_BY_KIND_FIELD: dict[tuple[str, str], set[str]] = {
     ("settings-drawer", "size"): {"sm", "md", "lg"},
-    ("settings-drawer", "defaultCollapsed"): {"layout", "components", "business"},
 }
 
 # user 层并不等于一律写 layout_user_config。跨页面共享的个人偏好由专用偏好存储承接；
 # 此表是布局写接口的反向拦截事实源，按 (kind, field) 判断，避免绑定具体 pageKey/slotId。
 COMPONENT_CONFIG_USER_PERSISTENCE_BY_KIND_FIELD: dict[tuple[str, str], str] = {
     ("settings-drawer", "size"): "global-preference",
-    ("settings-drawer", "defaultCollapsed"): "global-preference",
+}
+
+# registry 统一保留 settings 作为页面设置抽屉 slot。历史折叠字段已改为固定交互，
+# 读 effective 时同步屏蔽旧值，避免数据库中的存量覆盖继续泄漏到运行时。
+REMOVED_SETTINGS_DRAWER_PATHS = {
+    "slots.settings.config.collapsibleSections",
+    "slots.settings.config.defaultCollapsed",
 }
 
 
@@ -1248,6 +1253,8 @@ class LayoutConfigRepo:
         """读时按当前代码层级过滤组件配置，防止历史越权值继续进入 effective_config。"""
         filtered: dict[str, Any] = {}
         for path, value in values.items():
+            if path in REMOVED_SETTINGS_DRAWER_PATHS:
+                continue
             m = COMPONENT_CONFIG_PATH_RE.fullmatch(path)
             if not m:
                 filtered[path] = value

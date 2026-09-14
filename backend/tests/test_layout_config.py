@@ -343,7 +343,7 @@ def test_invalid_config_rejected(client):
         repo.set_page_config("board", {"values": {"slots.table.config.pageSize": 5}})
     with pytest.raises(LayoutConfigValidationError, match="不能大于"):
         repo.set_page_config("board", {"values": {"slots.table.config.pageSize": 201}})
-    with pytest.raises(LayoutConfigValidationError, match="包含非法取值"):
+    with pytest.raises(LayoutConfigValidationError, match="不支持配置字段 defaultCollapsed"):
         repo.set_user_config(
             "board",
             {"values": {"slots.settings.config.defaultCollapsed": ["unknown"]}},
@@ -652,7 +652,7 @@ def test_component_config_page_user_priority(client):
 
 
 def test_settings_drawer_component_config_layers(client):
-    """settings-drawer 页面默认可保存；跨页面个人偏好不得混入 layout_user_config。"""
+    """settings-drawer 只开放尺寸与滚动；折叠策略不允许写入布局配置。"""
     repo = LayoutConfigRepo(client)
     layout = {"slots": [{"id": "preferencesOverlay", "component": "settings-drawer"}]}
     repo.set_page_config(
@@ -661,18 +661,22 @@ def test_settings_drawer_component_config_layers(client):
             "values": {
                 "slots.preferencesOverlay.config.size": "lg",
                 "slots.preferencesOverlay.config.bodyScroll": False,
-                "slots.preferencesOverlay.config.collapsibleSections": True,
-                "slots.preferencesOverlay.config.defaultCollapsed": ["components"],
             }
         },
         layout=layout,
     )
-    for field, value in (("size", "sm"), ("defaultCollapsed", ["layout", "business"])):
-        with pytest.raises(LayoutConfigValidationError, match="不允许写入 layout_user_config"):
-            repo.set_user_config(
+    with pytest.raises(LayoutConfigValidationError, match="不允许写入 layout_user_config"):
+        repo.set_user_config(
+            "board",
+            {"values": {"slots.preferencesOverlay.config.size": "sm"}},
+            user_id="u1",
+            layout=layout,
+        )
+    for field, value in (("collapsibleSections", True), ("defaultCollapsed", ["layout"])):
+        with pytest.raises(LayoutConfigValidationError, match=f"不支持配置字段 {field}"):
+            repo.set_page_config(
                 "board",
                 {"values": {f"slots.preferencesOverlay.config.{field}": value}},
-                user_id="u1",
                 layout=layout,
             )
     with pytest.raises(LayoutConfigValidationError, match="不允许在 user 层"):
@@ -686,10 +690,8 @@ def test_settings_drawer_component_config_layers(client):
     eff = repo.effective_config("board", user_id="u1")
     assert eff["values"]["slots.preferencesOverlay.config.size"] == "lg"
     assert eff["values"]["slots.preferencesOverlay.config.bodyScroll"] is False
-    assert eff["values"]["slots.preferencesOverlay.config.collapsibleSections"] is True
-    assert eff["source"]["slots.preferencesOverlay.config.collapsibleSections"] == "page"
-    assert eff["values"]["slots.preferencesOverlay.config.defaultCollapsed"] == ["components"]
-    assert eff["source"]["slots.preferencesOverlay.config.defaultCollapsed"] == "page"
+    assert "slots.preferencesOverlay.config.collapsibleSections" not in eff["values"]
+    assert "slots.preferencesOverlay.config.defaultCollapsed" not in eff["values"]
 
 
 def test_effective_config_filters_stale_user_component_layer(client):
@@ -726,10 +728,10 @@ def test_effective_config_filters_stale_user_component_layer(client):
         eff = repo.effective_config("board", user_id="u-stale")
         assert eff["values"]["slots.settings.config.bodyScroll"] is True
         assert eff["source"]["slots.settings.config.bodyScroll"] == "page"
-        assert eff["values"]["slots.settings.config.defaultCollapsed"] == ["layout"]
-        assert eff["source"]["slots.settings.config.defaultCollapsed"] == "user"
+        assert "slots.settings.config.defaultCollapsed" not in eff["values"]
         user_layer = next(layer for layer in eff["layers"] if layer["layer"] == "user")
         assert "slots.settings.config.bodyScroll" not in user_layer["config"]["values"]
+        assert "slots.settings.config.defaultCollapsed" not in user_layer["config"]["values"]
     finally:
         repo.pg.execute(
             "DELETE FROM layout_user_config WHERE user_id=%s AND page_key=%s",

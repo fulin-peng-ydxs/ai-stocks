@@ -184,27 +184,6 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       highFrequency: true,
       help: '关闭后抽屉内容区不再独立滚动，仅适合短设置面板。',
     },
-    {
-      key: 'collapsibleSections',
-      label: '允许折叠分组',
-      control: 'bool',
-      layers: ['page'],
-      default: true,
-      highFrequency: true,
-      help: '关闭后页面设置抽屉三段固定展开，不记录个人折叠态。',
-    },
-    {
-      key: 'defaultCollapsed',
-      label: '默认折叠段',
-      control: 'string[]',
-      layers: ['page', 'user'],
-      userPersistence: 'global-preference',
-      options: ['layout', 'components', 'business'],
-      optionLabels: { layout: '布局', components: '组件设置', business: '业务选项' },
-      default: [],
-      highFrequency: true,
-      help: '控制页面设置抽屉三段默认折叠；用户点击折叠会写入个人层。',
-    },
   ],
   'config-panel': [
     {

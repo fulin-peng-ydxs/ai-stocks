@@ -60,8 +60,6 @@ describe('组件字段元数据', () => {
     ])
     expect((COMPONENT_FIELD_DEFS['settings-drawer'] ?? []).map((d) => d.key).sort()).toEqual([
       'bodyScroll',
-      'collapsibleSections',
-      'defaultCollapsed',
       'size',
     ])
     expect((COMPONENT_FIELD_DEFS.tabs ?? []).map((d) => d.key)).toEqual(['defaultActive'])
@@ -142,19 +140,15 @@ describe('组件配置分层合并', () => {
     expect(r.perLayerValues['slots.table.config.pageSize']).toMatchObject({ default: 20, page: 50, user: 100 })
   })
 
-  it('settings-drawer 折叠态默认值与用户层覆盖生效', () => {
+  it('settings-drawer 折叠能力为固定交互，不接受页面或用户配置', () => {
     const r = resolveComponentConfig(layout, [
-      { layer: 'page', overlay: { values: { 'slots.settings.config.defaultCollapsed': ['components'] } } },
-      { layer: 'user', overlay: { values: { 'slots.settings.config.defaultCollapsed': ['layout', 'business'] } } },
+      { layer: 'page', overlay: { values: { 'slots.settings.config.collapsibleSections': false } } },
+      { layer: 'user', overlay: { values: { 'slots.settings.config.defaultCollapsed': ['layout'] } } },
     ])
-    expect(r.configBySlot.settings.collapsibleSections).toBe(true)
-    expect(r.configBySlot.settings.defaultCollapsed).toEqual(['layout', 'business'])
-    expect(r.source['slots.settings.config.defaultCollapsed']).toBe('user')
-    expect(r.perLayerValues['slots.settings.config.defaultCollapsed']).toMatchObject({
-      default: [],
-      page: ['components'],
-      user: ['layout', 'business'],
-    })
+    expect(r.configBySlot.settings).not.toHaveProperty('collapsibleSections')
+    expect(r.configBySlot.settings).not.toHaveProperty('defaultCollapsed')
+    expect(r.dropped).toContainEqual({ layer: 'page', path: 'slots.settings.config.collapsibleSections', reason: 'field.unknown' })
+    expect(r.dropped).toContainEqual({ layer: 'user', path: 'slots.settings.config.defaultCollapsed', reason: 'field.unknown' })
   })
 
   it('config-panel 展示与默认折叠配置按层合并', () => {

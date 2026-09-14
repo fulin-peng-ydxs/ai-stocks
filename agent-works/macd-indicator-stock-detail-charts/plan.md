@@ -286,7 +286,7 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | 布局旋钮 | `density` | page/user | 既有 `pageRegistry.editable` | 不变。 |
 | 组件设置 | 无新增 | - | - | 不新增 `COMPONENT_FIELD_DEFS`。 |
-| 页面记忆 | `charts.slot2/slot3/heightRatios` | `usePageSettings` | `user_preference(page/stock-detail/settings)` | 类型即时保存；高度释放后提交。 |
+| 业务偏好 | `charts.slot2/slot3/heightRatios` | `usePageSettings` | `user_preference(page/stock-detail/settings)` | 类型即时保存；高度释放后提交。 |
 | 临时交互态 | 当前拖动比例、hover 日期、zoom | component memory | 不持久化 | 不进入 PG 或布局配置。 |
 
 #### 复用与组件资产闭环
@@ -294,7 +294,7 @@ flowchart LR
 | 资产 | 处理 | 系统组件关系 | 维护结论 | 验证 |
 | --- | --- | --- | --- | --- |
 | `LayoutHost/detail` | 复用 | 既有 `detail` | 不改原型、slot 或滚动事实源 | `pageRegistry.spec.ts`、`layout-contract.spec.ts` |
-| `PageSettingsDrawer/PageSegmented` | 复用 | 既有 `settings-drawer` | 新业务选项只进入页面记忆 | 组件测试、E2E |
+| `PageSettingsDrawer/PageSegmented` | 复用 | 既有 `settings-drawer` | 新业务选项只进入业务偏好 | 组件测试、E2E |
 | `AppStateBlock` | 复用 | 状态语义 | MACD 局部四态不得另写私有状态皮肤 | 组件测试 |
 | `CandleChart` | 保留现有对外契约并抽取共享 helper | 无新增种类 | 盘感训练/回测继续消费，补回归 | Vitest、build、现有页面 smoke |
 | `StockChartWorkspace` | 新增领域真实组件 | 不新增系统组件种类 | 登记到 DESIGN 真实组件清单，说明只承接股票多图联动；至少由 `StockDetailView` 实际消费 | 组件测试、Playwright |

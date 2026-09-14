@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, useSlots, watch } from 'vue'
-import { Close } from '@element-plus/icons-vue'
+import { Close, Expand, Fold } from '@element-plus/icons-vue'
 import type { EditableKnob } from '@/layout/schema'
 import type { LayoutConfigLayer } from '@/layout/merge'
 import { applicableComponentFields, getPageEntry, type SlotConfigMeta } from '@/layout/pageRegistry'
@@ -80,9 +80,6 @@ const activeConfig = computed<DrawerConfig | undefined>(() => {
       if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'size') {
         return drawerPreferences.size.value ?? props.config?.componentValueOf(slotId, field)
       }
-      if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'defaultCollapsed') {
-        return drawerPreferences.defaultCollapsed.value ?? props.config?.componentValueOf(slotId, field)
-      }
       return props.config?.componentValueOf(slotId, field)
     },
     setComponentKnob(slotId: string, field: string, value: unknown) {
@@ -90,24 +87,16 @@ const activeConfig = computed<DrawerConfig | undefined>(() => {
         drawerPreferences.setSize(value)
         return
       }
-      if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'defaultCollapsed') {
-        drawerPreferences.setDefaultCollapsed(value)
-        return
-      }
       props.config?.setComponentKnob(slotId, field, value)
     },
     componentSourceOf(slotId: string, field: string) {
       if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'size' && drawerPreferences.size.value) return 'user'
-      if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'defaultCollapsed' && drawerPreferences.defaultCollapsed.value) return 'user'
       return props.config?.componentSourceOf?.(slotId, field) ?? 'default'
     },
     componentLayerValuesOf(slotId: string, field: string) {
       const values = props.config?.componentLayerValuesOf?.(slotId, field) ?? {}
       if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'size' && drawerPreferences.size.value) {
         return { ...values, user: drawerPreferences.size.value }
-      }
-      if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'defaultCollapsed' && drawerPreferences.defaultCollapsed.value) {
-        return { ...values, user: drawerPreferences.defaultCollapsed.value }
       }
       return values
     },
@@ -141,7 +130,6 @@ const hasBusinessContent = computed(() => hasBusinessSlot.value)
 type SectionKey = 'layout' | 'components' | 'business'
 const SECTION_KEYS: SectionKey[] = ['layout', 'components', 'business']
 
-const collapsibleSections = computed(() => props.config?.componentValueOf('settings', 'collapsibleSections') !== false)
 const drawerSize = computed<PageDrawerSize>(() => {
   const size = activeConfig.value?.componentValueOf('settings', 'size')
   return size === 'sm' || size === 'lg' ? size : 'md'
@@ -150,12 +138,25 @@ const bodyScroll = computed(() => props.config?.componentValueOf('settings', 'bo
 const drawerPreferenceSyncing = computed(() => props.modelValue && !drawerPreferences.hydrated.value)
 const drawerPreferenceFallback = computed(() => props.modelValue && drawerPreferences.failed.value)
 const collapsedSections = computed<SectionKey[]>(() => {
-  const raw = activeConfig.value?.componentValueOf('settings', 'defaultCollapsed')
+  const raw = drawerPreferences.collapsedSections.value
   if (!Array.isArray(raw)) return []
   return raw.filter((v): v is SectionKey => SECTION_KEYS.includes(v as SectionKey))
 })
+const visibleSectionKeys = computed<SectionKey[]>(() => {
+  const active = !!activeConfig.value
+  return SECTION_KEYS.filter((key) => {
+    if (key === 'layout') return active ? hasLayoutKnobs.value : !!slots.layout
+    if (key === 'components') return active ? hasComponentConfig.value : !!slots.components
+    return active ? hasBusinessContent.value : hasBusinessSlot.value
+  })
+})
 const runtimeCollapsedSections = ref<SectionKey[]>([])
 const runtimeTouched = ref(false)
+const allVisibleSectionsCollapsed = computed(() => (
+  visibleSectionKeys.value.length > 0
+  && visibleSectionKeys.value.every((key) => runtimeCollapsedSections.value.includes(key))
+))
+const bulkToggleLabel = computed(() => allVisibleSectionsCollapsed.value ? '全部展开' : '全部收起')
 
 watch(
   () => props.modelValue,
@@ -172,20 +173,33 @@ watch(collapsedSections, (value) => {
 })
 
 function sectionOpen(key: SectionKey): boolean {
-  if (!collapsibleSections.value) return true
   return !runtimeCollapsedSections.value.includes(key)
 }
 
 function setSectionOpen(key: SectionKey, open: boolean): void {
-  if (!collapsibleSections.value) return
   const next = new Set(runtimeCollapsedSections.value)
   if (open) next.delete(key)
   else next.add(key)
   runtimeTouched.value = true
   runtimeCollapsedSections.value = SECTION_KEYS.filter((section) => next.has(section))
+  drawerPreferences.setCollapsedSections(runtimeCollapsedSections.value)
+}
+
+function toggleAllSections(): void {
+  const next = new Set(runtimeCollapsedSections.value)
+  if (allVisibleSectionsCollapsed.value) {
+    visibleSectionKeys.value.forEach((key) => next.delete(key))
+  } else {
+    visibleSectionKeys.value.forEach((key) => next.add(key))
+  }
+  runtimeTouched.value = true
+  runtimeCollapsedSections.value = SECTION_KEYS.filter((section) => next.has(section))
+  drawerPreferences.setCollapsedSections(runtimeCollapsedSections.value)
 }
 
 function handleReset(): void {
+  runtimeTouched.value = false
+  runtimeCollapsedSections.value = []
   drawerPreferences.reset()
   emit('reset')
 }
@@ -207,9 +221,20 @@ function handleReset(): void {
           <span>{{ props.title || '页面设置' }}</span>
           <span v-if="props.dirty" class="ps-dirty-dot" />
         </div>
-        <AppIconButton class="ps-close" label="关闭页面设置" size="sm" @click="emit('update:modelValue', false)">
-          <el-icon><Close /></el-icon>
-        </AppIconButton>
+        <div class="ps-header-actions">
+          <AppIconButton
+            v-if="visibleSectionKeys.length"
+            class="ps-fold-all"
+            :label="bulkToggleLabel"
+            size="sm"
+            @click="toggleAllSections"
+          >
+            <el-icon><Expand v-if="allVisibleSectionsCollapsed" /><Fold v-else /></el-icon>
+          </AppIconButton>
+          <AppIconButton class="ps-close" label="关闭页面设置" size="sm" @click="emit('update:modelValue', false)">
+            <el-icon><Close /></el-icon>
+          </AppIconButton>
+        </div>
       </header>
 
       <!--
@@ -241,7 +266,6 @@ function handleReset(): void {
             title="布局"
             hint="预设 / 明暗 / 密度等整页布局设置"
             :level="1"
-            :collapsible="collapsibleSections"
             :model-value="sectionOpen('layout')"
             @update:model-value="(open) => setSectionOpen('layout', open)"
           >
@@ -259,7 +283,6 @@ function handleReset(): void {
             title="组件设置"
             hint="本页开放可调的组件特性（列显隐 / 排序 / 分页等），统一走组件配置层"
             :level="1"
-            :collapsible="collapsibleSections"
             :model-value="sectionOpen('components')"
             @update:model-value="(open) => setSectionOpen('components', open)"
           >
@@ -277,9 +300,7 @@ function handleReset(): void {
           <SettingsGroup
             v-if="hasBusinessContent"
             title="业务选项"
-            badge="页面记忆"
             :level="1"
-            :collapsible="collapsibleSections"
             :model-value="sectionOpen('business')"
             @update:model-value="(open) => setSectionOpen('business', open)"
           >
@@ -288,7 +309,14 @@ function handleReset(): void {
         </template>
 
         <template v-else>
-          <SettingsGroup v-if="$slots.layout" title="布局" hint="预设 / 明暗 / 密度等整页布局设置" :level="1">
+          <SettingsGroup
+            v-if="$slots.layout"
+            title="布局"
+            hint="预设 / 明暗 / 密度等整页布局设置"
+            :level="1"
+            :model-value="sectionOpen('layout')"
+            @update:model-value="(open) => setSectionOpen('layout', open)"
+          >
             <slot name="layout" />
           </SettingsGroup>
           <SettingsGroup
@@ -296,10 +324,18 @@ function handleReset(): void {
             title="组件设置"
             hint="本页开放可调的组件特性（列显隐 / 排序 / 分页等）"
             :level="1"
+            :model-value="sectionOpen('components')"
+            @update:model-value="(open) => setSectionOpen('components', open)"
           >
             <slot name="components" />
           </SettingsGroup>
-          <SettingsGroup v-if="hasBusinessSlot" title="业务选项" badge="页面记忆" :level="1">
+          <SettingsGroup
+            v-if="hasBusinessSlot"
+            title="业务选项"
+            :level="1"
+            :model-value="sectionOpen('business')"
+            @update:model-value="(open) => setSectionOpen('business', open)"
+          >
             <slot name="business" />
           </SettingsGroup>
           <slot />
@@ -370,9 +406,16 @@ function handleReset(): void {
   border-radius: 50%;
   background: var(--page-settings-accent);
 }
+.ps-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-space-1);
+}
+.ps-fold-all,
 .ps-close {
   color: var(--page-settings-text-muted);
 }
+.ps-fold-all:hover:not(:disabled),
 .ps-close:hover:not(:disabled) {
   border-color: transparent;
   background: var(--page-settings-seg-hover-bg);

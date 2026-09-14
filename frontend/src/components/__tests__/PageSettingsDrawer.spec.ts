@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { nextTick, ref, type Ref } from 'vue'
+import { nextTick } from 'vue'
 import PageSettingsDrawer, { type DrawerConfig } from '@/components/PageSettingsDrawer.vue'
 import { clearAuth, writeAuth } from '@/api/authToken'
 import { resetDrawerPreferencesForTests } from '@/composables/useDrawerPreferences'
@@ -23,7 +23,7 @@ function login() {
   })
 }
 
-function makeConfig(defaultCollapsedRef: Ref<string[]>) {
+function makeConfig() {
   const setComponentKnob = vi.fn()
   const config: DrawerConfig = {
     knobs: [{ path: 'density', label: '信息密度', type: 'enum', options: ['standard'] }],
@@ -32,8 +32,6 @@ function makeConfig(defaultCollapsedRef: Ref<string[]>) {
     setKnob: vi.fn(),
     componentValueOf: vi.fn((slotId: string, field: string) => {
       if (slotId !== 'settings') return undefined
-      if (field === 'defaultCollapsed') return defaultCollapsedRef.value
-      if (field === 'collapsibleSections') return true
       if (field === 'bodyScroll') return true
       if (field === 'size') return 'md'
       return undefined
@@ -43,8 +41,8 @@ function makeConfig(defaultCollapsedRef: Ref<string[]>) {
   return { config, setComponentKnob }
 }
 
-function mountDrawer(defaultCollapsedRef: Ref<string[]>) {
-  const { config, setComponentKnob } = makeConfig(defaultCollapsedRef)
+function mountDrawer() {
+  const { config, setComponentKnob } = makeConfig()
   const wrapper = mount(PageSettingsDrawer, {
     props: {
       modelValue: true,
@@ -68,7 +66,7 @@ function mountDrawer(defaultCollapsedRef: Ref<string[]>) {
               <button class="toggle" :data-title="title" @click="$emit('update:modelValue', !modelValue)">
                 {{ title }}
               </button>
-              <div v-show="modelValue"><slot /></div>
+              <div class="group-body" v-show="modelValue"><slot /></div>
             </section>
           `,
         },
@@ -79,11 +77,14 @@ function mountDrawer(defaultCollapsedRef: Ref<string[]>) {
           template: `
             <div class="component-auto-settings" :data-slot-ids="slotIds?.join(',')" :data-show-slot-title="String(showSlotTitle)">
               <button class="set-drawer-size" @click="config.setComponentKnob('settings', 'size', 'lg')" />
-              <button class="set-drawer-collapsed" @click="config.setComponentKnob('settings', 'defaultCollapsed', ['layout'])" />
             </div>
           `,
         },
-        AppIconButton: { template: '<button type="button"><slot /></button>' },
+        AppIconButton: {
+          props: ['label'],
+          emits: ['click'],
+          template: '<button type="button" :aria-label="label" @click="$emit(\'click\', $event)"><slot /></button>',
+        },
         AppStateBlock: {
           props: ['state', 'title', 'description'],
           template: '<div class="state-block">{{ title }}{{ description }}</div>',
@@ -126,14 +127,14 @@ describe('PageSettingsDrawer', () => {
   })
 
   it('提供业务插槽且未传 businessVisible 时默认显示业务选项', () => {
-    const { wrapper } = mountDrawer(ref([]))
+    const { wrapper } = mountDrawer()
 
     expect(wrapper.find('.settings-group[data-title="业务选项"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('业务内容')
   })
 
   it('显式传入 businessVisible=false 时隐藏业务选项', async () => {
-    const { wrapper } = mountDrawer(ref([]))
+    const { wrapper } = mountDrawer()
 
     await wrapper.setProps({ businessVisible: false })
 
@@ -141,20 +142,48 @@ describe('PageSettingsDrawer', () => {
     expect(wrapper.text()).not.toContain('业务内容')
   })
 
-  it('点击折叠段只改变抽屉运行态，不写入默认折叠配置', async () => {
-    const defaults = ref<string[]>([])
-    const { wrapper, setComponentKnob } = mountDrawer(defaults)
+  it('点击折叠段保存当前折叠态，但不写入页面组件配置', async () => {
+    login()
+    vi.useFakeTimers()
+    const { wrapper, setComponentKnob } = mountDrawer()
 
     expect(groupOpen(wrapper, '布局')).toBe('true')
     await wrapper.find('.toggle[data-title="布局"]').trigger('click')
+    await vi.advanceTimersByTimeAsync(350)
 
     expect(groupOpen(wrapper, '布局')).toBe('false')
     expect(setComponentKnob).not.toHaveBeenCalled()
+    expect(prefApi.saveUserPreference).toHaveBeenCalledWith(expect.objectContaining({
+      scope: 'global',
+      prefKey: 'settings-drawer',
+      value: expect.objectContaining({ collapsedSections: ['layout'] }),
+    }))
+    vi.useRealTimers()
+  })
+
+  it('头部一键收起和展开当前可见顶层分组，父级隐藏全部子内容', async () => {
+    const { wrapper } = mountDrawer()
+
+    const collapseAll = wrapper.find('button[aria-label="全部收起"]')
+    expect(collapseAll.exists()).toBe(true)
+    await collapseAll.trigger('click')
+
+    expect(groupOpen(wrapper, '布局')).toBe('false')
+    expect(groupOpen(wrapper, '组件设置')).toBe('false')
+    expect(groupOpen(wrapper, '业务选项')).toBe('false')
+    expect(wrapper.find('.settings-group[data-title="业务选项"] .group-body').isVisible()).toBe(false)
+
+    const expandAll = wrapper.find('button[aria-label="全部展开"]')
+    expect(expandAll.exists()).toBe(true)
+    await expandAll.trigger('click')
+
+    expect(groupOpen(wrapper, '布局')).toBe('true')
+    expect(groupOpen(wrapper, '组件设置')).toBe('true')
+    expect(groupOpen(wrapper, '业务选项')).toBe('true')
   })
 
   it('把运行时 slot 与元数据过滤条件透传给组件设置', async () => {
-    const defaults = ref<string[]>([])
-    const { wrapper } = mountDrawer(defaults)
+    const { wrapper } = mountDrawer()
     const overrides = {
       table: {
         columns: [{ key: 'code', label: '代码' }],
@@ -172,8 +201,7 @@ describe('PageSettingsDrawer', () => {
   })
 
   it('当前策略关闭全部个人组件字段时不渲染空组件段', async () => {
-    const defaults = ref<string[]>([])
-    const { wrapper } = mountDrawer(defaults)
+    const { wrapper } = mountDrawer()
     const current = wrapper.props('config')!
 
     await wrapper.setProps({
@@ -189,8 +217,7 @@ describe('PageSettingsDrawer', () => {
   it('策略关闭抽屉尺寸个人层后，已存全局偏好不再进入实际效果', async () => {
     login()
     prefApi.listUserPreferences.mockResolvedValueOnce({ items: [{ value: { size: 'lg' } }] })
-    const defaults = ref<string[]>([])
-    const { wrapper } = mountDrawer(defaults)
+    const { wrapper } = mountDrawer()
     const current = wrapper.props('config')!
     await flushPromises()
     expect(wrapper.find('.drawer').attributes('data-size')).toBe('lg')
@@ -206,16 +233,12 @@ describe('PageSettingsDrawer', () => {
     expect(wrapper.find('.drawer').attributes('data-size')).toBe('md')
   })
 
-  it('每次打开抽屉时从当前默认折叠配置重新初始化运行态', async () => {
-    const defaults = ref<string[]>(['layout'])
-    const { wrapper, setComponentKnob } = mountDrawer(defaults)
+  it('每次打开抽屉时恢复上次保存的折叠态', async () => {
+    const { wrapper, setComponentKnob } = mountDrawer()
 
-    expect(groupOpen(wrapper, '布局')).toBe('false')
-    await wrapper.find('.toggle[data-title="布局"]').trigger('click')
-    expect(groupOpen(wrapper, '布局')).toBe('true')
-
+    await wrapper.find('.toggle[data-title="业务选项"]').trigger('click')
+    expect(groupOpen(wrapper, '业务选项')).toBe('false')
     await wrapper.setProps({ modelValue: false })
-    defaults.value = ['business']
     await wrapper.setProps({ modelValue: true })
 
     expect(groupOpen(wrapper, '布局')).toBe('true')
@@ -226,8 +249,7 @@ describe('PageSettingsDrawer', () => {
   it('抽屉自身偏好写入全局 user_preference，不写页面组件配置', async () => {
     login()
     vi.useFakeTimers()
-    const defaults = ref<string[]>([])
-    const { wrapper, setComponentKnob } = mountDrawer(defaults)
+    const { wrapper, setComponentKnob } = mountDrawer()
 
     await wrapper.find('.set-drawer-size').trigger('click')
     await vi.advanceTimersByTimeAsync(350)
@@ -244,10 +266,11 @@ describe('PageSettingsDrawer', () => {
   it('恢复默认同时清除抽屉自身偏好并继续触发页面重置', async () => {
     login()
     vi.useFakeTimers()
-    const defaults = ref<string[]>([])
-    const { wrapper, setComponentKnob } = mountDrawer(defaults)
+    const { wrapper, setComponentKnob } = mountDrawer()
 
     await wrapper.find('.set-drawer-size').trigger('click')
+    await wrapper.find('button[aria-label="全部收起"]').trigger('click')
+    expect(groupOpen(wrapper, '布局')).toBe('false')
     await vi.advanceTimersByTimeAsync(350)
     prefApi.saveUserPreference.mockClear()
 
@@ -256,6 +279,9 @@ describe('PageSettingsDrawer', () => {
 
     expect(setComponentKnob).not.toHaveBeenCalled()
     expect(wrapper.emitted('reset')).toHaveLength(1)
+    expect(groupOpen(wrapper, '布局')).toBe('true')
+    expect(groupOpen(wrapper, '组件设置')).toBe('true')
+    expect(groupOpen(wrapper, '业务选项')).toBe('true')
     expect(prefApi.saveUserPreference).toHaveBeenCalledWith(expect.objectContaining({
       scope: 'global',
       prefKey: 'settings-drawer',
@@ -268,7 +294,7 @@ describe('PageSettingsDrawer', () => {
     login()
     const remote = deferred<{ items: unknown[] }>()
     prefApi.listUserPreferences.mockReturnValue(remote.promise)
-    const { wrapper } = mountDrawer(ref([]))
+    const { wrapper } = mountDrawer()
 
     expect(wrapper.text()).toContain('正在同步抽屉偏好')
 
@@ -281,7 +307,7 @@ describe('PageSettingsDrawer', () => {
     resetDrawerPreferencesForTests()
     prefApi.listUserPreferences.mockReset()
     prefApi.listUserPreferences.mockRejectedValue(new Error('failed'))
-    const { wrapper: failedWrapper } = mountDrawer(ref([]))
+    const { wrapper: failedWrapper } = mountDrawer()
 
     await vi.waitFor(() => {
       expect(failedWrapper.text()).toContain('抽屉偏好暂用本地设置')

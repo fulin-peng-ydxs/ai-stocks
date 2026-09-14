@@ -22,7 +22,6 @@ vi.mock('@/layout/pageRegistry', () => ({
       ],
       'system-config': [
         { key: 'bodyScroll', layers: ['preset', 'page'] },
-        { key: 'defaultCollapsed', layers: ['preset', 'page', 'user'] },
       ],
     }
     return (fieldsByPage[entry.pageKey] ?? []).filter((field) => field.layers.includes(layer))
@@ -130,7 +129,7 @@ vi.mock('@/layout/componentConfig', () => {
         : kind === 'config-panel'
           ? ['defaultCollapsed']
           : kind === 'settings-drawer'
-            ? ['bodyScroll', 'defaultCollapsed']
+            ? ['bodyScroll']
             : meta.sortFields?.length
               ? ['defaultSort']
               : ['border']
@@ -415,22 +414,15 @@ function mountMasterDemo(runtimeRatio?: number) {
 }
 
 describe('ComponentAutoSettings', () => {
-  it('无业务设置 slot 时隐藏设置抽屉的业务折叠段选项', () => {
+  it('settings-drawer 折叠策略不进入组件设置', () => {
     const wrapper = mountAuto(false)
-    expect(wrapper.text()).toContain('默认折叠段')
-    expect(wrapper.text()).toContain('布局')
-    expect(wrapper.text()).toContain('组件设置')
-    expect(wrapper.text()).not.toContain('业务选项')
+    expect(wrapper.text()).not.toContain('默认折叠段')
+    expect(wrapper.text()).not.toContain('允许折叠分组')
   })
 
   it('settings-drawer 内容区滚动不进入用户层设置抽屉', () => {
     const wrapper = mountAuto(false)
     expect(wrapper.text()).not.toContain('内容区滚动')
-  })
-
-  it('有业务设置 slot 时保留业务折叠段选项', () => {
-    const wrapper = mountAuto(true)
-    expect(wrapper.text()).toContain('业务选项')
   })
 
   it('排序字段候选超过三个时使用下拉，避免窄抽屉内分段按钮挤压', () => {

@@ -255,13 +255,13 @@ Key Characteristics：
 
 | 真实组件 | 路径 | 用途 | 系统组件关系 | 使用规则 |
 |---|---|---|---|---|
-| `PageSettingsDrawer` | `frontend/src/components/PageSettingsDrawer.vue` | 统一页面设置抽屉运行时组件 | 对应 `settings-drawer` 种类；`size/defaultCollapsed` 的用户偏好走 PG `user_preference`，`bodyScroll/collapsibleSections` 只允许 preset/page 层 | `supportsPageSettings !== false` 的 registry 页面统一使用，禁止页面另写第二套设置抽屉 |
+| `PageSettingsDrawer` | `frontend/src/components/PageSettingsDrawer.vue` | 统一页面设置抽屉运行时组件 | 对应 `settings-drawer` 种类；仅 `size` 用户偏好走 PG `user_preference`，`bodyScroll` 只允许 page 层；分组固定可折叠，首次全部展开，当前折叠态作为内部用户偏好记忆 | `supportsPageSettings !== false` 的 registry 页面统一使用；抽屉根部控制一级分组，每个存在下级的可折叠分组自动控制自己的直接子分组；父级收起只隐藏子树、不重置更深层状态；禁止页面另写第二套设置抽屉 |
 | `PageSettingsTrigger` | `frontend/src/components/PageSettingsTrigger.vue` | 页面设置统一入口 | 触发 registry 页面中的 `settings-drawer` | 仅 `pageRegistry.supportsPageSettings !== false` 的真实消费页面显示；平台布局管理页不开放个人设置，不登记假入口 |
 | `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 页面级抽屉边界组件 | 无直接系统组件种类 | 页面打开的设置、详情、日志抽屉统一挂载到 `LayoutHost` 内容区；宽度只传 `sm/md/lg/xl/xxl/wide/full` 语义档位，禁止页面私传 px/%；`wide` 仅供日志、字段差异和长 JSON 等宽内容，`xxl` 供资产搜索等需更宽横向空间的复杂详情，`full` 仅供窄屏承载桌面同等复杂工作台；禁止直接覆盖应用顶栏与导航 |
 | `LayoutHost` | `frontend/src/layout/components/LayoutHost.vue` | registry 页面统一布局、slot、滚动和 overlay 运行时宿主 | 消费 `PageLayout` 中登记的系统组件种类与区域 | 所有 registry 业务页面统一消费；页面不得绕过宿主手写页面外壳、主成长区、滚动归属或 overlay 边界 |
 | `ComponentAutoSettings` | `frontend/src/components/ComponentAutoSettings.vue` | 组件特性唯一渲染器 | 按 slot kind 自动消费 `COMPONENT_FIELD_DEFS`，再结合 `componentMeta` / slot `config` / `fieldApplicability` 判定实例适用性 | 设置抽屉 user 层与页面布局编辑器 page 层共用；候选项可由页面按当前业务上下文传入运行时 meta 覆盖，避免不同面板的分区混显；布尔、枚举、数值、字符串和静态字符串多选控件按字段元数据通用渲染，动态候选字段复用专用安全渲染器 |
-| `SettingsGroup` | `frontend/src/components/SettingsGroup.vue` | 设置抽屉的分组容器 | 无直接系统组件种类 | 页面设置抽屉分组优先复用；不直接用于主内容区配置面板 |
-| `PageSettingSection` | `frontend/src/components/PageSettingSection.vue` | 页面设置业务选项分区 | 无直接系统组件种类 | `PageSettingsDrawer` 的业务选项统一复用；不得在页面内复制标题、说明和分区间距 |
+| `SettingsGroup` | `frontend/src/components/SettingsGroup.vue` | 设置抽屉的递归分组容器 | 无直接系统组件种类 | 页面设置抽屉分组优先复用；直接子节点可为 `SettingsGroup` 或 `PageSettingSection`；存在直接子节点时标题区自动显示“收起/展开下级分组”图标操作；叶子分组不显示批量入口；不直接用于主内容区配置面板 |
+| `PageSettingSection` | `frontend/src/components/PageSettingSection.vue` | 页面设置业务选项分区 | 无直接系统组件种类 | `PageSettingsDrawer` 的业务选项统一复用，并接入与 `SettingsGroup` 相同的父控子折叠树；不得在页面内复制标题、说明和分区间距 |
 | `ConfigPanelSection` | `frontend/src/components/config/ConfigPanelSection.vue` | 主内容区配置面板的可折叠分组容器 | 对应 `config-panel` 种类；读取 `collapsibleSections`、`defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | 系统设置等主面板配置分组优先复用；配置项中可作为单块纯文本理解的说明/默认值放 `HelpHint`，需要结构化排版时改用 `HelpTip`；一级组说明在组头展示，二级分区说明随分区内容一起展开/收起 |
 | `PageSegmented` | `frontend/src/components/PageSegmented.vue` | 页面设置和业务偏好的分段选择控件 | 无直接系统组件种类 | 业务选项、组件设置中的枚举选择优先复用；整组选项使用连续底板与基础边框，选中项在组内浮起，不把选项渲染成彼此分散的独立按钮；页面级模式/范围切换使用 `tone="primary"` 跟随系统主色，设置抽屉枚举保持默认中性色；固定操作区使用 `small`，设置抽屉与表单使用默认尺寸；每个选项必须通过 `aria-pressed` 暴露程序化选中状态，多组并列使用时由消费页提供可访问名称 |
 | `PageSettingsApplyButton` | `frontend/src/components/PageSettingsApplyButton.vue` | 设置抽屉采用当前页面值的统一按钮 | 无直接系统组件种类 | “使用/采用页面当前值”统一复用，固定为主题主色 `primary + plain` 和整行宽度；不得在字段组件内复制按钮颜色、宽度和边距样式 |
@@ -509,9 +509,9 @@ Key Characteristics：
 - 页面设置抽屉三段**固定顺序**：`布局` → `组件设置` → `业务选项`；每段**仅在该页有对应内容时渲染**。`布局` 恒在，`组件设置` 仅当 registry 声明了可配置组件字段，`业务选项` 仅当页面提供 `#business` 插槽；不得为了形式完整强插空段。
 - 抽屉两条配置通道的分工：**组件设置段**收当前页面所用组件实例的共有展示能力——列显隐、默认排序、每页条数、区域高度、默认 tab、主从区宽度、股票多图组合与内部比例；字段能力由组件种类共享，取值按 `pageKey + slotId` 隔离，所以不同页面表格列候选不同也仍属于组件设置。**业务选项段**只收页面业务默认/偏好——模式、行情口径、业务开关和筛选默认。持久化位置必须服从字段职责，不得仅因同一页面消费就把组件字段复制进 `usePageSettings`。
 - `布局` 和 `组件设置` 由元数据自动渲染；`业务选项` 由页面声明。组件配置不得通过业务插槽再次渲染或移动到业务段，避免同一字段出现双入口、双持久化和职责漂移。
-- 设置项必须有默认值、来源展示、合法值域和重置路径；页面设置抽屉 footer 的「恢复默认」必须同时重置页面业务偏好、页面布局/组件用户层，以及抽屉自身 `size/defaultCollapsed` 用户偏好。
+- 设置项必须有默认值、来源展示、合法值域和重置路径；页面设置抽屉 footer 的「恢复默认」必须同时重置页面业务偏好、页面布局/组件用户层，以及抽屉自身尺寸和当前折叠态偏好。
 - 「组件设置」段与系统管理→布局配置→**页面布局**编辑器的「组件特性」**共用唯一渲染器** `components/ComponentAutoSettings.vue`（抽屉=user 层、页面布局编辑器=page 层，经 `layer`/`slotIds`/`allowedLayersOf`/`collapsibleSlot`/`clearable` 适配），不得另写第二套组件特性表单。
-- 折叠规则统一：每个 slot 为可折叠组（`SettingsGroup` level 2；编辑器聚焦单 slot 时仅作标题锚点不折叠）；多行清单类特性（列显隐）为可折叠子组（level 3）；单字段为叶子不折叠。深层标题字号随层级递减但不低于正文。
+- 折叠规则统一：每个 slot 为可折叠组（`SettingsGroup` level 2；编辑器聚焦单 slot 时仅作标题锚点不折叠）；多行清单类特性（列显隐）为可折叠子组（level 3）；单字段为叶子不折叠。抽屉根按钮只控制一级组；任一 `SettingsGroup` 或 `PageSettingSection` 存在直接子分组时，必须由共享折叠树自动提供本层“一键收起/展开下级”，不得由页面手工维护子节点清单。父级操作不改写更深层状态。深层标题字号随层级递减但不低于正文。
 - 设置抽屉中将页面当前会话值保存为默认或尺寸档案的操作，统一复用 `PageSettingsApplyButton`，使用主题主色 `primary + plain`；普通编辑与恢复默认保持中性，危险操作才使用 `danger`。采用入口紧跟对应字段，不额外展示工作区像素、匹配阈值或档案清单等实现细节。
 - **页面可改动属性单向默认机制**：抽屉/组件配置层只提供**默认值**，页面主区可直接交互改动的属性必须用独立会话 ref 承载；重复的默认值投影统一复用 `composables/useDefaultedSessionValue.ts`，组件配置分页统一经 `composables/useComponentPageSizeSession.ts` 完成默认值解析、会话投影、归页和重载，**页面改动只进会话态、绝不写回默认值**——刷新/重进页面后重新应用抽屉默认。这样「默认」才有意义：用户临时改动不污染长期偏好。禁止可写 computed 或主区 `v-model` 直写持久层；设置抽屉内的默认值编辑，以及带有明确“设为默认”语义的显式操作，才是默认值持久化入口。初始化优先级固定为：先完成页面业务偏好与远端布局默认值水合，再应用 URL query、返回列表态等显式会话恢复，最后才接受用户交互；迟到的默认值不得清除已经恢复的显式会话覆盖。URL query/分享链接恢复只写会话 ref，不触碰默认。**会话态清单**（本就该会话级、也不进抽屉）：纯查询条件（关键字/日期口径/方案选择）、业务资产选择、运行参数（如回测日期、所选方案和当次执行参数）。
 - **新增属性登记判断（开发闭环必经步骤）**：新增页面、改造页面或给页面/组件新增任何可交互属性后，必须逐一回答三个问题再收尾——①该属性是否需要跨会话记住（默认值/偏好）？②需要时登记到哪条链路（业务偏好进 `usePageSettings` defaults + `#business` 插槽；组件展示字段按 §7.3 进 `COMPONENT_FIELD_DEFS`/后端规则，页面 slot 自动继承，仅候选或实例例外进 `componentMeta`）？③需要默认值时页面是否已按上条单向机制消费（读默认初始化会话 ref、不写回）？三问任一答「是」却未落地，即视为本次改动未完成。反向同样成立：不再需要或语义失效的已登记项必须及时下线，不得在抽屉里堆积死项。
@@ -681,13 +681,13 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `wide-table` | `hiddenColumns` | page/user | 候选列以 `componentMeta.columns` 为准 |
 | `chart` | `minHeight` | page/user | 图表 slot 以 `config.minHeight` 明确开放；自适应高度的工作台通过 `fieldApplicability.minHeight` 明确关闭并说明原因 |
 | `tabs` | `defaultActive` | page/user | 仅在页面登记 tabs slot 且 `componentMeta.tabs` 提供候选时渲染 |
-| `settings-drawer` | `size`、`defaultCollapsed` | page/user（全局偏好持久化） | `supportsPageSettings !== false` 的 registry 页面共享 `settings` overlay slot；具体 slotId 不作为存储判定条件 |
-| `settings-drawer` | `bodyScroll`、`collapsibleSections` | preset/page | `supportsPageSettings !== false` 的 registry 页面共享 `settings` overlay slot |
+| `settings-drawer` | `size` | page/user（全局偏好持久化） | `supportsPageSettings !== false` 的 registry 页面共享 `settings` overlay slot；具体 slotId 不作为存储判定条件 |
+| `settings-drawer` | `bodyScroll` | page | `supportsPageSettings !== false` 的 registry 页面共享 `settings` overlay slot |
 | `config-panel` | `collapsibleSections` | preset/page | `config-system.configPanel` |
 | `config-panel` | `defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | page/user | `config-system.configPanel`；分区候选以 `componentMeta.collapseSections` 为准 |
 
-`usePageSettings` 只保留页面业务态/页面记忆，不承载通用组件展示能力。
-`settings-drawer` 的用户层只允许 `size/defaultCollapsed`；字段元数据将其 `userPersistence` 标为 `global-preference`，跨页面个人值写入 `user_preference(global/settings-drawer)`。后端布局写接口按 `(component kind, field)` 反向拒绝这两项进入 `layout_user_config`，不绑定具体 pageKey 或 slotId。`bodyScroll/collapsibleSections` 只能由 preset/page 层控制。其他未声明 `userPersistence` 的 user 字段默认写页面布局用户层。
+`usePageSettings` 只保留页面业务偏好，不承载通用组件展示能力。
+`settings-drawer` 的可配置用户层只允许 `size`；字段元数据将其 `userPersistence` 标为 `global-preference`，跨页面个人值写入 `user_preference(global/settings-drawer)`。后端布局写接口按 `(component kind, field)` 反向拒绝它进入 `layout_user_config`，不绑定具体 pageKey 或 slotId。`bodyScroll` 只能由 page 层控制。折叠能力固定开启，不开放 `collapsibleSections` 或 `defaultCollapsed` 配置；实际交互状态以内部 `collapsedSections` 用户偏好保存，旧 `defaultCollapsed` 偏好仅兼容读取，新写入不再产生旧字段。其他未声明 `userPersistence` 的 user 字段默认写页面布局用户层。
 页面可改动的组件字段，组件配置层只提供默认值，页面读默认初始化会话态、改动不回写，规则见「设置抽屉」节「页面可改动属性单向默认机制」。
 
 ### 7.4 页面 / 组件 / 布局变更维护闭环

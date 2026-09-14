@@ -7,7 +7,7 @@ export type DrawerSize = 'sm' | 'md' | 'lg'
 
 export interface DrawerPreferenceValue {
   size?: DrawerSize
-  defaultCollapsed?: DrawerSectionKey[]
+  collapsedSections?: DrawerSectionKey[]
 }
 
 const SECTION_KEYS: DrawerSectionKey[] = ['layout', 'components', 'business']
@@ -46,9 +46,10 @@ function normalizePreference(value: unknown): DrawerPreferenceValue {
   const raw = value as Record<string, unknown>
   const next: DrawerPreferenceValue = {}
   const size = cleanSize(raw.size)
-  const collapsed = cleanCollapsed(raw.defaultCollapsed)
+  // 兼容旧偏好字段；新写入只保留“当前折叠态”语义，避免再被理解为可配置默认值。
+  const collapsed = cleanCollapsed(raw.collapsedSections ?? raw.defaultCollapsed)
   if (size) next.size = size
-  if (collapsed) next.defaultCollapsed = collapsed
+  if (collapsed) next.collapsedSections = collapsed
   return next
 }
 
@@ -71,7 +72,7 @@ function persistLocal(): void {
 
 function replaceStateValue(value: DrawerPreferenceValue): void {
   state.value.size = value.size
-  state.value.defaultCollapsed = value.defaultCollapsed
+  state.value.collapsedSections = value.collapsedSections
 }
 
 const drawerPreferenceSync = createGlobalPreferenceSync<DrawerPreferenceValue>({
@@ -82,7 +83,7 @@ const drawerPreferenceSync = createGlobalPreferenceSync<DrawerPreferenceValue>({
   normalize: normalizePreference,
   applyRemote(remote) {
     if (!state.dirty.has('size')) state.value.size = remote.size
-    if (!state.dirty.has('defaultCollapsed')) state.value.defaultCollapsed = remote.defaultCollapsed
+    if (!state.dirty.has('collapsedSections')) state.value.collapsedSections = remote.collapsedSections
   },
   persistLocal,
   onIdentityChange({ identityKey }) {
@@ -130,7 +131,7 @@ function resetPreference(): void {
   drawerPreferenceSync.ensureIdentity()
   replaceStateValue({})
   state.dirty.add('size')
-  state.dirty.add('defaultCollapsed')
+  state.dirty.add('collapsedSections')
   scheduleSave()
 }
 
@@ -156,7 +157,7 @@ export function useDrawerPreferences() {
   void load()
 
   const size = computed(() => state.value.size)
-  const defaultCollapsed = computed(() => state.value.defaultCollapsed)
+  const collapsedSections = computed(() => state.value.collapsedSections)
 
   function setSize(value: unknown): void {
     const next = cleanSize(value)
@@ -166,11 +167,11 @@ export function useDrawerPreferences() {
     scheduleSave()
   }
 
-  function setDefaultCollapsed(value: unknown): void {
+  function setCollapsedSections(value: unknown): void {
     const next = cleanCollapsed(value)
     if (!next) return
-    state.value.defaultCollapsed = next
-    state.dirty.add('defaultCollapsed')
+    state.value.collapsedSections = next
+    state.dirty.add('collapsedSections')
     scheduleSave()
   }
 
@@ -179,9 +180,9 @@ export function useDrawerPreferences() {
     loading: computed(() => state.loading),
     failed: computed(() => state.failed),
     size,
-    defaultCollapsed,
+    collapsedSections,
     setSize,
-    setDefaultCollapsed,
+    setCollapsedSections,
     reset: resetPreference,
   }
 }

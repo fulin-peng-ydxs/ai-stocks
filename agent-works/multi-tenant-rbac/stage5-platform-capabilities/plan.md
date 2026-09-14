@@ -403,7 +403,7 @@ Slot 与组件设计：
 | 布局旋钮 | `density` | page/user | `pageRegistry.editable` | 信息密度 |
 | 组件设置 | `itemTable.hiddenColumns` | preset/page/user | `pageRegistry.componentMeta` | 字典项列显隐；默认隐藏备注和更新时间，保证低宽度下操作列可见 |
 | 组件设置 | `itemTable.pageSize` | page/user | 页面业务态或组件配置 | 分页大小 |
-| 页面记忆 | `selectedTypeCode`、`itemStatusFilter` | user/local | `usePageSettings` 或页面状态 | 记住最近类型和筛选 |
+| 业务偏好 | `selectedTypeCode`、`itemStatusFilter` | user/local | `usePageSettings` 或页面状态 | 记住最近类型和筛选 |
 
 复用与新增判断：
 
@@ -493,7 +493,7 @@ Slot 与组件设计：
 | 布局旋钮 | `density` | page/user | `pageRegistry.editable` | 信息密度 |
 | 组件设置 | `auditTable.hiddenColumns` | preset/page/user | `pageRegistry.componentMeta` | 审计表列显隐 |
 | 组件设置 | `auditTable.pageSize` | page/user | 页面业务态或组件配置 | 分页大小 |
-| 页面记忆 | `autoRefreshEnabled`、`filters` | user/local | `usePageSettings` 或页面状态 | 记住筛选和自动刷新开关 |
+| 业务偏好 | `autoRefreshEnabled`、`filters` | user/local | `usePageSettings` 或页面状态 | 记住筛选和自动刷新开关 |
 
 复用与新增判断：
 

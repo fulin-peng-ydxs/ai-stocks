@@ -171,7 +171,7 @@
 | 页面定位 | 全屏独立认证壳；主流程=登录 / 注册切换；**新增页面** |
 | 布局选型 | **不适用 archetype**（不走 LayoutHost）；自定义「左视觉 / 右认证卡」分栏壳，原型 [../prototypes/login.html](../prototypes/login.html)；**不新增布局原型** |
 | Slot 与组件设计 | 不适用 LayoutHost slot；原生分栏 + Element Plus 表单组件（`el-input`/`el-button`/`el-tooltip`），主区无成长表、**无整页滚动**（卡片定高，超出卡内滚），无可重排区。**契约硬约束**：`LoginView.vue` 在 `src/views/` 下会被 `layout-contract.spec.ts` 扫描——**禁用 `vh/dvh` 高度、禁手写 `.v-page/.v-grow/.v-scroll`**；全屏用 `position:fixed;inset:0`（或 `height:100%` 继承 `html,body{height:100%}` 链）实现，类名用自定义 `.login-*` |
-| 配置设计 | 仅「黑/白主题」走 `useTheme` + `localStorage`（与全站一致）；**无布局旋钮 / 组件设置 / 页面记忆**，故无配置中心/设置抽屉接入 |
+| 配置设计 | 仅「黑/白主题」走 `useTheme` + `localStorage`（与全站一致）；**无布局旋钮 / 组件设置 / 业务偏好**，故无配置中心/设置抽屉接入 |
 | 复用与新增判断 | 复用 `useTheme`、Element Plus、axios 拦截；新增 `LoginView.vue` + `usePublicAuthConfig`；**不新增组件种类 / 组件配置字段 / registry 业务态** |
 | 维护清单 | 同步 [router/index.ts](../../../frontend/src/router/index.ts)（新增 `/login`，`meta.public/fullscreen`）+ [App.vue](../../../frontend/src/App.vue)（按 `route.meta.fullscreen` 决定是否套主框架壳）；**不入 `pageRegistry`、不登记 DESIGN §9、无 `settings-drawer`**（非 registry 页，理由见上） |
 | 验收项 | `npm test`（**`pageRegistry.spec.ts` + `layout-contract.spec.ts` 均绿**——非 registry 路由不破前者；LoginView 不踩 vh/`.v-page` 红线不破后者）、`npm run build`（vue-tsc）、关键视口 `1440×900` / `1366×768` / `1100×620` + `≤768px` 左栏退化、**无整页滚动**、黑白两套 token 对等 |

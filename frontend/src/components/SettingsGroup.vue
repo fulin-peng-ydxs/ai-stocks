@@ -4,7 +4,10 @@
  * 折叠提示规则（DESIGN.md §11/§12）：仅第一层（level=1，卡片）用箭头 chevron；
  * 更深层级用虚下划线提示可点。层数不写死，递归自适应。
  */
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { Expand, Fold } from '@element-plus/icons-vue'
+import { useSettingsFoldTree } from '../composables/useSettingsFoldTree'
+import AppIconButton from './AppIconButton.vue'
 import HelpHint from './HelpHint.vue'
 
 const props = withDefaults(
@@ -32,17 +35,39 @@ watch(
   },
 )
 const foldable = () => props.collapsible && !!props.title
-const isOpen = () => props.modelValue ?? localOpen.value
-function toggle() {
-  if (!foldable()) return
-  const next = !isOpen()
-  if (props.modelValue === undefined) localOpen.value = next
-  emit('update:modelValue', next)
+const openState = computed(() => props.modelValue ?? localOpen.value)
+
+function setOpen(value: boolean): void {
+  if (openState.value === value) return
+  if (props.modelValue === undefined) localOpen.value = value
+  emit('update:modelValue', value)
 }
+
+function toggle(): void {
+  if (foldable()) setOpen(!openState.value)
+}
+
+const {
+  allChildGroupsClosed,
+  hasChildGroups,
+  setRootElement,
+  toggleChildGroups,
+} = useSettingsFoldTree(openState, setOpen)
+const childToggleLabel = computed(() => (
+  `${props.title || '当前分组'}：${allChildGroupsClosed.value ? '展开' : '收起'}下级分组`
+))
+
 </script>
 
 <template>
-  <section class="sg" :class="[`sg-l${level}`]">
+  <section
+    :ref="setRootElement"
+    class="sg"
+    :class="[`sg-l${level}`]"
+    data-settings-fold-node
+    :data-settings-group-title="title"
+    :data-settings-group-open="openState"
+  >
     <div
       v-if="title || badge"
       class="sg-head"
@@ -50,16 +75,29 @@ function toggle() {
       :role="foldable() ? 'button' : undefined"
       :tabindex="foldable() ? 0 : undefined"
       @click="toggle"
+      @keydown.enter.prevent="toggle"
+      @keydown.space.prevent="toggle"
     >
-      <span v-if="foldable() && level === 1" class="sg-caret" :class="{ open: isOpen() }" aria-hidden="true">▸</span>
+      <span v-if="foldable() && level === 1" class="sg-caret" :class="{ open: openState }" aria-hidden="true">▸</span>
       <span v-if="title" class="sg-title">{{ title }}</span>
       <HelpHint v-if="hint" :text="hint" @click.stop />
-      <span v-if="badge" class="sg-badge">{{ badge }}</span>
-      <span v-if="$slots.actions" class="sg-actions" @click.stop>
-        <slot name="actions" />
+      <span v-if="badge || hasChildGroups || $slots.actions" class="sg-tail" @click.stop @keydown.stop>
+        <span v-if="badge" class="sg-badge">{{ badge }}</span>
+        <span v-if="hasChildGroups || $slots.actions" class="sg-actions">
+          <AppIconButton
+            v-if="hasChildGroups"
+            class="sg-toggle-children"
+            :label="childToggleLabel"
+            size="xs"
+            @click="toggleChildGroups"
+          >
+            <el-icon><Expand v-if="allChildGroupsClosed" /><Fold v-else /></el-icon>
+          </AppIconButton>
+          <slot name="actions" />
+        </span>
       </span>
     </div>
-    <div v-show="isOpen() || !foldable()" class="sg-body"><slot /></div>
+    <div v-show="openState || !foldable()" class="sg-body"><slot /></div>
   </section>
 </template>
 
@@ -152,7 +190,6 @@ function toggle() {
   transform: rotate(90deg);
 }
 .sg-badge {
-  margin-left: auto;
   font-size: var(--app-font-size-micro);
   line-height: var(--app-line-height-solid);
   padding: 3px 8px;
@@ -161,8 +198,13 @@ function toggle() {
   border: 1px solid var(--page-settings-border);
   background: var(--page-settings-bg);
 }
-.sg-actions {
+.sg-tail {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-space-2);
+}
+.sg-actions {
   display: inline-flex;
   align-items: center;
   gap: var(--app-space-2);

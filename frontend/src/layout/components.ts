@@ -488,13 +488,13 @@ export const COMPONENT_CATALOG: Record<ComponentKind, ComponentMeta> = {
   'settings-drawer': meta('settings-drawer', {
     category: 'overlay',
     label: '页面设置抽屉',
-    description: '承载当前页面布局、自动继承组件设置与显式业务选项的受控抽屉。内容固定三段「布局/组件设置/业务选项」，分段与子分组均可折叠。',
+    description: '承载当前页面布局、自动继承组件设置与显式业务选项的受控抽屉。分组固定可折叠，并支持一键收起或展开全部顶层分组。',
     minW: 320,
     minH: 280,
     defaultScroll: 'body-y',
     canGrowMain: false,
     reflowable: false,
-    configCapabilities: ['size', 'maxHeight', 'fixedHeader', 'fixedFooter', 'bodyScroll', 'sections', 'collapsibleSections', 'defaultCollapsed'],
+    configCapabilities: ['size', 'maxHeight', 'fixedHeader', 'fixedFooter', 'bodyScroll', 'sections', 'fixedCollapsibleSections', 'collapseAll'],
   }),
   'side-panel': meta('side-panel', {
     category: 'overlay',

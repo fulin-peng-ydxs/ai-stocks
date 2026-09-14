@@ -55,15 +55,15 @@ describe('useDrawerPreferences', () => {
 
     const pref = useDrawerPreferences()
     await flushPromises()
-    pref.setDefaultCollapsed(['layout'])
+    pref.setCollapsedSections(['layout'])
     await flushPromises()
 
     expect(pref.size.value).toBe('lg')
-    expect(pref.defaultCollapsed.value).toEqual(['layout'])
+    expect(pref.collapsedSections.value).toEqual(['layout'])
     expect(prefApi.listUserPreferences).not.toHaveBeenCalled()
     expect(prefApi.saveUserPreference).not.toHaveBeenCalled()
     expect(JSON.parse(localStorage.getItem('ai-stocks:drawer-preferences:anonymous') || '{}'))
-      .toEqual({ size: 'lg', defaultCollapsed: ['layout'] })
+      .toEqual({ size: 'lg', collapsedSections: ['layout'] })
   })
 
   it('同标签页换用户后重新按新 token 拉取，避免沿用上一用户抽屉偏好', async () => {
@@ -135,13 +135,30 @@ describe('useDrawerPreferences', () => {
     await vi.runOnlyPendingTimersAsync()
 
     expect(pref.size.value).toBeUndefined()
-    expect(pref.defaultCollapsed.value).toBeUndefined()
+    expect(pref.collapsedSections.value).toBeUndefined()
     expect(JSON.parse(localStorage.getItem('ai-stocks:drawer-preferences:tenant-a:user-a') || '{}'))
       .toEqual({})
     expect(prefApi.saveUserPreference).toHaveBeenCalledWith(expect.objectContaining({
       scope: 'global',
       prefKey: 'settings-drawer',
       value: {},
+    }))
+  })
+
+  it('读取旧 defaultCollapsed 偏好但新写入统一改为 collapsedSections', async () => {
+    vi.useFakeTimers()
+    login('user-a')
+    prefApi.listUserPreferences.mockResolvedValueOnce({ items: [{ value: { defaultCollapsed: ['business'] } }] })
+
+    const pref = useDrawerPreferences()
+    await flushPromises()
+    expect(pref.collapsedSections.value).toEqual(['business'])
+
+    pref.setCollapsedSections(['layout', 'business'])
+    await vi.runOnlyPendingTimersAsync()
+
+    expect(prefApi.saveUserPreference).toHaveBeenCalledWith(expect.objectContaining({
+      value: { collapsedSections: ['layout', 'business'] },
     }))
   })
 })

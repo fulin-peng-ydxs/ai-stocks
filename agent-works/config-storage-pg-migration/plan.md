@@ -109,7 +109,7 @@ flowchart TD
   PGLayoutUser["PG layout_user_config\n真实 pageKey"] --> LayoutMerge
 
   DrawerPref["PG user_preference\nscope=global/pref=settings-drawer"] --> DrawerRuntime["PageSettingsDrawer 运行态"]
-  PagePref["PG user_preference\nscope=page"] --> BusinessRuntime["业务选项/页面记忆"]
+  PagePref["PG user_preference\nscope=page"] --> BusinessRuntime["业务选项/业务偏好"]
 
   LocalOld["localStorage 旧用户偏好"] --> ClientMigration["登录后一次性迁移"]
   ClientMigration --> PGLayoutUser

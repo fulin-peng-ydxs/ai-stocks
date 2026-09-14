@@ -73,10 +73,10 @@ def test_user_preference_repo_roundtrip_and_isolation(pg):
         saved = a.set(
             scope="global",
             pref_key="settings-drawer",
-            value={"size": "lg", "defaultCollapsed": ["layout"]},
+            value={"size": "lg", "collapsedSections": ["layout"]},
         )
         assert saved["value"]["size"] == "lg"
-        assert a.get(scope="global", pref_key="settings-drawer")["value"]["defaultCollapsed"] == ["layout"]
+        assert a.get(scope="global", pref_key="settings-drawer")["value"]["collapsedSections"] == ["layout"]
         assert b.get(scope="global", pref_key="settings-drawer") is None
     finally:
         pg.execute(
