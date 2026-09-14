@@ -555,6 +555,11 @@ async function setCardSort(next: LimitLadderCardSort): Promise<void> {
   persistReturnState()
 }
 
+async function setCardSortOrder(next: LimitLadderCardSortOrder): Promise<void> {
+  cardSortOrder.value = normalizeLimitLadderCardSortOrder(next)
+  persistReturnState()
+}
+
 async function exportCsv(): Promise<void> {
   if (!tradeDate.value || exporting.value) return
   exporting.value = true
@@ -797,6 +802,7 @@ onBeforeUnmount(() => {
               @update:filters="setFilters"
               @update:trade-date="setTradeDate"
               @update:card-sort="setCardSort"
+              @update:card-sort-order="setCardSortOrder"
               @retry="retryLadder"
               @open-ingest="router.push('/data/ingest')"
               @select="selectStock"

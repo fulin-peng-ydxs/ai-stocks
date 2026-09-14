@@ -81,6 +81,10 @@ const at = (command: CommandButton) => `${command.file}:${command.line} ${comman
 
 const FILTER_CARD = /<el-card\b(?=[^>]*\bfilter-card\b)[^>]*>([\s\S]*?)<\/el-card>/g
 const FILTER_CONDITION = /<(AppSearchInput|el-select|AppFilterSelect|AppDatePicker|TradeDatePicker|PageSegmented|StockOptionSelect|el-checkbox)\b/g
+const APP_FILTER_SELECT = /<AppFilterSelect\b([\s\S]*?)\/>/g
+const APP_CONTROL_ROW = /<AppControlRow\b[^>]*>([\s\S]*?)<\/AppControlRow>/g
+const APP_SORT_CONTROL = /<AppSortControl\b[\s\S]*?\/>/g
+const APP_TABLE_COLUMN = /<AppTableColumn\b([^>]*)>([\s\S]*?)<\/AppTableColumn>/g
 
 function searchOrderAudit(): { inspected: number; offenders: string[] } {
   const offenders: string[] = []
@@ -103,11 +107,107 @@ function searchOrderAudit(): { inspected: number; offenders: string[] } {
   return { inspected, offenders }
 }
 
+function filterSelectCapacityAudit(): { inspected: number; offenders: string[] } {
+  const offenders: string[] = []
+  let inspected = 0
+  for (const file of vueFiles(SRC_DIR)) {
+    const source = readFileSync(file, 'utf8')
+    for (const select of source.matchAll(APP_FILTER_SELECT)) {
+      const attrs = select[1] ?? ''
+      if (/:multiple\s*=\s*["']false["']/.test(attrs)) continue
+      inspected += 1
+      if (/\bdisplay-mode\s*=\s*["']count["']/.test(attrs)) continue
+      if (/:visible-tag-count\s*=\s*["'][1-3]["']/.test(attrs)) continue
+      const line = source.slice(0, select.index).split('\n').length
+      offenders.push(`${relative(SRC_DIR, file).split('\\').join('/')}:${line}`)
+    }
+  }
+  return { inspected, offenders }
+}
+
+function sortControlOrderAudit(): { inspected: number; offenders: string[] } {
+  const offenders: string[] = []
+  let inspected = 0
+  for (const file of vueFiles(SRC_DIR)) {
+    const source = readFileSync(file, 'utf8')
+    for (const row of source.matchAll(APP_CONTROL_ROW)) {
+      const body = row[1] ?? ''
+      const sortControls = [...body.matchAll(APP_SORT_CONTROL)]
+      if (!sortControls.length) continue
+      inspected += sortControls.length
+      const lastSort = sortControls.at(-1)
+      const trailing = body
+        .slice((lastSort?.index ?? 0) + (lastSort?.[0].length ?? 0))
+        .replace(/<!--[\s\S]*?-->/g, '')
+        .trim()
+      if (!trailing) continue
+      const line = source.slice(0, row.index).split('\n').length
+      offenders.push(`${relative(SRC_DIR, file).split('\\').join('/')}:${line}`)
+    }
+  }
+  return { inspected, offenders }
+}
+
+function tableFilterSelectCapacityAudit(): { inspected: number; offenders: string[] } {
+  const offenders: string[] = []
+  let inspected = 0
+  for (const file of vueFiles(SRC_DIR)) {
+    const source = readFileSync(file, 'utf8')
+    for (const column of source.matchAll(APP_TABLE_COLUMN)) {
+      const select = [...(column[2] ?? '').matchAll(APP_FILTER_SELECT)]
+        .find((item) => !/:multiple\s*=\s*["']false["']/.test(item[1] ?? ''))
+      if (!select) continue
+      inspected += 1
+      const selectAttrs = select[1] ?? ''
+      const visibleCount = selectAttrs.match(
+        /:visible-tag-count\s*=\s*["']([1-3])["']/,
+      )?.[1]
+      const countMode = /\bdisplay-mode\s*=\s*["']count["']/.test(selectAttrs)
+      const reservedCount = (column[1] ?? '').match(
+        /:filter-select-visible-tag-count\s*=\s*["']([1-3])["']/,
+      )?.[1]
+      const reservedCountMode = /\bfilter-select-display-mode\s*=\s*["']count["']/.test(
+        column[1] ?? '',
+      )
+      if ((countMode && reservedCountMode) || (visibleCount && visibleCount === reservedCount)) {
+        continue
+      }
+      const line = source.slice(0, column.index).split('\n').length
+      offenders.push(`${relative(SRC_DIR, file).split('\\').join('/')}:${line}`)
+    }
+  }
+  return { inspected, offenders }
+}
+
 describe('查询、重置与刷新命令契约', () => {
   it('列表筛选区的文本搜索框位于全部条件选择之后', () => {
     const { inspected, offenders } = searchOrderAudit()
     expect(inspected, '至少应扫描当前已登记的列表搜索筛选区').toBeGreaterThanOrEqual(8)
     expect(offenders, `以下筛选区的搜索框不是最后一类条件：\n${offenders.join('\n')}`).toEqual([])
+  })
+
+  it('多选 AppFilterSelect 必须声明需要完整显示的标签数', () => {
+    const { inspected, offenders } = filterSelectCapacityAudit()
+    expect(inspected, '至少应扫描当前已登记的多选选择器').toBeGreaterThanOrEqual(10)
+    expect(
+      offenders,
+      `以下多选缺少 display-mode="count" 或 1–3 的 :visible-tag-count 容量声明：\n${offenders.join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('AppSortControl 在所属操作栏中固定放在最后', () => {
+    const { inspected, offenders } = sortControlOrderAudit()
+    expect(inspected, '至少应扫描当前已接入的统一排序控件').toBeGreaterThanOrEqual(1)
+    expect(offenders, `以下操作栏在排序控件后仍有内容：\n${offenders.join('\n')}`).toEqual([])
+  })
+
+  it('表格内多选下拉的列容量必须与可见标签数一致', () => {
+    const { inspected, offenders } = tableFilterSelectCapacityAudit()
+    expect(inspected, '至少应扫描当前表格内的多选下拉').toBeGreaterThanOrEqual(1)
+    expect(
+      offenders,
+      `以下表格列没有为多选下拉预留一致容量：\n${offenders.join('\n')}`,
+    ).toEqual([])
   })
 
   it('DESIGN 保留统一操作状态和稳定语义名称', () => {
@@ -117,6 +217,9 @@ describe('查询、重置与刷新命令契约', () => {
     for (const label of ['重置筛选', '刷新状态', '重新执行', '重新计算', '还原修改', '恢复默认', '清除用户覆盖']) {
       expect(DESIGN_SOURCE).toContain(`“${label}”`)
     }
+    expect(DESIGN_SOURCE).toContain('`AppSortControl`')
+    expect(DESIGN_SOURCE).toContain('`visibleTagCount=1..3`')
+    expect(DESIGN_SOURCE).toContain('`displayMode=count`')
   })
 
   it('命令按钮不得使用无对象的含糊重置或还原文案', () => {

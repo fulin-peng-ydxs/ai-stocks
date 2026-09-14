@@ -191,6 +191,23 @@ describe('LimitLadder', () => {
     expect(wrapper.get('[data-testid="limit-ladder-reset"]').attributes('disabled')).toBeDefined()
   })
 
+  it('使用紧凑菜单选择层内排序，并在工具栏直接切换排序方向', async () => {
+    const wrapper=mount(LimitLadder,{props:{result,filters:{...DEFAULT_LIMIT_LADDER_FILTERS},tradeDate:'2026-08-28',loading:false,error:'',canViewSectors:true,cardSort:'return',cardSortOrder:'desc'},global:{plugins:[ElementPlus,router()],stubs:{TradeDatePicker:true}}})
+    const sortDropdown=wrapper.findComponent({name:'ElDropdown'})
+    const sortButton=wrapper.get('[data-testid="limit-ladder-card-sort"]')
+    const orderButton=wrapper.get('[data-testid="limit-ladder-card-sort-order"]')
+
+    expect(sortButton.text()).toContain('排序 · 累计涨幅')
+    expect(orderButton.attributes('aria-label')).toBe('切换为升序')
+    sortDropdown.vm.$emit('command','industry')
+    await orderButton.trigger('click')
+
+    expect(wrapper.emitted('update:cardSort')).toEqual([['industry']])
+    expect(wrapper.emitted('update:cardSortOrder')).toEqual([['asc']])
+    expect(wrapper.get('[data-testid="limit-ladder-boards"]').attributes('data-visible-tag-count')).toBe('2')
+    expect(wrapper.get('.app-control-row').element.lastElementChild?.classList).toContain('app-sort-control')
+  })
+
   it('所有梯级使用同一宽度，不再按板位缩窄', () => {
     const firstBoardStock={...stock,code:'000001.SZ',name:'乙银行',consecutive_days:1,window_limit_up_days:1}
     const wrapper=mount(LimitLadder,{props:{result:{...result,layers:[...result.layers,{consecutive_days:1,stock_count:1,stocks:[firstBoardStock]}]},filters:{...DEFAULT_LIMIT_LADDER_FILTERS},tradeDate:'2026-08-28',loading:false,error:'',canViewSectors:true},global:{plugins:[ElementPlus,router()],stubs:{TradeDatePicker:true}}})

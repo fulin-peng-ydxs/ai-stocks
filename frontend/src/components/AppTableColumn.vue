@@ -33,6 +33,10 @@ const props = defineProps<{
   headerMeta?: string
   /** 单元格主内容前的紧凑控件数量；组件据此统一预留列宽并对齐表头。 */
   leadingControls?: number
+  /** 单元格内多选 AppFilterSelect 的目标可见标签数；列宽据此承载值与 +N。 */
+  filterSelectVisibleTagCount?: number
+  /** 单元格内多选 AppFilterSelect 的展示方式；count 只承载“已选 N”。 */
+  filterSelectDisplayMode?: 'tags' | 'count'
 }>()
 
 const attrs = useAttrs()

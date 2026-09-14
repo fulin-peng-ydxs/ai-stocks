@@ -564,30 +564,30 @@ onBeforeUnmount(stopTimer)
           <AppFilterSelect
             v-model="filters.event_category"
             :options="eventOptions"
+            :visible-tag-count="1"
             placeholder="事件类型"
-            class="w140"
             @change="filterChanged"
           />
           <AppFilterSelect
             v-model="filters.result"
             :options="resultOptions"
+            :visible-tag-count="1"
             placeholder="结果"
-            class="w120"
             @change="filterChanged"
           />
           <AppFilterSelect
             v-model="filters.status"
             :options="statusOptions"
+            :visible-tag-count="1"
             placeholder="状态"
-            class="w120"
             @change="filterChanged"
           />
           <AppFilterSelect
             v-if="auth.isSystem"
             v-model="filters.tenant_id"
             :options="tenantOptions"
+            :visible-tag-count="2"
             placeholder="租户"
-            class="w180"
             @change="filterChanged"
           />
           <AppSearchInput v-model="filters.resource_code" placeholder="资源码" style="width: 160px" @search="search" />

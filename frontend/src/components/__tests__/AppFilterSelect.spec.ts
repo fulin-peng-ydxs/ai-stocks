@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent, h, nextTick } from 'vue'
+import { defineComponent, h } from 'vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 
 const ElSelectStub = defineComponent({
@@ -78,26 +78,8 @@ function mountSelect(modelValue: string[] | string, props: Record<string, unknow
   })
 }
 
-const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
-const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth')
-const originalClientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight')
-const originalScrollHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight')
-
-afterEach(() => {
-  vi.restoreAllMocks()
-  const proto = HTMLElement.prototype as unknown as Record<string, unknown>
-  if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth)
-  else delete proto.clientWidth
-  if (originalScrollWidth) Object.defineProperty(HTMLElement.prototype, 'scrollWidth', originalScrollWidth)
-  else delete proto.scrollWidth
-  if (originalClientHeight) Object.defineProperty(HTMLElement.prototype, 'clientHeight', originalClientHeight)
-  else delete proto.clientHeight
-  if (originalScrollHeight) Object.defineProperty(HTMLElement.prototype, 'scrollHeight', originalScrollHeight)
-  else delete proto.scrollHeight
-})
-
 describe('AppFilterSelect', () => {
-  it('默认按列表筛选下拉启用多选、搜索、清空和 3 个标签折叠阈值', async () => {
+  it('默认启用多选、搜索、清空，并以 1 个标签作为安全回退', async () => {
     const wrapper = mountSelect(['a', 'b', 'c'])
     await flushPromises()
     const select = wrapper.find('.el-select')
@@ -106,101 +88,34 @@ describe('AppFilterSelect', () => {
     expect(select.attributes('data-filterable')).toBe('true')
     expect(select.attributes('data-collapse-tags')).toBe('true')
     expect(select.attributes('data-collapse-tags-tooltip')).toBe('true')
-    expect(select.attributes('data-max-collapse-tags')).toBe('3')
+    expect(select.attributes('data-max-collapse-tags')).toBe('1')
   })
 
-  it('选择区溢出时降低标签折叠阈值', async () => {
-    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
-      configurable: true,
-      get() {
-        return 100
-      },
-    })
-    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
-      configurable: true,
-      get() {
-        if (!this.classList.contains('el-select__selection')) return 100
-        const select = this.closest('.el-select')
-        return select?.getAttribute('data-max-collapse-tags') === '1' ? 90 : 160
-      },
-    })
-    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
-      configurable: true,
-      get() {
-        return 32
-      },
-    })
-    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
-      configurable: true,
-      get() {
-        return 32
-      },
-    })
-
-    const wrapper = mountSelect(['a', 'b', 'c'])
+  it('按调用方声明的可见标签数同时设置折叠阈值和容量宽度', async () => {
+    const wrapper = mountSelect(['a', 'b', 'c'], { visibleTagCount: 2 })
     await flushPromises()
-    await nextTick()
-    await nextTick()
-
-    expect(wrapper.find('.el-select').attributes('data-max-collapse-tags')).toBe('1')
-  })
-
-  it('三个标签放不下但两个可用时停在两个标签', async () => {
-    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
-      configurable: true,
-      get() { return 100 },
-    })
-    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
-      configurable: true,
-      get() {
-        if (!this.classList.contains('el-select__selection')) return 100
-        const select = this.closest('.el-select')
-        return select?.getAttribute('data-max-collapse-tags') === '3' ? 160 : 90
-      },
-    })
-    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
-      configurable: true,
-      get() { return 32 },
-    })
-    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
-      configurable: true,
-      get() { return 32 },
-    })
-
-    const wrapper = mountSelect(['a', 'b', 'c'])
-    await flushPromises()
-    await nextTick()
-    await nextTick()
 
     expect(wrapper.get('.el-select').attributes('data-max-collapse-tags')).toBe('2')
-    expect(wrapper.get('.app-filter-select').classes()).not.toContain('app-filter-select--compact-summary')
+    expect(wrapper.get('.app-filter-select').attributes('data-visible-tag-count')).toBe('2')
+    expect(wrapper.get('.app-filter-select').classes()).toContain('app-filter-select--visible-tags-2')
   })
 
-  it('单个标签和折叠计数仍溢出时降级为已选数量摘要', async () => {
-    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
-      configurable: true,
-      get() { return 80 },
-    })
-    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
-      configurable: true,
-      get() { return this.classList.contains('el-select__selection') ? 160 : 80 },
-    })
-    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
-      configurable: true,
-      get() { return 32 },
-    })
-    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
-      configurable: true,
-      get() { return 32 },
-    })
-
-    const wrapper = mountSelect(['a', 'b', 'c'])
+  it('count 模式只显示已选数量并使用独立紧凑容量', async () => {
+    const wrapper = mountSelect(['a', 'b', 'c'], { displayMode: 'count' })
     await flushPromises()
-    await nextTick()
-    await nextTick()
 
-    expect(wrapper.get('.app-filter-select').classes()).toContain('app-filter-select--compact-summary')
-    expect(wrapper.get('.app-filter-select__summary').text()).toBe('已选 3')
+    expect(wrapper.get('.app-filter-select').attributes('data-display-mode')).toBe('count')
+    expect(wrapper.get('.app-filter-select').classes()).toContain('app-filter-select--count')
+    expect(wrapper.get('.app-filter-select__count-summary').text()).toBe('已选 3')
+  })
+
+  it('可见标签数限制在组件支持的 1 到 3 档', async () => {
+    const tooSmall = mountSelect(['a'], { visibleTagCount: 0 })
+    const tooLarge = mountSelect(['a'], { visibleTagCount: 8 })
+    await flushPromises()
+
+    expect(tooSmall.get('.el-select').attributes('data-max-collapse-tags')).toBe('1')
+    expect(tooLarge.get('.el-select').attributes('data-max-collapse-tags')).toBe('3')
   })
 
   it('可创建模式、尺寸和弹层宽度策略统一传给底层选择器', async () => {

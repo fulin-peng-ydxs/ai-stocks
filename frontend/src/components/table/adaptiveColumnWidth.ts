@@ -34,6 +34,10 @@ export interface AdaptiveColumnDescriptor {
   filterable?: boolean
   customHeader?: boolean
   leadingControls?: number
+  /** 表格内 AppFilterSelect 需要完整显示的标签数；同时预留 +N 和单元格留白。 */
+  filterSelectVisibleTagCount?: number
+  /** 表格内 AppFilterSelect 的展示方式；count 只承载“已选 N”。 */
+  filterSelectDisplayMode?: 'tags' | 'count'
 }
 
 interface AdaptiveColumnPolicy extends AdaptiveColumnRule {
@@ -77,6 +81,9 @@ const HEADER_META_GAP = 4
 const LEADING_CONTROL_SLOT_WIDTH = 28
 const MAX_LEADING_CONTROLS = 4
 const COLUMN_WIDTH_GRID = 8
+const TABLE_CELL_HORIZONTAL_INSET = 24
+const FILTER_SELECT_WIDTH_BY_VISIBLE_TAG_COUNT = [0, 180, 220, 300] as const
+const FILTER_SELECT_COUNT_MODE_WIDTH = 140
 
 function glyphWidthInEm(char: string): number {
   if (/\s/.test(char)) return 0.32
@@ -106,6 +113,16 @@ function resolveLeadingControlsReserve(count: number | undefined): number {
     Math.max(0, Math.floor(Number.isFinite(count) ? count! : 0)),
   )
   return normalizedCount * LEADING_CONTROL_SLOT_WIDTH
+}
+
+function resolveFilterSelectReserve(
+  count: number | undefined,
+  displayMode: 'tags' | 'count' | undefined,
+): number {
+  if (displayMode === 'count') return FILTER_SELECT_COUNT_MODE_WIDTH + TABLE_CELL_HORIZONTAL_INSET
+  if (count === undefined) return 0
+  const normalized = Math.min(3, Math.max(1, Math.floor(Number(count))))
+  return FILTER_SELECT_WIDTH_BY_VISIBLE_TAG_COUNT[normalized] + TABLE_CELL_HORIZONTAL_INSET
 }
 
 function resolveHeaderSizing(
@@ -173,7 +190,13 @@ export function resolveAdaptiveColumnWidth(
   if (policy.width !== undefined) return { role, width: policy.width }
 
   const headerIndent = resolveLeadingControlsReserve(descriptor.leadingControls)
-  const baseMinWidth = (policy.minWidth ?? 0) + headerIndent
+  const baseMinWidth = Math.max(
+    (policy.minWidth ?? 0) + headerIndent,
+    resolveFilterSelectReserve(
+      descriptor.filterSelectVisibleTagCount,
+      descriptor.filterSelectDisplayMode,
+    ),
+  )
   const headerSizing = resolveHeaderSizing(
     descriptor,
     Math.max(0, (policy.maxAutoWidth ?? Number.POSITIVE_INFINITY) - headerIndent),

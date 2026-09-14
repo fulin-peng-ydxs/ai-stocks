@@ -1608,12 +1608,18 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               <span class="mono">{{ row.key }}</span>
             </template>
           </AppTableColumn>
-          <AppTableColumn prop="catOrder" label="分类" sortable="custom">
+          <AppTableColumn
+            prop="catOrder"
+            label="分类"
+            sortable="custom"
+            :filter-select-visible-tag-count="2"
+          >
             <template #default="{ row }">
               <AppFilterSelect
                 :model-value="row.categories"
                 :options="categoryOptions"
                 :clearable="false"
+                :visible-tag-count="2"
                 allow-create
                 default-first-option
                 size="small"
@@ -1698,6 +1704,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 v-model="defForm.categories"
                 :options="categoryOptions"
                 :clearable="false"
+                :visible-tag-count="3"
                 allow-create
                 default-first-option
                 placeholder="选择或输入分类"

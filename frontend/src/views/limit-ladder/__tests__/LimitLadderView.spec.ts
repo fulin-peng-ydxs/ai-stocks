@@ -308,6 +308,28 @@ describe('LimitLadderView polling deadline', () => {
     })
   })
 
+  it('工具栏排序只更新当前 Tab 会话，不改写用户默认设置', async () => {
+    vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(readyResult())
+    const wrapper = await mountView()
+    const ladder = wrapper.findComponent(LimitLadderStub)
+
+    ladder.vm.$emit('update:cardSort', 'industry')
+    ladder.vm.$emit('update:cardSortOrder', 'asc')
+    await flushPromises()
+
+    const state = stateProbe(wrapper)
+    expect(state.attributes('data-card-sort')).toBe('industry')
+    expect(state.attributes('data-card-sort-order')).toBe('asc')
+    expect(pageSettingsHarness.settings).toMatchObject({
+      cardSort: 'limitUps',
+      cardSortOrder: 'desc',
+    })
+    expect(useLimitLadderSessionStore().returnState).toMatchObject({
+      cardSort: 'industry',
+      cardSortOrder: 'asc',
+    })
+  })
+
   it('列表栏复用统一层级，以业务名为蓝色辅助行、日期为主标题', async () => {
     vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(readyResult())
     const wrapper = await mountView()

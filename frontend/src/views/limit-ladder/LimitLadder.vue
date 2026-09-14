@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
+import AppSortControl from '@/components/AppSortControl.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -51,6 +52,7 @@ const emit = defineEmits<{
   openIngest: []
   select: [stock: LimitLadderStock]
   'update:cardSort': [sort: LimitLadderCardSort]
+  'update:cardSortOrder': [order: LimitLadderCardSortOrder]
 }>()
 const keywordDraft = ref(props.filters.keyword)
 watch(() => props.filters.keyword, (value) => { keywordDraft.value = value })
@@ -191,6 +193,12 @@ function updateBoards(value: string[] | string): void {
     boards: boards.length ? boards : [...DEFAULT_LIMIT_LADDER_FILTERS.boards],
   })
 }
+function updateCardSort(value: string): void {
+  emit('update:cardSort', value as LimitLadderCardSort)
+}
+function updateCardSortOrder(value: 'asc' | 'desc'): void {
+  emit('update:cardSortOrder', value as LimitLadderCardSortOrder)
+}
 function searchKeyword(): void {
   updateFilters({ keyword: keywordDraft.value.trim() })
 }
@@ -212,25 +220,22 @@ function resetFilters(): void {
           <TradeDatePicker :model-value="tradeDate" placeholder="选择交易日" data-testid="limit-ladder-date" @update:model-value="$emit('update:tradeDate',$event)" />
         </div>
         <PageSegmented class="limit-ladder__window" :model-value="filters.window" :options="windowOptions" size="small" tone="primary" test-id="limit-ladder-window" aria-label="统计窗口" @update:model-value="updateFilters({window:Number($event) as LimitLadderFilters['window']})" />
-        <AppFilterSelect class="limit-ladder__board-filter" :model-value="filters.boards" :options="boardOptions" placeholder="上市板块" data-testid="limit-ladder-boards" @change="updateBoards" />
-        <label class="limit-ladder__sort-control">
-          <span>层内排序</span>
-          <AppFilterSelect
-            :model-value="cardSort"
-            :options="LIMIT_LADDER_CARD_SORT_OPTIONS"
-            :multiple="false"
-            :clearable="false"
-            :filterable="false"
-            data-testid="limit-ladder-card-sort"
-            @update:model-value="$emit('update:cardSort', $event as LimitLadderCardSort)"
-          />
-        </label>
+        <AppFilterSelect :model-value="filters.boards" :options="boardOptions" :visible-tag-count="2" placeholder="上市板块" aria-label="按上市板块筛选" data-testid="limit-ladder-boards" @change="updateBoards" />
         <div class="limit-ladder__checks app-inline-info app-inline-info--nowrap" data-testid="limit-ladder-checks">
           <el-checkbox :model-value="filters.ignoreSt" data-testid="limit-ladder-ignore-st" @update:model-value="updateFilters({ignoreSt:Boolean($event)})">忽略 ST</el-checkbox>
           <el-checkbox :model-value="filters.oneWordOnly" data-testid="limit-ladder-one-word" @update:model-value="updateFilters({oneWordOnly:Boolean($event)})">仅一字板</el-checkbox>
         </div>
         <AppSearchInput v-model="keywordDraft" class="limit-ladder__search" placeholder="代码 / 名称" data-testid="limit-ladder-keyword" @search="searchKeyword" />
         <el-button class="limit-ladder__command" data-testid="limit-ladder-reset" :disabled="!hasFilters" @click="resetFilters">重置筛选</el-button>
+        <AppSortControl
+          :model-value="cardSort"
+          :order="cardSortOrder"
+          :options="LIMIT_LADDER_CARD_SORT_OPTIONS"
+          aria-label="卡片层内排序"
+          test-id="limit-ladder-card-sort"
+          @update:model-value="updateCardSort"
+          @update:order="updateCardSortOrder"
+        />
       </AppControlRow>
     </section>
     <AppStatusNotice
@@ -318,17 +323,6 @@ function resetFilters(): void {
   padding: var(--app-space-3) var(--app-space-4);
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
-.limit-ladder__board-filter { width: 300px; }
-.limit-ladder__sort-control {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: var(--app-space-control-gap);
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-caption);
-  white-space: nowrap;
-}
-.limit-ladder__sort-control :deep(.app-filter-select) { width: 128px; }
 .limit-ladder__date { width: 220px; }
 .limit-ladder__date :deep(.el-date-editor) { width: 100%; }
 .limit-ladder__window {

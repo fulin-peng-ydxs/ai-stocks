@@ -510,8 +510,8 @@ onBeforeUnmount(detachKeyboard)
             <div class="cfg-item">
               <label>板块</label>
               <AppFilterSelect v-model="sessionConfig.boards" :options="boardOptions"
-                               :filterable="false" :max-collapse-tags="2"
-                               placeholder="不限（全部板块）" style="width:220px" />
+                               :filterable="false" :visible-tag-count="2"
+                               placeholder="不限（全部板块）" />
             </div>
           </div>
           <div class="cfg-actions">
@@ -921,8 +921,8 @@ onBeforeUnmount(detachKeyboard)
         <div class="setting-item">
           <div class="setting-label">板块</div>
           <AppFilterSelect v-model="settings.boards" :options="boardOptions"
-                           :filterable="false" :max-collapse-tags="2"
-                           placeholder="不限（全部板块）" style="width:220px" />
+                           :filterable="false" :visible-tag-count="2"
+                           placeholder="不限（全部板块）" />
         </div>
         <div v-if="settings.mode === 'multi'" class="setting-item">
           <div class="setting-label">回合数（只）</div>

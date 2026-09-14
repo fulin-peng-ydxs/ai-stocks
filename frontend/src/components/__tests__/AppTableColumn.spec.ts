@@ -197,6 +197,25 @@ describe('自适应表格列', () => {
     })
   })
 
+  it('表格内多选下拉按目标标签数预留控件和单元格容量', () => {
+    expect(resolveAdaptiveColumnWidth({
+      label: '分类',
+      filterSelectVisibleTagCount: 1,
+    })).toMatchObject({ minWidth: 204 })
+    expect(resolveAdaptiveColumnWidth({
+      label: '分类',
+      filterSelectVisibleTagCount: 2,
+    })).toMatchObject({ minWidth: 244 })
+    expect(resolveAdaptiveColumnWidth({
+      label: '分类',
+      filterSelectVisibleTagCount: 3,
+    })).toMatchObject({ minWidth: 324 })
+    expect(resolveAdaptiveColumnWidth({
+      label: '分类',
+      filterSelectDisplayMode: 'count',
+    })).toMatchObject({ minWidth: 164 })
+  })
+
   it.each([
     ['中文字段', 56],
     ['AB12', 37],

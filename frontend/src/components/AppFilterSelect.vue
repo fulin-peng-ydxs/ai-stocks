@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed } from 'vue'
 import {
   APP_BOTTOM_FLOATING_FALLBACKS,
   APP_BOTTOM_FLOATING_PLACEMENT,
@@ -10,6 +10,8 @@ export interface AppFilterSelectOption {
   label: string
 }
 
+export type AppFilterSelectDisplayMode = 'tags' | 'count'
+
 const props = withDefaults(defineProps<{
   modelValue?: string[] | string | null
   options: AppFilterSelectOption[]
@@ -18,8 +20,8 @@ const props = withDefaults(defineProps<{
   clearable?: boolean
   filterable?: boolean
   collapseTags?: boolean
-  collapseOnOverflow?: boolean
-  maxCollapseTags?: number
+  visibleTagCount?: number
+  displayMode?: AppFilterSelectDisplayMode
   allowCreate?: boolean
   defaultFirstOption?: boolean
   size?: 'large' | 'default' | 'small'
@@ -31,8 +33,8 @@ const props = withDefaults(defineProps<{
   clearable: true,
   filterable: true,
   collapseTags: true,
-  collapseOnOverflow: true,
-  maxCollapseTags: 3,
+  visibleTagCount: 1,
+  displayMode: 'tags',
   allowCreate: false,
   defaultFirstOption: false,
   size: 'default',
@@ -51,17 +53,12 @@ function toMulti(value: string[] | string | null | undefined): string[] {
   return text ? [text] : []
 }
 
-const rootRef = ref<HTMLElement | null>(null)
-const normalizedMaxCollapseTags = computed(() => {
-  const value = Math.floor(Number(props.maxCollapseTags))
-  return Number.isFinite(value) && value > 0 ? value : 1
+const normalizedVisibleTagCount = computed(() => {
+  const value = Math.floor(Number(props.visibleTagCount))
+  if (!Number.isFinite(value)) return 1
+  return Math.min(3, Math.max(1, value))
 })
-const effectiveMaxCollapseTags = ref(normalizedMaxCollapseTags.value)
-const compactSummary = ref(false)
-let resizeObserver: ResizeObserver | null = null
-let recomputing = false
-let recomputeAgain = false
-let recomputeVersion = 0
+const selectedCount = computed(() => toMulti(props.modelValue).length)
 
 const selected = computed<string[] | string>({
   get() {
@@ -84,94 +81,20 @@ function onChange(value: string[] | string) {
   emit('change', props.multiple ? toMulti(value) : String(Array.isArray(value) ? value[0] ?? '' : value ?? ''))
 }
 
-function hasSelectionOverflow(): boolean {
-  const root = rootRef.value
-  if (!root) return false
-  const selection = root.querySelector<HTMLElement>('.el-select__selection')
-  const wrapper = root.querySelector<HTMLElement>('.el-select__wrapper')
-  const target = selection ?? wrapper
-  if (!target) return false
-  const horizontalOverflow = target.scrollWidth > target.clientWidth + 1
-  const verticalOverflow = !!wrapper && !!selection && selection.scrollHeight > wrapper.clientHeight + 2
-  return horizontalOverflow || verticalOverflow
-}
-
-async function recomputeCollapseTags() {
-  if (recomputing) {
-    recomputeAgain = true
-    recomputeVersion += 1
-    return
-  }
-  recomputing = true
-  try {
-    do {
-      recomputeAgain = false
-      const version = ++recomputeVersion
-      let limit = normalizedMaxCollapseTags.value
-      compactSummary.value = false
-      effectiveMaxCollapseTags.value = limit
-      if (!props.multiple || !props.collapseTags || !props.collapseOnOverflow || toMulti(props.modelValue).length <= 1) {
-        continue
-      }
-      await nextTick()
-      while (version === recomputeVersion && limit > 1 && hasSelectionOverflow()) {
-        limit -= 1
-        effectiveMaxCollapseTags.value = limit
-        await nextTick()
-      }
-      if (version === recomputeVersion && limit === 1 && hasSelectionOverflow()) {
-        compactSummary.value = true
-        await nextTick()
-      }
-    } while (recomputeAgain)
-  } finally {
-    recomputing = false
-  }
-}
-
-function scheduleCollapseRecompute() {
-  void recomputeCollapseTags()
-}
-
-onMounted(() => {
-  scheduleCollapseRecompute()
-  if (typeof ResizeObserver !== 'undefined' && rootRef.value) {
-    resizeObserver = new ResizeObserver(scheduleCollapseRecompute)
-    resizeObserver.observe(rootRef.value)
-  }
-})
-
-onBeforeUnmount(() => {
-  recomputeVersion += 1
-  resizeObserver?.disconnect()
-})
-
-watch(
-  () => [
-    props.modelValue,
-    props.options,
-    props.multiple,
-    props.collapseTags,
-    props.collapseOnOverflow,
-    props.maxCollapseTags,
-    props.allowCreate,
-    props.defaultFirstOption,
-    props.size,
-  ],
-  scheduleCollapseRecompute,
-)
 </script>
 
 <template>
   <div
-    ref="rootRef"
     class="app-filter-select"
     :class="{
       'app-filter-select--multiple': multiple,
       'app-filter-select--has-selection': multiple && hasSelection,
-      'app-filter-select--compact-summary': compactSummary,
+      'app-filter-select--count': multiple && displayMode === 'count',
+      [`app-filter-select--visible-tags-${normalizedVisibleTagCount}`]: multiple && displayMode === 'tags',
       [`app-filter-select--${size}`]: true,
     }"
+    :data-visible-tag-count="multiple ? normalizedVisibleTagCount : undefined"
+    :data-display-mode="multiple ? displayMode : undefined"
   >
     <el-select
       v-model="selected"
@@ -183,7 +106,7 @@ watch(
       :default-first-option="defaultFirstOption"
       :collapse-tags="multiple && collapseTags"
       :collapse-tags-tooltip="multiple && collapseTags"
-      :max-collapse-tags="effectiveMaxCollapseTags"
+      :max-collapse-tags="normalizedVisibleTagCount"
       :fit-input-width="true"
       popper-class="app-filter-select-popper"
       :placement="APP_BOTTOM_FLOATING_PLACEMENT"
@@ -194,8 +117,8 @@ watch(
       :aria-label="ariaLabel || placeholder"
       @change="onChange"
     >
-      <template v-if="compactSummary" #tag>
-        <span class="app-filter-select__summary">已选 {{ toMulti(modelValue).length }}</span>
+      <template v-if="multiple && displayMode === 'count' && hasSelection" #tag>
+        <span class="app-filter-select__count-summary">已选 {{ selectedCount }}</span>
       </template>
       <el-option
         v-for="item in options"
@@ -210,7 +133,20 @@ watch(
 <style scoped>
 .app-filter-select {
   width: var(--app-control-inline-width, 100%);
+  max-width: 100%;
   min-width: 0;
+}
+.app-filter-select--visible-tags-1 {
+  --app-control-inline-width: var(--app-control-width-medium);
+}
+.app-filter-select--visible-tags-2 {
+  --app-control-inline-width: var(--app-control-width-long);
+}
+.app-filter-select--visible-tags-3 {
+  --app-control-inline-width: var(--app-control-width-wide);
+}
+.app-filter-select--count {
+  --app-control-inline-width: var(--app-control-width-short);
 }
 .app-filter-select__control {
   width: 100%;
@@ -238,7 +174,7 @@ watch(
 .app-filter-select--multiple.app-filter-select--has-selection .app-filter-select__control :deep(.el-select__selection) {
   overflow: hidden;
 }
-.app-filter-select__summary {
+.app-filter-select__count-summary {
   overflow: hidden;
   min-width: 0;
   padding: 0 var(--app-space-1);
