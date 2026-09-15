@@ -71,12 +71,21 @@ function onPreviewFocus(slotId: string) {
 }
 const selectedUserId = ref('local')
 const selectedPage = computed<PageRegistryEntry>(() => getPageEntry(selectedPageKey.value) ?? managedPages[0])
+const densityLabels: Record<string, string> = {
+  compact: '紧凑',
+  standard: '标准',
+  comfortable: '宽松',
+}
 
 const pageConfig = ref<LayoutPageConfig | null>(null)
 const pageLoadError = ref('')
 // 页面配置表单值按页面 editable 白名单 + 组件配置路径动态承载（不硬编码字段）。
 const pageDraft = reactive<{ values: LayoutOverlayValues }>({ values: {} })
 const pageSaving = ref(false)
+const pageDensityLabel = computed(() => {
+  const density = String(pageDraft.values.density ?? selectedPage.value.layout.density)
+  return densityLabels[density] ?? density
+})
 
 /** 设置/清除某个页面级旋钮草稿值；空值视为"不覆盖"。 */
 function setPageKnob(path: string, value: unknown): void {
@@ -525,51 +534,34 @@ const menuPageTitle = useMenuPageTitle()
         />
         <template v-else>
         <el-tabs v-model="tab" class="config-tabs" @tab-change="onTabChange">
-          <el-tab-pane label="预览与配置" name="workbench">
+          <el-tab-pane label="页面设计" name="workbench">
             <div class="workbench-pane">
             <section class="plain-panel source-panel">
               <div class="source-head">
-                <div>
-                  <div class="section-title app-section-title">布局源信息</div>
-                  <div class="section-subtitle app-caption-text">来自页面注册表（pageRegistry）的单一事实源。</div>
+                <div class="source-identity">
+                  <div class="section-title app-section-title">页面结构</div>
+                  <el-tag size="small" effect="plain">{{ selectedPage.archetype }}</el-tag>
+                  <el-tag size="small" effect="plain">{{ responsiveProfileLabel(selectedPage.responsiveProfile) }}</el-tag>
                 </div>
-                <el-tag effect="plain">{{ selectedPage.path }} · {{ selectedPage.pageKey }}</el-tag>
+                <span class="source-path app-caption-text">{{ selectedPage.path }} · {{ selectedPage.pageKey }}</span>
               </div>
-              <el-descriptions :column="4" size="small" border class="meta-desc">
-                <el-descriptions-item label="原型">{{ selectedPage.archetype }}</el-descriptions-item>
-                <el-descriptions-item label="目标响应式策略">{{ responsiveProfileLabel(selectedPage.responsiveProfile) }}</el-descriptions-item>
-                <el-descriptions-item label="页面密度">{{ pageDraft.values.density || '标准（系统默认）' }}</el-descriptions-item>
-                <el-descriptions-item label="组件配置">{{ selectedPage.supportsComponentConfig ? '已纳入页面默认配置' : '暂未开放' }}</el-descriptions-item>
-                <el-descriptions-item label="组件槽位" :span="4">
-                  <div class="slot-chips">
-                    <el-tag v-for="s in selectedPage.layout.slots" :key="s.id" size="small" effect="plain">
-                      {{ s.region }}:{{ s.component }}{{ s.growMain ? '(grow)' : '' }}
-                    </el-tag>
-                  </div>
-                </el-descriptions-item>
-              </el-descriptions>
-              <el-collapse class="source-collapse">
-                <el-collapse-item title="页面默认布局字段" name="editable">
-                  <AppDataTable v-if="selectedPage.layout.editable.length" :data="selectedPage.layout.editable" max-height="140" size="small" embedded>
-                    <AppTableColumn prop="label" label="字段" />
-                    <AppTableColumn prop="path" label="路径" />
-                    <AppTableColumn prop="type" label="类型" />
-                    <AppTableColumn label="范围">
-                      <template #default="{ row }">
-                        {{ row.options?.join('/') || `${row.min ?? '-'} ~ ${row.max ?? '-'}` }}
-                      </template>
-                    </AppTableColumn>
-                  </AppDataTable>
-                  <el-empty v-if="!selectedPage.layout.editable.length" class="app-empty app-empty--tiny" description="该页无页面默认布局字段" />
-                </el-collapse-item>
-              </el-collapse>
+              <div class="source-facts">
+                <span>槽位 <strong>{{ selectedPage.layout.slots.length }}</strong></span>
+                <span>页面密度 <strong>{{ pageDensityLabel }}</strong></span>
+                <span>组件设置 <strong>{{ selectedPage.supportsComponentConfig ? '可配置' : '未开放' }}</strong></span>
+              </div>
             </section>
 
             <div class="page-config-grid">
-              <!-- 左：结构示意预览（点击 slot → 右侧组件配置定位高亮，Q5）。 -->
+              <!-- 左侧只表达结构和选中关系；配置说明统一由右侧检查器承接。 -->
               <section class="plain-panel preview-panel">
-                <div class="section-title">{{ selectedPage.label }} · 结构示意预览</div>
-                <div class="section-subtitle">点击任一 slot/组件 → 右侧定位其配置；按预览档位看列数退化路径。占位示意，不挂载真实组件。</div>
+                <div class="panel-heading">
+                  <div>
+                    <div class="section-title">结构预览</div>
+                    <div class="section-subtitle">选择结构块后，在右侧查看和修改它的页面默认设置。</div>
+                  </div>
+                  <el-tag size="small" effect="plain">{{ selectedPage.label }}</el-tag>
+                </div>
                 <LayoutPagePreview
                   :key="selectedPageKey"
                   :layout="selectedPage.layout"
@@ -579,107 +571,135 @@ const menuPageTitle = useMenuPageTitle()
                 />
               </section>
 
-              <!-- 右：页面默认布局 + 组件特性配置 + 只读诊断，与左侧预览同屏一体。 -->
+              <!-- 右侧是唯一配置入口：页面默认、所选组件、折叠诊断、保存。 -->
               <section class="plain-panel config-panel">
-                <div class="section-title">{{ selectedPage.label }} · 配置</div>
-                <div class="section-subtitle">{{ selectedPage.path }} · {{ selectedPage.pageKey }}</div>
-                <el-form label-position="top" class="config-form">
-                  <!-- 页面级旋钮按本页 editable 白名单动态渲染（不再手写字段）。 -->
-                  <el-form-item v-for="knob in selectedPage.layout.editable" :key="knob.path" :label="knob.label">
-                    <el-select
-                      v-if="knob.type === 'enum'"
-                      :model-value="pageDraft.values[knob.path] ?? ''"
-                      clearable
-                      placeholder="不覆盖"
-                      @update:model-value="(v: unknown) => setPageKnob(knob.path, v)"
-                    >
-                      <el-option
-                        v-for="opt in knob.options"
-                        :key="String(opt)"
-                        :label="knob.optionLabels?.[String(opt)] ?? String(opt)"
-                        :value="opt"
-                      />
-                    </el-select>
-                    <el-switch
-                      v-else-if="knob.type === 'bool'"
-                      :model-value="Boolean(pageDraft.values[knob.path])"
-                      @update:model-value="(v: string | number | boolean) => setPageKnob(knob.path, v)"
-                    />
-                    <el-input-number
-                      v-else
-                      :model-value="(pageDraft.values[knob.path] as number)"
-                      :min="knob.min"
-                      :max="knob.max"
-                      :step="knob.type === 'int' ? 10 : undefined"
-                      @update:model-value="(v: number | undefined) => setPageKnob(knob.path, v ?? '')"
-                    />
-                  </el-form-item>
-                  <el-empty
-                    v-if="!selectedPage.layout.editable.length"
-                    class="app-empty app-empty--compact"
-                    description="该页面未开放页面级布局旋钮"
-                  />
-                </el-form>
-
-                <!-- 组件特性配置（页面层）：复用与设置抽屉同一渲染器 ComponentAutoSettings（page 层、聚焦单 slot、按策略门控、可清除）。 -->
-                <template v-if="selectedPage.supportsComponentConfig">
-                  <div class="cc-block-title">组件特性配置</div>
-                  <div class="section-subtitle">点击左侧预览里的某个 slot 后，这里展示代码默认与页面覆盖合并后的页面默认值。个人偏好仍在各页面设置抽屉里调整。</div>
-                  <!-- 受约束宽度容器：还原共享渲染器在窄抽屉里的密度，避免分段控件在宽面板被拉爆/溢出。 -->
-                  <div v-if="focusedSlotSpec" class="cc-cfg-host">
-                    <div class="focused-slot-card">
-                      <div class="diag-main">{{ focusedSlotSpec.label || focusedSlotSpec.id }}</div>
-                      <div class="muted">{{ focusedSlotSpec.id }} · {{ focusedSlotSpec.component }} · {{ focusedSlotSpec.region }}</div>
-                    </div>
-                    <ComponentAutoSettings
-                      :page-key="selectedPageKey"
-                      :config="pageComponentConfig"
-                      layer="page"
-                      :slot-ids="focusedSlotIds"
-                      :allowed-layers-of="componentAllowedLayers"
-                      :show-slot-title="false"
-                      clearable
-                    />
+                <div class="inspector-head">
+                  <div>
+                    <div class="section-title">配置检查器</div>
+                    <div class="section-subtitle">页面默认值会影响所有用户，个人仍可在页面设置中覆盖。</div>
                   </div>
-                  <el-empty
-                    v-else
-                    class="app-empty app-empty--compact"
-                    description="点击左侧预览中的一个组件后，在这里编辑它的页面默认配置"
-                  />
-                </template>
+                  <el-tag v-if="focusedSlotSpec" size="small" type="primary" effect="plain">已选组件</el-tag>
+                </div>
 
-                <div class="cc-block-title">只读诊断</div>
-                <div class="section-subtitle">只显示当前点击 slot 的页面默认值、可覆盖范围和安全枚举诊断；不可编辑字段只在这里解释原因。</div>
-                <AppDataTable v-if="focusedDiagnosticRows.length" :data="focusedDiagnosticRows" max-height="220" size="small" class="diagnostic-table" embedded>
-                  <AppTableColumn label="字段">
-                    <template #default="{ row }">
-                      <div class="diag-main">{{ row.fieldLabel }}</div>
-                      <div class="muted">{{ row.field }}</div>
-                    </template>
-                  </AppTableColumn>
-                  <AppTableColumn label="页面默认值">
-                    <template #default="{ row }">
-                      <div class="diag-main">{{ row.valueLabel }}</div>
-                      <div class="muted">{{ row.sourceLabel }}</div>
-                    </template>
-                  </AppTableColumn>
-                  <AppTableColumn label="可覆盖范围">
-                    <template #default="{ row }">
-                      <span class="muted">{{ row.layersLabel }}</span>
-                    </template>
-                  </AppTableColumn>
-                  <AppTableColumn label="状态">
-                    <template #default="{ row }">
-                      <el-tag size="small" :type="diagnosticTagType(row.status)" effect="plain">{{ row.statusLabel }}</el-tag>
-                    </template>
-                  </AppTableColumn>
-                  <AppTableColumn prop="detail" label="说明" />
-                </AppDataTable>
-                <el-empty
-                  v-if="!focusedDiagnosticRows.length"
-                  class="app-empty app-empty--compact"
-                  :description="focusedSlotSpec ? '当前 slot 暂无组件字段消费诊断' : '点击左侧预览中的一个组件后查看诊断'"
-                />
+                <div class="inspector-scroll">
+                  <section class="inspector-section">
+                    <div class="inspector-section-head">
+                      <div>
+                        <div class="inspector-title">页面默认设置</div>
+                        <div class="section-subtitle">未设置时使用系统默认值。</div>
+                      </div>
+                    </div>
+                    <el-form label-position="top" class="config-form">
+                      <!-- 页面级旋钮按本页 editable 白名单动态渲染。 -->
+                      <el-form-item v-for="knob in selectedPage.layout.editable" :key="knob.path" :label="knob.label">
+                        <el-select
+                          v-if="knob.type === 'enum'"
+                          :model-value="pageDraft.values[knob.path] ?? ''"
+                          clearable
+                          placeholder="使用系统默认"
+                          @update:model-value="(v: unknown) => setPageKnob(knob.path, v)"
+                        >
+                          <el-option
+                            v-for="opt in knob.options"
+                            :key="String(opt)"
+                            :label="knob.optionLabels?.[String(opt)] ?? String(opt)"
+                            :value="opt"
+                          />
+                        </el-select>
+                        <el-switch
+                          v-else-if="knob.type === 'bool'"
+                          :model-value="Boolean(pageDraft.values[knob.path])"
+                          @update:model-value="(v: string | number | boolean) => setPageKnob(knob.path, v)"
+                        />
+                        <el-input-number
+                          v-else
+                          :model-value="(pageDraft.values[knob.path] as number)"
+                          :min="knob.min"
+                          :max="knob.max"
+                          :step="knob.type === 'int' ? 10 : undefined"
+                          @update:model-value="(v: number | undefined) => setPageKnob(knob.path, v ?? '')"
+                        />
+                      </el-form-item>
+                      <div v-if="!selectedPage.layout.editable.length" class="inspector-empty">
+                        该页面没有可调整的页面级设置
+                      </div>
+                    </el-form>
+                  </section>
+
+                  <section v-if="selectedPage.supportsComponentConfig" class="inspector-section">
+                    <div class="inspector-section-head">
+                      <div>
+                        <div class="inspector-title">组件设置</div>
+                        <div class="section-subtitle">先从左侧结构图选择一个组件。</div>
+                      </div>
+                    </div>
+                    <div v-if="focusedSlotSpec" class="cc-cfg-host">
+                      <div class="focused-slot-card">
+                        <div class="focused-slot-name">{{ focusedSlotSpec.label || focusedSlotSpec.id }}</div>
+                        <div class="muted app-inline-info">
+                          <span>{{ focusedSlotSpec.component }}</span>
+                          <span>{{ focusedSlotSpec.region }}</span>
+                          <span>{{ focusedSlotSpec.id }}</span>
+                        </div>
+                      </div>
+                      <ComponentAutoSettings
+                        :page-key="selectedPageKey"
+                        :config="pageComponentConfig"
+                        layer="page"
+                        :slot-ids="focusedSlotIds"
+                        :allowed-layers-of="componentAllowedLayers"
+                        :show-slot-title="false"
+                        clearable
+                      />
+                    </div>
+                    <div v-else class="inspector-empty">
+                      选择左侧任一结构块后，在这里配置该组件
+                    </div>
+                  </section>
+
+                  <section v-else class="inspector-section inspector-section--muted">
+                    <div class="inspector-title">组件设置</div>
+                    <div class="section-subtitle">该页面暂未开放组件级默认设置。</div>
+                  </section>
+
+                  <el-collapse class="inspector-collapse">
+                    <el-collapse-item name="diagnostic">
+                      <template #title>
+                        <span class="diagnostic-title">配置依据与诊断</span>
+                        <el-tag size="small" effect="plain">{{ focusedDiagnosticRows.length }} 项</el-tag>
+                      </template>
+                      <div class="section-subtitle diagnostic-intro">查看当前组件的默认值来源、可覆盖范围与不可编辑原因。</div>
+                      <AppDataTable v-if="focusedDiagnosticRows.length" :data="focusedDiagnosticRows" max-height="220" size="small" class="diagnostic-table" embedded>
+                        <AppTableColumn label="字段">
+                          <template #default="{ row }">
+                            <div class="diag-main">{{ row.fieldLabel }}</div>
+                            <div class="muted">{{ row.field }}</div>
+                          </template>
+                        </AppTableColumn>
+                        <AppTableColumn label="页面默认值">
+                          <template #default="{ row }">
+                            <div class="diag-main">{{ row.valueLabel }}</div>
+                            <div class="muted">{{ row.sourceLabel }}</div>
+                          </template>
+                        </AppTableColumn>
+                        <AppTableColumn label="可覆盖范围">
+                          <template #default="{ row }">
+                            <span class="muted">{{ row.layersLabel }}</span>
+                          </template>
+                        </AppTableColumn>
+                        <AppTableColumn label="状态">
+                          <template #default="{ row }">
+                            <el-tag size="small" :type="diagnosticTagType(row.status)" effect="plain">{{ row.statusLabel }}</el-tag>
+                          </template>
+                        </AppTableColumn>
+                        <AppTableColumn prop="detail" label="说明" />
+                      </AppDataTable>
+                      <div v-else class="inspector-empty">
+                        {{ focusedSlotSpec ? '当前组件没有配置诊断项' : '选择组件后查看配置依据' }}
+                      </div>
+                    </el-collapse-item>
+                  </el-collapse>
+                </div>
 
                 <div class="button-row cc-save-row">
                   <el-button v-permission="'layout:page-manage'" type="primary" :loading="pageSaving" @click="savePageConfig">保存页面配置</el-button>
@@ -837,7 +857,6 @@ const menuPageTitle = useMenuPageTitle()
   font-weight: var(--app-font-weight-strong);
   color: var(--el-text-color-primary);
 }
-.page-config-grid,
 .import-grid,
 .report-grid {
   display: grid;
@@ -845,6 +864,9 @@ const menuPageTitle = useMenuPageTitle()
   gap: var(--app-space-3);
 }
 .page-config-grid {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.3fr) minmax(360px, 0.7fr);
+  gap: var(--app-space-3);
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
@@ -864,64 +886,142 @@ const menuPageTitle = useMenuPageTitle()
   padding: var(--app-density-card-padding);
 }
 .preview-panel,
-.config-panel,
 .import-grid > .plain-panel,
 .report-grid > .plain-panel {
   overflow: auto;
 }
 .source-panel {
   flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--app-space-3);
 }
 .source-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--app-space-3);
 }
-.source-collapse {
-  margin-top: 8px;
+.source-identity,
+.source-facts,
+.panel-heading,
+.inspector-head,
+.inspector-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-2);
 }
-.config-form {
-  margin-top: 14px;
+.source-path {
+  white-space: nowrap;
 }
-.preview-host {
-  margin-top: 12px;
+.source-facts {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
 }
-.cc-block-title {
-  margin-top: 16px;
+.source-facts > span + span {
+  padding-left: var(--app-space-2);
+  border-left: 1px solid var(--el-border-color-lighter);
+}
+.source-facts strong {
+  color: var(--el-text-color-primary);
+  font-weight: var(--app-font-weight-section);
+}
+.panel-heading,
+.inspector-head,
+.inspector-section-head {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.config-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.inspector-head {
+  flex: 0 0 auto;
+  padding-bottom: var(--app-space-3);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.inspector-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--app-space-3) 2px var(--app-space-3) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-4);
+}
+.inspector-section {
+  padding-bottom: var(--app-space-4);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.inspector-section--muted {
+  border: 1px dashed var(--el-border-color);
+  border-radius: var(--layout-control-radius);
+  padding: var(--app-space-3);
+  background: var(--app-section-bg);
+}
+.inspector-title {
   font-size: var(--app-font-size-body);
   font-weight: var(--app-font-weight-section);
   color: var(--el-text-color-primary);
 }
+.config-form {
+  margin-top: var(--app-space-3);
+}
+.config-form :deep(.el-form-item:last-child) {
+  margin-bottom: 0;
+}
+.preview-host {
+  margin-top: var(--app-space-3);
+}
 .cc-save-row {
-  margin-top: 16px;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  padding-top: var(--app-space-3);
+  border-top: 1px solid var(--el-border-color-lighter);
+  background: var(--el-bg-color);
+}
+.inspector-empty {
+  border: 1px dashed var(--el-border-color);
+  border-radius: var(--layout-control-radius);
+  padding: var(--app-space-3);
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+  text-align: center;
+}
+.inspector-collapse {
+  border-top: 0;
+}
+.diagnostic-title {
+  margin-right: var(--app-space-2);
+  color: var(--el-text-color-primary);
+  font-weight: var(--app-font-weight-section);
+}
+.diagnostic-intro {
+  margin-bottom: var(--app-space-2);
 }
 .diagnostic-table {
-  margin-top: 10px;
+  margin-top: var(--app-space-2);
 }
 .cc-cfg-host {
-  /* 与同卡片内的「默认预设/信息密度」等控件一致填满面板内容宽，避免窄一截、不对齐的空盒子观感。 */
   width: 100%;
 }
 .focused-slot-card {
-  margin-top: 10px;
-  margin-bottom: 10px;
+  margin-top: var(--app-space-3);
+  margin-bottom: var(--app-space-3);
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-  padding: 10px 12px;
+  border-radius: var(--layout-control-radius);
+  padding: var(--app-space-3);
   background: var(--app-section-bg);
 }
+.focused-slot-name,
 .diag-main {
   font-weight: var(--app-font-weight-section);
   color: var(--el-text-color-primary);
-}
-.meta-desc {
-  margin-top: 12px;
-}
-.slot-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--app-space-control-gap);
 }
 .file-input {
   display: block;
@@ -944,6 +1044,16 @@ const menuPageTitle = useMenuPageTitle()
   .report-grid {
     grid-template-columns: 1fr;
     overflow: auto;
+  }
+  .source-panel {
+    grid-template-columns: 1fr;
+  }
+  .source-facts {
+    justify-content: flex-start;
+  }
+  .config-panel,
+  .inspector-scroll {
+    overflow: visible;
   }
   .toolbar-actions,
   .inline-controls,

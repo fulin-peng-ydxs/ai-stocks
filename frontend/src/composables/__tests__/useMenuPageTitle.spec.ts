@@ -1,5 +1,8 @@
+// @vitest-environment jsdom
+import { defineComponent, h } from 'vue'
+import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import { resolveMenuPageTitle } from '../useMenuPageTitle'
+import { resolveMenuPageTitle, useMenuPageTitle } from '../useMenuPageTitle'
 import type { MenuTreeNode } from '@/utils/permission'
 
 const menus: MenuTreeNode[] = [{
@@ -28,5 +31,16 @@ describe('resolveMenuPageTitle', () => {
 
   it('菜单尚未加载时回退路由标题', () => {
     expect(resolveMenuPageTitle([], '/screen', '策略筛选')).toBe('策略筛选')
+  })
+
+  it('独立组件测试未挂载 Router 和 Pinia 时安全使用显式兜底', () => {
+    const component = defineComponent({
+      setup() {
+        const title = useMenuPageTitle({ fallback: '测试页面' })
+        return () => h('h2', title.value)
+      },
+    })
+
+    expect(mount(component).text()).toBe('测试页面')
   })
 })

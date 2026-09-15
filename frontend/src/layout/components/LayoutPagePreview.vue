@@ -10,6 +10,7 @@
  * （多数页面 single-column，故各档恒为 1 列；dashboard 类重排页会在大档位显示多列）。
  */
 import { computed, ref } from 'vue'
+import PageSegmented from '@/components/PageSegmented.vue'
 import { COMPONENT_CATALOG } from '../components'
 import { DEVICE_TIERS, columnsAt, describeResponsive, type DeviceTier } from '../responsive'
 import type { ResponsiveProfile } from '../pageRegistry'
@@ -19,7 +20,7 @@ const props = defineProps<{ layout: PageLayout; profile: ResponsiveProfile }>()
 // 点击 slot 时通知父级（页面布局工作台据此把右侧配置面板聚焦到该组件，实现"点击预览即配置"，Q5）。
 const emit = defineEmits<{ 'focus-slot': [slotId: string] }>()
 
-const tier = ref<DeviceTier['key']>('small')
+const tier = ref<DeviceTier['key']>('laptop')
 const currentTier = computed(() => DEVICE_TIERS.find((t) => t.key === tier.value)!)
 
 /** 响应式摘要（P8）：策略命名/说明 + 三档列数 + 可重排/不可重排大表大图 slot 分类。 */
@@ -59,24 +60,20 @@ const currentColumns = computed(() => columnsAt(props.layout, currentTier.value.
 const degradation = computed(() =>
   DEVICE_TIERS.map((t) => ({ key: t.key, label: t.short, w: t.w, columns: columnsAt(props.layout, t.w) })),
 )
-const tierButtonLabel = (t: DeviceTier): string => `${t.short}预览`
 const isSinglePreviewShape = computed(() => {
   const cols = degradation.value.map((d) => d.columns)
   return cols.every((c) => c === cols[0])
 })
-const previewHint = computed(() =>
-  isSinglePreviewShape.value
-    ? '当前只是预览档位，不保存配置；该页为单列内容，不同档位下列数一致。'
-    : '当前只是预览档位，不保存配置；多列页面会按断点展示退化路径。',
-)
+const tierOptions = computed(() => degradation.value.map((item) => ({
+  label: `${item.label} ${item.w}px · ${item.columns}列`,
+  value: item.key,
+})))
+const uniformColumnCount = computed(() => degradation.value[0]?.columns ?? 1)
 
 const focused = ref<string | null>(null)
-const focusedSlot = computed<SlotSpec | null>(() =>
-  focused.value ? (props.layout.slots.find((s) => s.id === focused.value) ?? null) : null,
-)
 function focus(id: string) {
-  focused.value = focused.value === id ? null : id
-  if (focused.value) emit('focus-slot', id)
+  focused.value = id
+  emit('focus-slot', id)
 }
 function parentLabel(s: SlotSpec): string | null {
   if (!s.parentId) return null
@@ -87,46 +84,45 @@ function parentLabel(s: SlotSpec): string | null {
 
 <template>
   <div class="preview-wrap">
-    <div class="preview-toolbar">
-      <el-radio-group v-model="tier" size="small">
-        <el-radio-button v-for="t in DEVICE_TIERS" :key="t.key" :value="t.key">{{ tierButtonLabel(t) }}</el-radio-button>
-      </el-radio-group>
-      <div class="resp-note">
-        当前 <b>{{ currentColumns }}</b> 列 · 退化路径：
-        <span v-for="(d, i) in degradation" :key="d.key" :class="{ cur: d.key === tier }">
-          {{ d.label }} {{ d.columns }}列<span v-if="i < degradation.length - 1"> → </span>
-        </span>
+    <div class="preview-context">
+      <div class="preview-context-main">
+        <div class="preview-control-label">预览宽度</div>
+        <PageSegmented
+          v-if="!isSinglePreviewShape"
+          v-model="tier"
+          :options="tierOptions"
+          size="small"
+          tone="primary"
+          aria-label="预览宽度"
+        />
+        <div v-else class="uniform-layout-note">
+          三档宽度均为 <strong>{{ uniformColumnCount }} 列</strong>，无需切换
+        </div>
+      </div>
+      <div class="preview-context-note">
+        仅查看响应式变化，不会修改页面配置
       </div>
     </div>
-    <div class="preview-mode-hint">{{ previewHint }}</div>
 
-    <!-- 响应式摘要（P8）：受控策略命名 + 三档列数 + 可重排/不可重排大表大图分类（红线不可配，仅展示）。 -->
+    <!-- 响应式摘要只保留策略与重排边界；档位列数已在上方宽度选择器中表达。 -->
     <div class="resp-summary">
       <div class="rs-strategy">
-        <el-tag size="small" type="primary" effect="plain">目标 · {{ summary.profileLabel }}</el-tag>
+        <el-tag size="small" type="primary" effect="plain">响应策略 · {{ summary.profileLabel }}</el-tag>
         <span class="rs-desc">{{ summary.profileDesc }}</span>
       </div>
       <div class="rs-grid">
         <div class="rs-col">
-          <div class="rs-h">预览档位 · 列数</div>
-          <div class="rs-tiers">
-            <span v-for="t in summary.tiers" :key="t.key" class="rs-tier" :class="{ cur: t.key === tier }">
-              {{ t.short }} <b>{{ t.columns }}</b> 列
-            </span>
-          </div>
-        </div>
-        <div class="rs-col">
-          <div class="rs-h">允许重排的 slot</div>
+          <div class="rs-h">可随宽度重排</div>
           <div class="rs-chips">
             <el-tag v-for="s in summary.reflowableSlots" :key="s.id" size="small" type="warning" effect="plain">{{ s.label }}</el-tag>
-            <span v-if="!summary.reflowableSlots.length" class="muted">无（不参与多列重排）</span>
+            <span v-if="!summary.reflowableSlots.length" class="muted">无</span>
           </div>
         </div>
         <div class="rs-col">
-          <div class="rs-h">不可重排（大表/大图，内部滚动）</div>
+          <div class="rs-h">保持位置并内部滚动</div>
           <div class="rs-chips">
             <el-tag v-for="s in summary.lockedSlots" :key="s.id" size="small" effect="plain">
-              {{ s.label }}<span v-if="s.growMain"> · grow</span>
+              {{ s.label }}<span v-if="s.growMain"> · 主区</span>
             </el-tag>
             <span v-if="!summary.lockedSlots.length" class="muted">—</span>
           </div>
@@ -134,9 +130,12 @@ function parentLabel(s: SlotSpec): string | null {
       </div>
     </div>
 
-    <div class="preview-body">
-      <!-- 结构示意框：操作区固定 + 主内容区按列数排布；纯示意、不跑真实组件。 -->
-      <div class="device-frame">
+    <!-- 结构示意框：操作区固定 + 主内容区按列数排布；纯示意、不跑真实组件。 -->
+    <div class="device-frame">
+      <div class="device-frame-head">
+        <span>{{ currentTier.label }}</span>
+        <span>当前 {{ currentColumns }} 列</span>
+      </div>
         <div v-if="actionSlots.length" class="region-action">
           <div class="region-tag">操作区（固定）</div>
           <div class="action-row">
@@ -178,14 +177,10 @@ function parentLabel(s: SlotSpec): string | null {
             </button>
           </div>
         </div>
-      </div>
 
-      <!-- 右侧：浮层/嵌套对象清单 + 聚焦详情。 -->
-      <div class="preview-side">
-        <div class="side-block">
-          <div class="side-title">浮层与嵌套对象</div>
-          <div class="side-hint">不参与主流布局，经 schema 可寻址（slots.&lt;id&gt;.config.*）</div>
-          <template v-if="offFlowSlots.length">
+      <div v-if="offFlowSlots.length" class="region-off-flow">
+        <div class="region-tag">浮层与嵌套内容（不占页面主排版）</div>
+        <div class="off-flow-grid">
             <button
               v-for="s in offFlowSlots"
               :key="s.id"
@@ -201,23 +196,7 @@ function parentLabel(s: SlotSpec): string | null {
                 <span v-else-if="s.parentId" class="off-tag">嵌套于 {{ parentLabel(s) }}</span>
               </span>
             </button>
-          </template>
-          <el-empty v-else class="app-empty app-empty--tiny" description="该页无浮层/嵌套对象" />
         </div>
-
-        <div v-if="focusedSlot" class="side-block">
-          <div class="side-title">聚焦：{{ focusedSlot.label || focusedSlot.id }}</div>
-          <el-descriptions :column="1" size="small" border>
-            <el-descriptions-item label="slot id">{{ focusedSlot.id }}</el-descriptions-item>
-            <el-descriptions-item label="组件">{{ compLabel(focusedSlot) }}（{{ focusedSlot.component }}）</el-descriptions-item>
-            <el-descriptions-item label="区域">{{ focusedSlot.region }}</el-descriptions-item>
-            <el-descriptions-item v-if="parentLabel(focusedSlot)" label="嵌套于">{{ parentLabel(focusedSlot) }}</el-descriptions-item>
-            <el-descriptions-item label="滚动归属">{{ SCROLL_LABELS[effScroll(focusedSlot)] }}</el-descriptions-item>
-            <el-descriptions-item label="最低尺寸">{{ effMinW(focusedSlot) }}×{{ effMinH(focusedSlot) }}</el-descriptions-item>
-            <el-descriptions-item label="配置寻址">slots.{{ focusedSlot.id }}.config.&lt;field&gt;</el-descriptions-item>
-          </el-descriptions>
-        </div>
-        <div v-else class="side-block muted-block">点击任一 slot 查看其能力与配置寻址</div>
       </div>
     </div>
   </div>
@@ -229,22 +208,29 @@ function parentLabel(s: SlotSpec): string | null {
   flex-direction: column;
   gap: var(--app-space-3);
 }
-.preview-toolbar {
+.preview-context {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: var(--app-space-4);
   flex-wrap: wrap;
 }
-.resp-note {
+.preview-context-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-1);
+}
+.preview-control-label {
   font-size: var(--app-font-size-caption);
+  font-weight: var(--app-font-weight-section);
   color: var(--el-text-color-regular);
 }
-.preview-mode-hint {
+.preview-context-note,
+.uniform-layout-note {
   font-size: var(--app-font-size-caption);
   color: var(--el-text-color-secondary);
 }
-.resp-note .cur {
+.uniform-layout-note strong {
   color: var(--el-color-primary);
   font-weight: var(--app-font-weight-strong);
 }
@@ -269,26 +255,13 @@ function parentLabel(s: SlotSpec): string | null {
 }
 .rs-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--app-space-3);
 }
 .rs-h {
   font-size: var(--app-font-size-caption);
   color: var(--el-text-color-secondary);
   margin-bottom: 6px;
-}
-.rs-tiers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--app-space-2);
-}
-.rs-tier {
-  font-size: var(--app-font-size-caption);
-  color: var(--el-text-color-regular);
-}
-.rs-tier.cur {
-  color: var(--el-color-primary);
-  font-weight: var(--app-font-weight-section);
 }
 .rs-chips {
   display: flex;
@@ -300,15 +273,9 @@ function parentLabel(s: SlotSpec): string | null {
     grid-template-columns: 1fr;
   }
 }
-.muted,
-.side-hint {
+.muted {
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
-}
-.preview-body {
-  display: grid;
-  grid-template-columns: minmax(360px, 1.4fr) minmax(260px, 0.9fr);
-  gap: var(--app-space-3);
 }
 .device-frame {
   border: 1px solid var(--el-border-color);
@@ -319,12 +286,29 @@ function parentLabel(s: SlotSpec): string | null {
   flex-direction: column;
   gap: var(--app-space-3);
 }
+.device-frame-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-2);
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+}
 .region-action,
-.region-main {
+.region-main,
+.region-off-flow {
   border: 1px dashed var(--el-border-color);
   border-radius: 6px;
   padding: 10px;
   background: var(--el-bg-color);
+}
+.region-off-flow {
+  border-style: dotted;
+}
+.off-flow-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--app-space-2);
 }
 .region-tag {
   font-size: var(--app-font-size-micro);
@@ -393,25 +377,6 @@ function parentLabel(s: SlotSpec): string | null {
   font-size: var(--app-font-size-micro);
   color: var(--el-text-color-secondary);
 }
-.preview-side {
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-3);
-}
-.side-block {
-  border: 1px solid var(--el-border-color);
-  border-radius: 6px;
-  padding: 12px;
-  background: var(--el-bg-color);
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-2);
-}
-.side-title {
-  font-size: var(--app-font-size-table);
-  font-weight: var(--app-font-weight-section);
-  color: var(--el-text-color-primary);
-}
 .slot-box.off {
   flex-direction: row;
   align-items: baseline;
@@ -421,12 +386,8 @@ function parentLabel(s: SlotSpec): string | null {
   font-size: var(--app-font-size-micro);
   color: var(--el-color-warning);
 }
-.muted-block {
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-caption);
-}
 @container app-viewport (max-width: 980px) {
-  .preview-body {
+  .off-flow-grid {
     grid-template-columns: 1fr;
   }
 }

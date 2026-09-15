@@ -90,6 +90,7 @@
 - 新增或复用的语义类 / token：
 - 可导航页面标题是否通过 `useMenuPageTitle()` 消费当前菜单名称；阶段状态是否使用 `suffix` 拼接且未复制基础菜单标题：
 - 页面密度：紧凑/标准/宽松是否由 `LayoutHost` 唯一提供，卡片、控件行、表单、表格和页面浮层是否共同消费 `--app-density-*`，且未改变字号或显式 small/large 层级：
+- 页面布局工作台预览：结构与配置是否左右分工；无响应式列数差异时是否隐藏预览宽度切换；配置诊断是否默认折叠：
 - 行内信息单元：非连续内容是否按 DESIGN §3.2 使用 ` · `、`.app-inline-info` 或 Teleport 浮层唯一 `popper-class`，且未用手工空格、`&nbsp;`、私有 `margin-left/right` 修补：
 - 排版或间距特例：
 - 页头容器对齐：`.page-head` / `.page-toolbar` 是否 `align-items: flex-start`（动作区钉标题顶）——禁止 `flex-end` / `center` 使抽屉触发钮跨页高度不一致；内嵌标题行 `.page-title-row` / `.title-row` 与右侧 `.page-head-actions` 不属此列。

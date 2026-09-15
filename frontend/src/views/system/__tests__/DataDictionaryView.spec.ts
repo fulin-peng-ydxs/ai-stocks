@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { routeLocationKey } from 'vue-router'
 import ElementPlus from 'element-plus'
 import { computed, defineComponent, h, inject, provide, ref, type Component, type ComputedRef } from 'vue'
 import { useAuthStore } from '@/stores/auth'
@@ -194,12 +195,16 @@ async function mountView(role = 'system'): Promise<VueWrapper> {
   const auth = useAuthStore()
   auth.role = role
   auth.permissions = role === 'system' ? ['dict:type-manage', 'dict:item-manage'] : []
+  auth.menus = [{ index: '/system/dicts', title: '数据字典' }]
   auth.menusStatus = 'ready'
   auth.tenant = { id: 'tenant-a' }
   const wrapper = mount(DataDictionaryView as Component, {
     attachTo: document.body,
     global: {
       plugins: [pinia, ElementPlus],
+      provide: {
+        [routeLocationKey as symbol]: { path: '/system/dicts', meta: {} },
+      },
       stubs,
       directives: { permission: {} },
     },

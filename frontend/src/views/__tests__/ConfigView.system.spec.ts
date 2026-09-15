@@ -15,7 +15,8 @@ const routeState = vi.hoisted(() => ({
   meta: { configTab: 'system' },
 }))
 
-vi.mock('vue-router', () => ({
+vi.mock('vue-router', async (importOriginal) => ({
+  ...await importOriginal<typeof import('vue-router')>(),
   useRoute: () => ({ meta: routeState.meta }),
 }))
 

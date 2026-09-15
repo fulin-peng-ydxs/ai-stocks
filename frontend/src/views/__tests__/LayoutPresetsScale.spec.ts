@@ -28,7 +28,7 @@ describe('视觉预设字段边界', () => {
     try {
       await flushPromises()
       const button = (text: string) => wrapper.findAll('button').find((item) => item.text() === text)!
-      await button('新增预设').trigger('click')
+      await button('新增视觉预设').trigger('click')
       expect(wrapper.text()).not.toContain('自动缩放激进程度')
       expect(wrapper.text()).not.toContain('表格密度')
       await button('保存').trigger('click')

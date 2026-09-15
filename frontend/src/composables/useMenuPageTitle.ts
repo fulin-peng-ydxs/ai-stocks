@@ -1,5 +1,13 @@
-import { computed, toValue, type ComputedRef, type MaybeRefOrGetter } from 'vue'
-import { useRoute } from 'vue-router'
+import {
+  computed,
+  getCurrentInstance,
+  inject,
+  toValue,
+  type ComputedRef,
+  type MaybeRefOrGetter,
+} from 'vue'
+import type { Pinia } from 'pinia'
+import { routeLocationKey } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { findMenuLeaf, type MenuTreeNode } from '@/utils/permission'
 
@@ -25,9 +33,10 @@ export function resolveMenuPageTitle(
 
 /** 页面标题统一跟随后端菜单名称；菜单未就绪时以路由 meta.title 稳定回退。 */
 export function useMenuPageTitle(options: MenuPageTitleOptions = {}): ComputedRef<string> {
-  const route = useRoute()
-  const auth = useAuthStore()
-  return computed(() => resolveMenuPageTitle(auth.menus, route.path, route.meta.title, {
+  const route = inject(routeLocationKey, null)
+  const pinia = getCurrentInstance()?.appContext.config.globalProperties.$pinia as Pinia | undefined
+  const auth = pinia ? useAuthStore(pinia) : null
+  return computed(() => resolveMenuPageTitle(auth?.menus ?? [], route?.path ?? '', route?.meta.title, {
     suffix: toValue(options.suffix),
     fallback: options.fallback,
   }))

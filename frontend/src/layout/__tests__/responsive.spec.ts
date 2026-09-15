@@ -46,8 +46,14 @@ describe('自适应策略摘要（P8）', () => {
   it('页面布局工作台把 profile 明确展示为目标策略', () => {
     const pageView = readFileSync(new URL('../../views/layout/LayoutPagesView.vue', import.meta.url), 'utf8')
     const preview = readFileSync(new URL('../components/LayoutPagePreview.vue', import.meta.url), 'utf8')
-    expect(pageView).toContain('label="目标响应式策略"')
-    expect(preview).toContain('目标 · {{ summary.profileLabel }}')
+    expect(pageView).toContain('label="页面设计"')
+    expect(pageView).toContain('配置检查器')
+    expect(pageView).toContain('配置依据与诊断')
+    expect(pageView).not.toContain('<el-tag size="small" effect="plain">{{ pageDensityLabel }}</el-tag>')
+    expect(preview).toContain('响应策略 · {{ summary.profileLabel }}')
+    expect(preview).toContain('v-if="!isSinglePreviewShape"')
+    expect(preview).toContain('三档宽度均为')
+    expect(preview).not.toContain('preview-side')
   })
 
   it('混合面板页（board）：三档保持单列布局契约，主从工作台归入不可重排', () => {
