@@ -16,10 +16,14 @@ import pandas as pd
 
 from backend.common.logging import get_logger
 from backend.indicators.engine import IndicatorEngine
-from backend.screening.condition import collect_leaves, eval_ast, validate_ast
+from backend.screening.condition import (
+    collect_indicator_leaves,
+    collect_leaves,
+    eval_ast,
+    validate_ast,
+)
 from backend.screening.expression import eval_expr
 from backend.storage.duckdb_client import get_client
-from backend.storage.repository import MarketRepository
 
 log = get_logger("screening.engine")
 
@@ -37,7 +41,6 @@ _CMP_FUNCS = {
 class ScreenEngine:
     def __init__(self, client=None):
         self.c = client or get_client()
-        self.repo = MarketRepository(self.c)
         self.ind = IndicatorEngine(self.c)
 
     def _snapshot(self, run_date: date, universe: list[str] | None) -> pd.DataFrame:
@@ -56,28 +59,20 @@ class ScreenEngine:
         return _CMP_FUNCS[leaf["cmp"]](snap[field], leaf["value"])
 
     def _eval_ind(self, leaf: dict, snap: pd.DataFrame, run_date: date) -> pd.Series:
-        """注册表指标叶子：内置→复用快照列；表达式型/自定义→渲染参数后逐股点时求值。"""
+        """注册表指标叶子统一读取已构建快照；表达式指标由 run_ast 提前批量补列。"""
         if leaf.get("ignore"):
             return pd.Series(True, index=snap.index)
-        from backend.indicators.definition import IndicatorDefRepo
         from backend.scoring.score_profile import resolve_indicator
         key, params = leaf["key"], leaf.get("params")
-        d = IndicatorDefRepo(self.c).get(key)
-        if d and d.get("kind") == "expr":
-            s = self.ind._eval_expr_indicator(
-                d["expression"], params, d.get("params"), run_date, list(snap.index))
-            s = s.reindex(snap.index)
-        else:
-            s = resolve_indicator(key, params, snap)  # 复用已建快照，避免重算
+        s = resolve_indicator(key, params, snap)
         return _CMP_FUNCS[leaf["cmp"]](s, leaf["value"])
 
     def _eval_exprs(self, exprs: list[dict], run_date: date, codes: list[str]) -> dict:
-        """逐股算各 expr 叶子在 run_date 的布尔值 → {expr_str: Series(code->bool)}。"""
+        """一次批量取行情，计算各裸 expr 叶子的当日值，消除逐股 SQL。"""
         out = {e["expr"]: {} for e in exprs}
-        for code in codes:
-            bars = self.repo.get_bars(code, run_date, adjust="qfq")
-            if bars.empty:
-                continue
+        bars_all = self.ind._bulk_qfq_bars(codes, run_date, self.ind._max_lb)
+        for code, bars in bars_all.groupby("code", sort=False):
+            bars = bars.reset_index(drop=True)
             ctx = {
                 "C": bars["close"], "O": bars["open"], "H": bars["high"], "L": bars["low"],
                 "V": bars["volume"].astype(float), "TURN": bars["turnover_rate"].astype(float),
@@ -96,7 +91,8 @@ class ScreenEngine:
         snap = self._snapshot(run_date, universe)
         if snap.empty:
             return pd.DataFrame(columns=["code", "hit"])
-        cols, exprs = collect_leaves(ast)
+        _, exprs = collect_leaves(ast)
+        self.ind.attach_columns(snap, collect_indicator_leaves(ast), run_date)
         expr_series = self._eval_exprs(exprs, run_date, list(snap.index)) if exprs else {}
 
         def eval_leaf(leaf: dict) -> pd.Series:

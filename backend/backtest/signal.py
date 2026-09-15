@@ -18,8 +18,8 @@ from datetime import date
 
 import pandas as pd
 
-from backend.common.logging import get_logger
 from backend.backtest.forward import compute_forward_returns
+from backend.common.logging import get_logger
 from backend.scoring.model import ScoreModel
 from backend.storage.duckdb_client import get_client
 
@@ -47,21 +47,10 @@ class SignalAnalyzer:
         snap = snap.copy()
         snap["trade_date"] = pd.to_datetime(snap["trade_date"])
         if score_profile:
-            from backend.indicators.definition import IndicatorDefRepo
             from backend.scoring.score_profile import ScoreProfileModel
-            repo = IndicatorDefRepo(self.c)
-            for it in score_profile.get("items", []):
-                key = it.get("indicator")
-                if not key or key in snap.columns:
-                    continue
-                d = repo.get(key)
-                if d and d.get("kind") == "expr":
-                    rng = self.ind.eval_expr_indicator_range(d["expression"], it.get("params"), d.get("params"),
-                                                             date_start, date_end)
-                    if not rng.empty:
-                        rng = rng.rename(columns={"value": key})
-                        rng["trade_date"] = pd.to_datetime(rng["trade_date"])
-                        snap = snap.merge(rng, on=["code", "trade_date"], how="left")
+            snap = self.ind.attach_range_columns(
+                snap, score_profile.get("items", []), date_start, date_end
+            )
             scorer: object = ScoreProfileModel(score_profile)
         else:
             scorer = self.model
@@ -95,7 +84,7 @@ class SignalAnalyzer:
 
         def cell(sub: pd.DataFrame, n: int, x: float) -> dict:
             ev = sub[sub[f"eval_{n}"]]
-            nn = int(len(ev))
+            nn = len(ev)
             if nn == 0:
                 return {"hit_rate": None, "n": 0}
             return {"hit_rate": round(float((ev[f"fwd_ret_{n}"] >= x).mean()), 4), "n": nn}
@@ -110,7 +99,7 @@ class SignalAnalyzer:
         by_grade: dict[str, dict] = {}
         for grade in _GRADES:
             sub = df[df["grade"] == grade]
-            entry: dict = {"n_signals": int(len(sub))}
+            entry: dict = {"n_signals": len(sub)}
             for n in horizons:
                 ev_n = sub[sub[f"eval_{n}"]]
                 entry[f"avg_fwd_ret_{n}"] = (
@@ -132,7 +121,7 @@ class SignalAnalyzer:
             "model_id": "default", "horizons": horizons,
             "thresholds": [round(x, 4) for x in thresholds],
             "min_samples": min_samples,
-            "total_signals": int(len(df)),
+            "total_signals": len(df),
             "base_rate": base,
             "by_grade": by_grade,
             "grades_order": _GRADES,

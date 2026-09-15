@@ -28,9 +28,9 @@ class ScreenScoreService:
     def __init__(self, client=None, *, tenant_id: str | None = None,
                  owner_user_id: str | None = None):
         self.c = client or get_client()
+        from backend.auth.context import get_current_owner
         from backend.storage.asset_repository import AssetRepository
         from backend.storage.ddl import init_db
-        from backend.auth.context import get_current_owner
         init_db(self.c)
         _ctx_t, _ctx_o = get_current_owner()
         self.tenant_id = tenant_id or _ctx_t
@@ -91,7 +91,10 @@ class ScreenScoreService:
             return []
 
         st_codes = self._st_codes(run_date, hits)
-        snap = self.engine._snapshot(run_date, hits)  # 命中票的当日截面
+        # 复用筛选时已计算的全市场指标帧，再切命中集。不能以 hits 重新计算：那会把
+        # rs_pct 从全市场百分位错误改成命中集内部百分位，也会产生一次重复指标计算。
+        full_snap = self.engine._snapshot(run_date, None)
+        snap = full_snap.reindex(hits).dropna(how="all") if not full_snap.empty else full_snap
         scored = self.model.score(snap) if not snap.empty else None
         name_df = self.c.query_df(
             f"SELECT code, name FROM stock_basic WHERE code IN ({','.join('?' * len(hits))})", hits
@@ -154,7 +157,7 @@ class ScreenScoreService:
         is_*（新高/放量/平台突破）为尺度无关布尔，直接由 hfq 序列用算子内联计算
         （v2.0 取消 indicator 落库表，改为动态计算，结果与旧表一致）。
         """
-        from backend.indicators.operators import HHV, MA, REF, is_new_high, platform_breakout
+        from backend.indicators.operators import MA, is_new_high, platform_breakout
 
         s = self.s.indicators
         af = g["adj_factor"].fillna(1.0)

@@ -340,6 +340,21 @@ def test_precompute_matches_screen_engine():
         assert "FLAT.SH" not in pre[date(2024, 1, 8)]
 
 
+def test_precompute_supports_registered_indicator_leaf():
+    """当前筛选页生成的 type=ind AST 在回测预算路径中必须可执行且同口径。"""
+    from backend.backtest.precompute import HitPrecomputer
+    from backend.screening.engine import ScreenEngine
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        D = [date(2024, 1, d) for d in (2, 3, 4, 5, 8)]
+        rows = [(d, 10, 10, 10, 10, 10) for d in D]
+        _seed_one_stock(c, "A.SH", rows, rs=80)
+        ast = {"type": "ind", "key": "turnover_rate", "cmp": ">=", "value": 5}
+        pre = HitPrecomputer(c).precompute(ast, D[1], D[-1])
+        for day in D[1:]:
+            assert pre.get(day, set()) == set(ScreenEngine(c).run_hits(ast, day))
+
+
 def test_engine_no_same_day_sell_then_rebuy():
     """当日触发卖出的票，当日不得被再次买回（防同日 churn；调仓与卖出规则的交互）。"""
     with DuckDBClient(db_path=":memory:") as c:

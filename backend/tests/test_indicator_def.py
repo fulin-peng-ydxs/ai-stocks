@@ -216,3 +216,44 @@ def test_custom_indicator_in_scoring_end_to_end():
         out = ScoreProfileModel({"items": items}).score(snap)
         assert out.loc["RISE.SH", "total_score"] == 100.0   # 连涨满足→100
         assert out.loc["FLAT.SH", "total_score"] == 0.0
+
+
+def test_same_expression_indicator_supports_multiple_parameter_sets():
+    """同一表达式指标在一个方案中使用不同参数时，取值不能被首个实例覆盖。"""
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        IndicatorDefRepo(c).seed_builtins()
+        target = _seed_stock(c, "RISE.SH", [10 + i * 0.3 for i in range(40)])
+        eng = IndicatorEngine(c)
+        snap = eng.wide_snapshot(target, target).set_index("code")
+        items = [
+            {"indicator": "consec_up", "params": {"n": 5}, "weight": 0.5,
+             "scoring": {"type": "bool"}},
+            {"indicator": "consec_up", "params": {"n": 50}, "weight": 0.5,
+             "scoring": {"type": "bool"}},
+        ]
+        eng.attach_columns(snap, items, target)
+        out = ScoreProfileModel({"items": items}).score(snap)
+        assert out.loc["RISE.SH", "total_score"] == 50.0
+
+
+def test_score_snapshot_hash_tracks_custom_definition_and_market_revision():
+    from backend.scoring.snapshot import _current_param_hash
+
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        repo = IndicatorDefRepo(c)
+        repo.seed_builtins()
+        repo.save_custom("my_signal", "自定义", "bool", "C > MA(C, 5)")
+        profile = {"items": [{"indicator": "my_signal"}]}
+        initial = _current_param_hash(c, profile)
+
+        repo.save_custom("my_signal", "自定义", "bool", "C > MA(C, 10)")
+        definition_changed = _current_param_hash(c, profile)
+        assert definition_changed != initial
+
+        c.execute(
+            "INSERT INTO data_update_log VALUES "
+            "(nextval('seq_update_log'),'daily_bar','test',NULL,NULL,1,'success','',current_timestamp)"
+        )
+        assert _current_param_hash(c, profile) != definition_changed

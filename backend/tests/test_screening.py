@@ -7,7 +7,12 @@ import pandas as pd
 import pytest
 
 from backend.screening.condition import ConditionError, eval_ast, validate_ast
-from backend.screening.expression import ExprError, eval_expr, validate_expr
+from backend.screening.expression import (
+    ExprError,
+    eval_expr,
+    validate_expr,
+    validate_scale_invariant_expr,
+)
 
 
 def _ctx(n=10):
@@ -72,6 +77,23 @@ def test_unknown_func_blocked():
 def test_unknown_var_at_eval():
     with pytest.raises(ExprError):
         eval_expr("ZZZ > 1", _ctx())
+
+
+@pytest.mark.parametrize("expr", [
+    "C > O",
+    "C / REF(C,1) - 1 >= 0.05",
+    "MA(C,20) >= REF(MA(C,20),5)",
+    "V < MA(V,5) * 0.7",
+    "COUNT(C > REF(C,1),5) == 5",
+])
+def test_scale_invariant_expr_accepts_relative_conditions(expr):
+    validate_scale_invariant_expr(expr)
+
+
+@pytest.mark.parametrize("expr", ["C > 50", "MA(C,20) >= 10", "C + TURN > 20"])
+def test_scale_invariant_expr_rejects_absolute_price_conditions(expr):
+    with pytest.raises(ExprError, match="价格|量纲"):
+        validate_scale_invariant_expr(expr)
 
 
 # ── 条件 AST 校验 ──
@@ -207,3 +229,45 @@ def test_preset_profiles_valid():
     assert len(PRESET_PROFILES) == 5
     for p in PRESET_PROFILES:
         validate_ast(p["expression"])  # 不抛错
+
+
+def test_screen_scored_reuses_full_market_snapshot_for_rs(monkeypatch):
+    """筛选后评分必须切全市场快照，不能对子集重算 RS 百分位。"""
+    from backend.services.screen_score import ScreenScoreService
+    from backend.services.stock_board_correlation import StockBoardCorrelationService
+
+    class FakeEngine:
+        def __init__(self):
+            self.universes = []
+
+        def _snapshot(self, run_date, universe):
+            self.universes.append(universe)
+            return pd.DataFrame({"rs_pct": [99.0, 60.0]}, index=["A.SH", "B.SH"])
+
+        def run_ast(self, expression, run_date):
+            self._snapshot(run_date, None)
+            return pd.DataFrame({"code": ["A.SH", "B.SH"], "hit": [True, True]})
+
+    class FakeModel:
+        def score(self, snap):
+            return pd.DataFrame({
+                "total_score": snap["rs_pct"],
+                "grade": ["龙头候选", ""],
+            }, index=snap.index)
+
+    class FakeClient:
+        @staticmethod
+        def query_df(sql, params):
+            return pd.DataFrame({"code": params, "name": params})
+
+    service = ScreenScoreService.__new__(ScreenScoreService)
+    service.engine = FakeEngine()
+    service.model = FakeModel()
+    service.c = FakeClient()
+    service._st_codes = lambda run_date, codes: set()
+    monkeypatch.setattr(StockBoardCorrelationService, "attach_related_boards", lambda *args: None)
+
+    rows = service.screen_scored(run_date=pd.Timestamp("2026-01-05").date(), expression={})
+
+    assert service.engine.universes == [None, None]
+    assert [row["total_score"] for row in rows] == [99.0, 60.0]

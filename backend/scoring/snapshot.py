@@ -26,10 +26,34 @@ log = get_logger("scoring.snapshot")
 _COLS = ["code", "total_score", "grade", "rank", "sub_scores"]
 
 
-def _current_param_hash() -> str:
-    """当前指标计算参数指纹（与 IndicatorEngine 内存缓存同源）。"""
+def _current_param_hash(market=None, profile: dict | None = None) -> str:
+    """当前指标参数与评分方案所引用自定义定义的联合指纹。"""
     from backend.indicators.compute import build_params, param_hash
-    return param_hash(build_params())
+
+    params = build_params()
+    client = market or get_client()
+    data_revision = client.query_df(
+        "SELECT max(id) AS revision FROM data_update_log "
+        "WHERE table_name IN ('daily_bar','daily_metrics') AND status IN ('success','partial')"
+    ).iloc[0]["revision"]
+    if pd.notna(data_revision):
+        # 正常行情/市值更新会留下日志；将版本并入指纹，让历史修订自动淘汰旧榜单。
+        params["market_data_revision"] = int(data_revision)
+    custom_keys = sorted({
+        str(item.get("indicator"))
+        for item in (profile or {}).get("items", [])
+        if item.get("indicator")
+    })
+    if custom_keys:
+        placeholders = ",".join("?" * len(custom_keys))
+        definitions = client.query_df(
+            "SELECT key,dtype,kind,expression,params FROM indicator_def "
+            f"WHERE is_builtin=false AND key IN ({placeholders}) ORDER BY key",
+            custom_keys,
+        )
+        if not definitions.empty:
+            params["custom_definitions"] = definitions.fillna("").to_dict("records")
+    return param_hash(params)
 
 
 def score_day(c, run_date: date, profile: dict) -> pd.DataFrame:
@@ -104,7 +128,7 @@ class ScoreSnapshotRepo:
         if not prof:
             return pd.DataFrame(columns=_COLS)
         version = int(prof.get("version") or 1)
-        ph = _current_param_hash()
+        ph = _current_param_hash(self.mkt, prof)
         st_version = self._st_input_version(run_date)
         if self._fresh(run_date, profile_id, version, ph, st_version):
             rows = self._read_board(run_date, profile_id, version)
@@ -125,7 +149,7 @@ class ScoreSnapshotRepo:
         version = int(prof.get("version") or 1)
         st_version = self._st_input_version(run_date)
         if not self._fresh(
-            run_date, profile_id, version, _current_param_hash(), st_version
+            run_date, profile_id, version, _current_param_hash(self.mkt, prof), st_version
         ):
             return pd.DataFrame(columns=_COLS)
         rows = self.pg.query_df(
@@ -155,11 +179,12 @@ class ScoreSnapshotRepo:
 
     def is_fresh(self, run_date: date, profile_id: str, version: int) -> bool:
         """Return whether the stored snapshot matches every current read-time input."""
+        profile = self._profile(profile_id)
         return self._fresh(
             run_date,
             profile_id,
             version,
-            _current_param_hash(),
+            _current_param_hash(self.mkt, profile),
             self._st_input_version(run_date),
         )
 

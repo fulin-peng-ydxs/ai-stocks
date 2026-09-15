@@ -25,7 +25,7 @@
 
 **稳健性测试**。`backend/backtest/robustness.py` 复用 `BacktestService.run_strategy(persist=False)` 不污染历史：`param_sweep` 固定其它参数扫单参数多取值看绩效是否平滑（`robustness.py:33`）；`in_out_sample` 区间一分为二做样本内外切分防过拟合（`robustness.py:42`）；同期基准（默认中证 500，可选沪深 300、上证指数、科创 50、深证成指、创业板指）即天然对照组，超额即相对全市场的优势。
 
-**性能优化**。① 筛选表达式批量预计算 `HitPrecomputer`（`backend/backtest/precompute.py`）：把 AST 的 expr 叶子在全历史一次性算成 `(code,date)->bool` 查找表（O(股) 次而非 O(股×日) 次），仅对尺度不变的相对条件成立，含绝对价比较的 expr 不适用（`precompute.py:10`）。② 策略回测与分层分析共享同一 `IndicatorEngine` 实例，区间指标快照只算一遍（`engine.py:40`、`backtest_service.py:155`）。
+**性能优化**。① `HitPrecomputer` 一次批量读取有界历史行情，把 AST 的 expr 叶子算成 `(code,date)->bool` 查找表，并通过 `attach_range_columns` 一次补齐所有注册表 `ind` 叶子；绝对价格阈值表达式会在运行前按价格量纲明确拒绝，避免统一 qfq 基准导致静默误判。② 策略回测、买卖树和分层分析共享同一 `IndicatorEngine` 实例，区间快照及同一 `key+params` 表达式实例只计算一次。
 
 ## 业务架构
 
@@ -163,8 +163,7 @@ flowchart LR
 |------|--------|------|------|
 | <span style="color:#dc2626">●</span> 高 | 回测 API 仍为同步执行（`backend/api/backtest.py:7`） | 长区间/大 universe 下 HTTP 可能超时，并发回测会受 DuckDB 单写锁影响 | 长区间先缩小样本验证；后续应改异步任务 + 进度轮询 |
 | <span style="color:#f59e0b">●</span> 中 | Baostock ST 源端临时不可用或纠错 | ST 刷新保持 `failed` 会阻断新回测；源端纠错会改变历史撮合结果 | 依赖自动重连/任务续跑恢复；回测参数保存 ST 数据版本，事实变更后重新运行并对比 |
-| <span style="color:#f59e0b">●</span> 中 | 同一指标 key 在评分项+买卖树中只取首次参数（`engine.py:100`） | 多参数同 key 方案可能静默取错参数 | 同一方案内避免同 key 多参数混用，必要时拆自定义指标 |
-| <span style="color:#f59e0b">●</span> 中 | `HitPrecomputer` 不适合绝对价比较 expr（`precompute.py:10`） | 如 `C>50` 这类条件可能得到错误命中 | 表达式预计算前增加运行期校验；当前用约定规避 |
+| <span style="color:#f59e0b">●</span> 中 | 回测裸表达式不接受绝对价格阈值 | `C>50` 受前复权基准影响，无法安全地跨日一次批算 | 改用价格比率、同量纲比较，或沉淀为具备明确点时口径的注册表指标 |
 | <span style="color:#f59e0b">●</span> 中 | 开盘可成交性只近似涨跌停，不建模盘中流动性 | 大额或冷门股可能高估可成交规模 | 对冷门股策略降低仓位假设，后续加入成交量约束 |
 | <span style="color:#f59e0b">●</span> 中 | 信号质量分档固定为三档（`signal.py:28`） | 自定义评分方案的新分档名不会进入分层统计 | 自定义方案沿用既有分档，或扩展分层配置 |
 | <span style="color:#16a34a">●</span> 低 | 前向收益使用窗口内最高价 | 命中率代表"最高摸到"，不等于可实现收益 | 只用于评分预测力比较，不作为收益预期 |

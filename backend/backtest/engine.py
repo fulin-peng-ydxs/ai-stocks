@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from typing import ClassVar
 
 import pandas as pd
 
@@ -126,26 +127,8 @@ class BacktestEngine:
 
     # ── M2.5：评分方案 + 买卖方案（区间向量化）─────────────────────
     def _attach_range_exprs(self, snap: pd.DataFrame, items: list[dict], lo: date, hi: date) -> pd.DataFrame:
-        """为区间快照 snap（含 code/trade_date 列）补齐表达式型指标列（列名=指标 key）。
-
-        注：同一指标 key 在本次回测的评分项+买卖树中只取一组参数（首次出现），多参数同 key 暂不支持。
-        """
-        from backend.indicators.definition import IndicatorDefRepo
-        repo = IndicatorDefRepo(self.c)
-        seen: set[str] = set()
-        for it in items:
-            key = it.get("indicator")
-            if not key or key in snap.columns or key in seen:
-                continue
-            seen.add(key)
-            d = repo.get(key)
-            if d and d.get("kind") == "expr":
-                rng = self.ind.eval_expr_indicator_range(d["expression"], it.get("params"), d.get("params"), lo, hi)
-                if not rng.empty:
-                    rng = rng.rename(columns={"value": key})
-                    rng["trade_date"] = pd.to_datetime(rng["trade_date"])
-                    snap = snap.merge(rng, on=["code", "trade_date"], how="left")
-        return snap
+        """批量补齐区间表达式指标，同 key 不同参数也按独立实例求值。"""
+        return self.ind.attach_range_columns(snap, items, lo, hi)
 
     def _tree_hits(self, snap: pd.DataFrame, tree: dict) -> dict:
         """条件树在区间快照上逐行求值 → {Timestamp: set(命中 code)}。"""
@@ -157,7 +140,9 @@ class BacktestEngine:
                            "hit": hit.values})
         return {d: set(g.loc[g["hit"], "code"]) for d, g in hh.groupby("trade_date", sort=False)}
 
-    _CMP_SYM = {">=": "≥", "<=": "≤", ">": ">", "<": "<", "==": "=", "!=": "≠", "between": "介于"}
+    _CMP_SYM: ClassVar[dict[str, str]] = {
+        ">=": "≥", "<=": "≤", ">": ">", "<": "<", "==": "=", "!=": "≠", "between": "介于",
+    }
 
     def _ind_name_map(self) -> dict:
         df = self.c.query_df("SELECT key, name_cn FROM indicator_def")

@@ -1,6 +1,6 @@
 # 配置定义（统一基座）
 
-> 技术指标是系统唯一的原子定义，买卖方案、评分方案、筛选条件都引用指标 key 组合；指标全部动态实时计算（无落库值表），方案按"日期+方案+版本"做版本化存储与惰性物化。
+> 技术指标是系统唯一的原子定义，买卖方案、评分方案、筛选条件都引用指标 key 组合；指标值按请求日期从行情动态计算（无指标值表），已保存评分方案的榜单结果按“日期+方案+版本”惰性物化并复用。
 
 ---
 
@@ -20,10 +20,11 @@
 - **启动校准**：FastAPI 存储自检在 DuckDB schema 就绪后调用 `seed_builtins()`，每次启动对齐整套 `REGISTRY`，不是只补本次新增 key。全新库会持久化全部 builtin；存量库会刷新代码管理的名称、类型、表达式、参数和描述，保留管理员明确设置的 `enabled/categories`，旧库 `NULL` 则回退注册表默认值；元数据未变化时跳过 UPDATE，避免启动写放大和无意义刷新 `updated_at`。
 - **MACD 五原子**：`macd_diff`、`macd_dea`、`macd_hist` 为 `number`，`macd_golden_cross`、`macd_dead_cross` 为可空 `bool`；固定参数 12/26/9，主分类“趋势”，预设分类“趋势/动量”，默认启用且不可删除。单股和全市场向量化路径使用同一严格后向 EMA/交叉口径，五列进入 `_IND_COLS` 后由筛选、评分和买卖条件通用求值链直接复用，不建立 MACD 专属下游分支。
 
-### 2. param_hash 与单次运行内存缓存
+### 2. 指标指纹与分层内存缓存
 
-- `build_params`（compute.py:27-40）从 `settings.indicators` 抽取参与计算的全局参数（MA/HHV 周期、放量倍数、平台窗口、换手健康区间等），`param_hash`（compute.py:43-46）对其 JSON 取 MD5 前 12 位作为参数版本指纹。
-- `IndicatorEngine`（engine.py:55-64）在 `__init__` 算出 `self.phash`，作为单次运行内存缓存 key 的一部分：`range_frame` 的缓存键是 `(codes_key, lo, hi, phash)`（engine.py:135），用 `OrderedDict` 做 LRU（容量 `_CACHE_MAX=6`，engine.py:46/126-129）。参数一变 → phash 变 → 缓存不命中 → 自动重算。这是"改全局指标参数即重算"的底层机制。
+- `build_params` 从 `settings.indicators` 抽取参与计算的全局参数（MA/HHV 周期、RS 窗口、放量倍数、平台窗口、换手健康区间等），`param_hash` 对其规范化 JSON 生成参数版本指纹；任一计算参数变化都会形成新指纹。
+- `IndicatorEngine.range_frame` 先查实例内 LRU，再查进程内共享小结果 LRU。共享层仅保存不超过 10 万行的文件库结果，`:memory:` 测试库不共享；缓存键包含数据库路径、`daily_bar/daily_metrics` 最近成功或部分成功的数据更新修订号、查询范围与参数指纹。因此正常采集或补数写入更新日志后，新请求不会复用旧行情结果。
+- 单次筛选、评分、买卖预览和回测会复用同一个 `IndicatorEngine`；表达式型指标先按 `key+params` 去重，再一次批量读取所需历史序列。缓存返回副本，避免调用方修改共享对象。
 - 全市场算指标用 `_bulk_qfq_bars`（engine.py:79-104）一条窗口 SQL 取每股末段 lookback 行（替代逐股 5000+ 次查询），按各股末日因子前复权（`COALESCE(adj_factor_clean, adj_factor)`）；RS 通过 `_cross_sectional_rs`（engine.py:115-124）按 `trade_date` 对 W 日收益做横截面百分位排名。
 
 ### 3. 方案的版本化存储
@@ -70,8 +71,8 @@
  score_snapshot   backtest        screen_result
 ```
 
-- **统一解析入口**：评分项叶子、买卖条件叶子都通过 `resolve_indicator(indicator, params, snap)`（score_profile.py:38-62）取值——优先取快照同名列（含已 attach 的表达式型/自定义列），其次内置别名（`_ALIASES`）与 `ma`/`hhv` 带参映射。买卖条件树 `eval_conditions`（trade_profile.py:43-56）复用同一解析，因此天然支持内置 + 自定义指标。
-- **表达式型指标补列**：评分/筛选/买卖在打分前调 `IndicatorEngine.attach_columns`（engine.py:269-282），对条件中用到、但快照里没有的表达式型指标，渲染参数后逐股求值补成列（列名=指标 key），再供按列读取。
+- **统一解析入口**：评分项、买卖条件和筛选 `ind` 叶子都通过 `resolve_indicator(indicator, params, snap)` 取值——优先取 `key+params` 对应的内部列，其次取兼容同名列，再解析内置别名与 `ma`/`hhv` 带参映射。
+- **表达式型指标补列**：评分/筛选/买卖在求值前调用 `IndicatorEngine.attach_columns` 或区间版 `attach_range_columns`。同一批请求只加载一次历史行情；同一 key 的不同参数写入不同内部列，因此可以在一个方案中同时引用多个参数实例而不会相互覆盖。
 - **方案校验依赖指标目录**：`ScoreProfileRepo.save` / `TradeProfileRepo.save` 保存前从 `IndicatorDefRepo` 取全部已知 key 作为 `known_keys`（score_profile.py:178-180、trade_profile.py:136-138），校验方案里引用的指标都存在；评分项还校验权重为正、打分方式 ∈ `bool/band/linear`。
 
 ### 三种评分打分方式（score_profile.py:65-85）
@@ -99,7 +100,7 @@
 | 配置生效 | `backend/api/config.py`、`backend/api/data_admin.py` | YAML 基线 reload 与 Web 系统设置；加载优先级见 [environment-configuration.md](environment-configuration.md) |
 
 - 评分试算 `/api/score-profiles/run`（score_profiles.py:56-107）：已保存方案走**评分快照层**（`ScoreSnapshotRepo.get_board`，命中即用/失效重算），未保存的 inline 方案当场 `score_day` 实时算不入库。
-- 评分快照 `ScoreSnapshotRepo` 按 `(tenant_id, owner_user_id, profile_id, profile_version, trade_date)` 惰性物化到 `score_snapshot`+`score_snapshot_meta`（结果归方案 owner 缓存槽，可见者共读，详见 screening-and-board.md「评分快照惰性物化与失效」）：读取同时比较 `stale`、指标 `param_hash` 和当日 `st_input_version`；显式维护只标 stale，版本不一致只让当前缓存不命中，均沿用同一锁内重算入口。
+- 评分快照 `ScoreSnapshotRepo` 按 `(tenant_id, owner_user_id, profile_id, profile_version, trade_date)` 惰性物化到 `score_snapshot`+`score_snapshot_meta`（结果归方案 owner 缓存槽，可见者共读，详见 screening-and-board.md「评分快照惰性物化与失效」）。读取同时比较 `stale`、综合计算指纹和当日 `st_input_version`；综合指纹覆盖全局指标参数、行情/指标输入更新修订号及该方案引用的自定义指标定义。
 - 三类方案 `/copy` 请求体可传 `version`；后端在可见性校验后按来源真实 `tenant_id + owner_user_id + id + version` 读取版本快照，副本固定从 v1、private 开始。只读公开方案的历史版本操作只能“复制此版本为我的”，不得把历史内容载入为可写原方案。
 - 配置页和筛选页的外部“加载查看”状态不进入 mine 数组。行内“×”只移除临时预览，不调用删除接口；方案删除只由编辑区右上角独立按钮承接。移除事件以临时项身份为准，不依赖 `readonly`（本人名下系统内置资产也可能可编辑）；收到事件后先取消在途详情并清空方案身份、参数、只读态、试算/筛选结果和错误，再刷新 mine，刷新失败仍保持空白新建态。
 
@@ -225,13 +226,13 @@ Web 系统设置当前只开放数据源限流/并发/容错、回测成本、�
 1. 前端编辑指标项（indicator + params + weight + scoring）与分档阈值 → `POST /api/score-profiles`。
 2. `ScoreProfileRepo.save`（score_profile.py:176-208）`validate_profile` 校验（权重为正、打分方式合法、指标可解析或为已知自定义）→ 版本递增 → 写主表 + version 表。
 3. 试算：`POST /api/score-profiles/run`（已保存走快照层、未保存实时算）→ 返回 Top N（含分项达标分 `sub_scores`）。
-4. 每日榜单 / 回测排名 / 评分验证统一走 `ScoreSnapshotRepo`，口径一致。
+4. 每日榜单复用 `ScoreSnapshotRepo`；回测排名与评分验证按区间动态计算，但复用同一 `wide_snapshot`、表达式补列和 `ScoreProfileModel` 口径，不重复读取已完成的同区间指标快照。
 
 ### 改参即时生效
 
 - **白名单系统参数**（数据源并发/限流/容错、回测成本、认证防滥用、审计保留期）：前端表单保存后按 [environment-configuration.md](environment-configuration.md) 的 PG 覆盖层规则生效。
 - **YAML 基线参数**（股票池、市值边界、TopN、指标全局周期等，含成段中文注释）：按 [environment-configuration.md](environment-configuration.md) 的 YAML reload 规则刷新。
-- **全局指标参数变更**：参数进 `build_params` → `param_hash` 变 → `IndicatorEngine` 单次运行缓存键失效；已物化评分快照在下次读取时也会因 meta 指纹不匹配而按需重算。需要提前批量维护、或变化不在现有指纹内时，才由用户执行「结果维护」或配置调度。
+- **指标输入变化**：全局参数（含 RS 窗口）、正常行情更新修订或方案引用的自定义指标定义变化，都会改变缓存/评分快照指纹；下次读取自动按需重算。只有绕过正式采集流程直接修改底层表、或需要提前批量维护时，才执行「结果维护」或重启进程。
 
 ---
 
@@ -240,7 +241,7 @@ Web 系统设置当前只开放数据源限流/并发/容错、回测成本、�
 | 等级 | 风险点 | 影响 | 建议 |
 |------|--------|------|------|
 | <span style="color:#dc2626">●</span> 高 | 已实例化服务可能持有旧配置对象 | 长任务或已创建的领域服务实例不会自动重建，可能继续使用创建时的 effective settings | 配置改动后新任务/新请求生效；需要严格切换口径时重启服务或重建相关服务实例 |
-| <span style="color:#f59e0b">●</span> 中 | 部分结果输入没有读取版本 | `param_hash` 与 ST 版本能让所读榜单自愈，但其它行情/基础资料变化不会自动批量失效历史结果 | 按影响范围显式执行「结果维护」或配置调度；新增关键输入时同步扩展缓存指纹 |
+| <span style="color:#f59e0b">●</span> 中 | 绕过更新日志直接改行情表 | 进程共享缓存与榜单指纹无法感知未登记的手工 SQL，可能短时读取旧结果 | 行情变更统一走采集/修复任务；确需手工处理后执行结果维护并重启服务 |
 | <span style="color:#f59e0b">●</span> 中 | 启动 seed 覆盖整套 builtin | 首次启用时会持久化全部注册表定义，不只是新指标；回滚旧代码前若下游已引用新 key 会无法计算 | 发布前备份 `indicator_def` 并对账完整 builtin；回滚优先停用新增定义，不直接删除 |
 | <span style="color:#f59e0b">●</span> 中 | 评分指标解析仅支持固定周期映射 | 非预设 `ma/hhv` 周期在试算时失败（score_profile.py:48-56） | 任意周期先走表达式型指标 |
 | <span style="color:#f59e0b">●</span> 中 | RS 指标不可逐方案调参 | `rs_pct` 使用全局窗口，方案里传参无效 | 需要多窗口 RS 时新增独立表达式/内置指标 |

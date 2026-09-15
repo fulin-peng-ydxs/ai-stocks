@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ast
 import operator as pyop
+from itertools import pairwise
 
 import pandas as pd
 
@@ -51,9 +52,69 @@ def validate_expr(expr: str) -> None:
     """仅做语法/白名单校验（不需数据），非法抛 ExprError。"""
     try:
         tree = ast.parse(expr, mode="eval")
-    except SyntaxError as e:  # noqa: BLE001
+    except SyntaxError as e:
         raise ExprError(f"表达式语法错误: {e}") from e
     _check(tree.body)
+
+
+def validate_scale_invariant_expr(expr: str) -> None:
+    """校验表达式是否不受价格序列整体缩放影响。
+
+    回测区间批算使用统一 qfq 基准；只有比较两侧价格量纲一致时，结果才与逐日
+    rebase 一致。比如 ``C > O``、``C / REF(C, 1) > 1.05`` 合法，``C > 50``
+    会因复权基准改变而失真，必须拒绝。
+    """
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError as exc:
+        raise ExprError(f"表达式语法错误: {exc}") from exc
+    _check(tree.body)
+    _price_dimension(tree.body)
+
+
+def _price_dimension(node) -> int:
+    """返回价格缩放指数；比较/布尔表达式返回 0，量纲不一致时抛错。"""
+    if isinstance(node, ast.Constant):
+        return 0
+    if isinstance(node, ast.Name):
+        return 1 if node.id in {"C", "O", "H", "L"} else 0
+    if isinstance(node, ast.UnaryOp):
+        return _price_dimension(node.operand)
+    if isinstance(node, ast.BoolOp):
+        for value in node.values:
+            if _price_dimension(value) != 0:
+                raise ExprError("布尔运算只能连接条件表达式")
+        return 0
+    if isinstance(node, ast.Compare):
+        dims = [_price_dimension(node.left)]
+        dims.extend(_price_dimension(comp) for comp in node.comparators)
+        if any(left != right for left, right in pairwise(dims)):
+            raise ExprError(
+                "回测不支持受复权基准影响的绝对价格比较；"
+                "请改用价格比率、同量纲比较或注册表指标"
+            )
+        return 0
+    if isinstance(node, ast.BinOp):
+        left = _price_dimension(node.left)
+        right = _price_dimension(node.right)
+        if isinstance(node.op, (ast.Add, ast.Sub)):
+            if left != right:
+                raise ExprError("加减运算两侧价格量纲必须一致")
+            return left
+        if isinstance(node.op, ast.Mult):
+            return left + right
+        if isinstance(node.op, ast.Div):
+            return left - right
+        if isinstance(node.op, (ast.BitAnd, ast.BitOr)):
+            if left != 0 or right != 0:
+                raise ExprError("布尔运算只能连接条件表达式")
+            return 0
+    if isinstance(node, ast.Call):
+        name = node.func.id
+        if name == "COUNT":
+            return 0
+        return _price_dimension(node.args[0]) if node.args else 0
+    raise ExprError(f"无法判断表达式价格量纲: {type(node).__name__}")
 
 
 def _check(node) -> None:

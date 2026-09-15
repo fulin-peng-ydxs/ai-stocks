@@ -28,6 +28,13 @@ def test_ma_backward_only():
     assert ma.iloc[2] == 2.0 and ma.iloc[4] == 4.0      # 仅用过去+当日
 
 
+def test_rs_window_participates_in_indicator_hash():
+    params = build_params()
+    assert params["rs_window"] > 0
+    changed = {**params, "rs_window": params["rs_window"] + 1}
+    assert param_hash(params) != param_hash(changed)
+
+
 def test_ema_matches_pandas_recursive_formula_and_preserves_invalid_rows():
     x = pd.Series([1.0, 2, 3, 4, 5, np.nan, 7, np.inf, 9])
     actual = op.EMA(x, 3)

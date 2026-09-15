@@ -67,7 +67,7 @@ def _latest_st_version_matched_date(rows: pd.DataFrame, market=None) -> date | N
     if rows.empty:
         return None
     service = StockSTStatusService(market or get_client())
-    expected_param_hash = _current_param_hash()
+    expected_param_hash = _current_param_hash(market or get_client())
     trade_dates = [
         trade_date
         for value in rows["trade_date"].tolist()

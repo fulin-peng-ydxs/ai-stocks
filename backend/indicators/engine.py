@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from datetime import date
+from threading import RLock
 
 import pandas as pd
 
@@ -45,6 +46,10 @@ _IND_COLS = [
 ]
 
 _CACHE_MAX = 6
+_SHARED_CACHE_MAX = 12
+_SHARED_CACHE_MAX_ROWS = 100_000
+_SHARED_CACHE: OrderedDict[tuple, pd.DataFrame] = OrderedDict()
+_SHARED_CACHE_LOCK = RLock()
 
 
 def _as_date(d) -> date:
@@ -61,8 +66,14 @@ class IndicatorEngine:
         self.params = build_params(self.s)
         self.phash = param_hash(self.params)
         self.rs_window = self.s.indicators.rs_window
+        revision = self.c.query_df(
+            "SELECT max(id) AS revision FROM data_update_log "
+            "WHERE table_name IN ('daily_bar','daily_metrics') "
+            "AND status IN ('success','partial')"
+        ).iloc[0]["revision"]
+        self.input_revision = None if pd.isna(revision) else int(revision)
         # 单次运行缓存：(codes_key, lo, hi) -> 指标帧
-        self._cache: "OrderedDict[tuple, pd.DataFrame]" = OrderedDict()
+        self._cache: OrderedDict[tuple, pd.DataFrame] = OrderedDict()
 
     # 覆盖最长指标 lookback（MA250/HHV480）+ RS 窗口 + buffer
     @property
@@ -129,6 +140,33 @@ class IndicatorEngine:
         while len(self._cache) > _CACHE_MAX:
             self._cache.popitem(last=False)
 
+    def _shared_cache_key(self, key: tuple) -> tuple | None:
+        """真实文件库允许跨请求复用小结果；内存测试库隔离，避免实例间串数据。"""
+        if str(getattr(self.c, "db_path", "")) == ":memory:":
+            return None
+        return (str(getattr(self.c, "db_path", "")), self.input_revision, *key)
+
+    def _shared_cache_get(self, key: tuple) -> pd.DataFrame | None:
+        shared_key = self._shared_cache_key(key)
+        if shared_key is None:
+            return None
+        with _SHARED_CACHE_LOCK:
+            frame = _SHARED_CACHE.get(shared_key)
+            if frame is not None:
+                _SHARED_CACHE.move_to_end(shared_key)
+                return frame.copy(deep=True)
+            return None
+
+    def _shared_cache_put(self, key: tuple, frame: pd.DataFrame) -> None:
+        shared_key = self._shared_cache_key(key)
+        if shared_key is None or len(frame) > _SHARED_CACHE_MAX_ROWS:
+            return
+        with _SHARED_CACHE_LOCK:
+            _SHARED_CACHE[shared_key] = frame.copy(deep=True)
+            _SHARED_CACHE.move_to_end(shared_key)
+            while len(_SHARED_CACHE) > _SHARED_CACHE_MAX:
+                _SHARED_CACHE.popitem(last=False)
+
     def range_frame(self, codes: list[str] | None, lo, hi) -> pd.DataFrame:
         """[lo,hi] 区间全市场（或子集）动态指标帧（含横截面 rs_pct）。"""
         lo, hi = _as_date(lo), _as_date(hi)
@@ -137,6 +175,10 @@ class IndicatorEngine:
         if ck in self._cache:
             self._cache.move_to_end(ck)
             return self._cache[ck]
+        shared = self._shared_cache_get(ck)
+        if shared is not None:
+            self._cache_put(ck, shared)
+            return shared
 
         n_days = int(self.c.query_df(
             "SELECT count(DISTINCT trade_date) AS n FROM daily_bar WHERE trade_date BETWEEN ? AND ?",
@@ -172,6 +214,7 @@ class IndicatorEngine:
                 frame = frame.reindex(columns=_IND_COLS)
                 frame["trade_date"] = pd.to_datetime(frame["trade_date"]).dt.date
         self._cache_put(ck, frame)
+        self._shared_cache_put(ck, frame)
         log.info("指标动态计算：%d 只 [%s~%s] → %d 行", n_codes, lo, hi, len(frame))
         return frame
 
@@ -218,6 +261,37 @@ class IndicatorEngine:
                 out[code] = None
         return pd.Series(out)
 
+    def _expression_specs(self, items: list[dict], existing: set[str]) -> list[dict]:
+        """解析并去重本次需要计算的表达式指标，按 key+params 区分实例。"""
+        from backend.indicators.definition import IndicatorDefRepo, render_expression
+        from backend.scoring.score_profile import indicator_value_column
+
+        repo = IndicatorDefRepo(self.c)
+        specs: list[dict] = []
+        seen: set[str] = set()
+        for item in items:
+            key = item.get("indicator")
+            if not key:
+                continue
+            column = indicator_value_column(key, item.get("params"))
+            if column in existing or column in seen:
+                continue
+            definition = repo.get(key)
+            if not definition or definition.get("kind") != "expr":
+                continue
+            if definition.get("is_builtin") and key in existing:
+                # ma5 等内置表达式同时已有统一宽表列，直接复用宽表结果。
+                continue
+            specs.append({
+                "key": key,
+                "column": column,
+                "expression": render_expression(
+                    definition["expression"], item.get("params"), definition.get("params")
+                ),
+            })
+            seen.add(column)
+        return specs
+
     def eval_expr_indicator_range(self, template: str, params: dict | None, param_defs: list[dict] | None,
                                   lo, hi, codes: list[str] | None = None) -> pd.DataFrame:
         """表达式型指标在 [lo,hi] 区间**逐日逐股**求值 → DataFrame[code, trade_date, value]。
@@ -245,7 +319,8 @@ class IndicatorEngine:
             }
             try:
                 val = eval_expr(expr, ctx)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                log.debug("区间表达式指标求值失败 code=%s: %s", code, exc)
                 continue
             vals = val.values if hasattr(val, "values") else val
             td = pd.to_datetime(g["trade_date"])
@@ -270,16 +345,84 @@ class IndicatorEngine:
         return resolve_indicator(key, params, snap.set_index("code"))
 
     def attach_columns(self, snap: pd.DataFrame, items: list[dict], asof) -> pd.DataFrame:
-        """为 snap（index=code）补齐表达式型指标列（列名=指标 key），供评分/筛选按列读取。"""
-        from backend.indicators.definition import IndicatorDefRepo
-        repo = IndicatorDefRepo(self.c)
+        """批量补齐单日表达式指标；一次取行情，并支持同 key 的多组参数。"""
+        from backend.screening.expression import eval_expr
+
         codes = list(snap.index)
-        for it in items:
-            key = it.get("indicator")
-            if not key or key in snap.columns:
-                continue
-            d = repo.get(key)
-            if d and d["kind"] == "expr":
-                s = self._eval_expr_indicator(d["expression"], it.get("params"), d.get("params"), asof, codes)
-                snap[key] = s.reindex(snap.index)
+        specs = self._expression_specs(items, set(snap.columns))
+        if not specs or not codes:
+            return snap
+        bars_all = self._bulk_qfq_bars(codes, _as_date(asof), self._max_lb)
+        values: dict[str, dict[str, object]] = {spec["column"]: {} for spec in specs}
+        for code, group in bars_all.groupby("code", sort=False):
+            group = group.reset_index(drop=True)
+            ctx = {
+                "C": group["close"], "O": group["open"], "H": group["high"],
+                "L": group["low"], "V": group["volume"].astype(float),
+                "TURN": group["turnover_rate"].astype(float),
+            }
+            for spec in specs:
+                try:
+                    result = eval_expr(spec["expression"], ctx)
+                    value = result.iloc[-1] if hasattr(result, "iloc") else result
+                except Exception:  # noqa: BLE001
+                    value = None
+                values[spec["column"]][code] = value
+        for spec in specs:
+            series = pd.Series(values[spec["column"]]).reindex(snap.index)
+            snap[spec["column"]] = series
+            # 保留历史调用方直接读 key 列的兼容行为；统一解析优先读取参数化列。
+            if spec["key"] not in snap.columns:
+                snap[spec["key"]] = series
         return snap
+
+    def attach_range_columns(
+        self, snap: pd.DataFrame, items: list[dict], lo, hi
+    ) -> pd.DataFrame:
+        """批量补齐区间表达式指标；所有指标共享一次历史行情加载与一次合并。"""
+        from backend.screening.expression import eval_expr
+
+        specs = self._expression_specs(items, set(snap.columns))
+        if not specs or snap.empty:
+            return snap
+        lo, hi = _as_date(lo), _as_date(hi)
+        n_days = int(self.c.query_df(
+            "SELECT count(DISTINCT trade_date) AS n FROM daily_bar WHERE trade_date BETWEEN ? AND ?",
+            [lo, hi],
+        ).iloc[0]["n"])
+        bars_all = self._bulk_qfq_bars(None, hi, n_days + self._max_lb)
+        lo_ts, hi_ts = pd.Timestamp(lo), pd.Timestamp(hi)
+        parts: list[pd.DataFrame] = []
+        for code, group in bars_all.groupby("code", sort=False):
+            group = group.reset_index(drop=True)
+            trade_dates = pd.to_datetime(group["trade_date"])
+            mask = ((trade_dates >= lo_ts) & (trade_dates <= hi_ts)).to_numpy()
+            if not mask.any():
+                continue
+            ctx = {
+                "C": group["close"], "O": group["open"], "H": group["high"],
+                "L": group["low"], "V": group["volume"].astype(float),
+                "TURN": group["turnover_rate"].astype(float),
+            }
+            part = pd.DataFrame({
+                "code": code,
+                "trade_date": trade_dates.to_numpy()[mask],
+            })
+            for spec in specs:
+                try:
+                    result = eval_expr(spec["expression"], ctx)
+                    raw = result.to_numpy() if hasattr(result, "to_numpy") else result
+                    part[spec["column"]] = pd.Series(raw).to_numpy()[mask]
+                except Exception:  # noqa: BLE001
+                    part[spec["column"]] = None
+            parts.append(part)
+        if not parts:
+            return snap
+        expr_frame = pd.concat(parts, ignore_index=True)
+        out = snap.copy()
+        out["trade_date"] = pd.to_datetime(out["trade_date"])
+        out = out.merge(expr_frame, on=["code", "trade_date"], how="left")
+        for spec in specs:
+            if spec["key"] not in out.columns:
+                out[spec["key"]] = out[spec["column"]]
+        return out

@@ -4,10 +4,9 @@
 本模块把 AST 的 expr 叶子在**全历史一次性**算成 (code, date)->bool 查找表（O(股) 次），
 再对每个调仓日用预算好的 expr 值 + 当日截面的 col 叶子，按 AST 合并出命中集。
 
-正确性：expr 多为**尺度不变**的相对条件（C>REF(C,1)、C>=HHV(H,720)、COUNT(...)==5），
-对 qfq 基准缩放不变 → 用统一基准（date_end）整段算与逐日 rebase 结果一致，且无未来函数
-（序列只到各日；预算用 ≤date_end 全序列，但每个调仓日只读该日及之前的布尔值）。
-⚠️ 含**绝对价**比较的 expr（如 `C > 50`）非尺度不变，不适用本优化——此类极少且不建议。
+正确性：只接受**尺度不变**的相对条件（C>REF(C,1)、C>=HHV(H,720)、COUNT(...)==5），
+对 qfq 基准缩放不变 → 用统一基准（date_end）整段算与逐日 rebase 结果一致，且无未来函数。
+含绝对价比较的 expr（如 `C > 50`）会在运行前明确拒绝，避免静默产生错误命中。
 """
 
 from __future__ import annotations
@@ -17,8 +16,13 @@ from datetime import date
 import pandas as pd
 
 from backend.common.logging import get_logger
-from backend.screening.condition import collect_leaves, eval_ast, validate_ast
-from backend.screening.expression import eval_expr
+from backend.screening.condition import (
+    collect_indicator_leaves,
+    collect_leaves,
+    eval_ast,
+    validate_ast,
+)
+from backend.screening.expression import eval_expr, validate_scale_invariant_expr
 from backend.storage.duckdb_client import get_client
 
 log = get_logger("backtest.precompute")
@@ -45,27 +49,27 @@ class HitPrecomputer:
         # ── 1. expr 叶子：每股全序列一次 → {expr_str: Series((code, ts) -> bool)} ──
         expr_lookup: dict[str, dict] = {e["expr"]: {} for e in exprs}
         if exprs:
-            bars = self.c.query_df(
-                "SELECT code, trade_date, open, high, low, close, volume, turnover_rate, "
-                "       COALESCE(adj_factor_clean, adj_factor) AS adj_factor "
-                "FROM daily_bar WHERE trade_date <= ? ORDER BY code, trade_date",
-                [date_end],
-            )
+            for expression in expr_lookup:
+                validate_scale_invariant_expr(expression)
+            n_days = int(self.c.query_df(
+                "SELECT count(DISTINCT trade_date) AS n FROM daily_bar "
+                "WHERE trade_date BETWEEN ? AND ?",
+                [date_start, date_end],
+            ).iloc[0]["n"])
+            bars = self.ind._bulk_qfq_bars(None, date_end, n_days + self.ind._max_lb)
             bars["trade_date"] = pd.to_datetime(bars["trade_date"])
             for code, g in bars.groupby("code", sort=False):
                 g = g.reset_index(drop=True)
-                af = g["adj_factor"].fillna(1.0)
-                base = af.iloc[-1] if len(af) else 1.0
                 ctx = {
-                    "C": g["close"] * af / base, "O": g["open"] * af / base,
-                    "H": g["high"] * af / base, "L": g["low"] * af / base,
+                    "C": g["close"], "O": g["open"], "H": g["high"], "L": g["low"],
                     "V": g["volume"].astype(float), "TURN": g["turnover_rate"].astype(float),
                 }
                 dts = list(g["trade_date"])  # pd.Timestamp，与下方截面 groupby 键同型
                 for e in exprs:
                     try:
                         s = eval_expr(e["expr"], ctx).fillna(False).astype(bool).values
-                    except Exception:  # noqa: BLE001
+                    except Exception as exc:  # noqa: BLE001
+                        log.debug("回测裸表达式预算失败 code=%s expr=%s: %s", code, e["expr"], exc)
                         continue
                     d = expr_lookup[e["expr"]]
                     for i, ts in enumerate(dts):
@@ -78,6 +82,9 @@ class HitPrecomputer:
         if snap_all.empty:
             return out
         snap_all["trade_date"] = pd.to_datetime(snap_all["trade_date"])
+        snap_all = self.ind.attach_range_columns(
+            snap_all, collect_indicator_leaves(ast), date_start, date_end
+        )
         for ts, snap in snap_all.groupby("trade_date", sort=False):
             snap = snap.set_index("code")
 
@@ -91,6 +98,11 @@ class HitPrecomputer:
                     )
                 if leaf.get("ignore"):
                     return pd.Series(True, index=_snap.index)
+                if leaf.get("type") == "ind":
+                    from backend.scoring.score_profile import resolve_indicator
+
+                    value = resolve_indicator(leaf["key"], leaf.get("params"), _snap)
+                    return _CMP[leaf["cmp"]](value, leaf["value"]).fillna(False)
                 field = leaf["field"]
                 if field not in _snap.columns:
                     return pd.Series(False, index=_snap.index)

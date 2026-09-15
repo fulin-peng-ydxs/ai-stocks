@@ -44,6 +44,7 @@ def build_params(settings=None) -> dict:
         "platform_breakout_n": s.platform_breakout_n,
         "turnover_healthy_min": s.turnover_healthy_min,
         "turnover_healthy_max": s.turnover_healthy_max,
+        "rs_window": s.rs_window,
     }
 
 
@@ -167,7 +168,7 @@ def compute_market_indicators(df: pd.DataFrame, params: dict | None = None) -> p
     """
     params = params or build_params()
     df = df.sort_values(["code", "trade_date"]).reset_index(drop=True)
-    code, close, high = df["code"], df["close"], df["high"]
+    code, close = df["code"], df["close"]
     vol, turn = df["volume"].astype(float), df["turnover_rate"]
     k = params["ma_up_lookback"]
     g = df.groupby("code", sort=False)

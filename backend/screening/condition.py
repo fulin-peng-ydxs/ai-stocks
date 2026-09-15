@@ -13,7 +13,7 @@ AST（嵌套 JSON dict）：
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import pandas as pd
 
@@ -87,6 +87,21 @@ def collect_leaves(node: dict) -> tuple[list[dict], list[dict]]:
     return cols, exprs
 
 
+def collect_indicator_leaves(node: dict) -> list[dict]:
+    """收集注册表指标叶子，供执行器统一批量补齐表达式指标。"""
+    indicators: list[dict] = []
+
+    def walk(n: dict) -> None:
+        if "op" in n:
+            for child in n.get("children", []):
+                walk(child)
+        elif n.get("type") == "ind":
+            indicators.append({"indicator": n["key"], "params": n.get("params")})
+
+    walk(node)
+    return indicators
+
+
 def eval_ast(node: dict, eval_leaf: Callable[[dict], pd.Series]) -> pd.Series:
     """按 AST 合并各叶子结果（布尔 Series，索引=code）。
 
@@ -105,5 +120,10 @@ def eval_ast(node: dict, eval_leaf: Callable[[dict], pd.Series]) -> pd.Series:
 
 
 __all__ = [
-    "ConditionError", "ExprError", "validate_ast", "collect_leaves", "eval_ast",
+    "ConditionError",
+    "ExprError",
+    "collect_indicator_leaves",
+    "collect_leaves",
+    "eval_ast",
+    "validate_ast",
 ]

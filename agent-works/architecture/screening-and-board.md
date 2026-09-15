@@ -12,7 +12,7 @@
   - `col`：固定快照列，`{type,field,cmp,value[,ignore]}`（旧格式，仍兼容）。
   - `expr`：动态表达式，`{type,expr[,ignore]}`。
 - `cmp` 白名单：`== != > >= < <= between`（`between` 的 value 必须 `[下限,上限]`）。`validate_ast`（condition.py:30）递归做结构/语义校验，非法抛 `ConditionError`；`expr` 叶子额外调 `validate_expr` 做白名单校验。
-- `collect_leaves`（condition.py:73）抽出全部 col/expr 叶子供引擎预取列/预编译。`eval_ast`（condition.py:90）按回调求值各叶子（布尔 Series，index=code）再 AND/OR/NOT 合并，所有叶子结果 `fillna(False)`（NULL 视作不命中）。
+- `collect_leaves` 抽出 col/expr 叶子，`collect_indicator_leaves` 抽出并按 `key+params` 去重全部 `ind` 叶子，供引擎统一预取和补列。`eval_ast` 按回调求值各叶子再 AND/OR/NOT 合并，所有叶子结果 `fillna(False)`（NULL 视作不命中）。
 
 ### 表达式 DSL 沙箱与防未来拦截（`backend/screening/expression.py`）
 - 用 Python `ast` 解析后**白名单遍历求值**（`_check` expression.py:59）：只放行 常量(int/float/bool) / 变量名 / 白名单函数调用 / 二元算术(`+ - * / & |`) / 比较 / 布尔(`and or not`、`~`) / 一元。**禁止**属性访问、下标、推导式、lambda、import、关键字参数、任意函数——杜绝注入。
@@ -22,8 +22,8 @@
 ### 筛选引擎（`backend/screening/engine.py`）
 - 混合执行 `run_ast`（engine.py:93）：
   1. `_snapshot` 取 run_date 当日全市场宽截面（`IndicatorEngine.wide_snapshot`，index=code）。
-  2. `col` 叶子在截面上向量化比较（`_eval_col`）；`ind` 叶子（`_eval_ind`）——表达式型指标逐股点时算后 reindex，其余复用快照列（`resolve_indicator`）。
-  3. `expr` 叶子逐股取 ≤run_date 的 qfq 序列，在 DSL 沙箱求值取末值（`_eval_exprs`，单股异常→False）。
+  2. 先收集全部 `ind` 叶子，由 `attach_columns` 一次批量加载行情并补齐所有表达式指标列；同 key 不同 params 使用各自内部列，随后统一经 `resolve_indicator` 向量化比较。
+  3. 全部临时 `expr` 叶子共用一次全市场历史行情批量查询，再按股票分组在 DSL 沙箱求值取末值；不再逐股票访问数据库（单股异常记录调试日志并按 False 处理）。
   4. `eval_ast` 合并出命中布尔。`ignore=true` 的叶子恒为 True（软删除一个条件）。
 
 ### 阈值打分 + 动态权重（`backend/scoring/score_profile.py`）
@@ -33,7 +33,7 @@
 - 旧固定模型 `ScoreModel`（`backend/scoring/model.py`）：固定 6 维（位置/趋势/量/换手/RS/资金流）、配置权重，资金流默认权重 0 自动从归一中排除。仍用于不带评分方案的榜单口径。
 
 ### 评分快照惰性物化与失效（`backend/scoring/snapshot.py`）
-- `score_snapshot_meta` 除 `stale/param_hash` 外保存 D 日 `st_input_version`。读取先通过 ST 发布门并比较当前 D 日版本；存量 NULL 或版本不同只让当前日期、方案、版本缓存未命中。可写入口沿用 PG advisory lock 重算，只读入口返回空命中且不越权写入。
+- `score_snapshot_meta` 除 `stale/param_hash` 外保存 D 日 `st_input_version`。其中 `param_hash` 是综合计算指纹，覆盖全局指标参数（含 RS 窗口）、行情/指标输入更新修订号和方案引用的自定义指标定义。读取先通过 ST 发布门并比较这些版本；任一不一致只让当前日期、方案、版本缓存未命中。
 - 榜单计算前后再次读取 D 日版本，只有一致时才把明细与版本写入 PG；返回已命中缓存前也二次核对，以收窄 DuckDB ST 事实与 PG 快照之间的跨库竞态。ST 批次 `refreshing/failed` 时保留旧明细，但不把它返回为有效榜单。
 - 每日榜单 `/board/run` 在发布门关闭时返回 `business_code=ST_STATUS_NOT_READY` 和可读原因，页面进入明确错误态，不把不可用误显示成“当日空榜”；等待发布完成后由用户刷新即可按当前版本命中或自愈。
 - 公共榜单默认日期和数据概览“榜单最新日”同样比较 `stale`、当前指标参数指纹和 D 日 ST 输入版本；不会把仅有 `stale=false`、但参数或 ST 已变化的 PG 元数据报成 fresh。候选日期批量读取日期修订账本，避免跨库 N+1 查询。
@@ -48,7 +48,7 @@
 ## 业务架构
 
 - **筛选↔评分↔榜单**：
-  - 筛选页 `/screen/run` → `ScreenScoreService.screen_scored`：跑筛选得命中票，再用固定 `ScoreModel` 给命中票打分排序、标/排 ST；最终命中排序形成后，按 `run_date` 一次批量附加当前走势行业/概念摘要，摘要不参与筛选或评分，历史日期不匹配时冠军为空。
+  - 筛选页 `/screen/run` → `ScreenScoreService.screen_scored`：筛选和固定评分共用一次全市场指标快照，命中后只切片已有评分结果，不对命中子集重算；这也保证 `rs_pct` 始终按全市场横截面排名。最终命中排序形成后，按 `run_date` 一次批量附加当前走势行业/概念摘要，摘要不参与筛选或评分。
   - 每日榜单页 `/score-profiles/run` 与回测“查看当日榜单” `/board/compute` → 走评分快照层 `ScoreSnapshotRepo.get_board`，对全市场按评分方案排序，不依赖筛选。
   - 当前页面实际榜单入口 `/board/run` 在 Top N 形成后按 `run_date` 一次批量附加 `related_boards`；历史日期与当前冠军截止日不一致时只返回空冠军和 `as_of_mismatch`。`/board/compute` 是回测/历史计算链路，明确不接入当前冠军摘要。
   - 旧固定模型公共读 `/scores`、`/scores/top`（读 `score_result`）**已废弃删除**（前端无调用方，产品已切到评分快照层）。
@@ -89,7 +89,7 @@
 ```mermaid
 flowchart LR
   A["选择日期+评分方案"] --> B["读取 score_snapshot_meta"]
-  B --> V["比较 stale / param_hash\n/ 当日 ST 输入版本"]
+  B --> V["比较 stale / 综合计算指纹\n/ 当日 ST 输入版本"]
   V -->|全部一致| C["直接返回缓存"]
   V -->|缺失或任一不一致| D["wide_snapshot\n动态算指标"]
   D --> E["ScoreProfileModel\n阈值打分+权重"]
@@ -201,8 +201,8 @@ flowchart LR
 | 等级 | 风险点 | 影响 | 建议 |
 |------|--------|------|------|
 | <span style="color:#f59e0b">●</span> 中 | ST 第三方事实源临时不可用或发生纠错 | 刷新批次失败时筛选、榜单和预览暂不可运行；纠错后的旧榜单不可继续视为有效 | 依赖批次门禁、自动重连/续跑、变更历史及读取时 ST 版本自检闭环恢复 |
-| <span style="color:#f59e0b">●</span> 中 | expr 叶子逐股串行求值 | 全市场筛选随股票数线性变慢（engine.py:74） | 常用逻辑沉淀为指标，减少临时 expr |
-| <span style="color:#f59e0b">●</span> 中 | 部分结果输入未纳入缓存版本 | ST 与指标参数能在读取时自愈，但其它行情/基础资料被绕过正规流程修改后可能留下陈旧榜单 | 其它输入变化走「结果维护」或调度；新增关键输入时同步扩展指纹 |
+| <span style="color:#f59e0b">●</span> 中 | 大量复杂 expr 仍需按股票分组计算 | 数据库查询已合并为一次，但 Python 求值耗时仍随股票数和表达式数线性增长 | 高频逻辑沉淀为注册表指标，并优先使用内置向量化列 |
+| <span style="color:#f59e0b">●</span> 中 | 绕过更新日志直接改行情表 | 正常采集可使缓存自愈，但未登记的手工 SQL 可能留下陈旧榜单 | 行情变更走正式任务；手工处理后执行结果维护并重启服务 |
 | <span style="color:#f59e0b">●</span> 中 | 评分指标周期受限 | 非预设 `ma/hhv` 周期会抛错 | 用表达式型指标绕行，后续扩展任意周期 |
 | <span style="color:#f59e0b">●</span> 中 | 筛选打分与榜单打分模型不一致 | `/screen/run` 与每日榜单分数不可直接比较 | 以榜单/回测评分方案为最终评分口径 |
 | <span style="color:#16a34a">●</span> 低 | 固定模型资金流维度恒 0 | 趋势榜单未纳入资金流信号（model.py:46） | 后续接入资金流数据后再启用权重 |
