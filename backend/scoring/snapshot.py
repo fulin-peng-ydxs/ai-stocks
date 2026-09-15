@@ -47,11 +47,24 @@ def _current_param_hash(market=None, profile: dict | None = None) -> str:
     if custom_keys:
         placeholders = ",".join("?" * len(custom_keys))
         definitions = client.query_df(
-            "SELECT key,dtype,kind,expression,params FROM indicator_def "
+            "SELECT key,dtype,kind,expression,params,parent_key,preset_params FROM indicator_def "
             f"WHERE key IN ({placeholders}) ORDER BY key",
             custom_keys,
         )
         if not definitions.empty:
+            parent_keys = sorted({
+                str(value) for value in definitions["parent_key"].dropna().tolist() if value
+            })
+            if parent_keys:
+                parent_placeholders = ",".join("?" * len(parent_keys))
+                parents = client.query_df(
+                    "SELECT key,dtype,kind,expression,params,parent_key,preset_params "
+                    f"FROM indicator_def WHERE key IN ({parent_placeholders})",
+                    parent_keys,
+                )
+                definitions = pd.concat([definitions, parents], ignore_index=True).drop_duplicates(
+                    subset=["key"], keep="first"
+                ).sort_values("key")
             semantic_definitions = []
             for row in definitions.fillna("").to_dict("records"):
                 raw_params = json.loads(row["params"]) if row.get("params") else []
@@ -59,6 +72,9 @@ def _current_param_hash(market=None, profile: dict | None = None) -> str:
                     {key: param.get(key) for key in ("name", "type", "default", "min", "max")}
                     for param in raw_params
                 ]
+                row["preset_params"] = (
+                    json.loads(row["preset_params"]) if row.get("preset_params") else {}
+                )
                 semantic_definitions.append(row)
             params["indicator_definitions"] = semantic_definitions
     return param_hash(params)

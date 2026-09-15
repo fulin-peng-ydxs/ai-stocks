@@ -35,7 +35,7 @@ log = get_logger("indicators.engine")
 # 动态指标帧的列（与旧 indicator 表一致，供下游 SQL 的 i.* 取用）
 _IND_COLS = [
     "code", "trade_date",
-    "ma5", "ma10", "ma20", "ma60", "ma250",
+    "ma5", "ma10", "ma20", "ma30", "ma60", "ma250",
     "macd_diff", "macd_dea", "macd_hist", "macd_golden_cross", "macd_dead_cross",
     "hhv60", "hhv120", "hhv240", "hhv480",
     "is_high_60", "is_high_120", "is_high_1y", "is_high_2y", "dist_to_high_2y",
@@ -292,17 +292,21 @@ class IndicatorEngine:
     def _expression_specs(self, items: list[dict], existing: set[str]) -> list[dict]:
         """解析并去重本次需要计算的表达式指标，按 key+params 区分实例。"""
         from backend.indicators.definition import IndicatorDefRepo, render_expression
+        from backend.indicators.registry import normalize_indicator_reference
         from backend.scoring.score_profile import indicator_value_column
 
         repo = IndicatorDefRepo(self.c)
         specs: list[dict] = []
         seen: set[str] = set()
         for item in items:
-            key = item.get("indicator")
-            if not key:
+            requested_key = item.get("indicator")
+            if not requested_key:
                 continue
-            column = indicator_value_column(key, item.get("params"))
-            if column in existing or column in seen:
+            key, params, preset_key = normalize_indicator_reference(
+                requested_key, item.get("params"), self.params
+            )
+            column = indicator_value_column(key, params)
+            if column in existing or column in seen or (preset_key and preset_key in existing):
                 continue
             definition = repo.get(key)
             if not definition or definition.get("kind") != "expr":
@@ -314,9 +318,9 @@ class IndicatorEngine:
                 "key": key,
                 "column": column,
                 "expression": render_expression(
-                    definition["expression"], item.get("params"), definition.get("params")
+                    definition["expression"], params, definition.get("params")
                 ),
-                "lookback": self._parameter_lookback(item.get("params"), definition.get("params")),
+                "lookback": self._parameter_lookback(params, definition.get("params")),
             })
             seen.add(column)
         return specs
@@ -366,14 +370,27 @@ class IndicatorEngine:
     def eval_named(self, key: str, params: dict | None, asof, codes: list[str] | None = None) -> pd.Series:
         """按指标 key 取值（index=code）：内置→快照列；表达式型→渲染参数后逐股求值。"""
         from backend.indicators.definition import IndicatorDefRepo
-        d = IndicatorDefRepo(self.c).get(key)
+        from backend.indicators.registry import normalize_indicator_reference
+
+        logical_key, effective_params, preset_key = normalize_indicator_reference(
+            key, params, self.params
+        )
+        if preset_key:
+            snap = self.wide_snapshot(asof, asof, codes)
+            if snap.empty:
+                return pd.Series(dtype="float64")
+            from backend.scoring.score_profile import resolve_indicator
+            return resolve_indicator(key, params, snap.set_index("code"))
+        d = IndicatorDefRepo(self.c).get(logical_key)
         if d and d["kind"] == "expr":
-            return self._eval_expr_indicator(d["expression"], params, d.get("params"), asof, codes)
+            return self._eval_expr_indicator(
+                d["expression"], effective_params, d.get("params"), asof, codes
+            )
         from backend.scoring.score_profile import resolve_indicator
         snap = self.wide_snapshot(asof, asof, codes)
         if snap.empty:
             return pd.Series(dtype="float64")
-        return resolve_indicator(key, params, snap.set_index("code"))
+        return resolve_indicator(logical_key, effective_params, snap.set_index("code"))
 
     def attach_columns(self, snap: pd.DataFrame, items: list[dict], asof) -> pd.DataFrame:
         """批量补齐单日表达式指标；一次取行情，并支持同 key 的多组参数。"""

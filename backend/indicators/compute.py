@@ -24,7 +24,7 @@ from backend.indicators.operators import (
     platform_breakout,
 )
 
-INDICATOR_ALGO_VERSION = "2.1-macd-v1"
+INDICATOR_ALGO_VERSION = "2.2-preset-runtime-v1"
 _MACD_FAST = 12
 _MACD_SLOW = 26
 _MACD_SIGNAL = 9
@@ -98,8 +98,8 @@ def compute_stock_indicators(df: pd.DataFrame, params: dict | None = None) -> pd
     out = pd.DataFrame({"code": df["code"], "trade_date": df["trade_date"]})
 
     # ── 均线 ──
-    ma = {n: MA(close, n) for n in (5, 10, 20, 60, 250)}
-    for n in (5, 10, 20, 60, 250):
+    ma = {n: MA(close, n) for n in (5, 10, 20, 30, 60, 250)}
+    for n in (5, 10, 20, 30, 60, 250):
         out[f"ma{n}"] = ma[n]
 
     # ── MACD（固定 12/26/9，全部严格后向）──
@@ -180,8 +180,8 @@ def compute_market_indicators(df: pd.DataFrame, params: dict | None = None) -> p
         return g[col].rolling(n, min_periods=n).max().reset_index(level=0, drop=True)
 
     out = pd.DataFrame({"code": code.values, "trade_date": df["trade_date"].values})
-    ma = {n: rmean("close", n) for n in (5, 10, 20, 60, 250)}
-    for n in (5, 10, 20, 60, 250):
+    ma = {n: rmean("close", n) for n in (5, 10, 20, 30, 60, 250)}
+    for n in (5, 10, 20, 30, 60, 250):
         out[f"ma{n}"] = ma[n].values
 
     def rema(series: pd.Series, n: int) -> pd.Series:

@@ -5,14 +5,24 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from backend.indicators.compute import build_params
 from backend.indicators.definition import (
     IndicatorDefRepo,
     render_expression,
     validate_definition,
 )
 from backend.indicators.engine import IndicatorEngine
-from backend.indicators.registry import PRESET_CATEGORIES, PRESET_RELATIONS, REGISTRY
-from backend.scoring.score_profile import ScoreProfileModel
+from backend.indicators.registry import (
+    PRESET_CATEGORIES,
+    PRESET_RELATIONS,
+    REGISTRY,
+    normalize_indicator_reference,
+)
+from backend.scoring.score_profile import (
+    ScoreProfileModel,
+    indicator_value_column,
+    resolve_indicator,
+)
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
 
@@ -123,6 +133,34 @@ def test_registry_has_governance_layers_and_preset_relationships():
         assert repo.get("ma20")["preset_params"] == {"period": 20}
         assert PRESET_RELATIONS["is_high_1y"] == ("new_high", {"n": 240})
         assert repo.get("pct_change")["name_cn"] == "N日涨跌幅"
+
+
+def test_preset_reference_normalizes_to_parent_and_fixed_params():
+    assert normalize_indicator_reference("ma10", {"period": 99}) == (
+        "ma", {"period": 10}, "ma10"
+    )
+    runtime = build_params()
+    assert normalize_indicator_reference(
+        "ma20_up", None, runtime
+    ) == ("ma_up", {"n": 20, "k": runtime["ma_up_lookback"]}, "ma20_up")
+
+
+def test_preset_and_parent_share_logical_value_column_but_prefer_attached_value():
+    logical_column = indicator_value_column("ma", {"period": 10})
+    assert indicator_value_column("ma10", {}) == logical_column
+    snap = pd.DataFrame({"ma10": [10.0], logical_column: [11.0]}, index=["TEST.SH"])
+    assert resolve_indicator("ma10", {}, snap).iloc[0] == 11.0
+
+
+def test_historical_ma_preset_matches_generic_parent_at_runtime():
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        IndicatorDefRepo(c).seed_builtins()
+        target = _seed_stock(c, "MA.SH", [10 + i * 0.2 for i in range(40)])
+        engine = IndicatorEngine(c)
+        preset = engine.eval_named("ma10", {}, target, ["MA.SH"])
+        generic = engine.eval_named("ma", {"period": 10}, target, ["MA.SH"])
+        assert preset["MA.SH"] == pytest.approx(generic["MA.SH"])
 
 
 def test_seed_builtins_fills_null_enabled_and_keeps_noop_updated_at():
@@ -435,3 +473,27 @@ def test_score_snapshot_hash_tracks_custom_definition_and_market_revision():
             "(nextval('seq_update_log'),'daily_bar','test',NULL,NULL,1,'success','',current_timestamp)"
         )
         assert _current_param_hash(c, profile) != definition_changed
+
+
+def test_score_snapshot_hash_tracks_preset_semantics_but_not_layer_display():
+    from backend.scoring.snapshot import _current_param_hash
+
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        repo = IndicatorDefRepo(c)
+        repo.seed_builtins()
+        profile = {"items": [{"indicator": "ma10"}]}
+        initial = _current_param_hash(c, profile)
+
+        c.execute("UPDATE indicator_def SET layer='metric' WHERE key='ma10'")
+        assert _current_param_hash(c, profile) == initial
+
+        c.execute(
+            "UPDATE indicator_def SET preset_params=? WHERE key='ma10'",
+            ['{"period":20}'],
+        )
+        preset_changed = _current_param_hash(c, profile)
+        assert preset_changed != initial
+
+        c.execute("UPDATE indicator_def SET expression='MA(C, {period}) + 1' WHERE key='ma'")
+        assert _current_param_hash(c, profile) != preset_changed

@@ -58,13 +58,16 @@ _DIRECT_COLS = {
     "is_high_60", "is_high_120", "is_high_1y", "is_high_2y",
 }
 _ALIASES = {"bull_arrange": "is_bull_arrange", "dist_to_high": "dist_to_high_2y"}
-_MA_PERIODS = {5, 10, 20, 60, 250}
+_MA_PERIODS = {5, 10, 20, 30, 60, 250}
 _HHV_WINDOWS = {60, 120, 240, 480}
 
 
 def indicator_value_column(indicator: str, params: dict | None) -> str:
     """返回参数化指标在临时快照中的稳定列名，避免同 key 不同参数互相覆盖。"""
-    blob = json.dumps(params or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    from backend.indicators.registry import normalize_indicator_reference
+
+    indicator, params, _ = normalize_indicator_reference(indicator, params)
+    blob = json.dumps(params, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     suffix = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
     return f"__indicator_{indicator}_{suffix}"
 
@@ -74,10 +77,19 @@ def resolve_indicator(indicator: str, params: dict, snap: pd.DataFrame) -> pd.Se
 
     优先取快照中同名列（含已 attach 的表达式型/自定义指标列）；其次内置别名与 ma/hhv 带参映射。
     """
+    from backend.indicators.registry import normalize_indicator_reference
+
+    requested_key = indicator
+    indicator, params, preset_key = normalize_indicator_reference(indicator, params)
     parameterized = indicator_value_column(indicator, params)
     if parameterized in snap.columns:
         return snap[parameterized]
+    # 预设的逻辑语义来自 parent_key + preset_params；存在等价快列时只优化物理执行。
+    if preset_key and preset_key in snap.columns:
+        return snap[preset_key]
     key = _ALIASES.get(indicator, indicator)
+    if requested_key in snap.columns:      # 未治理的历史表达式兼容列
+        return snap[requested_key]
     if indicator in snap.columns:          # 表达式型/自定义指标（已 attach，列名=key）
         return snap[indicator]
     if key in snap.columns:                # 内置直出列 / 别名列

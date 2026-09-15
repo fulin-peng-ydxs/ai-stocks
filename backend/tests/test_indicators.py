@@ -7,6 +7,7 @@ import pathlib
 
 import numpy as np
 import pandas as pd
+import pytest
 from pandas.testing import assert_series_equal
 
 from backend.indicators import operators as op
@@ -125,6 +126,7 @@ def test_compute_stock_indicators_shapes_and_values():
     assert bool(ind["is_turnover_healthy"].iloc[-1]) is True
     # param_hash 非空
     assert ind["param_hash"].iloc[0]
+    assert ind["ma30"].iloc[-1] == pytest.approx(df["close"].iloc[-30:].mean())
 
 
 def test_macd_numeric_values_warmup_and_algo_hash():

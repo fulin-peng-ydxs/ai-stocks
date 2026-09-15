@@ -53,12 +53,12 @@ REGISTRY: list[IndicatorDef] = [
                  "N日收盘价(前复权)的简单移动平均。是什么:价格中枢/趋势线。怎么用:周期任意可调,"
                  "常配合「收盘 vs 均线」「贴近/站上均线」使用。", kind="expr",
                  expression="MA(C, {period})"),
-    # 常用固定均线（无需传参,直接用）
-    IndicatorDef("ma5", "MA5", "number", "均线", None, [], "5日均线(常用固定周期)。", kind="expr", expression="MA(C, 5)"),
-    IndicatorDef("ma10", "MA10", "number", "均线", None, [], "10日均线(常用固定周期)。", kind="expr", expression="MA(C, 10)"),
-    IndicatorDef("ma20", "MA20", "number", "均线", None, [], "20日均线(常用固定周期)。", kind="expr", expression="MA(C, 20)"),
-    IndicatorDef("ma30", "MA30", "number", "均线", None, [], "30日均线(常用固定周期)。", kind="expr", expression="MA(C, 30)"),
-    IndicatorDef("ma60", "MA60", "number", "均线", None, [], "60日均线(常用固定周期)。", kind="expr", expression="MA(C, 60)"),
+    # 常用固定均线：计算语义统一继承 ma + preset_params，物理执行复用同名向量化列。
+    IndicatorDef("ma5", "MA5", "number", "均线", None, [], "5日均线(常用固定周期)。"),
+    IndicatorDef("ma10", "MA10", "number", "均线", None, [], "10日均线(常用固定周期)。"),
+    IndicatorDef("ma20", "MA20", "number", "均线", None, [], "20日均线(常用固定周期)。"),
+    IndicatorDef("ma30", "MA30", "number", "均线", None, [], "30日均线(常用固定周期)。"),
+    IndicatorDef("ma60", "MA60", "number", "均线", None, [], "60日均线(常用固定周期)。"),
     IndicatorDef("bull_arrange", "多头排列", "bool", "趋势", None, [],
                  "口径:MA5>MA10>MA20>MA60 同时成立(短中期均线向上发散)。是什么:典型强势"
                  "上升结构。怎么用:筛选/评分中作「趋势走强」的硬条件或高权重项。"),
@@ -238,11 +238,19 @@ PRESET_RELATIONS: dict[str, tuple[str, dict]] = {
     "is_high_120": ("new_high", {"n": 120}),
     "is_high_1y": ("new_high", {"n": 240}),
     "is_high_2y": ("new_high", {"n": 480}),
-    "is_vol_breakout": ("vol_break", {"n": 20, "x": 2}),
-    "is_platform_breakout": ("platform_break", {"n": 60}),
+    "is_vol_breakout": ("vol_break", {"n": "全局配置", "x": "全局配置"}),
+    "is_platform_breakout": ("platform_break", {"n": "全局配置"}),
     "ma20_up": ("ma_up", {"n": 20, "k": "全局配置"}),
     "ma60_up": ("ma_up", {"n": 60, "k": "全局配置"}),
     "above_ma250": ("above_ma", {"n": 250}),
+}
+
+_PRESET_GLOBAL_PARAM_KEYS: dict[tuple[str, str], str] = {
+    ("is_vol_breakout", "n"): "vol_breakout_n",
+    ("is_vol_breakout", "x"): "vol_breakout_x",
+    ("is_platform_breakout", "n"): "platform_breakout_n",
+    ("ma20_up", "k"): "ma_up_lookback",
+    ("ma60_up", "k"): "ma_up_lookback",
 }
 
 
@@ -256,6 +264,31 @@ def governance_metadata(d: IndicatorDef) -> tuple[str, str | None, dict]:
     if d.key in _FIELD_KEYS:
         return "field", None, {}
     return ("signal" if d.dtype == "bool" else "metric"), None, {}
+
+
+def normalize_indicator_reference(
+    key: str, params: dict | None = None, calculation_params: dict | None = None
+) -> tuple[str, dict, str | None]:
+    """把历史固定 key 归一为父指标引用，同时保留可走快列的预设 key。
+
+    preset_params 是固定参数，不能被方案里遗留的 params 覆盖；非预设指标保持原引用。
+    返回 (逻辑指标 key, 有效参数, 物理预设 key)。
+    """
+    relation = PRESET_RELATIONS.get(key)
+    if relation is None:
+        return key, dict(params or {}), None
+    parent_key, preset_params = relation
+    effective = dict(preset_params)
+    if "全局配置" in effective.values():
+        if calculation_params is None:
+            from backend.indicators.compute import build_params
+            calculation_params = build_params()
+        for param_name, value in effective.items():
+            if value != "全局配置":
+                continue
+            setting_key = _PRESET_GLOBAL_PARAM_KEYS[(key, param_name)]
+            effective[param_name] = calculation_params[setting_key]
+    return parent_key, effective, key
 
 
 def preset_categories(key: str, fallback_single: str) -> list[str]:
