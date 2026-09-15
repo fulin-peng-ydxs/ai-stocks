@@ -23,6 +23,8 @@ class Param:
     default: float | int
     min: float | int | None = None
     max: float | int | None = None
+    unit: str = ""
+    description: str = ""
 
 
 @dataclass(frozen=True)
@@ -38,6 +40,9 @@ class IndicatorDef:
     kind: str = "builtin"          # "builtin"(映射动态计算列) | "expr"(DSL 表达式，可参数化)
     expression: str | None = None  # kind=expr 的表达式模板，含 {param} 占位
     is_builtin: bool = True        # 内置（不可删，仅可启停）
+    layer: str | None = None       # field | metric | signal | preset；None 时由治理映射推导
+    parent_key: str | None = None  # preset 对应的通用指标 key
+    preset_params: dict = field(default_factory=dict)
 
 
 # ── 本期内置指标（与 compute.py 产出对齐；可动态传参的标注参数 schema）──
@@ -123,11 +128,17 @@ REGISTRY: list[IndicatorDef] = [
                  "N、倍数均可调。", kind="expr",
                  expression="V > MA(V, {n}) * {x}"),
     # 涨幅
-    IndicatorDef("pct_change", "N日涨幅", "number", "涨幅", "higher_better",
+    IndicatorDef("pct_change", "N日涨跌幅", "number", "涨幅", "higher_better",
                  [Param("n", "天数", "int", 1, 1, 250)],
                  "口径:(收盘/N日前收盘-1)×100,单位%。是什么:区间动量。怎么用:筛选涨幅区间(如近5日>10%),"
                  "或评分给动量加分;天数任意可调。", kind="expr",
                  expression="(C / REF(C, {n}) - 1) * 100"),
+    IndicatorDef("range_amplitude_pct", "N日区间振幅", "number", "涨幅", "lower_better",
+                 [Param("window", "统计周期", "int", 20, 2, 1200, "交易日",
+                        "使用最近多少个交易日的最高价和最低价计算区间振幅。")],
+                 "口径:(近N日最高价/近N日最低价-1)×100，单位%。是什么:指定区间内的价格波动范围。"
+                 "怎么用:筛选窄幅整理可配置结果<=阈值；一年口径使用N=240。", kind="expr",
+                 expression="(HHV(H, {window}) / LLV(L, {window}) - 1) * 100"),
     # 市值 / 股本
     IndicatorDef("float_mv", "流通市值", "number", "市值", None, [],
                  "口径:流通股本×收盘价(元)。是什么:可交易盘子大小。怎么用:筛选市值区间(如100-1000亿)避开过大/过小。"),
@@ -207,12 +218,44 @@ PRESET_CATEGORIES: dict[str, list[str]] = {
     "hhv": ["位置", "新高"], "is_high_120": ["位置", "新高"], "is_high_1y": ["位置", "新高"],
     "is_high_2y": ["位置", "新高"], "new_high": ["位置", "新高", "突破"], "dist_to_high_2y": ["位置"],
     "volume": ["量能"], "vol_change_pct": ["量能"], "is_vol_breakout": ["量能", "突破"], "vol_break": ["量能", "突破"],
-    "pct_change": ["动量"], "consec_up": ["动量", "形态"], "consec_down": ["形态"],
+    "pct_change": ["动量"], "range_amplitude_pct": ["动量", "形态"],
+    "consec_up": ["动量", "形态"], "consec_down": ["形态"],
     "float_mv": ["估值"], "total_mv": ["估值"],
     "rs_pct": ["动量", "强度"], "turnover_rate": ["换手"], "is_turnover_healthy": ["换手"],
     "is_platform_breakout": ["突破", "趋势"], "platform_break": ["突破", "趋势"],
     "days_since_xrxd": ["事件"], "holder_num": ["筹码"], "holder_change_pct": ["筹码"],
 }
+
+
+# 业务层级与计算方式、输出类型正交。固定 key 继续兼容，只在目录中作为快捷预设归组。
+_FIELD_KEYS = {"volume", "float_mv", "total_mv", "turnover_rate"}
+PRESET_RELATIONS: dict[str, tuple[str, dict]] = {
+    "ma5": ("ma", {"period": 5}),
+    "ma10": ("ma", {"period": 10}),
+    "ma20": ("ma", {"period": 20}),
+    "ma30": ("ma", {"period": 30}),
+    "ma60": ("ma", {"period": 60}),
+    "is_high_120": ("new_high", {"n": 120}),
+    "is_high_1y": ("new_high", {"n": 240}),
+    "is_high_2y": ("new_high", {"n": 480}),
+    "is_vol_breakout": ("vol_break", {"n": 20, "x": 2}),
+    "is_platform_breakout": ("platform_break", {"n": 60}),
+    "ma20_up": ("ma_up", {"n": 20, "k": "全局配置"}),
+    "ma60_up": ("ma_up", {"n": 60, "k": "全局配置"}),
+    "above_ma250": ("above_ma", {"n": 250}),
+}
+
+
+def governance_metadata(d: IndicatorDef) -> tuple[str, str | None, dict]:
+    """返回稳定业务层级；旧注册项无需为新增字段改写所有位置参数。"""
+    if d.layer:
+        return d.layer, d.parent_key, dict(d.preset_params)
+    relation = PRESET_RELATIONS.get(d.key)
+    if relation:
+        return "preset", relation[0], dict(relation[1])
+    if d.key in _FIELD_KEYS:
+        return "field", None, {}
+    return ("signal" if d.dtype == "bool" else "metric"), None, {}
 
 
 def preset_categories(key: str, fallback_single: str) -> list[str]:
@@ -229,6 +272,7 @@ def list_registry(include_disabled: bool = False) -> list[dict]:
 def _to_dict(d: IndicatorDef) -> dict:
     out = asdict(d)
     out["params"] = [asdict(p) for p in d.params]
+    out["layer"], out["parent_key"], out["preset_params"] = governance_metadata(d)
     return out
 
 

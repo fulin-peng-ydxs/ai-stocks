@@ -698,6 +698,9 @@ _COMMON_FIELD_META: dict[str, tuple[str, str]] = {
     "member_history_start_date": ("成员历史起点", "板块成员历史可用起始日"),
     "last_seen_at": ("最近观测时间", "最近一次从数据源观测到该对象的时间"),
     "net_ratio": ("净流入占比", "净流入相对成交规模的比例"),
+    "layer": ("业务层级", "对象所属的受控业务或配置层级"),
+    "parent_key": ("父指标标识", "参数预设所属的通用指标标识"),
+    "preset_params": ("预设参数", "参数预设绑定的固定参数 JSON"),
 }
 
 _DUCK_FRESHNESS_POLICIES: dict[str, FreshnessPolicy] = {

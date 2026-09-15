@@ -43,6 +43,8 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
+import IndicatorParamFields from '@/components/indicator/IndicatorParamFields.vue'
+import IndicatorSelect from '@/components/indicator/IndicatorSelect.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useStockSet } from '@/stores/stockSet'
@@ -770,22 +772,9 @@ const menuPageTitle = useMenuPageTitle()
               <!-- 指标条件 -->
               <template v-if="c.kind === 'ind'">
                 <el-tag size="small" type="success" effect="plain" class="kind-tag">指标</el-tag>
-                <el-select v-model="c.key" filterable size="small" style="width: 180px" :disabled="profileReadonly" @change="onIndKey(c)">
-                  <el-option v-for="d in enabledInds" :key="d.key" :value="d.key" :label="d.name_cn" />
-                </el-select>
+                <IndicatorSelect v-model="c.key" :definitions="registry" :disabled="profileReadonly" @change="onIndKey(c)" />
                 <!-- 动态参数 -->
-                <template v-for="p in defOf(c.key)?.params ?? []" :key="p.name">
-                  <span class="param-lb">{{ p.label }}</span>
-                  <el-input-number
-                    v-model="c.params[p.name]"
-                    :disabled="profileReadonly"
-                    :controls="false"
-                    :min="p.min ?? undefined"
-                    :max="p.max ?? undefined"
-                    size="small"
-                    style="width: 70px"
-                  />
-                </template>
+                <IndicatorParamFields v-model="c.params" :params="defOf(c.key)?.params ?? []" :disabled="profileReadonly" />
                 <!-- 布尔：成立/不成立 -->
                 <template v-if="defOf(c.key)?.dtype === 'bool'">
                   <el-select v-model="c.boolVal" size="small" style="width: 104px" :disabled="profileReadonly">

@@ -160,6 +160,9 @@ CREATE TABLE IF NOT EXISTS indicator_def (
     expression  VARCHAR,         -- 表达式模板（kind=expr），含 {param} 占位
     params      VARCHAR,         -- 参数 schema（JSON）
     categories  VARCHAR,         -- 多分类标签（JSON 数组，可自定义）
+    layer       VARCHAR,         -- field | metric | signal | preset
+    parent_key  VARCHAR,         -- 参数预设所属通用指标 key
+    preset_params VARCHAR,       -- 预设固定参数（JSON 对象，仅用于目录关系与展示）
     enabled     BOOLEAN,
     is_builtin  BOOLEAN,         -- 内置（不可删，仅可启停）
     descr       VARCHAR,
@@ -1087,6 +1090,13 @@ _DIMENSION_SEED: list[tuple] = [
 
 # 轻量迁移：给已存在的旧表补列（CREATE TABLE IF NOT EXISTS 不会改既有表结构）
 _MIGRATIONS: list[str] = [
+    "ALTER TABLE indicator_def ADD COLUMN IF NOT EXISTS layer VARCHAR",
+    "ALTER TABLE indicator_def ADD COLUMN IF NOT EXISTS parent_key VARCHAR",
+    "ALTER TABLE indicator_def ADD COLUMN IF NOT EXISTS preset_params VARCHAR",
+    (
+        "UPDATE indicator_def SET layer=CASE WHEN dtype='bool' THEN 'signal' ELSE 'metric' END "
+        "WHERE layer IS NULL"
+    ),
     (
         "ALTER TABLE stock_board_correlation_state ADD COLUMN IF NOT EXISTS "
         "industry_empty_reason VARCHAR"

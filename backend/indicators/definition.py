@@ -8,24 +8,116 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict
 from datetime import datetime
+from string import Formatter
 
 from backend.common.logging import get_logger
-from backend.indicators.registry import REGISTRY, preset_categories
+from backend.indicators.registry import REGISTRY, governance_metadata, preset_categories
 from backend.screening.expression import ExprError, validate_expr
 from backend.storage.duckdb_client import get_client
 
 log = get_logger("indicators.definition")
 
+_PARAM_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+
+
+def normalize_param_defs(params: list[dict] | None) -> list[dict]:
+    """校准自定义参数 schema，并确保占位渲染与下游输入共享同一约束。"""
+    normalized: list[dict] = []
+    names: set[str] = set()
+    for raw in params or []:
+        name = str(raw.get("name") or "").strip()
+        if not _PARAM_NAME_RE.fullmatch(name):
+            raise ValueError("参数名须以英文字母开头，且只含英文、数字或下划线")
+        if name in names:
+            raise ValueError(f"参数名重复: {name}")
+        names.add(name)
+        param_type = str(raw.get("type") or "")
+        if param_type not in ("int", "float"):
+            raise ValueError(f"参数 {name} 类型须为 int 或 float")
+        default = raw.get("default")
+        if isinstance(default, bool) or not isinstance(default, (int, float)):
+            raise ValueError(f"参数 {name} 默认值须为数字")  # noqa: TRY004
+        if param_type == "int" and not float(default).is_integer():
+            raise ValueError(f"参数 {name} 默认值须为整数")
+        minimum, maximum = raw.get("min"), raw.get("max")
+        for label, value in (("最小值", minimum), ("最大值", maximum)):
+            if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))):
+                raise ValueError(f"参数 {name} {label}须为数字")
+            if param_type == "int" and value is not None and not float(value).is_integer():
+                raise ValueError(f"参数 {name} {label}须为整数")
+        if minimum is not None and maximum is not None and minimum > maximum:
+            raise ValueError(f"参数 {name} 最小值不能大于最大值")
+        if minimum is not None and default < minimum or maximum is not None and default > maximum:
+            raise ValueError(f"参数 {name} 默认值超出允许范围")
+        normalized.append({
+            "name": name,
+            "label": str(raw.get("label") or name).strip(),
+            "type": param_type,
+            "default": int(default) if param_type == "int" else float(default),
+            "min": minimum,
+            "max": maximum,
+            "unit": str(raw.get("unit") or "").strip(),
+            "description": str(raw.get("description") or "").strip(),
+        })
+    return normalized
+
+
+def validate_definition(expression: str, params: list[dict] | None) -> list[dict]:
+    """严格校验参数与表达式占位符的一一对应关系，并执行 DSL 白名单验证。"""
+    normalized = normalize_param_defs(params)
+    try:
+        placeholders = {
+            field_name for _, field_name, _, _ in Formatter().parse(expression)
+            if field_name is not None
+        }
+    except ValueError as exc:
+        raise ValueError(f"表达式占位符格式错误: {exc}") from exc
+    names = {item["name"] for item in normalized}
+    missing = sorted(placeholders - names)
+    unused = sorted(names - placeholders)
+    if missing:
+        raise ValueError(f"表达式占位符缺少参数定义: {', '.join(missing)}")
+    if unused:
+        raise ValueError(f"参数未被表达式使用: {', '.join(unused)}")
+    render_expression(expression, None, normalized)
+    return normalized
+
+
+def definition_semantic_signature(dtype: str, expression: str, params: list[dict]) -> tuple:
+    """只纳入影响计算结果的字段；标签、单位和说明变化不应淘汰数值缓存。"""
+    return (
+        dtype,
+        expression,
+        tuple((p.get("name"), p.get("type"), p.get("default"), p.get("min"), p.get("max"))
+              for p in params),
+    )
+
 
 def render_expression(template: str, params: dict | None, param_defs: list[dict] | None = None) -> str:
     """把表达式模板的 {param} 占位用参数值渲染为可执行表达式，并做白名单校验。"""
     merged: dict = {}
-    for pd_ in (param_defs or []):
+    definitions = param_defs or []
+    known = {item["name"] for item in definitions}
+    unknown = sorted(set(params or {}) - known)
+    if param_defs is not None and unknown:
+        raise ValueError(f"存在未定义的指标参数: {', '.join(unknown)}")
+    for pd_ in definitions:
         merged[pd_["name"]] = pd_.get("default")
     for k, v in (params or {}).items():
         merged[k] = v
+    for pd_ in definitions:
+        name, value = pd_["name"], merged[pd_["name"]]
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"参数 {name} 须为数字")  # noqa: TRY004
+        if pd_.get("type") == "int" and not float(value).is_integer():
+            raise ValueError(f"参数 {name} 须为整数")
+        if pd_.get("min") is not None and value < pd_["min"]:
+            raise ValueError(f"参数 {name} 不能小于 {pd_['min']}")
+        if pd_.get("max") is not None and value > pd_["max"]:
+            raise ValueError(f"参数 {name} 不能大于 {pd_['max']}")
     try:
         expr = template.format(**merged)
     except (KeyError, IndexError) as e:
@@ -39,11 +131,14 @@ def render_expression(template: str, params: dict | None, param_defs: list[dict]
 
 def _row(d) -> dict:
     """IndicatorDef(dataclass) → 表行 dict。"""
+    layer, parent_key, preset_params = governance_metadata(d)
     return {
         "key": d.key, "name_cn": d.name_cn, "category": d.category, "dtype": d.dtype,
         "direction": d.direction, "kind": d.kind, "expression": d.expression,
         "params": json.dumps([asdict(p) for p in d.params], ensure_ascii=False),
         "categories": json.dumps(preset_categories(d.key, d.category), ensure_ascii=False),
+        "layer": layer, "parent_key": parent_key,
+        "preset_params": json.dumps(preset_params, ensure_ascii=False),
         "enabled": d.enabled, "is_builtin": d.is_builtin, "descr": d.desc,
     }
 
@@ -52,6 +147,7 @@ def _parse(r: dict) -> dict:
     r = dict(r)
     r["params"] = json.loads(r["params"]) if r.get("params") else []
     r["categories"] = json.loads(r["categories"]) if r.get("categories") else []
+    r["preset_params"] = json.loads(r["preset_params"]) if r.get("preset_params") else {}
     r["desc"] = r.pop("descr", "")
     for k in ("created_at", "updated_at"):
         if r.get(k) is not None:
@@ -72,7 +168,8 @@ class IndicatorDefRepo:
 
     def list(self, include_disabled: bool = True) -> list[dict]:
         sql = ("SELECT key,name_cn,category,dtype,direction,kind,expression,params,"
-               "categories,enabled,is_builtin,descr,created_at,updated_at FROM indicator_def")
+               "categories,layer,parent_key,preset_params,enabled,is_builtin,descr,created_at,"
+               "updated_at FROM indicator_def")
         if not include_disabled:
             sql += " WHERE enabled"
         sql += " ORDER BY is_builtin DESC, category, key"
@@ -88,14 +185,17 @@ class IndicatorDefRepo:
         created_at = created.iloc[0]["created_at"] if not created.empty else now
         self.c.execute(
             "INSERT INTO indicator_def (key,name_cn,category,dtype,direction,kind,expression,"
-            "params,categories,enabled,is_builtin,descr,created_at,updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (key) DO UPDATE SET "
+            "params,categories,layer,parent_key,preset_params,enabled,is_builtin,descr,created_at,"
+            "updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (key) DO UPDATE SET "
             "name_cn=EXCLUDED.name_cn, category=EXCLUDED.category, dtype=EXCLUDED.dtype, "
             "direction=EXCLUDED.direction, kind=EXCLUDED.kind, expression=EXCLUDED.expression, "
             "params=EXCLUDED.params, categories=EXCLUDED.categories, enabled=EXCLUDED.enabled, "
-            "is_builtin=EXCLUDED.is_builtin, descr=EXCLUDED.descr, updated_at=EXCLUDED.updated_at",
+            "layer=EXCLUDED.layer, parent_key=EXCLUDED.parent_key, "
+            "preset_params=EXCLUDED.preset_params, is_builtin=EXCLUDED.is_builtin, "
+            "descr=EXCLUDED.descr, updated_at=EXCLUDED.updated_at",
             [row["key"], row["name_cn"], row["category"], row["dtype"], row["direction"],
              row["kind"], row["expression"], row["params"], row.get("categories", "[]"),
+             row.get("layer"), row.get("parent_key"), row.get("preset_params", "{}"),
              row["enabled"], row["is_builtin"], row["descr"], created_at, now],
         )
 
@@ -104,23 +204,37 @@ class IndicatorDefRepo:
                     direction: str | None = None, desc: str = "",
                     categories: list[str] | None = None) -> None:
         """保存/更新自定义表达式指标（校验表达式合法、key 不与内置冲突）。"""
-        if not key or not key.replace("_", "").isalnum():
-            raise ValueError("指标标识 key 须为英文/数字/下划线")
+        if not _PARAM_NAME_RE.fullmatch(key):
+            raise ValueError("指标标识 key 须以英文字母开头，且只含英文、数字或下划线")
+        name_cn = name_cn.strip()
+        if not name_cn:
+            raise ValueError("请填写指标中文名称")
+        expression = expression.strip()
+        if not expression:
+            raise ValueError("请填写指标表达式")
         exist = self.get(key)
         if exist and exist["is_builtin"]:
             raise ValueError(f"{key} 为内置指标，不可覆盖")
         if dtype not in ("bool", "number"):
             raise ValueError("dtype 须为 bool 或 number")
-        params = params or []
-        render_expression(expression, None, params)  # 用默认参数试渲染 + 白名单校验
+        params = validate_definition(expression, params)
         cats = categories if categories is not None else (exist["categories"] if exist else [category])
+        old_semantic = None if not exist else definition_semantic_signature(
+            exist["dtype"], exist["expression"], exist["params"]
+        )
         self._upsert({
             "key": key, "name_cn": name_cn, "category": category, "dtype": dtype,
             "direction": direction, "kind": "expr", "expression": expression,
             "params": json.dumps(params, ensure_ascii=False),
             "categories": json.dumps(cats, ensure_ascii=False),
-            "enabled": True, "is_builtin": False, "descr": desc,
+            "layer": "signal" if dtype == "bool" else "metric",
+            "parent_key": None, "preset_params": "{}",
+            "enabled": bool(exist["enabled"]) if exist else True,
+            "is_builtin": False, "descr": desc,
         })
+        if old_semantic != definition_semantic_signature(dtype, expression, params):
+            from backend.indicators.engine import clear_indicator_caches
+            clear_indicator_caches()
 
     def set_enabled(self, key: str, enabled: bool) -> None:
         self.c.execute("UPDATE indicator_def SET enabled=?, updated_at=? WHERE key=?",
@@ -135,6 +249,8 @@ class IndicatorDefRepo:
         if d and d["is_builtin"]:
             raise ValueError("内置指标不可删除（可禁用）")
         self.c.execute("DELETE FROM indicator_def WHERE key=?", [key])
+        from backend.indicators.engine import clear_indicator_caches
+        clear_indicator_caches()
 
     def seed_builtins(self) -> int:
         """内置指标定义入库（幂等；保留用户改过的 enabled 与 categories）。"""
@@ -142,12 +258,13 @@ class IndicatorDefRepo:
             r["key"]: r
             for r in self.c.query_df(
                 "SELECT key,name_cn,category,dtype,direction,kind,expression,params,categories,"
-                "enabled,is_builtin,descr FROM indicator_def WHERE is_builtin"
+                "layer,parent_key,preset_params,enabled,is_builtin,descr FROM indicator_def "
+                "WHERE is_builtin"
             ).to_dict("records")
         }
         compare_fields = (
             "name_cn", "category", "dtype", "direction", "kind", "expression", "params",
-            "categories", "enabled", "is_builtin", "descr",
+            "categories", "layer", "parent_key", "preset_params", "enabled", "is_builtin", "descr",
         )
         changed = 0
         for d in REGISTRY:

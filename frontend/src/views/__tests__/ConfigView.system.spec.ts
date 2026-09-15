@@ -35,11 +35,14 @@ vi.mock('@/api/scoreProfile', () => ({
   deleteIndicatorDef: vi.fn(),
   deleteScoreProfile: vi.fn(),
   getIndicatorRegistry: vi.fn(),
+  getIndicatorReferences: vi.fn(),
   getScoreProfile: vi.fn(),
   getScoreProfileVersions: vi.fn(),
   listScoreProfiles: vi.fn(),
   runScoreProfile: vi.fn(),
+  previewIndicatorDef: vi.fn(),
   saveIndicatorDef: vi.fn(),
+  updateIndicatorDef: vi.fn(),
   saveScoreProfile: vi.fn(),
   setScoreProfileVisibility: vi.fn(),
   setIndicatorCategories: vi.fn(),
@@ -296,6 +299,59 @@ describe('ConfigView tech tab', () => {
     expect(select.props('allowCreate')).toBe(true)
     expect(select.props('defaultFirstOption')).toBe(true)
     expect(select.props('size')).toBe('small')
+    wrapper.unmount()
+  })
+
+  it('默认折叠参数预设并可显式展开', async () => {
+    routeState.meta.configTab = 'tech'
+    ;(scoreApi.getIndicatorRegistry as ReturnType<typeof vi.fn>).mockResolvedValue({
+      templates: [],
+      items: [
+        { key: 'ma', name_cn: '移动平均线', dtype: 'number', enabled: true, params: [],
+          categories: ['均线'], desc: '', is_builtin: true, layer: 'metric' },
+        { key: 'ma20', name_cn: 'MA20快捷项', dtype: 'number', enabled: true, params: [],
+          categories: ['均线'], desc: '', is_builtin: true, layer: 'preset', parent_key: 'ma',
+          preset_params: { period: 20 } },
+      ],
+    })
+    const wrapper = await mountView('normal', ['indicator:registry'])
+    expect(wrapper.findAll('.app-control-width-long')).toHaveLength(1)
+    expect(wrapper.findAll('.app-control-width-short')).toHaveLength(4)
+    expect(wrapper.text()).toContain('移动平均线')
+    expect(wrapper.text()).not.toContain('MA20快捷项')
+    const checkbox = wrapper.findAllComponents({ name: 'ElCheckbox' })
+      .find((item) => item.text().includes('展开快捷预设'))
+    expect(checkbox).toBeTruthy()
+    await checkbox?.vm.$emit('update:modelValue', true)
+    await flushPromises()
+    expect(wrapper.text()).toContain('MA20快捷项')
+    wrapper.unmount()
+  })
+
+  it('自定义指标抽屉使用三步流程并把 DSL 翻译为公式创建', async () => {
+    routeState.meta.configTab = 'tech'
+    ;(scoreApi.getIndicatorRegistry as ReturnType<typeof vi.fn>).mockResolvedValue({
+      items: [],
+      templates: [{
+        key: 'range_position', name: '区间位置', dtype: 'number',
+        expression: '(C - LLV(L, {window})) / (HHV(H, {window}) - LLV(L, {window})) * 100',
+        params: [{ name: 'window', label: '统计周期', type: 'int', default: 60,
+          min: 2, max: 1200, unit: '交易日', description: '回看长度' }],
+      }],
+    })
+    const wrapper = await mountView('system', ['indicator:registry', 'indicator:def-manage'])
+    const create = wrapper.findAll('button').find((node) => node.text().includes('新建自定义指标'))
+    expect(create).toBeTruthy()
+    await create?.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('选择创建方式')
+    expect(wrapper.text()).toContain('模板创建')
+    expect(wrapper.text()).toContain('公式创建')
+    expect(wrapper.text()).toContain('用真实行情验证')
+    expect(wrapper.text()).not.toContain('高级 DSL')
+    ;(wrapper.vm as any).defMode = 'dsl'
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('不是 Python 或 SQL')
     wrapper.unmount()
   })
 })

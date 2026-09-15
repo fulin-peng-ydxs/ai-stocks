@@ -10,7 +10,10 @@ export interface IndicatorParam {
   default: number
   min: number | null
   max: number | null
+  unit?: string
+  description?: string
 }
+export type IndicatorLayer = 'field' | 'metric' | 'signal' | 'preset'
 export interface IndicatorDef {
   key: string
   name_cn: string
@@ -24,8 +27,18 @@ export interface IndicatorDef {
   kind: 'builtin' | 'expr'
   expression: string | null
   is_builtin: boolean
+  layer?: IndicatorLayer
+  parent_key?: string | null
+  preset_params?: Record<string, number | string>
 }
-export function getIndicatorRegistry(includeDisabled = true): Promise<{ count: number; items: IndicatorDef[] }> {
+export interface IndicatorTemplate {
+  key: string
+  name: string
+  dtype: 'number' | 'bool'
+  expression: string
+  params: IndicatorParam[]
+}
+export function getIndicatorRegistry(includeDisabled = true): Promise<{ count: number; items: IndicatorDef[]; templates: IndicatorTemplate[] }> {
   return http.get('/indicators/registry', { params: { include_disabled: includeDisabled } })
 }
 export function saveIndicatorDef(body: {
@@ -40,6 +53,33 @@ export function saveIndicatorDef(body: {
   categories?: string[]
 }): Promise<{ key: string }> {
   return http.post('/indicators/def', body)
+}
+export function updateIndicatorDef(key: string, body: Parameters<typeof saveIndicatorDef>[0]): Promise<{ key: string }> {
+  return http.patch(`/indicators/def/${key}`, body)
+}
+export interface IndicatorReferenceSummary {
+  key: string
+  count: number
+  backtest_count: number
+  items: { kind: 'screen' | 'score' | 'trade'; id: string; name: string; version: number; historical: boolean }[]
+}
+export function getIndicatorReferences(key: string): Promise<IndicatorReferenceSummary> {
+  return http.get(`/indicators/def/${key}/references`)
+}
+export interface IndicatorPreviewResult {
+  status: 'ok' | 'history_insufficient' | 'missing_field' | 'empty_result' | 'expression_error'
+  reason: string
+  code: string
+  trade_date: string
+  rendered_expression: string
+  effective_params: Record<string, number>
+  value: number | boolean | null
+}
+export function previewIndicatorDef(body: {
+  dtype: 'number' | 'bool'; expression: string; params: IndicatorParam[]
+  values: Record<string, number>; code: string; trade_date?: string
+}): Promise<IndicatorPreviewResult> {
+  return http.post('/indicators/def/preview', body)
 }
 export function setIndicatorEnabled(key: string, enabled: boolean): Promise<unknown> {
   return http.patch(`/indicators/def/${key}/enabled`, { enabled })

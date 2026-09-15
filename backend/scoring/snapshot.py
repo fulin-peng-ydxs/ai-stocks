@@ -48,11 +48,19 @@ def _current_param_hash(market=None, profile: dict | None = None) -> str:
         placeholders = ",".join("?" * len(custom_keys))
         definitions = client.query_df(
             "SELECT key,dtype,kind,expression,params FROM indicator_def "
-            f"WHERE is_builtin=false AND key IN ({placeholders}) ORDER BY key",
+            f"WHERE key IN ({placeholders}) ORDER BY key",
             custom_keys,
         )
         if not definitions.empty:
-            params["custom_definitions"] = definitions.fillna("").to_dict("records")
+            semantic_definitions = []
+            for row in definitions.fillna("").to_dict("records"):
+                raw_params = json.loads(row["params"]) if row.get("params") else []
+                row["params"] = [
+                    {key: param.get(key) for key in ("name", "type", "default", "min", "max")}
+                    for param in raw_params
+                ]
+                semantic_definitions.append(row)
+            params["indicator_definitions"] = semantic_definitions
     return param_hash(params)
 
 

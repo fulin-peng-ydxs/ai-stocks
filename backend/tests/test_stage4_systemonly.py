@@ -107,6 +107,19 @@ _SYSTEM_ONLY_ENDPOINTS = [
             "expression": "close>0",
         },
     ),  # indicator:def-manage
+    ("GET", "/api/indicators/def/ma/references", None),
+    (
+        "POST",
+        "/api/indicators/def/preview",
+        {"dtype": "number", "expression": "C", "params": [], "values": {},
+         "code": "NOT-EXIST"},
+    ),
+    (
+        "PATCH",
+        f"/api/indicators/def/{_TEST_PLATFORM_KEY}",
+        {"key": _TEST_PLATFORM_KEY, "name_cn": "权限测试指标", "dtype": "bool",
+         "expression": "C > 0", "params": []},
+    ),
     (
         "POST",
         "/api/layout/presets",

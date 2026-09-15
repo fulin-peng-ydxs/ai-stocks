@@ -10,19 +10,25 @@ import {
   browseScoreProfiles,
   copyScoreProfile,
   deleteIndicatorDef,
+  getIndicatorReferences,
   deleteScoreProfile,
   getIndicatorRegistry,
   getScoreProfile,
   getScoreProfileVersions,
   listScoreProfiles,
   runScoreProfile,
+  previewIndicatorDef,
   saveIndicatorDef,
+  updateIndicatorDef,
   saveScoreProfile,
   setScoreProfileVisibility,
   setIndicatorCategories,
   setIndicatorEnabled,
   type IndicatorDef,
   type IndicatorParam,
+  type IndicatorPreviewResult,
+  type IndicatorReferenceSummary,
+  type IndicatorTemplate,
   type ScoreItem,
   type ScoreProfileSummary,
   type ScoreProfileVersion,
@@ -43,6 +49,10 @@ import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
+import PageDrawer from '@/components/PageDrawer.vue'
+import IndicatorParamFields from '@/components/indicator/IndicatorParamFields.vue'
+import IndicatorParamSchemaEditor from '@/components/indicator/IndicatorParamSchemaEditor.vue'
+import IndicatorSelect from '@/components/indicator/IndicatorSelect.vue'
 import { getErrorMessage } from '@/utils/error'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -70,6 +80,9 @@ import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-searc
 const settingsOpen = ref(false)
 const route = useRoute()
 const auth = useAuthStore()
+const canManageIndicators = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'indicator:def-manage'),
+)
 type ConfigTab = 'score' | 'tech' | 'trade' | 'system'
 const forcedTab = computed<ConfigTab | null>(() => (route.meta.configTab as ConfigTab | undefined) ?? null)
 const activeTab = computed<ConfigTab>(() => forcedTab.value || 'score')
@@ -108,7 +121,7 @@ const {
 // 抽屉由 PageSettingsDrawer 按布局旋钮渲染；本页不再暴露 tabs 组件配置。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
 
-const TECH_SORT_FIELDS = ['catOrder', 'name_cn', 'typeLabel', 'srcLabel', 'hasParams'] as const
+const TECH_SORT_FIELDS = ['catOrder', 'name_cn', 'layerLabel', 'typeLabel', 'srcLabel', 'hasParams'] as const
 const {
   sortBy: techSortBy,
   sortOrder: techSortOrder,
@@ -296,6 +309,7 @@ watch(() => sysTabs.value.map((tab) => tab.key).join('|'), () => {
 })
 // ── 技术指标注册表（含内置 + 自定义）──
 const registry = ref<IndicatorDef[]>([])
+const indicatorTemplates = ref<IndicatorTemplate[]>([])
 // 可作为评分项的指标（启用项）
 const scorable = computed(() => registry.value.filter((d) => d.enabled))
 function nameOf(key: string): string {
@@ -305,11 +319,21 @@ function defOf(key: string): IndicatorDef | undefined {
   return registry.value.find((d) => d.key === key)
 }
 async function reloadRegistry() {
-  registry.value = (await getIndicatorRegistry(true)).items
+  const result = await getIndicatorRegistry(true)
+  registry.value = result.items
+  indicatorTemplates.value = result.templates ?? []
 }
 
 // 技术指标列表：搜索 + 排序 + 多分类
 const techSearch = ref('')
+const techLayer = ref('')
+const techSource = ref('')
+const techDtype = ref('')
+const techStatus = ref('')
+const showPresets = ref(false)
+const LAYER_LABELS: Record<string, string> = {
+  field: '基础字段', metric: '数值指标', signal: '布尔信号', preset: '参数预设',
+}
 // 分类默认排序：按预设角度顺序，自定义分类排其后(中文序)
 const CATEGORY_ORDER = ['趋势', '动量', '量能', '位置', '均线', '突破', '估值', '换手', '形态', '强度', '新高', '事件', '筹码']
 function sortCats(cats: string[]): string[] {
@@ -340,10 +364,19 @@ const techRows = computed(() => {
       srcLabel: d.is_builtin ? '系统内置' : '自定义',
       hasParams: (d.params?.length ?? 0) > 0,
       typeLabel: d.dtype === 'bool' ? '布尔' : '数值',
+      layerLabel: d.layer ? LAYER_LABELS[d.layer] ?? d.layer : '未分层',
+      parentName: d.parent_key ? nameOf(d.parent_key) : '',
     }
   })
-  const filtered = !q ? rows : rows.filter((d) =>
+  const searched = !q ? rows : rows.filter((d) =>
     [d.name_cn, d.key, d.desc, ...(d.categories ?? [])].join(' ').toLowerCase().includes(q),
+  )
+  const filtered = searched.filter((d) =>
+    (!techLayer.value || d.layer === techLayer.value)
+    && (!techSource.value || (techSource.value === 'builtin') === d.is_builtin)
+    && (!techDtype.value || d.dtype === techDtype.value)
+    && (!techStatus.value || (techStatus.value === 'enabled') === d.enabled)
+    && (showPresets.value || !!q || techLayer.value === 'preset' || d.layer !== 'preset'),
   )
   const factor = techSortOrder.value === 'desc' ? -1 : 1
   filtered.sort((a, b) => {
@@ -362,6 +395,9 @@ async function onCategoriesChange(key: string, cats: string[]) {
 function onCategorySelectChange(key: string, value: string[] | string) {
   return onCategoriesChange(key, Array.isArray(value) ? value : [value].filter(Boolean))
 }
+function formatPresetParams(params: Record<string, number | string> | undefined): string {
+  return Object.entries(params ?? {}).map(([key, value]) => `${key}=${value}`).join('，')
+}
 
 // 技术指标管理：启停 / 删除 / 新建自定义
 async function toggleEnabled(row: IndicatorDef) {
@@ -369,6 +405,11 @@ async function toggleEnabled(row: IndicatorDef) {
   await reloadRegistry()
 }
 async function removeDef(row: IndicatorDef) {
+  const refs = await getIndicatorReferences(row.key)
+  if (refs.count) {
+    ElMessage.warning(`该指标被 ${refs.count} 个方案版本引用，并关联 ${refs.backtest_count} 条回测，不能删除`)
+    return
+  }
   await ElMessageBox.confirm(`确认删除自定义指标「${row.name_cn}」？`, '提示', { type: 'warning' })
   await deleteIndicatorDef(row.key)
   ElMessage.success('已删除')
@@ -379,6 +420,12 @@ function indicatorDefRowActions(row: IndicatorDef): AppRowAction[] {
   if (row.is_builtin) return []
   return [
     {
+      key: 'edit',
+      label: '编辑',
+      permission: 'indicator:def-manage',
+      onClick: () => openEditDef(row),
+    },
+    {
       key: 'delete',
       label: '删除',
       type: 'danger',
@@ -388,21 +435,99 @@ function indicatorDefRowActions(row: IndicatorDef): AppRowAction[] {
   ]
 }
 
-const defDialog = ref(false)
+const defDrawer = ref(false)
+const defMode = ref<'template' | 'dsl'>('template')
+const selectedTemplate = ref('')
+const editingKey = ref('')
+const defSaving = ref(false)
+const defPreviewing = ref(false)
+const defPreview = ref<IndicatorPreviewResult | null>(null)
+const defReferences = ref<IndicatorReferenceSummary | null>(null)
+const defReferencesLoading = ref(false)
+const defReferencesError = ref(false)
+const previewCode = ref('')
+const defPreviewDate = ref('')
+const previewValues = ref<Record<string, number>>({})
 const defForm = ref<{
   key: string; name_cn: string; dtype: 'bool' | 'number'; expression: string
   category: string; desc: string; params: IndicatorParam[]; categories: string[]
-}>({ key: '', name_cn: '', dtype: 'bool', expression: '', category: '自定义', desc: '', params: [], categories: [] })
+}>({ key: '', name_cn: '', dtype: 'number', expression: '', category: '自定义', desc: '', params: [], categories: [] })
+
+const semanticLocked = computed(() => !!editingKey.value && (
+  defReferencesLoading.value || defReferencesError.value || !!defReferences.value?.count
+))
+
+function resetPreviewValues(): void {
+  previewValues.value = Object.fromEntries(defForm.value.params.map((p) => [p.name, p.default]))
+  defPreview.value = null
+}
 
 function openNewDef() {
-  defForm.value = { key: '', name_cn: '', dtype: 'bool', expression: '', category: '自定义', desc: '', params: [], categories: [] }
-  defDialog.value = true
+  editingKey.value = ''
+  defReferences.value = null
+  defReferencesError.value = false
+  defMode.value = 'template'
+  selectedTemplate.value = ''
+  previewCode.value = ''
+  defPreviewDate.value = ''
+  defForm.value = { key: '', name_cn: '', dtype: 'number', expression: '', category: '自定义', desc: '', params: [], categories: [] }
+  resetPreviewValues()
+  defDrawer.value = true
 }
-function addDefParam() {
-  defForm.value.params.push({ name: 'n', label: '参数', type: 'int', default: 5, min: null, max: null })
+async function openEditDef(row: IndicatorDef) {
+  editingKey.value = row.key
+  defReferencesLoading.value = true
+  defReferencesError.value = false
+  defMode.value = 'dsl'
+  selectedTemplate.value = ''
+  previewCode.value = ''
+  defPreviewDate.value = ''
+  defForm.value = {
+    key: row.key, name_cn: row.name_cn, dtype: row.dtype, expression: row.expression ?? '',
+    category: row.category, desc: row.desc, params: row.params.map((p) => ({ ...p })),
+    categories: [...row.categories],
+  }
+  resetPreviewValues()
+  defDrawer.value = true
+  try {
+    defReferences.value = await getIndicatorReferences(row.key)
+  } catch {
+    defReferencesError.value = true
+  } finally {
+    defReferencesLoading.value = false
+  }
 }
-function removeDefParam(i: number) {
-  defForm.value.params.splice(i, 1)
+function applyTemplate(key: string) {
+  const template = indicatorTemplates.value.find((item) => item.key === key)
+  if (!template) return
+  defForm.value.dtype = template.dtype
+  defForm.value.expression = template.expression
+  defForm.value.params = template.params.map((param) => ({ ...param }))
+  if (!defForm.value.name_cn) defForm.value.name_cn = template.name
+  resetPreviewValues()
+}
+function templateSummary(key: string): string {
+  return ({
+    range_position: '判断收盘价处于一段价格区间的什么位置',
+    distance_to_high: '计算当前价格距离一段时间最高点有多远',
+    ma_spread: '衡量快线与慢线之间的距离和趋势强弱',
+  } as Record<string, string>)[key] ?? '从预设公式开始，只需调整参数'
+}
+async function runDefPreview() {
+  if (!previewCode.value.trim()) {
+    ElMessage.warning('请填写代表性股票代码后试算')
+    return
+  }
+  defPreviewing.value = true
+  try {
+    defPreview.value = await previewIndicatorDef({
+      dtype: defForm.value.dtype, expression: defForm.value.expression,
+      params: defForm.value.params, values: previewValues.value,
+      code: previewCode.value.trim(), trade_date: defPreviewDate.value || undefined,
+    })
+  } finally {
+    defPreviewing.value = false
+  }
 }
 async function submitNewDef() {
   const f = defForm.value
@@ -410,16 +535,25 @@ async function submitNewDef() {
     ElMessage.warning('请填写标识、名称、表达式')
     return
   }
+  if (!semanticLocked.value && defPreview.value?.status !== 'ok') {
+    ElMessage.warning('请先完成一次有效试算')
+    return
+  }
+  defSaving.value = true
   try {
-    await saveIndicatorDef({
+    const body = {
       key: f.key, name_cn: f.name_cn, dtype: f.dtype, expression: f.expression,
       params: f.params, category: f.category, desc: f.desc, categories: f.categories,
-    })
+    }
+    if (editingKey.value) await updateIndicatorDef(editingKey.value, body)
+    else await saveIndicatorDef(body)
     ElMessage.success('已保存')
-    defDialog.value = false
+    defDrawer.value = false
     await reloadRegistry()
   } catch {
     /* 错误已由拦截器提示 */
+  } finally {
+    defSaving.value = false
   }
 }
 
@@ -1431,23 +1565,19 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <AppDataTable :data="items" size="small" border class="item-table" embedded>
               <AppTableColumn label="指标">
                 <template #default="{ row }">
-                  <el-select v-model="row.indicator" size="small" filterable :disabled="profileReadonly" @change="onIndicatorChange(row)">
-                    <el-option v-for="d in scorable" :key="d.key" :label="d.name_cn" :value="d.key" />
-                  </el-select>
+                  <IndicatorSelect
+                    v-model="row.indicator"
+                    :definitions="registry"
+                    :disabled="profileReadonly"
+                    @change="onIndicatorChange(row)"
+                  />
                   <!-- 动态参数（如 连续上涨N天 的 N）-->
                   <div v-if="defOf(row.indicator)?.params?.length" class="param-row">
-                    <span v-for="p in defOf(row.indicator)!.params" :key="p.name" class="param-item">
-                      <label>{{ p.label }}</label>
-                      <el-input-number
-                        v-model="row.params![p.name]"
-                        size="small"
-                        :controls="false"
-                        :disabled="profileReadonly"
-                        :min="p.min ?? undefined"
-                        :max="p.max ?? undefined"
-                        style="width: 64px"
-                      />
-                    </span>
+                    <IndicatorParamFields
+                      v-model="row.params!"
+                      :params="defOf(row.indicator)!.params"
+                      :disabled="profileReadonly"
+                    />
                   </div>
                 </template>
               </AppTableColumn>
@@ -1591,7 +1721,26 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         <div class="pane-fill tech-pane">
         <el-card shadow="never" class="filter-card tech-filter-card">
           <AppControlRow>
-            <AppSearchInput v-model="techSearch" placeholder="搜索名称/标识/说明/分类" :debounce-ms="0" style="width: 220px" />
+            <AppSearchInput v-model="techSearch" placeholder="搜索名称/标识/说明/分类" :debounce-ms="0" class="app-control-width-long" />
+            <el-select v-model="techLayer" clearable placeholder="业务层级" class="app-control-width-short">
+              <el-option value="field" label="基础字段" />
+              <el-option value="metric" label="数值指标" />
+              <el-option value="signal" label="布尔信号" />
+              <el-option value="preset" label="参数预设" />
+            </el-select>
+            <el-select v-model="techSource" clearable placeholder="来源" class="app-control-width-short">
+              <el-option value="builtin" label="系统内置" />
+              <el-option value="custom" label="自定义" />
+            </el-select>
+            <el-select v-model="techDtype" clearable placeholder="输出类型" class="app-control-width-short">
+              <el-option value="number" label="数值" />
+              <el-option value="bool" label="布尔" />
+            </el-select>
+            <el-select v-model="techStatus" clearable placeholder="状态" class="app-control-width-short">
+              <el-option value="enabled" label="已启用" />
+              <el-option value="disabled" label="已停用" />
+            </el-select>
+            <el-checkbox v-model="showPresets">展开快捷预设</el-checkbox>
           </AppControlRow>
         </el-card>
         <div class="tech-table-wrap">
@@ -1601,6 +1750,12 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           <AppTableColumn prop="key" label="标识">
             <template #default="{ row }">
               <span class="mono">{{ row.key }}</span>
+            </template>
+          </AppTableColumn>
+          <AppTableColumn prop="layerLabel" label="业务层级" sortable="custom">
+            <template #default="{ row }">
+              <el-tag size="small" effect="plain">{{ row.layerLabel }}</el-tag>
+              <div v-if="row.parent_key" class="tip">属于 {{ row.parentName }} · {{ formatPresetParams(row.preset_params) }}</div>
             </template>
           </AppTableColumn>
           <AppTableColumn
@@ -1620,6 +1775,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 size="small"
                 placeholder="加分类"
                 aria-label="维护指标分类"
+                :disabled="!canManageIndicators"
                 @change="(value) => onCategorySelectChange(row.key, value)"
               />
             </template>
@@ -1663,70 +1819,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         </AppDataTable>
         </div>
 
-        <!-- 新建自定义指标 -->
-        <el-dialog v-model="defDialog" title="新建自定义指标" width="560px">
-          <el-form label-width="92px" size="small">
-            <el-form-item label="标识(英文)" required>
-              <el-input v-model="defForm.key" placeholder="如 consec_up3" />
-            </el-form-item>
-            <el-form-item label="中文名" required>
-              <el-input v-model="defForm.name_cn" placeholder="如 连续上涨" />
-            </el-form-item>
-            <el-form-item label="类型" required>
-              <el-radio-group v-model="defForm.dtype">
-                <el-radio-button value="bool">布尔</el-radio-button>
-                <el-radio-button value="number">数值</el-radio-button>
-              </el-radio-group>
-            </el-form-item>
-            <el-form-item label="表达式" required>
-              <el-input
-                v-model="defForm.expression"
-                type="textarea"
-                :rows="2"
-                placeholder="如 COUNT(C > REF(C,1), {n}) == {n}（用 {参数名} 占位）"
-              />
-            </el-form-item>
-            <el-form-item label="说明/用法">
-              <el-input
-                v-model="defForm.desc"
-                type="textarea"
-                :rows="2"
-                placeholder="这个指标是什么、口径、怎么用（会显示在指标列表，供选用时参考）"
-              />
-            </el-form-item>
-            <el-form-item label="分类">
-              <AppFilterSelect
-                v-model="defForm.categories"
-                :options="categoryOptions"
-                :clearable="false"
-                :visible-tag-count="3"
-                allow-create
-                default-first-option
-                placeholder="选择或输入分类"
-              />
-            </el-form-item>
-            <el-form-item label="参数">
-              <div class="def-params">
-                <div v-for="(p, i) in defForm.params" :key="i" class="def-param-row">
-                  <el-input v-model="p.name" size="small" placeholder="名(同{占位})" style="width: 110px" />
-                  <el-input v-model="p.label" size="small" placeholder="中文标签" style="width: 100px" />
-                  <el-input-number v-model="p.default" size="small" :controls="false" placeholder="默认" style="width: 80px" />
-                  <AppIconButton label="删除参数" size="xs" tone="danger" @click="removeDefParam(i)">
-                    <el-icon><Close /></el-icon>
-                  </AppIconButton>
-                </div>
-                <el-button link type="primary" size="small" @click="addDefParam">
-                  <template #icon><el-icon><Plus /></el-icon></template>
-                  参数
-                </el-button>
-              </div>
-            </el-form-item>
-          </el-form>
-          <template #footer>
-            <el-button @click="defDialog = false">取消</el-button>
-            <el-button v-permission="'indicator:def-manage'" type="primary" @click="submitNewDef">保存</el-button>
-          </template>
-        </el-dialog>
         </div>
       </template>
 
@@ -1810,13 +1902,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 <el-tag v-if="previewHit.buy !== null" type="success" size="small" round>命中 {{ previewHit.buy }} 只{{ previewDate.buy ? ` · ${previewDate.buy}` : '' }}</el-tag>
               </div>
               <div v-for="(c, i) in buyConds" :key="'b' + i" class="cond-row">
-                <el-select v-model="c.indicator" size="small" filterable style="width: 150px" :disabled="tReadonly" @change="onCondIndicator(c)">
-                  <el-option v-for="d in scorable" :key="d.key" :label="d.name_cn" :value="d.key" />
-                </el-select>
-                <span v-for="p in defOf(c.indicator)?.params ?? []" :key="p.name" class="param-item">
-                  <label>{{ p.label }}</label>
-                  <el-input-number v-model="c.params![p.name]" size="small" :disabled="tReadonly" :controls="false" style="width: 58px" />
-                </span>
+                <IndicatorSelect v-model="c.indicator" :definitions="registry" :disabled="tReadonly" @change="onCondIndicator(c)" />
+                <IndicatorParamFields v-model="c.params!" :params="defOf(c.indicator)?.params ?? []" :disabled="tReadonly" />
                 <template v-if="defOf(c.indicator)?.dtype === 'bool'">
                   <el-select :model-value="c.value" size="small" style="width: 96px" :disabled="tReadonly" @change="(v: boolean) => (c.value = v)">
                     <el-option :value="true" label="满足" />
@@ -1860,13 +1947,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 <el-tag v-if="previewHit.sell !== null" type="warning" size="small" round>命中 {{ previewHit.sell }} 只{{ previewDate.sell ? ` · ${previewDate.sell}` : '' }}</el-tag>
               </div>
               <div v-for="(c, i) in sellConds" :key="'s' + i" class="cond-row">
-                <el-select v-model="c.indicator" size="small" filterable style="width: 150px" :disabled="tReadonly" @change="onCondIndicator(c)">
-                  <el-option v-for="d in scorable" :key="d.key" :label="d.name_cn" :value="d.key" />
-                </el-select>
-                <span v-for="p in defOf(c.indicator)?.params ?? []" :key="p.name" class="param-item">
-                  <label>{{ p.label }}</label>
-                  <el-input-number v-model="c.params![p.name]" size="small" :disabled="tReadonly" :controls="false" style="width: 58px" />
-                </span>
+                <IndicatorSelect v-model="c.indicator" :definitions="registry" :disabled="tReadonly" @change="onCondIndicator(c)" />
+                <IndicatorParamFields v-model="c.params!" :params="defOf(c.indicator)?.params ?? []" :disabled="tReadonly" />
                 <template v-if="defOf(c.indicator)?.dtype === 'bool'">
                   <el-select :model-value="c.value" size="small" style="width: 96px" :disabled="tReadonly" @change="(v: boolean) => (c.value = v)">
                     <el-option :value="true" label="满足" />
@@ -2023,6 +2105,170 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 兜底 {{ JSON.stringify(v.backstop, null, 2) }}</pre>
       </div>
     </el-dialog>
+
+    <PageDrawer
+      v-model="defDrawer"
+      size="xxl"
+      class="indicator-definition-drawer"
+      destroy-on-close
+    >
+      <template #header>
+        <div class="indicator-editor-head">
+          <span>技术指标工作台</span>
+          <h2>{{ editingKey ? `编辑 · ${defForm.name_cn}` : '创建自定义指标' }}</h2>
+          <p>定义一个可被筛选、评分和买卖方案共同复用的计算能力。</p>
+        </div>
+      </template>
+      <AppStatusNotice
+        v-if="defReferencesError"
+        title="引用关系加载失败，计算语义已按安全策略锁定；可修改名称、说明和分类后保存。"
+        tone="warning"
+      />
+      <AppStatusNotice
+        v-else-if="semanticLocked && !defReferencesLoading"
+        title="该指标已被方案引用，计算类型、表达式和参数结构已锁定；如需修改口径，请另存为新指标。"
+      />
+      <el-form label-position="top" size="small" class="indicator-definition-form">
+        <section v-if="!editingKey" class="indicator-editor-section">
+          <header class="indicator-editor-section__head">
+            <span>01</span>
+            <div><h3>选择创建方式</h3><p>第一次创建建议从模板开始，公式创建适合熟悉指标计算的人。</p></div>
+          </header>
+          <el-radio-group v-model="defMode" class="indicator-create-mode">
+            <el-radio-button value="template">
+              <b>模板创建</b><small>选择常用计算，修改周期即可</small>
+            </el-radio-button>
+            <el-radio-button value="dsl">
+              <b>公式创建</b><small>使用受限制的安全指标公式</small>
+            </el-radio-button>
+          </el-radio-group>
+          <div v-if="defMode === 'template'" class="indicator-template-grid">
+            <el-button
+              v-for="item in indicatorTemplates"
+              :key="item.key"
+              :class="{ 'is-selected': selectedTemplate === item.key }"
+              :aria-pressed="selectedTemplate === item.key"
+              @click="selectedTemplate = item.key; applyTemplate(item.key)"
+            >
+              <b>{{ item.name }}</b>
+              <span>{{ templateSummary(item.key) }}</span>
+            </el-button>
+          </div>
+          <AppStatusNotice
+            v-else
+            title="什么是指标公式？"
+            description="它是一种只允许行情字段和安全函数的计算写法，不是 Python 或 SQL，也不能执行任意代码。"
+            size="compact"
+          />
+        </section>
+
+        <section class="indicator-editor-section">
+          <header class="indicator-editor-section__head">
+            <span>{{ editingKey ? '01' : '02' }}</span>
+            <div><h3>定义指标</h3><p>名称用于页面展示，英文标识用于方案长期引用，保存后不可修改。</p></div>
+          </header>
+          <div class="indicator-editor-grid indicator-editor-grid--identity">
+            <el-form-item label="中文名称" required>
+              <el-input v-model="defForm.name_cn" placeholder="如 区间位置" />
+            </el-form-item>
+            <el-form-item label="英文标识" required>
+              <el-input v-model="defForm.key" :disabled="!!editingKey" placeholder="如 range_position" />
+            </el-form-item>
+          </div>
+          <div class="indicator-editor-grid indicator-editor-grid--meta">
+            <el-form-item :label="!editingKey && defMode === 'template' ? '结果类型（模板已设定）' : '结果类型'" required>
+              <el-radio-group
+                v-model="defForm.dtype"
+                :disabled="semanticLocked || (!editingKey && defMode === 'template')"
+                @change="defPreview = null"
+              >
+                <el-radio-button value="number">数值</el-radio-button>
+                <el-radio-button value="bool">成立 / 不成立</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item label="分类">
+              <AppFilterSelect
+                v-model="defForm.categories"
+                :options="categoryOptions"
+                :clearable="false"
+                :visible-tag-count="3"
+                allow-create
+                default-first-option
+                placeholder="选择或输入分类"
+              />
+            </el-form-item>
+          </div>
+          <el-form-item v-if="editingKey || defMode === 'dsl'" label="计算公式" required>
+            <el-input
+              v-model="defForm.expression"
+              type="textarea"
+              :rows="4"
+              :disabled="semanticLocked"
+              placeholder="输入计算公式"
+              class="indicator-formula-input"
+              @input="defPreview = null"
+            />
+            <div class="indicator-formula-help">
+              <span>示例：(C / REF(C, {window}) - 1) * 100</span>
+              <span>C/O/H/L/V/TURN：收开高低、成交量、换手率</span>
+              <span>MA、HHV、LLV、REF、COUNT、SUM、ABS：安全函数</span>
+              <span>{参数名}：引用下方计算参数</span>
+            </div>
+          </el-form-item>
+          <div v-else-if="defForm.expression" class="indicator-formula-preview">
+            <span>模板生成的计算公式</span><code>{{ defForm.expression }}</code>
+          </div>
+          <el-form-item label="计算参数" class="indicator-param-form-item">
+            <IndicatorParamSchemaEditor
+              v-model="defForm.params"
+              :disabled="semanticLocked"
+              @update:model-value="resetPreviewValues"
+            />
+          </el-form-item>
+          <el-form-item label="说明与用法">
+            <el-input v-model="defForm.desc" type="textarea" :rows="2" placeholder="说明指标含义和用法" />
+          </el-form-item>
+        </section>
+
+        <section class="indicator-editor-section indicator-editor-section--preview">
+          <header class="indicator-editor-section__head">
+            <span>{{ editingKey ? '02' : '03' }}</span>
+            <div><h3>用真实行情验证</h3><p>选择一只代表性股票，确认公式能得到符合预期的结果后再保存。</p></div>
+          </header>
+          <div class="indicator-preview-controls">
+            <el-input v-model="previewCode" placeholder="如 600000.SH" class="app-control-width-long" />
+            <TradeDatePicker v-model="defPreviewDate" placeholder="默认最新交易日" class="app-control-width-medium" />
+            <IndicatorParamFields v-model="previewValues" :params="defForm.params" :disabled="semanticLocked" />
+            <el-button type="primary" :loading="defPreviewing" :disabled="semanticLocked" @click="runDefPreview">验证计算</el-button>
+          </div>
+          <AppStateBlock
+            v-if="defPreview && defPreview.status !== 'ok'"
+            state="empty"
+            size="compact"
+            title="这次验证没有得到有效结果"
+            :description="defPreview.reason"
+          />
+          <div v-else-if="defPreview" class="indicator-preview-result">
+            <span>{{ defPreview.code }} · {{ defPreview.trade_date }}</span>
+            <code>{{ defPreview.rendered_expression }}</code>
+            <b>结果：{{ defPreview.value }}</b>
+          </div>
+          <AppStatusNotice
+            v-else
+            title="等待验证"
+            description="填写股票代码并点击“验证计算”，结果会显示在这里。"
+            size="compact"
+          />
+          <div v-if="defReferences?.count" class="indicator-reference-summary">
+            当前被 {{ defReferences.count }} 个方案版本引用，关联 {{ defReferences.backtest_count }} 条回测。
+          </div>
+        </section>
+      </el-form>
+      <template #footer>
+        <el-button @click="defDrawer = false">取消</el-button>
+        <el-button v-permission="'indicator:def-manage'" type="primary" :loading="defSaving" @click="submitNewDef">保存指标</el-button>
+      </template>
+    </PageDrawer>
 
     <PageSettingsDrawer
       v-model="settingsOpen"
@@ -2218,8 +2464,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   flex-direction: column;
   gap: var(--app-space-1);
 }
-.band-box > .el-button.is-link,
-.def-params > .el-button.is-link {
+.band-box > .el-button.is-link {
   align-self: flex-start;
   width: fit-content;
 }
@@ -2263,13 +2508,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   gap: var(--app-space-control-gap);
   margin-top: 5px;
 }
-.param-item {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--app-space-1);
-  font-size: var(--app-font-size-caption);
-  color: var(--el-text-color-secondary);
-}
 .tech-pane {
   flex-direction: column;
   gap: var(--app-space-3);
@@ -2304,16 +2542,195 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   white-space: normal;
   word-break: break-word;
 }
-.def-params {
+:global(.indicator-definition-drawer .el-drawer__body) {
   display: flex;
   flex-direction: column;
-  gap: var(--app-space-control-gap);
-  width: 100%;
+  gap: var(--app-space-4);
+  padding-top: var(--app-space-2);
 }
-.def-param-row {
+:global(.indicator-editor-head) { min-width: 0; padding-right: var(--app-space-5); }
+:global(.indicator-editor-head > span) {
+  color: var(--el-color-primary);
+  font-size: var(--app-font-size-micro);
+  font-weight: var(--app-font-weight-strong);
+  letter-spacing: .12em;
+}
+:global(.indicator-editor-head h2) {
+  margin: var(--app-space-1) 0;
+  color: var(--el-text-color-primary);
+  font-size: var(--app-font-size-page-title);
+  line-height: var(--app-line-height-page-title);
+}
+:global(.indicator-editor-head p) {
+  margin: 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+}
+:global(.indicator-definition-form) {
+  display: grid;
+  min-width: 0;
+  gap: var(--app-space-5);
+}
+:global(.indicator-editor-section) {
+  display: grid;
+  min-width: 0;
+  gap: var(--app-space-4);
+}
+:global(.indicator-editor-section + .indicator-editor-section) {
+  padding-top: var(--app-space-5);
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+:global(.indicator-editor-section__head) {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: var(--app-space-3);
+  align-items: start;
+}
+:global(.indicator-editor-section__head > span) {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--el-color-primary-light-5);
+  border-radius: 50%;
+  color: var(--el-color-primary);
+  font-family: var(--app-font-family-mono);
+  font-size: var(--app-font-size-caption);
+  font-weight: var(--app-font-weight-strong);
+}
+:global(.indicator-editor-section__head h3) {
+  margin: 0;
+  color: var(--el-text-color-primary);
+  font-size: var(--app-font-size-section-title);
+  line-height: var(--app-line-height-section-title);
+}
+:global(.indicator-editor-section__head p) {
+  margin: var(--app-space-1) 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-comfy);
+}
+:global(.indicator-create-mode) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--app-space-3); }
+:global(.indicator-create-mode .el-radio-button) { width: 100%; }
+:global(.indicator-create-mode .el-radio-button__inner) {
+  display: grid;
+  width: 100%;
+  height: auto;
+  min-height: 68px;
+  padding: var(--app-space-3) var(--app-space-4);
+  justify-items: start;
+  border: 1px solid var(--el-border-color-light) !important;
+  border-radius: var(--app-radius-card) !important;
+  box-shadow: none !important;
+  text-align: left;
+}
+:global(.indicator-create-mode .el-radio-button__inner b) { color: var(--el-text-color-primary); font-size: var(--app-font-size-body); }
+:global(.indicator-create-mode .el-radio-button__inner small) { margin-top: var(--app-space-1); color: var(--el-text-color-secondary); }
+:global(.indicator-create-mode .el-radio-button.is-active .el-radio-button__inner) {
+  border-color: var(--el-color-primary) !important;
+  background: var(--el-bg-color) !important;
+  color: var(--el-color-primary) !important;
+}
+:global(.indicator-template-grid) {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--app-space-3);
+}
+:global(.indicator-template-grid .el-button) {
+  display: grid;
+  width: min(var(--app-control-width-long), 100%);
+  flex: 0 1 var(--app-control-width-long);
+  height: auto;
+  min-height: 80px;
+  margin: 0;
+  padding: var(--app-space-3);
+  justify-items: start;
+  border-color: var(--el-border-color-light);
+  white-space: normal;
+  text-align: left;
+}
+:global(.indicator-template-grid .el-button > span) {
+  display: grid;
+  justify-items: start;
+  white-space: normal;
+}
+:global(.indicator-template-grid .el-button > span > b) { color: var(--el-text-color-primary); font-size: var(--app-font-size-body); }
+:global(.indicator-template-grid .el-button > span > span) {
+  margin-top: var(--app-space-2);
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-comfy);
+}
+:global(.indicator-template-grid .el-button.is-selected) {
+  border-color: var(--el-color-primary);
+  background: var(--el-bg-color);
+  box-shadow: inset 3px 0 0 var(--el-color-primary);
+}
+:global(.indicator-editor-grid) { display: grid; gap: var(--app-space-4); }
+:global(.indicator-editor-grid--identity) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+:global(.indicator-editor-grid--meta) { grid-template-columns: minmax(260px, .8fr) minmax(0, 1.2fr); }
+:global(.indicator-definition-form .el-form-item) { margin: 0; }
+:global(.indicator-definition-form .el-form-item__label) {
+  color: var(--el-text-color-regular);
+  font-weight: var(--app-font-weight-section);
+}
+:global(.indicator-formula-input textarea),
+:global(.indicator-formula-preview code),
+:global(.indicator-preview-result code) { font-family: var(--app-font-family-mono); }
+:global(.indicator-formula-help) {
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  gap: var(--app-space-1) var(--app-space-4);
+  margin-top: var(--app-space-2);
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+}
+:global(.indicator-formula-preview) {
+  display: grid;
+  gap: var(--app-space-2);
+  padding: var(--app-space-3) var(--app-space-4);
+  border-left: 3px solid var(--el-color-primary);
+  background: var(--app-section-bg);
+}
+:global(.indicator-formula-preview span) { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
+:global(.indicator-formula-preview code) { color: var(--el-text-color-primary); overflow-wrap: anywhere; }
+:global(.indicator-param-form-item .el-form-item__content) { display: block; }
+:global(.indicator-editor-section--preview) {
+  padding: var(--app-space-4);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--app-radius-card);
+  background: var(--app-section-bg);
+}
+:global(.indicator-preview-controls) {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--app-space-control-gap);
+  gap: var(--app-space-2);
+}
+:global(.indicator-preview-result) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--app-space-3);
+  align-items: center;
+  padding: var(--app-space-3);
+  border: 1px solid var(--el-color-success-light-7);
+  border-radius: var(--app-radius-card);
+  background: var(--el-color-success-light-9);
+}
+:global(.indicator-preview-result code) { overflow-wrap: anywhere; }
+:global(.indicator-reference-summary) {
+  margin-top: var(--app-space-3);
+  color: var(--el-color-warning-dark-2);
+}
+@container app-viewport (max-width: 760px) {
+  :global(.indicator-create-mode),
+  :global(.indicator-editor-grid--identity),
+  :global(.indicator-editor-grid--meta) { grid-template-columns: 1fr; }
+  :global(.indicator-template-grid .el-button) {
+    width: 100%;
+    flex-basis: 100%;
+  }
 }
 .cond-block {
   margin: var(--app-space-3) 0;

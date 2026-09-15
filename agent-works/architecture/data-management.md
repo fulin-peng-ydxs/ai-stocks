@@ -32,6 +32,8 @@
 
 修改既有表同样执行第 2、4、5、6、7 步。目录 API 在运行时仍会暴露意外物理表并标记 `unregistered`，但这只是可观测兜底，不代表允许带遗漏发布。
 
+`indicator_def` 是 DuckDB 中的平台级指标定义资产。其层级、父子预设、参数契约、引用保护、试算和计算语义指纹见 [technical-indicators.md](technical-indicators.md)。新增字段或调整指标定义结构时，同样必须同步 DDL、字段中文元数据、显式鲜活度与质量策略，并执行上述目录门禁；筛选、评分、买卖方案和回测引用位于 PostgreSQL，只能在服务层分别读取后内存合并，禁止跨库 JOIN。
+
 ### 入库清洗与复权口径（`backend/dataquality/checker.py`、`storage/repository.py`）
 - **L1 入库闸门** `sanitize_bars`：收盘价空/≤0 的行直接丢弃（记 `null_close`）；开高低缺失/≤0 用收盘价回填（记 `ohl_repaired`）；零成交量补 0。坏行入库即拦截/标记，不进下游。
 - **复权口径分离**（关键正确性约定）：源因子 `adj_factor` 仅用于 K 线前复权；`pre_close`（涨跌停判定基准）走**独立清洗因子**；去抖列 `adj_factor_clean` 是复权查询的统一口径（`COALESCE(adj_factor_clean, adj_factor)`）。`rebuild-price-factors` 全序列重算这三者，不联网、不改源 `adj_factor`。

@@ -52,6 +52,12 @@ _SHARED_CACHE: OrderedDict[tuple, pd.DataFrame] = OrderedDict()
 _SHARED_CACHE_LOCK = RLock()
 
 
+def clear_indicator_caches() -> None:
+    """指标计算语义变化后清理进程级小结果缓存；展示元数据变化不调用。"""
+    with _SHARED_CACHE_LOCK:
+        _SHARED_CACHE.clear()
+
+
 def _as_date(d) -> date:
     if isinstance(d, date) and not isinstance(d, pd.Timestamp):
         return d
@@ -237,14 +243,34 @@ class IndicatorEngine:
         return df
 
     # ── 表达式型指标（M2.1b）：渲染参数 → 逐股点时求值（批量加载提速）──
-    def _eval_expr_indicator(self, template: str, params: dict | None,
-                             param_defs: list[dict] | None, asof, codes: list[str] | None) -> pd.Series:
+    @staticmethod
+    def _parameter_lookback(params: dict | None, param_defs: list[dict] | None) -> int:
+        """按实际整数型周期扩大历史窗口，避免参数允许 1200 日却只加载固定 500 日。"""
+        values = {item["name"]: item.get("default") for item in (param_defs or [])}
+        values.update(params or {})
+        return max([0, *(int(value) for value in values.values()
+                         if isinstance(value, (int, float)) and not isinstance(value, bool)
+                         and float(value).is_integer())])
+
+    def _eval_expr_indicator(
+        self,
+        template: str,
+        params: dict | None,
+        param_defs: list[dict] | None,
+        asof,
+        codes: list[str] | None,
+        *,
+        strict: bool = False,
+    ) -> pd.Series:
+        """批量计算表达式；试算使用 strict 暴露错误，生产批算继续逐股容错。"""
         from backend.indicators.definition import render_expression
         from backend.screening.expression import eval_expr
 
         expr = render_expression(template, params, param_defs)
         asof = _as_date(asof)
-        bars_all = self._bulk_qfq_bars(codes, asof, self._max_lb)
+        bars_all = self._bulk_qfq_bars(
+            codes, asof, max(self._max_lb, self._parameter_lookback(params, param_defs))
+        )
         if bars_all.empty:
             return pd.Series(dtype="float64")
         out: dict = {}
@@ -257,7 +283,9 @@ class IndicatorEngine:
             try:
                 val = eval_expr(expr, ctx)
                 out[code] = val.iloc[-1] if hasattr(val, "iloc") else val
-            except Exception:  # noqa: BLE001
+            except Exception:
+                if strict:
+                    raise
                 out[code] = None
         return pd.Series(out)
 
@@ -288,6 +316,7 @@ class IndicatorEngine:
                 "expression": render_expression(
                     definition["expression"], item.get("params"), definition.get("params")
                 ),
+                "lookback": self._parameter_lookback(item.get("params"), definition.get("params")),
             })
             seen.add(column)
         return specs
@@ -306,7 +335,9 @@ class IndicatorEngine:
         n_days = int(self.c.query_df(
             "SELECT count(DISTINCT trade_date) AS n FROM daily_bar WHERE trade_date BETWEEN ? AND ?",
             [lo, hi]).iloc[0]["n"])
-        bars_all = self._bulk_qfq_bars(codes, hi, n_days + self._max_lb)
+        bars_all = self._bulk_qfq_bars(
+            codes, hi, n_days + max(self._max_lb, self._parameter_lookback(params, param_defs))
+        )
         if bars_all.empty:
             return pd.DataFrame(columns=["code", "trade_date", "value"])
         lo_ts, hi_ts = pd.Timestamp(lo), pd.Timestamp(hi)
@@ -352,7 +383,9 @@ class IndicatorEngine:
         specs = self._expression_specs(items, set(snap.columns))
         if not specs or not codes:
             return snap
-        bars_all = self._bulk_qfq_bars(codes, _as_date(asof), self._max_lb)
+        bars_all = self._bulk_qfq_bars(
+            codes, _as_date(asof), max(self._max_lb, *(spec["lookback"] for spec in specs))
+        )
         values: dict[str, dict[str, object]] = {spec["column"]: {} for spec in specs}
         for code, group in bars_all.groupby("code", sort=False):
             group = group.reset_index(drop=True)
@@ -390,7 +423,9 @@ class IndicatorEngine:
             "SELECT count(DISTINCT trade_date) AS n FROM daily_bar WHERE trade_date BETWEEN ? AND ?",
             [lo, hi],
         ).iloc[0]["n"])
-        bars_all = self._bulk_qfq_bars(None, hi, n_days + self._max_lb)
+        bars_all = self._bulk_qfq_bars(
+            None, hi, n_days + max(self._max_lb, *(spec["lookback"] for spec in specs))
+        )
         lo_ts, hi_ts = pd.Timestamp(lo), pd.Timestamp(hi)
         parts: list[pd.DataFrame] = []
         for code, group in bars_all.groupby("code", sort=False):

@@ -496,6 +496,7 @@ const REGISTRY: PageRegistryEntry[] = [
         sortFields: [
           { key: 'catOrder', label: '分类' },
           { key: 'name_cn', label: '名称' },
+          { key: 'layerLabel', label: '业务层级' },
           { key: 'typeLabel', label: '类型' },
           { key: 'srcLabel', label: '来源' },
           { key: 'hasParams', label: '有无参数' },
@@ -513,7 +514,8 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'body', component: 'section', region: 'main', label: '技术指标', order: 1 },
         { id: 'techFilters', component: 'filter-bar', region: 'main', parentId: 'body', label: '技术指标筛选', order: 1 },
         { id: 'techTable', component: 'data-table', region: 'main', parentId: 'body', label: '技术指标表', order: 2, config: { pagination: false, defaultSort: 'catOrder:asc' } },
-        { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
+        { id: 'indicatorEditor', component: 'form', region: 'overlay', label: '自定义指标编辑抽屉', order: 1 },
+        { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 2 },
       ],
       editable: [densityKnob()],
     },
