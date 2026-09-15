@@ -39,14 +39,14 @@ const revision = {
 }
 
 const DrawerStub = defineComponent({
-  name: 'PageDrawer', props: ['modelValue', 'size'], emits: ['update:modelValue'],
+  name: 'AppDetailDrawer', props: ['modelValue', 'size'], emits: ['update:modelValue'],
   template: '<div v-if="modelValue"><slot/><footer><slot name="footer"/></footer></div>',
 })
 
 function mountDrawer(canSubmit = true) {
   return mount(TradeCheckinRevisionDrawer, {
     props: { modelValue: true, row, canSubmit },
-    global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { PageDrawer: DrawerStub } },
+    global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { AppDetailDrawer: DrawerStub } },
   })
 }
 
@@ -74,7 +74,7 @@ describe('TradeCheckinRevisionDrawer', () => {
     const operationPosition = wrapper.get('[data-testid="revision-operation-snapshot"]')
       .element.compareDocumentPosition(wrapper.get('[data-testid="revision-rule-snapshot"]').element)
     expect(operationPosition & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(wrapper.findComponent({ name: 'PageDrawer' }).props('size')).toBe('xl')
+    expect(wrapper.findComponent({ name: 'AppDetailDrawer' }).props('size')).toBe('xl')
     await wrapper.findAll('button').find((button) => button.text() === '发起修正')!.trigger('click')
     expect(wrapper.emitted('amend')).toEqual([[{ ruleId: 'rule-1', tradeDate: '2026-08-22' }]])
   })

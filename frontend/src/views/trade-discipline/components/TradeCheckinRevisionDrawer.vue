@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
-import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
-import PageDrawer from '@/components/PageDrawer.vue'
 import {
   getTradeDisciplineCheckinRevision,
   type CheckinHistoryRow,
@@ -95,23 +94,19 @@ watch(
 </script>
 
 <template>
-  <PageDrawer
+  <AppDetailDrawer
     :model-value="modelValue"
     title="履约修订详情"
     size="xl"
     data-testid="checkin-revision-drawer"
+    :state="loading ? 'loading' : loadError ? 'error' : detail ? 'ready' : 'empty'"
+    :state-title="loadError ? '修订详情读取失败' : loading ? '正在读取修订快照…' : '暂无修订详情'"
+    :state-description="loadError"
+    :retry="!!loadError"
     @update:model-value="emit('update:modelValue', $event)"
+    @retry="loadRevision"
   >
-    <AppStateBlock v-if="loading" state="loading" title="正在读取修订快照…" />
-    <AppStateBlock
-      v-else-if="loadError"
-      state="error"
-      title="修订详情读取失败"
-      :description="loadError"
-      retry
-      @retry="loadRevision"
-    />
-    <div v-else-if="detail" class="revision-detail">
+    <div v-if="detail" class="revision-detail">
       <section class="detail-hero">
         <div>
           <div class="detail-kicker">{{ detail.trade_date }} · r{{ detail.revision_no }}</div>
@@ -231,7 +226,7 @@ watch(
         <el-button @click="emit('update:modelValue', false)">关闭</el-button>
       </div>
     </template>
-  </PageDrawer>
+  </AppDetailDrawer>
 </template>
 
 <style scoped>

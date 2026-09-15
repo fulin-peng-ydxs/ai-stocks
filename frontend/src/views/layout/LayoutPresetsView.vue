@@ -2,6 +2,7 @@
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 /**
  * 视觉预设工作区（P4 布局平台 IA 重构）。
  *
@@ -367,7 +368,7 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #overlays>
-      <el-dialog v-model="presetDialog" width="720px" title="视觉预设">
+      <AppDetailDrawer v-model="presetDialog" size="xxl" title="视觉预设">
         <el-form label-position="top" class="preset-form">
           <div class="form-grid">
             <el-form-item label="标识" :required="!presetForm.is_builtin">
@@ -414,9 +415,9 @@ const menuPageTitle = useMenuPageTitle()
           <el-button @click="presetDialog = false">取消</el-button>
           <el-button v-permission="'layout:preset-manage'" type="primary" :loading="presetSaving" @click="submitPreset">保存</el-button>
         </template>
-      </el-dialog>
+      </AppDetailDrawer>
 
-      <el-dialog v-model="importExportVisible" width="720px" title="视觉预设导入导出">
+      <AppDetailDrawer v-model="importExportVisible" size="xxl" title="视觉预设导入导出">
         <div class="ie-grid">
           <section>
             <div class="section-title">导出全部预设</div>
@@ -436,7 +437,7 @@ const menuPageTitle = useMenuPageTitle()
             </div>
           </section>
         </div>
-      </el-dialog>
+      </AppDetailDrawer>
     </template>
   </LayoutHost>
 </template>

@@ -6,6 +6,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppDialog from '@/components/AppDialog.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -626,7 +627,7 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #overlays>
-      <el-dialog v-model="typeDialogOpen" :title="typeDialogMode === 'create' ? '新建字典类型' : '编辑字典类型'" width="520px">
+      <AppDialog v-model="typeDialogOpen" :title="typeDialogMode === 'create' ? '新建字典类型' : '编辑字典类型'" size="large">
         <el-form label-width="92px">
           <el-form-item label="类型 code" :required="typeDialogMode === 'create'">
             <el-input v-model="typeForm.code" :disabled="typeDialogMode === 'edit'" placeholder="如 user_status" />
@@ -648,9 +649,9 @@ const menuPageTitle = useMenuPageTitle()
           <el-button @click="typeDialogOpen = false">取消</el-button>
           <el-button type="primary" :loading="savingType" @click="saveType">保存</el-button>
         </template>
-      </el-dialog>
+      </AppDialog>
 
-      <el-dialog v-model="itemDialogOpen" :title="itemDialogMode === 'create' ? '新建字典项' : '编辑字典项'" width="520px">
+      <AppDialog v-model="itemDialogOpen" :title="itemDialogMode === 'create' ? '新建字典项' : '编辑字典项'" size="large">
         <el-form label-width="92px">
           <el-form-item label="类型 code">
             <el-input v-model="itemForm.type_code" disabled />
@@ -684,7 +685,7 @@ const menuPageTitle = useMenuPageTitle()
           <el-button @click="itemDialogOpen = false">取消</el-button>
           <el-button type="primary" :loading="savingItem" @click="saveItem">保存</el-button>
         </template>
-      </el-dialog>
+      </AppDialog>
 
       <PageSettingsDrawer
         v-model="settingsOpen"

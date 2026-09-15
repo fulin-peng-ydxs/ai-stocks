@@ -20,6 +20,8 @@ import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppDatePicker from '@/components/AppDatePicker.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppDialog from '@/components/AppDialog.vue'
+import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -677,7 +679,7 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #overlays>
-    <el-dialog v-model="ignoreDlg" title="选择忽略范围" width="440px" data-testid="quality-ignore-dialog">
+    <AppDialog v-model="ignoreDlg" title="选择忽略范围" size="narrow" data-testid="quality-ignore-dialog">
       <p class="ignore-tip">
         <template v-if="ignoreBatch">
           当前筛选【{{ ignoreBatchLabel }}】下所有“待处理”问题
@@ -706,10 +708,10 @@ const menuPageTitle = useMenuPageTitle()
         <el-button v-permission="'data-quality:fix'" type="primary" :loading="ignoring"
                    data-testid="quality-ignore-confirm" @click="confirmIgnore">确认忽略</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 标记退市对话框 -->
-    <el-dialog v-model="delistDlg" title="标记退市" width="440px">
+    <AppDialog v-model="delistDlg" title="标记退市" size="narrow">
       <p class="delist-tip">
         用于<b>数据源退市识别不准</b>（已退市却仍被当在市股、持续报缺口/滞后）的场景。指定退市日后：
         写入该股退市日、解决其缺口/滞后问题，之后覆盖鲜活扫描会据退市日自动排除该股，不再复发。
@@ -727,7 +729,7 @@ const menuPageTitle = useMenuPageTitle()
         <el-button @click="delistDlg = false">取消</el-button>
         <el-button v-permission="'data-quality:fix'" type="warning" :loading="delisting" @click="confirmDelist">确认标记退市</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
 
     <PageSettingsDrawer
       v-model="settingsOpen"
@@ -757,7 +759,7 @@ const menuPageTitle = useMenuPageTitle()
       </template>
     </PageSettingsDrawer>
 
-    <el-dialog v-model="checkupOpen" title="数据结构体检报告" width="640px" align-center>
+    <AppDetailDrawer v-model="checkupOpen" title="数据结构体检报告" size="xl">
       <template v-if="checkupReport">
         <div class="checkup-head">
           <el-tag :type="checkupHeaderType" effect="dark" size="large">
@@ -781,7 +783,7 @@ const menuPageTitle = useMenuPageTitle()
           </div>
         </div>
       </template>
-    </el-dialog>
+    </AppDetailDrawer>
     </template>
   </LayoutHost>
 </template>

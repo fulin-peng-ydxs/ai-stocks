@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { PAGE_DRAWER_WIDTHS } from '@/components/pageDrawerSize'
+import { APP_DIALOG_WIDTHS } from '@/components/appDialogSize'
 
 const SOURCE_DIR = resolve(process.cwd(), 'src')
 const VIEWS_DIR = resolve(SOURCE_DIR, 'views')
@@ -35,10 +36,15 @@ const HANDWRITTEN_LAYOUT = /class="[^"]*\bv-(?:page|grow|scroll)\b/
 const SCAFFOLD_PLACEHOLDER = /\bdata-scaffold-placeholder\b/
 const PRIVATE_DEFAULT_FILTER_SECTION = /<PageSettingSection\b[^>]*\btitle=["']默认筛选["']/
 const VIEWPORT_DRAWER = /<(?:el-drawer|ElDrawer)\b/
+const DIRECT_DIALOG = /<(?:el-dialog|ElDialog)\b/
+const DIRECT_DESCRIPTIONS = /<(?:el-descriptions|ElDescriptions)\b/
 const DIRECT_PAGINATION = /<(?:el-pagination|ElPagination)\b/
-const PAGE_DRAWER = /<PageDrawer\b[\s\S]*?>/g
+const PAGE_DRAWER = /<(?:PageDrawer|AppDetailDrawer)\b[\s\S]*?>/g
+const APP_DIALOG = /<AppDialog\b[\s\S]*?>/g
 const DRAWER_SIZE_KEYS = Object.keys(PAGE_DRAWER_WIDTHS)
 const CONTROLLED_DRAWER_SIZE = new RegExp(`\\bsize\\s*=\\s*["'](?:${DRAWER_SIZE_KEYS.join('|')})["']`)
+const DIALOG_SIZE_KEYS = Object.keys(APP_DIALOG_WIDTHS)
+const CONTROLLED_DIALOG_SIZE = new RegExp(`\\bsize\\s*=\\s*["'](?:${DIALOG_SIZE_KEYS.join('|')})["']`)
 
 function vueFiles(dir: string): string[] {
   const out: string[] = []
@@ -124,6 +130,43 @@ describe('布局契约守卫（M6）', () => {
       offenders,
       `以下页面直接使用了 <el-drawer>，应改用页面边界组件 <PageDrawer>：\n${offenders.join('\n')}`,
     ).toEqual([])
+  })
+
+  it('业务弹窗必须使用 AppDialog，详情字段必须使用统一详情组件', () => {
+    const dialogOffenders = vueFiles(SOURCE_DIR)
+      .filter((file) => !file.endsWith('/components/AppDialog.vue'))
+      .filter((file) => DIRECT_DIALOG.test(readFileSync(file, 'utf8')))
+      .map((file) => relative(SOURCE_DIR, file).split('\\').join('/'))
+    const detailOffenders = vueFiles(SOURCE_DIR)
+      .filter((file) => DIRECT_DESCRIPTIONS.test(readFileSync(file, 'utf8')))
+      .map((file) => relative(SOURCE_DIR, file).split('\\').join('/'))
+    expect(dialogOffenders, `以下组件绕过了 <AppDialog>：\n${dialogOffenders.join('\n')}`).toEqual([])
+    expect(detailOffenders, `以下组件绕过了统一详情字段：\n${detailOffenders.join('\n')}`).toEqual([])
+  })
+
+  it('AppDialog 只允许使用受控语义尺寸档位', () => {
+    const offenders: string[] = []
+    for (const file of vueFiles(SOURCE_DIR)) {
+      const source = readFileSync(file, 'utf8')
+      for (const match of source.matchAll(APP_DIALOG)) {
+        const tag = match[0]
+        if (!/\b:?size\s*=/.test(tag) || CONTROLLED_DIALOG_SIZE.test(tag)) continue
+        const line = source.slice(0, match.index).split('\n').length
+        offenders.push(`${relative(SOURCE_DIR, file)}:${line} ${tag.replace(/\s+/g, ' ')}`)
+      }
+    }
+    expect(
+      offenders,
+      `业务弹窗必须使用 ${DIALOG_SIZE_KEYS.join('/')} 语义档位：\n${offenders.join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('页面级业务详情必须使用 AppDetailDrawer，PageDrawer 只保留专用底层场景', () => {
+    const directConsumers = files
+      .filter((file) => /<PageDrawer\b/.test(readFileSync(file, 'utf8')))
+      .map(rel)
+      .sort()
+    expect(directConsumers).toEqual(['data/IngestView.vue'])
   })
 
   it('分页必须统一使用 AppPagination，不得复制底层分页器和响应式逻辑', () => {

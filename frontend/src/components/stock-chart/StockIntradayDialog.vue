@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { getIntraday, type StockIntraday } from '@/api/stocks'
+import AppDialog from '@/components/AppDialog.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import { getErrorMessage } from '@/utils/error'
@@ -114,10 +115,10 @@ onBeforeUnmount(() => controller?.abort())
 </script>
 
 <template>
-  <el-dialog
+  <AppDialog
     :model-value="modelValue"
     :title="title"
-    width="min(92cqw, 1040px)"
+    size="workspace"
     top="5cqh"
     destroy-on-close
     data-testid="stock-intraday-dialog"
@@ -168,7 +169,7 @@ onBeforeUnmount(() => controller?.abort())
       />
       <StockIntradayChart :points="data.points" :pre-close="data.pre_close" />
     </template>
-  </el-dialog>
+  </AppDialog>
 </template>
 
 <style scoped>

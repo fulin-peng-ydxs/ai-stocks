@@ -16,7 +16,7 @@
 2. 把推荐原型 + 理由告诉用户，确认后开发。
 3. 检查 DESIGN.md “真实复用组件清单”和 `frontend/src/components/**`，先复用已有真实组件；控件选型、图标按钮和系统组件种类边界按 DESIGN 执行。
 4. 优先运行 `npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型>` 生成骨架；脚手架中的 `data-scaffold-placeholder` 是未完成标记，接入真实组件和四态后必须删除，否则契约测试会失败。需要手写时再用 `createLayout(archetype, pageKey)` 起默认 `PageLayout`，按需覆盖 `slots`/`editable`/`responsive`。
-5. 模板用 `<LayoutHost :layout="effective">` + 具名插槽（`slot.id`）填业务组件；弹窗/抽屉放 `#overlays`。页面业务抽屉使用 `PageDrawer`，页面设置使用 `PageSettingsDrawer`，页面禁止直接使用 `el-drawer`。数据表格使用 `AppDataTable + AppTableColumn`，列只声明 `label/prop/role` 等语义，不声明 `width/min-width`；普通名称列使用 `name`，带前置控件和主副信息的对象识别列使用 `entity`；日期、单位或短口径摘要统一传 `header-meta` 并保持同行单行，主内容前有紧凑控件时传 `leading-controls` 由组件统一对齐，不在页面拼私有表头；主表使用默认成长模式，只有抽屉、展开行和局部明细等非主表使用 `embedded`。
+5. 模板用 `<LayoutHost :layout="effective">` + 具名插槽（`slot.id`）填业务组件；浮层放 `#overlays`。短表单和轻量查看使用 `AppDialog`，完整业务详情使用 `AppDetailDrawer`，专用底层抽屉使用 `PageDrawer`，页面设置使用 `PageSettingsDrawer`；页面禁止直接使用 `el-dialog`、`el-descriptions` 或 `el-drawer`。数据表格使用 `AppDataTable + AppTableColumn`，列只声明 `label/prop/role` 等语义，不声明 `width/min-width`；普通名称列使用 `name`，带前置控件和主副信息的对象识别列使用 `entity`；日期、单位或短口径摘要统一传 `header-meta` 并保持同行单行，主内容前有紧凑控件时传 `leading-controls` 由组件统一对齐，不在页面拼私有表头；主表使用默认成长模式，只有抽屉、展开行和局部明细等非主表使用 `embedded`。
 6. 若新增真实复用组件，补 DESIGN.md 清单、至少一个消费页面和测试；新增系统组件种类时同步 `COMPONENT_CATALOG`、schema 和预览；新增 Web 配置字段时同步字段定义、后端规则、pageRegistry 真实消费和配置中心验证。两类登记按职责维护，不机械捆绑。
 7. 跑校验：`npm test`（validator + 契约测试）；DEV 期 `LayoutHost` 会 `assertLayout` 直接抛。
 8. `npm run build`（含 vue-tsc 类型检查；改 `frontend/src` 后必构建）。
@@ -118,7 +118,7 @@
 
 - 触发来源：页面 / 应用顶栏
 - 浮层类型：dialog / 页面业务抽屉 / 页面设置抽屉 / 视口级全局抽屉
-- 组件选型：`el-dialog` / `PageDrawer` / `PageSettingsDrawer` / 应用外壳 `el-drawer`
+- 组件选型：`AppDialog` / `AppDetailDrawer` / 专用 `PageDrawer` / `PageSettingsDrawer` / 应用外壳 `el-drawer`
 - 承载边界：当前 `LayoutHost` 内容区 / 整个视口
 - 滚动归属：抽屉正文内滚，页面不跟随滚动
 - 关闭策略：关闭按钮 / 遮罩 / Esc / 完成动作后关闭
@@ -176,7 +176,7 @@
 | 字体 / 间距体系 | `global.css` typography/spacing token、DESIGN 排版与节奏规范；新增语义层级时同步 token、文档和消费点 | 相关样式契约测试、build、关键页面视觉验收 |
 | 全局界面比例 | `useDisplayScale`、`displayScaleProfiles`、`sizeProfileMatching`、`useLayoutViewport`、`displayScaleGeometry`、根画布与独立遮罩、视觉环境入口和 DESIGN；偏好复用 `useGlobalPreferenceSync`；自动缩放指数由系统外观配置 `ui.display.auto_scale_exponent`、后端校验、登录公开白名单和运行时缓存共同承接，默认 0.10；自定义比例按显示器可用 CSS 宽高保存个人尺寸档案，并与主从工作台复用尺寸匹配容差及距离工具；尺寸断点使用 `app-viewport`，第三方坐标补丁随安装校验 | composable/尺寸档案/坐标换算和真实组件交互单测、尺寸断点契约、build、分隔条/图表/滚动恢复与 Teleport 浮层视觉验收 |
 | 品牌字标 / 主题强调色 | `BrandMark.vue`、`useLayoutPreset.ts`、登录页与应用外壳消费点、DESIGN 品牌规则；不得新增场景变体或消费侧颜色覆盖 | `BrandMark.spec.ts`、`useLayoutPreset.spec.ts`、build、登录页与工作台同模式同预设视觉验收 |
-| 页面抽屉 | `#overlays`、`PageDrawer` / `PageSettingsDrawer`、唯一浮层类；新增公共能力时同步 DESIGN 组件清单 | `PageDrawer.spec.ts`、`layout-contract.spec.ts`、页面与顶部栏边界、正文内滚、关闭行为 |
+| 页面浮层 | `#overlays`、`AppDialog` / `AppDetailDrawer` / 专用 `PageDrawer` / `PageSettingsDrawer`、唯一浮层类；新增公共能力时同步 DESIGN 组件清单 | 统一组件测试、`layout-contract.spec.ts`、页面与顶部栏边界、正文内滚、关闭行为 |
 | 纯业务偏好 | `usePageSettings` / 页面业务态，放入「业务选项」；不追加存储实现类徽标 | 业务行为验证、必要时 build |
 
 新增系统组件 kind 必须维护组件能力事实源（`COMPONENT_CATALOG`、schema、预览），即使当前尚无页面消费者也可作为受控能力词汇存在。新增 Web 配置字段必须维护字段配置事实源（`COMPONENT_FIELD_DEFS`、后端规则）和安全渲染入口；所有同 kind slot 自动继承，页面只维护 slot `config`、`componentMeta` 和真实读取逻辑。结构型适用条件还必须同步后端实例归属校验，避免前端隐藏而保存接口仍放行。系统组件页逐 slot 展示自动继承、策略关闭和不适用原因。只有 kind 的语义能力摘要变化时才同步 `COMPONENT_CATALOG.configCapabilities`。`componentMeta.columns` 只提供设置候选，不自动生成业务列；每个候选 key 都必须由页面真实消费显隐状态。禁止新增页面不读取的 Web“假配置”；禁止绕过 `LayoutHost`、绕过 `pageRegistry` 或另建并行配置体系。
@@ -255,11 +255,14 @@ const drawerConfig = {
 
 ## 6. 模板骨架
 
-### 6.1 抽屉选型
+### 6.1 浮层选型
 
 | 触发位置与用途 | 使用组件 | 覆盖范围 | 规则 |
 |---|---|---|---|
-| 页面内业务详情、日志、长流程 | `PageDrawer` | 当前 `LayoutHost` 内容区 | 放在 `#overlays`；正文内滚；宽度只用 `sm/md/lg/xl/xxl/wide/full` 语义档位；`wide` 仅日志、字段差异、长 JSON 等横向内容，`xl` 用于固定宽度复杂详情/预览，`xxl` 用于资产搜索等需要更宽横向空间的复杂详情，`full` 仅用于窄屏承载桌面同等复杂工作台；页面不得传 px/%；不得遮挡应用顶栏、导航和工作标签 |
+| 破坏性确认 | `ElMessageBox` | 当前交互上下文 | 明确动作与对象；不使用表单弹窗模拟确认 |
+| 短表单、单组编辑、轻量查看 | `AppDialog` | 当前 `LayoutHost` 内容区 | 只用 `compact/narrow/medium/large/xlarge/max/workspace` 语义档位；普通表单不得使用 `workspace`；页面不得直接使用 `el-dialog` |
+| 完整业务详情、长编辑、历史版本 | `AppDetailDrawer` | 当前 `LayoutHost` 内容区 | 基于 `PageDrawer`；统一标题、四态、正文和 footer；内容使用 `AppDetailSection` 与 `AppDetailFields/Field`，禁止私有详情网格和 `el-descriptions` |
+| 实时日志、资产搜索、窄屏工作区回退 | `PageDrawer` | 当前 `LayoutHost` 内容区 | 仅专用交互模型可直接使用；宽度只用 `sm/md/lg/xl/xxl/wide/full` 语义档位；页面不得传 px/% |
 | 页面右上角设置入口 | `PageSettingsDrawer` | 当前 `LayoutHost` 内容区 | 内部复用 `PageDrawer`；固定承载布局、组件设置和业务选项；抽屉根部控制一级分组，嵌套父分组自动控制自己的直接子分组 |
 | 应用顶栏的用户中心、外观等全局能力 | 应用外壳中的 `el-drawer` | 整个视口 | 仅允许在 `App.vue` 等应用外壳使用，不属于业务页面模板 |
 
@@ -269,9 +272,16 @@ const drawerConfig = {
 PageSettingsDrawer
 └── PageDrawer
     └── el-drawer
+
+AppDetailDrawer
+└── PageDrawer
+    └── el-drawer
+
+AppDialog
+└── el-dialog
 ```
 
-`PageDrawer` 负责页面边界、遮罩、挂载位置和通用插槽；`PageSettingsDrawer` 负责页面设置的固定内容结构。二者不是并列替代关系。
+`PageDrawer` 负责抽屉底层页面边界、遮罩、挂载位置和通用插槽；`AppDetailDrawer` 负责业务详情结构，`PageSettingsDrawer` 负责页面设置结构，`AppDialog` 负责短内容。它们按内容职责选择，不按开发者偏好互换。
 
 页面设置抽屉不开放“允许折叠”和“默认折叠段”配置。首次使用全部展开；用户逐组折叠或使用抽屉根部一键操作后，统一记忆当前顶层折叠态。每个存在直接子分组的 `SettingsGroup` 由共享折叠树自动显示本层一键操作；父级收起直接子节点即可隐藏其子树，重新展开时保留更深层原状态。页面不得覆写这套策略、手工枚举子节点或添加第二套批量折叠入口。
 
@@ -286,9 +296,13 @@ PageSettingsDrawer
     <template #main>   <!-- 主表/主图/主列表 --> </template>
     <template #footer> <!-- 可选：固定底部批量条/购物车条（选择跨页累积）；纯渲染槽，不入 schema --> </template>
     <template #overlays>
-      <PageDrawer v-model="detailOpen" title="业务详情" class="my-detail-drawer">
+      <AppDialog v-model="editOpen" title="编辑名称" size="medium">
+        <!-- 短表单或轻量查看 -->
+      </AppDialog>
+
+      <AppDetailDrawer v-model="detailOpen" title="业务详情" size="xl">
         <!-- 页面业务详情；长内容在抽屉正文内滚 -->
-      </PageDrawer>
+      </AppDetailDrawer>
 
       <PageSettingsDrawer
         v-model="settingsOpen"
@@ -307,7 +321,7 @@ PageSettingsDrawer
 ```
 
 > 多组件主区（mixed/columns）按 `slot.id` 具名放置：`<template #<slotId>>…</template>`。可参考已登记且通过契约测试的同原型页面。
-> `el-dialog` 仍可放在 `#overlays`；页面抽屉不得用 `el-drawer` 替代 `PageDrawer`。Teleport 生成的内部 DOM 样式使用唯一全局类或 `:global`。
+> 业务代码不得直接使用 `el-dialog`、`el-descriptions` 或 `el-drawer`。Teleport 生成的内部 DOM 样式使用唯一全局类或 `:global`。
 
 ## 7. 验收红线（机制性强制，违反则对应 `npm test` / `npm run test:design` 门禁失败）
 
@@ -316,7 +330,7 @@ PageSettingsDrawer
 - 非公开 View 路由、`pageRegistry` 和 DESIGN marker 必须以 `pageKey` 双向一致；registry 页面必须真实导入和渲染 `LayoutHost`，并通过 `getPageLayout` 消费布局——`pageRegistry.spec.ts` 使用 TypeScript AST 与页面源码共同拦截。
 - 页面不得绕过 `LayoutHost` 手写 `.v-page/.v-grow/.v-scroll`——`layout-contract.spec.ts` 拦截。
 - 页面不得保留脚手架 `data-scaffold-placeholder`——必须接入真实组件和四态后再交付。
-- 页面源码不得直接使用 `<el-drawer>`；业务抽屉必须使用 `PageDrawer`，页面设置必须使用 `PageSettingsDrawer`——`layout-contract.spec.ts` 扫描拦截。
+- 页面源码不得直接使用 `<el-dialog>`、`<el-descriptions>` 或 `<el-drawer>`；短内容、普通详情、专用抽屉和页面设置分别使用 `AppDialog`、`AppDetailDrawer`、`PageDrawer`、`PageSettingsDrawer`——`layout-contract.spec.ts` 扫描拦截。
 - 不得使用未登记组件种类——`validateLayout` 拦截。
 - 不得把页面业务结构放进用户级配置；不得把不可重排的大表放进多列重排——`validateLayout` 拦截。
 - 列表交互：分页/排序默认走服务端、筛选变更自动触发（不设“查询”按钮）、多选跨页累积；“重置筛选”与“刷新”的准入、稳定命名、操作状态机、锁定范围、过期响应保护和触发边界统一遵守 [DESIGN.md](../../DESIGN.md)「按钮与输入 › 查询、重置与刷新」，页面不得私有改名或用 disabled 冒充 loading。**例外判据**：当数据为固定小集合（如一次性取全、无分页的 Top N 榜单）时，可允许客户端重排，且须在设计中注明为有意差异。

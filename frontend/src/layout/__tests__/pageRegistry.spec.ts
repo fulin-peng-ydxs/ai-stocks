@@ -482,7 +482,7 @@ describe('页面注册表完整性', () => {
     const drawer = readFileSync(join(VIEWS_DIR, 'trade-discipline/components/TradeCheckinRevisionDrawer.vue'), 'utf-8')
     expect(`${view}\n${history}\n${drawer}`).not.toMatch(/<el-(?:table|drawer)\b/i)
     expect(history).toContain('<AppDataTable')
-    expect(drawer).toContain('<PageDrawer')
+    expect(drawer).toContain('<AppDetailDrawer')
   })
 
   it('数据采集将任务中心与采集日志登记为同一成长页签的两个面板', () => {

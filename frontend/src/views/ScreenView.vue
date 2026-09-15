@@ -23,6 +23,7 @@ import { getIndicatorRegistry, type IndicatorDef } from '@/api/scoreProfile'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
@@ -917,7 +918,7 @@ const menuPageTitle = useMenuPageTitle()
 
     <template #overlays>
     <!-- 历史版本 -->
-    <el-dialog v-model="verVisible" :title="`历史版本 · ${loadedProfile?.name || ''}`" width="560px">
+    <AppDetailDrawer v-model="verVisible" :title="`历史版本 · ${loadedProfile?.name || ''}`" size="xl">
       <el-empty v-if="!versions.length" class="app-empty app-empty--compact" description="暂无历史版本" />
       <div v-for="v in versions" :key="v.version" class="ver-item">
         <div class="ver-head">
@@ -927,7 +928,7 @@ const menuPageTitle = useMenuPageTitle()
         </div>
         <pre class="ast">{{ JSON.stringify(v.expression, null, 2) }}</pre>
       </div>
-    </el-dialog>
+    </AppDetailDrawer>
 
     <PageSettingsDrawer
       v-model="settingsOpen"

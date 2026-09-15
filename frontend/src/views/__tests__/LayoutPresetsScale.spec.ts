@@ -20,7 +20,7 @@ describe('视觉预设字段边界', () => {
         plugins: [ElementPlus], directives: { permission: {} },
         stubs: {
           LayoutHost: { template: '<div><slot name="action"/><slot name="main"/><slot name="overlays"/></div>' },
-          ElDialog: { props: ['modelValue'], template: '<div v-if="modelValue"><slot/><slot name="footer"/></div>' },
+          AppDetailDrawer: { props: ['modelValue'], template: '<div v-if="modelValue"><slot/><slot name="footer"/></div>' },
           AppDataTable: true,
         },
       },

@@ -6,7 +6,7 @@ import ElementPlus from 'element-plus'
 import { ref, type Component } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
-import PageDrawer from '@/components/PageDrawer.vue'
+import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import AuditLogView from '@/views/system/AuditLogView.vue'
 
 vi.mock('@/api/audit', () => ({
@@ -48,6 +48,11 @@ const stubs = {
   PageSettingsDrawer: true,
   PageSettingsTrigger: true,
   HelpTip: { template: '<span><slot/></span>' },
+  AppDetailDrawer: {
+    name: 'AppDetailDrawer',
+    props: ['modelValue', 'size'],
+    template: '<aside v-if="modelValue"><slot/><slot name="footer"/></aside>',
+  },
 }
 
 const row = {
@@ -227,7 +232,7 @@ describe('AuditLogView', () => {
     expect(wrapper.text()).toContain('无字段级变更')
     expect(wrapper.text()).toContain('事件上下文')
     expect(wrapper.text()).toContain('req1')
-    expect(wrapper.findComponent(PageDrawer).props('size')).toBe('wide')
+    expect(wrapper.findComponent(AppDetailDrawer).props('size')).toBe('wide')
   })
 
   it('详情抽屉展示字段级 before/after 变更并处理长值换行', async () => {

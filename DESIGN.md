@@ -259,7 +259,10 @@ Key Characteristics：
 |---|---|---|---|---|
 | `PageSettingsDrawer` | `frontend/src/components/PageSettingsDrawer.vue` | 统一页面设置抽屉运行时组件 | 对应 `settings-drawer` 种类；仅 `size` 用户偏好走 PG `user_preference`，`bodyScroll` 只允许 page 层；分组固定可折叠，首次全部展开，当前折叠态作为内部用户偏好记忆 | `supportsPageSettings !== false` 的 registry 页面统一使用；抽屉根部控制一级分组，每个存在下级的可折叠分组自动控制自己的直接子分组；父级收起只隐藏子树、不重置更深层状态；禁止页面另写第二套设置抽屉 |
 | `PageSettingsTrigger` | `frontend/src/components/PageSettingsTrigger.vue` | 页面设置统一入口 | 触发 registry 页面中的 `settings-drawer` | 仅 `pageRegistry.supportsPageSettings !== false` 的真实消费页面显示；平台布局管理页不开放个人设置，不登记假入口 |
-| `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 页面级抽屉边界组件 | 无直接系统组件种类 | 页面打开的设置、详情、日志抽屉统一挂载到 `LayoutHost` 内容区；宽度只传 `sm/md/lg/xl/xxl/wide/full` 语义档位，禁止页面私传 px/%；`wide` 仅供日志、字段差异和长 JSON 等宽内容，`xxl` 供资产搜索等需更宽横向空间的复杂详情，`full` 仅供窄屏承载桌面同等复杂工作台；禁止直接覆盖应用顶栏与导航 |
+| `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 页面级抽屉底层边界组件 | 无直接系统组件种类 | 为 `AppDetailDrawer`、`PageSettingsDrawer` 和专用抽屉统一提供 `LayoutHost` 挂载、遮罩、滚动与宽度边界；直接消费只限实时日志、资产搜索和主从窄屏回退等专用场景；宽度只传 `sm/md/lg/xl/xxl/wide/full` 语义档位，禁止页面私传 px/% 或覆盖应用顶栏与导航 |
+| `AppDialog` | `frontend/src/components/AppDialog.vue` | 页面短表单、单组编辑和轻量查看的统一弹窗外壳 | 无直接系统组件种类；内部消费 `el-dialog` | 业务代码只传 `compact/narrow/medium/large/xlarge/max/workspace` 语义宽度；普通表单最大使用 `max`，`workspace` 只用于图表或宽表；统一挂载到当前 `LayoutHost`，禁止业务代码直接使用 `el-dialog` 或传 px/% |
+| `AppDetailDrawer` | `frontend/src/components/AppDetailDrawer.vue` | 完整详情、长编辑、历史版本和审计上下文的统一抽屉结构 | 无直接系统组件种类；内部消费 `PageDrawer` | 统一标题、副标题、头部动作、`ready/loading/empty/error/permission` 四态、正文和 footer；普通业务详情必须使用，只有实时日志、资产搜索、页面设置和主从窄屏回退等专用场景可直接消费 `PageDrawer` |
+| `AppDetailSection` / `AppDetailFields` / `AppDetailField` | `frontend/src/components/AppDetailSection.vue`、`frontend/src/components/AppDetailFields.vue`、`frontend/src/components/AppDetailField.vue` | 详情分区和规则型键值展示 | 无直接系统组件种类；作为详情抽屉或页面详情的内容结构 | 分区标题、说明和动作使用 `AppDetailSection`；1–3 列键值使用 `AppDetailFields`，低宽度按容器自动单列；字段使用 `AppDetailField`，空值统一 `—`，长值可跨列、代码值可等宽；禁止复制私有详情网格或使用 `el-descriptions` |
 | `LayoutHost` | `frontend/src/layout/components/LayoutHost.vue` | registry 页面统一布局、slot、滚动和 overlay 运行时宿主 | 消费 `PageLayout` 中登记的系统组件种类与区域 | 所有 registry 业务页面统一消费；页面不得绕过宿主手写页面外壳、主成长区、滚动归属或 overlay 边界 |
 | `ComponentAutoSettings` | `frontend/src/components/ComponentAutoSettings.vue` | 组件特性唯一渲染器 | 按 slot kind 自动消费 `COMPONENT_FIELD_DEFS`，再结合 `componentMeta` / slot `config` / `fieldApplicability` 判定实例适用性 | 设置抽屉 user 层与页面布局编辑器 page 层共用；候选项可由页面按当前业务上下文传入运行时 meta 覆盖，避免不同面板的分区混显；布尔、枚举、数值、字符串和静态字符串多选控件按字段元数据通用渲染，动态候选字段复用专用安全渲染器 |
 | `SettingsGroup` | `frontend/src/components/SettingsGroup.vue` | 设置抽屉的递归分组容器 | 无直接系统组件种类 | 页面设置抽屉分组优先复用；一级使用卡片边界，二级及更深使用统一 14px 节点标题、箭头、缩进和结构线，不再逐级缩小字号；存在直接子节点时标题区自动显示“收起/展开下级分组”图标操作；叶子分组不显示批量入口；不直接用于主内容区配置面板 |
@@ -492,9 +495,13 @@ Key Characteristics：
 ### 弹窗与抽屉
 
 - 弹窗/抽屉必须放在 `#overlays` 插槽。
-- 页面触发的抽屉必须使用 `PageDrawer`，遮罩和抽屉高度限制在当前 `LayoutHost` 内容区；只有应用顶栏触发的用户中心、外观等全局抽屉可以使用视口级浮层。
+- 破坏性确认使用 `ElMessageBox`；确认文案必须写清动作与对象，不用表单弹窗模拟二次确认。
+- 短表单、单一信息组编辑和轻量查看统一使用 `AppDialog`，业务页面和业务组件禁止直接使用 `el-dialog`。语义宽度固定为 `compact=420px`、`narrow=440px`、`medium=480px`、`large=520px`、`xlarge=560px`、`max=640px`；仅图表、宽表等完整横向工作区可用 `workspace=min(92cqw, 1200px)`，普通表单不得借此拉宽。
+- 完整对象详情、分段较多的编辑、历史版本和审计上下文统一使用 `AppDetailDrawer`；它负责标题、副标题、头部动作、四态、正文和 footer 的一致结构。业务详情按 `AppDetailSection` 分区，规则型键值展示使用 `AppDetailFields + AppDetailField`，空值统一为 `—`，不得复制私有详情网格或 `el-descriptions`。
+- `AppDetailDrawer` 基于 `PageDrawer`。页面直接使用 `PageDrawer` 只限实时日志、资产搜索、页面设置以及主从工作区窄屏回退等具有专用交互模型的底层场景；普通详情不得绕过 `AppDetailDrawer`。
+- 页面触发的抽屉遮罩和高度限制在当前 `LayoutHost` 内容区；只有应用顶栏触发的用户中心、外观等全局抽屉可以使用视口级浮层。
 - Element Plus teleport 生成的浮层 DOM 必须使用唯一全局类或 `:global` 定位内部样式，不要依赖 scoped 深层样式碰运气。
-- 普通 modal 用于确认、短表单、少字段编辑；宽表、长流程、跨模块设置优先 drawer、全屏弹窗或独立页面。
+- 复杂图表联动、宽表分析或跨模块工作流优先现有工作区、全屏抽屉或独立页面，不把完整工作台塞进普通弹窗。
 - 可编辑字段只要提交、发布或后端校验不允许为空，对应 `el-form-item` 就必须显示必填标记，并与提交校验保持一致；条件必填项只在条件分支生效时标记，已有默认值不能作为省略标记的理由。只读展示、没有“空值”状态的开关和允许留空的字段不标记，禁止用红色星号表达推荐填写。
 - 同一操作组内的同类任务必须采用一致的弹窗触发模型、对齐方式、footer 顺序和提交文案；只要同组任务需要在执行前展示参数，就统一使用参数弹窗，不得混用直接提交、`ElMessageBox` 和表单弹窗。
 - 异步任务参数弹窗提交期间，主按钮必须有 loading 并阻止重复提交；提交失败时保留弹窗与已填内容，只有成功后才关闭。
@@ -502,7 +509,7 @@ Key Characteristics：
 
 弹窗文案容量规则（解决窄弹窗内占位/说明文字被截断）：
 
-- 弹窗宽度只使用语义档位（420 / 440 / 460 / 480 / 520 / 560 / 640 px），窄档位只放短字段；宽度不足时优先压缩文案、调整字段布局或改用 `PageDrawer`，不靠继续加宽弹窗绕过。
+- 弹窗宽度只使用 `AppDialog` 语义档位，窄档位只放短字段；宽度不足时优先压缩文案、调整字段布局或改用 `AppDetailDrawer`，不靠继续加宽弹窗绕过。
 - 控件内直接可见的提示文案（`placeholder`、单选/复选后缀）控制在 15 字以内；更完整的说明移出控件，按内容结构使用 `HelpHint` / `HelpTip`，或放在字段 `label` 下方的辅助说明行（`*` 起头）及 `el-form` 底部的补充说明行。tooltip 与 popover 的选择遵循 §3 和真实复用组件清单，不受该可见文案字数边界约束。
 - `el-select` 等多选控件的占位只写「动作 + 对象」（如「输入代码或名称搜索」）；「可多选」「留空=默认值」等可操作语义放到字段辅助说明行，不拼进 `placeholder`，占位文案在输入框内不换行、不省略。
 - 单选项文案过长时拆为「主文案（行内）+ 补充说明（辅助行）」，不让单选标签撑满或截断。
@@ -738,7 +745,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 主从布局两侧都是表格、图表等主内容区时，默认分栏必须按容器比例连续计算并设置双侧最小可用宽度与配置比例上限，禁止用单侧固定像素上限让跨屏占比失衡；导航树、索引栏等语义窄栏可以固定宽度，但必须具备窄屏折叠、转单列或滚动兜底。
 - 多组件平级块只有在都允许重排、无强阅读顺序且最小宽度满足时才进入 `columns`。
 - `workbench` 类页面采用固定分析块 + 主成长区，放不下时由主区域兜底滚动。
-- 抽屉宽度使用 `PageDrawer` 的受控档位：`sm=320px`、`md=360px`、`lg=440px`、`xl=560px`、`xxl=clamp(640px, 60%, 820px)`、`wide=clamp(560px, 46%, 760px)`、`full=100%`。`wide` 只用于日志、字段差异、长 JSON 等需要横向阅读且应随页面内容区增长的场景；`xl` 用于固定宽度的复杂详情和组件预览；`xxl` 用于资产搜索等需要比 `xl` 更宽横向空间的复杂详情；`full` 只用于窄屏承载与桌面同等复杂的业务工作台，仍只铺满 `LayoutHost` 页面区域，不覆盖应用顶栏和导航。页面只传语义档位，不得私传 px 或百分比；页面设置抽屉只开放 `sm/md/lg`。
+- 抽屉宽度使用 `PageDrawer` 的受控档位：`sm=320px`、`md=360px`、`lg=440px`、`xl=560px`、`xxl=clamp(640px, 60%, 820px)`、`wide=clamp(560px, 46%, 760px)`、`full=100%`。`AppDetailDrawer` 同样只透传这些档位；`wide` 只用于日志、字段差异、长 JSON 等需要横向阅读且应随页面内容区增长的场景，`xl` 用于固定宽度的复杂详情和组件预览，`xxl` 用于资产搜索等需要更宽横向空间的复杂详情，`full` 只用于窄屏承载与桌面同等复杂的业务工作台。所有档位仍只铺满 `LayoutHost` 页面区域，不覆盖应用顶栏和导航；页面不得私传 px 或百分比，页面设置抽屉只开放 `sm/md/lg`。
 - 弹窗和抽屉允许 `max-height` 作为视口安全上限，但不能用视口高度驱动页面主体布局。
 
 ## 9. AI 开发入口

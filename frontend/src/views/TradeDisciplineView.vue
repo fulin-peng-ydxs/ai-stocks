@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppDialog from '@/components/AppDialog.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -698,10 +699,10 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #overlays>
-      <el-dialog
+      <AppDialog
         v-model="ruleLeaveDecisionVisible"
         title="未保存的规则修改"
-        width="460px"
+        size="medium"
         :show-close="false"
         :close-on-click-modal="false"
         :close-on-press-escape="false"
@@ -712,7 +713,7 @@ const menuPageTitle = useMenuPageTitle()
           <el-button v-permission="'trade-discipline:rule-manage'" type="danger" plain @click="discardRuleChangesAndLeave">放弃修改</el-button>
           <el-button v-permission="'trade-discipline:rule-manage'" type="primary" :loading="ruleLeaveSaving" @click="saveRuleChangesAndLeave">保存草稿</el-button>
         </template>
-      </el-dialog>
+      </AppDialog>
       <TradeCheckinRevisionDrawer
         v-model="historyDetailOpen"
         :row="historyDetailRow"

@@ -26,6 +26,7 @@ const ready = {
 }
 
 const DialogStub = defineComponent({
+  name: 'AppDialog',
   props: ['modelValue', 'title'],
   emits: ['close'],
   template: '<section v-if="modelValue" class="dialog-stub"><slot name="header"><h2>{{ title }}</h2></slot><slot /></section>',
@@ -61,7 +62,7 @@ function mountDialog() {
     },
     global: {
       stubs: {
-        ElDialog: DialogStub,
+        AppDialog: DialogStub,
         AppStatusNotice: NoticeStub,
         AppStateBlock: StateStub,
         StockIntradayChart: ChartStub,

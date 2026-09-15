@@ -9,6 +9,7 @@ import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppDialog from '@/components/AppDialog.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
@@ -590,7 +591,7 @@ const menuPageTitle = useMenuPageTitle()
 
     <template #overlays>
       <!-- 新建 / 编辑用户 -->
-      <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑用户' : '新建用户'" width="520px">
+      <AppDialog v-model="dialogVisible" :title="isEdit ? '编辑用户' : '新建用户'" size="large">
         <el-form label-width="76px">
           <el-form-item label="账号" :required="!isEdit">
             <el-input v-model="form.account" :disabled="isEdit" placeholder="账号唯一，创建后不可改" />
@@ -641,10 +642,10 @@ const menuPageTitle = useMenuPageTitle()
           <el-button @click="dialogVisible = false">取消</el-button>
           <el-button type="primary" :loading="saving" @click="save">保存</el-button>
         </template>
-      </el-dialog>
+      </AppDialog>
 
       <!-- 重置密码 -->
-      <el-dialog v-model="resetVisible" title="重置密码" width="420px">
+      <AppDialog v-model="resetVisible" title="重置密码" size="compact">
         <el-form label-width="76px">
           <el-form-item label="账号">
             <span>{{ resetTarget?.account }}</span>
@@ -661,7 +662,7 @@ const menuPageTitle = useMenuPageTitle()
           <el-button @click="resetVisible = false">取消</el-button>
           <el-button type="primary" :loading="resetting" @click="confirmReset">重置密码</el-button>
         </template>
-      </el-dialog>
+      </AppDialog>
 
       <PageSettingsDrawer
         v-model="settingsOpen"

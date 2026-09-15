@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppDialog from '@/components/AppDialog.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -416,7 +417,7 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #overlays>
-      <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新建角色' : '编辑角色'" width="420px">
+      <AppDialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新建角色' : '编辑角色'" size="compact">
         <el-form label-width="72px">
           <el-form-item label="角色名" required>
             <el-input v-model="roleForm.name" placeholder="如：数据分析员" />
@@ -445,7 +446,7 @@ const menuPageTitle = useMenuPageTitle()
           <el-button @click="dialogVisible = false">取消</el-button>
           <el-button type="primary" :loading="roleSaving" @click="saveRole">保存</el-button>
         </template>
-      </el-dialog>
+      </AppDialog>
 
       <PageSettingsDrawer
         v-model="settingsOpen"

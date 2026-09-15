@@ -7,6 +7,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppDialog from '@/components/AppDialog.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
@@ -729,7 +730,7 @@ const menuPageTitle = useMenuPageTitle()
 
     <template #overlays>
       <!-- 新建菜单 -->
-      <el-dialog v-model="menuDialog" title="新增菜单节点" width="480px">
+      <AppDialog v-model="menuDialog" title="新增菜单节点" size="medium">
         <el-form label-width="72px">
           <el-form-item label="上级">
             <el-select
@@ -778,7 +779,7 @@ const menuPageTitle = useMenuPageTitle()
           <el-button @click="menuDialog = false">取消</el-button>
           <el-button type="primary" :loading="menuSaving" @click="saveCreateMenu">创建</el-button>
         </template>
-      </el-dialog>
+      </AppDialog>
 
       <!-- 功能点无编辑 dialog：增删改一律表内联（见右栏功能点表） -->
       <PageSettingsDrawer

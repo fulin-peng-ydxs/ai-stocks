@@ -21,6 +21,7 @@ import {
 } from '@/api/stocks'
 import { fetchBenchmarkEquity, type BenchmarkEquity } from '@/utils/benchmarkEquity'
 import EquityChart from '@/components/EquityChart.vue'
+import AppDialog from '@/components/AppDialog.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import type { MacdPanelState, TradeMarker } from '@/components/stock-chart/workspaceOptions'
 import { Search, Close } from '@element-plus/icons-vue'
@@ -2307,7 +2308,7 @@ const menuPageTitle = useMenuPageTitle()
 
     <template #overlays>
     <!-- 交易明细 → 内嵌 K 线（买卖点标注，蓝▲买/橙▼卖），不跳转 -->
-    <el-dialog v-model="chartDlg" :title="`${dlgName || ''} ${dlgCode}　交易回放`" width="90%" top="5cqh">
+    <AppDialog v-model="chartDlg" :title="`${dlgName || ''} ${dlgCode}　交易回放`" size="workspace" top="5cqh">
       <div v-loading="dlgLoading">
         <!-- 左上角：本笔交易摘要（收益率/买入金额/卖出金额/股数）-->
         <div v-if="dlgSummary" class="dlg-summary">
@@ -2413,10 +2414,10 @@ const menuPageTitle = useMenuPageTitle()
           「卖后涨跌」是卖出后该股继续涨/跌的幅度：卖后大涨=卖早了，卖后续跌=卖对了。
         </div>
       </div>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 查看买入当日的每日榜单（全市场评分 Top 50，高亮本笔买入的票）-->
-    <el-dialog v-model="boardDlg" class="board-dlg" :title="`${boardDate}（选股信号日）每日榜单 · 全市场评分 Top 50`" width="640px" top="6cqh">
+    <AppDialog v-model="boardDlg" class="board-dlg" :title="`${boardDate}（选股信号日）每日榜单 · 全市场评分 Top 50`" size="max" top="6cqh">
       <div>
         <div class="dlg-hint" style="margin-bottom:8px">
           这是<b>选股信号日</b>（买入日的前一交易日）全市场按评分排序的榜单；<b class="bd-hit-legend">高亮行</b>=本笔买入的票，能看清它在大盘里的相对位置。
@@ -2443,7 +2444,7 @@ const menuPageTitle = useMenuPageTitle()
           </AppTableColumn>
         </AppDataTable>
       </div>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 浏览公开回测抽屉（R5/R6）：kind='backtest'，tenant/public 段、无系统内置、默认全体公开 -->
     <AssetSearchDrawer

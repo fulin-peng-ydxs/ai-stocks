@@ -101,7 +101,7 @@ const stubs = {
   AppPagination: true,
   ElTable: ElTableStub,
   ElTableColumn: ElTableColumnStub,
-  ElDialog: {
+  AppDialog: {
     props: ['modelValue'],
     template: '<div v-if="modelValue" class="dialog-stub"><slot/><slot name="footer"/></div>',
   },

@@ -17,12 +17,15 @@ import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
+import AppDetailField from '@/components/AppDetailField.vue'
+import AppDetailFields from '@/components/AppDetailFields.vue'
+import AppDetailSection from '@/components/AppDetailSection.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
-import PageDrawer from '@/components/PageDrawer.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -689,22 +692,17 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #overlays>
-      <PageDrawer
+      <AppDetailDrawer
         v-model="detailOpen"
         title="审计详情"
         size="wide"
         class="audit-detail-drawer"
         data-testid="audit-detail-drawer"
+        :state="detailLoading ? 'loading' : detailError ? 'error' : activeDetail ? 'ready' : 'empty'"
+        :state-title="detailError ? '详情读取失败' : detailLoading ? '正在读取审计详情…' : '暂无审计详情'"
+        :state-description="detailError ? '请关闭后重试' : ''"
       >
-        <div v-loading="detailLoading" class="detail-body">
-          <AppStateBlock
-            v-if="detailError"
-            state="error"
-            title="详情读取失败"
-            description="请关闭后重试"
-            size="compact"
-          />
-          <template v-else-if="activeDetail">
+          <template v-if="activeDetail">
             <section class="detail-hero">
               <div class="detail-title">
                 <b>{{ targetText(activeDetail) }}</b>
@@ -718,26 +716,21 @@ const menuPageTitle = useMenuPageTitle()
               </div>
             </section>
 
-            <div class="detail-grid">
-              <section class="detail-card">
-                <h4>执行信息</h4>
-                <div class="info-row"><span>处理人</span><b>{{ actorText(activeDetail) }}</b></div>
-                <div class="info-row"><span>租户</span><b>{{ activeDetail.tenant_id || '-' }}</b></div>
-                <div class="info-row"><span>来源 IP</span><b>{{ activeDetail.ip || '-' }}</b></div>
-                <div class="info-row"><span>耗时</span><b>{{ formatDuration(activeDetail.duration_ms) }}</b></div>
-              </section>
-              <section class="detail-card">
-                <h4>资源信息</h4>
-                <div class="info-row"><span>资源码</span><b class="mono">{{ activeDetail.resource_code || '-' }}</b></div>
-                <div class="info-row"><span>事件类型</span><b>{{ activeDetail.event_type }}</b></div>
-                <div class="info-row"><span>中文说明</span><b>{{ targetDescription(activeDetail) || '-' }}</b></div>
-                <div class="info-row"><span>请求方法</span><b>{{ activeDetail.method || '-' }}</b></div>
-                <div class="info-row"><span>请求路径</span><b>{{ activeDetail.path || '-' }}</b></div>
-              </section>
-            </div>
+            <AppDetailSection title="基础信息" :bordered="false">
+              <AppDetailFields :columns="2">
+                <AppDetailField label="处理人" :value="actorText(activeDetail)" />
+                <AppDetailField label="租户" :value="activeDetail.tenant_id" />
+                <AppDetailField label="来源 IP" :value="activeDetail.ip" />
+                <AppDetailField label="耗时" :value="formatDuration(activeDetail.duration_ms)" />
+                <AppDetailField label="资源码" :value="activeDetail.resource_code" mono />
+                <AppDetailField label="事件类型" :value="activeDetail.event_type" />
+                <AppDetailField label="中文说明" :value="targetDescription(activeDetail)" />
+                <AppDetailField label="请求方法" :value="activeDetail.method" />
+                <AppDetailField label="请求路径" :value="activeDetail.path" span="full" mono />
+              </AppDetailFields>
+            </AppDetailSection>
 
-            <section class="detail-section">
-              <h4>字段变更</h4>
+            <AppDetailSection title="字段变更">
               <p v-if="!activeDetail.changes?.length" class="muted">无字段级变更</p>
               <div v-else class="change-table">
                 <AppDataTable
@@ -759,23 +752,20 @@ const menuPageTitle = useMenuPageTitle()
                   </AppTableColumn>
                 </AppDataTable>
               </div>
-            </section>
+            </AppDetailSection>
 
-            <section class="detail-section">
-              <h4>错误摘要</h4>
+            <AppDetailSection title="错误摘要">
               <p :class="{ muted: !activeDetail.error_summary }">{{ activeDetail.error_summary || '无错误摘要' }}</p>
-            </section>
+            </AppDetailSection>
 
-            <section class="detail-section">
-              <h4>事件上下文</h4>
+            <AppDetailSection title="事件上下文">
               <pre class="json">{{ JSON.stringify(activeDetail.context || {}, null, 2) }}</pre>
-            </section>
+            </AppDetailSection>
           </template>
-        </div>
         <template #footer>
           <el-button @click="detailOpen = false">关闭</el-button>
         </template>
-      </PageDrawer>
+      </AppDetailDrawer>
 
       <PageSettingsDrawer
         v-model="settingsOpen"
@@ -890,12 +880,7 @@ const menuPageTitle = useMenuPageTitle()
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.detail-body {
-  min-height: 320px;
-}
-.detail-hero,
-.detail-card,
-.detail-section {
+.detail-hero {
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   background: var(--el-bg-color-overlay);
@@ -932,46 +917,6 @@ const menuPageTitle = useMenuPageTitle()
   flex-wrap: wrap;
   gap: var(--app-space-control-gap);
   justify-content: flex-end;
-}
-.detail-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--app-space-3);
-}
-.detail-card h4,
-.detail-section h4 {
-  margin: 0 0 10px;
-  font-size: var(--app-font-size-table);
-}
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--app-space-2);
-  padding: 6px 0;
-  border-top: 1px solid var(--el-border-color-lighter);
-  font-size: var(--app-font-size-table);
-}
-.info-row:first-of-type {
-  border-top: none;
-}
-.info-row span {
-  flex: none;
-  color: var(--el-text-color-secondary);
-}
-.info-row b {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  text-align: right;
-  font-weight: var(--app-font-weight-medium);
-}
-.detail-section p {
-  margin: 0;
-  color: var(--el-text-color-regular);
-  font-size: var(--app-font-size-table);
-  line-height: var(--app-line-height-longform);
-}
-.detail-section p.muted {
-  color: var(--el-text-color-secondary);
 }
 .change-table {
   overflow-x: auto;
@@ -1018,11 +963,6 @@ const menuPageTitle = useMenuPageTitle()
   }
   .audit-actions {
     justify-content: flex-start;
-  }
-}
-@container app-viewport (max-width: 720px) {
-  .detail-grid {
-    grid-template-columns: 1fr;
   }
 }
 </style>

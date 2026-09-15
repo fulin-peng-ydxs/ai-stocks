@@ -29,6 +29,8 @@ import {
 import { addMembers, getGroup, listGroups, removeMembers, type GroupSummary } from '@/api/stockGroup'
 import { browseTradeProfiles, copyTradeProfile, listTradeProfiles, type TradeProfileSummary } from '@/api/tradeProfile'
 import AppIconButton from '@/components/AppIconButton.vue'
+import AppDetailField from '@/components/AppDetailField.vue'
+import AppDetailFields from '@/components/AppDetailFields.vue'
 import AppWorkspacePane from '@/components/AppWorkspacePane.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
@@ -1220,11 +1222,14 @@ onBeforeUnmount(() => {
               class="ind-card"
               header="最新指标快照"
             >
-              <el-descriptions :column="2" border size="small">
-                <el-descriptions-item v-for="f in visibleIndicatorFields" :key="f.key" :label="f.label">
-                  {{ latest ? fmt(latest[f.key]) : '—' }}
-                </el-descriptions-item>
-              </el-descriptions>
+              <AppDetailFields :columns="2">
+                <AppDetailField
+                  v-for="f in visibleIndicatorFields"
+                  :key="f.key"
+                  :label="f.label"
+                  :value="latest ? fmt(latest[f.key]) : null"
+                />
+              </AppDetailFields>
               <p class="note">注：RS 相对强度为全市场横截面指标，个股单独查询不计算；请在策略筛选/每日榜单中查看。</p>
             </el-card>
 

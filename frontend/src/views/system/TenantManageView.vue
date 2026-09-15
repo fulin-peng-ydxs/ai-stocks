@@ -11,6 +11,7 @@ import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppDialog from '@/components/AppDialog.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -393,7 +394,7 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #overlays>
-      <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑租户' : '新建租户'" width="460px">
+      <AppDialog v-model="dialogVisible" :title="isEdit ? '编辑租户' : '新建租户'" size="medium">
         <el-form label-width="88px">
           <el-form-item label="租户名" required>
             <el-input v-model="form.name" placeholder="全局唯一" />
@@ -419,7 +420,7 @@ const menuPageTitle = useMenuPageTitle()
           <el-button @click="dialogVisible = false">取消</el-button>
           <el-button type="primary" :loading="saving" @click="save">保存</el-button>
         </template>
-      </el-dialog>
+      </AppDialog>
 
       <PageSettingsDrawer
         v-model="settingsOpen"

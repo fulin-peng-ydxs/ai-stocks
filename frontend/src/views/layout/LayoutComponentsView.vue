@@ -2,6 +2,10 @@
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
+import AppDetailField from '@/components/AppDetailField.vue'
+import AppDetailFields from '@/components/AppDetailFields.vue'
+import AppDetailSection from '@/components/AppDetailSection.vue'
 /**
  * 系统组件工作区（P4 IA 重构起步，P6 补可视化预览）。
  *
@@ -22,7 +26,6 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpHint from '@/components/HelpHint.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
-import PageDrawer from '@/components/PageDrawer.vue'
 import {
   COMPONENT_CATALOG,
   getPageLayout,
@@ -412,7 +415,7 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #overlays>
-      <PageDrawer
+      <AppDetailDrawer
         :model-value="detailVisible"
         @update:model-value="(value: boolean) => { detailVisible = value }"
         :title="selected ? `${selected.label}（${selected.kind}）` : '组件详情'"
@@ -439,28 +442,25 @@ const menuPageTitle = useMenuPageTitle()
             </div>
           </div>
 
-          <div class="detail-block">
-            <div class="db-title">能力说明</div>
-            <el-descriptions :column="1" size="small" border>
-              <el-descriptions-item label="说明">
-                <span class="app-body-text">{{ selected.description }}</span>
-              </el-descriptions-item>
-              <el-descriptions-item label="类别">{{ CATEGORY_LABELS[selected.category] }}</el-descriptions-item>
-              <el-descriptions-item label="宽度">{{ sizeText(selected, 'W') }}</el-descriptions-item>
-              <el-descriptions-item label="高度">{{ sizeText(selected, 'H') }}</el-descriptions-item>
-              <el-descriptions-item label="滚动归属">{{ scrollLabel(selected.defaultScroll) }}</el-descriptions-item>
-              <el-descriptions-item label="能力">
+          <AppDetailSection title="能力说明" :bordered="false">
+            <AppDetailFields :columns="1">
+              <AppDetailField label="说明" :value="selected.description" />
+              <AppDetailField label="类别" :value="CATEGORY_LABELS[selected.category]" />
+              <AppDetailField label="宽度" :value="sizeText(selected, 'W')" />
+              <AppDetailField label="高度" :value="sizeText(selected, 'H')" />
+              <AppDetailField label="滚动归属" :value="scrollLabel(selected.defaultScroll)" />
+              <AppDetailField label="能力">
                 <el-tag v-if="selected.canGrowMain" size="small" type="success" effect="plain">主区可成长</el-tag>
                 <el-tag v-if="selected.reflowable" size="small" type="warning" effect="plain">可重排</el-tag>
                 <span v-if="!selected.canGrowMain && !selected.reflowable" class="muted">不成长 / 不重排</span>
-              </el-descriptions-item>
-              <el-descriptions-item label="自适应">
+              </AppDetailField>
+              <AppDetailField label="自适应">
                 <span v-if="selected.category === 'overlay'">overlay：固定尺寸档位（size / maxHeight），不参与页面多列重排</span>
                 <span v-else-if="selected.reflowable">满足最低宽度时可参与多列重排</span>
                 <span v-else>不重排——靠内部滚动消化高度，不靠拆列解决</span>
-              </el-descriptions-item>
-            </el-descriptions>
-          </div>
+              </AppDetailField>
+            </AppDetailFields>
+          </AppDetailSection>
 
           <div class="detail-block">
             <div class="db-title">专属特性</div>
@@ -562,7 +562,7 @@ const menuPageTitle = useMenuPageTitle()
             title="边界：系统组件库只管理组件目录元信息与受控默认策略，不新增运行时优先级层（运行时为 default < page < user）。"
           />
         </div>
-      </PageDrawer>
+      </AppDetailDrawer>
     </template>
   </LayoutHost>
 </template>

@@ -2,6 +2,8 @@
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppDetailField from '@/components/AppDetailField.vue'
+import AppDetailFields from '@/components/AppDetailFields.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppPagination from '@/components/AppPagination.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
@@ -770,14 +772,14 @@ const menuPageTitle = useMenuPageTitle()
                 <AppTableColumn type="expand">
                   <template #default="{ row }">
                     <div class="expand">
-                      <div class="asset-detail-grid">
-                        <div><b>用途</b><span>{{ row.purpose }}</span></div>
-                        <div><b>事实源</b><span>{{ databaseLabel(row.source_of_truth) }}</span></div>
-                        <div><b>生命周期</b><span>{{ LIFECYCLE_LABEL[row.lifecycle] }}</span></div>
-                        <div><b>关联关系</b><span>{{ row.relations?.join('；') || '—' }}</span></div>
-                        <div><b>鲜活度策略</b><span>{{ freshnessPolicyLabel(row) }}</span></div>
-                        <div><b>质量策略</b><span>{{ qualityPolicyLabel(row) }}</span></div>
-                      </div>
+                      <AppDetailFields :columns="2">
+                        <AppDetailField label="用途" :value="row.purpose" />
+                        <AppDetailField label="事实源" :value="databaseLabel(row.source_of_truth)" />
+                        <AppDetailField label="生命周期" :value="LIFECYCLE_LABEL[row.lifecycle]" />
+                        <AppDetailField label="关联关系" :value="row.relations?.join('；')" />
+                        <AppDetailField label="鲜活度策略" :value="freshnessPolicyLabel(row)" />
+                        <AppDetailField label="质量策略" :value="qualityPolicyLabel(row)" />
+                      </AppDetailFields>
                       <AppStatusNotice
                         v-if="row.metadata_issues?.length"
                         class="asset-local-error"
@@ -1222,19 +1224,6 @@ const menuPageTitle = useMenuPageTitle()
   flex: 0 0 auto;
   margin-bottom: var(--app-space-2);
 }
-.asset-detail-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
-  gap: var(--app-space-2) var(--app-space-4);
-  color: var(--el-text-color-regular);
-  font-size: var(--app-font-size-table);
-}
-.asset-detail-grid > div {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  gap: var(--app-space-2);
-}
-.asset-detail-grid b { color: var(--el-text-color-primary); }
 .asset-count-action {
   display: flex;
   align-items: center;
@@ -1274,7 +1263,6 @@ const menuPageTitle = useMenuPageTitle()
 @container app-viewport (max-width: 760px) {
   .asset-search,
   .asset-category { width: 100%; }
-  .asset-detail-grid { grid-template-columns: 1fr; }
 }
 
 /* ── 板块数据 tab ── */

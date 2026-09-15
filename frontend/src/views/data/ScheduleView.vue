@@ -2,6 +2,8 @@
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppDialog from '@/components/AppDialog.vue'
+import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
@@ -36,7 +38,6 @@ import { compareScheduleFrequency } from '@/utils/scheduleFrequencySort'
 import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
 import StockIngestScopeFields from '@/components/data/StockIngestScopeFields.vue'
 import ResultMaintenanceTaskFields from '@/components/data/ResultMaintenanceTaskFields.vue'
-import PageDrawer from '@/components/PageDrawer.vue'
 import {
   buildStockIngestParams,
   createStockIngestForm,
@@ -751,7 +752,7 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #overlays>
-    <el-dialog v-model="cookieDlg" title="配置同花顺登录 Cookie" width="480px" data-testid="ths-login-cookie-dialog">
+    <AppDialog v-model="cookieDlg" title="配置同花顺登录 Cookie" size="medium" data-testid="ths-login-cookie-dialog">
       <AppStateBlock
         v-if="cookieStatus === 'loading'"
         data-testid="ths-login-cookie-status"
@@ -806,9 +807,9 @@ const menuPageTitle = useMenuPageTitle()
           加密保存
         </el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
 
-    <PageDrawer
+    <AppDetailDrawer
       v-model="eventDrawer"
       size="xl"
       :title="eventJob ? `${eventJob.name} · 触发记录` : '触发记录'"
@@ -858,10 +859,10 @@ const menuPageTitle = useMenuPageTitle()
         </AppTableColumn>
         <template #empty>暂无依赖或自身重试触发记录</template>
       </AppDataTable>
-    </PageDrawer>
+    </AppDetailDrawer>
 
     <!-- 新建/编辑对话框 -->
-    <el-dialog v-model="dlg" :title="dlgTitle" width="520px" data-testid="schedule-dialog">
+    <AppDetailDrawer v-model="dlg" :title="dlgTitle" size="xl" data-testid="schedule-dialog">
       <el-form label-width="92px">
         <el-form-item label="任务名称" required>
           <el-input
@@ -1028,7 +1029,7 @@ const menuPageTitle = useMenuPageTitle()
           @click="save"
         >保存调度</el-button>
       </template>
-    </el-dialog>
+    </AppDetailDrawer>
 
     <PageSettingsDrawer
       v-model="settingsOpen"

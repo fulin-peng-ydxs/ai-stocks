@@ -444,11 +444,8 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
         template: '<span :data-value="String(value)"><slot>{{ label }}</slot></span>',
       },
       ElCard: { template: '<section><slot name="header"/><slot/></section>' },
-      ElDescriptions: { template: '<dl><slot/></dl>' },
-      ElDescriptionsItem: {
-        props: ['label'],
-        template: '<div><dt>{{ label }}</dt><dd><slot/></dd></div>',
-      },
+      AppDetailFields: false,
+      AppDetailField: false,
     },
   }
 }

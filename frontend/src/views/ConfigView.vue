@@ -37,6 +37,7 @@ import {
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
@@ -49,7 +50,6 @@ import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
-import PageDrawer from '@/components/PageDrawer.vue'
 import IndicatorParamFields from '@/components/indicator/IndicatorParamFields.vue'
 import IndicatorParamSchemaEditor from '@/components/indicator/IndicatorParamSchemaEditor.vue'
 import IndicatorSelect from '@/components/indicator/IndicatorSelect.vue'
@@ -1721,7 +1721,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         <div class="pane-fill tech-pane">
         <el-card shadow="never" class="filter-card tech-filter-card">
           <AppControlRow>
-            <AppSearchInput v-model="techSearch" placeholder="搜索名称/标识/说明/分类" :debounce-ms="0" class="app-control-width-long" />
             <el-select v-model="techLayer" clearable placeholder="业务层级" class="app-control-width-short">
               <el-option value="field" label="基础字段" />
               <el-option value="metric" label="数值指标" />
@@ -1741,6 +1740,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               <el-option value="disabled" label="已停用" />
             </el-select>
             <el-checkbox v-model="showPresets">展开快捷预设</el-checkbox>
+            <AppSearchInput v-model="techSearch" placeholder="搜索名称/标识/说明/分类" :debounce-ms="0" class="app-control-width-long" />
           </AppControlRow>
         </el-card>
         <div class="tech-table-wrap">
@@ -2076,7 +2076,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 
     <template #overlays>
     <!-- 评分方案历史版本 -->
-    <el-dialog v-model="sVerVisible" :title="`历史版本 · ${editName || ''}`" width="560px">
+    <AppDetailDrawer v-model="sVerVisible" :title="`历史版本 · ${editName || ''}`" size="xl">
       <el-empty v-if="!sVersions.length" class="app-empty app-empty--compact" description="暂无历史版本" />
       <div v-for="v in sVersions" :key="v.version" class="ver-item">
         <div class="ver-head">
@@ -2088,10 +2088,10 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         </div>
         <pre class="ast">{{ JSON.stringify(v.items, null, 2) }}</pre>
       </div>
-    </el-dialog>
+    </AppDetailDrawer>
 
     <!-- 买卖方案历史版本 -->
-    <el-dialog v-model="tVerVisible" :title="`历史版本 · ${tEditName || ''}`" width="560px">
+    <AppDetailDrawer v-model="tVerVisible" :title="`历史版本 · ${tEditName || ''}`" size="xl">
       <el-empty v-if="!tVersions.length" class="app-empty app-empty--compact" description="暂无历史版本" />
       <div v-for="v in tVersions" :key="v.version" class="ver-item">
         <div class="ver-head">
@@ -2104,21 +2104,16 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 卖出 {{ JSON.stringify(v.sell_tree, null, 2) }}
 兜底 {{ JSON.stringify(v.backstop, null, 2) }}</pre>
       </div>
-    </el-dialog>
+    </AppDetailDrawer>
 
-    <PageDrawer
+    <AppDetailDrawer
       v-model="defDrawer"
+      :title="editingKey ? `编辑 · ${defForm.name_cn}` : '创建自定义指标'"
+      subtitle="定义一个可被筛选、评分和买卖方案共同复用的计算能力。"
       size="xxl"
       class="indicator-definition-drawer"
       destroy-on-close
     >
-      <template #header>
-        <div class="indicator-editor-head">
-          <span>技术指标工作台</span>
-          <h2>{{ editingKey ? `编辑 · ${defForm.name_cn}` : '创建自定义指标' }}</h2>
-          <p>定义一个可被筛选、评分和买卖方案共同复用的计算能力。</p>
-        </div>
-      </template>
       <AppStatusNotice
         v-if="defReferencesError"
         title="引用关系加载失败，计算语义已按安全策略锁定；可修改名称、说明和分类后保存。"
@@ -2268,7 +2263,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         <el-button @click="defDrawer = false">取消</el-button>
         <el-button v-permission="'indicator:def-manage'" type="primary" :loading="defSaving" @click="submitNewDef">保存指标</el-button>
       </template>
-    </PageDrawer>
+    </AppDetailDrawer>
 
     <PageSettingsDrawer
       v-model="settingsOpen"
@@ -2547,24 +2542,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   flex-direction: column;
   gap: var(--app-space-4);
   padding-top: var(--app-space-2);
-}
-:global(.indicator-editor-head) { min-width: 0; padding-right: var(--app-space-5); }
-:global(.indicator-editor-head > span) {
-  color: var(--el-color-primary);
-  font-size: var(--app-font-size-micro);
-  font-weight: var(--app-font-weight-strong);
-  letter-spacing: .12em;
-}
-:global(.indicator-editor-head h2) {
-  margin: var(--app-space-1) 0;
-  color: var(--el-text-color-primary);
-  font-size: var(--app-font-size-page-title);
-  line-height: var(--app-line-height-page-title);
-}
-:global(.indicator-editor-head p) {
-  margin: 0;
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-caption);
 }
 :global(.indicator-definition-form) {
   display: grid;

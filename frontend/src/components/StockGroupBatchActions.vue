@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import AppDialog from '@/components/AppDialog.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import {
   addMembers,
@@ -149,7 +150,7 @@ async function removeFromGroup(): Promise<void> {
     </div>
   </el-card>
 
-  <el-dialog v-model="createVisible" title="存为新分组" width="460px">
+  <AppDialog v-model="createVisible" title="存为新分组" size="medium">
     <el-form label-width="80px">
       <el-form-item label="分组名" required>
         <el-input v-model="createForm.name" placeholder="如：5月观察龙头" maxlength="30" show-word-limit />
@@ -173,9 +174,9 @@ async function removeFromGroup(): Promise<void> {
       <el-button @click="createVisible = false">取消</el-button>
       <el-button v-permission="'stock-group:create'" type="primary" :loading="creating" @click="submitCreate">创建</el-button>
     </template>
-  </el-dialog>
+  </AppDialog>
 
-  <el-dialog v-model="addVisible" title="加入已有分组" width="440px">
+  <AppDialog v-model="addVisible" title="加入已有分组" size="narrow">
     <el-form label-width="80px">
       <el-form-item label="目标分组" required>
         <el-select v-model="addTargetGid" filterable style="width: 100%">
@@ -192,7 +193,7 @@ async function removeFromGroup(): Promise<void> {
       <el-button @click="addVisible = false">取消</el-button>
       <el-button v-permission="'stock-group:member-update'" type="primary" :loading="adding" @click="submitAdd">加入</el-button>
     </template>
-  </el-dialog>
+  </AppDialog>
 </template>
 
 <style scoped>

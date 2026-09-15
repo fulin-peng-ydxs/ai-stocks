@@ -12,6 +12,9 @@ import {
   type BoardIngestStage, type BoardTypeScope,
 } from '@/api/data'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppDialog from '@/components/AppDialog.vue'
+import AppDetailField from '@/components/AppDetailField.vue'
+import AppDetailFields from '@/components/AppDetailFields.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTabToolbar from '@/components/AppTabToolbar.vue'
@@ -1043,10 +1046,10 @@ const menuPageTitle = useMenuPageTitle()
 
     <template #overlays>
     <!-- 采集执行对话框 -->
-    <el-dialog
+    <AppDialog
       v-model="optDlg"
       :title="TASK_LABEL[optType]"
-      width="520px"
+      size="large"
       align-center
       :close-on-click-modal="!optSubmitting"
       :close-on-press-escape="!optSubmitting"
@@ -1092,12 +1095,12 @@ const menuPageTitle = useMenuPageTitle()
           @click="submitOptions"
         >按以上参数执行</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
 
-    <el-dialog
+    <AppDialog
       v-model="resultDlg"
       :title="TASK_LABEL[resultType]"
-      width="520px"
+      size="large"
       align-center
       :close-on-click-modal="!resultSubmitting"
       :close-on-press-escape="!resultSubmitting"
@@ -1123,7 +1126,7 @@ const menuPageTitle = useMenuPageTitle()
           按以上参数执行
         </el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 实时日志抽屉 -->
     <PageDrawer v-model="logDrawer" :title="logTask ? `${taskDisplayLabel(logTask.task_type, logTask.params)} · 实时日志` : '实时日志'"
@@ -1140,47 +1143,43 @@ const menuPageTitle = useMenuPageTitle()
         <el-button link type="primary" @click="goToDataResult('/data/overview')">查看数据概览</el-button>
         <el-button link type="primary" @click="goToDataResult('/data/quality')">查看数据质量</el-button>
       </div>
-      <el-descriptions
+      <AppDetailFields
         v-if="correlationResult"
-        :column="3"
-        size="small"
-        border
+        :columns="3"
         class="correlation-task-result"
         data-testid="correlation-task-result"
       >
-        <el-descriptions-item label="目标日期">{{ correlationResult.target_date || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="目标股票">{{ correlationResult.target_stock_count ?? 0 }}</el-descriptions-item>
-        <el-descriptions-item label="候选关系">{{ correlationResult.candidate_relation_count ?? 0 }}</el-descriptions-item>
-        <el-descriptions-item label="行业冠军">{{ correlationResult.industry_champion_count ?? 0 }}</el-descriptions-item>
-        <el-descriptions-item label="概念冠军">{{ correlationResult.concept_champion_count ?? 0 }}</el-descriptions-item>
-        <el-descriptions-item label="空结果">{{ correlationResult.empty_result_count ?? 0 }}</el-descriptions-item>
-        <el-descriptions-item label="回退上证">{{ correlationResult.fallback_count ?? 0 }}</el-descriptions-item>
-        <el-descriptions-item label="跳过股票">{{ correlationResult.skipped_count ?? 0 }}</el-descriptions-item>
-        <el-descriptions-item label="失败数">{{ correlationResult.failed_count ?? 0 }}</el-descriptions-item>
-        <el-descriptions-item label="计算耗时">{{ correlationResult.calculation_seconds ?? 0 }} 秒</el-descriptions-item>
-        <el-descriptions-item label="写入耗时">{{ correlationResult.write_seconds ?? 0 }} 秒</el-descriptions-item>
-        <el-descriptions-item label="基准分布">{{ correlationBenchmarkText() }}</el-descriptions-item>
-        <el-descriptions-item label="写入状态">{{ correlationWriteStatus() }}</el-descriptions-item>
-      </el-descriptions>
-      <el-descriptions
+        <AppDetailField label="目标日期" :value="correlationResult.target_date" />
+        <AppDetailField label="目标股票" :value="correlationResult.target_stock_count ?? 0" />
+        <AppDetailField label="候选关系" :value="correlationResult.candidate_relation_count ?? 0" />
+        <AppDetailField label="行业冠军" :value="correlationResult.industry_champion_count ?? 0" />
+        <AppDetailField label="概念冠军" :value="correlationResult.concept_champion_count ?? 0" />
+        <AppDetailField label="空结果" :value="correlationResult.empty_result_count ?? 0" />
+        <AppDetailField label="回退上证" :value="correlationResult.fallback_count ?? 0" />
+        <AppDetailField label="跳过股票" :value="correlationResult.skipped_count ?? 0" />
+        <AppDetailField label="失败数" :value="correlationResult.failed_count ?? 0" />
+        <AppDetailField label="计算耗时" :value="`${correlationResult.calculation_seconds ?? 0} 秒`" />
+        <AppDetailField label="写入耗时" :value="`${correlationResult.write_seconds ?? 0} 秒`" />
+        <AppDetailField label="基准分布" :value="correlationBenchmarkText()" />
+        <AppDetailField label="写入状态" :value="correlationWriteStatus()" />
+      </AppDetailFields>
+      <AppDetailFields
         v-if="ladderResult"
-        :column="3"
-        size="small"
-        border
+        :columns="3"
         class="correlation-task-result"
         data-testid="limit-ladder-task-result"
       >
-        <el-descriptions-item label="交易日">{{ ladderResult.trade_date || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="快照状态">{{ ladderResult.snapshot_status || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="快照 ID">{{ ladderResult.snapshot_id || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="股票池">{{ ladderResult.coverage?.pool_count ?? 0 }}</el-descriptions-item>
-        <el-descriptions-item label="有效行情">{{ ladderResult.coverage?.valid_bar_count ?? 0 }}</el-descriptions-item>
-        <el-descriptions-item label="确认停牌">{{ ladderResult.coverage?.confirmed_suspension_count ?? 0 }}</el-descriptions-item>
-        <el-descriptions-item label="缺失">{{ ladderResult.coverage?.missing_count ?? 0 }}</el-descriptions-item>
-        <el-descriptions-item label="非法行情">{{ ladderResult.coverage?.invalid_bar_count ?? 0 }}</el-descriptions-item>
-        <el-descriptions-item label="未知规则">{{ ladderResult.coverage?.unsupported_rule_count ?? 0 }}</el-descriptions-item>
-        <el-descriptions-item label="采集终态">{{ ladderResult.coverage?.ingest_terminal_status || '—' }}</el-descriptions-item>
-      </el-descriptions>
+        <AppDetailField label="交易日" :value="ladderResult.trade_date" />
+        <AppDetailField label="快照状态" :value="ladderResult.snapshot_status" />
+        <AppDetailField label="快照 ID" :value="ladderResult.snapshot_id" mono />
+        <AppDetailField label="股票池" :value="ladderResult.coverage?.pool_count ?? 0" />
+        <AppDetailField label="有效行情" :value="ladderResult.coverage?.valid_bar_count ?? 0" />
+        <AppDetailField label="确认停牌" :value="ladderResult.coverage?.confirmed_suspension_count ?? 0" />
+        <AppDetailField label="缺失" :value="ladderResult.coverage?.missing_count ?? 0" />
+        <AppDetailField label="非法行情" :value="ladderResult.coverage?.invalid_bar_count ?? 0" />
+        <AppDetailField label="未知规则" :value="ladderResult.coverage?.unsupported_rule_count ?? 0" />
+        <AppDetailField label="采集终态" :value="ladderResult.coverage?.ingest_terminal_status" />
+      </AppDetailFields>
       <div ref="logBody" class="log-body">
         <div v-for="l in logs" :key="l.seq" class="log-line" :class="l.level">
           <span class="lt">{{ (l.ts || '').slice(11, 19) }}</span>
