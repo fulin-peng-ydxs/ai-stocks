@@ -33,7 +33,7 @@ defineEmits<{
 
 <style scoped>
 .page-toggle-row {
-  min-height: 40px;
+  min-height: var(--app-density-control-height);
   padding: 0;
   display: flex;
   align-items: center;
@@ -41,7 +41,7 @@ defineEmits<{
   gap: var(--app-space-3);
 }
 .page-toggle-row.is-sm {
-  min-height: 34px;
+  min-height: var(--app-control-height-sm);
 }
 .ptr-left {
   min-width: 0;
@@ -50,12 +50,12 @@ defineEmits<{
   gap: var(--app-space-2);
 }
 .ptr-label {
-  font-size: var(--app-font-size-body);
-  color: var(--page-settings-text);
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-medium);
+  color: var(--page-settings-text-subtle);
 }
 .page-toggle-row.is-sm .ptr-label {
   font-size: var(--app-font-size-table);
-  color: var(--page-settings-text-subtle);
 }
 .ptr-tip {
   width: 18px;

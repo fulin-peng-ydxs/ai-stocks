@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import PageSegmented from '@/components/PageSegmented.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsApplyButton from '@/components/PageSettingsApplyButton.vue'
 import type {
   AuxiliaryChartSlot,
@@ -116,12 +117,10 @@ watch(
 <template>
   <div class="stock-chart-settings">
     <slot name="before" />
-    <div class="setting-item">
-      <div class="setting-label">图表一</div>
+    <PageSettingItem label="图表一">
       <div class="fixed-chart-value" :data-testid="`${testIdPrefix || 'chart'}-slot1-kline`">K线（固定，不可隐藏）</div>
-    </div>
-    <div class="setting-item">
-      <div class="setting-label">图表二</div>
+    </PageSettingItem>
+    <PageSettingItem label="图表二">
       <PageSegmented
         :model-value="slot2"
         :options="auxiliaryChartOptions"
@@ -129,9 +128,8 @@ watch(
         :test-id="`${testIdPrefix || 'chart'}-slot2`"
         @update:model-value="emit('change', 'slot2', $event)"
       />
-    </div>
-    <div class="setting-item">
-      <div class="setting-label">图表三</div>
+    </PageSettingItem>
+    <PageSettingItem label="图表三">
       <PageSegmented
         :model-value="slot3"
         :options="auxiliaryChartOptions"
@@ -139,9 +137,9 @@ watch(
         :test-id="`${testIdPrefix || 'chart'}-slot3`"
         @update:model-value="emit('change', 'slot3', $event)"
       />
-    </div>
+    </PageSettingItem>
     <div class="ratio-setting">
-      <div class="setting-label">{{ canApplyCurrentRatios === false ? '默认高度比例' : '已配置高度比例' }}</div>
+      <div class="ratio-label">{{ canApplyCurrentRatios === false ? '默认高度比例' : '已配置高度比例' }}</div>
       <div class="ratio-composition">当前组合：{{ chartTypes.map((type) => chartTypeLabels[type]).join(' / ') }}</div>
       <div v-if="chartTypes.length === 1" class="fixed-chart-value">K线 100%（单图无需配置）</div>
       <template v-else>
@@ -186,14 +184,10 @@ watch(
   font-size: var(--app-font-size-table);
   line-height: var(--app-line-height-comfy);
 }
-.setting-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-2);
-}
-.setting-label {
+.ratio-label {
   color: var(--page-settings-text-subtle);
-  font-size: var(--app-font-size-body);
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-medium);
 }
 .fixed-chart-value {
   min-height: 38px;

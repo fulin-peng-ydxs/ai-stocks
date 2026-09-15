@@ -15,6 +15,7 @@ import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
@@ -670,13 +671,12 @@ onMounted(async () => {
       >
         <template #business>
           <PageSettingSection title="默认查询">
-            <div class="setting-item">
-              <div class="setting-label">状态筛选</div>
+            <PageSettingItem label="状态筛选">
               <PageSegmented v-model="settings.defaultStatus" aria-label="状态筛选" :options="[
                 { label: '全部', value: 'all' },
                 { label: '仅启用', value: 'active' },
               ]" />
-            </div>
+            </PageSettingItem>
           </PageSettingSection>
         </template>
       </PageSettingsDrawer>
@@ -689,6 +689,4 @@ onMounted(async () => {
 .page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
 .muted { color: var(--el-text-color-secondary); }
 .locked-field { color: var(--el-text-color-regular); }
-.setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
-.setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
 </style>

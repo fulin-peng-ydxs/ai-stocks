@@ -27,20 +27,20 @@ describe('PageSettingSection 折叠树', () => {
 
     const collapse = wrapper.find('button[aria-label="业务选项：收起下级分组"]')
     expect(collapse.exists()).toBe(true)
-    expect(group(wrapper, '业务分区一').find('.pss-body').isVisible()).toBe(true)
+    expect(group(wrapper, '业务分区一').find('.sg-body').isVisible()).toBe(true)
 
     await collapse.trigger('click')
     await nextTick()
     expect(group(wrapper, '业务选项').attributes('data-settings-group-open')).toBe('true')
     expect(group(wrapper, '业务分区一').attributes('data-settings-group-open')).toBe('false')
     expect(group(wrapper, '业务分区二').attributes('data-settings-group-open')).toBe('false')
-    expect(group(wrapper, '业务分区一').find('.pss-body').attributes('style')).toContain('display: none')
-    expect(group(wrapper, '业务分区二').find('.pss-body').attributes('style')).toContain('display: none')
+    expect(group(wrapper, '业务分区一').find('.sg-body').attributes('style')).toContain('display: none')
+    expect(group(wrapper, '业务分区二').find('.sg-body').attributes('style')).toContain('display: none')
 
     await wrapper.find('button[aria-label="业务选项：展开下级分组"]').trigger('click')
     await nextTick()
-    expect(group(wrapper, '业务分区一').find('.pss-body').isVisible()).toBe(true)
-    expect(group(wrapper, '业务分区二').find('.pss-body').isVisible()).toBe(true)
+    expect(group(wrapper, '业务分区一').find('.sg-body').isVisible()).toBe(true)
+    expect(group(wrapper, '业务分区二').find('.sg-body').isVisible()).toBe(true)
   })
 
   it('叶子业务分区不显示下级批量入口', async () => {

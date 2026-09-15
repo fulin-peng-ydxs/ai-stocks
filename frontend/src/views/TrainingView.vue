@@ -26,6 +26,7 @@ import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
@@ -907,8 +908,7 @@ onBeforeUnmount(detachKeyboard)
   >
       <template #business>
       <PageSettingSection title="开局默认" desc="每次开局沿用的默认参数，开局前可临时改。">
-        <div class="setting-item">
-          <div class="setting-label">训练模式</div>
+        <PageSettingItem label="训练模式">
           <PageSegmented
             v-model="settings.mode"
             aria-label="训练模式"
@@ -917,23 +917,19 @@ onBeforeUnmount(detachKeyboard)
               { label: '多只一轮', value: 'multi' },
             ]"
           />
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">板块</div>
+        </PageSettingItem>
+        <PageSettingItem label="板块">
           <AppFilterSelect v-model="settings.boards" :options="boardOptions"
                            :filterable="false" :visible-tag-count="2"
                            placeholder="不限（全部板块）" />
-        </div>
-        <div v-if="settings.mode === 'multi'" class="setting-item">
-          <div class="setting-label">回合数（只）</div>
+        </PageSettingItem>
+        <PageSettingItem v-if="settings.mode === 'multi'" label="回合数（只）" layout="inline">
           <el-input-number v-model="settings.n_rounds" :min="1" :max="20" size="small" style="width:140px" />
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">每回合连续交易日</div>
+        </PageSettingItem>
+        <PageSettingItem label="每回合连续交易日" layout="inline">
           <el-input-number v-model="settings.window_days" :min="5" :max="60" size="small" style="width:140px" />
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">初始资金（元）</div>
+        </PageSettingItem>
+        <PageSettingItem label="初始资金（元）" layout="inline">
           <el-input-number
             v-model="settings.initial_capital"
             :min="10000"
@@ -943,18 +939,17 @@ onBeforeUnmount(detachKeyboard)
             size="small"
             style="width:160px"
           />
-        </div>
+        </PageSettingItem>
       </PageSettingSection>
       <template v-if="phase !== 'config'">
         <KlineSettingSection />
       </template>
       <PageSettingSection title="选股范围" desc="控制随机选股时的股票池过滤条件。">
-        <div class="setting-item">
-          <div class="setting-label">排除 ST</div>
+        <PageSettingItem label="排除 ST" layout="inline">
           <el-switch v-model="settings.exclude_st" />
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">
+        </PageSettingItem>
+        <PageSettingItem layout="inline">
+          <template #label>
             计入交易成本
             <HelpTip title="交易成本" :width="280">
               <HelpTipItem question="关闭后如何计算">
@@ -963,23 +958,20 @@ onBeforeUnmount(detachKeyboard)
                 </ul>
               </HelpTipItem>
             </HelpTip>
-          </div>
+          </template>
           <el-switch v-model="settings.fee_enabled" />
-        </div>
+        </PageSettingItem>
       </PageSettingSection>
       <PageSettingSection title="快捷下单" desc="配置下单方式与一键预设，训练时直接点选快速买卖。">
-        <div class="setting-item">
-          <div class="setting-label">默认下单方式</div>
+        <PageSettingItem label="默认下单方式">
           <PageSegmented v-model="settings.orderMode" aria-label="默认下单方式" :options="[{ label: '按手数', value: 'hands' }, { label: '按金额', value: 'amount' }]" />
-        </div>
-        <div class="setting-item col">
-          <div class="setting-label">手数预设（逗号分隔）</div>
+        </PageSettingItem>
+        <PageSettingItem label="手数预设（逗号分隔）">
           <el-input v-model="settings.handsPresetStr" placeholder="1,10,20" />
-        </div>
-        <div class="setting-item col">
-          <div class="setting-label">金额预设（万，逗号分隔）</div>
+        </PageSettingItem>
+        <PageSettingItem label="金额预设（万，逗号分隔）">
           <el-input v-model="settings.amountWanPresetStr" placeholder="1,10,20" />
-        </div>
+        </PageSettingItem>
       </PageSettingSection>
       </template>
     </PageSettingsDrawer>
@@ -1013,9 +1005,6 @@ onBeforeUnmount(detachKeyboard)
 .hist-card :deep(.el-card__body) { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px 12px; }
 .hist-table { cursor: pointer; flex: 1; }
 .grade-chip { color: #fff; padding: 1px 8px; border-radius: 10px; font-weight: var(--app-font-weight-strong); font-size: var(--app-font-size-caption); }
-.setting-item { display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3); padding: 6px 0; }
-.setting-item.col { flex-direction: column; align-items: stretch; }
-.setting-label { font-size: var(--app-font-size-table); color: var(--el-text-color-regular); }
 
 /* 训练中：固定块（图+面板）+ 主表 → 混合成长区 */
 .run-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--app-space-2); overflow: auto; padding-right: 2px; }

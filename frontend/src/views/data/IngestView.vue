@@ -19,6 +19,7 @@ import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
@@ -1197,24 +1198,22 @@ watch(
     >
       <template #business>
         <PageSettingSection title="任务中心">
-          <div class="setting-item">
-            <div class="setting-label">默认任务筛选</div>
+          <PageSettingItem label="默认任务筛选">
             <PageSegmented v-model="settings.taskStatus" aria-label="默认任务筛选"
                            test-id="task-status-default" :options="[
               { label: '全部', value: 'all' },
               { label: '运行中', value: 'active' },
               { label: '失败项', value: 'failed' },
             ]" />
-          </div>
+          </PageSettingItem>
         </PageSettingSection>
         <PageSettingSection title="日志与显示">
-          <div class="setting-item">
-            <div class="setting-label">采集日志筛选</div>
+          <PageSettingItem label="采集日志筛选">
             <PageSegmented v-model="settings.logStatus" aria-label="采集日志筛选" :options="[
               { label: '全部', value: 'all' },
               { label: '仅失败', value: 'failed' },
             ]" />
-          </div>
+          </PageSettingItem>
           <PageToggleRow v-model="settings.autoScroll" label="日志默认自动滚动" />
         </PageSettingSection>
       </template>
@@ -1243,8 +1242,6 @@ watch(
   display: flex;
   flex-direction: column;
 }
-.setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
-.setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
 .blk { margin-bottom: 16px; }
 .blk-head { display: flex; justify-content: space-between; align-items: center; gap: var(--app-space-3); }
 .flt { display: flex; align-items: center; gap: var(--app-space-2); }

@@ -2104,8 +2104,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-body);
 }
-.setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
-.setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
 .hint {
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-table);

@@ -7,6 +7,7 @@
 import type { EditableKnob } from '../schema'
 import type { LayoutConfigLayer } from '../merge'
 import PageSegmented from '@/components/PageSegmented.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import SourceTag from '@/components/SourceTag.vue'
 
@@ -35,11 +36,10 @@ function sourceOf(path: string): LayoutConfigLayer {
       :model-value="Boolean(props.valueOf(knob.path))"
       @update:model-value="(v) => props.set(knob.path, v)"
     />
-    <div v-else class="setting-item">
-      <div class="setting-label">
-        <span>{{ knob.label }}</span>
+    <PageSettingItem v-else :label="knob.label">
+      <template #actions>
         <SourceTag :source="sourceOf(knob.path)" :values="props.layerValuesOf?.(knob.path)" />
-      </div>
+      </template>
       <PageSegmented
         v-if="knob.type === 'enum'"
         :model-value="props.valueOf(knob.path) as string | number"
@@ -56,22 +56,6 @@ function sourceOf(path: string): LayoutConfigLayer {
         controls-position="right"
         @update:model-value="(v: number | undefined) => v != null && props.set(knob.path, v)"
       />
-    </div>
+    </PageSettingItem>
   </template>
 </template>
-
-<style scoped>
-.setting-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-2);
-}
-.setting-label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--app-space-2);
-  font-size: var(--app-font-size-body);
-  color: var(--page-settings-text-subtle);
-}
-</style>

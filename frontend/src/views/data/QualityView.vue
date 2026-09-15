@@ -25,6 +25,7 @@ import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
@@ -736,21 +737,19 @@ onMounted(() => {
     >
       <template #business>
         <PageSettingSection title="默认查询">
-          <div class="setting-item">
-            <div class="setting-label">状态筛选</div>
+          <PageSettingItem label="状态筛选">
             <PageSegmented v-model="settings.defaultStatus" aria-label="状态筛选" :options="[
               { label: '待办两态', value: 'todo' },
               { label: '仅未处理', value: 'open' },
               { label: '全部', value: 'all' },
             ]" />
-          </div>
-          <div class="setting-item">
-            <div class="setting-label">严重度筛选</div>
+          </PageSettingItem>
+          <PageSettingItem label="严重度筛选">
             <PageSegmented v-model="settings.defaultSeverity" aria-label="严重度筛选" :options="[
               { label: '全部', value: 'all' },
               { label: '高危优先', value: 'high' },
             ]" />
-          </div>
+          </PageSettingItem>
           <PageToggleRow v-model="settings.hideDoneRows" label="隐藏已解决/已忽略" />
         </PageSettingSection>
       </template>
@@ -787,8 +786,6 @@ onMounted(() => {
 
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; }
-.setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
-.setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
 .layer-tag { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .filter-row { flex-wrap: wrap; }
 .summary { margin-left: auto; }

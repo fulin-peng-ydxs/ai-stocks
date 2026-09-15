@@ -10,6 +10,7 @@ import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
@@ -864,8 +865,7 @@ onBeforeUnmount(() => {
             description="当前修改已保存在本机，网络恢复后再次修改即可重试"
           />
           <PageSettingSection title="行情口径">
-              <div class="setting-item">
-                <div class="setting-label">复权模式</div>
+              <PageSettingItem label="复权模式">
                 <PageSegmented
                   v-model="settings.adjustMode"
                   aria-label="复权模式"
@@ -875,11 +875,10 @@ onBeforeUnmount(() => {
                     { label: '后复权', value: 'hfq' },
                   ]"
                 />
-              </div>
+              </PageSettingItem>
           </PageSettingSection>
           <PageSettingSection title="默认查询">
-            <div class="setting-item">
-              <div class="setting-label">统计窗口</div>
+            <PageSettingItem label="统计窗口">
               <PageSegmented
                 v-model="settings.window"
                 :options="[
@@ -891,9 +890,8 @@ onBeforeUnmount(() => {
                 aria-label="默认统计窗口"
                 test-id="limit-ladder-default-window"
               />
-            </div>
-            <div class="setting-item">
-              <div class="setting-label">纳入板块</div>
+            </PageSettingItem>
+            <PageSettingItem label="纳入板块">
               <el-checkbox-group
                 v-model="settings.boards"
                 class="board-preference-options"
@@ -904,14 +902,13 @@ onBeforeUnmount(() => {
                 <el-checkbox value="star">科创板</el-checkbox>
                 <el-checkbox value="gem">创业板</el-checkbox>
               </el-checkbox-group>
-            </div>
+            </PageSettingItem>
             <PageToggleRow
               v-model="settings.ignoreSt"
               label="默认忽略 ST"
               test-id="limit-ladder-default-ignore-st"
             />
-            <div class="setting-item">
-              <div class="setting-label">卡片层内排序</div>
+            <PageSettingItem label="卡片层内排序">
               <el-select
                 v-model="settings.cardSort"
                 data-testid="limit-ladder-default-card-sort"
@@ -923,9 +920,8 @@ onBeforeUnmount(() => {
                   :value="option.value"
                 />
               </el-select>
-            </div>
-            <div class="setting-item">
-              <div class="setting-label">排序方向</div>
+            </PageSettingItem>
+            <PageSettingItem label="排序方向">
               <PageSegmented
                 v-model="settings.cardSortOrder"
                 :options="[
@@ -935,7 +931,7 @@ onBeforeUnmount(() => {
                 aria-label="默认卡片排序方向"
                 test-id="limit-ladder-default-card-sort-order"
               />
-            </div>
+            </PageSettingItem>
             <StockAnalysisDefaultFields
               v-model:default-chart-mode="settings.defaultChartMode"
               v-model:compare-range="settings.compareRange"
@@ -957,15 +953,6 @@ onBeforeUnmount(() => {
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
-}
-.setting-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-2);
-}
-.setting-label {
-  color: var(--page-settings-text);
-  font-size: var(--app-font-size-body);
 }
 .board-preference-options {
   display: grid;

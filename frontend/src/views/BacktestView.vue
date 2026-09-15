@@ -36,6 +36,7 @@ import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
@@ -2467,38 +2468,34 @@ async function openTradeChart(row: TradeRow) {
     >
       <template #business>
         <PageSettingSection title="默认参数">
-          <div class="setting-item">
-            <div class="setting-label">默认模式</div>
+          <PageSettingItem label="默认模式">
             <PageSegmented
               v-model="settings.kind"
               aria-label="默认模式"
               :options="BACKTEST_KIND_OPTIONS"
             />
-          </div>
-          <div class="setting-item">
-            <div class="setting-label">Top N</div>
+          </PageSettingItem>
+          <PageSettingItem label="Top N">
             <PageSegmented v-model="settings.topN" aria-label="Top N" :options="[
               { label: '5', value: 5 },
               { label: '10', value: 10 },
               { label: '20', value: 20 },
             ]" />
-          </div>
-          <div class="setting-item">
-            <div class="setting-label">初始资金</div>
+          </PageSettingItem>
+          <PageSettingItem label="初始资金">
             <PageSegmented v-model="settings.initCap" aria-label="初始资金" :options="[
               { label: '500,000 元', value: 500000 },
               { label: '1,000,000 元', value: 1000000 },
               { label: '3,000,000 元', value: 3000000 },
             ]" />
-          </div>
+          </PageSettingItem>
           <PageToggleRow v-model="settings.robustExpanded" label="默认展开稳健性测试" />
-          <div class="setting-item">
-            <div class="setting-label">默认对比指数</div>
+          <PageSettingItem label="默认对比指数">
             <MarketBenchmarkSelect
               v-model="settings.benchmarkCode"
               test-id="backtest-default-benchmark"
             />
-          </div>
+          </PageSettingItem>
         </PageSettingSection>
       </template>
     </PageSettingsDrawer>
@@ -2516,8 +2513,6 @@ async function openTradeChart(row: TradeRow) {
 }
 .page-title-row { display: flex; align-items: center; }
 .page-head-actions { min-width: 0; max-width: 100%; }
-.setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
-.setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
 .hist {
   display: flex;
   align-items: center;

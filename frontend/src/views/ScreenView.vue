@@ -1133,15 +1133,6 @@ onMounted(initializeScreen)
   font-size: var(--app-font-size-caption);
   margin-left: auto;
 }
-.setting-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-2);
-}
-.setting-label {
-  font-size: var(--app-font-size-body);
-  color: var(--page-settings-text-subtle);
-}
 .score {
   color: var(--app-danger-text);
 }

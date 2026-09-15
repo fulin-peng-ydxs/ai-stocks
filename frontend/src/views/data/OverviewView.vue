@@ -19,6 +19,7 @@ import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
@@ -1150,14 +1151,13 @@ onMounted(load)
     >
       <template #business>
         <PageSettingSection title="逐股体检">
-          <div class="setting-item">
-            <div class="setting-label">默认关注层</div>
+          <PageSettingItem label="默认关注层">
             <PageSegmented v-model="settings.focusLayer" aria-label="默认关注层" :options="[
               { label: '全部', value: 'all' },
               { label: 'L1-L2', value: 'L12' },
               { label: 'L3-L4', value: 'L34' },
             ]" />
-          </div>
+          </PageSettingItem>
         </PageSettingSection>
         <PageSettingSection title="KPI 卡片">
           <PageToggleRow v-model="settings.kpi.latestTradeDate" label="最新交易日" />
@@ -1177,8 +1177,6 @@ onMounted(load)
 
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; }
-.setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
-.setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
 .overview-summary { min-width: 0; }
 .panel-title {
   color: var(--el-text-color-primary);

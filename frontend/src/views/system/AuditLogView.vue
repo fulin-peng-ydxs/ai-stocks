@@ -23,6 +23,7 @@ import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import { getAuditDetail, getAuditSummary, listAuditLogs, type AuditLog, type AuditQuery, type AuditSummary } from '@/api/audit'
@@ -784,10 +785,9 @@ onBeforeUnmount(stopTimer)
       >
         <template #business>
           <PageSettingSection title="刷新偏好" desc="设置进入页面时是否默认自动刷新；页面顶部开关只影响本次访问。">
-            <div class="setting-item">
-              <div class="setting-label">默认自动刷新</div>
+            <PageSettingItem label="默认自动刷新" layout="inline">
               <el-switch v-model="settings.autoRefreshEnabled" />
-            </div>
+            </PageSettingItem>
           </PageSettingSection>
         </template>
       </PageSettingsDrawer>

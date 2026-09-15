@@ -15,6 +15,7 @@ import { ElInput, ElInputNumber } from 'element-plus'
 import AppRowActions from './AppRowActions.vue'
 import SettingsGroup from './SettingsGroup.vue'
 import PageSegmented from './PageSegmented.vue'
+import PageSettingItem from './PageSettingItem.vue'
 import PageSettingsApplyButton from './PageSettingsApplyButton.vue'
 import PageToggleRow from './PageToggleRow.vue'
 import StockChartSettingSection from './StockChartSettingSection.vue'
@@ -412,9 +413,8 @@ function setSort(slotId: string, field: string, order: string): void {
       :data-cc-slot="s.slotId"
       :class="{ 'ca-highlight': s.slotId === highlightSlot }"
     >
-      <div v-if="s.fields.includes('stockChart')" class="ca-item">
-        <div class="ca-label-row">
-          <span class="ca-label">图表组合与内部比例</span>
+      <PageSettingItem v-if="s.fields.includes('stockChart')" label="图表组合与内部比例">
+        <template #actions>
           <span class="ca-actions">
             <SourceTag
               v-if="srcOf(s.slotId, 'stockChart')"
@@ -427,7 +427,7 @@ function setSort(slotId: string, field: string, order: string): void {
               :inline-limit="1"
             />
           </span>
-        </div>
+        </template>
         <StockChartSettingSection
           :slot2="stockChartValue(s.slotId).slot2"
           :slot3="stockChartValue(s.slotId).slot3"
@@ -440,13 +440,13 @@ function setSort(slotId: string, field: string, order: string): void {
           @save-default-ratios="(ratios) => setStockChartRatios(s.slotId, ratios)"
           @apply-current-ratios="applyStockChartCurrentRatios(s.slotId)"
         />
-      </div>
+      </PageSettingItem>
 
       <template v-if="s.fields.includes('defaultSort') && s.meta.sortFields?.length">
         <!-- field:order 模式：字段 + 方向 -->
-        <div v-if="s.meta.sortHasDirection !== false" class="ca-item">
-          <div class="ca-label-row">
-            <span class="ca-label">默认排序字段</span>
+        <template v-if="s.meta.sortHasDirection !== false">
+          <PageSettingItem label="默认排序字段">
+            <template #actions>
             <span class="ca-actions">
               <SourceTag
                 v-if="srcOf(s.slotId, 'defaultSort')"
@@ -459,7 +459,7 @@ function setSort(slotId: string, field: string, order: string): void {
                 :inline-limit="1"
               />
             </span>
-          </div>
+            </template>
           <PageSegmented
             v-if="s.meta.sortFields.length <= SEGMENTED_OPTION_LIMIT"
             :model-value="sortField(s.slotId)"
@@ -482,18 +482,19 @@ function setSort(slotId: string, field: string, order: string): void {
               :value="field.key"
             />
           </el-select>
-          <div class="ca-label">默认排序方向</div>
+          </PageSettingItem>
+          <PageSettingItem label="默认排序方向">
           <PageSegmented
             :model-value="sortOrder(s.slotId)"
             :options="ORDER_OPTIONS"
             :aria-label="`${s.label}：默认排序方向`"
             @update:model-value="(v) => setSort(s.slotId, sortField(s.slotId), String(v))"
           />
-        </div>
+          </PageSettingItem>
+        </template>
         <!-- 枚举模式：排序模式直接存 key（无方向，如 board 的 score/rank） -->
-        <div v-else class="ca-item">
-          <div class="ca-label-row">
-            <span class="ca-label">默认排序</span>
+        <PageSettingItem v-else label="默认排序">
+          <template #actions>
             <span class="ca-actions">
               <SourceTag
                 v-if="srcOf(s.slotId, 'defaultSort')"
@@ -506,7 +507,7 @@ function setSort(slotId: string, field: string, order: string): void {
                 :inline-limit="1"
               />
             </span>
-          </div>
+          </template>
           <PageSegmented
             v-if="s.meta.sortFields.length <= SEGMENTED_OPTION_LIMIT"
             :model-value="strVal(s.slotId, 'defaultSort')"
@@ -529,12 +530,11 @@ function setSort(slotId: string, field: string, order: string): void {
               :value="field.key"
             />
           </el-select>
-        </div>
+        </PageSettingItem>
       </template>
 
-      <div v-for="field in boolFieldDefs(s)" :key="field.key" class="ca-item">
-        <div class="ca-label-row">
-          <span class="ca-label">{{ field.label }}</span>
+      <PageSettingItem v-for="field in boolFieldDefs(s)" :key="field.key" :label="field.label">
+        <template #actions>
           <span class="ca-actions">
             <SourceTag
               v-if="srcOf(s.slotId, field.key)"
@@ -547,18 +547,17 @@ function setSort(slotId: string, field: string, order: string): void {
               :inline-limit="1"
             />
           </span>
-        </div>
+        </template>
         <el-switch
           :model-value="boolVal(s.slotId, field.key, Boolean(field.default))"
           inline-prompt
           @update:model-value="(v: boolean) => config.setComponentKnob(s.slotId, field.key, v)"
         />
-        <span v-if="field.help" class="ca-help">{{ field.help }}</span>
-      </div>
+        <template v-if="field.help" #help>{{ field.help }}</template>
+      </PageSettingItem>
 
-      <div v-if="s.fields.includes('pageSize')" class="ca-item">
-        <div class="ca-label-row">
-          <span class="ca-label">每页条数</span>
+      <PageSettingItem v-if="s.fields.includes('pageSize')" label="每页条数">
+        <template #actions>
           <span class="ca-actions">
             <SourceTag
               v-if="srcOf(s.slotId, 'pageSize')"
@@ -571,18 +570,17 @@ function setSort(slotId: string, field: string, order: string): void {
               :inline-limit="1"
             />
           </span>
-        </div>
+        </template>
         <PageSegmented
           :model-value="numVal(s.slotId, 'pageSize', 20)"
           :options="PAGE_SIZE_OPTIONS.map((n) => ({ label: String(n), value: n }))"
           :aria-label="`${s.label}：每页条数`"
           @update:model-value="(v) => config.setComponentKnob(s.slotId, 'pageSize', Number(v))"
         />
-      </div>
+      </PageSettingItem>
 
-      <div v-for="field in numericFieldDefs(s)" :key="field.key" class="ca-item">
-        <div class="ca-label-row">
-          <span class="ca-label">{{ field.label }}</span>
+      <PageSettingItem v-for="field in numericFieldDefs(s)" :key="field.key" :label="field.label">
+        <template #actions>
           <span class="ca-actions">
             <SourceTag
               v-if="srcOf(s.slotId, field.key)"
@@ -595,7 +593,7 @@ function setSort(slotId: string, field: string, order: string): void {
               :inline-limit="1"
             />
           </span>
-        </div>
+        </template>
         <el-input-number
           class="ca-number"
           :data-testid="`component-${s.slotId}-${field.key}`"
@@ -622,12 +620,11 @@ function setSort(slotId: string, field: string, order: string): void {
           :test-id="`component-${s.slotId}-${field.key}-use-runtime`"
           @click="config.setComponentKnob(s.slotId, field.key, runtimeNumber(s.slotId, field.key))"
         />
-        <span v-if="field.help" class="ca-help">{{ field.help }}</span>
-      </div>
+        <template v-if="field.help" #help>{{ field.help }}</template>
+      </PageSettingItem>
 
-      <div v-if="s.fields.includes('defaultActive') && s.meta.tabs?.length" class="ca-item">
-        <div class="ca-label-row">
-          <span class="ca-label">默认标签页</span>
+      <PageSettingItem v-if="s.fields.includes('defaultActive') && s.meta.tabs?.length" label="默认标签页">
+        <template #actions>
           <span class="ca-actions">
             <SourceTag
               v-if="srcOf(s.slotId, 'defaultActive')"
@@ -640,18 +637,17 @@ function setSort(slotId: string, field: string, order: string): void {
               :inline-limit="1"
             />
           </span>
-        </div>
+        </template>
         <PageSegmented
           :model-value="strVal(s.slotId, 'defaultActive')"
           :options="s.meta.tabs.map((t) => ({ label: t.label, value: t.key }))"
           :aria-label="`${s.label}：默认标签页`"
           @update:model-value="(v) => config.setComponentKnob(s.slotId, 'defaultActive', String(v))"
         />
-      </div>
+      </PageSettingItem>
 
-      <div v-for="field in enumFieldDefs(s)" :key="field.key" class="ca-item">
-        <div class="ca-label-row">
-          <span class="ca-label">{{ field.label }}</span>
+      <PageSettingItem v-for="field in enumFieldDefs(s)" :key="field.key" :label="field.label">
+        <template #actions>
           <span class="ca-actions">
             <SourceTag
               v-if="srcOf(s.slotId, field.key)"
@@ -664,7 +660,7 @@ function setSort(slotId: string, field: string, order: string): void {
               :inline-limit="1"
             />
           </span>
-        </div>
+        </template>
         <PageSegmented
           :model-value="enumVal(s.slotId, field)"
           :options="enumOptions(field)"
@@ -672,12 +668,11 @@ function setSort(slotId: string, field: string, order: string): void {
           :test-id="s.slotId === 'settings' && field.key === 'size' ? 'drawer-size' : undefined"
           @update:model-value="(v) => config.setComponentKnob(s.slotId, field.key, v)"
         />
-        <span v-if="field.help" class="ca-help">{{ field.help }}</span>
-      </div>
+        <template v-if="field.help" #help>{{ field.help }}</template>
+      </PageSettingItem>
 
-      <div v-for="field in stringFieldDefs(s)" :key="field.key" class="ca-item">
-        <div class="ca-label-row">
-          <span class="ca-label">{{ field.label }}</span>
+      <PageSettingItem v-for="field in stringFieldDefs(s)" :key="field.key" :label="field.label">
+        <template #actions>
           <span class="ca-actions">
             <SourceTag
               v-if="srcOf(s.slotId, field.key)"
@@ -690,18 +685,17 @@ function setSort(slotId: string, field: string, order: string): void {
               :inline-limit="1"
             />
           </span>
-        </div>
+        </template>
         <el-input
           :model-value="strVal(s.slotId, field.key)"
           clearable
           @update:model-value="(value: string) => config.setComponentKnob(s.slotId, field.key, value)"
         />
-        <span v-if="field.help" class="ca-help">{{ field.help }}</span>
-      </div>
+        <template v-if="field.help" #help>{{ field.help }}</template>
+      </PageSettingItem>
 
-      <div v-for="field in staticStringListFieldDefs(s)" :key="field.key" class="ca-item">
-        <div class="ca-label-row">
-          <span class="ca-label">{{ field.label }}</span>
+      <PageSettingItem v-for="field in staticStringListFieldDefs(s)" :key="field.key" :label="field.label">
+        <template #actions>
           <span class="ca-actions">
             <SourceTag
               v-if="srcOf(s.slotId, field.key)"
@@ -714,7 +708,7 @@ function setSort(slotId: string, field: string, order: string): void {
               :inline-limit="1"
             />
           </span>
-        </div>
+        </template>
         <el-checkbox-group
           :model-value="listVal(s.slotId, field.key)"
           @update:model-value="(value: string[]) => config.setComponentKnob(s.slotId, field.key, value)"
@@ -723,8 +717,8 @@ function setSort(slotId: string, field: string, order: string): void {
             {{ option.label }}
           </el-checkbox>
         </el-checkbox-group>
-        <span v-if="field.help" class="ca-help">{{ field.help }}</span>
-      </div>
+        <template v-if="field.help" #help>{{ field.help }}</template>
+      </PageSettingItem>
 
       <SettingsGroup
         v-if="s.fields.includes('hiddenColumns') && s.meta.columns?.length"
@@ -756,9 +750,11 @@ function setSort(slotId: string, field: string, order: string): void {
         />
       </SettingsGroup>
 
-      <div v-if="s.fields.includes('defaultCollapsed')" class="ca-item">
-        <div class="ca-label-row">
-          <span class="ca-label">{{ s.kind === 'config-panel' ? '默认折叠分区' : '默认折叠段' }}</span>
+      <PageSettingItem
+        v-if="s.fields.includes('defaultCollapsed')"
+        :label="s.kind === 'config-panel' ? '默认折叠分区' : '默认折叠段'"
+      >
+        <template #actions>
           <span class="ca-actions">
             <SourceTag
               v-if="srcOf(s.slotId, 'defaultCollapsed')"
@@ -771,7 +767,7 @@ function setSort(slotId: string, field: string, order: string): void {
               :inline-limit="1"
             />
           </span>
-        </div>
+        </template>
         <el-checkbox-group
           :model-value="visibleDefaultCollapsedValues(s)"
           @update:model-value="(v: string[]) => setDefaultCollapsed(s, v)"
@@ -780,7 +776,7 @@ function setSort(slotId: string, field: string, order: string): void {
             {{ opt.label }}
           </el-checkbox>
         </el-checkbox-group>
-      </div>
+      </PageSettingItem>
 
     </SettingsGroup>
   </div>
@@ -788,24 +784,6 @@ function setSort(slotId: string, field: string, order: string): void {
 </template>
 
 <style scoped>
-.ca-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-2);
-}
-.ca-item + .ca-item {
-  margin-top: 4px;
-}
-.ca-label {
-  font-size: var(--app-font-size-table);
-  color: var(--page-settings-text-subtle);
-}
-.ca-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--app-space-2);
-}
 .ca-actions {
   display: inline-flex;
   align-items: center;
@@ -816,11 +794,6 @@ function setSort(slotId: string, field: string, order: string): void {
 }
 .ca-number {
   width: 100%;
-}
-.ca-help {
-  color: var(--page-settings-text-subtle);
-  font-size: var(--app-font-size-caption);
-  line-height: var(--app-line-height-caption);
 }
 .ca-select :deep(.el-select__wrapper) {
   min-height: 46px;

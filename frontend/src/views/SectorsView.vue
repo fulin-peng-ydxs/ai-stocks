@@ -25,6 +25,7 @@ import MarketAnalysisHeader from '@/components/MarketAnalysisHeader.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
@@ -1378,44 +1379,39 @@ onMounted(async () => {
       >
         <template #business>
           <PageSettingSection title="默认查询">
-            <div v-if="canViewWatchlist" class="setting-item">
-              <div class="setting-label">默认板块范围</div>
+            <PageSettingItem v-if="canViewWatchlist" label="默认板块范围">
               <PageSegmented
                 v-model="settings.defaultScope"
                 :options="LIST_SCOPE_OPTIONS"
                 aria-label="默认板块范围"
                 test-id="sectors-default-scope"
               />
-            </div>
-            <div class="setting-item">
-              <div class="setting-label">默认类型</div>
+            </PageSettingItem>
+            <PageSettingItem label="默认类型">
               <PageSegmented
                 v-model="settings.defaultType"
                 :options="TYPE_OPTIONS"
                 aria-label="默认类型"
                 test-id="sectors-default-type"
               />
-            </div>
-            <div class="setting-item">
-              <div class="setting-label">默认图表模式</div>
+            </PageSettingItem>
+            <PageSettingItem label="默认图表模式">
               <PageSegmented
                 v-model="settings.defaultChartMode"
                 :options="CHART_MODE_OPTIONS"
                 aria-label="默认图表模式"
                 test-id="sectors-default-chart-mode"
               />
-            </div>
-            <div class="setting-item">
-              <div class="setting-label">默认对比指数</div>
+            </PageSettingItem>
+            <PageSettingItem label="默认对比指数">
               <MarketBenchmarkSelect
                 v-model="settings.benchmarkCode"
               />
-            </div>
+            </PageSettingItem>
             <PageToggleRow v-model="settings.showAnalysisPanel" label="显示走势分析区" />
           </PageSettingSection>
           <PageSettingSection title="对比指标" desc="配置头部对比指标槽展示哪些指标与默认选中口径。">
-            <div class="setting-item">
-              <div class="setting-label">展示指标</div>
+            <PageSettingItem label="展示指标">
               <el-checkbox-group v-model="settings.compareMetrics" class="compare-metric-checks">
                 <el-checkbox
                   v-for="metric in COMPARE_METRIC_ORDER"
@@ -1425,9 +1421,8 @@ onMounted(async () => {
                   {{ COMPARE_METRIC_META[metric].label }}
                 </el-checkbox>
               </el-checkbox-group>
-            </div>
-            <div class="setting-item">
-              <div class="setting-label">默认对比指标</div>
+            </PageSettingItem>
+            <PageSettingItem label="默认对比指标">
               <el-select v-model="settings.defaultCompareMetric" style="width: 160px">
                 <el-option
                   v-for="metric in COMPARE_METRIC_ORDER"
@@ -1436,13 +1431,12 @@ onMounted(async () => {
                   :label="COMPARE_METRIC_META[metric].label"
                 />
               </el-select>
-            </div>
-            <div class="setting-item">
-              <div class="setting-label">默认涨跌周期</div>
+            </PageSettingItem>
+            <PageSettingItem label="默认涨跌周期">
               <el-select v-model="settings.compareWindow" style="width: 160px">
                 <el-option v-for="o in COMPARE_RANGE_OPTIONS" :key="o.value" :value="o.value" :label="o.label" />
               </el-select>
-            </div>
+            </PageSettingItem>
           </PageSettingSection>
           <KlineSettingSection />
         </template>
@@ -1596,15 +1590,6 @@ onMounted(async () => {
 }
 .benchmark-warning {
   color: var(--el-color-warning);
-}
-.setting-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-2);
-}
-.setting-label {
-  color: var(--page-settings-text-subtle);
-  font-size: var(--app-font-size-body);
 }
 @container app-viewport (max-width: 1180px) {
   .page-subtitle {

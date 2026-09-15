@@ -34,6 +34,7 @@ import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
@@ -1346,14 +1347,13 @@ onBeforeUnmount(() => {
     >
       <template #business>
         <PageSettingSection title="行情口径">
-          <div class="setting-item">
-            <div class="setting-label">复权模式</div>
+          <PageSettingItem label="复权模式">
             <PageSegmented v-model="settings.adjustMode" aria-label="复权模式" :options="[
               { label: '不复权', value: '' },
               { label: '前复权', value: 'qfq' },
               { label: '后复权', value: 'hfq' },
             ]" />
-          </div>
+          </PageSettingItem>
         </PageSettingSection>
 
         <KlineSettingSection />
@@ -1497,15 +1497,6 @@ onBeforeUnmount(() => {
   height: 9px;
   border-radius: 50%;
   flex: 0 0 auto;
-}
-.setting-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-2);
-}
-.setting-label {
-  font-size: var(--app-font-size-body);
-  color: var(--page-settings-text-subtle);
 }
 .stock-context__collection {
   min-width: 0;

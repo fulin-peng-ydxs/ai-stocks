@@ -429,6 +429,7 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
       PageSettingsDrawer: PageSettingsDrawerStub,
       PageSettingsTrigger: true,
       PageSettingSection: { template: '<section><slot/></section>' },
+      PageSettingItem: { template: '<div><slot/></div>' },
       PageSegmented: PageSegmentedStub,
       PageToggleRow: PageToggleRowStub,
       PageSettingsApplyButton: {

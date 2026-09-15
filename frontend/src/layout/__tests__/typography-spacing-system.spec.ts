@@ -31,6 +31,29 @@ function styleBlocks(file: string): string[] {
 }
 
 describe('字体与间距设计契约', () => {
+  it('页面设置抽屉以稳定字体角色和结构线表达层级', () => {
+    const drawer = read(join(SRC_DIR, 'components/PageSettingsDrawer.vue'))
+    const group = read(join(SRC_DIR, 'components/SettingsGroup.vue'))
+    const section = read(join(SRC_DIR, 'components/PageSettingSection.vue'))
+    const item = read(join(SRC_DIR, 'components/PageSettingItem.vue'))
+
+    expect(drawer).toContain('font-size: var(--app-font-size-title-md)')
+    expect(group).toContain("'sg-nested': level > 1")
+    expect(group).toContain('border-left: 1px solid var(--page-settings-section-border)')
+    expect(group).toContain('font-size: var(--app-font-size-body)')
+    expect(group).not.toContain('text-transform: uppercase')
+    expect(group).not.toContain('text-decoration: underline dotted')
+    expect(section).toContain('<SettingsGroup')
+    expect(section).not.toContain('<style')
+    expect(item).toContain('font-size: var(--app-font-size-table)')
+
+    const duplicatedItemStyles = sourceFiles(SRC_DIR)
+      .filter((file) => !file.endsWith('PageSettingItem.vue'))
+      .filter((file) => /\.setting-(item|label)\s*\{/.test(read(file)))
+      .map((file) => relative(SRC_DIR, file))
+    expect(duplicatedItemStyles).toEqual([])
+  })
+
   it('三档页面密度使用唯一语义变量矩阵', () => {
     const globalCss = read(join(SRC_DIR, 'styles/global.css'))
     const expected = {

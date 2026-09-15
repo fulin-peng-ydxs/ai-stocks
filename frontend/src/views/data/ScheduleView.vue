@@ -22,6 +22,7 @@ import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
@@ -1037,22 +1038,20 @@ onActivated(openResultScheduleFromIntent)
     >
       <template #business>
         <PageSettingSection title="显示">
-          <div class="setting-item">
-            <div class="setting-label">时间显示</div>
+          <PageSettingItem label="时间显示">
             <PageSegmented v-model="settings.timeMode" aria-label="时间显示" :options="[
               { label: '完整时间', value: 'full' },
               { label: '仅时分', value: 'hm' },
             ]" />
-          </div>
+          </PageSettingItem>
         </PageSettingSection>
         <PageSettingSection title="数据源视图">
-          <div class="setting-item">
-            <div class="setting-label">显示范围</div>
+          <PageSettingItem label="显示范围">
             <PageSegmented v-model="settings.sourceMode" aria-label="显示范围" :options="[
               { label: '全部源', value: 'all' },
               { label: '只主源', value: 'primary' },
             ]" />
-          </div>
+          </PageSettingItem>
         </PageSettingSection>
       </template>
     </PageSettingsDrawer>
@@ -1081,8 +1080,6 @@ onActivated(openResultScheduleFromIntent)
   flex-direction: column;
 }
 .jobs-tbl { width: 100%; flex: 1 1 auto; min-height: 0; }
-.setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
-.setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
 .blk { margin-bottom: 16px; }
 .blk:last-child { margin-bottom: 0; }
 .blk-head { display: flex; justify-content: space-between; align-items: center; }

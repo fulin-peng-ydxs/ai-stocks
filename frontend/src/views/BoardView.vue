@@ -25,6 +25,7 @@ import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.vue'
@@ -890,32 +891,29 @@ onMounted(async () => {
     >
       <template #business>
         <PageSettingSection title="行情口径">
-          <div class="setting-item">
-            <div class="setting-label">复权模式</div>
+          <PageSettingItem label="复权模式">
             <PageSegmented v-model="settings.adjustMode" aria-label="复权模式" :options="[
               { label: '不复权', value: '' },
               { label: '前复权', value: 'qfq' },
               { label: '后复权', value: 'hfq' },
             ]" />
-          </div>
+          </PageSettingItem>
         </PageSettingSection>
         <PageSettingSection title="默认结果">
-          <div class="setting-item">
-            <div class="setting-label">Top N</div>
+          <PageSettingItem label="Top N">
             <PageSegmented v-model="settings.topN" aria-label="Top N" :options="[
               { label: '20', value: 20 },
               { label: '50', value: 50 },
               { label: '100', value: 100 },
             ]" />
-          </div>
-          <div class="setting-item">
-            <div class="setting-label">分项达标分</div>
+          </PageSettingItem>
+          <PageSettingItem label="分项达标分">
             <PageSegmented v-model="settings.subScoreMode" aria-label="分项达标分" :options="[
               { label: '全显', value: 'full' },
               { label: '精简', value: 'brief' },
               { label: '隐藏', value: 'hidden' },
             ]" />
-          </div>
+          </PageSettingItem>
           <StockAnalysisDefaultFields
             v-model:default-chart-mode="settings.defaultChartMode"
             v-model:compare-range="settings.compareRange"
@@ -963,14 +961,5 @@ onMounted(async () => {
 }
 .clickable :deep(.el-table__row) {
   cursor: pointer;
-}
-.setting-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-2);
-}
-.setting-label {
-  font-size: var(--app-font-size-body);
-  color: var(--page-settings-text-subtle);
 }
 </style>

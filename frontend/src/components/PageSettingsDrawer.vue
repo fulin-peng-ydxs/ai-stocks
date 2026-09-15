@@ -396,7 +396,8 @@ function handleReset(): void {
   display: inline-flex;
   align-items: center;
   gap: var(--app-space-2);
-  font-size: var(--app-font-size-section-title);
+  font-size: var(--app-font-size-title-md);
+  line-height: var(--app-line-height-title-md);
   font-weight: var(--app-font-weight-section);
   color: var(--page-settings-text);
 }
