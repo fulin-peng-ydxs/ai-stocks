@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1713,6 +1714,7 @@ async function openTradeChart(row: TradeRow) {
     dlgLoading.value = false
   }
 }
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -1721,7 +1723,7 @@ async function openTradeChart(row: TradeRow) {
     <div class="page-head">
       <div>
         <h2 class="app-page-title page-title-row">
-          策略回测
+          {{ menuPageTitle }}
           <HelpTip title="回测在验证什么？" :width="460">
             <HelpTipItem question="策略回测验证什么">
               <ul>

@@ -1525,7 +1525,7 @@ _SEED_MENU_TREE: list = [
             ("/system/config/system", "系统设置", None, "system", []),
         ]),
         ("layout", "布局配置", "Brush", "system", [
-            ("/system/layout/presets", "预设管理", None, "system", []),
+            ("/system/layout/presets", "视觉预设", None, "system", []),
             ("/system/layout/pages", "页面布局", None, "system", []),
             ("/system/layout/components", "系统组件", None, "system", []),
         ]),
@@ -1641,7 +1641,7 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
     ("/system/config/system", "config:reload",         "重载系统配置",     "api", "POST",   "/api/config/reload"),
     ("/system/config/tech", "indicator:def-manage",  "技术指标定义维护", "api", "POST",   "/api/indicators/def"),
     # C) 布局平台配置（system-only）
-    ("/system/layout/presets",    "layout:preset-manage", "布局预设管理", "api", "POST", "/api/layout/presets"),
+    ("/system/layout/presets",    "layout:preset-manage", "视觉预设管理", "api", "POST", "/api/layout/presets"),
     ("/system/layout/pages",      "layout:page-manage",   "页面布局管理", "api", "POST", "/api/layout/pages/{page_key}"),
     ("/system/layout/components", "layout:field-policy",  "组件字段策略", "api", "POST", "/api/layout/field-policies"),
     # C) 数据管理（system-only；整 router 另挂 require_system，此处补精确码供扫描/审计）
@@ -1687,6 +1687,8 @@ _CONFIG_SPLIT_MENU_DISCOVERY_MARKER = "migration.config_split_menu_discovery_v1"
 _CONFIG_SPLIT_MENU_DISCOVERY_LOCK = 8410010006
 _LIMIT_LADDER_RECOMPUTE_ANCHOR_MARKER = "migration.limit_ladder_recompute_anchor_v1"
 _LIMIT_LADDER_RECOMPUTE_ANCHOR_LOCK = 8410010008
+_VISUAL_PRESET_LABEL_MARKER = "migration.visual_preset_labels_v1"
+_VISUAL_PRESET_LABEL_LOCK = 8410010009
 _LEGACY_SCORE_PROFILES_MENU_ID = "/score-profiles"
 TRADE_DISCIPLINE_RBAC_MARKER = "migration.trade_discipline_default_grants_v1"
 TRADE_DISCIPLINE_RBAC_LOCK = 8410010005
@@ -2470,6 +2472,7 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
         _SEED_RESOURCES,
         excluded_codes=set(TRADE_DISCIPLINE_RESOURCE_CODES),
     )
+    _migrate_visual_preset_labels(client)
     _migrate_limit_ladder_recompute_anchor(client)
     # 4) 默认授权（首次 seed + 存量库一次性回填）
     _seed_role_grants(client, [m["code"] for m in menu_rows])
@@ -2521,6 +2524,60 @@ def _seed_resource_rows(
             "INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, sort, is_builtin) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE) ON CONFLICT (id) DO NOTHING",
             [code, menu_code, code, name, rtype, method, path, i * 10])
+
+
+def _migrate_visual_preset_labels(client: PostgresClient) -> None:
+    """一次性把旧内置默认文案改为“视觉预设”，保留管理员自定义名称。"""
+    with client.transaction() as conn, conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", [_VISUAL_PRESET_LABEL_LOCK])
+        cur.execute("SELECT 1 FROM app_config WHERE key=%s", [_VISUAL_PRESET_LABEL_MARKER])
+        if cur.fetchone():
+            return
+
+        states: dict[str, str] = {}
+        cur.execute(
+            "SELECT title, is_builtin FROM sys_menu WHERE id=%s FOR UPDATE",
+            ["/system/layout/presets"],
+        )
+        menu = cur.fetchone()
+        if menu and bool(menu[1]) and menu[0] == "预设管理":
+            cur.execute(
+                "UPDATE sys_menu SET title=%s, updated_at=now() WHERE id=%s",
+                ["视觉预设", "/system/layout/presets"],
+            )
+            states["menu"] = "migrated"
+        elif menu and menu[0] == "视觉预设":
+            states["menu"] = "already_current"
+        elif menu:
+            states["menu"] = "preserved_custom"
+        else:
+            states["menu"] = "missing"
+
+        cur.execute(
+            "SELECT name, is_builtin FROM sys_resource WHERE id=%s FOR UPDATE",
+            ["layout:preset-manage"],
+        )
+        resource = cur.fetchone()
+        if resource and bool(resource[1]) and resource[0] == "布局预设管理":
+            cur.execute(
+                "UPDATE sys_resource SET name=%s, updated_at=now() WHERE id=%s",
+                ["视觉预设管理", "layout:preset-manage"],
+            )
+            states["resource"] = "migrated"
+        elif resource and resource[0] == "视觉预设管理":
+            states["resource"] = "already_current"
+        elif resource:
+            states["resource"] = "preserved_custom"
+        else:
+            states["resource"] = "missing"
+
+        cur.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now())",
+            [
+                _VISUAL_PRESET_LABEL_MARKER,
+                json.dumps({"applied": True, "states": states}, ensure_ascii=False),
+            ],
+        )
 
 
 def _migrate_limit_ladder_recompute_anchor(client: PostgresClient) -> None:

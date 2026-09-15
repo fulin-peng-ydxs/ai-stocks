@@ -979,7 +979,7 @@ class LayoutConfigRepo:
             "schema_version=EXCLUDED.schema_version, updated_at=EXCLUDED.updated_at",
             [key, name, description, _json_dump(cfg["values"]), enabled, is_builtin, cfg["schemaVersion"], created_at, now],
         )
-        log.info("布局预设已保存: %s", key)
+        log.info("视觉预设已保存: %s", key)
         return self.get_preset(key) or {}
 
     def delete_preset(self, key: str) -> None:

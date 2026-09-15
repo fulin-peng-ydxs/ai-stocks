@@ -125,7 +125,7 @@ def test_system_only_reads_forbidden_for_tenant_admin(client, tadmin, method, pa
 # 反向守卫：普通用户页面渲染依赖的共享读接口**不得**被误 gate 成 system-only（防过度收紧回归）。
 _USER_SHARED_READS = [
     "/api/data/trade-dates",          # 全站日期选择器
-    "/api/layout/presets",            # 布局预设（App 顶栏选择器）
+    "/api/layout/presets",            # 视觉预设（App 顶栏选择器）
     "/api/layout/effective/board",    # 页面布局生效配置
 ]
 

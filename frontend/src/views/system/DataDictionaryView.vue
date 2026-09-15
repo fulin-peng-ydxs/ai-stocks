@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -436,6 +437,7 @@ async function toggleItem(row: DictItem, value: boolean) {
 
 
 onMounted(loadAll)
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -443,7 +445,7 @@ onMounted(loadAll)
     <template #action>
       <div class="dict-page-head">
         <div class="dict-title">
-          <h2 class="app-page-title">数据字典
+          <h2 class="app-page-title">{{ menuPageTitle }}
             <HelpTip title="数据字典说明" :width="420">
               <HelpTipItem question="字典维护什么">
                 <ul>

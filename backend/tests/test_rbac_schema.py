@@ -36,8 +36,10 @@ from backend.storage.pg_ddl import (
     _STAGE4_BUSINESS_GRANTS_MARKER,
     _STAGE6_ASSET_VISIBILITY_MARKER,
     _USER_RESOURCE_CODES,
+    _VISUAL_PRESET_LABEL_MARKER,
     _backfill_asset_publish_open_v1,
     _flatten_menu_tree,
+    _migrate_visual_preset_labels,
     _publish_policy_state_cur,
     _publish_suppressed,
     _record_config_split_legacy_menu_state,
@@ -276,6 +278,58 @@ def test_seed_rbac_does_not_overwrite_db_menu_customization(pg):
         assert not bool(row["is_builtin"])
     finally:
         pg.execute("DELETE FROM sys_menu WHERE id=%s", [menu_id])
+
+
+def test_visual_preset_label_migration_is_idempotent_and_preserves_custom_names(pg):
+    menu_id = "/system/layout/presets"
+    resource_id = "layout:preset-manage"
+    menu_before = pg.query_df(
+        "SELECT title, is_builtin, updated_at FROM sys_menu WHERE id=%s",
+        [menu_id],
+    ).iloc[0]
+    resource_before = pg.query_df(
+        "SELECT name, is_builtin, updated_at FROM sys_resource WHERE id=%s",
+        [resource_id],
+    ).iloc[0]
+    marker_before = _snapshot_app_config(pg, [_VISUAL_PRESET_LABEL_MARKER])
+    try:
+        pg.execute("DELETE FROM app_config WHERE key=%s", [_VISUAL_PRESET_LABEL_MARKER])
+        pg.execute(
+            "UPDATE sys_menu SET title='预设管理', is_builtin=TRUE WHERE id=%s",
+            [menu_id],
+        )
+        pg.execute(
+            "UPDATE sys_resource SET name='布局预设管理', is_builtin=TRUE WHERE id=%s",
+            [resource_id],
+        )
+
+        _migrate_visual_preset_labels(pg)
+        assert pg.query_df(
+            "SELECT title FROM sys_menu WHERE id=%s", [menu_id],
+        ).iloc[0]["title"] == "视觉预设"
+        assert pg.query_df(
+            "SELECT name FROM sys_resource WHERE id=%s", [resource_id],
+        ).iloc[0]["name"] == "视觉预设管理"
+
+        # marker 存在后不得把管理员后续显式名称改回代码默认值。
+        pg.execute("UPDATE sys_menu SET title='我的视觉主题' WHERE id=%s", [menu_id])
+        _migrate_visual_preset_labels(pg)
+        assert pg.query_df(
+            "SELECT title FROM sys_menu WHERE id=%s", [menu_id],
+        ).iloc[0]["title"] == "我的视觉主题"
+    finally:
+        pg.execute(
+            "UPDATE sys_menu SET title=%s, is_builtin=%s, updated_at=%s WHERE id=%s",
+            [menu_before["title"], bool(menu_before["is_builtin"]), menu_before["updated_at"], menu_id],
+        )
+        pg.execute(
+            "UPDATE sys_resource SET name=%s, is_builtin=%s, updated_at=%s WHERE id=%s",
+            [
+                resource_before["name"], bool(resource_before["is_builtin"]),
+                resource_before["updated_at"], resource_id,
+            ],
+        )
+        _restore_app_config(pg, [_VISUAL_PRESET_LABEL_MARKER], marker_before)
 
 
 def test_seed_rbac_does_not_overwrite_db_resource_customization(pg):

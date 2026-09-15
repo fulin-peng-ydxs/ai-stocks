@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -615,6 +616,7 @@ async function initializeScreen() {
 }
 
 onMounted(initializeScreen)
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -623,7 +625,7 @@ onMounted(initializeScreen)
     <div class="page-head">
       <div>
         <h2 class="app-page-title page-title-row">
-          策略筛选
+          {{ menuPageTitle }}
           <HelpTip title="筛选 与 榜单 的区别" :width="400">
             <HelpTipItem question="筛选是什么">
               <ul>

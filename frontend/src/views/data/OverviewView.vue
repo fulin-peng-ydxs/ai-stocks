@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
@@ -503,6 +504,7 @@ function coverageFreshness(
 }
 
 onMounted(load)
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -511,7 +513,7 @@ onMounted(load)
     <div class="page-head">
       <div>
       <h2 class="app-page-title">
-        数据概览
+        {{ menuPageTitle }}
         <HelpTip title="数据概览看什么？" :width="420">
           <HelpTipItem question="页面提供什么">
             <ul>

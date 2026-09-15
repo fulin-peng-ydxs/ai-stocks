@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import {
   computed,
@@ -480,6 +481,7 @@ onMounted(async () => {
 onActivated(startTimer)
 onDeactivated(stopTimer)
 onBeforeUnmount(stopTimer)
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -487,7 +489,7 @@ onBeforeUnmount(stopTimer)
     <template #action>
       <div class="audit-head">
         <div class="audit-title">
-          <h2 class="app-page-title">审计日志
+          <h2 class="app-page-title">{{ menuPageTitle }}
             <HelpTip title="审计日志说明" :width="420" test-id="audit-help-tip">
               <HelpTipItem question="记录哪些事件">
                 <ul>

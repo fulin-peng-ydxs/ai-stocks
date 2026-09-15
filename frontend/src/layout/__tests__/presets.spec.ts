@@ -210,7 +210,7 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     }
   })
 
-  it('预设管理页复用统一运行时目录入口，方案标签文档登记所有消费页', () => {
+  it('视觉预设页复用统一运行时目录入口，方案标签文档登记所有消费页', () => {
     const view = readFileSync(join(SRC_DIR, 'views/layout/LayoutPresetsView.vue'), 'utf8')
     const design = readFileSync(join(SRC_DIR, '../../DESIGN.md'), 'utf8')
 

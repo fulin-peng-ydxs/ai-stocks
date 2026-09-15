@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 // 菜单与功能管理页（多租户 RBAC stage3·T13，R12+R13）。承接 menu-resource-management.html。
 // master-detail：左 el-tree(draggable) 菜单树 + 右 菜单属性表单(含 IconPicker) + 功能点子表。
 // 菜单是平台级全局唯一源，SideMenu 消费它 + 按角色权限过滤（T15）；功能点是角色授权最小资源单位。
@@ -208,6 +209,8 @@ async function saveForm() {
     })
     ElMessage.success('已保存')
     await loadTree(true)
+    // 页面标题与侧栏共同消费 /me 菜单树，保存名称后立即刷新全局快照。
+    await auth.fetchMe()
   } catch { /* 唯一/内置/成环等由拦截器弹出 */ } finally { savingForm.value = false }
 }
 function resetForm() {
@@ -423,6 +426,7 @@ function resourceRowActions(r: Resource): AppRowAction[] {
 }
 
 onMounted(() => { loadTree() })
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -432,7 +436,7 @@ onMounted(() => { loadTree() })
         <div class="page-head">
           <div>
             <h2 class="app-page-title">
-              菜单功能
+              {{ menuPageTitle }}
               <HelpTip title="菜单与功能管理说明" :width="440">
                 <HelpTipItem question="菜单树如何维护">
                   <ul>

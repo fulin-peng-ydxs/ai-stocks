@@ -9,7 +9,7 @@
  * 各业务页面统一通过 getPageLayout(pageKey) 取布局；配置中心、报告页、导入校验
  * 统一通过 PAGE_REGISTRY / listManagedPages() 读取页面元信息，不再手写。
  *
- * 布局配置平台页（预设管理/页面布局/系统组件）也纳入注册表，保证「页面布局」工作台能查看和配置这些系统页面。
+ * 布局配置平台页（视觉预设/页面布局/系统组件）也纳入注册表，保证「页面布局」工作台能查看和配置这些系统页面。
  */
 import type { Archetype, EditableKnob, PageLayout, SlotSpec } from './schema'
 import { cloneLayout } from './path'
@@ -976,7 +976,7 @@ const REGISTRY: PageRegistryEntry[] = [
   },
   {
     pageKey: 'layout-presets',
-    label: '预设管理',
+    label: '视觉预设',
     path: '/system/layout/presets',
     archetype: 'list',
     responsiveProfile: 'single-column',

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
@@ -880,6 +881,7 @@ onMounted(async () => {
   await loadWatchlist()
   void load()
 })
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -889,7 +891,7 @@ onMounted(async () => {
         <div class="page-head">
           <div>
             <h2 class="app-page-title page-title-row">
-              板块行情
+              {{ menuPageTitle }}
               <HelpTip title="板块行情怎么看？" :width="460" test-id="sectors-help-tip">
                 <HelpTipItem question="涨幅口径是什么">
                   <ul>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import {
   computed,
@@ -449,6 +450,9 @@ onMounted(async () => {
 onActivated(attachKeyboard)
 onDeactivated(detachKeyboard)
 onBeforeUnmount(detachKeyboard)
+const menuPageTitle = useMenuPageTitle()
+const runningPageTitle = useMenuPageTitle({ suffix: '进行中' })
+const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 </script>
 
 <template>
@@ -458,7 +462,7 @@ onBeforeUnmount(detachKeyboard)
     <div class="page-head">
         <div>
           <h2 class="app-page-title page-title-row">
-            盘感训练
+            {{ menuPageTitle }}
             <HelpTip title="盘感训练是什么？" :width="440">
               <HelpTipItem question="训练如何进行">
                 <ul>
@@ -626,7 +630,7 @@ onBeforeUnmount(detachKeyboard)
     <div class="page-head">
         <div>
           <h2 class="app-page-title title-row">
-            盘感训练 · 进行中
+            {{ runningPageTitle }}
             <HelpTip title="训练规则" :width="380">
               <HelpTipItem question="盲测隐藏什么">
                 <ul>
@@ -773,7 +777,7 @@ onBeforeUnmount(detachKeyboard)
     <div class="page-head">
         <div>
           <h2 class="app-page-title title-row">
-            训练结算
+            {{ resultPageTitle }}
             <span class="grade-big app-data-emphasis" :style="{ color: gradeColor(detail.grade) }">{{ detail.grade }}</span>
             <span class="score-tip">综合评分 {{ detail.score?.toFixed(1) }}</span>
           </h2>

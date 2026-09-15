@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue'
@@ -569,6 +570,7 @@ onMounted(async () => {
 
 // keep-alive 缓存页再次进入时不会重新执行 onMounted，激活时消费一次性新建意图。
 onActivated(openResultScheduleFromIntent)
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -577,7 +579,7 @@ onActivated(openResultScheduleFromIntent)
     <div class="page-head">
       <div>
       <h2 class="app-page-title">
-        任务调度
+        {{ menuPageTitle }}
         <HelpTip title="这页管什么？" :width="440">
           <HelpTipItem question="调度任务管什么">
             <ul>

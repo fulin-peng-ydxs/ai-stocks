@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -76,13 +77,7 @@ function configPageKeyOf(tab: ConfigTab): string {
   return `config-${tab}`
 }
 const configPageKey = configPageKeyOf(activeTab.value)
-const pageTitle = computed(() => {
-  if (forcedTab.value === 'score') return '评分规则'
-  if (forcedTab.value === 'trade') return '买卖指标'
-  if (forcedTab.value === 'tech') return '技术指标'
-  if (forcedTab.value === 'system') return '系统设置'
-  return '配置管理'
-})
+const pageTitle = useMenuPageTitle({ fallback: '配置管理' })
 const pageSubtitle = computed(() => {
   if (forcedTab.value === 'score') return '按权重组合技术指标打分排序，权重自动归一到 100%。'
   if (forcedTab.value === 'trade') return '买入/卖出各一组技术指标条件（且/或），止盈/止损/持仓为可选兜底。'

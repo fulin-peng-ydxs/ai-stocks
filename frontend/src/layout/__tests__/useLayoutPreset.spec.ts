@@ -15,7 +15,7 @@ import type { ThemeMode } from '../schema'
 const COLOR_LEVELS = [3, 5, 7, 8, 9] as const
 const SEMANTIC_COLORS = ['primary', 'success', 'warning', 'danger'] as const
 
-describe('布局预设运行时 Element Plus 色阶', () => {
+describe('视觉预设运行时 Element Plus 色阶', () => {
   const { isDark } = useTheme()
 
   afterEach(() => {

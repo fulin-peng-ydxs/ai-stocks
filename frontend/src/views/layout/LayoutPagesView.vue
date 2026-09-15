@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 /**
@@ -9,7 +10,7 @@ import AppDataTable from '@/components/AppDataTable.vue'
  * 不再像旧单页配置中心那样把页面配置/导入导出/报告散到无上下文的独立入口。
  *
  * 由原单页 LayoutConfigView 的「页面配置 + 导入导出(页面/用户/有效) + 校验报告」迁移而来，
- * 能力不丢失。预设维度归「预设管理」工作区，组件目录归「系统组件」工作区。
+ * 能力不丢失。预设维度归「视觉预设」工作区，组件目录归「系统组件」工作区。
  * 实时布局预览、页面层组件默认值编辑与只读诊断在同一工作台内闭环。
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
@@ -416,7 +417,7 @@ async function importConfig() {
       ElMessage.success('用户配置导入完成')
       return
     }
-    ElMessage.error('请导入页面/用户配置文件；预设请在「预设管理」工作区导入')
+    ElMessage.error('请导入页面/用户配置文件；预设请在「视觉预设」工作区导入')
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : '导入内容不是合法 JSON')
   } finally {
@@ -486,6 +487,7 @@ onMounted(async () => {
   await reloadFieldPolicies()
   await loadPageConfig({ clearCurrent: true })
 })
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -494,7 +496,7 @@ onMounted(async () => {
       <div class="lh-action">
         <div class="page-head">
           <div>
-            <h2 class="app-page-title">页面布局</h2>
+            <h2 class="app-page-title">{{ menuPageTitle }}</h2>
             <p class="page-subtitle">配置单个页面的默认布局、组件特性、导入导出与校验报告。</p>
           </div>
           <div class="page-head-actions">
@@ -692,7 +694,7 @@ onMounted(async () => {
             <div class="import-grid">
               <section class="plain-panel">
                 <div class="section-title">导出</div>
-                <div class="section-subtitle">导出当前页面的页面/用户/有效配置；预设导出在「预设管理」工作区。</div>
+                <div class="section-subtitle">导出当前页面的页面/用户/有效配置；预设导出在「视觉预设」工作区。</div>
                 <div class="inline-controls">
                   <el-select v-model="exportScope">
                     <el-option label="当前页面配置" value="page" />

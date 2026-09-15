@@ -25,7 +25,7 @@ const TOOLBARS: Record<string, string> = {
     <button class="d-verify" v-permission="'data-task:manage'">立即质检</button>
     <button class="d-refresh">刷新</button>
   </div>`,
-  // 布局页（预设管理）：新增预设 layout:preset-manage / 导入 layout:preset-manage / 刷新(非受控)
+  // 布局页（视觉预设）：新增预设 layout:preset-manage / 导入 layout:preset-manage / 刷新(非受控)
   layout: `<div>
     <button class="l-new" v-permission="'layout:preset-manage'">新增预设</button>
     <button class="l-refresh">刷新</button>
@@ -68,7 +68,7 @@ describe('数据页工具栏（数据质量，system-only 页）', () => {
   })
 })
 
-describe('布局页工具栏（预设管理，system-only 页）', () => {
+describe('布局页工具栏（视觉预设，system-only 页）', () => {
   it('无 layout:preset-manage → 移除新增、保留刷新', () => {
     const w = mountToolbar('layout', 'normal', [])
     expect(w.find('.l-new').exists()).toBe(false)

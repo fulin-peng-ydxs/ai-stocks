@@ -1,12 +1,13 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 /**
- * 预设管理工作区（P4 布局平台 IA 重构）。
+ * 视觉预设工作区（P4 布局平台 IA 重构）。
  *
  * 职责（plan.md §13.2）：管理全局视觉预设、token 与启停状态，
  * 以及预设维度的导入导出。页面/用户配置与校验报告归「页面布局」工作区，组件目录归「系统组件」。
- * 由原单页 LayoutConfigView 的「预设管理 + 导入导出(预设部分)」迁移而来，能力不丢失。
+ * 由原单页 LayoutConfigView 的「视觉预设 + 导入导出(预设部分)」迁移而来，能力不丢失。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -127,7 +128,7 @@ async function reloadPresets() {
     const enabledPresets = presets.value.filter((preset) => preset.enabled)
     setRuntimePresetSources(enabledPresets)
   } catch (error) {
-    loadError.value = getErrorMessage(error, '布局预设加载失败')
+    loadError.value = getErrorMessage(error, '视觉预设加载失败')
   } finally {
     loading.value = false
   }
@@ -155,7 +156,7 @@ async function submitPreset() {
     Boolean(presetForm.light[key]) && Boolean(presetForm.dark[key])
   )) && Boolean(presetForm.light.shadow) && Boolean(presetForm.dark.shadow)
   if (numberValues.some((value) => !Number.isFinite(Number(value))) || !colorsComplete) {
-    ElMessage.warning('请补全布局预设中的必填配置')
+    ElMessage.warning('请补全视觉预设中的必填配置')
     return
   }
   const values = presetFormValues()
@@ -171,7 +172,7 @@ async function submitPreset() {
     })
     selectedPresetKey.value = saved.key
     presetDialog.value = false
-    ElMessage.success('布局预设已保存')
+    ElMessage.success('视觉预设已保存')
     await reloadPresets()
   } finally {
     presetSaving.value = false
@@ -296,6 +297,7 @@ const importExportVisible = ref(false)
 const presetCount = computed(() => presets.value.length)
 
 onMounted(reloadPresets)
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -304,13 +306,13 @@ onMounted(reloadPresets)
       <div class="lh-action">
         <div class="page-head">
           <div>
-            <h2 class="app-page-title">预设管理</h2>
+            <h2 class="app-page-title">{{ menuPageTitle }}</h2>
             <p class="page-subtitle">管理颜色、圆角、边框与阴影等全局视觉预设（共 {{ presetCount }} 套）。</p>
           </div>
           <div class="page-head-actions">
             <el-button @click="importExportVisible = true">导入导出</el-button>
             <el-button :loading="loading" @click="reloadPresets">刷新</el-button>
-            <el-button v-permission="'layout:preset-manage'" type="primary" @click="openNewPreset">新增预设</el-button>
+            <el-button v-permission="'layout:preset-manage'" type="primary" @click="openNewPreset">新增视觉预设</el-button>
           </div>
         </div>
       </div>
@@ -321,7 +323,7 @@ onMounted(reloadPresets)
         <AppStateBlock
           v-if="loadError"
           state="error"
-          :title="presets.length ? '布局预设刷新失败' : '布局预设加载失败'"
+          :title="presets.length ? '视觉预设刷新失败' : '视觉预设加载失败'"
           :description="loadError"
           retry
           @retry="reloadPresets"
@@ -365,7 +367,7 @@ onMounted(reloadPresets)
     </template>
 
     <template #overlays>
-      <el-dialog v-model="presetDialog" width="720px" title="布局预设">
+      <el-dialog v-model="presetDialog" width="720px" title="视觉预设">
         <el-form label-position="top" class="preset-form">
           <div class="form-grid">
             <el-form-item label="标识" :required="!presetForm.is_builtin">
@@ -414,7 +416,7 @@ onMounted(reloadPresets)
         </template>
       </el-dialog>
 
-      <el-dialog v-model="importExportVisible" width="720px" title="预设导入导出">
+      <el-dialog v-model="importExportVisible" width="720px" title="视觉预设导入导出">
         <div class="ie-grid">
           <section>
             <div class="section-title">导出全部预设</div>

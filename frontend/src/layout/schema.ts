@@ -48,7 +48,7 @@ export type RegionRole = 'action' | 'main' | 'overlay'
 /** 信息密度档位（L2 可调）。 */
 export type Density = 'compact' | 'standard' | 'comfortable'
 
-/** 当前内置预设只保留 balanced；运行时还允许加载预设管理中启用的自定义 key。 */
+/** 当前内置预设只保留 balanced；运行时还允许加载视觉预设页启用的自定义 key。 */
 export type LayoutPresetKey = 'balanced'
 
 export interface StyleTokenConfig {

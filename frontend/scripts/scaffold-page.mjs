@@ -96,9 +96,11 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
 const settingsOpen = ref(false)
+const menuPageTitle = useMenuPageTitle({ fallback: '${label}' })
 const pageLayout = getPageLayout('${pageKey}')
 const {
   effective,
@@ -123,7 +125,7 @@ const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, layerValuesOf, set
   <LayoutHost :layout="effective">
 ${hasActionSlot ? `    <template #action>
       <section class="page-toolbar">
-        <h1 class="app-page-title">${label}</h1>
+        <h2 class="app-page-title">{{ menuPageTitle }}</h2>
         <PageSettingsTrigger @click="settingsOpen = true" />
       </section>
     </template>` : ''}
@@ -138,7 +140,7 @@ ${mainSlots.map((slot) => `    <template #${mainSlots.length === 1 ? 'main' : sl
     <template #overlays>
       <PageSettingsDrawer
         v-model="settingsOpen"
-        title="${label}设置"
+        :title="\`\${menuPageTitle}设置\`"
         page-key="${pageKey}"
         :config="drawerConfig"
         :dirty="layoutDirty"

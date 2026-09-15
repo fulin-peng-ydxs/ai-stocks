@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
@@ -473,6 +474,7 @@ watch(tradeDisciplineChangeVersion, async () => {
     await historyRef.value?.reload()
   }
 })
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -482,7 +484,7 @@ watch(tradeDisciplineChangeVersion, async () => {
         <div class="page-head">
           <div>
             <h2 class="app-page-title">
-              交易纪律
+              {{ menuPageTitle }}
               <HelpTip
                 title="交易纪律工作台"
                 :width="480"

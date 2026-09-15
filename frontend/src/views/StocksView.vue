@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -836,6 +837,7 @@ onMounted(async () => {
     await load()
   }
 })
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -845,7 +847,7 @@ onMounted(async () => {
     <div class="page-head">
       <div>
       <h2 class="app-page-title">
-        个股查询
+        {{ menuPageTitle }}
         <HelpTip title="个股查询说明" :width="440">
           <HelpTipItem question="如何查询个股">
             <ul>

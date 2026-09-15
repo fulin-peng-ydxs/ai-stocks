@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -757,6 +758,7 @@ watch(
     }
   },
 )
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -765,7 +767,7 @@ watch(
     <div class="page-head">
       <div>
       <h2 class="app-page-title">
-        数据采集
+        {{ menuPageTitle }}
         <HelpTip title="这页能做什么？" :width="420">
           <HelpTipItem question="手动任务怎么执行">
             <ul>

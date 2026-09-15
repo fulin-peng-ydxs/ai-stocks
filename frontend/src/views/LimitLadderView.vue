@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
@@ -683,6 +684,7 @@ onBeforeUnmount(() => {
   requestSequence += 1
   clearResultRefresh()
 })
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -692,7 +694,7 @@ onBeforeUnmount(() => {
         <div class="page-head">
           <div>
             <h2 class="app-page-title">
-              连板天梯
+              {{ menuPageTitle }}
               <HelpTip title="连板天梯说明" :width="440" test-id="limit-ladder-help-tip">
                 <HelpTipItem question="天梯如何分层">
                   <ul>

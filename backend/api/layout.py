@@ -94,7 +94,7 @@ def save_preset(body: PresetBody) -> ApiResponse:
         )
     except LayoutConfigValidationError as e:
         return err(400, str(e))
-    return ok(preset, msg="布局预设已保存")
+    return ok(preset, msg="视觉预设已保存")
 
 
 @router.delete("/presets/{preset_key}", response_model=ApiResponse,
@@ -104,7 +104,7 @@ def delete_preset(preset_key: str) -> ApiResponse:
         LayoutConfigRepo().delete_preset(preset_key)
     except LayoutConfigValidationError as e:
         return err(400, str(e))
-    return ok({"key": preset_key}, msg="布局预设已删除")
+    return ok({"key": preset_key}, msg="视觉预设已删除")
 
 
 @router.get("/pages/{page_key}", response_model=ApiResponse,

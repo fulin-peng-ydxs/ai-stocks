@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 // 租户管理页（多租户 RBAC stage3·T14，R14）。承接 tenant-management.html（去勾选列、无批量工具条）。
 // 列表 + 筛选 + 分页 + 编辑弹窗（含指定管理员）+ 行内启停 + 查看用户跳转。整页仅系统管理员可达（require_system）。
@@ -278,6 +279,7 @@ onMounted(async () => {
   void loadUserStatusDictItems()
   await load()
 })
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -287,7 +289,7 @@ onMounted(async () => {
         <div class="page-head">
           <div>
             <h2 class="app-page-title">
-              租户管理
+              {{ menuPageTitle }}
               <HelpTip title="租户管理说明" :width="420">
                 <HelpTipItem question="可以维护什么">
                   <ul>

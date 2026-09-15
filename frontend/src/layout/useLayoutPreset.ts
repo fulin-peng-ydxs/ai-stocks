@@ -22,7 +22,7 @@ const themeRevision = ref(0)
 const { isDark } = useTheme()
 
 /**
- * 后端预设覆盖（P11：让"预设管理页编辑"真正驱动运行时外观）。
+ * 后端预设覆盖（P11：让“视觉预设”页编辑真正驱动运行时外观）。
  * 形如 { [presetKey]: { 'tokens.light.primary': '#...', 'tokens.shared.cardRadius': 8, ... } }，
  * 由 main.ts 挂载后异步拉取注入；缺省（离线/未拉取）则只用前端内置 presets.ts（首屏不闪烁）。
  */
@@ -369,7 +369,7 @@ export function setPresetOverrides(map: Record<string, Record<string, RuntimePre
   applyPreset(activePresetKey.value)
 }
 
-/** 取某预设某模式下「内置 + 后端覆盖」的有效 token（供预设管理页回显当前生效值）。 */
+/** 取某预设某模式下「内置 + 后端覆盖」的有效 token（供视觉预设页回显当前生效值）。 */
 export function effectivePresetTokens(key: string, mode: 'light' | 'dark'): StyleTokenConfig {
   return getRuntimeLayoutPreset(key).tokens[mode]
 }

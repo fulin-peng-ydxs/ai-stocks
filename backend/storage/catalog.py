@@ -587,7 +587,7 @@ _PG_META_GROUPS: tuple[tuple[str, str, dict[str, str]], ...] = (
         "training_trade": "盘感训练成交",
     }),
     ("布局与配置", "platform_global", {
-        "layout_preset": "布局预设",
+        "layout_preset": "视觉预设",
         "layout_page_config": "页面布局配置",
         "layout_field_policy": "布局字段策略",
         "app_config": "平台运行配置",
@@ -656,7 +656,7 @@ _PG_TABLE_PURPOSES: dict[str, str] = {
     "training_session": "保存盘感训练会话的规则、范围和汇总状态。",
     "training_round": "保存训练会话中的逐回合决策与结果。",
     "training_trade": "保存训练回合内的模拟交易记录。",
-    "layout_preset": "保存平台布局预设及版本化配置。",
+    "layout_preset": "保存平台视觉预设及版本化配置。",
     "layout_page_config": "保存页面级布局和组件配置。",
     "layout_field_policy": "定义组件配置字段允许写入的配置层级。",
     "app_config": "保存平台级运行配置及迁移标记。",

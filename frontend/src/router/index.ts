@@ -105,7 +105,7 @@ export const routes: RouteRecordRaw[] = [
     path: '/system/layout/presets',
     name: 'layout-presets',
     component: () => import('@/views/layout/LayoutPresetsView.vue'),
-    meta: { title: '预设管理' },
+    meta: { title: '视觉预设' },
   },
   {
     path: '/system/layout/pages',
@@ -129,7 +129,7 @@ export const routes: RouteRecordRaw[] = [
     path: '/backtest',
     name: 'backtest',
     component: () => import('@/views/BacktestView.vue'),
-    meta: { title: '回测' },
+    meta: { title: '策略回测' },
   },
   {
     path: '/training',
@@ -147,7 +147,7 @@ export const routes: RouteRecordRaw[] = [
     path: '/stocks',
     name: 'stocks',
     component: () => import('@/views/StocksView.vue'),
-    meta: { title: '个股查询' },
+    meta: { title: '个股行情' },
   },
   {
     path: '/stocks/:code',

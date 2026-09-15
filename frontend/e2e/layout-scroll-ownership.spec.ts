@@ -4,7 +4,7 @@ import { collectConsoleIssues } from './helpers/console'
 
 async function openPresets(page: import('@playwright/test').Page) {
   await page.goto('/system/layout/presets')
-  await expect(page.getByText('预设管理', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText('视觉预设', { exact: true }).first()).toBeVisible({ timeout: 20_000 })
   await expect(page.getByTestId('preset-table')).toBeVisible()
 }
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -274,6 +275,7 @@ async function loadAll() {
   }
 }
 onMounted(loadAll)
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -283,7 +285,7 @@ onMounted(loadAll)
         <div class="page-head">
           <div>
             <h2 class="app-page-title">
-              角色管理
+              {{ menuPageTitle }}
               <HelpTip title="角色管理说明" :width="440">
                 <HelpTipItem question="授权何时生效">
                   <ul>

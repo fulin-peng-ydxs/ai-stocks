@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -516,6 +517,7 @@ onMounted(() => {
   }
   load()
 })
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -525,7 +527,7 @@ onMounted(() => {
     <div class="page-head">
       <div>
       <h2 class="app-page-title">
-        数据质量
+        {{ menuPageTitle }}
         <HelpTip title="数据质量怎么来的、怎么处理？" :width="480">
           <HelpTipItem question="质量问题如何闭环">
             <ul>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 /**
@@ -10,7 +11,7 @@ import AppDataTable from '@/components/AppDataTable.vue'
  * 详情抽屉含 LayoutComponentPreview 的默认/loading/empty/error 四态预览。
  *
  * 边界（§6.3.1）：本页查看组件目录元信息并管理 page/user 字段可覆盖范围。
- * 组件具体默认值分别在预设管理、页面布局、页面抽屉对应层编辑。
+ * 组件具体默认值分别在视觉预设、页面布局、页面抽屉对应层编辑。
  */
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -298,6 +299,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
     .join(' · ') || '—'
 }
 
+const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
@@ -307,7 +309,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
         <div class="page-head">
           <div>
             <h2 class="app-page-title page-title-row">
-              系统组件
+              {{ menuPageTitle }}
               <HelpTip title="系统组件说明" :width="420">
                 <HelpTipItem question="当前目录包含哪些组件">
                   <ul>
@@ -316,7 +318,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
                 </HelpTipItem>
                 <HelpTipItem question="如何查看和配置">
                   <ul>
-                    <li>使用“预览”查看四态规范样板与字段可覆盖范围；可覆盖范围在本页编辑，组件默认值在“预设管理”中维护。</li>
+                    <li>使用“预览”查看四态规范样板与字段可覆盖范围；可覆盖范围在本页编辑，组件默认值在“视觉预设”中维护。</li>
                   </ul>
                 </HelpTipItem>
               </HelpTip>
@@ -471,7 +473,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
           <div class="detail-block">
             <div class="db-head">
               <span class="db-title">可覆盖范围（在线编辑）</span>
-              <HelpHint text="勾选某字段允许在哪些层被覆盖（预设 / 页面 / 个人）。灰色项=代码未声明、不可开放（安全红线）。组件默认值请到「预设管理」按预设设置。" />
+              <HelpHint text="勾选某字段允许在哪些层被覆盖（预设 / 页面 / 个人）。灰色项=代码未声明、不可开放（安全红线）。组件默认值请到「视觉预设」按预设设置。" />
             </div>
             <AppDataTable v-if="selected.configurableFields.length" :data="selected.configurableFields" size="small" embedded>
               <AppTableColumn label="字段">

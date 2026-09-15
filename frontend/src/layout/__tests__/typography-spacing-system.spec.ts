@@ -491,10 +491,32 @@ describe('字体与间距设计契约', () => {
     }
   })
 
+  it('所有可导航页面标题统一跟随菜单名称，阶段后缀不复制基础标题', () => {
+    const pagesWithTitle = sourceFiles(join(SRC_DIR, 'views'))
+      .filter((file) => read(file).includes('app-page-title'))
+
+    for (const file of pagesWithTitle) {
+      const source = read(file)
+      expect(source, relative(SRC_DIR, file)).toContain('useMenuPageTitle')
+    }
+
+    const training = read(join(SRC_DIR, 'views/TrainingView.vue'))
+    expect(training).toContain("useMenuPageTitle({ suffix: '进行中' })")
+    expect(training).toContain("useMenuPageTitle({ suffix: '结算' })")
+    expect(training).not.toContain('盘感训练 · 进行中')
+    expect(training).not.toContain('训练结算')
+
+    const menuManagement = read(join(SRC_DIR, 'views/system/MenuResourceView.vue'))
+    expect(menuManagement).toMatch(/await updateMenu\([\s\S]*await auth\.fetchMe\(\)/)
+  })
+
   it('新页面脚手架直接消费排版/间距事实源，并显式标记未完成占位', () => {
     const scaffold = read(join(FRONTEND_DIR, 'scripts/scaffold-page.mjs'))
 
     expect(scaffold).toContain('class="app-page-title"')
+    expect(scaffold).toContain("import { useMenuPageTitle } from '@/composables/useMenuPageTitle'")
+    expect(scaffold).toContain("const menuPageTitle = useMenuPageTitle({ fallback: '${label}' })")
+    expect(scaffold).toContain('{{ menuPageTitle }}')
     expect(scaffold).toContain('gap: var(--app-space-3)')
     expect(scaffold).toContain('AppStateBlock')
     expect(scaffold).toContain('data-scaffold-placeholder')
