@@ -2644,8 +2644,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   box-shadow: inset 3px 0 0 var(--el-color-primary);
 }
 :global(.indicator-editor-grid) { display: grid; gap: var(--app-space-4); }
-:global(.indicator-editor-grid--identity) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-:global(.indicator-editor-grid--meta) { grid-template-columns: minmax(260px, .8fr) minmax(0, 1.2fr); }
+:global(.indicator-editor-grid--identity),
+:global(.indicator-editor-grid--meta) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 :global(.indicator-definition-form .el-form-item) { margin: 0; }
 :global(.indicator-definition-form .el-form-item__label) {
   color: var(--el-text-color-regular);
