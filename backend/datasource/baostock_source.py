@@ -236,9 +236,15 @@ class BaostockSource(DataSource):
         )
 
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
-    @rate_limited(_MIN_INTERVAL)
+    @rate_limited(_MIN_INTERVAL, start_to_start=True)
     def _st_data(self, code: str, start: date, end: date) -> pd.DataFrame:
-        """Fetch only the three columns required by the ST identity timeline."""
+        """Fetch only the three columns required by the ST identity timeline.
+
+        ST 取数在生产路径上已被 `_BAO_FALLBACK_LOCK` 全进程串行（见 ingest._fetch_st_status_rows），
+        此处限流只用于守住请求速率：若仍按调用结束记时，间隔之外再叠加一次往返耗时，会把实际
+        速率压到配置值以下，而串行已经限住了并发，重复叠加没有额外防封收益。其余 baostock
+        方法不经该锁，保持默认的结束记时。
+        """
         import baostock as bs
 
         return self._query_frame(

@@ -9,7 +9,7 @@
 ### 数据源适配（`backend/datasource/`）
 - 主源 **AKShare**（新浪日线/指数/日历/股票列表 + 东财单只估值 `stock_value_em`）、备源 **baostock**（退市股历史、复权因子兜底）。能力按 `capabilities` 声明，编排层 `IngestionService._source_for(capability)` 按能力选源（主源支持→主源，否则备源），不硬编码"谁负责什么"。
 - 个股分时是独立的按需读链路：`intraday_1m` 由新浪近期 1 分钟窗口提供、东财近 5 日兜底，经 Redis 12 小时窗口缓存供日 K 下钻；不进入 `IngestionService`、不落库、不参与质检与回测。详见 [stock-intraday.md](stock-intraday.md)。
-- 统一封装**限流**（`rate_limited`，按生效配置 `rate_limit_per_sec`）、**重试**（`with_retry`，指数退避）、**超时**（模块级注入 requests 默认超时）、**兜底**（主源取空→备源）、**溯源**（`data_source_provenance` 记录每段数据来自哪个源）。Baostock 同时提供与日线日期对齐的历史 `isST`；完整闭环见 [st-status.md](st-status.md)。
+- 统一封装**限流**（`rate_limited`，按生效配置 `rate_limit_per_sec`；已被外部锁全进程串行的路径传 `start_to_start=True`，按调用起始记时，使配置速率不再被请求往返二次拉低）、**重试**（`with_retry`，指数退避）、**超时**（模块级注入 requests 默认超时）、**兜底**（主源取空→备源）、**溯源**（`data_source_provenance` 记录每段数据来自哪个源）。Baostock 同时提供与日线日期对齐的历史 `isST`；完整闭环见 [st-status.md](st-status.md)。
 
 ### 双库数据资产目录（`backend/storage/catalog.py`）
 

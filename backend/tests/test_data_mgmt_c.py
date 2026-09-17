@@ -1454,6 +1454,45 @@ def test_retry_backoff_observes_parallel_cancel():
     assert source.attempts == 1
 
 
+def test_rate_limited_start_to_start_keeps_configured_rate():
+    """串行路径按起始记时：配置间隔即真实起始间隔，不再叠加一次请求往返耗时。"""
+    from backend.datasource.base import rate_limited
+
+    interval = 0.1
+
+    class _Source:
+        _min_interval_sec = interval
+
+        @rate_limited(interval, start_to_start=True)
+        def serial(self):
+            time.sleep(interval)
+
+        @rate_limited(interval)
+        def spaced_from_end(self):
+            time.sleep(interval)
+
+    source = _Source()
+    started = time.monotonic()
+    source.serial()
+    assert abs(getattr(source, "_last_call_serial") - started) < interval / 2
+
+    started = time.monotonic()
+    source.spaced_from_end()
+    assert getattr(source, "_last_call_spaced_from_end") - started >= interval
+
+    serial_source = _Source()
+    started = time.monotonic()
+    serial_source.serial()
+    serial_source.serial()
+    assert time.monotonic() - started < interval * 2.5
+
+    end_spaced_source = _Source()
+    started = time.monotonic()
+    end_spaced_source.spaced_from_end()
+    end_spaced_source.spaced_from_end()
+    assert time.monotonic() - started >= interval * 2.5
+
+
 def test_bounded_parallel_cancel_waits_for_inflight_safe_exit():
     """终止不能留下孤儿线程：已进入不可打断边界的工作单元退出前，执行器不得返回。"""
     from backend.services.async_task import TaskCancelled

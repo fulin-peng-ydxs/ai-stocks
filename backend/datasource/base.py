@@ -80,13 +80,17 @@ def thread_cancel_scope(check):
 # ── 限流 / 重试 装饰器（应对公开接口频率/稳定性限制，需求 §10.1）──
 
 
-def rate_limited(min_interval_sec: float) -> Callable:
+def rate_limited(min_interval_sec: float, *, start_to_start: bool = False) -> Callable:
     """方法级简单限流：相邻两次调用间隔 >= 间隔秒数（按方法名隔离记时）。
 
     间隔取值优先级：实例属性 `self._min_interval_sec`（运行时按生效配置注入，
     见各源 __init__）> 装饰器入参 min_interval_sec（导入期默认兜底）。这样前端
     改「请求限流」后，新建的数据源实例即按新值限流，无需重启进程。并发时每线程
     各自独立实例 → 限流按线程隔离，总速率≈并发数×单线程速率。
+
+    `start_to_start=True` 按「调用起始」记时，使配置的每秒请求数就是真实起始间隔；
+    默认按「调用结束」记时，间隔之外还会再叠加一次请求往返耗时，实际速率低于配置值。
+    已被外部锁全进程串行的路径用前者：锁已保证不并发，再按结束记时会与串行重复叠加。
     """
 
     def deco(fn: Callable) -> Callable:
@@ -101,13 +105,14 @@ def rate_limited(min_interval_sec: float) -> Callable:
             wait = interval - (time.monotonic() - last)
             if wait > 0:
                 _cancel_aware_sleep(wait)
+            started = time.monotonic()
             try:
                 check_thread_cancel()
                 result = fn(self, *args, **kwargs)
                 check_thread_cancel()
                 return result
             finally:
-                setattr(self, attr, time.monotonic())
+                setattr(self, attr, started if start_to_start else time.monotonic())
 
         return wrapper
 
