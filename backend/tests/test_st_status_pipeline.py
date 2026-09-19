@@ -97,6 +97,44 @@ def test_baostock_query_failure_invalidates_socket_before_retry(monkeypatch):
     assert context.default_socket is None
 
 
+def test_baostock_hung_query_is_broken_by_watchdog(monkeypatch):
+    """源端丢弃连接时客户端会空转（不抛错）；看门狗必须在阈值内断开会话，让调用失败而不是永久挂起。"""
+    import threading
+    import time
+
+    from backend.datasource import baostock_source as bsrc
+
+    source = BaostockSource()
+    source._hang_break_sec = 0.2
+    monkeypatch.setattr(bsrc, "_WATCHDOG_POLL_SEC", 0.05)
+    monkeypatch.setattr(source, "_ensure_login", lambda: None)
+
+    closed = threading.Event()
+
+    class Socket:
+        def close(self):
+            closed.set()
+
+        def settimeout(self, _seconds):
+            pass
+
+    monkeypatch.setattr(context, "default_socket", Socket(), raising=False)
+
+    def stalled_query():
+        # 模拟 baostock 的空转：只有会话被断开才会退出
+        while not closed.is_set():
+            time.sleep(0.01)
+        raise OSError("Bad file descriptor")
+
+    started = time.monotonic()
+    with pytest.raises(Exception):
+        source._query_frame(stalled_query)
+
+    assert closed.is_set()
+    assert source._logged_in is False
+    assert time.monotonic() - started < 5.0
+
+
 def test_daily_ingest_persists_st_when_baostock_confirms_suspension(market, monkeypatch):
     day = date(2026, 7, 6)
     market.execute("INSERT INTO trade_calendar VALUES (?,TRUE)", [day])

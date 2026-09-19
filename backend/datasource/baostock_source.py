@@ -11,7 +11,9 @@ baostock 优势（探针实测）：
 
 from __future__ import annotations
 
+import threading
 import time
+from contextlib import contextmanager
 from datetime import date
 
 import pandas as pd
@@ -33,6 +35,65 @@ _MIN_INTERVAL = 1.0 / max(_s.rate_limit_per_sec, 0.1)
 _SHARED: "BaostockSource | None" = None
 # 会话复用上限：超过则重登——_collect 在会话失效时返回空表(不抛错)，靠 TTL 重登从"过期后一直空"恢复。
 _LOGIN_TTL_SEC = 25 * 60
+
+# ── 挂起看门狗 ──
+# baostock 客户端在源端丢弃连接时会空转：`socketutil.send_msg` 的收包循环等不到结束分隔符，
+# 而 `recv` 持续返回空字节——既不阻塞也不抛错，于是 socket 超时、重试、协作式取消检查全部失效，
+# 调用线程永远出不来。唯一能解除的手段是把这条进程级 socket 关掉（`recv` 随即抛错）。
+# 阈值取「socket 超时的倍数」并留足余量：单只查询亚秒级，最慢的全市场查询实测约 33s，
+# 默认 90s 不会误伤；一旦超过就判定会话已被源端丢弃，断开会话让调用方按"查询失败"重试或放弃。
+_HANG_BREAK_FACTOR = 3.0
+_HANG_MIN_SOCKET_TIMEOUT_SEC = 20.0
+_WATCHDOG_POLL_SEC = 1.0
+_watchdog_lock = threading.Lock()
+_watchdog_deadline = 0.0  # monotonic 截止时刻；0 表示当前没有在途调用
+_watchdog_limit = 0.0  # 本次在途调用的挂起阈值（秒），仅用于日志
+_watchdog_thread: threading.Thread | None = None
+
+
+def _break_stalled_session() -> None:
+    """关闭进程级 baostock socket，让空转中的收包循环立刻抛错退出。"""
+    try:
+        import baostock.common.context as ctx
+
+        sock = getattr(ctx, "default_socket", None)
+        if sock is not None:
+            sock.close()
+        setattr(ctx, "default_socket", None)
+    except Exception as exc:  # noqa: BLE001
+        log.debug("看门狗断开会话失败: %s", exc)
+
+
+def _watchdog_loop() -> None:
+    """单进程一个看门狗线程：在途调用超过截止时刻仍未返回即断开会话。"""
+    global _watchdog_deadline
+
+    while True:
+        time.sleep(_WATCHDOG_POLL_SEC)
+        with _watchdog_lock:
+            deadline = _watchdog_deadline
+            if not deadline or time.monotonic() <= deadline:
+                continue
+            limit = _watchdog_limit
+            _watchdog_deadline = 0.0  # 只触发一次，避免同一调用被反复断开
+        log.warning(
+            "baostock 查询在途超过 %.0fs 仍未返回，判定会话被源端丢弃，"
+            "断开会话以解除空转；本次按查询失败重试",
+            limit,
+        )
+        _break_stalled_session()
+
+
+def _ensure_watchdog() -> None:
+    global _watchdog_thread
+    if _watchdog_thread is not None and _watchdog_thread.is_alive():
+        return
+    with _watchdog_lock:
+        if _watchdog_thread is None or not _watchdog_thread.is_alive():
+            _watchdog_thread = threading.Thread(
+                target=_watchdog_loop, name="baostock-hang-watchdog", daemon=True
+            )
+            _watchdog_thread.start()
 
 
 def bs_to_full(bs_code: str) -> str:
@@ -90,6 +151,25 @@ class BaostockSource(DataSource):
             self._socket_timeout_sec = eff.socket_timeout_sec
         except Exception as exc:  # noqa: BLE001
             log.debug("读取 Baostock 生效配置失败，使用启动基线: %s", exc)
+        # 看门狗阈值随 socket 超时联动；测试可下调该属性以缩短等待。
+        self._hang_break_sec = (
+            max(float(self._socket_timeout_sec), _HANG_MIN_SOCKET_TIMEOUT_SEC) * _HANG_BREAK_FACTOR
+        )
+
+    @contextmanager
+    def _hang_guard(self, seconds: float):
+        """登记本次调用的截止时刻，交给进程级看门狗在超时时断开会话。"""
+        global _watchdog_deadline, _watchdog_limit
+
+        _ensure_watchdog()
+        with _watchdog_lock:
+            _watchdog_deadline = time.monotonic() + seconds
+            _watchdog_limit = seconds
+        try:
+            yield
+        finally:
+            with _watchdog_lock:
+                _watchdog_deadline = 0.0
 
     def _ensure_login(self) -> None:
         import baostock as bs
@@ -137,10 +217,15 @@ class BaostockSource(DataSource):
             log.debug("清理失效 baostock socket 失败: %s", exc)
 
     def _query_frame(self, query) -> pd.DataFrame:
-        """Run one SDK query and make transport failures recoverable by ``with_retry``."""
+        """Run one SDK query and make transport failures recoverable by ``with_retry``.
+
+        整段（登录 + 查询 + 游标遍历）都在看门狗保护内：源端丢弃连接时客户端会空转，
+        只有断开会话才会抛错，才能落到下面的失效重登与 ``with_retry`` 重试。
+        """
         try:
-            self._ensure_login()
-            return _collect(query())
+            with self._hang_guard(self._hang_break_sec):
+                self._ensure_login()
+                return _collect(query())
         except Exception:
             self._invalidate_login()
             raise
