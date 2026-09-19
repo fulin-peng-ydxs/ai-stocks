@@ -487,6 +487,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 
 - SQL 文件路径：
   - `agent-works/config-storage-pg-migration/config-storage-pg.sql`
+  - `agent-works/config-storage-pg-migration/cleanup-orphan-backtest-params.sql`（存量清理：删除 `feature/backtest/params` 孤儿偏好，回测参数已改为会话态）
 - 用途：
   - 新增 PG `layout_preset`、`layout_page_config`、`layout_field_policy`、`user_preference`。
   - 调整个人偏好相关资源码 seed 和 baseline 标记。
