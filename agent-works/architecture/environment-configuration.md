@@ -64,6 +64,8 @@ flowchart TD
 
 > 邮件 `mail.*` 采用「YAML 安全基线 + 环境变量覆盖」：`config/settings.yaml` 的 `mail` 段默认 `enabled=false`、账号留空（个人/部署账号不入仓库），真实开关与账号由上表 `AI_STOCKS_SMTP_*` 覆盖（`Settings.mail_config()` 叠加），密码只走 `AI_STOCKS_SMTP_PASSWORD`。另有 `server.trust_forwarded_for`（YAML，默认 `false`）控制是否信任 `X-Forwarded-For` 作为限流键 IP——直连公网时保持 false（用 socket 连接地址，防伪造头绕过 per-IP 限流），仅在可信反代会覆盖 XFF 时置 true。
 
+> 同花顺 Cookie 的来源优先级保持“环境变量 > 受控文件 > 页面加密配置”。`ths_board.cookie_validity_days` 默认 30 天，仅对具有可靠保存时间的页面配置计算到期提醒；环境变量和文件不伪造到期日。数据源“测试连通”会访问匿名态受限的概念深页验证登录态，明确登录墙记录为失效，网络、限流或上游异常只记录校验失败。脱敏校验结果保存在 `app_config` 内部运行键，Cookie 替换或清除时同步失效旧结论。
+
 前端代码没有项目自定义 `VITE_*` 运行配置。当前只使用 Vite 内置的 `import.meta.env.MODE` 和 `import.meta.env.DEV` 做测试/开发期分支；API 基址固定为同源 `/api`，开发期由 Vite proxy 转发到 `127.0.0.1:8000`。
 
 后端 pytest 会在 `backend/tests/conftest.py` 模块导入期用 `os.environ.setdefault("AI_STOCKS_JWT_SECRET", "...")` 注入测试默认密钥，部分用例再用 `monkeypatch` 覆盖或删除环境变量。该默认值只服务测试进程，不代表应用运行有默认 JWT 密钥。

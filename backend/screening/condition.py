@@ -27,10 +27,37 @@ class ConditionError(Exception):
     """AST 结构/语义非法。"""
 
 
-def validate_ast(node: dict) -> None:
+def is_node_enabled(node: dict) -> bool:
+    """历史节点缺省启用；兼容旧 ``ignore=true`` 语义。"""
+    return node.get("enabled", not bool(node.get("ignore", False))) is not False
+
+
+def prune_disabled_ast(node: dict) -> dict | None:
+    """裁剪停用叶子及其空分组，避免 AND/OR/NOT 中用常量替代造成语义偏差。"""
+    if not isinstance(node, dict):
+        return None
+    if "op" not in node:
+        return dict(node) if is_node_enabled(node) else None
+    children = [
+        active for child in node.get("children", [])
+        if (active := prune_disabled_ast(child)) is not None
+    ]
+    if not children:
+        return None
+    op = str(node.get("op", "")).upper()
+    if op in {"AND", "OR"} and len(children) == 1:
+        return children[0]
+    out = dict(node)
+    out["children"] = children
+    return out
+
+
+def validate_ast(node: dict, *, require_active: bool = False) -> None:
     """递归校验 AST 合法性，非法抛 ConditionError。"""
     if not isinstance(node, dict):
         raise ConditionError(f"节点必须是对象: {node!r}")
+    if "enabled" in node and not isinstance(node["enabled"], bool):
+        raise ConditionError("enabled 须为布尔值")
     if "op" in node:
         op = str(node["op"]).upper()
         if op not in _LOGIC:
@@ -42,6 +69,8 @@ def validate_ast(node: dict) -> None:
             raise ConditionError("NOT 只能有一个子节点")
         for c in children:
             validate_ast(c)
+        if require_active and prune_disabled_ast(node) is None:
+            raise ConditionError("至少需要一个已启用的筛选条件")
         return
     t = node.get("type")
     if t == "ind":
@@ -68,6 +97,8 @@ def validate_ast(node: dict) -> None:
         validate_expr(node["expr"])  # 表达式白名单校验（防注入）
     else:
         raise ConditionError(f"叶子缺少合法 type(col/expr): {node!r}")
+    if require_active and not is_node_enabled(node):
+        raise ConditionError("至少需要一个已启用的筛选条件")
 
 
 def collect_leaves(node: dict) -> tuple[list[dict], list[dict]]:
@@ -125,5 +156,7 @@ __all__ = [
     "collect_indicator_leaves",
     "collect_leaves",
     "eval_ast",
+    "is_node_enabled",
+    "prune_disabled_ast",
     "validate_ast",
 ]

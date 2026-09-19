@@ -3,6 +3,7 @@ import http from './client'
 
 export interface TradeCond {
   indicator: string
+  enabled?: boolean
   params?: Record<string, number>
   cmp: string // == != > >= < <= between
   value: number | boolean | [number, number]

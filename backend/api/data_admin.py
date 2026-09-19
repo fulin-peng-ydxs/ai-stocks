@@ -932,6 +932,8 @@ def get_settings_view() -> ApiResponse:
     overrides = repo.get_overrides()
     override_keys = repo.get_override_keys()
     secret_statuses = repo.get_secret_statuses()
+    from backend.services.ths_cookie_status import ths_cookie_status
+    ths_credential = ths_cookie_status(validate=False, repo=repo)
     groups = []
     for g in CONFIG_GROUPS:
         if g.get("hidden_in_form"):   # 定时调度收敛到调度页，不在系统设置渲染（DM-D14）
@@ -960,6 +962,8 @@ def get_settings_view() -> ApiResponse:
                           "overridden": f["path"] in override_keys}
             if f.get("type") == "password":
                 field_view["secret_status"] = secret_status
+                if f["path"] == "ths_board.login_cookie":
+                    field_view["credential"] = ths_credential
             fields.append(field_view)
         groups.append({
             "key": g["key"],

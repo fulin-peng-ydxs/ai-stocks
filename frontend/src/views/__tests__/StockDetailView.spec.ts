@@ -121,6 +121,7 @@ import * as stocksApi from '@/api/stocks'
 import * as stockGroupApi from '@/api/stockGroup'
 import * as tradeProfileApi from '@/api/tradeProfile'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
+import StockGroupFavoriteButton from '@/components/StockGroupFavoriteButton.vue'
 import StockDetailView from '@/views/StockDetailView.vue'
 
 const StockChartWorkspaceStub = defineComponent({
@@ -405,7 +406,7 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
       StockChartWorkspace: StockChartWorkspaceStub,
       MarketDetailHero: {
         props: ['eyebrow', 'title', 'code', 'subtitle', 'asideAlign'],
-        template: '<section :data-aside-align="asideAlign"><span>{{ title }}</span><span>{{ code }}</span><slot name="badges"/><slot name="summary"/><slot name="meta"/><slot name="footer"/></section>',
+        template: '<section :data-aside-align="asideAlign"><span>{{ title }}</span><span>{{ code }}</span><slot name="badges"/><slot name="actions"/><slot name="summary"/><slot name="meta"/><slot name="footer"/></section>',
       },
       StockQuoteSummary: {
         name: 'StockQuoteSummary',
@@ -757,8 +758,53 @@ describe('StockDetailView 三图数据协调', () => {
     expect(tradeProfileApi.listTradeProfiles).not.toHaveBeenCalled()
     expect(stocksApi.getTradeEval).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="stock-group-select"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="stock-detail-favorite"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="stock-trade-eval-card"]').exists()).toBe(false)
     expect(wrapper.findComponent(StockChartWorkspaceStub).exists()).toBe(true)
+  })
+
+  it('详情头部复用收藏心维护默认自选分组并同步所属分组状态', async () => {
+    vi.mocked(stockGroupApi.listGroups).mockResolvedValue([{
+      id: 'grp-default',
+      name: '自选',
+      group_date: null,
+      description: '',
+      color: '#409eff',
+      is_default: true,
+      member_count: 1,
+      updated_at: '2026-07-23T18:00:00',
+    }])
+    vi.mocked(stocksApi.listStocks).mockResolvedValue({
+      total: 1,
+      page: 1,
+      size: 1,
+      trade_date: '2026-07-23',
+      list: [{
+        code: '600000.SH',
+        name: '浦发银行',
+        board: '主板',
+        industry: '银行',
+        list_date: '1999-11-10',
+        delist_date: null,
+        is_st: false,
+        close: 10.5,
+        pct_chg: 1.2,
+        groups: [{ id: 'grp-default', name: '自选', color: '#409eff', is_default: true }],
+      }],
+    })
+
+    const wrapper = await mountView([
+      'stocks:view',
+      'stock-group:view',
+      'stock-group:member-update',
+    ])
+    const favorite = wrapper.getComponent(StockGroupFavoriteButton)
+
+    expect(favorite.props('active')).toBe(true)
+    favorite.vm.$emit('changed', false)
+    await nextTick()
+
+    expect(wrapper.getComponent(StockGroupFavoriteButton).props('active')).toBe(false)
   })
 
   it('所属分组下拉固定在触发器下方，不回退到页面上方', async () => {

@@ -247,7 +247,7 @@ body > .el-notification {
   --page-settings-footer-btn-hover-bg: #efeff0;
   --app-empty-text: #8a96a8;
   --app-empty-icon-opacity: 0.72;
-  --app-muted-text: #909399;
+  --app-muted-text: var(--el-text-color-secondary);
   --app-placeholder-text: #c0c4cc;
   /* --market-up/down、--app-warning-text、--app-danger-text、--score-high/mid 统一由 useLayoutPreset 按预设语义色写入，不在此硬编码。 */
   --perm-group-color: #64748b;
@@ -446,7 +446,7 @@ html.dark {
   --page-settings-footer-btn-hover-bg: #303030;
   --app-empty-text: #8c96a8;
   --app-empty-icon-opacity: 0.55;
-  --app-muted-text: #8c96a8;
+  --app-muted-text: var(--el-text-color-secondary);
   --app-placeholder-text: #687386;
   /* --market-up/down、--app-warning-text、--app-danger-text、--score-high/mid 统一由 useLayoutPreset 按预设语义色写入，不在此硬编码。 */
   --perm-group-color: #94a3b8;

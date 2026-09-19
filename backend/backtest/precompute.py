@@ -20,6 +20,7 @@ from backend.screening.condition import (
     collect_indicator_leaves,
     collect_leaves,
     eval_ast,
+    prune_disabled_ast,
     validate_ast,
 )
 from backend.screening.expression import eval_expr, validate_scale_invariant_expr
@@ -43,7 +44,10 @@ class HitPrecomputer:
 
     def precompute(self, ast: dict, date_start: date, date_end: date) -> dict:
         """返回 {date: set(命中 code)}（仅含区间内交易日）。"""
-        validate_ast(ast)
+        validate_ast(ast, require_active=True)
+        ast = prune_disabled_ast(ast)
+        if ast is None:
+            raise ValueError("至少需要一个已启用的筛选条件")
         _, exprs = collect_leaves(ast)
 
         # ── 1. expr 叶子：每股全序列一次 → {expr_str: Series((code, ts) -> bool)} ──

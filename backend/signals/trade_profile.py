@@ -56,6 +56,30 @@ _CMP = {
 }
 
 
+def is_condition_enabled(node: dict) -> bool:
+    """历史条件缺省启用。"""
+    return node.get("enabled", True) is not False
+
+
+def prune_disabled_conditions(tree: dict | None) -> dict:
+    """递归裁剪停用叶子和空分组；仅剩一个子节点时折叠分组。"""
+    if not tree:
+        return {}
+    if "op" not in tree:
+        return dict(tree) if is_condition_enabled(tree) else {}
+    children = [
+        active for child in tree.get("children", [])
+        if (active := prune_disabled_conditions(child))
+    ]
+    if not children:
+        return {}
+    if len(children) == 1:
+        return children[0]
+    out = dict(tree)
+    out["children"] = children
+    return out
+
+
 def _eval_leaf(leaf: dict, snap: pd.DataFrame) -> pd.Series:
     val = resolve_indicator(leaf["indicator"], leaf.get("params"), snap)
     cmp = leaf.get("cmp", "==")
@@ -65,6 +89,7 @@ def _eval_leaf(leaf: dict, snap: pd.DataFrame) -> pd.Series:
 
 def eval_conditions(tree: dict, snap: pd.DataFrame) -> pd.Series:
     """对截面 snap（index=code）求条件树命中 → 布尔 Series。空树视为全不命中。"""
+    tree = prune_disabled_conditions(tree)
     if not tree:
         return pd.Series(False, index=snap.index)
     if "op" in tree:
@@ -81,6 +106,7 @@ def eval_conditions(tree: dict, snap: pd.DataFrame) -> pd.Series:
 
 def collect_indicators(tree: dict) -> list[dict]:
     """提取条件树用到的全部 (indicator, params)（供 attach_columns 预补列）。"""
+    tree = prune_disabled_conditions(tree)
     if not tree:
         return []
     if "op" in tree:
@@ -94,6 +120,8 @@ def collect_indicators(tree: dict) -> list[dict]:
 def _validate_tree(tree: dict, known: set[str], where: str) -> None:
     if not tree:
         return
+    if "enabled" in tree and not isinstance(tree["enabled"], bool):
+        raise ValueError(f"{where} enabled 须为布尔值")
     if "op" in tree:
         if tree["op"] not in ("AND", "OR"):
             raise ValueError(f"{where} 逻辑须为 AND/OR")
@@ -112,9 +140,11 @@ def _validate_tree(tree: dict, known: set[str], where: str) -> None:
 def validate_trade_profile(buy_tree: dict, sell_tree: dict, backstop: dict | None,
                            known: set[str] | None = None) -> None:
     known = known or set()
-    if not buy_tree or ("op" in buy_tree and not buy_tree.get("children")):
-        raise ValueError("买入条件不能为空")
-    has_sell = bool(sell_tree and (("op" not in sell_tree) or sell_tree.get("children")))
+    active_buy = prune_disabled_conditions(buy_tree)
+    active_sell = prune_disabled_conditions(sell_tree)
+    if not active_buy:
+        raise ValueError("买入条件至少需要一个已启用项")
+    has_sell = bool(active_sell)
     has_backstop = bool(backstop) and any(
         backstop.get(k) not in (None, "") for k in ("take_profit", "stop_loss", "max_hold_days"))
     if not has_sell and not has_backstop:

@@ -22,6 +22,7 @@ from backend.scoring.score_profile import (
     ScoreProfileModel,
     indicator_value_column,
     resolve_indicator,
+    validate_profile,
 )
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
@@ -125,6 +126,9 @@ def test_registry_has_governance_layers_and_preset_relationships():
     with DuckDBClient(db_path=":memory:") as c:
         repo = IndicatorDefRepo(c)
         repo.seed_builtins()
+        assert repo.get("close")["layer"] == "field"
+        assert repo.get("close")["name_cn"] == "股价"
+        assert repo.get("close")["categories"] == ["价格"]
         assert repo.get("volume")["layer"] == "field"
         assert repo.get("pct_change")["layer"] == "metric"
         assert repo.get("new_high")["layer"] == "signal"
@@ -133,6 +137,18 @@ def test_registry_has_governance_layers_and_preset_relationships():
         assert repo.get("ma20")["preset_params"] == {"period": 20}
         assert PRESET_RELATIONS["is_high_1y"] == ("new_high", {"n": 240})
         assert repo.get("pct_change")["name_cn"] == "N日涨跌幅"
+
+
+def test_close_field_can_be_used_by_scoring_profiles():
+    items = [{
+        "indicator": "close",
+        "params": {},
+        "weight": 1,
+        "scoring": {"type": "linear", "min": 5, "max": 20},
+    }]
+    validate_profile(items)
+    snap = pd.DataFrame({"close": [5.0, 20.0]}, index=["LOW.SH", "HIGH.SH"])
+    assert ScoreProfileModel({"items": items}).score(snap)["total_score"].tolist() == [0.0, 100.0]
 
 
 def test_preset_reference_normalizes_to_parent_and_fixed_params():

@@ -17,6 +17,7 @@ from backend.signals.trade_profile import (
     TradeProfileRepo,
     collect_indicators,
     eval_conditions,
+    prune_disabled_conditions,
 )
 from backend.storage import get_read_client as get_client
 
@@ -196,6 +197,9 @@ def preview_conditions(body: dict) -> ApiResponse:
     tree = body.get("tree")
     if not tree:
         return ok({"hit": 0, "list": []})
+    tree = prune_disabled_conditions(tree)
+    if not tree:
+        return err(400, "至少需要一个已启用的条件")
     c = get_client()
     run_date = (date.fromisoformat(body["run_date"]) if body.get("run_date")
                 else pd.Timestamp(c.query_df("SELECT max(trade_date) d FROM daily_bar").iloc[0]["d"]).date())

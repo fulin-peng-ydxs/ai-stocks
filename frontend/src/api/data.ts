@@ -384,6 +384,7 @@ export interface SourceStatus {
   up: boolean | null
   last_success_at: string | null
   timeout_sec: number
+  credential?: CredentialStatus
 }
 export function getSources(ping = false): Promise<{ sources: SourceStatus[] }> {
   return http.get('/data/sources', { params: { ping } })
@@ -406,6 +407,17 @@ export interface SettingField {
   min?: number
   max?: number
   secret_status?: 'unset' | 'usable' | 'unavailable'
+  credential?: CredentialStatus
+}
+export type CredentialState = 'unset' | 'unavailable' | 'pending' | 'valid' | 'expiring' | 'expired' | 'invalid' | 'unknown' | 'check_failed'
+export interface CredentialStatus {
+  status: CredentialState
+  source: 'environment' | 'file' | 'app_config' | null
+  validity_days: number
+  saved_at: string | null
+  checked_at: string | null
+  expires_at: string | null
+  remaining_days: number | null
 }
 export interface SettingGroup { key: string; label: string; desc?: string; fields: SettingField[] }
 // 只读的邮件能力就绪状态（脱敏）：来自部署级环境变量，不可在页面编辑，仅用于开关旁提示底层是否真发。

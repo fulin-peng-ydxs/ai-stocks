@@ -46,6 +46,7 @@ import PageToggleRow from '@/components/PageToggleRow.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import IndicatorParamFields from '@/components/indicator/IndicatorParamFields.vue'
 import IndicatorSelect from '@/components/indicator/IndicatorSelect.vue'
+import StrategyItemEnabledSwitch from '@/components/strategy/StrategyItemEnabledSwitch.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useStockSet } from '@/stores/stockSet'
@@ -132,6 +133,7 @@ const NUM_CMP = [
 // ── 统一条件行：指标行(ind) 或 表达式行(expr)，同一 AND/OR 组合 ──
 interface Row {
   kind: 'ind' | 'expr'
+  enabled: boolean
   // ind
   key: string
   params: Record<string, number>
@@ -152,10 +154,10 @@ function newIndRow(key?: string): Row {
   const d = defOf(k)
   const params: Record<string, number> = {}
   ;(d?.params ?? []).forEach((p) => (params[p.name] = p.default))
-  return { kind: 'ind', key: k, params, cmp: '>=', value: 0, value2: 0, boolVal: true, expr: '' }
+  return { kind: 'ind', enabled: true, key: k, params, cmp: '>=', value: 0, value2: 0, boolVal: true, expr: '' }
 }
 function newExprRow(): Row {
-  return { kind: 'expr', key: '', params: {}, cmp: '>=', value: 0, value2: 0, boolVal: true, expr: '' }
+  return { kind: 'expr', enabled: true, key: '', params: {}, cmp: '>=', value: 0, value2: 0, boolVal: true, expr: '' }
 }
 function addIndRow() {
   complexAst.value = null
@@ -190,11 +192,11 @@ function onIndKey(row: Row) {
 function rowToLeaf(row: Row): Record<string, unknown> | null {
   if (row.kind === 'expr') {
     const e = row.expr.trim()
-    return e ? { type: 'expr', expr: e } : null
+    return e ? { type: 'expr', expr: e, enabled: row.enabled } : null
   }
   const d = defOf(row.key)
   if (!d) return null
-  const base: Record<string, unknown> = { type: 'ind', key: row.key }
+  const base: Record<string, unknown> = { type: 'ind', key: row.key, enabled: row.enabled }
   if ((d.params?.length ?? 0) > 0) base.params = { ...row.params }
   if (d.dtype === 'bool') {
     const leaf = { ...base, cmp: '>=', value: 1 }
@@ -228,6 +230,7 @@ function leafToRow(node: Record<string, unknown>): Row | null {
   if (t === 'expr') {
     const r = newExprRow()
     r.expr = String(node.expr ?? '')
+    r.enabled = node.enabled !== false && node.ignore !== true
     return r
   }
   if (t === 'ind' || t === 'col') {
@@ -235,6 +238,7 @@ function leafToRow(node: Record<string, unknown>): Row | null {
     const d = defOf(key)
     if (!d) return null
     const r = newIndRow(key)
+    r.enabled = node.enabled !== false && node.ignore !== true
     if (node.params && typeof node.params === 'object') r.params = { ...(node.params as Record<string, number>) }
     if (d.dtype === 'bool') {
       r.boolVal = node.value === true || node.value === 1
@@ -430,8 +434,8 @@ function gotoStock(row: ScreenHit) {
 let runSequence = 0
 async function runScreenResults(background = false) {
   const ast = buildAst()
-  if (!ast) {
-    if (!background) ElMessage.warning('请先添加条件')
+  if (!ast || (!complexAst.value && !rows.value.some((row) => row.enabled))) {
+    if (!background) ElMessage.warning(ast ? '请至少启用一个条件' : '请先添加条件')
     return
   }
   const sequence = ++runSequence
@@ -483,7 +487,7 @@ async function save() {
   }
   const expr = buildAst()
   if (!editName.value.trim()) return ElMessage.warning('请填写方案名称')
-  if (!expr) return ElMessage.warning('请先添加条件')
+  if (!expr || (!complexAst.value && !rows.value.some((row) => row.enabled))) return ElMessage.warning('请至少启用一个条件')
   saving.value = true
   try {
     const r = await saveProfile({
@@ -770,6 +774,11 @@ const menuPageTitle = useMenuPageTitle()
               class="b-cond"
               data-testid="screen-condition-row"
             >
+              <StrategyItemEnabledSwitch
+                v-model="c.enabled"
+                :disabled="profileReadonly"
+                label="是否启用筛选条件"
+              />
               <!-- 指标条件 -->
               <template v-if="c.kind === 'ind'">
                 <el-tag size="small" type="success" effect="plain" class="kind-tag">指标</el-tag>
@@ -886,8 +895,10 @@ const menuPageTitle = useMenuPageTitle()
               <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" sortable />
               <AppTableColumn v-if="colVisible('name')" label="名称" sortable :sort-by="(r:any)=>r.name || ''">
                 <template #default="{ row }">
-                  <span>{{ row.name || '—' }}</span>
-                  <el-tag v-if="colVisible('st') && row.is_st" type="danger" size="small" effect="dark" style="margin-left: 6px">ST</el-tag>
+                  <span class="app-inline-info app-inline-info--nowrap">
+                    <span>{{ row.name || '—' }}</span>
+                    <el-tag v-if="colVisible('st') && row.is_st" type="danger" size="small" effect="dark">ST</el-tag>
+                  </span>
                 </template>
               </AppTableColumn>
               <AppTableColumn v-if="colVisible('relatedIndustry')" label="行业走势">

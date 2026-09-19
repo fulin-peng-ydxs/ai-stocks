@@ -14,6 +14,7 @@ import {
   taskDisplayLabel, getSettingsView, saveSettings, resetSettings,
   type ScheduledJob, type ScheduledJobInput, type ScheduledTriggerEvent,
   type SourceStatus, type TaskStatus, type TaskType, type FreqType, type TriggerMode,
+  type CredentialStatus,
   type TriggerCondition,
   type DelayUnit,
   type BoardIngestStage, type BoardTypeScope,
@@ -491,6 +492,7 @@ const cookieSaving = ref(false)
 const cookieValue = ref('')
 type CookieDialogStatus = 'loading' | 'error' | 'unset' | 'usable' | 'unavailable'
 const cookieStatus = ref<CookieDialogStatus>('loading')
+const cookieCredential = ref<CredentialStatus | null>(null)
 const cookieStatusError = ref('')
 let cookieStatusRequestVersion = 0
 // 与系统配置页同一掩码：已设置时输入框回显「已设置」占位，明文不回显，留空/掩码即不修改。
@@ -505,6 +507,7 @@ async function loadCookieStatus() {
     const ths = view.groups.find((group) => group.key === 'ths_board')
     const field = ths?.fields.find((item) => item.path === 'ths_board.login_cookie')
     cookieStatus.value = field?.secret_status ?? 'unset'
+    cookieCredential.value = field?.credential ?? null
     // 对齐系统配置页：usable 时输入框回显掩码，避免「已设置」被显示成空白输入框。
     cookieValue.value = cookieStatus.value === 'usable' ? COOKIE_SET_MASK : ''
   } catch (error) {
@@ -512,6 +515,24 @@ async function loadCookieStatus() {
     cookieStatus.value = 'error'
     cookieStatusError.value = getErrorMessage(error, '授权配置状态加载失败')
   }
+}
+const COOKIE_STATUS_LABEL: Record<string, string> = {
+  unset: '未配置', unavailable: '密文不可用', pending: '待真实校验', valid: '有效',
+  expiring: '即将到期', expired: '已到期', invalid: '已失效', unknown: '有效期未知',
+  check_failed: '校验失败',
+}
+function cookieCredentialLabel(status = cookieCredential.value): string {
+  if (!status) return '未配置'
+  const suffix = status.remaining_days != null && ['valid', 'expiring', 'pending'].includes(status.status)
+    ? ` · 剩余 ${status.remaining_days} 天`
+    : ''
+  return `${COOKIE_STATUS_LABEL[status.status] ?? status.status}${suffix}`
+}
+function cookieCredentialType(status?: string): 'success' | 'warning' | 'danger' | 'info' {
+  if (status === 'valid') return 'success'
+  if (status === 'pending' || status === 'expiring' || status === 'unknown' || status === 'check_failed') return 'warning'
+  if (status === 'expired' || status === 'invalid' || status === 'unavailable') return 'danger'
+  return 'info'
 }
 function openCookieConfig() {
   cookieDlg.value = true
@@ -727,9 +748,17 @@ const menuPageTitle = useMenuPageTitle()
           </AppTableColumn>
           <AppTableColumn v-if="sourceColVisible('status')" label="状态" align="center">
             <template #default="{ row }">
-              <span class="src-status">
-                <span class="dot" :class="row.up === true ? 'up' : row.up === false ? 'down' : 'unknown'" />
-                {{ row.up === true ? '连通' : row.up === false ? '不可达' : '未测试' }}
+              <span class="app-inline-info app-inline-info--nowrap">
+                <span class="src-status">
+                  <span class="dot" :class="row.up === true ? 'up' : row.up === false ? 'down' : 'unknown'" />
+                  {{ row.up === true ? '连通' : row.up === false ? '不可达' : '未测试' }}
+                </span>
+                <el-tag
+                  v-if="row.source === 'ths_board' && row.credential"
+                  size="small"
+                  effect="plain"
+                  :type="cookieCredentialType(row.credential.status)"
+                >登录态：{{ cookieCredentialLabel(row.credential) }}</el-tag>
               </span>
             </template>
           </AppTableColumn>
@@ -773,24 +802,43 @@ const menuPageTitle = useMenuPageTitle()
         @retry="loadCookieStatus"
       />
       <el-form v-else label-width="92px">
+        <el-form-item label="当前状态">
+          <div class="app-inline-info app-inline-info--fill app-inline-info--md">
+            <el-tag :type="cookieCredentialType(cookieCredential?.status)" effect="plain">
+              {{ cookieCredentialLabel() }}
+            </el-tag>
+            <span v-if="cookieCredential?.checked_at" class="app-caption-text">
+              最近校验：{{ fmtTime(cookieCredential.checked_at) }}
+            </span>
+            <span v-if="cookieCredential?.saved_at" class="app-caption-text">
+              页面保存：{{ fmtTime(cookieCredential.saved_at) }}
+            </span>
+            <span v-if="cookieCredential?.expires_at" class="app-caption-text">
+              预计到期：{{ fmtTime(cookieCredential.expires_at) }}
+            </span>
+          </div>
+        </el-form-item>
         <el-form-item label="登录 Cookie">
-          <el-input
-            v-model="cookieValue"
-            type="password"
-            show-password
-            autocomplete="new-password"
-            readonly
-            placeholder="粘贴登录后的完整 Cookie；数据库只保存加密密文"
-            data-testid="ths-login-cookie-input"
-            @focus="($event.target as HTMLInputElement).removeAttribute('readonly')"
-          />
-          <span v-if="cookieStatus === 'unavailable'" class="cookie-field-hint">
-            已存密文无法解密，当前采集不会使用它；请检查主密钥，或输入新 Cookie 重新加密覆盖。
-          </span>
+          <div class="app-stack-sm app-inline-info--fill">
+            <el-input
+              v-model="cookieValue"
+              type="password"
+              show-password
+              autocomplete="new-password"
+              readonly
+              placeholder="粘贴登录后的完整 Cookie；数据库只保存加密密文"
+              data-testid="ths-login-cookie-input"
+              @focus="($event.target as HTMLInputElement).removeAttribute('readonly')"
+            />
+            <span v-if="cookieStatus === 'unavailable'" class="app-caption-text">
+              已存密文无法解密，当前采集不会使用它；请检查主密钥，或输入新 Cookie 重新加密覆盖。
+            </span>
+          </div>
         </el-form-item>
       </el-form>
       <p v-if="cookieStatus !== 'loading' && cookieStatus !== 'error'" class="cookie-note">
         浏览器登录同花顺后，从开发者工具 Network 复制完整 Cookie 头。
+        默认按 {{ cookieCredential?.validity_days ?? 30 }} 天提醒；点“测试连通”会访问登录深页真实校验。
         环境变量或受控文件仍优先于页面配置；数据库只保存加密密文，明文不会回显。
       </p>
       <template #footer>
@@ -1093,5 +1141,4 @@ const menuPageTitle = useMenuPageTitle()
 .dot.down { background: var(--app-danger-text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-danger-text) 18%, transparent); }
 .dot.unknown { background: var(--app-placeholder-text); }
 .cookie-note { margin: 10px 0 0; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); }
-.cookie-field-hint { display: block; margin-top: 4px; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); }
 </style>

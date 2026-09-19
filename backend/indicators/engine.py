@@ -299,6 +299,8 @@ class IndicatorEngine:
         specs: list[dict] = []
         seen: set[str] = set()
         for item in items:
+            if item.get("enabled", True) is False:
+                continue
             requested_key = item.get("indicator")
             if not requested_key:
                 continue

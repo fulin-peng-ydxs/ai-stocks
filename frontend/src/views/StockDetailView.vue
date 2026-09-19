@@ -44,6 +44,7 @@ import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import MarketDetailHero from '@/components/MarketDetailHero.vue'
 import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
+import StockGroupFavoriteButton from '@/components/StockGroupFavoriteButton.vue'
 import StockBoardMembershipPanel from '@/components/StockBoardMembershipPanel.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import StockIntradayDialog from '@/components/stock-chart/StockIntradayDialog.vue'
@@ -729,6 +730,11 @@ const groups = ref<GroupSummary[]>([])
 const stockGroups = ref<StockBasic['groups']>([])
 const groupOpsLoading = ref(false)
 const selectedGroupIds = ref<string[]>([])
+const defaultGroup = computed(() => groups.value.find((group) => group.is_default))
+const isDefaultFavorite = computed(() => {
+  const group = defaultGroup.value
+  return Boolean(group && selectedGroupIds.value.includes(group.id))
+})
 const selectedGroups = computed(() => selectedGroupIds.value.map((id) => {
   const fromAll = groups.value.find((g) => g.id === id)
   const fromStock = stockGroups.value.find((g) => g.id === id)
@@ -784,6 +790,17 @@ async function removeSelectedGroup(gid: string) {
   const next = selectedGroupIds.value.filter((id) => id !== gid)
   selectedGroupIds.value = next
   await onGroupsChange(next)
+}
+
+function updateDefaultFavorite(active: boolean): void {
+  const group = defaultGroup.value
+  if (!group) return
+  const otherGroups = stockGroups.value.filter((item) => item.id !== group.id)
+  stockGroups.value = active
+    ? [{ id: group.id, name: group.name, color: group.color, is_default: true }, ...otherGroups]
+    : otherGroups
+  selectedGroupIds.value = stockGroups.value.map((item) => item.id)
+  group.member_count = Math.max(0, group.member_count + (active ? 1 : -1))
 }
 
 // ── 集合下拉：保留全量集合语义，候选项按 100 条懒加载，搜索合并在同一个下拉里 ──
@@ -1012,6 +1029,18 @@ onBeforeUnmount(() => {
         <template #badges>
           <span v-if="quoteSummaryData?.board" class="stock-type">{{ quoteSummaryData.board }}</span>
           <span v-if="quoteSummaryData?.is_st" class="stock-type stock-type--risk">ST</span>
+        </template>
+        <template #actions>
+          <StockGroupFavoriteButton
+            v-if="canUpdateGroups && defaultGroup && !barsPermissionDenied"
+            :group-id="defaultGroup.id"
+            :code="code"
+            :name="name || quoteSummaryData?.name || code"
+            :active="isDefaultFavorite"
+            :default-date="quoteSummaryData?.trade_date || ''"
+            data-testid="stock-detail-favorite"
+            @changed="updateDefaultFavorite"
+          />
         </template>
         <template #summary>
           <StockQuoteSummary

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from backend.screening.condition import ConditionError, eval_ast, validate_ast
+from backend.screening.condition import ConditionError, eval_ast, prune_disabled_ast, validate_ast
 from backend.screening.expression import (
     ExprError,
     eval_expr,
@@ -130,6 +130,22 @@ def test_eval_ast_combines_leaves():
         {"type": "col", "field": "x"}, {"type": "col", "field": "y"}]}
     res = eval_ast(node, lambda leaf: table[leaf["field"]])
     assert res.tolist() == [True, False, False]
+
+
+def test_prune_disabled_ast_preserves_or_and_not_semantics():
+    tree = {"op": "OR", "children": [
+        {"type": "col", "field": "x", "cmp": ">=", "value": 1, "enabled": False},
+        {"op": "NOT", "children": [
+            {"type": "col", "field": "y", "cmp": ">=", "value": 1, "enabled": False},
+        ]},
+        {"type": "col", "field": "z", "cmp": ">=", "value": 1},
+    ]}
+    assert prune_disabled_ast(tree) == {
+        "type": "col", "field": "z", "cmp": ">=", "value": 1,
+    }
+    with pytest.raises(ConditionError, match="已启用"):
+        validate_ast({"type": "col", "field": "x", "cmp": ">=", "value": 1,
+                      "enabled": False}, require_active=True)
 
 
 def test_screen_engine_hybrid_col_and_expr():

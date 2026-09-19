@@ -20,6 +20,7 @@ from backend.screening.condition import (
     collect_indicator_leaves,
     collect_leaves,
     eval_ast,
+    prune_disabled_ast,
     validate_ast,
 )
 from backend.screening.expression import eval_expr
@@ -87,12 +88,15 @@ class ScreenEngine:
 
     def run_ast(self, ast: dict, run_date: date, universe: list[str] | None = None) -> pd.DataFrame:
         """执行筛选，返回 DataFrame[code, hit]（按命中过滤前的全 universe 布尔）。"""
-        validate_ast(ast)
+        validate_ast(ast, require_active=True)
+        active_ast = prune_disabled_ast(ast)
+        if active_ast is None:  # validate_ast(require_active=True) 已兜底，仅满足类型收窄
+            raise ValueError("至少需要一个已启用的筛选条件")
         snap = self._snapshot(run_date, universe)
         if snap.empty:
             return pd.DataFrame(columns=["code", "hit"])
-        _, exprs = collect_leaves(ast)
-        self.ind.attach_columns(snap, collect_indicator_leaves(ast), run_date)
+        _, exprs = collect_leaves(active_ast)
+        self.ind.attach_columns(snap, collect_indicator_leaves(active_ast), run_date)
         expr_series = self._eval_exprs(exprs, run_date, list(snap.index)) if exprs else {}
 
         def eval_leaf(leaf: dict) -> pd.Series:
@@ -106,7 +110,7 @@ class ScreenEngine:
                 return self._eval_ind(leaf, snap, run_date)
             return self._eval_col(leaf, snap)
 
-        hit = eval_ast(ast, eval_leaf).fillna(False).astype(bool)
+        hit = eval_ast(active_ast, eval_leaf).fillna(False).astype(bool)
         res = pd.DataFrame({"code": snap.index, "hit": hit.values})
         log.info("筛选 %s：universe %d，命中 %d", run_date, len(res), int(res["hit"].sum()))
         return res

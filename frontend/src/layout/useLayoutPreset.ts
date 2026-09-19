@@ -231,6 +231,7 @@ function applyPreset(key: string) {
   root.style.setProperty('--el-text-color-secondary', t.textMuted)
   root.style.setProperty('--el-text-color-placeholder', t.textMuted)
   root.style.setProperty('--el-text-color-disabled', t.textMuted)
+  root.style.setProperty('--app-muted-text', t.textMuted)
 
   root.style.setProperty('--chrome-bg', chromeBg)
   root.style.setProperty('--chrome-bg-soft', t.surfaceBg)

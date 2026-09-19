@@ -53,6 +53,7 @@ import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import IndicatorParamFields from '@/components/indicator/IndicatorParamFields.vue'
 import IndicatorParamSchemaEditor from '@/components/indicator/IndicatorParamSchemaEditor.vue'
 import IndicatorSelect from '@/components/indicator/IndicatorSelect.vue'
+import StrategyItemEnabledSwitch from '@/components/strategy/StrategyItemEnabledSwitch.vue'
 import { getErrorMessage } from '@/utils/error'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -202,6 +203,21 @@ const systemFieldStatus = computed<Record<string, FieldStatus>>(() => {
           tone: 'warn',
           text: '已存密文无法解密，请检查主密钥或输入新值后保存',
         }
+      } else if (field.path === 'ths_board.login_cookie' && field.credential) {
+        const labels: Record<string, string> = {
+          pending: 'Cookie 已保存，等待“测试连通”真实校验',
+          valid: 'Cookie 登录态有效',
+          expiring: `Cookie 即将到期（剩余 ${field.credential.remaining_days ?? 0} 天）`,
+          expired: 'Cookie 已超过默认有效期，请重新校验或更换',
+          invalid: 'Cookie 登录态已失效，请更换',
+          unknown: 'Cookie 来自部署配置，尚未真实校验',
+          check_failed: 'Cookie 最近一次真实校验失败，请检查网络后重试',
+        }
+        const text = labels[field.credential.status]
+        if (text) out[field.path] = {
+          tone: field.credential.status === 'valid' ? 'ok' : 'warn',
+          text,
+        }
       }
     }
   }
@@ -335,7 +351,7 @@ const LAYER_LABELS: Record<string, string> = {
   field: '基础字段', metric: '数值指标', signal: '布尔信号', preset: '参数预设',
 }
 // 分类默认排序：按预设角度顺序，自定义分类排其后(中文序)
-const CATEGORY_ORDER = ['趋势', '动量', '量能', '位置', '均线', '突破', '估值', '换手', '形态', '强度', '新高', '事件', '筹码']
+const CATEGORY_ORDER = ['价格', '趋势', '动量', '量能', '位置', '均线', '突破', '估值', '换手', '形态', '强度', '新高', '事件', '筹码']
 function sortCats(cats: string[]): string[] {
   return [...(cats ?? [])].sort((a, b) => {
     const ia = CATEGORY_ORDER.indexOf(a), ib = CATEGORY_ORDER.indexOf(b)
@@ -593,8 +609,12 @@ const canViewScoreProfiles = computed(() =>
 const canSaveScoreProfiles = computed(() =>
   hasPermission(auth.role, auth.permissions, 'score-profile:save'),
 )
+function itemEnabled(item: { enabled?: boolean }): boolean {
+  return item.enabled !== false
+}
+const activeScoreItems = computed(() => items.value.filter(itemEnabled))
 const weightSum = computed(() =>
-  Math.round(items.value.reduce((s, it) => s + (it.weight || 0), 0) * 100),
+  Math.round(activeScoreItems.value.reduce((s, it) => s + (it.weight || 0), 0) * 100),
 )
 
 const scoreSelectRef = ref<InstanceType<typeof AssetProfileSelect> | null>(null)
@@ -683,6 +703,7 @@ function scoreVersionRowActions(v: ScoreProfileVersion): AppRowAction[] {
 
 // 确保评分项的 params 含该指标全部参数（补默认值），供参数输入框绑定
 function ensureParams(item: ScoreItem) {
+  if (item.enabled === undefined) item.enabled = true
   if (!item.params) item.params = {}
   const def = defOf(item.indicator)
   for (const p of def?.params ?? []) {
@@ -718,6 +739,7 @@ function addItem() {
   }
   const def: ScoreItem = {
     indicator: cand.key,
+    enabled: true,
     params: defaultParams(cand),
     weight: 0,
     scoring: cand.dtype === 'bool' ? { type: 'bool' } : { type: 'linear', min: 0, max: 100 },
@@ -765,18 +787,25 @@ function onScoringTypeChange(item: ScoreItem, type: string) {
 
 // 权重平均分配（增删项后）
 function rebalanceEqual() {
-  const n = items.value.length
+  const active = activeScoreItems.value
+  const n = active.length
   if (!n) return
   const w = Math.floor((100 / n)) / 100
-  items.value.forEach((it, i) => {
+  active.forEach((it, i) => {
     it.weight = i === n - 1 ? +(1 - w * (n - 1)).toFixed(2) : w
   })
 }
 
+function onScoreEnabledChange() {
+  rebalanceEqual()
+  clearScoreRunResult()
+}
+
 // 拖动某项权重 → 其余按比例自动重分配，保持总和 100%
 function onWeightChange(idx: number, pct: number) {
+  if (!itemEnabled(items.value[idx])) return
   const v = Math.min(100, Math.max(0, pct)) / 100
-  const others = items.value.filter((_, i) => i !== idx)
+  const others = items.value.filter((item, i) => i !== idx && itemEnabled(item))
   const otherSum = others.reduce((s, it) => s + it.weight, 0)
   const remain = 1 - v
   items.value[idx].weight = +v.toFixed(4)
@@ -805,8 +834,8 @@ async function save() {
     ElMessage.warning('请填写方案名称')
     return
   }
-  if (!items.value.length) {
-    ElMessage.warning('请至少添加一个指标项')
+  if (!activeScoreItems.value.length) {
+    ElMessage.warning('请至少启用一个指标项')
     return
   }
   if (weightSum.value !== 100) {
@@ -899,11 +928,11 @@ function clearScoreRunResult() {
   runError.value = ''
   scoreRunCompleted.value = false
 }
-const subKeys = computed(() => items.value.map((i) => i.indicator))
+const subKeys = computed(() => activeScoreItems.value.map((i) => i.indicator))
 
 async function tryRun() {
-  if (!items.value.length || weightSum.value !== 100) {
-    ElMessage.warning('请先配置好指标与权重（合计 100%）')
+  if (!activeScoreItems.value.length || weightSum.value !== 100) {
+    ElMessage.warning('请至少启用一个指标，并确保启用项权重合计 100%')
     return
   }
   running.value = true
@@ -1009,11 +1038,12 @@ function newCond(): TradeCond {
 function condForIndicator(key: string): TradeCond {
   const def = defOf(key)
   const params = def ? defaultParams(def) : {}
-  if (def?.dtype === 'bool') return { indicator: key, params, cmp: '==', value: true }
-  return { indicator: key, params, cmp: '>=', value: 0 }
+  if (def?.dtype === 'bool') return { indicator: key, enabled: true, params, cmp: '==', value: true }
+  return { indicator: key, enabled: true, params, cmp: '>=', value: 0 }
 }
 function onCondIndicator(cond: TradeCond) {
-  Object.assign(cond, condForIndicator(cond.indicator))
+  const enabled = itemEnabled(cond)
+  Object.assign(cond, condForIndicator(cond.indicator), { enabled })
 }
 function onCmpChange(cond: TradeCond, cmp: string) {
   cond.cmp = cmp
@@ -1043,6 +1073,7 @@ function toTree(logic: 'AND' | 'OR', conds: TradeCond[]): CondTree {
     op: logic,
     children: conds.map((c) => {
       const leaf: TradeCond = { indicator: c.indicator, cmp: c.cmp, value: c.value }
+      leaf.enabled = itemEnabled(c)
       if (c.params && Object.keys(c.params).length) leaf.params = c.params
       return leaf
     }),
@@ -1052,7 +1083,7 @@ function fromTree(tree: CondTree | Record<string, never> | undefined): { logic: 
   const t = tree as CondTree
   if (!t || !t.children) return { logic: 'AND', conds: [] }
   const conds = t.children.map((l) => ({
-    indicator: l.indicator, params: l.params ?? {}, cmp: l.cmp, value: l.value,
+    indicator: l.indicator, enabled: itemEnabled(l), params: l.params ?? {}, cmp: l.cmp, value: l.value,
   }))
   conds.forEach((c) => {
     const def = defOf(c.indicator)
@@ -1148,7 +1179,7 @@ function tradeVersionRowActions(v: TradeProfileVersion): AppRowAction[] {
 async function saveTrade() {
   if (tReadonly.value) { ElMessage.warning('公开方案为只读，请先复制为自己的方案'); return }
   if (!tEditName.value) { ElMessage.warning('请填写方案名称'); return }
-  if (!buyConds.value.length) { ElMessage.warning('请至少配置一个买入条件'); return }
+  if (!buyConds.value.some(itemEnabled)) { ElMessage.warning('请至少启用一个买入条件'); return }
   const bs = {
     take_profit: backstop.value.tp != null ? backstop.value.tp / 100 : null,
     stop_loss: backstop.value.sl != null ? backstop.value.sl / 100 : null,
@@ -1236,7 +1267,7 @@ function clearTradePreview() {
 }
 async function previewSide(side: 'buy' | 'sell') {
   const conds = condListOf(side).value
-  if (!conds.length) { ElMessage.warning('该侧无条件'); return }
+  if (!conds.some(itemEnabled)) { ElMessage.warning('该侧没有已启用的条件'); return }
   previewing.value = side
   previewHit.value[side] = null
   previewDate.value[side] = null
@@ -1563,6 +1594,16 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             />
 
             <AppDataTable :data="items" size="small" border class="item-table" embedded>
+              <AppTableColumn label="启用" role="structural">
+                <template #default="{ row }">
+                  <StrategyItemEnabledSwitch
+                    v-model="row.enabled"
+                    :disabled="profileReadonly"
+                    label="是否启用评分指标"
+                    @change="onScoreEnabledChange"
+                  />
+                </template>
+              </AppTableColumn>
               <AppTableColumn label="指标">
                 <template #default="{ row }">
                   <IndicatorSelect
@@ -1639,7 +1680,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                       :model-value="Math.round(row.weight * 100)"
                       :min="0"
                       :max="100"
-                      :disabled="profileReadonly"
+                      :disabled="profileReadonly || !itemEnabled(row)"
                       @input="(v: number) => onWeightChange($index, v)"
                     />
                     <span class="wval">{{ Math.round(row.weight * 100) }}%</span>
@@ -1902,6 +1943,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 <el-tag v-if="previewHit.buy !== null" type="success" size="small" round>命中 {{ previewHit.buy }} 只{{ previewDate.buy ? ` · ${previewDate.buy}` : '' }}</el-tag>
               </div>
               <div v-for="(c, i) in buyConds" :key="'b' + i" class="cond-row">
+                <StrategyItemEnabledSwitch v-model="c.enabled" :disabled="tReadonly" label="是否启用买入条件" />
                 <IndicatorSelect v-model="c.indicator" :definitions="registry" :disabled="tReadonly" @change="onCondIndicator(c)" />
                 <IndicatorParamFields v-model="c.params!" :params="defOf(c.indicator)?.params ?? []" :disabled="tReadonly" />
                 <template v-if="defOf(c.indicator)?.dtype === 'bool'">
@@ -1947,6 +1989,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 <el-tag v-if="previewHit.sell !== null" type="warning" size="small" round>命中 {{ previewHit.sell }} 只{{ previewDate.sell ? ` · ${previewDate.sell}` : '' }}</el-tag>
               </div>
               <div v-for="(c, i) in sellConds" :key="'s' + i" class="cond-row">
+                <StrategyItemEnabledSwitch v-model="c.enabled" :disabled="tReadonly" label="是否启用卖出条件" />
                 <IndicatorSelect v-model="c.indicator" :definitions="registry" :disabled="tReadonly" @change="onCondIndicator(c)" />
                 <IndicatorParamFields v-model="c.params!" :params="defOf(c.indicator)?.params ?? []" :disabled="tReadonly" />
                 <template v-if="defOf(c.indicator)?.dtype === 'bool'">

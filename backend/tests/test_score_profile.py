@@ -80,6 +80,18 @@ def test_profile_model_weight_auto_normalize():
     assert out.loc["C", "total_score"] == 50.0
 
 
+def test_disabled_score_item_is_excluded_from_total_and_subscores():
+    profile = {"items": [
+        {"indicator": "rs_pct", "weight": 1.0, "enabled": True,
+         "scoring": {"type": "linear", "min": 0, "max": 100}},
+        {"indicator": "is_bull_arrange", "weight": 9.0, "enabled": False,
+         "scoring": {"type": "bool"}},
+    ]}
+    out = ScoreProfileModel(profile).score(_snap())
+    assert out["total_score"].tolist() == [100.0, 50.0, 0.0]
+    assert "is_bull_arrange" not in out.columns
+
+
 def test_macd_columns_score_without_special_resolver_branch():
     snap = pd.DataFrame({
         "macd_diff": [-1.0, 0.5, 1.0],

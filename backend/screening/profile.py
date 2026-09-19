@@ -90,7 +90,7 @@ class ProfileRepo:
         if not name:
             raise ValueError("请填写方案名称")
         pid = (pid or "").strip() or self._make_id(name)
-        validate_ast(expression)
+        validate_ast(expression, require_active=True)
         expr_json = json.dumps(expression, ensure_ascii=False)
         cur = self.pg.query_df(
             f"SELECT version, name, expression, created_at FROM screen_profile "

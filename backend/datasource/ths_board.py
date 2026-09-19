@@ -75,7 +75,7 @@ def _ths_js_path() -> "str":
     return str(resources.files("akshare.data").joinpath("ths.js"))
 
 
-def _login_cookie_from_config() -> str | None:
+def login_cookie_with_source() -> tuple[str | None, str | None]:
     """读取登录态 cookie（浏览器同花顺登录后复制）。
 
     优先级：环境变量 `AI_STOCKS_THS_COOKIE` > `AI_STOCKS_THS_COOKIE_FILE` >
@@ -86,20 +86,28 @@ def _login_cookie_from_config() -> str | None:
     import os
 
     raw = os.environ.get("AI_STOCKS_THS_COOKIE", "")
+    source = "environment" if raw else None
     if not raw:
         f = os.environ.get("AI_STOCKS_THS_COOKIE_FILE", "")
         if f:
             try:
                 with open(f, encoding="utf-8") as fh:
                     raw = fh.read().strip()
+                    source = "file" if raw else None
             except OSError:
-                return None
+                return None, None
     if not raw:
         try:
             raw = get_effective_settings().ths_board.login_cookie
+            source = "app_config" if raw else None
         except Exception:  # noqa: BLE001 —— 配置/密钥/DB 异常时按无登录态降级
             raw = ""
-    return raw.strip() or None
+    cookie = raw.strip() or None
+    return cookie, source if cookie else None
+
+
+def _login_cookie_from_config() -> str | None:
+    return login_cookie_with_source()[0]
 
 
 class ThsBoardSource:
@@ -186,6 +194,16 @@ class ThsBoardSource:
         """
         return re.sub(r"(^|;\s*)v=[^;]*", rf"\g<1>v={new_v}", cookie)
 
+    def validate_login_cookie(self) -> bool:
+        """访问匿名态会命中登录墙的概念深页，真实验证当前登录 Cookie。"""
+        if not self._login_cookie:
+            return False
+        html = self._http_get(
+            _CONCEPT_INDEX_PAGE.format(page=6),
+            referer="https://q.10jqka.com.cn/",
+        )
+        return not _is_login_wall(html)
+
     # ── 底层 HTTP ────────────────────────────────────────────
 
     @rate_limited(1.0)
@@ -256,6 +274,9 @@ class ThsBoardSource:
             html = self._http_get(_CONCEPT_INDEX_PAGE.format(page=page),
                                   referer="https://q.10jqka.com.cn/")
             if _is_login_wall(html):
+                if self._login_cookie:
+                    from backend.services.ths_cookie_status import mark_ths_cookie_invalid
+                    mark_ths_cookie_invalid(self._login_cookie)
                 break  # 登录墙：后续页不再有新概念，停止
             pairs = _parse_board_links(html)
             if not pairs:
@@ -297,6 +318,9 @@ class ThsBoardSource:
                     complete = False
                     break
                 if _is_login_wall(html):
+                    if self._login_cookie:
+                        from backend.services.ths_cookie_status import mark_ths_cookie_invalid
+                        mark_ths_cookie_invalid(self._login_cookie)
                     # 登录墙仅无登录态出现：数据可能被截断（大板块取不全），保守标不完整
                     if got_any or page > 1:
                         complete = False

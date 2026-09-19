@@ -55,11 +55,23 @@ def source_status(do_ping: bool = True) -> dict:
             continue
         seen.add(name)
         up = _ping(name, timeout) if do_ping else None
-        out.append({
+        item = {
             "source": name,
             "role": role,
             "up": up,
             "last_success_at": _last_success.get(name),
             "timeout_sec": timeout,
-        })
+        }
+        if name == "ths_board":
+            from backend.services.ths_cookie_status import ths_cookie_status
+            try:
+                item["credential"] = ths_cookie_status(validate=do_ping)
+            except Exception as exc:  # noqa: BLE001 -- 配置库异常不应让状态列表整体失败
+                log.warning("同花顺 Cookie 状态读取失败: %s", exc)
+                item["credential"] = {
+                    "status": "unknown", "source": None, "validity_days": 30,
+                    "saved_at": None, "checked_at": None, "expires_at": None,
+                    "remaining_days": None,
+                }
+        out.append(item)
     return {"sources": out}

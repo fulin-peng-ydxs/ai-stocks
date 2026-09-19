@@ -32,7 +32,7 @@ class IndicatorDef:
     key: str                       # 英文标识（后端/AST 用）
     name_cn: str                   # 中文显示名（前端用）
     dtype: str                     # "number" | "bool"
-    category: str                  # 分类：均线/新高/量/涨幅/市值/强度/换手/趋势/事件
+    category: str                  # 分类：价格/均线/新高/量/涨幅/市值/强度/换手/趋势/事件
     direction: str | None = None   # "higher_better" | "lower_better" | None（布尔型无方向）
     params: list[Param] = field(default_factory=list)
     desc: str = ""
@@ -47,6 +47,10 @@ class IndicatorDef:
 
 # ── 本期内置指标（与 compute.py 产出对齐；可动态传参的标注参数 schema）──
 REGISTRY: list[IndicatorDef] = [
+    # 行情基础字段
+    IndicatorDef("close", "股价", "number", "价格", None, [],
+                 "口径:当日未复权收盘价(元)。是什么:股票在指定交易日的收盘价格。"
+                 "怎么用:按绝对价格区间筛选或评分；涉及收益、均线和形态时应使用对应技术指标。"),
     # 均线
     IndicatorDef("ma", "日均线(自定周期)", "number", "均线", None,
                  [Param("period", "周期", "int", 20, 2, 1000)],
@@ -205,9 +209,10 @@ REGISTRY: list[IndicatorDef] = [
 
 
 # ── 指标分类预设（多分类/打标签；按"角度"划分，一个指标可属多类）──
-# 预设角度：趋势 / 动量 / 量能 / 位置 / 均线 / 突破 / 估值 / 换手 / 形态 / 强度
+# 预设角度：价格 / 趋势 / 动量 / 量能 / 位置 / 均线 / 突破 / 估值 / 换手 / 形态 / 强度
 # 用户可在前端为任意指标增删分类、或自定义新分类名（存库覆盖预设）。
 PRESET_CATEGORIES: dict[str, list[str]] = {
+    "close": ["价格"],
     "ma": ["均线"], "ma5": ["均线"], "ma10": ["均线"], "ma20": ["均线"], "ma30": ["均线"], "ma60": ["均线"],
     "ma_bias": ["均线", "动量"], "near_ma": ["均线", "位置"], "below_ma": ["均线"], "above_ma": ["均线", "趋势"],
     "bull_arrange": ["趋势", "均线"], "ma20_up": ["趋势", "均线"], "ma60_up": ["趋势", "均线"],
@@ -228,7 +233,7 @@ PRESET_CATEGORIES: dict[str, list[str]] = {
 
 
 # 业务层级与计算方式、输出类型正交。固定 key 继续兼容，只在目录中作为快捷预设归组。
-_FIELD_KEYS = {"volume", "float_mv", "total_mv", "turnover_rate"}
+_FIELD_KEYS = {"close", "volume", "float_mv", "total_mv", "turnover_rate"}
 PRESET_RELATIONS: dict[str, tuple[str, dict]] = {
     "ma5": ("ma", {"period": 5}),
     "ma10": ("ma", {"period": 10}),

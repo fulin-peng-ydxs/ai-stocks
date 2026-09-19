@@ -196,3 +196,5 @@ ths_board:
   timeout_sec: 10.0          # 单请求超时（秒）
   max_retries: 3             # 失败重试次数
   retry_backoff_sec: 2.0     # 重试退避基数（秒，指数退避）
+  member_update_interval_days: 7  # 成分快照更新间隔（天）
+  cookie_validity_days: 30    # 登录 Cookie 默认有效期提醒（天）；连通测试会做真实登录态校验

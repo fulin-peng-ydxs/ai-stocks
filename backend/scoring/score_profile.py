@@ -52,7 +52,7 @@ VISIBILITIES = {VISIBILITY_PRIVATE, VISIBILITY_TENANT, VISIBILITY_PUBLIC}
 
 # 指标 key（含别名）→ 快照列；ma/hhv 走带参解析
 _DIRECT_COLS = {
-    "rs_pct", "dist_to_high_2y", "float_mv", "total_mv", "turnover_rate", "volume",
+    "rs_pct", "dist_to_high_2y", "close", "float_mv", "total_mv", "turnover_rate", "volume",
     "is_bull_arrange", "ma20_up", "ma60_up", "above_ma250",
     "is_vol_breakout", "is_platform_breakout", "is_turnover_healthy",
     "is_high_60", "is_high_120", "is_high_1y", "is_high_2y",
@@ -60,6 +60,11 @@ _DIRECT_COLS = {
 _ALIASES = {"bull_arrange": "is_bull_arrange", "dist_to_high": "dist_to_high_2y"}
 _MA_PERIODS = {5, 10, 20, 30, 60, 250}
 _HHV_WINDOWS = {60, 120, 240, 480}
+
+
+def active_score_items(items: list[dict] | None) -> list[dict]:
+    """返回参与计算的评分项；旧方案无 enabled 字段时保持启用。"""
+    return [item for item in (items or []) if item.get("enabled", True) is not False]
 
 
 def indicator_value_column(indicator: str, params: dict | None) -> str:
@@ -139,7 +144,7 @@ class ScoreProfileModel:
 
     def __init__(self, profile: dict, settings=None):
         self.profile = profile
-        self.items = profile.get("items", [])
+        self.items = active_score_items(profile.get("items", []))
         g = profile.get("grade_thresholds") or {}
         gd = (settings or get_effective_settings()).scoring.grade_thresholds
         self.grades = {
@@ -199,12 +204,15 @@ DEFAULT_SCORE_PROFILES: list[dict] = [
 
 def validate_profile(items: list[dict], known_keys: set[str] | None = None) -> None:
     """校验评分项合法性（指标可解析或为已知自定义指标、打分方式合法、权重为正）。"""
-    if not items:
-        raise ValueError("评分方案至少需要一个指标项")
+    active_items = active_score_items(items)
+    if not active_items:
+        raise ValueError("评分方案至少需要一个已启用的指标项")
     known_keys = known_keys or set()
     snap = pd.DataFrame(columns=list(_DIRECT_COLS) + [f"ma{n}" for n in _MA_PERIODS]
                         + [f"hhv{w}" for w in _HHV_WINDOWS])
     for it in items:
+        if "enabled" in it and not isinstance(it["enabled"], bool):
+            raise ValueError("评分项 enabled 须为布尔值")
         if "indicator" not in it:
             raise ValueError("评分项缺少 indicator")
         if float(it.get("weight", 0)) <= 0:

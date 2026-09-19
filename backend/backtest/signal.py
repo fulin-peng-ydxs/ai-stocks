@@ -47,9 +47,9 @@ class SignalAnalyzer:
         snap = snap.copy()
         snap["trade_date"] = pd.to_datetime(snap["trade_date"])
         if score_profile:
-            from backend.scoring.score_profile import ScoreProfileModel
+            from backend.scoring.score_profile import ScoreProfileModel, active_score_items
             snap = self.ind.attach_range_columns(
-                snap, score_profile.get("items", []), date_start, date_end
+                snap, active_score_items(score_profile.get("items", [])), date_start, date_end
             )
             scorer: object = ScoreProfileModel(score_profile)
         else:

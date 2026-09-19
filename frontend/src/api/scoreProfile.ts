@@ -99,6 +99,7 @@ export type ScoringRule =
 
 export interface ScoreItem {
   indicator: string
+  enabled?: boolean
   params?: Record<string, number>
   weight: number
   scoring: ScoringRule

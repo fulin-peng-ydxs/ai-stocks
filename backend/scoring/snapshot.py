@@ -39,9 +39,11 @@ def _current_param_hash(market=None, profile: dict | None = None) -> str:
     if pd.notna(data_revision):
         # 正常行情/市值更新会留下日志；将版本并入指纹，让历史修订自动淘汰旧榜单。
         params["market_data_revision"] = int(data_revision)
+    from backend.scoring.score_profile import active_score_items
+
     custom_keys = sorted({
         str(item.get("indicator"))
-        for item in (profile or {}).get("items", [])
+        for item in active_score_items((profile or {}).get("items", []))
         if item.get("indicator")
     })
     if custom_keys:
@@ -86,9 +88,18 @@ def score_day(c, run_date: date, profile: dict) -> pd.DataFrame:
     与回测 `_decision_data` / `/board/compute` 同口径；纯计算，不落库。sub_scores=各指标项达标分 JSON。
     """
     from backend.indicators.engine import IndicatorEngine
-    from backend.scoring.score_profile import ScoreProfileModel
+    from backend.indicators.definition import IndicatorDefRepo
+    from backend.scoring.score_profile import (
+        ScoreProfileModel,
+        active_score_items,
+        validate_profile,
+    )
 
     eng = IndicatorEngine(c)
+    validate_profile(
+        profile.get("items", []),
+        known_keys={item["key"] for item in IndicatorDefRepo(c).list()},
+    )
     snap = eng.wide_snapshot(run_date, run_date)
     if snap.empty:
         return pd.DataFrame(columns=_COLS)
@@ -100,9 +111,10 @@ def score_day(c, run_date: date, profile: dict) -> pd.DataFrame:
     snap = snap[~snap.index.isin(st)]
     if snap.empty:
         return pd.DataFrame(columns=_COLS)
-    eng.attach_columns(snap, profile.get("items", []), run_date)
+    active_items = active_score_items(profile.get("items", []))
+    eng.attach_columns(snap, active_items, run_date)
     scored = ScoreProfileModel(profile).score(snap).sort_values("total_score", ascending=False)
-    item_keys = [it["indicator"] for it in profile.get("items", []) if it.get("indicator") in scored.columns]
+    item_keys = [it["indicator"] for it in active_items if it.get("indicator") in scored.columns]
     subs = [json.dumps({k: round(float(r[k]), 2) for k in item_keys}, ensure_ascii=False)
             for _, r in scored.iterrows()] if item_keys else [None] * len(scored)
     out = pd.DataFrame({

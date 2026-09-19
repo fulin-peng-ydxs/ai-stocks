@@ -163,7 +163,7 @@ class BacktestEngine:
 
     def _sell_leaf_detail(self, snap: pd.DataFrame, tree: dict | None) -> dict:
         """拍平卖树叶子 → {labels:[标签], hits:[{date:set(命中code)}]}，供卖出时标注具体命中指标。"""
-        from backend.signals.trade_profile import _eval_leaf
+        from backend.signals.trade_profile import _eval_leaf, prune_disabled_conditions
         leaves: list[dict] = []
 
         def walk(n: dict | None) -> None:
@@ -175,7 +175,7 @@ class BacktestEngine:
             else:
                 leaves.append(n)
 
-        walk(tree)
+        walk(prune_disabled_conditions(tree))
         if not leaves:
             return {"labels": [], "hits": []}
         name_map = self._ind_name_map()
@@ -199,7 +199,8 @@ class BacktestEngine:
             return {}, {}, {}, {"labels": [], "hits": []}
         snap = snap.copy()
         snap["trade_date"] = pd.to_datetime(snap["trade_date"])
-        items: list[dict] = list(score_profile.get("items", [])) if score_profile else []
+        from backend.scoring.score_profile import active_score_items
+        items: list[dict] = active_score_items(score_profile.get("items", [])) if score_profile else []
         items += collect_indicators(buy_tree or {}) + collect_indicators(sell_tree or {})
         snap = self._attach_range_exprs(snap, items, lo, hi)
         # 评分（排除 ST 作为选股 universe）

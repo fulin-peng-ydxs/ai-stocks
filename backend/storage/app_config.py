@@ -63,6 +63,7 @@ CONFIG_GROUPS: list[dict] = [
         {"path": "ths_board.max_retries", "label": "失败重试次数", "type": "int", "min": 1, "max": 10, "desc": "同花顺请求失败后的最多重试次数。"},
         {"path": "ths_board.retry_backoff_sec", "label": "重试退避(秒)", "type": "number", "min": 0, "max": 60, "desc": "同花顺请求连续重试之间的退避时间。"},
         {"path": "ths_board.member_update_interval_days", "label": "成分快照更新间隔(天)", "type": "int", "min": 1, "max": 30, "desc": "成分股快照多久全量拉取一次；未达间隔且上次完整时跳过（默认 7=周频）。"},
+        {"path": "ths_board.cookie_validity_days", "label": "Cookie 默认有效期(天)", "type": "int", "min": 1, "max": 365, "desc": "从保存或最近成功校验起计算的期限提醒；测试连通时仍会真实访问登录态页面确认是否有效。"},
         {"path": "ths_board.login_cookie", "label": "登录 Cookie", "type": "password",
          "encrypted": True,
          "placeholder": "粘贴登录后的完整 Cookie；数据库只保存加密密文",
@@ -90,6 +91,7 @@ ENCRYPTED_CONFIG_PATHS: frozenset[str] = frozenset(
 SECRET_STATUS_UNSET = "unset"
 SECRET_STATUS_USABLE = "usable"
 SECRET_STATUS_UNAVAILABLE = "unavailable"
+THS_COOKIE_STATUS_KEY = "runtime.ths_board.login_cookie_validation"
 
 
 def get_field_meta(path: str) -> dict | None:
@@ -222,6 +224,36 @@ class AppConfigRepo:
                 statuses[key] = SECRET_STATUS_USABLE
         return statuses
 
+    def get_updated_at(self, path: str) -> datetime | None:
+        """读取单项配置更新时间，不返回配置值。"""
+        df = self.pg.query_df("SELECT updated_at FROM app_config WHERE key=%s", [path])
+        if df.empty or df.iloc[0]["updated_at"] is None:
+            return None
+        return df.iloc[0]["updated_at"]
+
+    def get_ths_cookie_validation(self) -> dict:
+        """读取脱敏的同花顺 Cookie 校验记录。"""
+        df = self.pg.query_df("SELECT value FROM app_config WHERE key=%s", [THS_COOKIE_STATUS_KEY])
+        if df.empty:
+            return {}
+        try:
+            value = json.loads(df.iloc[0]["value"])
+        except (TypeError, ValueError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def set_ths_cookie_validation(self, value: dict) -> None:
+        """保存不含 Cookie 明文的真实校验结果。"""
+        now = datetime.now()  # noqa: DTZ005 -- 与 app_config 既有无时区时间口径一致
+        self.pg.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s,%s,%s) "
+            "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
+            [THS_COOKIE_STATUS_KEY, json.dumps(value, ensure_ascii=False), now],
+        )
+
+    def clear_ths_cookie_validation(self) -> None:
+        self.pg.execute("DELETE FROM app_config WHERE key=%s", [THS_COOKIE_STATUS_KEY])
+
     def set_many(self, updates: dict[str, object]) -> int:
         """校验并写入覆盖值。任一项非法则整批拒绝（不部分写入）。返回写入条数。"""
         if not updates:
@@ -251,6 +283,8 @@ class AppConfigRepo:
                 "INSERT INTO app_config (key, value, updated_at) VALUES (%s,%s,%s) "
                 "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
                 [path, json.dumps(value, ensure_ascii=False), now])
+        if "ths_board.login_cookie" in normalized:
+            self.clear_ths_cookie_validation()
         log.info("配置覆盖写入 %d 项: %s", len(normalized), list(normalized))
         return len(normalized)
 
@@ -260,6 +294,8 @@ class AppConfigRepo:
     def reset(self, path: str) -> None:
         """删除某项覆盖，回落到 settings.yaml 默认。"""
         self.pg.execute("DELETE FROM app_config WHERE key=%s", [path])
+        if path == "ths_board.login_cookie":
+            self.clear_ths_cookie_validation()
 
     def reset_many(self, paths: list[str]) -> int:
         """批量删除覆盖项，回落到 settings.yaml 默认。返回删除条数。"""
@@ -277,6 +313,8 @@ class AppConfigRepo:
             [normalized],
         )
         self.pg.execute("DELETE FROM app_config WHERE key = ANY(%s)", [normalized])
+        if "ths_board.login_cookie" in normalized:
+            self.clear_ths_cookie_validation()
         return int(len(df))
 
 

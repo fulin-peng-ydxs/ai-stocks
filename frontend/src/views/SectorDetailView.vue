@@ -621,7 +621,7 @@ onMounted(async () => {
                   <template #default="{ row }">
                     <el-tooltip :disabled="canViewStocks" content="无个股行情查看权限" placement="top">
                       <span
-                        :class="{ 'stock-link': canViewStocks, 'stock-disabled': !canViewStocks }"
+                        :class="{ 'stock-disabled': !canViewStocks }"
                         :data-testid="row?.code ? `sector-member-${row.code}` : undefined"
                       >{{ row.code }}</span>
                     </el-tooltip>
@@ -630,7 +630,7 @@ onMounted(async () => {
                 <AppTableColumn v-if="colVisible('name')" label="名称" prop="name" role="name">
                   <template #default="{ row }">
                     <el-tooltip :disabled="canViewStocks" content="无个股行情查看权限" placement="top">
-                      <strong :class="{ 'stock-link': canViewStocks, 'stock-disabled': !canViewStocks }">{{ row.name || '—' }}</strong>
+                      <strong :class="{ 'stock-disabled': !canViewStocks }">{{ row.name || '—' }}</strong>
                     </el-tooltip>
                   </template>
                 </AppTableColumn>
@@ -776,9 +776,6 @@ onMounted(async () => {
   flex: 0 0 auto;
   padding: var(--app-space-3) var(--app-space-4);
   border-bottom: 1px solid var(--el-border-color-lighter);
-}
-.stock-link {
-  color: var(--el-color-primary);
 }
 .stock-disabled {
   color: var(--el-text-color-secondary);

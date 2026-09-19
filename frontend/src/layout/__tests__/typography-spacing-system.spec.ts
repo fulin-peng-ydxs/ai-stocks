@@ -156,6 +156,8 @@ describe('字体与间距设计契约', () => {
     expect(design).toContain('明显不是同一个连贯内容单位的信息不得直接相邻')
     expect(globalCss).toContain('.app-inline-info')
     expect(globalCss).toContain('.app-inline-info--nowrap')
+    expect(globalCss).toContain('--app-muted-text: var(--el-text-color-secondary)')
+    expect(globalCss).not.toMatch(/--app-muted-text:\s*#[0-9a-f]{6}/i)
   })
 
   it('布局尺寸断点统一使用缩放后的容器，不混用原始视口媒体查询', () => {
@@ -175,6 +177,12 @@ describe('字体与间距设计契约', () => {
 
     for (const file of sourceFiles(SRC_DIR)) {
       const rel = relative(SRC_DIR, file)
+      const source = read(file)
+      const inlineTagMargin = /<el-tag\b[^>]*\bstyle=["'][^"']*margin-(left|right)\s*:[^"']*["'][^>]*>/gs
+      for (const match of source.matchAll(inlineTagMargin)) {
+        const line = lineOf(source, match.index ?? 0)
+        violations.push(`${rel}:${line} el-tag -> inline margin-${match[1]}`)
+      }
       for (const css of styleBlocks(file)) {
         for (const match of css.matchAll(/([^{}]+)\{([^{}]*?)\}/gs)) {
           const selector = match[1].trim()

@@ -259,6 +259,7 @@ class ThsBoardConfig(BaseModel):
     max_retries: int = Field(default=3, ge=1, le=10)         # 失败重试次数
     retry_backoff_sec: float = Field(default=2.0, ge=0, le=60)  # 重试退避基数（秒，指数退避）
     member_update_interval_days: int = Field(default=7, ge=1, le=30)  # 成分快照更新间隔（天）：默认周频，达标后按此跳过
+    cookie_validity_days: int = Field(default=30, ge=1, le=365)  # Cookie 期限提醒；真实有效性仍以登录页校验为准
     # 仅承接 AppConfigRepo 解密后的进程内值；YAML 中禁止配置，页面与接口只返回掩码。
     login_cookie: str = ""
 

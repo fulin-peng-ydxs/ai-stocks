@@ -62,6 +62,8 @@ describe('视觉预设运行时 Element Plus 色阶', () => {
           .toBe(tokens.surfaceHover)
         expect(document.documentElement.style.getPropertyValue('--app-section-bg'))
           .toBe(tokens.surfaceHover)
+        expect(document.documentElement.style.getPropertyValue('--app-muted-text'))
+          .toBe(tokens.textMuted)
         expect(document.documentElement.style.getPropertyValue('--page-settings-seg-hover-bg'))
           .toBe(tokens.activeBg)
         expect(document.documentElement.style.getPropertyValue('--page-settings-seg-active-bg'))

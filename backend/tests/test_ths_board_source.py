@@ -73,6 +73,17 @@ def test_is_login_wall():
     assert tb._is_login_wall(_member_page(["300476"])) is False
 
 
+def test_validate_login_cookie_uses_authenticated_deep_page(monkeypatch):
+    source = tb.ThsBoardSource(login_cookie="user=1; ticket=abc")
+    requested: list[str] = []
+    monkeypatch.setattr(source, "_http_get", lambda url, **kwargs: requested.append(url) or "ok")
+    assert source.validate_login_cookie() is True
+    assert "/page/6/" in requested[0]
+    monkeypatch.setattr(source, "_http_get", lambda url, **kwargs: _LOGIN_WALL)
+    assert source.validate_login_cookie() is False
+    assert tb.ThsBoardSource(login_cookie="").validate_login_cookie() is False
+
+
 def test_parse_bar_js():
     js = ('quotebridge_v4_line_bk_886071_01_2026({"data":"'
           '20260105,10,11,9,10.5,1000,2000.5,1,2,3;'

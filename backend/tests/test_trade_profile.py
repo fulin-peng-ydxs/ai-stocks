@@ -42,6 +42,21 @@ def test_eval_and_or():
     assert list(eval_conditions(or_tree, snap)) == [True, False, True]
 
 
+def test_disabled_trade_conditions_do_not_participate():
+    snap = _snap()
+    tree = {"op": "OR", "children": [
+        {"indicator": "is_vol_breakout", "cmp": "==", "value": True, "enabled": False},
+        {"indicator": "rs_pct", "cmp": ">=", "value": 80},
+    ]}
+    assert eval_conditions(tree, snap).tolist() == [True, False, False]
+    assert [item["indicator"] for item in collect_indicators(tree)] == ["rs_pct"]
+    with pytest.raises(ValueError, match="已启用"):
+        validate_trade_profile(
+            {"indicator": "rs_pct", "cmp": ">=", "value": 80, "enabled": False},
+            {}, {"stop_loss": 0.08}, {"rs_pct"},
+        )
+
+
 def test_all_macd_results_work_as_buy_and_sell_conditions():
     snap = pd.DataFrame({
         "macd_diff": [0.4, -0.4, pd.NA],
