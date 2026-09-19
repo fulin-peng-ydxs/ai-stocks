@@ -51,6 +51,7 @@ import {
 } from '@/api/training'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import { getErrorMessage } from '@/utils/error'
+import { formatDateTimeMinutes } from '@/utils/dateTime'
 import { formatMoney, formatMoneyInput, parseMoneyInput } from '@/utils/money'
 import type { AppRowAction } from '@/components/rowActions'
 
@@ -350,9 +351,17 @@ function sessionRowActions(row: SessionRow): AppRowAction[] {
 
 // ── 复盘笔记 ──
 const reviewNote = ref('')
+const reviewBaseline = ref('')
+const reviewChanged = computed(() => reviewNote.value !== reviewBaseline.value)
+watch(() => view.value?.id, () => {
+  reviewNote.value = view.value?.review_note ?? ''
+  reviewBaseline.value = reviewNote.value
+})
 async function persistReview() {
-  if (!view.value) return
+  if (!view.value || !reviewChanged.value) return
   await saveReview(view.value.id, reviewNote.value)
+  reviewBaseline.value = reviewNote.value
+  view.value.review_note = reviewNote.value
   ElMessage.success('复盘已保存')
 }
 
@@ -608,10 +617,10 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
               <template #default="{ row }">{{ row.win_rate != null ? (row.win_rate * 100).toFixed(0) + '%' : '--' }}</template>
             </AppTableColumn>
             <AppTableColumn label="开始时间" prop="created_at" sortable="custom">
-              <template #default="{ row }">{{ row.created_at?.slice(0, 16) }}</template>
+              <template #default="{ row }">{{ formatDateTimeMinutes(row.created_at) }}</template>
             </AppTableColumn>
             <AppTableColumn label="结束时间" prop="completed_at" sortable="custom">
-              <template #default="{ row }">{{ row.completed_at?.slice(0, 16) ?? '--' }}</template>
+              <template #default="{ row }">{{ formatDateTimeMinutes(row.completed_at, '--') }}</template>
             </AppTableColumn>
             <AppTableColumn label="操作" role="action-compact">
               <template #default="{ row }">
@@ -781,7 +790,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
             <span class="grade-big app-data-emphasis" :style="{ color: gradeColor(detail.grade) }">{{ detail.grade }}</span>
             <span class="score-tip">综合评分 {{ detail.score?.toFixed(1) }}</span>
           </h2>
-          <p class="page-subtitle">{{ modeText(detail.mode) }} · {{ detail.n_rounds }} 回合 · {{ detail.created_at?.slice(0, 16) }}</p>
+          <p class="page-subtitle">{{ modeText(detail.mode) }} · {{ detail.n_rounds }} 回合 · {{ formatDateTimeMinutes(detail.created_at) }}</p>
         </div>
         <div class="page-head-actions">
           <div class="ops">
@@ -892,7 +901,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
         <el-card shadow="never" class="review-card">
           <template #header><span class="card-title">整局复盘</span></template>
           <el-input v-model="reviewNote" type="textarea" :rows="4" placeholder="记录本局思路、复盘总结、改进点……" />
-          <div class="review-actions"><el-button v-permission="'training:review'" type="primary" @click="persistReview">保存复盘</el-button></div>
+          <div class="review-actions"><el-button v-permission="'training:review'" type="primary" :disabled="!reviewChanged" @click="persistReview">保存复盘</el-button></div>
         </el-card>
     </div>
     </template>

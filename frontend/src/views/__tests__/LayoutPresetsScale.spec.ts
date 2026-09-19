@@ -31,7 +31,12 @@ describe('视觉预设字段边界', () => {
       await button('新增视觉预设').trigger('click')
       expect(wrapper.text()).not.toContain('自动缩放激进程度')
       expect(wrapper.text()).not.toContain('表格密度')
-      await button('保存').trigger('click')
+      const saveButton = button('保存')
+      expect(saveButton.attributes('disabled')).toBeDefined()
+      const nameInput = wrapper.findAll('input').find((input) => input.element.value === '自定义预设')!
+      await nameInput.setValue('自定义预设 2')
+      expect(saveButton.attributes('disabled')).toBeUndefined()
+      await saveButton.trigger('click')
       await flushPromises()
       const values = api.saveLayoutPreset.mock.calls[0][0].config.values
       expect(Object.keys(values).every((path) => path.startsWith('tokens.'))).toBe(true)

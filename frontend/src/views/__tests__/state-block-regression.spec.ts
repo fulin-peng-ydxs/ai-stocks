@@ -609,7 +609,7 @@ describe('代表性页面四态回归', () => {
     ;(dataApi.getCatalog as ReturnType<typeof vi.fn>).mockResolvedValue({
       summary: {
         duckdb: { active_tables: 28, legacy_tables: 28, unregistered_tables: 0, database_size_bytes: 1 },
-        postgres: { active_tables: 59, legacy_tables: 0, unregistered_tables: 0, database_size_bytes: 2 },
+        postgres: { active_tables: 60, legacy_tables: 0, unregistered_tables: 0, database_size_bytes: 2 },
       },
       tables: [
         {
@@ -710,7 +710,7 @@ describe('代表性页面四态回归', () => {
       ({ include_legacy }: { include_legacy?: boolean } = {}) => Promise.resolve({
         summary: {
           duckdb: { active_tables: 28, legacy_tables: 28, unregistered_tables: 0, database_size_bytes: 1 },
-          postgres: { active_tables: 59, legacy_tables: 0, unregistered_tables: 0, database_size_bytes: 2 },
+          postgres: { active_tables: 60, legacy_tables: 0, unregistered_tables: 0, database_size_bytes: 2 },
         },
         tables: include_legacy ? [current, legacy] : [current],
       }),

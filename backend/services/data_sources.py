@@ -6,19 +6,16 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from backend.common.logging import get_logger
 from backend.config import get_effective_settings
 from backend.datasource.base import get_source
+from backend.storage.data_source_health_repository import DataSourceHealthRepository
 
 log = get_logger("services.data_sources")
 
-# 最近成功时间（进程内缓存，避免每次都真打）
-_last_success: dict[str, str] = {}
-
-
-def _ping(name: str, timeout: float) -> bool:
+def _ping(name: str, timeout: float) -> tuple[bool, str | None]:
     """轻量探活：行情源拉近 7 天日历；板块源拉一页行业字典。"""
     import socket
     old = socket.getdefaulttimeout()
@@ -30,36 +27,57 @@ def _ping(name: str, timeout: float) -> bool:
             df = ThsBoardSource(timeout=timeout, max_retries=1).get_board_dict("industry")
         else:
             src = get_source(name)
-            end = date.today()
+            end = datetime.now().astimezone().date()
             df = src.get_trade_calendar(end - timedelta(days=7), end)
-        ok = df is not None and not df.empty
-        if ok:
-            _last_success[name] = str(datetime.now())
-        return ok
+        if df is None or df.empty:
+            return False, "数据源返回空结果"
+        return True, None
     except Exception as e:  # noqa: BLE001
         log.warning("数据源 %s 探活失败: %s", name, e)
-        return False
+        return False, str(e)
     finally:
         socket.setdefaulttimeout(old)
 
 
-def source_status(do_ping: bool = True) -> dict:
-    """返回各数据源状态。do_ping=False 时只回配置 + 缓存的最近成功时间（不真打）。"""
+def source_status(
+    do_ping: bool = True,
+    *,
+    repo: DataSourceHealthRepository | None = None,
+) -> dict:
+    """返回各数据源状态；探活结果持久化，普通查询直接读取最近记录。"""
     s = get_effective_settings().datasource
     timeout = float(s.socket_timeout_sec)
     roles = [(s.primary, "primary"), (s.fallback, "fallback"), ("ths_board", "board")]
+    repo = repo or DataSourceHealthRepository()
+    records = repo.list(list(dict.fromkeys(name for name, _role in roles)))
     out = []
     seen = set()
     for name, role in roles:
         if name in seen:
             continue
         seen.add(name)
-        up = _ping(name, timeout) if do_ping else None
+        record = records.get(name, {})
+        if do_ping:
+            up, failure_reason = _ping(name, timeout)
+            # 以探测完成时间落库；并发测试时后完成的请求才应成为“最近测试”。
+            tested_at = datetime.now().astimezone()
+            repo.record(name, up=up, tested_at=tested_at, failure_reason=failure_reason)
+            record = {
+                "up": up,
+                "last_test_at": tested_at.isoformat(timespec="seconds"),
+                "last_success_at": (
+                    tested_at.isoformat(timespec="seconds")
+                    if up else record.get("last_success_at")
+                ),
+                "failure_reason": failure_reason,
+            }
         item = {
             "source": name,
             "role": role,
-            "up": up,
-            "last_success_at": _last_success.get(name),
+            "up": record.get("up"),
+            "last_test_at": record.get("last_test_at"),
+            "last_success_at": record.get("last_success_at"),
+            "failure_reason": record.get("failure_reason"),
             "timeout_sec": timeout,
         }
         if name == "ths_board":

@@ -290,6 +290,7 @@ Key Characteristics：
 | `AppRowActions` | `frontend/src/components/AppRowActions.vue` | 表格行操作列和列表项操作区的统一动作组，按权限过滤、单行排列、动作颜色层级、禁用/加载态展示、轻量“更多”菜单收纳和**宽度自适应折叠** | 无直接系统组件种类 | 表格 `label="操作"`、自绘表格行、列表项和编辑器条件行的行内按钮组优先复用；首个未显式指定语义色的行内高频动作使用主色，普通次要动作使用常规正文色，禁用态使用弱文本色并满足语义 token 规则定义的文字层级阈值，停用/禁用/终止/删除等破坏性动作使用危险色；动作始终清晰可见，不对整组做透明度弱显；低频或危险动作可设置 `placement: 'more'`，更多入口必须由 Element Plus 点击浮层承接定位、层级、点击外部关闭与 Esc 关闭，菜单命令继续使用 Element Plus 按钮并呈现真实 loading，不得在页面内手写多行按钮、原生命令按钮或自建全局浮层监听。**宽度折叠契约**：单动作或仅需“更多”入口的列声明 `role="action-compact"`，96px 是默认下限；两个及以上候选动作声明 `role="action"`，144px 是默认下限；各行按实测按钮宽度向所属列上报最低可用组合，整列取当前已渲染行最大值向上扩展。两类操作列默认统一居中表头与单元格，确有业务对齐理由时才显式覆盖。单动作最低完整显示；多动作最低保留两个操作入口，可由两个直接动作或“首个直接动作 + 更多”构成，“更多”本身计作一个入口；除调用方明确把全部动作设置为 `placement: 'more'` 外，禁止退化为仅“更多”。操作列不参与表格富余空间分配，余量留给名称、描述等内容列；超过最低组合后仍按实际可用宽度尽量展示更多直接动作，装不下的动作自动收进“更多”菜单，不硬截断；`inline-limit` 是行内数量硬性上限；显式 `placement: 'more'` 的动作恒入更多；可用宽度或按钮实测宽度不可用时使用文字估算与纯数量逻辑兜底 |
 | `SystemBuiltinTag` | `frontend/src/components/SystemBuiltinTag.vue` | 全站“系统内置”来源标记，固定使用灰色文字、灰色描边和中性浅底 | 无直接系统组件种类 | 菜单、功能点、角色、租户、视觉预设、技术指标和系统内置方案等来源标记统一复用；文案固定为“系统内置”，不追加对象名称或保护规则说明；与对象名称或标识并列时统一放在对象后面，独立的来源/类型字段保持标签单独展示 |
 | `IndicatorSelect` / `IndicatorParamFields` | `frontend/src/components/indicator/IndicatorSelect.vue`、`frontend/src/components/indicator/IndicatorParamFields.vue` | 技术指标选择与计算参数值的领域复用组件，统一通用指标/快捷预设分组、停用历史项回显、参数单位与范围 | 无直接系统组件种类；作为方案编辑器内部字段 | 筛选、评分、买入和卖出方案统一消费；新选择只展示启用项，当前已选停用项保留“历史兼容”回显；参数值只表达计算口径，比较符、阈值、评分方式和权重仍由下游方案维护，页面不得复制参数循环和单位展示 |
+| `StrategyItemEnabledSwitch` | `frontend/src/components/strategy/StrategyItemEnabledSwitch.vue` | 策略项启停开关，统一双向绑定、只读态和可访问名称 | 无直接系统组件种类；作为方案编辑器内部字段 | 筛选条件、评分因子及买卖条件统一复用；调用方传入领域化 `label`，不得在页面继续复制只透传启停值的裸开关包装 |
 | `IndicatorParamSchemaEditor` | `frontend/src/components/indicator/IndicatorParamSchemaEditor.vue` | 自定义指标参数 schema 编辑器，统一参数名、标签、类型、默认值、上下限、单位和说明 | 无直接系统组件种类；作为指标定义抽屉内部字段 | 只用于平台指标定义维护，不与方案参数值编辑器合并；定义被引用时整体只读，后端仍负责最终占位符和范围校验 |
 | `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、加载分流、空态插槽、行点击样式和成长/嵌入模式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 页面中的数据表格统一复用；`loading && data.length === 0` 自动显示 `AppStateBlock` 骨架，有旧数据刷新时保留表格并使用 `v-loading` 遮罩；主列表默认成长，抽屉、展开行和局部明细等非主表显式使用 `embedded`，嵌入式表格按内容自然撑高且不得被父级 flex 压缩，超出区域由所属滚动容器承接；`#empty` 只补充业务文案与操作并复用 `app-table-empty*`，禁止嵌套 `el-empty` 形成双图；`wide-table` 默认常显 Element Plus 内部滚动条，禁止页面再给 `el-table__body-wrapper` 添加第二层横向滚动；禁止用 `fill` 布尔值绕过主表语义；复杂单元格继续由业务页通过列插槽声明 |
 | `AppTableColumn` | `frontend/src/components/AppTableColumn.vue`、`frontend/src/components/table/adaptiveColumnWidth.ts` | 表格列运行时组件，根据结构类型、字段名和标签推导语义角色，以稳定字符权重结合排序/筛选控件计算弹性最小宽，并统一渲染单行表头及同行元信息 | `data-table`、`wide-table` 的稳定列宽、内容对齐和表头能力；不是用户可配置字段 | 页面表格列统一复用，禁止传 `width/min-width`；确有歧义的动态标签只传 `role`；日期、单位或短口径摘要传 `header-meta`；单元格主内容前存在紧凑控件时传 `leading-controls`，组件统一预留宽度并让表头对齐主内容；单元格使用多选 `AppFilterSelect` 时，标签模式由列与选择器声明相同的 `filterSelectVisibleTagCount / visibleTagCount`，数量摘要模式则声明相同的 `filterSelectDisplayMode=count / displayMode=count`；列宽完整承载目标内容，总列宽超出表格时由表体横向滚动，不裁切交互控件；自定义 header slot 只用于复选、帮助入口等真实交互结构；数值事实只维护在 `ADAPTIVE_COLUMN_RULES` |
@@ -402,6 +403,11 @@ Key Characteristics：
 - 金额输入控件展示千分位、业务状态和接口值不带分隔符：Element Plus 数字输入统一使用 `formatMoneyInput` / `parseMoneyInput`；精确定点字符串输入在非编辑态显示千分位，聚焦编辑时可以显示无分隔原值。粘贴带逗号金额必须能够正常解析。
 - 百分比、数量、手数、代码和日期不是金额，不得为了套用本规范改变其业务单位；其中确需数值分组时使用相应数值工具，不冒充金额格式化。
 
+### 日期时间展示
+
+- 后端可以使用 ISO 8601 传输日期时间，但用户可见文本不得直接暴露 `T`、毫秒或时区后缀。秒级和分钟级展示统一消费 `frontend/src/utils/dateTime.ts` 的 `formatDateTimeSeconds` / `formatDateTimeMinutes`；页面不得通过 `slice`、`replace` 或私有 formatter 重复实现。
+- 默认完整格式分别为 `YYYY-MM-DD HH:mm:ss` 和 `YYYY-MM-DD HH:mm`。仅时间模式可以在统一格式化后截取 `HH:mm`；空值文案由调用方按场景传入，不得把无值伪装成当前时间。
+
 ### 表格与列表
 
 - 主数据表应作为 `growMain` 占据剩余空间，使用 `height="100%"` 让表体内部滚动；当一个标签页工作区承载多个互斥主表时，由 `tabs` 作为唯一 `growMain`，当前面板内的表体承接滚动。
@@ -469,6 +475,7 @@ Key Characteristics：
 - 局部依赖失败只阻断该区域，不阻断已可用的其他区域；例如主表可加载但摘要失败时，摘要区显示局部错误态，主表保持可用。
 - 403 / 无权限态不能伪装为空态；标题使用“无权限查看{对象}”或“无权限维护{对象}”，副标题说明联系管理员或切换账号（即不可重试原因）；不放“重试”按钮（重试对无权无意义，实现见 `AppStateBlock variant="permission"` 默认 `retry:false`）。
 - 运行、保存、删除、发布等动作使用按钮 `:loading` 和禁用重复提交；动作失败用 `ElMessage.error`，若失败会影响当前区域继续使用，还要同步页内错误态。
+- 编辑/保存型表单必须在数据回填完成或弹层打开后，以实际提交负载记录已保存基线；仅当当前提交负载与基线存在实质差异时启用保存按钮，提交函数还必须二次拒绝无变更请求。保存成功后更新基线，失败时保留当前编辑值和脏状态；创建型保存弹层以打开后的初始表单为基线。独立发布、启停、重置密码等本身会改变业务状态的命令不套用“表单未变更”判断；“保存并发布”“保存并启用”等包含保存语义的组合命令仍必须遵守变更基线。
 - 远程选择器、懒加载下拉和日志区使用紧凑文案，不放大图标；下拉末尾可用“向下滚动加载更多”“无匹配结果”这类短句。
 
 ### 消息反馈层级

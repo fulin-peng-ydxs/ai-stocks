@@ -67,6 +67,7 @@ import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import { getErrorMessage } from '@/utils/error'
+import { formatDateTimeSeconds } from '@/utils/dateTime'
 import {
   formatCompactMoneyYuan,
   formatMoney,
@@ -952,7 +953,7 @@ async function fetchRunDetail(id: string) {
 // 应用已获取的详情到页面状态（同步、不再发请求）。返回该 run 实际评分口径供 resultScoreRef 冻结。
 function applyRunDetail(id: string, r: Awaited<ReturnType<typeof fetchRunDetail>>, summary?: RunSummary) {
   const ca = (r.run as { created_at?: string }).created_at
-  runTime.value = ca ? String(ca).slice(0, 19) : ''
+  runTime.value = ca ? formatDateTimeSeconds(String(ca), '') : ''
   fromHistory.value = true
   const p = applyRunParams(r.run, summary ?? selectedRunSummary.value)
   resultScoreRef.value = p.score_profile_id || '' // 冻结该历史 run 实际评分口径（下钻榜单用）
@@ -1390,7 +1391,7 @@ async function run() {
       let choice: 'load' | 'rerun' | 'abort' = 'abort'
       try {
         await ElMessageBox.confirm(
-          `已存在条件完全一致的历史记录（运行于 ${pre.duplicate.created_at.slice(0, 19)}）。\n可直接加载该结果，或重新回测覆盖它。`,
+          `已存在条件完全一致的历史记录（运行于 ${formatDateTimeSeconds(pre.duplicate.created_at)}）。\n可直接加载该结果，或重新回测覆盖它。`,
           '发现相同条件的历史回测',
           { confirmButtonText: '加载历史', cancelButtonText: '重新回测', distinguishCancelAndClose: true, type: 'info' },
         )

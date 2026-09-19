@@ -39,6 +39,7 @@ import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useTableSort } from '@/composables/useTableSort'
 import { getErrorMessage, isTimeoutError } from '@/utils/error'
+import { formatDateTimeSeconds } from '@/utils/dateTime'
 import type { AppRowAction } from '@/components/rowActions'
 
 const route = useRoute()
@@ -667,7 +668,7 @@ const menuPageTitle = useMenuPageTitle()
           </template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('detectedAt')" label="检出时间" prop="time" sortable="custom">
-          <template #default="{ row }">{{ (row.detected_at || '').slice(0, 19) }}</template>
+          <template #default="{ row }">{{ formatDateTimeSeconds(row.detected_at, '') }}</template>
         </AppTableColumn>
         <AppTableColumn label="操作" role="action" fixed="right">
           <template #default="{ row }">

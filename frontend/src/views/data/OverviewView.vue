@@ -617,7 +617,7 @@ const menuPageTitle = useMenuPageTitle()
         </div>
 
         <div class="scan-time" v-if="ov">
-          最近质检时间：<b>{{ ov.last_scan_at ? ov.last_scan_at.slice(0, 19) : '尚未质检' }}</b>
+          最近质检时间：<b>{{ formatDateTimeSeconds(ov.last_scan_at, '尚未质检') }}</b>
           <span class="hint">（“立即质检”或定时质检任务会刷新它）</span>
         </div>
       </div>
@@ -864,7 +864,7 @@ const menuPageTitle = useMenuPageTitle()
                   v-if="assetMode === 'duckdb' && assetColumnVisible('latestTime')"
                   label="最新业务日"
                 >
-                  <template #default="{ row }">{{ (row.latest_time || '—').slice(0, 19) }}</template>
+                  <template #default="{ row }">{{ formatDateTimeSeconds(row.latest_time) }}</template>
                 </AppTableColumn>
                 <AppTableColumn
                   v-if="assetMode === 'duckdb' && assetColumnVisible('freshness')"
@@ -1120,7 +1120,7 @@ const menuPageTitle = useMenuPageTitle()
                     </div>
                     <div class="board-update-card">
                       <span class="mono">{{ ov.board.last_update.table_name }}</span>
-                      <strong>{{ (ov.board.last_update.updated_at || '').slice(0, 19) }}</strong>
+                      <strong>{{ formatDateTimeSeconds(ov.board.last_update.updated_at, '') }}</strong>
                       <span v-if="ov.board.last_update.detail" class="hint">{{ ov.board.last_update.detail }}</span>
                     </div>
                   </div>

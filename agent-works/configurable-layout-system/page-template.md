@@ -386,7 +386,7 @@ npm run scaffold-page -- --pageKey my-dashboard --label "仪表盘" --archetype 
 npm run scaffold-page -- --pageKey my-form --label "表单页" --archetype form --route /my-form --view MyFormView
 ```
 
-结构：`main:form`。适合创建/编辑页；字段区内滚，提交按钮应固定在表单语义尾部或 footer，不写视口高度。
+结构：`main:form`。适合创建/编辑页；字段区内滚，提交按钮应固定在表单语义尾部或 footer，不写视口高度。保存型表单在回填完成或打开时记录实际提交负载基线，仅有实质变更时启用保存，提交函数同步拒绝无变更请求，成功后更新基线、失败时保留编辑现场。
 
 ### 9.5 detail
 

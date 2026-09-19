@@ -68,6 +68,7 @@ import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageEntry, getPageLayout, type SlotConfigMeta } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useFormChangeTracker } from '@/composables/useFormChangeTracker'
 import {
   relatedBoardFirstLoadContext,
   mergeRelatedBoardResults,
@@ -750,6 +751,13 @@ const editVisible = ref(false)
 const editForm = ref<{ name: string; group_date: string; description: string; color: string }>({
   name: '', group_date: '', description: '', color: DEFAULT_STOCK_GROUP_COLOR,
 })
+const groupSubmitPayload = () => ({
+  name: editForm.value.name.trim(),
+  group_date: editForm.value.group_date || undefined,
+  description: editForm.value.description,
+  color: editForm.value.color,
+})
+const { hasChanges: groupFormChanged, captureBaseline: captureGroupBaseline } = useFormChangeTracker(groupSubmitPayload)
 function openEdit() {
   if (!groupDetail.value) return
   editForm.value = {
@@ -758,19 +766,16 @@ function openEdit() {
     description: groupDetail.value.description || '',
     color: groupDetail.value.color || DEFAULT_STOCK_GROUP_COLOR,
   }
+  captureGroupBaseline()
   editVisible.value = true
 }
 async function doEdit() {
+  if (!groupFormChanged.value) return
   if (!editForm.value.name.trim()) {
     ElMessage.warning('请填写分组名')
     return
   }
-  await updateGroup(activeGid.value, {
-    name: editForm.value.name.trim(),
-    group_date: editForm.value.group_date || undefined,
-    description: editForm.value.description,
-    color: editForm.value.color,
-  })
+  await updateGroup(activeGid.value, groupSubmitPayload())
   ElMessage.success('已更新')
   editVisible.value = false
   await Promise.all([reloadGroups(), loadGroupDetail()])
@@ -1225,7 +1230,7 @@ const menuPageTitle = useMenuPageTitle()
       </el-form>
       <template #footer>
         <el-button @click="editVisible = false">取消</el-button>
-        <el-button v-permission="'stock-group:update'" type="primary" @click="doEdit">保存</el-button>
+        <el-button v-permission="'stock-group:update'" type="primary" :disabled="!groupFormChanged" @click="doEdit">保存</el-button>
       </template>
     </AppDialog>
 

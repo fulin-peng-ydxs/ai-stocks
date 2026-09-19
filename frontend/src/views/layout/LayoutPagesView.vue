@@ -54,6 +54,7 @@ import {
   type SlotConfigMeta,
 } from '@/layout'
 import { getErrorMessage } from '@/utils/error'
+import { useFormChangeTracker } from '@/composables/useFormChangeTracker'
 
 type TabKey = 'workbench' | 'import' | 'report'
 type ExportScope = 'page' | 'user' | 'effective'
@@ -294,6 +295,10 @@ function pageDraftValues(): LayoutOverlayValues {
   return values
 }
 
+const { hasChanges: pageConfigChanged, captureBaseline: capturePageConfigBaseline } = useFormChangeTracker(
+  () => ({ pageKey: selectedPageKey.value, values: pageDraftValues() }),
+)
+
 async function loadPageConfig(options: { clearCurrent?: boolean } = {}) {
   if (options.clearCurrent) pageConfig.value = null
   pageLoading.value = true
@@ -309,6 +314,7 @@ async function loadPageConfig(options: { clearCurrent?: boolean } = {}) {
     for (const [path, value] of Object.entries(stored)) {
       if (isComponentConfigPath(path)) pageDraft.values[path] = value
     }
+    capturePageConfigBaseline()
   } catch (error) {
     pageLoadError.value = getErrorMessage(error, '页面布局配置加载失败')
   } finally {
@@ -328,6 +334,7 @@ async function retryPageRegion() {
 }
 
 async function savePageConfig() {
+  if (!pageConfigChanged.value) return
   pageSaving.value = true
   try {
     const validation = await validateLayoutConfig({
@@ -343,6 +350,7 @@ async function savePageConfig() {
       config: { values: pageDraftValues() },
       layout: selectedPage.value.layout as unknown as Record<string, unknown>,
     })
+    capturePageConfigBaseline()
     ElMessage.success('页面默认布局已保存')
   } finally {
     pageSaving.value = false
@@ -702,7 +710,7 @@ const menuPageTitle = useMenuPageTitle()
                 </div>
 
                 <div class="button-row cc-save-row">
-                  <el-button v-permission="'layout:page-manage'" type="primary" :loading="pageSaving" @click="savePageConfig">保存页面配置</el-button>
+                  <el-button v-permission="'layout:page-manage'" type="primary" :loading="pageSaving" :disabled="!pageConfigChanged" @click="savePageConfig">保存页面配置</el-button>
                   <el-button v-permission="'layout:page-manage'" @click="resetPageConfig">恢复页面默认</el-button>
                 </div>
               </section>

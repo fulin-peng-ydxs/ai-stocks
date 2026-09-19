@@ -16,6 +16,7 @@ import type { PermNode } from './permissionTree'
 import { getPageLayout } from '@/layout'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useFormChangeTracker } from '@/composables/useFormChangeTracker'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import {
@@ -182,7 +183,7 @@ function resetGrants() {
 
 const saving = ref(false)
 async function save() {
-  if (!activeId.value || treeReadonly.value) return
+  if (!activeId.value || treeReadonly.value || !dirty.value) return
   saving.value = true
   try {
     const g = gatherGrants()
@@ -203,10 +204,18 @@ const roleForm = ref<{
   tenantAssignable: boolean
 }>({ code: '', name: '', description: '', tenantAssignable: false })
 const roleSaving = ref(false)
+const roleSubmitPayload = () => ({
+  code: roleForm.value.code.trim().toLowerCase(),
+  name: roleForm.value.name.trim(),
+  description: roleForm.value.description.trim() || null,
+  tenantAssignable: roleForm.value.tenantAssignable,
+})
+const { hasChanges: roleFormChanged, captureBaseline: captureRoleBaseline } = useFormChangeTracker(roleSubmitPayload)
 
 function openCreate() {
   dialogMode.value = 'create'
   roleForm.value = { code: '', name: '', description: '', tenantAssignable: false }
+  captureRoleBaseline()
   dialogVisible.value = true
 }
 function openEditRole() {
@@ -219,9 +228,11 @@ function openEditRole() {
     description: r.description ?? '',
     tenantAssignable: r.tenant_assignable,
   }
+  captureRoleBaseline()
   dialogVisible.value = true
 }
 async function saveRole() {
+  if (!roleFormChanged.value) return
   if (!roleForm.value.name.trim()) { ElMessage.warning('请填写角色名称'); return }
   if (dialogMode.value === 'create' && !roleForm.value.code.trim()) {
     ElMessage.warning('请填写角色码')
@@ -409,7 +420,7 @@ const menuPageTitle = useMenuPageTitle()
             <span class="dirty" :class="{ hidden: !dirty }">● 有未保存修改</span>
             <div class="page-head-actions">
               <el-button :disabled="!dirty || treeReadonly" @click="resetGrants">还原修改</el-button>
-              <el-button type="primary" :loading="saving" :disabled="treeReadonly" @click="save">保存并刷新权限</el-button>
+              <el-button type="primary" :loading="saving" :disabled="!dirty || treeReadonly" @click="save">保存并刷新权限</el-button>
             </div>
           </div>
         </div>
@@ -444,7 +455,7 @@ const menuPageTitle = useMenuPageTitle()
         </el-form>
         <template #footer>
           <el-button @click="dialogVisible = false">取消</el-button>
-          <el-button type="primary" :loading="roleSaving" @click="saveRole">保存</el-button>
+          <el-button type="primary" :loading="roleSaving" :disabled="!roleFormChanged" @click="saveRole">保存</el-button>
         </template>
       </AppDialog>
 

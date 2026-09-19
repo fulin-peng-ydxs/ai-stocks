@@ -313,10 +313,14 @@ describe('UserManageView 系统管理员保护', () => {
     expect(wrapper.text()).toContain('仅平台管理员可调整，本次保存会保留')
     const save = wrapper.findAll('.dialog-stub button')
       .find((button) => button.text() === '保存')!
+    expect(save.attributes('disabled')).toBeDefined()
+    ;(wrapper.vm as unknown as { form: { email: string } }).form.email = 'member@example.com'
+    await wrapper.vm.$nextTick()
+    expect(save.attributes('disabled')).toBeUndefined()
     await save.trigger('click')
     await flushPromises()
     expect(userApi.updateUser).toHaveBeenCalledWith('u-member', {
-      email: null,
+      email: 'member@example.com',
       roleIds: ['normal'],
       status: 'active',
     })

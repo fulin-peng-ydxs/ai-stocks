@@ -676,13 +676,75 @@ def test_board_schedulable_and_catalog(tmp_path):
 def test_source_status_includes_board_source(monkeypatch):
     """数据源健康列表把同花顺标为独立板块源，不混入行情主备源。"""
     from types import SimpleNamespace
-    from backend.services import data_sources
+
+    from backend.services import data_sources, ths_cookie_status
+
+    class _Repo:
+        def list(self, sources):
+            return {}
 
     monkeypatch.setattr(
         data_sources, "get_effective_settings",
         lambda: SimpleNamespace(datasource=SimpleNamespace(
             primary="akshare", fallback="baostock", socket_timeout_sec=3)),
     )
-    result = data_sources.source_status(do_ping=False)
+    monkeypatch.setattr(ths_cookie_status, "ths_cookie_status", lambda **_kwargs: {})
+    result = data_sources.source_status(do_ping=False, repo=_Repo())
     roles = {item["source"]: item["role"] for item in result["sources"]}
     assert roles == {"akshare": "primary", "baostock": "fallback", "ths_board": "board"}
+
+
+def test_source_status_persists_latest_probe_and_keeps_last_success(monkeypatch):
+    """失败测试更新最近状态和原因，但保留此前成功时间。"""
+    from types import SimpleNamespace
+
+    from backend.services import data_sources, ths_cookie_status
+
+    class _Repo:
+        def __init__(self):
+            self.records = {
+                "akshare": {
+                    "up": True,
+                    "last_test_at": "2026-09-19T18:00:00+08:00",
+                    "last_success_at": "2026-09-19T18:00:00+08:00",
+                    "failure_reason": None,
+                }
+            }
+
+        def list(self, sources):
+            return {name: self.records[name] for name in sources if name in self.records}
+
+        def record(self, source, *, up, tested_at, failure_reason):
+            previous = self.records.get(source, {})
+            self.records[source] = {
+                "up": up,
+                "last_test_at": tested_at.isoformat(timespec="seconds"),
+                "last_success_at": (
+                    tested_at.isoformat(timespec="seconds")
+                    if up else previous.get("last_success_at")
+                ),
+                "failure_reason": failure_reason,
+            }
+
+    repo = _Repo()
+    monkeypatch.setattr(
+        data_sources,
+        "get_effective_settings",
+        lambda: SimpleNamespace(datasource=SimpleNamespace(
+            primary="akshare", fallback="baostock", socket_timeout_sec=3)),
+    )
+    monkeypatch.setattr(ths_cookie_status, "ths_cookie_status", lambda **_kwargs: {})
+    results = iter([(False, "连接超时"), (True, None), (True, None)])
+    monkeypatch.setattr(data_sources, "_ping", lambda *_args: next(results))
+
+    tested = data_sources.source_status(do_ping=True, repo=repo)
+    akshare = next(item for item in tested["sources"] if item["source"] == "akshare")
+    assert akshare["up"] is False
+    assert akshare["failure_reason"] == "连接超时"
+    assert akshare["last_success_at"] == "2026-09-19T18:00:00+08:00"
+
+    loaded = data_sources.source_status(do_ping=False, repo=repo)
+    persisted = next(item for item in loaded["sources"] if item["source"] == "akshare")
+    assert persisted["up"] is False
+    assert persisted["last_test_at"] == akshare["last_test_at"]
+    assert persisted["last_success_at"] == "2026-09-19T18:00:00+08:00"

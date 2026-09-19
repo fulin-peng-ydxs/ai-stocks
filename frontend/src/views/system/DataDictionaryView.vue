@@ -28,6 +28,7 @@ import {
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useTableSort } from '@/composables/useTableSort'
+import { useFormChangeTracker } from '@/composables/useFormChangeTracker'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -104,6 +105,24 @@ const itemForm = reactive({
   sort: 100,
   remark: '',
 })
+const typeSubmitPayload = () => ({
+  code: typeForm.code.trim(),
+  name: typeForm.name.trim(),
+  enabled: typeForm.enabled,
+  sort: Number(typeForm.sort) || 100,
+  remark: typeForm.remark.trim() || null,
+})
+const itemSubmitPayload = () => ({
+  type_code: itemForm.type_code,
+  code: itemForm.code.trim(),
+  label: itemForm.label.trim(),
+  color: normalizeDictColor(itemForm.color) || null,
+  enabled: itemForm.enabled,
+  sort: Number(itemForm.sort) || 100,
+  remark: itemForm.remark.trim() || null,
+})
+const { hasChanges: typeFormChanged, captureBaseline: captureTypeBaseline } = useFormChangeTracker(typeSubmitPayload)
+const { hasChanges: itemFormChanged, captureBaseline: captureItemBaseline } = useFormChangeTracker(itemSubmitPayload)
 const drawerDirty = computed(() => layoutDirty.value)
 const canManageDict = computed(() => auth.isSystem)
 const activeType = computed(() => typeRows.value.find((row) => row.code === selectedTypeCode.value) ?? null)
@@ -261,6 +280,7 @@ function pageChanged(value: number) {
 function openCreateType() {
   typeDialogMode.value = 'create'
   resetTypeForm()
+  captureTypeBaseline()
   typeDialogOpen.value = true
 }
 
@@ -268,6 +288,7 @@ function openEditType(row = activeType.value) {
   if (!row) return
   typeDialogMode.value = 'edit'
   resetTypeForm(row)
+  captureTypeBaseline()
   typeDialogOpen.value = true
 }
 
@@ -275,12 +296,14 @@ function openCreateItem() {
   if (!selectedTypeCode.value) return
   itemDialogMode.value = 'create'
   resetItemForm()
+  captureItemBaseline()
   itemDialogOpen.value = true
 }
 
 function openEditItem(row: DictItem) {
   itemDialogMode.value = 'edit'
   resetItemForm(row)
+  captureItemBaseline()
   itemDialogOpen.value = true
 }
 
@@ -289,6 +312,7 @@ function validateCode(value: string): boolean {
 }
 
 async function saveType() {
+  if (!typeFormChanged.value) return
   const code = typeForm.code.trim()
   const name = typeForm.name.trim()
   if (!validateCode(code)) {
@@ -325,6 +349,7 @@ async function saveType() {
 }
 
 async function saveItem() {
+  if (!itemFormChanged.value) return
   const code = itemForm.code.trim()
   const label = itemForm.label.trim()
   if (!validateCode(code)) {
@@ -647,7 +672,7 @@ const menuPageTitle = useMenuPageTitle()
         </el-form>
         <template #footer>
           <el-button @click="typeDialogOpen = false">取消</el-button>
-          <el-button type="primary" :loading="savingType" @click="saveType">保存</el-button>
+          <el-button type="primary" :loading="savingType" :disabled="!typeFormChanged" @click="saveType">保存</el-button>
         </template>
       </AppDialog>
 
@@ -683,7 +708,7 @@ const menuPageTitle = useMenuPageTitle()
         </el-form>
         <template #footer>
           <el-button @click="itemDialogOpen = false">取消</el-button>
-          <el-button type="primary" :loading="savingItem" @click="saveItem">保存</el-button>
+          <el-button type="primary" :loading="savingItem" :disabled="!itemFormChanged" @click="saveItem">保存</el-button>
         </template>
       </AppDialog>
 

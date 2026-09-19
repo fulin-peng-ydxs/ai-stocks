@@ -23,6 +23,7 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useFormChangeTracker } from '@/composables/useFormChangeTracker'
 import { useAuthStore } from '@/stores/auth'
 import {
   listMenus, createMenu, updateMenu, deleteMenu, reorderMenus,
@@ -196,7 +197,7 @@ async function selectMenu(id: string) {
 const savingForm = ref(false)
 async function saveForm() {
   const m = activeMenu.value
-  if (!m || !canMenuUpdate.value) return
+  if (!m || !canMenuUpdate.value || !formDirty.value) return
   if (!form.value.title.trim()) { ElMessage.warning('请填写菜单标题'); return }
   savingForm.value = true
   try {
@@ -310,6 +311,17 @@ const editingId = ref<string>('')
 const resDraft = ref<{ code: string; name: string; type: string; apiMethod: string; apiPath: string }>(
   { code: '', name: '', type: 'api', apiMethod: 'GET', apiPath: '' },
 )
+const resourceSubmitPayload = () => ({
+  code: resDraft.value.code.trim(),
+  name: resDraft.value.name.trim(),
+  type: resDraft.value.type,
+  apiMethod: resDraft.value.type === 'api' ? resDraft.value.apiMethod : null,
+  apiPath: resDraft.value.apiPath.trim() || null,
+})
+const {
+  hasChanges: resourceFormChanged,
+  captureBaseline: captureResourceBaseline,
+} = useFormChangeTracker(resourceSubmitPayload)
 const resSaving = ref(false)
 const resourceRows = computed<Resource[]>(() => {
   if (editingId.value !== NEW_ROW) return resources.value
@@ -339,10 +351,12 @@ function bindingText(r: Resource): string {
 function startCreateRes() {
   if (!activeMenu.value) return
   resDraft.value = { code: '', name: '', type: 'api', apiMethod: 'GET', apiPath: '' }
+  captureResourceBaseline()
   editingId.value = NEW_ROW
 }
 function startEditRes(r: Resource) {
   resDraft.value = { code: r.code, name: r.name, type: r.type, apiMethod: r.api_method ?? 'GET', apiPath: r.api_path ?? '' }
+  captureResourceBaseline()
   editingId.value = r.id
 }
 function cancelRes() {
@@ -350,7 +364,7 @@ function cancelRes() {
 }
 async function saveResRow() {
   const m = activeMenu.value
-  if (!m) return
+  if (!m || !resourceFormChanged.value) return
   const f = resDraft.value
   if (!f.code.trim()) { ElMessage.warning('请填写功能码'); return }
   if (!f.name.trim()) { ElMessage.warning('请填写功能名称'); return }
@@ -388,6 +402,7 @@ function resourceEditRowActions(): AppRowAction[] {
       label: '保存',
       type: 'primary',
       loading: resSaving.value,
+      disabled: !resourceFormChanged.value,
       onClick: () => saveResRow(),
     },
     {

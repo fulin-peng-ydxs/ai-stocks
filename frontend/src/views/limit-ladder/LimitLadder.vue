@@ -6,6 +6,7 @@ import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppSortControl from '@/components/AppSortControl.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
+import { formatDateTimeSeconds } from '@/utils/dateTime'
 import PageSegmented from '@/components/PageSegmented.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import {
@@ -165,7 +166,7 @@ const staleDescription = computed(() => {
     const lastSuccess = props.result?.last_success_at || props.result?.snapshot?.computed_at
     return [
       'ST 状态刷新尚未完整发布，系统未把旧快照判定为有效结果',
-      lastSuccess ? `下方仅保留 ${lastSuccess} 生成的最后成功版本供核对` : '',
+      lastSuccess ? `下方仅保留 ${formatDateTimeSeconds(lastSuccess)} 生成的最后成功版本供核对` : '',
       props.result?.st_status_error || '',
     ].filter(Boolean).join(' · ')
   }
@@ -177,7 +178,7 @@ const staleDescription = computed(() => {
     || readableReason(props.result?.invalid_reason)
   return [
     status,
-    lastSuccess ? `当前展示 ${lastSuccess} 生成的最后成功版本` : '',
+    lastSuccess ? `当前展示 ${formatDateTimeSeconds(lastSuccess)} 生成的最后成功版本` : '',
     recalculating ? '计算完成后将自动刷新' : '',
     failure || '',
   ]

@@ -31,10 +31,12 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useTableSort } from '@/composables/useTableSort'
+import { useFormChangeTracker } from '@/composables/useFormChangeTracker'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
+import { formatDateTimeSeconds } from '@/utils/dateTime'
 import { compareScheduleFrequency } from '@/utils/scheduleFrequencySort'
 import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
 import StockIngestScopeFields from '@/components/data/StockIngestScopeFields.vue'
@@ -161,7 +163,7 @@ function taskTypeOptions() {
 }
 
 function fmtTime(value?: string | null): string {
-  const text = (value || '—').slice(0, 19)
+  const text = formatDateTimeSeconds(value)
   if (text === '—') return text
   return settings.timeMode === 'hm' ? text.slice(11, 16) : text
 }
@@ -191,6 +193,10 @@ const form = reactive({
 })
 const dlgTitle = computed(() => (editingId.value ? '编辑调度任务' : '新建调度任务'))
 const dependencyOptions = computed(() => jobs.value.filter((job) => job.id !== editingId.value))
+const {
+  hasChanges: scheduleFormChanged,
+  captureBaseline: captureScheduleBaseline,
+} = useFormChangeTracker(() => ({ ...form }))
 // 采集类任务（逐股拉取）才有并发概念；结果维护/质检无需并发。
 watch(() => form.task_type, (type, prev) => {
   if (type === 'audit_cleanup') form.trading_day_only = false
@@ -218,6 +224,7 @@ function openCreate() {
     retry_delay_unit: 'minute', max_retries: 1,
     trading_day_only: true, enabled: true,
   })
+  captureScheduleBaseline()
   dlg.value = true
 }
 
@@ -262,6 +269,7 @@ function openEdit(j: ScheduledJob) {
     max_retries: j.retry_config?.max_retries ?? 1,
     trading_day_only: j.trading_day_only, enabled: j.enabled,
   })
+  captureScheduleBaseline()
   dlg.value = true
 }
 
@@ -341,6 +349,7 @@ function buildPayload(): ScheduledJobInput | null {
 }
 
 async function save() {
+  if (!scheduleFormChanged.value) return
   const payload = buildPayload()
   if (!payload) return
   if (form.task_type === 'stock_ingest' && isHeavyStockIngestRecipe(form.stock.recipe)) {
@@ -749,7 +758,10 @@ const menuPageTitle = useMenuPageTitle()
           <AppTableColumn v-if="sourceColVisible('status')" label="状态" align="center">
             <template #default="{ row }">
               <span class="app-inline-info app-inline-info--nowrap">
-                <span class="src-status">
+                <span
+                  class="src-status"
+                  :title="row.up === false && row.failure_reason ? row.failure_reason : undefined"
+                >
                   <span class="dot" :class="row.up === true ? 'up' : row.up === false ? 'down' : 'unknown'" />
                   {{ row.up === true ? '连通' : row.up === false ? '不可达' : '未测试' }}
                 </span>
@@ -761,6 +773,9 @@ const menuPageTitle = useMenuPageTitle()
                 >登录态：{{ cookieCredentialLabel(row.credential) }}</el-tag>
               </span>
             </template>
+          </AppTableColumn>
+          <AppTableColumn v-if="sourceColVisible('lastTest')" label="最近测试">
+            <template #default="{ row }">{{ fmtTime(row.last_test_at) }}</template>
           </AppTableColumn>
           <AppTableColumn v-if="sourceColVisible('lastSuccess')" label="最近成功">
             <template #default="{ row }">{{ fmtTime(row.last_success_at) }}</template>
@@ -1074,6 +1089,7 @@ const menuPageTitle = useMenuPageTitle()
           data-testid="schedule-save"
           type="primary"
           :loading="saving"
+          :disabled="!scheduleFormChanged"
           @click="save"
         >保存调度</el-button>
       </template>

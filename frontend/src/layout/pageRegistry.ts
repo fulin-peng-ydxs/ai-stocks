@@ -955,6 +955,7 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'source', label: '数据源' },
           { key: 'role', label: '角色' },
           { key: 'status', label: '状态' },
+          { key: 'lastTest', label: '最近测试' },
           { key: 'lastSuccess', label: '最近成功' },
           { key: 'timeout', label: '超时' },
         ],

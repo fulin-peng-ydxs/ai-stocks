@@ -258,7 +258,7 @@ function normalizedPayload(): RuleDraftPayload {
 }
 
 async function saveDraft(showMessage = true): Promise<boolean> {
-  if (!detail.value || draftRevision.value === null) return false
+  if (!detail.value || draftRevision.value === null || !dirty.value) return false
   if (!validateSubtypeOwnership()) return false
   command.value = 'save'
   try {
@@ -359,8 +359,8 @@ function validateSubtypeOwnership(): boolean {
 }
 
 async function publish(): Promise<void> {
-  if (!detail.value || draftRevision.value === null || !validateForPublish()) return
-  if (dirty.value && !(await saveDraft(false))) return
+  if (!detail.value || draftRevision.value === null || !dirty.value || !validateForPublish()) return
+  if (!(await saveDraft(false))) return
   command.value = 'publish'
   try {
     const result = await publishTradeDisciplineRule(detail.value.id, draftRevision.value!)
@@ -727,8 +727,8 @@ defineExpose({
         <span v-if="dirty" class="dirty-copy">有未保存修改</span>
         <el-button v-permission="'trade-discipline:rule-manage'" :disabled="!dirty" @click="restoreBaseline">还原修改</el-button>
         <el-button v-if="hasSavedDraft && !isUnpublished" v-permission="'trade-discipline:rule-manage'" type="danger" plain :loading="command === 'discard'" @click="discardSavedDraft">放弃草稿</el-button>
-        <el-button v-permission="'trade-discipline:rule-manage'" :loading="command === 'save'" @click="saveDraft()">保存草稿</el-button>
-        <el-button v-permission="'trade-discipline:rule-manage'" type="primary" :loading="command === 'publish'" @click="publish">保存并启用</el-button>
+        <el-button v-permission="'trade-discipline:rule-manage'" :disabled="!dirty" :loading="command === 'save'" @click="saveDraft()">保存草稿</el-button>
+        <el-button v-permission="'trade-discipline:rule-manage'" type="primary" :disabled="!dirty" :loading="command === 'publish'" @click="publish">保存并启用</el-button>
       </footer>
 
     </template>

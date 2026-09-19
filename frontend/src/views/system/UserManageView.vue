@@ -27,6 +27,7 @@ import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useTableSort } from '@/composables/useTableSort'
+import { useFormChangeTracker } from '@/composables/useFormChangeTracker'
 import { usePublicDictItems } from '@/composables/usePublicDictItems'
 import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import { useAuthStore } from '@/stores/auth'
@@ -252,6 +253,24 @@ const form = ref<{
 }>({ account: '', email: '', roleIds: [], status: 'active', tenantId: '', password: '' })
 
 const isEdit = computed(() => editing.value !== null)
+const userSubmitPayload = () => isEdit.value
+  ? {
+      email: form.value.email.trim() || null,
+      roleIds: [...form.value.roleIds].sort(),
+      status: form.value.status,
+    }
+  : {
+      account: form.value.account.trim(),
+      password: form.value.password,
+      email: form.value.email.trim() || null,
+      roleIds: [...form.value.roleIds].sort(),
+      status: form.value.status,
+      tenantId: isSystem.value ? (form.value.tenantId || null) : null,
+    }
+const {
+  hasChanges: userFormChanged,
+  captureBaseline: captureUserBaseline,
+} = useFormChangeTracker(userSubmitPayload)
 const editingSelf = computed(() => editing.value ? isSelfUser(editing.value) : false)
 const editingOwnSystemRole = computed(
   () => editingSelf.value && !!editing.value?.roles?.includes('system'),
@@ -275,6 +294,7 @@ function openCreate() {
     account: '', email: '', roleIds: [], status: 'active',
     tenantId: isSystem.value ? (auth.tenantId || '') : '', password: '',
   }
+  captureUserBaseline()
   dialogVisible.value = true
 }
 function openEdit(row: AdminUser) {
@@ -289,9 +309,11 @@ function openEdit(row: AdminUser) {
     tenantId: row.tenant_id,
     password: '',
   }
+  captureUserBaseline()
   dialogVisible.value = true
 }
 async function save() {
+  if (!userFormChanged.value) return
   if (!form.value.roleIds.length && !protectedRoleNames.value.length) {
     ElMessage.warning('请至少选择一个角色')
     return
@@ -299,11 +321,7 @@ async function save() {
   saving.value = true
   try {
     if (isEdit.value && editing.value) {
-      await updateUser(editing.value.id, {
-        email: form.value.email.trim() || null,
-        roleIds: form.value.roleIds,
-        status: form.value.status,
-      })
+      await updateUser(editing.value.id, userSubmitPayload())
       ElMessage.success('已保存')
     } else {
       if (!form.value.account.trim()) { ElMessage.warning('请填写账号'); return }
@@ -640,7 +658,7 @@ const menuPageTitle = useMenuPageTitle()
         </el-form>
         <template #footer>
           <el-button @click="dialogVisible = false">取消</el-button>
-          <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+          <el-button type="primary" :loading="saving" :disabled="!userFormChanged" @click="save">保存</el-button>
         </template>
       </AppDialog>
 

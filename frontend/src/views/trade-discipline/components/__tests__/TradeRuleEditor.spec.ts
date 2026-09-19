@@ -184,6 +184,22 @@ describe('TradeRuleEditor', () => {
     expect(api.get).toHaveBeenCalledTimes(2)
   })
 
+  it('内容未变更时保存草稿和保存并启用均禁用，提交函数也不调用接口', async () => {
+    const wrapper = await mountEditor()
+    const saveDraftButton = wrapper.findAll('.rule-editor__footer .el-button')
+      .find((button) => button.text() === '保存草稿')!
+    const publishButton = wrapper.findAll('.rule-editor__footer .el-button')
+      .find((button) => button.text() === '保存并启用')!
+
+    expect(saveDraftButton.attributes('disabled')).toBeDefined()
+    expect(publishButton.attributes('disabled')).toBeDefined()
+    await (wrapper.vm as any).saveDraft()
+    await publishButton.trigger('click')
+
+    expect(api.save).not.toHaveBeenCalled()
+    expect(api.publish).not.toHaveBeenCalled()
+  })
+
   it('必填标记覆盖发布校验字段，明细缺失时不保存也不发布', async () => {
     const wrapper = await mountEditor()
     const baseRequiredLabels = wrapper.findAll('.el-form-item.is-required .el-form-item__label')
@@ -374,9 +390,10 @@ describe('TradeRuleEditor', () => {
     const wrapper = await mountEditor()
 
     expect(wrapper.text()).toContain('剩余 0.00')
+    await field(wrapper, '规则名称').get('input').setValue('小额精度验证')
     await wrapper.get('.rule-editor__footer .el-button:last-child').trigger('click')
     await flushPromises()
-    expect(api.publish).toHaveBeenCalledWith('rule-1', 2)
+    expect(api.publish).toHaveBeenCalledWith('rule-1', 3)
   })
 
   it('从接口展示到保存始终保留 NUMERIC(20,2) 大额十进制字符串', async () => {

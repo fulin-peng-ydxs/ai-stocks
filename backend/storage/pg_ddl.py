@@ -942,6 +942,17 @@ CREATE TABLE IF NOT EXISTS app_config (
 );
 """
 
+DDL_DATA_SOURCE_HEALTH = """
+CREATE TABLE IF NOT EXISTS data_source_health (
+    source          TEXT PRIMARY KEY,
+    is_up           BOOLEAN NOT NULL,
+    last_test_at    TIMESTAMPTZ NOT NULL,
+    last_success_at TIMESTAMPTZ,
+    failure_reason  TEXT,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+"""
+
 # ── 任务/调度运行态（从 DuckDB 解耦，行情库只保留领域数据）──────────────
 DDL_STORAGE_MIGRATION = """
 CREATE TABLE IF NOT EXISTS storage_migration (
@@ -1248,6 +1259,7 @@ _OTHER_TABLES: dict[str, str] = {
     "sys_tenant": DDL_SYS_TENANT,
     "sys_user": DDL_SYS_USER,
     "app_config": DDL_APP_CONFIG,
+    "data_source_health": DDL_DATA_SOURCE_HEALTH,
     "storage_migration": DDL_STORAGE_MIGRATION,
     "async_task": DDL_ASYNC_TASK_RUNTIME,
     "task_log": DDL_TASK_LOG_RUNTIME,

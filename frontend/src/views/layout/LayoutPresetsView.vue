@@ -31,6 +31,7 @@ import {
   type ThemeMode,
 } from '@/layout'
 import { getErrorMessage } from '@/utils/error'
+import { useFormChangeTracker } from '@/composables/useFormChangeTracker'
 import type { AppRowAction } from '@/components/rowActions'
 
 // 可编辑 token 清单（颜色按白天/夜间各一套；圆角明暗共用）。
@@ -116,6 +117,19 @@ function presetFormValues(): LayoutOverlayValues {
   return out
 }
 
+const presetSubmitPayload = () => ({
+  key: presetForm.key.trim(),
+  name: presetForm.name.trim(),
+  description: presetForm.description,
+  enabled: presetForm.enabled,
+  is_builtin: presetForm.is_builtin,
+  config: { values: presetFormValues() },
+})
+const {
+  hasChanges: presetFormChanged,
+  captureBaseline: capturePresetBaseline,
+} = useFormChangeTracker(presetSubmitPayload)
+
 async function reloadPresets() {
   loading.value = true
   loadError.value = ''
@@ -139,15 +153,18 @@ function openNewPreset() {
   presetToForm()
   presetForm.key = `custom-${Date.now().toString(36)}`
   presetForm.name = '自定义预设'
+  capturePresetBaseline()
   presetDialog.value = true
 }
 
 function openEditPreset(row: LayoutPresetRecord) {
   presetToForm(row)
+  capturePresetBaseline()
   presetDialog.value = true
 }
 
 async function submitPreset() {
+  if (!presetFormChanged.value) return
   if (!presetForm.key.trim() || !presetForm.name.trim()) {
     ElMessage.warning('请填写预设标识和名称')
     return
@@ -163,14 +180,7 @@ async function submitPreset() {
   const values = presetFormValues()
   presetSaving.value = true
   try {
-    const saved = await saveLayoutPreset({
-      key: presetForm.key,
-      name: presetForm.name,
-      description: presetForm.description,
-      enabled: presetForm.enabled,
-      is_builtin: presetForm.is_builtin,
-      config: { values },
-    })
+    const saved = await saveLayoutPreset({ ...presetSubmitPayload(), config: { values } })
     selectedPresetKey.value = saved.key
     presetDialog.value = false
     ElMessage.success('视觉预设已保存')
@@ -413,7 +423,7 @@ const menuPageTitle = useMenuPageTitle()
         </el-form>
         <template #footer>
           <el-button @click="presetDialog = false">取消</el-button>
-          <el-button v-permission="'layout:preset-manage'" type="primary" :loading="presetSaving" @click="submitPreset">保存</el-button>
+          <el-button v-permission="'layout:preset-manage'" type="primary" :loading="presetSaving" :disabled="!presetFormChanged" @click="submitPreset">保存</el-button>
         </template>
       </AppDetailDrawer>
 

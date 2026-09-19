@@ -54,7 +54,9 @@ import { downloadCsv } from '@/utils/csv'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useFormChangeTracker } from '@/composables/useFormChangeTracker'
 import { getErrorMessage } from '@/utils/error'
+import { formatDateTimeMinutes } from '@/utils/dateTime'
 import { confirmProfileVisibilityReduction } from '@/utils/assetVisibility'
 import type { AppRowAction } from '@/components/rowActions'
 
@@ -293,6 +295,14 @@ const curVersion = ref<number | null>(null)
 const editId = ref('')
 const editName = ref('')
 const isNew = ref(false)
+const screenSubmitPayload = () => ({
+  name: editName.value.trim(),
+  expression: buildAst(),
+})
+const {
+  hasChanges: screenFormChanged,
+  captureBaseline: captureScreenBaseline,
+} = useFormChangeTracker(screenSubmitPayload)
 const auth = useAuthStore()
 const visibilitySaving = ref(false)
 const profileReadonly = computed(() => !!loadedProfile.value?.readonly)
@@ -349,6 +359,7 @@ async function selectProfile(profileKey: string) {
     }
     profileLastAppliedRef = curRef.value
     isNew.value = false
+    captureScreenBaseline()
   } catch (error) {
     if (seq !== profileDetailSeq) return
     // 失败回滚到最后成功载入的项，编辑器保留旧内容（避免「选中新方案、保存到旧方案」）
@@ -396,12 +407,14 @@ function enterNewSession() {
   profileDetailAttempt = ''
   profileError.value = ''
   clearScreenResult()
+  captureScreenBaseline()
 }
 // 「新建方案」按钮：完全清空（身份 + 条件），从空白开始
 function newProfile() {
   enterNewSession()
   rows.value = []
   complexAst.value = null
+  captureScreenBaseline()
 }
 
 // ── 运行 / 结果 ──
@@ -481,6 +494,7 @@ const relatedBoardFirstLoad = useRelatedBoardFirstLoad(() => runScreenResults(tr
 // ── 保存（实质变更才版本+1；载入的自定义方案可覆盖更新；id 为空由后端自动生成）──
 const saving = ref(false)
 async function save() {
+  if (!screenFormChanged.value) return
   if (profileReadonly.value) {
     ElMessage.warning('公开方案为只读，请先复制为自己的方案')
     return
@@ -500,6 +514,7 @@ async function save() {
     isNew.value = false
     editId.value = r.id
     curId.value = r.id
+    captureScreenBaseline()
     // 先落到新标识再刷新列表：避免 reload→ready 在 curRef 为空时自动选中列表首项覆盖新建态
     curRef.value = r.id
     const list = await profileSelectRef.value?.reload()
@@ -723,7 +738,7 @@ const menuPageTitle = useMenuPageTitle()
               @copy="copyCurrentProfile"
             />
             <div class="spacer" />
-            <el-button v-permission="'screen-profile:save'" :disabled="profileReadonly" :loading="saving" type="primary" @click="save">保存</el-button>
+            <el-button v-permission="'screen-profile:save'" :disabled="profileReadonly || !screenFormChanged" :loading="saving" type="primary" @click="save">保存</el-button>
             <el-button v-permission="'screen-profile:delete'" v-if="curId && !isNew && !profileReadonly" type="danger" plain @click="remove">删除</el-button>
           </div>
 
@@ -934,7 +949,7 @@ const menuPageTitle = useMenuPageTitle()
       <div v-for="v in versions" :key="v.version" class="ver-item">
         <div class="ver-head">
           <b>v{{ v.version }}</b>
-          <span class="hint">{{ v.saved_at?.slice(0, 16) }}</span>
+          <span class="hint">{{ formatDateTimeMinutes(v.saved_at) }}</span>
           <AppRowActions :actions="versionRowActions(v)" :inline-limit="1" />
         </div>
         <pre class="ast">{{ JSON.stringify(v.expression, null, 2) }}</pre>

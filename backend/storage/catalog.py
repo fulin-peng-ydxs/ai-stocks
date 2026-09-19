@@ -599,6 +599,7 @@ _PG_META_GROUPS: tuple[tuple[str, str, dict[str, str]], ...] = (
         "user_preference": "用户偏好",
     }),
     ("任务与调度", "runtime_global", {
+        "data_source_health": "数据源健康状态",
         "storage_migration": "存储迁移状态",
         "async_task": "异步任务",
         "task_log": "任务日志",
@@ -660,6 +661,7 @@ _PG_TABLE_PURPOSES: dict[str, str] = {
     "layout_page_config": "保存页面级布局和组件配置。",
     "layout_field_policy": "定义组件配置字段允许写入的配置层级。",
     "app_config": "保存平台级运行配置及迁移标记。",
+    "data_source_health": "保存各外部数据源最近一次联通测试状态、时间、失败原因和最近成功时间。",
     "dict_type": "定义平台数据字典类型。",
     "dict_item": "保存数据字典类型下的可维护选项。",
     "layout_user_config": "保存用户在单页面上的个性化布局覆盖。",
@@ -695,6 +697,10 @@ _COMMON_FIELD_META: dict[str, tuple[str, str]] = {
     "ignore_scope": ("忽略范围", "仅本次 occurrence / 整体 object"),
     "ignore_active": ("忽略是否生效", "当前忽略规则是否仍在生效"),
     "source": ("数据来源", "产生该记录的数据来源"),
+    "is_up": ("是否连通", "最近一次联通测试是否成功"),
+    "last_test_at": ("最近测试时间", "最近一次执行联通测试的时间"),
+    "last_success_at": ("最近成功时间", "最近一次联通测试成功的时间"),
+    "failure_reason": ("失败原因", "最近一次联通测试失败时的错误摘要"),
     "member_history_start_date": ("成员历史起点", "板块成员历史可用起始日"),
     "last_seen_at": ("最近观测时间", "最近一次从数据源观测到该对象的时间"),
     "net_ratio": ("净流入占比", "净流入相对成交规模的比例"),
@@ -880,7 +886,9 @@ def _table_asset_meta(
         quality=quality,
     ), []
 
-_RUNTIME_TABLES = {"async_task", "task_log", "scheduled_job", "scheduled_trigger_event"}
+_RUNTIME_TABLES = {
+    "data_source_health", "async_task", "task_log", "scheduled_job", "scheduled_trigger_event",
+}
 _LAYOUT_PLATFORM_TABLES = {
     "app_config",
     "layout_preset",

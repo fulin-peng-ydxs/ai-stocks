@@ -382,7 +382,9 @@ export interface SourceStatus {
   source: string
   role: 'primary' | 'fallback' | 'board'
   up: boolean | null
+  last_test_at: string | null
   last_success_at: string | null
+  failure_reason: string | null
   timeout_sec: number
   credential?: CredentialStatus
 }

@@ -28,6 +28,7 @@ import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useTableSort } from '@/composables/useTableSort'
+import { useFormChangeTracker } from '@/composables/useFormChangeTracker'
 import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import { usePublicDictItems } from '@/composables/usePublicDictItems'
 import { useAuthStore } from '@/stores/auth'
@@ -237,6 +238,19 @@ const isEdit = computed(() => editing.value !== null)
 const form = ref<{ name: string; status: string; adminUserId: string }>(
   { name: '', status: 'active', adminUserId: '' })
 const saving = ref(false)
+const tenantSubmitPayload = () => isEdit.value
+  ? {
+      name: form.value.name.trim(),
+      adminUserId: form.value.adminUserId || null,
+    }
+  : {
+      name: form.value.name.trim(),
+      status: form.value.status,
+    }
+const {
+  hasChanges: tenantFormChanged,
+  captureBaseline: captureTenantBaseline,
+} = useFormChangeTracker(tenantSubmitPayload)
 // 编辑时该租户用户（供「指定管理员」下拉）
 const tenantUsers = ref<AdminUser[]>([])
 const usersLoading = ref(false)
@@ -245,11 +259,13 @@ function openCreate() {
   editing.value = null
   form.value = { name: '', status: 'active', adminUserId: '' }
   tenantUsers.value = []
+  captureTenantBaseline()
   dialogVisible.value = true
 }
 async function openEdit(row: Tenant) {
   editing.value = row
   form.value = { name: row.name, status: row.status, adminUserId: row.admin_user_id ?? '' }
+  captureTenantBaseline()
   dialogVisible.value = true
   // 拉该租户用户填充「指定管理员」下拉（system 可跨租户按 tenant 过滤）
   usersLoading.value = true
@@ -258,17 +274,15 @@ async function openEdit(row: Tenant) {
   } catch { tenantUsers.value = [] } finally { usersLoading.value = false }
 }
 async function save() {
+  if (!tenantFormChanged.value) return
   if (!form.value.name.trim()) { ElMessage.warning('请填写租户名称'); return }
   saving.value = true
   try {
     if (isEdit.value) {
-      await updateTenant(editing.value!.id, {
-        name: form.value.name.trim(),
-        adminUserId: form.value.adminUserId || null,
-      })
+      await updateTenant(editing.value!.id, tenantSubmitPayload())
       ElMessage.success('已保存')
     } else {
-      await createTenant({ name: form.value.name.trim(), status: form.value.status })
+      await createTenant(tenantSubmitPayload())
       ElMessage.success('已创建')
     }
     dialogVisible.value = false
@@ -418,7 +432,7 @@ const menuPageTitle = useMenuPageTitle()
         </el-form>
         <template #footer>
           <el-button @click="dialogVisible = false">取消</el-button>
-          <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+          <el-button type="primary" :loading="saving" :disabled="!tenantFormChanged" @click="save">保存</el-button>
         </template>
       </AppDialog>
 

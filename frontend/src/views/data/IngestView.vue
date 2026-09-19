@@ -39,6 +39,7 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
+import { formatDateTimeSeconds } from '@/utils/dateTime'
 import type { AppRowAction } from '@/components/rowActions'
 import {
   STOCK_INGEST_RECIPE_LABEL,
@@ -950,7 +951,7 @@ const menuPageTitle = useMenuPageTitle()
             </AppTableColumn>
             <AppTableColumn label="信息" prop="message" />
             <AppTableColumn label="截止时间" prop="time" sortable="custom">
-              <template #default="{ row }">{{ (row.updated_at || '').slice(0, 19) }}</template>
+              <template #default="{ row }">{{ formatDateTimeSeconds(row.updated_at, '') }}</template>
             </AppTableColumn>
             <AppTableColumn label="总耗时">
               <template #default="{ row }">{{ taskDuration(row) }}</template>
@@ -1033,7 +1034,7 @@ const menuPageTitle = useMenuPageTitle()
               </template>
             </AppTableColumn>
             <AppTableColumn label="时间" prop="time" sortable="custom">
-              <template #default="{ row }">{{ (row.updated_at || '').slice(0, 19) }}</template>
+              <template #default="{ row }">{{ formatDateTimeSeconds(row.updated_at, '') }}</template>
             </AppTableColumn>
           </AppDataTable>
         </div>

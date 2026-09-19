@@ -10,10 +10,11 @@
 - 主源 **AKShare**（新浪日线/指数/日历/股票列表 + 东财单只估值 `stock_value_em`）、备源 **baostock**（退市股历史、复权因子兜底）。能力按 `capabilities` 声明，编排层 `IngestionService._source_for(capability)` 按能力选源（主源支持→主源，否则备源），不硬编码"谁负责什么"。
 - 个股分时是独立的按需读链路：`intraday_1m` 由新浪近期 1 分钟窗口提供、东财近 5 日兜底，经 Redis 12 小时窗口缓存供日 K 下钻；不进入 `IngestionService`、不落库、不参与质检与回测。详见 [stock-intraday.md](stock-intraday.md)。
 - 统一封装**限流**（`rate_limited`，按生效配置 `rate_limit_per_sec`；已被外部锁全进程串行的路径传 `start_to_start=True`，按调用起始记时，使配置速率不再被请求往返二次拉低）、**重试**（`with_retry`，指数退避）、**超时**（模块级注入 requests 默认超时）、**挂起看门狗**（baostock 源端丢弃连接时其客户端会空转且不抛错，超阈值即断开会话使调用按失败重试）、**兜底**（主源取空→备源）、**溯源**（`data_source_provenance` 记录每段数据来自哪个源）。Baostock 同时提供与日线日期对齐的历史 `isST`；完整闭环见 [st-status.md](st-status.md)。
+- 调度页“测试连通”按数据源写入 PostgreSQL `data_source_health`：保存最近测试状态、测试时间、失败原因与最近成功时间。普通页面刷新只读取该运行态，不重复访问外部源；失败测试保留上一次成功时间，页面刷新和后端重启都不得清空记录。
 
 ### 双库数据资产目录（`backend/storage/catalog.py`）
 
-- `GET /api/data/catalog` 面向系统管理员自动发现 DuckDB `main` 与 PostgreSQL `public` 的物理表和字段，并在服务层合并；两库之间不执行跨库 JOIN。当前迁移完成态包含 87 张当前事实表（DuckDB 28、PostgreSQL 59）和 28 张默认隐藏的 DuckDB 迁移旧表。
+- `GET /api/data/catalog` 面向系统管理员自动发现 DuckDB `main` 与 PostgreSQL `public` 的物理表和字段，并在服务层合并；两库之间不执行跨库 JOIN。当前迁移完成态包含 88 张当前事实表（DuckDB 28、PostgreSQL 60）和 28 张默认隐藏的 DuckDB 迁移旧表。
 - 系统目录提供原生类型、可空性、默认值、主键、外键和数据库列注释；代码维护中文名、用途、业务分类、归属范围、数据源、关系、鲜活度策略与质量策略。字段中文名和说明按“表级显式注解 → 数据库列注释/公共词典 → 命名规则生成”解析，并返回来源；任何未识别字段保留为 `fallback`，由目录契约阻断。未登记的新物理表仍以 `unregistered` 展示，不能因缺注解而消失。
 - 列表行数使用数据库系统目录的快速估算；只有明确指定 `database + table` 时才允许单表 `COUNT(*)` 精确统计。表名先通过发现结果白名单校验；DuckDB 只报告数据库文件总大小，PostgreSQL 另报告表及索引空间。
 - 生命周期为 `active | legacy_readonly | unregistered`。任务运行态复用 `task_runtime_backend()`，平台布局配置复用配置迁移路由函数；受控回滚后事实源和旧表状态随真实 marker 自动切换，不维护第二套路由判断。

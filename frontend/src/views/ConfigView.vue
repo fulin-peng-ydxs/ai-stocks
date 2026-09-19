@@ -55,12 +55,14 @@ import IndicatorParamSchemaEditor from '@/components/indicator/IndicatorParamSch
 import IndicatorSelect from '@/components/indicator/IndicatorSelect.vue'
 import StrategyItemEnabledSwitch from '@/components/strategy/StrategyItemEnabledSwitch.vue'
 import { getErrorMessage } from '@/utils/error'
+import { formatDateTimeMinutes } from '@/utils/dateTime'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useTableSort } from '@/composables/useTableSort'
+import { useFormChangeTracker } from '@/composables/useFormChangeTracker'
 import { getSettingsView, resetSettings, saveSettings, type MailStatus, type SettingGroup } from '@/api/data'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
@@ -468,6 +470,20 @@ const defForm = ref<{
   key: string; name_cn: string; dtype: 'bool' | 'number'; expression: string
   category: string; desc: string; params: IndicatorParam[]; categories: string[]
 }>({ key: '', name_cn: '', dtype: 'number', expression: '', category: '自定义', desc: '', params: [], categories: [] })
+const indicatorSubmitPayload = () => ({
+  key: defForm.value.key.trim(),
+  name_cn: defForm.value.name_cn.trim(),
+  dtype: defForm.value.dtype,
+  expression: defForm.value.expression.trim(),
+  params: defForm.value.params,
+  category: defForm.value.category,
+  desc: defForm.value.desc.trim(),
+  categories: [...defForm.value.categories].sort(),
+})
+const {
+  hasChanges: indicatorFormChanged,
+  captureBaseline: captureIndicatorBaseline,
+} = useFormChangeTracker(indicatorSubmitPayload)
 
 const semanticLocked = computed(() => !!editingKey.value && (
   defReferencesLoading.value || defReferencesError.value || !!defReferences.value?.count
@@ -488,6 +504,7 @@ function openNewDef() {
   defPreviewDate.value = ''
   defForm.value = { key: '', name_cn: '', dtype: 'number', expression: '', category: '自定义', desc: '', params: [], categories: [] }
   resetPreviewValues()
+  captureIndicatorBaseline()
   defDrawer.value = true
 }
 async function openEditDef(row: IndicatorDef) {
@@ -504,6 +521,7 @@ async function openEditDef(row: IndicatorDef) {
     categories: [...row.categories],
   }
   resetPreviewValues()
+  captureIndicatorBaseline()
   defDrawer.value = true
   try {
     defReferences.value = await getIndicatorReferences(row.key)
@@ -546,6 +564,7 @@ async function runDefPreview() {
   }
 }
 async function submitNewDef() {
+  if (!indicatorFormChanged.value) return
   const f = defForm.value
   if (!f.key || !f.name_cn || !f.expression) {
     ElMessage.warning('请填写标识、名称、表达式')
@@ -597,6 +616,14 @@ const visibilitySaving = ref(false)
 const isNew = ref(false)
 const profileReadonly = ref(false)
 const profileVisibility = ref<'private' | 'tenant' | 'public'>('private')
+const scoreSubmitPayload = () => ({
+  name: editName.value.trim(),
+  items: items.value,
+})
+const {
+  hasChanges: scoreFormChanged,
+  captureBaseline: captureScoreBaseline,
+} = useFormChangeTracker(scoreSubmitPayload)
 const canPublishTenant = computed(() =>
   hasPermission(auth.role, auth.permissions, 'score-profile:publish-tenant'),
 )
@@ -657,6 +684,7 @@ async function selectProfile(profileKey: string) {
     profileVisibility.value = p.visibility || 'private'
     isNew.value = false
     scoreLastAppliedRef = curRef.value
+    captureScoreBaseline()
   } catch (e) {
     if (seq !== scoreDetailSeq) return
     // 失败回滚到最后成功载入的项，编辑器保留旧内容，避免出现「选中新方案、保存到旧方案」
@@ -727,6 +755,7 @@ function newProfile() {
   scoreDetailAttempt = ''
   profileDetailError.value = ''
   clearScoreRunResult()
+  captureScoreBaseline()
 }
 
 // 新增评分项（默认 bool / 平均分配权重）
@@ -826,6 +855,7 @@ function removeBand(item: ScoreItem, i: number) {
 }
 
 async function save() {
+  if (!scoreFormChanged.value) return
   if (profileReadonly.value) {
     ElMessage.warning('公开方案为只读，请先复制为自己的方案')
     return
@@ -854,6 +884,7 @@ async function save() {
     isNew.value = false
     editId.value = r.id
     curId.value = r.id
+    captureScoreBaseline()
     // 组件为列表唯一事实源（P2-1）：只经组件 reload 拉一次 mine 并回写 profiles.value（内部已 emit ready），
     // 不再并行调 loadProfiles() 直连 API（避免 save 后产生双份 source=mine 请求）。
     const list = await scoreSelectRef.value?.reload()
@@ -995,6 +1026,20 @@ const buyConds = ref<TradeCond[]>([])
 const sellConds = ref<TradeCond[]>([])
 const backstop = ref<{ tp: number | null; sl: number | null; hold: number | null }>({ tp: null, sl: null, hold: null })
 const tSaving = ref(false)
+const tradeSubmitPayload = () => ({
+  name: tEditName.value.trim(),
+  buy_tree: toTree(buyLogic.value, buyConds.value),
+  sell_tree: toTree(sellLogic.value, sellConds.value),
+  backstop: {
+    take_profit: backstop.value.tp != null ? backstop.value.tp / 100 : null,
+    stop_loss: backstop.value.sl != null ? backstop.value.sl / 100 : null,
+    max_hold_days: backstop.value.hold ?? null,
+  },
+})
+const {
+  hasChanges: tradeFormChanged,
+  captureBaseline: captureTradeBaseline,
+} = useFormChangeTracker(tradeSubmitPayload)
 const NUM_CMP = [
   { v: '>=', t: '≥' }, { v: '<=', t: '≤' }, { v: '>', t: '>' },
   { v: '<', t: '<' }, { v: 'between', t: '区间' },
@@ -1115,6 +1160,7 @@ async function selectTradeProfile(pid: string) {
       hold: p.backstop?.max_hold_days ?? null,
     }
     tradeLastAppliedRef = tCurRef.value
+    captureTradeBaseline()
   } catch (e) {
     if (seq !== tradeDetailSeq) return
     // 失败回滚到最后成功载入的项，编辑器保留旧内容
@@ -1143,6 +1189,7 @@ function newTradeProfile() {
   tradeDetailAttempt = ''
   tDetailError.value = ''
   clearTradePreview()
+  captureTradeBaseline()
 }
 
 // ── 买卖方案历史版本（回看/载入；载入仅写入编辑器，保存后才生成新版本）──
@@ -1177,6 +1224,7 @@ function tradeVersionRowActions(v: TradeProfileVersion): AppRowAction[] {
   ]
 }
 async function saveTrade() {
+  if (!tradeFormChanged.value) return
   if (tReadonly.value) { ElMessage.warning('公开方案为只读，请先复制为自己的方案'); return }
   if (!tEditName.value) { ElMessage.warning('请填写方案名称'); return }
   if (!buyConds.value.some(itemEnabled)) { ElMessage.warning('请至少启用一个买入条件'); return }
@@ -1199,6 +1247,7 @@ async function saveTrade() {
     tIsNew.value = false
     tEditId.value = r.id
     tCurId.value = r.id
+    captureTradeBaseline()
     // 组件为列表唯一事实源（P2-1）：只经组件 reload 拉一次 mine 并回写 tProfiles.value（内部已 emit ready），
     // 不再并行调 loadTradeProfiles() 直连 API。
     const list = await tradeSelectRef.value?.reload()
@@ -1572,7 +1621,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               />
               <span class="wsum" :class="{ bad: weightSum !== 100 }">权重合计 {{ weightSum }}%</span>
               <div class="spacer" />
-              <el-button v-permission="'score-profile:save'" :disabled="profileReadonly" :loading="saving" type="primary" @click="save">保存</el-button>
+              <el-button v-permission="'score-profile:save'" :disabled="profileReadonly || !scoreFormChanged" :loading="saving" type="primary" @click="save">保存</el-button>
               <el-button v-permission="'score-profile:delete'" v-if="curId && !isNew && !profileReadonly" type="danger" plain @click="remove">删除</el-button>
             </div>
 
@@ -1908,7 +1957,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 @copy="copyCurrentTradeProfile"
               />
               <div class="spacer" />
-              <el-button v-permission="'trade-profile:save'" :disabled="tReadonly" :loading="tSaving" type="primary" @click="saveTrade">保存</el-button>
+              <el-button v-permission="'trade-profile:save'" :disabled="tReadonly || !tradeFormChanged" :loading="tSaving" type="primary" @click="saveTrade">保存</el-button>
               <el-button v-permission="'trade-profile:delete'" v-if="tCurId && !tIsNew && !tReadonly" type="danger" plain @click="removeTrade">删除</el-button>
             </div>
 
@@ -2124,7 +2173,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       <div v-for="v in sVersions" :key="v.version" class="ver-item">
         <div class="ver-head">
           <b>v{{ v.version }}</b>
-          <span class="hint">{{ v.saved_at?.slice(0, 16) }}</span>
+          <span class="hint">{{ formatDateTimeMinutes(v.saved_at) }}</span>
           <span class="hint">{{ v.items.length }} 项指标</span>
           <div class="spacer" />
           <AppRowActions :actions="scoreVersionRowActions(v)" :inline-limit="1" />
@@ -2139,7 +2188,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       <div v-for="v in tVersions" :key="v.version" class="ver-item">
         <div class="ver-head">
           <b>v{{ v.version }}</b>
-          <span class="hint">{{ v.saved_at?.slice(0, 16) }}</span>
+          <span class="hint">{{ formatDateTimeMinutes(v.saved_at) }}</span>
           <div class="spacer" />
           <AppRowActions :actions="tradeVersionRowActions(v)" :inline-limit="1" />
         </div>
@@ -2304,7 +2353,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       </el-form>
       <template #footer>
         <el-button @click="defDrawer = false">取消</el-button>
-        <el-button v-permission="'indicator:def-manage'" type="primary" :loading="defSaving" @click="submitNewDef">保存指标</el-button>
+        <el-button v-permission="'indicator:def-manage'" type="primary" :loading="defSaving" :disabled="!indicatorFormChanged" @click="submitNewDef">保存指标</el-button>
       </template>
     </AppDetailDrawer>
 

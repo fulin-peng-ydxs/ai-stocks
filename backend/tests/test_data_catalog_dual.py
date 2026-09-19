@@ -54,13 +54,13 @@ def test_dual_catalog_discovers_all_current_and_legacy_tables(catalog_env):
     assert payload["summary"]["duckdb"]["active_tables"] == 28
     assert payload["summary"]["duckdb"]["legacy_tables"] == 28
     assert payload["summary"]["duckdb"]["unregistered_tables"] == 0
-    assert payload["summary"]["postgres"]["active_tables"] == 59
+    assert payload["summary"]["postgres"]["active_tables"] == 60
     assert payload["summary"]["postgres"]["legacy_tables"] == 0
     assert payload["summary"]["postgres"]["unregistered_tables"] == 0
-    assert len(active) == 87
+    assert len(active) == 88
     assert len(legacy) == 28
     assert all(item["metadata_complete"] for item in active)
-    assert len({item["key"] for item in tables}) == 115
+    assert len({item["key"] for item in tables}) == 116
 
     duck_ladder = {
         item["table"] for item in tables

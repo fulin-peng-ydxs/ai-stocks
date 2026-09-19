@@ -260,7 +260,7 @@ describe('LimitLadder', () => {
     await wrapper.setProps({result:{...result,business_code:'SNAPSHOT_STALE',snapshot_status:'recalculating',last_success_at:'2026-08-28T18:00:00'}})
     expect(wrapper.get('[data-testid="limit-ladder-stale-notice"]').text()).toContain('结果已过期')
     expect(wrapper.get('[data-testid="limit-ladder-stale-notice"]').text()).toContain('当前版本正在重算')
-    expect(wrapper.get('[data-testid="limit-ladder-stale-notice"]').text()).toContain('当前展示 2026-08-28T18:00:00 生成的最后成功版本')
+    expect(wrapper.get('[data-testid="limit-ladder-stale-notice"]').text()).toContain('当前展示 2026-08-28 18:00:00 生成的最后成功版本')
     expect(wrapper.get('[data-testid="limit-ladder-stale-notice"]').text()).toContain('计算完成后将自动刷新')
     expect(wrapper.get('[data-testid="limit-ladder-layer-2"]').text()).toContain('2 连板')
 
