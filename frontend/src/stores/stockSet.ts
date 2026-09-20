@@ -153,6 +153,14 @@ export const useStockSet = defineStore('stockSet', {
       this.pageSize = meta?.pageSize ?? Math.min(Math.max(items.length, 1), 100)
       this._persist()
     },
+    setResultSet(items: SetItem[], label: string, returnPath: string) {
+      this.setSet('list', items, label, '', {
+        total: items.length,
+        loadedPages: items.length ? [1] : [],
+        pageSize: Math.max(items.length, 1),
+        returnPath,
+      })
+    },
     setListState(state: StockListState) {
       this._ensureIdentity()
       this.listState = state

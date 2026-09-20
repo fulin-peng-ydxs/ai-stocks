@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 
 from backend.limit_ladder.rules import PointInTimeSTStatus, STStatusQuality
+from backend.services.data_report import DataIntegrityReport
 from backend.services.data_verify import DataVerifier
 from backend.services.stock_st_status import StockSTStatusFact, StockSTStatusService
 from backend.storage.ddl import init_db
@@ -56,6 +57,36 @@ def test_contract_catches_missing_list_date_and_pending_ladder_invalidation():
         checks = {name: ok for name, ok, _ in verifier.results}
         assert checks["基础·上市日 无缺失"] is False
         assert checks["连板天梯·失效 outbox 无积压"] is False
+
+
+def test_market_value_contract_and_report_cover_old_history_rows():
+    """全量体检不得因缺口不在近端窗口而漏掉旧年份的总市值空值。"""
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        c.execute(
+            "INSERT INTO stock_basic "
+            "(code,name,exchange,board,list_date,price_limit_pct,industry,total_share) "
+            "VALUES ('600000.SH','浦发','SH','主板',DATE '2000-01-01',0.10,'J66',1000000)"
+        )
+        c.execute(
+            "INSERT INTO daily_bar (code,trade_date,open,high,low,close,volume,amount,turnover_rate) "
+            "VALUES ('600000.SH',DATE '2021-01-04',10,10,10,10,100,1000,1),"
+            "('600000.SH',DATE '2026-01-05',11,11,11,11,100,1100,1)"
+        )
+        c.execute(
+            "INSERT INTO daily_metrics (code,trade_date,float_mv,total_mv) VALUES "
+            "('600000.SH',DATE '2021-01-04',800000000,NULL),"
+            "('600000.SH',DATE '2026-01-05',880000000,1100000000)"
+        )
+
+        verifier = DataVerifier(c, quiet=True)
+        verifier.check_contract()
+        checks = {name: ok for name, ok, _ in verifier.results}
+        critical = DataIntegrityReport(c).null_critical()
+
+        assert checks["在市股·总市值无缺失"] is False
+        assert critical["null_total_mv"] == 1
+        assert critical["null_float_mv"] == 0
 
 
 def test_structure_warns_when_valid_ladder_uses_old_st_version():

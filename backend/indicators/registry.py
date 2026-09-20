@@ -147,9 +147,14 @@ REGISTRY: list[IndicatorDef] = [
     IndicatorDef("float_mv", "流通市值", "number", "市值", None, [],
                  "口径:流通股本×收盘价(元)。是什么:可交易盘子大小。怎么用:筛选市值区间(如100-1000亿)避开过大/过小。"),
     IndicatorDef("total_mv", "总市值", "number", "市值", None, [],
-                 "口径:总股本×收盘价(元)。是什么:公司总规模。怎么用:市值分层/过滤。"
-                 "注:总市值数据当前未入库(需 valuation 采集流程),暂禁用;流通市值 float_mv 可正常用。",
-                 enabled=False),
+                 "口径:指定交易日由估值数据源采集的总市值(元)。是什么:公司总规模。"
+                 "怎么用:市值分层、筛选或评分；缺口由 valuation 回补与数据体检识别。"),
+    IndicatorDef("float_share", "流通股本", "number", "股本", None, [],
+                 "口径:指定交易日流通市值÷当日未复权收盘价，单位股。是什么:当日可交易股份数量。"
+                 "怎么用:筛选或评分流通盘规模；市值或收盘价缺失时结果为空。"),
+    IndicatorDef("total_share", "总股本", "number", "股本", None, [],
+                 "口径:指定交易日总市值÷当日未复权收盘价，单位股。是什么:当日公司已发行股份总量。"
+                 "怎么用:筛选或评分总盘规模；市值或收盘价缺失时结果为空。"),
     # 强度
     IndicatorDef("rs_pct", "相对强度RS", "number", "强度", "higher_better", [],
                  "口径:近W日收益在全市场的横截面百分位(0~100),W由全局配置(当前120日)。是什么:相对全市场"
@@ -226,6 +231,7 @@ PRESET_CATEGORIES: dict[str, list[str]] = {
     "pct_change": ["动量"], "range_amplitude_pct": ["动量", "形态"],
     "consec_up": ["动量", "形态"], "consec_down": ["形态"],
     "float_mv": ["估值"], "total_mv": ["估值"],
+    "float_share": ["股本", "估值"], "total_share": ["股本", "估值"],
     "rs_pct": ["动量", "强度"], "turnover_rate": ["换手"], "is_turnover_healthy": ["换手"],
     "is_platform_breakout": ["突破", "趋势"], "platform_break": ["突破", "趋势"],
     "days_since_xrxd": ["事件"], "holder_num": ["筹码"], "holder_change_pct": ["筹码"],
@@ -233,7 +239,9 @@ PRESET_CATEGORIES: dict[str, list[str]] = {
 
 
 # 业务层级与计算方式、输出类型正交。固定 key 继续兼容，只在目录中作为快捷预设归组。
-_FIELD_KEYS = {"close", "volume", "float_mv", "total_mv", "turnover_rate"}
+_FIELD_KEYS = {
+    "close", "volume", "float_mv", "total_mv", "float_share", "total_share", "turnover_rate",
+}
 PRESET_RELATIONS: dict[str, tuple[str, dict]] = {
     "ma5": ("ma", {"period": 5}),
     "ma10": ("ma", {"period": 10}),

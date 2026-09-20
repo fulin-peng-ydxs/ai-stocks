@@ -52,7 +52,8 @@ VISIBILITIES = {VISIBILITY_PRIVATE, VISIBILITY_TENANT, VISIBILITY_PUBLIC}
 
 # 指标 key（含别名）→ 快照列；ma/hhv 走带参解析
 _DIRECT_COLS = {
-    "rs_pct", "dist_to_high_2y", "close", "float_mv", "total_mv", "turnover_rate", "volume",
+    "rs_pct", "dist_to_high_2y", "close", "float_mv", "total_mv", "float_share",
+    "total_share", "turnover_rate", "volume",
     "is_bull_arrange", "ma20_up", "ma60_up", "above_ma250",
     "is_vol_breakout", "is_platform_breakout", "is_turnover_healthy",
     "is_high_60", "is_high_120", "is_high_1y", "is_high_2y",

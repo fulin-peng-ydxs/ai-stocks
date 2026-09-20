@@ -1870,6 +1870,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               :score-keys="subKeys"
               :label-of="nameOf"
               :return-path="route.fullPath"
+              collection-label="评分试算"
               :border="tableBorder('result')"
               :default-master-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 45)"
               :master-ratio-profiles="componentValueOf('workspace', 'masterRatioProfiles')"

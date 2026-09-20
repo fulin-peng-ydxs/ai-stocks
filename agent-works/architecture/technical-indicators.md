@@ -46,6 +46,10 @@
 ## 当前通用指标
 
 - `close`：当日未复权收盘价，作为“股价”基础字段供绝对价格区间筛选和评分使用。
+- `total_mv/float_mv`：指定交易日的总市值/流通市值，作为可直接参与筛选和评分的基础字段；
+  日常采集维持最新交易日，历史缺口由 `valuation --fill-gaps` 回补。
+- `float_share/total_share`：分别按指定交易日的流通市值/总市值除以当日未复权收盘价计算，
+  单位为股；不读取 `stock_basic` 最新股本快照，保证历史筛选、评分和回测的点时口径。
 - `pct_change`：N 日涨跌幅。N 日跌幅使用负阈值筛选，不另建跌幅指标。
 - `range_amplitude_pct`：`(HHV(H,N) / LLV(L,N) - 1) × 100`。一年区间振幅使用 `N=240`。
 - `ma/new_high/vol_break/platform_break/ma_up/above_ma`：承载对应固定周期历史 key 的通用定义。

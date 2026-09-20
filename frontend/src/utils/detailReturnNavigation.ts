@@ -1,4 +1,8 @@
-const TRUSTED_DETAIL_RETURN_RE = /^\/(?:limit-ladder|board|screen)(?:\?|$)|^\/(?:stocks|sectors)(?:\/[^/?#]+)?(?:\?|$)/
+const TRUSTED_DETAIL_RETURN_RE = new RegExp([
+  '^/(?:limit-ladder|board|screen)(?:\\?|$)',
+  '^/system/config/score(?:\\?|$)',
+  '^/(?:stocks|sectors)(?:/[^/?#]+)?(?:\\?|$)',
+].join('|'))
 
 /** 详情页只允许返回已知业务页，禁止持久化来源形成开放跳转。 */
 export function trustedDetailReturnPath(value: unknown): string | undefined {
@@ -19,5 +23,6 @@ export function detailReturnLabel(returnPath: string | undefined, fallback: stri
   if (path === '/sectors') return '返回板块行情'
   if (path === '/board') return '返回每日榜单'
   if (path === '/screen') return '返回策略筛选'
+  if (path === '/system/config/score') return '返回评分规则'
   return fallback
 }

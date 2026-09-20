@@ -7,6 +7,7 @@ import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
 import RankedStockResultTable from '@/components/ranked-stock/RankedStockResultTable.vue'
 import type { RankedStockColumn } from './types'
 import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
+import { useStockSet } from '@/stores/stockSet'
 import { PRICE_COMPARE_METRIC_ORDER } from '@/utils/marketCompare'
 import type { AuxiliaryChartType } from '@/composables/useStockChartPreferences'
 import type { StockChartWorkspaceSample } from '@/components/stock-chart/workspaceOptions'
@@ -28,6 +29,7 @@ const props = withDefaults(defineProps<{
   scoreKeys?: string[]
   labelOf?: (key: string) => string
   returnPath?: string
+  collectionLabel?: string
   border?: boolean
   defaultMasterRatio?: number
   masterRatioProfiles?: unknown
@@ -37,7 +39,7 @@ const props = withDefaults(defineProps<{
   heightMode?: MarketWorkspaceHeightMode
 }>(), {
   meta: '', runDate: '', loading: false, scoreKeys: () => [],
-  labelOf: (key: string) => key, returnPath: '', border: false,
+  labelOf: (key: string) => key, returnPath: '', collectionLabel: '排名结果', border: false,
   defaultMasterRatio: 45, slot2: 'volume', slot3: 'macd',
   heightRatios: () => [56, 22, 22],
   // 排名结果工作台通常位于筛选/试算等长文档末段，默认自适应剩余空间并内部滚动。
@@ -53,6 +55,7 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+const stockSet = useStockSet()
 const sourceRows = computed(() => props.rows)
 const selection = useStockAnalysisSelection(sourceRows, { maxItems: 6 })
 const analysisVisible = ref(true)
@@ -64,6 +67,14 @@ const klineRange = ref(120)
 
 function selectRow(row: ScoreRunRow): void {
   selection.select(row)
+}
+
+function openActiveDetail(): void {
+  const activeCode = selection.activeCode.value
+  if (!activeCode) return
+  const items = props.rows.map((row) => ({ code: row.code, name: row.name }))
+  stockSet.setResultSet(items, props.collectionLabel, props.returnPath || '/stocks?restore=1')
+  void router.push(`/stocks/${activeCode}`)
 }
 </script>
 
@@ -117,7 +128,7 @@ function selectRow(row: ScoreRunRow): void {
         :height-ratios="heightRatios"
         @activate="selection.activate"
         @remove="selection.remove"
-        @open-detail="selection.activeCode.value && router.push(`/stocks/${selection.activeCode.value}`)"
+        @open-detail="openActiveDetail"
         @ratio-draft="emit('ratioDraft', $event)"
         @ratio-commit="emit('ratioCommit', $event)"
         @workspace-resize="emit('workspaceResize', $event)"

@@ -545,24 +545,14 @@ async function recomputeCurrentBoard(): Promise<void> {
 
 function gotoStock(row: ScoreRunRow) {
   const items = displayRows.value.map((item) => ({ code: item.code, name: item.name }))
-  stockSet.setSet('list', items, '每日榜单', '', {
-    total: items.length,
-    loadedPages: [1],
-    pageSize: Math.max(items.length, 1),
-    returnPath: '/board',
-  })
+  stockSet.setResultSet(items, '每日榜单', '/board')
   router.push(`/stocks/${row.code}`)
 }
 
 function viewSelectedStocks(): void {
   const first = selectedStocks.value[0]
   if (!first) return
-  stockSet.setSet('list', selectedStocks.value, '每日榜单勾选集', '', {
-    total: selectedStocks.value.length,
-    loadedPages: [1],
-    pageSize: selectedStocks.value.length,
-    returnPath: '/board',
-  })
+  stockSet.setResultSet(selectedStocks.value, '每日榜单勾选集', '/board')
   router.push(`/stocks/${first.code}`)
 }
 

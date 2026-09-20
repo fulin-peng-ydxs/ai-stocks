@@ -733,7 +733,11 @@ function enterDetail(code: string) {
 }
 function viewCartOneByOne() {
   if (!cart.value.length) return
-  stockSet.setSet('list', cart.value.map((c) => ({ code: c.code, name: c.name })), '勾选集')
+  stockSet.setResultSet(
+    cart.value.map((c) => ({ code: c.code, name: c.name })),
+    '勾选集',
+    '/stocks?restore=1',
+  )
   router.push(`/stocks/${cart.value[0].code}`)
 }
 

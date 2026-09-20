@@ -1047,6 +1047,7 @@ const menuPageTitle = useMenuPageTitle()
               :score-keys="resultSubKeys"
               :label-of="indicatorName"
               :return-path="route.fullPath"
+              collection-label="策略筛选"
               :default-master-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 45)"
               :master-ratio-profiles="componentValueOf('workspace', 'masterRatioProfiles')"
               :slot2="chartPreferences.preferences.value.slot2"

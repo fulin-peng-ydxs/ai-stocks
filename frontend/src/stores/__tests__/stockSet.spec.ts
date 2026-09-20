@@ -87,15 +87,16 @@ describe('stockSet group context cleanup', () => {
 
   it('persists a custom collection return path', () => {
     const stockSet = useStockSet()
-    stockSet.setSet(
-      'list',
+    stockSet.setResultSet(
       [{ code: '000001.SZ', name: '平安银行' }],
       '每日榜单',
-      '',
-      { returnPath: '/board' },
+      '/board',
     )
 
     expect(stockSet.returnPath).toBe('/board')
+    expect(stockSet.total).toBe(1)
+    expect(stockSet.loadedPages).toEqual([1])
+    expect(stockSet.pageSize).toBe(1)
     expect(JSON.parse(sessionStorage.getItem(stockSetSessionStorageKey()) || '{}').returnPath).toBe('/board')
   })
 

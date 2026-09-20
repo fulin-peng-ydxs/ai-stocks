@@ -324,12 +324,11 @@ function openStock(row: SectorMember): void {
   if (!canViewStocks.value) return
   persistDetailReturnState()
   const items = members.value.map((member) => ({ code: member.code, name: member.name }))
-  stockSet.setSet('list', items, `${detail.value?.name || code.value}成分股`, '', {
-    total: items.length,
-    loadedPages: [1],
-    pageSize: Math.max(items.length, 1),
-    returnPath: `/sectors/${encodeURIComponent(code.value)}?restore=1`,
-  })
+  stockSet.setResultSet(
+    items,
+    `${detail.value?.name || code.value}成分股`,
+    `/sectors/${encodeURIComponent(code.value)}?restore=1`,
+  )
   void router.push(`/stocks/${encodeURIComponent(row.code)}`)
 }
 

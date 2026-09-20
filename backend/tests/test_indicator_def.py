@@ -73,6 +73,7 @@ def test_def_repo_seed_crud_and_builtin_protection():
         n = repo.seed_builtins()
         assert n >= 20
         assert repo.get("consec_up")["kind"] == "expr"      # 内置表达式型
+        assert repo.get("total_mv")["enabled"] is True
         # 自定义
         repo.save_custom("my_rule", "我的规则", "bool", "COUNT(C > REF(C,1), {n}) == {n}",
                          params=[{"name": "n", "label": "天数", "type": "int", "default": 4}])
@@ -107,6 +108,7 @@ def test_seed_builtins_is_full_idempotent_and_preserves_admin_state():
         repo.set_categories("ma5", [])
         repo.set_enabled("macd_dead_cross", False)
         repo.set_categories("macd_dead_cross", ["风险事件"])
+        repo.set_enabled("total_mv", False)
         c.execute("UPDATE indicator_def SET name_cn='旧名称' WHERE key IN ('ma5','macd_dead_cross')")
 
         assert repo.seed_builtins() == len(REGISTRY)
@@ -117,9 +119,33 @@ def test_seed_builtins_is_full_idempotent_and_preserves_admin_state():
         assert repo.get("macd_dead_cross")["name_cn"] == "MACD死叉"
         assert repo.get("macd_dead_cross")["enabled"] is False
         assert repo.get("macd_dead_cross")["categories"] == ["风险事件"]
+        assert repo.get("total_mv")["enabled"] is False
         assert "macd_dead_cross" not in {
             item["key"] for item in repo.list(include_disabled=False)
         }
+
+
+def test_seed_builtins_enables_total_market_value_from_legacy_default_once():
+    with DuckDBClient(db_path=":memory:") as c:
+        repo = IndicatorDefRepo(c)
+        repo.seed_builtins()
+        c.execute(
+            "UPDATE indicator_def SET enabled=FALSE, descr=? WHERE key='total_mv'",
+            [
+                (
+                    "口径:总股本×收盘价(元)。是什么:公司总规模。怎么用:市值分层/过滤。"
+                    "注:总市值数据当前未入库(需 valuation 采集流程),暂禁用;"
+                    "流通市值 float_mv 可正常用。"
+                )
+            ],
+        )
+
+        repo.seed_builtins()
+        assert repo.get("total_mv")["enabled"] is True
+
+        repo.set_enabled("total_mv", False)
+        repo.seed_builtins()
+        assert repo.get("total_mv")["enabled"] is False
 
 
 def test_registry_has_governance_layers_and_preset_relationships():
@@ -188,7 +214,7 @@ def test_seed_builtins_fills_null_enabled_and_keeps_noop_updated_at():
 
         repo.seed_builtins()
         assert repo.get("ma5")["enabled"] is True
-        assert repo.get("total_mv")["enabled"] is False
+        assert repo.get("total_mv")["enabled"] is True
 
         before = c.query_df(
             "SELECT key,updated_at FROM indicator_def WHERE is_builtin ORDER BY key"
@@ -273,6 +299,26 @@ def _seed_stock(c, code, closes):
             for d, px in zip(days, closes)]
     c.register_df("t", pd.DataFrame(rows)); c.execute("INSERT INTO daily_bar BY NAME SELECT * FROM t"); c.unregister("t")
     return days[-1]
+
+
+def test_share_capital_fields_are_point_in_time_market_value_derivatives():
+    with DuckDBClient(db_path=":memory:") as c:
+        repo = IndicatorDefRepo(c)
+        repo.seed_builtins()
+        target = _seed_stock(c, "SHARE.SH", [8.0, 10.0])
+        c.execute(
+            "INSERT INTO daily_metrics (code,trade_date,float_mv,total_mv) VALUES (?,?,?,?)",
+            ["SHARE.SH", target, 8_000_000_000, 10_000_000_000],
+        )
+
+        snap = IndicatorEngine(c).wide_snapshot(target, target).set_index("code")
+
+        assert snap.loc["SHARE.SH", "float_share"] == pytest.approx(800_000_000)
+        assert snap.loc["SHARE.SH", "total_share"] == pytest.approx(1_000_000_000)
+        assert resolve_indicator("float_share", {}, snap).iloc[0] == pytest.approx(800_000_000)
+        assert resolve_indicator("total_share", {}, snap).iloc[0] == pytest.approx(1_000_000_000)
+        assert repo.get("float_share")["layer"] == "field"
+        assert repo.get("total_share")["categories"] == ["股本", "估值"]
 
 
 def test_eval_named_expr_indicator_consec_up():

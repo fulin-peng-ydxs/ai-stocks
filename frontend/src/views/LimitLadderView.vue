@@ -603,12 +603,7 @@ async function openActiveAnalysisDetail(): Promise<void> {
   if (!canViewStockDetail.value || !active) return
   const items = analysisSourceItems.value.map((item) => ({ code: item.code, name: item.name }))
   persistReturnState()
-  stockSet.setSet('list', items, '连板天梯', '', {
-    total: items.length,
-    loadedPages: items.length ? [1] : [],
-    pageSize: Math.max(items.length, 1),
-    returnPath: ladderReturnPath,
-  })
+  stockSet.setResultSet(items, '连板天梯', ladderReturnPath)
   await router.push(`/stocks/${active.code}`)
 }
 

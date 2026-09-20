@@ -45,6 +45,7 @@
 - **流通市值 `float_mv`**：新浪日线自带时变流通股本 `outstanding_share`→`float_share`，日线入库时同步算 `float_mv = close × float_share`（[ingest.py:228](../../backend/services/ingest.py)）。随行情天然齐全、永远当前。
 - **总市值 `total_mv`**：唯一来源东财单只估值 `stock_value_em`（[akshare_source.py:339](../../backend/datasource/akshare_source.py)）。**无全市场快照可用**（东财全市场现货接口在本环境被封），故全部走**单只逐票取数**，与日线逐只采同量级。
 - `total_share/float_share` 存 `stock_basic`（最新快照），不进 `daily_metrics`（避免日线粒度膨胀）。
+- 历史筛选、评分和回测中的 `total_share/float_share` 指标不读取上述最新快照，而由 `wide_snapshot` 按指定交易日的 `total_mv/float_mv ÷ daily_bar.close` 点时派生；市值或收盘价缺失时指标为空。
 
 ### total_mv 的四个采集入口（统一走单只 `_valuation_one`，口径一致，[ingest.py](../../backend/services/ingest.py)）
 | 入口 | 方法 | 场景 | 范围 |
@@ -80,6 +81,8 @@
 
 ### 数据体检（`backend/services/data_verify.py`，与质检互补）
 `DataVerifier` 做**结构/正确性/字段契约**逐行核查（孤儿行、键对齐、日历一致、OHLC 序、复权因子、整列字段缺失、在市股逐行市值无缺失），只读不写台账，结果以 PASS/FAIL 报告呈现（`run_structured`）。可写质量扫描还会按板块分价涨跌停上下限检查收盘越界（保留 1 分钱源端舍入容差），并检查成交额/成交量推导的均价是否落在 OHLC 区间；命中后写入质量台账并支持定向重采恢复。市场指数的配置覆盖、日历/OHLC 合法性和鲜活缺口已由可写台账的指数质检统一承担，避免只报 FAIL 却无法修复。板块四表（`board_dict/board_member/board_bar/board_fund_flow`）同纳入体检（E 组）：孤儿板块、指数日历一致、OHLC/量额合法、枚举取值（board_type/period）、`has_bar/has_members/has_fund_flow` 能力标记与实际数据双向一致；板块缺口/新鲜度仍归质检台账+修复闭环，体检不重复。可选联网交叉验证（实时重拉对比原价/前复权价），仅 CLI 用。复权因子核查口径与业务一致：`COALESCE(adj_factor_clean, adj_factor)`，源 `adj_factor` 允许 NULL（仅审计，akshare 个别除权日源因子缺失时 clean 已回填前段因子）。
+
+市值校验的时间边界必须明确区分：`DataVerifier` 的 `daily_bar`/`daily_metrics` 键对齐和在市股市值非空契约不带日期过滤，覆盖库内全部年份；`DataIntegrityReport.null_critical()` 同样统计全表空值。日常可写质量台账为控制扫描与问题规模，`mv_gap` 只覆盖最近 90 个交易日，较早的逐日缺口由全量体检发现后通过 `valuation --fill-gaps` 收敛。退市股因免费源限制不纳入市值完整性契约。
 
 ### 异步任务执行模型（终止 / 续跑 / 三类采集差异，[async_task.py](../../backend/services/async_task.py)、[ingest.py](../../backend/services/ingest.py)）
 

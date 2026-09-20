@@ -4,7 +4,7 @@ v2.0 变更：删除 indicator 预计算值表。指标改为**按需实时计�
   - `range_frame(codes, lo, hi)`：逐股取前复权序列 → compute_stock_indicators → 切片到 [lo,hi]，
     再按 trade_date 横截面对 W 日收益排名得 rs_pct（防未来 + 防幸存者偏差，口径同旧实现）。
   - `wide_snapshot(lo, hi, codes)`：把动态指标帧注册为临时视图，与 daily_bar/daily_metrics
-    JOIN 出宽快照（列与旧 `indicator⋈daily_bar⋈daily_metrics` 完全一致），供筛选/评分/回测复用。
+    JOIN 出宽快照，并按当日市值/原始收盘价派生点时股本，供筛选/评分/回测复用。
   - `compute_series(code, end)`：单股指标序列，供个股查询（rs_pct 为横截面量，单股不填）。
 
 单次运行（一次筛选/榜单/回测）内对相同 (codes, lo, hi) 复用缓存，避免重复计算。
@@ -225,7 +225,7 @@ class IndicatorEngine:
         return frame
 
     def wide_snapshot(self, lo, hi, codes: list[str] | None = None) -> pd.DataFrame:
-        """宽快照（指标⋈行情⋈市值），列与旧 indicator⋈daily_bar⋈daily_metrics 一致。"""
+        """宽快照（指标⋈行情⋈市值），并派生指定交易日的总股本与流通股本。"""
         frame = self.range_frame(codes, lo, hi)
         if frame.empty:
             return pd.DataFrame()
@@ -233,7 +233,9 @@ class IndicatorEngine:
             df = self.c.query_df(
                 f"SELECT i.*, b.open, b.high, b.low, b.close, b.pre_close, b.volume, "
                 f"       b.amount, b.turnover_rate, st.is_st, b.limit_status, b.is_one_word, "
-                f"       m.float_mv, m.total_mv "
+                f"       m.float_mv, m.total_mv, "
+                f"       CASE WHEN b.close > 0 THEN m.float_mv / b.close END AS float_share, "
+                f"       CASE WHEN b.close > 0 THEN m.total_mv / b.close END AS total_share "
                 f"FROM {name} i "
                 f"JOIN daily_bar b ON b.code=i.code AND b.trade_date=i.trade_date "
                 f"LEFT JOIN stock_st_status_daily st "

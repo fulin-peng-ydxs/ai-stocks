@@ -1482,6 +1482,7 @@ class DataIntegrityReport:
             "null_volume": int(self._scalar("SELECT count(*) FROM daily_bar WHERE volume IS NULL")),
             "zero_or_neg_close": int(self._scalar("SELECT count(*) FROM daily_bar WHERE close <= 0")),
             "null_float_mv": int(self._scalar("SELECT count(*) FROM daily_metrics WHERE float_mv IS NULL")),
+            "null_total_mv": int(self._scalar("SELECT count(*) FROM daily_metrics WHERE total_mv IS NULL")),
         }
 
     # ── 5. 指数覆盖 ──
@@ -1546,7 +1547,8 @@ class DataIntegrityReport:
               f"涉及 {cov['stocks_with_suspension']} 只（缺口=存续期内开市但无行情，属正常）")
         nc = r["null_critical"]
         print(f"[空值] close空 {nc['null_close']}  OHLC空 {nc['null_ohlc']}  "
-              f"量空 {nc['null_volume']}  收盘<=0 {nc['zero_or_neg_close']}  市值空 {nc['null_float_mv']}")
+              f"量空 {nc['null_volume']}  收盘<=0 {nc['zero_or_neg_close']}  "
+              f"流通市值空 {nc['null_float_mv']}  总市值空 {nc['null_total_mv']}")
         print("[指数]")
         for idx in r["index_coverage"]["indices"]:
             print(f"   {idx['index_code']}: {idx['days']} 天 ({idx['coverage']*100:.1f}%)")

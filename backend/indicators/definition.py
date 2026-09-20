@@ -21,6 +21,12 @@ from backend.storage.duckdb_client import get_client
 log = get_logger("indicators.definition")
 
 _PARAM_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+_LEGACY_DEFAULT_DISABLED_DESCRIPTIONS = {
+    "total_mv": (
+        "口径:总股本×收盘价(元)。是什么:公司总规模。怎么用:市值分层/过滤。"
+        "注:总市值数据当前未入库(需 valuation 采集流程),暂禁用;流通市值 float_mv 可正常用。"
+    ),
+}
 
 
 def normalize_param_defs(params: list[dict] | None) -> list[dict]:
@@ -272,7 +278,12 @@ class IndicatorDefRepo:
             old = existing.get(d.key)
             if old:  # 不覆盖用户对内置的启停 / 分类自定义
                 # NULL 是旧库未初始化，不是管理员明确禁用；应回退到 REGISTRY 默认值。
-                if old.get("enabled") is not None:
+                # 旧版本因数据尚未接入而默认禁用的定义，在数据能力上线后随旧说明一次性校准；
+                # 说明已更新后的管理员启停仍按常规保留。
+                migrate_legacy_default = (
+                    old.get("descr") == _LEGACY_DEFAULT_DISABLED_DESCRIPTIONS.get(d.key)
+                )
+                if old.get("enabled") is not None and not migrate_legacy_default:
                     row["enabled"] = bool(old["enabled"])
                 # SQL NULL 表示旧库尚未初始化分类，应补预设；"[]" 是管理员明确清空，必须保留。
                 if isinstance(old.get("categories"), str):
