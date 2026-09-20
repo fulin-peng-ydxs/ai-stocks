@@ -119,6 +119,50 @@ function configEntry(pageKey: string, label: string, path: string): PageRegistry
   }
 }
 
+const RANKED_STOCK_RESULT_COLUMNS = [
+  { key: 'code', label: '代码列' },
+  { key: 'name', label: '名称列' },
+  { key: 'board', label: '板块' },
+  { key: 'score', label: '综合分' },
+  { key: 'grade', label: '评级' },
+  { key: 'subScores', label: '分项达标分' },
+]
+
+function rankedStockWorkbenchMeta(
+  extraColumns: { key: string; label: string }[] = [],
+): Record<string, SlotConfigMeta> {
+  return {
+    workspace: {
+      fieldApplicability: {
+        masterRatio: { enabled: true },
+        masterRatioProfiles: { enabled: true },
+      },
+    },
+    result: {
+      columns: [...RANKED_STOCK_RESULT_COLUMNS, ...extraColumns],
+      sortFields: [
+        { key: 'score', label: '综合分' },
+        { key: 'code', label: '代码' },
+        { key: 'name', label: '名称' },
+      ],
+      sortHasDirection: false,
+    },
+    analysis: {
+      fieldApplicability: {
+        minHeight: { enabled: false, reason: '主从工作台图表随剩余空间成长，不使用固定区域高度' },
+      },
+    },
+  }
+}
+
+function rankedStockWorkbenchSlots(): SlotSpec[] {
+  return [
+    { id: 'workspace', component: 'master-detail', region: 'main', minH: MARKET_WORKSPACE_MIN_HEIGHT, label: '评分结果工作台', order: 10 },
+    { id: 'result', component: 'wide-table', region: 'main', parentId: 'workspace', label: '评分结果列表', order: 1, config: { pagination: false, defaultSort: 'score' } },
+    { id: 'analysis', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences() } },
+  ]
+}
+
 const REGISTRY: PageRegistryEntry[] = [
   {
     pageKey: 'limit-ladder',
@@ -211,37 +255,10 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'master-detail',
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
-    componentMeta: {
-      workspace: {
-        fieldApplicability: {
-          masterRatio: { enabled: true },
-          masterRatioProfiles: { enabled: true },
-        },
-      },
-      result: {
-        columns: [
-          { key: 'code', label: '代码列' },
-          { key: 'name', label: '名称列' },
-          { key: 'board', label: '板块' },
-          { key: 'score', label: '综合分' },
-          { key: 'grade', label: '评级' },
-          { key: 'subScores', label: '分项达标分' },
-          { key: 'relatedIndustry', label: '行业走势' },
-          { key: 'relatedConcept', label: '概念走势' },
-        ],
-        sortFields: [
-          { key: 'score', label: '综合分' },
-          { key: 'code', label: '代码' },
-          { key: 'name', label: '名称' },
-        ],
-        sortHasDirection: false,
-      },
-      analysis: {
-        fieldApplicability: {
-          minHeight: { enabled: false, reason: '主从工作台图表随剩余空间成长，不使用固定区域高度' },
-        },
-      },
-    },
+    componentMeta: rankedStockWorkbenchMeta([
+      { key: 'relatedIndustry', label: '行业走势' },
+      { key: 'relatedConcept', label: '概念走势' },
+    ]),
     layout: {
       pageKey: 'screen',
       archetype: 'master-detail',
@@ -250,9 +267,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'builder', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'workspace', component: 'master-detail', region: 'main', minH: MARKET_WORKSPACE_MIN_HEIGHT, label: '筛选评分结果工作台', order: 1 },
-        { id: 'result', component: 'wide-table', region: 'main', parentId: 'workspace', label: '结果列表', order: 1, config: { pagination: false, defaultSort: 'score' } },
-        { id: 'analysis', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences() } },
+        ...rankedStockWorkbenchSlots(),
       ],
       editable: [densityKnob()],
     },
@@ -497,7 +512,30 @@ const REGISTRY: PageRegistryEntry[] = [
       editable: [densityKnob()],
     },
   },
-  configEntry('config-score', '评分规则', '/system/config/score'),
+  {
+    pageKey: 'config-score',
+    label: '评分规则',
+    path: '/system/config/score',
+    archetype: 'workbench',
+    responsiveProfile: 'mixed-panel',
+    supportsComponentConfig: true,
+    componentMeta: rankedStockWorkbenchMeta(),
+    layout: {
+      pageKey: 'config-score',
+      archetype: 'workbench',
+      hasActionRegion: true,
+      density: 'standard',
+      responsive: singleColumn(),
+      slots: [
+        { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
+        { id: 'body', component: 'section', region: 'main', label: '评分规则', order: 1 },
+        { id: 'scoreItems', component: 'data-table', region: 'main', parentId: 'body', label: '评分指标', order: 1, config: { pagination: false, border: true } },
+        ...rankedStockWorkbenchSlots(),
+        { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
+      ],
+      editable: [densityKnob()],
+    },
+  },
   configEntry('config-trade', '买卖指标', '/system/config/trade'),
   {
     pageKey: 'config-tech',

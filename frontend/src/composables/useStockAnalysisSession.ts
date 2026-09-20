@@ -9,6 +9,7 @@ import {
 } from '@/utils/marketCompare'
 
 export type StockAnalysisMode = 'compare' | 'kline'
+export type StockAdjustMode = '' | 'qfq' | 'hfq'
 
 export const STOCK_COMPARE_RANGES = [5, 10, 20, 60, 120, 250, ALL_DAYS] as const
 
@@ -27,8 +28,14 @@ function normalizeCompareRange(value: unknown): number {
   return (STOCK_COMPARE_RANGES as readonly number[]).includes(candidate) ? candidate : 60
 }
 
-function normalizeAdjustMode(value: unknown): '' | 'qfq' | 'hfq' {
+function normalizeAdjustMode(value: unknown): StockAdjustMode {
   return value === 'hfq' || value === '' ? value : 'qfq'
+}
+
+/** 单独使用统一复权默认值时仍走同一标准化与单向会话投影。 */
+export function useStockAdjustModeSession(settings: { adjustMode?: unknown }) {
+  const configuredAdjustMode = computed(() => normalizeAdjustMode(settings.adjustMode))
+  return useDefaultedSessionValue(configuredAdjustMode)
 }
 
 /**
@@ -58,7 +65,6 @@ export function useStockAnalysisSession(
       : visibleCompareMetrics.value[0] ?? 'cum'
   })
   const configuredBenchmarkCode = computed(() => normalizeMarketBenchmarkCode(settings.benchmarkCode))
-  const configuredAdjustMode = computed(() => normalizeAdjustMode(settings.adjustMode))
 
   return {
     analysisPanelVisible: useDefaultedSessionValue(configuredPanelVisible),
@@ -66,7 +72,7 @@ export function useStockAnalysisSession(
     compareRange: useDefaultedSessionValue(configuredCompareRange),
     compareMetric: useDefaultedSessionValue(configuredCompareMetric),
     benchmarkCode: useDefaultedSessionValue(configuredBenchmarkCode),
-    adjustMode: useDefaultedSessionValue(configuredAdjustMode),
+    adjustMode: useStockAdjustModeSession(settings),
     visibleCompareMetrics,
     klineRange: useDefaultedSessionValue(klineDefaultRange),
   }

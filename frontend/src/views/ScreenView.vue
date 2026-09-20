@@ -36,7 +36,7 @@ import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import RankedStockWorkbench from '@/components/ranked-stock/RankedStockWorkbench.vue'
-import { rankedStockColumns } from '@/components/ranked-stock/types'
+import type { RankedStockColumnKey } from '@/components/ranked-stock/types'
 import {
   relatedBoardFirstLoadContext,
   mergeRelatedBoardResults,
@@ -48,8 +48,10 @@ import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
 import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
+import PageSegmented from '@/components/PageSegmented.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import IndicatorParamFields from '@/components/indicator/IndicatorParamFields.vue'
@@ -57,6 +59,11 @@ import IndicatorSelect from '@/components/indicator/IndicatorSelect.vue'
 import StrategyItemEnabledSwitch from '@/components/strategy/StrategyItemEnabledSwitch.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
+import { useRankedStockResultView } from '@/composables/useRankedStockResultView'
+import {
+  useStockAdjustModeSession,
+  type StockAdjustMode,
+} from '@/composables/useStockAnalysisSession'
 import { downloadCsv } from '@/utils/csv'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
@@ -79,8 +86,10 @@ const settingsOpen = ref(false)
 const screenDefaults = {
   excludeSt: true,
   astExpanded: false,
+  adjustMode: 'qfq' as StockAdjustMode,
 }
 const { settings, isDirty, reset } = usePageSettings('screen', screenDefaults)
+const adjustMode = useStockAdjustModeSession(settings)
 
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
 const screenLayout = getPageLayout('screen')
@@ -117,28 +126,8 @@ const componentRuntimeValueOf = composeComponentRuntimeValueOf(
   chartPreferences.componentRuntimeValueOf,
 )
 
-// 抽屉写值由 ComponentAutoSettings 自动渲染；页面只保留排序/渲染要读的 getter。
-type ResultSort = 'score' | 'code' | 'name'
-// 排序单向：配置层默认值 → 会话覆盖；列头排序只写会话，不写回配置层。
-const configuredResultSort = computed<ResultSort>(() => {
-  const raw = componentValueOf('result', 'defaultSort')
-  return raw === 'code' || raw === 'name' ? raw : 'score'
-})
-const sessionResultSort = ref<ResultSort | null>(null)
-watch(configuredResultSort, () => { sessionResultSort.value = null })
-const resultSort = computed<ResultSort>(() => sessionResultSort.value ?? configuredResultSort.value)
-const hiddenColumns = computed<string[]>(() => (componentValueOf('result', 'hiddenColumns') as string[]) ?? [])
-function colVisible(key: string): boolean {
-  return !hiddenColumns.value.includes(key)
-}
 function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
-}
-const RESULT_SORT_PROPS: Record<string, ResultSort> = {
-  total_score: 'score', code: 'code', name: 'name',
-}
-function onResultSortChange({ prop }: { prop: string; order: string | null }): void {
-  sessionResultSort.value = RESULT_SORT_PROPS[prop] ?? 'score'
 }
 
 // ── 指标注册表（融合：可视化条件直接从注册表取指标，支持动态传参）──
@@ -535,27 +524,24 @@ function clearScreenResult() {
   result.value = null
   resultError.value = ''
 }
-const displayHits = computed(() => {
-  const list = [...(result.value?.hits ?? [])]
-  if (resultSort.value === 'code') list.sort((a, b) => a.code.localeCompare(b.code))
-  else if (resultSort.value === 'name') list.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-  else list.sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER))
-  return list
-})
 const resultSubKeys = computed(() => (
   result.value?.hits[0] ? Object.keys(result.value.hits[0].sub_scores || {}) : []
 ))
-const resultColumns = computed(() => rankedStockColumns([
+const resultColumnKeys = computed<RankedStockColumnKey[]>(() => [
   'rank',
-  ...(colVisible('code') ? ['code' as const] : []),
-  ...(colVisible('name') ? ['name' as const] : []),
-  ...(colVisible('board') ? ['board' as const] : []),
-  ...(colVisible('relatedIndustry') ? ['relatedIndustry' as const] : []),
-  ...(colVisible('relatedConcept') ? ['relatedConcept' as const] : []),
-  ...(colVisible('score') ? ['score' as const] : []),
-  ...(colVisible('grade') ? ['grade' as const] : []),
-  ...(colVisible('subScores') && resultSubKeys.value.length ? ['subScores' as const] : []),
-]))
+  'code', 'name', 'board', 'relatedIndustry', 'relatedConcept', 'score', 'grade',
+  ...(resultSubKeys.value.length ? ['subScores' as const] : []),
+])
+const {
+  rows: displayHits,
+  columns: resultColumns,
+  columnVisible: colVisible,
+  onSortChange: onResultSortChange,
+} = useRankedStockResultView({
+  rows: () => result.value?.hits ?? [],
+  columnKeys: resultColumnKeys,
+  componentValueOf,
+})
 
 let runSequence = 0
 async function runScreenResults(background = false) {
@@ -1048,6 +1034,8 @@ const menuPageTitle = useMenuPageTitle()
             />
             <RankedStockWorkbench
               v-else-if="result && result.hits.length"
+              registry-page-key="screen"
+              :adjust-mode="adjustMode"
               :rows="displayHits"
               :columns="resultColumns"
               :title="runDate || '最新交易日'"
@@ -1101,6 +1089,15 @@ const menuPageTitle = useMenuPageTitle()
       @reset="reset(); resetLayout()"
     >
       <template #business>
+        <PageSettingSection title="行情口径">
+          <PageSettingItem label="复权模式">
+            <PageSegmented v-model="settings.adjustMode" aria-label="复权模式" :options="[
+              { label: '不复权', value: '' },
+              { label: '前复权', value: 'qfq' },
+              { label: '后复权', value: 'hfq' },
+            ]" />
+          </PageSettingItem>
+        </PageSettingSection>
         <PageSettingSection title="默认行为">
           <PageToggleRow v-model="settings.excludeSt" label="默认排除 ST" />
           <PageToggleRow v-model="settings.astExpanded" label="展开 AST 预览" />

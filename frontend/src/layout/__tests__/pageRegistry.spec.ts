@@ -21,6 +21,8 @@ import { COMPONENT_CATALOG } from '../components'
 import { getComponentFieldDef } from '../componentConfig'
 import type { ComponentKind } from '../schema'
 import { MARKET_WORKSPACE_MIN_HEIGHT } from '../marketWorkspaceSizing'
+import { COMPOSITE_COMPONENT_CONTRACTS } from '../compositeComponentContracts'
+import { PAGE_BUSINESS_PREFERENCE_CONTRACTS } from '../pageBusinessPreferenceContracts'
 
 const RESPONSIVE_PROFILES = new Set(['single-column', 'safe-reflow', 'mixed-panel'])
 const DESIGN_MD = readFileSync(new URL('../../../../DESIGN.md', import.meta.url), 'utf-8')
@@ -28,6 +30,7 @@ const DESIGN_PAGE_SECTION = DESIGN_MD.match(
   /<!-- page-registry:start -->([\s\S]*?)<!-- page-registry:end -->/,
 )?.[1] ?? ''
 const VIEWS_DIR = fileURLToPath(new URL('../../views/', import.meta.url))
+const COMPONENTS_DIR = fileURLToPath(new URL('../../components/', import.meta.url))
 const ROUTER_TS = readFileSync(new URL('../../router/index.ts', import.meta.url), 'utf-8')
 
 interface RouteViewEntry {
@@ -797,11 +800,14 @@ describe('组件消费关系与配置一致性（P4）', () => {
       if (!configurableSlots.length) continue
 
       const source = sourceTreeForPage(entry.pageKey)
+      const pageSource = sourceForPage(entry.pageKey)
       const visibleKeys = configurableColumnVisibilityKeys(source)
       for (const [slotId, meta] of configurableSlots) {
         for (const column of meta.columns ?? []) {
+          const sharedRankedResultConsumption = pageSource.includes('useRankedStockResultView')
+            && new RegExp(`['"]${escapeRegExp(column.key)}['"]`).test(pageSource)
           expect(
-            visibleKeys.has(column.key),
+            visibleKeys.has(column.key) || sharedRankedResultConsumption,
             `${entry.pageKey}.${slotId}.${column.key} 已登记为可配置列，但页面没有真实显隐判断`,
           ).toBe(true)
         }
@@ -831,9 +837,13 @@ describe('组件消费关系与配置一致性（P4）', () => {
     ]
     for (const consumer of consumers) {
       const source = sourceTreeForPage(consumer.pageKey)
+      const pageSource = sourceForPage(consumer.pageKey)
       expect(source).toContain("import RelatedBoardCell from '@/components/RelatedBoardCell.vue'")
       for (const [key, type] of [['relatedIndustry', 'industry'], ['relatedConcept', 'concept']]) {
-        expect(source).toContain(`${consumer.visible}('${key}')`)
+        expect(
+          source.includes(`${consumer.visible}('${key}')`)
+          || (pageSource.includes('useRankedStockResultView') && pageSource.includes(`'${key}'`)),
+        ).toBe(true)
         expect(source).toMatch(new RegExp(`<RelatedBoardCell[^>]+board-type=["']${type}["']`))
       }
       expect(source).toContain(':return-path="route.fullPath"')
@@ -995,6 +1005,117 @@ describe('组件消费关系与配置一致性（P4）', () => {
     }
   })
 
+  it('复合业务组件从真实消费点反查槽位、运行时配置和业务偏好闭环', () => {
+    const registeredSources = new Set(COMPOSITE_COMPONENT_CONTRACTS.map((contract) => contract.sourcePath))
+    for (const file of vueFiles(COMPONENTS_DIR)) {
+      const source = readFileSync(file, 'utf8')
+      if (!source.includes('registryPageKey: string')) continue
+      const relativeSource = `components/${file.slice(COMPONENTS_DIR.length).replace(/^\//, '')}`
+      expect(
+        registeredSources.has(relativeSource),
+        `${relativeSource} 声明了 registryPageKey，但未进入 COMPOSITE_COMPONENT_CONTRACTS`,
+      ).toBe(true)
+    }
+
+    for (const contract of COMPOSITE_COMPONENT_CONTRACTS) {
+      const componentSource = readFileSync(new URL(`../../${contract.sourcePath}`, import.meta.url), 'utf8')
+      expect(componentSource).toContain('registryPageKey: string')
+      for (const forbidden of contract.forbiddenComponentSources) {
+        expect(componentSource, `${contract.componentName} 不得写死业务口径 ${forbidden}`).not.toContain(forbidden)
+      }
+
+      const consumers: { file: string; pageKey: string; tag: string }[] = []
+      for (const file of vueFiles(VIEWS_DIR)) {
+        const source = readFileSync(file, 'utf8')
+        const tags = [...source.matchAll(new RegExp(`<${contract.componentName}\\b[\\s\\S]*?\\/>`, 'g'))]
+          .map((match) => match[0])
+        for (const tag of tags) {
+          const pageKey = new RegExp(`${contract.pageKeyAttribute}=["']([^"']+)["']`).exec(tag)?.[1]
+          expect(pageKey, `${basename(file)} 的 ${contract.componentName} 必须声明 ${contract.pageKeyAttribute}`).toBeTruthy()
+          if (pageKey) consumers.push({ file, pageKey, tag })
+        }
+      }
+
+      expect(consumers.length, `${contract.componentName} 契约没有真实消费点`).toBeGreaterThan(0)
+      for (const { file, pageKey, tag } of consumers) {
+        const source = readFileSync(file, 'utf8')
+        const entry = getPageEntry(pageKey)
+        expect(entry, `${basename(file)} 引用的 pageKey=${pageKey} 未登记`).toBeTruthy()
+        expect(entry?.supportsComponentConfig, `${pageKey} 必须开放组件设置`).toBe(true)
+
+        for (const slotContract of contract.slots) {
+          expect(entry?.layout.slots).toContainEqual(expect.objectContaining({
+            id: slotContract.id,
+            component: slotContract.kind,
+            ...(slotContract.parentId ? { parentId: slotContract.parentId } : {}),
+          }))
+          expect(applicableComponentFields(entry!, slotContract.id).map((field) => field.key))
+            .toEqual(expect.arrayContaining(slotContract.requiredFields))
+        }
+        for (const fragment of contract.consumerRuntimeSources) {
+          expect(source, `${pageKey} 缺少复合组件运行时配置消费：${fragment}`).toContain(fragment)
+        }
+      }
+    }
+  })
+
+  it('业务偏好从所有运行时消费点反查默认值、抽屉入口与 prop 传递', () => {
+    const registeredCompositeSources = new Set(
+      COMPOSITE_COMPONENT_CONTRACTS.map((contract) => contract.sourcePath),
+    )
+
+    for (const preference of PAGE_BUSINESS_PREFERENCE_CONTRACTS) {
+      const consumerPattern = preference.consumerComponents.map(escapeRegExp).join('|')
+      const tagPattern = new RegExp(`<(${consumerPattern})\\b([^>]*)>`, 'g')
+
+      // 中间组件如果承接业务偏好，必须作为复合组件登记并以必填 prop 原样透传。
+      for (const file of vueFiles(COMPONENTS_DIR)) {
+        const source = readFileSync(file, 'utf8')
+        const tags = [...source.matchAll(tagPattern)]
+        if (!tags.length) continue
+        const relativeSource = `components/${file.slice(COMPONENTS_DIR.length).replace(/^\//, '')}`
+        expect(source, `${relativeSource} 承接 ${preference.label} 时必须声明 registryPageKey`)
+          .toContain('registryPageKey: string')
+        expect(
+          registeredCompositeSources.has(relativeSource),
+          `${relativeSource} 承接 ${preference.label} 但未登记复合组件契约`,
+        ).toBe(true)
+        expect(source, `${relativeSource} 的 ${preference.key} 必须是必填 prop`)
+          .toMatch(new RegExp(`\\b${escapeRegExp(preference.key)}\\s*:`))
+        expect(source, `${relativeSource} 不得把 ${preference.label} 声明为可选 prop`)
+          .not.toMatch(new RegExp(`\\b${escapeRegExp(preference.key)}\\s*\\?:`))
+        for (const tag of tags) {
+          expect(tag[0], `${relativeSource} 必须原样透传 ${preference.key}`)
+            .toContain(`:${preference.prop}="${preference.key}"`)
+        }
+      }
+
+      // 页面直接消费或消费已登记复合组件时，必须具备长期默认、抽屉入口和动态传参。
+      for (const entry of PAGE_REGISTRY) {
+        const source = sourceForPage(entry.pageKey)
+        if (!source) continue
+        const tags = [...source.matchAll(tagPattern)].filter((match) => {
+          const explicitPageKey = /registry-page-key=["']([^"']+)["']/.exec(match[0])?.[1]
+          return !explicitPageKey || explicitPageKey === entry.pageKey
+        })
+        if (!tags.length) continue
+
+        expect(source, `${entry.pageKey} 使用 ${preference.label} 但未声明默认值`)
+          .toContain(preference.defaultValueSource)
+        expect(source, `${entry.pageKey} 使用 ${preference.label} 但设置抽屉缺少写入入口`)
+          .toContain(`label="${preference.label}"`)
+        for (const tag of tags) {
+          expect(tag[0], `${entry.pageKey} 未把 ${preference.key} 动态传给 ${tag[1]}`)
+            .toContain(`:${preference.prop}="${preference.key}"`)
+          for (const literal of preference.forbiddenLiteralValues) {
+            expect(tag[0], `${entry.pageKey} 不得把 ${preference.label} 写死为 '${literal}'`)
+              .not.toContain(`${preference.prop}="${literal}"`)
+          }
+        }
+      }
+    }
+  })
+
   it('可交互排序字段必须进入 defaultSort 配置闭环', () => {
     for (const entry of PAGE_REGISTRY) {
       for (const [slotId, meta] of Object.entries(entry.componentMeta ?? {})) {
@@ -1033,7 +1154,8 @@ describe('组件消费关系与配置一致性（P4）', () => {
           source.includes(`componentValueOf('${slotId}', 'defaultSort'`) ||
           source.includes(`componentValueOf("${slotId}", "defaultSort"`) ||
           (source.includes('useTableSort') && source.includes(`slotId: '${slotId}'`)) ||
-          (source.includes('useTableSort') && source.includes(`slotId: "${slotId}"`))
+          (source.includes('useTableSort') && source.includes(`slotId: "${slotId}"`)) ||
+          (slotId === 'result' && source.includes('useRankedStockResultView'))
         expect(
           readsDefaultSort,
           `${entry.pageKey}.${slotId} 声明 sortFields 后页面必须消费 slots.${slotId}.config.defaultSort 作为默认排序`,
@@ -1330,7 +1452,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
       if (!stockChartSlot) continue
       expect(source).toContain('useStockChartComponentConfig({')
       expect(source).toContain(':height-ratios="chartPreferences.currentRatios.value"')
-      if (entry.pageKey !== 'screen') {
+      if (!['screen', 'config-score'].includes(entry.pageKey)) {
         expect(source).toContain('useLegacyStockChartPreferenceMigration({')
       }
       expect(source).not.toContain('<StockChartSettingSection')

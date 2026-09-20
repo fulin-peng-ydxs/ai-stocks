@@ -29,6 +29,7 @@
 
 1. **先复用真实组件**：查 `DESIGN.md`“真实复用组件清单”、`frontend/src/components/**`、业务组件目录和同类页面。已有同类 UI 或行为时直接复用；相同模式第二次出现时按项目复用规则抽取组件、composable、util 或 schema。
 2. **判断是否是独立系统组件实例**：已有系统组件种类若在页面中承担独立布局区、成长区、滚动区或可配置能力，必须在 `pageRegistry.ts` 登记对应 slot，并由 `<LayoutHost>` 的同名插槽承载真实组件。仅作为另一个真实组件内部实现细节、没有独立布局或配置语义的子组件，不登记假 slot。
+   - 复合业务组件封装多个可配置系统组件实例或承接页面业务口径时，必须登记到 `layout/compositeComponentContracts.ts`，消费点通过 `registryPageKey`（或组件约定的等价必填标识）声明所属页面；该契约列出必需子 slot、字段和运行时绑定。影响结果或展示口径的业务偏好另登记到 `layout/pageBusinessPreferenceContracts.ts`，业务口径 prop 必须为必填且由中间组件原样透传；测试从所有直接或间接消费点反查抽屉控件、默认值与动态 prop 传递。不得只做 registry → 页面消费或 defaults → 抽屉的单向校验，否则整个 slot 或业务偏好从未声明时不会进入校验集合。
 3. **消费已有受控字段**：登记 slot 后按 kind 自动继承字段。结构能力写 `slot.config`，安全候选写 `componentMeta`，明确例外写 `fieldApplicability` 与原因；页面必须读取并应用生效值，普通页面必须把 `componentAllowedLayers` 接入 `PageSettingsDrawer`。不得增加逐页面字段白名单。
 4. **没有匹配的系统组件种类**：如果新能力只负责真实 UI 复用，不需要进入布局配置、系统组件页、页面设置抽屉或页面布局编辑器，不新增 kind；如果需要这些平台能力，则按本文 §3“新组件种类”维护目录、schema、预览、页面 slot 和测试。
 5. **新开发真实 Vue 组件**：先判定页面私有业务片段、业务域复用组件或全局真实复用组件。形成稳定复用单元时维护 `DESIGN.md` 真实组件清单、至少一个实际消费点和组件/消费页测试；不要为了组件文件存在而机械新增系统 kind。

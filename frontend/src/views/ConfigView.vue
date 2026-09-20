@@ -41,7 +41,7 @@ import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import RankedStockWorkbench from '@/components/ranked-stock/RankedStockWorkbench.vue'
-import { rankedStockColumns } from '@/components/ranked-stock/types'
+import type { RankedStockColumnKey } from '@/components/ranked-stock/types'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
@@ -50,6 +50,8 @@ import HelpHint from '@/components/HelpHint.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
+import PageSettingItem from '@/components/PageSettingItem.vue'
+import PageSettingSection from '@/components/PageSettingSection.vue'
 import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import IndicatorParamFields from '@/components/indicator/IndicatorParamFields.vue'
@@ -65,6 +67,16 @@ import { usePageSettings } from '@/composables/usePageSettings'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useTableSort } from '@/composables/useTableSort'
 import { useFormChangeTracker } from '@/composables/useFormChangeTracker'
+import { useMarketMasterRatioRuntime } from '@/composables/useMarketMasterRatioRuntime'
+import {
+  composeComponentRuntimeValueOf,
+  useStockChartComponentConfig,
+} from '@/composables/useStockChartComponentConfig'
+import { useRankedStockResultView } from '@/composables/useRankedStockResultView'
+import {
+  useStockAdjustModeSession,
+  type StockAdjustMode,
+} from '@/composables/useStockAnalysisSession'
 import { getSettingsView, resetSettings, saveSettings, type MailStatus, type SettingGroup } from '@/api/data'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
@@ -103,8 +115,18 @@ const pageSubtitle = computed(() => {
   if (forcedTab.value === 'system') return '保存后即时影响访问安全、数据采集、审计留存和研究运行参数。'
   return ''
 })
-// 本页暂无业务偏好项（previewExpanded 已下线：试算结果区恒渲染，不再有显隐开关）。
-const { isDirty, reset } = usePageSettings(configPageKey, {})
+type ConfigPageSettings = Record<string, unknown> & {
+  adjustMode?: StockAdjustMode
+}
+const configDefaults: ConfigPageSettings = activeTab.value === 'score'
+  ? { adjustMode: 'qfq' }
+  : {}
+const { settings, isDirty, reset } = usePageSettings(configPageKey, configDefaults)
+const adjustMode = useStockAdjustModeSession(settings)
+const settingsAdjustMode = computed<StockAdjustMode>({
+  get: () => settings.adjustMode ?? 'qfq',
+  set: (value) => { settings.adjustMode = value },
+})
 
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
 const configLayout = getPageLayout(configPageKey)
@@ -121,10 +143,25 @@ const {
   componentSourceOf,
   layerValuesOf,
   componentLayerValuesOf, componentAllowedLayers,
+  remoteHydrated,
 } = useRemoteLayoutConfig(configLayout)
 
 // 抽屉由 PageSettingsDrawer 按布局旋钮渲染；本页不再暴露 tabs 组件配置。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
+const {
+  setCurrentMasterRatioSample,
+  componentRuntimeValueOf: masterRuntimeValueOf,
+} = useMarketMasterRatioRuntime()
+const chartPreferences = useStockChartComponentConfig({
+  slotId: 'analysis',
+  componentValueOf,
+  setComponentKnob,
+  hydrated: remoteHydrated,
+})
+const componentRuntimeValueOf = composeComponentRuntimeValueOf(
+  masterRuntimeValueOf,
+  chartPreferences.componentRuntimeValueOf,
+)
 
 const TECH_SORT_FIELDS = ['catOrder', 'name_cn', 'layerLabel', 'typeLabel', 'srcLabel', 'hasParams'] as const
 const {
@@ -970,9 +1007,18 @@ function clearScoreRunResult() {
   scoreRunCompleted.value = false
 }
 const subKeys = computed(() => activeScoreItems.value.map((i) => i.indicator))
-const scoreRunColumns = rankedStockColumns([
+const scoreRunColumnKeys = computed<RankedStockColumnKey[]>(() => [
   'rank', 'code', 'name', 'board', 'score', 'grade', 'subScores',
 ])
+const {
+  rows: displayRunRows,
+  columns: scoreRunColumns,
+  onSortChange: onScoreRunSortChange,
+} = useRankedStockResultView({
+  rows: runRows,
+  columnKeys: scoreRunColumnKeys,
+  componentValueOf,
+})
 
 async function tryRun() {
   if (!activeScoreItems.value.length || weightSum.value !== 100) {
@@ -1680,7 +1726,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               :data="items"
               :max-height="SCORE_ITEM_TABLE_MAX_HEIGHT"
               size="small"
-              border
+              :border="tableBorder('scoreItems')"
               class="item-table"
               embedded
             >
@@ -1812,7 +1858,9 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             />
             <div v-else-if="runRows.length" class="run-table-wrap">
             <RankedStockWorkbench
-              :rows="runRows"
+              registry-page-key="config-score"
+              :adjust-mode="adjustMode"
+              :rows="displayRunRows"
               :columns="scoreRunColumns"
               :title="runDate || '最新交易日'"
               :meta="`${runRows.length} 只`"
@@ -1821,6 +1869,17 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               :score-keys="subKeys"
               :label-of="nameOf"
               :return-path="route.fullPath"
+              :border="tableBorder('result')"
+              :default-master-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 45)"
+              :master-ratio-profiles="componentValueOf('workspace', 'masterRatioProfiles')"
+              :slot2="chartPreferences.preferences.value.slot2"
+              :slot3="chartPreferences.preferences.value.slot3"
+              :height-ratios="chartPreferences.currentRatios.value"
+              @sort-change="onScoreRunSortChange"
+              @master-ratio-sample-change="setCurrentMasterRatioSample"
+              @ratio-draft="chartPreferences.handleRatioDraft"
+              @ratio-commit="chartPreferences.handleRatioCommit"
+              @workspace-resize="chartPreferences.handleWorkspaceResize"
             />
             </div>
             <AppStateBlock
@@ -2391,8 +2450,21 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       :page-key="configPageKey"
       :config="drawerConfig"
       :component-meta-overrides="configPanelMetaOverrides"
+      :component-runtime-value-of="componentRuntimeValueOf"
       @reset="reset(); resetLayout()"
-    />
+    >
+      <template v-if="activeTab === 'score'" #business>
+        <PageSettingSection title="行情口径">
+          <PageSettingItem label="复权模式">
+            <PageSegmented v-model="settingsAdjustMode" aria-label="复权模式" :options="[
+              { label: '不复权', value: '' },
+              { label: '前复权', value: 'qfq' },
+              { label: '后复权', value: 'hfq' },
+            ]" />
+          </PageSettingItem>
+        </PageSettingSection>
+      </template>
+    </PageSettingsDrawer>
     </template>
   </LayoutHost>
 </template>

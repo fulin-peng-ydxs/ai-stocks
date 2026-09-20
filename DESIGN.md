@@ -682,6 +682,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 页面通过 `componentMeta` 提供安全枚举（列、可交互排序字段、tabs 等）。
 - `componentMeta.columns` 只声明列显隐候选，不负责生成业务表格列；每个候选 key 必须在消费页面进入真实显隐判断并控制对应列或列内业务片段。该正向消费关系由 `pageRegistry.spec.ts` 契约测试强制，禁止“设置里可勾选、页面没有可渲染节点”的假配置。
 - 页面实际读取并应用字段值。
+- 复合业务组件若封装了多个可配置系统组件实例或承接页面业务口径，必须暴露并由消费页显式填写 `registryPageKey`（或等价的机器可读页面标识），并登记到 `layout/compositeComponentContracts.ts`；该契约声明必需子 slot、字段和运行时绑定。影响结果或展示口径的页面偏好统一登记到 `layout/pageBusinessPreferenceContracts.ts`，通用测试从每个直接或间接消费点反查默认值、抽屉控件与动态 prop 传递；中间组件的业务口径 prop 必须为必填且原样透传，禁止内部写死。只校验“已登记字段是否被消费”不够，因为它无法发现整个 slot 或业务偏好从未声明。
 - 配置中心和设置抽屉共用 `ComponentAutoSettings`，且同时受字段代码最大层级与管理员当前开放策略限制。
 - 普通页面从 `/layout/effective/{pageKey}` 一次获取 page/user 层和字段开放策略，前端结合本地 default 做三层合并；历史上已存但现策略禁止或实例不适用的值必须丢弃。
 - `useRemoteLayoutConfig` 返回的 `componentAllowedLayers` 必须传入 `PageSettingsDrawer`；页面脚手架和 `pageRegistry.spec.ts` 同时守卫该接线，禁止只在配置中心消费管理员策略。
@@ -789,7 +790,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `training` | `TrainingView`（盘感训练） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / nested:`chart` |
 | `trade-discipline` | `TradeDisciplineView`（交易纪律） | `workbench` | `density` | action:`toolbar` / main:`tabs(growMain)` / nested:`section` / nested:`section` / nested:`data-table` / overlay:`detail` |
 | `stock-detail` | `StockDetailView`（个股详情） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` / nested:`chart` / nested:`section` / nested:`section` / nested:`section` / nested:`section` |
-| `config-score` | `ConfigView`（评分规则） | `workbench` | `density` | action:`toolbar` / main:`section` |
+| `config-score` | `ConfigView`（评分规则） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / main:`master-detail` / nested:`wide-table` / nested:`chart` |
 | `config-trade` | `ConfigView`（买卖指标） | `workbench` | `density` | action:`toolbar` / main:`section` |
 | `config-tech` | `ConfigView`（技术指标） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`filter-bar` / nested:`data-table` / overlay:`form` |
 | `config-system` | `ConfigView`（系统设置） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`tabs` / nested:`config-panel` |

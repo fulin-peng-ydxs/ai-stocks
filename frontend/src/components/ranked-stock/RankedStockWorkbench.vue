@@ -12,8 +12,13 @@ import type { AuxiliaryChartType } from '@/composables/useStockChartPreferences'
 import type { StockChartWorkspaceSample } from '@/components/stock-chart/workspaceOptions'
 import type { MasterDetailRatioRuntimeSample } from '@/layout/masterDetailRatioProfiles'
 import type { MarketWorkspaceHeightMode } from '@/layout/marketWorkspaceSizing'
+import type { StockAdjustMode } from '@/composables/useStockAnalysisSession'
 
 const props = withDefaults(defineProps<{
+  /** pageRegistry 反向契约标识：每个消费页必须显式声明其布局事实源。 */
+  registryPageKey: string
+  /** 行情业务口径必须由消费页设置抽屉提供，禁止组件内部写死。 */
+  adjustMode: StockAdjustMode
   rows: ScoreRunRow[]
   columns: RankedStockColumn[]
   title: string
@@ -64,6 +69,7 @@ function selectRow(row: ScoreRunRow): void {
 
 <template>
   <MarketMasterDetailWorkspace
+    :data-registry-page-key="registryPageKey"
     v-model:analysis-visible="analysisVisible"
     eyebrow="评分结果"
     :title="title"
@@ -105,7 +111,7 @@ function selectRow(row: ScoreRunRow): void {
         :items="selection.items.value"
         :end-date="runDate"
         :compare-metrics="PRICE_COMPARE_METRIC_ORDER"
-        adjust-mode="qfq"
+        :adjust-mode="adjustMode"
         :slot2="slot2"
         :slot3="slot3"
         :height-ratios="heightRatios"
