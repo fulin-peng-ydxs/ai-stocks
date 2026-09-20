@@ -613,6 +613,8 @@ const curVersion = ref<number | null>(null)
 const editId = ref('')
 const editName = ref('')
 const items = ref<ScoreItem[]>([])
+// 长文档中的可增长编辑表只在少量行时自然撑高，超出可读区后由表体内部滚动。
+const SCORE_ITEM_TABLE_MAX_HEIGHT = 'clamp(320px, 42cqh, 440px)'
 const includeSt = ref(true)
 const saving = ref(false)
 const visibilitySaving = ref(false)
@@ -1674,7 +1676,14 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               title="正在加载方案详情…"
             />
 
-            <AppDataTable :data="items" size="small" border class="item-table" embedded>
+            <AppDataTable
+              :data="items"
+              :max-height="SCORE_ITEM_TABLE_MAX_HEIGHT"
+              size="small"
+              border
+              class="item-table"
+              embedded
+            >
               <AppTableColumn label="启用" role="structural">
                 <template #default="{ row }">
                   <StrategyItemEnabledSwitch
@@ -2610,7 +2619,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 }
 .run-table-wrap {
   flex: 1 1 auto;
-  min-height: 240px;
   display: flex;
   flex-direction: column;
 }

@@ -4,6 +4,10 @@ import { nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ElementPlus from 'element-plus'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
+import {
+  MARKET_WORKSPACE_COMPACT_MIN_HEIGHT,
+  MARKET_WORKSPACE_MIN_HEIGHT,
+} from '@/layout/marketWorkspaceSizing'
 
 function pointerEvent(type: string, pointerId: number, clientX: number): Event {
   const event = new Event(type)
@@ -18,6 +22,27 @@ describe('MarketMasterDetailWorkspace', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+  })
+
+  it('统一执行行情工作台的常规与紧凑可阅读高度', async () => {
+    const wrapper = mount(MarketMasterDetailWorkspace, {
+      props: {
+        analysisVisible: true,
+        eyebrow: 'TEST',
+        title: '测试列表',
+        heightMode: 'adaptive',
+      },
+      slots: { list: '<div>列表</div>', analysis: '<div>分析</div>' },
+      global: { plugins: [ElementPlus] },
+    })
+
+    expect(wrapper.get('.market-master-detail').attributes('style'))
+      .toContain(`min-height: ${MARKET_WORKSPACE_MIN_HEIGHT}px`)
+    expect(wrapper.getComponent({ name: 'AppSplitWorkspace' }).props('adaptiveHeight')).toBe(true)
+    await wrapper.setProps({ compact: true })
+    expect(wrapper.get('.market-master-detail').attributes('style'))
+      .toContain(`min-height: ${MARKET_WORKSPACE_COMPACT_MIN_HEIGHT}px`)
+    wrapper.unmount()
   })
 
   it('compact 模式只渲染列表并隐藏无效的分析收展入口', () => {

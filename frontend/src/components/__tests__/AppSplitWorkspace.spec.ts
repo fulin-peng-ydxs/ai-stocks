@@ -30,6 +30,7 @@ describe('AppSplitWorkspace', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+    document.body.innerHTML = ''
   })
 
   it('按 65/35 默认比例渲染双栏，并支持键盘调整和双击恢复', async () => {
@@ -120,5 +121,64 @@ describe('AppSplitWorkspace', () => {
     expect(compact.getComponent(PageDrawer).props('modalClass'))
       .toBe('app-split-workspace-drawer business-drawer')
     compact.unmount()
+  })
+
+  it('按调用方语义高度区分常规与紧凑工作台', async () => {
+    const wrapper = mountWorkspace({
+      minHeight: 480,
+      compactMinHeight: 400,
+    })
+    expect(wrapper.get('.app-split-workspace').attributes('style')).toContain('min-height: 480px')
+
+    await wrapper.setProps({ compact: true })
+    expect(wrapper.get('.app-split-workspace').attributes('style')).toContain('min-height: 400px')
+    wrapper.unmount()
+  })
+
+  it('adaptive 在页面未溢出时填满剩余高度，空间不足时守住可读下限', async () => {
+    let frameCallback: FrameRequestCallback | undefined
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frameCallback = callback
+      return 1
+    })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200)
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('test-scrollport') ? 900 : 0
+    })
+    let workspaceTop = 300
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const top = this.classList.contains('test-scrollport') ? 100 : workspaceTop
+      return {
+        x: 0, y: top, top, left: 0, right: 1200, bottom: top,
+        width: 1200, height: 0, toJSON: () => ({}),
+      }
+    })
+
+    const scrollport = document.createElement('div')
+    scrollport.className = 'test-scrollport'
+    scrollport.style.overflowY = 'auto'
+    document.body.appendChild(scrollport)
+    const wrapper = mount(AppSplitWorkspace, {
+      attachTo: scrollport,
+      props: {
+        secondaryVisible: true,
+        minHeight: 480,
+        adaptiveHeight: true,
+      },
+      slots: { primary: '<div>列表</div>', secondary: '<div>分析</div>' },
+      global: { plugins: [ElementPlus] },
+    })
+
+    frameCallback?.(0)
+    await nextTick()
+    expect(wrapper.get('.app-split-workspace').attributes('style')).toContain('height: 700px')
+
+    workspaceTop = 800
+    window.dispatchEvent(new Event('resize'))
+    frameCallback?.(0)
+    await nextTick()
+    expect(wrapper.get('.app-split-workspace').attributes('style')).toContain('height: 480px')
+    wrapper.unmount()
   })
 })

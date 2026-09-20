@@ -11,6 +11,7 @@ import { PRICE_COMPARE_METRIC_ORDER } from '@/utils/marketCompare'
 import type { AuxiliaryChartType } from '@/composables/useStockChartPreferences'
 import type { StockChartWorkspaceSample } from '@/components/stock-chart/workspaceOptions'
 import type { MasterDetailRatioRuntimeSample } from '@/layout/masterDetailRatioProfiles'
+import type { MarketWorkspaceHeightMode } from '@/layout/marketWorkspaceSizing'
 
 const props = withDefaults(defineProps<{
   rows: ScoreRunRow[]
@@ -28,11 +29,14 @@ const props = withDefaults(defineProps<{
   slot2?: AuxiliaryChartType
   slot3?: AuxiliaryChartType
   heightRatios?: number[]
+  heightMode?: MarketWorkspaceHeightMode
 }>(), {
   meta: '', runDate: '', loading: false, scoreKeys: () => [],
   labelOf: (key: string) => key, returnPath: '', border: false,
   defaultMasterRatio: 45, slot2: 'volume', slot3: 'macd',
   heightRatios: () => [56, 22, 22],
+  // 排名结果工作台通常位于筛选/试算等长文档末段，默认自适应剩余空间并内部滚动。
+  heightMode: 'adaptive',
 })
 
 const emit = defineEmits<{
@@ -66,6 +70,7 @@ function selectRow(row: ScoreRunRow): void {
     :meta="meta"
     :default-master-ratio="defaultMasterRatio"
     :master-ratio-profiles="masterRatioProfiles"
+    :height-mode="heightMode"
     analysis-drawer-title="股票走势分析"
     test-id-prefix="ranked-stock"
     @master-ratio-sample-change="emit('masterRatioSampleChange', $event)"

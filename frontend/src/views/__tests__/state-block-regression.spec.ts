@@ -1103,6 +1103,7 @@ describe('代表性页面四态回归', () => {
     await wrapper.findAll('button').find((button) => button.text().includes('运行筛选'))!.trigger('click')
     await flushPromises()
     const workbench = wrapper.findComponent(RankedStockWorkbench)
+    expect(workbench.props('heightMode')).toBe('adaptive')
     expect((workbench.props('columns') as { key: string }[]).map((column) => column.key)).toEqual([
       'rank', 'code', 'name', 'board', 'relatedIndustry', 'score', 'grade', 'subScores',
     ])

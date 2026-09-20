@@ -20,6 +20,7 @@ import { validateLayout } from '../validator'
 import { COMPONENT_CATALOG } from '../components'
 import { getComponentFieldDef } from '../componentConfig'
 import type { ComponentKind } from '../schema'
+import { MARKET_WORKSPACE_MIN_HEIGHT } from '../marketWorkspaceSizing'
 
 const RESPONSIVE_PROFILES = new Set(['single-column', 'safe-reflow', 'mixed-panel'])
 const DESIGN_MD = readFileSync(new URL('../../../../DESIGN.md', import.meta.url), 'utf-8')
@@ -880,6 +881,19 @@ describe('组件消费关系与配置一致性（P4）', () => {
   })
 
   it('行情主从工作台统一在组件设置消费默认比例，主区拖动不反写配置层', () => {
+    for (const pageKey of [
+      'stocks',
+      'board',
+      'limit-ladder',
+      'screen',
+      'stock-detail',
+      'sectors',
+      'sectors-detail',
+    ]) {
+      expect(getPageEntry(pageKey)?.layout.slots.find((slot) => slot.id === 'workspace')?.minH)
+        .toBe(MARKET_WORKSPACE_MIN_HEIGHT)
+    }
+
     for (const pageKey of ['stocks', 'board', 'limit-ladder', 'sectors']) {
       const entry = getPageEntry(pageKey)!
       expect(applicableComponentFields(entry, 'workspace').map((field) => field.key)).toContain('masterRatio')
@@ -912,6 +926,15 @@ describe('组件消费关系与配置一致性（P4）', () => {
     )
     expect(workspaceSource).toContain('useDefaultedSessionValue(configuredPrimaryWidth, {')
     expect(workspaceSource).not.toContain('setComponentKnob')
+    const rankedWorkbenchSource = readFileSync(
+      new URL('../../components/ranked-stock/RankedStockWorkbench.vue', import.meta.url),
+      'utf8',
+    )
+    expect(rankedWorkbenchSource).toContain("heightMode: 'adaptive'")
+    expect(sourceForPage('config-score'))
+      .toContain(':max-height="SCORE_ITEM_TABLE_MAX_HEIGHT"')
+    expect(sourceForPage('config-score')).not.toContain('height-mode=')
+    expect(sourceForPage('screen')).not.toContain('height-mode=')
   })
 
   it('板块列表恢复业务偏好和组件配置，详情仅恢复自身组件配置', () => {

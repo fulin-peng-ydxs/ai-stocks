@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, useAttrs, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useAttrs, watch } from 'vue'
 import PageDrawer from '@/components/PageDrawer.vue'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { viewportDeltaToLayoutPixels } from '@/utils/displayScaleGeometry'
+import { adaptiveWorkspaceHeight } from '@/layout/marketWorkspaceSizing'
 import {
   closestMasterDetailRatioProfile,
   MASTER_DETAIL_RATIO_DEFAULT,
@@ -23,6 +24,9 @@ const props = withDefaults(defineProps<{
   primaryOnlyMinWidth?: number
   secondaryMinWidth?: number
   compactMaxWidth?: number
+  minHeight?: number
+  compactMinHeight?: number
+  adaptiveHeight?: boolean
   secondaryDrawerTitle?: string
   separatorLabel?: string
   drawerClass?: string
@@ -36,6 +40,8 @@ const props = withDefaults(defineProps<{
   primaryOnlyMinWidth: 360,
   secondaryMinWidth: 240,
   compactMaxWidth: 720,
+  minHeight: 0,
+  compactMinHeight: 0,
   secondaryDrawerTitle: '辅助信息',
   separatorLabel: '调整左右栏宽度',
   drawerClass: 'app-split-workspace-drawer',
@@ -59,6 +65,7 @@ defineSlots<{
 
 const workspaceEl = ref<HTMLElement | null>(null)
 const workspaceWidth = ref(0)
+const measuredAdaptiveHeight = ref<number | null>(null)
 const matchedProfile = computed(() => closestMasterDetailRatioProfile(
   props.primaryRatioProfiles,
   workspaceWidth.value,
@@ -119,6 +126,10 @@ const workspaceStyle = computed(() => ({
     : `${renderSecondary.value
       ? props.primaryMinWidth + SPLITTER_WIDTH + props.secondaryMinWidth
       : props.primaryOnlyMinWidth}px`,
+  minHeight: `${autoCompact.value ? props.compactMinHeight : props.minHeight}px`,
+  height: props.adaptiveHeight && measuredAdaptiveHeight.value != null
+    ? `${measuredAdaptiveHeight.value}px`
+    : undefined,
 }))
 const drawerClassName = computed(() => [
   'app-split-workspace-drawer',
@@ -139,7 +150,71 @@ const currentRatioSample = computed<MasterDetailRatioRuntimeSample | undefined>(
 ))
 
 let resizeObserver: ResizeObserver | null = null
+let adaptiveResizeObserver: ResizeObserver | null = null
+let adaptiveScrollport: HTMLElement | null = null
+let adaptiveFrame = 0
 let drag: { pointerId: number; startX: number; startWidth: number } | null = null
+
+function isVerticalScrollport(element: HTMLElement): boolean {
+  const overflowY = window.getComputedStyle(element).overflowY
+  return overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay'
+}
+
+function findVerticalScrollport(element: HTMLElement): HTMLElement {
+  let current = element.parentElement
+  while (current) {
+    if (isVerticalScrollport(current)) return current
+    current = current.parentElement
+  }
+  return document.getElementById('app') ?? document.documentElement
+}
+
+function measureAdaptiveHeight(): void {
+  adaptiveFrame = 0
+  const element = workspaceEl.value
+  if (!props.adaptiveHeight || !element) {
+    measuredAdaptiveHeight.value = null
+    return
+  }
+  const scrollport = findVerticalScrollport(element)
+  const scrollportRect = scrollport.getBoundingClientRect()
+  const elementRect = element.getBoundingClientRect()
+  const contentTop = viewportDeltaToLayoutPixels(
+    elementRect.top - scrollportRect.top,
+    element,
+    'y',
+  ) - scrollport.clientTop + scrollport.scrollTop
+  const bottomInset = Number.parseFloat(window.getComputedStyle(scrollport).paddingBottom) || 0
+  measuredAdaptiveHeight.value = adaptiveWorkspaceHeight({
+    scrollportHeight: scrollport.clientHeight,
+    contentTop,
+    minHeight: autoCompact.value ? props.compactMinHeight : props.minHeight,
+    bottomInset,
+  })
+}
+
+function scheduleAdaptiveHeightMeasure(): void {
+  if (adaptiveFrame) cancelAnimationFrame(adaptiveFrame)
+  adaptiveFrame = requestAnimationFrame(measureAdaptiveHeight)
+}
+
+function bindAdaptiveHeightMeasurement(): void {
+  adaptiveResizeObserver?.disconnect()
+  adaptiveResizeObserver = null
+  adaptiveScrollport = null
+  if (!props.adaptiveHeight || !workspaceEl.value) {
+    measuredAdaptiveHeight.value = null
+    return
+  }
+  adaptiveScrollport = findVerticalScrollport(workspaceEl.value)
+  if (typeof ResizeObserver !== 'undefined') {
+    adaptiveResizeObserver = new ResizeObserver(scheduleAdaptiveHeightMeasure)
+    adaptiveResizeObserver.observe(adaptiveScrollport)
+    const parent = workspaceEl.value.parentElement
+    if (parent && parent !== adaptiveScrollport) adaptiveResizeObserver.observe(parent)
+  }
+  scheduleAdaptiveHeightMeasure()
+}
 
 function resetPrimaryWidth(): void {
   sessionAdjusted.value = false
@@ -229,6 +304,10 @@ watch(autoCompact, (compact) => {
 }, { immediate: true })
 watch(effectivePrimaryRatio, (value) => emit('primaryRatioChange', value), { immediate: true })
 watch(currentRatioSample, (value) => emit('primaryRatioSampleChange', value), { immediate: true })
+watch(
+  [() => props.adaptiveHeight, autoCompact],
+  () => { void nextTick(bindAdaptiveHeightMeasurement) },
+)
 
 defineExpose({ openCompactSecondary, closeCompactSecondary })
 
@@ -238,12 +317,19 @@ onMounted(() => {
     resizeObserver = new ResizeObserver(updateWorkspaceWidth)
     resizeObserver.observe(workspaceEl.value)
   }
+  bindAdaptiveHeightMeasurement()
+  window.addEventListener('resize', scheduleAdaptiveHeightMeasure)
 })
 
 onBeforeUnmount(() => {
   finishDrag()
   resizeObserver?.disconnect()
   resizeObserver = null
+  adaptiveResizeObserver?.disconnect()
+  adaptiveResizeObserver = null
+  adaptiveScrollport = null
+  if (adaptiveFrame) cancelAnimationFrame(adaptiveFrame)
+  window.removeEventListener('resize', scheduleAdaptiveHeightMeasure)
 })
 </script>
 

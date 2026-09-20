@@ -5,6 +5,11 @@ import AppIconButton from '@/components/AppIconButton.vue'
 import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
 import AppWorkspacePane from '@/components/AppWorkspacePane.vue'
 import type { MasterDetailRatioRuntimeSample } from '@/layout/masterDetailRatioProfiles'
+import {
+  MARKET_WORKSPACE_COMPACT_MIN_HEIGHT,
+  MARKET_WORKSPACE_MIN_HEIGHT,
+  type MarketWorkspaceHeightMode,
+} from '@/layout/marketWorkspaceSizing'
 
 const props = defineProps<{
   analysisVisible: boolean
@@ -17,6 +22,7 @@ const props = defineProps<{
   masterRatioProfiles?: unknown
   analysisDrawerTitle?: string
   testIdPrefix?: string
+  heightMode?: MarketWorkspaceHeightMode
 }>()
 defineOptions({ inheritAttrs: false })
 const attrs = useAttrs()
@@ -56,6 +62,9 @@ defineExpose({ openCompactAnalysis, closeCompactAnalysis })
     :default-primary-ratio="defaultMasterRatio"
     :primary-ratio-profiles="masterRatioProfiles"
     :primary-only-min-width="640"
+    :min-height="MARKET_WORKSPACE_MIN_HEIGHT"
+    :compact-min-height="MARKET_WORKSPACE_COMPACT_MIN_HEIGHT"
+    :adaptive-height="heightMode === 'adaptive'"
     :secondary-drawer-title="analysisDrawerTitle || '走势分析'"
     separator-label="调整列表与走势分析宽度"
     :test-id-prefix="testIdPrefix"

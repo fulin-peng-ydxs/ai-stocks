@@ -84,6 +84,10 @@ import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyS
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { MASTER_DETAIL_RATIO_DEFAULT } from '@/layout/masterDetailRatioProfiles'
+import {
+  MARKET_WORKSPACE_COMPACT_MIN_HEIGHT,
+  MARKET_WORKSPACE_MIN_HEIGHT,
+} from '@/layout/marketWorkspaceSizing'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
 const route = useRoute()
@@ -1165,6 +1169,8 @@ onBeforeUnmount(() => {
           :secondary-visible="showAuxiliary"
           :default-primary-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? detailWorkspaceDefaultRatio)"
           :primary-ratio-profiles="componentValueOf('workspace', 'masterRatioProfiles')"
+          :min-height="MARKET_WORKSPACE_MIN_HEIGHT"
+          :compact-min-height="MARKET_WORKSPACE_COMPACT_MIN_HEIGHT"
           secondary-drawer-title="个股辅助信息"
           separator-label="调整图表与辅助信息宽度"
           test-id-prefix="stock-detail"

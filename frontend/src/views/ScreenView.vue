@@ -1274,7 +1274,6 @@ const menuPageTitle = useMenuPageTitle()
 }
 .run-table-wrap {
   flex: 1 1 auto;
-  min-height: 240px;
   display: flex;
   flex-direction: column;
 }

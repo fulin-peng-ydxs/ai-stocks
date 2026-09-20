@@ -20,6 +20,7 @@ import {
   type ComponentSlotConfigMeta,
 } from './componentConfig'
 import { createDefaultStockChartPreferences } from '@/composables/useStockChartPreferences'
+import { MARKET_WORKSPACE_MIN_HEIGHT } from './marketWorkspaceSizing'
 
 /** 页面响应式策略（plan.md §14.3）。受控命名，不等于自由编辑断点。 */
 export type ResponsiveProfile =
@@ -142,7 +143,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'workspace', component: 'master-detail', region: 'main', minH: 360, label: '连板天梯研究工作台', order: 1 },
+        { id: 'workspace', component: 'master-detail', region: 'main', minH: MARKET_WORKSPACE_MIN_HEIGHT, label: '连板天梯研究工作台', order: 1 },
         { id: 'ladder', component: 'section', region: 'main', parentId: 'workspace', label: '天梯分层', order: 1 },
         { id: 'analysis', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences() } },
         { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
@@ -196,7 +197,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'workspace', component: 'master-detail', region: 'main', minH: 360, label: '榜单股票行情工作台', order: 1 },
+        { id: 'workspace', component: 'master-detail', region: 'main', minH: MARKET_WORKSPACE_MIN_HEIGHT, label: '榜单股票行情工作台', order: 1 },
         { id: 'table', component: 'wide-table', region: 'main', parentId: 'workspace', label: '榜单列表', order: 1, config: { pagination: false, defaultSort: 'score' } },
         { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences() } },
       ],
@@ -249,7 +250,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'builder', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'workspace', component: 'master-detail', region: 'main', minH: 360, label: '筛选评分结果工作台', order: 1 },
+        { id: 'workspace', component: 'master-detail', region: 'main', minH: MARKET_WORKSPACE_MIN_HEIGHT, label: '筛选评分结果工作台', order: 1 },
         { id: 'result', component: 'wide-table', region: 'main', parentId: 'workspace', label: '结果列表', order: 1, config: { pagination: false, defaultSort: 'score' } },
         { id: 'analysis', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences() } },
       ],
@@ -328,7 +329,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'filter', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'workspace', component: 'master-detail', region: 'main', minH: 360, label: '个股行情分析工作台', order: 1 },
+        { id: 'workspace', component: 'master-detail', region: 'main', minH: MARKET_WORKSPACE_MIN_HEIGHT, label: '个股行情分析工作台', order: 1 },
         { id: 'table', component: 'wide-table', region: 'main', parentId: 'workspace', label: '普通查询列表', order: 1, config: { pagination: true, defaultSort: 'pct_chg:asc' } },
         // 分组视图表：与 table 互斥渲染（按 defaultView 模式），建模为 table 的可寻址子槽，承载独立列集，不进主流渲染。
         { id: 'groupTable', component: 'wide-table', region: 'main', parentId: 'workspace', label: '分组视图', order: 2, config: { pagination: true, defaultSort: 'add_date:asc' } },
@@ -832,7 +833,7 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'quoteSummary', component: 'section', region: 'main', label: '个股行情摘要', order: 1 },
-        { id: 'workspace', component: 'master-detail', region: 'main', minH: 360, label: '个股详情双栏工作台', order: 2, config: { masterRatio: 65, masterRatioProfiles: { profiles: [] } } },
+        { id: 'workspace', component: 'master-detail', region: 'main', minH: MARKET_WORKSPACE_MIN_HEIGHT, label: '个股详情双栏工作台', order: 2, config: { masterRatio: 65, masterRatioProfiles: { profiles: [] } } },
         { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '个股行情', order: 1, config: { stockChart: createDefaultStockChartPreferences() } },
         { id: 'relatedBoards', component: 'section', region: 'main', parentId: 'workspace', label: '所属板块', order: 2 },
         { id: 'indicatorSnapshot', component: 'section', region: 'main', parentId: 'workspace', label: '最新指标快照', order: 3 },
@@ -1108,7 +1109,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'filter', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'workspace', component: 'master-detail', region: 'main', minH: 360, label: '板块强弱分析工作台', order: 1 },
+        { id: 'workspace', component: 'master-detail', region: 'main', minH: MARKET_WORKSPACE_MIN_HEIGHT, label: '板块强弱分析工作台', order: 1 },
         {
           id: 'table',
           component: 'wide-table',
@@ -1170,7 +1171,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
-        { id: 'workspace', component: 'master-detail', region: 'main', minH: 360, label: '板块详情双栏工作台', order: 1, config: { masterRatio: 65, masterRatioProfiles: { profiles: [] } } },
+        { id: 'workspace', component: 'master-detail', region: 'main', minH: MARKET_WORKSPACE_MIN_HEIGHT, label: '板块详情双栏工作台', order: 1, config: { masterRatio: 65, masterRatioProfiles: { profiles: [] } } },
         { id: 'summary', component: 'section', region: 'main', parentId: 'workspace', label: '板块行情摘要', order: 1 },
         { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '板块走势', order: 1, config: { stockChart: createDefaultStockChartPreferences() } },
         { id: 'memberTable', component: 'data-table', region: 'main', parentId: 'workspace', label: '成分股', order: 2, config: { pagination: true, defaultSort: 'pct:desc', pageSize: 20 } },

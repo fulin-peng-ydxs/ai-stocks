@@ -49,6 +49,10 @@ import { useTradeDates } from '@/composables/useTradeDates'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { MASTER_DETAIL_RATIO_DEFAULT } from '@/layout/masterDetailRatioProfiles'
+import {
+  MARKET_WORKSPACE_COMPACT_MIN_HEIGHT,
+  MARKET_WORKSPACE_MIN_HEIGHT,
+} from '@/layout/marketWorkspaceSizing'
 import { useAuthStore } from '@/stores/auth'
 import { useSectorsSessionStore } from '@/stores/sectorsSession'
 import { useStockSet } from '@/stores/stockSet'
@@ -525,6 +529,8 @@ onMounted(async () => {
           :secondary-visible="memberPanelVisible"
           :default-primary-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? workspaceDefaultRatio)"
           :primary-ratio-profiles="componentValueOf('workspace', 'masterRatioProfiles')"
+          :min-height="MARKET_WORKSPACE_MIN_HEIGHT"
+          :compact-min-height="MARKET_WORKSPACE_COMPACT_MIN_HEIGHT"
           secondary-drawer-title="板块成分股"
           separator-label="调整板块走势与成分股宽度"
           test-id-prefix="sector-detail"
