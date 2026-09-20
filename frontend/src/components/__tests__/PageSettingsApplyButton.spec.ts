@@ -17,4 +17,16 @@ describe('PageSettingsApplyButton', () => {
     await button.trigger('click')
     expect(wrapper.emitted('click')).toHaveLength(1)
   })
+
+  it('保存期间展示 loading 并在组件边界拒绝重复点击', async () => {
+    const wrapper = mount(PageSettingsApplyButton, {
+      props: { loading: true, testId: 'apply-current' },
+      global: { plugins: [ElementPlus] },
+    })
+
+    const button = wrapper.get('[data-testid="apply-current"]')
+    expect(button.classes()).toContain('is-loading')
+    await button.trigger('click')
+    expect(wrapper.emitted('click')).toBeUndefined()
+  })
 })

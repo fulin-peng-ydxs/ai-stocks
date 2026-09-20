@@ -266,6 +266,7 @@ const drawerConfig = {
   componentSourceOf,
   componentLayerValuesOf,
   componentAllowedLayers,
+  save: saveRemoteUserConfig,
 }
 const {
   setCurrentMasterRatioSample,

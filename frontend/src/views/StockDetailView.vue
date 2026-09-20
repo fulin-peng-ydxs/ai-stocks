@@ -119,7 +119,7 @@ const {
 } = useRemoteLayoutConfig(detailLayout)
 
 // 抽屉的布局、分栏比例与图表组合由 PageSettingsDrawer 按 pageRegistry 元数据统一渲染。
-const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers, save: saveRemoteUserConfig }
 const detailDefaults = {
   adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
   showTradeCard: true,

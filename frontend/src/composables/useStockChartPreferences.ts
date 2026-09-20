@@ -144,6 +144,11 @@ export function setAuxiliaryChartType(
   return normalizeStockChartPreferences(preferences)
 }
 
+export function stockChartPreferencesEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(normalizeStockChartPreferences(left))
+    === JSON.stringify(normalizeStockChartPreferences(right))
+}
+
 function samePreferences(left: unknown, right: StockChartPreferences): boolean {
   return JSON.stringify(left) === JSON.stringify(right)
 }

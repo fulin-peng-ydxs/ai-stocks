@@ -34,4 +34,17 @@ describe('MasterDetailRatioProfileSettings', () => {
 
     expect(wrapper.get('[data-testid="master-ratio-profile-save-current"]').attributes('disabled')).toBeDefined()
   })
+
+  it('保存期间保留按钮语义并阻止重复采用', async () => {
+    const wrapper = mountSettings({
+      modelValue: { profiles: [] },
+      currentSample: { width: 1840, ratio: 46 },
+      saving: true,
+    })
+
+    const button = wrapper.get('[data-testid="master-ratio-profile-save-current"]')
+    expect(button.classes()).toContain('is-loading')
+    await button.trigger('click')
+    expect(wrapper.emitted('apply')).toBeUndefined()
+  })
 })

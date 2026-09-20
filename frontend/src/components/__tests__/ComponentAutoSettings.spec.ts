@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, reactive, type Component } from 'vue'
+import { ElMessage } from 'element-plus'
 import ComponentAutoSettings from '@/components/ComponentAutoSettings.vue'
 import { createDefaultStockChartPreferences } from '@/composables/useStockChartPreferences'
 
@@ -349,9 +350,9 @@ function mountChartDemo(withRuntime = false) {
         ElCheckbox: true,
         ElEmpty: true,
         StockChartSettingSection: {
-          props: ['slot2', 'slot3', 'defaultRatios', 'currentRatios', 'canApplyCurrentRatios'],
+          props: ['slot2', 'slot3', 'defaultRatios', 'currentRatios', 'canApplyCurrentRatios', 'currentRatiosChanged', 'disableCurrentRatios'],
           emits: ['change', 'saveDefaultRatios', 'applyCurrentRatios'],
-          template: '<div><button class="stock-chart-stub" :data-current-ratios="currentRatios.join(\'|\')" @click="$emit(\'change\', \'slot2\', \'macd\')">chart</button><button class="stock-chart-current-stub" @click="$emit(\'change\', \'slot2\', \'volume\')">current</button><button class="stock-chart-ratio-stub" @click="$emit(\'saveDefaultRatios\', [0.52, 0.28, 0.2])">ratio</button><button class="stock-chart-apply-stub" :disabled="!canApplyCurrentRatios" @click="$emit(\'applyCurrentRatios\')">apply</button></div>',
+          template: '<div><button class="stock-chart-stub" :data-current-ratios="currentRatios.join(\'|\')" @click="$emit(\'change\', \'slot2\', \'macd\')">chart</button><button class="stock-chart-current-stub" @click="$emit(\'change\', \'slot2\', \'volume\')">current</button><button class="stock-chart-ratio-stub" @click="$emit(\'saveDefaultRatios\', [0.52, 0.28, 0.2])">ratio</button><button class="stock-chart-apply-stub" :disabled="!canApplyCurrentRatios || !currentRatiosChanged || disableCurrentRatios" @click="$emit(\'applyCurrentRatios\')">apply</button></div>',
         },
       },
     },
@@ -359,7 +360,7 @@ function mountChartDemo(withRuntime = false) {
   return { wrapper, setComponentKnob }
 }
 
-function mountMasterDemo(runtimeRatio?: number) {
+function mountMasterDemo(runtimeRatio?: number, save?: () => Promise<boolean | void>) {
   const values = reactive<Record<string, unknown>>({
     masterRatio: 45,
     masterRatioProfiles: {
@@ -380,6 +381,7 @@ function mountMasterDemo(runtimeRatio?: number) {
       config: {
         componentValueOf: vi.fn((_slotId: string, field: string) => values[field]),
         setComponentKnob,
+        save,
       },
     },
     global: {
@@ -388,9 +390,9 @@ function mountMasterDemo(runtimeRatio?: number) {
         SourceTag: true,
         AppRowActions: true,
         MasterDetailRatioProfileSettings: {
-          props: ['modelValue', 'currentSample'],
+          props: ['modelValue', 'currentSample', 'disabled', 'saving'],
           emits: ['apply'],
-          template: '<button data-testid="master-ratio-profile-save-current" :disabled="!currentSample" @click="$emit(\'apply\', { ratio: currentSample.ratio, profiles: { profiles: [currentSample] } })">使用页面当前比例</button>',
+          template: '<button data-testid="master-ratio-profile-save-current" :data-saving="String(Boolean(saving))" :disabled="disabled || !currentSample || saving" @click="$emit(\'apply\', { ratio: currentSample.ratio, profiles: { profiles: [currentSample] } })">使用页面当前比例</button>',
         },
         ElInputNumber: {
           props: ['modelValue'],
@@ -530,6 +532,65 @@ describe('ComponentAutoSettings', () => {
       profiles: [{ width: 1920, ratio: 48 }],
     })
     expect(wrapper.get('.number-stub').attributes('data-value')).toBe('48')
+  })
+
+  it('采用页面当前比例时锁定按钮直到显式持久化完成', async () => {
+    let resolveSave!: () => void
+    const save = vi.fn(() => new Promise<void>((resolve) => { resolveSave = resolve }))
+    const { wrapper, setComponentKnob } = mountMasterDemo(48, save)
+    const button = wrapper.get('[data-testid="master-ratio-profile-save-current"]')
+
+    await button.trigger('click')
+    await nextTick()
+    expect(button.attributes('data-saving')).toBe('true')
+    expect(save).toHaveBeenCalledOnce()
+    expect(setComponentKnob).toHaveBeenCalledTimes(2)
+
+    await button.trigger('click')
+    expect(setComponentKnob).toHaveBeenCalledTimes(2)
+
+    resolveSave()
+    await flushPromises()
+    await nextTick()
+    expect(button.attributes('data-saving')).toBe('false')
+    expect(button.attributes('disabled')).toBeDefined()
+
+    await button.trigger('click')
+    expect(save).toHaveBeenCalledOnce()
+    expect(setComponentKnob).toHaveBeenCalledTimes(2)
+  })
+
+  it('采用页面当前比例保存失败时提示错误并释放按钮供重试', async () => {
+    const error = vi.spyOn(ElMessage, 'error').mockReturnValue({} as ReturnType<typeof ElMessage.error>)
+    const { wrapper } = mountMasterDemo(48, vi.fn().mockResolvedValue(false))
+    const button = wrapper.get('[data-testid="master-ratio-profile-save-current"]')
+
+    await button.trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    expect(error).toHaveBeenCalledWith('保存失败，请稍后重试')
+    expect(button.attributes('data-saving')).toBe('false')
+    expect(button.attributes('disabled')).toBeUndefined()
+
+    await button.trigger('click')
+    await flushPromises()
+    expect(error).toHaveBeenCalledTimes(2)
+    error.mockRestore()
+  })
+
+  it('保存函数抛出异常时同样提示错误并释放按钮', async () => {
+    const error = vi.spyOn(ElMessage, 'error').mockReturnValue({} as ReturnType<typeof ElMessage.error>)
+    const { wrapper } = mountMasterDemo(48, vi.fn().mockRejectedValue(new Error('failed')))
+    const button = wrapper.get('[data-testid="master-ratio-profile-save-current"]')
+
+    await button.trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    expect(error).toHaveBeenCalledWith('保存失败，请稍后重试')
+    expect(button.attributes('data-saving')).toBe('false')
+    error.mockRestore()
   })
 
   it('行情工作台按尺寸档案或安全边界调整后回显页面实际比例', () => {

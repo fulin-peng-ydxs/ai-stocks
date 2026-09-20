@@ -13,7 +13,7 @@ interface LegacyStockChartPreferenceMigrationAccess {
   componentSourceOf: (slotId: string, field: string) => unknown
   setComponentKnob: (slotId: string, field: string, value: unknown) => void
   whenRemoteHydrated: () => Promise<void>
-  saveRemoteUserConfig: () => Promise<void>
+  saveRemoteUserConfig: () => Promise<boolean | void>
   remoteSaveFailed: () => boolean
 }
 

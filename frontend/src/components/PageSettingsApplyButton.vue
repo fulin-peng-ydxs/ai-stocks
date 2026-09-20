@@ -1,16 +1,23 @@
 <script setup lang="ts">
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   label?: string
   disabled?: boolean
+  loading?: boolean
   testId?: string
 }>(), {
   label: '使用页面当前值',
   disabled: false,
+  loading: false,
 })
 
 const emit = defineEmits<{
   click: []
 }>()
+
+function handleClick(): void {
+  if (props.disabled || props.loading) return
+  emit('click')
+}
 </script>
 
 <template>
@@ -18,10 +25,11 @@ const emit = defineEmits<{
     class="page-settings-apply-button"
     type="primary"
     plain
-    :disabled="disabled"
-    :data-testid="testId"
-    @click="emit('click')"
-  >{{ label }}</el-button>
+    :disabled="props.disabled"
+    :loading="props.loading"
+    :data-testid="props.testId"
+    @click="handleClick"
+  >{{ props.label }}</el-button>
 </template>
 
 <style scoped>

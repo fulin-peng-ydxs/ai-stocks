@@ -98,6 +98,66 @@ describe('useRemoteLayoutConfig', () => {
     }))
   })
 
+  it('显式保存会接管已排队的防抖写入，避免同值重复请求', async () => {
+    vi.useFakeTimers()
+    const { config } = mountHarness(makeLayout())
+    await flushPromises()
+
+    config.setComponentKnob('table', 'pageSize', 50)
+    await nextTick()
+    await config.saveRemoteUserConfig()
+    await vi.advanceTimersByTimeAsync(350)
+
+    expect(layoutApi.saveLayoutUserConfig).toHaveBeenCalledTimes(1)
+  })
+
+  it('连续保存串行执行并让后发配置最终落库', async () => {
+    const firstSave = deferred<unknown>()
+    layoutApi.saveLayoutUserConfig
+      .mockReturnValueOnce(firstSave.promise)
+      .mockResolvedValueOnce({})
+    const { config } = mountHarness(makeLayout())
+    await flushPromises()
+
+    config.setComponentKnob('table', 'pageSize', 50)
+    await nextTick()
+    const first = config.saveRemoteUserConfig()
+    await flushPromises()
+    expect(layoutApi.saveLayoutUserConfig).toHaveBeenCalledTimes(1)
+
+    config.setComponentKnob('table', 'pageSize', 100)
+    await nextTick()
+    const second = config.saveRemoteUserConfig()
+    await flushPromises()
+    expect(layoutApi.saveLayoutUserConfig).toHaveBeenCalledTimes(1)
+
+    firstSave.resolve({})
+    await Promise.all([first, second])
+    expect(layoutApi.saveLayoutUserConfig).toHaveBeenCalledTimes(2)
+    expect(layoutApi.saveLayoutUserConfig).toHaveBeenLastCalledWith(
+      'remote-page',
+      expect.objectContaining({
+        config: expect.objectContaining({
+          values: expect.objectContaining({ 'slots.table.config.pageSize': 100 }),
+        }),
+      }),
+    )
+  })
+
+  it('显式保存失败返回失败结果并保留错误态', async () => {
+    layoutApi.saveLayoutUserConfig.mockRejectedValueOnce(new Error('failed'))
+    const { config } = mountHarness(makeLayout())
+    await flushPromises()
+
+    config.setComponentKnob('table', 'pageSize', 50)
+    await nextTick()
+    const saved = await config.saveRemoteUserConfig()
+
+    expect(saved).toBe(false)
+    expect(config.remoteSaveError.value).toBe(true)
+    expect(config.remoteSaving.value).toBe(false)
+  })
+
   it('远端用户层返回时保留加载期间的本地编辑并回写 PG', async () => {
     vi.useFakeTimers()
     const effectiveReq = deferred<ReturnType<typeof effectiveConfig>>()

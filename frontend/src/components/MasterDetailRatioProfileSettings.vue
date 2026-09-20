@@ -9,6 +9,8 @@ import {
 const props = defineProps<{
   modelValue?: unknown
   currentSample?: MasterDetailRatioSample
+  disabled?: boolean
+  saving?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -16,7 +18,7 @@ const emit = defineEmits<{
 }>()
 
 function saveCurrent(): void {
-  if (!props.currentSample) return
+  if (!props.currentSample || props.disabled || props.saving) return
   emit('apply', {
     profiles: upsertMasterDetailRatioProfile(props.modelValue, props.currentSample),
     ratio: props.currentSample.ratio,
@@ -26,7 +28,8 @@ function saveCurrent(): void {
 
 <template>
   <PageSettingsApplyButton
-    :disabled="!currentSample"
+    :disabled="disabled || !currentSample"
+    :loading="saving"
     label="使用页面当前比例"
     test-id="master-ratio-profile-save-current"
     @click="saveCurrent"

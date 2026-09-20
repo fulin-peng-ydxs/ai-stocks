@@ -11,7 +11,7 @@
  */
 import { computed, nextTick, ref, watch } from 'vue'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
-import { ElInput, ElInputNumber } from 'element-plus'
+import { ElInput, ElInputNumber, ElMessage } from 'element-plus'
 import AppRowActions from './AppRowActions.vue'
 import SettingsGroup from './SettingsGroup.vue'
 import PageSegmented from './PageSegmented.vue'
@@ -37,11 +37,13 @@ import {
   chartCompositionKey,
   normalizeStockChartPreferences,
   setAuxiliaryChartType,
+  stockChartPreferencesEqual,
   visibleChartTypes,
 } from '@/composables/useStockChartPreferences'
 import { upsertStockChartRatioProfile } from '@/layout/stockChartRatioProfiles'
 import type { AppRowAction } from './rowActions'
 import {
+  normalizeMasterDetailRatioProfiles,
   upsertMasterDetailRatioProfile,
   type MasterDetailRatioProfilesConfig,
   type MasterDetailRatioSample,
@@ -52,6 +54,8 @@ interface ComponentConfigAccess {
   /** 可选：只读当前编辑层显式覆盖值；不提供时用 componentValueOf 判定是否覆盖。 */
   componentOverrideOf?: (slotId: string, field: string) => unknown
   setComponentKnob: (slotId: string, field: string, value: unknown) => void
+  /** 用户主动采用当前值时立即落库；普通字段仍沿用配置层的防抖自动保存。 */
+  save?: () => Promise<boolean | void>
   /** 可选：读字段生效来源层，用于展示来源徽标（default/page/user）。 */
   componentSourceOf?: (slotId: string, field: string) => ComponentConfigSource
   /** 可选：读字段逐层取值，用于来源 hover 展示。 */
@@ -144,6 +148,9 @@ const autoSlots = computed<AutoSlot[]>(() => {
 
 // 高亮并滚动到聚焦 slot（页面布局「点击预览即配置」）。
 const root = ref<HTMLElement | null>(null)
+const pendingApplyKeys = ref(new Set<string>())
+const failedApplyKeys = ref(new Set<string>())
+const applyLocked = computed(() => pendingApplyKeys.value.size > 0)
 watch(
   () => props.highlightSlot,
   async (id) => {
@@ -152,6 +159,41 @@ watch(
     root.value?.querySelector(`[data-cc-slot="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   },
 )
+
+function applyKey(slotId: string, field: string): string {
+  return `${slotId}:${field}`
+}
+
+function isApplying(slotId: string, field: string): boolean {
+  return pendingApplyKeys.value.has(applyKey(slotId, field))
+}
+
+function applyFailed(slotId: string, field: string): boolean {
+  return failedApplyKeys.value.has(applyKey(slotId, field))
+}
+
+async function runApply(slotId: string, field: string, apply: () => void): Promise<void> {
+  const key = applyKey(slotId, field)
+  if (applyLocked.value) return
+  pendingApplyKeys.value.add(key)
+  try {
+    apply()
+    // 等待配置 watcher 排入防抖保存，再由显式保存取消该计时器并接管本次写入。
+    await nextTick()
+    const saved = await props.config.save?.()
+    if (saved === false) {
+      failedApplyKeys.value.add(key)
+      ElMessage.error('保存失败，请稍后重试')
+    } else {
+      failedApplyKeys.value.delete(key)
+    }
+  } catch {
+    failedApplyKeys.value.add(key)
+    ElMessage.error('保存失败，请稍后重试')
+  } finally {
+    pendingApplyKeys.value.delete(key)
+  }
+}
 
 const ORDER_OPTIONS = [
   { label: '升序', value: 'asc' },
@@ -202,6 +244,19 @@ function masterRatioSample(slotId: string): MasterDetailRatioSample | undefined 
     ? { width: Math.round(width), ratio: Math.round(ratio) }
     : undefined
 }
+function masterRatioChanged(slotId: string): boolean {
+  const sample = masterRatioSample(slotId)
+  if (!sample) return false
+  const configuredRatio = props.config.componentValueOf(slotId, 'masterRatio')
+  if (typeof configuredRatio !== 'number' || Math.round(configuredRatio) !== sample.ratio) {
+    return true
+  }
+  const currentProfiles = normalizeMasterDetailRatioProfiles(
+    props.config.componentValueOf(slotId, 'masterRatioProfiles'),
+  )
+  const nextProfiles = upsertMasterDetailRatioProfile(currentProfiles, sample)
+  return JSON.stringify(currentProfiles) !== JSON.stringify(nextProfiles)
+}
 function stockChartRatioSample(slotId: string): { width: number; height: number } | undefined {
   const value = props.runtimeValueOf?.(slotId, 'stockChartRatioSample')
   if (!value || typeof value !== 'object') return undefined
@@ -218,6 +273,14 @@ function applyMasterRatioSample(
 ): void {
   props.config.setComponentKnob(slotId, 'masterRatio', value.ratio)
   props.config.setComponentKnob(slotId, 'masterRatioProfiles', value.profiles)
+}
+
+function saveMasterRatioSample(
+  slotId: string,
+  value: { profiles: MasterDetailRatioProfilesConfig; ratio: number },
+): void {
+  if (!masterRatioChanged(slotId) && !applyFailed(slotId, 'masterRatio')) return
+  void runApply(slotId, 'masterRatio', () => applyMasterRatioSample(slotId, value))
 }
 function numericFieldDefs(slot: AutoSlot): ComponentFieldDef[] {
   return slot.fields
@@ -273,6 +336,14 @@ function stockChartCurrentRatios(slotId: string): number[] {
   const value = normalizeStockChartPreferences(runtime ?? stockChartValue(slotId))
   return value.heightRatios[chartCompositionKey(value)]
 }
+function stockChartCurrentRatiosChanged(slotId: string): boolean {
+  const runtime = props.runtimeValueOf?.(slotId, 'stockChart')
+  if (!stockChartRatioSample(slotId) || runtime === undefined) return false
+  return !stockChartPreferencesEqual(
+    props.config.componentValueOf(slotId, 'stockChart'),
+    runtime,
+  )
+}
 
 function setStockChartSlot(
   slotId: string,
@@ -317,6 +388,18 @@ function applyStockChartCurrentRatios(slotId: string): void {
     'stockChart',
     normalizeStockChartPreferences(runtime ?? stockChartValue(slotId)),
   )
+}
+
+function saveStockChartCurrentRatios(slotId: string): void {
+  if (!stockChartCurrentRatiosChanged(slotId) && !applyFailed(slotId, 'stockChart')) return
+  void runApply(slotId, 'stockChart', () => applyStockChartCurrentRatios(slotId))
+}
+
+function saveRuntimeNumber(slotId: string, field: string): void {
+  const value = runtimeNumber(slotId, field)
+  if (value == null) return
+  if (value === props.config.componentValueOf(slotId, field) && !applyFailed(slotId, field)) return
+  void runApply(slotId, field, () => props.config.setComponentKnob(slotId, field, value))
 }
 function setNumericField(slot: AutoSlot, field: ComponentFieldDef, value: number): void {
   props.config.setComponentKnob(slot.slotId, field.key, value)
@@ -435,10 +518,13 @@ function setSort(slotId: string, field: string, order: string): void {
           :default-ratios="stockChartValue(s.slotId).heightRatios[chartCompositionKey(stockChartValue(s.slotId))]"
           :current-ratios="stockChartCurrentRatios(s.slotId)"
           :can-apply-current-ratios="Boolean(stockChartRatioSample(s.slotId))"
+          :current-ratios-changed="stockChartCurrentRatiosChanged(s.slotId) || applyFailed(s.slotId, 'stockChart')"
+          :disable-current-ratios="applyLocked && !isApplying(s.slotId, 'stockChart')"
+          :saving-current-ratios="isApplying(s.slotId, 'stockChart')"
           :test-id-prefix="`component-${s.slotId}-stock-chart`"
           @change="(slot, value) => setStockChartSlot(s.slotId, slot, value)"
           @save-default-ratios="(ratios) => setStockChartRatios(s.slotId, ratios)"
-          @apply-current-ratios="applyStockChartCurrentRatios(s.slotId)"
+          @apply-current-ratios="saveStockChartCurrentRatios(s.slotId)"
         />
       </PageSettingItem>
 
@@ -611,14 +697,17 @@ function setSort(slotId: string, field: string, order: string): void {
           v-if="field.key === 'masterRatio' && s.fields.includes('masterRatioProfiles')"
           :model-value="config.componentValueOf(s.slotId, 'masterRatioProfiles')"
           :current-sample="masterRatioSample(s.slotId)"
-          @apply="(value) => applyMasterRatioSample(s.slotId, value)"
+          :disabled="(!masterRatioChanged(s.slotId) && !applyFailed(s.slotId, 'masterRatio')) || (applyLocked && !isApplying(s.slotId, 'masterRatio'))"
+          :saving="isApplying(s.slotId, 'masterRatio')"
+          @apply="(value) => saveMasterRatioSample(s.slotId, value)"
         />
         <PageSettingsApplyButton
           v-if="layer === 'user' && field.runtimeValueActionLabel"
-          :disabled="runtimeNumber(s.slotId, field.key) == null"
+          :disabled="runtimeNumber(s.slotId, field.key) == null || (runtimeNumber(s.slotId, field.key) === config.componentValueOf(s.slotId, field.key) && !applyFailed(s.slotId, field.key)) || (applyLocked && !isApplying(s.slotId, field.key))"
+          :loading="isApplying(s.slotId, field.key)"
           :label="field.runtimeValueActionLabel"
           :test-id="`component-${s.slotId}-${field.key}-use-runtime`"
-          @click="config.setComponentKnob(s.slotId, field.key, runtimeNumber(s.slotId, field.key))"
+          @click="saveRuntimeNumber(s.slotId, field.key)"
         />
         <template v-if="field.help" #help>{{ field.help }}</template>
       </PageSettingItem>

@@ -27,23 +27,39 @@ export function useRemoteLayoutConfig(base: PageLayout) {
     resolveRemoteHydrated = resolve
   })
   let saveTimer: number | undefined
+  let saveQueue: Promise<unknown> = Promise.resolve()
+  let pendingSaveCount = 0
 
-  async function saveNow(): Promise<void> {
-    if (!remoteHydrated.value) return
-    saving.value = true
-    try {
-      const userConfig = config.exportUserConfig()
-      await saveLayoutUserConfig(base.pageKey, {
-        config: userConfig,
-        schemaVersion: userConfig.schemaVersion,
-        layout: base as unknown as Record<string, unknown>,
-      })
-      saveError.value = false
-    } catch {
-      saveError.value = true
-    } finally {
-      saving.value = false
+  function saveNow(): Promise<boolean> {
+    if (!remoteHydrated.value) return Promise.resolve(false)
+    // 显式保存接管当前写入，取消 watcher 已排队的同值请求，避免重复 POST。
+    if (saveTimer) {
+      window.clearTimeout(saveTimer)
+      saveTimer = undefined
     }
+    pendingSaveCount += 1
+    saving.value = true
+    const task = saveQueue.then(async (): Promise<boolean> => {
+      try {
+        // 在真正轮到本次写入时读取最新配置，串行保证后发值最终落库。
+        const userConfig = config.exportUserConfig()
+        await saveLayoutUserConfig(base.pageKey, {
+          config: userConfig,
+          schemaVersion: userConfig.schemaVersion,
+          layout: base as unknown as Record<string, unknown>,
+        })
+        saveError.value = false
+        return true
+      } catch {
+        saveError.value = true
+        return false
+      } finally {
+        pendingSaveCount -= 1
+        saving.value = pendingSaveCount > 0
+      }
+    })
+    saveQueue = task.then(() => undefined)
+    return task
   }
 
   function scheduleSave(): void {

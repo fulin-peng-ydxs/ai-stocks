@@ -16,9 +16,13 @@ const props = withDefaults(defineProps<{
   defaultRatios: number[]
   currentRatios: number[]
   canApplyCurrentRatios?: boolean
+  currentRatiosChanged?: boolean
+  disableCurrentRatios?: boolean
+  savingCurrentRatios?: boolean
   testIdPrefix?: string
 }>(), {
   canApplyCurrentRatios: true,
+  currentRatiosChanged: true,
 })
 
 const emit = defineEmits<{
@@ -94,6 +98,7 @@ function updateRatio(index: number, value: number | undefined): void {
 }
 
 function useCurrentRatios(): void {
+  if (!props.currentRatiosChanged || props.disableCurrentRatios || props.savingCurrentRatios) return
   ratioDraft.value = toPercentages(props.currentRatios)
   emit('applyCurrentRatios')
 }
@@ -163,7 +168,8 @@ watch(
         <div class="ratio-actions">
           <PageSettingsApplyButton
             label="使用页面当前比例"
-            :disabled="canApplyCurrentRatios === false"
+            :disabled="canApplyCurrentRatios === false || currentRatiosChanged === false || disableCurrentRatios"
+            :loading="savingCurrentRatios"
             :test-id="`${testIdPrefix || 'chart'}-save-current-ratios`"
             @click="useCurrentRatios"
           />

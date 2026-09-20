@@ -144,10 +144,11 @@ const {
   layerValuesOf,
   componentLayerValuesOf, componentAllowedLayers,
   remoteHydrated,
+  saveRemoteUserConfig,
 } = useRemoteLayoutConfig(configLayout)
 
 // 抽屉由 PageSettingsDrawer 按布局旋钮渲染；本页不再暴露 tabs 组件配置。
-const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers, save: saveRemoteUserConfig }
 const {
   setCurrentMasterRatioSample,
   componentRuntimeValueOf: masterRuntimeValueOf,

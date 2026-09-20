@@ -123,7 +123,7 @@ useLegacyStockChartPreferenceMigration({
 })
 
 // 抽屉「布局 / 组件设置」由 PageSettingsDrawer 自动渲染；历史表与训练图表字段按 registry 自动继承。
-const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers, save: saveRemoteUserConfig }
 
 // 三阶段共用同一布局：body 槽统一走默认成长区（grow 策略）。
 // grow 容器是视口高 + overflow:auto——余量足够时由收尾块（历史表/成交明细/复盘卡）吃满剩余高度，

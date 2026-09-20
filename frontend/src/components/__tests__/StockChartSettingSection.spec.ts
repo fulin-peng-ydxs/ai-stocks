@@ -115,4 +115,24 @@ describe('StockChartSettingSection', () => {
     expect(wrapper.get('[data-testid="chart-test-save-current-ratios"]').attributes('disabled'))
       .toBeDefined()
   })
+
+  it('采用比例保存期间展示 loading 并拒绝重复提交', async () => {
+    const wrapper = mountSection()
+    await wrapper.setProps({ savingCurrentRatios: true })
+
+    const button = wrapper.get('[data-testid="chart-test-save-current-ratios"]')
+    expect(button.classes()).toContain('is-loading')
+    await button.trigger('click')
+    expect(wrapper.emitted('applyCurrentRatios')).toBeUndefined()
+  })
+
+  it('页面当前比例与已保存配置一致时禁用采用并二次拒绝提交', async () => {
+    const wrapper = mountSection()
+    await wrapper.setProps({ currentRatiosChanged: false })
+
+    const button = wrapper.get('[data-testid="chart-test-save-current-ratios"]')
+    expect(button.attributes('disabled')).toBeDefined()
+    await button.trigger('click')
+    expect(wrapper.emitted('applyCurrentRatios')).toBeUndefined()
+  })
 })

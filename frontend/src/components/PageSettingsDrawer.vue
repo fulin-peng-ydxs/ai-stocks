@@ -27,6 +27,8 @@ export interface DrawerConfig {
   setKnob: (path: string, value: unknown) => void
   componentValueOf: (slotId: string, field: string) => unknown
   setComponentKnob: (slotId: string, field: string, value: unknown) => void
+  /** 设置抽屉中显式保存动作使用，确保按钮 loading 覆盖真实持久化周期。 */
+  save?: () => Promise<boolean | void>
   componentSourceOf?: (slotId: string, field: string) => ComponentConfigSource
   componentLayerValuesOf?: (slotId: string, field: string) => Partial<Record<ComponentConfigSource, unknown>>
   componentAllowedLayers?: (kind: string, field: string) => ComponentConfigLayer[] | undefined

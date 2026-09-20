@@ -99,10 +99,16 @@ describe('全站按钮与图标操作契约', () => {
   it('设置抽屉采用当前页面值统一复用主色朴素按钮', () => {
     const design = read(join(PROJECT_DIR, 'DESIGN.md'))
     const applyButton = read(join(SRC_DIR, 'components/PageSettingsApplyButton.vue'))
+    const autoSettings = read(join(SRC_DIR, 'components/ComponentAutoSettings.vue'))
 
     expect(design).toContain('统一复用 `PageSettingsApplyButton`')
     expect(applyButton).toContain('type="primary"')
     expect(applyButton).toContain('plain')
+    expect(applyButton).toContain(':loading="props.loading"')
+    expect(applyButton).toContain('if (props.disabled || props.loading) return')
+    expect(autoSettings).toContain("ElMessage.error('保存失败，请稍后重试')")
+    expect(autoSettings).toContain('masterRatioChanged')
+    expect(autoSettings).toContain('stockChartCurrentRatiosChanged')
     for (const file of [
       'components/MasterDetailRatioProfileSettings.vue',
       'components/StockChartSettingSection.vue',
