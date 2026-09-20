@@ -98,6 +98,8 @@ const props = withDefaults(defineProps<{
   slot3?: AuxiliaryChartType
   heightRatios?: number[]
   adjustLabel?: string
+  /** MACD 可使用独立于 K 线行情的计算口径；未传时沿用行情口径。 */
+  macdAdjustLabel?: string
   macdState?: MacdPanelState
   macdError?: string
   zoomStart?: number
@@ -675,9 +677,9 @@ onBeforeUnmount(() => {
         :data-panel-key="panel.key"
       >
         <StockChartPanelHeader
-          :title="panelTitle(panel.type, adjustLabel)"
+          :title="panelTitle(panel.type, adjustLabel, macdAdjustLabel)"
           :items="panelLegendItems(panel.type)"
-          :legend-label="`${panelTitle(panel.type, adjustLabel)}图例与当前值`"
+          :legend-label="`${panelTitle(panel.type, adjustLabel, macdAdjustLabel)}图例与当前值`"
         >
           <template #tail>
             <time v-if="panel.type === 'kline' && rows.length" class="stock-chart-panel__date">
@@ -690,7 +692,7 @@ onBeforeUnmount(() => {
           <div
             :ref="(element) => setChartElement(panel.key, element)"
             class="stock-chart-panel__canvas"
-            :aria-label="`${panelTitle(panel.type, adjustLabel)}图表`"
+            :aria-label="`${panelTitle(panel.type, adjustLabel, macdAdjustLabel)}图表`"
           />
           <div
             v-if="panelState(panel)"
@@ -716,7 +718,7 @@ onBeforeUnmount(() => {
         role="separator"
         tabindex="0"
         aria-orientation="horizontal"
-        :aria-label="`调整${panelTitle(panel.type, adjustLabel)}与下一幅图高度`"
+        :aria-label="`调整${panelTitle(panel.type, adjustLabel, macdAdjustLabel)}与下一幅图高度`"
         :aria-valuemin="separatorMin(index)"
         :aria-valuemax="separatorMax(index)"
         :aria-valuenow="separatorValue(index)"

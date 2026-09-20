@@ -48,7 +48,7 @@ function mountPanel(overrides: Record<string, unknown> = {}) {
       plugins: [ElementPlus],
       stubs: {
         StockCompareChart: { name: 'StockCompareChart', props: ['series', 'activeCode', 'benchmark', 'calendar', 'metric', 'rangeDays'], template: '<div class="stock-compare-chart-stub" />' },
-        StockChartWorkspace: { name: 'StockChartWorkspace', props: { bars: Array, indicators: Array, enableIntradayDrilldown: Boolean }, emits: ['barClick'], template: '<button class="stock-chart-workspace-stub" @click="$emit(\'barClick\', \'2026-08-07\')" />' },
+        StockChartWorkspace: { name: 'StockChartWorkspace', props: { bars: Array, indicators: Array, adjustLabel: String, macdAdjustLabel: String, enableIntradayDrilldown: Boolean }, emits: ['barClick'], template: '<button class="stock-chart-workspace-stub" @click="$emit(\'barClick\', \'2026-08-07\')" />' },
         StockIntradayDialog: { name: 'StockIntradayDialog', props: ['modelValue', 'code', 'name', 'tradeDate'], emits: ['update:modelValue'], template: '<div class="intraday-dialog-stub" :data-open="modelValue" :data-date="tradeDate" />' },
         KlineRangeSelect: true,
       },
@@ -224,6 +224,9 @@ describe('StockAnalysisPanel', () => {
       expect.any(AbortSignal),
     )
     expect(wrapper.text()).toContain('后复权行情')
+    const workspace = wrapper.findComponent({ name: 'StockChartWorkspace' })
+    expect(workspace.props('adjustLabel')).toBe('后复权')
+    expect(workspace.props('macdAdjustLabel')).toBe('前复权')
   })
 
   it('详情、队列切换和移除都向页面发出明确事件', async () => {

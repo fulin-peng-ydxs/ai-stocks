@@ -1215,6 +1215,7 @@ onBeforeUnmount(() => {
               :slot3="chartPreferences.preferences.value.slot3"
               :height-ratios="chartPreferences.currentRatios.value"
               :adjust-label="adjustLabel"
+              macd-adjust-label="前复权"
               :macd-state="macdState"
               :macd-error="indicatorError"
               :zoom-start="0"

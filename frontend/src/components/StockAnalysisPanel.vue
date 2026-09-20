@@ -485,6 +485,7 @@ onBeforeUnmount(() => {
         :slot3="slot3"
         :height-ratios="heightRatios"
         :adjust-label="adjustLabel"
+        macd-adjust-label="前复权"
         :macd-state="indicatorError ? 'error' : 'ready'"
         :macd-error="indicatorError"
         :min-height="384"

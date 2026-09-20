@@ -136,6 +136,7 @@ const StockChartWorkspaceStub = defineComponent({
     'minHeight',
     'fitAvailableHeight',
     'adjustLabel',
+    'macdAdjustLabel',
     'macdState',
     'macdError',
     'enableIntradayDrilldown',
@@ -148,6 +149,7 @@ const StockChartWorkspaceStub = defineComponent({
       'data-min-height': props.minHeight,
       'data-macd-state': props.macdState,
       'data-adjust-label': props.adjustLabel,
+      'data-macd-adjust-label': props.macdAdjustLabel,
       'data-show-kline-tooltip': String(props.showKlineTooltip),
     }, [
       h('span', { 'data-testid': 'workspace-close' },
@@ -662,6 +664,7 @@ describe('StockDetailView 三图数据协调', () => {
     expect(workspace.props('slot3')).toBe('macd')
     expect(workspace.props('macdState')).toBe('ready')
     expect(workspace.props('adjustLabel')).toBe('前复权')
+    expect(workspace.props('macdAdjustLabel')).toBe('前复权')
     expect(workspace.props('minHeight')).toBeUndefined()
     expect(workspace.props('fitAvailableHeight')).toBe('')
     expect(workspace.props('enableIntradayDrilldown')).toBe('')
