@@ -25,6 +25,8 @@ describe('taskDisplayLabel', () => {
       .toBe('个股采集·日常同步')
     expect(taskDisplayLabel('stock_ingest', { recipe: 'valuation_gaps' }))
       .toBe('个股采集·市值缺口修复')
+    expect(taskDisplayLabel('stock_ingest', { recipe: 'valuation_invalid_history' }))
+      .toBe('个股采集·全历史异常市值修复')
     expect(taskDisplayLabel('stock_ingest', { recipe: 'st_status_refresh' }))
       .toBe('个股采集·ST状态刷新')
     expect(taskDisplayLabel('stock_board_correlation', { codes: ['600000.SH'], force: true }))
@@ -66,6 +68,13 @@ describe('taskDisplayLabel', () => {
     expect(RECOVER_ACTION_LABEL.price_volume_mismatch).toBe('重采该日')
     expect(taskDisplayLabel('fix', { issue_type: 'price_volume_mismatch' }))
       .toBe('质检问题恢复·行情·价量口径错配')
+  })
+
+  it('市值非法复用L2质量台账与异常值刷新映射', () => {
+    expect(ISSUE_TYPES_ACTIVE).toContain('mv_invalid')
+    expect(RECOVER_ACTION_LABEL.mv_invalid).toBe('刷新异常市值')
+    expect(taskDisplayLabel('fix', { issue_type: 'mv_invalid' }))
+      .toBe('质检问题恢复·市值·数值非法')
   })
 
   it('ST 质量类型统一进入专属层并指向刷新恢复', () => {

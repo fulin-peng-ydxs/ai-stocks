@@ -20,6 +20,7 @@ from datetime import date, datetime, timedelta, timezone
 import pandas as pd
 
 from backend.common.logging import get_logger
+from backend.dataquality.checker import ISSUE_LAYER, mv_inverted_sql
 from backend.datasource.ths_board import FUND_FLOW_PERIODS
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
@@ -28,6 +29,8 @@ log = get_logger("services.data_report")
 # 缺口/鲜活判定的近端窗口（DM-D21）：只在近 N 个开市日内判缺口与滞后；
 # 更早的历史空洞默认即停牌（老数据稳定，真漏采早暴露），不反复上报、不扣分。
 GAP_WINDOW_DAYS = 90
+MV_INVERTED = mv_inverted_sql("total_mv", "float_mv")
+M_INVERTED = mv_inverted_sql("m.total_mv", "m.float_mv")
 
 
 def _shanghai_today() -> date:
@@ -92,22 +95,25 @@ class DataIntegrityReport:
           - 内部缺口 gap（疑似漏采）：missing 中 ≤ 本股最新行情日的（历史空洞，可重采反向确认）
           - 尾部滞后 stale：missing 中 > 本股最新行情日的（未更新到最新，可增量补尾）
         停牌（已确认入 stock_suspension）一律不计入 → 系统收敛。
-        L2 字段契约（M2.9.3）：总市值 total_mv 与流通市值 float_mv 都须有（float_mv 供选股池过滤、
-        total_mv 供评分引用）；mv_detail 说明缺哪个。
+        L2 字段契约（M2.9.3）：总市值 total_mv 与流通市值 float_mv 都须有且为正，
+        total_mv 不得显著小于 float_mv（允许万分之一相对误差）；缺失与非法原因分别由
+        mv_detail、mv_invalid_detail 说明。
 
         性能（M2.9.3-E）：不再逐股关联子查询，改为各扫一次的 GROUP BY 聚合 + pandas 合并。
         返回 (DataFrame, latest_trade_date_str)。
         """
         cols = ["code", "name", "latest_date", "is_fresh", "mv_ok", "mv_detail",
-                "mv_gap_days", "mv_gap_lo", "mv_gap_hi", "gap_days", "gap_lo",
-                "gap_hi", "stale_days", "stale_lo", "l1_open", "l3_open", "open_total"]
+                "mv_gap_days", "mv_gap_lo", "mv_gap_hi", "mv_invalid_days",
+                "mv_invalid_lo", "mv_invalid_hi", "mv_invalid_detail", "gap_days", "gap_lo",
+                "gap_hi", "stale_days", "stale_lo", "l1_open", "l1_breakdown", "l3_open",
+                "l3_breakdown", "open_total"]
         # 数据变更签名缓存：同一页多接口复用，任一数据变更即失效。
         # openi 只数个股 issue 类型（L1-L4），市场指数/板块类型都有独立质量层，
         # 不参与个股 frame，也不应击穿个股覆盖帧缓存。
         sig = self.c.query_df(
             "SELECT (SELECT max(trade_date) FROM daily_bar) latest, "
             "(SELECT count(*) FROM daily_bar) bars, "
-            "(SELECT count(*) FROM daily_metrics) metrics, "
+            "dm.metrics, "
             "(SELECT count(*) FROM stock_basic) basics, "
             "(SELECT COALESCE(bit_xor(hash(code, name, list_date, delist_date)), 0) "
             "   FROM stock_basic) basicsig, "
@@ -115,15 +121,25 @@ class DataIntegrityReport:
             "   AND issue_type NOT IN ('market_index_gap','market_index_gap_daily',"
             "'market_index_invalid','board_index_gap','board_index_gap_daily','board_member_incomplete',"
             "'board_fund_unmatched','board_fund_missing','board_fund_stale')) openi, "
+            "(SELECT COALESCE(bit_xor(hash(id, code, trade_date, issue_type)), 0) "
+            "   FROM data_quality_issue WHERE status='open' "
+            "   AND issue_type NOT IN ('market_index_gap','market_index_gap_daily',"
+            "'market_index_invalid','board_index_gap','board_index_gap_daily','board_member_incomplete',"
+            "'board_fund_unmatched','board_fund_missing','board_fund_stale')) openisig, "
             "(SELECT count(*) FROM stock_suspension) susp, "
-            "(SELECT count(*) FROM daily_metrics WHERE total_mv IS NULL OR float_mv IS NULL) mvnull"
+            "dm.mvnull, dm.mvinvalid FROM ("
+            "  SELECT count(*) AS metrics, "
+            "  count(*) FILTER (WHERE total_mv IS NULL OR float_mv IS NULL) AS mvnull, "
+            f"  count(*) FILTER (WHERE total_mv <= 0 OR float_mv <= 0 OR {MV_INVERTED}) "
+            "    AS mvinvalid FROM daily_metrics"
+            ") dm"
         ).iloc[0]
-        # metrics/mvnull 纳入签名：L2 依赖逐日市值缺口，补市值后（bars/issues 可能没变）
-        # 须让缓存失效；metrics 变化覆盖 daily_metrics 整行缺失被补齐的场景。
+        # daily_metrics 的行数、空值和非法值在同一次聚合中计算并纳入签名：补市值或修正
+        # 非法值后，即便 bars/issues 尚未变化也要让 L2 缓存失效。
         key = (id(self.c), str(sig["latest"]), int(sig["bars"]),
                int(sig["metrics"]), int(sig["basics"]), int(sig["basicsig"]),
-               int(sig["openi"]), int(sig["susp"]),
-               int(sig["mvnull"]), int(window_days))
+               int(sig["openi"]), int(sig["openisig"]), int(sig["susp"]),
+               int(sig["mvnull"]), int(sig["mvinvalid"]), int(window_days))
         if _FRAME_CACHE["key"] == key and _FRAME_CACHE["frame"] is not None:
             return _FRAME_CACHE["frame"], _FRAME_CACHE["latest"]
         latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
@@ -169,17 +185,54 @@ class DataIntegrityReport:
             )
             for _, r in mvgap.iterrows()
         }
+        mvinvalid = self.c.query_df(
+            f"""
+            SELECT b.code,
+                   count(*) AS n,
+                   count(*) FILTER (WHERE m.total_mv <= 0) AS total_nonpositive,
+                   count(*) FILTER (WHERE m.float_mv <= 0) AS float_nonpositive,
+                   count(*) FILTER (WHERE m.total_mv > 0 AND m.float_mv > 0
+                                      AND {M_INVERTED}) AS inverted,
+                   min(b.trade_date) AS lo,
+                   max(b.trade_date) AS hi
+            FROM daily_bar b
+            JOIN stock_basic sb ON sb.code = b.code
+            JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date
+            WHERE sb.delist_date IS NULL
+              AND b.trade_date >= ?
+              AND (m.total_mv <= 0 OR m.float_mv <= 0 OR {M_INVERTED})
+            GROUP BY b.code
+            """,
+            [win_lo],
+        )
+        mvinvalid_map = {
+            r["code"]: (
+                int(r["n"]), int(r["total_nonpositive"]), int(r["float_nonpositive"]),
+                int(r["inverted"]), pd.Timestamp(r["lo"]).date(),
+                pd.Timestamp(r["hi"]).date(),
+            )
+            for _, r in mvinvalid.iterrows()
+        }
         iss = self.c.query_df(
-            "SELECT code, count(*) tot, "
-            "count(*) FILTER (WHERE issue_type IN ('null_close','ohl_repaired')) l1, "
-            "count(*) FILTER (WHERE issue_type IN "
-            "('abnormal_change','price_volume_mismatch','adj_jump')) l3 "
+            "SELECT code, issue_type, count(*) n "
             "FROM data_quality_issue WHERE status='open' "
             "AND issue_type NOT IN ('market_index_gap','market_index_gap_daily',"
             "'market_index_invalid','board_index_gap','board_index_gap_daily','board_member_incomplete',"
             "'board_fund_unmatched','board_fund_missing','board_fund_stale') "
-            "GROUP BY code")
-        iss_map = {r["code"]: (int(r["tot"]), int(r["l1"]), int(r["l3"])) for _, r in iss.iterrows()}
+            "GROUP BY code, issue_type ORDER BY code, issue_type")
+        issue_totals: dict[str, int] = {}
+        issue_breakdowns: dict[tuple[str, str], list[dict]] = {}
+        for _, issue in iss.iterrows():
+            code = str(issue["code"])
+            issue_type = str(issue["issue_type"])
+            count = int(issue["n"])
+            issue_totals[code] = issue_totals.get(code, 0) + count
+            layer = ISSUE_LAYER.get(issue_type)
+            if layer in ("L1", "L3"):
+                issue_breakdowns.setdefault((code, layer), []).append({
+                    "issue_type": issue_type,
+                    "count": count,
+                })
         stocks = self.c.query_df("SELECT code, name, list_date FROM stock_basic WHERE delist_date IS NULL")
         bars = self.c.query_df("SELECT code, trade_date FROM daily_bar WHERE trade_date >= ?", [win_lo])
         susp = self.c.query_df("SELECT code, trade_date FROM stock_suspension WHERE trade_date >= ?", [win_lo])
@@ -195,11 +248,26 @@ class DataIntegrityReport:
             min_bar = None if mn is None or pd.isna(mn) else pd.Timestamp(mn).date()
             max_bar = None if mx is None or pd.isna(mx) else pd.Timestamp(mx).date()
             tmv, fmv = mv_map.get(code, (0, 0))
-            tot, l1, l3 = iss_map.get(code, (0, 0, 0))
+            l1_breakdown = issue_breakdowns.get((code, "L1"), [])
+            l3_breakdown = issue_breakdowns.get((code, "L3"), [])
+            tot = issue_totals.get(code, 0)
+            l1 = sum(item["count"] for item in l1_breakdown)
+            l3 = sum(item["count"] for item in l3_breakdown)
             mv_ok = tmv > 0 and fmv > 0
             mvg_days, mvg_total, mvg_float, mvg_both, mvg_lo, mvg_hi = mvgap_map.get(
                 code, (0, 0, 0, 0, None, None)
             )
+            mvi_days, mvi_total, mvi_float, mvi_inverted, mvi_lo, mvi_hi = mvinvalid_map.get(
+                code, (0, 0, 0, 0, None, None)
+            )
+            invalid_parts = []
+            if mvi_total:
+                invalid_parts.append(f"总市值非正 {mvi_total} 天")
+            if mvi_float:
+                invalid_parts.append(f"流通市值非正 {mvi_float} 天")
+            if mvi_inverted:
+                invalid_parts.append(f"总市值低于流通市值（超万分之一容差）{mvi_inverted} 天")
+            mvi_detail = "、".join(invalid_parts)
             if mv_ok and mvg_days == 0:
                 mv_detail = ""
             elif tmv == 0 and fmv == 0:
@@ -221,7 +289,12 @@ class DataIntegrityReport:
                     "mv_gap_days": mvg_days,
                     "mv_gap_lo": str(mvg_lo) if mvg_lo else None,
                     "mv_gap_hi": str(mvg_hi) if mvg_hi else None,
-                    "l1_open": l1, "l3_open": l3, "open_total": tot}
+                    "mv_invalid_days": mvi_days,
+                    "mv_invalid_lo": str(mvi_lo) if mvi_lo else None,
+                    "mv_invalid_hi": str(mvi_hi) if mvi_hi else None,
+                    "mv_invalid_detail": mvi_detail,
+                    "l1_open": l1, "l1_breakdown": l1_breakdown,
+                    "l3_open": l3, "l3_breakdown": l3_breakdown, "open_total": tot}
             ld = None if ld_raw is None or pd.isna(ld_raw) else pd.Timestamp(ld_raw).date()
             if min_bar is None:  # 从未有行情：只从上市日起计滞后，不细分内部缺口
                 stale_days = [d for d in win if ld is None or d >= ld]
@@ -317,17 +390,25 @@ class DataIntegrityReport:
             l1, l3 = int(r["l1_open"]), int(r["l3_open"])
             gap, stale = int(r["gap_days"]), int(r["stale_days"])
             mv_gap = int(r["mv_gap_days"])
-            # L2 统一口径：整股有值（非"从没采过"）且近端无逐日缺口
-            l2_ok = bool(r["mv_ok"]) and mv_gap == 0
+            mv_invalid = int(r["mv_invalid_days"])
+            # L2 统一口径：整股有值，且近端无逐日缺口或非法市值。
+            l2_ok = bool(r["mv_ok"]) and mv_gap == 0 and mv_invalid == 0
             out.append({
                 "code": r["code"], "name": r["name"], "latest_date": r["latest_date"],
                 "is_fresh": bool(r["is_fresh"]), "total_mv_ok": l2_ok, "gap_days": gap,
                 "open_issues": int(r["open_total"]),
                 "layers": {
-                    "L1": {"name_cn": "入库闸门", "ok": l1 == 0, "issues": l1},
+                    "L1": {"name_cn": "入库闸门", "ok": l1 == 0, "issues": l1,
+                           "breakdown": r["l1_breakdown"]},
                     "L2": {"name_cn": "字段契约", "ok": l2_ok, "issues": 0 if l2_ok else 1,
-                           "mv_gap_days": mv_gap, "mv_gap_lo": r["mv_gap_lo"], "mv_gap_hi": r["mv_gap_hi"]},
-                    "L3": {"name_cn": "正确性", "ok": l3 == 0, "issues": l3},
+                           "mv_detail": r["mv_detail"],
+                           "mv_gap_days": mv_gap, "mv_gap_lo": r["mv_gap_lo"],
+                           "mv_gap_hi": r["mv_gap_hi"], "mv_invalid_days": mv_invalid,
+                           "mv_invalid_lo": r["mv_invalid_lo"],
+                           "mv_invalid_hi": r["mv_invalid_hi"],
+                           "mv_invalid_detail": r["mv_invalid_detail"]},
+                    "L3": {"name_cn": "正确性", "ok": l3 == 0, "issues": l3,
+                           "breakdown": r["l3_breakdown"]},
                     "L4": {"name_cn": "覆盖鲜活", "ok": gap == 0 and stale == 0,
                            "gap_days": gap, "gap_lo": r["gap_lo"], "gap_hi": r["gap_hi"],
                            "stale_days": stale, "stale_lo": r["stale_lo"],
@@ -348,8 +429,8 @@ class DataIntegrityReport:
         if n == 0:
             return {"score": 100, "latest_trade_date": latest_s, "by_layer": empty_layers,
                     "gaps": {"stocks_with_gap": 0, "gap_days_total": 0, "latest_trade_date": latest_s}}
-        # L2 统一口径：整股有值（非"从没采过"）且近端无逐日市值字段缺口（与质检 mv_missing+mv_gap 一致）
-        l2_ok = df["mv_ok"] & (df["mv_gap_days"] == 0)
+        # L2 统一口径：整股有值，且近端无逐日市值字段缺口或非法值。
+        l2_ok = df["mv_ok"] & (df["mv_gap_days"] == 0) & (df["mv_invalid_days"] == 0)
         ok = {
             "L1": df["l1_open"] == 0,
             "L2": l2_ok,
@@ -645,6 +726,16 @@ class DataIntegrityReport:
                 rows.append({"code": code, "trade_date": r["mv_gap_hi"], "issue_type": "mv_gap",
                              "detail": f"近{gap_window_days}个交易日内 {int(r['mv_gap_days'])} 天市值字段缺口"
                                        f"（需补市值）：{r['mv_detail']}"})
+            if int(r["mv_invalid_days"]) > 0:
+                rows.append({
+                    "code": code,
+                    "trade_date": r["mv_invalid_hi"],
+                    "issue_type": "mv_invalid",
+                    "detail": (
+                        f"近{gap_window_days}个交易日内 {int(r['mv_invalid_days'])} 天市值非法"
+                        f"（{r['mv_invalid_lo']}~{r['mv_invalid_hi']}）：{r['mv_invalid_detail']}"
+                    ),
+                })
         st_rows = self._collect_st_status_issues()
         issue_rows = ab_rows + price_volume_rows + adj_rows + rows + st_rows
         # 仅台账替换使用短事务：失败回滚保留旧问题，计算期间不锁住轮询。
@@ -666,6 +757,7 @@ class DataIntegrityReport:
             "adj_jump_rows": inserted_counts["adj_jump"],
             "mv_missing_rows": inserted_counts["mv_missing"],
             "mv_gap_rows": inserted_counts["mv_gap"],
+            "mv_invalid_rows": inserted_counts["mv_invalid"],
             "data_gap_rows": inserted_counts["data_gap"],
             "stale_rows": inserted_counts["stale"],
             "st_status_missing_rows": inserted_counts["st_status_missing"],
@@ -1082,7 +1174,7 @@ class DataIntegrityReport:
                       window_days: int = GAP_WINDOW_DAYS, detail: str | dict | None = None) -> bool:
         """复检：该 (类型,股,日期) 的问题现在是否已不存在。True=已恢复，可置 resolved。"""
         if issue_type == "mv_missing":
-            # L2 契约：总市值与流通市值都须有
+            # L2 整股缺失：总市值与流通市值都至少采到过一次；逐日缺口/非法分别复检。
             r = self.c.query_df(
                 "SELECT count(*) FILTER (WHERE total_mv IS NOT NULL) t, "
                 "count(*) FILTER (WHERE float_mv IS NOT NULL) f FROM daily_metrics WHERE code=?", [code]).iloc[0]
@@ -1100,6 +1192,21 @@ class DataIntegrityReport:
                              SELECT trade_date FROM trade_calendar
                              WHERE is_open AND trade_date <= (SELECT max(trade_date) FROM daily_bar)
                              ORDER BY trade_date DESC LIMIT ?))""", [code, window_days])
+            return int(n) == 0
+        if issue_type == "mv_invalid":
+            n = self._scalar(
+                f"""SELECT count(*) FROM daily_bar b
+                   JOIN stock_basic sb ON sb.code = b.code
+                   JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date
+                   WHERE b.code = ? AND sb.delist_date IS NULL
+                     AND (m.total_mv <= 0 OR m.float_mv <= 0 OR {M_INVERTED})
+                     AND b.trade_date >= (
+                         SELECT min(trade_date) FROM (
+                             SELECT trade_date FROM trade_calendar
+                             WHERE is_open AND trade_date <= (SELECT max(trade_date) FROM daily_bar)
+                             ORDER BY trade_date DESC LIMIT ?))""",
+                [code, window_days],
+            )
             return int(n) == 0
         if issue_type in ("data_gap", "stale"):
             return len(self.missing_days_for(code, window_days)) == 0
@@ -1483,6 +1590,13 @@ class DataIntegrityReport:
             "zero_or_neg_close": int(self._scalar("SELECT count(*) FROM daily_bar WHERE close <= 0")),
             "null_float_mv": int(self._scalar("SELECT count(*) FROM daily_metrics WHERE float_mv IS NULL")),
             "null_total_mv": int(self._scalar("SELECT count(*) FROM daily_metrics WHERE total_mv IS NULL")),
+            "nonpositive_mv": int(self._scalar(
+                "SELECT count(*) FROM daily_metrics WHERE total_mv <= 0 OR float_mv <= 0"
+            )),
+            "inverted_mv": int(self._scalar(
+                "SELECT count(*) FROM daily_metrics WHERE total_mv > 0 AND float_mv > 0 "
+                f"AND {MV_INVERTED}"
+            )),
         }
 
     # ── 5. 指数覆盖 ──
@@ -1548,7 +1662,9 @@ class DataIntegrityReport:
         nc = r["null_critical"]
         print(f"[空值] close空 {nc['null_close']}  OHLC空 {nc['null_ohlc']}  "
               f"量空 {nc['null_volume']}  收盘<=0 {nc['zero_or_neg_close']}  "
-              f"流通市值空 {nc['null_float_mv']}  总市值空 {nc['null_total_mv']}")
+              f"流通市值空 {nc['null_float_mv']}  总市值空 {nc['null_total_mv']}  "
+              f"市值非正 {nc['nonpositive_mv']}  总市值低于流通市值（超万分之一容差） "
+              f"{nc['inverted_mv']}")
         print("[指数]")
         for idx in r["index_coverage"]["indices"]:
             print(f"   {idx['index_code']}: {idx['days']} 天 ({idx['coverage']*100:.1f}%)")

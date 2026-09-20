@@ -12,8 +12,9 @@ import StockCodeMultiSelect from '@/components/data/StockCodeMultiSelect.vue'
 import { onMounted, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  getOverview, getCatalog, getDimensions, getStockQuality, LAYER_DESC, BOARD_ISSUE_ITEMS,
-  type Overview, type CatalogTable, type CatalogDatabaseSummary, type Dimension, type StockQuality,
+  getOverview, getCatalog, getDimensions, getStockQuality, LAYER_DESC, LAYER_ISSUE_SUMMARY,
+  BOARD_ISSUE_ITEMS, ISSUE_TYPE_LABEL, type Overview, type QualityLayer, type CatalogTable,
+  type CatalogDatabaseSummary, type Dimension, type StockQuality,
 } from '@/api/data'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTabToolbar from '@/components/AppTabToolbar.vue'
@@ -322,16 +323,54 @@ const LAYER_CN: Record<string, string> = {
 function layerCell(k: string, lay: any): { type: string; text: string; tip: string } {
   if (!lay) return { type: 'info', text: '—', tip: '' }
   if (lay.ok) {
-    return { type: 'success', text: '达标', tip: LAYER_DESC[k] || '' }
+    return { type: 'success', text: '达标', tip: `当前未发现问题。${LAYER_DESC[k] || ''}` }
   }
-  if (k === 'L1') return { type: 'danger', text: `${lay.issues} 问题`, tip: `入库问题 ${lay.issues} 项（行情·收盘价为空/开高低修补）→ 点击查看并修复` }
-  if (k === 'L2') return { type: 'danger', text: '缺', tip: '市值字段缺失（总市值/流通市值未补全）→ 点击前往质量页恢复' }
-  if (k === 'L3') return { type: 'danger', text: `${lay.issues} 问题`, tip: `正确性问题 ${lay.issues} 项（复权因子/涨跌停边界/价量口径）→ 点击查看并修复` }
+  const breakdown = (lay.breakdown || [])
+    .map((item: { issue_type: string; count: number }) =>
+      `${ISSUE_TYPE_LABEL[item.issue_type] ?? item.issue_type} ${item.count} 项`)
+  if (k === 'L1') return {
+    type: 'danger',
+    text: `${lay.issues} 问题`,
+    tip: `${breakdown.join(' · ') || `入库闸门有 ${lay.issues} 项待处理问题`} → 点击查看并修复`,
+  }
+  if (k === 'L2') {
+    const hasMissing = Boolean(lay.mv_detail)
+    const hasInvalid = Number(lay.mv_invalid_days || 0) > 0
+    const parts: string[] = []
+    if (hasMissing) parts.push(lay.mv_detail)
+    if (hasInvalid) {
+      const range = lay.mv_invalid_lo
+        ? `（${lay.mv_invalid_lo}~${lay.mv_invalid_hi || lay.mv_invalid_lo}）`
+        : ''
+      parts.push(`市值数值异常：${lay.mv_invalid_detail || `${lay.mv_invalid_days} 天不符合字段契约`}${range}`)
+    }
+    const text = hasMissing && hasInvalid ? '不达标' : hasInvalid ? '异常' : '缺'
+    return {
+      type: 'danger',
+      text,
+      tip: `${parts.join(' · ') || '市值字段契约不达标'} → 点击前往质量页恢复`,
+    }
+  }
+  if (k === 'L3') return {
+    type: 'danger',
+    text: `${lay.issues} 问题`,
+    tip: `${breakdown.join(' · ') || `正确性有 ${lay.issues} 项待处理问题`} → 点击查看并修复`,
+  }
   // L4
   const parts: string[] = []
   if (lay.gap_days) parts.push(`缺口 ${lay.gap_days} 天${lay.gap_lo ? `（${lay.gap_lo}~${lay.gap_hi}）` : ''}`)
   if (lay.stale_days) parts.push(`滞后 ${lay.stale_days} 天`)
   return { type: 'danger', text: '不达标', tip: (parts.join(' · ') || '覆盖/鲜活不达标') + ' → 点击带区间前往重采' }
+}
+function layerSummaryText(layer: QualityLayer): string {
+  return LAYER_ISSUE_SUMMARY[layer.layer]?.(layer.issues) ?? `${layer.issues} 项`
+}
+function layerSummaryTip(layer: QualityLayer): string {
+  const failedStocks = Math.max(layer.total - layer.pass_stocks, 0)
+  const result = failedStocks === 0
+    ? '当前全部股票达标'
+    : `当前 ${failedStocks} 只股票未达标，${layerSummaryText(layer)}`
+  return `${result}。${layer.desc}`
 }
 function shouldShowLayer(k: string): boolean {
   if (settings.focusLayer === 'L12') return k === 'L1' || k === 'L2'
@@ -633,12 +672,12 @@ const menuPageTitle = useMenuPageTitle()
           <template #header><span>分层质量模型（达标率）</span></template>
           <el-row :gutter="12">
             <el-col :span="6" v-for="l in ov.quality.by_layer" :key="l.layer">
-              <el-tooltip :content="l.desc" placement="top">
+              <el-tooltip :content="layerSummaryTip(l)" placement="top">
                 <div class="layer-card">
                   <div class="layer-name">{{ l.layer }} · {{ l.name_cn }}</div>
                   <el-progress :percentage="Math.round(l.pass_rate * 100)"
                                :status="l.pass_rate >= 0.99 ? 'success' : l.pass_rate >= 0.9 ? 'warning' : 'exception'" />
-                  <div class="layer-foot">{{ l.pass_stocks }}/{{ l.total }} 达标 · {{ l.issues }} 问题</div>
+                  <div class="layer-foot">{{ l.pass_stocks }}/{{ l.total }} 达标 · {{ layerSummaryText(l) }}</div>
                 </div>
               </el-tooltip>
             </el-col>

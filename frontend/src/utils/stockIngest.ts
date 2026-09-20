@@ -4,6 +4,7 @@ export type StockIngestRecipe =
   | 'range_refetch'
   | 'valuation_history'
   | 'valuation_gaps'
+  | 'valuation_invalid_history'
   | 'basic_refresh'
   | 'delisted_history'
   | 'st_status_refresh'
@@ -32,6 +33,12 @@ export const STOCK_INGEST_RECIPE_OPTIONS: Array<{
   { value: 'range_refetch', label: '日期区间重采', description: '覆盖重采指定交易日区间，可限定股票', heavy: true },
   { value: 'valuation_history', label: '市值历史补采', description: '补从未完整采过市值的股票历史数据', heavy: true },
   { value: 'valuation_gaps', label: '市值缺口修复', description: '按已有日线逐股补齐总市值和流通市值缺口', heavy: true },
+  {
+    value: 'valuation_invalid_history',
+    label: '全历史异常市值修复',
+    description: '按结构体检口径强制刷新全历史市值倒挂或非正日期并复检',
+    heavy: true,
+  },
   { value: 'basic_refresh', label: '基础资料刷新', description: '刷新上市日、退市日和行业，固定全市场' },
   { value: 'delisted_history', label: '退市股历史补全', description: '先刷新基础资料，再补回测窗口内退市股历史', heavy: true },
   { value: 'st_status_refresh', label: 'ST状态刷新', description: '仅用 Baostock 的日期/交易状态/isST 强制校准逐日 ST，不覆盖行情价格；采集不直接失效结果，榜单与天梯读取时按 ST 版本自检', heavy: true },
@@ -43,6 +50,7 @@ export const STOCK_INGEST_RECIPE_LABEL = Object.fromEntries(
 
 const CODE_RECIPES = new Set<StockIngestRecipe>([
   'daily_update', 'history_backfill', 'range_refetch', 'valuation_history', 'valuation_gaps',
+  'valuation_invalid_history',
   'st_status_refresh',
 ])
 const YEAR_RECIPES = new Set<StockIngestRecipe>([
@@ -50,6 +58,7 @@ const YEAR_RECIPES = new Set<StockIngestRecipe>([
 ])
 const CONCURRENCY_RECIPES = new Set<StockIngestRecipe>([
   'daily_update', 'history_backfill', 'range_refetch', 'valuation_history', 'valuation_gaps',
+  'valuation_invalid_history',
 ])
 
 export function createStockIngestForm(

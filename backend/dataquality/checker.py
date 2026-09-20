@@ -135,6 +135,16 @@ def sanitize_bars(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     return out.reset_index(drop=True), stats
 
 
+# 市值来自不同免费行情接口且以浮点数存储；同值经独立换算会产生约 1e-16 的尾差，
+# 数据源按展示精度取整时也可能有极小偏差。关系校验统一允许万分之一相对误差，超过才算倒挂。
+MV_REL_TOLERANCE = 1e-4
+
+
+def mv_inverted_sql(total_mv: str = "total_mv", float_mv: str = "float_mv") -> str:
+    """返回统一的市值倒挂 SQL 条件；参数只接受调用方写死的内部列表达式。"""
+    return f"{total_mv} < {float_mv} * (1 - {MV_REL_TOLERANCE})"
+
+
 # 质检问题严重度映射（DM-D10）：复权跳变最伤回测=high；修补痕迹=low；其余=mid。
 SEVERITY_BY_TYPE: dict[str, str] = {
     "adj_jump": "high",
@@ -144,6 +154,7 @@ SEVERITY_BY_TYPE: dict[str, str] = {
     "null_close": "mid",       # 收盘价空/非正被丢弃——原始数据缺损（M2.9 L1 入库闸门）
     "mv_missing": "low",       # 市值字段整股缺失——字段契约不全（M2.9.2 L2）
     "mv_gap": "mid",           # 近端逐日市值字段缺口（total_mv/float_mv）——逐日缺、code 聚合
+    "mv_invalid": "high",       # 近端市值非正或总市值倒挂超容差——逐日异常、code 聚合
     "data_gap": "mid",         # 存续期缺口（疑似漏采，待重采反向确认）（M2.9.2 L4）
     "stale": "mid",            # 尾部鲜活滞后（最新<全局最新交易日）（M2.9.2 L4）
     "st_status_missing": "high",       # 行情/停牌事实存在但缺逐日 ST 权威事实
@@ -171,7 +182,7 @@ def severity_for(issue_type: str) -> str:
 # L2/L4 为聚合度量（非空率 / 缺口鲜活），不逐行落 issue，仅在 stock_quality / quality_model 计算。
 QUALITY_LAYERS: list[dict] = [
     {"layer": "L1", "name_cn": "入库闸门", "desc": "新采行情的原始/复权响应配对一致，收盘价与开高低合法；除权边界按官方前收盘校准"},
-    {"layer": "L2", "name_cn": "字段契约", "desc": "市值字段完整：总市值与流通市值都非空（流通市值供选股池过滤）"},
+    {"layer": "L2", "name_cn": "字段契约", "desc": "市值字段完整合法：非空、为正且总市值不低于流通市值（允许万分之一相对误差）"},
     {"layer": "L3", "name_cn": "正确性", "desc": "复权因子、涨跌停边界及成交价量口径一致"},
     {"layer": "L4", "name_cn": "覆盖鲜活", "desc": "存续期无缺口、数据更新到最新交易日"},
 ]
@@ -180,6 +191,7 @@ ISSUE_LAYER: dict[str, str] = {
     "ohl_repaired": "L1",
     "mv_missing": "L2",
     "mv_gap": "L2",
+    "mv_invalid": "L2",
     "abnormal_change": "L3",
     "price_volume_mismatch": "L3",
     "adj_jump": "L3",
@@ -203,7 +215,7 @@ ISSUE_LAYER: dict[str, str] = {
 }
 # 各层落 data_quality_issue 表的离散异常类型（M2.9.2：四层都落表，质检可反复扫并幂等覆盖）。
 L1_ISSUE_TYPES: tuple[str, ...] = ("null_close", "ohl_repaired")
-L2_ISSUE_TYPES: tuple[str, ...] = ("mv_missing", "mv_gap")
+L2_ISSUE_TYPES: tuple[str, ...] = ("mv_missing", "mv_gap", "mv_invalid")
 L3_ISSUE_TYPES: tuple[str, ...] = (
     "abnormal_change", "price_volume_mismatch", "adj_jump",
 )

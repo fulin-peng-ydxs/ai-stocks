@@ -62,6 +62,7 @@ describe('stock ingest shared form contract', () => {
     expect(isHeavyStockIngestRecipe('history_backfill')).toBe(true)
     expect(isHeavyStockIngestRecipe('range_refetch')).toBe(true)
     expect(isHeavyStockIngestRecipe('valuation_history')).toBe(true)
+    expect(isHeavyStockIngestRecipe('valuation_invalid_history')).toBe(true)
     expect(isHeavyStockIngestRecipe('delisted_history')).toBe(true)
     expect(isHeavyStockIngestRecipe('daily_update')).toBe(false)
   })

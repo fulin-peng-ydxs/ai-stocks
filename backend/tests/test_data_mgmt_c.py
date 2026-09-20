@@ -143,7 +143,30 @@ def test_quality_model_l3_includes_price_volume_mismatch(client):
     assert by["L3"]["pass_stocks"] == 1
     assert by["L3"]["issues"] == 1
     assert stocks["A.SH"]["layers"]["L3"]["issues"] == 1
+    assert stocks["A.SH"]["layers"]["L3"]["breakdown"] == [
+        {"issue_type": "price_volume_mismatch", "count": 1}
+    ]
     assert qm["score"] == 0
+
+
+def test_stock_quality_cache_invalidates_when_issue_type_changes(client):
+    """问题数不变但类型变化时，逐股悬浮原因不能继续使用旧缓存。"""
+    _seed(client)
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id,code,issue_type,severity,status,detected_at) "
+        "VALUES (3,'A.SH','adj_jump','high','open',?)",
+        [datetime.now()],
+    )
+    rep = DataIntegrityReport(client)
+    before = rep.stock_quality()["list"][0]["layers"]["L3"]["breakdown"]
+    assert before == [{"issue_type": "adj_jump", "count": 1}]
+
+    client.execute(
+        "UPDATE data_quality_issue SET issue_type='price_volume_mismatch' WHERE id=3"
+    )
+    after = rep.stock_quality()["list"][0]["layers"]["L3"]["breakdown"]
+    assert after == [{"issue_type": "price_volume_mismatch", "count": 1}]
 
 
 # ── 逐股名称搜索 + 分层明细（DM-D17/D15）──
@@ -533,6 +556,47 @@ def test_scan_emits_mv_gap_for_recent_float_mv_gap(client):
     assert "流通市值" in issue["detail"]
 
 
+def test_scan_emits_aggregated_mv_invalid_and_marks_l2_failed(client):
+    cal = pd.DataFrame({"trade_date": [date(2024, 1, d) for d in (2, 3, 4)], "is_open": True})
+    client.register_df("_cal_mv_invalid", cal)
+    client.execute("INSERT INTO trade_calendar SELECT trade_date, is_open FROM _cal_mv_invalid")
+    client.unregister("_cal_mv_invalid")
+    client.execute(
+        "INSERT INTO stock_basic (code, name, delist_date, list_date) "
+        "VALUES ('A.SH','甲公司',NULL, DATE '2024-01-02')"
+    )
+    client.execute(
+        "INSERT INTO daily_bar (code, trade_date, close) VALUES "
+        "('A.SH', DATE '2024-01-02', 10.0),"
+        "('A.SH', DATE '2024-01-03', 10.0),"
+        "('A.SH', DATE '2024-01-04', 10.0)"
+    )
+    client.execute(
+        "INSERT INTO daily_metrics (code, trade_date, total_mv, float_mv) VALUES "
+        "('A.SH', DATE '2024-01-02', 799.9999999999, 800),"
+        "('A.SH', DATE '2024-01-03', 0, 8e9),"
+        "('A.SH', DATE '2024-01-04', 7e9, 8e9)"
+    )
+
+    rep = DataIntegrityReport(client)
+    qm = rep.quality_model()
+    assert {layer["layer"]: layer for layer in qm["by_layer"]}["L2"]["pass_stocks"] == 0
+    stock_l2 = rep.stock_quality()["list"][0]["layers"]["L2"]
+    assert stock_l2["mv_invalid_days"] == 2
+    assert "总市值非正 1 天" in stock_l2["mv_invalid_detail"]
+    assert "总市值低于流通市值（超万分之一容差）1 天" in stock_l2["mv_invalid_detail"]
+    result = rep.scan_quality_issues()
+    assert result["mv_invalid_rows"] == 1
+    issue = client.query_df(
+        "SELECT issue_type, trade_date, detail FROM data_quality_issue "
+        "WHERE code='A.SH' AND status='open'"
+    ).iloc[0]
+    assert issue["issue_type"] == "mv_invalid"
+    assert pd.Timestamp(issue["trade_date"]).date() == date(2024, 1, 4)
+    assert "总市值非正 1 天" in issue["detail"]
+    assert "总市值低于流通市值（超万分之一容差）1 天" in issue["detail"]
+
+
 def test_suspension_excluded_from_gap(client):
     """确认停牌后，缺口口径减去它（DM-D20）→ B 不再算缺口。"""
     rep = DataIntegrityReport(client)
@@ -661,6 +725,51 @@ def test_recover_mv_gap_fills_float_mv_gap(client, monkeypatch):
     svc = AsyncTaskService(client)
     _wait(svc, svc.create("fix", {"issue_id": iid}))
     assert client.query_df("SELECT status FROM data_quality_issue WHERE id=?", [iid]).iloc[0]["status"] == "resolved"
+
+
+def test_recover_mv_invalid_force_refreshes_and_resolves(client, monkeypatch):
+    cal = pd.DataFrame({"trade_date": [date(2024, 1, 2)], "is_open": True})
+    client.register_df("_cal_mv_invalid_fix", cal)
+    client.execute("INSERT INTO trade_calendar SELECT trade_date, is_open FROM _cal_mv_invalid_fix")
+    client.unregister("_cal_mv_invalid_fix")
+    client.execute(
+        "INSERT INTO stock_basic (code, name, delist_date, list_date) "
+        "VALUES ('A.SH','甲公司',NULL, DATE '2024-01-02')"
+    )
+    client.execute(
+        "INSERT INTO daily_bar (code, trade_date, close) VALUES "
+        "('A.SH', DATE '2024-01-02', 10.0)"
+    )
+    client.execute(
+        "INSERT INTO daily_metrics (code, trade_date, total_mv, float_mv) VALUES "
+        "('A.SH', DATE '2024-01-02', 7e9, 8e9)"
+    )
+    rep = DataIntegrityReport(client)
+    rep.scan_quality_issues()
+    iid = int(client.query_df(
+        "SELECT id FROM data_quality_issue WHERE code='A.SH' AND issue_type='mv_invalid'"
+    ).iloc[0]["id"])
+
+    from backend.services import ingest
+
+    def _repair(self, code, window_days=90, ctx=None):
+        assert code == "A.SH"
+        client.execute(
+            "UPDATE daily_metrics SET total_mv=1e10, float_mv=8e9 "
+            "WHERE code='A.SH' AND trade_date=DATE '2024-01-02'"
+        )
+        return {"target_days": 1, "total_mv_rows": 1}
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "repair_invalid_valuation", _repair, raising=True)
+    monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    service = AsyncTaskService(client)
+    _wait(service, service.create("fix", {"issue_id": iid}))
+
+    status = client.query_df(
+        "SELECT status FROM data_quality_issue WHERE id=?", [iid]
+    ).iloc[0]["status"]
+    assert status == "resolved"
 
 
 def test_recheck_keeps_open_if_unfixed(client, monkeypatch):
@@ -1205,6 +1314,128 @@ def test_valuation_latest_with_codes_fills_missing_metrics_row(client, monkeypat
     row = client.query_df("SELECT total_mv, float_mv FROM daily_metrics WHERE code='B.SH'").iloc[0]
     assert res["total_mv_rows"] == 1
     assert row["total_mv"] == 999.0 and row["float_mv"] == 888.0
+
+
+def test_valuation_rejects_invalid_source_and_force_repairs_confirmed_dates(client, monkeypatch):
+    from backend.config import get_effective_settings
+    from backend.services import ingest
+    from backend.storage.repository import MarketRepository
+
+    target = date(2026, 6, 12)
+    client.execute("INSERT INTO trade_calendar (trade_date, is_open) VALUES (?, TRUE)", [target])
+    client.execute("INSERT INTO stock_basic (code, name) VALUES ('A.SH','甲')")
+    client.execute(
+        "INSERT INTO daily_bar (code, trade_date, close, pre_close) VALUES (?, ?, 10.0, 9.9)",
+        ["A.SH", target],
+    )
+    client.execute(
+        "INSERT INTO daily_metrics (code, trade_date, float_mv, total_mv) VALUES (?, ?, 800, 700)",
+        ["A.SH", target],
+    )
+
+    class _Val:
+        name = "akshare"
+
+        def __init__(self):
+            self.total_mv = 0.0
+
+        def supports(self, _cap):
+            return True
+
+        def get_valuation(self, code, start, end):
+            return pd.DataFrame({
+                "code": [code], "trade_date": [target],
+                "total_mv": [self.total_mv], "float_mv": [800.0],
+                "total_share": [100], "float_share": [80],
+            })
+
+    source = _Val()
+
+    def _init(self, source_arg=None):
+        self.s = get_effective_settings()
+        self.c = client
+        self.repo = MarketRepository(client)
+        self.src = source
+        self._bao = None
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", _init, raising=True)
+    service = ingest.IngestionService()
+    assert service._valuation_one("A.SH", source, target, target) == 0
+    unchanged = client.query_df(
+        "SELECT total_mv, float_mv FROM daily_metrics WHERE code='A.SH'"
+    ).iloc[0]
+    assert unchanged["total_mv"] == 700 and unchanged["float_mv"] == 800
+
+    source.total_mv = 1000.0
+    result = service.repair_invalid_valuation("A.SH")
+    repaired = client.query_df(
+        "SELECT total_mv, float_mv FROM daily_metrics WHERE code='A.SH'"
+    ).iloc[0]
+    assert result == {"target_days": 1, "total_mv_rows": 1}
+    assert repaired["total_mv"] == 1000 and repaired["float_mv"] == 800
+
+
+def test_full_history_invalid_valuation_repair_uses_structure_contract(client, monkeypatch):
+    from backend.config import get_effective_settings
+    from backend.services import ingest
+    from backend.storage.repository import MarketRepository
+
+    old_day = date(2021, 5, 31)
+    tolerated_day = date(2022, 6, 1)
+    client.execute("INSERT INTO stock_basic (code, name) VALUES ('A.SH','甲')")
+    client.execute(
+        "INSERT INTO daily_bar (code, trade_date, close, pre_close) VALUES "
+        "('A.SH', ?, 10.0, 9.9), ('A.SH', ?, 10.0, 9.9)",
+        [old_day, tolerated_day],
+    )
+    client.execute(
+        "INSERT INTO daily_metrics (code, trade_date, float_mv, total_mv) VALUES "
+        "('A.SH', ?, 800, 700), ('A.SH', ?, 1000, 999.95)",
+        [old_day, tolerated_day],
+    )
+
+    class _Val:
+        name = "akshare"
+
+        def supports(self, _cap):
+            return True
+
+        def get_valuation(self, code, start, end):
+            return pd.DataFrame({
+                "code": [code, code],
+                "trade_date": [old_day, tolerated_day],
+                "total_mv": [1000.0, 1000.0],
+                "float_mv": [800.0, 1000.0],
+                "total_share": [100, 100],
+                "float_share": [80, 100],
+            })
+
+    source = _Val()
+
+    def _init(self, source_arg=None):
+        self.s = get_effective_settings()
+        self.c = client
+        self.repo = MarketRepository(client)
+        self.src = source
+        self._bao = None
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", _init, raising=True)
+    result = ingest.IngestionService().repair_invalid_valuation_history(concurrency=1)
+
+    rows = client.query_df(
+        "SELECT trade_date, total_mv, float_mv FROM daily_metrics "
+        "WHERE code='A.SH' ORDER BY trade_date"
+    )
+    assert result == {
+        "target": 1,
+        "target_days": 1,
+        "ok": 1,
+        "fail": 0,
+        "total_mv_rows": 1,
+        "remaining_rows": 0,
+    }
+    assert rows.iloc[0]["total_mv"] == 1000 and rows.iloc[0]["float_mv"] == 800
+    assert rows.iloc[1]["total_mv"] == 999.95 and rows.iloc[1]["float_mv"] == 1000
 
 
 # ── 历史补数：仅有部分近期数据的股票(被兜底/中断补了近窗口)必须重补早期历史，不能误跳过 ──

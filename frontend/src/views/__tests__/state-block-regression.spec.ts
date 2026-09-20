@@ -110,8 +110,17 @@ vi.mock('@/api/data', () => ({
   cancelTask: vi.fn(),
   TASK_LABEL: { update: '每日更新' },
   STATUS_LABEL: { running: '运行中', done: '已完成' },
-  LAYER_DESC: {},
-  ISSUE_TYPE_LABEL: { data_gap: '缺口' },
+  LAYER_DESC: { L1: '入库契约', L2: '字段契约', L3: '正确性契约', L4: '覆盖契约' },
+  LAYER_ISSUE_SUMMARY: {
+    L1: (issues: number) => `${issues} 项待处理`,
+    L2: (issues: number) => `${issues} 只未达标`,
+    L3: (issues: number) => `${issues} 项待处理`,
+    L4: (issues: number) => `${issues} 天缺口/滞后`,
+  },
+  ISSUE_TYPE_LABEL: {
+    data_gap: '缺口', null_close: '行情·收盘价为空(丢弃)',
+    price_volume_mismatch: '行情·价量口径错配',
+  },
   SEVERITY_LABEL: { high: '高' },
   ISSUE_STATUS_LABEL: { open: '未处理', fixing: '修复中' },
   ISSUE_LAYER: { data_gap: 'L4' },
@@ -622,6 +631,58 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.text()).toContain('逐股质量加载失败')
     expect(wrapper.text()).toContain('stock quality failed')
     expect(wrapper.text()).not.toContain('数据概览加载失败')
+  })
+
+  it('数据概览按实际 L2 字段契约原因区分缺失与数值异常', async () => {
+    const wrapper = await mountView(OverviewView)
+    const layerCell = (wrapper.vm as any).layerCell as (
+      layer: string,
+      value: Record<string, unknown>,
+    ) => { text: string; tip: string }
+
+    const invalid = layerCell('L2', {
+      ok: false,
+      mv_invalid_days: 2,
+      mv_invalid_lo: '2024-01-03',
+      mv_invalid_hi: '2024-01-04',
+      mv_invalid_detail: '总市值非正 1 天；总市值低于流通市值（超万分之一容差）1 天',
+    })
+    expect(invalid.text).toBe('异常')
+    expect(invalid.tip).toContain('市值数值异常')
+    expect(invalid.tip).toContain('总市值低于流通市值（超万分之一容差）1 天')
+    expect(invalid.tip).not.toContain('市值字段缺失')
+
+    const missing = layerCell('L2', { ok: false, mv_detail: '近端缺流通市值' })
+    expect(missing.text).toBe('缺')
+    expect(missing.tip).toContain('近端缺流通市值')
+  })
+
+  it('数据概览 L1/L3 只展示该股票实际命中的问题类型', async () => {
+    const wrapper = await mountView(OverviewView)
+    const layerCell = (wrapper.vm as any).layerCell as (
+      layer: string,
+      value: Record<string, unknown>,
+    ) => { text: string; tip: string }
+
+    const l1 = layerCell('L1', {
+      ok: false,
+      issues: 2,
+      breakdown: [{ issue_type: 'null_close', count: 2 }],
+    })
+    expect(l1.tip).toContain('行情·收盘价为空(丢弃) 2 项')
+    expect(l1.tip).not.toContain('开高低修补')
+
+    const l3 = layerCell('L3', {
+      ok: false,
+      issues: 1,
+      breakdown: [{ issue_type: 'price_volume_mismatch', count: 1 }],
+    })
+    expect(l3.tip).toContain('行情·价量口径错配 1 项')
+    expect(l3.tip).not.toContain('复权因子')
+
+    const passed = layerCell('L4', { ok: true })
+    expect(passed.tip).toContain('当前未发现问题')
+    expect(passed.tip).toContain('覆盖契约')
   })
 
   it('数据资产按双库和规划场景切换列集合且互不串用', async () => {

@@ -140,6 +140,15 @@ export interface StockQualityLayer {
   name_cn: string
   ok: boolean
   issues?: number
+  breakdown?: Array<{ issue_type: string; count: number }>
+  mv_detail?: string
+  mv_gap_days?: number
+  mv_gap_lo?: string | null
+  mv_gap_hi?: string | null
+  mv_invalid_days?: number
+  mv_invalid_lo?: string | null
+  mv_invalid_hi?: string | null
+  mv_invalid_detail?: string
   gap_days?: number
   gap_lo?: string | null
   gap_hi?: string | null
@@ -552,7 +561,7 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
 }
 // 当前在用的问题类型（下拉筛选用此顺序；missing_or_suspended 已废弃，不再产出/不再列出）。
 export const ISSUE_TYPES_ACTIVE = [
-  'null_close', 'ohl_repaired', 'mv_missing', 'mv_gap', 'abnormal_change',
+  'null_close', 'ohl_repaired', 'mv_missing', 'mv_gap', 'mv_invalid', 'abnormal_change',
   'price_volume_mismatch', 'adj_jump', 'data_gap', 'stale',
   'st_status_missing', 'st_status_approximate', 'st_status_mismatch',
   'market_index_gap', 'market_index_gap_daily', 'market_index_invalid',
@@ -562,7 +571,7 @@ export const ISSUE_TYPES_ACTIVE = [
 export const ISSUE_TYPE_LABEL: Record<string, string> = {
   // 展示名统一为「对象·现象」，现象词固定：缺失/缺口(近端缺某日)/滞后(未更新到最新)/非法/异常/跳变/修补/为空。
   null_close: '行情·收盘价为空(丢弃)', ohl_repaired: '行情·开高低修补', mv_missing: '市值·整段缺失',
-  mv_gap: '市值·近端缺某日', abnormal_change: '行情·涨跌幅异常',
+  mv_gap: '市值·近端缺某日', mv_invalid: '市值·数值非法', abnormal_change: '行情·涨跌幅异常',
   price_volume_mismatch: '行情·价量口径错配', adj_jump: '复权·因子跳变',
   data_gap: '行情·近端缺某日', stale: '行情·未更新到最新',
   st_status_missing: 'ST状态·逐日事实缺失',
@@ -624,7 +633,7 @@ export function taskDisplayLabel(
 }
 // 各问题类型归属的质量层（M2.9 DM-D15 / M2.9.2 DM-D20），用于质量页/概览按层归类。
 export const ISSUE_LAYER: Record<string, string> = {
-  null_close: 'L1', ohl_repaired: 'L1', mv_missing: 'L2', mv_gap: 'L2',
+  null_close: 'L1', ohl_repaired: 'L1', mv_missing: 'L2', mv_gap: 'L2', mv_invalid: 'L2',
   abnormal_change: 'L3', price_volume_mismatch: 'L3', adj_jump: 'L3',
   data_gap: 'L4', stale: 'L4',
   st_status_missing: 'ST', st_status_approximate: 'ST', st_status_mismatch: 'ST',
@@ -636,6 +645,7 @@ export const ISSUE_LAYER: Record<string, string> = {
 // 各问题类型的恢复动作文案（DM-D22）：按类型分派，不再统一“重拉/重算”。
 export const RECOVER_ACTION_LABEL: Record<string, string> = {
   null_close: '重采该日', ohl_repaired: '重采该日', mv_missing: '补市值', mv_gap: '补市值缺口',
+  mv_invalid: '刷新异常市值',
   abnormal_change: '重采该日', price_volume_mismatch: '重采该日',
   adj_jump: '重采整段重算复权',
   data_gap: '重采缺口', stale: '增量补尾',
@@ -658,11 +668,17 @@ export const LAYER_LABEL: Record<string, string> = {
 // 以后调整口径或新增层/指标只改这里，不再各页各写一份（避免漏改）。
 export const LAYER_DESC: Record<string, string> = {
   L1: 'L1 入库闸门：原始/复权响应配对一致、收盘价合法、开高低正常；除权边界按官方前收盘校准',
-  L2: 'L2 字段契约：市值字段（总市值 / 流通市值）完整',
+  L2: 'L2 字段契约：总市值与流通市值非空、为正，且总市值不低于流通市值（允许万分之一相对误差）',
   L3: 'L3 正确性：复权因子、涨跌停边界及成交价量口径一致',
   L4: 'L4 覆盖鲜活：无缺口且更新到最新交易日',
   指数: '市场指数维度：每个配置指数均更新到最新、近端无缺口且 OHLC/成交字段合法',
   板块: '板块维度：指数覆盖与字段合法、成分快照完整、资金流覆盖与映射（独立于个股四层质量）',
+}
+export const LAYER_ISSUE_SUMMARY: Record<string, (issues: number) => string> = {
+  L1: (issues) => `${issues} 项待处理`,
+  L2: (issues) => `${issues} 只未达标`,
+  L3: (issues) => `${issues} 项待处理`,
+  L4: (issues) => `${issues} 天缺口/滞后`,
 }
 export const SEVERITY_LABEL: Record<string, string> = { high: '高', mid: '中', low: '低' }
 export const ISSUE_STATUS_LABEL: Record<string, string> = {

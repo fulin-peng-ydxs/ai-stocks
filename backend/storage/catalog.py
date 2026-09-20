@@ -769,7 +769,7 @@ _DUCK_QUALITY_POLICIES: dict[str, QualityPolicy] = {
         "null_close", "ohl_repaired", "abnormal_change", "price_volume_mismatch",
         "adj_jump", "data_gap", "stale",
     )),
-    "daily_metrics": QualityPolicy("issue_types", ("mv_missing", "mv_gap")),
+    "daily_metrics": QualityPolicy("issue_types", ("mv_missing", "mv_gap", "mv_invalid")),
     "index_bar": QualityPolicy("issue_types", _MARKET_INDEX_ISSUES),
     "trade_calendar": QUALITY_NOT_APPLICABLE,
     "data_update_log": QUALITY_NOT_APPLICABLE,

@@ -19,6 +19,7 @@ from datetime import UTC, date, datetime
 import pandas as pd
 
 from backend.common.logging import get_logger
+from backend.dataquality.checker import mv_inverted_sql
 from backend.services.trade_calendar_readiness import (
     calendar_readiness_detail,
     inspect_trade_calendar,
@@ -38,12 +39,17 @@ class DataVerifier:
         self._cur_group = ""
         self._structured: list[dict] = []
 
-    def _check(self, name: str, ok: bool, detail: str = "") -> None:
+    def _check(self, name: str, ok: bool, detail: str = "", help_text: str = "") -> None:
         self.results.append((name, ok, detail))
         status = "pass" if ok else "fail"
-        self._structured.append(
-            {"group": self._cur_group, "name": name, "ok": ok, "status": status, "detail": detail}
-        )
+        self._structured.append({
+            "group": self._cur_group,
+            "name": name,
+            "ok": ok,
+            "status": status,
+            "detail": detail,
+            "help": help_text,
+        })
         if not self.quiet:
             flag = "PASS" if ok else "FAIL"
             print(f"  [{flag}] {name}" + (f" — {detail}" if detail else ""))
@@ -360,6 +366,36 @@ class DataVerifier:
             "WHERE sb.delist_date IS NULL AND m.total_mv IS NULL"
         )
         self._check("在市股·总市值无缺失", live_totalmv_null == 0, f"缺 {live_totalmv_null}")
+        live_mv_nonpositive = self._count(
+            "SELECT count(*) FROM daily_metrics m JOIN stock_basic sb ON sb.code=m.code "
+            "WHERE sb.delist_date IS NULL AND (m.total_mv <= 0 OR m.float_mv <= 0)"
+        )
+        self._check(
+            "在市股·市值均为正数",
+            live_mv_nonpositive == 0,
+            f"异常 {live_mv_nonpositive}",
+        )
+        inverted = mv_inverted_sql("m.total_mv", "m.float_mv")
+        live_mv_inverted = self._count(
+            "SELECT count(*) FROM daily_metrics m JOIN stock_basic sb ON sb.code=m.code "
+            "WHERE sb.delist_date IS NULL AND m.total_mv > 0 AND m.float_mv > 0 "
+            f"AND {inverted}"
+        )
+        recent_mv_inverted = self._count(
+            "SELECT count(*) FROM daily_metrics m JOIN stock_basic sb ON sb.code=m.code "
+            "WHERE sb.delist_date IS NULL AND m.total_mv > 0 AND m.float_mv > 0 "
+            f"AND {inverted} AND m.trade_date >= ("
+            "SELECT min(trade_date) FROM (SELECT trade_date FROM trade_calendar "
+            "WHERE is_open AND trade_date <= (SELECT max(trade_date) FROM daily_bar) "
+            "ORDER BY trade_date DESC LIMIT 90))"
+        )
+        self._check(
+            "在市股·总市值不低于流通市值（万分之一容差）",
+            live_mv_inverted == 0,
+            f"全历史异常 {live_mv_inverted} 行；近90交易日台账范围 {recent_mv_inverted} 行",
+            "结构体检覆盖库内全部年份；日常质量台账只覆盖最近90个交易日，"
+            "因此历史异常不会出现在当前台账中。",
+        )
 
         # 已知豁免（数据源固有局限，不判失败，但显式列出，绝不隐藏）
         self._say("  —— 已知豁免（数据源局限，非失败，明示）——")

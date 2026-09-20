@@ -114,14 +114,15 @@ CREATE TABLE IF NOT EXISTS data_update_log (
 
 # 数据质量问题（M2.8 起含 severity/status/resolved_at，支持修复闭环 FR-DM-4）
 # M2.9.2 起四层问题类型（DM-D20）：
-#   L1 null_close/ohl_repaired（入库时记）· L2 mv_missing · L3 abnormal_change/adj_jump
+#   L1 null_close/ohl_repaired（入库时记）· L2 mv_missing/mv_gap/mv_invalid
+#   · L3 abnormal_change/price_volume_mismatch/adj_jump
 #   · L4 data_gap（疑似漏采，trade_date 存区间起，detail 含[lo,hi]）/ stale（鲜活滞后）
 DDL_DATA_QUALITY_ISSUE = """
 CREATE TABLE IF NOT EXISTS data_quality_issue (
     id          BIGINT,
     code        VARCHAR,
     trade_date  DATE,
-    issue_type  VARCHAR,        -- null_close/ohl_repaired/mv_missing/abnormal_change/adj_jump/data_gap/stale
+    issue_type  VARCHAR,        -- L1-L4/ST/市场指数/板块等质量类型，完整集合见 dataquality.checker
     severity    VARCHAR,        -- high/mid/low（DM-D10）
     status      VARCHAR,        -- open/fixing/resolved/ignored（默认 open）
     detail      VARCHAR,
@@ -1189,11 +1190,12 @@ _MIGRATIONS: list[str] = [
         "UPDATE data_quality_issue SET ignore_active=false "
         "WHERE status<>'ignored' AND ignore_active IS NULL"
     ),
-    # 严重度映射（DM-D10）：adj_jump=high；ohl_repaired/mv_missing=low；其余(abnormal_change/data_gap/stale)=mid
+    # 兼容旧库空严重度；新问题统一由 dataquality.checker.severity_for 写入。
     (
         "UPDATE data_quality_issue SET severity = CASE "
-        "WHEN issue_type='adj_jump' THEN 'high' "
-        "WHEN issue_type='ohl_repaired' THEN 'low' "
+        "WHEN issue_type IN ('adj_jump','mv_invalid','price_volume_mismatch',"
+        "'st_status_missing','st_status_approximate','st_status_mismatch') THEN 'high' "
+        "WHEN issue_type IN ('ohl_repaired','mv_missing') THEN 'low' "
         "ELSE 'mid' END WHERE severity IS NULL"
     ),
     # qfq 根治：去抖后干净因子独立成列，K线前/后复权改用它（源 adj_factor 带舍入噪声）。

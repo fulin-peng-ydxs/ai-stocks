@@ -21,7 +21,12 @@ import pandas as pd
 from backend.common.exceptions import DataSourceError
 from backend.common.logging import get_logger
 from backend.config import get_effective_settings
-from backend.dataquality.checker import add_markers, sanitize_bars
+from backend.dataquality.checker import (
+    MV_REL_TOLERANCE,
+    add_markers,
+    mv_inverted_sql,
+    sanitize_bars,
+)
 from backend.datasource.akshare_source import classify_board
 from backend.datasource.base import (
     DataSource,
@@ -764,11 +769,13 @@ class IngestionService:
         )
         # 衍生指标：流通市值 = 收盘 × 当日流通股本（新浪日线自带 float_share）
         if "float_share" in df.columns:
+            float_share = pd.to_numeric(df["float_share"], errors="coerce")
             metrics = pd.DataFrame(
                 {
                     "code": df["code"],
                     "trade_date": df["trade_date"],
-                    "float_mv": df["close"] * df["float_share"],
+                    # 非正股本不写成非法市值，保留为空并交给 L2 缺口闭环补采。
+                    "float_mv": (df["close"] * float_share).where(float_share > 0),
                     "total_mv": None,
                 }
             )
@@ -1795,9 +1802,214 @@ class IngestionService:
                 log.warning("%s 收口补市值失败(不影响补回): %s", code, e)
         return {"miss": miss, "backfilled": backfilled, "confirmed": confirmed, "rows": rows}
 
-    def _valuation_one(self, code: str, source, start: date, end: date) -> int:
+    def _invalid_valuation_dates(self, code: str, window_days: int | None = 90) -> set[date]:
+        """按统一市值契约返回指定股票的异常日期。
+
+        ``window_days=None`` 表示覆盖库内全历史。
+        """
+        inverted = mv_inverted_sql("m.total_mv", "m.float_mv")
+        window_sql = ""
+        params: list = [code]
+        if window_days is not None:
+            window_sql = """
+              AND b.trade_date >= (
+                  SELECT min(trade_date) FROM (
+                      SELECT trade_date FROM trade_calendar
+                      WHERE is_open AND trade_date <= (SELECT max(trade_date) FROM daily_bar)
+                      ORDER BY trade_date DESC LIMIT ?))
+            """
+            params.append(int(window_days))
+        invalid = self.repo.c.query_df(
+            f"""
+            SELECT b.trade_date
+            FROM daily_bar b
+            JOIN stock_basic sb ON sb.code = b.code
+            JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date
+            WHERE b.code = ? AND sb.delist_date IS NULL
+              AND (m.total_mv <= 0 OR m.float_mv <= 0 OR {inverted})
+              {window_sql}
+            ORDER BY b.trade_date
+            """,
+            params,
+        )
+        return {
+            pd.Timestamp(value).date()
+            for value in invalid["trade_date"].tolist()
+        }
+
+    def repair_invalid_valuation(self, code: str, window_days: int | None = 90,
+                                 ctx=None) -> dict:
+        """重拉并强制覆盖已确认非法的市值行。
+
+        正常补缺链路仍不覆盖有效流通市值。
+        """
+        dates = self._invalid_valuation_dates(code, window_days)
+        if not dates:
+            return {"target_days": 0, "total_mv_rows": 0}
+        if ctx:
+            ctx.log(f"刷新 {code} 非法市值 {len(dates)} 天：{min(dates)}~{max(dates)}")
+        rows = self._valuation_one(
+            code,
+            self._source_for("valuation"),
+            min(dates),
+            max(dates),
+            overwrite_dates=dates,
+        )
+        return {"target_days": len(dates), "total_mv_rows": rows}
+
+    def repair_invalid_valuation_history(self, codes: list[str] | None = None,
+                                         concurrency: int | None = None, ctx=None) -> dict:
+        """按结构体检口径修复全历史非法市值，并逐股复检形成闭环。"""
+        inverted = mv_inverted_sql("m.total_mv", "m.float_mv")
+        invalid = self.repo.c.query_df(
+            f"""
+            SELECT m.code, m.trade_date
+            FROM daily_metrics m
+            JOIN stock_basic sb ON sb.code = m.code
+            WHERE sb.delist_date IS NULL
+              AND (m.total_mv <= 0 OR m.float_mv <= 0 OR {inverted})
+            ORDER BY m.code, m.trade_date
+            """
+        )
+        if codes:
+            invalid = invalid[invalid["code"].isin(set(codes))]
+        target_map = {
+            str(code): {pd.Timestamp(value).date() for value in rows["trade_date"].tolist()}
+            for code, rows in invalid.groupby("code")
+        }
+        target_days = sum(len(dates) for dates in target_map.values())
+        done_codes = set(
+            ctx.checkpoint.get("valuation_invalid_done_codes") or []
+        ) if (ctx and ctx.checkpoint) else set()
+        pending = [
+            (code, dates) for code, dates in target_map.items()
+            if code not in done_codes
+        ]
+        concurrency = (
+            concurrency
+            if concurrency is not None
+            else self.s.datasource.update_concurrency
+        )
+        n = len(pending)
+        ok = fail = rows = 0
+        log.info("全历史异常市值修复开始：%d 只，%d 个交易日", n, target_days)
+        if ctx:
+            ctx.set_phase(
+                "valuation_invalid_history", phase_total=n, phase_done=0,
+                current_item=None,
+                valuation_invalid_done_codes=sorted(done_codes),
+            )
+            ctx.log(
+                f"子任务：全历史异常市值修复开始，"
+                f"待修 {n} 只、{target_days} 个交易日"
+            )
+            ctx.flush()
+
+        def _one(item, source) -> int:
+            code, dates = item
+            written = self._valuation_one(
+                code, source, min(dates), max(dates), overwrite_dates=dates)
+            remaining = self._invalid_valuation_dates(code, window_days=None)
+            if remaining:
+                raise RuntimeError(
+                    f"源端返回后仍有 {len(remaining)} 个异常日期"
+                    f"（{min(remaining)}~{max(remaining)}）"
+                )
+            return written
+
+        def _complete(i, item, value, error, _in_flight):
+            nonlocal rows, ok, fail
+            code, dates = item
+            if ctx:
+                ctx.set_phase(
+                    "valuation_invalid_history", phase_total=n, phase_done=i - 1,
+                    current_item=code,
+                    valuation_invalid_done_codes=sorted(done_codes),
+                )
+            if error is None:
+                rows += value
+                ok += 1
+                done_codes.add(code)
+            else:
+                fail += 1
+                log.warning("%s 全历史异常市值修复失败: %s", code, error)
+                if ctx:
+                    ctx.log(
+                        f"{code} 全历史异常市值修复失败"
+                        f"（{min(dates)}~{max(dates)}）：{error}",
+                        "warn",
+                    )
+            if i % 20 == 0 or i == n:
+                log.info(
+                    "全历史异常市值修复进度 %d/%d（成功%d 失败%d，写入 %d行）",
+                    i, n, ok, fail, rows,
+                )
+                if ctx:
+                    ctx.set_phase(
+                        "valuation_invalid_history", phase_total=n, phase_done=i,
+                        current_item=code,
+                        valuation_invalid_done_codes=sorted(done_codes),
+                    )
+                    ctx.log(
+                        f"全历史异常市值修复进度 {i}/{n}："
+                        f"成功{ok} 失败{fail}，写入 {rows} 行"
+                    )
+                    ctx.flush()
+
+        val_src = self._source_for("valuation")
+        if concurrency <= 1:
+            for i, item in enumerate(pending, 1):
+                if ctx:
+                    ctx.check_cancel()
+                try:
+                    value = _one(item, val_src)
+                    _complete(i, item, value, None, 0)
+                except Exception as error:  # noqa: BLE001
+                    _complete(i, item, 0, error, 0)
+        else:
+            tls = threading.local()
+            source_name = val_src.name
+
+            def _worker(item) -> int:
+                return _one(item, self._thread_source(tls, source_name))
+
+            self._run_bounded_parallel(
+                pending, _worker, concurrency=concurrency, ctx=ctx,
+                wait_label="全历史异常市值修复", on_complete=_complete,
+            )
+
+        remaining_by_code = {
+            code: self._invalid_valuation_dates(code, window_days=None)
+            for code in target_map
+        }
+        remaining_by_code = {
+            code: dates for code, dates in remaining_by_code.items() if dates
+        }
+        remaining = sum(len(dates) for dates in remaining_by_code.values())
+        # checkpoint 只跳过本轮已确认干净的股票，最终状态仍以实时复检为准。
+        # 即使断点数据与当前库状态偏离，也不能把仍有异常的任务虚报为成功。
+        fail = max(fail, len(remaining_by_code))
+        result = {
+            "target": n,
+            "target_days": target_days,
+            "ok": ok,
+            "fail": fail,
+            "total_mv_rows": rows,
+            "remaining_rows": remaining,
+        }
+        log.info("全历史异常市值修复完成: %s", result)
+        if ctx:
+            ctx.log(
+                f"子任务：全历史异常市值修复完成，成功{ok} 失败{fail}，"
+                f"写入 {rows} 行，剩余异常 {remaining} 行"
+            )
+        return result
+
+    def _valuation_one(self, code: str, source, start: date, end: date,
+                       overwrite_dates: set[date] | None = None) -> int:
         """取单只 [start,end] 估值，幂等合并入 daily_metrics（只补 total_mv；float_mv 仅空缺才回填，
-        不覆盖日线更准值）+ 最新总/流通股本入 stock_basic。返回 total_mv 写入行数。
+        不覆盖日线更准值）；质量修复可用 overwrite_dates 仅强制覆盖已确认异常日期的两列市值。
+        同时把最新总/流通股本写入 stock_basic。返回总市值写入行数。
         供 ingest_valuation 全量补市值与 reconcile_gaps 收口补市值共用，口径一致。"""
         v = source.get_valuation(code, start, end)
         # 与行情入库保持同一安全边界：取消后不把刚返回的外部结果继续写入 DuckDB。
@@ -1814,12 +2026,43 @@ class IngestionService:
         v = v[v["trade_date"].isin(bar_dates)]
         if v.empty:
             return 0
-        # 每日总市值入 daily_metrics（只更新 total_mv 列，不动 float_mv）
-        added = self.repo.upsert_daily_metrics(v[["code", "trade_date", "total_mv"]])
+        total_mv = pd.to_numeric(v["total_mv"], errors="coerce")
+        float_mv = pd.to_numeric(v["float_mv"], errors="coerce")
+        invalid = ((total_mv.notna() & (total_mv <= 0))
+                   | (float_mv.notna() & (float_mv <= 0))
+                   | (total_mv.notna() & float_mv.notna()
+                      & (total_mv < float_mv * (1 - MV_REL_TOLERANCE))))
+        if invalid.any():
+            invalid_dates = sorted(str(pd.Timestamp(d).date()) for d in v.loc[invalid, "trade_date"])
+            log.warning(
+                "%s 估值源返回非法市值，已拒绝写入 %d 行：%s",
+                code,
+                len(invalid_dates),
+                ",".join(invalid_dates[:10]),
+            )
+            v = v.loc[~invalid].copy()
+            total_mv = total_mv.loc[~invalid]
+            float_mv = float_mv.loc[~invalid]
+        if v.empty:
+            return 0
+        v["total_mv"] = total_mv
+        v["float_mv"] = float_mv
+
+        if overwrite_dates is not None:
+            replacement = v[
+                v["trade_date"].isin(overwrite_dates)
+                & v["total_mv"].notna()
+                & v["float_mv"].notna()
+            ][["code", "trade_date", "float_mv", "total_mv"]]
+            added = self.repo.upsert_daily_metrics(replacement)
+        else:
+            # 每日总市值入 daily_metrics（只更新 total_mv 列，不动有效的 float_mv）。
+            total_rows = v.dropna(subset=["total_mv"])[["code", "trade_date", "total_mv"]]
+            added = self.repo.upsert_daily_metrics(total_rows)
         # 补流通市值：仅 float_mv 为空的行用估值源「流通市值」回填——保证 baostock 兜底票
         # （日线无 float_share、无 float_mv）也满足 L2 契约；新浪日线已写的更准 float_mv 不覆盖。
         fv = v[["code", "trade_date", "float_mv"]].dropna(subset=["float_mv"])
-        if not fv.empty:
+        if overwrite_dates is None and not fv.empty:
             with self.repo.c.temp_view(fv, prefix="fv_metrics") as t:
                 self.repo.c.execute(
                     f"UPDATE daily_metrics m SET float_mv = src.float_mv FROM {t} src "

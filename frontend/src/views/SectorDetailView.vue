@@ -504,9 +504,6 @@ onMounted(async () => {
               <el-icon><StarFilled v-if="watchlisted" /><Star v-else /></el-icon>
             </AppIconButton>
           </template>
-          <template #meta>
-            行情 {{ detail?.trade_date || '—' }}
-          </template>
         </MarketDetailHero>
 
         <section class="metric-strip" aria-label="板块关键指标">

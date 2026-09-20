@@ -809,6 +809,9 @@ def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
             codes=codes, years=normalized.get("years"), concurrency=concurrency, ctx=ctx)
     elif recipe == "valuation_gaps":
         result = ing.ingest_valuation_gaps(codes=codes, concurrency=concurrency, ctx=ctx)
+    elif recipe == "valuation_invalid_history":
+        result = ing.repair_invalid_valuation_history(
+            codes=codes, concurrency=concurrency, ctx=ctx)
     elif recipe == "st_status_refresh":
         result = ing.refresh_st_status(
             codes=codes,
@@ -881,7 +884,8 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
     """数据质检（与定时/手动质检同一方法 scan_quality_issues，口径一致）。
 
     四层 + ST 点时事实统一扫描写质量台账（幂等覆盖自动问题）：
-    L2 字段契约（市值缺失）/ L3 正确性（异常涨跌、复权跳变）/ L4 覆盖鲜活（缺口、滞后）。
+    L2 字段契约（市值缺失、非正或总市值倒挂超过万分之一容差）/
+    L3 正确性（异常涨跌、复权跳变）/ L4 覆盖鲜活（缺口、滞后）。
     L1 入库闸门由采集即时记录。停牌（已确认）不计入缺口。
     """
     from backend.services.data_report import DataIntegrityReport
@@ -894,7 +898,7 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
     q["board"] = rep.scan_board_quality()
     base_count = sum(int(q.get(k, 0)) for k in
             ("abnormal_change_rows", "price_volume_mismatch_rows", "adj_jump_rows",
-             "mv_missing_rows", "mv_gap_rows",
+             "mv_missing_rows", "mv_gap_rows", "mv_invalid_rows",
              "data_gap_rows", "stale_rows", "st_status_missing_rows",
              "st_status_approximate_rows", "st_status_mismatch_rows"))
     market_index = q.get("market_index") or {}
@@ -904,6 +908,7 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
             f"价量错配 {q.get('price_volume_mismatch_rows', 0)}、"
             f"复权跳变 {q.get('adj_jump_rows', 0)}、"
             f"市值缺失 {q.get('mv_missing_rows', 0)}、市值缺口 {q.get('mv_gap_rows', 0)}、"
+            f"市值非法 {q.get('mv_invalid_rows', 0)}、"
             f"缺口 {q.get('data_gap_rows', 0)}、滞后 {q.get('stale_rows', 0)}、"
             f"ST缺失 {q.get('st_status_missing_rows', 0)}、"
             f"ST非权威 {q.get('st_status_approximate_rows', 0)}、"
@@ -916,8 +921,9 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
 def _h_checkup(params: dict, ctx: TaskContext) -> dict:
     """数据结构体检（DataVerifier）：本地 SQL 的结构/价格正确性/字段契约/板块数据核查，返回结构化报告。
 
-    与质检（_h_verify 写台账+修复闭环）互补：体检查结构合法性与整列/逐行缺失（含质检盲区的
-    在市股逐行市值字段缺失），只读、不写台账。cross=True 时附加联网交叉验证（默认关闭）。
+    与质检（_h_verify 写台账+修复闭环）互补：体检覆盖全历史结构、完整性和字段关系；
+    质检按可操作窗口聚合问题并写台账。体检只读、不写台账，cross=True 时附加联网交叉验证
+    （默认关闭）。
     """
     from backend.services.data_verify import DataVerifier
     cross = bool(params.get("cross", False))
@@ -1145,6 +1151,13 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
             ctx.log(f"恢复(L2 逐日缺口)：补 {code} 的市值字段缺失天")
             res = _call_with_ctx(ing.ingest_valuation_gaps, codes=[code], ctx=ctx)
             note = f"补市值缺口 {res.get('total_mv_rows', 0)} 行"
+        elif issue_type == "mv_invalid":
+            ctx.log(f"恢复(L2 市值合法性)：刷新 {code} 的非法市值日期")
+            res = _call_with_ctx(ing.repair_invalid_valuation, code, ctx=ctx)
+            note = (
+                f"刷新异常市值 {res.get('total_mv_rows', 0)}/"
+                f"{res.get('target_days', 0)} 天"
+            )
         elif issue_type in ("data_gap", "stale"):
             ctx.log(f"恢复(L4 覆盖鲜活)：按缺口收口重采 {code}（与增量更新同口径）")
             r = ing.reconcile_gaps(code, ctx=ctx)
@@ -1380,6 +1393,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
     支持单条 `issue_id`、批量 `issue_ids`，或定时任务使用的 `issue_type`。
     `issue_type` 会在每次真正执行时动态查询当前 open 问题，不把过期问题 ID 固化到调度定义。
     - mv_missing(L2)        → ingest_valuation([code])（补市值字段，不是重拉行情）
+    - mv_invalid(L2)        → repair_invalid_valuation(code)（只强制覆盖异常日期）
     - data_gap/stale(L4)    → 反向重采缺口区间：补回的入库；源端仍无数据的确认为停牌写 stock_suspension（收敛）
     - null_close/abnormal   → 重采该单日；adj_jump → 重采该股整段 + 重算复权
     复检由 DataIntegrityReport.recheck_clean 判定：通过 → resolved；未通过 → 保持 open。

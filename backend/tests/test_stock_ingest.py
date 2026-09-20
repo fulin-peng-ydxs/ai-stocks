@@ -53,6 +53,10 @@ def test_stock_ingest_task_registered_as_resumable_write_task():
         ),
         ({"recipe": "valuation_history", "years": "3"}, {"recipe": "valuation_history", "years": 3}),
         ({"recipe": "valuation_gaps", "concurrency": 1}, {"recipe": "valuation_gaps", "concurrency": 1}),
+        (
+            {"recipe": "valuation_invalid_history", "concurrency": 2},
+            {"recipe": "valuation_invalid_history", "concurrency": 2},
+        ),
         ({"recipe": "basic_refresh"}, {"recipe": "basic_refresh"}),
         ({"recipe": "delisted_history", "years": 10}, {"recipe": "delisted_history", "years": 10}),
         ({"recipe": "st_status_refresh"}, {"recipe": "st_status_refresh"}),
@@ -98,6 +102,7 @@ def test_normalize_stock_ingest_params_rejects_unsafe_combinations(params):
         ({"recipe": "range_refetch", "date_start": "2026-08-01"}, "ingest_date"),
         ({"recipe": "valuation_history"}, "ingest_valuation"),
         ({"recipe": "valuation_gaps"}, "ingest_valuation_gaps"),
+        ({"recipe": "valuation_invalid_history"}, "repair_invalid_valuation_history"),
         ({"recipe": "basic_refresh"}, "enrich_basic_dates"),
         ({"recipe": "delisted_history"}, "ingest_delisted"),
         ({"recipe": "st_status_refresh"}, "refresh_st_status"),
@@ -112,6 +117,9 @@ def test_stock_ingest_handler_dispatches_recipe(monkeypatch, params, called):
         def ingest_date(self, *args, **kwargs): calls.append(("ingest_date", (args, kwargs))); return {"ok": 1, "fail": 0}
         def ingest_valuation(self, **kwargs): calls.append(("ingest_valuation", kwargs)); return {"ok": 1, "fail": 0}
         def ingest_valuation_gaps(self, **kwargs): calls.append(("ingest_valuation_gaps", kwargs)); return {"ok": 1, "fail": 0}
+        def repair_invalid_valuation_history(self, **kwargs):
+            calls.append(("repair_invalid_valuation_history", kwargs))
+            return {"ok": 1, "fail": 0}
         def enrich_basic_dates(self, **kwargs): calls.append(("enrich_basic_dates", kwargs)); return 3
         def ingest_delisted(self, **kwargs): calls.append(("ingest_delisted", kwargs)); return {"ok": 1, "fail": 0}
         def refresh_st_status(self, **kwargs): calls.append(("refresh_st_status", kwargs)); return {"ok": 1, "fail": 0}

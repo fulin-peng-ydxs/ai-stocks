@@ -13,6 +13,7 @@ STOCK_INGEST_RECIPES = (
     "range_refetch",
     "valuation_history",
     "valuation_gaps",
+    "valuation_invalid_history",
     "basic_refresh",
     "delisted_history",
     "st_status_refresh",
@@ -24,6 +25,7 @@ STOCK_INGEST_RECIPE_LABELS = {
     "range_refetch": "日期区间重采",
     "valuation_history": "市值历史补采",
     "valuation_gaps": "市值缺口修复",
+    "valuation_invalid_history": "全历史异常市值修复",
     "basic_refresh": "基础资料刷新",
     "delisted_history": "退市股历史补全",
     "st_status_refresh": "ST状态刷新",
@@ -34,13 +36,13 @@ _COMMON_FIELDS = {
 }
 _CODE_RECIPES = {
     "daily_update", "history_backfill", "range_refetch",
-    "valuation_history", "valuation_gaps",
+    "valuation_history", "valuation_gaps", "valuation_invalid_history",
     "st_status_refresh",
 }
 _YEAR_RECIPES = {"history_backfill", "valuation_history", "delisted_history"}
 _CONCURRENCY_RECIPES = {
     "daily_update", "history_backfill", "range_refetch",
-    "valuation_history", "valuation_gaps",
+    "valuation_history", "valuation_gaps", "valuation_invalid_history",
 }
 
 

@@ -89,6 +89,38 @@ def test_market_value_contract_and_report_cover_old_history_rows():
         assert critical["null_float_mv"] == 0
 
 
+def test_market_value_contract_rejects_nonpositive_and_inverted_values():
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        c.execute(
+            "INSERT INTO stock_basic "
+            "(code,name,exchange,board,list_date,price_limit_pct,industry,total_share) "
+            "VALUES ('600000.SH','浦发','SH','主板',DATE '2000-01-01',0.10,'J66',1000000)"
+        )
+        c.execute(
+            "INSERT INTO daily_metrics (code,trade_date,float_mv,total_mv) VALUES "
+            "('600000.SH',DATE '2020-01-02',800,-1),"
+            "('600000.SH',DATE '2021-01-04',900,800),"
+            "('600000.SH',DATE '2022-01-04',800,799.9999999999)"
+        )
+
+        verifier = DataVerifier(c, quiet=True)
+        verifier.check_contract()
+        checks = {name: ok for name, ok, _ in verifier.results}
+        critical = DataIntegrityReport(c).null_critical()
+
+        assert checks["在市股·市值均为正数"] is False
+        assert checks["在市股·总市值不低于流通市值（万分之一容差）"] is False
+        assert critical["nonpositive_mv"] == 1
+        assert critical["inverted_mv"] == 1
+        inverted_check = next(
+            item for item in verifier._structured
+            if item["name"] == "在市股·总市值不低于流通市值（万分之一容差）"
+        )
+        assert inverted_check["detail"] == "全历史异常 1 行；近90交易日台账范围 0 行"
+        assert "结构体检覆盖库内全部年份" in inverted_check["help"]
+
+
 def test_structure_warns_when_valid_ladder_uses_old_st_version():
     with DuckDBClient(db_path=":memory:") as c:
         init_db(c)
