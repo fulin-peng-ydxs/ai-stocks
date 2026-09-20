@@ -32,6 +32,18 @@ def client(monkeypatch):
     return TestClient(create_app())
 
 
+@pytest.fixture()
+def result_st_ready(monkeypatch):
+    """榜单行装配需要输出点时 ST；评分层已在其它测试覆盖严格门禁。"""
+    from backend.services.stock_st_status import StockSTStatusService
+
+    monkeypatch.setattr(
+        StockSTStatusService,
+        "status_map",
+        lambda self, run_date, codes: {str(code): False for code in codes},
+    )
+
+
 def _auth(uid: str, tid: str, pv: int = 0) -> dict:
     from backend.auth.jwt_tokens import issue_access
     return {"Authorization": "Bearer " + issue_access(uid, tid, pv)}
@@ -83,7 +95,9 @@ def test_board_compute_allowed_with_code(client, pg):
         _rm_user(pg, uid, tid, rid)
 
 
-def test_board_compute_accepts_visible_score_profile_ref(client, pg, market, monkeypatch):
+def test_board_compute_accepts_visible_score_profile_ref(
+    client, pg, market, monkeypatch, result_st_ready
+):
     """/board/compute 支持可见评分方案 profile_ref，供回测明细榜单按同一方案看排名。"""
     from backend.scoring.score_profile import ScoreProfileRepo
 
@@ -112,7 +126,7 @@ def test_board_compute_accepts_visible_score_profile_ref(client, pg, market, mon
         )
         assert r.status_code == 200
         assert r.json()["data"]["list"][0]["code"] == "T3B_COMPUTE.SZ"
-        assert "related_boards" not in r.json()["data"]["list"][0]
+        assert r.json()["data"]["list"][0]["related_boards"] == []
     finally:
         pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", [owner])
         pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", [owner])
@@ -200,6 +214,7 @@ def test_board_run_reads_fresh_public_snapshot_only(
     market,
     public_preset,
     monkeypatch,
+    result_st_ready,
 ):
     """/board/run 对 fresh 快照直接读取，并按榜单日期批量附加冠军摘要。"""
     preset_id, _priv_id = public_preset
@@ -220,8 +235,12 @@ def test_board_run_reads_fresh_public_snapshot_only(
         },
     )
     try:
-        from backend.indicators.compute import build_params, param_hash
-        ph = param_hash(build_params())
+        from backend.scoring.score_profile import ScoreProfileRepo
+        from backend.scoring.snapshot import _current_param_hash
+        profile = ScoreProfileRepo(
+            market=c, pg=pg, tenant_id=ptid, owner_user_id=pown
+        ).get(preset_id)
+        ph = _current_param_hash(c, profile)
         from backend.services.stock_st_status import StockSTStatusService
         st_version = StockSTStatusService(c).input_version_for_date(
             date.fromisoformat(_PUB_DATE)
@@ -328,7 +347,7 @@ def test_board_run_reports_st_status_not_ready_without_returning_old_cache(
 
 
 def test_board_run_without_date_uses_latest_market_date_and_materializes(
-    client, pg, public_preset, monkeypatch
+    client, pg, public_preset, monkeypatch, result_st_ready
 ):
     """不传 run_date 时取行情最新日；该日缺 fresh 快照则按 visible 方案物化。"""
     preset_id, _priv_id = public_preset
@@ -369,7 +388,9 @@ def test_board_run_without_date_uses_latest_market_date_and_materializes(
         _rm_user(pg, uid, tid, rid)
 
 
-def test_board_run_materializes_stale_snapshot_with_view(client, pg, public_preset, monkeypatch):
+def test_board_run_materializes_stale_snapshot_with_view(
+    client, pg, public_preset, monkeypatch, result_st_ready
+):
     """visible 方案 stale/缺失快照可由 board:view 触发受控物化，写回方案 owner 槽。"""
     preset_id, _priv_id = public_preset
     ptid, pown = PUBLIC_BOARD_OWNER
@@ -469,7 +490,9 @@ def test_board_run_force_rejects_non_owner_without_mutating_snapshot(
         _rm_user(pg, uid, tid, rid)
 
 
-def test_board_run_force_recomputes_owner_snapshot(client, pg, market, monkeypatch):
+def test_board_run_force_recomputes_owner_snapshot(
+    client, pg, market, monkeypatch, result_st_ready
+):
     """方案 owner 有 board:compute 时，force 只重算所选日期和当前版本。"""
     from backend.indicators.compute import build_params, param_hash
     from backend.scoring.score_profile import ScoreProfileRepo
@@ -553,7 +576,7 @@ def test_board_run_force_recomputes_owner_snapshot(client, pg, market, monkeypat
 
 
 def test_board_run_force_allows_system_to_recompute_visible_preset(
-    client, pg, market, public_preset, monkeypatch
+    client, pg, market, public_preset, monkeypatch, result_st_ready
 ):
     """system 管理员可对可见的平台预设执行所选日期重算。"""
     preset_id, _priv_id = public_preset
@@ -699,7 +722,8 @@ def test_data_admin_latest_board_date_reads_pg_public_preset(
 ):
     """数据总览只报告 PG 公共预设中与当前 ST 版本一致的最新榜单日。"""
     from backend.api.data_admin import _latest_board_date
-    from backend.indicators.compute import build_params, param_hash
+    from backend.scoring.score_profile import ScoreProfileRepo
+    from backend.scoring.snapshot import _current_param_hash
     from backend.services.stock_st_status import StockSTStatusFact, StockSTStatusService
     from backend.limit_ladder.rules import PointInTimeSTStatus, STStatusQuality
 
@@ -733,7 +757,12 @@ def test_data_admin_latest_board_date_reads_pg_public_preset(
             ptid,
             pown,
             datetime.now(),
-            param_hash(build_params()),
+            _current_param_hash(
+                market,
+                ScoreProfileRepo(
+                    market=market, pg=pg, tenant_id=ptid, owner_user_id=pown
+                ).get(preset_id),
+            ),
             st_version,
         ])
     pg.execute(

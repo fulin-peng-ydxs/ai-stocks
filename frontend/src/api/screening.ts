@@ -1,6 +1,7 @@
 // 筛选方案 + 运行筛选 API（对应 backend/api/profiles.py）
 import http from './client'
 import type { StockRelatedBoards } from '@/types/relatedBoards'
+import type { ScoreRunRow } from './scoreProfile'
 
 export interface Profile {
   id: string
@@ -28,12 +29,7 @@ export interface ProfileBrowseResult {
   source: string
 }
 
-export interface ScreenHit {
-  code: string
-  name: string | null
-  total_score: number | null
-  grade: string
-  is_st: boolean
+export interface ScreenHit extends ScoreRunRow {
   related_boards?: StockRelatedBoards | null
 }
 
@@ -41,6 +37,11 @@ export interface ScreenResult {
   run_date: string
   count: number
   exclude_st: boolean
+  include_st: boolean
+  score_profile_ref: string
+  score_profile_version: number
+  score_profile_name: string
+  candidate_codes: string[]
   hits: ScreenHit[]
 }
 
@@ -77,8 +78,18 @@ export function runScreen(body: {
   expression?: Record<string, unknown>
   run_date?: string
   exclude_st?: boolean
+  score_profile_id: string
 }): Promise<ScreenResult> {
   return http.post('/screen/run', body)
+}
+
+export function rankScreen(body: {
+  run_date: string
+  score_profile_id: string
+  codes: string[]
+  exclude_st?: boolean
+}): Promise<ScreenResult> {
+  return http.post('/screen/rank', body)
 }
 
 // 保存/更新筛选方案（实质变更才 版本+1）；id 为空则后端自动生成（新建）

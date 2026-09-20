@@ -218,6 +218,7 @@ CREATE TABLE IF NOT EXISTS score_profile (
     version          INTEGER,
     items            TEXT,
     grade_thresholds TEXT,
+    include_st       BOOLEAN NOT NULL DEFAULT TRUE,
     is_preset        BOOLEAN,
     visibility       TEXT NOT NULL DEFAULT 'private',
     published_at     TIMESTAMP,
@@ -236,6 +237,7 @@ CREATE TABLE IF NOT EXISTS score_profile_version (
     name             TEXT,
     items            TEXT,
     grade_thresholds TEXT,
+    include_st       BOOLEAN NOT NULL DEFAULT TRUE,
     saved_at         TIMESTAMP,
     PRIMARY KEY (tenant_id, owner_user_id, id, version)
 );
@@ -1780,6 +1782,7 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
         client.execute(idx_sql)
     _protect_legacy_config_secrets(client)
     _upgrade_dict_item_color(client)
+    _upgrade_score_profile_include_st(client)
     _upgrade_score_profile_visibility(client)
     _upgrade_stage6_asset_visibility(client)
     # layout 主键以 user_id 打头，补归属索引便于按 owner 统计；其余表复合主键已覆盖归属查询
@@ -1809,6 +1812,27 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     client.execute(
         "ALTER TABLE score_snapshot_meta ADD COLUMN IF NOT EXISTS st_input_version TEXT")
     return created
+
+
+def _upgrade_score_profile_include_st(client: PostgresClient) -> None:
+    """补齐评分方案 ST 母集开关；仅首次加列时失效既有评分快照。"""
+    existing = client.query_df(
+        "SELECT table_name,column_name FROM information_schema.columns "
+        "WHERE table_schema='public' AND table_name = ANY(%s) AND column_name='include_st'",
+        [["score_profile", "score_profile_version"]],
+    )
+    existing_tables = set(existing["table_name"].astype(str).tolist()) if not existing.empty else set()
+    changed = existing_tables != {"score_profile", "score_profile_version"}
+    client.execute(
+        "ALTER TABLE score_profile ADD COLUMN IF NOT EXISTS "
+        "include_st BOOLEAN NOT NULL DEFAULT TRUE"
+    )
+    client.execute(
+        "ALTER TABLE score_profile_version ADD COLUMN IF NOT EXISTS "
+        "include_st BOOLEAN NOT NULL DEFAULT TRUE"
+    )
+    if changed:
+        client.execute("UPDATE score_snapshot_meta SET stale=TRUE")
 
 
 def _upgrade_role_assignment_policy(client: PostgresClient) -> None:

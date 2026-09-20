@@ -30,16 +30,16 @@
 - 方案 = 若干指标项，每项独立产出 0~100 达标分（`score_one` score_profile.py:65）：
   - `bool` 满足=100/否=0；`band` 分段阈值（末段含右端）；`linear` 在 `[min,max]` 线性映射到 0~100（min>max 即“越小越高”）。
 - 综合分 = Σ(达标分×权重)，权重总和自动归一（`ScoreProfileModel.score` score_profile.py:102）。指标取值经 `resolve_indicator`（score_profile.py:38）解析为快照列：优先同名列（含已 attach 的表达式/自定义指标），其次别名、`ma{n}`/`hhv{w}` 带参映射。分档 grade 按 `grade_thresholds`（观察≥watch/龙头候选≥leader/主升浪核心≥core）。
-- 旧固定模型 `ScoreModel`（`backend/scoring/model.py`）：固定 6 维（位置/趋势/量/换手/RS/资金流）、配置权重，资金流默认权重 0 自动从归一中排除。仍用于不带评分方案的榜单口径。
+- 评分方案同时保存 `include_st`（默认 `true`）并进入版本历史和快照参数指纹。它只决定 ST 是否进入评分与全市场排名，不自动加分或扣分。旧固定模型 `ScoreModel` 仅保留在明确未传评分方案的兼容路径，继续排除 ST；榜单、筛选和评分试算的正常消费链路不得用它替代已选方案。
 
 ### 评分快照惰性物化与失效（`backend/scoring/snapshot.py`）
 - `score_snapshot_meta` 除 `stale/param_hash` 外保存 D 日 `st_input_version`。其中 `param_hash` 是综合计算指纹，覆盖全局指标参数（含 RS 窗口）、行情/指标输入更新修订号和方案引用的自定义指标定义。读取先通过 ST 发布门并比较这些版本；任一不一致只让当前日期、方案、版本缓存未命中。
 - 榜单计算前后再次读取 D 日版本，只有一致时才把明细与版本写入 PG；返回已命中缓存前也二次核对，以收窄 DuckDB ST 事实与 PG 快照之间的跨库竞态。ST 批次 `refreshing/failed` 时保留旧明细，但不把它返回为有效榜单。
 - 每日榜单 `/board/run` 在发布门关闭时返回 `business_code=ST_STATUS_NOT_READY` 和可读原因，页面进入明确错误态，不把不可用误显示成“当日空榜”；等待发布完成后由用户刷新即可按当前版本命中或自愈。
 - 公共榜单默认日期和数据概览“榜单最新日”同样比较 `stale`、当前指标参数指纹和 D 日 ST 输入版本；不会把仅有 `stale=false`、但参数或 ST 已变化的 PG 元数据报成 fresh。候选日期批量读取日期修订账本，避免跨库 N+1 查询。
-- 物化键 = `(tenant_id, owner_user_id, profile_id, profile_version, trade_date)`——**含方案 owner 归属维度**；缓存读写的 WHERE 始终带 `tenant_id + owner_user_id`，API 把二者设为方案真实 owner。`get_board` 只有在 meta 的 `stale=false`、指标参数指纹和 D 日 ST 输入版本都匹配时才直接读 `score_snapshot`；否则进入 `_materialize_locked`，以 `score_day` 对全市场排除 ST 后打分并原子覆盖明细与 meta。
+- 物化键 = `(tenant_id, owner_user_id, profile_id, profile_version, trade_date)`——**含方案 owner 归属维度**；缓存读写的 WHERE 始终带 `tenant_id + owner_user_id`，API 把二者设为方案真实 owner。`get_board` 只有在 meta 的 `stale=false`、指标参数指纹（含 `include_st`）和 D 日 ST 输入版本都匹配时才直接读 `score_snapshot`；否则进入 `_materialize_locked`，以 `score_day` 按方案 ST 母集打分并原子覆盖明细与 meta。
 - **榜单结果的共享语义（区别于「资产复用」）**：榜单不是可拥有的资产，没有「我的榜单」、**无复制/复用入口**。其结果是**一份物理快照，落在方案 owner 的缓存槽**（不属任何查看者）；凡对该评分方案有可见性（`get_visible`）且具 `board:view` 权限的人，对同一 `(方案,版本,交易日)` **共读这同一份快照**——首个请求者触发物化（`materialized`），后续命中同一份缓存（`cached`）。「所有人可见」受方案可见性约束：public 方案才接近全员共享，tenant 限同租户，private 仅 owner。
-- `score_day`（snapshot.py:25）口径与回测 `_decision_data`、`/board/compute` 一致：`wide_snapshot` 单日 → 按准确点时事实排除当日 ST → `attach_columns` 补表达式型指标列 → `ScoreProfileModel` 打分；事实未就绪时统一失败关闭。
+- `score_day` 口径与回测 `_decision_data`、评分验证和 `/board/compute` 一致：`wide_snapshot` 单日 → 批量读取准确点时 ST → 按 `include_st` 保留或剔除 ST → `attach_columns` 补表达式型指标列 → `ScoreProfileModel` 打分 → 综合分降序、代码升序生成稳定全市场排名；事实未就绪时统一失败关闭。
 - 失效触发器（只标 meta、不重算，便宜）：
   - `mark_stale_dates`（snapshot.py:116）：指定交易日的所有方案版本标 stale。
   - `mark_stale_all`（snapshot.py:131）：全量标 stale。
@@ -48,19 +48,19 @@
 ## 业务架构
 
 - **筛选↔评分↔榜单**：
-  - 筛选页 `/screen/run` → `ScreenScoreService.screen_scored`：筛选和固定评分共用一次全市场指标快照，命中后只切片已有评分结果，不对命中子集重算；这也保证 `rs_pct` 始终按全市场横截面排名。最终命中排序形成后，按 `run_date` 一次批量附加当前走势行业/概念摘要，摘要不参与筛选或评分。
+  - 筛选页 `/screen/run` 先执行条件树得到候选代码，再读取用户明确选择的评分方案完整全市场快照并投影候选集；`rank` 永远是全市场排名。`/screen/rank` 只对页面保留的候选代码切换评分方案，不重新执行筛选表达式，也不允许前端下载整榜自行过滤。
   - 每日榜单页 `/score-profiles/run` 与回测“查看当日榜单” `/board/compute` → 走评分快照层 `ScoreSnapshotRepo.get_board`，对全市场按评分方案排序，不依赖筛选。
   - 当前页面实际榜单入口 `/board/run` 在 Top N 形成后按 `run_date` 一次批量附加 `related_boards`；历史日期与当前冠军截止日不一致时只返回空冠军和 `as_of_mismatch`。`/board/compute` 是回测/历史计算链路，明确不接入当前冠军摘要。
   - 旧固定模型公共读 `/scores`、`/scores/top`（读 `score_result`）**已废弃删除**（前端无调用方，产品已切到评分快照层）。
 - **统一基座**：指标统一从指标注册表/`wide_snapshot` 取，筛选的 `ind` 叶子与评分项的 `indicator` 都经 `resolve_indicator`/`IndicatorDefRepo` 解析，表达式型指标动态算后 attach 成列。
 - **涉及表**（`backend/storage/pg_ddl.py`；`ddl.py` 为迁移保留的旧 DuckDB 定义）：
   - `screen_profile` / `screen_profile_version`（ddl.py:196/291）：筛选方案 + 版本归档。
-  - `score_profile` / `score_profile_version`（ddl.py:210/223）：评分方案（items+grade_thresholds）+ 版本归档。
+  - `score_profile` / `score_profile_version`：评分方案（items+grade_thresholds+include_st）+ 版本归档。
   - `screen_result`（ddl.py:235）：筛选命中落库（run_date+profile_id+code）。
   - `score_result`（ddl.py:247）：固定模型每日榜单（含 buy_point/risk_flags）。
   - `score_snapshot` / `score_snapshot_meta`（ddl.py:453/467）：评分方案榜单明细 + 失效元数据。
 - **涉及 API**：
-  - 筛选方案 CRUD/版本/发布/复制/跑筛选：`backend/api/profiles.py`（`/profiles*`、`/profiles/{ref}/visibility`、`/profiles/{ref}/copy`、`/screen/run`）。
+  - 筛选方案 CRUD/版本/发布/复制/跑筛选：`backend/api/profiles.py`（`/profiles*`、`/profiles/{ref}/visibility`、`/profiles/{ref}/copy`、`/screen/run`、`/screen/rank`）。
   - 评分方案 CRUD/版本/试算：`backend/api/score_profiles.py`（`/score-profiles*`、`/score-profiles/run`）。
   - 榜单查询：`backend/api/board.py`（`/board/run`、`/board/profiles`、`/board/compute`）。
 - **可见性**：筛选方案和评分方案均支持 `private / tenant / public`。API 使用 opaque `profile_ref` 解析真实 owner；非 owner 公开方案只读，可复制当前版本或指定历史版本为自己的 private；方案收窄范围时同步收窄关联公开回测但不删除结果。**复制后运行/筛选**结果归当前执行者。**例外——榜单快照相反**：其结果归**方案 owner** 的缓存槽（非执行者），凡对该方案有可见性者共读同一份（见上「评分快照惰性物化与失效」共享语义）。
@@ -104,13 +104,13 @@ flowchart LR
 - 如果最新榜单提示未生成，不需要手动预跑；打开对应日期会按需计算。
 - 只想重新读取当前结果用「刷新」；确认原始数据或方案结果需要覆盖时，方案 owner 可用「重算当日」。system 管理员可对可见方案执行该动作。
 
-#### 默认加载方案（无自己的评分方案时自动装载）
+#### 共享默认评分方案
 
-面向「还没有自己评分方案」的用户，免去每次进榜单页都要手动去抽屉选方案：
+每日榜单和策略筛选共用评分业务域偏好，不绑定某个页面，也不硬编码任何方案：
 
-- **设置入口**：`AssetSearchDrawer`（浏览评分方案抽屉）行操作新增「设为默认加载方案 / 取消默认」。该动作由 `setDefaultItem` 回调控制渲染——**仅榜单页经 `AssetProfileSelect` 传入才出现**，筛选/配置/个股详情等其它消费页不传则不显示。单值互斥：以 `defaultItemKey === assetItemKey(item)` 行级比较，改设后其它行自动复原。
+- **设置入口**：榜单和筛选的评分方案搜索抽屉都可将任意可见方案设为默认；普通切换不改变默认。
 - **持久化**：复用既有 `user_preference` 通道（`scope=feature / page_key=board / pref_key=default-score-profile`），前端经 `useUserPreference` 双写（localStorage 即时 + 远端 300ms 防抖），value 存方案 summary 快照（profile_ref/name/version/is_preset/source/owner_label）。**不新建表/端点/权限**（沿用 `user-preference:manage`）。
-- **装载时机**：进入榜单页时，**仅当「我的」评分方案列表为空**（`profiles.length===0`）且远端偏好已 `hydrated`，才经 `AssetProfileSelect.applyLoaded`（`selectLoaded` 同构、不开抽屉）把默认方案注入下拉并触发榜单刷新；若用户已有自己的方案，则维持「自动选中我的第一个」，默认偏好被忽略（不删除）。装载等 `hydrated` 完成再判定，避免远端偏好慢于 mine 列表时被过早置空态。
+- **选择顺序**：显式共享默认优先；未设置时选第一个「我的评分方案」；没有自己的方案则保持未选择。系统内置、租户公开和全体公开都只是候选资产。旧榜单偏好和 localStorage 键由 `useDefaultScoreProfile` 一次迁移；仅后端明确返回不存在/不可见时清除，网络或服务异常保留。
 - **失效兜底**：默认方案被 owner 取消公开或删除后，`runBoardProfile` 经 `get_visible` 返回统一响应业务码 404；仅当本次 load 由默认装载触发（`pendingDefaultKey` 命中）且该业务码明确命中时，自动清除偏好并落回空态。服务重启、断网、超时、5xx 或其他权限异常保留默认偏好并显示可重试错误；普通手动选公开方案失败也不清默认。
 
 ### 2. 策略筛选页
@@ -124,14 +124,14 @@ flowchart LR
 | 表达式条件 | 输入 DSL，如 `MA(C,20)>REF(MA(C,20),5)` | 适合临时验证想法 |
 | 方案保存 | 保存为 `screen_profile` 并版本化 | 后续回测引用同一筛选方案 |
 | 方案公开 | owner 可发布到同租户或全体；非 owner 公开方案只读、可复制 | 复用成熟筛选思路但保持个人资产隔离 |
-| 命中列表 | 展示命中股票，并附固定模型评分 | 用于快速看候选池质量 |
+| 命中列表 | 展示候选股票在所选评分方案全市场快照上的排名 | 可切换评分方案而不重跑筛选 |
 
 **页面布局与方案编辑闭环**（`ScreenView.vue`，与评分/买卖配置页同构）：
 
 - **双栏结构**：左侧 `prof-list` 方案列表（`AssetProfileSelect(list)` + `新建方案`），右侧 `editor-screen` 编辑器（`ed-head` 名称/可见性/`保存`/`删除` + 条件构建器 `b-conds`），下方 `run-head` 运行区 + `run-table-wrap` 结果区。已从旧「单卡 + filter-bar + 保存弹窗」收敛为编辑器头直存，交互路径与评分页一致。
 - **选择态与编辑态分离**：`curId`（侧栏选中）与 `editId`/`editName`（编辑器当前身份）解耦，避免「选中新方案、误存到旧方案」；载入详情失败回滚到最后一次成功选中的方案并保留旧编辑器内容，新建走空身份由后端 `_make_id` 生成 id 后绑定。
 - **外部预览闭环**：“加载查看”的系统/公开方案只作为临时预览，不混入 mine 列表。行内“×”仅移除预览，不删除资产；方案删除只由编辑区右上角独立按钮承接。移除事件以临时项身份为准，不依赖 `readonly`（本人名下系统内置资产也可能可编辑）；收到事件后先使在途详情失效，并同步清空方案身份、条件参数和旧结果，再刷新 mine。刷新失败保持干净的新建态，禁止把已移除方案的条件留作可编辑参数。只读历史版本只能复制指定版本为自己的 private。
-- **结果区四态**：未运行 `AppStateBlock empty` / 首次运行 `AppStateBlock loading` / 运行失败 `AppStateBlock error + 重试` / 命中走 `AppDataTable`、零命中走独立 `empty`。已有结果刷新时保留旧表并显示 loading，失败时保留旧结果并显示紧凑错误态。ready 态补 `run-meta` 摘要行「交易日 {run_date} · 共 N 只 · 已排除 ST · 按方案「名称」运行」并回填 `runDate`，与评分试算口径一致。
+- **结果区四态**：未运行、加载、错误、空结果使用 `AppStateBlock`；有结果统一进入 `RankedStockWorkbench`。摘要同时显示评分方案版本、全市场排名是否含 ST、筛选是否排除 ST。切换评分方案失败保留旧结果且不冒充新方案；迟到响应由请求代次丢弃。
 - **评级标签**：综合评分评级统一复用 `ScoreGradeTag`，主升浪核心/龙头候选/观察分别使用 danger/warning/success；榜单、筛选、评分试算和回测不得维护页面私有映射。
 - **运行主按钮**：`运行筛选` 统一为 primary + `VideoPlay` 图标，与评分试算、回测运行键视觉层级拉齐。
 

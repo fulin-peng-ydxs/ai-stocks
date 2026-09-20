@@ -139,7 +139,15 @@ def test_repo_save_get_version_delete(market, pg):
     assert repo.save("p1", "方案一", items2) == 2
     got = repo.get("p1")
     assert got["version"] == 2 and len(got["items"]) == 2
-    assert len(repo.versions("p1")) == 2
+    assert got["include_st"] is True
+    # ST 母集开关是实质变更，必须产生新版本并写入历史快照。
+    assert repo.save("p1", "方案一", items2, include_st=False) == 3
+    got = repo.get("p1")
+    assert got["include_st"] is False
+    versions = repo.versions("p1")
+    assert len(versions) == 3
+    assert versions[0]["include_st"] is False
+    assert versions[1]["include_st"] is True
     repo.delete("p1")
     assert repo.get("p1") is None
 

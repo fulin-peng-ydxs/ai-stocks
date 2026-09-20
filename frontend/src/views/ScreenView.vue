@@ -2,7 +2,7 @@
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, VideoPlay } from '@element-plus/icons-vue'
 import {
@@ -12,23 +12,31 @@ import {
   getProfile,
   getProfileVersions,
   listProfiles,
+  rankScreen,
   runScreen,
   saveProfile,
   setProfileVisibility,
   type Profile,
   type ProfileVersion,
   type ScreenHit,
+  type ScreenResult,
 } from '@/api/screening'
-import { getIndicatorRegistry, type IndicatorDef } from '@/api/scoreProfile'
+import {
+  browseScoreProfiles,
+  copyScoreProfile,
+  getIndicatorRegistry,
+  listScoreProfiles,
+  type IndicatorDef,
+  type ScoreProfileSummary,
+} from '@/api/scoreProfile'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
-import AppDataTable from '@/components/AppDataTable.vue'
 import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
-import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
-import RelatedBoardCell from '@/components/RelatedBoardCell.vue'
+import RankedStockWorkbench from '@/components/ranked-stock/RankedStockWorkbench.vue'
+import { rankedStockColumns } from '@/components/ranked-stock/types'
 import {
   relatedBoardFirstLoadContext,
   mergeRelatedBoardResults,
@@ -49,20 +57,23 @@ import IndicatorSelect from '@/components/indicator/IndicatorSelect.vue'
 import StrategyItemEnabledSwitch from '@/components/strategy/StrategyItemEnabledSwitch.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
-import { useStockSet } from '@/stores/stockSet'
 import { downloadCsv } from '@/utils/csv'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useFormChangeTracker } from '@/composables/useFormChangeTracker'
-import { getErrorMessage } from '@/utils/error'
+import { useDefaultScoreProfile } from '@/composables/useDefaultScoreProfile'
+import { useMarketMasterRatioRuntime } from '@/composables/useMarketMasterRatioRuntime'
+import {
+  composeComponentRuntimeValueOf,
+  useStockChartComponentConfig,
+} from '@/composables/useStockChartComponentConfig'
+import { getApiErrorCode, getErrorMessage } from '@/utils/error'
 import { formatDateTimeMinutes } from '@/utils/dateTime'
 import { confirmProfileVisibilityReduction } from '@/utils/assetVisibility'
 import type { AppRowAction } from '@/components/rowActions'
 
-const router = useRouter()
 const route = useRoute()
-const stockSet = useStockSet()
 const settingsOpen = ref(false)
 // 排除 ST、AST 预览属业务态偏好，保留 usePageSettings；结果排序与列显隐迁入组件配置层（plan.md §13.3）。
 const screenDefaults = {
@@ -86,14 +97,28 @@ const {
   componentSourceOf,
   layerValuesOf,
   componentLayerValuesOf, componentAllowedLayers,
+  remoteHydrated,
 } = useRemoteLayoutConfig(screenLayout)
 
 // 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
+const {
+  setCurrentMasterRatioSample,
+  componentRuntimeValueOf: masterRuntimeValueOf,
+} = useMarketMasterRatioRuntime()
+const chartPreferences = useStockChartComponentConfig({
+  slotId: 'analysis',
+  componentValueOf,
+  setComponentKnob,
+  hydrated: remoteHydrated,
+})
+const componentRuntimeValueOf = composeComponentRuntimeValueOf(
+  masterRuntimeValueOf,
+  chartPreferences.componentRuntimeValueOf,
+)
 
 // 抽屉写值由 ComponentAutoSettings 自动渲染；页面只保留排序/渲染要读的 getter。
 type ResultSort = 'score' | 'code' | 'name'
-const RESULT_SORT_PROPS: Record<string, ResultSort> = { total_score: 'score', code: 'code', name: 'name' }
 // 排序单向：配置层默认值 → 会话覆盖；列头排序只写会话，不写回配置层。
 const configuredResultSort = computed<ResultSort>(() => {
   const raw = componentValueOf('result', 'defaultSort')
@@ -102,17 +127,15 @@ const configuredResultSort = computed<ResultSort>(() => {
 const sessionResultSort = ref<ResultSort | null>(null)
 watch(configuredResultSort, () => { sessionResultSort.value = null })
 const resultSort = computed<ResultSort>(() => sessionResultSort.value ?? configuredResultSort.value)
-const elementDefaultSort = computed(() => {
-  if (resultSort.value === 'code') return { prop: 'code', order: 'ascending' }
-  if (resultSort.value === 'name') return { prop: 'name', order: 'ascending' }
-  return { prop: 'total_score', order: 'descending' }
-})
 const hiddenColumns = computed<string[]>(() => (componentValueOf('result', 'hiddenColumns') as string[]) ?? [])
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
 }
 function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
+}
+const RESULT_SORT_PROPS: Record<string, ResultSort> = {
+  total_score: 'score', code: 'code', name: 'name',
 }
 function onResultSortChange({ prop }: { prop: string; order: string | null }): void {
   sessionResultSort.value = RESULT_SORT_PROPS[prop] ?? 'score'
@@ -422,7 +445,89 @@ const runDate = ref('')
 const excludeSt = useDefaultedSessionValue(computed(() => Boolean(settings.excludeSt)))
 const loading = ref(false)
 const resultError = ref('')
-const result = ref<{ date: string; count: number; hits: ScreenHit[] } | null>(null)
+const result = ref<(ScreenResult & { date: string }) | null>(null)
+const scoreProfileRef = ref('')
+const scoreProfiles = ref<ScoreProfileSummary[]>([])
+const externalScoreProfile = ref<ScoreProfileSummary | null>(null)
+const scoreSelectRef = ref<InstanceType<typeof AssetProfileSelect> | null>(null)
+const defaultScoreProfile = useDefaultScoreProfile()
+async function fetchMineScoreProfiles(): Promise<ScoreProfileSummary[]> {
+  if (!hasPermission(auth.role, auth.permissions, 'score-profile:view')) return []
+  return listScoreProfiles('mine')
+}
+function browseScreenScoreProfiles(params: AssetBrowseParams) {
+  return browseScoreProfiles(params)
+}
+function copyAnyScoreProfile(item: ProfileSummary) {
+  return copyScoreProfile(item.profile_ref || item.id)
+}
+function onScoreProfileLoaded(item: ProfileSummary) {
+  externalScoreProfile.value = item as ScoreProfileSummary
+}
+function applyInitialScoreProfile(): void {
+  if (scoreProfileRef.value || !defaultScoreProfile.hydrated.value) return
+  const saved = defaultScoreProfile.value
+  const key = saved.profile_ref || saved.id
+  if (key) {
+    const mine = scoreProfiles.value.find((profile) => (profile.profile_ref || profile.id) === key)
+    if (mine) scoreProfileRef.value = key
+    else scoreSelectRef.value?.applyLoaded({
+      id: saved.id,
+      profile_ref: saved.profile_ref || undefined,
+      name: saved.name,
+      version: saved.version,
+      is_preset: saved.is_preset,
+      source: (saved.source as ProfileSummary['source']) ?? undefined,
+      owner_label: saved.owner_label,
+      readonly: true,
+    })
+  } else if (scoreProfiles.value.length) {
+    scoreProfileRef.value = scoreProfiles.value[0].profile_ref || scoreProfiles.value[0].id
+  }
+}
+function onScoreProfilesReady(items: ProfileSummary[]) {
+  scoreProfiles.value = items as ScoreProfileSummary[]
+  applyInitialScoreProfile()
+}
+watch(defaultScoreProfile.hydrated, applyInitialScoreProfile)
+
+let rankSequence = 0
+async function onScoreProfileSelect(key: string) {
+  scoreProfileRef.value = key
+  if (externalScoreProfile.value
+    && (externalScoreProfile.value.profile_ref || externalScoreProfile.value.id) !== key) {
+    externalScoreProfile.value = null
+  }
+  if (!result.value?.candidate_codes.length || !key) return
+  const sequence = ++rankSequence
+  loading.value = true
+  resultError.value = ''
+  try {
+    const reranked = await rankScreen({
+      run_date: result.value.run_date,
+      score_profile_id: key,
+      codes: result.value.candidate_codes,
+      exclude_st: excludeSt.value,
+    })
+    if (sequence !== rankSequence) return
+    result.value = { ...reranked, date: reranked.run_date }
+  } catch (error) {
+    if (sequence !== rankSequence) return
+    const defaultKey = defaultScoreProfile.value.profile_ref || defaultScoreProfile.value.id
+    if (key === defaultKey && getApiErrorCode(error) === 404) defaultScoreProfile.reset()
+    const previousKey = result.value?.score_profile_ref
+    if (previousKey) scoreProfileRef.value = previousKey
+    resultError.value = getErrorMessage(error, '切换评分方案失败，已保留原评分结果')
+    ElMessage.error(resultError.value)
+  } finally {
+    if (sequence === rankSequence) loading.value = false
+  }
+}
+function onSetScreenScoreDefault(item: ProfileSummary | null) {
+  defaultScoreProfile.setDefault(item)
+  if (item) ElMessage.success(`已将「${item.name}」设为默认评分方案`)
+  else ElMessage.info('已取消默认评分方案')
+}
 function clearScreenResult() {
   result.value = null
   resultError.value = ''
@@ -431,24 +536,29 @@ const displayHits = computed(() => {
   const list = [...(result.value?.hits ?? [])]
   if (resultSort.value === 'code') list.sort((a, b) => a.code.localeCompare(b.code))
   else if (resultSort.value === 'name') list.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-  else list.sort((a, b) => (b.total_score ?? 0) - (a.total_score ?? 0))
+  else list.sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER))
   return list
 })
-
-// 进个股详情：登记筛选结果集合与来源路径，返回键据此回筛选页（工作标签缓存恢复现场），
-// 避免沿用上个来源（榜单/板块）的残留 returnPath 错回旧页面。
-function gotoStock(row: ScreenHit) {
-  stockSet.setSet('list', displayHits.value.map((h) => ({ code: h.code, name: h.name })), '策略筛选', '', {
-    returnPath: '/screen',
-  })
-  router.push(`/stocks/${row.code}`)
-}
+const resultColumns = computed(() => rankedStockColumns([
+  'rank',
+  ...(colVisible('code') ? ['code' as const] : []),
+  ...(colVisible('name') ? ['name' as const] : []),
+  ...(colVisible('st') ? ['st' as const] : []),
+  ...(colVisible('relatedIndustry') ? ['relatedIndustry' as const] : []),
+  ...(colVisible('relatedConcept') ? ['relatedConcept' as const] : []),
+  ...(colVisible('score') ? ['score' as const] : []),
+  ...(colVisible('grade') ? ['grade' as const] : []),
+]))
 
 let runSequence = 0
 async function runScreenResults(background = false) {
   const ast = buildAst()
   if (!ast || (!complexAst.value && !rows.value.some((row) => row.enabled))) {
     if (!background) ElMessage.warning(ast ? '请至少启用一个条件' : '请先添加条件')
+    return
+  }
+  if (!scoreProfileRef.value) {
+    if (!background) ElMessage.warning('请先选择或加载评分方案')
     return
   }
   const sequence = ++runSequence
@@ -466,10 +576,11 @@ async function runScreenResults(background = false) {
         : { expression: ast }),
       run_date: runDate.value || undefined,
       exclude_st: excludeSt.value,
+      score_profile_id: scoreProfileRef.value,
     })
     if (sequence !== runSequence) return
     if (background && result.value) mergeRelatedBoardResults(result.value.hits, r.hits)
-    else result.value = { date: r.run_date, count: r.count, hits: r.hits }
+    else result.value = { ...r, date: r.run_date }
     relatedBoardFirstLoad.observe(
       r.hits,
       relatedBoardFirstLoadContext(r.hits, r.run_date),
@@ -478,6 +589,15 @@ async function runScreenResults(background = false) {
     runDate.value = r.run_date
   } catch (error) {
     if (sequence !== runSequence || background) return
+    const defaultKey = defaultScoreProfile.value.profile_ref || defaultScoreProfile.value.id
+    if (scoreProfileRef.value === defaultKey && getApiErrorCode(error) === 404) {
+      defaultScoreProfile.reset()
+      const invalidKey = scoreProfileRef.value
+      const fallback = scoreProfiles.value.find(
+        (profile) => (profile.profile_ref || profile.id) !== invalidKey,
+      )
+      scoreProfileRef.value = fallback ? (fallback.profile_ref || fallback.id) : ''
+    }
     resultError.value = getErrorMessage(error, '筛选运行失败')
     ElMessage.error(resultError.value)
   } finally {
@@ -603,19 +723,16 @@ function versionRowActions(v: ProfileVersion): AppRowAction[] {
   ]
 }
 
-function rowClass({ row }: { row: ScreenHit }) {
-  return row.is_st ? 'st-row' : ''
-}
 function exportCsv() {
   if (!result.value?.hits.length) return
   const relatedColumns = [
     { key: 'relatedIndustry', label: '行业走势', nameOf: (hit: ScreenHit) => hit.related_boards?.industry?.name ?? '' },
     { key: 'relatedConcept', label: '概念走势', nameOf: (hit: ScreenHit) => hit.related_boards?.concept?.name ?? '' },
   ].filter((column) => colVisible(column.key))
-  const headers = ['代码', '名称', ...relatedColumns.map((column) => column.label), '综合分', '评级', '是否ST']
+  const headers = ['全市场排名', '代码', '名称', ...relatedColumns.map((column) => column.label), '综合分', '评级', '是否ST', '评分状态']
   const data = result.value.hits.map((h) => [
-    h.code, h.name ?? '', ...relatedColumns.map((column) => column.nameOf(h)),
-    h.total_score ?? '', h.grade ?? '', h.is_st ? 'ST' : '',
+    h.rank ?? '', h.code, h.name ?? '', ...relatedColumns.map((column) => column.nameOf(h)),
+    h.total_score ?? '', h.grade ?? '', h.is_st ? 'ST' : '', h.score_status,
   ])
   downloadCsv(`筛选结果_${result.value.date}.csv`, headers, data)
 }
@@ -865,8 +982,27 @@ const menuPageTitle = useMenuPageTitle()
           <!-- 运行筛选 -->
           <div class="run-head">
             <span class="run-title">筛选结果</span>
+            <AssetProfileSelect
+              ref="scoreSelectRef"
+              :model-value="scoreProfileRef"
+              asset-label="评分方案"
+              :fetch-mine="fetchMineScoreProfiles"
+              :browse="browseScreenScoreProfiles"
+              :copy-item="copyAnyScoreProfile"
+              copy-permission="score-profile:save"
+              view-permission="score-profile:view"
+              placeholder="请选择评分方案"
+              select-loaded
+              :default-item-key="defaultScoreProfile.value.profile_ref || defaultScoreProfile.value.id"
+              test-id="screen-score-profile-select"
+              class="app-control-width-wide"
+              @update:model-value="onScoreProfileSelect"
+              @loaded="onScoreProfileLoaded"
+              @ready="onScoreProfilesReady"
+              @set-default="onSetScreenScoreDefault"
+            />
             <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" default-latest style="width: 160px" />
-            <el-button v-permission="'screen:run'" type="primary" :loading="loading" @click="run">
+            <el-button v-permission="'screen:run'" type="primary" :loading="loading" :disabled="!scoreProfileRef" @click="run">
               <template #icon><el-icon><VideoPlay /></el-icon></template>
               运行筛选
             </el-button>
@@ -875,7 +1011,10 @@ const menuPageTitle = useMenuPageTitle()
           </div>
           <!-- ready 摘要：结果可回溯——命中数、是否排除 ST、按哪个只读方案口径跑的；交易日由日期选择器展示，不重复 -->
           <div v-if="result" class="run-meta">
-            共 <b>{{ result.count }}</b> 只<template v-if="excludeSt"> · 已排除 ST</template><template v-if="profileReadonly && loadedProfile"> · 按方案「{{ loadedProfile.name }}」运行</template>
+            共 <b>{{ result.count }}</b> 只 · 评分方案「{{ result.score_profile_name }}」v{{ result.score_profile_version }}
+            · {{ result.include_st ? '全市场排名含 ST' : '全市场排名不含 ST' }}
+            · {{ result.exclude_st ? '筛选结果已排除 ST' : '筛选结果保留 ST' }}
+            <template v-if="profileReadonly && loadedProfile"> · 按筛选方案「{{ loadedProfile.name }}」运行</template>
           </div>
 
           <!-- 筛选结果表 -->
@@ -893,47 +1032,27 @@ const menuPageTitle = useMenuPageTitle()
               retry
               @retry="run"
             />
-            <AppDataTable
+            <RankedStockWorkbench
               v-else-if="result && result.hits.length"
-              :data="displayHits"
+              :rows="displayHits"
+              :columns="resultColumns"
+              :title="runDate || '最新交易日'"
+              :meta="`${result.count} 只候选`"
+              :run-date="runDate"
               :loading="loading"
               :border="tableBorder('result')"
-              :default-sort="elementDefaultSort"
-              :row-class-name="rowClass"
-              size="small"
-              height="100%"
-              clickable
+              :return-path="route.fullPath"
+              :default-master-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 45)"
+              :master-ratio-profiles="componentValueOf('workspace', 'masterRatioProfiles')"
+              :slot2="chartPreferences.preferences.value.slot2"
+              :slot3="chartPreferences.preferences.value.slot3"
+              :height-ratios="chartPreferences.currentRatios.value"
               @sort-change="onResultSortChange"
-              @row-click="gotoStock"
-            >
-              <AppTableColumn label="#" type="index" />
-              <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" sortable />
-              <AppTableColumn v-if="colVisible('name')" label="名称" sortable :sort-by="(r:any)=>r.name || ''">
-                <template #default="{ row }">
-                  <span class="app-inline-info app-inline-info--nowrap">
-                    <span>{{ row.name || '—' }}</span>
-                    <el-tag v-if="colVisible('st') && row.is_st" type="danger" size="small" effect="dark">ST</el-tag>
-                  </span>
-                </template>
-              </AppTableColumn>
-              <AppTableColumn v-if="colVisible('relatedIndustry')" label="行业走势">
-                <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="industry" :return-path="route.fullPath" /></template>
-              </AppTableColumn>
-              <AppTableColumn v-if="colVisible('relatedConcept')" label="概念走势">
-                <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="concept" :return-path="route.fullPath" /></template>
-              </AppTableColumn>
-              <AppTableColumn v-if="colVisible('score')" label="综合分" prop="total_score" sortable :sort-by="(r:any)=>r.total_score ?? -Infinity">
-                <template #default="{ row }">
-                  <strong class="score">{{ row.total_score ?? '—' }}</strong>
-                </template>
-              </AppTableColumn>
-              <AppTableColumn v-if="colVisible('grade')" label="评级">
-                <template #default="{ row }">
-                  <ScoreGradeTag v-if="row.grade" :grade="row.grade" />
-                  <span v-else class="muted">—</span>
-                </template>
-              </AppTableColumn>
-            </AppDataTable>
+              @master-ratio-sample-change="setCurrentMasterRatioSample"
+              @ratio-draft="chartPreferences.handleRatioDraft"
+              @ratio-commit="chartPreferences.handleRatioCommit"
+              @workspace-resize="chartPreferences.handleWorkspaceResize"
+            />
             <AppStateBlock v-else-if="result" state="empty" title="当前条件暂无命中" />
             <AppStateBlock v-else state="empty" title="运行后在这里展示筛选结果" />
           </div>
@@ -962,6 +1081,7 @@ const menuPageTitle = useMenuPageTitle()
       :dirty="isDirty || layoutDirty"
       page-key="screen"
       :config="drawerConfig"
+      :component-runtime-value-of="componentRuntimeValueOf"
       @reset="reset(); resetLayout()"
     >
       <template #business>

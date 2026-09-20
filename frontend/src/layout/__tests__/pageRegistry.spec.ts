@@ -328,7 +328,7 @@ function sourceForPage(pageKey: string): string {
 }
 
 /**
- * 页面通过业务子组件消费布局组件同样属于真实消费；递归收集 views 内静态 Vue 组件树，
+ * 页面通过业务子组件消费布局组件同样属于真实消费；递归收集静态 Vue 组件树，
  * 避免为了满足契约而在路由页保留无用的直接导入。
  */
 function sourceTreeForPage(pageKey: string): string {
@@ -342,7 +342,7 @@ function sourceTreeForPage(pageKey: string): string {
     visited.add(componentPath)
     const source = readFileSync(new URL(`../../${componentPath}`, import.meta.url), 'utf-8')
     sources.push(source)
-    for (const match of source.matchAll(/import\s+\w+\s+from\s+['"]@\/(views\/[^'"]+\.vue)['"]/g)) {
+    for (const match of source.matchAll(/import\s+\w+\s+from\s+['"]@\/((?:views|components|layout\/components)\/[^'"]+\.vue)['"]/g)) {
       visit(match[1]!)
     }
   }
@@ -759,9 +759,9 @@ describe('页面注册表完整性', () => {
 describe('组件消费关系与配置一致性（P4）', () => {
   it('listComponentUsage 命中真实消费页面，未消费组件返回空', () => {
     const tableUsers = listComponentUsage('data-table').map((u) => u.pageKey)
-    expect(tableUsers).toEqual(expect.arrayContaining(['screen', 'data-quality']))
+    expect(tableUsers).toEqual(expect.arrayContaining(['data-quality']))
     const wideTableUsers = listComponentUsage('wide-table').map((u) => u.pageKey)
-    expect(wideTableUsers).toEqual(expect.arrayContaining(['board', 'stocks']))
+    expect(wideTableUsers).toEqual(expect.arrayContaining(['board', 'screen', 'stocks']))
     expect(listComponentUsage('tabs').map((u) => u.pageKey)).not.toContain('config-score')
     // 目录中存在但无页面消费的组件（如 kanban）应返回空数组而非报错。
     expect(listComponentUsage('kanban')).toEqual([])
@@ -829,7 +829,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
       { pageKey: 'stocks', visible: 'groupColVisible' },
     ]
     for (const consumer of consumers) {
-      const source = sourceForPage(consumer.pageKey)
+      const source = sourceTreeForPage(consumer.pageKey)
       expect(source).toContain("import RelatedBoardCell from '@/components/RelatedBoardCell.vue'")
       for (const [key, type] of [['relatedIndustry', 'industry'], ['relatedConcept', 'concept']]) {
         expect(source).toContain(`${consumer.visible}('${key}')`)
@@ -1307,7 +1307,9 @@ describe('组件消费关系与配置一致性（P4）', () => {
       if (!stockChartSlot) continue
       expect(source).toContain('useStockChartComponentConfig({')
       expect(source).toContain(':height-ratios="chartPreferences.currentRatios.value"')
-      expect(source).toContain('useLegacyStockChartPreferenceMigration({')
+      if (entry.pageKey !== 'screen') {
+        expect(source).toContain('useLegacyStockChartPreferenceMigration({')
+      }
       expect(source).not.toContain('<StockChartSettingSection')
       expect(source).not.toMatch(/\bcharts:\s*createDefaultStockChartPreferences\(/)
     }

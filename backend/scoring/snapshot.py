@@ -6,7 +6,7 @@
   下次 get 时若 meta 缺失或 stale → 当场重算覆盖、meta 置 false 再返回，否则直接用缓存。
 - 只读入口可调用 get_board_cached：只读 fresh 快照，缺失/失效返回空表，不触发物化。
 - fresh 同时要求命中当日 ST 输入版本；ST 批次未发布时拒绝把旧缓存当成有效结果。
-- 口径与回测 `_decision_data` 一致：wide_snapshot 单日 + 排除 ST + ScoreProfileModel（表达式型指标补列）。
+- 口径与回测 `_decision_data` 一致：wide_snapshot 单日 + 方案 ST 母集 + ScoreProfileModel（表达式型指标补列）。
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ def _current_param_hash(market=None, profile: dict | None = None) -> str:
     from backend.indicators.compute import build_params, param_hash
 
     params = build_params()
+    params["score_profile_include_st"] = bool((profile or {}).get("include_st", True))
     client = market or get_client()
     data_revision = client.query_df(
         "SELECT max(id) AS revision FROM data_update_log "
@@ -83,12 +84,12 @@ def _current_param_hash(market=None, profile: dict | None = None) -> str:
 
 
 def score_day(c, run_date: date, profile: dict) -> pd.DataFrame:
-    """对某交易日全市场（排除 ST）按评分方案打分 → DataFrame[code,total_score,grade,rank,sub_scores]（降序）。
+    """按方案 ST 母集对某交易日全市场打分并生成稳定排名。
 
     与回测 `_decision_data` / `/board/compute` 同口径；纯计算，不落库。sub_scores=各指标项达标分 JSON。
     """
-    from backend.indicators.engine import IndicatorEngine
     from backend.indicators.definition import IndicatorDefRepo
+    from backend.indicators.engine import IndicatorEngine
     from backend.scoring.score_profile import (
         ScoreProfileModel,
         active_score_items,
@@ -107,13 +108,18 @@ def score_day(c, run_date: date, profile: dict) -> pd.DataFrame:
     from backend.services.stock_st_status import StockSTStatusService
 
     statuses = StockSTStatusService(c).status_map(run_date, snap.index.astype(str).tolist())
-    st = {code for code, is_st in statuses.items() if is_st}
-    snap = snap[~snap.index.isin(st)]
+    if not bool(profile.get("include_st", True)):
+        st = {code for code, is_st in statuses.items() if is_st}
+        snap = snap[~snap.index.isin(st)]
     if snap.empty:
         return pd.DataFrame(columns=_COLS)
     active_items = active_score_items(profile.get("items", []))
     eng.attach_columns(snap, active_items, run_date)
-    scored = ScoreProfileModel(profile).score(snap).sort_values("total_score", ascending=False)
+    scored = ScoreProfileModel(profile).score(snap)
+    scored["__code"] = scored.index.astype(str)
+    scored = scored.sort_values(
+        ["total_score", "__code"], ascending=[False, True], kind="mergesort"
+    ).drop(columns=["__code"])
     item_keys = [it["indicator"] for it in active_items if it.get("indicator") in scored.columns]
     subs = [json.dumps({k: round(float(r[k]), 2) for k in item_keys}, ensure_ascii=False)
             for _, r in scored.iterrows()] if item_keys else [None] * len(scored)

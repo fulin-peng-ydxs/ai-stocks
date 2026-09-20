@@ -168,6 +168,7 @@ const REGISTRY: PageRegistryEntry[] = [
         columns: [
           { key: 'code', label: '代码列' },
           { key: 'name', label: '名称列' },
+          { key: 'st', label: 'ST 状态' },
           { key: 'board', label: '板块' },
           { key: 'score', label: '综合分' },
           { key: 'grade', label: '评级' },
@@ -207,10 +208,16 @@ const REGISTRY: PageRegistryEntry[] = [
     pageKey: 'screen',
     label: '策略筛选',
     path: '/screen',
-    archetype: 'list',
-    responsiveProfile: 'single-column',
+    archetype: 'master-detail',
+    responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
     componentMeta: {
+      workspace: {
+        fieldApplicability: {
+          masterRatio: { enabled: true },
+          masterRatioProfiles: { enabled: true },
+        },
+      },
       result: {
         columns: [
           { key: 'code', label: '代码列' },
@@ -228,16 +235,23 @@ const REGISTRY: PageRegistryEntry[] = [
         ],
         sortHasDirection: false,
       },
+      analysis: {
+        fieldApplicability: {
+          minHeight: { enabled: false, reason: '主从工作台图表随剩余空间成长，不使用固定区域高度' },
+        },
+      },
     },
     layout: {
       pageKey: 'screen',
-      archetype: 'list',
+      archetype: 'master-detail',
       hasActionRegion: true,
       density: 'standard',
       responsive: singleColumn(),
       slots: [
         { id: 'builder', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'result', component: 'data-table', region: 'main', growMain: true, label: '结果列表', order: 1, config: { pagination: false, defaultSort: 'score' } },
+        { id: 'workspace', component: 'master-detail', region: 'main', minH: 360, label: '筛选评分结果工作台', order: 1 },
+        { id: 'result', component: 'wide-table', region: 'main', parentId: 'workspace', label: '结果列表', order: 1, config: { pagination: false, defaultSort: 'score' } },
+        { id: 'analysis', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences() } },
       ],
       editable: [densityKnob()],
     },

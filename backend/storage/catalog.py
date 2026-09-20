@@ -707,6 +707,7 @@ _COMMON_FIELD_META: dict[str, tuple[str, str]] = {
     "layer": ("业务层级", "对象所属的受控业务或配置层级"),
     "parent_key": ("父指标标识", "参数预设所属的通用指标标识"),
     "preset_params": ("预设参数", "参数预设绑定的固定参数 JSON"),
+    "include_st": ("ST 参与评分", "评分方案是否将目标交易日的 ST 股票纳入评分与全市场排名"),
 }
 
 _DUCK_FRESHNESS_POLICIES: dict[str, FreshnessPolicy] = {

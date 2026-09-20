@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query
@@ -41,19 +40,15 @@ def _board_by_profile(c, run_date: date, top: int, profile_ref_or_id: str) -> Ap
         tenant_id=prof["tenant_id"],
         owner_user_id=prof["owner_user_id"],
     ).get_board(run_date, prof["id"], top=top, profile=prof)
-    if board.empty:
-        return ok({"date": str(run_date), "top": top, "list": []})
-    codes = board["code"].tolist()
-    names = c.query_df(
-        f"SELECT code, name, board FROM stock_basic WHERE code IN ({','.join('?' * len(codes))})", codes)
-    nm = dict(zip(names["code"], names["name"]))
-    bd = dict(zip(names["code"], names["board"]))
-    rows = [{
-        "rank": int(r["rank"]), "code": r["code"], "name": nm.get(r["code"]),
-        "board": bd.get(r["code"]),
-        "total_score": round(float(r["total_score"]), 2), "grade": str(r["grade"]),
-    } for _, r in board.iterrows()]
-    return ok({"date": str(run_date), "top": top, "list": rows})
+    from backend.services.ranked_stock_result import ranked_rows
+
+    return ok({
+        "date": str(run_date),
+        "top": top,
+        "include_st": bool(prof.get("include_st", True)),
+        "profile_version": int(prof.get("version") or 1),
+        "list": ranked_rows(c, run_date, board),
+    })
 
 
 @router.get("/board/compute", response_model=ApiResponse,
@@ -76,18 +71,10 @@ def board_compute(date_: str = Query(..., alias="date"), top: int = 50,
     board = ScreenScoreService(c).rank_board(run_date, top_n=top, persist=False)
     if board is None or board.empty:
         return ok({"date": date_, "top": top, "list": []})
-    codes = board["code"].tolist()
-    name_df = c.query_df(
-        f"SELECT code, name, board FROM stock_basic WHERE code IN ({','.join('?' * len(codes))})", codes
-    )
-    name_map = dict(zip(name_df["code"], name_df["name"]))
-    board_map = dict(zip(name_df["code"], name_df["board"]))
-    rows = [{
-        "rank": int(r["rank"]), "code": r["code"], "name": name_map.get(r["code"]),
-        "board": board_map.get(r["code"]),
-        "total_score": round(float(r["total_score"]), 2), "grade": str(r["grade"]),
-    } for _, r in board.iterrows()]
-    return ok({"date": date_, "top": top, "list": rows})
+    from backend.services.ranked_stock_result import ranked_rows
+
+    return ok({"date": date_, "top": top, "include_st": False,
+               "list": ranked_rows(c, run_date, board)})
 
 
 @router.get("/board/profiles", response_model=ApiResponse,
@@ -197,28 +184,23 @@ def board_run(body: dict) -> ApiResponse:
             "count": 0,
             "business_code": "READY",
             "cache_status": "cached" if was_fresh and not force else "materialized",
+            "include_st": bool(prof.get("include_st", True)),
+            "profile_version": version,
             "list": [],
         })
-    codes = board["code"].tolist()
-    names = c.query_df(
-        f"SELECT code, name, board FROM stock_basic WHERE code IN ({','.join('?' * len(codes))})", codes)
-    nm = dict(zip(names["code"], names["name"]))
-    bd = dict(zip(names["code"], names["board"]))
-
-    def _subs(v) -> dict:
-        if isinstance(v, dict):
-            return v
-        try:
-            return json.loads(v) if v else {}
-        except (ValueError, TypeError):
-            return {}
-
-    rows = [{
-        "rank": int(r["rank"]), "code": r["code"], "name": nm.get(r["code"]),
-        "board": bd.get(r["code"]),
-        "total_score": float(r["total_score"]), "grade": r["grade"],
-        "sub_scores": _subs(r.get("sub_scores")),
-    } for _, r in board.iterrows()]
+    from backend.services.ranked_stock_result import ranked_rows
+    try:
+        rows = ranked_rows(c, run_date, board)
+    except STStatusNotReadyError as exc:
+        return ok({
+            "run_date": str(run_date),
+            "top": top,
+            "count": 0,
+            "business_code": "ST_STATUS_NOT_READY",
+            "st_status_error": str(exc),
+            "list": [],
+        })
+    codes = [row["code"] for row in rows]
     # 自选分组属于当前请求用户的 PG 私有资产；仅在具备查看权限时按榜单代码批量读取，
     # 与公共评分快照在服务层内存合并，避免跨库 JOIN 和前端逐行查询。
     if ctx and (ctx.is_system or "stock-group:view" in ctx.resources):
@@ -233,6 +215,8 @@ def board_run(body: dict) -> ApiResponse:
         "business_code": "READY",
         "profile_ref": prof.get("profile_ref") or repo.make_ref(prof["tenant_id"], prof["owner_user_id"], pid),
         "profile_version": version,
+        "profile_name": prof.get("name"),
+        "include_st": bool(prof.get("include_st", True)),
         "cache_status": "cached" if was_fresh and not force else "materialized",
         "list": rows,
     })

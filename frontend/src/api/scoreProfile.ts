@@ -118,6 +118,7 @@ export interface ScoreProfile {
   affected_run_count?: number
   items: ScoreItem[]
   grade_thresholds: Record<string, number>
+  include_st: boolean
 }
 
 export interface ScoreProfileSummary {
@@ -133,6 +134,7 @@ export interface ScoreProfileSummary {
   owner_label?: string
   updated_at?: string | null
   affected_run_count?: number
+  include_st?: boolean
 }
 
 // browse 分页结果（后端 repo.browse：items/total/page/page_size/source）
@@ -145,13 +147,15 @@ export interface ScoreProfileBrowseResult {
 }
 
 export interface ScoreRunRow {
-  rank: number
+  rank: number | null
   code: string
   name: string | null
   board: string | null
-  total_score: number
+  total_score: number | null
   grade: string
   sub_scores: Record<string, number>
+  is_st: boolean
+  score_status: 'ranked' | 'excluded_st' | 'missing'
   groups?: { id: string; name: string; color: string; is_default: boolean }[]
   related_boards?: StockRelatedBoards | null
 }
@@ -185,6 +189,7 @@ export function saveScoreProfile(body: {
   name: string
   items: ScoreItem[]
   grade_thresholds?: Record<string, number>
+  include_st?: boolean
 }): Promise<{ id: string; version: number }> {
   return http.post('/score-profiles', body)
 }
@@ -211,6 +216,7 @@ export interface ScoreProfileVersion {
   name: string
   items: ScoreItem[]
   grade_thresholds: Record<string, number>
+  include_st: boolean
   saved_at: string
 }
 export function getScoreProfileVersions(pid: string): Promise<{ id: string; profile_ref?: string; versions: ScoreProfileVersion[] }> {
@@ -220,8 +226,9 @@ export function runScoreProfile(body: {
   profile_id?: string
   items?: ScoreItem[]
   grade_thresholds?: Record<string, number>
+  include_st?: boolean
   run_date?: string
   top?: number
-}): Promise<{ run_date: string; top: number; count: number; cache_status?: string; list: ScoreRunRow[] }> {
+}): Promise<{ run_date: string; top: number; count: number; include_st: boolean; profile_version: number | null; cache_status?: string; list: ScoreRunRow[] }> {
   return http.post('/score-profiles/run', body)
 }

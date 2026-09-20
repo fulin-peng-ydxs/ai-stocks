@@ -12,18 +12,12 @@ export interface SubScores {
 }
 
 // 按需计算某交易日的每日榜单 Top N（回测"查看买入当日榜单"用）
-export interface BoardRow {
-  rank: number
-  code: string
-  name: string | null
-  total_score: number
-  grade: string
-}
+export type BoardRow = ScoreRunRow
 export function computeBoard(
   date: string,
   top = 50,
   scoreProfileRefOrId?: string,
-): Promise<{ date: string; top: number; list: BoardRow[] }> {
+): Promise<{ date: string; top: number; include_st: boolean; profile_version?: number; list: BoardRow[] }> {
   // 评分方案引用：与回测所选评分方案一致才能让名次对上 entry_rank。
   return http.get('/board/compute', {
     params: { date, top, ...(scoreProfileRefOrId ? { score_profile_id: scoreProfileRefOrId } : {}) },
@@ -66,6 +60,8 @@ export function runBoardProfile(body: {
   count: number
   profile_ref?: string
   profile_version?: number
+  profile_name?: string
+  include_st?: boolean
   business_code?: 'READY' | 'ST_STATUS_NOT_READY'
   st_status_error?: string
   cache_status?: 'cached' | 'materialized'

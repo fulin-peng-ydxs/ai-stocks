@@ -68,6 +68,13 @@ vi.mock('@/utils/csv', () => ({ downloadCsv: vi.fn() }))
 vi.mock('@/api/scoreProfile', () => ({
   getIndicatorRegistry: vi.fn(),
   listScoreProfiles: vi.fn(),
+  browseScoreProfiles: vi.fn(),
+  copyScoreProfile: vi.fn(),
+}))
+vi.mock('@/api/userPreferences', () => ({
+  listUserPreferences: vi.fn().mockResolvedValue({ items: [] }),
+  putUserPreference: vi.fn().mockResolvedValue(undefined),
+  deleteUserPreference: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('@/api/stockGroup', () => ({
   listGroups: vi.fn().mockResolvedValue([]),
@@ -120,6 +127,7 @@ vi.mock('@/api/screening', () => ({
   listProfiles: vi.fn(),
   browseProfiles: vi.fn(),
   runScreen: vi.fn(),
+  rankScreen: vi.fn(),
   saveProfile: vi.fn(),
   setProfileVisibility: vi.fn(),
 }))
@@ -305,6 +313,20 @@ beforeEach(() => {
 })
 
 describe('代表性页面四态回归', () => {
+  it('榜单与筛选使用相同的评分方案选择器宽度档位', async () => {
+    const board = await mountView(BoardView)
+    const screen = await mountView(ScreenView)
+    const boardSelector = board.findAllComponents(AssetProfileSelect)
+      .find((item) => item.props('testId') === 'board-profile-select')!
+    const screenSelector = screen.findAllComponents(AssetProfileSelect)
+      .find((item) => item.props('testId') === 'screen-score-profile-select')!
+
+    expect(boardSelector.classes()).toContain('app-control-width-wide')
+    expect(screenSelector.classes()).toContain('app-control-width-wide')
+    board.unmount()
+    screen.unmount()
+  })
+
   it('从每日榜单进入详情时同步榜单集合和返回地址', async () => {
     ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
       run_date: '2026-07-25',
@@ -343,11 +365,12 @@ describe('代表性页面四态回归', () => {
     await wrapper.get('.first-data-row').trigger('click')
     expect(push).not.toHaveBeenCalledWith('/stocks/000001.SZ')
 
-    // 收起为整宽列表后恢复原有的详情跳转。
+    // 收起后行点击仍只切换分析；完整详情必须走分析区的次级入口。
     await wrapper.get('[data-testid="market-hide-analysis"]').trigger('click')
     await wrapper.vm.$nextTick()
     await wrapper.get('.first-data-row').trigger('click')
-
+    expect(push).not.toHaveBeenCalledWith('/stocks/000001.SZ')
+    ;(wrapper.vm as unknown as { openActiveAnalysisDetail: () => void }).openActiveAnalysisDetail()
     const stockSet = useStockSet()
     expect(stockSet.label).toBe('每日榜单')
     expect(stockSet.codes).toEqual(['000001.SZ', '600000.SH'])
@@ -492,7 +515,7 @@ describe('代表性页面四态回归', () => {
     }))
     expect((wrapper.vm as unknown as { profileRef: string }).profileRef).toBe('ref_default_score')
     expect(wrapper.text()).toContain('服务暂时不可用，请稍后重试')
-    expect(JSON.parse(localStorage.getItem('ai-stocks-board-default-profile') || '{}'))
+    expect(JSON.parse(localStorage.getItem('ai-stocks-default-score-profile') || '{}'))
       .toMatchObject({ profile_ref: 'ref_default_score', id: 'default-score' })
 
     ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockRejectedValueOnce({
@@ -503,7 +526,7 @@ describe('代表性页面四态回归', () => {
     await flushPromises()
 
     expect((wrapper.vm as unknown as { profileRef: string }).profileRef).toBe('')
-    expect(JSON.parse(localStorage.getItem('ai-stocks-board-default-profile') || '{}'))
+    expect(JSON.parse(localStorage.getItem('ai-stocks-default-score-profile') || '{}'))
       .toMatchObject({ profile_ref: '', id: '' })
   })
 
@@ -528,7 +551,7 @@ describe('代表性页面四态回归', () => {
     await flushPromises()
 
     expect((wrapper.vm as unknown as { profileRef: string }).profileRef).toBe('')
-    expect(JSON.parse(localStorage.getItem('ai-stocks-board-default-profile') || '{}'))
+    expect(JSON.parse(localStorage.getItem('ai-stocks-default-score-profile') || '{}'))
       .toMatchObject({ profile_ref: '', id: '' })
   })
 
@@ -1079,8 +1102,8 @@ describe('代表性页面四态回归', () => {
 
     expect(csvUtils.downloadCsv).toHaveBeenCalledWith(
       '筛选结果_2026-08-28.csv',
-      ['代码', '名称', '行业走势', '综合分', '评级', '是否ST'],
-      [['000001.SZ', '平安银行', '银行', 90, '观察', '']],
+      ['全市场排名', '代码', '名称', '行业走势', '综合分', '评级', '是否ST', '评分状态'],
+      [['', '000001.SZ', '平安银行', '银行', 90, '观察', '', undefined]],
     )
     const serialized = JSON.stringify((csvUtils.downloadCsv as ReturnType<typeof vi.fn>).mock.calls[0])
     expect(serialized).not.toContain('中特估')

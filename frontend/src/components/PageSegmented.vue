@@ -10,6 +10,8 @@ const props = defineProps<{
   size?: 'default' | 'small'
   /** 页面级模式切换使用 primary；设置型枚举保持 neutral。 */
   tone?: 'neutral' | 'primary'
+  /** 只读配置仍展示真实选中项，但禁止切换。 */
+  disabled?: boolean
 }>()
 
 defineEmits<{
@@ -27,8 +29,10 @@ function optionTestId(value: OptionValue): string | undefined {
     :class="{
       'page-segmented--small': props.size === 'small',
       'page-segmented--primary': props.tone === 'primary',
+      'page-segmented--disabled': props.disabled,
     }"
     role="group"
+    :aria-disabled="props.disabled || undefined"
     :data-testid="props.testId"
   >
     <button
@@ -39,6 +43,7 @@ function optionTestId(value: OptionValue): string | undefined {
       :class="{ active: option.value === props.modelValue }"
       :aria-pressed="option.value === props.modelValue"
       :data-testid="optionTestId(option.value)"
+      :disabled="props.disabled"
       @click="$emit('update:modelValue', option.value)"
     >
       <!-- 可选前置图标（如明暗模式的日/夜/系统状态图形）；不传则保持纯文字。 -->
@@ -99,6 +104,12 @@ function optionTestId(value: OptionValue): string | undefined {
 .page-segmented--primary .seg-btn:hover:not(.active) {
   background: var(--el-color-primary-light-9);
   color: var(--el-color-primary);
+}
+.page-segmented--disabled {
+  opacity: .68;
+}
+.page-segmented--disabled .seg-btn {
+  cursor: not-allowed;
 }
 .page-segmented--small {
   box-sizing: border-box;

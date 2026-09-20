@@ -220,6 +220,7 @@ CREATE TABLE IF NOT EXISTS score_profile (
     version          INTEGER,
     items            VARCHAR,       -- [{indicator,params,weight,scoring}]（JSON）
     grade_thresholds VARCHAR,       -- 分档阈值 {watch,leader,core}（JSON）
+    include_st       BOOLEAN NOT NULL DEFAULT TRUE,
     is_preset        BOOLEAN,
     created_at       TIMESTAMP,
     updated_at       TIMESTAMP
@@ -233,6 +234,7 @@ CREATE TABLE IF NOT EXISTS score_profile_version (
     name             VARCHAR,
     items            VARCHAR,
     grade_thresholds VARCHAR,
+    include_st       BOOLEAN NOT NULL DEFAULT TRUE,
     saved_at         TIMESTAMP,
     PRIMARY KEY (id, version)
 );
@@ -1144,6 +1146,9 @@ _MIGRATIONS: list[str] = [
     "ALTER TABLE backtest_trade ADD COLUMN IF NOT EXISTS entry_score DOUBLE",
     "DROP TABLE IF EXISTS watchlist_history",  # M2.7 废除观察池
     "ALTER TABLE score_snapshot ADD COLUMN IF NOT EXISTS sub_scores VARCHAR",
+    # DuckDB ALTER ADD 暂不支持列约束；兼容表新建 DDL 仍保持 NOT NULL，存量由默认值补齐。
+    "ALTER TABLE score_profile ADD COLUMN IF NOT EXISTS include_st BOOLEAN DEFAULT TRUE",
+    "ALTER TABLE score_profile_version ADD COLUMN IF NOT EXISTS include_st BOOLEAN DEFAULT TRUE",
     "ALTER TABLE score_snapshot_meta ADD COLUMN IF NOT EXISTS st_input_version VARCHAR",
     "ALTER TABLE limit_ladder_snapshot_state ADD COLUMN IF NOT EXISTS st_input_version VARCHAR",
     "ALTER TABLE limit_ladder_snapshot ADD COLUMN IF NOT EXISTS st_input_version VARCHAR",

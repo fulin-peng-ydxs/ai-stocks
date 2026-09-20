@@ -19,6 +19,7 @@ from backend.screening.engine import ScreenEngine
 from backend.screening.profile import ProfileRepo
 from backend.services.stock_board_correlation import StockBoardCorrelationService
 from backend.storage.duckdb_client import get_client
+from backend.storage.pg_client import get_pg_client
 from backend.storage.repository import MarketRepository
 
 log = get_logger("services.screen_score")
@@ -38,6 +39,7 @@ class ScreenScoreService:
         self.repo = MarketRepository(self.c)                 # 行情库（DuckDB）
         self.assets = AssetRepository(tenant_id=self.tenant_id,
                                       owner_user_id=self.owner_user_id)  # 结果库（PG）
+        self.pg = get_pg_client()
         self.engine = ScreenEngine(self.c)
         self.profiles = ProfileRepo(market=self.c, tenant_id=self.tenant_id,
                                     owner_user_id=self.owner_user_id)
@@ -72,14 +74,12 @@ class ScreenScoreService:
     def screen_scored(
         self,
         run_date: date,
+        score_profile_id: str,
         profile_id: str | None = None,
         expression: dict | None = None,
         exclude_st: bool = True,
-    ) -> list[dict]:
-        """运行筛选 → 对命中股票用榜单同款评分模型打分 → 按综合分降序。
-
-        返回 [{code, name, total_score, grade, is_st}]；exclude_st 时剔除 ST。
-        """
+    ) -> dict:
+        """运行筛选，再把命中集合投影到所选方案的全市场评分快照。"""
         if profile_id:
             hits = self.run_profile(profile_id, run_date)
         elif expression is not None:
@@ -87,33 +87,110 @@ class ScreenScoreService:
             hits = res[res["hit"]]["code"].tolist()
         else:
             raise ValueError("需提供 profile_id 或 expression")
-        if not hits:
-            return []
-
-        st_codes = self._st_codes(run_date, hits)
-        # 复用筛选时已计算的全市场指标帧，再切命中集。不能以 hits 重新计算：那会把
-        # rs_pct 从全市场百分位错误改成命中集内部百分位，也会产生一次重复指标计算。
-        full_snap = self.engine._snapshot(run_date, None)
-        snap = full_snap.reindex(hits).dropna(how="all") if not full_snap.empty else full_snap
-        scored = self.model.score(snap) if not snap.empty else None
-        name_df = self.c.query_df(
-            f"SELECT code, name FROM stock_basic WHERE code IN ({','.join('?' * len(hits))})", hits
+        return self.rank_codes(
+            run_date,
+            score_profile_id=score_profile_id,
+            codes=hits,
+            exclude_st=exclude_st,
         )
-        name_map = dict(zip(name_df["code"], name_df["name"]))
 
-        out = []
-        for code in hits:
-            is_st = code in st_codes
+    def rank_codes(
+        self,
+        run_date: date,
+        *,
+        score_profile_id: str,
+        codes: list[str],
+        exclude_st: bool = False,
+    ) -> dict:
+        """只重排既有候选集合，不执行筛选引擎；rank 始终保留全市场名次。"""
+        from backend.scoring.score_profile import ScoreProfileRepo
+        from backend.scoring.snapshot import ScoreSnapshotRepo
+        from backend.services.ranked_stock_result import parse_sub_scores
+        from backend.services.stock_st_status import StockSTStatusService
+
+        prof = ScoreProfileRepo(self.c, self.pg).get_visible(
+            score_profile_id, include_owner=True
+        )
+        if not prof:
+            raise ValueError("评分方案不存在或不可见")
+        unique_codes = list(dict.fromkeys(str(code) for code in codes if code))
+        if len(unique_codes) > 5000:
+            raise ValueError("筛选候选股票数量不能超过 5000")
+        if not unique_codes:
+            return self._rank_result(prof, run_date, exclude_st, [], [])
+
+        placeholders = ",".join("?" * len(unique_codes))
+        actual = self.c.query_df(
+            f"SELECT DISTINCT code FROM daily_bar WHERE trade_date=? AND code IN ({placeholders})",
+            [run_date, *unique_codes],
+        )
+        actual_set = set(actual["code"].astype(str).tolist()) if not actual.empty else set()
+        candidate_codes = [code for code in unique_codes if code in actual_set]
+        if not candidate_codes:
+            return self._rank_result(prof, run_date, exclude_st, [], [])
+
+        status_map = StockSTStatusService(self.c).status_map(run_date, candidate_codes)
+        full_board = ScoreSnapshotRepo(
+            self.c,
+            self.pg,
+            tenant_id=prof["tenant_id"],
+            owner_user_id=prof["owner_user_id"],
+        ).get_board(run_date, prof["id"], profile=prof)
+        score_map = {
+            str(row["code"]): row for _, row in full_board.iterrows()
+        } if not full_board.empty else {}
+        basics = self.c.query_df(
+            f"SELECT code,name,board FROM stock_basic WHERE code IN ({placeholders})",
+            unique_codes,
+        )
+        basic_map = {str(row["code"]): row for _, row in basics.iterrows()}
+        rows: list[dict] = []
+        for code in candidate_codes:
+            is_st = bool(status_map[code])
             if exclude_st and is_st:
                 continue
-            ts = float(scored.loc[code, "total_score"]) if scored is not None and code in scored.index else None
-            grade = str(scored.loc[code, "grade"]) if scored is not None and code in scored.index else ""
-            out.append({"code": code, "name": name_map.get(code), "total_score": ts,
-                        "grade": grade, "is_st": is_st})
-        # 按综合分降序（None 排最后）
-        out.sort(key=lambda r: (r["total_score"] is not None, r["total_score"] or 0), reverse=True)
-        StockBoardCorrelationService(self.c).attach_related_boards(out, run_date)
-        return out
+            score = score_map.get(code)
+            basic = basic_map.get(code)
+            excluded_st = is_st and not bool(prof.get("include_st", True))
+            rows.append({
+                "rank": int(score["rank"]) if score is not None else None,
+                "code": code,
+                "name": basic["name"] if basic is not None else None,
+                "board": basic["board"] if basic is not None else None,
+                "total_score": round(float(score["total_score"]), 2) if score is not None else None,
+                "grade": str(score["grade"]) if score is not None else "",
+                "sub_scores": parse_sub_scores(score.get("sub_scores")) if score is not None else {},
+                "is_st": is_st,
+                "score_status": "excluded_st" if excluded_st else ("ranked" if score is not None else "missing"),
+                "related_boards": [],
+                "groups": [],
+            })
+        rows.sort(key=lambda row: (
+            row["rank"] is None,
+            row["rank"] if row["rank"] is not None else 10**9,
+            row["code"],
+        ))
+        StockBoardCorrelationService(self.c).attach_related_boards(rows, run_date)
+        return self._rank_result(prof, run_date, exclude_st, rows, candidate_codes)
+
+    @staticmethod
+    def _rank_result(
+        prof: dict,
+        run_date: date,
+        exclude_st: bool,
+        rows: list[dict],
+        candidate_codes: list[str],
+    ) -> dict:
+        return {
+            "run_date": str(run_date),
+            "score_profile_ref": prof.get("profile_ref"),
+            "score_profile_version": int(prof.get("version") or 1),
+            "score_profile_name": prof.get("name"),
+            "include_st": bool(prof.get("include_st", True)),
+            "exclude_st": bool(exclude_st),
+            "candidate_codes": candidate_codes,
+            "hits": rows,
+        }
 
     # ── 买点/风险信号（T-M6-3）：批量、hfq 基准一致 ──
     def compute_signals(self, run_date: date, codes: list[str], lookback_days: int = 140) -> dict:

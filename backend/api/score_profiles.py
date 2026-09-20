@@ -24,6 +24,7 @@ class ScoreProfileBody(BaseModel):
     name: str
     items: list[dict]
     grade_thresholds: dict | None = None
+    include_st: bool = True
 
 
 class ScoreProfileVisibilityBody(BaseModel):
@@ -89,7 +90,13 @@ def score_profile_versions(pid: str) -> ApiResponse:
              dependencies=[Depends(require_perm("score-profile:save"))])
 def save_score_profile(body: ScoreProfileBody) -> ApiResponse:
     try:
-        pid, v = ScoreProfileRepo().save_with_id(body.id, body.name, body.items, body.grade_thresholds)
+        pid, v = ScoreProfileRepo().save_with_id(
+            body.id,
+            body.name,
+            body.items,
+            body.grade_thresholds,
+            include_st=body.include_st,
+        )
     except ValueError as e:
         return err(400, str(e))
     return ok({"id": pid, "version": v, "msg": "已保存"})
@@ -182,14 +189,12 @@ def copy_score_profile(pid: str, body: ScoreProfileCopyBody) -> ApiResponse:
 @router.post("/score-profiles/run", response_model=ApiResponse,
              dependencies=[Depends(require_perm("score:run"))])
 def run_score_profile(body: dict) -> ApiResponse:
-    """按评分方案对某交易日全市场（排除 ST）打分排序，返回 Top N。
+    """按评分方案的 ST 母集对某交易日全市场打分排序，返回 Top N。
 
     body: {profile_id | items+grade_thresholds, run_date?, top?}
     - 已保存方案(profile_id)：走**评分快照层**（§10.1，命中即用/失效重算），与各评分入口同一缓存口径。
     - 未保存方案(inline items)：无版本可缓存，当场实时算（配置页编辑试算）。
     """
-    import json
-
     from backend.scoring.snapshot import ScoreSnapshotRepo, score_day
 
     c = get_client()
@@ -209,30 +214,24 @@ def run_score_profile(body: dict) -> ApiResponse:
         ).get_board(run_date, prof["id"], top=top, profile=prof)
     else:
         # 未保存方案：实时打分（不入快照，无版本键）
-        prof = {"items": body.get("items", []), "grade_thresholds": body.get("grade_thresholds")}
+        prof = {
+            "items": body.get("items", []),
+            "grade_thresholds": body.get("grade_thresholds"),
+            "include_st": bool(body.get("include_st", True)),
+        }
         try:
             board = score_day(c, run_date, prof).head(top)
         except ValueError as e:
             return err(400, str(e))
 
-    if board.empty:
-        return ok({"run_date": str(run_date), "top": top, "count": 0, "list": []})
-    codes = board["code"].tolist()
-    names = c.query_df(
-        f"SELECT code, name FROM stock_basic WHERE code IN ({','.join('?' * len(codes))})", codes)
-    nm = dict(zip(names["code"], names["name"]))
+    from backend.services.ranked_stock_result import ranked_rows
 
-    def _subs(v) -> dict:
-        if isinstance(v, dict):
-            return v
-        try:
-            return json.loads(v) if v else {}
-        except (ValueError, TypeError):
-            return {}
-
-    rows = [{
-        "rank": int(r["rank"]), "code": r["code"], "name": nm.get(r["code"]),
-        "total_score": float(r["total_score"]), "grade": r["grade"],
-        "sub_scores": _subs(r.get("sub_scores")),
-    } for _, r in board.iterrows()]
-    return ok({"run_date": str(run_date), "top": top, "count": len(rows), "list": rows})
+    rows = ranked_rows(c, run_date, board)
+    return ok({
+        "run_date": str(run_date),
+        "top": top,
+        "count": len(rows),
+        "include_st": bool(prof.get("include_st", True)),
+        "profile_version": int(prof["version"]) if prof.get("version") is not None else None,
+        "list": rows,
+    })

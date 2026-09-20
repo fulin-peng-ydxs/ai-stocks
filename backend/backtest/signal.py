@@ -56,10 +56,25 @@ class SignalAnalyzer:
             scorer = self.model
         snap_idx = snap.set_index("code")
         scored = scorer.score(snap_idx)
-        return pd.DataFrame({
+        result = pd.DataFrame({
             "code": snap_idx.index, "trade_date": snap["trade_date"].values,
             "total_score": scored["total_score"].values, "grade": scored["grade"].values,
         })
+        if score_profile:
+            from backend.services.stock_st_status import StockSTStatusService
+
+            st_service = StockSTStatusService(self.c)
+            kept = []
+            for day, group in result.groupby("trade_date", sort=False):
+                statuses = st_service.status_map(
+                    pd.Timestamp(day).date(), group["code"].astype(str).tolist()
+                )
+                if bool(score_profile.get("include_st", True)):
+                    kept.append(group)
+                else:
+                    kept.append(group[~group["code"].map(statuses).astype(bool)])
+            result = pd.concat(kept, ignore_index=True) if kept else result.iloc[0:0]
+        return result
 
     def analyze(
         self,

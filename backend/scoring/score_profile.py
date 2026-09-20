@@ -185,6 +185,7 @@ DEFAULT_SCORE_PROFILES: list[dict] = [
     {
         "id": "default",
         "name": "默认趋势分",
+        "include_st": True,
         "grade_thresholds": {"watch": 80, "leader": 90, "core": 95},
         "items": [
             {"indicator": "dist_to_high_2y", "params": {}, "weight": 0.30,
@@ -275,6 +276,7 @@ class ScoreProfileRepo:
         )
         out["version"] = int(out["version"])
         out["is_preset"] = bool(out.get("is_preset"))
+        out["include_st"] = bool(out.get("include_st", True))
         out["items"] = json.loads(out["items"]) if out.get("items") else []
         out["grade_thresholds"] = json.loads(out["grade_thresholds"]) if out.get("grade_thresholds") else {}
         out["published_at"] = str(out["published_at"]) if out.get("published_at") else None
@@ -286,7 +288,8 @@ class ScoreProfileRepo:
         return uuid_hex_id()
 
     def save(self, pid: str | None, name: str, items: list[dict],
-             grade_thresholds: dict | None = None, is_preset: bool = False) -> int:
+             grade_thresholds: dict | None = None, is_preset: bool = False,
+             include_st: bool = True) -> int:
         from backend.indicators.definition import IndicatorDefRepo
         name = (name or "").strip()
         if not name:
@@ -297,12 +300,17 @@ class ScoreProfileRepo:
         items_json = json.dumps(items, ensure_ascii=False)
         gt_json = json.dumps(grade_thresholds or {}, ensure_ascii=False)
         cur = self.pg.query_df(
-            f"SELECT version, name, items, grade_thresholds, created_at FROM score_profile "
+            f"SELECT version, name, items, grade_thresholds, include_st, created_at FROM score_profile "
             f"WHERE id=%s AND {self._own}", [pid, *self._op])
         now = datetime.now()
         if not cur.empty:
             old = cur.iloc[0]
-            if old["name"] == name and old["items"] == items_json and old["grade_thresholds"] == gt_json:
+            if (
+                old["name"] == name
+                and old["items"] == items_json
+                and old["grade_thresholds"] == gt_json
+                and bool(old["include_st"]) == bool(include_st)
+            ):
                 return int(old["version"])
             version = int(old["version"]) + 1
             created = old["created_at"]
@@ -310,14 +318,16 @@ class ScoreProfileRepo:
             version, created = 1, now
         self.pg.execute(
             "INSERT INTO score_profile "
-            "(id,tenant_id,owner_user_id,name,version,items,grade_thresholds,is_preset,visibility,"
+            "(id,tenant_id,owner_user_id,name,version,items,grade_thresholds,include_st,is_preset,visibility,"
             "published_at,published_by,created_at,updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (tenant_id, owner_user_id, id) DO UPDATE SET "
             "name=EXCLUDED.name, version=EXCLUDED.version, items=EXCLUDED.items, "
-            "grade_thresholds=EXCLUDED.grade_thresholds, is_preset=EXCLUDED.is_preset, updated_at=EXCLUDED.updated_at",
+            "grade_thresholds=EXCLUDED.grade_thresholds, include_st=EXCLUDED.include_st, "
+            "is_preset=EXCLUDED.is_preset, updated_at=EXCLUDED.updated_at",
             [
                 pid, self.tenant_id, self.owner_user_id, name, version, items_json, gt_json,
+                bool(include_st),
                 is_preset,
                 VISIBILITY_PUBLIC if is_preset and (self.tenant_id, self.owner_user_id) == PUBLIC_BOARD_OWNER else VISIBILITY_PRIVATE,
                 now if is_preset and (self.tenant_id, self.owner_user_id) == PUBLIC_BOARD_OWNER else None,
@@ -327,19 +337,24 @@ class ScoreProfileRepo:
         )
         self.pg.execute(
             "INSERT INTO score_profile_version "
-            "(id,tenant_id,owner_user_id,version,name,items,grade_thresholds,saved_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
+            "(id,tenant_id,owner_user_id,version,name,items,grade_thresholds,include_st,saved_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (tenant_id, owner_user_id, id, version) DO UPDATE SET "
-            "name=EXCLUDED.name, items=EXCLUDED.items, grade_thresholds=EXCLUDED.grade_thresholds, saved_at=EXCLUDED.saved_at",
-            [pid, self.tenant_id, self.owner_user_id, version, name, items_json, gt_json, now],
+            "name=EXCLUDED.name, items=EXCLUDED.items, grade_thresholds=EXCLUDED.grade_thresholds, "
+            "include_st=EXCLUDED.include_st, saved_at=EXCLUDED.saved_at",
+            [pid, self.tenant_id, self.owner_user_id, version, name, items_json, gt_json,
+             bool(include_st), now],
         )
         return version
 
     def save_with_id(self, pid: str | None, name: str, items: list[dict],
-                     grade_thresholds: dict | None = None, is_preset: bool = False) -> tuple[str, int]:
+                     grade_thresholds: dict | None = None, is_preset: bool = False,
+                     include_st: bool = True) -> tuple[str, int]:
         name = (name or "").strip()
         pid = (pid or "").strip() or self._make_id(name)
-        version = self.save(pid, name, items, grade_thresholds, is_preset=is_preset)
+        version = self.save(
+            pid, name, items, grade_thresholds, is_preset=is_preset, include_st=include_st
+        )
         return pid, version
 
     def get(self, pid: str) -> dict | None:
@@ -354,13 +369,13 @@ class ScoreProfileRepo:
 
     def list(self) -> list[dict]:
         df = self.pg.query_df(
-            f"SELECT id, name, version, is_preset FROM score_profile WHERE {self._own} "
+            f"SELECT id, name, version, is_preset, include_st FROM score_profile WHERE {self._own} "
             f"ORDER BY is_preset DESC, id", self._op)
         return df.to_dict("records")
 
     def list_visible(self) -> list[dict]:
         df = self.pg.query_df(
-            "SELECT id, tenant_id, owner_user_id, name, version, is_preset, visibility "
+            "SELECT id, tenant_id, owner_user_id, name, version, is_preset, visibility, include_st "
             "FROM score_profile "
             "WHERE (tenant_id=%s AND owner_user_id=%s) "
             "OR visibility='public' OR (visibility='tenant' AND tenant_id=%s) "
@@ -474,7 +489,7 @@ class ScoreProfileRepo:
         return result
 
     def _insert_copy(self, new_id: str, name: str, items: list[dict],
-                     grade_thresholds: dict | None) -> bool:
+                     grade_thresholds: dict | None, include_st: bool) -> bool:
         """原子插入一条全新 private 副本（version=1）；id 已存在则不写并返回 False，交上层换 id 重试。
 
         主表 + 版本表在**同一事务同一游标**内写入：主表 `ON CONFLICT DO NOTHING` 0 行即撞库
@@ -485,11 +500,12 @@ class ScoreProfileRepo:
         with self.pg.transaction() as conn, conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO score_profile "
-                "(id,tenant_id,owner_user_id,name,version,items,grade_thresholds,is_preset,visibility,"
+                "(id,tenant_id,owner_user_id,name,version,items,grade_thresholds,include_st,is_preset,visibility,"
                 "published_at,published_by,created_at,updated_at) "
-                "VALUES (%s,%s,%s,%s,1,%s,%s,false,'private',NULL,NULL,%s,%s) "
+                "VALUES (%s,%s,%s,%s,1,%s,%s,%s,false,'private',NULL,NULL,%s,%s) "
                 "ON CONFLICT (tenant_id, owner_user_id, id) DO NOTHING",
-                [new_id, self.tenant_id, self.owner_user_id, name, items_json, gt_json, now, now],
+                [new_id, self.tenant_id, self.owner_user_id, name, items_json, gt_json,
+                 bool(include_st), now, now],
             )
             if cur.rowcount == 0:
                 return False
@@ -497,9 +513,10 @@ class ScoreProfileRepo:
             # 不静默吞成「主表新、版本旧」的不一致。
             cur.execute(
                 "INSERT INTO score_profile_version "
-                "(id,tenant_id,owner_user_id,version,name,items,grade_thresholds,saved_at) "
-                "VALUES (%s,%s,%s,1,%s,%s,%s,%s)",
-                [new_id, self.tenant_id, self.owner_user_id, name, items_json, gt_json, now],
+                "(id,tenant_id,owner_user_id,version,name,items,grade_thresholds,include_st,saved_at) "
+                "VALUES (%s,%s,%s,1,%s,%s,%s,%s,%s)",
+                [new_id, self.tenant_id, self.owner_user_id, name, items_json, gt_json,
+                 bool(include_st), now],
             )
         return True
 
@@ -519,7 +536,7 @@ class ScoreProfileRepo:
             if version <= 0:
                 raise ValueError("版本号必须大于 0")
             snap = self.pg.query_df(
-                "SELECT name, items, grade_thresholds FROM score_profile_version "
+                "SELECT name, items, grade_thresholds, include_st FROM score_profile_version "
                 "WHERE id=%s AND tenant_id=%s AND owner_user_id=%s AND version=%s",
                 [src["id"], src["tenant_id"], src["owner_user_id"], version],
             )
@@ -533,30 +550,34 @@ class ScoreProfileRepo:
                 "grade_thresholds": (
                     json.loads(row["grade_thresholds"]) if row.get("grade_thresholds") else {}
                 ),
+                "include_st": bool(row.get("include_st", True)),
             }
         base_name = (new_name or "").strip() or f"{src['name']} 副本"
         for _ in range(5):
             new_id = self._make_id(base_name)
             if self._insert_copy(
-                new_id, base_name, src["items"], src["grade_thresholds"]
+                new_id, base_name, src["items"], src["grade_thresholds"],
+                bool(src.get("include_st", True)),
             ):
                 return {
                     "id": new_id,
                     "profile_ref": self.make_ref(self.tenant_id, self.owner_user_id, new_id),
                     "name": base_name,
                     "version": 1,
+                    "include_st": bool(src.get("include_st", True)),
                     "source_version": version,
                 }
         raise ValueError("复制失败：目标 id 冲突，请重试")
 
     def versions(self, pid: str) -> list[dict]:
         df = self.pg.query_df(
-            f"SELECT version, name, items, grade_thresholds, saved_at FROM score_profile_version "
+            f"SELECT version, name, items, grade_thresholds, include_st, saved_at FROM score_profile_version "
             f"WHERE id=%s AND {self._own} ORDER BY version DESC", [pid, *self._op])
         out = []
         for r in df.to_dict("records"):
             r["items"] = json.loads(r["items"])
             r["grade_thresholds"] = json.loads(r["grade_thresholds"]) if r.get("grade_thresholds") else {}
+            r["include_st"] = bool(r.get("include_st", True))
             r["saved_at"] = str(r["saved_at"])
             out.append(r)
         return out
@@ -566,7 +587,7 @@ class ScoreProfileRepo:
         if not prof:
             return None
         df = self.pg.query_df(
-            "SELECT version, name, items, grade_thresholds, saved_at FROM score_profile_version "
+            "SELECT version, name, items, grade_thresholds, include_st, saved_at FROM score_profile_version "
             "WHERE id=%s AND tenant_id=%s AND owner_user_id=%s ORDER BY version DESC",
             [prof["id"], prof["tenant_id"], prof["owner_user_id"]],
         )
@@ -574,6 +595,7 @@ class ScoreProfileRepo:
         for r in df.to_dict("records"):
             r["items"] = json.loads(r["items"])
             r["grade_thresholds"] = json.loads(r["grade_thresholds"]) if r.get("grade_thresholds") else {}
+            r["include_st"] = bool(r.get("include_st", True))
             r["saved_at"] = str(r["saved_at"])
             out.append(r)
         return {"id": prof["id"], "profile_ref": prof["profile_ref"], "versions": out}
@@ -648,7 +670,10 @@ class ScoreProfileRepo:
 
     def seed_defaults(self) -> int:
         for p in DEFAULT_SCORE_PROFILES:
-            self.save(p["id"], p["name"], p["items"], p.get("grade_thresholds"), is_preset=True)
+            self.save(
+                p["id"], p["name"], p["items"], p.get("grade_thresholds"),
+                is_preset=True, include_st=bool(p.get("include_st", True)),
+            )
         publish_platform_presets(
             self.pg,
             table="score_profile",

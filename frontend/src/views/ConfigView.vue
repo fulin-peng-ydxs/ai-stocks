@@ -40,14 +40,16 @@ import AppDataTable from '@/components/AppDataTable.vue'
 import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
-import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
-import SubScoreChips from '@/components/SubScoreChips.vue'
+import RankedStockWorkbench from '@/components/ranked-stock/RankedStockWorkbench.vue'
+import { rankedStockColumns } from '@/components/ranked-stock/types'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
+import HelpHint from '@/components/HelpHint.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
+import PageSegmented from '@/components/PageSegmented.vue'
 import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import IndicatorParamFields from '@/components/indicator/IndicatorParamFields.vue'
@@ -611,6 +613,7 @@ const curVersion = ref<number | null>(null)
 const editId = ref('')
 const editName = ref('')
 const items = ref<ScoreItem[]>([])
+const includeSt = ref(true)
 const saving = ref(false)
 const visibilitySaving = ref(false)
 const isNew = ref(false)
@@ -619,6 +622,7 @@ const profileVisibility = ref<'private' | 'tenant' | 'public'>('private')
 const scoreSubmitPayload = () => ({
   name: editName.value.trim(),
   items: items.value,
+  include_st: includeSt.value,
 })
 const {
   hasChanges: scoreFormChanged,
@@ -679,6 +683,7 @@ async function selectProfile(profileKey: string) {
     editId.value = p.id
     editName.value = p.name
     items.value = JSON.parse(JSON.stringify(p.items))
+    includeSt.value = p.include_st !== false
     items.value.forEach(ensureParams)
     profileReadonly.value = !!p.readonly
     profileVisibility.value = p.visibility || 'private'
@@ -712,6 +717,7 @@ async function openScoreVersions() {
 }
 function restoreScoreVersion(v: ScoreProfileVersion) {
   items.value = JSON.parse(JSON.stringify(v.items))
+  includeSt.value = v.include_st !== false
   items.value.forEach(ensureParams)
   sVerVisible.value = false
   ElMessage.success(`已载入 v${v.version} 到编辑器，确认后点「保存」生成新版本`)
@@ -747,6 +753,7 @@ function newProfile() {
   editId.value = ''
   editName.value = ''
   items.value = []
+  includeSt.value = true
   profileReadonly.value = false
   profileVisibility.value = 'private'
   isNew.value = true
@@ -878,6 +885,7 @@ async function save() {
       id: editId.value || null,
       name: editName.value,
       items: items.value,
+      include_st: includeSt.value,
     })
     curVersion.value = r.version
     ElMessage.success(`已保存（v${r.version}）`)
@@ -960,6 +968,9 @@ function clearScoreRunResult() {
   scoreRunCompleted.value = false
 }
 const subKeys = computed(() => activeScoreItems.value.map((i) => i.indicator))
+const scoreRunColumns = rankedStockColumns([
+  'rank', 'code', 'name', 'st', 'board', 'score', 'grade', 'subScores',
+])
 
 async function tryRun() {
   if (!activeScoreItems.value.length || weightSum.value !== 100) {
@@ -970,7 +981,9 @@ async function tryRun() {
   runError.value = ''
   try {
     const res = await runScoreProfile({
-      items: items.value,
+      ...(editId.value && !scoreFormChanged.value
+        ? { profile_id: curRef.value }
+        : { items: items.value, include_st: includeSt.value }),
       run_date: runDate.value || undefined,
       top: 30,
     })
@@ -1625,6 +1638,25 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               <el-button v-permission="'score-profile:delete'" v-if="curId && !isNew && !profileReadonly" type="danger" plain @click="remove">删除</el-button>
             </div>
 
+            <div class="score-profile-options">
+              <span class="score-profile-option-label">
+                ST 股票参与评分排名
+                <HelpHint text="决定 ST 是否进入该方案的评分母集和全市场排名；参与评分不会自动加分或扣分。" />
+              </span>
+              <PageSegmented
+                :model-value="includeSt"
+                :options="[
+                  { label: '参与', value: true },
+                  { label: '不参与', value: false },
+                ]"
+                size="small"
+                aria-label="ST 股票参与评分排名"
+                :disabled="profileReadonly"
+                test-id="score-include-st"
+                @update:model-value="includeSt = Boolean($event)"
+              />
+            </div>
+
             <!-- 详情加载态/失败态（P1-2）：失败已回滚选中值，编辑器保留旧内容 -->
             <AppStateBlock
               v-if="profileDetailError"
@@ -1770,31 +1802,17 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               @retry="tryRun"
             />
             <div v-else-if="runRows.length" class="run-table-wrap">
-            <AppDataTable :data="runRows" :loading="running" size="small" border height="100%" class="run-table">
-              <AppTableColumn label="#">
-                <template #default="{ row }">{{ row.rank }}</template>
-              </AppTableColumn>
-              <AppTableColumn prop="code" label="代码" />
-              <AppTableColumn prop="name" label="名称" />
-              <AppTableColumn label="综合分">
-                <template #default="{ row }"><b style="color: var(--el-color-danger)">{{ row.total_score }}</b></template>
-              </AppTableColumn>
-              <AppTableColumn label="评级">
-                <template #default="{ row }">
-                  <ScoreGradeTag v-if="row.grade" :grade="row.grade" />
-                  <span v-else>—</span>
-                </template>
-              </AppTableColumn>
-              <AppTableColumn label="分项达标分">
-                <template #default="{ row }">
-                  <SubScoreChips
-                    :score-keys="subKeys"
-                    :scores="row.sub_scores"
-                    :label-of="nameOf"
-                  />
-                </template>
-              </AppTableColumn>
-            </AppDataTable>
+            <RankedStockWorkbench
+              :rows="runRows"
+              :columns="scoreRunColumns"
+              :title="runDate || '最新交易日'"
+              :meta="`${runRows.length} 只`"
+              :run-date="runDate"
+              :loading="running"
+              :score-keys="subKeys"
+              :label-of="nameOf"
+              :return-path="route.fullPath"
+            />
             </div>
             <AppStateBlock
               v-else-if="scoreRunCompleted"
@@ -2480,6 +2498,25 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 }
 .editor-score > .ed-head {
   margin-bottom: var(--app-space-3);
+}
+.score-profile-options {
+  align-self: flex-start;
+  min-height: var(--app-control-height-md);
+  margin-bottom: var(--app-space-3);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-space-3);
+  flex-wrap: wrap;
+}
+.score-profile-option-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-space-control-gap);
+  color: var(--el-text-color-regular);
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-medium);
+  line-height: var(--app-line-height-table);
+  white-space: nowrap;
 }
 .spacer {
   flex: 1;

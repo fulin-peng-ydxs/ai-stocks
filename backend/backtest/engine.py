@@ -122,7 +122,9 @@ class BacktestEngine:
             scored = self.model.score(g.set_index("code"))
             df = pd.DataFrame({"code": scored.index, "total_score": scored["total_score"].values,
                                "grade": scored["grade"].values})
-            by_day[d] = df.sort_values("total_score", ascending=False).reset_index(drop=True)
+            by_day[d] = df.sort_values(
+                ["total_score", "code"], ascending=[False, True], kind="mergesort"
+            ).reset_index(drop=True)
         return by_day
 
     # ── M2.5：评分方案 + 买卖方案（区间向量化）─────────────────────
@@ -203,7 +205,7 @@ class BacktestEngine:
         items: list[dict] = active_score_items(score_profile.get("items", [])) if score_profile else []
         items += collect_indicators(buy_tree or {}) + collect_indicators(sell_tree or {})
         snap = self._attach_range_exprs(snap, items, lo, hi)
-        # 评分（排除 ST 作为选股 universe）
+        # 评分：有评分方案时遵循 include_st；旧固定模型兼容路径仍排除 ST。
         scorer = ScoreProfileModel(score_profile) if score_profile else self.model
         snap_idx = snap.set_index("code")
         scored = scorer.score(snap_idx)
@@ -217,9 +219,14 @@ class BacktestEngine:
             statuses = st_service.status_map(
                 pd.Timestamp(day).date(), group["code"].astype(str).tolist()
             )
-            kept.append(group[~group["code"].map(statuses).astype(bool)])
+            if score_profile and bool(score_profile.get("include_st", True)):
+                kept.append(group)
+            else:
+                kept.append(group[~group["code"].map(statuses).astype(bool)])
         sc = pd.concat(kept, ignore_index=True) if kept else sc.iloc[0:0]
-        S = {d: g.sort_values("total_score", ascending=False).reset_index(drop=True)[["code", "total_score", "grade"]]
+        S = {d: g.sort_values(
+                ["total_score", "code"], ascending=[False, True], kind="mergesort"
+            ).reset_index(drop=True)[["code", "total_score", "grade"]]
              for d, g in sc.groupby("trade_date", sort=False)}
         buy_hits = self._tree_hits(snap, buy_tree) if buy_tree else {}
         sell_hits = self._tree_hits(snap, sell_tree) if sell_tree else {}

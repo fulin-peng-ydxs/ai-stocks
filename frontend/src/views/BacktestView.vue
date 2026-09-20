@@ -33,6 +33,8 @@ import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
+import RankedStockResultTable from '@/components/ranked-stock/RankedStockResultTable.vue'
+import { rankedStockColumns } from '@/components/ranked-stock/types'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
@@ -1622,6 +1624,7 @@ const dlgSummary = computed(() => {
 const boardDlg = ref(false)
 const boardDate = ref('')
 const boardRows = ref<BoardRow[]>([])
+const backtestBoardColumns = rankedStockColumns(['rank', 'code', 'name', 'st', 'board', 'score', 'grade'])
 const boardLoading = ref(false)
 const boardHighlight = ref<Set<string>>(new Set())
 const boardMissing = ref(false)  // 高亮票不在 Top50（名次太靠后）
@@ -2430,20 +2433,14 @@ const menuPageTitle = useMenuPageTitle()
           title="本笔买入股票不在 Top 50 内"
           description="该股票因选股方案命中且方案内排名靠前而被买入，并非综合分靠前"
         />
-        <AppDataTable :data="boardRows" :loading="boardLoading" loading-text="正在加载每日榜单…" size="small" height="460" :row-class-name="boardRowClass" embedded>
-          <AppTableColumn label="#" prop="rank" />
-          <AppTableColumn label="代码" prop="code" />
-          <AppTableColumn label="名称" prop="name">
-            <template #default="{ row }">{{ row.name || '—' }}</template>
-          </AppTableColumn>
-          <AppTableColumn label="综合分" prop="total_score" />
-          <AppTableColumn label="评级" prop="grade">
-            <template #default="{ row }">
-              <ScoreGradeTag v-if="row.grade" :grade="row.grade" />
-              <span v-else>—</span>
-            </template>
-          </AppTableColumn>
-        </AppDataTable>
+        <RankedStockResultTable
+          :rows="boardRows"
+          :columns="backtestBoardColumns"
+          :loading="boardLoading"
+          :analysis-pins="false"
+          :row-class="(row) => boardRowClass({ row })"
+          height="460"
+        />
       </div>
     </AppDialog>
 

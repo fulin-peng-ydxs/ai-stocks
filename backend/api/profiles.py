@@ -17,6 +17,7 @@ from backend.screening.profile import ProfileRepo
 from backend.services.asset_audit import record_asset_copy_audit, record_asset_visibility_audit
 from backend.services.asset_visibility import normalize_visibility
 from backend.services.screen_score import ScreenScoreService
+from backend.storage import get_pg_client
 from backend.storage import get_read_client as get_client
 
 router = APIRouter(prefix="/api", tags=["screening"])
@@ -51,6 +52,14 @@ class ScreenRunIn(BaseModel):
     expression: dict | None = None  # 临时方案（不存库）直接跑
     run_date: str | None = None     # YYYY-MM-DD，默认最新交易日
     exclude_st: bool = True         # 默认排除 ST
+    score_profile_id: str | None = None
+
+
+class ScreenRankIn(BaseModel):
+    run_date: str
+    score_profile_id: str | None = None
+    codes: list[str]
+    exclude_st: bool = False
 
 
 def _latest_date() -> date:
@@ -63,6 +72,20 @@ def _has_perm(code: str) -> bool:
     if ctx is None:
         return False
     return ctx.is_system or code in ctx.resources
+
+
+def _attach_current_user_groups(rows: list[dict]) -> None:
+    """按当前请求归属批量附加自选分组；无查看权限时保持统一空数组。"""
+    if not rows or not _has_perm("stock-group:view"):
+        return
+    from backend.groups.stock_group import StockGroupRepo
+
+    market = get_client()
+    groups_by_code = StockGroupRepo(pg=get_pg_client(), market=market).groups_for_codes(
+        [str(row["code"]) for row in rows]
+    )
+    for row in rows:
+        row["groups"] = groups_by_code.get(str(row["code"]), [])
 
 
 @router.get("/profiles", response_model=ApiResponse,
@@ -203,24 +226,59 @@ def copy_profile(pid: str, body: ProfileCopyBody) -> ApiResponse:
 
 
 @router.post("/screen/run", response_model=ApiResponse,
-             dependencies=[Depends(require_perm("screen:run"))])
+             dependencies=[
+                 Depends(require_perm("screen:run")),
+                 Depends(require_perm("score-profile:view")),
+             ])
 def run_screen(body: ScreenRunIn) -> ApiResponse:
     run_date = date.fromisoformat(body.run_date) if body.run_date else _latest_date()
     if not body.profile_id and not body.expression:
         raise ValidationError("需提供 profile_id 或 expression")
+    if not (body.score_profile_id or "").strip():
+        raise ValidationError("请选择评分方案")
     if body.expression is not None:
         try:
             validate_ast(body.expression)
         except ConditionError as e:
             raise ValidationError(f"条件非法: {e}") from e
     # 命中 + 榜单同款评分 + ST 标记/排除 + 按综合分降序
-    hits = ScreenScoreService().screen_scored(
-        run_date, profile_id=body.profile_id, expression=body.expression,
-        exclude_st=body.exclude_st,
-    )
-    return ok({
-        "run_date": str(run_date),
-        "count": len(hits),
-        "exclude_st": body.exclude_st,
-        "hits": hits,
-    })
+    try:
+        result = ScreenScoreService().screen_scored(
+            run_date, profile_id=body.profile_id, expression=body.expression,
+            score_profile_id=body.score_profile_id,
+            exclude_st=body.exclude_st,
+        )
+    except ValueError as exc:
+        if "不存在或不可见" in str(exc):
+            return err(404, str(exc))
+        raise ValidationError(str(exc)) from exc
+    _attach_current_user_groups(result["hits"])
+    return ok({**result, "count": len(result["hits"])})
+
+
+@router.post("/screen/rank", response_model=ApiResponse,
+             dependencies=[
+                 Depends(require_perm("screen:run")),
+                 Depends(require_perm("score-profile:view")),
+             ])
+def rank_screen_candidates(body: ScreenRankIn) -> ApiResponse:
+    """按新评分方案重排当前页面候选集合，不重新执行筛选条件。"""
+    if not (body.score_profile_id or "").strip():
+        raise ValidationError("请选择评分方案")
+    try:
+        run_date = date.fromisoformat(body.run_date)
+    except ValueError as exc:
+        raise ValidationError("run_date 必须是 YYYY-MM-DD") from exc
+    try:
+        result = ScreenScoreService().rank_codes(
+            run_date,
+            score_profile_id=body.score_profile_id,
+            codes=body.codes,
+            exclude_st=body.exclude_st,
+        )
+    except ValueError as exc:
+        if "不存在或不可见" in str(exc):
+            return err(404, str(exc))
+        raise ValidationError(str(exc)) from exc
+    _attach_current_user_groups(result["hits"])
+    return ok({**result, "count": len(result["hits"])})

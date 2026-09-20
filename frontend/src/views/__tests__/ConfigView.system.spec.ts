@@ -9,6 +9,7 @@ import ConfigView from '@/views/ConfigView.vue'
 import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import HelpHint from '@/components/HelpHint.vue'
+import PageSegmented from '@/components/PageSegmented.vue'
 import type { MailStatus, SettingGroup } from '@/api/data'
 
 const routeState = vi.hoisted(() => ({
@@ -214,7 +215,7 @@ const stubs = {
   PageSettingsDrawer: true,
   PageSettingsTrigger: true,
   TradeDatePicker: true,
-  PageSegmented: true,
+  PageSegmented,
   PageSettingSection: { template: '<section><slot/></section>' },
   PageToggleRow: true,
   ElSelect: ElSelectStub,
@@ -706,6 +707,23 @@ describe('ConfigView trade tab', () => {
 })
 
 describe('ConfigView score tab 加载查看', () => {
+  it('用紧凑的显式二选一配置 ST 评分范围', async () => {
+    routeState.meta.configTab = 'score'
+    ;(scoreApi.listScoreProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    const wrapper = await mountView('normal', ['score-profile:view', 'score-profile:save'])
+
+    const scope = wrapper.get('[data-testid="score-include-st"]')
+    const segmented = wrapper.findComponent(PageSegmented)
+    expect(segmented.props('modelValue')).toBe(true)
+    expect(segmented.props('disabled')).toBe(false)
+    expect(scope.text()).toContain('参与')
+    expect(scope.text()).toContain('不参与')
+
+    await scope.get('[data-testid="score-include-st-false"]').trigger('click')
+    expect((wrapper.vm as any).includeSt).toBe(false)
+    wrapper.unmount()
+  })
+
   it('「加载查看」注入临时只读项并以 profile_ref 载入编辑器只读展示（P1-1 接入 @loaded）', async () => {
     routeState.meta.configTab = 'score'
     ;(scoreApi.listScoreProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([])
@@ -719,6 +737,7 @@ describe('ConfigView score tab 加载查看', () => {
     ;(scoreApi.getScoreProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'sp1', profile_ref: 'avr_score_preset', name: '默认趋势分', version: 1,
       is_preset: true, visibility: 'private', source: 'preset', readonly: true,
+      include_st: false,
       items: [],
     })
     const wrapper = await mountView('normal', ['score-profile:view'])
@@ -733,6 +752,9 @@ describe('ConfigView score tab 加载查看', () => {
     const nameInput = wrapper.find('input[placeholder="方案名称"]')
     expect((nameInput.element as HTMLInputElement).value).toBe('默认趋势分')
     expect((nameInput.element as HTMLInputElement).disabled).toBe(true)
+    const segmented = wrapper.findComponent(PageSegmented)
+    expect(segmented.props('modelValue')).toBe(false)
+    expect(segmented.props('disabled')).toBe(true)
     wrapper.unmount()
   })
 

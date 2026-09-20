@@ -5,6 +5,7 @@ withDefaults(defineProps<{
   tip?: string
   size?: 'md' | 'sm'
   testId?: string
+  disabled?: boolean
 }>(), { size: 'md' })
 
 defineEmits<{
@@ -25,6 +26,7 @@ defineEmits<{
       class="ptr-switch"
       :data-testid="testId ? `${testId}-switch` : undefined"
       inline-prompt
+      :disabled="disabled"
       :active-action-icon="undefined"
       @update:model-value="(value: boolean) => $emit('update:modelValue', value)"
     />

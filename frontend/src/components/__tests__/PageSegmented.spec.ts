@@ -29,6 +29,26 @@ describe('PageSegmented', () => {
     expect(wrapper.classes()).toContain('page-segmented--primary')
   })
 
+  it('只读时保留当前选中项并禁止切换', async () => {
+    const wrapper = mount(PageSegmented, {
+      props: {
+        modelValue: true,
+        disabled: true,
+        'aria-label': 'ST 股票参与评分排名',
+        options: [
+          { label: '参与', value: true },
+          { label: '不参与', value: false },
+        ],
+      },
+    })
+
+    expect(wrapper.attributes('aria-disabled')).toBe('true')
+    expect(wrapper.get('.seg-btn.active').text()).toBe('参与')
+    expect(wrapper.findAll('.seg-btn').every((button) => button.attributes('disabled') !== undefined)).toBe(true)
+    await wrapper.findAll('.seg-btn')[1].trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
+
   it('按需输出稳定 E2E 锚点，不影响原有分段选择行为', async () => {
     const wrapper = mount(PageSegmented, {
       props: {

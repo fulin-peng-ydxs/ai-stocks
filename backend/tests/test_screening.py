@@ -247,43 +247,96 @@ def test_preset_profiles_valid():
         validate_ast(p["expression"])  # 不抛错
 
 
-def test_screen_scored_reuses_full_market_snapshot_for_rs(monkeypatch):
-    """筛选后评分必须切全市场快照，不能对子集重算 RS 百分位。"""
+def test_screen_scored_projects_hits_to_selected_profile_without_rescreen(monkeypatch):
+    """筛选只执行一次，评分必须交给所选方案的全市场快照投影。"""
     from backend.services.screen_score import ScreenScoreService
-    from backend.services.stock_board_correlation import StockBoardCorrelationService
 
     class FakeEngine:
         def __init__(self):
             self.universes = []
 
-        def _snapshot(self, run_date, universe):
-            self.universes.append(universe)
-            return pd.DataFrame({"rs_pct": [99.0, 60.0]}, index=["A.SH", "B.SH"])
-
         def run_ast(self, expression, run_date):
-            self._snapshot(run_date, None)
+            self.universes.append(None)
             return pd.DataFrame({"code": ["A.SH", "B.SH"], "hit": [True, True]})
-
-    class FakeModel:
-        def score(self, snap):
-            return pd.DataFrame({
-                "total_score": snap["rs_pct"],
-                "grade": ["龙头候选", ""],
-            }, index=snap.index)
-
-    class FakeClient:
-        @staticmethod
-        def query_df(sql, params):
-            return pd.DataFrame({"code": params, "name": params})
 
     service = ScreenScoreService.__new__(ScreenScoreService)
     service.engine = FakeEngine()
-    service.model = FakeModel()
-    service.c = FakeClient()
-    service._st_codes = lambda run_date, codes: set()
+    captured = {}
+    service.rank_codes = lambda run_date, **kwargs: captured.update(kwargs) or {"hits": []}
+
+    result = service.screen_scored(
+        run_date=pd.Timestamp("2026-01-05").date(),
+        expression={},
+        score_profile_id="score-ref",
+    )
+
+    assert service.engine.universes == [None]
+    assert captured == {
+        "score_profile_id": "score-ref",
+        "codes": ["A.SH", "B.SH"],
+        "exclude_st": True,
+    }
+    assert result == {"hits": []}
+
+
+@pytest.mark.parametrize(
+    ("include_st", "exclude_st", "expected_codes", "st_status"),
+    [
+        (True, True, ["A.SH"], None),
+        (True, False, ["A.SH", "ST.SH"], "ranked"),
+        (False, True, ["A.SH"], None),
+        (False, False, ["A.SH", "ST.SH"], "excluded_st"),
+    ],
+)
+def test_rank_codes_keeps_global_rank_and_separates_st_policies(
+    monkeypatch, include_st, exclude_st, expected_codes, st_status
+):
+    """include_st 控制评分母集，exclude_st 只控制筛选结果可见集合。"""
+    from backend.scoring.score_profile import ScoreProfileRepo
+    from backend.scoring.snapshot import ScoreSnapshotRepo
+    from backend.services.screen_score import ScreenScoreService
+    from backend.services.stock_board_correlation import StockBoardCorrelationService
+    from backend.services.stock_st_status import StockSTStatusService
+
+    profile = {
+        "id": "score", "profile_ref": "score-ref", "name": "评分",
+        "version": 3, "tenant_id": "t", "owner_user_id": "o",
+        "include_st": include_st,
+    }
+    board = pd.DataFrame([
+        {"code": "A.SH", "rank": 7, "total_score": 88, "grade": "观察", "sub_scores": "{}"},
+        *([{"code": "ST.SH", "rank": 9, "total_score": 80, "grade": "观察", "sub_scores": "{}"}]
+          if include_st else []),
+    ])
+
+    class FakeClient:
+        def query_df(self, sql, params):
+            if "daily_bar" in sql:
+                return pd.DataFrame({"code": ["A.SH", "ST.SH"]})
+            return pd.DataFrame({
+                "code": ["A.SH", "ST.SH"], "name": ["A", "ST"], "board": ["主板", "主板"],
+            })
+
+    monkeypatch.setattr(ScoreProfileRepo, "get_visible", lambda *args, **kwargs: profile)
+    monkeypatch.setattr(ScoreSnapshotRepo, "get_board", lambda *args, **kwargs: board)
+    monkeypatch.setattr(
+        StockSTStatusService, "status_map",
+        lambda *args, **kwargs: {"A.SH": False, "ST.SH": True},
+    )
     monkeypatch.setattr(StockBoardCorrelationService, "attach_related_boards", lambda *args: None)
+    service = ScreenScoreService.__new__(ScreenScoreService)
+    service.c = FakeClient()
+    service.pg = object()
 
-    rows = service.screen_scored(run_date=pd.Timestamp("2026-01-05").date(), expression={})
+    result = service.rank_codes(
+        pd.Timestamp("2026-01-05").date(),
+        score_profile_id="score-ref",
+        codes=["ST.SH", "A.SH", "A.SH"],
+        exclude_st=exclude_st,
+    )
 
-    assert service.engine.universes == [None, None]
-    assert [row["total_score"] for row in rows] == [99.0, 60.0]
+    assert [row["code"] for row in result["hits"]] == expected_codes
+    assert result["candidate_codes"] == ["ST.SH", "A.SH"]
+    assert next(row for row in result["hits"] if row["code"] == "A.SH")["rank"] == 7
+    if st_status:
+        assert next(row for row in result["hits"] if row["code"] == "ST.SH")["score_status"] == st_status

@@ -11,16 +11,13 @@ import {
   type ScoreRunRow,
 } from '@/api/scoreProfile'
 import { browseBoardProfiles, listBoardProfiles, runBoardProfile } from '@/api/board'
-import AppDataTable from '@/components/AppDataTable.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
-import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
-import SubScoreChips from '@/components/SubScoreChips.vue'
-import StockAnalysisNameCell from '@/components/StockAnalysisNameCell.vue'
-import RelatedBoardCell from '@/components/RelatedBoardCell.vue'
 import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
+import RankedStockResultTable from '@/components/ranked-stock/RankedStockResultTable.vue'
+import { rankedStockColumns } from '@/components/ranked-stock/types'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
@@ -41,7 +38,7 @@ import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
 import { useStockBatchSelection, type StockBatchItem } from '@/composables/useStockBatchSelection'
 import { useStockAnalysisSession } from '@/composables/useStockAnalysisSession'
-import { useUserPreference } from '@/composables/useUserPreference'
+import { useDefaultScoreProfile } from '@/composables/useDefaultScoreProfile'
 import {
   composeComponentRuntimeValueOf,
   useStockChartComponentConfig,
@@ -169,11 +166,6 @@ const configuredSort = computed<BoardSort>(() => {
 const sessionSort = ref<BoardSort | null>(null)
 watch(configuredSort, () => { sessionSort.value = null }) // 抽屉改默认 → 清会话覆盖跟随
 const sortBy = computed<BoardSort>(() => sessionSort.value ?? configuredSort.value)
-const elementDefaultSort = computed(() => {
-  if (sortBy.value === 'rank') return { prop: 'rank', order: 'ascending' }
-  if (sortBy.value === 'code') return { prop: 'code', order: 'ascending' }
-  return { prop: 'total_score', order: 'descending' }
-})
 const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
@@ -199,33 +191,7 @@ function profileKey(p: ScoreProfileSummary): string {
 // 「默认加载方案」偏好：在资产抽屉里把某个可见评分方案设为默认后，
 // 下次进入本页且自己没有评分方案时，自动装载该方案进下拉框并刷新榜单（前提：没有自己的方案）。
 // 复用既有 user_preference 通道（scope=feature / pageKey=board），不新建表/端点/权限。
-interface BoardDefaultProfile {
-  profile_ref: string
-  id: string
-  name: string
-  version: number
-  is_preset: boolean
-  source: string | null
-  owner_label: string | null
-  readonly: boolean
-}
-const boardDefaultProfileDefaults: BoardDefaultProfile = {
-  profile_ref: '',
-  id: '',
-  name: '',
-  version: 0,
-  is_preset: false,
-  source: null,
-  owner_label: null,
-  readonly: true,
-}
-const defaultPref = useUserPreference<BoardDefaultProfile>({
-  scope: 'feature',
-  pageKey: 'board',
-  prefKey: 'default-score-profile',
-  defaults: boardDefaultProfileDefaults,
-  localStorageKey: 'ai-stocks-board-default-profile',
-})
+const defaultPref = useDefaultScoreProfile()
 const defaultItemKey = computed(() => defaultPref.value.profile_ref || defaultPref.value.id || '')
 const curProfile = computed(() => (
   profiles.value.find((p) => profileKey(p) === profileRef.value)
@@ -233,6 +199,8 @@ const curProfile = computed(() => (
     ? externalProfile.value : null)
 ))
 const cacheStatus = ref('')
+const boardIncludeSt = ref(true)
+const boardProfileVersion = ref<number | null>(null)
 const canViewBoardProfiles = computed(() =>
   hasPermission(auth.role, auth.permissions, 'board:view'),
 )
@@ -282,7 +250,7 @@ async function maybeLoadInitialBoard() {
   if (initialLoadStarted || !profilesReady.value || !tradeDatesReady.value) return
   // 自己无方案且可能已设默认但偏好尚未 hydrated 时，先等远端偏好合并，别急着落空态；
   // 待 hydrated watch 触发后再走（tryApplyDefault 装载默认，或确认无默认后落空态）。
-  if (!profiles.value.length && !defaultPref.hydrated.value && canViewBoardProfiles.value) return
+  if (!defaultPref.hydrated.value && canViewBoardProfiles.value) return
   initialLoadStarted = true
   if (profileRef.value) await load()
   else loading.value = false
@@ -292,9 +260,6 @@ async function maybeLoadInitialBoard() {
 async function onProfilesReady(list: ProfileSummary[]) {
   const recoveredFromError = profilesReady.value && !!error.value
   profiles.value = list as ScoreProfileSummary[]
-  if (profiles.value.length && !profileRef.value) {
-    profileRef.value = profileKey(profiles.value[0])
-  }
   profilesReady.value = true
   error.value = ''
   // 自己无方案时尝试装载默认（偏好已 hydrated 则立即生效；否则由下方 watch 兜底）
@@ -328,32 +293,33 @@ function onSetDefault(item: ProfileSummary | null) {
     ElMessage.info('已取消默认加载方案')
     return
   }
-  defaultPref.value.profile_ref = item.profile_ref || ''
-  defaultPref.value.id = item.id
-  defaultPref.value.name = item.name
-  defaultPref.value.version = item.version
-  defaultPref.value.is_preset = item.is_preset
-  defaultPref.value.source = item.source ?? null
-  defaultPref.value.owner_label = item.owner_label ?? null
-  defaultPref.value.readonly = true
+  defaultPref.setDefault(item)
   ElMessage.success(`已将「${item.name}」设为默认加载方案`)
 }
 
-// 首屏默认装载：仅当自己没有评分方案（mine 空）+ 已设默认 + 偏好已 hydrated 时，
-// 经选择器 applyLoaded 复用 selectLoaded 链路装载并触发榜单刷新。每次进入只尝试一次。
+// 首屏选择：显式共享默认优先；未设置时才回退到第一个「我的方案」。
 let defaultApplied = false
 let pendingDefaultKey = ''
 function tryApplyDefault() {
   if (defaultApplied) return
   if (!canViewBoardProfiles.value) return
   if (!profilesReady.value) return
-  if (profiles.value.length) return
+  if (error.value) return
   if (!defaultPref.hydrated.value) return
   const snap = defaultPref.value
   const key = snap.profile_ref || snap.id
-  if (!key) return
+  if (!key) {
+    defaultApplied = true
+    if (!profileRef.value && profiles.value.length) profileRef.value = profileKey(profiles.value[0])
+    return
+  }
   defaultApplied = true
   pendingDefaultKey = key
+  const mine = profiles.value.find((profile) => profileKey(profile) === key)
+  if (mine) {
+    profileRef.value = key
+    return
+  }
   const item: ProfileSummary = {
     id: snap.id,
     profile_ref: snap.profile_ref || undefined,
@@ -376,11 +342,23 @@ function nameOf(key: string): string {
 const subKeys = computed(() => (rows.value[0] ? Object.keys(rows.value[0].sub_scores || {}) : []))
 const displayRows = computed(() => {
   const list = [...rows.value]
-  if (sortBy.value === 'rank') list.sort((a, b) => a.rank - b.rank)
+  if (sortBy.value === 'rank') list.sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER))
   else if (sortBy.value === 'code') list.sort((a, b) => a.code.localeCompare(b.code))
-  else list.sort((a, b) => b.total_score - a.total_score)
+  else list.sort((a, b) => (b.total_score ?? -Infinity) - (a.total_score ?? -Infinity))
   return list
 })
+const boardResultColumns = computed(() => rankedStockColumns([
+  'rank',
+  ...(colVisible('code') ? ['code' as const] : []),
+  ...(colVisible('name') ? ['name' as const] : []),
+  ...(colVisible('st') ? ['st' as const] : []),
+  ...(colVisible('board') ? ['board' as const] : []),
+  ...(colVisible('relatedIndustry') ? ['relatedIndustry' as const] : []),
+  ...(colVisible('relatedConcept') ? ['relatedConcept' as const] : []),
+  ...(colVisible('score') ? ['score' as const] : []),
+  ...(colVisible('grade') ? ['grade' as const] : []),
+  ...(colVisible('subScores') && displaySubKeys.value.length ? ['subScores' as const] : []),
+]))
 const selectedStocks = ref<StockBatchItem[]>([])
 const groups = ref<GroupSummary[]>([])
 const defaultGroup = computed(() => groups.value.find((group) => group.is_default))
@@ -435,20 +413,15 @@ const {
   onLimitReached: (limit) => ElMessage.warning(`最多对比${limit}只股票`),
 })
 const boardListMeta = computed(() => (
-  analysisPanelVisible.value ? '点击行切换走势' : '点击行查看详情'
+  '点击行切换走势，完整详情在分析区打开'
 ))
 
 function handleBoardRowClick(item: ScoreRunRow): void {
+  selectAnalysisItem(item)
   if (marketWorkspaceRef.value?.openCompactAnalysis()) {
-    selectAnalysisItem(item)
     return
   }
-  if (analysisPanelVisible.value) selectAnalysisItem(item)
-  else gotoStock(item)
-}
-
-function boardAnalysisRowClass({ row }: { row: ScoreRunRow }): string {
-  return row.code === activeAnalysisCode.value ? 'stock-analysis-row--active' : ''
+  analysisPanelVisible.value = true
 }
 
 function openActiveAnalysisDetail(): void {
@@ -461,10 +434,6 @@ const displaySubKeys = computed(() => {
   if (settings.subScoreMode === 'brief') return subKeys.value.slice(0, 3)
   return subKeys.value
 })
-const tableEmptyText = computed(() =>
-  profileRef.value ? '当前条件暂无榜单数据' : '暂无可用评分方案',
-)
-
 watch(runDate, () => {
   if (!profileRef.value || syncingRunDate.value) return
   clearAnalysisSelection()
@@ -517,6 +486,8 @@ async function loadBoard(force: boolean, background = false): Promise<boolean> {
       relatedBoardFirstLoadContext(res.list, res.run_date),
     )
     cacheStatus.value = res.cache_status || ''
+    boardIncludeSt.value = res.include_st !== false
+    boardProfileVersion.value = res.profile_version ?? selected.version
     syncingRunDate.value = true
     runDate.value = res.run_date
     await nextTick()
@@ -530,13 +501,20 @@ async function loadBoard(force: boolean, background = false): Promise<boolean> {
     // 只有后端明确返回“方案不存在/不可见”的业务 404 才清除默认偏好。
     // 服务重启、断网、超时、5xx 或其他权限异常都保留偏好，让用户可以重试。
     if (loadingDefault && getApiErrorCode(e) === 404) {
+      const invalidKey = profileRef.value
       pendingDefaultKey = ''
       defaultPref.reset()
-      profileRef.value = ''
+      const fallback = profiles.value.find((profile) => profileKey(profile) !== invalidKey)
+      profileRef.value = fallback ? profileKey(fallback) : ''
       rows.value = []
       cacheStatus.value = ''
       loading.value = false
-      ElMessage.warning('默认加载方案已不可见（可能已被取消公开或删除），已清除默认设置')
+      ElMessage.warning(
+        fallback
+          ? '默认加载方案已不可见，已清除默认设置并切换到第一个我的评分方案'
+          : '默认加载方案已不可见（可能已被取消公开或删除），已清除默认设置',
+      )
+      if (fallback) void loadBoard(false)
       return false
     }
     if (!background) error.value = getErrorMessage(e, force ? '榜单重算失败' : '榜单加载失败')
@@ -591,9 +569,9 @@ function viewSelectedStocks(): void {
 
 function exportCsv() {
   if (!rows.value.length) return
-  const headers = ['排名', '代码', '名称', '板块', '综合分', '评级', ...subKeys.value.map((k) => nameOf(k))]
+  const headers = ['全市场排名', '代码', '名称', '板块', 'ST状态', '综合分', '评级', ...subKeys.value.map((k) => nameOf(k))]
   const data = rows.value.map((r) => [
-    r.rank, r.code, r.name ?? '', r.board ?? '', r.total_score, r.grade ?? '',
+    r.rank ?? '', r.code, r.name ?? '', r.board ?? '', r.is_st ? 'ST' : '', r.total_score ?? '', r.grade ?? '',
     ...subKeys.value.map((k) => Math.round(r.sub_scores[k] ?? 0)),
   ])
   downloadCsv(`每日榜单_${curProfile.value?.name ?? ''}_${runDate.value || 'latest'}.csv`, headers, data)
@@ -636,7 +614,7 @@ const menuPageTitle = useMenuPageTitle()
           <HelpTip title="榜单是怎么排出来的？" :width="420">
             <HelpTipItem question="榜单如何排序">
               <ul>
-                <li>选择一个评分规则方案，对全市场中除 ST 外的每只股票按规则打分，再按综合分降序取 Top N。</li>
+                <li>选择一个评分规则方案，按该方案的 ST 母集设置对全市场打分，再按综合分降序、代码升序生成稳定排名。</li>
               </ul>
             </HelpTipItem>
             <HelpTipItem question="可以使用哪些方案">
@@ -652,8 +630,8 @@ const menuPageTitle = useMenuPageTitle()
           </HelpTip>
         </h2>
         <p class="page-subtitle">
-          <template v-if="runDate">交易日 {{ runDate }} · 已排除 ST</template>
-          <template v-if="curProfile"> · 规则「{{ curProfile.name }}」 v{{ curProfile.version }}</template>
+          <template v-if="runDate">交易日 {{ runDate }} · {{ boardIncludeSt ? '全市场排名含 ST' : '全市场排名不含 ST' }}</template>
+          <template v-if="curProfile"> · 规则「{{ curProfile.name }}」 v{{ boardProfileVersion || curProfile.version }}</template>
           <template v-if="cacheStatus"> · {{ cacheStatus === 'cached' ? '已缓存' : '已更新' }}</template>
         </p>
       </div>
@@ -696,7 +674,7 @@ const menuPageTitle = useMenuPageTitle()
           select-loaded
           :default-item-key="defaultItemKey"
           test-id="board-profile-select"
-          style="width: 300px"
+          class="app-control-width-wide"
           @update:model-value="onProfileSelect"
           @loaded="onProfileLoaded"
           @ready="onProfilesReady"
@@ -746,20 +724,22 @@ const menuPageTitle = useMenuPageTitle()
         state="loading"
         title="正在加载榜单…"
       />
-      <AppDataTable
+      <RankedStockResultTable
         v-else
-        kind="wide-table"
-        :data="displayRows"
+        :rows="displayRows"
+        :columns="boardResultColumns"
         :loading="loading"
-        :empty-text="tableEmptyText"
         :border="tableBorder('table')"
-        :default-sort="elementDefaultSort"
-        :row-class-name="boardAnalysisRowClass"
-        row-key="code"
-        clickable
+        :active-code="activeAnalysisCode"
+        :is-pinned="isAnalysisPinned"
+        :score-keys="displaySubKeys"
+        :label-of="nameOf"
+        :return-path="route.fullPath"
         @sort-change="onTableSortChange"
         @row-click="handleBoardRowClick"
+        @toggle-analysis="toggleAnalysisPinned"
       >
+        <template #leading-columns>
         <AppTableColumn role="structural">
           <template #header>
             <el-checkbox
@@ -779,70 +759,20 @@ const menuPageTitle = useMenuPageTitle()
             </span>
           </template>
         </AppTableColumn>
-        <AppTableColumn label="#" prop="rank" sortable :sort-by="(r:any)=>r.rank">
-          <template #default="{ row }">{{ row.rank }}</template>
-        </AppTableColumn>
-        <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" sortable />
-        <AppTableColumn
-          v-if="colVisible('name')"
-          label="名称"
-          prop="name"
-          role="entity"
-          :leading-controls="canUpdateDefaultGroup ? 2 : 1"
-        >
-          <template #default="{ row }">
-            <StockAnalysisNameCell
-              :code="row.code"
-              :name="row.name"
-              :pinned="isAnalysisPinned(row.code)"
-              @toggle="toggleAnalysisPinned(row)"
-            >
-              <template #leading>
-                <StockGroupFavoriteButton
-                  v-if="canUpdateDefaultGroup && defaultGroup && row?.code"
-                  :group-id="defaultGroup.id"
-                  :code="row.code"
-                  :name="row.name"
-                  :active="isDefaultFavorite(row)"
-                  :default-date="runDate || dataMax || ''"
-                  :data-testid="`board-favorite-${row.code}`"
-                  @changed="updateDefaultFavorite(row, $event)"
-                />
-              </template>
-            </StockAnalysisNameCell>
-          </template>
-        </AppTableColumn>
-        <AppTableColumn v-if="colVisible('board')" label="板块" prop="board" />
-        <AppTableColumn v-if="colVisible('relatedIndustry')" label="行业走势">
-          <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="industry" :return-path="route.fullPath" /></template>
-        </AppTableColumn>
-        <AppTableColumn v-if="colVisible('relatedConcept')" label="概念走势">
-          <template #default="{ row }"><RelatedBoardCell :summary="row.related_boards" board-type="concept" :return-path="route.fullPath" /></template>
-        </AppTableColumn>
-        <AppTableColumn v-if="colVisible('score')" label="综合分" prop="total_score" sortable :sort-by="(r:any)=>r.total_score">
-          <template #default="{ row }">
-            <strong class="score">{{ row.total_score }}</strong>
-          </template>
-        </AppTableColumn>
-        <AppTableColumn v-if="colVisible('grade')" label="评级">
-          <template #default="{ row }">
-            <ScoreGradeTag v-if="row.grade" :grade="row.grade" />
-            <span v-else class="muted">—</span>
-          </template>
-        </AppTableColumn>
-        <AppTableColumn
-          v-if="colVisible('subScores') && displaySubKeys.length"
-          label="分项达标分"
-        >
-          <template #default="{ row }">
-            <SubScoreChips
-              :score-keys="displaySubKeys"
-              :scores="row.sub_scores"
-              :label-of="nameOf"
-            />
-          </template>
-        </AppTableColumn>
-      </AppDataTable>
+        </template>
+        <template #name-leading="{ row }">
+          <StockGroupFavoriteButton
+            v-if="canUpdateDefaultGroup && defaultGroup && row?.code"
+            :group-id="defaultGroup.id"
+            :code="row.code"
+            :name="row.name"
+            :active="isDefaultFavorite(row)"
+            :default-date="runDate || dataMax || ''"
+            :data-testid="`board-favorite-${row.code}`"
+            @changed="updateDefaultFavorite(row, $event)"
+          />
+        </template>
+      </RankedStockResultTable>
       </template>
       <template #analysis>
         <StockAnalysisPanel
