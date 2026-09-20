@@ -351,7 +351,6 @@ const boardResultColumns = computed(() => rankedStockColumns([
   'rank',
   ...(colVisible('code') ? ['code' as const] : []),
   ...(colVisible('name') ? ['name' as const] : []),
-  ...(colVisible('st') ? ['st' as const] : []),
   ...(colVisible('board') ? ['board' as const] : []),
   ...(colVisible('relatedIndustry') ? ['relatedIndustry' as const] : []),
   ...(colVisible('relatedConcept') ? ['relatedConcept' as const] : []),
@@ -569,9 +568,9 @@ function viewSelectedStocks(): void {
 
 function exportCsv() {
   if (!rows.value.length) return
-  const headers = ['全市场排名', '代码', '名称', '板块', 'ST状态', '综合分', '评级', ...subKeys.value.map((k) => nameOf(k))]
+  const headers = ['全市场排名', '代码', '名称', '板块', '综合分', '评级', ...subKeys.value.map((k) => nameOf(k))]
   const data = rows.value.map((r) => [
-    r.rank ?? '', r.code, r.name ?? '', r.board ?? '', r.is_st ? 'ST' : '', r.total_score ?? '', r.grade ?? '',
+    r.rank ?? '', r.code, r.name ?? '', r.board ?? '', r.total_score ?? '', r.grade ?? '',
     ...subKeys.value.map((k) => Math.round(r.sub_scores[k] ?? 0)),
   ])
   downloadCsv(`每日榜单_${curProfile.value?.name ?? ''}_${runDate.value || 'latest'}.csv`, headers, data)

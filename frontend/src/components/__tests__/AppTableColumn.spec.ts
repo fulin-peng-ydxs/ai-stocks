@@ -72,6 +72,17 @@ describe('自适应表格列', () => {
     })
   })
 
+  it('长排名标题按标题和排序控件自适应，不套用 60px 序号列', () => {
+    const sizing = resolveAdaptiveColumnWidth({
+      role: 'rank',
+      label: '全市场排名',
+      sortable: true,
+    })
+    expect(sizing.role).toBe('rank')
+    expect(sizing.width).toBeUndefined()
+    expect(sizing.minWidth).toBeGreaterThanOrEqual(120)
+  })
+
   it('内容列默认统一启用真实溢出判定，结构列和操作列保持专用契约', () => {
     const content = mount(AppTableColumn, {
       props: { label: '评级', prop: 'grade' },

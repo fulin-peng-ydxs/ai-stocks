@@ -1624,7 +1624,7 @@ const dlgSummary = computed(() => {
 const boardDlg = ref(false)
 const boardDate = ref('')
 const boardRows = ref<BoardRow[]>([])
-const backtestBoardColumns = rankedStockColumns(['rank', 'code', 'name', 'st', 'board', 'score', 'grade'])
+const backtestBoardColumns = rankedStockColumns(['rank', 'code', 'name', 'board', 'score', 'grade'])
 const boardLoading = ref(false)
 const boardHighlight = ref<Set<string>>(new Set())
 const boardMissing = ref(false)  // 高亮票不在 Top50（名次太靠后）

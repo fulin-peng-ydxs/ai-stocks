@@ -43,7 +43,6 @@ const emit = defineEmits<{
 function rowClassName({ row }: { row: ScoreRunRow }): string {
   return [
     row.code === props.activeCode ? 'stock-analysis-row--active' : '',
-    row.is_st ? 'st-row' : '',
     props.rowClass(row),
   ].filter(Boolean).join(' ')
 }
@@ -79,19 +78,15 @@ function rowClassName({ row }: { row: ScoreRunRow }): string {
           :code="row.code"
           :name="row.name"
           :pinned="isPinned(row.code)"
+          :tone="row.is_st ? 'warning' : 'default'"
           @toggle="emit('toggleAnalysis', row)"
         >
           <template #leading><slot name="name-leading" :row="row" /></template>
-          <el-tag v-if="row.is_st" type="danger" size="small" effect="dark">ST</el-tag>
         </StockAnalysisNameCell>
         <span v-else-if="column.key === 'name'" class="app-inline-info app-inline-info--nowrap">
           <slot name="name-leading" :row="row" />
-          <span>{{ row.name || '—' }}</span>
-          <el-tag v-if="row.is_st" type="danger" size="small" effect="dark">ST</el-tag>
+          <span :class="{ 'ranked-stock-name--st': row.is_st }">{{ row.name || '—' }}</span>
         </span>
-        <template v-else-if="column.key === 'st'">
-          <el-tag v-if="row.is_st" type="danger" size="small">ST</el-tag><span v-else>—</span>
-        </template>
         <template v-else-if="column.key === 'board'">{{ row.board || '—' }}</template>
         <RelatedBoardCell
           v-else-if="column.key === 'relatedIndustry'"
@@ -122,3 +117,10 @@ function rowClassName({ row }: { row: ScoreRunRow }): string {
     </AppTableColumn>
   </AppDataTable>
 </template>
+
+<style scoped>
+.ranked-stock-name--st {
+  color: var(--app-warning-text);
+  font-weight: var(--app-font-weight-section);
+}
+</style>

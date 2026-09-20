@@ -147,6 +147,9 @@ const enabledInds = computed(() => registry.value.filter((d) => d.enabled))
 function defOf(key: string): IndicatorDef | undefined {
   return registry.value.find((d) => d.key === key)
 }
+function indicatorName(key: string): string {
+  return defOf(key)?.name_cn || key
+}
 // 旧预设 col 字段 → 注册表 key 的反向别名（其余字段名与 key 一致）
 const COL_TO_KEY: Record<string, string> = { is_bull_arrange: 'bull_arrange', dist_to_high: 'dist_to_high_2y' }
 
@@ -539,15 +542,19 @@ const displayHits = computed(() => {
   else list.sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER))
   return list
 })
+const resultSubKeys = computed(() => (
+  result.value?.hits[0] ? Object.keys(result.value.hits[0].sub_scores || {}) : []
+))
 const resultColumns = computed(() => rankedStockColumns([
   'rank',
   ...(colVisible('code') ? ['code' as const] : []),
   ...(colVisible('name') ? ['name' as const] : []),
-  ...(colVisible('st') ? ['st' as const] : []),
+  ...(colVisible('board') ? ['board' as const] : []),
   ...(colVisible('relatedIndustry') ? ['relatedIndustry' as const] : []),
   ...(colVisible('relatedConcept') ? ['relatedConcept' as const] : []),
   ...(colVisible('score') ? ['score' as const] : []),
   ...(colVisible('grade') ? ['grade' as const] : []),
+  ...(colVisible('subScores') && resultSubKeys.value.length ? ['subScores' as const] : []),
 ]))
 
 let runSequence = 0
@@ -729,10 +736,17 @@ function exportCsv() {
     { key: 'relatedIndustry', label: '行业走势', nameOf: (hit: ScreenHit) => hit.related_boards?.industry?.name ?? '' },
     { key: 'relatedConcept', label: '概念走势', nameOf: (hit: ScreenHit) => hit.related_boards?.concept?.name ?? '' },
   ].filter((column) => colVisible(column.key))
-  const headers = ['全市场排名', '代码', '名称', ...relatedColumns.map((column) => column.label), '综合分', '评级', '是否ST', '评分状态']
+  const showBoard = colVisible('board')
+  const subScoreKeys = colVisible('subScores') ? resultSubKeys.value : []
+  const headers = [
+    '全市场排名', '代码', '名称', ...(showBoard ? ['板块'] : []),
+    ...relatedColumns.map((column) => column.label), '综合分', '评级',
+    ...subScoreKeys.map((key) => indicatorName(key)), '评分状态',
+  ]
   const data = result.value.hits.map((h) => [
-    h.rank ?? '', h.code, h.name ?? '', ...relatedColumns.map((column) => column.nameOf(h)),
-    h.total_score ?? '', h.grade ?? '', h.is_st ? 'ST' : '', h.score_status,
+    h.rank ?? '', h.code, h.name ?? '', ...(showBoard ? [h.board ?? ''] : []),
+    ...relatedColumns.map((column) => column.nameOf(h)), h.total_score ?? '', h.grade ?? '',
+    ...subScoreKeys.map((key) => Math.round(h.sub_scores[key] ?? 0)), h.score_status,
   ])
   downloadCsv(`筛选结果_${result.value.date}.csv`, headers, data)
 }
@@ -1041,6 +1055,8 @@ const menuPageTitle = useMenuPageTitle()
               :run-date="runDate"
               :loading="loading"
               :border="tableBorder('result')"
+              :score-keys="resultSubKeys"
+              :label-of="indicatorName"
               :return-path="route.fullPath"
               :default-master-ratio="Number(componentValueOf('workspace', 'masterRatio') ?? 45)"
               :master-ratio-profiles="componentValueOf('workspace', 'masterRatioProfiles')"
@@ -1279,8 +1295,5 @@ const menuPageTitle = useMenuPageTitle()
 }
 .clickable :deep(.el-table__row) {
   cursor: pointer;
-}
-.clickable :deep(.st-row) {
-  background: var(--el-color-danger-light-9);
 }
 </style>

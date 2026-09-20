@@ -168,7 +168,6 @@ const REGISTRY: PageRegistryEntry[] = [
         columns: [
           { key: 'code', label: '代码列' },
           { key: 'name', label: '名称列' },
-          { key: 'st', label: 'ST 状态' },
           { key: 'board', label: '板块' },
           { key: 'score', label: '综合分' },
           { key: 'grade', label: '评级' },
@@ -222,9 +221,10 @@ const REGISTRY: PageRegistryEntry[] = [
         columns: [
           { key: 'code', label: '代码列' },
           { key: 'name', label: '名称列' },
+          { key: 'board', label: '板块' },
           { key: 'score', label: '综合分' },
           { key: 'grade', label: '评级' },
-          { key: 'st', label: 'ST 标记' },
+          { key: 'subScores', label: '分项达标分' },
           { key: 'relatedIndustry', label: '行业走势' },
           { key: 'relatedConcept', label: '概念走势' },
         ],

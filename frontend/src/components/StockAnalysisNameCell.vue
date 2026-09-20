@@ -5,10 +5,12 @@ withDefaults(defineProps<{
   code?: string
   name?: string | null
   pinned?: boolean
+  tone?: 'default' | 'warning'
 }>(), {
   code: '',
   name: null,
   pinned: false,
+  tone: 'default',
 })
 
 const emit = defineEmits<{
@@ -25,7 +27,7 @@ const emit = defineEmits<{
       :label="`${pinned ? '移出' : '加入'}走势对比：${name || code}`"
       @toggle="emit('toggle')"
     />
-    <span>{{ name || '—' }}</span>
+    <span class="stock-analysis-name-cell__name" :class="`is-${tone}`">{{ name || '—' }}</span>
     <slot />
   </div>
 </template>
@@ -36,5 +38,9 @@ const emit = defineEmits<{
   align-items: center;
   gap: var(--app-space-2);
   min-width: 0;
+}
+.stock-analysis-name-cell__name.is-warning {
+  color: var(--app-warning-text);
+  font-weight: var(--app-font-weight-section);
 }
 </style>

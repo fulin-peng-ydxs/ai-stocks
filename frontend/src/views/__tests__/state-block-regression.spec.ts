@@ -172,6 +172,7 @@ import BacktestView from '@/views/BacktestView.vue'
 import TrainingView from '@/views/TrainingView.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AssetSearchDrawer from '@/components/asset-search/AssetSearchDrawer.vue'
+import RankedStockWorkbench from '@/components/ranked-stock/RankedStockWorkbench.vue'
 
 const router = createRouter({
   history: createMemoryHistory(),
@@ -1067,7 +1068,7 @@ describe('代表性页面四态回归', () => {
     wrapper.unmount()
   })
 
-  it('筛选 CSV 只按可见列导出走势板块名称，不泄露相关度内部字段', async () => {
+  it('筛选 CSV 对齐榜单字段并只导出可见走势板块名称', async () => {
     layoutMockState.hiddenColumnsBySlot.result = ['relatedConcept']
     ;(screeningApi.runScreen as ReturnType<typeof vi.fn>).mockResolvedValue({
       run_date: '2026-08-28',
@@ -1076,9 +1077,12 @@ describe('代表性页面四态回归', () => {
       hits: [{
         code: '000001.SZ',
         name: '平安银行',
+        board: '主板',
         total_score: 90,
         grade: '观察',
+        sub_scores: { rs_pct: 80 },
         is_st: false,
+        score_status: 'ranked',
         related_boards: {
           as_of_date: '2026-08-28',
           benchmark: { code: '399001.SZ', name: '深证成指', fallback: false },
@@ -1098,12 +1102,17 @@ describe('代表性页面四态回归', () => {
     const wrapper = await mountView(ScreenView)
     await wrapper.findAll('button').find((button) => button.text().includes('运行筛选'))!.trigger('click')
     await flushPromises()
+    const workbench = wrapper.findComponent(RankedStockWorkbench)
+    expect((workbench.props('columns') as { key: string }[]).map((column) => column.key)).toEqual([
+      'rank', 'code', 'name', 'board', 'relatedIndustry', 'score', 'grade', 'subScores',
+    ])
+    expect(workbench.props('scoreKeys')).toEqual(['rs_pct'])
     await wrapper.findAll('button').find((button) => button.text().includes('导出 CSV'))!.trigger('click')
 
     expect(csvUtils.downloadCsv).toHaveBeenCalledWith(
       '筛选结果_2026-08-28.csv',
-      ['全市场排名', '代码', '名称', '行业走势', '综合分', '评级', '是否ST', '评分状态'],
-      [['', '000001.SZ', '平安银行', '银行', 90, '观察', '', undefined]],
+      ['全市场排名', '代码', '名称', '板块', '行业走势', '综合分', '评级', '相对强度', '评分状态'],
+      [['', '000001.SZ', '平安银行', '主板', '银行', 90, '观察', 80, 'ranked']],
     )
     const serialized = JSON.stringify((csvUtils.downloadCsv as ReturnType<typeof vi.fn>).mock.calls[0])
     expect(serialized).not.toContain('中特估')

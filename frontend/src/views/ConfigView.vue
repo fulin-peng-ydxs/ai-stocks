@@ -969,7 +969,7 @@ function clearScoreRunResult() {
 }
 const subKeys = computed(() => activeScoreItems.value.map((i) => i.indicator))
 const scoreRunColumns = rankedStockColumns([
-  'rank', 'code', 'name', 'st', 'board', 'score', 'grade', 'subScores',
+  'rank', 'code', 'name', 'board', 'score', 'grade', 'subScores',
 ])
 
 async function tryRun() {

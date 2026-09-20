@@ -187,7 +187,14 @@ export function resolveAdaptiveColumnWidth(
 ): AdaptiveColumnSizing & { role: AdaptiveColumnRole } {
   const role = inferAdaptiveColumnRole(descriptor)
   const policy = ADAPTIVE_COLUMN_RULES[role]
-  if (policy.width !== undefined) return { role, width: policy.width }
+  if (policy.width !== undefined) {
+    // 普通「# / 序号 / 排名」保持紧凑固定宽度；显式使用 rank 角色的长标题
+    // （如「全市场排名」）仍需为标题和排序控件留足空间，不能套用 60px 序号列。
+    const compactRank = role === 'rank' && (!descriptor.label || RANK_PATTERN.test(descriptor.label))
+    if (role !== 'rank' || compactRank) return { role, width: policy.width }
+    const headerSizing = resolveHeaderSizing(descriptor, 160)
+    return { role, minWidth: Math.max(policy.width, headerSizing.minWidth) }
+  }
 
   const headerIndent = resolveLeadingControlsReserve(descriptor.leadingControls)
   const baseMinWidth = Math.max(
