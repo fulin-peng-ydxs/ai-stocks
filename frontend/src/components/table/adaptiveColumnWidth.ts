@@ -6,6 +6,7 @@ export type AdaptiveColumnRole =
   | 'entity'
   | 'status'
   | 'number'
+  | 'comparison-number'
   | 'date'
   | 'datetime'
   | 'key'
@@ -19,9 +20,12 @@ interface AdaptiveColumnRule {
   width?: number
 }
 
+export type AdaptiveColumnAlign = 'left' | 'center' | 'right'
+
 interface AdaptiveColumnSizing extends AdaptiveColumnRule {
   headerCapped?: boolean
   headerIndent?: number
+  align: AdaptiveColumnAlign
 }
 
 export interface AdaptiveColumnDescriptor {
@@ -42,34 +46,37 @@ export interface AdaptiveColumnDescriptor {
 
 interface AdaptiveColumnPolicy extends AdaptiveColumnRule {
   maxAutoWidth?: number
+  align: AdaptiveColumnAlign
 }
 
 /**
- * 自适应列宽的唯一数值事实源。
+ * 表格列语义呈现的唯一事实源：同一角色共同决定列宽、表头和单元格对齐。
  * 内容列只提供最小宽度，最终宽度由 Element Plus 的 fit 算法按容器余量同比分配；
  * 结构列和操作列使用固定语义宽度，避免无内容承载能力的列吞占富余空间。
  * 当列宽总和超过容器时，表体自然进入横向滚动。
  */
 export const ADAPTIVE_COLUMN_RULES: Record<AdaptiveColumnRole, AdaptiveColumnPolicy> = {
-  structural: { width: 48 },
-  rank: { width: 60 },
-  code: { minWidth: 112, maxAutoWidth: 192 },
-  name: { minWidth: 128, maxAutoWidth: 240 },
+  structural: { width: 48, align: 'center' },
+  rank: { width: 60, align: 'center' },
+  code: { minWidth: 112, maxAutoWidth: 192, align: 'left' },
+  name: { minWidth: 128, maxAutoWidth: 240, align: 'left' },
   // 主副两行共同识别业务对象；前置控件占位由 leadingControls 统一叠加。
-  entity: { minWidth: 152, maxAutoWidth: 320 },
+  entity: { minWidth: 152, maxAutoWidth: 320, align: 'left' },
   // 状态列要容纳表格单元格留白与常见五字标签，避免有限枚举仍属于正常
   // 短文案时被 max-width: 100% 误压缩成省略号。
-  status: { minWidth: 112, maxAutoWidth: 192 },
-  number: { minWidth: 96, maxAutoWidth: 192 },
-  date: { minWidth: 120, maxAutoWidth: 192 },
-  datetime: { minWidth: 168, maxAutoWidth: 224 },
-  key: { minWidth: 160, maxAutoWidth: 240 },
+  status: { minWidth: 112, maxAutoWidth: 192, align: 'center' },
+  number: { minWidth: 96, maxAutoWidth: 192, align: 'right' },
+  // 横向比较矩阵以列中轴对照不同系列，数值仍使用等宽数字，但不沿用普通数值右边界。
+  'comparison-number': { minWidth: 96, maxAutoWidth: 192, align: 'center' },
+  date: { minWidth: 120, maxAutoWidth: 192, align: 'left' },
+  datetime: { minWidth: 168, maxAutoWidth: 224, align: 'left' },
+  key: { minWidth: 160, maxAutoWidth: 240, align: 'left' },
   // 操作列数值是默认下限；运行时可按行操作组的最低可用组合向上扩展。
-  action: { width: 144 },
+  action: { width: 144, align: 'center' },
   // 紧凑操作列同样以该值为默认下限，而不是不可突破的固定上限。
-  'action-compact': { width: 96 },
-  text: { minWidth: 140, maxAutoWidth: 240 },
-  description: { minWidth: 200, maxAutoWidth: 320 },
+  'action-compact': { width: 96, align: 'center' },
+  text: { minWidth: 140, maxAutoWidth: 240, align: 'left' },
+  description: { minWidth: 200, maxAutoWidth: 320, align: 'left' },
 }
 
 const HEADER_FONT_SIZE = 14
@@ -78,7 +85,9 @@ const HEADER_SORT_CONTROL_WIDTH = 24
 const HEADER_FILTER_CONTROL_WIDTH = 20
 const HEADER_CUSTOM_SLOT_RESERVE = 16
 const HEADER_META_GAP = 4
-const LEADING_CONTROL_SLOT_WIDTH = 28
+// 紧凑前置操作统一按 24px xs 图标按钮 + 8px 实体列间距预留，
+// 使表头起点与按钮之后的主名称文字严格共线。
+const LEADING_CONTROL_SLOT_WIDTH = 32
 const MAX_LEADING_CONTROLS = 4
 const COLUMN_WIDTH_GRID = 8
 const TABLE_CELL_HORIZONTAL_INSET = 24
@@ -191,9 +200,13 @@ export function resolveAdaptiveColumnWidth(
     // 普通「# / 序号 / 排名」保持紧凑固定宽度；显式使用 rank 角色的长标题
     // （如「全市场排名」）仍需为标题和排序控件留足空间，不能套用 60px 序号列。
     const compactRank = role === 'rank' && (!descriptor.label || RANK_PATTERN.test(descriptor.label))
-    if (role !== 'rank' || compactRank) return { role, width: policy.width }
+    if (role !== 'rank' || compactRank) return { role, width: policy.width, align: policy.align }
     const headerSizing = resolveHeaderSizing(descriptor, 160)
-    return { role, minWidth: Math.max(policy.width, headerSizing.minWidth) }
+    return {
+      role,
+      minWidth: Math.max(policy.width, headerSizing.minWidth),
+      align: policy.align,
+    }
   }
 
   const headerIndent = resolveLeadingControlsReserve(descriptor.leadingControls)
@@ -213,6 +226,7 @@ export function resolveAdaptiveColumnWidth(
     minWidth: Math.max(baseMinWidth, headerSizing.minWidth + headerIndent),
     headerCapped: headerSizing.capped,
     headerIndent,
+    align: policy.align,
   }
 }
 

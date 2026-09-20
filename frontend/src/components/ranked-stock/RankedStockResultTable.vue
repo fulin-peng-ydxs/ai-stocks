@@ -19,6 +19,8 @@ const props = withDefaults(defineProps<{
   labelOf?: (key: string) => string
   returnPath?: string
   analysisPins?: boolean
+  /** 名称列中由调用方通过 name-leading 提供的紧凑前置控件数量。 */
+  nameLeadingControls?: number
   isPinned?: (code: string) => boolean
   rowClass?: (row: ScoreRunRow) => string
 }>(), {
@@ -30,6 +32,7 @@ const props = withDefaults(defineProps<{
   labelOf: (key: string) => key,
   returnPath: '',
   analysisPins: true,
+  nameLeadingControls: 0,
   isPinned: () => false,
   rowClass: () => '',
 })
@@ -45,6 +48,11 @@ function rowClassName({ row }: { row: ScoreRunRow }): string {
     row.code === props.activeCode ? 'stock-analysis-row--active' : '',
     props.rowClass(row),
   ].filter(Boolean).join(' ')
+}
+
+function leadingControlsOf(column: RankedStockColumn): number {
+  if (column.key !== 'name') return 0
+  return props.nameLeadingControls + (props.analysisPins ? 1 : 0)
 }
 </script>
 
@@ -68,7 +76,8 @@ function rowClassName({ row }: { row: ScoreRunRow }): string {
       :label="column.label"
       :prop="column.key === 'score' ? 'total_score' : column.key"
       :sortable="column.sortable"
-      :role="column.key === 'rank' ? 'rank' : column.key === 'name' ? 'entity' : undefined"
+      :role="column.role"
+      :leading-controls="leadingControlsOf(column)"
     >
       <template #default="{ row }">
         <template v-if="column.key === 'rank'">{{ row.rank ?? '—' }}</template>

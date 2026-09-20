@@ -412,7 +412,7 @@ const {
   onLimitReached: (limit) => ElMessage.warning(`最多对比${limit}只股票`),
 })
 const boardListMeta = computed(() => (
-  '点击行切换走势，完整详情在分析区打开'
+  '点击行切换走势'
 ))
 
 function handleBoardRowClick(item: ScoreRunRow): void {
@@ -734,6 +734,7 @@ const menuPageTitle = useMenuPageTitle()
         :score-keys="displaySubKeys"
         :label-of="nameOf"
         :return-path="route.fullPath"
+        :name-leading-controls="canUpdateDefaultGroup && defaultGroup ? 1 : 0"
         @sort-change="onTableSortChange"
         @row-click="handleBoardRowClick"
         @toggle-analysis="toggleAnalysisPinned"

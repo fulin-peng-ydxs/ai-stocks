@@ -4,8 +4,12 @@ import { parse as parseSfc } from '@vue/compiler-sfc'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
-const VIEWS_DIR = resolve(process.cwd(), 'src/views')
 const COMPONENTS_DIR = resolve(process.cwd(), 'src/components')
+const SRC_DIR = resolve(process.cwd(), 'src')
+const TABLE_RUNTIME_FILES = new Set([
+  resolve(COMPONENTS_DIR, 'AppDataTable.vue'),
+  resolve(COMPONENTS_DIR, 'AppTableColumn.vue'),
+])
 
 function vueFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
@@ -18,6 +22,17 @@ function vueFiles(dir: string): string[] {
   })
 }
 
+function tableConsumerFiles(): string[] {
+  return vueFiles(SRC_DIR).filter((file) => !TABLE_RUNTIME_FILES.has(file))
+}
+
+function privateTableAlignmentStyles(file: string): string[] {
+  const source = readFileSync(file, 'utf8')
+  const styles = parseSfc(source, { filename: file }).descriptor.styles
+  const tableSelectorWithAlignment = /(?:\.app-data-table|\.el-table)[^{]*\{[^}]*\btext-align\s*:/g
+  return styles.flatMap((style) => style.content.match(tableSelectorWithAlignment) ?? [])
+}
+
 interface ElementFinding {
   file: string
   tag: string
@@ -28,8 +43,7 @@ interface ElementFinding {
   nestedTableEmpty: boolean
 }
 
-function inspectTemplate(file: string): ElementFinding[] {
-  const source = readFileSync(file, 'utf8')
+function inspectTemplateSource(source: string, file: string): ElementFinding[] {
   const template = parseSfc(source, { filename: file }).descriptor.template?.content
   if (!template) return []
 
@@ -43,6 +57,11 @@ function inspectTemplate(file: string): ElementFinding[] {
           name === 'width'
           || name === 'min-width'
           || name === 'minWidth'
+          || (node.tag === 'AppTableColumn' && (
+            name === 'align'
+            || name === 'header-align'
+            || name === 'headerAlign'
+          ))
           || (node.tag === 'AppDataTable' && name === 'fill'))
       const propNames = node.props
         .map((prop: any) => prop.type === 6 ? prop.name : prop.arg?.content)
@@ -68,7 +87,7 @@ function inspectTemplate(file: string): ElementFinding[] {
         || nestedTableEmpty
       ) {
         findings.push({
-          file: relative(VIEWS_DIR, file).split('\\').join('/'),
+          file: relative(SRC_DIR, file).split('\\').join('/'),
           tag: node.tag,
           line: node.loc.start.line,
           forbiddenProps,
@@ -86,22 +105,28 @@ function inspectTemplate(file: string): ElementFinding[] {
   return findings
 }
 
+function inspectTemplate(file: string): ElementFinding[] {
+  return inspectTemplateSource(readFileSync(file, 'utf8'), file)
+}
+
 describe('统一自适应表格契约', () => {
-  it('页面表格统一复用 AppDataTable / AppTableColumn', () => {
-    const findings = vueFiles(VIEWS_DIR).flatMap(inspectTemplate)
+  it('页面和业务组件的表格统一复用 AppDataTable / AppTableColumn', () => {
+    const findings = tableConsumerFiles().flatMap(inspectTemplate)
     const directTables = findings.filter((item) =>
       ['table', 'el-table', 'el-table-column'].includes(item.tag))
     expect(
       directTables,
-      `页面不得绕过统一表格组件：\n${directTables.map((item) =>
+      `页面和业务组件不得绕过统一表格组件：\n${directTables.map((item) =>
         `${item.file}:${item.line} <${item.tag}>`).join('\n')}`,
     ).toEqual([])
   })
 
   it('页面不得给自适应列声明 width / min-width', () => {
-    const findings = vueFiles(VIEWS_DIR)
+    const widthProps = new Set(['width', 'min-width', 'minWidth'])
+    const findings = tableConsumerFiles()
       .flatMap(inspectTemplate)
-      .filter((item) => item.tag === 'AppTableColumn' && item.forbiddenProps.length)
+      .filter((item) => item.tag === 'AppTableColumn'
+        && item.forbiddenProps.some((prop) => widthProps.has(prop)))
     expect(
       findings,
       `列宽必须由语义规则推导：\n${findings.map((item) =>
@@ -109,8 +134,49 @@ describe('统一自适应表格契约', () => {
     ).toEqual([])
   })
 
+  it('业务调用方不得手写列对齐，必须使用语义角色', () => {
+    const alignmentProps = new Set(['align', 'header-align', 'headerAlign'])
+    const findings = tableConsumerFiles()
+      .flatMap(inspectTemplate)
+      .filter((item) => item.tag === 'AppTableColumn'
+        && item.forbiddenProps.some((prop) => alignmentProps.has(prop)))
+    expect(
+      findings,
+      `列对齐必须由 role 统一推导：\n${findings.map((item) =>
+        `${item.file}:${item.line} ${item.forbiddenProps.join(', ')}`).join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('能识别静态和动态的手写列对齐属性', () => {
+    const findings = inspectTemplateSource(`
+      <template>
+        <AppDataTable :data="[]">
+          <AppTableColumn label="涨跌幅" align="right" />
+          <AppTableColumn label="评级" :header-align="headerAlign" />
+        </AppDataTable>
+      </template>
+    `, resolve(SRC_DIR, '__table-contract-fixture__.vue'))
+    expect(findings.flatMap((item) => item.forbiddenProps)).toEqual([
+      'align',
+      'header-align',
+    ])
+  })
+
+  it('业务页面和组件不得用私有表格 CSS 覆盖语义对齐', () => {
+    const findings = tableConsumerFiles().flatMap((file) =>
+      privateTableAlignmentStyles(file).map((rule) => ({
+        file: relative(SRC_DIR, file).split('\\').join('/'),
+        rule,
+      })))
+    expect(
+      findings,
+      `表格对齐只能由 AppTableColumn 的语义角色维护：\n${findings.map((item) =>
+        `${item.file} ${item.rule}`).join('\n')}`,
+    ).toEqual([])
+  })
+
   it('页面不得用 fill 布尔值绕过主表/嵌入表语义', () => {
-    const findings = vueFiles(VIEWS_DIR)
+    const findings = tableConsumerFiles()
       .flatMap(inspectTemplate)
       .filter((item) => item.tag === 'AppDataTable' && item.forbiddenProps.includes('fill'))
     expect(
@@ -121,7 +187,7 @@ describe('统一自适应表格契约', () => {
   })
 
   it('无字段列必须显式声明结构、状态或操作等语义', () => {
-    const findings = vueFiles(VIEWS_DIR)
+    const findings = tableConsumerFiles()
       .flatMap(inspectTemplate)
       .filter((item) => item.missingColumnSemantics)
     expect(
@@ -132,7 +198,7 @@ describe('统一自适应表格契约', () => {
   })
 
   it('操作列必须显式声明动作密度语义', () => {
-    const findings = [...vueFiles(VIEWS_DIR), ...vueFiles(COMPONENTS_DIR)]
+    const findings = tableConsumerFiles()
       .flatMap(inspectTemplate)
       .filter((item) => item.ambiguousActionRole)
     expect(
@@ -143,7 +209,7 @@ describe('统一自适应表格契约', () => {
   })
 
   it('表格空态插槽不得嵌套第二套 el-empty 图形', () => {
-    const findings = [...vueFiles(VIEWS_DIR), ...vueFiles(COMPONENTS_DIR)]
+    const findings = tableConsumerFiles()
       .flatMap(inspectTemplate)
       .filter((item) => item.nestedTableEmpty)
     expect(

@@ -679,14 +679,14 @@ const menuPageTitle = useMenuPageTitle()
           <AppTableColumn v-if="jobColVisible('freq')" label="触发规则" prop="freq" sortable="custom">
             <template #default="{ row }"><span data-testid="schedule-frequency">{{ row.trigger_text || row.freq_text }}</span></template>
           </AppTableColumn>
-          <AppTableColumn v-if="jobColVisible('tradingDay')" label="仅交易日" align="center">
+          <AppTableColumn v-if="jobColVisible('tradingDay')" label="仅交易日" role="status">
             <template #default="{ row }">
               <el-tag :type="row.trading_day_only ? 'success' : 'info'" size="small" effect="plain">
                 {{ row.trading_day_only ? '是' : '否' }}
               </el-tag>
             </template>
           </AppTableColumn>
-          <AppTableColumn v-if="jobColVisible('enabled')" label="启用" align="center">
+          <AppTableColumn v-if="jobColVisible('enabled')" label="启用" role="status">
             <template #default="{ row }">
               <el-switch
                 v-permission="'data-schedule:manage'"
@@ -748,14 +748,14 @@ const menuPageTitle = useMenuPageTitle()
           <AppTableColumn v-if="sourceColVisible('source')" label="数据源" prop="source">
             <template #default="{ row }">{{ SOURCE_LABEL[row.source] ?? row.source }}</template>
           </AppTableColumn>
-          <AppTableColumn v-if="sourceColVisible('role')" label="角色" align="center">
+          <AppTableColumn v-if="sourceColVisible('role')" label="角色" role="status">
             <template #default="{ row }">
               <el-tag size="small" effect="plain" :type="row.role === 'primary' ? 'primary' : 'info'">
                 {{ sourceRoleLabel(row.role) }}
               </el-tag>
             </template>
           </AppTableColumn>
-          <AppTableColumn v-if="sourceColVisible('status')" label="状态" align="center">
+          <AppTableColumn v-if="sourceColVisible('status')" label="状态" role="status">
             <template #default="{ row }">
               <span class="app-inline-info app-inline-info--nowrap">
                 <span
@@ -895,13 +895,13 @@ const menuPageTitle = useMenuPageTitle()
         <AppTableColumn label="来源任务">
           <template #default="{ row }">{{ row.source_job_name || row.source_task_id }}</template>
         </AppTableColumn>
-        <AppTableColumn label="来源结果" align="center">
+        <AppTableColumn label="来源结果" role="status">
           <template #default="{ row }">{{ sourceStatusLabel(row.source_status) }}</template>
         </AppTableColumn>
-        <AppTableColumn label="类型" align="center">
+        <AppTableColumn label="类型" role="status">
           <template #default="{ row }">{{ row.trigger_kind === 'retry' ? `重试 ${row.retry_count}` : '任务依赖' }}</template>
         </AppTableColumn>
-        <AppTableColumn label="命中规则" align="center">
+        <AppTableColumn label="命中规则" role="status">
           <template #default="{ row }">{{ triggerConditionLabel(row.trigger_condition) }}</template>
         </AppTableColumn>
         <AppTableColumn label="计划时间">
@@ -910,7 +910,7 @@ const menuPageTitle = useMenuPageTitle()
         <AppTableColumn label="实际触发">
           <template #default="{ row }">{{ fmtTime(row.dispatched_at) }}</template>
         </AppTableColumn>
-        <AppTableColumn label="状态" align="center">
+        <AppTableColumn label="状态" role="status">
           <template #default="{ row }">
             <el-tag size="small" effect="plain" :type="row.status === 'failed' || row.status === 'exhausted' ? 'danger' : row.status === 'waiting' || row.status === 'dispatching' ? 'warning' : row.status === 'dispatched' ? 'success' : 'info'">
               {{ eventStatusLabel(row.status) }}

@@ -27,8 +27,8 @@ describe('RankedStockResultTable', () => {
             template: '<div><slot /></div>',
           },
           AppTableColumn: {
-            props: ['label'],
-            template: `<section><span>{{ label }}</span><slot :row="{
+            props: ['label', 'role', 'leadingControls'],
+            template: `<section class="column" :data-label="label" :data-role="role" :data-leading-controls="leadingControls"><span>{{ label }}</span><slot :row="{
               rank: null, code: '000001.SZ', name: '示例ST', board: '主板',
               total_score: null, grade: '', sub_scores: {}, is_st: true,
               score_status: 'excluded_st', related_boards: null, groups: [],
@@ -43,6 +43,10 @@ describe('RankedStockResultTable', () => {
     expect(wrapper.text()).toContain('该方案未纳入 ST')
     expect(wrapper.get('.ranked-stock-name--st').text()).toBe('示例ST')
     expect(wrapper.findAll('.el-tag')).toHaveLength(0)
+    expect(wrapper.get('[data-label="全市场排名"]').attributes('data-role')).toBe('rank')
+    expect(wrapper.get('[data-label="综合分"]').attributes('data-role')).toBe('number')
+    expect(wrapper.get('[data-label="评级"]').attributes('data-role')).toBe('status')
+    expect(wrapper.get('[data-label="名称"]').attributes('data-leading-controls')).toBe('0')
   })
 
   it('走势工作台模式同样把 ST 状态收进名称警告色', () => {
@@ -54,6 +58,7 @@ describe('RankedStockResultTable', () => {
           score_status: 'ranked', related_boards: null, groups: [],
         }],
         columns: rankedStockColumns(['rank', 'name', 'score']),
+        nameLeadingControls: 1,
       },
       global: {
         plugins: [ElementPlus],
@@ -63,8 +68,8 @@ describe('RankedStockResultTable', () => {
             template: '<div><slot /></div>',
           },
           AppTableColumn: {
-            props: ['label'],
-            template: `<section><span>{{ label }}</span><slot :row="{
+            props: ['label', 'role', 'leadingControls'],
+            template: `<section class="column" :data-label="label" :data-role="role" :data-leading-controls="leadingControls"><span>{{ label }}</span><slot :row="{
               rank: 8, code: '600001.SH', name: '风险样例', board: '主板',
               total_score: 76, grade: '观察', sub_scores: {}, is_st: true,
               score_status: 'ranked', related_boards: null, groups: [],
@@ -76,5 +81,7 @@ describe('RankedStockResultTable', () => {
 
     expect(wrapper.get('.stock-analysis-name-cell__name.is-warning').text()).toBe('风险样例')
     expect(wrapper.findAll('.el-tag')).toHaveLength(0)
+    expect(wrapper.get('[data-label="名称"]').attributes('data-role')).toBe('entity')
+    expect(wrapper.get('[data-label="名称"]').attributes('data-leading-controls')).toBe('2')
   })
 })

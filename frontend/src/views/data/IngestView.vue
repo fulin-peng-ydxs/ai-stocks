@@ -1024,7 +1024,7 @@ const menuPageTitle = useMenuPageTitle()
                 </el-tag>
               </template>
             </AppTableColumn>
-            <AppTableColumn label="行数" prop="row_count" align="right" />
+            <AppTableColumn label="行数" prop="row_count" role="number" />
             <AppTableColumn label="区间">
               <template #default="{ row }">{{ row.date_start ? `${row.date_start} ~ ${row.date_end || row.date_start}` : '—' }}</template>
             </AppTableColumn>

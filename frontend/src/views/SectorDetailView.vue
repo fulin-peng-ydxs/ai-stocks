@@ -634,13 +634,13 @@ onMounted(async () => {
                     </el-tooltip>
                   </template>
                 </AppTableColumn>
-                <AppTableColumn v-if="colVisible('price')" label="现价" prop="price" role="number" align="right" sortable="custom">
+                <AppTableColumn v-if="colVisible('price')" label="现价" prop="price" role="number" sortable="custom">
                   <template #default="{ row }"><span class="app-data-text">{{ fmtNumber(row.close) }}</span></template>
                 </AppTableColumn>
-                <AppTableColumn v-if="colVisible('pct')" label="涨跌幅" prop="pct" role="number" align="right" sortable="custom">
+                <AppTableColumn v-if="colVisible('pct')" label="涨跌幅" prop="pct" role="number" sortable="custom">
                   <template #default="{ row }"><strong class="app-data-text" :class="pctClass(row.pct_chg)">{{ fmtPct(row.pct_chg) }}</strong></template>
                 </AppTableColumn>
-                <AppTableColumn v-if="colVisible('turnover')" label="换手率" prop="turnover_rate" role="number" align="right">
+                <AppTableColumn v-if="colVisible('turnover')" label="换手率" prop="turnover_rate" role="number">
                   <template #default="{ row }"><span class="app-data-text">{{ fmtPct(row.turnover_rate) }}</span></template>
                 </AppTableColumn>
                 <template #empty>

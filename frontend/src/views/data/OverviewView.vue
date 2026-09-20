@@ -811,13 +811,13 @@ const menuPageTitle = useMenuPageTitle()
                         <AppTableColumn label="字段" prop="name" />
                         <AppTableColumn label="中文名" prop="name_cn" />
                         <AppTableColumn label="原生类型" prop="type" />
-                        <AppTableColumn label="可空" role="status" align="center">
+                        <AppTableColumn label="可空" role="status">
                           <template #default="scope">{{ scope.row.nullable ? '是' : '否' }}</template>
                         </AppTableColumn>
                         <AppTableColumn label="默认值">
                           <template #default="scope"><span class="mono">{{ scope.row.default ?? '—' }}</span></template>
                         </AppTableColumn>
-                        <AppTableColumn label="主键" role="status" align="center">
+                        <AppTableColumn label="主键" role="status">
                           <template #default="scope">{{ scope.row.primary_key ? '是' : '—' }}</template>
                         </AppTableColumn>
                         <AppTableColumn label="外键" prop="references" />
@@ -851,7 +851,7 @@ const menuPageTitle = useMenuPageTitle()
                     <span v-if="row.lifecycle === 'legacy_readonly'" class="asset-fact-source">PG 事实源</span>
                   </template>
                 </AppTableColumn>
-                <AppTableColumn v-if="assetColumnVisible('rowCount')" label="行数" align="right">
+                <AppTableColumn v-if="assetColumnVisible('rowCount')" label="行数" role="number">
                   <template #default="{ row }">{{ formatRowCount(row) }}</template>
                 </AppTableColumn>
 
@@ -898,8 +898,7 @@ const menuPageTitle = useMenuPageTitle()
                 <AppTableColumn
                   v-if="assetMode === 'duckdb' && assetColumnVisible('qualityIssues')"
                   label="质量问题"
-                  role="status"
-                  align="right"
+                  role="number"
                 >
                   <template #header>
                     <span>质量问题</span>
@@ -927,7 +926,7 @@ const menuPageTitle = useMenuPageTitle()
                 <AppTableColumn
                   v-if="assetMode === 'postgres' && assetColumnVisible('storageBytes')"
                   label="表及索引空间"
-                  align="right"
+                  role="number"
                 >
                   <template #default="{ row }">{{ formatBytes(row.storage_bytes) }}</template>
                 </AppTableColumn>
@@ -980,7 +979,7 @@ const menuPageTitle = useMenuPageTitle()
                   <AppTableColumn label="最新数据">
                     <template #default="{ row }">{{ (row.latest_date || '—').slice(0, 10) }}</template>
                   </AppTableColumn>
-                  <AppTableColumn v-for="k in ['L1', 'L2', 'L3', 'L4'].filter(shouldShowLayer)" :key="k" :label="LAYER_CN[k]" role="status" align="center">
+                  <AppTableColumn v-for="k in ['L1', 'L2', 'L3', 'L4'].filter(shouldShowLayer)" :key="k" :label="LAYER_CN[k]" role="status">
                     <template #header>
                       <span>{{ LAYER_CN[k] }} <HelpHint :text="LAYER_DESC[k]" /></span>
                     </template>

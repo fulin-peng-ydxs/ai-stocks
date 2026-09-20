@@ -498,7 +498,7 @@ const menuPageTitle = useMenuPageTitle()
                   </el-checkbox-group>
                 </template>
               </AppTableColumn>
-              <AppTableColumn label="" align="right">
+              <AppTableColumn label="" role="action-compact">
                 <template #default="{ row }">
                   <AppRowActions
                     v-if="row.overridden"

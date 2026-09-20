@@ -2178,22 +2178,22 @@ const menuPageTitle = useMenuPageTitle()
                 <AppTableColumn :label="ROBUST_PARAM_OPTS.find(o => o.v === sweepRes!.param)?.t || sweepRes.param" role="number">
                   <template #default="{ row }"><b>{{ sweepValLabel(row.value) }}</b></template>
                 </AppTableColumn>
-                <AppTableColumn label="累计收益" align="right">
+                <AppTableColumn label="累计收益" role="number">
                   <template #default="{ row }"><span :class="row.total_return >= 0 ? 'up' : 'down'">{{ pct(row.total_return) }}</span></template>
                 </AppTableColumn>
-                <AppTableColumn label="超额" align="right">
+                <AppTableColumn label="超额" role="number">
                   <template #default="{ row }"><span :class="row.excess_return >= 0 ? 'up' : 'down'">{{ pct(row.excess_return) }}</span></template>
                 </AppTableColumn>
-                <AppTableColumn label="最大回撤" align="right">
+                <AppTableColumn label="最大回撤" role="number">
                   <template #default="{ row }">{{ pct(row.max_drawdown) }}</template>
                 </AppTableColumn>
-                <AppTableColumn label="夏普" align="right">
+                <AppTableColumn label="夏普" role="number">
                   <template #default="{ row }">{{ num(row.sharpe) }}</template>
                 </AppTableColumn>
-                <AppTableColumn label="胜率" align="right">
+                <AppTableColumn label="胜率" role="number">
                   <template #default="{ row }">{{ pct(row.win_rate) }}</template>
                 </AppTableColumn>
-                <AppTableColumn label="交易数" align="right">
+                <AppTableColumn label="交易数" role="number">
                   <template #default="{ row }">{{ row.n_trades ?? '—' }}</template>
                 </AppTableColumn>
               </AppDataTable>
@@ -2206,19 +2206,19 @@ const menuPageTitle = useMenuPageTitle()
                 <AppTableColumn label="样本">
                   <template #default="{ row }"><b>{{ row.seg }}</b><span class="opt-range">{{ row.range[0] }}~{{ row.range[1] }}</span></template>
                 </AppTableColumn>
-                <AppTableColumn label="累计收益" align="right">
+                <AppTableColumn label="累计收益" role="number">
                   <template #default="{ row }"><span :class="row.total_return >= 0 ? 'up' : 'down'">{{ pct(row.total_return) }}</span></template>
                 </AppTableColumn>
-                <AppTableColumn label="超额" align="right">
+                <AppTableColumn label="超额" role="number">
                   <template #default="{ row }"><span :class="row.excess_return >= 0 ? 'up' : 'down'">{{ pct(row.excess_return) }}</span></template>
                 </AppTableColumn>
-                <AppTableColumn label="最大回撤" align="right">
+                <AppTableColumn label="最大回撤" role="number">
                   <template #default="{ row }">{{ pct(row.max_drawdown) }}</template>
                 </AppTableColumn>
-                <AppTableColumn label="夏普" align="right">
+                <AppTableColumn label="夏普" role="number">
                   <template #default="{ row }">{{ num(row.sharpe) }}</template>
                 </AppTableColumn>
-                <AppTableColumn label="胜率" align="right">
+                <AppTableColumn label="胜率" role="number">
                   <template #default="{ row }">{{ pct(row.win_rate) }}</template>
                 </AppTableColumn>
               </AppDataTable>
@@ -2239,7 +2239,7 @@ const menuPageTitle = useMenuPageTitle()
               <b :class="{ base: row.isBase }">{{ row.name }}</b>
             </template>
           </AppTableColumn>
-          <AppTableColumn v-for="lk in layerKeys" :key="lk.key" :label="lk.label" role="number" align="center">
+          <AppTableColumn v-for="lk in layerKeys" :key="lk.key" :label="lk.label" role="comparison-number">
             <template #default="{ row }">
               <template v-if="row.cells[lk.key] && row.cells[lk.key].hit_rate != null">
                 <span class="hit">{{ (row.cells[lk.key].hit_rate * 100).toFixed(1) }}%</span>

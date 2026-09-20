@@ -1069,7 +1069,6 @@ const menuPageTitle = useMenuPageTitle()
               prop="pct_today"
               sortable="custom"
               role="number"
-              align="right"
             >
               <template #default="{ row }">
                 <strong class="app-data-text" :class="pctClass(row.pct_today)">{{ fmtPct(row.pct_today) }}</strong>
@@ -1081,7 +1080,6 @@ const menuPageTitle = useMenuPageTitle()
               prop="pct_5d"
               sortable="custom"
               role="number"
-              align="right"
             >
               <template #default="{ row }">
                 <strong
@@ -1097,7 +1095,6 @@ const menuPageTitle = useMenuPageTitle()
               prop="pct_10d"
               sortable="custom"
               role="number"
-              align="right"
             >
               <template #default="{ row }">
                 <strong
@@ -1113,7 +1110,6 @@ const menuPageTitle = useMenuPageTitle()
               prop="pct_20d"
               sortable="custom"
               role="number"
-              align="right"
             >
               <template #default="{ row }">
                 <strong
@@ -1129,7 +1125,6 @@ const menuPageTitle = useMenuPageTitle()
               prop="net_inflow"
               sortable="custom"
               role="number"
-              align="right"
             >
               <template #default="{ row }">
                 <strong
@@ -1145,7 +1140,6 @@ const menuPageTitle = useMenuPageTitle()
               prop="net_inflow_3d"
               sortable="custom"
               role="number"
-              align="right"
             >
               <template #default="{ row }">
                 <strong
@@ -1160,7 +1154,6 @@ const menuPageTitle = useMenuPageTitle()
               prop="net_inflow_5d"
               sortable="custom"
               role="number"
-              align="right"
             >
               <template #default="{ row }">
                 <strong
@@ -1175,7 +1168,6 @@ const menuPageTitle = useMenuPageTitle()
               prop="net_inflow_10d"
               sortable="custom"
               role="number"
-              align="right"
             >
               <template #default="{ row }">
                 <strong
@@ -1190,7 +1182,6 @@ const menuPageTitle = useMenuPageTitle()
               prop="net_inflow_20d"
               sortable="custom"
               role="number"
-              align="right"
             >
               <template #default="{ row }">
                 <strong

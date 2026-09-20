@@ -147,7 +147,7 @@ describe('自适应表格列', () => {
     expect(resolveActionColumnWidth(144, [160.2])).toBe(161)
   })
 
-  it('操作列默认统一居中，并允许页面显式覆盖对齐方式', async () => {
+  it('所有语义列统一推导表头和单元格对齐，并忽略调用方手写覆盖', async () => {
     const wrapper = mount(AppTableColumn, {
       props: { label: '操作', role: 'action' },
       global: { stubs: { ElTableColumn: ElTableColumnStub } },
@@ -157,16 +157,54 @@ describe('自适应表格列', () => {
     expect(wrapper.get('.column').attributes('data-header-align')).toBe('center')
 
     await wrapper.setProps({ role: 'text' })
-    expect(wrapper.get('.column').attributes('data-align')).toBeUndefined()
-    expect(wrapper.get('.column').attributes('data-header-align')).toBeUndefined()
+    expect(wrapper.get('.column').attributes('data-align')).toBe('left')
+    expect(wrapper.get('.column').attributes('data-header-align')).toBe('left')
+
+    await wrapper.setProps({ role: 'number' })
+    expect(wrapper.get('.column').attributes('data-align')).toBe('right')
+    expect(wrapper.get('.column').attributes('data-header-align')).toBe('right')
+    expect(wrapper.get('.column').attributes('data-class-name')).toContain(
+      'app-table-column--tabular',
+    )
+
+    await wrapper.setProps({ role: 'comparison-number' })
+    expect(wrapper.get('.column').attributes('data-align')).toBe('center')
+    expect(wrapper.get('.column').attributes('data-header-align')).toBe('center')
+    expect(wrapper.get('.column').attributes('data-class-name')).toContain(
+      'app-table-column--tabular',
+    )
+
+    await wrapper.setProps({ role: 'status' })
+    expect(wrapper.get('.column').attributes('data-align')).toBe('center')
+    expect(wrapper.get('.column').attributes('data-header-align')).toBe('center')
 
     const overridden = mount(AppTableColumn, {
       props: { label: '操作', role: 'action-compact' },
       attrs: { align: 'right', 'header-align': 'left' },
       global: { stubs: { ElTableColumn: ElTableColumnStub } },
     })
-    expect(overridden.get('.column').attributes('data-align')).toBe('right')
-    expect(overridden.get('.column').attributes('data-header-align')).toBe('left')
+    expect(overridden.get('.column').attributes('data-align')).toBe('center')
+    expect(overridden.get('.column').attributes('data-header-align')).toBe('center')
+  })
+
+  it.each([
+    ['structural', 'center'],
+    ['rank', 'center'],
+    ['code', 'left'],
+    ['name', 'left'],
+    ['entity', 'left'],
+    ['status', 'center'],
+    ['number', 'right'],
+    ['comparison-number', 'center'],
+    ['date', 'left'],
+    ['datetime', 'left'],
+    ['key', 'left'],
+    ['text', 'left'],
+    ['description', 'left'],
+    ['action', 'center'],
+    ['action-compact', 'center'],
+  ] as const)('%s 角色使用 %s 对齐', (role, align) => {
+    expect(resolveAdaptiveColumnWidth({ role })).toMatchObject({ role, align })
   })
 
   it('操作列取所有已渲染行最低需求的最大值', async () => {
@@ -203,8 +241,8 @@ describe('自适应表格列', () => {
       leadingControls: 2,
     })).toMatchObject({
       role: 'entity',
-      minWidth: 208,
-      headerIndent: 56,
+      minWidth: 216,
+      headerIndent: 64,
     })
   })
 
@@ -308,9 +346,9 @@ describe('自适应表格列', () => {
       },
     })
 
-    expect(wrapper.get('.column').attributes('data-min-width')).toBe('208')
+    expect(wrapper.get('.column').attributes('data-min-width')).toBe('216')
     expect(wrapper.get('.app-table-column-header').attributes('style')).toContain(
-      '--app-table-column-header-indent: 56px',
+      '--app-table-column-header-indent: 64px',
     )
   })
 

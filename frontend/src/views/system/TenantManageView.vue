@@ -391,7 +391,7 @@ const menuPageTitle = useMenuPageTitle()
           <AppTableColumn v-if="colVisible('admin')" label="租户管理员">
             <template #default="{ row }">{{ row.admin_account || '—' }}</template>
           </AppTableColumn>
-          <AppTableColumn v-if="colVisible('userCount')" label="用户数" prop="userCount" align="right" sortable="custom">
+          <AppTableColumn v-if="colVisible('userCount')" label="用户数" prop="userCount" role="number" sortable="custom">
             <template #default="{ row }">{{ row.user_count ?? 0 }}</template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('created')" label="创建时间" prop="created" sortable="custom">

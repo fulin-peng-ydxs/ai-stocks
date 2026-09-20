@@ -49,6 +49,9 @@ const forwardedAttrs = computed(() => {
     'min-width': _kebabMinWidth,
     className: _className,
     'class-name': _kebabClassName,
+    align: _align,
+    headerAlign: _headerAlign,
+    'header-align': _kebabHeaderAlign,
     showOverflowTooltip: _showOverflowTooltip,
     'show-overflow-tooltip': _kebabShowOverflowTooltip,
     ...rest
@@ -72,16 +75,11 @@ const resolvedColumnClassName = computed(() => [
   attrs.className,
   attrs['class-name'],
   isActionColumn.value ? ACTION_COLUMN_CLASS : undefined,
+  ['number', 'comparison-number', 'rank'].includes(sizing.value.role)
+    ? 'app-table-column--tabular'
+    : undefined,
   overflowAware.value ? OVERFLOW_AWARE_COLUMN_CLASS : undefined,
 ].filter(Boolean).join(' '))
-const resolvedAlign = computed(() => (
-  typeof attrs.align === 'string' ? attrs.align : (isActionColumn.value ? 'center' : undefined)
-))
-const resolvedHeaderAlign = computed(() => (
-  typeof attrs['header-align'] === 'string'
-    ? attrs['header-align']
-    : (isActionColumn.value ? 'center' : undefined)
-))
 const resolvedWidth = computed(() => {
   const defaultWidth = sizing.value.width
   if (!isActionColumn.value || defaultWidth === undefined) return defaultWidth
@@ -127,8 +125,8 @@ const headerStyle = computed(() => ({
     :width="resolvedWidth"
     :min-width="sizing.minWidth"
     :class-name="resolvedColumnClassName"
-    :align="resolvedAlign"
-    :header-align="resolvedHeaderAlign"
+    :align="sizing.align"
+    :header-align="sizing.align"
   >
     <template v-if="$slots.header" #header="scope">
       <slot name="header" v-bind="scope ?? {}" />
