@@ -20,6 +20,7 @@ const theme: StockChartTheme = {
   area: '#area',
   up: '#red',
   down: '#green',
+  volumeNeutral: '#neutral-volume',
   series: {
     kline: { ma5: '#orange', ma10: '#1', ma20: '#2', ma30: '#3', ma60: '#4' },
     volume: { ma5: '#5', ma10: '#6' },
@@ -95,7 +96,7 @@ describe('buildIntradayOption', () => {
     expect((option.yAxis[0].min + option.yAxis[0].max) / 2).toBeCloseTo(9.8)
   })
 
-  it('缺失有效分钟开盘价时按上一分钟收盘判断量柱，首点使用中性色', () => {
+  it('分时量柱始终按上一分钟收盘判断，首点按昨收判断', () => {
     const fallbackPoints = points.map((point, index) => ({
       ...point,
       open: 0,
@@ -104,7 +105,24 @@ describe('buildIntradayOption', () => {
     const option = buildIntradayOption({ points: fallbackPoints, preClose: 10, theme }) as any
 
     expect(option.series[2].data.map((item: any) => item.itemStyle.color))
-      .toEqual(['#label', '#green', '#green'])
+      .toEqual(['#red', '#green', '#green'])
+  })
+
+  it('当前分钟与上一分钟收盘价相等时使用中性色量柱', () => {
+    const flatPoints = [
+      ...points,
+      {
+        ...points[2]!,
+        time: '13:02',
+        open: 9.95,
+        volume: 12,
+        amount: 12_000,
+      },
+    ]
+    const option = buildIntradayOption({ points: flatPoints, preClose: 9.8, theme }) as any
+
+    expect(option.series[2].data.at(-1).itemStyle.color).toBe('#neutral-volume')
+    expect(option.series[2].emphasis).toEqual({ disabled: true })
   })
 
   it('按画布高度为共享标题栏预留固定空间，并保持紧凑双图间距', () => {

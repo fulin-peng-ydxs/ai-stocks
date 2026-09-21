@@ -292,6 +292,8 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
       buildStockVolumeBarSeries({
         data: points,
         theme,
+        directionReference: 'previous-close',
+        initialReference: preClose,
         name: '成交量',
         xAxisIndex: 1,
         yAxisIndex: 2,

@@ -22,6 +22,7 @@ import {
 import {
   KLINE_MA_DEFINITIONS,
   obstructionAwareTooltipPosition,
+  stockChartTheme,
   stockVolumeRatioAt,
   VOLUME_MA_DEFINITIONS,
   type StockChartTheme,
@@ -40,6 +41,7 @@ const theme: StockChartTheme = {
   area: '#area',
   up: '#up',
   down: '#down',
+  volumeNeutral: '#neutral-volume',
   series: {
     kline: {
       ma5: '#ma5',
@@ -87,6 +89,11 @@ function bar(date: string, close = 10): Bar {
 }
 
 describe('workspaceOptions', () => {
+  it('平盘分时量柱在浅色主题使用灰色、黑色主题使用白色', () => {
+    expect(stockChartTheme(false).volumeNeutral).toBe('#73757d')
+    expect(stockChartTheme(true).volumeNeutral).toBe('#ffffff')
+  })
+
   it('按交易日而非数组位置对齐行情和指标', () => {
     const bars = [bar('2026-07-21'), bar('2026-07-22')]
     const indicators: IndicatorRow[] = [

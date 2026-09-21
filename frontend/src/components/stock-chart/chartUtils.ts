@@ -31,6 +31,7 @@ export interface StockChartSeriesPalette {
 export interface StockChartTheme extends EChartsTheme {
   up: string
   down: string
+  volumeNeutral: string
   series: StockChartSeriesPalette
 }
 
@@ -106,6 +107,7 @@ export function stockChartTheme(isDark: boolean): StockChartTheme {
     ...base,
     up,
     down,
+    volumeNeutral: isDark ? '#ffffff' : base.label,
     series: trainingChartSeriesPalette(isDark),
   }
 }
@@ -176,7 +178,9 @@ interface StockVolumeDatum {
 
 interface StockVolumeBarSeriesInput {
   data: readonly StockVolumeDatum[]
-  theme: Pick<StockChartTheme, 'up' | 'down' | 'label'>
+  theme: Pick<StockChartTheme, 'up' | 'down' | 'label' | 'volumeNeutral'>
+  directionReference?: 'open' | 'previous-close'
+  initialReference?: number | null
   name?: string
   barWidth?: string
   barMaxWidth?: number
@@ -184,7 +188,7 @@ interface StockVolumeBarSeriesInput {
   yAxisIndex?: number
 }
 
-/** 日线与分时共用的量能柱构造，统一涨跌判定、序列名称和柱形参数入口。 */
+/** 日线与分时共用量柱外形；方向参考值由调用方按日线或分时口径显式声明。 */
 export function buildStockVolumeBarSeries(input: StockVolumeBarSeriesInput) {
   return {
     name: input.name ?? '量能',
@@ -193,13 +197,17 @@ export function buildStockVolumeBarSeries(input: StockVolumeBarSeriesInput) {
     ...(input.yAxisIndex == null ? {} : { yAxisIndex: input.yAxisIndex }),
     ...(input.barWidth == null ? {} : { barWidth: input.barWidth }),
     ...(input.barMaxWidth == null ? {} : { barMaxWidth: input.barMaxWidth }),
+    emphasis: { disabled: true },
     data: input.data.map((item, index) => {
-      const reference = item.open != null && item.open > 0
-        ? item.open
-        : input.data[index - 1]?.close
+      const previousClose = index > 0 ? input.data[index - 1]?.close : input.initialReference
+      const reference = input.directionReference === 'previous-close'
+        ? previousClose
+        : item.open != null && item.open > 0 ? item.open : previousClose
       const color = reference == null
         ? input.theme.label
-        : item.close >= reference ? input.theme.up : input.theme.down
+        : item.close === reference
+          ? input.directionReference === 'previous-close' ? input.theme.volumeNeutral : input.theme.up
+          : item.close > reference ? input.theme.up : input.theme.down
       return { value: item.volume, itemStyle: { color } }
     }),
   }

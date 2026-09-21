@@ -165,6 +165,14 @@ onBeforeUnmount(() => {
   height: 100%;
 }
 
+/*
+ * 分时量柱在缩放画布中可能落到半像素，SVG 默认抗锯齿会让同一填充色呈现深浅差。
+ * 仅对有填充的柱形路径做设备像素对齐；价格、均价和网格等无填充线条保持平滑。
+ */
+.stock-intraday-chart__canvas :deep(path[fill]:not([fill='none'])) {
+  shape-rendering: crispEdges;
+}
+
 .stock-intraday-chart__header {
   position: absolute;
   z-index: 2;
