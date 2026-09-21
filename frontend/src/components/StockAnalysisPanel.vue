@@ -493,6 +493,7 @@ onBeforeUnmount(() => {
         :zoom-end="100"
         aria-label="股票K线多图联动工作区"
         enable-intraday-drilldown
+        enable-return-measurement
         @ratio-draft="emit('ratioDraft', $event)"
         @ratio-commit="emit('ratioCommit', $event)"
         @workspace-resize="emit('workspaceResize', $event)"

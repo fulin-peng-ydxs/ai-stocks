@@ -1334,6 +1334,7 @@ const menuPageTitle = useMenuPageTitle()
               :zoom-start="0"
               :zoom-end="100"
               aria-label="板块指数多图联动工作区"
+              enable-return-measurement
               @ratio-draft="chartPreferences.handleRatioDraft"
               @ratio-commit="chartPreferences.handleRatioCommit"
               @workspace-resize="chartPreferences.handleWorkspaceResize"

@@ -12,9 +12,9 @@ import {
 import * as echarts from 'echarts'
 import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import type { Bar, IndicatorRow } from '@/api/stocks'
-import AppControlItem from '@/components/AppControlItem.vue'
-import AppControlRow from '@/components/AppControlRow.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import ChartOperationBar from '@/components/ChartOperationBar.vue'
+import ChartOperationGroup from '@/components/ChartOperationGroup.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { useStatusColorPalette } from '@/components/chartTheme'
@@ -145,7 +145,7 @@ const props = withDefaults(defineProps<{
   showKlineTooltip: true,
   enableReturnMeasurement: false,
   returnMeasurementMode: 'latest',
-  measurementOperationsExpanded: true,
+  measurementOperationsExpanded: false,
 })
 
 const emit = defineEmits<{
@@ -924,28 +924,24 @@ onBeforeUnmount(() => {
             </div>
           </template>
         </StockChartPanelHeader>
-        <div
+        <ChartOperationBar
           v-if="panel.type === 'kline' && measurementControlsVisible && measurementOperationsExpanded"
           :id="`${groupId}-kline-operations`"
-          class="stock-chart-operation-bar"
-          role="toolbar"
-          aria-label="K线图表操作"
+          label="K线图表操作"
         >
-          <AppControlRow justify="start" class="stock-chart-operation-bar__actions">
-            <slot name="operation-actions" />
-            <AppControlItem label="涨跌测算" class="stock-chart-operation-group">
-              <PageSegmented
-                :model-value="measurementMode"
-                :options="MEASUREMENT_MODE_OPTIONS"
-                size="small"
-                tone="primary"
-                test-id="stock-chart-measurement-mode"
-                aria-label="区间涨跌测算模式"
-                @update:model-value="setMeasurementMode"
-              />
-            </AppControlItem>
-          </AppControlRow>
-        </div>
+          <slot name="operation-actions" />
+          <ChartOperationGroup label="涨跌测算">
+            <PageSegmented
+              :model-value="measurementMode"
+              :options="MEASUREMENT_MODE_OPTIONS"
+              size="small"
+              tone="primary"
+              test-id="stock-chart-measurement-mode"
+              aria-label="区间涨跌测算模式"
+              @update:model-value="setMeasurementMode"
+            />
+          </ChartOperationGroup>
+        </ChartOperationBar>
         <div class="stock-chart-panel__body">
           <div
             v-if="panel.type === 'kline' && measurementVisible"
@@ -1048,31 +1044,6 @@ onBeforeUnmount(() => {
   gap: var(--app-space-1);
 }
 
-.stock-chart-operation-bar {
-  flex: 0 0 auto;
-  padding: var(--app-space-1) var(--app-space-3);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  background: var(--el-bg-color);
-}
-
-.stock-chart-operation-bar__actions {
-  width: 100%;
-}
-
-.stock-chart-operation-group {
-  box-sizing: border-box;
-  height: var(--app-control-height-sm);
-  padding: 1px 1px 1px var(--app-space-2);
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--layout-control-radius);
-  background: var(--app-section-bg);
-}
-
-.stock-chart-operation-group :deep(.app-control-item__label) {
-  font-size: var(--app-font-size-caption);
-  line-height: var(--app-line-height-caption);
-}
-
 .stock-chart-measurement__result {
   position: absolute;
   z-index: 2;
@@ -1109,16 +1080,6 @@ onBeforeUnmount(() => {
 
 .stock-chart-measurement__return.is-down {
   color: var(--market-down-color);
-}
-
-.stock-chart-operation-bar :deep(.page-segmented) {
-  flex: 0 0 auto;
-  height: var(--app-control-height-xs);
-  padding: 1px;
-}
-
-.stock-chart-operation-bar :deep(.page-segmented .seg-btn) {
-  padding-inline: var(--app-space-control-gap);
 }
 
 .stock-chart-panel__body {

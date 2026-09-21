@@ -48,7 +48,7 @@ function mountPanel(overrides: Record<string, unknown> = {}) {
       plugins: [ElementPlus],
       stubs: {
         StockCompareChart: { name: 'StockCompareChart', props: ['series', 'activeCode', 'benchmark', 'calendar', 'metric', 'rangeDays'], template: '<div class="stock-compare-chart-stub" />' },
-        StockChartWorkspace: { name: 'StockChartWorkspace', props: { bars: Array, indicators: Array, adjustLabel: String, macdAdjustLabel: String, enableIntradayDrilldown: Boolean }, emits: ['barClick'], template: '<button class="stock-chart-workspace-stub" @click="$emit(\'barClick\', \'2026-08-07\')" />' },
+        StockChartWorkspace: { name: 'StockChartWorkspace', props: { bars: Array, indicators: Array, adjustLabel: String, macdAdjustLabel: String, enableIntradayDrilldown: Boolean, enableReturnMeasurement: Boolean }, emits: ['barClick'], template: '<button class="stock-chart-workspace-stub" @click="$emit(\'barClick\', \'2026-08-07\')" />' },
         StockIntradayDialog: { name: 'StockIntradayDialog', props: ['modelValue', 'code', 'name', 'tradeDate'], emits: ['update:modelValue'], template: '<div class="intraday-dialog-stub" :data-open="modelValue" :data-date="tradeDate" />' },
         KlineRangeSelect: true,
       },
@@ -113,11 +113,12 @@ describe('StockAnalysisPanel', () => {
     expect(wrapper.find('[data-testid="stock-analysis-retry-partial"]').exists()).toBe(false)
   })
 
-  it('K线模式启用分时下钻并把蜡烛日期交给共享弹窗', async () => {
+  it('K线模式启用分时下钻与涨跌测算，并把蜡烛日期交给共享弹窗', async () => {
     const wrapper = mountPanel({ mode: 'kline' })
     await flushPromises()
     const workspace = wrapper.findComponent({ name: 'StockChartWorkspace' })
     expect(workspace.props('enableIntradayDrilldown')).toBe(true)
+    expect(workspace.props('enableReturnMeasurement')).toBe(true)
 
     await workspace.trigger('click')
     const dialog = wrapper.findComponent({ name: 'StockIntradayDialog' })

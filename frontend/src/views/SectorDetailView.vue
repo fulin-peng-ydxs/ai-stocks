@@ -574,6 +574,7 @@ onMounted(async () => {
                   :zoom-end="100"
                   fit-available-height
                   aria-label="板块指数 K 线与量能联动工作区"
+                  enable-return-measurement
                   @ratio-draft="chartPreferences.handleRatioDraft"
                   @ratio-commit="chartPreferences.handleRatioCommit"
                   @workspace-resize="chartPreferences.handleWorkspaceResize"

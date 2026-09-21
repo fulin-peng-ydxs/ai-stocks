@@ -361,14 +361,15 @@ describe('StockChartWorkspace', () => {
     const wrapper = await mountWorkspace({
       enableReturnMeasurement: true,
       enableIntradayDrilldown: true,
+      measurementOperationsExpanded: true,
     })
     const kline = echartsMock.instances[0]
 
     expect(wrapper.find('.stock-chart-measurement__result').exists()).toBe(false)
-    expect(wrapper.find('.stock-chart-operation-bar').exists()).toBe(true)
-    expect(wrapper.get('.stock-chart-operation-bar__actions').classes())
+    expect(wrapper.find('.chart-operation-bar').exists()).toBe(true)
+    expect(wrapper.get('.chart-operation-bar__actions').classes())
       .toContain('is-justify-start')
-    expect(wrapper.get('.stock-chart-operation-group').text()).toContain('涨跌测算')
+    expect(wrapper.get('.chart-operation-group').text()).toContain('涨跌测算')
     expect(wrapper.get('[data-testid="stock-chart-measurement-mode-latest"]').text()).toBe('截止')
     expect(wrapper.get('[data-testid="stock-chart-measurement-mode-range"]').text()).toBe('区间')
     expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(true)
@@ -395,13 +396,13 @@ describe('StockChartWorkspace', () => {
     expect(wrapper.text()).toContain('33个交易日')
 
     await wrapper.get('[data-testid="stock-chart-toggle-operations"]').trigger('click')
-    expect(wrapper.find('.stock-chart-operation-bar').exists()).toBe(false)
+    expect(wrapper.find('.chart-operation-bar').exists()).toBe(false)
     expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(false)
     expect(wrapper.find('.stock-chart-measurement__result').exists()).toBe(true)
     expect(wrapper.find('.stock-chart-panel__date').text()).toBe('2026-06-07')
     expect(wrapper.emitted('update:measurementOperationsExpanded')).toEqual([[false]])
     await wrapper.get('[data-testid="stock-chart-toggle-operations"]').trigger('click')
-    expect(wrapper.find('.stock-chart-operation-bar').exists()).toBe(true)
+    expect(wrapper.find('.chart-operation-bar').exists()).toBe(true)
 
     const latestOption = kline.setOption.mock.calls.at(-1)?.[0]
     expect(latestOption.series[0].markArea).toBeUndefined()
@@ -465,12 +466,12 @@ describe('StockChartWorkspace', () => {
       returnMeasurementMode: 'range',
     })
 
-    expect(wrapper.find('.stock-chart-operation-bar').exists()).toBe(false)
+    expect(wrapper.find('.chart-operation-bar').exists()).toBe(false)
     expect(wrapper.get('[data-testid="stock-chart-toggle-operations"]').attributes('aria-expanded'))
       .toBe('false')
 
     await wrapper.setProps({ measurementOperationsExpanded: true })
-    expect(wrapper.find('.stock-chart-operation-bar').exists()).toBe(true)
+    expect(wrapper.find('.chart-operation-bar').exists()).toBe(true)
     expect(wrapper.get('[data-testid="stock-chart-measurement-mode-range"]')
       .attributes('aria-pressed')).toBe('true')
 
