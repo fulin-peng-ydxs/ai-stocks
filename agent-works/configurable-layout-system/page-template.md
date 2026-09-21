@@ -273,7 +273,7 @@ const drawerConfig = {
 | 破坏性确认 | `ElMessageBox` | 当前交互上下文 | 明确动作与对象；不使用表单弹窗模拟确认 |
 | 短表单、单组编辑、轻量查看 | `AppDialog` | 当前 `LayoutHost` 内容区 | 只用 `compact/narrow/medium/large/xlarge/max/workspace` 语义档位；普通表单不得使用 `workspace`；页面不得直接使用 `el-dialog` |
 | 完整业务详情、长编辑、历史版本 | `AppDetailDrawer` | 当前 `LayoutHost` 内容区 | 基于 `PageDrawer`；统一标题、四态、正文和 footer；内容使用 `AppDetailSection` 与 `AppDetailFields/Field`，禁止私有详情网格和 `el-descriptions` |
-| 实时日志、资产搜索、窄屏工作区回退 | `PageDrawer` | 当前 `LayoutHost` 内容区 | 仅专用交互模型可直接使用；宽度只用 `sm/md/lg/xl/xxl/wide/full` 语义档位；页面不得传 px/% |
+| 实时日志、资产搜索、窄屏工作区回退 | `PageDrawer` | 当前 `LayoutHost` 内容区 | 仅专用交互模型可直接使用；宽度只用 `xs/sm/md/lg/xl/xxl/wide/full` 语义档位；页面不得传 px/% |
 | 页面右上角设置入口 | `PageSettingsDrawer` | 当前 `LayoutHost` 内容区 | 内部复用 `PageDrawer`；固定承载布局、组件设置和业务选项；抽屉根部控制一级分组，嵌套父分组自动控制自己的直接子分组 |
 | 应用顶栏的用户中心、外观等全局能力 | 应用外壳中的 `el-drawer` | 整个视口 | 仅允许在 `App.vue` 等应用外壳使用，不属于业务页面模板 |
 
@@ -296,7 +296,7 @@ AppDialog
 
 页面设置抽屉不开放“允许折叠”和“默认折叠段”配置。首次使用全部展开；用户逐组折叠或使用抽屉根部一键操作后，统一记忆当前顶层折叠态。每个存在直接子分组的 `SettingsGroup` 由共享折叠树自动显示本层一键操作；父级收起直接子节点即可隐藏其子树，重新展开时保留更深层原状态。页面不得覆写这套策略、手工枚举子节点或添加第二套批量折叠入口。
 
-抽屉层级禁止依靠字体逐级缩小：抽屉标题使用 18px，一级分类 15px，二级及更深节点统一 14px，事项名 13px，辅助说明 12px；所有可折叠节点使用箭头，并以最多两档缩进和纵向结构线表达父子关系。业务分区使用 `PageSettingSection`，它仅是 `SettingsGroup level=2` 的语义薄封装；设置事项统一使用 `PageSettingItem`，开关等短控件可选行内布局，页面不得复制 `.setting-item/.setting-label`。
+抽屉层级禁止依靠字体逐级缩小：标准抽屉标题统一消费 `PageDrawer` 标准标题档或 `.app-drawer-title` 的 16px / 600 / 24px；只有嵌入局部工作区且空间受限的工具抽屉可声明 `compact`，使用 15px / 600 / 22px；副标题统一消费 `.app-drawer-subtitle` 的 12px / 400 / 18px。页面设置中的一级分类为 15px，二级及更深节点统一 14px，事项名 13px，辅助说明 12px；所有可折叠节点使用箭头，并以最多两档缩进和纵向结构线表达父子关系。业务分区使用 `PageSettingSection`，它仅是 `SettingsGroup level=2` 的语义薄封装；设置事项统一使用 `PageSettingItem`，开关等短控件可选行内布局，页面不得复制 `.setting-item/.setting-label`。
 
 ### 6.2 页面骨架
 

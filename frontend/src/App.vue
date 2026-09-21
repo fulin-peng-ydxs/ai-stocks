@@ -612,7 +612,7 @@ async function onLogout() {
     <el-drawer v-model="userDrawerVisible" direction="rtl" size="440px" class="user-drawer">
       <div class="drawer-card">
         <header class="drawer-head">
-          <span class="drawer-title">用户中心</span>
+          <span class="drawer-title app-drawer-title">用户中心</span>
           <AppIconButton class="drawer-close" label="关闭用户中心" size="sm" @click="userDrawerVisible = false">
             <el-icon><Close /></el-icon>
           </AppIconButton>
@@ -645,8 +645,8 @@ async function onLogout() {
       <div class="drawer-card">
         <header class="drawer-head drawer-head--appearance">
           <div>
-            <div class="drawer-title">视觉环境</div>
-            <div class="drawer-subtitle">调整界面比例、阅读光线与导航方式</div>
+            <div class="drawer-title app-drawer-title">视觉环境</div>
+            <div class="drawer-subtitle app-drawer-subtitle">调整界面比例、阅读光线与导航方式</div>
           </div>
           <AppIconButton class="drawer-close" label="关闭视觉环境" size="sm" @click="appearanceDrawerVisible = false">
             <el-icon><Close /></el-icon>
@@ -1251,15 +1251,11 @@ button.topbar-status:focus-visible {
   gap: var(--app-space-3);
 }
 .drawer-title {
-  font-size: var(--app-font-size-section-title);
-  font-weight: var(--app-font-weight-strong);
   color: var(--page-settings-text);
   flex: none;
 }
 .drawer-subtitle {
-  margin-top: 3px;
   color: var(--page-settings-text-muted);
-  font-size: var(--app-font-size-caption);
 }
 .drawer-close {
   color: var(--page-settings-text-muted);

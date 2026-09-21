@@ -56,6 +56,8 @@ describe('PageSegmented', () => {
 
     expect(wrapper.classes()).toContain('page-segmented--tabs')
     expect(wrapper.get('.seg-btn.active').text()).toBe('日K')
+    expect(source).toMatch(/\.page-segmented--tabs \.seg-btn\s*\{[\s\S]*?font-size:\s*var\(--app-font-size-table\)[\s\S]*?font-weight:\s*var\(--app-font-weight-regular\)/)
+    expect(source).toMatch(/\.page-segmented--tabs \.seg-btn\.active,[\s\S]*?font-weight:\s*var\(--app-font-weight-section\)/)
     await wrapper.findAll('.seg-btn')[1].trigger('click')
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['week'])
   })

@@ -42,6 +42,7 @@ describe('PageDrawer 页面边界', () => {
     const page = wrapper.get('.v-page').element
     const overlay = document.querySelector('.el-overlay.page-drawer-modal')
     expect(overlay).not.toBeNull()
+    expect(overlay?.classList.contains('page-drawer-modal--title-standard')).toBe(true)
     expect(page.contains(overlay)).toBe(true)
     expect(overlay?.parentElement).not.toBe(document.body)
     expect((document.querySelector('.el-drawer') as HTMLElement)?.style.width)
@@ -114,5 +115,19 @@ describe('PageDrawer 页面边界', () => {
       wide: 'clamp(560px, 46%, 760px)',
       full: '100%',
     })
+  })
+
+  it('标题默认消费标准档，并允许局部工具抽屉声明紧凑档', async () => {
+    const wrapper = mount(PageDrawer, {
+      attachTo: document.body,
+      props: { modelValue: true, title: '局部工具', titleSize: 'compact' },
+      global: { plugins: [ElementPlus] },
+    })
+    await nextTick()
+    await nextTick()
+
+    expect(document.querySelector('.el-overlay.page-drawer-modal--title-compact')).not.toBeNull()
+
+    wrapper.unmount()
   })
 })

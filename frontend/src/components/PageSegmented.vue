@@ -159,7 +159,8 @@ function optionTestId(value: OptionValue): string | undefined {
   background: transparent;
   box-shadow: none;
   color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-body);
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-regular);
 }
 .page-segmented--tabs .seg-btn::after {
   content: '';
@@ -182,6 +183,7 @@ function optionTestId(value: OptionValue): string | undefined {
   background: transparent;
   box-shadow: none;
   color: var(--el-text-color-primary);
+  font-weight: var(--app-font-weight-section);
 }
 .page-segmented--tabs.page-segmented--primary .seg-btn.active::after {
   background: var(--el-color-primary);

@@ -115,6 +115,7 @@ body > .el-notification {
   --app-font-size-page-title: 22px;
   --app-font-size-page-title-sm: 20px;
   --app-font-size-title-md: 18px;
+  --app-font-size-drawer-title: 16px;
   --app-font-size-section-title: 15px;
   --app-font-size-kpi-xl: 32px;
   --app-font-size-kpi-lg: 26px;
@@ -130,6 +131,7 @@ body > .el-notification {
   --app-state-icon-size: 64px;
   --app-line-height-page-title: 30px;
   --app-line-height-title-md: 26px;
+  --app-line-height-drawer-title: 24px;
   --app-line-height-kpi-xl: 38px;
   --app-line-height-kpi-lg: 32px;
   --app-line-height-section-title: 22px;
@@ -485,6 +487,24 @@ html.dark {
   font-size: var(--app-font-size-section-title);
   line-height: var(--app-line-height-section-title);
   font-weight: var(--app-font-weight-section);
+}
+.app-drawer-title {
+  margin: 0;
+  color: var(--el-text-color-primary);
+  font-size: var(--app-font-size-drawer-title);
+  line-height: var(--app-line-height-drawer-title);
+  font-weight: var(--app-font-weight-section);
+}
+.app-drawer-title--compact {
+  font-size: var(--app-font-size-section-title);
+  line-height: var(--app-line-height-section-title);
+}
+.app-drawer-subtitle {
+  margin: var(--app-space-1) 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
+  font-weight: var(--app-font-weight-regular);
 }
 .app-body-text {
   color: var(--el-text-color-regular);

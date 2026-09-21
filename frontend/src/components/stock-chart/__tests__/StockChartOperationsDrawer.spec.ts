@@ -46,10 +46,11 @@ describe('StockChartOperationsDrawer', () => {
     const host = wrapper.get('.chart-host').element
     const overlay = document.querySelector('.el-overlay.stock-chart-operations-modal')
     expect(overlay).not.toBeNull()
+    expect(overlay?.classList.contains('page-drawer-modal--title-compact')).toBe(true)
     expect(host.contains(overlay)).toBe(true)
     expect(document.querySelector('.stock-chart-operations-drawer')?.textContent)
       .toContain('涨跌测算截止区间')
-    expect((document.querySelector('.el-drawer') as HTMLElement)?.style.width).toBe('280px')
+    expect((document.querySelector('.el-drawer') as HTMLElement)?.style.width).toBe('320px')
 
     wrapper.unmount()
   })

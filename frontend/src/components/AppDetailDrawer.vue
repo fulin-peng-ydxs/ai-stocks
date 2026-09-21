@@ -42,8 +42,8 @@ const emit = defineEmits<{
     <template #header>
       <div class="app-detail-drawer__header">
         <div class="app-detail-drawer__heading">
-          <h2>{{ title }}</h2>
-          <p v-if="subtitle">{{ subtitle }}</p>
+          <h2 class="app-drawer-title">{{ title }}</h2>
+          <p v-if="subtitle" class="app-drawer-subtitle">{{ subtitle }}</p>
           <slot name="header-meta" />
         </div>
         <div v-if="$slots['header-actions']" class="app-detail-drawer__header-actions">
@@ -78,18 +78,6 @@ const emit = defineEmits<{
   gap: var(--app-space-4);
 }
 .app-detail-drawer__heading { min-width: 0; }
-.app-detail-drawer__heading h2 {
-  margin: 0;
-  color: var(--el-text-color-primary);
-  font-size: var(--app-font-size-title-md);
-  line-height: var(--app-line-height-title-md);
-}
-.app-detail-drawer__heading p {
-  margin: var(--app-space-1) 0 0;
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-caption);
-  line-height: var(--app-line-height-comfy);
-}
 .app-detail-drawer__header-actions,
 .app-detail-drawer__footer {
   display: flex;

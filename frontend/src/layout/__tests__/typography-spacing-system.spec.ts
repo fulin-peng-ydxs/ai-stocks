@@ -32,12 +32,27 @@ function styleBlocks(file: string): string[] {
 
 describe('字体与间距设计契约', () => {
   it('页面设置抽屉以稳定字体角色和结构线表达层级', () => {
+    const globalCss = read(join(SRC_DIR, 'styles/global.css'))
     const drawer = read(join(SRC_DIR, 'components/PageSettingsDrawer.vue'))
+    const detailDrawer = read(join(SRC_DIR, 'components/AppDetailDrawer.vue'))
+    const appShell = read(join(SRC_DIR, 'App.vue'))
     const group = read(join(SRC_DIR, 'components/SettingsGroup.vue'))
     const section = read(join(SRC_DIR, 'components/PageSettingSection.vue'))
     const item = read(join(SRC_DIR, 'components/PageSettingItem.vue'))
 
-    expect(drawer).toContain('font-size: var(--app-font-size-title-md)')
+    expect(globalCss).toContain('--app-font-size-drawer-title: 16px')
+    expect(globalCss).toContain('--app-line-height-drawer-title: 24px')
+    expect(globalCss).toMatch(/\.app-drawer-title\s*\{[\s\S]*?font-size: var\(--app-font-size-drawer-title\)[\s\S]*?font-weight: var\(--app-font-weight-section\)/)
+    expect(globalCss).toMatch(/\.app-drawer-title--compact\s*\{[\s\S]*?font-size: var\(--app-font-size-section-title\)/)
+    expect(globalCss).toMatch(/\.app-drawer-subtitle\s*\{[\s\S]*?font-size: var\(--app-font-size-caption\)/)
+    expect(drawer).toContain('class="ps-title app-drawer-title"')
+    expect(drawer).not.toMatch(/\.ps-title\s*\{[^}]*font-size:/)
+    expect(detailDrawer).toContain('<h2 class="app-drawer-title">')
+    expect(detailDrawer).toContain('class="app-drawer-subtitle"')
+    expect(detailDrawer).not.toMatch(/\.app-detail-drawer__heading h2\s*\{/)
+    expect(appShell).toContain('class="drawer-title app-drawer-title"')
+    expect(appShell).toContain('class="drawer-subtitle app-drawer-subtitle"')
+    expect(appShell).not.toMatch(/\.drawer-title\s*\{[^}]*font-size:/)
     expect(group).toContain("'sg-nested': level > 1")
     expect(group).toContain('border-left: 1px solid var(--page-settings-section-border)')
     expect(group).toContain('font-size: var(--app-font-size-body)')

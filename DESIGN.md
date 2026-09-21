@@ -108,13 +108,14 @@ Key Characteristics：
 
 - token 落地在 `frontend/src/styles/global.css`，包括 `--app-font-family-base`、`--app-font-size-*`、`--app-line-height-*`、`--app-font-weight-*`。
 - 页面私有样式不得新增游离字体族；除品牌字标、登录主视觉、代码/配置值、图表 tooltip 外，必须继承 `body` 的 `--app-font-family-base`。
-- 新增文字样式必须先判断是否能消费 `.app-page-title`、`.app-section-title`、`.app-body-text`、`.app-caption-text`、`.app-micro-text`、`.app-data-text`、`.app-data-emphasis` 或对应 token。
+- 新增文字样式必须先判断是否能消费 `.app-page-title`、`.app-section-title`、`.app-drawer-title`、`.app-drawer-subtitle`、`.app-body-text`、`.app-caption-text`、`.app-micro-text`、`.app-data-text`、`.app-data-emphasis` 或对应 token。
 - 常规行高使用表内 token；图标/徽标贴边用 `--app-line-height-solid`，紧凑说明用 `--app-line-height-compact` / `--app-line-height-comfy`，长说明用 `--app-line-height-reading` / `--app-line-height-longform`，极小角标用 `--app-line-height-ornament` / `--app-line-height-tiny`。
 
 | 层级 | 强制 token / 值 | 使用场景 |
 |---|---|---|
 | 页面标题 | `--app-font-size-page-title` 22px / 700 / 30px；紧凑页可用 20px | 页面主标题、工作台名称、配置中心一级标题 |
-| 分区标题 | `--app-font-size-section-title` 15px / 600 / 22px；抽屉或大面板可用 18px | 卡片标题、抽屉标题、配置组标题 |
+| 分区标题 | `--app-font-size-section-title` 15px / 600 / 22px | 卡片标题、配置组标题、局部紧凑工具抽屉标题 |
+| 标准抽屉标题 | `--app-font-size-drawer-title` 16px / 600 / 24px | 页面详情、页面设置、全局功能抽屉标题 |
 | 正文 | `--app-font-size-body` 14px / 400 / 22px | 表单、普通说明、主体内容 |
 | 表格正文 | 默认 `--app-font-size-table` 13px / 400 / 20px；不高于 `1.5dppx` 的低像素密度屏幕使用 14px / 22px | 数据表格、列表、密集参数行 |
 | 辅助标签 | `--app-font-size-caption` 12px / 400 / 18px | 单位、提示、来源、次级说明、tag 内文 |
@@ -131,7 +132,8 @@ Key Characteristics：
 - 页面主体新增 `font-size`、`line-height`、`font-weight` 时必须引用上述 token 或语义类；直接写 px/数字只允许在以下特例：品牌字标、登录主视觉、图表 canvas/tooltip、第三方组件适配、极窄状态点/角标、图标尺寸。特例必须是局部私有，不得被复制为普通页面模式。
 - 10px 以下只允许使用 `--app-font-size-ornament` 或 `--app-icon-size-xs`，用于图标内部标记、红点角标或不可读正文之外的装饰性标尺；不得用于业务说明、表格、表单、按钮、筛选项。
 - 11px 只用于弱标签或极窄 chrome 信息；业务内容、表格单元格、表单 label、按钮文案不得小于 12px。
-- 页面设置抽屉的字体按语义角色固定：抽屉标题 18px，一级分类 15px，二级及更深可折叠节点统一 14px，事项名 13px，辅助说明 12px。禁止按 DOM 深度继续缩小节点字号，也不得通过全大写、字距或虚下划线代替真实层级；页面密度只调整间距，不改写这套字体角色。
+- 页面设置抽屉的字体按语义角色固定：抽屉标题 16px，一级分类 15px，二级及更深可折叠节点统一 14px，事项名 13px，辅助说明 12px。禁止按 DOM 深度继续缩小节点字号，也不得通过全大写、字距或虚下划线代替真实层级；页面密度只调整间距，不改写这套字体角色。
+- 抽屉标题统一消费 `PageDrawer` 的标题档位或 `.app-drawer-title`：标准抽屉使用 16px / 600 / 24px，嵌入局部工作区且空间受限的工具抽屉可声明 `compact`，使用 15px / 600 / 22px；副标题统一消费 `.app-drawer-subtitle` 的 12px / 400 / 18px。禁止依赖 Element Plus、原生标题标签默认字号字重或页面私有字号。
 - 微字号（`--app-font-size-micro`/`tiny`/`ornament`）不得通过无 `>` 限定的宽泛后代选择器（如 `.xx span`、`.xx strong`）声明——此类规则会把它误传给嵌套的数值、标题等本不该用小字号的元素。微字号只允许作用于语义类、`:global` 或 `>` 限定的直接子级；容器用常规字号，内部小字通过独立子级规则声明。该约束由 `typography-spacing-system.spec.ts` 强制，禁止用 `>` 缺失的选择器绕过。
 - 表格内长文本默认省略、tooltip 或详情承接，不默认自动换行撑高行高。
 - 单块纯文本说明优先进入 `HelpHint` 的 tooltip；需要标题、分段、列表、示例或同时解释多个独立要点时使用 `HelpTip` 的 popover。`HelpHint` 长文必须在共享浮层中换行并限制视口内最大宽度，不得撑成横跨页面的单行提示。`HelpTip` 的默认插槽只放 `HelpTipItem`，每个独立说明项固定两层：传 `question="具体问题文本"` 时，第一行显示该问题文本并由组件追加冒号；传 `warning` 时，第一行固定显示“注意：”并消费当前视觉预设的 `--app-warning-text`。第二行的全部内容无论长短都必须使用语义化 `ul/li`，由组件统一渲染为以 `.` 开头的无序列表。同一项必须且只能在 `question` 与 `warning` 中选择一个，调用方不得自行拼接标签、冒号、列表符号、颜色或项间距。页面上只保留必要短标签，不以字符数作为两者的硬边界。
@@ -261,7 +263,7 @@ Key Characteristics：
 |---|---|---|---|---|
 | `PageSettingsDrawer` | `frontend/src/components/PageSettingsDrawer.vue` | 统一页面设置抽屉运行时组件 | 对应 `settings-drawer` 种类；仅 `size` 用户偏好走 PG `user_preference`，`bodyScroll` 只允许 page 层；分组固定可折叠，首次全部展开，当前折叠态作为内部用户偏好记忆 | `supportsPageSettings !== false` 的 registry 页面统一使用；抽屉根部控制一级分组，每个存在下级的可折叠分组自动控制自己的直接子分组；父级收起只隐藏子树、不重置更深层状态；禁止页面另写第二套设置抽屉 |
 | `PageSettingsTrigger` | `frontend/src/components/PageSettingsTrigger.vue` | 页面设置统一入口 | 触发 registry 页面中的 `settings-drawer` | 仅 `pageRegistry.supportsPageSettings !== false` 的真实消费页面显示；平台布局管理页不开放个人设置，不登记假入口 |
-| `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 页面级抽屉底层边界组件 | 无直接系统组件种类 | 为 `AppDetailDrawer`、`PageSettingsDrawer` 和专用抽屉统一提供 `LayoutHost` 挂载、遮罩、滚动与宽度边界；直接消费只限实时日志、资产搜索和主从窄屏回退等专用场景；宽度只传 `xs/sm/md/lg/xl/xxl/wide/full` 语义档位，禁止页面私传 px/% 或覆盖应用顶栏与导航 |
+| `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 页面级抽屉底层边界组件 | 无直接系统组件种类 | 为 `AppDetailDrawer`、`PageSettingsDrawer` 和专用抽屉统一提供 `LayoutHost` 挂载、遮罩、滚动、标题语义与宽度边界；直接消费只限实时日志、资产搜索和主从窄屏回退等专用场景；标题默认使用标准档，局部工具抽屉才声明 `compact`；宽度只传 `xs/sm/md/lg/xl/xxl/wide/full` 语义档位，禁止页面私传 px/% 或覆盖应用顶栏与导航 |
 | `AppDialog` | `frontend/src/components/AppDialog.vue` | 页面短表单、单组编辑和轻量查看的统一弹窗外壳 | 无直接系统组件种类；内部消费 `el-dialog` | 业务代码只传 `compact/narrow/medium/large/xlarge/max/workspace` 语义宽度；普通表单最大使用 `max`，`workspace` 只用于图表或宽表；统一挂载到当前 `LayoutHost`，禁止业务代码直接使用 `el-dialog` 或传 px/% |
 | `AppDetailDrawer` | `frontend/src/components/AppDetailDrawer.vue` | 完整详情、长编辑、历史版本和审计上下文的统一抽屉结构 | 无直接系统组件种类；内部消费 `PageDrawer` | 统一标题、副标题、头部动作、`ready/loading/empty/error/permission` 四态、正文和 footer；普通业务详情必须使用，只有实时日志、资产搜索、页面设置和主从窄屏回退等专用场景可直接消费 `PageDrawer` |
 | `AppDetailSection` / `AppDetailFields` / `AppDetailField` | `frontend/src/components/AppDetailSection.vue`、`frontend/src/components/AppDetailFields.vue`、`frontend/src/components/AppDetailField.vue` | 详情分区和规则型键值展示 | 无直接系统组件种类；作为详情抽屉或页面详情的内容结构 | 分区标题、说明和动作使用 `AppDetailSection`；1–3 列键值使用 `AppDetailFields`，低宽度按容器自动单列；字段使用 `AppDetailField`，空值统一 `—`，长值可跨列、代码值可等宽；禁止复制私有详情网格或使用 `el-descriptions` |
@@ -271,7 +273,7 @@ Key Characteristics：
 | `PageSettingSection` | `frontend/src/components/PageSettingSection.vue` | 页面设置业务选项分区 | 无直接系统组件种类 | 仅作为 `SettingsGroup level=2` 的业务语义薄封装，不得维护第二套标题、折叠或间距样式 |
 | `PageSettingItem` | `frontend/src/components/PageSettingItem.vue` | 设置抽屉的事项名、控件与辅助说明布局 | 无直接系统组件种类 | 组件设置和业务选项的字段块统一复用；默认堆叠，开关或短数值可用 `layout="inline"`；事项名固定 13px；较长的单块纯文本说明统一传 `hint`，由组件收成 `HelpHint` 并在受控宽度内换行，不得缩小字号常驻铺陈或由页面复制 `.setting-item/.setting-label`；含标题、分段、列表或多要点时由调用方使用 `HelpTip` / `HelpTipItem` |
 | `ConfigPanelSection` | `frontend/src/components/config/ConfigPanelSection.vue` | 主内容区配置面板的可折叠分组容器 | 对应 `config-panel` 种类；读取 `collapsibleSections`、`defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | 系统设置等主面板配置分组优先复用；配置项中可作为单块纯文本理解的说明/默认值放 `HelpHint`，需要结构化排版时改用 `HelpTip`；一级组说明在组头展示，二级分区说明随分区内容一起展开/收起 |
-| `PageSegmented` | `frontend/src/components/PageSegmented.vue` | 页面设置和业务偏好的分段选择控件 | 无直接系统组件种类 | 业务选项、组件设置中的枚举选择优先复用；默认 `contained` 使用连续底板与基础边框，选中项在组内浮起，不把选项渲染成彼此分散的独立按钮；轻量视图切换通过 `variant="tabs"` 使用无底板文字与选中下划线，但继续复用同一组选项、禁用态、测试锚点和 `aria-pressed` 契约；页面级模式/范围切换使用 `tone="primary"` 跟随系统主色，局部工具与设置枚举保持默认中性色；固定操作区使用 `small`，设置抽屉与表单使用默认尺寸；只读资产使用 `disabled` 保留真实选中项并禁止切换；多组并列使用时由消费页提供可访问名称 |
+| `PageSegmented` | `frontend/src/components/PageSegmented.vue` | 页面设置和业务偏好的分段选择控件 | 无直接系统组件种类 | 业务选项、组件设置中的枚举选择优先复用；默认 `contained` 使用连续底板与基础边框，选中项在组内浮起，不把选项渲染成彼此分散的独立按钮；轻量视图切换通过 `variant="tabs"` 使用无底板文字与选中下划线，文字固定为表格正文 13px，未选中使用常规字重、选中使用分区字重，避免与同排标题争夺层级；同时继续复用同一组选项、禁用态、测试锚点和 `aria-pressed` 契约；页面级模式/范围切换使用 `tone="primary"` 跟随系统主色，局部工具与设置枚举保持默认中性色；固定操作区使用 `small`，设置抽屉与表单使用默认尺寸；只读资产使用 `disabled` 保留真实选中项并禁止切换；多组并列使用时由消费页提供可访问名称 |
 | `PageSettingsApplyButton` | `frontend/src/components/PageSettingsApplyButton.vue` | 设置抽屉采用当前页面值的统一按钮 | 无直接系统组件种类 | “使用/采用页面当前值”统一复用，固定为主题主色 `primary + plain` 和整行宽度；当前页面值与已保存载荷无实质差异时禁用，提交函数二次拒绝无变化请求；持久化期间必须绑定真实 `loading`、在组件边界拒绝重复点击，并在成功或失败后释放；保存失败统一通过 `ElMessage.error` 明确提示并保留当前值供重试；不得在字段组件内复制按钮颜色、宽度、边距或保存状态样式 |
 | `BoardTaskScopeFields` | `frontend/src/components/data/BoardTaskScopeFields.vue` | 板块采集范围和分阶段参数组 | 无直接系统组件种类 | 数据采集与任务调度的板块任务统一复用；模式、板块类型、采集内容、增量当日退级和成分强刷文案/参数不得在消费页再维护第二套 |
 | `CurrentDayFallbackField` | `frontend/src/components/data/CurrentDayFallbackField.vue` | 增量行情的当日退级开关 | 无直接系统组件种类 | 个股与板块增量采集统一复用；保持普通表单背景与复选框样式，仅在支持当日退级的增量方案中展示 |

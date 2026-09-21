@@ -12,8 +12,10 @@ const props = withDefaults(defineProps<{
   modelValue: boolean
   modalClass?: string
   size?: PageDrawerSize
+  titleSize?: 'standard' | 'compact'
 }>(), {
   size: 'md',
+  titleSize: 'standard',
 })
 
 const emit = defineEmits<{
@@ -32,6 +34,7 @@ if (import.meta.env.DEV && pageTarget == null) {
 const appendTarget = computed(() => pageTarget?.value ?? 'body')
 const modalClassName = computed(() => [
   'page-drawer-modal',
+  `page-drawer-modal--title-${props.titleSize}`,
   props.size === 'full' ? 'page-drawer-modal--full' : '',
   props.modalClass,
 ].filter(Boolean).join(' '))
@@ -60,6 +63,17 @@ const drawerWidth = computed(() => PAGE_DRAWER_WIDTHS[props.size])
 /* PageDrawer teleport 到 LayoutHost 根节点；absolute 让遮罩严格服从页面边界，而非视口。 */
 .el-overlay.page-drawer-modal {
   position: absolute;
+}
+.el-overlay.page-drawer-modal .el-drawer__title {
+  margin: 0;
+  color: var(--el-text-color-primary);
+  font-size: var(--app-font-size-drawer-title);
+  line-height: var(--app-line-height-drawer-title);
+  font-weight: var(--app-font-weight-section);
+}
+.el-overlay.page-drawer-modal--title-compact .el-drawer__title {
+  font-size: var(--app-font-size-section-title);
+  line-height: var(--app-line-height-section-title);
 }
 .el-overlay.page-drawer-modal--full .el-drawer {
   width: 100% !important;
