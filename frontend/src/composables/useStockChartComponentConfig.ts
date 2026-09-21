@@ -19,6 +19,7 @@ import {
   normalizeSectorAnalysisPreferences,
   type SectorAnalysisComponentPreferences,
 } from '@/composables/useSectorAnalysisPreferences'
+import type { KlinePeriod } from '@/components/stock-chart/klinePeriod'
 
 interface StockChartComponentConfigAccess {
   slotId?: string
@@ -50,9 +51,10 @@ export function useStockChartComponentConfig(access: StockChartComponentConfigAc
     get: () => normalizeSectorAnalysisPreferences(access.componentValueOf(slotId, 'sectorAnalysis')),
     set: (value) => access.setComponentKnob(slotId, 'sectorAnalysis', value),
   })
-  const measurementOperationsExpanded = useDefaultedSessionValue(computed(() => (
-    access.componentValueOf(slotId, 'measurementOperationsExpanded') === true
-  )))
+  const klinePeriod = useDefaultedSessionValue(computed<KlinePeriod>(() => {
+    const value = access.componentValueOf(slotId, 'klinePeriod')
+    return value === 'week' || value === 'month' || value === 'year' ? value : 'day'
+  }))
   const returnMeasurementMode = useDefaultedSessionValue(computed<'latest' | 'range'>(() => (
     access.componentValueOf(slotId, 'returnMeasurementMode') === 'range' ? 'range' : 'latest'
   )))
@@ -131,7 +133,7 @@ export function useStockChartComponentConfig(access: StockChartComponentConfigAc
     ...preferences,
     stockAnalysis,
     sectorAnalysis,
-    measurementOperationsExpanded,
+    klinePeriod,
     returnMeasurementMode,
     setAuxiliaryChart,
     handleRatioDraft,

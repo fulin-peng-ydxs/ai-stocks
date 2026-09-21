@@ -15,6 +15,7 @@ import PageSegmented from '@/components/PageSegmented.vue'
 import StockCompareChart from '@/components/StockCompareChart.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import StockIntradayDialog from '@/components/stock-chart/StockIntradayDialog.vue'
+import type { KlinePeriod } from '@/components/stock-chart/klinePeriod'
 import type { StockChartWorkspaceSample } from '@/components/stock-chart/workspaceOptions'
 import { ALL_DAYS } from '@/composables/useKlinePrefs'
 import { useStockIntradayDrilldown } from '@/composables/useStockIntradayDrilldown'
@@ -49,7 +50,7 @@ const props = withDefaults(defineProps<{
   slot3: AuxiliaryChartType
   heightRatios: number[]
   returnMeasurementMode?: 'latest' | 'range'
-  measurementOperationsExpanded?: boolean
+  klinePeriod?: KlinePeriod
   canOpenDetail?: boolean
   refreshRevision?: number
 }>(), {
@@ -57,7 +58,7 @@ const props = withDefaults(defineProps<{
   canOpenDetail: true,
   refreshRevision: 0,
   returnMeasurementMode: 'latest',
-  measurementOperationsExpanded: false,
+  klinePeriod: 'day',
 })
 
 const emit = defineEmits<{
@@ -67,7 +68,7 @@ const emit = defineEmits<{
   'update:benchmarkCode': [value: string]
   'update:klineRange': [value: number]
   'update:returnMeasurementMode': [value: 'latest' | 'range']
-  'update:measurementOperationsExpanded': [value: boolean]
+  'update:klinePeriod': [value: KlinePeriod]
   activate: [code: string]
   remove: [code: string]
   openDetail: []
@@ -500,10 +501,11 @@ onBeforeUnmount(() => {
         aria-label="股票K线多图联动工作区"
         enable-intraday-drilldown
         enable-return-measurement
+        enable-kline-period-switch
         :return-measurement-mode="returnMeasurementMode"
-        :measurement-operations-expanded="measurementOperationsExpanded"
+        :kline-period="klinePeriod"
         @update:return-measurement-mode="emit('update:returnMeasurementMode', $event)"
-        @update:measurement-operations-expanded="emit('update:measurementOperationsExpanded', $event)"
+        @update:kline-period="emit('update:klinePeriod', $event)"
         @ratio-draft="emit('ratioDraft', $event)"
         @ratio-commit="emit('ratioCommit', $event)"
         @workspace-resize="emit('workspaceResize', $event)"

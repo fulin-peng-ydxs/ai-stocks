@@ -578,14 +578,18 @@ def test_component_config_rejects_fields_not_applicable_to_slot_instance(client)
         )
 
 
-def test_return_measurement_component_defaults_require_enabled_chart_instance(client):
+def test_chart_period_and_return_measurement_defaults_require_enabled_chart_instance(client):
     repo = LayoutConfigRepo(client)
     layout = {
         "slots": [
             {
                 "id": "chart",
                 "component": "chart",
-                "config": {"stockChart": {}, "returnMeasurement": True},
+                "config": {
+                    "stockChart": {},
+                    "returnMeasurement": True,
+                    "multiPeriodKline": True,
+                },
             }
         ]
     }
@@ -593,7 +597,7 @@ def test_return_measurement_component_defaults_require_enabled_chart_instance(cl
         "stock-detail",
         {
             "values": {
-                "slots.chart.config.measurementOperationsExpanded": True,
+                "slots.chart.config.klinePeriod": "week",
                 "slots.chart.config.returnMeasurementMode": "range",
             }
         },
@@ -601,9 +605,16 @@ def test_return_measurement_component_defaults_require_enabled_chart_instance(cl
         layout=layout,
     )
     assert saved["config"]["values"] == {
-        "slots.chart.config.measurementOperationsExpanded": True,
+        "slots.chart.config.klinePeriod": "week",
         "slots.chart.config.returnMeasurementMode": "range",
     }
+    with pytest.raises(LayoutConfigValidationError, match="未登记的组件配置项"):
+        repo.set_user_config(
+            "stock-detail",
+            {"values": {"slots.chart.config.measurementOperationsExpanded": True}},
+            user_id="u1",
+            layout=layout,
+        )
     with pytest.raises(LayoutConfigValidationError, match="取值非法"):
         repo.set_user_config(
             "stock-detail",
@@ -787,6 +798,7 @@ def test_effective_config_filters_stale_user_component_layer(client):
             json.dumps({
                 "slots.settings.config.bodyScroll": False,
                 "slots.settings.config.defaultCollapsed": ["layout"],
+                "slots.chart.config.measurementOperationsExpanded": True,
             }, ensure_ascii=False),
             1,
         ],
@@ -797,9 +809,14 @@ def test_effective_config_filters_stale_user_component_layer(client):
         assert eff["values"]["slots.settings.config.bodyScroll"] is True
         assert eff["source"]["slots.settings.config.bodyScroll"] == "page"
         assert "slots.settings.config.defaultCollapsed" not in eff["values"]
+        assert "slots.chart.config.measurementOperationsExpanded" not in eff["values"]
         user_layer = next(layer for layer in eff["layers"] if layer["layer"] == "user")
         assert "slots.settings.config.bodyScroll" not in user_layer["config"]["values"]
         assert "slots.settings.config.defaultCollapsed" not in user_layer["config"]["values"]
+        assert (
+            "slots.chart.config.measurementOperationsExpanded"
+            not in user_layer["config"]["values"]
+        )
     finally:
         repo.pg.execute(
             "DELETE FROM layout_user_config WHERE user_id=%s AND page_key=%s",

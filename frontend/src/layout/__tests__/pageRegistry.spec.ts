@@ -1506,7 +1506,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
     }
   })
 
-  it('启用涨跌测算的图表统一登记并消费操作栏默认值', () => {
+  it('常规行情图表统一登记并消费 K 线周期与测算默认值', () => {
     const enabledPages = PAGE_REGISTRY
       .filter((entry) => entry.layout.slots.some((slot) => slot.config?.returnMeasurement === true))
       .map((entry) => entry.pageKey)
@@ -1525,21 +1525,21 @@ describe('组件消费关系与配置一致性（P4）', () => {
       const entry = PAGE_REGISTRY.find((candidate) => candidate.pageKey === pageKey)!
       const chart = entry.layout.slots.find((slot) => slot.config?.returnMeasurement === true)!
       const fields = applicableComponentFields(entry, chart.id).map((field) => field.key)
-      expect(fields, pageKey).toContain('measurementOperationsExpanded')
+      expect(fields, pageKey).toContain('klinePeriod')
       expect(fields, pageKey).toContain('returnMeasurementMode')
       const source = sourceForPage(pageKey)
       expect(source, pageKey).toContain(
         'v-model:return-measurement-mode="chartPreferences.returnMeasurementMode.value"',
       )
       expect(source, pageKey).toContain(
-        'v-model:measurement-operations-expanded="chartPreferences.measurementOperationsExpanded.value"',
+        'v-model:kline-period="chartPreferences.klinePeriod.value"',
       )
     }
     for (const pageKey of ['backtest', 'training']) {
       const entry = PAGE_REGISTRY.find((candidate) => candidate.pageKey === pageKey)!
       const chart = entry.layout.slots.find((slot) => slot.component === 'chart')!
       const fields = applicableComponentFields(entry, chart.id).map((field) => field.key)
-      expect(fields, pageKey).not.toContain('measurementOperationsExpanded')
+      expect(fields, pageKey).not.toContain('klinePeriod')
       expect(fields, pageKey).not.toContain('returnMeasurementMode')
     }
   })

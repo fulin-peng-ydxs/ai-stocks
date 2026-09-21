@@ -61,7 +61,11 @@ COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
     "stockChart": {"type": "object", "layers": {"page", "user"}},
     "stockAnalysis": {"type": "object", "layers": {"page", "user"}},
     "sectorAnalysis": {"type": "object", "layers": {"page", "user"}},
-    "measurementOperationsExpanded": {"type": "bool", "layers": {"page", "user"}},
+    "klinePeriod": {
+        "type": "enum",
+        "layers": {"page", "user"},
+        "options": {"day", "week", "month", "year"},
+    },
     "returnMeasurementMode": {
         "type": "enum",
         "layers": {"page", "user"},
@@ -94,7 +98,7 @@ COMPONENT_CONFIG_FIELDS_BY_KIND: dict[str, set[str]] = {
         "stockChart",
         "stockAnalysis",
         "sectorAnalysis",
-        "measurementOperationsExpanded",
+        "klinePeriod",
         "returnMeasurementMode",
         "klineRangePreferences",
     },
@@ -109,6 +113,7 @@ COMPONENT_CONFIG_FIELDS_BY_KIND: dict[str, set[str]] = {
 
 # 同名字段可能因组件种类拥有不同静态值域；动态页面值域不在此表硬编码。
 COMPONENT_CONFIG_OPTIONS_BY_KIND_FIELD: dict[tuple[str, str], set[str]] = {
+    ("chart", "klinePeriod"): {"day", "week", "month", "year"},
     ("chart", "returnMeasurementMode"): {"latest", "range"},
     ("settings-drawer", "size"): {"sm", "md", "lg"},
     ("section", "visibleIndicatorFields"): {
@@ -215,11 +220,17 @@ def check_component_config_ownership(values: dict[str, Any], layout: dict[str, A
             errors.append(f"组件 {kind} 的当前实例不是板块联动走势工作台，不能配置 sectorAnalysis（slot {slot_id}）")
             continue
         if (
-            field in {"measurementOperationsExpanded", "returnMeasurementMode"}
+            field == "returnMeasurementMode"
             and slot_config.get("returnMeasurement") is not True
         ):
             errors.append(
                 f"组件 {kind} 的当前实例未启用涨跌测算，"
+                f"不能配置 {field}（slot {slot_id}）"
+            )
+            continue
+        if field == "klinePeriod" and slot_config.get("multiPeriodKline") is not True:
+            errors.append(
+                f"组件 {kind} 的当前实例未启用多周期 K 线，"
                 f"不能配置 {field}（slot {slot_id}）"
             )
             continue

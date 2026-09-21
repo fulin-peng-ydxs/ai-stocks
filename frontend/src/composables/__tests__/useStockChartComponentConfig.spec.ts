@@ -70,10 +70,10 @@ describe('useStockChartComponentConfig', () => {
     ).heightRatios['kline|volume|macd']).toEqual([0.6, 0.2, 0.2])
   })
 
-  it('把组件登记的测算默认值单向投影为当前页面会话值', async () => {
+  it('把组件登记的周期与测算默认值单向投影为当前页面会话值', async () => {
     const stored = reactive<Record<string, unknown>>({
       stockChart: createDefaultStockChartPreferences(),
-      measurementOperationsExpanded: false,
+      klinePeriod: 'day',
       returnMeasurementMode: 'latest',
     })
     const config = useStockChartComponentConfig({
@@ -82,15 +82,15 @@ describe('useStockChartComponentConfig', () => {
       hydrated: ref(true),
     })
 
-    stored.measurementOperationsExpanded = true
+    stored.klinePeriod = 'week'
     stored.returnMeasurementMode = 'range'
     await nextTick()
-    expect(config.measurementOperationsExpanded.value).toBe(true)
+    expect(config.klinePeriod.value).toBe('week')
     expect(config.returnMeasurementMode.value).toBe('range')
 
-    config.measurementOperationsExpanded.value = false
+    config.klinePeriod.value = 'month'
     config.returnMeasurementMode.value = 'latest'
-    expect(stored.measurementOperationsExpanded).toBe(true)
+    expect(stored.klinePeriod).toBe('week')
     expect(stored.returnMeasurementMode).toBe('range')
   })
 

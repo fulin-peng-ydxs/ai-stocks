@@ -6,20 +6,21 @@ import {
   onBeforeUnmount,
   onDeactivated,
   onMounted,
+  provide,
   ref,
   watch,
 } from 'vue'
 import * as echarts from 'echarts'
-import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
+import { Operation } from '@element-plus/icons-vue'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import AppIconButton from '@/components/AppIconButton.vue'
-import ChartOperationBar from '@/components/ChartOperationBar.vue'
 import ChartOperationGroup from '@/components/ChartOperationGroup.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { useStatusColorPalette } from '@/components/chartTheme'
 import { initVectorEChart } from '@/components/echartsRenderer'
 import type { AuxiliaryChartType, ChartType } from '@/composables/useStockChartPreferences'
+import { PAGE_OVERLAY_TARGET } from '@/layout/pageOverlay'
 import {
   elementVisualScale,
   viewportDeltaToLayoutPixels,
@@ -27,7 +28,9 @@ import {
 import { formatMarketPercent, marketValueClass } from '@/utils/marketValue'
 import StockChartPanelDivider from './StockChartPanelDivider.vue'
 import StockChartPanelHeader from './StockChartPanelHeader.vue'
+import StockChartLegend from './StockChartLegend.vue'
 import type { StockChartLegendItem } from './StockChartLegend.vue'
+import StockChartOperationsDrawer from './StockChartOperationsDrawer.vue'
 import {
   KLINE_MA_DEFINITIONS,
   STOCK_CHART_GRID_SIDE,
@@ -38,9 +41,15 @@ import {
 } from './chartUtils'
 import { useStockChartTheme } from './useStockChartTheme'
 import {
-  AUXILIARY_MIN_HEIGHT,
+  KLINE_PERIOD_LINE_LABELS,
+  KLINE_PERIOD_OPTIONS,
+  buildKlinePeriodSeries,
+  tradingDaysBetween,
+  type KlinePeriod,
+  type PeriodBar,
+} from './klinePeriod'
+import {
   KEYBOARD_RATIO_STEP,
-  KLINE_MIN_HEIGHT,
   SPLITTER_SIZE,
   WORKSPACE_MIN_HEIGHT,
   adjustAdjacentRatios,
@@ -130,7 +139,8 @@ const props = withDefaults(defineProps<{
   showKlineTooltip?: boolean
   enableReturnMeasurement?: boolean
   returnMeasurementMode?: MeasurementMode
-  measurementOperationsExpanded?: boolean
+  enableKlinePeriodSwitch?: boolean
+  klinePeriod?: KlinePeriod
 }>(), {
   warmupBars: () => [],
   indicators: () => [],
@@ -149,7 +159,8 @@ const props = withDefaults(defineProps<{
   showKlineTooltip: true,
   enableReturnMeasurement: false,
   returnMeasurementMode: 'latest',
-  measurementOperationsExpanded: false,
+  enableKlinePeriodSwitch: false,
+  klinePeriod: 'day',
 })
 
 const emit = defineEmits<{
@@ -160,7 +171,7 @@ const emit = defineEmits<{
   activeBarChange: [bar: Bar | null]
   workspaceResize: [sample: StockChartWorkspaceSample | undefined]
   'update:returnMeasurementMode': [mode: MeasurementMode]
-  'update:measurementOperationsExpanded': [expanded: boolean]
+  'update:klinePeriod': [period: KlinePeriod]
 }>()
 
 defineSlots<{
@@ -170,6 +181,7 @@ defineSlots<{
 
 const groupId = nextStockChartWorkspaceGroupId()
 const workspaceEl = ref<HTMLElement | null>(null)
+provide(PAGE_OVERLAY_TARGET, workspaceEl)
 const chartElements = new Map<WorkspacePanelKey, HTMLElement>()
 const charts = new Map<WorkspacePanelKey, echarts.ECharts>()
 const theme = useStockChartTheme()
@@ -177,7 +189,9 @@ const statusPalette = useStatusColorPalette()
 const activeIndex = ref<number | null>(null)
 const klinePointerInside = ref(false)
 const measurementMode = ref<MeasurementMode>(props.returnMeasurementMode)
-const measurementOperationsExpanded = ref(props.measurementOperationsExpanded)
+const selectedPeriod = ref<KlinePeriod>(props.klinePeriod)
+const operationsDrawerOpen = ref(false)
+const operationsTrigger = ref<HTMLElement | null>(null)
 const rangeStartIndex = ref<number | null>(null)
 const rangeEndIndex = ref<number | null>(null)
 const liveRatios = ref<number[]>([])
@@ -189,6 +203,7 @@ let bottomSliderVisible: boolean | undefined
 let lastDisplayScale = 0
 let lastWorkspaceState = ''
 let workspaceReportedAvailable = false
+let connectedChartSignature = ''
 
 const panels = computed<PanelDescriptor[]>(() => {
   const next: PanelDescriptor[] = [{ key: 'kline', type: 'kline' }]
@@ -208,7 +223,20 @@ const effectiveMinHeight = computed(() => {
     Number.isFinite(requested) && requested > 0 ? requested : fallback,
   )
 })
-const rows = computed(() => alignStockChartRows(props.bars, props.indicators))
+const effectivePeriod = computed<KlinePeriod>(() => (
+  props.enableKlinePeriodSwitch ? selectedPeriod.value : 'day'
+))
+const periodLineLabel = computed(() => KLINE_PERIOD_LINE_LABELS[effectivePeriod.value])
+const periodSeries = computed(() => buildKlinePeriodSeries(
+  props.bars,
+  props.warmupBars,
+  props.indicators,
+  effectivePeriod.value,
+))
+const rows = computed(() => alignStockChartRows(
+  periodSeries.value.bars,
+  periodSeries.value.indicators,
+))
 const ratios = computed(() => constrainWorkspaceRatios(
   liveRatios.value.length ? liveRatios.value : props.heightRatios,
   minimumRatios(),
@@ -274,7 +302,7 @@ const measurementPresentation = computed(() => {
     return {
       headline,
       returnText: formatMarketPercent(measurementReturn.value),
-      note: `${Math.max(0, endIndex - startIndex)}个交易日`,
+      note: `${tradingDaysBetween(periodSeries.value.bars, startIndex, endIndex)}个交易日`,
     }
   }
   if (rangeStartIndex.value == null) {
@@ -294,7 +322,7 @@ const measurementPresentation = computed(() => {
   if (!start || !end) {
     return { headline: '自选区间', returnText: '—', note: '' }
   }
-  const days = Math.max(0, endIndex - startIndex)
+  const days = tradingDaysBetween(periodSeries.value.bars, startIndex, endIndex)
   return {
     headline: `${start} → ${end}`,
     returnText: formatMarketPercent(measurementReturn.value),
@@ -305,6 +333,10 @@ const measurementPresentation = computed(() => {
 })
 
 const measurementTone = computed(() => marketValueClass(measurementReturn.value))
+
+function panelDisplayTitle(type: ChartType): string {
+  return panelTitle(type, props.adjustLabel, props.macdAdjustLabel, periodLineLabel.value)
+}
 
 function panelMetrics(type: ChartType): Metric[] {
   if (!rows.value.length) {
@@ -320,12 +352,12 @@ function panelMetrics(type: ChartType): Metric[] {
     return ['MACD', 'DIFF', 'DEA'].map((label) => ({ label, value: '--' }))
   }
   if (type === 'kline') {
-    return klineMetrics(rows.value, props.warmupBars, metricIndex.value)
+    return klineMetrics(rows.value, periodSeries.value.warmupBars, metricIndex.value)
   }
   if (type === 'volume') {
-    return volumeMetrics(rows.value, props.warmupBars, metricIndex.value)
+    return volumeMetrics(rows.value, periodSeries.value.warmupBars, metricIndex.value)
   }
-  if (props.macdState !== 'ready') {
+  if (effectivePeriod.value === 'day' && props.macdState !== 'ready') {
     return ['MACD', 'DIFF', 'DEA'].map((label) => ({ label, value: '--' }))
   }
   return macdMetrics(rows.value, metricIndex.value)
@@ -380,7 +412,7 @@ function chartOption(panel: PanelDescriptor, isBottom: boolean) {
   }
   const context = {
     rows: rows.value,
-    warmupBars: props.warmupBars,
+    warmupBars: periodSeries.value.warmupBars,
     theme: theme.value,
     isBottom,
     panelHeight,
@@ -389,7 +421,7 @@ function chartOption(panel: PanelDescriptor, isBottom: boolean) {
     markers: props.markers,
     buyMarkerColor: statusPalette.value.primary,
     sellMarkerColor: statusPalette.value.warning,
-    clickableCandles: props.enableIntradayDrilldown,
+    clickableCandles: props.enableIntradayDrilldown && effectivePeriod.value === 'day',
     showKlineTooltip: props.showKlineTooltip,
     measurementRange: measurementChartRange.value,
     candlestickRect,
@@ -403,7 +435,11 @@ function chartOption(panel: PanelDescriptor, isBottom: boolean) {
 function onChartClick(event: { seriesType?: string; dataIndex?: number }): void {
   // 自选区间由整个绘图区接管，避免细蜡烛或均线遮挡导致难以点中。
   if (props.enableReturnMeasurement && measurementMode.value === 'range') return
-  if (!props.enableIntradayDrilldown || event.seriesType !== 'candlestick') return
+  if (
+    !props.enableIntradayDrilldown
+    || effectivePeriod.value !== 'day'
+    || event.seriesType !== 'candlestick'
+  ) return
   if (typeof event.dataIndex !== 'number') return
   const tradeDate = rows.value[event.dataIndex]?.bar.date
   if (tradeDate) emit('barClick', tradeDate)
@@ -444,7 +480,20 @@ function onAxisPointer(event: {
   const index = stockChartAxisPointerIndex(event, rows.value.map((row) => row.bar.date))
   if (index == null || index === activeIndex.value) return
   activeIndex.value = index
-  emit('activeBarChange', rows.value[index]?.bar ?? null)
+  const activeBar = rows.value[index]?.bar
+  if (!activeBar) {
+    emit('activeBarChange', null)
+  } else if (effectivePeriod.value === 'day') {
+    const {
+      periodStartDate: _periodStartDate,
+      periodEndDate: _periodEndDate,
+      tradingDayCount: _tradingDayCount,
+      ...dailyBar
+    } = activeBar as PeriodBar
+    emit('activeBarChange', dailyBar)
+  } else {
+    emit('activeBarChange', activeBar)
+  }
   if (
     measurementMode.value === 'range'
     && rangeStartIndex.value != null
@@ -478,9 +527,25 @@ function setMeasurementMode(value: string | number | boolean): void {
   refreshKlineChart()
 }
 
-function toggleMeasurementOperations(): void {
-  measurementOperationsExpanded.value = !measurementOperationsExpanded.value
-  emit('update:measurementOperationsExpanded', measurementOperationsExpanded.value)
+function setKlinePeriod(value: string | number | boolean): void {
+  if (value !== 'day' && value !== 'week' && value !== 'month' && value !== 'year') return
+  if (value === selectedPeriod.value) return
+  selectedPeriod.value = value
+  emit('update:klinePeriod', value)
+  activeIndex.value = null
+  rangeStartIndex.value = null
+  rangeEndIndex.value = null
+  emit('activeBarChange', null)
+  zoomRange.value = normalizeZoomRange(props.zoomStart, props.zoomEnd)
+}
+
+function openOperationsDrawer(event: MouseEvent): void {
+  operationsTrigger.value = event.currentTarget as HTMLElement | null
+  operationsDrawerOpen.value = true
+}
+
+function restoreOperationsTriggerFocus(): void {
+  operationsTrigger.value?.focus()
 }
 
 function enterKlinePanel(): void {
@@ -522,8 +587,13 @@ function onDataZoom(sourceKey: WorkspacePanelKey, event: DataZoomEvent): void {
 }
 
 function connectCharts(): void {
-  echarts.disconnect(groupId)
-  if (!active || charts.size < 2) return
+  const signature = active && charts.size >= 2
+    ? [...charts.keys()].sort().join('|')
+    : ''
+  if (signature === connectedChartSignature) return
+  if (connectedChartSignature) echarts.disconnect(groupId)
+  connectedChartSignature = signature
+  if (!signature) return
   charts.forEach((chart) => { chart.group = groupId })
   echarts.connect(groupId)
 }
@@ -643,6 +713,7 @@ function reportWorkspaceUnavailable(): void {
 
 function disposeCharts(): void {
   echarts.disconnect(groupId)
+  connectedChartSignature = ''
   charts.forEach((chart) => chart.dispose())
   charts.clear()
   bottomSliderVisible = undefined
@@ -785,7 +856,11 @@ function separatorMax(index: number): number {
 }
 
 function panelState(panel: PanelDescriptor): MacdPanelState | null {
-  return panel.type === 'macd' && props.macdState !== 'ready' ? props.macdState : null
+  return panel.type === 'macd'
+    && effectivePeriod.value === 'day'
+    && props.macdState !== 'ready'
+    ? props.macdState
+    : null
 }
 
 function stateCopy(state: MacdPanelState) {
@@ -824,9 +899,10 @@ watch(
   },
 )
 watch(
-  () => props.measurementOperationsExpanded,
+  () => props.klinePeriod,
   (value) => {
-    measurementOperationsExpanded.value = value
+    if (value === selectedPeriod.value) return
+    selectedPeriod.value = value
   },
 )
 watch(ratios, () => {
@@ -845,7 +921,7 @@ watch(
   },
 )
 watch(
-  [panels, rows, () => props.warmupBars, () => props.macdState, () => props.markers, theme,
+  [panels, rows, () => periodSeries.value.warmupBars, () => props.macdState, () => props.markers, theme,
   ],
   async () => {
     clearActiveBar()
@@ -913,10 +989,21 @@ onBeforeUnmount(() => {
       @pointerleave="panel.type === 'kline' && leaveKlinePanel()"
       >
         <StockChartPanelHeader
-          :title="panelTitle(panel.type, adjustLabel, macdAdjustLabel)"
-          :items="panelLegendItems(panel.type)"
-          :legend-label="`${panelTitle(panel.type, adjustLabel, macdAdjustLabel)}图例与当前值`"
+          :title="panelDisplayTitle(panel.type)"
+          :items="panel.type === 'kline' ? [] : panelLegendItems(panel.type)"
+          :legend-label="`${panelDisplayTitle(panel.type)}图例与当前值`"
         >
+          <PageSegmented
+            v-if="panel.type === 'kline' && enableKlinePeriodSwitch"
+            class="stock-chart-period-switch"
+            :model-value="effectivePeriod"
+            :options="KLINE_PERIOD_OPTIONS"
+            size="small"
+            tone="primary"
+            test-id="stock-chart-kline-period"
+            aria-label="K线周期"
+            @update:model-value="setKlinePeriod"
+          />
           <template #tail>
             <div
               v-if="panel.type === 'kline'"
@@ -927,39 +1014,29 @@ onBeforeUnmount(() => {
               </time>
               <AppIconButton
                 v-if="measurementControlsVisible"
-                :label="measurementOperationsExpanded ? '收起图表操作' : '展开图表操作'"
-                :aria-expanded="measurementOperationsExpanded"
+                label="图表操作"
+                :aria-expanded="operationsDrawerOpen"
                 :aria-controls="`${groupId}-kline-operations`"
                 data-testid="stock-chart-toggle-operations"
                 size="xs"
                 :native-title="false"
-                @click="toggleMeasurementOperations"
+                @click="openOperationsDrawer"
               >
-                <ArrowUp v-if="measurementOperationsExpanded" />
-                <ArrowDown v-else />
+                <Operation />
               </AppIconButton>
               <slot name="header-actions" />
             </div>
           </template>
         </StockChartPanelHeader>
-        <ChartOperationBar
-          v-if="panel.type === 'kline' && measurementControlsVisible && measurementOperationsExpanded"
-          :id="`${groupId}-kline-operations`"
-          label="K线图表操作"
+        <div
+          v-if="panel.type === 'kline'"
+          class="stock-chart-metric-rail"
         >
-          <slot name="operation-actions" />
-          <ChartOperationGroup label="涨跌测算">
-            <PageSegmented
-              :model-value="measurementMode"
-              :options="MEASUREMENT_MODE_OPTIONS"
-              size="small"
-              tone="primary"
-              test-id="stock-chart-measurement-mode"
-              aria-label="区间涨跌测算模式"
-              @update:model-value="setMeasurementMode"
-            />
-          </ChartOperationGroup>
-        </ChartOperationBar>
+          <StockChartLegend
+            :items="panelLegendItems('kline')"
+            :aria-label="`${panelDisplayTitle('kline')}均线与当前值`"
+          />
+        </div>
         <div class="stock-chart-panel__body">
           <div
             v-if="panel.type === 'kline' && measurementVisible"
@@ -995,7 +1072,7 @@ onBeforeUnmount(() => {
           <div
             :ref="(element) => setChartElement(panel.key, element)"
             class="stock-chart-panel__canvas"
-            :aria-label="`${panelTitle(panel.type, adjustLabel, macdAdjustLabel)}图表`"
+            :aria-label="`${panelDisplayTitle(panel.type)}图表`"
             @pointerenter="panel.type === 'kline' && enterKlinePanel()"
           />
           <div
@@ -1022,7 +1099,7 @@ onBeforeUnmount(() => {
         role="separator"
         tabindex="0"
         aria-orientation="horizontal"
-        :aria-label="`调整${panelTitle(panel.type, adjustLabel, macdAdjustLabel)}与下一幅图高度`"
+        :aria-label="`调整${panelDisplayTitle(panel.type)}与下一幅图高度`"
         :aria-valuemin="separatorMin(index)"
         :aria-valuemax="separatorMax(index)"
         :aria-valuenow="separatorValue(index)"
@@ -1031,14 +1108,36 @@ onBeforeUnmount(() => {
         @keydown="onSeparatorKeydown($event, index)"
       />
     </template>
+
+    <StockChartOperationsDrawer
+      v-if="enableReturnMeasurement"
+      v-model="operationsDrawerOpen"
+      :drawer-id="`${groupId}-kline-operations`"
+      @closed="restoreOperationsTriggerFocus"
+    >
+      <slot name="operation-actions" />
+      <ChartOperationGroup label="涨跌测算">
+        <PageSegmented
+          :model-value="measurementMode"
+          :options="MEASUREMENT_MODE_OPTIONS"
+          size="small"
+          tone="primary"
+          test-id="stock-chart-measurement-mode"
+          aria-label="区间涨跌测算模式"
+          @update:model-value="setMeasurementMode"
+        />
+      </ChartOperationGroup>
+    </StockChartOperationsDrawer>
   </section>
 </template>
 
 <style scoped>
 .stock-chart-workspace {
+  position: relative;
   width: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .stock-chart-panel {
@@ -1060,6 +1159,34 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: var(--app-space-1);
+}
+
+.stock-chart-period-switch {
+  flex: 0 0 auto;
+  width: auto;
+  height: var(--app-control-height-xs);
+  padding: 1px;
+}
+
+.stock-chart-period-switch :deep(.seg-btn) {
+  min-width: 38px;
+  padding-inline: var(--app-space-2);
+}
+
+.stock-chart-metric-rail {
+  box-sizing: border-box;
+  height: 28px;
+  min-height: 28px;
+  padding: 4px var(--app-space-3);
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: var(--el-bg-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.stock-chart-metric-rail :deep(.stock-chart-legend) {
+  width: 100%;
 }
 
 .stock-chart-measurement__result {
@@ -1124,6 +1251,25 @@ onBeforeUnmount(() => {
     display: none;
   }
 
+  .stock-chart-metric-rail :deep(.stock-chart-legend__item:nth-child(n + 4)) {
+    display: inline-flex;
+  }
+
+  .stock-chart-metric-rail :deep(.stock-chart-legend) {
+    gap: var(--app-space-2);
+  }
+
+  .stock-chart-period-switch :deep(.seg-btn) {
+    min-width: 34px;
+    padding-inline: var(--app-space-control-gap);
+  }
+
+}
+
+@container app-viewport (max-width: 400px) {
+  .stock-chart-metric-rail :deep(.stock-chart-legend__item:nth-child(n + 4)) {
+    display: none;
+  }
 }
 
 </style>

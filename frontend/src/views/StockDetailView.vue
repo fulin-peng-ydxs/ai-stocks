@@ -1265,8 +1265,9 @@ onBeforeUnmount(() => {
               fit-available-height
               enable-intraday-drilldown
               enable-return-measurement
+              enable-kline-period-switch
               v-model:return-measurement-mode="chartPreferences.returnMeasurementMode.value"
-              v-model:measurement-operations-expanded="chartPreferences.measurementOperationsExpanded.value"
+              v-model:kline-period="chartPreferences.klinePeriod.value"
               :show-kline-tooltip="false"
               @ratio-draft="chartPreferences.handleRatioDraft"
               @ratio-commit="chartPreferences.handleRatioCommit"

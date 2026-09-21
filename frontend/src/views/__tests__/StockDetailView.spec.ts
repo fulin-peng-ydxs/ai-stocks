@@ -63,7 +63,10 @@ function defaultLayoutVisibility() {
 vi.mock('@/composables/useRemoteLayoutConfig', () => ({
   useRemoteLayoutConfig: () => {
     componentConfigState.current ??= reactive(defaultChartConfig())
-    measurementConfigState.current ??= reactive({ expanded: false, mode: 'latest' as 'latest' | 'range' })
+    measurementConfigState.current ??= reactive({
+      period: 'day' as 'day' | 'week' | 'month' | 'year',
+      mode: 'latest' as 'latest' | 'range',
+    })
     sectionConfigState.current ??= reactive(defaultSectionConfig())
     layoutVisibilityState.current ??= reactive(defaultLayoutVisibility())
     return ({
@@ -78,20 +81,22 @@ vi.mock('@/composables/useRemoteLayoutConfig', () => ({
     resetAll: () => {
       resetLayout()
       Object.assign(componentConfigState.current, defaultChartConfig())
-      measurementConfigState.current.expanded = false
+      measurementConfigState.current.period = 'day'
       measurementConfigState.current.mode = 'latest'
       Object.assign(sectionConfigState.current, defaultSectionConfig())
       Object.assign(layoutVisibilityState.current, defaultLayoutVisibility())
     },
     componentValueOf: vi.fn((slotId: string, field: string) => (
       field === 'stockChart' ? componentConfigState.current
-        : field === 'measurementOperationsExpanded' ? measurementConfigState.current.expanded
+        : field === 'klinePeriod' ? measurementConfigState.current.period
           : field === 'returnMeasurementMode' ? measurementConfigState.current.mode
             : field === 'minHeight' ? 650 : undefined
     ) ?? sectionConfigState.current[slotId]?.[field]),
     setComponentKnob: vi.fn((slotId: string, field: string, value: unknown) => {
-      if (field === 'measurementOperationsExpanded') {
-        measurementConfigState.current.expanded = value === true
+      if (field === 'klinePeriod') {
+        measurementConfigState.current.period = ['week', 'month', 'year'].includes(String(value))
+          ? value as 'week' | 'month' | 'year'
+          : 'day'
         return
       }
       if (field === 'returnMeasurementMode') {
@@ -188,8 +193,9 @@ const StockChartWorkspaceStub = defineComponent({
     'macdError',
     'enableIntradayDrilldown',
     'enableReturnMeasurement',
+    'enableKlinePeriodSwitch',
+    'klinePeriod',
     'returnMeasurementMode',
-    'measurementOperationsExpanded',
     'showKlineTooltip',
   ],
   emits: [
@@ -198,8 +204,8 @@ const StockChartWorkspaceStub = defineComponent({
     'ratioCommit',
     'barClick',
     'activeBarChange',
+    'update:klinePeriod',
     'update:returnMeasurementMode',
-    'update:measurementOperationsExpanded',
   ],
   setup(props, { emit, slots }) {
     return () => h('section', {
@@ -284,13 +290,9 @@ const PageSettingsDrawerStub = defineComponent({
         onApplyCurrentRatios: () => config.setComponentKnob('chart', 'stockChart', runtime),
       }),
       h('button', {
-        'data-testid': 'component-chart-measurementOperationsExpanded',
-        onClick: () => config.setComponentKnob(
-          'chart',
-          'measurementOperationsExpanded',
-          !config.componentValueOf('chart', 'measurementOperationsExpanded'),
-        ),
-      }, '默认展开图表操作栏'),
+        'data-testid': 'component-chart-klinePeriod-week',
+        onClick: () => config.setComponentKnob('chart', 'klinePeriod', 'week'),
+      }, '周K'),
       h('button', {
         'data-testid': 'component-chart-returnMeasurementMode-range',
         onClick: () => config.setComponentKnob('chart', 'returnMeasurementMode', 'range'),
@@ -749,8 +751,9 @@ describe('StockDetailView 三图数据协调', () => {
     expect(workspace.props('fitAvailableHeight')).toBe('')
     expect(workspace.props('enableIntradayDrilldown')).toBe('')
     expect(workspace.props('enableReturnMeasurement')).toBe('')
+    expect(workspace.props('enableKlinePeriodSwitch')).toBe('')
+    expect(workspace.props('klinePeriod')).toBe('day')
     expect(workspace.props('returnMeasurementMode')).toBe('latest')
-    expect(workspace.props('measurementOperationsExpanded')).toBe(false)
     expect(workspace.props('showKlineTooltip')).toBe(false)
     expect(wrapper.find('[data-testid="stock-board-membership-panel"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="stock-detail-primary"]').findComponent(StockChartWorkspaceStub).exists())
@@ -1083,31 +1086,31 @@ describe('StockDetailView 三图数据协调', () => {
     })
   })
 
-  it('设置抽屉的图表操作默认值单向投影到当前页面会话', async () => {
+  it('设置抽屉的 K 线周期与测算模式默认值单向投影到当前页面会话', async () => {
     const wrapper = await mountView()
     const workspace = wrapper.findComponent(StockChartWorkspaceStub)
 
-    expect(measurementConfigState.current.expanded).toBe(false)
+    expect(measurementConfigState.current.period).toBe('day')
     expect(measurementConfigState.current.mode).toBe('latest')
-    expect(workspace.props('measurementOperationsExpanded')).toBe(false)
+    expect(workspace.props('klinePeriod')).toBe('day')
     expect(workspace.props('returnMeasurementMode')).toBe('latest')
 
-    await wrapper.get('[data-testid="component-chart-measurementOperationsExpanded"]').trigger('click')
+    await wrapper.get('[data-testid="component-chart-klinePeriod-week"]').trigger('click')
     await wrapper.get('[data-testid="component-chart-returnMeasurementMode-range"]').trigger('click')
     await nextTick()
 
-    expect(measurementConfigState.current.expanded).toBe(true)
+    expect(measurementConfigState.current.period).toBe('week')
     expect(measurementConfigState.current.mode).toBe('range')
-    expect(workspace.props('measurementOperationsExpanded')).toBe(true)
+    expect(workspace.props('klinePeriod')).toBe('week')
     expect(workspace.props('returnMeasurementMode')).toBe('range')
 
-    workspace.vm.$emit('update:measurementOperationsExpanded', false)
+    workspace.vm.$emit('update:klinePeriod', 'month')
     workspace.vm.$emit('update:returnMeasurementMode', 'latest')
     await nextTick()
 
-    expect(workspace.props('measurementOperationsExpanded')).toBe(false)
+    expect(workspace.props('klinePeriod')).toBe('month')
     expect(workspace.props('returnMeasurementMode')).toBe('latest')
-    expect(measurementConfigState.current.expanded).toBe(true)
+    expect(measurementConfigState.current.period).toBe('week')
     expect(measurementConfigState.current.mode).toBe('range')
   })
 

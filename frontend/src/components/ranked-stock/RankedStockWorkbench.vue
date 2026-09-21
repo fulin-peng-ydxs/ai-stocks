@@ -10,6 +10,7 @@ import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelecti
 import { useStockSet } from '@/stores/stockSet'
 import type { AuxiliaryChartType } from '@/composables/useStockChartPreferences'
 import type { StockChartWorkspaceSample } from '@/components/stock-chart/workspaceOptions'
+import type { KlinePeriod } from '@/components/stock-chart/klinePeriod'
 import type { MasterDetailRatioRuntimeSample } from '@/layout/masterDetailRatioProfiles'
 import type { MarketWorkspaceHeightMode } from '@/layout/marketWorkspaceSizing'
 import {
@@ -42,7 +43,7 @@ const props = withDefaults(defineProps<{
   slot3?: AuxiliaryChartType
   heightRatios?: number[]
   returnMeasurementMode?: 'latest' | 'range'
-  measurementOperationsExpanded?: boolean
+  klinePeriod?: KlinePeriod
   heightMode?: MarketWorkspaceHeightMode
 }>(), {
   meta: '', runDate: '', loading: false, scoreKeys: () => [],
@@ -50,7 +51,7 @@ const props = withDefaults(defineProps<{
   defaultMasterRatio: 45, slot2: 'volume', slot3: 'macd',
   heightRatios: () => [56, 22, 22],
   returnMeasurementMode: 'latest',
-  measurementOperationsExpanded: false,
+  klinePeriod: 'day',
   // 排名结果工作台通常位于筛选/试算等长文档末段，默认自适应剩余空间并内部滚动。
   heightMode: 'adaptive',
 })
@@ -62,7 +63,7 @@ const emit = defineEmits<{
   ratioCommit: [ratios: number[]]
   workspaceResize: [sample: StockChartWorkspaceSample | undefined]
   'update:returnMeasurementMode': [value: 'latest' | 'range']
-  'update:measurementOperationsExpanded': [value: boolean]
+  'update:klinePeriod': [value: KlinePeriod]
 }>()
 
 const router = useRouter()
@@ -145,9 +146,9 @@ function openActiveDetail(): void {
         :slot3="slot3"
         :height-ratios="heightRatios"
         :return-measurement-mode="returnMeasurementMode"
-        :measurement-operations-expanded="measurementOperationsExpanded"
+        :kline-period="klinePeriod"
         @update:return-measurement-mode="emit('update:returnMeasurementMode', $event)"
-        @update:measurement-operations-expanded="emit('update:measurementOperationsExpanded', $event)"
+        @update:kline-period="emit('update:klinePeriod', $event)"
         @activate="selection.activate"
         @remove="selection.remove"
         @open-detail="openActiveDetail"

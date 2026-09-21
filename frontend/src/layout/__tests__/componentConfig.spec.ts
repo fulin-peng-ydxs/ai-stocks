@@ -54,7 +54,7 @@ describe('组件字段元数据', () => {
       'stockChart',
       'stockAnalysis',
       'sectorAnalysis',
-      'measurementOperationsExpanded',
+      'klinePeriod',
       'returnMeasurementMode',
     ])
     expect((COMPONENT_FIELD_DEFS.section ?? []).map((d) => d.key)).toEqual([

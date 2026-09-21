@@ -177,6 +177,7 @@ const detailLoading = ref(false)
 const detailError = ref('')
 const forbidden = ref(false)
 const bars = ref<Bar[]>([])
+const warmupBars = ref<Bar[]>([])
 const indicators = ref<IndicatorRow[]>([])
 const chartLoading = ref(false)
 const chartError = ref('')
@@ -257,6 +258,7 @@ async function loadChart(): Promise<void> {
     const mapped = toBoardChartBars(data.list)
     // 周期是数据与缩放的共同边界，不能在“近 N 日”下再缩放回周期外历史。
     bars.value = trimKlineRange(mapped, viewDays.value)
+    warmupBars.value = mapped.slice(0, Math.max(0, mapped.length - bars.value.length))
     const visibleDates = new Set(bars.value.map((bar) => bar.date))
     indicators.value = (data.indicators ?? []).filter((row) => visibleDates.has(row.trade_date))
   } catch (error) {
@@ -564,6 +566,7 @@ onMounted(async () => {
                   v-else
                   class="sector-chart-workspace"
                   :bars="bars"
+                  :warmup-bars="warmupBars"
                   :indicators="indicators"
                   :slot2="chartPreferences.preferences.value.slot2"
                   :slot3="chartPreferences.preferences.value.slot3"
@@ -574,8 +577,9 @@ onMounted(async () => {
                   fit-available-height
                   aria-label="板块指数 K 线与量能联动工作区"
                   enable-return-measurement
+                  enable-kline-period-switch
                   v-model:return-measurement-mode="chartPreferences.returnMeasurementMode.value"
-                  v-model:measurement-operations-expanded="chartPreferences.measurementOperationsExpanded.value"
+                  v-model:kline-period="chartPreferences.klinePeriod.value"
                   @ratio-draft="chartPreferences.handleRatioDraft"
                   @ratio-commit="chartPreferences.handleRatioCommit"
                   @workspace-resize="chartPreferences.handleWorkspaceResize"

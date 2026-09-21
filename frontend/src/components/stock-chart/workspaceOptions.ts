@@ -51,6 +51,7 @@ export interface SignalDatum {
 export const KLINE_MIN_HEIGHT = 250
 export const AUXILIARY_MIN_HEIGHT = 126
 export const FIT_KLINE_MIN_HEIGHT = 150
+export const KLINE_METRIC_RAIL_HEIGHT = 28
 // 32px 标题 + 8px 顶边界 + 24px 日期轴 + 12px 最小绘图区。
 export const FIT_AUXILIARY_MIN_HEIGHT = 76
 export const WORKSPACE_MIN_HEIGHT = 650
@@ -80,9 +81,13 @@ export function alignStockChartRows(
 
 export function panelMinHeight(type: ChartType, fitAvailableHeight = false): number {
   if (fitAvailableHeight) {
-    return type === 'kline' ? FIT_KLINE_MIN_HEIGHT : FIT_AUXILIARY_MIN_HEIGHT
+    return type === 'kline'
+      ? FIT_KLINE_MIN_HEIGHT + KLINE_METRIC_RAIL_HEIGHT
+      : FIT_AUXILIARY_MIN_HEIGHT
   }
-  return type === 'kline' ? KLINE_MIN_HEIGHT : AUXILIARY_MIN_HEIGHT
+  return type === 'kline'
+    ? KLINE_MIN_HEIGHT + KLINE_METRIC_RAIL_HEIGHT
+    : AUXILIARY_MIN_HEIGHT
 }
 
 /** 股票多图工作区在当前图表组合下不可压缩的内容高度。 */
@@ -705,10 +710,12 @@ export function panelTitle(
   type: ChartType,
   adjustLabel: string,
   macdAdjustLabel?: string,
+  periodLineLabel = '日线',
 ): string {
-  if (type === 'kline') return `K线（日线·${adjustLabel}）`
-  if (type === 'volume') return '量能'
-  return `MACD（12,26,9·${macdAdjustLabel || adjustLabel}）`
+  if (type === 'kline') return `K线（${periodLineLabel}·${adjustLabel}）`
+  if (type === 'volume') return periodLineLabel === '日线' ? '量能' : `量能（${periodLineLabel}）`
+  const periodPrefix = periodLineLabel === '日线' ? '' : `${periodLineLabel}·`
+  return `MACD（12,26,9·${periodPrefix}${macdAdjustLabel || adjustLabel}）`
 }
 
 export function klineMetrics(

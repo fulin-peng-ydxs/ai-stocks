@@ -158,6 +158,19 @@ async function mountWorkspace(
             </div>
           `,
         },
+        StockChartOperationsDrawer: {
+          props: ['modelValue', 'drawerId'],
+          emits: ['update:modelValue', 'closed'],
+          template: `
+            <aside v-if="modelValue" class="stock-chart-operations-drawer-stub" :id="drawerId">
+              <slot />
+              <button
+                data-testid="close-chart-operations"
+                @click="$emit('update:modelValue', false); $emit('closed')"
+              >关闭</button>
+            </aside>
+          `,
+        },
       },
     },
   })
@@ -196,7 +209,7 @@ describe('StockChartWorkspace', () => {
       slot3: 'hidden',
       minHeight: 100,
     })
-    expect(clamped.attributes('data-min-height')).toBe('384')
+    expect(clamped.attributes('data-min-height')).toBe('412')
     clamped.unmount()
   })
 
@@ -208,8 +221,8 @@ describe('StockChartWorkspace', () => {
       fitAvailableHeight: true,
     })
 
-    expect(wrapper.attributes('data-min-height')).toBe('234')
-    expect(wrapper.find('.stock-chart-panel--kline').attributes('style')).toContain('min-height: 150px')
+    expect(wrapper.attributes('data-min-height')).toBe('262')
+    expect(wrapper.find('.stock-chart-panel--kline').attributes('style')).toContain('min-height: 178px')
     expect(wrapper.find('.stock-chart-panel--volume').attributes('style')).toContain('min-height: 76px')
     wrapper.unmount()
   })
@@ -387,14 +400,15 @@ describe('StockChartWorkspace', () => {
     const wrapper = await mountWorkspace({
       enableReturnMeasurement: true,
       enableIntradayDrilldown: true,
-      measurementOperationsExpanded: true,
     })
     const kline = echartsMock.instances[0]
 
     expect(wrapper.find('.stock-chart-measurement__result').exists()).toBe(false)
-    expect(wrapper.find('.chart-operation-bar').exists()).toBe(true)
-    expect(wrapper.get('.chart-operation-bar__actions').classes())
-      .toContain('is-justify-start')
+    expect(wrapper.find('.stock-chart-operations-drawer-stub').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="stock-chart-toggle-operations"]').attributes('aria-expanded'))
+      .toBe('false')
+    await wrapper.get('[data-testid="stock-chart-toggle-operations"]').trigger('click')
+    expect(wrapper.find('.stock-chart-operations-drawer-stub').exists()).toBe(true)
     expect(wrapper.get('.chart-operation-group').text()).toContain('涨跌测算')
     expect(wrapper.get('[data-testid="stock-chart-measurement-mode-latest"]').text()).toBe('截止')
     expect(wrapper.get('[data-testid="stock-chart-measurement-mode-range"]').text()).toBe('区间')
@@ -421,14 +435,13 @@ describe('StockChartWorkspace', () => {
     expect(wrapper.text()).not.toContain('2026-06-07起')
     expect(wrapper.text()).toContain('33个交易日')
 
-    await wrapper.get('[data-testid="stock-chart-toggle-operations"]').trigger('click')
-    expect(wrapper.find('.chart-operation-bar').exists()).toBe(false)
+    await wrapper.get('[data-testid="close-chart-operations"]').trigger('click')
+    expect(wrapper.find('.stock-chart-operations-drawer-stub').exists()).toBe(false)
     expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(false)
     expect(wrapper.find('.stock-chart-measurement__result').exists()).toBe(true)
     expect(wrapper.find('.stock-chart-panel__date').text()).toBe('2026-06-07')
-    expect(wrapper.emitted('update:measurementOperationsExpanded')).toEqual([[false]])
     await wrapper.get('[data-testid="stock-chart-toggle-operations"]').trigger('click')
-    expect(wrapper.find('.chart-operation-bar').exists()).toBe(true)
+    expect(wrapper.find('.stock-chart-operations-drawer-stub').exists()).toBe(true)
 
     const latestOption = kline.setOption.mock.calls.at(-1)?.[0]
     expect(latestOption.series[0].markArea).toBeUndefined()
@@ -485,25 +498,57 @@ describe('StockChartWorkspace', () => {
     wrapper.unmount()
   })
 
-  it('按外部默认值初始化操作栏与测算模式，并响应后续默认值变更', async () => {
+  it('按外部默认值初始化 K 线周期与测算模式，并响应后续默认值变更', async () => {
     const wrapper = await mountWorkspace({
       enableReturnMeasurement: true,
-      measurementOperationsExpanded: false,
+      enableKlinePeriodSwitch: true,
+      klinePeriod: 'week',
       returnMeasurementMode: 'range',
     })
 
-    expect(wrapper.find('.chart-operation-bar').exists()).toBe(false)
+    expect(wrapper.find('.stock-chart-operations-drawer-stub').exists()).toBe(false)
     expect(wrapper.get('[data-testid="stock-chart-toggle-operations"]').attributes('aria-expanded'))
       .toBe('false')
+    expect(wrapper.get('[data-testid="stock-chart-kline-period-week"]').attributes('aria-pressed'))
+      .toBe('true')
+    expect(wrapper.text()).toContain('K线（周线·前复权）')
 
-    await wrapper.setProps({ measurementOperationsExpanded: true })
-    expect(wrapper.find('.chart-operation-bar').exists()).toBe(true)
+    await wrapper.get('[data-testid="stock-chart-toggle-operations"]').trigger('click')
     expect(wrapper.get('[data-testid="stock-chart-measurement-mode-range"]')
       .attributes('aria-pressed')).toBe('true')
 
-    await wrapper.setProps({ returnMeasurementMode: 'latest' })
+    await wrapper.setProps({ klinePeriod: 'month', returnMeasurementMode: 'latest' })
+    expect(wrapper.get('[data-testid="stock-chart-kline-period-month"]').attributes('aria-pressed'))
+      .toBe('true')
+    expect(wrapper.text()).toContain('K线（月线·前复权）')
     expect(wrapper.get('[data-testid="stock-chart-measurement-mode-latest"]')
       .attributes('aria-pressed')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('切换周期会重置光标和缩放，且非日 K 不触发分时下钻', async () => {
+    const wrapper = await mountWorkspace({
+      enableKlinePeriodSwitch: true,
+      enableIntradayDrilldown: true,
+    })
+    const kline = echartsMock.instances[0]
+
+    kline.emit('updateAxisPointer', { seriesDataIndices: [{ dataIndex: 6 }] })
+    kline.emit('datazoom', { batch: [{ start: 20, end: 70 }] })
+    await wrapper.get('[data-testid="stock-chart-kline-period-week"]').trigger('click')
+    await nextTick()
+    await nextTick()
+
+    expect(wrapper.emitted('update:klinePeriod')).toEqual([['week']])
+    expect(wrapper.emitted('activeBarChange')?.at(-1)?.[0]).toBeNull()
+    expect(wrapper.text()).toContain('K线（周线·前复权）')
+    expect(kline.setOption.mock.calls.at(-1)?.[0].dataZoom[0]).toMatchObject({
+      start: 0,
+      end: 100,
+    })
+
+    kline.emit('click', { seriesType: 'candlestick', dataIndex: 1 })
+    expect(wrapper.emitted('barClick')).toBeUndefined()
     wrapper.unmount()
   })
 
@@ -701,7 +746,7 @@ describe('StockChartWorkspace', () => {
     const wrapper = await mountWorkspace({ minHeight: 384 })
     const separator = wrapper.find('[role="separator"]')
 
-    expect(wrapper.attributes('data-min-height')).toBe('518')
+    expect(wrapper.attributes('data-min-height')).toBe('546')
     expect(separator.attributes('aria-valuenow')).toBe('60')
     expect(Number(separator.attributes('aria-valuemax'))).toBeGreaterThan(60)
 
@@ -713,12 +758,12 @@ describe('StockChartWorkspace', () => {
     const committed = wrapper.emitted('ratioCommit')?.at(-1)?.[0] as number[]
     expect(committed[0]).toBeGreaterThan(0.6)
 
-    mockClientHeight = 518
+    mockClientHeight = 546
     ResizeObserverMock.instances[0]?.trigger()
     await nextTick()
 
-    expect(separator.attributes('aria-valuenow')).toBe('50')
-    expect(separator.attributes('aria-valuemax')).toBe('50')
+    expect(separator.attributes('aria-valuenow')).toBe('52')
+    expect(separator.attributes('aria-valuemax')).toBe('53')
   })
 
   it('pointermove 只发草稿，pointercancel 作为终态仅提交一次并触发 resize', async () => {

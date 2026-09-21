@@ -308,6 +308,7 @@ const chartLoading = ref(false)
 const chartError = ref('')
 const benchmarkError = ref('')
 const compareBars = ref<Record<string, SectorBar[]>>({})
+const compareWarmupBars = ref<Record<string, SectorBar[]>>({})
 const compareIndicators = ref<Record<string, IndicatorRow[]>>({})
 // 累计涨跌窗口的独立缓存：头部「累计涨跌」槽与其它固定指标（5/10/20日）的图表数据同用一个
 // compareBars 会导致切固定指标时覆盖掉累计窗口数据、数值漂移，故单独缓存，仅在累计被选中时刷新。
@@ -348,6 +349,9 @@ const compareSeries = computed(() =>
 )
 const klineBars = computed<Bar[]>(() =>
   toBoardChartBars(compareBars.value[activeCode.value] ?? []),
+)
+const klineWarmupBars = computed<Bar[]>(() =>
+  toBoardChartBars(compareWarmupBars.value[activeCode.value] ?? []),
 )
 const klineIndicators = computed(() => compareIndicators.value[activeCode.value] ?? [])
 const compareMetricKind = computed(() => metricKind(compareMetric.value, compareWindow.value))
@@ -410,6 +414,7 @@ async function loadChart(): Promise<void> {
   const codes = chartCodes.value
   if (!codes.length) {
     compareBars.value = {}
+    compareWarmupBars.value = {}
     benchmarkSeries.value = null
     chartError.value = ''
     benchmarkError.value = ''
@@ -462,6 +467,10 @@ async function loadChart(): Promise<void> {
     if (benchmark) rawSeries[benchmarkKey] = benchmark.list
     const trimmed = trimAlignedKlineRange(rawSeries, requestedPointCount.value)
     compareBars.value = Object.fromEntries(codes.map((code) => [code, trimmed[code] ?? []]))
+    compareWarmupBars.value = Object.fromEntries(codes.map((code) => {
+      const visibleDates = new Set((trimmed[code] ?? []).map((row) => row.trade_date))
+      return [code, (rawSeries[code] ?? []).filter((row) => !visibleDates.has(row.trade_date))]
+    }))
     // 累计涨跌被选中时同步刷新其独立缓存，供头部槽在切换到其它指标后仍能取到正确窗口的数值。
     if (compareMetric.value === 'cum') {
       cumBars.value = { ...compareBars.value }
@@ -1335,6 +1344,7 @@ const menuPageTitle = useMenuPageTitle()
               v-else
               class="sector-kline-workspace"
               :bars="klineBars"
+              :warmup-bars="klineWarmupBars"
               :indicators="klineIndicators"
               :slot2="chartPreferences.preferences.value.slot2"
               :slot3="chartPreferences.preferences.value.slot3"
@@ -1345,8 +1355,9 @@ const menuPageTitle = useMenuPageTitle()
               :zoom-end="100"
               aria-label="板块指数多图联动工作区"
               enable-return-measurement
+              enable-kline-period-switch
               v-model:return-measurement-mode="chartPreferences.returnMeasurementMode.value"
-              v-model:measurement-operations-expanded="chartPreferences.measurementOperationsExpanded.value"
+              v-model:kline-period="chartPreferences.klinePeriod.value"
               @ratio-draft="chartPreferences.handleRatioDraft"
               @ratio-commit="chartPreferences.handleRatioCommit"
               @workspace-resize="chartPreferences.handleWorkspaceResize"
