@@ -1,9 +1,21 @@
 // @vitest-environment jsdom
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import PageSegmented from '../PageSegmented.vue'
 
+const source = readFileSync(resolve(process.cwd(), 'src/components/PageSegmented.vue'), 'utf8')
+
 describe('PageSegmented', () => {
+  it('等分选项允许在窄容器内收缩且长标签省略，不撑破设置抽屉', () => {
+    expect(source).toMatch(/grid-auto-columns:\s*minmax\(0,\s*1fr\)/)
+    expect(source).toMatch(/\.seg-btn\s*\{[\s\S]*?min-width:\s*0/)
+    expect(source).toMatch(/\.seg-label\s*\{[\s\S]*?overflow:\s*hidden[\s\S]*?text-overflow:\s*ellipsis/)
+    expect(source).toContain('data-overflow-tooltip-delegate')
+    expect(source).toContain('data-overflow-tooltip-target')
+  })
+
   it('supports a compact size for page control rows', () => {
     const wrapper = mount(PageSegmented, {
       props: {

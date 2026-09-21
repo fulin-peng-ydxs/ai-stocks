@@ -48,6 +48,69 @@ describe('全局省略悬浮目标判定', () => {
     expect(overflowTooltipContent(chip)).toBe('放量突破 100')
   })
 
+  it('复合按钮命中内边距时代理到内部真实省略文本', () => {
+    document.body.innerHTML = `
+      <button id="segmented-option" data-overflow-tooltip-delegate>
+        <span id="segmented-label" data-overflow-tooltip-target
+          style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          逐股分层体检
+        </span>
+      </button>
+    `
+    const button = document.querySelector<HTMLElement>('#segmented-option')!
+    const label = document.querySelector<HTMLElement>('#segmented-label')!
+    setBox(label, 72, 112)
+
+    expect(findOverflowTooltipTarget(button)).toBe(label)
+    expect(overflowTooltipContent(label)).toBe('逐股分层体检')
+  })
+
+  it('对话框的 aria-describedby 不会误伤内部省略提示', () => {
+    document.body.innerHTML = `
+      <div role="dialog" aria-describedby="drawer-description">
+        <button id="segmented-option" data-overflow-tooltip-delegate>
+          <span id="segmented-label" data-overflow-tooltip-target
+            style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            逐股分层体检
+          </span>
+        </button>
+      </div>
+    `
+    const button = document.querySelector<HTMLElement>('#segmented-option')!
+    const label = document.querySelector<HTMLElement>('#segmented-label')!
+    setBox(label, 72, 112)
+
+    expect(findOverflowTooltipTarget(button)).toBe(label)
+
+    button.setAttribute('aria-describedby', 'existing-tooltip')
+    expect(findOverflowTooltipTarget(button)).toBeNull()
+  })
+
+  it('后续简单交互控件自动代理唯一的内部省略文本', () => {
+    document.body.innerHTML = `
+      <div id="rule" role="option" tabindex="0">
+        <span id="rule-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          很长的交易纪律规则名称
+        </span>
+      </div>
+      <button id="complex-card">
+        <strong id="complex-title" style="overflow:hidden;text-overflow:ellipsis">很长的标题</strong>
+        <small id="complex-preview" style="overflow:hidden;text-overflow:ellipsis">很长的摘要</small>
+      </button>
+    `
+    const rule = document.querySelector<HTMLElement>('#rule')!
+    const ruleName = document.querySelector<HTMLElement>('#rule-name')!
+    const complexCard = document.querySelector<HTMLElement>('#complex-card')!
+    const complexTitle = document.querySelector<HTMLElement>('#complex-title')!
+    const complexPreview = document.querySelector<HTMLElement>('#complex-preview')!
+    setBox(ruleName, 80, 160)
+    setBox(complexTitle, 80, 160)
+    setBox(complexPreview, 80, 160)
+
+    expect(findOverflowTooltipTarget(rule)).toBe(ruleName)
+    expect(findOverflowTooltipTarget(complexCard)).toBeNull()
+  })
+
   it('复用表格视觉溢出标记，并跳过已有业务 popover 的内容', () => {
     const tableCell = document.createElement('div')
     tableCell.className = CELL_VISUAL_OVERFLOW_CLASS

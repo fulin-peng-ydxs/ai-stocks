@@ -43,21 +43,25 @@ function optionTestId(value: OptionValue): string | undefined {
       :class="{ active: option.value === props.modelValue }"
       :aria-pressed="option.value === props.modelValue"
       :data-testid="optionTestId(option.value)"
+      data-overflow-tooltip-delegate
       :disabled="props.disabled"
       @click="$emit('update:modelValue', option.value)"
     >
       <!-- 可选前置图标（如明暗模式的日/夜/系统状态图形）；不传则保持纯文字。 -->
       <slot name="icon" :option="option" :active="option.value === props.modelValue" />
-      <span class="seg-label">{{ option.label }}</span>
+      <span class="seg-label" data-overflow-tooltip-target>{{ option.label }}</span>
     </button>
   </div>
 </template>
 
 <style scoped>
 .page-segmented {
+  box-sizing: border-box;
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 1fr;
+  grid-auto-columns: minmax(0, 1fr);
+  min-width: 0;
+  max-width: 100%;
   gap: var(--app-space-1);
   padding: 3px;
   border: 1px solid var(--page-settings-section-border);
@@ -65,6 +69,9 @@ function optionTestId(value: OptionValue): string | undefined {
   background: var(--page-settings-seg-bg);
 }
 .seg-btn {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
   min-height: 38px;
   padding: 0 10px;
   border: 1px solid transparent;
@@ -80,7 +87,15 @@ function optionTestId(value: OptionValue): string | undefined {
   gap: var(--app-space-control-gap);
   transition: background-color .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
-.seg-label { white-space: nowrap; }
+.seg-label {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .seg-btn:hover:not(.active) {
   background: var(--page-settings-seg-hover-bg);
   color: var(--page-settings-text);
