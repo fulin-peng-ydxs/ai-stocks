@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, reactive, type Component } from 'vue'
 import { ElMessage } from 'element-plus'
 import ComponentAutoSettings from '@/components/ComponentAutoSettings.vue'
+import HelpHint from '@/components/HelpHint.vue'
 import { createDefaultStockChartPreferences } from '@/composables/useStockChartPreferences'
 
 vi.mock('@/layout/pageRegistry', () => ({
@@ -108,11 +109,11 @@ vi.mock('@/layout/pageRegistry', () => ({
 vi.mock('@/layout/componentConfig', () => {
   const fieldDef = (_kind: string, field: string) => (
     field === 'klineRangePreferences'
-      ? { key: 'klineRangePreferences', label: 'K 线范围', control: 'object', layers: ['user'] }
+      ? { key: 'klineRangePreferences', label: 'K 线范围', control: 'object', layers: ['user'], help: '所有 K 线图共用的快捷范围与默认范围。' }
       : field === 'stockChart'
       ? { key: 'stockChart', label: '图表组合与内部比例', control: 'object', layers: ['page', 'user'] }
       : field === 'minHeight'
-      ? { key: 'minHeight', label: '图表区域高度', control: 'int', layers: ['page', 'user'], min: 480, max: 900, default: 560 }
+      ? { key: 'minHeight', label: '图表区域高度', control: 'int', layers: ['page', 'user'], min: 480, max: 900, default: 560, help: '这是一段需要收进统一帮助提示而不是常驻铺开的较长说明。' }
       : field === 'masterRatio'
         ? { key: 'masterRatio', label: '列表默认占比', control: 'int', layers: ['preset', 'page', 'user'], min: 30, max: 70, default: 45 }
       : field === 'masterRatioProfiles'
@@ -348,6 +349,7 @@ function mountChartDemo(withRuntime = false) {
         ElButton: { template: '<button><slot /></button>' },
         ElSelect: true,
         ElOption: true,
+        ElTooltip: { template: '<span><slot /></span>' },
         ElSwitch: true,
         ElCheckboxGroup: true,
         ElCheckbox: true,
@@ -456,6 +458,16 @@ describe('ComponentAutoSettings', () => {
     })
     await wrapper.find('.number-stub').trigger('click')
     expect(setComponentKnob).toHaveBeenCalledWith('chart', 'minHeight', 620)
+  })
+
+  it('较长字段说明统一收进 HelpHint，不在抽屉正文常驻铺开', () => {
+    const { wrapper } = mountChartDemo()
+    const hint = wrapper.findAllComponents(HelpHint).find((item) => (
+      item.props('text') === '这是一段需要收进统一帮助提示而不是常驻铺开的较长说明。'
+    ))
+
+    expect(hint).toBeTruthy()
+    expect(wrapper.text()).not.toContain('这是一段需要收进统一帮助提示而不是常驻铺开的较长说明。')
   })
 
   it('股票多图组合在组件设置中按 slot 写回统一 stockChart 字段', async () => {

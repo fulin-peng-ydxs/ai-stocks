@@ -110,14 +110,15 @@
 ### 配置设计
 | 类型 | 字段 | 层级 | 落点 | 说明 |
 |---|---|---|---|---|
-| 布局旋钮 | density | page/user | editable | 信息密度 |
-| 布局旋钮 | slots.&lt;slotId&gt;.visible | page/user | editable | 完整模块显隐 |
+| 布局旋钮 | density | page/user | editable / 基础布局 | 信息密度 |
+| 布局旋钮 | slots.&lt;slotId&gt;.visible | page/user | editable / 模块显示 | 完整模块显隐 |
 | 组件设置 |  | page/user | COMPONENT_FIELD_DEFS |  |
 | 业务偏好 |  | usePageSettings | 业务选项 |  |
 
 分类先判断属性所有者，不按控件所在页面、字段名或当前存储表判断：
 
 - 控制完整 slot / 模块是否存在、顺序、尺寸或密度：登记为布局旋钮；完整模块显隐统一使用 `slots.<slotId>.visible`，不得登记为组件内部 `config.visible`。
+- 布局旋钮必须声明稳定的二级章节；基础密度归“基础布局”，完整模块显隐归“模块显示”，禁止在布局一级平铺不断增长。
 - 能力由已登记组件实例拥有，更换或移除该组件后能力随之消失：登记为组件设置，并完成字段定义、后端规则、实例适用性、自动渲染和页面消费闭环。
 - 语义由页面业务流程拥有，更换承载 UI 后业务含义仍存在：登记为业务偏好，使用 `usePageSettings` 与 `#business`。
 - 跨页面共享不改变属性归属：属于已登记组件实例的字段仍在组件设置中展示，并可通过 `userPersistence=global-preference` 接入专用全局偏好；不归属于当前组件实例的产品偏好才独立设置入口。两者都不得复制平行字段。

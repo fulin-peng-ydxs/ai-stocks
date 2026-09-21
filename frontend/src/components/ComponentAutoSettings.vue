@@ -119,6 +119,10 @@ interface AutoSlot {
   meta: SlotConfigMeta
 }
 
+function fieldHelp(slot: AutoSlot, field: string): string {
+  return getComponentFieldDef(slot.kind as never, field)?.help ?? ''
+}
+
 /** 字段是否允许在当前层覆盖（开放策略优先，回退 def.layers）。 */
 function layerAllowed(kind: string, field: string): boolean {
   const def = getComponentFieldDef(kind as never, field)
@@ -540,7 +544,7 @@ function setSort(slotId: string, field: string, order: string): void {
       :class="{ 'ca-highlight': s.slotId === highlightSlot }"
     >
       <template v-if="s.fields.includes('klineRangePreferences')">
-        <PageSettingItem label="K 线范围">
+        <PageSettingItem label="K 线范围" :hint="fieldHelp(s, 'klineRangePreferences')">
           <template #actions>
             <SourceTag
               v-if="srcOf(s.slotId, 'klineRangePreferences')"
@@ -548,13 +552,12 @@ function setSort(slotId: string, field: string, order: string): void {
               :values="srcValuesOf(s.slotId, 'klineRangePreferences')"
             />
           </template>
-          <template #help>快捷范围选项与默认范围，所有 K 线图统一生效。</template>
         </PageSettingItem>
         <KlineSettingSection />
       </template>
 
       <template v-if="s.fields.includes('stockAnalysis')">
-        <PageSettingItem label="走势分析默认项">
+        <PageSettingItem label="走势分析默认项" :hint="fieldHelp(s, 'stockAnalysis')">
           <template #actions>
             <span class="ca-actions">
               <SourceTag
@@ -587,7 +590,7 @@ function setSort(slotId: string, field: string, order: string): void {
       </template>
 
       <template v-if="s.fields.includes('sectorAnalysis')">
-        <PageSettingItem label="板块走势默认项">
+        <PageSettingItem label="板块走势默认项" :hint="fieldHelp(s, 'sectorAnalysis')">
           <template #actions>
             <span class="ca-actions">
               <SourceTag
@@ -619,7 +622,11 @@ function setSort(slotId: string, field: string, order: string): void {
         />
       </template>
 
-      <PageSettingItem v-if="s.fields.includes('stockChart')" label="图表组合与内部比例">
+      <PageSettingItem
+        v-if="s.fields.includes('stockChart')"
+        label="图表组合与内部比例"
+        :hint="fieldHelp(s, 'stockChart')"
+      >
         <template #actions>
           <span class="ca-actions">
             <SourceTag
@@ -654,7 +661,7 @@ function setSort(slotId: string, field: string, order: string): void {
       <template v-if="s.fields.includes('defaultSort') && s.meta.sortFields?.length">
         <!-- field:order 模式：字段 + 方向 -->
         <template v-if="s.meta.sortHasDirection !== false">
-          <PageSettingItem label="默认排序字段">
+          <PageSettingItem label="默认排序字段" :hint="fieldHelp(s, 'defaultSort')">
             <template #actions>
             <span class="ca-actions">
               <SourceTag
@@ -702,7 +709,7 @@ function setSort(slotId: string, field: string, order: string): void {
           </PageSettingItem>
         </template>
         <!-- 枚举模式：排序模式直接存 key（无方向，如 board 的 score/rank） -->
-        <PageSettingItem v-else label="默认排序">
+        <PageSettingItem v-else label="默认排序" :hint="fieldHelp(s, 'defaultSort')">
           <template #actions>
             <span class="ca-actions">
               <SourceTag
@@ -742,7 +749,12 @@ function setSort(slotId: string, field: string, order: string): void {
         </PageSettingItem>
       </template>
 
-      <PageSettingItem v-for="field in boolFieldDefs(s)" :key="field.key" :label="field.label">
+      <PageSettingItem
+        v-for="field in boolFieldDefs(s)"
+        :key="field.key"
+        :label="field.label"
+        :hint="field.help"
+      >
         <template #actions>
           <span class="ca-actions">
             <SourceTag
@@ -763,7 +775,6 @@ function setSort(slotId: string, field: string, order: string): void {
           inline-prompt
           @update:model-value="(v: boolean) => config.setComponentKnob(s.slotId, field.key, v)"
         />
-        <template v-if="field.help" #help>{{ field.help }}</template>
       </PageSettingItem>
 
       <PageSettingItem v-if="s.fields.includes('pageSize')" label="每页条数">
@@ -789,7 +800,12 @@ function setSort(slotId: string, field: string, order: string): void {
         />
       </PageSettingItem>
 
-      <PageSettingItem v-for="field in numericFieldDefs(s)" :key="field.key" :label="field.label">
+      <PageSettingItem
+        v-for="field in numericFieldDefs(s)"
+        :key="field.key"
+        :label="field.label"
+        :hint="field.help"
+      >
         <template #actions>
           <span class="ca-actions">
             <SourceTag
@@ -833,10 +849,13 @@ function setSort(slotId: string, field: string, order: string): void {
           :test-id="`component-${s.slotId}-${field.key}-use-runtime`"
           @click="saveRuntimeNumber(s.slotId, field.key)"
         />
-        <template v-if="field.help" #help>{{ field.help }}</template>
       </PageSettingItem>
 
-      <PageSettingItem v-if="s.fields.includes('defaultActive') && s.meta.tabs?.length" label="默认标签页">
+      <PageSettingItem
+        v-if="s.fields.includes('defaultActive') && s.meta.tabs?.length"
+        label="默认标签页"
+        :hint="fieldHelp(s, 'defaultActive')"
+      >
         <template #actions>
           <span class="ca-actions">
             <SourceTag
@@ -859,7 +878,12 @@ function setSort(slotId: string, field: string, order: string): void {
         />
       </PageSettingItem>
 
-      <PageSettingItem v-for="field in enumFieldDefs(s)" :key="field.key" :label="field.label">
+      <PageSettingItem
+        v-for="field in enumFieldDefs(s)"
+        :key="field.key"
+        :label="field.label"
+        :hint="field.help"
+      >
         <template #actions>
           <span class="ca-actions">
             <SourceTag
@@ -881,10 +905,14 @@ function setSort(slotId: string, field: string, order: string): void {
           :test-id="s.slotId === 'settings' && field.key === 'size' ? 'drawer-size' : `component-${s.slotId}-${field.key}`"
           @update:model-value="(v) => config.setComponentKnob(s.slotId, field.key, v)"
         />
-        <template v-if="field.help" #help>{{ field.help }}</template>
       </PageSettingItem>
 
-      <PageSettingItem v-for="field in stringFieldDefs(s)" :key="field.key" :label="field.label">
+      <PageSettingItem
+        v-for="field in stringFieldDefs(s)"
+        :key="field.key"
+        :label="field.label"
+        :hint="field.help"
+      >
         <template #actions>
           <span class="ca-actions">
             <SourceTag
@@ -904,10 +932,14 @@ function setSort(slotId: string, field: string, order: string): void {
           clearable
           @update:model-value="(value: string) => config.setComponentKnob(s.slotId, field.key, value)"
         />
-        <template v-if="field.help" #help>{{ field.help }}</template>
       </PageSettingItem>
 
-      <PageSettingItem v-for="field in staticStringListFieldDefs(s)" :key="field.key" :label="field.label">
+      <PageSettingItem
+        v-for="field in staticStringListFieldDefs(s)"
+        :key="field.key"
+        :label="field.label"
+        :hint="field.help"
+      >
         <template #actions>
           <span class="ca-actions">
             <SourceTag
@@ -930,12 +962,12 @@ function setSort(slotId: string, field: string, order: string): void {
             {{ option.label }}
           </el-checkbox>
         </el-checkbox-group>
-        <template v-if="field.help" #help>{{ field.help }}</template>
       </PageSettingItem>
 
       <SettingsGroup
         v-if="s.fields.includes('hiddenColumns') && s.meta.columns?.length"
         title="列显隐"
+        :hint="fieldHelp(s, 'hiddenColumns')"
         :level="showSlotTitle ? 3 : 2"
       >
         <template #actions>
@@ -966,6 +998,7 @@ function setSort(slotId: string, field: string, order: string): void {
       <PageSettingItem
         v-if="s.fields.includes('defaultCollapsed')"
         :label="s.kind === 'config-panel' ? '默认折叠分区' : '默认折叠段'"
+        :hint="fieldHelp(s, 'defaultCollapsed')"
       >
         <template #actions>
           <span class="ca-actions">

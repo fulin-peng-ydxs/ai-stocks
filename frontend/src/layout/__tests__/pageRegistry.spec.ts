@@ -898,6 +898,8 @@ describe('组件消费关系与配置一致性（P4）', () => {
       'slots.indicatorSnapshot.visible',
       'slots.tradeEvaluation.visible',
     ]))
+    expect(entry.layout.editable.filter((knob) => knob.path.endsWith('.visible'))
+      .every((knob) => knob.group === '模块显示')).toBe(true)
     expect(applicableComponentFields(entry, 'indicatorSnapshot').map((field) => field.key))
       .toEqual(['visibleIndicatorFields'])
     expect(sourceForPage('stock-detail')).not.toContain("componentValueOf('indicatorSnapshot', 'visible')")

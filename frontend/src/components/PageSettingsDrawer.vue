@@ -286,7 +286,7 @@ function handleReset(): void {
           <SettingsGroup
             v-if="hasLayoutKnobs"
             title="布局"
-            hint="预设 / 明暗 / 密度等整页布局设置"
+            hint="整页密度、模块显示等页面结构设置"
             :level="1"
             :model-value="sectionOpen('layout')"
             @update:model-value="(open) => setSectionOpen('layout', open)"
@@ -334,7 +334,7 @@ function handleReset(): void {
           <SettingsGroup
             v-if="$slots.layout"
             title="布局"
-            hint="预设 / 明暗 / 密度等整页布局设置"
+            hint="整页密度、模块显示等页面结构设置"
             :level="1"
             :model-value="sectionOpen('layout')"
             @update:model-value="(open) => setSectionOpen('layout', open)"

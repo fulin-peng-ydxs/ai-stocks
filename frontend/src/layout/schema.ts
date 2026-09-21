@@ -246,6 +246,8 @@ export interface EditableKnob {
   /** 点分路径，定位 PageLayout 内字段：'density' | 'slots.<id>.minH' | ...。 */
   path: string
   label: string
+  /** 设置抽屉中的二级章节；同组旋钮由共享布局设置组件统一收拢。 */
+  group?: string
   type: 'enum' | 'int' | 'number' | 'bool'
   options?: (string | number)[]
   /** enum 选项的中文展示名（按 String(value) 取），纯展示用，校验器忽略。 */
