@@ -11,10 +11,12 @@ import {
 } from 'vue'
 import * as echarts from 'echarts'
 import type { Bar, IndicatorRow } from '@/api/stocks'
+import PageSegmented from '@/components/PageSegmented.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { useStatusColorPalette } from '@/components/chartTheme'
 import type { AuxiliaryChartType, ChartType } from '@/composables/useStockChartPreferences'
 import { viewportDeltaToLayoutPixels } from '@/utils/displayScaleGeometry'
+import { formatMarketPercent, marketValueClass } from '@/utils/marketValue'
 import StockChartPanelDivider from './StockChartPanelDivider.vue'
 import StockChartPanelHeader from './StockChartPanelHeader.vue'
 import type { StockChartLegendItem } from './StockChartLegend.vue'
@@ -30,6 +32,8 @@ import {
   KEYBOARD_RATIO_STEP,
   KLINE_MIN_HEIGHT,
   SPLITTER_SIZE,
+  STOCK_CHART_GRID_SIDE,
+  STOCK_CHART_GRID_TOP,
   WORKSPACE_MIN_HEIGHT,
   adjustAdjacentRatios,
   alignStockChartRows,
@@ -89,6 +93,13 @@ interface DataZoomEvent {
   batch?: Array<{ start?: number; end?: number }>
 }
 
+type MeasurementMode = 'latest' | 'range'
+
+const MEASUREMENT_MODE_OPTIONS: Array<{ label: string; value: MeasurementMode }> = [
+  { label: '至最新', value: 'latest' },
+  { label: '自选区间', value: 'range' },
+]
+
 const props = withDefaults(defineProps<{
   bars: Bar[]
   warmupBars?: Bar[]
@@ -109,6 +120,7 @@ const props = withDefaults(defineProps<{
   ariaLabel?: string
   enableIntradayDrilldown?: boolean
   showKlineTooltip?: boolean
+  enableReturnMeasurement?: boolean
 }>(), {
   warmupBars: () => [],
   indicators: () => [],
@@ -125,6 +137,7 @@ const props = withDefaults(defineProps<{
   ariaLabel: '行情多图联动工作区',
   enableIntradayDrilldown: false,
   showKlineTooltip: true,
+  enableReturnMeasurement: false,
 })
 
 const emit = defineEmits<{
@@ -147,6 +160,10 @@ const charts = new Map<WorkspacePanelKey, echarts.ECharts>()
 const theme = useStockChartTheme()
 const statusPalette = useStatusColorPalette()
 const activeIndex = ref<number | null>(null)
+const klinePointerInside = ref(false)
+const measurementMode = ref<MeasurementMode>('latest')
+const rangeStartIndex = ref<number | null>(null)
+const rangeEndIndex = ref<number | null>(null)
 const liveRatios = ref<number[]>([])
 const zoomRange = ref<ZoomRange>(normalizeZoomRange(props.zoomStart, props.zoomEnd))
 const workspaceHeight = ref(0)
@@ -181,6 +198,96 @@ const ratios = computed(() => constrainWorkspaceRatios(
 ))
 const lastIndex = computed(() => Math.max(0, rows.value.length - 1))
 const metricIndex = computed(() => activeIndex.value ?? lastIndex.value)
+
+const measurementIndices = computed<[number, number] | null>(() => {
+  if (!props.enableReturnMeasurement || !rows.value.length) return null
+  if (measurementMode.value === 'latest') {
+    return activeIndex.value == null ? null : [activeIndex.value, lastIndex.value]
+  }
+  if (rangeStartIndex.value == null) return null
+  const candidateEnd = rangeEndIndex.value ?? activeIndex.value
+  if (candidateEnd == null) return null
+  return rangeStartIndex.value <= candidateEnd
+    ? [rangeStartIndex.value, candidateEnd]
+    : [candidateEnd, rangeStartIndex.value]
+})
+
+const measurementChartRange = computed(() => {
+  if (measurementMode.value !== 'range' || !measurementIndices.value) return null
+  return {
+    startIndex: measurementIndices.value[0],
+    endIndex: measurementIndices.value[1],
+  }
+})
+
+const measurementReturn = computed<number | null>(() => {
+  if (!measurementIndices.value) return null
+  const [startIndex, endIndex] = measurementIndices.value
+  const startClose = rows.value[startIndex]?.bar.close
+  const endClose = rows.value[endIndex]?.bar.close
+  if (
+    startClose == null
+    || endClose == null
+    || !Number.isFinite(startClose)
+    || !Number.isFinite(endClose)
+    || startClose <= 0
+  ) return null
+  return ((endClose / startClose) - 1) * 100
+})
+
+const measurementVisible = computed(() => (
+  props.enableReturnMeasurement
+  && rows.value.length > 0
+  && klinePointerInside.value
+  && (measurementMode.value === 'range' || activeIndex.value != null)
+))
+const measurementControlsVisible = computed(() => (
+  props.enableReturnMeasurement
+  && rows.value.length > 0
+))
+
+const measurementPresentation = computed(() => {
+  const latestDate = rows.value[lastIndex.value]?.bar.date
+  if (measurementMode.value === 'latest') {
+    const headline = latestDate ? `截止 ${latestDate}` : '截止'
+    if (activeIndex.value == null || !measurementIndices.value) {
+      return { headline, returnText: '', note: '移入 K 线查看区间涨跌' }
+    }
+    const [startIndex, endIndex] = measurementIndices.value
+    return {
+      headline,
+      returnText: formatMarketPercent(measurementReturn.value),
+      note: `${Math.max(0, endIndex - startIndex)}个交易日`,
+    }
+  }
+  if (rangeStartIndex.value == null) {
+    return { headline: '自选区间', returnText: '', note: '点击 K 线选择起点' }
+  }
+  if (!measurementIndices.value) {
+    const start = rows.value[rangeStartIndex.value]?.bar.date
+    return {
+      headline: start ? `${start}起` : '自选区间',
+      returnText: '',
+      note: '移动到终点后再次点击',
+    }
+  }
+  const [startIndex, endIndex] = measurementIndices.value
+  const start = rows.value[startIndex]?.bar.date
+  const end = rows.value[endIndex]?.bar.date
+  if (!start || !end) {
+    return { headline: '自选区间', returnText: '—', note: '' }
+  }
+  const days = Math.max(0, endIndex - startIndex)
+  return {
+    headline: `${start} → ${end}`,
+    returnText: formatMarketPercent(measurementReturn.value),
+    note: rangeEndIndex.value == null
+      ? `${days}个交易日 · 再次点击确认终点`
+      : `${days}个交易日`,
+  }
+})
+
+const measurementTone = computed(() => marketValueClass(measurementReturn.value))
 
 function panelMetrics(type: ChartType): Metric[] {
   if (!rows.value.length) {
@@ -267,6 +374,7 @@ function chartOption(panel: PanelDescriptor, isBottom: boolean) {
     sellMarkerColor: statusPalette.value.warning,
     clickableCandles: props.enableIntradayDrilldown,
     showKlineTooltip: props.showKlineTooltip,
+    measurementRange: measurementChartRange.value,
     candlestickRect,
   }
   if (panel.type === 'kline') return buildKlineOption(context)
@@ -275,10 +383,40 @@ function chartOption(panel: PanelDescriptor, isBottom: boolean) {
 }
 
 function onChartClick(event: { seriesType?: string; dataIndex?: number }): void {
+  // 自选区间由整个绘图区接管，避免细蜡烛或均线遮挡导致难以点中。
+  if (props.enableReturnMeasurement && measurementMode.value === 'range') return
   if (!props.enableIntradayDrilldown || event.seriesType !== 'candlestick') return
   if (typeof event.dataIndex !== 'number') return
   const tradeDate = rows.value[event.dataIndex]?.bar.date
   if (tradeDate) emit('barClick', tradeDate)
+}
+
+function selectMeasurementIndex(index: number): void {
+  if (rangeStartIndex.value == null || rangeEndIndex.value != null) {
+    rangeStartIndex.value = index
+    rangeEndIndex.value = null
+  } else {
+    const start = Math.min(rangeStartIndex.value, index)
+    const end = Math.max(rangeStartIndex.value, index)
+    rangeStartIndex.value = start
+    rangeEndIndex.value = end
+  }
+  refreshKlineChart()
+}
+
+function onKlineCanvasClick(
+  chart: echarts.ECharts,
+  event: { offsetX?: number; offsetY?: number },
+): void {
+  if (
+    !props.enableReturnMeasurement
+    || measurementMode.value !== 'range'
+    || activeIndex.value == null
+    || typeof event.offsetX !== 'number'
+    || typeof event.offsetY !== 'number'
+    || !chart.containPixel({ gridIndex: 0 }, [event.offsetX, event.offsetY])
+  ) return
+  selectMeasurementIndex(activeIndex.value)
 }
 
 function onAxisPointer(event: {
@@ -289,12 +427,44 @@ function onAxisPointer(event: {
   if (index == null || index === activeIndex.value) return
   activeIndex.value = index
   emit('activeBarChange', rows.value[index]?.bar ?? null)
+  if (
+    measurementMode.value === 'range'
+    && rangeStartIndex.value != null
+    && rangeEndIndex.value == null
+  ) refreshKlineChart()
 }
 
 function clearActiveBar(): void {
   if (activeIndex.value == null) return
   activeIndex.value = null
   emit('activeBarChange', null)
+  if (
+    measurementMode.value === 'range'
+    && rangeStartIndex.value != null
+    && rangeEndIndex.value == null
+  ) refreshKlineChart()
+}
+
+function refreshKlineChart(): void {
+  const chart = charts.get('kline')
+  if (!chart || chart.isDisposed()) return
+  chart.setOption(chartOption({ key: 'kline', type: 'kline' }, panels.value.length === 1), true)
+}
+
+function setMeasurementMode(value: string | number | boolean): void {
+  if (value !== 'latest' && value !== 'range') return
+  measurementMode.value = value
+  rangeStartIndex.value = null
+  rangeEndIndex.value = null
+  refreshKlineChart()
+}
+
+function enterKlinePanel(): void {
+  if (props.enableReturnMeasurement) klinePointerInside.value = true
+}
+
+function leaveKlinePanel(): void {
+  klinePointerInside.value = false
 }
 
 function normalizeZoomRange(start: number, end: number): ZoomRange {
@@ -363,7 +533,11 @@ function syncCharts(): void {
         onDataZoom(panel.key, event as DataZoomEvent)
       })
       chart.on('globalout', clearActiveBar)
-      if (panel.type === 'kline') chart.on('click', onChartClick)
+      if (panel.type === 'kline') {
+        const klineChart = chart
+        chart.on('click', onChartClick)
+        chart.getZr().on('click', (event) => onKlineCanvasClick(klineChart, event))
+      }
       charts.set(panel.key, chart)
     }
     chart.group = groupId
@@ -631,6 +805,14 @@ watch(
   },
   { deep: true },
 )
+watch(
+  () => props.bars,
+  () => {
+    rangeStartIndex.value = null
+    rangeEndIndex.value = null
+  },
+  { deep: true },
+)
 
 onMounted(async () => {
   await nextTick()
@@ -645,6 +827,7 @@ onActivated(async () => {
 })
 onDeactivated(() => {
   active = false
+  klinePointerInside.value = false
   if (drag) finishDrag()
   reportWorkspaceUnavailable()
   stopObservingResize()
@@ -673,8 +856,9 @@ onBeforeUnmount(() => {
       <article
         class="stock-chart-panel"
         :class="`stock-chart-panel--${panel.type}`"
-        :style="panelStyle(panel, index)"
-        :data-panel-key="panel.key"
+      :style="panelStyle(panel, index)"
+      :data-panel-key="panel.key"
+      @pointerleave="panel.type === 'kline' && leaveKlinePanel()"
       >
         <StockChartPanelHeader
           :title="panelTitle(panel.type, adjustLabel, macdAdjustLabel)"
@@ -682,7 +866,23 @@ onBeforeUnmount(() => {
           :legend-label="`${panelTitle(panel.type, adjustLabel, macdAdjustLabel)}图例与当前值`"
         >
           <template #tail>
-            <time v-if="panel.type === 'kline' && rows.length" class="stock-chart-panel__date">
+            <div
+              v-if="panel.type === 'kline' && measurementControlsVisible"
+              class="stock-chart-measurement"
+            >
+              <PageSegmented
+                :model-value="measurementMode"
+                :options="MEASUREMENT_MODE_OPTIONS"
+                size="small"
+                tone="primary"
+                test-id="stock-chart-measurement-mode"
+                @update:model-value="setMeasurementMode"
+              />
+            </div>
+            <time
+              v-else-if="panel.type === 'kline' && rows.length && !enableReturnMeasurement"
+              class="stock-chart-panel__date"
+            >
               {{ rows[metricIndex]?.bar.date }}
             </time>
             <slot v-if="panel.type === 'kline'" name="header-actions" />
@@ -690,9 +890,36 @@ onBeforeUnmount(() => {
         </StockChartPanelHeader>
         <div class="stock-chart-panel__body">
           <div
+            v-if="panel.type === 'kline' && measurementVisible"
+            class="stock-chart-measurement__result"
+            :style="{
+              top: `${STOCK_CHART_GRID_TOP}px`,
+              right: `${STOCK_CHART_GRID_SIDE}px`,
+              maxWidth: `calc(100% - ${STOCK_CHART_GRID_SIDE * 2}px)`,
+            }"
+          >
+            <span class="stock-chart-measurement__headline">
+              {{ measurementPresentation.headline }}
+            </span>
+            <strong
+              v-if="measurementPresentation.returnText"
+              class="stock-chart-measurement__return"
+              :class="{
+                'is-up': measurementTone === 'up',
+                'is-down': measurementTone === 'down',
+              }"
+            >
+              {{ measurementPresentation.returnText }}
+            </strong>
+            <span class="stock-chart-measurement__meta">
+              {{ measurementPresentation.note }}
+            </span>
+          </div>
+          <div
             :ref="(element) => setChartElement(panel.key, element)"
             class="stock-chart-panel__canvas"
             :aria-label="`${panelTitle(panel.type, adjustLabel, macdAdjustLabel)}图表`"
+            @pointerenter="panel.type === 'kline' && enterKlinePanel()"
           />
           <div
             v-if="panelState(panel)"
@@ -752,6 +979,53 @@ onBeforeUnmount(() => {
   font-size: var(--app-font-size-micro);
 }
 
+.stock-chart-measurement {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.stock-chart-measurement__result {
+  position: absolute;
+  z-index: 2;
+  padding: 3px 7px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--layout-control-radius);
+  background: color-mix(in srgb, var(--el-bg-color) 92%, transparent);
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-micro);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.stock-chart-measurement__headline,
+.stock-chart-measurement__meta {
+  color: var(--el-text-color-secondary);
+  font-weight: 400;
+}
+
+.stock-chart-measurement__return {
+  flex: 0 0 auto;
+  font-weight: var(--app-font-weight-section);
+}
+
+.stock-chart-measurement__return.is-up {
+  color: var(--market-up-color);
+}
+
+.stock-chart-measurement__return.is-down {
+  color: var(--market-down-color);
+}
+
+.stock-chart-measurement :deep(.page-segmented) {
+  flex: 0 0 auto;
+}
+
 .stock-chart-panel__body {
   position: relative;
   flex: 1 1 auto;
@@ -775,6 +1049,7 @@ onBeforeUnmount(() => {
   .stock-chart-panel :deep(.stock-chart-legend__item:nth-child(n + 4)) {
     display: none;
   }
+
 }
 
 </style>

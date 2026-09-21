@@ -1222,6 +1222,7 @@ onBeforeUnmount(() => {
               :zoom-end="100"
               fit-available-height
               enable-intraday-drilldown
+              enable-return-measurement
               :show-kline-tooltip="false"
               @ratio-draft="chartPreferences.handleRatioDraft"
               @ratio-commit="chartPreferences.handleRatioCommit"

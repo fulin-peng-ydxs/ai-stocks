@@ -59,6 +59,8 @@ export const MACD_BAR_WIDTH = '24%'
 export const BOTTOM_GRID_HEIGHT = 52
 export const AXIS_ONLY_BOTTOM_GRID_HEIGHT = 24
 export const VISIBLE_SLIDER_MIN_CANVAS_HEIGHT = 84
+export const STOCK_CHART_GRID_SIDE = 64
+export const STOCK_CHART_GRID_TOP = 8
 
 export function alignStockChartRows(
   bars: readonly Bar[],
@@ -298,6 +300,7 @@ interface OptionContext {
   sellMarkerColor?: string
   clickableCandles?: boolean
   showKlineTooltip?: boolean
+  measurementRange?: { startIndex: number; endIndex: number } | null
   candlestickRect?: (params: unknown) => TooltipTargetRect | null
 }
 
@@ -346,9 +349,9 @@ function commonAxes(context: OptionContext, showPointerDate: boolean) {
   const showSlider = context.isBottom && stockChartVisibleSlider(context.panelHeight)
   return {
     grid: {
-      left: 64,
-      right: 64,
-      top: 8,
+      left: STOCK_CHART_GRID_SIDE,
+      right: STOCK_CHART_GRID_SIDE,
+      top: STOCK_CHART_GRID_TOP,
       bottom: context.isBottom
         ? (showSlider ? BOTTOM_GRID_HEIGHT : AXIS_ONLY_BOTTOM_GRID_HEIGHT)
         : 8,
@@ -479,6 +482,15 @@ export function buildKlineOption(context: OptionContext) {
         scale: true,
         position: 'right',
         axisLine: { show: false },
+        axisPointer: {
+          label: {
+            show: true,
+            formatter: ({ value }: { value: number }) => {
+              if (referencePrice == null) return '--'
+              return formatMarketPercent(((value / referencePrice) - 1) * 100)
+            },
+          },
+        },
         axisLabel: {
           color: context.theme.label,
           fontSize: 10,
@@ -509,6 +521,29 @@ export function buildKlineOption(context: OptionContext) {
           symbolSize: 0,
           data: buildTradeMarkPoints(context),
         },
+        markArea: context.measurementRange
+          ? {
+              silent: true,
+              label: { show: false },
+              itemStyle: { color: context.theme.area, opacity: 0.45 },
+              data: [[
+                { xAxis: context.measurementRange.startIndex },
+                { xAxis: context.measurementRange.endIndex },
+              ]],
+            }
+          : undefined,
+        markLine: context.measurementRange
+          ? {
+              silent: true,
+              symbol: ['none', 'none'],
+              label: { show: false },
+              lineStyle: { color: context.theme.accent, width: 1, type: 'dashed' },
+              data: [
+                { xAxis: context.measurementRange.startIndex },
+                { xAxis: context.measurementRange.endIndex },
+              ],
+            }
+          : undefined,
       },
       ...KLINE_MA_DEFINITIONS.map((definition) => {
         const full = movingAverage(allCloses, definition.period)

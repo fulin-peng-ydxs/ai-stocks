@@ -18,18 +18,28 @@ const echartsMock = vi.hoisted(() => {
     init: vi.fn(() => {
       let disposed = false
       const listeners = new Map<string, Array<(event: unknown) => void>>()
+      const rendererListeners = new Map<string, Array<(event: unknown) => void>>()
       const instance = {
         group: undefined as string | undefined,
         setOption: vi.fn(),
         dispatchAction: vi.fn(),
         resize: vi.fn(),
+        containPixel: vi.fn(() => true),
         dispose: vi.fn(() => { disposed = true }),
         isDisposed: vi.fn(() => disposed),
         on: vi.fn((name: string, handler: (event: unknown) => void) => {
           listeners.set(name, [...(listeners.get(name) ?? []), handler])
         }),
+        getZr: vi.fn(() => ({
+          on: (name: string, handler: (event: unknown) => void) => {
+            rendererListeners.set(name, [...(rendererListeners.get(name) ?? []), handler])
+          },
+        })),
         emit(name: string, event: unknown) {
           listeners.get(name)?.forEach((handler) => handler(event))
+        },
+        emitRenderer(name: string, event: unknown = {}) {
+          rendererListeners.get(name)?.forEach((handler) => handler(event))
         },
       }
       instances.push(instance)
@@ -345,6 +355,83 @@ describe('StockChartWorkspace', () => {
     expect(enabled.emitted('barClick')).toEqual([['2026-06-03']])
     const option = kline.setOption.mock.calls.at(-1)?.[0]
     expect(option.series[0].cursor).toBe('pointer')
+  })
+
+  it('按需显示至最新涨跌，并在自选区间模式接管两次 K 线点击', async () => {
+    const wrapper = await mountWorkspace({
+      enableReturnMeasurement: true,
+      enableIntradayDrilldown: true,
+    })
+    const kline = echartsMock.instances[0]
+
+    expect(wrapper.find('.stock-chart-measurement__result').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(true)
+    await wrapper.get('.stock-chart-panel--kline .stock-chart-panel__canvas')
+      .trigger('pointerenter')
+    expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(true)
+    kline.emit('updateAxisPointer', { seriesDataIndices: [{ dataIndex: 6 }] })
+    await nextTick()
+    expect(wrapper.get('.stock-chart-measurement__result').attributes('style'))
+      .toContain('top: 8px; right: 64px; max-width: calc(100% - 128px)')
+    expect(wrapper.get('.stock-chart-measurement__headline').text())
+      .toBe('截止 2026-06-40')
+    expect(wrapper.get('.stock-chart-measurement__return').text()).toBe('+30.56%')
+    expect(wrapper.get('.stock-chart-measurement__return').classes()).toContain('is-up')
+    expect(wrapper.get('.stock-chart-measurement__headline').classes()).not.toContain('is-up')
+    expect(wrapper.text()).not.toContain('2026-06-07起')
+    expect(wrapper.text()).toContain('33个交易日')
+    const latestOption = kline.setOption.mock.calls.at(-1)?.[0]
+    expect(latestOption.series[0].markArea).toBeUndefined()
+
+    kline.emit('globalout', {})
+    await nextTick()
+    expect(wrapper.find('.stock-chart-measurement__result').exists()).toBe(false)
+    await wrapper.get('.stock-chart-panel--kline').trigger('pointerleave')
+    expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(true)
+
+    await wrapper.get('.stock-chart-panel--kline .stock-chart-panel__canvas')
+      .trigger('pointerenter')
+    await wrapper.get('[data-testid="stock-chart-measurement-mode-range"]').trigger('click')
+    expect(wrapper.text()).toContain('点击 K 线选择起点')
+    await wrapper.get('.stock-chart-panel--kline').trigger('pointerleave')
+    expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(true)
+    expect(wrapper.find('.stock-chart-measurement__result').exists()).toBe(false)
+
+    await wrapper.get('.stock-chart-panel--kline .stock-chart-panel__canvas')
+      .trigger('pointerenter')
+    expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('点击 K 线选择起点')
+
+    kline.containPixel.mockReturnValueOnce(false)
+    kline.emit('updateAxisPointer', { seriesDataIndices: [{ dataIndex: 1 }] })
+    kline.emitRenderer('click', { offsetX: 12, offsetY: 320 })
+    expect(wrapper.text()).toContain('点击 K 线选择起点')
+
+    kline.emit('updateAxisPointer', { seriesDataIndices: [{ dataIndex: 2 }] })
+    kline.emitRenderer('click', { offsetX: 120, offsetY: 80 })
+    kline.emit('updateAxisPointer', { seriesDataIndices: [{ dataIndex: 6 }] })
+    await nextTick()
+    expect(wrapper.text()).toContain('2026-06-03 → 2026-06-07')
+    expect(wrapper.get('.stock-chart-measurement__return').text()).toBe('+3.85%')
+    expect(wrapper.text()).toContain('4个交易日')
+    expect(wrapper.text()).toContain('再次点击确认终点')
+
+    kline.emitRenderer('click', { offsetX: 180, offsetY: 70 })
+    await nextTick()
+    expect(wrapper.text()).not.toContain('再次点击确认终点')
+    expect(wrapper.emitted('barClick')).toBeUndefined()
+    const option = kline.setOption.mock.calls.at(-1)?.[0]
+    expect(option.series[0].markArea.data).toEqual([[{ xAxis: 2 }, { xAxis: 6 }]])
+
+    wrapper.unmount()
+  })
+
+  it('未启用涨跌测算时保持原有紧凑日期标题', async () => {
+    const wrapper = await mountWorkspace()
+
+    expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(false)
+    expect(wrapper.find('.stock-chart-panel__date').text()).toBe('2026-06-40')
+    wrapper.unmount()
   })
 
   it('空数据标题仍从共享 MA/VMA 定义生成', async () => {

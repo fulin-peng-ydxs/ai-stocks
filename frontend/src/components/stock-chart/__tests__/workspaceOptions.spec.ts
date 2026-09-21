@@ -345,6 +345,7 @@ describe('workspaceOptions', () => {
       .toEqual(['left', 'right'])
     expect(kline.yAxis[1].axisLabel.formatter(9.7)).toBe('0.00%')
     expect(kline.yAxis[1].axisLabel.formatter(10.67)).toBe('+10.00%')
+    expect(kline.yAxis[1].axisPointer.label.formatter({ value: 10.67 })).toBe('+10.00%')
     expect(kline.series.at(-1)).toMatchObject({
       name: '__price_axis_sync__',
       yAxisIndex: 1,
@@ -357,6 +358,32 @@ describe('workspaceOptions', () => {
     expect(kline.yAxis[0].axisLabel.formatter(4.2)).toBe('4.20')
     expect(macd.yAxis.axisLabel.formatter(0.280109715605261)).toBe('0.28')
     expect(macd.yAxis.axisLabel.formatter(-0.0001)).toBe('0.00')
+  })
+
+  it('自选涨跌区间在 K 线上显示端点与区间底色', () => {
+    const rows = alignStockChartRows([
+      bar('2026-07-21', 9.8),
+      bar('2026-07-22', 10),
+      bar('2026-07-23', 10.2),
+    ], [])
+    const kline = buildKlineOption({
+      rows,
+      warmupBars: [],
+      theme,
+      isBottom: false,
+      zoomStart: 0,
+      zoomEnd: 100,
+      measurementRange: { startIndex: 0, endIndex: 2 },
+    }) as any
+
+    expect(kline.series[0].markArea).toMatchObject({
+      silent: true,
+      data: [[{ xAxis: 0 }, { xAxis: 2 }]],
+    })
+    expect(kline.series[0].markLine).toMatchObject({
+      silent: true,
+      data: [{ xAxis: 0 }, { xAxis: 2 }],
+    })
   })
 
   it('区间首根缺少前收时使用预热区最后收盘作为右轴基准', () => {
