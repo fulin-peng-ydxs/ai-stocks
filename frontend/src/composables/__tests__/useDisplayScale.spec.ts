@@ -28,6 +28,11 @@ function setScreenArea(width: number, height: number): void {
   Object.defineProperty(window.screen, 'availHeight', { configurable: true, value: height })
 }
 
+function setScreenPosition(left: number, top: number): void {
+  Object.defineProperty(window.screen, 'availLeft', { configurable: true, value: left })
+  Object.defineProperty(window.screen, 'availTop', { configurable: true, value: top })
+}
+
 function login(): void {
   writeAuth({
     accessToken: 'scale-token',
@@ -48,6 +53,7 @@ describe('应用显示比例', () => {
     resetDisplayScaleForTests()
     setDpr(1)
     setScreenArea(1920, 1080)
+    setScreenPosition(0, 0)
     prefApi.listUserPreferences.mockResolvedValue({ items: [] })
     prefApi.saveUserPreference.mockResolvedValue({})
   })
@@ -196,6 +202,20 @@ describe('应用显示比例', () => {
     vi.advanceTimersByTime(130)
 
     expect(useDisplayScale().effectivePercent.value).toBe(106)
+  })
+
+  it('跨到同尺寸同缩放屏幕时仍更新几何修订并触发布局复测', () => {
+    vi.useFakeTimers()
+    initDisplayScale()
+    const originalPercent = useDisplayScale().effectivePercent.value
+    const originalRevision = useDisplayScale().geometryRevision.value
+
+    setScreenPosition(1920, 0)
+    window.dispatchEvent(new Event('focus'))
+    vi.advanceTimersByTime(130)
+
+    expect(useDisplayScale().effectivePercent.value).toBe(originalPercent)
+    expect(useDisplayScale().geometryRevision.value).toBe(originalRevision + 1)
   })
 
   it('跨屏没有窗口事件时仍补算，并在隐藏期间跳过探测', () => {

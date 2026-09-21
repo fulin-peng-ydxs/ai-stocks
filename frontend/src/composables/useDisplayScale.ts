@@ -48,6 +48,7 @@ const customPercent = ref(DISPLAY_SCALE_DEFAULT)
 const customProfiles = ref<DisplayScaleProfile[]>([])
 const autoPercent = ref(DISPLAY_SCALE_DEFAULT)
 const currentScreenArea = ref<DisplayScaleArea>({ width: 0, height: 0 })
+const geometryRevision = ref(0)
 const matchedCustomProfile = computed(() => (
   closestDisplayScaleProfile(customProfiles.value, currentScreenArea.value)
 ))
@@ -75,6 +76,17 @@ function readAvailableScreenArea(): DisplayScaleArea {
     width: screenWidth > 0 ? screenWidth : window.innerWidth,
     height: screenHeight > 0 ? screenHeight : window.innerHeight,
   }
+}
+
+function readScreenGeometrySignature(): string {
+  const screen = window.screen as Screen & { availLeft?: number; availTop?: number }
+  return [
+    Number(screen.availLeft) || 0,
+    Number(screen.availTop) || 0,
+    Number(screen.availWidth) || window.innerWidth,
+    Number(screen.availHeight) || window.innerHeight,
+    window.devicePixelRatio || 1,
+  ].join(':')
 }
 
 /**
@@ -133,7 +145,7 @@ function persistLocal(): void {
   }
 }
 
-function applyScale(): void {
+function applyScale(forceLayoutRefresh = false): void {
   const percent = effectivePercent.value
   const scale = percent / 100
   const root = document.documentElement
@@ -148,14 +160,16 @@ function applyScale(): void {
   root.dataset.displayResolution = resolution
 
   // Canvas 与依赖窗口尺寸的第三方组件需要在缩放后的布局稳定后重新测量。
-  if (changed) window.requestAnimationFrame?.(() => window.dispatchEvent(new Event('resize')))
+  if (changed || forceLayoutRefresh) {
+    window.requestAnimationFrame?.(() => window.dispatchEvent(new Event('resize')))
+  }
 }
 
-function refreshScaleForScreen(): void {
+function refreshScaleForScreen(forceLayoutRefresh = false): void {
   currentScreenArea.value = readAvailableScreenArea()
   autoPercent.value = calculateAutoDisplayScalePercent(currentScreenArea.value)
   // 自定义模式会按当前显示器尺寸重新匹配档案；两种模式都需刷新清晰度分级。
-  applyScale()
+  applyScale(forceLayoutRefresh)
 }
 
 const preferenceSync = createGlobalPreferenceSync<DisplayScalePreference>({
@@ -185,18 +199,19 @@ function onViewportChange(): void {
   if (resizeTimer) window.clearTimeout(resizeTimer)
   resizeTimer = window.setTimeout(() => {
     resizeTimer = undefined
-    refreshScaleForScreen()
+    if (!checkScreenChange()) refreshScaleForScreen()
   }, 120)
 }
 
-// 浏览器把窗口移到相同 DPR 的屏幕时不保证产生 resize/focus；只比较廉价屏幕属性。
-function checkScreenChange(): void {
-  if (document.hidden) return
-  const area = readAvailableScreenArea()
-  const signature = `${area.width}:${area.height}:${window.devicePixelRatio || 1}`
-  if (signature === lastScreenSignature) return
+// 跨屏不一定改变最终百分比；屏幕位置、可用面积或 DPR 任一变化都必须刷新命中层。
+function checkScreenChange(): boolean {
+  if (document.hidden) return false
+  const signature = readScreenGeometrySignature()
+  if (signature === lastScreenSignature) return false
   lastScreenSignature = signature
-  refreshScaleForScreen()
+  geometryRevision.value += 1
+  refreshScaleForScreen(true)
+  return true
 }
 
 function onVisibilityChange(): void {
@@ -216,6 +231,7 @@ export function initDisplayScale(): void {
   mode.value = saved?.mode ?? 'auto'
   customPercent.value = saved?.customPercent ?? DISPLAY_SCALE_DEFAULT
   customProfiles.value = saved?.customProfiles ?? []
+  lastScreenSignature = readScreenGeometrySignature()
   refreshScaleForScreen()
   if (!initialized) {
     window.addEventListener('resize', onViewportChange)
@@ -287,6 +303,7 @@ export function resetDisplayScaleForTests(): void {
   customProfiles.value = []
   autoPercent.value = DISPLAY_SCALE_DEFAULT
   currentScreenArea.value = { width: 0, height: 0 }
+  geometryRevision.value = 0
   document.documentElement.style.removeProperty('--app-display-scale')
   document.documentElement.style.removeProperty('--app-display-scale-inverse')
   delete document.documentElement.dataset.displayScaleMode
@@ -301,6 +318,7 @@ export function useDisplayScale() {
     customProfiles,
     autoPercent,
     effectivePercent,
+    geometryRevision,
     setMode: setDisplayScaleMode,
     setCustomPercent: setCustomDisplayScalePercent,
     reset: resetDisplayScale,

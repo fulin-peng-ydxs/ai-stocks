@@ -18,8 +18,13 @@ const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const { selectedPrimaryMenuIndex } = useAppNavigation()
-const { effectivePercent: displayScalePercent } = useDisplayScale()
-const navigationRenderKey = computed(() => `${props.level}-${displayScalePercent.value}`)
+const {
+  effectivePercent: displayScalePercent,
+  geometryRevision: displayGeometryRevision,
+} = useDisplayScale()
+const navigationRenderKey = computed(() => (
+  `${props.level}-${displayScalePercent.value}-${displayGeometryRevision.value}`
+))
 
 const menus = computed(() => auth.menus)
 const activePrimary = computed(() => menus.value.find((node) => menuContainsPath(node, route.path)))
@@ -81,6 +86,7 @@ function descendantLeaves(
     class="top-navigation"
     :class="`is-${level}`"
     :data-display-scale="displayScalePercent"
+    :data-display-geometry-revision="displayGeometryRevision"
     :aria-label="level === 'primary' ? '一级导航' : '二级导航'"
   >
     <template v-if="level === 'primary'">
