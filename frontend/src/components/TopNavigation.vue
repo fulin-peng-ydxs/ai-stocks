@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowDownBold } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAppNavigation } from '@/composables/useAppNavigation'
+import { useDisplayScale } from '@/composables/useDisplayScale'
 import { resolveWorkspaceMenuPath } from '@/composables/useWorkspaceTabs'
 import MenuIcon from '@/components/MenuIcon.vue'
 import {
@@ -17,6 +18,8 @@ const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const { selectedPrimaryMenuIndex } = useAppNavigation()
+const { effectivePercent: displayScalePercent } = useDisplayScale()
+const navigationRenderKey = computed(() => `${props.level}-${displayScalePercent.value}`)
 
 const menus = computed(() => auth.menus)
 const activePrimary = computed(() => menus.value.find((node) => menuContainsPath(node, route.path)))
@@ -74,8 +77,10 @@ function descendantLeaves(
 <template>
   <nav
     v-if="auth.menusStatus === 'ready' && (level === 'primary' ? menus.length : secondaryMenus.length)"
+    :key="navigationRenderKey"
     class="top-navigation"
     :class="`is-${level}`"
+    :data-display-scale="displayScalePercent"
     :aria-label="level === 'primary' ? '一级导航' : '二级导航'"
   >
     <template v-if="level === 'primary'">

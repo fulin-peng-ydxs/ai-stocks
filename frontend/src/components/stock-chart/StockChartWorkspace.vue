@@ -1073,7 +1073,7 @@ onBeforeUnmount(() => {
   font-size: var(--app-font-size-micro);
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--app-space-1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1084,7 +1084,7 @@ onBeforeUnmount(() => {
 .stock-chart-measurement__separator,
 .stock-chart-measurement__meta {
   color: var(--el-text-color-secondary);
-  font-weight: 400;
+  font-weight: var(--app-font-weight-regular);
 }
 
 .stock-chart-measurement__return {

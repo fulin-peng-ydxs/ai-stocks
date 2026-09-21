@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
-import { defineComponent } from 'vue'
-import { describe, expect, it } from 'vitest'
+import { defineComponent, nextTick } from 'vue'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import TopNavigation from '@/components/TopNavigation.vue'
+import {
+  resetDisplayScaleForTests,
+  setCustomDisplayScalePercent,
+} from '@/composables/useDisplayScale'
 import { useAuthStore } from '@/stores/auth'
 import type { MenuTreeNode } from '@/utils/permission'
 
@@ -18,6 +22,9 @@ const menus: MenuTreeNode[] = [
 ]
 
 describe('双层顶栏导航', () => {
+  beforeEach(resetDisplayScaleForTests)
+  afterEach(resetDisplayScaleForTests)
+
   it('一级切换后进入首个授权页，并展示对应二级菜单', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -47,5 +54,31 @@ describe('双层顶栏导航', () => {
     expect(wrapper.text()).toContain('审计日志')
     expect(wrapper.findAll('.primary-entry-icon')).toHaveLength(2)
     expect(wrapper.findAll('.secondary-entry-icon')).toHaveLength(2)
+  })
+
+  it('当前标签页调整显示比例后重建导航命中层', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const auth = useAuthStore()
+    auth.menusStatus = 'ready'
+    auth.menus = menus
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/board', component: { template: '<div />' } }],
+    })
+    await router.push('/board')
+    await router.isReady()
+    const wrapper = mount(TopNavigation, {
+      props: { level: 'secondary' },
+      global: { plugins: [pinia, router, ElementPlus] },
+    })
+    const originalNavigation = wrapper.get('nav').element
+
+    setCustomDisplayScalePercent(73)
+    await nextTick()
+
+    expect(wrapper.get('nav').attributes('data-display-scale')).toBe('73')
+    expect(wrapper.get('nav').element).not.toBe(originalNavigation)
+    wrapper.unmount()
   })
 })
