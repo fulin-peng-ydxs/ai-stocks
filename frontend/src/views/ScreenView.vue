@@ -1037,6 +1037,7 @@ const menuPageTitle = useMenuPageTitle()
               v-else-if="result && result.hits.length"
               registry-page-key="screen"
               :adjust-mode="adjustMode"
+              :analysis-defaults="chartPreferences.stockAnalysis.value"
               :rows="displayHits"
               :columns="resultColumns"
               :title="runDate || '最新交易日'"

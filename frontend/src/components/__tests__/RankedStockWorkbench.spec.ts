@@ -6,6 +6,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import RankedStockWorkbench from '@/components/ranked-stock/RankedStockWorkbench.vue'
 import { rankedStockColumns } from '@/components/ranked-stock/types'
 import { useStockSet } from '@/stores/stockSet'
+import { createDefaultStockAnalysisPreferences } from '@/composables/useStockAnalysisSession'
 
 const router = createRouter({
   history: createMemoryHistory(),
@@ -29,6 +30,7 @@ describe('RankedStockWorkbench', () => {
       props: {
         registryPageKey: 'screen',
         adjustMode: 'qfq',
+        analysisDefaults: createDefaultStockAnalysisPreferences(),
         rows: [
           {
             code: '000001.SZ', name: '平安银行', board: '主板', total_score: 90,

@@ -74,7 +74,11 @@ export const COMPONENT_CATALOG: Record<ComponentKind, ComponentMeta> = {
     defaultScroll: 'none',
     canGrowMain: false,
     reflowable: true,
-    configCapabilities: ['title', 'collapsible'],
+    configCapabilities: [
+      'title',
+      'collapsible',
+      'visibleIndicatorFields',
+    ],
   }),
   'split-pane': meta('split-pane', {
     category: 'structure',

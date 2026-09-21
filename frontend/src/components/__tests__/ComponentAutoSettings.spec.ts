@@ -14,6 +14,7 @@ vi.mock('@/layout/pageRegistry', () => ({
       'border-demo': [{ key: 'border', layers: ['page'] }],
       'config-panel-demo': [{ key: 'defaultCollapsed', layers: ['page', 'user'] }],
       'chart-demo': [
+        { key: 'klineRangePreferences', layers: ['user'] },
         { key: 'minHeight', layers: ['page', 'user'] },
         { key: 'stockChart', layers: ['page', 'user'] },
       ],
@@ -106,7 +107,9 @@ vi.mock('@/layout/pageRegistry', () => ({
 
 vi.mock('@/layout/componentConfig', () => {
   const fieldDef = (_kind: string, field: string) => (
-    field === 'stockChart'
+    field === 'klineRangePreferences'
+      ? { key: 'klineRangePreferences', label: 'K 线范围', control: 'object', layers: ['user'] }
+      : field === 'stockChart'
       ? { key: 'stockChart', label: '图表组合与内部比例', control: 'object', layers: ['page', 'user'] }
       : field === 'minHeight'
       ? { key: 'minHeight', label: '图表区域高度', control: 'int', layers: ['page', 'user'], min: 480, max: 900, default: 560 }
@@ -124,7 +127,7 @@ vi.mock('@/layout/componentConfig', () => {
     getComponentFieldDef: fieldDef,
     getApplicableComponentFieldDefs: (kind: string, meta: any, layer: string) => {
       const fields = kind === 'chart'
-        ? ['minHeight', 'stockChart']
+        ? ['klineRangePreferences', 'minHeight', 'stockChart']
         : kind === 'master-detail'
           ? ['masterRatio', 'masterRatioProfiles']
         : kind === 'config-panel'
@@ -354,6 +357,9 @@ function mountChartDemo(withRuntime = false) {
           emits: ['change', 'saveDefaultRatios', 'applyCurrentRatios'],
           template: '<div><button class="stock-chart-stub" :data-current-ratios="currentRatios.join(\'|\')" @click="$emit(\'change\', \'slot2\', \'macd\')">chart</button><button class="stock-chart-current-stub" @click="$emit(\'change\', \'slot2\', \'volume\')">current</button><button class="stock-chart-ratio-stub" @click="$emit(\'saveDefaultRatios\', [0.52, 0.28, 0.2])">ratio</button><button class="stock-chart-apply-stub" :disabled="!canApplyCurrentRatios || !currentRatiosChanged || disableCurrentRatios" @click="$emit(\'applyCurrentRatios\')">apply</button></div>',
         },
+        KlineSettingSection: {
+          template: '<div data-testid="kline-setting-section" />',
+        },
       },
     },
   })
@@ -461,6 +467,12 @@ describe('ComponentAutoSettings', () => {
       'stockChart',
       expect.objectContaining({ slot2: 'macd', slot3: 'volume' }),
     )
+  })
+
+  it('K 线范围作为图表组件设置渲染，不走页面业务插槽', () => {
+    const { wrapper } = mountChartDemo()
+    expect(wrapper.find('[data-testid="kline-setting-section"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('K 线范围')
   })
 
   it('股票多图组合重复选择当前类型时不写入组件配置', async () => {

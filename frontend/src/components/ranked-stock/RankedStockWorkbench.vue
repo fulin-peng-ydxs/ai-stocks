@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { ScoreRunRow } from '@/api/scoreProfile'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
@@ -8,18 +8,23 @@ import RankedStockResultTable from '@/components/ranked-stock/RankedStockResultT
 import type { RankedStockColumn } from './types'
 import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
 import { useStockSet } from '@/stores/stockSet'
-import { PRICE_COMPARE_METRIC_ORDER } from '@/utils/marketCompare'
 import type { AuxiliaryChartType } from '@/composables/useStockChartPreferences'
 import type { StockChartWorkspaceSample } from '@/components/stock-chart/workspaceOptions'
 import type { MasterDetailRatioRuntimeSample } from '@/layout/masterDetailRatioProfiles'
 import type { MarketWorkspaceHeightMode } from '@/layout/marketWorkspaceSizing'
-import type { StockAdjustMode } from '@/composables/useStockAnalysisSession'
+import {
+  useStockAnalysisSession,
+  type StockAdjustMode,
+  type StockAnalysisComponentPreferences,
+} from '@/composables/useStockAnalysisSession'
+import { useKlinePrefs } from '@/composables/useKlinePrefs'
 
 const props = withDefaults(defineProps<{
   /** pageRegistry 反向契约标识：每个消费页必须显式声明其布局事实源。 */
   registryPageKey: string
   /** 行情业务口径必须由消费页设置抽屉提供，禁止组件内部写死。 */
   adjustMode: StockAdjustMode
+  analysisDefaults: StockAnalysisComponentPreferences
   rows: ScoreRunRow[]
   columns: RankedStockColumn[]
   title: string
@@ -64,12 +69,19 @@ const router = useRouter()
 const stockSet = useStockSet()
 const sourceRows = computed(() => props.rows)
 const selection = useStockAnalysisSelection(sourceRows, { maxItems: 6 })
-const analysisVisible = ref(true)
-const mode = ref<'compare' | 'kline'>('compare')
-const compareRange = ref(60)
-const compareMetric = ref<'cum'>('cum')
-const benchmarkCode = ref('000905.SH')
-const klineRange = ref(120)
+const { validDefault: klineDefaultRange } = useKlinePrefs()
+const {
+  analysisPanelVisible: analysisVisible,
+  chartMode: mode,
+  compareRange,
+  compareMetric,
+  benchmarkCode,
+  visibleCompareMetrics,
+  klineRange,
+} = useStockAnalysisSession(
+  computed(() => ({ ...props.analysisDefaults, adjustMode: props.adjustMode })),
+  klineDefaultRange,
+)
 
 function selectRow(row: ScoreRunRow): void {
   selection.select(row)
@@ -127,7 +139,7 @@ function openActiveDetail(): void {
         :active="selection.activeItem.value"
         :items="selection.items.value"
         :end-date="runDate"
-        :compare-metrics="PRICE_COMPARE_METRIC_ORDER"
+        :compare-metrics="visibleCompareMetrics"
         :adjust-mode="adjustMode"
         :slot2="slot2"
         :slot3="slot3"

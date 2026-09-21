@@ -5,6 +5,7 @@ import {
   normalizeStockChartPreferences,
 } from '@/composables/useStockChartPreferences'
 import { useStockChartComponentConfig } from '@/composables/useStockChartComponentConfig'
+import { createDefaultStockAnalysisPreferences } from '@/composables/useStockAnalysisSession'
 
 describe('useStockChartComponentConfig', () => {
   it('拖动比例只进入待采用样本，不提前覆盖抽屉配置基线', () => {
@@ -91,5 +92,25 @@ describe('useStockChartComponentConfig', () => {
     config.returnMeasurementMode.value = 'latest'
     expect(stored.measurementOperationsExpanded).toBe(true)
     expect(stored.returnMeasurementMode).toBe('range')
+  })
+
+  it('通过组件配置读写联动走势工作台默认项', () => {
+    const stored = reactive<Record<string, unknown>>({
+      stockChart: createDefaultStockChartPreferences(),
+      stockAnalysis: createDefaultStockAnalysisPreferences(),
+    })
+    const config = useStockChartComponentConfig({
+      componentValueOf: (_slotId, field) => stored[field],
+      setComponentKnob: (_slotId, field, value) => { stored[field] = value },
+      hydrated: ref(true),
+    })
+
+    config.stockAnalysis.value = {
+      ...config.stockAnalysis.value,
+      defaultChartMode: 'kline',
+      compareRange: 120,
+    }
+
+    expect(stored.stockAnalysis).toMatchObject({ defaultChartMode: 'kline', compareRange: 120 })
   })
 })

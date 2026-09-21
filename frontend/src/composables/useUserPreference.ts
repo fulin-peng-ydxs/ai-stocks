@@ -10,6 +10,8 @@ export interface UseUserPreferenceOptions<T extends object> {
   prefKey: string
   defaults: T
   localStorageKey: string
+  /** 旧字段由专用迁移器按“新配置先落库、旧字段后清理”的顺序处理。 */
+  deferUnknownFieldCleanup?: boolean
 }
 
 function clone<T>(value: T): T {
@@ -38,12 +40,12 @@ export function replaceReactive<T extends Record<string, unknown>>(target: T, so
   Object.assign(target, source)
 }
 
-function readLocal<T>(key: string, defaults: T): T {
+function readLocal<T>(key: string, defaults: T, rewriteNormalized = true): T {
   try {
     const raw = localStorage.getItem(key)
     const saved = raw ? JSON.parse(raw) : undefined
     const normalized = mergePreferenceDefaults(defaults, saved)
-    if (raw && JSON.stringify(saved) !== JSON.stringify(normalized)) {
+    if (rewriteNormalized && raw && JSON.stringify(saved) !== JSON.stringify(normalized)) {
       localStorage.setItem(key, JSON.stringify(normalized))
     }
     return normalized
@@ -52,8 +54,23 @@ function readLocal<T>(key: string, defaults: T): T {
   }
 }
 
+function readLocalSnapshot(key: string): unknown {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw ? JSON.parse(raw) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export function useUserPreference<T extends object>(options: UseUserPreferenceOptions<T>) {
-  const value = reactive(readLocal(options.localStorageKey, options.defaults)) as T
+  // 保留规范化前的旧载荷，仅供一次性迁移读取；运行时设置仍只暴露当前 defaults 字段。
+  const legacySnapshot = ref<unknown>(readLocalSnapshot(options.localStorageKey))
+  const value = reactive(readLocal(
+    options.localStorageKey,
+    options.defaults,
+    !options.deferUnknownFieldCleanup,
+  )) as T
   const hydrated = ref(false)
   const remoteError = ref(false)
   const saving = ref(false)
@@ -117,6 +134,7 @@ export function useUserPreference<T extends object>(options: UseUserPreferenceOp
         prefKey: options.prefKey,
       })
       const remote = res.items[0]?.value
+      if (remote !== undefined) legacySnapshot.value = clone(remote)
       if (!dirtyBeforeHydrate && remote !== undefined) {
         const normalized = mergePreferenceDefaults(options.defaults, remote)
         const remoteNeedsCleanup = JSON.stringify(remote) !== JSON.stringify(normalized)
@@ -124,7 +142,7 @@ export function useUserPreference<T extends object>(options: UseUserPreferenceOp
         replaceReactive(value as Record<string, unknown>, normalized as Record<string, unknown>)
         applyingRemote = false
         // defaults 是当前偏好 schema；字段下线后顺手清理 PG 旧载荷，避免隐藏会话字段长期残留。
-        if (remoteNeedsCleanup) await saveRemoteNow()
+        if (remoteNeedsCleanup && !options.deferUnknownFieldCleanup) await saveRemoteNow()
       } else if (dirtyBeforeHydrate) {
         await saveRemoteNow()
       }
@@ -150,7 +168,9 @@ export function useUserPreference<T extends object>(options: UseUserPreferenceOp
   watch(
     value,
     () => {
-      persistLocal()
+      // 专用迁移接管时，远端水合只更新运行时值；不能先用规范化结果覆盖本地旧载荷，
+      // 否则组件配置保存失败后将失去下一次迁移所需的数据。
+      if (!(applyingRemote && options.deferUnknownFieldCleanup)) persistLocal()
       if (!hydrated.value && !applyingRemote) dirtyBeforeHydrate = true
       if (!applyingRemote && hydrated.value) scheduleRemoteSave()
     },
@@ -176,5 +196,6 @@ export function useUserPreference<T extends object>(options: UseUserPreferenceOp
     loadRemote,
     whenHydrated,
     saveRemoteNow,
+    legacySnapshot,
   }
 }

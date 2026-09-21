@@ -57,7 +57,10 @@ COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
     "defaultSort": {"type": "str", "layers": {"page", "user"}},
     "hiddenColumns": {"type": "str_list", "layers": {"page", "user"}},
     "minHeight": {"type": "int", "layers": {"page", "user"}, "min": 480, "max": 900},
+    "klineRangePreferences": {"type": "object", "layers": {"user"}},
     "stockChart": {"type": "object", "layers": {"page", "user"}},
+    "stockAnalysis": {"type": "object", "layers": {"page", "user"}},
+    "sectorAnalysis": {"type": "object", "layers": {"page", "user"}},
     "measurementOperationsExpanded": {"type": "bool", "layers": {"page", "user"}},
     "returnMeasurementMode": {
         "type": "enum",
@@ -75,6 +78,7 @@ COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
     "defaultCollapsed": {"type": "str_list", "layers": {"page", "user"}},
     "showGroupDescription": {"type": "bool", "layers": {"page", "user"}},
     "showSectionDescription": {"type": "bool", "layers": {"page", "user"}},
+    "visibleIndicatorFields": {"type": "str_list", "layers": {"page", "user"}},
 }
 
 # 组件种类 -> 允许的配置字段集合（与前端 COMPONENT_FIELD_DEFS 同口径）。
@@ -86,9 +90,13 @@ COMPONENT_CONFIG_FIELDS_BY_KIND: dict[str, set[str]] = {
     "chart": {
         "minHeight",
         "stockChart",
+        "stockAnalysis",
+        "sectorAnalysis",
         "measurementOperationsExpanded",
         "returnMeasurementMode",
+        "klineRangePreferences",
     },
+    "section": {"visibleIndicatorFields"},
     "master-detail": {"masterWidth", "masterRatio", "masterRatioProfiles"},
     "tabs": {"defaultActive"},
     "settings-drawer": {"size", "bodyScroll"},
@@ -99,12 +107,23 @@ COMPONENT_CONFIG_FIELDS_BY_KIND: dict[str, set[str]] = {
 COMPONENT_CONFIG_OPTIONS_BY_KIND_FIELD: dict[tuple[str, str], set[str]] = {
     ("chart", "returnMeasurementMode"): {"latest", "range"},
     ("settings-drawer", "size"): {"sm", "md", "lg"},
+    ("section", "visibleIndicatorFields"): {
+        "ma20",
+        "ma60",
+        "dist_to_high_2y",
+        "is_high_2y",
+        "is_bull_arrange",
+        "ma20_up",
+        "is_platform_breakout",
+        "is_vol_breakout",
+    },
 }
 
 # user 层并不等于一律写 layout_user_config。跨页面共享的个人偏好由专用偏好存储承接；
 # 此表是布局写接口的反向拦截事实源，按 (kind, field) 判断，避免绑定具体 pageKey/slotId。
 COMPONENT_CONFIG_USER_PERSISTENCE_BY_KIND_FIELD: dict[tuple[str, str], str] = {
     ("settings-drawer", "size"): "global-preference",
+    ("chart", "klineRangePreferences"): "global-preference",
 }
 
 # registry 统一保留 settings 作为页面设置抽屉 slot。历史折叠字段已改为固定交互，
@@ -172,6 +191,24 @@ def check_component_config_ownership(values: dict[str, Any], layout: dict[str, A
             continue
         if field == "stockChart" and "stockChart" not in slot_config:
             errors.append(f"组件 {kind} 的当前实例不是股票多图工作区，不能配置 stockChart（slot {slot_id}）")
+            continue
+        if field == "klineRangePreferences" and "stockChart" not in slot_config:
+            errors.append(
+                f"组件 {kind} 的当前实例不是 K 线工作区，"
+                f"不能配置 klineRangePreferences（slot {slot_id}）"
+            )
+            continue
+        if (
+            field == "visibleIndicatorFields"
+            and field not in slot_config
+        ):
+            errors.append(f"组件 {kind} 的当前实例未开放 {field}（slot {slot_id}）")
+            continue
+        if field == "stockAnalysis" and "stockAnalysis" not in slot_config:
+            errors.append(f"组件 {kind} 的当前实例不是联动走势工作台，不能配置 stockAnalysis（slot {slot_id}）")
+            continue
+        if field == "sectorAnalysis" and "sectorAnalysis" not in slot_config:
+            errors.append(f"组件 {kind} 的当前实例不是板块联动走势工作台，不能配置 sectorAnalysis（slot {slot_id}）")
             continue
         if (
             field in {"measurementOperationsExpanded", "returnMeasurementMode"}

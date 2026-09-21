@@ -39,9 +39,7 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
-import PageToggleRow from '@/components/PageToggleRow.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
-import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import MarketDetailHero from '@/components/MarketDetailHero.vue'
 import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
 import StockGroupFavoriteButton from '@/components/StockGroupFavoriteButton.vue'
@@ -118,26 +116,17 @@ const {
   saveRemoteUserConfig, remoteSaveError,
 } = useRemoteLayoutConfig(detailLayout)
 
-// 抽屉的布局、分栏比例与图表组合由 PageSettingsDrawer 按 pageRegistry 元数据统一渲染。
-const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers, save: saveRemoteUserConfig }
 const detailDefaults = {
   adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
-  showTradeCard: true,
-  showIndicatorSnapshot: true,
-  showRelatedBoards: true,
-  showNav: true,
-  indicators: {
-    ma20: true,
-    ma60: true,
-    dist_to_high_2y: true,
-    is_high_2y: true,
-    is_bull_arrange: true,
-    ma20_up: true,
-    is_platform_breakout: true,
-    is_vol_breakout: true,
-  },
 }
-const { settings, isDirty, reset } = usePageSettings('stock-detail', detailDefaults)
+const {
+  settings,
+  isDirty,
+  reset,
+  whenHydrated: whenDetailSettingsHydrated,
+  legacySnapshot: detailLegacySnapshot,
+  save: saveDetailSettings,
+} = usePageSettings('stock-detail', detailDefaults, { deferUnknownFieldCleanup: true })
 const chartPreferences = useStockChartComponentConfig({
   componentValueOf,
   setComponentKnob,
@@ -155,8 +144,30 @@ const splitWorkspaceRef = ref<InstanceType<typeof AppSplitWorkspace> | null>(nul
 const splitCompact = ref(false)
 const auxiliaryVisible = ref(true)
 useLegacyStockChartPreferenceMigration({
-  pageKey: 'stock-detail', componentSourceOf, setComponentKnob, whenRemoteHydrated,
+  pageKey: 'stock-detail', sourceOf, setKnob, componentSourceOf, setComponentKnob, whenRemoteHydrated,
   saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
+  whenPageSettingsHydrated: whenDetailSettingsHydrated,
+  legacySnapshot: detailLegacySnapshot,
+  savePageSettings: saveDetailSettings,
+  legacyLayoutMappings: [
+    { legacyField: 'showNav', path: 'slots.collectionNavigation.visible' },
+    { legacyField: 'showRelatedBoards', path: 'slots.relatedBoards.visible' },
+    { legacyField: 'showIndicatorSnapshot', path: 'slots.indicatorSnapshot.visible' },
+    { legacyField: 'showTradeCard', path: 'slots.tradeEvaluation.visible' },
+  ],
+  legacyComponentMappings: [
+    {
+      legacyField: 'indicators',
+      slotId: 'indicatorSnapshot',
+      componentField: 'visibleIndicatorFields',
+      transform(value) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+        return Object.entries(value)
+          .filter(([, visible]) => visible === true)
+          .map(([field]) => field)
+      },
+    },
+  ],
 })
 
 function resetDetailSettings(): void {
@@ -183,10 +194,33 @@ const canViewSectors = computed(() => hasPermission(auth.role, auth.permissions,
 const canUseTradeEvaluation = computed(() => (
   canViewTradeProfiles.value && canEvaluateTrades.value
 ))
+// 抽屉由 registry 自动渲染；无买卖评估权限时同步收起对应布局入口。
+const drawerConfig = computed(() => ({
+  knobs: layoutKnobs.filter((knob) => (
+    canUseTradeEvaluation.value || knob.path !== 'slots.tradeEvaluation.visible'
+  )),
+  valueOf,
+  sourceOf,
+  setKnob,
+  componentValueOf,
+  setComponentKnob,
+  componentSourceOf,
+  layerValuesOf,
+  componentLayerValuesOf,
+  componentAllowedLayers,
+  save: saveRemoteUserConfig,
+}))
+const showCollectionNavigation = computed(() => valueOf('slots.collectionNavigation.visible') !== false)
+const showRelatedBoards = computed(() => valueOf('slots.relatedBoards.visible') !== false)
+const showIndicatorSnapshot = computed(() => valueOf('slots.indicatorSnapshot.visible') !== false)
+const showTradeCard = computed(() => valueOf('slots.tradeEvaluation.visible') !== false)
+const settingsComponentSlotIds = computed(() => detailLayout.slots
+  .map((slot) => slot.id)
+  .filter((slotId) => canUseTradeEvaluation.value || slotId !== 'tradeEvaluation'))
 const hasAuxiliaryContent = computed(() => (
-  settings.showRelatedBoards
-  || settings.showIndicatorSnapshot
-  || (settings.showTradeCard && canUseTradeEvaluation.value)
+  showRelatedBoards.value
+  || showIndicatorSnapshot.value
+  || (showTradeCard.value && canUseTradeEvaluation.value)
 ))
 const showAuxiliary = computed(() => auxiliaryVisible.value && hasAuxiliaryContent.value)
 
@@ -397,7 +431,15 @@ const DETAIL_INDICATOR_FIELDS = [
   ...INDICATOR_FIELDS.map((field) => field.key),
   ...MACD_FIELDS,
 ] as readonly IndicatorField[]
-const visibleIndicatorFields = computed(() => INDICATOR_FIELDS.filter((f) => settings.indicators[f.key as keyof typeof settings.indicators]))
+const visibleIndicatorFields = computed(() => {
+  const configured = componentValueOf('indicatorSnapshot', 'visibleIndicatorFields')
+  const visible = new Set(
+    Array.isArray(configured)
+      ? configured.filter((value): value is string => typeof value === 'string')
+      : INDICATOR_FIELDS.map((field) => field.key),
+  )
+  return INDICATOR_FIELDS.filter((field) => visible.has(field.key))
+})
 const adjustLabel = computed(() => {
   if (settings.adjustMode === 'qfq') return '前复权'
   if (settings.adjustMode === 'hfq') return '后复权'
@@ -1057,9 +1099,9 @@ onBeforeUnmount(() => {
             {{ quoteLoading ? '行情摘要加载中…' : '行情摘要暂不可用' }}
           </span>
         </template>
-        <template v-if="(settings.showNav && stockSet.has) || (canUpdateGroups && !barsPermissionDenied)" #footer>
+        <template v-if="(showCollectionNavigation && stockSet.has) || (canUpdateGroups && !barsPermissionDenied)" #footer>
           <div
-            v-if="settings.showNav && stockSet.has"
+            v-if="showCollectionNavigation && stockSet.has"
             class="stock-context__collection"
             data-testid="stock-set-navigation"
           >
@@ -1246,7 +1288,7 @@ onBeforeUnmount(() => {
           >
           <aside class="stock-detail-auxiliary">
             <StockBoardMembershipPanel
-              v-if="settings.showRelatedBoards"
+              v-if="showRelatedBoards"
               :membership="boardMembership"
               :loading="membershipLoading"
               :error="membershipError"
@@ -1255,7 +1297,7 @@ onBeforeUnmount(() => {
               @retry="loadBoardMembership"
             />
             <el-card
-              v-if="settings.showIndicatorSnapshot"
+              v-if="showIndicatorSnapshot"
               data-testid="stock-indicator-snapshot-card"
               shadow="never"
               class="ind-card"
@@ -1274,7 +1316,7 @@ onBeforeUnmount(() => {
 
             <!-- 买卖指标方案评估 -->
             <el-card
-              v-if="settings.showTradeCard && canUseTradeEvaluation"
+              v-if="showTradeCard && canUseTradeEvaluation"
               data-testid="stock-trade-eval-card"
               shadow="never"
               class="trade-card"
@@ -1386,6 +1428,7 @@ onBeforeUnmount(() => {
       page-key="stock-detail"
       :config="drawerConfig"
       :business-visible="true"
+      :component-slot-ids="settingsComponentSlotIds"
       :component-runtime-value-of="componentRuntimeValueOf"
       @reset="resetDetailSettings"
     >
@@ -1398,39 +1441,6 @@ onBeforeUnmount(() => {
               { label: '后复权', value: 'hfq' },
             ]" />
           </PageSettingItem>
-        </PageSettingSection>
-
-        <KlineSettingSection />
-
-        <PageSettingSection title="指标快照">
-          <PageToggleRow v-model="settings.indicators.ma20" label="MA20" />
-          <PageToggleRow v-model="settings.indicators.ma60" label="MA60" />
-          <PageToggleRow v-model="settings.indicators.dist_to_high_2y" label="距两年高(比)" />
-          <PageToggleRow v-model="settings.indicators.is_high_2y" label="两年新高" />
-          <PageToggleRow v-model="settings.indicators.is_bull_arrange" label="多头排列" />
-          <PageToggleRow v-model="settings.indicators.ma20_up" label="MA20 向上" />
-          <PageToggleRow v-model="settings.indicators.is_platform_breakout" label="平台突破" />
-          <PageToggleRow v-model="settings.indicators.is_vol_breakout" label="放量突破" />
-        </PageSettingSection>
-
-        <PageSettingSection title="辅助模块">
-          <PageToggleRow v-model="settings.showNav" label="显示集合导航条" />
-          <PageToggleRow
-            v-model="settings.showRelatedBoards"
-            label="显示所属板块"
-            test-id="stock-detail-toggle-related-boards"
-          />
-          <PageToggleRow
-            v-model="settings.showIndicatorSnapshot"
-            label="显示最新指标快照"
-            test-id="stock-detail-toggle-indicator-snapshot"
-          />
-          <PageToggleRow
-            v-if="canUseTradeEvaluation"
-            v-model="settings.showTradeCard"
-            label="显示买卖信号评估卡"
-            test-id="stock-detail-toggle-trade-card"
-          />
         </PageSettingSection>
       </template>
     </PageSettingsDrawer>

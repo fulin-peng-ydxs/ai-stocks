@@ -19,6 +19,8 @@ import {
   MASTER_DETAIL_RATIO_MAX,
   MASTER_DETAIL_RATIO_MIN,
 } from './masterDetailRatioProfiles'
+import { createDefaultStockAnalysisPreferences } from '@/composables/useStockAnalysisSession'
+import { createDefaultSectorAnalysisPreferences } from '@/composables/useSectorAnalysisPreferences'
 
 /** 可覆盖层级（不含 default：default 即 slot.config 代码默认）。 */
 export type ComponentConfigLayer = 'page' | 'user'
@@ -113,6 +115,17 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
   ],
   chart: [
     {
+      key: 'klineRangePreferences',
+      label: 'K 线范围',
+      control: 'object',
+      layers: ['user'],
+      userPersistence: 'global-preference',
+      default: {},
+      highFrequency: true,
+      help: '配置所有 K 线图共用的快捷范围与默认范围。',
+      applicability: 'explicit',
+    },
+    {
       key: 'minHeight',
       label: '图表区域高度',
       control: 'int',
@@ -135,13 +148,32 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       applicability: 'explicit',
     },
     {
+      key: 'stockAnalysis',
+      label: '走势分析默认项',
+      control: 'object',
+      layers: ['page', 'user'],
+      default: createDefaultStockAnalysisPreferences() as unknown as Record<string, unknown>,
+      highFrequency: true,
+      help: '配置联动走势工作台的默认模式、显示状态、对比周期、指数与指标。',
+      applicability: 'explicit',
+    },
+    {
+      key: 'sectorAnalysis',
+      label: '板块走势默认项',
+      control: 'object',
+      layers: ['page', 'user'],
+      default: createDefaultSectorAnalysisPreferences() as unknown as Record<string, unknown>,
+      highFrequency: true,
+      help: '配置板块联动工作台的默认模式、显示状态、对比指数、指标与周期。',
+      applicability: 'explicit',
+    },
+    {
       key: 'measurementOperationsExpanded',
       label: '默认展开图表操作栏',
       control: 'bool',
       layers: ['page', 'user'],
       default: false,
       highFrequency: true,
-      help: '只作为新页面会话的默认值；页面内临时展开或收起不会反写该配置。',
       applicability: 'explicit',
     },
     {
@@ -153,7 +185,46 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       optionLabels: { latest: '截止', range: '区间' },
       default: 'latest',
       highFrequency: true,
-      help: '只作为新页面会话的默认值；页面内切换模式不会反写该配置。',
+      applicability: 'explicit',
+    },
+  ],
+  section: [
+    {
+      key: 'visibleIndicatorFields',
+      label: '显示指标',
+      control: 'string[]',
+      layers: ['page', 'user'],
+      options: [
+        'ma20',
+        'ma60',
+        'dist_to_high_2y',
+        'is_high_2y',
+        'is_bull_arrange',
+        'ma20_up',
+        'is_platform_breakout',
+        'is_vol_breakout',
+      ],
+      optionLabels: {
+        ma20: 'MA20',
+        ma60: 'MA60',
+        dist_to_high_2y: '距两年高(比)',
+        is_high_2y: '两年新高',
+        is_bull_arrange: '多头排列',
+        ma20_up: 'MA20 向上',
+        is_platform_breakout: '平台突破',
+        is_vol_breakout: '放量突破',
+      },
+      default: [
+        'ma20',
+        'ma60',
+        'dist_to_high_2y',
+        'is_high_2y',
+        'is_bull_arrange',
+        'ma20_up',
+        'is_platform_breakout',
+        'is_vol_breakout',
+      ],
+      highFrequency: true,
       applicability: 'explicit',
     },
   ],

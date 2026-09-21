@@ -23,6 +23,8 @@ const pageSettingsState = vi.hoisted(() => ({
 const resetLayout = vi.hoisted(() => vi.fn())
 const componentConfigState = vi.hoisted(() => ({ current: null as any }))
 const measurementConfigState = vi.hoisted(() => ({ current: null as any }))
+const sectionConfigState = vi.hoisted(() => ({ current: null as any }))
+const layoutVisibilityState = vi.hoisted(() => ({ current: null as any }))
 
 function defaultChartConfig() {
   return {
@@ -38,15 +40,39 @@ function defaultChartConfig() {
   }
 }
 
+function defaultSectionConfig() {
+  return {
+    indicatorSnapshot: {
+      visibleIndicatorFields: [
+        'ma20', 'ma60', 'dist_to_high_2y', 'is_high_2y', 'is_bull_arrange',
+        'ma20_up', 'is_platform_breakout', 'is_vol_breakout',
+      ],
+    },
+  }
+}
+
+function defaultLayoutVisibility() {
+  return {
+    'slots.collectionNavigation.visible': true,
+    'slots.relatedBoards.visible': true,
+    'slots.indicatorSnapshot.visible': true,
+    'slots.tradeEvaluation.visible': true,
+  }
+}
+
 vi.mock('@/composables/useRemoteLayoutConfig', () => ({
   useRemoteLayoutConfig: () => {
     componentConfigState.current ??= reactive(defaultChartConfig())
     measurementConfigState.current ??= reactive({ expanded: false, mode: 'latest' as 'latest' | 'range' })
+    sectionConfigState.current ??= reactive(defaultSectionConfig())
+    layoutVisibilityState.current ??= reactive(defaultLayoutVisibility())
     return ({
     effective: {},
     knobs: [],
-    setKnob: vi.fn(),
-    valueOf: vi.fn(),
+    setKnob: vi.fn((path: string, value: unknown) => {
+      layoutVisibilityState.current[path] = value
+    }),
+    valueOf: vi.fn((path: string) => layoutVisibilityState.current[path]),
     sourceOf: vi.fn(),
     isDirty: ref(false),
     resetAll: () => {
@@ -54,14 +80,16 @@ vi.mock('@/composables/useRemoteLayoutConfig', () => ({
       Object.assign(componentConfigState.current, defaultChartConfig())
       measurementConfigState.current.expanded = false
       measurementConfigState.current.mode = 'latest'
+      Object.assign(sectionConfigState.current, defaultSectionConfig())
+      Object.assign(layoutVisibilityState.current, defaultLayoutVisibility())
     },
-    componentValueOf: vi.fn((_slotId: string, field: string) => (
+    componentValueOf: vi.fn((slotId: string, field: string) => (
       field === 'stockChart' ? componentConfigState.current
         : field === 'measurementOperationsExpanded' ? measurementConfigState.current.expanded
           : field === 'returnMeasurementMode' ? measurementConfigState.current.mode
             : field === 'minHeight' ? 650 : undefined
-    )),
-    setComponentKnob: vi.fn((_slotId: string, field: string, value: unknown) => {
+    ) ?? sectionConfigState.current[slotId]?.[field]),
+    setComponentKnob: vi.fn((slotId: string, field: string, value: unknown) => {
       if (field === 'measurementOperationsExpanded') {
         measurementConfigState.current.expanded = value === true
         return
@@ -70,9 +98,12 @@ vi.mock('@/composables/useRemoteLayoutConfig', () => ({
         measurementConfigState.current.mode = value === 'range' ? 'range' : 'latest'
         return
       }
-      if (field !== 'stockChart') return
-      for (const key of Object.keys(componentConfigState.current)) delete componentConfigState.current[key]
-      Object.assign(componentConfigState.current, structuredClone(value))
+      if (field === 'stockChart') {
+        for (const key of Object.keys(componentConfigState.current)) delete componentConfigState.current[key]
+        Object.assign(componentConfigState.current, structuredClone(value))
+        return
+      }
+      if (sectionConfigState.current[slotId]) sectionConfigState.current[slotId][field] = value
     }),
     componentSourceOf: vi.fn(() => 'default'),
     layerValuesOf: vi.fn(),
@@ -105,6 +136,7 @@ vi.mock('@/composables/usePageSettings', () => ({
 
 // 每次调用返回独立 prefs：避免未卸载组件实例经共享单例串扰（真实单例行为对这些断言无意义）。
 vi.mock('@/composables/useKlinePrefs', () => ({
+  ALL_DAYS: 99999,
   useKlinePrefs: () => {
     const prefs = reactive({ defaultPeriod: 120 })
     return { validDefault: computed(() => prefs.defaultPeriod), prefs }
@@ -263,6 +295,13 @@ const PageSettingsDrawerStub = defineComponent({
         'data-testid': 'component-chart-returnMeasurementMode-range',
         onClick: () => config.setComponentKnob('chart', 'returnMeasurementMode', 'range'),
       }, '区间'),
+      ...(['relatedBoards', 'indicatorSnapshot', 'tradeEvaluation'] as const).map((slotId) => h('button', {
+        'data-testid': `layout-${slotId}-visible`,
+        onClick: () => {
+          const path = `slots.${slotId}.visible`
+          config.setKnob(path, !config.valueOf(path))
+        },
+      }, slotId)),
       slots.business?.(),
       h('button', {
         'data-testid': 'page-settings-reset',
@@ -627,6 +666,8 @@ describe('StockDetailView 三图数据协调', () => {
     pageSettingsState.current = null
     componentConfigState.current = null
     measurementConfigState.current = null
+    sectionConfigState.current = null
+    layoutVisibilityState.current = null
     resetLayout.mockReset()
     localStorage.clear()
     setDefaultApiResponses()
@@ -1081,20 +1122,20 @@ describe('StockDetailView 三图数据协调', () => {
     expect(wrapper.get('[data-testid="stock-chart-workspace"]').classes())
       .toContain('detail-chart-workspace')
 
-    await wrapper.get('[data-testid="stock-detail-toggle-indicator-snapshot"]').trigger('click')
+    await wrapper.get('[data-testid="layout-indicatorSnapshot-visible"]').trigger('click')
     await nextTick()
     await flushPromises()
 
-    expect(pageSettingsState.current.showIndicatorSnapshot).toBe(false)
+    expect(layoutVisibilityState.current['slots.indicatorSnapshot.visible']).toBe(false)
     expect(wrapper.find('[data-testid="stock-indicator-snapshot-card"]').exists()).toBe(false)
-    expect(pageSettingsState.current.indicators.ma20).toBe(true)
+    expect(sectionConfigState.current.indicatorSnapshot.visibleIndicatorFields).toContain('ma20')
     expect(stocksApi.getBars).toHaveBeenCalledTimes(barsCalls)
     expect(stocksApi.getIndicators).toHaveBeenCalledTimes(indicatorCalls)
 
     await wrapper.get('[data-testid="page-settings-reset"]').trigger('click')
     await nextTick()
 
-    expect(pageSettingsState.current.showIndicatorSnapshot).toBe(true)
+    expect(layoutVisibilityState.current['slots.indicatorSnapshot.visible']).toBe(true)
     expect(wrapper.find('[data-testid="stock-indicator-snapshot-card"]').exists()).toBe(true)
   })
 
@@ -1104,16 +1145,16 @@ describe('StockDetailView 三图数据协调', () => {
 
     expect(split.props('defaultPrimaryRatio')).toBe(65)
     expect(split.props('secondaryVisible')).toBe(true)
-    await wrapper.get('[data-testid="stock-detail-toggle-indicator-snapshot"]').trigger('click')
-    await wrapper.get('[data-testid="stock-detail-toggle-trade-card"]').trigger('click')
-    await wrapper.get('[data-testid="stock-detail-toggle-related-boards"]').trigger('click')
+    await wrapper.get('[data-testid="layout-indicatorSnapshot-visible"]').trigger('click')
+    await wrapper.get('[data-testid="layout-tradeEvaluation-visible"]').trigger('click')
+    await wrapper.get('[data-testid="layout-relatedBoards-visible"]').trigger('click')
     await nextTick()
 
     expect(split.props('secondaryVisible')).toBe(false)
     expect(wrapper.find('[data-testid="stock-detail-secondary"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="stock-detail-toggle-auxiliary"]').exists()).toBe(false)
 
-    await wrapper.get('[data-testid="stock-detail-toggle-indicator-snapshot"]').trigger('click')
+    await wrapper.get('[data-testid="layout-indicatorSnapshot-visible"]').trigger('click')
     await nextTick()
     expect(split.props('secondaryVisible')).toBe(true)
     expect(wrapper.find('[data-testid="stock-indicator-snapshot-card"]').exists()).toBe(true)

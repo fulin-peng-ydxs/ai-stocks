@@ -20,6 +20,8 @@ import {
   type ComponentSlotConfigMeta,
 } from './componentConfig'
 import { createDefaultStockChartPreferences } from '@/composables/useStockChartPreferences'
+import { createDefaultStockAnalysisPreferences } from '@/composables/useStockAnalysisSession'
+import { createDefaultSectorAnalysisPreferences } from '@/composables/useSectorAnalysisPreferences'
 import { MARKET_WORKSPACE_MIN_HEIGHT } from './marketWorkspaceSizing'
 
 /** 页面响应式策略（plan.md §14.3）。受控命名，不等于自由编辑断点。 */
@@ -87,6 +89,15 @@ function densityKnob(): EditableKnob {
     type: 'enum',
     options: ['compact', 'standard', 'comfortable'],
     optionLabels: { compact: '紧凑', standard: '标准', comfortable: '宽松' },
+  }
+}
+
+/** 模块显隐属于页面结构，由布局旋钮统一控制，不登记为组件内部配置。 */
+function slotVisibilityKnob(slotId: string, label: string): EditableKnob {
+  return {
+    path: `slots.${slotId}.visible`,
+    label,
+    type: 'bool',
   }
 }
 
@@ -159,7 +170,7 @@ function rankedStockWorkbenchSlots(): SlotSpec[] {
   return [
     { id: 'workspace', component: 'master-detail', region: 'main', minH: MARKET_WORKSPACE_MIN_HEIGHT, label: '评分结果工作台', order: 10 },
     { id: 'result', component: 'wide-table', region: 'main', parentId: 'workspace', label: '评分结果列表', order: 1, config: { pagination: false, defaultSort: 'score' } },
-    { id: 'analysis', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences(), returnMeasurement: true } },
+    { id: 'analysis', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences(), stockAnalysis: createDefaultStockAnalysisPreferences(), returnMeasurement: true } },
   ]
 }
 
@@ -194,7 +205,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
         { id: 'workspace', component: 'master-detail', region: 'main', minH: MARKET_WORKSPACE_MIN_HEIGHT, label: '连板天梯研究工作台', order: 1 },
         { id: 'ladder', component: 'section', region: 'main', parentId: 'workspace', label: '天梯分层', order: 1 },
-        { id: 'analysis', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences(), returnMeasurement: true } },
+        { id: 'analysis', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences(), stockAnalysis: createDefaultStockAnalysisPreferences({ showAnalysisPanel: false }), returnMeasurement: true } },
         { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
       ],
       editable: [densityKnob()],
@@ -248,7 +259,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
         { id: 'workspace', component: 'master-detail', region: 'main', minH: MARKET_WORKSPACE_MIN_HEIGHT, label: '榜单股票行情工作台', order: 1 },
         { id: 'table', component: 'wide-table', region: 'main', parentId: 'workspace', label: '榜单列表', order: 1, config: { pagination: false, defaultSort: 'score' } },
-        { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences(), returnMeasurement: true } },
+        { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences(), stockAnalysis: createDefaultStockAnalysisPreferences(), returnMeasurement: true } },
       ],
       editable: [densityKnob()],
     },
@@ -353,7 +364,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'table', component: 'wide-table', region: 'main', parentId: 'workspace', label: '普通查询列表', order: 1, config: { pagination: true, defaultSort: 'pct_chg:asc' } },
         // 分组视图表：与 table 互斥渲染（按 defaultView 模式），建模为 table 的可寻址子槽，承载独立列集，不进主流渲染。
         { id: 'groupTable', component: 'wide-table', region: 'main', parentId: 'workspace', label: '分组视图', order: 2, config: { pagination: true, defaultSort: 'add_date:asc' } },
-        { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 3, config: { stockChart: createDefaultStockChartPreferences(), returnMeasurement: true } },
+        { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 3, config: { stockChart: createDefaultStockChartPreferences(), stockAnalysis: createDefaultStockAnalysisPreferences(), returnMeasurement: true } },
       ],
       editable: [densityKnob()],
     },
@@ -876,14 +887,35 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'quoteSummary', component: 'section', region: 'main', label: '个股行情摘要', order: 1 },
+        { id: 'collectionNavigation', component: 'section', region: 'main', parentId: 'quoteSummary', label: '集合导航条', order: 1, visible: true },
         { id: 'workspace', component: 'master-detail', region: 'main', minH: MARKET_WORKSPACE_MIN_HEIGHT, label: '个股详情双栏工作台', order: 2, config: { masterRatio: 65, masterRatioProfiles: { profiles: [] } } },
         { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '个股行情', order: 1, config: { stockChart: createDefaultStockChartPreferences(), returnMeasurement: true } },
-        { id: 'relatedBoards', component: 'section', region: 'main', parentId: 'workspace', label: '所属板块', order: 2 },
-        { id: 'indicatorSnapshot', component: 'section', region: 'main', parentId: 'workspace', label: '最新指标快照', order: 3 },
-        { id: 'tradeEvaluation', component: 'section', region: 'main', parentId: 'workspace', label: '买卖信号评估', order: 4 },
+        { id: 'relatedBoards', component: 'section', region: 'main', parentId: 'workspace', label: '所属板块', order: 2, visible: true },
+        {
+          id: 'indicatorSnapshot',
+          component: 'section',
+          region: 'main',
+          parentId: 'workspace',
+          label: '最新指标快照',
+          order: 3,
+          visible: true,
+          config: {
+            visibleIndicatorFields: [
+              'ma20', 'ma60', 'dist_to_high_2y', 'is_high_2y', 'is_bull_arrange',
+              'ma20_up', 'is_platform_breakout', 'is_vol_breakout',
+            ],
+          },
+        },
+        { id: 'tradeEvaluation', component: 'section', region: 'main', parentId: 'workspace', label: '买卖信号评估', order: 4, visible: true },
         { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
       ],
-      editable: [densityKnob()],
+      editable: [
+        densityKnob(),
+        slotVisibilityKnob('collectionNavigation', '显示集合导航条'),
+        slotVisibilityKnob('relatedBoards', '显示所属板块'),
+        slotVisibilityKnob('indicatorSnapshot', '显示最新指标快照'),
+        slotVisibilityKnob('tradeEvaluation', '显示买卖信号评估卡'),
+      ],
     },
   },
   {
@@ -1167,7 +1199,7 @@ const REGISTRY: PageRegistryEntry[] = [
             hiddenColumns: ['pct_20d', 'net_inflow_3d', 'net_inflow_5d', 'net_inflow_10d', 'net_inflow_20d'],
           },
         },
-        { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '板块走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences(), returnMeasurement: true } },
+        { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '板块走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences(), sectorAnalysis: createDefaultSectorAnalysisPreferences(), returnMeasurement: true } },
       ],
       editable: [densityKnob()],
     },
@@ -1245,6 +1277,18 @@ export function componentMetaForSlot(entry: PageRegistryEntry, slot: SlotSpec): 
       : { enabled: false, reason: '该图表实例不是股票 K 线多图工作区' }
   }
   if (slot.component === 'chart') {
+    const klineRangeEnabled = Boolean(slot.config?.stockChart)
+    fieldApplicability.klineRangePreferences = klineRangeEnabled
+      ? { enabled: true }
+      : { enabled: false, reason: '该图表实例不是 K 线工作区' }
+    const stockAnalysisEnabled = Boolean(slot.config?.stockAnalysis)
+    fieldApplicability.stockAnalysis = stockAnalysisEnabled
+      ? { enabled: true }
+      : { enabled: false, reason: '该图表实例不是联动走势工作台' }
+    const sectorAnalysisEnabled = Boolean(slot.config?.sectorAnalysis)
+    fieldApplicability.sectorAnalysis = sectorAnalysisEnabled
+      ? { enabled: true }
+      : { enabled: false, reason: '该图表实例不是板块联动走势工作台' }
     const returnMeasurementEnabled = slot.config?.returnMeasurement === true
     fieldApplicability.measurementOperationsExpanded = returnMeasurementEnabled
       ? { enabled: true }
@@ -1252,6 +1296,14 @@ export function componentMetaForSlot(entry: PageRegistryEntry, slot: SlotSpec): 
     fieldApplicability.returnMeasurementMode = returnMeasurementEnabled
       ? { enabled: true }
       : { enabled: false, reason: '该图表实例未启用涨跌测算' }
+  }
+  if (slot.component === 'section') {
+    fieldApplicability.visibleIndicatorFields = Object.prototype.hasOwnProperty.call(
+      slot.config ?? {},
+      'visibleIndicatorFields',
+    )
+      ? { enabled: true }
+      : { enabled: false, reason: '该内容分区不承载指标快照字段' }
   }
   return { ...declared, fieldApplicability }
 }

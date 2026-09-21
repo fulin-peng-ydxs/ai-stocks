@@ -1,4 +1,4 @@
-import { onMounted } from 'vue'
+import { onMounted, type Ref } from 'vue'
 import { getAccessToken } from '@/api/authToken'
 import {
   listUserPreferences,
@@ -6,15 +6,52 @@ import {
   type UserPreferenceRecord,
 } from '@/api/userPreferences'
 import { normalizeStockChartPreferences } from '@/composables/useStockChartPreferences'
+import { normalizeStockAnalysisPreferences } from '@/composables/useStockAnalysisSession'
+import { normalizeSectorAnalysisPreferences } from '@/composables/useSectorAnalysisPreferences'
+
+const LEGACY_STOCK_ANALYSIS_FIELDS = [
+  'defaultChartMode',
+  'showAnalysisPanel',
+  'compareRange',
+  'benchmarkCode',
+  'compareMetrics',
+  'defaultCompareMetric',
+] as const
+
+const LEGACY_SECTOR_ANALYSIS_FIELDS = [
+  'defaultChartMode',
+  'showAnalysisPanel',
+  'benchmarkCode',
+  'compareMetrics',
+  'defaultCompareMetric',
+  'compareWindow',
+] as const
 
 interface LegacyStockChartPreferenceMigrationAccess {
   pageKey: string
   slotId?: string
+  analysisType?: 'stock' | 'sector' | 'none'
   componentSourceOf: (slotId: string, field: string) => unknown
   setComponentKnob: (slotId: string, field: string, value: unknown) => void
+  sourceOf?: (path: string) => unknown
+  setKnob?: (path: string, value: unknown) => void
   whenRemoteHydrated: () => Promise<void>
+  whenPageSettingsHydrated?: () => Promise<void>
+  legacySnapshot?: Ref<unknown>
+  savePageSettings?: () => Promise<void>
   saveRemoteUserConfig: () => Promise<boolean | void>
   remoteSaveFailed: () => boolean
+  legacyComponentMappings?: Array<{
+    legacyField: string
+    slotId: string
+    componentField: string
+    transform?: (value: unknown) => unknown
+  }>
+  legacyLayoutMappings?: Array<{
+    legacyField: string
+    path: string
+    transform?: (value: unknown) => unknown
+  }>
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -31,16 +68,30 @@ function readLocalRecord(pageKey: string): Record<string, unknown> | undefined {
   }
 }
 
-function removeLocalLegacyField(pageKey: string, record: Record<string, unknown> | undefined): void {
-  if (!record || !Object.prototype.hasOwnProperty.call(record, 'charts')) return
+function removeLocalLegacyFields(
+  pageKey: string,
+  record: Record<string, unknown> | undefined,
+  fields: readonly string[],
+): void {
+  if (!record || !fields.some((field) => Object.prototype.hasOwnProperty.call(record, field))) return
   const next = { ...record }
-  delete next.charts
+  for (const field of fields) delete next[field]
   localStorage.setItem(`ai-stocks:page-settings:${pageKey}`, JSON.stringify(next))
 }
 
+function analysisFrom(
+  record: Record<string, unknown>,
+  fields: readonly string[],
+): Record<string, unknown> | undefined {
+  const entries = fields
+    .filter((field) => Object.prototype.hasOwnProperty.call(record, field))
+    .map((field) => [field, record[field]])
+  return entries.length ? Object.fromEntries(entries) : undefined
+}
+
 /**
- * 一次性兼容旧版页面偏好中的 charts 字段：先迁入 page+slot 的用户组件配置，
- * 确认组件配置已保存后再删除旧字段。已有组件用户配置始终优先，避免回迁覆盖新值。
+ * 一次性兼容旧版页面偏好：结构属性迁入布局用户层，组件内部能力迁入 page+slot 组件配置，
+ * 确认布局配置已保存后再删除旧字段。已有用户层配置始终优先，避免回迁覆盖新值。
  */
 export function useLegacyStockChartPreferenceMigration(
   access: LegacyStockChartPreferenceMigrationAccess,
@@ -53,17 +104,16 @@ export function useLegacyStockChartPreferenceMigration(
       || typeof access.setComponentKnob !== 'function'
     ) return
     const slotId = access.slotId ?? 'chart'
-    const localRecord = readLocalRecord(access.pageKey)
-
-    await access.whenRemoteHydrated()
-    if (access.componentSourceOf(slotId, 'stockChart') === 'user') {
-      removeLocalLegacyField(access.pageKey, localRecord)
-      return
-    }
+    await Promise.all([
+      access.whenRemoteHydrated(),
+      access.whenPageSettingsHydrated?.() ?? Promise.resolve(),
+    ])
+    const snapshot = asRecord(access.legacySnapshot?.value)
+    const localRecord = snapshot ?? readLocalRecord(access.pageKey)
 
     let remoteRecord: UserPreferenceRecord | undefined
 
-    if (getAccessToken()) {
+    if (!snapshot && getAccessToken()) {
       try {
         const response = await listUserPreferences({
           scope: 'page',
@@ -77,23 +127,94 @@ export function useLegacyStockChartPreferenceMigration(
     }
 
     const remoteValue = asRecord(remoteRecord?.value)
-    const legacyCharts = remoteValue?.charts ?? localRecord?.charts
-    let componentReady = false
+    const legacyValue = snapshot ?? remoteValue ?? localRecord
+    if (!legacyValue) return
+    const legacyCharts = legacyValue.charts
+    const analysisType = access.analysisType ?? 'none'
+    const analysisFields = analysisType === 'sector'
+      ? LEGACY_SECTOR_ANALYSIS_FIELDS
+      : analysisType === 'stock'
+        ? LEGACY_STOCK_ANALYSIS_FIELDS
+        : []
+    const legacyAnalysis = analysisFrom(legacyValue, analysisFields)
+    const componentAnalysisField = analysisType === 'sector' ? 'sectorAnalysis' : 'stockAnalysis'
+    const migratedFields: string[] = []
+    let changed = false
 
-    if (!componentReady && legacyCharts !== undefined) {
-      access.setComponentKnob(slotId, 'stockChart', normalizeStockChartPreferences(legacyCharts))
-      if (typeof access.saveRemoteUserConfig === 'function') await access.saveRemoteUserConfig()
-      componentReady = !getAccessToken()
-        || typeof access.remoteSaveFailed !== 'function'
-        || !access.remoteSaveFailed()
+    for (const mapping of access.legacyLayoutMappings ?? []) {
+      if (!Object.prototype.hasOwnProperty.call(legacyValue, mapping.legacyField)) continue
+      migratedFields.push(mapping.legacyField)
+      if (access.sourceOf?.(mapping.path) === 'user') continue
+      if (typeof access.setKnob !== 'function') continue
+      access.setKnob(
+        mapping.path,
+        mapping.transform
+          ? mapping.transform(legacyValue[mapping.legacyField])
+          : legacyValue[mapping.legacyField],
+      )
+      changed = true
     }
 
-    if (!componentReady) return
-    removeLocalLegacyField(access.pageKey, localRecord)
+    for (const mapping of access.legacyComponentMappings ?? []) {
+      if (!Object.prototype.hasOwnProperty.call(legacyValue, mapping.legacyField)) continue
+      migratedFields.push(mapping.legacyField)
+      if (access.componentSourceOf(mapping.slotId, mapping.componentField) === 'user') continue
+      access.setComponentKnob(
+        mapping.slotId,
+        mapping.componentField,
+        mapping.transform
+          ? mapping.transform(legacyValue[mapping.legacyField])
+          : legacyValue[mapping.legacyField],
+      )
+      changed = true
+    }
 
-    if (remoteRecord && remoteValue && Object.prototype.hasOwnProperty.call(remoteValue, 'charts')) {
+    if (legacyCharts !== undefined) {
+      migratedFields.push('charts')
+    }
+    if (legacyCharts !== undefined && access.componentSourceOf(slotId, 'stockChart') !== 'user') {
+      access.setComponentKnob(slotId, 'stockChart', normalizeStockChartPreferences(legacyCharts))
+      changed = true
+    }
+    if (legacyAnalysis) {
+      migratedFields.push(...analysisFields.filter((field) => (
+        Object.prototype.hasOwnProperty.call(legacyValue, field)
+      )))
+      if (access.componentSourceOf(slotId, componentAnalysisField) !== 'user') {
+        access.setComponentKnob(
+          slotId,
+          componentAnalysisField,
+          analysisType === 'sector'
+            ? normalizeSectorAnalysisPreferences(legacyAnalysis)
+            : normalizeStockAnalysisPreferences(legacyAnalysis),
+        )
+        changed = true
+      }
+    }
+
+    if (!migratedFields.length) return
+    if (changed && typeof access.saveRemoteUserConfig === 'function') {
+      await access.saveRemoteUserConfig()
+    }
+    const componentReady = !changed
+      || !getAccessToken()
+      || typeof access.remoteSaveFailed !== 'function'
+      || !access.remoteSaveFailed()
+    if (!componentReady) return
+    // 页面偏好在 hydration 时会按新 schema 规范化；清理必须基于此刻的最新值，
+    // 不能把迁移前快照写回去覆盖用户刚刚修改的仍有效字段。
+    removeLocalLegacyFields(access.pageKey, readLocalRecord(access.pageKey), migratedFields)
+
+    // usePageSettings 在这几页延迟清理未知字段；只有组件配置已安全落库后，
+    // 才显式保存当前页面 schema，从 PG 删除旧字段。
+    if (access.savePageSettings && getAccessToken()) {
+      await access.savePageSettings()
+      return
+    }
+
+    if (remoteRecord && remoteValue) {
       const next = { ...remoteValue }
-      delete next.charts
+      for (const field of migratedFields) delete next[field]
       try {
         await saveUserPreference({
           scope: 'page',

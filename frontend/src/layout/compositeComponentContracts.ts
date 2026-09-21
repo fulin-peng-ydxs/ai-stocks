@@ -42,7 +42,7 @@ export const COMPOSITE_COMPONENT_CONTRACTS: CompositeComponentContract[] = [
         id: 'analysis',
         kind: 'chart',
         parentId: 'workspace',
-        requiredFields: ['stockChart'],
+        requiredFields: ['stockChart', 'stockAnalysis'],
       },
     ],
     consumerRuntimeSources: [
@@ -50,6 +50,7 @@ export const COMPOSITE_COMPONENT_CONTRACTS: CompositeComponentContract[] = [
       "tableBorder('result')",
       "componentValueOf('workspace', 'masterRatio')",
       "componentValueOf('workspace', 'masterRatioProfiles')",
+      ':analysis-defaults="chartPreferences.stockAnalysis.value"',
     ],
     forbiddenComponentSources: ['adjust-mode="qfq"', "adjust-mode='qfq'"],
   },

@@ -7,7 +7,6 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
-import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
@@ -16,7 +15,6 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
-import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.vue'
 import {
   exportLimitLadder,
   getLimitLadder,
@@ -35,7 +33,12 @@ import { useLayoutViewport } from '@/composables/useLayoutViewport'
 import { useMarketMasterRatioRuntime } from '@/composables/useMarketMasterRatioRuntime'
 import { useAsyncResultPolling } from '@/composables/useAsyncResultPolling'
 import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
-import { useStockAnalysisSession } from '@/composables/useStockAnalysisSession'
+import {
+  createDefaultStockAnalysisPreferences,
+  useStockAnalysisSession,
+  type StockAdjustMode,
+  type StockAnalysisComponentPreferences,
+} from '@/composables/useStockAnalysisSession'
 import {
   composeComponentRuntimeValueOf,
   useStockChartComponentConfig,
@@ -48,10 +51,6 @@ import { useAuthStore } from '@/stores/auth'
 import { useLimitLadderSessionStore } from '@/stores/limitLadderSession'
 import { useStockSet } from '@/stores/stockSet'
 import { hasPermission } from '@/utils/permission'
-import {
-  PRICE_COMPARE_METRIC_ORDER,
-  type PriceCompareMetric,
-} from '@/utils/marketCompare'
 import LimitLadder from '@/views/limit-ladder/LimitLadder.vue'
 import {
   LIMIT_LADDER_POLL_TIMEOUT_MS,
@@ -114,7 +113,12 @@ const {
   remoteError: pageSettingsRemoteError,
   saveError: pageSettingsSaveError,
   save: savePageSettings,
-} = usePageSettings('limit-ladder', DEFAULT_LIMIT_LADDER_PREFERENCE)
+  legacySnapshot,
+} = usePageSettings(
+  'limit-ladder',
+  DEFAULT_LIMIT_LADDER_PREFERENCE,
+  { deferUnknownFieldCleanup: true },
+)
 
 const normalizedSettings = computed(() => normalizeLimitLadderPreference(settings))
 const filterWindow = useDefaultedSessionValue(
@@ -164,12 +168,7 @@ const cardSortOrder = useDefaultedSessionValue(
 )
 
 const analysisDefaults = reactive({
-  defaultChartMode: 'compare' as 'compare' | 'kline',
-  showAnalysisPanel: DEFAULT_LIMIT_LADDER_PREFERENCE.showAnalysisPanel,
-  compareRange: 60,
-  benchmarkCode: '000905.SH',
-  compareMetrics: [...PRICE_COMPARE_METRIC_ORDER] as PriceCompareMetric[],
-  defaultCompareMetric: 'cum' as PriceCompareMetric,
+  ...createDefaultStockAnalysisPreferences({ showAnalysisPanel: false }),
   adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
 })
 const { validDefault: klineDefaultRange } = useKlinePrefs()
@@ -189,14 +188,17 @@ function effectiveSettings(): LimitLadderPreferenceV1 {
     : normalizeLimitLadderPreference(settings)
 }
 
-function applyAnalysisDefaults(value: LimitLadderPreferenceV1): void {
+function applyAnalysisDefaults(
+  value: StockAnalysisComponentPreferences,
+  adjustModeValue: StockAdjustMode,
+): void {
   analysisDefaults.defaultChartMode = value.defaultChartMode
   analysisDefaults.showAnalysisPanel = value.showAnalysisPanel
   analysisDefaults.compareRange = value.compareRange
   analysisDefaults.benchmarkCode = value.benchmarkCode
   analysisDefaults.compareMetrics = [...value.compareMetrics]
   analysisDefaults.defaultCompareMetric = value.defaultCompareMetric
-  analysisDefaults.adjustMode = value.adjustMode
+  analysisDefaults.adjustMode = adjustModeValue
 }
 
 const canViewSectors = computed(() => (
@@ -283,16 +285,22 @@ const componentRuntimeValueOf = composeComponentRuntimeValueOf(
   chartPreferences.componentRuntimeValueOf,
 )
 useLegacyStockChartPreferenceMigration({
-  pageKey: 'limit-ladder', slotId: 'analysis', componentSourceOf, setComponentKnob,
-  whenRemoteHydrated, saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
+  pageKey: 'limit-ladder', slotId: 'analysis', analysisType: 'stock', componentSourceOf, setComponentKnob,
+  whenRemoteHydrated, whenPageSettingsHydrated, legacySnapshot,
+  saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
+  savePageSettings,
 })
+watch(
+  [chartPreferences.stockAnalysis, () => normalizedSettings.value.adjustMode],
+  ([analysis, adjustModeValue]) => applyAnalysisDefaults(analysis, adjustModeValue),
+  { deep: true, immediate: true },
+)
 
 async function applySystemDefaults(): Promise<void> {
   restoringPageSession.value = true
   filters.value = filtersFromLimitLadderPreference(DEFAULT_LIMIT_LADDER_PREFERENCE)
   cardSort.value = DEFAULT_LIMIT_LADDER_CARD_SORT
   cardSortOrder.value = DEFAULT_LIMIT_LADDER_CARD_SORT_ORDER
-  applyAnalysisDefaults(DEFAULT_LIMIT_LADDER_PREFERENCE)
   await nextTick()
   restoringPageSession.value = false
   persistReturnState()
@@ -607,8 +615,6 @@ async function openActiveAnalysisDetail(): Promise<void> {
   await router.push(`/stocks/${active.code}`)
 }
 
-watch(settings, () => applyAnalysisDefaults(normalizeLimitLadderPreference(settings)), { deep: true })
-
 watch(
   () => [route.path, route.query.restore] as const,
   ([path, restore]) => {
@@ -627,7 +633,6 @@ async function initializePage(): Promise<void> {
   try {
     await whenPageSettingsHydrated()
     const savedSettings = effectiveSettings()
-    applyAnalysisDefaults(savedSettings)
     const restored = route.query.restore === '1'
       ? limitLadderSession.consumeReturnState()
       : null
@@ -638,7 +643,6 @@ async function initializePage(): Promise<void> {
     )
     pendingSelectedCode.value = restored?.selectedCode ?? ''
     pendingAnchorCode.value = restored?.anchorCode ?? ''
-    analysisDefaults.showAnalysisPanel = savedSettings.showAnalysisPanel
     const dates = await listLimitLadderTradeDates()
     const restoredDate = restored?.tradeDate
     tradeDate.value = restoredDate && dates.dates.includes(restoredDate)
@@ -932,16 +936,7 @@ const menuPageTitle = useMenuPageTitle()
                 test-id="limit-ladder-default-card-sort-order"
               />
             </PageSettingItem>
-            <StockAnalysisDefaultFields
-              v-model:default-chart-mode="settings.defaultChartMode"
-              v-model:compare-range="settings.compareRange"
-              v-model:benchmark-code="settings.benchmarkCode"
-              v-model:compare-metrics="settings.compareMetrics"
-              v-model:default-compare-metric="settings.defaultCompareMetric"
-              v-model:show-analysis-panel="settings.showAnalysisPanel"
-            />
           </PageSettingSection>
-          <KlineSettingSection />
         </template>
       </PageSettingsDrawer>
     </template>

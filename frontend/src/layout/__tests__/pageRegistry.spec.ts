@@ -890,6 +890,20 @@ describe('组件消费关系与配置一致性（P4）', () => {
     expect(applicableComponentFields(sectorWorkbench, 'chart').map((field) => field.key)).not.toContain('minHeight')
   })
 
+  it('个股详情完整模块显隐归布局，分区内部字段归组件设置', () => {
+    const entry = getPageEntry('stock-detail')!
+    expect(entry.layout.editable.map((knob) => knob.path)).toEqual(expect.arrayContaining([
+      'slots.collectionNavigation.visible',
+      'slots.relatedBoards.visible',
+      'slots.indicatorSnapshot.visible',
+      'slots.tradeEvaluation.visible',
+    ]))
+    expect(applicableComponentFields(entry, 'indicatorSnapshot').map((field) => field.key))
+      .toEqual(['visibleIndicatorFields'])
+    expect(sourceForPage('stock-detail')).not.toContain("componentValueOf('indicatorSnapshot', 'visible')")
+    expect(sourceForPage('stock-detail')).toContain("valueOf('slots.indicatorSnapshot.visible')")
+  })
+
   it('行情主从工作台统一在组件设置消费默认比例，主区拖动不反写配置层', () => {
     for (const pageKey of [
       'stocks',
@@ -1496,6 +1510,25 @@ describe('组件消费关系与配置一致性（P4）', () => {
       expect(fields, pageKey).not.toContain('measurementOperationsExpanded')
       expect(fields, pageKey).not.toContain('returnMeasurementMode')
     }
+  })
+
+  it('联动走势默认项按股票与板块组件模型分别登记并消费', () => {
+    for (const pageKey of ['board', 'stocks', 'limit-ladder', 'screen', 'config-score']) {
+      const entry = PAGE_REGISTRY.find((candidate) => candidate.pageKey === pageKey)!
+      const chart = entry.layout.slots.find((slot) => slot.config?.stockAnalysis)!
+      expect(chart, pageKey).toBeDefined()
+      expect(applicableComponentFields(entry, chart.id).map((field) => field.key))
+        .toContain('stockAnalysis')
+      const source = sourceForPage(pageKey)
+      expect(source, pageKey).toContain('chartPreferences.stockAnalysis')
+    }
+
+    const sectors = PAGE_REGISTRY.find((candidate) => candidate.pageKey === 'sectors')!
+    const sectorChart = sectors.layout.slots.find((slot) => slot.config?.sectorAnalysis)!
+    expect(sectorChart).toBeDefined()
+    expect(applicableComponentFields(sectors, sectorChart.id).map((field) => field.key))
+      .toContain('sectorAnalysis')
+    expect(sourceForPage('sectors')).toContain('chartPreferences.sectorAnalysis.value')
   })
 
   it('个股与板块详情始终开放图表组件实例设置', () => {

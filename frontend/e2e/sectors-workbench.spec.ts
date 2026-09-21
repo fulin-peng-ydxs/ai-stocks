@@ -135,7 +135,7 @@ test.describe('板块行情工作台', () => {
       await expect(listDrawer).toBeVisible()
       const listDefaultMode = listDrawer.getByTestId('sectors-default-chart-mode')
       if (!await listDefaultMode.isVisible()) {
-        await listDrawer.getByRole('button', { name: '业务选项', exact: true }).click()
+        await listDrawer.getByRole('button', { name: '组件设置', exact: true }).click()
       }
       await expect(listDrawer.getByTestId('sectors-default-scope')).toBeVisible()
       await expect(listDefaultMode).toBeVisible()

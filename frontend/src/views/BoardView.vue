@@ -13,7 +13,6 @@ import {
 import { browseBoardProfiles, listBoardProfiles, runBoardProfile } from '@/api/board'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
-import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
 import RankedStockResultTable from '@/components/ranked-stock/RankedStockResultTable.vue'
@@ -26,7 +25,6 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
-import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.vue'
 import StockGroupBatchActions from '@/components/StockGroupBatchActions.vue'
 import StockGroupFavoriteButton from '@/components/StockGroupFavoriteButton.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
@@ -59,10 +57,6 @@ import { isDefaultStockGroupMember } from '@/utils/stockGroupPresentation'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
-import {
-  PRICE_COMPARE_METRIC_ORDER,
-  type PriceCompareMetric,
-} from '@/utils/marketCompare'
 import { getApiErrorCode, getErrorMessage } from '@/utils/error'
 import { listGroups, type GroupSummary } from '@/api/stockGroup'
 
@@ -104,11 +98,6 @@ const componentRuntimeValueOf = composeComponentRuntimeValueOf(
   masterRuntimeValueOf,
   chartPreferences.componentRuntimeValueOf,
 )
-useLegacyStockChartPreferenceMigration({
-  pageKey: 'board', componentSourceOf, setComponentKnob, whenRemoteHydrated,
-  saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
-})
-
 const router = useRouter()
 const route = useRoute()
 const stockSet = useStockSet()
@@ -125,15 +114,21 @@ const { dataMax, ensureLoaded: ensureTradeDatesLoaded } = useTradeDates()
 const boardDefaults = {
   topN: 50,
   subScoreMode: 'full' as 'full' | 'brief' | 'hidden',
-  defaultChartMode: 'compare' as 'compare' | 'kline',
-  showAnalysisPanel: true,
-  compareRange: 60,
-  benchmarkCode: '000905.SH',
-  compareMetrics: [...PRICE_COMPARE_METRIC_ORDER] as PriceCompareMetric[],
-  defaultCompareMetric: 'cum' as PriceCompareMetric,
   adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
 }
-const { settings, isDirty, reset } = usePageSettings('board', boardDefaults)
+const {
+  settings,
+  isDirty,
+  reset,
+  save: savePageSettings,
+  whenHydrated: whenPageSettingsHydrated,
+  legacySnapshot,
+} = usePageSettings('board', boardDefaults, { deferUnknownFieldCleanup: true })
+useLegacyStockChartPreferenceMigration({
+  pageKey: 'board', analysisType: 'stock', componentSourceOf, setComponentKnob, whenRemoteHydrated,
+  whenPageSettingsHydrated, legacySnapshot,
+  saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value, savePageSettings,
+})
 const configuredTopN = computed(() => Number(settings.topN))
 const topN = useDefaultedSessionValue(configuredTopN, {
   onSynced: () => {
@@ -152,7 +147,7 @@ const {
   visibleCompareMetrics,
   klineRange,
 } = useStockAnalysisSession(
-  settings,
+  computed(() => ({ ...chartPreferences.stockAnalysis.value, adjustMode: settings.adjustMode })),
   klineDefaultRange,
 )
 
@@ -838,16 +833,7 @@ const menuPageTitle = useMenuPageTitle()
               { label: '隐藏', value: 'hidden' },
             ]" />
           </PageSettingItem>
-          <StockAnalysisDefaultFields
-            v-model:default-chart-mode="settings.defaultChartMode"
-            v-model:compare-range="settings.compareRange"
-            v-model:benchmark-code="settings.benchmarkCode"
-            v-model:compare-metrics="settings.compareMetrics"
-            v-model:default-compare-metric="settings.defaultCompareMetric"
-            v-model:show-analysis-panel="settings.showAnalysisPanel"
-          />
         </PageSettingSection>
-        <KlineSettingSection />
       </template>
     </PageSettingsDrawer>
     </template>

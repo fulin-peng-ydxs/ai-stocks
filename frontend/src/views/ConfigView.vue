@@ -1861,6 +1861,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <RankedStockWorkbench
               registry-page-key="config-score"
               :adjust-mode="adjustMode"
+              :analysis-defaults="chartPreferences.stockAnalysis.value"
               :rows="displayRunRows"
               :columns="scoreRunColumns"
               :title="runDate || '最新交易日'"

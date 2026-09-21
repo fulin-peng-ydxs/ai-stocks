@@ -446,7 +446,8 @@ test.describe('个股详情三图工作区', () => {
     await expect(page.getByTestId('stock-analysis-kline-range')).toHaveCount(0)
     await page.waitForTimeout(400)
     const settingsKey = preferenceKey({ scope: 'page', pageKey: 'stocks', prefKey: 'settings' })
-    expect((preferences.store.get(settingsKey)?.value as { defaultChartMode?: string }).defaultChartMode).toBe('kline')
+    expect((preferences.store.get(settingsKey)?.value as { defaultChartMode?: string }).defaultChartMode)
+      .toBeUndefined()
 
     // 抽屉修改默认值会通过单向会话投影立即驱动主区。
     await page.getByTestId('page-settings-trigger').click()

@@ -17,7 +17,6 @@ import CompareQueueRail from '@/components/CompareQueueRail.vue'
 import type { CompareQueueItem } from '@/components/CompareQueueRail.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
-import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import MarketCompareMetricStrip from '@/components/MarketCompareMetricStrip.vue'
 import type { MarketMetricStripItem } from '@/components/MarketCompareMetricStrip.vue'
@@ -29,7 +28,6 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
-import PageToggleRow from '@/components/PageToggleRow.vue'
 import { useMarketMasterRatioRuntime } from '@/composables/useMarketMasterRatioRuntime'
 import SectorCompareChart from '@/components/SectorCompareChart.vue'
 import type { CrossSectionDatum } from '@/components/SectorCompareChart.vue'
@@ -85,6 +83,7 @@ import {
   useStockChartComponentConfig,
 } from '@/composables/useStockChartComponentConfig'
 import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
+import { normalizeSectorAnalysisPreferences } from '@/composables/useSectorAnalysisPreferences'
 import { useTableSort } from '@/composables/useTableSort'
 import { useTradeDates } from '@/composables/useTradeDates'
 import { getPageLayout } from '@/layout'
@@ -105,14 +104,15 @@ const settingsOpen = ref(false)
 const sectorsDefaults = {
   defaultType: '' as BoardType | '',
   defaultScope: 'all' as 'all' | 'watchlist',
-  defaultChartMode: 'compare' as 'compare' | 'kline',
-  benchmarkCode: '000905.SH',
-  showAnalysisPanel: true,
-  compareMetrics: COMPARE_METRIC_ORDER as CompareMetric[],
-  defaultCompareMetric: 'cum' as CompareMetric,
-  compareWindow: 250,
 }
-const { settings, isDirty, reset, whenHydrated } = usePageSettings('sectors', sectorsDefaults)
+const {
+  settings,
+  isDirty,
+  reset,
+  save: savePageSettings,
+  whenHydrated,
+  legacySnapshot,
+} = usePageSettings('sectors', sectorsDefaults, { deferUnknownFieldCleanup: true })
 
 const sectorsLayout = getPageLayout('sectors')
 const {
@@ -162,8 +162,9 @@ const componentRuntimeValueOf = composeComponentRuntimeValueOf(
   chartPreferences.componentRuntimeValueOf,
 )
 useLegacyStockChartPreferenceMigration({
-  pageKey: 'sectors', componentSourceOf, setComponentKnob, whenRemoteHydrated,
-  saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
+  pageKey: 'sectors', analysisType: 'sector', componentSourceOf, setComponentKnob,
+  whenRemoteHydrated, whenPageSettingsHydrated: whenHydrated, legacySnapshot,
+  saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value, savePageSettings,
 })
 
 const DEFAULT_SORT = 'pct_today:desc'
@@ -279,18 +280,23 @@ function applyQueue(next: CompareQueueState): void {
   persistListReturnState()
 }
 const { validDefault: klineDefaultRange } = useKlinePrefs()
+const sectorAnalysis = computed(() => normalizeSectorAnalysisPreferences(
+  chartPreferences.sectorAnalysis.value,
+))
 // K 线范围单向：全局偏好默认范围 → 会话 ref；主区切换不写回全局默认。
 const rangeDays = useDefaultedSessionValue(klineDefaultRange)
 const configuredChartMode = computed<'compare' | 'kline'>(() => (
-  settings.defaultChartMode === 'kline' ? 'kline' : 'compare'
+  sectorAnalysis.value.defaultChartMode
 ))
 const configuredBenchmarkCode = computed(() => (
-  normalizeMarketBenchmarkCode(settings.benchmarkCode)
+  normalizeMarketBenchmarkCode(sectorAnalysis.value.benchmarkCode)
 ))
-const configuredCompareMetric = computed(() => sanitizeCompareMetric(settings.defaultCompareMetric))
+const configuredCompareMetric = computed(() => sanitizeCompareMetric(
+  sectorAnalysis.value.defaultCompareMetric,
+))
 const configuredCompareWindow = computed(() => (
-  COMPARE_RANGE_OPTIONS.some((option) => option.value === settings.compareWindow)
-    ? settings.compareWindow
+  COMPARE_RANGE_OPTIONS.some((option) => option.value === sectorAnalysis.value.compareWindow)
+    ? sectorAnalysis.value.compareWindow
     : 250
 ))
 const chartMode = useDefaultedSessionValue(configuredChartMode)
@@ -348,7 +354,7 @@ const compareMetricKind = computed(() => metricKind(compareMetric.value, compare
 // 头部槽位只展示用户配置的指标，顺序固定为指标池顺序（过滤掉历史遗留的失效指标，如 speed）。
 // 配置为空时回退全量，避免头部无槽可切。
 const visibleCompareMetrics = computed<CompareMetric[]>(() => {
-  const configured = settings.compareMetrics as CompareMetric[]
+  const configured = sectorAnalysis.value.compareMetrics
   const list = COMPARE_METRIC_ORDER.filter((m) => configured.includes(m))
   return list.length ? list : [...COMPARE_METRIC_ORDER]
 })
@@ -477,7 +483,9 @@ async function loadChart(): Promise<void> {
 }
 
 // 走势分析区显隐单向：抽屉默认值 → 会话 ref；主区「》」收起/展开只进会话态，不写回默认。
-const analysisPanelVisible = useDefaultedSessionValue(computed(() => settings.showAnalysisPanel !== false))
+const analysisPanelVisible = useDefaultedSessionValue(computed(() => (
+  sectorAnalysis.value.showAnalysisPanel
+)))
 // 抽屉默认和主区会话变化统一触发副作用。
 watch(analysisPanelVisible, (visible) => {
   persistListReturnState()
@@ -831,7 +839,9 @@ onMounted(async () => {
   benchmarkCode.value = restored
     ? normalizeMarketBenchmarkCode(restored.benchmarkCode)
     : configuredBenchmarkCode.value
-  compareMetric.value = sanitizeCompareMetric(restored?.compareMetric ?? settings.defaultCompareMetric)
+  compareMetric.value = sanitizeCompareMetric(
+    restored?.compareMetric ?? sectorAnalysis.value.defaultCompareMetric,
+  )
   compareWindow.value = COMPARE_RANGE_OPTIONS.some((option) => option.value === restored?.compareWindow)
     ? restored!.compareWindow
     : configuredCompareWindow.value
@@ -840,7 +850,7 @@ onMounted(async () => {
     : klineDefaultRange.value
   analysisPanelVisible.value = typeof restored?.analysisPanelVisible === 'boolean'
     ? restored.analysisPanelVisible
-    : settings.showAnalysisPanel !== false
+    : sectorAnalysis.value.showAnalysisPanel
   // 默认指标若被移出展示列表，回退到首个可见指标，避免图与头部高亮脱节。
   if (!visibleCompareMetrics.value.includes(compareMetric.value)) {
     compareMetric.value = visibleCompareMetrics.value[0] ?? 'cum'
@@ -1392,50 +1402,7 @@ const menuPageTitle = useMenuPageTitle()
                 test-id="sectors-default-type"
               />
             </PageSettingItem>
-            <PageSettingItem label="默认图表模式">
-              <PageSegmented
-                v-model="settings.defaultChartMode"
-                :options="CHART_MODE_OPTIONS"
-                aria-label="默认图表模式"
-                test-id="sectors-default-chart-mode"
-              />
-            </PageSettingItem>
-            <PageSettingItem label="默认对比指数">
-              <MarketBenchmarkSelect
-                v-model="settings.benchmarkCode"
-              />
-            </PageSettingItem>
-            <PageToggleRow v-model="settings.showAnalysisPanel" label="显示走势分析区" />
           </PageSettingSection>
-          <PageSettingSection title="对比指标" desc="配置头部对比指标槽展示哪些指标与默认选中口径。">
-            <PageSettingItem label="展示指标">
-              <el-checkbox-group v-model="settings.compareMetrics" class="compare-metric-checks">
-                <el-checkbox
-                  v-for="metric in COMPARE_METRIC_ORDER"
-                  :key="metric"
-                  :value="metric"
-                >
-                  {{ COMPARE_METRIC_META[metric].label }}
-                </el-checkbox>
-              </el-checkbox-group>
-            </PageSettingItem>
-            <PageSettingItem label="默认对比指标">
-              <el-select v-model="settings.defaultCompareMetric" style="width: 160px">
-                <el-option
-                  v-for="metric in COMPARE_METRIC_ORDER"
-                  :key="metric"
-                  :value="metric"
-                  :label="COMPARE_METRIC_META[metric].label"
-                />
-              </el-select>
-            </PageSettingItem>
-            <PageSettingItem label="默认涨跌周期">
-              <el-select v-model="settings.compareWindow" style="width: 160px">
-                <el-option v-for="o in COMPARE_RANGE_OPTIONS" :key="o.value" :value="o.value" :label="o.label" />
-              </el-select>
-            </PageSettingItem>
-          </PageSettingSection>
-          <KlineSettingSection />
         </template>
       </PageSettingsDrawer>
     </template>

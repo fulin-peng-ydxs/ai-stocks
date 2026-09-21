@@ -11,6 +11,14 @@ import {
 } from '@/composables/useStockChartPreferences'
 import type { StockChartRatioSample } from '@/layout/stockChartRatioProfiles'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
+import {
+  normalizeStockAnalysisPreferences,
+  type StockAnalysisComponentPreferences,
+} from '@/composables/useStockAnalysisSession'
+import {
+  normalizeSectorAnalysisPreferences,
+  type SectorAnalysisComponentPreferences,
+} from '@/composables/useSectorAnalysisPreferences'
 
 interface StockChartComponentConfigAccess {
   slotId?: string
@@ -34,6 +42,14 @@ export function useStockChartComponentConfig(access: StockChartComponentConfigAc
   // 页面单测或离线壳可能只提供基础组件访问器；缺少远端水合 ref 时按已就绪处理。
   const hydrated = isRef(access.hydrated) ? access.hydrated : ref(true)
   const preferences = useStockChartPreferences(source, hydrated)
+  const stockAnalysis = computed<StockAnalysisComponentPreferences>({
+    get: () => normalizeStockAnalysisPreferences(access.componentValueOf(slotId, 'stockAnalysis')),
+    set: (value) => access.setComponentKnob(slotId, 'stockAnalysis', value),
+  })
+  const sectorAnalysis = computed<SectorAnalysisComponentPreferences>({
+    get: () => normalizeSectorAnalysisPreferences(access.componentValueOf(slotId, 'sectorAnalysis')),
+    set: (value) => access.setComponentKnob(slotId, 'sectorAnalysis', value),
+  })
   const measurementOperationsExpanded = useDefaultedSessionValue(computed(() => (
     access.componentValueOf(slotId, 'measurementOperationsExpanded') === true
   )))
@@ -113,6 +129,8 @@ export function useStockChartComponentConfig(access: StockChartComponentConfigAc
 
   return {
     ...preferences,
+    stockAnalysis,
+    sectorAnalysis,
     measurementOperationsExpanded,
     returnMeasurementMode,
     setAuxiliaryChart,

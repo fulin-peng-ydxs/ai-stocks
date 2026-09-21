@@ -17,6 +17,7 @@ import AppIconButton from './AppIconButton.vue'
 import AppStatusNotice from './AppStatusNotice.vue'
 import type { PageDrawerSize } from './pageDrawerSize'
 import { useDrawerPreferences } from '@/composables/useDrawerPreferences'
+import { useKlinePrefs } from '@/composables/useKlinePrefs'
 
 /** 抽屉自动渲染所需的配置访问器（即 useRemoteLayoutConfig 的返回子集）。 */
 export interface DrawerConfig {
@@ -57,6 +58,7 @@ const emit = defineEmits<{
 }>()
 const slots = useSlots()
 const drawerPreferences = useDrawerPreferences()
+const klinePreferences = useKlinePrefs()
 
 function usesGlobalPreference(slotId: string, field: string): boolean {
   const slot = props.pageKey
@@ -79,6 +81,9 @@ const activeConfig = computed<DrawerConfig | undefined>(() => {
   return {
     ...props.config,
     componentValueOf(slotId: string, field: string) {
+      if (usesGlobalPreference(slotId, field) && field === 'klineRangePreferences') {
+        return klinePreferences.prefs
+      }
       if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'size') {
         return drawerPreferences.size.value ?? props.config?.componentValueOf(slotId, field)
       }
@@ -92,11 +97,19 @@ const activeConfig = computed<DrawerConfig | undefined>(() => {
       props.config?.setComponentKnob(slotId, field, value)
     },
     componentSourceOf(slotId: string, field: string) {
+      if (usesGlobalPreference(slotId, field) && field === 'klineRangePreferences') {
+        return klinePreferences.isDirty.value ? 'user' : 'default'
+      }
       if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'size' && drawerPreferences.size.value) return 'user'
       return props.config?.componentSourceOf?.(slotId, field) ?? 'default'
     },
     componentLayerValuesOf(slotId: string, field: string) {
       const values = props.config?.componentLayerValuesOf?.(slotId, field) ?? {}
+      if (usesGlobalPreference(slotId, field) && field === 'klineRangePreferences') {
+        return klinePreferences.isDirty.value
+          ? { ...values, user: { ...klinePreferences.prefs } }
+          : values
+      }
       if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'size' && drawerPreferences.size.value) {
         return { ...values, user: drawerPreferences.size.value }
       }
@@ -203,6 +216,13 @@ function handleReset(): void {
   runtimeTouched.value = false
   runtimeCollapsedSections.value = []
   drawerPreferences.reset()
+  const entry = props.pageKey ? getPageEntry(props.pageKey) : undefined
+  if (entry?.layout.slots.some((slot) => (
+    applicableComponentFields(entry, slot.id, 'user')
+      .some((field) => field.key === 'klineRangePreferences')
+  ))) {
+    klinePreferences.reset()
+  }
   emit('reset')
 }
 </script>
@@ -241,9 +261,9 @@ function handleReset(): void {
 
       <!--
         固定三段（P13）：布局 / 组件设置 / 业务选项，均为可折叠的 SettingsGroup（level 1 卡片）。
-        - 传 :config(+:pageKey)：布局段与组件字段由元数据自动渲染；指定组件字段可归入业务选项。
+        - 传 :config(+:pageKey)：布局段与组件字段由元数据自动渲染；组件字段只能出现在组件设置段。
         - 未迁移页：回落具名插槽 #layout/#components/#business（+ default 插槽）。
-        业务选项以页面声明为主；归入其中的组件字段仍保持原配置链路和来源展示。
+        - #business 只承载页面业务偏好或不归属于当前组件实例的产品级偏好，不得重绘组件配置字段。
       -->
       <div class="ps-body" :class="{ 'is-scroll-disabled': !bodyScroll }">
         <AppStatusNotice

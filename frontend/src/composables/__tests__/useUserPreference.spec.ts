@@ -128,6 +128,34 @@ describe('useUserPreference', () => {
     }))
   })
 
+  it('专用迁移接管时保留未知字段，直至显式保存当前 schema', async () => {
+    login()
+    localStorage.setItem('pref:migrating', JSON.stringify({ mode: 'single', legacy: true }))
+    prefApi.listUserPreferences.mockResolvedValue({
+      items: [{ value: { mode: 'remote', legacy: true } }],
+    })
+    const pref = useUserPreference({
+      scope: 'page',
+      pageKey: 'migrating',
+      prefKey: 'settings',
+      defaults: { mode: 'single' },
+      localStorageKey: 'pref:migrating',
+      deferUnknownFieldCleanup: true,
+    })
+    await pref.whenHydrated()
+
+    expect(pref.value).toEqual({ mode: 'remote' })
+    expect(pref.legacySnapshot.value).toEqual({ mode: 'remote', legacy: true })
+    expect(prefApi.saveUserPreference).not.toHaveBeenCalled()
+    expect(JSON.parse(localStorage.getItem('pref:migrating') || '{}'))
+      .toEqual({ mode: 'single', legacy: true })
+
+    await pref.saveRemoteNow()
+    expect(prefApi.saveUserPreference).toHaveBeenCalledWith(expect.objectContaining({
+      value: { mode: 'remote' },
+    }))
+  })
+
   it('whenHydrated 等待远端偏好完成后再放行页面初始化', async () => {
     login()
     const remote = deferred<{ items: Array<{ value: { density: string } }> }>()

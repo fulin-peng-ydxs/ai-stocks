@@ -19,6 +19,9 @@ import PageSettingItem from './PageSettingItem.vue'
 import PageSettingsApplyButton from './PageSettingsApplyButton.vue'
 import PageToggleRow from './PageToggleRow.vue'
 import StockChartSettingSection from './StockChartSettingSection.vue'
+import StockAnalysisDefaultFields from './StockAnalysisDefaultFields.vue'
+import SectorAnalysisDefaultFields from './SectorAnalysisDefaultFields.vue'
+import KlineSettingSection from './KlineSettingSection.vue'
 import MasterDetailRatioProfileSettings from './MasterDetailRatioProfileSettings.vue'
 import SourceTag from './SourceTag.vue'
 import {
@@ -42,6 +45,14 @@ import {
 } from '@/composables/useStockChartPreferences'
 import { upsertStockChartRatioProfile } from '@/layout/stockChartRatioProfiles'
 import type { AppRowAction } from './rowActions'
+import {
+  normalizeSectorAnalysisPreferences,
+  type SectorAnalysisComponentPreferences,
+} from '@/composables/useSectorAnalysisPreferences'
+import {
+  normalizeStockAnalysisPreferences,
+  type StockAnalysisComponentPreferences,
+} from '@/composables/useStockAnalysisSession'
 import {
   normalizeMasterDetailRatioProfiles,
   upsertMasterDetailRatioProfile,
@@ -326,6 +337,38 @@ function stockChartValue(slotId: string) {
   return normalizeStockChartPreferences(props.config.componentValueOf(slotId, 'stockChart'))
 }
 
+function stockAnalysisValue(slotId: string): StockAnalysisComponentPreferences {
+  return normalizeStockAnalysisPreferences(props.config.componentValueOf(slotId, 'stockAnalysis'))
+}
+
+function setStockAnalysisField<K extends keyof StockAnalysisComponentPreferences>(
+  slotId: string,
+  field: K,
+  value: StockAnalysisComponentPreferences[K],
+): void {
+  props.config.setComponentKnob(
+    slotId,
+    'stockAnalysis',
+    normalizeStockAnalysisPreferences({ ...stockAnalysisValue(slotId), [field]: value }),
+  )
+}
+
+function sectorAnalysisValue(slotId: string): SectorAnalysisComponentPreferences {
+  return normalizeSectorAnalysisPreferences(props.config.componentValueOf(slotId, 'sectorAnalysis'))
+}
+
+function setSectorAnalysisField<K extends keyof SectorAnalysisComponentPreferences>(
+  slotId: string,
+  field: K,
+  value: SectorAnalysisComponentPreferences[K],
+): void {
+  props.config.setComponentKnob(
+    slotId,
+    'sectorAnalysis',
+    normalizeSectorAnalysisPreferences({ ...sectorAnalysisValue(slotId), [field]: value }),
+  )
+}
+
 function stockChartTypes(slotId: string) {
   return visibleChartTypes(stockChartValue(slotId))
 }
@@ -496,6 +539,86 @@ function setSort(slotId: string, field: string, order: string): void {
       :data-cc-slot="s.slotId"
       :class="{ 'ca-highlight': s.slotId === highlightSlot }"
     >
+      <template v-if="s.fields.includes('klineRangePreferences')">
+        <PageSettingItem label="K 线范围">
+          <template #actions>
+            <SourceTag
+              v-if="srcOf(s.slotId, 'klineRangePreferences')"
+              :source="srcOf(s.slotId, 'klineRangePreferences')!"
+              :values="srcValuesOf(s.slotId, 'klineRangePreferences')"
+            />
+          </template>
+          <template #help>快捷范围选项与默认范围，所有 K 线图统一生效。</template>
+        </PageSettingItem>
+        <KlineSettingSection />
+      </template>
+
+      <template v-if="s.fields.includes('stockAnalysis')">
+        <PageSettingItem label="走势分析默认项">
+          <template #actions>
+            <span class="ca-actions">
+              <SourceTag
+                v-if="srcOf(s.slotId, 'stockAnalysis')"
+                :source="srcOf(s.slotId, 'stockAnalysis')!"
+                :values="srcValuesOf(s.slotId, 'stockAnalysis')"
+              />
+              <AppRowActions
+                v-if="clearable && isOverridden(s.slotId, 'stockAnalysis')"
+                :actions="clearFieldActions(s.slotId, 'stockAnalysis')"
+                :inline-limit="1"
+              />
+            </span>
+          </template>
+        </PageSettingItem>
+        <StockAnalysisDefaultFields
+          :default-chart-mode="stockAnalysisValue(s.slotId).defaultChartMode"
+          :compare-range="stockAnalysisValue(s.slotId).compareRange"
+          :benchmark-code="stockAnalysisValue(s.slotId).benchmarkCode"
+          :compare-metrics="stockAnalysisValue(s.slotId).compareMetrics"
+          :default-compare-metric="stockAnalysisValue(s.slotId).defaultCompareMetric"
+          :show-analysis-panel="stockAnalysisValue(s.slotId).showAnalysisPanel"
+          @update:default-chart-mode="(value) => setStockAnalysisField(s.slotId, 'defaultChartMode', value)"
+          @update:compare-range="(value) => setStockAnalysisField(s.slotId, 'compareRange', value)"
+          @update:benchmark-code="(value) => setStockAnalysisField(s.slotId, 'benchmarkCode', value)"
+          @update:compare-metrics="(value) => setStockAnalysisField(s.slotId, 'compareMetrics', value)"
+          @update:default-compare-metric="(value) => setStockAnalysisField(s.slotId, 'defaultCompareMetric', value)"
+          @update:show-analysis-panel="(value) => setStockAnalysisField(s.slotId, 'showAnalysisPanel', value)"
+        />
+      </template>
+
+      <template v-if="s.fields.includes('sectorAnalysis')">
+        <PageSettingItem label="板块走势默认项">
+          <template #actions>
+            <span class="ca-actions">
+              <SourceTag
+                v-if="srcOf(s.slotId, 'sectorAnalysis')"
+                :source="srcOf(s.slotId, 'sectorAnalysis')!"
+                :values="srcValuesOf(s.slotId, 'sectorAnalysis')"
+              />
+              <AppRowActions
+                v-if="clearable && isOverridden(s.slotId, 'sectorAnalysis')"
+                :actions="clearFieldActions(s.slotId, 'sectorAnalysis')"
+                :inline-limit="1"
+              />
+            </span>
+          </template>
+        </PageSettingItem>
+        <SectorAnalysisDefaultFields
+          :default-chart-mode="sectorAnalysisValue(s.slotId).defaultChartMode"
+          :benchmark-code="sectorAnalysisValue(s.slotId).benchmarkCode"
+          :show-analysis-panel="sectorAnalysisValue(s.slotId).showAnalysisPanel"
+          :compare-metrics="sectorAnalysisValue(s.slotId).compareMetrics"
+          :default-compare-metric="sectorAnalysisValue(s.slotId).defaultCompareMetric"
+          :compare-window="sectorAnalysisValue(s.slotId).compareWindow"
+          @update:default-chart-mode="(value) => setSectorAnalysisField(s.slotId, 'defaultChartMode', value)"
+          @update:benchmark-code="(value) => setSectorAnalysisField(s.slotId, 'benchmarkCode', value)"
+          @update:show-analysis-panel="(value) => setSectorAnalysisField(s.slotId, 'showAnalysisPanel', value)"
+          @update:compare-metrics="(value) => setSectorAnalysisField(s.slotId, 'compareMetrics', value)"
+          @update:default-compare-metric="(value) => setSectorAnalysisField(s.slotId, 'defaultCompareMetric', value)"
+          @update:compare-window="(value) => setSectorAnalysisField(s.slotId, 'compareWindow', value)"
+        />
+      </template>
+
       <PageSettingItem v-if="s.fields.includes('stockChart')" label="图表组合与内部比例">
         <template #actions>
           <span class="ca-actions">

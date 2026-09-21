@@ -44,12 +44,18 @@ describe('组件字段元数据', () => {
   })
 
   it('字段定义只覆盖已消费字段，不预设无消费字段', () => {
-    expect(Object.keys(COMPONENT_FIELD_DEFS).sort()).toEqual(['chart', 'config-panel', 'data-table', 'master-detail', 'settings-drawer', 'tabs', 'wide-table'])
+    expect(Object.keys(COMPONENT_FIELD_DEFS).sort()).toEqual(['chart', 'config-panel', 'data-table', 'master-detail', 'section', 'settings-drawer', 'tabs', 'wide-table'])
     expect((COMPONENT_FIELD_DEFS.chart ?? []).map((d) => d.key)).toEqual([
+      'klineRangePreferences',
       'minHeight',
       'stockChart',
+      'stockAnalysis',
+      'sectorAnalysis',
       'measurementOperationsExpanded',
       'returnMeasurementMode',
+    ])
+    expect((COMPONENT_FIELD_DEFS.section ?? []).map((d) => d.key)).toEqual([
+      'visibleIndicatorFields',
     ])
     expect((COMPONENT_FIELD_DEFS['config-panel'] ?? []).map((d) => d.key).sort()).toEqual([
       'collapsibleSections',

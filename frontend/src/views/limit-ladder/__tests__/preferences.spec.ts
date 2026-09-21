@@ -12,49 +12,32 @@ describe('limit ladder preferences', () => {
       window: 20,
       ignoreSt: false,
       boards: ['main', 'gem'],
-      showAnalysisPanel: true,
     })).toEqual({
       ...DEFAULT_LIMIT_LADDER_PREFERENCE,
       schemaVersion: 1,
       window: 20,
       ignoreSt: false,
       boards: ['main', 'gem'],
-      showAnalysisPanel: true,
     })
   })
 
-  it('补齐走势图和层内排序默认值，并规范化非法值', () => {
+  it('补齐层内排序默认值，并规范化非法值', () => {
     expect(normalizeLimitLadderPreference({
       schemaVersion: 1,
       cardSort: 'industry',
       cardSortOrder: 'asc',
-      defaultChartMode: 'kline',
-      compareRange: 120,
-      benchmarkCode: '000300.SH',
-      compareMetrics: ['cum', 'roll_20d'],
-      defaultCompareMetric: 'roll_20d',
       adjustMode: 'hfq',
     })).toMatchObject({
       cardSort: 'industry',
       cardSortOrder: 'asc',
-      defaultChartMode: 'kline',
-      compareRange: 120,
-      benchmarkCode: '000300.SH',
-      compareMetrics: ['cum', 'roll_20d'],
-      defaultCompareMetric: 'roll_20d',
       adjustMode: 'hfq',
     })
     expect(normalizeLimitLadderPreference({
       cardSort: 'unknown',
       cardSortOrder: 'unknown',
-      benchmarkCode: 'unknown',
-      compareMetrics: [],
     })).toMatchObject({
       cardSort: 'limitUps',
       cardSortOrder: 'desc',
-      benchmarkCode: '000905.SH',
-      compareMetrics: DEFAULT_LIMIT_LADDER_PREFERENCE.compareMetrics,
-      defaultCompareMetric: 'cum',
     })
     expect(normalizeLimitLadderPreference({
       cardSort: 'industry',
@@ -70,7 +53,6 @@ describe('limit ladder preferences', () => {
       window: 10,
       ignoreSt: false,
       boards: ['main'],
-      showAnalysisPanel: true,
     })).toEqual(DEFAULT_LIMIT_LADDER_PREFERENCE)
 
     expect(normalizeLimitLadderPreference({
@@ -78,7 +60,6 @@ describe('limit ladder preferences', () => {
       window: 12,
       ignoreSt: 'false',
       boards: ['main', 'unknown'],
-      showAnalysisPanel: 'true',
     })).toEqual(DEFAULT_LIMIT_LADDER_PREFERENCE)
   })
 
@@ -88,7 +69,6 @@ describe('limit ladder preferences', () => {
       window: 20,
       ignoreSt: false,
       boards: ['star'],
-      showAnalysisPanel: true,
     })
     const preferredFilters = filtersFromLimitLadderPreference(preference)
     expect(filtersFromRouteQuery({}, preferredFilters)).toEqual({

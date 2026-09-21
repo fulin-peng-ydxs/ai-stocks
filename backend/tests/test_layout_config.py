@@ -554,6 +554,28 @@ def test_component_config_rejects_fields_not_applicable_to_slot_instance(client)
                 ]
             },
         )
+    with pytest.raises(LayoutConfigValidationError, match="不是联动走势工作台"):
+        repo.set_user_config(
+            "backtest",
+            {"values": {"slots.chart.config.stockAnalysis": {"defaultChartMode": "kline"}}},
+            user_id="u1",
+            layout={
+                "slots": [
+                    {"id": "chart", "component": "chart", "config": {"stockChart": {}}}
+                ]
+            },
+        )
+    with pytest.raises(LayoutConfigValidationError, match="不是板块联动走势工作台"):
+        repo.set_user_config(
+            "backtest",
+            {"values": {"slots.chart.config.sectorAnalysis": {"compareWindow": 120}}},
+            user_id="u1",
+            layout={
+                "slots": [
+                    {"id": "chart", "component": "chart", "config": {"stockChart": {}}}
+                ]
+            },
+        )
 
 
 def test_return_measurement_component_defaults_require_enabled_chart_instance(client):

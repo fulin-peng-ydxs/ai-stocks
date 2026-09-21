@@ -31,7 +31,6 @@ import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
-import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import { useStockChartComponentConfig } from '@/composables/useStockChartComponentConfig'
 import { useLegacyStockChartPreferenceMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
 import { usePageSettings } from '@/composables/usePageSettings'
@@ -955,7 +954,6 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
         </PageSettingItem>
       </PageSettingSection>
       <template v-if="phase !== 'config'">
-        <KlineSettingSection />
       </template>
       <PageSettingSection title="选股范围" desc="控制随机选股时的股票池过滤条件。">
         <PageSettingItem label="排除 ST" layout="inline">

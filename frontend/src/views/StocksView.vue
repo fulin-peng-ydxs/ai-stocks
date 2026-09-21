@@ -17,12 +17,10 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
-import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 import StockAnalysisNameCell from '@/components/StockAnalysisNameCell.vue'
 import RelatedBoardCell from '@/components/RelatedBoardCell.vue'
 import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
-import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.vue'
 import StockGroupBatchActions from '@/components/StockGroupBatchActions.vue'
 import StockGroupFavoriteButton from '@/components/StockGroupFavoriteButton.vue'
 import {
@@ -77,10 +75,6 @@ import {
 import { getErrorMessage } from '@/utils/error'
 import { formatMoney } from '@/utils/money'
 import {
-  PRICE_COMPARE_METRIC_ORDER,
-  type PriceCompareMetric,
-} from '@/utils/marketCompare'
-import {
   DEFAULT_STOCK_GROUP_COLOR,
   STOCK_GROUP_COLOR_PRESETS,
   isDefaultStockGroupMember,
@@ -98,29 +92,12 @@ const settingsOpen = ref(false)
 const stocksDefaults = {
   defaultView: 'group' as 'list' | 'group',
   excludeSt: true,
-  defaultChartMode: 'compare' as 'compare' | 'kline',
-  showAnalysisPanel: true,
-  compareRange: 60,
-  benchmarkCode: '000905.SH',
-  compareMetrics: [...PRICE_COMPARE_METRIC_ORDER] as PriceCompareMetric[],
-  defaultCompareMetric: 'cum' as PriceCompareMetric,
   adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
 }
-const { settings, isDirty, reset, whenHydrated } = usePageSettings('stocks', stocksDefaults)
-const { validDefault: klineDefaultRange } = useKlinePrefs()
 const {
-  analysisPanelVisible,
-  chartMode,
-  compareRange,
-  compareMetric,
-  benchmarkCode,
-  adjustMode,
-  visibleCompareMetrics,
-  klineRange,
-} = useStockAnalysisSession(
-  settings,
-  klineDefaultRange,
-)
+  settings, isDirty, reset, save: savePageSettings, whenHydrated, legacySnapshot,
+} = usePageSettings('stocks', stocksDefaults, { deferUnknownFieldCleanup: true })
+const { validDefault: klineDefaultRange } = useKlinePrefs()
 
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
 const stocksLayout = getPageLayout('stocks')
@@ -156,13 +133,27 @@ const chartPreferences = useStockChartComponentConfig({
   setComponentKnob,
   hydrated: remoteHydrated,
 })
+const {
+  analysisPanelVisible,
+  chartMode,
+  compareRange,
+  compareMetric,
+  benchmarkCode,
+  adjustMode,
+  visibleCompareMetrics,
+  klineRange,
+} = useStockAnalysisSession(
+  computed(() => ({ ...chartPreferences.stockAnalysis.value, adjustMode: settings.adjustMode })),
+  klineDefaultRange,
+)
 const componentRuntimeValueOf = composeComponentRuntimeValueOf(
   masterRuntimeValueOf,
   chartPreferences.componentRuntimeValueOf,
 )
 useLegacyStockChartPreferenceMigration({
-  pageKey: 'stocks', componentSourceOf, setComponentKnob, whenRemoteHydrated,
-  saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
+  pageKey: 'stocks', analysisType: 'stock', componentSourceOf, setComponentKnob, whenRemoteHydrated,
+  whenPageSettingsHydrated: whenHydrated, legacySnapshot,
+  saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value, savePageSettings,
 })
 
 // 普通列表表格的组件配置（slot 'table'）：抽屉写值由 ComponentAutoSettings 自动渲染；
@@ -1272,16 +1263,7 @@ const menuPageTitle = useMenuPageTitle()
             />
           </PageSettingItem>
           <PageToggleRow v-model="settings.excludeSt" label="默认排除 ST" />
-          <StockAnalysisDefaultFields
-            v-model:default-chart-mode="settings.defaultChartMode"
-            v-model:compare-range="settings.compareRange"
-            v-model:benchmark-code="settings.benchmarkCode"
-            v-model:compare-metrics="settings.compareMetrics"
-            v-model:default-compare-metric="settings.defaultCompareMetric"
-            v-model:show-analysis-panel="settings.showAnalysisPanel"
-          />
         </PageSettingSection>
-        <KlineSettingSection />
       </template>
     </PageSettingsDrawer>
     </template>

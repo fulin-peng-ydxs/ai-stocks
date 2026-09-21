@@ -23,7 +23,6 @@ import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppWorkspacePane from '@/components/AppWorkspacePane.vue'
-import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import MarketDetailHero from '@/components/MarketDetailHero.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -671,7 +670,6 @@ onMounted(async () => {
         @reset="resetSettings"
       >
         <template #business>
-          <KlineSettingSection />
         </template>
       </PageSettingsDrawer>
     </template>

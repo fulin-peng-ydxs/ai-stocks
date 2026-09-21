@@ -69,7 +69,8 @@ function preference() {
 }
 
 export function useKlinePrefs() {
-  const state = preference().value
+  const prefState = preference()
+  const state = prefState.value
   const options = computed(() => {
     const opts = state.periods.map((d) => ({ value: d, label: `近 ${d} 日` }))
     if (state.includeAll) opts.push({ value: ALL_DAYS, label: '全部' })
@@ -95,5 +96,5 @@ export function useKlinePrefs() {
     state.includeAll = DEFAULTS.includeAll
     state.defaultPeriod = DEFAULTS.defaultPeriod
   }
-  return { prefs: state, options, validDefault, setPeriods, reset }
+  return { prefs: state, options, validDefault, setPeriods, reset, isDirty: prefState.isDirty }
 }

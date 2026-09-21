@@ -85,6 +85,9 @@ const chartShape: ConfigShape = {
   chartType,
   minHeight: 'int',
   stockChart: 'object',
+  klineRangePreferences: 'object',
+  stockAnalysis: 'object',
+  sectorAnalysis: 'object',
   returnMeasurement: 'bool',
   measurementOperationsExpanded: 'bool',
   returnMeasurementMode: ['latest', 'range'],
@@ -102,6 +105,11 @@ const feedbackShape: ConfigShape = {
 }
 
 const COMPONENT_CONFIG_SHAPES: Partial<Record<ComponentKind, ConfigShape>> = {
+  section: {
+    title: 'string',
+    collapsible: 'bool',
+    visibleIndicatorFields: 'string[]',
+  },
   'data-table': tableShape,
   'wide-table': tableShape,
   'tree-table': { ...tableShape, defaultExpandAll: 'bool', rowKey: 'string' },
@@ -162,7 +170,6 @@ const COMPONENT_CONFIG_SHAPES: Partial<Record<ComponentKind, ConfigShape>> = {
   breadcrumb: { maxItems: 'int' },
 
   'page-shell': {},
-  section: { title: 'string', collapsible: 'bool' },
   'split-pane': { direction: ['horizontal', 'vertical'], primarySize: 'int', resizable: 'bool' },
   'slot-group': { gap: 'int', columns: 'int' },
 }

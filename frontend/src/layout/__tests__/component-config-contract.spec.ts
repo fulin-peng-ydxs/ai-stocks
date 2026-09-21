@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { PAGE_REGISTRY, applicableComponentFields, componentMetaForSlot } from '../pageRegistry'
 import { componentFieldApplicability, COMPONENT_FIELD_DEFS, getComponentFieldDefs } from '../componentConfig'
+import { PAGE_BUSINESS_PREFERENCE_CONTRACTS } from '../pageBusinessPreferenceContracts'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 
 // 后端组件字段规则源（backend/storage/layout_config.py 的 COMPONENT_CONFIG_FIELDS_BY_KIND），
@@ -98,10 +99,27 @@ function backendUserPersistenceByKindField(): Record<string, string> {
 }
 
 describe('组件配置字段注册契约', () => {
+  it('组件字段与页面业务偏好使用互斥事实源', () => {
+    const componentFields = new Set(
+      Object.values(COMPONENT_FIELD_DEFS)
+        .flatMap((defs) => defs ?? [])
+        .map((field) => field.key),
+    )
+    const conflicts = PAGE_BUSINESS_PREFERENCE_CONTRACTS
+      .map((preference) => preference.key)
+      .filter((key) => componentFields.has(key))
+
+    expect(
+      conflicts,
+      `以下字段同时登记为组件设置和业务偏好，必须按属性所有者保留唯一入口：\n${conflicts.join('\n')}`,
+    ).toEqual([])
+  })
+
   it('每个受控字段都有统一抽屉渲染策略', () => {
     const specialized = new Set([
       'defaultSort', 'pageSize', 'defaultActive', 'hiddenColumns', 'defaultCollapsed', 'stockChart',
-      'masterRatioProfiles',
+      'stockAnalysis', 'sectorAnalysis', 'masterRatioProfiles',
+      'klineRangePreferences',
     ])
     const unsupported: string[] = []
     for (const [kind, defs] of Object.entries(COMPONENT_FIELD_DEFS)) {
