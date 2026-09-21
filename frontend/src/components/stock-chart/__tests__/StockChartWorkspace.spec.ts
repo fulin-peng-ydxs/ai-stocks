@@ -413,6 +413,8 @@ describe('StockChartWorkspace', () => {
     expect(wrapper.get('[data-testid="stock-chart-measurement-mode-latest"]').text()).toBe('截止')
     expect(wrapper.get('[data-testid="stock-chart-measurement-mode-range"]').text()).toBe('区间')
     expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="stock-chart-measurement-mode"]').classes())
+      .not.toContain('page-segmented--primary')
     expect(wrapper.find('.stock-chart-panel__date').text()).toBe('2026-06-40')
     await wrapper.get('.stock-chart-panel--kline .stock-chart-panel__canvas')
       .trigger('pointerenter')
@@ -542,6 +544,8 @@ describe('StockChartWorkspace', () => {
     await wrapper.get('[data-testid="stock-chart-toggle-operations"]').trigger('click')
     expect(wrapper.get('[data-testid="stock-chart-adjust-mode-qfq"]')
       .attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('[data-testid="stock-chart-adjust-mode"]').classes())
+      .not.toContain('page-segmented--primary')
     expect(wrapper.get('.chart-operation-group').text()).toContain('复权口径')
 
     await wrapper.get('[data-testid="stock-chart-adjust-mode-hfq"]').trigger('click')

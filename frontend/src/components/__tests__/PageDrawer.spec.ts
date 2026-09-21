@@ -105,6 +105,7 @@ describe('PageDrawer 页面边界', () => {
 
   it('抽屉宽度只由稳定语义档位定义，宽内容档位保留受控响应式', () => {
     expect(PAGE_DRAWER_WIDTHS).toEqual({
+      xs: '280px',
       sm: '320px',
       md: '360px',
       lg: '440px',

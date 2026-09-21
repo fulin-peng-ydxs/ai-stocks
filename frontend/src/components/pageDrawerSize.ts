@@ -1,4 +1,6 @@
 export const PAGE_DRAWER_WIDTHS = {
+  // 只含少量短选项的局部工具使用，避免挤占过多工作区。
+  xs: '280px',
   sm: '320px',
   md: '360px',
   lg: '440px',

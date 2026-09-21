@@ -17,7 +17,7 @@ defineEmits<{
     :id="drawerId"
     :model-value="modelValue"
     title="图表操作"
-    size="sm"
+    size="xs"
     modal-class="stock-chart-operations-modal"
     destroy-on-close
     @update:model-value="$emit('update:modelValue', $event)"

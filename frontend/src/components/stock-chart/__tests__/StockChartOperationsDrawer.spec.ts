@@ -49,7 +49,7 @@ describe('StockChartOperationsDrawer', () => {
     expect(host.contains(overlay)).toBe(true)
     expect(document.querySelector('.stock-chart-operations-drawer')?.textContent)
       .toContain('涨跌测算截止区间')
-    expect((document.querySelector('.el-drawer') as HTMLElement)?.style.width).toBe('320px')
+    expect((document.querySelector('.el-drawer') as HTMLElement)?.style.width).toBe('280px')
 
     wrapper.unmount()
   })
