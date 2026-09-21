@@ -58,6 +58,12 @@ COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
     "hiddenColumns": {"type": "str_list", "layers": {"page", "user"}},
     "minHeight": {"type": "int", "layers": {"page", "user"}, "min": 480, "max": 900},
     "stockChart": {"type": "object", "layers": {"page", "user"}},
+    "measurementOperationsExpanded": {"type": "bool", "layers": {"page", "user"}},
+    "returnMeasurementMode": {
+        "type": "enum",
+        "layers": {"page", "user"},
+        "options": {"latest", "range"},
+    },
     # 兼容历史配置读取；新页面配置统一写 masterRatio，避免跨屏固定像素导致分栏失衡。
     "masterWidth": {"type": "int", "layers": {"page", "user"}, "min": 360, "max": 1200},
     "masterRatio": {"type": "int", "layers": {"page", "user"}, "min": 30, "max": 70},
@@ -77,7 +83,12 @@ COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
 COMPONENT_CONFIG_FIELDS_BY_KIND: dict[str, set[str]] = {
     "data-table": {"border", "pageSize", "defaultSort", "hiddenColumns"},
     "wide-table": {"border", "pageSize", "defaultSort", "hiddenColumns"},
-    "chart": {"minHeight", "stockChart"},
+    "chart": {
+        "minHeight",
+        "stockChart",
+        "measurementOperationsExpanded",
+        "returnMeasurementMode",
+    },
     "master-detail": {"masterWidth", "masterRatio", "masterRatioProfiles"},
     "tabs": {"defaultActive"},
     "settings-drawer": {"size", "bodyScroll"},
@@ -86,6 +97,7 @@ COMPONENT_CONFIG_FIELDS_BY_KIND: dict[str, set[str]] = {
 
 # 同名字段可能因组件种类拥有不同静态值域；动态页面值域不在此表硬编码。
 COMPONENT_CONFIG_OPTIONS_BY_KIND_FIELD: dict[tuple[str, str], set[str]] = {
+    ("chart", "returnMeasurementMode"): {"latest", "range"},
     ("settings-drawer", "size"): {"sm", "md", "lg"},
 }
 
@@ -160,6 +172,15 @@ def check_component_config_ownership(values: dict[str, Any], layout: dict[str, A
             continue
         if field == "stockChart" and "stockChart" not in slot_config:
             errors.append(f"组件 {kind} 的当前实例不是股票多图工作区，不能配置 stockChart（slot {slot_id}）")
+            continue
+        if (
+            field in {"measurementOperationsExpanded", "returnMeasurementMode"}
+            and slot_config.get("returnMeasurement") is not True
+        ):
+            errors.append(
+                f"组件 {kind} 的当前实例未启用涨跌测算，"
+                f"不能配置 {field}（slot {slot_id}）"
+            )
             continue
         if field == "defaultSort" and "defaultSort" not in slot_config:
             errors.append(f"组件 {kind} 的当前实例未启用默认排序，不能配置 defaultSort（slot {slot_id}）")

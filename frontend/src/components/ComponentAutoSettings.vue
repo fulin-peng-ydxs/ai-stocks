@@ -635,6 +635,7 @@ function setSort(slotId: string, field: string, order: string): void {
           </span>
         </template>
         <el-switch
+          :data-testid="`component-${s.slotId}-${field.key}`"
           :model-value="boolVal(s.slotId, field.key, Boolean(field.default))"
           inline-prompt
           @update:model-value="(v: boolean) => config.setComponentKnob(s.slotId, field.key, v)"
@@ -754,7 +755,7 @@ function setSort(slotId: string, field: string, order: string): void {
           :model-value="enumVal(s.slotId, field)"
           :options="enumOptions(field)"
           :aria-label="`${s.label}：${field.label}`"
-          :test-id="s.slotId === 'settings' && field.key === 'size' ? 'drawer-size' : undefined"
+          :test-id="s.slotId === 'settings' && field.key === 'size' ? 'drawer-size' : `component-${s.slotId}-${field.key}`"
           @update:model-value="(v) => config.setComponentKnob(s.slotId, field.key, v)"
         />
         <template v-if="field.help" #help>{{ field.help }}</template>

@@ -1460,6 +1460,44 @@ describe('组件消费关系与配置一致性（P4）', () => {
     }
   })
 
+  it('启用涨跌测算的图表统一登记并消费操作栏默认值', () => {
+    const enabledPages = PAGE_REGISTRY
+      .filter((entry) => entry.layout.slots.some((slot) => slot.config?.returnMeasurement === true))
+      .map((entry) => entry.pageKey)
+      .sort()
+    expect(enabledPages).toEqual([
+      'board',
+      'config-score',
+      'limit-ladder',
+      'screen',
+      'sectors',
+      'sectors-detail',
+      'stock-detail',
+      'stocks',
+    ])
+    for (const pageKey of enabledPages) {
+      const entry = PAGE_REGISTRY.find((candidate) => candidate.pageKey === pageKey)!
+      const chart = entry.layout.slots.find((slot) => slot.config?.returnMeasurement === true)!
+      const fields = applicableComponentFields(entry, chart.id).map((field) => field.key)
+      expect(fields, pageKey).toContain('measurementOperationsExpanded')
+      expect(fields, pageKey).toContain('returnMeasurementMode')
+      const source = sourceForPage(pageKey)
+      expect(source, pageKey).toContain(
+        'v-model:return-measurement-mode="chartPreferences.returnMeasurementMode.value"',
+      )
+      expect(source, pageKey).toContain(
+        'v-model:measurement-operations-expanded="chartPreferences.measurementOperationsExpanded.value"',
+      )
+    }
+    for (const pageKey of ['backtest', 'training']) {
+      const entry = PAGE_REGISTRY.find((candidate) => candidate.pageKey === pageKey)!
+      const chart = entry.layout.slots.find((slot) => slot.component === 'chart')!
+      const fields = applicableComponentFields(entry, chart.id).map((field) => field.key)
+      expect(fields, pageKey).not.toContain('measurementOperationsExpanded')
+      expect(fields, pageKey).not.toContain('returnMeasurementMode')
+    }
+  })
+
   it('个股与板块详情始终开放图表组件实例设置', () => {
     for (const pageKey of ['stock-detail', 'sectors-detail']) {
       const source = sourceForPage(pageKey)

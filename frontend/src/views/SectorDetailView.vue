@@ -575,6 +575,8 @@ onMounted(async () => {
                   fit-available-height
                   aria-label="板块指数 K 线与量能联动工作区"
                   enable-return-measurement
+                  v-model:return-measurement-mode="chartPreferences.returnMeasurementMode.value"
+                  v-model:measurement-operations-expanded="chartPreferences.measurementOperationsExpanded.value"
                   @ratio-draft="chartPreferences.handleRatioDraft"
                   @ratio-commit="chartPreferences.handleRatioCommit"
                   @workspace-resize="chartPreferences.handleWorkspaceResize"

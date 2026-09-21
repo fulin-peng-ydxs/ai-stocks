@@ -122,8 +122,6 @@ const {
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers, save: saveRemoteUserConfig }
 const detailDefaults = {
   adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
-  klineOperationBarExpanded: false,
-  klineMeasurementMode: 'latest' as 'latest' | 'range',
   showTradeCard: true,
   showIndicatorSnapshot: true,
   showRelatedBoards: true,
@@ -156,12 +154,6 @@ const componentRuntimeValueOf = composeComponentRuntimeValueOf(
 const splitWorkspaceRef = ref<InstanceType<typeof AppSplitWorkspace> | null>(null)
 const splitCompact = ref(false)
 const auxiliaryVisible = ref(true)
-const klineOperationBarExpanded = useDefaultedSessionValue(computed(() => (
-  Boolean(settings.klineOperationBarExpanded)
-)))
-const klineMeasurementMode = useDefaultedSessionValue(computed<'latest' | 'range'>(() => (
-  settings.klineMeasurementMode === 'range' ? 'range' : 'latest'
-)))
 useLegacyStockChartPreferenceMigration({
   pageKey: 'stock-detail', componentSourceOf, setComponentKnob, whenRemoteHydrated,
   saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
@@ -1231,8 +1223,8 @@ onBeforeUnmount(() => {
               fit-available-height
               enable-intraday-drilldown
               enable-return-measurement
-              v-model:return-measurement-mode="klineMeasurementMode"
-              v-model:measurement-operations-expanded="klineOperationBarExpanded"
+              v-model:return-measurement-mode="chartPreferences.returnMeasurementMode.value"
+              v-model:measurement-operations-expanded="chartPreferences.measurementOperationsExpanded.value"
               :show-kline-tooltip="false"
               @ratio-draft="chartPreferences.handleRatioDraft"
               @ratio-commit="chartPreferences.handleRatioCommit"
@@ -1409,25 +1401,6 @@ onBeforeUnmount(() => {
         </PageSettingSection>
 
         <KlineSettingSection />
-
-        <PageSettingSection title="图表操作">
-          <PageToggleRow
-            v-model="settings.klineOperationBarExpanded"
-            label="默认展开图表操作栏"
-            test-id="stock-detail-default-operation-bar"
-          />
-          <PageSettingItem label="默认区间测算模式">
-            <PageSegmented
-              v-model="settings.klineMeasurementMode"
-              aria-label="默认区间测算模式"
-              test-id="stock-detail-default-measurement-mode"
-              :options="[
-                { label: '截止', value: 'latest' },
-                { label: '区间', value: 'range' },
-              ]"
-            />
-          </PageSettingItem>
-        </PageSettingSection>
 
         <PageSettingSection title="指标快照">
           <PageToggleRow v-model="settings.indicators.ma20" label="MA20" />

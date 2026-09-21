@@ -134,6 +134,28 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       help: '配置 K线、成交量、MACD 的组合及各组合默认高度比例。',
       applicability: 'explicit',
     },
+    {
+      key: 'measurementOperationsExpanded',
+      label: '默认展开图表操作栏',
+      control: 'bool',
+      layers: ['page', 'user'],
+      default: false,
+      highFrequency: true,
+      help: '只作为新页面会话的默认值；页面内临时展开或收起不会反写该配置。',
+      applicability: 'explicit',
+    },
+    {
+      key: 'returnMeasurementMode',
+      label: '默认区间测算模式',
+      control: 'enum',
+      layers: ['page', 'user'],
+      options: ['latest', 'range'],
+      optionLabels: { latest: '截止', range: '区间' },
+      default: 'latest',
+      highFrequency: true,
+      help: '只作为新页面会话的默认值；页面内切换模式不会反写该配置。',
+      applicability: 'explicit',
+    },
   ],
   'master-detail': [
     {

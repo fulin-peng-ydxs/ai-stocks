@@ -36,12 +36,16 @@ const props = withDefaults(defineProps<{
   slot2?: AuxiliaryChartType
   slot3?: AuxiliaryChartType
   heightRatios?: number[]
+  returnMeasurementMode?: 'latest' | 'range'
+  measurementOperationsExpanded?: boolean
   heightMode?: MarketWorkspaceHeightMode
 }>(), {
   meta: '', runDate: '', loading: false, scoreKeys: () => [],
   labelOf: (key: string) => key, returnPath: '', collectionLabel: '排名结果', border: false,
   defaultMasterRatio: 45, slot2: 'volume', slot3: 'macd',
   heightRatios: () => [56, 22, 22],
+  returnMeasurementMode: 'latest',
+  measurementOperationsExpanded: false,
   // 排名结果工作台通常位于筛选/试算等长文档末段，默认自适应剩余空间并内部滚动。
   heightMode: 'adaptive',
 })
@@ -52,6 +56,8 @@ const emit = defineEmits<{
   ratioDraft: [ratios: number[]]
   ratioCommit: [ratios: number[]]
   workspaceResize: [sample: StockChartWorkspaceSample | undefined]
+  'update:returnMeasurementMode': [value: 'latest' | 'range']
+  'update:measurementOperationsExpanded': [value: boolean]
 }>()
 
 const router = useRouter()
@@ -126,6 +132,10 @@ function openActiveDetail(): void {
         :slot2="slot2"
         :slot3="slot3"
         :height-ratios="heightRatios"
+        :return-measurement-mode="returnMeasurementMode"
+        :measurement-operations-expanded="measurementOperationsExpanded"
+        @update:return-measurement-mode="emit('update:returnMeasurementMode', $event)"
+        @update:measurement-operations-expanded="emit('update:measurementOperationsExpanded', $event)"
         @activate="selection.activate"
         @remove="selection.remove"
         @open-detail="openActiveDetail"

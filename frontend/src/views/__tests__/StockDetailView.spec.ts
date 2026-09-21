@@ -22,6 +22,7 @@ const pageSettingsState = vi.hoisted(() => ({
 }))
 const resetLayout = vi.hoisted(() => vi.fn())
 const componentConfigState = vi.hoisted(() => ({ current: null as any }))
+const measurementConfigState = vi.hoisted(() => ({ current: null as any }))
 
 function defaultChartConfig() {
   return {
@@ -40,6 +41,7 @@ function defaultChartConfig() {
 vi.mock('@/composables/useRemoteLayoutConfig', () => ({
   useRemoteLayoutConfig: () => {
     componentConfigState.current ??= reactive(defaultChartConfig())
+    measurementConfigState.current ??= reactive({ expanded: false, mode: 'latest' as 'latest' | 'range' })
     return ({
     effective: {},
     knobs: [],
@@ -50,11 +52,24 @@ vi.mock('@/composables/useRemoteLayoutConfig', () => ({
     resetAll: () => {
       resetLayout()
       Object.assign(componentConfigState.current, defaultChartConfig())
+      measurementConfigState.current.expanded = false
+      measurementConfigState.current.mode = 'latest'
     },
     componentValueOf: vi.fn((_slotId: string, field: string) => (
-      field === 'stockChart' ? componentConfigState.current : field === 'minHeight' ? 650 : undefined
+      field === 'stockChart' ? componentConfigState.current
+        : field === 'measurementOperationsExpanded' ? measurementConfigState.current.expanded
+          : field === 'returnMeasurementMode' ? measurementConfigState.current.mode
+            : field === 'minHeight' ? 650 : undefined
     )),
     setComponentKnob: vi.fn((_slotId: string, field: string, value: unknown) => {
+      if (field === 'measurementOperationsExpanded') {
+        measurementConfigState.current.expanded = value === true
+        return
+      }
+      if (field === 'returnMeasurementMode') {
+        measurementConfigState.current.mode = value === 'range' ? 'range' : 'latest'
+        return
+      }
       if (field !== 'stockChart') return
       for (const key of Object.keys(componentConfigState.current)) delete componentConfigState.current[key]
       Object.assign(componentConfigState.current, structuredClone(value))
@@ -236,6 +251,18 @@ const PageSettingsDrawerStub = defineComponent({
         }),
         onApplyCurrentRatios: () => config.setComponentKnob('chart', 'stockChart', runtime),
       }),
+      h('button', {
+        'data-testid': 'component-chart-measurementOperationsExpanded',
+        onClick: () => config.setComponentKnob(
+          'chart',
+          'measurementOperationsExpanded',
+          !config.componentValueOf('chart', 'measurementOperationsExpanded'),
+        ),
+      }, '默认展开图表操作栏'),
+      h('button', {
+        'data-testid': 'component-chart-returnMeasurementMode-range',
+        onClick: () => config.setComponentKnob('chart', 'returnMeasurementMode', 'range'),
+      }, '区间'),
       slots.business?.(),
       h('button', {
         'data-testid': 'page-settings-reset',
@@ -599,6 +626,7 @@ describe('StockDetailView 三图数据协调', () => {
     vi.clearAllMocks()
     pageSettingsState.current = null
     componentConfigState.current = null
+    measurementConfigState.current = null
     resetLayout.mockReset()
     localStorage.clear()
     setDefaultApiResponses()
@@ -1018,17 +1046,17 @@ describe('StockDetailView 三图数据协调', () => {
     const wrapper = await mountView()
     const workspace = wrapper.findComponent(StockChartWorkspaceStub)
 
-    expect(pageSettingsState.current.klineOperationBarExpanded).toBe(false)
-    expect(pageSettingsState.current.klineMeasurementMode).toBe('latest')
+    expect(measurementConfigState.current.expanded).toBe(false)
+    expect(measurementConfigState.current.mode).toBe('latest')
     expect(workspace.props('measurementOperationsExpanded')).toBe(false)
     expect(workspace.props('returnMeasurementMode')).toBe('latest')
 
-    await wrapper.get('[data-testid="stock-detail-default-operation-bar"]').trigger('click')
-    await wrapper.get('[data-testid="stock-detail-default-measurement-mode-range"]').trigger('click')
+    await wrapper.get('[data-testid="component-chart-measurementOperationsExpanded"]').trigger('click')
+    await wrapper.get('[data-testid="component-chart-returnMeasurementMode-range"]').trigger('click')
     await nextTick()
 
-    expect(pageSettingsState.current.klineOperationBarExpanded).toBe(true)
-    expect(pageSettingsState.current.klineMeasurementMode).toBe('range')
+    expect(measurementConfigState.current.expanded).toBe(true)
+    expect(measurementConfigState.current.mode).toBe('range')
     expect(workspace.props('measurementOperationsExpanded')).toBe(true)
     expect(workspace.props('returnMeasurementMode')).toBe('range')
 
@@ -1038,8 +1066,8 @@ describe('StockDetailView 三图数据协调', () => {
 
     expect(workspace.props('measurementOperationsExpanded')).toBe(false)
     expect(workspace.props('returnMeasurementMode')).toBe('latest')
-    expect(pageSettingsState.current.klineOperationBarExpanded).toBe(true)
-    expect(pageSettingsState.current.klineMeasurementMode).toBe('range')
+    expect(measurementConfigState.current.expanded).toBe(true)
+    expect(measurementConfigState.current.mode).toBe('range')
   })
 
   it('最新指标快照作为独立辅助模块隐藏，保留指标请求和字段偏好并可恢复默认', async () => {

@@ -543,6 +543,52 @@ def test_component_config_rejects_fields_not_applicable_to_slot_instance(client)
             {"values": {"slots.table.config.defaultSort": "score:desc"}},
             layout={"slots": [{"id": "table", "component": "data-table", "config": {"pagination": True}}]},
         )
+    with pytest.raises(LayoutConfigValidationError, match="未启用涨跌测算"):
+        repo.set_user_config(
+            "backtest",
+            {"values": {"slots.chart.config.returnMeasurementMode": "range"}},
+            user_id="u1",
+            layout={
+                "slots": [
+                    {"id": "chart", "component": "chart", "config": {"stockChart": {}}}
+                ]
+            },
+        )
+
+
+def test_return_measurement_component_defaults_require_enabled_chart_instance(client):
+    repo = LayoutConfigRepo(client)
+    layout = {
+        "slots": [
+            {
+                "id": "chart",
+                "component": "chart",
+                "config": {"stockChart": {}, "returnMeasurement": True},
+            }
+        ]
+    }
+    saved = repo.set_user_config(
+        "stock-detail",
+        {
+            "values": {
+                "slots.chart.config.measurementOperationsExpanded": True,
+                "slots.chart.config.returnMeasurementMode": "range",
+            }
+        },
+        user_id="u1",
+        layout=layout,
+    )
+    assert saved["config"]["values"] == {
+        "slots.chart.config.measurementOperationsExpanded": True,
+        "slots.chart.config.returnMeasurementMode": "range",
+    }
+    with pytest.raises(LayoutConfigValidationError, match="取值非法"):
+        repo.set_user_config(
+            "stock-detail",
+            {"values": {"slots.chart.config.returnMeasurementMode": "invalid"}},
+            user_id="u1",
+            layout=layout,
+        )
 
 
 def test_stock_chart_component_config_validates_instance_and_ratio_contract(client):

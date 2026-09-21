@@ -10,6 +10,7 @@ import {
   type StockChartPreferences,
 } from '@/composables/useStockChartPreferences'
 import type { StockChartRatioSample } from '@/layout/stockChartRatioProfiles'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 
 interface StockChartComponentConfigAccess {
   slotId?: string
@@ -33,6 +34,12 @@ export function useStockChartComponentConfig(access: StockChartComponentConfigAc
   // 页面单测或离线壳可能只提供基础组件访问器；缺少远端水合 ref 时按已就绪处理。
   const hydrated = isRef(access.hydrated) ? access.hydrated : ref(true)
   const preferences = useStockChartPreferences(source, hydrated)
+  const measurementOperationsExpanded = useDefaultedSessionValue(computed(() => (
+    access.componentValueOf(slotId, 'measurementOperationsExpanded') === true
+  )))
+  const returnMeasurementMode = useDefaultedSessionValue(computed<'latest' | 'range'>(() => (
+    access.componentValueOf(slotId, 'returnMeasurementMode') === 'range' ? 'range' : 'latest'
+  )))
   const workspaceSample = ref<StockChartRatioSample | null>(null)
   const workspaceMeasurement = ref<StockChartWorkspaceSample | null>(null)
   const configuredWorkspaceSample = ref<StockChartRatioSample | null>(null)
@@ -106,6 +113,8 @@ export function useStockChartComponentConfig(access: StockChartComponentConfigAc
 
   return {
     ...preferences,
+    measurementOperationsExpanded,
+    returnMeasurementMode,
     setAuxiliaryChart,
     handleRatioDraft,
     handleRatioCommit,

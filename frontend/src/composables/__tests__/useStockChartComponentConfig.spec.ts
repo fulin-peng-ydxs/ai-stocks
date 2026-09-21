@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ref } from 'vue'
+import { nextTick, reactive, ref } from 'vue'
 import {
   createDefaultStockChartPreferences,
   normalizeStockChartPreferences,
@@ -67,5 +67,29 @@ describe('useStockChartComponentConfig', () => {
     expect(normalizeStockChartPreferences(
       config.componentRuntimeValueOf('chart', 'stockChartConfigured'),
     ).heightRatios['kline|volume|macd']).toEqual([0.6, 0.2, 0.2])
+  })
+
+  it('把组件登记的测算默认值单向投影为当前页面会话值', async () => {
+    const stored = reactive<Record<string, unknown>>({
+      stockChart: createDefaultStockChartPreferences(),
+      measurementOperationsExpanded: false,
+      returnMeasurementMode: 'latest',
+    })
+    const config = useStockChartComponentConfig({
+      componentValueOf: (_slotId, field) => stored[field],
+      setComponentKnob: (_slotId, field, value) => { stored[field] = value },
+      hydrated: ref(true),
+    })
+
+    stored.measurementOperationsExpanded = true
+    stored.returnMeasurementMode = 'range'
+    await nextTick()
+    expect(config.measurementOperationsExpanded.value).toBe(true)
+    expect(config.returnMeasurementMode.value).toBe('range')
+
+    config.measurementOperationsExpanded.value = false
+    config.returnMeasurementMode.value = 'latest'
+    expect(stored.measurementOperationsExpanded).toBe(true)
+    expect(stored.returnMeasurementMode).toBe('range')
   })
 })

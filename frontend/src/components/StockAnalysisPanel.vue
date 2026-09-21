@@ -48,12 +48,16 @@ const props = withDefaults(defineProps<{
   slot2: AuxiliaryChartType
   slot3: AuxiliaryChartType
   heightRatios: number[]
+  returnMeasurementMode?: 'latest' | 'range'
+  measurementOperationsExpanded?: boolean
   canOpenDetail?: boolean
   refreshRevision?: number
 }>(), {
   adjustMode: 'qfq',
   canOpenDetail: true,
   refreshRevision: 0,
+  returnMeasurementMode: 'latest',
+  measurementOperationsExpanded: false,
 })
 
 const emit = defineEmits<{
@@ -62,6 +66,8 @@ const emit = defineEmits<{
   'update:compareMetric': [value: PriceCompareMetric]
   'update:benchmarkCode': [value: string]
   'update:klineRange': [value: number]
+  'update:returnMeasurementMode': [value: 'latest' | 'range']
+  'update:measurementOperationsExpanded': [value: boolean]
   activate: [code: string]
   remove: [code: string]
   openDetail: []
@@ -494,6 +500,10 @@ onBeforeUnmount(() => {
         aria-label="股票K线多图联动工作区"
         enable-intraday-drilldown
         enable-return-measurement
+        :return-measurement-mode="returnMeasurementMode"
+        :measurement-operations-expanded="measurementOperationsExpanded"
+        @update:return-measurement-mode="emit('update:returnMeasurementMode', $event)"
+        @update:measurement-operations-expanded="emit('update:measurementOperationsExpanded', $event)"
         @ratio-draft="emit('ratioDraft', $event)"
         @ratio-commit="emit('ratioCommit', $event)"
         @workspace-resize="emit('workspaceResize', $event)"
