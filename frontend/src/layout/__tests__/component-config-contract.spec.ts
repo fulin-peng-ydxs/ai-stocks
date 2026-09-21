@@ -125,7 +125,9 @@ describe('组件配置字段注册契约', () => {
     for (const [kind, defs] of Object.entries(COMPONENT_FIELD_DEFS)) {
       for (const def of defs ?? []) {
         const generic = ['bool', 'enum', 'int', 'number', 'string'].includes(def.control)
-          || (def.control === 'string[]' && Boolean(def.options?.length))
+          || (def.control === 'string[]' && (
+            Boolean(def.options?.length) || def.applicability === 'items'
+          ))
         if (!generic && !specialized.has(def.key)) unsupported.push(`${kind}.${def.key}:${def.control}`)
       }
     }

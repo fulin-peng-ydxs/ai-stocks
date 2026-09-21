@@ -26,11 +26,11 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
-import PageToggleRow from '@/components/PageToggleRow.vue'
 import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
 import ResultMaintenanceTaskFields from '@/components/data/ResultMaintenanceTaskFields.vue'
 import StockIngestScopeFields from '@/components/data/StockIngestScopeFields.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useLegacyPageSettingsMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useTableSort } from '@/composables/useTableSort'
@@ -64,9 +64,11 @@ const settingsOpen = ref(false)
 const ingestDefaults = {
   taskStatus: 'active' as 'all' | 'active' | 'failed',
   logStatus: 'all' as 'all' | 'failed',
-  autoScroll: true,
 }
-const { settings, isDirty, reset } = usePageSettings('data-ingest', ingestDefaults)
+const {
+  settings, isDirty, reset, save: savePageSettings,
+  whenHydrated: whenPageSettingsHydrated, legacySnapshot,
+} = usePageSettings('data-ingest', ingestDefaults, { deferUnknownFieldCleanup: true })
 
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
 const ingestLayout = getPageLayout('data-ingest')
@@ -83,10 +85,22 @@ const {
   componentSourceOf,
   layerValuesOf,
   componentLayerValuesOf, componentAllowedLayers,
+  whenRemoteHydrated, saveRemoteUserConfig, remoteSaveError,
 } = useRemoteLayoutConfig(ingestLayout)
 
 // 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
+useLegacyPageSettingsMigration({
+  pageKey: 'data-ingest',
+  componentSourceOf, setComponentKnob, whenRemoteHydrated,
+  whenPageSettingsHydrated, legacySnapshot, savePageSettings,
+  saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
+  legacyComponentMappings: [{
+    legacyField: 'autoScroll',
+    slotId: 'taskLogDrawer',
+    componentField: 'autoScroll',
+  }],
+})
 type IngestWorkspaceTab = 'tasks' | 'logs'
 const workspaceTabDefault = computed<IngestWorkspaceTab>(() => (
   componentValueOf('workspace', 'defaultActive') === 'logs' ? 'logs' : 'tasks'
@@ -621,7 +635,9 @@ function correlationBenchmarkText(): string {
   return items.join(' · ') || '—'
 }
 // autoScroll 单向：抽屉默认值 → 会话 ref；日志抽屉复选框改动只进会话态，不写回默认。
-const autoScroll = useDefaultedSessionValue(computed(() => Boolean(settings.autoScroll)))
+const autoScroll = useDefaultedSessionValue(computed(() => (
+  componentValueOf('taskLogDrawer', 'autoScroll') !== false
+)))
 function applyTaskPrefs(status = defaultTaskStatus.value) {
   taskFilter.value.status = status
   taskPage.value = 1
@@ -1209,14 +1225,13 @@ const menuPageTitle = useMenuPageTitle()
             ]" />
           </PageSettingItem>
         </PageSettingSection>
-        <PageSettingSection title="日志与显示">
+        <PageSettingSection title="采集日志">
           <PageSettingItem label="采集日志筛选">
             <PageSegmented v-model="settings.logStatus" aria-label="采集日志筛选" :options="[
               { label: '全部', value: 'all' },
               { label: '仅失败', value: 'failed' },
             ]" />
           </PageSettingItem>
-          <PageToggleRow v-model="settings.autoScroll" label="日志默认自动滚动" />
         </PageSettingSection>
       </template>
     </PageSettingsDrawer>

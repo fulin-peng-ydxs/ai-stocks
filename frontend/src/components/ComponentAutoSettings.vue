@@ -334,7 +334,16 @@ function staticStringListFieldDefs(slot: AutoSlot): ComponentFieldDef[] {
   return slot.fields
     .filter((field) => field !== 'hiddenColumns' && field !== 'defaultCollapsed')
     .map((field) => getComponentFieldDef(slot.kind as never, field))
-    .filter((def): def is ComponentFieldDef => def?.control === 'string[]' && Boolean(def.options?.length))
+    .filter((def): def is ComponentFieldDef => def?.control === 'string[]' && (
+      Boolean(def.options?.length) || def.applicability === 'items'
+    ))
+}
+
+function stringListOptions(slot: AutoSlot, field: ComponentFieldDef): { label: string; value: string }[] {
+  if (field.applicability === 'items') {
+    return (slot.meta.items ?? []).map((item) => ({ label: item.label, value: item.key }))
+  }
+  return enumOptions(field).map((option) => ({ label: option.label, value: String(option.value) }))
 }
 
 function stockChartValue(slotId: string) {
@@ -958,7 +967,7 @@ function setSort(slotId: string, field: string, order: string): void {
           :model-value="listVal(s.slotId, field.key)"
           @update:model-value="(value: string[]) => config.setComponentKnob(s.slotId, field.key, value)"
         >
-          <el-checkbox v-for="option in enumOptions(field)" :key="String(option.value)" :value="String(option.value)">
+          <el-checkbox v-for="option in stringListOptions(s, field)" :key="option.value" :value="option.value">
             {{ option.label }}
           </el-checkbox>
         </el-checkbox-group>

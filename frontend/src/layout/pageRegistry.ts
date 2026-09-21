@@ -54,8 +54,8 @@ export interface PageRegistryEntry {
   /** 是否开放组件特性配置层；字段由 slot.component 自动继承，不再逐页面登记。 */
   supportsComponentConfig: boolean
   /**
-   * 组件配置自动渲染元数据（slotId -> 列/可交互排序字段），驱动设置抽屉「组件设置」段自动生成
-   * （列显隐开关、默认排序下拉），并作为页面列头排序能力的事实源。
+   * 组件配置自动渲染元数据（slotId -> 列、可交互排序字段、组件内部可选项），驱动设置抽屉
+   * 「组件设置」段自动生成安全控件，并作为页面组件候选能力的事实源。
    * 登记 sortFields 的 slot 必须消费 defaultSort，页面表格也必须接入列头排序；
    * sortFields 须与页面侧可排序列白名单（useTableSort 的 allowedFields 等）双向一致，
    * 反向漂移由 pageRegistry.spec.ts 契约测试拦截。
@@ -77,6 +77,8 @@ export interface SlotConfigMeta extends ComponentSlotConfigMeta {
   sortHasDirection?: boolean
   /** 可选的 Tab 项（驱动 tabs.defaultActive 选择；key 为 tab name、label 为中文名）。 */
   tabs?: { key: string; label: string }[]
+  /** 组件内部可配置项（驱动 visibleItems 等动态候选字段）。 */
+  items?: { key: string; label: string }[]
   /** 可折叠分区项（驱动 config-panel/defaultCollapsed 选择；key 为折叠节点 key、label 为中文名）。 */
   collapseSections?: { key: string; label: string }[]
 }
@@ -139,6 +141,17 @@ const RANKED_STOCK_RESULT_COLUMNS = [
   { key: 'score', label: '综合分' },
   { key: 'grade', label: '评级' },
   { key: 'subScores', label: '分项达标分' },
+]
+
+const DATA_OVERVIEW_KPI_ITEMS = [
+  { key: 'latestTradeDate', label: '最新交易日' },
+  { key: 'codes', label: '在市 / 退市' },
+  { key: 'barRows', label: '日线总行数' },
+  { key: 'stStatus', label: 'ST 点时事实' },
+  { key: 'board', label: '板块数据' },
+  { key: 'score', label: '全局质量评分' },
+  { key: 'quality', label: '未解决质检' },
+  { key: 'gaps', label: '缺口 / 滞后' },
 ]
 
 function rankedStockWorkbenchMeta(
@@ -512,6 +525,11 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'updated_at', label: '最后更新' },
         ],
       },
+      historyDetail: {
+        fieldApplicability: {
+          autoScroll: { enabled: false, reason: '履约修订详情是静态审阅内容，不跟随追加日志滚动' },
+        },
+      },
     },
     layout: {
       pageKey: 'trade-discipline',
@@ -771,6 +789,11 @@ const REGISTRY: PageRegistryEntry[] = [
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
     componentMeta: {
+      detailDrawer: {
+        fieldApplicability: {
+          autoScroll: { enabled: false, reason: '审计详情是静态字段与上下文，不跟随追加日志滚动' },
+        },
+      },
       auditTable: {
         columns: [
           { key: 'event_time', label: '时间列' },
@@ -948,6 +971,11 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'status', label: '结果' },
         ],
       },
+      taskLogDrawer: {
+        fieldApplicability: {
+          autoScroll: { enabled: true },
+        },
+      },
     },
     layout: {
       pageKey: 'data-ingest',
@@ -983,6 +1011,9 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'board', label: '板块数据' },
         ],
       },
+      summary: {
+        items: DATA_OVERVIEW_KPI_ITEMS,
+      },
       assetTable: {
         columns: [
           { key: 'database', label: '数据库' },
@@ -1008,7 +1039,16 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
-        { id: 'summary', component: 'kpi-grid', region: 'main', label: '核心指标', order: 1 },
+        {
+          id: 'summary',
+          component: 'kpi-grid',
+          region: 'main',
+          label: '核心指标',
+          order: 1,
+          config: {
+            visibleItems: DATA_OVERVIEW_KPI_ITEMS.map((item) => item.key),
+          },
+        },
         { id: 'quality', component: 'stat-strip', region: 'main', label: '四层质量摘要', order: 2 },
         { id: 'workspace', component: 'tabs', region: 'main', growMain: true, label: '数据治理工作区', order: 3, config: { defaultActive: 'assets' } },
         { id: 'assetTable', component: 'wide-table', region: 'main', parentId: 'workspace', label: '数据资产表', order: 4, config: { pagination: false, hiddenColumns: [] } },
@@ -1026,6 +1066,11 @@ const REGISTRY: PageRegistryEntry[] = [
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
     componentMeta: {
+      triggerEvents: {
+        fieldApplicability: {
+          autoScroll: { enabled: false, reason: '触发记录是静态列表，不跟随追加日志滚动' },
+        },
+      },
       jobTable: {
         columns: [
           { key: 'name', label: '名称' },

@@ -143,7 +143,7 @@ const COMPONENT_CONFIG_SHAPES: Partial<Record<ComponentKind, ConfigShape>> = {
   'error-state': feedbackShape,
   skeleton: feedbackShape,
 
-  'kpi-grid': { columns: 'int', autoFit: 'bool' },
+  'kpi-grid': { columns: 'int', autoFit: 'bool', visibleItems: 'string[]' },
   'metric-card': { trend: 'bool', precision: 'int' },
   'stat-strip': { items: 'string[]', wrap: 'bool' },
   chart: chartShape,
@@ -152,7 +152,7 @@ const COMPONENT_CONFIG_SHAPES: Partial<Record<ComponentKind, ConfigShape>> = {
   'trend-panel': { chartType, summaryPlacement: ['top', 'right', 'bottom'] },
 
   'detail-panel': overlayShape,
-  detail: { sections: 'string[]', stickySummary: 'bool', bodyScroll: 'bool' },
+  detail: { sections: 'string[]', stickySummary: 'bool', bodyScroll: 'bool', autoScroll: 'bool' },
   drawer: overlayShape,
   dialog: overlayShape,
   'settings-drawer': { ...overlayShape, sections: 'string[]' },

@@ -669,8 +669,6 @@ onMounted(async () => {
         :component-runtime-value-of="componentRuntimeValueOf"
         @reset="resetSettings"
       >
-        <template #business>
-        </template>
       </PageSettingsDrawer>
     </template>
   </LayoutHost>

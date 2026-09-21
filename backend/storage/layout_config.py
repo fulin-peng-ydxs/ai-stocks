@@ -79,6 +79,8 @@ COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
     "showGroupDescription": {"type": "bool", "layers": {"page", "user"}},
     "showSectionDescription": {"type": "bool", "layers": {"page", "user"}},
     "visibleIndicatorFields": {"type": "str_list", "layers": {"page", "user"}},
+    "visibleItems": {"type": "str_list", "layers": {"page", "user"}},
+    "autoScroll": {"type": "bool", "layers": {"page", "user"}},
 }
 
 # 组件种类 -> 允许的配置字段集合（与前端 COMPONENT_FIELD_DEFS 同口径）。
@@ -97,6 +99,8 @@ COMPONENT_CONFIG_FIELDS_BY_KIND: dict[str, set[str]] = {
         "klineRangePreferences",
     },
     "section": {"visibleIndicatorFields"},
+    "kpi-grid": {"visibleItems"},
+    "detail": {"autoScroll"},
     "master-detail": {"masterWidth", "masterRatio", "masterRatioProfiles"},
     "tabs": {"defaultActive"},
     "settings-drawer": {"size", "bodyScroll"},

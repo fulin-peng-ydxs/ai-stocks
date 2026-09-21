@@ -376,7 +376,7 @@ export const COMPONENT_CATALOG: Record<ComponentKind, ComponentMeta> = {
     defaultScroll: 'none',
     canGrowMain: false,
     reflowable: true,
-    configCapabilities: ['columns', 'autoFit'],
+    configCapabilities: ['columns', 'autoFit', 'visibleItems'],
   }),
   'metric-card': meta('metric-card', {
     category: 'analytics',
@@ -465,7 +465,7 @@ export const COMPONENT_CATALOG: Record<ComponentKind, ComponentMeta> = {
     defaultScroll: 'region',
     canGrowMain: false,
     reflowable: false,
-    configCapabilities: ['sections', 'stickySummary', 'bodyScroll'],
+    configCapabilities: ['sections', 'stickySummary', 'bodyScroll', 'autoScroll'],
   }),
   drawer: meta('drawer', {
     category: 'overlay',

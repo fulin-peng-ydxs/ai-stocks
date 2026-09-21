@@ -26,8 +26,8 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
-import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useLegacyPageSettingsMigration } from '@/composables/useLegacyStockChartPreferenceMigration'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
@@ -41,12 +41,18 @@ const router = useRouter()
 const settingsOpen = ref(false)
 const overviewDefaults = {
   focusLayer: 'all' as 'all' | 'L12' | 'L34',
-  kpi: { latestTradeDate: true, codes: true, barRows: true, stStatus: true, board: true, score: true, quality: true, gaps: true },
 }
-const { settings, isDirty, reset } = usePageSettings('data-overview', overviewDefaults)
+const {
+  settings, isDirty, reset, save: savePageSettings,
+  whenHydrated: whenPageSettingsHydrated, legacySnapshot,
+} = usePageSettings('data-overview', overviewDefaults, { deferUnknownFieldCleanup: true })
 
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
 const overviewLayout = getPageLayout('data-overview')
+const defaultKpiItems = (
+  overviewLayout.slots.find((slot) => slot.id === 'summary')?.config?.visibleItems as string[] | undefined
+) ?? []
+const validKpiItems = new Set(defaultKpiItems)
 const {
   effective: overviewEffective,
   knobs: layoutKnobs,
@@ -60,15 +66,39 @@ const {
   componentSourceOf,
   layerValuesOf,
   componentLayerValuesOf, componentAllowedLayers,
+  whenRemoteHydrated, saveRemoteUserConfig, remoteSaveError,
 } = useRemoteLayoutConfig(overviewLayout)
 
 // 抽屉「布局 / 组件设置」由 PageSettingsDrawer 自动渲染；tabs 与表格字段按 registry 实例元数据继承。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
+useLegacyPageSettingsMigration({
+  pageKey: 'data-overview',
+  componentSourceOf, setComponentKnob, whenRemoteHydrated,
+  whenPageSettingsHydrated, legacySnapshot, savePageSettings,
+  saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value,
+  legacyComponentMappings: [{
+    legacyField: 'kpi',
+    slotId: 'summary',
+    componentField: 'visibleItems',
+    transform: (value) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return defaultKpiItems
+      return Object.entries(value as Record<string, unknown>)
+        .filter(([key, visible]) => validKpiItems.has(key) && visible !== false)
+        .map(([key]) => key)
+    },
+  }],
+})
 // 工作区 tab 单向：组件配置层默认值（workspace.defaultActive）→ 会话 ref；切换不写回配置层。
 const workspaceTabDefault = computed<'assets' | 'stocks' | 'board'>(() =>
   (componentValueOf('workspace', 'defaultActive') as 'assets' | 'stocks' | 'board') || 'assets',
 )
 const activeWorkspaceTab = useDefaultedSessionValue(workspaceTabDefault)
+const visibleKpiItems = computed(() => new Set(
+  (componentValueOf('summary', 'visibleItems') as string[] | undefined) ?? defaultKpiItems,
+))
+function kpiVisible(key: string): boolean {
+  return visibleKpiItems.value.has(key)
+}
 function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
 }
@@ -585,20 +615,20 @@ const menuPageTitle = useMenuPageTitle()
           title="正在加载数据概览…"
         />
         <div v-else class="stat-grid" data-testid="overview-kpi-grid" v-loading="loading && !!ov">
-          <el-card v-if="settings.kpi.latestTradeDate" shadow="never" class="stat">
+          <el-card v-if="kpiVisible('latestTradeDate')" shadow="never" class="stat">
             <div class="stat-label">最新交易日 <HelpHint text="库内 daily_bar 的最大交易日，全局鲜活度的基准日" /></div>
             <div class="stat-val">{{ (ov?.latest_trade_date ?? '').slice(0, 10) || '—' }}</div>
           </el-card>
-          <el-card v-if="settings.kpi.codes" shadow="never" class="stat">
+          <el-card v-if="kpiVisible('codes')" shadow="never" class="stat">
             <div class="stat-label">在市 / 退市 <HelpHint text="在市 = 未退市股票数；退市 = 已退市（保留历史以防幸存者偏差）" /></div>
             <div class="stat-val">{{ ov?.codes.active ?? '—' }}<span class="sub"> / {{ ov?.codes.delisted ?? '—' }}</span></div>
           </el-card>
-          <el-card v-if="settings.kpi.barRows" shadow="never" class="stat">
+          <el-card v-if="kpiVisible('barRows')" shadow="never" class="stat">
             <div class="stat-label">日线总行数 <HelpHint text="daily_bar 日线行情总记录数（全市场×历史交易日）" /></div>
             <div class="stat-val">{{ ov?.bar_rows?.toLocaleString() ?? '—' }}</div>
           </el-card>
           <el-card
-            v-if="settings.kpi.stStatus"
+            v-if="kpiVisible('stStatus')"
             shadow="never"
             class="stat clickable"
             data-testid="overview-st-status-card"
@@ -615,7 +645,7 @@ const menuPageTitle = useMenuPageTitle()
             </div>
           </el-card>
           <el-card
-            v-if="settings.kpi.board"
+            v-if="kpiVisible('board')"
             shadow="never"
             class="stat clickable"
             data-testid="overview-board-card"
@@ -631,11 +661,11 @@ const menuPageTitle = useMenuPageTitle()
               概念 {{ ov.board.concept_count }} · 行业 {{ ov.board.industry_count }} · 待处理 {{ ov.board.open_issues }}
             </div>
           </el-card>
-          <el-card v-if="settings.kpi.score" shadow="never" class="stat">
+          <el-card v-if="kpiVisible('score')" shadow="never" class="stat">
             <div class="stat-label">全局质量评分 <HelpHint text="在市股票中「四层质量全部达标」的占比（0~100），综合入库/契约/正确性/鲜活" /></div>
             <div class="stat-val" :style="{ color: scoreColor }">{{ ov?.quality.score ?? '—' }}</div>
           </el-card>
-          <el-card v-if="settings.kpi.quality" shadow="never" class="stat clickable" role="button" tabindex="0"
+          <el-card v-if="kpiVisible('quality')" shadow="never" class="stat clickable" role="button" tabindex="0"
             @click="gotoQuality()" @keydown.enter.prevent="gotoQuality()" @keydown.space.prevent="gotoQuality()">
             <div class="stat-label">未解决质检 <HelpHint text="尚未解决的质检问题数（按高/中/低危分级）；点击前往数据质量页逐条恢复" @click.stop /></div>
             <div class="stat-val" :class="{ danger: (ov?.quality.by_severity?.high ?? 0) > 0, warn: (ov?.quality.open ?? 0) > 0 }">
@@ -645,7 +675,7 @@ const menuPageTitle = useMenuPageTitle()
               高{{ ov.quality.by_severity?.high ?? 0 }} 中{{ ov.quality.by_severity?.mid ?? 0 }} 低{{ ov.quality.by_severity?.low ?? 0 }} · 点此处理
             </div>
           </el-card>
-          <el-card v-if="settings.kpi.gaps" shadow="never" class="stat clickable" role="button" tabindex="0"
+          <el-card v-if="kpiVisible('gaps')" shadow="never" class="stat clickable" role="button" tabindex="0"
             @click="gotoGap" @keydown.enter.prevent="gotoGap" @keydown.space.prevent="gotoGap">
             <div class="stat-label">缺口 / 滞后 <HelpHint text="近 90 个交易日内存在缺口(疑似漏采)或数据滞后的股票数(已排除确认停牌)；点此前往补数。下方逐股表 L4 列可见各股缺口/滞后明细" @click.stop /></div>
             <div class="stat-val" :class="{ warn: (ov?.gaps.stocks_with_gap ?? 0) > 0 }">
@@ -1200,16 +1230,6 @@ const menuPageTitle = useMenuPageTitle()
               { label: 'L3-L4', value: 'L34' },
             ]" />
           </PageSettingItem>
-        </PageSettingSection>
-        <PageSettingSection title="KPI 卡片">
-          <PageToggleRow v-model="settings.kpi.latestTradeDate" label="最新交易日" />
-          <PageToggleRow v-model="settings.kpi.codes" label="在市 / 退市" />
-          <PageToggleRow v-model="settings.kpi.barRows" label="日线总行数" />
-          <PageToggleRow v-model="settings.kpi.stStatus" label="ST 点时事实" />
-          <PageToggleRow v-model="settings.kpi.board" label="板块数据" />
-          <PageToggleRow v-model="settings.kpi.score" label="全局质量评分" />
-          <PageToggleRow v-model="settings.kpi.quality" label="未解决质检" />
-          <PageToggleRow v-model="settings.kpi.gaps" label="缺口 / 滞后" />
         </PageSettingSection>
       </template>
     </PageSettingsDrawer>

@@ -65,7 +65,7 @@ export interface ComponentFieldDef {
    * 字段对组件实例的适用条件。缺省为 always；候选型字段由组件实例元数据自动判定，
    * explicit 字段要求实例明确声明启用或给出不适用原因，禁止靠页面漏登记表达能力差异。
    */
-  applicability?: 'always' | 'columns' | 'sortFields' | 'tabs' | 'collapseSections' | 'explicit'
+  applicability?: 'always' | 'columns' | 'sortFields' | 'tabs' | 'items' | 'collapseSections' | 'explicit'
 }
 
 export interface ComponentFieldApplicabilityOverride {
@@ -79,6 +79,7 @@ export interface ComponentSlotConfigMeta {
   columns?: { key: string; label: string }[]
   sortFields?: { key: string; label: string }[]
   tabs?: { key: string; label: string }[]
+  items?: { key: string; label: string }[]
   collapseSections?: { key: string; label: string }[]
   fieldApplicability?: Record<string, ComponentFieldApplicabilityOverride>
 }
@@ -252,6 +253,30 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       applicability: 'explicit',
     },
   ],
+  'kpi-grid': [
+    {
+      key: 'visibleItems',
+      label: '显示指标',
+      control: 'string[]',
+      layers: ['page', 'user'],
+      default: [],
+      highFrequency: true,
+      help: '控制该指标组内部显示的指标项。',
+      applicability: 'items',
+    },
+  ],
+  detail: [
+    {
+      key: 'autoScroll',
+      label: '默认自动滚动',
+      control: 'bool',
+      layers: ['page', 'user'],
+      default: true,
+      highFrequency: true,
+      help: '打开日志详情时，默认跟随滚动到最新内容。',
+      applicability: 'explicit',
+    },
+  ],
   tabs: [
     { key: 'defaultActive', label: '默认激活页', control: 'string', layers: ['page', 'user'], applicability: 'tabs', help: '激活的 tab name（随页面而异）' },
   ],
@@ -338,6 +363,7 @@ const META_REQUIREMENT_LABELS: Record<Exclude<NonNullable<ComponentFieldDef['app
   columns: '未声明可配置列',
   sortFields: '未声明可排序字段',
   tabs: '未声明标签页候选',
+  items: '未声明可配置项',
   collapseSections: '未声明可折叠分区',
 }
 

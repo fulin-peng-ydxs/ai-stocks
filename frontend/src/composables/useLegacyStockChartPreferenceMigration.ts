@@ -27,7 +27,7 @@ const LEGACY_SECTOR_ANALYSIS_FIELDS = [
   'compareWindow',
 ] as const
 
-interface LegacyStockChartPreferenceMigrationAccess {
+interface LegacyPageSettingsMigrationAccess {
   pageKey: string
   slotId?: string
   analysisType?: 'stock' | 'sector' | 'none'
@@ -93,8 +93,8 @@ function analysisFrom(
  * 一次性兼容旧版页面偏好：结构属性迁入布局用户层，组件内部能力迁入 page+slot 组件配置，
  * 确认布局配置已保存后再删除旧字段。已有用户层配置始终优先，避免回迁覆盖新值。
  */
-export function useLegacyStockChartPreferenceMigration(
-  access: LegacyStockChartPreferenceMigrationAccess,
+export function useLegacyPageSettingsMigration(
+  access: LegacyPageSettingsMigrationAccess,
 ): void {
   onMounted(async () => {
     // 兼容只实现最小布局访问器的嵌入壳/页面测试；生产 useRemoteLayoutConfig 会提供完整接口。
@@ -229,3 +229,6 @@ export function useLegacyStockChartPreferenceMigration(
     }
   })
 }
+
+/** 行情页面保留原入口；通用旧页面偏好迁移与其它页面共用同一实现。 */
+export const useLegacyStockChartPreferenceMigration = useLegacyPageSettingsMigration

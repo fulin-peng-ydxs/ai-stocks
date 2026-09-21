@@ -906,6 +906,36 @@ describe('组件消费关系与配置一致性（P4）', () => {
     expect(sourceForPage('stock-detail')).toContain("valueOf('slots.indicatorSnapshot.visible')")
   })
 
+  it('页面展示能力归组件设置，业务选项不再保留平行字段或空分组', () => {
+    const overview = getPageEntry('data-overview')!
+    const ingest = getPageEntry('data-ingest')!
+    expect(applicableComponentFields(overview, 'summary').map((field) => field.key))
+      .toContain('visibleItems')
+    expect(applicableComponentFields(ingest, 'taskLogDrawer').map((field) => field.key))
+      .toContain('autoScroll')
+
+    const overviewSource = sourceForPage('data-overview')
+    const ingestSource = sourceForPage('data-ingest')
+    const sectorDetailSource = sourceForPage('sectors-detail')
+    expect(overviewSource).not.toContain('settings.kpi')
+    expect(overviewSource).toContain("componentValueOf('summary', 'visibleItems')")
+    expect(ingestSource).not.toContain('settings.autoScroll')
+    expect(ingestSource).toContain("componentValueOf('taskLogDrawer', 'autoScroll')")
+    expect(sectorDetailSource).not.toContain('<template #business>')
+  })
+
+  it('业务选项插槽不得登记空内容', () => {
+    const offenders: string[] = []
+    for (const entry of PAGE_REGISTRY) {
+      const source = sourceForPage(entry.pageKey)
+      if (!source) continue
+      for (const match of source.matchAll(/<template\s+(?:v-if="[^"]*"\s+)?#business\b[^>]*>([\s\S]*?)<\/template>/g)) {
+        if (!match[1]?.replace(/<!--[\s\S]*?-->/g, '').trim()) offenders.push(entry.pageKey)
+      }
+    }
+    expect(offenders, `以下页面登记了空业务选项分组：\n${offenders.join('\n')}`).toEqual([])
+  })
+
   it('行情主从工作台统一在组件设置消费默认比例，主区拖动不反写配置层', () => {
     for (const pageKey of [
       'stocks',
