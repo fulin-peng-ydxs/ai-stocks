@@ -4,6 +4,7 @@ import { mount } from '@vue/test-utils'
 import MarketDetailHero from '@/components/MarketDetailHero.vue'
 import StockBoardMembershipPanel from '@/components/StockBoardMembershipPanel.vue'
 import StockQuoteSummary from '@/components/stock-chart/StockQuoteSummary.vue'
+import { stockQuoteSummaryHtml } from '@/components/stock-chart/stockQuoteSummary'
 import type { StockBoardMembership } from '@/api/stocks'
 
 const ElCardStub = {
@@ -93,6 +94,54 @@ describe('StockQuoteSummary', () => {
     expect(standard.classes()).toContain('stock-quote-summary--gap-standard')
     expect(standard.classes()).not.toContain('stock-quote-summary--gap-relaxed')
     expect(relaxed.classes()).toContain('stock-quote-summary--gap-relaxed')
+  })
+
+  it('把涨跌测算作为行情字段后的独立补充分区', () => {
+    const wrapper = mount(StockQuoteSummary, {
+      props: {
+        summary: {
+          hero: { label: '', value: '10.20', tone: 'up' },
+          rowsPerColumn: 4,
+          metrics: [{ label: '开盘', value: '10.00' }],
+          supplement: {
+            label: '截止 2026-09-18',
+            value: '+9.06%',
+            tone: 'up',
+            details: [{ label: '交易日', value: '19个交易日' }],
+          },
+        },
+      },
+    })
+
+    expect(wrapper.get('.stock-quote-summary__supplement dt').text()).toBe('截止 2026-09-18')
+    expect(wrapper.get('.stock-quote-summary__supplement dd').text()).toBe('+9.06%')
+    expect(wrapper.get('.stock-quote-summary__supplement dd').classes()).toContain('is-up')
+    expect(wrapper.get('.stock-quote-summary__supplement-details').text()).toContain('19个交易日')
+  })
+
+  it('悬浮摘要第三分区保持日期表头与正文列数一致', () => {
+    const html = stockQuoteSummaryHtml({
+      time: '2026-09-18',
+      hero: { label: '', value: '10.20' },
+      rowsPerColumn: 4,
+      metrics: Array.from({ length: 8 }, (_, index) => ({
+        label: `字段${index + 1}`,
+        value: String(index + 1),
+      })),
+      supplement: {
+        label: '区间涨跌',
+        value: '+9.06%',
+        details: [{ label: '交易日', value: '19个交易日' }],
+      },
+    }, {
+      text: '#111',
+      label: '#666',
+      up: '#f00',
+      down: '#0a0',
+      border: '#ddd',
+    })
+
+    expect(html).toContain('colspan="5"')
   })
 })
 

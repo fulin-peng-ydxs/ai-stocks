@@ -1,11 +1,14 @@
 export type StockQuoteTone = 'up' | 'down' | 'neutral'
 export interface StockQuoteMetric { label: string; value: string; tone?: StockQuoteTone }
 export interface StockQuoteHero extends StockQuoteMetric { details?: StockQuoteMetric[] }
+export interface StockQuoteSupplement extends StockQuoteMetric { details?: StockQuoteMetric[] }
 export interface StockQuoteSummaryModel {
   time?: string
   hero: StockQuoteHero
   metrics: StockQuoteMetric[]
   rowsPerColumn: number
+  /** 行情字段后的独立第三分区，用于涨跌测算等与单日行情并列的派生摘要。 */
+  supplement?: StockQuoteSupplement | null
 }
 export interface StockQuotePalette { text: string; label: string; up: string; down: string; border: string }
 
@@ -24,11 +27,11 @@ export function stockQuoteSummaryHtml(summary: StockQuoteSummaryModel, palette: 
     { length: Math.ceil(summary.metrics.length / rowsPerColumn) },
     (_, index) => summary.metrics.slice(index * rowsPerColumn, (index + 1) * rowsPerColumn),
   )
-  const columnCount = Math.max(1, grouped.length)
+  const detailColumnCount = (Math.max(1, grouped.length) * 2) + (summary.supplement ? 1 : 0)
   const time = summary.time
     ? '<thead><tr>'
       + `<th style="padding:0 ${scaledPx(10)} ${scaledPx(4)} 0;text-align:left;color:${palette.label};font-weight:400">时间</th>`
-      + `<td colspan="${columnCount * 2}" style="padding:0 0 ${scaledPx(4)} ${scaledPx(10)};text-align:right;color:${palette.text}">${summary.time}</td>`
+      + `<td colspan="${detailColumnCount}" style="padding:0 0 ${scaledPx(4)} ${scaledPx(10)};text-align:right;color:${palette.text}">${summary.time}</td>`
       + '</tr></thead>'
     : ''
   const heroDetails = summary.hero.details?.length
@@ -49,7 +52,16 @@ export function stockQuoteSummaryHtml(summary: StockQuoteSummaryModel, palette: 
       return `<th style="padding:0 0 0 ${scaledPx(10)};text-align:left;color:${palette.label};font-weight:400;white-space:nowrap">${metric.label}</th>`
         + `<td style="padding:0 0 0 ${scaledPx(8)};text-align:right;color:${colorOf(metric.tone, palette)};white-space:nowrap">${metric.value}</td>`
     }).join('')
-    return `<tr style="height:${scaledPx(21)}">${hero}${metrics}</tr>`
+    const supplement = rowIndex === 0 && summary.supplement
+      ? `<td rowspan="${rowsPerColumn}" style="padding:0 0 0 ${scaledPx(10)};border-left:1px solid ${palette.border};vertical-align:middle">`
+        + `<div style="padding-left:${scaledPx(10)};color:${palette.label};font-size:${scaledPx(11)};white-space:nowrap">${summary.supplement.label}</div>`
+        + `<div style="padding-left:${scaledPx(10)};color:${colorOf(summary.supplement.tone, palette)};font-size:${scaledPx(16)};line-height:1.45;font-weight:700;white-space:nowrap">${summary.supplement.value}</div>`
+        + (summary.supplement.details?.length
+          ? `<div style="display:flex;flex-direction:column;padding-left:${scaledPx(10)};color:${palette.label};font-size:${scaledPx(11)};white-space:nowrap">${summary.supplement.details.map((detail) => `<span>${detail.value}</span>`).join('')}</div>`
+          : '')
+        + '</td>'
+      : ''
+    return `<tr style="height:${scaledPx(21)}">${hero}${metrics}${supplement}</tr>`
   }).join('')
 
   return '<div style="width:max-content;max-width:calc(100cqw - 32px);box-sizing:border-box;font-variant-numeric:tabular-nums;line-height:1.55">'

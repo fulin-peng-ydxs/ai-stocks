@@ -17,6 +17,7 @@ import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vu
 import StockIntradayDialog from '@/components/stock-chart/StockIntradayDialog.vue'
 import type { KlinePeriod } from '@/components/stock-chart/klinePeriod'
 import type { StockChartWorkspaceSample } from '@/components/stock-chart/workspaceOptions'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { ALL_DAYS } from '@/composables/useKlinePrefs'
 import { useStockIntradayDrilldown } from '@/composables/useStockIntradayDrilldown'
 import { STOCK_COMPARE_RANGES } from '@/composables/useStockAnalysisSession'
@@ -141,12 +142,15 @@ const benchmarkSeries = computed(() => props.benchmarkCode && benchmarkBars.valu
       bars: benchmarkBars.value,
     }
   : null)
+const activeAdjustMode = useDefaultedSessionValue(computed(() => props.adjustMode))
 const calendarPoints = computed(() => benchmarkBars.value.map((bar) => ({
   date: bar.date,
   close: bar.close,
 })))
 const adjustLabel = computed(() => (
-  props.adjustMode === 'hfq' ? '后复权' : props.adjustMode === 'qfq' ? '前复权' : '不复权'
+  activeAdjustMode.value === 'hfq'
+    ? '后复权'
+    : activeAdjustMode.value === 'qfq' ? '前复权' : '不复权'
 ))
 
 function formatPercent(value: number | null): string {
@@ -198,7 +202,7 @@ async function loadCompare(
   const lookback = priceCompareSetLookback(props.compareMetrics, props.compareRange)
   const entriesPromise = Promise.allSettled(targetItems.map(async (item) => {
     const result = await getBars(item.code, {
-      adjust: props.adjustMode,
+      adjust: activeAdjustMode.value,
       lookback,
       end: props.endDate || undefined,
     }, signal)
@@ -266,7 +270,7 @@ async function loadKline(): Promise<void> {
   try {
     const [barsResult, indicatorResult] = await Promise.all([
       getBars(active.code, {
-        adjust: props.adjustMode,
+        adjust: activeAdjustMode.value,
         lookback,
         end: props.endDate || undefined,
       }, controller.signal),
@@ -338,7 +342,7 @@ watch(
     props.compareMetrics.join(','),
     props.benchmarkCode,
     props.klineRange,
-    props.adjustMode,
+    activeAdjustMode.value,
     props.refreshRevision,
   ],
   load,
@@ -502,6 +506,8 @@ onBeforeUnmount(() => {
         enable-intraday-drilldown
         enable-return-measurement
         enable-kline-period-switch
+        enable-adjust-mode-switch
+        v-model:adjust-mode="activeAdjustMode"
         :return-measurement-mode="returnMeasurementMode"
         :kline-period="klinePeriod"
         @update:return-measurement-mode="emit('update:returnMeasurementMode', $event)"

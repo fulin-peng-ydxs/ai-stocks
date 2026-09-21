@@ -2,6 +2,7 @@ import type { Bar, IndicatorRow } from '@/api/stocks'
 import type { ChartType } from '@/composables/useStockChartPreferences'
 import { elementVisualScale } from '@/utils/displayScaleGeometry'
 import { formatMarketPercent } from '@/utils/marketValue'
+import type { StockQuoteSupplement } from './stockQuoteSummary'
 import {
   buildStockVolumeBarSeries,
   formatChartAxisNumber,
@@ -314,6 +315,7 @@ interface OptionContext {
   clickableCandles?: boolean
   showKlineTooltip?: boolean
   measurementRange?: { startIndex: number; endIndex: number } | null
+  measurementSupplementAt?: (index: number) => StockQuoteSupplement | null
   candlestickRect?: (params: unknown) => TooltipTargetRect | null
   displayScale?: number
 }
@@ -485,7 +487,9 @@ export function buildKlineOption(context: OptionContext) {
         const index = (list[0] as { dataIndex?: unknown } | undefined)?.dataIndex
         if (typeof index !== 'number') return ''
         const row = context.rows[index]
-        return row ? klineTooltipHtml(row.bar, context.theme) : ''
+        return row
+          ? klineTooltipHtml(row.bar, context.theme, context.measurementSupplementAt?.(index))
+          : ''
       },
     },
     yAxis: [
@@ -710,12 +714,10 @@ export function panelTitle(
   type: ChartType,
   adjustLabel: string,
   macdAdjustLabel?: string,
-  periodLineLabel = '日线',
 ): string {
-  if (type === 'kline') return `K线（${periodLineLabel}·${adjustLabel}）`
-  if (type === 'volume') return periodLineLabel === '日线' ? '量能' : `量能（${periodLineLabel}）`
-  const periodPrefix = periodLineLabel === '日线' ? '' : `${periodLineLabel}·`
-  return `MACD（12,26,9·${periodPrefix}${macdAdjustLabel || adjustLabel}）`
+  if (type === 'kline') return `K线（${adjustLabel}）`
+  if (type === 'volume') return '量能'
+  return `MACD（12,26,9·${macdAdjustLabel || adjustLabel}）`
 }
 
 export function klineMetrics(

@@ -5,7 +5,11 @@ import {
   echartsTheme,
   type EChartsTheme,
 } from '@/components/chartTheme'
-import { stockQuoteSummaryHtml, type StockQuoteTone } from './stockQuoteSummary'
+import {
+  stockQuoteSummaryHtml,
+  type StockQuoteSupplement,
+  type StockQuoteTone,
+} from './stockQuoteSummary'
 
 export const STOCK_CHART_GRID_SIDE = 64
 export const STOCK_CHART_GRID_TOP = 8
@@ -336,7 +340,11 @@ export function priceDirectionTone(
 }
 
 /** K线详情统一格式：日期单独成行，行情字段按每列三项横向排布。 */
-export function klineTooltipHtml(bar: Bar, palette: KlineTooltipPalette): string {
+export function klineTooltipHtml(
+  bar: Bar,
+  palette: KlineTooltipPalette,
+  supplement?: StockQuoteSupplement | null,
+): string {
   const pct = bar.pre_close ? ((bar.close - bar.pre_close) / bar.pre_close) * 100 : null
   const amplitude = bar.pre_close ? ((bar.high - bar.low) / bar.pre_close) * 100 : null
   const pctText = pct == null ? '--' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
@@ -346,6 +354,7 @@ export function klineTooltipHtml(bar: Bar, palette: KlineTooltipPalette): string
     time: bar.date,
     hero: { label: '', value: formatChartNumber(bar.close), tone },
     rowsPerColumn: 4,
+    supplement,
     metrics: [
       { label: '开盘', value: formatChartNumber(bar.open), tone: priceDirectionTone(bar.open, bar.pre_close) },
       { label: '最高', value: formatChartNumber(bar.high), tone: priceDirectionTone(bar.high, bar.pre_close) },

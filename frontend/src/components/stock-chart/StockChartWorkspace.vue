@@ -19,6 +19,7 @@ import PageSegmented from '@/components/PageSegmented.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { useStatusColorPalette } from '@/components/chartTheme'
 import { initVectorEChart } from '@/components/echartsRenderer'
+import type { StockAdjustMode } from '@/composables/useStockAnalysisSession'
 import type { AuxiliaryChartType, ChartType } from '@/composables/useStockChartPreferences'
 import { PAGE_OVERLAY_TARGET } from '@/layout/pageOverlay'
 import {
@@ -31,6 +32,7 @@ import StockChartPanelHeader from './StockChartPanelHeader.vue'
 import StockChartLegend from './StockChartLegend.vue'
 import type { StockChartLegendItem } from './StockChartLegend.vue'
 import StockChartOperationsDrawer from './StockChartOperationsDrawer.vue'
+import type { StockQuoteSupplement, StockQuoteTone } from './stockQuoteSummary'
 import {
   KLINE_MA_DEFINITIONS,
   STOCK_CHART_GRID_SIDE,
@@ -41,7 +43,6 @@ import {
 } from './chartUtils'
 import { useStockChartTheme } from './useStockChartTheme'
 import {
-  KLINE_PERIOD_LINE_LABELS,
   KLINE_PERIOD_OPTIONS,
   buildKlinePeriodSeries,
   tradingDaysBetween,
@@ -117,6 +118,12 @@ const MEASUREMENT_MODE_OPTIONS: Array<{ label: string; value: MeasurementMode }>
   { label: '区间', value: 'range' },
 ]
 
+const ADJUST_MODE_OPTIONS: Array<{ label: string; value: StockAdjustMode }> = [
+  { label: '不复权', value: '' },
+  { label: '前复权', value: 'qfq' },
+  { label: '后复权', value: 'hfq' },
+]
+
 const props = withDefaults(defineProps<{
   bars: Bar[]
   warmupBars?: Bar[]
@@ -141,6 +148,8 @@ const props = withDefaults(defineProps<{
   returnMeasurementMode?: MeasurementMode
   enableKlinePeriodSwitch?: boolean
   klinePeriod?: KlinePeriod
+  enableAdjustModeSwitch?: boolean
+  adjustMode?: StockAdjustMode
 }>(), {
   warmupBars: () => [],
   indicators: () => [],
@@ -161,6 +170,8 @@ const props = withDefaults(defineProps<{
   returnMeasurementMode: 'latest',
   enableKlinePeriodSwitch: false,
   klinePeriod: 'day',
+  enableAdjustModeSwitch: false,
+  adjustMode: 'qfq',
 })
 
 const emit = defineEmits<{
@@ -169,9 +180,11 @@ const emit = defineEmits<{
   retryMacd: []
   barClick: [tradeDate: string]
   activeBarChange: [bar: Bar | null]
+  measurementSummaryChange: [summary: StockQuoteSupplement | null]
   workspaceResize: [sample: StockChartWorkspaceSample | undefined]
   'update:returnMeasurementMode': [mode: MeasurementMode]
   'update:klinePeriod': [period: KlinePeriod]
+  'update:adjustMode': [mode: StockAdjustMode]
 }>()
 
 defineSlots<{
@@ -190,6 +203,7 @@ const activeIndex = ref<number | null>(null)
 const klinePointerInside = ref(false)
 const measurementMode = ref<MeasurementMode>(props.returnMeasurementMode)
 const selectedPeriod = ref<KlinePeriod>(props.klinePeriod)
+const selectedAdjustMode = ref<StockAdjustMode>(props.adjustMode)
 const operationsDrawerOpen = ref(false)
 const operationsTrigger = ref<HTMLElement | null>(null)
 const rangeStartIndex = ref<number | null>(null)
@@ -226,7 +240,12 @@ const effectiveMinHeight = computed(() => {
 const effectivePeriod = computed<KlinePeriod>(() => (
   props.enableKlinePeriodSwitch ? selectedPeriod.value : 'day'
 ))
-const periodLineLabel = computed(() => KLINE_PERIOD_LINE_LABELS[effectivePeriod.value])
+const effectiveAdjustLabel = computed(() => {
+  if (!props.enableAdjustModeSwitch) return props.adjustLabel
+  if (selectedAdjustMode.value === 'hfq') return '后复权'
+  if (selectedAdjustMode.value === 'qfq') return '前复权'
+  return '不复权'
+})
 const periodSeries = computed(() => buildKlinePeriodSeries(
   props.bars,
   props.warmupBars,
@@ -265,9 +284,9 @@ const measurementChartRange = computed(() => {
   }
 })
 
-const measurementReturn = computed<number | null>(() => {
-  if (!measurementIndices.value) return null
-  const [startIndex, endIndex] = measurementIndices.value
+function measurementReturnFor(indices: [number, number] | null): number | null {
+  if (!indices) return null
+  const [startIndex, endIndex] = indices
   const startClose = rows.value[startIndex]?.bar.close
   const endClose = rows.value[endIndex]?.bar.close
   if (
@@ -278,64 +297,89 @@ const measurementReturn = computed<number | null>(() => {
     || startClose <= 0
   ) return null
   return ((endClose / startClose) - 1) * 100
-})
+}
 
-const measurementVisible = computed(() => (
+const measurementHintVisible = computed(() => (
   props.enableReturnMeasurement
   && rows.value.length > 0
   && klinePointerInside.value
-  && (measurementMode.value === 'range' || activeIndex.value != null)
+  && measurementMode.value === 'range'
 ))
-const measurementControlsVisible = computed(() => (
-  props.enableReturnMeasurement
+const chartOperationsVisible = computed(() => (
+  (props.enableReturnMeasurement || props.enableAdjustModeSwitch)
   && rows.value.length > 0
 ))
 
-const measurementPresentation = computed(() => {
-  const latestDate = rows.value[lastIndex.value]?.bar.date
-  if (measurementMode.value === 'latest') {
-    const headline = latestDate ? `截止 ${latestDate}` : '截止'
-    if (activeIndex.value == null || !measurementIndices.value) {
-      return { headline, returnText: '', note: '移入 K 线查看区间涨跌' }
-    }
-    const [startIndex, endIndex] = measurementIndices.value
-    return {
-      headline,
-      returnText: formatMarketPercent(measurementReturn.value),
-      note: `${tradingDaysBetween(periodSeries.value.bars, startIndex, endIndex)}个交易日`,
-    }
-  }
+const measurementHint = computed(() => {
   if (rangeStartIndex.value == null) {
-    return { headline: '自选区间', returnText: '', note: '点击 K 线选择起点' }
+    return { headline: '自选区间', note: '点击 K 线选择起点' }
   }
-  if (!measurementIndices.value) {
+  if (rangeEndIndex.value == null) {
     const start = rows.value[rangeStartIndex.value]?.bar.date
     return {
       headline: start ? `${start}起` : '自选区间',
-      returnText: '',
       note: '移动到终点后再次点击',
     }
   }
-  const [startIndex, endIndex] = measurementIndices.value
+  const [startIndex, endIndex] = measurementIndices.value!
   const start = rows.value[startIndex]?.bar.date
   const end = rows.value[endIndex]?.bar.date
-  if (!start || !end) {
-    return { headline: '自选区间', returnText: '—', note: '' }
-  }
-  const days = tradingDaysBetween(periodSeries.value.bars, startIndex, endIndex)
   return {
-    headline: `${start} → ${end}`,
-    returnText: formatMarketPercent(measurementReturn.value),
-    note: rangeEndIndex.value == null
-      ? `${days}个交易日 · 再次点击确认终点`
-      : `${days}个交易日`,
+    headline: start && end ? `${start} → ${end}` : '自选区间',
+    note: '点击 K 线重新选择起点',
   }
 })
 
-const measurementTone = computed(() => marketValueClass(measurementReturn.value))
+function measurementIndicesAt(index: number): [number, number] | null {
+  if (measurementMode.value === 'latest') return [index, lastIndex.value]
+  if (rangeStartIndex.value == null) return null
+  const candidateEnd = rangeEndIndex.value ?? index
+  return rangeStartIndex.value <= candidateEnd
+    ? [rangeStartIndex.value, candidateEnd]
+    : [candidateEnd, rangeStartIndex.value]
+}
+
+function measurementToneOf(value: number | null): StockQuoteTone {
+  const tone = marketValueClass(value)
+  return tone === 'up' || tone === 'down' ? tone : 'neutral'
+}
+
+function measurementSupplementAt(index: number): StockQuoteSupplement | null {
+  if (!props.enableReturnMeasurement || !rows.value[index]) return null
+  const indices = measurementIndicesAt(index)
+  if (!indices) return null
+  const [startIndex, endIndex] = indices
+  const start = rows.value[startIndex]?.bar.date
+  const end = rows.value[endIndex]?.bar.date
+  if (!start || !end) return null
+  const value = measurementReturnFor(indices)
+  const days = tradingDaysBetween(periodSeries.value.bars, startIndex, endIndex)
+  return measurementMode.value === 'latest'
+    ? {
+        label: `截止 ${end}`,
+        value: formatMarketPercent(value),
+        tone: measurementToneOf(value),
+        details: [{ label: '交易日', value: `${days}个交易日` }],
+      }
+    : {
+        label: '区间涨跌',
+        value: formatMarketPercent(value),
+        tone: measurementToneOf(value),
+        details: [
+          { label: '区间', value: `${start} → ${end}` },
+          { label: '交易日', value: `${days}个交易日` },
+        ],
+      }
+}
+
+const activeMeasurementSupplement = computed(() => (
+  klinePointerInside.value && activeIndex.value != null
+    ? measurementSupplementAt(activeIndex.value)
+    : null
+))
 
 function panelDisplayTitle(type: ChartType): string {
-  return panelTitle(type, props.adjustLabel, props.macdAdjustLabel, periodLineLabel.value)
+  return panelTitle(type, effectiveAdjustLabel.value, props.macdAdjustLabel)
 }
 
 function panelMetrics(type: ChartType): Metric[] {
@@ -424,6 +468,7 @@ function chartOption(panel: PanelDescriptor, isBottom: boolean) {
     clickableCandles: props.enableIntradayDrilldown && effectivePeriod.value === 'day',
     showKlineTooltip: props.showKlineTooltip,
     measurementRange: measurementChartRange.value,
+    measurementSupplementAt,
     candlestickRect,
     displayScale: elementVisualScale(chartElements.get(panel.key), 'x'),
   }
@@ -537,6 +582,13 @@ function setKlinePeriod(value: string | number | boolean): void {
   rangeEndIndex.value = null
   emit('activeBarChange', null)
   zoomRange.value = normalizeZoomRange(props.zoomStart, props.zoomEnd)
+}
+
+function setAdjustMode(value: string | number | boolean): void {
+  if (value !== '' && value !== 'qfq' && value !== 'hfq') return
+  if (value === selectedAdjustMode.value) return
+  selectedAdjustMode.value = value
+  emit('update:adjustMode', value)
 }
 
 function openOperationsDrawer(event: MouseEvent): void {
@@ -905,6 +957,18 @@ watch(
     selectedPeriod.value = value
   },
 )
+watch(
+  () => props.adjustMode,
+  (value) => {
+    if (value === selectedAdjustMode.value) return
+    selectedAdjustMode.value = value
+  },
+)
+watch(
+  activeMeasurementSupplement,
+  (value) => emit('measurementSummaryChange', value),
+  { deep: true, immediate: true },
+)
 watch(ratios, () => {
   void nextTick(onWorkspaceResize)
 }, { deep: true })
@@ -1000,6 +1064,7 @@ onBeforeUnmount(() => {
             :options="KLINE_PERIOD_OPTIONS"
             size="small"
             tone="primary"
+            variant="tabs"
             test-id="stock-chart-kline-period"
             aria-label="K线周期"
             @update:model-value="setKlinePeriod"
@@ -1013,7 +1078,7 @@ onBeforeUnmount(() => {
                 {{ rows[metricIndex]?.bar.date }}
               </time>
               <AppIconButton
-                v-if="measurementControlsVisible"
+                v-if="chartOperationsVisible"
                 label="图表操作"
                 :aria-expanded="operationsDrawerOpen"
                 :aria-controls="`${groupId}-kline-operations`"
@@ -1039,8 +1104,8 @@ onBeforeUnmount(() => {
         </div>
         <div class="stock-chart-panel__body">
           <div
-            v-if="panel.type === 'kline' && measurementVisible"
-            class="stock-chart-measurement__result"
+            v-if="panel.type === 'kline' && measurementHintVisible"
+            class="stock-chart-measurement__hint"
             :style="{
               top: `${STOCK_CHART_GRID_TOP}px`,
               right: `${STOCK_CHART_GRID_SIDE}px`,
@@ -1048,26 +1113,16 @@ onBeforeUnmount(() => {
             }"
           >
             <span class="stock-chart-measurement__headline">
-              {{ measurementPresentation.headline }}
+              {{ measurementHint.headline }}
             </span>
             <span
-              v-if="measurementPresentation.note"
+              v-if="measurementHint.note"
               class="stock-chart-measurement__separator"
               aria-hidden="true"
             >·</span>
-            <span v-if="measurementPresentation.note" class="stock-chart-measurement__meta">
-              {{ measurementPresentation.note }}
+            <span v-if="measurementHint.note" class="stock-chart-measurement__meta">
+              {{ measurementHint.note }}
             </span>
-            <strong
-              v-if="measurementPresentation.returnText"
-              class="stock-chart-measurement__return"
-              :class="{
-                'is-up': measurementTone === 'up',
-                'is-down': measurementTone === 'down',
-              }"
-            >
-              {{ measurementPresentation.returnText }}
-            </strong>
           </div>
           <div
             :ref="(element) => setChartElement(panel.key, element)"
@@ -1110,13 +1165,24 @@ onBeforeUnmount(() => {
     </template>
 
     <StockChartOperationsDrawer
-      v-if="enableReturnMeasurement"
+      v-if="enableReturnMeasurement || enableAdjustModeSwitch"
       v-model="operationsDrawerOpen"
       :drawer-id="`${groupId}-kline-operations`"
       @closed="restoreOperationsTriggerFocus"
     >
       <slot name="operation-actions" />
-      <ChartOperationGroup label="涨跌测算">
+      <ChartOperationGroup v-if="enableAdjustModeSwitch" label="复权口径">
+        <PageSegmented
+          :model-value="selectedAdjustMode"
+          :options="ADJUST_MODE_OPTIONS"
+          size="small"
+          tone="primary"
+          test-id="stock-chart-adjust-mode"
+          aria-label="K线复权口径"
+          @update:model-value="setAdjustMode"
+        />
+      </ChartOperationGroup>
+      <ChartOperationGroup v-if="enableReturnMeasurement" label="涨跌测算">
         <PageSegmented
           :model-value="measurementMode"
           :options="MEASUREMENT_MODE_OPTIONS"
@@ -1165,12 +1231,13 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   width: auto;
   height: var(--app-control-height-xs);
-  padding: 1px;
+  padding: 0;
+  gap: var(--app-space-3);
 }
 
 .stock-chart-period-switch :deep(.seg-btn) {
-  min-width: 38px;
-  padding-inline: var(--app-space-2);
+  min-width: 32px;
+  padding-inline: var(--app-space-1);
 }
 
 .stock-chart-metric-rail {
@@ -1189,7 +1256,7 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
-.stock-chart-measurement__result {
+.stock-chart-measurement__hint {
   position: absolute;
   z-index: 2;
   padding: 3px 7px;
@@ -1212,19 +1279,6 @@ onBeforeUnmount(() => {
 .stock-chart-measurement__meta {
   color: var(--el-text-color-secondary);
   font-weight: var(--app-font-weight-regular);
-}
-
-.stock-chart-measurement__return {
-  flex: 0 0 auto;
-  font-weight: var(--app-font-weight-section);
-}
-
-.stock-chart-measurement__return.is-up {
-  color: var(--market-up-color);
-}
-
-.stock-chart-measurement__return.is-down {
-  color: var(--market-down-color);
 }
 
 .stock-chart-panel__body {
@@ -1260,8 +1314,12 @@ onBeforeUnmount(() => {
   }
 
   .stock-chart-period-switch :deep(.seg-btn) {
-    min-width: 34px;
+    min-width: 28px;
     padding-inline: var(--app-space-control-gap);
+  }
+
+  .stock-chart-period-switch {
+    gap: var(--app-space-control-gap);
   }
 
 }

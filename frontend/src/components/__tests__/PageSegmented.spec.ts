@@ -41,6 +41,25 @@ describe('PageSegmented', () => {
     expect(wrapper.classes()).toContain('page-segmented--primary')
   })
 
+  it('以声明式 tabs 外观保留分段选择能力', async () => {
+    const wrapper = mount(PageSegmented, {
+      props: {
+        modelValue: 'day',
+        tone: 'primary',
+        variant: 'tabs',
+        options: [
+          { label: '日K', value: 'day' },
+          { label: '周K', value: 'week' },
+        ],
+      },
+    })
+
+    expect(wrapper.classes()).toContain('page-segmented--tabs')
+    expect(wrapper.get('.seg-btn.active').text()).toBe('日K')
+    await wrapper.findAll('.seg-btn')[1].trigger('click')
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['week'])
+  })
+
   it('只读时保留当前选中项并禁止切换', async () => {
     const wrapper = mount(PageSegmented, {
       props: {

@@ -10,6 +10,8 @@ const props = defineProps<{
   size?: 'default' | 'small'
   /** 页面级模式切换使用 primary；设置型枚举保持 neutral。 */
   tone?: 'neutral' | 'primary'
+  /** tabs 用于图表周期等轻量视图切换；保留分段控件行为，仅改为文字与下划线表达。 */
+  variant?: 'contained' | 'tabs'
   /** 只读配置仍展示真实选中项，但禁止切换。 */
   disabled?: boolean
 }>()
@@ -29,6 +31,7 @@ function optionTestId(value: OptionValue): string | undefined {
     :class="{
       'page-segmented--small': props.size === 'small',
       'page-segmented--primary': props.tone === 'primary',
+      'page-segmented--tabs': props.variant === 'tabs',
       'page-segmented--disabled': props.disabled,
     }"
     role="group"
@@ -137,5 +140,53 @@ function optionTestId(value: OptionValue): string | undefined {
   height: 100%;
   padding: 0 var(--app-space-2);
   border-radius: calc(var(--layout-control-radius) - 1px);
+}
+.page-segmented--tabs {
+  height: var(--app-control-height-md);
+  gap: var(--app-space-2);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.page-segmented--tabs .seg-btn {
+  position: relative;
+  min-height: 0;
+  height: 100%;
+  padding: 0 var(--app-space-1);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-body);
+}
+.page-segmented--tabs .seg-btn::after {
+  content: '';
+  position: absolute;
+  right: var(--app-space-1);
+  bottom: 0;
+  left: var(--app-space-1);
+  height: 3px;
+  border-radius: 999px;
+  background: transparent;
+}
+.page-segmented--tabs .seg-btn:hover:not(.active),
+.page-segmented--tabs.page-segmented--primary .seg-btn:hover:not(.active) {
+  background: transparent;
+  color: var(--el-text-color-primary);
+}
+.page-segmented--tabs .seg-btn.active,
+.page-segmented--tabs.page-segmented--primary .seg-btn.active {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--el-text-color-primary);
+}
+.page-segmented--tabs.page-segmented--primary .seg-btn.active::after {
+  background: var(--el-color-primary);
+}
+.page-segmented--tabs .seg-btn:focus-visible {
+  outline-offset: -1px;
 }
 </style>

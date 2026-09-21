@@ -48,7 +48,21 @@ function mountPanel(overrides: Record<string, unknown> = {}) {
       plugins: [ElementPlus],
       stubs: {
         StockCompareChart: { name: 'StockCompareChart', props: ['series', 'activeCode', 'benchmark', 'calendar', 'metric', 'rangeDays'], template: '<div class="stock-compare-chart-stub" />' },
-        StockChartWorkspace: { name: 'StockChartWorkspace', props: { bars: Array, indicators: Array, adjustLabel: String, macdAdjustLabel: String, enableIntradayDrilldown: Boolean, enableReturnMeasurement: Boolean }, emits: ['barClick'], template: '<button class="stock-chart-workspace-stub" @click="$emit(\'barClick\', \'2026-08-07\')" />' },
+        StockChartWorkspace: {
+          name: 'StockChartWorkspace',
+          props: {
+            bars: Array,
+            indicators: Array,
+            adjustLabel: String,
+            adjustMode: String,
+            macdAdjustLabel: String,
+            enableIntradayDrilldown: Boolean,
+            enableReturnMeasurement: Boolean,
+            enableAdjustModeSwitch: Boolean,
+          },
+          emits: ['barClick', 'update:adjustMode'],
+          template: '<button class="stock-chart-workspace-stub" @click="$emit(\'barClick\', \'2026-08-07\')" />',
+        },
         StockIntradayDialog: { name: 'StockIntradayDialog', props: ['modelValue', 'code', 'name', 'tradeDate'], emits: ['update:modelValue'], template: '<div class="intraday-dialog-stub" :data-open="modelValue" :data-date="tradeDate" />' },
         KlineRangeSelect: true,
       },
@@ -119,6 +133,7 @@ describe('StockAnalysisPanel', () => {
     const workspace = wrapper.findComponent({ name: 'StockChartWorkspace' })
     expect(workspace.props('enableIntradayDrilldown')).toBe(true)
     expect(workspace.props('enableReturnMeasurement')).toBe(true)
+    expect(workspace.props('enableAdjustModeSwitch')).toBe(true)
 
     await workspace.trigger('click')
     const dialog = wrapper.findComponent({ name: 'StockIntradayDialog' })
@@ -228,6 +243,23 @@ describe('StockAnalysisPanel', () => {
     const workspace = wrapper.findComponent({ name: 'StockChartWorkspace' })
     expect(workspace.props('adjustLabel')).toBe('后复权')
     expect(workspace.props('macdAdjustLabel')).toBe('前复权')
+  })
+
+  it('图表抽屉临时切换复权口径后重载行情且不改写外部默认值', async () => {
+    const wrapper = mountPanel({ mode: 'kline', adjustMode: 'qfq' })
+    await flushPromises()
+    const workspace = wrapper.findComponent({ name: 'StockChartWorkspace' })
+
+    workspace.vm.$emit('update:adjustMode', 'hfq')
+    await flushPromises()
+
+    expect(workspace.props('adjustMode')).toBe('hfq')
+    expect(wrapper.props('adjustMode')).toBe('qfq')
+    expect(stockApi.getBars).toHaveBeenLastCalledWith(
+      '000001.SZ',
+      expect.objectContaining({ adjust: 'hfq' }),
+      expect.any(AbortSignal),
+    )
   })
 
   it('详情、队列切换和移除都向页面发出明确事件', async () => {

@@ -268,16 +268,16 @@ describe('StockChartWorkspace', () => {
     const wrapper = await mountWorkspace()
 
     expect(wrapper.findAll('.stock-chart-panel')).toHaveLength(3)
-    expect(wrapper.text()).toContain('K线（日线·前复权）')
+    expect(wrapper.text()).toContain('K线（前复权）')
     expect(wrapper.text()).toContain('量能')
     expect(wrapper.text()).toContain('MACD（12,26,9·前复权）')
 
     await wrapper.setProps({ adjustLabel: '原始连续指数' })
-    expect(wrapper.text()).toContain('K线（日线·原始连续指数）')
+    expect(wrapper.text()).toContain('K线（原始连续指数）')
     expect(wrapper.text()).toContain('MACD（12,26,9·原始连续指数）')
 
     await wrapper.setProps({ adjustLabel: '后复权', macdAdjustLabel: '前复权' })
-    expect(wrapper.text()).toContain('K线（日线·后复权）')
+    expect(wrapper.text()).toContain('K线（后复权）')
     expect(wrapper.text()).toContain('MACD（12,26,9·前复权）')
     expect(wrapper.findAll('.stock-chart-panel__date')).toHaveLength(1)
     expect(wrapper.find('.stock-chart-panel--kline .stock-chart-panel__date').exists()).toBe(true)
@@ -403,7 +403,7 @@ describe('StockChartWorkspace', () => {
     })
     const kline = echartsMock.instances[0]
 
-    expect(wrapper.find('.stock-chart-measurement__result').exists()).toBe(false)
+    expect(wrapper.find('.stock-chart-measurement__hint').exists()).toBe(false)
     expect(wrapper.find('.stock-chart-operations-drawer-stub').exists()).toBe(false)
     expect(wrapper.get('[data-testid="stock-chart-toggle-operations"]').attributes('aria-expanded'))
       .toBe('false')
@@ -419,36 +419,33 @@ describe('StockChartWorkspace', () => {
     expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(true)
     kline.emit('updateAxisPointer', { seriesDataIndices: [{ dataIndex: 6 }] })
     await nextTick()
-    expect(wrapper.get('.stock-chart-measurement__result').attributes('style'))
-      .toContain('top: 8px; right: 64px; max-width: calc(100% - 128px)')
-    expect(wrapper.get('.stock-chart-measurement__headline').text())
-      .toBe('截止 2026-06-40')
-    expect(wrapper.get('.stock-chart-measurement__return').text()).toBe('+30.56%')
-    expect(wrapper.get('.stock-chart-measurement__return').classes()).toContain('is-up')
-    expect(wrapper.get('.stock-chart-measurement__headline').classes()).not.toContain('is-up')
-    const resultChildren = wrapper.get('.stock-chart-measurement__result').element.children
-    expect(resultChildren[0]?.classList).toContain('stock-chart-measurement__headline')
-    expect(resultChildren[1]?.classList).toContain('stock-chart-measurement__separator')
-    expect(resultChildren[1]?.textContent).toBe('·')
-    expect(resultChildren[2]?.classList).toContain('stock-chart-measurement__meta')
-    expect(resultChildren[3]?.classList).toContain('stock-chart-measurement__return')
-    expect(wrapper.text()).not.toContain('2026-06-07起')
-    expect(wrapper.text()).toContain('33个交易日')
+    expect(wrapper.find('.stock-chart-measurement__hint').exists()).toBe(false)
+    expect(wrapper.emitted('measurementSummaryChange')?.at(-1)?.[0]).toEqual({
+      label: '截止 2026-06-40',
+      value: '+30.56%',
+      tone: 'up',
+      details: [{ label: '交易日', value: '33个交易日' }],
+    })
+    const latestOption = kline.setOption.mock.calls.at(-1)?.[0]
+    const tooltipHtml = latestOption.tooltip.formatter([{ dataIndex: 6 }])
+    expect(tooltipHtml).toContain('截止 2026-06-40')
+    expect(tooltipHtml).toContain('+30.56%')
+    expect(tooltipHtml).toContain('33个交易日')
 
     await wrapper.get('[data-testid="close-chart-operations"]').trigger('click')
     expect(wrapper.find('.stock-chart-operations-drawer-stub').exists()).toBe(false)
     expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(false)
-    expect(wrapper.find('.stock-chart-measurement__result').exists()).toBe(true)
+    expect(wrapper.find('.stock-chart-measurement__hint').exists()).toBe(false)
     expect(wrapper.find('.stock-chart-panel__date').text()).toBe('2026-06-07')
     await wrapper.get('[data-testid="stock-chart-toggle-operations"]').trigger('click')
     expect(wrapper.find('.stock-chart-operations-drawer-stub').exists()).toBe(true)
 
-    const latestOption = kline.setOption.mock.calls.at(-1)?.[0]
     expect(latestOption.series[0].markArea).toBeUndefined()
 
     kline.emit('globalout', {})
     await nextTick()
-    expect(wrapper.find('.stock-chart-measurement__result').exists()).toBe(false)
+    expect(wrapper.find('.stock-chart-measurement__hint').exists()).toBe(false)
+    expect(wrapper.emitted('measurementSummaryChange')?.at(-1)?.[0]).toBeNull()
     await wrapper.get('.stock-chart-panel--kline').trigger('pointerleave')
     expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(true)
 
@@ -459,12 +456,14 @@ describe('StockChartWorkspace', () => {
     expect(wrapper.text()).toContain('点击 K 线选择起点')
     await wrapper.get('.stock-chart-panel--kline').trigger('pointerleave')
     expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(true)
-    expect(wrapper.find('.stock-chart-measurement__result').exists()).toBe(false)
+    expect(wrapper.find('.stock-chart-measurement__hint').exists()).toBe(false)
 
     await wrapper.get('.stock-chart-panel--kline .stock-chart-panel__canvas')
       .trigger('pointerenter')
     expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('点击 K 线选择起点')
+    expect(wrapper.get('.stock-chart-measurement__hint').attributes('style'))
+      .toContain('top: 8px; right: 64px; max-width: calc(100% - 128px)')
 
     kline.containPixel.mockReturnValueOnce(false)
     kline.emit('updateAxisPointer', { seriesDataIndices: [{ dataIndex: 1 }] })
@@ -475,14 +474,22 @@ describe('StockChartWorkspace', () => {
     kline.emitRenderer('click', { offsetX: 120, offsetY: 80 })
     kline.emit('updateAxisPointer', { seriesDataIndices: [{ dataIndex: 6 }] })
     await nextTick()
-    expect(wrapper.text()).toContain('2026-06-03 → 2026-06-07')
-    expect(wrapper.get('.stock-chart-measurement__return').text()).toBe('+3.85%')
-    expect(wrapper.text()).toContain('4个交易日')
-    expect(wrapper.text()).toContain('再次点击确认终点')
+    expect(wrapper.text()).toContain('2026-06-03起')
+    expect(wrapper.text()).toContain('移动到终点后再次点击')
+    expect(wrapper.emitted('measurementSummaryChange')?.at(-1)?.[0]).toEqual({
+      label: '区间涨跌',
+      value: '+3.85%',
+      tone: 'up',
+      details: [
+        { label: '区间', value: '2026-06-03 → 2026-06-07' },
+        { label: '交易日', value: '4个交易日' },
+      ],
+    })
 
     kline.emitRenderer('click', { offsetX: 180, offsetY: 70 })
     await nextTick()
-    expect(wrapper.text()).not.toContain('再次点击确认终点')
+    expect(wrapper.text()).toContain('2026-06-03 → 2026-06-07')
+    expect(wrapper.text()).toContain('点击 K 线重新选择起点')
     expect(wrapper.emitted('barClick')).toBeUndefined()
     const option = kline.setOption.mock.calls.at(-1)?.[0]
     expect(option.series[0].markArea.data).toEqual([[{ xAxis: 2 }, { xAxis: 6 }]])
@@ -511,7 +518,7 @@ describe('StockChartWorkspace', () => {
       .toBe('false')
     expect(wrapper.get('[data-testid="stock-chart-kline-period-week"]').attributes('aria-pressed'))
       .toBe('true')
-    expect(wrapper.text()).toContain('K线（周线·前复权）')
+    expect(wrapper.text()).toContain('K线（前复权）')
 
     await wrapper.get('[data-testid="stock-chart-toggle-operations"]').trigger('click')
     expect(wrapper.get('[data-testid="stock-chart-measurement-mode-range"]')
@@ -520,9 +527,26 @@ describe('StockChartWorkspace', () => {
     await wrapper.setProps({ klinePeriod: 'month', returnMeasurementMode: 'latest' })
     expect(wrapper.get('[data-testid="stock-chart-kline-period-month"]').attributes('aria-pressed'))
       .toBe('true')
-    expect(wrapper.text()).toContain('K线（月线·前复权）')
+    expect(wrapper.text()).toContain('K线（前复权）')
     expect(wrapper.get('[data-testid="stock-chart-measurement-mode-latest"]')
       .attributes('aria-pressed')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('复权口径作为抽屉内临时操作并更新标题', async () => {
+    const wrapper = await mountWorkspace({
+      enableAdjustModeSwitch: true,
+      adjustMode: 'qfq',
+    })
+
+    await wrapper.get('[data-testid="stock-chart-toggle-operations"]').trigger('click')
+    expect(wrapper.get('[data-testid="stock-chart-adjust-mode-qfq"]')
+      .attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('.chart-operation-group').text()).toContain('复权口径')
+
+    await wrapper.get('[data-testid="stock-chart-adjust-mode-hfq"]').trigger('click')
+    expect(wrapper.emitted('update:adjustMode')).toEqual([['hfq']])
+    expect(wrapper.text()).toContain('K线（后复权）')
     wrapper.unmount()
   })
 
@@ -541,7 +565,7 @@ describe('StockChartWorkspace', () => {
 
     expect(wrapper.emitted('update:klinePeriod')).toEqual([['week']])
     expect(wrapper.emitted('activeBarChange')?.at(-1)?.[0]).toBeNull()
-    expect(wrapper.text()).toContain('K线（周线·前复权）')
+    expect(wrapper.text()).toContain('K线（前复权）')
     expect(kline.setOption.mock.calls.at(-1)?.[0].dataZoom[0]).toMatchObject({
       start: 0,
       end: 100,

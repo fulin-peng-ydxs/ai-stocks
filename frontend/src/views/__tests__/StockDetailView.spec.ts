@@ -194,6 +194,8 @@ const StockChartWorkspaceStub = defineComponent({
     'enableIntradayDrilldown',
     'enableReturnMeasurement',
     'enableKlinePeriodSwitch',
+    'enableAdjustModeSwitch',
+    'adjustMode',
     'klinePeriod',
     'returnMeasurementMode',
     'showKlineTooltip',
@@ -204,6 +206,8 @@ const StockChartWorkspaceStub = defineComponent({
     'ratioCommit',
     'barClick',
     'activeBarChange',
+    'measurementSummaryChange',
+    'update:adjustMode',
     'update:klinePeriod',
     'update:returnMeasurementMode',
   ],
@@ -232,6 +236,15 @@ const StockChartWorkspaceStub = defineComponent({
         'data-testid': 'activate-kline-bar',
         onClick: () => emit('activeBarChange', bar('2026-07-22', 9.5)),
       }, '联动行情摘要'),
+      h('button', {
+        'data-testid': 'activate-measurement-summary',
+        onClick: () => emit('measurementSummaryChange', {
+          label: '截止 2026-09-18',
+          value: '+9.06%',
+          tone: 'up',
+          details: [{ label: '交易日', value: '19个交易日' }],
+        }),
+      }, '联动涨跌测算'),
       h('button', {
         'data-testid': 'ratio-draft',
         onClick: () => emit('ratioDraft', [0.5, 0.3, 0.2]),
@@ -492,7 +505,7 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
       StockQuoteSummary: {
         name: 'StockQuoteSummary',
         props: ['summary', 'columnGap'],
-        template: '<div data-testid="stock-latest-quote">{{ summary.hero.value }}:{{ summary.hero.tone }} {{ summary.hero.details?.map((item) => item.value).join(" ") }} {{ summary.metrics.map((item) => `${item.label}:${item.value}:${item.tone || "neutral"}`).join(" ") }}</div>',
+        template: '<div data-testid="stock-latest-quote">{{ summary.hero.value }}:{{ summary.hero.tone }} {{ summary.hero.details?.map((item) => item.value).join(" ") }} {{ summary.metrics.map((item) => `${item.label}:${item.value}:${item.tone || "neutral"}`).join(" ") }} {{ summary.supplement ? `${summary.supplement.label}:${summary.supplement.value}:${summary.supplement.details?.map((item) => item.value).join(" ")}` : "" }}</div>',
       },
       StockBoardMembershipPanel: {
         name: 'StockBoardMembershipPanel',
@@ -752,6 +765,8 @@ describe('StockDetailView 三图数据协调', () => {
     expect(workspace.props('enableIntradayDrilldown')).toBe('')
     expect(workspace.props('enableReturnMeasurement')).toBe('')
     expect(workspace.props('enableKlinePeriodSwitch')).toBe('')
+    expect(workspace.props('enableAdjustModeSwitch')).toBe('')
+    expect(workspace.props('adjustMode')).toBe('qfq')
     expect(workspace.props('klinePeriod')).toBe('day')
     expect(workspace.props('returnMeasurementMode')).toBe('latest')
     expect(workspace.props('showKlineTooltip')).toBe(false)
@@ -816,6 +831,11 @@ describe('StockDetailView 三图数据协调', () => {
     expect(summary).toContain('9.50:up')
     expect(summary).toContain('开盘:9.40:neutral')
     expect(wrapper.text()).not.toContain('行情 2026-07-22')
+
+    await wrapper.get('[data-testid="activate-measurement-summary"]').trigger('click')
+    await nextTick()
+    expect(wrapper.get('[data-testid="stock-latest-quote"]').text())
+      .toContain('截止 2026-09-18:+9.06%:19个交易日')
   })
 
   it('手动刷新保留当前股票和方案并同步行情、指标、报价与买卖评估', async () => {
@@ -1112,6 +1132,25 @@ describe('StockDetailView 三图数据协调', () => {
     expect(workspace.props('returnMeasurementMode')).toBe('latest')
     expect(measurementConfigState.current.period).toBe('week')
     expect(measurementConfigState.current.mode).toBe('range')
+  })
+
+  it('图表操作抽屉临时切换复权口径但不反写页面默认值', async () => {
+    const wrapper = await mountView()
+    const workspace = wrapper.findComponent(StockChartWorkspaceStub)
+    expect(pageSettingsState.current.adjustMode).toBe('qfq')
+    expect(workspace.props('adjustMode')).toBe('qfq')
+
+    workspace.vm.$emit('update:adjustMode', 'hfq')
+    await nextTick()
+    await flushPromises()
+
+    expect(workspace.props('adjustMode')).toBe('hfq')
+    expect(pageSettingsState.current.adjustMode).toBe('qfq')
+    expect(stocksApi.getBars).toHaveBeenLastCalledWith(
+      '600000.SH',
+      expect.objectContaining({ adjust: 'hfq' }),
+      expect.any(AbortSignal),
+    )
   })
 
   it('最新指标快照作为独立辅助模块隐藏，保留指标请求和字段偏好并可恢复默认', async () => {

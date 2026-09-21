@@ -54,7 +54,11 @@ import {
   priceDirectionTone,
   stockVolumeRatioAt,
 } from '@/components/stock-chart/chartUtils'
-import type { StockQuoteSummaryModel, StockQuoteTone } from '@/components/stock-chart/stockQuoteSummary'
+import type {
+  StockQuoteSummaryModel,
+  StockQuoteSupplement,
+  StockQuoteTone,
+} from '@/components/stock-chart/stockQuoteSummary'
 import type { MacdPanelState } from '@/components/stock-chart/workspaceOptions'
 import { useStockSet } from '@/stores/stockSet'
 import { useAuthStore } from '@/stores/auth'
@@ -69,6 +73,7 @@ import {
 } from '@/utils/floatingPlacement'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
+import { useStockAdjustModeSession } from '@/composables/useStockAnalysisSession'
 import { useStockIntradayDrilldown } from '@/composables/useStockIntradayDrilldown'
 import { useDebouncedQuery } from '@/composables/useDebouncedQuery'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
@@ -132,6 +137,7 @@ const chartPreferences = useStockChartComponentConfig({
   setComponentKnob,
   hydrated: remoteHydrated,
 })
+const adjustMode = useStockAdjustModeSession(settings)
 const {
   setCurrentMasterRatioSample,
   componentRuntimeValueOf: masterRuntimeValueOf,
@@ -324,6 +330,7 @@ const {
 } = useStockIntradayDrilldown(code)
 const quoteSummaryData = ref<StockQuoteSummaryData | null>(null)
 const chartActiveBar = ref<Bar | null>(null)
+const chartMeasurementSummary = ref<StockQuoteSupplement | null>(null)
 const boardMembership = ref<StockBoardMembership | null>(null)
 const latest = ref<IndicatorRow | null>(null)
 const analysisDate = computed(() => (
@@ -376,6 +383,7 @@ const headerSummary = computed<StockQuoteSummaryModel | null>(() => {
       ],
     },
     rowsPerColumn: 4,
+    supplement: chartMeasurementSummary.value,
     metrics: [
       {
         label: '开盘',
@@ -441,8 +449,8 @@ const visibleIndicatorFields = computed(() => {
   return INDICATOR_FIELDS.filter((field) => visible.has(field.key))
 })
 const adjustLabel = computed(() => {
-  if (settings.adjustMode === 'qfq') return '前复权'
-  if (settings.adjustMode === 'hfq') return '后复权'
+  if (adjustMode.value === 'qfq') return '前复权'
+  if (adjustMode.value === 'hfq') return '后复权'
   return '不复权'
 })
 const hasCompleteMacd = computed(() => indicatorRows.value.some((row) => (
@@ -596,7 +604,7 @@ async function loadBars() {
   try {
     const result = await getBars(
       code.value,
-      { adjust: settings.adjustMode || '', lookback: chartLookback.value },
+      { adjust: adjustMode.value || '', lookback: chartLookback.value },
       controller.signal,
     )
     if (!isCurrentRequest(barsRequest, controller, sequence)) return
@@ -740,7 +748,7 @@ async function refreshStockDetail(): Promise<void> {
 watch(viewDays, () => {
   void reloadRangeData()
 })
-watch(() => settings.adjustMode, () => {
+watch(adjustMode, () => {
   void loadBars()
 })
 
@@ -1266,6 +1274,8 @@ onBeforeUnmount(() => {
               enable-intraday-drilldown
               enable-return-measurement
               enable-kline-period-switch
+              enable-adjust-mode-switch
+              v-model:adjust-mode="adjustMode"
               v-model:return-measurement-mode="chartPreferences.returnMeasurementMode.value"
               v-model:kline-period="chartPreferences.klinePeriod.value"
               :show-kline-tooltip="false"
@@ -1275,6 +1285,7 @@ onBeforeUnmount(() => {
               @retry-macd="loadIndicators"
               @bar-click="openIntraday"
               @active-bar-change="chartActiveBar = $event"
+              @measurement-summary-change="chartMeasurementSummary = $event"
             />
           </AppWorkspacePane>
           </template>
