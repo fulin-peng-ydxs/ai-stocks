@@ -12,7 +12,7 @@ const echartsMock = vi.hoisted(() => ({
     resize: ReturnType<typeof vi.fn>
     dispose: ReturnType<typeof vi.fn>
   }>,
-  init: vi.fn(() => {
+  init: vi.fn((_element?: HTMLElement, _theme?: unknown, _options?: { renderer?: string }) => {
     const instance = {
       setOption: vi.fn(),
       resize: vi.fn(),
@@ -69,6 +69,7 @@ describe('普通 ECharts 主题消费者', () => {
   ])('$name 在当前预设同 key 覆盖后重新取色', async ({ component, props }) => {
     const wrapper = mount(component as never, { props: props as never })
     await nextTick()
+    expect(echartsMock.init.mock.calls.at(-1)?.[2]).toMatchObject({ renderer: 'svg' })
     const chart = echartsMock.instances[0]
     const callsBefore = chart.setOption.mock.calls.length
 

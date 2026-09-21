@@ -1,5 +1,6 @@
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import type { ChartType } from '@/composables/useStockChartPreferences'
+import { elementVisualScale } from '@/utils/displayScaleGeometry'
 import { formatMarketPercent } from '@/utils/marketValue'
 import {
   buildStockVolumeBarSeries,
@@ -10,6 +11,8 @@ import {
   klineTooltipHtml,
   movingAverage,
   obstructionAwareTooltipPosition,
+  STOCK_CHART_GRID_SIDE,
+  STOCK_CHART_GRID_TOP,
   VOLUME_MA_DEFINITIONS,
   type StockChartTheme,
   type TooltipPositionSize,
@@ -59,8 +62,13 @@ export const MACD_BAR_WIDTH = '24%'
 export const BOTTOM_GRID_HEIGHT = 52
 export const AXIS_ONLY_BOTTOM_GRID_HEIGHT = 24
 export const VISIBLE_SLIDER_MIN_CANVAS_HEIGHT = 84
-export const STOCK_CHART_GRID_SIDE = 64
-export const STOCK_CHART_GRID_TOP = 8
+
+export function scaledBarWidth(width: string, displayScale = 1): string {
+  const percentage = Number.parseFloat(width)
+  const safeScale = Number.isFinite(displayScale) && displayScale > 0 ? displayScale : 1
+  if (!width.endsWith('%') || !Number.isFinite(percentage)) return width
+  return `${Number((percentage * safeScale).toFixed(3))}%`
+}
 
 export function alignStockChartRows(
   bars: readonly Bar[],
@@ -302,6 +310,7 @@ interface OptionContext {
   showKlineTooltip?: boolean
   measurementRange?: { startIndex: number; endIndex: number } | null
   candlestickRect?: (params: unknown) => TooltipTargetRect | null
+  displayScale?: number
 }
 
 /** 所有股票图表按真实画布高度统一决定是否容纳可视缩放条。 */
@@ -442,22 +451,30 @@ export function buildKlineOption(context: OptionContext) {
       ...base.tooltip,
       showContent: context.showKlineTooltip !== false,
       className: 'stock-chart-kline-tooltip',
+      appendTo: 'body',
       confine: true,
       transitionDuration: 0,
-      extraCssText: 'transition:opacity .14s ease,visibility .14s ease;',
+      extraCssText: 'transition:opacity .14s ease,visibility .14s ease;'
+        + 'font-size:calc(12px * var(--app-display-scale, 1))!important;'
+        + 'line-height:calc(18px * var(--app-display-scale, 1))!important;'
+        + 'padding:calc(10px * var(--app-display-scale, 1))!important;',
       position: (
         point: number[],
         params: unknown,
         dom: HTMLElement,
         rect: unknown,
         size: TooltipPositionSize,
-      ) => obstructionAwareTooltipPosition(
-        point,
-        params,
-        dom,
-        rect ?? context.candlestickRect?.(params),
-        size,
-      ),
+      ) => {
+        const appRoot = globalThis.document?.querySelector<HTMLElement>('#app')
+        return obstructionAwareTooltipPosition(
+          point,
+          params,
+          dom,
+          rect ?? context.candlestickRect?.(params),
+          size,
+          elementVisualScale(appRoot, 'x'),
+        )
+      },
       formatter: (params: unknown) => {
         const list = Array.isArray(params) ? params : [params]
         const index = (list[0] as { dataIndex?: unknown } | undefined)?.dataIndex
@@ -508,7 +525,7 @@ export function buildKlineOption(context: OptionContext) {
         name: 'K线',
         type: 'candlestick',
         cursor: context.clickableCandles ? 'pointer' : 'default',
-        barWidth: KLINE_BAR_WIDTH,
+        barWidth: scaledBarWidth(KLINE_BAR_WIDTH, context.displayScale),
         barMaxWidth: 18,
         data: bars.map((bar) => [bar.open, bar.close, bar.low, bar.high]),
         itemStyle: {
@@ -598,7 +615,7 @@ export function buildVolumeOption(context: OptionContext) {
       buildStockVolumeBarSeries({
         data: bars,
         theme: context.theme,
-        barWidth: VOLUME_BAR_WIDTH,
+        barWidth: scaledBarWidth(VOLUME_BAR_WIDTH, context.displayScale),
         barMaxWidth: 12,
       }),
       ...VOLUME_MA_DEFINITIONS.map((definition) => ({
@@ -644,7 +661,7 @@ export function buildMacdOption(context: OptionContext) {
       {
         name: 'MACD',
         type: 'bar',
-        barWidth: MACD_BAR_WIDTH,
+        barWidth: scaledBarWidth(MACD_BAR_WIDTH, context.displayScale),
         barMaxWidth: 7,
         markLine: {
           silent: true,

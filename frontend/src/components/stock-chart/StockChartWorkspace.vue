@@ -18,14 +18,20 @@ import ChartOperationGroup from '@/components/ChartOperationGroup.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { useStatusColorPalette } from '@/components/chartTheme'
+import { initVectorEChart } from '@/components/echartsRenderer'
 import type { AuxiliaryChartType, ChartType } from '@/composables/useStockChartPreferences'
-import { viewportDeltaToLayoutPixels } from '@/utils/displayScaleGeometry'
+import {
+  elementVisualScale,
+  viewportDeltaToLayoutPixels,
+} from '@/utils/displayScaleGeometry'
 import { formatMarketPercent, marketValueClass } from '@/utils/marketValue'
 import StockChartPanelDivider from './StockChartPanelDivider.vue'
 import StockChartPanelHeader from './StockChartPanelHeader.vue'
 import type { StockChartLegendItem } from './StockChartLegend.vue'
 import {
   KLINE_MA_DEFINITIONS,
+  STOCK_CHART_GRID_SIDE,
+  STOCK_CHART_GRID_TOP,
   VOLUME_MA_DEFINITIONS,
   nextStockChartWorkspaceGroupId,
   stockChartAxisPointerIndex,
@@ -36,8 +42,6 @@ import {
   KEYBOARD_RATIO_STEP,
   KLINE_MIN_HEIGHT,
   SPLITTER_SIZE,
-  STOCK_CHART_GRID_SIDE,
-  STOCK_CHART_GRID_TOP,
   WORKSPACE_MIN_HEIGHT,
   adjustAdjacentRatios,
   alignStockChartRows,
@@ -182,6 +186,7 @@ const workspaceHeight = ref(0)
 let resizeObserver: ResizeObserver | null = null
 let active = true
 let bottomSliderVisible: boolean | undefined
+let lastDisplayScale = 0
 let lastWorkspaceState = ''
 let workspaceReportedAvailable = false
 
@@ -388,6 +393,7 @@ function chartOption(panel: PanelDescriptor, isBottom: boolean) {
     showKlineTooltip: props.showKlineTooltip,
     measurementRange: measurementChartRange.value,
     candlestickRect,
+    displayScale: elementVisualScale(chartElements.get(panel.key), 'x'),
   }
   if (panel.type === 'kline') return buildKlineOption(context)
   if (panel.type === 'volume') return buildVolumeOption(context)
@@ -528,6 +534,7 @@ function hasRenderableSize(element: HTMLElement): boolean {
 
 function syncCharts(): void {
   if (!active) return
+  lastDisplayScale = elementVisualScale(workspaceEl.value, 'x')
   const visibleKeys = new Set(panels.value.map((panel) => panel.key))
   charts.forEach((chart, key) => {
     if (visibleKeys.has(key) && chartElements.has(key)) return
@@ -543,7 +550,7 @@ function syncCharts(): void {
       // KeepAlive 切换期间 DOM 可能已隐藏但 onDeactivated 尚未执行；禁止在 0×0 容器初始化，
       // 等 ResizeObserver 收到可见尺寸后再补建，避免 ECharts 告警和无效实例。
       if (!hasRenderableSize(element)) return
-      chart = echarts.init(element)
+      chart = initVectorEChart(element)
       chart.on('updateAxisPointer', (event: unknown) => {
         onAxisPointer(event as Parameters<typeof onAxisPointer>[0])
       })
@@ -608,6 +615,15 @@ function onWorkspaceResize(): void {
       return
     }
     resizeCharts()
+    const nextDisplayScale = elementVisualScale(workspaceEl.value, 'x')
+    if (Math.abs(nextDisplayScale - lastDisplayScale) > 0.001) {
+      lastDisplayScale = nextDisplayScale
+      panels.value.forEach((panel, index) => {
+        const chart = charts.get(panel.key)
+        if (!chart || chart.isDisposed()) return
+        chart.setOption(chartOption(panel, index === panels.value.length - 1), true)
+      })
+    }
     const bottomPanel = panels.value.at(-1)
     const bottomElement = bottomPanel ? chartElements.get(bottomPanel.key) : undefined
     const nextSliderVisible = stockChartVisibleSlider(bottomElement?.clientHeight)
@@ -849,6 +865,7 @@ watch(
 )
 
 onMounted(async () => {
+  window.addEventListener('resize', onWorkspaceResize)
   await nextTick()
   syncCharts()
   observeResize()
@@ -868,6 +885,7 @@ onDeactivated(() => {
   disposeCharts()
 })
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', onWorkspaceResize)
   if (drag) finishDrag()
   reportWorkspaceUnavailable()
   stopObservingResize()

@@ -15,7 +15,11 @@ const echartsMock = vi.hoisted(() => {
   const instances: Array<Record<string, any>> = []
   return {
     instances,
-    init: vi.fn(() => {
+    init: vi.fn((
+      _element?: HTMLElement,
+      _theme?: unknown,
+      _options?: { renderer?: string },
+    ) => {
       let disposed = false
       const listeners = new Map<string, Array<(event: unknown) => void>>()
       const rendererListeners = new Map<string, Array<(event: unknown) => void>>()
@@ -223,6 +227,28 @@ describe('StockChartWorkspace', () => {
     ResizeObserverMock.instances.length = 0
     mockClientWidth = 640
     mockClientHeight = 800
+    document.documentElement.style.removeProperty('--app-display-scale')
+  })
+
+  it('使用 SVG 保持非整数页面缩放下的矢量清晰度，并响应比例变化', async () => {
+    const wrapper = await mountWorkspace()
+
+    expect(echartsMock.init).toHaveBeenCalledTimes(3)
+    expect(echartsMock.init.mock.calls[0]?.[2]).toMatchObject({ renderer: 'svg' })
+
+    document.documentElement.style.setProperty('--app-display-scale', '0.91')
+    window.dispatchEvent(new Event('resize'))
+    await nextTick()
+    await nextTick()
+
+    expect(echartsMock.init).toHaveBeenCalledTimes(3)
+    expect(echartsMock.instances.slice(0, 3).every(
+      (instance) => instance.resize.mock.calls.length > 0,
+    )).toBe(true)
+    const updatedKlineOption = echartsMock.instances[0].setOption.mock.calls.at(-1)?.[0]
+    expect(updatedKlineOption.series[0].barWidth).toBe('65.52%')
+
+    wrapper.unmount()
   })
 
   it('默认创建三幅独立图、唯一联动 group，并把日期轴 slider 放在底图', async () => {

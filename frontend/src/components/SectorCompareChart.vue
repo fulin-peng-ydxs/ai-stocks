@@ -8,6 +8,7 @@ import * as echarts from 'echarts'
 import type { SectorBar } from '@/api/sectors'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { chartCssVariable, hasRenderableChartSize, useEChartsTheme } from '@/components/chartTheme'
+import { initVectorEChart } from '@/components/echartsRenderer'
 import {
   buildMarketCompareLineOption,
   escapeChartHtml,
@@ -259,7 +260,7 @@ function resize() {
 }
 function ensureChart() {
   if (chart || !el.value || !hasComparableLine.value || !hasRenderableChartSize(el.value)) return
-  chart = echarts.init(el.value)
+  chart = initVectorEChart(el.value)
   render()
 }
 function attachResize() {

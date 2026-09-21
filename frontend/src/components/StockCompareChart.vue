@@ -4,6 +4,7 @@ import * as echarts from 'echarts'
 import type { Bar } from '@/api/stocks'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { hasRenderableChartSize, useEChartsTheme } from '@/components/chartTheme'
+import { initVectorEChart } from '@/components/echartsRenderer'
 import {
   buildMarketCompareLineOption,
   escapeChartHtml,
@@ -151,7 +152,7 @@ function resize(): void {
 
 function ensureChart(): void {
   if (chart || !el.value || !hasCommonInterval.value || !hasRenderableChartSize(el.value)) return
-  chart = echarts.init(el.value)
+  chart = initVectorEChart(el.value)
   render()
 }
 

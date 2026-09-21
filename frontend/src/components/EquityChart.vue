@@ -4,6 +4,7 @@ import * as echarts from 'echarts'
 import type { EquityPoint } from '@/api/backtest'
 import type { BenchmarkEquity } from '@/utils/benchmarkEquity'
 import { chartCssVariable, useEChartsTheme } from '@/components/chartTheme'
+import { initVectorEChart } from '@/components/echartsRenderer'
 import { formatMoney } from '@/utils/money'
 
 // showBenchmark：缺省 true（默认展示基准）；父页显式传 false（回测选「不对比指数」）时整条基准线隐藏。
@@ -153,7 +154,7 @@ function detachResize() {
 }
 onMounted(() => {
   if (el.value) {
-    chart = echarts.init(el.value)
+    chart = initVectorEChart(el.value)
     render()
     attachResize()
   }

@@ -15,11 +15,13 @@ import {
   MACD_BAR_WIDTH,
   panelMetricColor,
   signalRenderGeometry,
+  scaledBarWidth,
   VOLUME_BAR_WIDTH,
   volumeMetrics,
 } from '@/components/stock-chart/workspaceOptions'
 import {
   KLINE_MA_DEFINITIONS,
+  obstructionAwareTooltipPosition,
   stockVolumeRatioAt,
   VOLUME_MA_DEFINITIONS,
   type StockChartTheme,
@@ -272,6 +274,30 @@ describe('workspaceOptions', () => {
     expect(macd).toMatchObject({ barWidth: MACD_BAR_WIDTH, barMaxWidth: 7 })
   })
 
+  it('页面缩小时同比缩小分类柱宽，不被倒数布局宽度抵消', () => {
+    expect(scaledBarWidth(KLINE_BAR_WIDTH, 0.5)).toBe('36%')
+    expect(scaledBarWidth(VOLUME_BAR_WIDTH, 0.5)).toBe('22%')
+    expect(scaledBarWidth(MACD_BAR_WIDTH, 0.5)).toBe('12%')
+
+    const rows = alignStockChartRows(
+      [bar('2026-07-21'), bar('2026-07-22')],
+      [{ trade_date: '2026-07-22', macd_hist: 0.2 }],
+    )
+    const context = {
+      rows,
+      warmupBars: [],
+      theme,
+      isBottom: false,
+      zoomStart: 0,
+      zoomEnd: 100,
+      displayScale: 0.5,
+    }
+
+    expect((buildKlineOption(context).series[0] as { barWidth?: string }).barWidth).toBe('36%')
+    expect((buildVolumeOption(context).series[0] as { barWidth?: string }).barWidth).toBe('22%')
+    expect((buildMacdOption(context).series[0] as { barWidth?: string }).barWidth).toBe('12%')
+  })
+
   it('标题指标值与各折线严格消费同一系列色板', () => {
     const rows = alignStockChartRows([bar('2026-07-22')], [{
       trade_date: '2026-07-22',
@@ -414,6 +440,7 @@ describe('workspaceOptions', () => {
     }
     const option = buildKlineOption(context)
     const tooltip = option.tooltip as {
+      appendTo: string
       transitionDuration: number
       extraCssText: string
       position: (
@@ -432,31 +459,41 @@ describe('workspaceOptions', () => {
       viewSize: [600, 320] as [number, number],
     }
     const tooltipElement = {} as HTMLElement
-    expect(tooltip.position([40, 100], [], tooltipElement, null, size)).toEqual([72, 6])
-    expect(tooltip.position([80, 100], [], tooltipElement, null, size)).toEqual([72, 6])
+    expect(tooltip.position([40, 100], [], tooltipElement, null, size)).toEqual([64, 8])
+    expect(tooltip.position([80, 100], [], tooltipElement, null, size)).toEqual([64, 8])
     expect(tooltip.position(
       [80, 100], [{ seriesType: 'line', dataIndex: 0 }], tooltipElement, null, size,
-    )).toEqual([72, 6])
+    )).toEqual([64, 8])
     expect(tooltip.position(
       [80, 100], [{ seriesType: 'candlestick', dataIndex: 0 }], tooltipElement, null, size,
-    )).toEqual([72, 6])
-    expect(tooltip.position([240, 100], [], tooltipElement, null, size)).toEqual([72, 6])
-    expect(tooltip.position([480, 100], [], tooltipElement, null, size)).toEqual([72, 6])
+    )).toEqual([64, 8])
+    expect(tooltip.position([240, 100], [], tooltipElement, null, size)).toEqual([64, 8])
+    expect(tooltip.position([480, 100], [], tooltipElement, null, size)).toEqual([64, 8])
     expect(tooltip.position(
       [40, 100], [], tooltipElement, { x: 68, y: 20, width: 12, height: 80 }, size,
-    )).toEqual([72, 6])
+    )).toEqual([64, 8])
     expect(tooltip.position(
       [80, 100], [], tooltipElement, { x: 68, y: 20, width: 12, height: 80 }, size,
-    )).toEqual([372, 6])
+    )).toEqual([380, 8])
     expect(tooltip.position(
       [80, 100], [], tooltipElement, { x: 68, y: 260, width: 12, height: 20 }, size,
-    )).toEqual([72, 6])
+    )).toEqual([64, 8])
+    const scaledRight = obstructionAwareTooltipPosition(
+      [80, 100], [], tooltipElement, { x: 68, y: 20, width: 12, height: 80 }, size, 0.91,
+    )
+    expect(scaledRight[0]).toBeCloseTo(600 - 64 - (156 / 0.91))
+    expect(scaledRight[1]).toBe(8)
     expect(tooltip.transitionDuration).toBe(0)
+    expect(tooltip.appendTo).toBe('body')
     expect(tooltip.extraCssText).toContain('opacity .14s ease')
     expect(content).toContain('width:max-content')
-    expect(content).toContain('font-size:18px')
-    expect(content).toContain('display:flex;align-items:stretch;gap:8px')
-    expect(content).toContain('align-items:center;justify-content:center;align-self:stretch')
+    expect(content).toContain('<table style="border-collapse:collapse')
+    expect(content).toContain('<thead><tr>')
+    expect(content).toContain('rowspan="4"')
+    expect(content).toContain('text-align:left')
+    expect(content).toContain('text-align:right')
+    expect(content).toContain('font-variant-numeric:tabular-nums')
+    expect(content).toContain('font-size:calc(18px * var(--app-display-scale, 1))')
     expect(content).toContain('border-right:1px solid #ddd')
     for (const field of ['时间', '开盘', '最高', '最低', '涨幅', '振幅', '成交量', '成交额', '换手率']) {
       expect(content).toContain(`>${field}<`)
@@ -476,11 +513,11 @@ describe('workspaceOptions', () => {
     ]) {
       expect(content).toContain(`>${value}<`)
     }
-    expect(content).toContain('color:#up;font-size:18px')
-    expect(content).toContain('style="color:#up">+1.01%</span>')
-    expect(content).toContain('style="color:#down">9.80</span>')
-    expect(content).toContain('style="color:#up">10.40</span>')
-    expect(content).toContain('style="color:#down">9.50</span>')
+    expect(content).toContain('color:#up;font-size:calc(18px * var(--app-display-scale, 1))')
+    expect(content).toContain('color:#up;white-space:nowrap">+1.01%</td>')
+    expect(content).toContain('color:#down;white-space:nowrap">9.80</td>')
+    expect(content).toContain('color:#up;white-space:nowrap">10.40</td>')
+    expect(content).toContain('color:#down;white-space:nowrap">9.50</td>')
     expect(content.indexOf('>开盘<')).toBeLessThan(content.indexOf('>最高<'))
     expect(content.indexOf('>最高<')).toBeLessThan(content.indexOf('>最低<'))
     expect((buildVolumeOption(context).tooltip as { showContent?: boolean }).showContent)
@@ -509,8 +546,8 @@ describe('workspaceOptions', () => {
     const downContent = (downOption.tooltip.formatter as (
       params: Array<{ dataIndex: number }>,
     ) => string)([{ dataIndex: 0 }])
-    expect(downContent).toContain('color:#down;font-size:18px')
-    expect(downContent).toContain('style="color:#down">-2.00%</span>')
+    expect(downContent).toContain('color:#down;font-size:calc(18px * var(--app-display-scale, 1))')
+    expect(downContent).toContain('color:#down;white-space:nowrap">-2.00%</td>')
   })
 
   it('允许消费页只关闭 K线内容浮层并保留轴指针', () => {

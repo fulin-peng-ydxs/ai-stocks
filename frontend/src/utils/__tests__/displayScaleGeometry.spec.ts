@@ -1,9 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  elementVisualScale,
-  viewportDeltaToLayoutPixels,
-} from '@/utils/displayScaleGeometry'
+import { elementVisualScale, viewportDeltaToLayoutPixels } from '@/utils/displayScaleGeometry'
 
 describe('displayScaleGeometry', () => {
   afterEach(() => {
@@ -27,4 +24,5 @@ describe('displayScaleGeometry', () => {
     expect(viewportDeltaToLayoutPixels(125, null, 'y')).toBe(100)
     expect(viewportDeltaToLayoutPixels(Number.NaN, null, 'y')).toBe(0)
   })
+
 })

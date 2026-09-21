@@ -3,6 +3,7 @@
 import { onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import { useEChartsTheme } from '@/components/chartTheme'
+import { initVectorEChart } from '@/components/echartsRenderer'
 import type { GrowthPoint } from '@/api/training'
 
 const props = defineProps<{ data: GrowthPoint[] }>()
@@ -70,7 +71,7 @@ function detachResize() {
   window.removeEventListener('resize', resize)
   resizeListening = false
 }
-onMounted(() => { if (el.value) { chart = echarts.init(el.value); render(); attachResize() } })
+onMounted(() => { if (el.value) { chart = initVectorEChart(el.value); render(); attachResize() } })
 onActivated(() => { attachResize(); resize() })
 onDeactivated(detachResize)
 watch(() => props.data, render, { deep: true })

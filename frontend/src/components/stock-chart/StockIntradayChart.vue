@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import type { IntradayPoint } from '@/api/stocks'
 import { hasRenderableChartSize } from '@/components/chartTheme'
+import { initVectorEChart } from '@/components/echartsRenderer'
 import StockChartPanelDivider from './StockChartPanelDivider.vue'
 import StockChartPanelHeader from './StockChartPanelHeader.vue'
 import type { StockChartLegendItem } from './StockChartLegend.vue'
@@ -87,7 +88,7 @@ function render(): void {
   volumeHeaderTop.value = panelLayout.volumeHeaderTop
   dividerTop.value = panelLayout.dividerTop
   if (!chart || chart.isDisposed()) {
-    chart = echarts.init(chartEl.value)
+    chart = initVectorEChart(chartEl.value)
     chart.on('datazoom', onDataZoom)
     chart.on('updateAxisPointer', onAxisPointer)
     chart.on('globalout', () => { activeIndex.value = null })
@@ -110,6 +111,7 @@ watch([() => props.points, () => props.preClose, theme], async () => {
 }, { deep: true })
 
 onMounted(async () => {
+  window.addEventListener('resize', render)
   await nextTick()
   render()
   if (chartEl.value) {
@@ -119,6 +121,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', render)
   resizeObserver?.disconnect()
   chart?.dispose()
   chart = null

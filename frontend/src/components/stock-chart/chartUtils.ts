@@ -7,6 +7,9 @@ import {
 } from '@/components/chartTheme'
 import { stockQuoteSummaryHtml, type StockQuoteTone } from './stockQuoteSummary'
 
+export const STOCK_CHART_GRID_SIDE = 64
+export const STOCK_CHART_GRID_TOP = 8
+
 export interface StockChartSeriesPalette {
   kline: {
     ma5: string
@@ -285,34 +288,35 @@ export function obstructionAwareTooltipPosition(
   _dom: HTMLElement,
   rectValue: unknown,
   size: TooltipPositionSize,
+  displayScale = 1,
 ): [number, number] {
-  const horizontalInset = 8
-  const axisGutter = 64
-  const tooltipTop = 6
+  const safeScale = Number.isFinite(displayScale) && displayScale > 0 ? displayScale : 1
+  // Tooltip 挂到未缩放的 body 后，DOM 尺寸是视口像素；碰撞与停靠仍使用图表布局坐标。
   const contentWidth = Math.min(
-    size.contentSize[0],
-    Math.max(0, size.viewSize[0] - (axisGutter + horizontalInset) * 2),
+    size.contentSize[0] / safeScale,
+    Math.max(0, size.viewSize[0] - STOCK_CHART_GRID_SIDE * 2),
   )
+  const contentHeight = size.contentSize[1] / safeScale
   const leftDock = Math.min(
-    axisGutter + horizontalInset,
-    Math.max(horizontalInset, size.viewSize[0] - contentWidth - horizontalInset),
+    STOCK_CHART_GRID_SIDE,
+    Math.max(0, size.viewSize[0] - contentWidth),
   )
   const rightDockLeft = Math.max(
     leftDock,
-    size.viewSize[0] - axisGutter - horizontalInset - contentWidth,
+    size.viewSize[0] - STOCK_CHART_GRID_SIDE - contentWidth,
   )
   const overlapsLeftDock = point[0] >= leftDock && point[0] <= leftDock + contentWidth
   const targetRect = tooltipTargetRect(rectValue)
   const leftArea = overlapArea(
-    leftDock, tooltipTop, contentWidth, size.contentSize[1], targetRect,
+    leftDock, STOCK_CHART_GRID_TOP, contentWidth, contentHeight, targetRect,
   )
   const coversCandlestick = targetRect ? leftArea > 0 : false
-  if (!overlapsLeftDock || !coversCandlestick) return [leftDock, tooltipTop]
+  if (!overlapsLeftDock || !coversCandlestick) return [leftDock, STOCK_CHART_GRID_TOP]
 
   const rightArea = overlapArea(
-    rightDockLeft, tooltipTop, contentWidth, size.contentSize[1], targetRect,
+    rightDockLeft, STOCK_CHART_GRID_TOP, contentWidth, contentHeight, targetRect,
   )
-  return [rightArea <= leftArea ? rightDockLeft : leftDock, tooltipTop]
+  return [rightArea <= leftArea ? rightDockLeft : leftDock, STOCK_CHART_GRID_TOP]
 }
 
 export function priceDirectionTone(

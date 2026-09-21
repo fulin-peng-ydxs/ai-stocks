@@ -9,13 +9,12 @@ export interface StockQuoteSummaryModel {
 }
 export interface StockQuotePalette { text: string; label: string; up: string; down: string; border: string }
 
+function scaledPx(value: number): string {
+  return `calc(${value}px * var(--app-display-scale, 1))`
+}
+
 function colorOf(tone: StockQuoteTone | undefined, palette: StockQuotePalette): string {
   return tone === 'up' ? palette.up : tone === 'down' ? palette.down : palette.text
-}
-function metricRow(metric: StockQuoteMetric, palette: StockQuotePalette): string {
-  return '<div style="display:flex;justify-content:space-between;gap:8px;white-space:nowrap">'
-    + `<span style="color:${palette.label}">${metric.label}</span>`
-    + `<span style="color:${colorOf(metric.tone, palette)}">${metric.value}</span></div>`
 }
 
 /** ECharts 浮层与 DOM 行情摘要共用同一字段分组模型。 */
@@ -25,23 +24,34 @@ export function stockQuoteSummaryHtml(summary: StockQuoteSummaryModel, palette: 
     { length: Math.ceil(summary.metrics.length / rowsPerColumn) },
     (_, index) => summary.metrics.slice(index * rowsPerColumn, (index + 1) * rowsPerColumn),
   )
-  const columns = grouped.map((column) => (
-    '<div style="display:flex;flex-direction:column;gap:1px;min-width:0">'
-    + column.map((metric) => metricRow(metric, palette)).join('') + '</div>'
-  )).join('')
+  const columnCount = Math.max(1, grouped.length)
   const time = summary.time
-    ? `<div style="display:flex;justify-content:space-between;margin-bottom:3px;color:${palette.label}"><span>时间</span><span style="color:${palette.text}">${summary.time}</span></div>`
+    ? '<thead><tr>'
+      + `<th style="padding:0 ${scaledPx(10)} ${scaledPx(4)} 0;text-align:left;color:${palette.label};font-weight:400">时间</th>`
+      + `<td colspan="${columnCount * 2}" style="padding:0 0 ${scaledPx(4)} ${scaledPx(10)};text-align:right;color:${palette.text}">${summary.time}</td>`
+      + '</tr></thead>'
     : ''
   const heroDetails = summary.hero.details?.length
-    ? '<div style="display:flex;gap:8px;margin-top:2px;font-size:11px;white-space:nowrap">'
+    ? `<div style="display:flex;justify-content:flex-start;gap:${scaledPx(8)};margin-top:${scaledPx(2)};font-size:${scaledPx(11)};white-space:nowrap">`
       + summary.hero.details.map((detail) => (
         `<span style="color:${colorOf(detail.tone, palette)}">${detail.value}</span>`
       )).join('') + '</div>'
     : ''
-  return '<div style="width:max-content;max-width:calc(100cqw - 32px);box-sizing:border-box;line-height:1.55">'
-    + time + '<div style="display:flex;align-items:stretch;gap:8px">'
-    + `<div style="display:flex;align-items:center;justify-content:center;align-self:stretch;padding-right:8px;border-right:1px solid ${palette.border};text-align:center">`
-    + (summary.hero.label ? `<div style="color:${palette.label};font-size:11px">${summary.hero.label}</div>` : '')
-    + `<div><div style="color:${colorOf(summary.hero.tone, palette)};font-size:18px;line-height:1.35;font-weight:700;white-space:nowrap">${summary.hero.value}</div>${heroDetails}</div></div>`
-    + columns + '</div></div>'
+  const bodyRows = Array.from({ length: rowsPerColumn }, (_, rowIndex) => {
+    const hero = rowIndex === 0
+      ? `<td rowspan="${rowsPerColumn}" style="padding:0 ${scaledPx(10)} 0 0;border-right:1px solid ${palette.border};vertical-align:middle;text-align:left">`
+        + (summary.hero.label ? `<div style="color:${palette.label};font-size:${scaledPx(11)}">${summary.hero.label}</div>` : '')
+        + `<div style="color:${colorOf(summary.hero.tone, palette)};font-size:${scaledPx(18)};line-height:1.35;font-weight:700;white-space:nowrap">${summary.hero.value}</div>${heroDetails}</td>`
+      : ''
+    const metrics = grouped.map((column) => {
+      const metric = column[rowIndex]
+      if (!metric) return '<td></td><td></td>'
+      return `<th style="padding:0 0 0 ${scaledPx(10)};text-align:left;color:${palette.label};font-weight:400;white-space:nowrap">${metric.label}</th>`
+        + `<td style="padding:0 0 0 ${scaledPx(8)};text-align:right;color:${colorOf(metric.tone, palette)};white-space:nowrap">${metric.value}</td>`
+    }).join('')
+    return `<tr style="height:${scaledPx(21)}">${hero}${metrics}</tr>`
+  }).join('')
+
+  return '<div style="width:max-content;max-width:calc(100cqw - 32px);box-sizing:border-box;font-variant-numeric:tabular-nums;line-height:1.55">'
+    + `<table style="border-collapse:collapse;border-spacing:0;color:${palette.text}">${time}<tbody>${bodyRows}</tbody></table></div>`
 }
