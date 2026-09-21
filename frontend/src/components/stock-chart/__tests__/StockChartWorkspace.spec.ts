@@ -365,7 +365,14 @@ describe('StockChartWorkspace', () => {
     const kline = echartsMock.instances[0]
 
     expect(wrapper.find('.stock-chart-measurement__result').exists()).toBe(false)
+    expect(wrapper.find('.stock-chart-operation-bar').exists()).toBe(true)
+    expect(wrapper.get('.stock-chart-operation-bar__actions').classes())
+      .toContain('is-justify-start')
+    expect(wrapper.get('.stock-chart-operation-group').text()).toContain('涨跌测算')
+    expect(wrapper.get('[data-testid="stock-chart-measurement-mode-latest"]').text()).toBe('截止')
+    expect(wrapper.get('[data-testid="stock-chart-measurement-mode-range"]').text()).toBe('区间')
     expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(true)
+    expect(wrapper.find('.stock-chart-panel__date').text()).toBe('2026-06-40')
     await wrapper.get('.stock-chart-panel--kline .stock-chart-panel__canvas')
       .trigger('pointerenter')
     expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(true)
@@ -378,8 +385,24 @@ describe('StockChartWorkspace', () => {
     expect(wrapper.get('.stock-chart-measurement__return').text()).toBe('+30.56%')
     expect(wrapper.get('.stock-chart-measurement__return').classes()).toContain('is-up')
     expect(wrapper.get('.stock-chart-measurement__headline').classes()).not.toContain('is-up')
+    const resultChildren = wrapper.get('.stock-chart-measurement__result').element.children
+    expect(resultChildren[0]?.classList).toContain('stock-chart-measurement__headline')
+    expect(resultChildren[1]?.classList).toContain('stock-chart-measurement__separator')
+    expect(resultChildren[1]?.textContent).toBe('·')
+    expect(resultChildren[2]?.classList).toContain('stock-chart-measurement__meta')
+    expect(resultChildren[3]?.classList).toContain('stock-chart-measurement__return')
     expect(wrapper.text()).not.toContain('2026-06-07起')
     expect(wrapper.text()).toContain('33个交易日')
+
+    await wrapper.get('[data-testid="stock-chart-toggle-operations"]').trigger('click')
+    expect(wrapper.find('.stock-chart-operation-bar').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(false)
+    expect(wrapper.find('.stock-chart-measurement__result').exists()).toBe(true)
+    expect(wrapper.find('.stock-chart-panel__date').text()).toBe('2026-06-07')
+    expect(wrapper.emitted('update:measurementOperationsExpanded')).toEqual([[false]])
+    await wrapper.get('[data-testid="stock-chart-toggle-operations"]').trigger('click')
+    expect(wrapper.find('.stock-chart-operation-bar').exists()).toBe(true)
+
     const latestOption = kline.setOption.mock.calls.at(-1)?.[0]
     expect(latestOption.series[0].markArea).toBeUndefined()
 
@@ -392,6 +415,7 @@ describe('StockChartWorkspace', () => {
     await wrapper.get('.stock-chart-panel--kline .stock-chart-panel__canvas')
       .trigger('pointerenter')
     await wrapper.get('[data-testid="stock-chart-measurement-mode-range"]').trigger('click')
+    expect(wrapper.emitted('update:returnMeasurementMode')).toEqual([['range']])
     expect(wrapper.text()).toContain('点击 K 线选择起点')
     await wrapper.get('.stock-chart-panel--kline').trigger('pointerleave')
     expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(true)
@@ -431,6 +455,28 @@ describe('StockChartWorkspace', () => {
 
     expect(wrapper.find('[data-testid="stock-chart-measurement-mode"]').exists()).toBe(false)
     expect(wrapper.find('.stock-chart-panel__date').text()).toBe('2026-06-40')
+    wrapper.unmount()
+  })
+
+  it('按外部默认值初始化操作栏与测算模式，并响应后续默认值变更', async () => {
+    const wrapper = await mountWorkspace({
+      enableReturnMeasurement: true,
+      measurementOperationsExpanded: false,
+      returnMeasurementMode: 'range',
+    })
+
+    expect(wrapper.find('.stock-chart-operation-bar').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="stock-chart-toggle-operations"]').attributes('aria-expanded'))
+      .toBe('false')
+
+    await wrapper.setProps({ measurementOperationsExpanded: true })
+    expect(wrapper.find('.stock-chart-operation-bar').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="stock-chart-measurement-mode-range"]')
+      .attributes('aria-pressed')).toBe('true')
+
+    await wrapper.setProps({ returnMeasurementMode: 'latest' })
+    expect(wrapper.get('[data-testid="stock-chart-measurement-mode-latest"]')
+      .attributes('aria-pressed')).toBe('true')
     wrapper.unmount()
   })
 

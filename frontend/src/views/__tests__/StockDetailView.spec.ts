@@ -140,9 +140,20 @@ const StockChartWorkspaceStub = defineComponent({
     'macdState',
     'macdError',
     'enableIntradayDrilldown',
+    'enableReturnMeasurement',
+    'returnMeasurementMode',
+    'measurementOperationsExpanded',
     'showKlineTooltip',
   ],
-  emits: ['retryMacd', 'ratioDraft', 'ratioCommit', 'barClick', 'activeBarChange'],
+  emits: [
+    'retryMacd',
+    'ratioDraft',
+    'ratioCommit',
+    'barClick',
+    'activeBarChange',
+    'update:returnMeasurementMode',
+    'update:measurementOperationsExpanded',
+  ],
   setup(props, { emit, slots }) {
     return () => h('section', {
       'data-testid': 'stock-chart-workspace',
@@ -668,6 +679,9 @@ describe('StockDetailView 三图数据协调', () => {
     expect(workspace.props('minHeight')).toBeUndefined()
     expect(workspace.props('fitAvailableHeight')).toBe('')
     expect(workspace.props('enableIntradayDrilldown')).toBe('')
+    expect(workspace.props('enableReturnMeasurement')).toBe('')
+    expect(workspace.props('returnMeasurementMode')).toBe('latest')
+    expect(workspace.props('measurementOperationsExpanded')).toBe(false)
     expect(workspace.props('showKlineTooltip')).toBe(false)
     expect(wrapper.find('[data-testid="stock-board-membership-panel"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="stock-detail-primary"]').findComponent(StockChartWorkspaceStub).exists())
@@ -998,6 +1012,34 @@ describe('StockDetailView 三图数据协调', () => {
         'kline|macd|volume': [],
       },
     })
+  })
+
+  it('设置抽屉的图表操作默认值单向投影到当前页面会话', async () => {
+    const wrapper = await mountView()
+    const workspace = wrapper.findComponent(StockChartWorkspaceStub)
+
+    expect(pageSettingsState.current.klineOperationBarExpanded).toBe(false)
+    expect(pageSettingsState.current.klineMeasurementMode).toBe('latest')
+    expect(workspace.props('measurementOperationsExpanded')).toBe(false)
+    expect(workspace.props('returnMeasurementMode')).toBe('latest')
+
+    await wrapper.get('[data-testid="stock-detail-default-operation-bar"]').trigger('click')
+    await wrapper.get('[data-testid="stock-detail-default-measurement-mode-range"]').trigger('click')
+    await nextTick()
+
+    expect(pageSettingsState.current.klineOperationBarExpanded).toBe(true)
+    expect(pageSettingsState.current.klineMeasurementMode).toBe('range')
+    expect(workspace.props('measurementOperationsExpanded')).toBe(true)
+    expect(workspace.props('returnMeasurementMode')).toBe('range')
+
+    workspace.vm.$emit('update:measurementOperationsExpanded', false)
+    workspace.vm.$emit('update:returnMeasurementMode', 'latest')
+    await nextTick()
+
+    expect(workspace.props('measurementOperationsExpanded')).toBe(false)
+    expect(workspace.props('returnMeasurementMode')).toBe('latest')
+    expect(pageSettingsState.current.klineOperationBarExpanded).toBe(true)
+    expect(pageSettingsState.current.klineMeasurementMode).toBe('range')
   })
 
   it('最新指标快照作为独立辅助模块隐藏，保留指标请求和字段偏好并可恢复默认', async () => {

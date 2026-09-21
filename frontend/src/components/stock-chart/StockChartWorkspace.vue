@@ -10,7 +10,11 @@ import {
   watch,
 } from 'vue'
 import * as echarts from 'echarts'
+import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import type { Bar, IndicatorRow } from '@/api/stocks'
+import AppControlItem from '@/components/AppControlItem.vue'
+import AppControlRow from '@/components/AppControlRow.vue'
+import AppIconButton from '@/components/AppIconButton.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { useStatusColorPalette } from '@/components/chartTheme'
@@ -96,8 +100,8 @@ interface DataZoomEvent {
 type MeasurementMode = 'latest' | 'range'
 
 const MEASUREMENT_MODE_OPTIONS: Array<{ label: string; value: MeasurementMode }> = [
-  { label: '至最新', value: 'latest' },
-  { label: '自选区间', value: 'range' },
+  { label: '截止', value: 'latest' },
+  { label: '区间', value: 'range' },
 ]
 
 const props = withDefaults(defineProps<{
@@ -121,6 +125,8 @@ const props = withDefaults(defineProps<{
   enableIntradayDrilldown?: boolean
   showKlineTooltip?: boolean
   enableReturnMeasurement?: boolean
+  returnMeasurementMode?: MeasurementMode
+  measurementOperationsExpanded?: boolean
 }>(), {
   warmupBars: () => [],
   indicators: () => [],
@@ -138,6 +144,8 @@ const props = withDefaults(defineProps<{
   enableIntradayDrilldown: false,
   showKlineTooltip: true,
   enableReturnMeasurement: false,
+  returnMeasurementMode: 'latest',
+  measurementOperationsExpanded: true,
 })
 
 const emit = defineEmits<{
@@ -147,10 +155,13 @@ const emit = defineEmits<{
   barClick: [tradeDate: string]
   activeBarChange: [bar: Bar | null]
   workspaceResize: [sample: StockChartWorkspaceSample | undefined]
+  'update:returnMeasurementMode': [mode: MeasurementMode]
+  'update:measurementOperationsExpanded': [expanded: boolean]
 }>()
 
 defineSlots<{
   'header-actions'?: () => unknown
+  'operation-actions'?: () => unknown
 }>()
 
 const groupId = nextStockChartWorkspaceGroupId()
@@ -161,7 +172,8 @@ const theme = useStockChartTheme()
 const statusPalette = useStatusColorPalette()
 const activeIndex = ref<number | null>(null)
 const klinePointerInside = ref(false)
-const measurementMode = ref<MeasurementMode>('latest')
+const measurementMode = ref<MeasurementMode>(props.returnMeasurementMode)
+const measurementOperationsExpanded = ref(props.measurementOperationsExpanded)
 const rangeStartIndex = ref<number | null>(null)
 const rangeEndIndex = ref<number | null>(null)
 const liveRatios = ref<number[]>([])
@@ -454,9 +466,15 @@ function refreshKlineChart(): void {
 function setMeasurementMode(value: string | number | boolean): void {
   if (value !== 'latest' && value !== 'range') return
   measurementMode.value = value
+  emit('update:returnMeasurementMode', value)
   rangeStartIndex.value = null
   rangeEndIndex.value = null
   refreshKlineChart()
+}
+
+function toggleMeasurementOperations(): void {
+  measurementOperationsExpanded.value = !measurementOperationsExpanded.value
+  emit('update:measurementOperationsExpanded', measurementOperationsExpanded.value)
 }
 
 function enterKlinePanel(): void {
@@ -779,6 +797,22 @@ watch(
   },
   { deep: true },
 )
+watch(
+  () => props.returnMeasurementMode,
+  (value) => {
+    if (value === measurementMode.value) return
+    measurementMode.value = value
+    rangeStartIndex.value = null
+    rangeEndIndex.value = null
+    refreshKlineChart()
+  },
+)
+watch(
+  () => props.measurementOperationsExpanded,
+  (value) => {
+    measurementOperationsExpanded.value = value
+  },
+)
 watch(ratios, () => {
   void nextTick(onWorkspaceResize)
 }, { deep: true })
@@ -867,27 +901,51 @@ onBeforeUnmount(() => {
         >
           <template #tail>
             <div
-              v-if="panel.type === 'kline' && measurementControlsVisible"
-              class="stock-chart-measurement"
+              v-if="panel.type === 'kline'"
+              class="stock-chart-panel__tail"
             >
+              <time v-if="rows.length" class="stock-chart-panel__date">
+                {{ rows[metricIndex]?.bar.date }}
+              </time>
+              <AppIconButton
+                v-if="measurementControlsVisible"
+                :label="measurementOperationsExpanded ? '收起图表操作' : '展开图表操作'"
+                :aria-expanded="measurementOperationsExpanded"
+                :aria-controls="`${groupId}-kline-operations`"
+                data-testid="stock-chart-toggle-operations"
+                size="xs"
+                :native-title="false"
+                @click="toggleMeasurementOperations"
+              >
+                <ArrowUp v-if="measurementOperationsExpanded" />
+                <ArrowDown v-else />
+              </AppIconButton>
+              <slot name="header-actions" />
+            </div>
+          </template>
+        </StockChartPanelHeader>
+        <div
+          v-if="panel.type === 'kline' && measurementControlsVisible && measurementOperationsExpanded"
+          :id="`${groupId}-kline-operations`"
+          class="stock-chart-operation-bar"
+          role="toolbar"
+          aria-label="K线图表操作"
+        >
+          <AppControlRow justify="start" class="stock-chart-operation-bar__actions">
+            <slot name="operation-actions" />
+            <AppControlItem label="涨跌测算" class="stock-chart-operation-group">
               <PageSegmented
                 :model-value="measurementMode"
                 :options="MEASUREMENT_MODE_OPTIONS"
                 size="small"
                 tone="primary"
                 test-id="stock-chart-measurement-mode"
+                aria-label="区间涨跌测算模式"
                 @update:model-value="setMeasurementMode"
               />
-            </div>
-            <time
-              v-else-if="panel.type === 'kline' && rows.length && !enableReturnMeasurement"
-              class="stock-chart-panel__date"
-            >
-              {{ rows[metricIndex]?.bar.date }}
-            </time>
-            <slot v-if="panel.type === 'kline'" name="header-actions" />
-          </template>
-        </StockChartPanelHeader>
+            </AppControlItem>
+          </AppControlRow>
+        </div>
         <div class="stock-chart-panel__body">
           <div
             v-if="panel.type === 'kline' && measurementVisible"
@@ -901,6 +959,14 @@ onBeforeUnmount(() => {
             <span class="stock-chart-measurement__headline">
               {{ measurementPresentation.headline }}
             </span>
+            <span
+              v-if="measurementPresentation.note"
+              class="stock-chart-measurement__separator"
+              aria-hidden="true"
+            >·</span>
+            <span v-if="measurementPresentation.note" class="stock-chart-measurement__meta">
+              {{ measurementPresentation.note }}
+            </span>
             <strong
               v-if="measurementPresentation.returnText"
               class="stock-chart-measurement__return"
@@ -911,9 +977,6 @@ onBeforeUnmount(() => {
             >
               {{ measurementPresentation.returnText }}
             </strong>
-            <span class="stock-chart-measurement__meta">
-              {{ measurementPresentation.note }}
-            </span>
           </div>
           <div
             :ref="(element) => setChartElement(panel.key, element)"
@@ -973,16 +1036,41 @@ onBeforeUnmount(() => {
 }
 
 .stock-chart-panel__date {
-  margin-left: auto;
   flex: 0 0 auto;
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-micro);
 }
 
-.stock-chart-measurement {
+.stock-chart-panel__tail {
   margin-left: auto;
   display: flex;
   align-items: center;
+  gap: var(--app-space-1);
+}
+
+.stock-chart-operation-bar {
+  flex: 0 0 auto;
+  padding: var(--app-space-1) var(--app-space-3);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: var(--el-bg-color);
+}
+
+.stock-chart-operation-bar__actions {
+  width: 100%;
+}
+
+.stock-chart-operation-group {
+  box-sizing: border-box;
+  height: var(--app-control-height-sm);
+  padding: 1px 1px 1px var(--app-space-2);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--layout-control-radius);
+  background: var(--app-section-bg);
+}
+
+.stock-chart-operation-group :deep(.app-control-item__label) {
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
 }
 
 .stock-chart-measurement__result {
@@ -1004,6 +1092,7 @@ onBeforeUnmount(() => {
 }
 
 .stock-chart-measurement__headline,
+.stock-chart-measurement__separator,
 .stock-chart-measurement__meta {
   color: var(--el-text-color-secondary);
   font-weight: 400;
@@ -1022,8 +1111,14 @@ onBeforeUnmount(() => {
   color: var(--market-down-color);
 }
 
-.stock-chart-measurement :deep(.page-segmented) {
+.stock-chart-operation-bar :deep(.page-segmented) {
   flex: 0 0 auto;
+  height: var(--app-control-height-xs);
+  padding: 1px;
+}
+
+.stock-chart-operation-bar :deep(.page-segmented .seg-btn) {
+  padding-inline: var(--app-space-control-gap);
 }
 
 .stock-chart-panel__body {
