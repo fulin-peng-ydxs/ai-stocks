@@ -9,13 +9,14 @@ const AppStateBlockStub = {
   template: '<div class="state" :data-state="state">{{ title }}{{ description }}</div>',
 }
 
-function mountRegion(props: Record<string, unknown>) {
+function mountRegion(props: Record<string, unknown>, attrs: Record<string, unknown> = {}) {
   return mount(AppAsyncRegion, {
     props: {
       loading: false,
       hasContent: false,
       ...props,
     },
+    attrs,
     slots: {
       default: '<div class="content">图表内容</div>',
     },
@@ -27,12 +28,10 @@ function mountRegion(props: Record<string, unknown>) {
 }
 
 describe('AppAsyncRegion', () => {
-  it('仅在显式声明 fill 时占满父级可用高度', () => {
-    const natural = mountRegion({ loading: false, hasContent: true })
-    const filled = mountRegion({ loading: false, hasContent: true, fill: true })
+  it('把调用方已有的区域布局 class 透传到唯一根容器', () => {
+    const wrapper = mountRegion({ hasContent: true }, { class: 'sector-detail' })
 
-    expect(natural.classes()).not.toContain('app-async-region--fill')
-    expect(filled.classes()).toContain('app-async-region--fill')
+    expect(wrapper.classes()).toEqual(expect.arrayContaining(['app-async-region', 'sector-detail']))
   })
 
   it('无旧内容首次加载使用骨架状态', () => {

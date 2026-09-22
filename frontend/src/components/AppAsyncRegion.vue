@@ -14,7 +14,6 @@ const props = withDefaults(defineProps<{
   emptyTitle?: string
   emptyDescription?: string
   stateSize?: StateSize
-  fill?: boolean
   retry?: boolean
   retryText?: string
 }>(), {
@@ -25,7 +24,6 @@ const props = withDefaults(defineProps<{
   emptyTitle: '暂无数据',
   emptyDescription: '',
   stateSize: 'default',
-  fill: false,
   retry: false,
   retryText: '重试',
 })
@@ -44,7 +42,6 @@ const loadingMode = computed(() => (
 <template>
   <div
     class="app-async-region"
-    :class="{ 'app-async-region--fill': fill }"
     :aria-busy="loading"
     :data-loading-mode="loadingMode"
     v-loading="refreshLoading"
@@ -84,11 +81,5 @@ const loadingMode = computed(() => (
   width: 100%;
   min-width: 0;
   min-height: 0;
-}
-.app-async-region--fill {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  height: 100%;
 }
 </style>

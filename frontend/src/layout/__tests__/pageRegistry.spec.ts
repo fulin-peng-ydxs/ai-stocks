@@ -580,6 +580,16 @@ describe('页面注册表完整性', () => {
     }
   })
 
+  it('板块详情异步外壳直接承接既有根布局，不新增第二套 fill 机制', () => {
+    const source = sourceForPage('sectors-detail')
+    const asyncRegionSource = readFileSync(join(COMPONENTS_DIR, 'AppAsyncRegion.vue'), 'utf-8')
+
+    expect(source).toMatch(/<AppAsyncRegion[\s\S]*?class="sector-detail"[\s\S]*?data-testid="sector-detail-page"/)
+    expect(source).not.toContain('<div class="sector-detail"')
+    expect(asyncRegionSource).not.toMatch(/\bfill\??\s*:/)
+    expect(asyncRegionSource).not.toContain('app-async-region--fill')
+  })
+
   it('editable 旋钮 path 必须指向 density 或真实存在的 slot 字段', () => {
     for (const entry of PAGE_REGISTRY) {
       const slotIds = new Set(entry.layout.slots.map((s) => s.id))

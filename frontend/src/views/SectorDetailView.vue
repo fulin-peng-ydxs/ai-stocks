@@ -480,17 +480,17 @@ onMounted(async () => {
       />
       <AppAsyncRegion
         v-else
+        class="sector-detail"
+        data-testid="sector-detail-page"
         :loading="detailLoading"
         :has-content="Boolean(detail)"
         :error="detailError"
         loading-title="正在加载板块详情…"
         error-title="板块不存在或加载失败"
         empty-title="暂无板块详情"
-        fill
         retry
         @retry="loadAll"
       >
-      <div class="sector-detail" data-testid="sector-detail-page">
         <MarketDetailHero
           :title="detail?.name || code"
           :code="code"
@@ -684,7 +684,6 @@ onMounted(async () => {
             </AppWorkspacePane>
           </template>
         </AppSplitWorkspace>
-      </div>
       </AppAsyncRegion>
     </template>
 
