@@ -118,6 +118,13 @@ describe('双层顶栏导航', () => {
     expect(wrapper.get('nav').attributes('data-display-scale')).toBe(originalScale)
     expect(wrapper.get('nav').attributes('data-display-geometry-revision')).toBe('1')
     expect(wrapper.get('nav').element).not.toBe(originalNavigation)
+
+    const firstRefreshedNavigation = wrapper.get('nav').element
+    vi.advanceTimersByTime(420)
+    await nextTick()
+
+    expect(wrapper.get('nav').attributes('data-display-geometry-revision')).toBe('2')
+    expect(wrapper.get('nav').element).not.toBe(firstRefreshedNavigation)
     wrapper.unmount()
   })
 })

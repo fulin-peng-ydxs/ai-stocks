@@ -54,6 +54,7 @@ describe('应用显示比例', () => {
     setDpr(1)
     setScreenArea(1920, 1080)
     setScreenPosition(0, 0)
+    document.body.innerHTML = ''
     prefApi.listUserPreferences.mockResolvedValue({ items: [] })
     prefApi.saveUserPreference.mockResolvedValue({})
   })
@@ -216,6 +217,40 @@ describe('应用显示比例', () => {
 
     expect(useDisplayScale().effectivePercent.value).toBe(originalPercent)
     expect(useDisplayScale().geometryRevision.value).toBe(originalRevision + 1)
+
+    vi.advanceTimersByTime(420)
+    expect(useDisplayScale().geometryRevision.value).toBe(originalRevision + 2)
+
+    vi.advanceTimersByTime(500)
+    expect(useDisplayScale().geometryRevision.value).toBe(originalRevision + 2)
+  })
+
+  it('屏幕签名尚未变化时也按真实视口事件重建并在稳定后复测', () => {
+    vi.useFakeTimers()
+    initDisplayScale()
+    const originalRevision = useDisplayScale().geometryRevision.value
+
+    window.dispatchEvent(new Event('resize'))
+    vi.advanceTimersByTime(130)
+    expect(useDisplayScale().geometryRevision.value).toBe(originalRevision + 1)
+
+    vi.advanceTimersByTime(420)
+    expect(useDisplayScale().geometryRevision.value).toBe(originalRevision + 2)
+  })
+
+  it('视口变化时重建应用根缩放合成层并恢复原有内联 transform', () => {
+    vi.useFakeTimers()
+    document.body.innerHTML = '<div id="app" style="transform: scale(.8)"></div>'
+    const appRoot = document.querySelector<HTMLElement>('#app')!
+    const geometryRead = vi.spyOn(appRoot, 'getBoundingClientRect')
+    initDisplayScale()
+
+    window.dispatchEvent(new Event('resize'))
+    vi.advanceTimersByTime(130)
+
+    expect(geometryRead).toHaveBeenCalledTimes(2)
+    expect(appRoot.style.transform).toBe('scale(.8)')
+    expect(appRoot.style.getPropertyPriority('transform')).toBe('')
   })
 
   it('跨屏没有窗口事件时仍补算，并在隐藏期间跳过探测', () => {

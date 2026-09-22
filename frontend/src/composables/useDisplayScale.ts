@@ -23,6 +23,8 @@ export const DISPLAY_SCALE_DEFAULT = 100
 const AUTO_SCALE_MIN = 90
 const AUTO_SCALE_MAX = 110
 const AUTO_SCALE_REFERENCE_AREA = 2560 * 1440
+const VIEWPORT_CHANGE_DEBOUNCE_MS = 120
+const GEOMETRY_SETTLE_REFRESH_MS = 420
 let responsiveExponent = AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT
 const AUTO_SCALE_EXPONENT_CACHE_KEY = 'ai-stocks:auto-scale-exponent:v1'
 
@@ -61,7 +63,9 @@ const effectivePercent = computed(() => (
 let initialized = false
 let resizeTimer: number | undefined
 let screenTimer: number | undefined
+let geometrySettleTimer: number | undefined
 let lastScreenSignature = ''
+let dispatchingLayoutResize = false
 
 function clampPercent(value: unknown, fallback = DISPLAY_SCALE_DEFAULT): number {
   const numeric = Number(value)
@@ -161,7 +165,16 @@ function applyScale(forceLayoutRefresh = false): void {
 
   // Canvas 与依赖窗口尺寸的第三方组件需要在缩放后的布局稳定后重新测量。
   if (changed || forceLayoutRefresh) {
-    window.requestAnimationFrame?.(() => window.dispatchEvent(new Event('resize')))
+    const dispatchLayoutResize = () => {
+      dispatchingLayoutResize = true
+      try {
+        window.dispatchEvent(new Event('resize'))
+      } finally {
+        dispatchingLayoutResize = false
+      }
+    }
+    if (window.requestAnimationFrame) window.requestAnimationFrame(dispatchLayoutResize)
+    else dispatchLayoutResize()
   }
 }
 
@@ -170,6 +183,23 @@ function refreshScaleForScreen(forceLayoutRefresh = false): void {
   autoPercent.value = calculateAutoDisplayScalePercent(currentScreenArea.value)
   // 自定义模式会按当前显示器尺寸重新匹配档案；两种模式都需刷新清晰度分级。
   applyScale(forceLayoutRefresh)
+}
+
+/**
+ * Chromium 跨不同系统缩放的屏幕时，可能保留 transformed 根节点的旧命中坐标。
+ * 同一帧内移除并恢复 transform，配合几何读取强制失效父合成层，不产生可见闪动。
+ */
+function rebuildScaledRootHitTestLayers(): void {
+  const roots = document.querySelectorAll<HTMLElement>('#app, body > .el-overlay')
+  roots.forEach((root) => {
+    const previousValue = root.style.getPropertyValue('transform')
+    const previousPriority = root.style.getPropertyPriority('transform')
+    root.style.setProperty('transform', 'none', 'important')
+    void root.getBoundingClientRect()
+    if (previousValue) root.style.setProperty('transform', previousValue, previousPriority)
+    else root.style.removeProperty('transform')
+    void root.getBoundingClientRect()
+  })
 }
 
 const preferenceSync = createGlobalPreferenceSync<DisplayScalePreference>({
@@ -196,11 +226,32 @@ function schedulePersist(): void {
 }
 
 function onViewportChange(): void {
+  // applyScale 为图表等消费方派发的 resize 不是新的视口变化，禁止反向触发重算循环。
+  if (dispatchingLayoutResize) return
   if (resizeTimer) window.clearTimeout(resizeTimer)
   resizeTimer = window.setTimeout(() => {
     resizeTimer = undefined
-    if (!checkScreenChange()) refreshScaleForScreen()
-  }, 120)
+    if (!checkScreenChange()) refreshDisplayGeometry()
+    scheduleSettledGeometryRefresh()
+  }, VIEWPORT_CHANGE_DEBOUNCE_MS)
+}
+
+function refreshDisplayGeometry(): void {
+  geometryRevision.value += 1
+  refreshScaleForScreen(true)
+  rebuildScaledRootHitTestLayers()
+}
+
+/**
+ * 浏览器跨不同缩放屏幕后，Screen/DPR 与 transformed 根画布的命中层可能分两阶段稳定。
+ * 首次刷新负责及时响应，稳定刷新负责清除合成器仍持有的旧点击热区。
+ */
+function scheduleSettledGeometryRefresh(): void {
+  if (geometrySettleTimer) window.clearTimeout(geometrySettleTimer)
+  geometrySettleTimer = window.setTimeout(() => {
+    geometrySettleTimer = undefined
+    if (!document.hidden) refreshDisplayGeometry()
+  }, GEOMETRY_SETTLE_REFRESH_MS)
 }
 
 // 跨屏不一定改变最终百分比；屏幕位置、可用面积或 DPR 任一变化都必须刷新命中层。
@@ -209,9 +260,12 @@ function checkScreenChange(): boolean {
   const signature = readScreenGeometrySignature()
   if (signature === lastScreenSignature) return false
   lastScreenSignature = signature
-  geometryRevision.value += 1
-  refreshScaleForScreen(true)
+  refreshDisplayGeometry()
   return true
+}
+
+function pollScreenChange(): void {
+  if (checkScreenChange()) scheduleSettledGeometryRefresh()
 }
 
 function onVisibilityChange(): void {
@@ -237,9 +291,10 @@ export function initDisplayScale(): void {
     window.addEventListener('resize', onViewportChange)
     window.addEventListener('focus', onViewportChange)
     window.addEventListener('pageshow', onViewportChange)
+    window.visualViewport?.addEventListener('resize', onViewportChange)
     document.addEventListener('visibilitychange', onVisibilityChange)
     checkScreenChange()
-    screenTimer = window.setInterval(checkScreenChange, 1500)
+    screenTimer = window.setInterval(pollScreenChange, 1500)
     initialized = true
   }
 }
@@ -289,10 +344,14 @@ export function resetDisplayScaleForTests(): void {
   lastScreenSignature = ''
   if (resizeTimer) window.clearTimeout(resizeTimer)
   resizeTimer = undefined
+  if (geometrySettleTimer) window.clearTimeout(geometrySettleTimer)
+  geometrySettleTimer = undefined
+  dispatchingLayoutResize = false
   if (initialized) {
     window.removeEventListener('resize', onViewportChange)
     window.removeEventListener('focus', onViewportChange)
     window.removeEventListener('pageshow', onViewportChange)
+    window.visualViewport?.removeEventListener('resize', onViewportChange)
     document.removeEventListener('visibilitychange', onVisibilityChange)
   }
   initialized = false

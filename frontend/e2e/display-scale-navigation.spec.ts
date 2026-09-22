@@ -37,7 +37,12 @@ test('双层顶栏跨屏但比例不变时重建真实点击命中层', async ({
     'data-display-geometry-revision',
     String(originalRevision + 1),
   )
+  await expect(navigation).toHaveAttribute(
+    'data-display-geometry-revision',
+    String(originalRevision + 2),
+  )
   await expect(navigation).toHaveAttribute('data-display-scale', '73')
+  await expect(page.locator('#app')).not.toHaveAttribute('style', /transform:\s*none/)
 
   await expectVisualCenterTargets(page, board)
   await board.click({ position: { x: 20, y: 15 } })
