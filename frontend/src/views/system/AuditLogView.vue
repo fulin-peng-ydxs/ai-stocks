@@ -17,6 +17,7 @@ import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import AppDetailField from '@/components/AppDetailField.vue'
 import AppDetailFields from '@/components/AppDetailFields.vue'
@@ -520,37 +521,35 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #summary>
-      <AppStateBlock
-        v-if="summaryLoading && !summary"
-        state="loading"
-        title="正在加载审计摘要…"
-      />
-      <AppStateBlock
-        v-else-if="summaryError"
-        state="error"
-        size="compact"
-        title="审计摘要加载失败"
-        description="请稍后重试"
+      <AppAsyncRegion
+        :loading="summaryLoading"
+        :has-content="Boolean(summary)"
+        :error="summaryError ? '请稍后重试' : ''"
+        state-size="compact"
+        loading-title="正在加载审计摘要…"
+        error-title="审计摘要加载失败"
+        empty-title="暂无审计摘要"
         retry
         @retry="loadSummary(false)"
-      />
-      <div v-else class="audit-summary" v-loading="summaryLoading && !!summary">
-        <div class="metric">
-          <span>范围事件</span>
-          <b>{{ summary?.total ?? 0 }}</b>
-          <em>{{ retentionHint }}</em>
+      >
+        <div class="audit-summary">
+          <div class="metric">
+            <span>范围事件</span>
+            <b>{{ summary?.total ?? 0 }}</b>
+            <em>{{ retentionHint }}</em>
+          </div>
+          <div class="metric">
+            <span>失败 / 拒绝</span>
+            <b class="warn">{{ summary?.failed ?? 0 }}</b>
+            <em>含失败、拒绝和异常</em>
+          </div>
+          <div class="metric">
+            <span>安全事件</span>
+            <b class="danger">{{ summary?.by_category?.security ?? 0 }}</b>
+            <em>登录失败、账号锁定等</em>
+          </div>
         </div>
-        <div class="metric">
-          <span>失败 / 拒绝</span>
-          <b class="warn">{{ summary?.failed ?? 0 }}</b>
-          <em>含失败、拒绝和异常</em>
-        </div>
-        <div class="metric">
-          <span>安全事件</span>
-          <b class="danger">{{ summary?.by_category?.security ?? 0 }}</b>
-          <em>登录失败、账号锁定等</em>
-        </div>
-      </div>
+      </AppAsyncRegion>
     </template>
 
     <template #filters>

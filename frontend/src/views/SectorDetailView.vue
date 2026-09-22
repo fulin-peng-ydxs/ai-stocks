@@ -478,20 +478,19 @@ onMounted(async () => {
         title="无权限查看板块详情"
         description="请联系系统管理员调整权限"
       />
-      <AppStateBlock
-        v-else-if="detailError && !detail"
-        state="error"
-        title="板块不存在或加载失败"
-        :description="detailError"
+      <AppAsyncRegion
+        v-else
+        :loading="detailLoading"
+        :has-content="Boolean(detail)"
+        :error="detailError"
+        loading-title="正在加载板块详情…"
+        error-title="板块不存在或加载失败"
+        empty-title="暂无板块详情"
+        fill
         retry
         @retry="loadAll"
-      />
-      <AppStateBlock
-        v-else-if="detailLoading && !detail"
-        state="loading"
-        title="正在加载板块详情…"
-      />
-      <div v-else class="sector-detail" v-loading="detailLoading && !!detail" data-testid="sector-detail-page">
+      >
+      <div class="sector-detail" data-testid="sector-detail-page">
         <MarketDetailHero
           :title="detail?.name || code"
           :code="code"
@@ -686,6 +685,7 @@ onMounted(async () => {
           </template>
         </AppSplitWorkspace>
       </div>
+      </AppAsyncRegion>
     </template>
 
     <template #overlays>

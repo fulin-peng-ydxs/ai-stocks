@@ -1456,24 +1456,18 @@ onBeforeUnmount(() => {
             <span class="hint" v-if="tradeEval">交易日 {{ tradeEval.date }} · v{{ tradeEval.version }}</span>
           </div>
         </template>
-        <div v-loading="tradeLoading && !!tradeEval">
-          <AppStateBlock
-            v-if="tradeError"
-            state="error"
-            size="compact"
-            title="买卖信号加载失败"
-            :description="tradeError"
-            retry
-            @retry="evalTrade()"
-          />
-          <AppStateBlock
-            v-else-if="tradeLoading && !tradeEval"
-            state="loading"
-            size="compact"
-            title="正在加载买卖信号…"
-          />
-          <el-empty v-else-if="!tradeEval" class="app-empty app-empty--compact" description="选择买卖方案以评估当日信号" />
-          <div v-else class="trade-body">
+        <AppAsyncRegion
+          :loading="tradeLoading"
+          :has-content="Boolean(tradeEval)"
+          :error="tradeError"
+          state-size="compact"
+          loading-title="正在加载买卖信号…"
+          error-title="买卖信号加载失败"
+          empty-title="选择买卖方案以评估当日信号"
+          retry
+          @retry="evalTrade()"
+        >
+          <div v-if="tradeEval" class="trade-body">
             <div class="signal-row">
               <el-tag :type="tradeEval.buy_signal ? 'danger' : 'info'" effect="dark" size="large">
                 {{ tradeEval.buy_signal ? '✓ 触发买入' : '买入未触发' }}
@@ -1511,7 +1505,7 @@ onBeforeUnmount(() => {
             </div>
             <p class="note">点时安全：仅用 ≤ 当日数据求值。兜底止盈止损需结合持仓成本，在回测验证中生效。</p>
           </div>
-        </div>
+        </AppAsyncRegion>
             </el-card>
           </aside>
           </AppWorkspacePane>

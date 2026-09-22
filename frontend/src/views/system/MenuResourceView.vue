@@ -7,6 +7,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
@@ -503,23 +504,19 @@ const menuPageTitle = useMenuPageTitle()
               <Plus />
             </AppIconButton>
           </div>
-          <div class="mr-col-body" v-loading="treeLoading && tree.length > 0">
-            <AppStateBlock
-              v-if="treeError"
-              state="error"
-              title="菜单加载失败"
-              description="请重试"
-              retry
-              @retry="loadTree()"
-            />
-            <AppStateBlock
-              v-else-if="treeLoading && !tree.length"
-              state="loading"
-              size="compact"
-              title="正在加载菜单…"
-            />
+          <AppAsyncRegion
+            class="mr-col-body"
+            :loading="treeLoading"
+            :has-content="tree.length > 0"
+            :error="treeError ? '请重试' : ''"
+            state-size="compact"
+            loading-title="正在加载菜单…"
+            error-title="菜单加载失败"
+            empty-title="暂无菜单"
+            retry
+            @retry="loadTree()"
+          >
             <el-tree
-              v-else
               ref="treeRef"
               :data="tree"
               node-key="id"
@@ -553,8 +550,7 @@ const menuPageTitle = useMenuPageTitle()
                 </span>
               </template>
             </el-tree>
-            <el-empty v-if="!treeLoading && !treeError && !tree.length" class="app-empty app-empty--compact" description="暂无菜单" />
-          </div>
+          </AppAsyncRegion>
         </div>
 
         <!-- 右：属性 + 功能点 -->

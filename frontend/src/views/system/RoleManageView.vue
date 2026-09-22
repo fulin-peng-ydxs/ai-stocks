@@ -3,6 +3,7 @@ import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
+import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -355,14 +356,14 @@ const menuPageTitle = useMenuPageTitle()
           <div class="rm-col-head">
             <span class="rm-head-title">角色 <span class="mini">{{ roles.length }}</span></span>
           </div>
-          <div class="rm-col-body" v-loading="rolesLoading && roles.length > 0">
-            <AppStateBlock
-              v-if="rolesLoading && !roles.length"
-              state="loading"
-              size="compact"
-              title="正在加载角色…"
-            />
-            <template v-else>
+          <AppAsyncRegion
+            class="rm-col-body"
+            :loading="rolesLoading"
+            :has-content="roles.length > 0"
+            state-size="compact"
+            loading-title="正在加载角色…"
+            empty-title="暂无角色"
+          >
             <div
               v-for="r in roles"
               :key="r.id"
@@ -376,9 +377,7 @@ const menuPageTitle = useMenuPageTitle()
               </div>
               <div v-if="r.member_count != null" class="role-desc">关联用户 {{ r.member_count }} 名</div>
             </div>
-            <el-empty v-if="!rolesLoading && !roles.length" class="app-empty app-empty--compact" description="暂无角色" />
-            </template>
-          </div>
+          </AppAsyncRegion>
         </div>
 
         <!-- 右：权限树 -->

@@ -297,7 +297,7 @@ Key Characteristics：
 | `StrategyItemEnabledSwitch` | `frontend/src/components/strategy/StrategyItemEnabledSwitch.vue` | 策略项启停开关，统一双向绑定、只读态和可访问名称 | 无直接系统组件种类；作为方案编辑器内部字段 | 筛选条件、评分因子及买卖条件统一复用；调用方传入领域化 `label`，不得在页面继续复制只透传启停值的裸开关包装 |
 | `IndicatorParamSchemaEditor` | `frontend/src/components/indicator/IndicatorParamSchemaEditor.vue` | 自定义指标参数 schema 编辑器，统一参数名、标签、类型、默认值、上下限、单位和说明 | 无直接系统组件种类；作为指标定义抽屉内部字段 | 只用于平台指标定义维护，不与方案参数值编辑器合并；定义被引用时整体只读，后端仍负责最终占位符和范围校验 |
 | `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、加载分流、空态插槽、行点击样式和成长/嵌入模式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 页面中的数据表格统一复用；`loading && data.length === 0` 自动显示 `AppStateBlock` 骨架，有旧数据刷新时保留表格并使用 `v-loading` 遮罩；主列表默认成长，抽屉、展开行和局部明细等数量受控的非主表显式使用 `embedded` 并按内容自然撑高；位于整体滚动长文档中、条目可由用户持续添加且后面仍有关键内容的编辑表，必须在 `embedded` 基础上声明语义 `max-height`，少量行自然高度、超出后由表体内部滚动，禁止把后续操作和结果区无限推远；`#empty` 只补充业务文案与操作并复用 `app-table-empty*`，禁止嵌套 `el-empty` 形成双图；`wide-table` 默认常显 Element Plus 内部滚动条，禁止页面再给 `el-table__body-wrapper` 添加第二层横向滚动；禁止用 `fill` 布尔值绕过主表语义；复杂单元格继续由业务页通过列插槽声明 |
-| `AppAsyncRegion` | `frontend/src/components/AppAsyncRegion.vue` | 非表格异步内容区域外壳，统一首次加载、已有内容刷新、空态和异常态的互斥切换 | 消费 `AppStateBlock` 和 Element Plus `v-loading`，通过 `loading + hasContent + error` 推导区域状态 | 图表、详情等非表格区域优先复用；当前上下文没有可用内容时显示稳定骨架，同一上下文已有内容刷新时保留内容并覆盖遮罩，错误必须接管并隐藏旧内容；主数据范围切换时必须清除上一上下文内容，同一列表内仅切换观察对象时允许在遮罩下保留最后一次成功图表，响应后原子替换；表格仍使用 `AppDataTable` |
+| `AppAsyncRegion` | `frontend/src/components/AppAsyncRegion.vue` | 非表格异步内容区域外壳，统一首次加载、已有内容刷新、空态和异常态的互斥切换 | 消费 `AppStateBlock` 和 Element Plus `v-loading`，通过调用方提供的 `loading + hasContent + error` 推导区域状态；不负责请求、业务缓存或内容归属判断；只有消费区必须占满父级可用高度时才显式声明 `fill` | 图表、摘要、树、详情和结果等标准非表格异步区优先复用；当前上下文没有可用内容时显示稳定骨架，同一上下文已有内容刷新时保留内容并覆盖遮罩，错误必须接管并隐藏旧内容；主数据范围切换时必须清除上一上下文内容，同一列表内仅切换观察对象时允许在遮罩下保留最后一次成功图表，响应后原子替换；表格仍使用 `AppDataTable`，长任务、多依赖聚合和纯生命周期遮罩按四态入口矩阵处理；普通摘要和自然高度列表不得为消除局部空白滥用 `fill` |
 | `AppTableColumn` | `frontend/src/components/AppTableColumn.vue`、`frontend/src/components/table/adaptiveColumnWidth.ts` | 表格列运行时组件，根据结构类型、字段名和标签推导语义角色，以稳定字符权重结合排序/筛选控件计算弹性最小宽，并统一推导表头/单元格对齐、数字排版、单行表头及同行元信息 | `data-table`、`wide-table` 的稳定列宽、语义对齐和表头能力；不是用户可配置字段 | 页面表格列统一复用，禁止传 `width/min-width/align/header-align`；确有歧义的动态标签只传 `role`；文本、代码、名称和日期左对齐，排名、结构、状态与操作居中，普通数值右对齐，横向比较矩阵数值使用 `comparison-number` 居中，两类数值均使用等宽数字，表头与主值共用基准线；日期、单位或短口径摘要传 `header-meta`；单元格主内容前存在紧凑控件时传 `leading-controls`，组件统一预留宽度并让表头对齐主内容；单元格使用多选 `AppFilterSelect` 时，标签模式由列与选择器声明相同的 `filterSelectVisibleTagCount / visibleTagCount`，数量摘要模式则声明相同的 `filterSelectDisplayMode=count / displayMode=count`；列宽完整承载目标内容，总列宽超出表格时由表体横向滚动，不裁切交互控件；自定义 header slot 只用于复选、帮助入口等真实交互结构；呈现事实只维护在 `ADAPTIVE_COLUMN_RULES`，调用方私有对齐属性和表格 CSS 由契约测试阻止 |
 | `AppOverflowTooltipHost` | `frontend/src/components/AppOverflowTooltipHost.vue`、`frontend/src/components/overflow/overflowTooltip.ts` | 全站省略内容的单一悬浮提示宿主，事件委托检测原生 CSS 省略和表格复合内容视觉溢出 | 无直接系统组件种类；由应用根节点挂载一次 | 任何 `text-overflow: ellipsis` 内容只有在真实截断时自动显示完整文本，页面和业务组件不得手工配置列级 `show-overflow-tooltip`、私建 `ResizeObserver + title` 或复制 tooltip；已有结构化 popover/tooltip、操作列及动作组保持自身交互并自动跳过，避免双层浮层或把隐藏测量内容拼成提示 |
 | `AppStateBlock` | `frontend/src/components/AppStateBlock.vue` | 页面和组件的加载、空、异常、无权反馈块，统一 `ready / loading / empty / error` 四态中的非 ready 呈现、重试入口和尺寸档位 | 对应布局系统中的 `loading-state`、`empty-state`、`error-state`、`skeleton` 语义，但作为真实运行时复用组件消费 | 主加载失败、局部列表失败、无权态、非表格空态和稳定骨架占位优先复用；默认大尺寸空态与异常态占满父级可用区域并水平、垂直居中，消费页的直接内容容器必须传递可成长的确定区域，滚动结果区使用纵向 flex 且状态承载体同时填充剩余高度，禁止只让状态块在自身最小高度内居中；`compact` / `tiny` / `inline` 保持局部区域语义；空态同时提供 `title + description` 时由组件统一展示两层信息，不得让说明覆盖标题或由页面私写重复结构；表格数据的 loading/empty 仍优先由 `AppDataTable` / `el-table` 承接，不在页面手写第二套错误块、空态图标或重试布局 |
@@ -446,16 +446,28 @@ Key Characteristics：
 | 状态 | 中文口径 | 使用场景 | 组件和图标 | 文案模板 |
 |---|---|---|---|---|
 | `ready` | 价值态 / 有数据态 | 接口或本地计算已返回可行动内容 | 不额外加状态图标；价值由表格、KPI、图表、详情、状态 tag 自身承载 | 标题或摘要写清范围、日期、数量、来源，例如“2026-07-10 · 预设榜单 · 320 条” |
-| `loading` | 加载态 | 首次加载、刷新、保存、运行、远程下拉 | 无旧内容的独立区域用 `AppStateBlock loading` / `el-skeleton`；已有内容刷新用 `v-loading`；按钮用 `:loading`；小型导航可用 Element Plus `Loading` 图标 | 页面级“正在加载{对象}…”，按钮级“{动作}中…”，下拉级“加载中…” |
-| `empty` | 空态 | 请求成功但当前条件下没有可展示数据，或用户尚未完成前置选择 | 表格走全局 `el-table` 空态；非表格走 `el-empty.app-empty*`；很小区域走 `app-empty-inline` | “暂无{对象}”“请选择{对象}”“运行后在这里展示{结果}”“当前条件无命中” |
-| `error` | 异常态 / 无权态 | 主请求失败、局部依赖失败、403/权限失败、详情读取失败 | 整区用 `el-result icon="warning"`；表格局部失败可用表内错误行。两变体二选一：**异常态**必须提供重试入口；**无权态**不提供重试（重试无意义），以「请联系系统管理员调整权限」说明不可重试原因（见 §312、§219；`AppStateBlock variant="permission"` 默认 `retry:false`） | 异常态“{对象}加载失败”+“请检查网络或稍后重试”；无权态“无权限{操作/查看对象}”+“请联系系统管理员调整权限” |
+| `loading` | 加载态 | 首次加载、刷新、保存、运行、远程下拉 | 表格使用 `AppDataTable`；标准非表格异步区使用 `AppAsyncRegion`；只需单个阻断反馈时使用 `AppStateBlock loading`；按钮用 `:loading`；小型导航可用 Element Plus `Loading` 图标 | 页面级“正在加载{对象}…”，按钮级“{动作}中…”，下拉级“加载中…” |
+| `empty` | 空态 | 请求成功但当前条件下没有可展示数据，或用户尚未完成前置选择 | 表格由 `AppDataTable` 承接；标准非表格区域由 `AppAsyncRegion` 承接；单个业务子状态用 `AppStateBlock empty`；底层 `el-empty.app-empty*` 不由页面重复拼装 | “暂无{对象}”“请选择{对象}”“运行后在这里展示{结果}”“当前条件无命中” |
+| `error` | 异常态 / 无权态 | 主请求失败、局部依赖失败、403/权限失败、详情读取失败 | 标准非表格区域由 `AppAsyncRegion` 承接，单个阻断反馈用 `AppStateBlock error`；底层统一呈现警告结果。两变体二选一：**异常态**必须提供重试入口；**无权态**不提供重试（重试无意义），以「请联系系统管理员调整权限」说明不可重试原因（见 §312、§219；`AppStateBlock variant="permission"` 默认 `retry:false`） | 异常态“{对象}加载失败”+“请检查网络或稍后重试”；无权态“无权限{操作/查看对象}”+“请联系系统管理员调整权限” |
+
+四态运行时入口按区域职责选择，不按页面偏好选择：
+
+| 区域类型 | 必须优先使用 | 状态责任 | 不适用边界 |
+|---|---|---|---|
+| 标准数据表格 | `AppDataTable` | 组件根据 `loading + data.length` 分流首次骨架与已有表格遮罩，并承接分页和表格空态 | 不得再外套 `AppAsyncRegion` 或在页面重复写表格 loading/empty 分支 |
+| 图表、摘要、树、详情、结果等标准非表格异步区 | `AppAsyncRegion` | 调用方提供 `loading + hasContent + error`，组件统一互斥渲染首次骨架、已有内容遮罩、空态和异常态 | 多个必需依赖需聚合、长任务存在额外业务状态、KeepAlive 仅做画布恢复等特殊生命周期可保留领域状态机，但必须复用 `AppStateBlock` / `AppStatusNotice` 的视觉语义并说明理由 |
+| 整页首次初始化、单个阻断反馈或标准异步区内部的业务子状态 | `AppStateBlock` | 调用方明确声明单一 `loading / empty / error` 状态 | 不得用它在同一区域重新拼装一套“首次骨架 + 已有内容遮罩 + 错误 + 空态”标准分流 |
+| 后台保鲜仍可安全使用缓存内容 | `AppStatusNotice` | 保持 `ready`，只说明降级原因和恢复动作 | 用户主动请求失败或内容已不可信时不得使用 |
+| 按钮、远程下拉、小型导航、KeepAlive 画布恢复 | 组件自身 loading 能力 | 只反馈局部操作或生命周期，不改变所属数据区域顶层四态 | 不得代替主数据区域的首次加载、空态或异常态 |
+
+`AppAsyncRegion` 不发请求、不缓存业务数据，也不自行判断内容归属。调用方的 `hasContent` 必须表示“当前区域此刻允许继续展示的可信内容”，不能机械等同于任意旧对象、任意非空数组或组件是否挂载：同一上下文刷新可保留当前内容；主数据范围切换必须先清空；同一列表内用户主动换行可显式保留最后一次成功图表到新响应原子替换；自动选首项、跨上下文恢复和最终空结果不得冒充已有内容。标准区域禁止继续手写与 `AppAsyncRegion` 等价的 `AppStateBlock + v-loading + v-if/else` 分流。
 
 状态互斥与降级规则：
 
 - 每个独立数据区域同一时间只能有一个顶层状态；`ready / loading / empty / error` 不得在同一区域并排或叠加渲染。刷新按钮的 loading、`v-loading` 遮罩等属于当前请求的操作反馈，不扩展顶层状态。
 - 状态作用域按“最小可独立恢复的数据区域”确定。多个相邻面板因同一个请求、同一空集合或同一必需依赖失败时，在最近公共父级聚合为一个主状态；主从工作区不得在列表和详情两侧重复大图标、标题和主动作。次级区域确需保留上下文时只显示无图标短文案，不再生成第二个主状态。
 - 同一工作区存在多个必需依赖失败时，优先聚合失败对象和一个恢复动作；可选依赖失败只贴近对应控件显示紧凑提示。不得让多个局部实体主按钮与页面主任务竞争。
-- 首次进入或当前区域没有可复用旧内容时，使用 `AppStateBlock loading` 的骨架占位，不在空白内容上只放转圈遮罩，也不和 `empty` 同时出现；已有数据刷新过程中可以暂时保留旧 `ready` 内容并覆盖 `v-loading`，避免闪回空态，但请求失败后必须由 `error` 接管受影响区域并隐藏旧内容，不能继续显示“异常态 + 旧 ready 内容”。表格由 `AppDataTable` 统一执行该分流，消费页不得重复实现。
+- 首次进入或当前区域没有可复用旧内容时显示稳定骨架，不在空白内容上只放转圈遮罩，也不和 `empty` 同时出现；已有数据刷新过程中可以暂时保留旧 `ready` 内容并覆盖 `v-loading`，避免闪回空态，但请求失败后必须由 `error` 接管受影响区域并隐藏旧内容，不能继续显示“异常态 + 旧 ready 内容”。表格由 `AppDataTable`、标准非表格区域由 `AppAsyncRegion` 统一执行该分流，消费页不得重复实现。
 - 全市场、自选、分组等主数据范围切换视为进入新上下文：必须先撤下上一范围的当前观察与图表内容，列表进入完整骨架加载态，分析区进入未选择空态或新对象首次加载骨架；即使新旧范围包含同一对象，也不得把上一范围图表作为可复用内容覆盖刷新遮罩。同一范围内的搜索、筛选、排序和分页仍属于已有内容刷新，请求期间列表保留现有数据并使用 `v-loading`，图表保持当前对象；新列表返回后，当前对象仍在结果中则保持不变，否则自动选择首个可用对象并以首次加载骨架加载对应图表；没有可用对象时必须清除旧观察与旧图并稳定展示空态。重复点击当前已激活对象保持幂等，不重新请求或重建图表。
 - 同一列表上下文内仅点击另一行切换观察对象时，图表属于已有内容刷新：保留最后一次成功图表并使用 `v-loading` 遮罩，新对象成功返回后原子替换；不得先卸载画布再闪回横线骨架。该暂存只允许跨一次行选择请求，列表范围切换、列表最终为空或观察对象被清除时必须同步清空。
 - `error` 不只依赖全局 toast；主内容、侧栏列表、详情面板、表格局部依赖失败时，失败区域必须留下页内错误态和“重试”或明确原因。
@@ -733,7 +745,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 具体维护矩阵、计划块和验收命令统一维护在 `agent-works/configurable-layout-system/page-template.md`。本节只保留长期规则：
 
 - 页面、布局原型、系统组件种类、组件字段、真实复用组件、按钮图标体系或业务偏好发生变化时，必须同步对应代码事实源、页面消费事实源、文档入口和测试。
-- 非公开 View 路由、`pageRegistry` 和页面登记 marker 必须以 `pageKey` 双向一致；registry 页面必须真实渲染 `LayoutHost`、通过 `getPageLayout` 消费布局，并复用 `AppStateBlock` 承接非 ready 状态。
+- 非公开 View 路由、`pageRegistry` 和页面登记 marker 必须以 `pageKey` 双向一致；registry 页面必须真实渲染 `LayoutHost`、通过 `getPageLayout` 消费布局，并按四态入口矩阵实际渲染 `AppDataTable`、`AppAsyncRegion` 或 `AppStateBlock` 中至少一种标准运行时状态入口，禁止把直接使用 `AppStateBlock` 固化为所有页面的唯一接入方式。
 - 已有稳定真实实现的系统组件种类必须由消费页面实际导入并渲染对应复用入口；当前强映射包括 `data-table` / `wide-table` → `AppDataTable + AppTableColumn`、`settings-drawer` → `PageSettingsDrawer`、`config-panel` → `ConfigGroupForm → ConfigPanelSection`。`toolbar`、`section`、`tabs` 等组合型种类不要求虚构一对一空壳组件。
 - DESIGN 只维护稳定设计规则、组件关系、字段治理原则和机器读取的页面登记 marker；不展开可复制流程和命令清单。
 - `page-template.md` 是执行清单；如它与本文件或布局测试冲突，优先修正模板或代码事实源，不在 DESIGN 复制第二套矩阵。

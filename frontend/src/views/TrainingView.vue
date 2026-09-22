@@ -19,6 +19,7 @@ import StockChartRegion from '@/components/stock-chart/StockChartRegion.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import { useStatusColorPalette } from '@/components/chartTheme'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
@@ -550,22 +551,17 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
               </HelpTipItem>
             </HelpTip>
           </template>
-          <AppStateBlock
-            v-if="growthLoading && !growthData.length"
-            state="loading"
-            title="正在加载成长曲线…"
-          />
-          <AppStateBlock
-            v-else-if="growthError"
-            state="error"
-            :title="growthData.length ? '成长曲线刷新失败' : '成长曲线加载失败'"
-            :description="growthError"
+          <AppAsyncRegion
+            :loading="growthLoading"
+            :has-content="growthData.length > 0"
+            :error="growthError"
+            loading-title="正在加载成长曲线…"
+            :error-title="growthData.length ? '成长曲线刷新失败' : '成长曲线加载失败'"
             retry
             @retry="loadGrowth"
-          />
-          <div v-else v-loading="growthLoading">
+          >
             <GrowthChart :data="growthData" />
-          </div>
+          </AppAsyncRegion>
         </el-card>
 
         <el-card shadow="never" class="hist-card">

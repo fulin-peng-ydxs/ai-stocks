@@ -566,8 +566,17 @@ describe('页面注册表完整性', () => {
       expect(imports.has('LayoutHost'), `${entry.pageKey} 必须导入 LayoutHost`).toBe(true)
       expect(source, `${entry.pageKey} 必须真实渲染 <LayoutHost>`).toContain('<LayoutHost')
       expect(source, `${entry.pageKey} 必须通过 getPageLayout 消费 registry 布局`).toContain('getPageLayout')
-      expect(imports.has('AppStateBlock'), `${entry.pageKey} 必须复用 AppStateBlock 承接非 ready 状态`).toBe(true)
-      expect(source, `${entry.pageKey} 必须真实渲染 <AppStateBlock>`).toContain('<AppStateBlock')
+      const asyncStateEntries = ['AppDataTable', 'AppAsyncRegion', 'AppStateBlock']
+      const importedStateEntries = asyncStateEntries.filter((name) => imports.has(name))
+      const renderedStateEntries = importedStateEntries.filter((name) => source.includes(`<${name}`))
+      expect(
+        importedStateEntries.length,
+        `${entry.pageKey} 必须导入 AppDataTable、AppAsyncRegion 或 AppStateBlock 承接运行时状态`,
+      ).toBeGreaterThan(0)
+      expect(
+        renderedStateEntries.length,
+        `${entry.pageKey} 必须真实渲染已导入的标准运行时状态入口`,
+      ).toBeGreaterThan(0)
     }
   })
 

@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
+import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import type { CheckinSummaryRule, TradeDisciplineRule } from '@/api/tradeDiscipline'
 import {
@@ -19,6 +20,8 @@ const props = withDefaults(defineProps<{
   checkinStates?: CheckinSummaryRule[] | null
 }>(), {
   showCreate: true,
+  loading: false,
+  error: false,
 })
 
 const emit = defineEmits<{
@@ -95,48 +98,50 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
       <AppSearchInput v-model="query" size="small" placeholder="搜索规则" />
     </div>
 
-    <AppStateBlock v-if="loading && !rules.length" state="loading" size="tiny" />
-    <AppStateBlock
-      v-else-if="error"
-      state="error"
-      size="compact"
-      title="规则列表刷新失败"
-      description="右侧内容已保留，重试后同步列表"
+    <AppAsyncRegion
+      class="rule-master__region"
+      :loading="loading"
+      :has-content="rules.length > 0"
+      :error="error ? '右侧内容已保留，重试后同步列表' : ''"
+      state-size="tiny"
+      error-title="规则列表刷新失败"
+      :empty-title="query ? '没有匹配的规则' : '暂无交易规则'"
       retry
       @retry="emit('retry')"
-    />
-    <AppStateBlock
-      v-else-if="!filteredRules.length"
-      state="empty"
-      size="inline"
-      :title="query ? '没有匹配的规则' : '暂无交易规则'"
-    />
-    <div v-else v-loading="loading" class="rule-master__list" role="listbox" aria-label="选择交易规则">
-      <div
-        v-for="rule in filteredRules"
-        :key="rule.id"
-        class="rule-master__item"
-        :class="{ active: selectedId === rule.id }"
-        role="option"
-        tabindex="0"
-        :aria-selected="selectedId === rule.id"
-        @click="emit('select', rule.id)"
-        @keydown.enter="emit('select', rule.id)"
-        @keydown.space.prevent="emit('select', rule.id)"
-      >
-        <div class="rule-master__name">
-          <span>{{ rule.proposed_name || rule.name || '未命名规则' }}</span>
-          <el-tag v-if="rule.draft_revision" size="small" type="warning" effect="plain">草稿</el-tag>
-        </div>
-        <div class="rule-master__states">
-          <span>{{ checkinByRule.get(rule.id) ? `履约版本 v${checkinByRule.get(rule.id)?.version_no}` : effectiveLabel(rule) }}</span>
-          <small
-            class="rule-master__management"
-            :class="`is-${managementTone(rule)}`"
-          >{{ managementLabel(rule) }}</small>
+    >
+      <AppStateBlock
+        v-if="!filteredRules.length"
+        state="empty"
+        size="inline"
+        :title="query ? '没有匹配的规则' : '暂无交易规则'"
+      />
+      <div v-else class="rule-master__list" role="listbox" aria-label="选择交易规则">
+        <div
+          v-for="rule in filteredRules"
+          :key="rule.id"
+          class="rule-master__item"
+          :class="{ active: selectedId === rule.id }"
+          role="option"
+          tabindex="0"
+          :aria-selected="selectedId === rule.id"
+          @click="emit('select', rule.id)"
+          @keydown.enter="emit('select', rule.id)"
+          @keydown.space.prevent="emit('select', rule.id)"
+        >
+          <div class="rule-master__name">
+            <span>{{ rule.proposed_name || rule.name || '未命名规则' }}</span>
+            <el-tag v-if="rule.draft_revision" size="small" type="warning" effect="plain">草稿</el-tag>
+          </div>
+          <div class="rule-master__states">
+            <span>{{ checkinByRule.get(rule.id) ? `履约版本 v${checkinByRule.get(rule.id)?.version_no}` : effectiveLabel(rule) }}</span>
+            <small
+              class="rule-master__management"
+              :class="`is-${managementTone(rule)}`"
+            >{{ managementLabel(rule) }}</small>
+          </div>
         </div>
       </div>
-    </div>
+    </AppAsyncRegion>
   </aside>
 </template>
 
@@ -155,7 +160,8 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
 }
 .rule-master__tools { display: grid; gap: var(--app-space-2); flex: none; }
 .rule-master__create { width: 100%; }
-.rule-master__list { min-height: 0; overflow: auto; display: grid; align-content: start; gap: var(--app-space-1); }
+.rule-master__region { min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; }
+.rule-master__list { min-height: 0; flex: 1 1 auto; overflow: auto; display: grid; align-content: start; gap: var(--app-space-1); }
 .rule-master__item {
   min-height: 70px;
   padding: var(--app-space-2) var(--app-space-3);

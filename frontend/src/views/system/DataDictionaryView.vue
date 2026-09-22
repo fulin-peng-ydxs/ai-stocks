@@ -6,6 +6,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
@@ -514,27 +515,23 @@ const menuPageTitle = useMenuPageTitle()
               <AppSearchInput v-model="typeKeyword" placeholder="搜索类型 / code" @search="searchTypes" />
             </AppControlRow>
           </el-card>
-          <div class="dict-type-list" v-loading="typeLoading && typeRows.length > 0">
-            <AppStateBlock
-              v-if="typeError"
-              state="error"
-              size="compact"
-              title="类型加载失败"
-              description="请稍后重试"
-              class="compact-state"
-              retry
-              @retry="loadTypes(true)"
-            />
-            <AppStateBlock
-              v-else-if="typeLoading && !typeRows.length"
-              state="loading"
-              size="compact"
-              title="正在加载字典类型…"
-            />
-            <el-empty v-else-if="!typeRows.length" class="app-empty app-empty--compact" description="暂无字典类型">
-              <el-button v-permission="'dict:type-manage'" type="primary" @click="openCreateType">新建类型</el-button>
-            </el-empty>
-            <template v-else>
+          <AppAsyncRegion
+            class="dict-type-list"
+            :loading="typeLoading"
+            :has-content="typeRows.length > 0"
+            :error="typeError ? '请稍后重试' : ''"
+            state-size="compact"
+            loading-title="正在加载字典类型…"
+            error-title="类型加载失败"
+            retry
+            @retry="loadTypes(true)"
+          >
+            <template #empty>
+              <el-empty class="app-empty app-empty--compact" description="暂无字典类型">
+                <el-button v-permission="'dict:type-manage'" type="primary" @click="openCreateType">新建类型</el-button>
+              </el-empty>
+            </template>
+            <template #default>
               <div
                 v-for="row in typeRows"
                 :key="row.code"
@@ -562,7 +559,7 @@ const menuPageTitle = useMenuPageTitle()
                 />
               </div>
             </template>
-          </div>
+          </AppAsyncRegion>
         </section>
 
         <section class="dict-panel dict-right">

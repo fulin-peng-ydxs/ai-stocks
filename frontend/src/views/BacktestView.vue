@@ -30,6 +30,7 @@ import AppControlRow from '@/components/AppControlRow.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import MarketBenchmarkSelect from '@/components/MarketBenchmarkSelect.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
@@ -2074,21 +2075,17 @@ const menuPageTitle = useMenuPageTitle()
       </div>
     </el-card>
 
-    <div v-loading="loading && !!(strat || sig)" class="results">
-      <AppStateBlock
-        v-if="loading && !strat && !sig"
-        state="loading"
-        title="正在加载回测结果…"
-      />
-      <AppStateBlock
-        v-else-if="resultError"
-        state="error"
-        :title="resultErrorContext === 'history' ? '历史回测载入失败' : ((strat || sig) ? '回测结果刷新失败' : '回测运行失败')"
-        :description="resultError"
-        retry
-        @retry="retryResult"
-      />
-      <template v-else>
+    <AppAsyncRegion
+      class="results"
+      :loading="loading"
+      :has-content="Boolean(strat || sig)"
+      :error="resultError"
+      loading-title="正在加载回测结果…"
+      :error-title="resultErrorContext === 'history' ? '历史回测载入失败' : ((strat || sig) ? '回测结果刷新失败' : '回测运行失败')"
+      empty-title="设置参数后点「运行回测」"
+      retry
+      @retry="retryResult"
+    >
       <div class="results-top">
       <!-- 加载历史时：显示这次回测的运行时间 -->
       <AppStatusNotice
@@ -2309,9 +2306,7 @@ const menuPageTitle = useMenuPageTitle()
         </div>
       </el-card>
 
-      <AppStateBlock v-if="!strat && !sig" state="empty" title="设置参数后点「运行回测」" />
-      </template>
-    </div>
+    </AppAsyncRegion>
     </div>
     </template>
 

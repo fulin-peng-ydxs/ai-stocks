@@ -27,6 +27,14 @@ function mountRegion(props: Record<string, unknown>) {
 }
 
 describe('AppAsyncRegion', () => {
+  it('仅在显式声明 fill 时占满父级可用高度', () => {
+    const natural = mountRegion({ loading: false, hasContent: true })
+    const filled = mountRegion({ loading: false, hasContent: true, fill: true })
+
+    expect(natural.classes()).not.toContain('app-async-region--fill')
+    expect(filled.classes()).toContain('app-async-region--fill')
+  })
+
   it('无旧内容首次加载使用骨架状态', () => {
     const wrapper = mountRegion({ loading: true, loadingTitle: '正在加载走势…' })
 

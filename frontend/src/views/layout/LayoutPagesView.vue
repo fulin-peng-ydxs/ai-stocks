@@ -2,6 +2,7 @@
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 /**
  * 页面布局工作区（P4 布局平台 IA 重构）。
  *
@@ -526,21 +527,17 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #main>
-      <div class="layout-pages-view" v-loading="pageLoading && !!pageConfig">
-        <AppStateBlock
-          v-if="pageLoading && !pageConfig"
-          state="loading"
-          title="正在加载页面布局配置…"
-        />
-        <AppStateBlock
-          v-else-if="pageRegionError"
-          state="error"
-          :title="pageRegionErrorTitle"
-          :description="pageRegionError"
-          retry
-          @retry="retryPageRegion"
-        />
-        <template v-else>
+      <AppAsyncRegion
+        class="layout-pages-view"
+        :loading="pageLoading"
+        :has-content="Boolean(pageConfig)"
+        :error="pageRegionError"
+        loading-title="正在加载页面布局配置…"
+        :error-title="pageRegionErrorTitle"
+        empty-title="暂无页面布局配置"
+        retry
+        @retry="retryPageRegion"
+      >
         <el-tabs v-model="tab" class="config-tabs" @tab-change="onTabChange">
           <el-tab-pane label="页面设计" name="workbench">
             <div class="workbench-pane">
@@ -798,8 +795,7 @@ const menuPageTitle = useMenuPageTitle()
             </div>
           </el-tab-pane>
         </el-tabs>
-        </template>
-      </div>
+      </AppAsyncRegion>
     </template>
   </LayoutHost>
 </template>

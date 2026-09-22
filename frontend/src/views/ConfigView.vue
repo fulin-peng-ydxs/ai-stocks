@@ -41,6 +41,7 @@ import {
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
@@ -2209,19 +2210,15 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           description="系统设置仅系统管理员可编辑"
           class="config-error"
         />
-        <AppStateBlock
-          v-else-if="sysLoading && !sysGroups.length"
-          state="loading"
-          title="正在加载系统设置…"
-          class="config-error"
-        />
-        <div v-else class="sys-wrap" v-loading="sysLoading && sysGroups.length > 0">
-          <el-empty
-            v-if="!sysLoading && !sysGroups.length"
-            class="app-empty"
-            description="暂无可维护配置"
-          />
-          <el-tabs v-else v-model="activeSysTab" class="sys-tabs">
+        <AppAsyncRegion
+          v-else
+          class="sys-wrap"
+          :loading="sysLoading"
+          :has-content="sysGroups.length > 0"
+          loading-title="正在加载系统设置…"
+          empty-title="暂无可维护配置"
+        >
+          <el-tabs v-model="activeSysTab" class="sys-tabs">
             <el-tab-pane
               v-for="tab in sysTabs"
               :key="tab.key"
@@ -2277,7 +2274,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               </div>
             </el-tab-pane>
           </el-tabs>
-        </div>
+        </AppAsyncRegion>
       </template>
     </template>
     </div>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import MarketBoardTag from '@/components/MarketBoardTag.vue'
 import type { BoardMembershipItem, StockBoardMembership } from '@/api/stocks'
 import { sectorDetailLocation } from '@/utils/sectorNavigation'
@@ -74,35 +74,32 @@ const relatedIndustry = computed<BoardMembershipItem | null>(() => {
       </div>
     </template>
 
-    <AppStateBlock
-      v-if="error"
-      state="error"
-      size="compact"
-      title="所属板块加载失败"
-      :description="error"
+    <AppAsyncRegion
+      :loading="loading"
+      :has-content="Boolean(membership)"
+      :error="error"
+      state-size="compact"
+      loading-title="正在加载所属板块…"
+      error-title="所属板块加载失败"
+      empty-title="暂无所属板块"
       retry
       @retry="emit('retry')"
-    />
-    <AppStateBlock
-      v-else-if="loading && !membership"
-      state="loading"
-      size="compact"
-      title="正在加载所属板块…"
-    />
-    <div v-else class="stock-board-membership__body" v-loading="loading && !!membership">
-      <div v-if="concepts.length" class="stock-board-membership__grid">
-        <MarketBoardTag
-          v-for="item in concepts"
-          :key="item.board_code"
-          :name="item.name"
-          :pct-chg="item.pct_chg"
-          :related="isWinner('concept', item)"
-          :to="canNavigate ? sectorDetailLocation(item.board_code, returnPath) : undefined"
-          :data-testid="`stock-board-${item.board_code}`"
-        />
+    >
+      <div class="stock-board-membership__body">
+        <div v-if="concepts.length" class="stock-board-membership__grid">
+          <MarketBoardTag
+            v-for="item in concepts"
+            :key="item.board_code"
+            :name="item.name"
+            :pct-chg="item.pct_chg"
+            :related="isWinner('concept', item)"
+            :to="canNavigate ? sectorDetailLocation(item.board_code, returnPath) : undefined"
+            :data-testid="`stock-board-${item.board_code}`"
+          />
+        </div>
+        <span v-else class="stock-board-membership__empty">暂无其他板块</span>
       </div>
-      <span v-else class="stock-board-membership__empty">暂无其他板块</span>
-    </div>
+    </AppAsyncRegion>
   </el-card>
 </template>
 

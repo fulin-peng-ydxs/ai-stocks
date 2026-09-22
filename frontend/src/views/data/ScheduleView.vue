@@ -731,20 +731,23 @@ const menuPageTitle = useMenuPageTitle()
             <el-button v-permission="'data-source:test'" size="small" type="primary" plain :loading="pinging || sourceLoading" @click="loadSources(true)">测试连通</el-button></div>
         </template>
         <AppStateBlock
-          v-if="sourceLoading && !displaySources.length"
-          state="loading"
-          title="正在加载数据源健康…"
-        />
-        <AppStateBlock
-          v-else-if="sourceError"
+          v-if="sourceError"
           state="error"
           :title="displaySources.length ? '数据源健康刷新失败' : '数据源健康加载失败'"
           :description="sourceError"
           retry
           @retry="loadSources(false)"
         />
-        <div v-else v-loading="sourceLoading">
-        <AppDataTable :data="displaySources" size="small" class="srcs-tbl" embedded :border="tableBorder('sourceTable')">
+        <AppDataTable
+          v-else
+          :data="displaySources"
+          :loading="sourceLoading"
+          loading-text="正在加载数据源健康…"
+          size="small"
+          class="srcs-tbl"
+          embedded
+          :border="tableBorder('sourceTable')"
+        >
           <AppTableColumn v-if="sourceColVisible('source')" label="数据源" prop="source">
             <template #default="{ row }">{{ SOURCE_LABEL[row.source] ?? row.source }}</template>
           </AppTableColumn>
@@ -790,7 +793,6 @@ const menuPageTitle = useMenuPageTitle()
           </AppTableColumn>
           <template #empty>点「测试连通」检查行情源与板块源可达性</template>
         </AppDataTable>
-        </div>
       </el-card>
     </div>
     </template>
