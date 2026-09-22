@@ -2848,6 +2848,15 @@ class IngestionService:
         fund_snapshot_date = (
             update_target if mode == "update" else self._latest_open_day()
         ) if "fund" in steps else None
+        if "fund" in steps and "bar" not in steps and not force_current_day:
+            # 只采资金流时没有指数阶段执行源端就绪探测与日期回退，不能直接把“今天是开市日”
+            # 当成“今天行情已就绪”。页面以 board_bar 最新日为截面，资金流必须锚定同一日期；
+            # 库内尚无板块行情时才保留最近开市日兜底，供初始化任务建立首个快照。
+            latest_bar = svc.c.query_df("SELECT max(trade_date) AS d FROM board_bar").iloc[0]["d"]
+            if latest_bar is not None and pd.notna(latest_bar):
+                fund_snapshot_date = pd.Timestamp(latest_bar).date()
+                if ctx:
+                    ctx.log(f"只采资金流：按板块行情最新日 {fund_snapshot_date} 标记快照")
         if force_current_day and uses_market_date and ctx:
             ctx.log(f"已强制采集当日 {update_target}，跳过交易日和数据就绪检查", "warn")
         # 阶段日志对齐现有采集（阶段 i/N + 进度推进，前端任务中心实时可见）

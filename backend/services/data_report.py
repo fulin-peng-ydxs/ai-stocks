@@ -1072,9 +1072,10 @@ class DataIntegrityReport:
             if str(r["board_code"]) not in active_member_codes
         ]
 
-        # 资金流缺失按“逐板块该周期最新快照 >= 基准日”判断，不能使用
-        # 历史粘性的 has_fund_flow，也不能要求等于全局最新快照日：定向补采可能只会产生
-        # 少量当日记录，若按当日全量覆盖判断会误报其他已追平的板块。
+        # 资金流缺失按“逐板块该周期存在基准日同日快照”判断，不能使用
+        # 历史粘性的 has_fund_flow，也不能用未来日期快照替代当前行情截面：页面严格读取
+        # 行情截面同日资金流，质检必须保持同一口径。定向补采只要求目标板块同日有记录，
+        # 不要求当日全市场覆盖。
         # 多周期：每个板块一条 issue、detail 列缺失周期列表（缺全部周期不刷 5 条）。
         # 数据源不支持按日期回溯，故不检查历史某天缺口，只盯最新快照新鲜度。
         latest_fund = self._scalar(
@@ -1086,9 +1087,9 @@ class DataIntegrityReport:
         if fund_date is not None:
             boards = self.c.query_df(
                 "SELECT board_code, name FROM board_dict WHERE (has_members OR has_bar)")
-            # 一次聚合该板块 >= 基准日的全部周期覆盖，避免逐板块 N+1 查询
+            # 一次聚合该板块在基准日的全部周期覆盖，避免逐板块 N+1 查询
             have_all = self.c.query_df(
-                "SELECT board_code, period FROM board_fund_flow WHERE snapshot_date>=?",
+                "SELECT board_code, period FROM board_fund_flow WHERE snapshot_date=?",
                 [fund_date])
             have_map: dict[str, set[str]] = {}
             for _, r in have_all.iterrows():
@@ -1104,7 +1105,7 @@ class DataIntegrityReport:
                         "detail": json.dumps({
                             "periods": missing,
                             "message": f"板块 {b['name']}（{bcode}）资金流缺周期"
-                                       f"{'、'.join(missing)}：无不早于 {fund_date} 的快照",
+                                       f"{'、'.join(missing)}：无 {fund_date} 同日快照",
                         }, ensure_ascii=False),
                     })
         # 资金流滞后：源级单条（code=NULL），判断任一周期是否整体落后于最新快照日。
@@ -1445,7 +1446,7 @@ class DataIntegrityReport:
                 params.append(board_type)
             return int(self._scalar(sql, params)) > 0
         if issue_type == "board_fund_missing":
-            # 与扫描同口径：该板块 issue 中列出的各周期，其最新快照均追平基准日才算恢复。
+            # 与扫描和页面同口径：该板块 issue 中列出的各周期均有基准日同日快照才算恢复。
             # 周期从 detail.periods 数组读取（多周期口径）；无 periods 字段回退即时（旧 issue 兼容）。
             row = self.c.query_df(
                 "SELECT 1 FROM board_dict WHERE board_code=?", [code])
@@ -1462,7 +1463,7 @@ class DataIntegrityReport:
                     periods = []
             if not periods:
                 periods = ["即时"]
-            expected = self._scalar("SELECT max(trade_date) FROM daily_bar")
+            expected = trade_date or self._scalar("SELECT max(trade_date) FROM daily_bar")
             if expected is None or pd.isna(expected):
                 expected = self._scalar(
                     "SELECT max(snapshot_date) FROM board_fund_flow WHERE period='即时'")
@@ -1474,20 +1475,20 @@ class DataIntegrityReport:
                     continue
                 present = self._scalar(
                     "SELECT count(*) FROM board_fund_flow "
-                    "WHERE board_code=? AND snapshot_date>=? AND period=?",
+                    "WHERE board_code=? AND snapshot_date=? AND period=?",
                     [code, expected_date, period])
                 if int(present) <= 0:
                     return False
             return True
         if issue_type == "board_fund_stale":
-            # 资金流滞后：当初报出的滞后周期现已追平全局最新交易日即收敛（源级单条 issue，无 code）。
+            # 资金流滞后：当初报出的滞后周期在问题交易日已有快照才收敛（源级单条 issue，无 code）。
             # 只复检 detail.periods 列出的滞后周期（与扫描口径一致：从未有快照的周期由
             # board_fund_missing 覆盖，不在 stale 判定内）；旧纯文本 detail 无 periods 时，
             # 回退检查全部有快照的周期是否追平。
-            latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
-            if latest is None:
+            expected = trade_date or self._scalar("SELECT max(trade_date) FROM daily_bar")
+            if expected is None:
                 return False
-            latest = pd.Timestamp(latest).date()
+            expected_date = pd.Timestamp(expected).date()
             periods: list[str] = []
             if isinstance(detail, dict):
                 periods = [str(p) for p in (detail.get("periods") or [])]
@@ -1510,11 +1511,10 @@ class DataIntegrityReport:
             if not check_periods:
                 return True  # 无任何已报滞后周期（全从未有快照）→ 无 stale 残留
             for period in check_periods:
-                pv = self._scalar(
-                    "SELECT max(snapshot_date) FROM board_fund_flow WHERE period=?", [period])
-                if pv is None or pd.isna(pv):
-                    return False
-                if pd.Timestamp(pv).date() < latest:
+                present = self._scalar(
+                    "SELECT count(*) FROM board_fund_flow WHERE snapshot_date=? AND period=?",
+                    [expected_date, period])
+                if int(present) <= 0:
                     return False
             return True
         return True

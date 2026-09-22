@@ -85,7 +85,7 @@
 | ⚙️ **配置管理** | `ConfigView`（`/system/config/{score,trade,tech,system}`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 四个子页：评分规则（可公开/复制/版本回看）/ 买卖指标（买入+卖出+兜底，可公开/复制）/ 技术指标（注册表）/ 系统设置（数据源、回测成本、认证与审计白名单） | [config-definitions.md](agent-works/architecture/config-definitions.md) |
 | 🎨 **布局配置** | `views/layout/{Presets,Pages,Components}`（`/system/layout/*`） | `/api/layout/*` | 可配置布局系统的产品化工作台 3 子页：预设管理（全局风格 token / 预设×组件默认 / 响应式默认）、页面布局（左预览右配置 + `default→preset→page→user` 四层来源追踪）、系统组件（组件能力目录 + 字段开放策略 + 页面 slot 自动继承覆盖） | [DESIGN.md](DESIGN.md) |
 | 🔐 **系统菜单 / 权限 / 租户** | `views/system/{UserManage,RoleManage,MenuResource,TenantManage}` | `/api/auth/*`, `/api/users`, `/api/roles`, `/api/menus`, `/api/resources`, `/api/tenants` | 登录会话、用户域、角色授权、菜单树、功能点和租户启停；接口、菜单、按钮同源授权 | [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) |
-| 🗄️ **数据管理** | `views/data/{Overview,Ingest,Quality,Schedule}` | `/api/data/*` | 采集闭环 4 子页：概览 / 数据采集 / 质检修复 / 定时调度；个股采集统一提供八类安全方案，含 ST 全局/区间刷新 | [data-management.md](agent-works/architecture/data-management.md) / [st-status.md](agent-works/architecture/st-status.md) |
+| 🗄️ **数据管理** | `views/data/{Overview,Ingest,Quality,Schedule}` | `/api/data/*` | 采集闭环 4 子页：概览 / 数据采集 / 质检修复 / 定时调度；个股采集统一提供九类安全方案，含 ST 全局/区间刷新 | [data-management.md](agent-works/architecture/data-management.md) / [stock-collection.md](agent-works/architecture/stock-collection.md) / [st-status.md](agent-works/architecture/st-status.md) |
 | 🧩 **板块行情与采集** | `SectorsView` / `SectorDetailView` / `views/data/*` | `/api/sectors/*`, `/api/data/*` | 板块工作台支持概念/行业查询、连续指数对比、资金流和成分股钻取；数据管理承接字典/成分/指数/资金流采集、周频控制和专项质检修复 | [board-collection.md](agent-works/architecture/board-collection.md) |
 | 🎮 **盘感训练** | `TrainingView` | `/api/training/*` | 盲测随机个股 + 逐日揭示 K 线（含 MACD）+ T+1 真实撮合买卖；一局产出评分/评级/资金曲线，结算揭晓板块；跨局成长轨迹 | [market-sense-training.md](agent-works/architecture/market-sense-training.md) |
 
@@ -355,15 +355,17 @@ Web 与 CLI 共用同一采集服务和行情口径。Web 是常用运维入口�
 | 日期区间重采 | `range_refetch` | `refetch-daily` / 指定日期采集 |
 | 市值历史补采 | `valuation_history` | `valuation` |
 | 市值缺口修复 | `valuation_gaps` | `valuation --fill-gaps` |
+| 全历史异常市值修复 | `valuation_invalid_history` | 质量修复对应能力 |
 | 基础资料刷新 | `basic_refresh` | `delisted --enrich` 的基础资料阶段 |
 | 退市股历史补全 | `delisted_history` | `delisted --enrich` |
+| ST 状态刷新 | `st_status_refresh` | ST 专项刷新能力 |
 
 ### 5.6 数据管理页面操作速查
 
 | 页面 | 主要用途 | 典型操作 |
 |------|----------|----------|
 | 数据概览 | 看数据新鲜度、质量分、缺口、双库数据资产目录 | 在数据资产中切换全部 / DuckDB / PG / 规划中；默认看 88 张当前事实表，可按需查看 28 张迁移旧表并逐表精确统计 |
-| 数据采集 | 发起异步采集/补数任务，看实时日志 | 在一个「个股采集」入口选择八类方案与全市场/指定股票范围，并续跑、重试或终止任务 |
+| 数据采集 | 发起异步采集/补数任务，看实时日志 | 在一个「个股采集」入口选择九类方案与全市场/指定股票范围，并续跑、重试或终止任务 |
 | 数据质量 | 质检台账、修复、忽略、结构体检 | 先筛高危 open 问题，批量修复后复检 |
 | 定时调度 | 配置自动更新、质检、体检、审计清理 | 建每日收盘后「个股采集·日常同步」，再建定期 verify/checkup；审计清理默认每天 03:30 |
 
@@ -422,6 +424,8 @@ python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB
 | [environment-configuration.md](agent-works/architecture/environment-configuration.md) | 环境变量、变量文件、YAML 基线、PG/DuckDB `app_config` 边界和配置生效规则 |
 | [stock-board-correlation.md](agent-works/architecture/stock-board-correlation.md) | 行业/概念走势冠军的算法口径、有效样本含义、任务落表、页面读取和风险边界 |
 | [stock-intraday.md](agent-works/architecture/stock-intraday.md) | 日 K 下钻近期分时的数据口径、Redis 缓存、源站并发保护、页面状态与运维边界 |
+| [stock-collection.md](agent-works/architecture/stock-collection.md) | 个股 EOD 数据的九类采集方案、交易日历与源端就绪、并发落库、断点续跑和质量修复 |
+| [board-collection.md](agent-works/architecture/board-collection.md) | 板块字典、成分、指数和资金流的日期口径、采集编排、反爬、质检与修复 |
 | [limit-ladder.md](agent-works/architecture/limit-ladder.md) | 连板天梯的涨停/ST 口径、快照 v2、任务协调、页面/API、权限、部署与风险边界 |
 | [st-status.md](agent-works/architecture/st-status.md) | ST 点时事实的采集、批次发布、质检、修复、业务门禁与涨跌停截止点 |
 | [multi-tenant-rbac](agent-works/multi-tenant-rbac/) | 系统菜单、权限、多租户相关需求与落地记录 |

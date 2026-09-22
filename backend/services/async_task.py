@@ -1295,8 +1295,8 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
             note = f"重采资金流 {res.get('rows', 0)} 行（未匹配 {res.get('unmatched', 0)}）"
             ctx.log(note)
         elif issue_type == "board_fund_missing":
-            # 资金流缺失：定向重采该板块缺失周期。采到不早于最新交易日的快照后重扫自动收敛；
-            # 源仍无则保持 open，不使用历史能力标记假解决。
+            # 资金流缺失：按问题交易日定向重采该板块缺失周期。页面只消费与行情截面
+            # 同日的资金流，不能让修复任务默认写入当前自然日后误判问题已收敛。
             import json as _json
 
             from backend.services.board_ingest import BoardIngestService
@@ -1309,10 +1309,12 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
             periods_list = issue_payload.get("periods") if isinstance(issue_payload, dict) else None
             if not periods_list:
                 periods_list = ("即时",)
+            if td is None:
+                raise RuntimeError("板块资金流缺失问题缺少目标交易日，无法定向重采")
             ctx.log(f"恢复(板块资金流缺失)：重采板块 {code} 周期 {list(periods_list)}")
             bsvc = BoardIngestService(c)
             res = _call_with_ctx(
-                bsvc.ingest_board_fund_flow, periods=tuple(periods_list),
+                bsvc.ingest_board_fund_flow, snapshot_date=td, periods=tuple(periods_list),
                 board_codes=[code], ctx=ctx)
             if res.get("failed"):
                 raise RuntimeError(f"板块资金流重采失败：{res['failed']}")
@@ -1337,9 +1339,12 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
             else:
                 ctx.log(f"恢复(板块资金流滞后)：重采全源资金流周期 {list(stale_periods)}")
                 periods_arg = tuple(stale_periods)
+            if td is None:
+                raise RuntimeError("板块资金流滞后问题缺少目标交易日，无法定向重采")
             bsvc = BoardIngestService(c)
             res = _call_with_ctx(
-                bsvc.ingest_board_fund_flow, periods=periods_arg, ctx=ctx)
+                bsvc.ingest_board_fund_flow,
+                snapshot_date=td, periods=periods_arg, ctx=ctx)
             if res.get("failed"):
                 raise RuntimeError(f"板块资金流重采失败：{res['failed']}")
             note = f"重采资金流 {res.get('rows', 0)} 行"

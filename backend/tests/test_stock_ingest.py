@@ -67,7 +67,7 @@ def test_stock_ingest_task_registered_as_resumable_write_task():
         ),
     ],
 )
-def test_normalize_stock_ingest_params_accepts_seven_safe_recipes(params, expected):
+def test_normalize_stock_ingest_params_accepts_nine_safe_recipes(params, expected):
     assert normalize_stock_ingest_params(params) == expected
 
 

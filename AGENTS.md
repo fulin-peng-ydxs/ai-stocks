@@ -28,6 +28,7 @@
 - 评分与验证：分层命中率必须扣同期全市场 base rate 并附样本量；技术指标是唯一原子定义，下游只组合引用，不硬编码字段。
 - 双库边界：禁止跨库 JOIN。行情读 DuckDB，资产读写 PG；需要联合时在服务层分别取数后内存合并，并控制结果集规模。
 - 数据表接入：新增或修改表必须同步对应 DDL、表级中文业务元数据、归属/来源/关系、显式鲜活度与质量策略以及字段中文名/说明；不适用策略也必须登记。合并前执行 `python -m backend.cli verify-catalog`，禁止手工建表绕过 DDL。完整流程见 `agent-works/architecture/data-management.md`。
+- 采集机制：个股 EOD 采集、日期收敛和九类安全方案见 `agent-works/architecture/stock-collection.md`；板块字典、成分、指数和资金流采集见 `agent-works/architecture/board-collection.md`。
 - 资产隔离：用户私有 PG 表必须带 `tenant_id + owner_user_id`；复合主键、`ON CONFLICT`、JOIN/子查询、UPDATE/DELETE/`max(seq)` 都必须带归属条件。归属取请求上下文，禁止信任前端传入。
 - 鉴权边界：`AuthMiddleware` 默认 deny；白名单仅健康检查和认证接口。新增业务端点必须同步 `require_perm`/`require_system_perm`、`sys_resource` seed、SQL 留痕和路由扫描测试。
 - 新页面接入：新增前端页面、系统页或可导航业务功能时，必须同步路由、菜单 seed、功能点 seed、后端守卫、按钮 `v-permission`、默认角色授权决策和租户归属；流程见 `agent-works/architecture/system-rbac-tenant.md`。
@@ -116,7 +117,7 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 
 - 除命令、代码、日志和原文外，面向用户输出使用简体中文。
 - 改代码前先读同类实现并优先复用；偏离既有分层、命名、返回结构、异常、日志或配置方式时说明理由。
-- 最近一次 `git pull` 操作时间：2026-09-22 01:22 CST。
+- 最近一次 `git pull` 操作时间：2026-09-22 08:47 CST。
 - 技术方案、交互设计或关键业务规则不确定时，先给推荐方案与理由让用户确认。
 - 不在用户未要求时提交或推送；提交信息使用中文语义化风格，例如 `Agent 新增(基础功能): ...`。
 - 不提交 `data/` 本地数据库、`logs/`、个人环境配置或密钥。`prod` 绑定 `0.0.0.0:8000`，公网部署必须配合反向代理、TLS、限流和运维访问控制。

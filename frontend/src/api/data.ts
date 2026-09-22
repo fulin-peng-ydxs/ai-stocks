@@ -702,5 +702,5 @@ export const BOARD_ISSUE_ITEMS = [
   { key: 'board_index_invalid', label: '指数·字段非法', hint: '重采 OHLC/成交异常日' },
   { key: 'board_fund_unmatched', label: '资金流·未映射', hint: '重采全源并检查归属' },
   { key: 'board_fund_missing', label: '资金流·源未收录', hint: '补齐最新交易日覆盖' },
-  { key: 'board_fund_stale', label: '资金流·未到最新', hint: '重采全源即时快照' },
+  { key: 'board_fund_stale', label: '资金流·未到最新', hint: '按问题日期重采滞后周期' },
 ] as const

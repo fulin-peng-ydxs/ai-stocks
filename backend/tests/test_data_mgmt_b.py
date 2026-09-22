@@ -1221,6 +1221,7 @@ def test_fix_board_fund_missing_targets_periods(client, monkeypatch):
 
     def fake_ingest_fund(self, snapshot_date=None, periods=None, board_codes=None,
                          board_type=None, ctx=None):
+        captured["snapshot_date"] = snapshot_date
         captured["periods"] = periods
         captured["board_codes"] = board_codes
         # 模拟重采写入缺失周期（即时已存在，补 3日）
@@ -1243,6 +1244,7 @@ def test_fix_board_fund_missing_targets_periods(client, monkeypatch):
     clean, affected, note = _recover_one(client, rep, None, TaskContext(
         AsyncTaskService(client), "t_fix", {}), 500)
     # 定向重采只传缺失周期与指定板块
+    assert captured["snapshot_date"] == date(2026, 8, 7)
     assert captured["periods"] == ("3日",)
     assert captured["board_codes"] == ["309121"]
     # 重采后复检通过（3日 已追平）→ 可收敛
@@ -1310,6 +1312,31 @@ def test_board_recheck_fund_missing(client, monkeypatch):
     assert rep.recheck_clean("board_fund_missing", "no-such-board", None) is True
 
 
+def test_board_fund_missing_future_snapshot_does_not_replace_trade_date(client):
+    """未来日期快照不能让当前行情截面的资金流缺失误收敛。"""
+    from backend.services.data_report import DataIntegrityReport
+
+    _seed_board_scan(client)
+    for period in ("即时", "3日", "5日", "10日", "20日"):
+        client.execute(
+            "INSERT INTO board_fund_flow "
+            "(board_code, snapshot_date, period, inflow, outflow, net_inflow) "
+            "VALUES ('309121', DATE '2026-08-08', ?, 2.0, 1.0, 1.0)", [period])
+
+    rep = DataIntegrityReport(client)
+    result = rep.scan_board_quality()
+    missing = client.query_df(
+        "SELECT trade_date FROM data_quality_issue "
+        "WHERE issue_type='board_fund_missing' AND code='309121' AND status='open'")
+
+    assert result["fund_missing"] == 2
+    assert missing["trade_date"].astype(str).tolist() == ["2026-08-07"]
+    assert rep.recheck_clean(
+        "board_fund_missing", "309121", date(2026, 8, 7),
+        detail={"periods": ["即时", "3日", "5日", "10日", "20日"]},
+    ) is False
+
+
 def test_scan_board_quality_fund_stale(client, monkeypatch):
     """资金流滞后扫描：有快照但滞后的周期记单条源级 issue（detail 结构化列滞后周期）。"""
     import json
@@ -1364,6 +1391,42 @@ def test_scan_board_quality_fund_stale_converge(client, monkeypatch):
     left = client.query_df(
         "SELECT count(*) n FROM data_quality_issue WHERE issue_type='board_fund_stale' AND status='open'")
     assert int(left.iloc[0]["n"]) == 0
+
+
+def test_fix_board_fund_stale_targets_trade_date_and_periods(client, monkeypatch):
+    """资金流滞后 fix：按问题交易日和 detail 周期重采，避免写入当前自然日。"""
+    import json
+
+    from backend.services.async_task import TaskContext, _recover_one
+    from backend.services.board_ingest import BoardIngestService
+
+    _seed_board_scan(client)
+    captured: dict = {}
+
+    def fake_ingest_fund(self, snapshot_date=None, periods=None, board_codes=None,
+                         board_type=None, ctx=None):
+        captured["snapshot_date"] = snapshot_date
+        captured["periods"] = periods
+        self.c.execute(
+            "INSERT INTO board_fund_flow "
+            "(board_code, snapshot_date, period, inflow, outflow, net_inflow) "
+            "VALUES ('309121', ?, '即时', 2.0, 1.0, 1.0)", [snapshot_date])
+        return {"rows": 1, "unmatched": 0, "failed": []}
+
+    monkeypatch.setattr(BoardIngestService, "ingest_board_fund_flow", fake_ingest_fund, raising=True)
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detail, detected_at) "
+        "VALUES (501, NULL, DATE '2026-08-07', 'board_fund_stale', 'mid', 'open', ?, now())",
+        [json.dumps({"periods": ["即时"]})])
+
+    clean, _, note = _recover_one(
+        client, DataIntegrityReport(client), None,
+        TaskContext(AsyncTaskService(client), "t_fix_stale", {}), 501)
+
+    assert captured == {"snapshot_date": date(2026, 8, 7), "periods": ("即时",)}
+    assert clean is True
+    assert "重采资金流" in note
 
 
 def test_board_recheck_fund_stale(client, monkeypatch):
@@ -1514,6 +1577,38 @@ def test_board_update_uses_latest_open_day(client, monkeypatch):
     }
     with pytest.raises(ValueError, match="concept/industry"):
         IngestionService().ingest_board(board_type="theme")
+
+
+def test_board_fund_only_uses_latest_board_bar_date(client, monkeypatch):
+    """只采资金流锚定页面行情截面，不把开市但尚未出行情的今天提前入库。"""
+    from backend.services import ingest as ingest_mod
+    from backend.services.board_ingest import BoardIngestService
+    from backend.services.ingest import IngestionService
+
+    captured = {}
+    client.execute(
+        "INSERT INTO board_dict (board_code, name, board_type, has_bar) "
+        "VALUES ('309121', 'AI PC', 'concept', TRUE)")
+    client.execute(
+        "INSERT INTO board_bar (board_code, trade_date, close) "
+        "VALUES ('309121', DATE '2026-08-07', 100.0)")
+
+    def fake_ingest_board_fund_flow(self, snapshot_date=None, periods=None, board_codes=None,
+                                    board_type=None, ctx=None):
+        captured["snapshot_date"] = snapshot_date
+        return {"rows": 0, "unmatched": 0, "failed": []}
+
+    monkeypatch.setattr(BoardIngestService, "ingest_board_fund_flow",
+                        fake_ingest_board_fund_flow, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__",
+                        lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "_latest_open_day",
+                        lambda self: date(2026, 8, 10), raising=True)
+
+    IngestionService().ingest_board(
+        mode="update", only=["fund"], board_codes=["309121"])
+
+    assert captured["snapshot_date"] == date(2026, 8, 7)
 
 
 def test_scan_board_quality_no_false_wave_without_bar(client, monkeypatch):
