@@ -63,7 +63,7 @@ describe('双层顶栏导航', () => {
     expect(wrapper.findAll('.secondary-entry-icon')).toHaveLength(2)
   })
 
-  it('当前标签页调整显示比例后重建导航命中层', async () => {
+  it('当前标签页调整显示比例后保持导航 DOM 稳定', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const auth = useAuthStore()
@@ -85,11 +85,11 @@ describe('双层顶栏导航', () => {
     await nextTick()
 
     expect(wrapper.get('nav').attributes('data-display-scale')).toBe('73')
-    expect(wrapper.get('nav').element).not.toBe(originalNavigation)
+    expect(wrapper.get('nav').element).toBe(originalNavigation)
     wrapper.unmount()
   })
 
-  it('跨到同尺寸屏幕且比例不变时仍重建导航命中层', async () => {
+  it('跨到同尺寸屏幕且比例不变时更新几何修订但不重挂导航', async () => {
     vi.useFakeTimers()
     initDisplayScale()
     const pinia = createPinia()
@@ -117,14 +117,14 @@ describe('双层顶栏导航', () => {
 
     expect(wrapper.get('nav').attributes('data-display-scale')).toBe(originalScale)
     expect(wrapper.get('nav').attributes('data-display-geometry-revision')).toBe('1')
-    expect(wrapper.get('nav').element).not.toBe(originalNavigation)
+    expect(wrapper.get('nav').element).toBe(originalNavigation)
 
     const firstRefreshedNavigation = wrapper.get('nav').element
     vi.advanceTimersByTime(420)
     await nextTick()
 
     expect(wrapper.get('nav').attributes('data-display-geometry-revision')).toBe('2')
-    expect(wrapper.get('nav').element).not.toBe(firstRefreshedNavigation)
+    expect(wrapper.get('nav').element).toBe(firstRefreshedNavigation)
     wrapper.unmount()
   })
 })

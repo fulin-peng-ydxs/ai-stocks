@@ -22,26 +22,25 @@ body {
   text-rendering: optimizeLegibility;
 }
 #app {
+  position: relative;
   container: app-viewport / size;
   /*
-   * 只缩放应用画布，并用倒数尺寸补回布局空间。body 必须保持浏览器原始坐标系，
-   * 否则 ECharts 指针事件和挂到 body 的 Element Plus 浮层会产生比例相关偏移。
+   * zoom 参与布局与原生命中测试，避免整页 transform 在 macOS 跨系统缩放屏幕时
+   * 出现视觉位置已更新、物理鼠标命中仍停留在旧坐标的问题。zoom 会自行折算布局画布。
    */
-  width: calc(100% * var(--app-display-scale-inverse, 1));
-  height: calc(100% * var(--app-display-scale-inverse, 1));
-  transform: scale(var(--app-display-scale, 1));
-  transform-origin: top left;
+  width: 100%;
+  height: 100%;
+  zoom: var(--app-display-scale, 1);
 }
 
 /* Element Plus 的共享 Popper 容器由应用入口移入 #app，与触发器共用缩放坐标系。 */
 
-/* 独立遮罩与应用根使用相同的布局画布，整屏抽屉和弹窗上限才能随比例补偿。 */
+/* 独立遮罩与应用根使用相同的布局缩放，整屏抽屉和弹窗上限才能保持一致。 */
 body > .el-overlay {
   container: app-viewport / size;
-  width: calc(100% * var(--app-display-scale-inverse, 1));
-  height: calc(100% * var(--app-display-scale-inverse, 1));
-  transform: scale(var(--app-display-scale, 1));
-  transform-origin: top left;
+  width: 100%;
+  height: 100%;
+  zoom: var(--app-display-scale, 1);
 }
 /* Element Plus 默认 overlay-dialog 使用 vh；在缩放画布内应服从父遮罩。 */
 .el-overlay-dialog {
@@ -108,7 +107,6 @@ body > .el-notification {
 
 :root {
   --app-display-scale: 1;
-  --app-display-scale-inverse: 1;
   --app-font-family-base: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable',
     'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
   --app-font-family-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;

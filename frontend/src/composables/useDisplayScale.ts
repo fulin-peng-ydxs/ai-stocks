@@ -25,6 +25,7 @@ const AUTO_SCALE_MAX = 110
 const AUTO_SCALE_REFERENCE_AREA = 2560 * 1440
 const VIEWPORT_CHANGE_DEBOUNCE_MS = 120
 const GEOMETRY_SETTLE_REFRESH_MS = 420
+const SCREEN_CHANGE_POLL_MS = 1000
 let responsiveExponent = AUTO_SCALE_RESPONSIVE_EXPONENT_DEFAULT
 const AUTO_SCALE_EXPONENT_CACHE_KEY = 'ai-stocks:auto-scale-exponent:v1'
 
@@ -66,6 +67,7 @@ let screenTimer: number | undefined
 let geometrySettleTimer: number | undefined
 let lastScreenSignature = ''
 let dispatchingLayoutResize = false
+let dprMediaQuery: MediaQueryList | undefined
 
 function clampPercent(value: unknown, fallback = DISPLAY_SCALE_DEFAULT): number {
   const numeric = Number(value)
@@ -158,7 +160,6 @@ function applyScale(forceLayoutRefresh = false): void {
     || root.dataset.displayScaleMode !== mode.value
     || root.dataset.displayResolution !== resolution
   root.style.setProperty('--app-display-scale', String(scale))
-  root.style.setProperty('--app-display-scale-inverse', String(1 / scale))
   root.dataset.displayScaleMode = mode.value
   root.dataset.displayScalePercent = String(percent)
   root.dataset.displayResolution = resolution
@@ -183,23 +184,6 @@ function refreshScaleForScreen(forceLayoutRefresh = false): void {
   autoPercent.value = calculateAutoDisplayScalePercent(currentScreenArea.value)
   // 自定义模式会按当前显示器尺寸重新匹配档案；两种模式都需刷新清晰度分级。
   applyScale(forceLayoutRefresh)
-}
-
-/**
- * Chromium 跨不同系统缩放的屏幕时，可能保留 transformed 根节点的旧命中坐标。
- * 同一帧内移除并恢复 transform，配合几何读取强制失效父合成层，不产生可见闪动。
- */
-function rebuildScaledRootHitTestLayers(): void {
-  const roots = document.querySelectorAll<HTMLElement>('#app, body > .el-overlay')
-  roots.forEach((root) => {
-    const previousValue = root.style.getPropertyValue('transform')
-    const previousPriority = root.style.getPropertyPriority('transform')
-    root.style.setProperty('transform', 'none', 'important')
-    void root.getBoundingClientRect()
-    if (previousValue) root.style.setProperty('transform', previousValue, previousPriority)
-    else root.style.removeProperty('transform')
-    void root.getBoundingClientRect()
-  })
 }
 
 const preferenceSync = createGlobalPreferenceSync<DisplayScalePreference>({
@@ -239,13 +223,9 @@ function onViewportChange(): void {
 function refreshDisplayGeometry(): void {
   geometryRevision.value += 1
   refreshScaleForScreen(true)
-  rebuildScaledRootHitTestLayers()
 }
 
-/**
- * 浏览器跨不同缩放屏幕后，Screen/DPR 与 transformed 根画布的命中层可能分两阶段稳定。
- * 首次刷新负责及时响应，稳定刷新负责清除合成器仍持有的旧点击热区。
- */
+/** 浏览器跨屏时 Screen/DPR 可能分两阶段更新，稳定刷新用于采用最终屏幕参数。 */
 function scheduleSettledGeometryRefresh(): void {
   if (geometrySettleTimer) window.clearTimeout(geometrySettleTimer)
   geometrySettleTimer = window.setTimeout(() => {
@@ -254,7 +234,40 @@ function scheduleSettledGeometryRefresh(): void {
   }, GEOMETRY_SETTLE_REFRESH_MS)
 }
 
-// 跨屏不一定改变最终百分比；屏幕位置、可用面积或 DPR 任一变化都必须刷新命中层。
+function removeDprChangeListener(): void {
+  if (!dprMediaQuery) return
+  if (typeof dprMediaQuery.removeEventListener === 'function') {
+    dprMediaQuery.removeEventListener('change', onDevicePixelRatioChange)
+  } else {
+    dprMediaQuery.removeListener(onDevicePixelRatioChange)
+  }
+  dprMediaQuery = undefined
+}
+
+/**
+ * resolution 查询在当前 DPR 失效时会立即触发，能覆盖 macOS 跨不同缩放屏幕时
+ * 没有同步派发 resize/focus 的窗口。每次变化后按新 DPR 重新订阅下一次变化。
+ */
+function bindDprChangeListener(): void {
+  removeDprChangeListener()
+  if (typeof window.matchMedia !== 'function') return
+  dprMediaQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`)
+  if (typeof dprMediaQuery.addEventListener === 'function') {
+    dprMediaQuery.addEventListener('change', onDevicePixelRatioChange)
+  } else {
+    dprMediaQuery.addListener(onDevicePixelRatioChange)
+  }
+}
+
+function onDevicePixelRatioChange(): void {
+  bindDprChangeListener()
+  if (document.hidden) return
+  lastScreenSignature = readScreenGeometrySignature()
+  refreshDisplayGeometry()
+  scheduleSettledGeometryRefresh()
+}
+
+// 跨屏不一定改变最终百分比；屏幕位置、可用面积或 DPR 变化仍需刷新自动比例与画布测量。
 function checkScreenChange(): boolean {
   if (document.hidden) return false
   const signature = readScreenGeometrySignature()
@@ -293,8 +306,9 @@ export function initDisplayScale(): void {
     window.addEventListener('pageshow', onViewportChange)
     window.visualViewport?.addEventListener('resize', onViewportChange)
     document.addEventListener('visibilitychange', onVisibilityChange)
+    bindDprChangeListener()
     checkScreenChange()
-    screenTimer = window.setInterval(pollScreenChange, 1500)
+    screenTimer = window.setInterval(pollScreenChange, SCREEN_CHANGE_POLL_MS)
     initialized = true
   }
 }
@@ -347,6 +361,7 @@ export function resetDisplayScaleForTests(): void {
   if (geometrySettleTimer) window.clearTimeout(geometrySettleTimer)
   geometrySettleTimer = undefined
   dispatchingLayoutResize = false
+  removeDprChangeListener()
   if (initialized) {
     window.removeEventListener('resize', onViewportChange)
     window.removeEventListener('focus', onViewportChange)
@@ -364,7 +379,6 @@ export function resetDisplayScaleForTests(): void {
   currentScreenArea.value = { width: 0, height: 0 }
   geometryRevision.value = 0
   document.documentElement.style.removeProperty('--app-display-scale')
-  document.documentElement.style.removeProperty('--app-display-scale-inverse')
   delete document.documentElement.dataset.displayScaleMode
   delete document.documentElement.dataset.displayScalePercent
   delete document.documentElement.dataset.displayResolution

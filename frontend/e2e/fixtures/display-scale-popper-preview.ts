@@ -15,7 +15,6 @@ const Preview = defineComponent({
 
     function setScale(scale: number) {
       document.documentElement.style.setProperty('--app-display-scale', String(scale))
-      document.documentElement.style.setProperty('--app-display-scale-inverse', String(1 / scale))
     }
 
     return () => h('main', { class: 'popper-preview' }, [

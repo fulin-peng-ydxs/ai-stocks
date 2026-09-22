@@ -10,7 +10,7 @@ test('多图工作区三种可见数量、局部错误、主题和键盘高度�
   const separators = page.getByRole('separator')
   await expect(panels).toHaveCount(3)
   await expect(separators).toHaveCount(2)
-  await expect(page.getByText('K线（日线·前复权）', { exact: true })).toBeVisible()
+  await expect(page.getByText('K线（前复权）', { exact: true })).toBeVisible()
   await expect(page.getByText('量能', { exact: true })).toBeVisible()
   await expect(page.getByText('MACD（12,26,9·前复权）', { exact: true })).toBeVisible()
 
@@ -31,7 +31,7 @@ test('多图工作区三种可见数量、局部错误、主题和键盘高度�
   await expect(page.locator('[data-state="error"]')).toContainText('MACD 加载失败')
 
   const firstSeparator = page.getByRole('separator', {
-    name: '调整K线（日线·前复权）与下一幅图高度',
+    name: '调整K线（前复权）与下一幅图高度',
   })
   await firstSeparator.press('ArrowUp')
   await expect(page.getByTestId('ratio')).toHaveText('58% · 22% · 20%')
@@ -40,4 +40,28 @@ test('多图工作区三种可见数量、局部错误、主题和键盘高度�
     document.documentElement.scrollWidth <= document.documentElement.clientWidth,
   )).toBe(true)
   expect(consoleIssues).toEqual([])
+})
+
+test('根级显示比例变化后 K 线光标仍命中同一数据点', async ({ page }) => {
+  await page.goto('/e2e/fixtures/stock-chart-workspace-preview.html')
+  const canvas = page.locator('[data-panel-key="kline"] .stock-chart-panel__canvas')
+  const date = page.locator('[data-panel-key="kline"] .stock-chart-panel__date')
+
+  const hoverAtRelativePosition = async (scale: number) => {
+    await page.evaluate((nextScale) => {
+      document.documentElement.style.setProperty('--app-display-scale', String(nextScale))
+      window.dispatchEvent(new Event('resize'))
+    }, scale)
+    await page.waitForTimeout(250)
+    const box = await canvas.boundingBox()
+    expect(box).not.toBeNull()
+    await page.mouse.move(box!.x + box!.width * 0.55, box!.y + box!.height * 0.55)
+    await expect(date).not.toHaveText('')
+    return date.textContent()
+  }
+
+  const baseline = await hoverAtRelativePosition(1)
+  expect(await hoverAtRelativePosition(0.8)).toBe(baseline)
+  expect(await hoverAtRelativePosition(0.94)).toBe(baseline)
+  expect(await hoverAtRelativePosition(1.2)).toBe(baseline)
 })

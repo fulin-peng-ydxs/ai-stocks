@@ -281,7 +281,7 @@ describe('workspaceOptions', () => {
     expect(macd).toMatchObject({ barWidth: MACD_BAR_WIDTH, barMaxWidth: 7 })
   })
 
-  it('页面缩小时同比缩小分类柱宽，不被倒数布局宽度抵消', () => {
+  it('页面缩小时同比缩小分类柱宽，不被 zoom 扩展后的布局宽度抵消', () => {
     expect(scaledBarWidth(KLINE_BAR_WIDTH, 0.5)).toBe('36%')
     expect(scaledBarWidth(VOLUME_BAR_WIDTH, 0.5)).toBe('22%')
     expect(scaledBarWidth(MACD_BAR_WIDTH, 0.5)).toBe('12%')

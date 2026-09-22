@@ -151,10 +151,9 @@ describe('字体与间距设计契约', () => {
     expect(globalCss).toContain('--app-line-height-solid')
     expect(globalCss).toContain('--app-space-control-gap')
     expect(globalCss).toContain('--app-display-scale')
-    expect(globalCss).toContain('--app-display-scale-inverse')
-    expect(globalCss).toContain('width: calc(100% * var(--app-display-scale-inverse')
-    expect(globalCss).toContain('transform: scale(var(--app-display-scale')
-    expect(globalCss).not.toContain('zoom: var(--app-display-scale')
+    expect(globalCss).not.toContain('--app-display-scale-inverse')
+    expect(globalCss).toContain('zoom: var(--app-display-scale')
+    expect(globalCss).not.toContain('transform: scale(var(--app-display-scale')
     expect(globalCss).not.toContain("body > [id^='el-popper-container-'] > .el-popper")
     expect(globalCss).not.toMatch(/\.el-popper\s*\{\s*scale:\s*1;/)
     expect(read(join(SRC_DIR, 'utils/elementPlusPopperContainer.ts'))).toContain(

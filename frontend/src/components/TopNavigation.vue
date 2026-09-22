@@ -22,9 +22,6 @@ const {
   effectivePercent: displayScalePercent,
   geometryRevision: displayGeometryRevision,
 } = useDisplayScale()
-const navigationRenderKey = computed(() => (
-  `${props.level}-${displayScalePercent.value}-${displayGeometryRevision.value}`
-))
 
 const menus = computed(() => auth.menus)
 const activePrimary = computed(() => menus.value.find((node) => menuContainsPath(node, route.path)))
@@ -82,7 +79,6 @@ function descendantLeaves(
 <template>
   <nav
     v-if="auth.menusStatus === 'ready' && (level === 'primary' ? menus.length : secondaryMenus.length)"
-    :key="navigationRenderKey"
     class="top-navigation"
     :class="`is-${level}`"
     :data-display-scale="displayScalePercent"

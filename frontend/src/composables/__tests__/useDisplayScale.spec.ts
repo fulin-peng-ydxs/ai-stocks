@@ -43,6 +43,36 @@ function login(): void {
   })
 }
 
+let dprChangeListener: ((event: MediaQueryListEvent) => void) | undefined
+let resolutionQueries: string[] = []
+
+function mockMatchMedia(): void {
+  dprChangeListener = undefined
+  resolutionQueries = []
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: vi.fn((query: string) => {
+      resolutionQueries.push(query)
+      return {
+        matches: true,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
+          if (type === 'change' && typeof listener === 'function') {
+            dprChangeListener = listener as (event: MediaQueryListEvent) => void
+          }
+        }),
+        removeEventListener: vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
+          if (type === 'change' && dprChangeListener === listener) dprChangeListener = undefined
+        }),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      } as unknown as MediaQueryList
+    }),
+  })
+}
+
 describe('应用显示比例', () => {
   afterEach(() => { resetDisplayScaleForTests(); vi.useRealTimers() })
   beforeEach(() => {
@@ -52,6 +82,7 @@ describe('应用显示比例', () => {
     clearAuth()
     resetDisplayScaleForTests()
     setDpr(1)
+    mockMatchMedia()
     setScreenArea(1920, 1080)
     setScreenPosition(0, 0)
     document.body.innerHTML = ''
@@ -103,9 +134,6 @@ describe('应用显示比例', () => {
     )
     expect(document.documentElement.style.getPropertyValue('--app-display-scale')).toBe(
       String(calculateAutoDisplayScalePercent() / 100),
-    )
-    expect(document.documentElement.style.getPropertyValue('--app-display-scale-inverse')).toBe(
-      String(1 / 0.94),
     )
     expect(document.documentElement.dataset.displayResolution).toBe('high')
   })
@@ -238,19 +266,25 @@ describe('应用显示比例', () => {
     expect(useDisplayScale().geometryRevision.value).toBe(originalRevision + 2)
   })
 
-  it('视口变化时重建应用根缩放合成层并恢复原有内联 transform', () => {
+  it('跨不同系统缩放屏幕时按 DPR 变化立即重建并订阅新口径', () => {
     vi.useFakeTimers()
-    document.body.innerHTML = '<div id="app" style="transform: scale(.8)"></div>'
-    const appRoot = document.querySelector<HTMLElement>('#app')!
-    const geometryRead = vi.spyOn(appRoot, 'getBoundingClientRect')
+    setDpr(2)
     initDisplayScale()
+    const originalRevision = useDisplayScale().geometryRevision.value
 
-    window.dispatchEvent(new Event('resize'))
-    vi.advanceTimersByTime(130)
+    expect(resolutionQueries).toEqual(['(resolution: 2dppx)'])
+    setDpr(1)
+    dprChangeListener?.({} as MediaQueryListEvent)
 
-    expect(geometryRead).toHaveBeenCalledTimes(2)
-    expect(appRoot.style.transform).toBe('scale(.8)')
-    expect(appRoot.style.getPropertyPriority('transform')).toBe('')
+    expect(useDisplayScale().geometryRevision.value).toBe(originalRevision + 1)
+    expect(document.documentElement.dataset.displayResolution).toBe('low')
+    expect(resolutionQueries).toEqual([
+      '(resolution: 2dppx)',
+      '(resolution: 1dppx)',
+    ])
+
+    vi.advanceTimersByTime(420)
+    expect(useDisplayScale().geometryRevision.value).toBe(originalRevision + 2)
   })
 
   it('跨屏没有窗口事件时仍补算，并在隐藏期间跳过探测', () => {
@@ -259,14 +293,14 @@ describe('应用显示比例', () => {
     initDisplayScale()
     expect(useDisplayScale().effectivePercent.value).toBe(94)
     setScreenArea(3360, 1890)
-    vi.advanceTimersByTime(1500)
+    vi.advanceTimersByTime(1000)
     expect(useDisplayScale().effectivePercent.value).toBe(106)
     Object.defineProperty(document, 'hidden', { configurable: true, value: true })
     setScreenArea(1366, 768)
-    vi.advanceTimersByTime(1500)
+    vi.advanceTimersByTime(1000)
     expect(useDisplayScale().effectivePercent.value).toBe(106)
     Object.defineProperty(document, 'hidden', { configurable: true, value: false })
-    vi.advanceTimersByTime(1500)
+    vi.advanceTimersByTime(1000)
     expect(useDisplayScale().effectivePercent.value).toBe(90)
   })
 
@@ -281,9 +315,6 @@ describe('应用显示比例', () => {
     expect(useDisplayScale().mode.value).toBe('custom')
     expect(useDisplayScale().effectivePercent.value).toBe(76)
     expect(document.documentElement.style.getPropertyValue('--app-display-scale')).toBe('0.76')
-    expect(document.documentElement.style.getPropertyValue('--app-display-scale-inverse')).toBe(
-      String(1 / 0.76),
-    )
   })
 
   it('登录后恢复当前显示器最接近的自定义比例档案', async () => {
