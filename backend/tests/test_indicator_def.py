@@ -254,6 +254,14 @@ def test_macd_builtin_metadata_and_registry_api(monkeypatch):
         assert response.code == 0
         assert _MACD_KEYS <= api_keys
         assert response.data["count"] == sum(1 for item in REGISTRY if item.enabled)
+        assert response.data["calculation_context"] == {
+            "default_period": "day",
+            "supported_periods": ["day"],
+        }
+        api_items = {item["key"]: item for item in response.data["items"]}
+        assert api_items["macd_diff"]["calculation_period"] == "day"
+        assert api_items["close"]["calculation_period"] is None
+        assert api_items["total_mv"]["calculation_period"] is None
         for key in _MACD_KEYS:
             with pytest.raises(ValueError, match="内置指标不可删除"):
                 repo.delete(key)

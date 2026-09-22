@@ -264,6 +264,7 @@ beforeEach(() => {
   document.body.innerHTML = ''
   mockSettings()
   ;(scoreApi.getIndicatorRegistry as ReturnType<typeof vi.fn>).mockResolvedValue({
+    calculation_context: { default_period: 'day', supported_periods: ['day'] },
     items: [
       {
         key: 'rs_pct',
@@ -277,6 +278,28 @@ beforeEach(() => {
 })
 
 describe('ConfigView tech tab', () => {
+  it('使用紧凑标签展示K线指标周期，非K线字段不伪装成日K', async () => {
+    routeState.meta.configTab = 'tech'
+    ;(scoreApi.getIndicatorRegistry as ReturnType<typeof vi.fn>).mockResolvedValue({
+      calculation_context: { default_period: 'day', supported_periods: ['day'] },
+      items: [
+        { key: 'macd_diff', name_cn: 'MACD DIFF', dtype: 'number', enabled: true,
+          params: [], categories: ['趋势'], calculation_period: 'day' },
+        { key: 'close', name_cn: '股价', dtype: 'number', enabled: true,
+          params: [], categories: ['价格'], calculation_period: null },
+      ],
+    })
+    const wrapper = await mountView('normal', ['indicator:registry'])
+
+    expect(wrapper.text()).toContain('计算周期')
+    const periods = wrapper.findAll('[data-testid="indicator-calculation-period"]')
+    expect(periods).toHaveLength(1)
+    expect(periods[0].text()).toBe('日K')
+    expect(periods[0].text()).not.toContain('周K')
+    expect(wrapper.findAll('.el-tag').some((tag) => tag.text() === '日K')).toBe(true)
+    wrapper.unmount()
+  })
+
   it('分类维护复用可创建的响应式选择器', async () => {
     routeState.meta.configTab = 'tech'
     ;(scoreApi.getIndicatorRegistry as ReturnType<typeof vi.fn>).mockResolvedValue({

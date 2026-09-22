@@ -1,5 +1,6 @@
 // 评分规则方案 + 技术指标注册表 API（对应 backend/api/score_profiles.py、indicators.py）
 import http from './client'
+import type { KlinePeriod } from './stocks'
 import type { StockRelatedBoards } from '@/types/relatedBoards'
 
 // ── 技术指标注册表 ──
@@ -27,6 +28,7 @@ export interface IndicatorDef {
   kind: 'builtin' | 'expr'
   expression: string | null
   is_builtin: boolean
+  calculation_period?: KlinePeriod | null
   layer?: IndicatorLayer
   parent_key?: string | null
   preset_params?: Record<string, number | string>
@@ -38,7 +40,17 @@ export interface IndicatorTemplate {
   expression: string
   params: IndicatorParam[]
 }
-export function getIndicatorRegistry(includeDisabled = true): Promise<{ count: number; items: IndicatorDef[]; templates: IndicatorTemplate[] }> {
+export interface IndicatorCalculationContext {
+  default_period: KlinePeriod
+  supported_periods: KlinePeriod[]
+}
+export interface IndicatorRegistryResponse {
+  count: number
+  items: IndicatorDef[]
+  templates: IndicatorTemplate[]
+  calculation_context: IndicatorCalculationContext
+}
+export function getIndicatorRegistry(includeDisabled = true): Promise<IndicatorRegistryResponse> {
   return http.get('/indicators/registry', { params: { include_disabled: includeDisabled } })
 }
 export function saveIndicatorDef(body: {

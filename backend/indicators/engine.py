@@ -27,6 +27,7 @@ from backend.indicators.compute import (
     compute_stock_indicators,
     param_hash,
 )
+from backend.indicators.period import INDICATOR_ENGINE_DEFAULT_PERIOD
 from backend.storage.duckdb_client import get_client
 from backend.storage.repository import MarketRepository
 
@@ -65,6 +66,8 @@ def _as_date(d) -> date:
 
 
 class IndicatorEngine:
+    calculation_period = INDICATOR_ENGINE_DEFAULT_PERIOD
+
     def __init__(self, client=None):
         self.c = client or get_client()
         self.repo = MarketRepository(self.c)

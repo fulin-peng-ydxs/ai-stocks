@@ -34,6 +34,7 @@ import {
   type ScoreProfileVersion,
   type ScoreRunRow,
 } from '@/api/scoreProfile'
+import { KLINE_PERIOD_OPTIONS } from '@/components/stock-chart/klinePeriod'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -422,6 +423,10 @@ const techRows = computed(() => {
       srcLabel: d.is_builtin ? '系统内置' : '自定义',
       hasParams: (d.params?.length ?? 0) > 0,
       typeLabel: d.dtype === 'bool' ? '布尔' : '数值',
+      calculationPeriodLabel: d.calculation_period
+        ? KLINE_PERIOD_OPTIONS.find(({ value }) => value === d.calculation_period)?.label
+          ?? d.calculation_period
+        : '',
       layerLabel: d.layer ? LAYER_LABELS[d.layer] ?? d.layer : '未分层',
       parentName: d.parent_key ? nameOf(d.parent_key) : '',
     }
@@ -1974,6 +1979,17 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               <span v-else>
                 <span v-for="p in row.params" :key="p.name" class="subchip">{{ p.label }}({{ p.default }})</span>
               </span>
+            </template>
+          </AppTableColumn>
+          <AppTableColumn label="计算周期">
+            <template #default="{ row }">
+              <el-tag
+                v-if="row.calculationPeriodLabel"
+                size="small"
+                effect="plain"
+                data-testid="indicator-calculation-period"
+              >{{ row.calculationPeriodLabel }}</el-tag>
+              <span v-else class="tip">—</span>
             </template>
           </AppTableColumn>
           <AppTableColumn label="计算 / 表达式">

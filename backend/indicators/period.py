@@ -13,6 +13,10 @@ from backend.indicators.compute import compute_macd
 
 IndicatorPeriod = Literal["day", "week", "month", "year"]
 INDICATOR_PERIODS: tuple[IndicatorPeriod, ...] = ("day", "week", "month", "year")
+# 方案指标引擎当前只消费日线序列。图表可切换多周期，但不会隐式改变
+# 筛选、评分、买卖或回测的计算粒度；未来开放时在方案执行上下文扩展。
+INDICATOR_ENGINE_DEFAULT_PERIOD: IndicatorPeriod = "day"
+INDICATOR_ENGINE_SUPPORTED_PERIODS: tuple[IndicatorPeriod, ...] = ("day",)
 MACD_OUTPUT_COLUMNS: tuple[str, ...] = (
     "macd_diff",
     "macd_dea",

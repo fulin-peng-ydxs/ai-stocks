@@ -10,6 +10,11 @@ from pydantic import BaseModel, Field
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.deps import require_perm, require_system_perm
 from backend.indicators.definition import IndicatorDefRepo
+from backend.indicators.period import (
+    INDICATOR_ENGINE_DEFAULT_PERIOD,
+    INDICATOR_ENGINE_SUPPORTED_PERIODS,
+)
+from backend.indicators.registry import indicator_calculation_period
 from backend.services.indicator_definition_service import (
     IndicatorDefinitionService,
     IndicatorReferenceError,
@@ -82,8 +87,22 @@ CUSTOM_INDICATOR_TEMPLATES = [
             dependencies=[Depends(require_perm("indicator:registry"))])
 def indicators_registry(include_disabled: bool = True) -> ApiResponse:
     """技术指标目录（内置 + 自定义）。include_disabled=false 只返回启用项（供选择列表）。"""
-    items = IndicatorDefRepo().list(include_disabled=include_disabled)
-    return ok({"count": len(items), "items": items, "templates": CUSTOM_INDICATOR_TEMPLATES})
+    items = [
+        {
+            **item,
+            "calculation_period": indicator_calculation_period(item["key"], item["kind"]),
+        }
+        for item in IndicatorDefRepo().list(include_disabled=include_disabled)
+    ]
+    return ok({
+        "count": len(items),
+        "items": items,
+        "templates": CUSTOM_INDICATOR_TEMPLATES,
+        "calculation_context": {
+            "default_period": INDICATOR_ENGINE_DEFAULT_PERIOD,
+            "supported_periods": list(INDICATOR_ENGINE_SUPPORTED_PERIODS),
+        },
+    })
 
 
 @router.post("/indicators/def", response_model=ApiResponse,

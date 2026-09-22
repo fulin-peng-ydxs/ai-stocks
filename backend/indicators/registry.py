@@ -242,6 +242,12 @@ PRESET_CATEGORIES: dict[str, list[str]] = {
 _FIELD_KEYS = {
     "close", "volume", "float_mv", "total_mv", "float_share", "total_share", "turnover_rate",
 }
+_NON_KLINE_PERIOD_KEYS = _FIELD_KEYS | {
+    "is_turnover_healthy",
+    "days_since_xrxd",
+    "holder_num",
+    "holder_change_pct",
+}
 PRESET_RELATIONS: dict[str, tuple[str, dict]] = {
     "ma5": ("ma", {"period": 5}),
     "ma10": ("ma", {"period": 10}),
@@ -265,6 +271,13 @@ _PRESET_GLOBAL_PARAM_KEYS: dict[tuple[str, str], str] = {
     ("ma20_up", "k"): "ma_up_lookback",
     ("ma60_up", "k"): "ma_up_lookback",
 }
+
+
+def indicator_calculation_period(key: str, kind: str) -> str | None:
+    """返回指标实际消费的 K 线周期；快照和事件字段不伪装为 K 线指标。"""
+    if kind == "expr":
+        return "day"
+    return None if key in _NON_KLINE_PERIOD_KEYS else "day"
 
 
 def governance_metadata(d: IndicatorDef) -> tuple[str, str | None, dict]:
