@@ -34,7 +34,10 @@ import {
   type ScoreProfileVersion,
   type ScoreRunRow,
 } from '@/api/scoreProfile'
-import { KLINE_PERIOD_OPTIONS } from '@/components/stock-chart/klinePeriod'
+import {
+  KLINE_PERIOD_OPTIONS,
+  type KlinePeriod,
+} from '@/components/stock-chart/klinePeriod'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -369,6 +372,11 @@ watch(() => sysTabs.value.map((tab) => tab.key).join('|'), () => {
 // ── 技术指标注册表（含内置 + 自定义）──
 const registry = ref<IndicatorDef[]>([])
 const indicatorTemplates = ref<IndicatorTemplate[]>([])
+const indicatorDefaultPeriod = ref<KlinePeriod>('day')
+function klinePeriodLabel(period: KlinePeriod | null | undefined): string {
+  if (!period) return ''
+  return KLINE_PERIOD_OPTIONS.find(({ value }) => value === period)?.label ?? period
+}
 // 可作为评分项的指标（启用项）
 const scorable = computed(() => registry.value.filter((d) => d.enabled))
 function nameOf(key: string): string {
@@ -381,6 +389,7 @@ async function reloadRegistry() {
   const result = await getIndicatorRegistry(true)
   registry.value = result.items
   indicatorTemplates.value = result.templates ?? []
+  indicatorDefaultPeriod.value = result.calculation_context?.default_period ?? 'day'
 }
 
 // 技术指标列表：搜索 + 排序 + 多分类
@@ -423,10 +432,7 @@ const techRows = computed(() => {
       srcLabel: d.is_builtin ? '系统内置' : '自定义',
       hasParams: (d.params?.length ?? 0) > 0,
       typeLabel: d.dtype === 'bool' ? '布尔' : '数值',
-      calculationPeriodLabel: d.calculation_period
-        ? KLINE_PERIOD_OPTIONS.find(({ value }) => value === d.calculation_period)?.label
-          ?? d.calculation_period
-        : '',
+      calculationPeriodLabel: klinePeriodLabel(d.calculation_period),
       layerLabel: d.layer ? LAYER_LABELS[d.layer] ?? d.layer : '未分层',
       parentName: d.parent_key ? nameOf(d.parent_key) : '',
     }
@@ -502,6 +508,8 @@ const defDrawer = ref(false)
 const defMode = ref<'template' | 'dsl'>('template')
 const selectedTemplate = ref('')
 const editingKey = ref('')
+const indicatorDefinitionPeriod = ref<KlinePeriod>('day')
+const indicatorDefinitionPeriodLabel = computed(() => klinePeriodLabel(indicatorDefinitionPeriod.value))
 const defSaving = ref(false)
 const defPreviewing = ref(false)
 const defPreview = ref<IndicatorPreviewResult | null>(null)
@@ -541,6 +549,7 @@ function resetPreviewValues(): void {
 
 function openNewDef() {
   editingKey.value = ''
+  indicatorDefinitionPeriod.value = indicatorDefaultPeriod.value
   defReferences.value = null
   defReferencesError.value = false
   defMode.value = 'template'
@@ -554,6 +563,7 @@ function openNewDef() {
 }
 async function openEditDef(row: IndicatorDef) {
   editingKey.value = row.key
+  indicatorDefinitionPeriod.value = row.calculation_period ?? indicatorDefaultPeriod.value
   defReferencesLoading.value = true
   defReferencesError.value = false
   defMode.value = 'dsl'
@@ -2391,6 +2401,15 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 placeholder="选择或输入分类"
               />
             </el-form-item>
+            <el-form-item label="计算周期">
+              <el-tag
+                size="small"
+                effect="plain"
+                data-testid="indicator-definition-calculation-period"
+              >
+                {{ indicatorDefinitionPeriodLabel }}
+              </el-tag>
+            </el-form-item>
           </div>
           <el-form-item v-if="editingKey || defMode === 'dsl'" label="计算公式" required>
             <el-input
@@ -2874,8 +2893,10 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   box-shadow: inset 3px 0 0 var(--el-color-primary);
 }
 :global(.indicator-editor-grid) { display: grid; gap: var(--app-space-4); }
-:global(.indicator-editor-grid--identity),
-:global(.indicator-editor-grid--meta) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+:global(.indicator-editor-grid--identity) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+:global(.indicator-editor-grid--meta) {
+  grid-template-columns: minmax(280px, 1.3fr) minmax(180px, 1fr) max-content;
+}
 :global(.indicator-definition-form .el-form-item) { margin: 0; }
 :global(.indicator-definition-form .el-form-item__label) {
   color: var(--el-text-color-regular);

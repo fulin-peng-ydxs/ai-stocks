@@ -19,7 +19,7 @@
 - **定义仓库** `backend/indicators/definition.py`：`IndicatorDefRepo` 把内置指标 seed 进 `indicator_def` 表（`seed_builtins` 幂等、保留用户改过的 `enabled` 与 `categories`，definition.py:139-151），并管理用户自定义表达式指标（`save_custom` 校验 key 合法/不与内置冲突/表达式白名单通过，definition.py:102-123）。内置指标不可删、仅可启停。
 - **启动校准**：FastAPI 存储自检在 DuckDB schema 就绪后调用 `seed_builtins()`，每次启动对齐整套 `REGISTRY`，不是只补本次新增 key。全新库会持久化全部 builtin；存量库会刷新代码管理的名称、类型、表达式、参数和描述，保留管理员明确设置的 `enabled/categories`，旧库 `NULL` 则回退注册表默认值；元数据未变化时跳过 UPDATE，避免启动写放大和无意义刷新 `updated_at`。
 - **MACD 五原子**：`macd_diff`、`macd_dea`、`macd_hist` 为 `number`，`macd_golden_cross`、`macd_dead_cross` 为可空 `bool`；固定参数 12/26/9，主分类“趋势”，预设分类“趋势/动量”，默认启用且不可删除。日/周/月/年只是输入行情粒度上下文，不形成新的指标 key；各周期先按自然边界生成收盘序列，再复用同一严格后向 EMA/交叉定义。单股图表的 MACD 输入固定为前复权，板块使用连续指数原值；筛选、评分、买卖和回测继续使用日 K 上下文，未来开放其它周期时应扩展方案的周期上下文而不是复制指标。五列进入 `_IND_COLS` 后由下游通用求值链直接复用，不建立 MACD 专属分支；历史不足或输入缺失时返回空值，不用短窗口或其它周期结果代填。
-- **计算上下文契约**：指标目录接口在定义列表之外返回统一 `calculation_context`。`default_period` 是当前默认输入粒度，`supported_periods` 是方案引擎实际可用粒度；现阶段两者均只包含 `day`。周期属于一次方案计算的上下文，不进入单个指标的参数 schema，也不因图表切换而改变。目录项另返回只读 `calculation_period`：K 线序列指标为 `day`，快照和事件字段为 `null`。管理页在“计算周期”列用紧凑标签展示适用周期，不适用时显示 `—`；下游不得根据指标名称或说明文字猜测周期能力。
+- **计算上下文契约**：指标目录接口在定义列表之外返回统一 `calculation_context`。`default_period` 是当前默认输入粒度，`supported_periods` 是方案引擎实际可用粒度；现阶段两者均只包含 `day`。周期属于一次方案计算的上下文，不进入单个指标的参数 schema，也不因图表切换而改变。目录项另返回只读 `calculation_period`：K 线序列指标为 `day`，快照和事件字段为 `null`。管理页以紧凑标签只读展示指标的适用周期，自定义指标编辑器不提供引擎尚未支持的周期选项；下游不得根据指标名称或说明文字猜测周期能力。
 
 ### 2. 指标指纹与分层内存缓存
 

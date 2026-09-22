@@ -355,6 +355,7 @@ describe('ConfigView tech tab', () => {
   it('自定义指标抽屉使用三步流程并把 DSL 翻译为公式创建', async () => {
     routeState.meta.configTab = 'tech'
     ;(scoreApi.getIndicatorRegistry as ReturnType<typeof vi.fn>).mockResolvedValue({
+      calculation_context: { default_period: 'day', supported_periods: ['day'] },
       items: [],
       templates: [{
         key: 'range_position', name: '区间位置', dtype: 'number',
@@ -373,6 +374,10 @@ describe('ConfigView tech tab', () => {
     expect(wrapper.text()).toContain('公式创建')
     expect(wrapper.text()).toContain('用真实行情验证')
     expect(wrapper.text()).not.toContain('高级 DSL')
+    const period = wrapper.find('[data-testid="indicator-definition-calculation-period"]')
+    expect(period.exists()).toBe(true)
+    expect(period.text()).toBe('日K')
+    expect(wrapper.findAll('.el-tag').some((tag) => tag.text() === '日K')).toBe(true)
     ;(wrapper.vm as any).defMode = 'dsl'
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('不是 Python 或 SQL')
