@@ -216,6 +216,9 @@ const zoomRange = ref<ZoomRange>(normalizeZoomRange(props.zoomStart, props.zoomE
 const workspaceHeight = ref(0)
 let resizeObserver: ResizeObserver | null = null
 let active = true
+let activatedOnce = false
+let activationTimer: number | null = null
+const activationLoading = ref(false)
 let bottomSliderVisible: boolean | undefined
 let lastDisplayScale = 0
 let lastWorkspaceState = ''
@@ -791,6 +794,12 @@ function stopObservingResize(): void {
   resizeObserver = null
 }
 
+function cancelDeferredActivation(): void {
+  if (activationTimer === null) return
+  window.clearTimeout(activationTimer)
+  activationTimer = null
+}
+
 function availableHeight(): number {
   const height = workspaceHeight.value || workspaceEl.value?.clientHeight || effectiveMinHeight.value
   return Math.max(
@@ -1018,12 +1027,32 @@ onMounted(async () => {
 })
 onActivated(async () => {
   active = true
+  if (!activatedOnce) {
+    activatedOnce = true
+    return
+  }
+  activationLoading.value = true
   await nextTick()
-  syncCharts()
-  observeResize()
+  // KeepAlive 恢复时先让路由页面完成一次绘制，再重建 ECharts，避免图表初始化阻塞菜单反馈。
+  cancelDeferredActivation()
+  activationTimer = window.setTimeout(() => {
+    activationTimer = null
+    if (!active) {
+      activationLoading.value = false
+      return
+    }
+    try {
+      syncCharts()
+      observeResize()
+    } finally {
+      activationLoading.value = false
+    }
+  }, 0)
 })
 onDeactivated(() => {
   active = false
+  activationLoading.value = false
+  cancelDeferredActivation()
   klinePointerInside.value = false
   if (drag) finishDrag()
   reportWorkspaceUnavailable()
@@ -1031,6 +1060,7 @@ onDeactivated(() => {
   disposeCharts()
 })
 onBeforeUnmount(() => {
+  cancelDeferredActivation()
   window.removeEventListener('resize', onWorkspaceResize)
   if (drag) finishDrag()
   reportWorkspaceUnavailable()
@@ -1049,6 +1079,8 @@ onBeforeUnmount(() => {
     :data-zoom-start="zoomRange.start"
     :data-zoom-end="zoomRange.end"
     :aria-label="ariaLabel"
+    :aria-busy="activationLoading"
+    v-loading="activationLoading"
   >
     <template v-for="(panel, index) in panels" :key="panel.key">
       <article

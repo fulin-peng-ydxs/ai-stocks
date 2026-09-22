@@ -8,6 +8,7 @@ import type { CompareQueueItem } from '@/components/CompareQueueRail.vue'
 import MarketCompareMetricStrip from '@/components/MarketCompareMetricStrip.vue'
 import MarketBenchmarkSelect from '@/components/MarketBenchmarkSelect.vue'
 import type { MarketMetricStripItem } from '@/components/MarketCompareMetricStrip.vue'
+import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import MarketAnalysisHeader from '@/components/MarketAnalysisHeader.vue'
@@ -98,6 +99,7 @@ const klineBars = ref<Bar[]>([])
 const klineWarmupBars = ref<Bar[]>([])
 const klineIndicators = ref<IndicatorRow[]>([])
 const klineIndicatorPeriod = ref<KlinePeriod>('day')
+const loadedKlineCode = ref('')
 const indicatorError = ref('')
 let requestVersion = 0
 let controller: AbortController | null = null
@@ -290,8 +292,10 @@ async function loadKline(): Promise<void> {
       : allBars.slice(0, -props.klineRange || undefined)
     klineIndicators.value = indicatorResult.indicators
     klineIndicatorPeriod.value = indicatorResult.period ?? requestedPeriod
+    loadedKlineCode.value = active.code
   } catch (loadError) {
     if (!isAbort(loadError) && version === requestVersion) {
+      loadedKlineCode.value = ''
       error.value = getErrorMessage(loadError, 'K线加载失败')
       klineBars.value = []
       klineWarmupBars.value = []
@@ -313,6 +317,7 @@ function load(): void {
     benchmarkBars.value = []
     benchmarkError.value = ''
     klineBars.value = []
+    loadedKlineCode.value = ''
     return
   }
   if (props.mode === 'compare') void loadCompare()
@@ -348,8 +353,33 @@ watch(
   { immediate: true },
 )
 const hasChartContent = computed(() => (
-  props.mode === 'compare' ? compareSeries.value.length > 0 : klineBars.value.length > 0
+  props.mode === 'compare'
+    ? compareSeries.value.length > 0
+    : loadedKlineCode.value === props.active?.code && klineBars.value.length > 0
 ))
+const chartRegionError = computed(() => (
+  error.value || (!loading.value && props.mode === 'compare' ? benchmarkError.value : '')
+))
+const chartRegionErrorTitle = computed(() => (
+  error.value
+    ? (props.mode === 'compare' ? '股票走势加载失败' : 'K线加载失败')
+    : '市场交易日加载失败'
+))
+const chartEmptyTitle = computed(() => {
+  if (!props.active) return '选择一只股票'
+  return props.mode === 'compare' ? '暂无走势数据' : '暂无K线数据'
+})
+const chartEmptyDescription = computed(() => {
+  if (!props.active) return '点击左侧列表中的任意一行即可查看走势'
+  return props.mode === 'compare'
+    ? '当前对比股票在所选区间没有可用行情'
+    : '当前股票在所选区间没有可用行情'
+})
+
+function retryChartRegion(): void {
+  if (!error.value && props.mode === 'compare' && benchmarkError.value) retryCalendar()
+  else load()
+}
 
 onBeforeUnmount(() => {
   requestVersion += 1
@@ -427,56 +457,39 @@ onBeforeUnmount(() => {
       @remove="(code) => emit('remove', code)"
     />
 
-    <div class="stock-analysis-stage" v-loading="loading && hasChartContent">
-      <AppStateBlock
-        v-if="error"
-        state="error"
-        :title="mode === 'compare' ? '股票走势加载失败' : 'K线加载失败'"
-        :description="error"
-        retry
-        @retry="load"
-      />
-      <AppStateBlock
-        v-else-if="!active"
-        state="empty"
-        title="选择一只股票"
-        description="点击左侧列表中的任意一行即可查看走势"
-      />
-      <AppStateBlock
-        v-else-if="loading && !hasChartContent"
-        state="loading"
-        :title="mode === 'compare' ? '正在加载股票走势…' : '正在加载K线数据…'"
-      />
-      <AppStateBlock
-        v-else-if="!loading && mode === 'compare' && benchmarkError"
-        state="error"
-        title="市场交易日加载失败"
-        :description="benchmarkError"
-      >
-        <template #extra>
-          <el-button
-            type="primary"
-            data-testid="stock-analysis-retry-calendar"
-            @click="retryCalendar"
-          >
-            重试交易日
-          </el-button>
-        </template>
-      </AppStateBlock>
-      <AppStateBlock
-        v-else-if="!loading && mode === 'compare' && !compareSeries.length"
-        state="empty"
-        title="暂无走势数据"
-        description="当前对比股票在所选区间没有可用行情"
-      />
-      <AppStateBlock
-        v-else-if="!loading && mode === 'kline' && !klineBars.length"
-        state="empty"
-        title="暂无K线数据"
-        description="当前股票在所选区间没有可用行情"
-      />
+    <AppAsyncRegion
+      class="stock-analysis-stage"
+      :loading="loading"
+      :has-content="hasChartContent"
+      :error="chartRegionError"
+      :error-title="chartRegionErrorTitle"
+      :loading-title="mode === 'compare' ? '正在加载股票走势…' : '正在加载K线数据…'"
+      :empty-title="chartEmptyTitle"
+      :empty-description="chartEmptyDescription"
+      retry
+      @retry="retryChartRegion"
+    >
+      <template #error>
+        <AppStateBlock
+          state="error"
+          :title="chartRegionErrorTitle"
+          :description="chartRegionError"
+          retry
+          @retry="retryChartRegion"
+        >
+          <template v-if="!error && mode === 'compare' && benchmarkError" #extra>
+            <el-button
+              type="primary"
+              data-testid="stock-analysis-retry-calendar"
+              @click="retryCalendar"
+            >
+              重试交易日
+            </el-button>
+          </template>
+        </AppStateBlock>
+      </template>
       <StockCompareChart
-        v-else-if="mode === 'compare'"
+        v-if="mode === 'compare'"
         :series="compareSeries"
         :benchmark="benchmarkSeries"
         :calendar="benchmarkBars"
@@ -518,7 +531,7 @@ onBeforeUnmount(() => {
         @retry-macd="loadKline"
         @bar-click="openIntraday"
       />
-    </div>
+    </AppAsyncRegion>
 
     <footer class="stock-analysis-footer">
       <span v-if="mode === 'compare'">

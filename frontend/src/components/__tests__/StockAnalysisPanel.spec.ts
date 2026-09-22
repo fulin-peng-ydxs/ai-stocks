@@ -243,6 +243,28 @@ describe('StockAnalysisPanel', () => {
     expect(workspace.props('indicatorsPeriod')).toBe('week')
   })
 
+  it('K线切换股票时不复用上一只股票画布，而是回到首次加载骨架', async () => {
+    const wrapper = mountPanel({ mode: 'kline' })
+    await flushPromises()
+    expect(wrapper.get('.app-async-region').attributes('data-loading-mode')).toBe('idle')
+    expect(wrapper.findComponent({ name: 'StockChartWorkspace' }).exists()).toBe(true)
+
+    let resolveNextBars!: (value: unknown) => void
+    ;(stockApi.getBars as ReturnType<typeof vi.fn>).mockImplementationOnce(() => (
+      new Promise((resolve) => { resolveNextBars = resolve })
+    ))
+    await wrapper.setProps({ active: { code: '600000.SH', name: '浦发银行' } })
+    await flushPromises()
+
+    expect(wrapper.get('.app-async-region').attributes('data-loading-mode')).toBe('initial')
+    expect(wrapper.findComponent({ name: 'StockChartWorkspace' }).exists()).toBe(false)
+
+    resolveNextBars({ code: '600000.SH', name: '浦发银行', adjust: 'qfq', bars: [bar] })
+    await flushPromises()
+    expect(wrapper.get('.app-async-region').attributes('data-loading-mode')).toBe('idle')
+    expect(wrapper.findComponent({ name: 'StockChartWorkspace' }).exists()).toBe(true)
+  })
+
   it('复权口径随 adjustMode 进入行情请求与界面文案', async () => {
     const wrapper = mountPanel({ mode: 'kline', adjustMode: 'hfq' })
     await flushPromises()

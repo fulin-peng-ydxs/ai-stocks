@@ -147,6 +147,7 @@ async function mountWorkspace(
     },
     slots,
     global: {
+      directives: { loading: {} },
       stubs: {
         AppStateBlock: {
           props: ['state', 'title', 'description', 'retry'],
@@ -860,7 +861,7 @@ describe('StockChartWorkspace', () => {
       .toBe(true)
   })
 
-  it('KeepAlive 停用释放实例，恢复时只重建一组实例和监听', async () => {
+  it('KeepAlive 停用释放实例，恢复页先绘制后只重建一组实例和监听', async () => {
     const visible = ref(true)
     const source = bars()
     const Host = defineComponent({
@@ -875,6 +876,7 @@ describe('StockChartWorkspace', () => {
     })
     const wrapper = mount(Host, {
       global: {
+        directives: { loading: {} },
         stubs: {
           AppStateBlock: true,
         },
@@ -895,6 +897,11 @@ describe('StockChartWorkspace', () => {
 
     visible.value = true
     await nextTick()
+    expect(echartsMock.init).toHaveBeenCalledTimes(3)
+    expect(wrapper.find('.stock-chart-workspace').attributes('aria-busy')).toBe('true')
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+    expect(wrapper.find('.stock-chart-workspace').attributes('aria-busy')).toBe('false')
     await nextTick()
     expect(echartsMock.init).toHaveBeenCalledTimes(6)
     expect(echartsMock.instances.slice(3).every(

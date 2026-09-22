@@ -100,11 +100,13 @@ export function useStockAnalysisSelection<T extends StockAnalysisSelectable>(
   }
 
   function select(item: T): void {
+    if (item.code === activeCode.value) return
     remember(item)
     applyState(activateCompareCode(currentState(), item.code, limit))
   }
 
   function activate(code: string): void {
+    if (code === activeCode.value) return
     if (lookup.value[code]) applyState(activateCompareCode(currentState(), code, limit))
   }
 

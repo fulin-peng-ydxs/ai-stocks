@@ -16,6 +16,7 @@ import {
   type SectorMemberSortField,
 } from '@/api/sectors'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
@@ -566,12 +567,20 @@ onMounted(async () => {
                   </el-icon>
                 </AppIconButton>
               </template>
-              <div class="chart-stage" v-loading="chartLoading && bars.length > 0">
-                <AppStateBlock v-if="chartError" state="error" size="compact" title="指数走势加载失败" :description="chartError" retry @retry="loadChart" />
-                <AppStateBlock v-else-if="chartLoading && !bars.length" state="loading" size="compact" title="正在加载指数走势…" />
-                <AppStateBlock v-else-if="!bars.length" state="empty" size="compact" title="暂无指数走势" description="请先运行板块指数采集，或切换交易日期" />
+              <AppAsyncRegion
+                class="chart-stage"
+                :loading="chartLoading"
+                :has-content="bars.length > 0"
+                :error="chartError"
+                loading-title="正在加载指数走势…"
+                error-title="指数走势加载失败"
+                empty-title="暂无指数走势"
+                empty-description="请先运行板块指数采集，或切换交易日期"
+                state-size="compact"
+                retry
+                @retry="loadChart"
+              >
                 <StockChartWorkspace
-                  v-else
                   class="sector-chart-workspace"
                   :bars="bars"
                   :warmup-bars="warmupBars"
@@ -593,7 +602,7 @@ onMounted(async () => {
                   @ratio-commit="chartPreferences.handleRatioCommit"
                   @workspace-resize="chartPreferences.handleWorkspaceResize"
                 />
-              </div>
+              </AppAsyncRegion>
             </AppWorkspacePane>
           </template>
           <template #secondary>

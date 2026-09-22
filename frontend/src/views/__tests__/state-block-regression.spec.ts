@@ -108,6 +108,7 @@ vi.mock('@/api/data', () => ({
   getTaskLogs: vi.fn(),
   resumeTask: vi.fn(),
   cancelTask: vi.fn(),
+  taskDisplayLabel: vi.fn((taskType: string) => taskType),
   TASK_LABEL: { update: '每日更新' },
   STATUS_LABEL: { running: '运行中', done: '已完成' },
   LAYER_DESC: { L1: '入库契约', L2: '字段契约', L3: '正确性契约', L4: '覆盖契约' },
@@ -228,10 +229,10 @@ const stubs = {
     `,
   },
   AppDataTable: {
-    props: ['loading', 'data'],
+    props: ['loading', 'data', 'rowKey'],
     emits: ['row-click'],
     template: `
-      <div class="app-data-table" :data-loading="String(Boolean(loading))">
+      <div class="app-data-table" :data-loading="String(Boolean(loading))" :data-row-key="rowKey">
         <button
           v-if="data?.length"
           class="first-data-row"
@@ -1070,6 +1071,45 @@ describe('代表性页面四态回归', () => {
 
     wrapper.unmount()
     vi.useRealTimers()
+  })
+
+  it('打开已完成任务日志时只静默刷新一次任务表', async () => {
+    const doneTask: import('@/api/data').AsyncTask = {
+      id: 'task-done-1',
+      task_type: 'update',
+      status: 'done',
+      progress: 1,
+      message: '已完成',
+      params: {},
+      created_at: '2026-07-20 10:00:00',
+      updated_at: '2026-07-20 10:01:00',
+    }
+    ;(dataApi.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue({
+      tasks: [doneTask], total: 1,
+    })
+    ;(dataApi.getTask as ReturnType<typeof vi.fn>).mockResolvedValue(doneTask)
+    ;(dataApi.getTaskLogs as ReturnType<typeof vi.fn>).mockResolvedValue({ logs: [] })
+
+    const wrapper = await mountView(IngestView)
+    vi.mocked(dataApi.listTasks).mockClear()
+    vi.mocked(dataApi.getUpdateLogs).mockClear()
+    type TaskPage = Awaited<ReturnType<typeof dataApi.listTasks>>
+    let resolveTaskRefresh!: (value: TaskPage) => void
+    vi.mocked(dataApi.listTasks).mockImplementationOnce(() => new Promise<TaskPage>((resolve) => {
+      resolveTaskRefresh = (value) => resolve(value)
+    }))
+
+    await (wrapper.vm as any).openLogs(doneTask.id)
+    await flushPromises()
+
+    const taskTable = wrapper.findAll('.app-data-table')[0]
+    expect(taskTable.attributes('data-row-key')).toBe('id')
+    expect(taskTable.attributes('data-loading')).toBe('false')
+    resolveTaskRefresh({ tasks: [doneTask], total: 1 })
+    await flushPromises()
+    expect(dataApi.listTasks).toHaveBeenCalledTimes(1)
+    expect(dataApi.getUpdateLogs).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
   })
 
   it('任务中心按失败和中断状态使用不同恢复动作', async () => {

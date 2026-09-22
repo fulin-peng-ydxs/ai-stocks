@@ -255,9 +255,10 @@ const {
 })
 const total = ref(0)
 const rows = ref<StockBasic[]>([])
+const initializing = ref(true)
 const relatedBoardFirstLoad = useRelatedBoardFirstLoad(async () => {
   if (inGroupMode.value) await loadGroupDetail(true)
-  else await load(true)
+  else await load({ silent: true, relatedBoardsOnly: true })
 })
 const analysisRefreshRevision = ref(0)
 
@@ -268,11 +269,29 @@ watch(board, (b) => {
 // 选交易日自动触发查询（初始化/恢复时设值不触发，避免重复加载）
 watch(tradeDate, () => {
   if (restoringListState) return
-  clearAnalysisSelection()
   searchCurrentView()
 })
 
 const stockListRequest = createLatestRequestGuard()
+type StockListLoadOptions = {
+  silent?: boolean
+  relatedBoardsOnly?: boolean
+}
+
+function stockListParams(): StockListParams {
+  return {
+    q: q.value || undefined,
+    board: board.value || undefined,
+    membership_board_code: membershipBoardCode.value || undefined,
+    exclude_st: excludeSt.value,
+    trade_date: tradeDate.value || undefined,
+    sort_by: sortBy.value,
+    sort_order: sortOrder.value,
+    page: page.value,
+    size: size.value,
+  }
+}
+
 async function loadMembershipOptions(): Promise<void> {
   const requestId = membershipOptionsRequest.begin()
   membershipOptionsLoading.value = true
@@ -289,26 +308,21 @@ async function loadMembershipOptions(): Promise<void> {
   }
 }
 
-async function load(background = false) {
+async function load(options: StockListLoadOptions = {}) {
   const requestId = stockListRequest.begin()
-  if (!background) {
+  const params = stockListParams()
+  const silent = options.silent === true
+  if (!silent) {
     loading.value = true
     loadError.value = ''
+  } else {
+    // 静默请求成为最新请求时，不能遗留被它取代的前台 loading 状态。
+    loading.value = false
   }
   try {
-    const data = await listStocks({
-      q: q.value || undefined,
-      board: board.value || undefined,
-      membership_board_code: membershipBoardCode.value || undefined,
-      exclude_st: excludeSt.value,
-      trade_date: tradeDate.value || undefined,
-      sort_by: sortBy.value,
-      sort_order: sortOrder.value,
-      page: page.value,
-      size: size.value,
-    })
+    const data = await listStocks(params)
     if (!stockListRequest.isCurrent(requestId)) return
-    if (background) mergeRelatedBoardResults(rows.value, data.list)
+    if (options.relatedBoardsOnly) mergeRelatedBoardResults(rows.value, data.list)
     else rows.value = data.list
     relatedBoardFirstLoad.observe(
       data.list,
@@ -317,9 +331,9 @@ async function load(background = false) {
     total.value = data.total
   } catch (error) {
     if (!stockListRequest.isCurrent(requestId)) return
-    if (!background) loadError.value = getErrorMessage(error, '个股列表加载失败')
+    if (!silent) loadError.value = getErrorMessage(error, '个股列表加载失败')
   } finally {
-    if (!background && stockListRequest.isCurrent(requestId)) loading.value = false
+    if (!silent && stockListRequest.isCurrent(requestId)) loading.value = false
   }
 }
 function search() {
@@ -342,6 +356,7 @@ function onSortChange({ prop, order }: { prop: string; order: string | null }) {
 // ── 分组查看 ──
 const groups = ref<GroupSummary[]>([])
 const activeGid = ref('')
+const viewSwitching = ref(false)
 const groupDetail = ref<GroupDetail | null>(null)
 const groupLoading = ref(false)
 const groupError = ref('')
@@ -432,18 +447,24 @@ function updateDefaultFavorite(row: StockBasic, active: boolean): void {
 watch(activeGid, async (gid) => {
   cart.value = []   // 切换上下文清空选择
   if (!restoringListState) groupPage.value = 1
-  if (!gid) {
-    groupLoadRevision += 1
-    groupDetail.value = null
-    await load()
-    return
+  try {
+    if (!gid) {
+      groupLoadRevision += 1
+      groupDetail.value = null
+      // 用户显式切换范围时统一展示前台加载态；静默更新只用于关联板块等后台补数。
+      await load()
+      return
+    }
+    lastActiveGid.value = gid
+    if (!canViewGroups.value) {
+      activeGid.value = ''
+      return
+    }
+    await loadGroupDetail()
+  } finally {
+    // 只允许当前上下文的请求结束完整切换态，避免快速往返时旧请求提前恢复旧图。
+    if (activeGid.value === gid) viewSwitching.value = false
   }
-  lastActiveGid.value = gid
-  if (!canViewGroups.value) {
-    activeGid.value = ''
-    return
-  }
-  await loadGroupDetail()
 })
 useDefaultedSessionValue(computed(() => settings.defaultView), {
   shouldSync: () => !restoringListState,
@@ -465,14 +486,25 @@ const viewOptions = [
 
 function changeView(value: 'list' | 'group') {
   if (value === 'list') {
+    if (!activeGid.value) return
+    viewSwitching.value = true
+    clearAnalysisSelection()
+    // 主上下文切换不复用上次全市场列表，避免旧股票被重新自动选中并触发遮罩刷新。
+    rows.value = []
     if (activeGid.value) lastActiveGid.value = activeGid.value
     activeGid.value = ''
     return
   }
   if (!canViewGroups.value) return
+  if (activeGid.value) return
   const remembered = groups.value.find((group) => group.id === lastActiveGid.value)
   const target = remembered || defaultGroup.value || groups.value[0]
-  if (target) activeGid.value = target.id
+  if (target) {
+    viewSwitching.value = true
+    clearAnalysisSelection()
+    groupDetail.value = null
+    activeGid.value = target.id
+  }
 }
 
 function onViewChange(value: string | number | boolean) {
@@ -480,12 +512,14 @@ function onViewChange(value: string | number | boolean) {
 }
 
 function switchGroup(gid: string) {
-  if (!canViewGroups.value || !gid) return
+  if (!canViewGroups.value || !gid || gid === activeGid.value) return
+  viewSwitching.value = true
+  clearAnalysisSelection()
+  groupDetail.value = null
   activeGid.value = gid
 }
 
 function searchCurrentView() {
-  clearAnalysisSelection()
   if (inGroupMode.value) groupSearch()
   else search()
 }
@@ -508,7 +542,6 @@ async function resetQueryFilters(): Promise<void> {
   groupPage.value = 1
   await nextTick()
   restoringListState = false
-  clearAnalysisSelection()
   if (inGroupMode.value) await loadGroupDetail()
   else await load()
 }
@@ -601,6 +634,10 @@ type StockAnalysisRow = { code: string; name: string | null; last_date?: string 
 const curRows = computed<StockAnalysisRow[]>(() =>
   inGroupMode.value ? groupRows.value : rows.value,
 )
+// 全市场、分组及具体分组之间属于不同主上下文；切换完成前分析区必须为空，不能复用旧图。
+const analysisSourceRows = computed<StockAnalysisRow[]>(() => (
+  viewSwitching.value ? [] : curRows.value
+))
 const {
   activeCode: activeAnalysisCode,
   activeItem: activeAnalysisItem,
@@ -611,7 +648,7 @@ const {
   activate: activateAnalysisCode,
   remove: removeAnalysisCode,
   clear: clearAnalysisSelection,
-} = useStockAnalysisSelection(curRows, {
+} = useStockAnalysisSelection(analysisSourceRows, {
   onLimitReached: (limit) => ElMessage.warning(`最多对比${limit}只股票`),
 })
 const analysisEndDate = computed(() => (
@@ -790,54 +827,59 @@ async function doDeleteGroup() {
 }
 
 onMounted(async () => {
-  await Promise.all([
-    whenHydrated(),
-    whenRemoteHydrated(),
-    auth.ensureLoaded().catch(() => undefined),
-  ])
-  await Promise.all([reloadGroups(), loadMembershipOptions()])
-  const restore = route.query.restore === '1' ? stockSet.consumeListState() : null
-  if (restore) {
-    // 返回现场已由 store 原子消费，避免后续刷新重复覆盖当前页状态。
+  try {
+    await Promise.all([
+      whenHydrated(),
+      whenRemoteHydrated(),
+      auth.ensureLoaded().catch(() => undefined),
+    ])
+    // 分组和交易日决定首屏内容，筛选项独立加载，不阻塞个股主列表。
+    void loadMembershipOptions()
+    await Promise.all([reloadGroups(), ensureLoaded()])
+    const restore = route.query.restore === '1' ? stockSet.consumeListState() : null
+    if (restore) {
+      // 返回现场已由 store 原子消费，避免后续刷新重复覆盖当前页状态。
+      restoringListState = true
+      q.value = restore.mode === 'group' ? (restore.groupQ || restore.q) : restore.q
+      board.value = restore.board
+      membershipBoardCode.value = restore.membershipBoardCode || ''
+      excludeSt.value = restore.excludeSt
+      tradeDate.value = restore.tradeDate
+      sortBy.value = restore.sortBy
+      sortOrder.value = restore.sortOrder
+      page.value = restore.page
+      // size/groupSize 是组件配置层默认值派生的会话 ref，恢复上次浏览态时直接赋值会话值即可。
+      size.value = normalizePageSize(restore.size)
+      groupSize.value = normalizePageSize(restore.groupSize)
+      groupPage.value = restore.groupPage
+      groupSortBy.value = restore.groupSortBy
+      groupSortOrder.value = restore.groupSortOrder
+      activeGid.value = restore.mode === 'group' && canViewGroups.value ? restore.activeGid : ''
+      restoringListState = false
+      if (activeGid.value) await loadGroupDetail()
+      else await load()
+      router.replace('/stocks')
+      return
+    }
+    const dg = defaultGroup.value
+    excludeSt.value = Boolean(settings.excludeSt)
+    sortBy.value = defaultSortBy.value
+    sortOrder.value = defaultSortOrder.value
+    size.value = defaultSize.value
+    groupSize.value = groupSizeCfg.value
+    groupSortBy.value = groupDefaultSortBy.value
+    groupSortOrder.value = groupDefaultSortOrder.value
+    // 交易日默认直接选中最新交易日（而非留空靠占位提示）
     restoringListState = true
-    q.value = restore.mode === 'group' ? (restore.groupQ || restore.q) : restore.q
-    board.value = restore.board
-    membershipBoardCode.value = restore.membershipBoardCode || ''
-    excludeSt.value = restore.excludeSt
-    tradeDate.value = restore.tradeDate
-    sortBy.value = restore.sortBy
-    sortOrder.value = restore.sortOrder
-    page.value = restore.page
-    // size/groupSize 是组件配置层默认值派生的会话 ref，恢复上次浏览态时直接赋值会话值即可。
-    size.value = normalizePageSize(restore.size)
-    groupSize.value = normalizePageSize(restore.groupSize)
-    groupPage.value = restore.groupPage
-    groupSortBy.value = restore.groupSortBy
-    groupSortOrder.value = restore.groupSortOrder
-    activeGid.value = restore.mode === 'group' && canViewGroups.value ? restore.activeGid : ''
+    tradeDate.value = dataMax.value || ''
     restoringListState = false
-    if (activeGid.value) await loadGroupDetail()
-    else await load()
-    router.replace('/stocks')
-    return
-  }
-  const dg = defaultGroup.value
-  excludeSt.value = Boolean(settings.excludeSt)
-  sortBy.value = defaultSortBy.value
-  sortOrder.value = defaultSortOrder.value
-  size.value = defaultSize.value
-  groupSize.value = groupSizeCfg.value
-  groupSortBy.value = groupDefaultSortBy.value
-  groupSortOrder.value = groupDefaultSortOrder.value
-  // 交易日默认直接选中最新交易日（而非留空靠占位提示）
-  await ensureLoaded()
-  restoringListState = true
-  tradeDate.value = dataMax.value || ''
-  restoringListState = false
-  if (canViewGroups.value && settings.defaultView === 'group' && dg) {
-    activeGid.value = dg.id
-  } else {
-    await load()
+    if (canViewGroups.value && settings.defaultView === 'group' && dg) {
+      activeGid.value = dg.id
+    } else {
+      await load()
+    }
+  } finally {
+    initializing.value = false
   }
 })
 const menuPageTitle = useMenuPageTitle()
@@ -993,8 +1035,14 @@ const menuPageTitle = useMenuPageTitle()
       data-testid="stocks-market-workspace"
     >
       <template #list>
+      <AppStateBlock
+        v-if="viewSwitching || initializing"
+        state="loading"
+        :title="initializing ? '正在初始化个股行情' : inGroupMode ? '正在加载分组股票' : '正在加载全市场股票'"
+        description="正在读取最新行情与筛选结果，请稍候。"
+      />
       <!-- 分组视图 -->
-      <template v-if="inGroupMode">
+      <template v-else-if="inGroupMode">
         <AppStateBlock
           v-if="groupError"
           state="error"

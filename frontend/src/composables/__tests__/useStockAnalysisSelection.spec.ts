@@ -1,4 +1,4 @@
-import { nextTick, ref } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
 
@@ -66,4 +66,22 @@ describe('useStockAnalysisSelection', () => {
     expect(selection.activeCode.value).toBe('C')
     expect(selection.items.value.map((item) => item.code)).toEqual(['A', 'B', 'C'])
   })
+
+  it('重复选择或激活当前股票保持幂等，不触发分析队列刷新', async () => {
+    const source = ref([
+      { code: 'A', name: '甲' },
+      { code: 'B', name: '乙' },
+    ])
+    const selection = useStockAnalysisSelection(source)
+    const onItemsChange = vi.fn()
+    watch(selection.items, onItemsChange)
+
+    selection.select(source.value[0]!)
+    selection.activate('A')
+    await nextTick()
+
+    expect(selection.activeCode.value).toBe('A')
+    expect(onItemsChange).not.toHaveBeenCalled()
+  })
+
 })

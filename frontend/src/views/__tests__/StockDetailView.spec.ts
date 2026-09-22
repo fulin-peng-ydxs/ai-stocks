@@ -375,6 +375,14 @@ const AppStateBlockStub = defineComponent({
   },
 })
 
+const AppAsyncRegionStub = defineComponent({
+  name: 'AppAsyncRegion',
+  props: ['loading', 'hasContent', 'error'],
+  setup(_props, { slots }) {
+    return () => h('div', { 'data-testid': 'async-region' }, slots.default?.())
+  },
+})
+
 const KlineRangeSelectStub = defineComponent({
   name: 'KlineRangeSelect',
   props: ['modelValue', 'width'],
@@ -520,6 +528,7 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
         template: '<div data-testid="intraday-dialog" :data-open="modelValue" :data-date="tradeDate" />',
       },
       StockChartSettingSection: false,
+      AppAsyncRegion: AppAsyncRegionStub,
       AppStateBlock: AppStateBlockStub,
       KlineRangeSelect: KlineRangeSelectStub,
       PageSettingsDrawer: PageSettingsDrawerStub,

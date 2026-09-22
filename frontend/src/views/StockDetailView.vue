@@ -29,6 +29,7 @@ import {
 } from '@/api/stocks'
 import { addMembers, getGroup, listGroups, removeMembers, type GroupSummary } from '@/api/stockGroup'
 import { browseTradeProfiles, copyTradeProfile, listTradeProfiles, type TradeProfileSummary } from '@/api/tradeProfile'
+import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppDetailField from '@/components/AppDetailField.vue'
 import AppDetailFields from '@/components/AppDetailFields.vue'
@@ -1335,39 +1336,47 @@ onBeforeUnmount(() => {
                 </el-icon>
               </AppIconButton>
             </template>
-            <StockChartWorkspace
-              class="detail-chart-workspace"
-              v-loading="barsLoading && bars.length > 0"
-              :bars="displayBars"
-              :warmup-bars="warmupBars"
-              :indicators="chartIndicatorRows"
-              :indicators-period="chartIndicatorPeriod"
-              :slot2="chartPreferences.preferences.value.slot2"
-              :slot3="chartPreferences.preferences.value.slot3"
-              :height-ratios="chartPreferences.currentRatios.value"
-              :adjust-label="adjustLabel"
-              macd-adjust-label="前复权"
-              :macd-state="macdState"
-              :macd-error="chartIndicatorError"
-              :zoom-start="0"
-              :zoom-end="100"
-              fit-available-height
-              enable-intraday-drilldown
-              enable-return-measurement
-              enable-kline-period-switch
-              enable-adjust-mode-switch
-              v-model:adjust-mode="adjustMode"
-              v-model:return-measurement-mode="chartPreferences.returnMeasurementMode.value"
-              v-model:kline-period="chartPreferences.klinePeriod.value"
-              :show-kline-tooltip="false"
-              @ratio-draft="chartPreferences.handleRatioDraft"
-              @ratio-commit="chartPreferences.handleRatioCommit"
-              @workspace-resize="chartPreferences.handleWorkspaceResize"
-              @retry-macd="loadIndicators"
-              @bar-click="openIntraday"
-              @active-bar-change="chartActiveBar = $event"
-              @measurement-summary-change="chartMeasurementSummary = $event"
-            />
+            <AppAsyncRegion
+              class="detail-chart-region"
+              :loading="barsLoading"
+              :has-content="bars.length > 0"
+              loading-title="正在加载个股行情…"
+              empty-title="暂无个股行情"
+              empty-description="当前股票在所选范围内没有可用行情"
+            >
+              <StockChartWorkspace
+                class="detail-chart-workspace"
+                :bars="displayBars"
+                :warmup-bars="warmupBars"
+                :indicators="chartIndicatorRows"
+                :indicators-period="chartIndicatorPeriod"
+                :slot2="chartPreferences.preferences.value.slot2"
+                :slot3="chartPreferences.preferences.value.slot3"
+                :height-ratios="chartPreferences.currentRatios.value"
+                :adjust-label="adjustLabel"
+                macd-adjust-label="前复权"
+                :macd-state="macdState"
+                :macd-error="chartIndicatorError"
+                :zoom-start="0"
+                :zoom-end="100"
+                fit-available-height
+                enable-intraday-drilldown
+                enable-return-measurement
+                enable-kline-period-switch
+                enable-adjust-mode-switch
+                v-model:adjust-mode="adjustMode"
+                v-model:return-measurement-mode="chartPreferences.returnMeasurementMode.value"
+                v-model:kline-period="chartPreferences.klinePeriod.value"
+                :show-kline-tooltip="false"
+                @ratio-draft="chartPreferences.handleRatioDraft"
+                @ratio-commit="chartPreferences.handleRatioCommit"
+                @workspace-resize="chartPreferences.handleWorkspaceResize"
+                @retry-macd="loadIndicators"
+                @bar-click="openIntraday"
+                @active-bar-change="chartActiveBar = $event"
+                @measurement-summary-change="chartMeasurementSummary = $event"
+              />
+            </AppAsyncRegion>
           </AppWorkspacePane>
           </template>
 
@@ -1574,6 +1583,12 @@ onBeforeUnmount(() => {
 .detail-chart-workspace {
   flex: 1 1 auto;
   width: 100%;
+  min-height: 0;
+}
+
+.detail-chart-region {
+  display: flex;
+  flex: 1 1 auto;
   min-height: 0;
 }
 

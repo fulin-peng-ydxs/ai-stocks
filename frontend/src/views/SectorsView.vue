@@ -11,6 +11,7 @@ import AppDataTable from '@/components/AppDataTable.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import ComparePinButton from '@/components/ComparePinButton.vue'
+import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import CompareQueueRail from '@/components/CompareQueueRail.vue'
@@ -36,6 +37,7 @@ import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import { normalizePageSize, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import {
   activateCompareCode,
+  emptyCompareQueue,
   removeCompareCode,
   toggleComparePin,
   type CompareQueueState,
@@ -404,6 +406,18 @@ const hasChartContent = computed(() => {
     ? compareSeries.value.length > 0
     : hasCrossSectionData.value
 })
+const chartEmptyTitle = computed(() => {
+  if (!activeCode.value) return '选择一个板块'
+  if (chartMode.value === 'kline') return '暂无 K 线数据'
+  return compareMetricKind.value === 'line' ? '暂无指数走势' : '暂无对比数据'
+})
+const chartEmptyDescription = computed(() => {
+  if (!activeCode.value) return '点击左侧排行中的任意一行即可查看走势'
+  if (chartMode.value === 'compare' && compareMetricKind.value === 'bar') {
+    return '对比队列暂无该指标快照'
+  }
+  return '可切换其他板块，或先运行板块指数采集'
+})
 function chartEnd(): string {
   return tradeDate.value || marketDate.value || dataMax.value || ''
 }
@@ -687,6 +701,17 @@ function search(): void {
 }
 function changeListScope(): void {
   page.value = 1
+  // 全市场 / 自选是主列表上下文切换：先撤下旧观察和图表缓存，再加载新范围。
+  chartRequestVersion += 1
+  chartLoading.value = false
+  chartError.value = ''
+  benchmarkError.value = ''
+  compareBars.value = {}
+  compareWarmupBars.value = {}
+  compareIndicators.value = {}
+  cumBars.value = {}
+  benchmarkSeries.value = null
+  applyQueue(emptyCompareQueue())
   void load()
 }
 function onDateChange(): void {
@@ -1305,46 +1330,20 @@ const menuPageTitle = useMenuPageTitle()
             @remove="removeCompared"
           />
 
-          <div class="chart-stage" v-loading="chartLoading && hasChartContent">
-            <AppStateBlock
-              v-if="chartError"
-              state="error"
-              title="板块走势加载失败"
-              :description="chartError"
-              retry
-              @retry="loadChart"
-            />
-            <AppStateBlock
-              v-else-if="!activeCode"
-              state="empty"
-              title="选择一个板块"
-              description="点击左侧排行中的任意一行即可查看走势"
-            />
-            <AppStateBlock
-              v-else-if="chartLoading && !hasChartContent"
-              state="loading"
-              title="正在加载板块走势…"
-            />
-            <AppStateBlock
-              v-else-if="chartMode === 'compare' && compareMetricKind === 'line' && !compareSeries.length"
-              state="empty"
-              title="暂无指数走势"
-              description="可切换其他板块，或先运行板块指数采集"
-            />
-            <AppStateBlock
-              v-else-if="chartMode === 'compare' && compareMetricKind === 'bar' && !hasCrossSectionData"
-              state="empty"
-              title="暂无对比数据"
-              description="对比队列暂无该指标快照"
-            />
-            <AppStateBlock
-              v-else-if="chartMode === 'kline' && !klineBars.length"
-              state="empty"
-              title="暂无 K 线数据"
-              description="可切换其他板块，或先运行板块指数采集"
-            />
+          <AppAsyncRegion
+            class="chart-stage"
+            :loading="chartLoading"
+            :has-content="hasChartContent"
+            :error="chartError"
+            loading-title="正在加载板块走势…"
+            error-title="板块走势加载失败"
+            :empty-title="chartEmptyTitle"
+            :empty-description="chartEmptyDescription"
+            retry
+            @retry="loadChart"
+          >
             <SectorCompareChart
-              v-else-if="chartMode === 'compare'"
+              v-if="chartMode === 'compare'"
               data-testid="sectors-compare-chart"
               :series="compareSeries"
               :benchmark="benchmarkSeries"
@@ -1376,7 +1375,7 @@ const menuPageTitle = useMenuPageTitle()
               @ratio-commit="chartPreferences.handleRatioCommit"
               @workspace-resize="chartPreferences.handleWorkspaceResize"
             />
-          </div>
+          </AppAsyncRegion>
 
           <footer v-if="chartMode === 'compare'" class="chart-footer">
             <span v-if="benchmarkError && compareMetricKind === 'line'" class="benchmark-warning">{{ benchmarkError }}，当前仅显示板块走势。</span>

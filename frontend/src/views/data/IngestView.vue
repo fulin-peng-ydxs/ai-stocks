@@ -512,7 +512,7 @@ async function loadTasks(silent = false) {
   }
   const after = activeCount()
   if (before > 0 && after === 0) {
-    await loadLogs()
+    await loadLogs(true)
   }
   if (taskTimer) { clearTimeout(taskTimer); taskTimer = undefined }
   // 自动轮询只更新任务数据，不反复触发表格 loading 遮罩，避免页面每两秒闪烁。
@@ -521,10 +521,11 @@ async function loadTasks(silent = false) {
   }
 }
 const refreshTasks = loadTasks   // 兼容旧调用名
-async function loadLogs() {
+async function loadLogs(silent = false) {
   const requestId = ingestLogRequest.begin()
-  logLoading.value = true
-  logError.value = ''
+  if (!silent) logLoading.value = true
+  else logLoading.value = false
+  if (!silent) logError.value = ''
   try {
     const r = await getUpdateLogs({
       page: logPage.value, size: logSize.value,
@@ -537,9 +538,9 @@ async function loadLogs() {
     if (r.tables?.length) logTables.value = r.tables
   } catch (error) {
     if (!ingestLogRequest.isCurrent(requestId)) return
-    logError.value = getErrorMessage(error, '采集日志加载失败')
+    if (!silent) logError.value = getErrorMessage(error, '采集日志加载失败')
   } finally {
-    if (ingestLogRequest.isCurrent(requestId)) logLoading.value = false
+    if (!silent && ingestLogRequest.isCurrent(requestId)) logLoading.value = false
   }
 }
 async function load() {
@@ -648,7 +649,7 @@ function applyTaskPrefs(status = defaultTaskStatus.value) {
 function applyLogPrefs(status = defaultLogStatus.value) {
   logFilter.value.status = status
   logPage.value = 1
-  loadLogs()
+  loadLogs(updateLogList.value.length > 0)
 }
 useDefaultedSessionValue(defaultTaskStatus, { onSynced: applyTaskPrefs })
 useDefaultedSessionValue(defaultLogStatus, { onSynced: applyLogPrefs })
@@ -710,8 +711,8 @@ function pollLogs(id: string) {
       }
       const st = logTask.value?.status
       if (st === 'done' || st === 'failed' || st === 'interrupted') {
-        await refreshTasks()
-        if (st === 'done') await load()
+        await loadTasks(true)
+        if (st === 'done') await loadLogs(true)
         return
       }
     } catch { /* 下一拍重试 */ }
@@ -914,6 +915,7 @@ const menuPageTitle = useMenuPageTitle()
             v-else
             :data="tasks"
             :loading="taskLoading"
+            row-key="id"
             size="small"
             :border="tableBorder('taskTable')"
             :default-sort="taskDefaultSort"
