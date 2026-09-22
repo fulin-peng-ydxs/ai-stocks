@@ -216,8 +216,8 @@ const zoomRange = ref<ZoomRange>(normalizeZoomRange(props.zoomStart, props.zoomE
 const workspaceHeight = ref(0)
 let resizeObserver: ResizeObserver | null = null
 let active = true
-let activatedOnce = false
 let activationTimer: number | null = null
+const ACTIVATION_RETRY_LIMIT = 12
 const activationLoading = ref(false)
 let bottomSliderVisible: boolean | undefined
 let lastDisplayScale = 0
@@ -425,6 +425,13 @@ function setChartElement(key: WorkspacePanelKey, element: unknown): void {
   const previous = chartElements.get(key)
   if (previous === element) return
   if (previous && previous !== element) resizeObserver?.unobserve(previous)
+  const chart = charts.get(key)
+  if (chart && !chart.isDisposed() && chart.getDom() !== element) {
+    chart.dispose()
+    charts.delete(key)
+    if (connectedChartSignature) echarts.disconnect(groupId)
+    connectedChartSignature = ''
+  }
   if (element instanceof HTMLElement) {
     chartElements.set(key, element)
     resizeObserver?.observe(element)
@@ -663,14 +670,31 @@ function hasRenderableSize(element: HTMLElement): boolean {
   return element.clientWidth > 0 && element.clientHeight > 0
 }
 
+function hasReadyVisibleCharts(): boolean {
+  return panels.value.every((panel) => {
+    const element = chartElements.get(panel.key)
+    const chart = charts.get(panel.key)
+    return Boolean(
+      element
+      && hasRenderableSize(element)
+      && chart
+      && !chart.isDisposed()
+      && chart.getDom() === element,
+    )
+  })
+}
+
 function syncCharts(): void {
   if (!active) return
   lastDisplayScale = elementVisualScale(workspaceEl.value, 'x')
   const visibleKeys = new Set(panels.value.map((panel) => panel.key))
   charts.forEach((chart, key) => {
-    if (visibleKeys.has(key) && chartElements.has(key)) return
+    const element = chartElements.get(key)
+    if (visibleKeys.has(key) && element && chart.getDom() === element) return
     chart.dispose()
     charts.delete(key)
+    if (connectedChartSignature) echarts.disconnect(groupId)
+    connectedChartSignature = ''
   })
 
   panels.value.forEach((panel, index) => {
@@ -743,9 +767,11 @@ function onWorkspaceResize(): void {
     })
     if (hasPendingVisibleChart) {
       syncCharts()
+      if (hasReadyVisibleCharts()) activationLoading.value = false
       return
     }
     resizeCharts()
+    if (hasReadyVisibleCharts()) activationLoading.value = false
     const nextDisplayScale = elementVisualScale(workspaceEl.value, 'x')
     if (Math.abs(nextDisplayScale - lastDisplayScale) > 0.001) {
       lastDisplayScale = nextDisplayScale
@@ -798,6 +824,26 @@ function cancelDeferredActivation(): void {
   if (activationTimer === null) return
   window.clearTimeout(activationTimer)
   activationTimer = null
+}
+
+function scheduleActivationRestore(attempt = 0): void {
+  cancelDeferredActivation()
+  activationTimer = window.setTimeout(() => {
+    activationTimer = null
+    if (!active) {
+      activationLoading.value = false
+      return
+    }
+    syncCharts()
+    observeResize()
+    if (hasReadyVisibleCharts()) {
+      activationLoading.value = false
+      return
+    }
+    // KeepAlive 恢复时父级工作区可能仍处于 0×0；跨短帧补试，避免完全依赖一次
+    // ResizeObserver 通知。超过上限后继续保留加载态，由真实尺寸通知完成恢复。
+    if (attempt < ACTIVATION_RETRY_LIMIT) scheduleActivationRestore(attempt + 1)
+  }, attempt === 0 ? 0 : 16)
 }
 
 function availableHeight(): number {
@@ -1027,27 +1073,16 @@ onMounted(async () => {
 })
 onActivated(async () => {
   active = true
-  if (!activatedOnce) {
-    activatedOnce = true
+  if (hasReadyVisibleCharts()) {
+    activationLoading.value = false
+    observeResize()
+    resizeCharts()
     return
   }
   activationLoading.value = true
   await nextTick()
   // KeepAlive 恢复时先让路由页面完成一次绘制，再重建 ECharts，避免图表初始化阻塞菜单反馈。
-  cancelDeferredActivation()
-  activationTimer = window.setTimeout(() => {
-    activationTimer = null
-    if (!active) {
-      activationLoading.value = false
-      return
-    }
-    try {
-      syncCharts()
-      observeResize()
-    } finally {
-      activationLoading.value = false
-    }
-  }, 0)
+  scheduleActivationRestore()
 })
 onDeactivated(() => {
   active = false

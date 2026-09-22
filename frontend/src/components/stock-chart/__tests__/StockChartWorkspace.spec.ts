@@ -25,6 +25,7 @@ const echartsMock = vi.hoisted(() => {
       const rendererListeners = new Map<string, Array<(event: unknown) => void>>()
       const instance = {
         group: undefined as string | undefined,
+        getDom: vi.fn(() => _element),
         setOption: vi.fn(),
         dispatchAction: vi.fn(),
         resize: vi.fn(),
@@ -915,6 +916,54 @@ describe('StockChartWorkspace', () => {
     expect(ResizeObserverMock.instances[1].disconnect).toHaveBeenCalledTimes(1)
   })
 
+  it('图表在缓存页面激活后才挂载时，第一次菜单恢复仍会重建画布', async () => {
+    const pageVisible = ref(true)
+    const chartVisible = ref(false)
+    const source = bars()
+    const CachedPage = defineComponent({
+      name: 'LateChartCachedPage',
+      setup: () => () => h('div', chartVisible.value
+        ? [h(StockChartWorkspace, {
+            bars: source,
+            indicators: indicators(source),
+          })]
+        : []),
+    })
+    const Host = defineComponent({
+      setup: () => () => h(KeepAlive, null, {
+        default: () => pageVisible.value ? h(CachedPage) : h('div', 'inactive'),
+      }),
+    })
+    const wrapper = mount(Host, {
+      global: {
+        directives: { loading: {} },
+        stubs: { AppStateBlock: true },
+      },
+    })
+    await nextTick()
+    chartVisible.value = true
+    await nextTick()
+    await nextTick()
+    expect(echartsMock.init).toHaveBeenCalledTimes(3)
+
+    pageVisible.value = false
+    await nextTick()
+    expect(echartsMock.instances.slice(0, 3).every(
+      (instance) => instance.dispose.mock.calls.length === 1,
+    )).toBe(true)
+
+    pageVisible.value = true
+    await nextTick()
+    expect(wrapper.find('.stock-chart-workspace').attributes('aria-busy')).toBe('true')
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+    await nextTick()
+
+    expect(echartsMock.init).toHaveBeenCalledTimes(6)
+    expect(wrapper.find('.stock-chart-workspace').attributes('aria-busy')).toBe('false')
+    wrapper.unmount()
+  })
+
   it('容器为 0×0 时延迟初始化，尺寸恢复后由 ResizeObserver 补建图表', async () => {
     mockClientWidth = 0
     mockClientHeight = 0
@@ -929,6 +978,48 @@ describe('StockChartWorkspace', () => {
     await nextTick()
 
     expect(echartsMock.init).toHaveBeenCalledTimes(3)
+    wrapper.unmount()
+  })
+
+  it('KeepAlive 恢复瞬间仍为 0×0 时跨帧补建，不依赖 ResizeObserver 恰好通知', async () => {
+    const visible = ref(true)
+    const source = bars()
+    const Host = defineComponent({
+      setup: () => () => h(KeepAlive, null, {
+        default: () => visible.value
+          ? h(StockChartWorkspace, {
+              bars: source,
+              indicators: indicators(source),
+            })
+          : h('div', 'inactive'),
+      }),
+    })
+    const wrapper = mount(Host, {
+      global: {
+        directives: { loading: {} },
+        stubs: { AppStateBlock: true },
+      },
+    })
+    await nextTick()
+    await nextTick()
+    expect(echartsMock.init).toHaveBeenCalledTimes(3)
+
+    visible.value = false
+    await nextTick()
+    mockClientWidth = 0
+    mockClientHeight = 0
+    visible.value = true
+    await nextTick()
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+    expect(echartsMock.init).toHaveBeenCalledTimes(3)
+
+    mockClientWidth = 640
+    mockClientHeight = 800
+    await new Promise((resolve) => window.setTimeout(resolve, 25))
+    await nextTick()
+
+    expect(echartsMock.init).toHaveBeenCalledTimes(6)
+    expect(wrapper.find('.stock-chart-workspace').attributes('aria-busy')).toBe('false')
     wrapper.unmount()
   })
 

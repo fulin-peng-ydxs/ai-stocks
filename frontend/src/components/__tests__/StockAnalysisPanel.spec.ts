@@ -243,11 +243,34 @@ describe('StockAnalysisPanel', () => {
     expect(workspace.props('indicatorsPeriod')).toBe('week')
   })
 
-  it('K线切换股票时不复用上一只股票画布，而是回到首次加载骨架', async () => {
+  it('K线在同一列表切换股票时保留旧画布并使用刷新遮罩', async () => {
     const wrapper = mountPanel({ mode: 'kline' })
     await flushPromises()
     expect(wrapper.get('.app-async-region').attributes('data-loading-mode')).toBe('idle')
     expect(wrapper.findComponent({ name: 'StockChartWorkspace' }).exists()).toBe(true)
+
+    let resolveNextBars!: (value: unknown) => void
+    ;(stockApi.getBars as ReturnType<typeof vi.fn>).mockImplementationOnce(() => (
+      new Promise((resolve) => { resolveNextBars = resolve })
+    ))
+    await wrapper.setProps({
+      active: { code: '600000.SH', name: '浦发银行' },
+      selectionRevision: 1,
+    })
+    await flushPromises()
+
+    expect(wrapper.get('.app-async-region').attributes('data-loading-mode')).toBe('refresh')
+    expect(wrapper.findComponent({ name: 'StockChartWorkspace' }).exists()).toBe(true)
+
+    resolveNextBars({ code: '600000.SH', name: '浦发银行', adjust: 'qfq', bars: [bar] })
+    await flushPromises()
+    expect(wrapper.get('.app-async-region').attributes('data-loading-mode')).toBe('idle')
+    expect(wrapper.findComponent({ name: 'StockChartWorkspace' }).exists()).toBe(true)
+  })
+
+  it('列表刷新自动回退观察项时不跨对象复用旧图', async () => {
+    const wrapper = mountPanel({ mode: 'kline' })
+    await flushPromises()
 
     let resolveNextBars!: (value: unknown) => void
     ;(stockApi.getBars as ReturnType<typeof vi.fn>).mockImplementationOnce(() => (
@@ -261,8 +284,32 @@ describe('StockAnalysisPanel', () => {
 
     resolveNextBars({ code: '600000.SH', name: '浦发银行', adjust: 'qfq', bars: [bar] })
     await flushPromises()
-    expect(wrapper.get('.app-async-region').attributes('data-loading-mode')).toBe('idle')
-    expect(wrapper.findComponent({ name: 'StockChartWorkspace' }).exists()).toBe(true)
+  })
+
+  it('走势对比切换临时观察项时在遮罩下保留上一次成功序列', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'StockCompareChart' }).props('series')).toHaveLength(2)
+
+    let resolveNextBars!: (value: unknown) => void
+    ;(stockApi.getBars as ReturnType<typeof vi.fn>).mockImplementationOnce(() => (
+      new Promise((resolve) => { resolveNextBars = resolve })
+    ))
+    await wrapper.setProps({
+      active: { code: '300750.SZ', name: '宁德时代' },
+      items: [{ code: '300750.SZ', name: '宁德时代' }],
+      selectionRevision: 1,
+    })
+    await flushPromises()
+
+    expect(wrapper.get('.app-async-region').attributes('data-loading-mode')).toBe('refresh')
+    expect(wrapper.findComponent({ name: 'StockCompareChart' }).props('series')).toHaveLength(2)
+
+    resolveNextBars({ code: '300750.SZ', name: '宁德时代', adjust: 'qfq', bars: [bar] })
+    await flushPromises()
+    const series = wrapper.findComponent({ name: 'StockCompareChart' }).props('series')
+    expect(series).toHaveLength(1)
+    expect(series[0].code).toBe('300750.SZ')
   })
 
   it('复权口径随 adjustMode 进入行情请求与界面文案', async () => {

@@ -140,6 +140,7 @@ function openActiveDetail(): void {
         v-model:kline-range="klineRange"
         :active="selection.activeItem.value"
         :items="selection.items.value"
+        :selection-revision="selection.selectionRevision.value"
         :end-date="runDate"
         :compare-metrics="visibleCompareMetrics"
         :adjust-mode="adjustMode"

@@ -12,8 +12,10 @@ describe('useStockAnalysisSelection', () => {
     const selection = useStockAnalysisSelection(source, { maxItems: 2, onLimitReached })
 
     expect(selection.activeItem.value?.code).toBe('000001.SZ')
+    expect(selection.selectionRevision.value).toBe(0)
     selection.togglePinned(source.value[0]!)
     selection.select(source.value[1]!)
+    expect(selection.selectionRevision.value).toBe(1)
     expect(selection.items.value.map((item) => item.code)).toEqual(['600000.SH', '000001.SZ'])
     expect(selection.activeItem.value?.last_date).toBe('2026-08-13')
 
@@ -22,10 +24,12 @@ describe('useStockAnalysisSelection', () => {
 
     selection.remove('600000.SH')
     expect(selection.activeCode.value).toBe('000001.SZ')
+    expect(selection.selectionRevision.value).toBe(2)
 
     source.value = [{ code: '300001.SZ', name: '特锐德', last_date: '2026-08-12' }]
     await nextTick()
     expect(selection.activeCode.value).toBe('300001.SZ')
+    expect(selection.selectionRevision.value).toBe(2)
     expect(selection.isPinned('000001.SZ')).toBe(true)
 
     selection.clear()

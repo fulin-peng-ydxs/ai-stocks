@@ -27,6 +27,7 @@ export function useStockAnalysisSelection<T extends StockAnalysisSelectable>(
   const autoSelectFirst = options.autoSelectFirst ?? true
   const lookup = ref<Record<string, T>>({})
   const queue = ref<CompareQueueState>(emptyCompareQueue())
+  const selectionRevision = ref(0)
 
   const currentState = (): CompareQueueState => queue.value
   function applyState(next: CompareQueueState): void {
@@ -103,15 +104,21 @@ export function useStockAnalysisSelection<T extends StockAnalysisSelectable>(
     if (item.code === activeCode.value) return
     remember(item)
     applyState(activateCompareCode(currentState(), item.code, limit))
+    selectionRevision.value += 1
   }
 
   function activate(code: string): void {
     if (code === activeCode.value) return
-    if (lookup.value[code]) applyState(activateCompareCode(currentState(), code, limit))
+    if (lookup.value[code]) {
+      applyState(activateCompareCode(currentState(), code, limit))
+      selectionRevision.value += 1
+    }
   }
 
   function remove(code: string): void {
+    const previousActiveCode = activeCode.value
     applyState(removeCompareCode(currentState(), code, sourceItems.value[0]?.code || ''))
+    if (activeCode.value !== previousActiveCode) selectionRevision.value += 1
   }
 
   function clear(): void {
@@ -123,6 +130,7 @@ export function useStockAnalysisSelection<T extends StockAnalysisSelectable>(
     activeCode,
     activeItem,
     items,
+    selectionRevision,
     pinnedCodes,
     isPinned,
     togglePinned,

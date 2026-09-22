@@ -281,6 +281,32 @@ function applyQueue(next: CompareQueueState): void {
   activeCode.value = next.activeCode
   persistListReturnState()
 }
+
+/** 退出当前板块结果上下文，避免范围切换或空结果继续展示旧图。 */
+function clearChartContext(): void {
+  chartRequestVersion += 1
+  chartLoading.value = false
+  chartError.value = ''
+  benchmarkError.value = ''
+  compareBars.value = {}
+  compareWarmupBars.value = {}
+  compareIndicators.value = {}
+  loadedChartActiveCode.value = ''
+  loadedChartCodes.value = []
+  preserveChartOnNextLoad.value = false
+  retainSelectionChart.value = false
+  cumBars.value = {}
+  benchmarkSeries.value = null
+  applyQueue(emptyCompareQueue())
+}
+
+/** 切换板块主范围时撤下旧列表，交由 AppDataTable 统一呈现首次加载骨架。 */
+function clearListContext(): void {
+  rows.value = []
+  total.value = 0
+  boardLookup.value = {}
+  clearChartContext()
+}
 const { validDefault: klineDefaultRange } = useKlinePrefs()
 const sectorAnalysis = computed(() => normalizeSectorAnalysisPreferences(
   chartPreferences.sectorAnalysis.value,
@@ -317,6 +343,10 @@ const compareIndicatorPeriod = ref<KlinePeriod>('day')
 // compareBars 会导致切固定指标时覆盖掉累计窗口数据、数值漂移，故单独缓存，仅在累计被选中时刷新。
 const cumBars = ref<Record<string, SectorBar[]>>({})
 const benchmarkSeries = ref<{ code: string; name: string; bars: SectorBar[] } | null>(null)
+const loadedChartActiveCode = ref('')
+const loadedChartCodes = ref<string[]>([])
+const preserveChartOnNextLoad = ref(false)
+const retainSelectionChart = ref(false)
 let chartRequestVersion = 0
 
 const activeRow = computed(() => boardLookup.value[activeCode.value] ?? null)
@@ -327,6 +357,25 @@ const chartCodes = computed(() => {
 })
 const compareRows = computed(() =>
   chartCodes.value
+    .map((code) => boardLookup.value[code])
+    .filter((row): row is SectorRow => Boolean(row)),
+)
+// 行选择属于同一列表上下文内的内容刷新：请求期间继续渲染最后一次成功图表，
+// 由 AppAsyncRegion 叠加 v-loading；范围切换会通过 clearChartContext 清空快照。
+const isSelectionRefresh = computed(() => Boolean(
+  chartLoading.value
+  && retainSelectionChart.value
+  && activeCode.value
+  && loadedChartActiveCode.value
+  && loadedChartActiveCode.value !== activeCode.value,
+))
+const renderedChartCodes = computed(() => (
+  isSelectionRefresh.value && loadedChartCodes.value.length
+    ? loadedChartCodes.value
+    : chartCodes.value
+))
+const renderedCompareRows = computed(() =>
+  renderedChartCodes.value
     .map((code) => boardLookup.value[code])
     .filter((row): row is SectorRow => Boolean(row)),
 )
@@ -342,7 +391,7 @@ function activateCompared(code: string): void {
   if (row) selectRow(row)
 }
 const compareSeries = computed(() =>
-  compareRows.value
+  renderedCompareRows.value
     .filter((row) => compareBars.value[row.board_code]?.length)
     .map((row) => ({
       code: row.board_code,
@@ -351,12 +400,18 @@ const compareSeries = computed(() =>
     })),
 )
 const klineBars = computed<Bar[]>(() =>
-  toBoardChartBars(compareBars.value[activeCode.value] ?? []),
+  toBoardChartBars(compareBars.value[
+    isSelectionRefresh.value ? loadedChartActiveCode.value : activeCode.value
+  ] ?? []),
 )
 const klineWarmupBars = computed<Bar[]>(() =>
-  toBoardChartBars(compareWarmupBars.value[activeCode.value] ?? []),
+  toBoardChartBars(compareWarmupBars.value[
+    isSelectionRefresh.value ? loadedChartActiveCode.value : activeCode.value
+  ] ?? []),
 )
-const klineIndicators = computed(() => compareIndicators.value[activeCode.value] ?? [])
+const klineIndicators = computed(() => compareIndicators.value[
+  isSelectionRefresh.value ? loadedChartActiveCode.value : activeCode.value
+] ?? [])
 const compareMetricKind = computed(() => metricKind(compareMetric.value, compareWindow.value))
 // 头部槽位只展示用户配置的指标，顺序固定为指标池顺序（过滤掉历史遗留的失效指标，如 speed）。
 // 配置为空时回退全量，避免头部无槽可切。
@@ -422,8 +477,16 @@ function chartEnd(): string {
   return tradeDate.value || marketDate.value || dataMax.value || ''
 }
 async function loadChart(): Promise<void> {
+  const preservePreviousChart = preserveChartOnNextLoad.value
+  preserveChartOnNextLoad.value = false
+  retainSelectionChart.value = Boolean(
+    preservePreviousChart
+    && loadedChartActiveCode.value
+    && loadedChartActiveCode.value !== activeCode.value,
+  )
   if (!analysisPanelVisible.value) {
     chartLoading.value = false
+    retainSelectionChart.value = false
     return
   }
   const codes = chartCodes.value
@@ -433,6 +496,7 @@ async function loadChart(): Promise<void> {
     benchmarkSeries.value = null
     chartError.value = ''
     benchmarkError.value = ''
+    retainSelectionChart.value = false
     return
   }
   // 柱状模式（截面指标 / 单日累计）无时间轴，直接消费列表行快照，无需请求 bars。
@@ -442,11 +506,15 @@ async function loadChart(): Promise<void> {
     chartError.value = ''
     benchmarkError.value = ''
     benchmarkSeries.value = null
+    retainSelectionChart.value = false
     return
   }
   const end = chartEnd()
   const start = klineRangeQueryStart(end, requestedPointCount.value, dataMin.value || '2024-01-01')
-  if (!start || !end) return
+  if (!start || !end) {
+    retainSelectionChart.value = false
+    return
+  }
 
   const requestVersion = ++chartRequestVersion
   const requestedPeriod = chartPreferences.klinePeriod.value
@@ -506,11 +574,16 @@ async function loadChart(): Promise<void> {
       name: benchmark.name,
       bars: trimmed[benchmarkKey] ?? [],
     } : null
+    loadedChartActiveCode.value = activeCode.value
+    loadedChartCodes.value = [...codes]
   } catch (error) {
     if (requestVersion !== chartRequestVersion) return
     chartError.value = getErrorMessage(error, '板块走势加载失败')
   } finally {
-    if (requestVersion === chartRequestVersion) chartLoading.value = false
+    if (requestVersion === chartRequestVersion) {
+      chartLoading.value = false
+      retainSelectionChart.value = false
+    }
   }
 }
 
@@ -589,6 +662,7 @@ function selectRow(row: SectorRow): void {
   marketWorkspaceRef.value?.openCompactAnalysis()
   boardLookup.value = { ...boardLookup.value, [row.board_code]: row }
   if (activeCode.value === row.board_code) return
+  preserveChartOnNextLoad.value = hasChartContent.value
   applyQueue(activateCompareCode(currentQueue(), row.board_code, COMPARE_MAX))
   void loadChart()
 }
@@ -674,6 +748,10 @@ async function load(options: { deferChart?: boolean } = {}): Promise<void> {
 
     // 首屏直接呈现可用走势，避免必须先理解控件才能看到内容。
     const availableRows = data.list.filter((row) => row.available !== false)
+    if (!availableRows.length) {
+      clearChartContext()
+      return
+    }
     const activeInCurrentList = availableRows.some((row) => row.board_code === activeCode.value)
     if (!activeInCurrentList && availableRows.length) {
       const first = availableRows[0]!.board_code
@@ -701,17 +779,8 @@ function search(): void {
 }
 function changeListScope(): void {
   page.value = 1
-  // 全市场 / 自选是主列表上下文切换：先撤下旧观察和图表缓存，再加载新范围。
-  chartRequestVersion += 1
-  chartLoading.value = false
-  chartError.value = ''
-  benchmarkError.value = ''
-  compareBars.value = {}
-  compareWarmupBars.value = {}
-  compareIndicators.value = {}
-  cumBars.value = {}
-  benchmarkSeries.value = null
-  applyQueue(emptyCompareQueue())
+  // 全市场 / 自选是主列表上下文切换：列表与图表都不得复用上一范围的内容。
+  clearListContext()
   void load()
 }
 function onDateChange(): void {

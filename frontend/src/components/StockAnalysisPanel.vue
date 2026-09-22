@@ -56,10 +56,12 @@ const props = withDefaults(defineProps<{
   klinePeriod?: KlinePeriod
   canOpenDetail?: boolean
   refreshRevision?: number
+  selectionRevision?: number
 }>(), {
   adjustMode: 'qfq',
   canOpenDetail: true,
   refreshRevision: 0,
+  selectionRevision: 0,
   returnMeasurementMode: 'latest',
   klinePeriod: 'day',
 })
@@ -100,6 +102,9 @@ const klineWarmupBars = ref<Bar[]>([])
 const klineIndicators = ref<IndicatorRow[]>([])
 const klineIndicatorPeriod = ref<KlinePeriod>('day')
 const loadedKlineCode = ref('')
+const loadedCompareActiveCode = ref('')
+const loadedCompareItems = ref<StockAnalysisItem[]>([])
+const retainSelectionContent = ref(false)
 const indicatorError = ref('')
 let requestVersion = 0
 let controller: AbortController | null = null
@@ -110,7 +115,21 @@ const {
   openIntraday,
 } = useStockIntradayDrilldown(() => props.active?.code)
 
-const compareSeries = computed(() => props.items
+// 同一列表内切换观察对象时，旧图保留到新请求成功，避免画布卸载后闪回骨架。
+// 主上下文切换会先把 active 置空并清除此快照，因此不会跨范围复用旧图。
+const isSelectionRefresh = computed(() => Boolean(
+  loading.value
+  && retainSelectionContent.value
+  && props.active?.code
+  && ((props.mode === 'compare' ? loadedCompareActiveCode.value : loadedKlineCode.value))
+  && (props.mode === 'compare' ? loadedCompareActiveCode.value : loadedKlineCode.value) !== props.active?.code,
+))
+const renderedCompareItems = computed(() => (
+  isSelectionRefresh.value && loadedCompareItems.value.length
+    ? loadedCompareItems.value
+    : props.items
+))
+const compareSeries = computed(() => renderedCompareItems.value
   .filter((item) => barsByCode.value[item.code]?.length)
   .map((item) => ({
     code: item.code,
@@ -231,6 +250,10 @@ async function loadCompare(
   })
   barsByCode.value = nextBars
   partialErrors.value = nextErrors
+  if (Object.values(nextBars).some((bars) => bars.length)) {
+    loadedCompareActiveCode.value = props.active?.code ?? ''
+    loadedCompareItems.value = props.items.map((item) => ({ ...item }))
+  }
   if (reloadCalendar) {
     benchmarkBars.value = calendarResult?.bars ?? []
     benchmarkName.value = calendarResult?.name ?? ''
@@ -314,6 +337,8 @@ function load(): void {
     loading.value = false
     error.value = ''
     barsByCode.value = {}
+    loadedCompareActiveCode.value = ''
+    loadedCompareItems.value = []
     benchmarkBars.value = []
     benchmarkError.value = ''
     klineBars.value = []
@@ -348,14 +373,30 @@ watch(
     props.klinePeriod,
     activeAdjustMode.value,
     props.refreshRevision,
+    props.selectionRevision,
   ],
-  load,
+  (next, previous) => {
+    const [nextMode, nextActiveCode] = next
+    const [previousMode, previousActiveCode] = previous ?? []
+    const nextSelectionRevision = next[next.length - 1]
+    const previousSelectionRevision = previous?.[previous.length - 1]
+    retainSelectionContent.value = Boolean(
+      nextMode === previousMode
+      && nextActiveCode
+      && previousActiveCode
+      && nextActiveCode !== previousActiveCode
+      && nextSelectionRevision !== previousSelectionRevision,
+    )
+    load()
+  },
   { immediate: true },
 )
 const hasChartContent = computed(() => (
   props.mode === 'compare'
     ? compareSeries.value.length > 0
-    : loadedKlineCode.value === props.active?.code && klineBars.value.length > 0
+      && (loadedCompareActiveCode.value === props.active?.code || isSelectionRefresh.value)
+    : klineBars.value.length > 0
+      && (loadedKlineCode.value === props.active?.code || isSelectionRefresh.value)
 ))
 const chartRegionError = computed(() => (
   error.value || (!loading.value && props.mode === 'compare' ? benchmarkError.value : '')

@@ -642,6 +642,7 @@ const {
   activeCode: activeAnalysisCode,
   activeItem: activeAnalysisItem,
   items: analysisItems,
+  selectionRevision: analysisSelectionRevision,
   isPinned: isAnalysisPinned,
   togglePinned: toggleAnalysisPinned,
   select: selectAnalysisItem,
@@ -1254,6 +1255,7 @@ const menuPageTitle = useMenuPageTitle()
           v-model:kline-range="klineRange"
           :active="activeAnalysisItem"
           :items="analysisItems"
+          :selection-revision="analysisSelectionRevision"
           :compare-metrics="visibleCompareMetrics"
           :adjust-mode="adjustMode"
           :end-date="analysisEndDate"
