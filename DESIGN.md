@@ -114,7 +114,7 @@ Key Characteristics：
 | 层级 | 强制 token / 值 | 使用场景 |
 |---|---|---|
 | 页面标题 | `--app-font-size-page-title` 22px / 700 / 30px；紧凑页可用 20px | 页面主标题、工作台名称、配置中心一级标题 |
-| 分区标题 | `--app-font-size-section-title` 15px / 600 / 22px | 卡片标题、配置组标题、局部紧凑工具抽屉标题 |
+| 分区标题 | `--app-font-size-section-title` 15px / 600 / 22px | 卡片标题、标准抽屉配置组标题、局部紧凑工具抽屉标题；紧凑抽屉内的一级分组降为正文尺寸 14px / 600 / 22px |
 | 标准抽屉标题 | `--app-font-size-drawer-title` 16px / 600 / 24px | 页面详情、页面设置、全局功能抽屉标题 |
 | 正文 | `--app-font-size-body` 14px / 400 / 22px | 表单、普通说明、主体内容 |
 | 表格正文 | 默认 `--app-font-size-table` 13px / 400 / 20px；不高于 `1.5dppx` 的低像素密度屏幕使用 14px / 22px | 数据表格、列表、密集参数行 |
@@ -133,7 +133,7 @@ Key Characteristics：
 - 10px 以下只允许使用 `--app-font-size-ornament` 或 `--app-icon-size-xs`，用于图标内部标记、红点角标或不可读正文之外的装饰性标尺；不得用于业务说明、表格、表单、按钮、筛选项。
 - 11px 只用于弱标签或极窄 chrome 信息；业务内容、表格单元格、表单 label、按钮文案不得小于 12px。
 - 页面设置抽屉的字体按语义角色固定：抽屉标题 16px，一级分类 15px，二级及更深可折叠节点统一 14px，事项名 13px，辅助说明 12px。禁止按 DOM 深度继续缩小节点字号，也不得通过全大写、字距或虚下划线代替真实层级；页面密度只调整间距，不改写这套字体角色。
-- 抽屉标题统一消费 `PageDrawer` 的标题档位或 `.app-drawer-title`：标准抽屉使用 16px / 600 / 24px，嵌入局部工作区且空间受限的工具抽屉可声明 `compact`，使用 15px / 600 / 22px；副标题统一消费 `.app-drawer-subtitle` 的 12px / 400 / 18px。禁止依赖 Element Plus、原生标题标签默认字号字重或页面私有字号。
+- 抽屉标题统一消费 `PageDrawer` 的标题档位或 `.app-drawer-title`：标准抽屉使用 16px / 600 / 24px，嵌入局部工作区且空间受限的工具抽屉可声明 `compact`，使用 15px / 600 / 22px；标准抽屉内的一级 `SettingsGroup` 为 15px / 600 / 22px，紧凑抽屉内自动降为 14px / 600 / 22px，分段选项使用 13px / 600，形成清晰的标题—分组—选项层级。该差异由 `PageDrawerSurface` 与 `SettingsGroup` 的共享上下文承载，业务抽屉不得私自覆盖。副标题统一消费 `.app-drawer-subtitle` 的 12px / 400 / 18px。禁止依赖 Element Plus、原生标题标签默认字号字重或页面私有字号。
 - 微字号（`--app-font-size-micro`/`tiny`/`ornament`）不得通过无 `>` 限定的宽泛后代选择器（如 `.xx span`、`.xx strong`）声明——此类规则会把它误传给嵌套的数值、标题等本不该用小字号的元素。微字号只允许作用于语义类、`:global` 或 `>` 限定的直接子级；容器用常规字号，内部小字通过独立子级规则声明。该约束由 `typography-spacing-system.spec.ts` 强制，禁止用 `>` 缺失的选择器绕过。
 - 表格内长文本默认省略、tooltip 或详情承接，不默认自动换行撑高行高。
 - 单块纯文本说明优先进入 `HelpHint` 的 tooltip；需要标题、分段、列表、示例或同时解释多个独立要点时使用 `HelpTip` 的 popover。`HelpHint` 长文必须在共享浮层中换行并限制视口内最大宽度，不得撑成横跨页面的单行提示。`HelpTip` 的默认插槽只放 `HelpTipItem`，每个独立说明项固定两层：传 `question="具体问题文本"` 时，第一行显示该问题文本并由组件追加冒号；传 `warning` 时，第一行固定显示“注意：”并消费当前视觉预设的 `--app-warning-text`。第二行的全部内容无论长短都必须使用语义化 `ul/li`，由组件统一渲染为以 `.` 开头的无序列表。同一项必须且只能在 `question` 与 `warning` 中选择一个，调用方不得自行拼接标签、冒号、列表符号、颜色或项间距。页面上只保留必要短标签，不以字符数作为两者的硬边界。

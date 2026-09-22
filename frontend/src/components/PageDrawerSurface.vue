@@ -22,7 +22,10 @@ defineEmits<{
 </script>
 
 <template>
-  <section class="page-drawer-surface">
+  <section
+    class="page-drawer-surface"
+    :class="{ 'is-title-compact': titleSize === 'compact' }"
+  >
     <header class="page-drawer-surface__header">
       <div
         class="page-drawer-surface__heading"
@@ -62,6 +65,7 @@ defineEmits<{
 
 <style scoped>
 .page-drawer-surface {
+  --app-settings-group-level-one-font-size: var(--app-font-size-section-title);
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -72,6 +76,9 @@ defineEmits<{
   border-radius: 16px;
   box-shadow: 0 10px 30px var(--page-settings-shadow);
   overflow: hidden;
+}
+.page-drawer-surface.is-title-compact {
+  --app-settings-group-level-one-font-size: var(--app-font-size-body);
 }
 .page-drawer-surface__header {
   flex: none;

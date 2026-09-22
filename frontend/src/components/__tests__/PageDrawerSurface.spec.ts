@@ -21,6 +21,7 @@ describe('PageDrawerSurface', () => {
     })
 
     expect(wrapper.get('.page-drawer-surface__title').classes()).toContain('app-drawer-title')
+    expect(wrapper.get('.page-drawer-surface').classes()).not.toContain('is-title-compact')
     expect(wrapper.get('.app-drawer-subtitle').text()).toContain('调整界面比例')
     expect(wrapper.get('.suffix').text()).toBe('已修改')
     expect(wrapper.get('.content').text()).toBe('正文')
@@ -43,6 +44,7 @@ describe('PageDrawerSurface', () => {
 
     expect(wrapper.get('.page-drawer-surface__title').classes())
       .toContain('app-drawer-title--compact')
+    expect(wrapper.get('.page-drawer-surface').classes()).toContain('is-title-compact')
     expect(wrapper.get('.page-drawer-surface__body').classes()).toContain('is-scroll-disabled')
     expect(wrapper.get('.page-drawer-surface__body').classes()).toContain('is-fill')
   })

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * 通用可折叠分组（设置抽屉的固有结构单元）。层级由卡片、缩进和结构线表达，
- * 标题字号按语义角色稳定分档，不随嵌套深度持续缩小。
+ * 标题字号按语义角色稳定分档；紧凑抽屉可通过共享上下文降低一级分组字号，
+ * 嵌套层级仍主要由卡片、缩进和结构线表达。
  */
 import { computed, ref, watch } from 'vue'
 import { Expand, Fold } from '@element-plus/icons-vue'
@@ -124,7 +125,10 @@ const childToggleLabel = computed(() => (
   background: var(--page-settings-seg-hover-bg);
 }
 .sg-l1 > .sg-head .sg-title {
-  font-size: var(--app-font-size-section-title);
+  font-size: var(
+    --app-settings-group-level-one-font-size,
+    var(--app-font-size-section-title)
+  );
   font-weight: var(--app-font-weight-section);
   color: var(--page-settings-text);
 }
