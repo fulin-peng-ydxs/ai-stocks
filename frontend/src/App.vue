@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Calendar, Clock, Close, Minus, Plus, Refresh, Select } from '@element-plus/icons-vue'
+import { Calendar, Clock, Minus, Plus, Refresh, Select } from '@element-plus/icons-vue'
 import { useTheme, type ThemeMode } from '@/composables/useTheme'
 import {
   useAppNavigation,
@@ -48,6 +48,8 @@ import WorkspaceRouteView from '@/components/WorkspaceRouteView.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppOverflowTooltipHost from '@/components/AppOverflowTooltipHost.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
+import PageDrawerSurface from '@/components/PageDrawerSurface.vue'
+import SettingsGroup from '@/components/SettingsGroup.vue'
 import TradeDisciplineQuickCard from '@/components/trade-discipline/TradeDisciplineQuickCard.vue'
 import { formatDateTimeMinutes } from '@/utils/dateTime'
 
@@ -609,16 +611,15 @@ async function onLogout() {
       </el-container>
     </el-container>
 
-    <el-drawer v-model="userDrawerVisible" direction="rtl" size="440px" class="user-drawer">
-      <div class="drawer-card">
-        <header class="drawer-head">
-          <span class="drawer-title app-drawer-title">用户中心</span>
-          <AppIconButton class="drawer-close" label="关闭用户中心" size="sm" @click="userDrawerVisible = false">
-            <el-icon><Close /></el-icon>
-          </AppIconButton>
-        </header>
-
-        <div class="drawer-body">
+    <el-drawer
+      v-model="userDrawerVisible"
+      direction="rtl"
+      size="440px"
+      class="app-drawer-surface-host"
+      modal-class="app-drawer-surface-modal"
+    >
+      <PageDrawerSurface title="用户中心" close-label="关闭用户中心" @close="userDrawerVisible = false">
+        <div class="app-stack-md">
           <div class="drawer-user-card">
             <span class="drawer-avatar">{{ avatarText }}</span>
             <div>
@@ -638,161 +639,155 @@ async function onLogout() {
             退出登录
           </el-button>
         </div>
-      </div>
+      </PageDrawerSurface>
     </el-drawer>
 
-    <el-drawer v-model="appearanceDrawerVisible" direction="rtl" size="440px" class="appearance-drawer">
-      <div class="drawer-card">
-        <header class="drawer-head drawer-head--appearance">
-          <div>
-            <div class="drawer-title app-drawer-title">视觉环境</div>
-            <div class="drawer-subtitle app-drawer-subtitle">调整界面比例、阅读光线与导航方式</div>
-          </div>
-          <AppIconButton class="drawer-close" label="关闭视觉环境" size="sm" @click="appearanceDrawerVisible = false">
-            <el-icon><Close /></el-icon>
-          </AppIconButton>
-        </header>
-
-        <div class="drawer-body">
-          <section class="theme-card">
-            <div class="theme-card-head">
-              <div>
-                <div class="theme-card-title">界面比例</div>
-                <div class="theme-card-sub">100% 为原始设计尺寸；自动模式小屏缩小、大屏放大</div>
-              </div>
-              <output class="display-scale-value" aria-live="polite">{{ displayScalePercent }}%</output>
-            </div>
-            <PageSegmented
-              v-model="displayScaleModeModel"
-              aria-label="界面比例模式"
-              test-id="appearance-display-scale-mode"
-              :options="displayScaleModeOptions"
-            />
-            <div class="display-scale-control">
-              <AppIconButton
-                label="缩小界面"
-                size="sm"
-                :disabled="displayScalePercent <= DISPLAY_SCALE_MIN"
-                @click="nudgeDisplayScale(-1)"
-              >
-                <el-icon><Minus /></el-icon>
-              </AppIconButton>
-              <el-slider
-                class="display-scale-slider"
-                :model-value="displayScalePercent"
-                :min="DISPLAY_SCALE_MIN"
-                :max="DISPLAY_SCALE_MAX"
-                :step="1"
-                :show-tooltip="false"
-                aria-label="调整界面比例"
-                data-testid="appearance-display-scale-slider"
-                @input="setDisplayScalePercent"
-              />
-              <AppIconButton
-                label="放大界面"
-                size="sm"
-                :disabled="displayScalePercent >= DISPLAY_SCALE_MAX"
-                @click="nudgeDisplayScale(1)"
-              >
-                <el-icon><Plus /></el-icon>
-              </AppIconButton>
-            </div>
-            <div class="display-scale-foot">
-              <span>{{ displayScaleMode === 'auto' ? `已按当前屏幕自动调整为 ${displayScalePercent}%` : '已使用自定义比例' }}</span>
-              <el-button link type="primary" @click="resetDisplayScale">恢复100%</el-button>
-            </div>
-          </section>
-
-          <section class="theme-card">
-            <div class="theme-card-head">
-              <div>
-                <div class="theme-card-title">明暗模式</div>
-                <div class="theme-card-sub">跟随系统时随系统浅色/深色自动切换</div>
-              </div>
-            </div>
-            <PageSegmented
-              v-model="themeModeModel"
-              aria-label="明暗模式"
-              test-id="appearance-theme-mode"
-              :options="themeModeOptions"
+    <el-drawer
+      v-model="appearanceDrawerVisible"
+      direction="rtl"
+      size="440px"
+      class="app-drawer-surface-host"
+      modal-class="app-drawer-surface-modal"
+    >
+      <PageDrawerSurface
+        title="视觉环境"
+        subtitle="调整界面比例、阅读光线与导航方式"
+        close-label="关闭视觉环境"
+        @close="appearanceDrawerVisible = false"
+      >
+        <SettingsGroup
+          title="界面比例"
+          hint="100% 为原始设计尺寸；自动模式小屏缩小、大屏放大"
+          :level="1"
+          :collapsible="false"
+        >
+          <template #actions>
+            <output class="display-scale-value" aria-live="polite">{{ displayScalePercent }}%</output>
+          </template>
+          <PageSegmented
+            v-model="displayScaleModeModel"
+            aria-label="界面比例模式"
+            test-id="appearance-display-scale-mode"
+            :options="displayScaleModeOptions"
+          />
+          <div class="display-scale-control">
+            <AppIconButton
+              label="缩小界面"
+              size="sm"
+              :disabled="displayScalePercent <= DISPLAY_SCALE_MIN"
+              @click="nudgeDisplayScale(-1)"
             >
-              <template #icon="{ option }">
-                <span class="mode-orb" :class="`mode-orb--${option.value}`" aria-hidden="true" />
-              </template>
-            </PageSegmented>
-          </section>
+              <el-icon><Minus /></el-icon>
+            </AppIconButton>
+            <el-slider
+              class="display-scale-slider"
+              :model-value="displayScalePercent"
+              :min="DISPLAY_SCALE_MIN"
+              :max="DISPLAY_SCALE_MAX"
+              :step="1"
+              :show-tooltip="false"
+              aria-label="调整界面比例"
+              data-testid="appearance-display-scale-slider"
+              @input="setDisplayScalePercent"
+            />
+            <AppIconButton
+              label="放大界面"
+              size="sm"
+              :disabled="displayScalePercent >= DISPLAY_SCALE_MAX"
+              @click="nudgeDisplayScale(1)"
+            >
+              <el-icon><Plus /></el-icon>
+            </AppIconButton>
+          </div>
+          <div class="display-scale-foot">
+            <span>{{ displayScaleMode === 'auto' ? `已按当前屏幕自动调整为 ${displayScalePercent}%` : '已使用自定义比例' }}</span>
+            <el-button link type="primary" @click="resetDisplayScale">恢复100%</el-button>
+          </div>
+        </SettingsGroup>
 
-          <section class="theme-card">
-            <div class="theme-card-head">
-              <div>
-                <div class="theme-card-title">视觉预设</div>
-                <div class="theme-card-sub">预设改变强调色与布局策略，不改变明暗基础背景</div>
-              </div>
-            </div>
+        <SettingsGroup
+          title="明暗模式"
+          hint="跟随系统时随系统浅色/深色自动切换"
+          :level="1"
+          :collapsible="false"
+        >
+          <PageSegmented
+            v-model="themeModeModel"
+            aria-label="明暗模式"
+            test-id="appearance-theme-mode"
+            :options="themeModeOptions"
+          >
+            <template #icon="{ option }">
+              <span class="mode-orb" :class="`mode-orb--${option.value}`" aria-hidden="true" />
+            </template>
+          </PageSegmented>
+        </SettingsGroup>
 
-            <div class="theme-list" aria-label="视觉预设选择">
-              <button
-                v-for="option in themeOptionsWithSwatches"
-                :key="option.value"
-                class="theme-option"
-                :class="{ 'is-active': option.value === activePresetKey }"
-                type="button"
-                :aria-pressed="option.value === activePresetKey"
-                @click="selectPreset(option.value)"
-              >
-                <span class="theme-option-signal" aria-hidden="true">
-                  <i
-                    v-for="(swatch, index) in option.swatches"
-                    :key="`${index}-${swatch}`"
-                    :class="{ 'is-primary': index === 0 }"
-                    :style="{ background: swatch }"
-                  />
-                </span>
-                <span class="theme-option-copy">
-                  <strong>{{ option.label }}</strong>
-                  <small>{{ option.description }}</small>
-                </span>
-                <el-icon class="theme-option-check" aria-hidden="true"><Select /></el-icon>
-              </button>
-            </div>
-          </section>
+        <SettingsGroup
+          title="视觉预设"
+          hint="预设改变强调色与布局策略，不改变明暗基础背景"
+          :level="1"
+          :collapsible="false"
+        >
+          <div class="theme-list" aria-label="视觉预设选择">
+            <button
+              v-for="option in themeOptionsWithSwatches"
+              :key="option.value"
+              class="theme-option"
+              :class="{ 'is-active': option.value === activePresetKey }"
+              type="button"
+              :aria-pressed="option.value === activePresetKey"
+              @click="selectPreset(option.value)"
+            >
+              <span class="theme-option-signal" aria-hidden="true">
+                <i
+                  v-for="(swatch, index) in option.swatches"
+                  :key="`${index}-${swatch}`"
+                  :class="{ 'is-primary': index === 0 }"
+                  :style="{ background: swatch }"
+                />
+              </span>
+              <span class="theme-option-copy">
+                <strong>{{ option.label }}</strong>
+                <small>{{ option.description }}</small>
+              </span>
+              <el-icon class="theme-option-check" aria-hidden="true"><Select /></el-icon>
+            </button>
+          </div>
+        </SettingsGroup>
 
-          <section class="theme-card navigation-card">
-            <div class="theme-card-head">
-              <div>
-                <div class="theme-card-title">导航布局</div>
-                <div class="theme-card-sub">选择页面之间的组织方式</div>
-              </div>
-            </div>
-
-            <div class="navigation-list" aria-label="导航布局选择">
-              <button
-                v-for="option in navigationOptions"
-                :key="option.value"
-                class="navigation-option"
-                :class="{ 'is-active': navigationMode === option.value }"
-                type="button"
-                :aria-pressed="navigationMode === option.value"
-                @click="setNavigationMode(option.value)"
-              >
-                <span class="navigation-preview" :class="`is-${option.value}`" aria-hidden="true">
-                  <i class="nav-preview-head" />
-                  <i class="nav-preview-rail" />
-                  <i class="nav-preview-sub" />
-                  <i class="nav-preview-tabs"><b /><b /></i>
-                  <i class="nav-preview-content"><b /><b /></i>
-                </span>
-                <span class="navigation-option-copy">
-                  <strong>{{ option.label }}</strong>
-                  <small>{{ option.description }}</small>
-                </span>
-                <el-icon class="theme-option-check" aria-hidden="true"><Select /></el-icon>
-              </button>
-            </div>
-          </section>
-
-        </div>
-      </div>
+        <SettingsGroup
+          title="导航布局"
+          hint="选择页面之间的组织方式"
+          :level="1"
+          :collapsible="false"
+        >
+          <div class="navigation-list" aria-label="导航布局选择">
+            <button
+              v-for="option in navigationOptions"
+              :key="option.value"
+              class="navigation-option"
+              :class="{ 'is-active': navigationMode === option.value }"
+              type="button"
+              :aria-pressed="navigationMode === option.value"
+              @click="setNavigationMode(option.value)"
+            >
+              <span class="navigation-preview" :class="`is-${option.value}`" aria-hidden="true">
+                <i class="nav-preview-head" />
+                <i class="nav-preview-rail" />
+                <i class="nav-preview-sub" />
+                <i class="nav-preview-tabs"><b /><b /></i>
+                <i class="nav-preview-content"><b /><b /></i>
+              </span>
+              <span class="navigation-option-copy">
+                <strong>{{ option.label }}</strong>
+                <small>{{ option.description }}</small>
+              </span>
+              <el-icon class="theme-option-check" aria-hidden="true"><Select /></el-icon>
+            </button>
+          </div>
+        </SettingsGroup>
+      </PageDrawerSurface>
     </el-drawer>
   </el-container>
   <AppOverflowTooltipHost />
@@ -1208,72 +1203,6 @@ button.topbar-status:focus-visible {
   gap: var(--app-space-2);
   padding-top: 2px;
 }
-:deep(.user-drawer),
-:deep(.appearance-drawer) {
-  --el-drawer-bg-color: transparent;
-}
-:deep(.user-drawer .el-drawer),
-:deep(.appearance-drawer .el-drawer) {
-  background: transparent;
-  box-shadow: none;
-}
-:deep(.user-drawer .el-drawer__header),
-:deep(.appearance-drawer .el-drawer__header) {
-  display: none;
-  margin: 0;
-  padding: 0;
-}
-:deep(.user-drawer .el-drawer__body),
-:deep(.appearance-drawer .el-drawer__body) {
-  padding: 14px;
-  display: flex;
-}
-.drawer-card {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--page-settings-bg);
-  border: 1px solid var(--page-settings-border);
-  border-radius: 16px;
-  box-shadow: 0 10px 30px var(--page-settings-shadow);
-  overflow: hidden;
-}
-.drawer-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--page-settings-divider);
-}
-.drawer-head--appearance {
-  gap: var(--app-space-3);
-}
-.drawer-title {
-  color: var(--page-settings-text);
-  flex: none;
-}
-.drawer-subtitle {
-  color: var(--page-settings-text-muted);
-}
-.drawer-close {
-  color: var(--page-settings-text-muted);
-}
-.drawer-close:hover:not(:disabled) {
-  border-color: transparent;
-  background: var(--page-settings-seg-hover-bg);
-  color: var(--page-settings-text);
-}
-.drawer-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-3);
-}
 .drawer-user-card {
   display: flex;
   align-items: center;
@@ -1318,32 +1247,6 @@ button.topbar-status:focus-visible {
 .mode-orb--light { background: radial-gradient(circle at 38% 35%, #ffffff 0 20%, #9ec5ff 22% 48%, #3b82f6 51% 100%); }
 .mode-orb--dark { background: radial-gradient(circle at 60% 38%, #dbeafe 0 16%, #4b7bbd 18% 40%, #172554 43% 100%); }
 .mode-orb--system { background: linear-gradient(115deg, #3b82f6 0 50%, #172554 50% 100%); }
-.theme-card {
-  border: 0;
-  background: transparent;
-  border-radius: 0;
-  padding: 4px 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-3);
-  box-shadow: none;
-}
-.theme-card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--app-space-3);
-}
-.theme-card-title {
-  font-size: var(--app-font-size-table);
-  font-weight: var(--app-font-weight-strong);
-  color: var(--page-settings-text);
-}
-.theme-card-sub {
-  margin-top: 1px;
-  font-size: var(--app-font-size-caption);
-  color: var(--page-settings-text-muted);
-}
 .display-scale-value {
   flex: none;
   color: var(--page-settings-accent);
@@ -1438,9 +1341,6 @@ button.topbar-status:focus-visible {
   color: var(--page-settings-text-muted);
   font-size: var(--app-font-size-caption);
   line-height: var(--app-line-height-caption);
-}
-.navigation-card {
-  padding-top: 2px;
 }
 .navigation-list {
   display: grid;

@@ -13,9 +13,11 @@ const props = withDefaults(defineProps<{
   modalClass?: string
   size?: PageDrawerSize
   titleSize?: 'standard' | 'compact'
+  surface?: boolean
 }>(), {
   size: 'md',
   titleSize: 'standard',
+  surface: false,
 })
 
 const emit = defineEmits<{
@@ -35,6 +37,8 @@ const appendTarget = computed(() => pageTarget?.value ?? 'body')
 const modalClassName = computed(() => [
   'page-drawer-modal',
   `page-drawer-modal--title-${props.titleSize}`,
+  props.surface ? 'page-drawer-modal--surface' : '',
+  props.surface ? 'app-drawer-surface-modal' : '',
   props.size === 'full' ? 'page-drawer-modal--full' : '',
   props.modalClass,
 ].filter(Boolean).join(' '))
@@ -46,6 +50,7 @@ const drawerWidth = computed(() => PAGE_DRAWER_WIDTHS[props.size])
     v-model="model"
     v-bind="$attrs"
     :append-to="appendTarget"
+    :class="{ 'page-drawer--surface app-drawer-surface-host': props.surface }"
     :modal-class="modalClassName"
     :size="drawerWidth"
   >
@@ -63,6 +68,9 @@ const drawerWidth = computed(() => PAGE_DRAWER_WIDTHS[props.size])
 /* PageDrawer teleport 到 LayoutHost 根节点；absolute 让遮罩严格服从页面边界，而非视口。 */
 .el-overlay.page-drawer-modal {
   position: absolute;
+}
+.el-overlay.page-drawer-modal .el-drawer {
+  max-width: 100%;
 }
 .el-overlay.page-drawer-modal .el-drawer__title {
   margin: 0;

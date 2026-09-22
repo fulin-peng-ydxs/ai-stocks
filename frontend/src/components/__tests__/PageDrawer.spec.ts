@@ -130,4 +130,19 @@ describe('PageDrawer 页面边界', () => {
 
     wrapper.unmount()
   })
+
+  it('设置型抽屉通过共享 surface 档统一遮罩和内容宿主', async () => {
+    const wrapper = mount(PageDrawer, {
+      attachTo: document.body,
+      props: { modelValue: true, title: '设置型抽屉', surface: true },
+      global: { plugins: [ElementPlus] },
+    })
+    await nextTick()
+    await nextTick()
+
+    expect(document.querySelector('.el-overlay.page-drawer-modal--surface')).not.toBeNull()
+    expect(document.querySelector('.el-drawer.page-drawer--surface')).not.toBeNull()
+
+    wrapper.unmount()
+  })
 })

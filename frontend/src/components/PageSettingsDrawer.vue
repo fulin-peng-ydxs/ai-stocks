@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, useSlots, watch } from 'vue'
-import { Close, Expand, Fold } from '@element-plus/icons-vue'
+import { Expand, Fold } from '@element-plus/icons-vue'
 import type { EditableKnob } from '@/layout/schema'
 import type { LayoutConfigLayer } from '@/layout/merge'
 import { applicableComponentFields, getPageEntry, type SlotConfigMeta } from '@/layout/pageRegistry'
@@ -12,6 +12,7 @@ import {
 import SettingsGroup from './SettingsGroup.vue'
 import ComponentAutoSettings from './ComponentAutoSettings.vue'
 import PageDrawer from './PageDrawer.vue'
+import PageDrawerSurface from './PageDrawerSurface.vue'
 import LayoutSettingsSection from '@/layout/components/LayoutSettingsSection.vue'
 import AppIconButton from './AppIconButton.vue'
 import AppStatusNotice from './AppStatusNotice.vue'
@@ -233,31 +234,28 @@ function handleReset(): void {
     @update:model-value="(value: boolean) => emit('update:modelValue', value)"
     direction="rtl"
     :size="drawerSize"
-    class="page-settings-drawer"
+    surface
     data-testid="page-settings-drawer"
-    modal-class="ps-settings-modal"
   >
-    <div class="ps-card">
-      <header class="ps-header">
-        <div class="ps-title app-drawer-title">
-          <span>{{ props.title || '页面设置' }}</span>
-          <span v-if="props.dirty" class="ps-dirty-dot" />
-        </div>
-        <div class="ps-header-actions">
-          <AppIconButton
-            v-if="visibleSectionKeys.length"
-            class="ps-fold-all"
-            :label="bulkToggleLabel"
-            size="sm"
-            @click="toggleAllSections"
-          >
-            <el-icon><Expand v-if="allVisibleSectionsCollapsed" /><Fold v-else /></el-icon>
-          </AppIconButton>
-          <AppIconButton class="ps-close" label="关闭页面设置" size="sm" @click="emit('update:modelValue', false)">
-            <el-icon><Close /></el-icon>
-          </AppIconButton>
-        </div>
-      </header>
+    <PageDrawerSurface
+      :title="props.title || '页面设置'"
+      :body-scroll="bodyScroll"
+      close-label="关闭页面设置"
+      @close="emit('update:modelValue', false)"
+    >
+      <template #title-suffix>
+        <span v-if="props.dirty" class="ps-dirty-dot" />
+      </template>
+      <template #actions>
+        <AppIconButton
+          v-if="visibleSectionKeys.length"
+          :label="bulkToggleLabel"
+          size="sm"
+          @click="toggleAllSections"
+        >
+          <el-icon><Expand v-if="allVisibleSectionsCollapsed" /><Fold v-else /></el-icon>
+        </AppIconButton>
+      </template>
 
       <!--
         固定三段（P13）：布局 / 组件设置 / 业务选项，均为可折叠的 SettingsGroup（level 1 卡片）。
@@ -265,24 +263,23 @@ function handleReset(): void {
         - 未迁移页：回落具名插槽 #layout/#components/#business（+ default 插槽）。
         - #business 只承载页面业务偏好或不归属于当前组件实例的产品级偏好，不得重绘组件配置字段。
       -->
-      <div class="ps-body" :class="{ 'is-scroll-disabled': !bodyScroll }">
-        <AppStatusNotice
-          v-if="drawerPreferenceSyncing"
-          class="ps-sync-state"
-          loading
-          size="compact"
-          title="正在同步抽屉偏好…"
-        />
-        <AppStatusNotice
-          v-else-if="drawerPreferenceFallback"
-          class="ps-sync-state"
-          tone="warning"
-          size="compact"
-          title="抽屉偏好暂用本地设置"
-          description="远端同步失败，当前使用本地偏好"
-        />
+      <AppStatusNotice
+        v-if="drawerPreferenceSyncing"
+        class="ps-sync-state"
+        loading
+        size="compact"
+        title="正在同步抽屉偏好…"
+      />
+      <AppStatusNotice
+        v-else-if="drawerPreferenceFallback"
+        class="ps-sync-state"
+        tone="warning"
+        size="compact"
+        title="抽屉偏好暂用本地设置"
+        description="远端同步失败，当前使用本地偏好"
+      />
 
-        <template v-if="activeConfig">
+      <template v-if="activeConfig">
           <SettingsGroup
             v-if="hasLayoutKnobs"
             title="布局"
@@ -328,9 +325,9 @@ function handleReset(): void {
           >
             <slot name="business" />
           </SettingsGroup>
-        </template>
+      </template>
 
-        <template v-else>
+      <template v-else>
           <SettingsGroup
             v-if="$slots.layout"
             title="布局"
@@ -361,105 +358,25 @@ function handleReset(): void {
             <slot name="business" />
           </SettingsGroup>
           <slot />
-        </template>
-      </div>
-
-      <footer class="ps-footer">
+      </template>
+      <template #footer>
         <el-button class="ps-reset" data-testid="page-settings-reset" @click="handleReset">恢复默认</el-button>
-      </footer>
-    </div>
+      </template>
+    </PageDrawerSurface>
   </PageDrawer>
 </template>
 
 <style scoped>
-:global(.page-settings-drawer) {
-  --el-drawer-bg-color: transparent;
-}
-/* 页面设置沿用抽屉遮光层，明确浮层焦点；抽屉与页面自身底色仍由中性主题表面控制。 */
-:global(.el-overlay.ps-settings-modal) {
-  background-color: rgba(0, 0, 0, 0.32) !important;
-}
-:global(.page-settings-drawer .el-drawer) {
-  background: transparent;
-  box-shadow: none;
-}
-:global(.page-settings-drawer .el-drawer__header) {
-  display: none;
-  margin: 0;
-  padding: 0;
-}
-:global(.page-settings-drawer .el-drawer__body) {
-  padding: var(--app-density-overlay-group-gap);
-  display: flex;
-  align-items: stretch;
-  min-height: 0;
-}
-.ps-card {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--page-settings-bg);
-  border: 1px solid var(--page-settings-border);
-  border-radius: 16px;
-  box-shadow: 0 10px 30px var(--page-settings-shadow);
-  overflow: hidden;
-}
-.ps-header {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--app-density-overlay-padding);
-  border-bottom: 1px solid var(--page-settings-divider);
-}
-.ps-title {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--app-space-2);
-  color: var(--page-settings-text);
-}
 .ps-dirty-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--page-settings-accent);
 }
-.ps-header-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--app-space-1);
-}
-.ps-fold-all,
-.ps-close {
-  color: var(--page-settings-text-muted);
-}
-.ps-fold-all:hover:not(:disabled),
-.ps-close:hover:not(:disabled) {
-  border-color: transparent;
-  background: var(--page-settings-seg-hover-bg);
-  color: var(--page-settings-text);
-}
-.ps-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  padding: var(--app-density-overlay-padding);
-}
-.ps-body.is-scroll-disabled {
-  overflow: hidden;
-}
 .ps-sync-state {
   margin-bottom: var(--app-density-overlay-group-gap);
 }
 /* 三段结构已抽到 SettingsGroup.vue（level 1 卡片 + 折叠 + 比例标题），此处不再重复样式。 */
-.ps-footer {
-  flex: none;
-  padding: var(--app-density-overlay-group-gap) var(--app-density-overlay-padding)
-    var(--app-density-overlay-padding);
-  border-top: 1px solid var(--page-settings-divider);
-}
 .ps-reset {
   width: 100%;
 }

@@ -1181,6 +1181,7 @@ onBeforeUnmount(() => {
         <PageSegmented
           :model-value="selectedAdjustMode"
           :options="ADJUST_MODE_OPTIONS"
+          class="app-control-width-fill"
           size="small"
           test-id="stock-chart-adjust-mode"
           aria-label="K线复权口径"
@@ -1191,6 +1192,7 @@ onBeforeUnmount(() => {
         <PageSegmented
           :model-value="measurementMode"
           :options="MEASUREMENT_MODE_OPTIONS"
+          class="app-control-width-fill"
           size="small"
           test-id="stock-chart-measurement-mode"
           aria-label="区间涨跌测算模式"

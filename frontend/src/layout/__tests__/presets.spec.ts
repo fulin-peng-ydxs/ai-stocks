@@ -150,11 +150,11 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
   })
 
   it('页面设置抽屉保留遮光层，同时使用中性明暗内容表面', () => {
-    const drawer = readFileSync(join(SRC_DIR, 'components/PageSettingsDrawer.vue'), 'utf8')
+    const drawer = readFileSync(join(SRC_DIR, 'components/PageDrawerSurface.vue'), 'utf8')
     const globalCss = readFileSync(join(SRC_DIR, 'styles/global.css'), 'utf8')
 
     expect(drawer).toMatch(
-      /\.el-overlay\.ps-settings-modal\)\s*\{\s*background-color:\s*rgba\(0, 0, 0, 0\.32\) !important;/,
+      /\.el-overlay\.app-drawer-surface-modal\s*\{\s*background-color:\s*rgba\(0, 0, 0, 0\.32\) !important;/,
     )
     expect(globalCss).toContain('--drawer-bg: #ffffff')
     expect(globalCss).toContain('--page-settings-section-bg: #ffffff')
