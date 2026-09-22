@@ -3,7 +3,6 @@ import type { Bar } from '@/api/stocks'
 import {
   aggregateKlineBars,
   buildKlinePeriodSeries,
-  computePeriodMacd,
   klinePeriodKey,
   tradingDaysBetween,
 } from '../klinePeriod'
@@ -91,22 +90,16 @@ describe('klinePeriod', () => {
     })
   })
 
-  it('MACD 暖机不足保持空值，满足 26+9 个周期后才生成柱值', () => {
-    const bars = Array.from({ length: 40 }, (_, index) => bar(
-      `2026-02-${String(index + 1).padStart(2, '0')}`,
-      index + 1,
-    ))
-    const indicators = computePeriodMacd(aggregateKlineBars(bars, 'day'))
-    expect(indicators.slice(0, 25).every((row) => row.macd_diff == null)).toBe(true)
-    expect(indicators.slice(0, 33).every((row) => row.macd_dea == null)).toBe(true)
-    expect(indicators[33]!.macd_hist).not.toBeNull()
-    expect(indicators[39]).toMatchObject({
-      macd_golden_cross: false,
-      macd_dead_cross: false,
-    })
-    expect(indicators[39]!.macd_diff).toBeCloseTo(6.386727317589845, 12)
-    expect(indicators[39]!.macd_dea).toBeCloseTo(6.143887057853118, 12)
-    expect(indicators[39]!.macd_hist).toBeCloseTo(0.48568051947345303, 12)
+  it('周期图表直接消费后端对应周期指标，不在前端重算', () => {
+    const indicators = [{ trade_date: '2026-09-18', macd_hist: 0.25 }]
+    const series = buildKlinePeriodSeries(
+      [bar('2026-09-14', 10), bar('2026-09-18', 12)],
+      [],
+      indicators,
+      'week',
+    )
+
+    expect(series.indicators).toEqual(indicators)
   })
 
   it('按聚合柱包含的实际交易日计算收盘间隔', () => {

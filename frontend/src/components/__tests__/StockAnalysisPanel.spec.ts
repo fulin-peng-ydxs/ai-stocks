@@ -53,6 +53,7 @@ function mountPanel(overrides: Record<string, unknown> = {}) {
           props: {
             bars: Array,
             indicators: Array,
+            indicatorsPeriod: String,
             adjustLabel: String,
             adjustMode: String,
             macdAdjustLabel: String,
@@ -224,10 +225,22 @@ describe('StockAnalysisPanel', () => {
     )
     expect(stockApi.getIndicators).toHaveBeenCalledWith(
       '000001.SZ',
-      expect.objectContaining({ end: '2026-08-07' }),
+      expect.objectContaining({ end: '2026-08-07', period: 'day' }),
       expect.any(AbortSignal),
     )
-    expect(wrapper.findComponent({ name: 'StockChartWorkspace' }).exists()).toBe(true)
+    const workspace = wrapper.findComponent({ name: 'StockChartWorkspace' })
+    expect(workspace.exists()).toBe(true)
+    expect(workspace.props('indicatorsPeriod')).toBe('day')
+
+    await wrapper.setProps({ klinePeriod: 'week' })
+    await flushPromises()
+
+    expect(stockApi.getIndicators).toHaveBeenLastCalledWith(
+      '000001.SZ',
+      expect.objectContaining({ end: '2026-08-07', period: 'week' }),
+      expect.any(AbortSignal),
+    )
+    expect(workspace.props('indicatorsPeriod')).toBe('week')
   })
 
   it('复权口径随 adjustMode 进入行情请求与界面文案', async () => {

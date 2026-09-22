@@ -14,6 +14,7 @@ from backend.auth.context import get_current_context
 from backend.auth.deps import require_perm, require_system_perm
 from backend.groups.stock_group import StockGroupRepo
 from backend.indicators.engine import _IND_COLS
+from backend.indicators.period import MACD_OUTPUT_COLUMNS, IndicatorPeriod, compute_period_macd
 from backend.services.intraday_quotes import IntradayQuoteService, IntradayServiceUnavailable
 from backend.services.market_benchmark import MarketBenchmarkService
 from backend.services.stock_board_correlation import StockBoardCorrelationService
@@ -443,11 +444,41 @@ def stock_indicators(
     lookback: Annotated[int, Query(ge=1, le=6000)] = 60,
     fields: str | None = None,
     end: date | None = None,
+    period: IndicatorPeriod = "day",
 ) -> ApiResponse:
     from backend.indicators.engine import IndicatorEngine
 
     selected = _parse_indicator_fields(fields)
     c = get_client()
+    if period != "day":
+        unsupported = [field for field in selected or [] if field not in MACD_OUTPUT_COLUMNS]
+        if unsupported:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{period} 周期暂不支持的指标字段: {', '.join(unsupported)}",
+            )
+        end_date = end
+        if end_date is None:
+            latest = c.query_df(
+                "SELECT max(trade_date) AS d FROM daily_bar WHERE code = ?", [code]
+            ).iloc[0]["d"]
+            if latest is None or pd.isna(latest):
+                return ok({
+                    "code": code, "period": period, "adjust": "qfq", "indicators": [],
+                })
+            end_date = pd.Timestamp(latest).date()
+        # 单股全历史仅为数千行；先完整暖机再裁输出，避免周/月切换改变尾段结果。
+        daily = MarketRepository(c).get_bars(code, end_date, lookback=None, adjust="qfq")
+        df = compute_period_macd(daily, period).tail(int(lookback))
+        columns = list(selected) if selected is not None else list(MACD_OUTPUT_COLUMNS)
+        df = df.reindex(columns=["trade_date", *columns])
+        return ok({
+            "code": code,
+            "period": period,
+            "adjust": "qfq",
+            "indicators": _serialize_indicator_rows(df),
+        })
+
     # v2.0：指标动态实时计算（无 indicator 表）。多取窗口暖机后裁末段 lookback 行。
     # 注：rs_pct 为横截面量，单股序列不填（个股查询页该列为空，M2.4 适配）。
     df = IndicatorEngine(c).compute_series(
@@ -456,11 +487,18 @@ def stock_indicators(
         lookback=int(lookback) + 520,
     )
     if df.empty:
-        return ok({"code": code, "indicators": []})
+        return ok({
+            "code": code, "period": period, "adjust": "qfq", "indicators": [],
+        })
     df = df.sort_values("trade_date").tail(int(lookback))
     if selected is not None:
         df = df.reindex(columns=["trade_date", *selected])
-    return ok({"code": code, "indicators": _serialize_indicator_rows(df)})
+    return ok({
+        "code": code,
+        "period": period,
+        "adjust": "qfq",
+        "indicators": _serialize_indicator_rows(df),
+    })
 
 
 # 数据管理页专属读接口：仅平台系统管理员可见（需求 §7 数据管理菜单 system-only；R8 守卫）。

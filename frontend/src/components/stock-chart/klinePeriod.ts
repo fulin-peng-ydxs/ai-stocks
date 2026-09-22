@@ -1,6 +1,7 @@
 import type { Bar, IndicatorRow } from '@/api/stocks'
+import type { KlinePeriod } from '@/api/stocks'
 
-export type KlinePeriod = 'day' | 'week' | 'month' | 'year'
+export type { KlinePeriod } from '@/api/stocks'
 
 export interface PeriodBar extends Bar {
   periodStartDate: string
@@ -117,55 +118,13 @@ export function aggregateKlineBars(
   return groups.map(aggregateGroup)
 }
 
-function ema(values: readonly (number | null)[], period: number): Array<number | null> {
-  const alpha = 2 / (period + 1)
-  let state: number | null = null
-  let validCount = 0
-  return values.map((value) => {
-    if (value == null || !Number.isFinite(value)) return null
-    state = state == null ? value : alpha * value + (1 - alpha) * state
-    validCount += 1
-    return validCount >= period ? state : null
-  })
-}
-
-/** 与后端 compute_macd 的 adjust=false、min_periods 口径一致，仅用于周期图表派生展示。 */
-export function computePeriodMacd(bars: readonly PeriodBar[]): IndicatorRow[] {
-  const fast = ema(bars.map((bar) => bar.close), 12)
-  const slow = ema(bars.map((bar) => bar.close), 26)
-  const diff = fast.map((value, index) => (
-    value == null || slow[index] == null ? null : value - slow[index]!
-  ))
-  const dea = ema(diff, 9)
-  return bars.map((bar, index) => {
-    const currentDiff = diff[index]
-    const currentDea = dea[index]
-    const previousDiff = diff[index - 1]
-    const previousDea = dea[index - 1]
-    const valid = currentDiff != null
-      && currentDea != null
-      && previousDiff != null
-      && previousDea != null
-    return {
-      trade_date: bar.date,
-      macd_diff: currentDiff,
-      macd_dea: currentDea,
-      macd_hist: currentDiff == null || currentDea == null
-        ? null
-        : 2 * (currentDiff - currentDea),
-      macd_golden_cross: valid ? currentDiff > currentDea && previousDiff <= previousDea : null,
-      macd_dead_cross: valid ? currentDiff < currentDea && previousDiff >= previousDea : null,
-    }
-  })
-}
-
 function samePeriod(left: PeriodBar | undefined, right: PeriodBar | undefined, period: KlinePeriod) {
   return Boolean(left && right && klinePeriodKey(left.date, period) === klinePeriodKey(right.date, period))
 }
 
 /**
- * 图表只公开一条周期变换入口：日 K 沿用后端指标；其它周期先独立聚合可见区间，
- * 再用暖机周期补足后向指标。范围边界落在周期中间时，可见首柱保持用户选择的严格范围。
+ * 图表只负责周期 K 线聚合；指标由后端统一按同一周期计算后传入。
+ * 范围边界落在周期中间时，可见首柱保持用户选择的严格范围。
  */
 export function buildKlinePeriodSeries(
   bars: readonly Bar[],
@@ -174,22 +133,12 @@ export function buildKlinePeriodSeries(
   period: KlinePeriod,
 ): KlinePeriodSeries {
   const visible = aggregateKlineBars(bars, period)
-  if (period === 'day') {
-    return {
-      bars: visible,
-      warmupBars: aggregateKlineBars(warmupBars, period),
-      indicators: [...indicators],
-    }
-  }
-
   const warmup = aggregateKlineBars(warmupBars, period)
   if (samePeriod(warmup.at(-1), visible[0], period)) warmup.pop()
-  const allBars = [...warmup, ...visible]
-  const allIndicators = computePeriodMacd(allBars)
   return {
     bars: visible,
     warmupBars: warmup,
-    indicators: allIndicators.slice(warmup.length),
+    indicators: [...indicators],
   }
 }
 

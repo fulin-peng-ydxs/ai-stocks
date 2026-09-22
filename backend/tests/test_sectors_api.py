@@ -287,6 +287,12 @@ def test_get_bar_indicators_reuses_macd_definition_and_keeps_nullable_warmup(c):
     assert all(row["macd_diff"] is None for row in indicators)
     assert all(row["macd_golden_cross"] is None for row in indicators)
 
+    weekly = _svc(c).get_bar_indicators(
+        "309121", date(2026, 8, 3), date(2026, 8, 7), "week",
+    )
+    assert [row["trade_date"] for row in weekly] == ["2026-08-07"]
+    assert weekly[0]["macd_hist"] is None
+
 
 def test_get_benchmark_bars_range(c):
     """市场指数基准与板块走势使用同一日期和 OHLC 字段契约。"""

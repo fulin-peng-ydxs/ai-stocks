@@ -128,6 +128,8 @@ const props = withDefaults(defineProps<{
   bars: Bar[]
   warmupBars?: Bar[]
   indicators?: IndicatorRow[]
+  /** 后端指标所属 K 线周期；切换请求完成前不把旧周期数值对齐到新周期。 */
+  indicatorsPeriod?: KlinePeriod
   markers?: TradeMarker[]
   slot2?: AuxiliaryChartType
   slot3?: AuxiliaryChartType
@@ -153,6 +155,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   warmupBars: () => [],
   indicators: () => [],
+  indicatorsPeriod: 'day',
   markers: () => [],
   slot2: 'volume',
   slot3: 'macd',
@@ -246,10 +249,13 @@ const effectiveAdjustLabel = computed(() => {
   if (selectedAdjustMode.value === 'qfq') return '前复权'
   return '不复权'
 })
+const effectiveIndicators = computed(() => (
+  props.indicatorsPeriod === effectivePeriod.value ? props.indicators : []
+))
 const periodSeries = computed(() => buildKlinePeriodSeries(
   props.bars,
   props.warmupBars,
-  props.indicators,
+  effectiveIndicators.value,
   effectivePeriod.value,
 ))
 const rows = computed(() => alignStockChartRows(

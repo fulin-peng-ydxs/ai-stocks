@@ -21,6 +21,7 @@ import {
   type Bar,
   type IndicatorField,
   type IndicatorRow,
+  type KlinePeriod,
   type StockBoardMembership,
   type StockBasic,
   type StockQuoteSummary as StockQuoteSummaryData,
@@ -45,6 +46,7 @@ import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
 import StockGroupFavoriteButton from '@/components/StockGroupFavoriteButton.vue'
 import StockBoardMembershipPanel from '@/components/StockBoardMembershipPanel.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
+import { MACD_INDICATOR_FIELDS } from '@/components/stock-chart/indicatorFields'
 import StockIntradayDialog from '@/components/stock-chart/StockIntradayDialog.vue'
 import StockQuoteSummary from '@/components/stock-chart/StockQuoteSummary.vue'
 import {
@@ -313,6 +315,10 @@ const barsPermissionDenied = ref(false)
 const indicatorLoading = ref(true)
 const indicatorError = ref('')
 const indicatorRows = ref<IndicatorRow[]>([])
+const periodIndicatorLoading = ref(false)
+const periodIndicatorError = ref('')
+const periodIndicatorRows = ref<IndicatorRow[]>([])
+const periodIndicatorPeriod = ref<KlinePeriod>('day')
 const quoteLoading = ref(true)
 const membershipLoading = ref(true)
 const membershipError = ref('')
@@ -428,16 +434,9 @@ const INDICATOR_FIELDS = [
   { key: 'is_platform_breakout', label: '平台突破' },
   { key: 'is_vol_breakout', label: '放量突破' },
 ] as const
-const MACD_FIELDS = [
-  'macd_diff',
-  'macd_dea',
-  'macd_hist',
-  'macd_golden_cross',
-  'macd_dead_cross',
-] as const satisfies readonly IndicatorField[]
 const DETAIL_INDICATOR_FIELDS = [
   ...INDICATOR_FIELDS.map((field) => field.key),
-  ...MACD_FIELDS,
+  ...MACD_INDICATOR_FIELDS,
 ] as readonly IndicatorField[]
 const visibleIndicatorFields = computed(() => {
   const configured = componentValueOf('indicatorSnapshot', 'visibleIndicatorFields')
@@ -453,14 +452,30 @@ const adjustLabel = computed(() => {
   if (adjustMode.value === 'hfq') return '后复权'
   return '不复权'
 })
-const hasCompleteMacd = computed(() => indicatorRows.value.some((row) => (
+const chartIndicatorRows = computed(() => (
+  chartPreferences.klinePeriod.value === 'day' ? indicatorRows.value : periodIndicatorRows.value
+))
+const chartIndicatorPeriod = computed<KlinePeriod>(() => (
+  chartPreferences.klinePeriod.value === 'day' ? 'day' : periodIndicatorPeriod.value
+))
+const chartIndicatorLoading = computed(() => (
+  chartPreferences.klinePeriod.value === 'day'
+    ? indicatorLoading.value
+    : periodIndicatorLoading.value
+))
+const chartIndicatorError = computed(() => (
+  chartPreferences.klinePeriod.value === 'day'
+    ? indicatorError.value
+    : periodIndicatorError.value
+))
+const hasCompleteMacd = computed(() => chartIndicatorRows.value.some((row) => (
   typeof row.macd_diff === 'number'
   && typeof row.macd_dea === 'number'
   && typeof row.macd_hist === 'number'
 )))
 const macdState = computed<MacdPanelState>(() => {
-  if (indicatorLoading.value) return 'loading'
-  if (indicatorError.value) return 'error'
+  if (chartIndicatorLoading.value) return 'loading'
+  if (chartIndicatorError.value) return 'error'
   return hasCompleteMacd.value ? 'ready' : 'insufficient'
 })
 
@@ -523,6 +538,7 @@ function createRequestChannel(): RequestChannel {
 
 const barsRequest = createRequestChannel()
 const indicatorRequest = createRequestChannel()
+const periodIndicatorRequest = createRequestChannel()
 const quoteRequest = createRequestChannel()
 const membershipRequest = createRequestChannel()
 const tradeRequest = createRequestChannel()
@@ -552,6 +568,7 @@ function cancelRequest(channel: RequestChannel): void {
 function cancelDetailRequests(): void {
   cancelRequest(barsRequest)
   cancelRequest(indicatorRequest)
+  cancelRequest(periodIndicatorRequest)
   cancelRequest(quoteRequest)
   cancelRequest(membershipRequest)
   cancelRequest(tradeRequest)
@@ -559,6 +576,7 @@ function cancelDetailRequests(): void {
 
 let resumeBarsRequest = false
 let resumeIndicatorRequest = false
+let resumePeriodIndicatorRequest = false
 let resumeQuoteRequest = false
 let resumeMembershipRequest = false
 let resumeTradeRequest = false
@@ -621,17 +639,21 @@ async function loadBars() {
       bars.value = []
       name.value = ''
       indicatorRows.value = []
+      periodIndicatorRows.value = []
       latest.value = null
       quoteSummaryData.value = null
       boardMembership.value = null
       tradeEval.value = null
       indicatorError.value = ''
+      periodIndicatorError.value = ''
       tradeError.value = ''
       cancelRequest(indicatorRequest)
+      cancelRequest(periodIndicatorRequest)
       cancelRequest(quoteRequest)
       cancelRequest(membershipRequest)
       cancelRequest(tradeRequest)
       indicatorLoading.value = false
+      periodIndicatorLoading.value = false
       quoteLoading.value = false
       membershipLoading.value = false
       tradeLoading.value = false
@@ -660,13 +682,60 @@ async function loadIndicators() {
     latest.value = result.indicators.at(-1) ?? null
   } catch (e) {
     if (isAbort(e) || !isCurrentRequest(indicatorRequest, controller, sequence)) return
-    indicatorError.value = getErrorStatus(e) === 403
+    const permissionDenied = getErrorStatus(e) === 403
+    if (permissionDenied) {
+      indicatorRows.value = []
+      latest.value = null
+    }
+    indicatorError.value = permissionDenied
       ? '无权限查看 MACD 指标，请联系系统管理员调整权限'
       : getErrorMessage(e, 'MACD 指标加载失败，K线与量能不受影响')
   } finally {
     if (isCurrentRequest(indicatorRequest, controller, sequence)) {
       indicatorLoading.value = false
       indicatorRequest.controller = null
+    }
+  }
+}
+
+async function loadPeriodIndicators() {
+  const requestedPeriod = chartPreferences.klinePeriod.value
+  if (requestedPeriod === 'day') {
+    cancelRequest(periodIndicatorRequest)
+    periodIndicatorLoading.value = false
+    periodIndicatorError.value = ''
+    periodIndicatorRows.value = []
+    periodIndicatorPeriod.value = 'day'
+    return
+  }
+  const { controller, sequence } = beginRequest(periodIndicatorRequest)
+  periodIndicatorLoading.value = true
+  periodIndicatorError.value = ''
+  periodIndicatorRows.value = []
+  periodIndicatorPeriod.value = requestedPeriod
+  try {
+    const result = await getIndicators(
+      code.value,
+      {
+        lookback: chartLookback.value,
+        fields: MACD_INDICATOR_FIELDS,
+        period: requestedPeriod,
+      },
+      controller.signal,
+    )
+    if (!isCurrentRequest(periodIndicatorRequest, controller, sequence)) return
+    periodIndicatorRows.value = result.indicators
+    periodIndicatorPeriod.value = result.period ?? requestedPeriod
+  } catch (e) {
+    if (isAbort(e) || !isCurrentRequest(periodIndicatorRequest, controller, sequence)) return
+    periodIndicatorRows.value = []
+    periodIndicatorError.value = getErrorStatus(e) === 403
+      ? '无权限查看 MACD 指标，请联系系统管理员调整权限'
+      : getErrorMessage(e, 'MACD 指标加载失败，K线与量能不受影响')
+  } finally {
+    if (isCurrentRequest(periodIndicatorRequest, controller, sequence)) {
+      periodIndicatorLoading.value = false
+      periodIndicatorRequest.controller = null
     }
   }
 }
@@ -732,7 +801,7 @@ async function loadQuoteContext(): Promise<void> {
 }
 
 async function reloadRangeData() {
-  await Promise.all([loadBars(), loadIndicators()])
+  await Promise.all([loadBars(), loadIndicators(), loadPeriodIndicators()])
 }
 
 async function refreshStockDetail(): Promise<void> {
@@ -747,6 +816,9 @@ async function refreshStockDetail(): Promise<void> {
 
 watch(viewDays, () => {
   void reloadRangeData()
+})
+watch(() => chartPreferences.klinePeriod.value, () => {
+  void loadPeriodIndicators()
 })
 watch(adjustMode, () => {
   void loadBars()
@@ -999,12 +1071,14 @@ function onCollectionEndReached(direction: string) {
 onDeactivated(() => {
   resumeBarsRequest = barsLoading.value
   resumeIndicatorRequest = indicatorLoading.value
+  resumePeriodIndicatorRequest = periodIndicatorLoading.value
   resumeQuoteRequest = quoteLoading.value
   resumeMembershipRequest = membershipLoading.value
   resumeTradeRequest = tradeLoading.value
   cancelDetailRequests()
   barsLoading.value = false
   indicatorLoading.value = false
+  periodIndicatorLoading.value = false
   quoteLoading.value = false
   membershipLoading.value = false
   tradeLoading.value = false
@@ -1013,10 +1087,12 @@ onDeactivated(() => {
 onActivated(() => {
   if (resumeBarsRequest) void loadBars()
   if (resumeIndicatorRequest) void loadIndicators()
+  if (resumePeriodIndicatorRequest) void loadPeriodIndicators()
   if (resumeQuoteRequest || resumeMembershipRequest) void loadQuoteContext()
   if (resumeTradeRequest) void evalTrade()
   resumeBarsRequest = false
   resumeIndicatorRequest = false
+  resumePeriodIndicatorRequest = false
   resumeQuoteRequest = false
   resumeMembershipRequest = false
   resumeTradeRequest = false
@@ -1260,14 +1336,15 @@ onBeforeUnmount(() => {
               v-loading="barsLoading && bars.length > 0"
               :bars="displayBars"
               :warmup-bars="warmupBars"
-              :indicators="indicatorRows"
+              :indicators="chartIndicatorRows"
+              :indicators-period="chartIndicatorPeriod"
               :slot2="chartPreferences.preferences.value.slot2"
               :slot3="chartPreferences.preferences.value.slot3"
               :height-ratios="chartPreferences.currentRatios.value"
               :adjust-label="adjustLabel"
               macd-adjust-label="前复权"
               :macd-state="macdState"
-              :macd-error="indicatorError"
+              :macd-error="chartIndicatorError"
               :zoom-start="0"
               :zoom-end="100"
               fit-available-height

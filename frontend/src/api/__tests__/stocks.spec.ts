@@ -54,6 +54,24 @@ describe('getIndicators', () => {
       skipGlobalError: true,
     })
   })
+
+  it('透传周 K 指标周期而不改变字段裁剪契约', () => {
+    getIndicators('600000.SH', {
+      lookback: 250,
+      fields: ['macd_diff', 'macd_hist'],
+      period: 'week',
+    })
+
+    expect(http.get).toHaveBeenCalledWith('/stocks/600000.SH/indicators', {
+      params: {
+        lookback: 250,
+        fields: 'macd_diff,macd_hist',
+        period: 'week',
+      },
+      signal: undefined,
+      skipGlobalError: true,
+    })
+  })
 })
 
 describe('getIntraday', () => {

@@ -28,7 +28,7 @@ from datetime import date
 
 import pandas as pd
 
-from backend.indicators.compute import compute_macd
+from backend.indicators.period import IndicatorPeriod, compute_period_macd
 from backend.storage.duckdb_client import DuckDBClient
 from backend.storage.duckdb_client import get_read_client as get_client
 
@@ -389,8 +389,14 @@ class BoardQueryService:
             for _, r in df.iterrows()
         ]
 
-    def get_bar_indicators(self, code: str, start: date, end: date) -> list[dict]:
-        """板块指数 MACD；从可用历史起算后再截取区间，避免短周期预热失真。"""
+    def get_bar_indicators(
+        self,
+        code: str,
+        start: date,
+        end: date,
+        period: IndicatorPeriod = "day",
+    ) -> list[dict]:
+        """板块指数周期 MACD；从全历史暖机后再截取展示区间。"""
         df = self.c.query_df(
             "SELECT trade_date, close FROM board_bar "
             "WHERE board_code = ? AND trade_date <= ? ORDER BY trade_date",
@@ -398,8 +404,7 @@ class BoardQueryService:
         )
         if df.empty:
             return []
-        macd = compute_macd(df["close"])
-        rows = pd.concat([df[["trade_date"]].reset_index(drop=True), macd], axis=1)
+        rows = compute_period_macd(df, period)
         rows = rows[pd.to_datetime(rows["trade_date"]).dt.date >= start]
 
         def value_or_none(value):
@@ -408,7 +413,11 @@ class BoardQueryService:
         return [
             {
                 "trade_date": str(pd.Timestamp(row["trade_date"]).date()),
-                **{column: value_or_none(row[column]) for column in macd.columns},
+                **{
+                    column: value_or_none(row[column])
+                    for column in rows.columns
+                    if column != "trade_date"
+                },
             }
             for _, row in rows.iterrows()
         ]

@@ -54,7 +54,7 @@ import {
   type SectorRow,
   type SectorSortField,
 } from '@/api/sectors'
-import type { Bar, IndicatorRow } from '@/api/stocks'
+import type { Bar, IndicatorRow, KlinePeriod } from '@/api/stocks'
 import {
   COMPARE_METRIC_META,
   COMPARE_METRIC_ORDER,
@@ -310,6 +310,7 @@ const benchmarkError = ref('')
 const compareBars = ref<Record<string, SectorBar[]>>({})
 const compareWarmupBars = ref<Record<string, SectorBar[]>>({})
 const compareIndicators = ref<Record<string, IndicatorRow[]>>({})
+const compareIndicatorPeriod = ref<KlinePeriod>('day')
 // 累计涨跌窗口的独立缓存：头部「累计涨跌」槽与其它固定指标（5/10/20日）的图表数据同用一个
 // compareBars 会导致切固定指标时覆盖掉累计窗口数据、数值漂移，故单独缓存，仅在累计被选中时刷新。
 const cumBars = ref<Record<string, SectorBar[]>>({})
@@ -434,6 +435,7 @@ async function loadChart(): Promise<void> {
   if (!start || !end) return
 
   const requestVersion = ++chartRequestVersion
+  const requestedPeriod = chartPreferences.klinePeriod.value
   chartLoading.value = true
   chartError.value = ''
   benchmarkError.value = ''
@@ -452,7 +454,13 @@ async function loadChart(): Promise<void> {
       : Promise.resolve(null)
     const [results, benchmark] = await Promise.all([Promise.all(
       codes.map(async (code) => {
-        const result = await getSectorBars(code, start, end, chartMode.value === 'kline')
+        const result = await getSectorBars(
+          code,
+          start,
+          end,
+          chartMode.value === 'kline',
+          requestedPeriod,
+        )
         return [code, result] as const
       }),
     ), benchmarkPromise])
@@ -463,6 +471,7 @@ async function loadChart(): Promise<void> {
     compareIndicators.value = Object.fromEntries(
       results.map(([code, result]) => [code, result.indicators ?? []]),
     )
+    compareIndicatorPeriod.value = results[0]?.[1].period ?? requestedPeriod
     const benchmarkKey = benchmark ? `benchmark:${benchmark.index_code}` : ''
     if (benchmark) rawSeries[benchmarkKey] = benchmark.list
     const trimmed = trimAlignedKlineRange(rawSeries, requestedPointCount.value)
@@ -726,6 +735,10 @@ watch([sortBy, sortOrder], () => {
 watch([rangeDays, chartMode, benchmarkCode, compareMetric, compareWindow], () => {
   if (restoring) return
   persistListReturnState()
+  void loadChart()
+})
+watch(chartPreferences.klinePeriod, () => {
+  if (restoring || chartMode.value !== 'kline') return
   void loadChart()
 })
 // 抽屉里把当前指标从展示列表移除时，回退到首个可见指标，保持图与头部一致。
@@ -1346,6 +1359,7 @@ const menuPageTitle = useMenuPageTitle()
               :bars="klineBars"
               :warmup-bars="klineWarmupBars"
               :indicators="klineIndicators"
+              :indicators-period="compareIndicatorPeriod"
               :slot2="chartPreferences.preferences.value.slot2"
               :slot3="chartPreferences.preferences.value.slot3"
               :height-ratios="chartPreferences.currentRatios.value"

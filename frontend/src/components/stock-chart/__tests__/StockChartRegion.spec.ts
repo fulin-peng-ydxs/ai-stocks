@@ -81,8 +81,8 @@ describe('StockChartRegion', () => {
     await flushPromises()
 
     expect(wrapper.attributes('data-configured-height')).toBe('560')
-    expect(wrapper.attributes('data-effective-height')).toBe('598')
-    expect(wrapper.attributes('data-content-height')).toBe('518')
+    expect(wrapper.attributes('data-effective-height')).toBe('626')
+    expect(wrapper.attributes('data-content-height')).toBe('546')
   })
 
   it('详情页可显式允许图表区域消费父容器剩余空间', () => {

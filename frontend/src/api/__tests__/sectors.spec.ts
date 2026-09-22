@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '@/api/client'
-import { getSectorMembers } from '@/api/sectors'
+import { getSectorBars, getSectorMembers } from '@/api/sectors'
 
 vi.mock('@/api/client', () => ({
   default: {
@@ -32,6 +32,25 @@ describe('getSectorMembers', () => {
         size: 30,
         sort_by: 'price',
         order: 'asc',
+      },
+    })
+  })
+})
+
+describe('getSectorBars', () => {
+  beforeEach(() => {
+    vi.mocked(http.get).mockReset()
+  })
+
+  it('把指标开关和 K 线周期作为同一板块行情请求上下文', () => {
+    getSectorBars('AI/PC', '2026-01-01', '2026-09-22', true, 'month')
+
+    expect(http.get).toHaveBeenCalledWith('/sectors/AI%2FPC/bars', {
+      params: {
+        start: '2026-01-01',
+        end: '2026-09-22',
+        include_indicators: true,
+        period: 'month',
       },
     })
   })

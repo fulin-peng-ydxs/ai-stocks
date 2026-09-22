@@ -82,6 +82,8 @@ export interface Bar {
   macd_dead_cross?: boolean | null
 }
 
+export type KlinePeriod = 'day' | 'week' | 'month' | 'year'
+
 export interface Bars {
   code: string
   name: string | null
@@ -145,6 +147,8 @@ export type IndicatorRow = {
 
 export interface Indicators {
   code: string
+  period?: KlinePeriod
+  adjust?: 'qfq'
   indicators: IndicatorRow[]
 }
 
@@ -152,6 +156,7 @@ export interface IndicatorParams {
   lookback?: number
   fields?: readonly IndicatorField[]
   end?: string
+  period?: KlinePeriod
 }
 
 export function listStocks(params?: StockListParams): Promise<StockList> {

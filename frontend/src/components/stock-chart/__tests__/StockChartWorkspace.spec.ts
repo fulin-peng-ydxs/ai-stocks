@@ -296,6 +296,38 @@ describe('StockChartWorkspace', () => {
     expect(latestOptions[2].dataZoom).toHaveLength(2)
   })
 
+  it('周期请求完成前不把旧周期指标错配到新 K 线', async () => {
+    const source: Bar[] = [
+      { ...bars()[0]!, date: '2026-09-14' },
+      { ...bars()[1]!, date: '2026-09-15' },
+      { ...bars()[2]!, date: '2026-09-18' },
+    ]
+    const periodIndicators: IndicatorRow[] = [{
+      trade_date: '2026-09-18',
+      macd_diff: 0.3,
+      macd_dea: 0.2,
+      macd_hist: 0.2,
+    }]
+    const wrapper = await mountWorkspace({
+      bars: source,
+      indicators: periodIndicators,
+      enableKlinePeriodSwitch: true,
+      klinePeriod: 'week',
+      indicatorsPeriod: 'day',
+    })
+    const macd = echartsMock.instances[2]
+
+    expect(macd.setOption.mock.calls.at(-1)?.[0].series[0].data)
+      .toEqual([{ value: null, itemStyle: expect.any(Object) }])
+
+    await wrapper.setProps({ indicatorsPeriod: 'week' })
+    await nextTick()
+
+    expect(macd.setOption.mock.calls.at(-1)?.[0].series[0].data)
+      .toEqual([{ value: 0.2, itemStyle: expect.any(Object) }])
+    wrapper.unmount()
+  })
+
   it('向消费页报告当前光标 K 线，离开图表后恢复最新行情', async () => {
     const source = bars()
     const wrapper = await mountWorkspace()

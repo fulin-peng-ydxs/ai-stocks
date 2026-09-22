@@ -1,7 +1,7 @@
 // 板块行情 API（对应 backend/api/sectors.py，板块概念需求 R7-R10/R13/R14）
 import http from './client'
 import type { AppRequestConfig } from './client'
-import type { IndicatorRow } from './stocks'
+import type { IndicatorRow, KlinePeriod } from './stocks'
 
 /** 列表可排序字段码（与 board_query.SORT_FIELDS 双向一致，前端中文标签仅 UI 映射）。 */
 export type SectorSortField =
@@ -86,6 +86,7 @@ export interface SectorBars {
   board_code: string
   start: string
   end: string
+  period?: KlinePeriod
   list: SectorBar[]
   /** includeIndicators=true 时返回；缺省请求保持仅行情的轻量契约。 */
   indicators?: IndicatorRow[]
@@ -156,9 +157,10 @@ export function getSectorBars(
   start: string,
   end: string,
   includeIndicators = false,
+  period: KlinePeriod = 'day',
 ): Promise<SectorBars> {
   return http.get(`/sectors/${encodeURIComponent(code)}/bars`, {
-    params: { start, end, include_indicators: includeIndicators },
+    params: { start, end, include_indicators: includeIndicators, period },
   })
 }
 

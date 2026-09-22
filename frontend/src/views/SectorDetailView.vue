@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ArrowLeft, DArrowLeft, DArrowRight, Star, StarFilled } from '@element-plus/icons-vue'
 import { ElMessage, type Sort } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
-import type { Bar, IndicatorRow } from '@/api/stocks'
+import type { Bar, IndicatorRow, KlinePeriod } from '@/api/stocks'
 import {
   addSectorWatchlist,
   getSector,
@@ -179,6 +179,7 @@ const forbidden = ref(false)
 const bars = ref<Bar[]>([])
 const warmupBars = ref<Bar[]>([])
 const indicators = ref<IndicatorRow[]>([])
+const indicatorPeriod = ref<KlinePeriod>('day')
 const chartLoading = ref(false)
 const chartError = ref('')
 const members = ref<SectorMember[]>([])
@@ -253,7 +254,8 @@ async function loadChart(): Promise<void> {
   chartError.value = ''
   try {
     const start = klineRangeQueryStart(end, viewDays.value, dataMin.value || '2024-01-01')
-    const data = await getSectorBars(code.value, start, end, true)
+    const requestedPeriod = chartPreferences.klinePeriod.value
+    const data = await getSectorBars(code.value, start, end, true, requestedPeriod)
     if (version !== requestVersion) return
     const mapped = toBoardChartBars(data.list)
     // 周期是数据与缩放的共同边界，不能在“近 N 日”下再缩放回周期外历史。
@@ -261,6 +263,7 @@ async function loadChart(): Promise<void> {
     warmupBars.value = mapped.slice(0, Math.max(0, mapped.length - bars.value.length))
     const visibleDates = new Set(bars.value.map((bar) => bar.date))
     indicators.value = (data.indicators ?? []).filter((row) => visibleDates.has(row.trade_date))
+    indicatorPeriod.value = data.period ?? requestedPeriod
   } catch (error) {
     if (version !== requestVersion) return
     indicators.value = []
@@ -385,6 +388,10 @@ watch([sortBy, sortOrder], () => {
 watch(viewDays, () => {
   if (!initialized) return
   persistDetailReturnState()
+  void loadChart()
+})
+watch(() => chartPreferences.klinePeriod.value, () => {
+  if (!initialized) return
   void loadChart()
 })
 watch(tradeDate, () => {
@@ -568,6 +575,7 @@ onMounted(async () => {
                   :bars="bars"
                   :warmup-bars="warmupBars"
                   :indicators="indicators"
+                  :indicators-period="indicatorPeriod"
                   :slot2="chartPreferences.preferences.value.slot2"
                   :slot3="chartPreferences.preferences.value.slot3"
                   :height-ratios="chartPreferences.currentRatios.value"

@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from backend.api.response import ApiResponse, ok
 from backend.auth.deps import require_perm
+from backend.indicators.period import IndicatorPeriod
 from backend.services.board_query import MEMBER_SORT_FIELDS, SORT_FIELDS, BoardQueryService
 from backend.services.board_watchlist import BoardWatchlistService
 from backend.services.market_benchmark import MarketBenchmarkService
@@ -146,17 +147,22 @@ def get_sector_bars(
     start: date = Query(..., description="区间起点"),
     end: date = Query(..., description="区间终点"),
     include_indicators: bool = Query(False, description="是否返回板块指数 MACD"),
+    period: IndicatorPeriod = "day",
 ) -> ApiResponse:
     """板块指数区间序列（原值，周期由前端区间参数控制）。"""
     if start > end:
         raise _bad_params("start 不能晚于 end")
     service = BoardQueryService()
     data = service.get_bars(code, start, end)
-    indicators = service.get_bar_indicators(code, start, end) if include_indicators else []
+    indicators = (
+        service.get_bar_indicators(code, start, end, period)
+        if include_indicators else []
+    )
     return ok({
         "board_code": code,
         "start": str(start),
         "end": str(end),
+        "period": period,
         "list": data,
         "indicators": indicators,
     })

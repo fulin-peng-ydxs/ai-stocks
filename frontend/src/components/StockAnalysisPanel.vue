@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import type { Bar, IndicatorField, IndicatorRow } from '@/api/stocks'
+import type { Bar, IndicatorRow } from '@/api/stocks'
 import { getBars, getIndicators } from '@/api/stocks'
 import { getStockBenchmarkBars } from '@/api/stocks'
 import CompareQueueRail from '@/components/CompareQueueRail.vue'
@@ -14,6 +14,7 @@ import MarketAnalysisHeader from '@/components/MarketAnalysisHeader.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import StockCompareChart from '@/components/StockCompareChart.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
+import { MACD_INDICATOR_FIELDS } from '@/components/stock-chart/indicatorFields'
 import StockIntradayDialog from '@/components/stock-chart/StockIntradayDialog.vue'
 import type { KlinePeriod } from '@/components/stock-chart/klinePeriod'
 import type { StockChartWorkspaceSample } from '@/components/stock-chart/workspaceOptions'
@@ -86,14 +87,6 @@ const COMPARE_RANGE_OPTIONS = STOCK_COMPARE_RANGES.map((value) => ({
   value,
   label: value === ALL_DAYS ? '全部' : `${value}日`,
 }))
-const MACD_FIELDS = [
-  'macd_diff',
-  'macd_dea',
-  'macd_hist',
-  'macd_golden_cross',
-  'macd_dead_cross',
-] as const satisfies readonly IndicatorField[]
-
 const loading = ref(false)
 const error = ref('')
 const partialErrors = ref<Record<string, string>>({})
@@ -104,6 +97,7 @@ const benchmarkError = ref('')
 const klineBars = ref<Bar[]>([])
 const klineWarmupBars = ref<Bar[]>([])
 const klineIndicators = ref<IndicatorRow[]>([])
+const klineIndicatorPeriod = ref<KlinePeriod>('day')
 const indicatorError = ref('')
 let requestVersion = 0
 let controller: AbortController | null = null
@@ -266,6 +260,7 @@ async function loadKline(): Promise<void> {
   loading.value = true
   error.value = ''
   indicatorError.value = ''
+  const requestedPeriod = props.klinePeriod
   const lookback = props.klineRange === ALL_DAYS ? 6000 : Math.max(props.klineRange, 1250)
   try {
     const [barsResult, indicatorResult] = await Promise.all([
@@ -276,14 +271,15 @@ async function loadKline(): Promise<void> {
       }, controller.signal),
       getIndicators(active.code, {
         lookback,
-        fields: MACD_FIELDS,
+        fields: MACD_INDICATOR_FIELDS,
         end: props.endDate || undefined,
+        period: requestedPeriod,
       }, controller.signal)
         .catch((indicatorLoadError) => {
           if (!isAbort(indicatorLoadError) && version === requestVersion) {
             indicatorError.value = getErrorMessage(indicatorLoadError, 'MACD指标加载失败，K线与量能不受影响')
           }
-          return { code: active.code, indicators: [] }
+          return { code: active.code, period: requestedPeriod, indicators: [] }
         }),
     ])
     if (version !== requestVersion) return
@@ -293,12 +289,14 @@ async function loadKline(): Promise<void> {
       ? []
       : allBars.slice(0, -props.klineRange || undefined)
     klineIndicators.value = indicatorResult.indicators
+    klineIndicatorPeriod.value = indicatorResult.period ?? requestedPeriod
   } catch (loadError) {
     if (!isAbort(loadError) && version === requestVersion) {
       error.value = getErrorMessage(loadError, 'K线加载失败')
       klineBars.value = []
       klineWarmupBars.value = []
       klineIndicators.value = []
+      klineIndicatorPeriod.value = requestedPeriod
     }
   } finally {
     if (version === requestVersion) loading.value = false
@@ -342,6 +340,7 @@ watch(
     props.compareMetrics.join(','),
     props.benchmarkCode,
     props.klineRange,
+    props.klinePeriod,
     activeAdjustMode.value,
     props.refreshRevision,
   ],
@@ -492,6 +491,7 @@ onBeforeUnmount(() => {
         :bars="klineBars"
         :warmup-bars="klineWarmupBars"
         :indicators="klineIndicators"
+        :indicators-period="klineIndicatorPeriod"
         :slot2="slot2"
         :slot3="slot3"
         :height-ratios="heightRatios"

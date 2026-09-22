@@ -60,6 +60,8 @@ def test_indicators_without_fields_keeps_full_legacy_row(monkeypatch):
 
     assert data == {
         "code": "600000.SH",
+        "period": "day",
+        "adjust": "qfq",
         "indicators": [{
             "code": "600000.SH",
             "trade_date": "2026-07-22",
@@ -131,7 +133,9 @@ def test_indicators_lookback_boundaries(monkeypatch, lookback, engine_lookback):
         params={"lookback": lookback},
     ))
 
-    assert data == {"code": "600000.SH", "indicators": []}
+    assert data == {
+        "code": "600000.SH", "period": "day", "adjust": "qfq", "indicators": [],
+    }
     assert engine.calls == [("600000.SH", None, engine_lookback)]
 
 
@@ -154,7 +158,9 @@ def test_indicators_passes_historical_end_date_to_engine(monkeypatch):
         params={"lookback": 120, "end": "2026-06-30"},
     ))
 
-    assert data == {"code": "600000.SH", "indicators": []}
+    assert data == {
+        "code": "600000.SH", "period": "day", "adjust": "qfq", "indicators": [],
+    }
     assert engine.calls == [("600000.SH", pd.Timestamp("2026-06-30").date(), 640)]
 
 
@@ -182,6 +188,58 @@ def test_indicators_empty_field_list_returns_trade_date_only(monkeypatch):
     ))
 
     assert data["indicators"] == [{"trade_date": "2026-07-22"}]
+
+
+def test_period_indicators_reuse_qfq_history_and_return_period_context(monkeypatch):
+    dates = pd.bdate_range("2025-01-06", periods=200)
+    daily = pd.DataFrame({
+        "trade_date": dates,
+        "close": np.arange(1, 201, dtype="float64"),
+    })
+
+    repository_calls: list[tuple[str, object, object, str]] = []
+
+    class _StubRepository:
+
+        def __init__(self, _client):
+            pass
+
+        def get_bars(self, code, end_date, lookback=None, adjust="qfq"):
+            repository_calls.append((code, end_date, lookback, adjust))
+            return daily.copy()
+
+    monkeypatch.setattr("backend.api.stocks.MarketRepository", _StubRepository)
+    engine = _StubEngine(pd.DataFrame())
+    data = _data(_client(monkeypatch, engine).get(
+        "/api/stocks/600000.SH/indicators",
+        params={
+            "period": "week",
+            "lookback": 40,
+            "end": "2026-01-01",
+            "fields": "macd_diff,macd_dea,macd_hist",
+        },
+    ))
+
+    assert data["period"] == "week"
+    assert data["adjust"] == "qfq"
+    assert len(data["indicators"]) == 40
+    assert data["indicators"][-1]["macd_hist"] == pytest.approx(2.4284025974)
+    assert repository_calls == [
+        ("600000.SH", pd.Timestamp("2026-01-01").date(), None, "qfq"),
+    ]
+    assert engine.calls == []
+
+
+def test_period_indicators_reject_non_macd_fields(monkeypatch):
+    engine = _StubEngine(pd.DataFrame())
+    response = _client(monkeypatch, engine).get(
+        "/api/stocks/600000.SH/indicators",
+        params={"period": "month", "fields": "macd_diff,ma20"},
+    )
+
+    assert response.status_code == 400
+    assert "ma20" in response.json()["detail"]
+    assert engine.calls == []
 
 
 def test_indicators_route_keeps_stocks_view_guard():

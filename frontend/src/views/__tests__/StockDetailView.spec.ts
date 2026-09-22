@@ -182,6 +182,7 @@ const StockChartWorkspaceStub = defineComponent({
     'bars',
     'warmupBars',
     'indicators',
+    'indicatorsPeriod',
     'slot2',
     'slot3',
     'heightRatios',
@@ -1118,17 +1119,26 @@ describe('StockDetailView 三图数据协调', () => {
     await wrapper.get('[data-testid="component-chart-klinePeriod-week"]').trigger('click')
     await wrapper.get('[data-testid="component-chart-returnMeasurementMode-range"]').trigger('click')
     await nextTick()
+    await flushPromises()
 
     expect(measurementConfigState.current.period).toBe('week')
     expect(measurementConfigState.current.mode).toBe('range')
     expect(workspace.props('klinePeriod')).toBe('week')
+    expect(workspace.props('indicatorsPeriod')).toBe('week')
     expect(workspace.props('returnMeasurementMode')).toBe('range')
+    expect(stocksApi.getIndicators).toHaveBeenLastCalledWith(
+      '600000.SH',
+      expect.objectContaining({ period: 'week' }),
+      expect.any(AbortSignal),
+    )
 
     workspace.vm.$emit('update:klinePeriod', 'month')
     workspace.vm.$emit('update:returnMeasurementMode', 'latest')
     await nextTick()
+    await flushPromises()
 
     expect(workspace.props('klinePeriod')).toBe('month')
+    expect(workspace.props('indicatorsPeriod')).toBe('month')
     expect(workspace.props('returnMeasurementMode')).toBe('latest')
     expect(measurementConfigState.current.period).toBe('week')
     expect(measurementConfigState.current.mode).toBe('range')

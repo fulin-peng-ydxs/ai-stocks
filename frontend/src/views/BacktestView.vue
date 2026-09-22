@@ -16,13 +16,13 @@ import {
   getBars,
   getIndicators,
   type Bar,
-  type IndicatorField,
   type IndicatorRow,
 } from '@/api/stocks'
 import { fetchBenchmarkEquity, type BenchmarkEquity } from '@/utils/benchmarkEquity'
 import EquityChart from '@/components/EquityChart.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
+import { MACD_INDICATOR_FIELDS } from '@/components/stock-chart/indicatorFields'
 import type { MacdPanelState, TradeMarker } from '@/components/stock-chart/workspaceOptions'
 import { Search, Close } from '@element-plus/icons-vue'
 import AppControlItem from '@/components/AppControlItem.vue'
@@ -1570,13 +1570,6 @@ const dlgTrades = ref<DlgTrade[]>([])
 const dlgClicked = ref<TradeRow | null>(null)
 const dlgLoading = ref(false)
 const dlgZoom = ref<{ start: number; end: number }>({ start: 55, end: 100 })
-const BACKTEST_MACD_FIELDS = [
-  'macd_diff',
-  'macd_dea',
-  'macd_hist',
-  'macd_golden_cross',
-  'macd_dead_cross',
-] as const satisfies readonly IndicatorField[]
 const dlgMacdState = computed<MacdPanelState>(() => {
   if (dlgIndicatorLoading.value) return 'loading'
   if (dlgIndicatorError.value) return 'error'
@@ -1597,7 +1590,7 @@ async function loadDialogIndicators(): Promise<void> {
   try {
     const data = await getIndicators(dlgCode.value, {
       lookback: 6000,
-      fields: BACKTEST_MACD_FIELDS,
+      fields: MACD_INDICATOR_FIELDS,
     })
     dlgIndicators.value = data.indicators
   } catch (error) {
