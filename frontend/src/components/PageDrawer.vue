@@ -5,6 +5,7 @@ import {
   PAGE_DRAWER_WIDTHS,
   type PageDrawerSize,
 } from './pageDrawerSize'
+import PageDrawerSurface from './PageDrawerSurface.vue'
 
 defineOptions({ inheritAttrs: false })
 
@@ -12,12 +13,21 @@ const props = withDefaults(defineProps<{
   modelValue: boolean
   modalClass?: string
   size?: PageDrawerSize
+  title: string
+  subtitle?: string
   titleSize?: 'standard' | 'compact'
-  surface?: boolean
+  bodyScroll?: boolean
+  bodyLayout?: 'flow' | 'fill'
+  boundary?: 'page' | 'app'
+  closeLabel?: string
 }>(), {
   size: 'md',
   titleSize: 'standard',
-  surface: false,
+  bodyScroll: true,
+  bodyLayout: 'flow',
+  boundary: 'page',
+  subtitle: '',
+  closeLabel: '',
 })
 
 const emit = defineEmits<{
@@ -29,20 +39,24 @@ const model = computed({
 })
 
 const pageTarget = inject(PAGE_OVERLAY_TARGET, null)
-if (import.meta.env.DEV && pageTarget == null) {
+if (import.meta.env.DEV && props.boundary === 'page' && pageTarget == null) {
   console.warn('[PageDrawer] 未找到 LayoutHost 页面容器，抽屉将回退到 body。')
 }
 // 真实页面由 LayoutHost 提供目标；body 回退仅兼容组件预览与把 LayoutHost 替换为测试桩的场景。
-const appendTarget = computed(() => pageTarget?.value ?? 'body')
+const appendTarget = computed(() => (
+  props.boundary === 'app' ? 'body' : (pageTarget?.value ?? 'body')
+))
 const modalClassName = computed(() => [
   'page-drawer-modal',
+  props.boundary === 'app' ? 'page-drawer-modal--app' : '',
   `page-drawer-modal--title-${props.titleSize}`,
-  props.surface ? 'page-drawer-modal--surface' : '',
-  props.surface ? 'app-drawer-surface-modal' : '',
+  'page-drawer-modal--surface',
+  'app-drawer-surface-modal',
   props.size === 'full' ? 'page-drawer-modal--full' : '',
   props.modalClass,
 ].filter(Boolean).join(' '))
 const drawerWidth = computed(() => PAGE_DRAWER_WIDTHS[props.size])
+const resolvedCloseLabel = computed(() => props.closeLabel || `关闭${props.title}`)
 </script>
 
 <template>
@@ -50,17 +64,30 @@ const drawerWidth = computed(() => PAGE_DRAWER_WIDTHS[props.size])
     v-model="model"
     v-bind="$attrs"
     :append-to="appendTarget"
-    :class="{ 'page-drawer--surface app-drawer-surface-host': props.surface }"
+    class="page-drawer--surface app-drawer-surface-host"
     :modal-class="modalClassName"
     :size="drawerWidth"
   >
-    <template v-if="$slots.header" #header>
-      <slot name="header" />
-    </template>
-    <slot />
-    <template v-if="$slots.footer" #footer>
-      <slot name="footer" />
-    </template>
+    <PageDrawerSurface
+      :title="title"
+      :subtitle="subtitle"
+      :title-size="titleSize"
+      :body-scroll="bodyScroll"
+      :body-layout="bodyLayout"
+      :close-label="resolvedCloseLabel"
+      @close="model = false"
+    >
+      <template v-if="$slots['title-suffix']" #title-suffix>
+        <slot name="title-suffix" />
+      </template>
+      <template v-if="$slots['header-actions']" #actions>
+        <slot name="header-actions" />
+      </template>
+      <slot />
+      <template v-if="$slots.footer" #footer>
+        <slot name="footer" />
+      </template>
+    </PageDrawerSurface>
   </el-drawer>
 </template>
 
@@ -69,19 +96,11 @@ const drawerWidth = computed(() => PAGE_DRAWER_WIDTHS[props.size])
 .el-overlay.page-drawer-modal {
   position: absolute;
 }
+.el-overlay.page-drawer-modal--app {
+  position: fixed;
+}
 .el-overlay.page-drawer-modal .el-drawer {
   max-width: 100%;
-}
-.el-overlay.page-drawer-modal .el-drawer__title {
-  margin: 0;
-  color: var(--el-text-color-primary);
-  font-size: var(--app-font-size-drawer-title);
-  line-height: var(--app-line-height-drawer-title);
-  font-weight: var(--app-font-weight-section);
-}
-.el-overlay.page-drawer-modal--title-compact .el-drawer__title {
-  font-size: var(--app-font-size-section-title);
-  line-height: var(--app-line-height-section-title);
 }
 .el-overlay.page-drawer-modal--full .el-drawer {
   width: 100% !important;

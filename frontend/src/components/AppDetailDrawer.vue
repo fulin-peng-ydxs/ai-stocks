@@ -36,19 +36,19 @@ const emit = defineEmits<{
     v-bind="$attrs"
     :model-value="modelValue"
     :size="size"
+    :title="title"
+    :subtitle="subtitle"
     class="app-detail-drawer"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <template #header>
-      <div class="app-detail-drawer__header">
-        <div class="app-detail-drawer__heading">
-          <h2 class="app-drawer-title">{{ title }}</h2>
-          <p v-if="subtitle" class="app-drawer-subtitle">{{ subtitle }}</p>
-          <slot name="header-meta" />
-        </div>
-        <div v-if="$slots['header-actions']" class="app-detail-drawer__header-actions">
-          <slot name="header-actions" />
-        </div>
+    <template v-if="$slots['header-meta']" #title-suffix>
+      <div class="app-detail-drawer__header-meta">
+        <slot name="header-meta" />
+      </div>
+    </template>
+    <template v-if="$slots['header-actions']" #header-actions>
+      <div class="app-detail-drawer__header-actions">
+        <slot name="header-actions" />
       </div>
     </template>
 
@@ -70,14 +70,7 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
-.app-detail-drawer__header {
-  display: flex;
-  min-width: 0;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--app-space-4);
-}
-.app-detail-drawer__heading { min-width: 0; }
+.app-detail-drawer__header-meta,
 .app-detail-drawer__header-actions,
 .app-detail-drawer__footer {
   display: flex;

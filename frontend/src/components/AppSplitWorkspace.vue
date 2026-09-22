@@ -376,6 +376,8 @@ onBeforeUnmount(() => {
     v-model="compactSecondaryOpen"
     :title="secondaryDrawerTitle"
     size="full"
+    :body-scroll="false"
+    body-layout="fill"
     :modal-class="drawerClassName"
     :data-testid="secondaryDrawerTestId || `${testIdPrefix}-secondary-drawer`"
     @closed="emit('compactSecondaryClose')"
@@ -459,11 +461,6 @@ onBeforeUnmount(() => {
 </style>
 
 <style>
-.app-split-workspace-drawer .el-drawer__body {
-  display: flex;
-  min-height: 0;
-  padding: var(--app-space-3);
-}
 body.app-split-workspace-is-resizing {
   cursor: col-resize;
   user-select: none;

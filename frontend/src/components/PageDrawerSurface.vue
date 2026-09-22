@@ -7,10 +7,12 @@ withDefaults(defineProps<{
   subtitle?: string
   titleSize?: 'standard' | 'compact'
   bodyScroll?: boolean
+  bodyLayout?: 'flow' | 'fill'
   closeLabel?: string
 }>(), {
   titleSize: 'standard',
   bodyScroll: true,
+  bodyLayout: 'flow',
   closeLabel: '关闭抽屉',
 })
 
@@ -44,7 +46,10 @@ defineEmits<{
 
     <div
       class="page-drawer-surface__body"
-      :class="{ 'is-scroll-disabled': !bodyScroll }"
+      :class="[
+        `is-${bodyLayout}`,
+        { 'is-scroll-disabled': !bodyScroll },
+      ]"
     >
       <slot />
     </div>
@@ -104,6 +109,10 @@ defineEmits<{
 }
 .page-drawer-surface__body.is-scroll-disabled {
   overflow: hidden;
+}
+.page-drawer-surface__body.is-fill {
+  display: flex;
+  flex-direction: column;
 }
 .page-drawer-surface__footer {
   flex: none;

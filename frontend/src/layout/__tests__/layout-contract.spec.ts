@@ -57,7 +57,9 @@ function vueFiles(dir: string): string[] {
 }
 
 const files = vueFiles(VIEWS_DIR)
+const allVueFiles = vueFiles(SOURCE_DIR)
 const rel = (f: string) => relative(VIEWS_DIR, f).split('\\').join('/')
+const sourceRel = (f: string) => relative(SOURCE_DIR, f).split('\\').join('/')
 
 describe('布局契约守卫（M6）', () => {
   it('发现页面源码', () => {
@@ -129,6 +131,26 @@ describe('布局契约守卫（M6）', () => {
     expect(
       offenders,
       `以下页面直接使用了 <el-drawer>，应改用页面边界组件 <PageDrawer>：\n${offenders.join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('所有抽屉统一由 PageDrawer 管理外壳，消费方不得覆盖 Element 抽屉结构', () => {
+    const directDrawerOffenders = allVueFiles
+      .filter((file) => !file.endsWith('/components/PageDrawer.vue'))
+      .filter((file) => VIEWPORT_DRAWER.test(readFileSync(file, 'utf8')))
+      .map(sourceRel)
+    const shellStyleOffenders = allVueFiles
+      .filter((file) => !file.endsWith('/components/PageDrawerSurface.vue'))
+      .filter((file) => /\.el-drawer__(?:header|body|footer)|--el-drawer-bg-color/.test(readFileSync(file, 'utf8')))
+      .map(sourceRel)
+
+    expect(
+      directDrawerOffenders,
+      `以下组件绕过了统一抽屉 <PageDrawer>：\n${directDrawerOffenders.join('\n')}`,
+    ).toEqual([])
+    expect(
+      shellStyleOffenders,
+      `以下组件私自覆盖抽屉外壳：\n${shellStyleOffenders.join('\n')}`,
     ).toEqual([])
   })
 

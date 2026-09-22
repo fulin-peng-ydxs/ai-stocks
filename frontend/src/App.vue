@@ -48,7 +48,7 @@ import WorkspaceRouteView from '@/components/WorkspaceRouteView.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppOverflowTooltipHost from '@/components/AppOverflowTooltipHost.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
-import PageDrawerSurface from '@/components/PageDrawerSurface.vue'
+import PageDrawer from '@/components/PageDrawer.vue'
 import SettingsGroup from '@/components/SettingsGroup.vue'
 import TradeDisciplineQuickCard from '@/components/trade-discipline/TradeDisciplineQuickCard.vue'
 import { formatDateTimeMinutes } from '@/utils/dateTime'
@@ -611,50 +611,45 @@ async function onLogout() {
       </el-container>
     </el-container>
 
-    <el-drawer
+    <PageDrawer
       v-model="userDrawerVisible"
       direction="rtl"
-      size="440px"
-      class="app-drawer-surface-host"
-      modal-class="app-drawer-surface-modal"
+      size="lg"
+      title="用户中心"
+      boundary="app"
+      close-label="关闭用户中心"
     >
-      <PageDrawerSurface title="用户中心" close-label="关闭用户中心" @close="userDrawerVisible = false">
-        <div class="app-stack-md">
-          <div class="drawer-user-card">
-            <span class="drawer-avatar">{{ avatarText }}</span>
-            <div>
-              <div class="drawer-user-name">{{ displayName }}</div>
-              <div class="drawer-user-sub">{{ userSubline || '登录态' }}</div>
-            </div>
+      <div class="app-stack-md">
+        <div class="drawer-user-card">
+          <span class="drawer-avatar">{{ avatarText }}</span>
+          <div>
+            <div class="drawer-user-name">{{ displayName }}</div>
+            <div class="drawer-user-sub">{{ userSubline || '登录态' }}</div>
           </div>
-
-          <TradeDisciplineQuickCard
-            v-if="canViewTradeDisciplineQuickCard"
-            :can-submit="canSubmitTradeDisciplineCheckin"
-            :trade-date="latestTradeDisciplineDate"
-            @navigate="openTradeDiscipline"
-          />
-
-          <el-button class="drawer-logout" type="danger" plain :loading="loggingOut" @click="onLogout">
-            退出登录
-          </el-button>
         </div>
-      </PageDrawerSurface>
-    </el-drawer>
 
-    <el-drawer
+        <TradeDisciplineQuickCard
+          v-if="canViewTradeDisciplineQuickCard"
+          :can-submit="canSubmitTradeDisciplineCheckin"
+          :trade-date="latestTradeDisciplineDate"
+          @navigate="openTradeDiscipline"
+        />
+
+        <el-button class="drawer-logout" type="danger" plain :loading="loggingOut" @click="onLogout">
+          退出登录
+        </el-button>
+      </div>
+    </PageDrawer>
+
+    <PageDrawer
       v-model="appearanceDrawerVisible"
       direction="rtl"
-      size="440px"
-      class="app-drawer-surface-host"
-      modal-class="app-drawer-surface-modal"
+      size="lg"
+      title="视觉环境"
+      subtitle="调整界面比例、阅读光线与导航方式"
+      boundary="app"
+      close-label="关闭视觉环境"
     >
-      <PageDrawerSurface
-        title="视觉环境"
-        subtitle="调整界面比例、阅读光线与导航方式"
-        close-label="关闭视觉环境"
-        @close="appearanceDrawerVisible = false"
-      >
         <SettingsGroup
           title="界面比例"
           hint="100% 为原始设计尺寸；自动模式小屏缩小、大屏放大"
@@ -787,8 +782,7 @@ async function onLogout() {
             </button>
           </div>
         </SettingsGroup>
-      </PageDrawerSurface>
-    </el-drawer>
+    </PageDrawer>
   </el-container>
   <AppOverflowTooltipHost />
 </template>

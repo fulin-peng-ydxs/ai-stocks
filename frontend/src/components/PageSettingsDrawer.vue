@@ -12,7 +12,6 @@ import {
 import SettingsGroup from './SettingsGroup.vue'
 import ComponentAutoSettings from './ComponentAutoSettings.vue'
 import PageDrawer from './PageDrawer.vue'
-import PageDrawerSurface from './PageDrawerSurface.vue'
 import LayoutSettingsSection from '@/layout/components/LayoutSettingsSection.vue'
 import AppIconButton from './AppIconButton.vue'
 import AppStatusNotice from './AppStatusNotice.vue'
@@ -234,19 +233,15 @@ function handleReset(): void {
     @update:model-value="(value: boolean) => emit('update:modelValue', value)"
     direction="rtl"
     :size="drawerSize"
-    surface
+    :title="props.title || '页面设置'"
+    :body-scroll="bodyScroll"
+    close-label="关闭页面设置"
     data-testid="page-settings-drawer"
   >
-    <PageDrawerSurface
-      :title="props.title || '页面设置'"
-      :body-scroll="bodyScroll"
-      close-label="关闭页面设置"
-      @close="emit('update:modelValue', false)"
-    >
-      <template #title-suffix>
-        <span v-if="props.dirty" class="ps-dirty-dot" />
-      </template>
-      <template #actions>
+    <template #title-suffix>
+      <span v-if="props.dirty" class="ps-dirty-dot" />
+    </template>
+    <template #header-actions>
         <AppIconButton
           v-if="visibleSectionKeys.length"
           :label="bulkToggleLabel"
@@ -255,7 +250,7 @@ function handleReset(): void {
         >
           <el-icon><Expand v-if="allVisibleSectionsCollapsed" /><Fold v-else /></el-icon>
         </AppIconButton>
-      </template>
+    </template>
 
       <!--
         固定三段（P13）：布局 / 组件设置 / 业务选项，均为可折叠的 SettingsGroup（level 1 卡片）。
@@ -359,10 +354,9 @@ function handleReset(): void {
           </SettingsGroup>
           <slot />
       </template>
-      <template #footer>
-        <el-button class="ps-reset" data-testid="page-settings-reset" @click="handleReset">恢复默认</el-button>
-      </template>
-    </PageDrawerSurface>
+    <template #footer>
+      <el-button class="ps-reset" data-testid="page-settings-reset" @click="handleReset">恢复默认</el-button>
+    </template>
   </PageDrawer>
 </template>
 

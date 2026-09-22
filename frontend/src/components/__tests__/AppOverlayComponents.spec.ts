@@ -54,8 +54,8 @@ describe('统一弹窗与详情组件', () => {
       global: {
         stubs: {
           PageDrawer: {
-            props: ['modelValue', 'size'],
-            template: '<aside><header><slot name="header"/></header><slot/><footer><slot name="footer"/></footer></aside>',
+            props: ['modelValue', 'size', 'title', 'subtitle'],
+            template: '<aside><header>{{ title }}{{ subtitle }}<slot name="title-suffix"/><slot name="header-actions"/></header><slot/><footer><slot name="footer"/></footer></aside>',
           },
           AppStateBlock: { props: ['title'], template: '<div class="state">{{ title }}</div>' },
         },

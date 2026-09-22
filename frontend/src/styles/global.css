@@ -498,6 +498,7 @@ html.dark {
 .app-drawer-title--compact {
   font-size: var(--app-font-size-section-title);
   line-height: var(--app-line-height-section-title);
+  font-weight: var(--app-font-weight-section);
 }
 .app-drawer-subtitle {
   margin: var(--app-space-1) 0 0;

@@ -93,7 +93,7 @@ describe('PageDrawer 页面边界', () => {
   it('在 LayoutHost 外使用时开发环境给出回退提示', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const wrapper = mount(PageDrawer, {
-      props: { modelValue: false },
+      props: { modelValue: false, title: '预览抽屉' },
       global: { plugins: [ElementPlus] },
     })
 
@@ -131,10 +131,10 @@ describe('PageDrawer 页面边界', () => {
     wrapper.unmount()
   })
 
-  it('设置型抽屉通过共享 surface 档统一遮罩和内容宿主', async () => {
+  it('所有抽屉默认通过共享 surface 统一遮罩和内容宿主', async () => {
     const wrapper = mount(PageDrawer, {
       attachTo: document.body,
-      props: { modelValue: true, title: '设置型抽屉', surface: true },
+      props: { modelValue: true, title: '统一抽屉' },
       global: { plugins: [ElementPlus] },
     })
     await nextTick()
@@ -142,6 +142,25 @@ describe('PageDrawer 页面边界', () => {
 
     expect(document.querySelector('.el-overlay.page-drawer-modal--surface')).not.toBeNull()
     expect(document.querySelector('.el-drawer.page-drawer--surface')).not.toBeNull()
+
+    wrapper.unmount()
+  })
+
+  it('应用级抽屉仍复用统一外壳，但覆盖整个应用视口', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const wrapper = mount(PageDrawer, {
+      attachTo: document.body,
+      props: { modelValue: true, title: '用户中心', boundary: 'app', size: 'lg' },
+      global: { plugins: [ElementPlus] },
+    })
+    await nextTick()
+    await nextTick()
+
+    expect(warn).not.toHaveBeenCalled()
+    expect(document.querySelector('.el-overlay.page-drawer-modal--app')).not.toBeNull()
+    expect(document.querySelector('.page-drawer-surface')).not.toBeNull()
+    expect((document.querySelector('.el-drawer') as HTMLElement)?.style.width)
+      .toBe(PAGE_DRAWER_WIDTHS.lg)
 
     wrapper.unmount()
   })

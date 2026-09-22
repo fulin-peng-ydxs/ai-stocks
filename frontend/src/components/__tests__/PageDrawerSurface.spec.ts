@@ -32,12 +32,18 @@ describe('PageDrawerSurface', () => {
 
   it('局部工具只切换共享标题档，不创建第二套外壳', () => {
     const wrapper = mount(PageDrawerSurface, {
-      props: { title: '图表操作', titleSize: 'compact', bodyScroll: false },
+      props: {
+        title: '图表操作',
+        titleSize: 'compact',
+        bodyScroll: false,
+        bodyLayout: 'fill',
+      },
       global: { stubs: { ElIcon: true } },
     })
 
     expect(wrapper.get('.page-drawer-surface__title').classes())
       .toContain('app-drawer-title--compact')
     expect(wrapper.get('.page-drawer-surface__body').classes()).toContain('is-scroll-disabled')
+    expect(wrapper.get('.page-drawer-surface__body').classes()).toContain('is-fill')
   })
 })

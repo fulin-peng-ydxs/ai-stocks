@@ -55,8 +55,8 @@ function mountDrawer() {
     global: {
       stubs: {
         PageDrawer: {
-          props: ['modelValue', 'size'],
-          template: '<div v-if="modelValue" class="drawer" :data-size="size"><slot /></div>',
+          props: ['modelValue', 'size', 'title'],
+          template: '<div v-if="modelValue" class="drawer" :data-size="size"><header>{{ title }}<slot name="title-suffix"/><slot name="header-actions"/></header><slot /><footer><slot name="footer"/></footer></div>',
         },
         SettingsGroup: {
           props: ['title', 'modelValue'],

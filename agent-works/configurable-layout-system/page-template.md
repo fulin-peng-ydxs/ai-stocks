@@ -275,25 +275,26 @@ const drawerConfig = {
 | 完整业务详情、长编辑、历史版本 | `AppDetailDrawer` | 当前 `LayoutHost` 内容区 | 基于 `PageDrawer`；统一标题、四态、正文和 footer；内容使用 `AppDetailSection` 与 `AppDetailFields/Field`，禁止私有详情网格和 `el-descriptions` |
 | 实时日志、资产搜索、窄屏工作区回退 | `PageDrawer` | 当前 `LayoutHost` 内容区 | 仅专用交互模型可直接使用；宽度只用 `xs/sm/md/lg/xl/xxl/wide/full` 语义档位；页面不得传 px/% |
 | 页面右上角设置入口 | `PageSettingsDrawer` | 当前 `LayoutHost` 内容区 | 内部复用 `PageDrawer`；固定承载布局、组件设置和业务选项；抽屉根部控制一级分组，嵌套父分组自动控制自己的直接子分组 |
-| 应用顶栏的用户中心、外观等全局能力 | 应用外壳中的 `el-drawer` | 整个视口 | 仅允许在 `App.vue` 等应用外壳使用，不属于业务页面模板 |
+| 应用顶栏的用户中心、外观等全局能力 | `PageDrawer boundary="app"` | 整个视口 | 与页面抽屉共用唯一外壳，只切换挂载边界；应用外壳也不得直接使用 `el-drawer` 或私传 px/% |
 
 组件关系：
 
 ```text
 PageSettingsDrawer
 └── PageDrawer
-    ├── PageDrawerSurface
-    └── el-drawer
+    ├── el-drawer
+    └── PageDrawerSurface
 
 AppDetailDrawer
 └── PageDrawer
-    └── el-drawer
+    ├── el-drawer
+    └── PageDrawerSurface
 
 AppDialog
 └── el-dialog
 ```
 
-`PageDrawer` 负责抽屉底层页面边界、遮罩、挂载位置和通用插槽；`PageDrawerSurface` 负责页面设置、用户中心、视觉环境与局部工具抽屉共享的内嵌内容面、可见外边界、标题/副标题、关闭入口、正文和 footer；抽屉正文中同层功能分组统一使用 `SettingsGroup level=1` 的卡片边界，无需折叠时传 `collapsible=false`，消费方不得复制视觉外壳或分组边框；`AppDetailDrawer` 负责业务详情结构，`PageSettingsDrawer` 负责页面设置结构，`AppDialog` 负责短内容。它们按内容职责选择，不按开发者偏好互换。
+`PageDrawer` 是全站抽屉唯一入口，负责页面/应用挂载边界、遮罩、语义宽度和通用插槽，并在内部唯一消费 `PageDrawerSurface` 与 `el-drawer`；`PageDrawerSurface` 统一可见外边界、标题/副标题、关闭入口、正文滚动或填充布局和 footer，不允许业务代码直接消费。抽屉正文中同层功能分组统一使用 `SettingsGroup level=1` 的卡片边界，无需折叠时传 `collapsible=false`。消费方只保留业务内容样式，不得覆盖 `.el-drawer__header/body/footer`、复制视觉外壳或私建分组边框；`AppDetailDrawer` 只补充详情四态与内容结构，`PageSettingsDrawer` 负责页面设置结构，`AppDialog` 负责短内容。它们按内容职责选择，不按开发者偏好互换。
 
 页面设置抽屉不开放“允许折叠”和“默认折叠段”配置。首次使用全部展开；用户逐组折叠或使用抽屉根部一键操作后，统一记忆当前顶层折叠态。每个存在直接子分组的 `SettingsGroup` 由共享折叠树自动显示本层一键操作；父级收起直接子节点即可隐藏其子树，重新展开时保留更深层原状态。页面不得覆写这套策略、手工枚举子节点或添加第二套批量折叠入口。
 

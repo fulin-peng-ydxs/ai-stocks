@@ -2786,12 +2786,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   white-space: normal;
   word-break: break-word;
 }
-:global(.indicator-definition-drawer .el-drawer__body) {
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-4);
-  padding-top: var(--app-space-2);
-}
 :global(.indicator-definition-form) {
   display: grid;
   min-width: 0;

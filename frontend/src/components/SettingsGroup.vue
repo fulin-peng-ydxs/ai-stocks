@@ -125,7 +125,7 @@ const childToggleLabel = computed(() => (
 }
 .sg-l1 > .sg-head .sg-title {
   font-size: var(--app-font-size-section-title);
-  font-weight: var(--app-font-weight-strong);
+  font-weight: var(--app-font-weight-section);
   color: var(--page-settings-text);
 }
 .sg-l1 > .sg-body {

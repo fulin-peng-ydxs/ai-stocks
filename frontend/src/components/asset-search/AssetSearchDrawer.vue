@@ -310,7 +310,14 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
 </script>
 
 <template>
-  <PageDrawer v-model="open" size="xl" :title="`浏览${assetLabel}`" class="asset-search-drawer">
+  <PageDrawer
+    v-model="open"
+    size="xl"
+    :title="`浏览${assetLabel}`"
+    :body-scroll="false"
+    body-layout="fill"
+    class="asset-search-drawer"
+  >
     <div class="asset-search" :data-testid="testId">
       <div v-if="canBrowse" class="asset-search__toolbar">
         <PageSegmented
