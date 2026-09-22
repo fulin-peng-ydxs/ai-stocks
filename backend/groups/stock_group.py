@@ -356,6 +356,7 @@ class StockGroupRepo:
             latest = self.mkt.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]
             status_date = None if pd.isna(latest) else pd.Timestamp(latest).date()
         st_map: dict[str, bool] = {}
+        st_date_map: dict[str, date] = {}
         st_codes_by_date: dict[date, list[str]] = {}
         if status_date is not None:
             for code in codes:
@@ -368,6 +369,7 @@ class StockGroupRepo:
                         continue
                     point_date = pd.Timestamp(last_value).date()
                 st_codes_by_date.setdefault(point_date, []).append(code)
+                st_date_map[code] = point_date
         st_service = StockSTStatusService(self.mkt)
         for point_date, point_codes in st_codes_by_date.items():
             st_map.update(st_service.status_map(point_date, point_codes))
@@ -400,9 +402,11 @@ class StockGroupRepo:
                 "ret": ret, "last_date": last_d.get(code),
                 "price": round(float(px), 2) if px is not None and not pd.isna(px) else None,
                 "pct_chg": round(float(dpct), 2) if dpct is not None and not pd.isna(dpct) else None,
+                "is_st": bool(st_map[code]) if code in st_date_map else None,
+                "st_as_of_date": str(st_date_map[code]) if code in st_date_map else None,
                 "note": r["note"] or "",
                 "_board": basic.get("board"),
-                "_is_st": bool(st_map.get(code, False)),
+                "_is_st": bool(st_map[code]) if code in st_date_map else None,
                 "_delisted": delist_date is not None and not pd.isna(delist_date),
             })
         return out

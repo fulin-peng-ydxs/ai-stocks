@@ -33,6 +33,7 @@ import AppIconButton from '@/components/AppIconButton.vue'
 import AppDetailField from '@/components/AppDetailField.vue'
 import AppDetailFields from '@/components/AppDetailFields.vue'
 import AppWorkspacePane from '@/components/AppWorkspacePane.vue'
+import StockStatusTag from '@/components/StockStatusTag.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -1158,7 +1159,10 @@ onBeforeUnmount(() => {
       >
         <template #badges>
           <span v-if="quoteSummaryData?.board" class="stock-type">{{ quoteSummaryData.board }}</span>
-          <span v-if="quoteSummaryData?.is_st" class="stock-type stock-type--risk">ST</span>
+          <StockStatusTag
+            :is-st="quoteSummaryData?.is_st"
+            :as-of-date="quoteSummaryData?.trade_date"
+          />
         </template>
         <template #actions>
           <StockGroupFavoriteButton
@@ -1615,10 +1619,6 @@ onBeforeUnmount(() => {
   font-weight: var(--app-font-weight-strong);
 }
 
-.stock-type--risk {
-  color: var(--market-up-color);
-  background: color-mix(in srgb, var(--market-up-color) 10%, transparent);
-}
 .group-option {
   display: inline-flex;
   align-items: center;

@@ -106,6 +106,8 @@ export interface SectorMember {
   close: number | null
   pct_chg: number | null
   turnover_rate: number | null
+  is_st?: boolean | null
+  st_as_of_date?: string | null
 }
 
 export interface SectorMembers {

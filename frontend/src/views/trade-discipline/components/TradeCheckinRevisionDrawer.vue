@@ -5,6 +5,7 @@ import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
 import AppTableColumn from '@/components/AppTableColumn.vue'
+import StockStatusTag from '@/components/StockStatusTag.vue'
 import {
   getTradeDisciplineCheckinRevision,
   type CheckinHistoryRow,
@@ -164,7 +165,17 @@ watch(
           aria-label="修订操作快照"
         >
           <AppTableColumn label="股票" role="name">
-            <template #default="{ row }">{{ row.stock_code }} · {{ row.stock_name_snapshot }}</template>
+            <template #default="{ row }">
+              <span class="app-inline-info app-inline-info--nowrap">
+                <span>{{ row.stock_code }} · {{ row.stock_name_snapshot }}</span>
+                <StockStatusTag
+                  :is-st="row.is_st"
+                  :as-of-date="row.st_as_of_date || detail?.trade_date"
+                  context-label="交易日"
+                  show-unknown
+                />
+              </span>
+            </template>
           </AppTableColumn>
           <AppTableColumn label="方向"><template #default="{ row }">{{ sideText(row.side) }}</template></AppTableColumn>
           <AppTableColumn v-if="detail.assessment === 'partial'" label="履约状态">

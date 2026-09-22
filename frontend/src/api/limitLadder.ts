@@ -42,6 +42,7 @@ export interface LimitLadderStock {
   board: string
   price_limit_pct: number
   is_st: boolean
+  st_as_of_date?: string | null
   st_quality: 'accurate' | 'approximate'
   st_source: string
   is_one_word: boolean

@@ -468,8 +468,9 @@ class BacktestService:
                     horizons=params.get("horizons"), thresholds=params.get("thresholds"),
                     score_profile=self._load_score_profile(params),
                 )
+                decorated_trades = self._attach_trade_st(out["trades"])
                 result = {"run_id": run_id, "metrics": metrics, "layers": layers,
-                          "trades": out["trades"], "equity": eq.to_dict("records"),
+                          "trades": decorated_trades, "equity": eq.to_dict("records"),
                           "benchmark_code": out["benchmark_code"], "initial_capital": out["initial_capital"]}
                 if persist:
                     self._persist(run_id, eq, out["trades"], metrics, layers)
@@ -623,6 +624,33 @@ class BacktestService:
         return refs
 
     # ── 读取 ──
+    def _attach_trade_st(self, trades: list[dict]) -> list[dict]:
+        """按每笔买入日附加点时 ST 展示事实，不把当前状态投影到历史成交。"""
+        from backend.services.stock_st_status import StockSTStatusService
+
+        decorated = [dict(trade) for trade in trades]
+        grouped: dict[date, list[str]] = {}
+        for trade in decorated:
+            raw_day = trade.get("entry_date")
+            if raw_day is None or not trade.get("code"):
+                trade["entry_is_st"] = None
+                trade["st_as_of_date"] = None
+                continue
+            point_date = pd.Timestamp(raw_day).date()
+            trade["st_as_of_date"] = point_date.isoformat()
+            grouped.setdefault(point_date, []).append(str(trade["code"]))
+        service = StockSTStatusService(self.c)
+        statuses: dict[tuple[date, str], bool] = {}
+        for point_date, codes in grouped.items():
+            for code, is_st in service.status_map(point_date, sorted(set(codes))).items():
+                statuses[(point_date, code)] = bool(is_st)
+        for trade in decorated:
+            if trade.get("st_as_of_date") is None:
+                continue
+            point_date = date.fromisoformat(str(trade["st_as_of_date"]))
+            trade["entry_is_st"] = statuses[(point_date, str(trade["code"]))]
+        return decorated
+
     def _runs_where(self, kind: str | None, source: str | None) -> tuple[str, list]:
         """list_runs / count_runs 共用的 WHERE 构建（可见性 + kind + source 过滤）。"""
         where = f"WHERE {visible_sql('r')} "
@@ -971,4 +999,5 @@ class BacktestService:
         for _k in ("tenant_id", "owner_user_id"):
             run_d.pop(_k, None)
         return {"run": run_d, "metrics": metrics, "layers": layers,
-                "equity": eq.to_dict("records"), "trades": td.to_dict("records")}
+                "equity": eq.to_dict("records"),
+                "trades": self._attach_trade_st(td.to_dict("records"))}

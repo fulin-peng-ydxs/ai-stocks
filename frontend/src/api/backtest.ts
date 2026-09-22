@@ -36,6 +36,8 @@ export interface EquityPoint {
 export interface TradeRow {
   seq: number
   code: string
+  entry_is_st?: boolean | null
+  st_as_of_date?: string | null
   entry_date: string
   entry_price: number
   exit_date: string

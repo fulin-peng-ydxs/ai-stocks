@@ -23,6 +23,7 @@ import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppWorkspacePane from '@/components/AppWorkspacePane.vue'
+import StockStatusTag from '@/components/StockStatusTag.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import MarketDetailHero from '@/components/MarketDetailHero.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -640,14 +641,22 @@ onMounted(async () => {
                       <span
                         :class="{ 'stock-disabled': !canViewStocks }"
                         :data-testid="row?.code ? `sector-member-${row.code}` : undefined"
-                      >{{ row.code }}</span>
+                      >
+                        <span class="app-inline-info app-inline-info--nowrap">
+                          <span>{{ row.code }}</span>
+                          <StockStatusTag v-if="!colVisible('name')" :is-st="row.is_st" :as-of-date="row.st_as_of_date" />
+                        </span>
+                      </span>
                     </el-tooltip>
                   </template>
                 </AppTableColumn>
                 <AppTableColumn v-if="colVisible('name')" label="名称" prop="name" role="name">
                   <template #default="{ row }">
                     <el-tooltip :disabled="canViewStocks" content="无个股行情查看权限" placement="top">
-                      <strong :class="{ 'stock-disabled': !canViewStocks }">{{ row.name || '—' }}</strong>
+                      <span class="app-inline-info app-inline-info--nowrap">
+                        <strong :class="{ 'stock-disabled': !canViewStocks }">{{ row.name || '—' }}</strong>
+                        <StockStatusTag :is-st="row.is_st" :as-of-date="row.st_as_of_date" />
+                      </span>
                     </el-tooltip>
                   </template>
                 </AppTableColumn>

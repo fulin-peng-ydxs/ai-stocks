@@ -122,6 +122,39 @@ def test_list_stocks_without_group_permission_does_not_read_or_create_groups(
         assert body["code"] == 0
         assert body["data"]["list"][0]["code"] == code
         assert body["data"]["list"][0]["groups"] == []
+        assert body["data"]["list"][0]["st_as_of_date"] == "2024-01-02"
+
+        delisted_code = "600001.SH"
+        market.execute(
+            "INSERT INTO stock_basic "
+            "(code,name,exchange,board,list_date,delist_date,industry,price_limit_pct) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            [
+                delisted_code,
+                "退市样本",
+                "SH",
+                "主板",
+                date(2000, 1, 1),
+                date(2024, 1, 3),
+                "测试",
+                0.1,
+            ],
+        )
+        market.execute(
+            "INSERT INTO stock_st_status_daily "
+            "(code,trade_date,is_st,source,source_ref,quality,captured_at,updated_at) "
+            "VALUES (?,DATE '2024-01-02',TRUE,'test','delisted-point','accurate',"
+            "CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+            [delisted_code],
+        )
+        delisted_response = client.get(
+            "/api/stocks?board=退市&trade_date=2024-02-01&page=1&size=10",
+            headers=_auth(user_id, tenant_id),
+        )
+        assert delisted_response.status_code == 200
+        delisted_row = delisted_response.json()["data"]["list"][0]
+        assert delisted_row["is_st"] is True
+        assert delisted_row["st_as_of_date"] == "2024-01-02"
         after = pg.query_df(
             "SELECT count(*) AS n FROM stock_group "
             "WHERE tenant_id=%s AND owner_user_id=%s AND is_default=TRUE",

@@ -14,6 +14,7 @@
 - 行业/概念筛选统一使用同花顺 `board_dict + board_member` 累计归属，选项由 `GET /stocks/membership-options` 按行业、概念稳定返回，列表与分组接口共同消费 `membership_board_code`。指定历史交易日时排除 `first_seen_date` 明确晚于该日的关系；存量空日期视为历史已存在。该口径不同于列表“行业”列的证监会行业分类。
 - 只有认证上下文具备 `stock-group:view`（或 system）时才构造 `StockGroupRepo` 并批量调用 `groups_for_codes`；无权限时统一返回空 `groups`，不读取分组资产，也不会因仓库构造而创建默认分组。前端同时隐藏分组列、分组视图和对应页面设置元数据。
 - 股票当前页在最终分页行形成后，以响应 `trade_date` 一次批量读取 `stock_board_correlation_state + stock_board_correlation + board_dict` 并附加可选 `related_boards`；分组页先从 PG 取资产、再从 DuckDB 取行情，最终只对当前页按各行 `last_date` 批量合并摘要，禁止跨库 JOIN。业务日期与摘要 `as_of_date` 不一致时行业/概念为空并标记 `as_of_mismatch`，不会用最新冠军装饰历史行。
+- 普通列表与分组列表均返回所选交易日的 `is_st + st_as_of_date`，名称后统一显示显式 `ST` 标签；名称列隐藏时标签跟随代码。板块筛选已选择 `ST`、列表上下文已明确全部为 ST 时隐藏重复行内标签，切换到其他筛选后恢复。分组筛选与行内展示消费同一份点时事实，不再只保留内部 `_is_st` 后把展示字段剔除。状态列只表达上市/退市等存续状态，避免与名称旁 ST 标签重复。
 
 ### 行情、指标、报价与买卖评估分层
 

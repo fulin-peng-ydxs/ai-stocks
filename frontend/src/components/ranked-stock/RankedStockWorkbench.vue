@@ -122,6 +122,7 @@ function openActiveDetail(): void {
         :score-keys="scoreKeys"
         :label-of="labelOf"
         :return-path="returnPath"
+        :st-as-of-date="runDate"
         @row-click="selectRow"
         @toggle-analysis="selection.togglePinned"
         @sort-change="emit('sortChange', $event)"

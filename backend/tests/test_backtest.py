@@ -15,7 +15,10 @@ from datetime import date
 import pandas as pd
 
 from backend.backtest.broker import (
-    Broker, can_buy_at_open, can_sell_at_open, limit_prices,
+    Broker,
+    can_buy_at_open,
+    can_sell_at_open,
+    limit_prices,
 )
 from backend.backtest.engine import BacktestEngine
 from backend.backtest.forward import compute_forward_returns
@@ -427,6 +430,31 @@ def test_backtest_service_list_get_run(market, pg):
     # 跨归属不可见
     other = BacktestService(market, tenant_id=TEST_TENANT, owner_user_id="pytest_other")
     assert other.get_run("r9") is None
+
+
+def test_backtest_trade_st_display_uses_entry_date(market, pg):
+    """逐笔成交只附加买入日 ST，不能用查看日的当前状态覆盖历史。"""
+    from backend.services.backtest_service import BacktestService
+    from backend.tests.conftest import TEST_OWNER, TEST_TENANT
+
+    entry_date = date(2026, 8, 8)
+    market.execute(
+        "INSERT INTO stock_st_status_daily "
+        "(code,trade_date,is_st,source,source_ref,quality,captured_at,updated_at) "
+        "VALUES ('600000.SH',?,TRUE,'test','backtest-entry','accurate',"
+        "CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+        [entry_date],
+    )
+    service = BacktestService(market, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+
+    rows = service._attach_trade_st([{"code": "600000.SH", "entry_date": entry_date}])
+
+    assert rows == [{
+        "code": "600000.SH",
+        "entry_date": entry_date,
+        "entry_is_st": True,
+        "st_as_of_date": "2026-08-08",
+    }]
 
 
 def test_backtest_service_resolves_visible_score_profile_ref(market, pg):

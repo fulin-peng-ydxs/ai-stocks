@@ -5,6 +5,7 @@ import type { LimitLadderStock, LimitLadderWindow } from '@/api/limitLadder'
 import { formatMarketPercent, marketValueClass } from '@/utils/marketValue'
 import { sectorDetailLocation } from '@/utils/sectorNavigation'
 import RelatedBoardEmptyValue from '@/components/RelatedBoardEmptyValue.vue'
+import StockStatusTag from '@/components/StockStatusTag.vue'
 
 const props = defineProps<{
   stock: LimitLadderStock
@@ -71,7 +72,7 @@ function selectCard(): void {
           </b>
           板
         </span>
-        <el-tag v-if="stock.is_st" size="small" type="danger" effect="plain">ST</el-tag>
+        <StockStatusTag :is-st="stock.is_st" :as-of-date="stock.st_as_of_date" />
         <el-tag v-if="stock.is_one_word" size="small" type="warning" effect="plain">一字</el-tag>
       </span>
 

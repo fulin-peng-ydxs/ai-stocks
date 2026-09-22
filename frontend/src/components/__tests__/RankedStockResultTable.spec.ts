@@ -6,7 +6,7 @@ import RankedStockResultTable from '@/components/ranked-stock/RankedStockResultT
 import { rankedStockColumns } from '@/components/ranked-stock/types'
 
 describe('RankedStockResultTable', () => {
-  it('统一展示全市场排名，以名称警告色表达 ST 与未参与评分状态', () => {
+  it('统一展示全市场排名，以显式标签表达 ST 与未参与评分状态', () => {
     const wrapper = mount(RankedStockResultTable, {
       props: {
         rows: [
@@ -41,15 +41,14 @@ describe('RankedStockResultTable', () => {
     expect(wrapper.text()).toContain('全市场排名')
     expect(wrapper.text()).toContain('示例ST')
     expect(wrapper.text()).toContain('该方案未纳入 ST')
-    expect(wrapper.get('.ranked-stock-name--st').text()).toBe('示例ST')
-    expect(wrapper.findAll('.el-tag')).toHaveLength(0)
+    expect(wrapper.get('.stock-status-tag').text()).toBe('ST')
     expect(wrapper.get('[data-label="全市场排名"]').attributes('data-role')).toBe('rank')
     expect(wrapper.get('[data-label="综合分"]').attributes('data-role')).toBe('number')
     expect(wrapper.get('[data-label="评级"]').attributes('data-role')).toBe('status')
     expect(wrapper.get('[data-label="名称"]').attributes('data-leading-controls')).toBe('0')
   })
 
-  it('走势工作台模式同样把 ST 状态收进名称警告色', () => {
+  it('走势工作台模式同样显示显式 ST 标签', () => {
     const wrapper = mount(RankedStockResultTable, {
       props: {
         rows: [{
@@ -79,8 +78,8 @@ describe('RankedStockResultTable', () => {
       },
     })
 
-    expect(wrapper.get('.stock-analysis-name-cell__name.is-warning').text()).toBe('风险样例')
-    expect(wrapper.findAll('.el-tag')).toHaveLength(0)
+    expect(wrapper.get('.stock-analysis-name-cell__name').text()).toBe('风险样例')
+    expect(wrapper.get('.stock-status-tag').text()).toBe('ST')
     expect(wrapper.get('[data-label="名称"]').attributes('data-role')).toBe('entity')
     expect(wrapper.get('[data-label="名称"]').attributes('data-leading-controls')).toBe('2')
   })

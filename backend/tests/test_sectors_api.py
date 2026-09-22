@@ -57,6 +57,13 @@ def _seed(c):
     # stock_basic（成分名称）
     for code, name in (("000001.SZ", "平安银行"), ("000002.SZ", "万科A")):
         c.execute("INSERT INTO stock_basic (code, name) VALUES (?, ?)", [code, name])
+        c.execute(
+            "INSERT INTO stock_st_status_daily "
+            "(code,trade_date,is_st,source,source_ref,quality,captured_at,updated_at) "
+            "VALUES (?,DATE '2026-08-07',FALSE,'test','sector-members','accurate',"
+            "CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+            [code],
+        )
 
 
 def _seed_bar(c, board_code, dates, closes):
@@ -240,6 +247,12 @@ def test_cumulative_member_market_is_distinct_from_latest_snapshot_count(c):
         "INSERT INTO daily_bar (code, trade_date, close, pre_close, amount) "
         "VALUES ('000003.SZ', DATE '2026-08-07', 12, 10, 1000000)"
     )
+    c.execute(
+        "INSERT INTO stock_st_status_daily "
+        "(code,trade_date,is_st,source,source_ref,quality,captured_at,updated_at) "
+        "VALUES ('000003.SZ',DATE '2026-08-07',TRUE,'test','sector-members','accurate',"
+        "CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
+    )
     svc = _svc(c)
 
     rows = {x["board_code"]: x for x in svc.list_sectors()["list"]}
@@ -327,6 +340,8 @@ def test_get_members_paginated(c):
     """成分股分页 + 现价/涨跌幅/换手 + 名称。"""
     svc = _svc(c)
     m = svc.get_members("309121", size=1, page=1)
+    assert m["list"][0]["is_st"] is False
+    assert m["list"][0]["st_as_of_date"] == "2026-08-07"
     assert m["total"] == 2
     assert len(m["list"]) == 1
     row = m["list"][0]

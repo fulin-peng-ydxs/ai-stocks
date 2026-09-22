@@ -4,6 +4,7 @@ import AppTableColumn from '@/components/AppTableColumn.vue'
 import RelatedBoardCell from '@/components/RelatedBoardCell.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
 import StockAnalysisNameCell from '@/components/StockAnalysisNameCell.vue'
+import StockStatusTag from '@/components/StockStatusTag.vue'
 import SubScoreChips from '@/components/SubScoreChips.vue'
 import type { ScoreRunRow } from '@/api/scoreProfile'
 import type { RankedStockColumn } from './types'
@@ -18,6 +19,7 @@ const props = withDefaults(defineProps<{
   scoreKeys?: string[]
   labelOf?: (key: string) => string
   returnPath?: string
+  stAsOfDate?: string | null
   analysisPins?: boolean
   /** 名称列中由调用方通过 name-leading 提供的紧凑前置控件数量。 */
   nameLeadingControls?: number
@@ -31,6 +33,7 @@ const props = withDefaults(defineProps<{
   scoreKeys: () => [],
   labelOf: (key: string) => key,
   returnPath: '',
+  stAsOfDate: null,
   analysisPins: true,
   nameLeadingControls: 0,
   isPinned: () => false,
@@ -81,20 +84,29 @@ function leadingControlsOf(column: RankedStockColumn): number {
     >
       <template #default="{ row }">
         <template v-if="column.key === 'rank'">{{ row.rank ?? '—' }}</template>
-        <template v-else-if="column.key === 'code'">{{ row.code }}</template>
+        <span v-else-if="column.key === 'code'" class="app-inline-info app-inline-info--nowrap">
+          <span>{{ row.code }}</span>
+          <StockStatusTag
+            v-if="!columns.some((item) => item.key === 'name')"
+            :is-st="row.is_st"
+            :as-of-date="row.st_as_of_date || stAsOfDate"
+          />
+        </span>
         <StockAnalysisNameCell
           v-else-if="column.key === 'name' && analysisPins"
           :code="row.code"
           :name="row.name"
           :pinned="isPinned(row.code)"
-          :tone="row.is_st ? 'warning' : 'default'"
+          :is-st="row.is_st"
+          :st-as-of-date="row.st_as_of_date || stAsOfDate"
           @toggle="emit('toggleAnalysis', row)"
         >
           <template #leading><slot name="name-leading" :row="row" /></template>
         </StockAnalysisNameCell>
         <span v-else-if="column.key === 'name'" class="app-inline-info app-inline-info--nowrap">
           <slot name="name-leading" :row="row" />
-          <span :class="{ 'ranked-stock-name--st': row.is_st }">{{ row.name || '—' }}</span>
+          <span>{{ row.name || '—' }}</span>
+          <StockStatusTag :is-st="row.is_st" :as-of-date="row.st_as_of_date || stAsOfDate" />
         </span>
         <template v-else-if="column.key === 'board'">{{ row.board || '—' }}</template>
         <RelatedBoardCell
@@ -126,10 +138,3 @@ function leadingControlsOf(column: RankedStockColumn): number {
     </AppTableColumn>
   </AppDataTable>
 </template>
-
-<style scoped>
-.ranked-stock-name--st {
-  color: var(--app-warning-text);
-  font-weight: var(--app-font-weight-section);
-}
-</style>

@@ -5,6 +5,7 @@ import {
   APP_BOTTOM_FLOATING_FALLBACKS,
   APP_BOTTOM_FLOATING_PLACEMENT,
 } from '@/utils/floatingPlacement'
+import StockStatusTag from '@/components/StockStatusTag.vue'
 
 const props = defineProps<{
   modelValue: StockOption | null
@@ -105,12 +106,21 @@ onUnmounted(() => {
       @update:model-value="select"
     >
       <el-option v-for="item in options" :key="item.code" :label="`${item.code} · ${item.name}`" :value="item.code">
-        <span class="stock-option-select__primary">{{ item.code }} · {{ item.name }}</span>
+        <span class="stock-option-select__primary app-inline-info app-inline-info--nowrap">
+          <span>{{ item.code }} · {{ item.name }}</span>
+          <StockStatusTag :is-st="item.is_st" :as-of-date="item.st_as_of_date" show-unknown />
+        </span>
         <small v-if="item.industry || item.delist_date" class="stock-option-select__meta">
           {{ [item.industry, item.delist_date ? '已退市' : ''].filter(Boolean).join(' · ') }}
         </small>
       </el-option>
     </el-select>
+    <StockStatusTag
+      v-if="modelValue"
+      :is-st="modelValue.is_st"
+      :as-of-date="modelValue.st_as_of_date"
+      show-unknown
+    />
     <small v-if="searchError" class="stock-option-select__error" role="alert">
       搜索失败，请重新输入重试
     </small>
@@ -118,9 +128,10 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.stock-option-select, .el-select { width: 100%; }
+.stock-option-select { display: flex; flex-wrap: wrap; align-items: center; gap: var(--app-space-2); width: 100%; }
+.el-select { flex: 1; min-width: 0; }
 small { color: var(--el-text-color-secondary); }
-.stock-option-select__error { display: block; margin-top: var(--app-space-1); color: var(--el-color-danger); }
+.stock-option-select__error { flex-basis: 100%; display: block; color: var(--el-color-danger); }
 :global(.stock-option-select-popper .el-select-dropdown__item) {
   display: flex;
   align-items: center;

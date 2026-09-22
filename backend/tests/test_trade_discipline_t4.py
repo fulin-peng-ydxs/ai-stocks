@@ -229,6 +229,8 @@ def test_permission_matrix_and_dedicated_stock_search(client, pg, market, monkey
                 "industry": "银行",
                 "list_date": "1991-04-03",
                 "delist_date": None,
+                "is_st": None,
+                "st_as_of_date": None,
             }
         ]
         readonly_search = client.get(

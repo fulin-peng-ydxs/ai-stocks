@@ -48,6 +48,7 @@ import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetVisibilityTag from '@/components/AssetVisibilityTag.vue'
 import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import StockStatusTag from '@/components/StockStatusTag.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AssetSearchDrawer from '@/components/asset-search/AssetSearchDrawer.vue'
 import {
@@ -2264,7 +2265,18 @@ const menuPageTitle = useMenuPageTitle()
                   :border="tableBorder('trades')"
                   :default-sort="tradeDefaultSort" @sort-change="onTradeSortChange"
                   @row-click="(r:any) => openTradeChart(r)">
-          <AppTableColumn label="代码" prop="code" />
+          <AppTableColumn label="代码" prop="code">
+            <template #default="{ row }">
+              <span class="app-inline-info app-inline-info--nowrap">
+                <span>{{ row.code }}</span>
+                <StockStatusTag
+                  :is-st="row.entry_is_st"
+                  :as-of-date="row.st_as_of_date || row.entry_date"
+                  context-label="买入日"
+                />
+              </span>
+            </template>
+          </AppTableColumn>
           <AppTableColumn label="买入" prop="entry_date" sortable :sort-by="(r:any)=>r.entry_date" />
           <AppTableColumn label="买价"><template #default="{ row }">{{ formatMoney(row.entry_price) }}</template></AppTableColumn>
           <AppTableColumn label="卖出" prop="exit_date" sortable :sort-by="(r:any)=>r.exit_date" />
@@ -2431,6 +2443,7 @@ const menuPageTitle = useMenuPageTitle()
           :columns="backtestBoardColumns"
           :loading="boardLoading"
           :analysis-pins="false"
+          :st-as-of-date="boardDate"
           :row-class="(row) => boardRowClass({ row })"
           height="460"
         />

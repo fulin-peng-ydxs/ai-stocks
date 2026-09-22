@@ -293,6 +293,7 @@ class LimitLadderQueryService:
             enriched.append(
                 {
                     **self._json_row(stock),
+                    "st_as_of_date": trade_date.isoformat(),
                     "window_limit_up_days": metric.get("window_limit_up_days"),
                     "window_return_pct": metric.get("window_return_pct"),
                     "window_start_date": metric.get("window_start_date"),

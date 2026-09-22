@@ -155,6 +155,8 @@ export interface StockOption {
   industry: string | null
   list_date?: string | null
   delist_date?: string | null
+  is_st?: boolean | null
+  st_as_of_date?: string | null
 }
 
 export interface StockOptionPage {
@@ -175,6 +177,8 @@ export interface CheckinOperation {
   id?: string | null
   stock_code: string
   stock_name_snapshot: string
+  is_st?: boolean | null
+  st_as_of_date?: string | null
   side: ActionType
   stock_rule_id: string
   action_rule_id: string

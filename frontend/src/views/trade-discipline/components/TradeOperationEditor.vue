@@ -165,6 +165,8 @@ function selectStock(index: number, stock: StockOption | null): void {
   update(index, {
     stock_code: stock?.code ?? '',
     stock_name_snapshot: stock?.name ?? '',
+    is_st: stock?.is_st ?? null,
+    st_as_of_date: stock?.st_as_of_date ?? null,
   })
 }
 
@@ -278,7 +280,7 @@ defineExpose({ expandOperation })
           <div class="operation-grid">
             <el-form-item label="股票" required class="operation-field operation-field--stock">
               <StockOptionSelect
-                :model-value="operation.stock_code ? { code: operation.stock_code, name: operation.stock_name_snapshot, board: null, industry: null } : null"
+                :model-value="operation.stock_code ? { code: operation.stock_code, name: operation.stock_name_snapshot, board: null, industry: null, is_st: operation.is_st, st_as_of_date: operation.st_as_of_date } : null"
                 :disabled="disabled"
                 :trade-date="tradeDate"
                 @update:model-value="selectStock(index, $event)"

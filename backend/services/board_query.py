@@ -478,6 +478,19 @@ class BoardQueryService:
                 "pct_chg": _pct_chg(r["close"], r["pre_close"]),
                 "turnover_rate": r["turnover_rate"],
             })
+        if bar_date is not None and rows:
+            from backend.services.stock_st_status import StockSTStatusService
+
+            status_map = StockSTStatusService(self.c).status_map(
+                pd.Timestamp(bar_date).date(), [row["code"] for row in rows]
+            )
+            for row in rows:
+                row["is_st"] = bool(status_map[row["code"]])
+                row["st_as_of_date"] = str(pd.Timestamp(bar_date).date())
+        else:
+            for row in rows:
+                row["is_st"] = None
+                row["st_as_of_date"] = None
         return {"list": rows, "total": total, "trade_date": str(bar_date) if bar_date else None}
 
 

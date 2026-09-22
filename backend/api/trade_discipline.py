@@ -16,6 +16,7 @@ from backend.auth.context import get_current_context
 from backend.auth.deps import require_any_perm, require_perm
 from backend.common.exceptions import NotFoundError, ValidationError
 from backend.services.audit_service import AuditService
+from backend.services.stock_st_status import StockSTStatusService, STStatusNotReadyError
 from backend.services.trade_discipline_service import TradeDisciplineService
 from backend.storage import get_read_client as get_client
 
@@ -472,4 +473,24 @@ def stock_options(
         params,
     )
     rows = frame.astype(object).where(pd.notna(frame), None).to_dict("records")
+    market = get_client()
+    point_date = trade_date
+    if point_date is None:
+        latest = market.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]
+        point_date = None if pd.isna(latest) else pd.Timestamp(latest).date()
+    if rows and point_date is not None:
+        try:
+            statuses = StockSTStatusService(market).status_map(
+                point_date, [str(row["code"]) for row in rows]
+            )
+        except STStatusNotReadyError:
+            # 搜索选择器属于辅助入口，允许保留候选并把状态明确降级为未知。
+            statuses = {}
+        for row in rows:
+            row["is_st"] = statuses.get(str(row["code"]))
+            row["st_as_of_date"] = point_date.isoformat()
+    else:
+        for row in rows:
+            row["is_st"] = None
+            row["st_as_of_date"] = None
     return ok({"q": keyword, "limit": limit, "list": rows})

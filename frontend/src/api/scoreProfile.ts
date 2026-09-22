@@ -167,6 +167,7 @@ export interface ScoreRunRow {
   grade: string
   sub_scores: Record<string, number>
   is_st: boolean
+  st_as_of_date?: string | null
   score_status: 'ranked' | 'excluded_st' | 'missing'
   groups?: { id: string; name: string; color: string; is_default: boolean }[]
   related_boards?: StockRelatedBoards | null

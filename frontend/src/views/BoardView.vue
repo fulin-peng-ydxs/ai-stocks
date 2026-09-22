@@ -719,6 +719,7 @@ const menuPageTitle = useMenuPageTitle()
         :score-keys="displaySubKeys"
         :label-of="nameOf"
         :return-path="route.fullPath"
+        :st-as-of-date="runDate"
         :name-leading-controls="canUpdateDefaultGroup && defaultGroup ? 1 : 0"
         @sort-change="onTableSortChange"
         @row-click="handleBoardRowClick"

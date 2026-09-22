@@ -21,6 +21,8 @@ export interface GroupMember {
   price: number | null      // 最新收盘价（元）
   pct_chg: number | null    // 最新交易日当日涨跌幅（%）
   last_date: string | null
+  is_st?: boolean | null
+  st_as_of_date?: string | null
   note: string
   related_boards?: StockRelatedBoards | null
 }

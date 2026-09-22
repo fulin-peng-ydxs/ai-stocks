@@ -928,10 +928,26 @@ class TradeDisciplineService:
             operations=prepared["operations"],
         )
 
-    @staticmethod
-    def _decorate_revision(revision: dict[str, Any]) -> dict[str, Any]:
+    def _decorate_revision(self, revision: dict[str, Any]) -> dict[str, Any]:
         operations = revision.get("operations") or []
+        trade_date = pd.Timestamp(revision["trade_date"]).date()
+        statuses: dict[str, bool] = {}
+        if operations:
+            from backend.services.stock_st_status import (
+                StockSTStatusService,
+                STStatusNotReadyError,
+            )
+
+            try:
+                statuses = StockSTStatusService(self.market).status_map(
+                    trade_date, sorted({str(item["stock_code"]) for item in operations})
+                )
+            except STStatusNotReadyError:
+                # 交易纪律可保留既有操作快照；展示事实缺失时明确返回未知，不阻断复盘。
+                statuses = {}
         for operation in operations:
+            operation["is_st"] = statuses.get(str(operation["stock_code"]))
+            operation["st_as_of_date"] = trade_date.isoformat()
             operation["financial_complete"] = all(
                 operation.get(field) is not None
                 for field in ("price", "quantity", "amount", "fee", "operated_at")

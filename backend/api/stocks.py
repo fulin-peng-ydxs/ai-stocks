@@ -122,7 +122,7 @@ def list_stocks(q: str | None = None, board: str | None = None,
                 f"退市股票缺少退市前 ST 点时事实，示例 {','.join(missing)}；请先运行 ST状态刷新"
             )
         st_join = (
-            "LEFT JOIN LATERAL (SELECT s.is_st FROM stock_st_status_daily s "
+            "LEFT JOIN LATERAL (SELECT s.is_st, s.trade_date FROM stock_st_status_daily s "
             "WHERE s.code=sb.code AND s.trade_date<=LEAST(sb.delist_date, ?) "
             "AND s.quality='accurate' ORDER BY s.trade_date DESC LIMIT 1) st ON TRUE "
         )
@@ -171,7 +171,7 @@ def list_stocks(q: str | None = None, board: str | None = None,
     order_clause = f"{col} {order} NULLS LAST, sb.code ASC"
     df = c.query_df(
         f"SELECT sb.code, sb.name, sb.board, sb.industry, sb.list_date, sb.delist_date, "
-        f"       st.is_st AS is_st, b.close AS close, "
+        f"       st.is_st AS is_st, st.trade_date AS st_as_of_date, b.close AS close, "
         f"       CASE WHEN b.pre_close > 0 THEN (b.close / b.pre_close - 1) * 100 END AS pct_chg "
         f"FROM stock_basic sb "
         f"{st_join}"
@@ -193,6 +193,7 @@ def list_stocks(q: str | None = None, board: str | None = None,
         r["list_date"] = str(r["list_date"]) if r.get("list_date") is not None and not pd.isna(r["list_date"]) else None
         r["delist_date"] = str(r["delist_date"]) if r.get("delist_date") is not None and not pd.isna(r["delist_date"]) else None
         r["is_st"] = bool(r["is_st"])
+        r["st_as_of_date"] = str(pd.Timestamp(r["st_as_of_date"]).date())
         r["close"] = round(float(r["close"]), 2) if r.get("close") is not None and not pd.isna(r["close"]) else None
         r["pct_chg"] = round(float(r["pct_chg"]), 2) if r.get("pct_chg") is not None and not pd.isna(r["pct_chg"]) else None
         r["groups"] = groups_by_code.get(r["code"], [])

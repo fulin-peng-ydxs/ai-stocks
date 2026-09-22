@@ -19,6 +19,7 @@ import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 import StockAnalysisNameCell from '@/components/StockAnalysisNameCell.vue'
+import StockStatusTag from '@/components/StockStatusTag.vue'
 import RelatedBoardCell from '@/components/RelatedBoardCell.vue'
 import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
 import StockGroupBatchActions from '@/components/StockGroupBatchActions.vue'
@@ -205,6 +206,7 @@ const loading = ref(false)
 const loadError = ref('')
 const q = ref('')
 const board = ref('')
+const stOnlyContext = computed(() => board.value === 'ST')
 const membershipBoardCode = ref('')
 const membershipOptionRows = ref<StockMembershipOption[]>([])
 const membershipOptionsLoading = ref(false)
@@ -1019,13 +1021,28 @@ const menuPageTitle = useMenuPageTitle()
               <span @click.stop><el-checkbox :model-value="inCart(row.code)" @change="() => toggle(row)" /></span>
             </template>
           </AppTableColumn>
-          <AppTableColumn v-if="groupColVisible('code')" label="代码" prop="code" sortable="custom" />
+          <AppTableColumn v-if="groupColVisible('code')" label="代码" prop="code" sortable="custom">
+            <template #default="{ row }">
+              <span class="app-inline-info app-inline-info--nowrap">
+                <span>{{ row.code }}</span>
+                <StockStatusTag
+                  v-if="!groupColVisible('name')"
+                  :is-st="row.is_st"
+                  :as-of-date="row.st_as_of_date"
+                  :st-only-context="stOnlyContext"
+                />
+              </span>
+            </template>
+          </AppTableColumn>
           <AppTableColumn v-if="groupColVisible('name')" label="名称" prop="name" role="entity" :leading-controls="1" sortable="custom">
             <template #default="{ row }">
               <StockAnalysisNameCell
                 :code="row.code"
                 :name="row.name"
                 :pinned="isAnalysisPinned(row.code)"
+                :is-st="row.is_st"
+                :st-as-of-date="row.st_as_of_date"
+                :st-only-context="stOnlyContext"
                 @toggle="toggleAnalysisPinned(row)"
               />
             </template>
@@ -1082,7 +1099,19 @@ const menuPageTitle = useMenuPageTitle()
               <span @click.stop><el-checkbox :model-value="inCart(row.code)" @change="() => toggle(row)" /></span>
             </template>
           </AppTableColumn>
-          <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" sortable="custom" />
+          <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" sortable="custom">
+            <template #default="{ row }">
+              <span class="app-inline-info app-inline-info--nowrap">
+                <span>{{ row.code }}</span>
+                <StockStatusTag
+                  v-if="!colVisible('name')"
+                  :is-st="row.is_st"
+                  :as-of-date="row.st_as_of_date"
+                  :st-only-context="stOnlyContext"
+                />
+              </span>
+            </template>
+          </AppTableColumn>
           <AppTableColumn
             v-if="colVisible('name')"
             label="名称"
@@ -1096,6 +1125,9 @@ const menuPageTitle = useMenuPageTitle()
                 :code="row.code"
                 :name="row.name"
                 :pinned="isAnalysisPinned(row.code)"
+                :is-st="row.is_st"
+                :st-as-of-date="row.st_as_of_date"
+                :st-only-context="stOnlyContext"
                 @toggle="toggleAnalysisPinned(row)"
               >
                 <template #leading>
@@ -1110,7 +1142,6 @@ const menuPageTitle = useMenuPageTitle()
                     @changed="updateDefaultFavorite(row, $event)"
                   />
                 </template>
-                <el-tag v-if="row.is_st" type="danger" size="small" effect="plain">ST</el-tag>
               </StockAnalysisNameCell>
             </template>
           </AppTableColumn>
@@ -1160,9 +1191,7 @@ const menuPageTitle = useMenuPageTitle()
           <AppTableColumn v-if="colVisible('status')" label="状态">
             <template #default="{ row }">
               <el-tag v-if="row.delist_date" type="info" effect="plain" size="small">退市</el-tag>
-              <el-tag v-else :type="row.is_st ? 'danger' : 'success'" effect="plain" size="small">
-                {{ row.is_st ? 'ST' : '正常' }}
-              </el-tag>
+              <el-tag v-else type="success" effect="plain" size="small">上市</el-tag>
             </template>
           </AppTableColumn>
         </AppDataTable>
