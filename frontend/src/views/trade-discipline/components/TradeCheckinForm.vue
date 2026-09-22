@@ -406,7 +406,7 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
   font-size: var(--app-font-size-caption);
   text-align: right;
 }
-.checkin-actions { justify-content: flex-end; position: sticky; bottom: 0; padding: var(--app-space-3) 0 0; background: var(--el-bg-color); }
+.checkin-actions { justify-content: flex-end; }
 @container app-viewport (max-width: 760px) {
   .checkin-head, .checkin-head__facts, .assessment-row { align-items: stretch; flex-direction: column; }
   .checkin-head__commands { justify-content: flex-end; }

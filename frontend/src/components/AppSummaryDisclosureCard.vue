@@ -35,6 +35,7 @@ const emit = defineEmits<{ toggle: [] }>()
       <button
         type="button"
         class="app-summary-disclosure-card__summary"
+        data-overflow-tooltip-disabled
         :aria-expanded="expanded"
         :aria-controls="panelId"
         :aria-label="toggleLabel"
