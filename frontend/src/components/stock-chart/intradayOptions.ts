@@ -7,7 +7,6 @@ import {
   formatAmount,
   formatChartNumber,
   formatVolumeLots,
-  STOCK_CHART_TOOLTIP_SHOW_DELAY_MS,
   type StockChartTheme,
 } from './chartUtils'
 
@@ -108,7 +107,6 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
     axisPointer: { link: [{ xAxisIndex: [0, 1] }], label: { backgroundColor: theme.muted } },
     tooltip: {
       trigger: 'axis',
-      showDelay: STOCK_CHART_TOOLTIP_SHOW_DELAY_MS,
       confine: true,
       axisPointer: { type: 'cross' },
       backgroundColor: theme.tooltipBackground,

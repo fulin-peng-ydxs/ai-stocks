@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { RelatedBoardEmptyReason } from '@/types/relatedBoards'
+import { APP_HOVER_TOOLTIP_DELAY_MS } from '@/components/overflow/tooltipTiming'
 
 withDefaults(defineProps<{
   reason?: RelatedBoardEmptyReason | null
@@ -16,6 +17,7 @@ withDefaults(defineProps<{
     v-if="reason"
     :content="reason.message"
     :trigger="['hover', 'focus']"
+    :show-after="APP_HOVER_TOOLTIP_DELAY_MS"
     placement="top"
     popper-class="app-wrapping-popper related-board-empty-tooltip"
   >

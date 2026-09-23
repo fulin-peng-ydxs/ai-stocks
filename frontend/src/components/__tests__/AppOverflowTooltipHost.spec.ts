@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { mount } from '@vue/test-utils'
 import { defineComponent, h, nextTick } from 'vue'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import AppOverflowTooltipHost from '@/components/AppOverflowTooltipHost.vue'
 
 const ElTooltipStub = defineComponent({
@@ -17,26 +17,41 @@ const ElTooltipStub = defineComponent({
   },
 })
 
+function appendOverflowTarget(id: string, title = '完整内容'): HTMLElement {
+  const target = document.createElement('span')
+  target.id = id
+  target.title = title
+  target.textContent = title
+  target.style.textOverflow = 'ellipsis'
+  Object.defineProperty(target, 'clientWidth', { value: 40 })
+  Object.defineProperty(target, 'scrollWidth', { value: 100 })
+  document.body.append(target)
+  return target
+}
+
 afterEach(() => {
+  vi.useRealTimers()
   document.body.innerHTML = ''
 })
 
 describe('AppOverflowTooltipHost', () => {
-  it('悬浮真实省略目标时统一显示完整内容，离开后收起并恢复原 title', async () => {
+  it('鼠标停留后才显示真实省略内容，持续移动会重置等待，离开后恢复 title', async () => {
+    vi.useFakeTimers()
     const wrapper = mount(AppOverflowTooltipHost, {
       attachTo: document.body,
       global: { stubs: { ElTooltip: ElTooltipStub } },
     })
-    const target = document.createElement('span')
-    target.id = 'truncated-label'
-    target.title = '完整标签'
-    target.textContent = '完整标签'
-    target.style.textOverflow = 'ellipsis'
-    Object.defineProperty(target, 'clientWidth', { value: 40 })
-    Object.defineProperty(target, 'scrollWidth', { value: 100 })
-    document.body.append(target)
+    const target = appendOverflowTarget('truncated-label', '完整标签')
 
     target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+    vi.advanceTimersByTime(200)
+    target.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+    vi.advanceTimersByTime(299)
+    await nextTick()
+    expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+    vi.advanceTimersByTime(1)
     await nextTick()
     expect(wrapper.get('.tooltip-host').attributes()).toMatchObject({
       'data-visible': 'true',
@@ -45,10 +60,96 @@ describe('AppOverflowTooltipHost', () => {
     })
     expect(target.title).toBe('')
 
+    target.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+    vi.advanceTimersByTime(300)
+    await nextTick()
+    expect(wrapper.get('.tooltip-host').attributes('data-visible')).toBe('true')
+
     target.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
     await nextTick()
     expect(wrapper.find('.tooltip-host').exists()).toBe(false)
     expect(target.title).toBe('完整标签')
+    wrapper.unmount()
+  })
+
+  it('短暂经过时取消待显示提示，键盘焦点仍立即展示', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(AppOverflowTooltipHost, {
+      attachTo: document.body,
+      global: { stubs: { ElTooltip: ElTooltipStub } },
+    })
+    const target = appendOverflowTarget('short-hover')
+
+    target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    vi.advanceTimersByTime(100)
+    target.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
+    vi.advanceTimersByTime(300)
+    await nextTick()
+    expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+    expect(target.title).toBe('完整内容')
+
+    target.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    await nextTick()
+    expect(wrapper.get('.tooltip-host').attributes('data-visible')).toBe('true')
+    target.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('切换目标或卸载时取消上一目标的待显示计时', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(AppOverflowTooltipHost, {
+      attachTo: document.body,
+      global: { stubs: { ElTooltip: ElTooltipStub } },
+    })
+    const first = appendOverflowTarget('first', '第一项完整内容')
+    const second = appendOverflowTarget('second', '第二项完整内容')
+
+    first.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    vi.advanceTimersByTime(200)
+    second.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    vi.advanceTimersByTime(299)
+    await nextTick()
+    expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+    vi.advanceTimersByTime(1)
+    await nextTick()
+    expect(wrapper.get('.tooltip-host').attributes('data-target')).toBe('second')
+
+    second.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
+    first.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    wrapper.unmount()
+    vi.advanceTimersByTime(300)
+    expect(first.title).toBe('第一项完整内容')
+  })
+
+  it('按钮内省略文字由外层代理时，移动和离开仍能正确取消提示', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(AppOverflowTooltipHost, {
+      attachTo: document.body,
+      global: { stubs: { ElTooltip: ElTooltipStub } },
+    })
+    const button = document.createElement('button')
+    button.dataset.overflowTooltipDelegate = ''
+    const label = document.createElement('span')
+    label.dataset.overflowTooltipTarget = ''
+    label.textContent = '较长的选项名称'
+    label.style.textOverflow = 'ellipsis'
+    Object.defineProperty(label, 'clientWidth', { value: 40 })
+    Object.defineProperty(label, 'scrollWidth', { value: 100 })
+    button.append(label)
+    document.body.append(button)
+
+    button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    vi.advanceTimersByTime(200)
+    button.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+    vi.advanceTimersByTime(200)
+    button.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
+    vi.advanceTimersByTime(300)
+    await nextTick()
+    expect(wrapper.find('.tooltip-host').exists()).toBe(false)
     wrapper.unmount()
   })
 })

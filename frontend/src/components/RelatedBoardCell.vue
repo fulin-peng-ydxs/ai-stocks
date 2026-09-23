@@ -7,6 +7,7 @@ import { hasPermission } from '@/utils/permission'
 import { sectorDetailLocation } from '@/utils/sectorNavigation'
 import type { RelatedBoardWinner, StockRelatedBoards } from '@/types/relatedBoards'
 import RelatedBoardEmptyValue from '@/components/RelatedBoardEmptyValue.vue'
+import { APP_HOVER_TOOLTIP_DELAY_MS } from '@/components/overflow/tooltipTiming'
 
 const props = withDefaults(defineProps<{
   summary?: StockRelatedBoards | null
@@ -50,6 +51,7 @@ function formatCorrelation(value: number): string {
   <el-popover
     v-if="board"
     :trigger="['hover', 'focus']"
+    :show-after="APP_HOVER_TOOLTIP_DELAY_MS"
     placement="bottom-start"
     :width="280"
   >
@@ -91,6 +93,7 @@ function formatCorrelation(value: number): string {
     v-else-if="unavailableReason === 'first_load_pending'"
     content="首次计算正在等待或执行，完成后将自动刷新"
     :trigger="['hover', 'focus']"
+    :show-after="APP_HOVER_TOOLTIP_DELAY_MS"
     placement="top"
   >
     <span

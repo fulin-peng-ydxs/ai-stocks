@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HelpHint from '@/components/HelpHint.vue'
 withDefaults(defineProps<{
   label: string
   modelValue: boolean
@@ -17,9 +18,7 @@ defineEmits<{
   <div class="page-toggle-row" :class="`is-${size}`" :data-testid="testId">
     <div class="ptr-left">
       <span class="ptr-label">{{ label }}</span>
-      <el-tooltip v-if="tip" :content="tip" placement="top">
-        <span class="ptr-tip">i</span>
-      </el-tooltip>
+      <HelpHint v-if="tip" :text="tip" />
     </div>
     <el-switch
       :model-value="modelValue"
@@ -58,17 +57,6 @@ defineEmits<{
 }
 .page-toggle-row.is-sm .ptr-label {
   font-size: var(--app-font-size-table);
-}
-.ptr-tip {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--app-font-size-caption);
-  color: var(--page-settings-text-muted);
-  border: 1px solid var(--page-settings-tip-border);
 }
 :global(.ptr-switch.el-switch) {
   --el-switch-off-color: var(--page-settings-switch-off);

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { APP_HOVER_TOOLTIP_DELAY_MS } from '@/components/overflow/tooltipTiming'
 // 通用帮助气泡：默认插槽只承载 HelpTipItem，确保问题项、注意项和分行结构一致。
 defineProps<{ title?: string; width?: number; testId?: string }>()
 </script>
@@ -8,6 +9,7 @@ defineProps<{ title?: string; width?: number; testId?: string }>()
     :title="title"
     :width="width ?? 360"
     :trigger="['hover', 'focus']"
+    :show-after="APP_HOVER_TOOLTIP_DELAY_MS"
     placement="bottom-start"
   >
     <template #reference>

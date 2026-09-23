@@ -14,7 +14,6 @@ import {
   obstructionAwareTooltipPosition,
   STOCK_CHART_GRID_SIDE,
   STOCK_CHART_GRID_TOP,
-  STOCK_CHART_TOOLTIP_SHOW_DELAY_MS,
   VOLUME_MA_DEFINITIONS,
   type StockChartTheme,
   type TooltipPositionSize,
@@ -430,7 +429,6 @@ function commonOption(context: OptionContext, showPointerDate: boolean) {
     },
     tooltip: {
       trigger: 'axis',
-      showDelay: STOCK_CHART_TOOLTIP_SHOW_DELAY_MS,
       axisPointer: { type: 'cross' },
       backgroundColor: context.theme.tooltipBackground,
       borderColor: context.theme.tooltipBorder,

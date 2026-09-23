@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
+import { APP_HOVER_TOOLTIP_DELAY_MS } from '@/components/overflow/tooltipTiming'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computeBoard, type BoardRow } from '@/api/board'
@@ -1923,7 +1924,7 @@ const menuPageTitle = useMenuPageTitle()
               </HelpTip>
             </template>
             <!-- 悬浮显示方案具体选股条件 -->
-            <el-tooltip placement="bottom" :disabled="!profileDesc" effect="dark">
+            <el-tooltip placement="bottom" :disabled="!profileDesc" effect="dark" :show-after="APP_HOVER_TOOLTIP_DELAY_MS">
               <template #content>
                 <div style="max-width:360px;line-height:1.6">
                   <b>方案说明：</b> <br>{{ profileDesc }}
