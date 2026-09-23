@@ -4,6 +4,7 @@ import * as echarts from 'echarts'
 import type { EquityPoint } from '@/api/backtest'
 import type { BenchmarkEquity } from '@/utils/benchmarkEquity'
 import { chartCssVariable, useEChartsTheme } from '@/components/chartTheme'
+import { chartTooltipRowHtml } from '@/components/chartTooltipHtml'
 import { initVectorEChart } from '@/components/echartsRenderer'
 import { formatMoney } from '@/utils/money'
 
@@ -107,10 +108,10 @@ function render() {
           const valText = isDd ? (Number.isFinite(val) ? `${(val as number).toFixed(2)}%` : '--') : fmtRet(r)
           const excessHtml = !isDd && item.seriesName === '组合净值' && excess != null
             ? `<small style="display:block;color:${colorOf(excess)}">超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}%</small>` : ''
-          return `<div style="display:flex;justify-content:space-between;gap:18px">`
-            + `<span>${item.marker ?? ''}${item.seriesName ?? ''}</span>`
-            + `<span style="text-align:right"><strong style="color:${colorOf(isDd ? val : r)}">${valText}</strong>${excessHtml}</span>`
-            + '</div>'
+          return chartTooltipRowHtml(
+            `<span>${item.marker ?? ''}${item.seriesName ?? ''}</span>`,
+            `<span style="text-align:right"><strong style="color:${colorOf(isDd ? val : r)}">${valText}</strong>${excessHtml}</span>`,
+          )
         }).join('')
         return `<div style="min-width:150px;line-height:1.7">`
           + `<div style="color:${t.label};margin-bottom:2px">${date}</div>${content}</div>`

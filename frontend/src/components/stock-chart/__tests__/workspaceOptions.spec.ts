@@ -448,6 +448,7 @@ describe('workspaceOptions', () => {
     const option = buildKlineOption(context)
     const tooltip = option.tooltip as {
       appendTo: string
+      showDelay: number
       transitionDuration: number
       extraCssText: string
       position: (
@@ -460,6 +461,7 @@ describe('workspaceOptions', () => {
       formatter: (params: Array<{ dataIndex: number }>) => string
     }
     const content = tooltip.formatter([{ dataIndex: 0 }])
+    expect(tooltip.showDelay).toBe(250)
 
     const size = {
       contentSize: [156, 200] as [number, number],

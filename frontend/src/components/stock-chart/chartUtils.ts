@@ -13,6 +13,8 @@ import {
 
 export const STOCK_CHART_GRID_SIDE = 64
 export const STOCK_CHART_GRID_TOP = 8
+/** 光标短暂停留后再展示行情浮层，避免经过图表时遮挡内容。 */
+export const STOCK_CHART_TOOLTIP_SHOW_DELAY_MS = 250
 
 export interface StockChartSeriesPalette {
   kline: {

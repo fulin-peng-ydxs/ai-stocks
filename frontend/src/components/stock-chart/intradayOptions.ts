@@ -1,11 +1,13 @@
 import type { EChartsOption } from 'echarts'
 import type { IntradayPoint } from '@/api/stocks'
+import { chartTooltipRowHtml } from '@/components/chartTooltipHtml'
 import { formatMarketPercent } from '@/utils/marketValue'
 import {
   buildStockVolumeBarSeries,
   formatAmount,
   formatChartNumber,
   formatVolumeLots,
+  STOCK_CHART_TOOLTIP_SHOW_DELAY_MS,
   type StockChartTheme,
 } from './chartUtils'
 
@@ -77,10 +79,10 @@ function symmetricPriceExtent(
 }
 
 function tooltipRow(label: string, value: string, color: string, labelColor: string): string {
-  return '<div style="display:flex;justify-content:space-between;gap:18px">'
-    + `<span style="color:${labelColor}">${label}</span>`
-    + `<span style="color:${color}">${value}</span>`
-    + '</div>'
+  return chartTooltipRowHtml(
+    `<span style="color:${labelColor}">${label}</span>`,
+    `<span style="color:${color}">${value}</span>`,
+  )
 }
 
 export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
@@ -106,6 +108,7 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
     axisPointer: { link: [{ xAxisIndex: [0, 1] }], label: { backgroundColor: theme.muted } },
     tooltip: {
       trigger: 'axis',
+      showDelay: STOCK_CHART_TOOLTIP_SHOW_DELAY_MS,
       confine: true,
       axisPointer: { type: 'cross' },
       backgroundColor: theme.tooltipBackground,

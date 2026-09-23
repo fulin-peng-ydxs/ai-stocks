@@ -80,6 +80,7 @@ describe('buildIntradayOption', () => {
       .toEqual(['#red', '#red', '#green'])
     expect(option.yAxis[2].axisLabel.formatter(15_000)).toBe('1.50万手')
     expect(option.axisPointer.link).toEqual([{ xAxisIndex: [0, 1] }])
+    expect(option.tooltip.showDelay).toBe(250)
     expect(option.legend).toBeUndefined()
     expect(option.title).toBeUndefined()
     expect(option.graphic).toBeUndefined()

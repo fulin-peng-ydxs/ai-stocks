@@ -4,6 +4,7 @@ import * as echarts from 'echarts'
 import type { Bar } from '@/api/stocks'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { hasRenderableChartSize, useEChartsTheme } from '@/components/chartTheme'
+import { chartTooltipRowHtml } from '@/components/chartTooltipHtml'
 import { initVectorEChart } from '@/components/echartsRenderer'
 import {
   buildMarketCompareLineOption,
@@ -131,12 +132,12 @@ function render(): void {
         const excessColor = excess == null || excess === 0
           ? currentTheme.label
           : excess > 0 ? changeColors.up : changeColors.down
-        return `<div style="display:flex;justify-content:space-between;gap:18px">`
-          + `<span>${row.marker ?? ''}${escapeChartHtml(row.seriesName)}</span>`
-          + `<span style="text-align:right"><strong style="color:${color}">${relativeText}</strong>`
-          + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}%</small>`)
-          + '</span>'
-          + '</div>'
+        return chartTooltipRowHtml(
+          `<span>${row.marker ?? ''}${escapeChartHtml(row.seriesName)}</span>`,
+          `<span style="text-align:right"><strong style="color:${color}">${relativeText}</strong>`
+            + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}%</small>`)
+            + '</span>',
+        )
       }).join('')
       return `<div style="min-width:180px;line-height:1.7">`
         + `<div style="color:${currentTheme.label};margin-bottom:2px">${escapeChartHtml(date)} · ${metricLabel.value}</div>`

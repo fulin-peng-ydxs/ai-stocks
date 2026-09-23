@@ -8,6 +8,7 @@ import * as echarts from 'echarts'
 import type { SectorBar } from '@/api/sectors'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { chartCssVariable, hasRenderableChartSize, useEChartsTheme } from '@/components/chartTheme'
+import { chartTooltipRowHtml } from '@/components/chartTooltipHtml'
 import { initVectorEChart } from '@/components/echartsRenderer'
 import {
   buildMarketCompareLineOption,
@@ -147,12 +148,12 @@ function renderLine() {
         const excessColor = excess == null || excess === 0
           ? t.label
           : excess > 0 ? changeColors.up : changeColors.down
-        return `<div style="display:flex;justify-content:space-between;gap:18px">`
-          + `<span>${item.marker ?? ''}${escapeChartHtml(item.seriesName)}</span>`
-          + `<span style="text-align:right"><strong style="color:${color}">${valueText}</strong>`
-          + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}%</small>`)
-          + '</span>'
-          + '</div>'
+        return chartTooltipRowHtml(
+          `<span>${item.marker ?? ''}${escapeChartHtml(item.seriesName)}</span>`,
+          `<span style="text-align:right"><strong style="color:${color}">${valueText}</strong>`
+            + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}%</small>`)
+            + '</span>',
+        )
       }).join('')
       return `<div style="min-width:150px;line-height:1.7">`
         + `<div style="color:${t.label};margin-bottom:2px">${date} · ${meta.value.label}</div>`
@@ -217,10 +218,10 @@ function renderBar() {
               ? `${formatMoney(value, { forceSign: true })}${unit}`
               : `${value > 0 ? '+' : ''}${value.toFixed(2)}${unit}`)
             : '--'
-          return `<div style="display:flex;justify-content:space-between;gap:18px">`
-            + `<span>${item.marker ?? ''}${escapeChartHtml(item.seriesName)}</span>`
-            + `<span style="text-align:right"><strong style="color:${color}">${valueText}</strong></span>`
-            + '</div>'
+          return chartTooltipRowHtml(
+            `<span>${item.marker ?? ''}${escapeChartHtml(item.seriesName)}</span>`,
+            `<span style="text-align:right"><strong style="color:${color}">${valueText}</strong></span>`,
+          )
         }).join('')
         return `<div style="min-width:150px;line-height:1.7">`
           + `<div style="color:${t.label};margin-bottom:2px">${name}</div>`
