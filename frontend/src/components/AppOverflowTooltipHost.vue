@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   findOverflowTooltipTarget,
   findNativeTitleTooltipTarget,
@@ -10,10 +10,32 @@ import { APP_HOVER_TOOLTIP_DELAY_MS } from '@/components/overflow/tooltipTiming'
 const visible = ref(false)
 const content = ref('')
 const virtualRef = ref<HTMLElement>()
+const contentRef = ref<HTMLElement>()
+const contentTruncated = ref(false)
 let hoverTarget: HTMLElement | null = null
 let focusTarget: HTMLElement | null = null
 let suppressedTitle: { element: HTMLElement; value: string; addedAriaLabel: boolean } | null = null
 let hoverTimer: ReturnType<typeof setTimeout> | null = null
+let contentResizeObserver: ResizeObserver | null = null
+
+function measureContentOverflow(): void {
+  const element = contentRef.value
+  contentTruncated.value = Boolean(
+    visible.value && element && element.scrollHeight > element.clientHeight + 1,
+  )
+}
+
+watch([content, visible], async () => {
+  await nextTick()
+  measureContentOverflow()
+}, { flush: 'post' })
+
+watch(contentRef, async (element, previous) => {
+  if (previous) contentResizeObserver?.unobserve(previous)
+  if (element) contentResizeObserver?.observe(element)
+  await nextTick()
+  measureContentOverflow()
+}, { flush: 'post' })
 
 function clearHoverTimer(): void {
   if (hoverTimer == null) return
@@ -52,12 +74,14 @@ function showFor(element: HTMLElement): void {
   if (virtualRef.value !== element) restoreSuppressedTitle()
   suppressTitle(element)
   virtualRef.value = element
+  contentTruncated.value = false
   content.value = nextContent
   visible.value = true
 }
 
 function hideCurrent(): void {
   visible.value = false
+  contentTruncated.value = false
   restoreSuppressedTitle()
   virtualRef.value = undefined
   content.value = ''
@@ -146,6 +170,9 @@ onMounted(() => {
   document.addEventListener('mouseout', onMouseOut)
   document.addEventListener('focusin', onFocusIn)
   document.addEventListener('focusout', onFocusOut)
+  if (typeof ResizeObserver !== 'undefined') {
+    contentResizeObserver = new ResizeObserver(measureContentOverflow)
+  }
 })
 
 onBeforeUnmount(() => {
@@ -155,6 +182,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('focusin', onFocusIn)
   document.removeEventListener('focusout', onFocusOut)
   clearHoverTimer()
+  contentResizeObserver?.disconnect()
   restoreSuppressedTitle()
 })
 </script>
@@ -167,5 +195,34 @@ onBeforeUnmount(() => {
     :virtual-ref="virtualRef"
     virtual-triggering
     placement="top"
-  />
+    popper-class="app-wrapping-popper app-overflow-tooltip-popper"
+  >
+    <template #content>
+      <div class="app-overflow-tooltip-content">
+        <span ref="contentRef" class="app-overflow-tooltip-content__text">{{ content }}</span>
+        <span v-if="contentTruncated" class="app-overflow-tooltip-content__notice">… 内容已截断</span>
+      </div>
+    </template>
+  </el-tooltip>
 </template>
+
+<style scoped>
+.app-overflow-tooltip-content__text {
+  display: -webkit-box;
+  max-height: calc(8 * var(--app-line-height-table));
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+  line-height: var(--app-line-height-table);
+  white-space: normal;
+}
+
+.app-overflow-tooltip-content__notice {
+  display: block;
+  margin-top: 4px;
+  color: var(--app-muted-text);
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-compact);
+}
+</style>

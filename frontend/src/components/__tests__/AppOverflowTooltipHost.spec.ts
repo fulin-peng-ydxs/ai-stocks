@@ -6,14 +6,15 @@ import AppOverflowTooltipHost from '@/components/AppOverflowTooltipHost.vue'
 
 const ElTooltipStub = defineComponent({
   name: 'ElTooltip',
-  props: ['visible', 'content', 'virtualRef'],
-  setup(props) {
+  props: ['visible', 'content', 'virtualRef', 'popperClass'],
+  setup(props, { slots }) {
     return () => h('div', {
       class: 'tooltip-host',
       'data-visible': String(props.visible),
       'data-content': props.content,
       'data-target': props.virtualRef?.id,
-    })
+      'data-popper-class': props.popperClass,
+    }, slots.content?.())
   },
 })
 
@@ -31,10 +32,37 @@ function appendOverflowTarget(id: string, title = '完整内容'): HTMLElement {
 
 afterEach(() => {
   vi.useRealTimers()
+  vi.restoreAllMocks()
   document.body.innerHTML = ''
 })
 
 describe('AppOverflowTooltipHost', () => {
+  it('长文本使用共享宽度上限，实际超过八行时显示截断提示', async () => {
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('app-overflow-tooltip-content__text') ? 160 : 0
+    })
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('app-overflow-tooltip-content__text') ? 200 : 0
+    })
+    const wrapper = mount(AppOverflowTooltipHost, {
+      attachTo: document.body,
+      global: { stubs: { ElTooltip: ElTooltipStub } },
+    })
+    const target = appendOverflowTarget('long-label', '很长的内容'.repeat(100))
+
+    target.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    await nextTick()
+    await nextTick()
+    expect(wrapper.get('.tooltip-host').attributes('data-popper-class'))
+      .toBe('app-wrapping-popper app-overflow-tooltip-popper')
+    expect(wrapper.get('.app-overflow-tooltip-content__text').text()).toBe(target.textContent)
+    expect(wrapper.get('.app-overflow-tooltip-content__notice').text()).toBe('… 内容已截断')
+
+    target.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+    await nextTick()
+    wrapper.unmount()
+  })
+
   it('鼠标停留后才显示真实省略内容，持续移动会重置等待，离开后恢复 title', async () => {
     vi.useFakeTimers()
     const wrapper = mount(AppOverflowTooltipHost, {
@@ -58,6 +86,7 @@ describe('AppOverflowTooltipHost', () => {
       'data-content': '完整标签',
       'data-target': 'truncated-label',
     })
+    expect(wrapper.find('.app-overflow-tooltip-content__notice').exists()).toBe(false)
     expect(target.title).toBe('')
 
     target.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
