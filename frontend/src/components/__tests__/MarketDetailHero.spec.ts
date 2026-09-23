@@ -142,6 +142,17 @@ describe('StockQuoteSummary', () => {
     })
 
     expect(html).toContain('colspan="5"')
+    const container = document.createElement('div')
+    container.innerHTML = html
+    const firstRowCells = container.querySelectorAll('tbody tr:first-child td')
+    const valueBeforeSeparator = firstRowCells[2]
+    const supplement = firstRowCells[3]
+    expect(valueBeforeSeparator?.textContent).toBe('5')
+    expect(valueBeforeSeparator?.getAttribute('style'))
+      .toContain('padding:0 calc(var(--stock-quote-section-gap) * var(--app-display-scale, 1)) 0')
+    expect(supplement?.getAttribute('style'))
+      .toContain('padding:0 0 0 calc(var(--stock-quote-section-gap) * var(--app-display-scale, 1))')
+    expect(supplement?.querySelectorAll('[style*="padding-left"]')).toHaveLength(0)
   })
 })
 

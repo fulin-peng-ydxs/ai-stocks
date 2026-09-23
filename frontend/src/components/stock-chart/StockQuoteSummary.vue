@@ -51,7 +51,7 @@ const columns = computed(() => {
 
 <style scoped>
 .stock-quote-summary { display: flex; align-items: stretch; gap: var(--app-space-2); margin: 0; font-variant-numeric: tabular-nums; }
-.stock-quote-summary--gap-relaxed { gap: var(--app-space-3); }
+.stock-quote-summary--gap-relaxed { gap: var(--stock-quote-section-gap); }
 .stock-quote-summary__hero { display: flex; align-items: center; justify-content: center; align-self: stretch; padding-right: var(--app-space-2); border-right: 1px solid var(--el-border-color); text-align: center; }
 .stock-quote-summary__hero-values { display: flex; flex-direction: column; align-items: center; }
 .stock-quote-summary__hero-details { display: flex; gap: var(--app-space-2); margin-top: 2px; font-size: var(--app-font-size-caption); white-space: nowrap; }
@@ -60,7 +60,7 @@ const columns = computed(() => {
 .stock-quote-summary__hero dd { font-size: var(--app-font-size-page-title-sm); line-height: var(--app-line-height-data); font-weight: var(--app-font-weight-strong); }
 .stock-quote-summary__column { display: flex; min-width: 0; flex-direction: column; gap: var(--app-space-control-gap); }
 .stock-quote-summary__metric { display: flex; justify-content: space-between; gap: var(--app-space-2); line-height: var(--app-line-height-table); }
-.stock-quote-summary__supplement { display: flex; min-width: 0; flex-direction: column; justify-content: center; padding-left: var(--app-space-3); border-left: 1px solid var(--el-border-color); }
+.stock-quote-summary__supplement { display: flex; min-width: 0; flex-direction: column; justify-content: center; padding-left: var(--stock-quote-section-gap); border-left: 1px solid var(--el-border-color); }
 .stock-quote-summary__supplement dt { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); font-weight: var(--app-font-weight-section); white-space: nowrap; }
 .stock-quote-summary__supplement dd { margin: 0; color: var(--el-text-color-primary); font-size: var(--app-font-size-section-title); line-height: var(--app-line-height-data); font-weight: var(--app-font-weight-strong); white-space: nowrap; }
 .stock-quote-summary__supplement-details { display: flex; flex-direction: column; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); white-space: nowrap; }

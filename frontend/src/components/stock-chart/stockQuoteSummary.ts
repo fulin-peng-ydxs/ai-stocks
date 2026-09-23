@@ -23,6 +23,7 @@ function colorOf(tone: StockQuoteTone | undefined, palette: StockQuotePalette): 
 /** ECharts 浮层与 DOM 行情摘要共用同一字段分组模型。 */
 export function stockQuoteSummaryHtml(summary: StockQuoteSummaryModel, palette: StockQuotePalette): string {
   const rowsPerColumn = Math.max(1, Math.floor(summary.rowsPerColumn))
+  const supplementGap = 'calc(var(--stock-quote-section-gap) * var(--app-display-scale, 1))'
   const grouped = Array.from(
     { length: Math.ceil(summary.metrics.length / rowsPerColumn) },
     (_, index) => summary.metrics.slice(index * rowsPerColumn, (index + 1) * rowsPerColumn),
@@ -46,18 +47,21 @@ export function stockQuoteSummaryHtml(summary: StockQuoteSummaryModel, palette: 
         + (summary.hero.label ? `<div style="color:${palette.label};font-size:${scaledPx(11)}">${summary.hero.label}</div>` : '')
         + `<div style="color:${colorOf(summary.hero.tone, palette)};font-size:${scaledPx(18)};line-height:1.35;font-weight:700;white-space:nowrap">${summary.hero.value}</div>${heroDetails}</td>`
       : ''
-    const metrics = grouped.map((column) => {
+    const metrics = grouped.map((column, columnIndex) => {
       const metric = column[rowIndex]
       if (!metric) return '<td></td><td></td>'
+      const separatorGap = summary.supplement && columnIndex === grouped.length - 1
+        ? supplementGap
+        : '0'
       return `<th style="padding:0 0 0 ${scaledPx(10)};text-align:left;color:${palette.label};font-weight:400;white-space:nowrap">${metric.label}</th>`
-        + `<td style="padding:0 0 0 ${scaledPx(8)};text-align:right;color:${colorOf(metric.tone, palette)};white-space:nowrap">${metric.value}</td>`
+        + `<td style="padding:0 ${separatorGap} 0 ${scaledPx(8)};text-align:right;color:${colorOf(metric.tone, palette)};white-space:nowrap">${metric.value}</td>`
     }).join('')
     const supplement = rowIndex === 0 && summary.supplement
-      ? `<td rowspan="${rowsPerColumn}" style="padding:0 0 0 ${scaledPx(10)};border-left:1px solid ${palette.border};vertical-align:middle">`
-        + `<div style="padding-left:${scaledPx(10)};color:${palette.label};font-size:${scaledPx(11)};white-space:nowrap">${summary.supplement.label}</div>`
-        + `<div style="padding-left:${scaledPx(10)};color:${colorOf(summary.supplement.tone, palette)};font-size:${scaledPx(16)};line-height:1.45;font-weight:700;white-space:nowrap">${summary.supplement.value}</div>`
+      ? `<td rowspan="${rowsPerColumn}" style="padding:0 0 0 ${supplementGap};border-left:1px solid ${palette.border};vertical-align:middle">`
+        + `<div style="color:${palette.label};font-size:${scaledPx(11)};white-space:nowrap">${summary.supplement.label}</div>`
+        + `<div style="color:${colorOf(summary.supplement.tone, palette)};font-size:${scaledPx(16)};line-height:1.45;font-weight:700;white-space:nowrap">${summary.supplement.value}</div>`
         + (summary.supplement.details?.length
-          ? `<div style="display:flex;flex-direction:column;padding-left:${scaledPx(10)};color:${palette.label};font-size:${scaledPx(11)};white-space:nowrap">${summary.supplement.details.map((detail) => `<span>${detail.value}</span>`).join('')}</div>`
+          ? `<div style="display:flex;flex-direction:column;color:${palette.label};font-size:${scaledPx(11)};white-space:nowrap">${summary.supplement.details.map((detail) => `<span>${detail.value}</span>`).join('')}</div>`
           : '')
         + '</td>'
       : ''
