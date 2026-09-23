@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
-import { APP_HOVER_TOOLTIP_DELAY_MS } from '@/components/overflow/tooltipTiming'
+import AppHoverInfo from '@/components/AppHoverInfo'
 import {
   computed,
   onActivated,
@@ -513,9 +513,9 @@ const menuPageTitle = useMenuPageTitle()
         <div class="audit-actions">
           <el-switch v-model="autoRefreshEnabled" size="small" active-text="自动刷新" />
           <el-button :loading="tableLoading || summaryLoading" @click="refresh(false)">刷新</el-button>
-          <el-tooltip content="导出能力不在本阶段范围" placement="bottom" :show-after="APP_HOVER_TOOLTIP_DELAY_MS">
+          <AppHoverInfo content="导出能力不在本阶段范围" placement="bottom">
             <span><el-button disabled>导出</el-button></span>
-          </el-tooltip>
+          </AppHoverInfo>
           <PageSettingsTrigger :dirty="drawerDirty" @click="settingsOpen = true" />
         </div>
       </div>

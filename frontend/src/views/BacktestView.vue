@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
-import { APP_HOVER_TOOLTIP_DELAY_MS } from '@/components/overflow/tooltipTiming'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computeBoard, type BoardRow } from '@/api/board'
@@ -39,6 +38,7 @@ import RankedStockResultTable from '@/components/ranked-stock/RankedStockResultT
 import { rankedStockColumns } from '@/components/ranked-stock/types'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpHint from '@/components/HelpHint.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
@@ -1922,33 +1922,26 @@ const menuPageTitle = useMenuPageTitle()
                   </ul>
                 </HelpTipItem>
               </HelpTip>
+              <HelpHint v-if="profileDesc" :text="`方案说明：${profileDesc}`" />
             </template>
-            <!-- 悬浮显示方案具体选股条件 -->
-            <el-tooltip placement="bottom" :disabled="!profileDesc" effect="dark" :show-after="APP_HOVER_TOOLTIP_DELAY_MS">
-              <template #content>
-                <div style="max-width:360px;line-height:1.6">
-                  <b>方案说明：</b> <br>{{ profileDesc }}
-                </div>
-              </template>
-              <AssetProfileSelect
-                ref="screenProfileSelectRef"
-                v-model="guardedScreenProfileId"
-                asset-label="选股方案"
-                :fetch-mine="fetchMineScreenProfiles"
-                :browse="browseScreen"
-                :copy-item="copyAnyScreenProfile"
-                loaded-mode="external"
-                copy-permission="screen-profile:save"
-                view-permission="screen-profile:view"
-                placeholder="不使用选股方案（默认）"
-                test-id="backtest-screen-select"
-                style="width: 300px"
-                @ready="onScreenReady"
-                @loaded="onScreenLoaded"
-                @copied-item="onScreenCopied"
-                @update:model-value="onScreenSelect"
-              />
-            </el-tooltip>
+            <AssetProfileSelect
+              ref="screenProfileSelectRef"
+              v-model="guardedScreenProfileId"
+              asset-label="选股方案"
+              :fetch-mine="fetchMineScreenProfiles"
+              :browse="browseScreen"
+              :copy-item="copyAnyScreenProfile"
+              loaded-mode="external"
+              copy-permission="screen-profile:save"
+              view-permission="screen-profile:view"
+              placeholder="不使用选股方案（默认）"
+              test-id="backtest-screen-select"
+              style="width: 300px"
+              @ready="onScreenReady"
+              @loaded="onScreenLoaded"
+              @copied-item="onScreenCopied"
+              @update:model-value="onScreenSelect"
+            />
             <!-- 加载查看的临时只读项：选择器外展示（方案b）；本次运行口径（快照优先于 mine 选择器值） -->
             <span
               v-if="tempSelected.screen || historyProfileUnavailable.screen"

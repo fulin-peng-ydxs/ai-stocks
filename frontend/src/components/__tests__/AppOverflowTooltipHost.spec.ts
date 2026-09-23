@@ -152,4 +152,42 @@ describe('AppOverflowTooltipHost', () => {
     expect(wrapper.find('.tooltip-host').exists()).toBe(false)
     wrapper.unmount()
   })
+
+  it('原生 title 由全局宿主显示，经过时不触发浏览器重复提示', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(AppOverflowTooltipHost, {
+      attachTo: document.body,
+      global: { stubs: { ElTooltip: ElTooltipStub } },
+    })
+    const button = document.createElement('button')
+    button.title = '查看完整说明'
+    const label = document.createElement('span')
+    label.textContent = '说明'
+    button.append(label)
+    document.body.append(button)
+
+    button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    expect(button.hasAttribute('title')).toBe(false)
+    label.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    vi.advanceTimersByTime(200)
+    button.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+    vi.advanceTimersByTime(299)
+    await nextTick()
+    expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+    vi.advanceTimersByTime(1)
+    await nextTick()
+    expect(wrapper.get('.tooltip-host').attributes('data-content')).toBe('查看完整说明')
+
+    button.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
+    await nextTick()
+    expect(button.title).toBe('查看完整说明')
+
+    button.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    await nextTick()
+    expect(wrapper.get('.tooltip-host').attributes('data-visible')).toBe('true')
+    button.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+    await nextTick()
+    expect(button.title).toBe('查看完整说明')
+    wrapper.unmount()
+  })
 })

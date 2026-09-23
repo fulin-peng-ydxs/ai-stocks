@@ -16,7 +16,7 @@ import {
   type SectorMemberSortField,
 } from '@/api/sectors'
 import AppDataTable from '@/components/AppDataTable.vue'
-import { APP_HOVER_TOOLTIP_DELAY_MS } from '@/components/overflow/tooltipTiming'
+import AppHoverInfo from '@/components/AppHoverInfo'
 import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
@@ -646,7 +646,7 @@ onMounted(async () => {
               >
                 <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" role="code" sortable="custom">
                   <template #default="{ row }">
-                    <el-tooltip :disabled="canViewStocks" content="无个股行情查看权限" placement="top" :show-after="APP_HOVER_TOOLTIP_DELAY_MS">
+                    <AppHoverInfo :disabled="canViewStocks" content="无个股行情查看权限" placement="top">
                       <span
                         :class="{ 'stock-disabled': !canViewStocks }"
                         :data-testid="row?.code ? `sector-member-${row.code}` : undefined"
@@ -656,17 +656,17 @@ onMounted(async () => {
                           <StockStatusTag v-if="!colVisible('name')" :is-st="row.is_st" :as-of-date="row.st_as_of_date" />
                         </span>
                       </span>
-                    </el-tooltip>
+                    </AppHoverInfo>
                   </template>
                 </AppTableColumn>
                 <AppTableColumn v-if="colVisible('name')" label="名称" prop="name" role="name">
                   <template #default="{ row }">
-                    <el-tooltip :disabled="canViewStocks" content="无个股行情查看权限" placement="top" :show-after="APP_HOVER_TOOLTIP_DELAY_MS">
+                    <AppHoverInfo :disabled="canViewStocks" content="无个股行情查看权限" placement="top">
                       <span class="app-inline-info app-inline-info--nowrap">
                         <strong :class="{ 'stock-disabled': !canViewStocks }">{{ row.name || '—' }}</strong>
                         <StockStatusTag :is-st="row.is_st" :as-of-date="row.st_as_of_date" />
                       </span>
-                    </el-tooltip>
+                    </AppHoverInfo>
                   </template>
                 </AppTableColumn>
                 <AppTableColumn v-if="colVisible('price')" label="现价" prop="price" role="number" sortable="custom">

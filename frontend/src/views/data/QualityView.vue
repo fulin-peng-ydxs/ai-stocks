@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
-import { APP_HOVER_TOOLTIP_DELAY_MS } from '@/components/overflow/tooltipTiming'
+import AppHoverInfo from '@/components/AppHoverInfo'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
@@ -647,9 +647,9 @@ const menuPageTitle = useMenuPageTitle()
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('layer')" label="层">
           <template #default="{ row }">
-            <el-tooltip :content="LAYER_LABEL[ISSUE_LAYER[row.issue_type]] ?? '—'" placement="top" :show-after="APP_HOVER_TOOLTIP_DELAY_MS">
+            <AppHoverInfo :content="LAYER_LABEL[ISSUE_LAYER[row.issue_type]] ?? '—'" placement="top">
               <span class="layer-tag">{{ ISSUE_LAYER[row.issue_type] ?? '—' }}</span>
-            </el-tooltip>
+            </AppHoverInfo>
           </template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('type')" label="类型">
@@ -774,12 +774,12 @@ const menuPageTitle = useMenuPageTitle()
           <div class="checkup-group-title">{{ g.group }}</div>
           <div v-for="c in g.checks" :key="c.name" class="checkup-row"
                :class="{ bad: checkupStatus(c) === 'fail', warn: checkupStatus(c) === 'warn' }">
-            <el-tooltip :disabled="checkupStatus(c) !== 'warn' || !(c.help || c.detail)"
-                        :content="c.help || c.detail" placement="top" :show-after="APP_HOVER_TOOLTIP_DELAY_MS">
+            <AppHoverInfo :disabled="checkupStatus(c) !== 'warn' || !(c.help || c.detail)"
+                          :content="c.help || c.detail" placement="top">
               <el-tag :type="checkupTagType(c)" size="small" effect="plain" class="checkup-flag">
                 {{ checkupFlag(c) }}
               </el-tag>
-            </el-tooltip>
+            </AppHoverInfo>
             <span class="checkup-name">{{ c.name }}</span>
             <span v-if="c.detail" class="checkup-detail">{{ c.detail }}</span>
           </div>

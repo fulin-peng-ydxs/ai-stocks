@@ -7,7 +7,7 @@ import { hasPermission } from '@/utils/permission'
 import { sectorDetailLocation } from '@/utils/sectorNavigation'
 import type { RelatedBoardWinner, StockRelatedBoards } from '@/types/relatedBoards'
 import RelatedBoardEmptyValue from '@/components/RelatedBoardEmptyValue.vue'
-import { APP_HOVER_TOOLTIP_DELAY_MS } from '@/components/overflow/tooltipTiming'
+import AppHoverInfo from '@/components/AppHoverInfo'
 
 const props = withDefaults(defineProps<{
   summary?: StockRelatedBoards | null
@@ -48,10 +48,9 @@ function formatCorrelation(value: number): string {
 </script>
 
 <template>
-  <el-popover
+  <AppHoverInfo
     v-if="board"
-    :trigger="['hover', 'focus']"
-    :show-after="APP_HOVER_TOOLTIP_DELAY_MS"
+    kind="popover"
     placement="bottom-start"
     :width="280"
   >
@@ -87,13 +86,11 @@ function formatCorrelation(value: number): string {
         <div><dt>数据截止日</dt><dd>{{ asOfDate || '—' }}</dd></div>
       </dl>
     </div>
-  </el-popover>
+  </AppHoverInfo>
 
-  <el-tooltip
+  <AppHoverInfo
     v-else-if="unavailableReason === 'first_load_pending'"
     content="首次计算正在等待或执行，完成后将自动刷新"
-    :trigger="['hover', 'focus']"
-    :show-after="APP_HOVER_TOOLTIP_DELAY_MS"
     placement="top"
   >
     <span
@@ -102,7 +99,7 @@ function formatCorrelation(value: number): string {
       aria-label="走势相关首次计算中"
       :data-testid="testId"
     >计算中</span>
-  </el-tooltip>
+  </AppHoverInfo>
 
   <RelatedBoardEmptyValue
     v-else

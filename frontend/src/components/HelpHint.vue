@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { APP_HOVER_TOOLTIP_DELAY_MS } from '@/components/overflow/tooltipTiming'
+import AppHoverInfo from '@/components/AppHoverInfo'
 /**
  * 说明提示「?」——承载可作为一个纯文本块理解的解释性文案，避免说明占用常驻版面。
  * 需要标题、分段、列表、示例或多要点结构时改用 HelpTip + HelpTipItem；操作指引和极短标签仍用明文。
@@ -8,17 +8,15 @@ defineProps<{ text: string }>()
 </script>
 
 <template>
-  <el-tooltip
+  <AppHoverInfo
     :content="text"
-    :trigger="['hover', 'focus']"
     placement="top"
     effect="dark"
     popper-class="app-wrapping-popper help-hint-popper"
-    :show-after="APP_HOVER_TOOLTIP_DELAY_MS"
     :hide-after="0"
   >
     <span class="help-hint" tabindex="0" role="button" aria-label="说明">?</span>
-  </el-tooltip>
+  </AppHoverInfo>
 </template>
 
 <style scoped>

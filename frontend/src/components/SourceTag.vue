@@ -4,7 +4,7 @@
  * 默认层用弱化样式，被某层覆盖时高亮，让用户一眼看出"这个值是谁定的"。
  */
 import { computed } from 'vue'
-import { APP_HOVER_TOOLTIP_DELAY_MS } from '@/components/overflow/tooltipTiming'
+import AppHoverInfo from '@/components/AppHoverInfo'
 
 type Source = 'default' | 'page' | 'user'
 const props = defineProps<{
@@ -28,7 +28,7 @@ const rows = computed(() =>
 </script>
 
 <template>
-  <el-tooltip placement="top" effect="light" popper-class="source-tag-popper" :show-after="APP_HOVER_TOOLTIP_DELAY_MS">
+  <AppHoverInfo placement="top" effect="light" popper-class="source-tag-popper">
     <template #content>
       <div class="source-pop">
         <div v-for="row in rows" :key="row.layer" class="source-row" :class="{ active: row.layer === source }">
@@ -38,7 +38,7 @@ const rows = computed(() =>
       </div>
     </template>
     <span class="source-tag app-micro-text" :class="`is-${source}`">{{ LABELS[source] }}</span>
-  </el-tooltip>
+  </AppHoverInfo>
 </template>
 
 <style scoped>

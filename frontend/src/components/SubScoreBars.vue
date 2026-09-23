@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { SCORE_DIMS, type SubScores } from '@/api/board'
 import { useStatusColorPalette } from './chartTheme'
-import { APP_HOVER_TOOLTIP_DELAY_MS } from '@/components/overflow/tooltipTiming'
+import AppHoverInfo from '@/components/AppHoverInfo'
 
 const props = defineProps<{ sub: SubScores | null }>()
 
@@ -27,7 +27,7 @@ const cells = computed(() =>
 </script>
 
 <template>
-  <el-tooltip placement="right" :show-after="APP_HOVER_TOOLTIP_DELAY_MS" effect="dark">
+  <AppHoverInfo placement="right" effect="dark">
     <template #content>
       <div class="tip">
         <div v-for="c in cells" :key="c.key" class="tip-row">
@@ -40,7 +40,7 @@ const cells = computed(() =>
     <div class="cells">
       <span v-for="c in cells" :key="c.key" class="cell" :style="{ background: c.color }" />
     </div>
-  </el-tooltip>
+  </AppHoverInfo>
 </template>
 
 <style scoped>

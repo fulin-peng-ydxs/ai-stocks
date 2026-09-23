@@ -25,7 +25,7 @@ describe('HelpTip 主题样式契约', () => {
   })
 
   it('键盘聚焦与鼠标悬停共享主题主色反馈', () => {
-    expect(source).toContain(`:trigger="['hover', 'focus']"`)
+    expect(source).toContain('<AppHoverInfo')
     expect(source).toContain('tabindex="0"')
     expect(source).toContain('role="button"')
     expect(style).toContain('.help-icon:focus-visible')

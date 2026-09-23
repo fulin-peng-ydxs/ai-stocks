@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   findOverflowTooltipTarget,
+  findNativeTitleTooltipTarget,
   overflowTooltipContent,
 } from '@/components/overflow/overflowTooltip'
 import { APP_HOVER_TOOLTIP_DELAY_MS } from '@/components/overflow/tooltipTiming'
@@ -11,7 +12,7 @@ const content = ref('')
 const virtualRef = ref<HTMLElement>()
 let hoverTarget: HTMLElement | null = null
 let focusTarget: HTMLElement | null = null
-let suppressedTitle: { element: HTMLElement; value: string } | null = null
+let suppressedTitle: { element: HTMLElement; value: string; addedAriaLabel: boolean } | null = null
 let hoverTimer: ReturnType<typeof setTimeout> | null = null
 
 function clearHoverTimer(): void {
@@ -22,18 +23,34 @@ function clearHoverTimer(): void {
 
 function restoreSuppressedTitle(): void {
   if (!suppressedTitle) return
-  suppressedTitle.element.title = suppressedTitle.value
+  if (!suppressedTitle.element.hasAttribute('title')) {
+    suppressedTitle.element.title = suppressedTitle.value
+  }
+  if (suppressedTitle.addedAriaLabel
+    && suppressedTitle.element.getAttribute('aria-label') === suppressedTitle.value) {
+    suppressedTitle.element.removeAttribute('aria-label')
+  }
   suppressedTitle = null
 }
 
+function suppressTitle(element: HTMLElement): void {
+  if (!element.title || suppressedTitle?.element === element) return
+  restoreSuppressedTitle()
+  const addedAriaLabel = !element.hasAttribute('aria-label')
+    && !element.hasAttribute('aria-labelledby')
+    && !element.textContent?.trim()
+  if (addedAriaLabel) element.setAttribute('aria-label', element.title)
+  suppressedTitle = { element, value: element.title, addedAriaLabel }
+  element.removeAttribute('title')
+}
+
 function showFor(element: HTMLElement): void {
-  const nextContent = overflowTooltipContent(element)
+  const nextContent = suppressedTitle?.element === element
+    ? suppressedTitle.value
+    : overflowTooltipContent(element)
   if (!nextContent) return
   if (virtualRef.value !== element) restoreSuppressedTitle()
-  if (element.title) {
-    suppressedTitle = { element, value: element.title }
-    element.removeAttribute('title')
-  }
+  suppressTitle(element)
   virtualRef.value = element
   content.value = nextContent
   visible.value = true
@@ -48,6 +65,7 @@ function hideCurrent(): void {
 
 function scheduleHover(element: HTMLElement): void {
   clearHoverTimer()
+  suppressTitle(element)
   hoverTimer = setTimeout(() => {
     hoverTimer = null
     if (hoverTarget === element && element.isConnected && !focusTarget) showFor(element)
@@ -64,7 +82,11 @@ function syncVisibleTarget(): void {
 }
 
 function onMouseOver(event: MouseEvent): void {
-  const next = findOverflowTooltipTarget(event.target)
+  if (suppressedTitle?.element === hoverTarget
+    && event.target instanceof Node
+    && hoverTarget?.contains(event.target)) return
+  const next = findNativeTitleTooltipTarget(event.target)
+    || findOverflowTooltipTarget(event.target)
   if (!next || hoverTarget === next) return
   hoverTarget = next
   if (focusTarget) return
@@ -97,7 +119,9 @@ function onMouseOut(event: MouseEvent): void {
 }
 
 function onFocusIn(event: FocusEvent): void {
-  const next = findOverflowTooltipTarget(event.target)
+  const next = findNativeTitleTooltipTarget(event.target)
+    || findOverflowTooltipTarget(event.target)
+    || (event.target instanceof Node && hoverTarget?.contains(event.target) ? hoverTarget : null)
   if (!next) return
   focusTarget = next
   clearHoverTimer()

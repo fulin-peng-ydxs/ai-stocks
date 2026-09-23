@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
-import { APP_HOVER_TOOLTIP_DELAY_MS } from '@/components/overflow/tooltipTiming'
+import AppHoverInfo from '@/components/AppHoverInfo'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppDetailField from '@/components/AppDetailField.vue'
 import AppDetailFields from '@/components/AppDetailFields.vue'
@@ -703,14 +703,14 @@ const menuPageTitle = useMenuPageTitle()
           <template #header><span>分层质量模型（达标率）</span></template>
           <el-row :gutter="12">
             <el-col :span="6" v-for="l in ov.quality.by_layer" :key="l.layer">
-              <el-tooltip :content="layerSummaryTip(l)" placement="top" :show-after="APP_HOVER_TOOLTIP_DELAY_MS">
+              <AppHoverInfo :content="layerSummaryTip(l)" placement="top">
                 <div class="layer-card">
                   <div class="layer-name">{{ l.layer }} · {{ l.name_cn }}</div>
                   <el-progress :percentage="Math.round(l.pass_rate * 100)"
                                :status="l.pass_rate >= 0.99 ? 'success' : l.pass_rate >= 0.9 ? 'warning' : 'exception'" />
                   <div class="layer-foot">{{ l.pass_stocks }}/{{ l.total }} 达标 · {{ layerSummaryText(l) }}</div>
                 </div>
-              </el-tooltip>
+              </AppHoverInfo>
             </el-col>
           </el-row>
       </el-card>
@@ -1054,12 +1054,12 @@ const menuPageTitle = useMenuPageTitle()
                       <span>{{ LAYER_CN[k] }} <HelpHint :text="LAYER_DESC[k]" /></span>
                     </template>
                     <template #default="{ row }">
-                      <el-tooltip :content="layerCell(k, row.layers[k]).tip" placement="top" :show-after="APP_HOVER_TOOLTIP_DELAY_MS">
+                      <AppHoverInfo :content="layerCell(k, row.layers[k]).tip" placement="top">
                         <el-tag :type="layerCell(k, row.layers[k]).type as any" size="small" effect="plain"
                                 class="clk-tag" @click="goLayer(k, row)">
                           {{ layerCell(k, row.layers[k]).text }}
                         </el-tag>
-                      </el-tooltip>
+                      </AppHoverInfo>
                     </template>
                   </AppTableColumn>
                 </AppDataTable>
