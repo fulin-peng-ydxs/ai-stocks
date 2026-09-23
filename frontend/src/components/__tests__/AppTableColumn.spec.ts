@@ -109,6 +109,24 @@ describe('自适应表格列', () => {
     expect(action.get('.column').attributes('data-class-name')).toContain(ACTION_COLUMN_CLASS)
   })
 
+  it('长文本列通过统一列选项启用单行省略，普通列保持自然换行', () => {
+    const summary = mount(AppTableColumn, {
+      props: { label: '信息', prop: 'message', singleLine: true },
+      global: { stubs: { ElTableColumn: ElTableColumnStub } },
+    })
+    const normal = mount(AppTableColumn, {
+      props: { label: '说明' },
+      global: { stubs: { ElTableColumn: ElTableColumnStub } },
+    })
+
+    expect(summary.get('.column').attributes('data-class-name')).toContain(
+      'app-table-column--single-line',
+    )
+    expect(normal.get('.column').attributes('data-class-name')).not.toContain(
+      'app-table-column--single-line',
+    )
+  })
+
   it('忽略遗留的列级 tooltip 配置，统一交给自动溢出机制', () => {
     const wrapper = mount(AppTableColumn, {
       props: { label: '状态' },

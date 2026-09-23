@@ -37,6 +37,8 @@ const props = defineProps<{
   filterSelectVisibleTagCount?: number
   /** 单元格内多选 AppFilterSelect 的展示方式；count 只承载“已选 N”。 */
   filterSelectDisplayMode?: 'tags' | 'count'
+  /** 长文本摘要保持单行，超出列宽时由单元格原生绘制省略号。 */
+  singleLine?: boolean
 }>()
 
 const attrs = useAttrs()
@@ -79,6 +81,7 @@ const resolvedColumnClassName = computed(() => [
     ? 'app-table-column--tabular'
     : undefined,
   overflowAware.value ? OVERFLOW_AWARE_COLUMN_CLASS : undefined,
+  props.singleLine && overflowAware.value ? 'app-table-column--single-line' : undefined,
 ].filter(Boolean).join(' '))
 const resolvedWidth = computed(() => {
   const defaultWidth = sizing.value.width

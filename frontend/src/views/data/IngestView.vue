@@ -967,7 +967,7 @@ const menuPageTitle = useMenuPageTitle()
                   :status="row.status === 'failed' || row.status === 'interrupted' ? 'exception' : row.status === 'done' ? 'success' : undefined" />
               </template>
             </AppTableColumn>
-            <AppTableColumn label="信息" prop="message" />
+            <AppTableColumn label="信息" prop="message" role="description" single-line />
             <AppTableColumn label="截止时间" prop="time" sortable="custom">
               <template #default="{ row }">{{ formatDateTimeSeconds(row.updated_at, '') }}</template>
             </AppTableColumn>
@@ -1046,7 +1046,7 @@ const menuPageTitle = useMenuPageTitle()
             <AppTableColumn label="区间">
               <template #default="{ row }">{{ row.date_start ? `${row.date_start} ~ ${row.date_end || row.date_start}` : '—' }}</template>
             </AppTableColumn>
-            <AppTableColumn label="详情 / 失败原因">
+            <AppTableColumn label="详情 / 失败原因" single-line>
               <template #default="{ row }">
                 <span :class="{ 'fail-detail': row.status === 'failed', 'partial-detail': row.status === 'partial' }">{{ row.detail || (row.status === 'success' ? '—' : '') }}</span>
               </template>

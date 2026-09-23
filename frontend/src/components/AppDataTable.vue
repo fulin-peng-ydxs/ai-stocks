@@ -237,6 +237,12 @@ const emit = defineEmits<{
   white-space: nowrap;
 }
 
+.app-data-table :deep(td.app-table-column--single-line .cell) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .app-data-table :deep(td.app-table-column--tabular .cell) {
   font-variant-numeric: tabular-nums;
 }

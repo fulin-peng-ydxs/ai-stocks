@@ -655,7 +655,7 @@ const menuPageTitle = useMenuPageTitle()
         <AppTableColumn v-if="colVisible('type')" label="类型">
           <template #default="{ row }">{{ ISSUE_TYPE_LABEL[row.issue_type] ?? row.issue_type }}</template>
         </AppTableColumn>
-        <AppTableColumn v-if="colVisible('detail')" label="详情">
+        <AppTableColumn v-if="colVisible('detail')" label="详情" single-line>
           <template #default="{ row }">{{ detailText(row.detail) }}</template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('status')" label="状态">
