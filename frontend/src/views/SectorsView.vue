@@ -792,12 +792,8 @@ function onDateChange(): void {
 const defaultBoardType = computed<BoardType | ''>(() => (
   configuredBoardType.value
 ))
-const defaultListScope = computed<'all' | 'watchlist'>(() => (
-  canViewWatchlist.value && settings.defaultScope === 'watchlist' ? 'watchlist' : 'all'
-))
 const hasQueryFilters = computed(() => (
-  listScope.value !== defaultListScope.value
-  || boardType.value !== defaultBoardType.value
+  boardType.value !== defaultBoardType.value
   || tradeDate.value !== (dataMax.value || '')
   || keyword.value.trim() !== ''
 ))
@@ -805,7 +801,6 @@ const hasQueryFilters = computed(() => (
 async function resetQueryFilters(): Promise<void> {
   if (!hasQueryFilters.value) return
   restoring = true
-  listScope.value = defaultListScope.value
   boardType.value = defaultBoardType.value
   tradeDate.value = dataMax.value || ''
   keyword.value = ''
@@ -1068,7 +1063,6 @@ const menuPageTitle = useMenuPageTitle()
               aria-label="板块类型"
               test-id="sectors-type"
               size="small"
-              tone="primary"
               @update:model-value="search"
             />
             <TradeDatePicker
