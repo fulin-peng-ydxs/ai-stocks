@@ -10,6 +10,7 @@ import {
 } from '@/components/stock-chart/chartUtils'
 import { useTheme } from '@/composables/useTheme'
 import { setLayoutPreset, setPresetOverrides } from '@/layout/useLayoutPreset'
+import { WORKSPACE_RESIZE_ACTIVE } from '@/layout/workspaceResizeContext'
 
 const echartsMock = vi.hoisted(() => {
   const instances: Array<Record<string, any>> = []
@@ -138,6 +139,7 @@ function indicators(source: Bar[]): IndicatorRow[] {
 async function mountWorkspace(
   extraProps: Record<string, unknown> = {},
   slots: Record<string, string> = {},
+  provided: Record<PropertyKey, unknown> = {},
 ) {
   const source = bars()
   const wrapper = mount(StockChartWorkspace, {
@@ -148,6 +150,7 @@ async function mountWorkspace(
     },
     slots,
     global: {
+      provide: provided,
       directives: { loading: {} },
       stubs: {
         AppStateBlock: {
@@ -828,7 +831,7 @@ describe('StockChartWorkspace', () => {
     expect(separator.attributes('aria-valuemax')).toBe('53')
   })
 
-  it('同帧 pointermove 只应用最新草稿，pointercancel 仅提交一次并由尺寸观察触发 resize', async () => {
+  it('同帧 pointermove 只应用最新草稿，拖动中仅刷新相邻图并在结束后全量校准', async () => {
     const wrapper = await mountWorkspace()
     const separator = wrapper.find('[role="separator"]')
     let frameCallback: FrameRequestCallback | undefined
@@ -837,6 +840,7 @@ describe('StockChartWorkspace', () => {
       return 7
     })
     const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => {})
+    await nextTick()
     echartsMock.instances.forEach((instance) => instance.resize.mockClear())
 
     await separator.trigger('pointerdown', { pointerId: 7, clientY: 100 })
@@ -851,20 +855,53 @@ describe('StockChartWorkspace', () => {
     expect(wrapper.emitted('ratioDraft')).toHaveLength(1)
     expect(wrapper.emitted('ratioCommit')).toBeUndefined()
     const resizeCounts = echartsMock.instances.map((instance) => instance.resize.mock.calls.length)
+    expect(resizeCounts).toEqual([1, 1, 0])
 
     ResizeObserverMock.instances[0]?.trigger()
     await nextTick()
     echartsMock.instances.forEach((instance, index) => {
-      expect(instance.resize.mock.calls.length).toBe(resizeCounts[index] + 1)
+      expect(instance.resize.mock.calls.length).toBe(resizeCounts[index])
     })
 
     window.dispatchEvent(pointerEvent('pointercancel', 7, 130))
     window.dispatchEvent(pointerEvent('pointerup', 7, 130))
     await nextTick()
+    await nextTick()
 
     expect(wrapper.emitted('ratioCommit')).toHaveLength(1)
+    echartsMock.instances.forEach((instance, index) => {
+      expect(instance.resize.mock.calls.length).toBe(resizeCounts[index] + 1)
+    })
     requestFrame.mockRestore()
     cancelFrame.mockRestore()
+  })
+
+  it('父级左右分栏拖动期间延后图表 resize，结束后只按最终尺寸刷新', async () => {
+    const ancestorResizing = ref(true)
+    const wrapper = await mountWorkspace({}, {}, {
+      [WORKSPACE_RESIZE_ACTIVE as symbol]: ancestorResizing,
+    })
+    echartsMock.instances.forEach((instance) => instance.resize.mockClear())
+
+    mockClientWidth = 720
+    ResizeObserverMock.instances[0]?.trigger()
+    await nextTick()
+    await nextTick()
+    echartsMock.instances.forEach((instance) => {
+      expect(instance.resize).not.toHaveBeenCalled()
+    })
+
+    ancestorResizing.value = false
+    await nextTick()
+    await nextTick()
+    await nextTick()
+    echartsMock.instances.forEach((instance) => {
+      expect(instance.resize).toHaveBeenCalledTimes(1)
+    })
+    expect(wrapper.emitted('workspaceResize')?.at(-1)?.[0]).toEqual(expect.objectContaining({
+      width: 720,
+    }))
+    wrapper.unmount()
   })
 
   it('卸载时断开 group、销毁全部实例且不残留拖动监听状态', async () => {

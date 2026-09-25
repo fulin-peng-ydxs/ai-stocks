@@ -1,10 +1,21 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useAttrs, watch } from 'vue'
+import {
+  computed,
+  inject,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  provide,
+  ref,
+  useAttrs,
+  watch,
+} from 'vue'
 import PageDrawer from '@/components/PageDrawer.vue'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { elementVisualScale, viewportDeltaToLayoutPixels } from '@/utils/displayScaleGeometry'
 import { createLatestAnimationFrame } from '@/utils/latestAnimationFrame'
 import { adaptiveWorkspaceHeight } from '@/layout/marketWorkspaceSizing'
+import { WORKSPACE_RESIZE_ACTIVE } from '@/layout/workspaceResizeContext'
 import {
   closestMasterDetailRatioProfile,
   MASTER_DETAIL_RATIO_DEFAULT,
@@ -67,6 +78,12 @@ defineSlots<{
 const workspaceEl = ref<HTMLElement | null>(null)
 const workspaceWidth = ref(0)
 const measuredAdaptiveHeight = ref<number | null>(null)
+const ancestorWorkspaceResizeActive = inject(WORKSPACE_RESIZE_ACTIVE, ref(false))
+const localWorkspaceResizeActive = ref(false)
+const workspaceResizeActive = computed(() => (
+  ancestorWorkspaceResizeActive.value || localWorkspaceResizeActive.value
+))
+provide(WORKSPACE_RESIZE_ACTIVE, workspaceResizeActive)
 const matchedProfile = computed(() => closestMasterDetailRatioProfile(
   props.primaryRatioProfiles,
   workspaceWidth.value,
@@ -262,6 +279,7 @@ function finishDrag(event?: PointerEvent): void {
   if (!drag || (event && event.pointerId !== drag.pointerId)) return
   primaryWidthFrame.flush()
   drag = null
+  localWorkspaceResizeActive.value = false
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', finishDrag)
   window.removeEventListener('pointercancel', finishDrag)
@@ -276,6 +294,7 @@ function startDrag(event: PointerEvent): void {
     startWidth: primaryWidth.value,
     visualScale: elementVisualScale(workspaceEl.value, 'x'),
   }
+  localWorkspaceResizeActive.value = true
   ;(event.currentTarget as HTMLElement | null)?.setPointerCapture?.(event.pointerId)
   document.body.classList.add('app-split-workspace-is-resizing')
   window.addEventListener('pointermove', onPointerMove)

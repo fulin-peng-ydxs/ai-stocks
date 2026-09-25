@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { mount } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { defineComponent, h, inject, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ElementPlus from 'element-plus'
 import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
+import { WORKSPACE_RESIZE_ACTIVE } from '@/layout/workspaceResizeContext'
 
 function pointerEvent(type: string, pointerId: number, clientX: number): Event {
   const event = new Event(type)
@@ -83,6 +84,42 @@ describe('AppSplitWorkspace', () => {
     ])
     window.dispatchEvent(pointerEvent('pointerup', 3, 672))
     expect(document.body.classList.contains('app-split-workspace-is-resizing')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('拖拽期间向后代声明布局调整状态，结束后立即恢复', async () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200)
+    const ResizeStateProbe = defineComponent({
+      setup() {
+        const resizing = inject(WORKSPACE_RESIZE_ACTIVE)
+        return () => h('span', {
+          'data-testid': 'resize-state',
+          'data-resizing': String(resizing?.value ?? false),
+        })
+      },
+    })
+    const wrapper = mount(AppSplitWorkspace, {
+      props: { secondaryVisible: true },
+      slots: {
+        primary: () => h(ResizeStateProbe),
+        secondary: '<div>辅助信息</div>',
+      },
+      global: { plugins: [ElementPlus] },
+    })
+    await nextTick()
+
+    const state = wrapper.get('[data-testid="resize-state"]')
+    expect(state.attributes('data-resizing')).toBe('false')
+    await wrapper.get('[role="separator"]').trigger('pointerdown', {
+      pointerId: 8,
+      clientX: 780,
+    })
+    await nextTick()
+    expect(state.attributes('data-resizing')).toBe('true')
+
+    window.dispatchEvent(pointerEvent('pointerup', 8, 780))
+    await nextTick()
+    expect(state.attributes('data-resizing')).toBe('false')
     wrapper.unmount()
   })
 

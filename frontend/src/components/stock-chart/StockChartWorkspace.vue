@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   computed,
+  inject,
   nextTick,
   onActivated,
   onBeforeUnmount,
@@ -22,6 +23,7 @@ import { initVectorEChart } from '@/components/echartsRenderer'
 import type { StockAdjustMode } from '@/composables/useStockAnalysisSession'
 import type { AuxiliaryChartType, ChartType } from '@/composables/useStockChartPreferences'
 import { PAGE_OVERLAY_TARGET } from '@/layout/pageOverlay'
+import { WORKSPACE_RESIZE_ACTIVE } from '@/layout/workspaceResizeContext'
 import { elementVisualScale } from '@/utils/displayScaleGeometry'
 import { createLatestAnimationFrame } from '@/utils/latestAnimationFrame'
 import { formatMarketPercent, marketValueClass } from '@/utils/marketValue'
@@ -196,6 +198,7 @@ defineSlots<{
 const groupId = nextStockChartWorkspaceGroupId()
 const workspaceEl = ref<HTMLElement | null>(null)
 provide(PAGE_OVERLAY_TARGET, workspaceEl)
+const ancestorWorkspaceResizeActive = inject(WORKSPACE_RESIZE_ACTIVE, ref(false))
 const chartElements = new Map<WorkspacePanelKey, HTMLElement>()
 const charts = new Map<WorkspacePanelKey, echarts.ECharts>()
 const theme = useStockChartTheme()
@@ -222,6 +225,9 @@ let lastDisplayScale = 0
 let lastWorkspaceState = ''
 let workspaceReportedAvailable = false
 let connectedChartSignature = ''
+let deferredWorkspaceResize = false
+let settledWorkspaceResizeScheduled = false
+let dragChartResizeScheduled = false
 
 const panels = computed<PanelDescriptor[]>(() => {
   const next: PanelDescriptor[] = [{ key: 'kline', type: 'kline' }]
@@ -755,6 +761,11 @@ function onWorkspaceResize(): void {
       minimumRatios: effectiveMinimumRatios,
     })
   }
+  if (drag || ancestorWorkspaceResizeActive.value) {
+    deferredWorkspaceResize = true
+    return
+  }
+  deferredWorkspaceResize = false
   // 高度变化会先更新面板最低比例；等待 DOM 完成重排后再让画布读取最终尺寸。
   void nextTick(() => {
     if (!active) return
@@ -792,6 +803,17 @@ function onWorkspaceResize(): void {
     const chart = charts.get(bottomPanel.key)
     if (!chart || chart.isDisposed()) return
     chart.setOption(chartOption(bottomPanel, true), true)
+  })
+}
+
+function scheduleSettledWorkspaceResize(): void {
+  deferredWorkspaceResize = true
+  if (settledWorkspaceResizeScheduled) return
+  settledWorkspaceResizeScheduled = true
+  void nextTick(() => {
+    settledWorkspaceResizeScheduled = false
+    if (!active || drag || ancestorWorkspaceResizeActive.value || !deferredWorkspaceResize) return
+    onWorkspaceResize()
   })
 }
 
@@ -893,6 +915,21 @@ const ratioFrame = createLatestAnimationFrame<{ separatorIndex: number; delta: n
   ({ separatorIndex, delta }) => { applyRatioChange(separatorIndex, delta) },
 )
 
+function scheduleDraggedChartsResize(): void {
+  if (dragChartResizeScheduled) return
+  dragChartResizeScheduled = true
+  void nextTick(() => {
+    dragChartResizeScheduled = false
+    if (!active || !drag) return
+    const adjacentPanels = panels.value.slice(drag.separatorIndex, drag.separatorIndex + 2)
+    adjacentPanels.forEach((panel) => {
+      const chart = charts.get(panel.key)
+      if (!chart || chart.isDisposed()) return
+      chart.resize()
+    })
+  })
+}
+
 function applyRatioChange(separatorIndex: number, delta: number): number[] {
   const next = adjustAdjacentRatios(
     drag?.startRatios ?? ratios.value,
@@ -902,6 +939,7 @@ function applyRatioChange(separatorIndex: number, delta: number): number[] {
   )
   liveRatios.value = next
   emit('ratioDraft', [...next])
+  if (drag) scheduleDraggedChartsResize()
   return next
 }
 
@@ -928,6 +966,7 @@ function finishDrag(event?: PointerEvent): void {
     const next = normalizeWorkspaceRatios(liveRatios.value, panels.value.length)
     emit('ratioCommit', [...next])
   }
+  scheduleSettledWorkspaceResize()
 }
 
 function startDrag(event: PointerEvent, separatorIndex: number): void {
@@ -1046,6 +1085,9 @@ watch(ratios, () => {
   if (drag) return
   void nextTick(onWorkspaceResize)
 }, { deep: true })
+watch(ancestorWorkspaceResizeActive, (resizing) => {
+  if (!resizing) scheduleSettledWorkspaceResize()
+})
 watch(
   [() => props.zoomStart, () => props.zoomEnd],
   ([start, end]) => {
@@ -1108,6 +1150,7 @@ onDeactivated(() => {
   disposeCharts()
 })
 onBeforeUnmount(() => {
+  active = false
   cancelDeferredActivation()
   window.removeEventListener('resize', onWorkspaceResize)
   if (drag) finishDrag()
