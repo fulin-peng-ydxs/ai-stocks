@@ -120,6 +120,14 @@ export function validateLayout(layout: PageLayout): ValidationIssue[] {
     }
   }
 
+  // section 只作为内部真实组件的成长容器，不允许空分区凭自身占用主区余量。
+  for (const slot of layout.slots) {
+    if (slot.component !== 'section' || !slot.growMain) continue
+    if (!layout.slots.some((candidate) => candidate.parentId === slot.id)) {
+      push('error', 'section.growMain.child.required', `成长内容分区 ${slot.id} 必须登记至少一个嵌套组件`, slot.id)
+    }
+  }
+
   // 5b. 主内容区至多一个 growMain（规范 §1：富余空间交给一个主表/主图）
   const growCount = mainSlots.filter((s) => s.growMain).length
   if (growCount > 1) {

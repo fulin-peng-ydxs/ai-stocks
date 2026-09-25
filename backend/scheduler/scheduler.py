@@ -485,6 +485,103 @@ class ScheduledJobService:
             "ORDER BY j.created_at")
         return [self._row(r) for _, r in df.iterrows()]
 
+    def _frequency_order_sql(self, direction: str) -> str:
+        """Return a cross-runtime frequency order matching the UI's configured frequency fields."""
+        if is_postgres_task_runtime(self.c):
+            def text_value(key: str) -> str:
+                return f"j.freq_config->>'{key}'"
+
+            def weekday(index: int) -> str:
+                return f"COALESCE((j.freq_config->'weekdays'->>{index})::INTEGER, 0)"
+
+            month_day = "COALESCE((j.freq_config->>'day')::INTEGER, 1)"
+        else:
+            def text_value(key: str) -> str:
+                return (
+                    "json_extract_string(try_cast(j.freq_config AS JSON), "
+                    f"'$.{key}')"
+                )
+
+            def weekday(index: int) -> str:
+                return (
+                    "COALESCE(try_cast(json_extract_string(try_cast(j.freq_config AS JSON), "
+                    f"'$.weekdays[{index}]') AS INTEGER), 0)"
+                )
+
+            month_day = (
+                "COALESCE(try_cast(json_extract_string(try_cast(j.freq_config AS JSON), "
+                "'$.day') AS INTEGER), 1)"
+            )
+
+        rank = (
+            "CASE WHEN j.trigger_mode='dependency' OR j.freq_type IS NULL THEN 4 "
+            "WHEN j.freq_type='daily' THEN 0 WHEN j.freq_type='weekly' THEN 1 "
+            "WHEN j.freq_type='monthly' THEN 2 WHEN j.freq_type='cron' THEN 3 ELSE 4 END"
+        )
+        parts = [rank]
+        parts.extend(
+            f"CASE WHEN j.freq_type='weekly' THEN {weekday(index)} ELSE 0 END"
+            for index in range(7)
+        )
+        parts.extend([
+            f"CASE WHEN j.freq_type='monthly' THEN {month_day} ELSE 0 END",
+            (
+                "CASE "
+                f"WHEN j.freq_type='cron' THEN trim(COALESCE({text_value('cron')}, '')) "
+                "WHEN j.trigger_mode='dependency' OR j.freq_type IS NULL "
+                "THEN lower(COALESCE(u.name, j.dependency_job_id, '')) "
+                f"ELSE COALESCE({text_value('time')}, '') END"
+            ),
+            "COALESCE(j.dependency_condition, '')",
+        ])
+        return ", ".join(f"{part} {direction}" for part in parts)
+
+    def list_page(self, *, page: int, size: int, sort_by: str, sort_order: str) -> dict:
+        """Paginate scheduled jobs in storage; the scheduler's internal list() remains unpaged."""
+        page = max(1, int(page))
+        size = max(1, min(int(size), 200))
+        direction = "ASC" if str(sort_order).lower() == "asc" else "DESC"
+        if sort_by == "freq":
+            primary_order = self._frequency_order_sql(direction)
+        else:
+            primary_order = f"lower(j.name) {direction}"
+        total = int(self.c.query_df(
+            "SELECT count(*) AS n FROM scheduled_job",
+        ).iloc[0]["n"])
+        df = self.c.query_df(
+            "SELECT j.*, u.name AS dependency_job_name, "
+            "(SELECT count(*) FROM scheduled_trigger_event e WHERE e.target_job_id=j.id "
+            " AND e.status IN ('waiting','dispatching')) AS waiting_trigger_count, "
+            "(SELECT min(due_at) FROM scheduled_trigger_event e WHERE e.target_job_id=j.id "
+            " AND e.status IN ('waiting','dispatching')) AS next_dependency_run_at "
+            "FROM scheduled_job j LEFT JOIN scheduled_job u ON u.id=j.dependency_job_id "
+            f"ORDER BY {primary_order}, lower(j.name) {direction}, j.id {direction} "
+            "LIMIT ? OFFSET ?",
+            [size, (page - 1) * size],
+        )
+        return {
+            "jobs": [self._row(r) for _, r in df.iterrows()],
+            "total": total,
+            "page": page,
+            "size": size,
+        }
+
+    def list_options(self, *, query: str = "", limit: int = 50) -> list[dict]:
+        """Return lightweight dependency candidates for the remote select."""
+        query = str(query or "").strip().lower()
+        limit = max(1, min(int(limit), 100))
+        where = "WHERE lower(name) LIKE ?" if query else ""
+        params: list = [f"%{query}%"] if query else []
+        df = self.c.query_df(
+            f"SELECT id, name, enabled FROM scheduled_job {where} "
+            "ORDER BY lower(name), id LIMIT ?",
+            [*params, limit],
+        )
+        return [
+            {"id": str(row["id"]), "name": str(row["name"]), "enabled": bool(row["enabled"])}
+            for _, row in df.iterrows()
+        ]
+
     def get(self, jid: str) -> dict | None:
         df = self.c.query_df(
             "SELECT j.*, u.name AS dependency_job_name, "

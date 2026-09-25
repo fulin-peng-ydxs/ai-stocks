@@ -340,12 +340,29 @@ export interface ScheduledJobInput {
   trading_day_only: boolean
   enabled: boolean
 }
-export function listSchedules(): Promise<{
+export interface ScheduleListQuery {
+  page: number
+  size: number
+  sort_by: 'name' | 'freq'
+  sort_order: 'asc' | 'desc'
+}
+export interface ScheduledJobOption {
+  id: string
+  name: string
+  enabled: boolean
+}
+export function listSchedules(query: ScheduleListQuery): Promise<{
   jobs: ScheduledJob[]
+  total: number
+  page: number
+  size: number
   task_types: TaskType[]
   quality_issue_types: string[]
 }> {
-  return http.get('/data/schedules')
+  return http.get('/data/schedules', { params: query })
+}
+export function listScheduleOptions(q = '', limit = 50): Promise<{ list: ScheduledJobOption[] }> {
+  return http.get('/data/schedules/options', { params: { q, limit } })
 }
 export function createSchedule(body: ScheduledJobInput): Promise<ScheduledJob> {
   return http.post('/data/schedules', body)

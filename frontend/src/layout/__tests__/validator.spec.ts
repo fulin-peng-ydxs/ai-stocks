@@ -132,6 +132,26 @@ describe('主表唯一与 growMain 约束（规范 §1）', () => {
     expect(errorsOf(layout)).toEqual([])
   })
 
+  it('内容分区可作为内部主组件的唯一成长容器', () => {
+    const layout = createLayout('workbench', 'p')
+    layout.slots = [
+      { id: 'leading', component: 'data-table', region: 'main', minH: 300, idealH: 960, order: 1 },
+      { id: 'workspace', component: 'section', region: 'main', growMain: true, minH: 200, order: 2 },
+      { id: 'inner', component: 'data-table', region: 'main', parentId: 'workspace', order: 1 },
+    ]
+    layout.editable = []
+    expect(errorsOf(layout)).toEqual([])
+  })
+
+  it('成长内容分区必须登记内部真实组件', () => {
+    const layout = createLayout('workbench', 'p')
+    layout.slots = [
+      { id: 'workspace', component: 'section', region: 'main', growMain: true, minH: 200, order: 1 },
+    ]
+    layout.editable = []
+    expect(codesOf(layout)).toContain('section.growMain.child.required')
+  })
+
   it('主内容区两个 growMain → error', () => {
     const layout = createLayout('workbench', 'p')
     layout.slots.find((s) => s.id === 'chart')!.growMain = true // 已有 table growMain

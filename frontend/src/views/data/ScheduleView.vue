@@ -8,11 +8,11 @@ import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import {
-  listSchedules, createSchedule, updateSchedule, setScheduleEnabled, deleteSchedule, runSchedule,
+  listSchedules, listScheduleOptions, createSchedule, updateSchedule, setScheduleEnabled, deleteSchedule, runSchedule,
   listScheduleTriggerEvents,
   getSources, testSources, SOURCE_LABEL, TASK_LABEL, ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE,
   taskDisplayLabel, getSettingsView, saveSettings, resetSettings,
-  type ScheduledJob, type ScheduledJobInput, type ScheduledTriggerEvent,
+  type ScheduledJob, type ScheduledJobInput, type ScheduledJobOption, type ScheduledTriggerEvent,
   type SourceStatus, type TaskStatus, type TaskType, type FreqType, type TriggerMode,
   type CredentialStatus,
   type TriggerCondition,
@@ -31,16 +31,19 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useTableSort } from '@/composables/useTableSort'
+import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useFormChangeTracker } from '@/composables/useFormChangeTracker'
+import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
-import { compareScheduleFrequency } from '@/utils/scheduleFrequencySort'
+import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
 import StockIngestScopeFields from '@/components/data/StockIngestScopeFields.vue'
 import ResultMaintenanceTaskFields from '@/components/data/ResultMaintenanceTaskFields.vue'
+import { LEADING_WORKBENCH_TABLE_MAX_HEIGHT } from '@/components/table/tableSizing'
 import {
   buildStockIngestParams,
   createStockIngestForm,
@@ -89,7 +92,22 @@ function jobColVisible(key: string): boolean { return !jobHiddenColumns.value.in
 function sourceColVisible(key: string): boolean { return !sourceHiddenColumns.value.includes(key) }
 function tableBorder(slotId: string): boolean { return componentValueOf(slotId, 'border') === true }
 
-// 列头排序（单向默认机制）：任务列表全量在前端，排序走本地 computed，不回源。
+const loading = ref(true)
+const loadError = ref('')
+const jobs = ref<ScheduledJob[]>([])
+const jobTotal = ref(0)
+const jobPage = ref(1)
+const scheduleListRequest = createLatestRequestGuard()
+const { pageSize: jobPageSize, changePageSize: changeJobPageSize } = useComponentPageSizeSession({
+  resolveDefault: () => componentValueOf('jobTable', 'pageSize'),
+  fallback: DEFAULT_PAGE_SIZE,
+  resetPage: () => {
+    jobPage.value = 1
+  },
+  reload: load,
+})
+
+// 调度任务按完整结果集在服务端排序，列头和设置抽屉共享同一排序会话。
 const JOB_SORT_FIELDS = ['name', 'freq'] as const
 const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(typeof JOB_SORT_FIELDS)[number]>({
   slotId: 'jobTable',
@@ -97,20 +115,11 @@ const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(ty
   componentValueOf,
   allowedFields: JOB_SORT_FIELDS,
   defaultOrder: 'asc',
+  onChanged: () => {
+    jobPage.value = 1
+    void load()
+  },
 })
-// 频率按真实配置排序（每日时间、每周星期与时间、每月日期与时间、cron 表达式）。
-const sortedJobs = computed(() => {
-  const factor = sortOrder.value === 'desc' ? -1 : 1
-  const byName = (a: ScheduledJob, b: ScheduledJob) => a.name.localeCompare(b.name, 'zh')
-  return [...jobs.value].sort((a, b) => {
-    const primary = sortBy.value === 'freq' ? compareScheduleFrequency(a, b) : byName(a, b)
-    return (primary || byName(a, b)) * factor
-  })
-})
-
-const loading = ref(true)
-const loadError = ref('')
-const jobs = ref<ScheduledJob[]>([])
 const taskTypes = ref<TaskType[]>([])
 const qualityIssueTypes = ref<string[]>([...ISSUE_TYPES_ACTIVE])
 const togglingId = ref('')
@@ -192,7 +201,28 @@ const form = reactive({
   trading_day_only: true, enabled: true,
 })
 const dlgTitle = computed(() => (editingId.value ? '编辑调度任务' : '新建调度任务'))
-const dependencyOptions = computed(() => jobs.value.filter((job) => job.id !== editingId.value))
+const dependencyOptions = ref<ScheduledJobOption[]>([])
+const dependencyOptionsLoading = ref(false)
+const dependencyOptionsRequest = createLatestRequestGuard()
+async function loadDependencyOptions(query = '') {
+  const requestId = dependencyOptionsRequest.begin()
+  dependencyOptionsLoading.value = true
+  try {
+    const result = await listScheduleOptions(query)
+    if (!dependencyOptionsRequest.isCurrent(requestId)) return
+    const selected = dependencyOptions.value.find((item) => item.id === form.dependency_job_id)
+    const next = result.list.filter((item) => item.id !== editingId.value)
+    dependencyOptions.value = selected && !next.some((item) => item.id === selected.id)
+      ? [selected, ...next]
+      : next
+  } catch (error) {
+    if (dependencyOptionsRequest.isCurrent(requestId)) {
+      ElMessage.error(getErrorMessage(error, '上游任务候选加载失败'))
+    }
+  } finally {
+    if (dependencyOptionsRequest.isCurrent(requestId)) dependencyOptionsLoading.value = false
+  }
+}
 const {
   hasChanges: scheduleFormChanged,
   captureBaseline: captureScheduleBaseline,
@@ -201,6 +231,9 @@ const {
 watch(() => form.task_type, (type, prev) => {
   if (type === 'audit_cleanup') form.trading_day_only = false
   else if (prev === 'audit_cleanup' && !editingId.value) form.trading_day_only = true
+})
+watch(() => form.trigger_mode, (mode) => {
+  if (mode === 'dependency' && !dependencyOptions.value.length) void loadDependencyOptions()
 })
 
 function changeTaskType(type: TaskType) {
@@ -224,6 +257,7 @@ function openCreate() {
     retry_delay_unit: 'minute', max_retries: 1,
     trading_day_only: true, enabled: true,
   })
+  dependencyOptions.value = []
   captureScheduleBaseline()
   dlg.value = true
 }
@@ -269,6 +303,14 @@ function openEdit(j: ScheduledJob) {
     max_retries: j.retry_config?.max_retries ?? 1,
     trading_day_only: j.trading_day_only, enabled: j.enabled,
   })
+  dependencyOptions.value = j.dependency_job_id
+    ? [{
+        id: j.dependency_job_id,
+        name: j.dependency_job_name || j.dependency_job_id,
+        enabled: true,
+      }]
+    : []
+  if (form.trigger_mode === 'dependency') void loadDependencyOptions()
   captureScheduleBaseline()
   dlg.value = true
 }
@@ -580,18 +622,41 @@ async function clearCookie() {
 }
 
 async function load() {
+  const requestId = scheduleListRequest.begin()
   loading.value = true
   loadError.value = ''
   try {
-    const r = await listSchedules()
+    let r = await listSchedules({
+      page: jobPage.value,
+      size: jobPageSize.value,
+      sort_by: sortBy.value,
+      sort_order: sortOrder.value,
+    })
+    if (!scheduleListRequest.isCurrent(requestId)) return
+    const lastPage = Math.max(1, Math.ceil(r.total / jobPageSize.value))
+    if (jobPage.value > lastPage) {
+      jobPage.value = lastPage
+      r = await listSchedules({
+        page: jobPage.value,
+        size: jobPageSize.value,
+        sort_by: sortBy.value,
+        sort_order: sortOrder.value,
+      })
+      if (!scheduleListRequest.isCurrent(requestId)) return
+    }
     jobs.value = r.jobs
+    jobTotal.value = r.total
     taskTypes.value = r.task_types
     qualityIssueTypes.value = r.quality_issue_types?.length
       ? r.quality_issue_types
       : [...ISSUE_TYPES_ACTIVE]
   } catch (error) {
-    loadError.value = getErrorMessage(error, '调度任务加载失败')
-  } finally { loading.value = false }
+    if (scheduleListRequest.isCurrent(requestId)) {
+      loadError.value = getErrorMessage(error, '调度任务加载失败')
+    }
+  } finally {
+    if (scheduleListRequest.isCurrent(requestId)) loading.value = false
+  }
 }
 
 onMounted(async () => {
@@ -641,10 +706,8 @@ const menuPageTitle = useMenuPageTitle()
     </div>
     </template>
 
-    <template #main>
-    <div class="schedule-body">
-      <!-- ① 调度任务列表 -->
-      <el-card shadow="never" class="blk jobs-card">
+    <template #jobTable>
+      <el-card shadow="never" class="blk">
         <template #header>
           <div class="blk-head"><span>调度任务</span>
             <span class="app-caption-text">时间任务到点触发；依赖任务命中上游结果后可靠等待并按配置延迟执行。</span></div>
@@ -664,13 +727,17 @@ const menuPageTitle = useMenuPageTitle()
         />
         <AppDataTable
           v-else
-          :data="sortedJobs"
+          :data="jobs"
+          :max-height="LEADING_WORKBENCH_TABLE_MAX_HEIGHT"
           size="small"
-          class="jobs-tbl"
+          embedded
           :loading="loading"
           :border="tableBorder('jobTable')"
           :default-sort="elementDefaultSort"
+          :pagination="{ currentPage: jobPage, pageSize: jobPageSize, total: jobTotal, pageSizes: PAGE_SIZE_OPTIONS }"
           @sort-change="onSortChange"
+          @page-change="(page: number) => { jobPage = page; load() }"
+          @size-change="changeJobPageSize"
         >
           <AppTableColumn v-if="jobColVisible('name')" label="名称" prop="name" sortable="custom" />
           <AppTableColumn v-if="jobColVisible('taskType')" label="任务类型">
@@ -723,8 +790,9 @@ const menuPageTitle = useMenuPageTitle()
           <template #empty>暂无调度任务，点右上「新建调度任务」添加</template>
         </AppDataTable>
       </el-card>
+    </template>
 
-      <!-- ② 数据源健康 -->
+    <template #sourcePanel>
       <el-card shadow="never" class="blk">
         <template #header>
           <div class="blk-head"><span>数据源健康</span>
@@ -744,8 +812,6 @@ const menuPageTitle = useMenuPageTitle()
           :loading="sourceLoading"
           loading-text="正在加载数据源健康…"
           size="small"
-          class="srcs-tbl"
-          embedded
           :border="tableBorder('sourceTable')"
         >
           <AppTableColumn v-if="sourceColVisible('source')" label="数据源" prop="source">
@@ -794,7 +860,6 @@ const menuPageTitle = useMenuPageTitle()
           <template #empty>点「测试连通」检查行情源与板块源可达性</template>
         </AppDataTable>
       </el-card>
-    </div>
     </template>
 
     <template #overlays>
@@ -1019,6 +1084,10 @@ const menuPageTitle = useMenuPageTitle()
               data-testid="schedule-dependency-job"
               placeholder="选择上游任务"
               filterable
+              remote
+              :remote-method="loadDependencyOptions"
+              :loading="dependencyOptionsLoading"
+              :reserve-keyword="false"
               style="width: 100%"
             >
               <el-option
@@ -1131,26 +1200,8 @@ const menuPageTitle = useMenuPageTitle()
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .page-head-actions { display: flex; gap: var(--app-space-2); align-items: center; }
-/* 填满 LayoutHost 的条件成长区；放不下时整区内滚（兜底阶梯第 3 级） */
-.schedule-body { flex: 1 1 auto; overflow: auto; min-height: 0; display: flex; flex-direction: column; }
 .delay-unit-select { width: 96px; margin-left: var(--space-2); }
 .warn-hint { color: var(--app-warning-text); }
-.jobs-card {
-  flex: 1 1 auto;
-  min-height: 300px;
-  margin-bottom: 16px;
-  display: flex;
-  flex-direction: column;
-}
-.jobs-card :deep(.el-card__body) {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.jobs-tbl { width: 100%; flex: 1 1 auto; min-height: 0; }
-.blk { margin-bottom: 16px; }
-.blk:last-child { margin-bottom: 0; }
 .blk-head { display: flex; justify-content: space-between; align-items: center; }
 .form-section-divider { margin: var(--app-space-4) 0 14px; }
 .src-status { display: inline-flex; align-items: center; gap: var(--app-space-control-gap); }

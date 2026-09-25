@@ -814,13 +814,28 @@ class ScheduledJobIn(BaseModel):
 
 
 @router.get("/schedules", response_model=ApiResponse, dependencies=_SCHEDULE)
-def schedules_list() -> ApiResponse:
+def schedules_list(page: int = 1, size: int = 20,
+                   sort_by: Literal["name", "freq"] = "name",
+                   sort_order: Literal["asc", "desc"] = "asc") -> ApiResponse:
     """定时任务列表（含频率人话、下次触发、最近触发）+ 可调度类型/频率枚举，前端建表单用。"""
     from backend.dataquality.checker import QUALITY_ISSUE_TYPES
     from backend.scheduler.scheduler import SCHEDULABLE_TASK_TYPES, ScheduledJobService
-    return ok({"jobs": ScheduledJobService().list(),
-               "task_types": list(SCHEDULABLE_TASK_TYPES),
-               "quality_issue_types": list(QUALITY_ISSUE_TYPES)})
+    result = ScheduledJobService().list_page(
+        page=page, size=size, sort_by=sort_by, sort_order=sort_order,
+    )
+    result.update({
+        "task_types": list(SCHEDULABLE_TASK_TYPES),
+        "quality_issue_types": list(QUALITY_ISSUE_TYPES),
+    })
+    return ok(result)
+
+
+@router.get("/schedules/options", response_model=ApiResponse, dependencies=_SCHEDULE)
+def schedule_options(q: str = "", limit: int = 50) -> ApiResponse:
+    """依赖任务远程选择候选；只返回轻量字段，避免借用分页主表数据。"""
+    from backend.scheduler.scheduler import ScheduledJobService
+
+    return ok({"list": ScheduledJobService().list_options(query=q, limit=limit)})
 
 
 @router.post("/schedules", response_model=ApiResponse, dependencies=_SCHEDULE)

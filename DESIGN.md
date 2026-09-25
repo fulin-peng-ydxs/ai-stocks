@@ -330,7 +330,7 @@ Key Characteristics：
 | `StockGroupBatchActions` | `frontend/src/components/StockGroupBatchActions.vue` | 批量观察、创建分组、加入分组与移出分组 | 无独立系统组件种类；由列表工具区消费 | 个股查询与每日榜单共享批量操作，消费页控制权限与选中集合，组件统一弹窗校验、请求和成功后清空选择；不得在页面复制分组操作流程 |
 | `StockCompareChart` | `frontend/src/components/StockCompareChart.vue` | 多股票前复权序列与可选市场指数的涨跌幅对比折线（对比指数统一共同基期，纯股票间对比各序列从自身首值起算），统一交易日、主题、图例、tooltip、超额收益和缩放 | 无直接系统组件种类；由 `StockAnalysisPanel` 承载 | 只表达股票相对走势，不扩展板块资金流、成员涨跌、领涨股等截面指标；与 `SectorCompareChart` 共同消费 `marketCompareChart.ts` 的序列色、金融涨跌色、tooltip 转义及折线坐标轴/缩放 option 骨架；统一使用显式市场日历；对比指数统一从首个共同有效日期起算并据此计算超额，个别序列上市较晚只缩短基准期、不否决整体，仅连一个共同有效日期都没有时才显示不可比较空态；纯股票间对比时各序列从自身首个有效值起算，上市前留空、停牌期前向延续为 0%，不因个别序列缺起点而否决整体；当前观察线可强化，但所有序列仍须可辨识且不依赖单一颜色 |
 | `SectorCompareChart` | `frontend/src/components/SectorCompareChart.vue` | 多板块连续指数的涨跌幅对比折线、市场指数超额和资金流/成员涨跌截面柱图 | 无直接系统组件种类；由板块行情分析区承载 | 折线与股票对比复用 `marketCompare` 的 N+1、统一交易日、停牌补齐和对比基期算法，并共同消费 `marketCompareChart.ts` 的折线 option 骨架；板块资金流和成员涨跌柱图保留领域私有配置，不并入通用折线组件；资金流、当日涨跌和成员涨跌缺失值保持空值，不得代填 0；页面偏好只消费 `sectors` 页面键，禁止与 `stocks` / `board` 串用默认指标或基准配置 |
-| `AppPagination` | `frontend/src/components/AppPagination.vue` | 列表页统一分页；按自身容器宽度从“总数 + 每页条数 + 页码导航”依次降级为“总数 + 页码导航”和紧凑页码导航，禁止完整分页器反向溢出窄分栏 | 由 `data-table`/`wide-table` 的 `pageSize` 配置间接驱动 | 服务端分页页脚统一复用；页面不得直接使用 `el-pagination` 或复制宽度降级逻辑 |
+| `AppPagination` | `frontend/src/components/AppPagination.vue` | 列表页统一分页；按自身容器宽度从“总数 + 每页条数 + 页码导航”依次降级为“总数 + 页码导航”和紧凑页码导航，禁止完整分页器反向溢出窄分栏 | 由 `data-table`/`wide-table` 的 `pageSize` 配置间接驱动 | 分页页脚统一复用；页面不得直接使用 `el-pagination` 或复制宽度降级逻辑 |
 | `AppFilterSelect` | `frontend/src/components/AppFilterSelect.vue` | 容量自适应选择器，统一列表筛选与紧凑多选编辑 | 无直接系统组件种类 | 默认多选、可搜索、可清空；业务只允许单选时必须传 `multiple=false`，需要创建新选项时显式启用 `allowCreate`；非空候选项恰好全部选中时，优先于标签/数量模式显示 `allSelectedLabel`，默认“全部选中”、可自定义，传空字符串可关闭；多选消费方必须在标签模式声明 `visibleTagCount=1..3`，组件据此同时确定可见标签上限和 `medium / long / wide` 容量档位，未全选且选中项更多时保留对应数量的值并显示 `+N`；只需表达选择规模时使用 `displayMode=count`，未全选时固定显示“已选 N”并使用 `short` 容量，空值仍显示占位文案；两种模式均不得由页面另加宽度 class 或内联宽度覆盖；未显式提供可访问名称时统一继承占位文案；同类筛选和紧凑多选编辑优先复用 |
 | `AppSortControl` | `frontend/src/components/AppSortControl.vue` | 统一“排序字段菜单 + 升降序切换”的紧凑排序交互 | 无直接系统组件种类 | 页面只提供稳定选项、当前字段和方向，不得复制下拉菜单、选中勾选和方向按钮；位于筛选或操作栏时固定作为最后一个控件，空间不足按 DOM 顺序整体换行 |
 | `AppSearchInput` | `frontend/src/components/AppSearchInput.vue` | 列表页关键字搜索输入，统一"输入即防抖查 + 回车/清空立即查" | 无直接系统组件种类 | 关键字输入防抖（默认 300ms，可传 `debounceMs`）后 `@search`，回车/清空立即 `@search`；消费页绑定 `v-model` + `@search`（`@search` = 重置第 1 页 + 加载）。查询触发、重置筛选和手动刷新的通用行为以「按钮与输入 › 查询、重置与刷新」为准。查询防抖编排统一走 `frontend/src/composables/useDebouncedQuery.ts`；关键字字段不得再用裸 `<el-input>` 手写防抖 |
@@ -425,6 +425,7 @@ Key Characteristics：
 
 - 主数据表应作为 `growMain` 占据剩余空间，使用 `height="100%"` 让表体内部滚动；当一个标签页工作区承载多个互斥主表时，由 `tabs` 作为唯一 `growMain`，当前面板内的表体承接滚动。
 - `list` 原型必须且只能有一个顶层 `growMain`；主列表不得使用 `embedded`。
+- 长文档中后方仍有同级内容的局部表格不得独占富余高度；统一使用 `embedded` 并消费 `components/table/tableSizing.ts` 的 `LONG_DOCUMENT_TABLE_MAX_HEIGHT`。纵向混合工作台中，前置主业务表使用 `LEADING_WORKBENCH_TABLE_MAX_HEIGHT`，并通过 slot 的 `minH + idealH` 声明受控收缩范围；末尾表格可由 `section` 作为成长容器，在 `pageRegistry` 声明为唯一 `growMain`，内部表格继续作为嵌套 slot 登记。`VMixedGrow` 只让声明 `idealH` 的前置块收缩，未声明的固定块继续保持自然高度；页面不得复制 `clamp`、视口减法、私有行数换算或用 CSS 模拟成长关系。
 - 页面数据表格统一使用 `AppDataTable + AppTableColumn`。页面不得直接使用原生 `<table>`、`el-table`、`el-table-column`，也不得向列传 `width/min-width`。
 - 列宽采用语义自适应契约：选择、展开、序号等结构列保持稳定窄宽；普通名称使用 `name`，含前置选择/收藏等控件并展示主副信息的对象识别列使用 `entity`；其余列取“语义内容基础宽度”和“表头标签 + 同行元信息 + 排序/筛选控件 + 主内容前置控件”的较大值，并按 8px 网格取整。表格内多选下拉必须按 `filterSelectVisibleTagCount` 或 `filterSelectDisplayMode=count` 计入控件容量和单元格留白，禁止先压窄控件再裁掉标签、`+N` 或“已选 N”。中英文混排使用稳定字符权重估算，不做运行时 DOM/数据采样，避免数据变化触发列宽跳动；异常长表头受角色上限保护，真实截断时由全局省略提示展示原文（超长内容按统一上限截断）。容器有余量时由 Element Plus `fit` 按最小宽度权重分配并铺满，空间不足时保持最小可读宽度并由表体横向滚动。
 - 横向滚动与单元格溢出是两套独立机制：前者只由所有列的语义最小宽度总和是否超过表格可视宽度决定；后者由 `AppDataTable` 递归比较单元格内文字、标签和嵌套结构的真实矩形是否越过该单元格边界。不得使用包含透明 padding / margin 的 `scrollWidth` 制造虚假省略号。省略号只有一种视觉规则：必须由实际承载文字的内容容器通过原生 `text-overflow: ellipsis` 绘制在自身末尾；表格只负责检测真实遮挡和触发统一悬浮，不得使用渐隐遮罩、伪元素或独立字符在单元格外层补画省略号。表格内标签、评分胶囊及其它有边界的复合内容必须在自身内部收缩，禁止切断背景、边框、文字或数字。全站省略原文统一由 `AppOverflowTooltipHost` 自动承接，只在真实截断时显示，并遵守统一的宽度与高度上限；页面不得传列级 `show-overflow-tooltip` 或自行维护截断 tooltip。操作列及动作组属于命令交互边界，不接入普通文本省略悬浮，也不得把隐藏测量副本纳入提示内容；结构列与操作列继续使用各自专用契约。
@@ -435,7 +436,7 @@ Key Characteristics：
 - 表头保持稳定，分页、批量操作和关键筛选不被表体滚动带走。
 - 不使用隔行变色作为默认识别手段；当前全局样式会取消 stripe 背景。
 - 列宽按信息类型分配：编号、状态、日期、操作列稳定窄列；名称、标题、描述、备注更宽；数字列保持易比较。
-- `data-table` / `wide-table` 的稳定字段只要支持排序，就必须同时支持列头直接排序和设置抽屉默认排序；分页表优先服务端排序，纯本地完整数据表可用 Element Plus 本地排序。
+- `data-table` / `wide-table` 的稳定字段只要支持排序，就必须同时支持列头直接排序和设置抽屉默认排序；分页表默认服务端分页与排序。只有具备明确规模上限、一次性返回完整结果的小集合才允许客户端分页与排序，且必须先对完整集合排序、再截取当前页，禁止只重排当前页。
 - 多级排序统一按“全量一级、页内二级”解释：默认或用户选择的一级字段必须由接口对完整结果集排序；只在当前已加载页提供的其它候选字段属于二级排序，只能在一级值相同的分组内稳定排序，并在二级值相同时保留接口顺序。纯本地完整结果可在本地完成全部层级；禁止把打乱接口一级顺序的当前页排序展示成全量排序。存在业务分层的视图以分层键作为不可破坏的一级边界，例如连板天梯固定按连板高度分层，卡片自定义排序只作用于各层内部。
 - `pageRegistry.componentMeta[slot].sortFields` 是可交互排序字段和默认排序候选的单一事实源；登记后该 slot 自动继承 `defaultSort`，页面表格必须把对应列接入 `sortable` / `@sort-change`。**反向契约**：页面列头可排序的字段必须登记进 `sortFields`，二者双向一致，由 `pageRegistry.spec.ts` 契约测试强制拦截漂移。
 - 操作列、展开列、按钮列、开关列、多值标签组合列、长说明/详情文本列默认不排序；若业务需要排序，必须明确映射到稳定字段并登记到 `sortFields`。
@@ -670,7 +671,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 主数据区优先占据可用空间，表格表体内滚，分页和关键操作稳定展示。
 - 所有滚动祖先保持 `min-height: 0`。
 - 页面和主要组件必须声明 `ready / loading / empty / error` 四态处理；空态、错误态和加载态不得用彼此替代。
-- 列表页分页/排序走服务端；筛选变更自动触发；多选跨分页/搜索累积。
+- 列表页分页/排序默认走服务端；具备明确规模上限且一次性完整加载的小集合可采用客户端分页，但必须先全量排序再切页；筛选变更自动触发；多选跨分页/搜索累积。
 - 标准命令、纯图标操作、列表筛选、关键字搜索和日期选择必须复用 §4 登记的统一控件入口；具体 props、状态、事件和降级行为以“真实复用组件清单”、组件类型与测试为准，页面不得私建平行实现。
 - 页面主体字体、字号、行高、字重和间距必须优先消费 `global.css` 的 `--app-font-*`、`--app-line-height-*`、`--app-space-*` token 或 `.app-*` 语义类；新增 px 值必须属于文档允许的局部特例。
 - 说明性文字必须使用 §3 定义的统一说明入口，不在页面堆放长文或复制私有提示结构；具体承载方式以真实复用组件清单为准。
@@ -814,7 +815,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `screen` | `ScreenView`（策略筛选） | `master-detail` | `density` | action:`filter-bar` / main:`master-detail` / main:`wide-table` / main:`chart` |
 | `stocks` | `StocksView`（个股查询） | `master-detail` | `density` | action:`filter-bar` / main:`master-detail` / nested:`wide-table` / nested:`wide-table` / nested:`chart` / footer |
 | `data-quality` | `QualityView`（数据质量） | `list` | `density` | action:`filter-bar` / main:`data-table` |
-| `data-schedule` | `ScheduleView`（任务调度） | `detail` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / nested:`data-table` / overlay:`detail` |
+| `data-schedule` | `ScheduleView`（任务调度） | `detail` | `density` | action:`toolbar` / main:`data-table` / main:`section(growMain)` / nested:`data-table` / overlay:`detail` |
 | `data-ingest` | `IngestView`（数据采集） | `workbench` | `density` | action:`toolbar` / main:`section` / main:`tabs(growMain)` / nested:`data-table` / nested:`data-table` / overlay:`form` / overlay:`form` / overlay:`detail` |
 | `data-overview` | `OverviewView`（数据概览） | `workbench` | `density` | action:`toolbar` / main:`kpi-grid` / main:`stat-strip` / main:`tabs` / nested:`wide-table` / nested:`data-table` |
 | `backtest` | `BacktestView`（策略回测） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / nested:`chart` |

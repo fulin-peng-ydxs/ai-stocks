@@ -98,6 +98,7 @@ import { hasPermission } from '@/utils/permission'
 import { confirmProfileVisibilityReduction } from '@/utils/assetVisibility'
 import type { AppRowAction } from '@/components/rowActions'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
+import { LONG_DOCUMENT_TABLE_MAX_HEIGHT } from '@/components/table/tableSizing'
 
 const settingsOpen = ref(false)
 const route = useRoute()
@@ -667,8 +668,6 @@ const curVersion = ref<number | null>(null)
 const editId = ref('')
 const editName = ref('')
 const items = ref<ScoreItem[]>([])
-// 长文档中的可增长编辑表只在少量行时自然撑高，超出可读区后由表体内部滚动。
-const SCORE_ITEM_TABLE_MAX_HEIGHT = 'clamp(320px, 42cqh, 440px)'
 const includeSt = ref(true)
 const saving = ref(false)
 const visibilitySaving = ref(false)
@@ -1741,7 +1740,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 
             <AppDataTable
               :data="items"
-              :max-height="SCORE_ITEM_TABLE_MAX_HEIGHT"
+              :max-height="LONG_DOCUMENT_TABLE_MAX_HEIGHT"
               size="small"
               :border="tableBorder('scoreItems')"
               class="item-table"

@@ -100,6 +100,39 @@ def test_scheduled_job_crud():
         assert svc.list() == []
 
 
+def test_scheduled_job_server_pagination_sort_and_options():
+    """调度主表在存储层分页排序；依赖候选使用独立轻量查询。"""
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        svc = ScheduledJobService(c)
+        for name, freq_type, freq_config in (
+            ("C周任务", "weekly", {"weekdays": [1, 3], "time": "09:00"}),
+            ("B日任务乙", "daily", {"time": "15:00"}),
+            ("D月任务", "monthly", {"day": 2, "time": "08:00"}),
+            ("A日任务甲", "daily", {"time": "09:00"}),
+            ("ECron任务", "cron", {"cron": "0 8 * * 1-5"}),
+        ):
+            svc.create(
+                name=name, task_type="verify", params={}, freq_type=freq_type,
+                freq_config=freq_config, trading_day_only=False, enabled=False,
+            )
+
+        first = svc.list_page(page=1, size=2, sort_by="name", sort_order="asc")
+        second = svc.list_page(page=2, size=2, sort_by="name", sort_order="asc")
+        assert first["total"] == 5 and first["page"] == 1 and first["size"] == 2
+        assert [row["name"] for row in first["jobs"]] == ["A日任务甲", "B日任务乙"]
+        assert [row["name"] for row in second["jobs"]] == ["C周任务", "D月任务"]
+
+        by_frequency = svc.list_page(page=1, size=5, sort_by="freq", sort_order="asc")
+        assert [row["name"] for row in by_frequency["jobs"]] == [
+            "A日任务甲", "B日任务乙", "C周任务", "D月任务", "ECron任务",
+        ]
+        assert svc.list_options(query="日任务", limit=10) == [
+            {"id": by_frequency["jobs"][0]["id"], "name": "A日任务甲", "enabled": False},
+            {"id": by_frequency["jobs"][1]["id"], "name": "B日任务乙", "enabled": False},
+        ]
+
+
 def test_scheduled_dependency_validation_and_cycle_rejected():
     """依赖任务只选一个上游，普通关系拒绝环路，引用中的上游不能删除。"""
     with DuckDBClient(db_path=":memory:") as c:

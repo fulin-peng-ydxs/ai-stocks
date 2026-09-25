@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import {
@@ -696,24 +696,26 @@ describe('页面注册表完整性', () => {
     expect([...components].sort()).toEqual(['InsidePair', 'InsideTable'])
   })
 
-  it('DESIGN 核心真实组件登记必须指向同名运行时 Vue 文件', () => {
+  it('DESIGN 核心真实组件登记必须指向同名运行时组件文件', () => {
     const errors: string[] = []
     for (const row of coreComponentRows(DESIGN_MD)) {
-      const vuePaths = row.paths.filter((path) => path.endsWith('.vue'))
-      if (row.names.length !== vuePaths.length) {
-        errors.push(`${row.names.join('/')} 的组件名与路径数量不一致`)
-        continue
-      }
+      const runtimePaths = row.names.map((name) => row.paths.find((path) => {
+        const extension = extname(path)
+        return ['.vue', '.ts'].includes(extension) && basename(path, extension) === name
+      }))
       row.names.forEach((name, index) => {
-        const path = vuePaths[index]!
-        if (!/^frontend\/src\/(components|layout\/components)\/.+\.vue$/.test(path)) {
+        const path = runtimePaths[index]
+        if (!path) {
+          errors.push(`${name} 缺少同名运行时组件文件`)
+          return
+        }
+        if (!/^frontend\/src\/(components|layout\/components)\/.+\.(vue|ts)$/.test(path)) {
           errors.push(`${name} 路径不属于真实复用组件目录: ${path}`)
           return
         }
-        if (basename(path, '.vue') !== name) errors.push(`${name} 与文件名不一致: ${path}`)
         if (!existsSync(new URL(`../../../../${path}`, import.meta.url))) errors.push(`${name} 文件不存在: ${path}`)
       })
-      for (const path of row.paths.filter((candidate) => !candidate.endsWith('.vue'))) {
+      for (const path of row.paths.filter((candidate) => !runtimePaths.includes(candidate))) {
         if (!path.startsWith('frontend/src/') || !existsSync(new URL(`../../../../${path}`, import.meta.url))) {
           errors.push(`${row.names.join('/')} 的辅助路径不存在: ${path}`)
         }
@@ -1007,7 +1009,19 @@ describe('组件消费关系与配置一致性（P4）', () => {
     )
     expect(rankedWorkbenchSource).toContain("heightMode: 'adaptive'")
     expect(sourceForPage('config-score'))
-      .toContain(':max-height="SCORE_ITEM_TABLE_MAX_HEIGHT"')
+      .toContain(':max-height="LONG_DOCUMENT_TABLE_MAX_HEIGHT"')
+    expect(sourceForPage('data-schedule'))
+      .toContain(':max-height="LEADING_WORKBENCH_TABLE_MAX_HEIGHT"')
+    expect(sourceForPage('data-schedule'))
+      .toMatch(/<AppDataTable[\s\S]*?:data="jobs"[\s\S]*?embedded[\s\S]*?>/)
+    expect(sourceForPage('data-schedule'))
+      .toContain(':pagination="{ currentPage: jobPage, pageSize: jobPageSize, total: jobTotal, pageSizes: PAGE_SIZE_OPTIONS }"')
+    expect(sourceForPage('data-schedule'))
+      .toMatch(/listSchedules\(\{[\s\S]*page: jobPage\.value,[\s\S]*size: jobPageSize\.value,[\s\S]*sort_by: sortBy\.value,[\s\S]*sort_order: sortOrder\.value/)
+    expect(getPageEntry('data-schedule')!.layout.slots.find((slot) => slot.id === 'jobTable'))
+      .toMatchObject({ minH: 300, idealH: 960, config: { pagination: true, pageSize: 20 } })
+    expect(getPageEntry('data-schedule')!.layout.slots.find((slot) => slot.id === 'sourcePanel'))
+      .toMatchObject({ component: 'section', growMain: true, minH: 200 })
     expect(sourceForPage('config-score')).not.toContain('height-mode=')
     expect(sourceForPage('screen')).not.toContain('height-mode=')
   })

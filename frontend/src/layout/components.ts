@@ -68,11 +68,11 @@ export const COMPONENT_CATALOG: Record<ComponentKind, ComponentMeta> = {
   section: meta('section', {
     category: 'structure',
     label: '内容分区',
-    description: '页面内的语义分区，适合承载一组相关组件。',
+    description: '页面内的语义分区，适合承载一组相关组件，也可作为内部主组件的成长容器。',
     minW: 280,
     minH: 120,
     defaultScroll: 'none',
-    canGrowMain: false,
+    canGrowMain: true,
     reflowable: true,
     configCapabilities: [
       'title',

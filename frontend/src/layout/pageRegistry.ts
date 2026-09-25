@@ -22,6 +22,7 @@ import {
 import { createDefaultStockChartPreferences } from '@/composables/useStockChartPreferences'
 import { createDefaultStockAnalysisPreferences } from '@/composables/useStockAnalysisSession'
 import { createDefaultSectorAnalysisPreferences } from '@/composables/useSectorAnalysisPreferences'
+import { DEFAULT_PAGE_SIZE } from '@/constants/pagination'
 import { MARKET_WORKSPACE_MIN_HEIGHT } from './marketWorkspaceSizing'
 
 /** 页面响应式策略（plan.md §14.3）。受控命名，不等于自由编辑断点。 */
@@ -1106,9 +1107,9 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
-        { id: 'body', component: 'section', region: 'main', order: 1 },
-        { id: 'jobTable', component: 'data-table', region: 'main', parentId: 'body', label: '定时任务', order: 2, config: { pagination: false, defaultSort: 'name:asc' } },
-        { id: 'sourceTable', component: 'data-table', region: 'main', parentId: 'body', label: '数据源健康', order: 3, config: { pagination: false } },
+        { id: 'jobTable', component: 'data-table', region: 'main', minH: 300, idealH: 960, label: '定时任务', order: 1, config: { pagination: true, pageSize: DEFAULT_PAGE_SIZE, defaultSort: 'name:asc' } },
+        { id: 'sourcePanel', component: 'section', region: 'main', growMain: true, minH: 200, label: '数据源健康', order: 2 },
+        { id: 'sourceTable', component: 'data-table', region: 'main', parentId: 'sourcePanel', label: '数据源健康表', order: 1, config: { pagination: false } },
         { id: 'triggerEvents', component: 'detail', region: 'overlay', label: '触发记录抽屉', order: 4 },
       ],
       editable: [densityKnob()],
