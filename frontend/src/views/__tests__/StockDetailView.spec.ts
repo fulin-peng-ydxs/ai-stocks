@@ -840,6 +840,16 @@ describe('StockDetailView 三图数据协调', () => {
     const summary = wrapper.get('[data-testid="stock-latest-quote"]').text()
     expect(summary).toContain('9.50:up')
     expect(summary).toContain('开盘:9.40:neutral')
+    expect(summary).toContain('涨跌幅:+1.06%:up')
+    expect(summary).toContain('振幅:5.32%:neutral')
+    expect(summary).toContain('成交量:1000手:neutral')
+    expect(summary).toContain('成交额:100万:neutral')
+    const headerMetrics = wrapper.getComponent({ name: 'StockQuoteSummary' })
+      .props('summary').metrics
+    expect(headerMetrics.slice(8, 12).map((item: { label: string }) => item.label))
+      .toEqual(['总市值', '流通市值', '总股本', '流通股'])
+    expect(headerMetrics.slice(12).map((item: { label: string }) => item.label))
+      .toEqual(['量比', '市盈率'])
     expect(wrapper.text()).not.toContain('行情 2026-07-22')
 
     await wrapper.get('[data-testid="activate-measurement-summary"]').trigger('click')

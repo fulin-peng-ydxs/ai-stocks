@@ -52,16 +52,13 @@ import { MACD_INDICATOR_FIELDS } from '@/components/stock-chart/indicatorFields'
 import StockIntradayDialog from '@/components/stock-chart/StockIntradayDialog.vue'
 import StockQuoteSummary from '@/components/stock-chart/StockQuoteSummary.vue'
 import {
-  formatAmount,
-  formatChartNumber,
+  buildKlineQuoteSummary,
   formatShares,
-  priceDirectionTone,
   stockVolumeRatioAt,
 } from '@/components/stock-chart/chartUtils'
 import type {
   StockQuoteSummaryModel,
   StockQuoteSupplement,
-  StockQuoteTone,
 } from '@/components/stock-chart/stockQuoteSummary'
 import type { MacdPanelState } from '@/components/stock-chart/workspaceOptions'
 import { useStockSet } from '@/stores/stockSet'
@@ -354,19 +351,6 @@ const chartLookback = computed(() => viewDays.value >= 99999 ? 6000 : Math.max(v
 // 展示用：按选项切末尾 N 根；热身用：剩余部分仅参与 MA 计算不渲染
 const displayBars = computed(() => viewDays.value >= 99999 ? bars.value : bars.value.slice(-viewDays.value))
 const warmupBars = computed(() => viewDays.value >= 99999 ? [] : bars.value.slice(0, -viewDays.value || undefined))
-const latestPct = computed(() => {
-  const b = chartActiveBar.value ?? quoteSummaryData.value
-  if (b?.close == null || !b.pre_close || b.pre_close <= 0) return null
-  return ((b.close / b.pre_close) - 1) * 100
-})
-const latestChange = computed(() => {
-  const b = chartActiveBar.value ?? quoteSummaryData.value
-  if (b?.close == null || b.pre_close == null) return null
-  return b.close - b.pre_close
-})
-const quoteTone = computed<StockQuoteTone>(() => (
-  latestPct.value == null || latestPct.value === 0 ? 'neutral' : latestPct.value > 0 ? 'up' : 'down'
-))
 const headerSummary = computed<StockQuoteSummaryModel | null>(() => {
   const quote = quoteSummaryData.value
   if (!quote) return null
@@ -374,55 +358,28 @@ const headerSummary = computed<StockQuoteSummaryModel | null>(() => {
   const close = bar?.close ?? quote.close
   const preClose = bar?.pre_close ?? quote.pre_close
   const volumeRatio = bar ? stockVolumeRatioAt(bars.value, bar.date) : quote.volume_ratio
-  return {
-    hero: {
-      label: '',
-      value: formatChartNumber(close, 2, '—'),
-      tone: quoteTone.value,
-      details: [
-        {
-          label: '涨跌额',
-          value: latestChange.value == null
-            ? '—'
-            : `${latestChange.value > 0 ? '+' : ''}${latestChange.value.toFixed(2)}`,
-          tone: quoteTone.value,
-        },
-        { label: '涨跌幅', value: fmtPct(latestPct.value), tone: quoteTone.value },
-      ],
-    },
-    rowsPerColumn: 4,
+  return buildKlineQuoteSummary({
+    date: bar?.date ?? quote.trade_date,
+    open: bar?.open ?? quote.open,
+    high: bar?.high ?? quote.high,
+    low: bar?.low ?? quote.low,
+    close,
+    preClose,
+    volume: bar?.volume ?? quote.volume,
+    amount: bar?.amount ?? quote.amount,
+    turnoverRate: bar?.turnover_rate ?? quote.turnover_rate,
+  }, {
+    showChangeDetail: true,
     supplement: chartMeasurementSummary.value,
-    metrics: [
-      {
-        label: '开盘',
-        value: formatChartNumber(bar?.open ?? quote.open, 2, '—'),
-        tone: priceDirectionTone(bar?.open ?? quote.open, preClose),
-      },
-      {
-        label: '最高',
-        value: formatChartNumber(bar?.high ?? quote.high, 2, '—'),
-        tone: priceDirectionTone(bar?.high ?? quote.high, preClose),
-      },
-      {
-        label: '最低',
-        value: formatChartNumber(bar?.low ?? quote.low, 2, '—'),
-        tone: priceDirectionTone(bar?.low ?? quote.low, preClose),
-      },
-      { label: '量比', value: volumeRatio == null ? '—' : volumeRatio.toFixed(2) },
+    additionalMetrics: [
       { label: '总市值', value: formatCompactMoneyYuan(quote.total_mv) },
       { label: '流通市值', value: formatCompactMoneyYuan(quote.float_mv) },
-      { label: '市盈率', value: '—' },
-      {
-        label: '换手率',
-        value: (bar?.turnover_rate ?? quote.turnover_rate) == null
-          ? '—'
-          : `${(bar?.turnover_rate ?? quote.turnover_rate)!.toFixed(2)}%`,
-      },
-      { label: '成交额', value: formatAmount(bar?.amount ?? quote.amount, '—') },
-      { label: '流通股', value: formatShares(quote.float_share, '—') },
       { label: '总股本', value: formatShares(quote.total_share, '—') },
+      { label: '流通股', value: formatShares(quote.float_share, '—') },
+      { label: '量比', value: volumeRatio == null ? '—' : volumeRatio.toFixed(2) },
+      { label: '市盈率', value: quote.pe_ttm == null ? '—' : quote.pe_ttm.toFixed(2) },
     ],
-  }
+  })
 })
 
 // 个股详情页展示的关键指标（取最新一日）
@@ -486,10 +443,6 @@ function fmt(v: unknown): string {
   if (typeof v === 'boolean') return v ? '是' : '否'
   if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(2)
   return String(v)
-}
-function fmtPct(v: number | null | undefined): string {
-  if (v === null || v === undefined) return '--'
-  return (v > 0 ? '+' : '') + v.toFixed(2) + '%'
 }
 // ── 买卖指标方案评估（v2.0：替代固定买点引擎）──
 // R3/R5/R7/R10：方案选择统一走 AssetProfileSelect——下拉只加载「我的」source=mine 纯 owner，

@@ -7,6 +7,8 @@ import {
 } from '@/components/chartTheme'
 import {
   stockQuoteSummaryHtml,
+  type StockQuoteMetric,
+  type StockQuoteSummaryModel,
   type StockQuoteSupplement,
   type StockQuoteTone,
 } from './stockQuoteSummary'
@@ -135,8 +137,8 @@ export function formatAmount(yuan: number | null | undefined, empty = '--'): str
   return formatMoney(yuan, { digits: 0, empty })
 }
 
-export function formatVolume(shares: number | null | undefined): string {
-  if (shares == null || !Number.isFinite(shares)) return '--'
+export function formatVolume(shares: number | null | undefined, empty = '--'): string {
+  if (shares == null || !Number.isFinite(shares)) return empty
   const lots = shares / 100
   if (lots >= 1e8) return `${(lots / 1e8).toFixed(2)}亿手`
   if (lots >= 1e4) return `${(lots / 1e4).toFixed(2)}万手`
@@ -339,31 +341,106 @@ export function priceDirectionTone(
   return value > reference ? 'up' : 'down'
 }
 
-/** K线详情统一格式：日期单独成行，行情字段按每列三项横向排布。 */
+export interface KlineQuoteSnapshot {
+  date?: string | null
+  open: number | null | undefined
+  high: number | null | undefined
+  low: number | null | undefined
+  close: number | null | undefined
+  preClose: number | null | undefined
+  volume: number | null | undefined
+  amount: number | null | undefined
+  turnoverRate: number | null | undefined
+}
+
+export interface KlineQuoteSummaryOptions {
+  showTime?: boolean
+  showChangeDetail?: boolean
+  additionalMetrics?: StockQuoteMetric[]
+  supplement?: StockQuoteSupplement | null
+}
+
+/** K 线浮层与详情页头共用的单根行情字段、名称、顺序和格式。 */
+export function buildKlineQuoteSummary(
+  quote: KlineQuoteSnapshot,
+  options: KlineQuoteSummaryOptions = {},
+): StockQuoteSummaryModel {
+  const empty = '—'
+  const reference = quote.preClose != null && quote.preClose > 0 ? quote.preClose : null
+  const change = quote.close != null && quote.preClose != null ? quote.close - quote.preClose : null
+  const changeRate = quote.close != null && reference != null
+    ? ((quote.close - reference) / reference) * 100
+    : null
+  const amplitude = quote.high != null && quote.low != null && reference != null
+    ? ((quote.high - quote.low) / reference) * 100
+    : null
+  const tone: StockQuoteTone = changeRate == null || changeRate === 0
+    ? 'neutral'
+    : changeRate > 0 ? 'up' : 'down'
+  const formatSignedRate = (value: number | null): string => (
+    value == null ? empty : `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
+  )
+
+  return {
+    ...(options.showTime && quote.date ? { time: quote.date } : {}),
+    hero: {
+      label: '',
+      value: formatChartNumber(quote.close, 2, empty),
+      tone,
+      ...(options.showChangeDetail ? {
+        details: [{
+          label: '涨跌额',
+          value: change == null ? empty : `${change > 0 ? '+' : ''}${change.toFixed(2)}`,
+          tone,
+        }],
+      } : {}),
+    },
+    rowsPerColumn: 4,
+    supplement: options.supplement,
+    metrics: [
+      {
+        label: '开盘',
+        value: formatChartNumber(quote.open, 2, empty),
+        tone: priceDirectionTone(quote.open, quote.preClose),
+      },
+      {
+        label: '最高',
+        value: formatChartNumber(quote.high, 2, empty),
+        tone: priceDirectionTone(quote.high, quote.preClose),
+      },
+      {
+        label: '最低',
+        value: formatChartNumber(quote.low, 2, empty),
+        tone: priceDirectionTone(quote.low, quote.preClose),
+      },
+      { label: '涨跌幅', value: formatSignedRate(changeRate), tone },
+      { label: '振幅', value: amplitude == null ? empty : `${amplitude.toFixed(2)}%` },
+      {
+        label: '换手率',
+        value: quote.turnoverRate == null ? empty : `${quote.turnoverRate.toFixed(2)}%`,
+      },
+      { label: '成交量', value: formatVolume(quote.volume, empty) },
+      { label: '成交额', value: formatAmount(quote.amount, empty) },
+      ...(options.additionalMetrics ?? []),
+    ],
+  }
+}
+
+/** K线详情统一格式：日期单独成行，行情字段按每列四项横向排布。 */
 export function klineTooltipHtml(
   bar: Bar,
   palette: KlineTooltipPalette,
   supplement?: StockQuoteSupplement | null,
 ): string {
-  const pct = bar.pre_close ? ((bar.close - bar.pre_close) / bar.pre_close) * 100 : null
-  const amplitude = bar.pre_close ? ((bar.high - bar.low) / bar.pre_close) * 100 : null
-  const pctText = pct == null ? '--' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
-
-  const tone: StockQuoteTone = pct == null || pct === 0 ? 'neutral' : pct > 0 ? 'up' : 'down'
-  return stockQuoteSummaryHtml({
-    time: bar.date,
-    hero: { label: '', value: formatChartNumber(bar.close), tone },
-    rowsPerColumn: 4,
-    supplement,
-    metrics: [
-      { label: '开盘', value: formatChartNumber(bar.open), tone: priceDirectionTone(bar.open, bar.pre_close) },
-      { label: '最高', value: formatChartNumber(bar.high), tone: priceDirectionTone(bar.high, bar.pre_close) },
-      { label: '最低', value: formatChartNumber(bar.low), tone: priceDirectionTone(bar.low, bar.pre_close) },
-      { label: '涨幅', value: pctText, tone },
-      { label: '振幅', value: amplitude == null ? '--' : `${amplitude.toFixed(2)}%` },
-      { label: '换手率', value: bar.turnover_rate == null ? '--' : `${bar.turnover_rate.toFixed(2)}%` },
-      { label: '成交量', value: formatVolume(bar.volume) },
-      { label: '成交额', value: formatAmount(bar.amount) },
-    ],
-  }, { ...palette, border: palette.tooltipBorder })
+  return stockQuoteSummaryHtml(buildKlineQuoteSummary({
+    date: bar.date,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    preClose: bar.pre_close,
+    volume: bar.volume,
+    amount: bar.amount,
+    turnoverRate: bar.turnover_rate,
+  }, { showTime: true, supplement }), { ...palette, border: palette.tooltipBorder })
 }

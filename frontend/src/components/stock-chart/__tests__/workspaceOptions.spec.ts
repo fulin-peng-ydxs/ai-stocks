@@ -20,6 +20,7 @@ import {
   volumeMetrics,
 } from '@/components/stock-chart/workspaceOptions'
 import {
+  buildKlineQuoteSummary,
   KLINE_MA_DEFINITIONS,
   obstructionAwareTooltipPosition,
   stockChartTheme,
@@ -71,6 +72,39 @@ describe('stockVolumeRatioAt', () => {
 
     expect(stockVolumeRatioAt(source, '2026-07-07')).toBe(2)
     expect(stockVolumeRatioAt(source, '2026-07-06')).toBeNull()
+  })
+})
+
+describe('buildKlineQuoteSummary', () => {
+  it('统一浮层与页头基础行情的字段、精度、单位和空值', () => {
+    const summary = buildKlineQuoteSummary({
+      date: '2026-07-22',
+      open: 9.8,
+      high: 10.4,
+      low: 9.5,
+      close: 10,
+      preClose: 9.9,
+      volume: 100_000,
+      amount: null,
+      turnoverRate: 1,
+    }, { showTime: true, showChangeDetail: true })
+
+    expect(summary.time).toBe('2026-07-22')
+    expect(summary.hero).toMatchObject({
+      value: '10.00',
+      tone: 'up',
+      details: [{ label: '涨跌额', value: '+0.10', tone: 'up' }],
+    })
+    expect(summary.metrics).toEqual([
+      { label: '开盘', value: '9.80', tone: 'down' },
+      { label: '最高', value: '10.40', tone: 'up' },
+      { label: '最低', value: '9.50', tone: 'down' },
+      { label: '涨跌幅', value: '+1.01%', tone: 'up' },
+      { label: '振幅', value: '9.09%' },
+      { label: '换手率', value: '1.00%' },
+      { label: '成交量', value: '1000手' },
+      { label: '成交额', value: '—' },
+    ])
   })
 })
 
@@ -502,7 +536,7 @@ describe('workspaceOptions', () => {
     expect(content).toContain('font-variant-numeric:tabular-nums')
     expect(content).toContain('font-size:calc(18px * var(--app-display-scale, 1))')
     expect(content).toContain('border-right:1px solid #ddd')
-    for (const field of ['时间', '开盘', '最高', '最低', '涨幅', '振幅', '成交量', '成交额', '换手率']) {
+    for (const field of ['时间', '开盘', '最高', '最低', '涨跌幅', '振幅', '成交量', '成交额', '换手率']) {
       expect(content).toContain(`>${field}<`)
     }
     expect(content).not.toContain('>收盘<')
