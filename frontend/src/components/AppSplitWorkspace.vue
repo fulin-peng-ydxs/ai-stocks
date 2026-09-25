@@ -2,7 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useAttrs, watch } from 'vue'
 import PageDrawer from '@/components/PageDrawer.vue'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
-import { viewportDeltaToLayoutPixels } from '@/utils/displayScaleGeometry'
+import { elementVisualScale, viewportDeltaToLayoutPixels } from '@/utils/displayScaleGeometry'
+import { createLatestAnimationFrame } from '@/utils/latestAnimationFrame'
 import { adaptiveWorkspaceHeight } from '@/layout/marketWorkspaceSizing'
 import {
   closestMasterDetailRatioProfile,
@@ -153,7 +154,18 @@ let resizeObserver: ResizeObserver | null = null
 let adaptiveResizeObserver: ResizeObserver | null = null
 let adaptiveScrollport: HTMLElement | null = null
 let adaptiveFrame = 0
-let drag: { pointerId: number; startX: number; startWidth: number } | null = null
+let drag: {
+  pointerId: number
+  startX: number
+  startWidth: number
+  visualScale: number
+} | null = null
+
+const primaryWidthFrame = createLatestAnimationFrame<number>((value) => {
+  sessionAdjusted.value = true
+  sessionAdjustedAtWidth.value = workspaceWidth.value
+  primaryWidth.value = clampSessionWidth(value)
+})
 
 function isVerticalScrollport(element: HTMLElement): boolean {
   const overflowY = window.getComputedStyle(element).overflowY
@@ -236,22 +248,19 @@ function updateWorkspaceWidth(): void {
   primaryWidth.value = !sessionAdjusted.value
     ? configuredPrimaryWidth.value
     : clampSessionWidth(primaryWidth.value)
+  // 外部容器或显示器比例在手势期间变化时刷新基准；普通 pointermove 不再读布局。
+  if (drag) drag.visualScale = elementVisualScale(workspaceEl.value, 'x')
 }
 
 function onPointerMove(event: PointerEvent): void {
   if (!drag || event.pointerId !== drag.pointerId) return
-  const layoutDelta = viewportDeltaToLayoutPixels(
-    event.clientX - drag.startX,
-    workspaceEl.value,
-    'x',
-  )
-  sessionAdjusted.value = true
-  sessionAdjustedAtWidth.value = workspaceWidth.value
-  primaryWidth.value = clampSessionWidth(drag.startWidth + layoutDelta)
+  const layoutDelta = (event.clientX - drag.startX) / drag.visualScale
+  primaryWidthFrame.schedule(drag.startWidth + layoutDelta)
 }
 
 function finishDrag(event?: PointerEvent): void {
   if (!drag || (event && event.pointerId !== drag.pointerId)) return
+  primaryWidthFrame.flush()
   drag = null
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', finishDrag)
@@ -261,7 +270,12 @@ function finishDrag(event?: PointerEvent): void {
 
 function startDrag(event: PointerEvent): void {
   if (drag) finishDrag()
-  drag = { pointerId: event.pointerId, startX: event.clientX, startWidth: primaryWidth.value }
+  drag = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startWidth: primaryWidth.value,
+    visualScale: elementVisualScale(workspaceEl.value, 'x'),
+  }
   ;(event.currentTarget as HTMLElement | null)?.setPointerCapture?.(event.pointerId)
   document.body.classList.add('app-split-workspace-is-resizing')
   window.addEventListener('pointermove', onPointerMove)
@@ -323,6 +337,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   finishDrag()
+  primaryWidthFrame.cancel()
   resizeObserver?.disconnect()
   resizeObserver = null
   adaptiveResizeObserver?.disconnect()

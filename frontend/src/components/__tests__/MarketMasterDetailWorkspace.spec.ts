@@ -18,6 +18,17 @@ function pointerEvent(type: string, pointerId: number, clientX: number): Event {
   return event
 }
 
+function captureAnimationFrame() {
+  let callback: FrameRequestCallback | undefined
+  const request = vi.fn((next: FrameRequestCallback) => {
+    callback = next
+    return 1
+  })
+  vi.stubGlobal('requestAnimationFrame', request)
+  vi.stubGlobal('cancelAnimationFrame', vi.fn())
+  return { request, run: () => callback?.(0) }
+}
+
 describe('MarketMasterDetailWorkspace', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -102,6 +113,7 @@ describe('MarketMasterDetailWorkspace', () => {
   })
 
   it('指针拖动按共享比例上限钳制，卸载时清理全局拖动态', async () => {
+    const frame = captureAnimationFrame()
     const originalRect = HTMLElement.prototype.getBoundingClientRect
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1100)
     HTMLElement.prototype.getBoundingClientRect = () => ({ width: 1100 } as DOMRect)
@@ -119,6 +131,8 @@ describe('MarketMasterDetailWorkspace', () => {
     const separator = wrapper.get('[role="separator"]')
     await separator.trigger('pointerdown', { pointerId: 7, clientX: 495 })
     window.dispatchEvent(pointerEvent('pointermove', 7, 900))
+    expect(frame.request).toHaveBeenCalledTimes(1)
+    frame.run()
     await nextTick()
 
     expect(separator.attributes('aria-valuemax')).toBe('770')
@@ -268,6 +282,7 @@ describe('MarketMasterDetailWorkspace', () => {
   })
 
   it('缩放后把视口指针位移换算为布局像素，分隔条始终跟随鼠标', async () => {
+    const frame = captureAnimationFrame()
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(2000)
     vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(2000)
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
@@ -286,6 +301,8 @@ describe('MarketMasterDetailWorkspace', () => {
     const separator = wrapper.get('[role="separator"]')
     await separator.trigger('pointerdown', { pointerId: 8, clientX: 900 })
     window.dispatchEvent(pointerEvent('pointermove', 8, 1000))
+    expect(frame.request).toHaveBeenCalledTimes(1)
+    frame.run()
     await nextTick()
 
     expect(separator.attributes('aria-valuenow')).toBe('1025')

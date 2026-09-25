@@ -22,10 +22,8 @@ import { initVectorEChart } from '@/components/echartsRenderer'
 import type { StockAdjustMode } from '@/composables/useStockAnalysisSession'
 import type { AuxiliaryChartType, ChartType } from '@/composables/useStockChartPreferences'
 import { PAGE_OVERLAY_TARGET } from '@/layout/pageOverlay'
-import {
-  elementVisualScale,
-  viewportDeltaToLayoutPixels,
-} from '@/utils/displayScaleGeometry'
+import { elementVisualScale } from '@/utils/displayScaleGeometry'
+import { createLatestAnimationFrame } from '@/utils/latestAnimationFrame'
 import { formatMarketPercent, marketValueClass } from '@/utils/marketValue'
 import StockChartPanelDivider from './StockChartPanelDivider.vue'
 import StockChartPanelHeader from './StockChartPanelHeader.vue'
@@ -773,6 +771,12 @@ function onWorkspaceResize(): void {
     resizeCharts()
     if (hasReadyVisibleCharts()) activationLoading.value = false
     const nextDisplayScale = elementVisualScale(workspaceEl.value, 'x')
+    if (drag) {
+      // ResizeObserver 已处于布局完成后的读取阶段，可安全刷新跨屏缩放与可用高度基准。
+      drag.visualScale = nextDisplayScale
+      drag.availableHeight = availableHeight()
+      drag.minimumRatios = minimumRatios()
+    }
     if (Math.abs(nextDisplayScale - lastDisplayScale) > 0.001) {
       lastDisplayScale = nextDisplayScale
       panels.value.forEach((panel, index) => {
@@ -877,39 +881,42 @@ interface DragState {
   separatorIndex: number
   startY: number
   startRatios: number[]
+  minimumRatios: number[]
+  availableHeight: number
+  visualScale: number
   committed: boolean
 }
 
 let drag: DragState | null = null
+
+const ratioFrame = createLatestAnimationFrame<{ separatorIndex: number; delta: number }>(
+  ({ separatorIndex, delta }) => { applyRatioChange(separatorIndex, delta) },
+)
 
 function applyRatioChange(separatorIndex: number, delta: number): number[] {
   const next = adjustAdjacentRatios(
     drag?.startRatios ?? ratios.value,
     separatorIndex,
     delta,
-    minimumRatios(),
+    drag?.minimumRatios ?? minimumRatios(),
   )
   liveRatios.value = next
   emit('ratioDraft', [...next])
-  void nextTick(resizeCharts)
   return next
 }
 
 function onPointerMove(event: PointerEvent): void {
   if (!drag || event.pointerId !== drag.pointerId) return
-  const layoutDelta = viewportDeltaToLayoutPixels(
-    event.clientY - drag.startY,
-    workspaceEl.value,
-    'y',
-  )
-  applyRatioChange(
-    drag.separatorIndex,
-    layoutDelta / availableHeight(),
-  )
+  const layoutDelta = (event.clientY - drag.startY) / drag.visualScale
+  ratioFrame.schedule({
+    separatorIndex: drag.separatorIndex,
+    delta: layoutDelta / drag.availableHeight,
+  })
 }
 
 function finishDrag(event?: PointerEvent): void {
   if (!drag || (event && event.pointerId !== drag.pointerId)) return
+  ratioFrame.flush()
   const completed = drag
   drag = null
   window.removeEventListener('pointermove', onPointerMove)
@@ -925,11 +932,15 @@ function finishDrag(event?: PointerEvent): void {
 
 function startDrag(event: PointerEvent, separatorIndex: number): void {
   if (drag) finishDrag()
+  const height = availableHeight()
   drag = {
     pointerId: event.pointerId,
     separatorIndex,
     startY: event.clientY,
     startRatios: [...ratios.value],
+    minimumRatios: minimumRatios(),
+    availableHeight: height,
+    visualScale: elementVisualScale(workspaceEl.value, 'y'),
     committed: false,
   }
   liveRatios.value = [...ratios.value]
@@ -1031,6 +1042,8 @@ watch(
   { deep: true, immediate: true },
 )
 watch(ratios, () => {
+  // 拖动时真实尺寸变化由 ResizeObserver 统一上报并 resize，避免比例 watch 再做一轮。
+  if (drag) return
   void nextTick(onWorkspaceResize)
 }, { deep: true })
 watch(
@@ -1098,6 +1111,7 @@ onBeforeUnmount(() => {
   cancelDeferredActivation()
   window.removeEventListener('resize', onWorkspaceResize)
   if (drag) finishDrag()
+  ratioFrame.cancel()
   reportWorkspaceUnavailable()
   stopObservingResize()
   disposeCharts()

@@ -828,23 +828,43 @@ describe('StockChartWorkspace', () => {
     expect(separator.attributes('aria-valuemax')).toBe('53')
   })
 
-  it('pointermove 只发草稿，pointercancel 作为终态仅提交一次并触发 resize', async () => {
+  it('同帧 pointermove 只应用最新草稿，pointercancel 仅提交一次并由尺寸观察触发 resize', async () => {
     const wrapper = await mountWorkspace()
     const separator = wrapper.find('[role="separator"]')
+    let frameCallback: FrameRequestCallback | undefined
+    const requestFrame = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+      frameCallback = callback
+      return 7
+    })
+    const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => {})
+    echartsMock.instances.forEach((instance) => instance.resize.mockClear())
 
     await separator.trigger('pointerdown', { pointerId: 7, clientY: 100 })
+    window.dispatchEvent(pointerEvent('pointermove', 7, 115))
     window.dispatchEvent(pointerEvent('pointermove', 7, 130))
+    expect(requestFrame).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('ratioDraft')).toBeUndefined()
+
+    frameCallback?.(0)
     await nextTick()
 
     expect(wrapper.emitted('ratioDraft')).toHaveLength(1)
     expect(wrapper.emitted('ratioCommit')).toBeUndefined()
-    expect(echartsMock.instances.some((instance) => instance.resize.mock.calls.length > 0)).toBe(true)
+    const resizeCounts = echartsMock.instances.map((instance) => instance.resize.mock.calls.length)
+
+    ResizeObserverMock.instances[0]?.trigger()
+    await nextTick()
+    echartsMock.instances.forEach((instance, index) => {
+      expect(instance.resize.mock.calls.length).toBe(resizeCounts[index] + 1)
+    })
 
     window.dispatchEvent(pointerEvent('pointercancel', 7, 130))
     window.dispatchEvent(pointerEvent('pointerup', 7, 130))
     await nextTick()
 
     expect(wrapper.emitted('ratioCommit')).toHaveLength(1)
+    requestFrame.mockRestore()
+    cancelFrame.mockRestore()
   })
 
   it('卸载时断开 group、销毁全部实例且不残留拖动监听状态', async () => {

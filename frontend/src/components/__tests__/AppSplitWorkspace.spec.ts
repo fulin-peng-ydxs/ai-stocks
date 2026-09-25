@@ -31,6 +31,7 @@ describe('AppSplitWorkspace', () => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     document.body.innerHTML = ''
+    document.documentElement.style.removeProperty('--app-display-scale')
   })
 
   it('按 65/35 默认比例渲染双栏，并支持键盘调整和双击恢复', async () => {
@@ -54,20 +55,33 @@ describe('AppSplitWorkspace', () => {
   })
 
   it('拖拽分隔条按左右栏最小宽度钳制，并输出当前比例样本', async () => {
+    let frameCallback: FrameRequestCallback | undefined
+    const requestFrame = vi.fn((callback: FrameRequestCallback) => {
+      frameCallback = callback
+      return 3
+    })
+    vi.stubGlobal('requestAnimationFrame', requestFrame)
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    document.documentElement.style.setProperty('--app-display-scale', '0.8')
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200)
     const wrapper = mountWorkspace({ defaultPrimaryRatio: 65 })
     await nextTick()
 
     const separator = wrapper.get('[role="separator"]')
-    await separator.trigger('pointerdown', { pointerId: 3, clientX: 780 })
-    window.dispatchEvent(pointerEvent('pointermove', 3, 1200))
+    await separator.trigger('pointerdown', { pointerId: 3, clientX: 624 })
+    window.dispatchEvent(pointerEvent('pointermove', 3, 650))
+    window.dispatchEvent(pointerEvent('pointermove', 3, 672))
+    expect(requestFrame).toHaveBeenCalledTimes(1)
+    expect(separator.attributes('aria-valuenow')).toBe('780')
+
+    frameCallback?.(0)
     await nextTick()
 
     expect(separator.attributes('aria-valuenow')).toBe('840')
     expect(wrapper.emitted('primaryRatioSampleChange')?.at(-1)).toEqual([
       { width: 1200, ratio: 70, configuredRatio: 65 },
     ])
-    window.dispatchEvent(pointerEvent('pointerup', 3, 1200))
+    window.dispatchEvent(pointerEvent('pointerup', 3, 672))
     expect(document.body.classList.contains('app-split-workspace-is-resizing')).toBe(false)
     wrapper.unmount()
   })
