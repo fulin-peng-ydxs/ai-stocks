@@ -2,7 +2,7 @@
 
 后端分别保存视觉预设与受控的页面、用户覆盖层。页面实际结构仍由前端
 PageLayout 声明提供，后端负责最终守门：schema 版本、路径白名单、类型和值域，
-以及 validate 接口中传入 layout 时的组件存在性和尺寸下限。视觉预设不参与布局合并。
+以及 validate 接口中传入 layout 时的组件存在性、尺寸下限和理想高度关系。视觉预设不参与布局合并。
 """
 
 from __future__ import annotations
@@ -718,6 +718,24 @@ def validate_layout_payload(layout: dict[str, Any]) -> list[str]:
             errors.append(f"slots.{slot_id}.minW 不能低于组件下限 {min_w}")
         if "minH" in slot and isinstance(slot.get("minH"), (int, float)) and slot["minH"] < min_h:
             errors.append(f"slots.{slot_id}.minH 不能低于组件下限 {min_h}")
+        ideal_h = slot.get("idealH")
+        if ideal_h is not None:
+            if isinstance(ideal_h, bool) or not isinstance(ideal_h, int) or ideal_h <= 0:
+                errors.append(f"slots.{slot_id}.idealH 必须为正整数")
+            else:
+                configured_min_h = slot.get("minH")
+                effective_min_h = (
+                    configured_min_h
+                    if isinstance(configured_min_h, (int, float))
+                    and not isinstance(configured_min_h, bool)
+                    else min_h
+                )
+                if ideal_h < effective_min_h:
+                    errors.append(
+                        f"slots.{slot_id}.idealH 不能低于有效最低高 {effective_min_h}"
+                    )
+            if slot.get("growMain") is True:
+                errors.append(f"slots.{slot_id} 已是成长主区，不应再声明 idealH")
     return errors
 
 

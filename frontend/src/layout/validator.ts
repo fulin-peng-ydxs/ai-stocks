@@ -2,7 +2,7 @@
  * 布局约束校验器（M1 核心）——把规范的「可执行规则」从 prose 变成机制性强制。
  *
  * 职责边界（见 plan.md 决策 c）：本校验器只覆盖 **schema 层可判定** 的规则：
- *   - 原型/组件合法性、组件最低尺寸下限（规范 §3）
+ *   - 原型/组件合法性、组件最低尺寸与理想高度关系（规范 §3）
  *   - 主表唯一（growMain）、滚动轴唯一（规范 §6）
  *   - 操作区一致性（规范 §1）
  *   - 重排多列三条件 + 断点合法性（规范 §5）
@@ -43,6 +43,10 @@ function effectiveMinW(slot: SlotSpec): number {
   return slot.minW ?? COMPONENT_CATALOG[slot.component]?.minW ?? 0
 }
 
+function effectiveMinH(slot: SlotSpec): number {
+  return slot.minH ?? COMPONENT_CATALOG[slot.component]?.minH ?? 0
+}
+
 /** 校验一份 PageLayout，返回全部问题（error + warn）。空数组表示完全合规。 */
 export function validateLayout(layout: PageLayout): ValidationIssue[] {
   const issues: ValidationIssue[] = []
@@ -76,6 +80,16 @@ export function validateLayout(layout: PageLayout): ValidationIssue[] {
     }
     if (slot.minH != null && slot.minH < meta.minH) {
       push('error', 'slot.minH.below', `${slot.id} 最低高 ${slot.minH} 低于 ${meta.label} 下限 ${meta.minH}`, slot.id)
+    }
+    if (slot.idealH != null) {
+      if (!Number.isInteger(slot.idealH) || slot.idealH <= 0) {
+        push('error', 'slot.idealH.invalid', `${slot.id} 理想高度必须为正整数`, slot.id)
+      } else if (slot.idealH < effectiveMinH(slot)) {
+        push('error', 'slot.idealH.belowMin', `${slot.id} 理想高度 ${slot.idealH} 低于有效最低高 ${effectiveMinH(slot)}`, slot.id)
+      }
+      if (slot.growMain) {
+        push('error', 'slot.idealH.growMain', `${slot.id} 已是成长主区，不应再声明固定块理想高度`, slot.id)
+      }
     }
 
     // 5a. growMain 的组件必须 canGrowMain

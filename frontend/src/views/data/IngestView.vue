@@ -1258,7 +1258,7 @@ const menuPageTitle = useMenuPageTitle()
 }
 .ingest-bottom {
   flex: 1 1 auto;
-  min-height: 520px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -1290,5 +1290,4 @@ const menuPageTitle = useMenuPageTitle()
 :deep(.row-partial) { background: var(--el-color-warning-light-9); }
 .fail-detail { color: var(--app-danger-text); }
 .partial-detail { color: var(--app-warning-text); }
-@container app-viewport (max-width: 1280px) { .ingest-bottom { min-height: 520px; } }
 </style>

@@ -194,7 +194,7 @@ export interface SlotSpec {
   minW?: number
   /** 业务最低高（px）。缺省取组件目录；显式值不得低于目录下限。 */
   minH?: number
-  /** 理想宽高（仅渲染参考，不参与下限校验）。 */
+  /** 理想宽仅作渲染参考；idealH 是混合成长区固定块的收缩上限，必须不低于有效 minH。 */
   idealW?: number
   idealH?: number
   /** 滚动归属。缺省取组件目录默认。 */

@@ -32,6 +32,38 @@ describe('组件最低尺寸下限（规范 §3）', () => {
   })
 })
 
+describe('混合成长区理想高度', () => {
+  function mixedLayout(): PageLayout {
+    const layout = createLayout('workbench', 'p')
+    layout.slots = [
+      { id: 'leading', component: 'data-table', region: 'main', minH: 300, idealH: 960, order: 1 },
+      { id: 'workspace', component: 'tabs', region: 'main', growMain: true, minH: 520, order: 2 },
+    ]
+    layout.editable = []
+    return layout
+  }
+
+  it('固定块 idealH 不低于有效 minH 时合规', () => {
+    expect(errorsOf(mixedLayout())).toEqual([])
+  })
+
+  it('idealH 必须为正整数且不低于有效 minH', () => {
+    const invalid = mixedLayout()
+    invalid.slots[0]!.idealH = 320.5
+    expect(codesOf(invalid)).toContain('slot.idealH.invalid')
+
+    const belowMin = mixedLayout()
+    belowMin.slots[0]!.idealH = 299
+    expect(codesOf(belowMin)).toContain('slot.idealH.belowMin')
+  })
+
+  it('成长主区不能同时声明固定块 idealH', () => {
+    const layout = mixedLayout()
+    layout.slots[1]!.idealH = 720
+    expect(codesOf(layout)).toContain('slot.idealH.growMain')
+  })
+})
+
 describe('组件能力目录（M1）', () => {
   const requiredKinds: ComponentKind[] = [
     'page-shell', 'section', 'split-pane', 'slot-group',

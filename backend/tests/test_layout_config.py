@@ -884,6 +884,38 @@ def test_validate_api_reports_layout_component_errors(client):
     assert any("组件未登记" in e for e in body["data"]["errors"])
 
 
+def test_validate_api_reports_invalid_ideal_height_contract(client):
+    api = TestClient(app)
+    resp = api.post(
+        "/api/layout/validate",
+        json={
+            "config": {"values": {}},
+            "layout": {
+                "slots": [
+                    {
+                        "id": "leading",
+                        "component": "data-table",
+                        "minH": 520,
+                        "idealH": 519,
+                    },
+                    {
+                        "id": "workspace",
+                        "component": "tabs",
+                        "growMain": True,
+                        "idealH": 720,
+                    },
+                ]
+            },
+        },
+        headers=_sys_headers(),
+    )
+    body = resp.json()
+    assert body["code"] == 0
+    assert body["data"]["valid"] is False
+    assert any("idealH 不能低于有效最低高 520" in e for e in body["data"]["errors"])
+    assert any("成长主区，不应再声明 idealH" in e for e in body["data"]["errors"])
+
+
 def test_preset_per_mode_tokens_and_extras(client):
     """视觉预设只支持按模式颜色/阴影和共享圆角。"""
     repo = LayoutConfigRepo(client)
