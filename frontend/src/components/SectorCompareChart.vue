@@ -10,6 +10,7 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import { chartCssVariable, hasRenderableChartSize, useEChartsTheme } from '@/components/chartTheme'
 import { chartTooltipRowHtml } from '@/components/chartTooltipHtml'
 import { initVectorEChart } from '@/components/echartsRenderer'
+import { useDeferredWorkspaceResize } from '@/composables/useDeferredWorkspaceResize'
 import {
   buildMarketCompareLineOption,
   escapeChartHtml,
@@ -259,6 +260,9 @@ function render() {
 function resize() {
   chart?.resize()
 }
+
+const requestWorkspaceResize = useDeferredWorkspaceResize(resize)
+
 function ensureChart() {
   if (chart || !el.value || !hasComparableLine.value || !hasRenderableChartSize(el.value)) return
   chart = initVectorEChart(el.value)
@@ -280,7 +284,7 @@ onMounted(async () => {
   if (el.value && typeof ResizeObserver !== 'undefined') {
     resizeObserver = new ResizeObserver(() => {
       ensureChart()
-      resize()
+      requestWorkspaceResize()
     })
     resizeObserver.observe(el.value)
   }

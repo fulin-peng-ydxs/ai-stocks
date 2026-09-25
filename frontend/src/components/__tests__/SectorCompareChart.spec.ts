@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { nextTick, ref } from 'vue'
 import SectorCompareChart from '@/components/SectorCompareChart.vue'
+import { WORKSPACE_RESIZE_ACTIVE } from '@/layout/workspaceResizeContext'
 
 const echartsMock = vi.hoisted(() => ({
   setOption: vi.fn(),
@@ -19,6 +20,22 @@ echartsMock.init.mockReturnValue({
 
 vi.mock('echarts', () => ({ init: echartsMock.init }))
 
+class ResizeObserverMock {
+  static instances: ResizeObserverMock[] = []
+  observe = vi.fn()
+  disconnect = vi.fn()
+
+  constructor(private readonly callback: ResizeObserverCallback) {
+    ResizeObserverMock.instances.push(this)
+  }
+
+  trigger(): void {
+    this.callback([], this as unknown as ResizeObserver)
+  }
+}
+
+vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+
 const bars = (closes: number[]) => closes.map((close, i) => ({
   trade_date: `2026-08-${String(6 + i).padStart(2, '0')}`,
   open: close, high: close, low: close, close,
@@ -28,10 +45,35 @@ const bars = (closes: number[]) => closes.map((close, i) => ({
 describe('SectorCompareChart', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    ResizeObserverMock.instances.length = 0
     document.documentElement.style.setProperty('--market-up-color', '#f04438')
     document.documentElement.style.setProperty('--market-down-color', '#0ea968')
     Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 800 })
     Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 440 })
+  })
+
+  it('父级分栏拖动期间合并板块走势尺寸刷新，结束后按最终宽度刷新一次', async () => {
+    const resizing = ref(true)
+    const wrapper = mount(SectorCompareChart, {
+      props: {
+        metric: 'cum',
+        rangeDays: 5,
+        series: [{ code: '881175', name: '医疗服务', bars: bars([100, 101]) }],
+      },
+      global: { provide: { [WORKSPACE_RESIZE_ACTIVE as symbol]: resizing } },
+    })
+    await nextTick()
+    echartsMock.resize.mockClear()
+
+    ResizeObserverMock.instances[0]?.trigger()
+    ResizeObserverMock.instances[0]?.trigger()
+    expect(echartsMock.resize).not.toHaveBeenCalled()
+
+    resizing.value = false
+    await nextTick()
+    await nextTick()
+    expect(echartsMock.resize).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
   })
 
   it('累计涨跌折线：悬浮提示带指标名并按正负值使用行情语义色，含基准超额', async () => {

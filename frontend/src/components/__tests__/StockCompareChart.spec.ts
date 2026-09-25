@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { nextTick, ref } from 'vue'
 import StockCompareChart from '@/components/StockCompareChart.vue'
+import { WORKSPACE_RESIZE_ACTIVE } from '@/layout/workspaceResizeContext'
 
 const echartsMock = vi.hoisted(() => ({
   setOption: vi.fn(),
@@ -18,6 +19,22 @@ echartsMock.init.mockReturnValue({
 })
 
 vi.mock('echarts', () => ({ init: echartsMock.init }))
+
+class ResizeObserverMock {
+  static instances: ResizeObserverMock[] = []
+  observe = vi.fn()
+  disconnect = vi.fn()
+
+  constructor(private readonly callback: ResizeObserverCallback) {
+    ResizeObserverMock.instances.push(this)
+  }
+
+  trigger(): void {
+    this.callback([], this as unknown as ResizeObserver)
+  }
+}
+
+vi.stubGlobal('ResizeObserver', ResizeObserverMock)
 
 function bars(code: string, closes: number[]) {
   return closes.map((close, index) => ({
@@ -41,10 +58,39 @@ function datedBars(code: string, dates: string[], closes: number[]) {
 describe('StockCompareChart', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    ResizeObserverMock.instances.length = 0
     document.documentElement.style.setProperty('--market-up-color', '#f04438')
     document.documentElement.style.setProperty('--market-down-color', '#0ea968')
     Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 800 })
     Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 440 })
+  })
+
+  it('父级分栏拖动期间合并走势尺寸刷新，结束后按最终宽度刷新一次', async () => {
+    const resizing = ref(true)
+    const wrapper = mount(StockCompareChart, {
+      props: {
+        activeCode: '000001.SZ',
+        metric: 'cum',
+        rangeDays: 1,
+        series: [{ code: '000001.SZ', name: '平安银行', bars: bars('000001.SZ', [10, 11]) }],
+      },
+      global: {
+        provide: { [WORKSPACE_RESIZE_ACTIVE as symbol]: resizing },
+        stubs: { AppStateBlock: true },
+      },
+    })
+    await nextTick()
+    echartsMock.resize.mockClear()
+
+    ResizeObserverMock.instances[0]?.trigger()
+    ResizeObserverMock.instances[0]?.trigger()
+    expect(echartsMock.resize).not.toHaveBeenCalled()
+
+    resizing.value = false
+    await nextTick()
+    await nextTick()
+    expect(echartsMock.resize).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
   })
 
   it('纯股票间对比时各序列从自身首个有效值起算，并强化当前观察序列', async () => {
