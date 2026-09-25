@@ -525,8 +525,19 @@ def _normalize_stock_chart(value: dict[str, Any]) -> dict[str, Any]:
         if abs(total - 1.0) > 1e-6:
             raise LayoutConfigValidationError(f"组件配置 stockChart 的 {key} 高度比例之和必须为 1")
         normalized_ratios[key] = [float(item) / total for item in items]
-    normalized = {"slot2": slot2, "slot3": slot3, "heightRatios": normalized_ratios}
-    # 旧配置没有尺寸档案字段，继续原样兼容；新配置按图表组合分别保存工作区宽高与比例。
+    normalized = {
+        "slot2": slot2,
+        "slot3": slot3,
+        "heightRatioProfileBasis": "visual-workspace-v1",
+        "heightRatios": normalized_ratios,
+    }
+    # 旧尺寸档案使用右侧图表自身宽高，不能当作外层视觉工作区尺寸继续匹配。
+    # 缺少 basis 时仅保留默认高度比例，由用户下次显式采用当前比例生成新档案。
+    profile_basis = value.get("heightRatioProfileBasis")
+    if profile_basis is None:
+        return normalized
+    if profile_basis != "visual-workspace-v1":
+        raise LayoutConfigValidationError("组件配置 stockChart 的尺寸比例档案基准非法")
     raw_profiles = value.get("heightRatioProfiles")
     if raw_profiles is None:
         return normalized

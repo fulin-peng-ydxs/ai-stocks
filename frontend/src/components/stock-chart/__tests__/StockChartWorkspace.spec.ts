@@ -10,7 +10,10 @@ import {
 } from '@/components/stock-chart/chartUtils'
 import { useTheme } from '@/composables/useTheme'
 import { setLayoutPreset, setPresetOverrides } from '@/layout/useLayoutPreset'
-import { WORKSPACE_RESIZE_ACTIVE } from '@/layout/workspaceResizeContext'
+import {
+  WORKSPACE_PROFILE_SIZE,
+  WORKSPACE_RESIZE_ACTIVE,
+} from '@/layout/workspaceResizeContext'
 
 const echartsMock = vi.hoisted(() => {
   const instances: Array<Record<string, any>> = []
@@ -878,8 +881,10 @@ describe('StockChartWorkspace', () => {
 
   it('父级左右分栏拖动期间延后图表 resize，结束后只按最终尺寸刷新', async () => {
     const ancestorResizing = ref(true)
+    const profileSize = ref({ width: 1200, height: 900 })
     const wrapper = await mountWorkspace({}, {}, {
       [WORKSPACE_RESIZE_ACTIVE as symbol]: ancestorResizing,
+      [WORKSPACE_PROFILE_SIZE as symbol]: profileSize,
     })
     echartsMock.instances.forEach((instance) => instance.resize.mockClear())
 
@@ -900,6 +905,16 @@ describe('StockChartWorkspace', () => {
     })
     expect(wrapper.emitted('workspaceResize')?.at(-1)?.[0]).toEqual(expect.objectContaining({
       width: 720,
+      profileWidth: 1200,
+      profileHeight: 900,
+    }))
+
+    profileSize.value = { width: 1440, height: 900 }
+    await nextTick()
+    expect(wrapper.emitted('workspaceResize')?.at(-1)?.[0]).toEqual(expect.objectContaining({
+      width: 720,
+      profileWidth: 1440,
+      profileHeight: 900,
     }))
     wrapper.unmount()
   })

@@ -30,6 +30,7 @@ function defaultChartConfig() {
   return {
     slot2: 'volume',
     slot3: 'macd',
+    heightRatioProfileBasis: 'visual-workspace-v1',
     heightRatios: {
       kline: [1],
       'kline|volume': [0.75, 0.25],
@@ -1109,6 +1110,7 @@ describe('StockDetailView 三图数据协调', () => {
     expect(componentConfigState.current).toEqual({
       slot2: 'volume',
       slot3: 'macd',
+      heightRatioProfileBasis: 'visual-workspace-v1',
       heightRatios: {
         kline: [1],
         'kline|volume': [0.75, 0.25],

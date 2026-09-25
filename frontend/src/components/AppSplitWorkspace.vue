@@ -15,7 +15,10 @@ import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue
 import { elementVisualScale, viewportDeltaToLayoutPixels } from '@/utils/displayScaleGeometry'
 import { createLatestAnimationFrame } from '@/utils/latestAnimationFrame'
 import { adaptiveWorkspaceHeight } from '@/layout/marketWorkspaceSizing'
-import { WORKSPACE_RESIZE_ACTIVE } from '@/layout/workspaceResizeContext'
+import {
+  WORKSPACE_PROFILE_SIZE,
+  WORKSPACE_RESIZE_ACTIVE,
+} from '@/layout/workspaceResizeContext'
 import {
   closestMasterDetailRatioProfile,
   MASTER_DETAIL_RATIO_DEFAULT,
@@ -77,6 +80,7 @@ defineSlots<{
 
 const workspaceEl = ref<HTMLElement | null>(null)
 const workspaceWidth = ref(0)
+const workspaceProfileSize = ref({ width: 0, height: 0 })
 const measuredAdaptiveHeight = ref<number | null>(null)
 const ancestorWorkspaceResizeActive = inject(WORKSPACE_RESIZE_ACTIVE, ref(false))
 const localWorkspaceResizeActive = ref(false)
@@ -84,6 +88,7 @@ const workspaceResizeActive = computed(() => (
   ancestorWorkspaceResizeActive.value || localWorkspaceResizeActive.value
 ))
 provide(WORKSPACE_RESIZE_ACTIVE, workspaceResizeActive)
+provide(WORKSPACE_PROFILE_SIZE, workspaceProfileSize)
 const matchedProfile = computed(() => closestMasterDetailRatioProfile(
   props.primaryRatioProfiles,
   workspaceWidth.value,
@@ -253,6 +258,8 @@ function resetPrimaryWidth(): void {
 
 function updateWorkspaceWidth(): void {
   const nextWidth = workspaceEl.value?.clientWidth ?? 0
+  const nextHeight = workspaceEl.value?.clientHeight ?? 0
+  workspaceProfileSize.value = { width: nextWidth, height: nextHeight }
   if (
     sessionAdjusted.value
     && sessionAdjustedAtWidth.value > 0

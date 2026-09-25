@@ -26,6 +26,9 @@ export type MacdPanelState = 'ready' | 'loading' | 'insufficient' | 'error'
 export interface StockChartWorkspaceSample {
   width: number
   height: number
+  /** 稳定视觉环境尺寸；外层分栏变化时与当前图表渲染宽高分离。 */
+  profileWidth?: number
+  profileHeight?: number
   ratios: number[]
   minimumRatios: number[]
 }

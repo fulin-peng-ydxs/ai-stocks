@@ -23,7 +23,10 @@ import { initVectorEChart } from '@/components/echartsRenderer'
 import type { StockAdjustMode } from '@/composables/useStockAnalysisSession'
 import type { AuxiliaryChartType, ChartType } from '@/composables/useStockChartPreferences'
 import { PAGE_OVERLAY_TARGET } from '@/layout/pageOverlay'
-import { WORKSPACE_RESIZE_ACTIVE } from '@/layout/workspaceResizeContext'
+import {
+  WORKSPACE_PROFILE_SIZE,
+  WORKSPACE_RESIZE_ACTIVE,
+} from '@/layout/workspaceResizeContext'
 import { elementVisualScale } from '@/utils/displayScaleGeometry'
 import { createLatestAnimationFrame } from '@/utils/latestAnimationFrame'
 import { formatMarketPercent, marketValueClass } from '@/utils/marketValue'
@@ -199,6 +202,7 @@ const groupId = nextStockChartWorkspaceGroupId()
 const workspaceEl = ref<HTMLElement | null>(null)
 provide(PAGE_OVERLAY_TARGET, workspaceEl)
 const ancestorWorkspaceResizeActive = inject(WORKSPACE_RESIZE_ACTIVE, ref(false))
+const ancestorWorkspaceProfileSize = inject(WORKSPACE_PROFILE_SIZE, null)
 const chartElements = new Map<WorkspacePanelKey, HTMLElement>()
 const charts = new Map<WorkspacePanelKey, echarts.ECharts>()
 const theme = useStockChartTheme()
@@ -741,6 +745,8 @@ function onWorkspaceResize(): void {
   if (!active) return
   const width = workspaceEl.value?.clientWidth ?? 0
   const height = workspaceEl.value?.clientHeight ?? 0
+  const profileWidth = ancestorWorkspaceProfileSize?.value.width || width
+  const profileHeight = ancestorWorkspaceProfileSize?.value.height || height
   workspaceHeight.value = height
   const effectiveRatios = ratios.value.map((value) => Number(value.toFixed(6)))
   const effectiveMinimumRatios = minimumRatios()
@@ -748,6 +754,8 @@ function onWorkspaceResize(): void {
   const signature = [
     width,
     height,
+    profileWidth,
+    profileHeight,
     effectiveRatios.join(':'),
     effectiveMinimumRatios.join(':'),
   ].join('|')
@@ -757,6 +765,8 @@ function onWorkspaceResize(): void {
     emit('workspaceResize', {
       width,
       height,
+      profileWidth,
+      profileHeight,
       ratios: effectiveRatios,
       minimumRatios: effectiveMinimumRatios,
     })
@@ -1088,6 +1098,11 @@ watch(ratios, () => {
 watch(ancestorWorkspaceResizeActive, (resizing) => {
   if (!resizing) scheduleSettledWorkspaceResize()
 })
+if (ancestorWorkspaceProfileSize) {
+  watch(ancestorWorkspaceProfileSize, () => {
+    if (!ancestorWorkspaceResizeActive.value) onWorkspaceResize()
+  }, { deep: true })
+}
 watch(
   [() => props.zoomStart, () => props.zoomEnd],
   ([start, end]) => {

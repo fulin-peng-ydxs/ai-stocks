@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import ElementPlus from 'element-plus'
 import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
-import { WORKSPACE_RESIZE_ACTIVE } from '@/layout/workspaceResizeContext'
+import {
+  WORKSPACE_PROFILE_SIZE,
+  WORKSPACE_RESIZE_ACTIVE,
+} from '@/layout/workspaceResizeContext'
 
 function pointerEvent(type: string, pointerId: number, clientX: number): Event {
   const event = new Event(type)
@@ -89,12 +92,15 @@ describe('AppSplitWorkspace', () => {
 
   it('拖拽期间向后代声明布局调整状态，结束后立即恢复', async () => {
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200)
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(800)
     const ResizeStateProbe = defineComponent({
       setup() {
         const resizing = inject(WORKSPACE_RESIZE_ACTIVE)
+        const profileSize = inject(WORKSPACE_PROFILE_SIZE)
         return () => h('span', {
           'data-testid': 'resize-state',
           'data-resizing': String(resizing?.value ?? false),
+          'data-profile-size': `${profileSize?.value.width}x${profileSize?.value.height}`,
         })
       },
     })
@@ -110,12 +116,14 @@ describe('AppSplitWorkspace', () => {
 
     const state = wrapper.get('[data-testid="resize-state"]')
     expect(state.attributes('data-resizing')).toBe('false')
+    expect(state.attributes('data-profile-size')).toBe('1200x800')
     await wrapper.get('[role="separator"]').trigger('pointerdown', {
       pointerId: 8,
       clientX: 780,
     })
     await nextTick()
     expect(state.attributes('data-resizing')).toBe('true')
+    expect(state.attributes('data-profile-size')).toBe('1200x800')
 
     window.dispatchEvent(pointerEvent('pointerup', 8, 780))
     await nextTick()

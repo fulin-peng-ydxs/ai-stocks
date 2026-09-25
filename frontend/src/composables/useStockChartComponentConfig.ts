@@ -69,8 +69,8 @@ export function useStockChartComponentConfig(access: StockChartComponentConfigAc
       return
     }
     configuredWorkspaceSample.value = {
-      width: sample.width,
-      height: sample.height,
+      width: sample.profileWidth ?? sample.width,
+      height: sample.profileHeight ?? sample.height,
       ratios: constrainWorkspaceRatios(
         preferences.configuredRatios.value,
         sample.minimumRatios,
@@ -103,12 +103,15 @@ export function useStockChartComponentConfig(access: StockChartComponentConfigAc
       ratios: [...sample.ratios],
       minimumRatios: [...sample.minimumRatios],
     }
+    const profileSize = {
+      width: sample.profileWidth ?? sample.width,
+      height: sample.profileHeight ?? sample.height,
+    }
     workspaceSample.value = {
-      width: sample.width,
-      height: sample.height,
+      ...profileSize,
       ratios: [...sample.ratios],
     }
-    preferences.setWorkspaceSize(sample)
+    preferences.setWorkspaceSize(profileSize)
     refreshConfiguredWorkspaceSample()
   }
 

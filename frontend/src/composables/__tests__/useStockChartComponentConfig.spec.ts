@@ -70,6 +70,47 @@ describe('useStockChartComponentConfig', () => {
     ).heightRatios['kline|volume|macd']).toEqual([0.6, 0.2, 0.2])
   })
 
+  it('使用外层视觉工作区尺寸匹配比例档案，右侧栏自身宽度变化不切换档案', () => {
+    const initial = createDefaultStockChartPreferences()
+    initial.heightRatioProfiles['kline|volume|macd'] = [{
+      width: 1200,
+      height: 900,
+      ratios: [0.5, 0.3, 0.2],
+    }]
+    const stored = ref(initial)
+    const config = useStockChartComponentConfig({
+      componentValueOf: () => stored.value,
+      setComponentKnob: (_slotId, _field, value) => {
+        stored.value = normalizeStockChartPreferences(value)
+      },
+      hydrated: ref(true),
+    })
+
+    config.handleWorkspaceResize({
+      width: 540,
+      height: 720,
+      profileWidth: 1200,
+      profileHeight: 900,
+      ratios: [0.6, 0.2, 0.2],
+      minimumRatios: [0.2, 0.1, 0.1],
+    })
+    expect(config.currentRatios.value).toEqual([0.5, 0.3, 0.2])
+
+    config.handleWorkspaceResize({
+      width: 760,
+      height: 720,
+      profileWidth: 1200,
+      profileHeight: 900,
+      ratios: [0.5, 0.3, 0.2],
+      minimumRatios: [0.2, 0.1, 0.1],
+    })
+    expect(config.currentRatios.value).toEqual([0.5, 0.3, 0.2])
+    expect(config.componentRuntimeValueOf('chart', 'stockChartRatioSample')).toMatchObject({
+      width: 1200,
+      height: 900,
+    })
+  })
+
   it('把组件登记的周期与测算默认值单向投影为当前页面会话值', async () => {
     const stored = reactive<Record<string, unknown>>({
       stockChart: createDefaultStockChartPreferences(),

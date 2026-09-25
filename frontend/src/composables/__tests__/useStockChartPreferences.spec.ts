@@ -110,6 +110,22 @@ describe('useStockChartPreferences pure helpers', () => {
     expect(chartCompositionKey(hidden)).toBe('kline|volume')
     expect(shown.heightRatios['kline|volume|macd']).toEqual([0.5, 0.3, 0.2])
   })
+
+  it('旧的右栏自身尺寸档案不按新的视觉工作区基准误匹配', () => {
+    const current = createDefaultStockChartPreferences()
+    const { heightRatioProfileBasis: _basis, ...legacy } = current
+    legacy.heightRatioProfiles['kline|volume|macd'] = [{
+      width: 720,
+      height: 800,
+      ratios: [0.8, 0.1, 0.1],
+    }]
+
+    const normalized = normalizeStockChartPreferences(legacy)
+
+    expect(normalized.heightRatioProfileBasis).toBe('visual-workspace-v1')
+    expect(normalized.heightRatioProfiles['kline|volume|macd']).toEqual([])
+    expect(normalized.heightRatios['kline|volume|macd']).toEqual([0.6, 0.2, 0.2])
+  })
 })
 
 describe('useStockChartPreferences draft state', () => {

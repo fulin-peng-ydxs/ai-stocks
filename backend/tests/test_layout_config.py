@@ -629,6 +629,7 @@ def test_stock_chart_component_config_validates_instance_and_ratio_contract(clie
     valid = {
         "slot2": "volume",
         "slot3": "macd",
+        "heightRatioProfileBasis": "visual-workspace-v1",
         "heightRatios": {
             "kline": [1],
             "kline|volume": [0.75, 0.25],
@@ -665,6 +666,26 @@ def test_stock_chart_component_config_validates_instance_and_ratio_contract(clie
         layout=layout,
     )
     assert saved_profiles["config"]["values"]["slots.chart.config.stockChart"] == with_profiles
+
+    legacy_profiles = json.loads(json.dumps(with_profiles))
+    legacy_profiles.pop("heightRatioProfileBasis")
+    saved_legacy = repo.set_user_config(
+        "stocks",
+        {"values": {"slots.chart.config.stockChart": legacy_profiles}},
+        user_id="u1",
+        layout=layout,
+    )
+    assert saved_legacy["config"]["values"]["slots.chart.config.stockChart"] == valid
+
+    invalid_basis = json.loads(json.dumps(with_profiles))
+    invalid_basis["heightRatioProfileBasis"] = "chart-panel-v0"
+    with pytest.raises(LayoutConfigValidationError, match="尺寸比例档案基准非法"):
+        repo.set_user_config(
+            "stocks",
+            {"values": {"slots.chart.config.stockChart": invalid_basis}},
+            user_id="u1",
+            layout=layout,
+        )
 
     duplicate_size = json.loads(json.dumps(with_profiles))
     duplicate_size["heightRatioProfiles"]["kline|volume|macd"].append(

@@ -20,6 +20,7 @@ export type ChartCompositionKey =
 export interface StockChartPreferences {
   slot2: AuxiliaryChartType
   slot3: AuxiliaryChartType
+  heightRatioProfileBasis: 'visual-workspace-v1'
   heightRatios: Record<ChartCompositionKey, number[]>
   heightRatioProfiles: Record<ChartCompositionKey, StockChartRatioProfile[]>
 }
@@ -57,6 +58,7 @@ export function createDefaultStockChartPreferences(): StockChartPreferences {
   return {
     slot2: 'volume',
     slot3: 'macd',
+    heightRatioProfileBasis: 'visual-workspace-v1',
     heightRatios: Object.fromEntries(
       COMPOSITION_KEYS.map((key) => [key, cloneDefaultRatios(key)]),
     ) as Record<ChartCompositionKey, number[]>,
@@ -98,17 +100,21 @@ export function normalizeStockChartPreferences(value: unknown): StockChartPrefer
   const hasDuplicate = slot2Valid && slot3Valid && slot2 !== 'hidden' && slot2 === slot3
   const ratios = isRecord(value.heightRatios) ? value.heightRatios : {}
   const ratioProfiles = isRecord(value.heightRatioProfiles) ? value.heightRatioProfiles : {}
+  const hasVisualWorkspaceProfiles = value.heightRatioProfileBasis === 'visual-workspace-v1'
 
   return {
     slot2: hasDuplicate ? defaults.slot2 : slot2,
     slot3: hasDuplicate ? defaults.slot3 : slot3,
+    heightRatioProfileBasis: 'visual-workspace-v1',
     heightRatios: Object.fromEntries(
       COMPOSITION_KEYS.map((key) => [key, normalizeHeightRatios(ratios[key], key)]),
     ) as Record<ChartCompositionKey, number[]>,
     heightRatioProfiles: Object.fromEntries(
       COMPOSITION_KEYS.map((key) => [
         key,
-        normalizeStockChartRatioProfiles(ratioProfiles[key], cloneDefaultRatios(key).length),
+        hasVisualWorkspaceProfiles
+          ? normalizeStockChartRatioProfiles(ratioProfiles[key], cloneDefaultRatios(key).length)
+          : [],
       ]),
     ) as Record<ChartCompositionKey, StockChartRatioProfile[]>,
   }
