@@ -671,6 +671,8 @@ function onDataZoom(sourceKey: WorkspacePanelKey, event: DataZoomEvent): void {
       end: next.end,
     })
   })
+  // 极值标签取当前可视窗口；缩放完成后只重建 K 线 option，量能/MACD 保持原实例状态。
+  refreshKlineChart()
 }
 
 function connectCharts(): void {
@@ -1150,6 +1152,7 @@ watch(
       if (chart.isDisposed()) return
       chart.dispatchAction({ type: 'dataZoom', start: next.start, end: next.end })
     })
+    refreshKlineChart()
   },
 )
 watch(

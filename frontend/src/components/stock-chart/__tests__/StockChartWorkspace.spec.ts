@@ -708,6 +708,16 @@ describe('StockChartWorkspace', () => {
       end: 82,
     })
     expect(macd.dispatchAction).not.toHaveBeenCalled()
+    const zoomedKlineOption = kline.setOption.mock.calls.at(-1)?.[0]
+    const zoomedKlineSeries = (zoomedKlineOption.series as Array<Record<string, unknown>>)
+      .find((series) => series.name === 'K线')
+    const zoomedExtrema = ((zoomedKlineSeries?.markPoint as {
+      data?: Array<{ kind?: string, coord?: [number, number] }>
+    }).data ?? []).filter((point) => point.kind?.startsWith('visible-'))
+    expect(zoomedExtrema).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'visible-high', coord: [32, 13.7] }),
+      expect.objectContaining({ kind: 'visible-low', coord: [9, 10.4] }),
+    ]))
 
     await wrapper.setProps({ macdState: 'loading' })
     await nextTick()
@@ -1139,7 +1149,7 @@ describe('StockChartWorkspace', () => {
       .find((series) => series.type === 'candlestick')
     const points = (klineSeries?.markPoint as { data?: unknown[] })?.data ?? []
 
-    expect(points).toHaveLength(2)
+    expect(points).toHaveLength(4)
     const buy = (points as Array<Record<string, unknown>>)
       .find((point) => point.kind === 'buy')
     const sell = (points as Array<Record<string, unknown>>)
@@ -1158,13 +1168,16 @@ describe('StockChartWorkspace', () => {
     wrapper.unmount()
   })
 
-  it('未传 markers 时 K 线 markPoint 为空，不影响个股详情等既有页面', async () => {
+  it('未传 markers 时 K 线仍有可视区最高价和最低价标注', async () => {
     const wrapper = await mountWorkspace()
     const klineInstance = echartsMock.instances[0]
     const option = klineInstance.setOption.mock.calls.at(-1)?.[0]
     const klineSeries = (option.series as Array<Record<string, unknown>>)
       .find((series) => series.type === 'candlestick')
-    expect((klineSeries?.markPoint as { data?: unknown[] }).data ?? []).toEqual([])
+    const points = (klineSeries?.markPoint as {
+      data?: Array<{ kind?: string }>
+    }).data ?? []
+    expect(points.map((point) => point.kind)).toEqual(['visible-high', 'visible-low'])
     wrapper.unmount()
   })
 })

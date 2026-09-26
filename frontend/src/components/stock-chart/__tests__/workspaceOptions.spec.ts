@@ -16,6 +16,7 @@ import {
   panelMetricColor,
   signalRenderGeometry,
   scaledBarWidth,
+  visibleKlineExtrema,
   VOLUME_BAR_WIDTH,
   volumeMetrics,
 } from '@/components/stock-chart/workspaceOptions'
@@ -653,7 +654,7 @@ describe('workspaceOptions', () => {
       markPoint: { symbolSize: number, data: Array<Record<string, unknown>> }
     }
     const points = kline.markPoint.data
-    expect(points).toHaveLength(2)
+    expect(points).toHaveLength(4)
 
     const buy = points.find((point) => point.kind === 'buy') as typeof points[number]
     const sell = points.find((point) => point.kind === 'sell') as typeof points[number]
@@ -672,11 +673,55 @@ describe('workspaceOptions', () => {
     expect((sell.label as { formatter: string }).formatter).toBe('卖出\n12.00')
   })
 
-  it('未传 markers 时 K 线 markPoint 为空数组，不影响个股详情等既有页面', () => {
+  it('未传 markers 时仍标注当前可视区最高价和最低价', () => {
     const rows = alignStockChartRows([bar('2026-07-22')], [])
     const option = buildKlineOption({ rows, warmupBars: [], theme, isBottom: false, zoomStart: 0, zoomEnd: 100 })
-    const kline = option.series[0] as { markPoint: { data: unknown[] } }
-    expect(kline.markPoint.data).toEqual([])
+    const kline = option.series[0] as {
+      markPoint: { data: Array<Record<string, unknown>> }
+    }
+    expect(kline.markPoint.data.map((point) => point.kind)).toEqual([
+      'visible-high',
+      'visible-low',
+    ])
+    expect(kline.markPoint.data.map((point) => point.coord)).toEqual([
+      [0, 10.4],
+      [0, 9.5],
+    ])
+  })
+
+  it('可视区极值只消费缩放窗口，并列极值固定取最早交易日', () => {
+    const rows = alignStockChartRows([
+      { ...bar('2026-07-20', 30), high: 99, low: 1 },
+      { ...bar('2026-07-21', 10), high: 12, low: 8 },
+      { ...bar('2026-07-22', 11), high: 15, low: 7 },
+      { ...bar('2026-07-23', 12), high: 15, low: 9 },
+      { ...bar('2026-07-24', 30), high: 100, low: 2 },
+    ], [])
+
+    expect(visibleKlineExtrema(rows, 25, 75)).toEqual([
+      { kind: 'visible-high', index: 2, value: 15 },
+      { kind: 'visible-low', index: 2, value: 7 },
+    ])
+
+    const option = buildKlineOption({
+      rows,
+      warmupBars: [],
+      theme,
+      isBottom: false,
+      zoomStart: 25,
+      zoomEnd: 75,
+    })
+    const points = (option.series[0] as {
+      markPoint: { data: Array<Record<string, unknown>> }
+    }).markPoint.data
+    const high = points.find((point) => point.kind === 'visible-high')
+    const low = points.find((point) => point.kind === 'visible-low')
+    expect(high?.coord).toEqual([2, 15])
+    expect(low?.coord).toEqual([2, 7])
+    expect((high?.label as { formatter?: string }).formatter).toBe('← 15.00')
+    expect((low?.label as { formatter?: string }).formatter).toBe('← 7.00')
+    expect((high?.label as { offset?: number[] }).offset).toEqual([0, -7])
+    expect((low?.label as { offset?: number[] }).offset).toEqual([0, 7])
   })
 
   it('拖动只改变相邻比例并受最低高度比例约束', () => {

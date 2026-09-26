@@ -364,6 +364,98 @@ function buildTradeMarkPoints(context: OptionContext) {
     .filter(Boolean)
 }
 
+interface VisibleKlineExtremum {
+  kind: 'visible-high' | 'visible-low'
+  index: number
+  value: number
+}
+
+function visibleKlineIndexRange(length: number, zoomStart: number, zoomEnd: number) {
+  const lastIndex = Math.max(0, length - 1)
+  const normalizedStart = Number.isFinite(zoomStart) ? zoomStart : 0
+  const normalizedEnd = Number.isFinite(zoomEnd) ? zoomEnd : 100
+  const safeStart = Math.min(100, Math.max(0, normalizedStart))
+  const safeEnd = Math.min(100, Math.max(0, normalizedEnd))
+  const lower = Math.min(safeStart, safeEnd)
+  const upper = Math.max(safeStart, safeEnd)
+  return {
+    startIndex: Math.max(0, Math.floor(lower / 100 * lastIndex)),
+    endIndex: Math.min(lastIndex, Math.ceil(upper / 100 * lastIndex)),
+  }
+}
+
+/** 当前缩放窗口的最高/最低价；并列时固定取最早出现者，避免重绘时标注跳动。 */
+export function visibleKlineExtrema(
+  rows: readonly AlignedStockChartRow[],
+  zoomStart: number,
+  zoomEnd: number,
+): VisibleKlineExtremum[] {
+  if (!rows.length) return []
+  const { startIndex, endIndex } = visibleKlineIndexRange(rows.length, zoomStart, zoomEnd)
+
+  let highest: VisibleKlineExtremum | null = null
+  let lowest: VisibleKlineExtremum | null = null
+  for (let index = startIndex; index <= endIndex; index += 1) {
+    const bar = rows[index]?.bar
+    if (!bar) continue
+    if (Number.isFinite(bar.high) && (highest == null || bar.high > highest.value)) {
+      highest = { kind: 'visible-high', index, value: bar.high }
+    }
+    if (Number.isFinite(bar.low) && (lowest == null || bar.low < lowest.value)) {
+      lowest = { kind: 'visible-low', index, value: bar.low }
+    }
+  }
+  return [highest, lowest].filter((item): item is VisibleKlineExtremum => item != null)
+}
+
+/** 可视区极值共用 K 线 markPoint，标签朝绘图区内部展开，避免左右边缘裁切。 */
+function buildVisibleExtremaMarkPoints(context: OptionContext) {
+  const extrema = visibleKlineExtrema(context.rows, context.zoomStart, context.zoomEnd)
+  if (!extrema.length) return []
+  const { startIndex, endIndex } = visibleKlineIndexRange(
+    context.rows.length,
+    context.zoomStart,
+    context.zoomEnd,
+  )
+  const visibleMidpoint = (startIndex + endIndex) / 2
+
+  return extrema.map((item) => {
+    const placeOnLeft = item.index > visibleMidpoint
+    const direction = placeOnLeft ? '→' : '←'
+    return {
+      name: item.kind === 'visible-high' ? '最高价' : '最低价',
+      kind: item.kind,
+      coord: [item.index, item.value],
+      value: item.value,
+      symbol: 'circle',
+      symbolSize: 4,
+      itemStyle: {
+        color: context.theme.tooltipBackground,
+        borderColor: context.theme.text,
+        borderWidth: 1,
+      },
+      label: {
+        show: true,
+        position: placeOnLeft ? 'left' : 'right',
+        distance: 5,
+        // 停牌等平价 K 线可能 high=low，上下错开仍能同时识别两个极值。
+        offset: [0, item.kind === 'visible-high' ? -7 : 7],
+        color: context.theme.text,
+        fontSize: 10,
+        fontWeight: 600,
+        backgroundColor: context.theme.tooltipBackground,
+        borderColor: context.theme.tooltipBorder,
+        borderWidth: 1,
+        borderRadius: 3,
+        padding: [3, 5],
+        formatter: placeOnLeft
+          ? `${formatChartNumber(item.value, 2)} ${direction}`
+          : `${direction} ${formatChartNumber(item.value, 2)}`,
+      },
+    }
+  })
+}
+
 function commonAxes(context: OptionContext, showPointerDate: boolean) {
   const dates = context.rows.map((row) => row.bar.date)
   const showSlider = context.isBottom && stockChartVisibleSlider(context.panelHeight)
@@ -551,7 +643,10 @@ export function buildKlineOption(context: OptionContext) {
         },
         markPoint: {
           symbolSize: 0,
-          data: buildTradeMarkPoints(context),
+          data: [
+            ...buildVisibleExtremaMarkPoints(context),
+            ...buildTradeMarkPoints(context),
+          ],
         },
         markArea: context.measurementRange
           ? {
