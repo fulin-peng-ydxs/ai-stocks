@@ -5,6 +5,7 @@ import * as echarts from 'echarts'
 import { useEChartsTheme } from '@/components/chartTheme'
 import { initVectorEChart } from '@/components/echartsRenderer'
 import type { GrowthPoint } from '@/api/training'
+import { formatMarketPercent } from '@/utils/marketValue'
 
 const props = defineProps<{ data: GrowthPoint[] }>()
 const el = ref<HTMLDivElement | null>(null)
@@ -45,7 +46,7 @@ function render() {
         splitLine: { lineStyle: { color: t.split } } },
       { type: 'value', position: 'right',
         axisLine: { show: false },
-        axisLabel: { color: t.label, fontSize: 11, formatter: '{value}%' },
+        axisLabel: { color: t.label, fontSize: 11, formatter: formatMarketPercent },
         splitLine: { show: false } },
     ],
     series: [

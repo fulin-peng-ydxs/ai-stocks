@@ -149,6 +149,8 @@ const props = withDefaults(defineProps<{
   ariaLabel?: string
   enableIntradayDrilldown?: boolean
   showKlineTooltip?: boolean
+  /** 分时弹窗打开期间保留所点蜡烛的日期、指标和十字光标信息。 */
+  preserveActiveBar?: boolean
   enableReturnMeasurement?: boolean
   returnMeasurementMode?: MeasurementMode
   enableKlinePeriodSwitch?: boolean
@@ -172,6 +174,7 @@ const props = withDefaults(defineProps<{
   ariaLabel: '行情多图联动工作区',
   enableIntradayDrilldown: false,
   showKlineTooltip: true,
+  preserveActiveBar: false,
   enableReturnMeasurement: false,
   returnMeasurementMode: 'latest',
   enableKlinePeriodSwitch: false,
@@ -491,6 +494,7 @@ function chartOption(panel: PanelDescriptor, isBottom: boolean) {
     sellMarkerColor: statusPalette.value.warning,
     clickableCandles: props.enableIntradayDrilldown && effectivePeriod.value === 'day',
     showKlineTooltip: props.showKlineTooltip,
+    preserveActiveBar: props.preserveActiveBar,
     measurementRange: measurementChartRange.value,
     measurementSupplementAt,
     candlestickRect,
@@ -510,6 +514,7 @@ function onChartClick(event: { seriesType?: string; dataIndex?: number }): void 
     || event.seriesType !== 'candlestick'
   ) return
   if (typeof event.dataIndex !== 'number') return
+  setActiveBar(event.dataIndex)
   const tradeDate = rows.value[event.dataIndex]?.bar.date
   if (tradeDate) emit('barClick', tradeDate)
 }
@@ -542,11 +547,7 @@ function onKlineCanvasClick(
   selectMeasurementIndex(activeIndex.value)
 }
 
-function onAxisPointer(event: {
-  axesInfo?: Array<{ value?: string | number }>
-  seriesDataIndices?: Array<{ dataIndex?: number }>
-}): void {
-  const index = stockChartAxisPointerIndex(event, rows.value.map((row) => row.bar.date))
+function setActiveBar(index: number): void {
   if (index == null || index === activeIndex.value) return
   activeIndex.value = index
   const activeBar = rows.value[index]?.bar
@@ -570,7 +571,17 @@ function onAxisPointer(event: {
   ) refreshKlineChart()
 }
 
+function onAxisPointer(event: {
+  axesInfo?: Array<{ value?: string | number }>
+  seriesDataIndices?: Array<{ dataIndex?: number }>
+}): void {
+  const index = stockChartAxisPointerIndex(event, rows.value.map((row) => row.bar.date))
+  if (index == null) return
+  setActiveBar(index)
+}
+
 function clearActiveBar(): void {
+  if (props.preserveActiveBar) return
   if (activeIndex.value == null) return
   activeIndex.value = null
   emit('activeBarChange', null)
@@ -924,6 +935,13 @@ let drag: DragState | null = null
 const ratioFrame = createLatestAnimationFrame<{ separatorIndex: number; delta: number }>(
   ({ separatorIndex, delta }) => { applyRatioChange(separatorIndex, delta) },
 )
+const preservedPointerFrame = createLatestAnimationFrame<{
+  chart: echarts.ECharts
+  dataIndex: number
+}>(({ chart, dataIndex }) => {
+  if (!props.preserveActiveBar || activeIndex.value !== dataIndex || chart.isDisposed()) return
+  chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex })
+})
 
 function scheduleDraggedChartsResize(): void {
   if (dragChartResizeScheduled) return
@@ -1086,6 +1104,25 @@ watch(
   },
 )
 watch(
+  () => props.preserveActiveBar,
+  async (preserve) => {
+    const chart = charts.get('kline')
+    if (preserve && activeIndex.value != null) {
+      refreshKlineChart()
+      await nextTick()
+      if (!chart || chart.isDisposed()) return
+      chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: activeIndex.value })
+      // 弹窗遮罩挂载会让图表再收到一次 mouseout，下一绘制帧再恢复轴指针。
+      preservedPointerFrame.schedule({ chart, dataIndex: activeIndex.value })
+      return
+    }
+    preservedPointerFrame.cancel()
+    if (chart && !chart.isDisposed()) chart.dispatchAction({ type: 'hideTip' })
+    clearActiveBar()
+    refreshKlineChart()
+  },
+)
+watch(
   activeMeasurementSupplement,
   (value) => emit('measurementSummaryChange', value),
   { deep: true, immediate: true },
@@ -1158,6 +1195,7 @@ onDeactivated(() => {
   active = false
   activationLoading.value = false
   cancelDeferredActivation()
+  preservedPointerFrame.cancel()
   klinePointerInside.value = false
   if (drag) finishDrag()
   reportWorkspaceUnavailable()
@@ -1167,6 +1205,7 @@ onDeactivated(() => {
 onBeforeUnmount(() => {
   active = false
   cancelDeferredActivation()
+  preservedPointerFrame.cancel()
   window.removeEventListener('resize', onWorkspaceResize)
   if (drag) finishDrag()
   ratioFrame.cancel()

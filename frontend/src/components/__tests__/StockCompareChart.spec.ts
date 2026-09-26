@@ -118,10 +118,15 @@ describe('StockCompareChart', () => {
     const option = echartsMock.setOption.mock.calls.at(-1)?.[0] as {
       series: Array<{ data: number[]; lineStyle: { width: number } }>
       tooltip: { formatter: (params: unknown[]) => string }
+      yAxis: Array<{ axisLabel: { formatter: string | ((value: number) => string) } }>
     }
     expect(option.series[0]?.data).toEqual([0, 10])
     expect(option.series[1]?.data).toEqual([0, -5])
     expect(option.series[0]!.lineStyle.width).toBeGreaterThan(option.series[1]!.lineStyle.width)
+    const concreteFormatter = option.yAxis[0]!.axisLabel.formatter
+    expect(typeof concreteFormatter === 'function' ? concreteFormatter(0) : '').toBe('10.00')
+    const percentFormatter = option.yAxis[1]!.axisLabel.formatter
+    expect(typeof percentFormatter === 'function' ? percentFormatter(12.3456) : '').toBe('+12.35%')
     const content = option.tooltip.formatter([
       { axisValueLabel: '2026-08-07', dataIndex: 1, seriesIndex: 0, seriesName: '平安银行 · 000001.SZ', value: 10, marker: '' },
     ])

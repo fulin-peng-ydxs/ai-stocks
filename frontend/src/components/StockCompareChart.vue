@@ -20,6 +20,7 @@ import {
   type PriceCompareMetric,
   type PriceCompareSeries,
 } from '@/utils/marketCompare'
+import { formatMarketPercent } from '@/utils/marketValue'
 
 export interface StockCompareSeries {
   code: string
@@ -67,6 +68,14 @@ const comparison = computed(() => {
 const dates = computed(() => comparison.value.dates)
 const hasCommonInterval = computed(() => dates.value.length >= 2)
 const metricLabel = computed(() => PRICE_COMPARE_METRIC_META[props.metric].label)
+const concreteValueBase = computed(() => {
+  const referenceCode = props.activeCode && comparison.value.closesByCode[props.activeCode]
+    ? props.activeCode
+    : props.series[0]?.code
+  return referenceCode
+    ? comparison.value.closesByCode[referenceCode]?.find((value) => value != null) ?? null
+    : null
+})
 
 function relativeSeries(item: StockCompareSeries): (number | null)[] {
   return comparison.value.valuesByCode[item.code] ?? []
@@ -115,13 +124,14 @@ function render(): void {
     dates: dates.value,
     series,
     scrollLegend: true,
+    concreteValueBase: concreteValueBase.value,
     tooltipFormatter: (params: unknown) => {
       const rows = (Array.isArray(params) ? params : [params]).filter(Boolean) as any[]
       const date = String(rows[0]?.axisValueLabel ?? rows[0]?.name ?? '')
       const content = rows.map((row: any) => {
         const relative = Number(row.value)
         const valid = row.value != null && Number.isFinite(relative)
-        const relativeText = valid ? `${relative > 0 ? '+' : ''}${relative.toFixed(2)}%` : '--'
+        const relativeText = valid ? formatMarketPercent(relative) : '--'
         const color = !valid || relative === 0
           ? changeColors.neutral
           : relative > 0 ? changeColors.up : changeColors.down
@@ -136,7 +146,7 @@ function render(): void {
         return chartTooltipRowHtml(
           `<span>${row.marker ?? ''}${escapeChartHtml(row.seriesName)}</span>`,
           `<span style="text-align:right"><strong style="color:${color}">${relativeText}</strong>`
-            + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}%</small>`)
+            + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${formatMarketPercent(excess)}</small>`)
             + '</span>',
         )
       }).join('')

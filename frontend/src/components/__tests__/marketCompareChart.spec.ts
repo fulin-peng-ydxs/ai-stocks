@@ -31,11 +31,28 @@ describe('marketCompareChart', () => {
       series: [{ name: '示例', type: 'line', data: [0, 1] }],
       tooltipFormatter: formatter,
       scrollLegend: true,
+      concreteValueBase: 10,
     })
 
     expect(option.legend).toMatchObject({ data: ['示例'], type: 'scroll' })
     expect(option.xAxis).toMatchObject({ data: ['2026-09-01', '2026-09-02'] })
-    expect(option.yAxis.axisLabel.formatter).toBe('{value}%')
+    expect(option.yAxis).toHaveLength(2)
+    expect(option.yAxis.map((axis) => axis.position)).toEqual(['left', 'right'])
+    const concreteFormatter = option.yAxis[0].axisLabel.formatter
+    expect(typeof concreteFormatter).toBe('function')
+    if (typeof concreteFormatter === 'function') {
+      expect(concreteFormatter(0)).toBe('10.00')
+      expect(concreteFormatter(5)).toBe('10.50')
+    }
+    const percentFormatter = option.yAxis[1].axisLabel.formatter
+    expect(typeof percentFormatter).toBe('function')
+    if (typeof percentFormatter === 'function') {
+      expect(percentFormatter(12.3456)).toBe('+12.35%')
+      expect(percentFormatter(-2.3456)).toBe('-2.35%')
+      expect(percentFormatter(0)).toBe('0.00%')
+    }
+    expect(option.yAxis[0].min).toBe(option.yAxis[1].min)
+    expect(option.yAxis[0].max).toBe(option.yAxis[1].max)
     expect(option.dataZoom).toHaveLength(2)
     expect(option.tooltip.formatter).toBe(formatter)
   })

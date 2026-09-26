@@ -436,6 +436,36 @@ describe('StockChartWorkspace', () => {
     expect(option.series[0].cursor).toBe('pointer')
   })
 
+  it('分时弹窗打开期间只保留所点 K 线十字光标，关闭后恢复最新行情', async () => {
+    const wrapper = await mountWorkspace({
+      enableIntradayDrilldown: true,
+      showKlineTooltip: false,
+    })
+    const kline = echartsMock.instances[0]
+
+    kline.emit('click', { seriesType: 'candlestick', dataIndex: 2 })
+    await wrapper.setProps({ preserveActiveBar: true })
+    kline.emit('globalout', {})
+    await nextTick()
+
+    expect(wrapper.find('.stock-chart-panel__date').text()).toBe('2026-06-03')
+    expect(kline.setOption.mock.calls.at(-1)?.[0].tooltip).toMatchObject({
+      showContent: false,
+      alwaysShowContent: false,
+    })
+    expect(kline.dispatchAction).toHaveBeenCalledWith({
+      type: 'showTip',
+      seriesIndex: 0,
+      dataIndex: 2,
+    })
+
+    await wrapper.setProps({ preserveActiveBar: false })
+    await nextTick()
+
+    expect(kline.dispatchAction).toHaveBeenCalledWith({ type: 'hideTip' })
+    expect(wrapper.find('.stock-chart-panel__date').text()).toBe('2026-06-40')
+  })
+
   it('按需显示至最新涨跌，并在自选区间模式接管两次 K 线点击', async () => {
     const wrapper = await mountWorkspace({
       enableReturnMeasurement: true,

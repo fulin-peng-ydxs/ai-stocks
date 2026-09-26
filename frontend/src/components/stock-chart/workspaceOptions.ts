@@ -317,6 +317,7 @@ interface OptionContext {
   sellMarkerColor?: string
   clickableCandles?: boolean
   showKlineTooltip?: boolean
+  preserveActiveBar?: boolean
   measurementRange?: { startIndex: number; endIndex: number } | null
   measurementSupplementAt?: (index: number) => StockQuoteSupplement | null
   candlestickRect?: (params: unknown) => TooltipTargetRect | null
@@ -459,7 +460,9 @@ export function buildKlineOption(context: OptionContext) {
     ...base,
     tooltip: {
       ...base.tooltip,
-      showContent: context.showKlineTooltip !== false,
+      // 分时下钻只锁定十字光标与轴标签，不改写消费页原本的内容浮层策略。
+      showContent: context.showKlineTooltip !== false && context.preserveActiveBar !== true,
+      alwaysShowContent: false,
       className: 'stock-chart-kline-tooltip',
       appendTo: 'body',
       confine: true,

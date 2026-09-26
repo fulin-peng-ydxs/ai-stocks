@@ -29,6 +29,7 @@ import {
   type PriceCompareSeries,
 } from '@/utils/marketCompare'
 import { formatMoney } from '@/utils/money'
+import { formatMarketPercent } from '@/utils/marketValue'
 
 // 单个板块的序列：code/name 标识 + 该板块的日线 bars（升序）
 export interface CompareSeries {
@@ -88,6 +89,12 @@ const lineComparison = computed(() => {
 })
 const dates = computed(() => lineComparison.value.dates)
 const hasComparableLine = computed(() => isBar.value || dates.value.length >= 2)
+const concreteValueBase = computed(() => {
+  const referenceCode = props.series[0]?.code
+  return referenceCode
+    ? lineComparison.value.closesByCode[referenceCode]?.find((value) => value != null) ?? null
+    : null
+})
 
 function alignedMetric(series: CompareSeries): (number | null)[] {
   return lineComparison.value.valuesByCode[series.code] ?? []
@@ -131,6 +138,7 @@ function renderLine() {
     colors,
     dates: dates.value,
     series,
+    concreteValueBase: concreteValueBase.value,
     tooltipFormatter: (params: unknown) => {
       const rows = (Array.isArray(params) ? params : [params]).filter(Boolean) as any[]
       const date = escapeChartHtml(rows[0]?.axisValueLabel ?? rows[0]?.name ?? '')
@@ -140,7 +148,7 @@ function renderLine() {
         const color = !valid || value === 0
           ? changeColors.neutral
           : value > 0 ? changeColors.up : changeColors.down
-        const valueText = valid ? `${value > 0 ? '+' : ''}${value.toFixed(2)}%` : '--'
+        const valueText = valid ? formatMarketPercent(value) : '--'
         const isBenchmark = item.seriesName === benchmarkName
         const benchmarkValue = benchmarkData?.[Number(item.dataIndex)]
         const excess = valid && !isBenchmark && typeof benchmarkValue === 'number'
@@ -152,7 +160,7 @@ function renderLine() {
         return chartTooltipRowHtml(
           `<span>${item.marker ?? ''}${escapeChartHtml(item.seriesName)}</span>`,
           `<span style="text-align:right"><strong style="color:${color}">${valueText}</strong>`
-            + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}%</small>`)
+            + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${formatMarketPercent(excess)}</small>`)
             + '</span>',
         )
       }).join('')
@@ -243,7 +251,9 @@ function renderBar() {
         fontSize: 10,
         formatter: props.metric === 'inflow'
           ? (value: number) => `${formatMoney(value)}${unit}`
-          : `{value}${unit}`,
+          : unit === '%'
+            ? formatMarketPercent
+            : (value: number) => `${value}${unit}`,
       },
       splitLine: { lineStyle: { color: t.split } },
     },

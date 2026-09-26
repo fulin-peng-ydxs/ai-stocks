@@ -7,6 +7,7 @@ import { chartCssVariable, useEChartsTheme } from '@/components/chartTheme'
 import { chartTooltipRowHtml } from '@/components/chartTooltipHtml'
 import { initVectorEChart } from '@/components/echartsRenderer'
 import { formatMoney } from '@/utils/money'
+import { formatMarketPercent } from '@/utils/marketValue'
 
 // showBenchmark：缺省 true（默认展示基准）；父页显式传 false（回测选「不对比指数」）时整条基准线隐藏。
 // extraBenchmark 由父页按各自 trade_date 归一成资金净值曲线（与 points 同长同序）；有值渲染指数虚线，
@@ -93,8 +94,7 @@ function render() {
         const idx = rows[0]?.dataIndex ?? 0
         const retOf = (v: unknown, first: number) =>
           Number.isFinite(v) && first ? ((v as number) / first - 1) * 100 : null
-        const fmtRet = (r: number | null) =>
-          r == null ? '--' : `${r > 0 ? '+' : ''}${r.toFixed(2)}%`
+        const fmtRet = (r: number | null) => r == null ? '--' : formatMarketPercent(r)
         const colorOf = (r: number | null) => (r == null || r === 0 ? t.text : r > 0 ? upColor : downColor)
         // 超额=组合相对首日涨跌幅 − 基准相对首日涨跌幅（仅组合行、且基准可见时显示）
         const portfolioRet = retOf(equity[idx], firstEquity)
@@ -105,9 +105,9 @@ function render() {
           const isDd = item.seriesName === '回撤'
           const r = isDd ? null : (item.seriesName === '组合净值' ? portfolioRet : benchRet)
           const val = isDd ? Number(item.value) : r
-          const valText = isDd ? (Number.isFinite(val) ? `${(val as number).toFixed(2)}%` : '--') : fmtRet(r)
+          const valText = isDd ? (Number.isFinite(val) ? formatMarketPercent(val as number) : '--') : fmtRet(r)
           const excessHtml = !isDd && item.seriesName === '组合净值' && excess != null
-            ? `<small style="display:block;color:${colorOf(excess)}">超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}%</small>` : ''
+            ? `<small style="display:block;color:${colorOf(excess)}">超额 ${formatMarketPercent(excess)}</small>` : ''
           return chartTooltipRowHtml(
             `<span>${item.marker ?? ''}${item.seriesName ?? ''}</span>`,
             `<span style="text-align:right"><strong style="color:${colorOf(isDd ? val : r)}">${valText}</strong>${excessHtml}</span>`,
@@ -132,7 +132,7 @@ function render() {
       },
         splitLine: { lineStyle: { color: t.split } } },
       { gridIndex: 1, axisLine: { show: false }, splitNumber: 2,
-        axisLabel: { color: t.label, fontSize: 10, formatter: '{value}%' },
+        axisLabel: { color: t.label, fontSize: 10, formatter: formatMarketPercent },
         splitLine: { show: false } },
     ],
     dataZoom: [{ type: 'inside', xAxisIndex: [0, 1] }],

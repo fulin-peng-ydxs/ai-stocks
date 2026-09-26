@@ -59,7 +59,7 @@ export function intradayPanelLayout(chartHeight = 560): IntradayPanelLayout {
 function symmetricPriceExtent(
   points: IntradayPoint[],
   preClose: number | null,
-): { min?: number; max?: number } {
+): { min?: number; max?: number; interval?: number } {
   if (preClose == null || !Number.isFinite(preClose) || preClose <= 0) return {}
   const prices = points.flatMap((point) => [point.close, point.average_price])
     .filter((value): value is number => value != null && Number.isFinite(value))
@@ -74,6 +74,8 @@ function symmetricPriceExtent(
   return {
     min: Number((preClose - padded).toFixed(4)),
     max: Number((preClose + padded).toFixed(4)),
+    // 四等分保证昨收价落在中央刻度，零轴左侧始终显示对应具体股价。
+    interval: Number((padded / 2).toFixed(6)),
   }
 }
 
@@ -211,6 +213,7 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         gridIndex: 0,
         position: 'left',
         scale: true,
+        splitNumber: 4,
         ...priceExtent,
         axisLabel: {
           color: theme.label,
@@ -230,6 +233,7 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         gridIndex: 0,
         position: 'right',
         scale: true,
+        splitNumber: 4,
         ...priceExtent,
         axisLabel: {
           show: preClose != null && preClose > 0,

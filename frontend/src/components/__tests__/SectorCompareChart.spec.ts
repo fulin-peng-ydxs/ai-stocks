@@ -96,6 +96,7 @@ describe('SectorCompareChart', () => {
     const option = echartsMock.setOption.mock.calls.at(-1)?.[0] as {
       tooltip: { formatter: (params: unknown[]) => string }
       dataZoom: Array<{ start: number; end: number }>
+      yAxis: Array<{ axisLabel: { formatter: string | ((value: number) => string) } }>
     }
     const content = option.tooltip.formatter([
       { axisValueLabel: '2026-08-11', seriesName: '上涨板块', value: 5, dataIndex: 5, marker: '' },
@@ -118,6 +119,10 @@ describe('SectorCompareChart', () => {
       expect.objectContaining({ start: 0, end: 100 }),
       expect.objectContaining({ start: 0, end: 100 }),
     ])
+    const concreteFormatter = option.yAxis[0]!.axisLabel.formatter
+    expect(typeof concreteFormatter === 'function' ? concreteFormatter(0) : '').toBe('100.00')
+    const percentFormatter = option.yAxis[1]!.axisLabel.formatter
+    expect(typeof percentFormatter === 'function' ? percentFormatter(12.3456) : '').toBe('+12.35%')
     expect(wrapper.attributes('data-point-count')).toBe('6')
     expect(wrapper.attributes('data-benchmark-code')).toBe('000905.SH')
     expect(wrapper.attributes('data-benchmark-point-count')).toBe('6')
@@ -138,8 +143,10 @@ describe('SectorCompareChart', () => {
     const option = echartsMock.setOption.mock.calls.at(-1)?.[0] as {
       series: Array<{ type: string }>
       dataZoom?: unknown[]
+      yAxis: { axisLabel: { formatter: (value: number) => string } }
     }
     expect(option.series.every((s) => s.type === 'bar')).toBe(true)
+    expect(option.yAxis.axisLabel.formatter(12.3456)).toBe('+12.35%')
     expect(option.dataZoom).toBeUndefined()
     expect(wrapper.attributes('data-benchmark-code')).toBe('')
     expect(wrapper.attributes('data-benchmark-point-count')).toBe('0')

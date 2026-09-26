@@ -28,6 +28,7 @@ function lastOption() {
   return echartsMock.setOption.mock.calls.at(-1)?.[0] as {
     legend: { data: string[] }
     tooltip: { formatter: (params: unknown) => string }
+    yAxis: Array<{ axisLabel: { formatter: (value: number) => string } }>
     series: Array<{ name: string; lineStyle: { type: string; color: string }; color: string; itemStyle: { color: string }; data: number[] }>
   }
 }
@@ -137,6 +138,7 @@ describe('EquityChart 基准对比渲染', () => {
     expect(html).toContain('+5.00%')
     expect(html).toContain('+1.00%')
     expect(html).toContain('超额 +4.00%')
+    expect(option.yAxis[1]!.axisLabel.formatter(12.3456)).toBe('+12.35%')
     wrapper.unmount()
   })
 

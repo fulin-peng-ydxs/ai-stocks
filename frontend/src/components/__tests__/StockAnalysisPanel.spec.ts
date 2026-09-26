@@ -58,6 +58,7 @@ function mountPanel(overrides: Record<string, unknown> = {}) {
             adjustMode: String,
             macdAdjustLabel: String,
             enableIntradayDrilldown: Boolean,
+            preserveActiveBar: Boolean,
             enableReturnMeasurement: Boolean,
             enableAdjustModeSwitch: Boolean,
           },
@@ -133,10 +134,12 @@ describe('StockAnalysisPanel', () => {
     await flushPromises()
     const workspace = wrapper.findComponent({ name: 'StockChartWorkspace' })
     expect(workspace.props('enableIntradayDrilldown')).toBe(true)
+    expect(workspace.props('preserveActiveBar')).toBe(false)
     expect(workspace.props('enableReturnMeasurement')).toBe(true)
     expect(workspace.props('enableAdjustModeSwitch')).toBe(true)
 
     await workspace.trigger('click')
+    expect(workspace.props('preserveActiveBar')).toBe(true)
     const dialog = wrapper.findComponent({ name: 'StockIntradayDialog' })
     expect(dialog.props()).toMatchObject({
       modelValue: true,

@@ -609,6 +609,26 @@ describe('workspaceOptions', () => {
     })
   })
 
+  it('分时下钻保留十字光标与轴标签，不强制恢复 K 线内容浮层', () => {
+    const option = buildKlineOption({
+      rows: alignStockChartRows([bar('2026-07-22', 10)], []),
+      warmupBars: [],
+      theme,
+      isBottom: false,
+      showKlineTooltip: false,
+      preserveActiveBar: true,
+      zoomStart: 0,
+      zoomEnd: 100,
+    })
+
+    expect(option.tooltip).toMatchObject({
+      showContent: false,
+      alwaysShowContent: false,
+      trigger: 'axis',
+      axisPointer: { type: 'cross' },
+    })
+  })
+
   it('买卖点标注渲染到 K 线 markPoint，买=蓝▲置于最低价下方、卖=橙▼置于最高价上方', () => {
     const rows = alignStockChartRows(
       [bar('2026-07-22', 10), bar('2026-07-23', 11), bar('2026-07-24', 12)],

@@ -1314,6 +1314,7 @@ onBeforeUnmount(() => {
                 :zoom-end="100"
                 fit-available-height
                 enable-intraday-drilldown
+                :preserve-active-bar="intradayOpen"
                 enable-return-measurement
                 enable-kline-period-switch
                 enable-adjust-mode-switch

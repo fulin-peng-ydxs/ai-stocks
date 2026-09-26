@@ -558,6 +558,7 @@ onBeforeUnmount(() => {
         :zoom-end="100"
         aria-label="股票K线多图联动工作区"
         enable-intraday-drilldown
+        :preserve-active-bar="intradayOpen"
         enable-return-measurement
         enable-kline-period-switch
         enable-adjust-mode-switch
