@@ -56,7 +56,10 @@ def _seed(c):
     c.execute("INSERT INTO daily_bar (code, trade_date, close) VALUES ('600000.SH', DATE '2026-08-07', 10.0)")
     # stock_basic（成分名称）
     for code, name in (("000001.SZ", "平安银行"), ("000002.SZ", "万科A")):
-        c.execute("INSERT INTO stock_basic (code, name) VALUES (?, ?)", [code, name])
+        c.execute(
+            "INSERT INTO stock_basic (code, name, board) VALUES (?, ?, '主板')",
+            [code, name],
+        )
         c.execute(
             "INSERT INTO stock_st_status_daily "
             "(code,trade_date,is_st,source,source_ref,quality,captured_at,updated_at) "
@@ -242,7 +245,10 @@ def test_detail_and_subset_queries_push_board_codes_into_fact_sql(c, monkeypatch
 def test_cumulative_member_market_is_distinct_from_latest_snapshot_count(c):
     """行情统计消费历史累计关系；最近完整快照返回数保持独立口径。"""
     c.execute("INSERT INTO board_member (board_code, code) VALUES ('309121', '000003.SZ')")
-    c.execute("INSERT INTO stock_basic (code, name) VALUES ('000003.SZ', '累计成员')")
+    c.execute(
+        "INSERT INTO stock_basic (code, name, board) "
+        "VALUES ('000003.SZ', '累计成员', '主板')"
+    )
     c.execute(
         "INSERT INTO daily_bar (code, trade_date, close, pre_close, amount) "
         "VALUES ('000003.SZ', DATE '2026-08-07', 12, 10, 1000000)"
@@ -383,6 +389,29 @@ def test_get_members_filters_by_code_or_name(c, keyword, expected_code):
 def test_get_members_treats_like_wildcards_as_literals(c):
     """搜索内容中的 SQL LIKE 通配符按普通字符处理。"""
     assert _svc(c).get_members("309121", keyword="%_")["total"] == 0
+
+
+def test_get_members_excludes_out_of_scope_and_inactive_members(c):
+    """累计原始关系可保留，但详情列表只展示截面日项目股票池内成员。"""
+    rows = [
+        ("920249.BJ", "北交样本", "北交所", None, None, None),
+        ("600001.SH", "已退市", "主板", None, "2026-08-01", None),
+        ("300999.SZ", "未来成员", "创业板", None, None, "2026-08-08"),
+    ]
+    for code, name, board, list_date, delist_date, first_seen in rows:
+        c.execute(
+            "INSERT INTO stock_basic (code,name,board,list_date,delist_date) VALUES (?,?,?,?,?)",
+            [code, name, board, list_date, delist_date],
+        )
+        c.execute(
+            "INSERT INTO board_member (board_code,code,first_seen_date) VALUES ('309121',?,?)",
+            [code, first_seen],
+        )
+
+    result = _svc(c).get_members("309121", trade_date=date(2026, 8, 7))
+
+    assert result["total"] == 2
+    assert {row["code"] for row in result["list"]} == {"000001.SZ", "000002.SZ"}
 
 
 def test_get_members_empty_board(c):

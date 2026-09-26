@@ -27,7 +27,7 @@ import pandas as pd
 from backend.common.exceptions import DataSourceError
 from backend.common.logging import get_logger
 from backend.dataquality.checker import severity_for
-from backend.datasource.akshare_source import to_full_code
+from backend.datasource.akshare_source import classify_board, to_full_code
 from backend.datasource.ths_board import FUND_FLOW_PERIODS, ThsBoardSource
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient, get_client
@@ -390,8 +390,12 @@ class BoardIngestService:
                                   phase_done=len(done_codes), current_item=code,
                                   member_done_codes=sorted(done_codes))
                 if ctx:
-                    ctx.log(f"成分 {i}/{n_total} {code}：完整 {r.get('total', 0)} 只，"
-                            f"新增 {r.get('added', 0)} 只")
+                    ctx.log(
+                        f"成分 {i}/{n_total} {code}：源端完整 {r.get('total', 0)} 只，"
+                        f"项目内 {r.get('eligible_total', 0)} 只，"
+                        f"排除范围外 {r.get('excluded_out_of_scope', 0)} 只，"
+                        f"新增 {r.get('added', 0)} 只"
+                    )
             except Exception as e:  # noqa: BLE001 —— 单板块失败跳过不中断，记 data_update_log failed
                 log.warning("板块 %s 成分快照失败: %s", code, e)
                 results[code] = {"error": str(e)}
@@ -404,11 +408,16 @@ class BoardIngestService:
             ctx.log(f"成分：{len(skipped_codes)} 个板块未达更新间隔（{self._member_interval_days} 天），跳过")
         # 更新留痕（聚合：一次运行一条日志，避免逐板块刷屏）
         written = sum(int(r.get("added", 0)) for r in results.values() if "error" not in r and not r.get("skipped"))
+        excluded = sum(
+            int(r.get("excluded_out_of_scope", 0))
+            for r in results.values()
+            if "error" not in r and not r.get("skipped")
+        )
         skip_detail = f"，跳过 {len(skipped_codes)} 个未到期板块" if skipped_codes else ""
         self._log_update("board_member", sdate, sdate, written,
                          "success" if not n_err else "partial",
                          f"处理 {len(results) - len(skipped_codes)} 个板块，新增 {written} 条成员关系"
-                         f"（失败 {n_err}）{skip_detail}")
+                         f"，排除范围外 {excluded} 条（失败 {n_err}）{skip_detail}")
         log.info("板块成分快照 %d 个板块（跳过 %d，失败 %d）",
                  len(results) - len(skipped_codes), len(skipped_codes), n_err)
         return results
@@ -423,29 +432,38 @@ class BoardIngestService:
         """
         m = self.src.get_board_members(code, board_type)
         codes_full = [to_full_code(c) for c in m["codes"]]
-        cur_set = set(codes_full)
+        source_set = set(codes_full)
+        cur_set = {
+            member_code
+            for member_code in source_set
+            if classify_board(member_code.split(".", 1)[0])[1]
+            in {"主板", "创业板", "科创板"}
+        }
+        excluded_count = len(source_set) - len(cur_set)
         if not m["complete"]:
             # 完整性即闸门：不完整快照整趟不落库（含完全没取到的空快照），抛错走失败留痕
             raise DataSourceError(
-                f"板块 {code} 成分快照不完整（complete=False，取到 {len(cur_set)} 只），不落库待重采")
-        if not cur_set:
+                f"板块 {code} 成分快照不完整（complete=False，取到 {len(source_set)} 只），不落库待重采")
+        if not source_set:
             # 完整但空快照：源端返回空成分（罕见，如板块成分为空），记失败
             raise DataSourceError(f"板块 {code} 成分快照完整但为空，记失败待重采")
         # 完整快照 → 只进不出落库（已有不动、新增插入），同事务刷新 member_count
         with self.c.transaction():
-            ph = _in_placeholders(len(cur_set))
-            existing = int(self.c.query_df(
-                f"SELECT count(*) AS n FROM board_member WHERE board_code=? AND code IN ({ph})",
-                [code, *sorted(cur_set)]).iloc[0]["n"])
-            self.c.execute(
-                f"INSERT INTO board_member (board_code, code, first_seen_date) "
-                f"SELECT ?, code, ? FROM (VALUES {','.join('(?)' for _ in cur_set)}) t(code) "
-                f"ON CONFLICT (board_code, code) DO NOTHING",
-                [code, sdate, *sorted(cur_set)])
+            existing = 0
+            if cur_set:
+                ph = _in_placeholders(len(cur_set))
+                existing = int(self.c.query_df(
+                    f"SELECT count(*) AS n FROM board_member WHERE board_code=? AND code IN ({ph})",
+                    [code, *sorted(cur_set)]).iloc[0]["n"])
+                self.c.execute(
+                    f"INSERT INTO board_member (board_code, code, first_seen_date) "
+                    f"SELECT ?, code, ? FROM (VALUES {','.join('(?)' for _ in cur_set)}) t(code) "
+                    f"ON CONFLICT (board_code, code) DO NOTHING",
+                    [code, sdate, *sorted(cur_set)])
             self.c.execute(
                 "UPDATE board_dict SET member_count=?, member_snapshot_at=now(), updated_at=now() "
                 "WHERE board_code=?",
-                [len(cur_set), code])
+                [len(source_set), code])
             self.c.execute(
                 "UPDATE board_dict SET member_history_start_date=COALESCE(member_history_start_date, ?), "
                 "updated_at=now() WHERE board_code=?",
@@ -462,7 +480,12 @@ class BoardIngestService:
             deactivate_occurrence_ignores(
                 self.c, "board_member_incomplete", code, ignored_dates["trade_date"].tolist(),
             )
-        return {"total": len(cur_set), "added": len(cur_set) - existing}
+        return {
+            "total": len(source_set),
+            "eligible_total": len(cur_set),
+            "excluded_out_of_scope": excluded_count,
+            "added": len(cur_set) - existing,
+        }
 
     # ── 3. 指数 ──────────────────────────────────────────────
 

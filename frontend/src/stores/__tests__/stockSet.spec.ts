@@ -10,7 +10,7 @@ import {
 const LIST_STATE: StockListState = {
   mode: 'group',
   q: '',
-  board: '',
+  boards: ['主板', '创业板'],
   excludeSt: true,
   tradeDate: '2026-01-05',
   sortBy: 'pct_chg',

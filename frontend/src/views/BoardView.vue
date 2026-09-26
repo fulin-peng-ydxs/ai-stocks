@@ -12,6 +12,8 @@ import {
 } from '@/api/scoreProfile'
 import { browseBoardProfiles, listBoardProfiles, runBoardProfile } from '@/api/board'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppFilterSelect from '@/components/AppFilterSelect.vue'
+import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
@@ -29,7 +31,7 @@ import StockGroupBatchActions from '@/components/StockGroupBatchActions.vue'
 import StockGroupFavoriteButton from '@/components/StockGroupFavoriteButton.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
-import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
+import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useMarketMasterRatioRuntime } from '@/composables/useMarketMasterRatioRuntime'
 import { useTradeDates } from '@/composables/useTradeDates'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
@@ -59,6 +61,8 @@ import { hasPermission } from '@/utils/permission'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
 import { getApiErrorCode, getErrorMessage } from '@/utils/error'
 import { listGroups, type GroupSummary } from '@/api/stockGroup'
+import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
+import { normalizeAllSelectedFilter } from '@/utils/multiSelectFilter'
 
 // 列表页布局（原型 A）：操作区=头部（标题+控件），主内容区=榜单表格（撑满·表体内滚）。
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
@@ -105,14 +109,23 @@ const loading = ref(true)
 const error = ref('')
 const runDate = ref<string>('')
 const rows = ref<ScoreRunRow[]>([])
+const total = ref(0)
+const page = ref(1)
+const BOARD_LISTED_OPTIONS = [
+  { value: 'main', label: '主板' },
+  { value: 'star', label: '科创板' },
+  { value: 'gem', label: '创业板' },
+]
+const BOARD_LISTED_KEYS = BOARD_LISTED_OPTIONS.map((item) => item.value)
+const listedBoards = ref<string[]>([...BOARD_LISTED_KEYS])
+const keyword = ref('')
 const syncingRunDate = ref(false)
 const settingsOpen = ref(false)
 const { dataMax, ensureLoaded: ensureTradeDatesLoaded } = useTradeDates()
 
-// topN、分项达标分模式属榜单业务态偏好，保留在 usePageSettings；
-// 列显隐与默认排序迁入组件配置层（slots.table.config.*），消除与 usePageSettings 的双入口（plan.md §13.3）。
+// 分项达标分模式属榜单业务态偏好，保留在 usePageSettings；
+// 列显隐与分页大小属表格组件配置，排名则始终直接使用服务端全市场排名。
 const boardDefaults = {
-  topN: 50,
   subScoreMode: 'full' as 'full' | 'brief' | 'hidden',
   adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
 }
@@ -129,12 +142,11 @@ useLegacyStockChartPreferenceMigration({
   whenPageSettingsHydrated, legacySnapshot,
   saveRemoteUserConfig, remoteSaveFailed: () => remoteSaveError.value, savePageSettings,
 })
-const configuredTopN = computed(() => Number(settings.topN))
-const topN = useDefaultedSessionValue(configuredTopN, {
-  onSynced: () => {
-    clearAnalysisSelection()
-    if (profileRef.value) void load()
-  },
+const { pageSize, changePageSize } = useComponentPageSizeSession({
+  resolveDefault: () => componentValueOf('table', 'pageSize'),
+  fallback: 50,
+  resetPage: () => { page.value = 1 },
+  reload: () => profileRef.value && load(),
 })
 const { validDefault: klineDefaultRange } = useKlinePrefs()
 const {
@@ -151,16 +163,6 @@ const {
   klineDefaultRange,
 )
 
-// 排序单向：配置层 defaultSort 只提供默认值，列头排序只进会话覆盖（sessionSort），不写回配置层。
-type BoardSort = 'score' | 'rank' | 'code'
-const BOARD_SORT_PROPS: Record<string, BoardSort> = { total_score: 'score', rank: 'rank', code: 'code' }
-const configuredSort = computed<BoardSort>(() => {
-  const raw = componentValueOf('table', 'defaultSort')
-  return raw === 'rank' || raw === 'code' ? raw : 'score'
-})
-const sessionSort = ref<BoardSort | null>(null)
-watch(configuredSort, () => { sessionSort.value = null }) // 抽屉改默认 → 清会话覆盖跟随
-const sortBy = computed<BoardSort>(() => sessionSort.value ?? configuredSort.value)
 const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
@@ -168,11 +170,6 @@ function colVisible(key: string): boolean {
 function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
 }
-function onTableSortChange({ prop }: { prop: string; order: string | null }): void {
-  sessionSort.value = BOARD_SORT_PROPS[prop] ?? 'score'
-}
-
-
 // 评分规则方案（R3/R5/R7）：下拉加载「我的」，搜索抽屉可浏览可见资产；
 // 榜单属于“选择即查看”页面，加载公开方案后直接形成只读选项并自动刷新。
 const auth = useAuthStore()
@@ -223,6 +220,7 @@ function onProfileSelect(key: string) {
   // 任何选择变化（包括清空）都先让旧请求失效，避免无选中时被迟到响应重新写回榜单。
   loadSequence += 1
   clearAnalysisSelection()
+  page.value = 1
   profileRef.value = key
   if (externalProfile.value && profileKey(externalProfile.value) !== key) {
     externalProfile.value = null
@@ -230,6 +228,7 @@ function onProfileSelect(key: string) {
   if (key) void load()
   else {
     rows.value = []
+    total.value = 0
     cacheStatus.value = ''
     loading.value = false
   }
@@ -335,13 +334,6 @@ function nameOf(key: string): string {
 }
 // 分项 key 顺序 = 本次结果第一行 sub_scores 的键序
 const subKeys = computed(() => (rows.value[0] ? Object.keys(rows.value[0].sub_scores || {}) : []))
-const displayRows = computed(() => {
-  const list = [...rows.value]
-  if (sortBy.value === 'rank') list.sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER))
-  else if (sortBy.value === 'code') list.sort((a, b) => a.code.localeCompare(b.code))
-  else list.sort((a, b) => (b.total_score ?? -Infinity) - (a.total_score ?? -Infinity))
-  return list
-})
 const boardResultColumns = computed(() => rankedStockColumns([
   'rank',
   ...(colVisible('code') ? ['code' as const] : []),
@@ -352,7 +344,7 @@ const boardResultColumns = computed(() => rankedStockColumns([
   ...(colVisible('score') ? ['score' as const] : []),
   ...(colVisible('grade') ? ['grade' as const] : []),
   ...(colVisible('subScores') && displaySubKeys.value.length ? ['subScores' as const] : []),
-]))
+]).map((column) => ({ ...column, sortable: false })))
 const selectedStocks = ref<StockBatchItem[]>([])
 const groups = ref<GroupSummary[]>([])
 const defaultGroup = computed(() => groups.value.find((group) => group.is_default))
@@ -366,7 +358,7 @@ const {
   allCurrentSelected,
   someCurrentSelected,
   toggleAllCurrent,
-} = useStockBatchSelection(displayRows, selectedStocks)
+} = useStockBatchSelection(rows, selectedStocks)
 
 async function loadGroups(): Promise<void> {
   if (!hasPermission(auth.role, auth.permissions, 'stock-group:view')) {
@@ -391,7 +383,7 @@ function updateDefaultFavorite(row: ScoreRunRow, active: boolean): void {
     : otherGroups
   group.member_count = Math.max(0, group.member_count + (active ? 1 : -1))
 }
-const analysisSourceItems = computed(() => displayRows.value)
+const analysisSourceItems = computed(() => rows.value)
 const analysisRefreshRevision = ref(0)
 const {
   activeCode: activeAnalysisCode,
@@ -407,9 +399,7 @@ const {
 } = useStockAnalysisSelection(analysisSourceItems, {
   onLimitReached: (limit) => ElMessage.warning(`最多对比${limit}只股票`),
 })
-const boardListMeta = computed(() => (
-  '点击行切换走势'
-))
+const boardListMeta = computed(() => `${total.value} 只 · 点击行切换走势`)
 
 function handleBoardRowClick(item: ScoreRunRow): void {
   selectAnalysisItem(item)
@@ -431,18 +421,42 @@ const displaySubKeys = computed(() => {
 })
 watch(runDate, () => {
   if (!profileRef.value || syncingRunDate.value) return
+  page.value = 1
   clearAnalysisSelection()
   load()
 })
 
-function onTopNChange(): void {
+function reloadFromFirstPage(): void {
+  page.value = 1
   clearAnalysisSelection()
+  void load()
+}
+
+function onListedBoardsChange(value: string[] | string): void {
+  listedBoards.value = normalizeAllSelectedFilter(value, BOARD_LISTED_KEYS)
+  reloadFromFirstPage()
+}
+
+function searchKeyword(): void {
+  keyword.value = keyword.value.trim()
+  reloadFromFirstPage()
+}
+
+function resetStockFilters(): void {
+  listedBoards.value = [...BOARD_LISTED_KEYS]
+  keyword.value = ''
+  reloadFromFirstPage()
+}
+
+function changePage(value: number): void {
+  page.value = value
   void load()
 }
 
 let loadSequence = 0
 const relatedBoardFirstLoad = useRelatedBoardFirstLoad(() => loadBoard(false, true))
 const recomputing = ref(false)
+const exporting = ref(false)
 async function loadBoard(force: boolean, background = false): Promise<boolean> {
   if (!profileRef.value) return false
   const selected = curProfile.value
@@ -462,7 +476,10 @@ async function loadBoard(force: boolean, background = false): Promise<boolean> {
     const res = await runBoardProfile({
       ...(selected.profile_ref ? { profile_ref: selected.profile_ref } : { profile_id: selected.id }),
       run_date: runDate.value || undefined,
-      top: topN.value,
+      page: page.value,
+      page_size: pageSize.value,
+      listed_boards: listedBoards.value,
+      keyword: keyword.value || undefined,
       ...(force ? { force: true } : {}),
     })
     if (sequence !== loadSequence) return false
@@ -474,8 +491,17 @@ async function loadBoard(force: boolean, background = false): Promise<boolean> {
       }
       return false
     }
+    const nextTotal = Number(res.total ?? res.count ?? res.list.length)
+    if (!background) {
+      const maxPage = Math.max(1, Math.ceil(nextTotal / pageSize.value))
+      if (page.value > maxPage) {
+        page.value = maxPage
+        return loadBoard(false)
+      }
+    }
     if (background) mergeRelatedBoardResults(rows.value, res.list)
     else rows.value = res.list
+    total.value = nextTotal
     relatedBoardFirstLoad.observe(
       res.list,
       relatedBoardFirstLoadContext(res.list, res.run_date),
@@ -540,7 +566,7 @@ async function recomputeCurrentBoard(): Promise<void> {
 }
 
 function gotoStock(row: ScoreRunRow) {
-  const items = displayRows.value.map((item) => ({ code: item.code, name: item.name }))
+  const items = rows.value.map((item) => ({ code: item.code, name: item.name }))
   stockSet.setResultSet(items, '每日榜单', '/board')
   router.push(`/stocks/${row.code}`)
 }
@@ -552,14 +578,37 @@ function viewSelectedStocks(): void {
   router.push(`/stocks/${first.code}`)
 }
 
-function exportCsv() {
-  if (!rows.value.length) return
-  const headers = ['全市场排名', '代码', '名称', '板块', '综合分', '评级', ...subKeys.value.map((k) => nameOf(k))]
-  const data = rows.value.map((r) => [
-    r.rank ?? '', r.code, r.name ?? '', r.board ?? '', r.total_score ?? '', r.grade ?? '',
-    ...subKeys.value.map((k) => Math.round(r.sub_scores[k] ?? 0)),
-  ])
-  downloadCsv(`每日榜单_${curProfile.value?.name ?? ''}_${runDate.value || 'latest'}.csv`, headers, data)
+async function exportCsv(): Promise<void> {
+  const selected = curProfile.value
+  if (!selected || !total.value || exporting.value) return
+  exporting.value = true
+  try {
+    const res = await runBoardProfile({
+      ...(selected.profile_ref ? { profile_ref: selected.profile_ref } : { profile_id: selected.id }),
+      run_date: runDate.value || undefined,
+      listed_boards: listedBoards.value,
+      keyword: keyword.value || undefined,
+      export_all: true,
+    })
+    if (res.business_code === 'ST_STATUS_NOT_READY') {
+      ElMessage.error(res.st_status_error || 'ST 状态刷新尚未完整发布，请等待完成后重试')
+      return
+    }
+    const headers = ['全市场排名', '代码', '名称', '板块', '综合分', '评级', ...subKeys.value.map((k) => nameOf(k))]
+    const data = res.list.map((r) => [
+      r.rank ?? '', r.code, r.name ?? '', r.board ?? '', r.total_score ?? '', r.grade ?? '',
+      ...subKeys.value.map((k) => Math.round(r.sub_scores[k] ?? 0)),
+    ])
+    downloadCsv(
+      `每日榜单_${selected.name}_${res.run_date || runDate.value || 'latest'}.csv`,
+      headers,
+      data,
+    )
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error, '榜单导出失败'))
+  } finally {
+    exporting.value = false
+  }
 }
 
 onMounted(async () => {
@@ -636,7 +685,7 @@ const menuPageTitle = useMenuPageTitle()
             :disabled="loading && !recomputing"
             @click="recomputeCurrentBoard"
           >重算当日</el-button>
-          <el-button :disabled="!rows.length" @click="exportCsv">导出 CSV</el-button>
+          <el-button :loading="exporting" :disabled="!total || exporting" @click="exportCsv">导出 CSV</el-button>
         </div>
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
@@ -668,12 +717,28 @@ const menuPageTitle = useMenuPageTitle()
           @set-default="onSetDefault"
         />
         <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" />
-        <span class="lbl">Top</span>
-        <el-select v-model="topN" style="width: 88px" @change="onTopNChange">
-          <el-option :value="20" label="20" />
-          <el-option :value="50" label="50" />
-          <el-option :value="100" label="100" />
-        </el-select>
+        <AppFilterSelect
+          :model-value="listedBoards"
+          :options="BOARD_LISTED_OPTIONS"
+          :visible-tag-count="2"
+          all-selected-label="全部板块"
+          placeholder="上市板块"
+          aria-label="按上市板块筛选"
+          data-testid="board-listed-boards"
+          @change="onListedBoardsChange"
+        />
+        <AppSearchInput
+          v-model="keyword"
+          class="app-control-width-long"
+          placeholder="代码 / 名称"
+          data-testid="board-stock-keyword"
+          @search="searchKeyword"
+        />
+        <el-button
+          data-testid="board-reset-filters"
+          :disabled="!keyword && listedBoards.length === BOARD_LISTED_KEYS.length"
+          @click="resetStockFilters"
+        >重置筛选</el-button>
       </AppControlRow>
     </el-card>
 
@@ -711,7 +776,7 @@ const menuPageTitle = useMenuPageTitle()
       />
       <RankedStockResultTable
         v-else
-        :rows="displayRows"
+        :rows="rows"
         :columns="boardResultColumns"
         :loading="loading"
         :border="tableBorder('table')"
@@ -722,7 +787,9 @@ const menuPageTitle = useMenuPageTitle()
         :return-path="route.fullPath"
         :st-as-of-date="runDate"
         :name-leading-controls="canUpdateDefaultGroup && defaultGroup ? 1 : 0"
-        @sort-change="onTableSortChange"
+        :pagination="{ currentPage: page, pageSize, total, pageSizes: PAGE_SIZE_OPTIONS }"
+        @page-change="changePage"
+        @size-change="changePageSize"
         @row-click="handleBoardRowClick"
         @toggle-analysis="toggleAnalysisPinned"
       >
@@ -822,13 +889,6 @@ const menuPageTitle = useMenuPageTitle()
           </PageSettingItem>
         </PageSettingSection>
         <PageSettingSection title="默认结果">
-          <PageSettingItem label="Top N">
-            <PageSegmented v-model="settings.topN" aria-label="Top N" :options="[
-              { label: '20', value: 20 },
-              { label: '50', value: 50 },
-              { label: '100', value: 100 },
-            ]" />
-          </PageSettingItem>
           <PageSettingItem label="分项达标分">
             <PageSegmented v-model="settings.subScoreMode" aria-label="分项达标分" :options="[
               { label: '全显', value: 'full' },

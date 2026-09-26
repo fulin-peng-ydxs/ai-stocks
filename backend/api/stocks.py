@@ -18,6 +18,7 @@ from backend.indicators.period import MACD_OUTPUT_COLUMNS, IndicatorPeriod, comp
 from backend.services.intraday_quotes import IntradayQuoteService, IntradayServiceUnavailable
 from backend.services.market_benchmark import MarketBenchmarkService
 from backend.services.stock_board_correlation import StockBoardCorrelationService
+from backend.services.stock_board_filters import parse_stock_board_values
 from backend.services.stock_quote_summary import StockQuoteSummaryService
 from backend.storage import get_read_client as get_client
 from backend.storage.repository import MarketRepository
@@ -90,30 +91,66 @@ def _serialize_indicator_rows(df: pd.DataFrame) -> list[dict]:
 
 @router.get("/stocks", response_model=ApiResponse,
             dependencies=[Depends(require_perm("stocks:view"))])
-def list_stocks(q: str | None = None, board: str | None = None,
+def list_stocks(q: str | None = None, boards: str | None = None,
+                board: str | None = None,
                 membership_board_code: str | None = None,
                 exclude_st: bool = False, trade_date: date | None = None,
                 sort_by: str = "pct_chg", sort_order: str = "asc",
                 page: int = 1, size: int = 50) -> ApiResponse:
     """个股列表（按交易日展示当日涨跌幅 + 上市板块/行业概念归属筛选 + 服务端排序）。
 
+    boards: 逗号分隔的个股板块值，支持主板/创业板/科创板/ST/退市；board 仅兼容旧客户端。
     board: 主板/创业板/科创板 / 'ST'(只看 ST) / '退市'(只看退市)；除 '退市' 外均排除已退市。
     exclude_st=true 且非 ST 板块 → 过滤该交易日的权威 ST 点时事实。
     trade_date 默认最新交易日，LEFT JOIN 当日行情算涨跌幅 pct_chg。
     sort_by ∈ {pct_chg,close,name,industry,code}，sort_order ∈ {asc,desc}；NULL（停牌）恒排末尾。
     """
     c = get_client()
+    try:
+        selected_boards = parse_stock_board_values(boards)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    using_multi_boards = boards is not None
+    include_delisted = "退市" in selected_boards
+    legacy_delisted = not using_multi_boards and board == "退市"
     td = (trade_date if trade_date else pd.Timestamp(
         c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]).date())
     from backend.services.stock_st_status import StockSTStatusService
 
-    if board == "退市":
+    if legacy_delisted or include_delisted:
+        # 项目只对已有历史行情的退市证券承诺点时 ST 事实。更早的证券仅有基础档案，
+        # 既不属于当前五年行情研究范围，也不能靠名称伪造退市前 ST 状态。
+        missing_conds = [
+            "sb.delist_date IS NOT NULL",
+            "sb.delist_date<=?",
+            (
+                "EXISTS (SELECT 1 FROM daily_bar hist WHERE hist.code=sb.code "
+                "AND hist.trade_date<=sb.delist_date)"
+            ),
+            (
+                "NOT EXISTS (SELECT 1 FROM stock_st_status_daily st "
+                "WHERE st.code=sb.code AND st.trade_date<=LEAST(sb.delist_date, ?) "
+                "AND st.quality='accurate')"
+            ),
+        ]
+        missing_params: list[object] = [td, td]
+        if q:
+            missing_conds.append("(sb.code LIKE ? OR sb.name LIKE ?)")
+            missing_params.extend([f"%{q}%", f"%{q}%"])
+        if membership_board_code:
+            missing_conds.append(
+                "EXISTS (SELECT 1 FROM board_member bm "
+                "JOIN board_dict bd ON bd.board_code=bm.board_code "
+                "WHERE bm.code=sb.code AND bd.board_code=? "
+                "AND bd.board_type IN ('industry','concept') "
+                "AND (bm.first_seen_date IS NULL OR bm.first_seen_date<=?))"
+            )
+            missing_params.extend([membership_board_code, td])
         missing = c.query_df(
-            "SELECT sb.code FROM stock_basic sb WHERE sb.delist_date IS NOT NULL "
-            "AND NOT EXISTS (SELECT 1 FROM stock_st_status_daily st "
-            "WHERE st.code=sb.code AND st.trade_date<=LEAST(sb.delist_date, ?) "
-            "AND st.quality='accurate') LIMIT 5",
-            [td],
+            "SELECT sb.code FROM stock_basic sb WHERE "
+            + " AND ".join(missing_conds)
+            + " LIMIT 5",
+            missing_params,
         )["code"].astype(str).tolist()
         if missing:
             from backend.services.stock_st_status import STStatusNotReadyError
@@ -138,16 +175,42 @@ def list_stocks(q: str | None = None, board: str | None = None,
     if q:
         conds.append("(sb.code LIKE ? OR sb.name LIKE ?)")
         params += [f"%{q}%", f"%{q}%"]
-    if board == "退市":
-        conds.append("sb.delist_date IS NOT NULL")
+    if legacy_delisted:
+        conds.append(
+            "sb.delist_date IS NOT NULL AND sb.delist_date<=? "
+            "AND EXISTS (SELECT 1 FROM daily_bar hist WHERE hist.code=sb.code "
+            "AND hist.trade_date<=sb.delist_date)"
+        )
+        params.append(td)
+    elif using_multi_boards and selected_boards:
+        scope_conds: list[str] = []
+        listed_values = [
+            value for value in selected_boards if value in {"主板", "创业板", "科创板"}
+        ]
+        if listed_values:
+            placeholders = ",".join(["?"] * len(listed_values))
+            scope_conds.append(f"(sb.delist_date IS NULL AND sb.board IN ({placeholders}))")
+            params.extend(listed_values)
+        if "ST" in selected_boards:
+            scope_conds.append("(sb.delist_date IS NULL AND st.is_st IS TRUE)")
+        if include_delisted:
+            scope_conds.append(
+                "(sb.delist_date IS NOT NULL AND sb.delist_date<=? "
+                "AND EXISTS (SELECT 1 FROM daily_bar hist WHERE hist.code=sb.code "
+                "AND hist.trade_date<=sb.delist_date))"
+            )
+            params.append(td)
+        conds.append(f"({' OR '.join(scope_conds)})")
+        if exclude_st and "ST" not in selected_boards:
+            conds.append("(sb.delist_date IS NOT NULL OR st.is_st IS FALSE)")
     else:
         conds.append("sb.delist_date IS NULL")        # 其他板块一律排除退市
-        if board == "ST":
+        if not using_multi_boards and board == "ST":
             conds.append("st.is_st IS TRUE")
-        elif board:
+        elif not using_multi_boards and board:
             conds.append("sb.board = ?")
             params.append(board)
-        if exclude_st and board != "ST":
+        if exclude_st and (using_multi_boards or board != "ST"):
             conds.append("st.is_st IS FALSE")
     if membership_board_code:
         conds.append(

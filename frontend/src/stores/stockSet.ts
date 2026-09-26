@@ -25,7 +25,9 @@ export type SetQuery =
 export interface StockListState {
   mode: 'list' | 'group'
   q: string
-  board: string
+  boards: string[]
+  /** 旧会话兼容字段，新状态不再写入。 */
+  board?: string
   membershipBoardCode?: string
   excludeSt: boolean
   tradeDate: string

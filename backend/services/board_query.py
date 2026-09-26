@@ -432,8 +432,21 @@ class BoardQueryService:
         返回 {"list": [{code, name, close, pct_chg, turnover_rate}], "total": n}。
         """
         bar_date = trade_date or self._latest_bar_date()
-        where_sql = "m.board_code = ?"
-        where_params: list[str] = [code]
+        # board_member 保存源端累计关系，可能包含北交所或基础档案尚未就绪的代码；
+        # 页面只消费项目股票池，并按行情截面排除尚未上市/已经退市的成员。
+        where_sql = (
+            "m.board_code = ? AND sb.board IN ('主板','创业板','科创板')"
+        )
+        where_params: list[object] = [code]
+        if bar_date is not None:
+            where_sql += (
+                " AND (sb.list_date IS NULL OR sb.list_date<=?)"
+                " AND (sb.delist_date IS NULL OR sb.delist_date>?)"
+                " AND (m.first_seen_date IS NULL OR m.first_seen_date<=?)"
+            )
+            where_params.extend([bar_date, bar_date, bar_date])
+        else:
+            where_sql += " AND sb.delist_date IS NULL"
         normalized_keyword = keyword.strip() if keyword else ""
         if normalized_keyword:
             escaped = (normalized_keyword.replace("\\", "\\\\")
@@ -448,7 +461,7 @@ class BoardQueryService:
             f"""
             SELECT count(*) AS n
             FROM board_member m
-            LEFT JOIN stock_basic sb ON sb.code = m.code
+            INNER JOIN stock_basic sb ON sb.code = m.code
             WHERE {where_sql}
             """,
             where_params,
@@ -462,7 +475,7 @@ class BoardQueryService:
             f"""
             SELECT m.code, sb.name, b.close, b.pre_close, b.turnover_rate
             FROM board_member m
-            LEFT JOIN stock_basic sb ON sb.code = m.code
+            INNER JOIN stock_basic sb ON sb.code = m.code
             LEFT JOIN daily_bar b ON b.code = m.code AND {cond}
             WHERE {where_sql}
             ORDER BY {sort_expr} {sort_order} NULLS LAST, m.code ASC

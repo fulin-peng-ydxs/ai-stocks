@@ -105,6 +105,31 @@ def test_empty_code_scope_never_expands_to_all_boards(tmp_path):
     assert c.query_df("SELECT * FROM board_member").empty
 
 
+def test_member_snapshot_keeps_raw_count_but_drops_bse_relations(tmp_path):
+    """源端快照数保留原口径，项目关系表只落主板、创业板和科创板。"""
+    src = _FakeSource({"309121": ["300476", "688981", "920249"]})
+    svc, c = _make_service(tmp_path, src)
+    c.execute(
+        "INSERT INTO board_dict (board_code,name,board_type,has_members) "
+        "VALUES ('309121','AI PC','concept',TRUE)"
+    )
+
+    result = svc.ingest_board_members(
+        snapshot_date=date(2026, 1, 5), board_codes=["309121"], force=True,
+    )["309121"]
+
+    assert result == {
+        "total": 3,
+        "eligible_total": 2,
+        "excluded_out_of_scope": 1,
+        "added": 2,
+    }
+    assert c.query_df(
+        "SELECT code FROM board_member ORDER BY code"
+    )["code"].tolist() == ["300476.SZ", "688981.SH"]
+    assert _member_count(c, "309121") == 3
+
+
 def test_board_type_limits_dictionary_and_members(tmp_path):
     """board_type 是真实作用域：只拉取并处理指定的概念或行业。"""
     src = _FakeSource(

@@ -1,4 +1,4 @@
-"""评分榜单 API（SDD §12，T-M3-8）：某日评分结果 + Top N 榜单。"""
+"""评分榜单 API（SDD §12，T-M3-8）：某日评分结果与分页查询。"""
 
 from __future__ import annotations
 
@@ -108,7 +108,8 @@ def board_profiles(
 def board_run(body: dict) -> ApiResponse:
     """按可见评分方案读取榜单；快照缺失或 stale 时物化到方案 owner 的共享缓存槽。
 
-    body: {profile_ref | profile_id, run_date?, top?, force?}
+    body: {profile_ref | profile_id, run_date?, page?, page_size?, listed_boards?, keyword?,
+           export_all?, force?}
     force 仅允许方案 owner（需 board:compute）或 system 管理员执行。
     """
     from backend.scoring.score_profile import ScoreProfileRepo
@@ -131,9 +132,23 @@ def board_run(body: dict) -> ApiResponse:
     if not prof:
         return err(404, "方案不存在")
     run_date = date.fromisoformat(body["run_date"]) if body.get("run_date") else latest_market_date(c)
-    top = int(body.get("top", 50))
+    try:
+        page = max(1, int(body.get("page", 1)))
+        page_size = max(10, min(int(body.get("page_size", 50)), 200))
+    except (TypeError, ValueError):
+        return err(400, "page 和 page_size 必须是整数")
+    listed_boards = body.get("listed_boards") or []
+    if not isinstance(listed_boards, list) or any(
+        value not in ("main", "star", "gem") for value in listed_boards
+    ):
+        return err(400, "listed_boards 只支持 main、star、gem")
+    keyword = str(body.get("keyword") or "").strip()[:50]
+    export_all = bool(body.get("export_all"))
     if run_date is None:
-        return ok({"run_date": "", "top": top, "count": 0, "list": []})
+        return ok({
+            "run_date": "", "page": page, "page_size": page_size,
+            "total": 0, "count": 0, "list": [],
+        })
     pid = prof["id"]
     version = int(prof.get("version") or 1)
     snapshot_repo = ScoreSnapshotRepo(
@@ -167,11 +182,13 @@ def board_run(body: dict) -> ApiResponse:
                 "AND profile_version=%s AND tenant_id=%s AND owner_user_id=%s",
                 [run_date, pid, version, prof["tenant_id"], prof["owner_user_id"]],
             )
-        board = snapshot_repo.get_board(run_date, pid, top=top, profile=prof)
+        board = snapshot_repo.get_board(run_date, pid, profile=prof)
     except STStatusNotReadyError as exc:
         return ok({
             "run_date": str(run_date),
-            "top": top,
+            "page": page,
+            "page_size": page_size,
+            "total": 0,
             "count": 0,
             "business_code": "ST_STATUS_NOT_READY",
             "st_status_error": str(exc),
@@ -180,7 +197,9 @@ def board_run(body: dict) -> ApiResponse:
     if board.empty:
         return ok({
             "run_date": str(run_date),
-            "top": top,
+            "page": page,
+            "page_size": page_size,
+            "total": 0,
             "count": 0,
             "business_code": "READY",
             "cache_status": "cached" if was_fresh and not force else "materialized",
@@ -188,13 +207,23 @@ def board_run(body: dict) -> ApiResponse:
             "profile_version": version,
             "list": [],
         })
-    from backend.services.ranked_stock_result import ranked_rows
+    from backend.services.ranked_stock_result import ranked_page
     try:
-        rows = ranked_rows(c, run_date, board)
+        total, rows = ranked_page(
+            c,
+            run_date,
+            board,
+            page=1 if export_all else page,
+            page_size=max(len(board), 1) if export_all else page_size,
+            listed_boards=listed_boards,
+            keyword=keyword,
+        )
     except STStatusNotReadyError as exc:
         return ok({
             "run_date": str(run_date),
-            "top": top,
+            "page": page,
+            "page_size": page_size,
+            "total": 0,
             "count": 0,
             "business_code": "ST_STATUS_NOT_READY",
             "st_status_error": str(exc),
@@ -203,14 +232,17 @@ def board_run(body: dict) -> ApiResponse:
     codes = [row["code"] for row in rows]
     # 自选分组属于当前请求用户的 PG 私有资产；仅在具备查看权限时按榜单代码批量读取，
     # 与公共评分快照在服务层内存合并，避免跨库 JOIN 和前端逐行查询。
-    if ctx and (ctx.is_system or "stock-group:view" in ctx.resources):
+    if not export_all and ctx and (ctx.is_system or "stock-group:view" in ctx.resources):
         groups_by_code = _current_user_stock_groups(c, pg, codes)
         for row in rows:
             row["groups"] = groups_by_code.get(row["code"], [])
-    StockBoardCorrelationService(c).attach_related_boards(rows, run_date)
+    if not export_all:
+        StockBoardCorrelationService(c).attach_related_boards(rows, run_date)
     return ok({
         "run_date": str(run_date),
-        "top": top,
+        "page": 1 if export_all else page,
+        "page_size": len(rows) if export_all else page_size,
+        "total": total,
         "count": len(rows),
         "business_code": "READY",
         "profile_ref": prof.get("profile_ref") or repo.make_ref(prof["tenant_id"], prof["owner_user_id"], pid),

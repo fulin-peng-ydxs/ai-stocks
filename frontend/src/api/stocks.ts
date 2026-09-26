@@ -20,6 +20,8 @@ export interface StockBasic {
 
 export interface StockListParams {
   q?: string
+  boards?: string
+  /** 兼容旧调用；新页面使用 boards 传本页原有板块值。 */
   board?: string
   membership_board_code?: string
   exclude_st?: boolean

@@ -25,6 +25,12 @@ const props = withDefaults(defineProps<{
   nameLeadingControls?: number
   isPinned?: (code: string) => boolean
   rowClass?: (row: ScoreRunRow) => string
+  pagination?: {
+    currentPage: number
+    pageSize: number
+    total: number
+    pageSizes?: number[]
+  }
 }>(), {
   loading: false,
   border: false,
@@ -44,6 +50,8 @@ const emit = defineEmits<{
   rowClick: [row: ScoreRunRow]
   toggleAnalysis: [row: ScoreRunRow]
   sortChange: [payload: { prop: string; order: string | null }]
+  pageChange: [page: number]
+  sizeChange: [size: number]
 }>()
 
 function rowClassName({ row }: { row: ScoreRunRow }): string {
@@ -67,10 +75,13 @@ function leadingControlsOf(column: RankedStockColumn): number {
     :border="border"
     :height="height"
     :row-class-name="rowClassName"
+    :pagination="pagination"
     row-key="code"
     clickable
     @row-click="emit('rowClick', $event)"
     @sort-change="emit('sortChange', $event)"
+    @page-change="emit('pageChange', $event)"
+    @size-change="emit('sizeChange', $event)"
   >
     <slot name="leading-columns" />
     <AppTableColumn

@@ -52,11 +52,17 @@ export function runBoardProfile(body: {
   profile_ref?: string
   profile_id?: string
   run_date?: string
-  top?: number
+  page?: number
+  page_size?: number
+  listed_boards?: string[]
+  keyword?: string
+  export_all?: boolean
   force?: boolean
 }): Promise<{
   run_date: string
-  top: number
+  page: number
+  page_size: number
+  total: number
   count: number
   profile_ref?: string
   profile_version?: number

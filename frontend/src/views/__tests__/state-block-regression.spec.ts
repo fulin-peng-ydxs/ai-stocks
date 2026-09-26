@@ -338,6 +338,80 @@ describe('代表性页面四态回归', () => {
     screen.unmount()
   })
 
+  it('每日榜单按上市板块和代码名称筛选，并通过服务端翻页', async () => {
+    ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      run_date: '2024-12-31', page: 1, page_size: 50, total: 100, count: 0, list: [],
+    })
+    const wrapper = await mountView(BoardView)
+    const vm = wrapper.vm as unknown as {
+      keyword: string
+      onListedBoardsChange: (value: string[]) => void
+      searchKeyword: () => void
+      changePage: (value: number) => void
+    }
+
+    vm.onListedBoardsChange(['gem'])
+    await flushPromises()
+    expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({
+      page: 1,
+      listed_boards: ['gem'],
+    }))
+
+    vm.keyword = '平安'
+    vm.searchKeyword()
+    await flushPromises()
+    expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({
+      page: 1,
+      keyword: '平安',
+    }))
+
+    vm.changePage(2)
+    await flushPromises()
+    expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }))
+  })
+
+  it('每日榜单导出当前筛选条件下的全部结果而不是当前页', async () => {
+    ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      run_date: '2024-12-31', page: 1, page_size: 50, total: 2, count: 1,
+      list: [{
+        rank: 3, code: '000001.SZ', name: '平安银行', board: '主板',
+        total_score: 90, grade: '观察', sub_scores: { rs_pct: 80 },
+      }],
+    })
+    const wrapper = await mountView(BoardView)
+    ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      run_date: '2024-12-31', page: 1, page_size: 2, total: 2, count: 2,
+      list: [
+        {
+          rank: 3, code: '000001.SZ', name: '平安银行', board: '主板',
+          total_score: 90, grade: '观察', sub_scores: { rs_pct: 80 },
+        },
+        {
+          rank: 8, code: '300001.SZ', name: '特锐德', board: '创业板',
+          total_score: 82, grade: '关注', sub_scores: { rs_pct: 70 },
+        },
+      ],
+    })
+
+    await wrapper.findAll('button').find((button) => button.text().includes('导出 CSV'))!.trigger('click')
+    await flushPromises()
+
+    expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({
+      run_date: '2024-12-31',
+      listed_boards: ['main', 'star', 'gem'],
+      export_all: true,
+    }))
+    expect(csvUtils.downloadCsv).toHaveBeenCalledWith(
+      '每日榜单_榜单方案_2024-12-31.csv',
+      expect.any(Array),
+      expect.arrayContaining([
+        expect.arrayContaining([3, '000001.SZ']),
+        expect.arrayContaining([8, '300001.SZ']),
+      ]),
+    )
+    wrapper.unmount()
+  })
+
   it('从每日榜单进入详情时同步榜单集合和返回地址', async () => {
     ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
       run_date: '2026-07-25',
@@ -369,6 +443,9 @@ describe('代表性页面四态回归', () => {
     expect(boardApi.runBoardProfile).toHaveBeenCalledWith(expect.objectContaining({
       profile_id: 'board1',
       run_date: '2024-12-31',
+      page: 1,
+      page_size: 50,
+      listed_boards: ['main', 'star', 'gem'],
     }))
     expect(boardApi.runBoardProfile).toHaveBeenCalledTimes(1)
 

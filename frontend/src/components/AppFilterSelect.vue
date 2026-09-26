@@ -194,8 +194,8 @@ function onChange(value: string[] | string) {
   min-width: 0;
   padding: 0 var(--app-space-1);
   color: var(--el-text-color-regular);
-  font-size: var(--app-font-size-caption);
-  line-height: var(--app-line-height-caption);
+  font-size: var(--app-font-size-body);
+  line-height: var(--app-line-height-body);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

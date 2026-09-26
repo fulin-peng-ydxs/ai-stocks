@@ -135,10 +135,15 @@ def test_list_stocks_without_group_permission_does_not_read_or_create_groups(
                 "SH",
                 "主板",
                 date(2000, 1, 1),
-                date(2024, 1, 3),
+                date(2024, 1, 2),
                 "测试",
                 0.1,
             ],
+        )
+        market.execute(
+            "INSERT INTO daily_bar (code,trade_date,close,pre_close) "
+            "VALUES (?,DATE '2024-01-02',1.0,1.1)",
+            [delisted_code],
         )
         market.execute(
             "INSERT INTO stock_st_status_daily "
@@ -155,6 +160,90 @@ def test_list_stocks_without_group_permission_does_not_read_or_create_groups(
         delisted_row = delisted_response.json()["data"]["list"][0]
         assert delisted_row["is_st"] is True
         assert delisted_row["st_as_of_date"] == "2024-01-02"
+        ancient_code = "600099.SH"
+        market.execute(
+            "INSERT INTO stock_basic "
+            "(code,name,exchange,board,list_date,delist_date,industry,price_limit_pct) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            [
+                ancient_code,
+                "无行情退市档案",
+                "SH",
+                "主板",
+                date(1992, 1, 1),
+                date(2005, 1, 1),
+                "测试",
+                0.1,
+            ],
+        )
+        multi_response = client.get(
+            "/api/stocks",
+            params={
+                "boards": "主板,退市",
+                "trade_date": "2024-01-02",
+                "sort_by": "code",
+                "sort_order": "asc",
+                "page": 1,
+                "size": 10,
+            },
+            headers=_auth(user_id, tenant_id),
+        )
+        assert multi_response.status_code == 200
+        assert [
+            row["code"] for row in multi_response.json()["data"]["list"]
+        ] == [code, delisted_code]
+
+        missing_st_code = "600098.SH"
+        market.execute(
+            "INSERT INTO stock_basic "
+            "(code,name,exchange,board,list_date,delist_date,industry,price_limit_pct) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            [
+                missing_st_code,
+                "覆盖内缺ST",
+                "SH",
+                "主板",
+                date(2000, 1, 1),
+                date(2024, 1, 2),
+                "测试",
+                0.1,
+            ],
+        )
+        market.execute(
+            "INSERT INTO daily_bar (code,trade_date,close,pre_close) "
+            "VALUES (?,DATE '2024-01-02',1.0,1.1)",
+            [missing_st_code],
+        )
+        missing_st_response = client.get(
+            "/api/stocks",
+            params={
+                "boards": "退市",
+                "q": missing_st_code,
+                "trade_date": "2024-01-02",
+                "page": 1,
+                "size": 10,
+            },
+            headers=_auth(user_id, tenant_id),
+        )
+        assert missing_st_response.status_code == 200
+        assert missing_st_response.json()["code"] == 5004
+        assert missing_st_code in missing_st_response.json()["msg"]
+
+        # 缺失事实只阻断当前筛选候选，不应污染无关代码的精确检索。
+        unaffected_response = client.get(
+            "/api/stocks",
+            params={
+                "boards": "退市",
+                "q": delisted_code,
+                "trade_date": "2024-01-02",
+                "page": 1,
+                "size": 10,
+            },
+            headers=_auth(user_id, tenant_id),
+        )
+        assert unaffected_response.status_code == 200
+        assert unaffected_response.json()["code"] == 0
+        assert unaffected_response.json()["data"]["list"][0]["code"] == delisted_code
         after = pg.query_df(
             "SELECT count(*) AS n FROM stock_group "
             "WHERE tenant_id=%s AND owner_user_id=%s AND is_default=TRUE",

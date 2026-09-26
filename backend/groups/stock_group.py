@@ -202,7 +202,8 @@ class StockGroupRepo:
         return out
 
     def get(self, gid: str, page: int = 1, size: int = 50, q: str | None = None,
-            board: str | None = None, exclude_st: bool = False,
+            boards: list[str] | None = None, board: str | None = None,
+            exclude_st: bool = False,
             membership_board_code: str | None = None,
             exclude_delisted: bool = False,
             trade_date: date | None = None,
@@ -228,6 +229,7 @@ class StockGroupRepo:
         filtered = self._filter_members(
             all_members,
             q,
+            boards=boards,
             board=board,
             membership_board_code=membership_board_code,
             membership_as_of_date=trade_date,
@@ -257,7 +259,8 @@ class StockGroupRepo:
         return meta
 
     def _filter_members(self, members: list[dict], q: str | None,
-                        *, board: str | None = None,
+                        *, boards: list[str] | None = None,
+                        board: str | None = None,
                         membership_board_code: str | None = None,
                         membership_as_of_date: date | None = None,
                         exclude_st: bool = False,
@@ -278,6 +281,14 @@ class StockGroupRepo:
                 return False
             if membership_codes is not None and member.get("code") not in membership_codes:
                 return False
+            if boards:
+                in_scope = (
+                    (member.get("_board") in boards and not member.get("_delisted"))
+                    or ("ST" in boards and member.get("_is_st") and not member.get("_delisted"))
+                    or ("退市" in boards and member.get("_delisted"))
+                )
+                if not in_scope:
+                    return False
             if board == "退市":
                 return bool(member.get("_delisted"))
             if member.get("_delisted") and (board or exclude_delisted):
@@ -286,6 +297,10 @@ class StockGroupRepo:
                 return bool(member.get("_is_st"))
             if board and member.get("_board") != board:
                 return False
+            if boards and (
+                "ST" in boards or ("退市" in boards and member.get("_delisted"))
+            ):
+                return True
             return not (exclude_st and member.get("_is_st"))
 
         return [member for member in members if matches(member)]

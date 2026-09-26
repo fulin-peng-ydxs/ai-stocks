@@ -191,6 +191,10 @@ def test_group_reuses_stock_filters_and_trade_date_cutoff(repo):
 
     main_board = repo.get(gid, board="主板", trade_date=date(2026, 1, 5))
     assert [row["code"] for row in main_board["members"]["list"]] == ["A"]
+    listed_boards = repo.get(gid, boards=["主板", "创业板"], trade_date=date(2026, 1, 5))
+    assert [row["code"] for row in listed_boards["members"]["list"]] == ["A", "B"]
+    gem_only = repo.get(gid, boards=["创业板"], trade_date=date(2026, 1, 5))
+    assert [row["code"] for row in gem_only["members"]["list"]] == ["B"]
     assert repo.get(gid, board="创业板", exclude_st=True)["members"]["total"] == 0
     st_only = repo.get(gid, board="ST")
     assert [row["code"] for row in st_only["members"]["list"]] == ["B"]
@@ -199,6 +203,15 @@ def test_group_reuses_stock_filters_and_trade_date_cutoff(repo):
     assert repo.get(gid)["members"]["total"] == 2
     assert repo.get(gid, exclude_delisted=True)["members"]["total"] == 1
     assert [row["code"] for row in repo.get(gid, board="退市")["members"]["list"]] == ["A"]
+    mixed = repo.get(gid, boards=["创业板", "退市"], exclude_st=True, sort_by="code")
+    assert [row["code"] for row in mixed["members"]["list"]] == ["A"]
+    all_types = repo.get(
+        gid,
+        boards=["主板", "创业板", "科创板", "ST", "退市"],
+        exclude_st=True,
+        sort_by="code",
+    )
+    assert [row["code"] for row in all_types["members"]["list"]] == ["A", "B"]
 
 
 def test_group_filters_ths_membership_with_point_in_time_boundary(repo):

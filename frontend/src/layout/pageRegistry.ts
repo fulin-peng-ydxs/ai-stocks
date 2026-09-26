@@ -252,12 +252,6 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'relatedIndustry', label: '行业走势' },
           { key: 'relatedConcept', label: '概念走势' },
         ],
-        sortFields: [
-          { key: 'score', label: '综合分' },
-          { key: 'rank', label: '排名' },
-          { key: 'code', label: '代码' },
-        ],
-        sortHasDirection: false,
       },
       chart: {
         fieldApplicability: {
@@ -274,7 +268,7 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
         { id: 'workspace', component: 'master-detail', region: 'main', minH: MARKET_WORKSPACE_MIN_HEIGHT, label: '榜单股票行情工作台', order: 1 },
-        { id: 'table', component: 'wide-table', region: 'main', parentId: 'workspace', label: '榜单列表', order: 1, config: { pagination: false, defaultSort: 'score' } },
+        { id: 'table', component: 'wide-table', region: 'main', parentId: 'workspace', label: '榜单列表', order: 1, config: { pagination: true, pageSize: 50 } },
         { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2, config: { stockChart: createDefaultStockChartPreferences(), stockAnalysis: createDefaultStockAnalysisPreferences(), returnMeasurement: true, multiPeriodKline: true } },
       ],
       editable: [densityKnob()],

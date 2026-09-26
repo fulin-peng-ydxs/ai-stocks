@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { PAGE_SIZE_OPTIONS, normalizePageSize } from '@/constants/pagination'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
+import { isAllSelectedFilter, normalizeAllSelectedFilter } from '@/utils/multiSelectFilter'
 import { ArrowDown, Delete, Edit } from '@element-plus/icons-vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
@@ -205,8 +206,19 @@ function tableBorder(slotId: string): boolean {
 const loading = ref(false)
 const loadError = ref('')
 const q = ref('')
-const board = ref('')
-const stOnlyContext = computed(() => board.value === 'ST')
+const STOCK_BOARD_OPTIONS = [
+  { value: '主板', label: '主板' },
+  { value: '创业板', label: '创业板' },
+  { value: '科创板', label: '科创板' },
+  { value: 'ST', label: 'ST 板块' },
+  { value: '退市', label: '退市板块' },
+]
+const STOCK_BOARD_VALUES = new Set(STOCK_BOARD_OPTIONS.map((item) => item.value))
+const STOCK_BOARD_ALL_VALUES = STOCK_BOARD_OPTIONS.map((item) => item.value)
+const selectedBoards = ref<string[]>([...STOCK_BOARD_ALL_VALUES])
+const stOnlyContext = computed(() => (
+  selectedBoards.value.length === 1 && selectedBoards.value[0] === 'ST'
+))
 const membershipBoardCode = ref('')
 const membershipOptionRows = ref<StockMembershipOption[]>([])
 const membershipOptionsLoading = ref(false)
@@ -228,7 +240,7 @@ const membershipOptions = computed(() => {
   })
 })
 const excludeSt = useDefaultedSessionValue(computed(() => Boolean(settings.excludeSt)), {
-  shouldSync: () => !restoringListState && board.value !== 'ST' && board.value !== '退市',
+  shouldSync: () => !restoringListState,
   onSynced: () => { void searchCurrentView() },
 })
 const tradeDate = ref('')          // 交易日期（默认最新，展示当日涨跌幅）
@@ -262,10 +274,6 @@ const relatedBoardFirstLoad = useRelatedBoardFirstLoad(async () => {
 })
 const analysisRefreshRevision = ref(0)
 
-// ST / 退市板块下「排除 ST」无意义（隐藏），其余板块默认排除 ST
-watch(board, (b) => {
-  excludeSt.value = b !== 'ST' && b !== '退市'
-})
 // 选交易日自动触发查询（初始化/恢复时设值不触发，避免重复加载）
 watch(tradeDate, () => {
   if (restoringListState) return
@@ -281,7 +289,7 @@ type StockListLoadOptions = {
 function stockListParams(): StockListParams {
   return {
     q: q.value || undefined,
-    board: board.value || undefined,
+    boards: selectedBoards.value.length ? selectedBoards.value.join(',') : undefined,
     membership_board_code: membershipBoardCode.value || undefined,
     exclude_st: excludeSt.value,
     trade_date: tradeDate.value || undefined,
@@ -523,9 +531,16 @@ function searchCurrentView() {
   if (inGroupMode.value) groupSearch()
   else search()
 }
+function onListedBoardsChange(value: string[] | string): void {
+  selectedBoards.value = normalizeAllSelectedFilter(value, STOCK_BOARD_ALL_VALUES)
+  excludeSt.value = selectedBoards.value.includes('ST')
+    ? false
+    : Boolean(settings.excludeSt)
+  searchCurrentView()
+}
 const hasQueryFilters = computed(() => (
   q.value.trim() !== ''
-  || board.value !== ''
+  || !isAllSelectedFilter(selectedBoards.value, STOCK_BOARD_ALL_VALUES)
   || membershipBoardCode.value !== ''
   || tradeDate.value !== (dataMax.value || '')
 ))
@@ -534,9 +549,9 @@ async function resetQueryFilters(): Promise<void> {
   if (!hasQueryFilters.value) return
   restoringListState = true
   q.value = ''
-  board.value = ''
+  selectedBoards.value = [...STOCK_BOARD_ALL_VALUES]
   membershipBoardCode.value = ''
-  excludeSt.value = Boolean(settings.excludeSt)
+  excludeSt.value = false
   tradeDate.value = dataMax.value || ''
   page.value = 1
   groupPage.value = 1
@@ -571,10 +586,10 @@ async function loadGroupDetail(background = false) {
       page: groupPage.value,
       size: groupSize.value,
       q: q.value || undefined,
-      board: board.value || undefined,
+      boards: selectedBoards.value.length ? selectedBoards.value.join(',') : undefined,
       membership_board_code: membershipBoardCode.value || undefined,
       exclude_st: excludeSt.value,
-      exclude_delisted: board.value !== '退市',
+      exclude_delisted: !selectedBoards.value.includes('退市'),
       trade_date: tradeDate.value || undefined,
       sort_by: groupSortBy.value,
       sort_order: groupSortOrder.value,
@@ -695,7 +710,7 @@ function activeItems(): { code: string; name?: string | null }[] {
 function querySnapshot(): StockListParams {
   return {
     q: q.value || undefined,
-    board: board.value || undefined,
+    boards: selectedBoards.value.length ? selectedBoards.value.join(',') : undefined,
     membership_board_code: membershipBoardCode.value || undefined,
     exclude_st: excludeSt.value,
     trade_date: tradeDate.value || undefined,
@@ -709,10 +724,10 @@ function groupQuerySnapshot() {
     page: groupPage.value,
     size: Math.min(groupSize.value, 100),
     q: q.value || undefined,
-    board: board.value || undefined,
+    boards: selectedBoards.value.length ? selectedBoards.value.join(',') : undefined,
     membership_board_code: membershipBoardCode.value || undefined,
     exclude_st: excludeSt.value,
-    exclude_delisted: board.value !== '退市',
+    exclude_delisted: !selectedBoards.value.includes('退市'),
     trade_date: tradeDate.value || undefined,
     sort_by: groupSortBy.value,
     sort_order: groupSortOrder.value,
@@ -722,7 +737,7 @@ function currentListState(): StockListState {
   return {
     mode: inGroupMode.value ? 'group' : 'list',
     q: q.value,
-    board: board.value,
+    boards: [...selectedBoards.value],
     membershipBoardCode: membershipBoardCode.value,
     excludeSt: excludeSt.value,
     tradeDate: tradeDate.value,
@@ -842,9 +857,14 @@ onMounted(async () => {
       // 返回现场已由 store 原子消费，避免后续刷新重复覆盖当前页状态。
       restoringListState = true
       q.value = restore.mode === 'group' ? (restore.groupQ || restore.q) : restore.q
-      board.value = restore.board
+      selectedBoards.value = normalizeAllSelectedFilter(
+        restore.boards?.length
+          ? restore.boards
+          : restore.board && STOCK_BOARD_VALUES.has(restore.board) ? [restore.board] : [],
+        STOCK_BOARD_ALL_VALUES,
+      )
       membershipBoardCode.value = restore.membershipBoardCode || ''
-      excludeSt.value = restore.excludeSt
+      excludeSt.value = selectedBoards.value.includes('ST') ? false : restore.excludeSt
       tradeDate.value = restore.tradeDate
       sortBy.value = restore.sortBy
       sortOrder.value = restore.sortOrder
@@ -942,13 +962,16 @@ const menuPageTitle = useMenuPageTitle()
           @update:model-value="onViewChange"
         />
         <TradeDatePicker v-model="tradeDate" placeholder="交易日期" clearable class="app-control-width-medium" />
-        <el-select v-model="board" placeholder="全部板块" class="app-control-width-short" clearable @change="searchCurrentView">
-          <el-option label="主板" value="主板" />
-          <el-option label="创业板" value="创业板" />
-          <el-option label="科创板" value="科创板" />
-          <el-option label="ST 板块" value="ST" />
-          <el-option label="退市板块" value="退市" />
-        </el-select>
+        <AppFilterSelect
+          :model-value="selectedBoards"
+          :options="STOCK_BOARD_OPTIONS"
+          :visible-tag-count="2"
+          all-selected-label="全部板块"
+          placeholder="全部板块"
+          aria-label="按板块筛选"
+          data-testid="stocks-boards"
+          @change="onListedBoardsChange"
+        />
         <AppFilterSelect
           v-model="membershipBoardCode"
           :options="membershipOptions"

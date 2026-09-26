@@ -6,6 +6,33 @@ import RankedStockResultTable from '@/components/ranked-stock/RankedStockResultT
 import { rankedStockColumns } from '@/components/ranked-stock/types'
 
 describe('RankedStockResultTable', () => {
+  it('把通用分页配置和事件透传给统一表格', async () => {
+    const wrapper = mount(RankedStockResultTable, {
+      props: {
+        rows: [],
+        columns: rankedStockColumns(['rank', 'code']),
+        pagination: { currentPage: 2, pageSize: 50, total: 123, pageSizes: [20, 50, 100] },
+      },
+      global: {
+        stubs: {
+          AppDataTable: {
+            name: 'AppDataTable',
+            props: ['pagination'],
+            emits: ['page-change', 'size-change'],
+            template: '<div data-testid="table" @click="$emit(\'page-change\', 3)"><slot /></div>',
+          },
+          AppTableColumn: true,
+        },
+      },
+    })
+
+    expect(wrapper.findComponent({ name: 'AppDataTable' }).props('pagination')).toEqual({
+      currentPage: 2, pageSize: 50, total: 123, pageSizes: [20, 50, 100],
+    })
+    await wrapper.get('[data-testid="table"]').trigger('click')
+    expect(wrapper.emitted('pageChange')).toEqual([[3]])
+  })
+
   it('统一展示全市场排名，以显式标签表达 ST 与未参与评分状态', () => {
     const wrapper = mount(RankedStockResultTable, {
       props: {

@@ -418,6 +418,7 @@ def test_stock_list_attaches_one_batch_for_returned_page(monkeypatch):
 
         response = list_stocks(
             q=None,
+            boards="主板",
             board=None,
             exclude_st=False,
             trade_date=as_of,
