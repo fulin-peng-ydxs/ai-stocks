@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
+import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
@@ -18,6 +19,7 @@ import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
 import {
   exportLimitLadder,
   getLimitLadder,
+  LIMIT_LADDER_BOARD_OPTIONS,
   listLimitLadderTradeDates,
   normalizeLimitLadderFilters,
   recomputeLimitLadder,
@@ -121,6 +123,12 @@ const {
 )
 
 const normalizedSettings = computed(() => normalizeLimitLadderPreference(settings))
+const defaultBoards = computed<string[]>({
+  get: () => [...normalizedSettings.value.boards],
+  set: value => {
+    settings.boards = normalizeLimitLadderPreference({ ...settings, boards: value }).boards
+  },
+})
 const filterWindow = useDefaultedSessionValue(
   computed(() => normalizedSettings.value.window),
   { shouldSync: () => !restoringPageSession.value, onSynced: scheduleDefaultFilterReload },
@@ -897,17 +905,17 @@ const menuPageTitle = useMenuPageTitle()
                 test-id="limit-ladder-default-window"
               />
             </PageSettingItem>
-            <PageSettingItem label="纳入板块">
-              <el-checkbox-group
-                v-model="settings.boards"
-                class="board-preference-options"
+            <PageSettingItem label="默认上市板块">
+              <AppFilterSelect
+                v-model="defaultBoards"
+                :options="LIMIT_LADDER_BOARD_OPTIONS"
+                :filterable="false"
+                :visible-tag-count="2"
+                all-selected-label="全部板块"
+                placeholder="默认上市板块"
                 aria-label="默认纳入板块"
                 data-testid="limit-ladder-default-boards"
-              >
-                <el-checkbox value="main">主板</el-checkbox>
-                <el-checkbox value="star">科创板</el-checkbox>
-                <el-checkbox value="gem">创业板</el-checkbox>
-              </el-checkbox-group>
+              />
             </PageSettingItem>
             <PageToggleRow
               v-model="settings.ignoreSt"
@@ -950,10 +958,5 @@ const menuPageTitle = useMenuPageTitle()
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
-}
-.board-preference-options {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--app-space-1);
 }
 </style>

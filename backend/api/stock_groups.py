@@ -10,7 +10,12 @@ from pydantic import BaseModel
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.deps import require_perm
 from backend.groups.stock_group import StockGroupRepo
-from backend.services.stock_board_filters import parse_stock_board_values
+from backend.services.stock_board_filters import (
+    STOCK_LISTED_BOARD_VALUES,
+    STOCK_STATUS_VALUES,
+    parse_stock_board_values,
+    parse_stock_status_values,
+)
 
 router = APIRouter(prefix="/api", tags=["stock-groups"])
 
@@ -52,7 +57,8 @@ def list_groups() -> ApiResponse:
 @router.get("/stock-groups/{gid}", response_model=ApiResponse,
             dependencies=[Depends(require_perm("stock-group:view"))])
 def get_group(gid: str, page: int = 1, size: int = 50, q: str | None = None,
-              boards: str | None = None, board: str | None = None,
+              boards: str | None = None, statuses: str | None = None,
+              board: str | None = None,
               exclude_st: bool = False,
               membership_board_code: str | None = None,
               exclude_delisted: bool = False,
@@ -60,13 +66,19 @@ def get_group(gid: str, page: int = 1, size: int = 50, q: str | None = None,
               sort_by: str = "add_date", sort_order: str = "asc") -> ApiResponse:
     try:
         selected_boards = parse_stock_board_values(boards)
+        selected_statuses = parse_stock_status_values(statuses)
+        using_dimensions = boards is not None or statuses is not None
+        if using_dimensions:
+            selected_boards = selected_boards or list(STOCK_LISTED_BOARD_VALUES)
+            selected_statuses = selected_statuses or list(STOCK_STATUS_VALUES)
         g = StockGroupRepo().get(
             gid,
             page=page,
             size=size,
             q=q,
             boards=selected_boards or None,
-            board=None if boards is not None else board,
+            statuses=selected_statuses or None,
+            board=None if using_dimensions else board,
             membership_board_code=membership_board_code,
             exclude_st=exclude_st,
             exclude_delisted=exclude_delisted,

@@ -179,7 +179,8 @@ def test_list_stocks_without_group_permission_does_not_read_or_create_groups(
         multi_response = client.get(
             "/api/stocks",
             params={
-                "boards": "主板,退市",
+                "boards": "主板",
+                "statuses": "正常上市,退市",
                 "trade_date": "2024-01-02",
                 "sort_by": "code",
                 "sort_order": "asc",
@@ -192,6 +193,49 @@ def test_list_stocks_without_group_permission_does_not_read_or_create_groups(
         assert [
             row["code"] for row in multi_response.json()["data"]["list"]
         ] == [code, delisted_code]
+
+        future_delisted_code = "600097.SH"
+        market.execute(
+            "INSERT INTO stock_basic "
+            "(code,name,exchange,board,list_date,delist_date,industry,price_limit_pct) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            [
+                future_delisted_code,
+                "后续退市样本",
+                "SH",
+                "主板",
+                date(2000, 1, 1),
+                date(2024, 2, 1),
+                "测试",
+                0.1,
+            ],
+        )
+        market.execute(
+            "INSERT INTO daily_bar (code,trade_date,close,pre_close) "
+            "VALUES (?,DATE '2024-01-02',2.0,1.9)",
+            [future_delisted_code],
+        )
+        market.execute(
+            "INSERT INTO stock_st_status_daily "
+            "(code,trade_date,is_st,source,source_ref,quality,captured_at,updated_at) "
+            "VALUES (?,DATE '2024-01-02',FALSE,'test','point-in-time','accurate',"
+            "CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+            [future_delisted_code],
+        )
+        historical_active_response = client.get(
+            "/api/stocks",
+            params={
+                "boards": "主板",
+                "statuses": "正常上市",
+                "q": future_delisted_code,
+                "trade_date": "2024-01-02",
+                "page": 1,
+                "size": 10,
+            },
+            headers=_auth(user_id, tenant_id),
+        )
+        assert historical_active_response.status_code == 200
+        assert historical_active_response.json()["data"]["list"][0]["code"] == future_delisted_code
 
         missing_st_code = "600098.SH"
         market.execute(
@@ -217,7 +261,8 @@ def test_list_stocks_without_group_permission_does_not_read_or_create_groups(
         missing_st_response = client.get(
             "/api/stocks",
             params={
-                "boards": "退市",
+                "boards": "主板",
+                "statuses": "退市",
                 "q": missing_st_code,
                 "trade_date": "2024-01-02",
                 "page": 1,
@@ -233,7 +278,8 @@ def test_list_stocks_without_group_permission_does_not_read_or_create_groups(
         unaffected_response = client.get(
             "/api/stocks",
             params={
-                "boards": "退市",
+                "boards": "主板",
+                "statuses": "退市",
                 "q": delisted_code,
                 "trade_date": "2024-01-02",
                 "page": 1,

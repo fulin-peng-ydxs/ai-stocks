@@ -6,7 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { PAGE_SIZE_OPTIONS, normalizePageSize } from '@/constants/pagination'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
-import { isAllSelectedFilter, normalizeAllSelectedFilter } from '@/utils/multiSelectFilter'
+import { isSameSelectedFilter, normalizeAllSelectedFilter } from '@/utils/multiSelectFilter'
 import { ArrowDown, Delete, Edit } from '@element-plus/icons-vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
@@ -46,7 +46,6 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingItem from '@/components/PageSettingItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
-import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
@@ -88,17 +87,39 @@ const route = useRoute()
 const stockSet = useStockSet()
 const { dataMax, ensureLoaded } = useTradeDates()
 const settingsOpen = ref(false)
-// 默认视图/排除 ST 属业务态偏好，保留 usePageSettings；
+let restoringListState = true
+const STOCK_LISTED_BOARD_OPTIONS = [
+  { value: '主板', label: '主板' },
+  { value: '创业板', label: '创业板' },
+  { value: '科创板', label: '科创板' },
+]
+const STOCK_LISTED_BOARD_VALUES = STOCK_LISTED_BOARD_OPTIONS.map((item) => item.value)
+const STOCK_STATUS_OPTIONS = [
+  { value: '正常上市', label: '正常上市' },
+  { value: 'ST', label: 'ST' },
+  { value: '退市', label: '退市' },
+]
+const STOCK_STATUS_VALUES = STOCK_STATUS_OPTIONS.map((item) => item.value)
+// 默认视图与默认筛选属业务态偏好，保留 usePageSettings；
 // 普通列表的默认排序、每页条数、列显隐迁入组件配置层 table slot（plan.md §13.3）。
 // 分组视图为另一套列集，P7 已建模为独立可寻址 groupTable slot 并迁入组件配置层（见下 groupColVisible）。
 const stocksDefaults = {
   defaultView: 'group' as 'list' | 'group',
-  excludeSt: true,
+  defaultListedBoards: [...STOCK_LISTED_BOARD_VALUES],
+  defaultStatuses: ['正常上市'],
   adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
 }
 const {
   settings, isDirty, reset, save: savePageSettings, whenHydrated, legacySnapshot,
 } = usePageSettings('stocks', stocksDefaults, { deferUnknownFieldCleanup: true })
+const defaultListedBoards = computed<string[]>({
+  get: () => normalizeAllSelectedFilter(settings.defaultListedBoards, STOCK_LISTED_BOARD_VALUES),
+  set: value => { settings.defaultListedBoards = normalizeAllSelectedFilter(value, STOCK_LISTED_BOARD_VALUES) },
+})
+const defaultStatuses = computed<string[]>({
+  get: () => normalizeAllSelectedFilter(settings.defaultStatuses, STOCK_STATUS_VALUES),
+  set: value => { settings.defaultStatuses = normalizeAllSelectedFilter(value, STOCK_STATUS_VALUES) },
+})
 const { validDefault: klineDefaultRange } = useKlinePrefs()
 
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
@@ -206,18 +227,12 @@ function tableBorder(slotId: string): boolean {
 const loading = ref(false)
 const loadError = ref('')
 const q = ref('')
-const STOCK_BOARD_OPTIONS = [
-  { value: '主板', label: '主板' },
-  { value: '创业板', label: '创业板' },
-  { value: '科创板', label: '科创板' },
-  { value: 'ST', label: 'ST 板块' },
-  { value: '退市', label: '退市板块' },
-]
-const STOCK_BOARD_VALUES = new Set(STOCK_BOARD_OPTIONS.map((item) => item.value))
-const STOCK_BOARD_ALL_VALUES = STOCK_BOARD_OPTIONS.map((item) => item.value)
-const selectedBoards = ref<string[]>([...STOCK_BOARD_ALL_VALUES])
+const selectedListedBoards = ref<string[]>([...STOCK_LISTED_BOARD_VALUES])
+const selectedStatuses = ref<string[]>(['正常上市'])
+const listedBoardsDirty = ref(false)
+const statusesDirty = ref(false)
 const stOnlyContext = computed(() => (
-  selectedBoards.value.length === 1 && selectedBoards.value[0] === 'ST'
+  selectedStatuses.value.length === 1 && selectedStatuses.value[0] === 'ST'
 ))
 const membershipBoardCode = ref('')
 const membershipOptionRows = ref<StockMembershipOption[]>([])
@@ -238,10 +253,6 @@ const membershipOptions = computed(() => {
       label: `${typeLabel}｜${item.name}${duplicate ? `（${item.board_code}）` : ''}`,
     }
   })
-})
-const excludeSt = useDefaultedSessionValue(computed(() => Boolean(settings.excludeSt)), {
-  shouldSync: () => !restoringListState,
-  onSynced: () => { void searchCurrentView() },
 })
 const tradeDate = ref('')          // 交易日期（默认最新，展示当日涨跌幅）
 const sortBy = useDefaultedSessionValue(defaultSortBy, {
@@ -289,9 +300,9 @@ type StockListLoadOptions = {
 function stockListParams(): StockListParams {
   return {
     q: q.value || undefined,
-    boards: selectedBoards.value.length ? selectedBoards.value.join(',') : undefined,
+    boards: selectedListedBoards.value.join(','),
+    statuses: selectedStatuses.value.join(','),
     membership_board_code: membershipBoardCode.value || undefined,
-    exclude_st: excludeSt.value,
     trade_date: tradeDate.value || undefined,
     sort_by: sortBy.value,
     sort_order: sortOrder.value,
@@ -382,9 +393,6 @@ const groupSortOrder = useDefaultedSessionValue(groupDefaultSortOrder, {
 const groupTotal = computed(() => groupDetail.value?.members.total ?? 0)
 const lastActiveGid = ref('')
 let groupLoadRevision = 0
-// 首屏在远端组件默认值水合完成前保持恢复态，避免 watcher 抢跑并覆盖返回列表态。
-let restoringListState = true
-
 const auth = useAuthStore()
 const canViewGroups = computed(() => hasPermission(auth.role, auth.permissions, 'stock-group:view'))
 const canUpdateGroups = computed(() => hasPermission(
@@ -532,15 +540,32 @@ function searchCurrentView() {
   else search()
 }
 function onListedBoardsChange(value: string[] | string): void {
-  selectedBoards.value = normalizeAllSelectedFilter(value, STOCK_BOARD_ALL_VALUES)
-  excludeSt.value = selectedBoards.value.includes('ST')
-    ? false
-    : Boolean(settings.excludeSt)
+  listedBoardsDirty.value = true
+  selectedListedBoards.value = normalizeAllSelectedFilter(value, STOCK_LISTED_BOARD_VALUES)
   searchCurrentView()
 }
+function onStatusesChange(value: string[] | string): void {
+  statusesDirty.value = true
+  selectedStatuses.value = normalizeAllSelectedFilter(value, STOCK_STATUS_VALUES)
+  searchCurrentView()
+}
+watch([defaultListedBoards, defaultStatuses], ([boards, statuses]) => {
+  if (restoringListState) return
+  let changed = false
+  if (!listedBoardsDirty.value) {
+    selectedListedBoards.value = [...boards]
+    changed = true
+  }
+  if (!statusesDirty.value) {
+    selectedStatuses.value = [...statuses]
+    changed = true
+  }
+  if (changed) void searchCurrentView()
+})
 const hasQueryFilters = computed(() => (
   q.value.trim() !== ''
-  || !isAllSelectedFilter(selectedBoards.value, STOCK_BOARD_ALL_VALUES)
+  || !isSameSelectedFilter(selectedListedBoards.value, defaultListedBoards.value)
+  || !isSameSelectedFilter(selectedStatuses.value, defaultStatuses.value)
   || membershipBoardCode.value !== ''
   || tradeDate.value !== (dataMax.value || '')
 ))
@@ -549,9 +574,11 @@ async function resetQueryFilters(): Promise<void> {
   if (!hasQueryFilters.value) return
   restoringListState = true
   q.value = ''
-  selectedBoards.value = [...STOCK_BOARD_ALL_VALUES]
+  selectedListedBoards.value = [...defaultListedBoards.value]
+  selectedStatuses.value = [...defaultStatuses.value]
+  listedBoardsDirty.value = false
+  statusesDirty.value = false
   membershipBoardCode.value = ''
-  excludeSt.value = false
   tradeDate.value = dataMax.value || ''
   page.value = 1
   groupPage.value = 1
@@ -586,10 +613,9 @@ async function loadGroupDetail(background = false) {
       page: groupPage.value,
       size: groupSize.value,
       q: q.value || undefined,
-      boards: selectedBoards.value.length ? selectedBoards.value.join(',') : undefined,
+      boards: selectedListedBoards.value.join(','),
+      statuses: selectedStatuses.value.join(','),
       membership_board_code: membershipBoardCode.value || undefined,
-      exclude_st: excludeSt.value,
-      exclude_delisted: !selectedBoards.value.includes('退市'),
       trade_date: tradeDate.value || undefined,
       sort_by: groupSortBy.value,
       sort_order: groupSortOrder.value,
@@ -710,9 +736,9 @@ function activeItems(): { code: string; name?: string | null }[] {
 function querySnapshot(): StockListParams {
   return {
     q: q.value || undefined,
-    boards: selectedBoards.value.length ? selectedBoards.value.join(',') : undefined,
+    boards: selectedListedBoards.value.join(','),
+    statuses: selectedStatuses.value.join(','),
     membership_board_code: membershipBoardCode.value || undefined,
-    exclude_st: excludeSt.value,
     trade_date: tradeDate.value || undefined,
     sort_by: sortBy.value,
     sort_order: sortOrder.value,
@@ -724,10 +750,9 @@ function groupQuerySnapshot() {
     page: groupPage.value,
     size: Math.min(groupSize.value, 100),
     q: q.value || undefined,
-    boards: selectedBoards.value.length ? selectedBoards.value.join(',') : undefined,
+    boards: selectedListedBoards.value.join(','),
+    statuses: selectedStatuses.value.join(','),
     membership_board_code: membershipBoardCode.value || undefined,
-    exclude_st: excludeSt.value,
-    exclude_delisted: !selectedBoards.value.includes('退市'),
     trade_date: tradeDate.value || undefined,
     sort_by: groupSortBy.value,
     sort_order: groupSortOrder.value,
@@ -737,9 +762,9 @@ function currentListState(): StockListState {
   return {
     mode: inGroupMode.value ? 'group' : 'list',
     q: q.value,
-    boards: [...selectedBoards.value],
+    boards: [...selectedListedBoards.value],
+    statuses: [...selectedStatuses.value],
     membershipBoardCode: membershipBoardCode.value,
-    excludeSt: excludeSt.value,
     tradeDate: tradeDate.value,
     sortBy: sortBy.value,
     sortOrder: sortOrder.value,
@@ -857,14 +882,28 @@ onMounted(async () => {
       // 返回现场已由 store 原子消费，避免后续刷新重复覆盖当前页状态。
       restoringListState = true
       q.value = restore.mode === 'group' ? (restore.groupQ || restore.q) : restore.q
-      selectedBoards.value = normalizeAllSelectedFilter(
-        restore.boards?.length
-          ? restore.boards
-          : restore.board && STOCK_BOARD_VALUES.has(restore.board) ? [restore.board] : [],
-        STOCK_BOARD_ALL_VALUES,
+      const legacyValues = restore.boards?.length
+        ? restore.boards
+        : restore.board ? [restore.board] : []
+      selectedListedBoards.value = normalizeAllSelectedFilter(
+        legacyValues.filter(value => STOCK_LISTED_BOARD_VALUES.includes(value)),
+        STOCK_LISTED_BOARD_VALUES,
       )
+      const restoredStatuses = restore.statuses?.length
+        ? restore.statuses
+        : [
+            ...(legacyValues.some(value => STOCK_LISTED_BOARD_VALUES.includes(value))
+              || legacyValues.length === 0 ? ['正常上市'] : []),
+            ...(legacyValues.includes('ST') || restore.excludeSt === false ? ['ST'] : []),
+            ...(legacyValues.includes('退市') ? ['退市'] : []),
+          ]
+      selectedStatuses.value = normalizeAllSelectedFilter(
+        restoredStatuses,
+        STOCK_STATUS_VALUES,
+      )
+      listedBoardsDirty.value = true
+      statusesDirty.value = true
       membershipBoardCode.value = restore.membershipBoardCode || ''
-      excludeSt.value = selectedBoards.value.includes('ST') ? false : restore.excludeSt
       tradeDate.value = restore.tradeDate
       sortBy.value = restore.sortBy
       sortOrder.value = restore.sortOrder
@@ -883,7 +922,10 @@ onMounted(async () => {
       return
     }
     const dg = defaultGroup.value
-    excludeSt.value = Boolean(settings.excludeSt)
+    selectedListedBoards.value = [...defaultListedBoards.value]
+    selectedStatuses.value = [...defaultStatuses.value]
+    listedBoardsDirty.value = false
+    statusesDirty.value = false
     sortBy.value = defaultSortBy.value
     sortOrder.value = defaultSortOrder.value
     size.value = defaultSize.value
@@ -963,14 +1005,24 @@ const menuPageTitle = useMenuPageTitle()
         />
         <TradeDatePicker v-model="tradeDate" placeholder="交易日期" clearable class="app-control-width-medium" />
         <AppFilterSelect
-          :model-value="selectedBoards"
-          :options="STOCK_BOARD_OPTIONS"
+          :model-value="selectedListedBoards"
+          :options="STOCK_LISTED_BOARD_OPTIONS"
           :visible-tag-count="2"
           all-selected-label="全部板块"
-          placeholder="全部板块"
-          aria-label="按板块筛选"
+          placeholder="上市板块"
+          aria-label="按上市板块筛选"
           data-testid="stocks-boards"
           @change="onListedBoardsChange"
+        />
+        <AppFilterSelect
+          :model-value="selectedStatuses"
+          :options="STOCK_STATUS_OPTIONS"
+          :visible-tag-count="2"
+          all-selected-label="全部状态"
+          placeholder="股票状态"
+          aria-label="按股票状态筛选"
+          data-testid="stocks-statuses"
+          @change="onStatusesChange"
         />
         <AppFilterSelect
           v-model="membershipBoardCode"
@@ -1364,7 +1416,28 @@ const menuPageTitle = useMenuPageTitle()
               test-id="stocks-default-view"
             />
           </PageSettingItem>
-          <PageToggleRow v-model="settings.excludeSt" label="默认排除 ST" />
+          <PageSettingItem label="默认上市板块">
+            <AppFilterSelect
+              v-model="defaultListedBoards"
+              :options="STOCK_LISTED_BOARD_OPTIONS"
+              :visible-tag-count="2"
+              all-selected-label="全部板块"
+              placeholder="默认上市板块"
+              aria-label="默认上市板块"
+              data-testid="stocks-default-boards"
+            />
+          </PageSettingItem>
+          <PageSettingItem label="默认股票状态">
+            <AppFilterSelect
+              v-model="defaultStatuses"
+              :options="STOCK_STATUS_OPTIONS"
+              :visible-tag-count="2"
+              all-selected-label="全部状态"
+              placeholder="默认股票状态"
+              aria-label="默认股票状态"
+              data-testid="stocks-default-statuses"
+            />
+          </PageSettingItem>
         </PageSettingSection>
       </template>
     </PageSettingsDrawer>

@@ -11,7 +11,7 @@ const LIST_STATE: StockListState = {
   mode: 'group',
   q: '',
   boards: ['主板', '创业板'],
-  excludeSt: true,
+  statuses: ['正常上市'],
   tradeDate: '2026-01-05',
   sortBy: 'pct_chg',
   sortOrder: 'asc',

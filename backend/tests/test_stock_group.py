@@ -191,24 +191,41 @@ def test_group_reuses_stock_filters_and_trade_date_cutoff(repo):
 
     main_board = repo.get(gid, board="主板", trade_date=date(2026, 1, 5))
     assert [row["code"] for row in main_board["members"]["list"]] == ["A"]
-    listed_boards = repo.get(gid, boards=["主板", "创业板"], trade_date=date(2026, 1, 5))
+    listed_boards = repo.get(
+        gid,
+        boards=["主板", "创业板"],
+        statuses=["正常上市", "ST"],
+        trade_date=date(2026, 1, 5),
+    )
     assert [row["code"] for row in listed_boards["members"]["list"]] == ["A", "B"]
-    gem_only = repo.get(gid, boards=["创业板"], trade_date=date(2026, 1, 5))
+    gem_only = repo.get(
+        gid, boards=["创业板"], statuses=["ST"], trade_date=date(2026, 1, 5),
+    )
     assert [row["code"] for row in gem_only["members"]["list"]] == ["B"]
     assert repo.get(gid, board="创业板", exclude_st=True)["members"]["total"] == 0
     st_only = repo.get(gid, board="ST")
     assert [row["code"] for row in st_only["members"]["list"]] == ["B"]
 
-    repo.mkt.execute("UPDATE stock_basic SET delist_date='2026-02-01' WHERE code='A'")
+    repo.mkt.execute("UPDATE stock_basic SET delist_date='2026-01-06' WHERE code='A'")
     assert repo.get(gid)["members"]["total"] == 2
     assert repo.get(gid, exclude_delisted=True)["members"]["total"] == 1
     assert [row["code"] for row in repo.get(gid, board="退市")["members"]["list"]] == ["A"]
-    mixed = repo.get(gid, boards=["创业板", "退市"], exclude_st=True, sort_by="code")
-    assert [row["code"] for row in mixed["members"]["list"]] == ["A"]
+    main_delisted = repo.get(gid, boards=["主板"], statuses=["退市"])
+    assert [row["code"] for row in main_delisted["members"]["list"]] == ["A"]
+    gem_delisted = repo.get(gid, boards=["创业板"], statuses=["退市"])
+    assert gem_delisted["members"]["total"] == 0
+    historical_main = repo.get(
+        gid,
+        boards=["主板"],
+        statuses=["正常上市"],
+        trade_date=date(2026, 1, 5),
+    )
+    assert [row["code"] for row in historical_main["members"]["list"]] == ["A"]
+    assert historical_main["members"]["list"][0]["st_as_of_date"] == "2026-01-05"
     all_types = repo.get(
         gid,
-        boards=["主板", "创业板", "科创板", "ST", "退市"],
-        exclude_st=True,
+        boards=["主板", "创业板", "科创板"],
+        statuses=["正常上市", "ST", "退市"],
         sort_by="code",
     )
     assert [row["code"] for row in all_types["members"]["list"]] == ["A", "B"]

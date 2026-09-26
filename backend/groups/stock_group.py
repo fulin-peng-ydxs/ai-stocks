@@ -202,7 +202,8 @@ class StockGroupRepo:
         return out
 
     def get(self, gid: str, page: int = 1, size: int = 50, q: str | None = None,
-            boards: list[str] | None = None, board: str | None = None,
+            boards: list[str] | None = None, statuses: list[str] | None = None,
+            board: str | None = None,
             exclude_st: bool = False,
             membership_board_code: str | None = None,
             exclude_delisted: bool = False,
@@ -230,6 +231,7 @@ class StockGroupRepo:
             all_members,
             q,
             boards=boards,
+            statuses=statuses,
             board=board,
             membership_board_code=membership_board_code,
             membership_as_of_date=trade_date,
@@ -260,6 +262,7 @@ class StockGroupRepo:
 
     def _filter_members(self, members: list[dict], q: str | None,
                         *, boards: list[str] | None = None,
+                        statuses: list[str] | None = None,
                         board: str | None = None,
                         membership_board_code: str | None = None,
                         membership_as_of_date: date | None = None,
@@ -281,14 +284,17 @@ class StockGroupRepo:
                 return False
             if membership_codes is not None and member.get("code") not in membership_codes:
                 return False
-            if boards:
-                in_scope = (
-                    (member.get("_board") in boards and not member.get("_delisted"))
-                    or ("ST" in boards and member.get("_is_st") and not member.get("_delisted"))
-                    or ("退市" in boards and member.get("_delisted"))
-                )
-                if not in_scope:
+            if boards and member.get("_board") not in boards:
+                return False
+            if statuses:
+                if not member.get("_listed_as_of"):
                     return False
+                stock_status = (
+                    "退市" if member.get("_delisted")
+                    else "ST" if member.get("_is_st")
+                    else "正常上市"
+                )
+                return stock_status in statuses
             if board == "退市":
                 return bool(member.get("_delisted"))
             if member.get("_delisted") and (board or exclude_delisted):
@@ -297,10 +303,6 @@ class StockGroupRepo:
                 return bool(member.get("_is_st"))
             if board and member.get("_board") != board:
                 return False
-            if boards and (
-                "ST" in boards or ("退市" in boards and member.get("_delisted"))
-            ):
-                return True
             return not (exclude_st and member.get("_is_st"))
 
         return [member for member in members if matches(member)]
@@ -351,7 +353,8 @@ class StockGroupRepo:
         ph = ",".join("?" * len(codes))   # 行情库 DuckDB 占位符
         # 2) 行情：DuckDB（只读）——名称 + 各股最新前复权收盘/当日涨跌
         names_df = self.mkt.query_df(
-            f"SELECT code, name, board, delist_date FROM stock_basic WHERE code IN ({ph})", codes)
+            f"SELECT code, name, board, list_date, delist_date "
+            f"FROM stock_basic WHERE code IN ({ph})", codes)
         basics = {row["code"]: row for row in names_df.to_dict("records")}
         cutoff_clause = " AND trade_date<=?" if trade_date else ""
         last_params = [*codes, trade_date] if trade_date else codes
@@ -372,22 +375,63 @@ class StockGroupRepo:
             status_date = None if pd.isna(latest) else pd.Timestamp(latest).date()
         st_map: dict[str, bool] = {}
         st_date_map: dict[str, date] = {}
-        st_codes_by_date: dict[date, list[str]] = {}
+        active_codes: list[str] = []
+        delisted_cutoffs: list[dict[str, object]] = []
         if status_date is not None:
             for code in codes:
                 basic = basics.get(code, {})
+                list_date = basic.get("list_date")
+                if (
+                    list_date is not None
+                    and not pd.isna(list_date)
+                    and pd.Timestamp(list_date).date() > status_date
+                ):
+                    continue
                 delist_date = basic.get("delist_date")
-                point_date = status_date
-                if delist_date is not None and not pd.isna(delist_date):
-                    last_value = last_d.get(code)
-                    if last_value is None:
-                        continue
-                    point_date = pd.Timestamp(last_value).date()
-                st_codes_by_date.setdefault(point_date, []).append(code)
-                st_date_map[code] = point_date
+                is_delisted = (
+                    delist_date is not None
+                    and not pd.isna(delist_date)
+                    and pd.Timestamp(delist_date).date() <= status_date
+                )
+                if is_delisted:
+                    delisted_cutoffs.append({
+                        "code": code,
+                        "cutoff_date": pd.Timestamp(delist_date).date(),
+                    })
+                else:
+                    active_codes.append(code)
         st_service = StockSTStatusService(self.mkt)
-        for point_date, point_codes in st_codes_by_date.items():
-            st_map.update(st_service.status_map(point_date, point_codes))
+        if status_date is not None and active_codes:
+            st_map.update(st_service.status_map(status_date, active_codes))
+            st_date_map.update({code: status_date for code in active_codes})
+        if delisted_cutoffs:
+            cutoff_frame = pd.DataFrame(delisted_cutoffs)
+            with self.mkt.temp_view(cutoff_frame, "group_delisted_st_cutoff") as cutoff_view:
+                delisted_status = self.mkt.query_df(
+                    f"""
+                    SELECT wanted.code,status.is_st,status.trade_date,status.source
+                    FROM {cutoff_view} wanted
+                    LEFT JOIN LATERAL (
+                        SELECT st.is_st,st.trade_date,st.source
+                        FROM stock_st_status_daily st
+                        WHERE st.code=wanted.code AND st.trade_date<=wanted.cutoff_date
+                          AND st.quality='accurate'
+                        ORDER BY st.trade_date DESC LIMIT 1
+                    ) status ON TRUE
+                    """
+                )
+            missing = delisted_status[delisted_status["source"].isna()]["code"].astype(str).tolist()
+            if missing:
+                from backend.services.stock_st_status import STStatusNotReadyError
+
+                raise STStatusNotReadyError(
+                    f"退市股票缺少退市前 ST 点时事实，示例 {','.join(missing[:5])}；"
+                    "请先运行 ST状态刷新"
+                )
+            for _, status in delisted_status.iterrows():
+                code = str(status["code"])
+                st_map[code] = bool(status["is_st"])
+                st_date_map[code] = pd.Timestamp(status["trade_date"]).date()
         # 3) 内存合并
         out = []
         for _, r in m.iterrows():
@@ -410,7 +454,18 @@ class StockGroupRepo:
             dpct = last_pct.get(code)
             basic = basics.get(code, {})
             name = basic.get("name")
+            list_date = basic.get("list_date")
             delist_date = basic.get("delist_date")
+            listed_as_of = status_date is not None and (
+                list_date is None
+                or pd.isna(list_date)
+                or pd.Timestamp(list_date).date() <= status_date
+            )
+            delisted_as_of = listed_as_of and (
+                delist_date is not None
+                and not pd.isna(delist_date)
+                and pd.Timestamp(delist_date).date() <= status_date
+            )
             out.append({
                 "code": code, "name": name,
                 "add_date": str(ad) if ad else None,
@@ -422,6 +477,7 @@ class StockGroupRepo:
                 "note": r["note"] or "",
                 "_board": basic.get("board"),
                 "_is_st": bool(st_map[code]) if code in st_date_map else None,
-                "_delisted": delist_date is not None and not pd.isna(delist_date),
+                "_listed_as_of": listed_as_of,
+                "_delisted": delisted_as_of,
             })
         return out

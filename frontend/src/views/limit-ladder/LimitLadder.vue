@@ -11,6 +11,7 @@ import PageSegmented from '@/components/PageSegmented.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import {
   DEFAULT_LIMIT_LADDER_FILTERS,
+  LIMIT_LADDER_BOARD_OPTIONS,
   type LimitLadderFilters,
   type LimitLadderHotspotType,
   type LimitLadderResult,
@@ -57,11 +58,6 @@ const emit = defineEmits<{
 }>()
 const keywordDraft = ref(props.filters.keyword)
 watch(() => props.filters.keyword, (value) => { keywordDraft.value = value })
-const boardOptions = [
-  { value: 'main', label: '主板' },
-  { value: 'star', label: '科创板' },
-  { value: 'gem', label: '创业板' },
-]
 const windowOptions = [10, 20, 31, 60].map((value) => ({ label: `${value}日`, value }))
 const sortedLayers = computed(() => sortLimitLadderLayers(
   props.result?.layers ?? [],
@@ -221,7 +217,7 @@ function resetFilters(): void {
           <TradeDatePicker :model-value="tradeDate" placeholder="选择交易日" data-testid="limit-ladder-date" @update:model-value="$emit('update:tradeDate',$event)" />
         </div>
         <PageSegmented class="limit-ladder__window" :model-value="filters.window" :options="windowOptions" size="small" tone="primary" test-id="limit-ladder-window" aria-label="统计窗口" @update:model-value="updateFilters({window:Number($event) as LimitLadderFilters['window']})" />
-        <AppFilterSelect :model-value="filters.boards" :options="boardOptions" :visible-tag-count="2" all-selected-label="全部板块" placeholder="上市板块" aria-label="按上市板块筛选" data-testid="limit-ladder-boards" @change="updateBoards" />
+        <AppFilterSelect :model-value="filters.boards" :options="LIMIT_LADDER_BOARD_OPTIONS" :visible-tag-count="2" all-selected-label="全部板块" placeholder="上市板块" aria-label="按上市板块筛选" data-testid="limit-ladder-boards" @change="updateBoards" />
         <div class="limit-ladder__checks app-inline-info app-inline-info--nowrap" data-testid="limit-ladder-checks">
           <el-checkbox :model-value="filters.ignoreSt" data-testid="limit-ladder-ignore-st" @update:model-value="updateFilters({ignoreSt:Boolean($event)})">忽略 ST</el-checkbox>
           <el-checkbox :model-value="filters.oneWordOnly" data-testid="limit-ladder-one-word" @update:model-value="updateFilters({oneWordOnly:Boolean($event)})">仅一字板</el-checkbox>

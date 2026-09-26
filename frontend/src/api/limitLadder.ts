@@ -7,6 +7,12 @@ export type LimitLadderWindow = typeof LIMIT_LADDER_WINDOWS[number]
 export type LimitLadderBoard = 'main' | 'star' | 'gem'
 export type LimitLadderHotspotType = 'industry' | 'concept'
 
+export const LIMIT_LADDER_BOARD_OPTIONS: { value: LimitLadderBoard; label: string }[] = [
+  { value: 'main', label: '主板' },
+  { value: 'star', label: '科创板' },
+  { value: 'gem', label: '创业板' },
+]
+
 export interface LimitLadderFilters {
   window: LimitLadderWindow
   boards: LimitLadderBoard[]

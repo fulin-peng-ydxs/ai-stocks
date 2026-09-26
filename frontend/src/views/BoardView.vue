@@ -62,7 +62,7 @@ import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-searc
 import { getApiErrorCode, getErrorMessage } from '@/utils/error'
 import { listGroups, type GroupSummary } from '@/api/stockGroup'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
-import { normalizeAllSelectedFilter } from '@/utils/multiSelectFilter'
+import { isSameSelectedFilter, normalizeAllSelectedFilter } from '@/utils/multiSelectFilter'
 
 // 列表页布局（原型 A）：操作区=头部（标题+控件），主内容区=榜单表格（撑满·表体内滚）。
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
@@ -118,6 +118,7 @@ const BOARD_LISTED_OPTIONS = [
 ]
 const BOARD_LISTED_KEYS = BOARD_LISTED_OPTIONS.map((item) => item.value)
 const listedBoards = ref<string[]>([...BOARD_LISTED_KEYS])
+const listedBoardsDirty = ref(false)
 const keyword = ref('')
 const syncingRunDate = ref(false)
 const settingsOpen = ref(false)
@@ -127,6 +128,7 @@ const { dataMax, ensureLoaded: ensureTradeDatesLoaded } = useTradeDates()
 // 列显隐与分页大小属表格组件配置，排名则始终直接使用服务端全市场排名。
 const boardDefaults = {
   subScoreMode: 'full' as 'full' | 'brief' | 'hidden',
+  defaultListedBoards: [...BOARD_LISTED_KEYS],
   adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
 }
 const {
@@ -137,6 +139,15 @@ const {
   whenHydrated: whenPageSettingsHydrated,
   legacySnapshot,
 } = usePageSettings('board', boardDefaults, { deferUnknownFieldCleanup: true })
+const defaultListedBoards = computed<string[]>({
+  get: () => normalizeAllSelectedFilter(
+    settings.defaultListedBoards,
+    BOARD_LISTED_KEYS,
+  ),
+  set: value => {
+    settings.defaultListedBoards = normalizeAllSelectedFilter(value, BOARD_LISTED_KEYS)
+  },
+})
 useLegacyStockChartPreferenceMigration({
   pageKey: 'board', analysisType: 'stock', componentSourceOf, setComponentKnob, whenRemoteHydrated,
   whenPageSettingsHydrated, legacySnapshot,
@@ -433,9 +444,16 @@ function reloadFromFirstPage(): void {
 }
 
 function onListedBoardsChange(value: string[] | string): void {
+  listedBoardsDirty.value = true
   listedBoards.value = normalizeAllSelectedFilter(value, BOARD_LISTED_KEYS)
   reloadFromFirstPage()
 }
+
+watch(defaultListedBoards, (value) => {
+  if (listedBoardsDirty.value) return
+  listedBoards.value = [...value]
+  if (profileRef.value) reloadFromFirstPage()
+})
 
 function searchKeyword(): void {
   keyword.value = keyword.value.trim()
@@ -443,7 +461,8 @@ function searchKeyword(): void {
 }
 
 function resetStockFilters(): void {
-  listedBoards.value = [...BOARD_LISTED_KEYS]
+  listedBoards.value = [...defaultListedBoards.value]
+  listedBoardsDirty.value = false
   keyword.value = ''
   reloadFromFirstPage()
 }
@@ -621,7 +640,9 @@ onMounted(async () => {
       getIndicatorRegistry(true),
       ensureTradeDatesLoaded(),
       loadGroups(),
+      whenPageSettingsHydrated(),
     ])
+    if (!listedBoardsDirty.value) listedBoards.value = [...defaultListedBoards.value]
     registry.value = registryResult.items
     syncingRunDate.value = true
     if (!runDate.value && dataMax.value) runDate.value = dataMax.value
@@ -736,7 +757,7 @@ const menuPageTitle = useMenuPageTitle()
         />
         <el-button
           data-testid="board-reset-filters"
-          :disabled="!keyword && listedBoards.length === BOARD_LISTED_KEYS.length"
+          :disabled="!keyword && isSameSelectedFilter(listedBoards, defaultListedBoards)"
           @click="resetStockFilters"
         >重置筛选</el-button>
       </AppControlRow>
@@ -889,6 +910,17 @@ const menuPageTitle = useMenuPageTitle()
           </PageSettingItem>
         </PageSettingSection>
         <PageSettingSection title="默认结果">
+          <PageSettingItem label="默认上市板块">
+            <AppFilterSelect
+              v-model="defaultListedBoards"
+              :options="BOARD_LISTED_OPTIONS"
+              :visible-tag-count="2"
+              all-selected-label="全部板块"
+              placeholder="默认上市板块"
+              aria-label="默认上市板块"
+              data-testid="board-default-listed-boards"
+            />
+          </PageSettingItem>
           <PageSettingItem label="分项达标分">
             <PageSegmented v-model="settings.subScoreMode" aria-label="分项达标分" :options="[
               { label: '全显', value: 'full' },

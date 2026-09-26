@@ -17,3 +17,12 @@ export function isAllSelectedFilter(
   const selected = new Set(value)
   return allowedValues.every((item) => selected.has(item))
 }
+
+export function isSameSelectedFilter(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  if (left.length !== right.length) return false
+  const expected = new Set(right)
+  return left.every(item => expected.has(item))
+}

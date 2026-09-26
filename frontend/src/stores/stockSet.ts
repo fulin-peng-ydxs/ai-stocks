@@ -26,10 +26,12 @@ export interface StockListState {
   mode: 'list' | 'group'
   q: string
   boards: string[]
+  statuses: string[]
   /** 旧会话兼容字段，新状态不再写入。 */
   board?: string
   membershipBoardCode?: string
-  excludeSt: boolean
+  /** 旧会话兼容字段，新状态不再写入。 */
+  excludeSt?: boolean
   tradeDate: string
   sortBy: string
   sortOrder: 'asc' | 'desc'

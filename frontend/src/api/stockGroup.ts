@@ -54,7 +54,8 @@ export interface GroupMembersParams {
   size?: number
   q?: string
   boards?: string
-  /** 兼容旧调用；新页面使用 boards 传本页原有板块值。 */
+  statuses?: string
+  /** 兼容旧调用；新页面分别使用 boards 和 statuses。 */
   board?: string
   membership_board_code?: string
   exclude_st?: boolean

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { isAllSelectedFilter, normalizeAllSelectedFilter } from '@/utils/multiSelectFilter'
+import {
+  isAllSelectedFilter,
+  isSameSelectedFilter,
+  normalizeAllSelectedFilter,
+} from '@/utils/multiSelectFilter'
 
 const VALUES = ['主板', '创业板', '科创板', 'ST', '退市']
 
@@ -16,5 +20,10 @@ describe('multiSelectFilter', () => {
   it('recognizes the canonical all state regardless of order', () => {
     expect(isAllSelectedFilter([...VALUES].reverse(), VALUES)).toBe(true)
     expect(isAllSelectedFilter(['主板', 'ST'], VALUES)).toBe(false)
+  })
+
+  it('compares current selections with configured defaults as sets', () => {
+    expect(isSameSelectedFilter(['ST', '主板'], ['主板', 'ST'])).toBe(true)
+    expect(isSameSelectedFilter(['主板'], ['主板', 'ST'])).toBe(false)
   })
 })
