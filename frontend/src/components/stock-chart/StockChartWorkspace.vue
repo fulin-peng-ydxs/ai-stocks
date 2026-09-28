@@ -71,6 +71,7 @@ import {
   stockChartWorkspaceMinHeight,
   stockChartVisibleSlider,
   volumeMetrics,
+  visibleKlineIndexRange,
   type MacdPanelState,
   type TradeMarker,
   type WorkspacePanelKey,
@@ -281,12 +282,17 @@ const ratios = computed(() => constrainWorkspaceRatios(
   minimumRatios(),
 ))
 const lastIndex = computed(() => Math.max(0, rows.value.length - 1))
+const visibleIndexRange = computed(() => visibleKlineIndexRange(
+  rows.value.length,
+  zoomRange.value.start,
+  zoomRange.value.end,
+))
 const metricIndex = computed(() => activeIndex.value ?? lastIndex.value)
 
 const measurementIndices = computed<[number, number] | null>(() => {
   if (!props.enableReturnMeasurement || !rows.value.length) return null
   if (measurementMode.value === 'latest') {
-    return activeIndex.value == null ? null : [activeIndex.value, lastIndex.value]
+    return activeIndex.value == null ? null : measurementIndicesAt(activeIndex.value)
   }
   if (rangeStartIndex.value == null) return null
   const candidateEnd = rangeEndIndex.value ?? activeIndex.value
@@ -351,7 +357,10 @@ const measurementHint = computed(() => {
 })
 
 function measurementIndicesAt(index: number): [number, number] | null {
-  if (measurementMode.value === 'latest') return [index, lastIndex.value]
+  if (measurementMode.value === 'latest') {
+    const { startIndex, endIndex } = visibleIndexRange.value
+    return index >= startIndex && index <= endIndex ? [index, endIndex] : null
+  }
   if (rangeStartIndex.value == null) return null
   const candidateEnd = rangeEndIndex.value ?? index
   return rangeStartIndex.value <= candidateEnd

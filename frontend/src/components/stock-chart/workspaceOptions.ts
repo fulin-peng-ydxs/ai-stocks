@@ -370,7 +370,8 @@ interface VisibleKlineExtremum {
   value: number
 }
 
-function visibleKlineIndexRange(length: number, zoomStart: number, zoomEnd: number) {
+/** 与可视区极值和截止测算共用窗口边界，保证两者读取同一根末尾 K 线。 */
+export function visibleKlineIndexRange(length: number, zoomStart: number, zoomEnd: number) {
   const lastIndex = Math.max(0, length - 1)
   const normalizedStart = Number.isFinite(zoomStart) ? zoomStart : 0
   const normalizedEnd = Number.isFinite(zoomEnd) ? zoomEnd : 100

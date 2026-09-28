@@ -569,6 +569,36 @@ describe('StockChartWorkspace', () => {
     wrapper.unmount()
   })
 
+  it('截止测算随 K 线可视窗口末日变化，浮层和图外摘要使用同一终点', async () => {
+    const wrapper = await mountWorkspace({ enableReturnMeasurement: true, zoomEnd: 50 })
+    const kline = echartsMock.instances[0]
+
+    await wrapper.get('.stock-chart-panel--kline .stock-chart-panel__canvas')
+      .trigger('pointerenter')
+    kline.emit('updateAxisPointer', { seriesDataIndices: [{ dataIndex: 6 }] })
+    await nextTick()
+    expect(wrapper.emitted('measurementSummaryChange')?.at(-1)?.[0]).toMatchObject({
+      label: '截止 2026-06-21',
+      details: [{ label: '交易日', value: '14个交易日' }],
+    })
+    expect(kline.setOption.mock.calls.at(-1)?.[0].tooltip.formatter([{ dataIndex: 6 }]))
+      .toContain('截止 2026-06-21')
+
+    kline.emit('datazoom', { start: 0, end: 70 })
+    await nextTick()
+    expect(wrapper.emitted('measurementSummaryChange')?.at(-1)?.[0]).toMatchObject({
+      label: '截止 2026-06-29',
+      details: [{ label: '交易日', value: '22个交易日' }],
+    })
+    expect(kline.setOption.mock.calls.at(-1)?.[0].tooltip.formatter([{ dataIndex: 6 }]))
+      .toContain('截止 2026-06-29')
+
+    kline.emit('datazoom', { start: 0, end: 10 })
+    await nextTick()
+    expect(wrapper.emitted('measurementSummaryChange')?.at(-1)?.[0]).toBeNull()
+    wrapper.unmount()
+  })
+
   it('未启用涨跌测算时保持原有紧凑日期标题', async () => {
     const wrapper = await mountWorkspace()
 
