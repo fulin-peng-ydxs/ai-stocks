@@ -112,7 +112,8 @@ describe('LoginView captcha', () => {
     await wrapper.vm.$nextTick()
 
     expect(authApi.getCaptcha).toHaveBeenCalledTimes(1)
-    expect(wrapper.find('input[placeholder="图形验证码"]').exists()).toBe(true)
+    expect(wrapper.find('.login-field .field-label').text()).toBe('账号 / 邮箱')
+    expect(wrapper.find('input[name="captchaCode"]').exists()).toBe(true)
   })
 
   it('后端返回图形验证码错误时立即拉取并展示验证码', async () => {
@@ -125,14 +126,14 @@ describe('LoginView captcha', () => {
 
     const wrapper = mount(LoginView as Component)
     await flushPromises()
-    await wrapper.find('input[placeholder="账号 / 邮箱"]').setValue('admin')
-    await wrapper.find('input[placeholder="密码"]').setValue('bad-pass')
-    await wrapper.find('input[placeholder="图形验证码"]').setValue('AB12')
+    await wrapper.find('input[name="account"]').setValue('admin')
+    await wrapper.find('input[name="password"]').setValue('bad-pass')
+    await wrapper.find('input[name="captchaCode"]').setValue('AB12')
     await wrapper.find('button.login-primary').trigger('click')
     await flushPromises()
 
     expect(authApi.getCaptcha).toHaveBeenCalledTimes(2)
-    expect(wrapper.find('input[placeholder="图形验证码"]').exists()).toBe(true)
+    expect(wrapper.find('input[name="captchaCode"]').exists()).toBe(true)
   })
 
   it('登录成功前锁定登录页当前主题，进入工作台后不被旧远端模式覆盖', async () => {
@@ -145,8 +146,8 @@ describe('LoginView captcha', () => {
 
     const wrapper = mount(LoginView as Component)
     await flushPromises()
-    await wrapper.find('input[placeholder="账号 / 邮箱"]').setValue('debug_normal')
-    await wrapper.find('input[placeholder="密码"]').setValue('test-password')
+    await wrapper.find('input[name="account"]').setValue('debug_normal')
+    await wrapper.find('input[name="password"]').setValue('test-password')
     await wrapper.find('button.login-primary').trigger('click')
     await flushPromises()
 

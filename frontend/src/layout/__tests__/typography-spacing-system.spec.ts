@@ -310,7 +310,7 @@ describe('字体与间距设计契约', () => {
     expect(loginView).not.toContain('.login-shell.preset-nocturne')
     expect(loginView).not.toMatch(/#(?:b69254|876a3a|c5a466|d0ab68|9a7137)\b/i)
     expect(loginView).toContain(
-      'grid-template-columns: minmax(0, 1.38fr) minmax(430px, 0.82fr)',
+      'grid-template-columns: minmax(0, 1.2fr) minmax(430px, 1fr)',
     )
     expect(loginView).toMatch(
       /radial-gradient\(\s*circle at 85% 0,\s*color-mix\(in srgb,\s*var\(--login-accent\)\s+12%,\s*transparent\),\s*transparent 28%\s*\)/,

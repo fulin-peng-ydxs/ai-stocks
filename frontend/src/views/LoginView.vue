@@ -392,11 +392,11 @@ function onSubmit() {
 
         <div class="login-field-block">
           <label class="login-field" :class="{ 'is-error': errors.account }">
-            <span class="field-label">账号</span>
+            <span class="field-label">{{ mode === 'login' ? '账号 / 邮箱' : '账号' }}</span>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
             </svg>
-            <input v-model="form.account" type="text" :placeholder="mode === 'register' ? '账号' : '账号 / 邮箱'"
+            <input v-model="form.account" name="account" type="text"
                    autocomplete="username" @input="errors.account = ''; errors.form = ''" @keyup.enter="onSubmit" />
           </label>
           <p v-if="errors.account" class="field-error">{{ errors.account }}</p>
@@ -408,8 +408,9 @@ function onSubmit() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
             </svg>
-            <input v-model="form.password" :type="showPwd ? 'text' : 'password'" placeholder="密码"
-                   autocomplete="current-password" @input="errors.password = ''; errors.form = ''" @keyup.enter="onSubmit" />
+            <input v-model="form.password" name="password" :type="showPwd ? 'text' : 'password'"
+                   :autocomplete="mode === 'register' ? 'new-password' : 'current-password'"
+                   @input="errors.password = ''; errors.form = ''" @keyup.enter="onSubmit" />
             <svg class="eye" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                  stroke-width="2" @click="showPwd = !showPwd">
               <path v-if="showPwd" d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z" />
@@ -426,7 +427,7 @@ function onSubmit() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
             </svg>
-            <input v-model="form.confirm" type="password" placeholder="确认密码" autocomplete="new-password"
+            <input v-model="form.confirm" name="confirm" type="password" autocomplete="new-password"
                    @input="errors.confirm = ''" @keyup.enter="onSubmit" />
           </label>
           <p v-if="errors.confirm" class="field-error">{{ errors.confirm }}</p>
@@ -438,7 +439,7 @@ function onSubmit() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
             </svg>
-            <input v-model="form.email" type="email" placeholder="邮箱" autocomplete="email"
+            <input v-model="form.email" name="email" type="email" autocomplete="email"
                    @input="errors.email = ''" @keyup.enter="onSubmit" />
           </label>
           <p v-if="errors.email" class="field-error">{{ errors.email }}</p>
@@ -450,7 +451,7 @@ function onSubmit() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
             </svg>
-            <input v-model="form.emailCode" type="text" placeholder="邮箱验证码"
+            <input v-model="form.emailCode" name="emailCode" type="text" autocomplete="one-time-code"
                    @input="errors.emailCode = ''" @keyup.enter="onSubmit" />
             <span class="send" :class="{ disabled: emailCountdown > 0 || emailSending }"
                   role="button" @click="onSendEmailCode">
@@ -470,7 +471,7 @@ function onSubmit() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M12 3v18M3 12h18" />
                 </svg>
-                <input v-model="form.captchaCode" type="text" placeholder="图形验证码"
+                <input v-model="form.captchaCode" name="captchaCode" type="text"
                        @input="errors.captcha = ''" @keyup.enter="onSubmit" />
               </label>
               <div class="login-captcha-img" title="点击刷新" v-html="captchaSvg" @click="refreshCaptcha" />
@@ -541,7 +542,7 @@ function onSubmit() {
   position: fixed;
   inset: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.38fr) minmax(430px, 0.82fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(430px, 1fr);
   background: var(--login-page-bg);
   color: var(--login-text);
   font-family: var(--app-font-family-base);
@@ -689,7 +690,7 @@ function onSubmit() {
 .readout-three { left: 79%; top: 6%; }
 .mr-label {
   color: var(--login-brand-muted);
-  font-size: var(--app-font-size-ornament);
+  font-size: var(--app-font-size-caption);
   letter-spacing: 0.14em;
 }
 .mr-value {
@@ -709,7 +710,7 @@ function onSubmit() {
 }
 .mr-delta {
   font-family: var(--app-font-family-mono);
-  font-size: var(--app-font-size-ornament);
+  font-size: var(--app-font-size-caption);
   letter-spacing: 0.04em;
 }
 .mr-delta.up { color: var(--login-accent); }
@@ -882,7 +883,7 @@ function onSubmit() {
 .login-card {
   position: relative;
   width: 100%;
-  max-width: 430px;
+  max-width: 480px;
   margin: auto;
   padding: 36px 38px 30px;
   border: 1px solid var(--login-card-edge);
@@ -908,7 +909,7 @@ function onSubmit() {
   font-weight: 600;
   letter-spacing: 0.04em;
 }
-.login-card-title p { margin: 0; color: var(--login-text-muted); font-size: var(--app-font-size-table); }
+.login-card-title p { margin: 0; color: var(--login-text-muted); font-size: var(--app-font-size-body); }
 .login-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -927,7 +928,7 @@ function onSubmit() {
   background: transparent;
   color: var(--login-text-muted);
   font: inherit;
-  font-size: var(--app-font-size-table);
+  font-size: var(--app-font-size-body);
   cursor: pointer;
   transition: background 0.2s, color 0.2s, box-shadow 0.2s;
 }
@@ -945,8 +946,8 @@ function onSubmit() {
   display: flex;
   align-items: center;
   gap: var(--app-space-2);
-  height: 54px;
-  padding: 12px 14px 0;
+  height: 60px;
+  padding: 18px 14px 0;
   border: 1px solid var(--login-border);
   border-radius: 10px;
   background: var(--login-input-bg);
@@ -994,12 +995,13 @@ function onSubmit() {
 }
 .field-label {
   position: absolute;
-  top: 7px;
+  top: 6px;
   left: 40px;
   color: var(--login-text-muted);
-  font-family: var(--app-font-family-mono);
-  font-size: var(--app-font-size-ornament);
-  letter-spacing: 0.12em;
+  font-family: var(--app-font-family-base);
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
+  letter-spacing: 0.04em;
 }
 .login-field svg {
   flex: none;
@@ -1014,9 +1016,6 @@ function onSubmit() {
   color: var(--login-text);
   font-size: var(--app-font-size-body);
   line-height: var(--app-line-height-table);
-}
-.login-field input::placeholder {
-  color: var(--login-text-muted);
 }
 .login-field input:-webkit-autofill,
 .login-field input:-webkit-autofill:hover,
@@ -1065,7 +1064,7 @@ function onSubmit() {
 }
 .login-captcha-img {
   width: 104px;
-  height: 54px;
+  height: 60px;
   border-radius: 10px;
   overflow: hidden;
   background: var(--login-captcha-bg);
@@ -1141,7 +1140,7 @@ function onSubmit() {
   padding-top: 18px;
   border-top: 1px solid var(--login-divider);
   color: var(--login-text-muted);
-  font-size: var(--app-font-size-tiny);
+  font-size: var(--app-font-size-caption);
   letter-spacing: 0.1em;
   text-align: center;
 }

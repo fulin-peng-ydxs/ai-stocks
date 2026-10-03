@@ -44,7 +44,8 @@ async function mountRegister(): Promise<VueWrapper> {
   const tabs = wrapper.findAll('.login-tab')
   await tabs[1].trigger('click')
   await wrapper.vm.$nextTick()
-  await wrapper.find('input[placeholder="邮箱"]').setValue('user@ex.com')
+  expect(wrapper.find('.login-field .field-label').text()).toBe('账号')
+  await wrapper.find('input[name="email"]').setValue('user@ex.com')
   return wrapper
 }
 
@@ -95,7 +96,7 @@ describe('LoginView 邮箱验证码发送', () => {
   it('未填邮箱直接发送时提示先填邮箱，不调用接口', async () => {
     ;(authApi.sendEmailCode as ReturnType<typeof vi.fn>).mockResolvedValue(null)
     const wrapper = await mountRegister()
-    await wrapper.find('input[placeholder="邮箱"]').setValue('')
+    await wrapper.find('input[name="email"]').setValue('')
 
     await wrapper.find('.login-emailcode .send').trigger('click')
     await flushPromises()
