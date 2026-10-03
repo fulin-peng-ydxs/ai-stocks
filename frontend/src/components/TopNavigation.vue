@@ -173,7 +173,7 @@ function descendantLeaves(
   align-items: center;
   justify-content: center;
   gap: var(--app-space-2);
-  font-size: var(--app-font-size-table);
+  font-size: var(--app-font-size-body);
   font-weight: var(--app-font-weight-section);
   letter-spacing: .02em;
   white-space: nowrap;
@@ -235,7 +235,7 @@ function descendantLeaves(
   flex: none;
   margin-right: 8px;
   color: var(--chrome-text-muted);
-  font-size: var(--app-font-size-tiny);
+  font-size: var(--app-font-size-caption);
   font-weight: var(--app-font-weight-strong);
   letter-spacing: .13em;
   text-transform: uppercase;
@@ -259,7 +259,7 @@ function descendantLeaves(
   display: inline-flex;
   align-items: center;
   gap: var(--app-space-control-gap);
-  font-size: var(--app-font-size-caption);
+  font-size: var(--app-font-size-body);
   font-weight: var(--app-font-weight-section);
   white-space: nowrap;
   cursor: pointer;
