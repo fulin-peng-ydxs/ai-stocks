@@ -64,7 +64,7 @@ function toggle(): void {
           </el-button>
           <slot name="commands" />
         </div>
-        <div v-else-if="entry.kind === 'divider'" v-show="enabled && expanded" class="app-advanced-search__divider" />
+        <div v-else-if="entry.kind === 'divider'" v-show="enabled && expanded" class="app-advanced-search__divider">高级条件</div>
         <div v-else v-show="entry.kind !== 'advanced' || expanded" class="app-advanced-search__field" :data-search-field="entry.key" :aria-label="entry.label">
           <span v-if="states[entry.key]?.selfLabelled === false" class="app-advanced-search__label">{{ entry.label }}</span>
           <slot :name="entry.key" />
@@ -89,8 +89,8 @@ function toggle(): void {
 .app-advanced-search__commands { flex: 1 1 auto; }
 .app-advanced-search__field { display: flex; flex-wrap: wrap; align-items: center; gap: var(--app-space-2); min-width: 0; max-width: 100%; }
 .app-advanced-search__field :deep(> *) { max-width: 100%; }
-.app-advanced-search__divider { flex-basis: 100%; border-top: 1px solid var(--el-border-color-lighter); }
-.app-advanced-search__label, .app-advanced-search__summary { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
+.app-advanced-search__divider { flex-basis: 100%; border-top: 1px solid var(--el-border-color-lighter); padding-top: var(--app-space-2); }
+.app-advanced-search__divider, .app-advanced-search__label, .app-advanced-search__summary { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .app-advanced-search__summary { margin-top: var(--app-space-2); padding-inline: var(--app-space-1); }
 .app-advanced-search__summary :deep(.el-tag) { max-width: 100%; height: auto; white-space: normal; }
 .app-advanced-search__summary :deep(.el-button) { white-space: normal; text-align: left; }
