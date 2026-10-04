@@ -3,6 +3,7 @@
 import { computed, ref, watch } from 'vue'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
+import AppFilterSwitch from '@/components/AppFilterSwitch.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppSortControl from '@/components/AppSortControl.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -79,10 +80,10 @@ function resetFilters(): void {
         <AppFilterSelect :model-value="filters.boards" :options="LIMIT_LADDER_BOARD_OPTIONS" :visible-tag-count="2" all-selected-label="全部板块" placeholder="上市板块" aria-label="按上市板块筛选" data-testid="limit-ladder-boards" @change="updateBoards" />
       </template>
       <template #ignoreSt>
-        <el-checkbox :model-value="filters.ignoreSt" data-testid="limit-ladder-ignore-st" @update:model-value="updateFilters({ignoreSt:Boolean($event)})">忽略 ST</el-checkbox>
+        <AppFilterSwitch :model-value="filters.ignoreSt" label="忽略 ST" test-id="limit-ladder-ignore-st" @update:model-value="updateFilters({ignoreSt:$event})" />
       </template>
       <template #oneWord>
-        <el-checkbox :model-value="filters.oneWordOnly" data-testid="limit-ladder-one-word" @update:model-value="updateFilters({oneWordOnly:Boolean($event)})">仅一字板</el-checkbox>
+        <AppFilterSwitch :model-value="filters.oneWordOnly" label="仅一字板" test-id="limit-ladder-one-word" @update:model-value="updateFilters({oneWordOnly:$event})" />
       </template>
       <template #keyword>
         <AppSearchInput v-model="keywordDraft" class="limit-ladder__search" placeholder="代码 / 名称" data-testid="limit-ladder-keyword" @search="searchKeyword" />

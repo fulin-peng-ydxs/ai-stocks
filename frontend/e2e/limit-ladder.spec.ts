@@ -30,7 +30,11 @@ test('三档桌面视口完成组合筛选、热点、短历史与 CSV 导出', 
 
   await page.getByTestId('limit-ladder-window-20').click()
   await expect.poll(() => latestQueryParams(fixture.queryUrls()).get('window')).toBe('20')
-  await page.getByTestId('limit-ladder-one-word').check()
+  const oneWordSwitch = page.getByTestId('limit-ladder-one-word')
+  if (!await oneWordSwitch.isVisible()) {
+    await page.locator('[data-search-toggle]').click()
+  }
+  await oneWordSwitch.click()
   await expect.poll(() => latestQueryParams(fixture.queryUrls()).get('one_word_only')).toBe('true')
   await page.getByTestId('limit-ladder-hotspot-concept-C001').click()
   await expect.poll(() => ({

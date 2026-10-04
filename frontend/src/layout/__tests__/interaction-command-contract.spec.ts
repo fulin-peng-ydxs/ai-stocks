@@ -80,7 +80,7 @@ const commands = commandButtons()
 const at = (command: CommandButton) => `${command.file}:${command.line} ${command.label}`
 
 const FILTER_CARD = /<el-card\b(?=[^>]*\bfilter-card\b)[^>]*>([\s\S]*?)<\/el-card>/g
-const FILTER_CONDITION = /<(AppSearchInput|el-select|AppFilterSelect|AppDatePicker|TradeDatePicker|PageSegmented|StockOptionSelect|el-checkbox)\b/g
+const FILTER_CONDITION = /<(AppSearchInput|el-select|AppFilterSelect|AppFilterSwitch|AppDatePicker|TradeDatePicker|PageSegmented|StockOptionSelect|el-checkbox)\b/g
 const APP_FILTER_SELECT = /<AppFilterSelect\b([\s\S]*?)\/>/g
 const APP_CONTROL_ROW = /<AppControlRow\b[^>]*>([\s\S]*?)<\/AppControlRow>/g
 const APP_SORT_CONTROL = /<AppSortControl\b[\s\S]*?\/>/g

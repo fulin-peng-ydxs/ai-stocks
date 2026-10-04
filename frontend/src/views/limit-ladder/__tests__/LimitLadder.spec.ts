@@ -187,6 +187,25 @@ describe('LimitLadder', () => {
     }])
   })
 
+  it('独立布尔筛选使用统一开关，切换后保持原有查询值', async () => {
+    const wrapper=mount(LimitLadderFilters,{props:{filters:{...DEFAULT_LIMIT_LADDER_FILTERS},tradeDate:'2026-08-28'},global:{plugins:[ElementPlus,router()],stubs:{TradeDatePicker:true}}})
+    const ignoreSt=wrapper.get('[data-testid="limit-ladder-ignore-st"]')
+    const oneWord=wrapper.get('[data-testid="limit-ladder-one-word"]')
+    expect(ignoreSt.text()).toContain('忽略 ST')
+    expect(oneWord.text()).toContain('仅一字板')
+    expect(ignoreSt.get('[role="switch"]').attributes('aria-checked')).toBe('true')
+    expect(oneWord.get('[role="switch"]').attributes('aria-checked')).toBe('false')
+
+    await ignoreSt.trigger('click')
+    await oneWord.trigger('click')
+    expect(wrapper.emitted('update:filters')).toContainEqual([{
+      ...DEFAULT_LIMIT_LADDER_FILTERS, ignoreSt: false,
+    }])
+    expect(wrapper.emitted('update:filters')).toContainEqual([{
+      ...DEFAULT_LIMIT_LADDER_FILTERS, oneWordOnly: true,
+    }])
+  })
+
   it('筛选条件为默认值时禁用重置筛选', () => {
     const wrapper=mount(LimitLadderFilters,{props:{filters:{...DEFAULT_LIMIT_LADDER_FILTERS},tradeDate:'2026-08-28'},global:{plugins:[ElementPlus,router()],stubs:{TradeDatePicker:true}}})
     expect(wrapper.get('[data-testid="limit-ladder-reset"]').attributes('disabled')).toBeDefined()
