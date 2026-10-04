@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { mount } from '@vue/test-utils'
-import { defineComponent, h, nextTick } from 'vue'
+import { defineComponent, h, KeepAlive, nextTick, ref } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import AppHoverInfo from '@/components/AppHoverInfo'
 
@@ -83,6 +83,32 @@ describe('AppHoverInfo', () => {
     wrapper.unmount()
   })
 
+  it('子链接阻止冒泡时也在点击阶段收起浮层', async () => {
+    const wrapper = mount(AppHoverInfo, {
+      props: { kind: 'popover' },
+      slots: {
+        reference: () => h('span', { class: 'reference' }, [
+          h('a', {
+            class: 'board-link',
+            href: '/sectors/881001',
+            onClick: (event: MouseEvent) => {
+              event.preventDefault()
+              event.stopPropagation()
+            },
+          }, '行业走势'),
+        ]),
+        default: () => h('div', '相关性说明'),
+      },
+      global: { stubs: { ElPopover: ElPopoverStub } },
+    })
+
+    await wrapper.get('.board-link').trigger('focusin')
+    expect(wrapper.get('.popover-stub').attributes('data-visible')).toBe('true')
+    await wrapper.get('.board-link').trigger('click')
+    expect(wrapper.get('.popover-stub').attributes('data-visible')).toBe('false')
+    wrapper.unmount()
+  })
+
   it('禁用时取消待显示计时并收起已有提示', async () => {
     vi.useFakeTimers()
     const wrapper = mount(AppHoverInfo, {
@@ -99,6 +125,32 @@ describe('AppHoverInfo', () => {
     expect(wrapper.get('.tooltip-stub').attributes('data-visible')).toBe('false')
     vi.advanceTimersByTime(300)
     expect(wrapper.get('.tooltip-stub').attributes('data-visible')).toBe('false')
+    wrapper.unmount()
+  })
+
+  it('缓存页面切走再返回时收起已显示的浮层', async () => {
+    const active = ref(true)
+    const InfoPage = defineComponent({
+      name: 'InfoPage',
+      setup: () => () => h(AppHoverInfo, { kind: 'popover' }, {
+        reference: () => h('a', { class: 'reference', href: '/sectors/881001' }, '行业走势'),
+        default: () => h('div', '相关性说明'),
+      }),
+    })
+    const OtherPage = defineComponent({ name: 'OtherPage', render: () => h('div', '板块详情') })
+    const wrapper = mount(defineComponent({
+      setup: () => () => h(KeepAlive, null, {
+        default: () => active.value ? h(InfoPage) : h(OtherPage),
+      }),
+    }), { global: { stubs: { ElPopover: ElPopoverStub } } })
+
+    await wrapper.get('.reference').trigger('focusin')
+    expect(wrapper.get('.popover-stub').attributes('data-visible')).toBe('true')
+    active.value = false
+    await nextTick()
+    active.value = true
+    await nextTick()
+    expect(wrapper.get('.popover-stub').attributes('data-visible')).toBe('false')
     wrapper.unmount()
   })
 })

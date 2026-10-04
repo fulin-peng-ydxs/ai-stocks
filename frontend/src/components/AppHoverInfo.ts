@@ -18,6 +18,7 @@ export default defineComponent({
       onMouseleave: intent.onMouseLeave,
       onFocusin: intent.onFocusIn,
       onFocusout: intent.onFocusOut,
+      onClickCapture: intent.onReferenceClick,
     }
     const contentEvents = {
       onMouseenter: intent.onContentEnter,

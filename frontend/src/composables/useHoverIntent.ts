@@ -1,4 +1,4 @@
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { APP_HOVER_TOOLTIP_DELAY_MS } from '@/components/overflow/tooltipTiming'
 
 const CONTENT_ENTRY_GRACE_MS = 180
@@ -80,6 +80,11 @@ export function useHoverIntent(isDisabled: () => boolean, allowsContentEntry: ()
     visible.value = true
   }
 
+  function onReferenceClick(): void {
+    // 链接在路由切换前仍会短暂保留旧浮层；点击时先清理，不能等页面停用。
+    reset()
+  }
+
   function onFocusOut(event: FocusEvent): void {
     if (event.relatedTarget instanceof Node
       && event.currentTarget instanceof Node
@@ -101,6 +106,8 @@ export function useHoverIntent(isDisabled: () => boolean, allowsContentEntry: ()
   }
 
   watch(isDisabled, (disabled) => { if (disabled) reset() })
+  // 工作区会缓存页面；离开时收起传送到 body 的浮层，避免锚点隐藏后漂到视口角落。
+  onDeactivated(reset)
   onBeforeUnmount(reset)
 
   return {
@@ -109,6 +116,7 @@ export function useHoverIntent(isDisabled: () => boolean, allowsContentEntry: ()
     onMouseMove,
     onMouseLeave,
     onFocusIn,
+    onReferenceClick,
     onFocusOut,
     onContentEnter,
     onContentLeave,
