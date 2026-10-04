@@ -66,7 +66,7 @@ function toggle(): void {
         </div>
         <div v-else-if="entry.kind === 'divider'" v-show="enabled && expanded" class="app-advanced-search__divider" />
         <div v-else v-show="entry.kind !== 'advanced' || expanded" class="app-advanced-search__field" :data-search-field="entry.key" :aria-label="entry.label">
-          <span v-if="entry.kind === 'advanced' && !states[entry.key]?.selfLabelled" class="app-advanced-search__label">{{ entry.label }}</span>
+          <span v-if="states[entry.key]?.selfLabelled === false" class="app-advanced-search__label">{{ entry.label }}</span>
           <slot :name="entry.key" />
           <span v-if="props.states[entry.key]?.error" role="alert" class="app-advanced-search__error">{{ props.states[entry.key].error }}</span>
         </div>
@@ -84,18 +84,20 @@ function toggle(): void {
 
 <style scoped>
 .app-advanced-search { width: 100%; min-width: 0; }
-.app-advanced-search__controls { max-height: 40vh; overflow-y: auto; align-items: flex-end; padding: var(--app-space-1); }
+.app-advanced-search__controls { max-height: 40vh; overflow-y: auto; padding: var(--app-space-1); }
 .app-advanced-search__commands, .app-advanced-search__summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--app-density-control-gap, var(--app-space-2)); }
-.app-advanced-search__field { display: flex; flex-direction: column; gap: var(--app-space-1); min-width: 0; max-width: 100%; }
+.app-advanced-search__commands { flex: 1 1 auto; }
+.app-advanced-search__field { display: flex; flex-wrap: wrap; align-items: center; gap: var(--app-space-2); min-width: 0; max-width: 100%; }
 .app-advanced-search__field :deep(> *) { max-width: 100%; }
 .app-advanced-search__divider { flex-basis: 100%; border-top: 1px solid var(--el-border-color-lighter); }
 .app-advanced-search__label, .app-advanced-search__summary { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
-.app-advanced-search__summary { margin-top: var(--app-space-2); }
+.app-advanced-search__summary { margin-top: var(--app-space-2); padding-inline: var(--app-space-1); }
 .app-advanced-search__summary :deep(.el-tag) { max-width: 100%; height: auto; white-space: normal; }
 .app-advanced-search__summary :deep(.el-button) { white-space: normal; text-align: left; }
-.app-advanced-search__error { color: var(--app-danger-text); font-size: var(--app-font-size-caption); }
+.app-advanced-search__label { flex: 0 0 auto; white-space: nowrap; }
+.app-advanced-search__error { flex-basis: 100%; color: var(--app-danger-text); font-size: var(--app-font-size-caption); }
 @media (max-width: 720px) {
   .app-advanced-search__field { flex-basis: 100%; }
-  .app-advanced-search__field :deep(> *) { width: 100%; }
+  .app-advanced-search__field :deep(> :not(.app-advanced-search__label):not(.app-advanced-search__error)) { flex: 1; width: 0; min-width: 0; }
 }
 </style>

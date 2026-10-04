@@ -3,6 +3,7 @@ import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
+import LimitLadderFilterBar from './limit-ladder/LimitLadderFilters.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
@@ -750,6 +751,17 @@ const menuPageTitle = useMenuPageTitle()
             <PageSettingsTrigger :dirty="isDirty || pageSettingsDirty" @click="settingsOpen = true" />
           </div>
         </div>
+        <LimitLadderFilterBar
+          v-if="tradeDate"
+          :filters="filters"
+          :trade-date="tradeDate"
+          :card-sort="cardSort"
+          :card-sort-order="cardSortOrder"
+          @update:filters="setFilters"
+          @update:trade-date="setTradeDate"
+          @update:card-sort="setCardSort"
+          @update:card-sort-order="setCardSortOrder"
+        />
       </div>
     </template>
 
@@ -799,7 +811,6 @@ const menuPageTitle = useMenuPageTitle()
             <LimitLadder
               :result="result"
               :filters="filters"
-              :trade-date="tradeDate"
               :loading="loading"
               :error="error"
               :forbidden="forbidden"
@@ -812,9 +823,6 @@ const menuPageTitle = useMenuPageTitle()
               :card-sort="cardSort"
               :card-sort-order="cardSortOrder"
               @update:filters="setFilters"
-              @update:trade-date="setTradeDate"
-              @update:card-sort="setCardSort"
-              @update:card-sort-order="setCardSortOrder"
               @retry="retryLadder"
               @open-ingest="router.push('/data/ingest')"
               @select="selectStock"

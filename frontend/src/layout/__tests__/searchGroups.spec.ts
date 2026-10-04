@@ -7,7 +7,7 @@ const sources: Record<keyof typeof SEARCH_GROUPS, [string, string?]> = {
   stocks: ['StocksView.vue'], users: ['system/UserManageView.vue'],
   audit: ['system/AuditLogView.vue'], quality: ['data/QualityView.vue'],
   indicators: ['ConfigView.vue'], assets: ['data/OverviewView.vue'],
-  ladder: ['limit-ladder/LimitLadder.vue', 'LimitLadderView.vue'],
+  ladder: ['limit-ladder/LimitLadderFilters.vue', 'LimitLadderView.vue'],
   history: ['trade-discipline/components/TradeDisciplineHistory.vue', 'TradeDisciplineView.vue'],
 }
 const source = (file: string) => readFileSync(new URL(`../../views/${file}`, import.meta.url), 'utf8')

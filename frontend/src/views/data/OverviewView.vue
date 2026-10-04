@@ -782,13 +782,11 @@ const menuPageTitle = useMenuPageTitle()
                       class="asset-search"
                       placeholder="搜索中文名、表名或用途"
                       :debounce-ms="150"
-                      size="small"
                       data-testid="overview-asset-search"
                     />
                   </template>
                   <template #commands>
                     <el-button
-                      size="small"
                       :disabled="!hasAssetFilters"
                       data-testid="overview-asset-reset-filters"
                       @click="resetAssetFilters"
@@ -1287,8 +1285,8 @@ const menuPageTitle = useMenuPageTitle()
 .expand { padding: 6px 14px; }
 .exp-line { font-size: var(--app-font-size-table); margin-bottom: 6px; color: var(--el-text-color-regular); }
 .fld-tbl { margin-top: 8px; }
-.asset-search { width: min(280px, 100%); }
-.asset-category { width: min(190px, 100%); }
+.asset-search { width: 280px; max-width: 100%; }
+.asset-category { width: 190px; max-width: 100%; }
 .asset-legacy-toggle {
   display: inline-flex;
   align-items: center;
@@ -1337,10 +1335,6 @@ const menuPageTitle = useMenuPageTitle()
 .txt-warn { color: var(--app-warning-text); font-weight: var(--app-font-weight-section); }
 .pager { display: flex; justify-content: flex-end; margin-top: 12px; }
 
-@container app-viewport (max-width: 760px) {
-  .asset-search,
-  .asset-category { width: 100%; }
-}
 
 /* ── 板块数据 tab ── */
 /* el-tabs 内容区 overflow:hidden 会裁超高内容，板块面板须自行承接滚动。 */

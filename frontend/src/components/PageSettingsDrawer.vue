@@ -212,7 +212,11 @@ function toggleAllSections(): void {
   drawerPreferences.setCollapsedSections(runtimeCollapsedSections.value)
 }
 
+const componentSettings = ref<InstanceType<typeof ComponentAutoSettings>>()
+watch(() => props.modelValue, () => componentSettings.value?.resetSearchDrafts())
+
 function handleReset(): void {
+  componentSettings.value?.resetSearchDrafts()
   runtimeTouched.value = false
   runtimeCollapsedSections.value = []
   drawerPreferences.reset()
@@ -301,6 +305,7 @@ function handleReset(): void {
             @update:model-value="(open) => setSectionOpen('components', open)"
           >
             <ComponentAutoSettings
+              ref="componentSettings"
               :page-key="pageKey!"
               :config="activeConfig"
               :drawer-business-visible="hasBusinessContent"

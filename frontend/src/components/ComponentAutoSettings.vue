@@ -537,10 +537,26 @@ function commonFields(slot: AutoSlot): string[] {
   const group = Object.values(SEARCH_GROUPS).find((group) => group.pageKey === props.pageKey && group.slotId === slot.slotId)
   return resolveCommonFields(props.config.componentValueOf(slot.slotId, 'commonFields'), slot.meta.searchFields ?? [], group?.defaults ?? [])
 }
-function setCommonField(slot: AutoSlot, index: number, value: string): void {
-  const next = commonFields(slot)
-  next[index] = value
-  if (new Set(next).size === 2) void runApply(slot.slotId, 'commonFields', () => props.config.setComponentKnob(slot.slotId, 'commonFields', next))
+// 未选满两项时只保留编辑草稿，页面继续使用最后一次完整组合。
+const commonFieldDrafts = ref<Record<string, string[]>>({})
+function selectedCommonFields(slot: AutoSlot): string[] {
+  return commonFieldDrafts.value[slot.slotId] ?? commonFields(slot)
+}
+function resetSearchDrafts(): void { commonFieldDrafts.value = {} }
+defineExpose({ resetSearchDrafts })
+watch(
+  () => JSON.stringify(autoSlots.value.map(slot => [
+    slot.slotId, slot.meta.searchFields, props.config.componentValueOf(slot.slotId, 'commonFields'),
+  ])),
+  resetSearchDrafts,
+)
+function setCommonFields(slot: AutoSlot, values: string[]): void {
+  if (applyLocked.value) return
+  const allowed = new Set(slot.meta.searchFields?.map(field => field.key))
+  const next = [...new Set(values)].filter(value => allowed.has(value))
+  if (next.length > 2) return
+  commonFieldDrafts.value[slot.slotId] = next
+  if (next.length === 2) void runApply(slot.slotId, 'commonFields', () => props.config.setComponentKnob(slot.slotId, 'commonFields', next))
 }
 
 function sortField(slotId: string): string {
@@ -569,11 +585,18 @@ function setSort(slotId: string, field: string, order: string): void {
         <template #actions>
           <SourceTag v-if="srcOf(s.slotId, 'commonFields')" :source="srcOf(s.slotId, 'commonFields')!" :values="srcValuesOf(s.slotId, 'commonFields')" />
         </template>
-        <el-select v-for="index in [0, 1]" :key="index" :disabled="applyLocked" :model-value="commonFields(s)[index]" :aria-label="`常显条件${index + 1}`" class="ca-select" @change="(value: unknown) => setCommonField(s, index, String(value))">
-          <el-option v-for="field in s.meta.searchFields" :key="field.key" :label="field.label" :value="field.key" :disabled="commonFields(s)[1 - index] === field.key" />
-        </el-select>
-        <el-button link :loading="isApplying(s.slotId, 'commonFields')" :disabled="srcOf(s.slotId, 'commonFields') !== layer || applyLocked" @click="runApply(s.slotId, 'commonFields', () => config.setComponentKnob(s.slotId, 'commonFields', null))">恢复常显条件默认</el-button>
-        <el-button v-if="applyFailed(s.slotId, 'commonFields')" link :loading="isApplying(s.slotId, 'commonFields')" @click="runApply(s.slotId, 'commonFields', () => {})">保存失败，重试</el-button>
+        <el-checkbox-group
+          :model-value="selectedCommonFields(s)"
+          :max="2"
+          :disabled="applyLocked"
+          aria-label="常显搜索条件"
+          @update:model-value="(values: string[]) => setCommonFields(s, values)"
+        >
+          <el-checkbox v-for="field in s.meta.searchFields" :key="field.key" :value="field.key">{{ field.label }}</el-checkbox>
+        </el-checkbox-group>
+        <p class="ca-search-hint" role="status">{{ selectedCommonFields(s).length === 2 ? '已选 2 项；替换时先取消一项' : `已选 ${selectedCommonFields(s).length}/2 项，选满后自动保存` }}</p>
+        <AppRowActions v-if="clearable && isOverridden(s.slotId, 'commonFields')" :actions="clearFieldActions(s.slotId, 'commonFields')" :inline-limit="1" />
+        <el-button v-if="applyFailed(s.slotId, 'commonFields')" link :disabled="selectedCommonFields(s).length !== 2" :loading="isApplying(s.slotId, 'commonFields')" @click="runApply(s.slotId, 'commonFields', () => {})">保存失败，重试</el-button>
       </PageSettingItem>
       <template v-if="s.fields.includes('klineRangePreferences')">
         <PageSettingItem label="K 线范围" :hint="fieldHelp(s, 'klineRangePreferences')">
@@ -1062,6 +1085,11 @@ function setSort(slotId: string, field: string, order: string): void {
 </template>
 
 <style scoped>
+.ca-search-hint {
+  margin: 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+}
 .ca-actions {
   display: inline-flex;
   align-items: center;

@@ -43,6 +43,7 @@ function makeConfig() {
 
 function mountDrawer() {
   const { config, setComponentKnob } = makeConfig()
+  const resetSearchDrafts = vi.fn()
   const wrapper = mount(PageSettingsDrawer, {
     props: {
       modelValue: true,
@@ -73,6 +74,7 @@ function mountDrawer() {
         LayoutSettingsSection: true,
         ComponentAutoSettings: {
           name: 'ComponentAutoSettings',
+          methods: { resetSearchDrafts },
           props: ['config', 'slotIds', 'componentMetaOverrides', 'showSlotTitle', 'runtimeValueOf'],
           template: `
             <div class="component-auto-settings" :data-slot-ids="slotIds?.join(',')" :data-show-slot-title="String(showSlotTitle)">
@@ -94,7 +96,7 @@ function mountDrawer() {
       },
     },
   })
-  return { wrapper, setComponentKnob }
+  return { wrapper, setComponentKnob, resetSearchDrafts }
 }
 
 function groupOpen(wrapper: ReturnType<typeof mount>, title: string): string | undefined {
@@ -263,10 +265,10 @@ describe('PageSettingsDrawer', () => {
     vi.useRealTimers()
   })
 
-  it('恢复默认同时清除抽屉自身偏好并继续触发页面重置', async () => {
+  it('恢复默认同时清除抽屉自身偏好、未完成搜索草稿并继续触发页面重置', async () => {
     login()
     vi.useFakeTimers()
-    const { wrapper, setComponentKnob } = mountDrawer()
+    const { wrapper, setComponentKnob, resetSearchDrafts } = mountDrawer()
 
     await wrapper.find('.set-drawer-size').trigger('click')
     await wrapper.find('button[aria-label="全部收起"]').trigger('click')
@@ -279,6 +281,7 @@ describe('PageSettingsDrawer', () => {
 
     expect(setComponentKnob).not.toHaveBeenCalled()
     expect(wrapper.emitted('reset')).toHaveLength(1)
+    expect(resetSearchDrafts).toHaveBeenCalledOnce()
     expect(groupOpen(wrapper, '布局')).toBe('true')
     expect(groupOpen(wrapper, '组件设置')).toBe('true')
     expect(groupOpen(wrapper, '业务选项')).toBe('true')

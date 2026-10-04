@@ -37,7 +37,7 @@ export interface SearchFieldState {
   available?: boolean
   active?: boolean
   range?: boolean
-  /** 复选框、开关等已经包含可见标签，避免高级区重复标题。 */
+  /** 默认使用控件占位提示或自带标签；仅无可见提示的控件显式设 false，补充左侧标签。 */
   selfLabelled?: boolean
   summary?: string
   options?: readonly { value?: unknown; code?: unknown; id?: unknown; label?: string; name?: string }[]

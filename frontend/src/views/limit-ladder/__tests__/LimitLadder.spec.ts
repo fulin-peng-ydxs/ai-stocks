@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import LimitLadderFilters from '../LimitLadderFilters.vue'
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
@@ -176,7 +177,7 @@ describe('LimitLadder', () => {
   })
 
   it('重置筛选按钮无图标并恢复全部默认筛选', async () => {
-    const wrapper=mount(LimitLadder,{props:{result,filters:{...DEFAULT_LIMIT_LADDER_FILTERS,keyword:'甲',oneWordOnly:true},tradeDate:'2026-08-28',loading:false,error:'',canViewSectors:true},global:{plugins:[ElementPlus,router()],stubs:{TradeDatePicker:true}}})
+    const wrapper=mount(LimitLadderFilters,{props:{filters:{...DEFAULT_LIMIT_LADDER_FILTERS,keyword:'甲',oneWordOnly:true},tradeDate:'2026-08-28'},global:{plugins:[ElementPlus,router()],stubs:{TradeDatePicker:true}}})
     const reset=wrapper.get('[data-testid="limit-ladder-reset"]')
     expect(reset.text()).toBe('重置筛选')
     expect(reset.find('.el-icon').exists()).toBe(false)
@@ -187,12 +188,12 @@ describe('LimitLadder', () => {
   })
 
   it('筛选条件为默认值时禁用重置筛选', () => {
-    const wrapper=mount(LimitLadder,{props:{result,filters:{...DEFAULT_LIMIT_LADDER_FILTERS},tradeDate:'2026-08-28',loading:false,error:'',canViewSectors:true},global:{plugins:[ElementPlus,router()],stubs:{TradeDatePicker:true}}})
+    const wrapper=mount(LimitLadderFilters,{props:{filters:{...DEFAULT_LIMIT_LADDER_FILTERS},tradeDate:'2026-08-28'},global:{plugins:[ElementPlus,router()],stubs:{TradeDatePicker:true}}})
     expect(wrapper.get('[data-testid="limit-ladder-reset"]').attributes('disabled')).toBeDefined()
   })
 
   it('使用紧凑菜单选择层内排序，并在工具栏直接切换排序方向', async () => {
-    const wrapper=mount(LimitLadder,{props:{result,filters:{...DEFAULT_LIMIT_LADDER_FILTERS},tradeDate:'2026-08-28',loading:false,error:'',canViewSectors:true,cardSort:'return',cardSortOrder:'desc'},global:{plugins:[ElementPlus,router()],stubs:{TradeDatePicker:true}}})
+    const wrapper=mount(LimitLadderFilters,{props:{filters:{...DEFAULT_LIMIT_LADDER_FILTERS},tradeDate:'2026-08-28',cardSort:'return',cardSortOrder:'desc'},global:{plugins:[ElementPlus,router()],stubs:{TradeDatePicker:true}}})
     const sortDropdown=wrapper.findComponent({name:'ElDropdown'})
     const sortButton=wrapper.get('[data-testid="limit-ladder-card-sort"]')
     const orderButton=wrapper.get('[data-testid="limit-ladder-card-sort-order"]')

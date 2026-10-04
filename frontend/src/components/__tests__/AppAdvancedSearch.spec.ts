@@ -31,6 +31,17 @@ function setup(overrides: Record<string, SearchFieldState> = {}) {
 }
 
 describe('列表高级搜索', () => {
+  it('默认不重复标题，无可见提示的控件显式提供左侧标签', async () => {
+    const { wrapper, states } = setup()
+    await wrapper.get('[data-search-toggle]').trigger('click')
+    expect(wrapper.findAll('.app-advanced-search__label')).toHaveLength(0)
+    states.role.selfLabelled = false
+    await nextTick()
+    expect(wrapper.get('[data-search-field="role"] .app-advanced-search__label').text()).toBe('角色')
+    expect(wrapper.get('[data-search-field="role"]').attributes('aria-label')).toBe('角色')
+    wrapper.unmount()
+  })
+
   it('达到三项后默认收起，隐藏的生效条件显示摘要，收展不重建控件或清空值', async () => {
     const { wrapper, states, mounted } = setup()
     expect(wrapper.get('[data-search-field="role"]').isVisible()).toBe(false)

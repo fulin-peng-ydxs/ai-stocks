@@ -70,6 +70,7 @@ vi.mock('@/composables/useKlinePrefs', async (importOriginal) => {
 
 import * as limitLadderApi from '@/api/limitLadder'
 import LimitLadderView from '@/views/LimitLadderView.vue'
+import LimitLadderFilters from '../LimitLadderFilters.vue'
 
 const LimitLadderStub = defineComponent({
   name: 'LimitLadder',
@@ -311,7 +312,8 @@ describe('LimitLadderView polling deadline', () => {
   it('工具栏排序只更新当前 Tab 会话，不改写用户默认设置', async () => {
     vi.mocked(limitLadderApi.getLimitLadder).mockResolvedValue(readyResult())
     const wrapper = await mountView()
-    const ladder = wrapper.findComponent(LimitLadderStub)
+    const ladder = wrapper.findComponent(LimitLadderFilters)
+    expect(ladder.element.closest('[data-eyebrow]')).toBeNull()
 
     ladder.vm.$emit('update:cardSort', 'industry')
     ladder.vm.$emit('update:cardSortOrder', 'asc')
