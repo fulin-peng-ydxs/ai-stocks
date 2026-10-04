@@ -65,7 +65,7 @@ export interface ComponentFieldDef {
    * 字段对组件实例的适用条件。缺省为 always；候选型字段由组件实例元数据自动判定，
    * explicit 字段要求实例明确声明启用或给出不适用原因，禁止靠页面漏登记表达能力差异。
    */
-  applicability?: 'always' | 'columns' | 'sortFields' | 'tabs' | 'items' | 'collapseSections' | 'explicit'
+  applicability?: 'always' | 'columns' | 'sortFields' | 'tabs' | 'items' | 'collapseSections' | 'searchFields' | 'explicit'
 }
 
 export interface ComponentFieldApplicabilityOverride {
@@ -76,6 +76,7 @@ export interface ComponentFieldApplicabilityOverride {
 
 /** 页面只声明组件实例候选和明确例外；不再逐字段复制组件种类的配置白名单。 */
 export interface ComponentSlotConfigMeta {
+  searchFields?: { key: string; label: string }[]
   columns?: { key: string; label: string }[]
   sortFields?: { key: string; label: string }[]
   tabs?: { key: string; label: string }[]
@@ -102,6 +103,9 @@ export interface ComponentFieldApplicabilityResult {
  * 页面布局编辑器=page 层），不做自由文本编辑。
  */
 export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldDef[]>> = {
+  'filter-bar': [
+    { key: 'commonFields', label: '常显搜索条件', control: 'string[]', layers: ['page', 'user'], applicability: 'searchFields', help: '选择两个常显条件，其余条件收纳到默认关闭的高级搜索。' },
+  ],
   'data-table': [
     { key: 'border', label: '显示表格边框', control: 'bool', layers: ['page'], default: false, highFrequency: true },
     { key: 'pageSize', label: '默认分页大小', control: 'int', layers: ['page', 'user'], min: 10, max: 200, default: 20, highFrequency: true, applicability: 'explicit' },
@@ -362,6 +366,7 @@ export function getComponentFieldDef(kind: ComponentKind, field: string): Compon
 }
 
 const META_REQUIREMENT_LABELS: Record<Exclude<NonNullable<ComponentFieldDef['applicability']>, 'always' | 'explicit'>, string> = {
+  searchFields: '未声明列表搜索条件',
   columns: '未声明可配置列',
   sortFields: '未声明可排序字段',
   tabs: '未声明标签页候选',
@@ -486,6 +491,8 @@ export function coerceComponentValue(def: ComponentFieldDef, value: unknown): Co
         throw new ComponentConfigError(`${def.label} 需为字符串数组`)
       if (def.options?.length && !value.every((v) => def.options?.some((o) => String(o) === v)))
         throw new ComponentConfigError(`${def.label} 取值非法`)
+      if (def.key === 'commonFields' && (value.length !== 2 || new Set(value).size !== 2))
+        throw new ComponentConfigError('常显搜索条件必须为两个不同字段')
       return value as string[]
     case 'object':
       if (value == null || typeof value !== 'object' || Array.isArray(value))

@@ -9,7 +9,9 @@
  * 折叠规则（统一）：slot 是一个可折叠组；多行清单类特性（列显隐）作为可折叠子组；
  * 单字段为叶子不折叠。页面布局编辑器一次只聚焦一个 slot，slot 头作锚点不折叠（collapsibleSlot=false）。
  */
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, inject, nextTick, ref, watch } from 'vue'
+import { SEARCH_RUNTIME_META } from '@/layout/searchContext'
+import { SEARCH_GROUPS, resolveCommonFields } from '@/layout/searchGroups'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { ElInput, ElInputNumber, ElMessage } from 'element-plus'
 import AppRowActions from './AppRowActions.vue'
@@ -130,6 +132,7 @@ function layerAllowed(kind: string, field: string): boolean {
   return (props.allowedLayersOf?.(kind, field) ?? def.layers).includes(props.layer)
 }
 
+const searchRuntimeMeta = inject(SEARCH_RUNTIME_META, {})
 const autoSlots = computed<AutoSlot[]>(() => {
   const entry = getPageEntry(props.pageKey)
   if (!entry?.supportsComponentConfig) return []
@@ -138,7 +141,7 @@ const autoSlots = computed<AutoSlot[]>(() => {
     .filter((slot) => !props.slotIds || props.slotIds.includes(slot.id))
     .map((slot) => {
       const baseMeta = componentMetaForSlot(entry, slot)
-      const overrideMeta = metaOverrides[slot.id] ?? {}
+      const overrideMeta = { ...searchRuntimeMeta[slot.id], ...metaOverrides[slot.id] }
       const slotMeta = {
         ...baseMeta,
         ...overrideMeta,
@@ -530,6 +533,16 @@ function setColVisible(slotId: string, key: string, visible: boolean): void {
   props.config.setComponentKnob(slotId, 'hiddenColumns', [...set])
 }
 
+function commonFields(slot: AutoSlot): string[] {
+  const group = Object.values(SEARCH_GROUPS).find((group) => group.pageKey === props.pageKey && group.slotId === slot.slotId)
+  return resolveCommonFields(props.config.componentValueOf(slot.slotId, 'commonFields'), slot.meta.searchFields ?? [], group?.defaults ?? [])
+}
+function setCommonField(slot: AutoSlot, index: number, value: string): void {
+  const next = commonFields(slot)
+  next[index] = value
+  if (new Set(next).size === 2) void runApply(slot.slotId, 'commonFields', () => props.config.setComponentKnob(slot.slotId, 'commonFields', next))
+}
+
 function sortField(slotId: string): string {
   return strVal(slotId, 'defaultSort').split(':')[0] ?? ''
 }
@@ -552,6 +565,16 @@ function setSort(slotId: string, field: string, order: string): void {
       :data-cc-slot="s.slotId"
       :class="{ 'ca-highlight': s.slotId === highlightSlot }"
     >
+      <PageSettingItem v-if="s.fields.includes('commonFields')" label="常显搜索条件" :hint="fieldHelp(s, 'commonFields')">
+        <template #actions>
+          <SourceTag v-if="srcOf(s.slotId, 'commonFields')" :source="srcOf(s.slotId, 'commonFields')!" :values="srcValuesOf(s.slotId, 'commonFields')" />
+        </template>
+        <el-select v-for="index in [0, 1]" :key="index" :disabled="applyLocked" :model-value="commonFields(s)[index]" :aria-label="`常显条件${index + 1}`" class="ca-select" @change="(value: unknown) => setCommonField(s, index, String(value))">
+          <el-option v-for="field in s.meta.searchFields" :key="field.key" :label="field.label" :value="field.key" :disabled="commonFields(s)[1 - index] === field.key" />
+        </el-select>
+        <el-button link :loading="isApplying(s.slotId, 'commonFields')" :disabled="srcOf(s.slotId, 'commonFields') !== layer || applyLocked" @click="runApply(s.slotId, 'commonFields', () => config.setComponentKnob(s.slotId, 'commonFields', null))">恢复常显条件默认</el-button>
+        <el-button v-if="applyFailed(s.slotId, 'commonFields')" link :loading="isApplying(s.slotId, 'commonFields')" @click="runApply(s.slotId, 'commonFields', () => {})">保存失败，重试</el-button>
+      </PageSettingItem>
       <template v-if="s.fields.includes('klineRangePreferences')">
         <PageSettingItem label="K 线范围" :hint="fieldHelp(s, 'klineRangePreferences')">
           <template #actions>

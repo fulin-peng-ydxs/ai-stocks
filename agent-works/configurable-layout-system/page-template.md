@@ -424,3 +424,11 @@ npm run scaffold-page -- --pageKey my-wizard --label "向导页" --archetype wiz
 ```
 
 结构：`main:steps`。适合多步骤流程；步骤条稳定展示，当前步骤内容内滚，导航按钮保持在流程底部。
+
+### 列表高级搜索接入
+
+每个独立列表有三个及以上可收纳条件时使用 `AppAdvancedSearch`。候选、中文名与两个默认常显项登记在 `frontend/src/layout/searchGroups.ts`；注册表把该组映射到 `filter-bar` slot 和 `commonFields` 配置，不另写页面私有偏好。已有 slot 复用，新嵌套列表只补登记可寻址 slot。
+
+消费页向 `LayoutHost` 传递 `:component-value-of="componentValueOf"`，组件通过宿主读取已合并的组件配置（结构布局 `effective` 不包含组件覆盖值），按同名字段插槽承载原有控件。`states` 提供各字段当前值、选项中文映射、实际限制判定、清除回调、业务适用性与错误；`context` 承载固定工作上下文，`commands` 承载重置和末位排序。条件变化仍由页面原有领域事件负责，不能因收展或替换常显项额外查询。全选、false 表示排除某类内容等特殊语义必须显式声明 `active` 和 `summary`，不能仅凭值是否为空判断。
+
+页面设置抽屉沿用 `ComponentAutoSettings`，保存回调接入 `saveRemoteUserConfig`；运行时权限候选由公共组件共享给设置消费，禁止页面复制配置编辑器。临时展开状态不保存为长期偏好。测试覆盖阈值、动态权限回退、控件实例保留、隐藏限制摘要、字段清除、错误聚焦与保存失败重试；维护入口见 DESIGN「列表高级搜索」。

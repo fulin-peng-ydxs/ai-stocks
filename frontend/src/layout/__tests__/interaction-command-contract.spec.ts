@@ -130,7 +130,7 @@ function sortControlOrderAudit(): { inspected: number; offenders: string[] } {
   let inspected = 0
   for (const file of vueFiles(SRC_DIR)) {
     const source = readFileSync(file, 'utf8')
-    for (const row of source.matchAll(APP_CONTROL_ROW)) {
+    for (const row of [...source.matchAll(APP_CONTROL_ROW), ...source.matchAll(/<template #commands>([\s\S]*?)<\/template>/g)]) {
       const body = row[1] ?? ''
       const sortControls = [...body.matchAll(APP_SORT_CONTROL)]
       if (!sortControls.length) continue

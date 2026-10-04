@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
@@ -6,7 +7,6 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
-import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppDialog from '@/components/AppDialog.vue'
@@ -57,9 +57,9 @@ const userLayout = getPageLayout('user-manage')
 const {
   effective, knobs: layoutKnobs, setKnob, valueOf, sourceOf,
   isDirty: layoutDirty, resetAll: resetLayout,
-  componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers,
+  componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers, saveRemoteUserConfig,
 } = useRemoteLayoutConfig(userLayout)
-const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers, save: saveRemoteUserConfig }
 const settingsOpen = ref(false)
 
 const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
@@ -471,7 +471,7 @@ const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
-  <LayoutHost :layout="effective">
+  <LayoutHost :component-value-of="componentValueOf" :layout="effective">
     <template #action>
       <div class="lh-action">
         <div class="page-head">
@@ -513,20 +513,38 @@ const menuPageTitle = useMenuPageTitle()
         </div>
 
         <el-card shadow="never" class="filter-card">
-          <AppControlRow>
-            <el-select v-if="isSystem" v-model="filters.tenant" placeholder="租户：全部" clearable
-                       :loading="dependencyLoading" class="app-control-width-medium" @change="search">
-              <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
-            </el-select>
-            <el-select v-model="filters.role" :loading="dependencyLoading" placeholder="角色：全部" clearable class="app-control-width-medium" @change="search">
-              <el-option v-for="r in assignableRoles" :key="r.id" :label="r.name" :value="r.code" />
-            </el-select>
-            <el-select v-model="filters.status" placeholder="状态：全部" clearable class="app-control-width-short" @change="search">
-              <el-option v-for="item in userStatusOptions" :key="item.code" :label="item.label" :value="item.code" />
-            </el-select>
-            <AppSearchInput v-model="filters.q" placeholder="搜索账号 / 邮箱" class="app-control-width-long" @search="search" />
-            <el-button data-testid="user-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
-          </AppControlRow>
+          <AppAdvancedSearch
+            group="users"
+            :states="{
+              tenant: { value: filters.tenant, available: isSystem, options: tenants, clear: () => filters.tenant = '' },
+              role: { value: filters.role, options: assignableRoles.map(r => ({ value: r.code, label: r.name })), clear: () => filters.role = '' },
+              status: { value: filters.status, options: userStatusOptions, clear: () => filters.status = '' },
+              keyword: { value: filters.q, clear: () => { filters.q = ''; search() } }
+            }"
+          >
+            <template #tenant>
+              <el-select v-if="isSystem" v-model="filters.tenant" placeholder="租户：全部" clearable
+                         :loading="dependencyLoading" class="app-control-width-medium">
+                <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
+              </el-select>
+            </template>
+            <template #role>
+              <el-select v-model="filters.role" :loading="dependencyLoading" placeholder="角色：全部" clearable class="app-control-width-medium">
+                <el-option v-for="r in assignableRoles" :key="r.id" :label="r.name" :value="r.code" />
+              </el-select>
+            </template>
+            <template #status>
+              <el-select v-model="filters.status" placeholder="状态：全部" clearable class="app-control-width-short">
+                <el-option v-for="item in userStatusOptions" :key="item.code" :label="item.label" :value="item.code" />
+              </el-select>
+            </template>
+            <template #keyword>
+              <AppSearchInput v-model="filters.q" placeholder="搜索账号 / 邮箱" class="app-control-width-long" @search="search" />
+            </template>
+            <template #commands>
+              <el-button data-testid="user-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
+            </template>
+          </AppAdvancedSearch>
         </el-card>
         <AppStatusNotice
           v-if="dependencyError"

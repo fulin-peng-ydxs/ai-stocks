@@ -56,6 +56,7 @@ COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
     "pageSize": {"type": "int", "layers": {"page", "user"}, "min": 10, "max": 200},
     "defaultSort": {"type": "str", "layers": {"page", "user"}},
     "hiddenColumns": {"type": "str_list", "layers": {"page", "user"}},
+    "commonFields": {"type": "str_list", "layers": {"page", "user"}},
     "minHeight": {"type": "int", "layers": {"page", "user"}, "min": 480, "max": 900},
     "klineRangePreferences": {"type": "object", "layers": {"user"}},
     "stockChart": {"type": "object", "layers": {"page", "user"}},
@@ -91,6 +92,7 @@ COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
 # 仅按字段名校验无法发现"字段挂错组件/挂错 slot"（如 toolbar.config.pageSize、data-table.config.defaultActive），
 # 必须结合页面 layout 的 slot->component 映射做归属校验，才是真正的数据边界收口。
 COMPONENT_CONFIG_FIELDS_BY_KIND: dict[str, set[str]] = {
+    "filter-bar": {"commonFields"},
     "data-table": {"border", "pageSize", "defaultSort", "hiddenColumns"},
     "wide-table": {"border", "pageSize", "defaultSort", "hiddenColumns"},
     "chart": {
@@ -456,6 +458,8 @@ def _normalize_component_value(field: str, value: Any, layer: str | None) -> Any
     if t == "str_list":
         if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
             raise LayoutConfigValidationError(f"组件配置 {field} 需为字符串数组")
+        if field == "commonFields" and (len(value) != 2 or len(set(value)) != 2):
+            raise LayoutConfigValidationError("常显搜索条件必须为两个不同字段")
         return value
     if t == "object":
         if not isinstance(value, dict):

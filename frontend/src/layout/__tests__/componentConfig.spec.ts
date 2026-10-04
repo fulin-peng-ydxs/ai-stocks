@@ -45,7 +45,7 @@ describe('组件字段元数据', () => {
 
   it('字段定义只覆盖已消费字段，不预设无消费字段', () => {
     expect(Object.keys(COMPONENT_FIELD_DEFS).sort()).toEqual([
-      'chart', 'config-panel', 'data-table', 'detail', 'kpi-grid',
+      'chart', 'config-panel', 'data-table', 'detail', 'filter-bar', 'kpi-grid',
       'master-detail', 'section', 'settings-drawer', 'tabs', 'wide-table',
     ])
     expect((COMPONENT_FIELD_DEFS.chart ?? []).map((d) => d.key)).toEqual([

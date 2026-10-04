@@ -119,7 +119,7 @@ describe('组件配置字段注册契约', () => {
     const specialized = new Set([
       'defaultSort', 'pageSize', 'defaultActive', 'hiddenColumns', 'defaultCollapsed', 'stockChart',
       'stockAnalysis', 'sectorAnalysis', 'masterRatioProfiles',
-      'klineRangePreferences',
+      'klineRangePreferences', 'commonFields',
     ])
     const unsupported: string[] = []
     for (const [kind, defs] of Object.entries(COMPONENT_FIELD_DEFS)) {

@@ -112,7 +112,7 @@ export const COMPONENT_CATALOG: Record<ComponentKind, ComponentMeta> = {
     defaultScroll: 'none',
     canGrowMain: false,
     reflowable: false,
-    configCapabilities: ['controls', 'wrap', 'fillOptIn', 'groupedLabelControl', 'autoQuery', 'resetMode', 'remember'],
+    configCapabilities: ['controls', 'commonFields', 'wrap', 'fillOptIn', 'groupedLabelControl', 'autoQuery', 'resetMode', 'remember'],
   }),
   'search-box': meta('search-box', {
     category: 'query',

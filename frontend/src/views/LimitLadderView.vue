@@ -697,7 +697,7 @@ const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
-  <LayoutHost :layout="effective" data-testid="limit-ladder-page">
+  <LayoutHost :component-value-of="componentValueOf" :layout="effective" data-testid="limit-ladder-page">
     <template #action>
       <div class="lh-action">
         <div class="page-head">

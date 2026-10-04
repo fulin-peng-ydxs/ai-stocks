@@ -78,7 +78,7 @@ const {
   setComponentKnob,
   componentSourceOf,
   layerValuesOf,
-  componentLayerValuesOf, componentAllowedLayers,
+  componentLayerValuesOf, componentAllowedLayers, saveRemoteUserConfig,
 } = useRemoteLayoutConfig(pageLayout)
 const drawerConfig = {
   knobs: layoutKnobs,
@@ -90,7 +90,8 @@ const drawerConfig = {
   componentSourceOf,
   layerValuesOf,
   componentLayerValuesOf,
-componentAllowedLayers,
+  componentAllowedLayers,
+  save: saveRemoteUserConfig,
 }
 const { reset: resetPageSettings } = usePageSettings(PAGE_KEY, {})
 const settingsOpen = ref(false)
@@ -479,7 +480,7 @@ const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
-  <LayoutHost :layout="effective">
+  <LayoutHost :component-value-of="componentValueOf" :layout="effective">
     <template #action>
       <div class="lh-action">
         <div class="page-head">

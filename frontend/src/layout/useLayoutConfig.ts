@@ -271,7 +271,8 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
       throw new Error(`该字段必须通过全局偏好入口修改: ${slotId}.${field}`)
     }
     const path = `slots.${slotId}.config.${field}`
-    userComponentOverlay[path] = coerceComponentValue(def, value)
+    if (value == null) delete userComponentOverlay[path]
+    else userComponentOverlay[path] = coerceComponentValue(def, value)
     markUserPathDirty(path)
   }
 

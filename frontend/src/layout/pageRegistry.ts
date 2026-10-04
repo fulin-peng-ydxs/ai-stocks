@@ -12,6 +12,7 @@
  * 布局配置平台页（视觉预设/页面布局/系统组件）也纳入注册表，保证「页面布局」工作台能查看和配置这些系统页面。
  */
 import type { Archetype, EditableKnob, PageLayout, SlotSpec } from './schema'
+import { SEARCH_GROUPS } from './searchGroups'
 import { cloneLayout } from './path'
 import { CONFIG_SYSTEM_COLLAPSE_SECTIONS, CONFIG_SYSTEM_GROUP_TABS } from './configPanel'
 import {
@@ -1360,6 +1361,19 @@ export function applicableComponentFields(
   const slot = entry.layout.slots.find((candidate) => candidate.id === slotId)
   if (!slot) return []
   return getApplicableComponentFieldDefs(slot.component, componentMetaForSlot(entry, slot), layer)
+}
+
+// 搜索候选和默认常显组合统一登记；嵌套列表只增加可寻址槽，不改变页面主布局。
+for (const group of Object.values(SEARCH_GROUPS)) {
+  const entry = REGISTRY.find((entry) => entry.pageKey === group.pageKey)!
+  let slot = entry.layout.slots.find((slot) => slot.id === group.slotId)
+  if (!slot) {
+    slot = { id: group.slotId, component: 'filter-bar', region: 'main', parentId: group.parentId, label: group.label }
+    entry.layout.slots.push(slot)
+  }
+  slot.label = group.label
+  slot.config = { ...slot.config, commonFields: group.defaults }
+  entry.componentMeta = { ...entry.componentMeta, [slot.id]: { ...entry.componentMeta?.[slot.id], searchFields: group.fields } }
 }
 
 // overlay 纳管：开放个人设置的业务页面统一补登 settings-drawer；平台布局管理页

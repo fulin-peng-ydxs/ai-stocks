@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { computed, ref, watch } from 'vue'
-import AppControlRow from '@/components/AppControlRow.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppSortControl from '@/components/AppSortControl.vue'
@@ -212,28 +212,46 @@ function resetFilters(): void {
 <template>
   <div class="limit-ladder" data-testid="limit-ladder-main">
     <section class="limit-ladder__toolbar" aria-label="连板天梯筛选">
-      <AppControlRow align="center">
-        <div class="limit-ladder__date">
-          <TradeDatePicker :model-value="tradeDate" placeholder="选择交易日" data-testid="limit-ladder-date" @update:model-value="$emit('update:tradeDate',$event)" />
-        </div>
-        <PageSegmented class="limit-ladder__window" :model-value="filters.window" :options="windowOptions" size="small" tone="primary" test-id="limit-ladder-window" aria-label="统计窗口" @update:model-value="updateFilters({window:Number($event) as LimitLadderFilters['window']})" />
-        <AppFilterSelect :model-value="filters.boards" :options="LIMIT_LADDER_BOARD_OPTIONS" :visible-tag-count="2" all-selected-label="全部板块" placeholder="上市板块" aria-label="按上市板块筛选" data-testid="limit-ladder-boards" @change="updateBoards" />
-        <div class="limit-ladder__checks app-inline-info app-inline-info--nowrap" data-testid="limit-ladder-checks">
+      <AppAdvancedSearch
+        group="ladder"
+        :states="{
+          boards: { value: filters.boards, options: LIMIT_LADDER_BOARD_OPTIONS, active: filters.boards.length !== LIMIT_LADDER_BOARD_OPTIONS.length, clear: () => updateBoards([]) },
+          ignoreSt: { selfLabelled: true, value: filters.ignoreSt, clear: () => updateFilters({ignoreSt:false}) },
+          oneWord: { selfLabelled: true, value: filters.oneWordOnly, clear: () => updateFilters({oneWordOnly:false}) },
+          keyword: { value: keywordDraft, clear: () => { keywordDraft = ''; searchKeyword() } }
+        }"
+      >
+        <template #context>
+          <div class="limit-ladder__date">
+            <TradeDatePicker :model-value="tradeDate" placeholder="选择交易日" data-testid="limit-ladder-date" @update:model-value="$emit('update:tradeDate',$event)" />
+          </div>
+          <PageSegmented class="limit-ladder__window" :model-value="filters.window" :options="windowOptions" size="small" tone="primary" test-id="limit-ladder-window" aria-label="统计窗口" @update:model-value="updateFilters({window:Number($event) as LimitLadderFilters['window']})" />
+        </template>
+        <template #boards>
+          <AppFilterSelect :model-value="filters.boards" :options="LIMIT_LADDER_BOARD_OPTIONS" :visible-tag-count="2" all-selected-label="全部板块" placeholder="上市板块" aria-label="按上市板块筛选" data-testid="limit-ladder-boards" @change="updateBoards" />
+        </template>
+        <template #ignoreSt>
           <el-checkbox :model-value="filters.ignoreSt" data-testid="limit-ladder-ignore-st" @update:model-value="updateFilters({ignoreSt:Boolean($event)})">忽略 ST</el-checkbox>
+        </template>
+        <template #oneWord>
           <el-checkbox :model-value="filters.oneWordOnly" data-testid="limit-ladder-one-word" @update:model-value="updateFilters({oneWordOnly:Boolean($event)})">仅一字板</el-checkbox>
-        </div>
-        <AppSearchInput v-model="keywordDraft" class="limit-ladder__search" placeholder="代码 / 名称" data-testid="limit-ladder-keyword" @search="searchKeyword" />
-        <el-button class="limit-ladder__command" data-testid="limit-ladder-reset" :disabled="!hasFilters" @click="resetFilters">重置筛选</el-button>
-        <AppSortControl
-          :model-value="cardSort"
-          :order="cardSortOrder"
-          :options="LIMIT_LADDER_CARD_SORT_OPTIONS"
-          aria-label="卡片层内排序"
-          test-id="limit-ladder-card-sort"
-          @update:model-value="updateCardSort"
-          @update:order="updateCardSortOrder"
-        />
-      </AppControlRow>
+        </template>
+        <template #keyword>
+          <AppSearchInput v-model="keywordDraft" class="limit-ladder__search" placeholder="代码 / 名称" data-testid="limit-ladder-keyword" @search="searchKeyword" />
+        </template>
+        <template #commands>
+          <el-button class="limit-ladder__command" data-testid="limit-ladder-reset" :disabled="!hasFilters" @click="resetFilters">重置筛选</el-button>
+          <AppSortControl
+            :model-value="cardSort"
+            :order="cardSortOrder"
+            :options="LIMIT_LADDER_CARD_SORT_OPTIONS"
+            aria-label="卡片层内排序"
+            test-id="limit-ladder-card-sort"
+            @update:model-value="updateCardSort"
+            @update:order="updateCardSortOrder"
+          />
+        </template>
+      </AppAdvancedSearch>
     </section>
     <AppStatusNotice
       v-if="staleSnapshot && !loading && !error"
@@ -329,11 +347,6 @@ function resetFilters(): void {
 }
 .limit-ladder__search { width: 180px; }
 .limit-ladder__command { flex: 0 0 auto; }
-.limit-ladder__checks {
-  flex: 0 0 auto;
-  min-height: var(--app-control-height-md);
-}
-.limit-ladder__checks :deep(.el-checkbox) { margin: 0; }
 .limit-ladder__content {
   display: flex;
   flex: 1 1 auto;

@@ -285,6 +285,7 @@ Key Characteristics：
 | `StockIngestScopeFields` | `frontend/src/components/data/StockIngestScopeFields.vue` | 个股一体化采集的场景、范围和安全参数组 | 无直接系统组件种类 | 数据采集与任务调度统一复用；方案、股票范围、日期、年限、并发、增量当日退级、风险提示和执行摘要不得在消费页维护第二套；底层步骤有依赖时使用场景方案，不开放任意组合 |
 | `ResultMaintenanceTaskFields` | `frontend/src/components/data/ResultMaintenanceTaskFields.vue` | 结果失效与重算任务的目标范围、日期和股票范围字段组 | 无直接系统组件种类 | 数据采集与任务调度统一复用；页面只传任务类型和表单值，不复制目标范围候选、股票范围分支或任务说明 |
 | `PageToggleRow` | `frontend/src/components/PageToggleRow.vue` | 页面设置和业务偏好的开关行 | 无直接系统组件种类 | 业务选项、列显隐、布尔设置优先复用；事项名与 `PageSettingItem` 同为 13px，默认高度跟随页面密度，显式 `sm` 保持业务小尺寸；简短说明复用 `HelpHint` |
+| `AppAdvancedSearch` | `frontend/src/components/AppAdvancedSearch.vue` | 列表筛选常显与高级区统一收纳，复用 `AppControlRow`，保留控件实例、条件值与领域事件 | `filter-bar.commonFields`，候选与默认值统一由 `layout/searchGroups.ts` 驱动页面登记，运行时权限候选经 `LayoutHost` 共享给设置抽屉 | 每个独立列表 ≥3 个可收纳条件时常显两个，高级区默认收起；收起不清空、不查询；摘要体现隐藏的实际限制（包括默认限制），可定位和按字段清除；复杂日期范围算一个条件，整页上下文不收纳；禁止复制页面私有收展与配置保存逻辑 |
 | `AppControlRow` / `AppControlItem` | `frontend/src/components/AppControlRow.vue`、`frontend/src/components/AppControlItem.vue` | 页面工具行、查询行和参数行的通用横向控件容器；控件行默认按控件自然宽度排列，空间不足时换行，不自动拉伸填满；控件项把标签和控件作为一个整体换行 | `filter-bar`、`toolbar` 等系统组件种类的真实渲染基础 | 多个输入、选择器、按钮组成的横向行优先使用 `AppControlRow`；存在“说明文字 + 控件”时必须用 `AppControlItem` 包裹，避免标签和控件被拆到不同行；选择器与其浏览、搜索等内置附属动作属于一个复合控件，在支持的桌面宽度内必须保持同行，空间不足时由复合控件整体随控件项换行，不得只把附属动作挤到下一行；只有明确需要均分或撑满时才传 `fill` 或让具体 `AppControlItem` 设置 `grow` |
 | `AppTabToolbar` | `frontend/src/components/AppTabToolbar.vue` | Tab 内容区的统一操作栏，左侧承载筛选或命令，右侧承载当前面板的简短说明，并在空间不足时自然换行 | `tabs` 下属 `filter-bar` / `toolbar` 的真实组合外壳，内部复用 `AppControlRow` | Tab 标签已表达面板名称时，内容区不得重复标题；操作和筛选统一放 `#actions`，说明统一放 `#description`；没有操作时允许仅右对齐展示说明，不得为填空新增无业务意义的按钮 |
 | `AppIconButton` | `frontend/src/components/AppIconButton.vue` | 全站纯图标操作按钮，统一可访问名称、尺寸、圆角、悬浮、聚焦、禁用、loading 和语义色 | 无直接系统组件种类 | 顶栏工具、抽屉关闭、刷新、页面设置等仅图标操作统一复用；必须传 `label`，异步纯图标操作使用 `AppIconButton` 的 `loading`，外层 `el-tooltip` 承载长说明时关闭原生 `title`；图形使用 Element Plus 图标或项目既有 SVG，禁止页面手写 Unicode 符号按钮 |
@@ -380,6 +381,14 @@ Key Characteristics：
 - 工具栏按钮应贴近其影响区域，避免页面右上角堆积所有操作。
 - 操作位置按真实影响范围判断，不按“新建 / 保存 / 刷新”等动词机械归类：作用于整页或页面唯一主任务的主操作统一放页头 `.page-head-actions`，位于 `PageSettingsTrigger` 左侧并使用默认 32px 尺寸；只作用于当前页签、局部表单、选中对象或局部区块的命令必须留在对应区域工具区，不进总页头。
 - 顶栏状态和工具按 `32px` 控件基线对齐、间距 `6px`。交易日等状态项使用“图标 + 弱标签 + 强值 + 5px 状态点”的轻量结构；无详情权限时使用只读 `role=status`，不得伪装成禁用按钮，也不得使用永久渐变、内阴影或大胶囊底板。
+
+#### 列表高级搜索
+
+- 列表筛选区统一判断 ≥3 个可收纳条件的门槛；0～2 个全部展示。搜索项与默认常显组合登记到 `searchGroups.ts`，页面按字段插槽提供原有控件和生效摘要、清除回调、适用性及错误状态。新增列表或增加搜索项时同步检查接入，不能仅按路由数量判断；静态表、编辑器和运行参数区不套用。
+- 常显两个字段，其余放筛选条下方的高级区；每个分区内部保持条件选择在前、文本输入在后。工作对象、研究日期、统计窗口等整页上下文固定展示；范围输入保持整体。高级搜索入口与重置、排序位于常显命令区，排序仍为该命令区最后一项。
+- 收展和常显成员替换仅影响展示，不发查询、不归页、不清空、不重建字段控件。普通进入默认收起，查询条件仍为会话态。高级区限制摘要包含默认生效条件，计数按逻辑字段而非多选值数量；全选或无约束状态不计数。摘要删除只清除对应字段限制，重置筛选则按页面既有默认一次恢复全部筛选。
+- 页面设置的「组件设置 → 对应列表 → 常显搜索条件」提供两个不重复选择位，配置走 PG 布局 page/user 层及既有归属隔离。动态权限、业务模式可收窄候选；旧字段失效时保留有效成员并补默认。保存失败保留待保存值并明确提供重试，恢复该项默认只清除该字段覆盖；整页恢复默认继续清除全部布局用户覆盖。
+- 长条件区受控滚动，保证列表仍可操作；窄屏单列。条件错误显示在字段旁并阻止无效查询和收起；摘要定位展开后聚焦原控件，收起时焦点回到入口。
 
 #### 查询、重置与刷新
 
@@ -599,7 +608,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 ### 5.1.1 搜索/筛选行边框
 
-列表页的搜索/筛选交互行统一用卡片边框承载：`<el-card shadow="never" class="filter-card">` 包裹 `AppControlRow`，`filter-card` 使用全局样式（`margin-bottom: 0`，卡片体内边距 `var(--app-density-card-padding)`）。禁止搜索行裸 div 无边框散落在页面。工具栏/操作按钮行不强制套卡。
+列表页的搜索/筛选交互行统一用卡片边框承载：`<el-card shadow="never" class="filter-card">` 包裹 `AppControlRow` 或 `AppAdvancedSearch`，`filter-card` 使用全局样式（`margin-bottom: 0`，卡片体内边距 `var(--app-density-card-padding)`）。禁止搜索行裸 div 无边框散落在页面。工具栏/操作按钮行不强制套卡。
 
 ### 5.1.2 页面间距承载
 
@@ -726,6 +735,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 | 组件 | 字段 | 层级 | 归属事实源 |
 |---|---|---|---|
+| `filter-bar` | `commonFields` | page/user | 候选为 `componentMeta.searchFields`，默认组合在 slot.config；不足三个有效候选时运行时不提供编辑入口 |
 | `data-table` | `border` | page | 全部 `data-table` slot 自动继承；页面需实际消费 `tableBorder(slotId)` |
 | `data-table` | `pageSize` | page/user | slot `config.pagination=true` 时自动启用 |
 | `data-table` | `defaultSort` | page/user | 候选排序字段以 `componentMeta.sortFields` 为准 |
@@ -821,10 +831,10 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `data-quality` | `QualityView`（数据质量） | `list` | `density` | action:`filter-bar` / main:`data-table` |
 | `data-schedule` | `ScheduleView`（任务调度） | `detail` | `density` | action:`toolbar` / main:`data-table` / main:`section(growMain)` / nested:`data-table` / overlay:`detail` |
 | `data-ingest` | `IngestView`（数据采集） | `workbench` | `density` | action:`toolbar` / main:`section` / main:`tabs(growMain)` / nested:`data-table` / nested:`data-table` / overlay:`form` / overlay:`form` / overlay:`detail` |
-| `data-overview` | `OverviewView`（数据概览） | `workbench` | `density` | action:`toolbar` / main:`kpi-grid` / main:`stat-strip` / main:`tabs` / nested:`wide-table` / nested:`data-table` |
+| `data-overview` | `OverviewView`（数据概览） | `workbench` | `density` | action:`toolbar` / main:`kpi-grid` / main:`stat-strip` / main:`tabs` / nested:`wide-table` / nested:`data-table`  / nested:`filter-bar` |
 | `backtest` | `BacktestView`（策略回测） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / nested:`chart` |
 | `training` | `TrainingView`（盘感训练） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / nested:`chart` |
-| `trade-discipline` | `TradeDisciplineView`（交易纪律） | `workbench` | `density` | action:`toolbar` / main:`tabs(growMain)` / nested:`section` / nested:`section` / nested:`data-table` / overlay:`detail` |
+| `trade-discipline` | `TradeDisciplineView`（交易纪律） | `workbench` | `density` | action:`toolbar` / main:`tabs(growMain)` / nested:`section` / nested:`section` / nested:`data-table` / overlay:`detail`  / nested:`filter-bar` |
 | `stock-detail` | `StockDetailView`（个股详情） | `master-detail` | `density`、模块显隐 | action:`toolbar` / main:`master-detail` / nested:`chart` / nested:`section` / nested:`section` / nested:`section` / nested:`section` / nested:`section` |
 | `config-score` | `ConfigView`（评分规则） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / main:`master-detail` / nested:`wide-table` / nested:`chart` |
 | `config-trade` | `ConfigView`（买卖指标） | `workbench` | `density` | action:`toolbar` / main:`section` |

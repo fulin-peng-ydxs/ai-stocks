@@ -7,8 +7,9 @@
  * 不再手写页面外壳、成长区或视口高度——CSS/DOM 层红线（规范 §9）由本宿主统一兜住。
  * 开发期对传入布局做 assertLayout，不合规立即抛错（生产构建自动剔除该断言）。
  */
-import { computed, provide, ref } from 'vue'
+import { computed, provide, reactive, ref } from 'vue'
 import { COMPONENT_CATALOG } from '../components'
+import { SEARCH_COMPONENT_VALUE, SEARCH_RUNTIME_META } from '../searchContext'
 import { PAGE_OVERLAY_TARGET } from '../pageOverlay'
 import type { PageLayout, ScrollOwnership, SlotSpec } from '../schema'
 import { assertLayout } from '../validator'
@@ -16,10 +17,12 @@ import VAdaptiveGrow from './VAdaptiveGrow.vue'
 import VColumns from './VColumns.vue'
 import VMixedGrow from './VMixedGrow.vue'
 
-const props = defineProps<{ layout: PageLayout }>()
+const props = defineProps<{ layout: PageLayout; componentValueOf?: (slotId: string, field: string) => unknown }>()
 const pageRoot = ref<HTMLElement | null>(null)
 
 provide(PAGE_OVERLAY_TARGET, pageRoot)
+provide(SEARCH_COMPONENT_VALUE, (slotId, field) => props.componentValueOf?.(slotId, field))
+provide(SEARCH_RUNTIME_META, reactive({}))
 
 if (import.meta.env.DEV) assertLayout(props.layout)
 

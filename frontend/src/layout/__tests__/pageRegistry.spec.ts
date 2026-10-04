@@ -467,7 +467,7 @@ describe('页面注册表完整性', () => {
       'workspaceTabs',
     ])
     expect(slots.filter((slot) => slot.parentId === 'workspaceTabs').map((slot) => slot.id))
-      .toEqual(['checkinPanel', 'rulesPanel', 'history'])
+      .toEqual(['checkinPanel', 'rulesPanel', 'history', 'historyFilters'])
     expect(applicableComponentFields(entry, 'history').map((field) => field.key)).toEqual([
       'border', 'pageSize', 'defaultSort', 'hiddenColumns',
     ])

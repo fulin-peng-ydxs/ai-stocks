@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppHoverInfo from '@/components/AppHoverInfo'
@@ -71,7 +72,7 @@ const {
 } = useRemoteLayoutConfig(overviewLayout)
 
 // 抽屉「布局 / 组件设置」由 PageSettingsDrawer 自动渲染；tabs 与表格字段按 registry 实例元数据继承。
-const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers, save: saveRemoteUserConfig }
 useLegacyPageSettingsMigration({
   pageKey: 'data-overview',
   componentSourceOf, setComponentKnob, whenRemoteHydrated,
@@ -580,7 +581,7 @@ const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
-  <LayoutHost :layout="overviewEffective">
+  <LayoutHost :component-value-of="componentValueOf" :layout="overviewEffective">
     <template #action>
     <div class="page-head">
       <div>
@@ -735,50 +736,67 @@ const menuPageTitle = useMenuPageTitle()
           <el-tab-pane label="数据资产" name="assets">
             <div class="app-workspace-panel overview-panel">
               <AppTabToolbar label="数据资产操作栏" data-testid="overview-assets-toolbar">
-                <template #actions>
-                  <PageSegmented
-                    v-model="assetMode"
-                    :options="assetModeOptions"
-                    aria-label="数据资产数据库场景"
-                    test-id="overview-asset-mode"
-                    size="small"
-                    tone="primary"
-                  />
-                  <AppFilterSelect
-                    v-model="assetCategory"
-                    class="asset-category"
-                    :options="categoryOptions"
-                    :multiple="false"
-                    placeholder="业务分类"
-                    aria-label="数据资产业务分类"
-                    data-testid="overview-asset-category"
-                  />
-                  <label v-if="assetMode === 'all' || assetMode === 'duckdb'" class="asset-legacy-toggle">
-                    <span>查看迁移旧表</span>
-                    <el-switch
-                      :model-value="showLegacyAssets"
-                      :loading="catalogLoading"
-                      data-testid="overview-asset-legacy"
-                      @change="toggleLegacyAssets(Boolean($event))"
+                <template #actions><AppAdvancedSearch
+                  group="assets"
+                  :states="{
+                    category: { value: assetCategory, options: categoryOptions, clear: () => assetCategory = '' },
+                    legacy: { selfLabelled: true, value: showLegacyAssets, active: !showLegacyAssets, summary: !showLegacyAssets ? '不包含迁移旧表' : '', available: assetMode === 'all' || assetMode === 'duckdb', clear: () => toggleLegacyAssets(true) },
+                    keyword: { value: assetKeyword, clear: () => assetKeyword = '' }
+                  }"
+                >
+                  <template #context>
+                    <PageSegmented
+                      v-model="assetMode"
+                      :options="assetModeOptions"
+                      aria-label="数据资产数据库场景"
+                      test-id="overview-asset-mode"
+                      size="small"
+                      tone="primary"
                     />
-                  </label>
-                  <AppSearchInput
-                    v-model="assetKeyword"
-                    class="asset-search"
-                    placeholder="搜索中文名、表名或用途"
-                    :debounce-ms="150"
-                    size="small"
-                    data-testid="overview-asset-search"
-                  />
-                  <el-button
-                    size="small"
-                    :disabled="!hasAssetFilters"
-                    data-testid="overview-asset-reset-filters"
-                    @click="resetAssetFilters"
-                  >
-                    重置筛选
-                  </el-button>
-                </template>
+                  </template>
+                  <template #category>
+                    <AppFilterSelect
+                      v-model="assetCategory"
+                      class="asset-category"
+                      :options="categoryOptions"
+                      :multiple="false"
+                      placeholder="业务分类"
+                      aria-label="数据资产业务分类"
+                      data-testid="overview-asset-category"
+                    />
+                  </template>
+                  <template #legacy>
+                    <label v-if="assetMode === 'all' || assetMode === 'duckdb'" class="asset-legacy-toggle">
+                      <span>查看迁移旧表</span>
+                      <el-switch
+                        :model-value="showLegacyAssets"
+                        :loading="catalogLoading"
+                        data-testid="overview-asset-legacy"
+                        @change="toggleLegacyAssets(Boolean($event))"
+                      />
+                    </label>
+                  </template>
+                  <template #keyword>
+                    <AppSearchInput
+                      v-model="assetKeyword"
+                      class="asset-search"
+                      placeholder="搜索中文名、表名或用途"
+                      :debounce-ms="150"
+                      size="small"
+                      data-testid="overview-asset-search"
+                    />
+                  </template>
+                  <template #commands>
+                    <el-button
+                      size="small"
+                      :disabled="!hasAssetFilters"
+                      data-testid="overview-asset-reset-filters"
+                      @click="resetAssetFilters"
+                    >
+                      重置筛选
+                    </el-button>
+                  </template>
+                </AppAdvancedSearch></template>
                 <template #description>
                   {{ assetMode === 'planned'
                     ? '规划维度不参与物理表统计'

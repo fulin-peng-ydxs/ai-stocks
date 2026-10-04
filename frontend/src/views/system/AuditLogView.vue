@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppHoverInfo from '@/components/AppHoverInfo'
@@ -15,7 +16,6 @@ import {
 import { ElMessage } from 'element-plus'
 import AppDatePicker from '@/components/AppDatePicker.vue'
 import AppControlItem from '@/components/AppControlItem.vue'
-import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
@@ -92,7 +92,7 @@ const {
   setComponentKnob,
   componentSourceOf,
   layerValuesOf,
-  componentLayerValuesOf, componentAllowedLayers,
+  componentLayerValuesOf, componentAllowedLayers, saveRemoteUserConfig,
 } = useRemoteLayoutConfig(baseLayout)
 const drawerConfig = {
   knobs: layoutKnobs,
@@ -104,7 +104,8 @@ const drawerConfig = {
   componentSourceOf,
   layerValuesOf,
   componentLayerValuesOf,
-componentAllowedLayers,
+  componentAllowedLayers,
+  save: saveRemoteUserConfig,
 }
 
 const { settings, isDirty: bizDirty, reset: resetBiz } = usePageSettings(pageKey, {
@@ -490,7 +491,7 @@ const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
-  <LayoutHost :layout="effective">
+  <LayoutHost :component-value-of="componentValueOf" :layout="effective">
     <template #action>
       <div class="audit-head">
         <div class="audit-title">
@@ -555,52 +556,82 @@ const menuPageTitle = useMenuPageTitle()
 
     <template #filters>
       <el-card shadow="never" class="filter-card">
-        <AppControlRow class="audit-filters">
-          <AppControlItem>
-            <AppDatePicker
-              v-model="dateRange"
-              type="datetimerange"
-              start-placeholder="开始时间"
-              end-placeholder="结束时间"
-              value-format="YYYY-MM-DDTHH:mm:ss"
-              range-separator="至"
-              class="audit-date"
+        <AppAdvancedSearch
+          group="audit"
+          :states="{
+            date: { range: true, value: dateRange, clear: () => { dateRange = null; search() } },
+            event: { value: filters.event_category, options: eventOptions, clear: () => { filters.event_category = []; search() } },
+            result: { value: filters.result, options: resultOptions, clear: () => { filters.result = []; search() } },
+            status: { value: filters.status, options: statusOptions, clear: () => { filters.status = []; search() } },
+            tenant: { value: filters.tenant_id, available: auth.isSystem, options: tenantOptions, clear: () => { filters.tenant_id = []; search() } },
+            resource: { value: filters.resource_code, clear: () => { filters.resource_code = ''; search() } },
+            actor: { value: filters.actor_keyword, clear: () => { filters.actor_keyword = ''; search() } },
+            target: { value: filters.target_keyword, clear: () => { filters.target_keyword = ''; search() } }
+          }"
+        >
+          <template #date>
+            <AppControlItem>
+              <AppDatePicker
+                v-model="dateRange" @change="filterChanged"
+                type="datetimerange"
+                start-placeholder="开始时间"
+                end-placeholder="结束时间"
+                value-format="YYYY-MM-DDTHH:mm:ss"
+                range-separator="至"
+                class="audit-date"
+              />
+            </AppControlItem>
+          </template>
+          <template #event>
+            <AppFilterSelect
+              v-model="filters.event_category"
+              :options="eventOptions"
+              :visible-tag-count="1"
+              placeholder="事件类型"
+              @change="filterChanged"
             />
-          </AppControlItem>
-          <AppFilterSelect
-            v-model="filters.event_category"
-            :options="eventOptions"
-            :visible-tag-count="1"
-            placeholder="事件类型"
-            @change="filterChanged"
-          />
-          <AppFilterSelect
-            v-model="filters.result"
-            :options="resultOptions"
-            :visible-tag-count="1"
-            placeholder="结果"
-            @change="filterChanged"
-          />
-          <AppFilterSelect
-            v-model="filters.status"
-            :options="statusOptions"
-            :visible-tag-count="1"
-            placeholder="状态"
-            @change="filterChanged"
-          />
-          <AppFilterSelect
-            v-if="auth.isSystem"
-            v-model="filters.tenant_id"
-            :options="tenantOptions"
-            :visible-tag-count="2"
-            placeholder="租户"
-            @change="filterChanged"
-          />
-          <AppSearchInput v-model="filters.resource_code" placeholder="资源码" style="width: 160px" @search="search" />
-          <AppSearchInput v-model="filters.actor_keyword" placeholder="处理人" style="width: 140px" @search="search" />
-          <AppSearchInput v-model="filters.target_keyword" placeholder="目标对象" style="width: 160px" @search="search" />
-          <el-button data-testid="audit-reset-filters" :disabled="!hasFilters" @click="resetFilters">重置筛选</el-button>
-        </AppControlRow>
+          </template>
+          <template #result>
+            <AppFilterSelect
+              v-model="filters.result"
+              :options="resultOptions"
+              :visible-tag-count="1"
+              placeholder="结果"
+              @change="filterChanged"
+            />
+          </template>
+          <template #status>
+            <AppFilterSelect
+              v-model="filters.status"
+              :options="statusOptions"
+              :visible-tag-count="1"
+              placeholder="状态"
+              @change="filterChanged"
+            />
+          </template>
+          <template #tenant>
+            <AppFilterSelect
+              v-if="auth.isSystem"
+              v-model="filters.tenant_id"
+              :options="tenantOptions"
+              :visible-tag-count="2"
+              placeholder="租户"
+              @change="filterChanged"
+            />
+          </template>
+          <template #resource>
+            <AppSearchInput v-model="filters.resource_code" placeholder="资源码" style="width: 160px" @search="search" />
+          </template>
+          <template #actor>
+            <AppSearchInput v-model="filters.actor_keyword" placeholder="处理人" style="width: 140px" @search="search" />
+          </template>
+          <template #target>
+            <AppSearchInput v-model="filters.target_keyword" placeholder="目标对象" style="width: 160px" @search="search" />
+          </template>
+          <template #commands>
+            <el-button data-testid="audit-reset-filters" :disabled="!hasFilters" @click="resetFilters">重置筛选</el-button>
+          </template>
+        </AppAdvancedSearch>
       </el-card>
     </template>
 

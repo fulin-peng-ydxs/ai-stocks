@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
@@ -9,7 +10,6 @@ import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import { isSameSelectedFilter, normalizeAllSelectedFilter } from '@/utils/multiSelectFilter'
 import { ArrowDown, Delete, Edit } from '@element-plus/icons-vue'
 import AppIconButton from '@/components/AppIconButton.vue'
-import AppControlRow from '@/components/AppControlRow.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -401,7 +401,7 @@ const canUpdateGroups = computed(() => hasPermission(
   'stock-group:member-update',
 ))
 const settingsComponentSlotIds = computed(() => (
-  canViewGroups.value ? undefined : ['table', 'chart']
+  canViewGroups.value ? undefined : ['filter', 'table', 'chart']
 ))
 const settingsComponentMetaOverrides = computed<Record<string, SlotConfigMeta> | undefined>(() => {
   if (canViewGroups.value) return undefined
@@ -949,7 +949,7 @@ const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
-  <LayoutHost :layout="stocksEffective">
+  <LayoutHost :component-value-of="componentValueOf" :layout="stocksEffective">
     <template #action>
     <div class="lh-action">
     <div class="page-head">
@@ -992,51 +992,71 @@ const menuPageTitle = useMenuPageTitle()
 
     <!-- 搜索 / 筛选（置顶）-->
     <el-card shadow="never" class="filter-card">
-      <AppControlRow class="filter-row">
-        <PageSegmented
-          v-if="canViewGroups"
-          :model-value="currentView"
-          :options="viewOptions"
-          aria-label="个股范围"
-          test-id="stocks-list-scope"
-          size="small"
-          tone="primary"
-          @update:model-value="onViewChange"
-        />
-        <TradeDatePicker v-model="tradeDate" placeholder="交易日期" clearable class="app-control-width-medium" />
-        <AppFilterSelect
-          :model-value="selectedListedBoards"
-          :options="STOCK_LISTED_BOARD_OPTIONS"
-          :visible-tag-count="2"
-          all-selected-label="全部板块"
-          placeholder="上市板块"
-          aria-label="按上市板块筛选"
-          data-testid="stocks-boards"
-          @change="onListedBoardsChange"
-        />
-        <AppFilterSelect
-          :model-value="selectedStatuses"
-          :options="STOCK_STATUS_OPTIONS"
-          :visible-tag-count="2"
-          all-selected-label="全部状态"
-          placeholder="股票状态"
-          aria-label="按股票状态筛选"
-          data-testid="stocks-statuses"
-          @change="onStatusesChange"
-        />
-        <AppFilterSelect
-          v-model="membershipBoardCode"
-          :options="membershipOptions"
-          :multiple="false"
-          :disabled="membershipOptionsLoading || !!membershipOptionsError"
-          placeholder="所属行业 / 概念"
-          aria-label="所属行业或概念"
-          class="app-control-width-long"
-          @change="searchCurrentView"
-        />
-        <AppSearchInput v-model="q" placeholder="代码 / 名称" class="app-control-width-long" @search="searchCurrentView" />
-        <el-button data-testid="stocks-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
-      </AppControlRow>
+      <AppAdvancedSearch
+        group="stocks"
+        :states="{
+          boards: { value: selectedListedBoards, options: STOCK_LISTED_BOARD_OPTIONS, active: selectedListedBoards.length !== STOCK_LISTED_BOARD_VALUES.length, clear: () => onListedBoardsChange([]) },
+          status: { value: selectedStatuses, options: STOCK_STATUS_OPTIONS, active: selectedStatuses.length !== STOCK_STATUS_VALUES.length, clear: () => onStatusesChange([]) },
+          membership: { value: membershipBoardCode, options: membershipOptions, clear: () => { membershipBoardCode = ''; searchCurrentView() } },
+          keyword: { value: q, clear: () => { q = ''; searchCurrentView() } }
+        }"
+      >
+        <template #context>
+          <PageSegmented
+            v-if="canViewGroups"
+            :model-value="currentView"
+            :options="viewOptions"
+            aria-label="个股范围"
+            test-id="stocks-list-scope"
+            size="small"
+            tone="primary"
+            @update:model-value="onViewChange"
+          />
+          <TradeDatePicker v-model="tradeDate" placeholder="交易日期" clearable class="app-control-width-medium" />
+        </template>
+        <template #boards>
+          <AppFilterSelect
+            :model-value="selectedListedBoards"
+            :options="STOCK_LISTED_BOARD_OPTIONS"
+            :visible-tag-count="2"
+            all-selected-label="全部板块"
+            placeholder="上市板块"
+            aria-label="按上市板块筛选"
+            data-testid="stocks-boards"
+            @change="onListedBoardsChange"
+          />
+        </template>
+        <template #status>
+          <AppFilterSelect
+            :model-value="selectedStatuses"
+            :options="STOCK_STATUS_OPTIONS"
+            :visible-tag-count="2"
+            all-selected-label="全部状态"
+            placeholder="股票状态"
+            aria-label="按股票状态筛选"
+            data-testid="stocks-statuses"
+            @change="onStatusesChange"
+          />
+        </template>
+        <template #membership>
+          <AppFilterSelect
+            v-model="membershipBoardCode"
+            :options="membershipOptions"
+            :multiple="false"
+            :disabled="membershipOptionsLoading || !!membershipOptionsError"
+            placeholder="所属行业 / 概念"
+            aria-label="所属行业或概念"
+            class="app-control-width-long"
+            @change="searchCurrentView"
+          />
+        </template>
+        <template #keyword>
+          <AppSearchInput v-model="q" placeholder="代码 / 名称" class="app-control-width-long" @search="searchCurrentView" />
+        </template>
+        <template #commands>
+          <el-button data-testid="stocks-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
+        </template>
+      </AppAdvancedSearch>
     </el-card>
 
     <!-- 分组横幅 -->

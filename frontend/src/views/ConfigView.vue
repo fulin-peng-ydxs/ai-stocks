@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
@@ -48,7 +49,6 @@ import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import RankedStockWorkbench from '@/components/ranked-stock/RankedStockWorkbench.vue'
 import type { RankedStockColumnKey } from '@/components/ranked-stock/types'
 import AppIconButton from '@/components/AppIconButton.vue'
-import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import HelpHint from '@/components/HelpHint.vue'
@@ -401,6 +401,18 @@ const techSource = ref('')
 const techDtype = ref('')
 const techStatus = ref('')
 const showPresets = ref(false)
+const hasTechFilters = computed(() => Boolean(
+  techSearch.value.trim() || techLayer.value || techSource.value
+  || techDtype.value || techStatus.value || showPresets.value,
+))
+function resetTechFilters(): void {
+  techSearch.value = ''
+  techLayer.value = ''
+  techSource.value = ''
+  techDtype.value = ''
+  techStatus.value = ''
+  showPresets.value = false
+}
 const LAYER_LABELS: Record<string, string> = {
   field: '基础字段', metric: '数值指标', signal: '布尔信号', preset: '参数预设',
 }
@@ -1544,7 +1556,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 </script>
 
 <template>
-  <LayoutHost :layout="configEffective">
+  <LayoutHost :component-value-of="componentValueOf" :layout="configEffective">
     <template #action>
     <div class="page-head">
       <div>
@@ -1916,28 +1928,53 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       <template v-else-if="activeTab === 'tech'">
         <div class="pane-fill tech-pane">
         <el-card shadow="never" class="filter-card tech-filter-card">
-          <AppControlRow>
-            <el-select v-model="techLayer" clearable placeholder="业务层级" class="app-control-width-short">
-              <el-option value="field" label="基础字段" />
-              <el-option value="metric" label="数值指标" />
-              <el-option value="signal" label="布尔信号" />
-              <el-option value="preset" label="参数预设" />
-            </el-select>
-            <el-select v-model="techSource" clearable placeholder="来源" class="app-control-width-short">
-              <el-option value="builtin" label="系统内置" />
-              <el-option value="custom" label="自定义" />
-            </el-select>
-            <el-select v-model="techDtype" clearable placeholder="输出类型" class="app-control-width-short">
-              <el-option value="number" label="数值" />
-              <el-option value="bool" label="布尔" />
-            </el-select>
-            <el-select v-model="techStatus" clearable placeholder="状态" class="app-control-width-short">
-              <el-option value="enabled" label="已启用" />
-              <el-option value="disabled" label="已停用" />
-            </el-select>
-            <el-checkbox v-model="showPresets">展开快捷预设</el-checkbox>
-            <AppSearchInput v-model="techSearch" placeholder="搜索名称/标识/说明/分类" :debounce-ms="0" class="app-control-width-long" />
-          </AppControlRow>
+          <AppAdvancedSearch
+            group="indicators"
+            :states="{
+              layer: { value: techLayer, options: [{value:'field',label:'基础字段'},{value:'metric',label:'数值指标'},{value:'signal',label:'布尔信号'},{value:'preset',label:'参数预设'}], clear: () => techLayer = '' },
+              source: { value: techSource, options: [{value:'builtin',label:'系统内置'},{value:'custom',label:'自定义'}], clear: () => techSource = '' },
+              dtype: { value: techDtype, options: [{value:'number',label:'数值'},{value:'bool',label:'布尔'}], clear: () => techDtype = '' },
+              status: { value: techStatus, options: [{value:'enabled',label:'已启用'},{value:'disabled',label:'已停用'}], clear: () => techStatus = '' },
+              presets: { selfLabelled: true, value: showPresets, active: !showPresets && !techSearch.trim() && techLayer !== 'preset', summary: !showPresets ? '不包含快捷预设' : '', clear: () => showPresets = true },
+              keyword: { value: techSearch, clear: () => techSearch = '' }
+            }"
+          >
+            <template #layer>
+              <el-select v-model="techLayer" clearable placeholder="业务层级" class="app-control-width-short">
+                <el-option value="field" label="基础字段" />
+                <el-option value="metric" label="数值指标" />
+                <el-option value="signal" label="布尔信号" />
+                <el-option value="preset" label="参数预设" />
+              </el-select>
+            </template>
+            <template #source>
+              <el-select v-model="techSource" clearable placeholder="来源" class="app-control-width-short">
+                <el-option value="builtin" label="系统内置" />
+                <el-option value="custom" label="自定义" />
+              </el-select>
+            </template>
+            <template #dtype>
+              <el-select v-model="techDtype" clearable placeholder="输出类型" class="app-control-width-short">
+                <el-option value="number" label="数值" />
+                <el-option value="bool" label="布尔" />
+              </el-select>
+            </template>
+            <template #status>
+              <el-select v-model="techStatus" clearable placeholder="状态" class="app-control-width-short">
+                <el-option value="enabled" label="已启用" />
+                <el-option value="disabled" label="已停用" />
+              </el-select>
+            </template>
+            <template #presets>
+              <el-checkbox v-model="showPresets">展开快捷预设</el-checkbox>
+            </template>
+            <template #keyword>
+              <AppSearchInput v-model="techSearch" placeholder="搜索名称/标识/说明/分类" :debounce-ms="0" class="app-control-width-long" />
+            </template>
+            <template #commands>
+                <el-button :disabled="!hasTechFilters" @click="resetTechFilters">重置筛选</el-button>
+              </template>
+            </AppAdvancedSearch>
         </el-card>
         <div class="tech-table-wrap">
         <AppDataTable :data="techRows" size="small" :border="tableBorder('techTable')"

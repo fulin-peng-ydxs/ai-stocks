@@ -57,7 +57,7 @@ describe('TradeDisciplineHistory', () => {
     await flushPromises()
     const filterCard = wrapper.get('.filter-card')
     expect(filterCard.attributes('class')).toContain('history-filter-card')
-    expect(filterCard.find('.filter-row[aria-label="履约历史筛选"]').exists()).toBe(true)
+    expect(filterCard.find('.app-advanced-search[aria-label="履约历史搜索"]').exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'AppDataTable' }).props('clickable')).toBe(false)
     expect(wrapper.findAllComponents(AppTableColumn).some((column) => column.props('role') === 'action-compact')).toBe(false)
     expect(wrapper.get('.history-workspace').attributes('class')).toContain('history-workspace')
@@ -128,6 +128,18 @@ describe('TradeDisciplineHistory', () => {
       label: '操作笔数',
       role: 'number',
     })
+  })
+
+  it('日期范围反转时保留输入、显示错误并阻止无效查询，修正后恢复查询', async () => {
+    const wrapper = mountHistory({ query: { date_from: '2026-02-02', date_to: '2026-01-01' } })
+    await flushPromises()
+    expect(listCheckins).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('开始日期不能晚于结束日期')
+    await wrapper.setProps({ query: { date_from: '2026-01-01', date_to: '2026-02-02' } })
+    await flushPromises()
+    expect(listCheckins).toHaveBeenCalledOnce()
+    expect(wrapper.text()).not.toContain('开始日期不能晚于结束日期')
+    wrapper.unmount()
   })
 
   it('查询失败由历史表格区接管且不保留旧数据', async () => {

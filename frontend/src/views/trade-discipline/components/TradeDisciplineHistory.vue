@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { computed, ref, watch } from 'vue'
 import AppControlItem from '@/components/AppControlItem.vue'
-import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
@@ -121,6 +121,10 @@ function colVisible(key: string): boolean {
 
 async function load(): Promise<void> {
   const seq = ++loadSeq
+  if (props.query.date_from && props.query.date_to && props.query.date_from > props.query.date_to) {
+    loading.value = false
+    return
+  }
   loading.value = true
   loadError.value = false
   try {
@@ -158,22 +162,49 @@ defineExpose({ reload: load })
 <template>
   <div class="history-workspace">
     <el-card shadow="never" class="filter-card history-filter-card">
-      <AppControlRow class="filter-row" aria-label="履约历史筛选">
-        <AppControlItem class="date-filter">
-          <div class="date-range" aria-label="交易日期范围">
-            <TradeDatePicker :model-value="query.date_from || null" clearable placeholder="开始交易日" @update:model-value="updateQuery({ date_from: $event || undefined })" />
-            <span>至</span>
-            <TradeDatePicker :model-value="query.date_to || null" clearable placeholder="结束交易日" @update:model-value="updateQuery({ date_to: $event || undefined })" />
-          </div>
-        </AppControlItem>
-        <AppFilterSelect class="rule-filter" data-testid="history-rule-filter" :model-value="query.rule_id || ''" :options="ruleOptions" :multiple="false" placeholder="全部规则" @change="updateQuery({ rule_id: String($event) || undefined })" />
-        <AppFilterSelect class="assessment-filter" data-testid="history-assessment-filter" :model-value="query.assessment || ''" :options="checkinAssessmentOptions" :multiple="false" placeholder="全部结果" @change="updateQuery({ assessment: (String($event) || undefined) as CheckinHistoryQuery['assessment'] })" />
-        <AppFilterSelect class="operation-filter" data-testid="history-operation-filter" :model-value="noOperationValue" :options="operationOptions" :multiple="false" placeholder="全部操作状态" @change="updateQuery({ no_operation: booleanValue($event) })" />
-        <AppFilterSelect class="amended-filter" data-testid="history-amended-filter" :model-value="amendedValue" :options="amendedOptions" :multiple="false" placeholder="全部修订状态" @change="updateQuery({ amended: booleanValue($event) })" />
-        <StockOptionSelect class="stock-filter" :model-value="selectedStock" clearable @update:model-value="selectStock" />
-        <AppSearchInput class="reason-filter" v-model="reasonText" placeholder="违规原因" @search="updateQuery({ reason: reasonText.trim() || undefined })" />
-        <el-button data-testid="history-reset-filters" :disabled="!hasFilters" @click="resetFilters">重置筛选</el-button>
-      </AppControlRow>
+      <AppAdvancedSearch
+        group="history"
+        :states="{
+          date: { range: true, value: [query.date_from, query.date_to], clear: () => updateQuery({date_from:undefined,date_to:undefined}), error: query.date_from && query.date_to && query.date_from > query.date_to ? '开始日期不能晚于结束日期' : '' },
+          rule: { value: query.rule_id, options: ruleOptions, clear: () => updateQuery({rule_id:undefined}) },
+          assessment: { value: query.assessment, options: checkinAssessmentOptions, clear: () => updateQuery({assessment:undefined}) },
+          operation: { value: noOperationValue, options: operationOptions, clear: () => updateQuery({no_operation:undefined}) },
+          amended: { value: amendedValue, options: amendedOptions, clear: () => updateQuery({amended:undefined}) },
+          stock: { value: query.stock, summary: selectedStock?.name, clear: () => selectStock(null) },
+          reason: { value: reasonText, clear: () => { reasonText = ''; updateQuery({reason:undefined}) } }
+        }"
+      >
+        <template #date>
+          <AppControlItem class="date-filter">
+            <div class="date-range" aria-label="交易日期范围">
+              <TradeDatePicker :model-value="query.date_from || null" clearable placeholder="开始交易日" @update:model-value="updateQuery({ date_from: $event || undefined })" />
+              <span>至</span>
+              <TradeDatePicker :model-value="query.date_to || null" clearable placeholder="结束交易日" @update:model-value="updateQuery({ date_to: $event || undefined })" />
+            </div>
+          </AppControlItem>
+        </template>
+        <template #rule>
+          <AppFilterSelect class="rule-filter" data-testid="history-rule-filter" :model-value="query.rule_id || ''" :options="ruleOptions" :multiple="false" placeholder="全部规则" @change="updateQuery({ rule_id: String($event) || undefined })" />
+        </template>
+        <template #assessment>
+          <AppFilterSelect class="assessment-filter" data-testid="history-assessment-filter" :model-value="query.assessment || ''" :options="checkinAssessmentOptions" :multiple="false" placeholder="全部结果" @change="updateQuery({ assessment: (String($event) || undefined) as CheckinHistoryQuery['assessment'] })" />
+        </template>
+        <template #operation>
+          <AppFilterSelect class="operation-filter" data-testid="history-operation-filter" :model-value="noOperationValue" :options="operationOptions" :multiple="false" placeholder="全部操作状态" @change="updateQuery({ no_operation: booleanValue($event) })" />
+        </template>
+        <template #amended>
+          <AppFilterSelect class="amended-filter" data-testid="history-amended-filter" :model-value="amendedValue" :options="amendedOptions" :multiple="false" placeholder="全部修订状态" @change="updateQuery({ amended: booleanValue($event) })" />
+        </template>
+        <template #stock>
+          <StockOptionSelect class="stock-filter" :model-value="selectedStock" clearable @update:model-value="selectStock" />
+        </template>
+        <template #reason>
+          <AppSearchInput class="reason-filter" v-model="reasonText" placeholder="违规原因" @search="updateQuery({ reason: reasonText.trim() || undefined })" />
+        </template>
+        <template #commands>
+          <el-button data-testid="history-reset-filters" :disabled="!hasFilters" @click="resetFilters">重置筛选</el-button>
+        </template>
+      </AppAdvancedSearch>
     </el-card>
 
     <AppStateBlock
@@ -236,7 +267,6 @@ defineExpose({ reload: load })
 <style scoped>
 .history-workspace { width: 100%; height: 100%; min-height: 0; min-width: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--app-space-3); }
 .history-filter-card { flex: none; }
-.filter-row { flex-wrap: wrap; }
 .date-filter { width: 300px; max-width: 100%; }
 .rule-filter { width: 180px; }
 .assessment-filter { width: 120px; }

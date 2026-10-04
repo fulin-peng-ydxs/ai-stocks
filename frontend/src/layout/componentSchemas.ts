@@ -40,6 +40,7 @@ const filterShape: ConfigShape = {
 }
 
 const controlRowShape: ConfigShape = {
+  commonFields: 'string[]',
   controls: 'string[]',
   wrap: 'bool',
   fill: 'bool',

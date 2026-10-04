@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppHoverInfo from '@/components/AppHoverInfo'
@@ -16,7 +17,6 @@ import {
   type DataQuality, type QualityIssue, type QualityIgnoreScope, type CheckupCheck, type CheckupReport,
   type CheckupStatus,
 } from '@/api/data'
-import AppControlRow from '@/components/AppControlRow.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppDatePicker from '@/components/AppDatePicker.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
@@ -74,11 +74,11 @@ const {
   setComponentKnob,
   componentSourceOf,
   layerValuesOf,
-  componentLayerValuesOf, componentAllowedLayers,
+  componentLayerValuesOf, componentAllowedLayers, saveRemoteUserConfig,
 } = useRemoteLayoutConfig(qualityLayout)
 
 // 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
-const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers, save: saveRemoteUserConfig }
 
 // 抽屉写值由 ComponentAutoSettings 自动渲染；页面只保留渲染要读的 getter。
 const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
@@ -525,7 +525,7 @@ const menuPageTitle = useMenuPageTitle()
 </script>
 
 <template>
-  <LayoutHost :layout="qualityEffective">
+  <LayoutHost :component-value-of="componentValueOf" :layout="qualityEffective">
     <template #action>
     <div class="lh-action">
     <div class="page-head">
@@ -579,35 +579,53 @@ const menuPageTitle = useMenuPageTitle()
     </div>
 
     <el-card shadow="never" class="filter-card">
-    <AppControlRow class="filter-row">
-      <AppFilterSelect v-model="filters.status" :options="statusFilterOptions"
-                       :visible-tag-count="2" placeholder="状态" @change="applyFilter" />
-      <AppFilterSelect v-model="filters.severity" :options="severityFilterOptions"
-                       :visible-tag-count="1" placeholder="严重度" @change="applyFilter" />
-      <AppFilterSelect v-model="filters.issue_type" :options="issueTypeFilterOptions"
-                       :visible-tag-count="3" placeholder="问题类型" @change="applyFilter" />
-      <AppSearchInput v-model="filters.code" placeholder="股票/板块代码或名称" class="app-control-width-long" @search="applyFilter" />
-      <el-button data-testid="quality-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
-      <div class="summary app-inline-info">
-        <el-tag
-          v-for="s in data?.summary ?? []"
-          :key="s.issue_type"
-          size="small"
-          type="warning"
-          :effect="filters.issue_type.includes(s.issue_type) ? 'dark' : 'plain'"
-          class="sm-tag"
-          :class="{ active: filters.issue_type.includes(s.issue_type) }"
-          tabindex="0"
-          role="checkbox"
-          :aria-checked="filters.issue_type.includes(s.issue_type)"
-          @click="toggleIssueType(s.issue_type)"
-          @keydown.enter.prevent="toggleIssueType(s.issue_type)"
-          @keydown.space.prevent="toggleIssueType(s.issue_type)"
-        >
-          {{ ISSUE_TYPE_LABEL[s.issue_type] ?? s.issue_type }}: {{ s.n }}
-        </el-tag>
-      </div>
-    </AppControlRow>
+    <AppAdvancedSearch
+      group="quality"
+      :states="{
+        status: { value: filters.status, options: statusFilterOptions, clear: () => filters.status = [] },
+        severity: { value: filters.severity, options: severityFilterOptions, clear: () => filters.severity = [] },
+        type: { value: filters.issue_type, options: issueTypeFilterOptions, clear: () => filters.issue_type = [] },
+        keyword: { value: filters.code, clear: () => { filters.code = ''; applyFilter() } }
+      }"
+    >
+      <template #status>
+        <AppFilterSelect v-model="filters.status" :options="statusFilterOptions"
+        :visible-tag-count="2" placeholder="状态" />
+      </template>
+      <template #severity>
+        <AppFilterSelect v-model="filters.severity" :options="severityFilterOptions"
+        :visible-tag-count="1" placeholder="严重度" />
+      </template>
+      <template #type>
+        <AppFilterSelect v-model="filters.issue_type" :options="issueTypeFilterOptions"
+        :visible-tag-count="3" placeholder="问题类型" />
+      </template>
+      <template #keyword>
+        <AppSearchInput v-model="filters.code" placeholder="股票/板块代码或名称" class="app-control-width-long" @search="applyFilter" />
+      </template>
+      <template #commands>
+        <el-button data-testid="quality-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
+        <div class="summary app-inline-info">
+          <el-tag
+            v-for="s in data?.summary ?? []"
+            :key="s.issue_type"
+            size="small"
+            type="warning"
+            :effect="filters.issue_type.includes(s.issue_type) ? 'dark' : 'plain'"
+            class="sm-tag"
+            :class="{ active: filters.issue_type.includes(s.issue_type) }"
+            tabindex="0"
+            role="checkbox"
+            :aria-checked="filters.issue_type.includes(s.issue_type)"
+            @click="toggleIssueType(s.issue_type)"
+            @keydown.enter.prevent="toggleIssueType(s.issue_type)"
+            @keydown.space.prevent="toggleIssueType(s.issue_type)"
+          >
+            {{ ISSUE_TYPE_LABEL[s.issue_type] ?? s.issue_type }}: {{ s.n }}
+          </el-tag>
+        </div>
+      </template>
+    </AppAdvancedSearch>
     </el-card>
     </div>
     </template>
@@ -793,7 +811,6 @@ const menuPageTitle = useMenuPageTitle()
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .layer-tag { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
-.filter-row { flex-wrap: wrap; }
 .summary { margin-left: auto; }
 .sm-tag { cursor: pointer; user-select: none; }
 .sm-tag:focus-visible {
