@@ -163,6 +163,25 @@ describe('LadderHotspots', () => {
 })
 
 describe('LimitLadder', () => {
+  it('概览独立于股票滚动区，收展热点保留当前筛选且不重新查询', async () => {
+    const wrapper = mount(LimitLadder, {
+      props: { result, filters: { ...DEFAULT_LIMIT_LADDER_FILTERS, hotspotType: 'concept', hotspotKey: 'C002' }, loading: false, error: '', canViewSectors: false },
+      global: { plugins: [ElementPlus, router()] },
+    })
+    const scrollRegion = wrapper.get('[data-testid="limit-ladder-scroll-region"]')
+    expect(scrollRegion.find('.limit-ladder__summary').exists()).toBe(false)
+    expect(scrollRegion.findComponent(LadderHotspots).exists()).toBe(false)
+    expect(scrollRegion.find('[data-testid="limit-ladder-layer-2"]').exists()).toBe(true)
+    const toggle = wrapper.get('.limit-ladder__hotspots-toggle')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('.limit-ladder__hotspots').classes()).toContain('is-expanded')
+    await toggle.trigger('click')
+    expect(wrapper.get('[data-testid="limit-ladder-hotspot-concept-C002"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.emitted('update:filters')).toBeUndefined()
+  })
+
   it('摘要、层级与热点使用同一服务端结果并联动筛选', async () => {
     const wrapper=mount(LimitLadder,{props:{result,filters:{...DEFAULT_LIMIT_LADDER_FILTERS},tradeDate:'2026-08-28',loading:false,error:'',canViewSectors:true},global:{plugins:[ElementPlus,router()],stubs:{TradeDatePicker:true}}})
     expect(wrapper.get('[data-testid="limit-ladder-summary-total"]').text()).toBe('1')

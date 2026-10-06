@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
@@ -44,6 +44,7 @@ const emit = defineEmits<{
   openIngest: []
   select: [stock: LimitLadderStock]
 }>()
+const compactHotspotsOpen = ref(false)
 const sortedLayers = computed(() => sortLimitLadderLayers(
   props.result?.layers ?? [],
   props.cardSort,
@@ -194,21 +195,31 @@ function resetFilters(): void {
       :title="stStatusBlocked ? 'ST 状态尚未就绪' : '结果已过期'"
       :description="staleDescription"
     />
-    <div class="limit-ladder__content" data-testid="limit-ladder-scroll-region">
-      <section v-if="result?.has_snapshot && !loading && !error" class="limit-ladder__summary" aria-label="天梯摘要">
+    <div v-if="result?.has_snapshot && !loading && !error" class="limit-ladder__overview">
+      <section class="limit-ladder__summary" aria-label="天梯摘要">
         <div><span>当前股票</span><strong class="is-total" data-testid="limit-ladder-summary-total">{{ result.summary.stock_count }}</strong><small>只</small></div>
         <div><span>最高板位</span><strong class="is-highest">{{ result.summary.highest_board ?? '—' }}</strong><small>板</small></div>
         <div><span>首板股票</span><strong class="is-first">{{ result.summary.first_board_count }}</strong><small>只</small></div>
         <div class="limit-ladder__summary-meta"><span>{{ ladderMeta }}</span><el-tag v-if="hasApproximateSt" type="warning" effect="plain" size="small">历史 ST 含近似口径</el-tag></div>
+        <el-button
+          class="limit-ladder__hotspots-toggle"
+          text
+          :aria-expanded="compactHotspotsOpen"
+          aria-controls="limit-ladder-hotspots"
+          @click="compactHotspotsOpen = !compactHotspotsOpen"
+        >{{ compactHotspotsOpen ? '收起热点' : '展开热点' }}</el-button>
       </section>
-      <LadderHotspots
-        v-if="result?.has_snapshot && !loading && !error"
-        :hotspots="result.hotspots"
-        :active-type="filters.hotspotType"
-        :active-key="filters.hotspotKey"
-        :compact="compactHotspots"
-        @toggle="toggleHotspot"
-      />
+      <div id="limit-ladder-hotspots" class="limit-ladder__hotspots" :class="{ 'is-expanded': compactHotspotsOpen }">
+        <LadderHotspots
+          :hotspots="result.hotspots"
+          :active-type="filters.hotspotType"
+          :active-key="filters.hotspotKey"
+          :compact="compactHotspots"
+          @toggle="toggleHotspot"
+        />
+      </div>
+    </div>
+    <div class="limit-ladder__content" data-testid="limit-ladder-scroll-region">
       <div class="limit-ladder__body">
         <AppStateBlock v-if="loading" data-testid="limit-ladder-state" state="loading" title="正在加载天梯快照" :skeleton-rows="6" />
         <AppStateBlock
@@ -274,6 +285,18 @@ function resetFilters(): void {
   overflow: auto;
   overscroll-behavior: contain;
 }
+/* 概览与股票滚动区分离，展开热点也不能占满工作区。 */
+.limit-ladder__overview {
+  flex: 0 0 auto;
+  min-width: 0;
+  background: var(--el-bg-color);
+}
+.limit-ladder__hotspots {
+  max-height: min(calc(6 * var(--app-control-height-sm) + 8 * var(--app-space-2)), 24cqh);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.limit-ladder__hotspots-toggle { display: none; }
 .limit-ladder__summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(96px, auto)) minmax(180px, 1fr);
@@ -375,5 +398,13 @@ function resetFilters(): void {
   .limit-ladder__summary-meta { grid-column: 1 / -1; justify-content: flex-start; }
   .limit-ladder__body { padding: var(--app-space-3); }
   .limit-ladder__layers { align-items: stretch; }
+}
+@container app-viewport (max-width: 720px) {
+  .limit-ladder__hotspots-toggle { display: inline-flex; grid-column: 1 / -1; justify-self: start; }
+  .limit-ladder__hotspots:not(.is-expanded) { display: none; }
+}
+@container app-viewport (max-height: 620px) {
+  .limit-ladder__hotspots-toggle { display: inline-flex; grid-column: 1 / -1; justify-self: start; }
+  .limit-ladder__hotspots:not(.is-expanded) { display: none; }
 }
 </style>
