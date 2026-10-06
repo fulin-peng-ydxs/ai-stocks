@@ -37,6 +37,56 @@ afterEach(() => {
 })
 
 describe('AppOverflowTooltipHost', () => {
+  it('点击产生的焦点不锁定提示，阻止冒泡也能清理，Tab 焦点仍显示', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(AppOverflowTooltipHost, {
+      attachTo: document.body,
+      global: { stubs: { ElTooltip: ElTooltipStub } },
+    })
+    const button = document.createElement('button')
+    button.title = '用户列表：收起下级分组'
+    document.body.append(button)
+    button.addEventListener('pointerdown', (event) => event.stopPropagation())
+    button.addEventListener('click', (event) => event.stopPropagation())
+
+    button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    vi.advanceTimersByTime(300)
+    await nextTick()
+    expect(wrapper.get('.tooltip-host').attributes('data-visible')).toBe('true')
+
+    button.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    button.focus()
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    button.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
+    vi.advanceTimersByTime(300)
+    await nextTick()
+    expect(document.activeElement).toBe(button)
+    expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+    expect(button.title).toBe('用户列表：收起下级分组')
+
+    // 再次悬停仍按停留门槛显示，点击焦点不阻止鼠标移开后的清理。
+    button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    vi.advanceTimersByTime(300)
+    await nextTick()
+    expect(wrapper.get('.tooltip-host').attributes('data-visible')).toBe('true')
+    button.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+
+    button.blur()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    button.focus()
+    await nextTick()
+    expect(wrapper.get('.tooltip-host').attributes('data-visible')).toBe('true')
+    button.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
+    await nextTick()
+    expect(wrapper.get('.tooltip-host').attributes('data-visible')).toBe('true')
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('长文本使用共享宽度上限，实际超过八行时显示截断提示', async () => {
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
       return this.classList.contains('app-overflow-tooltip-content__text') ? 160 : 0

@@ -14,6 +14,7 @@ const contentRef = ref<HTMLElement>()
 const contentTruncated = ref(false)
 let hoverTarget: HTMLElement | null = null
 let focusTarget: HTMLElement | null = null
+let pointerFocus = false
 let suppressedTitle: { element: HTMLElement; value: string; addedAriaLabel: boolean } | null = null
 let hoverTimer: ReturnType<typeof setTimeout> | null = null
 let contentResizeObserver: ResizeObserver | null = null
@@ -143,6 +144,8 @@ function onMouseOut(event: MouseEvent): void {
 }
 
 function onFocusIn(event: FocusEvent): void {
+  // 鼠标点击也会让按钮获得焦点；只有键盘焦点可以持续展示提示。
+  if (pointerFocus) return
   const next = findNativeTitleTooltipTarget(event.target)
     || findOverflowTooltipTarget(event.target)
     || (event.target instanceof Node && hoverTarget?.contains(event.target) ? hoverTarget : null)
@@ -164,7 +167,27 @@ function onFocusOut(event: FocusEvent): void {
   scheduleHover(hoverTarget)
 }
 
+function onPointerDown(): void {
+  pointerFocus = true
+  dismissCurrent()
+}
+
+function dismissCurrent(): void {
+  focusTarget = null
+  hoverTarget = null
+  clearHoverTimer()
+  hideCurrent()
+}
+
+function onKeyDown(): void {
+  pointerFocus = false
+}
+
 onMounted(() => {
+  // 捕获阶段先清理，设置抽屉等控件可能阻止事件冒泡。
+  document.addEventListener('pointerdown', onPointerDown, true)
+  document.addEventListener('keydown', onKeyDown, true)
+  document.addEventListener('click', dismissCurrent, true)
   document.addEventListener('mouseover', onMouseOver)
   document.addEventListener('mousemove', onMouseMove)
   document.addEventListener('mouseout', onMouseOut)
@@ -176,6 +199,9 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onPointerDown, true)
+  document.removeEventListener('keydown', onKeyDown, true)
+  document.removeEventListener('click', dismissCurrent, true)
   document.removeEventListener('mouseover', onMouseOver)
   document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('mouseout', onMouseOut)
