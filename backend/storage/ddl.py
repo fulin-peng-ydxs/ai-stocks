@@ -1025,7 +1025,23 @@ CREATE TABLE IF NOT EXISTS limit_ladder_invalidation_outbox (
 );
 """
 
+DDL_STOCK_SPECIAL_TRADING_DAY = """
+CREATE TABLE IF NOT EXISTS stock_special_trading_day (
+    code VARCHAR NOT NULL, -- 股票标准代码
+    trade_date DATE NOT NULL, -- 仅在此交易日生效
+    event_type VARCHAR NOT NULL CHECK (event_type = 'delisting_first_day'), -- 退市整理首日
+    announcement_date DATE NOT NULL CHECK (announcement_date <= trade_date), -- 公告日期
+    source_ref VARCHAR NOT NULL, -- 官方公告链接
+    note VARCHAR NOT NULL, -- 人工核验说明/撤销原因
+    active BOOLEAN NOT NULL, -- false 表示已撤销，保留记录
+    task_id VARCHAR NOT NULL, -- 维护任务，关联 PG async_task（服务层）
+    updated_at TIMESTAMP NOT NULL, -- 最近维护时间
+    PRIMARY KEY (code, trade_date)
+);
+"""
+
 M_LIMIT_LADDER_TABLES: dict[str, str] = {
+    "stock_special_trading_day": DDL_STOCK_SPECIAL_TRADING_DAY,
     "stock_st_status_daily": DDL_STOCK_ST_STATUS_DAILY,
     "stock_st_status_history": DDL_STOCK_ST_STATUS_HISTORY,
     "stock_st_status_refresh_state": DDL_STOCK_ST_STATUS_REFRESH_STATE,

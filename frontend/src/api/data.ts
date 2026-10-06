@@ -471,7 +471,7 @@ export type TaskType =
   | 'update' | 'backfill' | 'ingest_date' | 'ingest_codes' | 'rebuild_price_factors'
   | 'recompute' | 'verify' | 'checkup' | 'fix'
   | 'enrich_basic' | 'audit_cleanup' | 'board' | 'stock_ingest' | 'stock_board_correlation'
-  | 'limit_ladder_invalidate' | 'limit_ladder_recompute'
+  | 'limit_ladder_invalidate' | 'limit_ladder_recompute' | 'stock_special_trading_day'
 
 // ── 数据结构体检报告（checkup 任务 result.checkup）──
 export type CheckupStatus = 'pass' | 'warn' | 'fail'
@@ -571,6 +571,7 @@ export const TASK_LABEL: Record<TaskType, string> = {
   audit_cleanup: '审计日志清理', board: '板块采集', stock_ingest: '个股采集',
   stock_board_correlation: '走势相关重算',
   limit_ladder_invalidate: '连板天梯失效',
+  stock_special_trading_day: '特殊交易日维护',
   limit_ladder_recompute: '连板天梯重算',
 }
 export const STATUS_LABEL: Record<TaskStatus, string> = {

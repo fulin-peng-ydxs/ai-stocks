@@ -445,17 +445,21 @@ class LimitLadderCalculator:
                        b.amount,b.is_suspended,b.is_one_word,
                        st.is_st AS point_is_st,st.source AS st_source,
                        st.source_ref AS st_source_ref,st.quality AS st_quality,
-                       (s.trade_date IS NOT NULL) AS confirmed_suspension
+                       (s.trade_date IS NOT NULL) AS confirmed_suspension,
+                       special.event_type AS special_event_type,
+                       special.source_ref AS special_source_ref
                 FROM daily_bar b
                 JOIN {code_view} codes ON codes.code=b.code
                 JOIN {date_view} dates ON dates.trade_date=b.trade_date
                 LEFT JOIN stock_st_status_daily st
                   ON st.code=b.code AND st.trade_date=b.trade_date
+                LEFT JOIN stock_special_trading_day special
+                  ON special.code=b.code AND special.trade_date=b.trade_date AND special.active
                 LEFT JOIN stock_suspension s
                   ON s.code=b.code AND s.trade_date=b.trade_date
                 UNION ALL
                 SELECT s.code,s.trade_date,NULL,NULL,NULL,NULL,NULL,NULL,NULL,TRUE,FALSE,
-                       st.is_st,st.source,st.source_ref,st.quality,TRUE
+                       st.is_st,st.source,st.source_ref,st.quality,TRUE,NULL,NULL
                 FROM stock_suspension s
                 JOIN {code_view} codes ON codes.code=s.code
                 JOIN {date_view} dates ON dates.trade_date=s.trade_date
@@ -489,6 +493,9 @@ class LimitLadderCalculator:
                     list_date=list_date,
                     listing_session_number=current_index - first_index + 1,
                 )
+        # 公告事实只由 (code, trade_date) 精确关联，不能由退市名称或缺昨收推断。
+        if fact.get("special_event_type") == "delisting_first_day":
+            applicability = PriceLimitApplicability.NOT_APPLICABLE
         board_pct = (
             None if pd.isna(basic.get("price_limit_pct")) else float(basic.get("price_limit_pct"))
         )

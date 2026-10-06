@@ -33,6 +33,7 @@ describe('taskDisplayLabel', () => {
       .toBe('走势相关重算·最新完整交易日·指定 1 只')
     expect(taskDisplayLabel('stock_board_correlation', { force: false }))
       .toBe('走势相关重算·最新完整交易日·全市场')
+    expect(taskDisplayLabel('stock_special_trading_day', {})).toBe('特殊交易日维护')
     expect(taskDisplayLabel('limit_ladder_invalidate', { target_mode: 'all' }))
       .toBe('连板天梯失效·全部快照')
     expect(taskDisplayLabel('recompute', { target_mode: 'fixed', trade_date: '2026-08-28' }))

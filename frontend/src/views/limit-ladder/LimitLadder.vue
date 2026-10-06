@@ -79,6 +79,13 @@ const coverageReasonLabels: Record<string, string> = {
   INGEST_PARTIAL: '当日行情采集未完整成功',
   MISSING_BAR_OR_SUSPENSION: '部分股票缺少行情或停牌确认',
   INVALID_DAILY_BAR: '部分日行情字段无效',
+  INVALID_OHLC: '开高低收价格无效',
+  PRICE_NOT_NUMERIC: '收盘价或昨收缺失',
+  PRICE_NOT_POSITIVE_FINITE: '收盘价或昨收不是有效正数',
+  CLOSE_ABOVE_LIMIT_PRICE: '收盘价超过当前规则涨停价',
+  LIMIT_PCT_MISSING: '缺少板块涨跌幅比例',
+  LIMIT_PCT_INVALID: '板块涨跌幅比例无效',
+  PRICE_LIMIT_APPLICABILITY_UNKNOWN: '无法确认当日涨跌幅规则',
   UNSUPPORTED_LIMIT_RULE: '部分股票无法可靠判断涨停规则',
   ST_STATUS_NOT_READY: 'ST 点时事实尚未发布',
 }
@@ -120,7 +127,15 @@ const unavailableDescription = computed(() => {
       : '请联系有数据任务权限的管理员执行行情补采，完成后刷新状态'
     return `${reason || '当日行情采集未完整成功'}；${action}`
   }
-  return props.result?.task_error || reason || '系统尚未发布通过完整性校验的结果，请稍后重试'
+  const diagnostics = props.result?.coverage?.diagnostics
+  const detail = Array.isArray(diagnostics)
+    ? diagnostics.slice(0, 10).map((item) => (
+      `${item.code}：${coverageReasonLabels[item.reason] || item.reason}`
+    )).join('；')
+    : ''
+  return [detail ? (coverageReasons.value || reason) : (props.result?.task_error || reason), detail]
+    .filter(Boolean).join('；')
+    || '系统尚未发布通过完整性校验的结果，请稍后重试'
 })
 const pendingDescription = computed(() => {
   const task = props.result?.task

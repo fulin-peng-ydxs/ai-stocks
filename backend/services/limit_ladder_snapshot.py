@@ -38,6 +38,7 @@ class LimitLadderCoverage:
     checked_at: str
     upstream_fingerprint: str
     st_input_version: str
+    diagnostics: tuple[dict, ...] = ()
 
     @property
     def ready(self) -> bool:
@@ -124,12 +125,19 @@ class LimitLadderSnapshotService:
         st_not_ready = 0
         samples: list[str] = []
         fingerprint_rows: list[dict] = []
+        diagnostics: list[dict] = []
+
+        def diagnose(code: str, reason: str) -> None:
+            if len(diagnostics) < 10:
+                diagnostics.append({"code": code, "reason": reason})
+
         calculator = LimitLadderCalculator(self.c)
         for code in codes:
             fact = facts.get(code)
             basic = basic_by_code[code]
             if fact is None:
                 missing += 1
+                diagnose(code, "MISSING_BAR_OR_SUSPENSION")
                 self._sample(samples, code)
                 fingerprint_rows.append({"code": code, "fact": "missing"})
                 continue
@@ -139,16 +147,19 @@ class LimitLadderSnapshotService:
                 continue
             if calculator._bool_value(fact.get("is_suspended")):
                 missing += 1
+                diagnose(code, "MISSING_BAR_OR_SUSPENSION")
                 self._sample(samples, code)
                 fingerprint_rows.append({"code": code, "fact": "unconfirmed_suspension"})
                 continue
             if pd.isna(fact.get("st_source")) or fact.get("st_quality") != "accurate":
+                diagnose(code, "ST_STATUS_NOT_READY")
                 st_not_ready += 1
                 invalid += 1
                 self._sample(samples, code)
                 fingerprint_rows.append({"code": code, "fact": "st_status_not_ready"})
                 continue
             if not self._valid_ohlc(fact):
+                diagnose(code, "INVALID_OHLC")
                 invalid += 1
                 self._sample(samples, code)
                 fingerprint_rows.append({"code": code, "fact": "invalid_ohlc"})
@@ -160,9 +171,11 @@ class LimitLadderSnapshotService:
                 calendar=calendar,
             )
             if result.status is CloseLimitStatus.INVALID_PRICE:
+                diagnose(code, result.reason or "INVALID_DAILY_BAR")
                 invalid += 1
                 self._sample(samples, code)
             elif result.status is CloseLimitStatus.UNSUPPORTED_RULE:
+                diagnose(code, result.reason or "UNSUPPORTED_LIMIT_RULE")
                 unsupported += 1
                 self._sample(samples, code)
             else:
@@ -187,6 +200,8 @@ class LimitLadderSnapshotService:
                     "st_source_ref": st_status.source_ref,
                     "st_quality": st_status.quality.value,
                     "status": result.status.value,
+                    "special_event_type": self._json_value(fact.get("special_event_type")),
+                    "special_source_ref": self._json_value(fact.get("special_source_ref")),
                 }
             )
 
@@ -225,6 +240,7 @@ class LimitLadderSnapshotService:
             ingest_run_id=run_id,
             reason_codes=tuple(reasons),
             sample_codes=tuple(samples),
+            diagnostics=tuple(diagnostics),
             checked_at=checked_at,
             upstream_fingerprint=fingerprint,
             st_input_version=st_input_version,
@@ -671,17 +687,21 @@ class LimitLadderSnapshotService:
                        b.amount,b.is_suspended,b.is_one_word,
                        st.is_st AS point_is_st,st.source AS st_source,
                        st.source_ref AS st_source_ref,st.quality AS st_quality,
-                       (s.trade_date IS NOT NULL) AS confirmed_suspension
+                       (s.trade_date IS NOT NULL) AS confirmed_suspension,
+                       special.event_type AS special_event_type,
+                       special.source_ref AS special_source_ref
                 FROM daily_bar b
                 JOIN {view} codes ON codes.code=b.code
                 LEFT JOIN stock_st_status_daily st
                   ON st.code=b.code AND st.trade_date=b.trade_date
+                LEFT JOIN stock_special_trading_day special
+                  ON special.code=b.code AND special.trade_date=b.trade_date AND special.active
                 LEFT JOIN stock_suspension s
                   ON s.code=b.code AND s.trade_date=b.trade_date
                 WHERE b.trade_date=?
                 UNION ALL
                 SELECT s.code,s.trade_date,NULL,NULL,NULL,NULL,NULL,NULL,TRUE,NULL,
-                       st.is_st,st.source,st.source_ref,st.quality,TRUE
+                       st.is_st,st.source,st.source_ref,st.quality,TRUE,NULL,NULL
                 FROM stock_suspension s
                 JOIN {view} codes ON codes.code=s.code
                 LEFT JOIN stock_st_status_daily st

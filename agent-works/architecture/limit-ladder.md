@@ -12,7 +12,7 @@
 
 | 层次 | 当前实现 | 关键入口 |
 | --- | --- | --- |
-| 市场规则 | 按交易日、上市板块和点时 ST 判断收盘涨停；特殊无涨跌幅日 fail-closed | `backend/market_rules.py`、`backend/limit_ladder/rules.py` |
+| 市场规则 | 按交易日、上市板块和点时 ST 判断收盘涨停；已确认无涨跌幅日不计涨停，未知规则 fail-closed | `backend/market_rules.py`、`backend/limit_ladder/rules.py` |
 | 点时 ST | 当前事实、不可变变更历史与日期修订账本；质量只允许从 `approximate` 升到 `accurate` | `backend/services/stock_st_status.py` |
 | 连板计算 | 批量加载行情；连续板回溯到中断或上市边界，不受 60 日窗口截断 | `backend/services/limit_ladder_calculator.py` |
 | 快照发布 | coverage 门禁、不可变版本、四档窗口指标冻结、状态指针原子切换 | `backend/services/limit_ladder_snapshot.py` |
@@ -162,3 +162,25 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 | 中 | 正式数据副本尚未完成迁移与恢复演练 | 正式环境锁等待、耗时和资源峰值未知 | 上线前按 SQL 演练文档复演并记录备份恢复耗时 |
 | 低 | 天梯日缺少同日走势相关快照 | 等待期间对应行业/概念暂显示未分类或“—” | 查询只排队异步首次任务、不在请求内同步计算；页面轮询同一业务接口，不借用其它日期结果 |
 | 低 | DuckDB 单写者限制 | 首算或重算可能排队 | 统一异步任务和同日活动命令；页面展示处理态，不以同步长请求阻塞 |
+
+## 特殊交易日事实维护
+
+`stock_special_trading_day` 为 DuckDB 全市场参考事实，主键为股票代码与交易日。
+当前仅支持公告确认的 `delisting_first_day`（退市整理期首日）；仅匹配当日，后续日期仍走板块/ST 规则。
+门禁与窗口计算批量按代码、日期关联此表，不根据股票当前名称或缺失昨收推断例外。
+无涨跌幅日仍须满足有效 OHLC 和准确 ST 事实，但不要求昨收，不计涨停并中断连板。
+普通交易日缺失昨收继续阻断发布。失败 coverage 返回最多 10 条 `diagnostics`（代码、原因），页面和任务可定位问题。
+
+维护步骤（系统管理员、后端已启动）：
+
+1. 人工核验交易所/巨潮原始公告的代码、生效日及首日不设涨跌幅规则；不以搜索摘要代替公告。
+2. 携带已登录 Bearer token 向 `POST /api/data/tasks` 提交：
+   `{"task_type":"stock_special_trading_day","params":{"records":[{"code":"301139.SZ","trade_date":"2026-09-30","event_type":"delisting_first_day","announcement_date":"2026-09-21","source_ref":"https://disc.static.szse.cn/download/disc/disk03/finalpage/2026-09-21/d60f2508-dee7-4b50-9f42-57500e4d24b0.PDF","note":"元道通信公告2026-097：2026-09-30进入退市整理期，首日不设涨跌幅限制","active":true}]}}`。
+3. 通过 `GET /api/data/tasks/{task_id}` 检查 `done`，失败查同任务 `/logs`。单批最多 100 条，写任务互斥；不自动抓取公告，也不开放定时维护。
+4. 导入与失效 outbox 同一事务提交；修改会失效生效日及之后已有快照。失败重放先补完 pending 通知，再幂等维护；重新提交相同事实不会重复写入。
+5. `POST /api/limit-ladder/2026-09-30/recompute` 显式重算，再通过 `/status` 与查询接口确认 `valid/READY`，coverage 无阻断原因。导入本身不代表重算成功。
+
+更正用相同代码/日期提交正确来源和说明；撤销提交 `active:false` 并填写撤销原因，再重算受影响日期。
+任务参数/日志保存维护请求，表中保留最近任务与公告来源。参考表非每日连续数据，鲜活度和现有质量问题统计显式不适用；输入合法性由维护服务强校验。
+DDL 由 `backend/storage/ddl.py` 初始化，SQL 归档为 `agent-works/limit-up-ladder/stock-special-trading-day.sql`。
+此入口复用系统级 `data-task:manage` 守卫与任务审计，无新增业务端点或页面；天梯重算仍用 `limit-ladder:recompute`。

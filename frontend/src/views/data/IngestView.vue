@@ -192,7 +192,7 @@ function tableBorder(slotId: string): boolean {
 const TASK_TYPE_OPTIONS: { v: TaskType; l: string }[] = [
   'stock_ingest', 'update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
   'recompute', 'verify', 'checkup', 'fix', 'enrich_basic', 'board', 'stock_board_correlation',
-  'limit_ladder_invalidate', 'limit_ladder_recompute',
+  'limit_ladder_invalidate', 'limit_ladder_recompute', 'stock_special_trading_day',
 ].map((v) => ({ v: v as TaskType, l: TASK_LABEL[v as TaskType] }))
 const TASK_STATUS_OPTIONS: { v: TaskStatus; l: string }[] = (
   ['pending', 'running', 'done', 'failed', 'interrupted'] as TaskStatus[]).map((v) => ({ v, l: STATUS_LABEL[v] }))
@@ -261,7 +261,8 @@ const writeRunning = computed(() =>
   tasks.value.some((t) => ['pending', 'running'].includes(t.status)
     && ['update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
       'verify', 'fix', 'enrich_basic', 'board', 'stock_ingest',
-      'stock_board_correlation', 'limit_ladder_invalidate', 'limit_ladder_recompute'].includes(t.task_type)))
+      'stock_board_correlation', 'limit_ladder_invalidate', 'limit_ladder_recompute',
+      'stock_special_trading_day'].includes(t.task_type)))
 
 // 总耗时：进行中=开始到现在(随 now 每秒刷新)；已结束/人工终止=开始到截止时间(updated_at)。
 const now = ref(Date.now())

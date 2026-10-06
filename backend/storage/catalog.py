@@ -56,6 +56,75 @@ _MARKET_INDEX_ISSUES: tuple[str, ...] = (
 # - date_col：用于取"最新数据时间"的列（None 表示该表无时间维度，取 NULL）。
 # - relations：与其它表的关联关系（人类可读）。
 TABLE_CATALOG: dict[str, dict] = {
+    "stock_special_trading_day": {
+        "name_cn": "特殊交易日事实",
+        "category": "行情参考",
+        "purpose": "保存公告确认的退市整理首日无涨跌幅限制事实；事件非每日连续，无鲜活度和质检问题统计，导入执行强校验。",
+        "ownership_scope": "market_global",
+        "source": "官方公告人工核验/异步维护",
+        "relations": [
+            "code → stock_basic",
+            "trade_date → trade_calendar",
+            "task_id → PostgreSQL async_task（服务层关联）"
+        ],
+        "fields": [
+            {
+                "name": "code",
+                "name_cn": "股票代码",
+                "desc": "与 stock_basic.code 关联",
+                "type": "VARCHAR"
+            },
+            {
+                "name": "trade_date",
+                "name_cn": "生效交易日",
+                "desc": "仅按本日匹配，不向前后日期传播",
+                "type": "DATE"
+            },
+            {
+                "name": "event_type",
+                "name_cn": "特殊交易类型",
+                "desc": "delisting_first_day 表示退市整理期首日不设涨跌幅限制",
+                "type": "VARCHAR"
+            },
+            {
+                "name": "announcement_date",
+                "name_cn": "公告日期",
+                "desc": "公告公开日期，不得晚于生效交易日",
+                "type": "DATE"
+            },
+            {
+                "name": "source_ref",
+                "name_cn": "公告链接",
+                "desc": "经人工核验的交易所或巨潮资讯原始公告 HTTPS 链接",
+                "type": "VARCHAR"
+            },
+            {
+                "name": "note",
+                "name_cn": "核验说明",
+                "desc": "公告编号、核验结论或撤销原因",
+                "type": "VARCHAR"
+            },
+            {
+                "name": "active",
+                "name_cn": "是否生效",
+                "desc": "撤销时置 false，保留来源",
+                "type": "BOOLEAN"
+            },
+            {
+                "name": "task_id",
+                "name_cn": "维护任务",
+                "desc": "服务层关联 PostgreSQL async_task",
+                "type": "VARCHAR"
+            },
+            {
+                "name": "updated_at",
+                "name_cn": "更新时间",
+                "desc": "事实最近修改时间",
+                "type": "TIMESTAMP"
+            }
+        ],
+        "date_col": None
+    },
     "stock_basic": {
         "name_cn": "股票基础信息",
         "purpose": "全市场股票主数据：代码/名称/交易所/板块/上市退市日/行业/涨跌幅限制，所有维度的关联主键来源。",
@@ -711,6 +780,7 @@ _COMMON_FIELD_META: dict[str, tuple[str, str]] = {
 }
 
 _DUCK_FRESHNESS_POLICIES: dict[str, FreshnessPolicy] = {
+    "stock_special_trading_day": FRESHNESS_NOT_APPLICABLE,
     "stock_basic": FRESHNESS_NOT_APPLICABLE,
     "daily_bar": FreshnessPolicy("direct", "trade_date", "latest_trade_date", "equal"),
     "daily_metrics": FreshnessPolicy("direct", "trade_date", "latest_trade_date", "equal"),
@@ -764,6 +834,7 @@ _DUCK_FRESHNESS_POLICIES: dict[str, FreshnessPolicy] = {
 }
 
 _DUCK_QUALITY_POLICIES: dict[str, QualityPolicy] = {
+    "stock_special_trading_day": QUALITY_NOT_APPLICABLE,
     "stock_basic": QUALITY_NOT_APPLICABLE,
     "daily_bar": QualityPolicy("issue_types", (
         "null_close", "ohl_repaired", "abnormal_change", "price_volume_mismatch",

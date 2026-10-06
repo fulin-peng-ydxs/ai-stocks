@@ -266,6 +266,10 @@ describe('LimitLadder', () => {
     await wrapper.get('button.el-button--primary').trigger('click')
     expect(wrapper.emitted('retry')).toHaveLength(1)
 
+    await wrapper.setProps({result:{...result,has_snapshot:false,business_code:'SNAPSHOT_NOT_READY',snapshot_status:'invalid',snapshot:null,layers:[],invalid_reason:'INVALID_DAILY_BAR',coverage:{reason_codes:['INVALID_DAILY_BAR'],diagnostics:[{code:'301139.SZ',reason:'PRICE_NOT_NUMERIC'}]}}})
+    expect(wrapper.text()).toContain('301139.SZ：收盘价或昨收缺失')
+    expect(wrapper.text()).toContain('部分日行情字段无效')
+
     await wrapper.setProps({canManageData:false,result:{...result,has_snapshot:false,business_code:'SNAPSHOT_NOT_READY',snapshot_status:'invalid',snapshot:null,layers:[],invalid_reason:'INGEST_PARTIAL',coverage:{reason_codes:['INGEST_PARTIAL']}}})
     expect(wrapper.text()).toContain('当日行情采集未完整成功')
     expect(wrapper.text()).toContain('请联系有数据任务权限的管理员执行行情补采')

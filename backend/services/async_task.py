@@ -36,12 +36,13 @@ log = get_logger("services.async_task")
 TASK_TYPES = ("update", "backfill", "ingest_date", "ingest_codes", "rebuild_price_factors",
               "recompute", "verify", "checkup", "fix", "enrich_basic", "audit_cleanup",
               "board", "stock_ingest", "stock_board_correlation", "limit_ladder_invalidate",
-              "limit_ladder_recompute")
+              "limit_ladder_recompute", "stock_special_trading_day")
 # 写类任务：互斥（写任务之间不并发），且服务重启需 reconcile。
 WRITE_TASK_TYPES = frozenset({"update", "backfill", "ingest_date", "ingest_codes",
                               "rebuild_price_factors", "verify", "fix", "enrich_basic",
                               "board", "stock_ingest", "stock_board_correlation",
-                              "limit_ladder_invalidate", "limit_ladder_recompute"})
+                              "limit_ladder_invalidate", "limit_ladder_recompute",
+                              "stock_special_trading_day"})
 
 # 日志保留（DM-D8）
 LOG_MAX_PER_TASK = 2000
@@ -52,6 +53,10 @@ _LOG_FLUSH_EVERY = 10  # 累计 N 条即 flush；长任务日志要比进度条�
 _TASK_CREATE_LOCK = threading.Lock()
 
 TASK_CAPABILITIES: dict[str, dict] = {
+    "stock_special_trading_day": {
+        "can_cancel": False, "can_resume": False, "cancel_mode": "none",
+        "resume_granularity": None, "cancel_message": "公告事实按批次原子维护",
+    },
     "update": {
         "can_cancel": True, "can_resume": True, "cancel_mode": "checkpoint",
         "resume_granularity": "phase_code",
@@ -281,6 +286,10 @@ class AsyncTaskService:
         if task_type not in TASK_TYPES:
             raise ValueError(f"未知任务类型: {task_type}（可选 {TASK_TYPES}）")
         params = params or {}
+        if task_type == "stock_special_trading_day":
+            from backend.services.stock_special_trading_day import normalize_special_day_params
+
+            params = normalize_special_day_params(params)
         if task_type == "stock_ingest":
             from backend.services.stock_ingest import normalize_stock_ingest_params
 
@@ -1734,6 +1743,11 @@ def _h_limit_ladder_recompute(params: dict, ctx: TaskContext) -> dict:
         }
         if outcome.status != "valid":
             reason = ",".join(outcome.coverage.reason_codes) or "COVERAGE_NOT_READY"
+            if outcome.coverage.diagnostics:
+                reason += "；" + "；".join(
+                    f"{item['code']}: {item['reason']}"
+                    for item in outcome.coverage.diagnostics
+                )
             coordinator.mark_terminal(
                 command_id,
                 status="failed",
@@ -1774,7 +1788,18 @@ def _h_limit_ladder_recompute(params: dict, ctx: TaskContext) -> dict:
         raise
 
 
+def _h_stock_special_trading_day(params: dict, ctx: TaskContext) -> dict:
+    """通过现有系统管理员数据任务入口维护公告事实。"""
+    from backend.services.stock_special_trading_day import StockSpecialTradingDayService
+
+    ctx.progress(0.2, "校验并维护特殊交易日事实")
+    result = StockSpecialTradingDayService(ctx.svc.market).import_records(params, task_id=ctx.tid)
+    ctx.log(result["message"])
+    return result
+
+
 _HANDLERS = {
+    "stock_special_trading_day": _h_stock_special_trading_day,
     "update": _h_update,
     "backfill": _h_backfill,
     "ingest_date": _h_ingest_date,

@@ -14,7 +14,7 @@
 
 ### 双库数据资产目录（`backend/storage/catalog.py`）
 
-- `GET /api/data/catalog` 面向系统管理员自动发现 DuckDB `main` 与 PostgreSQL `public` 的物理表和字段，并在服务层合并；两库之间不执行跨库 JOIN。当前迁移完成态包含 88 张当前事实表（DuckDB 28、PostgreSQL 60）和 28 张默认隐藏的 DuckDB 迁移旧表。
+- `GET /api/data/catalog` 面向系统管理员自动发现 DuckDB `main` 与 PostgreSQL `public` 的物理表和字段，并在服务层合并；两库之间不执行跨库 JOIN。当前迁移完成态包含 89 张当前事实表（DuckDB 29、PostgreSQL 60）和 28 张默认隐藏的 DuckDB 迁移旧表。
 - 系统目录提供原生类型、可空性、默认值、主键、外键和数据库列注释；代码维护中文名、用途、业务分类、归属范围、数据源、关系、鲜活度策略与质量策略。字段中文名和说明按“表级显式注解 → 数据库列注释/公共词典 → 命名规则生成”解析，并返回来源；任何未识别字段保留为 `fallback`，由目录契约阻断。未登记的新物理表仍以 `unregistered` 展示，不能因缺注解而消失。
 - 列表行数使用数据库系统目录的快速估算；只有明确指定 `database + table` 时才允许单表 `COUNT(*)` 精确统计。表名先通过发现结果白名单校验；DuckDB 只报告数据库文件总大小，PostgreSQL 另报告表及索引空间。
 - 生命周期为 `active | legacy_readonly | unregistered`。任务运行态复用 `task_runtime_backend()`，平台布局配置复用配置迁移路由函数；受控回滚后事实源和旧表状态随真实 marker 自动切换，不维护第二套路由判断。
@@ -168,6 +168,7 @@
 | 走势相关重算 | `stock_board_correlation` | 最新完整日或固定日，全市场或指定股票；强制重算并原子发布 | 缺失快照首次读取时幂等创建一次；已有结果由「结果维护」手动或用户调度维护；失败保留最后成功结果 |
 | 连板天梯失效 | `limit_ladder_invalidate` | 最新完整日或固定起始日及之后；只标记失效 | 「结果维护」手动或用户调度；查询对应日期时按门禁重算 |
 | 每日榜单失效 | `recompute` | 最新交易日、固定日或全部评分快照；只标记 stale | 「结果维护」手动或用户调度；下次榜单读取按需重算。榜单页另提供 owner + `board:compute` 的「重算当日」，只精确失效并刷新当前日期/方案/版本；system 可维护可见方案 |
+| 特殊交易日维护 | `stock_special_trading_day` | 经官方公告核验的退市整理首日事实；维护与失效 outbox 原子提交 | 系统管理员通过现有数据任务 API 导入，不开放周期调度；操作见 [天梯架构](limit-ladder.md) |
 | 连板天梯单日重算 | `limit_ladder_recompute` | 按完整性门禁计算并原子发布指定交易日不可变天梯快照 | 内部任务类型，不开放调度配置；PG `async_task/task_log` 展示执行进度，`limit_ladder_task_ledger` 与 `limit_ladder_audit_outbox` 保存跨来源协调和可靠审计事实；DuckDB 只保存快照 |
 | 质检扫描 | `verify`/质量扫描 | 四层质量问题，写入台账 | 补数后复查 |
 | 数据体检 | `checkup` | 结构/字段契约，只读报告 | 初始化后或重大补数后 |
@@ -178,7 +179,7 @@
 
 #### 连板天梯任务契约
 
-「结果维护」的 `limit_ladder_invalidate` 只负责将最新完整日或固定起始日及之后的快照标记失效；采集、补数和修复不再隐式调用该能力。读取端还会比较截至所选日的 ST 输入版本：失配时只标记当前日期并复用 `limit_ladder_recompute`，不是批量采集联动。读取失效或缺失日期时，内部任务统一进入完整性门禁、同日活动命令协调和原子发布。执行日志保存在 DuckDB，PG 只保存日期级协调账本与可靠审计 outbox；两库通过 `command_id/task_id/source_event_key` 在服务层对账，禁止跨库 JOIN。内部发布失败或中断时保留最后成功快照，页面最长等待 120 秒。完整模块架构见 [limit-ladder.md](limit-ladder.md)。
+「结果维护」的 `limit_ladder_invalidate` 只负责将最新完整日或固定起始日及之后的快照标记失效；采集、补数和修复不再隐式调用该能力。读取端还会比较截至所选日的 ST 输入版本：失配时只标记当前日期并复用 `limit_ladder_recompute`，不是批量采集联动。读取失效或缺失日期时，内部任务统一进入完整性门禁、同日活动命令协调和原子发布。任务运行态与执行日志保存在 PG，日期级协调账本与可靠审计 outbox 也在 PG；两库通过 `command_id/task_id/source_event_key` 在服务层对账，禁止跨库 JOIN。内部发布失败或中断时保留最后成功快照，页面最长等待 120 秒。完整模块架构见 [limit-ladder.md](limit-ladder.md)。
 
 个股采集表单由数据采集页与定时调度页复用，服务端只接受方案支持的字段：
 
