@@ -104,7 +104,7 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 - 新增后端领域逻辑优先补服务/领域单测；涉及数据口径、防未来函数、DDL、回测撮合、权限和资产隔离时必须覆盖边界。
 - 涉及全量批处理、超长参数列表、窗口/聚合 SQL 或明确规模门槛时，小夹具之外必须补代表性规模回归；阶段验收还需通过真实入口或等价数据规模覆盖输入加载、计算与落表，纯算法基准和 Mock 响应不能替代该链路。
 - 新增布局、校验、配置合并或权限消费逻辑时，同步补充 Vitest。
-- 涉及页面、组件、样式、表格、弹窗、抽屉时，计划必须说明是否触发页面设计闭环和组件/布局维护矩阵。
+- 涉及页面、组件、样式、表格、弹窗、抽屉时，计划必须说明是否触发页面设计闭环和组件/布局维护矩阵。新页面和布局改造必须完成 `page-template.md`「响应式设计」与关键视口复核，遵守 `DESIGN.md` §8 信息降级与交付门禁；不得以响应式画像登记代替实现和验收。
 - 页面改动按风险选择定向 Vitest、必要的构建或内置浏览器临时复核；Playwright 的新增、更新和执行统一遵守 `agent-works/e2e-automation/guide.md`，不因已有 E2E 覆盖就自动运行整组回归。
 - `./start.sh e2e-backtest-run seed|cleanup` 是回测 Playwright E2E 的可清理公开回测夹具（`backend/devtools/e2e_backtest_runs.py`，经 `frontend/e2e/helpers/backtestRuns.ts` 调用）：以固定调试账号显式归属真实跑一条跨 owner 公开策略回测（`e2e_bt_` 前缀 + opaque run_ref）或按前缀精确清理（含 backtest_run_reuse 审计）。同 `dev-users` 受 `AI_STOCKS_ENV=dev|test|local` + `AI_STOCKS_E2E_WRITE=1` 双重门控，并经 `/api/health/e2e` 的 PG 指纹校验防误写他库。因 DuckDB 单文件写锁互斥，夹具进程独占写锁时被测后端必须以 `AI_STOCKS_DUCKDB_READ_ONLY=1` 只读启动；该 spec 与需 DuckDB 写的其余 E2E 须分开运行（读写模式跑全量排除此 spec，只读模式单跑此 spec）。
 - `./start.sh e2e-board-data seed|cleanup` 是板块工作台的确定性 DuckDB 夹具，仅写 `E2E9*` 板块、`9999*.SZ` 股票和 2099 年固定行情；同样受本地环境 + `AI_STOCKS_E2E_WRITE=1` 双重门控。只有满足 E2E 准入条件时才使用 `npm run test:e2e:sectors`；普通聚焦回归必须向脚本透传 `--project`、spec 或 `--grep`，不得默认执行三视口整组。脚本负责停服、夹具生命周期和恢复原后端状态。

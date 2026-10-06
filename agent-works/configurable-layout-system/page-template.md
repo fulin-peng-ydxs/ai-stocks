@@ -15,11 +15,11 @@
 1. 判断业务页面类型 → 按 [DESIGN.md](../../DESIGN.md) §5.3 选一个**原型**，并按本文 §2 / §4 写明选择理由。
 2. 把推荐原型 + 理由告诉用户，确认后开发。
 3. 检查 DESIGN.md “真实复用组件清单”和 `frontend/src/components/**`，先复用已有真实组件；控件选型、图标按钮和系统组件种类边界按 DESIGN 执行。
-4. 优先运行 `npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型>` 生成骨架；脚手架中的 `data-scaffold-placeholder` 是未完成标记，接入真实组件和四态后必须删除，否则契约测试会失败。需要手写时再用 `createLayout(archetype, pageKey)` 起默认 `PageLayout`，按需覆盖 `slots`/`editable`/`responsive`。
+4. 优先运行 `npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型>` 生成骨架；脚手架中的 `data-scaffold-placeholder` 是未完成标记，接入真实组件和四态后必须删除；独立的 `responsive-review-pending` 按下方「响应式设计」完成设计与实测后替换为具体结论，两类未完成标记均由契约测试拦截。需要手写时必须同样添加 `responsive-review-pending` 待验收标记，再用 `createLayout(archetype, pageKey)` 起默认 `PageLayout`，按需覆盖 `slots`/`editable`/`responsive`。
 5. 模板用 `<LayoutHost :layout="effective">` + 具名插槽（`slot.id`）填业务组件；浮层放 `#overlays`。短表单和轻量查看使用 `AppDialog`，完整业务详情使用 `AppDetailDrawer`，专用底层抽屉使用 `PageDrawer`，页面设置使用 `PageSettingsDrawer`；页面禁止直接使用 `el-dialog`、`el-descriptions` 或 `el-drawer`。数据表格使用 `AppDataTable + AppTableColumn`，列只声明 `label/prop/role` 等语义，不声明 `width/min-width/align/header-align`；语义角色同时统一表头和单元格对齐，横向比较矩阵数值使用 `comparison-number`；普通名称列使用 `name`，带前置控件和主副信息的对象识别列使用 `entity`；日期、单位或短口径摘要统一传 `header-meta` 并保持同行单行，主内容前有紧凑控件时传 `leading-controls` 由组件统一对齐，不在页面拼私有表头；主表使用默认成长模式，只有抽屉、展开行、局部明细或后方仍有同级内容的长文档局部表格使用 `embedded + LONG_DOCUMENT_TABLE_MAX_HEIGHT`。纵向混合工作台的前置主业务表使用 `embedded + LEADING_WORKBENCH_TABLE_MAX_HEIGHT`，通过 slot 的 `minH + idealH` 声明受控收缩范围；末尾组件在 `pageRegistry` 声明为唯一 `growMain` 吃掉剩余高度。禁止复制高度公式、用页面 CSS 模拟成长关系或无限推远后续内容。
 6. 若新增真实复用组件，补 DESIGN.md 清单、至少一个消费页面和测试；新增系统组件种类时同步 `COMPONENT_CATALOG`、schema 和预览；新增 Web 配置字段时同步字段定义、后端规则、pageRegistry 真实消费和配置中心验证。两类登记按职责维护，不机械捆绑。
 7. 跑校验：`npm test`（validator + 契约测试）；DEV 期 `LayoutHost` 会 `assertLayout` 直接抛。
-8. `npm run build`（含 vue-tsc 类型检查；改 `frontend/src` 后必构建）。
+8. 构建按 AGENTS.md 的风险门槛执行；新增页面影响路由或懒加载，须运行 `npm run build`（含 vue-tsc）。普通局部模板、逻辑和样式改动只做定向验证。
 9. 核对 DESIGN.md 的 `page-registry` 区块已有唯一同名行：脚手架会自动写入；仅未使用脚手架时按下方 §8 手工补一行，禁止重复登记。
 10. 新页面如需要出现在侧栏或有受控 API / 按钮动作，同步菜单 seed、功能点 seed、后端守卫、`v-permission`、默认角色授权决策，并按 [system-rbac-tenant.md](../architecture/system-rbac-tenant.md) 验收。
 
@@ -61,6 +61,26 @@
 | action |  |  | 否 |  | 否 |  |
 | main |  |  |  |  |  |  |
 | overlay | settings | settings-drawer | 否 |  | 否 | 页面设置 |
+
+### 响应式设计
+规则入口：[DESIGN.md](../../DESIGN.md) §8.1–§8.3；本节记录本页面的实施与验收，不重新定义全站规则。
+
+| 区域 / 组件 | 核心内容 | 辅助内容 | 尺寸来源与触发条件 | 换行 / 折叠 / 隐藏 / 抽屉 / 内滚 | 恢复入口与状态保留 |
+|---|---|---|---|---|---|
+| action / 筛选操作 |  |  |  |  |  |
+| main / 主结果与分析 |  |  |  |  |  |
+| footer / 分页 |  |  |  |  |  |
+| overlay / 浮层 |  |  |  |  |  |
+
+- 页面目标画像、实际断点、slot 最小尺寸与滚动所有者：
+- 复用的响应式组件及消费点：
+- 低高度时固定区和主内容的空间冲突如何解决：
+- 宽屏富余分配给哪一主表 / 主图 / 概览：
+- 无辅助内容或不适用区域写明理由；不得留空或只写“自适应”。
+- 新增降级行为必须补最低层边界测试（触发、恢复和状态保留）；CSS 几何以实际浏览器复核为准，不用 jsdom 证明。
+- 新页面默认临时复核 1100×620 / 1366×768 / 1440×900；涉及宽屏分栏增加1920×1080，新增局部断点检查临界两侧。采用不同界面比例时确认仍按布局尺寸触发。
+- 实测须覆盖代表性长名称、多条件、大总数以及加载/空/错误态，检查核心操作可达、无整页溢出、展开/恢复不丢筛选与草稿；记录实际视口、界面比例、结果和未验证项。已有 E2E 仅满足准入时执行最小范围。
+- 实施和实测完成后，将脚手架 `responsive-review-pending` 整段替换为简短的页面响应式说明与验证结论；手写页面遵循同一流程。
 
 ### 四态反馈设计
 规则入口：[DESIGN.md](../../DESIGN.md) §4「四态反馈总则 / 空状态 / 加载态与异常态」。
@@ -163,12 +183,14 @@
 - 字体与间距契约：是否消费 typography/spacing token；行情摘要是否复用 `StockQuoteSummary`，保持垂直居中的主值列、两列最多四行的信息、自适应列宽和紧凑列间距；是否存在合理特例、是否影响低宽度文本溢出：
 
 ### 验收
-- cd frontend && npm test
-- cd frontend && npm run build
+- 定向运行 registry / validator / layout-contract / typography-spacing-system 与变更组件测试；只有发布门禁或明确需求才全量测试
+- 构建按 AGENTS.md 门槛执行；新增路由 / 懒加载页面必须 build
 - 视口验证：按 DESIGN.md §8 选择关键视口，默认覆盖 1100×620 / 1366×768 / 1440×900
 - 检查无整页滚动、无视口高度硬编码、设置抽屉分段正常
 - 检查按钮、图标、排版、间距、表格、抽屉和四态反馈均符合 DESIGN 对应章节；例外写明原因
 ```
+
+如果缺少「响应式设计」或适用项未填写，计划视为不完整，不能直接进入开发。
 
 如果计划声明“新增布局原型 / 组件种类 / 组件配置字段”，但没有维护清单，计划视为不完整，不能直接进入开发。
 
@@ -176,7 +198,8 @@
 
 | 变更类型 | 必须同步维护 | 必须验证 |
 |---|---|---|
-| 新页面 | 脚手架、`pageRegistry.ts`、`router/index.ts`、DESIGN 页面登记区块；四处 `pageKey` 必须一致；需要侧栏/权限时同步 RBAC 菜单与功能点 | `pageRegistry.spec.ts`、`layout-contract.spec.ts`、权限相关测试、build、关键视口 |
+| 新页面 | 响应式设计与实测结论、脚手架、`pageRegistry.ts`、`router/index.ts`、DESIGN 页面登记区块；四处 `pageKey` 必须一致；需要侧栏/权限时同步 RBAC 菜单与功能点 | `pageRegistry.spec.ts`、`layout-contract.spec.ts`、权限相关测试、build、关键视口 |
+| 响应式降级变化 | DESIGN §8 组件规则、真实消费组件、计划中的降级表；复用现有布局和组件，不新增平行配置 | 边界/恢复/状态保留定向测试、尺寸断点契约、相关关键视口临时复核 |
 | 新布局原型 | `archetypes.ts`、`schema.ts`、`validator.ts`、`LayoutHost.vue`、DESIGN 原型说明 | `validator.spec.ts`、布局契约测试 |
 | 新组件种类 | `COMPONENT_CATALOG`、`componentSchemas.ts`、`componentPreview.ts`、系统组件页展示 | `componentPreview.spec.ts`、`pageRegistry.spec.ts` |
 | 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py` 字段/值域/实例归属规则、`ComponentAutoSettings` 通用或专用安全渲染器、系统组件覆盖页、页面真实消费、DESIGN 字段治理入口 | `component-config-contract.spec.ts`、`componentConfig.spec.ts`、后端 layout 测试、保存/回显与策略收紧验证 |

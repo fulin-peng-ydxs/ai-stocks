@@ -33,6 +33,7 @@ const VIEWPORT_HEIGHT =
 
 /** 模板里真正手写布局契约类（排除注释/文档里的 .v-page 提及）。 */
 const HANDWRITTEN_LAYOUT = /class="[^"]*\bv-(?:page|grow|scroll)\b/
+const RESPONSIVE_REVIEW_PENDING = /\bresponsive-review-pending\b/
 const SCAFFOLD_PLACEHOLDER = /\bdata-scaffold-placeholder\b/
 const PRIVATE_DEFAULT_FILTER_SECTION = /<PageSettingSection\b[^>]*\btitle=["']默认筛选["']/
 const VIEWPORT_DRAWER = /<(?:el-drawer|ElDrawer)\b/
@@ -111,6 +112,16 @@ describe('布局契约守卫（M6）', () => {
     expect(
       offenders,
       `以下页面仍保留脚手架占位内容，必须接入真实组件和四态后再交付：\n${offenders.join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('新页面必须完成响应式复核，不能只删除业务占位即交付', () => {
+    const offenders = files
+      .filter((file) => RESPONSIVE_REVIEW_PENDING.test(readFileSync(file, 'utf8')))
+      .map(rel)
+    expect(
+      offenders,
+      `以下页面尚未完成响应式设计与关键视口复核，请按 page-template.md 完成后替换标记：\n${offenders.join('\n')}`,
     ).toEqual([])
   })
 

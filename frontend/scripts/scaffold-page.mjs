@@ -99,6 +99,15 @@ import { getPageLayout } from '@/layout'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
+/**
+ * responsive-review-pending
+ * 完成 DESIGN.md §8 和 page-template.md「响应式设计」后替换本段：
+ * - 核心内容 / 次要内容及其承载组件；不适用项写理由。
+ * - 窄宽、低高度、宽屏的触发条件、降级方式与滚动归属。
+ * - 复用组件及保留筛选、选择、草稿和恢复展开的行为。
+ * - 关键视口实测结果与验证方式；未验证时保留 pending 标记。
+ * 本标记独立于业务占位，未完成响应式复核时契约测试拒绝交付。
+ */
 const settingsOpen = ref(false)
 const menuPageTitle = useMenuPageTitle({ fallback: '${label}' })
 const pageLayout = getPageLayout('${pageKey}')
@@ -154,6 +163,8 @@ ${mainSlots.map((slot) => `    <template #${mainSlots.length === 1 ? 'main' : sl
 .page-toolbar {
   display: flex;
   align-items: flex-start;
+  flex-wrap: wrap;
+  min-width: 0;
   justify-content: space-between;
   gap: var(--app-space-3);
 }

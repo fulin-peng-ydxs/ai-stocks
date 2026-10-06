@@ -30,6 +30,8 @@ function styleBlocks(file: string): string[] {
   return [...source.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)].map((match) => match[1])
 }
 
+const SIZE_MEDIA_QUERY = /@media[^{}]*\([^)]*\b(?:(?:min|max)-)?(?:width|height)\b/
+
 describe('字体与间距设计契约', () => {
   it('页面设置抽屉以稳定字体角色和结构线表达层级', () => {
     const globalCss = read(join(SRC_DIR, 'styles/global.css'))
@@ -187,11 +189,26 @@ describe('字体与间距设计契约', () => {
     expect(globalCss).not.toMatch(/--app-muted-text:\s*#[0-9a-f]{6}/i)
   })
 
+  it('尺寸断点守卫覆盖范围语法，并允许主题与输入能力媒体查询', () => {
+    for (const css of [
+      '@media (max-width: 720px) {}',
+      '@media screen and (min-height: 620px) {}',
+      '@media (width <= 720px) {}',
+      '@media (620px < height < 900px) {}',
+    ]) expect(SIZE_MEDIA_QUERY.test(css), css).toBe(true)
+    for (const css of [
+      '@media (prefers-reduced-motion: reduce) {}',
+      '@media (max-resolution: 1.5dppx) {}',
+      '@media (hover: none) {}',
+      '@container app-viewport (max-width: 720px) {}',
+    ]) expect(SIZE_MEDIA_QUERY.test(css), css).toBe(false)
+  })
+
   it('布局尺寸断点统一使用缩放后的容器，不混用原始视口媒体查询', () => {
     const violations: string[] = []
     for (const file of sourceFiles(SRC_DIR)) {
       for (const css of styleBlocks(file)) {
-        if (/@media[^{}]*\((?:min|max)-(?:width|height)\s*:/.test(css)) {
+        if (SIZE_MEDIA_QUERY.test(css)) {
           violations.push(relative(SRC_DIR, file))
         }
       }
@@ -555,6 +572,8 @@ describe('字体与间距设计契约', () => {
     expect(scaffold).toContain('gap: var(--app-space-3)')
     expect(scaffold).toContain('AppStateBlock')
     expect(scaffold).toContain('data-scaffold-placeholder')
+    expect(scaffold).toContain('responsive-review-pending')
+    expect(scaffold).toContain('flex-wrap: wrap')
     expect(scaffold).toContain('componentAllowedLayers,')
     expect(scaffold).toContain('componentLayerValuesOf, componentAllowedLayers }')
     expect(scaffold).not.toMatch(/\.page-toolbar h1\s*\{[\s\S]*?font-size\s*:/)

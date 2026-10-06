@@ -45,7 +45,7 @@ export interface PageRegistryEntry {
   /**
    * 页面类型的目标响应式画像，用于表达设计意图和配置中心摘要。
    * 实际列数/重排由 layout.responsive 决定，滚动由 LayoutHost 决定，
-   * 浏览器可用性以关键视口 E2E 为准；配置中心不得把本字段展示成已验证结论。
+   * 浏览器可用性以关键视口实测为准（Playwright 遵守 E2E 准入）；配置中心不得把本字段展示成已验证结论。
    */
   responsiveProfile: ResponsiveProfile
   /**
