@@ -198,8 +198,8 @@
 
 | 变更类型 | 必须同步维护 | 必须验证 |
 |---|---|---|
-| 新页面 | 响应式设计与实测结论、脚手架、`pageRegistry.ts`、`router/index.ts`、DESIGN 页面登记区块；四处 `pageKey` 必须一致；需要侧栏/权限时同步 RBAC 菜单与功能点 | `pageRegistry.spec.ts`、`layout-contract.spec.ts`、权限相关测试、build、关键视口 |
-| 响应式降级变化 | DESIGN §8 组件规则、真实消费组件、计划中的降级表；复用现有布局和组件，不新增平行配置 | 边界/恢复/状态保留定向测试、尺寸断点契约、相关关键视口临时复核 |
+| 新页面 | 响应式设计与实测结论、完整组件触发清单、页面检查表、脚手架、`pageRegistry.ts`、`router/index.ts`、DESIGN 页面登记区块；四处 `pageKey` 必须一致；需要侧栏/权限时同步 RBAC 菜单与功能点 | `pageRegistry.spec.ts`、`layout-contract.spec.ts`、权限相关测试、build、关键视口 |
+| 响应式降级变化 | DESIGN §8、`responsive-components.md` 逐文件触发清单、`responsive-pages.md` 受影响页面检查、真实消费组件、计划中的降级表；复用现有布局和组件，不新增平行配置 | `responsive-inventory.spec.ts`、边界/恢复/状态保留定向测试、尺寸断点契约、相关关键视口临时复核 |
 | 新布局原型 | `archetypes.ts`、`schema.ts`、`validator.ts`、`LayoutHost.vue`、DESIGN 原型说明 | `validator.spec.ts`、布局契约测试 |
 | 新组件种类 | `COMPONENT_CATALOG`、`componentSchemas.ts`、`componentPreview.ts`、系统组件页展示 | `componentPreview.spec.ts`、`pageRegistry.spec.ts` |
 | 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py` 字段/值域/实例归属规则、`ComponentAutoSettings` 通用或专用安全渲染器、系统组件覆盖页、页面真实消费、DESIGN 字段治理入口 | `component-config-contract.spec.ts`、`componentConfig.spec.ts`、后端 layout 测试、保存/回显与策略收紧验证 |

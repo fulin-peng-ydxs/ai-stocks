@@ -44,6 +44,7 @@ const stripStyle = computed(() => ({
         'market-metric--lead': index === 0,
       }"
       :aria-pressed="item.key === activeKey"
+      :title="`${item.label}：${item.parts?.map((part) => part.text).join(' ') || item.value}`"
       :data-testid="`${testIdPrefix}-${item.key}`"
       @click="emit('select', item.key)"
     >
@@ -159,8 +160,20 @@ const stripStyle = computed(() => ({
   }
 }
 @container app-viewport (max-height: 700px) {
+  /* 低高度仍保留唯一指标切换入口，只把辅助数值收敛到悬浮说明。 */
   .market-metric-strip {
-    display: none;
+    grid-template-columns: none !important;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(90px, 1fr);
   }
+  .market-metric {
+    min-height: var(--app-control-height-md);
+    padding: var(--app-space-1) var(--app-space-2);
+  }
+  .market-metric-label {
+    font-size: var(--app-font-size-caption);
+    line-height: var(--app-line-height-caption);
+  }
+  .market-metric strong { display: none !important; }
 }
 </style>
