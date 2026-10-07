@@ -71,6 +71,13 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 测试通过或结束后，按测试前状态用 `./start.sh` 重启，并用
 `./start.sh status` 确认 `/api/health=200`。禁止在后台服务仍持有 DuckDB 锁时硬跑相关测试；不得直接裸杀进程，除非脚本停服失败且用户明确同意。
 
+## 环境识别
+
+- 调试前先执行 `./start.sh status`，再核对 `logs/backend-runtime.json` 的 `pid`、`mode` 与 `safeEnv.AI_STOCKS_ENV`（缺失时看 `safeEnv.ENV`）。只有 PID 与当前服务一致时，档案才代表该服务；缺失或不匹配时不能拿旧档案推断。`mode=dev|prod` 是启动方式，环境标记是调试工具守卫，两者不得混同。
+- 本机环境身份持久化在 Git 忽略的 `.env.local`：用户已确认本地调试环境时设置 `AI_STOCKS_ENV=dev`，由 `start.sh` 统一加载；不依赖每次会话的 shell export，也不把“所有部署都是 dev”写成仓库默认。变量文件代表后续启动配置，已运行服务以有效运行档案为准；变更后通过脚本安全重启并确认健康状态。
+- `dev-users --list` 提示环境 `<unset>` 时，先检查命令是否加载本机变量文件及其环境标记；用户已确认本地环境且无生产/共享目标冲突时，应补齐标记后重试，不能直接把参数缺失当作页面验收阻塞，也无需重复索要本地调试授权。真实环境不明或证据冲突时仍须停止调试写入并澄清。
+- 普通内置浏览器验收不需要启用 `AI_STOCKS_E2E_WRITE` 或登录限流豁免。完整配置语义与核查步骤见 `agent-works/architecture/environment-configuration.md`「环境身份与运行模式」。
+
 ## 测试用户
 
 - 页面或接口权限验收需要固定调试账号时，先读 `agent-works/multi-tenant-rbac/test-users.md`，不要凭记忆猜账号、角色、权限或密码。

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ElCollapseTransition } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 
 // 只统一 disclosure 的结构、可访问性和视觉边界，业务状态与命令由消费方注入。
@@ -61,14 +62,16 @@ const emit = defineEmits<{ toggle: [] }>()
       </div>
     </div>
 
-    <div
-      v-if="expanded"
-      :id="panelId"
-      class="app-summary-disclosure-card__editor"
-      :data-testid="editorTestId"
-    >
-      <slot />
-    </div>
+    <ElCollapseTransition>
+      <div
+        v-if="expanded"
+        :id="panelId"
+        class="app-summary-disclosure-card__editor app-motion-collapse"
+        :data-testid="editorTestId"
+      >
+        <slot />
+      </div>
+    </ElCollapseTransition>
   </article>
 </template>
 
@@ -161,7 +164,7 @@ const emit = defineEmits<{ toggle: [] }>()
 .app-summary-disclosure-card__chevron {
   width: 14px;
   color: var(--el-text-color-placeholder);
-  transition: transform 0.15s ease;
+  transition: transform var(--app-motion-collapse) var(--app-motion-ease);
 }
 .is-expanded .app-summary-disclosure-card__chevron { transform: rotate(180deg); }
 .app-summary-disclosure-card__tools {

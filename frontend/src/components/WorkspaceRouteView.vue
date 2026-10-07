@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vReveal } from '@/directives/reveal'
 import { watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -23,7 +24,7 @@ watch(
 </script>
 
 <template>
-  <div class="workspace-route-view">
+  <div v-reveal:page="route.path" class="workspace-route-view">
     <router-view v-slot="{ Component }">
       <keep-alive :include="workspaceCacheNames" :max="WORKSPACE_TAB_LIMIT">
         <component

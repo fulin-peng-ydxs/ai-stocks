@@ -144,6 +144,14 @@
 - 跨页面共享不改变属性归属：属于已登记组件实例的字段仍在组件设置中展示，并可通过 `userPersistence=global-preference` 接入专用全局偏好；不归属于当前组件实例的产品偏好才独立设置入口。两者都不得复制平行字段。
 - “模式”“显示”“默认”等命名不能决定分类；同一字段不得同时出现在组件设置与业务选项。
 
+### 动效验收
+规则入口：[DESIGN.md](../../DESIGN.md) §4「动效与状态过渡」。
+
+- 页面与标准异步区域是否复用 `WorkspaceRouteView` / `AppAsyncRegion` / `AppDataTable` 的共享显现能力，避免页面再次叠加动画：
+- 折叠是否复用 `SettingsGroup` / `AppSummaryDisclosureCard`，保持编辑值和原挂载语义：
+- 是否覆盖快速切换、已有内容刷新不重播、错误立即接管、减少动画偏好和缓存页现场恢复：
+- 共享动效变更同步维护 `global.css`、`directives/reveal.ts`、消费组件和定向测试；不新增系统组件种类、slot 或可配置字段：
+
 ### 浮层设计
 规则入口：[DESIGN.md](../../DESIGN.md) §4「弹窗与抽屉 / 设置抽屉」。
 

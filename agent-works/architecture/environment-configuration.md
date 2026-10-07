@@ -102,6 +102,21 @@ flowchart TD
 `AI_STOCKS_ENV=production` 并移除 `AI_STOCKS_E2E_WRITE`，因此误把本地 `.env.local`
 复制到生产也不会开放调试数据写入口。
 
+### 环境身份与运行模式
+
+`start.sh` 的 `dev/prod` 参数控制热重载与监听方式，`AI_STOCKS_ENV`（兼容回落 `ENV`）控制调试工具的环境守卫。开发启动不会自动补 `AI_STOCKS_ENV=dev`，因此两者必须分别核查。
+
+已确认的本机开发环境在 Git 忽略的 `.env.local` 中持久化 `AI_STOCKS_ENV=dev`；这让后续 AI 会话执行 `./start.sh dev-users --list` 时自动继承标记，无需每次手写前缀。不要把个人变量文件内容整体输出到日志或对话。共享/生产部署必须使用对应真实环境值；普通页面验收不设置 E2E 写入或限流豁免开关。
+
+在仓库根目录按以下顺序核查：
+
+1. 执行 `./start.sh status`，确认当前 PID 和 `/api/health=200`。
+2. 读取 `logs/backend-runtime.json` 的 `pid`、`mode`、`safeEnv.AI_STOCKS_ENV`（兼容 `safeEnv.ENV`）与 `envFile`；PID 必须匹配。档案不存在或 PID 不匹配时标记为未知，不能将历史档案当作当前进程状态。
+3. `.env.local` 是后续命令与启动的配置，不会更新已运行进程；改动会让旧档案的变量文件摘要失配。需要生效时先通过脚本检查并停止空闲服务，再按原启动模式启动，禁止伪造或手工改写运行档案绕过校验；随后重新确认健康、PID 和环境标记。
+4. 执行 `./start.sh dev-users --list`，成功列出所需启用账号后按最小权限选择账号。若提示 `<unset>`，检查变量加载与环境配置；已经确认本地用途时补齐标记再试，不能据此直接跳过页面验收。账号缺失的维护流程见 [test-users.md](../multi-tenant-rbac/test-users.md)。
+
+运行档案仅保存恢复所需的安全字段和摘要，不是认证授权凭据；`dev` 标记也不能代替 E2E 写入授权和数据库指纹校验。
+
 ### 2. YAML 基线与缓存
 
 `get_settings()` 只负责 `config/settings.yaml` 基线读取和 Pydantic 校验，结果用 `lru_cache(maxsize=1)` 缓存。它不能访问数据库，因为 DuckDB/PG/Redis 客户端初始化会依赖 `get_settings()`，在这里合并数据库覆盖层会形成初始化环。

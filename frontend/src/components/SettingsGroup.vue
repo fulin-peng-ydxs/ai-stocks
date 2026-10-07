@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ElCollapseTransition } from 'element-plus'
 /**
  * 通用可折叠分组（设置抽屉的固有结构单元）。层级由卡片、缩进和结构线表达，
  * 标题字号按语义角色稳定分档；紧凑抽屉可通过共享上下文降低一级分组字号，
@@ -78,6 +79,7 @@ const childToggleLabel = computed(() => (
       v-if="title || badge"
       class="sg-head"
       :class="{ 'sg-foldable': foldable(), 'sg-top': level === 1 }"
+      :aria-expanded="foldable() ? openState : undefined"
       :role="foldable() ? 'button' : undefined"
       :tabindex="foldable() ? 0 : undefined"
       @click="toggle"
@@ -103,7 +105,9 @@ const childToggleLabel = computed(() => (
         </span>
       </span>
     </div>
-    <div v-show="openState || !foldable()" class="sg-body"><slot /></div>
+    <ElCollapseTransition>
+      <div v-show="openState || !foldable()" class="sg-body app-motion-collapse"><slot /></div>
+    </ElCollapseTransition>
   </section>
 </template>
 
@@ -187,7 +191,7 @@ const childToggleLabel = computed(() => (
   justify-content: center;
   font-size: var(--app-font-size-micro);
   color: var(--page-settings-text-muted);
-  transition: transform .15s ease;
+  transition: transform var(--app-motion-collapse) var(--app-motion-ease);
 }
 .sg-caret.open {
   transform: rotate(90deg);

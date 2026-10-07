@@ -1,3 +1,29 @@
+/* 动效时长统一使用 ms；reveal 指令与折叠组件共用此入口。 */
+:root {
+  --app-motion-content: 160ms;
+  --app-motion-page: 180ms;
+  --app-motion-collapse: 200ms;
+  --app-motion-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.app-motion-collapse.el-collapse-transition-enter-active,
+.app-motion-collapse.el-collapse-transition-leave-active {
+  transition: max-height var(--app-motion-collapse) var(--app-motion-ease),
+    padding-top var(--app-motion-collapse) var(--app-motion-ease),
+    padding-bottom var(--app-motion-collapse) var(--app-motion-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --app-motion-content: 0ms;
+    --app-motion-page: 0ms;
+    --app-motion-collapse: 0ms;
+  }
+  .app-state-block .el-skeleton.is-animated .el-skeleton__item {
+    animation: none;
+  }
+}
+
 /* 全局重置 + 主题底色：消除浏览器默认 body 边距导致的周边空白 */
 * {
   box-sizing: border-box;

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vReveal } from '@/directives/reveal'
 import { computed } from 'vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 
@@ -41,6 +42,7 @@ const loadingMode = computed(() => (
 
 <template>
   <div
+    v-reveal="hasContent && !error && !initialLoading"
     class="app-async-region"
     :aria-busy="loading"
     :data-loading-mode="loadingMode"

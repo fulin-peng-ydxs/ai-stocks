@@ -4,7 +4,7 @@
 
 ## AI 使用指引
 
-- 页面或接口验收前，先明确设置 `AI_STOCKS_ENV=dev|test|local`，再执行 `./start.sh dev-users --list` 查看固定调试账号；账号缺失、角色漂移或权限异常时，执行 `./start.sh dev-users` 重新校准。该入口与后端统一加载 `.env.local`，避免连到另一套 PG。
+- 页面或接口验收前，按 [环境身份与运行模式](../architecture/environment-configuration.md#环境身份与运行模式) 核查本机配置与运行档案；已确认本地开发时在 `.env.local` 持久化 `AI_STOCKS_ENV=dev`（单次命令也可显式设置 `dev|test|local`），再执行 `./start.sh dev-users --list` 查看固定调试账号；账号缺失、角色漂移或权限异常时，执行 `./start.sh dev-users` 重新校准。该入口与后端统一加载 `.env.local`，避免连到另一套 PG。
 - 按测试场景选择最小权限账号：系统页用 system，租户管理用 tenant_admin，普通业务链路用 normal，权限边界用 board_only、stocks_only、stocks_group、backtest_view、trade_discipline_view、trade_discipline_submit。
 - `admin` 是 README 中的本地开发系统管理员账号，归属 `default` 租户；密码来源和覆盖边界见 [environment-configuration.md](../architecture/environment-configuration.md)。它不属于本清单的 `debug_*` 调试账号，不用于替代最小权限或无权限场景。
 - 不把固定调试账号作为 pytest 依赖；自动化后端用例继续在用例内创建临时用户。

@@ -541,6 +541,16 @@ Key Characteristics：
 - `el-alert` 只用于不随异步状态变化的说明性提示、字段风险说明和校验结果列表；缓存过期、同步失败、只读模式等运行时状态必须使用 `AppStatusNotice`，页面不得再维护私有 status/readonly/error banner。
 - 同一原因只能选择一个反馈层级；禁止同时显示 toast、持久 notice 和阻断 error 三份同义信息。动作失败可先用 toast 告知，若它使区域不可用，随后由阻断状态接管，二者文案分别表达“动作结果”和“当前区域状态”。
 
+### 动效与状态过渡
+
+- 全站动效时长与缓动统一由 `styles/global.css` 的 `--app-motion-content`（160ms）、`--app-motion-page`（180ms）、`--app-motion-collapse`（200ms）与 `--app-motion-ease` 管理；时长固定使用 ms，不作为页面配置或视觉预设字段。
+- 工作区页面切换由 `WorkspaceRouteView` 消费 `directives/reveal.ts` 的 `vReveal`，仅在路径变化时淡入真实页面根节点；不增加布局外壳、不等待旧页离场、不改变 KeepAlive 身份、滚动位置或图表恢复逻辑。同路径 query 变化不重复播放。
+- `AppAsyncRegion` 与 `AppDataTable` 共用 `vReveal`，从无内容进入有效内容时短淡入；同一区域已有内容刷新、轮询和数值更新不重播。错误和上下文切换立即撤下旧内容，禁止为离场动画延迟清除、双份叠放旧新数据或人为等待骨架播放完毕。
+- `SettingsGroup`、`AppSummaryDisclosureCard` 复用 `ElCollapseTransition` 与 `app-motion-collapse`，正文折叠和箭头使用同一时长。保留原来的 v-show/v-if 生命周期，不因动效重置编辑值或改变懒挂载行为。
+- 动效只增强反馈，缺少 Web Animations API 时直接显示内容。系统 `prefers-reduced-motion: reduce` 下不播放上述淡入与折叠、停止共享骨架动画；偏好在淡入中变化时立即取消动画，恢复正常可见内容。
+- 不给行情数值、大表格行、K线或画布尺寸添加逐项进场、缩放或位移动画。不设置全局 `transition: all`；不使用常驻 `will-change`，动画结束、快速切换和卸载时释放资源。
+- 此入口覆盖工作区页面、标准异步区域与上述两类折叠；抽屉、弹窗继续消费组件库原生动效，其他历史局部动效尚不自动统一。
+
 ### 卡片、面板与分区
 
 - 卡片只用于承载独立数据块、表格容器、设置组、弹层内容，不把页面 section 都做成浮动卡片。

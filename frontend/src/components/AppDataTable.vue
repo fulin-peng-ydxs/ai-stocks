@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vReveal } from '@/directives/reveal'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppPagination from '@/components/AppPagination.vue'
 import { syncTableCellVisualOverflow } from '@/components/table/cellVisualOverflow'
@@ -127,6 +128,7 @@ const emit = defineEmits<{
 
 <template>
   <div
+    v-reveal="!initialLoading && data.length > 0"
     class="app-data-table"
     :aria-busy="loading"
     :class="[

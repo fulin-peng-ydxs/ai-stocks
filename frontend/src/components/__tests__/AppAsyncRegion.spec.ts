@@ -50,6 +50,19 @@ describe('AppAsyncRegion', () => {
     expect(wrapper.find('.state').exists()).toBe(false)
   })
 
+  it('首次就绪后刷新保留同一个内容节点，失败立即撤下旧内容', async () => {
+    const wrapper = mountRegion({ loading: true })
+    await wrapper.setProps({ loading: false, hasContent: true })
+    const content = wrapper.get('.content').element
+    await wrapper.setProps({ loading: true })
+    expect(wrapper.get('.content').element).toBe(content)
+    await wrapper.setProps({ loading: false })
+    expect(wrapper.get('.content').element).toBe(content)
+    await wrapper.setProps({ error: '刷新失败' })
+    expect(wrapper.find('.content').exists()).toBe(false)
+    expect(wrapper.get('[data-state="error"]').text()).toContain('刷新失败')
+  })
+
   it('错误接管旧内容，空结果进入统一空态', async () => {
     const wrapper = mountRegion({ hasContent: true, error: '请求失败', errorTitle: '走势加载失败' })
 
