@@ -50,9 +50,6 @@ const sortedLayers = computed(() => sortLimitLadderLayers(
   props.cardSort,
   props.cardSortOrder,
 ))
-const ladderMeta = computed(() => props.result
-  ? `${props.result.summary.stock_count} 只 · ${props.filters.window} 日口径`
-  : '等待快照')
 const hasApproximateSt = computed(() => Boolean(
   props.result?.snapshot?.has_approx_st
     || props.result?.layers.some((layer) => (
@@ -200,7 +197,7 @@ function resetFilters(): void {
         <div><span>当前股票</span><strong class="is-total" data-testid="limit-ladder-summary-total">{{ result.summary.stock_count }}</strong><small>只</small></div>
         <div><span>最高板位</span><strong class="is-highest">{{ result.summary.highest_board ?? '—' }}</strong><small>板</small></div>
         <div><span>首板股票</span><strong class="is-first">{{ result.summary.first_board_count }}</strong><small>只</small></div>
-        <div class="limit-ladder__summary-meta"><span>{{ ladderMeta }}</span><el-tag v-if="hasApproximateSt" type="warning" effect="plain" size="small">历史 ST 含近似口径</el-tag></div>
+        <div v-if="hasApproximateSt" class="limit-ladder__summary-meta"><el-tag type="warning" effect="plain" size="small">历史 ST 含近似口径</el-tag></div>
         <el-button
           class="limit-ladder__hotspots-toggle"
           text
