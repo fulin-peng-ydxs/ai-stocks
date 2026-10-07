@@ -1,8 +1,9 @@
 /* 动效时长统一使用 ms；reveal 指令与折叠组件共用此入口。 */
 :root {
-  --app-motion-content: 160ms;
-  --app-motion-page: 180ms;
+  --app-motion-content: 180ms;
+  --app-motion-page: 220ms;
   --app-motion-collapse: 200ms;
+  --app-motion-distance: 4px;
   --app-motion-ease: cubic-bezier(0.2, 0, 0, 1);
 }
 
@@ -13,11 +14,18 @@
     padding-bottom var(--app-motion-collapse) var(--app-motion-ease);
 }
 
+/* 只统一共享异步区域的遮罩淡出，不覆盖组件库其他浮层。 */
+.app-async-region > .el-loading-mask,
+.app-data-table .el-table > .el-loading-mask {
+  transition: opacity var(--app-motion-content) var(--app-motion-ease);
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root {
     --app-motion-content: 0ms;
     --app-motion-page: 0ms;
     --app-motion-collapse: 0ms;
+    --app-motion-distance: 0px;
   }
   .app-state-block .el-skeleton.is-animated .el-skeleton__item {
     animation: none;

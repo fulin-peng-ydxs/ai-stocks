@@ -62,6 +62,22 @@ describe('PageSegmented', () => {
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['week'])
   })
 
+  it('tabs 指示位置跟随受控选中值及选项重排，无有效选中项时不误指首项', async () => {
+    const wrapper = mount(PageSegmented, { props: {
+      variant: 'tabs', modelValue: 'week',
+      options: [{ label: '日K', value: 'day' }, { label: '周K', value: 'week' }],
+    } })
+    expect(wrapper.get('.seg-indicator').attributes('aria-hidden')).toBe('true')
+    expect(wrapper.attributes('style')).toContain('--segment-index: 1')
+    await wrapper.setProps({ options: [{ label: '周K', value: 'week' }, { label: '日K', value: 'day' }] })
+    expect(wrapper.attributes('style')).toContain('--segment-index: 0')
+    await wrapper.setProps({ modelValue: 'missing' })
+    expect(wrapper.find('.seg-indicator').exists()).toBe(false)
+    await wrapper.setProps({ options: [] })
+    expect(wrapper.find('.seg-indicator').exists()).toBe(false)
+    expect(wrapper.attributes('style')).toContain('--segment-count: 1')
+  })
+
   it('只读时保留当前选中项并禁止切换', async () => {
     const wrapper = mount(PageSegmented, {
       props: {

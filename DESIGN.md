@@ -543,13 +543,15 @@ Key Characteristics：
 
 ### 动效与状态过渡
 
-- 全站动效时长与缓动统一由 `styles/global.css` 的 `--app-motion-content`（160ms）、`--app-motion-page`（180ms）、`--app-motion-collapse`（200ms）与 `--app-motion-ease` 管理；时长固定使用 ms，不作为页面配置或视觉预设字段。
-- 工作区页面切换由 `WorkspaceRouteView` 消费 `directives/reveal.ts` 的 `vReveal`，仅在路径变化时淡入真实页面根节点；不增加布局外壳、不等待旧页离场、不改变 KeepAlive 身份、滚动位置或图表恢复逻辑。同路径 query 变化不重复播放。
-- `AppAsyncRegion` 与 `AppDataTable` 共用 `vReveal`，从无内容进入有效内容时短淡入；同一区域已有内容刷新、轮询和数值更新不重播。错误和上下文切换立即撤下旧内容，禁止为离场动画延迟清除、双份叠放旧新数据或人为等待骨架播放完毕。
+- 全站动效时长与缓动统一由 `styles/global.css` 的 `--app-motion-content`（180ms）、`--app-motion-page`（220ms）、`--app-motion-collapse`（200ms）、`--app-motion-distance`（4px）与 `--app-motion-ease` 管理；时长固定使用 ms，不作为页面配置或视觉预设字段。
+- 工作区页面切换由 `WorkspaceRouteView` 消费 `directives/reveal.ts` 的 `vReveal`，仅在路径变化时对真实页面根节点短淡入并从下方 4px 归位；不增加布局外壳、不等待旧页离场、不改变 KeepAlive 身份、滚动位置或图表恢复逻辑。同路径 query 变化不重复播放。
+- `AppAsyncRegion` 与 `AppDataTable` 共用 `vReveal`，从无内容进入有效内容时原位短淡入（初始透明度 0.35，避免整块突然消失），共享加载遮罩按相同时长淡出；同一区域已有内容刷新、轮询和数值更新不重播。错误和上下文切换立即撤下旧内容，禁止为离场动画延迟清除、双份叠放旧新数据或人为等待骨架播放完毕。
 - `SettingsGroup`、`AppSummaryDisclosureCard` 复用 `ElCollapseTransition` 与 `app-motion-collapse`，正文折叠和箭头使用同一时长。保留原来的 v-show/v-if 生命周期，不因动效重置编辑值或改变懒挂载行为。
-- 动效只增强反馈，缺少 Web Animations API 时直接显示内容。系统 `prefers-reduced-motion: reduce` 下不播放上述淡入与折叠、停止共享骨架动画；偏好在淡入中变化时立即取消动画，恢复正常可见内容。
+- `PageSegmented` 的常规分段保持选中底色渐变，tabs 外观通过单一下划线跟随受控选中值平移，复用内容时长与缓动；指示器不参与布局、不拦截点击，选项重排跟随真实选中值，无有效选中项时隐藏；tabs 消费点调整间距时使用 `--app-segment-gap`，使网格与指示器位置共用同一值，禁止页面新增私有切换动画。
+- “减少动态效果”来自操作系统辅助功能，由浏览器映射为 `prefers-reduced-motion`，不是应用新增设置；只降低运动呈现，不关闭加载状态、禁用状态或交互反馈。
+- 动效只增强反馈，缺少 Web Animations API 时直接显示内容。系统 `prefers-reduced-motion: reduce` 下不播放上述淡入、位移、折叠和选中指示过渡，停止共享骨架动画；偏好在淡入中变化时立即取消动画，恢复正常可见内容。
 - 不给行情数值、大表格行、K线或画布尺寸添加逐项进场、缩放或位移动画。不设置全局 `transition: all`；不使用常驻 `will-change`，动画结束、快速切换和卸载时释放资源。
-- 此入口覆盖工作区页面、标准异步区域与上述两类折叠；抽屉、弹窗继续消费组件库原生动效，其他历史局部动效尚不自动统一。
+- 此入口覆盖工作区页面、标准异步区域、分段控件与上述两类折叠；抽屉、弹窗继续消费组件库原生动效，其他历史局部动效尚不自动统一。
 
 ### 卡片、面板与分区
 

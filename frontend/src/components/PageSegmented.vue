@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 type OptionValue = string | number | boolean
 
 const props = defineProps<{
@@ -15,6 +16,8 @@ const props = defineProps<{
   /** 只读配置仍展示真实选中项，但禁止切换。 */
   disabled?: boolean
 }>()
+
+const activeIndex = computed(() => props.options.findIndex(option => option.value === props.modelValue))
 
 defineEmits<{
   'update:modelValue': [value: OptionValue]
@@ -34,10 +37,12 @@ function optionTestId(value: OptionValue): string | undefined {
       'page-segmented--tabs': props.variant === 'tabs',
       'page-segmented--disabled': props.disabled,
     }"
+    :style="{ '--segment-count': Math.max(1, props.options.length), '--segment-index': Math.max(0, activeIndex) }"
     role="group"
     :aria-disabled="props.disabled || undefined"
     :data-testid="props.testId"
   >
+    <span v-if="props.variant === 'tabs' && activeIndex >= 0" class="seg-indicator" aria-hidden="true" />
     <button
       v-for="option in props.options"
       :key="String(option.value)"
@@ -59,6 +64,7 @@ function optionTestId(value: OptionValue): string | undefined {
 
 <style scoped>
 .page-segmented {
+  position: relative;
   box-sizing: border-box;
   display: grid;
   grid-auto-flow: column;
@@ -88,7 +94,10 @@ function optionTestId(value: OptionValue): string | undefined {
   align-items: center;
   justify-content: center;
   gap: var(--app-space-control-gap);
-  transition: background-color .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
+  transition: background-color var(--app-motion-content) var(--app-motion-ease),
+    color var(--app-motion-content) var(--app-motion-ease),
+    border-color var(--app-motion-content) var(--app-motion-ease),
+    box-shadow var(--app-motion-content) var(--app-motion-ease);
 }
 .seg-label {
   display: block;
@@ -143,7 +152,7 @@ function optionTestId(value: OptionValue): string | undefined {
 }
 .page-segmented--tabs {
   height: var(--app-control-height-md);
-  gap: var(--app-space-2);
+  gap: var(--app-segment-gap, var(--app-space-2));
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -162,16 +171,28 @@ function optionTestId(value: OptionValue): string | undefined {
   font-size: var(--app-font-size-table);
   font-weight: var(--app-font-weight-regular);
 }
-.page-segmented--tabs .seg-btn::after {
+.seg-indicator {
+  position: absolute;
+  pointer-events: none;
+  bottom: 0;
+  left: 0;
+  /* tabs 沿用等分网格；位置由选中值派生，缩放/容器变宽无需尺寸监听。 */
+  width: calc((100% - (var(--segment-count) - 1) * var(--app-segment-gap, var(--app-space-2))) / var(--segment-count));
+  height: 3px;
+  transform: translateX(calc(var(--segment-index) * (100% + var(--app-segment-gap, var(--app-space-2)))));
+  transition: transform var(--app-motion-content) var(--app-motion-ease);
+}
+.seg-indicator::after {
   content: '';
   position: absolute;
-  right: var(--app-space-1);
-  bottom: 0;
-  left: var(--app-space-1);
-  height: 3px;
+  inset: 0 var(--app-space-1);
   border-radius: 999px;
-  background: transparent;
+  background: var(--el-text-color-primary);
 }
+.page-segmented--primary .seg-indicator::after {
+  background: var(--el-color-primary);
+}
+
 .page-segmented--tabs .seg-btn:hover:not(.active),
 .page-segmented--tabs.page-segmented--primary .seg-btn:hover:not(.active) {
   background: transparent;
@@ -184,9 +205,6 @@ function optionTestId(value: OptionValue): string | undefined {
   box-shadow: none;
   color: var(--el-text-color-primary);
   font-weight: var(--app-font-weight-section);
-}
-.page-segmented--tabs.page-segmented--primary .seg-btn.active::after {
-  background: var(--el-color-primary);
 }
 .page-segmented--tabs .seg-btn:focus-visible {
   outline-offset: -1px;

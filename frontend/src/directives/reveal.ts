@@ -17,8 +17,13 @@ function reveal(el: HTMLElement, binding: DirectiveBinding<RevealKey>): void {
 
   // 工作区宿主为 display:contents；对其真实根节点显现，兼容多根页面与 KeepAlive。
   const targets = style.display === 'contents' ? Array.from(el.children) : [el]
+  // 页面进入只做轻量位移；图表、表格内容保持原位，避免数值阅读与画布测量受扰。
+  const frames: Keyframe[] = binding.arg === 'page'
+    ? [{ opacity: 0.35, translate: `0 ${style.getPropertyValue('--app-motion-distance').trim() || '4px'}` },
+      { opacity: 1, translate: '0 0' }]
+    : [{ opacity: 0.35 }, { opacity: 1 }]
   const animations = targets.filter((target) => typeof target.animate === 'function').map(
-    (target) => target.animate([{ opacity: 0 }, { opacity: 1 }], {
+    (target) => target.animate(frames, {
       duration,
       easing: style.getPropertyValue('--app-motion-ease').trim() || 'ease-out',
     }),

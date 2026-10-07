@@ -1428,7 +1428,7 @@ onBeforeUnmount(() => {
   width: auto;
   height: var(--app-control-height-xs);
   padding: 0;
-  gap: var(--app-space-3);
+  --app-segment-gap: var(--app-space-3);
 }
 
 .stock-chart-period-switch :deep(.seg-btn) {
@@ -1515,7 +1515,7 @@ onBeforeUnmount(() => {
   }
 
   .stock-chart-period-switch {
-    gap: var(--app-space-control-gap);
+    --app-segment-gap: var(--app-space-control-gap);
   }
 
 }

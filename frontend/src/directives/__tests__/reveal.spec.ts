@@ -60,6 +60,7 @@ describe('共享显现动效', () => {
     const wrapper = render({ value: '/one', page: true })
     expect(animate).toHaveBeenCalledTimes(2)
     expect(animate.mock.calls[0][1]).toMatchObject({ duration: 180 })
+    expect(animate.mock.calls[0][0][0]).toMatchObject({ translate: '0 4px' })
     await wrapper.setProps({ value: '/two' })
     expect(cancel).toHaveBeenCalledTimes(2)
     expect(animate).toHaveBeenCalledTimes(4)
@@ -78,6 +79,16 @@ describe('共享显现动效', () => {
     expect(animate).toHaveBeenCalledTimes(1)
     preferenceChange?.()
     expect(cancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('内容显现保持原位，不对表格和画布增加位移', () => {
+    const Content = defineComponent({
+      directives: { reveal: vReveal },
+      template: '<div v-reveal="true" style="--app-motion-content:180ms">内容</div>',
+    })
+    const wrapper = mount(Content)
+    wrappers.push(wrapper)
+    expect(animate.mock.calls[0][0]).toEqual([{ opacity: 0.35 }, { opacity: 1 }])
   })
 
   it('正常结束后释放动画和偏好监听，不残留透明度效果', async () => {
