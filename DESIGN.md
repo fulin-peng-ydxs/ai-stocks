@@ -200,6 +200,8 @@ Key Characteristics：
 
 ### 3.3 Tag, Badge & Chip Rules
 
+依附主体的非阻断辅助状态（如历史结果沿用、待处理提醒）优先使用 `AppStatusDot` 的黄色状态点，避免另加文字标签挤占主体；说明通过 `AppHoverInfo` 悬浮或键盘聚焦显示，并保留可访问名称。已有整体说明时复用该浮层，不叠加第二个提示。独立主要业务状态仍按下表使用标签。
+
 标签体系采用“Element Plus 基础几何 + 语义规则 + 领域复用单元”。规范定义目标一致性；实现与本节冲突时应修正实现，不将已有差异视为新的设计分支。
 
 | 密度层级 | 几何 | 使用边界 |
@@ -265,6 +267,7 @@ Key Characteristics：
 | 真实组件 | 路径 | 用途 | 系统组件关系 | 使用规则 |
 |---|---|---|---|---|
 | `PageSettingsDrawer` | `frontend/src/components/PageSettingsDrawer.vue` | 统一页面设置抽屉运行时组件 | 对应 `settings-drawer` 种类；仅 `size` 用户偏好走 PG `user_preference`，`bodyScroll` 只允许 page 层；分组固定可折叠，首次全部展开，当前折叠态作为内部用户偏好记忆 | `supportsPageSettings !== false` 的 registry 页面统一使用；抽屉根部控制一级分组，每个存在下级的可折叠分组自动控制自己的直接子分组；父级收起只隐藏子树、不重置更深层状态；禁止页面另写第二套设置抽屉 |
+| `AppStatusDot` | `frontend/src/components/AppStatusDot.vue` | 依附主体的黄色辅助状态点 | 无直接系统组件种类 | 头像待打卡、走势历史提示、天梯热点共用；统一 warning 色、圆点几何和可访问名称，简短说明复用 AppHoverInfo，位置由宿主布局承接，不用常驻文字扩宽主体 |
 | `PageSettingsTrigger` | `frontend/src/components/PageSettingsTrigger.vue` | 页面设置统一入口 | 触发 registry 页面中的 `settings-drawer` | 仅 `pageRegistry.supportsPageSettings !== false` 的真实消费页面显示；平台布局管理页不开放个人设置，不登记假入口 |
 | `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 全站抽屉唯一外壳与边界组件 | 无直接系统组件种类；内部唯一消费 `el-drawer` 和 `PageDrawerSurface` | 为 `AppDetailDrawer`、`PageSettingsDrawer`、应用级与专用抽屉统一提供挂载边界、遮罩、语义宽度、标题、关闭入口、正文滚动/填充布局和 footer；页面级默认挂到 `LayoutHost`，应用顶栏能力显式传 `boundary="app"`；直接消费只限实时日志、资产搜索、主从窄屏回退和应用级能力；标题默认标准档，局部工具才声明 `compact`；宽度只传 `xs/sm/md/lg/xl/xxl/wide/full`，禁止消费方直接使用 `el-drawer`、私传 px/% 或覆盖其 header/body/footer |
 | `PageDrawerSurface` | `frontend/src/components/PageDrawerSurface.vue` | 全站抽屉统一内容面板 | 无直接系统组件种类；仅由 `PageDrawer` 内部消费 | 统一可见外边界、背景、圆角、阴影、标题/副标题、头部动作、关闭入口、正文滚动或填充布局和可选 footer；差异只通过 `PageDrawer` 的语义属性与内容插槽表达，消费方不得直接拼装或复制面板背景、边框、圆角、阴影、header/body/footer 间距、遮光层和关闭按钮样式 |
@@ -291,7 +294,7 @@ Key Characteristics：
 | `AppTabToolbar` | `frontend/src/components/AppTabToolbar.vue` | Tab 内容区的统一操作栏，左侧承载筛选或命令，右侧承载当前面板的简短说明，并在空间不足时自然换行 | `tabs` 下属 `filter-bar` / `toolbar` 的真实组合外壳，内部复用 `AppControlRow` | Tab 标签已表达面板名称时，内容区不得重复标题；操作和筛选统一放 `#actions`，说明统一放 `#description`；没有操作时允许仅右对齐展示说明，不得为填空新增无业务意义的按钮 |
 | `AppIconButton` | `frontend/src/components/AppIconButton.vue` | 全站纯图标操作按钮，统一可访问名称、尺寸、圆角、悬浮、聚焦、禁用、loading 和语义色 | 无直接系统组件种类 | 顶栏工具、抽屉关闭、刷新、页面设置等仅图标操作统一复用；必须传 `label`，异步纯图标操作使用 `AppIconButton` 的 `loading`，外层 `el-tooltip` 承载长说明时关闭原生 `title`；图形使用 Element Plus 图标或项目既有 SVG，禁止页面手写 Unicode 符号按钮 |
 | `HelpTip` / `HelpTipItem` | `frontend/src/components/HelpTip.vue`、`frontend/src/components/HelpTipItem.vue` | 全站结构化“？”说明入口与说明项，统一键盘可达、两层结构、点号列表和警告语义色 | 无直接系统组件种类 | `HelpTip` 默认插槽只放 `HelpTipItem`；每项必须且只能传 `question="具体问题文本"` 或 `warning`：前者显示具体问题文本并自动追加冒号，后者固定显示黄色“注意：”；第二行无论内容长短都使用 `ul/li`，组件统一渲染为 `.` 开头的无序列表；禁止页面私写 `<br>`、冒号、列表符号、段落外边距或警告色 |
-| `RelatedBoardCell` / `RelatedBoardEmptyValue` | `frontend/src/components/RelatedBoardCell.vue`、`frontend/src/components/RelatedBoardEmptyValue.vue` | 个股行业走势/概念走势冠军及可解释空值的业务域复用单元，统一名称、结构化相关性说明、低可信提示、首次计算、空结果原因、历史日期保护和权限感知导航 | 无直接系统组件种类；作为既有 `data-table` / `wide-table` 业务列内容及天梯卡片紧凑值 | 个股查询普通表与分组表、每日榜单、策略筛选统一消费 `RelatedBoardCell`，连板天梯与单元格共同消费 `RelatedBoardEmptyValue`；调用方只传完整摘要和 `industry|concept` 类型，不拆散日期或异常判断；只展示单个冠军，名称统一使用小号朴素标签，指标最多四位小数；首次任务等待或执行时显示“计算中”；无冠军、摘要不可用和历史不匹配均 fail-closed 显示“—”，仅后端确实返回结构化空结果原因时允许“—”悬浮和键盘聚焦解释，禁止常驻原因标签和前端猜测；只有 `sectors:view` 才渲染 `/sectors/:code` 链接，且链接点击必须阻止表格行详情冒泡；四个表格 slot 通过统一列 key 消费现有列显隐，不复制私有 popover 或任务轮询，不依赖任务中心管理权限 |
+| `RelatedBoardCell` / `RelatedBoardEmptyValue` / `RelatedBoardHistoryHint` | `frontend/src/components/RelatedBoardCell.vue`、`frontend/src/components/RelatedBoardEmptyValue.vue`、`frontend/src/components/RelatedBoardHistoryHint.vue` | 个股行业走势/概念走势冠军及可解释空值的业务域复用单元，统一名称、结构化相关性说明、低可信提示、首次计算、空结果原因、历史日期保护和权限感知导航 | 无直接系统组件种类；作为既有 `data-table` / `wide-table` 业务列内容及天梯卡片紧凑值 | 个股查询普通表与分组表、每日榜单、策略筛选统一消费 `RelatedBoardCell`，连板天梯与单元格共同消费 `RelatedBoardEmptyValue`、`RelatedBoardHistoryHint`；调用方只传完整摘要和 `industry|concept` 类型，不拆散日期或异常判断；只展示单个冠军，名称统一使用小号朴素标签，指标最多四位小数；首次任务等待或执行时显示“计算中”；仅当日样本不足时允许后端按行业/概念分别附加当前版本的最近历史结果，名称旁使用 warning 色状态点，悬浮/键盘聚焦说明来源日；指标与基准展示原结果，禁止前端猜测或将历史结果冒充当日；无可沿用冠军、摘要不可用和历史不匹配均 fail-closed 显示“—”，仅后端确实返回结构化空结果原因时允许“—”悬浮和键盘聚焦解释，禁止常驻原因标签和前端猜测；只有 `sectors:view` 才渲染 `/sectors/:code` 链接，且链接点击必须阻止表格行详情冒泡；四个表格 slot 通过统一列 key 消费现有列显隐，不复制私有 popover 或任务轮询，不依赖任务中心管理权限 |
 | `BuiltinOptionRow` | `frontend/src/components/BuiltinOptionRow.vue` | 可创建下拉项的统一行结构，区分内置项和可操作自定义项，并统一标签截断、来源提示与尾部动作对齐 | 无直接系统组件种类 | 交易纪律的内置/自定义原因和买卖类型选择统一复用；内置项只显示中性“内置”提示，自定义项的删除等动作通过默认插槽注入，不在消费页复制选项行布局 |
 | `AppSummaryDisclosureCard` | `frontend/src/components/AppSummaryDisclosureCard.vue` | 高密编辑器的通用折叠摘要卡外壳，统一序号、标题、元信息、单行摘要、工具区、展开边界与键盘可访问 disclosure | 无直接系统组件种类 | 规则、操作事实等“列表摘要 + 展开编辑”场景统一复用；业务状态和命令通过插槽注入，组件不持有启停、删除或校验等领域逻辑；展开编辑区保持基础表面并用边框与主色边线表达层级，不使用常驻填充色形成嵌套色块；整块摘要使用带完整 `aria-expanded`、`aria-controls` 和可访问名称的专用原生 disclosure button，不得在消费页复制卡片结构 |
 | `TradeDirectionGroupGrid` | `frontend/src/components/trade-discipline/TradeDirectionGroupGrid.vue` | 交易纪律中按买入、卖出方向并列组织卡片清单，统一分组标题、说明、动作区和桌面降级布局 | 无直接系统组件种类；仅承载交易纪律方向分组 | 买卖规则与操作事实统一消费；分组即方向事实源，组内卡片不得再展示重复方向选择器；规则或成交的领域状态留在调用方，通过分组动作和内容插槽注入；桌面宽屏保持买入在左、卖出在右，紧凑桌面视口降为单列，不在消费组件复制方向分组结构与样式 |

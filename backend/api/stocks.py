@@ -291,7 +291,8 @@ def stock_related_boards(code: str, business_date: date | None = None) -> ApiRes
     """返回股票累计归属及当前冠军摘要；未传业务日期时按"默认最新交易日"启用历史保护。
 
     与列表页口径一致：业务日期 = daily_bar 最新交易日；当冠军 as_of_date 与之不一致时返回
-    as_of_mismatch（冠军为空），禁止用最新结果装饰历史行。无最新交易日（空表）时不保护，
+    as_of_mismatch（冠军为空）；仅同日已计算且样本不足时允许沿用此前最近有效冠军并标来源。
+    禁止用未来结果装饰历史行。无最新交易日（空表）时不保护，
     退化为直接返回最近结果。
     """
     try:

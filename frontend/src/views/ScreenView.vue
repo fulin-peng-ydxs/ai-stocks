@@ -65,6 +65,7 @@ import {
   type StockAdjustMode,
 } from '@/composables/useStockAnalysisSession'
 import { downloadCsv } from '@/utils/csv'
+import { relatedBoardExportValues } from '@/utils/relatedBoardExport'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
@@ -720,19 +721,20 @@ function versionRowActions(v: ProfileVersion): AppRowAction[] {
 function exportCsv() {
   if (!result.value?.hits.length) return
   const relatedColumns = [
-    { key: 'relatedIndustry', label: '行业走势', nameOf: (hit: ScreenHit) => hit.related_boards?.industry?.name ?? '' },
-    { key: 'relatedConcept', label: '概念走势', nameOf: (hit: ScreenHit) => hit.related_boards?.concept?.name ?? '' },
+    { key: 'relatedIndustry', label: '行业走势', type: 'industry' as const },
+    { key: 'relatedConcept', label: '概念走势', type: 'concept' as const },
   ].filter((column) => colVisible(column.key))
   const showBoard = colVisible('board')
   const subScoreKeys = colVisible('subScores') ? resultSubKeys.value : []
   const headers = [
     '全市场排名', '代码', '名称', ...(showBoard ? ['板块'] : []),
-    ...relatedColumns.map((column) => column.label), '综合分', '评级',
+    ...relatedColumns.flatMap((column) => [column.label, `${column.label}截止日`, `${column.label}状态`]), '综合分', '评级',
     ...subScoreKeys.map((key) => indicatorName(key)), '评分状态',
   ]
   const data = result.value.hits.map((h) => [
     h.rank ?? '', h.code, h.name ?? '', ...(showBoard ? [h.board ?? ''] : []),
-    ...relatedColumns.map((column) => column.nameOf(h)), h.total_score ?? '', h.grade ?? '',
+    ...relatedColumns.flatMap((column) => relatedBoardExportValues(h.related_boards, column.type)),
+    h.total_score ?? '', h.grade ?? '',
     ...subScoreKeys.map((key) => Math.round(h.sub_scores[key] ?? 0)), h.score_status,
   ])
   downloadCsv(`筛选结果_${result.value.date}.csv`, headers, data)

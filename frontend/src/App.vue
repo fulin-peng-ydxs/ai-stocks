@@ -46,6 +46,7 @@ import TopNavigation from '@/components/TopNavigation.vue'
 import WorkspaceTabs from '@/components/WorkspaceTabs.vue'
 import WorkspaceRouteView from '@/components/WorkspaceRouteView.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import AppStatusDot from '@/components/AppStatusDot.vue'
 import AppOverflowTooltipHost from '@/components/AppOverflowTooltipHost.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
@@ -574,7 +575,7 @@ async function onLogout() {
 
         <AppIconButton class="user-entry" label="用户中心" @click="userDrawerVisible = true">
           <span class="user-avatar">{{ avatarText }}</span>
-          <span v-if="hasPendingTradeDiscipline" class="user-discipline-dot" aria-label="有待打卡交易纪律" />
+          <AppStatusDot v-if="hasPendingTradeDiscipline" class="user-discipline-dot" label="有待打卡交易纪律" />
         </AppIconButton>
       </div>
     </el-header>
@@ -1038,14 +1039,13 @@ button.topbar-status:focus-visible {
   box-shadow: 0 3px 9px color-mix(in srgb, var(--shell-accent) 18%, transparent);
 }
 .user-discipline-dot {
+  --status-dot-size: 8px;
   position: absolute;
   top: 3px;
   right: 2px;
-  width: 8px;
-  height: 8px;
+  padding: 0;
   border: 2px solid var(--chrome-bg);
   border-radius: 50%;
-  background: var(--el-color-warning);
   box-sizing: content-box;
 }
 :global(.topbar-popover) {

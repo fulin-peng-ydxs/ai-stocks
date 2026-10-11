@@ -2,7 +2,7 @@
 
 ## 模块定位
 
-本模块在股票截至目标交易日已经收录的行业、概念候选中，分别选出近期走势最相关的行业冠军和概念冠军。计算通过版本化后台任务完成，股票列表、分组列表、每日榜单和策略筛选直接批量读取对应业务日快照，连板天梯则为整份当日快照间接读取同日冠军；读取发现该日期、该范围从未生成快照时，只幂等创建异步首次计算任务，不在页面请求线程内逐股计算或写正式结果。
+本模块在股票截至目标交易日已经收录的行业、概念候选中，分别选出近期走势最相关的行业冠军和概念冠军。计算通过版本化后台任务完成，股票列表、分组列表、每日榜单和策略筛选直接批量读取对应业务日快照，连板天梯则为整份当日快照读取同日冠军或样本不足时的最近历史冠军；读取发现该日期、该范围从未生成快照时，只幂等创建异步首次计算任务，不在页面请求线程内逐股计算或写正式结果。
 
 > “走势相关”表示在扣除共同市场基准后，股票与板块收益的同步程度；不表示公司主营归属、当前有效成分关系、因果关系或投资建议。
 
@@ -32,7 +32,7 @@
 | 异步任务 | `stock_board_correlation` 五阶段任务、DuckDB 写互斥、取消检查、结果统计 | `backend/services/async_task.py` |
 | 结果维护与调度 | 缺失快照由读取入口创建一次首次计算；已有结果的再次维护支持最新完整日或固定交易日、全市场或指定股票，手动与调度均强制重算，代码不创建默认调度 | `backend/services/stock_board_correlation.py`、`backend/services/result_maintenance.py`、`backend/scheduler/scheduler.py` |
 | 数据结构 | 冠军与状态按交易日快照（每日一行），保存各交易日结果，不保存候选明细 | `backend/storage/ddl.py` |
-| 后端读取 | 单股累计归属及冠军接口；股票、分组、榜单和筛选结果形成后批量附加摘要；天梯按整份日期快照合并同日冠军 | `backend/api/stocks.py`、`backend/groups/stock_group.py`、`backend/api/board.py`、`backend/services/screen_score.py`、`backend/services/limit_ladder_query.py` |
+| 后端读取 | 单股累计归属及冠军接口；股票、分组、榜单和筛选结果形成后批量附加摘要；天梯按整份日期快照合并有效冠军，当日样本不足时附带历史来源 | `backend/api/stocks.py`、`backend/groups/stock_group.py`、`backend/api/board.py`、`backend/services/screen_score.py`、`backend/services/limit_ladder_query.py` |
 | 前端展示 | 四个表格 slot 复用同一单元格并在后台轮询时只合并走势摘要；表格与天梯复用同一轮询生命周期，分别保留轻量固定间隔和天梯分阶段退避策略 | `frontend/src/components/RelatedBoardCell.vue`、`frontend/src/composables/useAsyncResultPolling.ts`、`frontend/src/composables/useRelatedBoardFirstLoad.ts`、`frontend/src/layout/pageRegistry.ts` |
 
 ## 系统架构
@@ -154,13 +154,21 @@ board_neutral_t = board_return_t - benchmark_return_t
 | 股票普通表/分组表 | `/stocks` | 沿用股票/分组查看权限；最终页数据形成后批量附加摘要 |
 | 每日榜单 | `/board`、`POST /api/board/run` | 沿用 `board:view`；摘要不参与评分或排序 |
 | 策略筛选 | `/screen`、`POST /api/screen/run` | 沿用 `screen:run`；摘要不参与命中和评分 |
-| 连板天梯 | `/limit-ladder`、`GET /api/limit-ladder/{trade_date}` | 沿用 `limit-ladder:view`；按所选历史日整份天梯快照读取同日冠军，不按当前可见卡片分页 |
+| 连板天梯 | `/limit-ladder`、`GET /api/limit-ladder/{trade_date}` | 沿用 `limit-ladder:view`；按所选历史日整份天梯快照读取当日冠军或样本不足时的历史回退，不按当前可见卡片分页 |
 | 板块详情跳转 | `/sectors/{board_code}` | 只有 `sectors:view` 才生成链接；无权限仍可看板块名称 |
 | 任务与调度 | 数据管理任务中心、定时调度 | 使用既有 system-only `data-task:manage`、`data-schedule:manage` |
 
 四个业务表格统一使用“行业走势”“概念走势”列名，冠军名称以小号朴素标签展示。悬浮层保留综合相关度、20/60 日相关度、20/60 日有效样本数和数据截止日；有效样本的技术定义由本文统一维护，页面不重复展示定义句。
 
-按业务日期只匹配该日、当前算法版本的冠军快照返回，旧版本和其他日期均不得装饰当前业务行。缺少状态快照时，GET 使用算法版本、日期、规范化股票范围和上游数据水位生成触发事件，幂等创建 `stock_board_correlation` 异步首次计算任务；请求线程不计算、不写正式结果，只有任务已经创建且处于 `pending/running` 时页面才显示“计算中”并通过原业务读取接口自动刷新。同一数据水位的失败任务不会被查询反复重建；上游最新日推进或同日补数改变水位后，允许一次新尝试。全局写槽被其他任务占用时，走势任务尚未创建，页面直接降级为空；写槽释放后由再次读取、结果维护或已配置调度决定是否创建。采集任务本身不直接触发失效或重算。
+按业务日期先匹配该日、当前算法版本状态与冠军；仅该类型当日已计算且原因为 `insufficient_samples` 时，允许读取当前版本、早于业务日的最近有效冠军。旧版本、未来日期、缺档或无候选/相关性无效不得回退。缺少状态快照时，GET 使用算法版本、日期、规范化股票范围和上游数据水位生成触发事件，幂等创建 `stock_board_correlation` 异步首次计算任务；请求线程不计算、不写正式结果，只有任务已经创建且处于 `pending/running` 时页面才显示“计算中”并通过原业务读取接口自动刷新。同一数据水位的失败任务不会被查询反复重建；上游最新日推进或同日补数改变水位后，允许一次新尝试。全局写槽被其他任务占用时，走势任务尚未创建，页面直接降级为空；写槽释放后由再次读取、结果维护或已配置调度决定是否创建。采集任务本身不直接触发失效或重算。
+
+### 样本不足时沿用历史结果
+
+- 行业、概念分别查询最近一条有效冠军；必须早于请求业务日、属于当前算法版本、存在一致状态快照及有效板块字典引用。没有历史结果时仍为空，不在查询中补算过去日期。
+- `summary.as_of_date/benchmark` 与空结果原因保留当日事实；沿用的冠军增加 `history: {as_of_date, benchmark}`，相关度、样本数和基准均来自原结果。此回退只作用于读模型，不写回当日快照，不改变 15/40 门槛、评分、筛选表达式或回测决策。
+- 正常读取仍为一次 SQL；出现样本不足时增加一次按股票和类型批量查询，不逐股访问历史。
+- 表格与天梯卡片共用 `RelatedBoardHistoryHint` 消费 `AppStatusDot` 显示黄色状态点及来源日期说明；表格结构化浮层显示原日期、原基准。当天再次计算有合格冠军后，下次读取自动恢复当日结果。
+- 天梯热点与筛选消费同一有效冠军，热点通过 `historical_stock_count` 标出沿用历史的数量；天梯和策略筛选 CSV 都保留来源日期及“历史/当日/无结果”状态。历史日期查询始终只能向前取结果。
 
 ## 空结果怎么判断
 
@@ -172,7 +180,7 @@ board_neutral_t = board_return_t - benchmark_return_t
 - 页面业务日期没有同日当前版本结果快照，且首次任务未能创建或同数据水位任务已经失败，此时返回 `as_of_mismatch`，页面仍统一显示“—”。
 - 已成功创建该业务日首次任务且任务仍为 `pending/running` 时返回 `first_load_pending`，页面显示“计算中”。
 
-每日状态表按行业、概念分别保存 `no_candidates`、`insufficient_samples` 或 `invalid_correlation`，样本不足时同时保存 20/60 日候选最高共同样本数。API 将其组装为结构化原因和统一说明；页面仍显示“—”，仅在原因真实存在时通过悬浮或键盘聚焦解释。历史未重算行允许原因为空，页面不得根据 `has_*_champion=false` 自行推测。
+每日状态表按行业、概念分别保存 `no_candidates`、`insufficient_samples` 或 `invalid_correlation`，样本不足时同时保存 20/60 日候选最高共同样本数。API 保留当日结构化原因；样本不足且有可用历史时显示历史冠军，否则页面显示“—”，仅在原因真实存在时通过悬浮或键盘聚焦解释。历史未重算行允许原因为空，页面不得根据 `has_*_champion=false` 自行推测。
 
 结构体检按算法的共同有效样本口径判定：个股或冠军板块未覆盖结果目标日时显示 `WARN` 标记，右侧保留未覆盖数量，口径说明通过标记悬浮层展示；该日期差异不据此否定已经满足 15/40 门槛的结果，样本低于门槛仍判失败。基准指数必须有目标日有效收盘，其目标日缺失继续判失败。
 

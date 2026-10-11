@@ -8,7 +8,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from hashlib import sha256
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 import pandas as pd
 
@@ -60,12 +60,20 @@ class RelatedBoardWinner(TypedDict):
     sample_20: int
     sample_60: int
     confidence: Literal["high", "medium", "low"]
+    history: NotRequired[RelatedBoardHistory]
 
 
 class RelatedBoardBenchmark(TypedDict):
     code: str | None
     name: str | None
     fallback: bool
+
+
+class RelatedBoardHistory(TypedDict):
+    """读取时沿用的真实历史来源，不写回当日计算快照。"""
+
+    as_of_date: str
+    benchmark: RelatedBoardBenchmark
 
 
 class RelatedBoardEmptyReason(TypedDict):
@@ -929,7 +937,8 @@ class StockBoardCorrelationService:
     ) -> dict[str, StockRelatedBoards | None]:
         """一次查询返回多股各业务日期的冠军快照摘要。
 
-        业务日期匹配该日快照则返回该日冠军；该日无快照时只创建异步首次计算任务，
+        业务日期匹配该日快照则返回该日冠军；仅样本不足时附加最近历史冠军及来源。
+        该日无快照时只创建异步首次计算任务，
         不在查询请求内同步计算或写正式结果。逐代码业务日期缺失（Mapping 中为 None）
         时按 fail-closed 处理。
         """
@@ -953,12 +962,66 @@ class StockBoardCorrelationService:
             missing = self._collect_first_load_codes(normalized, normalized_dates, rows)
             if missing:
                 first_load_codes = self._enqueue_first_load_tasks(missing, normalized_dates)
-        return self._assemble_related_boards(
+        summaries = self._assemble_related_boards(
             normalized,
             rows,
             protect_dates,
             first_load_codes=first_load_codes,
         )
+        self._apply_historical_fallback(summaries)
+        return summaries
+
+    def _apply_historical_fallback(
+        self, summaries: dict[str, StockRelatedBoards | None]
+    ) -> None:
+        """仅为样本不足的类型批量取最近历史冠军；不借用未来、旧版本或孤立结果。"""
+        wanted = []
+        for code, summary in summaries.items():
+            if not summary or summary.get("unavailable_reason") or not summary.get("as_of_date"):
+                continue
+            for board_type in ("industry", "concept"):
+                reason = summary.get(f"{board_type}_empty_reason")
+                if (
+                    summary.get(board_type) is None
+                    and reason
+                    and reason["code"] == "insufficient_samples"
+                ):
+                    wanted.append({
+                        "code": code,
+                        "board_type": board_type,
+                        "as_of_date": pd.Timestamp(summary["as_of_date"]).date(),
+                    })
+        if not wanted:
+            return
+        # 按请求范围过滤后选最近日期，查询次数不随股票数增长；正常结果不增加查询。
+        with self.c.temp_view(pd.DataFrame(wanted), "wanted_historical_champions") as view:
+            rows = self.c.query_df(
+                "SELECT c.*, bd.name AS board_name FROM stock_board_correlation c "
+                f"JOIN {view} w ON w.code=c.code AND w.board_type=c.board_type "
+                "AND c.as_of_date<w.as_of_date "
+                "JOIN stock_board_correlation_state s ON s.code=c.code "
+                "AND s.as_of_date=c.as_of_date AND s.algorithm_version=c.algorithm_version "
+                "JOIN board_dict bd ON bd.board_code=c.board_code AND bd.board_type=c.board_type "
+                "WHERE c.algorithm_version=? "
+                "AND ((c.board_type='industry' AND s.has_industry_champion) "
+                "OR (c.board_type='concept' AND s.has_concept_champion)) "
+                "QUALIFY row_number() OVER (PARTITION BY c.code,c.board_type "
+                "ORDER BY c.as_of_date DESC)=1",
+                [ALGORITHM_VERSION],
+            )
+        for row in rows.to_dict("records"):
+            summary = summaries[str(row["code"])]
+            benchmark_code = str(row["benchmark_code"])
+            winner = self._related_board_winner(row)
+            winner["history"] = {
+                "as_of_date": str(pd.Timestamp(row["as_of_date"]).date()),
+                "benchmark": {
+                    "code": benchmark_code,
+                    "name": MarketBenchmarkService.name(benchmark_code),
+                    "fallback": bool(row["benchmark_fallback"]),
+                },
+            }
+            summary[str(row["board_type"])] = winner
 
     @staticmethod
     def _collect_missing_snapshot_codes(
@@ -1140,16 +1203,7 @@ class StockBoardCorrelationService:
                 or pd.isna(board_name)
             ):
                 continue
-            summary[board_type] = {
-                "board_code": str(row["board_code"]),
-                "name": str(board_name),
-                "score": float(row["score"]),
-                "corr_20": float(row["corr_20"]),
-                "corr_60": float(row["corr_60"]),
-                "sample_20": int(row["sample_20"]),
-                "sample_60": int(row["sample_60"]),
-                "confidence": str(row["confidence"]),
-            }
+            summary[board_type] = self._related_board_winner(row)
         if protect_dates:
             for code in normalized:
                 if result.get(code) is None:
@@ -1164,6 +1218,20 @@ class StockBoardCorrelationService:
                         ),
                     }
         return result
+
+    @staticmethod
+    def _related_board_winner(row: Mapping[str, Any]) -> RelatedBoardWinner:
+        """当日与历史冠军共用数值组装，来源元数据由读取路径补充。"""
+        return {
+            "board_code": str(row["board_code"]),
+            "name": str(row["board_name"]),
+            "score": float(row["score"]),
+            "corr_20": float(row["corr_20"]),
+            "corr_60": float(row["corr_60"]),
+            "sample_20": int(row["sample_20"]),
+            "sample_60": int(row["sample_60"]),
+            "confidence": str(row["confidence"]),
+        }
 
     @staticmethod
     def _related_board_empty_reason(

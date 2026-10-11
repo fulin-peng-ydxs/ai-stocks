@@ -1,6 +1,6 @@
 # 响应式组件触发清单
 
-范围：`frontend/src/**/*.vue` 全部 161 个文件（含页面私有片段、布局宿主及应用外壳），每个文件一行。页面消费与实测结论见 [页面检查](responsive-pages.md)。规则以 [DESIGN.md](../../DESIGN.md) §8 为准。
+范围：`frontend/src/**/*.vue` 全部 163 个文件（含页面私有片段、布局宿主及应用外壳），每个文件一行。页面消费与实测结论见 [页面检查](responsive-pages.md)。规则以 [DESIGN.md](../../DESIGN.md) §8 为准。
 
 尺寸均为缩放后 CSS 像素。`app-viewport` 是应用画布，匿名/命名容器查询看自身容器，ResizeObserver 看被观察元素；不得把浏览器原始视口直接当作触发尺寸。无自身断点不代表无需响应式：该行列出自然布局或委托对象。
 
@@ -29,6 +29,7 @@
 | `frontend/src/components/AppSearchInput.vue` | 无自身 CSS 查询 | 语义控件宽度compact/short/medium/long/wide=96/140/180/220/300，由global.css统一max100%、min0；父行自然换行。 | BoardView、ConfigView、SectorDetailView、SectorsView、StocksView、OverviewView、QualityView、LimitLadderFilters、AuditLogView、DataDictionaryView、TenantManageView、UserManageView、RuleMasterList、TradeDisciplineHistory |
 | `frontend/src/components/AppSortControl.vue` | 无自身 CSS 查询 | 语义short宽140，排序方向动作不收缩；父级控件行换行，选择不重置。 | LimitLadderFilters |
 | `frontend/src/components/AppSplitWorkspace.vue` | `@media (prefers-reduced-motion: reduce)` | 自身宽≤720或compact转单区+分析抽屉；双侧最小宽360/240，比例默认45%、范围30–70%；高度不足外层滚动。 | MarketMasterDetailWorkspace、SectorDetailView、StockDetailView |
+| `frontend/src/components/AppStatusDot.vue` | 无自身 CSS 查询 | 辅助圆点不收缩；可访问名称和悬浮/键盘说明承接含义，不挤占主体名称；角标位置由宿主承接。 | App、RelatedBoardHistoryHint、LadderHotspots |
 | `frontend/src/components/AppStateBlock.vue` | 无自身 CSS 查询 | 默认/compact/tiny最低高度180/120/72；动作换行；密度由调用方选择，无自动隐藏恢复入口。 | AppAsyncRegion、AppDataTable、AppDetailDrawer、SectorCompareChart、StockAnalysisPanel、StockCompareChart、AssetProfileSelect、AssetSearchDrawer、StockChartWorkspace、StockIntradayDialog、TradeDisciplineQuickCard、LayoutComponentPreview、BacktestView、BoardView、ConfigView、LimitLadderView、ScreenView、SectorDetailView、SectorsView、StockDetailView、StocksView、TradeDisciplineView、TrainingView、IngestView、OverviewView、QualityView、ScheduleView、LayoutComponentsView、LayoutPagesView、LayoutPresetsView、LimitLadder、AuditLogView、DataDictionaryView、MenuResourceView、RoleManageView、TenantManageView、UserManageView、RuleMasterList、TradeCheckinForm、TradeDisciplineHistory、TradeOperationEditor、TradeRuleEditor |
 | `frontend/src/components/AppStatusNotice.vue` | `@container app-viewport (max-width: 720px)`<br>`@media (prefers-reduced-motion: reduce)` | 窄宽正文/操作换行，恢复操作保留；减少动画偏好停用动画。 | PageSettingsDrawer、AssetProfileSelect、StockIntradayDialog、BacktestView、ConfigView、LimitLadderView、ScreenView、StocksView、OverviewView、LimitLadder、UserManageView、TradeRuleEditor |
 | `frontend/src/components/AppSummaryDisclosureCard.vue` | `@media (prefers-reduced-motion: reduce)`<br>`@container app-viewport (max-width: 760px)` | 窄宽摘要与工具上下排列；用户展开独立于尺寸，保留摘要和显式开关。 | RuleSummaryCard、TradeOperationEditor |
@@ -69,8 +70,9 @@
 | `frontend/src/components/PageSettingsDrawer.vue` | 无自身 CSS 查询 | 委托 SettingsGroup、ComponentAutoSettings、PageDrawer、LayoutSettingsSection、AppStatusNotice。 | BacktestView、BoardView、ConfigView、LimitLadderView、ScreenView、SectorDetailView、SectorsView、StockDetailView、StocksView、TradeDisciplineView、TrainingView、IngestView、OverviewView、QualityView、ScheduleView、AuditLogView、DataDictionaryView、MenuResourceView、RoleManageView、TenantManageView、UserManageView |
 | `frontend/src/components/PageSettingsTrigger.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | BacktestView、BoardView、ConfigView、LimitLadderView、ScreenView、SectorDetailView、SectorsView、StockDetailView、StocksView、TradeDisciplineView、TrainingView、IngestView、OverviewView、QualityView、ScheduleView、AuditLogView、DataDictionaryView、MenuResourceView、RoleManageView、TenantManageView、UserManageView |
 | `frontend/src/components/PageToggleRow.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | ComponentAutoSettings、SectorAnalysisDefaultFields、StockAnalysisDefaultFields、LayoutSettingsSection、BacktestView、LimitLadderView、ScreenView、QualityView |
-| `frontend/src/components/RelatedBoardCell.vue` | 无自身 CSS 查询 | 关联名称省略，关键评分/涨跌保留；详情入口不隐藏。 | RankedStockResultTable、StocksView |
+| `frontend/src/components/RelatedBoardCell.vue` | 无自身 CSS 查询 | 关联名称可省略，历史标记不收缩；来源日期与原基准由浮层承接，详情入口不隐藏。 | RankedStockResultTable、StocksView |
 | `frontend/src/components/RelatedBoardEmptyValue.vue` | 无自身 CSS 查询 | 长文省略，完整内容由提示/详情承接；宽度不超过父容器。 | RelatedBoardCell、LimitLadderCard |
+| `frontend/src/components/RelatedBoardHistoryHint.vue` | 无自身 CSS 查询 | 黄色状态点不收缩，含义通过可访问名称和说明承接；来源日期通过悬浮与键盘聚焦提示，表格已有整体说明时不重复弹出。 | RelatedBoardCell、LimitLadderCard |
 | `frontend/src/components/ScoreGradeTag.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | RankedStockResultTable、BacktestView |
 | `frontend/src/components/SectorAnalysisDefaultFields.vue` | 无自身 CSS 查询 | 委托 MarketBenchmarkSelect、PageSettingItem、PageSegmented、PageToggleRow。 | ComponentAutoSettings |
 | `frontend/src/components/SectorCompareChart.vue` | 无自身 CSS 查询 | 委托 AppStateBlock。 | SectorsView |
@@ -150,7 +152,7 @@
 | `frontend/src/views/layout/LayoutPresetsView.vue` | `@container app-viewport (max-width: 980px)` | 窄宽导入/导出区单列；正文滚动，应用/保存动作保留。 | 路由 |
 | `frontend/src/views/limit-ladder/LadderHotspots.vue` | `@container app-viewport (max-width:720px)` | 常规每类12项；低高≤700、宽>768且分析开启时4项；选中项纳入常显，具名展开其余项，用户展开保留。 | LimitLadder |
 | `frontend/src/views/limit-ladder/LimitLadder.vue` | `@container limit-ladder (max-width: 700px)`<br>`@container app-viewport (max-width: 720px)`<br>`@container app-viewport (max-height: 620px)` | 自身limit-ladder容器≤700摘要重排；app宽≤720或高≤620热点整区默认收起，显式展开恢复，展开区限高内部滚动。 | LimitLadderView |
-| `frontend/src/views/limit-ladder/LimitLadderCard.vue` | 无自身 CSS 查询 | 自然换行；长文省略，完整内容由提示/详情承接；委托 RelatedBoardEmptyValue、StockStatusTag。 | LimitLadder |
+| `frontend/src/views/limit-ladder/LimitLadderCard.vue` | 无自身 CSS 查询 | 自然换行；长文省略，完整内容由提示/详情承接；关联名称可收缩，历史标记保留；委托 RelatedBoardEmptyValue、RelatedBoardHistoryHint、StockStatusTag。 | LimitLadder |
 | `frontend/src/views/limit-ladder/LimitLadderFilters.vue` | 无自身 CSS 查询 | 委托 AppAdvancedSearch、AppFilterSelect、AppFilterSwitch、AppSearchInput、AppSortControl、PageSegmented、TradeDatePicker。 | LimitLadderView |
 | `frontend/src/views/system/AuditLogView.vue` | `@container app-viewport (max-width: 980px)` | 窄宽摘要2列、头部上下排列、操作左对齐；审计表格内部滚动。 | 路由 |
 | `frontend/src/views/system/DataDictionaryView.vue` | `@container app-viewport (max-width: 980px)` | 窄宽头部上下排列、操作左对齐；树与详情由主体内部滚动承接。 | 路由 |

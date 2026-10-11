@@ -5,6 +5,7 @@ import type { LimitLadderStock, LimitLadderWindow } from '@/api/limitLadder'
 import { formatMarketPercent, marketValueClass } from '@/utils/marketValue'
 import { sectorDetailLocation } from '@/utils/sectorNavigation'
 import RelatedBoardEmptyValue from '@/components/RelatedBoardEmptyValue.vue'
+import RelatedBoardHistoryHint from '@/components/RelatedBoardHistoryHint.vue'
 import StockStatusTag from '@/components/StockStatusTag.vue'
 
 const props = defineProps<{
@@ -85,7 +86,10 @@ function selectCard(): void {
       <span>{{ stock.board }}</span>
       <span aria-hidden="true">·</span>
       <span class="limit-ladder-card__industry" :title="relatedIndustryName || undefined" data-testid="limit-ladder-related-industry">
-        <template v-if="relatedIndustryName">{{ relatedIndustryName }}</template>
+        <template v-if="relatedIndustryName">
+          <span class="limit-ladder-card__related-name">{{ relatedIndustryName }}</span>
+          <RelatedBoardHistoryHint :history="stock.latest_related_industry?.history" />
+        </template>
         <RelatedBoardEmptyValue
           v-else
           :reason="stock.latest_related_industry_empty_reason"
@@ -103,6 +107,7 @@ function selectCard(): void {
           @click.stop
         >{{ stock.latest_related_concept.board_name }} ↗</RouterLink>
         <span v-else :title="stock.latest_related_concept.board_name">{{ stock.latest_related_concept.board_name }}</span>
+        <RelatedBoardHistoryHint :history="stock.latest_related_concept.history" />
       </span>
       <RelatedBoardEmptyValue
         v-else
@@ -262,8 +267,18 @@ function selectCard(): void {
 }
 .limit-ladder-card__industry,
 .limit-ladder-card__concept {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-space-control-gap);
   flex: 1 1 auto;
   text-align: left;
+}
+.limit-ladder-card__related-name,
+.limit-ladder-card__concept > a,
+.limit-ladder-card__concept > span:not(.related-board-history-hint) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .limit-ladder-card__foot span,
 .limit-ladder-card__foot a,

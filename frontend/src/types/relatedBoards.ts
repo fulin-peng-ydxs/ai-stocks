@@ -9,12 +9,18 @@ export interface RelatedBoardWinner {
   sample_20: number
   sample_60: number
   confidence: RelatedBoardConfidence
+  history?: RelatedBoardHistory
 }
 
 export interface RelatedBoardBenchmark {
   code: string | null
   name: string | null
   fallback: boolean
+}
+
+export interface RelatedBoardHistory {
+  as_of_date: string
+  benchmark: RelatedBoardBenchmark
 }
 
 export interface RelatedBoardEmptyReason {

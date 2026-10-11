@@ -736,3 +736,45 @@ def test_recompute_route_keeps_system_only_permission_metadata():
     guard = next(dependency.call for dependency in route.dependant.dependencies)
     assert guard.resource_code == "limit-ladder:recompute"
     assert guard.require_system_perm is True
+
+
+def test_historical_fallback_is_shared_by_cards_hotspot_filter_and_csv(market):
+    trade_date = _seed_ladder(market)
+    previous_day = trade_date - timedelta(days=2)
+    market.execute("INSERT INTO stock_board_correlation_state "
+                   "(code,as_of_date,computed_at,algorithm_version,benchmark_code,"
+                   "has_industry_champion,has_concept_champion) "
+                   "VALUES ('600002.SH',?,current_timestamp,?,'000001.SH',true,true)",
+                   [previous_day, ALGORITHM_VERSION])
+    market.execute("INSERT INTO stock_board_correlation "
+                   "(code,board_type,board_code,score,corr_20,corr_60,sample_20,sample_60,"
+                   "confidence,benchmark_code,as_of_date,computed_at,algorithm_version) VALUES "
+                   "('600002.SH','industry','I900',0.8,0.8,0.8,20,60,'high','000001.SH',"
+                   "?,current_timestamp,?),"
+                   "('600002.SH','concept','C001',0.8,0.8,0.8,20,60,'high','000001.SH',"
+                   "?,current_timestamp,?)",
+                   [previous_day, ALGORITHM_VERSION, previous_day, ALGORITHM_VERSION])
+    market.execute("UPDATE stock_board_correlation_state SET "
+                   "concept_empty_reason='insufficient_samples',concept_max_sample_20=20,"
+                   "concept_max_sample_60=32 WHERE code='600002.SH' AND as_of_date=?", [trade_date])
+    service = LimitLadderQueryService(market, coordinator=_FakeCoordinator())
+    filters = LimitLadderFilters(window=10, ignore_st=False)
+    data = service.query(trade_date, filters)
+    short = next(stock for layer in data["layers"] for stock in layer["stocks"]
+                 if stock["code"] == "600002.SH")
+    assert short["latest_related_concept"]["as_of_date"] == previous_day.isoformat()
+    assert short["latest_related_industry"]["history"]["as_of_date"] == previous_day.isoformat()
+    assert data["hotspots"]["industry"] == [{
+        "group_key": "I900", "group_name": "数字服务", "stock_count": 2,
+        "historical_stock_count": 1,
+    }]
+    selected = service.query(trade_date, LimitLadderFilters(
+        window=10, ignore_st=False, hotspot_type="concept", hotspot_key="C001"))
+    assert [s["code"] for layer in selected["layers"] for s in layer["stocks"]] == ["600002.SH"]
+    _, payload = service.export_csv(trade_date, filters)
+    row = next(row for row in csv.DictReader(io.StringIO(payload.decode("utf-8-sig")))
+               if row["代码"] == "600002.SH")
+    assert row["相关概念截止日"] == previous_day.isoformat()
+    assert row["相关概念状态"] == "历史"
+    assert row["相关行业截止日"] == previous_day.isoformat()
+    assert row["相关行业状态"] == "历史"

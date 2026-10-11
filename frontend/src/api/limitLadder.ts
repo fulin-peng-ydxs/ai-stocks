@@ -1,6 +1,6 @@
 import http, { type AppRequestConfig } from './client'
 import { getAccessToken } from './authToken'
-import type { RelatedBoardEmptyReason } from '@/types/relatedBoards'
+import type { RelatedBoardEmptyReason, RelatedBoardHistory } from '@/types/relatedBoards'
 
 export const LIMIT_LADDER_WINDOWS = [10, 20, 31, 60] as const
 export type LimitLadderWindow = typeof LIMIT_LADDER_WINDOWS[number]
@@ -40,6 +40,7 @@ export interface LimitLadderConcept {
 
 export interface LimitLadderRelatedBoard extends LimitLadderConcept {
   as_of_date: string
+  history?: RelatedBoardHistory
 }
 
 export interface LimitLadderStock {
@@ -78,6 +79,7 @@ export interface LimitLadderHotspot {
   group_key: string
   group_name: string
   stock_count: number
+  historical_stock_count?: number
 }
 
 export interface LimitLadderResult {

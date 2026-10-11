@@ -406,10 +406,16 @@ class LimitLadderQueryService:
                 "相关概念截止日",
                 "快照状态",
                 "快照计算时间",
+                "相关概念状态",
+                "走势相关行业",
+                "相关行业代码",
+                "相关行业截止日",
+                "相关行业状态",
             ]
         )
         for stock in stocks:
             related = stock.get("latest_related_concept") or {}
+            industry = stock.get("latest_related_industry") or {}
             writer.writerow(
                 [
                     self._csv_cell(value)
@@ -435,6 +441,11 @@ class LimitLadderQueryService:
                         related.get("as_of_date", ""),
                         data["snapshot_status"],
                         data["snapshot"]["computed_at"],
+                        "历史" if related.get("history") else "当日" if related else "无结果",
+                        industry.get("board_name", ""),
+                        industry.get("board_code", ""),
+                        industry.get("as_of_date", ""),
+                        "历史" if industry.get("history") else "当日" if industry else "无结果",
                     ]
                 ]
             )
@@ -513,7 +524,7 @@ class LimitLadderQueryService:
         return result
 
     def _related_boards_for_date(self, codes: list[str], trade_date: date):
-        """读取天梯业务日的同日快照；缺档时只排队首次任务，不在请求内同步计算。"""
+        """读取业务日结果及样本不足时的历史回退；缺档仍只排队首次任务。"""
         if not codes:
             return {}, "ready"
         try:
@@ -543,8 +554,10 @@ class LimitLadderQueryService:
                     result.setdefault(code, {})[board_type] = {
                         "board_code": str(winner["board_code"]),
                         "board_name": str(winner["name"]),
-                        "as_of_date": as_of_date,
+                        "as_of_date": winner.get("history", {}).get("as_of_date", as_of_date),
                     }
+                    if winner.get("history"):
+                        result[code][board_type]["history"] = winner["history"]
             if pending:
                 return result, "calculating"
             return result, "partial" if missing else "ready"
@@ -605,8 +618,9 @@ class LimitLadderQueryService:
     @staticmethod
     def _hotspots(stocks: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
         counts: dict[tuple[str, str, str], int] = {}
+        historical_counts: dict[tuple[str, str, str], int] = {}
         for stock in stocks:
-            # 顶部两类热点都使用天梯业务日的同日走势相关冠军；快照归属事实不参与热点聚合。
+            # 热点、筛选与卡片消费同一有效结果；沿用历史的数量单独提示。
             for kind in ("industry", "concept"):
                 related = stock.get(f"latest_related_{kind}") or {
                     "board_code": "__unclassified__",
@@ -614,11 +628,17 @@ class LimitLadderQueryService:
                 }
                 key = (kind, str(related["board_code"]), str(related["board_name"]))
                 counts[key] = counts.get(key, 0) + 1
+                if related.get("history"):
+                    historical_counts[key] = historical_counts.get(key, 0) + 1
         result = {"industry": [], "concept": []}
         for (kind, key, name), count in sorted(
             counts.items(), key=lambda item: (item[0][0], -item[1], item[0][2], item[0][1])
         ):
-            result[kind].append({"group_key": key, "group_name": name, "stock_count": count})
+            item = {"group_key": key, "group_name": name, "stock_count": count}
+            historical_count = historical_counts.get((kind, key, name), 0)
+            if historical_count:
+                item["historical_stock_count"] = historical_count
+            result[kind].append(item)
         return result
 
     def _active_task(self, trade_date: date) -> dict[str, Any] | None:

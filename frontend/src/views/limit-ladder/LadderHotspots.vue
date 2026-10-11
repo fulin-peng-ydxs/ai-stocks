@@ -2,6 +2,8 @@
 import { computed, reactive } from 'vue'
 import { ElButton } from 'element-plus'
 import type { LimitLadderHotspot, LimitLadderHotspotType } from '@/api/limitLadder'
+import AppHoverInfo from '@/components/AppHoverInfo'
+import AppStatusDot from '@/components/AppStatusDot.vue'
 
 const props = defineProps<{
   hotspots: Record<LimitLadderHotspotType, LimitLadderHotspot[]>
@@ -34,19 +36,27 @@ function visibleItems(kind: LimitLadderHotspotType): LimitLadderHotspot[] {
     <div v-for="kind in (['industry', 'concept'] as const)" :key="kind" class="ladder-hotspots__group">
       <strong>{{ kind === 'industry' ? '行业热点' : '概念热点' }}</strong>
       <div class="ladder-hotspots__chips">
-        <ElButton
+        <AppHoverInfo
           v-for="item in visibleItems(kind)"
           :key="`${kind}-${item.group_key}`"
-          class="ladder-hotspots__chip"
-          :class="{ 'is-active': activeType === kind && activeKey === item.group_key }"
-          :aria-pressed="activeType === kind && activeKey === item.group_key"
-          :data-testid="`limit-ladder-hotspot-${kind}-${item.group_key}`"
-          @click="$emit('toggle', kind, item.group_key)"
+          :disabled="!item.historical_stock_count"
+          :content="`其中 ${item.historical_stock_count} 只股票因当日共同有效样本不足，沿用此前最近有效结果`"
+          placement="top"
+          popper-class="app-wrapping-popper"
         >
-          <span>{{ item.group_name }}</span>
-          <span class="ladder-hotspots__separator" aria-hidden="true">·</span>
-          <b>{{ item.stock_count }}只</b>
-        </ElButton>
+          <ElButton
+            class="ladder-hotspots__chip"
+            :class="{ 'is-active': activeType === kind && activeKey === item.group_key }"
+            :aria-pressed="activeType === kind && activeKey === item.group_key"
+            :data-testid="`limit-ladder-hotspot-${kind}-${item.group_key}`"
+            @click="$emit('toggle', kind, item.group_key)"
+          >
+            <span>{{ item.group_name }}</span>
+            <span class="ladder-hotspots__separator" aria-hidden="true">·</span>
+            <b>{{ item.stock_count }}只</b>
+            <AppStatusDot v-if="item.historical_stock_count" :label="`含历史结果 ${item.historical_stock_count} 只`" />
+          </ElButton>
+        </AppHoverInfo>
         <span v-if="!hotspots[kind].length" class="ladder-hotspots__empty">暂无</span>
         <ElButton
           v-else-if="hotspots[kind].length > visibleLimit"

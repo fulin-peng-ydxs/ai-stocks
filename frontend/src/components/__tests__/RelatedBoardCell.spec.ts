@@ -36,12 +36,13 @@ const ElTooltipStub = defineComponent({
 
 const ElTagStub = defineComponent({
   name: 'ElTag',
-  props: ['size', 'effect'],
+  props: ['size', 'effect', 'type'],
   setup(props, { slots }) {
     return () => h('span', {
       class: 'tag-stub',
       'data-size': props.size,
       'data-effect': props.effect,
+      'data-type': props.type,
     }, slots.default?.())
   },
 })
@@ -165,6 +166,26 @@ describe('RelatedBoardCell', () => {
     expect(wrapper.text()).toContain('综合相关度-0.1235')
     expect(wrapper.text()).toContain('20 日相关度—')
     expect(wrapper.text()).toContain('数据截止日—')
+  })
+
+  it('历史结果保留原样本、日期与基准，恢复当日后移除标记', async () => {
+    const history = {
+      as_of_date: '2026-08-25',
+      benchmark: { code: '399001.SZ', name: '深证成指', fallback: true },
+    }
+    const wrapper = mountCell({ summary: summary('high', { history }), boardType: 'industry' })
+    expect(wrapper.get('.related-board-history-hint').text()).toBe('')
+    expect(wrapper.get('.related-board-history-hint').attributes('tabindex')).toBe('0')
+    expect(wrapper.get('.related-board-history-hint').attributes('aria-label')).toContain('2026-08-25')
+    expect(wrapper.get('.related-board-history-hint').classes()).toContain('app-status-dot')
+    expect(wrapper.text()).toContain('当日共同有效样本不足，沿用 2026-08-25 的最近有效结果')
+    expect(wrapper.text()).toContain('数据截止日2026-08-25')
+    expect(wrapper.text()).toContain('计算基准深证成指')
+    expect(wrapper.text()).toContain('60 日有效样本58')
+    expect(wrapper.text()).not.toContain('相关性较弱')
+    await wrapper.setProps({ summary: summary('high') })
+    expect(wrapper.find('.related-board-history-hint').exists()).toBe(false)
+    expect(wrapper.text()).toContain('数据截止日2026-08-28')
   })
 
   it('有 sectors:view 时渲染编码后的详情链接，system 角色也放行', () => {

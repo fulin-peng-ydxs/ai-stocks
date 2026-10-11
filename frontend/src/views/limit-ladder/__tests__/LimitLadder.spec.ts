@@ -38,6 +38,28 @@ function router() {
 }
 
 describe('LimitLadderCard', () => {
+  it('行业和概念分别展示历史来源，并在恢复当日结果后移除', async () => {
+    const history = {
+      as_of_date: '2026-08-25',
+      benchmark: { code: '000001.SH', name: '上证指数', fallback: false },
+    }
+    const wrapper = mount(LimitLadderCard, {
+      props: { stock: { ...stock,
+        latest_related_industry: { ...stock.latest_related_industry!, history },
+        latest_related_concept: { ...stock.latest_related_concept!, history: { ...history, as_of_date: '2026-08-24' } },
+      }, window: 31, canViewSectors: false },
+      global: { plugins: [ElementPlus, router()] },
+    })
+    const tags = wrapper.findAll('.related-board-history-hint')
+    expect(tags).toHaveLength(2)
+    expect(tags.every((tag) => tag.text() === '' && tag.attributes('tabindex') === '0')).toBe(true)
+    expect(tags[0].attributes('aria-label')).toContain('2026-08-25')
+    expect(tags[1].attributes('aria-label')).toContain('2026-08-24')
+    expect(wrapper.find('a').exists()).toBe(false)
+    await wrapper.setProps({ stock })
+    expect(wrapper.find('.related-board-history-hint').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('展示精简卡片、走势相关行业和动态窗口统计', () => {
     const wrapper=mount(LimitLadderCard,{props:{stock,window:31,canViewSectors:true,returnPath:'/limit-ladder?restore=1'},global:{plugins:[ElementPlus,router()]}})
     expect(wrapper.text()).toContain('甲软件')
@@ -134,6 +156,16 @@ describe('LimitLadder layout', () => {
 })
 
 describe('LadderHotspots', () => {
+  it('热点明确说明包含的历史结果数量', () => {
+    const wrapper = mount(LadderHotspots, { props: {
+      hotspots: { industry: [], concept: [{ group_key: 'C002', group_name: '机器人', stock_count: 3, historical_stock_count: 2 }] },
+      activeType: null, activeKey: null,
+    } })
+    expect(wrapper.get('[data-testid="limit-ladder-hotspot-concept-C002"]').text()).not.toContain('含历史')
+    expect(wrapper.get('.app-status-dot').attributes('aria-label')).toBe('含历史结果 2 只')
+    expect(wrapper.get('b').text()).toBe('3只')
+    wrapper.unmount()
+  })
   it('按每股唯一的走势最相关概念输出热点交集条件', async () => {
     const wrapper=mount(LadderHotspots,{props:{hotspots:result.hotspots,activeType:'industry',activeKey:'I001'}})
     const concept = wrapper.get('[data-testid="limit-ladder-hotspot-concept-C002"]')

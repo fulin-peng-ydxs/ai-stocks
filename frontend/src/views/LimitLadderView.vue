@@ -719,7 +719,7 @@ const menuPageTitle = useMenuPageTitle()
                 </HelpTipItem>
                 <HelpTipItem question="数据口径是什么">
                   <ul>
-                    <li>筛选、摘要、热点和导出共享所选交易日的同一快照；热点使用当日走势最相关行业与概念。</li>
+                    <li>筛选、摘要、热点和导出共享所选交易日的同一快照；热点优先使用当日走势相关行业与概念；当日样本不足时沿用最近有效结果并标明历史来源。</li>
                     <li>本页用于盘后复盘，不代表盘中实时涨停状态。</li>
                   </ul>
                 </HelpTipItem>

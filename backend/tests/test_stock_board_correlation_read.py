@@ -441,30 +441,160 @@ class _ScreenEngine:
         return pd.DataFrame({"close": [10.0]}, index=["600000.SH"])
 
 
-class _ScoreModel:
-    def score(self, _snapshot):
-        return pd.DataFrame(
-            {"total_score": [88.0], "grade": ["A"]},
-            index=["600000.SH"],
-        )
+def test_screen_results_attach_summary_without_changing_score_order(monkeypatch):
+    from backend.scoring.score_profile import ScoreProfileRepo
+    from backend.scoring.snapshot import ScoreSnapshotRepo
+    from backend.services.stock_st_status import StockSTStatusService
 
-
-def test_screen_results_attach_summary_without_changing_score_order():
+    monkeypatch.setattr(ScoreProfileRepo, "get_visible", lambda *_args, **_kwargs: {
+        "id": "profile", "tenant_id": "pytest", "owner_user_id": "pytest_owner",
+        "include_st": True,
+    })
+    monkeypatch.setattr(ScoreSnapshotRepo, "get_board", lambda *_args, **_kwargs: pd.DataFrame([
+        {"code": "600000.SH", "rank": 1, "total_score": 88.0, "grade": "A"},
+    ]))
+    monkeypatch.setattr(StockSTStatusService, "status_map", lambda *_args: {"600000.SH": False})
     as_of = date(2026, 8, 28)
     with DuckDBClient(db_path=":memory:") as market:
         init_db(market)
         _seed_summary(market, as_of=as_of)
         market.execute("INSERT INTO stock_basic (code,name) VALUES ('600000.SH','浦发银行')")
+        market.execute("INSERT INTO daily_bar (code,trade_date,close) VALUES "
+                       "('600000.SH','2026-08-28',10),('600000.SH','2026-08-27',10)")
         service = object.__new__(ScreenScoreService)
         service.c = market
+        service.pg = object()  # repo 方法已隔离，禁止测试访问真实资产库。
         service.engine = _ScreenEngine()
-        service.model = _ScoreModel()
-        service._st_codes = lambda _run_date, _codes: set()
 
-        current = service.screen_scored(as_of, expression={"type": "expr"})
-        historical = service.screen_scored(date(2026, 8, 27), expression={"type": "expr"})
-
+        current = service.screen_scored(as_of, "profile", expression={"type": "expr"})["hits"]
+        historical = service.screen_scored(date(2026, 8, 27), "profile",
+                                            expression={"type": "expr"})["hits"]
         assert current[0]["total_score"] == 88.0
         assert current[0]["related_boards"]["industry"]["name"] == "银行"
         assert historical[0]["related_boards"]["industry"] is None
         assert historical[0]["related_boards"]["unavailable_reason"] == "as_of_mismatch"
+
+
+def _seed_history(market, day, board_type="industry", *, code="000001.SZ",
+                  board_code="881001", version="stock-board-correlation-v2"):
+    """仅在用例内存库写入带完整状态的历史冠军。"""
+    market.execute(
+        "INSERT INTO board_dict (board_code,name,board_type) VALUES (?,?,?) "
+        "ON CONFLICT DO NOTHING", [board_code, board_code, board_type],
+    )
+    market.execute(
+        "INSERT INTO stock_board_correlation_state "
+        "(code,as_of_date,computed_at,algorithm_version,benchmark_code,"
+        "has_industry_champion,has_concept_champion) "
+        "VALUES (?,?,current_timestamp,?,'000001.SH',?,?) "
+        "ON CONFLICT (code,as_of_date) DO UPDATE SET "
+        "has_industry_champion=stock_board_correlation_state.has_industry_champion "
+        "OR excluded.has_industry_champion, "
+        "has_concept_champion=stock_board_correlation_state.has_concept_champion "
+        "OR excluded.has_concept_champion",
+        [code, day, version, board_type == "industry", board_type == "concept"],
+    )
+    market.execute(
+        "INSERT INTO stock_board_correlation "
+        "(code,board_type,board_code,score,corr_20,corr_60,sample_20,sample_60,confidence,"
+        "benchmark_code,benchmark_fallback,as_of_date,computed_at,algorithm_version) "
+        "VALUES (?,?,?,0.82,0.86,0.76,20,58,'high','000001.SH',true,?,current_timestamp,?)",
+        [code, board_type, board_code, day, version],
+    )
+
+
+def test_sample_shortage_reuses_each_types_nearest_valid_history_and_original_benchmark():
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_summary(market)
+        market.execute("UPDATE stock_board_correlation_state SET "
+                       "concept_empty_reason='insufficient_samples', "
+                       "concept_max_sample_20=20, concept_max_sample_60=32 "
+                       "WHERE code='000001.SZ'")
+        _seed_history(market, date(2026, 8, 20))
+        _seed_history(market, date(2026, 8, 25))
+        _seed_history(market, date(2026, 8, 24), "concept", board_code="C_HISTORY")
+        _seed_history(market, date(2026, 8, 29), "concept", board_code="C_FUTURE")
+        _seed_history(market, date(2026, 8, 27), version="old-version")
+        _seed_history(market, date(2026, 8, 26), board_code="I_MISSING")
+        market.execute("DELETE FROM board_dict WHERE board_code='I_MISSING'")
+        counting = _CountingClient(market)
+        service = StockBoardCorrelationService(counting)
+        summary = service.get_related_boards(["000001.SZ"], date(2026, 8, 28))["000001.SZ"]
+
+        assert len(counting.queries) == 2
+        assert summary["as_of_date"] == "2026-08-28"
+        assert summary["industry"]["history"] == {
+            "as_of_date": "2026-08-25",
+            "benchmark": {"code": "000001.SH", "name": "上证指数", "fallback": True},
+        }
+        assert summary["concept"]["history"]["as_of_date"] == "2026-08-24"
+        assert summary["concept"]["board_code"] == "C_HISTORY"
+        assert summary["industry"]["sample_60"] == 58
+        assert summary["industry_empty_reason"]["code"] == "insufficient_samples"
+        # 沿用只发生在读模型，不改写当日状态或派生结果。
+        assert market.query_df("SELECT count(*) n FROM stock_board_correlation "
+                               "WHERE code='000001.SZ' AND as_of_date='2026-08-28'").iloc[0]["n"] == 0
+
+
+@pytest.mark.parametrize("reason", ["no_candidates", "invalid_correlation", None])
+def test_non_sample_shortage_never_reuses_history(reason):
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_summary(market)
+        _seed_history(market, date(2026, 8, 25))
+        market.execute("UPDATE stock_board_correlation_state SET industry_empty_reason=? "
+                       "WHERE code='000001.SZ' AND as_of_date='2026-08-28'", [reason])
+        summary = StockBoardCorrelationService(market).get_related_boards(
+            ["000001.SZ"], date(2026, 8, 28))["000001.SZ"]
+        assert summary["industry"] is None
+
+
+def test_current_result_replaces_history_and_missing_snapshot_still_fails_closed():
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_summary(market)
+        _seed_history(market, date(2026, 8, 25))
+        _seed_history(market, date(2026, 8, 28))
+        market.execute("UPDATE stock_board_correlation_state SET industry_empty_reason=NULL "
+                       "WHERE code='000001.SZ' AND as_of_date='2026-08-28'")
+        service = StockBoardCorrelationService(market)
+        summary = service.get_related_boards(["000001.SZ"], date(2026, 8, 28))["000001.SZ"]
+        assert "history" not in summary["industry"]
+        missing = service.get_related_boards(["000001.SZ"], date(2026, 8, 27),
+                                             schedule_missing=False)["000001.SZ"]
+        assert missing["industry"] is None
+        assert missing["unavailable_reason"] == "as_of_mismatch"
+
+
+def test_history_fallback_scales_to_1024_stocks_with_90_snapshots_in_two_queries():
+    from backend.devtools.benchmark_stock_board_correlation_read import seed_read_fixture
+
+    with DuckDBClient(db_path=":memory:") as market:
+        codes = seed_read_fixture(market, 1024)
+        # 184320 历史冠军，走与页面相同的批量读取入口，不能逐股查询。
+        market.execute("INSERT INTO stock_board_correlation_state "
+                       "SELECT code, as_of_date-CAST(n AS INTEGER), computed_at, "
+                       "algorithm_version, benchmark_code, benchmark_fallback, "
+                       "has_industry_champion,has_concept_champion, "
+                       "industry_empty_reason,industry_max_sample_20,industry_max_sample_60, "
+                       "concept_empty_reason,concept_max_sample_20,concept_max_sample_60 "
+                       "FROM stock_board_correlation_state CROSS JOIN range(1,91) t(n)")
+        market.execute("INSERT INTO stock_board_correlation "
+                       "SELECT code,board_type,board_code,score,corr_20,corr_60,sample_20, "
+                       "sample_60,confidence,benchmark_code,benchmark_fallback, "
+                       "as_of_date-CAST(n AS INTEGER),computed_at,algorithm_version "
+                       "FROM stock_board_correlation CROSS JOIN range(1,91) t(n)")
+        market.execute("DELETE FROM stock_board_correlation WHERE as_of_date='2026-08-28'")
+        market.execute("UPDATE stock_board_correlation_state SET has_industry_champion=false, "
+                       "has_concept_champion=false,industry_empty_reason='insufficient_samples', "
+                       "concept_empty_reason='insufficient_samples' "
+                       "WHERE as_of_date='2026-08-28'")
+        counting = _CountingClient(market)
+        summaries = StockBoardCorrelationService(counting).get_related_boards(
+            codes, date(2026, 8, 28))
+        assert len(counting.queries) == 2
+        assert len(summaries) == 1024
+        for summary in summaries.values():
+            for kind in ("industry", "concept"):
+                assert summary[kind]["history"]["as_of_date"] == "2026-08-27"
