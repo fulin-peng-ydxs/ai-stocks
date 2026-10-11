@@ -96,6 +96,7 @@ async function mountActions(actions: AppRowAction[], opts: {
   moreWidth?: number
   /** 单元格横向内边距总和 */
   containerPaddingX?: number
+  cellBorderRight?: number
   widthContext?: RowActionColumnWidthContext
 } = {}) {
   const pinia = createPinia()
@@ -106,7 +107,15 @@ async function mountActions(actions: AppRowAction[], opts: {
 
   const host = document.createElement('div')
   host.style.width = '100%'
-  document.body.appendChild(host)
+  if (opts.cellBorderRight) {
+    const table = document.createElement('table')
+    const cell = table.insertRow().insertCell()
+    cell.style.borderRight = `${opts.cellBorderRight}px solid black`
+    cell.appendChild(host)
+    document.body.appendChild(table)
+  } else {
+    document.body.appendChild(host)
+  }
   const wrapper = mount(AppRowActions, {
     props: {
       actions,
@@ -334,6 +343,7 @@ describe('AppRowActions', () => {
 
   it('向所属操作列上报含单元格内边距的最低可用宽度', async () => {
     const widthContext: RowActionColumnWidthContext = {
+      width: ref(144),
       setMinimumWidth: vi.fn(),
       removeMinimumWidth: vi.fn(),
     }
@@ -352,5 +362,65 @@ describe('AppRowActions', () => {
     expect(widthContext.setMinimumWidth).toHaveBeenLastCalledWith(expect.any(Symbol), 164)
     wrapper.unmount()
     expect(widthContext.removeMinimumWidth).toHaveBeenCalledWith(expect.any(Symbol))
+  })
+
+  it('列宽变化即使没有新的 DOM 尺寸通知也会同步展开和折叠主操作', async () => {
+    const columnWidth = ref(144)
+    const widthContext: RowActionColumnWidthContext = {
+      width: columnWidth,
+      setMinimumWidth: vi.fn(),
+      removeMinimumWidth: vi.fn(),
+    }
+    const wrapper = await mountActions([
+      { key: 'recover', label: '重采缺失日指数' },
+      { key: 'ignore', label: '标记正常', placement: 'more' },
+    ], {
+      containerWidth: 147,
+      containerPaddingX: 16,
+      buttonWidths: [98, 61],
+      moreWidth: 53,
+      widthContext,
+    })
+
+    expect(widthContext.setMinimumWidth).toHaveBeenLastCalledWith(expect.any(Symbol), 175)
+    expect(visibleButtons(wrapper).map((button) => button.text())).toEqual(['更多'])
+    // DOM 仍停留在筛选时的旧尺寸，所属列已经按当前行需求扩宽。
+    columnWidth.value = 175
+    await nextTick()
+    expect(visibleButtons(wrapper).map((button) => button.text()))
+      .toEqual(['重采缺失日指数', '更多'])
+
+    columnWidth.value = 144
+    await nextTick()
+    expect(visibleButtons(wrapper).map((button) => button.text())).toEqual(['更多'])
+  })
+
+  it('带边框的操作列同时预留边框与单元格内边距', async () => {
+    const columnWidth = ref(144)
+    const widthContext: RowActionColumnWidthContext = {
+      width: columnWidth,
+      setMinimumWidth: vi.fn(),
+      removeMinimumWidth: vi.fn(),
+    }
+    const wrapper = await mountActions([
+      { key: 'recover', label: '重采缺失日指数' },
+      { key: 'ignore', label: '标记正常', placement: 'more' },
+    ], {
+      containerWidth: 143,
+      containerPaddingX: 16,
+      cellBorderRight: 1,
+      buttonWidths: [98, 61],
+      moreWidth: 53,
+      widthContext,
+    })
+
+    expect(widthContext.setMinimumWidth).toHaveBeenLastCalledWith(expect.any(Symbol), 176)
+    columnWidth.value = 175
+    await nextTick()
+    expect(visibleButtons(wrapper).map((button) => button.text())).toEqual(['更多'])
+    columnWidth.value = 176
+    await nextTick()
+    expect(visibleButtons(wrapper).map((button) => button.text()))
+      .toEqual(['重采缺失日指数', '更多'])
   })
 })

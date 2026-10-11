@@ -1869,10 +1869,15 @@ def test_board_index_gap_daily_fix_reingests_and_resolves(client, monkeypatch):
     client.execute("INSERT INTO data_quality_issue (id, code, trade_date, issue_type, severity, status, detected_at) "
                    "VALUES (1, '309121', DATE '2026-08-07', 'board_index_gap_daily', 'mid', 'open', now())")
 
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_bar) "
+                   "VALUES ('never','从未采到指数','concept',TRUE)")
     tid = svc.create("fix", {"issue_id": 1})
     _wait(svc, tid)
     row = client.query_df("SELECT status FROM data_quality_issue WHERE id=1").iloc[0]
     assert row["status"] == "resolved"
+    logs = client.query_df("SELECT level, message FROM task_log WHERE task_id=?", [tid])
+    assert not logs["level"].isin(["warn", "error"]).any()
+    assert any("板块关联问题复检完成" in msg for msg in logs["message"])
     assert captured["start"] == date(2026, 8, 7)
     assert captured["end"] == date(2026, 8, 7)
     assert captured["board_codes"] == ["309121"]
@@ -2011,3 +2016,242 @@ def test_board_fund_unmatched_fix_resolves_only_after_mapping(client, monkeypatc
     _wait(svc, tid)
     row = client.query_df("SELECT status FROM data_quality_issue WHERE id=3").iloc[0]
     assert row["status"] == "resolved"
+
+
+@pytest.mark.parametrize("today", [date(2026, 8, 7), date(2026, 8, 8), date(2026, 10, 10)])
+def test_board_scan_missing_dates_uses_market_day_on_weekend_and_later(client, monkeypatch, today):
+    """当天、周末和历史日期复检都只检查行情基准日前的开市日，空指数不能打断扫描。"""
+    monkeypatch.setattr("backend.services.data_report._shanghai_today", lambda: today)
+    _seed_board_scan(client)
+    client.execute(
+        "INSERT INTO trade_calendar VALUES (DATE '2026-08-06', TRUE), "
+        "(DATE '2026-08-07', TRUE), (DATE '2026-08-08', FALSE), "
+        "(DATE '2026-08-10', TRUE)"
+    )
+    client.execute(
+        "INSERT INTO board_dict (board_code, name, board_type, has_bar) VALUES "
+        "('never', '从未采到指数', 'concept', TRUE), "
+        "('old', '近期无指数', 'concept', TRUE)"
+    )
+    client.execute(
+        "INSERT INTO board_bar (board_code, trade_date, open, high, low, close) "
+        "VALUES ('old', DATE '2026-07-01', 100, 101, 99, 100)"
+    )
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detected_at) "
+        "VALUES (799, 'never', DATE '2026-08-06', 'board_index_gap_daily', 'mid', 'open', now())"
+    )
+    result = DataIntegrityReport(client).scan_board_quality()
+    assert result["index_gap"] == 3
+    daily = client.query_df(
+        "SELECT code, trade_date FROM data_quality_issue "
+        "WHERE issue_type='board_index_gap_daily' AND status='open'"
+    )
+    gaps = {(r.code, pd.Timestamp(r.trade_date).date()) for r in daily.itertuples()}
+    assert gaps == {
+        ("881121", date(2026, 8, 7)),
+        ("old", date(2026, 8, 6)),
+        ("old", date(2026, 8, 7)),
+    }
+    assert client.query_df("SELECT status FROM data_quality_issue WHERE id=799").iloc[0, 0] == "resolved"
+    assert result["index_invalid"] == 0
+    details = client.query_df(
+        "SELECT detail FROM data_quality_issue WHERE issue_type='board_index_gap'"
+    )["detail"]
+    assert all("NaT" not in detail for detail in details)
+
+
+def test_board_scan_and_recheck_without_market_dates(client):
+    """空行情库的聚合日期是 NaT，扫描应正常返回，复检不能误判为已追平。"""
+    client.execute(
+        "INSERT INTO board_dict (board_code, name, board_type, has_bar) "
+        "VALUES ('empty', '无行情', 'concept', TRUE)"
+    )
+    rep = DataIntegrityReport(client)
+    result = rep.scan_board_quality()
+    assert result["index_gap"] == result["index_gap_daily"] == 0
+    assert rep.recheck_clean("board_index_gap", "empty", None) is False
+    assert rep.recheck_clean("board_fund_stale", None, None) is False
+
+
+def test_board_recheck_missing_member_snapshot_in_mixed_dates(client):
+    """NULL 快照在混合日期结果中也是 NaT，不得因没有 active 问题就认定有完整快照。"""
+    client.execute(
+        "INSERT INTO board_dict (board_code, name, board_type, member_snapshot_at) VALUES "
+        "('empty', '未形成快照', 'concept', NULL), "
+        "('complete', '已有快照', 'concept', now())"
+    )
+    assert (
+        DataIntegrityReport(client).recheck_clean("board_member_incomplete", "empty", None) is False
+    )
+
+
+@pytest.mark.parametrize(
+    "issue_type",
+    [
+        "board_index_gap",
+        "board_index_gap_daily",
+        "board_index_invalid",
+        "board_fund_missing",
+        "board_fund_stale",
+        "market_index_gap",
+        "market_index_gap_daily",
+        "market_index_invalid",
+    ],
+)
+def test_scan_issue_fix_rechecks_collected_data_before_source_request(
+    client, monkeypatch, issue_type
+):
+    """已被普通采集补齐的旧问题只复检收敛，不重复请求板块或市场指数源。"""
+    from backend.services.async_task import TaskContext, _recover_one
+    from backend.services.board_ingest import BoardIngestService
+
+    _seed_board_scan(client)
+    for period in ("即时", "3日", "5日", "10日", "20日"):
+        client.execute(
+            "INSERT INTO board_fund_flow (board_code, snapshot_date, period) "
+            "VALUES ('309121', DATE '2026-08-07', ?)",
+            [period],
+        )
+    client.execute(
+        "INSERT INTO index_bar (index_code, trade_date, open, high, low, close) "
+        "VALUES ('000905.SH', DATE '2026-08-07', 100, 101, 99, 100)"
+    )
+    client.execute("INSERT INTO trade_calendar VALUES (DATE '2026-08-07', TRUE)")
+    code = "000905.SH" if issue_type.startswith("market_") else "309121"
+    if issue_type == "board_fund_stale":
+        code = None
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detected_at) "
+        "VALUES (800, ?, DATE '2026-08-07', ?, 'mid', 'open', now())",
+        [code, issue_type],
+    )
+
+    def unexpected_request(*args, **kwargs):
+        raise AssertionError("已补齐的旧问题不得请求采集源")
+
+    monkeypatch.setattr(BoardIngestService, "__init__", unexpected_request)
+    rep = DataIntegrityReport(client)
+    clean, _, message = _recover_one(
+        client, rep, None, TaskContext(AsyncTaskService(client), "test_stale_issue", {}), 800
+    )
+    assert clean is True
+    assert "无需重复采集" in message
+    row = client.query_df("SELECT status, fix_task_id FROM data_quality_issue WHERE id=800").iloc[0]
+    assert row["status"] == "resolved" and pd.isna(row["fix_task_id"])
+
+
+@pytest.mark.parametrize("issue_type", ["board_index_gap_daily", "board_index_invalid"])
+def test_board_fix_missing_issue_date_does_not_send_nat_to_source(client, monkeypatch, issue_type):
+    """旧台账空日期应保持待处理，不可把 NaT 传入定向重采。"""
+    from backend.services.async_task import TaskContext, _recover_one
+    from backend.services.board_ingest import BoardIngestService
+
+    _seed_board_scan(client)
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, issue_type, severity, status, detected_at) "
+        "VALUES (801, '881121', ?, 'mid', 'open', now())",
+        [issue_type],
+    )
+
+    def unexpected_request(*args, **kwargs):
+        raise AssertionError("空日期不得请求采集源")
+
+    monkeypatch.setattr(BoardIngestService, "__init__", unexpected_request)
+    clean, _, message = _recover_one(
+        client,
+        DataIntegrityReport(client),
+        None,
+        TaskContext(AsyncTaskService(client), "test_null_issue_date", {}),
+        801,
+    )
+    assert clean is False
+    assert "缺少日期" in message
+    assert (
+        client.query_df("SELECT status FROM data_quality_issue WHERE id=801").iloc[0, 0] == "open"
+    )
+
+
+def test_board_fix_closes_current_issue_when_related_scan_fails(client, monkeypatch):
+    """本条已补齐但关联扫描失败时，保留真实成功状态，清晰说明其他问题尚未复检。"""
+    from backend.services.async_task import TaskContext, _recover_one
+
+    _seed_board_scan(client)
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detected_at) "
+        "VALUES (802, '309121', DATE '2026-08-07', 'board_index_gap_daily', 'mid', 'open', now())"
+    )
+    rep = DataIntegrityReport(client)
+
+    def failed_scan():
+        raise RuntimeError("模拟关联扫描失败")
+
+    monkeypatch.setattr(rep, "scan_board_quality", failed_scan)
+    ctx = TaskContext(AsyncTaskService(client), "test_related_scan_failure", {})
+    clean, _, message = _recover_one(client, rep, None, ctx, 802)
+    ctx.flush()
+    assert clean is True
+    assert "其他板块的质量检查未完成" in message
+    assert (
+        client.query_df("SELECT status FROM data_quality_issue WHERE id=802").iloc[0, 0]
+        == "resolved"
+    )
+    logs = client.query_df("SELECT message FROM task_log WHERE task_id='test_related_scan_failure'")
+    assert any("旧问题状态可能尚未更新" in text for text in logs["message"])
+
+
+def test_board_scheduled_fix_converges_481_collected_old_issues(client, monkeypatch):
+    """代表性全板块规模：定时任务接到旧缺口台账，真实复检/落表后零重采、零遗留。"""
+    from backend.services import ingest
+    from backend.services.async_task import TaskContext, _h_fix
+    from backend.services.board_ingest import BoardIngestService
+
+    client.execute(
+        "INSERT INTO daily_bar (code, trade_date, close) VALUES ('600000.SH', DATE '2026-08-07', 10)"
+    )
+    client.execute("INSERT INTO trade_calendar VALUES (DATE '2026-08-07', TRUE)")
+    client.execute(
+        "INSERT INTO board_dict (board_code, name, board_type, has_bar) "
+        "SELECT 'board_' || i, '板块' || i, 'concept', TRUE FROM range(481) t(i)"
+    )
+    client.execute(
+        "INSERT INTO board_bar (board_code, trade_date, open, high, low, close) "
+        "SELECT board_code, DATE '2026-08-07', 100, 101, 99, 100 FROM board_dict"
+    )
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detected_at) "
+        "SELECT row_number() OVER (), board_code, DATE '2026-08-07', "
+        "'board_index_gap_daily', 'mid', 'open', now() FROM board_dict"
+    )
+    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda *args, **kwargs: None)
+
+    def unexpected_request(*args, **kwargs):
+        raise AssertionError("普通采集已补齐的板块不得重采")
+
+    monkeypatch.setattr(BoardIngestService, "__init__", unexpected_request)
+    result = _h_fix(
+        {"issue_type": "board_index_gap_daily"},
+        TaskContext(AsyncTaskService(client), "test_collected_board_batch", {}),
+    )
+    assert result["ok"] is True
+    assert result["resolved"] == result["total"] == 481 and result["failed"] == 0
+    assert (
+        client.query_df(
+            "SELECT count(*) FROM data_quality_issue "
+            "WHERE issue_type='board_index_gap_daily' AND status='resolved'"
+        ).iloc[0, 0]
+        == 481
+    )
+    assert (
+        client.query_df(
+            "SELECT count(*) FROM data_quality_issue "
+            "WHERE issue_type IN ('board_index_gap','board_index_gap_daily') "
+            "AND status IN ('open','fixing')"
+        ).iloc[0, 0]
+        == 0
+    )

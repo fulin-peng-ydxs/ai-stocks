@@ -950,10 +950,11 @@ class DataIntegrityReport:
         """
         # 板块指数缺口：board_bar 最近交易日滞后于 daily_bar 全局最新交易日。
         gap_issues: list[dict] = []
-        latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
+        latest_raw = self._scalar("SELECT max(trade_date) FROM daily_bar")
+        latest = None if latest_raw is None or pd.isna(latest_raw) \
+            else pd.Timestamp(latest_raw).date()
         fund_date = None
         if latest is not None:
-            latest = pd.Timestamp(latest).date()
             fund_date = latest
             gap_df = self.c.query_df(
                 """
@@ -965,8 +966,11 @@ class DataIntegrityReport:
                 """)
             for _, r in gap_df.iterrows():
                 code = str(r["board_code"])
-                last_bar = r["last_bar"]
-                if last_bar is None or pd.Timestamp(last_bar).date() < latest:
+                # LEFT JOIN 的 SQL NULL 经 query_df 转为 NaT，必须先判断缺失再比较。
+                last_raw = r["last_bar"]
+                last_bar = None if last_raw is None or pd.isna(last_raw) \
+                    else pd.Timestamp(last_raw).date()
+                if last_bar is None or last_bar < latest:
                     gap_issues.append({
                         "code": code, "trade_date": latest,
                         "issue_type": "board_index_gap",
@@ -1000,19 +1004,24 @@ class DataIntegrityReport:
                 bar_start_by_code: dict[str, date] = {
                     str(r["board_code"]): pd.Timestamp(r["bar_start"]).date()
                     for _, r in start_df.iterrows()
+                    if r["bar_start"] is not None and not pd.isna(r["bar_start"])
                 }
                 bar_by_code: dict[str, dict] = {}
                 for _, r in bar_df.iterrows():
                     code = str(r["board_code"])
                     if code not in bar_by_code:
                         bar_by_code[code] = {"name": str(r["name"]), "dates": set()}
-                    if r["trade_date"] is not None:
+                    if r["trade_date"] is not None and not pd.isna(r["trade_date"]):
                         bar_by_code[code]["dates"].add(pd.Timestamp(r["trade_date"]).date())
                 for code, info in bar_by_code.items():
                     bar_start = bar_start_by_code.get(code)
+                    # 从未入库时无法确定成立/数据起点，只由 board_index_gap 恢复最新日；
+                    # 首次采到指数后再检查起点之后的缺口，不能推断过去整个窗口都应有数据。
+                    if bar_start is None:
+                        continue
                     for md in sorted(recent_set - info["dates"]):
                         # 成立前豁免：起点之前的缺失是板块成立前源端本无数据，不算缺口。
-                        if bar_start is not None and md < bar_start:
+                        if md < bar_start:
                             continue
                         daily_gap_issues.append({
                             "code": code, "trade_date": md,
@@ -1380,7 +1389,7 @@ class DataIntegrityReport:
             if has_bar is None or not bool(has_bar):
                 return True
             latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
-            if latest is None:
+            if latest is None or pd.isna(latest):
                 return False
             last_bar = self._scalar("SELECT max(trade_date) FROM board_bar WHERE board_code=?", [code])
             if last_bar is None or pd.isna(last_bar):
@@ -1420,7 +1429,7 @@ class DataIntegrityReport:
             # 本次问题已经修复，否则旧快照会造成假解决。
             row = self.c.query_df(
                 "SELECT member_snapshot_at FROM board_dict WHERE board_code=?", [code])
-            if row.empty or row.iloc[0]["member_snapshot_at"] is None:
+            if row.empty or pd.isna(row.iloc[0]["member_snapshot_at"]):
                 return False
             active = self._scalar(
                 "SELECT count(*) FROM data_quality_issue "
@@ -1486,7 +1495,7 @@ class DataIntegrityReport:
             # board_fund_missing 覆盖，不在 stale 判定内）；旧纯文本 detail 无 periods 时，
             # 回退检查全部有快照的周期是否追平。
             expected = trade_date or self._scalar("SELECT max(trade_date) FROM daily_bar")
-            if expected is None:
+            if expected is None or pd.isna(expected):
                 return False
             expected_date = pd.Timestamp(expected).date()
             periods: list[str] = []

@@ -41,8 +41,19 @@ const measureEl = ref<HTMLElement | null>(null)
 const moreMeasureBtn = ref<ButtonRef>(null)
 const widthMap = ref<Record<string, number>>({})
 const availableWidth = ref(0)
+const cellHorizontalInset = ref(0)
 const moreWidth = ref(0)
 let observer: ResizeObserver | null = null
+
+// 筛选时各行需求撤销/重报可让列宽同帧先缩后扩；最终尺寸不变时，
+// ResizeObserver 不会再次通知，动作组却可能已测到中间的窄尺寸。
+// 固定列消费所属列的响应式预算；非表格动作组继续使用容器实测宽度。
+const layoutWidth = computed(() => {
+  const columnWidth = actionColumnWidth?.width.value
+  return columnWidth === undefined
+    ? availableWidth.value
+    : Math.max(0, columnWidth - cellHorizontalInset.value)
+})
 
 function isAllowed(action: AppRowAction): boolean {
   if (action.visible === false) return false
@@ -64,7 +75,7 @@ const measuredActions = computed<AppRowActionMeasure[]>(() =>
 )
 
 const widthModeReady = computed(() => {
-  if (visibleActions.value.length === 0 || availableWidth.value <= 0) return false
+  if (visibleActions.value.length === 0 || layoutWidth.value <= 0) return false
   const fillable = visibleActions.value.filter((action) => action.placement !== 'more')
   if (fillable.length && fillable.some((action) => widthMap.value[action.key] === undefined)) {
     return false
@@ -75,7 +86,7 @@ const widthModeReady = computed(() => {
 const layout = computed(() => {
   const limit = Math.max(0, props.inlineLimit)
   if (widthModeReady.value) {
-    return computeRowLayout(measuredActions.value, availableWidth.value, limit, moreWidth.value)
+    return computeRowLayout(measuredActions.value, layoutWidth.value, limit, moreWidth.value)
   }
   // 兜底：无实测宽度（jsdom / 测量不可用）时退化为纯数量逻辑
   const fillable = visibleActions.value.filter((action) => action.placement !== 'more')
@@ -104,13 +115,21 @@ const moreActions = computed(() => {
 function measure(): void {
   const parent = rootEl.value?.parentElement
   let padX = 0
+  let borderX = 0
   if (parent) {
     const cs = getComputedStyle(parent)
     padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0)
+    const cell = parent.closest('td')
+    if (cell) {
+      const cellStyle = getComputedStyle(cell)
+      borderX = (parseFloat(cellStyle.borderLeftWidth) || 0)
+        + (parseFloat(cellStyle.borderRightWidth) || 0)
+    }
     availableWidth.value = Math.max(0, parent.clientWidth - padX)
   } else {
     availableWidth.value = 0
   }
+  cellHorizontalInset.value = padX + borderX
 
   const buttons = measureEl.value?.querySelectorAll('.app-row-actions__button') ?? []
   const next: Record<string, number> = {}
@@ -139,7 +158,7 @@ function measure(): void {
   )
   actionColumnWidth?.setMinimumWidth(
     actionColumnWidthSource,
-    Math.ceil(minimumContentWidth + padX),
+    Math.ceil(minimumContentWidth + cellHorizontalInset.value),
   )
 }
 

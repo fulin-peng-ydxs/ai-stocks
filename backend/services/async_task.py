@@ -1142,8 +1142,15 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
         raise ValueError(f"仅未处理问题可恢复: id={issue_id}, status={current_status}")
     code, trade_date, issue_type = df.iloc[0]["code"], df.iloc[0]["trade_date"], df.iloc[0]["issue_type"]
     issue_detail = df.iloc[0]["detail"]
-    td = None if trade_date is None or (isinstance(trade_date, float) and pd.isna(trade_date)) \
+    td = None if trade_date is None or pd.isna(trade_date) \
         else pd.Timestamp(trade_date).date()
+    scan_board_types = {
+        "board_index_gap", "board_index_gap_daily", "board_index_invalid",
+        "board_fund_missing", "board_fund_stale",
+    }
+    scan_market_index_types = {
+        "market_index_gap", "market_index_gap_daily", "market_index_invalid",
+    }
     # 进入 fixing 并绑定本任务 id：任务失败/中断/重启时据 fix_task_id 复位，不留孤儿（DM 修复中闭环）
     c.execute("UPDATE data_quality_issue SET status='fixing', fix_task_id=? WHERE id=?", [ctx.tid, issue_id])
 
@@ -1152,7 +1159,14 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
     try:
         affected: list = []
         note = ""
-        if issue_type == "mv_missing":
+        # 质检后普通采集可能已补齐数据；先按同一口径复检，避免旧台账重复请求源端。
+        # 仍走下方状态回写和关联扫描，不能只跳过采集而留下 open 旧问题。
+        if issue_type in (scan_board_types | scan_market_index_types) and rep.recheck_clean(
+            issue_type, code, td, detail=issue_detail,
+        ):
+            note = "目标数据已满足复检要求，无需重复采集"
+            ctx.log(f"{code or '全源'}：{note}")
+        elif issue_type == "mv_missing":
             ctx.log(f"恢复(L2 字段契约)：拉取 {code} 估值，补市值字段")
             res = _call_with_ctx(ing.ingest_valuation, codes=[code], ctx=ctx)
             note = f"补市值 {res.get('total_mv_rows', 0)} 行"
@@ -1373,20 +1387,14 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
         # 扫描型板块问题可能共享同一底层缺口：例如最新日缺失同时产生 index_gap 与
         # index_gap_daily。当前问题解决后立即重扫，收敛兄弟问题并发现全源资金流恢复后的
         # 逐板块缺失；扫描失败不回滚已真实修好的当前问题，但在任务日志中明确告警。
-        scan_board_types = {
-            "board_index_gap", "board_index_gap_daily", "board_index_invalid",
-            "board_fund_missing", "board_fund_stale",
-        }
         if issue_type in scan_board_types:
             try:
                 scan_result = rep.scan_board_quality()
                 ctx.log(f"板块关联问题复检完成：{scan_result}")
             except Exception as scan_error:  # noqa: BLE001 -- 当前问题已复检通过，关联扫描降级告警
-                ctx.log(f"当前问题已解决，但板块关联问题复检失败：{scan_error}", "warn")
-                note += "；关联问题复检失败，请稍后重新质检"
-        scan_market_index_types = {
-            "market_index_gap", "market_index_gap_daily", "market_index_invalid",
-        }
+                ctx.log("本条问题已复检通过并关闭；其他板块的质量检查未完成，"
+                        f"旧问题状态可能尚未更新，请重新质检。错误：{scan_error}", "warn")
+                note += "；本条已解决，其他板块的质量检查未完成，请重新质检"
         if issue_type in scan_market_index_types:
             try:
                 scan_result = rep.scan_market_index_quality()

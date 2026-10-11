@@ -234,7 +234,9 @@ describe('自适应表格列', () => {
         const source = sources[props.index]
         onMounted(() => context?.setMinimumWidth(source, props.index === 0 ? 132 : 188))
         onBeforeUnmount(() => context?.removeMinimumWidth(source))
-        return () => h('span', `row-${props.index}`)
+        return () => h('span', {
+          'data-column-width': context?.width.value,
+        }, `row-${props.index}`)
       },
     })
     const wrapper = mount(AppTableColumn, {
@@ -249,6 +251,8 @@ describe('自适应表格列', () => {
 
     await wrapper.vm.$nextTick()
     expect(wrapper.get('.column').attributes('data-width')).toBe('188')
+    expect(wrapper.findAll('[data-column-width]').map((row) => row.attributes('data-column-width')))
+      .toEqual(['188', '188'])
   })
 
   it('复合实体列为前置控件和主副信息保留统一识别宽度', () => {

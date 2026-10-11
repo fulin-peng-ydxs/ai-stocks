@@ -90,6 +90,7 @@ const resolvedWidth = computed(() => {
 })
 
 const actionWidthContext: RowActionColumnWidthContext = {
+  width: resolvedWidth,
   setMinimumWidth(source, width) {
     if (!isActionColumn.value) return
     actionWidthRequests.set(source, Math.max(0, width))
