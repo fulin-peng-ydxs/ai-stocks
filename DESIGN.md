@@ -200,7 +200,7 @@ Key Characteristics：
 
 ### 3.3 Tag, Badge & Chip Rules
 
-依附主体的非阻断辅助状态（如历史结果沿用、待处理提醒）优先使用 `AppStatusDot` 的黄色状态点，避免另加文字标签挤占主体；说明通过 `AppHoverInfo` 悬浮或键盘聚焦显示，并保留可访问名称。已有整体说明时复用该浮层，不叠加第二个提示。独立主要业务状态仍按下表使用标签。
+依附主体的非阻断辅助状态（如历史结果沿用、待处理提醒）优先使用 `AppStatusDot` 的黄色状态点，避免另加文字标签挤占主体；说明通过 `AppHoverInfo` 悬浮或键盘聚焦显示，并保留可访问名称。圆形头像/图标入口使用 `placement="top-right"` 依附右上角，宿主提供定位容器；`AppIconButton` 使用 `badge` 插槽，不把角标放进图形的横向排列。文本旁的提示保持默认 `inline`。已有整体说明时复用该浮层，不叠加第二个提示。独立主要业务状态仍按下表使用标签。
 
 标签体系采用“Element Plus 基础几何 + 语义规则 + 领域复用单元”。规范定义目标一致性；实现与本节冲突时应修正实现，不将已有差异视为新的设计分支。
 
@@ -267,7 +267,7 @@ Key Characteristics：
 | 真实组件 | 路径 | 用途 | 系统组件关系 | 使用规则 |
 |---|---|---|---|---|
 | `PageSettingsDrawer` | `frontend/src/components/PageSettingsDrawer.vue` | 统一页面设置抽屉运行时组件 | 对应 `settings-drawer` 种类；仅 `size` 用户偏好走 PG `user_preference`，`bodyScroll` 只允许 page 层；分组固定可折叠，首次全部展开，当前折叠态作为内部用户偏好记忆 | `supportsPageSettings !== false` 的 registry 页面统一使用；抽屉根部控制一级分组，每个存在下级的可折叠分组自动控制自己的直接子分组；父级收起只隐藏子树、不重置更深层状态；禁止页面另写第二套设置抽屉 |
-| `AppStatusDot` | `frontend/src/components/AppStatusDot.vue` | 依附主体的黄色辅助状态点 | 无直接系统组件种类 | 头像待打卡、走势历史提示、天梯热点共用；统一 warning 色、圆点几何和可访问名称，简短说明复用 AppHoverInfo，位置由宿主布局承接，不用常驻文字扩宽主体 |
+| `AppStatusDot` | `frontend/src/components/AppStatusDot.vue` | 依附主体的黄色辅助状态点 | 无直接系统组件种类 | 头像待打卡、走势历史提示、天梯热点共用；统一 warning 色、圆点几何和可访问名称，简短说明复用 AppHoverInfo；圆形入口用 top-right 角标模式及宿主定位容器，文本用 inline，不用常驻文字扩宽主体 |
 | `PageSettingsTrigger` | `frontend/src/components/PageSettingsTrigger.vue` | 页面设置统一入口 | 触发 registry 页面中的 `settings-drawer` | 仅 `pageRegistry.supportsPageSettings !== false` 的真实消费页面显示；平台布局管理页不开放个人设置，不登记假入口 |
 | `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 全站抽屉唯一外壳与边界组件 | 无直接系统组件种类；内部唯一消费 `el-drawer` 和 `PageDrawerSurface` | 为 `AppDetailDrawer`、`PageSettingsDrawer`、应用级与专用抽屉统一提供挂载边界、遮罩、语义宽度、标题、关闭入口、正文滚动/填充布局和 footer；页面级默认挂到 `LayoutHost`，应用顶栏能力显式传 `boundary="app"`；直接消费只限实时日志、资产搜索、主从窄屏回退和应用级能力；标题默认标准档，局部工具才声明 `compact`；宽度只传 `xs/sm/md/lg/xl/xxl/wide/full`，禁止消费方直接使用 `el-drawer`、私传 px/% 或覆盖其 header/body/footer |
 | `PageDrawerSurface` | `frontend/src/components/PageDrawerSurface.vue` | 全站抽屉统一内容面板 | 无直接系统组件种类；仅由 `PageDrawer` 内部消费 | 统一可见外边界、背景、圆角、阴影、标题/副标题、头部动作、关闭入口、正文滚动或填充布局和可选 footer；差异只通过 `PageDrawer` 的语义属性与内容插槽表达，消费方不得直接拼装或复制面板背景、边框、圆角、阴影、header/body/footer 间距、遮光层和关闭按钮样式 |

@@ -7,7 +7,9 @@ withDefaults(defineProps<{
   label: string
   content?: string
   disabled?: boolean
-}>(), { disabled: false })
+  /** 圆形入口依附右上角，文本辅助状态保持行内。宿主须提供定位容器。 */
+  placement?: 'inline' | 'top-right'
+}>(), { disabled: false, placement: 'inline' })
 </script>
 
 <template>
@@ -15,7 +17,7 @@ withDefaults(defineProps<{
     <span
       v-bind="$attrs"
       class="app-status-dot"
-      :class="{ 'app-status-dot--help': content }"
+      :class="[`app-status-dot--${placement}`, { 'app-status-dot--help': content }]"
       role="img"
       :tabindex="content ? 0 : undefined"
       :aria-label="label"
@@ -40,6 +42,16 @@ withDefaults(defineProps<{
   border-radius: 50%;
   background: var(--el-color-warning);
   content: '';
+}
+.app-status-dot--top-right {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 2px solid var(--status-dot-ring, var(--el-bg-color));
+  border-radius: 50%;
 }
 .app-status-dot--help { cursor: help; }
 .app-status-dot:focus-visible {

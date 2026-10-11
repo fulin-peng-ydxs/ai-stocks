@@ -575,7 +575,9 @@ async function onLogout() {
 
         <AppIconButton class="user-entry" label="用户中心" @click="userDrawerVisible = true">
           <span class="user-avatar">{{ avatarText }}</span>
-          <AppStatusDot v-if="hasPendingTradeDiscipline" class="user-discipline-dot" label="有待打卡交易纪律" />
+          <template #badge>
+            <AppStatusDot v-if="hasPendingTradeDiscipline" placement="top-right" label="有待打卡交易纪律" />
+          </template>
         </AppIconButton>
       </div>
     </el-header>
@@ -1015,6 +1017,7 @@ button.topbar-status:focus-visible {
   fill: currentColor;
 }
 .user-entry {
+  --status-dot-ring: var(--chrome-bg);
   color: var(--chrome-text);
   border-radius: 50%;
   position: relative;
@@ -1037,16 +1040,6 @@ button.topbar-status:focus-visible {
   font-weight: var(--app-font-weight-strong);
   flex-shrink: 0;
   box-shadow: 0 3px 9px color-mix(in srgb, var(--shell-accent) 18%, transparent);
-}
-.user-discipline-dot {
-  --status-dot-size: 8px;
-  position: absolute;
-  top: 3px;
-  right: 2px;
-  padding: 0;
-  border: 2px solid var(--chrome-bg);
-  border-radius: 50%;
-  box-sizing: content-box;
 }
 :global(.topbar-popover) {
   --el-popover-padding: 0;
