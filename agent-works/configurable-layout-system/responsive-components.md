@@ -118,7 +118,7 @@
 | `frontend/src/components/stock-chart/StockChartWorkspace.vue` | `@container app-viewport (max-width: 1180px)`<br>`@container app-viewport (max-width: 400px)` | 窄宽面板图例第4项起移入指标栏；极窄≤400指标栏也减少常显项，完整配置在图表操作抽屉。ResizeObserver按面板最小高度分配，滑块canvas高度<84隐藏；不重新取行情。 | StockAnalysisPanel、BacktestView、SectorDetailView、SectorsView、StockDetailView、TrainingView |
 | `frontend/src/components/stock-chart/StockIntradayChart.vue` | `@container app-viewport (max-width: 960px)` | 窄宽图表58cqh、min340；图表自身resize，溢出由对话框正文滚动承接。 | StockIntradayDialog |
 | `frontend/src/components/stock-chart/StockIntradayDialog.vue` | `@container app-viewport (max-width: 960px)` | 窄宽头部上下排列，图表置于AppDialog工作区。 | StockAnalysisPanel、StockDetailView |
-| `frontend/src/components/stock-chart/StockQuoteSummary.vue` | `@container app-viewport (max-width: 720px)` | 窄宽补充信息换行，报价关键值保留。 | StockIntradayDialog、StockDetailView |
+| `frontend/src/components/stock-chart/StockQuoteSummary.vue` | `@container app-viewport (max-width: 720px)` | 窄宽补充信息换行，报价关键值保留；K 线联动摘要使用最新与可视窗口字符容量，空间不足由摘要内部横向滚动承接；可选字段说明复用 HelpHint 图标，字段名不加后缀；标签区容纳图标且数值列保持固定，支持悬浮与键盘聚焦。 | StockIntradayDialog、StockDetailView |
 | `frontend/src/components/strategy/StrategyItemEnabledSwitch.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | ConfigView、ScreenView |
 | `frontend/src/components/trade-discipline/RuleSummaryCard.vue` | 无自身 CSS 查询 | 委托 AppSummaryDisclosureCard。 | TradeRuleEditor |
 | `frontend/src/components/trade-discipline/TradeDirectionGroupGrid.vue` | `@container app-viewport (max-width: 1100px)` | 窄宽分组单列，保持阅读顺序。 | TradeOperationEditor、TradeRuleEditor |

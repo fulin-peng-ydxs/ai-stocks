@@ -48,7 +48,6 @@ import { useStockChartTheme } from './useStockChartTheme'
 import {
   KLINE_PERIOD_OPTIONS,
   buildKlinePeriodSeries,
-  tradingDaysBetween,
   type KlinePeriod,
   type PeriodBar,
 } from './klinePeriod'
@@ -72,6 +71,9 @@ import {
   stockChartVisibleSlider,
   volumeMetrics,
   visibleKlineIndexRange,
+  stockQuoteWindow,
+  klineQuoteWindowWidths,
+  type StockQuoteWindow,
   type MacdPanelState,
   type TradeMarker,
   type WorkspacePanelKey,
@@ -191,6 +193,7 @@ const emit = defineEmits<{
   barClick: [tradeDate: string]
   activeBarChange: [bar: Bar | null]
   measurementSummaryChange: [summary: StockQuoteSupplement | null]
+  quoteWindowChange: [window: StockQuoteWindow]
   workspaceResize: [sample: StockChartWorkspaceSample | undefined]
   'update:returnMeasurementMode': [mode: MeasurementMode]
   'update:klinePeriod': [period: KlinePeriod]
@@ -287,6 +290,16 @@ const visibleIndexRange = computed(() => visibleKlineIndexRange(
   zoomRange.value.start,
   zoomRange.value.end,
 ))
+// 可视窗口内批量预留测算容量时复用交易日累计值，避免每根 K 线重复切片求和。
+const tradingDayOffsets = computed(() => {
+  const offsets = [0]
+  for (const bar of periodSeries.value.bars) offsets.push(offsets.at(-1)! + bar.tradingDayCount)
+  return offsets
+})
+const quoteWindow = computed(() => stockQuoteWindow(
+  rows.value, zoomRange.value.start, zoomRange.value.end, measurementSupplementAt,
+))
+const quoteWidths = computed(() => klineQuoteWindowWidths(quoteWindow.value))
 const metricIndex = computed(() => activeIndex.value ?? lastIndex.value)
 
 const measurementIndices = computed<[number, number] | null>(() => {
@@ -382,7 +395,7 @@ function measurementSupplementAt(index: number): StockQuoteSupplement | null {
   const end = rows.value[endIndex]?.bar.date
   if (!start || !end) return null
   const value = measurementReturnFor(indices)
-  const days = tradingDaysBetween(periodSeries.value.bars, startIndex, endIndex)
+  const days = tradingDayOffsets.value[endIndex + 1] - tradingDayOffsets.value[startIndex + 1]
   return measurementMode.value === 'latest'
     ? {
         label: `截止 ${end}`,
@@ -508,6 +521,7 @@ function chartOption(panel: PanelDescriptor, isBottom: boolean) {
     measurementSupplementAt,
     candlestickRect,
     displayScale: elementVisualScale(chartElements.get(panel.key), 'x'),
+    quoteWidths: quoteWidths.value,
   }
   if (panel.type === 'kline') return buildKlineOption(context)
   if (panel.type === 'volume') return buildVolumeOption(context)
@@ -1138,6 +1152,7 @@ watch(
   (value) => emit('measurementSummaryChange', value),
   { deep: true, immediate: true },
 )
+watch(quoteWindow, (window) => emit('quoteWindowChange', window), { immediate: true })
 watch(ratios, () => {
   // 拖动时真实尺寸变化由 ResizeObserver 统一上报并 resize，避免比例 watch 再做一轮。
   if (drag) return

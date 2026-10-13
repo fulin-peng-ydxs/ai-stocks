@@ -599,6 +599,28 @@ describe('StockChartWorkspace', () => {
     wrapper.unmount()
   })
 
+  it('窗口摘要只在范围改变时通知详情，移动光标不重算容量', async () => {
+    const wrapper = await mountWorkspace({ enableReturnMeasurement: true, zoomStart: 50 })
+    const kline = echartsMock.instances[0]
+    const initial = wrapper.emitted('quoteWindowChange')!
+    const window = initial.at(-1)![0] as { bars: Bar[]; latestBar: Bar; supplements: unknown[] }
+    expect(window.bars).toHaveLength(21)
+    expect(window.latestBar.close).toBe(bars().at(-1)!.close)
+    expect(window.supplements).toHaveLength(21)
+    const count = initial.length
+    kline.emit('updateAxisPointer', { seriesDataIndices: [{ dataIndex: 30 }] })
+    await nextTick()
+    kline.emit('updateAxisPointer', { seriesDataIndices: [{ dataIndex: 35 }] })
+    await nextTick()
+    expect(wrapper.emitted('quoteWindowChange')).toHaveLength(count)
+    kline.emit('datazoom', { start: 80, end: 100 })
+    await nextTick()
+    const changed = wrapper.emitted('quoteWindowChange')!.at(-1)![0] as { bars: Bar[] }
+    expect(changed.bars).toHaveLength(9)
+    expect(wrapper.emitted('quoteWindowChange')).toHaveLength(count + 1)
+    wrapper.unmount()
+  })
+
   it('未启用涨跌测算时保持原有紧凑日期标题', async () => {
     const wrapper = await mountWorkspace()
 

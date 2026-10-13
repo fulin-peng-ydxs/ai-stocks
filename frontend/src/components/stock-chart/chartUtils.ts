@@ -9,6 +9,7 @@ import {
   stockQuoteSummaryHtml,
   type StockQuoteMetric,
   type StockQuoteSummaryModel,
+  type StockQuoteSummaryWidths,
   type StockQuoteSupplement,
   type StockQuoteTone,
 } from './stockQuoteSummary'
@@ -164,12 +165,17 @@ export function formatShares(shares: number | null | undefined, empty = '--'): s
 /** 光标历史行情量比；只消费图表已加载数据，口径与详情最新行情接口一致。 */
 export function stockVolumeRatioAt(bars: readonly Bar[], tradeDate: string): number | null {
   const index = bars.findIndex((bar) => bar.date === tradeDate)
-  if (index < 0) return null
-  const history = bars
-    .slice(0, index)
-    .map((bar) => bar.volume)
-    .filter((volume) => Number.isFinite(volume) && volume > 0)
-    .slice(-5)
+  return stockVolumeRatioAtIndex(bars, index)
+}
+
+/** 已知日期索引时只向后查找五个有效样本，避免窗口容量汇总反复遍历整段历史。 */
+export function stockVolumeRatioAtIndex(bars: readonly Bar[], index: number): number | null {
+  if (!Number.isInteger(index) || index < 0 || index >= bars.length) return null
+  const history: number[] = []
+  for (let previous = index - 1; previous >= 0 && history.length < 5; previous -= 1) {
+    const volume = bars[previous].volume
+    if (Number.isFinite(volume) && volume > 0) history.push(volume)
+  }
   const current = bars[index]?.volume
   if (history.length !== 5 || current == null || !Number.isFinite(current)) return null
   const average = history.reduce((total, volume) => total + volume, 0) / history.length
@@ -426,21 +432,25 @@ export function buildKlineQuoteSummary(
   }
 }
 
+/** 单根 K 线到共享摘要的适配入口，避免浮层和窗口容量各自复制字段映射。 */
+export function buildKlineBarQuoteSummary(
+  bar: Bar,
+  options: KlineQuoteSummaryOptions = {},
+): StockQuoteSummaryModel {
+  return buildKlineQuoteSummary({
+    date: bar.date, open: bar.open, high: bar.high, low: bar.low, close: bar.close,
+    preClose: bar.pre_close, volume: bar.volume, amount: bar.amount,
+    turnoverRate: bar.turnover_rate,
+  }, options)
+}
+
 /** K线详情统一格式：日期单独成行，行情字段按每列四项横向排布。 */
 export function klineTooltipHtml(
   bar: Bar,
   palette: KlineTooltipPalette,
   supplement?: StockQuoteSupplement | null,
+  widths?: StockQuoteSummaryWidths,
 ): string {
-  return stockQuoteSummaryHtml(buildKlineQuoteSummary({
-    date: bar.date,
-    open: bar.open,
-    high: bar.high,
-    low: bar.low,
-    close: bar.close,
-    preClose: bar.pre_close,
-    volume: bar.volume,
-    amount: bar.amount,
-    turnoverRate: bar.turnover_rate,
-  }, { showTime: true, supplement }), { ...palette, border: palette.tooltipBorder })
+  return stockQuoteSummaryHtml(buildKlineBarQuoteSummary(bar, { showTime: true, supplement }),
+    { ...palette, border: palette.tooltipBorder }, widths)
 }

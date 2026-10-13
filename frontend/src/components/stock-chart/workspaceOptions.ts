@@ -2,9 +2,10 @@ import type { Bar, IndicatorRow } from '@/api/stocks'
 import type { ChartType } from '@/composables/useStockChartPreferences'
 import { elementVisualScale } from '@/utils/displayScaleGeometry'
 import { formatMarketPercent } from '@/utils/marketValue'
-import type { StockQuoteSupplement } from './stockQuoteSummary'
+import { stockQuoteSummaryWidths, type StockQuoteSummaryWidths, type StockQuoteSupplement } from './stockQuoteSummary'
 import {
   buildStockVolumeBarSeries,
+  buildKlineBarQuoteSummary,
   formatChartAxisNumber,
   formatChartNumber,
   formatVolume,
@@ -36,6 +37,13 @@ export interface StockChartWorkspaceSample {
 export interface AlignedStockChartRow {
   bar: Bar
   indicator?: IndicatorRow
+}
+
+/** 最新 K 线为基线，历史容量仅取当前实际可视窗口；不包含均线热身数据。 */
+export interface StockQuoteWindow {
+  latestBar: Bar | null
+  bars: readonly Bar[]
+  supplements: readonly (StockQuoteSupplement | null)[]
 }
 
 /** 买卖点标注：date=交易日（与 bars.date 对齐），kind=买/卖，label=标注文字。 */
@@ -322,6 +330,7 @@ interface OptionContext {
   measurementSupplementAt?: (index: number) => StockQuoteSupplement | null
   candlestickRect?: (params: unknown) => TooltipTargetRect | null
   displayScale?: number
+  quoteWidths?: StockQuoteSummaryWidths
 }
 
 /** 所有股票图表按真实画布高度统一决定是否容纳可视缩放条。 */
@@ -383,6 +392,29 @@ export function visibleKlineIndexRange(length: number, zoomStart: number, zoomEn
     startIndex: Math.max(0, Math.floor(lower / 100 * lastIndex)),
     endIndex: Math.min(lastIndex, Math.ceil(upper / 100 * lastIndex)),
   }
+}
+
+export function stockQuoteWindow(
+  rows: readonly AlignedStockChartRow[],
+  zoomStart: number,
+  zoomEnd: number,
+  supplementAt?: (index: number) => StockQuoteSupplement | null,
+): StockQuoteWindow {
+  const { startIndex, endIndex } = visibleKlineIndexRange(rows.length, zoomStart, zoomEnd)
+  const visible = rows.slice(startIndex, endIndex + 1)
+  return {
+    latestBar: rows.at(-1)?.bar ?? null,
+    bars: visible.map((row) => row.bar),
+    supplements: visible.map((_, index) => supplementAt?.(startIndex + index) ?? null),
+  }
+}
+
+export function klineQuoteWindowWidths(window: StockQuoteWindow): StockQuoteSummaryWidths {
+  const summaries = window.bars.map((bar, index) => buildKlineBarQuoteSummary(bar, {
+    supplement: window.supplements[index],
+  }))
+  if (window.latestBar) summaries.push(buildKlineBarQuoteSummary(window.latestBar))
+  return stockQuoteSummaryWidths(summaries)
 }
 
 /** 当前缩放窗口的最高/最低价；并列时固定取最早出现者，避免重绘时标注跳动。 */
@@ -537,6 +569,9 @@ function commonOption(context: OptionContext, showPointerDate: boolean) {
 }
 
 export function buildKlineOption(context: OptionContext) {
+  const quoteWidths = context.quoteWidths ?? klineQuoteWindowWidths(stockQuoteWindow(
+    context.rows, context.zoomStart, context.zoomEnd, context.measurementSupplementAt,
+  ))
   const bars = context.rows.map((row) => row.bar)
   const allCloses = [...context.warmupBars, ...bars].map((bar) => bar.close)
   const firstPreClose = bars[0]?.pre_close
@@ -587,7 +622,7 @@ export function buildKlineOption(context: OptionContext) {
         if (typeof index !== 'number') return ''
         const row = context.rows[index]
         return row
-          ? klineTooltipHtml(row.bar, context.theme, context.measurementSupplementAt?.(index))
+          ? klineTooltipHtml(row.bar, context.theme, context.measurementSupplementAt?.(index), quoteWidths)
           : ''
       },
     },

@@ -9,6 +9,7 @@ import type { Bar, IndicatorRow } from '@/api/stocks'
 import { useAuthStore } from '@/stores/auth'
 import { useStockSet } from '@/stores/stockSet'
 import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
+import { aggregateKlineBars } from '@/components/stock-chart/klinePeriod'
 import {
   chartCompositionKey,
   normalizeStockChartPreferences,
@@ -209,6 +210,7 @@ const StockChartWorkspaceStub = defineComponent({
     'barClick',
     'activeBarChange',
     'measurementSummaryChange',
+    'quoteWindowChange',
     'update:adjustMode',
     'update:klinePeriod',
     'update:returnMeasurementMode',
@@ -514,7 +516,7 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
       },
       StockQuoteSummary: {
         name: 'StockQuoteSummary',
-        props: ['summary', 'columnGap'],
+        props: ['summary', 'columnGap', 'widths'],
         template: '<div data-testid="stock-latest-quote">{{ summary.hero.value }}:{{ summary.hero.tone }} {{ summary.hero.details?.map((item) => item.value).join(" ") }} {{ summary.metrics.map((item) => `${item.label}:${item.value}:${item.tone || "neutral"}`).join(" ") }} {{ summary.supplement ? `${summary.supplement.label}:${summary.supplement.value}:${summary.supplement.details?.map((item) => item.value).join(" ")}` : "" }}</div>',
       },
       StockBoardMembershipPanel: {
@@ -741,7 +743,7 @@ describe('StockDetailView 三图数据协调', () => {
 
     expect(stocksApi.getBars).toHaveBeenCalledWith(
       '600000.SH',
-      { adjust: 'qfq', lookback: 1250 },
+      { adjust: 'qfq', lookback: 1250, include_market_values: true },
       expect.any(AbortSignal),
     )
     expect(stocksApi.getStockQuoteSummary).toHaveBeenCalledWith(
@@ -857,6 +859,95 @@ describe('StockDetailView 三图数据协调', () => {
     await nextTick()
     expect(wrapper.get('[data-testid="stock-latest-quote"]').text())
       .toContain('截止 2026-09-18:+9.06%:19个交易日')
+  })
+
+  it('详情宽度由最新报价和工作区窗口决定，光标变化不覆盖容量且窗口可收窄', async () => {
+    const wrapper = await mountView()
+    const workspace = wrapper.getComponent({ name: 'StockChartWorkspace' })
+    const summary = wrapper.getComponent({ name: 'StockQuoteSummary' })
+    const current = bar('2026-07-23', 10.5)
+    const large = { ...bar('2026-07-22', 12345.6), total_mv: 12_345_678_000_000 }
+    workspace.vm.$emit('quoteWindowChange', {
+      latestBar: current, bars: [current], supplements: [null],
+    })
+    await nextTick()
+    const narrow = summary.props('widths')
+    await wrapper.get('[data-testid="activate-kline-bar"]').trigger('click')
+    await nextTick()
+    expect(summary.props('widths')).toBe(narrow)
+    workspace.vm.$emit('quoteWindowChange', {
+      latestBar: current, bars: [large, current], supplements: [null, null],
+    })
+    await nextTick()
+    expect(summary.props('widths').hero.value).not.toBe(narrow.hero.value)
+    expect(summary.props('widths').columns[2].value).not.toBe(narrow.columns[2].value)
+    workspace.vm.$emit('quoteWindowChange', {
+      latestBar: current, bars: [current], supplements: [null],
+    })
+    await nextTick()
+    expect(summary.props('widths')).toEqual(narrow)
+    wrapper.unmount()
+  })
+
+  it('历史市值随光标和单位阈值变化，宽度不变且不再请求行情', async () => {
+    const wrapper = await mountView()
+    const workspace = wrapper.getComponent({ name: 'StockChartWorkspace' })
+    const summary = wrapper.getComponent({ name: 'StockQuoteSummary' })
+    const small = { ...bar('2026-07-20', 8), total_mv: 9_000_000, float_mv: 5_000_000 }
+    const large = { ...bar('2026-07-21', 9), total_mv: 2_000_000_000, float_mv: 1_000_000_000 }
+    workspace.vm.$emit('quoteWindowChange', {
+      latestBar: large, bars: [small, large], supplements: [null, null],
+    })
+    await nextTick()
+    const widths = summary.props('widths')
+    const requests = vi.mocked(stocksApi.getBars).mock.calls.length
+    const values = () => Object.fromEntries(summary.props('summary').metrics
+      .map((metric: { label: string; value: string }) => [metric.label, metric.value]))
+
+    workspace.vm.$emit('activeBarChange', small)
+    await nextTick()
+    expect(values()).toMatchObject({ 总市值: '900.00 万', 流通市值: '500.00 万', 总股本: '10.00亿股', 流通股: '8.00亿股' })
+    expect(summary.props('summary').metrics.slice(10, 12)).toMatchObject([
+      { label: '总股本', hint: expect.stringContaining('最新采集的总股本') },
+      { label: '流通股', hint: expect.stringContaining('最新采集的流通股本') },
+    ])
+    workspace.vm.$emit('activeBarChange', large)
+    await nextTick()
+    expect(values()).toMatchObject({ 总市值: '20.00 亿', 流通市值: '10.00 亿', 总股本: '10.00亿股', 流通股: '8.00亿股' })
+    expect(summary.props('widths')).toBe(widths)
+    expect(stocksApi.getBars).toHaveBeenCalledTimes(requests)
+
+    workspace.vm.$emit('activeBarChange', {
+      ...small, total_mv: null, float_mv: null, amount: null, turnover_rate: null, pre_close: null,
+    })
+    await nextTick()
+    expect(values()).toMatchObject({ 总市值: '—', 流通市值: '—', 成交额: '—', 换手率: '—', 涨跌幅: '—', 总股本: '10.00亿股', 流通股: '8.00亿股' })
+    workspace.vm.$emit('activeBarChange', null)
+    await nextTick()
+    expect(values()).toMatchObject({ 总市值: '100.00 亿', 流通市值: '80.00 亿', 总股本: '10.00亿股' })
+    expect(summary.props('widths')).toBe(widths)
+    wrapper.unmount()
+  })
+
+  it.each(['week', 'month', 'year'] as const)('%s 摘要消费最后交易日市值，末日缺口保持为空', async (period) => {
+    const wrapper = await mountView()
+    const workspace = wrapper.getComponent({ name: 'StockChartWorkspace' })
+    const summary = wrapper.getComponent({ name: 'StockQuoteSummary' })
+    const source: Bar[] = [
+      { ...bar('2026-07-16', 8), total_mv: 9_000_000, float_mv: 5_000_000 },
+      { ...bar('2026-07-17', 9), total_mv: 2_000_000_000, float_mv: 1_000_000_000 },
+    ]
+    workspace.vm.$emit('activeBarChange', aggregateKlineBars(source, period)[0])
+    await nextTick()
+    expect(summary.props('summary').metrics.slice(8, 10).map((item: { value: string }) => item.value))
+      .toEqual(['20.00 亿', '10.00 亿'])
+    source[1]!.total_mv = null
+    source[1]!.float_mv = null
+    workspace.vm.$emit('activeBarChange', aggregateKlineBars(source, period)[0])
+    await nextTick()
+    expect(summary.props('summary').metrics.slice(8, 10).map((item: { value: string }) => item.value))
+      .toEqual(['—', '—'])
+    wrapper.unmount()
   })
 
   it('手动刷新保留当前股票和方案并同步行情、指标、报价与买卖评估', async () => {

@@ -54,13 +54,14 @@ import StockQuoteSummary from '@/components/stock-chart/StockQuoteSummary.vue'
 import {
   buildKlineQuoteSummary,
   formatShares,
-  stockVolumeRatioAt,
+  stockVolumeRatioAtIndex,
 } from '@/components/stock-chart/chartUtils'
-import type {
-  StockQuoteSummaryModel,
-  StockQuoteSupplement,
+import {
+  stockQuoteSummaryWidths,
+  type StockQuoteSummaryModel,
+  type StockQuoteSupplement,
 } from '@/components/stock-chart/stockQuoteSummary'
-import type { MacdPanelState } from '@/components/stock-chart/workspaceOptions'
+import type { MacdPanelState, StockQuoteWindow } from '@/components/stock-chart/workspaceOptions'
 import { useStockSet } from '@/stores/stockSet'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
@@ -336,6 +337,7 @@ const {
 const quoteSummaryData = ref<StockQuoteSummaryData | null>(null)
 const chartActiveBar = ref<Bar | null>(null)
 const chartMeasurementSummary = ref<StockQuoteSupplement | null>(null)
+const chartQuoteWindow = ref<StockQuoteWindow | null>(null)
 const boardMembership = ref<StockBoardMembership | null>(null)
 const latest = ref<IndicatorRow | null>(null)
 const analysisDate = computed(() => (
@@ -351,36 +353,68 @@ const chartLookback = computed(() => viewDays.value >= 99999 ? 6000 : Math.max(v
 // 展示用：按选项切末尾 N 根；热身用：剩余部分仅参与 MA 计算不渲染
 const displayBars = computed(() => viewDays.value >= 99999 ? bars.value : bars.value.slice(-viewDays.value))
 const warmupBars = computed(() => viewDays.value >= 99999 ? [] : bars.value.slice(0, -viewDays.value || undefined))
-const headerSummary = computed<StockQuoteSummaryModel | null>(() => {
+const barIndexByDate = computed(() => new Map(bars.value.map((bar, index) => [bar.date, index])))
+
+function buildHeaderSummary(
+  bar: Bar | null,
+  supplement: StockQuoteSupplement | null = null,
+): StockQuoteSummaryModel | null {
   const quote = quoteSummaryData.value
   if (!quote) return null
-  const bar = chartActiveBar.value
-  const close = bar?.close ?? quote.close
-  const preClose = bar?.pre_close ?? quote.pre_close
-  const volumeRatio = bar ? stockVolumeRatioAt(bars.value, bar.date) : quote.volume_ratio
+  const close = bar ? bar.close : quote.close
+  const preClose = bar ? bar.pre_close : quote.pre_close
+  // 光标市值取该根末交易日；股本保持最新采集值，并由悬浮说明区分日期口径。
+  const isLatestDate = !bar || bar.date === quote.trade_date
+  const totalMv = bar ? bar.total_mv : quote.total_mv
+  const floatMv = bar ? bar.float_mv : quote.float_mv
+  const volumeRatio = bar
+    ? stockVolumeRatioAtIndex(bars.value, barIndexByDate.value.get(bar.date) ?? -1)
+    : quote.volume_ratio
   return buildKlineQuoteSummary({
-    date: bar?.date ?? quote.trade_date,
-    open: bar?.open ?? quote.open,
-    high: bar?.high ?? quote.high,
-    low: bar?.low ?? quote.low,
+    date: bar ? bar.date : quote.trade_date,
+    open: bar ? bar.open : quote.open,
+    high: bar ? bar.high : quote.high,
+    low: bar ? bar.low : quote.low,
     close,
     preClose,
-    volume: bar?.volume ?? quote.volume,
-    amount: bar?.amount ?? quote.amount,
-    turnoverRate: bar?.turnover_rate ?? quote.turnover_rate,
+    volume: bar ? bar.volume : quote.volume,
+    amount: bar ? bar.amount : quote.amount,
+    turnoverRate: bar ? bar.turnover_rate : quote.turnover_rate,
   }, {
     showChangeDetail: true,
-    supplement: chartMeasurementSummary.value,
+    supplement,
     additionalMetrics: [
-      { label: '总市值', value: formatCompactMoneyYuan(quote.total_mv) },
-      { label: '流通市值', value: formatCompactMoneyYuan(quote.float_mv) },
-      { label: '总股本', value: formatShares(quote.total_share, '—') },
-      { label: '流通股', value: formatShares(quote.float_share, '—') },
+      { label: '总市值', value: formatCompactMoneyYuan(totalMv) },
+      { label: '流通市值', value: formatCompactMoneyYuan(floatMv) },
+      {
+        label: '总股本', value: formatShares(quote.total_share, '—'),
+        hint: '显示最新采集的总股本，不随 K 线光标日期变化；当前未提供历史股本数据。',
+      },
+      {
+        label: '流通股', value: formatShares(quote.float_share, '—'),
+        hint: '显示最新采集的流通股本，不随 K 线光标日期变化；当前未提供历史股本数据。',
+      },
       { label: '量比', value: volumeRatio == null ? '—' : volumeRatio.toFixed(2) },
-      { label: '市盈率', value: quote.pe_ttm == null ? '—' : quote.pe_ttm.toFixed(2) },
+      { label: '市盈率', value: !isLatestDate || quote.pe_ttm == null ? '—' : quote.pe_ttm.toFixed(2) },
     ],
   })
+}
+const headerSummary = computed(() => buildHeaderSummary(
+  chartActiveBar.value, chartMeasurementSummary.value,
+))
+// 不依赖光标行情；最新报价 + 最新周期 K 线 + 窗口内样本共同决定本轮稳定容量。
+const headerQuoteWidths = computed(() => {
+  const latestQuote = buildHeaderSummary(null)
+  if (!latestQuote) return undefined
+  const window = chartQuoteWindow.value
+  const summaries = [latestQuote]
+  if (window?.latestBar) summaries.push(buildHeaderSummary(window.latestBar)!)
+  window?.bars.forEach((bar, index) => {
+    summaries.push(buildHeaderSummary(bar, window.supplements[index])!)
+  })
+  return stockQuoteSummaryWidths(summaries)
 })
+watch(code, () => { chartQuoteWindow.value = null })
 
 // 个股详情页展示的关键指标（取最新一日）
 const INDICATOR_FIELDS = [
@@ -577,7 +611,7 @@ async function loadBars() {
   try {
     const result = await getBars(
       code.value,
-      { adjust: adjustMode.value || '', lookback: chartLookback.value },
+      { adjust: adjustMode.value || '', lookback: chartLookback.value, include_market_values: true },
       controller.signal,
     )
     if (!isCurrentRequest(barsRequest, controller, sequence)) return
@@ -1134,6 +1168,7 @@ onBeforeUnmount(() => {
           <StockQuoteSummary
             v-if="headerSummary"
             :summary="headerSummary"
+            :widths="headerQuoteWidths"
             column-gap="relaxed"
             data-testid="stock-latest-quote"
           />
@@ -1329,6 +1364,7 @@ onBeforeUnmount(() => {
                 @bar-click="openIntraday"
                 @active-bar-change="chartActiveBar = $event"
                 @measurement-summary-change="chartMeasurementSummary = $event"
+                @quote-window-change="chartQuoteWindow = $event"
               />
             </AppAsyncRegion>
           </AppWorkspacePane>

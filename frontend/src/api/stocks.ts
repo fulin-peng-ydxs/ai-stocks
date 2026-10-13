@@ -78,6 +78,9 @@ export interface Bar {
   volume: number
   amount: number | null
   turnover_rate: number | null
+  /** 详情按需加载的当日原始市值（元）；不随价格复权，历史缺口为 null。 */
+  total_mv?: number | null
+  float_mv?: number | null
   // 盘感训练 K 线由后端在 bars 内附带（12/26/9，严格后向），未暖机为 null
   macd_diff?: number | null
   macd_dea?: number | null
@@ -218,7 +221,7 @@ export function getStockQuoteSummary(
 
 export function getBars(
   code: string,
-  params?: { adjust?: string; lookback?: number; end?: string },
+  params?: { adjust?: string; lookback?: number; end?: string; include_market_values?: boolean },
   signal?: AbortSignal,
 ): Promise<Bars> {
   return http.get(`/stocks/${code}/bars`, { params, signal })

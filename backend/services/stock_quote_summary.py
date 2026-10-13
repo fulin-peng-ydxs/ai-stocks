@@ -1,8 +1,9 @@
-"""个股详情头部所需的最新行情、市值与股本只读摘要。"""
+"""个股详情最新行情摘要与 K 线日期对齐的历史市值。"""
 
 from __future__ import annotations
 
 import math
+from datetime import date
 from typing import Any
 
 import pandas as pd
@@ -13,7 +14,7 @@ from backend.storage.duckdb_client import DuckDBClient
 
 
 class StockQuoteSummaryService:
-    """一次查询组装个股最新收盘摘要，避免页面重复拉取行情和估值。"""
+    """组装最新收盘摘要，并按已加载 K 线日期批量补充历史市值。"""
 
     def __init__(self, client: DuckDBClient | None = None):
         self.c = client or get_read_client()
@@ -32,6 +33,33 @@ class StockQuoteSummaryService:
         if value is None or pd.isna(value):
             return None
         return int(value)
+
+    def get_market_values(
+        self, code: object, trade_dates: list[date]
+    ) -> dict[str, dict[str, float | None]]:
+        """只批量读取已返回 K 线的指定日期；市值不复权，不向前填充历史缺口。"""
+        normalized = normalize_stock_code(code)
+        dates = list(dict.fromkeys(trade_dates))
+        if len(dates) > 6000:
+            raise ValueError("市值日期数量不能超过 6000")
+        if not dates:
+            return {}
+        rows = self.c.query_df(
+            """
+            SELECT requested.trade_date, metrics.total_mv, metrics.float_mv
+            FROM unnest(?::DATE[]) AS requested(trade_date)
+            LEFT JOIN daily_metrics metrics
+              ON metrics.code = ? AND metrics.trade_date = requested.trade_date
+            """,
+            [dates, normalized],
+        )
+        return {
+            str(pd.Timestamp(row["trade_date"]).date()): {
+                "total_mv": self._number(row["total_mv"], 0),
+                "float_mv": self._number(row["float_mv"], 0),
+            }
+            for _, row in rows.iterrows()
+        }
 
     def get(self, code: object) -> dict[str, Any]:
         normalized = normalize_stock_code(code)

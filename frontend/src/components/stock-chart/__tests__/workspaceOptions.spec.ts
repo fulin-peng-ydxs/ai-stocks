@@ -26,6 +26,7 @@ import {
   obstructionAwareTooltipPosition,
   stockChartTheme,
   stockVolumeRatioAt,
+  stockVolumeRatioAtIndex,
   VOLUME_MA_DEFINITIONS,
   type StockChartTheme,
 } from '@/components/stock-chart/chartUtils'
@@ -73,6 +74,9 @@ describe('stockVolumeRatioAt', () => {
 
     expect(stockVolumeRatioAt(source, '2026-07-07')).toBe(2)
     expect(stockVolumeRatioAt(source, '2026-07-06')).toBeNull()
+    expect(stockVolumeRatioAtIndex(source, 6)).toBe(2)
+    expect(stockVolumeRatioAtIndex(source, -1)).toBeNull()
+    expect(stockVolumeRatioAtIndex(source, source.length)).toBeNull()
   })
 })
 
@@ -556,10 +560,10 @@ describe('workspaceOptions', () => {
       expect(content).toContain(`>${value}<`)
     }
     expect(content).toContain('color:#up;font-size:calc(18px * var(--app-display-scale, 1))')
-    expect(content).toContain('color:#up;white-space:nowrap">+1.01%</td>')
-    expect(content).toContain('color:#down;white-space:nowrap">9.80</td>')
-    expect(content).toContain('color:#up;white-space:nowrap">10.40</td>')
-    expect(content).toContain('color:#down;white-space:nowrap">9.50</td>')
+    expect(content).toMatch(/color:#up;white-space:nowrap"><span[^>]*>\+1\.01%<\/span><\/td>/)
+    expect(content).toMatch(/color:#down;white-space:nowrap"><span[^>]*>9\.80<\/span><\/td>/)
+    expect(content).toMatch(/color:#up;white-space:nowrap"><span[^>]*>10\.40<\/span><\/td>/)
+    expect(content).toMatch(/color:#down;white-space:nowrap"><span[^>]*>9\.50<\/span><\/td>/)
     expect(content.indexOf('>开盘<')).toBeLessThan(content.indexOf('>最高<'))
     expect(content.indexOf('>最高<')).toBeLessThan(content.indexOf('>最低<'))
     expect((buildVolumeOption(context).tooltip as { showContent?: boolean }).showContent)
@@ -589,7 +593,7 @@ describe('workspaceOptions', () => {
       params: Array<{ dataIndex: number }>,
     ) => string)([{ dataIndex: 0 }])
     expect(downContent).toContain('color:#down;font-size:calc(18px * var(--app-display-scale, 1))')
-    expect(downContent).toContain('color:#down;white-space:nowrap">-2.00%</td>')
+    expect(downContent).toMatch(/color:#down;white-space:nowrap"><span[^>]*>-2\.00%<\/span><\/td>/)
   })
 
   it('允许消费页只关闭 K线内容浮层并保留轴指针', () => {

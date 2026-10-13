@@ -91,24 +91,22 @@ def test_quote_summary_rejects_invalid_code_and_returns_empty_shape_for_unknown_
         assert result["close"] is None
 
 
+def _api_client(monkeypatch, market: DuckDBClient) -> TestClient:
+    monkeypatch.setattr("backend.api.stocks.get_client", lambda: market)
+    app = FastAPI()
+    app.include_router(router)
+    for item in router.routes:
+        for dependency in item.dependant.dependencies:
+            if getattr(dependency.call, "resource_code", None) == "stocks:view":
+                app.dependency_overrides[dependency.call] = lambda: None
+    return TestClient(app)
+
+
 def test_quote_summary_api_returns_contract_and_rejects_invalid_code(monkeypatch):
     with DuckDBClient(db_path=":memory:") as market:
         init_db(market)
         _seed_stock(market, [100, 200, 300, 400, 500, 600])
-        monkeypatch.setattr("backend.api.stocks.get_client", lambda: market)
-        app = FastAPI()
-        app.include_router(router)
-        route_item = next(
-            item for item in router.routes
-            if item.path == "/api/stocks/{code}/quote-summary"
-        )
-        dependency = next(
-            dep.call
-            for dep in route_item.dependant.dependencies
-            if getattr(dep.call, "resource_code", None) == "stocks:view"
-        )
-        app.dependency_overrides[dependency] = lambda: None
-        client = TestClient(app)
+        client = _api_client(monkeypatch, market)
 
         response = client.get("/api/stocks/600000.SH/quote-summary")
         assert response.status_code == 200
@@ -117,3 +115,88 @@ def test_quote_summary_api_returns_contract_and_rejects_invalid_code(monkeypatch
         invalid = client.get("/api/stocks/600000/quote-summary")
         assert invalid.status_code == 400
         assert "股票代码格式非法" in invalid.json()["detail"]
+
+
+@pytest.mark.parametrize("adjust", ["", "qfq", "hfq"])
+def test_bars_market_values_align_by_date_without_adjustment_or_gap_filling(monkeypatch, adjust):
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        _seed_stock(market, [100, 200, 300, 400, 500, 600])
+        market.execute("UPDATE daily_bar SET adj_factor = 2, adj_factor_clean = 2")
+        market.execute(
+            "UPDATE daily_bar SET adj_factor = 1, adj_factor_clean = 1 "
+            "WHERE trade_date < DATE '2026-09-06'"
+        )
+        market.execute(
+            "INSERT INTO daily_metrics VALUES "
+            "('600000.SH','2026-09-04',5000000,9000000),"
+            "('600001.SH','2026-09-05',90000000000,100000000000)"
+        )
+        client = _api_client(monkeypatch, market)
+        params = {
+            "adjust": adjust, "lookback": 3, "end": "2026-09-06",
+            "include_market_values": True,
+        }
+        response = client.get("/api/stocks/600000.SH/bars", params=params)
+        assert response.status_code == 200
+        bars = response.json()["data"]["bars"]
+        assert [(bar["date"], bar["total_mv"], bar["float_mv"]) for bar in bars] == [
+            ("2026-09-04", 9_000_000, 5_000_000),
+            ("2026-09-05", None, None),
+            ("2026-09-06", 10_000_000_000, 8_000_000_000),
+        ]
+        assert bars[0]["close"] == {"": 13, "qfq": 6.5, "hfq": 13}[adjust]
+        # 历史截止日不带未来最新市值，普通消费者也不增加字段。
+        params["end"] = "2026-09-05"
+        historical = client.get("/api/stocks/600000.SH/bars", params=params)
+        assert historical.json()["data"]["bars"][-1]["total_mv"] is None
+        params.pop("include_market_values")
+        legacy = client.get("/api/stocks/600000.SH/bars", params=params)
+        assert all("total_mv" not in bar for bar in legacy.json()["data"]["bars"])
+
+
+@pytest.mark.parametrize("lookback", [0, -1, 6001])
+def test_bars_rejects_unbounded_market_value_windows_before_query(monkeypatch, lookback):
+    client = _api_client(monkeypatch, object())
+    response = client.get(
+        "/api/stocks/600000.SH/bars",
+        params={"include_market_values": True, "lookback": lookback},
+    )
+    assert response.status_code == 422
+
+
+def test_bars_market_values_6000_row_real_api_regression(monkeypatch):
+    with DuckDBClient(db_path=":memory:") as market:
+        init_db(market)
+        market.execute("INSERT INTO stock_basic (code,name) VALUES ('600000.SH','测试股')")
+        market.execute(
+            "INSERT INTO daily_bar (code,trade_date,open,high,low,close,pre_close,volume,"
+            "amount,turnover_rate,adj_factor) "
+            "SELECT '600000.SH', DATE '2000-01-01' + CAST(i AS INTEGER),"
+            "10,11,9,10,9,100,1000,1,1 FROM range(6001) t(i)"
+        )
+        market.execute(
+            "INSERT INTO daily_metrics SELECT code,trade_date,5000000,9000000 FROM daily_bar "
+            "WHERE trade_date <> DATE '2000-01-01' + 3000"
+        )
+        queries: list[list[object]] = []
+        query_df = market.query_df
+
+        def tracked_query(sql, params=None):
+            if "unnest(?::DATE[])" in sql:
+                queries.append(params)
+            return query_df(sql, params)
+
+        monkeypatch.setattr(market, "query_df", tracked_query)
+        response = _api_client(monkeypatch, market).get(
+            "/api/stocks/600000.SH/bars",
+            params={"include_market_values": True, "lookback": 6000},
+        )
+        assert response.status_code == 200
+        bars = response.json()["data"]["bars"]
+        assert len(bars) == 6000
+        assert len(queries) == 1
+        assert len(queries[0][0]) == 6000
+        assert bars[0]["date"] == "2000-01-02"
+        assert bars[2999]["total_mv"] is None
+        assert bars[-1]["total_mv"] == 9_000_000
