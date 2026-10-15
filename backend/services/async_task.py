@@ -1212,7 +1212,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
         elif issue_type in (
             "st_status_missing", "st_status_approximate", "st_status_mismatch"
         ):
-            ctx.log(f"恢复(ST 点时事实)：刷新 {code} 的全部已有日线区间")
+            ctx.log(f"恢复(ST 点时事实)：刷新 {code} 上市/行情起点至市场最新日的事实（含停牌）")
             res = ing.refresh_st_status(codes=[str(code)], ctx=ctx)
             if int(res.get("fail") or 0):
                 raise RuntimeError(f"ST 状态刷新失败：{res.get('failures')}")

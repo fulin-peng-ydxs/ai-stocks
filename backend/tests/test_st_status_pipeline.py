@@ -164,6 +164,42 @@ def test_daily_ingest_persists_st_when_baostock_confirms_suspension(market, monk
     ).iloc[0]
     assert bool(row["is_st"]) is True
     assert row["quality"] == "accurate"
+    assert market.query_df(
+        "SELECT trade_date FROM stock_suspension WHERE code='600001.SH'"
+    )["trade_date"].dt.date.tolist() == [day]
+    # 重复采集不重复追加停牌记录。
+    assert ingest.ingest_one_daily("600001.SH", day, day, source=source) == 0
+    assert len(market.query_df("SELECT * FROM stock_suspension")) == 1
+
+
+@pytest.mark.parametrize('trade_status,returned_day', [
+    (1, date(2026, 7, 6)),
+    (0, date(2026, 7, 3)),
+])
+def test_empty_daily_requires_complete_positive_suspension_evidence(
+    market, monkeypatch, trade_status, returned_day,
+):
+    """正常交易行或源端漏一天，均不得凭空登记停牌来消除质检缺口。"""
+    day = date(2026, 7, 6)
+    market.execute('INSERT INTO trade_calendar VALUES (?,TRUE)', [day])
+    source = SimpleNamespace(name='baostock')
+    ingest = IngestionService.__new__(IngestionService)
+    ingest.c, ingest.src = market, source
+    monkeypatch.setattr(
+        ingest, '_fetch_daily_with_fallback',
+        lambda *_, **__: (_ for _ in ()).throw(DataSourceError('日线为空')),
+    )
+    monkeypatch.setattr(
+        ingest, '_fetch_st_status_rows',
+        lambda *_, **__: (source, pd.DataFrame([{
+            'code': '600001.SH', 'trade_date': returned_day,
+            'is_st': False, 'trade_status': trade_status,
+        }])),
+    )
+    with pytest.raises(DataSourceError, match='日线为空'):
+        ingest.ingest_one_daily('600001.SH', day, day, source=source)
+    assert market.query_df('SELECT * FROM stock_suspension').empty
+    assert market.query_df('SELECT * FROM stock_st_status_daily').empty
 
 
 def test_st_status_read_gate_rejects_missing_and_approximate(market):
@@ -198,6 +234,110 @@ def test_st_coverage_and_daily_projection_are_observable(market):
     assert service.sync_daily_bar_projection([day]) == 1
     row = market.query_df("SELECT is_st FROM daily_bar").iloc[0]
     assert bool(row["is_st"]) is False
+
+
+def test_st_quality_covers_suspensions_and_latest_listed_without_bars(market):
+    """行情覆盖完整不能掩盖停牌 ST 缺失，未来退市不得提前免检。"""
+    from backend.services.data_report import DataIntegrityReport
+    from backend.services.data_verify import DataVerifier
+
+    old_day, day = date(2026, 10, 12), date(2026, 10, 13)
+    market.execute(
+        "INSERT INTO daily_bar (code,trade_date,close,is_st) VALUES ('MARKET.SH',?,10,FALSE)",
+        [day],
+    )
+    market.execute(
+        "INSERT INTO daily_bar (code,trade_date,close,is_st) "
+        "VALUES ('SUSP.SH',DATE '2026-10-09',10,FALSE)"
+    )
+    market.execute(
+        "INSERT INTO stock_basic (code,board,list_date,delist_date) VALUES "
+        "('SUSP.SH','主板','2020-01-01','2026-10-19'),"
+        "('DELIST.SH','主板','2020-01-01','2026-10-13'),"
+        "('FUTURE.SH','主板','2026-10-14',NULL),"
+        "('OUT.SH','北交所','2020-01-01',NULL)"
+    )
+    market.execute(
+        "INSERT INTO stock_suspension (code,trade_date) VALUES ('SUSP.SH',?),('SUSP.SH',?),"
+        "('SUSP.SH',DATE '2026-10-08'),('DELIST.SH',DATE '2026-10-08')",
+        [old_day, day],
+    )
+    service = StockSTStatusService(market)
+    service.upsert_facts([
+        _fact('MARKET.SH', day, False),
+        _fact('SUSP.SH', date(2026, 10, 9), False),
+    ], change_reason='seed')
+    report = DataIntegrityReport(market)
+    coverage = service.coverage()
+    assert coverage['expected'] == 4  # 两条日线 + 两个停牌日，最新日去重。
+    assert coverage['missing'] == 2
+    assert coverage['ready'] is False
+    issue = report._collect_st_status_issues()
+    assert len(issue) == 1 and issue[0]['code'] == 'SUSP.SH'
+    assert issue[0]['issue_type'] == 'st_status_missing'
+    assert '2 日' in issue[0]['detail']
+    scan = report.scan_quality_issues()
+    assert scan['st_status_missing_rows'] == 1
+    assert market.query_df(
+        "SELECT code FROM data_quality_issue WHERE issue_type='st_status_missing' AND status='open'"
+    )['code'].tolist() == ['SUSP.SH']
+    assert report.recheck_clean('st_status_missing', 'SUSP.SH', day) is False
+    verifier = DataVerifier(market, quiet=True)
+    verifier.check_structure()
+    assert any('权威 ST 点时事实' in name and not ok for name, ok, _ in verifier.results)
+
+    # 停牌缺失补齐但仍非权威时，复检必须转为质量问题，不能声称可用。
+    service.upsert_facts([
+        _fact('SUSP.SH', old_day, False),
+        _fact('SUSP.SH', day, False, STStatusQuality.APPROXIMATE),
+    ], change_reason='controlled_import')
+    assert report._collect_st_status_issues()[0]['issue_type'] == 'st_status_approximate'
+    assert report.recheck_clean('st_status_missing', 'SUSP.SH', day) is False
+    assert report.recheck_clean('st_status_approximate', 'SUSP.SH', day) is False
+    service.upsert_facts([_fact('SUSP.SH', day, False)], change_reason='refresh')
+    assert report._collect_st_status_issues() == []
+    assert report.recheck_clean('st_status_approximate', 'SUSP.SH', day) is True
+    assert service.coverage()['ready'] is True
+    assert service.status_map(day, ['SUSP.SH']) == {'SUSP.SH': False}
+
+
+def test_st_latest_missing_without_suspension_and_scale(market):
+    """代表性规模全链查询：缺行情、尚未确认停牌也要在最新日在市集合中报缺失。"""
+    from backend.services.data_report import DataIntegrityReport
+
+    market.execute(
+        "INSERT INTO stock_basic (code,board,list_date,delist_date) "
+        "SELECT 'S'||i::VARCHAR,'主板',DATE '2020-01-01',DATE '2026-10-19' "
+        "FROM range(1000) t(i)"
+    )
+    market.execute(
+        "INSERT INTO daily_bar (code,trade_date,close,is_st) "
+        "SELECT sb.code,DATE '2026-07-15'+d::INTEGER,10,FALSE "
+        "FROM stock_basic sb CROSS JOIN range(90) t(d)"
+    )
+    market.execute(
+        "INSERT INTO stock_st_status_daily "
+        "(code,trade_date,is_st,source,quality,captured_at,updated_at) "
+        "SELECT code,trade_date,FALSE,'baostock','accurate',current_timestamp,current_timestamp "
+        "FROM daily_bar"
+    )
+    market.execute(
+        "INSERT INTO daily_bar (code,trade_date,close,is_st) "
+        "VALUES ('S0',DATE '2026-10-13',10,FALSE)"
+    )
+    market.execute(
+        "INSERT INTO stock_st_status_daily "
+        "(code,trade_date,is_st,source,quality,captured_at,updated_at) "
+        "VALUES ('S0',DATE '2026-10-13',FALSE,'baostock','accurate',"
+        "current_timestamp,current_timestamp)"
+    )
+    service = StockSTStatusService(market)
+    coverage = service.coverage()
+    assert coverage['expected'] == 91000
+    assert coverage['missing'] == 999
+    issues = DataIntegrityReport(market)._collect_st_status_issues()
+    assert len(issues) == 999
+    assert all(issue['trade_date'].date() == date(2026, 10, 13) for issue in issues)
 
 
 def test_st_dataset_version_preserves_subsecond_fact_changes(market):

@@ -3,9 +3,9 @@ import { ElCollapseTransition } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 
 // 只统一 disclosure 的结构、可访问性和视觉边界，业务状态与命令由消费方注入。
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   panelId: string
-  indexLabel: string
+  indexLabel?: string
   title: string
   toggleLabel: string
   meta?: string | null
@@ -15,35 +15,51 @@ withDefaults(defineProps<{
   muted?: boolean
   toggleTestId?: string
   editorTestId?: string
+  /** 紧凑只读清单沿用同一 disclosure，避免消费方覆写折叠结构和动效。 */
+  variant?: 'card' | 'compact'
+  collapsible?: boolean
 }>(), {
+  indexLabel: '',
   meta: null,
   preview: null,
   previewFallback: '暂无摘要',
   muted: false,
   toggleTestId: 'summary-card-toggle',
   editorTestId: 'summary-card-editor',
+  variant: 'card',
+  collapsible: true,
 })
 
 const emit = defineEmits<{ toggle: [] }>()
+function toggle() {
+  if (props.collapsible) emit('toggle')
+}
 </script>
 
 <template>
   <article
     class="app-summary-disclosure-card"
-    :class="{ 'is-expanded': expanded, 'is-muted': muted }"
+    :class="{
+      'is-expanded': expanded && collapsible, 'is-muted': muted,
+      'is-compact': variant === 'compact', 'is-static': !collapsible,
+    }"
   >
     <div class="app-summary-disclosure-card__bar">
-      <button
-        type="button"
+      <component
+        :is="collapsible ? 'button' : 'div'"
+        :type="collapsible ? 'button' : undefined"
         class="app-summary-disclosure-card__summary"
+        :class="{ 'has-leading': $slots.leading || indexLabel }"
         data-overflow-tooltip-disabled
-        :aria-expanded="expanded"
-        :aria-controls="panelId"
-        :aria-label="toggleLabel"
+        :aria-expanded="collapsible ? expanded : undefined"
+        :aria-controls="collapsible ? panelId : undefined"
+        :aria-label="collapsible ? toggleLabel : undefined"
         :data-testid="toggleTestId"
-        @click="emit('toggle')"
+        @click="toggle"
       >
-        <span class="app-summary-disclosure-card__index">{{ indexLabel }}</span>
+        <span v-if="$slots.leading || indexLabel" class="app-summary-disclosure-card__leading">
+          <slot name="leading"><span class="app-summary-disclosure-card__index">{{ indexLabel }}</span></slot>
+        </span>
         <span class="app-summary-disclosure-card__copy">
           <span class="app-summary-disclosure-card__title-row">
             <strong>{{ title }}</strong>
@@ -54,8 +70,8 @@ const emit = defineEmits<{ toggle: [] }>()
             {{ preview?.trim() || previewFallback }}
           </span>
         </span>
-        <ArrowDown class="app-summary-disclosure-card__chevron" aria-hidden="true" />
-      </button>
+        <ArrowDown v-if="collapsible" class="app-summary-disclosure-card__chevron" aria-hidden="true" />
+      </component>
 
       <div v-if="$slots.tools" class="app-summary-disclosure-card__tools">
         <slot name="tools" />
@@ -64,7 +80,7 @@ const emit = defineEmits<{ toggle: [] }>()
 
     <ElCollapseTransition>
       <div
-        v-if="expanded"
+        v-if="expanded && collapsible"
         :id="panelId"
         class="app-summary-disclosure-card__editor app-motion-collapse"
         :data-testid="editorTestId"
@@ -96,7 +112,7 @@ const emit = defineEmits<{ toggle: [] }>()
   min-width: 0;
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) 16px;
+  grid-template-columns: minmax(0, 1fr) 16px;
   align-items: center;
   gap: var(--app-space-2);
   padding: var(--app-space-2) var(--app-space-3);
@@ -106,6 +122,8 @@ const emit = defineEmits<{ toggle: [] }>()
   text-align: left;
   cursor: pointer;
 }
+.app-summary-disclosure-card__summary.has-leading { grid-template-columns: 28px minmax(0, 1fr) 16px; }
+.app-summary-disclosure-card__leading { display: inline-flex; align-items: center; }
 .app-summary-disclosure-card__summary:hover {
   background: color-mix(in srgb, var(--el-fill-color-light) 58%, transparent);
 }
@@ -181,6 +199,25 @@ const emit = defineEmits<{ toggle: [] }>()
   background: var(--el-bg-color);
 }
 .app-summary-disclosure-card__editor :deep(.el-form-item:last-child) { margin-bottom: 0; }
+
+/* 报告型清单只保留行分隔；所有状态共用相同对齐、留白和正文表面。 */
+.app-summary-disclosure-card.is-compact {
+  border: 0;
+  border-bottom: 1px solid var(--el-border-color-extra-light);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.is-compact .app-summary-disclosure-card__bar { min-height: var(--app-density-control-height); }
+.is-compact .app-summary-disclosure-card__summary { padding: var(--app-space-2) 0; }
+.is-compact .app-summary-disclosure-card__summary.has-leading { grid-template-columns: auto minmax(0, 1fr) 16px; }
+.is-compact .app-summary-disclosure-card__copy { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--app-space-1) var(--app-space-2); }
+.is-compact .app-summary-disclosure-card__title-row { flex: 0 1 auto; flex-wrap: wrap; }
+.is-compact .app-summary-disclosure-card__title-row strong { white-space: normal; overflow-wrap: anywhere; }
+.is-compact .app-summary-disclosure-card__preview { flex: 1 1 120px; margin: 0; white-space: normal; overflow-wrap: anywhere; }
+.is-compact .app-summary-disclosure-card__editor { padding: var(--app-space-2) 0 var(--app-space-3); border-top: 0; }
+.is-static .app-summary-disclosure-card__summary { cursor: default; }
+.is-static .app-summary-disclosure-card__summary:hover { background: transparent; }
 
 @media (prefers-reduced-motion: reduce) {
   .app-summary-disclosure-card__chevron { transition: none; }

@@ -378,10 +378,17 @@ class IngestionService:
             ctx.log(f"子任务：股票基础信息采集完成，目标板块 {len(basic)} 只，写入/更新 {n} 只")
         return basic
 
-    def _stock_basic_from_db(self, codes: list[str] | None = None) -> pd.DataFrame:
+    def _stock_basic_from_db(
+        self, codes: list[str] | None = None, *, as_of: date | None = None,
+    ) -> pd.DataFrame:
         """续跑用：从库读 stock_basic（首跑已刷新名册），列同 backfill 所需，避免重复触网。"""
+        as_of = as_of or self._latest_open_day()
         df = self.repo.c.query_df(
-            "SELECT code, name, price_limit_pct FROM stock_basic WHERE delist_date IS NULL")
+            "SELECT code, name, price_limit_pct FROM stock_basic "
+            "WHERE (list_date IS NULL OR list_date<=?) "
+            "AND (delist_date IS NULL OR delist_date>?) ORDER BY code",
+            [as_of, as_of],
+        )
         if codes:
             df = df[df["code"].isin(codes)]
         return df
@@ -668,6 +675,11 @@ class IngestionService:
                     change_reason="daily_ingest_st_suspended",
                     task_id=getattr(ctx, "tid", None),
                 )
+                # 这里已有逐日 tradestatus=0 的正向证据，且覆盖全部请求开市日；
+                # 必须同时保存停牌确认，避免成功零行采集后质检仍报告尾部滞后。
+                from backend.services.data_report import DataIntegrityReport
+
+                DataIntegrityReport(self.c).confirm_suspension(code, sorted(expected_open))
                 if ctx:
                     ctx.log(f"{code} {start}~{end} 已由 Baostock 确认停牌；保存 ST 事实，日线 0 行")
                 return 0
@@ -797,11 +809,7 @@ class IngestionService:
         years = years or self.s.datasource.history_years
         end = self._latest_open_day()   # 收敛到最近交易日，非交易日不当截止
         start = date(end.year - years, end.month, end.day)
-        live = self.repo.c.query_df(
-            "SELECT code FROM stock_basic WHERE delist_date IS NULL"
-        )["code"].tolist()
-        if codes:
-            live = [c for c in live if c in codes]
+        live = self._stock_basic_from_db(codes, as_of=end)["code"].tolist()
         val_src = self._source_for("valuation")  # 校验能力可用（串行直接用，并发用线程局部源）
         # 断点续跑：跳过已同时具备 total_mv 与 float_mv 的票；只缺流通市值的旧数据也要补。
         done = set(self.repo.c.query_df(
@@ -903,10 +911,10 @@ class IngestionService:
             "SELECT b.code AS code FROM daily_bar b "
             "JOIN stock_basic sb ON sb.code = b.code "
             "LEFT JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date "
-            "WHERE b.trade_date = ? AND sb.delist_date IS NULL "
+            "WHERE b.trade_date = ? AND (sb.delist_date IS NULL OR sb.delist_date>?) "
             "AND (m.code IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL)"
         )
-        params: list = [trade_date]
+        params: list = [trade_date, trade_date]
         if codes:
             sql += f" AND b.code IN ({','.join('?' * len(codes))})"
             params += list(codes)
@@ -1012,7 +1020,8 @@ class IngestionService:
             "count(*) AS n FROM daily_bar b "
             "JOIN stock_basic sb ON sb.code = b.code "
             "LEFT JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date "
-            "WHERE sb.delist_date IS NULL "
+            "WHERE (sb.delist_date IS NULL OR sb.delist_date> "
+            "(SELECT COALESCE(max(trade_date),current_date) FROM daily_bar)) "
             "AND (m.code IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL) "
             "GROUP BY b.code")
         if codes:
@@ -1482,23 +1491,14 @@ class IngestionService:
         """
         end = date.today()
         concurrency = concurrency or self.s.datasource.update_concurrency
-        basic = (
-            self.repo.c.query_df(
-                "SELECT code FROM stock_basic WHERE delist_date IS NULL ORDER BY code")["code"].tolist()
-        )
-        if codes:
-            basic = [c for c in basic if c in codes]
+        basic = self._stock_basic_from_db(codes, as_of=end)["code"].tolist()
         # 续跑（FR-DM-10）：串行老任务按 done 兼容跳过；并发任务按 done_codes 精确跳过。
-        n_total = len(basic)
         checkpoint = ctx.checkpoint if (ctx and ctx.checkpoint) else {}
         has_exact_done_codes = "done_codes" in checkpoint
         done_codes = set(checkpoint.get("done_codes") or [])
         # 新版 checkpoint 即使成功集合为空也会显式写 done_codes=[]，不得回退
         # 到旧版位置 done；只有真正没有该字段的历史 checkpoint 才按前 N 只兼容。
         skip_done = 0 if has_exact_done_codes else int(checkpoint.get("done", 0))
-        completed_codes = set(done_codes) | set(basic[:skip_done])
-        resumed_count = len(completed_codes)
-        pending = [c for c in basic if c not in completed_codes]
         # 续跑锁定本次任务目标日：首跑就绪门收敛后固化 target_end，续跑直接取回，避免被重算成
         # 「今天」后又重新触发就绪判定，保证中断前后处理同一截止日。target_end 仅在首跑成功
         # 解析后写入，故"存在即代表前置(日历/指数)已完成"，续跑据此一并跳过这两个幂等前置。
@@ -1517,6 +1517,13 @@ class IngestionService:
             end = self._resolve_update_end(
                 end, basic, codes, ctx=ctx, force_current_day=force_current_day,
             )
+        # 就绪门可能回退日期，续跑也可能沿用旧目标日；以最终目标重取点时名册。
+        # 已登记未来退市日的停牌股票仍需每日同步 ST，不能按 delist_date 非空提前排除。
+        basic = self._stock_basic_from_db(codes, as_of=end)["code"].tolist()
+        n_total = len(basic)
+        completed_codes = (set(done_codes) | set(basic[:skip_done])) & set(basic)
+        resumed_count = len(completed_codes)
+        pending = [code for code in basic if code not in completed_codes]
         if pinned_end is None:
             # 指数行情与日行情同口径：从 index_bar 已入库最新日 +1 增量补到 end（已收敛到最新交易日），
             # 不再每次固定拉「今天-30」窗口；已最新则跳过，不会"凭空一直更新"。
@@ -1825,7 +1832,8 @@ class IngestionService:
             FROM daily_bar b
             JOIN stock_basic sb ON sb.code = b.code
             JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date
-            WHERE b.code = ? AND sb.delist_date IS NULL
+            WHERE b.code = ? AND (sb.delist_date IS NULL OR sb.delist_date>
+                (SELECT COALESCE(max(trade_date),current_date) FROM daily_bar))
               AND (m.total_mv <= 0 OR m.float_mv <= 0 OR {inverted})
               {window_sql}
             ORDER BY b.trade_date
@@ -1866,7 +1874,8 @@ class IngestionService:
             SELECT m.code, m.trade_date
             FROM daily_metrics m
             JOIN stock_basic sb ON sb.code = m.code
-            WHERE sb.delist_date IS NULL
+            WHERE (sb.delist_date IS NULL OR sb.delist_date>
+                (SELECT COALESCE(max(trade_date),current_date) FROM daily_bar))
               AND (m.total_mv <= 0 OR m.float_mv <= 0 OR {inverted})
             ORDER BY m.code, m.trade_date
             """
@@ -2089,10 +2098,7 @@ class IngestionService:
         （限流按线程隔离，总请求速率≈N×rate_limit_per_sec），写入经 DuckDB 单写锁串行。
         默认 1（串行，最稳）。⚠️ 调高并发即调高总请求速率，注意免费源封禁风险。
         """
-        live = self.repo.c.query_df(
-            "SELECT code, name, price_limit_pct FROM stock_basic WHERE delist_date IS NULL")
-        if codes:
-            live = live[live["code"].isin(codes)]
+        live = self._stock_basic_from_db(codes, as_of=end)
         # 确保区间内日历+指数存在（与 update/backfill 一致：补缺口时该区间指数也一并补，避免回测基准留缺口）。
         # 续跑跳过前置：prep_done 标记后续跑不再重采日历/指数（首跑已幂等入库）。
         if ctx and ctx.checkpoint.get("prep_done"):

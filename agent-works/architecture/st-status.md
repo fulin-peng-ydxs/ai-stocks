@@ -205,11 +205,15 @@ begin_refresh → market=refreshing
 
 | 问题类型 | 发现条件 | 恢复动作 |
 | --- | --- | --- |
-| `st_status_missing` | 有日线、无当前 ST 事实 | 指定股票专项刷新 → 复检 |
-| `st_status_approximate` | 仍为测试/受控导入口径 | Baostock 强制重抓为 `accurate` → 复检 |
+| `st_status_missing` | 应有 ST 的股票日期缺少事实，包括已有日线、研究范围内确认停牌日及最新市场日在市股（即使无日线） | 指定股票专项刷新 → 复检 |
+| `st_status_approximate` | 同一应覆盖范围内仍为测试/受控导入口径 | Baostock 强制重抓为 `accurate` → 复检 |
 | `st_status_mismatch` | `daily_bar.is_st` 与唯一事实不同 | 强制重抓并重建投影 → 复检 |
 
 恢复失败时 issue 回到 `open`；复检通过才变为 `resolved`。结构体检还核对事实覆盖、投影一致性、日期修订账本和天梯快照 ST 版本。数据概览展示 `expected/present/accurate/approximate/missing/coverage_rate`、专项发布状态以及日期修订范围。
+
+覆盖统计、专项发布核对、质检扫描和恢复复检共用 `ST_EXPECTED_POINTS_SQL`：已有日线全量保留，确认停牌只纳入该股票首条研究行情之后且上市生命周期内、截至市场最新日的记录；最新市场日额外纳入主板、创业板、科创板的全部在市股。日期去重，停牌不免除 ST 身份契约，也不展开全股票与全日历的笛卡尔积。采集名册及覆盖鲜活判断按目标日判断退市是否生效，登记未来退市日期不会提前排除日常同步；日常任务回退或续跑时沿用最终目标日。
+
+日线为空但 ST 窄字段源完整覆盖请求区间全部开市日且逐行 `tradestatus=0` 时，采集保存权威 ST 事实并同步登记这些开市日的 `stock_suspension`，以成功零行情行结束。只有这一正向证据分支允许日常采集确认尾部停牌；单纯行情为空、ST 数据不完整或存在正常交易行仍须失败，不得凭空标停牌。
 
 ### 下游缓存版本自检
 

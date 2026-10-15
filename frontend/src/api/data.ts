@@ -475,12 +475,30 @@ export type TaskType =
 
 // ── 数据结构体检报告（checkup 任务 result.checkup）──
 export type CheckupStatus = 'pass' | 'warn' | 'fail'
+export interface CheckupIssueItem {
+  code: string
+  name: string
+  issue_type: string
+  target_date: string
+  latest_date?: string | null
+  missing_periods: string[]
+  status: 'open' | 'fixing' | 'ignored' | 'unrecorded'
+}
 export interface CheckupCheck {
   name: string
   ok: boolean
   status?: CheckupStatus
   detail: string
   help?: string
+  items?: CheckupIssueItem[]
+  evidence?: CheckupEvidence[]
+}
+export interface CheckupEvidence {
+  label: string
+  total: number
+  limit: number
+  columns: { key: string; label: string }[]
+  rows: Record<string, string>[]
 }
 export interface CheckupGroup { group: string; checks: CheckupCheck[] }
 export interface CheckupReport {

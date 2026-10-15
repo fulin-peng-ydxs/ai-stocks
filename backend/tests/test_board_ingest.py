@@ -778,7 +778,7 @@ def test_board_update_force_current_day_bypasses_all_fallbacks(monkeypatch):
     }
 
 
-def test_board_backfill_fund_uses_latest_open_day(monkeypatch):
+def test_board_backfill_fund_uses_latest_open_day(monkeypatch, market):
     """backfill 资金流以最近交易日标记快照，不使用周末采集日。"""
     from backend.services import board_ingest as board_module
     from backend.services.ingest import IngestionService
@@ -787,6 +787,9 @@ def test_board_backfill_fund_uses_latest_open_day(monkeypatch):
     captured: dict = {}
 
     class _FakeBoardService:
+        # 只采资金流会查询库内指数水位；空库时才回落最近开市日。
+        c = market
+
         def ingest_board_fund_flow(self, snapshot_date=None, **kwargs):
             captured["fund_date"] = snapshot_date
             return {"rows": 0, "unmatched": 0, "failed": []}

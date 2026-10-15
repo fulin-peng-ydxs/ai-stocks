@@ -2,7 +2,9 @@
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
+import CheckupReportContent from './components/CheckupReportContent.vue'
 import AppHoverInfo from '@/components/AppHoverInfo'
+import { checkupIssueFilters, visibleQualityRows } from './qualityReport'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
@@ -14,8 +16,7 @@ import {
   markDelisted, createTask, getTask,
   ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE, SEVERITY_LABEL, ISSUE_STATUS_LABEL, ISSUE_LAYER, LAYER_LABEL,
   RECOVER_ACTION_LABEL,
-  type DataQuality, type QualityIssue, type QualityIgnoreScope, type CheckupCheck, type CheckupReport,
-  type CheckupStatus,
+  type DataQuality, type QualityIssue, type QualityIgnoreScope, type CheckupIssueItem, type CheckupReport,
 } from '@/api/data'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppDatePicker from '@/components/AppDatePicker.vue'
@@ -122,11 +123,9 @@ const sevType: Record<string, 'danger' | 'warning' | 'info'> = { high: 'danger',
 const statType: Record<string, 'info' | 'warning' | 'success'> = {
   open: 'info', fixing: 'warning', resolved: 'success', ignored: 'info',
 }
-const displayList = computed(() => {
-  let list = [...(data.value?.list ?? [])]
-  if (settings.hideDoneRows) list = list.filter((row) => row.status !== 'resolved' && row.status !== 'ignored')
-  return list
-})
+const displayList = computed(() => visibleQualityRows(
+  data.value?.list ?? [], settings.hideDoneRows, filters.value.status,
+))
 
 // 详情列展示文案：部分 issue_type 的 detail 是结构化 JSON（修复链路解析 periods/board_type 等
 // 字段定向重采用），展示层只取人读文案（message/reason），非 JSON 或缺文案时原样显示。
@@ -421,35 +420,16 @@ async function runVerify() {
 const checkupRunning = ref(false)
 const checkupOpen = ref(false)
 const checkupReport = ref<CheckupReport | null>(null)
-function checkupStatus(check: CheckupCheck): CheckupStatus {
-  return check.status ?? (check.ok ? 'pass' : 'fail')
+async function locateCheckupIssue(item: CheckupIssueItem) {
+  suppressFilterReload = true
+  filters.value = checkupIssueFilters(item)
+  page.value = 1
+  checkupOpen.value = false
+  await nextTick()
+  suppressFilterReload = false
+  await load()
+  if (item.status === 'unrecorded') ElMessage.info('该缺口尚未入账，请先运行数据质检')
 }
-function checkupTagType(check: CheckupCheck): 'success' | 'warning' | 'danger' {
-  const status = checkupStatus(check)
-  return status === 'pass' ? 'success' : status === 'warn' ? 'warning' : 'danger'
-}
-function checkupFlag(check: CheckupCheck): 'PASS' | 'WARN' | 'FAIL' {
-  const status = checkupStatus(check)
-  return status === 'pass' ? 'PASS' : status === 'warn' ? 'WARN' : 'FAIL'
-}
-const checkupWarningCount = computed(() => checkupReport.value?.warning_count
-  ?? checkupReport.value?.groups.flatMap((group) => group.checks)
-    .filter((check) => checkupStatus(check) === 'warn').length
-  ?? 0)
-const checkupHeaderType = computed<'success' | 'warning' | 'danger'>(() => {
-  if (!checkupReport.value?.all_ok) return 'danger'
-  return checkupWarningCount.value ? 'warning' : 'success'
-})
-const checkupHeaderText = computed(() => {
-  if (!checkupReport.value) return ''
-  if (!checkupReport.value.all_ok) return `${checkupReport.value.fails.length} 项未通过`
-  return checkupWarningCount.value ? `体检通过，${checkupWarningCount.value} 项提醒` : '全部通过'
-})
-const checkupScoreText = computed(() => {
-  if (!checkupReport.value) return ''
-  const warning = checkupWarningCount.value ? ` · ${checkupWarningCount.value} 提醒` : ''
-  return `${checkupReport.value.passed} 通过${warning} / ${checkupReport.value.total} 总项`
-})
 async function runCheckup() {
   checkupRunning.value = true
   try {
@@ -774,35 +754,14 @@ const menuPageTitle = useMenuPageTitle()
               { label: '高危优先', value: 'high' },
             ]" />
           </PageSettingItem>
-          <PageToggleRow v-model="settings.hideDoneRows" label="隐藏已解决/已忽略" />
+          <PageToggleRow v-model="settings.hideDoneRows" label="隐藏已解决/已忽略"
+            tip="显式筛选已解决或已忽略状态时仍会显示，便于定位和复核已办问题。" />
         </PageSettingSection>
       </template>
     </PageSettingsDrawer>
 
     <AppDetailDrawer v-model="checkupOpen" title="数据结构体检报告" size="xl">
-      <template v-if="checkupReport">
-        <div class="checkup-head">
-          <el-tag :type="checkupHeaderType" effect="dark" size="large">
-            {{ checkupHeaderText }}
-          </el-tag>
-          <span class="checkup-score">{{ checkupScoreText }}</span>
-          <span class="checkup-note">结构合法性 + 价格正确性 + 字段契约 + 板块数据（本地核查，与质检台账互补，不写台账）</span>
-        </div>
-        <div v-for="g in checkupReport.groups" :key="g.group" class="checkup-group">
-          <div class="checkup-group-title">{{ g.group }}</div>
-          <div v-for="c in g.checks" :key="c.name" class="checkup-row"
-               :class="{ bad: checkupStatus(c) === 'fail', warn: checkupStatus(c) === 'warn' }">
-            <AppHoverInfo :disabled="checkupStatus(c) !== 'warn' || !(c.help || c.detail)"
-                          :content="c.help || c.detail" placement="top">
-              <el-tag :type="checkupTagType(c)" size="small" effect="plain" class="checkup-flag">
-                {{ checkupFlag(c) }}
-              </el-tag>
-            </AppHoverInfo>
-            <span class="checkup-name">{{ c.name }}</span>
-            <span v-if="c.detail" class="checkup-detail">{{ c.detail }}</span>
-          </div>
-        </div>
-      </template>
+      <CheckupReportContent v-if="checkupReport" :report="checkupReport" @locate="locateCheckupIssue" />
     </AppDetailDrawer>
     </template>
   </LayoutHost>
@@ -829,15 +788,4 @@ const menuPageTitle = useMenuPageTitle()
 .ignore-option-title { color: var(--el-text-color-primary); font-weight: var(--app-font-weight-section); }
 .ignore-option-note { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); line-height: var(--app-line-height-comfy); }
 :deep(.row-done) { opacity: 0.55; }
-.checkup-head { display: flex; align-items: center; gap: var(--app-space-3); flex-wrap: wrap; margin-bottom: 16px; }
-.checkup-score { font-size: var(--app-font-size-section-title); font-weight: var(--app-font-weight-section); }
-.checkup-note { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); flex-basis: 100%; }
-.checkup-group { margin-bottom: 14px; }
-.checkup-group-title { font-weight: var(--app-font-weight-section); font-size: var(--app-font-size-table); color: var(--el-text-color-secondary); margin-bottom: 6px; }
-.checkup-row { display: flex; align-items: center; gap: var(--app-space-2); padding: 4px 0; font-size: var(--app-font-size-table); }
-.checkup-row.bad { color: var(--el-color-danger); }
-.checkup-flag { width: 48px; text-align: center; flex-shrink: 0; }
-.checkup-name { flex-shrink: 0; }
-.checkup-detail { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); margin-left: auto; }
-.checkup-row.bad .checkup-detail { color: var(--el-color-danger); }
 </style>

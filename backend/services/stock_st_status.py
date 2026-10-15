@@ -12,6 +12,29 @@ from backend.common.exceptions import DataQualityError
 from backend.limit_ladder.rules import PointInTimeSTStatus, STStatusQuality
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
+# 停牌不免除 ST 身份契约；最新市场日还需覆盖没有当日日线的在市证券。
+# 不展开「全股票 × 全日历」，避免质检生成项目研究范围外的历史缺口。
+ST_EXPECTED_POINTS_SQL = """
+    WITH market AS (SELECT max(trade_date) AS latest FROM daily_bar),
+    bar_spans AS (SELECT code,min(trade_date) AS first_date FROM daily_bar GROUP BY code)
+    SELECT code,trade_date FROM daily_bar
+    UNION
+    SELECT s.code,s.trade_date FROM stock_suspension s
+    JOIN stock_basic sb ON sb.code=s.code
+    JOIN bar_spans span ON span.code=s.code AND s.trade_date>=span.first_date
+    CROSS JOIN market
+    WHERE s.trade_date<=market.latest
+      AND (sb.list_date IS NULL OR sb.list_date<=s.trade_date)
+      AND (sb.delist_date IS NULL OR sb.delist_date>s.trade_date)
+      AND sb.board IN ('主板','创业板','科创板')
+    UNION
+    SELECT sb.code,market.latest AS trade_date FROM stock_basic sb CROSS JOIN market
+    WHERE market.latest IS NOT NULL
+      AND (sb.list_date IS NULL OR sb.list_date<=market.latest)
+      AND (sb.delist_date IS NULL OR sb.delist_date>market.latest)
+      AND sb.board IN ('主板','创业板','科创板')
+"""
+
 
 @dataclass(frozen=True, slots=True)
 class StockSTStatusFact:
@@ -369,7 +392,7 @@ class StockSTStatusService:
         }
 
     def coverage(self, start: date | None = None, end: date | None = None) -> dict:
-        """Summarize canonical ST coverage against stored daily bars."""
+        """Summarize ST coverage for bars, confirmed suspensions and latest listed stocks."""
         where = []
         params: list = []
         if start is not None:
@@ -387,7 +410,7 @@ class StockSTStatusService:
                    count(*) FILTER (WHERE st.quality='approximate') AS approximate,
                    min(st.trade_date) AS first_date,max(st.trade_date) AS latest_date,
                    max(st.updated_at) AS updated_at
-            FROM daily_bar b
+            FROM ({ST_EXPECTED_POINTS_SQL}) b
             LEFT JOIN stock_st_status_daily st
               ON st.code=b.code AND st.trade_date=b.trade_date
             {clause}
@@ -545,7 +568,7 @@ class StockSTStatusService:
         version_row = self.c.query_df(
             f"""
             SELECT max(st.updated_at) AS updated_at
-            FROM daily_bar b
+            FROM ({ST_EXPECTED_POINTS_SQL}) b
             LEFT JOIN stock_st_status_daily st
               ON st.code=b.code AND st.trade_date=b.trade_date
             {clause}

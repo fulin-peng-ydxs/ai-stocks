@@ -161,3 +161,41 @@ def test_update_valuation_respects_fallback_target(client, monkeypatch):
     svc.update(concurrency=1)
 
     assert captured["trade_date"] == target
+
+
+def test_update_keeps_future_delisting_and_uses_final_target(client, monkeypatch):
+    """即使今已退市，回退/续跑的历史目标仍须采集当时在市的证券。"""
+    from backend.config import get_effective_settings
+
+    target = date(2026, 8, 27)
+    client.execute(
+        "INSERT INTO stock_basic (code,name,board,list_date,delist_date) VALUES "
+        "('FUTURE.SH','未来退市','主板','2020-01-01','2026-08-28'),"
+        "('DELIST.SH','已退市','主板','2020-01-01','2026-08-27'),"
+        "('NEW.SH','尚未上市','主板','2026-08-28',NULL)"
+    )
+    svc = IngestionService.__new__(IngestionService)
+    svc.s = get_effective_settings()
+    svc.c, svc.repo = client, MarketRepository(client)
+    svc.src = SimpleNamespace(name='fake')
+    svc.ingest_calendar = lambda *_, **__: 0
+    svc._resolve_update_end = lambda *_, **__: target
+    svc._ingest_indices_incremental = lambda *_, **__: 0
+    svc.ingest_valuation_latest = lambda *_, **__: {'total_mv_rows': 0}
+    svc.ingest_valuation = lambda *_, **__: {'total_mv_rows': 0}
+    monkeypatch.setattr(data_report.DataIntegrityReport, 'gapped_codes', lambda self: [])
+    collected = []
+    svc._update_one = lambda code, end, **__: collected.append((code, end)) or 0
+
+    result = svc.update(concurrency=1)
+    assert collected == [('FUTURE.SH', target)]
+    assert result['target'] == result['ok'] == 1
+    # 覆盖鲜活同样不能把尚未生效的退市日期作为免检理由。
+    client.execute(
+        "INSERT INTO trade_calendar VALUES (?,TRUE)", [target]
+    )
+    client.execute(
+        "INSERT INTO daily_bar (code,trade_date,close) VALUES ('MARKET.SH',?,10)", [target]
+    )
+    frame, _ = data_report.DataIntegrityReport(client)._coverage_frame()
+    assert frame['code'].tolist() == ['FUTURE.SH']

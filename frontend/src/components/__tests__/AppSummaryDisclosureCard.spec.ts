@@ -25,4 +25,37 @@ describe('AppSummaryDisclosureCard', () => {
     Object.defineProperty(preview, 'scrollWidth', { value: 240, configurable: true })
     expect(findOverflowTooltipTarget(preview)).toBeNull()
   })
+
+  it('紧凑模式复用原生展开入口，支持状态前缀且不强加序号', async () => {
+    const wrapper = mount(AppSummaryDisclosureCard, {
+      props: {
+        panelId: 'check-detail', title: '检查项', toggleLabel: '展开检查项',
+        expanded: false, variant: 'compact',
+      },
+      slots: { leading: '<span>提醒</span>', default: '<p>对象明细</p>' },
+    })
+    const trigger = wrapper.get('button')
+    expect(trigger.attributes('aria-controls')).toBe('check-detail')
+    expect(trigger.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('.app-summary-disclosure-card__index').exists()).toBe(false)
+    expect(wrapper.find('#check-detail').exists()).toBe(false)
+    await trigger.trigger('click')
+    expect(wrapper.emitted('toggle')).toHaveLength(1)
+    await wrapper.setProps({ expanded: true })
+    expect(wrapper.get('#check-detail').text()).toBe('对象明细')
+  })
+
+  it('无需明细的静态行保留同一摘要结构，不提供无效按钮或切换事件', async () => {
+    const wrapper = mount(AppSummaryDisclosureCard, {
+      props: {
+        panelId: 'static-check', title: '已通过', toggleLabel: '已通过',
+        expanded: false, variant: 'compact', collapsible: false,
+      },
+    })
+    expect(wrapper.find('button').exists()).toBe(false)
+    const summary = wrapper.get('.app-summary-disclosure-card__summary')
+    expect(summary.attributes('aria-controls')).toBeUndefined()
+    await summary.trigger('click')
+    expect(wrapper.emitted('toggle')).toBeUndefined()
+  })
 })

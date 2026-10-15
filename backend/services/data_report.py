@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pandas as pd
 
@@ -65,8 +65,14 @@ class DataIntegrityReport:
         span = self.c.query_df(
             "SELECT min(trade_date) lo, max(trade_date) hi, count(DISTINCT code) codes FROM daily_bar"
         ).iloc[0]
-        live = int(self._scalar("SELECT count(*) FROM stock_basic WHERE delist_date IS NULL"))
-        delisted = int(self._scalar("SELECT count(*) FROM stock_basic WHERE delist_date IS NOT NULL"))
+        as_of = span["hi"] if not pd.isna(span["hi"]) else datetime.now(UTC).astimezone().date()
+        live = int(self._scalar(
+            "SELECT count(*) FROM stock_basic WHERE delist_date IS NULL OR delist_date>?",
+            [as_of],
+        ))
+        delisted = int(self._scalar(
+            "SELECT count(*) FROM stock_basic WHERE delist_date<=?", [as_of],
+        ))
         return {
             "row_counts": counts,
             "bar_date_min": str(span["lo"]),
@@ -173,7 +179,8 @@ class DataIntegrityReport:
             FROM daily_bar b
             JOIN stock_basic sb ON sb.code = b.code
             LEFT JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date
-            WHERE sb.delist_date IS NULL
+            WHERE (sb.delist_date IS NULL OR sb.delist_date>
+                (SELECT COALESCE(max(trade_date),current_date) FROM daily_bar))
               AND b.trade_date >= ?
               AND (m.code IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL)
             GROUP BY b.code
@@ -198,7 +205,8 @@ class DataIntegrityReport:
             FROM daily_bar b
             JOIN stock_basic sb ON sb.code = b.code
             JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date
-            WHERE sb.delist_date IS NULL
+            WHERE (sb.delist_date IS NULL OR sb.delist_date>
+                (SELECT COALESCE(max(trade_date),current_date) FROM daily_bar))
               AND b.trade_date >= ?
               AND (m.total_mv <= 0 OR m.float_mv <= 0 OR {M_INVERTED})
             GROUP BY b.code
@@ -233,7 +241,12 @@ class DataIntegrityReport:
                     "issue_type": issue_type,
                     "count": count,
                 })
-        stocks = self.c.query_df("SELECT code, name, list_date FROM stock_basic WHERE delist_date IS NULL")
+        stocks = self.c.query_df(
+            "SELECT code, name, list_date FROM stock_basic "
+            "WHERE (list_date IS NULL OR list_date<=?) "
+            "AND (delist_date IS NULL OR delist_date>?)",
+            [latest, latest],
+        )
         bars = self.c.query_df("SELECT code, trade_date FROM daily_bar WHERE trade_date >= ?", [win_lo])
         susp = self.c.query_df("SELECT code, trade_date FROM stock_suspension WHERE trade_date >= ?", [win_lo])
         bar_map: dict[str, set] = {c: set(pd.Timestamp(d).date() for d in g["trade_date"])
@@ -767,6 +780,8 @@ class DataIntegrityReport:
 
     def _collect_st_status_issues(self) -> list[dict]:
         """Aggregate ST contract failures per stock instead of flooding one issue per day."""
+        from backend.services.stock_st_status import ST_EXPECTED_POINTS_SQL
+
         checks = (
             (
                 "st_status_missing",
@@ -786,10 +801,15 @@ class DataIntegrityReport:
         )
         result: list[dict] = []
         for issue_type, predicate, label in checks:
+            # 投影仅存在于日线；缺失与质量必须覆盖停牌及最新在市股票。
+            expected = (
+                "daily_bar" if issue_type == "st_status_mismatch"
+                else f"({ST_EXPECTED_POINTS_SQL})"
+            )
             frame = self.c.query_df(
                 f"""
                 SELECT b.code,min(b.trade_date) AS lo,max(b.trade_date) AS hi,count(*) AS n
-                FROM daily_bar b
+                FROM {expected} b
                 LEFT JOIN stock_st_status_daily st
                   ON st.code=b.code AND st.trade_date=b.trade_date
                 WHERE {predicate}
@@ -935,18 +955,11 @@ class DataIntegrityReport:
         }
 
     # ── 板块维度质检（板块概念需求 R12，T7）──────────────────
-    def scan_board_quality(self) -> dict:
-        """板块数据质检：成分覆盖、板块指数缺口/非法值和资金流覆盖扫描。
+    def board_coverage_issues(self) -> dict:
+        """只读计算指数水位与同日资金流覆盖，供质检台账和结构体检共用。
 
-        收敛语义：先完整计算本轮结果，再在一个事务内替换 open 的
-        board_index_gap / board_index_gap_daily / board_index_invalid /
-        board_fund_missing / board_fund_stale；
-        扫描失败时事务不提交，旧问题不会消失。
-        ignored 豁免按问题性质区分：逐日缺口/单日非法值按
-        (code, type, trade_date) 精确豁免，其余状态型问题按 (code, type) 整体豁免。
-
-        成分数波动不做质量判断；但 has_members=true 且从未形成完整快照必须进入台账，
-        否则概览只能显示覆盖不足、质量页却没有恢复入口。
+        不沿用已处理/忽略台账状态，以当前行情基准和实际数据判断可用性。
+        每类数据一次聚合，避免逐板块查询或因已有历史记录而漏掉尾部缺口。
         """
         # 板块指数缺口：board_bar 最近交易日滞后于 daily_bar 全局最新交易日。
         gap_issues: list[dict] = []
@@ -973,10 +986,62 @@ class DataIntegrityReport:
                 if last_bar is None or last_bar < latest:
                     gap_issues.append({
                         "code": code, "trade_date": latest,
+                        "name": str(r["name"]), "latest_date": str(last_bar) if last_bar else None,
                         "issue_type": "board_index_gap",
                         "detail": f"板块 {r['name']}（{code}）指数缺口：最近指数 {last_bar or '无'}，"
                                   f"全局最新交易日 {latest}",
                     })
+        latest_fund = self._scalar(
+            "SELECT max(snapshot_date) FROM board_fund_flow WHERE period='即时'")
+        latest_fund = None if latest_fund is None or pd.isna(latest_fund) \
+            else pd.Timestamp(latest_fund).date()
+        fund_date = latest or latest_fund or fund_date or _shanghai_today()
+        fund_issues: list[dict] = []
+        if fund_date is not None:
+            boards = self.c.query_df(
+                "SELECT board_code, name FROM board_dict WHERE (has_members OR has_bar)")
+            # 一次聚合该板块在基准日的全部周期覆盖，避免逐板块 N+1 查询
+            have_all = self.c.query_df(
+                "SELECT board_code, period FROM board_fund_flow WHERE snapshot_date=?",
+                [fund_date])
+            have_map: dict[str, set[str]] = {}
+            for _, r in have_all.iterrows():
+                have_map.setdefault(str(r["board_code"]), set()).add(str(r["period"]))
+            for _, b in boards.iterrows():
+                bcode = str(b["board_code"])
+                missing = [p for p in FUND_FLOW_PERIODS
+                           if p not in have_map.get(bcode, set())]
+                if missing:
+                    fund_issues.append({
+                        "code": bcode, "trade_date": fund_date,
+                        "name": str(b["name"]), "missing_periods": missing,
+                        "issue_type": "board_fund_missing",
+                        "detail": json.dumps({
+                            "periods": missing,
+                            "message": f"板块 {b['name']}（{bcode}）资金流缺周期"
+                                       f"{'、'.join(missing)}：无 {fund_date} 同日快照",
+                        }, ensure_ascii=False),
+                    })
+        return {"latest_trade_date": latest, "fund_date": fund_date,
+                "index_gaps": gap_issues, "fund_missing": fund_issues}
+
+    def scan_board_quality(self) -> dict:
+        """板块数据质检：成分覆盖、板块指数缺口/非法值和资金流覆盖扫描。
+
+        收敛语义：先完整计算本轮结果，再在一个事务内替换 open 的
+        board_index_gap / board_index_gap_daily / board_index_invalid /
+        board_fund_missing / board_fund_stale；
+        扫描失败时事务不提交，旧问题不会消失。
+        ignored 豁免按问题性质区分：逐日缺口/单日非法值按
+        (code, type, trade_date) 精确豁免，其余状态型问题按 (code, type) 整体豁免。
+
+        成分数波动不做质量判断；但 has_members=true 且从未形成完整快照必须进入台账，
+        否则概览只能显示覆盖不足、质量页却没有恢复入口。
+        """
+        coverage = self.board_coverage_issues()
+        gap_issues = coverage["index_gaps"]
+        latest = coverage["latest_trade_date"]
+        if latest is not None:
             # 板块指数逐日缺口：近 GAP_WINDOW_DAYS 个开市日内，has_bar 板块具体缺了哪几天。
             # 与 board_index_gap 共存：后者只关心最新交易日是否追上，本类型定位历史窗口内逐日缺失。
             # 板块成立前豁免：晚成立板块（如「xx一季报预增」）在源端成立日前本无数据，
@@ -1087,36 +1152,7 @@ class DataIntegrityReport:
         # 不要求当日全市场覆盖。
         # 多周期：每个板块一条 issue、detail 列缺失周期列表（缺全部周期不刷 5 条）。
         # 数据源不支持按日期回溯，故不检查历史某天缺口，只盯最新快照新鲜度。
-        latest_fund = self._scalar(
-            "SELECT max(snapshot_date) FROM board_fund_flow WHERE period='即时'")
-        latest_fund = None if latest_fund is None or pd.isna(latest_fund) \
-            else pd.Timestamp(latest_fund).date()
-        fund_date = latest or latest_fund or fund_date or _shanghai_today()
-        fund_issues: list[dict] = []
-        if fund_date is not None:
-            boards = self.c.query_df(
-                "SELECT board_code, name FROM board_dict WHERE (has_members OR has_bar)")
-            # 一次聚合该板块在基准日的全部周期覆盖，避免逐板块 N+1 查询
-            have_all = self.c.query_df(
-                "SELECT board_code, period FROM board_fund_flow WHERE snapshot_date=?",
-                [fund_date])
-            have_map: dict[str, set[str]] = {}
-            for _, r in have_all.iterrows():
-                have_map.setdefault(str(r["board_code"]), set()).add(str(r["period"]))
-            for _, b in boards.iterrows():
-                bcode = str(b["board_code"])
-                missing = [p for p in FUND_FLOW_PERIODS
-                           if p not in have_map.get(bcode, set())]
-                if missing:
-                    fund_issues.append({
-                        "code": bcode, "trade_date": fund_date,
-                        "issue_type": "board_fund_missing",
-                        "detail": json.dumps({
-                            "periods": missing,
-                            "message": f"板块 {b['name']}（{bcode}）资金流缺周期"
-                                       f"{'、'.join(missing)}：无 {fund_date} 同日快照",
-                        }, ensure_ascii=False),
-                    })
+        fund_issues = coverage["fund_missing"]
         # 资金流滞后：源级单条（code=NULL），判断任一周期是否整体落后于最新快照日。
         # 资金流是整体批量采集，停摆/某周期连续失败时全源或该周期一起滞后，
         # 记一条源级 issue 而非逐板块逐周期刷屏，修复动作重采对应滞后周期。
@@ -1195,7 +1231,8 @@ class DataIntegrityReport:
                 """SELECT count(*) FROM daily_bar b
                    JOIN stock_basic sb ON sb.code = b.code
                    LEFT JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date
-                   WHERE b.code = ? AND sb.delist_date IS NULL
+                   WHERE b.code = ? AND (sb.delist_date IS NULL OR sb.delist_date>
+                       (SELECT COALESCE(max(trade_date),current_date) FROM daily_bar))
                      AND (m.code IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL)
                      AND b.trade_date >= (
                          SELECT min(trade_date) FROM (
@@ -1208,7 +1245,8 @@ class DataIntegrityReport:
                 f"""SELECT count(*) FROM daily_bar b
                    JOIN stock_basic sb ON sb.code = b.code
                    JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date
-                   WHERE b.code = ? AND sb.delist_date IS NULL
+                   WHERE b.code = ? AND (sb.delist_date IS NULL OR sb.delist_date>
+                       (SELECT COALESCE(max(trade_date),current_date) FROM daily_bar))
                      AND (m.total_mv <= 0 OR m.float_mv <= 0 OR {M_INVERTED})
                      AND b.trade_date >= (
                          SELECT min(trade_date) FROM (
@@ -1249,18 +1287,16 @@ class DataIntegrityReport:
                 [code, trade_date],
             )
             return int(invalid) == 0
-        if issue_type == "st_status_missing":
+        if issue_type in ("st_status_missing", "st_status_approximate"):
+            from backend.services.stock_st_status import ST_EXPECTED_POINTS_SQL
+
+            # 恢复只能以权威事实为终态；缺失变成 approximate 也不能误判修好。
+            predicate = "st.code IS NULL OR st.quality<>'accurate'"
             return int(self._scalar(
-                "SELECT count(*) FROM daily_bar b LEFT JOIN stock_st_status_daily st "
+                f"SELECT count(*) FROM ({ST_EXPECTED_POINTS_SQL}) b "
+                "LEFT JOIN stock_st_status_daily st "
                 "ON st.code=b.code AND st.trade_date=b.trade_date "
-                "WHERE b.code=? AND st.code IS NULL",
-                [code],
-            )) == 0
-        if issue_type == "st_status_approximate":
-            return int(self._scalar(
-                "SELECT count(*) FROM daily_bar b JOIN stock_st_status_daily st "
-                "ON st.code=b.code AND st.trade_date=b.trade_date "
-                "WHERE b.code=? AND st.quality<>'accurate'",
+                f"WHERE b.code=? AND ({predicate})",
                 [code],
             )) == 0
         if issue_type == "st_status_mismatch":
