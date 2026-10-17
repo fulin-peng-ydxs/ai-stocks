@@ -29,7 +29,6 @@ html.dark {
 }
 .app-interaction-list-item:is(.active, .on, [aria-pressed='true']) {
   background: var(--app-interaction-selected-background);
-  box-shadow: inset 3px 0 var(--el-color-primary);
 }
 .app-interaction-link { cursor: pointer; text-underline-offset: 2px; }
 :is(.app-interaction-list-item, .app-interaction-link, .app-focus-ring):focus-visible,

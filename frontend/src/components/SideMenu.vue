@@ -226,7 +226,7 @@ function selectMenu(index: string) {
   color: var(--el-color-primary);
   border-left: 0;
   font-weight: var(--app-nav-weight-active);
-  box-shadow: inset var(--app-nav-indicator-size) 0 var(--shell-accent);
+  box-shadow: none;
 }
 .menu :deep(.el-sub-menu.is-active > .el-sub-menu__title) {
   color: var(--chrome-text-strong);
