@@ -197,7 +197,7 @@ span {
   flex: 1;
   border: 1px solid var(--el-border-color);
   border-radius: 4px;
-  background: var(--app-surface-control);
+  background: var(--app-section-bg);
 }
 .cp-input.sm {
   flex: 0 0 80px;
@@ -270,7 +270,7 @@ span {
   height: 30px;
   border: 1px solid var(--el-border-color);
   border-radius: 4px;
-  background: var(--app-surface-control);
+  background: var(--app-section-bg);
 }
 .cp-overlay,
 .cp-tabs,
@@ -379,7 +379,7 @@ span {
   border-radius: 3px;
 }
 .cp-mli.active {
-  background: var(--app-surface-selected);
+  background: color-mix(in srgb, var(--el-color-primary) 30%, var(--el-fill-color));
 }
 .cp-mdetail {
   flex: 1;

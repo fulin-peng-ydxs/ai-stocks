@@ -1536,7 +1536,7 @@ const menuPageTitle = useMenuPageTitle()
   flex-direction: column;
 }
 :deep(.el-table__row.sector-row--active > td.el-table__cell) {
-  background: var(--app-surface-selected);
+  background: color-mix(in srgb, var(--el-color-primary-light-9) 72%, var(--el-bg-color));
 }
 :deep(.el-table__row.sector-row--active > td:first-child) {
   box-shadow: inset 3px 0 0 var(--el-color-primary);

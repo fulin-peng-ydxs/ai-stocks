@@ -61,7 +61,7 @@ const slots = useSlots()
   min-height: 64px;
   padding: var(--app-space-3) var(--app-space-4);
   border-bottom: 1px solid var(--el-border-color-lighter);
-  background: var(--app-section-bg);
+  background: var(--el-bg-color);
 }
 
 .app-workspace-pane__identity {

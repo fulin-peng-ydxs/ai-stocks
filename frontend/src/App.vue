@@ -991,7 +991,7 @@ button.topbar-status {
 }
 button.topbar-status:hover {
   border-color: var(--app-border-strong);
-  background: var(--app-surface-hover);
+  background: color-mix(in srgb, var(--chrome-bg-soft-hover) 58%, transparent);
   color: var(--chrome-text-strong);
 }
 button.topbar-status:focus-visible {
@@ -1053,7 +1053,7 @@ button.topbar-status:focus-visible {
 }
 .topbar-tool:hover:not(:disabled) {
   border-color: transparent;
-  background: var(--app-surface-hover);
+  background: color-mix(in srgb, var(--chrome-bg-soft-hover) 58%, transparent);
   color: var(--chrome-text-strong);
 }
 .topbar-tool .el-icon {
@@ -1128,14 +1128,14 @@ button.topbar-status:focus-visible {
 }
 .user-entry:hover:not(:disabled) {
   border-color: transparent;
-  background: var(--app-surface-hover);
+  background: color-mix(in srgb, var(--chrome-bg-soft-hover) 62%, transparent);
   color: var(--chrome-text-strong);
 }
 .user-avatar {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--brand-icon-start), var(--brand-icon-end));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--shell-accent) 72%, white 28%), var(--shell-accent));
   color: var(--shell-control-mark);
   display: inline-flex;
   align-items: center;
@@ -1228,7 +1228,7 @@ button.topbar-status:focus-visible {
   gap: var(--app-space-2);
   border-radius: var(--layout-control-radius, 6px);
   padding: 6px 8px;
-  background: var(--app-surface-container);
+  background: color-mix(in srgb, var(--el-fill-color-extra-light) 78%, transparent);
 }
 .topbar-update {
   justify-content: space-between;
@@ -1307,7 +1307,7 @@ button.topbar-status:focus-visible {
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--brand-icon-start), var(--brand-icon-end));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--shell-accent) 72%, white 28%), var(--shell-accent));
   color: var(--shell-control-mark);
   display: inline-flex;
   align-items: center;
@@ -1377,13 +1377,13 @@ button.topbar-status:focus-visible {
 }
 .theme-option {
   --app-interaction-card-border: var(--page-settings-section-border);
-  --app-interaction-card-background: var(--app-surface-container);
+  --app-interaction-card-background: color-mix(in srgb, var(--page-settings-section-bg) 58%, transparent);
   width: 100%;
   min-height: 76px;
   padding: 10px 11px;
   border: 1px solid var(--page-settings-section-border);
   border-radius: 12px;
-  background: var(--app-surface-container);
+  background: color-mix(in srgb, var(--page-settings-section-bg) 58%, transparent);
   color: var(--page-settings-text-muted);
   display: grid;
   grid-template-columns: 72px minmax(0, 1fr) 20px;
@@ -1435,14 +1435,14 @@ button.topbar-status:focus-visible {
 }
 .navigation-option {
   --app-interaction-card-border: var(--page-settings-section-border);
-  --app-interaction-card-background: var(--app-surface-container);
+  --app-interaction-card-background: color-mix(in srgb, var(--page-settings-section-bg) 58%, transparent);
   position: relative;
   min-width: 0;
   min-height: 142px;
   padding: 9px;
   border: 1px solid var(--page-settings-section-border);
   border-radius: 13px;
-  background: var(--app-surface-container);
+  background: color-mix(in srgb, var(--page-settings-section-bg) 58%, transparent);
   color: var(--page-settings-text-muted);
   display: grid;
   grid-template-columns: minmax(0, 1fr) 20px;
@@ -1460,7 +1460,7 @@ button.topbar-status:focus-visible {
   overflow: hidden;
   border: 1px solid var(--page-settings-section-border);
   border-radius: 8px;
-  background: var(--app-surface-container);
+  background: color-mix(in srgb, var(--page-settings-bg) 84%, var(--page-settings-section-bg));
 }
 .nav-preview-head,
 .nav-preview-rail,
@@ -1474,7 +1474,7 @@ button.topbar-status:focus-visible {
   inset: 0 0 auto;
   height: 15px;
   border-bottom: 1px solid var(--page-settings-section-border);
-  background: var(--app-surface-navigation);
+  background: color-mix(in srgb, var(--page-settings-section-bg) 80%, transparent);
 }
 .nav-preview-head::before {
   content: '';
@@ -1493,7 +1493,7 @@ button.topbar-status:focus-visible {
   bottom: 0;
   width: 29px;
   border-right: 1px solid var(--page-settings-section-border);
-  background: var(--app-surface-navigation);
+  background: color-mix(in srgb, var(--page-settings-section-bg) 74%, transparent);
 }
 .nav-preview-rail::before,
 .nav-preview-rail::after {
@@ -1581,7 +1581,7 @@ button.topbar-status:focus-visible {
   top: 15px;
   height: 14px;
   border-bottom: 1px solid var(--page-settings-section-border);
-  background: var(--app-surface-navigation);
+  background: color-mix(in srgb, var(--page-settings-section-bg) 54%, transparent);
 }
 .navigation-preview.is-dual-topbar .nav-preview-sub::before {
   content: '';

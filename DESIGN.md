@@ -48,15 +48,14 @@ Key Characteristics：
 | 角色 | 默认值 | 使用规则 |
 |---|---:|---|
 | 主交互色 | 白天 `#1677ff` / 夜间 `#3b8cff` | 主按钮、当前菜单、可点击强调、选中边框 |
-| 页面背景 | 白天 `#fafafa` / 夜间 `#111111` | 工作区与登录页统一画布，只受明暗模式控制 |
-| 边栏背景 | 白天 `#fcfcfc` / 夜间 `#1c1c1c` | 导航与轻量控件的中性表面，不随预设强调色变化 |
-| 表面色 | 白天 `#ffffff` / 夜间 `#191919` | 卡片、表格、输入框、图表与弹窗、抽屉内容面；与页面画布形成轻微明度层次，不随预设变化 |
-| 次级表面 | 白天 `#f7f7f7` / 夜间 `#202020` | 筛选、摘要、标签格及配置分组，统一消费 `--app-section-bg` |
+| 页面背景 | 白天 `#ffffff` / 夜间 `#171717` | 对齐参考原型主区；工作区与登录页统一画布，只受明暗模式控制 |
+| 边栏背景 | 白天 `#fcfcfc` / 夜间 `#1f1f1f` | 对齐参考原型侧栏；固定中性表面，不随预设强调色变化 |
+| 表面色 | 白天 `#ffffff` / 夜间 `#171717` | 卡片、表格、输入框、抽屉内容面；与同模式页面背景连续，避免主体区域出现无业务意义的色块断层，不随预设变化 |
 | 悬停表面 | 白天 `#f3f3f3` / 夜间 `#292929` | 菜单、表格行、轻量按钮 hover |
 | 主文字 | 白天 `#17181c` / 夜间 `#f4f4f4` | 标题、表头、关键字段 |
 | 正文文字 | 白天 `#44464d` / 夜间 `#d2d2d2` | 表格正文、表单值、说明正文 |
 | 次要文字 | 白天 `#6e7078` / 夜间 `#9a9a9a` | 提示、辅助说明、弱化信息 |
-| 边框 | 白天 `#e5e5e5` / 夜间 `#353535` | 卡片、表格、分割线、输入框 |
+| 边框 | 白天 `#d4d4d4` / 夜间 `#454545` | 卡片、表格、分割线、输入框 |
 | 强边框 | 白天 `#c9c9c9` / 夜间 `#545454` | 选中、强调分区、高对比控件 |
 | 成功 | 白天 `#0ea968` / 夜间 `#3ecf8e` | 健康状态、成功提示、评分高档 |
 | 警告 | 白天 `#f58a07` / 夜间 `#f5a623` | 异常但未失败、样本不足、风险提示、评分中档 |
@@ -89,7 +88,7 @@ Key Characteristics：
 
 预设规则：
 
-- 登录页与工作台必须同源：同一 `light/dark` 下，登录右侧交互区基础色等于工作台 `pageBg`，登录卡片可见色等于工作台 `surfaceBg`；白天以浅灰画布与白色内容面区分区域，夜间按画布 `#111111`、内容面 `#191919`、次级分区 `#202020` 形成层次，边框与间距辅助分隔。结构化信息内部可使用下述 `--app-section-bg` 区分标签格、KPI 与摘要组，不得借此改变图表或卡片主体底色。该关系以 `frontend/src/layout/themeSurfaces.ts` 为底色事实源，并由 `presets.spec.ts` 守卫。
+- 登录页与工作台必须同源：同一 `light/dark` 下，登录右侧交互区基础色等于工作台 `pageBg`，登录卡片可见色等于工作台 `surfaceBg`；白天和夜间的 `pageBg`、`surfaceBg` 分别保持相同，页面与卡片主体通过边框、间距和交互态表达层级，不用常驻底色色块互相分层。结构化信息内部可使用下述 `--app-section-bg` 区分标签格、KPI 与摘要组，不得借此改变图表或卡片主体底色。该关系以 `frontend/src/layout/themeSurfaces.ts` 为底色事实源，并由 `presets.spec.ts` 守卫。
 - 登录或注册成功时，登录页当前可见的 `light/dark` 是本次会话的明确模式：进入工作台前先暂存，鉴权后优先写回用户偏好；只有登录页没有形成待同步模式时，才允许远端用户偏好覆盖本地模式。
 - 登录页恢复为修改前的全屏左右品牌布局：左侧承载品牌字标、趋势轨迹与“看见趋势，先于共识。”主视觉文案，右侧承载独立登录/注册卡片；页面结构、文案层级与交互以 `LoginView.vue` 的恢复版本为准。
 - 登录页桌面双栏以左侧约 55%、右侧约 45% 分配可用宽度，登录/注册卡片最大宽度 480px，空间不足时随右栏收缩；进入单栏布局后卡片最大宽度 430px。账号、密码、验证码等表单标签至少使用 12px 辅助标签 token，标题下说明、登录/注册切换标签和输入值使用 14px 正文 token，卡片底部说明至少使用 12px 辅助标签 token；左侧趋势数据标注中的名称和涨跌值同样不得使用装饰字号。登录页的独立品牌排版不豁免可读业务文字的字号下限。
@@ -100,10 +99,10 @@ Key Characteristics：
 - 外观抽屉必须保留视觉预设区：当前只有一套时显示唯一选中项；“视觉预设”页新增并启用自定义项后，无需改前端代码即可出现在抽屉并驱动运行时。登录页不提供视觉预设管理入口。
 - 外观抽屉必须提供独立的「界面比例」：100% 表示设计 token 的原始尺寸，不表示某台屏幕的自动推荐值。`auto` 使用操作系统已经折算后的当前屏幕可用 CSS 宽高，以 `2560×1440` 可用面积作为原始设计尺寸的自动参考点，按面积的低指数连续曲线双向微调；指数由系统外观配置 `ui.display.auto_scale_exponent` 提供，默认 `0.10`、范围 `0～1`、步长 `0.01`，`0` 表示自动保持 100%；缺项或非法运行时值回退默认，保存与首屏缓存恢复必须同步应用，手动模式和手动比例不受该系统值变化影响；小屏缩小以保留总览、大屏放大以改善远距离阅读，自动范围限制为 `90%~110%`。不得枚举设备型号、分辨率档位，也不得把物理像素、`devicePixelRatio` 或浏览器页级缩放当成目标比例。`custom` 允许在 `50%~150%` 内按 1% 连续微调，首次从自动切换时继承当前比例，避免视觉跳变；滑块调整自动保存当前显示器可用 CSS 宽高与比例档案，宽高均在档案 `±15%` 内时使用综合距离最近项，`5%` 内重复调整更新原项，无匹配时回退最近一次自定义比例，档案只属于当前用户且不直接暴露管理界面。「恢复100%」进入自定义 100% 并更新当前尺寸档案。该能力通过应用根级 `--app-display-scale` 将 `#app` 以左上角为原点整体 `zoom`，统一缩放字体、控件、间距、图表容器、应用内抽屉与锚点浮层，并让布局与原生命中测试消费同一坐标系；浏览器会按 `zoom` 自动折算布局画布，禁止再叠加倒数宽高补偿。滑块不重复显示会遮挡模式选项的数值气泡。布局宽高、滚动量和组件配置必须使用 `client/offset` 布局像素；只有命中测试、指针位置和视口对齐使用 `getBoundingClientRect/clientX/clientY`，两套坐标相减后必须通过共享换算工具转回布局像素。缩放后必须触发依赖尺寸的画布重测；Tooltip、Popover、Select、DatePicker 等依赖触发器坐标的 Popper 浮层必须通过应用级唯一容器管理入口挂入 `#app`，与触发器共同消费浏览器原生 `zoom` 坐标系；依赖层允许通过锁版本补丁把视口裁剪边界换算到该布局坐标系，页面不得再增加私有补偿、二次缩放或逐个关闭 Teleport。Dialog、Drawer、MessageBox 的 body 级遮罩复用整体 `zoom`，内部面板不得重复缩放；全屏抽屉高度和弹窗视口上限必须服从该画布。Message、Notification 按浏览器视口堆叠，保持 100% 自身比例。
 - 启用预设的名称与视觉 token、独立的自动缩放指数通过登录公开配置下发，并分别写入首屏安全缓存。登录页与工作台必须共同消费同一公开配置，不得各自解析或维护另一套。公开配置禁止携带页面、组件或响应式布局字段。
-- 行情身份摘要（`MarketDetailHero`）使用内容面 `--el-bg-color`，列表和图表的栏级标题（`AppWorkspacePane`）使用中性分区面 `--app-section-bg`；这些常驻区域及辅助标题不得混入 `primary` 或随视觉预设强调色染色。
+- 行情身份摘要（`MarketDetailHero`）、行情主次栏头（`AppWorkspacePane`）、板块静态指标和交易纪律快捷卡保持中性底色，不恢复主色浅背景或渐变强调；真实选中、悬停及状态反馈继续沿用既有语义。
 - 调整基础表面必须同步维护 `light`、`dark`、`themeSurfaces.ts` 与 `presets.spec.ts`；调整预设能力必须验证后端目录、运行时选择和固定表面不受覆盖。
 - 页面设置抽屉保留 `32%` 黑色遮光层，用于明确浮层焦点和点击外部关闭边界；遮光层属于临时交互状态，不参与主题底色定义，抽屉内容面与页面常驻容器仍必须使用中性明暗表面。
-- `surfaceHover` 只用于 hover、选中或明确可操作控件状态；常驻的 KPI、指标标签格、查询摘要和配置分组等内部信息分区统一使用 `--app-section-bg`。该语义变量由 `themeSurfaces.ts` 的 `sectionBg` 提供，独立于 `surfaceHover`；设置抽屉分组的 `--page-settings-section-bg` 使用同一次级表面，页面不得直接借用悬停 token，也不得自行调深；图表画布、卡片主体和工作区内容面继续使用 `surfaceBg`。
+- `surfaceHover` 只用于 hover、选中或明确可操作控件状态；常驻的 KPI、指标标签格、查询摘要和配置分组等内部信息分区统一使用 `--app-section-bg`。该语义变量由主题运行时映射当前中性分区色，当前视觉值与 `surfaceHover` 同源但职责独立，页面不得直接借用悬停 token，也不得自行调深；图表画布、卡片主体和工作区内容面继续使用 `surfaceBg`。
 
 ## 3. Typography Rules
 
@@ -368,7 +367,7 @@ Key Characteristics：
 | `AppOverflowTooltipHost` | `frontend/src/components/AppOverflowTooltipHost.vue`、`frontend/src/components/overflow/overflowTooltip.ts` | 全站真实截断原文提示宿主 | 无直接系统组件种类 | 唯一全局挂载于 App；只识别真实截断，不接管原生 title；触发、原文来源与边界见本节提示契约 |
 | `AppHoverInfo` | `frontend/src/components/AppHoverInfo.ts`、`frontend/src/composables/useHoverIntent.ts` | 说明性提示与富内容浮层的统一悬浮意图入口 | 无直接系统组件种类；承接 `HelpHint`、`HelpTip` 和业务解释浮层 | 鼠标静止后显示、移动时重新计时、键盘聚焦即时显示；富内容浮层允许鼠标从触发目标进入内容；点击触发目标时先收起浮层，缓存页面切走时取消计时并再次清理，避免锚点隐藏后漂移；点击触发的菜单不接入 |
 | `AppStateBlock` | `frontend/src/components/AppStateBlock.vue` | 页面和组件的加载、空、异常、无权反馈块，统一 `ready / loading / empty / error` 四态中的非 ready 呈现、重试入口和尺寸档位 | 对应布局系统中的 `loading-state`、`empty-state`、`error-state`、`skeleton` 语义，但作为真实运行时复用组件消费 | 主加载失败、局部列表失败、无权态、非表格空态和稳定骨架占位优先复用；默认大尺寸空态与异常态占满父级可用区域并水平、垂直居中，消费页的直接内容容器必须传递可成长的确定区域，滚动结果区使用纵向 flex 且状态承载体同时填充剩余高度，禁止只让状态块在自身最小高度内居中；`compact` / `tiny` / `inline` 保持局部区域语义；空态同时提供 `title + description` 时由组件统一展示两层信息，不得让说明覆盖标题或由页面私写重复结构；表格数据的 loading/empty 仍优先由 `AppDataTable` / `el-table` 承接，不在页面手写第二套错误块、空态图标或重试布局 |
-| `AppWorkspacePane` | `frontend/src/components/AppWorkspacePane.vue` | 主从工作区单栏的统一栏级外壳，承载标题、可选辅助行、操作区和自适应内容区 | `master-detail` 左右栏的内部面板 | 个股查询、每日榜单、连板天梯、板块行情通过 `MarketMasterDetailWorkspace` 共同消费，个股详情与板块详情直接用于各自两栏；栏级标题统一高度、边框和间距，次要文字色的小号辅助行承载稳定的业务类型，当前日期或结果批次作为主标题展示；主次栏头统一消费 `--app-section-bg` 中性分区色，不提供主色背景变体，禁止由页面复制背景样式；不与图表内部 `StockChartPanelHeader` 合并；图表范围、分栏收展等栏级操作通过 `actions` 插槽承载；紧凑抽屉已有标题时可隐藏重复栏头 |
+| `AppWorkspacePane` | `frontend/src/components/AppWorkspacePane.vue` | 主从工作区单栏的统一栏级外壳，承载标题、可选辅助行、操作区和自适应内容区 | `master-detail` 左右栏的内部面板 | 个股查询、每日榜单、连板天梯、板块行情通过 `MarketMasterDetailWorkspace` 共同消费，个股详情与板块详情直接用于各自两栏；栏级标题统一高度、边框和间距，次要文字色的小号辅助行承载稳定的业务类型，当前日期或结果批次作为主标题展示；主次栏头统一消费 `--el-bg-color` 内容面，不提供主色背景变体，禁止由页面复制背景样式；不与图表内部 `StockChartPanelHeader` 合并；图表范围、分栏收展等栏级操作通过 `actions` 插槽承载；紧凑抽屉已有标题时可隐藏重复栏头 |
 | `AppStatusNotice` | `frontend/src/components/AppStatusNotice.vue` | ready 内容仍可继续使用时的轻量持久提示，统一信息、成功、警告、失败语义、紧凑尺寸和可选动作 | 不属于第五种顶层状态；作为 ready 的辅助消息层 | 缓存数据过期、后台同步失败、本地降级、只读说明和局部依赖不完整但主体仍可用时统一复用；不得替代区域不可用时的 `AppStateBlock error`，同一原因不得同时显示 notice 与阻断错误态；动作使用明确的重新加载、刷新状态等文案，不使用实体主按钮抢占页面主任务 |
 | `StockChartPanelHeader` / `StockChartLegend` / `StockChartPanelDivider` | `frontend/src/components/stock-chart/StockChartPanelHeader.vue`、`frontend/src/components/stock-chart/StockChartLegend.vue`、`frontend/src/components/stock-chart/StockChartPanelDivider.vue` | 股票图表面板的共享标题栏、图例项与独立分隔区，统一 32px 高度、标题层级、水平对齐、序列形态标识、图例文字层级以及双边框分隔 | 股票画布内部结构，不直接映射布局系统组件种类 | `StockChartWorkspace` 的 K线、MACD、量能面板和 `StockIntradayChart` 的分时、量能面板统一消费；调用方以 `items` 提供图例，不复制短线/小柱标识、标签、当前值、边框、内边距或响应式间距；相邻图区使用独立 `StockChartPanelDivider`，只有可拖动工作区启用 `interactive`，不得借用绘图区边界网格线或页面私有边线仿制 |
 | `StockChartOperationsDrawer` / `ChartOperationGroup` | `frontend/src/components/stock-chart/StockChartOperationsDrawer.vue`、`frontend/src/components/ChartOperationGroup.vue` | 图表工作区内部的局部操作抽屉与带名称边界的紧凑操作组，统一局部遮罩、关闭与焦点归还、分组边界、间距和组内控件高度 | 图表内部结构，不直接映射布局系统组件种类 | 使用与短选项内容匹配的受控紧凑宽度，边界只覆盖所属 `StockChartWorkspace`，不得进入页面级覆盖层或遮挡相邻区域；局部枚举保持中性色，主色只用于主视图切换；容器不持有图表领域状态或计算，每类操作独立成组，消费页不得复制同类抽屉、边框、标题和紧凑尺寸 |
@@ -449,7 +448,7 @@ Key Characteristics：
 - 纯图标异步操作必须使用 `AppIconButton` 的 `loading`，不得在页面内为图标按钮新增私有旋转动画或把 loading 混同为 disabled 灰态。图标按钮有必要的功能说明时显式传 `tooltip`；外层已有 `AppHoverInfo` 时不再声明同一提示，统一遵循本节提示契约。
 - Unicode 禁令针对交互图标、操作按钮和纯图标控件；业务公式、状态文案里的箭头/对勾/叉号可作为局部文案保留，但不得用于按钮图标。选择态勾选标记也使用 Element Plus 图标或项目 SVG，不使用 Unicode 字形。
 - 自定义原生 `<button>` 仅保留给导航、登录主视觉切换、规则摘要 disclosure 等具有独立语义和结构的专用控件，并在实现中保持专用 class、键盘语义和必要的 ARIA 状态；普通命令和纯图标操作不得借此绕过统一组件。
-- 明暗模式的输入框、文本域、下拉、数字和日期控件在禁用或只读时保留控件外形，禁用底色统一跟随内容面 `surfaceBg`，边框消费 `border`，文字消费 `textMuted`；不得以大面积 hover 底色充当禁用填充。Element Plus 的差异化选择器统一由 `global.css` 适配，页面不再追加局部底色补丁。`PageSegmented` 禁用时同样使用内容面底色与可见边框，不以整体透明度淡化边界；保留真实选中项，禁用项不响应 hover。
+- 禁用或只读控件保留外形，边框消费 `border`，文字消费 `textMuted`；Element Plus 的边框与文字适配统一由 `global.css` 承接。`PageSegmented` 不以整体透明度淡化边界，保留真实选中项，禁用项不响应 hover。
 - 夜间模式的复选框、单选框、输入边界和表格行悬浮必须使用强边框或主色反馈；空框、选中、禁用三态均需肉眼可辨。
 - 多行对象选择卡片的普通项必须保留共享卡片的中性边框；选中项通过主色边框和定位标记强调，不能只给选中项画边界。宿主透明边框只用于共享交互表面占位，不得把可见表面的边框 token 置为透明。
 - 工具栏按钮应贴近其影响区域，避免页面右上角堆积所有操作。
@@ -787,35 +786,23 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 ## 6. Depth & Elevation
 
-层级按界面职责表达，不按 DOM 嵌套深度自动加灰或加深。内容容器与内部规则卡、配置组、展开编辑区可以使用相同内容底色，通过可见边框、间距和标题区分。
+层级主要通过背景、边框、轻阴影和密度表达，不使用强装饰和多层浮动卡片。
 
-背景与边界的唯一映射入口为 `frontend/src/layout/themeSurfaces.ts::themeSurfaceVariables()`，由 `useLayoutPreset.ts` 在挂载前及切换明暗/预设时统一应用。中性基础色沿用 `THEME_SURFACE_SPECS`，本节不维护第二份色值。`global.css` 负责旧变量别名和 Element Plus 状态选择器适配；业务组件只消费角色，禁止新增私有底色、透明度混色或硬编码颜色兜底。
-
-| 角色 | 共享变量 | 使用场景 |
+| 层级 | 表达方式 | 使用场景 |
 |---|---|---|
-| 页面画布 | `--app-surface-canvas` | 工作区外部底色；兼容 `--el-bg-color-page` |
-| 内容面 | `--app-surface-container` | 主体、卡片、规则摘要、配置组、表格和展开编辑区；兼容 `--el-bg-color` / `--chrome-bg-soft` |
-| 分区标识 | `--app-surface-section` | 已有 KPI 标签格、图表标题等中性分区；兼容 `--app-section-bg`，不得仅因嵌套就使用 |
-| 导航面 | `--app-surface-navigation` | 应用边栏及导航预览 |
-| 控件面 | `--app-surface-control` | 可编辑、只读和禁用输入框、文本域、选择器、数字和日期控件，底色与内容面一致 |
-| 浮层面 | `--app-surface-overlay` / `--app-overlay-scrim` | dialog、drawer、popover 的内容面及遮罩 |
-| 交互状态 | `--app-surface-hover` / `--app-surface-active` / `--app-surface-selected` | 真正悬停、按下或选中时使用；不能充当普通卡片或禁用控件的大面积底色 |
-| 语义状态 | `--app-surface-success/warning/danger` | 成功、警示和错误提示；不得用于普通内容层级 |
-| 分隔线与常规边框 | `--app-border-divider` / `--app-border-default` | 内部分隔与卡片/输入轮廓；Element Plus 的 `border-color`、`light`、`lighter`、`extra-light` 均显式接入，不能回退到组件库默认色 |
-| 强边框与选中边框 | `--app-border-strong` / `--app-border-selected` | 需要增强的边界与真实选择态 |
-| 状态边框 | `--app-border-success/warning/danger` | 与对应状态提示一致的边界 |
+| 页面底 | `--el-bg-color-page` | 工作区背景 |
+| 基础表面 | `--el-bg-color` / `--chrome-bg-soft` | 卡片、表格、输入框 |
+| 分区表面 | `--app-section-bg` | KPI、指标标签格、查询摘要、配置组内部 |
+| 浮层 | `--el-bg-color-overlay`、遮罩、边框 | dialog、drawer、popover |
+| 强浮层 | `box-shadow: 0 10px 30px ...` | 页面设置抽屉、用户中心 |
 
 规则：
 
 - 默认卡片圆角 4px，控件圆角 4-6px，抽屉卡片可到 16px。
-- 业务页面优先用边框、间距和标题表达内容关系；规则卡片和输入内容保持内容面，不通过逐层填灰、主色染底或多层阴影区分。
-- 布局编辑器的设备预览框、响应式说明、组件信息卡与预览区域内的内容统一使用内容面，输入控件样板使用控件面。主成长区通过尺寸、标题和标签标识，不能用成功状态底色表示；真正选中的结构块保留选中边框。
-- 弹窗遮罩统一消费 `--app-overlay-scrim`；不在浮层消费侧私调透明度。
-- 高对比预设提高边框和文字对比，不改变固定中性基础色。
-- 兼容的 `--el-*`、`--chrome-*`、`--drawer-*`、`--page-settings-*` 由共享入口映射，页面可以继续消费，禁止在消费侧重新定义底色配方。
-- `npm run check:surfaces` 已接入 `build`：扫描 Vue/CSS/TS 的静态表面声明、Vue 静态/绑定样式及脚本样式对象和直接赋值，拦截局部色值、混色、未定义角色和私自定义共享角色。动态业务颜色表达式仍须按代码审查核对来源；图表序列身份色不属于容器底色规则。
-- 装饰例外仅限 `App.vue` 的三个明暗示意圆图，以及 `LoginView.vue` 的品牌轨迹、轨迹标注、行情带和认证区光晕。守卫逐条绑定文件、选择器、属性和原值，不能扩大到普通登录控件或整文件豁免；新增例外须同步本节与守卫登记。
-- 本次规则由统一主题要求及内容卡保持原底色的用户反馈确认；共享映射、组件接入和源码守卫已实现。验收覆盖定向测试、生产构建及共享组件明暗临时预览，不代表逐页人工验收全部业务状态。
+- 业务页面不通过多层阴影表达层级，优先用边框、间距、标题和背景差异。
+- 弹窗遮罩保持轻压暗，不能让背景表格干扰当前任务。
+- 高对比预设必须提高边框和文字对比，而不是仅加深背景。
+- 共享边框角色由 `themeSurfaces.ts::themeBorderVariables()` 提供，包含常规、分隔、强边框、选中及语义状态边框；`useLayoutPreset.ts` 统一同步组件库边框。背景仍按本节原有层级和 §2 维护。
 
 ## 7. Do's and Don'ts
 

@@ -32,8 +32,6 @@ export interface LoginSurfaceSpec {
   cardAlpha: number
   /** 登录卡片叠加后的肉眼可见色，同时也是工作台 surfaceBg。 */
   surfaceBg: string
-  /** 常驻筛选、摘要和配置分组的次级表面，不参与悬停状态。 */
-  sectionBg: string
 }
 
 type RgbChannels = [number, number, number]
@@ -113,7 +111,6 @@ function surface(
   sidebarBg: string,
   cardBg: string,
   cardAlpha: number,
-  sectionBg: string,
 ): LoginSurfaceSpec {
   return {
     pageBg,
@@ -121,7 +118,6 @@ function surface(
     cardBg,
     cardAlpha,
     surfaceBg: blendHex(cardBg, pageBg, cardAlpha),
-    sectionBg,
   }
 }
 
@@ -130,80 +126,30 @@ function surface(
  * 预设只能覆盖强调色和形态，不能改变主画布、边栏、卡片与文字的中性底色；边界消费预设的统一边框角色。
  */
 export const THEME_SURFACE_SPECS: Record<ThemeMode, LoginSurfaceSpec> = {
-  light: surface('#fafafa', '#fcfcfc', '#ffffff', 1, '#f7f7f7'),
-  dark: surface('#111111', '#1c1c1c', '#191919', 1, '#202020'),
+  light: surface('#ffffff', '#fcfcfc', '#ffffff', 1),
+  dark: surface('#171717', '#1f1f1f', '#171717', 1),
 }
 
 export function getLoginSurfaceSpec(mode: ThemeMode): LoginSurfaceSpec {
   return THEME_SURFACE_SPECS[mode]
 }
 
-/** 背景与边界角色的唯一映射。业务组件只选角色，不自行混色或依赖组件库默认档位。 */
-export function themeSurfaceVariables(tokens: StyleTokenConfig, mode: ThemeMode): Record<string, string> {
-  const spec = THEME_SURFACE_SPECS[mode]
-  const divider = tokens.border
-  const selected = blendHex(tokens.primary, tokens.surfaceBg, 0.06)
+/** 统一边框角色；背景继续由原有预设运行时及组件样式管理。 */
+export function themeBorderVariables(tokens: StyleTokenConfig): Record<string, string> {
   return {
-    '--app-overlay-scrim': 'rgba(0, 0, 0, 0.32)',
-    '--app-surface-canvas': spec.pageBg,
-    '--app-surface-container': spec.surfaceBg,
-    '--app-surface-section': spec.sectionBg,
-    '--app-surface-navigation': spec.sidebarBg,
-    '--app-surface-active': tokens.activeBg,
-    '--app-surface-control': spec.surfaceBg,
-    '--app-surface-overlay': spec.surfaceBg,
-    '--app-surface-hover': tokens.surfaceHover,
-    '--app-surface-selected': selected,
-    '--app-border-divider': divider,
+    '--app-border-divider': tokens.border,
     '--app-border-default': tokens.border,
     '--app-border-strong': tokens.borderStrong,
     '--app-border-selected': tokens.primary,
-    '--el-bg-color-page': spec.pageBg,
-    '--el-bg-color': spec.surfaceBg,
-    '--el-bg-color-overlay': spec.surfaceBg,
-    '--el-fill-color-blank': spec.surfaceBg,
-    '--el-fill-color': tokens.activeBg,
-    '--el-fill-color-light': tokens.surfaceHover,
-    '--el-fill-color-lighter': spec.sectionBg,
-    '--el-fill-color-extra-light': spec.sectionBg,
-    '--app-section-bg': spec.sectionBg,
-    '--el-disabled-bg-color': spec.surfaceBg,
-    '--el-disabled-border-color': tokens.border,
-    '--el-disabled-text-color': tokens.textMuted,
     '--el-border-color': tokens.border,
     '--el-border-color-light': tokens.border,
-    '--el-border-color-lighter': divider,
-    '--el-border-color-extra-light': divider,
+    '--el-border-color-lighter': tokens.border,
+    '--el-border-color-extra-light': tokens.border,
     '--el-border-color-dark': tokens.borderStrong,
     '--el-border-color-darker': tokens.borderStrong,
-    '--chrome-bg': spec.sidebarBg,
-    '--chrome-bg-soft': spec.surfaceBg,
-    '--chrome-bg-soft-hover': tokens.surfaceHover,
-    '--chrome-border': tokens.border,
-    '--chrome-border-strong': tokens.borderStrong,
-    '--chrome-submenu-bg': spec.sidebarBg,
-    '--chrome-active-bg': tokens.activeBg,
-    '--drawer-bg': spec.surfaceBg,
-    '--drawer-card-bg': spec.surfaceBg,
-    '--drawer-border': tokens.border,
-    '--page-settings-bg': spec.surfaceBg,
-    '--page-settings-border': tokens.border,
-    '--page-settings-section-bg': spec.sectionBg,
-    '--page-settings-section-border': tokens.border,
-    '--page-settings-divider': divider,
-    '--page-settings-dot-ring': spec.surfaceBg,
-    '--page-settings-trigger-hover-bg': tokens.surfaceHover,
-    '--page-settings-seg-bg': tokens.surfaceHover,
-    '--page-settings-seg-hover-bg': tokens.activeBg,
-    '--page-settings-seg-active-bg': mode === 'dark' ? blendHex(tokens.activeBg, tokens.textStrong, 0.88) : spec.surfaceBg,
-    '--page-settings-seg-active-border': tokens.borderStrong,
-    '--page-settings-switch-off': tokens.borderStrong,
-    '--page-settings-tip-border': tokens.borderStrong,
-    '--page-settings-footer-btn-bg': tokens.surfaceHover,
-    '--page-settings-footer-btn-hover-bg': tokens.activeBg,
-    ...Object.fromEntries((['success', 'warning', 'danger'] as const).flatMap((name) => [
-      [`--app-border-${name}`, blendHex(tokens[name], tokens.border, 0.4)],
-      [`--app-surface-${name}`, blendHex(tokens[name], tokens.surfaceBg, 0.08)],
+    '--el-disabled-border-color': tokens.border,
+    ...Object.fromEntries((['success', 'warning', 'danger'] as const).map((name) => [
+      `--app-border-${name}`, blendHex(tokens[name], tokens.border, 0.4),
     ])),
   }
 }

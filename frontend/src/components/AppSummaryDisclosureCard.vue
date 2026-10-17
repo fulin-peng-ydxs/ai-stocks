@@ -96,7 +96,7 @@ function toggle() {
   min-width: 0;
   border: 1px solid var(--app-border-default);
   border-radius: var(--layout-card-radius);
-  background: var(--app-surface-container);
+  background: var(--el-bg-color);
   overflow: hidden;
 }
 .app-summary-disclosure-card.is-expanded {
@@ -125,7 +125,7 @@ function toggle() {
 .app-summary-disclosure-card__summary.has-leading { grid-template-columns: 28px minmax(0, 1fr) 16px; }
 .app-summary-disclosure-card__leading { display: inline-flex; align-items: center; }
 .app-summary-disclosure-card__summary:hover {
-  background: var(--app-surface-hover);
+  background: color-mix(in srgb, var(--el-fill-color-light) 58%, transparent);
 }
 .app-summary-disclosure-card__summary:focus-visible {
   outline: none;
@@ -135,7 +135,7 @@ function toggle() {
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  background: var(--app-surface-control);
+  background: color-mix(in srgb, var(--app-section-bg) 68%, var(--el-bg-color));
   color: var(--el-text-color-secondary);
   display: inline-flex;
   align-items: center;
@@ -144,7 +144,7 @@ function toggle() {
   font-variant-numeric: tabular-nums;
 }
 .is-expanded .app-summary-disclosure-card__index {
-  background: var(--app-surface-selected);
+  background: color-mix(in srgb, var(--el-color-primary-light-9) 76%, var(--el-bg-color));
   color: var(--el-color-primary);
 }
 .app-summary-disclosure-card__copy { min-width: 0; }
@@ -196,7 +196,7 @@ function toggle() {
 .app-summary-disclosure-card__editor {
   padding: var(--app-space-3);
   border-top: 1px solid var(--el-border-color-extra-light);
-  background: var(--app-surface-container);
+  background: var(--el-bg-color);
 }
 .app-summary-disclosure-card__editor :deep(.el-form-item:last-child) { margin-bottom: 0; }
 

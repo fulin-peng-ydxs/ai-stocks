@@ -93,7 +93,7 @@ function toggle() {
 .is-level-1 {
   border: 1px solid var(--app-border-default);
   border-radius: 6px;
-  background: var(--app-surface-container);
+  background: var(--el-bg-color);
   overflow: hidden;
 }
 
@@ -104,7 +104,7 @@ function toggle() {
 .is-level-1 > .config-panel-section__head {
   min-height: 48px;
   padding: 11px 14px;
-  background: var(--app-surface-container);
+  background: color-mix(in srgb, var(--app-section-bg) 58%, transparent);
 }
 
 .is-level-1 > .config-panel-section__body {

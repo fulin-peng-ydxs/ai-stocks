@@ -2,12 +2,11 @@ import { computed, ref, watch } from 'vue'
 import { DEFAULT_LAYOUT_PRESET, getLayoutPreset, LAYOUT_PRESETS } from './presets'
 import {
   blendHex,
-  getLoginSurfaceSpec,
   hasDistinctTextHierarchy,
   isHexColor,
   rgbChannelsFromHex,
   rgbaFromHex,
-  themeSurfaceVariables,
+  themeBorderVariables,
 } from './themeSurfaces'
 import type { LayoutPreset, StyleTokenConfig } from './schema'
 import { useTheme } from '@/composables/useTheme'
@@ -214,10 +213,24 @@ function applyPreset(key: string) {
   applyElementColorScale(root, 'warning', t.warning, mode, t.surfaceBg)
   applyElementColorScale(root, 'danger', t.danger, mode, t.surfaceBg)
   applyElementColorScale(root, 'error', t.danger, mode, t.surfaceBg)
-  const surfaceRoles = themeSurfaceVariables(t, mode)
-  for (const [name, value] of Object.entries(surfaceRoles)) {
+  root.style.setProperty('--el-bg-color-page', t.pageBg)
+  root.style.setProperty('--el-bg-color', t.surfaceBg)
+  root.style.setProperty('--el-bg-color-overlay', t.surfaceBg)
+  root.style.setProperty('--el-fill-color-blank', t.surfaceBg)
+  root.style.setProperty('--app-section-bg', t.surfaceHover)
+  root.style.setProperty('--el-fill-color-light', t.surfaceHover)
+  root.style.setProperty('--el-fill-color-lighter', rgbaFromHex(t.border, mode === 'dark' ? 0.46 : 0.34))
+  root.style.setProperty('--el-fill-color-extra-light', rgbaFromHex(t.surfaceHover, mode === 'dark' ? 0.72 : 0.58))
+  root.style.setProperty('--el-disabled-bg-color', t.surfaceHover)
+  root.style.setProperty('--el-border-color', t.border)
+  root.style.setProperty('--el-border-color-light', t.border)
+  root.style.setProperty('--el-border-color-lighter', t.border)
+  root.style.setProperty('--el-border-color-dark', t.borderStrong)
+  root.style.setProperty('--el-border-color-darker', t.borderStrong)
+  for (const [name, value] of Object.entries(themeBorderVariables(t))) {
     root.style.setProperty(name, value)
   }
+  root.style.setProperty('--el-disabled-text-color', t.textMuted)
   root.style.setProperty('--el-text-color-primary', t.textStrong)
   root.style.setProperty('--el-text-color-regular', t.text)
   root.style.setProperty('--el-text-color-secondary', t.textMuted)
@@ -225,10 +238,17 @@ function applyPreset(key: string) {
   root.style.setProperty('--el-text-color-disabled', t.textMuted)
   root.style.setProperty('--app-muted-text', t.textMuted)
 
+  root.style.setProperty('--chrome-bg', chromeBg)
+  root.style.setProperty('--chrome-bg-soft', t.surfaceBg)
+  root.style.setProperty('--chrome-bg-soft-hover', t.surfaceHover)
+  root.style.setProperty('--chrome-border', t.border)
+  root.style.setProperty('--chrome-border-strong', t.borderStrong)
   root.style.setProperty('--chrome-border-hover', t.primary)
   root.style.setProperty('--chrome-text', t.text)
   root.style.setProperty('--chrome-text-strong', t.textStrong)
   root.style.setProperty('--chrome-text-muted', t.textMuted)
+  root.style.setProperty('--chrome-submenu-bg', t.submenuBg)
+  root.style.setProperty('--chrome-active-bg', t.activeBg)
   root.style.setProperty('--chrome-menu-icon-active-bg', rgbaFromHex(t.primary, mode === 'dark' ? 0.22 : 0.14))
   root.style.setProperty('--chrome-menu-icon-active-border', rgbaFromHex(t.primary, mode === 'dark' ? 0.42 : 0.26))
   root.style.setProperty('--chrome-menu-icon-active-color', t.primary)
@@ -247,15 +267,36 @@ function applyPreset(key: string) {
   root.style.setProperty('--brand-signal', rgbaFromHex(t.danger, mode === 'dark' ? 0.58 : 0.42))
   root.style.setProperty('--brand-word', t.textStrong)
   root.style.setProperty('--brand-word-stroke', rgbaFromHex(mode === 'dark' ? t.pageBg : t.surfaceBg, mode === 'dark' ? 0.58 : 0.68))
+  root.style.setProperty('--drawer-bg', t.pageBg)
+  root.style.setProperty('--drawer-card-bg', t.surfaceBg)
+  root.style.setProperty('--drawer-border', t.border)
   root.style.setProperty('--drawer-text', t.text)
   root.style.setProperty('--drawer-text-muted', t.textMuted)
+  root.style.setProperty('--page-settings-bg', t.surfaceBg)
+  root.style.setProperty('--page-settings-border', t.border)
   root.style.setProperty('--page-settings-shadow', t.shadow)
+  root.style.setProperty('--page-settings-section-bg', t.surfaceBg)
+  root.style.setProperty('--page-settings-section-border', t.border)
+  root.style.setProperty('--page-settings-divider', t.border)
   root.style.setProperty('--page-settings-text', t.textStrong)
   root.style.setProperty('--page-settings-text-subtle', t.text)
   root.style.setProperty('--page-settings-text-muted', t.textMuted)
   root.style.setProperty('--page-settings-accent', t.primary)
+  root.style.setProperty('--page-settings-dot-ring', t.surfaceBg)
   root.style.setProperty('--page-settings-trigger-text', t.textMuted)
   root.style.setProperty('--page-settings-trigger-hover-text', t.textStrong)
+  root.style.setProperty('--page-settings-trigger-hover-bg', t.surfaceHover)
+  root.style.setProperty('--page-settings-seg-bg', t.surfaceHover)
+  root.style.setProperty('--page-settings-seg-hover-bg', t.activeBg)
+  root.style.setProperty(
+    '--page-settings-seg-active-bg',
+    mode === 'dark' ? blendHex(t.activeBg, t.textStrong, 0.88) : t.surfaceBg,
+  )
+  root.style.setProperty('--page-settings-seg-active-border', t.borderStrong)
+  root.style.setProperty('--page-settings-switch-off', t.borderStrong)
+  root.style.setProperty('--page-settings-tip-border', t.borderStrong)
+  root.style.setProperty('--page-settings-footer-btn-bg', t.surfaceHover)
+  root.style.setProperty('--page-settings-footer-btn-hover-bg', t.activeBg)
 
   // 金融涨跌色（涨红/跌绿）：感知亮度恒高于同名主体信号色一档，由预设统一提供并随明暗/预设联动。
   const marketUp = isHexColor(t.marketUp) ? t.marketUp : t.danger

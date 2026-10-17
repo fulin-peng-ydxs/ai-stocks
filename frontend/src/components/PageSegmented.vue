@@ -133,7 +133,6 @@ function optionTestId(value: OptionValue): string | undefined {
   color: var(--el-color-primary);
 }
 .page-segmented--disabled {
-  background: var(--el-disabled-bg-color);
   border-color: var(--el-disabled-border-color);
 }
 .page-segmented--disabled .seg-btn {

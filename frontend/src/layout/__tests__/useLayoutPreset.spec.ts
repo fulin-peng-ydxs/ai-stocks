@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { useTheme } from '@/composables/useTheme'
 import { LAYOUT_PRESETS } from '../presets'
-import { blendHex, rgbChannelsFromHex, THEME_SURFACE_SPECS } from '../themeSurfaces'
+import { blendHex, rgbChannelsFromHex } from '../themeSurfaces'
 import {
   setLayoutPreset,
   setPresetCatalog,
@@ -61,16 +61,19 @@ describe('视觉预设运行时 Element Plus 色阶', () => {
         expect(document.documentElement.style.getPropertyValue('--page-settings-seg-bg'))
           .toBe(tokens.surfaceHover)
         expect(document.documentElement.style.getPropertyValue('--app-section-bg'))
-          .toBe(THEME_SURFACE_SPECS[mode].sectionBg)
-        expect(document.documentElement.style.getPropertyValue('--page-settings-section-bg'))
-          .toBe(THEME_SURFACE_SPECS[mode].sectionBg)
-        for (const variable of ['--el-bg-color', '--el-bg-color-overlay', '--el-fill-color-blank',
-          '--drawer-bg', '--drawer-card-bg', '--page-settings-bg', '--el-disabled-bg-color']) {
+          .toBe(tokens.surfaceHover)
+        for (const variable of ['--app-border-default', '--app-border-divider',
+          '--el-border-color', '--el-border-color-light', '--el-border-color-lighter',
+          '--el-border-color-extra-light']) {
           expect(document.documentElement.style.getPropertyValue(variable), `${mode} ${variable}`)
-            .toBe(tokens.surfaceBg)
+            .toBe(tokens.border)
         }
-        expect(document.documentElement.style.getPropertyValue('--el-bg-color-page'))
-          .toBe(tokens.pageBg)
+        expect(document.documentElement.style.getPropertyValue('--app-border-selected'))
+          .toBe(tokens.primary)
+        expect(document.documentElement.style.getPropertyValue('--page-settings-section-bg'))
+          .toBe(tokens.surfaceBg)
+        expect(document.documentElement.style.getPropertyValue('--el-disabled-bg-color'))
+          .toBe(tokens.surfaceHover)
         expect(document.documentElement.style.getPropertyValue('--el-disabled-border-color'))
           .toBe(tokens.border)
         expect(document.documentElement.style.getPropertyValue('--el-disabled-text-color'))
@@ -92,7 +95,7 @@ describe('视觉预设运行时 Element Plus 色阶', () => {
     setLayoutPreset('balanced')
 
     expect(document.documentElement.style.getPropertyValue('--el-color-primary')).toBe('#3b8cff')
-    expect(document.documentElement.style.getPropertyValue('--el-color-primary-light-5')).toBe('#2a538c')
+    expect(document.documentElement.style.getPropertyValue('--el-color-primary-light-5')).toBe('#29528b')
     expect(document.documentElement.style.getPropertyValue('--el-color-primary-light-5')).not.toBe('#2a598a')
     expect(document.documentElement.style.getPropertyValue('--el-color-error'))
       .toBe(document.documentElement.style.getPropertyValue('--el-color-danger'))
@@ -166,7 +169,7 @@ describe('视觉预设运行时 Element Plus 色阶', () => {
     expect(options.value.map((option) => option.value)).toEqual(['balanced', 'custom-red'])
     expect(document.documentElement.dataset.layoutPreset).toBe('custom-red')
     expect(document.documentElement.style.getPropertyValue('--el-color-primary')).toBe('#e5484d')
-    expect(document.documentElement.style.getPropertyValue('--el-bg-color-page')).toBe('#fafafa')
+    expect(document.documentElement.style.getPropertyValue('--el-bg-color-page')).toBe('#ffffff')
   })
 
   it('公开外观目录缓存自定义预设并让登录页与系统页消费同一强调色', () => {
@@ -211,6 +214,6 @@ describe('视觉预设运行时 Element Plus 色阶', () => {
       .toBe(blendHex('#a78bfa', '#ffffff', 0.62))
     expect(document.documentElement.style.getPropertyValue('--brand-icon-end'))
       .toBe(blendHex('#a78bfa', '#ffffff', 0.8))
-    expect(document.documentElement.style.getPropertyValue('--el-bg-color-page')).toBe('#111111')
+    expect(document.documentElement.style.getPropertyValue('--el-bg-color-page')).toBe('#171717')
   })
 })

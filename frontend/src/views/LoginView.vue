@@ -510,18 +510,18 @@ function onSubmit() {
 
 <style scoped>
 .login-shell {
-  /* 登录与工作台消费同一组表面；运行时同源变量由 themeSurfaces.ts 注入。 */
-  --login-page-bg: var(--app-surface-canvas);
-  --login-panel-bg: var(--app-surface-navigation);
-  --login-panel-deep: var(--app-surface-navigation);
+  /* 仅作首帧兜底；运行时基础色由 themeSurfaces.ts 注入，确保登录页与工作台同源。 */
+  --login-page-bg: #ffffff;
+  --login-panel-bg: #fcfcfc;
+  --login-panel-deep: #fcfcfc;
   --login-grid: color-mix(in srgb, var(--login-accent) 7%, transparent);
-  --login-card-bg: var(--app-surface-container);
-  --login-card-opaque-bg: var(--app-surface-container);
+  --login-card-bg: #ffffff;
+  --login-card-opaque-bg: #ffffff;
   --login-card-edge: var(--app-border-default);
   --login-border: var(--app-border-default);
   --login-border-focus: var(--el-color-primary);
   --login-border-dash: var(--app-border-strong);
-  --login-input-bg: var(--app-surface-control);
+  --login-input-bg: color-mix(in srgb, var(--login-card-opaque-bg) 92%, var(--login-page-bg) 8%);
   --login-text: var(--el-text-color-primary, #17181c);
   --login-text-sub: var(--el-text-color-regular, #44464d);
   --login-text-muted: var(--el-text-color-secondary, #6e7078);
@@ -529,8 +529,8 @@ function onSubmit() {
   --login-accent-strong: var(--el-color-primary-dark-2, #1264d9);
   --login-accent-readable: var(--login-accent-strong);
   --login-accent-text: #ffffff;
-  --login-captcha-bg: var(--app-surface-section);
-  --login-toggle-bg: var(--app-surface-control);
+  --login-captcha-bg: var(--app-section-bg, #f3f3f3);
+  --login-toggle-bg: color-mix(in srgb, var(--login-card-opaque-bg) 88%, transparent);
   --login-divider: var(--app-border-default);
   --login-shadow: var(--shell-surface-shadow, rgba(20, 24, 32, 0.1));
   --login-brand-text: var(--el-text-color-primary, #17181c);
@@ -541,7 +541,7 @@ function onSubmit() {
   --login-track-glow: color-mix(in srgb, var(--login-accent) 25%, transparent);
   --login-danger: var(--el-color-danger, #d9363e);
   --login-danger-ring: color-mix(in srgb, var(--login-danger) 16%, transparent);
-  --login-danger-bg: var(--app-surface-danger);
+  --login-danger-bg: color-mix(in srgb, var(--login-danger) 10%, transparent);
   --login-success: var(--el-color-success, #168f63);
 
   position: fixed;
@@ -555,8 +555,8 @@ function onSubmit() {
 }
 .login-shell.is-dark {
   --login-accent-readable: var(--el-color-primary-light-3, #77adff);
-  --login-input-bg: var(--app-surface-control);
-  --login-toggle-bg: var(--app-surface-control);
+  --login-input-bg: color-mix(in srgb, var(--login-card-opaque-bg) 88%, var(--login-page-bg) 12%);
+  --login-toggle-bg: color-mix(in srgb, var(--login-card-opaque-bg) 90%, transparent);
 }
 
 .login-brand {
@@ -923,7 +923,7 @@ function onSubmit() {
   padding: 4px;
   border: 1px solid var(--login-divider);
   border-radius: 10px;
-  background: var(--app-surface-container);
+  background: rgba(112, 132, 142, 0.08);
 }
 .login-tab {
   height: 36px;
@@ -963,7 +963,7 @@ function onSubmit() {
 .login-field:focus-within {
   border-color: var(--login-border-focus);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--login-accent) 13%, transparent);
-  background: var(--app-surface-control);
+  background: color-mix(in srgb, var(--login-input-bg) 82%, white 18%);
 }
 .is-dark .login-field:focus-within { background: var(--login-input-bg); }
 /* 错误态：红边 + 红聚焦环，与 field-error 文案配合就地报错 */
@@ -1137,7 +1137,7 @@ function onSubmit() {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--login-success);
+  background: #43a47a;
   box-shadow: 0 0 0 3px rgba(67, 164, 122, 0.1);
 }
 .login-footnote {

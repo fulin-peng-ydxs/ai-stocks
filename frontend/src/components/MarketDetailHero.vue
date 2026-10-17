@@ -104,7 +104,7 @@ defineSlots<{
   gap: var(--app-space-3);
   padding: var(--app-space-2) var(--app-space-4);
   border-top: 1px solid var(--el-border-color-lighter);
-  background: var(--app-surface-container);
+  background: color-mix(in srgb, var(--el-bg-color) 82%, transparent);
 }
 
 @container app-viewport (max-width: 980px) {
