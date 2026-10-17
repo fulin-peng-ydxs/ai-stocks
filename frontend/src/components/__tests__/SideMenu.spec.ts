@@ -185,6 +185,25 @@ describe('SideMenu 分区导航与 fail-closed', () => {
     expect(router.currentRoute.value.path).toBe('/screen')
   })
 
+  it('跨页返回每日榜单后叶子和分区仍保持当前状态，悬停其他入口不改选择', async () => {
+    const w = await mountMenu('ready', MENUS, '/screen')
+    const board = w.findAll('.el-menu-item').find((item) => item.text() === '每日榜单')!
+    const screen = w.findAll('.el-menu-item').find((item) => item.text() === '策略筛选')!
+    await board.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/board')
+    expect(board.classes()).toContain('is-active')
+    expect(w.get('.section-heading[aria-current="location"]').text()).toBe('最新行情')
+    await screen.trigger('mouseenter')
+    expect(board.classes()).toContain('is-active')
+    await screen.trigger('click')
+    await flushPromises()
+    await board.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/board')
+    expect(w.get('.el-menu-item.is-active').text()).toBe('每日榜单')
+  })
+
   it('仅页面路径或授权变化时滚动露出当前项，不因查询变化抢滚动', async () => {
     const targets: HTMLElement[] = []
     const scroll = vi.fn(function (this: HTMLElement) { targets.push(this) })

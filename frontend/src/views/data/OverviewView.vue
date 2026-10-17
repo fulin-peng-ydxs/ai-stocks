@@ -632,7 +632,7 @@ const menuPageTitle = useMenuPageTitle()
           <el-card
             v-if="kpiVisible('stStatus')"
             shadow="never"
-            class="stat clickable"
+            class="stat clickable app-interaction-target app-interaction-card"
             data-testid="overview-st-status-card"
             role="button"
             tabindex="0"
@@ -649,7 +649,7 @@ const menuPageTitle = useMenuPageTitle()
           <el-card
             v-if="kpiVisible('board')"
             shadow="never"
-            class="stat clickable"
+            class="stat clickable app-interaction-target app-interaction-card"
             data-testid="overview-board-card"
             role="button"
             tabindex="0"
@@ -667,7 +667,7 @@ const menuPageTitle = useMenuPageTitle()
             <div class="stat-label">全局质量评分 <HelpHint text="在市股票中「四层质量全部达标」的占比（0~100），综合入库/契约/正确性/鲜活" /></div>
             <div class="stat-val" :style="{ color: scoreColor }">{{ ov?.quality.score ?? '—' }}</div>
           </el-card>
-          <el-card v-if="kpiVisible('quality')" shadow="never" class="stat clickable" role="button" tabindex="0"
+          <el-card v-if="kpiVisible('quality')" shadow="never" class="stat clickable app-interaction-target app-interaction-card" role="button" tabindex="0"
             @click="gotoQuality()" @keydown.enter.prevent="gotoQuality()" @keydown.space.prevent="gotoQuality()">
             <div class="stat-label">未解决质检 <HelpHint text="尚未解决的质检问题数（按高/中/低危分级）；点击前往数据质量页逐条恢复" @click.stop /></div>
             <div class="stat-val" :class="{ danger: (ov?.quality.by_severity?.high ?? 0) > 0, warn: (ov?.quality.open ?? 0) > 0 }">
@@ -677,7 +677,7 @@ const menuPageTitle = useMenuPageTitle()
               高{{ ov.quality.by_severity?.high ?? 0 }} 中{{ ov.quality.by_severity?.mid ?? 0 }} 低{{ ov.quality.by_severity?.low ?? 0 }} · 点此处理
             </div>
           </el-card>
-          <el-card v-if="kpiVisible('gaps')" shadow="never" class="stat clickable" role="button" tabindex="0"
+          <el-card v-if="kpiVisible('gaps')" shadow="never" class="stat clickable app-interaction-target app-interaction-card" role="button" tabindex="0"
             @click="gotoGap" @keydown.enter.prevent="gotoGap" @keydown.space.prevent="gotoGap">
             <div class="stat-label">缺口 / 滞后 <HelpHint text="近 90 个交易日内存在缺口(疑似漏采)或数据滞后的股票数(已排除确认停牌)；点此前往补数。下方逐股表 L4 列可见各股缺口/滞后明细" @click.stop /></div>
             <div class="stat-val" :class="{ warn: (ov?.gaps.stocks_with_gap ?? 0) > 0 }">
@@ -1179,15 +1179,16 @@ const menuPageTitle = useMenuPageTitle()
                         :key="item.key"
                         role="button"
                         tabindex="0"
-                        class="issue-card"
+                        class="issue-card app-interaction-target app-interaction-card"
                         @click="gotoQuality(undefined, item.key)"
-                        @keyup.enter="gotoQuality(undefined, item.key)"
+                        @keydown.enter.prevent="gotoQuality(undefined, item.key)"
+                        @keydown.space.prevent="gotoQuality(undefined, item.key)"
                       >
-                        <span class="issue-copy">
+                        <span class="issue-copy app-interaction-content">
                           <span class="issue-tag">{{ item.label }}</span>
                           <span class="issue-hint">{{ item.hint }}</span>
                         </span>
-                        <strong>{{ item.count }}</strong>
+                        <strong class="app-interaction-content">{{ item.count }}</strong>
                       </div>
                     </div>
                     <div v-else class="issue-ok-card">
@@ -1269,9 +1270,7 @@ const menuPageTitle = useMenuPageTitle()
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--app-space-3); }
 .stat { text-align: center; }
 .stat :deep(.el-card__body) { padding: 14px 6px; }
-.stat.clickable { cursor: pointer; transition: box-shadow .15s; }
-.stat.clickable:hover { box-shadow: 0 0 0 1px var(--el-color-primary) inset; }
-.stat.clickable:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+.stat.clickable { --app-interaction-card-border: var(--el-card-border-color); cursor: pointer; }
 .stat-label { color: var(--el-text-color-secondary); font-size: var(--app-font-size-table); }
 .stat-val { font-size: var(--app-font-size-data); font-weight: var(--app-font-weight-strong); color: var(--el-text-color-primary); margin-top: 6px; white-space: nowrap; }
 .stat-val .sub { font-size: var(--app-font-size-body); font-weight: var(--app-font-weight-regular); color: var(--el-text-color-secondary); }
@@ -1568,6 +1567,9 @@ const menuPageTitle = useMenuPageTitle()
   gap: var(--app-space-2);
 }
 .issue-card {
+  --app-interaction-card-border: var(--el-color-warning-light-7);
+  --app-interaction-card-hover-border: var(--app-warning-text);
+  --app-interaction-card-background: var(--el-color-warning-light-9);
   width: 100%;
   min-height: 54px;
   display: flex;
@@ -1581,12 +1583,6 @@ const menuPageTitle = useMenuPageTitle()
   color: inherit;
   cursor: pointer;
   text-align: left;
-}
-.issue-card:hover,
-.issue-card:focus-visible {
-  border-color: var(--app-warning-text);
-  box-shadow: 0 0 0 2px var(--el-color-warning-light-8);
-  outline: none;
 }
 .issue-copy {
   min-width: 0;

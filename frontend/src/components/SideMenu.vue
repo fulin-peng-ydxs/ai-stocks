@@ -210,6 +210,8 @@ function selectMenu(index: string) {
   font-weight: var(--app-nav-weight-primary);
 }
 .menu :deep(.el-menu-item.side-menu-node.is-active) {
+  --app-interaction-nav-hover-background: var(--chrome-nav-leaf-active-hover-bg);
+  --app-interaction-nav-hover-color: var(--el-color-primary);
   background: var(--chrome-nav-leaf-active-bg);
   color: var(--el-color-primary);
   border-left: 0;
@@ -219,16 +221,6 @@ function selectMenu(index: string) {
 .menu :deep(.el-sub-menu.is-active > .el-sub-menu__title) {
   color: var(--chrome-text-strong);
   font-weight: var(--app-nav-weight-active);
-}
-.menu :deep(.el-menu-item:hover) {
-  background: var(--chrome-bg-soft);
-}
-.menu :deep(.el-menu-item.is-active:hover) {
-  background: var(--chrome-nav-leaf-active-hover-bg);
-}
-.menu :deep(.el-sub-menu__title:hover) {
-  background: var(--chrome-bg-soft);
-  color: var(--chrome-text-strong);
 }
 .menu :deep(.el-sub-menu .el-menu) {
   background: transparent;
@@ -246,10 +238,5 @@ function selectMenu(index: string) {
   height: 100%;
   margin: 0;
   font-size: inherit;
-}
-.menu :deep(.el-menu-item:focus-visible),
-.menu :deep(.el-sub-menu__title:focus-visible) {
-  outline: var(--app-nav-indicator-size) solid var(--shell-accent);
-  outline-offset: calc(-1 * var(--app-nav-indicator-size));
 }
 </style>

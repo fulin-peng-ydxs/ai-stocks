@@ -13,7 +13,7 @@ withDefaults(defineProps<{ node: MenuTreeNode; depth?: number }>(), { depth: 0 }
     :class="{ 'is-root-menu-node': depth === 0 }" :style="{ '--side-menu-depth': depth }"
   >
     <template #title>
-      <span class="menu-label">
+      <span class="menu-label app-interaction-content">
         <span class="menu-icon" aria-hidden="true"><MenuIcon v-if="node.icon" :name="node.icon" /></span>
         <span class="menu-text">{{ node.title }}</span>
       </span>
@@ -21,10 +21,10 @@ withDefaults(defineProps<{ node: MenuTreeNode; depth?: number }>(), { depth: 0 }
     <SideMenuItem v-for="child in node.children" :key="child.index" :node="child" :depth="depth + 1" />
   </el-sub-menu>
   <el-menu-item
-    v-else :index="node.index" class="side-menu-node"
+    v-else :index="node.index" class="side-menu-node app-interaction-target app-interaction-nav"
     :class="{ 'is-root-menu-node': depth === 0 }" :style="{ '--side-menu-depth': depth }"
   >
-    <span class="menu-label">
+    <span class="menu-label app-interaction-content">
       <span class="menu-icon" aria-hidden="true"><MenuIcon v-if="node.icon" :name="node.icon" /></span>
       <span class="menu-text">{{ node.title }}</span>
     </span>

@@ -35,20 +35,20 @@ const stripStyle = computed(() => ({
     :style="stripStyle"
   >
     <el-button
-      v-for="(item, index) in items"
+      v-for="item in items"
       :key="item.key"
       text
-      class="market-metric"
+      class="market-metric app-interaction-target"
       :class="{
         'market-metric--active': item.key === activeKey,
-        'market-metric--lead': index === 0,
+        'is-selected': item.key === activeKey,
       }"
       :aria-pressed="item.key === activeKey"
       :title="`${item.label}：${item.parts?.map((part) => part.text).join(' ') || item.value}`"
       :data-testid="`${testIdPrefix}-${item.key}`"
       @click="emit('select', item.key)"
     >
-      <span class="market-metric-content">
+      <span class="market-metric-content app-interaction-content">
         <span class="market-metric-label">{{ item.label }}</span>
         <strong v-if="item.parts?.length" class="market-metric-value">
           <span
@@ -71,7 +71,7 @@ const stripStyle = computed(() => ({
   border-bottom: 1px solid var(--el-border-color-lighter);
   background: color-mix(in srgb, var(--app-section-bg) 54%, var(--el-bg-color));
 }
-.market-metric {
+.market-metric.el-button.is-text {
   box-sizing: border-box;
   min-width: 0;
   width: 100%;
@@ -80,27 +80,19 @@ const stripStyle = computed(() => ({
   margin: 0;
   padding: var(--app-space-2) var(--app-space-3);
   justify-content: flex-start;
+  border: 0;
   border-right: 1px solid var(--el-border-color-lighter);
+  background: transparent;
+  box-shadow: none;
   border-radius: 0;
   color: var(--el-text-color-primary);
   text-align: left;
 }
-.market-metric.el-button + .market-metric.el-button {
+.market-metric.el-button + .market-metric.el-button.is-text {
   margin-left: 0;
 }
-.market-metric:last-child {
+.market-metric.el-button:last-child {
   border-right: 0;
-}
-.market-metric:hover,
-.market-metric--active {
-  background: color-mix(in srgb, var(--el-color-primary-light-9) 70%, transparent);
-}
-.market-metric--active {
-  box-shadow: inset 0 -2px 0 var(--el-color-primary);
-}
-.market-metric:focus-visible {
-  outline: 2px solid var(--el-color-primary-light-5);
-  outline-offset: -2px;
 }
 .market-metric :deep(.el-button__text) {
   min-width: 0;
@@ -148,11 +140,26 @@ const stripStyle = computed(() => ({
 .market-metric .muted {
   color: var(--el-text-color-placeholder);
 }
-.market-metric--lead {
-  background: color-mix(in srgb, var(--el-color-primary-light-9) 58%, transparent);
+/* 连续指标属于一个分段栏：定位线留在单元格内部，不叠加独立卡片框和投影。 */
+.market-metric::before { content: none; }
+.market-metric.el-button.is-selected {
+  background: var(--app-interaction-selected-background);
 }
-.market-metric--lead.market-metric--active {
-  background: color-mix(in srgb, var(--el-color-primary-light-9) 70%, transparent);
+.market-metric.is-selected::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: var(--app-nav-indicator-size);
+  background: var(--el-color-primary);
+  pointer-events: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .market-metric.el-button:not(:disabled):hover {
+    background: var(--chrome-bg-soft-hover);
+  }
+  .market-metric.el-button.is-selected:not(:disabled):hover {
+    background: var(--app-interaction-selected-background);
+  }
 }
 @container app-viewport (max-width: 1180px) {
   .market-metric-strip {
@@ -166,7 +173,7 @@ const stripStyle = computed(() => ({
     grid-auto-flow: column;
     grid-auto-columns: minmax(90px, 1fr);
   }
-  .market-metric {
+  .market-metric.el-button.is-text {
     min-height: var(--app-control-height-md);
     padding: var(--app-space-1) var(--app-space-2);
   }

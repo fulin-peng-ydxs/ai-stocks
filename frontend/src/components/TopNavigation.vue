@@ -89,13 +89,15 @@ function descendantLeaves(
       <button
         v-for="node in menus"
         :key="node.index"
-        class="primary-entry"
+        class="primary-entry app-interaction-target app-interaction-nav"
         :class="{ 'is-active': activePrimary?.index === node.index }"
         type="button"
         @click="choosePrimary(node)"
       >
-        <MenuIcon v-if="node.icon" :name="node.icon" class="primary-entry-icon" />
-        <span>{{ node.title }}</span>
+        <span class="app-interaction-content app-interaction-row">
+          <MenuIcon v-if="node.icon" :name="node.icon" class="primary-entry-icon" />
+          <span>{{ node.title }}</span>
+        </span>
       </button>
     </template>
 
@@ -110,13 +112,15 @@ function descendantLeaves(
           @command="chooseLeaf"
         >
           <button
-            class="secondary-entry app-nav-context-entry"
+            class="secondary-entry app-nav-context-entry app-interaction-target app-interaction-nav"
             :class="{ 'is-active': menuContainsPath(node, route.path) }"
             type="button"
           >
-            <MenuIcon v-if="node.icon" :name="node.icon" class="secondary-entry-icon" />
-            {{ node.title }}
-            <el-icon><ArrowDownBold /></el-icon>
+            <span class="app-interaction-content app-interaction-row">
+              <MenuIcon v-if="node.icon" :name="node.icon" class="secondary-entry-icon" />
+              {{ node.title }}
+              <el-icon><ArrowDownBold /></el-icon>
+            </span>
           </button>
           <template #dropdown>
             <el-dropdown-menu>
@@ -124,23 +128,28 @@ function descendantLeaves(
                 v-for="leaf in descendantLeaves(node)"
                 :key="leaf.path"
                 :command="leaf.path"
+                class="app-interaction-target app-interaction-nav"
                 :class="{ 'is-active': route.path === leaf.path || route.path.startsWith(leaf.path + '/') }"
               >
-                <MenuIcon v-if="leaf.icon" :name="leaf.icon" class="dropdown-entry-icon" />
-                {{ leaf.title }}
+                <span class="app-interaction-content app-interaction-row">
+                  <MenuIcon v-if="leaf.icon" :name="leaf.icon" class="dropdown-entry-icon" />
+                  {{ leaf.title }}
+                </span>
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
         <button
           v-else
-          class="secondary-entry app-nav-context-entry"
+          class="secondary-entry app-nav-context-entry app-interaction-target app-interaction-nav"
           :class="{ 'is-active': menuContainsPath(node, route.path) }"
           type="button"
           @click="chooseLeaf(node.index)"
         >
-          <MenuIcon v-if="node.icon" :name="node.icon" class="secondary-entry-icon" />
-          {{ node.title }}
+          <span class="app-interaction-content app-interaction-row">
+            <MenuIcon v-if="node.icon" :name="node.icon" class="secondary-entry-icon" />
+            {{ node.title }}
+          </span>
         </button>
       </template>
     </template>
@@ -162,11 +171,13 @@ function descendantLeaves(
   padding: 0 var(--app-space-3) 0 var(--app-space-control-gap);
 }
 .primary-entry {
+  --app-interaction-content-gap: var(--app-space-2);
   position: relative;
   align-self: stretch;
   min-width: 0;
   padding: var(--app-nav-indicator-size) var(--app-space-3) 0;
   border: 0;
+  border-radius: var(--app-nav-item-radius);
   background: transparent;
   color: var(--chrome-text);
   display: inline-flex;
@@ -179,20 +190,14 @@ function descendantLeaves(
   font-weight: var(--app-nav-weight-primary);
   white-space: nowrap;
   cursor: pointer;
-  transition: color .16s ease, background-color .16s ease;
 }
-.primary-entry-icon {
-  width: var(--app-nav-icon-badge-size);
-  height: var(--app-nav-icon-badge-size);
-  flex: 0 0 var(--app-nav-icon-badge-size);
-  border: 1px solid transparent;
-  border-radius: var(--app-nav-item-radius);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--app-font-size-section-title);
-  overflow: hidden;
-  transition: color .16s ease, border-color .16s ease, background-color .16s ease;
+/* 一级保留整栏底部定位线，只有悬停/焦点表面使用紧凑高度。 */
+.primary-entry.app-interaction-nav {
+  --app-interaction-nav-hover-background: transparent;
+  --app-interaction-inset: calc((100% - var(--app-nav-context-entry-height)) / 2) var(--app-space-1);
+}
+.primary-entry.app-interaction-nav::before {
+  background: var(--chrome-bg-soft-hover);
 }
 .primary-entry::after {
   content: '';
@@ -205,27 +210,41 @@ function descendantLeaves(
   background: var(--shell-accent);
   opacity: 0;
   transform: scaleX(.35);
-  transition: opacity .16s ease, transform .16s ease;
+  transition: opacity var(--app-motion-content) var(--app-motion-ease), transform var(--app-motion-content) var(--app-motion-ease);
 }
-.primary-entry:hover {
-  color: var(--chrome-text-strong);
-  background: color-mix(in srgb, var(--chrome-bg-soft-hover) 42%, transparent);
-}
+.primary-entry:hover,
 .primary-entry.is-active {
   color: var(--chrome-text-strong);
+}
+.primary-entry.is-active::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+.primary-entry-icon {
+  width: var(--app-nav-icon-badge-size);
+  height: var(--app-nav-icon-badge-size);
+  flex: 0 0 var(--app-nav-icon-badge-size);
+  border: 1px solid transparent;
+  border-radius: var(--app-nav-item-radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--app-font-size-section-title);
+  overflow: hidden;
+  transition: var(--app-interaction-color-transition);
 }
 .primary-entry.is-active .primary-entry-icon {
   border-color: var(--chrome-menu-icon-active-border);
   background: var(--chrome-menu-icon-active-bg);
   color: var(--chrome-menu-icon-active-color);
 }
-.primary-entry.is-active::after {
-  opacity: 1;
-  transform: scaleX(1);
-}
 .primary-entry:focus-visible {
+  outline: none;
+}
+.primary-entry.app-interaction-nav:focus-visible::before {
   outline: var(--app-nav-indicator-size) solid var(--shell-accent);
   outline-offset: calc(-1 * var(--app-nav-indicator-size));
+  opacity: 1;
 }
 .top-navigation.is-secondary {
   flex: none;
@@ -301,6 +320,8 @@ function descendantLeaves(
   font-weight: var(--app-nav-weight-regular);
 }
 .top-navigation-dropdown .el-dropdown-menu__item.is-active {
+  --app-interaction-nav-hover-background: var(--chrome-nav-leaf-active-bg);
+  --app-interaction-nav-hover-color: var(--el-color-primary);
   color: var(--el-color-primary);
   background: var(--chrome-nav-leaf-active-bg);
   font-weight: var(--app-nav-weight-active);
@@ -308,7 +329,6 @@ function descendantLeaves(
 .top-navigation-dropdown .dropdown-entry-icon {
   width: var(--app-nav-icon-size);
   height: var(--app-nav-icon-size);
-  margin-right: var(--app-nav-entry-gap);
   display: inline-flex;
   align-items: center;
   justify-content: center;

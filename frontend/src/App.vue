@@ -746,7 +746,7 @@ async function onLogout() {
 
         <SettingsGroup
           title="视觉预设"
-          hint="预设改变强调色与布局策略，不改变明暗基础背景"
+          hint="预设改变强调色与材质，不改变明暗基础背景"
           :level="1"
           :collapsible="false"
         >
@@ -754,13 +754,13 @@ async function onLogout() {
             <button
               v-for="option in themeOptionsWithSwatches"
               :key="option.value"
-              class="theme-option"
-              :class="{ 'is-active': option.value === activePresetKey }"
+              class="theme-option app-interaction-target app-interaction-card"
+              :class="{ 'is-active': option.value === activePresetKey, 'is-selected': option.value === activePresetKey }"
               type="button"
               :aria-pressed="option.value === activePresetKey"
               @click="selectPreset(option.value)"
             >
-              <span class="theme-option-signal" aria-hidden="true">
+              <span class="theme-option-signal app-interaction-content" aria-hidden="true">
                 <i
                   v-for="(swatch, index) in option.swatches"
                   :key="`${index}-${swatch}`"
@@ -768,11 +768,11 @@ async function onLogout() {
                   :style="{ background: swatch }"
                 />
               </span>
-              <span class="theme-option-copy">
+              <span class="theme-option-copy app-interaction-content">
                 <strong>{{ option.label }}</strong>
                 <small>{{ option.description }}</small>
               </span>
-              <el-icon class="theme-option-check" aria-hidden="true"><Select /></el-icon>
+              <el-icon class="theme-option-check app-interaction-content" aria-hidden="true"><Select /></el-icon>
             </button>
           </div>
         </SettingsGroup>
@@ -787,24 +787,24 @@ async function onLogout() {
             <button
               v-for="option in navigationOptions"
               :key="option.value"
-              class="navigation-option"
-              :class="{ 'is-active': navigationMode === option.value }"
+              class="navigation-option app-interaction-target app-interaction-card"
+              :class="{ 'is-active': navigationMode === option.value, 'is-selected': navigationMode === option.value }"
               type="button"
               :aria-pressed="navigationMode === option.value"
               @click="setNavigationMode(option.value)"
             >
-              <span class="navigation-preview" :class="`is-${option.value}`" aria-hidden="true">
+              <span class="navigation-preview app-interaction-content" :class="`is-${option.value}`" aria-hidden="true">
                 <i class="nav-preview-head" />
                 <i class="nav-preview-rail" />
                 <i class="nav-preview-sub" />
                 <i class="nav-preview-tabs"><b /><b /></i>
                 <i class="nav-preview-content"><b /><b /></i>
               </span>
-              <span class="navigation-option-copy">
+              <span class="navigation-option-copy app-interaction-content">
                 <strong>{{ option.label }}</strong>
                 <small>{{ option.description }}</small>
               </span>
-              <el-icon class="theme-option-check" aria-hidden="true"><Select /></el-icon>
+              <el-icon class="theme-option-check app-interaction-content" aria-hidden="true"><Select /></el-icon>
             </button>
           </div>
         </SettingsGroup>
@@ -1369,6 +1369,8 @@ button.topbar-status:focus-visible {
   gap: var(--app-space-2);
 }
 .theme-option {
+  --app-interaction-card-border: var(--page-settings-section-border);
+  --app-interaction-card-background: color-mix(in srgb, var(--page-settings-section-bg) 58%, transparent);
   width: 100%;
   min-height: 76px;
   padding: 10px 11px;
@@ -1382,16 +1384,8 @@ button.topbar-status:focus-visible {
   gap: var(--app-space-3);
   text-align: left;
   cursor: pointer;
-  transition: border-color .18s ease, background-color .18s ease, transform .18s ease;
 }
-.theme-option:hover {
-  border-color: var(--page-settings-border);
-  transform: translateY(-1px);
-}
-.theme-option.is-active {
-  border-color: color-mix(in srgb, var(--page-settings-accent) 62%, var(--page-settings-border));
-  background: color-mix(in srgb, var(--page-settings-accent) 7%, var(--page-settings-bg));
-}
+.theme-option.is-active { color: var(--page-settings-text); }
 .theme-option-signal {
   height: 44px;
   padding: 8px;
@@ -1433,6 +1427,8 @@ button.topbar-status:focus-visible {
   gap: var(--app-space-2);
 }
 .navigation-option {
+  --app-interaction-card-border: var(--page-settings-section-border);
+  --app-interaction-card-background: color-mix(in srgb, var(--page-settings-section-bg) 58%, transparent);
   position: relative;
   min-width: 0;
   min-height: 142px;
@@ -1447,19 +1443,8 @@ button.topbar-status:focus-visible {
   gap: var(--app-space-2) var(--app-space-control-gap);
   text-align: left;
   cursor: pointer;
-  transition: color .18s ease, border-color .18s ease, background-color .18s ease, transform .18s ease;
 }
-.navigation-option:hover {
-  color: var(--page-settings-text);
-  border-color: var(--page-settings-border);
-  transform: translateY(-1px);
-}
-.navigation-option.is-active {
-  color: var(--page-settings-text);
-  border-color: color-mix(in srgb, var(--page-settings-accent) 62%, var(--page-settings-border));
-  background: color-mix(in srgb, var(--page-settings-accent) 7%, var(--page-settings-bg));
-  box-shadow: 0 8px 22px color-mix(in srgb, var(--page-settings-shadow) 38%, transparent);
-}
+.navigation-option.is-active { color: var(--page-settings-text); }
 .navigation-preview {
   position: relative;
   grid-column: 1 / -1;

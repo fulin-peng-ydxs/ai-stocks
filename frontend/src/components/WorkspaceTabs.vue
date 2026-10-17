@@ -58,7 +58,7 @@ async function close(key: string) {
       <div
         v-for="tab in workspaceTabs"
         :key="tab.key"
-        class="workspace-tab app-nav-context-entry"
+        class="workspace-tab app-nav-context-entry app-interaction-target app-interaction-nav"
         :class="{ 'is-active': tab.key === route.path }"
         role="tab"
         :tabindex="tab.key === route.path ? 0 : -1"
@@ -67,13 +67,15 @@ async function close(key: string) {
         @keydown.enter="activate(tab.path)"
         @keydown.space.prevent="activate(tab.path)"
       >
-        <span class="workspace-tab-title">{{ tab.title }}</span>
+        <span class="workspace-tab-dot app-interaction-content" aria-hidden="true" />
+        <span class="workspace-tab-title app-interaction-content">{{ tab.title }}</span>
         <button
           v-if="workspaceTabs.length > 1"
           class="workspace-tab-close"
           type="button"
           :aria-label="`关闭 ${tab.title}`"
           @click.stop="close(tab.key)"
+          @keydown.stop
         >
           <el-icon><Close /></el-icon>
         </button>
@@ -102,6 +104,7 @@ async function close(key: string) {
   gap: var(--app-nav-entry-gap);
   overflow-x: auto;
   scrollbar-width: none;
+  padding-block: var(--app-space-1);
 }
 .workspace-tabs-rail::-webkit-scrollbar { display: none; }
 .workspace-tab {
@@ -114,8 +117,7 @@ async function close(key: string) {
   line-height: var(--app-nav-meta-line-height);
   font-weight: var(--app-nav-weight-regular);
 }
-.workspace-tab::before {
-  content: '';
+.workspace-tab-dot {
   width: var(--app-nav-location-dot-size);
   height: var(--app-nav-location-dot-size);
   flex: none;
@@ -126,7 +128,7 @@ async function close(key: string) {
 .workspace-tab.is-active {
   font-weight: var(--app-nav-weight-active);
 }
-.workspace-tab.is-active::before {
+.workspace-tab.is-active .workspace-tab-dot {
   background: var(--shell-accent);
 }
 .workspace-tab-title {

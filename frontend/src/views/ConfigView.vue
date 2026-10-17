@@ -2383,12 +2383,13 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <el-button
               v-for="item in indicatorTemplates"
               :key="item.key"
+              class="app-interaction-target app-interaction-card"
               :class="{ 'is-selected': selectedTemplate === item.key }"
               :aria-pressed="selectedTemplate === item.key"
               @click="selectedTemplate = item.key; applyTemplate(item.key)"
             >
-              <b>{{ item.name }}</b>
-              <span>{{ templateSummary(item.key) }}</span>
+              <b class="app-interaction-content">{{ item.name }}</b>
+              <span class="app-interaction-content">{{ templateSummary(item.key) }}</span>
             </el-button>
           </div>
           <AppStatusNotice
@@ -2890,6 +2891,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   gap: var(--app-space-3);
 }
 :global(.indicator-template-grid .el-button) {
+  --app-interaction-card-border: var(--el-border-color-light);
   display: grid;
   width: min(var(--app-control-width-long), 100%);
   flex: 0 1 var(--app-control-width-long);
@@ -2913,11 +2915,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
   line-height: var(--app-line-height-comfy);
-}
-:global(.indicator-template-grid .el-button.is-selected) {
-  border-color: var(--el-color-primary);
-  background: var(--el-bg-color);
-  box-shadow: inset 3px 0 0 var(--el-color-primary);
 }
 :global(.indicator-editor-grid) { display: grid; gap: var(--app-space-4); }
 :global(.indicator-editor-grid--identity) { grid-template-columns: repeat(2, minmax(0, 1fr)); }

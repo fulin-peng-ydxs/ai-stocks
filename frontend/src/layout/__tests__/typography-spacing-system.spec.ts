@@ -33,6 +33,57 @@ function styleBlocks(file: string): string[] {
 const SIZE_MEDIA_QUERY = /@media[^{}]*\([^)]*\b(?:(?:min|max)-)?(?:width|height)\b/
 
 describe('字体与间距设计契约', () => {
+  it('浮起只接入明确交互角色，视觉层不接管点击并提供禁用与减弱动效边界', () => {
+    const css = read(join(SRC_DIR, 'styles/global.css'))
+    for (const file of [
+      'components/SideMenuItem.vue', 'components/TopNavigation.vue', 'components/WorkspaceTabs.vue',
+      'components/MarketCompareMetricStrip.vue', 'views/limit-ladder/LimitLadderCard.vue',
+      'views/data/OverviewView.vue', 'views/ConfigView.vue', 'views/trade-discipline/components/RuleMasterList.vue',
+      'App.vue',
+    ]) {
+      expect(read(join(SRC_DIR, file)), file).toContain('app-interaction-target')
+    }
+    const shadowLayer = css.match(/::before\s*\{([^}]+)\}/)?.[1] ?? ''
+    expect(shadowLayer).toContain('pointer-events: none')
+    expect(shadowLayer).not.toMatch(/(?:^|;)\s*(?:border|background):/)
+    expect(shadowLayer).not.toContain('--app-interaction-marker')
+    // 卡片边框由唯一浮起表面负责，固定宿主不能再绘制第二套轮廓。
+    const cardHost = css.match(/html\[data-layout-preset\] \.app-interaction-target\.app-interaction-card\s*\{([^}]+)\}/)?.[1] ?? ''
+    expect(cardHost).toContain('border-color: transparent')
+    expect(cardHost).toContain('background: transparent')
+    expect(cardHost).toContain('box-shadow: none')
+    expect(css).toMatch(/\.app-interaction-target\.app-interaction-card::before\s*\{[^}]*--app-interaction-card-background[^}]*--app-interaction-marker[^}]*transform: translateY/)
+
+    const metrics = read(join(SRC_DIR, 'components/MarketCompareMetricStrip.vue'))
+    expect(metrics).not.toContain('app-interaction-card')
+    expect(metrics).toContain('.market-metric::before { content: none; }')
+    expect(metrics).toContain('background: var(--app-interaction-selected-background)')
+    expect(metrics).not.toMatch(/color-mix\([^;]*var\(--el-color-primary\)/)
+    expect(css).toContain('@media (hover: hover) and (pointer: fine)')
+    expect(css).toContain(':not(.app-interaction-delegated, :disabled, .is-disabled, .is-loading,')
+    expect(css).toContain(':has(.app-interaction-trigger:not(:disabled')
+    expect(css).toMatch(/\.app-interaction-delegated \.app-interaction-trigger:focus-visible\s*\{[^}]*outline: none/)
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*\.app-interaction-content[^}]*transform: none !important/)
+    expect(css).not.toMatch(/\.el-card:hover|transition:\s*all\b/)
+    const side = read(join(SRC_DIR, 'components/SideMenu.vue'))
+    expect(side).toContain('class="menu-label section-heading"')
+    expect(side).not.toContain('class="menu-label section-heading app-interaction')
+  })
+
+  it('菜单悬停与焦点共用中性表面入口，当前项通过角色变量保持定位色', () => {
+    const css = read(join(SRC_DIR, 'styles/global.css'))
+    const side = read(join(SRC_DIR, 'components/SideMenu.vue'))
+    const top = read(join(SRC_DIR, 'components/TopNavigation.vue'))
+    expect(css).toContain('--app-interaction-nav-hover-background: var(--chrome-bg-soft-hover)')
+    expect(css).toMatch(/html\[data-layout-preset\] \.el-button\.app-interaction-target\s*\{[^}]*transition: var\(--app-interaction-color-transition\)/)
+    expect(css).toMatch(/:is\(:hover, :focus-visible\)[^{]*\{[^}]*background: var\(--app-interaction-nav-hover-background\)/)
+    expect(side).not.toContain('background: var(--chrome-bg-soft)')
+    expect(side).not.toMatch(/\.el-menu-item[^}]*:hover/)
+    expect(side).toContain('--app-interaction-nav-hover-background: var(--chrome-nav-leaf-active-hover-bg)')
+    expect(top).toContain('--app-interaction-nav-hover-background: transparent')
+    expect(top).toContain('--app-interaction-nav-hover-color: var(--el-color-primary)')
+  })
+
   it('侧栏与双排顶栏按相同导航角色消费字阶，辅助导航保留独立档位', () => {
     const css = read(join(SRC_DIR, 'styles/global.css'))
     const side = read(join(SRC_DIR, 'components/SideMenu.vue'))
@@ -83,9 +134,13 @@ describe('字体与间距设计契约', () => {
     const top = read(join(SRC_DIR, 'components/TopNavigation.vue'))
     const tabs = read(join(SRC_DIR, 'components/WorkspaceTabs.vue'))
     const app = read(join(SRC_DIR, 'App.vue'))
-    // 守卫共享消费边界：防止某个入口重新复制局部选中配方而分叉。
-    expect(top.match(/class="secondary-entry app-nav-context-entry"/g)).toHaveLength(2)
-    expect(tabs).toContain('class="workspace-tab app-nav-context-entry"')
+    // 一级保留图标框和栏底定位线，仅悬停表面紧凑；二级/标签复用选中壳层。
+    expect(top).not.toContain('class="primary-entry app-nav-context-entry ')
+    expect(top).toContain('.primary-entry.is-active::after')
+    expect(top).toContain('.primary-entry.is-active .primary-entry-icon')
+    expect(top).toContain('--app-interaction-inset: calc((100% - var(--app-nav-context-entry-height)) / 2)')
+    expect(top.match(/class="secondary-entry app-nav-context-entry(?: [^"]+)?"/g)).toHaveLength(2)
+    expect(tabs).toContain('class="workspace-tab app-nav-context-entry ')
     expect(css).toMatch(/\.app-nav-context-entry\s*\{[^}]*height: var\(--app-nav-context-entry-height\)/)
     expect(css).toMatch(/\.app-nav-context-entry\.is-active\s*\{[^}]*border-color: var\(--chrome-nav-entry-active-border\)[^}]*box-shadow:/)
     expect(css).toContain('--app-nav-context-entry-height: var(--app-control-height-md)')

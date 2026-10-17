@@ -126,7 +126,7 @@ describe('全站按钮与图标操作契约', () => {
   })
 
   it('原生 button 只用于已声明的专用交互，不回流为页面私有命令按钮', () => {
-    const allowedSpecializedClasses = /class="(?:topbar-status|appearance-mode-option|navigation-option|theme-option|workspace-tab-close|primary-entry|secondary-entry(?: app-nav-context-entry)?|seg-btn|pt-group-toggle|slot-box(?: [^"]*)?|app-icon-button|app-summary-disclosure-card__summary|login-[^"]+)"/
+    const allowedSpecializedClasses = /class="(?:topbar-status|appearance-mode-option|(?:navigation-option|theme-option)(?: app-interaction-target app-interaction-card)?|workspace-tab-close(?: app-interaction-content)?|primary-entry(?: app-nav-context-entry)?(?: app-interaction-target app-interaction-nav)?|secondary-entry(?: app-nav-context-entry)?(?: app-interaction-target app-interaction-nav)?|seg-btn|pt-group-toggle|slot-box(?: [^"]*)?|app-icon-button|app-summary-disclosure-card__summary|login-[^"]+)"/
     const violations: string[] = []
 
     for (const file of vueFiles(SRC_DIR)) {
@@ -211,6 +211,6 @@ describe('全站按钮与图标操作契约', () => {
     const app = read(join(SRC_DIR, 'App.vue'))
 
     expect(app).not.toContain('class="theme-option-check" aria-hidden="true">✓')
-    expect(app).toContain('<el-icon class="theme-option-check" aria-hidden="true"><Select /></el-icon>')
+    expect(app).toContain('<el-icon class="theme-option-check app-interaction-content" aria-hidden="true"><Select /></el-icon>')
   })
 })

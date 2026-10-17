@@ -129,8 +129,16 @@ describe('LimitLadderCard', () => {
     expect(select.element.tagName).toBe('BUTTON')
     expect(select.attributes('aria-label')).toBe('选择甲软件查看走势')
     expect(select.element.contains(related.element)).toBe(false)
+    expect(card.classes()).toContain('app-interaction-delegated')
+    await select.trigger('mouseenter')
+    expect(wrapper.emitted('select')).toBeUndefined()
     await select.trigger('click')
     expect(wrapper.emitted('select')).toEqual([[stock]])
+    expect(card.classes()).not.toContain('is-selected')
+    await wrapper.setProps({ selected: true })
+    expect(card.classes()).toContain('is-selected')
+    expect(card.attributes('aria-current')).toBe('true')
+    wrapper.unmount()
   })
 
   it('选中态同时提供边框和 aria-current，不只依赖颜色', () => {

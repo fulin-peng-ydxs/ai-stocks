@@ -38,15 +38,15 @@ function selectCard(): void {
 
 <template>
   <article
-    class="limit-ladder-card"
-    :class="{ 'limit-ladder-card--selected': selected }"
+    class="limit-ladder-card app-interaction-target app-interaction-card app-interaction-delegated"
+    :class="{ 'limit-ladder-card--selected': selected, 'is-selected': selected }"
     :aria-current="selected ? 'true' : undefined"
     :data-testid="`limit-ladder-card-${stock.code}`"
     :data-stock-code="stock.code"
   >
     <el-button
       native-type="button"
-      class="limit-ladder-card__select"
+      class="limit-ladder-card__select app-interaction-trigger"
       :aria-current="selected ? 'true' : undefined"
       :aria-label="`选择${stock.name}查看走势`"
       :data-testid="`limit-ladder-card-select-${stock.code}`"
@@ -120,26 +120,13 @@ function selectCard(): void {
 
 <style scoped>
 .limit-ladder-card {
+  --app-interaction-rest-elevation: var(--el-box-shadow-lighter);
   min-width: 0;
   padding: var(--app-space-2);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
   box-shadow: var(--el-box-shadow-lighter);
-  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
-}
-.limit-ladder-card:has(.limit-ladder-card__select:hover) {
-  border-color: var(--el-color-primary-light-5);
-  box-shadow: var(--el-box-shadow-light);
-  transform: translateY(-1px);
-}
-.limit-ladder-card--selected {
-  border-color: var(--el-color-primary);
-  box-shadow: inset 3px 0 0 var(--el-color-primary), var(--el-box-shadow-light);
-}
-.limit-ladder-card__select.el-button:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: 2px;
 }
 .limit-ladder-card .limit-ladder-card__select.el-button {
   --el-button-text-color: inherit;

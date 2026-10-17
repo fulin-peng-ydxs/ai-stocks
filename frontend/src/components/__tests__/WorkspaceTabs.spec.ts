@@ -46,6 +46,9 @@ describe('侧栏工作标签页', () => {
     await flushPromises()
 
     expect(wrapper.findAll('.workspace-tab')).toHaveLength(2)
+    await wrapper.get('.workspace-tab:not(.is-active) .workspace-tab-close').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/screen')
     await wrapper.find('.workspace-tab.is-active .workspace-tab-close').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/board')

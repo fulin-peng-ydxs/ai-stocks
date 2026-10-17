@@ -119,8 +119,8 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
         <div
           v-for="rule in filteredRules"
           :key="rule.id"
-          class="rule-master__item"
-          :class="{ active: selectedId === rule.id }"
+          class="rule-master__item app-interaction-target app-interaction-card"
+          :class="{ active: selectedId === rule.id, 'is-selected': selectedId === rule.id }"
           role="option"
           tabindex="0"
           :aria-selected="selectedId === rule.id"
@@ -128,11 +128,11 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
           @keydown.enter="emit('select', rule.id)"
           @keydown.space.prevent="emit('select', rule.id)"
         >
-          <div class="rule-master__name">
+          <div class="rule-master__name app-interaction-content">
             <span>{{ rule.proposed_name || rule.name || '未命名规则' }}</span>
             <el-tag v-if="rule.draft_revision" size="small" type="warning" effect="plain">草稿</el-tag>
           </div>
-          <div class="rule-master__states">
+          <div class="rule-master__states app-interaction-content">
             <span>{{ checkinByRule.get(rule.id) ? `履约版本 v${checkinByRule.get(rule.id)?.version_no}` : effectiveLabel(rule) }}</span>
             <small
               class="rule-master__management"
@@ -161,20 +161,24 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
 .rule-master__tools { display: grid; gap: var(--app-space-2); flex: none; }
 .rule-master__create { width: 100%; }
 .rule-master__region { min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; }
-.rule-master__list { min-height: 0; flex: 1 1 auto; overflow: auto; display: grid; align-content: start; gap: var(--app-space-1); }
+.rule-master__list {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: var(--app-space-1);
+  /* 借用外壳既有内距露出首尾浮层，条目占位与原始文字坐标保持不变。 */
+  margin: calc(-1 * var(--app-space-2));
+  padding: var(--app-space-2);
+}
 .rule-master__item {
+  --app-interaction-card-border: transparent;
   min-height: 70px;
   padding: var(--app-space-2) var(--app-space-3);
   border: 1px solid transparent;
   border-radius: var(--layout-control-radius);
   cursor: pointer;
-}
-.rule-master__item:hover { background: color-mix(in srgb, var(--el-fill-color-light) 58%, transparent); }
-.rule-master__item:focus-visible { outline: 2px solid var(--el-color-primary-light-3); outline-offset: 1px; }
-.rule-master__item.active {
-  border-color: color-mix(in srgb, var(--el-color-primary) 62%, var(--el-border-color));
-  background: color-mix(in srgb, var(--el-color-primary-light-9) 72%, var(--el-bg-color));
-  box-shadow: inset 3px 0 0 var(--el-color-primary);
 }
 .rule-master__name { display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-weight: var(--app-font-weight-section); }
 .rule-master__name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

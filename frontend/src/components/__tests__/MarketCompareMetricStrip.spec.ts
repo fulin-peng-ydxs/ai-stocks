@@ -23,11 +23,19 @@ describe('MarketCompareMetricStrip', () => {
     const members = wrapper.get('[data-testid="metrics-members"]')
     expect(growth.attributes('title')).toBe('5日涨幅：+2.66%')
     expect(members.attributes('title')).toBe('成员涨/跌：50 / 2')
+    await members.trigger('mouseenter')
+    expect(wrapper.emitted('select')).toBeUndefined()
+    const memberButton = members.element as HTMLButtonElement
+    memberButton.disabled = true
+    await members.trigger('click')
+    expect(wrapper.emitted('select')).toBeUndefined()
+    memberButton.disabled = false
     await members.trigger('click')
     expect(wrapper.emitted('select')).toEqual([['members']])
     expect(growth.attributes('aria-pressed')).toBe('true')
     await wrapper.setProps({ activeKey: 'members' })
     expect(members.attributes('aria-pressed')).toBe('true')
+    expect(members.classes()).toContain('is-selected')
     wrapper.unmount()
   })
 })
