@@ -73,7 +73,16 @@ MoneyDecimal = Annotated[Decimal, Field(ge=0, max_digits=20, decimal_places=2)]
 FourPlaceDecimal = Annotated[Decimal, Field(ge=0, max_digits=20, decimal_places=4)]
 
 
+ConditionFilter = Literal["any", "exclude", "only"]
+FactStatus = Literal["yes", "no", "unknown"]
+
+
 class StockRuleBody(StrictBody):
+    price_min: Annotated[Decimal, Field(gt=0, max_digits=20, decimal_places=4)] | None = None
+    price_max: Annotated[Decimal, Field(gt=0, max_digits=20, decimal_places=4)] | None = None
+    st_filter: ConditionFilter = "any"
+    loss_filter: ConditionFilter = "any"
+    st_risk_filter: ConditionFilter = "any"
     detail_id: str | None = None
     name: str | None = None
     max_capital: MoneyDecimal | None = None
@@ -93,6 +102,7 @@ class ActionRuleBody(StrictBody):
 
 
 class RuleDraftBody(StrictBody):
+    max_positions: Annotated[int, Field(strict=True, gt=0, le=2147483647)] | None = None
     name: str | None = None
     capital: MoneyDecimal | None = None
     stock_rules: list[StockRuleBody] = Field(default_factory=list)
@@ -112,6 +122,8 @@ class CopyRuleBody(StrictBody):
 
 
 class OperationBody(StrictBody):
+    loss_status: FactStatus | None = None
+    st_risk_status: FactStatus | None = None
     id: str | None = None
     stock_code: str
     # 兼容旧客户端字段；保存时始终由服务端按 stock_code 解析权威名称。
@@ -130,6 +142,7 @@ class OperationBody(StrictBody):
 
 
 class CheckinContentBody(StrictBody):
+    peak_positions: Annotated[int, Field(strict=True, ge=0, le=2147483647)] | None = None
     assessment: Literal["complied", "partial", "breached"]
     no_operation: bool
     reason_code: str | None = None

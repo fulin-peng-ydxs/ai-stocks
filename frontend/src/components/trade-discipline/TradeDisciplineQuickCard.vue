@@ -45,6 +45,11 @@ function navigateToCheckin(ruleId?: string): void {
 }
 
 async function quickSubmit(ruleId: string, ruleName: string): Promise<void> {
+  const rule = summary.value?.rules.find((item) => item.rule_id === ruleId)
+  if (rule?.max_positions != null) {
+    navigateToCheckin(ruleId)
+    return
+  }
   const tradeDate = summary.value?.trade_date
   if (!tradeDate || submittingRuleId.value) return
   try {
@@ -146,7 +151,7 @@ async function quickSubmit(ruleId: string, ruleName: string): Promise<void> {
             :disabled="Boolean(submittingRuleId)"
             @click="quickSubmit(rule.rule_id, rule.rule_name)"
           >
-            无操作履约
+            {{ rule.max_positions != null ? '填写持仓打卡' : '无操作履约' }}
           </el-button>
           <el-button size="small" text @click="navigateToCheckin(rule.rule_id)">
             去打卡<el-icon><ArrowRight /></el-icon>

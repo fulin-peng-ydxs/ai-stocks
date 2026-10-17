@@ -392,6 +392,7 @@ CREATE TABLE IF NOT EXISTS trade_discipline_rule_version (
     CHECK (version_no > 0),
     CHECK (btrim(name) <> '' AND btrim(normalized_name) <> ''),
     CHECK (capital > 0),
+    max_positions INTEGER CHECK (max_positions > 0),
     PRIMARY KEY (tenant_id, owner_user_id, rule_id, version_no),
     FOREIGN KEY (tenant_id, owner_user_id, rule_id)
         REFERENCES trade_discipline_rule (tenant_id, owner_user_id, id) ON DELETE RESTRICT
@@ -411,6 +412,13 @@ CREATE TABLE IF NOT EXISTS trade_discipline_stock_rule (
     CHECK (btrim(name) <> '' AND btrim(content) <> ''),
     CHECK (display_order > 0),
     CHECK (NOT enabled OR (max_capital IS NOT NULL AND max_capital > 0)),
+    price_min NUMERIC(20,4) CHECK (price_min > 0),
+    price_max NUMERIC(20,4) CHECK (price_max > 0),
+    st_filter TEXT NOT NULL DEFAULT 'any' CHECK (st_filter IN ('any','exclude','only')),
+    loss_filter TEXT NOT NULL DEFAULT 'any' CHECK (loss_filter IN ('any','exclude','only')),
+    st_risk_filter TEXT NOT NULL DEFAULT 'any' CHECK (st_risk_filter IN ('any','exclude','only')),
+    CONSTRAINT trade_discipline_stock_rule_price_bounds
+    CHECK (price_min IS NULL OR price_max IS NULL OR price_min <= price_max),
     PRIMARY KEY (tenant_id, owner_user_id, rule_id, version_no, detail_id),
     UNIQUE (tenant_id, owner_user_id, rule_id, version_no, display_order),
     FOREIGN KEY (tenant_id, owner_user_id, rule_id, version_no)
@@ -455,6 +463,7 @@ CREATE TABLE IF NOT EXISTS trade_discipline_rule_draft (
     CHECK (draft_revision > 0),
     CHECK (capital IS NULL OR capital >= 0),
     CHECK (source_version_no IS NULL OR source_version_no > 0),
+    max_positions INTEGER CHECK (max_positions > 0),
     PRIMARY KEY (tenant_id, owner_user_id, rule_id),
     FOREIGN KEY (tenant_id, owner_user_id, rule_id)
         REFERENCES trade_discipline_rule (tenant_id, owner_user_id, id) ON DELETE CASCADE,
@@ -475,6 +484,13 @@ CREATE TABLE IF NOT EXISTS trade_discipline_draft_stock_rule (
     enabled       BOOLEAN NOT NULL DEFAULT TRUE,
     CHECK (max_capital IS NULL OR max_capital >= 0),
     CHECK (display_order > 0),
+    price_min NUMERIC(20,4) CHECK (price_min > 0),
+    price_max NUMERIC(20,4) CHECK (price_max > 0),
+    st_filter TEXT NOT NULL DEFAULT 'any' CHECK (st_filter IN ('any','exclude','only')),
+    loss_filter TEXT NOT NULL DEFAULT 'any' CHECK (loss_filter IN ('any','exclude','only')),
+    st_risk_filter TEXT NOT NULL DEFAULT 'any' CHECK (st_risk_filter IN ('any','exclude','only')),
+    CONSTRAINT trade_discipline_draft_stock_rule_price_bounds
+    CHECK (price_min IS NULL OR price_max IS NULL OR price_min <= price_max),
     PRIMARY KEY (tenant_id, owner_user_id, rule_id, detail_id),
     UNIQUE (tenant_id, owner_user_id, rule_id, display_order),
     FOREIGN KEY (tenant_id, owner_user_id, rule_id)
@@ -585,6 +601,7 @@ CREATE TABLE IF NOT EXISTS trade_discipline_checkin_revision (
     CONSTRAINT td_revision_violation_detail_check
     CHECK ((assessment IN ('partial', 'breached') AND btrim(coalesce(violation_detail, '')) <> '')
         OR (assessment = 'complied' AND violation_detail IS NULL)),
+    peak_positions INTEGER CHECK (peak_positions >= 0),
     PRIMARY KEY (tenant_id, owner_user_id, checkin_id, revision_no),
     UNIQUE (tenant_id, owner_user_id, checkin_id, revision_no, rule_id, version_no),
     FOREIGN KEY (tenant_id, owner_user_id, checkin_id)
@@ -659,6 +676,7 @@ CREATE TABLE IF NOT EXISTS trade_discipline_operation (
     CHECK (amount IS NULL OR amount >= 0),
     CHECK (fee IS NULL OR fee >= 0),
     CHECK (display_order > 0),
+    selection_facts JSONB,
     PRIMARY KEY (tenant_id, owner_user_id, id),
     UNIQUE (tenant_id, owner_user_id, checkin_id, revision_no, display_order),
     FOREIGN KEY (tenant_id, owner_user_id, checkin_id, revision_no, rule_id, version_no)
@@ -1374,6 +1392,39 @@ _STAGE6_VISIBILITY_INDEXES: tuple[str, ...] = (
      "ON backtest_run (visibility, tenant_id, owner_user_id)"),
 )
 
+_TRADE_DISCIPLINE_CONDITION_UPGRADES = """
+ALTER TABLE trade_discipline_rule_version ADD COLUMN IF NOT EXISTS max_positions INTEGER CHECK (max_positions > 0);
+ALTER TABLE trade_discipline_rule_draft ADD COLUMN IF NOT EXISTS max_positions INTEGER CHECK (max_positions > 0);
+ALTER TABLE trade_discipline_stock_rule ADD COLUMN IF NOT EXISTS price_min NUMERIC(20,4) CHECK (price_min > 0);
+ALTER TABLE trade_discipline_stock_rule ADD COLUMN IF NOT EXISTS price_max NUMERIC(20,4) CHECK (price_max > 0);
+ALTER TABLE trade_discipline_stock_rule ADD COLUMN IF NOT EXISTS st_filter TEXT NOT NULL DEFAULT 'any' CHECK (st_filter IN ('any','exclude','only'));
+ALTER TABLE trade_discipline_stock_rule ADD COLUMN IF NOT EXISTS loss_filter TEXT NOT NULL DEFAULT 'any' CHECK (loss_filter IN ('any','exclude','only'));
+ALTER TABLE trade_discipline_stock_rule ADD COLUMN IF NOT EXISTS st_risk_filter TEXT NOT NULL DEFAULT 'any' CHECK (st_risk_filter IN ('any','exclude','only'));
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='trade_discipline_stock_rule'::regclass AND conname='trade_discipline_stock_rule_price_bounds') THEN ALTER TABLE trade_discipline_stock_rule ADD CONSTRAINT trade_discipline_stock_rule_price_bounds CHECK (price_min IS NULL OR price_max IS NULL OR price_min <= price_max); END IF; END $$;
+ALTER TABLE trade_discipline_draft_stock_rule ADD COLUMN IF NOT EXISTS price_min NUMERIC(20,4) CHECK (price_min > 0);
+ALTER TABLE trade_discipline_draft_stock_rule ADD COLUMN IF NOT EXISTS price_max NUMERIC(20,4) CHECK (price_max > 0);
+ALTER TABLE trade_discipline_draft_stock_rule ADD COLUMN IF NOT EXISTS st_filter TEXT NOT NULL DEFAULT 'any' CHECK (st_filter IN ('any','exclude','only'));
+ALTER TABLE trade_discipline_draft_stock_rule ADD COLUMN IF NOT EXISTS loss_filter TEXT NOT NULL DEFAULT 'any' CHECK (loss_filter IN ('any','exclude','only'));
+ALTER TABLE trade_discipline_draft_stock_rule ADD COLUMN IF NOT EXISTS st_risk_filter TEXT NOT NULL DEFAULT 'any' CHECK (st_risk_filter IN ('any','exclude','only'));
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='trade_discipline_draft_stock_rule'::regclass AND conname='trade_discipline_draft_stock_rule_price_bounds') THEN ALTER TABLE trade_discipline_draft_stock_rule ADD CONSTRAINT trade_discipline_draft_stock_rule_price_bounds CHECK (price_min IS NULL OR price_max IS NULL OR price_min <= price_max); END IF; END $$;
+ALTER TABLE trade_discipline_checkin_revision ADD COLUMN IF NOT EXISTS peak_positions INTEGER CHECK (peak_positions >= 0);
+ALTER TABLE trade_discipline_operation ADD COLUMN IF NOT EXISTS selection_facts JSONB;
+COMMENT ON COLUMN trade_discipline_rule_version.max_positions IS '本套规则允许同时持有的不同股票数量上限，空表示不限';
+COMMENT ON COLUMN trade_discipline_rule_draft.max_positions IS '本套规则允许同时持有的不同股票数量上限，空表示不限';
+COMMENT ON COLUMN trade_discipline_stock_rule.price_min IS '买入成交价下限（元、原始价、含边界），空表示不限';
+COMMENT ON COLUMN trade_discipline_stock_rule.price_max IS '买入成交价上限（元、原始价、含边界），空表示不限';
+COMMENT ON COLUMN trade_discipline_stock_rule.st_filter IS '买入时ST条件：any不限、exclude排除、only仅限';
+COMMENT ON COLUMN trade_discipline_stock_rule.loss_filter IS '买入时亏损条件：any不限、exclude排除、only仅限；事实由用户确认';
+COMMENT ON COLUMN trade_discipline_stock_rule.st_risk_filter IS '买入时ST风险条件：any不限、exclude排除、only仅限；事实由用户确认';
+COMMENT ON COLUMN trade_discipline_draft_stock_rule.price_min IS '买入成交价下限（元、原始价、含边界），空表示不限';
+COMMENT ON COLUMN trade_discipline_draft_stock_rule.price_max IS '买入成交价上限（元、原始价、含边界），空表示不限';
+COMMENT ON COLUMN trade_discipline_draft_stock_rule.st_filter IS '买入时ST条件：any不限、exclude排除、only仅限';
+COMMENT ON COLUMN trade_discipline_draft_stock_rule.loss_filter IS '买入时亏损条件：any不限、exclude排除、only仅限；事实由用户确认';
+COMMENT ON COLUMN trade_discipline_draft_stock_rule.st_risk_filter IS '买入时ST风险条件：any不限、exclude排除、only仅限；事实由用户确认';
+COMMENT ON COLUMN trade_discipline_checkin_revision.peak_positions IS '用户确认的当日最大同时持仓股票数，含之前持仓；空表示旧记录未采集';
+COMMENT ON COLUMN trade_discipline_operation.selection_facts IS '操作时点事实快照：is_st、st_as_of_date为服务端逐日ST数据；loss_status和st_risk_status为用户是/否/未知确认，null旧记录未采集';
+"""
+
 _TRADE_DISCIPLINE_INDEXES: tuple[str, ...] = (
     ("CREATE INDEX IF NOT EXISTS idx_td_rule_owner_status "
      "ON trade_discipline_rule (tenant_id, owner_user_id, status, updated_at DESC) "
@@ -1776,6 +1827,7 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
         client.execute(idx_sql)
     for upgrade_sql in _TASK_RUNTIME_UPGRADES:
         client.execute(upgrade_sql)
+    client.execute(_TRADE_DISCIPLINE_CONDITION_UPGRADES)
     for constraint_sql in _TRADE_DISCIPLINE_POINTER_CONSTRAINTS:
         client.execute(constraint_sql)
     for idx_sql in _TRADE_DISCIPLINE_INDEXES:

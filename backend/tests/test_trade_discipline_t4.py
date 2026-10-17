@@ -88,6 +88,61 @@ def test_operation_request_allows_server_owned_stock_name_snapshot():
     assert body.stock_name_snapshot is None
 
 
+def test_structured_conditions_and_peak_roundtrip_via_authorized_api(
+    client, pg, market, monkeypatch
+):
+    from backend.services.trade_discipline_service import TradeDisciplineService
+    from backend.storage.trade_discipline_repository import TradeDisciplineRepository
+    from backend.tests.test_trade_discipline_t3 import _operation, _rule_payload, _seed_market
+
+    trade_date, *_ = _seed_market(market)
+    identity = _make_user(pg, [
+        "trade-discipline:view", "trade-discipline:rule-manage",
+        "trade-discipline:checkin-view", "trade-discipline:checkin-submit",
+    ])
+    headers = _auth(identity[0], identity[1])
+    monkeypatch.setattr(
+        "backend.api.trade_discipline._service",
+        lambda: TradeDisciplineService(TradeDisciplineRepository(pg), market),
+    )
+    try:
+        payload = _rule_payload()
+        payload["max_positions"] = 2
+        payload["stock_rules"][0].update(price_min="5.1234", loss_filter="exclude")
+        created = client.post("/api/trade-discipline/rules", headers=headers, json=payload)
+        assert created.status_code == 200, created.text
+        rule_id = created.json()["data"]["id"]
+        published = client.post(
+            f"/api/trade-discipline/rules/{rule_id}/publish", headers=headers,
+            json={"expected_revision": 1},
+        )
+        assert published.status_code == 200, published.text
+        operation = _operation(trade_date, complete=False)
+        operation.update(loss_status="unknown", price="5.1234")
+        content = {
+            "rule_id": rule_id, "trade_date": str(trade_date),
+            "assessment": "complied", "no_operation": False, "peak_positions": 3,
+            "operations": [operation],
+        }
+        submitted = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
+        assert submitted.status_code == 200, submitted.text
+        data = submitted.json()["data"]
+        assert data["peak_positions"] == 3
+        assert data["operations"][0]["price"] == "5.1234"
+        assert data["operations"][0]["selection_facts"]["loss_status"] == "unknown"
+        assert "亏损状态未知，无法核对" in data["operations"][0]["condition_warnings"]
+        draft = client.get(
+            f"/api/trade-discipline/rules/{rule_id}", headers=headers,
+        ).json()["data"]["latest_version"]
+        assert draft["max_positions"] == 2
+        assert draft["stock_rules"][0]["price_min"] == "5.1234"
+        content["operations"][0]["is_st"] = False
+        forged = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
+        assert forged.status_code == 422
+    finally:
+        _remove_user(pg, identity)
+
+
 def test_partial_assessment_and_operation_status_are_openapi_validated():
     from backend.api.trade_discipline import CheckinContentBody
 

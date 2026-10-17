@@ -127,7 +127,7 @@
 | `frontend/src/components/stock-chart/StockQuoteSummary.vue` | `@container app-viewport (max-width: 720px)` | 窄宽补充信息换行，报价关键值保留；K 线联动摘要使用最新与可视窗口字符容量，空间不足由摘要内部横向滚动承接；可选字段说明复用 HelpHint 图标，字段名不加后缀；标签区容纳图标且数值列保持固定，支持悬浮与键盘聚焦。 | StockIntradayDialog、StockDetailView |
 | `frontend/src/components/strategy/StrategyItemEnabledSwitch.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | ConfigView、ScreenView |
 | `frontend/src/components/trade-discipline/RuleSummaryCard.vue` | 无自身 CSS 查询 | 委托 AppSummaryDisclosureCard。 | TradeRuleEditor |
-| `frontend/src/components/trade-discipline/TradeDirectionGroupGrid.vue` | `@container app-viewport (max-width: 1100px)` | 窄宽分组单列，保持阅读顺序。 | TradeOperationEditor、TradeRuleEditor |
+| `frontend/src/components/trade-discipline/TradeDirectionGroupGrid.vue` | 无自身 CSS 查询 | 所有宽度按买入、卖出顺序单列，规则与操作逐条独占一行。 | TradeOperationEditor、TradeRuleEditor |
 | `frontend/src/components/trade-discipline/TradeDisciplineQuickCard.vue` | `@container app-viewport (max-width: 520px)` | 窄容器操作换行，规则与动作保留。 | App |
 | `frontend/src/components/trade-discipline/TradeDisciplineSectionPanel.vue` | `@container app-viewport (max-width: 760px)` | 窄宽头部上下排列，不隐藏操作。 | TradeCheckinForm、TradeOperationEditor、TradeRuleEditor |
 | `frontend/src/layout/components/LayoutComponentPreview.vue` | 无自身 CSS 查询 | 固定256高规范样板；状态复用AppStateBlock，消费页可用性需独立验证。 | LayoutComponentsView |
@@ -176,5 +176,5 @@
 | `frontend/src/views/trade-discipline/components/TradeCheckinRevisionDrawer.vue` | `@container app-viewport (max-width: 760px)` | 窄宽身份与版本切换上下排列、事实/规则单列，长内容在详情抽屉滚动。 | TradeDisciplineView |
 | `frontend/src/views/trade-discipline/components/TradeDisciplineHistory.vue` | 无自身 CSS 查询 | 筛选控件最大100%，期间网格最低110；历史表格内部滚动，详情交给统一抽屉。 | TradeDisciplineView |
 | `frontend/src/views/trade-discipline/components/TradeOperationEditor.vue` | `@container app-viewport (max-width: 1180px)`<br>`@container app-viewport (max-width: 760px)` | 中窄股票/时间占整行，规则/金额半行；更窄全部单列，输入保留。 | TradeCheckinForm |
-| `frontend/src/views/trade-discipline/components/TradeRuleEditor.vue` | `@container app-viewport (max-width: 1100px)`<br>`@container app-viewport (max-width: 760px)` | 窄宽状态/基础/卡片单列并开放主体滚动；更窄头部/表单/footer换行。 | TradeDisciplineView |
+| `frontend/src/views/trade-discipline/components/TradeRuleEditor.vue` | `@container app-viewport (max-width: 1100px)`<br>`@container app-viewport (max-width: 760px)` | 规则始终单列；基础字段与资金汇总复用表单标签、顶部对齐及同档控件高度，辅助说明不改变同行对齐；窄宽状态/基础单列并开放主体滚动，更窄头部/表单/footer换行，条件输入保留。 | TradeDisciplineView |
 | `frontend/src/views/trade-discipline/components/ViolationReasonCombobox.vue` | 无自身 CSS 查询 | 委托 BuiltinOptionRow。 | TradeCheckinForm |

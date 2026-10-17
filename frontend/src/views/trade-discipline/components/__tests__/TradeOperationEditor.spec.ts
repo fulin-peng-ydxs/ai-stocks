@@ -15,6 +15,34 @@ const version: RuleVersionDetail = {
 }
 
 describe('TradeOperationEditor', () => {
+  it('买入按所选规则展示事实选择，未知可选；换股清除旧事实，卖出不核对', async () => {
+    const limited: RuleVersionDetail = { ...version, stock_rules: [{ ...version.stock_rules[0], price_max: '10', loss_filter: 'exclude', st_risk_filter: 'exclude' }] }
+    const operation = {
+      client_key: 'condition-operation', stock_code: '000001.SZ', stock_name_snapshot: '平安银行',
+      side: 'buy' as const, stock_rule_id: 'stock-1', action_rule_id: 'buy-1',
+      price: '12', quantity: null, amount: null, fee: null, operated_at: null, note: null, display_order: 1,
+    }
+    const wrapper = mount(TradeOperationEditor, {
+      props: { modelValue: [operation], version: limited, tradeDate: '2026-08-22' },
+      global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } },
+    })
+    await wrapper.get('[data-testid="operation-card-toggle"]').trigger('click')
+    expect(wrapper.get('[data-testid="operation-conditions"]').text()).toContain('股价 ≤10.0000 元')
+    expect(wrapper.text()).toContain('成交价不符合股价条件')
+    const selector = wrapper.findAllComponents({ name: 'ElSelect' }).find((node) => node.attributes('data-testid') === 'operation-loss_status-0')!
+    selector.vm.$emit('update:modelValue', 'unknown')
+    await flushPromises()
+    const changed = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as any[]
+    expect(changed[0].loss_status).toBe('unknown')
+    await wrapper.setProps({ modelValue: changed })
+    wrapper.findComponent({ name: 'StockOptionSelect' }).vm.$emit('update:modelValue', { code: '000002.SZ', name: '万科A', is_st: false })
+    await flushPromises()
+    const switched = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as any[]
+    expect(switched[0]).toMatchObject({ stock_code: '000002.SZ', loss_status: null, st_risk_status: null, selection_facts: null })
+    await wrapper.setProps({ modelValue: [{ ...operation, side: 'sell', action_rule_id: 'sell-1' }] })
+    expect(wrapper.find('[data-testid="operation-conditions"]').exists()).toBe(false)
+  })
+
   it('用统一业务分区完整包裹操作事实和买卖方向组', () => {
     const wrapper = mount(TradeOperationEditor, {
       props: { modelValue: [], version, tradeDate: '2026-08-22' },

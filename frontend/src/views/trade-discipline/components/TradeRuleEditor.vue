@@ -10,6 +10,7 @@ import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import { decimalToMinorUnits, formatMinorUnits } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
+import { conditionFilterOptions, stockConditionFields, stockConditionSummary } from '@/utils/tradeDisciplineConditions'
 import FixedDecimalInput from '@/views/trade-discipline/components/FixedDecimalInput.vue'
 import RuleSummaryCard from '@/components/trade-discipline/RuleSummaryCard.vue'
 import TradeDirectionGroupGrid, {
@@ -162,7 +163,7 @@ function groupedActionRules(side: ActionType) {
 }
 
 function emptyPayload(): RuleDraftPayload {
-  return { name: null, capital: null, stock_rules: [], action_rules: [] }
+  return { name: null, capital: null, max_positions: null, stock_rules: [], action_rules: [] }
 }
 
 function clonePayload(source: RuleDraftPayload | RuleVersionDetail | null): RuleDraftPayload {
@@ -170,10 +171,14 @@ function clonePayload(source: RuleDraftPayload | RuleVersionDetail | null): Rule
   return {
     name: source.name ?? null,
     capital: source.capital,
+    max_positions: source.max_positions ?? null,
     stock_rules: source.stock_rules.map((item, index) => ({
       detail_id: item.detail_id ?? null,
       name: item.name ?? null,
       max_capital: item.max_capital,
+      price_min: item.price_min ?? null, price_max: item.price_max ?? null,
+      st_filter: item.st_filter ?? 'any', loss_filter: item.loss_filter ?? 'any',
+      st_risk_filter: item.st_risk_filter ?? 'any',
       content: item.content ?? null,
       display_order: index + 1,
       enabled: Boolean(item.enabled),
@@ -241,6 +246,7 @@ function normalizedPayload(): RuleDraftPayload {
   return {
     name: form.value.name?.trim() || null,
     capital: form.value.capital === '' ? null : form.value.capital,
+    max_positions: form.value.max_positions ?? null,
     stock_rules: form.value.stock_rules.map((item, index) => ({
       ...item,
       name: item.name?.trim() || null,
@@ -259,7 +265,7 @@ function normalizedPayload(): RuleDraftPayload {
 
 async function saveDraft(showMessage = true): Promise<boolean> {
   if (!detail.value || draftRevision.value === null || !dirty.value) return false
-  if (!validateSubtypeOwnership()) return false
+  if (!validateConditions() || !validateSubtypeOwnership()) return false
   command.value = 'save'
   try {
     const saved = await saveTradeDisciplineRuleDraft(detail.value.id, {
@@ -314,7 +320,23 @@ async function discardSavedDraft(): Promise<void> {
   }
 }
 
+function validateConditions(): boolean {
+  const maximum = form.value.max_positions
+  if (maximum != null && (!Number.isInteger(maximum) || maximum < 1 || maximum > 2147483647)) {
+    return warn('最大同时持仓数必须为正整数，留空表示不限')
+  }
+  for (const item of form.value.stock_rules) {
+    const low = decimalToMinorUnits(item.price_min, 4)
+    const high = decimalToMinorUnits(item.price_max, 4)
+    if ((item.price_min != null && (low === null || low <= 0n))
+      || (item.price_max != null && (high === null || high <= 0n))) return warn('股价上下限必须大于 0，最多4位小数')
+    if (low !== null && high !== null && low > high) return warn('股价下限不能大于上限')
+  }
+  return true
+}
+
 function validateForPublish(): boolean {
+  if (!validateConditions()) return false
   if (!form.value.name?.trim()) return warn('发布前请填写规则名称')
   if (totalCapitalUnits.value <= 0n) return warn('发布前请填写大于 0 的总本金')
   if (!enabledStockRules.value.length) return warn('发布前至少启用一条选股规则')
@@ -454,6 +476,7 @@ function addStockRule(): void {
   if (!canEditDetails.value) return
   const item: DraftStockRule = {
     detail_id: null, name: null, max_capital: null, content: null,
+    price_min: null, price_max: null, st_filter: 'any', loss_filter: 'any', st_risk_filter: 'any',
     display_order: form.value.stock_rules.length + 1, enabled: true,
   }
   form.value.stock_rules.push(item)
@@ -607,10 +630,16 @@ defineExpose({
           <el-form-item label="总本金（元）" :required="editing && canManage">
             <FixedDecimalInput v-model="form.capital" grouped data-testid="rule-capital-input" />
           </el-form-item>
-          <div class="capital-meter" :class="{ danger: capitalExceeded }">
-            <span>启用规则已分配 {{ allocatedCapitalText }}</span>
-            <strong>剩余 {{ remainingCapitalText }}</strong>
-          </div>
+          <el-form-item label="最大同时持仓数">
+            <el-input-number :model-value="form.max_positions ?? undefined" :min="1" :max="2147483647" :precision="0" :step="1" :controls="false" placeholder="不限" data-testid="rule-max-positions" @update:model-value="form.max_positions = $event ?? null" />
+            <small class="app-caption-text">本套规则同时持有的不同股票数量上限，留空不限。</small>
+          </el-form-item>
+          <el-form-item label="资金分配">
+            <div class="capital-meter" :class="{ danger: capitalExceeded }">
+              <span>启用规则已分配 {{ allocatedCapitalText }}</span>
+              <strong>剩余 {{ remainingCapitalText }}</strong>
+            </div>
+          </el-form-item>
         </div>
 
         <section class="detail-group">
@@ -624,7 +653,7 @@ defineExpose({
               :index-label="cardIndex(index)"
               :title="cardTitle(item, `未命名选股规则 ${index + 1}`)"
               :meta="stockCapitalMeta(item)"
-              :content="item.content"
+              :content="[stockConditionSummary(item), item.content].filter(Boolean).join(' · ')"
               :enabled="item.enabled"
               :expanded="isRuleExpanded('stock', item)"
               :editable="canEditDetails"
@@ -642,6 +671,11 @@ defineExpose({
               <div class="rule-card-form rule-card-form--stock">
                 <el-form-item label="规则名称" :required="editing && canManage"><el-input v-model="item.name" data-testid="stock-rule-name-input" maxlength="80" /></el-form-item>
                 <el-form-item label="资金上限（元）" :required="editing && canManage && item.enabled"><FixedDecimalInput v-model="item.max_capital" grouped data-testid="stock-rule-capital-input" /></el-form-item>
+                <el-form-item label="股价下限（元）"><FixedDecimalInput :model-value="item.price_min ?? null" @update:model-value="item.price_min = $event" :scale="4" :integer-digits="16" placeholder="不限" data-testid="stock-price-min" /></el-form-item>
+                <el-form-item label="股价上限（元）"><FixedDecimalInput :model-value="item.price_max ?? null" @update:model-value="item.price_max = $event" :scale="4" :integer-digits="16" placeholder="不限" data-testid="stock-price-max" /></el-form-item>
+                <el-form-item v-for="condition in stockConditionFields" :key="condition.key" :label="condition.label">
+                  <el-select v-model="item[condition.key]" :data-testid="`stock-${condition.key}`"><el-option v-for="option in conditionFilterOptions" :key="option.value" :label="option.label" :value="option.value" /></el-select>
+                </el-form-item>
                 <el-form-item class="rule-card-form__content" label="规则内容" :required="editing && canManage"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
               </div>
             </RuleSummaryCard>
@@ -748,15 +782,15 @@ defineExpose({
 .rule-state-track span { display: block; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .rule-state-track strong { display: block; margin-top: var(--app-space-1); color: var(--el-text-color-primary); font-size: var(--app-font-size-table); }
 .readonly-notice { margin-bottom: var(--app-space-4); }
-.rule-editor__base { display: grid; grid-template-columns: minmax(260px, 2fr) minmax(220px, 1.3fr) minmax(240px, 1.3fr); gap: var(--app-space-3); align-items: end; }
-.rule-editor__base :deep(.el-input) { width: 100%; }
-.capital-meter { min-height: var(--app-control-height-md); margin-bottom: var(--app-space-4); padding: 0 var(--app-space-3); border: 1px solid color-mix(in srgb, var(--el-color-success) 38%, var(--el-border-color)); border-radius: var(--layout-control-radius); background: transparent; color: var(--el-color-success); display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-size: var(--app-font-size-caption); }
+.rule-editor__base { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--app-space-3); align-items: start; }
+.rule-editor__base :deep(.el-input), .rule-editor__base :deep(.el-input-number) { width: 100%; }
+.capital-meter { box-sizing: border-box; width: 100%; min-height: var(--app-density-control-height, var(--app-control-height-md)); padding: 0 var(--app-space-3); border: 1px solid color-mix(in srgb, var(--el-color-success) 38%, var(--el-border-color)); border-radius: var(--layout-control-radius); background: transparent; color: var(--el-color-success); display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); }
 .capital-meter.danger { border-color: color-mix(in srgb, var(--el-color-danger) 42%, var(--el-border-color)); background: transparent; color: var(--el-color-danger); }
 .detail-group { margin-top: var(--app-space-5); }
 .detail-group > header { justify-content: space-between; gap: var(--app-space-3); margin-bottom: var(--app-space-2); }
 
 .detail-group p { margin: var(--app-space-1) 0 0; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
-.rule-card-grid { display: grid; grid-template-columns: repeat(2, minmax(280px, 1fr)); gap: var(--app-space-2); }
+.rule-card-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--app-space-2); }
 .rule-card-grid--single { grid-template-columns: 1fr; }
 .rule-card--wide { grid-column: 1 / -1; }
 .rule-card-form { display: grid; row-gap: 0; column-gap: var(--app-space-3); }
@@ -770,7 +804,6 @@ defineExpose({
   .rule-editor { overflow: visible; }
   .rule-state-track, .rule-editor__base { grid-template-columns: 1fr; }
   .rule-state-track > div + div { border-left: 0; border-top: 1px solid var(--el-border-color-lighter); }
-  .capital-meter { margin-bottom: 0; }
   .rule-card-grid { grid-template-columns: 1fr; }
 }
 @container app-viewport (max-width: 760px) {

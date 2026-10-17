@@ -36,7 +36,7 @@ defineProps<{
 <style scoped>
 .trade-direction-group-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(300px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--app-space-3);
 }
 .trade-direction-group {
@@ -64,7 +64,4 @@ defineProps<{
 }
 .trade-direction-group__body { min-width: 0; }
 
-@container app-viewport (max-width: 1100px) {
-  .trade-direction-group-grid { grid-template-columns: minmax(0, 1fr); }
-}
 </style>

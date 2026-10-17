@@ -7,6 +7,7 @@
 -- normal/tenant_admin/system 展示授权；受影响用户 perm_ver 在同一事务自增。
 -- 回滚：默认仅回滚 RBAC，不删除业务表或用户事实；确定从未写入业务事实时才可按 FK 逆序删表。
 -- 所有业务外键均以 tenant_id + owner_user_id 开头，禁止跨归属关联；金额统一 NUMERIC。
+-- 本文件保留T1基线；结构化选股条件、持仓上限及事实快照增量见同目录 selection-conditions-migration.sql。
 
 -- ========== 业务模型（幂等建表）==========
 

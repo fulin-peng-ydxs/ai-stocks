@@ -15,6 +15,7 @@ import {
 import { getErrorMessage } from '@/utils/error'
 import { formatDecimalString } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
+import { stockConditionSummary, conditionFactLabel, holdingCountWarning } from '@/utils/tradeDisciplineConditions'
 import {
   checkinAssessmentLabel,
   checkinAssessmentTagType,
@@ -190,6 +191,13 @@ watch(
           <AppTableColumn label="成交事实" role="description">
             <template #default="{ row }">价 {{ formatMoney(row.price, { digits: 4 }) }} · 量 {{ formatDecimalString(row.quantity, 4) }} · 额 {{ formatMoney(row.amount) }} · 费 {{ formatMoney(row.fee) }}</template>
           </AppTableColumn>
+          <AppTableColumn label="选股事实" role="description">
+            <template #default="{ row }">
+              <span v-if="row.side === 'sell'">卖出不核对选股条件</span>
+              <span v-else-if="!row.selection_facts">未记录</span>
+              <span v-else>ST：{{ row.selection_facts.is_st === null ? '未知' : row.selection_facts.is_st ? '是' : '否' }} · 亏损：{{ conditionFactLabel(row.loss_status) }} · ST风险：{{ conditionFactLabel(row.st_risk_status) }}<span v-if="row.condition_warnings?.length"> · {{ row.condition_warnings.join('；') }}</span></span>
+            </template>
+          </AppTableColumn>
           <AppTableColumn label="操作时间"><template #default="{ row }">{{ formatDateTimeSeconds(row.operated_at) }}</template></AppTableColumn>
           <AppTableColumn label="完整度">
             <template #default="{ row }"><el-tag :type="row.financial_complete ? 'success' : 'warning'" effect="plain">{{ row.financial_complete ? '完整' : '不完整' }}</el-tag></template>
@@ -200,6 +208,8 @@ watch(
 
       <section v-if="ruleVersion" class="detail-card" data-testid="revision-rule-snapshot">
         <h4>规则版本快照</h4>
+        <p>当日最大同时持仓 {{ detail.peak_positions ?? '未记录' }} 只 · 规则上限 {{ ruleVersion.max_positions ?? '不限' }}</p>
+        <p v-if="holdingCountWarning(ruleVersion.max_positions, detail.peak_positions)" class="app-caption-text">{{ holdingCountWarning(ruleVersion.max_positions, detail.peak_positions) }}</p>
         <dl class="fact-grid">
           <div><dt>规则名称</dt><dd>{{ ruleVersion.name }}</dd></div>
           <div><dt>规则资金</dt><dd>¥ {{ formatMoney(ruleVersion.capital) }}</dd></div>
@@ -210,6 +220,7 @@ watch(
             <article v-for="rule in ruleVersion.stock_rules" :key="rule.detail_id || rule.display_order" class="rule-snapshot">
               <span>{{ rule.name || '未命名规则' }} · {{ rule.enabled ? '启用' : '停用' }}</span>
               <small>资金上限 ¥ {{ formatMoney(rule.max_capital) }}</small>
+              <p>{{ stockConditionSummary(rule) }}</p>
               <p>{{ rule.content || '—' }}</p>
             </article>
           </div>
@@ -257,7 +268,7 @@ watch(
 .fact-grid dd { margin: var(--app-space-1) 0 0; font-weight: var(--app-font-weight-section); }
 .text-snapshot { margin-top: var(--app-space-3); }
 .text-snapshot p, .rule-snapshot p { margin: var(--app-space-1) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.rule-grid { display: grid; grid-template-columns: repeat(2, minmax(240px, 1fr)); gap: var(--app-space-4); }
+.rule-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--app-space-4); }
 .rule-snapshot { margin-top: var(--app-space-2); padding: var(--app-space-3); border: 1px solid var(--el-border-color-lighter); border-radius: var(--layout-control-radius); background: transparent; }
 .rule-snapshot span, .rule-snapshot small { display: block; }
 .rule-snapshot small, .empty-copy { color: var(--el-text-color-secondary); }

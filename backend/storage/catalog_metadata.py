@@ -54,6 +54,14 @@ QUALITY_NOT_APPLICABLE = QualityPolicy(mode="not_applicable")
 # 字段名优先读取表级显式注解，其次使用本词典；复合字段再按 token 生成。
 # 未识别 token 不做伪翻译，而是保留 fallback 并交给目录契约阻断。
 FIELD_LABELS: dict[str, str] = {
+    "max_positions": "最大同时持仓数",
+    "peak_positions": "当日最大同时持仓数",
+    "price_min": "股价下限",
+    "price_max": "股价上限",
+    "st_filter": "ST选股条件",
+    "loss_filter": "亏损选股条件",
+    "st_risk_filter": "ST风险选股条件",
+    "selection_facts": "选股事实快照",
     "id": "标识",
     "key": "键",
     "code": "代码",

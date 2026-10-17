@@ -493,3 +493,13 @@ diff --git a/node_modules/element-plus/lib/utils/dom/position.js b/node_modules/
 +//# sourceMappingURL=position.js.map
 +exports.getElementScale = getElementScale;
 +exports.getLayoutRect = getLayoutRect;
+diff --git a/node_modules/element-plus/es/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.mjs b/node_modules/element-plus/es/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.mjs
+--- a/node_modules/element-plus/es/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.mjs
++++ b/node_modules/element-plus/es/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.mjs
+@@ -217,0 +218 @@
++			(input.value?.input)?.setAttribute("aria-disabled", String(inputNumberDisabled.value));
+diff --git a/node_modules/element-plus/lib/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.js b/node_modules/element-plus/lib/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.js
+--- a/node_modules/element-plus/lib/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.js
++++ b/node_modules/element-plus/lib/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.js
+@@ -218,0 +219 @@
++			(input.value?.input)?.setAttribute("aria-disabled", String(inputNumberDisabled.value));

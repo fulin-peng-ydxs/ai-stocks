@@ -91,6 +91,23 @@ describe('TradeRuleEditor', () => {
     vi.restoreAllMocks()
   })
 
+  it('恢复并保存结构化条件、四位股价和整套规则持仓上限', async () => {
+    const value: any = detail()
+    value.draft.max_positions = 3
+    value.draft.stock_rules[0] = { ...value.draft.stock_rules[0], price_min: '5.1234', price_max: '20', st_filter: 'exclude', loss_filter: 'exclude', st_risk_filter: 'only' }
+    api.get.mockResolvedValue(value)
+    const wrapper = await mountEditor()
+    expect(wrapper.text()).toContain('股价 5.1234～20.0000 元')
+    await wrapper.get('[data-testid="rule-max-positions"] input').setValue('4')
+    await wrapper.get('[data-testid="rule-max-positions"] input').trigger('change')
+    await wrapper.get('.rule-editor__footer .el-button:nth-last-child(2)').trigger('click')
+    await flushPromises()
+    expect(api.save).toHaveBeenCalledWith('rule-1', expect.objectContaining({
+      max_positions: 4,
+      stock_rules: expect.arrayContaining([expect.objectContaining({ price_min: '5.1234', price_max: '20', st_filter: 'exclude', loss_filter: 'exclude', st_risk_filter: 'only' })]),
+    }))
+  })
+
   it('用统一业务分区完整包裹买卖规则和两个方向组', async () => {
     const wrapper = await mountEditor()
     const section = wrapper.get('[data-testid="action-rules-section"]')

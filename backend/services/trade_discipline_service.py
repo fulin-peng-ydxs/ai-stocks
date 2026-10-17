@@ -13,6 +13,7 @@ import pandas as pd
 import psycopg
 
 from backend.common.exceptions import ConflictError, NotFoundError, ValidationError
+from backend.services.trade_discipline_conditions import condition_warnings, position_count
 from backend.storage.duckdb_client import DuckDBClient, get_client
 from backend.storage.trade_discipline_repository import TradeDisciplineRepository
 
@@ -95,6 +96,9 @@ class TradeDisciplineService:
             "name": name,
             "normalized_name": normalized,
             "capital": self._money(payload.get("capital")),
+            "max_positions": position_count(
+                payload.get("max_positions"), label="最大同时持仓数", minimum=1
+            ),
             "stock_rules": [],
             "action_rules": [],
         }
@@ -130,6 +134,19 @@ class TradeDisciplineService:
                 item["content"] = content
                 if kind == "stock_rules":
                     item["max_capital"] = self._money(item.get("max_capital"))
+                    for key in ("price_min", "price_max"):
+                        item[key] = self._decimal(item.get(key), places=4, label="股价")
+                        if item[key] is not None and item[key] <= 0:
+                            raise ValidationError("股价上下限必须大于 0")
+                    if (
+                        item["price_min"] is not None and item["price_max"] is not None
+                        and item["price_min"] > item["price_max"]
+                    ):
+                        raise ValidationError("股价下限不能大于上限")
+                    for key in ("st_filter", "loss_filter", "st_risk_filter"):
+                        item[key] = item.get(key, "any")
+                        if item[key] not in {"any", "exclude", "only"}:
+                            raise ValidationError("选股条件必须为不限、排除或仅限")
                     order_key = ("stock", item["display_order"])
                 else:
                     action_type = item.get("action_type") or None
@@ -237,6 +254,11 @@ class TradeDisciplineService:
                 x["detail_id"],
                 x.get("name"),
                 x.get("max_capital"),
+                x.get("price_min"),
+                x.get("price_max"),
+                x.get("st_filter", "any"),
+                x.get("loss_filter", "any"),
+                x.get("st_risk_filter", "any"),
                 x.get("content"),
                 x["display_order"],
                 x["enabled"],
@@ -264,7 +286,7 @@ class TradeDisciplineService:
                 ),
             )
         )
-        return data.get("name"), data.get("capital"), stocks, actions
+        return data.get("name"), data.get("capital"), data.get("max_positions"), stocks, actions
 
     def _next_trade_date(self, occurred_at: Any) -> date:
         action_date = occurred_at.astimezone(SHANGHAI).date()
@@ -439,6 +461,7 @@ class TradeDisciplineService:
                 "name": version["name"],
                 "normalized_name": version["normalized_name"],
                 "capital": version["capital"],
+                "max_positions": version.get("max_positions"),
                 "stock_rules": version["stock_rules"],
                 "action_rules": version["action_rules"],
             }
@@ -614,6 +637,7 @@ class TradeDisciplineService:
                 {
                     "name": name,
                     "capital": source_data.get("capital"),
+                    "max_positions": source_data.get("max_positions"),
                     "stock_rules": source_data["stock_rules"],
                     "action_rules": source_data["action_rules"],
                 }
@@ -681,6 +705,7 @@ class TradeDisciplineService:
         *,
         trade_date: date,
         version: dict[str, Any],
+        previous: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         enabled_stocks = {
             str(item["detail_id"]): item for item in version["stock_rules"] if bool(item["enabled"])
@@ -737,12 +762,24 @@ class TradeDisciplineService:
                     operated_at = operated_at.replace(tzinfo=SHANGHAI)
                 if operated_at.astimezone(SHANGHAI).date() != trade_date:
                     raise ValidationError("操作时间必须落在履约交易日")
+            facts = {}
+            stock_rule = enabled_stocks[stock_rule_id]
+            for key, condition_key in (
+                ("loss_status", "loss_filter"), ("st_risk_status", "st_risk_filter")
+            ):
+                status = item.get(key)
+                if status is not None and status not in {"yes", "no", "unknown"}:
+                    raise ValidationError("选股事实必须为是、否或未知")
+                if side == "buy" and stock_rule.get(condition_key, "any") != "any" and status is None:
+                    raise ValidationError("请明确选择亏损/ST风险事实，未查明可选未知")
+                facts[key] = status if side == "buy" else None
             prepared.append(
                 {
                     "id": operation_id,
                     "stock_code": stock_code,
                     # 名称在批量验证股票主数据后由服务端覆盖，禁止信任客户端快照。
                     "stock_name_snapshot": "",
+                    "selection_facts": facts,
                     "side": side,
                     "stock_rule_id": stock_rule_id,
                     "action_rule_id": action_rule_id,
@@ -789,7 +826,32 @@ class TradeDisciplineService:
                 item["stock_name_snapshot"] = str(stocks[item["stock_code"]]["name"] or "").strip()
                 if not item["stock_name_snapshot"]:
                     raise ValidationError(f"股票名称缺失：{item['stock_code']}")
+        # 同一交易日同一股票的ST快照在修正时沿用；只批量读取尚无快照的股票。
+        old_facts = {
+            item["stock_code"]: item["selection_facts"]
+            for item in (previous or {}).get("operations", []) if item.get("selection_facts")
+        }
+        statuses = self._st_statuses(trade_date, [code for code in codes if code not in old_facts])
+        for item in prepared:
+            previous_facts = old_facts.get(item["stock_code"])
+            item["selection_facts"].update({
+                "is_st": (
+                    previous_facts.get("is_st") if previous_facts
+                    else statuses.get(item["stock_code"])
+                ),
+                "st_as_of_date": trade_date.isoformat(),
+            })
         return prepared
+
+    def _st_statuses(self, trade_date: date, codes: list[str]) -> dict[str, bool]:
+        if not codes:
+            return {}
+        from backend.services.stock_st_status import StockSTStatusService, STStatusNotReadyError
+
+        try:
+            return StockSTStatusService(self.market).status_map(trade_date, codes)
+        except STStatusNotReadyError:
+            return {}
 
     def _prepare_checkin(
         self,
@@ -797,7 +859,13 @@ class TradeDisciplineService:
         *,
         trade_date: date,
         version: dict[str, Any],
+        previous: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        peak_positions = position_count(
+            payload.get("peak_positions"), label="当日最大同时持仓数", minimum=0
+        )
+        if version.get("max_positions") is not None and peak_positions is None:
+            raise ValidationError("本套规则限制持仓数量，请填写当日最大同时持仓数")
         assessment = payload.get("assessment")
         if assessment not in {"complied", "partial", "breached"}:
             raise ValidationError("用户自评必须为 complied、partial 或 breached")
@@ -836,7 +904,7 @@ class TradeDisciplineService:
                 raise ValidationError("已履约不能填写未履约原因或详细说明")
             violation_detail = None
         operations = self._prepare_operations(
-            raw_operations, trade_date=trade_date, version=version
+            raw_operations, trade_date=trade_date, version=version, previous=previous
         )
         operation_statuses = [item.get("compliance_status") for item in operations]
         if assessment == "partial":
@@ -845,6 +913,7 @@ class TradeDisciplineService:
         elif any(status is not None for status in operation_statuses):
             raise ValidationError("仅部分履约可以填写单笔操作履约状态")
         return {
+            "peak_positions": peak_positions,
             "assessment": assessment,
             "no_operation": no_operation,
             "violation_detail": violation_detail,
@@ -909,6 +978,7 @@ class TradeDisciplineService:
             no_operation=prepared["no_operation"],
             violation_detail=prepared["violation_detail"],
             review_note=prepared["review_note"],
+            peak_positions=prepared.get("peak_positions"),
         )
         if reason is not None:
             self.repo.insert_violation(
@@ -932,7 +1002,8 @@ class TradeDisciplineService:
         operations = revision.get("operations") or []
         trade_date = pd.Timestamp(revision["trade_date"]).date()
         statuses: dict[str, bool] = {}
-        if operations:
+        legacy_operations = [item for item in operations if not item.get("selection_facts")]
+        if legacy_operations:
             from backend.services.stock_st_status import (
                 StockSTStatusService,
                 STStatusNotReadyError,
@@ -940,14 +1011,18 @@ class TradeDisciplineService:
 
             try:
                 statuses = StockSTStatusService(self.market).status_map(
-                    trade_date, sorted({str(item["stock_code"]) for item in operations})
+                    trade_date, sorted({str(item["stock_code"]) for item in legacy_operations})
                 )
             except STStatusNotReadyError:
                 # 交易纪律可保留既有操作快照；展示事实缺失时明确返回未知，不阻断复盘。
                 statuses = {}
         for operation in operations:
-            operation["is_st"] = statuses.get(str(operation["stock_code"]))
-            operation["st_as_of_date"] = trade_date.isoformat()
+            facts = operation.get("selection_facts")
+            operation["is_st"] = facts.get("is_st") if facts else statuses.get(str(operation["stock_code"]))
+            operation["st_as_of_date"] = facts.get("st_as_of_date") if facts else trade_date.isoformat()
+            operation["loss_status"] = facts.get("loss_status") if facts else None
+            operation["st_risk_status"] = facts.get("st_risk_status") if facts else None
+            operation["condition_warnings"] = condition_warnings(operation, operation)
             operation["financial_complete"] = all(
                 operation.get(field) is not None
                 for field in ("price", "quantity", "amount", "fee", "operated_at")
@@ -1014,7 +1089,9 @@ class TradeDisciplineService:
             current = self.repo.load_revision(checkin_id, expected_revision, conn=conn)
             version_no = int(current["version_no"])
             version = self.repo.load_version(str(checkin["rule_id"]), version_no, conn=conn)
-            prepared = self._prepare_checkin(payload, trade_date=trade_date, version=version)
+            prepared = self._prepare_checkin(
+                payload, trade_date=trade_date, version=version, previous=current
+            )
             new_revision = expected_revision + 1
             self._write_revision(
                 conn,
@@ -1067,6 +1144,9 @@ class TradeDisciplineService:
                 raise ValidationError("该日期尚无生效规则版本")
             checkin_id = self._id("tdc")
             version_no = int(event["version_no"])
+            version = self.repo.load_version(rule_id, version_no, conn=conn)
+            if version.get("max_positions") is not None:
+                raise ValidationError("本套规则限制持仓数量，请进入工作台填写当日最大同时持仓数")
             self.repo.create_checkin(
                 conn,
                 checkin_id=checkin_id,

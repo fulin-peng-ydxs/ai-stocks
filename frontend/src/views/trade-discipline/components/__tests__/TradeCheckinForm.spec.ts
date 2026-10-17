@@ -82,6 +82,23 @@ describe('TradeCheckinForm', () => {
     amendCheckin.mockResolvedValue({ ...saved, revision_no: 2, current_revision_no: 2, checkin_status: 'amended' })
   })
 
+  it('限制持仓时无操作仍需填峰值，超限仅提示且如实提交', async () => {
+    getContext.mockResolvedValue({ ...emptyContext, version: { ...version, max_positions: 2 } })
+    const wrapper = mountForm()
+    await flushPromises()
+    wrapper.findComponent({ name: 'ElCheckbox' }).vm.$emit('change', true)
+    await wrapper.vm.$nextTick()
+    await wrapper.get('button.el-button--primary').trigger('click')
+    expect(submitCheckin).not.toHaveBeenCalled()
+    const input = wrapper.get('[data-testid="checkin-peak-positions"] input')
+    await input.setValue('3')
+    await input.trigger('change')
+    expect(wrapper.text()).toContain('超过本套规则上限 2 只')
+    await wrapper.get('button.el-button--primary').trigger('click')
+    await flushPromises()
+    expect(submitCheckin).toHaveBeenCalledWith(expect.objectContaining({ peak_positions: 3, no_operation: true, assessment: 'complied' }))
+  })
+
   it('提交“已履约 + 今日无操作”并在成功后刷新上下文', async () => {
     getContext.mockResolvedValueOnce(emptyContext).mockResolvedValue({ ...emptyContext, checkin: saved })
     const wrapper = mountForm()

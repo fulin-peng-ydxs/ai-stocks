@@ -28,6 +28,8 @@ import type {
   StockOption,
 } from '@/api/tradeDiscipline'
 
+import { conditionFactOptions, manualConditionFields, stockConditionSummary, stockConditionWarnings, conditionFactLabel } from '@/utils/tradeDisciplineConditions'
+
 const props = defineProps<{
   modelValue: CheckinOperation[]
   version: RuleVersionDetail
@@ -66,7 +68,7 @@ function emptyOperation(order: number, side: 'buy' | 'sell'): CheckinOperation {
     action_rule_id: actionRules(side).length === 1 ? actionRules(side)[0].detail_id! : '',
     price: null, quantity: null, amount: null, fee: null,
     operated_at: defaultOperatedAt(props.tradeDate), note: null,
-    compliance_status: null, display_order: order,
+    compliance_status: null, loss_status: null, st_risk_status: null, display_order: order,
   }
 }
 
@@ -99,6 +101,15 @@ function ruleName(operation: CheckinOperation, kind: 'stock' | 'action'): string
     || (kind === 'stock' ? '未选择选股规则' : '未选择买卖规则')
 }
 
+function selectedStockRule(operation: CheckinOperation) {
+  return props.version.stock_rules.find((rule) => rule.detail_id === operation.stock_rule_id)
+}
+
+function requiredFactFields(operation: CheckinOperation) {
+  const rule = selectedStockRule(operation)
+  return manualConditionFields.filter((field) => rule?.[field.filter] && rule[field.filter] !== 'any')
+}
+
 function cardMeta(operation: CheckinOperation): string {
   return operation.amount === null || operation.amount === ''
     ? '成交金额未填写'
@@ -107,7 +118,7 @@ function cardMeta(operation: CheckinOperation): string {
 
 function cardPreview(operation: CheckinOperation): string {
   const operatedAt = formatDateTimeMinutes(operation.operated_at, '时间未填写')
-  return `${ruleName(operation, 'stock')} · ${ruleName(operation, 'action')} · ${operatedAt}`
+  return `${ruleName(operation, 'stock')} · ${ruleName(operation, 'action')} · ${operatedAt}${operation.side === 'buy' && stockConditionWarnings(selectedStockRule(operation), operation).length ? ' · 条件需核对' : ''}`
 }
 
 function operationIssue(operation: CheckinOperation): string | null {
@@ -165,6 +176,7 @@ function selectStock(index: number, stock: StockOption | null): void {
   update(index, {
     stock_code: stock?.code ?? '',
     stock_name_snapshot: stock?.name ?? '',
+    loss_status: null, st_risk_status: null, selection_facts: null,
     is_st: stock?.is_st ?? null,
     st_as_of_date: stock?.st_as_of_date ?? null,
   })
@@ -314,6 +326,20 @@ defineExpose({ expandOperation })
           </div>
         </section>
 
+        <section v-if="operation.side === 'buy' && selectedStockRule(operation)" class="operation-form-section" aria-label="选股条件核对" data-testid="operation-conditions">
+          <header><h5 class="app-section-title">选股条件核对</h5><p>{{ stockConditionSummary(selectedStockRule(operation)) }}；股价按本笔成交价核对。</p></header>
+          <div class="operation-grid">
+            <el-form-item v-for="field in requiredFactFields(operation)" :key="field.key" :label="field.label" :required="!disabled" class="operation-field operation-field--rule">
+              <el-select :model-value="operation[field.key]" :disabled="disabled" placeholder="选择事实状态" :data-testid="`operation-${field.key}-${index}`" @update:model-value="update(index, { [field.key]: $event })">
+                <el-option v-for="option in conditionFactOptions" :key="option.value" :label="option.label" :value="option.value" />
+              </el-select>
+              <small v-if="disabled && !operation[field.key]" class="app-caption-text">{{ conditionFactLabel(operation[field.key]) }}</small>
+            </el-form-item>
+          </div>
+          <p class="app-caption-text">ST按交易日逐日数据核对；亏损与ST风险由你确认操作当时情况，未查明选未知。</p>
+          <ul v-if="stockConditionWarnings(selectedStockRule(operation), operation).length" class="condition-warnings" role="status"><li v-for="warning in stockConditionWarnings(selectedStockRule(operation), operation)" :key="warning">{{ warning }}</li></ul>
+        </section>
+
         <section class="operation-form-section" aria-label="成交明细" data-testid="operation-trade-section">
           <header>
             <h5 class="app-section-title">成交明细</h5>
@@ -347,6 +373,7 @@ defineExpose({ expandOperation })
 </template>
 
 <style scoped>
+.condition-warnings { margin: var(--app-space-2) 0; padding-left: var(--app-space-4); color: var(--el-color-warning); font-size: var(--app-font-size-caption); }
 .operation-card-list { display: grid; gap: var(--app-space-2); }
 .operation-card__issue {
   flex: none;

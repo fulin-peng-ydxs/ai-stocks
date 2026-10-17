@@ -47,7 +47,15 @@ export interface TradeDisciplineRule {
   updated_at?: string
 }
 
+export type ConditionFilter = 'any' | 'exclude' | 'only'
+export type ConditionFact = 'yes' | 'no' | 'unknown'
+
 export interface DraftStockRule {
+  price_min?: string | null
+  price_max?: string | null
+  st_filter?: ConditionFilter
+  loss_filter?: ConditionFilter
+  st_risk_filter?: ConditionFilter
   detail_id: string | null
   name: string | null
   max_capital: string | null
@@ -77,6 +85,7 @@ export interface DraftActionRule {
 }
 
 export interface RuleDraft {
+  max_positions?: number | null
   rule_id: string
   draft_revision: number
   name: string | null
@@ -88,6 +97,7 @@ export interface RuleDraft {
 }
 
 export interface RuleVersionDetail {
+  max_positions?: number | null
   rule_id: string
   version_no: number
   name: string
@@ -103,6 +113,7 @@ export interface TradeDisciplineRuleDetail extends TradeDisciplineRule {
 }
 
 export interface RuleDraftPayload {
+  max_positions?: number | null
   name: string | null
   capital: string | null
   stock_rules: DraftStockRule[]
@@ -173,6 +184,10 @@ export interface ViolationReason {
 }
 
 export interface CheckinOperation {
+  loss_status?: ConditionFact | null
+  st_risk_status?: ConditionFact | null
+  selection_facts?: { is_st: boolean | null; st_as_of_date: string; loss_status: ConditionFact | null; st_risk_status: ConditionFact | null } | null
+  condition_warnings?: string[]
   client_key?: string
   id?: string | null
   stock_code: string
@@ -197,6 +212,8 @@ export interface CheckinOperation {
 }
 
 export interface TradeDisciplineCheckin {
+  peak_positions?: number | null
+  max_positions?: number | null
   checkin_id: string
   revision_no: number
   current_revision_no: number
@@ -228,6 +245,7 @@ export interface CheckinContext {
 }
 
 export interface CheckinContentPayload {
+  peak_positions?: number | null
   assessment: CheckinAssessment
   no_operation: boolean
   reason_code: string | null
@@ -244,6 +262,7 @@ export interface SubmitCheckinPayload extends CheckinContentPayload {
 }
 
 export interface CheckinSummaryRule {
+  max_positions?: number | null
   rule_id: string
   rule_name: string
   version_no: number

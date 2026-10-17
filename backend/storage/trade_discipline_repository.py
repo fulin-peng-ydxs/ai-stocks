@@ -15,6 +15,7 @@ import pandas as pd
 import psycopg
 from psycopg import errors
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 from backend.auth.context import get_current_owner
 from backend.common.exceptions import ConflictError, NotFoundError
@@ -279,10 +280,11 @@ class TradeDisciplineRepository:
             cur.execute(
                 "INSERT INTO trade_discipline_rule_draft "
                 "(rule_id,tenant_id,owner_user_id,draft_revision,proposed_name,normalized_name,"
-                "capital,source_version_no) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
+                "capital,source_version_no,max_positions) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                 "ON CONFLICT (tenant_id,owner_user_id,rule_id) DO UPDATE SET "
                 "draft_revision=EXCLUDED.draft_revision, proposed_name=EXCLUDED.proposed_name, "
                 "normalized_name=EXCLUDED.normalized_name, capital=EXCLUDED.capital, "
+                "max_positions=EXCLUDED.max_positions, "
                 "source_version_no=EXCLUDED.source_version_no, updated_at=now()",
                 [
                     rule_id,
@@ -292,6 +294,7 @@ class TradeDisciplineRepository:
                     draft.get("normalized_name"),
                     draft.get("capital"),
                     source_version_no,
+                    draft.get("max_positions"),
                 ],
             )
             for table in (
@@ -305,8 +308,9 @@ class TradeDisciplineRepository:
             for item in draft.get("stock_rules", []):
                 cur.execute(
                     "INSERT INTO trade_discipline_draft_stock_rule "
-                    "(rule_id,tenant_id,owner_user_id,detail_id,name,max_capital,content,display_order,enabled) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "(rule_id,tenant_id,owner_user_id,detail_id,name,max_capital,content,display_order,enabled,"
+                    "price_min,price_max,st_filter,loss_filter,st_risk_filter) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     [
                         rule_id,
                         *self.owner,
@@ -316,6 +320,11 @@ class TradeDisciplineRepository:
                         item.get("content"),
                         item["display_order"],
                         item["enabled"],
+                        item.get("price_min"),
+                        item.get("price_max"),
+                        item.get("st_filter", "any"),
+                        item.get("loss_filter", "any"),
+                        item.get("st_risk_filter", "any"),
                     ],
                 )
             for item in draft.get("action_rules", []):
@@ -393,8 +402,8 @@ class TradeDisciplineRepository:
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO trade_discipline_rule_version "
-                "(rule_id,tenant_id,owner_user_id,version_no,name,normalized_name,capital) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                "(rule_id,tenant_id,owner_user_id,version_no,name,normalized_name,capital,max_positions) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                 [
                     rule_id,
                     *self.owner,
@@ -402,13 +411,15 @@ class TradeDisciplineRepository:
                     draft["name"],
                     draft["normalized_name"],
                     draft["capital"],
+                    draft.get("max_positions"),
                 ],
             )
             for item in draft["stock_rules"]:
                 cur.execute(
                     "INSERT INTO trade_discipline_stock_rule "
                     "(rule_id,tenant_id,owner_user_id,version_no,detail_id,name,max_capital,content,"
-                    "display_order,enabled) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "display_order,enabled,price_min,price_max,st_filter,loss_filter,st_risk_filter) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     [
                         rule_id,
                         *self.owner,
@@ -419,6 +430,11 @@ class TradeDisciplineRepository:
                         item["content"],
                         item["display_order"],
                         item["enabled"],
+                        item.get("price_min"),
+                        item.get("price_max"),
+                        item.get("st_filter", "any"),
+                        item.get("loss_filter", "any"),
+                        item.get("st_risk_filter", "any"),
                     ],
                 )
             for item in draft["action_rules"]:
@@ -645,13 +661,14 @@ class TradeDisciplineRepository:
         no_operation: bool,
         violation_detail: str | None,
         review_note: str | None,
+        peak_positions: int | None = None,
     ) -> dict[str, Any]:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 "INSERT INTO trade_discipline_checkin_revision "
                 "(checkin_id,tenant_id,owner_user_id,revision_no,rule_id,version_no,"
-                "revision_kind,assessment,no_operation,violation_detail,review_note,created_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,clock_timestamp()) RETURNING *",
+                "revision_kind,assessment,no_operation,violation_detail,review_note,peak_positions,created_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,clock_timestamp()) RETURNING *",
                 [
                     checkin_id,
                     *self.owner,
@@ -663,6 +680,7 @@ class TradeDisciplineRepository:
                     no_operation,
                     violation_detail,
                     review_note,
+                    peak_positions,
                 ],
             )
             row = self._one(cur)
@@ -711,8 +729,8 @@ class TradeDisciplineRepository:
                     "INSERT INTO trade_discipline_operation "
                     "(id,tenant_id,owner_user_id,checkin_id,revision_no,rule_id,version_no,"
                     "stock_code,stock_name_snapshot,side,stock_rule_id,action_rule_id,price,"
-                    "quantity,amount,fee,operated_at,note,compliance_status,display_order) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "quantity,amount,fee,operated_at,note,compliance_status,display_order,selection_facts) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     [
                         item["id"],
                         *self.owner,
@@ -733,6 +751,7 @@ class TradeDisciplineRepository:
                         item.get("note"),
                         item.get("compliance_status"),
                         item["display_order"],
+                        Jsonb(item["selection_facts"]) if item.get("selection_facts") else None,
                     ],
                 )
 
@@ -798,7 +817,7 @@ class TradeDisciplineRepository:
     ) -> dict[str, Any]:
         sql = (
             "SELECT rv.*,c.trade_date,c.status AS checkin_status,c.current_revision_no,"
-            "c.submitted_at,c.amended_at,v.name AS rule_name,v.capital,"
+            "c.submitted_at,c.amended_at,v.name AS rule_name,v.capital,v.max_positions,"
             "vio.reason_code,vio.reason_id,vio.reason_name_snapshot "
             "FROM trade_discipline_checkin_revision rv "
             "JOIN trade_discipline_checkin c ON c.tenant_id=rv.tenant_id "
@@ -834,7 +853,8 @@ class TradeDisciplineRepository:
     ) -> list[dict[str, Any]]:
         sql = (
             "SELECT op.*,sr.name AS stock_rule_name,ar.name AS action_rule_name,"
-            "ar.action_subtype FROM trade_discipline_operation op "
+            "ar.action_subtype,sr.price_min,sr.price_max,sr.st_filter,sr.loss_filter,sr.st_risk_filter "
+            "FROM trade_discipline_operation op "
             "JOIN trade_discipline_stock_rule sr ON sr.tenant_id=op.tenant_id "
             "AND sr.owner_user_id=op.owner_user_id AND sr.rule_id=op.rule_id "
             "AND sr.version_no=op.version_no AND sr.detail_id=op.stock_rule_id "
@@ -937,7 +957,7 @@ class TradeDisciplineRepository:
             "ORDER BY a.rule_id,a.effective_from_trade_date DESC,a.event_seq DESC) "
             "SELECT r.id AS rule_id,v.name AS rule_name,le.version_no,"
             "le.effective_from_trade_date,c.id AS checkin_id,c.current_revision_no,c.status,"
-            "rv.assessment,rv.no_operation FROM latest_event le "
+            "rv.assessment,rv.no_operation,v.max_positions FROM latest_event le "
             "JOIN trade_discipline_rule r ON r.tenant_id=%s AND r.owner_user_id=%s "
             "AND r.id=le.rule_id AND r.deleted_at IS NULL "
             "JOIN trade_discipline_rule_version v ON v.tenant_id=%s AND v.owner_user_id=%s "

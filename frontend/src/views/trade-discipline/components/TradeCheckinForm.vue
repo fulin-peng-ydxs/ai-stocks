@@ -5,6 +5,7 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import TradeDisciplineSectionPanel from '@/components/trade-discipline/TradeDisciplineSectionPanel.vue'
 import { getErrorMessage } from '@/utils/error'
+import { holdingCountWarning, manualConditionFields } from '@/utils/tradeDisciplineConditions'
 import { decimalToMinorUnits, multiplyToMinorUnits } from '@/utils/fixedDecimal'
 import {
   checkinAssessmentOptions,
@@ -33,6 +34,7 @@ const emit = defineEmits<{
 }>()
 
 interface CheckinFormState {
+  peak_positions: number | null
   assessment: CheckinAssessment
   no_operation: boolean
   reason: ReasonValue | null
@@ -50,7 +52,7 @@ const baseline = ref('')
 const operationEditor = ref<InstanceType<typeof TradeOperationEditor> | null>(null)
 let loadSeq = 0
 const form = reactive<CheckinFormState>({
-  assessment: 'complied', no_operation: false, reason: null,
+  peak_positions: null, assessment: 'complied', no_operation: false, reason: null,
   violation_detail: '', review_note: '', operations: [],
 })
 
@@ -67,6 +69,7 @@ function reasonFromContext(value: CheckinContext['checkin']): ReasonValue | null
 
 function snapshot(): string {
   return JSON.stringify({
+    peak_positions: form.peak_positions,
     assessment: form.assessment,
     no_operation: form.no_operation,
     reason: form.reason,
@@ -78,6 +81,7 @@ function snapshot(): string {
 
 function applyContext(value: CheckinContext): void {
   const checkin = value.checkin
+  form.peak_positions = checkin?.peak_positions ?? null
   form.assessment = checkin?.assessment ?? 'complied'
   form.no_operation = checkin?.no_operation ?? false
   form.reason = reasonFromContext(checkin)
@@ -126,6 +130,8 @@ async function toggleNoOperation(value: boolean): Promise<void> {
 }
 
 function validate(): string | null {
+  if (context.value?.version.max_positions != null && form.peak_positions === null) return '请填写当日最大同时持仓数'
+  if (form.peak_positions !== null && (!Number.isInteger(form.peak_positions) || form.peak_positions < 0 || form.peak_positions > 2147483647)) return '当日最大同时持仓数必须为非负整数'
   if (form.assessment === 'partial' && !form.operations.length) return '部分履约至少需要一条操作'
   if (!form.no_operation && !form.operations.length) return '请添加至少一条操作，或选择“今日无操作”'
   if (hasCheckinViolation(form.assessment) && !form.reason) return '部分履约或未履约时必须选择或输入一个原因'
@@ -139,6 +145,12 @@ function validate(): string | null {
     if (!operation.stock_code || !operation.stock_name_snapshot) return operationError('请选择股票')
     if (!operation.stock_rule_id) return operationError('请选择选股规则')
     if (!operation.action_rule_id) return operationError('请选择买卖规则')
+    const stockRule = context.value?.version.stock_rules.find((rule) => rule.detail_id === operation.stock_rule_id)
+    if (operation.side === 'buy') {
+      for (const field of manualConditionFields) {
+        if (stockRule?.[field.filter] && stockRule[field.filter] !== 'any' && !operation[field.key]) return operationError(`请选择${field.label}，未查明可选未知`)
+      }
+    }
     if (form.assessment === 'partial' && !operation.compliance_status) {
       return operationError('请选择履约状态')
     }
@@ -168,6 +180,7 @@ function amountMismatchRows(): number[] {
 function payload(): CheckinContentPayload {
   const hasViolation = hasCheckinViolation(form.assessment)
   return {
+    peak_positions: form.peak_positions,
     assessment: form.assessment,
     no_operation: form.no_operation,
     reason_code: hasViolation && form.reason?.kind === 'builtin' ? form.reason.code ?? null : null,
@@ -183,6 +196,8 @@ function payload(): CheckinContentPayload {
       side: item.side,
       stock_rule_id: item.stock_rule_id,
       action_rule_id: item.action_rule_id,
+      loss_status: item.loss_status ?? null,
+      st_risk_status: item.st_risk_status ?? null,
       price: item.price,
       quantity: item.quantity,
       amount: item.amount,
@@ -349,6 +364,13 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
             </el-form-item>
             <el-checkbox data-testid="checkin-no-operation" :model-value="form.no_operation" :disabled="readonly || form.assessment === 'partial'" @change="toggleNoOperation(Boolean($event))">今日无操作</el-checkbox>
           </div>
+          <div v-if="context.version.max_positions != null || form.peak_positions != null" class="holding-count" data-testid="checkin-holding-count">
+            <el-form-item label="当日最大同时持仓数" :required="context.version.max_positions != null">
+              <el-input-number v-model="form.peak_positions" :min="0" :max="2147483647" :precision="0" :step="1" :controls="false" :disabled="readonly" placeholder="填写实际数量" data-testid="checkin-peak-positions" />
+            </el-form-item>
+            <p class="app-caption-text">本套规则上限 {{ context.version.max_positions ?? '不限' }} 只；填写当日峰值，包含此前持仓，同股多笔只算一只。无操作也可能仍有持仓。</p>
+            <p v-if="holdingCountWarning(context.version.max_positions, form.peak_positions)" class="condition-warning" role="status">{{ holdingCountWarning(context.version.max_positions, form.peak_positions) }}</p>
+          </div>
           <div v-if="hasCheckinViolation(form.assessment)" class="breach-grid">
             <el-form-item label="未履约原因" required>
               <ViolationReasonCombobox v-model="form.reason" data-testid="checkin-reason" :disabled="readonly" />
@@ -387,6 +409,7 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
 
 <style scoped>
 .checkin-detail { display: block; }
+.condition-warning { color: var(--el-color-warning); font-size: var(--app-font-size-caption); }
 .checkin-head, .checkin-head__facts, .checkin-head__commands, .assessment-row, .checkin-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3); }
 .checkin-head { align-items: flex-start; padding-bottom: var(--app-space-3); border-bottom: 1px solid var(--el-border-color-lighter); }
 .checkin-head .app-section-title { margin: var(--app-space-1) 0 0; }

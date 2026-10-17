@@ -103,7 +103,7 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
       :loading="loading"
       :has-content="rules.length > 0"
       :error="error ? '右侧内容已保留，重试后同步列表' : ''"
-      state-size="tiny"
+      :state-size="!loading && !error && !rules.length ? 'inline' : 'tiny'"
       error-title="规则列表刷新失败"
       :empty-title="query ? '没有匹配的规则' : '暂无交易规则'"
       retry

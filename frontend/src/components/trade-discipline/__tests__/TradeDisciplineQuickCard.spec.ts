@@ -44,6 +44,20 @@ describe('TradeDisciplineQuickCard', () => {
     getSummary.mockResolvedValue(pendingSummary)
   })
 
+  it('配置持仓上限后快捷入口跳转表单，不自动确认履约', async () => {
+    getSummary.mockResolvedValue({ ...pendingSummary, rules: pendingSummary.rules.map((rule) => ({ ...rule, max_positions: 2 })) })
+    const state = useTradeDisciplineSummary()
+    await state.refreshSummary('2026-08-22')
+    const wrapper = mount(TradeDisciplineQuickCard, {
+      props: { canSubmit: true, tradeDate: '2026-08-22' },
+      global: { plugins: [ElementPlus], directives: { permission: {} } },
+    })
+    await flushPromises()
+    await wrapper.findAll('button').find((item) => item.text() === '填写持仓打卡')!.trigger('click')
+    expect(quickSubmit).not.toHaveBeenCalled()
+    expect(wrapper.emitted('navigate')?.at(-1)).toEqual([{ tab: 'checkin', ruleId: 'rule-1', tradeDate: '2026-08-22' }])
+  })
+
   it('展示最新日摘要和待打卡规则，并按维护权限控制快捷动作', async () => {
     await useTradeDisciplineSummary().refreshSummary('2026-08-22')
     const writable = await mountCard(true)
