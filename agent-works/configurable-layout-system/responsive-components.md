@@ -1,6 +1,6 @@
 # 响应式组件触发清单
 
-范围：`frontend/src/**/*.vue` 全部 164 个文件（含页面私有片段、布局宿主及应用外壳），每个文件一行。页面消费与实测结论见 [页面检查](responsive-pages.md)。响应式规则以 [DESIGN.md](../../DESIGN.md) §8 为准；全站字体角色及例外统一引用该文档 §3、§3.5；应用导航尺寸引用 §3.4，本清单只登记消费与适配行为，不另行定义字阶。
+范围：`frontend/src/**/*.vue` 全部 165 个文件（含页面私有片段、布局宿主及应用外壳），每个文件一行。页面消费与实测结论见 [页面检查](responsive-pages.md)。响应式规则以 [DESIGN.md](../../DESIGN.md) §8 为准；全站字体角色及例外统一引用该文档 §3、§3.5；应用导航尺寸引用 §3.4，本清单只登记消费与适配行为，不另行定义字阶。
 
 字体实现维护：所有行均消费 `global.css` 的 token/语义类；MarketCompareMetricStrip、行情和数据概览等普通数据强调使用完整 data 角色，交易纪律分区复用 app-section-title；ECharts 消费 chartTheme 的 typography 快照并经 echartsRenderer 统一基础字体，HTML 行情浮层消费共享 stockQuoteSummaryHtml。源码守卫、构建门禁及例外登记入口见 DESIGN §3.5。
 
@@ -23,10 +23,11 @@
 | `frontend/src/components/AppDetailField.vue` | 无自身 CSS 查询 | 标签/值网格且值min-width:0；长值换行，不依赖隐藏。 | StockDetailView、IngestView、OverviewView、LayoutComponentsView、AuditLogView |
 | `frontend/src/components/AppDetailFields.vue` | `@container app-viewport (max-width: 760px)` | 窄宽从多列降为单列，字段值完整保留。 | StockDetailView、IngestView、OverviewView、LayoutComponentsView、AuditLogView |
 | `frontend/src/components/AppDetailSection.vue` | 无自身 CSS 查询 | 分区头部换行，正文长内容在详情外壳滚动。 | LayoutComponentsView、AuditLogView |
+| `frontend/src/components/AppCloseButton.vue` | 无自身 CSS 查询 | 关闭档位与状态统一消费 DESIGN §4 及 global.css；不浮起，点击和激活键不传播，Escape 保留；宿主管理显隐和业务关闭条件。 | WorkspaceTabs、PageDrawerSurface、CompareQueueRail、AssetProfileSelect、BacktestView、StockDetailView |
 | `frontend/src/components/AppDialog.vue` | 无自身 CSS 查询 | 语义宽度，最大100cqw减安全间距；正文内部滚动，标题与关闭保持可达。 | StockGroupBatchActions、StockIntradayDialog、BacktestView、StocksView、TradeDisciplineView、IngestView、QualityView、ScheduleView、DataDictionaryView、MenuResourceView、RoleManageView、TenantManageView、UserManageView |
 | `frontend/src/components/AppFilterSelect.vue` | 无自身 CSS 查询 | 统一语义宽度与max100%；标签摘要按数量折叠，完整选项在下拉；不按尺寸修改筛选。 | MarketBenchmarkSelect、BacktestView、BoardView、ConfigView、LimitLadderView、SectorsView、StocksView、TrainingView、OverviewView、QualityView、LimitLadderFilters、AuditLogView、TradeCheckinRevisionDrawer、TradeDisciplineHistory |
 | `frontend/src/components/AppFilterSwitch.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | LimitLadderFilters |
-| `frontend/src/components/AppIconButton.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | App、AppSortControl、ComparePinButton、CompareQueueRail、MarketMasterDetailWorkspace、PageDrawerSurface、PageSettingsDrawer、PageSettingsTrigger、SettingsGroup、StockGroupFavoriteButton、AssetProfileSelect、IndicatorParamSchemaEditor、StockChartWorkspace、BacktestView、ConfigView、SectorDetailView、SectorsView、StockDetailView、StocksView、MenuResourceView、TradeOperationEditor、TradeRuleEditor、ViolationReasonCombobox |
+| `frontend/src/components/AppIconButton.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | App、AppCloseButton、AppSortControl、ComparePinButton、ConfigView、IndicatorParamSchemaEditor、MarketMasterDetailWorkspace、MenuResourceView、PageSettingsDrawer、PageSettingsTrigger、SectorDetailView、SectorsView、SettingsGroup、StockChartWorkspace、StockDetailView、StockGroupFavoriteButton、StocksView、TradeOperationEditor、TradeRuleEditor、ViolationReasonCombobox |
 | `frontend/src/components/AppOverflowTooltipHost.vue` | 无自身 CSS 查询 | 全局溢出文本提示宿主；按实际截断检测展示原文，提示尺寸服从统一浮层安全边界，页面不复制监听。 | App |
 | `frontend/src/components/AppPagination.vue` | 无自身 CSS 查询 | 自身宽≥640完整、420–639摘要、<420导航；实测溢出继续降档；始终保留翻页并自动恢复。 | AppDataTable、AssetSearchDrawer、OverviewView |
 | `frontend/src/components/AppRowActions.vue` | 无自身 CSS 查询 | ResizeObserver 实测父容器与按钮宽，默认最多3个常显；放不下进入具名“更多”菜单，操作不丢失。 | ComponentAutoSettings、AssetSearchDrawer、ConfigView、ScreenView、TrainingView、IngestView、QualityView、ScheduleView、LayoutComponentsView、LayoutPresetsView、AuditLogView、DataDictionaryView、MenuResourceView、TenantManageView、UserManageView |
@@ -99,7 +100,7 @@
 | `frontend/src/components/TopNavigation.vue` | `@container app-viewport (max-width: 960px)`<br>`@media (prefers-reduced-motion: reduce)` | 窄宽压缩导航间距/隐藏辅助上下文；一级、二级与下拉入口的字体及尺寸按 DESIGN §3.4 消费共享导航 token；二级栏共用中性底色、不混入预设强调色；二级入口与工作标签复用`.app-nav-context-entry`的尺寸、圆角及选中边框/底线，下拉消费共享导航字阶、几何和叶子背景，导航动作保留。 两级及下拉入口共用悬停视觉层与180ms颜色过渡，下拉不回落组件库默认蓝底，指针移出后不保留焦点蓝色；命中区和下划线保持稳定。 一级保留图标框与整栏底部下划线，仅收紧悬停和键盘焦点面，不套二级选中框。 | App |
 | `frontend/src/components/TradeDatePicker.vue` | 无自身 CSS 查询 | 委托 AppDatePicker。 | StockGroupBatchActions、BoardTaskScopeFields、ResultMaintenanceTaskFields、StockIngestScopeFields、BacktestView、BoardView、ConfigView、ScreenView、SectorDetailView、SectorsView、StocksView、TrainingView、LimitLadderFilters、TradeCheckinForm、TradeDisciplineHistory |
 | `frontend/src/components/WorkspaceRouteView.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | App |
-| `frontend/src/components/WorkspaceTabs.vue` | `@container app-viewport (max-width: 720px)` | 字体按 DESIGN §3.4 消费工作标签专用字号 token；窄宽压缩间距，标签条内部横向滚动，路由切换与容器缩窄按布局坐标最小滚动露出当前项，销毁时释放尺寸监听，当前页与关闭入口可达；共用中性栏底色，与双顶栏二级入口复用`.app-nav-context-entry`的尺寸、圆角及选中边框/底线；当前项保留无光晕强调色圆点，普通项透明占位，切换宽度稳定。 悬停抬起圆点和标题并增加投影，关闭按钮固定且键盘事件独立；栏内保留视觉层安全空间。 | App |
+| `frontend/src/components/WorkspaceTabs.vue` | `@container app-viewport (max-width: 720px)`、`@media (hover: none), (pointer: coarse)` | 字体按 DESIGN §3.4 消费工作标签专用字号 token；窄宽压缩间距，标签条内部横向滚动，路由切换与容器缩窄按布局坐标最小滚动露出当前项，销毁时释放尺寸监听，当前页与关闭入口可达；共用中性栏底色，与双顶栏二级入口复用`.app-nav-context-entry`的尺寸、圆角及选中边框/底线；当前项保留无光晕强调色圆点，普通项透明占位，切换宽度稳定。 悬停抬起圆点和标题并增加投影，关闭按钮复用 AppCloseButton，粗指针或无悬停设备常显，等待确认防重复关闭且成功移除后恢复焦点；栏内保留视觉层安全空间。 | App |
 | `frontend/src/components/asset-search/AssetProfileSelect.vue` | 无自身 CSS 查询 | 选择器0+auto网格，搜索交给AssetSearchDrawer。 | BacktestView、BoardView、ConfigView、ScreenView、StockDetailView |
 | `frontend/src/components/asset-search/AssetSearchDrawer.vue` | 无自身 CSS 查询 | 共享抽屉满高、搜索换行、列表内部滚动、统一分页，查询值保留。 | AssetProfileSelect、BacktestView |
 | `frontend/src/components/config/ConfigGroupForm.vue` | `@container app-viewport (max-width: 720px)` | 窄宽配置网格单列，控件占行宽；不清除输入。 | ConfigView |

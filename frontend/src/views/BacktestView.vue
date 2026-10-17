@@ -24,7 +24,7 @@ import AppDialog from '@/components/AppDialog.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import { MACD_INDICATOR_FIELDS } from '@/components/stock-chart/indicatorFields'
 import type { MacdPanelState, TradeMarker } from '@/components/stock-chart/workspaceOptions'
-import { Search, Close } from '@element-plus/icons-vue'
+import { Search } from '@element-plus/icons-vue'
 import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
@@ -49,7 +49,7 @@ import PageToggleRow from '@/components/PageToggleRow.vue'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetVisibilityTag from '@/components/AssetVisibilityTag.vue'
 import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
-import AppIconButton from '@/components/AppIconButton.vue'
+import AppCloseButton from '@/components/AppCloseButton.vue'
 import StockStatusTag from '@/components/StockStatusTag.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AssetSearchDrawer from '@/components/asset-search/AssetSearchDrawer.vue'
@@ -1797,7 +1797,7 @@ const menuPageTitle = useMenuPageTitle()
               :source="externalRunOption.displaySource"
               :owner-label="externalRunOption.ownerLabel"
             />
-            <AppIconButton label="关闭公开回测查看" size="xs" @click="clearExternalRun"><el-icon><Close /></el-icon></AppIconButton>
+            <AppCloseButton label="关闭公开回测查看" size="compact" @click="clearExternalRun" />
           </span>
           <AssetVisibilityActions
             :show-visibility="!!selectedRunSummary"
@@ -1903,7 +1903,7 @@ const menuPageTitle = useMenuPageTitle()
               />
             </template>
             <span v-else class="temp-readonly-chip-prefix">历史评分方案已不可用，请重新选择</span>
-            <AppIconButton label="清除临时只读方案" size="xs" @click="clearTemp('score')"><el-icon><Close /></el-icon></AppIconButton>
+            <AppCloseButton label="清除临时只读方案" size="compact" @click="clearTemp('score')" />
           </span>
         </AppControlItem>
         <template v-if="kind === 'strategy'">
@@ -1960,7 +1960,7 @@ const menuPageTitle = useMenuPageTitle()
                 />
               </template>
               <span v-else class="temp-readonly-chip-prefix">历史选股方案已不可用，请重新选择或清除</span>
-              <AppIconButton label="清除临时只读方案" size="xs" @click="clearTemp('screen')"><el-icon><Close /></el-icon></AppIconButton>
+              <AppCloseButton label="清除临时只读方案" size="compact" @click="clearTemp('screen')" />
             </span>
           </AppControlItem>
           <AppControlItem>
@@ -2039,7 +2039,7 @@ const menuPageTitle = useMenuPageTitle()
                 />
               </template>
               <span v-else class="temp-readonly-chip-prefix">历史买卖方案已不可用，请重新选择</span>
-              <AppIconButton label="清除临时只读方案" size="xs" @click="clearTemp('trade')"><el-icon><Close /></el-icon></AppIconButton>
+              <AppCloseButton label="清除临时只读方案" size="compact" @click="clearTemp('trade')" />
             </span>
           </AppControlItem>
           <AppControlItem>

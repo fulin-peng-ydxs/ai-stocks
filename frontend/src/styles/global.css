@@ -169,6 +169,174 @@ html[data-layout-preset] .app-interaction-target.app-interaction-card {
   }
 }
 
+/* 关闭动作唯一视觉配方；库内置入口只适配样式，保留其事件、焦点管理和关闭守卫。 */
+:root {
+  --app-close-size-default: 28px;
+  --app-close-size-compact: 24px;
+  --app-close-size-inline: 16px;
+  --app-icon-close-glyph-default: 14px;
+  --app-icon-close-glyph-compact: 12px;
+  --app-icon-close-glyph-inline: 12px;
+}
+:root :is(.app-icon-button.app-close-control[data-close-size],
+  .el-dialog__headerbtn,
+  .el-message-box__headerbtn,
+  .el-tag__close,
+  .el-input__clear,
+  .el-textarea__clear,
+  .el-select__clear,
+  .el-cascader__clear-btn,
+  .el-date-editor .clear-icon,
+  .el-date-editor .el-range__close-icon,
+  .el-alert__close-btn:not(.is-customed),
+  .el-message__closeBtn,
+  .el-notification__closeBtn) {
+  --app-close-size: var(--app-close-size-inline);
+  --app-close-glyph: var(--app-icon-close-glyph-inline);
+  box-sizing: border-box;
+  width: var(--app-close-size);
+  min-width: var(--app-close-size);
+  height: var(--app-close-size);
+  padding: 0;
+  margin-block: 0;
+  border: 1px solid transparent;
+  border-radius: var(--layout-control-radius);
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-close-glyph);
+  line-height: var(--app-line-height-solid);
+  text-align: center;
+  vertical-align: middle;
+  cursor: pointer;
+  box-shadow: none;
+  transition: var(--app-interaction-color-transition);
+}
+:root :is(.app-icon-button.app-close-control[data-close-size='default'], .el-dialog__headerbtn, .el-message-box__headerbtn) {
+  --app-close-size: var(--app-close-size-default);
+  --app-close-glyph: var(--app-icon-close-glyph-default);
+}
+:root :is(.app-icon-button.app-close-control[data-close-size='compact'], .el-message__closeBtn, .el-notification__closeBtn) {
+  --app-close-size: var(--app-close-size-compact);
+  --app-close-glyph: var(--app-icon-close-glyph-compact);
+}
+:root :is(.el-dialog__headerbtn, .el-message-box__headerbtn) {
+  top: var(--app-space-2);
+  right: var(--app-space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+:root :is(.el-tag--dark .el-tag__close, .el-alert.is-dark .el-alert__close-btn:not(.is-customed)) { color: inherit; }
+/* 通知关闭为绝对定位；增大命中区后同步给正文留出空间。 */
+:root .el-notification:has(.el-notification__closeBtn) .el-notification__group {
+  margin-right: var(--app-close-size-compact);
+}
+:root :is(.app-icon-button.app-close-control[data-close-size],
+  .el-dialog__headerbtn,
+  .el-message-box__headerbtn,
+  .el-tag__close,
+  .el-input__clear,
+  .el-textarea__clear,
+  .el-select__clear,
+  .el-cascader__clear-btn,
+  .el-date-editor .clear-icon,
+  .el-date-editor .el-range__close-icon,
+  .el-alert__close-btn:not(.is-customed),
+  .el-message__closeBtn,
+  .el-notification__closeBtn) :is(.app-icon-button__glyph, .el-icon, svg) {
+  width: var(--app-close-glyph);
+  height: var(--app-close-glyph);
+  font-size: inherit;
+  color: inherit;
+}
+@media (hover: hover) and (pointer: fine) {
+  :root :is(.app-icon-button.app-close-control[data-close-size],
+  .el-dialog__headerbtn,
+  .el-message-box__headerbtn,
+  .el-tag__close,
+  .el-input__clear,
+  .el-textarea__clear,
+  .el-select__clear,
+  .el-cascader__clear-btn,
+  .el-date-editor .clear-icon,
+  .el-date-editor .el-range__close-icon,
+  .el-alert__close-btn:not(.is-customed),
+  .el-message__closeBtn,
+  .el-notification__closeBtn):hover:not(:disabled, [aria-disabled='true'], .is-loading) {
+    border-color: transparent;
+    background: var(--chrome-bg-soft-hover);
+    color: var(--el-text-color-primary);
+    box-shadow: none;
+  }
+}
+:root :is(.app-icon-button.app-close-control[data-close-size],
+  .el-dialog__headerbtn,
+  .el-message-box__headerbtn,
+  .el-tag__close,
+  .el-input__clear,
+  .el-textarea__clear,
+  .el-select__clear,
+  .el-cascader__clear-btn,
+  .el-date-editor .clear-icon,
+  .el-date-editor .el-range__close-icon,
+  .el-alert__close-btn:not(.is-customed),
+  .el-message__closeBtn,
+  .el-notification__closeBtn):active:not(:disabled, [aria-disabled='true'], .is-loading) {
+  background: var(--chrome-active-bg);
+  color: var(--el-text-color-primary);
+  box-shadow: none;
+}
+:root :is(.app-icon-button.app-close-control[data-close-size],
+  .el-dialog__headerbtn,
+  .el-message-box__headerbtn,
+  .el-tag__close,
+  .el-input__clear,
+  .el-textarea__clear,
+  .el-select__clear,
+  .el-cascader__clear-btn,
+  .el-date-editor .clear-icon,
+  .el-date-editor .el-range__close-icon,
+  .el-alert__close-btn:not(.is-customed),
+  .el-message__closeBtn,
+  .el-notification__closeBtn):focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 1px;
+  box-shadow: none;
+}
+:root :is(.app-icon-button.app-close-control[data-close-size],
+  .el-dialog__headerbtn,
+  .el-message-box__headerbtn,
+  .el-tag__close,
+  .el-input__clear,
+  .el-textarea__clear,
+  .el-select__clear,
+  .el-cascader__clear-btn,
+  .el-date-editor .clear-icon,
+  .el-date-editor .el-range__close-icon,
+  .el-alert__close-btn:not(.is-customed),
+  .el-message__closeBtn,
+  .el-notification__closeBtn):is(:disabled:not(.is-loading), [aria-disabled='true']) {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root :is(.app-icon-button.app-close-control[data-close-size],
+  .el-dialog__headerbtn,
+  .el-message-box__headerbtn,
+  .el-tag__close,
+  .el-input__clear,
+  .el-textarea__clear,
+  .el-select__clear,
+  .el-cascader__clear-btn,
+  .el-date-editor .clear-icon,
+  .el-date-editor .el-range__close-icon,
+  .el-alert__close-btn:not(.is-customed),
+  .el-message__closeBtn,
+  .el-notification__closeBtn) { transition: none; }
+}
+
+:root .app-icon-button.app-close-control.is-loading { cursor: wait; opacity: 1; }
+
 /* 全局重置 + 主题底色：消除浏览器默认 body 边距导致的周边空白 */
 * {
   box-sizing: border-box;

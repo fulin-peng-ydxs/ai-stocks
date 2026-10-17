@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { Close } from '@element-plus/icons-vue'
-import AppIconButton from './AppIconButton.vue'
+import AppCloseButton from './AppCloseButton.vue'
 
 withDefaults(defineProps<{
   title: string
@@ -9,11 +8,13 @@ withDefaults(defineProps<{
   bodyScroll?: boolean
   bodyLayout?: 'flow' | 'fill'
   closeLabel?: string
+  showClose?: boolean
 }>(), {
   titleSize: 'standard',
   bodyScroll: true,
   bodyLayout: 'flow',
   closeLabel: '关闭抽屉',
+  showClose: true,
 })
 
 defineEmits<{
@@ -41,9 +42,7 @@ defineEmits<{
       </div>
       <div class="page-drawer-surface__actions">
         <slot name="actions" />
-        <AppIconButton :label="closeLabel" size="sm" @click="$emit('close')">
-          <el-icon><Close /></el-icon>
-        </AppIconButton>
+        <AppCloseButton v-if="showClose" :label="closeLabel" @click="$emit('close')" />
       </div>
     </header>
 
@@ -102,11 +101,6 @@ defineEmits<{
   align-items: center;
   gap: var(--app-space-1);
   color: var(--page-settings-text-muted);
-}
-.page-drawer-surface__actions :deep(.app-icon-button:hover:not(:disabled)) {
-  border-color: transparent;
-  background: var(--page-settings-seg-hover-bg);
-  color: var(--page-settings-text);
 }
 .page-drawer-surface__body {
   flex: 1 1 auto;

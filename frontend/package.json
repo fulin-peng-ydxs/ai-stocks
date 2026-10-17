@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run check:typography && vue-tsc -b && vite build",
+    "build": "npm run check:typography && npm run check:close-controls && vue-tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -18,7 +18,8 @@
     "test:e2e:install": "playwright install chromium",
     "scaffold-page": "node scripts/scaffold-page.mjs",
     "postinstall": "node scripts/verify-dependency-patches.mjs && patch-package --error-on-fail",
-    "check:typography": "node scripts/check-typography.mjs"
+    "check:typography": "node scripts/check-typography.mjs",
+    "check:close-controls": "node scripts/check-close-controls.mjs"
   },
   "dependencies": {
     "@popperjs/core": "npm:@sxzz/popperjs-es@2.11.8",

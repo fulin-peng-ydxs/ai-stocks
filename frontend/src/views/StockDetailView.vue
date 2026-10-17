@@ -10,7 +10,7 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, ArrowRight, Close, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import {
   getBars,
   getIndicators,
@@ -31,6 +31,7 @@ import { addMembers, getGroup, listGroups, removeMembers, type GroupSummary } fr
 import { browseTradeProfiles, copyTradeProfile, listTradeProfiles, type TradeProfileSummary } from '@/api/tradeProfile'
 import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import AppCloseButton from '@/components/AppCloseButton.vue'
 import AppDetailField from '@/components/AppDetailField.vue'
 import AppDetailFields from '@/components/AppDetailFields.vue'
 import AppWorkspacePane from '@/components/AppWorkspacePane.vue'
@@ -1227,9 +1228,7 @@ onBeforeUnmount(() => {
                 :label="dropdownLoading ? '加载中...' : '向下滚动加载更多'"
               />
             </el-select>
-            <AppIconButton label="退出集合" size="sm" tone="default" @click="stockSet.clear()">
-              <el-icon><Close /></el-icon>
-            </AppIconButton>
+            <AppCloseButton label="退出集合" size="default" @click="stockSet.clear()" />
           </div>
           <div v-if="canUpdateGroups && !barsPermissionDenied" class="stock-context__groups">
             <span class="stock-context__label">所属分组</span>

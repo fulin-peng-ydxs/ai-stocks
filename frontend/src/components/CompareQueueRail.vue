@@ -1,9 +1,8 @@
 <script setup lang="ts">
 // 走势对比队列：板块/个股/榜单共用的对比对象 chip 行。遵循按钮契约不引入原生 button：
 // chip 为 role=button 容器承载激活（点击 + Enter/Space，.self 避免焦点在移除钮时连击），
-// 名称为纯 span 继承 chip 颜色（激活/悬浮随主色变蓝），移除用规范的 AppIconButton。
-import { Close } from '@element-plus/icons-vue'
-import AppIconButton from '@/components/AppIconButton.vue'
+// 名称为纯 span 继承 chip 颜色（激活/悬浮随主色变蓝），移除用共享 AppCloseButton。
+import AppCloseButton from '@/components/AppCloseButton.vue'
 
 export interface CompareQueueItem {
   key: string
@@ -55,17 +54,15 @@ const emit = defineEmits<{
       @keydown.space.self.prevent="emit('activate', item.key)"
     >
       <span class="compare-queue-name">{{ item.label }}</span>
-      <AppIconButton
+      <AppCloseButton
         v-if="!item.active || items.length > 1"
         class="compare-queue-remove"
         :label="`移除对比：${item.label}`"
         :data-testid="testIdPrefix ? `${testIdPrefix}-remove-${item.key}` : undefined"
-        size="xs"
+        size="inline"
         :native-title="false"
         @click.stop="emit('remove', item.key)"
-      >
-        <el-icon><Close /></el-icon>
-      </AppIconButton>
+      />
     </div>
     <span v-if="hint && items.length < max" class="compare-queue-hint">{{ hint }}</span>
   </div>
@@ -116,10 +113,5 @@ const emit = defineEmits<{
 .compare-queue-chip.error {
   border-color: var(--el-color-warning);
 }
-.compare-queue-remove {
-  --app-icon-button-size: 18px;
-  --app-icon-button-glyph: 11px;
-  border-radius: 50%;
-  color: var(--el-text-color-secondary);
-}
+
 </style>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Close } from '@element-plus/icons-vue'
+import AppCloseButton from './AppCloseButton.vue'
 import {
   removeWorkspaceTab,
   useWorkspaceTabs,
@@ -12,6 +12,7 @@ const route = useRoute()
 const router = useRouter()
 const { workspaceTabs } = useWorkspaceTabs()
 const rail = ref<HTMLElement>()
+const closingKeys = ref(new Set<string>())
 
 function revealActiveTab() {
   const container = rail.value
@@ -44,11 +45,22 @@ function activate(path: string) {
 }
 
 async function close(key: string) {
-  const nextPath = await removeWorkspaceTab(key, route.path)
-  if (nextPath) {
-    permitNextRouteLeave(key)
-    void router.push(nextPath)
-  }
+  if (closingKeys.value.has(key)) return
+  closingKeys.value.add(key)
+  try {
+    const restoreFocus = rail.value?.contains(document.activeElement)
+    const nextPath = await removeWorkspaceTab(key, route.path)
+    if (nextPath) {
+      permitNextRouteLeave(key)
+      await router.push(nextPath)
+    }
+    await nextTick()
+    // 仅在触发入口已被移除时恢复到当前标签；取消离开和用户已交接的焦点保持原状。
+    if (restoreFocus && !workspaceTabs.value.some(tab => tab.key === key)
+      && (document.activeElement === document.body || !document.activeElement?.isConnected)) {
+      rail.value?.querySelector<HTMLElement>('.workspace-tab.is-active')?.focus()
+    }
+  } finally { closingKeys.value.delete(key) }
 }
 </script>
 
@@ -69,16 +81,14 @@ async function close(key: string) {
       >
         <span class="workspace-tab-dot app-interaction-content" aria-hidden="true" />
         <span class="workspace-tab-title app-interaction-content">{{ tab.title }}</span>
-        <button
+        <AppCloseButton
           v-if="workspaceTabs.length > 1"
           class="workspace-tab-close"
-          type="button"
-          :aria-label="`关闭 ${tab.title}`"
+          size="inline"
+          :label="`关闭 ${tab.title}`"
           @click.stop="close(tab.key)"
-          @keydown.stop
-        >
-          <el-icon><Close /></el-icon>
-        </button>
+          :disabled="closingKeys.has(tab.key)"
+        />
       </div>
     </div>
   </div>
@@ -137,28 +147,13 @@ async function close(key: string) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.workspace-tab-close {
-  width: var(--app-nav-icon-size-nested);
-  height: var(--app-nav-icon-size-nested);
-  flex: none;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  border-radius: var(--app-nav-item-radius);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--chrome-text-muted);
-  opacity: 0;
-}
+.workspace-tab-close { opacity: 0; }
 .workspace-tab:hover .workspace-tab-close,
 .workspace-tab.is-active .workspace-tab-close,
 .workspace-tab-close:focus-visible { opacity: 1; }
-.workspace-tab-close:hover {
-  background: color-mix(in srgb, var(--el-color-danger) 12%, transparent);
-  color: var(--el-color-danger);
+@media (hover: none), (pointer: coarse) {
+  .workspace-tab-close { opacity: 1; }
 }
-.workspace-tab-close .el-icon { font-size: var(--app-font-size-micro); }
 @container app-viewport (max-width: 720px) {
   .workspace-tabs { padding-inline: var(--app-nav-entry-padding-x); }
 }

@@ -7,6 +7,7 @@ import ElementPlus from 'element-plus'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import WorkspaceTabs from '@/components/WorkspaceTabs.vue'
 import WorkspaceRouteView from '@/components/WorkspaceRouteView.vue'
+import { registerUnsavedHandler, resetUnsavedChangesGuard } from '@/composables/useUnsavedChangesGuard'
 import { resetWorkspaceTabs } from '@/composables/useWorkspaceTabs'
 import { useAuthStore } from '@/stores/auth'
 
@@ -33,12 +34,12 @@ async function mountTabs() {
     components: { WorkspaceTabs, WorkspaceRouteView },
     template: '<WorkspaceTabs/><WorkspaceRouteView/>',
   })
-  const wrapper = mount(host, { global: { plugins: [pinia, router, ElementPlus] } })
+  const wrapper = mount(host, { attachTo: document.body, global: { plugins: [pinia, router, ElementPlus] } })
   return { wrapper, router }
 }
 
 describe('侧栏工作标签页', () => {
-  afterEach(() => { vi.unstubAllGlobals() })
+  afterEach(() => { vi.unstubAllGlobals(); resetUnsavedChangesGuard(); document.body.innerHTML = '' })
 
   it('记录访问页面，关闭当前页后切回相邻标签', async () => {
     const { wrapper, router } = await mountTabs()
@@ -82,4 +83,37 @@ describe('侧栏工作标签页', () => {
     wrapper.unmount()
     expect(disconnect).toHaveBeenCalledOnce()
   })
+  it('关闭聚焦的非当前标签后不切页，并恢复当前标签焦点', async () => {
+    const { wrapper, router } = await mountTabs()
+    await router.push('/screen')
+    await flushPromises()
+    const close = wrapper.get('.workspace-tab:not(.is-active) .workspace-tab-close')
+    ;(close.element as HTMLButtonElement).focus()
+    await close.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/screen')
+    expect(document.activeElement).toBe(wrapper.get('.workspace-tab.is-active').element)
+    wrapper.unmount()
+  })
+
+  it('关闭确认期间防止重复请求，取消后标签和缓存入口保留', async () => {
+    const { wrapper, router } = await mountTabs()
+    await router.push('/screen')
+    await flushPromises()
+    let resolve: (allowed: boolean) => void = () => {}
+    const requestLeave = vi.fn(() => new Promise<boolean>(done => { resolve = done }))
+    const unregister = registerUnsavedHandler('/screen', { isDirty: () => true, requestLeave })
+    const close = wrapper.get('.workspace-tab.is-active .workspace-tab-close')
+    await close.trigger('click')
+    await close.trigger('click')
+    expect(requestLeave).toHaveBeenCalledTimes(1)
+    resolve(false)
+    await flushPromises()
+    expect(wrapper.findAll('.workspace-tab')).toHaveLength(2)
+    expect(router.currentRoute.value.path).toBe('/screen')
+    expect(close.attributes('disabled')).toBeUndefined()
+    unregister()
+    wrapper.unmount()
+  })
+
 })

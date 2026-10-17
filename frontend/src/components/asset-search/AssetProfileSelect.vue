@@ -6,10 +6,10 @@
 // 权限态（§307）：配置 viewPermission 后，无权限角色不渲染搜索入口与复制引导，
 // 不调用 browse（避免 403），抽屉内显示「无权限查看」无权态——不把无权伪装成空态。
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { Search, Close } from '@element-plus/icons-vue'
+import { Search } from '@element-plus/icons-vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
-import AppIconButton from '@/components/AppIconButton.vue'
+import AppCloseButton from '@/components/AppCloseButton.vue'
 import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import AssetSearchDrawer from './AssetSearchDrawer.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -387,16 +387,14 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
               :readonly="p.readonly"
               :label-mine="labelMine"
             />
-            <AppIconButton
+            <AppCloseButton
               v-if="isTempRow(p)"
               class="asset-profile-select__remove"
               :label="`从列表移除「${p.name}」`"
-              size="xs"
+              size="compact"
               :data-testid="`${testId}-remove`"
               @click="onRemoveTemp(p, $event)"
-            >
-              <el-icon><Close /></el-icon>
-            </AppIconButton>
+            />
           </li>
         </ul>
       </template>

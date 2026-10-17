@@ -101,6 +101,7 @@
 - 按钮位置：按真实影响范围判断，不按动词机械归类；作用于整页或页面唯一主任务的主操作放 `.page-head-actions`、位于 `PageSettingsTrigger` 左侧并使用默认 32px 尺寸；当前页签、局部表单、选中对象或局部区块命令留在对应区域工具区（见 DESIGN.md §4「按钮与输入」）。
 - 控件宽度：普通控件按内容容量选择 `.app-control-width-compact/short/medium/long/wide/fill` 中能完整承载常态内容的最小档位；多选 `AppFilterSelect` 必须按使用场景声明 `visibleTagCount=1..3`，由组件确定可见值、`+N` 与宽度档位，或使用 `displayMode=count` 只显示“已选 N”；不得另加宽度 class 或内联宽度；独立复合组件例外必须使用具名 class 并说明理由。
 - 排序操作：统一复用 `AppSortControl`，并作为所属筛选/操作栏的最后一个控件；空间不足保持 DOM 顺序整体换行。
+- 图标关闭/移除临时界面：使用 `AppCloseButton`；库内置关闭由全局适配，档位、状态、适用范围和业务边界统一引用 DESIGN §4，不私写配方。
 - 纯图标操作：使用 `AppIconButton`；异步纯图标操作使用 `:loading`；具体尺寸、tooltip 和 Unicode 禁令见 DESIGN。
 - 专用原生按钮例外：
 - 自检结论：
@@ -214,7 +215,7 @@
 | 页面消费已有字段 | 登记组件 slot 即自动继承该 kind 的适用字段；结构能力写 slot `config`，候选能力写 `componentMeta`，明确例外写 `fieldApplicability` 和原因；页面仍必须读取/应用值，并把 `useRemoteLayoutConfig.componentAllowedLayers` 传给统一抽屉。需要会话交互时走“配置默认值 → session state”，页面操作不反写默认值 | `pageRegistry.spec.ts` 自动继承、适用性、策略接线、正向消费与禁止页面直写契约，页面交互验证 |
 | 新真实复用组件 | 组件文件、DESIGN 真实复用组件清单、至少一个消费页面；需要配置化时再同步系统组件种类/字段事实源 | 组件/消费页测试、build；涉及页面布局时做关键视口 |
 | 业务域内复用组件 | 组件文件、DESIGN 真实复用组件清单、明确业务边界与消费页面；仅在需要布局配置时登记系统组件 kind | 组件/消费页测试、build、对应业务页面交互验收 |
-| 按钮 / 图标操作体系 | `global.css` 控件 token、`AppIconButton`、DESIGN 按钮规范；确需新增专用原生按钮时同步契约允许项和理由 | `button-system.spec.ts`、组件测试、build、顶栏与操作区视觉验收 |
+| 按钮 / 图标操作体系 | `global.css` 控件 token、`AppIconButton` / `AppCloseButton`、DESIGN 按钮规范；确需新增专用原生按钮时同步契约允许项和理由 | `check:close-controls`、`button-system.spec.ts`、关闭/离开拦截组件测试、build、顶栏与操作区视觉验收 |
 | 字体 / 间距体系 | `global.css` typography/spacing token、DESIGN 排版与节奏规范；新增语义层级时同步 token、文档和消费点 | 相关样式契约测试、build、关键页面视觉验收 |
 | 全局界面比例 | `useDisplayScale`、`displayScaleProfiles`、`sizeProfileMatching`、`useLayoutViewport`、`displayScaleGeometry`、根画布与独立遮罩、视觉环境入口和 DESIGN；偏好复用 `useGlobalPreferenceSync`；自动缩放指数由系统外观配置 `ui.display.auto_scale_exponent`、后端校验、登录公开白名单和运行时缓存共同承接，默认 0.10；自定义比例按显示器可用 CSS 宽高保存个人尺寸档案，并与主从工作台复用尺寸匹配容差及距离工具；尺寸断点使用 `app-viewport`，第三方坐标补丁随安装校验 | composable/尺寸档案/坐标换算和真实组件交互单测、尺寸断点契约、build、分隔条/图表/滚动恢复与 Teleport 浮层视觉验收 |
 | 品牌字标 / 主题强调色 | `BrandMark.vue`、`useLayoutPreset.ts`、登录页与应用外壳消费点、DESIGN 品牌规则；不得新增场景变体或消费侧颜色覆盖 | `BrandMark.spec.ts`、`useLayoutPreset.spec.ts`、build、登录页与工作台同模式同预设视觉验收 |

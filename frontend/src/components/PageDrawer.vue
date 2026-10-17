@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, inject } from 'vue'
+import { computed, inject, ref } from 'vue'
+import type { DrawerInstance } from 'element-plus'
 import { PAGE_OVERLAY_TARGET } from '@/layout/pageOverlay'
 import {
   PAGE_DRAWER_WIDTHS,
@@ -20,6 +21,7 @@ const props = withDefaults(defineProps<{
   bodyLayout?: 'flow' | 'fill'
   boundary?: 'page' | 'app'
   closeLabel?: string
+  showClose?: boolean
 }>(), {
   size: 'md',
   titleSize: 'standard',
@@ -28,6 +30,7 @@ const props = withDefaults(defineProps<{
   boundary: 'page',
   subtitle: '',
   closeLabel: '',
+  showClose: true,
 })
 
 const emit = defineEmits<{
@@ -55,14 +58,19 @@ const modalClassName = computed(() => [
   props.size === 'full' ? 'page-drawer-modal--full' : '',
   props.modalClass,
 ].filter(Boolean).join(' '))
+const drawer = ref<DrawerInstance>()
+// 自定义头部与遮罩/Escape 共同经过组件库 before-close，不能直接改 v-model 绕过拦截。
+function requestClose() { drawer.value?.handleClose() }
 const drawerWidth = computed(() => PAGE_DRAWER_WIDTHS[props.size])
 const resolvedCloseLabel = computed(() => props.closeLabel || `关闭${props.title}`)
 </script>
 
 <template>
   <el-drawer
+    ref="drawer"
     v-model="model"
     v-bind="$attrs"
+    :show-close="false"
     :append-to="appendTarget"
     class="page-drawer--surface app-drawer-surface-host"
     :modal-class="modalClassName"
@@ -75,7 +83,8 @@ const resolvedCloseLabel = computed(() => props.closeLabel || `关闭${props.tit
       :body-scroll="bodyScroll"
       :body-layout="bodyLayout"
       :close-label="resolvedCloseLabel"
-      @close="model = false"
+      :show-close="showClose"
+      @close="requestClose"
     >
       <template v-if="$slots['title-suffix']" #title-suffix>
         <slot name="title-suffix" />

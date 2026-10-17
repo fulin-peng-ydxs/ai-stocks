@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { defineComponent, nextTick, ref } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import PageDrawer from '@/components/PageDrawer.vue'
 import { PAGE_DRAWER_WIDTHS } from '@/components/pageDrawerSize'
@@ -164,4 +164,38 @@ describe('PageDrawer 页面边界', () => {
 
     wrapper.unmount()
   })
+  it('头部关闭经过 before-close，拒绝时保留抽屉，允许时再关闭', async () => {
+    let done: (() => void) | undefined
+    const beforeClose = vi.fn((allow: () => void) => { done = allow })
+    const wrapper = mount(PageDrawer, {
+      attachTo: document.body,
+      props: { modelValue: true, title: '待保存内容', boundary: 'app' },
+      attrs: { beforeClose },
+      global: { plugins: [ElementPlus], stubs: { transition: false } },
+    })
+    await flushPromises()
+    const close = document.querySelector<HTMLButtonElement>('button[aria-label="关闭待保存内容"]')!
+    expect(close).not.toBeNull()
+    close.click()
+    await flushPromises()
+    expect(beforeClose).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    done!()
+    await flushPromises()
+    await vi.waitFor(() => expect(wrapper.emitted('update:modelValue')).toEqual([[false]]))
+    wrapper.unmount()
+  })
+
+  it('show-close=false 同时隐藏自定义头部关闭入口', async () => {
+    const wrapper = mount(PageDrawer, {
+      attachTo: document.body,
+      props: { modelValue: true, title: '处理中', boundary: 'app', showClose: false },
+      global: { plugins: [ElementPlus] },
+    })
+    await flushPromises()
+    expect(document.querySelector('.app-close-control')).toBeNull()
+    expect(document.querySelector('.el-drawer__close-btn')).toBeNull()
+    wrapper.unmount()
+  })
+
 })
