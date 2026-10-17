@@ -6,6 +6,7 @@ import type { MenuInstance } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { Loading } from '@element-plus/icons-vue'
 import SideMenuItem from './SideMenuItem.vue'
+import MenuIcon from './MenuIcon.vue'
 import { useAuthStore } from '@/stores/auth'
 import { activeMenuPath, findMenuTrail, type MenuTreeNode } from '@/utils/permission'
 import { resolveWorkspaceMenuPath } from '@/composables/useWorkspaceTabs'
@@ -17,31 +18,52 @@ const menuRef = ref<MenuInstance>()
 
 const menus = computed<MenuTreeNode[]>(() => auth.menus)
 
+// 只投影展示分区，不改授权树；连续的一级直达页面合为无标题区段。
+const sections = computed(() => {
+  const result: Array<{ key: string; heading?: MenuTreeNode; items: MenuTreeNode[] }> = []
+  for (const node of menus.value) {
+    if (node.children?.length) {
+      result.push({ key: node.index, heading: node, items: node.children })
+    } else {
+      const previous = result.at(-1)
+      if (previous && !previous.heading) previous.items.push(node)
+      else result.push({ key: node.index, items: [node] })
+    }
+  }
+  return result
+})
+
 const activeMenu = computed(() => activeMenuPath(menus.value, route.path))
+// 复用最长路由归属，让分区标题与详情页、工作标签切换保持同一条激活链。
+const activeTrail = computed(() => findMenuTrail(menus.value, route.path))
+const activeSectionIndex = computed(() => activeTrail.value[0]?.index)
 
 // 与面包屑共用最长匹配的授权层级。
-const defaultOpeneds = computed(() => findMenuTrail(menus.value, route.path)
+const defaultOpeneds = computed(() => activeTrail.value
+  .slice(1)
   .filter((node) => node.children?.length).map((node) => node.index))
 
 // default-openeds 仅在组件创建时生效；标签切换或详情跳转后要重新露出当前项。
 // 只响应页面/授权树变化，不监听手动收展，避免与用户浏览其他分组的操作争抢。
-watch([() => route.path, () => auth.menusStatus, menus], async () => {
+watch([() => route.path, () => auth.menusStatus, menus], async (_, __, onCleanup) => {
+  let cancelled = false
+  onCleanup(() => { cancelled = true })
   await nextTick()
   const menu = menuRef.value
-  if (auth.menusStatus !== 'ready' || !menu) return
-  const trail = defaultOpeneds.value
-  const currentGroups = new Set(trail)
-  const closeOtherGroups = (nodes: MenuTreeNode[]) => {
-    for (const node of nodes) {
-      if (!node.children?.length) continue
-      if (!currentGroups.has(node.index)) menu.close(node.index)
-      closeOtherGroups(node.children)
-    }
+  if (cancelled || auth.menusStatus !== 'ready' || !menu) return
+  // 保留其他分组的手动收展，只补开当前页面所属的可折叠祖先。
+  for (const index of defaultOpeneds.value) menu.open(index)
+  await nextTick()
+  if (cancelled) return
+  const activeItem = (menu.$el as HTMLElement).querySelector<HTMLElement>('.el-menu-item.is-active')
+  activeItem?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  // 返回分区首项时连同标题一起露出，避免滚动正好把当前分区的上下文裁掉。
+  const section = activeItem?.closest('.menu-section')
+  if (section?.querySelector('.side-menu-node') === activeItem) {
+    section?.querySelector<HTMLElement>('.section-heading')
+      ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
   }
-  closeOtherGroups(menus.value)
-  const currentGroup = trail.at(-1)
-  if (currentGroup) menu.open(currentGroup)
-}, { flush: 'post' })
+}, { flush: 'post', immediate: true })
 
 function selectMenu(index: string) {
   if (index.startsWith('/')) void router.push(resolveWorkspaceMenuPath(index))
@@ -51,18 +73,37 @@ function selectMenu(index: string) {
 <template>
   <!-- 就绪：按后端菜单渲染 -->
   <el-menu v-if="auth.menusStatus === 'ready' && menus.length" ref="menuRef" :default-active="activeMenu"
-           :default-openeds="defaultOpeneds" unique-opened class="menu" @select="selectMenu">
-    <SideMenuItem v-for="node in menus" :key="node.index" :node="node" />
+           :default-openeds="defaultOpeneds" class="menu" aria-label="侧栏导航" @select="selectMenu">
+    <el-menu-item-group v-for="section in sections" :key="section.key" class="menu-section"
+                        :class="{
+                          'is-untitled': !section.heading,
+                          'is-current-section': !!section.heading && section.heading.index === activeSectionIndex,
+                        }">
+      <template v-if="section.heading" #title>
+        <span class="menu-label section-heading" role="heading" aria-level="2"
+              :aria-current="section.heading.index === activeSectionIndex ? 'location' : undefined">
+          <span class="menu-icon" aria-hidden="true">
+            <MenuIcon v-if="section.heading.icon" :name="section.heading.icon" />
+          </span>
+          <span class="menu-text">{{ section.heading.title }}</span>
+        </span>
+      </template>
+      <SideMenuItem v-for="node in section.items" :key="node.index" :node="node" />
+    </el-menu-item-group>
   </el-menu>
 
   <!-- 加载中 -->
-  <div v-else-if="auth.menusStatus === 'loading' || auth.menusStatus === 'idle'" class="menu-hint">
+  <div v-else-if="auth.menusStatus === 'loading' || auth.menusStatus === 'idle'" class="menu-hint" role="status">
     <el-icon class="is-loading"><Loading /></el-icon>
     <span>菜单加载中…</span>
   </div>
 
+  <div v-else-if="auth.menusStatus === 'ready'" class="menu-hint" role="status">
+    <span>暂无可用菜单</span>
+  </div>
+
   <!-- 加载失败（fail-closed：不显示任何菜单，提供重试） -->
-  <div v-else class="menu-hint error">
+  <div v-else class="menu-hint error" role="alert">
     <span>菜单加载失败</span>
     <el-button size="small" text type="primary" @click="auth.retryMe()">重试</el-button>
   </div>
@@ -76,6 +117,60 @@ function selectMenu(index: string) {
   padding: 0 var(--app-space-2) var(--app-space-2);
   --el-menu-base-level-padding: 8px;
   --el-menu-level-padding: 12px;
+  --side-menu-icon-size: 18px;
+}
+.menu :deep(.menu-section + .menu-section) {
+  margin-top: var(--app-space-3);
+  padding-top: var(--app-space-3);
+  border-top: 1px solid var(--chrome-border);
+}
+.menu :deep(.menu-section > .el-menu-item-group__title) {
+  padding: var(--app-space-1) var(--app-space-2);
+  font-family: var(--app-nav-font-family);
+  font-size: var(--app-nav-meta-font-size);
+  line-height: var(--app-nav-meta-line-height);
+  font-weight: var(--app-nav-weight-primary);
+  color: var(--chrome-text-muted);
+}
+.menu :deep(.is-untitled > .el-menu-item-group__title) {
+  display: none;
+}
+.menu :deep(.is-current-section > .el-menu-item-group__title) {
+  color: var(--chrome-text-strong);
+}
+.menu :deep(.is-current-section .section-heading .menu-icon) {
+  color: var(--chrome-menu-icon-active-color);
+}
+.menu :deep(.is-current-section .section-heading::after) {
+  content: '';
+  flex: 0 0 var(--app-space-1);
+  width: var(--app-space-1);
+  height: var(--app-space-1);
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--shell-accent);
+}
+.menu :deep(.menu-label) {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-2);
+  flex: 1;
+  min-width: 0;
+}
+.menu :deep(.menu-icon) {
+  width: 18px;
+  height: var(--side-menu-icon-size);
+  flex: 0 0 18px;
+  font-size: var(--side-menu-icon-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.menu :deep(.menu-text) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .menu-hint {
   flex: 1;

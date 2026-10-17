@@ -77,8 +77,8 @@
 | `frontend/src/components/SectorAnalysisDefaultFields.vue` | 无自身 CSS 查询 | 委托 MarketBenchmarkSelect、PageSettingItem、PageSegmented、PageToggleRow。 | ComponentAutoSettings |
 | `frontend/src/components/SectorCompareChart.vue` | 无自身 CSS 查询 | 委托 AppStateBlock。 | SectorsView |
 | `frontend/src/components/SettingsGroup.vue` | 无自身 CSS 查询 | 手动递归折叠，父级收起只隐藏子树，不重置下级展开状态。 | App、ChartOperationGroup、ComponentAutoSettings、PageSettingSection、PageSettingsDrawer、LayoutSettingsSection |
-| `frontend/src/components/SideMenu.vue` | 无自身 CSS 查询 | 一级44px/子级36px固定行高，菜单高度不足由App侧栏内滚承接；授权层级与面包屑共用查询，页面路径变化时展开当前链、收起其余分组，同页查询变化保留手动收展。 | App |
-| `frontend/src/components/SideMenuItem.vue` | 无自身 CSS 查询 | 每层缩进12px，图标占位与末尾箭头固定，长名称省略并交给全局溢出提示；收展及选中不重置页面。 | SideMenu |
+| `frontend/src/components/SideMenu.vue` | 无自身 CSS 查询 | 一级为常驻分区标题，与二级文字左边界一致；当前分区标题和父菜单随路由同步使用中性高对比文字高亮，当前标题右侧圆点使用导航强调色且不显示下划线、图标使用导航激活色，选中叶子保留主色，详情继承所属分区；主入口44px/三级起36px，高度不足由App侧栏内滚承接。页面路径或授权树变化只补开当前下级链并最小滚动露出叶子，保留其他展开状态；同页查询变化不干预收展或滚动。加载/空授权/失败分别呈现。 | App |
+| `frontend/src/components/SideMenuItem.vue` | 无自身 CSS 查询 | 分区内部展示深度从0开始，三级起每层缩进12px；图标统一18px占位、下级图形16px，末尾箭头固定，长名称省略并交给全局溢出提示；收展及选中不重置页面。 | SideMenu |
 | `frontend/src/components/SourceTag.vue` | 无自身 CSS 查询 | 来源浮层min180/max280、字段网格44+0；受统一浮层边界约束。 | ComponentAutoSettings、LayoutSettingsSection |
 | `frontend/src/components/StockAnalysisDefaultFields.vue` | 无自身 CSS 查询 | 委托 MarketBenchmarkSelect、PageSettingItem、PageSegmented、PageToggleRow。 | ComponentAutoSettings |
 | `frontend/src/components/StockAnalysisNameCell.vue` | 无自身 CSS 查询 | 委托 ComparePinButton、StockStatusTag。 | RankedStockResultTable、StocksView |

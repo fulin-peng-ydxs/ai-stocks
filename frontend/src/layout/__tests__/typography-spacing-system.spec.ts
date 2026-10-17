@@ -63,7 +63,10 @@ describe('字体与间距设计契约', () => {
       .toContain('font-weight: var(--app-nav-weight-primary)')
     expect(rule(side, '.menu :deep(.el-sub-menu.is-active > .el-sub-menu__title)'))
       .toContain('font-weight: var(--app-nav-weight-active)')
-    for (const [source, selector] of [[top, '.secondary-context'], [tabs, '.workspace-tab']]) {
+    for (const [source, selector] of [
+      [side, '.menu :deep(.menu-section > .el-menu-item-group__title)'],
+      [top, '.secondary-context'], [tabs, '.workspace-tab'],
+    ]) {
       expect(rule(source, selector), selector).toContain('font-size: var(--app-nav-meta-font-size)')
     }
   })
