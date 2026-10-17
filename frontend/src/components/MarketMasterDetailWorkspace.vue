@@ -122,7 +122,7 @@ defineExpose({ openCompactAnalysis, closeCompactAnalysis })
   min-height: 0;
 }
 :deep(.el-table__row.stock-analysis-row--active > td.el-table__cell) {
-  background: color-mix(in srgb, var(--el-color-primary-light-9) 72%, var(--el-bg-color));
+  background: var(--app-surface-selected);
 }
 :deep(.el-table__row.stock-analysis-row--active > td:first-child) {
   box-shadow: inset 3px 0 0 var(--el-color-primary);

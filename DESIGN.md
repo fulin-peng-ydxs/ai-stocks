@@ -787,22 +787,34 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 ## 6. Depth & Elevation
 
-层级主要通过背景、边框、轻阴影和密度表达，不使用强装饰和多层浮动卡片。
+层级按界面职责表达，不按 DOM 嵌套深度自动加灰或加深。内容容器与内部规则卡、配置组、展开编辑区可以使用相同内容底色，通过可见边框、间距和标题区分。
 
-| 层级 | 表达方式 | 使用场景 |
+背景与边界的唯一映射入口为 `frontend/src/layout/themeSurfaces.ts::themeSurfaceVariables()`，由 `useLayoutPreset.ts` 在挂载前及切换明暗/预设时统一应用。中性基础色沿用 `THEME_SURFACE_SPECS`，本节不维护第二份色值。`global.css` 负责旧变量别名和 Element Plus 状态选择器适配；业务组件只消费角色，禁止新增私有底色、透明度混色或硬编码颜色兜底。
+
+| 角色 | 共享变量 | 使用场景 |
 |---|---|---|
-| 页面底 | `--el-bg-color-page` | 工作区背景 |
-| 基础表面 | `--el-bg-color` / `--chrome-bg-soft` | 卡片、表格、输入框 |
-| 分区表面 | `--app-section-bg` | KPI、指标标签格、查询摘要、配置组内部 |
-| 浮层 | `--el-bg-color-overlay`、遮罩、边框 | dialog、drawer、popover |
-| 强浮层 | `box-shadow: 0 10px 30px ...` | 页面设置抽屉、用户中心 |
+| 页面画布 | `--app-surface-canvas` | 工作区外部底色；兼容 `--el-bg-color-page` |
+| 内容面 | `--app-surface-container` | 主体、卡片、规则摘要、配置组、表格和展开编辑区；兼容 `--el-bg-color` / `--chrome-bg-soft` |
+| 分区标识 | `--app-surface-section` | 已有 KPI 标签格、图表标题等中性分区；兼容 `--app-section-bg`，不得仅因嵌套就使用 |
+| 导航面 | `--app-surface-navigation` | 应用边栏及导航预览 |
+| 控件面 | `--app-surface-control` | 可编辑、只读和禁用输入框、文本域、选择器、数字和日期控件，底色与内容面一致 |
+| 浮层面 | `--app-surface-overlay` / `--app-overlay-scrim` | dialog、drawer、popover 的内容面及遮罩 |
+| 交互状态 | `--app-surface-hover` / `--app-surface-active` / `--app-surface-selected` | 真正悬停、按下或选中时使用；不能充当普通卡片或禁用控件的大面积底色 |
+| 语义状态 | `--app-surface-success/warning/danger` | 成功、警示和错误提示；不得用于普通内容层级 |
+| 分隔线与常规边框 | `--app-border-divider` / `--app-border-default` | 内部分隔与卡片/输入轮廓；Element Plus 的 `border-color`、`light`、`lighter`、`extra-light` 均显式接入，不能回退到组件库默认色 |
+| 强边框与选中边框 | `--app-border-strong` / `--app-border-selected` | 需要增强的边界与真实选择态 |
+| 状态边框 | `--app-border-success/warning/danger` | 与对应状态提示一致的边界 |
 
 规则：
 
 - 默认卡片圆角 4px，控件圆角 4-6px，抽屉卡片可到 16px。
-- 业务页面不通过多层阴影表达层级，优先用边框、间距、标题和背景差异。
-- 弹窗遮罩保持轻压暗，不能让背景表格干扰当前任务。
-- 高对比预设必须提高边框和文字对比，而不是仅加深背景。
+- 业务页面优先用边框、间距和标题表达内容关系；规则卡片和输入内容保持内容面，不通过逐层填灰、主色染底或多层阴影区分。
+- 弹窗遮罩统一消费 `--app-overlay-scrim`；不在浮层消费侧私调透明度。
+- 高对比预设提高边框和文字对比，不改变固定中性基础色。
+- 兼容的 `--el-*`、`--chrome-*`、`--drawer-*`、`--page-settings-*` 由共享入口映射，页面可以继续消费，禁止在消费侧重新定义底色配方。
+- `npm run check:surfaces` 已接入 `build`：扫描 Vue/CSS/TS 的静态表面声明、Vue 静态/绑定样式及脚本样式对象和直接赋值，拦截局部色值、混色、未定义角色和私自定义共享角色。动态业务颜色表达式仍须按代码审查核对来源；图表序列身份色不属于容器底色规则。
+- 装饰例外仅限 `App.vue` 的三个明暗示意圆图，以及 `LoginView.vue` 的品牌轨迹、轨迹标注、行情带和认证区光晕。守卫逐条绑定文件、选择器、属性和原值，不能扩大到普通登录控件或整文件豁免；新增例外须同步本节与守卫登记。
+- 本次规则由统一主题要求及内容卡保持原底色的用户反馈确认；共享映射、组件接入和源码守卫已实现。验收覆盖定向测试、生产构建及共享组件明暗临时预览，不代表逐页人工验收全部业务状态。
 
 ## 7. Do's and Don'ts
 

@@ -78,7 +78,7 @@ function metricDescription(item: MarketMetricStripItem): string {
   flex: 0 0 auto;
   overflow-x: auto;
   border-bottom: 1px solid var(--el-border-color-lighter);
-  background: color-mix(in srgb, var(--app-section-bg) 54%, var(--el-bg-color));
+  background: var(--app-surface-container);
 }
 .market-metric-cell {
   position: relative;

@@ -141,6 +141,6 @@ defineEmits<{
   min-height: 0;
 }
 .el-overlay.app-drawer-surface-modal {
-  background-color: rgba(0, 0, 0, 0.32) !important;
+  background-color: var(--app-overlay-scrim) !important;
 }
 </style>

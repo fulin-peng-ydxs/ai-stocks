@@ -97,7 +97,7 @@ defineProps<{
   font-size: var(--app-font-size-caption);
 }
 .pt-system-only {
-  border-color: color-mix(in srgb, var(--el-color-warning) 40%, var(--el-border-color));
+  border-color: var(--app-border-warning);
   color: var(--el-color-warning);
 }
 :deep(.el-checkbox) {

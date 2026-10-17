@@ -773,7 +773,7 @@ onMounted(async () => {
   line-height: var(--app-line-height-data);
 }
 .metric--primary {
-  background: color-mix(in srgb, var(--el-color-primary-light-9) 52%, transparent);
+  background: var(--app-surface-section);
 }
 .metric--leader {
   min-width: 154px;

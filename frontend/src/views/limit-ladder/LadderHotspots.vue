@@ -70,7 +70,7 @@ function visibleItems(kind: LimitLadderHotspotType): LimitLadderHotspot[] {
 </template>
 
 <style scoped>
-.ladder-hotspots { display:grid; gap:var(--app-space-2); padding:var(--app-space-3) var(--app-space-4); border-bottom:1px solid var(--el-border-color-lighter); background:color-mix(in srgb,var(--app-section-bg) 45%,var(--el-bg-color)); }
+.ladder-hotspots { display:grid; gap:var(--app-space-2); padding:var(--app-space-3) var(--app-space-4); border-bottom:1px solid var(--el-border-color-lighter); background:var(--app-surface-container); }
 .ladder-hotspots__group { display:grid; grid-template-columns:70px minmax(0,1fr); align-items:start; gap:var(--app-space-2); }
 .ladder-hotspots__group>strong { display:flex; align-items:center; min-height:var(--app-control-height-sm); color:var(--el-text-color-secondary); font-size:var(--app-font-size-caption); }
 .ladder-hotspots__chips { display:flex; flex-wrap:wrap; gap:var(--app-space-1); }

@@ -172,9 +172,7 @@ async function quickSubmit(ruleId: string, ruleName: string): Promise<void> {
 .discipline-quick-card {
   border: 1px solid var(--page-settings-section-border);
   border-radius: 12px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--shell-accent) 7%, transparent), transparent 46%),
-    var(--page-settings-section-bg);
+  background: var(--app-surface-container);
   overflow: hidden;
 }
 .quick-head {
@@ -191,9 +189,9 @@ async function quickSubmit(ruleId: string, ruleName: string): Promise<void> {
 .quick-progress {
   min-width: 82px;
   padding: var(--app-space-control-gap) var(--app-space-2);
-  border: 1px solid color-mix(in srgb, var(--el-color-warning) 35%, var(--page-settings-section-border));
+  border: 1px solid var(--app-border-warning);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--el-color-warning) 8%, transparent);
+  background: var(--app-surface-warning);
   color: var(--page-settings-text);
   display: flex;
   flex-direction: column;
@@ -201,7 +199,7 @@ async function quickSubmit(ruleId: string, ruleName: string): Promise<void> {
 }
 .quick-progress-label { color: var(--page-settings-text-muted); font-size: var(--app-font-size-caption); }
 .quick-progress-value { font-variant-numeric: tabular-nums; }
-.quick-progress.is-complete { border-color: color-mix(in srgb, var(--el-color-success) 35%, var(--page-settings-section-border)); background: color-mix(in srgb, var(--el-color-success) 8%, transparent); }
+.quick-progress.is-complete { border-color: var(--app-border-success); background: var(--app-surface-success); }
 .quick-rule-list { padding: var(--app-space-1) var(--app-space-3) var(--app-space-2); }
 .quick-rule-row { padding: var(--app-space-3) 0; border-bottom: 1px solid var(--page-settings-divider); }
 .quick-rule-row:last-child { border-bottom: 0; }

@@ -1,7 +1,8 @@
 import { computed, type ComputedRef } from 'vue'
 import { useTheme } from '@/composables/useTheme'
 import { useLayoutPreset } from '@/layout/useLayoutPreset'
-import { getLoginSurfaceSpec } from '@/layout/themeSurfaces'
+import { getLoginSurfaceSpec, themeSurfaceVariables } from '@/layout/themeSurfaces'
+import { LAYOUT_PRESETS } from '@/layout/presets'
 
 export interface EChartsTheme {
   typography: ChartTypography
@@ -49,19 +50,22 @@ export function hasRenderableChartSize(element: HTMLElement): boolean {
 
 /** 非股票 ECharts 的语义主题；只读取预设系统已经提交完成的 CSS token。fallback 与 balanced 预设同值，避免预设未就绪时回退到旧色。 */
 export function echartsTheme(isDark: boolean): EChartsTheme {
-  const surfaces = getLoginSurfaceSpec(isDark ? 'dark' : 'light')
+  const mode = isDark ? 'dark' : 'light'
+  const surfaces = getLoginSurfaceSpec(mode)
+  const tokens = LAYOUT_PRESETS.balanced.tokens[mode]
+  const roles = themeSurfaceVariables(tokens, mode)
   return {
     typography: chartTypography(),
     background: chartCssVariable('--el-bg-color', surfaces.surfaceBg),
-    axis: chartCssVariable('--el-border-color', isDark ? '#353535' : '#e5e5e5'),
-    split: chartCssVariable('--el-border-color-lighter', isDark ? '#353535' : '#e5e5e5'),
+    axis: chartCssVariable('--el-border-color', roles['--app-border-default']),
+    split: chartCssVariable('--el-border-color-lighter', roles['--app-border-divider']),
     label: chartCssVariable('--el-text-color-secondary', isDark ? '#9a9a9a' : '#6e7078'),
     text: chartCssVariable('--el-text-color-primary', isDark ? '#f4f4f4' : '#17181c'),
     tooltipBackground: chartCssVariable(
       '--el-bg-color-overlay',
       surfaces.surfaceBg,
     ),
-    tooltipBorder: chartCssVariable('--el-border-color', isDark ? '#353535' : '#e5e5e5'),
+    tooltipBorder: chartCssVariable('--el-border-color', roles['--app-border-default']),
     focus: chartCssVariable('--el-color-primary', isDark ? '#3b8cff' : '#1677ff'),
     accent: chartCssVariable('--el-color-warning', isDark ? '#f5a623' : '#f58a07'),
     muted: chartCssVariable('--el-text-color-placeholder', isDark ? '#9a9a9a' : '#6e7078'),

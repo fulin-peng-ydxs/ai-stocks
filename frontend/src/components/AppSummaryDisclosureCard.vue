@@ -94,13 +94,13 @@ function toggle() {
 <style scoped>
 .app-summary-disclosure-card {
   min-width: 0;
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--app-border-default);
   border-radius: var(--layout-card-radius);
-  background: var(--el-bg-color);
+  background: var(--app-surface-container);
   overflow: hidden;
 }
 .app-summary-disclosure-card.is-expanded {
-  border-color: color-mix(in srgb, var(--el-color-primary) 62%, var(--el-border-color));
+  border-color: var(--app-border-selected);
   box-shadow: inset 3px 0 0 var(--el-color-primary);
 }
 .app-summary-disclosure-card__bar {
@@ -125,7 +125,7 @@ function toggle() {
 .app-summary-disclosure-card__summary.has-leading { grid-template-columns: 28px minmax(0, 1fr) 16px; }
 .app-summary-disclosure-card__leading { display: inline-flex; align-items: center; }
 .app-summary-disclosure-card__summary:hover {
-  background: color-mix(in srgb, var(--el-fill-color-light) 58%, transparent);
+  background: var(--app-surface-hover);
 }
 .app-summary-disclosure-card__summary:focus-visible {
   outline: none;
@@ -135,7 +135,7 @@ function toggle() {
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  background: color-mix(in srgb, var(--app-section-bg) 68%, var(--el-bg-color));
+  background: var(--app-surface-control);
   color: var(--el-text-color-secondary);
   display: inline-flex;
   align-items: center;
@@ -144,7 +144,7 @@ function toggle() {
   font-variant-numeric: tabular-nums;
 }
 .is-expanded .app-summary-disclosure-card__index {
-  background: color-mix(in srgb, var(--el-color-primary-light-9) 76%, var(--el-bg-color));
+  background: var(--app-surface-selected);
   color: var(--el-color-primary);
 }
 .app-summary-disclosure-card__copy { min-width: 0; }
@@ -196,7 +196,7 @@ function toggle() {
 .app-summary-disclosure-card__editor {
   padding: var(--app-space-3);
   border-top: 1px solid var(--el-border-color-extra-light);
-  background: var(--el-bg-color);
+  background: var(--app-surface-container);
 }
 .app-summary-disclosure-card__editor :deep(.el-form-item:last-child) { margin-bottom: 0; }
 

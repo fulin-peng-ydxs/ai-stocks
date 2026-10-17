@@ -91,9 +91,9 @@ function toggle() {
 }
 
 .is-level-1 {
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--app-border-default);
   border-radius: 6px;
-  background: var(--el-bg-color);
+  background: var(--app-surface-container);
   overflow: hidden;
 }
 
@@ -104,7 +104,7 @@ function toggle() {
 .is-level-1 > .config-panel-section__head {
   min-height: 48px;
   padding: 11px 14px;
-  background: color-mix(in srgb, var(--app-section-bg) 58%, transparent);
+  background: var(--app-surface-container);
 }
 
 .is-level-1 > .config-panel-section__body {
@@ -131,11 +131,11 @@ function toggle() {
   flex: 1 1 auto;
   min-width: 72px;
   height: 1px;
-  background: color-mix(in srgb, var(--el-border-color) 72%, transparent);
+  background: var(--app-border-divider);
 }
 
 .is-level-2.is-closed > .config-panel-section__head::after {
-  background: color-mix(in srgb, var(--el-border-color) 88%, transparent);
+  background: var(--app-border-default);
 }
 
 .is-level-2 > .config-panel-section__body {
@@ -218,7 +218,7 @@ function toggle() {
   margin-left: auto;
   flex: none;
   padding: 2px 8px;
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--app-border-default);
   border-radius: 999px;
   background: var(--el-fill-color-blank);
   color: var(--el-text-color-secondary);

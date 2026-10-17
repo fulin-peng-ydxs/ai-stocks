@@ -1472,7 +1472,7 @@ onBeforeUnmount(() => {
   padding: 3px 7px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: var(--layout-control-radius);
-  background: color-mix(in srgb, var(--el-bg-color) 92%, transparent);
+  background: var(--app-surface-overlay);
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-micro);
   display: flex;
@@ -1507,7 +1507,7 @@ onBeforeUnmount(() => {
   inset: 0;
   display: flex;
   align-items: center;
-  background: color-mix(in srgb, var(--el-bg-color) 94%, transparent);
+  background: var(--app-surface-overlay);
 }
 
 @container app-viewport (max-width: 1180px) {

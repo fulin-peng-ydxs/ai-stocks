@@ -379,7 +379,7 @@ span {
   border-radius: 3px;
 }
 .cp-mli.active {
-  background: color-mix(in srgb, var(--el-color-primary) 30%, var(--el-fill-color));
+  background: var(--app-surface-selected);
 }
 .cp-mdetail {
   flex: 1;

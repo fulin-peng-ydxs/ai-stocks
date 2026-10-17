@@ -127,7 +127,7 @@ function surface(
 
 /**
  * 明暗模式的固定基础表面。
- * 预设只能覆盖强调色和形态，不能改变主画布、边栏、卡片、文字与边界的中性底色。
+ * 预设只能覆盖强调色和形态，不能改变主画布、边栏、卡片与文字的中性底色；边界消费预设的统一边框角色。
  */
 export const THEME_SURFACE_SPECS: Record<ThemeMode, LoginSurfaceSpec> = {
   light: surface('#fafafa', '#fcfcfc', '#ffffff', 1, '#f7f7f7'),
@@ -136,4 +136,74 @@ export const THEME_SURFACE_SPECS: Record<ThemeMode, LoginSurfaceSpec> = {
 
 export function getLoginSurfaceSpec(mode: ThemeMode): LoginSurfaceSpec {
   return THEME_SURFACE_SPECS[mode]
+}
+
+/** 背景与边界角色的唯一映射。业务组件只选角色，不自行混色或依赖组件库默认档位。 */
+export function themeSurfaceVariables(tokens: StyleTokenConfig, mode: ThemeMode): Record<string, string> {
+  const spec = THEME_SURFACE_SPECS[mode]
+  const divider = tokens.border
+  const selected = blendHex(tokens.primary, tokens.surfaceBg, 0.06)
+  return {
+    '--app-overlay-scrim': 'rgba(0, 0, 0, 0.32)',
+    '--app-surface-canvas': spec.pageBg,
+    '--app-surface-container': spec.surfaceBg,
+    '--app-surface-section': spec.sectionBg,
+    '--app-surface-navigation': spec.sidebarBg,
+    '--app-surface-active': tokens.activeBg,
+    '--app-surface-control': spec.surfaceBg,
+    '--app-surface-overlay': spec.surfaceBg,
+    '--app-surface-hover': tokens.surfaceHover,
+    '--app-surface-selected': selected,
+    '--app-border-divider': divider,
+    '--app-border-default': tokens.border,
+    '--app-border-strong': tokens.borderStrong,
+    '--app-border-selected': tokens.primary,
+    '--el-bg-color-page': spec.pageBg,
+    '--el-bg-color': spec.surfaceBg,
+    '--el-bg-color-overlay': spec.surfaceBg,
+    '--el-fill-color-blank': spec.surfaceBg,
+    '--el-fill-color': tokens.activeBg,
+    '--el-fill-color-light': tokens.surfaceHover,
+    '--el-fill-color-lighter': spec.sectionBg,
+    '--el-fill-color-extra-light': spec.sectionBg,
+    '--app-section-bg': spec.sectionBg,
+    '--el-disabled-bg-color': spec.surfaceBg,
+    '--el-disabled-border-color': tokens.border,
+    '--el-disabled-text-color': tokens.textMuted,
+    '--el-border-color': tokens.border,
+    '--el-border-color-light': tokens.border,
+    '--el-border-color-lighter': divider,
+    '--el-border-color-extra-light': divider,
+    '--el-border-color-dark': tokens.borderStrong,
+    '--el-border-color-darker': tokens.borderStrong,
+    '--chrome-bg': spec.sidebarBg,
+    '--chrome-bg-soft': spec.surfaceBg,
+    '--chrome-bg-soft-hover': tokens.surfaceHover,
+    '--chrome-border': tokens.border,
+    '--chrome-border-strong': tokens.borderStrong,
+    '--chrome-submenu-bg': spec.sidebarBg,
+    '--chrome-active-bg': tokens.activeBg,
+    '--drawer-bg': spec.surfaceBg,
+    '--drawer-card-bg': spec.surfaceBg,
+    '--drawer-border': tokens.border,
+    '--page-settings-bg': spec.surfaceBg,
+    '--page-settings-border': tokens.border,
+    '--page-settings-section-bg': spec.sectionBg,
+    '--page-settings-section-border': tokens.border,
+    '--page-settings-divider': divider,
+    '--page-settings-dot-ring': spec.surfaceBg,
+    '--page-settings-trigger-hover-bg': tokens.surfaceHover,
+    '--page-settings-seg-bg': tokens.surfaceHover,
+    '--page-settings-seg-hover-bg': tokens.activeBg,
+    '--page-settings-seg-active-bg': mode === 'dark' ? blendHex(tokens.activeBg, tokens.textStrong, 0.88) : spec.surfaceBg,
+    '--page-settings-seg-active-border': tokens.borderStrong,
+    '--page-settings-switch-off': tokens.borderStrong,
+    '--page-settings-tip-border': tokens.borderStrong,
+    '--page-settings-footer-btn-bg': tokens.surfaceHover,
+    '--page-settings-footer-btn-hover-bg': tokens.activeBg,
+    ...Object.fromEntries((['success', 'warning', 'danger'] as const).flatMap((name) => [
+      [`--app-border-${name}`, blendHex(tokens[name], tokens.border, 0.4)],
+      [`--app-surface-${name}`, blendHex(tokens[name], tokens.surfaceBg, 0.08)],
+    ])),
+  }
 }

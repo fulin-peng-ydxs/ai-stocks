@@ -237,7 +237,7 @@ const resourceStats = computed(() => {
 .pt-system-only {
   flex: none;
   padding: 0 4px;
-  border: 1px solid color-mix(in srgb, var(--el-color-warning) 40%, var(--el-border-color));
+  border: 1px solid var(--app-border-warning);
   border-radius: 3px;
   color: var(--el-color-warning);
   font-size: var(--app-font-size-caption);

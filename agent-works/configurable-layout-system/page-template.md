@@ -120,9 +120,11 @@
 - 自检结论：
 
 ### 主题底色规范
-规则入口：[DESIGN.md](../../DESIGN.md) §2「Color Palette & Roles」。
+规则入口：[DESIGN.md](../../DESIGN.md) §2「Color Palette & Roles」与 §6「Depth & Elevation」。
 
 - 是否调整主题底色 / 预设：
+- 背景/边框是否消费 `themeSurfaces.ts::themeSurfaceVariables()` 的角色，未按嵌套深度给内容卡或输入内容加灰：
+- `npm run check:surfaces` 是否通过：
 - 涉及 `themeSurfaces.ts` / `presets.ts`：
 - 是否涉及品牌露出：涉及时必须直接复用 `BrandMark`，不得新增场景变体或消费侧 `--brand-*` 覆盖：
 - 登录页 / 应用外壳同明暗模式、同预设下的品牌与基础表面是否一致：
@@ -220,6 +222,7 @@
 | 提示 / 截断机制 | DESIGN 提示契约、AppHoverInfo / useHoverIntent、AppIconButton / AppActionHint、AppOverflowTooltipHost；涉及原文时同步专用内容来源，不恢复原生 title 自动提示 | `check:tooltips`、提示/消费者定向测试、build、实际停留/移动/点击/键盘与主题验收 |
 | 字体 / 间距体系 | `global.css` typography/spacing token、DESIGN 排版与节奏规范；新增语义层级时同步 token、文档和消费点 | 相关样式契约测试、build、关键页面视觉验收 |
 | 全局界面比例 | `useDisplayScale`、`displayScaleProfiles`、`sizeProfileMatching`、`useLayoutViewport`、`displayScaleGeometry`、根画布与独立遮罩、视觉环境入口和 DESIGN；偏好复用 `useGlobalPreferenceSync`；自动缩放指数由系统外观配置 `ui.display.auto_scale_exponent`、后端校验、登录公开白名单和运行时缓存共同承接，默认 0.10；自定义比例按显示器可用 CSS 宽高保存个人尺寸档案，并与主从工作台复用尺寸匹配容差及距离工具；尺寸断点使用 `app-viewport`，第三方坐标补丁随安装校验 | composable/尺寸档案/坐标换算和真实组件交互单测、尺寸断点契约、build、分隔条/图表/滚动恢复与 Teleport 浮层视觉验收 |
+| 主体 / 组件 / 内部控件背景与边框 | `themeSurfaces.ts::themeSurfaceVariables()`、`useLayoutPreset.ts`、`global.css` 与实际共享消费者、DESIGN §6；不得在页面定义第二份底色或混色规则 | `check:surfaces`、`surface-contract.spec.ts`、`useLayoutPreset.spec.ts`、build、明暗模式普通/禁用/选中态临时复核 |
 | 品牌字标 / 主题强调色 | `BrandMark.vue`、`useLayoutPreset.ts`、登录页与应用外壳消费点、DESIGN 品牌规则；不得新增场景变体或消费侧颜色覆盖 | `BrandMark.spec.ts`、`useLayoutPreset.spec.ts`、build、登录页与工作台同模式同预设视觉验收 |
 | 页面浮层 | `#overlays`、`AppDialog` / `AppDetailDrawer` / 专用 `PageDrawer` / `PageSettingsDrawer`、唯一浮层类；新增公共能力时同步 DESIGN 组件清单 | 统一组件测试、`layout-contract.spec.ts`、页面与顶部栏边界、正文内滚、关闭行为 |
 | 纯业务偏好 | `usePageSettings` / 页面业务态，放入「业务选项」；不追加存储实现类徽标 | 业务行为验证、必要时 build |

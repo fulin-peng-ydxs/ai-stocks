@@ -358,7 +358,7 @@ function buildTradeMarkPoints(context: OptionContext) {
         symbol: 'triangle',
         symbolRotate: isBuy ? 0 : 180,
         symbolSize: 12,
-        itemStyle: { color, borderColor: '#fff', borderWidth: 1 },
+        itemStyle: { color, borderColor: context.theme.background, borderWidth: 1 },
         label: {
           show: true,
           position: isBuy ? 'bottom' : 'top',

@@ -456,7 +456,7 @@ describe('字体与间距设计契约', () => {
     const loginView = read(join(SRC_DIR, 'views/LoginView.vue'))
 
     expect(loginView).not.toContain('--login-auth-glow')
-    expect(loginView).toContain('--login-accent: var(--el-color-primary, #1677ff)')
+    expect(loginView).toContain('--login-accent: var(--el-color-primary)')
     expect(loginView).toContain('--login-accent-strong: var(--el-color-primary-dark-2, #1264d9)')
     expect(loginView).not.toContain('.login-shell.preset-daylight')
     expect(loginView).not.toContain('.login-shell.preset-nocturne')

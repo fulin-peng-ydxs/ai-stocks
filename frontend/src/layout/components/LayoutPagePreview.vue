@@ -345,7 +345,7 @@ function parentLabel(s: SlotSpec): string | null {
 }
 .slot-box.main.grow {
   min-height: 120px;
-  background: color-mix(in srgb, var(--el-color-success) 7%, var(--el-bg-color));
+  background: var(--app-surface-success);
 }
 .slot-box.action {
   flex-direction: row;
