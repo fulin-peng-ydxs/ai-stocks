@@ -8,12 +8,10 @@ withDefaults(defineProps<{
   size?: 'default' | 'compact' | 'inline'
   disabled?: boolean
   loading?: boolean
-  nativeTitle?: boolean | string
 }>(), {
   size: 'default',
   disabled: false,
   loading: false,
-  nativeTitle: false,
 })
 defineEmits<{ click: [event: MouseEvent] }>()
 </script>
@@ -26,7 +24,6 @@ defineEmits<{ click: [event: MouseEvent] }>()
     :size="size === 'default' ? 'sm' : 'xs'"
     :disabled="disabled"
     :loading="loading"
-    :native-title="nativeTitle"
     @click.stop="$emit('click', $event)"
     @keydown.enter.stop
     @keydown.space.stop

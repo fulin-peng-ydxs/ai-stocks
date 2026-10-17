@@ -46,7 +46,6 @@ async function toggle(): Promise<void> {
     :label="`${active ? '移出' : '加入'}自选分组：${name || code}`"
     :loading="loading"
     size="xs"
-    :native-title="false"
     @click.stop="toggle"
   >
     <el-icon><StarFilled v-if="active" /><Star v-else /></el-icon>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppHoverInfo from '@/components/AppHoverInfo'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -827,13 +828,17 @@ const menuPageTitle = useMenuPageTitle()
           <AppTableColumn v-if="sourceColVisible('status')" label="状态" role="status">
             <template #default="{ row }">
               <span class="app-inline-info app-inline-info--nowrap">
-                <span
-                  class="src-status"
-                  :title="row.up === false && row.failure_reason ? row.failure_reason : undefined"
+                <AppHoverInfo
+                  :content="row.up === false && row.failure_reason ? row.failure_reason : undefined"
+                  :disabled="!(row.up === false && row.failure_reason ? row.failure_reason : undefined)"
                 >
-                  <span class="dot" :class="row.up === true ? 'up' : row.up === false ? 'down' : 'unknown'" />
-                  {{ row.up === true ? '连通' : row.up === false ? '不可达' : '未测试' }}
-                </span>
+                  <span :tabindex="row.up === false && row.failure_reason ? 0 : undefined"
+                    class="src-status"
+                  >
+                    <span class="dot" :class="row.up === true ? 'up' : row.up === false ? 'down' : 'unknown'" />
+                    {{ row.up === true ? '连通' : row.up === false ? '不可达' : '未测试' }}
+                  </span>
+                </AppHoverInfo>
                 <el-tag
                   v-if="row.source === 'ths_board' && row.credential"
                   size="small"

@@ -2,9 +2,9 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   findOverflowTooltipTarget,
-  findNativeTitleTooltipTarget,
   overflowTooltipContent,
 } from '@/components/overflow/overflowTooltip'
+import { useTooltipInputModality } from '@/composables/useTooltipInputModality'
 import { APP_HOVER_TOOLTIP_DELAY_MS } from '@/components/overflow/tooltipTiming'
 
 const visible = ref(false)
@@ -14,8 +14,7 @@ const contentRef = ref<HTMLElement>()
 const contentTruncated = ref(false)
 let hoverTarget: HTMLElement | null = null
 let focusTarget: HTMLElement | null = null
-let pointerFocus = false
-let suppressedTitle: { element: HTMLElement; value: string; addedAriaLabel: boolean } | null = null
+const modality = useTooltipInputModality()
 let hoverTimer: ReturnType<typeof setTimeout> | null = null
 let contentResizeObserver: ResizeObserver | null = null
 
@@ -44,36 +43,10 @@ function clearHoverTimer(): void {
   hoverTimer = null
 }
 
-function restoreSuppressedTitle(): void {
-  if (!suppressedTitle) return
-  if (!suppressedTitle.element.hasAttribute('title')) {
-    suppressedTitle.element.title = suppressedTitle.value
-  }
-  if (suppressedTitle.addedAriaLabel
-    && suppressedTitle.element.getAttribute('aria-label') === suppressedTitle.value) {
-    suppressedTitle.element.removeAttribute('aria-label')
-  }
-  suppressedTitle = null
-}
-
-function suppressTitle(element: HTMLElement): void {
-  if (!element.title || suppressedTitle?.element === element) return
-  restoreSuppressedTitle()
-  const addedAriaLabel = !element.hasAttribute('aria-label')
-    && !element.hasAttribute('aria-labelledby')
-    && !element.textContent?.trim()
-  if (addedAriaLabel) element.setAttribute('aria-label', element.title)
-  suppressedTitle = { element, value: element.title, addedAriaLabel }
-  element.removeAttribute('title')
-}
-
 function showFor(element: HTMLElement): void {
-  const nextContent = suppressedTitle?.element === element
-    ? suppressedTitle.value
-    : overflowTooltipContent(element)
+  if (!element.isConnected || findOverflowTooltipTarget(element) !== element) { hideCurrent(); return }
+  const nextContent = overflowTooltipContent(element)
   if (!nextContent) return
-  if (virtualRef.value !== element) restoreSuppressedTitle()
-  suppressTitle(element)
   virtualRef.value = element
   contentTruncated.value = false
   content.value = nextContent
@@ -83,14 +56,12 @@ function showFor(element: HTMLElement): void {
 function hideCurrent(): void {
   visible.value = false
   contentTruncated.value = false
-  restoreSuppressedTitle()
   virtualRef.value = undefined
   content.value = ''
 }
 
 function scheduleHover(element: HTMLElement): void {
   clearHoverTimer()
-  suppressTitle(element)
   hoverTimer = setTimeout(() => {
     hoverTimer = null
     if (hoverTarget === element && element.isConnected && !focusTarget) showFor(element)
@@ -107,11 +78,7 @@ function syncVisibleTarget(): void {
 }
 
 function onMouseOver(event: MouseEvent): void {
-  if (suppressedTitle?.element === hoverTarget
-    && event.target instanceof Node
-    && hoverTarget?.contains(event.target)) return
-  const next = findNativeTitleTooltipTarget(event.target)
-    || findOverflowTooltipTarget(event.target)
+  const next = findOverflowTooltipTarget(event.target)
   if (!next || hoverTarget === next) return
   hoverTarget = next
   if (focusTarget) return
@@ -145,9 +112,8 @@ function onMouseOut(event: MouseEvent): void {
 
 function onFocusIn(event: FocusEvent): void {
   // 鼠标点击也会让按钮获得焦点；只有键盘焦点可以持续展示提示。
-  if (pointerFocus) return
-  const next = findNativeTitleTooltipTarget(event.target)
-    || findOverflowTooltipTarget(event.target)
+  if (modality.isPointerInteraction()) return
+  const next = findOverflowTooltipTarget(event.target)
     || (event.target instanceof Node && hoverTarget?.contains(event.target) ? hoverTarget : null)
   if (!next) return
   focusTarget = next
@@ -168,7 +134,6 @@ function onFocusOut(event: FocusEvent): void {
 }
 
 function onPointerDown(): void {
-  pointerFocus = true
   dismissCurrent()
 }
 
@@ -179,8 +144,8 @@ function dismissCurrent(): void {
   hideCurrent()
 }
 
-function onKeyDown(): void {
-  pointerFocus = false
+function onKeyDown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') dismissCurrent()
 }
 
 onMounted(() => {
@@ -193,6 +158,7 @@ onMounted(() => {
   document.addEventListener('mouseout', onMouseOut)
   document.addEventListener('focusin', onFocusIn)
   document.addEventListener('focusout', onFocusOut)
+  window.addEventListener('resize', dismissCurrent)
   if (typeof ResizeObserver !== 'undefined') {
     contentResizeObserver = new ResizeObserver(measureContentOverflow)
   }
@@ -207,9 +173,9 @@ onBeforeUnmount(() => {
   document.removeEventListener('mouseout', onMouseOut)
   document.removeEventListener('focusin', onFocusIn)
   document.removeEventListener('focusout', onFocusOut)
+  window.removeEventListener('resize', dismissCurrent)
   clearHoverTimer()
   contentResizeObserver?.disconnect()
-  restoreSuppressedTitle()
 })
 </script>
 

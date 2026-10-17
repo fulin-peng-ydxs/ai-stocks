@@ -406,7 +406,7 @@ function userRowActions(row: AdminUser): AppRowAction[] {
       label: '编辑',
       permission: 'user:update',
       disabled: tenantAdminBlocked,
-      title: blockedTitle,
+      tooltip: blockedTitle,
       onClick: () => openEdit(row),
     },
     {
@@ -414,7 +414,7 @@ function userRowActions(row: AdminUser): AppRowAction[] {
       label: '重置密码',
       permission: 'user:reset-password',
       disabled: tenantAdminBlocked,
-      title: blockedTitle,
+      tooltip: blockedTitle,
       onClick: () => openReset(row),
     },
     {
@@ -424,7 +424,7 @@ function userRowActions(row: AdminUser): AppRowAction[] {
       permission: 'user:disable',
       visible: row.status === 'active',
       disabled: self || tenantAdminBlocked,
-      title: blockedTitle,
+      tooltip: blockedTitle,
       onClick: () => changeStatus(row, 'disabled', '禁用'),
     },
     {
@@ -434,7 +434,7 @@ function userRowActions(row: AdminUser): AppRowAction[] {
       permission: 'user:disable',
       visible: row.status === 'disabled',
       disabled: tenantAdminBlocked,
-      title: blockedTitle,
+      tooltip: blockedTitle,
       onClick: () => changeStatus(row, 'active', '启用'),
     },
     {
@@ -444,7 +444,7 @@ function userRowActions(row: AdminUser): AppRowAction[] {
       permission: 'user:disable',
       visible: row.status === 'locked',
       disabled: tenantAdminBlocked,
-      title: blockedTitle,
+      tooltip: blockedTitle,
       onClick: () => changeStatus(row, 'active', '解锁'),
     },
     {
@@ -453,7 +453,7 @@ function userRowActions(row: AdminUser): AppRowAction[] {
       type: 'danger',
       permission: 'user:delete',
       disabled: self || tenantAdminBlocked,
-      title: blockedTitle,
+      tooltip: blockedTitle,
       placement: 'more',
       onClick: () => removeUser(row),
     },

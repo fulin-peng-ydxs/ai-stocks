@@ -97,6 +97,7 @@ onMounted(load)
         <AppIconButton
           v-permission="'trade-discipline:checkin-submit'"
           label="删除自定义原因"
+          tooltip="删除自定义原因"
           size="sm"
           :disabled="disabled"
           @click.stop="remove(reason)"

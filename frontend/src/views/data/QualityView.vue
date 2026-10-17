@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppActionHint from '@/components/AppActionHint.vue'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -541,15 +542,19 @@ const menuPageTitle = useMenuPageTitle()
       <p class="page-subtitle">个股四层与板块专项质量台账，每条问题按类型恢复，复检通过才标记「已解决」。</p>
       </div>
       <div class="page-head-actions">
-        <el-button v-permission="'data-quality:fix'" type="warning" plain :loading="batching" :disabled="!canBatch"
-                   :title="canBatch ? '' : '请先选择类型/严重度/代码再批量恢复'" @click="batchRecover">
-          一键恢复
-        </el-button>
-        <el-button v-permission="'data-quality:fix'" type="info" plain
-                   :loading="ignoring && ignoreBatch" :disabled="!canBatch"
-                   :title="canBatch ? '' : '请先选择类型/严重度/代码再批量标记正常'" @click="batchMarkNormal">
-          一键标记正常
-        </el-button>
+        <AppActionHint :text="canBatch ? '' : '请先选择类型/严重度/代码再批量恢复'" :disabled="!canBatch" label="一键恢复" v-permission="'data-quality:fix'">
+          <el-button type="warning" plain :loading="batching" :disabled="!canBatch"
+                      @click="batchRecover">
+            一键恢复
+          </el-button>
+        </AppActionHint>
+        <AppActionHint :text="canBatch ? '' : '请先选择类型/严重度/代码再批量标记正常'" :disabled="!canBatch" label="一键标记正常" v-permission="'data-quality:fix'">
+          <el-button type="info" plain
+                     :loading="ignoring && ignoreBatch" :disabled="!canBatch"
+                     @click="batchMarkNormal">
+            一键标记正常
+          </el-button>
+        </AppActionHint>
         <el-button v-permission="'data-task:manage'" type="primary" plain
                    :loading="verifyRunning" :disabled="verifyRunning" @click="runVerify">立即质检</el-button>
         <el-button v-permission="'data-task:manage'" type="success" plain :loading="checkupRunning" @click="runCheckup">结构体检</el-button>
@@ -727,7 +732,7 @@ const menuPageTitle = useMenuPageTitle()
       </el-form>
       <template #footer>
         <el-button @click="delistDlg = false">取消</el-button>
-        <el-button v-permission="'data-quality:fix'" type="warning" :loading="delisting" @click="confirmDelist">确认标记退市</el-button>
+        <el-button type="warning" :loading="delisting" @click="confirmDelist">确认标记退市</el-button>
       </template>
     </AppDialog>
 

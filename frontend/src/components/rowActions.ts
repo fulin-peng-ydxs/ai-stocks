@@ -113,7 +113,7 @@ export interface AppRowAction {
   visible?: boolean
   disabled?: boolean
   loading?: boolean
-  title?: string
+  tooltip?: string
   placement?: AppRowActionPlacement
   onClick?: (event?: MouseEvent) => void
 }

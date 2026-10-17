@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppHoverInfo from '@/components/AppHoverInfo'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import {
@@ -723,10 +724,14 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
               <span class="unit">{{ isAmount ? '元' : '手' }}</span>
               <span class="hint" v-if="!isAmount">
                 约需 ¥{{ formatMoney(estCost, { digits: 0, empty: '--' }) }} · 最多可买
-                <b class="hl" title="点击填入全仓" @click="fillBuyMax">{{ maxBuyHands }}</b> 手
+                <AppHoverInfo content="点击填入全仓">
+                  <b tabindex="0" class="hl" role="button" @click="fillBuyMax" @keydown.enter.prevent="fillBuyMax" @keydown.space.prevent="fillBuyMax">{{ maxBuyHands }}</b>
+                </AppHoverInfo> 手
               </span>
               <span class="hint" v-else>
-                可用资金 <b class="hl" title="点击全额填入" @click="fillBuyMax">¥{{ formatMoney(cash, { digits: 0, empty: '--' }) }}</b> · 本单 ≈ {{ orderHands }} 手
+                可用资金 <AppHoverInfo content="点击全额填入">
+                       <b tabindex="0" class="hl" role="button" @click="fillBuyMax" @keydown.enter.prevent="fillBuyMax" @keydown.space.prevent="fillBuyMax">¥{{ formatMoney(cash, { digits: 0, empty: '--' }) }}</b>
+                     </AppHoverInfo> · 本单 ≈ {{ orderHands }} 手
               </span>
             </div>
 

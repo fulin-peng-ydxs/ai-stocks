@@ -1,6 +1,6 @@
 # 响应式组件触发清单
 
-范围：`frontend/src/**/*.vue` 全部 165 个文件（含页面私有片段、布局宿主及应用外壳），每个文件一行。页面消费与实测结论见 [页面检查](responsive-pages.md)。响应式规则以 [DESIGN.md](../../DESIGN.md) §8 为准；全站字体角色及例外统一引用该文档 §3、§3.5；应用导航尺寸引用 §3.4，本清单只登记消费与适配行为，不另行定义字阶。
+范围：`frontend/src/**/*.vue` 全部 166 个文件（含页面私有片段、布局宿主及应用外壳），每个文件一行。页面消费与实测结论见 [页面检查](responsive-pages.md)。响应式规则以 [DESIGN.md](../../DESIGN.md) §8 为准；全站字体角色及例外统一引用该文档 §3、§3.5；应用导航尺寸引用 §3.4，本清单只登记消费与适配行为，不另行定义字阶。
 
 字体实现维护：所有行均消费 `global.css` 的 token/语义类；MarketCompareMetricStrip、行情和数据概览等普通数据强调使用完整 data 角色，交易纪律分区复用 app-section-title；ECharts 消费 chartTheme 的 typography 快照并经 echartsRenderer 统一基础字体，HTML 行情浮层消费共享 stockQuoteSummaryHtml。源码守卫、构建门禁及例外登记入口见 DESIGN §3.5。
 
@@ -13,6 +13,7 @@
 | 文件 | 查询原文（去重） | 行为 / 恢复入口 | 直接消费方 |
 |---|---|---|---|
 | `frontend/src/App.vue` | `@container app-viewport (max-width: 720px)` | 侧栏模式品牌/说明与底部固定，菜单独立内滚；右侧顶栏面包屑长标题省略，工作区独立收缩。窄宽收起交易日辅助文字，保留状态图标与用户/视觉环境入口；画布统一缩放。 | 应用入口 |
+| `frontend/src/components/AppActionHint.vue` | 无自身 CSS 查询 | 命令说明与禁用原因共用显式提示契约；外壳维持原按钮几何，禁用且有原因时可键盘阅读，无权入口连同外壳隐藏。 | AppRowActions、BacktestView、QualityView |
 | `frontend/src/components/AppAdvancedSearch.vue` | `@container app-viewport (max-width: 720px)` | 条件≥3时分常用/高级；高级折叠保留生效摘要与展开入口；窄宽逐行；错误自动展开，草稿不重置。 | ConfigView、StocksView、OverviewView、QualityView、LimitLadderFilters、AuditLogView、UserManageView、TradeDisciplineHistory |
 | `frontend/src/components/AppAsyncRegion.vue` | 无自身 CSS 查询 | 委托 AppStateBlock。 | StockAnalysisPanel、StockBoardMembershipPanel、BacktestView、ConfigView、SectorDetailView、SectorsView、StockDetailView、TrainingView、LayoutPagesView、AuditLogView、DataDictionaryView、MenuResourceView、RoleManageView、RuleMasterList |
 | `frontend/src/components/AppControlItem.vue` | 无自身 CSS 查询 | 控件min-width:0/max100%，标签不压缩，父行负责换行。 | BacktestView、AuditLogView、TradeDisciplineHistory |
@@ -27,8 +28,8 @@
 | `frontend/src/components/AppDialog.vue` | 无自身 CSS 查询 | 语义宽度，最大100cqw减安全间距；正文内部滚动，标题与关闭保持可达。 | StockGroupBatchActions、StockIntradayDialog、BacktestView、StocksView、TradeDisciplineView、IngestView、QualityView、ScheduleView、DataDictionaryView、MenuResourceView、RoleManageView、TenantManageView、UserManageView |
 | `frontend/src/components/AppFilterSelect.vue` | 无自身 CSS 查询 | 统一语义宽度与max100%；标签摘要按数量折叠，完整选项在下拉；不按尺寸修改筛选。 | MarketBenchmarkSelect、BacktestView、BoardView、ConfigView、LimitLadderView、SectorsView、StocksView、TrainingView、OverviewView、QualityView、LimitLadderFilters、AuditLogView、TradeCheckinRevisionDrawer、TradeDisciplineHistory |
 | `frontend/src/components/AppFilterSwitch.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | LimitLadderFilters |
-| `frontend/src/components/AppIconButton.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | App、AppCloseButton、AppSortControl、ComparePinButton、ConfigView、IndicatorParamSchemaEditor、MarketMasterDetailWorkspace、MenuResourceView、PageSettingsDrawer、PageSettingsTrigger、SectorDetailView、SectorsView、SettingsGroup、StockChartWorkspace、StockDetailView、StockGroupFavoriteButton、StocksView、TradeOperationEditor、TradeRuleEditor、ViolationReasonCombobox |
-| `frontend/src/components/AppOverflowTooltipHost.vue` | 无自身 CSS 查询 | 全局溢出文本提示宿主；按实际截断检测展示原文，提示尺寸服从统一浮层安全边界，页面不复制监听。 | App |
+| `frontend/src/components/AppIconButton.vue` | 无自身 CSS 查询 | 保持真实 button 根节点；名称不生成提示，显式 tooltip 复用 AppHoverInfo 虚拟锚点。 | App、AppCloseButton、AppSortControl、ComparePinButton、ConfigView、IndicatorParamSchemaEditor、MarketMasterDetailWorkspace、MenuResourceView、PageSettingsDrawer、PageSettingsTrigger、SectorDetailView、SectorsView、SettingsGroup、StockChartWorkspace、StockDetailView、StockGroupFavoriteButton、StocksView、TradeOperationEditor、TradeRuleEditor、ViolationReasonCombobox |
+| `frontend/src/components/AppOverflowTooltipHost.vue` | 无自身 CSS 查询 | 只承接真实截断的原文，不读取或修改 title；完整内容不显示，提示尺寸服从统一浮层安全边界，页面不复制监听。 | App |
 | `frontend/src/components/AppPagination.vue` | 无自身 CSS 查询 | 自身宽≥640完整、420–639摘要、<420导航；实测溢出继续降档；始终保留翻页并自动恢复。 | AppDataTable、AssetSearchDrawer、OverviewView |
 | `frontend/src/components/AppRowActions.vue` | 无自身 CSS 查询 | ResizeObserver 实测父容器与按钮宽，默认最多3个常显；放不下进入具名“更多”菜单，操作不丢失。 | ComponentAutoSettings、AssetSearchDrawer、ConfigView、ScreenView、TrainingView、IngestView、QualityView、ScheduleView、LayoutComponentsView、LayoutPresetsView、AuditLogView、DataDictionaryView、MenuResourceView、TenantManageView、UserManageView |
 | `frontend/src/components/AppSearchInput.vue` | 无自身 CSS 查询 | 语义控件宽度compact/short/medium/long/wide=96/140/180/220/300，由global.css统一max100%、min0；父行自然换行。 | BoardView、ConfigView、SectorDetailView、SectorsView、StocksView、OverviewView、QualityView、LimitLadderFilters、AuditLogView、DataDictionaryView、TenantManageView、UserManageView、RuleMasterList、TradeDisciplineHistory |

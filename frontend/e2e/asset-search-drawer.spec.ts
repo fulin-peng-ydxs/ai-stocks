@@ -58,13 +58,14 @@ test('筛选页资产搜索抽屉：三来源、复制为我的、临时只读�
       contentType: 'image/png',
     })
 
-    // 切到租户公开段：同租户他人发布的方案可见，提供者经来源徽标 title 脱敏承载
+    // 切到租户公开段：同租户他人发布的方案可见，提供者经来源徽标显式提示 脱敏承载
     await drawer.getByTestId('asset-search-drawer-segment-tenant').click()
     const row = drawer.getByRole('row').filter({ hasText: marker })
     await expect(row).toBeVisible()
-    await expect(row.locator('.asset-visibility-tag').first()).toHaveAttribute('title', /同租户用户/)
+    await row.locator('.asset-visibility-tag').first().hover()
+    await expect(page.getByRole('tooltip').filter({ hasText: '同租户用户' })).toBeVisible()
     await expect(row).not.toContainText('debug_normal')
-    // 需求契约（合并形态）：方案类列 = 方案名称(含版本/更新时间)/来源(徽标 title 含提供者)/操作
+    // 需求契约（合并形态）：方案类列 = 方案名称(含版本/更新时间)/来源(徽标显式提示 含提供者)/操作
     // 三列全部完整可见（左右边界都在抽屉可视区内），无横向滚动
     const drawerBox = await drawerPanel.boundingBox()
     expect(drawerBox, '抽屉应有可视区域').not.toBeNull()
@@ -78,9 +79,9 @@ test('筛选页资产搜索抽屉：三来源、复制为我的、临时只读�
       expect(box!.x, `列头「${header}」左缘不应超出抽屉左边界`).toBeGreaterThanOrEqual(drawerLeft - 1)
       expect(box!.x + box!.width, `列头「${header}」右缘不应超出抽屉右边界`).toBeLessThanOrEqual(drawerRight + 1)
     }
-    // 合并单元格：名称单元格次行含「更新于 + 真实时间」（非占位「—」）；提供者经来源徽标 title 承载
+    // 合并单元格：名称单元格次行含「更新于 + 真实时间」（非占位「—」）；提供者经来源徽标显式提示 承载
     await expect(row.locator('.asset-search__profile-meta').first()).toContainText(/更新于 \d{4}-\d{2}-\d{2} \d{2}:\d{2}/)
-    await expect(row.locator('.asset-visibility-tag').first()).toHaveAttribute('title', /同租户用户/)
+    await expect(row.locator('.asset-visibility-tag').first()).not.toHaveAttribute('title', /./)
     // 操作列 fixed="right"：核心操作完整可见
     const loadBtn = row.getByTestId('asset-search-drawer-load')
     await expect(loadBtn).toBeVisible()

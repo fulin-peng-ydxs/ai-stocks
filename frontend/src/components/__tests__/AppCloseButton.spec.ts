@@ -31,8 +31,8 @@ describe('关闭语义入口', () => {
     wrapper.unmount()
   })
 
-  it('禁用和加载均阻止关闭，外部已有提示时不叠原生 title', async () => {
-    const wrapper = mount(AppCloseButton, { props: { label: '关闭', disabled: true, nativeTitle: false } })
+  it('禁用和加载均阻止关闭且不生成重复提示', async () => {
+    const wrapper = mount(AppCloseButton, { props: { label: '关闭', disabled: true } })
     await wrapper.get('button').trigger('click')
     expect(wrapper.emitted('click')).toBeUndefined()
     expect(wrapper.get('button').attributes('title')).toBeUndefined()

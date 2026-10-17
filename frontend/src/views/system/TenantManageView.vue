@@ -224,7 +224,7 @@ function tenantRowActions(row: Tenant): AppRowAction[] {
       permission: 'tenant:delete',
       visible: !isDefaultTenant,
       disabled: hasUsers,
-      title: hasUsers ? '该租户仍有用户，不可删除' : undefined,
+      tooltip: hasUsers ? '该租户仍有用户，不可删除' : undefined,
       placement: 'more',
       onClick: () => removeTenant(row),
     },

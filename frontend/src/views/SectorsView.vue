@@ -1155,7 +1155,6 @@ const menuPageTitle = useMenuPageTitle()
                     :loading="isWatchlistBusy(row.board_code)"
                     :data-testid="`sectors-watchlist-${row.board_code}`"
                     size="xs"
-                    :native-title="false"
                     @click.stop="toggleWatchlist(row)"
                   >
                     <el-icon><StarFilled v-if="isWatchlisted(row.board_code)" /><Star v-else /></el-icon>

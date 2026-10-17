@@ -81,6 +81,7 @@ function updateSort(value: unknown): void {
     </el-dropdown>
     <AppIconButton
       :label="orderActionLabel"
+      :tooltip="orderActionLabel"
       variant="soft"
       :disabled="disabled"
       :data-testid="testId ? `${testId}-order` : undefined"

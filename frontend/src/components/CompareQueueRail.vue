@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppHoverInfo from '@/components/AppHoverInfo'
 // 走势对比队列：板块/个股/榜单共用的对比对象 chip 行。遵循按钮契约不引入原生 button：
 // chip 为 role=button 容器承载激活（点击 + Enter/Space，.self 避免焦点在移除钮时连击），
 // 名称为纯 span 继承 chip 颜色（激活/悬浮随主色变蓝），移除用共享 AppCloseButton。
@@ -39,31 +40,34 @@ const emit = defineEmits<{
     :data-testid="testIdPrefix ? `${testIdPrefix}-compare-rail` : undefined"
   >
     <span class="compare-queue-label">{{ label }}</span>
-    <div
+    <AppHoverInfo
       v-for="item in items"
       :key="item.key"
-      class="compare-queue-chip"
-      :class="{ active: item.active, error: Boolean(item.error) }"
-      :title="item.error || undefined"
-      role="button"
-      tabindex="0"
-      :aria-pressed="item.active ? 'true' : 'false'"
-      :data-testid="testIdPrefix ? `${testIdPrefix}-compare-${item.key}` : undefined"
-      @click="emit('activate', item.key)"
-      @keydown.enter.self="emit('activate', item.key)"
-      @keydown.space.self.prevent="emit('activate', item.key)"
+      :content="item.error || undefined"
+      :disabled="!(item.error || undefined)"
     >
-      <span class="compare-queue-name">{{ item.label }}</span>
-      <AppCloseButton
-        v-if="!item.active || items.length > 1"
-        class="compare-queue-remove"
-        :label="`移除对比：${item.label}`"
-        :data-testid="testIdPrefix ? `${testIdPrefix}-remove-${item.key}` : undefined"
-        size="inline"
-        :native-title="false"
-        @click.stop="emit('remove', item.key)"
-      />
-    </div>
+      <div
+        class="compare-queue-chip"
+        :class="{ active: item.active, error: Boolean(item.error) }"
+        role="button"
+        tabindex="0"
+        :aria-pressed="item.active ? 'true' : 'false'"
+        :data-testid="testIdPrefix ? `${testIdPrefix}-compare-${item.key}` : undefined"
+        @click="emit('activate', item.key)"
+        @keydown.enter.self="emit('activate', item.key)"
+        @keydown.space.self.prevent="emit('activate', item.key)"
+      >
+        <span class="compare-queue-name">{{ item.label }}</span>
+        <AppCloseButton
+          v-if="!item.active || items.length > 1"
+          class="compare-queue-remove"
+          :label="`移除对比：${item.label}`"
+          :data-testid="testIdPrefix ? `${testIdPrefix}-remove-${item.key}` : undefined"
+          size="inline"
+          @click.stop="emit('remove', item.key)"
+        />
+      </div>
+    </AppHoverInfo>
     <span v-if="hint && items.length < max" class="compare-queue-hint">{{ hint }}</span>
   </div>
 </template>

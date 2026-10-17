@@ -280,14 +280,14 @@ function rowActions(item: AssetBrowseItem): AppRowAction[] {
           label: '取消默认',
           testId: `${props.testId}-default`,
           type: 'info',
-          title: '当前默认加载方案；进入榜单页且没有自己的方案时自动装载，点击取消默认',
+          tooltip: '当前默认加载方案；进入榜单页且没有自己的方案时自动装载，点击取消默认',
           onClick: () => props.setDefaultItem!(null),
         }
       : {
           key: 'default',
           label: '设为默认加载方案',
           testId: `${props.testId}-default`,
-          title: '设为默认后，进入榜单页且自己没有评分方案时自动装载该方案',
+          tooltip: '设为默认后，进入榜单页且自己没有评分方案时自动装载该方案',
           onClick: () => props.setDefaultItem!(item),
         })
   }

@@ -25,7 +25,7 @@ function remove(index: number): void {
     <div v-for="(param, index) in modelValue" :key="index" class="indicator-param-schema__row">
       <header>
         <div><b>参数 {{ index + 1 }}</b><span>{{ param.label || param.name || '未命名参数' }}</span></div>
-        <AppIconButton label="删除参数" size="xs" tone="danger" :disabled="disabled" @click="remove(index)">
+        <AppIconButton label="删除参数" tooltip="删除参数" size="xs" tone="danger" :disabled="disabled" @click="remove(index)">
           <el-icon><Close /></el-icon>
         </AppIconButton>
       </header>

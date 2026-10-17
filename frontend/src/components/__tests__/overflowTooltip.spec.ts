@@ -145,14 +145,16 @@ describe('全局省略悬浮目标判定', () => {
     expect(findOverflowTooltipTarget(button)).toBeNull()
   })
 
-  it('无文本节点的输入值和既有 title 也复用统一提示内容', () => {
+  it('输入值及专用原文字段提供截断内容，不读取 title', () => {
     const input = document.createElement('input')
     input.value = '被截断的输入值'
     expect(overflowTooltipContent(input)).toBe('被截断的输入值')
 
     const titled = document.createElement('span')
     titled.title = '完整说明'
-    expect(overflowTooltipContent(titled)).toBe('完整说明')
+    expect(overflowTooltipContent(titled)).toBe('')
+    titled.dataset.overflowTooltipContent = '完整原文'
+    expect(overflowTooltipContent(titled)).toBe('完整原文')
   })
 
   it('表格标签在自身内容末尾使用原生省略并接入统一悬浮', () => {

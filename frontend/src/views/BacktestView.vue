@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppHoverInfo from '@/components/AppHoverInfo'
+import AppActionHint from '@/components/AppActionHint.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
@@ -1769,10 +1771,9 @@ const menuPageTitle = useMenuPageTitle()
             @change="onMineRunSelected(selectedRun)"
             size="default"
             :placeholder="historyPlaceholder"
-            title="显示最近 100 条我的回测记录"
           >
             <el-option v-for="o in runOptions" :key="o.id" :value="o.id" :label="o.label">
-              <span class="history-run-option" :title="`${o.label}｜${o.range}｜${o.retTxt}`">
+              <span class="history-run-option">
                 <span class="history-run-option-name" :style="{ color: o.color }">{{ o.label }}</span>
                 <AssetVisibilityTag
                   v-if="o.displaySource"
@@ -1784,6 +1785,7 @@ const menuPageTitle = useMenuPageTitle()
               </span>
             </el-option>
           </el-select>
+          <HelpHint text="历史记录显示最近 100 条我的回测，可通过公开回测入口浏览共享记录。" />
           <span
             v-if="externalRunOption"
             class="temp-readonly-chip"
@@ -1812,15 +1814,15 @@ const menuPageTitle = useMenuPageTitle()
             @publish="publishRunVisibility"
             @reuse="reuseCurrentRunParams"
           />
-          <el-button v-permission="'backtest:delete'" v-if="!selectedRunReadonly" :disabled="!selectedRun" @click="removeCurrentRun" title="删除当前选中的历史回测">删除</el-button>
+          <el-button v-permission="'backtest:delete'" v-if="!selectedRunReadonly" :disabled="!selectedRun" @click="removeCurrentRun">删除</el-button>
           <!-- 浏览公开回测（R5/R6）：表格化浏览 tenant/public 回测 + 加载查看 + 复用参数重跑 -->
-          <el-button
-            v-if="canViewBacktest"
-            :icon="Search"
-            data-testid="backtest-browse-open"
-            title="浏览租户/全体公开的历史回测，可加载查看或复用参数重跑"
-            @click="runBrowseOpen = true"
-          >浏览公开回测</el-button>
+          <AppActionHint v-if="canViewBacktest" text="浏览租户/全体公开的历史回测，可加载查看或复用参数重跑" label="浏览公开回测">
+            <el-button
+              :icon="Search"
+              data-testid="backtest-browse-open"
+              @click="runBrowseOpen = true"
+            >浏览公开回测</el-button>
+          </AppActionHint>
           </template>
         </div>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
@@ -2094,7 +2096,7 @@ const menuPageTitle = useMenuPageTitle()
           <div class="metrics">
             <div v-for="c in metricCards" :key="c.label" class="metric"
                  :class="{ good: c.good && !c.neutral, bad: !c.good && !c.neutral }">
-              <div class="m-label">{{ c.label }}<span v-if="c.hint" class="m-hint" :title="c.hint">ⓘ</span></div>
+              <div class="m-label">{{ c.label }}<HelpHint v-if="c.hint" :text="c.hint" /></div>
               <div class="m-val">{{ c.val }}</div>
             </div>
           </div>
@@ -2232,7 +2234,9 @@ const menuPageTitle = useMenuPageTitle()
                       class="excess" :class="{ pos: row.cells[lk.key].excess >= 0 }">
                   {{ pct(row.cells[lk.key].excess, 1) }}
                 </span>
-                <span v-if="!row.isBase && row.cells[lk.key].reliable === false" class="unreliable" title="样本量过小，不采信">·样本少</span>
+                <AppHoverInfo v-if="!row.isBase && row.cells[lk.key].reliable === false" content="样本量过小，不采信">
+                  <span tabindex="0" class="unreliable">·样本少</span>
+                </AppHoverInfo>
               </template>
               <span v-else class="muted">—</span>
             </template>
@@ -2289,7 +2293,9 @@ const menuPageTitle = useMenuPageTitle()
           <AppTableColumn v-if="tradeColVisible('grade')" label="买入档">
             <template #default="{ row }">
               <ScoreGradeTag v-if="row.grade" :grade="row.grade" />
-              <span v-else-if="row.entry_score != null" class="muted" title="综合分未达「观察」档阈值，但因候选池内排名靠前而买入">无评级·{{ row.entry_score.toFixed(0) }}分</span>
+              <AppHoverInfo v-else-if="row.entry_score != null" content="综合分未达「观察」档阈值，但因候选池内排名靠前而买入">
+                <span tabindex="0" class="muted">无评级·{{ row.entry_score.toFixed(0) }}分</span>
+              </AppHoverInfo>
               <span v-else class="muted">—</span>
             </template>
           </AppTableColumn>
@@ -2631,7 +2637,6 @@ const menuPageTitle = useMenuPageTitle()
 .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--app-space-3); }
 .metric { background: var(--app-section-bg); border-radius: 8px; padding: 12px 14px; }
 .m-label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
-.m-hint { margin-left: 3px; cursor: help; }
 .m-val { font-size: var(--app-font-size-page-title-sm); font-weight: var(--app-font-weight-strong); font-variant-numeric: tabular-nums; margin-top: 4px; }
 .metric.good .m-val { color: var(--market-up-color); }
 .metric.bad .m-val { color: var(--market-down-color); }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppHoverInfo from '@/components/AppHoverInfo'
 // 登录 / 注册页：金融科技视觉与明暗双主题，认证流程由公开配置动态控制。
 // 全屏独立壳（App.vue 按 meta.fullscreen 脱离主框架单独渲染），不套用布局 archetype、不走 LayoutHost。
 // 契约：用 position:fixed;inset:0 全屏（禁 vh 高度、禁手写 .v-page/.v-grow，过 layout-contract.spec.ts）。
@@ -366,15 +367,17 @@ function onSubmit() {
         >
           <i /><span>{{ activePresetLabel }}</span>
         </button>
-        <button class="login-theme" type="button" aria-label="切换主题" title="切换黑/白主题" @click="toggleTheme">
-          <svg v-if="isDark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4" />
-            <circle cx="12" cy="12" r="4" />
-          </svg>
-          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z" />
-          </svg>
-        </button>
+        <AppHoverInfo content="切换黑/白主题">
+          <button tabindex="0" class="login-theme" type="button" aria-label="切换主题" @click="toggleTheme">
+            <svg v-if="isDark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4" />
+              <circle cx="12" cy="12" r="4" />
+            </svg>
+            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z" />
+            </svg>
+          </button>
+        </AppHoverInfo>
       </div>
 
       <div class="login-card" data-testid="login-card-surface">
@@ -474,7 +477,9 @@ function onSubmit() {
                 <input v-model="form.captchaCode" name="captchaCode" type="text"
                        @input="errors.captcha = ''" @keyup.enter="onSubmit" />
               </label>
-              <div class="login-captcha-img" title="点击刷新" v-html="captchaSvg" @click="refreshCaptcha" />
+              <AppHoverInfo content="点击刷新">
+                <div tabindex="0" class="login-captcha-img" v-html="captchaSvg" role="button" @click="refreshCaptcha" @keydown.enter.prevent="refreshCaptcha" @keydown.space.prevent="refreshCaptcha" />
+              </AppHoverInfo>
             </div>
             <p v-if="errors.captcha" class="field-error">{{ errors.captcha }}</p>
           </div>

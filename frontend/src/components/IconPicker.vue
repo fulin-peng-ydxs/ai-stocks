@@ -69,7 +69,6 @@ function clear() {
           :key="name"
           class="ip-cell"
           :class="{ on: name === modelValue }"
-          :title="name"
           @click="choose(name)"
         >
           <el-icon :size="18"><component :is="resolveMenuIcon(name)" /></el-icon>

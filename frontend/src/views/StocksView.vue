@@ -1092,12 +1092,13 @@ const menuPageTitle = useMenuPageTitle()
             <b :class="pctClass(groupDetail.avg_ret)">{{ fmtPctRatio(groupDetail.avg_ret) }}</b>
             <span class="gb-hint">（各股自加入日起·等权平均）</span>
           </span>
-          <span v-if="groupDetail.description" class="gb-desc" :title="groupDetail.description">{{ groupDetail.description }}</span>
+          <span v-if="groupDetail.description" class="gb-desc" >{{ groupDetail.description }}</span>
         </div>
         <div class="gb-ops">
           <AppIconButton
             v-permission="'stock-group:update'"
             label="编辑分组"
+            tooltip="编辑分组"
             size="sm"
             tone="primary"
             @click="openEdit"
@@ -1105,6 +1106,7 @@ const menuPageTitle = useMenuPageTitle()
           <AppIconButton
             v-permission="'stock-group:delete'"
             :label="groupDetail.is_default ? '默认自选分组不能删除' : '删除分组'"
+            :tooltip="groupDetail.is_default ? '默认自选分组不能删除' : '删除分组'"
             size="sm"
             tone="danger"
             :disabled="groupDetail.is_default"
@@ -1308,7 +1310,6 @@ const menuPageTitle = useMenuPageTitle()
                   role="button"
                   tabindex="0"
                   :aria-label="`查看分组：${g.name}`"
-                  :title="`查看分组：${g.name}`"
                   @click.stop="switchGroup(g.id)"
                   @keydown.enter.stop.prevent="switchGroup(g.id)"
                   @keydown.space.stop.prevent="switchGroup(g.id)"

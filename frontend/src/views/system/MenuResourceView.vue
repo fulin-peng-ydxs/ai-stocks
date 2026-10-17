@@ -422,7 +422,7 @@ function resourceRowActions(r: Resource): AppRowAction[] {
       label: '编辑',
       permission: 'resource:update',
       disabled: r.is_builtin || editingOther,
-      title: r.is_builtin
+      tooltip: r.is_builtin
         ? '系统内置功能点不可编辑'
         : editingOther
           ? '请先完成当前编辑'
@@ -435,7 +435,7 @@ function resourceRowActions(r: Resource): AppRowAction[] {
       type: 'danger',
       permission: 'resource:delete',
       disabled: r.is_builtin,
-      title: r.is_builtin ? '系统内置功能点不可删除' : undefined,
+      tooltip: r.is_builtin ? '系统内置功能点不可删除' : undefined,
       placement: 'more',
       onClick: () => removeRes(r),
     },
@@ -497,6 +497,7 @@ const menuPageTitle = useMenuPageTitle()
             <AppIconButton
               v-permission="'menu:create'"
               label="新增根节点"
+              tooltip="新增根节点"
               size="sm"
               class="mr-root-add"
               @click="openCreateRoot"
@@ -541,6 +542,7 @@ const menuPageTitle = useMenuPageTitle()
                     v-if="data.type === 'group'"
                     v-permission="'menu:create'"
                     label="新增子节点"
+                    tooltip="新增子节点"
                     class="mr-node-add"
                     size="sm"
                     @click.stop="openCreateChild(data)"

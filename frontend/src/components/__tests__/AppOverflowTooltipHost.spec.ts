@@ -21,7 +21,7 @@ const ElTooltipStub = defineComponent({
 function appendOverflowTarget(id: string, title = '完整内容'): HTMLElement {
   const target = document.createElement('span')
   target.id = id
-  target.title = title
+  target.dataset.overflowTooltipContent = title
   target.textContent = title
   target.style.textOverflow = 'ellipsis'
   Object.defineProperty(target, 'clientWidth', { value: 40 })
@@ -44,7 +44,10 @@ describe('AppOverflowTooltipHost', () => {
       global: { stubs: { ElTooltip: ElTooltipStub } },
     })
     const button = document.createElement('button')
-    button.title = '用户列表：收起下级分组'
+    button.textContent = '用户列表：收起下级分组'
+    button.style.textOverflow = 'ellipsis'
+    Object.defineProperty(button, 'clientWidth', { value: 40 })
+    Object.defineProperty(button, 'scrollWidth', { value: 100 })
     document.body.append(button)
     button.addEventListener('pointerdown', (event) => event.stopPropagation())
     button.addEventListener('click', (event) => event.stopPropagation())
@@ -62,7 +65,7 @@ describe('AppOverflowTooltipHost', () => {
     await nextTick()
     expect(document.activeElement).toBe(button)
     expect(wrapper.find('.tooltip-host').exists()).toBe(false)
-    expect(button.title).toBe('用户列表：收起下级分组')
+    expect(button.textContent).toBe('用户列表：收起下级分组')
 
     // 再次悬停仍按停留门槛显示，点击焦点不阻止鼠标移开后的清理。
     button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
@@ -113,7 +116,7 @@ describe('AppOverflowTooltipHost', () => {
     wrapper.unmount()
   })
 
-  it('鼠标停留后才显示真实省略内容，持续移动会重置等待，离开后恢复 title', async () => {
+  it('鼠标停留后才显示真实省略内容，持续移动会重置等待', async () => {
     vi.useFakeTimers()
     const wrapper = mount(AppOverflowTooltipHost, {
       attachTo: document.body,
@@ -137,7 +140,7 @@ describe('AppOverflowTooltipHost', () => {
       'data-target': 'truncated-label',
     })
     expect(wrapper.find('.app-overflow-tooltip-content__notice').exists()).toBe(false)
-    expect(target.title).toBe('')
+    expect(target.hasAttribute('title')).toBe(false)
 
     target.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
     await nextTick()
@@ -149,7 +152,7 @@ describe('AppOverflowTooltipHost', () => {
     target.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
     await nextTick()
     expect(wrapper.find('.tooltip-host').exists()).toBe(false)
-    expect(target.title).toBe('完整标签')
+    expect(target.dataset.overflowTooltipContent).toBe('完整标签')
     wrapper.unmount()
   })
 
@@ -167,7 +170,7 @@ describe('AppOverflowTooltipHost', () => {
     vi.advanceTimersByTime(300)
     await nextTick()
     expect(wrapper.find('.tooltip-host').exists()).toBe(false)
-    expect(target.title).toBe('完整内容')
+    expect(target.dataset.overflowTooltipContent).toBe('完整内容')
 
     target.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
     await nextTick()
@@ -201,7 +204,7 @@ describe('AppOverflowTooltipHost', () => {
     first.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
     wrapper.unmount()
     vi.advanceTimersByTime(300)
-    expect(first.title).toBe('第一项完整内容')
+    expect(first.dataset.overflowTooltipContent).toBe('第一项完整内容')
   })
 
   it('按钮内省略文字由外层代理时，移动和离开仍能正确取消提示', async () => {
@@ -232,41 +235,26 @@ describe('AppOverflowTooltipHost', () => {
     wrapper.unmount()
   })
 
-  it('原生 title 由全局宿主显示，经过时不触发浏览器重复提示', async () => {
+  it('完整可见内容和原生 title 不会触发全局提示，也不修改 DOM 属性', async () => {
     vi.useFakeTimers()
     const wrapper = mount(AppOverflowTooltipHost, {
       attachTo: document.body,
       global: { stubs: { ElTooltip: ElTooltipStub } },
     })
     const button = document.createElement('button')
-    button.title = '查看完整说明'
-    const label = document.createElement('span')
-    label.textContent = '说明'
-    button.append(label)
+    button.title = '关闭页面设置'
+    button.setAttribute('aria-label', '关闭页面设置')
+    button.textContent = '关闭'
     document.body.append(button)
-
     button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
-    expect(button.hasAttribute('title')).toBe(false)
-    label.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
-    vi.advanceTimersByTime(200)
-    button.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
-    vi.advanceTimersByTime(299)
+    vi.advanceTimersByTime(300)
     await nextTick()
     expect(wrapper.find('.tooltip-host').exists()).toBe(false)
-    vi.advanceTimersByTime(1)
-    await nextTick()
-    expect(wrapper.get('.tooltip-host').attributes('data-content')).toBe('查看完整说明')
-
-    button.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
-    await nextTick()
-    expect(button.title).toBe('查看完整说明')
-
     button.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
     await nextTick()
-    expect(wrapper.get('.tooltip-host').attributes('data-visible')).toBe('true')
-    button.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
-    await nextTick()
-    expect(button.title).toBe('查看完整说明')
+    expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+    expect(button.title).toBe('关闭页面设置')
+    expect(button.getAttribute('aria-label')).toBe('关闭页面设置')
     wrapper.unmount()
   })
 })

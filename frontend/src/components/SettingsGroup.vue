@@ -96,6 +96,7 @@ const childToggleLabel = computed(() => (
             v-if="hasChildGroups"
             class="sg-toggle-children"
             :label="childToggleLabel"
+            :tooltip="childToggleLabel"
             size="xs"
             @click="toggleChildGroups"
           >

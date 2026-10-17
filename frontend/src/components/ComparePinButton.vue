@@ -26,7 +26,6 @@ const emit = defineEmits<{
     :disabled="disabled"
     :data-testid="testId"
     size="xs"
-    :native-title="false"
     @click.stop="emit('toggle')"
   >
     <el-icon><TrendCharts /></el-icon>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HelpHint from '@/components/HelpHint.vue'
 import type { IndicatorParam } from '@/api/scoreProfile'
 
 const props = defineProps<{
@@ -16,9 +17,10 @@ function setValue(name: string, value: number | undefined): void {
 
 <template>
   <span v-for="param in params" :key="param.name" class="indicator-param-field">
-    <label :title="param.description || undefined">
+    <label>
       {{ param.label }}<small v-if="param.unit">（{{ param.unit }}）</small>
     </label>
+    <HelpHint v-if="param.description" :text="param.description" />
     <el-input-number
       :model-value="modelValue[param.name]"
       :disabled="disabled"

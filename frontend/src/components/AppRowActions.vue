@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import AppActionHint from './AppActionHint.vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { getActivePinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
@@ -234,21 +235,26 @@ onBeforeUnmount(() => {
     :data-testid="testId"
   >
     <template v-if="visibleActions.length">
-      <el-button
+      <AppActionHint
         v-for="(action, index) in inlineMeasureActions"
         :key="action.key"
-        class="app-row-actions__button"
-        :class="actionClass(action, index)"
-        link
-        size="small"
-        :loading="action.loading"
-        :disabled="action.disabled"
-        :title="action.title"
-        :data-testid="actionTestId(action)"
-        @click.stop="runAction(action, $event)"
+        :text="action.tooltip"
+        :disabled="action.disabled || action.loading"
+        :label="action.label"
       >
-        {{ action.label }}
-      </el-button>
+        <el-button
+          class="app-row-actions__button"
+          :class="actionClass(action, index)"
+          link
+          size="small"
+          :loading="action.loading"
+          :disabled="action.disabled"
+          :data-testid="actionTestId(action)"
+          @click.stop="runAction(action, $event)"
+        >
+          {{ action.label }}
+        </el-button>
+      </AppActionHint>
       <el-popover
         v-if="moreActions.length"
         ref="morePopover"
@@ -283,22 +289,27 @@ onBeforeUnmount(() => {
           :data-testid="testId ? `${testId}-menu` : undefined"
           @click.stop
         >
-          <el-button
+          <AppActionHint
             v-for="action in moreActions"
             :key="action.key"
-            class="app-row-actions-menu__item"
-            :class="actionClass(action)"
-            link
-            size="small"
-            :loading="action.loading"
+            :text="action.tooltip"
             :disabled="action.disabled || action.loading"
-            :title="action.title"
-            role="menuitem"
-            :data-testid="actionTestId(action)"
-            @click="runMenuAction(action, $event)"
+            :label="action.label"
           >
-            {{ action.label }}
-          </el-button>
+            <el-button
+              class="app-row-actions-menu__item"
+              :class="actionClass(action)"
+              link
+              size="small"
+              :loading="action.loading"
+              :disabled="action.disabled || action.loading"
+              role="menuitem"
+              :data-testid="actionTestId(action)"
+              @click="runMenuAction(action, $event)"
+            >
+              {{ action.label }}
+            </el-button>
+          </AppActionHint>
         </div>
       </el-popover>
     </template>
@@ -424,6 +435,8 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: var(--app-space-1);
 }
+
+.app-row-actions-menu :deep(.app-action-hint) { width: 100%; }
 
 .app-row-actions-menu__item {
   --row-action-menu-text: var(--el-text-color-regular);

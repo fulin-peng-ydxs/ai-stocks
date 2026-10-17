@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
+import { defineComponent, nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
+import AppHoverInfo from '../AppHoverInfo'
 import { describe, expect, it } from 'vitest'
 import AppIconButton from '../AppIconButton.vue'
 
@@ -13,7 +15,8 @@ describe('AppIconButton', () => {
     const button = wrapper.get('button')
     expect(button.attributes('type')).toBe('button')
     expect(button.attributes('aria-label')).toBe('刷新状态')
-    expect(button.attributes('title')).toBe('刷新状态')
+    expect(button.attributes('title')).toBeUndefined()
+    expect(wrapper.findComponent(AppHoverInfo).exists()).toBe(false)
     expect(button.classes()).toEqual(expect.arrayContaining(['is-sm', 'is-soft', 'is-primary']))
     expect(wrapper.find('[data-test="icon"]').exists()).toBe(true)
   })
@@ -46,12 +49,27 @@ describe('AppIconButton', () => {
     expect(wrapper.emitted('click')).toBeUndefined()
   })
 
-  it('外层 el-tooltip 承载长说明时可关闭原生 title，避免双提示', () => {
+  it('显式说明复用 AppHoverInfo，保留 button 根节点', async () => {
     const wrapper = mount(AppIconButton, {
-      props: { label: '同步预设', nativeTitle: false },
+      props: { label: '同步预设', tooltip: '同步共享配置的最新版本' },
     })
 
     expect(wrapper.get('button').attributes('aria-label')).toBe('同步预设')
     expect(wrapper.get('button').attributes('title')).toBeUndefined()
+    expect(wrapper.element.tagName).toBe('BUTTON')
+    await nextTick()
+    expect(wrapper.findComponent(AppHoverInfo).vm.$attrs.content).toBe('同步共享配置的最新版本')
+    wrapper.unmount()
   })
+  it('显式提示不改变权限指令的真实 button 目标', async () => {
+    let target: HTMLElement | undefined
+    const host = defineComponent({ components: { AppIconButton }, template: '<AppIconButton v-permission label="新增节点" tooltip="新增根节点" />' })
+    const wrapper = mount(host, { global: { directives: { permission: { mounted: (el: HTMLElement) => { target = el; el.style.display = 'none' } } } } })
+    await nextTick()
+    expect(target?.tagName).toBe('BUTTON')
+    expect(wrapper.get('button').element).toBe(target)
+    expect(target?.style.display).toBe('none')
+    wrapper.unmount()
+  })
+
 })

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppHoverInfo from '@/components/AppHoverInfo'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -1695,7 +1696,9 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           <section class="editor editor-score">
             <div class="ed-head app-cluster-md">
               <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
-              <span v-if="curVersion && !isNew" class="ver-badge" title="点击查看历史版本" @click="openScoreVersions">v{{ curVersion }}</span>
+              <AppHoverInfo v-if="curVersion && !isNew" content="点击查看历史版本">
+                <span tabindex="0" class="ver-badge" role="button" @click="openScoreVersions" @keydown.enter.prevent="openScoreVersions" @keydown.space.prevent="openScoreVersions">v{{ curVersion }}</span>
+              </AppHoverInfo>
               <AssetVisibilityActions
                 v-if="!isNew"
                 :visibility="profileVisibility"
@@ -1824,7 +1827,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                         <span>→</span>
                         <el-input-number v-model="b[2]" size="small" :controls="false" :disabled="profileReadonly" :min="0" :max="100" style="width: 64px" />
                         <span>分</span>
-                        <AppIconButton label="删除分段" size="xs" tone="danger" :disabled="profileReadonly" @click="removeBand(row, bi)">
+                        <AppIconButton label="删除分段" tooltip="删除分段" size="xs" tone="danger" :disabled="profileReadonly" @click="removeBand(row, bi)">
                           <el-icon><Close /></el-icon>
                         </AppIconButton>
                       </div>
@@ -2097,7 +2100,9 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           <section class="editor">
             <div class="ed-head app-cluster-md">
               <el-input v-model="tEditName" :disabled="tReadonly" placeholder="方案名称" style="width: 190px" />
-              <span v-if="tCurVersion && !tIsNew" class="ver-badge" title="点击查看历史版本" @click="openTradeVersions">v{{ tCurVersion }}</span>
+              <AppHoverInfo v-if="tCurVersion && !tIsNew" content="点击查看历史版本">
+                <span tabindex="0" class="ver-badge" role="button" @click="openTradeVersions" @keydown.enter.prevent="openTradeVersions" @keydown.space.prevent="openTradeVersions">v{{ tCurVersion }}</span>
+              </AppHoverInfo>
               <AssetVisibilityActions
                 v-if="!tIsNew"
                 :visibility="tVisibility"

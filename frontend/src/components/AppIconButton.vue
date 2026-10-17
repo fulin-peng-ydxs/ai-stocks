@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+import AppHoverInfo from './AppHoverInfo'
 import { Loading } from '@element-plus/icons-vue'
 
 withDefaults(defineProps<{
@@ -8,15 +10,17 @@ withDefaults(defineProps<{
   tone?: 'default' | 'primary' | 'danger'
   disabled?: boolean
   loading?: boolean
-  nativeTitle?: boolean | string
+  tooltip?: string
 }>(), {
   size: 'md',
   variant: 'ghost',
   tone: 'default',
   disabled: false,
   loading: false,
-  nativeTitle: true,
+  tooltip: undefined,
 })
+
+const button = ref<HTMLButtonElement>()
 
 defineEmits<{
   click: [event: MouseEvent]
@@ -25,12 +29,12 @@ defineEmits<{
 
 <template>
   <button
+    ref="button"
     class="app-icon-button"
     :class="[`is-${size}`, `is-${variant}`, `is-${tone}`, { 'is-loading': loading }]"
     type="button"
     :aria-label="label"
     :aria-busy="loading ? 'true' : undefined"
-    :title="nativeTitle === true ? label : nativeTitle || undefined"
     :disabled="disabled || loading"
     @click="$emit('click', $event)"
   >
@@ -39,6 +43,7 @@ defineEmits<{
       <slot v-else />
     </span>
     <slot name="badge" />
+    <AppHoverInfo v-if="tooltip && button" :reference="button" :content="tooltip" :disabled="loading" />
   </button>
 </template>
 

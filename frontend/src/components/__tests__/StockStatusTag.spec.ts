@@ -13,7 +13,7 @@ describe('StockStatusTag', () => {
 
     expect(wrapper.text()).toBe('ST')
     expect(wrapper.get('.el-tag').classes()).toContain('el-tag--danger')
-    expect(wrapper.get('.stock-status-tag-shell').attributes('title')).toBe('截至 2026-09-22，该股票处于 ST 状态')
+    expect(wrapper.get('.stock-status-tag-shell').attributes('aria-label')).toBe('截至 2026-09-22，该股票处于 ST 状态')
   })
 
   it('非 ST 不显示，未知仅在调用方明确允许降级时显示', async () => {
@@ -25,7 +25,7 @@ describe('StockStatusTag', () => {
 
     await wrapper.setProps({ isSt: null, showUnknown: true, contextLabel: '买入日', asOfDate: '2026-08-01' })
     expect(wrapper.text()).toBe('ST状态未知')
-    expect(wrapper.get('.stock-status-tag-shell').attributes('title')).toBe('买入日 2026-08-01，该股票的 ST 状态未知')
+    expect(wrapper.get('.stock-status-tag-shell').attributes('aria-label')).toBe('买入日 2026-08-01，该股票的 ST 状态未知')
   })
 
   it('上层上下文已经明确为纯 ST 集合时隐藏重复标签，离开后恢复', async () => {

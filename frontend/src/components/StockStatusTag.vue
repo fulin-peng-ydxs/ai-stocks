@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppHoverInfo from '@/components/AppHoverInfo'
 import { computed } from 'vue'
 
 const props = withDefaults(defineProps<{
@@ -18,7 +19,7 @@ const props = withDefaults(defineProps<{
 
 const visible = computed(() => !props.stOnlyContext
   && (props.isSt === true || (props.isSt == null && props.showUnknown)))
-const title = computed(() => {
+const description = computed(() => {
   const point = props.asOfDate ? `${props.contextLabel} ${props.asOfDate}，` : ''
   return props.isSt === true
     ? `${point}该股票处于 ST 状态`
@@ -27,14 +28,16 @@ const title = computed(() => {
 </script>
 
 <template>
-  <span v-if="visible" class="stock-status-tag-shell" :title="title" :aria-label="title">
-    <el-tag
-      class="stock-status-tag"
-      :type="isSt === true ? 'danger' : 'info'"
-      size="small"
-      effect="plain"
-    >{{ isSt === true ? 'ST' : 'ST状态未知' }}</el-tag>
-  </span>
+  <AppHoverInfo v-if="visible" :content="description" >
+    <span tabindex="0" class="stock-status-tag-shell"  :aria-label="description">
+      <el-tag
+        class="stock-status-tag"
+        :type="isSt === true ? 'danger' : 'info'"
+        size="small"
+        effect="plain"
+      >{{ isSt === true ? 'ST' : 'ST状态未知' }}</el-tag>
+    </span>
+  </AppHoverInfo>
 </template>
 
 <style scoped>

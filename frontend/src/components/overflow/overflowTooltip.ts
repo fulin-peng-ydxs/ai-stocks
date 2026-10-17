@@ -19,7 +19,6 @@ const OVERFLOW_TOOLTIP_EXCLUSION_SELECTOR = [
   '.el-tooltip__trigger',
   `.${ACTION_COLUMN_CLASS}`,
 ].join(',')
-const NATIVE_TITLE_EXCLUSION_SELECTOR = '[data-overflow-tooltip-disabled], .el-tooltip__trigger'
 const DESCRIBED_INTERACTIVE_SELECTOR = [
   'button[aria-describedby]',
   'a[aria-describedby]',
@@ -83,16 +82,6 @@ export function findOverflowTooltipTarget(target: EventTarget | null): HTMLEleme
   return null
 }
 
-/** 原生 title 只负责提供文案，显示与计时由全局宿主统一处理。 */
-export function findNativeTitleTooltipTarget(target: EventTarget | null): HTMLElement | null {
-  if (!(target instanceof Node)) return null
-  const element = target instanceof HTMLElement ? target : target.parentElement
-  if (element?.closest(NATIVE_TITLE_EXCLUSION_SELECTOR)) return null
-  const titled = element?.closest<HTMLElement>('[title]')
-  if (!titled?.title) return null
-  return titled
-}
-
 export function overflowTooltipContent(element: HTMLElement): string {
   const formValue = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
     ? element.value
@@ -100,7 +89,6 @@ export function overflowTooltipContent(element: HTMLElement): string {
   return (
     element.dataset.overflowTooltipContent
     || formValue
-    || element.title
     || element.textContent
     || element.getAttribute('aria-label')
     || ''

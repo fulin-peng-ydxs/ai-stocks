@@ -507,6 +507,7 @@ onMounted(async () => {
               v-if="canUpdateWatchlist"
               v-permission="'sector-watchlist:update'"
               :label="watchlisted ? '移出板块自选' : '加入板块自选'"
+              :tooltip="watchlisted ? '移出板块自选' : '加入板块自选'"
               :loading="watchlistBusy"
               :class="{ 'watchlist-active': watchlisted }"
               @click="toggleWatchlist"
@@ -558,7 +559,6 @@ onMounted(async () => {
                   :label="splitCompact ? '查看成分股' : (memberPanelVisible ? '收起成分股，仅看走势' : '显示成分股')"
                   data-testid="sector-detail-toggle-members"
                   size="sm"
-                  :native-title="false"
                   @click="toggleMemberPanel"
                 >
                   <el-icon>

@@ -344,8 +344,10 @@ Key Characteristics：
 | `AppAdvancedSearch` | `frontend/src/components/AppAdvancedSearch.vue` | 列表筛选常显与高级区统一收纳，复用 `AppControlRow`，保留控件实例、条件值与领域事件 | `filter-bar.commonFields`，候选与默认值统一由 `layout/searchGroups.ts` 驱动页面登记，运行时权限候选经 `LayoutHost` 共享给设置抽屉 | 每个独立列表 ≥3 个可收纳条件时常显两个，高级区默认收起；收起不清空、不查询；摘要体现隐藏的实际限制（包括默认限制），可定位和按字段清除；复杂日期范围算一个条件，整页上下文不收纳；禁止复制页面私有收展与配置保存逻辑 |
 | `AppControlRow` / `AppControlItem` | `frontend/src/components/AppControlRow.vue`、`frontend/src/components/AppControlItem.vue` | 页面工具行、查询行和参数行的通用横向控件容器；控件行默认按控件自然宽度排列，空间不足时换行，不自动拉伸填满；控件项把标签和控件作为一个整体换行 | `filter-bar`、`toolbar` 等系统组件种类的真实渲染基础 | 多个输入、选择器、按钮组成的横向行优先使用 `AppControlRow`；存在“说明文字 + 控件”时必须用 `AppControlItem` 包裹，避免标签和控件被拆到不同行；选择器与其浏览、搜索等内置附属动作属于一个复合控件，在支持的桌面宽度内必须保持同行，空间不足时由复合控件整体随控件项换行，不得只把附属动作挤到下一行；只有明确需要均分或撑满时才传 `fill` 或让具体 `AppControlItem` 设置 `grow` |
 | `AppTabToolbar` | `frontend/src/components/AppTabToolbar.vue` | Tab 内容区的统一操作栏，左侧承载筛选或命令，右侧承载当前面板的简短说明，并在空间不足时自然换行 | `tabs` 下属 `filter-bar` / `toolbar` 的真实组合外壳，内部复用 `AppControlRow` | Tab 标签已表达面板名称时，内容区不得重复标题；操作和筛选统一放 `#actions`，说明统一放 `#description`；没有操作时允许仅右对齐展示说明，不得为填空新增无业务意义的按钮 |
-| `AppIconButton` | `frontend/src/components/AppIconButton.vue` | 全站纯图标操作按钮，统一可访问名称、尺寸、圆角、悬浮、聚焦、禁用、loading 和语义色 | 无直接系统组件种类 | 顶栏工具、刷新、页面设置等仅图标操作统一复用；关闭动作通过 `AppCloseButton` 复用此基础能力；必须传 `label`，异步纯图标操作使用 `AppIconButton` 的 `loading`，外层 `el-tooltip` 承载长说明时关闭原生 `title`；图形使用 Element Plus 图标或项目既有 SVG，禁止页面手写 Unicode 符号按钮 |
+| `AppIconButton` | `frontend/src/components/AppIconButton.vue` | 全站纯图标操作按钮，统一可访问名称、尺寸、圆角、悬浮、聚焦、禁用、loading 和语义色 | 无直接系统组件种类 | 顶栏工具、刷新、页面设置等仅图标操作统一复用；关闭动作通过 `AppCloseButton` 复用此基础能力；必须传 `label`，异步纯图标操作使用 `AppIconButton` 的 `loading`；`tooltip` 为显式说明入口，默认不显示提示，可访问名称与可见提示的边界见本节“提示、截断与可访问名称”；图形使用 Element Plus 图标或项目既有 SVG，禁止页面手写 Unicode 符号按钮 |
 | `AppCloseButton` | `frontend/src/components/AppCloseButton.vue` | 关闭与移除临时界面的语义入口 | 无直接系统组件种类；复用 `AppIconButton` | 工作标签、抽屉头部、对比队列及临时预览共同消费；档位、颜色、状态与事件边界统一遵循本节关闭契约，业务允许判断留在容器，库内置关闭由全局样式适配 |
+| `AppHoverInfo` | `frontend/src/components/AppHoverInfo.ts`、`frontend/src/composables/useHoverIntent.ts`、`frontend/src/composables/useTooltipInputModality.ts` | 显式说明的共享 tooltip / popover 与悬停意图判定 | 无直接系统组件种类 | HelpHint、HelpTip、状态说明共同消费；图标按钮及标签可用 reference 虚拟锚点保留原根节点；禁用提示不生成额外触发层，监听按锚点归属释放，触发与边界见本节提示契约 |
+| `AppActionHint` | `frontend/src/components/AppActionHint.vue` | 命令补充说明与禁用原因的可聚焦外壳 | 无直接系统组件种类；复用 AppHoverInfo | 行操作与独立业务命令共同消费；不持有业务执行逻辑，权限指令作用于其真实 span 根节点，使用边界见本节提示契约 |
 | `HelpTip` / `HelpTipItem` | `frontend/src/components/HelpTip.vue`、`frontend/src/components/HelpTipItem.vue` | 全站结构化“？”说明入口与说明项，统一键盘可达、两层结构、点号列表和警告语义色 | 无直接系统组件种类 | `HelpTip` 默认插槽只放 `HelpTipItem`；每项必须且只能传 `question="具体问题文本"` 或 `warning`：前者显示具体问题文本并自动追加冒号，后者固定显示黄色“注意：”；第二行无论内容长短都使用 `ul/li`，组件统一渲染为 `.` 开头的无序列表；禁止页面私写 `<br>`、冒号、列表符号、段落外边距或警告色 |
 | `RelatedBoardCell` / `RelatedBoardEmptyValue` / `RelatedBoardHistoryHint` | `frontend/src/components/RelatedBoardCell.vue`、`frontend/src/components/RelatedBoardEmptyValue.vue`、`frontend/src/components/RelatedBoardHistoryHint.vue` | 个股行业走势/概念走势冠军及可解释空值的业务域复用单元，统一名称、结构化相关性说明、低可信提示、首次计算、空结果原因、历史日期保护和权限感知导航 | 无直接系统组件种类；作为既有 `data-table` / `wide-table` 业务列内容及天梯卡片紧凑值 | 个股查询普通表与分组表、每日榜单、策略筛选统一消费 `RelatedBoardCell`，连板天梯与单元格共同消费 `RelatedBoardEmptyValue`、`RelatedBoardHistoryHint`；调用方只传完整摘要和 `industry|concept` 类型，不拆散日期或异常判断；只展示单个冠军，名称统一使用小号朴素标签，指标最多四位小数；首次任务等待或执行时显示“计算中”；仅当日样本不足时允许后端按行业/概念分别附加当前版本的最近历史结果，名称旁使用 warning 色状态点，悬浮/键盘聚焦说明来源日；指标与基准展示原结果，禁止前端猜测或将历史结果冒充当日；无可沿用冠军、摘要不可用和历史不匹配均 fail-closed 显示“—”，仅后端确实返回结构化空结果原因时允许“—”悬浮和键盘聚焦解释，禁止常驻原因标签和前端猜测；只有 `sectors:view` 才渲染 `/sectors/:code` 链接，且链接点击必须阻止表格行详情冒泡；四个表格 slot 通过统一列 key 消费现有列显隐，不复制私有 popover 或任务轮询，不依赖任务中心管理权限 |
 | `BuiltinOptionRow` | `frontend/src/components/BuiltinOptionRow.vue` | 可创建下拉项的统一行结构，区分内置项和可操作自定义项，并统一标签截断、来源提示与尾部动作对齐 | 无直接系统组件种类 | 交易纪律的内置/自定义原因和买卖类型选择统一复用；内置项只显示中性“内置”提示，自定义项的删除等动作通过默认插槽注入，不在消费页复制选项行布局 |
@@ -361,7 +363,7 @@ Key Characteristics：
 | `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、加载分流、空态插槽、行点击样式和成长/嵌入模式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 页面中的数据表格统一复用；`loading && data.length === 0` 自动显示 `AppStateBlock` 骨架，有旧数据刷新时保留表格并使用 `v-loading` 遮罩；主列表默认成长，抽屉、展开行和局部明细等数量受控的非主表显式使用 `embedded` 并按内容自然撑高；位于整体滚动长文档中、条目可由用户持续添加且后面仍有关键内容的编辑表，必须在 `embedded` 基础上声明语义 `max-height`，少量行自然高度、超出后由表体内部滚动，禁止把后续操作和结果区无限推远；`#empty` 只补充业务文案与操作并复用 `app-table-empty*`，禁止嵌套 `el-empty` 形成双图；`wide-table` 默认常显 Element Plus 内部滚动条，禁止页面再给 `el-table__body-wrapper` 添加第二层横向滚动；禁止用 `fill` 布尔值绕过主表语义；复杂单元格继续由业务页通过列插槽声明 |
 | `AppAsyncRegion` | `frontend/src/components/AppAsyncRegion.vue` | 非表格异步内容区域外壳，统一首次加载、已有内容刷新、空态和异常态的互斥切换 | 消费 `AppStateBlock` 和 Element Plus `v-loading`，通过调用方提供的 `loading + hasContent + error` 推导区域状态；不负责请求、业务缓存或内容归属判断 | 图表、摘要、树、详情和结果等标准非表格异步区优先复用；接入后必须保持消费区域既有的高度、成长和滚动语义；表格仍使用 `AppDataTable`，长任务、多依赖聚合和纯生命周期遮罩按四态入口矩阵处理 |
 | `AppTableColumn` | `frontend/src/components/AppTableColumn.vue`、`frontend/src/components/table/adaptiveColumnWidth.ts` | 表格列运行时组件，根据结构类型、字段名和标签推导语义角色，以稳定字符权重结合排序/筛选控件计算弹性最小宽，并统一推导表头/单元格对齐、数字排版、单行表头及同行元信息 | `data-table`、`wide-table` 的稳定列宽、语义对齐和表头能力；不是用户可配置字段 | 页面表格列统一复用，禁止传 `width/min-width/align/header-align`；确有歧义的动态标签只传 `role`；文本、代码、名称和日期左对齐，排名、结构、状态与操作居中，普通数值右对齐，横向比较矩阵数值使用 `comparison-number` 居中，两类数值均使用等宽数字，表头与主值共用基准线；日期、单位或短口径摘要传 `header-meta`；单元格主内容前存在紧凑控件时传 `leading-controls`，组件统一预留宽度并让表头对齐主内容；单元格使用多选 `AppFilterSelect` 时，标签模式由列与选择器声明相同的 `filterSelectVisibleTagCount / visibleTagCount`，数量摘要模式则声明相同的 `filterSelectDisplayMode=count / displayMode=count`；列宽完整承载目标内容，总列宽超出表格时由表体横向滚动，不裁切交互控件；自定义 header slot 只用于复选、帮助入口等真实交互结构；呈现事实只维护在 `ADAPTIVE_COLUMN_RULES`，调用方私有对齐属性和表格 CSS 由契约测试阻止 |
-| `AppOverflowTooltipHost` | `frontend/src/components/AppOverflowTooltipHost.vue`、`frontend/src/components/overflow/overflowTooltip.ts` | 全站省略内容和原生 `title` 文案的单一悬浮宿主，由事件委托识别真实截断和标题目标 | 无直接系统组件种类；由应用根节点挂载一次 | 任何 `text-overflow: ellipsis` 内容只有在真实截断且光标停止移动后才显示提示；提示宽度不超过 360px 并随容器收缩、自动换行，正文最多显示 8 行，实际超出时显示“内容已截断”；原生 `title` 由宿主接管显示，避免重复浏览器浮层。页面和业务组件不得手工配置列级 `show-overflow-tooltip`、私建 `ResizeObserver + title` 或复制 tooltip；已有结构化 popover/tooltip、操作列及动作组保持自身交互并自动跳过 |
+| `AppOverflowTooltipHost` | `frontend/src/components/AppOverflowTooltipHost.vue`、`frontend/src/components/overflow/overflowTooltip.ts` | 全站真实截断原文提示宿主 | 无直接系统组件种类 | 唯一全局挂载于 App；只识别真实截断，不接管原生 title；触发、原文来源与边界见本节提示契约 |
 | `AppHoverInfo` | `frontend/src/components/AppHoverInfo.ts`、`frontend/src/composables/useHoverIntent.ts` | 说明性提示与富内容浮层的统一悬浮意图入口 | 无直接系统组件种类；承接 `HelpHint`、`HelpTip` 和业务解释浮层 | 鼠标静止后显示、移动时重新计时、键盘聚焦即时显示；富内容浮层允许鼠标从触发目标进入内容；点击触发目标时先收起浮层，缓存页面切走时取消计时并再次清理，避免锚点隐藏后漂移；点击触发的菜单不接入 |
 | `AppStateBlock` | `frontend/src/components/AppStateBlock.vue` | 页面和组件的加载、空、异常、无权反馈块，统一 `ready / loading / empty / error` 四态中的非 ready 呈现、重试入口和尺寸档位 | 对应布局系统中的 `loading-state`、`empty-state`、`error-state`、`skeleton` 语义，但作为真实运行时复用组件消费 | 主加载失败、局部列表失败、无权态、非表格空态和稳定骨架占位优先复用；默认大尺寸空态与异常态占满父级可用区域并水平、垂直居中，消费页的直接内容容器必须传递可成长的确定区域，滚动结果区使用纵向 flex 且状态承载体同时填充剩余高度，禁止只让状态块在自身最小高度内居中；`compact` / `tiny` / `inline` 保持局部区域语义；空态同时提供 `title + description` 时由组件统一展示两层信息，不得让说明覆盖标题或由页面私写重复结构；表格数据的 loading/empty 仍优先由 `AppDataTable` / `el-table` 承接，不在页面手写第二套错误块、空态图标或重试布局 |
 | `AppWorkspacePane` | `frontend/src/components/AppWorkspacePane.vue` | 主从工作区单栏的统一栏级外壳，承载标题、可选辅助行、操作区和自适应内容区 | `master-detail` 左右栏的内部面板 | 个股查询、每日榜单、连板天梯、板块行情通过 `MarketMasterDetailWorkspace` 共同消费，个股详情与板块详情直接用于各自两栏；栏级标题统一高度、边框和间距，蓝色小号辅助行承载稳定的业务类型，当前日期或结果批次作为主标题展示；双栏默认仅主栏显式传入 `primary` 使用主色浅背景，次栏保持中性背景，禁止两栏同时强调或由页面复制背景样式；不与图表内部 `StockChartPanelHeader` 合并；图表范围、分栏收展等栏级操作通过 `actions` 插槽承载；紧凑抽屉已有标题时可隐藏重复栏头 |
@@ -434,7 +436,7 @@ Key Characteristics：
 - **关闭动作统一契约**：自有图标关闭、退出临时预览、移除对比对象使用 `AppCloseButton`（内部复用 `AppIconButton`）；组件库内置弹窗、确认框、标签、输入/选择/日期清空、消息、通知与 Alert 图标关闭入口由 `global.css` 唯一适配，禁止消费页面单独覆盖颜色、尺寸、圆角或动画。文字“取消/关闭”命令继续使用 `el-button`；删除真实参数、分段等数据继续使用危险操作，不能因图形相同套用普通关闭。
 - 关闭入口按位置选档：`default=28px / glyph=14px` 用于弹窗、确认框与抽屉头部；`compact=24px / glyph=12px` 用于局部临时预览、消息与通知；`inline=16px / glyph=12px` 只用于工作标签、队列 chip、标签移除和字段清空等内嵌操作。尺寸和图形 token 在 `global.css` 的 `--app-close-size-*`、`--app-icon-close-glyph-*` 定义；不得借用内嵌档压缩独立工具按钮。Alert 自定义文字关闭保留组件库文字布局，不强制图标几何。
 - 关闭入口常态透明底、辅助文字色；精细指针悬停统一 `--chrome-bg-soft-hover` 与主文字色，按下为 `--chrome-active-bg`；不使用危险红、缩放、浮起或阴影。键盘焦点为2px主色外框，颜色过渡复用共享180ms配方；减少动态效果时取消过渡。语义深色标签和告警保持必要的文字对比。禁用/加载不产生悬停反馈，加载保持进行中语义。页面只控制排列、间距和显隐。
-- `AppCloseButton` 必须传具体 `label` 作为可访问名称；明确的关闭图形默认不显示重复文字气泡（`nativeTitle=false`），名称不自动转成可见提示。阻止点击与 Enter/Space 传播到父菜单、标签或卡片，Escape 继续交给浮层。库内置控件保留原生事件、焦点及键盘模型（字段清空仍依附输入控件，不额外改造成独立 Tab 入口）。工作标签在无悬停/粗指针设备始终显示关闭，最后一个标签不显示关闭；等待离开确认时阻止重复关闭，成功移除焦点所在标签后将焦点交还当前标签。取消关闭不改变选择或焦点。
+- `AppCloseButton` 必须传具体 `label` 作为可访问名称；明确的关闭图形默认不显示重复文字气泡，名称不自动转成可见提示。阻止点击与 Enter/Space 传播到父菜单、标签或卡片，Escape 继续交给浮层。库内置控件保留原生事件、焦点及键盘模型（字段清空仍依附输入控件，不额外改造成独立 Tab 入口）。工作标签在无悬停/粗指针设备始终显示关闭，最后一个标签不显示关闭；等待离开确认时阻止重复关闭，成功移除焦点所在标签后将焦点交还当前标签。取消关闭不改变选择或焦点。
 - 关闭呈现不承担业务允许判断：未保存拦截、权限、异步状态由所属容器处理；`PageDrawer` 自定义关闭、遮罩与 Escape 共走组件库关闭链路，尊重 `before-close`，`show-close=false` 同时隐藏自定义头部入口。弹窗继续由 `AppDialog` / Element Plus 管理关闭与焦点归还。
 - 校验入口为 `npm run check:close-controls`（构建门禁同时执行），检测直接手写关闭图形、缺少名称和私有视觉配方；允许危险删除与非交互预览图形。交互、离开拦截和焦点恢复由定向组件测试覆盖，明暗主题的实际命中区、裁切与状态须在内置浏览器复核，源码扫描不能替代页面验收。
 - 标准命令按钮为 `32px` 高、左右 padding `12px`、文字 `13px / --app-font-weight-section`、图文间距 `6px`；small 为 `28px`、large 为 `36px`。输入框、选择器、按钮统一使用 `--layout-control-radius=6px`，主题只改变颜色和材质，不改变基础控件形态。
@@ -442,7 +444,7 @@ Key Characteristics：
 - 同一页面主工作区原则上最多一个实体 `primary` 主按钮；页面工具栏先确定当前唯一主任务，其他并发命令使用默认、plain、warning、success、danger 等与动作含义一致的语义色，不用多个实体主按钮竞争。行级和列表项的轻量文字操作按 `AppRowActions` 的首个高频动作规则处理，不计作页面主按钮；危险色只用于删除、退出、停用、终止、标记退市等破坏性动作，不能用来制造普通视觉重点。
 - 工作区命令按钮保持平面、清晰边界和轻状态反馈，不使用渐变、高光内阴影、厚重投影或装饰性位移；用按钮承载的导航入口、可选卡片遵循下文“菜单与交互卡片”角色规则。hover、focus-visible、disabled、loading 必须可辨；loading 使用 Element Plus `:loading`。
 - 图标统一使用 Element Plus 图标或项目既有 SVG，同一区域保持相同描边气质；禁止用 `⚙`、`✕`、emoji 等 Unicode 字符充当界面图标。
-- 纯图标异步操作必须使用 `AppIconButton` 的 `loading`，不得在页面内为图标按钮新增私有旋转动画或把 loading 混同为 disabled 灰态。外层 `el-tooltip` 承载完整说明时，应关闭 `AppIconButton` 原生 `title`，避免双提示。
+- 纯图标异步操作必须使用 `AppIconButton` 的 `loading`，不得在页面内为图标按钮新增私有旋转动画或把 loading 混同为 disabled 灰态。图标按钮有必要的功能说明时显式传 `tooltip`；外层已有 `AppHoverInfo` 时不再声明同一提示，统一遵循本节提示契约。
 - Unicode 禁令针对交互图标、操作按钮和纯图标控件；业务公式、状态文案里的箭头/对勾/叉号可作为局部文案保留，但不得用于按钮图标。选择态勾选标记也使用 Element Plus 图标或项目 SVG，不使用 Unicode 字形。
 - 自定义原生 `<button>` 仅保留给导航、登录主视觉切换、规则摘要 disclosure 等具有独立语义和结构的专用控件，并在实现中保持专用 class、键盘语义和必要的 ARIA 状态；普通命令和纯图标操作不得借此绕过统一组件。
 - 夜间模式的复选框、单选框、输入边界和表格行悬浮必须使用强边框或主色反馈；空框、选中、禁用三态均需肉眼可辨。
@@ -491,6 +493,27 @@ Key Characteristics：
 - loading 期间保留按钮稳定语义名称，由组件旋转图标表达进行中，不把“刷新”临时改成“刷新中”导致宽度跳动。纯图标刷新同样必须把同一同步状态传给 `AppIconButton.loading`。
 - 后续页面固定使用：筛选恢复为“重置筛选”，同上下文同步为“刷新”，失败请求重放为“重试”，只读取任务状态为“刷新状态”，重新运行业务任务为“重新执行”或“重新计算”，草稿回退为“还原修改”，持久化基线恢复为“恢复默认”，覆盖删除为“清除用户覆盖”，领域重置必须带对象名。普通列表不设“查询”按钮；确需显式提交的完整条件或高成本查询使用“查询”并标记为显式查询主命令。
 
+### 提示、截断与可访问名称
+
+以下是全站提示准入的唯一规则；表格、按钮和响应式清单引用本节，不另建默认行为。
+
+| 对象 | 默认行为与接入方式 |
+|---|---|
+| 可访问名称 | 图标命令必须提供 `label` / `aria-label`；名称用于辅助技术，不自动生成可见气泡。 |
+| 关闭、清空、移除临时界面，完整可见的名称、数值和普通文字命令 | 不显示重复说明。关闭入口复用 `AppCloseButton`；普通命令不因存在名称自动弹提示。 |
+| 需要解释的纯图标入口 | 显式传 `AppIconButton.tooltip`，内部复用 `AppHoverInfo`；页面设置、任务中心、图标编辑/新增等依实际用途声明，不给所有图标统一默认提示。 |
+| 必要的错误、状态和命令说明 | 使用 `AppHoverInfo`；命令或禁用原因使用 `AppActionHint`，行操作通过 `AppRowAction.tooltip` 接入；只读标签仅在拥有归属、日期或只读等补充信息时提示。 |
+| 字段帮助与多段说明 | 单块解释使用可见 `HelpHint`，结构化说明使用 `HelpTip`；不得把整块指标或卡片变成无标记的隐形说明区。 |
+| 真实截断的菜单、标签、选项和表格原文 | 由 `AppOverflowTooltipHost` 自动检测；内容完整时不显示。原文默认来自真实内容/输入值，原文不在 DOM 时显式提供 `data-overflow-tooltip-content`，该属性只提供内容，不强制触发。 |
+| 图表行情读数、点击菜单与操作面板 | 保留所属共享图表或点击交互机制，不转换成普通悬停说明。 |
+
+- 原生 HTML `title` 不再用作提示文案或触发信号；`nativeTitle` 接口已移除。组件的 `title` 标题属性、标题插槽、路由/业务标题及 iframe 可访问名称保留，不按字符串批量删除。
+- `AppHoverInfo` 与截断宿主复用 `tooltipTiming.ts` 的停留门槛；鼠标停止后才显示，持续移动重置等待，离开/点击/Escape 关闭，键盘聚焦立即显示，鼠标点击及其引起的焦点归还不锁定提示；输入来源由 `useTooltipInputModality` 在显式说明和截断宿主间共享，不接管控件焦点。富内容 popover 允许移入阅读；点击菜单及图表读数不等待这个门槛。页面不得新增私有计时器或第二套监听。
+- `AppHoverInfo` 的 `reference` 只用于稳定的虚拟锚点；图标按钮保留真实 button 根节点及原有权限、点击和加载语义。监听随锚点更换与销毁清理，缓存页面停用时清理瞬态显示。提示文案为空或不适用时不生成空触发层。
+- 禁用原因通过 `AppActionHint` 的外壳悬停或键盘阅读；禁用按钮仍不执行，外壳不代理点击。无权命令连同说明入口一起隐藏，权限过滤先于提示；加载状态不改成可执行状态。相同信息只出现一个提示，有显式说明的目标不再叠加截断气泡。
+- 提示复用 `app-wrapping-popper` 的主题、排版和空间边界；简短说明与结构化帮助保留各自组件角色，不在消费页面私设颜色、字号或动效。
+- `npm run check:tooltips` 按 Vue/TS AST 检查原生/透传 title 和旧自动接口，已接入生产构建；组件标题、插槽和 iframe 名称不误报。定向测试覆盖默认不显示、显式说明、真实截断、禁用原因、焦点/鼠标区分、点击关闭及监听清理；内置浏览器复核实际主题、位置和消失行为。
+
 ### 金额展示与输入
 
 - 金额格式化的唯一前端事实源是 `frontend/src/utils/money.ts`。本金、资金、现金、资产、成交金额、费用、盈亏、市值、净流入、价格，以及图表中的金额轴和金额 tooltip，必须消费 `formatMoney` 或该文件导出的缩放/输入 helper；页面和业务组件不得再定义私有 `money`、`wan`、金额 `toLocaleString` 或正则分组逻辑。
@@ -514,7 +537,7 @@ Key Characteristics：
 - 列宽采用语义自适应契约：选择、展开、序号等结构列保持稳定窄宽；普通名称使用 `name`，含前置选择/收藏等控件并展示主副信息的对象识别列使用 `entity`；其余列取“语义内容基础宽度”和“表头标签 + 同行元信息 + 排序/筛选控件 + 主内容前置控件”的较大值，并按 8px 网格取整。表格内多选下拉必须按 `filterSelectVisibleTagCount` 或 `filterSelectDisplayMode=count` 计入控件容量和单元格留白，禁止先压窄控件再裁掉标签、`+N` 或“已选 N”。中英文混排使用稳定字符权重估算，不做运行时 DOM/数据采样，避免数据变化触发列宽跳动；异常长表头受角色上限保护，真实截断时由全局省略提示展示原文（超长内容按统一上限截断）。容器有余量时由 Element Plus `fit` 按最小宽度权重分配并铺满，空间不足时保持最小可读宽度并由表体横向滚动。
 - 横向滚动与单元格溢出是两套独立机制：前者只由所有列的语义最小宽度总和是否超过表格可视宽度决定；后者由 `AppDataTable` 递归比较单元格内文字、标签和嵌套结构的真实矩形是否越过该单元格边界。不得使用包含透明 padding / margin 的 `scrollWidth` 制造虚假省略号。省略号只有一种视觉规则：必须由实际承载文字的内容容器通过原生 `text-overflow: ellipsis` 绘制在自身末尾；表格只负责检测真实遮挡和触发统一悬浮，不得使用渐隐遮罩、伪元素或独立字符在单元格外层补画省略号。表格内标签、评分胶囊及其它有边界的复合内容必须在自身内部收缩，禁止切断背景、边框、文字或数字。全站省略原文统一由 `AppOverflowTooltipHost` 自动承接，只在真实截断时显示，并遵守统一的宽度与高度上限；页面不得传列级 `show-overflow-tooltip` 或自行维护截断 tooltip。操作列及动作组属于命令交互边界，不接入普通文本省略悬浮，也不得把隐藏测量副本纳入提示内容；结构列与操作列继续使用各自专用契约。
 - 列表中的长文本摘要通过 `AppTableColumn` 的 `single-line` 显式限制为单行，由单元格原生绘制省略号；原文沿用统一悬浮提示，超出提示上限的长文由已有日志或详情入口继续承载，不让单条数据无限拉高行高。
-- `AppOverflowTooltipHost` 统一承接真实省略内容和必要的原生 `title` 操作说明；完整可见的名称、指标标签和值不得添加重复 `title`，真实截断交给统一宿主。响应式收起的指标数值通过可见的 `HelpHint` 独立入口恢复，不把整块指标按钮变成隐形提示区。鼠标提示只在光标停止移动后显示，移动、离开或切换目标时取消待显示内容；键盘焦点立即显示，鼠标点击产生的焦点不得锁定提示，点击时取消当前及待显示提示。其它说明性浮层统一通过 `AppHoverInfo` 消费相同停留门槛和移动重置行为，简短说明优先使用 `HelpHint`，结构化说明使用 `HelpTip`；点击触发的菜单、弹层和图表行情读数保持即时交互。
+- 截断提示、显式操作说明与可访问名称的准入及交互统一遵循本节“提示、截断与可访问名称”；响应式收起的指标数值通过可见的 `HelpHint` 独立入口恢复，不把整块指标按钮变成隐形提示区。
 - 列语义角色同时决定宽度和对齐：`structural/rank/status/action/comparison-number` 的表头与单元格居中，`number` 右对齐，`code/name/entity/date/datetime/key/text/description` 左对齐；`number/comparison-number/rank` 使用等宽数字，表头默认与主值保持同一基准线。页面和业务组件不得传 `align/header-align` 或通过私有表格 CSS 覆盖；横向比较矩阵声明 `comparison-number`，其它差异新增稳定语义角色。空值、排序箭头、标签和加载状态不得改变该列基准线。
 - 自适应列宽的角色、字符权重、控件预留、上限、对齐和数字排版唯一维护在 `components/table/adaptiveColumnWidth.ts`；页面只在动态标签无法推导时声明语义 `role`，不得复制数值或对齐 CSS。所有标准表头保持单行且不换行；日期、单位或短口径摘要使用 `header-meta` 在标签后同行弱化展示；主内容前存在紧凑控件时使用 `leading-controls` 让组件统一缩进表头并预留列宽。说明性长文本继续放 `HelpTip` / `HelpHint`，不得通过私有 header slot 拼接第二套样式。
 - 表头保持稳定，分页、批量操作和关键筛选不被表体滚动带走。

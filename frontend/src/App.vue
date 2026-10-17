@@ -468,6 +468,7 @@ async function onLogout() {
               </div>
               <AppIconButton
                 label="刷新交易数据状态"
+                tooltip="刷新交易数据状态"
                 size="sm"
                 variant="soft"
                 :loading="shellStatusLoading"
@@ -543,6 +544,7 @@ async function onLogout() {
               class="topbar-tool"
               :class="`is-${taskTone}`"
               label="任务中心"
+              tooltip="任务中心"
             >
               <el-icon><Clock /></el-icon>
               <template #badge>
@@ -563,6 +565,7 @@ async function onLogout() {
               </div>
               <AppIconButton
                 label="刷新任务"
+                tooltip="刷新任务"
                 size="sm"
                 variant="soft"
                 :loading="shellStatusLoading"
@@ -594,6 +597,7 @@ async function onLogout() {
         <AppIconButton
           class="topbar-tool topbar-tool--appearance"
           label="视觉环境"
+          tooltip="视觉环境"
           @click="appearanceDrawerVisible = true"
         >
           <svg class="skin-glyph" viewBox="0 0 24 24" aria-hidden="true">
@@ -608,7 +612,7 @@ async function onLogout() {
           </svg>
         </AppIconButton>
 
-        <AppIconButton class="user-entry" label="用户中心" @click="userDrawerVisible = true">
+        <AppIconButton class="user-entry" label="用户中心" tooltip="用户中心" @click="userDrawerVisible = true">
           <span class="user-avatar">{{ avatarText }}</span>
           <template #badge>
             <AppStatusDot v-if="hasPendingTradeDiscipline" placement="top-right" label="有待打卡交易纪律" />
@@ -694,6 +698,7 @@ async function onLogout() {
           <div class="display-scale-control">
             <AppIconButton
               label="缩小界面"
+              tooltip="缩小界面"
               size="sm"
               :disabled="displayScalePercent <= DISPLAY_SCALE_MIN"
               @click="nudgeDisplayScale(-1)"
@@ -713,6 +718,7 @@ async function onLogout() {
             />
             <AppIconButton
               label="放大界面"
+              tooltip="放大界面"
               size="sm"
               :disabled="displayScalePercent >= DISPLAY_SCALE_MAX"
               @click="nudgeDisplayScale(1)"

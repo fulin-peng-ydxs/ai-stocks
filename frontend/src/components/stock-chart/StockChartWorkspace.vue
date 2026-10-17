@@ -1295,7 +1295,6 @@ onBeforeUnmount(() => {
                 :aria-controls="`${groupId}-kline-operations`"
                 data-testid="stock-chart-toggle-operations"
                 size="xs"
-                :native-title="false"
                 @click="openOperationsDrawer"
               >
                 <Operation />

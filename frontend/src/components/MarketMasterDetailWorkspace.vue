@@ -90,7 +90,6 @@ defineExpose({ openCompactAnalysis, closeCompactAnalysis })
               v-if="!isCompact"
               :label="analysisVisible ? '收起走势分析，仅看列表' : '显示走势分析'"
               :data-testid="analysisVisible ? `${testIdPrefix}-hide-analysis` : `${testIdPrefix}-show-analysis`"
-              :native-title="false"
               @click="toggleAnalysis"
             >
               <el-icon><DArrowRight v-if="analysisVisible" /><DArrowLeft v-else /></el-icon>

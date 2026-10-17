@@ -229,7 +229,7 @@ function presetRowActions(row: LayoutPresetRecord): AppRowAction[] {
       type: 'danger',
       permission: 'layout:preset-manage',
       disabled: row.is_builtin,
-      title: row.is_builtin ? '系统内置预设不可删除' : undefined,
+      tooltip: row.is_builtin ? '系统内置预设不可删除' : undefined,
       placement: 'more',
       onClick: () => removePreset(row),
     },

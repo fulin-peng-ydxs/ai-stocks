@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import AppHoverInfo from '@/components/AppHoverInfo'
+import { computed, ref } from 'vue'
 import SystemBuiltinTag from './SystemBuiltinTag.vue'
 
 type AssetSource = 'mine' | 'tenant' | 'public' | 'preset'
@@ -23,6 +24,9 @@ const props = withDefaults(defineProps<{
   labelMine: '我的',
 })
 
+const tag = ref<{ $el: HTMLElement }>()
+const tagElement = computed(() => tag.value?.$el)
+
 const label = computed(() => {
   if (props.mode === 'readonly') return '只读'
   if (props.mode === 'source') {
@@ -45,7 +49,7 @@ const tagType = computed(() => {
   return props.mode === 'source' ? 'primary' : 'info'
 })
 
-const title = computed(() => {
+const tooltipContent = computed(() => {
   const owner = props.ownerLabel ? ` · ${props.ownerLabel}` : ''
   return props.readonly && props.mode !== 'readonly' ? `${label.value}${owner} · 只读` : `${label.value}${owner}`
 })
@@ -55,15 +59,17 @@ const title = computed(() => {
   <SystemBuiltinTag v-if="mode === 'source' && source === 'preset'" />
   <el-tag
     v-else
+    ref="tag"
+    :tabindex="tooltipContent !== label ? 0 : undefined"
     class="asset-visibility-tag"
     :class="{ 'is-clickable': clickable }"
     :type="tagType"
     size="small"
     effect="plain"
-    :title="title"
   >
     <span class="asset-visibility-tag__text">{{ label }}</span>
     <slot />
+    <AppHoverInfo v-if="tooltipContent !== label && tagElement" :reference="tagElement" :content="tooltipContent" />
   </el-tag>
 </template>
 

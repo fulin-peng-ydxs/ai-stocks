@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
+import AppHoverInfo from '../AppHoverInfo'
 import { mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import CompareQueueRail from '@/components/CompareQueueRail.vue'
@@ -64,11 +65,12 @@ describe('CompareQueueRail', () => {
     expect(wrapper.find('.compare-queue-remove').exists()).toBe(false)
   })
 
-  it('错误项带 error 类与 title 说明', () => {
+  it('错误项保留 error 类并通过共享提示提供原因', () => {
     const wrapper = mountRail({ items: [{ key: 'A', label: '板块A', active: true, error: '加载失败' }] })
     const chip = wrapper.get('.compare-queue-chip')
     expect(chip.classes()).toContain('error')
-    expect(chip.attributes('title')).toBe('加载失败')
+    expect(chip.attributes('title')).toBeUndefined()
+    expect(wrapper.findComponent(AppHoverInfo).vm.$attrs.content).toBe('加载失败')
   })
 
   it('按 testIdPrefix 生成稳定 testid', () => {

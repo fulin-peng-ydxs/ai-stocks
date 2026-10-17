@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppHoverInfo from '@/components/AppHoverInfo'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -838,13 +839,13 @@ const menuPageTitle = useMenuPageTitle()
         <section class="editor editor-screen">
           <div class="ed-head app-cluster-md">
             <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
-            <span
-              v-if="curVersion && !isNew"
-              class="ver-badge"
-              title="点击查看历史版本"
-              data-testid="screen-profile-version"
-              @click="openVersions"
-            >v{{ curVersion }}</span>
+            <AppHoverInfo v-if="curVersion && !isNew" content="点击查看历史版本">
+              <span tabindex="0"
+                class="ver-badge"
+                data-testid="screen-profile-version"
+                role="button" @click="openVersions" @keydown.enter.prevent="openVersions" @keydown.space.prevent="openVersions"
+              >v{{ curVersion }}</span>
+            </AppHoverInfo>
             <AssetVisibilityActions
               v-if="!isNew"
               :visibility="profileVisibility"

@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { nextTick } from 'vue'
+import AppHoverInfo from '../AppHoverInfo'
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -29,14 +31,18 @@ function mountActions(role: string, permissions: string[]) {
 }
 
 describe('AssetVisibilityTag', () => {
-  it('展示公开来源和 owner 提示', () => {
+  it('展示公开来源和 owner 提示', async () => {
     const w = mount(AssetVisibilityTag, {
       props: { mode: 'source', source: 'tenant', ownerLabel: 'owner_a', readonly: true },
       global: { plugins: [ElementPlus] },
     })
     expect(w.text()).toContain('租户公开')
-    expect(w.find('.asset-visibility-tag').attributes('title')).toContain('owner_a')
-    expect(w.find('.asset-visibility-tag').attributes('title')).toContain('只读')
+    await nextTick()
+    const hint = w.findComponent(AppHoverInfo).vm.$attrs.content as string
+    expect(hint).toContain('owner_a')
+    expect(hint).toContain('只读')
+    expect(w.find('.asset-visibility-tag').attributes('title')).toBeUndefined()
+    w.unmount()
   })
 
   it('展示公开范围和只读标签', () => {
@@ -50,7 +56,7 @@ describe('AssetVisibilityTag', () => {
 })
 
 describe('AssetProfileLabel', () => {
-  it('统一展示方案名称、版本和归属标签', () => {
+  it('统一展示方案名称、版本和归属标签', async () => {
     const w = mount(AssetProfileLabel, {
       props: {
         name: '趋势评分',
@@ -62,8 +68,12 @@ describe('AssetProfileLabel', () => {
       global: { plugins: [ElementPlus] },
     })
     expect(w.text()).toBe('趋势评分v3租户公开')
-    expect(w.find('.asset-visibility-tag').attributes('title')).toContain('owner_a')
-    expect(w.find('.asset-visibility-tag').attributes('title')).toContain('只读')
+    await nextTick()
+    const hint = w.findComponent(AppHoverInfo).vm.$attrs.content as string
+    expect(hint).toContain('owner_a')
+    expect(hint).toContain('只读')
+    expect(w.find('.asset-visibility-tag').attributes('title')).toBeUndefined()
+    w.unmount()
   })
 })
 

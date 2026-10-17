@@ -1314,7 +1314,6 @@ onBeforeUnmount(() => {
                 :label="splitCompact ? '查看辅助信息' : (showAuxiliary ? '收起辅助信息，仅看图表' : '显示辅助信息')"
                 data-testid="stock-detail-toggle-auxiliary"
                 size="sm"
-                :native-title="false"
                 @click="toggleAuxiliaryPanel"
               >
                 <el-icon>
