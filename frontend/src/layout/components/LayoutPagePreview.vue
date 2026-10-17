@@ -237,7 +237,7 @@ function parentLabel(s: SlotSpec): string | null {
 .resp-summary {
   border: 1px solid var(--el-border-color);
   border-radius: 6px;
-  background: var(--app-section-bg);
+  background: var(--app-surface-container);
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
@@ -280,7 +280,7 @@ function parentLabel(s: SlotSpec): string | null {
 .device-frame {
   border: 1px solid var(--el-border-color);
   border-radius: 8px;
-  background: var(--app-section-bg);
+  background: var(--app-surface-container);
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -345,7 +345,6 @@ function parentLabel(s: SlotSpec): string | null {
 }
 .slot-box.main.grow {
   min-height: 120px;
-  background: var(--app-surface-success);
 }
 .slot-box.action {
   flex-direction: row;

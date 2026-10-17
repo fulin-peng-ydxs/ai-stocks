@@ -197,7 +197,7 @@ span {
   flex: 1;
   border: 1px solid var(--el-border-color);
   border-radius: 4px;
-  background: var(--app-section-bg);
+  background: var(--app-surface-control);
 }
 .cp-input.sm {
   flex: 0 0 80px;
@@ -270,7 +270,7 @@ span {
   height: 30px;
   border: 1px solid var(--el-border-color);
   border-radius: 4px;
-  background: var(--app-section-bg);
+  background: var(--app-surface-control);
 }
 .cp-overlay,
 .cp-tabs,

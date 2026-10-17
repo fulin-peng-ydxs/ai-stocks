@@ -966,7 +966,7 @@ const menuPageTitle = useMenuPageTitle()
   border: 1px dashed var(--el-border-color);
   border-radius: var(--layout-control-radius);
   padding: var(--app-space-3);
-  background: var(--app-section-bg);
+  background: var(--app-surface-container);
 }
 .inspector-title {
   font-size: var(--app-font-size-body);
@@ -1020,7 +1020,7 @@ const menuPageTitle = useMenuPageTitle()
   border: 1px solid var(--el-border-color-lighter);
   border-radius: var(--layout-control-radius);
   padding: var(--app-space-3);
-  background: var(--app-section-bg);
+  background: var(--app-surface-container);
 }
 .focused-slot-name,
 .diag-main {
