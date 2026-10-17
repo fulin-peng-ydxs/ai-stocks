@@ -232,11 +232,11 @@ Key Characteristics：
 | 双顶栏一级菜单 | 14px | 600 / 600 | 22px | 宿主随顶栏高度；悬停/焦点面为32px |
 | 双顶栏二级菜单 | 14px | 600 / 600 | 22px | 32px |
 | 顶栏下拉叶子 | 14px | 400 / 600 | 22px | 最小32px |
-| 工作标签 | 12px | 400 / 600 | 18px | 32px |
+| 工作标签 | 13px | 400 / 600 | 18px | 32px |
 | 双顶栏辅助分组提示 | 12px | 400 / — | 18px | 次栏内自然高度 |
 | 当前位置（面包屑） | 14px | 400 / 600 | 22px | 随顶栏高度，垂直居中 |
 
-- 主菜单使用 `--app-nav-font-size` / `--app-nav-line-height`，分区标题、工作标签及辅助提示使用 `--app-nav-meta-font-size` / `--app-nav-meta-line-height`。字重按 `--app-nav-weight-primary`、`--app-nav-weight-regular`、`--app-nav-weight-active` 分配；同角色不得回落组件库默认字号或另写私有字体。
+- 主菜单使用 `--app-nav-font-size` / `--app-nav-line-height`，分区标题及辅助提示使用 `--app-nav-meta-font-size` / `--app-nav-meta-line-height`。工作标签使用独立的 `--app-nav-tab-font-size`（复用13px基础字阶），行高沿用 `--app-nav-meta-line-height`，不随辅助标题字号联动。字重按 `--app-nav-weight-primary`、`--app-nav-weight-regular`、`--app-nav-weight-active` 分配；同角色不得回落组件库默认字号或另写私有字体。
 - 主入口以14px/600保证定位强度；下级保留14px正文可读性，通过缩进、分组、当前字重和定位标记表达层级，不随菜单深度继续缩小。12px只用于本表列明的辅助导航，不能用于压缩主菜单或面包屑；长名称通过省略和溢出说明承接。
 - 悬停、按下不改变字号或字重。当前项由现有路由/受控值决定，普通下级、下拉叶子及工作标签从400提升至600；主入口已为600，保持字重并通过颜色和定位标记强化。
 - 行容器高度决定点击区域，文字行高决定排版，二者不得混用。侧栏下级每层缩进12px；主菜单图标使用18px占位，下级及横向二级/下拉图形为16px；顶栏一级保留24px图标框和15px图形，侧栏分区标题也保留18px图标。图标与文字角色分开定义，不以缩小文字去迁就图标。

@@ -356,6 +356,7 @@ body > .el-notification {
   --app-nav-font-size: var(--app-font-size-body);
   --app-nav-line-height: var(--app-line-height-body);
   --app-nav-meta-font-size: var(--app-font-size-caption);
+  --app-nav-tab-font-size: var(--app-font-size-table);
   --app-nav-meta-line-height: var(--app-line-height-caption);
   --app-nav-weight-primary: var(--app-font-weight-section);
   --app-nav-weight-regular: var(--app-font-weight-regular);

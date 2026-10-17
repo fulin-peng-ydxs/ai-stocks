@@ -113,7 +113,7 @@ async function close(key: string) {
   max-width: 210px;
   --app-nav-entry-color: var(--chrome-text-muted);
   font-family: var(--app-nav-font-family);
-  font-size: var(--app-nav-meta-font-size);
+  font-size: var(--app-nav-tab-font-size);
   line-height: var(--app-nav-meta-line-height);
   font-weight: var(--app-nav-weight-regular);
 }

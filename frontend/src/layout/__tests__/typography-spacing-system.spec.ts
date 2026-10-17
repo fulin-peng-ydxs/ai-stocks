@@ -120,12 +120,17 @@ describe('字体与间距设计契约', () => {
       .toContain('font-weight: var(--app-nav-weight-active)')
     for (const [source, selector] of [
       [side, '.menu :deep(.menu-section > .el-menu-item-group__title)'],
-      [top, '.secondary-context'], [tabs, '.workspace-tab'],
+      [top, '.secondary-context'],
     ]) {
       expect(rule(source, selector), selector).toContain('font-size: var(--app-nav-meta-font-size)')
       expect(rule(source, selector), selector).toContain('font-family: var(--app-nav-font-family)')
       expect(rule(source, selector), selector).toContain('line-height: var(--app-nav-meta-line-height)')
     }
+    // 工作标签独立消费字号角色，避免调整标签时连带改变分区标题与辅助提示。
+    expect(css).toContain('--app-nav-tab-font-size: var(--app-font-size-table)')
+    expect(rule(tabs, '.workspace-tab')).toContain('font-size: var(--app-nav-tab-font-size)')
+    expect(rule(tabs, '.workspace-tab')).toContain('font-family: var(--app-nav-font-family)')
+    expect(rule(tabs, '.workspace-tab')).toContain('line-height: var(--app-nav-meta-line-height)')
   })
 
   it('横向导航共享尺寸和选中壳层，侧栏与下拉消费同一导航几何和叶子颜色', () => {
