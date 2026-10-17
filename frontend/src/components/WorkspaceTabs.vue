@@ -13,16 +13,29 @@ const router = useRouter()
 const { workspaceTabs } = useWorkspaceTabs()
 const rail = ref<HTMLElement>()
 
+function revealActiveTab() {
+  const container = rail.value
+  const activeTab = container?.querySelector<HTMLElement>('.workspace-tab.is-active')
+  if (!container || !activeTab || !container.clientWidth) return
+  // 同一定位容器内使用布局坐标，避免 CSS zoom 下 scrollIntoView 的偏差；仅滚动被裁掉的距离。
+  const left = activeTab.offsetLeft
+  const right = left + activeTab.offsetWidth
+  if (left < container.scrollLeft) container.scrollLeft = left
+  else if (right > container.scrollLeft + container.clientWidth) {
+    container.scrollLeft = right - container.clientWidth
+  }
+}
+
+watch(rail, (container, _, onCleanup) => {
+  if (!container || typeof ResizeObserver === 'undefined') return
+  const observer = new ResizeObserver(revealActiveTab)
+  observer.observe(container)
+  onCleanup(() => observer.disconnect())
+}, { flush: 'post' })
+
 watch(
   () => [route.path, workspaceTabs.value.length] as const,
-  () => {
-    void nextTick(() => {
-      const activeTab = rail.value?.querySelector<HTMLElement>('.workspace-tab.is-active')
-      if (typeof activeTab?.scrollIntoView === 'function') {
-        activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
-      }
-    })
-  },
+  () => { void nextTick(revealActiveTab) },
   { immediate: true, flush: 'post' },
 )
 
@@ -45,7 +58,7 @@ async function close(key: string) {
       <div
         v-for="tab in workspaceTabs"
         :key="tab.key"
-        class="workspace-tab"
+        class="workspace-tab app-nav-context-entry"
         :class="{ 'is-active': tab.key === route.path }"
         role="tab"
         :tabindex="tab.key === route.path ? 0 : -1"
@@ -72,7 +85,7 @@ async function close(key: string) {
 <style scoped>
 .workspace-tabs {
   flex: none;
-  height: 45px;
+  height: var(--app-nav-context-bar-height);
   min-width: 0;
   padding: 0 var(--app-space-5);
   border-bottom: 1px solid var(--chrome-border);
@@ -82,10 +95,11 @@ async function close(key: string) {
   gap: var(--app-space-3);
 }
 .workspace-tabs-rail {
+  position: relative;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: var(--app-space-control-gap);
+  gap: var(--app-nav-entry-gap);
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -93,42 +107,24 @@ async function close(key: string) {
 .workspace-tab {
   position: relative;
   flex: none;
-  height: 31px;
   max-width: 210px;
-  padding: 0 var(--app-space-2);
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--chrome-text-muted);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--app-space-control-gap);
+  --app-nav-entry-color: var(--chrome-text-muted);
   font-family: var(--app-nav-font-family);
   font-size: var(--app-nav-meta-font-size);
   line-height: var(--app-nav-meta-line-height);
   font-weight: var(--app-nav-weight-regular);
-  cursor: pointer;
-  transition: color .15s ease, background-color .15s ease, border-color .15s ease;
 }
 .workspace-tab::before {
   content: '';
-  width: 4px;
-  height: 4px;
+  width: var(--app-nav-location-dot-size);
+  height: var(--app-nav-location-dot-size);
   flex: none;
   border-radius: 50%;
   /* 保留圆点占位，只有当前项显示，避免切换标签时宽度跳动。 */
   background: transparent;
 }
-.workspace-tab:hover {
-  color: var(--chrome-text);
-  background: var(--chrome-bg-soft-hover);
-}
 .workspace-tab.is-active {
   font-weight: var(--app-nav-weight-active);
-  border-color: color-mix(in srgb, var(--shell-accent) 30%, var(--chrome-border));
-  background: var(--chrome-active-bg);
-  color: var(--chrome-text-strong);
-  box-shadow: inset 0 -2px var(--shell-accent);
 }
 .workspace-tab.is-active::before {
   background: var(--shell-accent);
@@ -140,13 +136,13 @@ async function close(key: string) {
   white-space: nowrap;
 }
 .workspace-tab-close {
-  width: 16px;
-  height: 16px;
+  width: var(--app-nav-icon-size-nested);
+  height: var(--app-nav-icon-size-nested);
   flex: none;
   padding: 0;
   border: 0;
   background: transparent;
-  border-radius: 5px;
+  border-radius: var(--app-nav-item-radius);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -162,6 +158,6 @@ async function close(key: string) {
 }
 .workspace-tab-close .el-icon { font-size: var(--app-font-size-micro); }
 @container app-viewport (max-width: 720px) {
-  .workspace-tabs { padding-inline: 10px; }
+  .workspace-tabs { padding-inline: var(--app-nav-entry-padding-x); }
 }
 </style>

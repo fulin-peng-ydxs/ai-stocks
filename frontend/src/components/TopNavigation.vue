@@ -110,7 +110,7 @@ function descendantLeaves(
           @command="chooseLeaf"
         >
           <button
-            class="secondary-entry"
+            class="secondary-entry app-nav-context-entry"
             :class="{ 'is-active': menuContainsPath(node, route.path) }"
             type="button"
           >
@@ -134,7 +134,7 @@ function descendantLeaves(
         </el-dropdown>
         <button
           v-else
-          class="secondary-entry"
+          class="secondary-entry app-nav-context-entry"
           :class="{ 'is-active': menuContainsPath(node, route.path) }"
           type="button"
           @click="chooseLeaf(node.index)"
@@ -159,16 +159,16 @@ function descendantLeaves(
 .top-navigation.is-primary {
   height: 100%;
   gap: var(--app-space-1);
-  padding: 0 12px 0 6px;
+  padding: 0 var(--app-space-3) 0 var(--app-space-control-gap);
 }
 .primary-entry {
   position: relative;
   align-self: stretch;
   min-width: 0;
-  padding: 2px 13px 0;
+  padding: var(--app-nav-indicator-size) var(--app-space-3) 0;
   border: 0;
   background: transparent;
-  color: var(--chrome-text-muted);
+  color: var(--chrome-text);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -182,11 +182,11 @@ function descendantLeaves(
   transition: color .16s ease, background-color .16s ease;
 }
 .primary-entry-icon {
-  width: 24px;
-  height: 24px;
-  flex: 0 0 24px;
+  width: var(--app-nav-icon-badge-size);
+  height: var(--app-nav-icon-badge-size);
+  flex: 0 0 var(--app-nav-icon-badge-size);
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--app-nav-item-radius);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -197,11 +197,11 @@ function descendantLeaves(
 .primary-entry::after {
   content: '';
   position: absolute;
-  left: 13px;
-  right: 13px;
+  left: var(--app-space-3);
+  right: var(--app-space-3);
   bottom: 0;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
+  height: var(--app-nav-indicator-size);
+  border-radius: var(--app-nav-indicator-size) var(--app-nav-indicator-size) 0 0;
   background: var(--shell-accent);
   opacity: 0;
   transform: scaleX(.35);
@@ -223,19 +223,24 @@ function descendantLeaves(
   opacity: 1;
   transform: scaleX(1);
 }
+.primary-entry:focus-visible {
+  outline: var(--app-nav-indicator-size) solid var(--shell-accent);
+  outline-offset: calc(-1 * var(--app-nav-indicator-size));
+}
 .top-navigation.is-secondary {
   flex: none;
-  height: 45px;
-  gap: var(--app-space-control-gap);
-  padding: 0 24px;
+  height: var(--app-nav-context-bar-height);
+  gap: var(--app-nav-entry-gap);
+  padding: 0 var(--app-space-5);
   border-bottom: 1px solid var(--chrome-border);
   background: var(--chrome-context-bar-bg);
   color: var(--chrome-text);
 }
 .secondary-context {
   flex: none;
-  margin-right: 8px;
+  margin-right: var(--app-space-2);
   color: var(--chrome-text-muted);
+  font-family: var(--app-nav-font-family);
   font-size: var(--app-nav-meta-font-size);
   line-height: var(--app-nav-meta-line-height);
   font-weight: var(--app-nav-weight-regular);
@@ -244,65 +249,52 @@ function descendantLeaves(
   content: '';
   display: inline-block;
   width: 1px;
-  height: 13px;
-  margin-left: 13px;
+  height: var(--app-nav-meta-font-size);
+  margin-left: var(--app-space-3);
   vertical-align: -2px;
   background: var(--chrome-border-strong);
 }
 .secondary-entry {
-  height: 30px;
-  padding: 0 11px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--chrome-text);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--app-space-control-gap);
   font-family: var(--app-nav-font-family);
   font-size: var(--app-nav-font-size);
   line-height: var(--app-nav-line-height);
-  font-weight: var(--app-nav-weight-regular);
+  font-weight: var(--app-nav-weight-primary);
   white-space: nowrap;
-  cursor: pointer;
-  transition: color .16s ease, border-color .16s ease, background-color .16s ease;
 }
 .secondary-entry .el-icon { font-size: var(--app-icon-size-xs); }
 .secondary-entry-icon {
-  width: 19px;
-  height: 19px;
-  flex: 0 0 19px;
+  width: var(--app-nav-icon-size);
+  height: var(--app-nav-icon-size);
+  flex: 0 0 var(--app-nav-icon-size);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--app-font-size-table) !important;
+  font-size: var(--app-nav-icon-size-nested) !important;
   color: var(--chrome-text-muted);
   overflow: hidden;
 }
-.secondary-entry:hover {
-  color: var(--chrome-text-strong);
-  background: var(--chrome-bg-soft-hover);
-}
 .secondary-entry.is-active {
   font-weight: var(--app-nav-weight-active);
-  border-color: color-mix(in srgb, var(--shell-accent) 34%, var(--chrome-border));
-  background: var(--chrome-active-bg);
-  color: var(--chrome-text-strong);
-  box-shadow: inset 0 -2px var(--shell-accent);
 }
 .secondary-entry.is-active .secondary-entry-icon {
   color: var(--chrome-menu-icon-active-color);
 }
 @container app-viewport (max-width: 960px) {
-  .top-navigation.is-primary { padding-inline: 2px; }
-  .primary-entry { padding-inline: 9px; }
-  .primary-entry::after { left: 9px; right: 9px; }
+  .top-navigation.is-primary { padding-inline: var(--app-nav-indicator-size); }
+  .primary-entry { padding-inline: var(--app-space-2); }
+  .primary-entry::after { left: var(--app-space-2); right: var(--app-space-2); }
   .secondary-context { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .primary-entry, .primary-entry-icon, .primary-entry::after { transition: none; }
 }
 </style>
 
 <style>
 .top-navigation-dropdown .el-dropdown-menu__item {
+  min-height: var(--app-nav-context-entry-height);
+  padding-inline: var(--app-nav-entry-padding-x);
+  border-radius: var(--app-nav-item-radius);
   font-family: var(--app-nav-font-family);
   font-size: var(--app-nav-font-size);
   line-height: var(--app-nav-line-height);
@@ -310,16 +302,16 @@ function descendantLeaves(
 }
 .top-navigation-dropdown .el-dropdown-menu__item.is-active {
   color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
+  background: var(--chrome-nav-leaf-active-bg);
   font-weight: var(--app-nav-weight-active);
 }
 .top-navigation-dropdown .dropdown-entry-icon {
-  width: 18px;
-  height: 18px;
-  margin-right: 7px;
+  width: var(--app-nav-icon-size);
+  height: var(--app-nav-icon-size);
+  margin-right: var(--app-nav-entry-gap);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--app-font-size-table);
+  font-size: var(--app-nav-icon-size-nested);
 }
 </style>

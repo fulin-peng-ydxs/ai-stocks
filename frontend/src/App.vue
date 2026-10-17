@@ -405,7 +405,7 @@ async function onLogout() {
   <el-container v-else class="app" :class="`is-${navigationMode}`" role="region" aria-label="研究工作台">
     <el-aside
       v-if="navigationMode === 'sidebar-tabs'"
-      width="208px"
+      width="var(--app-nav-sidebar-width)"
       class="aside"
       data-testid="app-sidebar-surface"
     >
@@ -821,8 +821,8 @@ async function onLogout() {
 }
 .app.is-sidebar-tabs {
   display: grid;
-  grid-template-columns: 208px minmax(0, 1fr);
-  grid-template-rows: 67px minmax(0, 1fr);
+  grid-template-columns: var(--app-nav-sidebar-width) minmax(0, 1fr);
+  grid-template-rows: var(--app-nav-topbar-height) minmax(0, 1fr);
   overflow: hidden;
 }
 .is-sidebar-tabs > .aside { grid-area: 1 / 1 / 3 / 2; }
@@ -881,7 +881,7 @@ async function onLogout() {
   background: var(--el-bg-color-page);
 }
 .topbar {
-  height: 67px;
+  height: var(--app-nav-topbar-height);
   padding: 0;
   background: var(--el-bg-color-page);
   border-bottom: 1px solid var(--chrome-border);
@@ -897,7 +897,7 @@ async function onLogout() {
   content: none;
 }
 .topbar-brand {
-  width: 208px;
+  width: var(--app-nav-sidebar-width);
   height: 100%;
   padding: 0 12px;
   display: flex;

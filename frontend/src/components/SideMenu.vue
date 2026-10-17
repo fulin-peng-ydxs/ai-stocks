@@ -115,9 +115,9 @@ function selectMenu(index: string) {
   border-right: none;
   background: transparent;
   padding: 0 var(--app-space-2) var(--app-space-2);
-  --el-menu-base-level-padding: 8px;
-  --el-menu-level-padding: 12px;
-  --side-menu-icon-size: 18px;
+  --el-menu-base-level-padding: var(--app-nav-entry-padding-x);
+  --el-menu-level-padding: var(--app-nav-indent);
+  --side-menu-icon-size: var(--app-nav-icon-size);
 }
 .menu :deep(.menu-section + .menu-section) {
   margin-top: var(--app-space-3);
@@ -143,9 +143,9 @@ function selectMenu(index: string) {
 }
 .menu :deep(.is-current-section .section-heading::after) {
   content: '';
-  flex: 0 0 var(--app-space-1);
-  width: var(--app-space-1);
-  height: var(--app-space-1);
+  flex: 0 0 var(--app-nav-location-dot-size);
+  width: var(--app-nav-location-dot-size);
+  height: var(--app-nav-location-dot-size);
   margin-left: auto;
   border-radius: 50%;
   background: var(--shell-accent);
@@ -158,9 +158,9 @@ function selectMenu(index: string) {
   min-width: 0;
 }
 .menu :deep(.menu-icon) {
-  width: 18px;
+  width: var(--app-nav-icon-size);
   height: var(--side-menu-icon-size);
-  flex: 0 0 18px;
+  flex: 0 0 var(--app-nav-icon-size);
   font-size: var(--side-menu-icon-size);
   display: inline-flex;
   align-items: center;
@@ -174,45 +174,47 @@ function selectMenu(index: string) {
 }
 .menu-hint {
   flex: 1;
-  padding: 24px 18px;
+  padding: var(--app-space-5) var(--app-space-4);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--app-space-2);
   color: var(--chrome-text-muted);
-  font-size: var(--app-font-size-table);
+  font-family: var(--app-nav-font-family);
+  font-size: var(--app-nav-meta-font-size);
+  line-height: var(--app-nav-meta-line-height);
 }
 .menu-hint.error {
   color: var(--el-color-danger);
 }
 .menu :deep(.el-menu-item.side-menu-node),
 .menu :deep(.side-menu-node > .el-sub-menu__title) {
-  --side-menu-icon-size: 16px;
-  height: 36px;
+  --side-menu-icon-size: var(--app-nav-icon-size-nested);
+  height: var(--app-nav-side-nested-height);
   line-height: var(--app-nav-line-height);
-  padding-left: calc(var(--app-space-2) + var(--side-menu-depth) * var(--app-space-3)) !important;
-  padding-right: var(--app-space-2);
-  margin-block: 2px;
+  padding-left: calc(var(--app-nav-entry-padding-x) + var(--side-menu-depth) * var(--app-nav-indent)) !important;
+  padding-right: var(--app-nav-entry-padding-x);
+  margin-block: calc(var(--app-space-1) / 2);
   min-width: 0;
   color: var(--chrome-text-muted);
   font-family: var(--app-nav-font-family);
   font-size: var(--app-nav-font-size);
   font-weight: var(--app-nav-weight-regular);
-  border-radius: var(--layout-control-radius);
+  border-radius: var(--app-nav-item-radius);
 }
 .menu :deep(.el-menu-item.is-root-menu-node),
 .menu :deep(.is-root-menu-node > .el-sub-menu__title) {
-  --side-menu-icon-size: 18px;
-  height: 44px;
+  --side-menu-icon-size: var(--app-nav-icon-size);
+  height: var(--app-nav-side-primary-height);
   color: var(--chrome-text);
   font-weight: var(--app-nav-weight-primary);
 }
 .menu :deep(.el-menu-item.side-menu-node.is-active) {
-  background: color-mix(in srgb, var(--el-color-primary) 12%, transparent);
+  background: var(--chrome-nav-leaf-active-bg);
   color: var(--el-color-primary);
   border-left: 0;
   font-weight: var(--app-nav-weight-active);
-  box-shadow: inset 2px 0 var(--el-color-primary);
+  box-shadow: inset var(--app-nav-indicator-size) 0 var(--shell-accent);
 }
 .menu :deep(.el-sub-menu.is-active > .el-sub-menu__title) {
   color: var(--chrome-text-strong);
@@ -222,7 +224,7 @@ function selectMenu(index: string) {
   background: var(--chrome-bg-soft);
 }
 .menu :deep(.el-menu-item.is-active:hover) {
-  background: color-mix(in srgb, var(--el-color-primary) 16%, transparent);
+  background: var(--chrome-nav-leaf-active-hover-bg);
 }
 .menu :deep(.el-sub-menu__title:hover) {
   background: var(--chrome-bg-soft);
@@ -234,10 +236,10 @@ function selectMenu(index: string) {
 .menu :deep(.el-sub-menu__icon-arrow) {
   position: static;
   flex: none;
-  width: 12px;
+  width: var(--app-nav-meta-font-size);
   margin: 0 0 0 var(--app-space-2);
   color: var(--chrome-text-muted);
-  font-size: var(--app-font-size-caption);
+  font-size: var(--app-nav-meta-font-size);
 }
 .menu :deep(.menu-icon > .el-icon) {
   width: 100%;
@@ -247,7 +249,7 @@ function selectMenu(index: string) {
 }
 .menu :deep(.el-menu-item:focus-visible),
 .menu :deep(.el-sub-menu__title:focus-visible) {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: -2px;
+  outline: var(--app-nav-indicator-size) solid var(--shell-accent);
+  outline-offset: calc(-1 * var(--app-nav-indicator-size));
 }
 </style>

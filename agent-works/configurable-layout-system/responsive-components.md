@@ -77,7 +77,7 @@
 | `frontend/src/components/SectorAnalysisDefaultFields.vue` | 无自身 CSS 查询 | 委托 MarketBenchmarkSelect、PageSettingItem、PageSegmented、PageToggleRow。 | ComponentAutoSettings |
 | `frontend/src/components/SectorCompareChart.vue` | 无自身 CSS 查询 | 委托 AppStateBlock。 | SectorsView |
 | `frontend/src/components/SettingsGroup.vue` | 无自身 CSS 查询 | 手动递归折叠，父级收起只隐藏子树，不重置下级展开状态。 | App、ChartOperationGroup、ComponentAutoSettings、PageSettingSection、PageSettingsDrawer、LayoutSettingsSection |
-| `frontend/src/components/SideMenu.vue` | 无自身 CSS 查询 | 一级为常驻分区标题，与二级文字左边界一致；当前分区标题和父菜单随路由同步使用中性高对比文字高亮，当前标题右侧圆点使用导航强调色且不显示下划线、图标使用导航激活色，选中叶子保留主色，详情继承所属分区；主入口44px/三级起36px，高度不足由App侧栏内滚承接。页面路径或授权树变化只补开当前下级链并最小滚动露出叶子，保留其他展开状态；同页查询变化不干预收展或滚动。加载/空授权/失败分别呈现。 | App |
+| `frontend/src/components/SideMenu.vue` | 无自身 CSS 查询 | 一级为常驻分区标题，与二级文字左边界一致；当前分区标题和父菜单随路由同步使用中性高对比文字高亮，当前标题右侧圆点使用导航强调色且不显示下划线、图标使用导航激活色，选中叶子保留主色，详情继承所属分区；主入口44px/三级起36px，尺寸、图标和圆角消费共享导航token，高度不足由App侧栏内滚承接。页面路径或授权树变化只补开当前下级链并最小滚动露出叶子，保留其他展开状态；同页查询变化不干预收展或滚动。加载/空授权/失败分别呈现。 | App |
 | `frontend/src/components/SideMenuItem.vue` | 无自身 CSS 查询 | 分区内部展示深度从0开始，三级起每层缩进12px；图标统一18px占位、下级图形16px，末尾箭头固定，长名称省略并交给全局溢出提示；收展及选中不重置页面。 | SideMenu |
 | `frontend/src/components/SourceTag.vue` | 无自身 CSS 查询 | 来源浮层min180/max280、字段网格44+0；受统一浮层边界约束。 | ComponentAutoSettings、LayoutSettingsSection |
 | `frontend/src/components/StockAnalysisDefaultFields.vue` | 无自身 CSS 查询 | 委托 MarketBenchmarkSelect、PageSettingItem、PageSegmented、PageToggleRow。 | ComponentAutoSettings |
@@ -92,10 +92,10 @@
 | `frontend/src/components/SubScoreBars.vue` | 无自身 CSS 查询 | 语义微图min132，消费表格内部横滚承担最低宽。 | 按路由/动态渲染或内部消费；无直接Vue import匹配 |
 | `frontend/src/components/SubScoreChips.vue` | 无自身 CSS 查询 | 评分项自然换行，单项长文本省略并保留提示。 | RankedStockResultTable |
 | `frontend/src/components/SystemBuiltinTag.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | AssetVisibilityTag、ConfigView、LayoutPresetsView、MenuResourceView、RoleManageView、TenantManageView |
-| `frontend/src/components/TopNavigation.vue` | `@container app-viewport (max-width: 960px)` | 窄宽压缩导航间距/隐藏辅助上下文；二级栏共用中性底色、不混入预设强调色，选中下划线及导航动作保留。 | App |
+| `frontend/src/components/TopNavigation.vue` | `@container app-viewport (max-width: 960px)` | 窄宽压缩导航间距/隐藏辅助上下文；一级与二级入口共用侧栏主入口的14px/600字阶及普通文字色，下拉叶子为14px/400；二级栏共用中性底色、不混入预设强调色；二级入口与工作标签复用`.app-nav-context-entry`的尺寸、圆角及选中边框/底线，下拉消费共享导航字阶、几何和叶子背景，导航动作保留。 | App |
 | `frontend/src/components/TradeDatePicker.vue` | 无自身 CSS 查询 | 委托 AppDatePicker。 | StockGroupBatchActions、BoardTaskScopeFields、ResultMaintenanceTaskFields、StockIngestScopeFields、BacktestView、BoardView、ConfigView、ScreenView、SectorDetailView、SectorsView、StocksView、TrainingView、LimitLadderFilters、TradeCheckinForm、TradeDisciplineHistory |
 | `frontend/src/components/WorkspaceRouteView.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | App |
-| `frontend/src/components/WorkspaceTabs.vue` | `@container app-viewport (max-width: 720px)` | 窄宽压缩间距，标签条内部横向滚动，当前页与关闭入口可达；共用中性栏底色，当前项保留边框/底线和无光晕蓝点，普通项圆点透明占位，8px内距/6px间距保证切换宽度稳定。 | App |
+| `frontend/src/components/WorkspaceTabs.vue` | `@container app-viewport (max-width: 720px)` | 窄宽压缩间距，标签条内部横向滚动，路由切换与容器缩窄按布局坐标最小滚动露出当前项，销毁时释放尺寸监听，当前页与关闭入口可达；共用中性栏底色，与双顶栏二级入口复用`.app-nav-context-entry`的尺寸、圆角及选中边框/底线；当前项保留无光晕强调色圆点，普通项透明占位，切换宽度稳定。 | App |
 | `frontend/src/components/asset-search/AssetProfileSelect.vue` | 无自身 CSS 查询 | 选择器0+auto网格，搜索交给AssetSearchDrawer。 | BacktestView、BoardView、ConfigView、ScreenView、StockDetailView |
 | `frontend/src/components/asset-search/AssetSearchDrawer.vue` | 无自身 CSS 查询 | 共享抽屉满高、搜索换行、列表内部滚动、统一分页，查询值保留。 | AssetProfileSelect、BacktestView |
 | `frontend/src/components/config/ConfigGroupForm.vue` | `@container app-viewport (max-width: 720px)` | 窄宽配置网格单列，控件占行宽；不清除输入。 | ConfigView |

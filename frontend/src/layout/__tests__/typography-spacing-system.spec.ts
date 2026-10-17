@@ -56,8 +56,12 @@ describe('字体与间距设计契约', () => {
       expect(rule(source, selector), selector).toContain('line-height: var(--app-nav-line-height)')
       expect(rule(source, selector), selector).toContain('font-family: var(--app-nav-font-family)')
     }
-    expect(rule(top, '.primary-entry')).toContain('font-weight: var(--app-nav-weight-primary)')
-    expect(rule(top, '.secondary-entry')).toContain('font-weight: var(--app-nav-weight-regular)')
+    for (const selector of ['.primary-entry', '.secondary-entry']) {
+      expect(rule(top, selector), selector).toContain('font-weight: var(--app-nav-weight-primary)')
+    }
+    expect(rule(top, '.primary-entry')).toContain('color: var(--chrome-text)')
+    expect(rule(top, '.top-navigation-dropdown .el-dropdown-menu__item'))
+      .toContain('font-weight: var(--app-nav-weight-regular)')
     expect(rule(top, '.secondary-entry.is-active')).toContain('font-weight: var(--app-nav-weight-active)')
     expect(rule(side, '.menu :deep(.is-root-menu-node > .el-sub-menu__title)'))
       .toContain('font-weight: var(--app-nav-weight-primary)')
@@ -68,7 +72,39 @@ describe('字体与间距设计契约', () => {
       [top, '.secondary-context'], [tabs, '.workspace-tab'],
     ]) {
       expect(rule(source, selector), selector).toContain('font-size: var(--app-nav-meta-font-size)')
+      expect(rule(source, selector), selector).toContain('font-family: var(--app-nav-font-family)')
+      expect(rule(source, selector), selector).toContain('line-height: var(--app-nav-meta-line-height)')
     }
+  })
+
+  it('横向导航共享尺寸和选中壳层，侧栏与下拉消费同一导航几何和叶子颜色', () => {
+    const css = read(join(SRC_DIR, 'styles/global.css'))
+    const side = read(join(SRC_DIR, 'components/SideMenu.vue'))
+    const top = read(join(SRC_DIR, 'components/TopNavigation.vue'))
+    const tabs = read(join(SRC_DIR, 'components/WorkspaceTabs.vue'))
+    const app = read(join(SRC_DIR, 'App.vue'))
+    // 守卫共享消费边界：防止某个入口重新复制局部选中配方而分叉。
+    expect(top.match(/class="secondary-entry app-nav-context-entry"/g)).toHaveLength(2)
+    expect(tabs).toContain('class="workspace-tab app-nav-context-entry"')
+    expect(css).toMatch(/\.app-nav-context-entry\s*\{[^}]*height: var\(--app-nav-context-entry-height\)/)
+    expect(css).toMatch(/\.app-nav-context-entry\.is-active\s*\{[^}]*border-color: var\(--chrome-nav-entry-active-border\)[^}]*box-shadow:/)
+    expect(css).toContain('--app-nav-context-entry-height: var(--app-control-height-md)')
+    for (const source of [top, tabs, side]) {
+      expect(source).not.toContain('border-radius: 8px')
+    }
+    for (const source of [top, tabs]) {
+      expect(source).toContain('height: var(--app-nav-context-bar-height)')
+      expect(source).not.toMatch(/border-color: color-mix\([^;]+var\(--shell-accent\)/)
+    }
+    for (const source of [side, top]) {
+      expect(source).toContain('background: var(--chrome-nav-leaf-active-bg)')
+      expect(source).toContain('var(--app-nav-icon-size)')
+      expect(source).toContain('var(--app-nav-icon-size-nested)')
+    }
+    expect(side).toContain('height: var(--app-nav-side-primary-height)')
+    expect(side).toContain('height: var(--app-nav-side-nested-height)')
+    expect(app).toContain('grid-template-columns: var(--app-nav-sidebar-width)')
+    expect(app).toContain('grid-template-rows: var(--app-nav-topbar-height)')
   })
 
   it('页面设置抽屉以稳定字体角色和结构线表达层级', () => {

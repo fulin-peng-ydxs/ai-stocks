@@ -139,6 +139,38 @@ body > .el-notification {
   line-height: var(--app-line-height-table);
 }
 
+/* 工作标签与双顶栏二级入口共用状态壳层，文字角色由各自的导航字阶决定。 */
+.app-nav-context-entry {
+  height: var(--app-nav-context-entry-height);
+  padding: 0 var(--app-nav-entry-padding-x);
+  border: 1px solid transparent;
+  border-radius: var(--app-nav-item-radius);
+  background: transparent;
+  color: var(--app-nav-entry-color, var(--chrome-text));
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-nav-entry-gap);
+  cursor: pointer;
+  transition: color .15s ease, background-color .15s ease, border-color .15s ease;
+}
+.app-nav-context-entry:hover {
+  color: var(--chrome-text-strong);
+  background: var(--chrome-bg-soft-hover);
+}
+.app-nav-context-entry.is-active {
+  border-color: var(--chrome-nav-entry-active-border);
+  background: var(--chrome-active-bg);
+  color: var(--chrome-text-strong);
+  box-shadow: inset 0 calc(-1 * var(--app-nav-indicator-size)) var(--shell-accent);
+}
+.app-nav-context-entry:focus-visible {
+  outline: var(--app-nav-indicator-size) solid var(--shell-accent);
+  outline-offset: calc(-1 * var(--app-nav-indicator-size));
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-nav-context-entry { transition: none; }
+}
+
 :root {
   --app-display-scale: 1;
   --app-font-family-base: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable',
@@ -202,6 +234,22 @@ body > .el-notification {
   --app-space-6: 32px;
   --stock-quote-section-gap: var(--app-space-3);
   --app-space-control-gap: 6px;
+  /* 应用导航几何：横向入口共用壳层，侧栏按主入口/下级角色分档，不受页面密度影响。 */
+  --app-nav-context-bar-height: 45px;
+  --app-nav-sidebar-width: 208px;
+  --app-nav-topbar-height: 67px;
+  --app-nav-context-entry-height: var(--app-control-height-md);
+  --app-nav-entry-padding-x: var(--app-space-2);
+  --app-nav-entry-gap: var(--app-space-control-gap);
+  --app-nav-item-radius: var(--layout-control-radius);
+  --app-nav-side-primary-height: 44px;
+  --app-nav-side-nested-height: var(--app-control-height-lg);
+  --app-nav-indent: var(--app-space-3);
+  --app-nav-icon-size: 18px;
+  --app-nav-icon-size-nested: 16px;
+  --app-nav-icon-badge-size: var(--app-control-height-xs);
+  --app-nav-indicator-size: 2px;
+  --app-nav-location-dot-size: var(--app-space-1);
   /* 页面密度语义变量：默认标准档；LayoutHost 在页面根按 compact/standard/comfortable 覆盖。 */
   --app-density-page-gap: 12px;
   --app-density-section-gap: 12px;
@@ -252,6 +300,9 @@ body > .el-notification {
   --chrome-menu-icon-active-color: #409eff;
   --shell-accent: #409eff;
   --chrome-context-bar-bg: var(--chrome-bg);
+  --chrome-nav-entry-active-border: color-mix(in srgb, var(--shell-accent) 30%, var(--chrome-border));
+  --chrome-nav-leaf-active-bg: color-mix(in srgb, var(--shell-accent) 12%, transparent);
+  --chrome-nav-leaf-active-hover-bg: color-mix(in srgb, var(--shell-accent) 16%, transparent);
   --shell-accent-strong: #dc2626;
   --shell-accent-soft: rgba(64, 158, 255, 0.12);
   --shell-accent-faint: rgba(64, 158, 255, 0.07);
