@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { keyboardRangeValue } from '@/utils/keyboard'
 import {
   computed,
   inject,
@@ -1044,11 +1045,16 @@ function startDrag(event: PointerEvent, separatorIndex: number): void {
 }
 
 function onSeparatorKeydown(event: KeyboardEvent, separatorIndex: number): void {
-  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
-  event.preventDefault()
+  const current = ratios.value[separatorIndex]
+  const pair = current + ratios.value[separatorIndex + 1]
+  const minimum = minimumRatios()
+  const value = keyboardRangeValue(event, current, {
+    axis: 'vertical', step: KEYBOARD_RATIO_STEP,
+    min: minimum[separatorIndex], max: pair - minimum[separatorIndex + 1],
+  })
+  if (value === undefined) return
   liveRatios.value = [...ratios.value]
-  const delta = event.key === 'ArrowUp' ? -KEYBOARD_RATIO_STEP : KEYBOARD_RATIO_STEP
-  const next = applyRatioChange(separatorIndex, delta)
+  const next = applyRatioChange(separatorIndex, value - current)
   emit('ratioCommit', [...next])
 }
 
@@ -1057,14 +1063,14 @@ function separatorValue(index: number): number {
 }
 
 function separatorMin(index: number): number {
-  const value = minimumRatios().slice(0, index + 1).reduce((sum, ratio) => sum + ratio, 0)
+  const value = ratios.value.slice(0, index).reduce((sum, ratio) => sum + ratio, 0)
+    + minimumRatios()[index]
   return Math.ceil(value * 100 - Number.EPSILON * 100)
 }
 
 function separatorMax(index: number): number {
-  const value = 1 - minimumRatios()
-    .slice(index + 1)
-    .reduce((sum, ratio) => sum + ratio, 0)
+  const value = ratios.value.slice(0, index + 2).reduce((sum, ratio) => sum + ratio, 0)
+    - minimumRatios()[index + 1]
   return Math.max(
     separatorMin(index),
     Math.floor(value * 100 + 1e-8),

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import { ElCollapseTransition } from 'element-plus'
 /**
  * 通用可折叠分组（设置抽屉的固有结构单元）。层级由卡片、缩进和结构线表达，
@@ -83,8 +84,7 @@ const childToggleLabel = computed(() => (
       :role="foldable() ? 'button' : undefined"
       :tabindex="foldable() ? 0 : undefined"
       @click="toggle"
-      @keydown.enter.prevent="toggle"
-      @keydown.space.prevent="toggle"
+      v-keyboard-activate
     >
       <span v-if="foldable()" class="sg-caret" :class="{ open: openState }" aria-hidden="true">▸</span>
       <span v-if="title" class="sg-title">{{ title }}</span>

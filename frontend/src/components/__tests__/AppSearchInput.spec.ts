@@ -36,7 +36,7 @@ describe('AppSearchInput', () => {
     const wrapper = mountSearch()
     const input = wrapper.find('input')
     await input.setValue('abc')
-    await input.trigger('keyup', { key: 'Enter' })
+    await input.trigger('keydown', { key: 'Enter' })
     expect(wrapper.emitted('search')).toHaveLength(1)
     // flush 已取消防抖队列，因此不会再触发
     vi.advanceTimersByTime(300)
@@ -50,11 +50,11 @@ describe('AppSearchInput', () => {
     vi.advanceTimersByTime(300)
     expect(wrapper.emitted('search')).toHaveLength(1)
 
-    await input.trigger('keyup', { key: 'Enter' })
+    await input.trigger('keydown', { key: 'Enter' })
     expect(wrapper.emitted('search')).toHaveLength(1)
 
     vi.advanceTimersByTime(301)
-    await input.trigger('keyup', { key: 'Enter' })
+    await input.trigger('keydown', { key: 'Enter' })
     expect(wrapper.emitted('search')).toHaveLength(2)
   })
 

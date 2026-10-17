@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { keyboardRangeValue } from '@/utils/keyboard'
 import {
   computed,
   inject,
@@ -310,13 +311,11 @@ function startDrag(event: PointerEvent): void {
 }
 
 function onSeparatorKeydown(event: KeyboardEvent): void {
-  let next: number | undefined
-  if (event.key === 'ArrowLeft') next = primaryWidth.value - KEYBOARD_STEP
-  if (event.key === 'ArrowRight') next = primaryWidth.value + KEYBOARD_STEP
-  if (event.key === 'Home') next = currentMinWidth.value
-  if (event.key === 'End') next = currentMaxWidth.value
+  const next = keyboardRangeValue(event, primaryWidth.value, {
+    axis: 'horizontal', step: KEYBOARD_STEP,
+    min: currentMinWidth.value, max: currentMaxWidth.value,
+  })
   if (next === undefined) return
-  event.preventDefault()
   sessionAdjusted.value = true
   sessionAdjustedAtWidth.value = workspaceWidth.value
   primaryWidth.value = clampSessionWidth(next)

@@ -161,7 +161,7 @@ describe('AuditLogView', () => {
     const wrapper = await mountView()
     const actorInput = wrapper.find('input[placeholder="处理人"]')
     await actorInput.setValue('admin')
-    await actorInput.trigger('keyup', { key: 'Enter' })
+    await actorInput.trigger('keydown', { key: 'Enter' })
     await flushPromises()
     expect(auditApi.listAuditLogs).toHaveBeenLastCalledWith(expect.objectContaining({ actor_keyword: 'admin' }))
     expect(auditApi.getAuditSummary).toHaveBeenLastCalledWith(expect.objectContaining({ actor_keyword: 'admin' }))

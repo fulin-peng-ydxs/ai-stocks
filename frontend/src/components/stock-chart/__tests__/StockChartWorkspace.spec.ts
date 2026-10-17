@@ -901,6 +901,22 @@ describe('StockChartWorkspace', () => {
     expect(committed).toEqual(draft)
   })
 
+  it('Home/End 到相邻分区允许边界，其他分区不变；组合键不调整', async () => {
+    const wrapper = await mountWorkspace()
+    const separator = wrapper.find('[role="separator"]')
+    await separator.trigger('keydown', { key: 'End', ctrlKey: true })
+    expect(wrapper.emitted('ratioCommit')).toBeUndefined()
+    await separator.trigger('keydown', { key: 'Home' })
+    const home = wrapper.emitted('ratioCommit')?.at(-1)?.[0] as number[]
+    expect(home[2]).toBeCloseTo(0.2)
+    expect(Math.abs(home[0] * 100 - Number(separator.attributes('aria-valuemin')))).toBeLessThanOrEqual(1)
+    await separator.trigger('keydown', { key: 'End' })
+    const end = wrapper.emitted('ratioCommit')?.at(-1)?.[0] as number[]
+    expect(end[2]).toBeCloseTo(0.2)
+    expect(Math.abs(end[0] * 100 - Number(separator.attributes('aria-valuemax')))).toBeLessThanOrEqual(1)
+    wrapper.unmount()
+  })
+
   it('成长型紧凑外壳按实际高度释放拖动空间，仅在真实最低高度锁定', async () => {
     mockClientHeight = 900
     const wrapper = await mountWorkspace({ minHeight: 384 })

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { submitOnEnter } from '@/utils/keyboard'
 import { computed, watch } from 'vue'
 import { useDebouncedQuery } from '@/composables/useDebouncedQuery'
 
@@ -57,7 +58,7 @@ function scheduleQuery(next: string): void {
     :size="size"
     :maxlength="maxlength"
     @input="scheduleQuery"
-    @keyup.enter="query.flush"
+    @keydown="submitOnEnter($event, query.flush)"
     @clear="query.flush"
   >
     <template #prefix>

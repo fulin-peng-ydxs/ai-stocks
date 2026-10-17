@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -1311,8 +1312,7 @@ const menuPageTitle = useMenuPageTitle()
                   tabindex="0"
                   :aria-label="`查看分组：${g.name}`"
                   @click.stop="switchGroup(g.id)"
-                  @keydown.enter.stop.prevent="switchGroup(g.id)"
-                  @keydown.space.stop.prevent="switchGroup(g.id)"
+                  v-keyboard-activate
                 >
                   {{ g.name }}
                 </el-tag>

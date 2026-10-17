@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppHoverInfo from '@/components/AppHoverInfo'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -843,7 +844,7 @@ const menuPageTitle = useMenuPageTitle()
               <span tabindex="0"
                 class="ver-badge"
                 data-testid="screen-profile-version"
-                role="button" @click="openVersions" @keydown.enter.prevent="openVersions" @keydown.space.prevent="openVersions"
+                role="button" @click="openVersions" v-keyboard-activate
               >v{{ curVersion }}</span>
             </AppHoverInfo>
             <AssetVisibilityActions

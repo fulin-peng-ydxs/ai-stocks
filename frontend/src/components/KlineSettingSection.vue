@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { submitOnEnter } from '@/utils/keyboard'
 // 抽屉内的「K 线范围」配置：编辑全局快捷范围选项与默认范围，所有看 K 线的页面同步生效。
 import { ref, watch } from 'vue'
 import PageSettingItem from '@/components/PageSettingItem.vue'
@@ -27,7 +28,7 @@ function commitPeriods() {
 <template>
   <div class="kline-setting-fields" data-testid="kline-setting-section">
     <PageSettingItem label="快捷范围" hint="按交易日填写，多个范围用逗号分隔，如 15,30,60。">
-      <el-input v-model="periodsStr" placeholder="15,30,60" @blur="commitPeriods" @keyup.enter="commitPeriods" />
+      <el-input v-model="periodsStr" placeholder="15,30,60" @blur="commitPeriods" @keydown="submitOnEnter($event, commitPeriods)" />
     </PageSettingItem>
     <PageSettingItem label="提供「全部」选项" layout="inline">
       <el-switch v-model="prefs.includeAll" />

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import { ref, watch } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 
@@ -56,8 +57,7 @@ function toggle() {
       :tabindex="foldable() ? 0 : undefined"
       :aria-expanded="foldable() ? isOpen() : undefined"
       @click="toggle"
-      @keydown.enter.prevent="toggle"
-      @keydown.space.prevent="toggle"
+      v-keyboard-activate
     >
       <el-icon v-if="foldable()" class="config-panel-section__caret">
         <ArrowDown />

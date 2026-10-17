@@ -178,3 +178,7 @@
 | `frontend/src/views/trade-discipline/components/TradeOperationEditor.vue` | `@container app-viewport (max-width: 1180px)`<br>`@container app-viewport (max-width: 760px)` | 中窄股票/时间占整行，规则/金额半行；更窄全部单列，输入保留。 | TradeCheckinForm |
 | `frontend/src/views/trade-discipline/components/TradeRuleEditor.vue` | `@container app-viewport (max-width: 1100px)`<br>`@container app-viewport (max-width: 760px)` | 规则始终单列；基础字段与资金汇总复用表单标签、顶部对齐及同档控件高度，辅助说明不改变同行对齐；窄宽状态/基础单列并开放主体滚动，更窄头部/表单/footer换行，条件输入保留。 | TradeDisciplineView |
 | `frontend/src/views/trade-discipline/components/ViolationReasonCombobox.vue` | 无自身 CSS 查询 | 委托 BuiltinOptionRow。 | TradeCheckinForm |
+
+### 共享键盘行为
+
+`WorkspaceTabs` 的方向键焦点移动会按现有布局坐标补滚被裁掉的标签；折叠后标签不进入焦点序列。`AppSplitWorkspace` 与 `StockChartWorkspace` 的方向键及 Home/End 调整遵守当前尺寸下的边界，与拖拽共用比例处理。其余键盘接入不改变几何或断点；完整按键和作用域规则见 [DESIGN.md](../../DESIGN.md)「键盘能力与适用边界」。

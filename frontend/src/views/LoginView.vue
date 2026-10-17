@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { submitOnEnter } from '@/utils/keyboard'
+import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppHoverInfo from '@/components/AppHoverInfo'
 // 登录 / 注册页：金融科技视觉与明暗双主题，认证流程由公开配置动态控制。
 // 全屏独立壳（App.vue 按 meta.fullscreen 脱离主框架单独渲染），不套用布局 archetype、不走 LayoutHost。
@@ -400,7 +402,7 @@ function onSubmit() {
               <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
             </svg>
             <input v-model="form.account" name="account" type="text"
-                   autocomplete="username" @input="errors.account = ''; errors.form = ''" @keyup.enter="onSubmit" />
+                   autocomplete="username" @input="errors.account = ''; errors.form = ''" @keydown="submitOnEnter($event, onSubmit)" />
           </label>
           <p v-if="errors.account" class="field-error">{{ errors.account }}</p>
         </div>
@@ -413,7 +415,7 @@ function onSubmit() {
             </svg>
             <input v-model="form.password" name="password" :type="showPwd ? 'text' : 'password'"
                    :autocomplete="mode === 'register' ? 'new-password' : 'current-password'"
-                   @input="errors.password = ''; errors.form = ''" @keyup.enter="onSubmit" />
+                   @input="errors.password = ''; errors.form = ''" @keydown="submitOnEnter($event, onSubmit)" />
             <svg class="eye" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                  stroke-width="2" @click="showPwd = !showPwd">
               <path v-if="showPwd" d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z" />
@@ -431,7 +433,7 @@ function onSubmit() {
               <rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
             </svg>
             <input v-model="form.confirm" name="confirm" type="password" autocomplete="new-password"
-                   @input="errors.confirm = ''" @keyup.enter="onSubmit" />
+                   @input="errors.confirm = ''" @keydown="submitOnEnter($event, onSubmit)" />
           </label>
           <p v-if="errors.confirm" class="field-error">{{ errors.confirm }}</p>
         </div>
@@ -443,7 +445,7 @@ function onSubmit() {
               <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
             </svg>
             <input v-model="form.email" name="email" type="email" autocomplete="email"
-                   @input="errors.email = ''" @keyup.enter="onSubmit" />
+                   @input="errors.email = ''" @keydown="submitOnEnter($event, onSubmit)" />
           </label>
           <p v-if="errors.email" class="field-error">{{ errors.email }}</p>
         </div>
@@ -455,11 +457,11 @@ function onSubmit() {
               <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
             </svg>
             <input v-model="form.emailCode" name="emailCode" type="text" autocomplete="one-time-code"
-                   @input="errors.emailCode = ''" @keyup.enter="onSubmit" />
+                   @input="errors.emailCode = ''" @keydown="submitOnEnter($event, onSubmit)" />
             <span class="send app-interaction-link" :class="{ disabled: emailCountdown > 0 || emailSending }"
                   role="button" :tabindex="emailCountdown > 0 || emailSending ? -1 : 0"
                   :aria-disabled="emailCountdown > 0 || emailSending" :aria-busy="emailSending"
-                  @keydown.enter.prevent="onSendEmailCode" @keydown.space.prevent="onSendEmailCode"
+                  v-keyboard-activate
                   @click="onSendEmailCode">
               <i v-if="emailSending" class="send-spinner" aria-hidden="true" />
               {{ emailSending ? '发送中…' : emailCountdown > 0 ? `${emailCountdown}s 后重发` : '发送验证码' }}
@@ -478,10 +480,10 @@ function onSubmit() {
                   <path d="M12 3v18M3 12h18" />
                 </svg>
                 <input v-model="form.captchaCode" name="captchaCode" type="text"
-                       @input="errors.captcha = ''" @keyup.enter="onSubmit" />
+                       @input="errors.captcha = ''" @keydown="submitOnEnter($event, onSubmit)" />
               </label>
               <AppHoverInfo content="点击刷新">
-                <div tabindex="0" class="login-captcha-img" v-html="captchaSvg" role="button" @click="refreshCaptcha" @keydown.enter.prevent="refreshCaptcha" @keydown.space.prevent="refreshCaptcha" />
+                <div tabindex="0" class="login-captcha-img" v-html="captchaSvg" role="button" @click="refreshCaptcha" v-keyboard-activate />
               </AppHoverInfo>
             </div>
             <p v-if="errors.captcha" class="field-error">{{ errors.captcha }}</p>

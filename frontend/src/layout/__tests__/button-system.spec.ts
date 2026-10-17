@@ -41,11 +41,11 @@ describe('全站按钮与图标操作契约', () => {
     const violations: string[] = []
     for (const file of vueFiles(SRC_DIR)) {
       const source = read(file)
-      for (const match of source.matchAll(/<(?:div|span|li|el-tag)\b(?:"[^"]*"|'[^']*'|[^'">])*>/g)) {
+      for (const match of source.matchAll(/<(?:div|span|li|b|el-tag)\b(?:"[^"]*"|'[^']*'|[^'">])*>/g)) {
         const tag = match[0]
         // 仅检查真实动作；@click.stop 等拦截冒泡的容器不承担点击命令。
         if (!/@click(?:\.[\w-]+)*="[^"\s][^"]*"/.test(tag)) continue
-        if (!/tabindex=/.test(tag) || !/@keydown\.enter/.test(tag) || !/@keydown\.space/.test(tag)) {
+        if (!/tabindex=/.test(tag) || !/v-keyboard-activate/.test(tag)) {
           violations.push(`${relative(SRC_DIR, file)}:${lineOf(source, match.index ?? 0)}`)
         }
       }

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { vKeyboardActivate } from '@/directives/keyboardActivate'
+import { acceptsKeyboardEvent } from '@/utils/keyboard'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppCloseButton from './AppCloseButton.vue'
@@ -25,13 +27,19 @@ const tabIcons = computed(() => new Map(workspaceTabs.value.map((tab) => [
   tab.key, findMenuLeaf(auth.menus, tab.key)?.icon || 'Document',
 ])))
 const rail = ref<HTMLElement>()
+const focusedKey = ref(route.path)
+const tabStop = computed(() => workspaceTabs.value.some(tab => tab.key === focusedKey.value)
+  ? focusedKey.value : workspaceTabs.value.find(tab => tab.key === route.path)?.key ?? workspaceTabs.value[0]?.key)
+watch(() => route.path, path => { focusedKey.value = path })
 const closingKeys = ref(new Set<string>())
 const clearing = ref(false)
 watch(collapsed, () => { void nextTick(revealActiveTab) })
 
 function revealActiveTab() {
   const container = rail.value
-  const activeTab = container?.querySelector<HTMLElement>('.workspace-tab.is-active')
+  const activeTab = container?.contains(document.activeElement) && document.activeElement?.matches('.workspace-tab')
+    ? document.activeElement as HTMLElement
+    : container?.querySelector<HTMLElement>('.workspace-tab.is-active')
   if (!container || !activeTab || !container.clientWidth) return
   // 同一定位容器内使用布局坐标，避免 CSS zoom 下 scrollIntoView 的偏差；仅滚动被裁掉的距离。
   const left = activeTab.offsetLeft
@@ -57,6 +65,23 @@ watch(
 
 function activate(path: string) {
   if (path !== route.fullPath) void router.push(path)
+}
+
+function onTabKeydown(event: KeyboardEvent, key: string) {
+  if (event.target !== event.currentTarget || !acceptsKeyboardEvent(event, true)) return
+  const tabs = workspaceTabs.value
+  const index = tabs.findIndex(tab => tab.key === key)
+  let next: number
+  if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length
+  else if (event.key === 'ArrowRight') next = (index + 1) % tabs.length
+  else if (event.key === 'Home') next = 0
+  else if (event.key === 'End') next = tabs.length - 1
+  else return
+  event.preventDefault()
+  focusedKey.value = tabs[next].key
+  // 手动激活：方向键只移动焦点；Enter/空格复用 click，避免浏览标签即触发页面请求。
+  rail.value?.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus()
+  revealActiveTab()
 }
 
 async function close(key: string) {
@@ -115,11 +140,12 @@ async function clear() {
         class="workspace-tab app-nav-context-entry app-interaction-target app-interaction-nav"
         :class="{ 'is-active': tab.key === route.path }"
         role="tab"
-        :tabindex="tab.key === route.path ? 0 : -1"
+        :tabindex="tab.key === tabStop ? 0 : -1"
+        @focus="focusedKey = tab.key"
         :aria-selected="tab.key === route.path"
         @click="activate(tab.path)"
-        @keydown.enter="activate(tab.path)"
-        @keydown.space.prevent="activate(tab.path)"
+        v-keyboard-activate
+        @keydown="onTabKeydown($event, tab.key)"
       >
         <MenuIcon class="workspace-tab-icon app-interaction-content" :name="tabIcons.get(tab.key)" />
         <span class="workspace-tab-title app-interaction-content">{{ tab.title }}</span>

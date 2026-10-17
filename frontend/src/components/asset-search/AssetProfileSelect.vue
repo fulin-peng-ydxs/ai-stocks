@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vKeyboardActivate } from '@/directives/keyboardActivate'
 // 统一「资产方案选择器」（R3/R7）：下拉/侧栏双形态，列表只加载「我的」资产（纯 owner），
 // 内置「搜索」入口打开 AssetSearchDrawer；「加载查看」注入会话内临时只读选中项
 // （不进「我的」、切换即丢弃、不持久化、不自动运行，§7.0 契约）；「复制为我的」
@@ -385,8 +386,7 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
               :tabindex="loadingMine ? -1 : 0"
               :aria-disabled="loadingMine"
               :aria-pressed="assetItemKey(p) === modelValue"
-              @keydown.enter.self.prevent="onSelect(assetItemKey(p))"
-              @keydown.space.self.prevent="onSelect(assetItemKey(p))"
+              v-keyboard-activate
               @click="onSelect(assetItemKey(p))"
               :name="p.name"
               :version="p.version"

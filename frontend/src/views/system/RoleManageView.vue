@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -371,8 +372,7 @@ const menuPageTitle = useMenuPageTitle()
               role="button"
               tabindex="0"
               :aria-pressed="r.id === activeId"
-              @keydown.enter.self.prevent="selectRole(r.id)"
-              @keydown.space.self.prevent="selectRole(r.id)"
+              v-keyboard-activate
               :class="{ active: r.id === activeId }"
               @click="selectRole(r.id)"
             >

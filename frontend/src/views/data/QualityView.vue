@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppActionHint from '@/components/AppActionHint.vue'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -603,8 +604,7 @@ const menuPageTitle = useMenuPageTitle()
             role="checkbox"
             :aria-checked="filters.issue_type.includes(s.issue_type)"
             @click="toggleIssueType(s.issue_type)"
-            @keydown.enter.prevent="toggleIssueType(s.issue_type)"
-            @keydown.space.prevent="toggleIssueType(s.issue_type)"
+            v-keyboard-activate
           >
             {{ ISSUE_TYPE_LABEL[s.issue_type] ?? s.issue_type }}: {{ s.n }}
           </el-tag>

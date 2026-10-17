@@ -995,7 +995,7 @@ describe('代表性页面四态回归', () => {
     ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('refresh failed'))
     const search = wrapper.find('input[placeholder="股票/板块代码或名称"]')
     await search.setValue('600000')
-    await search.trigger('keyup', { key: 'Enter' })
+    await search.trigger('keydown', { key: 'Enter' })
     await flushPromises()
 
     expect(wrapper.text()).toContain('数据质量刷新失败')
@@ -1511,6 +1511,44 @@ describe('代表性页面四态回归', () => {
     expect(scoreSelector.find('[data-testid="backtest-score-select-select"]').exists()).toBe(false)
     expect(scoreSelector.find('.app-state-block__inline-error').exists()).toBe(true)
     expect(wrapper.text()).toContain('运行回测')
+  })
+
+  it('训练键盘与按钮共享权限、输入边界和异步互斥', async () => {
+    const running = {
+      id: 'keyboard-test', status: 'running', mode: 'single', n_rounds: 1,
+      window_days: 20, initial_capital: 100000, fee_enabled: false, cur_round: 1,
+      round: { seq: 1, cursor_idx: 0, window_days: 20, status: 'running', is_last_day: false,
+        cash: 100000, pos_shares: 100, pos_hands: 1, pos_avg_price: 10, cur_close: 10,
+        pos_value: 1000, equity: 101000, unrealized_pnl: 0, realized_pnl: 0,
+        pending: null, bars: [], markers: [], trades: [], lot_size: 100, board: null },
+    }
+    vi.mocked(trainingApi.startSession).mockResolvedValue(running as trainingApi.RunningView)
+    let resolve!: (value: trainingApi.RunningView) => void
+    vi.mocked(trainingApi.revealNext).mockImplementation(() => new Promise(done => { resolve = done }))
+    const wrapper = await mountView(TrainingView)
+    await wrapper.findAll('button').find(button => button.text() === '开始训练')!.trigger('click')
+    await flushPromises()
+    const press = (target: EventTarget, init: KeyboardEventInit = {}) => target.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true, ...init }),
+    )
+    press(document.body, { ctrlKey: true })
+    press(document.body, { isComposing: true })
+    press(wrapper.get('input').element)
+    expect(trainingApi.revealNext).not.toHaveBeenCalled()
+    press(document.body)
+    press(document.body)
+    await wrapper.findAll('button').find(button => button.text().includes('下一交易日'))!.trigger('click')
+    expect(trainingApi.revealNext).toHaveBeenCalledTimes(1)
+    expect(wrapper.findAll('button').find(button => button.text() === '退出训练')!.attributes('disabled')).toBeDefined()
+    resolve(running as trainingApi.RunningView)
+    await flushPromises()
+    const auth = useAuthStore()
+    auth.role = 'user'; auth.permissions = []
+    press(document.body)
+    expect(trainingApi.revealNext).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+    press(document.body)
+    expect(trainingApi.revealNext).toHaveBeenCalledTimes(1)
   })
 
   it('训练历史加载失败显示错误态', async () => {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vKeyboardActivate } from '@/directives/keyboardActivate'
 // 图标选择器（多租户 RBAC stage3·T13）：消费 @element-plus/icons-vue，供菜单 icon 字段选图标名。
 // icon 字段存图标名（如 TrendCharts），渲染时按名取组件；不手填字符，从图标库可搜索网格中选。
 // 复用组件：SideMenu/菜单管理页共用同一图标名 → 组件映射，保证选什么就渲染什么。
@@ -75,8 +76,7 @@ function clear() {
           class="ip-cell app-interaction-list-item"
           role="button" :tabindex="disabled ? -1 : 0" :aria-disabled="disabled"
           :aria-label="name" :aria-pressed="name === modelValue"
-          @keydown.enter.self.prevent="choose(name)"
-          @keydown.space.self.prevent="choose(name)"
+          v-keyboard-activate
           :class="{ on: name === modelValue }"
           @click="choose(name)"
         >

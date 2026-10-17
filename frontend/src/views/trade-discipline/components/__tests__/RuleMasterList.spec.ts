@@ -25,7 +25,7 @@ describe('RuleMasterList', () => {
     expect(wrapper.text()).toContain('当前 v2')
     expect(wrapper.text()).toContain('有编辑中草稿')
     expect(wrapper.get('.rule-master__management').classes()).toContain('is-warning')
-    await wrapper.get('[role="option"]').trigger('keydown.enter')
+    await wrapper.get('[role="button"]').trigger('keydown', { key: 'Enter' })
     expect(wrapper.emitted('select')?.[0]).toEqual(['rule-1'])
   })
 

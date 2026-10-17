@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -637,8 +638,7 @@ const menuPageTitle = useMenuPageTitle()
             role="button"
             tabindex="0"
             @click="gotoStRefresh"
-            @keydown.enter.prevent="gotoStRefresh"
-            @keydown.space.prevent="gotoStRefresh"
+            v-keyboard-activate
           >
             <div class="stat-label">ST 点时事实 <HelpHint text="权威 ST 逐日事实覆盖 daily_bar 的比例；缺失或非权威时筛选、评分、回测和涨跌停业务会拒绝运行" @click.stop /></div>
             <div class="stat-val" :class="{ danger: ov?.st_status?.ready === false }">{{ ov?.st_status?.coverage_rate ?? '—' }}<span class="sub">%</span></div>
@@ -654,8 +654,7 @@ const menuPageTitle = useMenuPageTitle()
             role="button"
             tabindex="0"
             @click="gotoBoardTab()"
-            @keydown.enter.prevent="gotoBoardTab()"
-            @keydown.space.prevent="gotoBoardTab()"
+            v-keyboard-activate
           >
             <div class="stat-label">板块数据 <HelpHint text="板块规模、覆盖与质量问题概览；点击进入下方「板块数据」专区" @click.stop /></div>
             <div class="stat-val">{{ ov?.board ? (ov.board.board_dict ?? 0) + ' 板块' : '—' }}</div>
@@ -668,7 +667,7 @@ const menuPageTitle = useMenuPageTitle()
             <div class="stat-val" :style="{ color: scoreColor }">{{ ov?.quality.score ?? '—' }}</div>
           </el-card>
           <el-card v-if="kpiVisible('quality')" shadow="never" class="stat clickable app-interaction-target app-interaction-card" role="button" tabindex="0"
-            @click="gotoQuality()" @keydown.enter.prevent="gotoQuality()" @keydown.space.prevent="gotoQuality()">
+            @click="gotoQuality()" v-keyboard-activate>
             <div class="stat-label">未解决质检 <HelpHint text="尚未解决的质检问题数（按高/中/低危分级）；点击前往数据质量页逐条恢复" @click.stop /></div>
             <div class="stat-val" :class="{ danger: (ov?.quality.by_severity?.high ?? 0) > 0, warn: (ov?.quality.open ?? 0) > 0 }">
               {{ ov?.quality.open ?? '—' }}
@@ -678,7 +677,7 @@ const menuPageTitle = useMenuPageTitle()
             </div>
           </el-card>
           <el-card v-if="kpiVisible('gaps')" shadow="never" class="stat clickable app-interaction-target app-interaction-card" role="button" tabindex="0"
-            @click="gotoGap" @keydown.enter.prevent="gotoGap" @keydown.space.prevent="gotoGap">
+            @click="gotoGap" v-keyboard-activate>
             <div class="stat-label">缺口 / 滞后 <HelpHint text="近 90 个交易日内存在缺口(疑似漏采)或数据滞后的股票数(已排除确认停牌)；点此前往补数。下方逐股表 L4 列可见各股缺口/滞后明细" @click.stop /></div>
             <div class="stat-val" :class="{ warn: (ov?.gaps.stocks_with_gap ?? 0) > 0 }">
               {{ ov?.gaps.stocks_with_gap ?? '—' }}<span class="sub"> 只</span>
@@ -1073,8 +1072,7 @@ const menuPageTitle = useMenuPageTitle()
                       <AppHoverInfo :content="layerCell(k, row.layers[k]).tip" placement="top">
                         <el-tag :type="layerCell(k, row.layers[k]).type as any" size="small" effect="plain"
                                 class="app-interaction-link" role="button" tabindex="0"
-                                @keydown.enter.prevent="goLayer(k, row)"
-                                @keydown.space.prevent="goLayer(k, row)"
+                                v-keyboard-activate
                                 @click="goLayer(k, row)">
                           {{ layerCell(k, row.layers[k]).text }}
                         </el-tag>
@@ -1184,8 +1182,7 @@ const menuPageTitle = useMenuPageTitle()
                         tabindex="0"
                         class="issue-card app-interaction-target app-interaction-card"
                         @click="gotoQuality(undefined, item.key)"
-                        @keydown.enter.prevent="gotoQuality(undefined, item.key)"
-                        @keydown.space.prevent="gotoQuality(undefined, item.key)"
+                        v-keyboard-activate
                       >
                         <span class="issue-copy app-interaction-content">
                           <span class="issue-tag">{{ item.label }}</span>

@@ -300,7 +300,7 @@ describe('DataDictionaryView', () => {
     const wrapper = await mountView()
     const typeKeyword = wrapper.find('input[placeholder="搜索类型 / code"]')
     await typeKeyword.setValue('audit')
-    await typeKeyword.trigger('keyup.enter')
+    await typeKeyword.trigger('keydown', { key: 'Enter' })
     await flushPromises()
     expect(dictApi.listDictTypes).toHaveBeenLastCalledWith(expect.objectContaining({
       q: 'audit',

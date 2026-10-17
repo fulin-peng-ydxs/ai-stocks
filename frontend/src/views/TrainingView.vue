@@ -1,12 +1,13 @@
 <script setup lang="ts">
+import { vKeyboardActivate } from '@/directives/keyboardActivate'
+import { useAuthStore } from '@/stores/auth'
+import { hasPermission } from '@/utils/permission'
+import { usePageShortcuts } from '@/composables/usePageShortcuts'
 import AppHoverInfo from '@/components/AppHoverInfo'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import {
   computed,
-  onActivated,
-  onBeforeUnmount,
-  onDeactivated,
   onMounted,
   reactive,
   ref,
@@ -65,6 +66,7 @@ const boardOptions = [
 // ── 页面阶段：config(未开局) / running(训练中) / result(结算回看) ──
 const view = ref<(RunningView & Partial<DetailView>) | null>(null)
 const loading = ref(false)
+const actionPending = ref(false)
 const phase = computed<'config' | 'running' | 'result'>(() => {
   if (!view.value) return 'config'
   return view.value.status === 'completed' ? 'result' : 'running'
@@ -294,17 +296,31 @@ async function start() {
   }
 }
 
+// 鼠标与快捷键共同进入此互斥边界，避免异步写操作交错覆盖当前回合。
+async function runTrainingAction(action: () => Promise<void>) {
+  if (actionPending.value || loading.value || phase.value !== 'running'
+    || !hasPermission(auth.role, auth.permissions, 'training:trade')) return
+  actionPending.value = true
+  try { await action() }
+  catch (error) { ElMessage.error((error as Error).message || '训练操作失败') }
+  finally { actionPending.value = false }
+}
+
 async function placeBuy(hands: number) {
   const h = Math.min(Math.floor(hands), maxBuyHands.value)
   if (h < 1) { ElMessage.warning('可用资金不足以买入 1 手'); return }
-  view.value = await placeTrade(view.value!.id, 'buy', h, order.reason)
-  order.reason = ''
+  await runTrainingAction(async () => {
+    view.value = await placeTrade(view.value!.id, 'buy', h, order.reason)
+    order.reason = ''
+  })
 }
 async function placeSell(hands: number) {
   const h = Math.min(Math.floor(hands), posHands.value)
   if (h < 1) { ElMessage.warning('当前无持仓可卖'); return }
-  view.value = await placeTrade(view.value!.id, 'sell', h, order.reason)
-  order.reason = ''
+  await runTrainingAction(async () => {
+    view.value = await placeTrade(view.value!.id, 'sell', h, order.reason)
+    order.reason = ''
+  })
 }
 // 自定义量（输入框）
 const doBuy = () => placeBuy(orderHands.value)
@@ -317,17 +333,24 @@ const buyPreset = (p: number) => placeBuy(presetHands(p))
 const sellAll = () => placeSell(posHands.value)
 const sellHalf = () => placeSell(halfPosHands.value)
 const sellPreset = (p: number) => placeSell(presetHands(p))
-async function doCancel() { view.value = await cancelIntent(view.value!.id) }
+async function doCancel() {
+  await runTrainingAction(async () => { view.value = await cancelIntent(view.value!.id) })
+}
 async function nextDay() {
-  const r = await revealNext(view.value!.id, round.value?.cursor_idx ?? null)
-  view.value = r
-  if (r.fill_msg) ElMessage.warning(r.fill_msg)
+  await runTrainingAction(async () => {
+    const r = await revealNext(view.value!.id, round.value?.cursor_idx ?? null)
+    view.value = r
+    if (r.fill_msg) ElMessage.warning(r.fill_msg)
+  })
 }
 async function finishRound() {
-  view.value = await settleRound(view.value!.id) as RunningView & DetailView
-  if (view.value.status === 'completed') await Promise.all([loadHistory(), loadGrowth()])
+  await runTrainingAction(async () => {
+    view.value = await settleRound(view.value!.id) as RunningView & DetailView
+    if (view.value.status === 'completed') await Promise.all([loadHistory(), loadGrowth()])
+  })
 }
 async function backToConfig() {
+  if (actionPending.value) return
   view.value = null
   await Promise.all([loadHistory(), loadGrowth()])
 }
@@ -431,35 +454,21 @@ const gradeBands = [
   { g: 'D', text: 'D < 60', thr: 0 },
 ]
 
-// ── 键盘快捷键 ──
-function onKey(e: KeyboardEvent) {
-  if (phase.value !== 'running') return
-  const tag = (e.target as HTMLElement)?.tagName
-  if (tag === 'INPUT' || tag === 'TEXTAREA') return
-  if (e.key === 'ArrowRight') { isLast.value ? finishRound() : nextDay() }
-  else if (e.key.toLowerCase() === 'b' && !isLast.value) doBuy()
-  else if (e.key.toLowerCase() === 's' && (round.value?.pos_hands ?? 0) > 0) doSell()
-}
-
-let keyListening = false
-function attachKeyboard() {
-  if (keyListening) return
-  window.addEventListener('keydown', onKey)
-  keyListening = true
-}
-function detachKeyboard() {
-  if (!keyListening) return
-  window.removeEventListener('keydown', onKey)
-  keyListening = false
-}
+const auth = useAuthStore()
+// 快捷键只在训练运行态生效，输入、弹层和缓存失活由共享入口隔离。
+usePageShortcuts([
+  { key: 'ArrowRight', run: () => isLast.value ? finishRound() : nextDay() },
+  { key: 'b', enabled: () => !isLast.value && orderHands.value > 0 && maxBuyHands.value > 0, run: doBuy },
+  { key: 's', enabled: () => !isLast.value && posHands.value > 0 && orderHands.value > 0, run: doSell },
+], {
+  enabled: () => phase.value === 'running' && !loading.value && !actionPending.value
+    && hasPermission(auth.role, auth.permissions, 'training:trade'),
+  onError: error => ElMessage.error((error as Error).message || '训练操作失败'),
+})
 
 onMounted(async () => {
-  attachKeyboard()
   await Promise.all([loadHistory(), loadGrowth()])
 })
-onActivated(attachKeyboard)
-onDeactivated(detachKeyboard)
-onBeforeUnmount(detachKeyboard)
 const menuPageTitle = useMenuPageTitle()
 const runningPageTitle = useMenuPageTitle({ suffix: '进行中' })
 const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
@@ -532,7 +541,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           <div class="cfg-actions">
             <el-button v-permission="'training:start'" type="primary" size="large" :loading="loading" @click="start">开始训练</el-button>
             <span class="cfg-hint">回合数、连续交易日、初始资金等默认值可在右上角
-              <b class="hl" @click="settingsOpen = true">设置</b> 中调整</span>
+              <b class="hl" role="button" tabindex="0" v-keyboard-activate @click="settingsOpen = true">设置</b> 中调整</span>
           </div>
         </el-card>
 
@@ -658,7 +667,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           <div class="ops">
             <KlineRangeSelect v-model="viewDays" />
           </div>
-          <el-button @click="backToConfig">退出训练</el-button>
+          <el-button :disabled="actionPending" @click="backToConfig">退出训练</el-button>
           <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
         </div>
       </div>
@@ -694,7 +703,8 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           </StockChartRegion>
         </div>
 
-        <div v-permission="'training:trade'" class="action-panel">
+        <div v-permission="'training:trade'" v-loading="actionPending" :aria-busy="actionPending" class="action-panel">
+          <p class="muted">快捷键：→ 下一日／末日结算，B 买入当前量，S 卖出当前量；仅在输入框、控件和弹窗外生效。</p>
           <div class="acct">
             <div class="acct-item"><label>可用资金（可买上限）</label><b class="lim">{{ formatMoney(round.cash, { digits: 0, empty: '--' }) }}</b></div>
             <div class="acct-item"><label>持仓（可卖上限）</label><b class="lim">{{ round.pos_hands }} 手</b><span class="muted">@{{ formatMoney(round.pos_avg_price) }}</span></div>
@@ -725,12 +735,12 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
               <span class="hint" v-if="!isAmount">
                 约需 ¥{{ formatMoney(estCost, { digits: 0, empty: '--' }) }} · 最多可买
                 <AppHoverInfo content="点击填入全仓">
-                  <b tabindex="0" class="hl" role="button" @click="fillBuyMax" @keydown.enter.prevent="fillBuyMax" @keydown.space.prevent="fillBuyMax">{{ maxBuyHands }}</b>
+                  <b tabindex="0" class="hl" role="button" @click="fillBuyMax" v-keyboard-activate>{{ maxBuyHands }}</b>
                 </AppHoverInfo> 手
               </span>
               <span class="hint" v-else>
                 可用资金 <AppHoverInfo content="点击全额填入">
-                       <b tabindex="0" class="hl" role="button" @click="fillBuyMax" @keydown.enter.prevent="fillBuyMax" @keydown.space.prevent="fillBuyMax">¥{{ formatMoney(cash, { digits: 0, empty: '--' }) }}</b>
+                       <b tabindex="0" class="hl" role="button" @click="fillBuyMax" v-keyboard-activate>¥{{ formatMoney(cash, { digits: 0, empty: '--' }) }}</b>
                      </AppHoverInfo> · 本单 ≈ {{ orderHands }} 手
               </span>
             </div>
@@ -740,7 +750,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
               <el-button size="small" type="danger" plain :disabled="maxBuyHands < 1" @click="buyAll">全仓</el-button>
               <el-button size="small" type="danger" plain :disabled="halfBuyHands < 1" @click="buyHalf">半仓</el-button>
               <el-button v-for="p in activePresets" :key="'b' + p" size="small" plain :disabled="buyPresetDisabled(p)" @click="buyPreset(p)">{{ presetLabel(p) }}</el-button>
-              <el-button type="danger" :disabled="orderHands < 1" @click="doBuy">买入当前量 (B)</el-button>
+              <el-button type="danger" :disabled="orderHands < 1 || maxBuyHands < 1" :loading="actionPending" aria-keyshortcuts="B" @click="doBuy">买入当前量 (B)</el-button>
             </div>
 
             <div class="trade-row" :class="{ disabled: posHands < 1 }">
@@ -748,12 +758,12 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
               <el-button size="small" type="success" plain :disabled="posHands < 1" @click="sellAll">全部</el-button>
               <el-button size="small" type="success" plain :disabled="halfPosHands < 1" @click="sellHalf">半仓</el-button>
               <el-button v-for="p in activePresets" :key="'s' + p" size="small" plain :disabled="posHands < 1" @click="sellPreset(p)">{{ presetLabel(p) }}</el-button>
-              <el-button type="success" :disabled="posHands < 1" @click="doSell">卖出当前量 (S)</el-button>
+              <el-button type="success" :disabled="posHands < 1 || orderHands < 1" :loading="actionPending" aria-keyshortcuts="S" @click="doSell">卖出当前量 (S)</el-button>
             </div>
 
             <div class="ops">
               <el-input v-model="order.reason" placeholder="操作理由（选填，记录买卖思路）" size="default" style="width:280px" />
-              <el-button type="primary" plain @click="nextDay">
+              <el-button type="primary" plain :loading="actionPending" aria-keyshortcuts="ArrowRight" @click="nextDay">
                 下一交易日
                 <el-icon class="el-icon--right"><ArrowRight /></el-icon>
               </el-button>
@@ -761,7 +771,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           </template>
           <div class="ops" v-else>
             <span class="last-tip">已到窗口末日，结算后揭晓个股身份与得分</span>
-            <el-button type="warning" @click="finishRound">结算本回合</el-button>
+            <el-button type="warning" :loading="actionPending" aria-keyshortcuts="ArrowRight" @click="finishRound">结算本回合</el-button>
           </div>
         </div>
 
@@ -796,7 +806,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           <div class="ops">
             <KlineRangeSelect v-model="viewDays" />
           </div>
-          <el-button @click="backToConfig">返回</el-button>
+          <el-button :disabled="actionPending" @click="backToConfig">返回</el-button>
           <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
         </div>
       </div>

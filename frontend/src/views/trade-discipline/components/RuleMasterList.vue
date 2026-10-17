@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import { computed, ref } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
@@ -115,18 +116,17 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
         size="inline"
         :title="query ? '没有匹配的规则' : '暂无交易规则'"
       />
-      <div v-else class="rule-master__list" role="listbox" aria-label="选择交易规则">
+      <div v-else class="rule-master__list" role="group" aria-label="选择交易规则">
         <div
           v-for="rule in filteredRules"
           :key="rule.id"
           class="rule-master__item app-interaction-target app-interaction-card"
           :class="{ active: selectedId === rule.id, 'is-selected': selectedId === rule.id }"
-          role="option"
+          role="button"
           tabindex="0"
-          :aria-selected="selectedId === rule.id"
+          :aria-pressed="selectedId === rule.id"
           @click="emit('select', rule.id)"
-          @keydown.enter="emit('select', rule.id)"
-          @keydown.space.prevent="emit('select', rule.id)"
+          v-keyboard-activate
         >
           <div class="rule-master__name app-interaction-content">
             <span>{{ rule.proposed_name || rule.name || '未命名规则' }}</span>

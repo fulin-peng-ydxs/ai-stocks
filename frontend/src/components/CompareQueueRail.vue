@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppHoverInfo from '@/components/AppHoverInfo'
 // 走势对比队列：板块/个股/榜单共用的对比对象 chip 行。遵循按钮契约不引入原生 button：
 // chip 为 role=button 容器承载激活（点击 + Enter/Space，.self 避免焦点在移除钮时连击），
@@ -54,8 +55,7 @@ const emit = defineEmits<{
         :aria-pressed="item.active ? 'true' : 'false'"
         :data-testid="testIdPrefix ? `${testIdPrefix}-compare-${item.key}` : undefined"
         @click="emit('activate', item.key)"
-        @keydown.enter.self="emit('activate', item.key)"
-        @keydown.space.self.prevent="emit('activate', item.key)"
+        v-keyboard-activate
       >
         <span class="compare-queue-name">{{ item.label }}</span>
         <AppCloseButton

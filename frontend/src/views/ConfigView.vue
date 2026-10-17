@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppHoverInfo from '@/components/AppHoverInfo'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -1696,7 +1697,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <div class="ed-head app-cluster-md">
               <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
               <AppHoverInfo v-if="curVersion && !isNew" content="点击查看历史版本">
-                <span tabindex="0" class="ver-badge" role="button" @click="openScoreVersions" @keydown.enter.prevent="openScoreVersions" @keydown.space.prevent="openScoreVersions">v{{ curVersion }}</span>
+                <span tabindex="0" class="ver-badge" role="button" @click="openScoreVersions" v-keyboard-activate>v{{ curVersion }}</span>
               </AppHoverInfo>
               <AssetVisibilityActions
                 v-if="!isNew"
@@ -2099,7 +2100,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <div class="ed-head app-cluster-md">
               <el-input v-model="tEditName" :disabled="tReadonly" placeholder="方案名称" style="width: 190px" />
               <AppHoverInfo v-if="tCurVersion && !tIsNew" content="点击查看历史版本">
-                <span tabindex="0" class="ver-badge" role="button" @click="openTradeVersions" @keydown.enter.prevent="openTradeVersions" @keydown.space.prevent="openTradeVersions">v{{ tCurVersion }}</span>
+                <span tabindex="0" class="ver-badge" role="button" @click="openTradeVersions" v-keyboard-activate>v{{ tCurVersion }}</span>
               </AppHoverInfo>
               <AssetVisibilityActions
                 v-if="!tIsNew"

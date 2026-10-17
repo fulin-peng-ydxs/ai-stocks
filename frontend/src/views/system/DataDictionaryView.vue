@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
@@ -541,8 +542,7 @@ const menuPageTitle = useMenuPageTitle()
                 :aria-pressed="row.code === selectedTypeCode"
                 :class="{ active: row.code === selectedTypeCode }"
                 @click="selectType(row.code)"
-                @keydown.enter.self.prevent="selectType(row.code)"
-                @keydown.space.self.prevent="selectType(row.code)"
+                v-keyboard-activate
               >
                 <span class="type-main">
                   <b>{{ row.name }}</b>
