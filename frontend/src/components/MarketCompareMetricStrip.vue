@@ -132,6 +132,7 @@ function metricDescription(item: MarketMetricStripItem): string {
   overflow: hidden;
   margin-top: 2px;
   font-size: var(--app-font-size-data);
+  font-weight: var(--app-font-weight-section);
   line-height: var(--app-line-height-data);
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;

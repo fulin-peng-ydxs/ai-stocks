@@ -326,6 +326,7 @@ body > .el-notification {
   --app-font-size-tiny: 10px;
   --app-font-size-ornament: 8px;
   --app-icon-size-xs: 9px;
+  --app-icon-size-sm: 16px;
   --app-state-icon-size: 64px;
   --app-line-height-page-title: 30px;
   --app-line-height-title-md: 26px;
@@ -496,6 +497,11 @@ body > .el-notification {
 html[data-display-resolution='low'] {
   --app-table-content-font-size: var(--app-font-size-body);
   --app-table-content-line-height: var(--app-line-height-body);
+}
+
+/* 固定语义强调字重，避免 UA 的 bolder 在 600 字重按钮中累计到 900。 */
+b, strong, h1, h2, h3, h4, h5, h6 {
+  font-weight: var(--app-font-weight-strong);
 }
 
 /* ── 全站自适应布局契约 ──
@@ -949,6 +955,10 @@ html[data-layout-preset] .el-table {
   background-color: var(--el-bg-color);
   color: var(--chrome-text);
   font-size: var(--app-table-content-font-size);
+  line-height: var(--app-table-content-line-height);
+}
+/* .cell 自带组件库行高，必须在文字实际承载层消费表格字阶。 */
+html[data-layout-preset] .el-table .cell {
   line-height: var(--app-table-content-line-height);
 }
 html[data-layout-preset] .el-table th.el-table__cell {

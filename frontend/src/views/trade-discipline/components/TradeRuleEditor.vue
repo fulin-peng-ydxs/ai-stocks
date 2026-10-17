@@ -614,7 +614,7 @@ defineExpose({
         </div>
 
         <section class="detail-group">
-          <header><div><h4>选股规则</h4><p>仅启用项参与发布校验和资金汇总</p></div><el-button v-if="canEditDetails" v-permission="'trade-discipline:rule-manage'" :icon="Plus" @click="addStockRule">添加选股规则</el-button></header>
+          <header><div><h4 class="app-section-title">选股规则</h4><p>仅启用项参与发布校验和资金汇总</p></div><el-button v-if="canEditDetails" v-permission="'trade-discipline:rule-manage'" :icon="Plus" @click="addStockRule">添加选股规则</el-button></header>
           <AppStateBlock v-if="!form.stock_rules.length" state="empty" size="tiny" title="尚未添加选股规则" />
           <div v-else class="rule-card-grid">
             <RuleSummaryCard
@@ -753,7 +753,7 @@ defineExpose({
 .capital-meter.danger { border-color: color-mix(in srgb, var(--el-color-danger) 42%, var(--el-border-color)); background: transparent; color: var(--el-color-danger); }
 .detail-group { margin-top: var(--app-space-5); }
 .detail-group > header { justify-content: space-between; gap: var(--app-space-3); margin-bottom: var(--app-space-2); }
-.detail-group h4 { margin: 0; font-size: var(--app-font-size-section); }
+
 .detail-group p { margin: var(--app-space-1) 0 0; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .rule-card-grid { display: grid; grid-template-columns: repeat(2, minmax(280px, 1fr)); gap: var(--app-space-2); }
 .rule-card-grid--single { grid-template-columns: 1fr; }

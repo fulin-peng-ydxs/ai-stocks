@@ -274,7 +274,7 @@ defineExpose({ expandOperation })
       <div class="operation-form-sections">
         <section class="operation-form-section" aria-label="操作依据" data-testid="operation-context-section">
           <header>
-            <h5>操作依据</h5>
+            <h5 class="app-section-title">操作依据</h5>
             <p>记录标的、执行时间及本次操作对应的纪律规则。</p>
           </header>
           <div class="operation-grid">
@@ -315,7 +315,7 @@ defineExpose({ expandOperation })
 
         <section class="operation-form-section" aria-label="成交明细" data-testid="operation-trade-section">
           <header>
-            <h5>成交明细</h5>
+            <h5 class="app-section-title">成交明细</h5>
             <p>价格、数量、金额和费用均为可选事实，系统不会覆盖手工填写值。</p>
           </header>
           <div class="operation-grid">
@@ -333,7 +333,7 @@ defineExpose({ expandOperation })
 
         <section class="operation-form-section" aria-label="操作说明" data-testid="operation-note-section">
           <header>
-            <h5>操作说明</h5>
+            <h5 class="app-section-title">操作说明</h5>
           </header>
           <el-form-item label="补充说明" class="operation-note"><el-input :model-value="operation.note" :disabled="disabled" maxlength="500" @update:model-value="update(index, { note: $event })" /></el-form-item>
         </section>
@@ -362,7 +362,7 @@ defineExpose({ expandOperation })
   border-top: 1px solid var(--el-border-color-lighter);
 }
 .operation-form-section > header { margin-bottom: var(--app-space-3); }
-.operation-form-section h5 { margin: 0; font-size: var(--app-font-size-section); }
+
 .operation-form-section p {
   margin: var(--app-space-1) 0 0;
   color: var(--el-text-color-secondary);

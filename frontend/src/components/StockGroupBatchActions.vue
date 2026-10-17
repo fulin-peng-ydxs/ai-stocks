@@ -201,7 +201,7 @@ async function removeFromGroup(): Promise<void> {
 .stock-batch-row { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-4); flex-wrap: wrap; }
 .stock-batch-info { display: flex; align-items: flex-start; gap: var(--app-space-3); flex: 1; min-width: 260px; }
 .stock-batch-count { font-size: var(--app-font-size-table); white-space: nowrap; padding-top: 2px; }
-.stock-batch-count b { color: var(--market-up-color); font-size: var(--app-font-size-data); }
+.stock-batch-count b { color: var(--market-up-color); font-size: var(--app-font-size-data); line-height: var(--app-line-height-data); font-weight: var(--app-font-weight-section); }
 .stock-batch-chips { display: flex; flex-wrap: wrap; gap: var(--app-space-control-gap); max-height: 64px; overflow: auto; }
 .stock-batch-more, .stock-batch-hint { color: var(--app-muted-text); font-size: var(--app-font-size-caption); }
 .stock-batch-more { align-self: center; }

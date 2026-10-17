@@ -1,3 +1,4 @@
+import { chartTypography } from '@/components/chartTheme'
 import { describe, expect, it } from 'vitest'
 import type { EChartsTheme } from '@/components/chartTheme'
 import {
@@ -8,6 +9,7 @@ import {
 } from '@/components/marketCompareChart'
 
 const theme: EChartsTheme = {
+  typography: chartTypography(),
   background: '#fff',
   axis: '#ddd',
   split: '#eee',

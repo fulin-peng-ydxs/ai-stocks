@@ -1506,6 +1506,7 @@ const menuPageTitle = useMenuPageTitle()
 }
 .gb-name {
   font-size: var(--app-font-size-data);
+  line-height: var(--app-line-height-data);
   font-weight: var(--app-font-weight-section);
   padding: 0;
 }
@@ -1531,6 +1532,8 @@ const menuPageTitle = useMenuPageTitle()
 }
 .gb-ret b {
   font-size: var(--app-font-size-data);
+  line-height: var(--app-line-height-data);
+  font-weight: var(--app-font-weight-section);
   margin: 0 2px;
 }
 .gb-hint,

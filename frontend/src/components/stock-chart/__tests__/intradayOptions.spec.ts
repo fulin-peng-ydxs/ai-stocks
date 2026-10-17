@@ -1,3 +1,4 @@
+import { chartTypography } from '@/components/chartTheme'
 import { describe, expect, it } from 'vitest'
 import type { IntradayPoint } from '@/api/stocks'
 import {
@@ -7,6 +8,7 @@ import {
 import type { StockChartTheme } from '@/components/stock-chart/chartUtils'
 
 const theme: StockChartTheme = {
+  typography: chartTypography(),
   background: '#bg',
   axis: '#axis',
   split: '#split',

@@ -1021,7 +1021,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 .acct { display: flex; gap: var(--app-space-5); flex-wrap: wrap; }
 .acct-item { display: flex; flex-direction: column; }
 .acct-item label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
-.acct-item b { font-size: var(--app-font-size-data); font-variant-numeric: tabular-nums; }
+.acct-item b { font-size: var(--app-font-size-data); line-height: var(--app-line-height-data); font-weight: var(--app-font-weight-section); font-variant-numeric: tabular-nums; }
 .acct-item b.lim { color: var(--el-color-primary); }
 .acct-item .muted { font-size: var(--app-font-size-caption); }
 .pending { display: flex; align-items: center; gap: var(--app-space-2); background: var(--el-color-warning-light-9); padding: 4px 10px; border-radius: 6px; font-size: var(--app-font-size-table); }

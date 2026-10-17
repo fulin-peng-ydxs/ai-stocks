@@ -1,4 +1,5 @@
 import * as echarts from 'echarts'
+import { chartTypography } from './chartTheme'
 import { viewportDeltaToLayoutPixels } from '@/utils/displayScaleGeometry'
 
 type ZRenderPointerEvent = Event & {
@@ -44,5 +45,10 @@ function installPointerCoordinateNormalization(element: HTMLElement): void {
 /** 应用根允许非整数缩放；统一使用矢量渲染和同一套指针坐标换算。 */
 export function initVectorEChart(element: HTMLElement): echarts.ECharts {
   installPointerCoordinateNormalization(element)
-  return echarts.init(element, undefined, { renderer: 'svg' })
+  const typography = chartTypography()
+  return echarts.init(element, { textStyle: {
+    fontFamily: typography.fontFamily,
+    fontSize: typography.body,
+    fontWeight: typography.regular,
+  } }, { renderer: 'svg' })
 }

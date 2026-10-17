@@ -9,7 +9,7 @@ defineProps<{
   <section class="trade-discipline-section-panel">
     <header class="trade-discipline-section-panel__head">
       <div>
-        <h4>{{ title }}</h4>
+        <h4 class="app-section-title">{{ title }}</h4>
         <p v-if="description">{{ description }}</p>
       </div>
     </header>
@@ -30,7 +30,7 @@ defineProps<{
   gap: var(--app-space-3);
   margin-bottom: var(--app-space-3);
 }
-.trade-discipline-section-panel__head h4 { margin: 0; font-size: var(--app-font-size-section); }
+
 .trade-discipline-section-panel__head p {
   margin: var(--app-space-1) 0 0;
   color: var(--el-text-color-secondary);

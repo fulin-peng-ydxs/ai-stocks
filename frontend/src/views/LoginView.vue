@@ -697,16 +697,16 @@ function onSubmit() {
   color: var(--login-brand-text);
   font-family: var(--app-font-family-mono);
   font-size: clamp(24px, 1.9cqw, 30px);
-  font-weight: 600;
-  line-height: 1;
+  font-weight: var(--app-font-weight-section);
+  line-height: var(--app-line-height-solid);
   font-variant-numeric: tabular-nums;
 }
-.mr-value i {
+.mr-value > i {
   margin-left: 2px;
   color: var(--login-brand-muted);
   font-size: var(--app-font-size-micro);
   font-style: normal;
-  font-weight: 400;
+  font-weight: var(--app-font-weight-regular);
 }
 .mr-delta {
   font-family: var(--app-font-family-mono);
@@ -758,7 +758,7 @@ function onSubmit() {
 }
 .t-item b {
   font-family: var(--app-font-family-mono);
-  font-weight: 600;
+  font-weight: var(--app-font-weight-section);
   font-variant-numeric: tabular-nums;
 }
 .t-item b.up { color: var(--login-accent); }
@@ -776,7 +776,7 @@ function onSubmit() {
   color: var(--login-brand-text);
   font-family: 'Songti SC', STSong, 'SimSun', serif;
   font-size: clamp(42px, 4.5cqw, 70px);
-  font-weight: 600;
+  font-weight: var(--app-font-weight-section);
   letter-spacing: 0.02em;
   line-height: 1.18;
 }
@@ -906,7 +906,7 @@ function onSubmit() {
   color: var(--login-text);
   font-family: 'Songti SC', STSong, 'SimSun', serif;
   font-size: 29px;
-  font-weight: 600;
+  font-weight: var(--app-font-weight-section);
   letter-spacing: 0.04em;
 }
 .login-card-title p { margin: 0; color: var(--login-text-muted); font-size: var(--app-font-size-body); }
@@ -936,7 +936,7 @@ function onSubmit() {
   color: var(--login-text);
   background: var(--login-input-bg);
   box-shadow: 0 3px 12px rgba(32, 50, 60, 0.08);
-  font-weight: 650;
+  font-weight: var(--app-font-weight-section);
 }
 .login-field-block {
   margin-bottom: 13px;
@@ -974,13 +974,13 @@ function onSubmit() {
   margin: 6px 2px 0;
   color: var(--login-danger);
   font-size: var(--app-font-size-caption);
-  line-height: 1.4;
+  line-height: var(--app-line-height-compact);
 }
 .field-hint {
   margin: 6px 2px 0;
   color: var(--login-success);
   font-size: var(--app-font-size-caption);
-  line-height: 1.4;
+  line-height: var(--app-line-height-compact);
 }
 /* 不归属单字段的整体错误（如账密不匹配/锁定），展示在提交按钮上方 */
 .login-form-error {
@@ -991,7 +991,7 @@ function onSubmit() {
   background: var(--login-danger-bg);
   color: var(--login-danger);
   font-size: var(--app-font-size-caption);
-  line-height: 1.45;
+  line-height: var(--app-line-height-comfy);
 }
 .field-label {
   position: absolute;
@@ -1089,7 +1089,7 @@ function onSubmit() {
   color: var(--login-accent-text);
   box-shadow: 0 10px 24px color-mix(in srgb, var(--login-accent) 25%, transparent);
   font-size: var(--app-font-size-body);
-  font-weight: 650;
+  font-weight: var(--app-font-weight-section);
   cursor: pointer;
   letter-spacing: 0.16em;
   display: flex;

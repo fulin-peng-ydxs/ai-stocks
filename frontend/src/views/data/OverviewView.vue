@@ -1272,7 +1272,7 @@ const menuPageTitle = useMenuPageTitle()
 .stat :deep(.el-card__body) { padding: 14px 6px; }
 .stat.clickable { --app-interaction-card-border: var(--el-card-border-color); cursor: pointer; }
 .stat-label { color: var(--el-text-color-secondary); font-size: var(--app-font-size-table); }
-.stat-val { font-size: var(--app-font-size-data); font-weight: var(--app-font-weight-strong); color: var(--el-text-color-primary); margin-top: 6px; white-space: nowrap; }
+.stat-val { font-size: var(--app-font-size-data); line-height: var(--app-line-height-data); font-weight: var(--app-font-weight-section); color: var(--el-text-color-primary); margin-top: 6px; white-space: nowrap; }
 .stat-val .sub { font-size: var(--app-font-size-body); font-weight: var(--app-font-weight-regular); color: var(--el-text-color-secondary); }
 .stat-val.warn { color: var(--app-warning-text); }
 .stat-val.danger { color: var(--app-danger-text); }
@@ -1401,6 +1401,8 @@ const menuPageTitle = useMenuPageTitle()
 .board-type-row b {
   color: var(--el-text-color-primary);
   font-size: var(--app-font-size-data);
+  line-height: var(--app-line-height-data);
+  font-weight: var(--app-font-weight-section);
 }
 .board-hero-status {
   min-width: 150px;
@@ -1424,7 +1426,8 @@ const menuPageTitle = useMenuPageTitle()
 }
 .board-hero-status strong {
   font-size: var(--app-font-size-data);
-  line-height: var(--app-line-height-compact);
+  font-weight: var(--app-font-weight-section);
+  line-height: var(--app-line-height-data);
   color: var(--el-text-color-primary);
 }
 .board-hero-status span:last-child {
@@ -1502,7 +1505,8 @@ const menuPageTitle = useMenuPageTitle()
 .cov-pct {
   flex: 0 0 auto;
   font-size: var(--app-font-size-data);
-  font-weight: var(--app-font-weight-strong);
+  line-height: var(--app-line-height-data);
+  font-weight: var(--app-font-weight-section);
   color: var(--app-warning-text);
 }
 .cov-pct.done {
@@ -1598,6 +1602,8 @@ const menuPageTitle = useMenuPageTitle()
 .issue-card strong {
   flex: 0 0 auto;
   font-size: var(--app-font-size-data);
+  line-height: var(--app-line-height-data);
+  font-weight: var(--app-font-weight-section);
   color: var(--app-warning-text);
 }
 .issue-ok-card {

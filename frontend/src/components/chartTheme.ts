@@ -3,6 +3,7 @@ import { useTheme } from '@/composables/useTheme'
 import { useLayoutPreset } from '@/layout/useLayoutPreset'
 
 export interface EChartsTheme {
+  typography: ChartTypography
   background: string
   axis: string
   split: string
@@ -21,6 +22,25 @@ export function chartCssVariable(name: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
 }
 
+/** 图表文本适配：ECharts 需要数字字号，统一从 CSS 字阶取值，不在消费页另设尺度。 */
+export function chartTypography() {
+  const numberToken = (name: string, fallback: number) => {
+    const value = Number.parseFloat(chartCssVariable(name, String(fallback)))
+    return Number.isFinite(value) && value > 0 ? value : fallback
+  }
+  return {
+    fontFamily: chartCssVariable('--app-font-family-base', 'system-ui, sans-serif'),
+    axis: numberToken('--app-font-size-tiny', 10),
+    compact: numberToken('--app-font-size-micro', 11),
+    body: numberToken('--app-font-size-caption', 12),
+    annotationLineHeight: numberToken('--app-line-height-ornament', 13),
+    regular: numberToken('--app-font-weight-regular', 400),
+    section: numberToken('--app-font-weight-section', 600),
+    strong: numberToken('--app-font-weight-strong', 700),
+  }
+}
+export type ChartTypography = ReturnType<typeof chartTypography>
+
 /** KeepAlive、v-show 与布局切换期间禁止在 0×0 容器创建 ECharts 实例。 */
 export function hasRenderableChartSize(element: HTMLElement): boolean {
   return element.clientWidth > 0 && element.clientHeight > 0
@@ -29,6 +49,7 @@ export function hasRenderableChartSize(element: HTMLElement): boolean {
 /** 非股票 ECharts 的语义主题；只读取预设系统已经提交完成的 CSS token。fallback 与 balanced 预设同值，避免预设未就绪时回退到旧色。 */
 export function echartsTheme(isDark: boolean): EChartsTheme {
   return {
+    typography: chartTypography(),
     background: chartCssVariable('--el-bg-color', isDark ? '#171717' : '#ffffff'),
     axis: chartCssVariable('--el-border-color', isDark ? '#353535' : '#e5e5e5'),
     split: chartCssVariable('--el-border-color-lighter', isDark ? '#353535' : '#e5e5e5'),

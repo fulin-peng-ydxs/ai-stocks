@@ -121,7 +121,7 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         const point = points[index]
         const pct = preClose ? ((point.close / preClose) - 1) * 100 : null
         const direction = pct == null || pct === 0 ? theme.text : pct > 0 ? theme.up : theme.down
-        return '<div style="min-width:150px;line-height:1.6">'
+        return '<div style="min-width:150px;line-height:var(--app-line-height-reading)">'
           + tooltipRow('时间', point.time, theme.text, theme.label)
           + tooltipRow('价格', formatChartNumber(point.close, 2), direction, theme.label)
           + tooltipRow(

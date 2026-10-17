@@ -182,7 +182,7 @@ async function quickSubmit(ruleId: string, ruleName: string): Promise<void> {
 }
 .quick-head > div { display: flex; flex-direction: column; gap: var(--app-space-1); }
 .quick-kicker { color: var(--page-settings-text-muted); font-size: var(--app-font-size-caption); }
-.quick-head strong { color: var(--page-settings-text); font-size: var(--app-font-size-data); }
+.quick-head strong { color: var(--page-settings-text); font-size: var(--app-font-size-data); line-height: var(--app-line-height-data); font-weight: var(--app-font-weight-section); }
 .quick-progress {
   min-width: 82px;
   padding: var(--app-space-control-gap) var(--app-space-2);

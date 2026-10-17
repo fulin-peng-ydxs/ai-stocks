@@ -164,7 +164,7 @@ function renderLine() {
             + '</span>',
         )
       }).join('')
-      return `<div style="min-width:150px;line-height:1.7">`
+      return `<div style="min-width:150px;line-height:var(--app-line-height-longform)">`
         + `<div style="color:${t.label};margin-bottom:2px">${date} · ${meta.value.label}</div>`
         + content
         + '</div>'
@@ -208,12 +208,12 @@ function renderBar() {
     grid: { left: 64, right: 24, top: 40, bottom: 40 },
     legend: {
       data: series.map((item) => item.name),
-      top: 4, textStyle: { color: t.label, fontSize: 11 },
+      top: 4, textStyle: { color: t.label, fontSize: t.typography.compact },
     },
     tooltip: {
       trigger: 'axis',
       backgroundColor: t.tooltipBackground, borderColor: t.tooltipBorder, borderWidth: 1,
-      textStyle: { color: t.text, fontSize: 12 },
+      textStyle: { color: t.text, fontSize: t.typography.body },
       axisPointer: { type: 'shadow' },
       formatter: (params: any) => {
         const rows = (Array.isArray(params) ? params : [params]).filter(Boolean)
@@ -232,7 +232,7 @@ function renderBar() {
             `<span style="text-align:right"><strong style="color:${color}">${valueText}</strong></span>`,
           )
         }).join('')
-        return `<div style="min-width:150px;line-height:1.7">`
+        return `<div style="min-width:150px;line-height:var(--app-line-height-longform)">`
           + `<div style="color:${t.label};margin-bottom:2px">${name}</div>`
           + content
           + '</div>'
@@ -241,14 +241,14 @@ function renderBar() {
     xAxis: {
       type: 'category', data: names,
       axisLine: { lineStyle: { color: t.axis } },
-      axisLabel: { color: t.label, fontSize: 10, interval: 0, rotate: names.length > 4 ? 20 : 0 },
+      axisLabel: { color: t.label, fontSize: t.typography.axis, interval: 0, rotate: names.length > 4 ? 20 : 0 },
     },
     yAxis: {
       scale: true,
       axisLine: { show: false },
       axisLabel: {
         color: t.label,
-        fontSize: 10,
+        fontSize: t.typography.axis,
         formatter: props.metric === 'inflow'
           ? (value: number) => `${formatMoney(value)}${unit}`
           : unit === '%'

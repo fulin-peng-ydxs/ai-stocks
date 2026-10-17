@@ -110,20 +110,21 @@ Key Characteristics：
 排版事实源：
 
 - token 落地在 `frontend/src/styles/global.css`，包括 `--app-font-family-base`、`--app-font-size-*`、`--app-line-height-*`、`--app-font-weight-*`。
-- 页面私有样式不得新增游离字体族；除品牌字标、登录主视觉、代码/配置值、图表 tooltip 外，必须继承 `body` 的 `--app-font-family-base`。
+- 页面私有样式不得新增游离字体族；正文、导航、表单、图表均使用 `--app-font-family-base`。代码/配置值可消费 `--app-font-family-mono`；品牌和登录主视觉的局部例外见 §3.5。
 - 新增文字样式必须先判断是否能消费 `.app-page-title`、`.app-section-title`、`.app-drawer-title`、`.app-drawer-subtitle`、`.app-body-text`、`.app-caption-text`、`.app-micro-text`、`.app-data-text`、`.app-data-emphasis` 或对应 token。
 - 常规行高使用表内 token；图标/徽标贴边用 `--app-line-height-solid`，紧凑说明用 `--app-line-height-compact` / `--app-line-height-comfy`，长说明用 `--app-line-height-reading` / `--app-line-height-longform`，极小角标用 `--app-line-height-ornament` / `--app-line-height-tiny`。
 
 | 层级 | 强制 token / 值 | 使用场景 |
 |---|---|---|
-| 页面标题 | `--app-font-size-page-title` 22px / 700 / 30px；紧凑页可用 20px | 页面主标题、工作台名称、配置中心一级标题 |
+| 页面标题 | `--app-font-size-page-title` 22px / 700 / 30px；紧凑页可用 `--app-font-size-page-title-sm` 20px | 页面主标题、工作台名称、配置中心一级标题 |
+| 工作区对象标题 | `--app-font-size-title-md` 18px / 700 / 26px | 分析区对象名、头像首字；不得替代页面主标题 |
 | 分区标题 | `--app-font-size-section-title` 15px / 600 / 22px | 卡片标题、标准抽屉配置组标题、局部紧凑工具抽屉标题；紧凑抽屉内的一级分组降为正文尺寸 14px / 600 / 22px |
 | 标准抽屉标题 | `--app-font-size-drawer-title` 16px / 600 / 24px | 页面详情、页面设置、全局功能抽屉标题 |
 | 正文 | `--app-font-size-body` 14px / 400 / 22px | 表单、普通说明、主体内容 |
 | 表格正文 | 默认 `--app-font-size-table` 13px / 400 / 20px；不高于 `1.5dppx` 的低像素密度屏幕使用 14px / 22px | 数据表格、列表、密集参数行 |
 | 辅助标签 | `--app-font-size-caption` 12px / 400 / 18px | 单位、提示、来源、次级说明、tag 内文 |
 | 微型标签 | `--app-font-size-micro` 11px / 400 / 16px | 顶栏弱标签、状态小字、空间极窄的 badge；禁止用于正文 |
-| 数字强调 | `--app-font-size-data` 16px / 600 / 24px；大 KPI 可用 `--app-font-size-kpi-lg` 26px / 700 / 32px；单组唯一主数值可用 `--app-font-size-kpi-xl` 32px / 700 / 38px | KPI、收益、评分、排名、需要横向比较的数字 |
+| 数字强调 | `--app-font-size-data` 16px / 600 / 24px；大 KPI 可用 `--app-font-size-kpi-lg` 26px / 700 / 32px；单组唯一主数值可用 `--app-font-size-kpi-xl` 32px / 700 / 38px | KPI、收益、评分、排名、需要横向比较的数字；紧凑统计主值可用 `--app-font-size-page-title-sm` / 700，常驻行情摘要由共享组件承载主值和补充值的角色差异 |
 
 排版规则：
 
@@ -132,7 +133,7 @@ Key Characteristics：
 - 可导航页面标题必须通过 `useMenuPageTitle()` 读取后端菜单树中的当前名称，路由 `meta.title` 只作菜单未就绪时的稳定回退；页面不得重复硬编码菜单标题。阶段标题通过该入口的 `suffix` 统一拼接，保持菜单改名后基础标题同步变化。
 - 页面顶部标题字号唯一来源是全局 `app-page-title`（22px），禁止页面用 `.page-head h2`/`.title h2`/`.title-row` 等私有选择器覆盖标题字号或边距；详情页对象标题（个股/板块名）同样走 `app-page-title`。
 - 标题内嵌 `HelpTip` 时，标题行使用 `align-items: center`（flex 或 `vertical-align: middle`）保证圆点与标题垂直居中，不随行高下沉。
-- 页面主体新增 `font-size`、`line-height`、`font-weight` 时必须引用上述 token 或语义类；直接写 px/数字只允许在以下特例：品牌字标、登录主视觉、图表 canvas/tooltip、第三方组件适配、极窄状态点/角标、图标尺寸。特例必须是局部私有，不得被复制为普通页面模式。
+- 页面主体新增 `font-size`、`line-height`、`font-weight` 时必须引用上述 token 或语义类；原始数字仅允许出现在共享 token 定义、§3.5 登记的品牌选择器或图表数字适配器中；第三方适配、角标和图标同样消费已有 token，不是整文件豁免。禁止页面内联添加另一套字体规则。
 - 10px 以下只允许使用 `--app-font-size-ornament` 或 `--app-icon-size-xs`，用于图标内部标记、红点角标或不可读正文之外的装饰性标尺；不得用于业务说明、表格、表单、按钮、筛选项。
 - 11px 只用于弱标签或极窄 chrome 信息；业务内容、表格单元格、表单 label、按钮文案不得小于 12px。
 - 页面设置抽屉的字体按语义角色固定：抽屉标题 16px，一级分类 15px，二级及更深可折叠节点统一 14px，事项名 13px，辅助说明 12px。禁止按 DOM 深度继续缩小节点字号，也不得通过全大写、字距或虚下划线代替真实层级；页面密度只调整间距，不改写这套字体角色。
@@ -241,6 +242,35 @@ Key Characteristics：
 - 悬停、按下不改变字号或字重。当前项由现有路由/受控值决定，普通下级、下拉叶子及工作标签从400提升至600；主入口已为600，保持字重并通过颜色和定位标记强化。
 - 行容器高度决定点击区域，文字行高决定排版，二者不得混用。侧栏下级每层缩进12px；主菜单图标使用18px占位，下级及横向二级/下拉图形为16px；顶栏一级保留24px图标框和15px图形，侧栏分区标题也保留18px图标。图标与文字角色分开定义，不以缩小文字去迁就图标。
 - 二级顶栏和工作标签共用 `.app-nav-context-entry`：32px高、8px水平内距、6px图文间距，圆角引用 `--layout-control-radius`。一级保留原有图标框与顶栏底部下划线，仅悬停/焦点面收紧；文字统一不改变其选中外观。外壳宽高、导航定位及颜色规则见“应用外壳”，悬停/选中状态见“动效与状态过渡”。
+
+### 3.5 全站字体角色、例外与校验
+
+本节与本章角色表是字体规范唯一入口；页面模板和组件清单只引用，不平行维护数值。适用范围包括全部业务页、系统页、登录表单、导航、抽屉、弹窗、表格、可操作卡片和图表文字；统一指同一角色共用规则，不要求标题、正文、说明和数据使用同一字号。
+
+字重使用范围：`--app-font-weight-regular` 用于正文和辅助内容；`--app-font-weight-medium` 用于设置事项名、三级弱分组名、配置选项名及帮助/审计对象的轻强调；`--app-font-weight-section` 用于分区、主导航、选中项、控件和普通数字强调；`--app-font-weight-strong` 用于页面/对象标题、较大统计主值和行内语义强调。原生 `b/strong/h1…h6` 由全局样式固定为 strong，再由具体角色覆盖，禁止依赖浏览器 `bolder` 累积到 900。普通数据及对象强调必须完整消费 data 字号、section 字重和 data 行高，不能只换字号。
+
+角色补充与底层 token 登记：
+
+| 类别 | 共享 token / 入口 | 边界 |
+|---|---|---|
+| 字体 | `--app-font-family-base`、`--app-font-family-mono` | 基础界面和图表同栈；等宽仅用于代码、配置值、证券代码及技术数值 |
+| 标题行高 | `--app-line-height-page-title`、`--app-line-height-title-md`、`--app-line-height-drawer-title`、`--app-line-height-section-title` | 按本章标题角色使用，不跟随 DOM 深度缩小 |
+| 数据行高 | `--app-line-height-data`、`--app-line-height-kpi-lg`、`--app-line-height-kpi-xl` | 数值与对应字号成组使用 |
+| 正文及说明行高 | `--app-line-height-body`、`--app-line-height-table`、`--app-line-height-caption`、`--app-line-height-micro` | 表格低像素密度分支仍由全局 token 管理 |
+| 比例行高 | `--app-line-height-solid`、`--app-line-height-tight`、`--app-line-height-compact`、`--app-line-height-comfy`、`--app-line-height-reading`、`--app-line-height-longform` | 依次用于贴边标记、紧凑图形、短说明、普通多行说明、阅读和长说明 |
+| 图标字号 | `--app-icon-size-xs`、`--app-icon-size-sm` | 图形内部标记与常规提示/工具图标，不借用数据字阶或附带文字字重 |
+| 极小文字 | `--app-font-size-tiny`、`--app-font-size-ornament`，配合 `--app-line-height-tiny`、`--app-line-height-ornament` | 仅图表刻度、图形内部标记及非正文装饰；不得扩散到业务标签 |
+| 图表 | `chartTheme.ts` 的 `chartTypography()`、`echartsRenderer.ts` | SVG 文字继承基础字体；axis/compact/body 分别读取 tiny/micro/caption，标注行高读取 ornament；字重读取全局字重 token。仅适配器提供 CSS 未就绪时的数字回退，消费页不得写数字字体对象 |
+| 行情浮层 | `stockQuoteSummaryHtml()` | HTML 字号和行高直接引用 CSS token；主值 title-md/strong、补充值 data/strong、辅助行 micro/regular，按已有浮层缩放机制换算。DOM 常驻摘要由 `StockQuoteSummary` 管理紧凑角色，页面不能复制配方 |
+
+品牌例外只允许以下范围，例外值由源码守卫按选择器、属性和值精确登记：`BrandMark .brand-mark__word-main` 的字标字号和字重；登录 `.mr-value` 的流式主数值字号；`.login-brand-copy h1` 的流式字号、宋体栈和品牌行高；`.login-card-title h2` 的宋体栈和桌面字号。登录表单、切换标签和主按钮不在例外内，字重不得另设 650。斜体仅用于品牌字标、辅助副标或文本语义，普通标题和菜单不引入私有斜体。
+
+实现与校验入口：
+
+- CSS token 和语义类统一在 `frontend/src/styles/global.css`；抽屉层级仅允许 `PageDrawerSurface` 映射已有标题字号，不新造尺度。新增或变更根字体 token 必须同步本章角色登记。
+- 执行 `cd frontend && npm run check:typography`：解析全部生产 Vue/CSS/TS，检查字体变量定义、角色类型、别名循环、CSS 简写、模板内联样式、脚本字体对象及 HTML tooltip 样式；品牌例外不豁免整个文件。`npm run build` 自动先执行该守卫。
+- `typography-audit.spec.ts` 以违规夹具证明拦截有效；`typography-spacing-system.spec.ts` 保留语义组件、导航、微字号选择器和间距契约；`chartTypography.spec.ts` 验证图表真实读取 CSS token。
+- 静态守卫不能代替浏览器的层叠、裁切和继承检查。全局字体变更还需生产构建，并用内置浏览器抽查导航、数据指标、长说明、表格、抽屉及图表；记录实际状态，不把未打开的页面或设备写成实测通过。
 
 ## 4. Component Stylings
 

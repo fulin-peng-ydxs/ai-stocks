@@ -120,7 +120,7 @@ const live = computed(() => props.tone === 'error' ? 'assertive' : 'polite')
 .app-status-notice__icon {
   flex: 0 0 auto;
   color: var(--app-status-notice-color);
-  font-size: var(--app-font-size-data);
+  font-size: var(--app-icon-size-sm);
 }
 
 .app-status-notice.is-loading .app-status-notice__icon {

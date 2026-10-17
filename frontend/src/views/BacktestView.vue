@@ -1773,7 +1773,7 @@ const menuPageTitle = useMenuPageTitle()
           >
             <el-option v-for="o in runOptions" :key="o.id" :value="o.id" :label="o.label">
               <span class="history-run-option" :title="`${o.label}｜${o.range}｜${o.retTxt}`">
-                <span class="history-run-option-name" :style="{ color: o.color, fontWeight: 600 }">{{ o.label }}</span>
+                <span class="history-run-option-name" :style="{ color: o.color }">{{ o.label }}</span>
                 <AssetVisibilityTag
                   v-if="o.displaySource"
                   mode="source"
@@ -2520,7 +2520,7 @@ const menuPageTitle = useMenuPageTitle()
 }
 .history-run-select { flex: 1 1 260px; min-width: 0; max-width: 340px; }
 .history-run-option { display: flex; align-items: center; gap: var(--app-space-2); width: 100%; min-width: 0; }
-.history-run-option-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-run-option-name { font-weight: var(--app-font-weight-section); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-run-option .opt-range { flex: 0 0 auto; float: none; margin-left: 0; }
 .opt-range { float: right; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); margin-left: 18px; }
 .dlg-legend { display: flex; align-items: center; gap: var(--app-space-4); margin-bottom: 8px; font-size: var(--app-font-size-caption); }
@@ -2536,7 +2536,7 @@ const menuPageTitle = useMenuPageTitle()
 .ds-item { display: flex; flex-direction: column; }
 .ds-item.ds-span { margin-left: auto; }
 .ds-k { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
-.ds-v { font-size: var(--app-font-size-data); font-weight: var(--app-font-weight-strong); font-variant-numeric: tabular-nums; }
+.ds-v { font-size: var(--app-font-size-data); line-height: var(--app-line-height-data); font-weight: var(--app-font-weight-section); font-variant-numeric: tabular-nums; }
 .ds-rank { font-size: var(--app-font-size-section-title); }
 .ds-rank .ds-sub { font-size: var(--app-font-size-caption); font-weight: var(--app-font-weight-regular); color: var(--el-text-color-secondary); }
 .ds-rank2 { font-size: var(--app-font-size-caption); color: var(--el-text-color-regular); margin-top: 2px; }

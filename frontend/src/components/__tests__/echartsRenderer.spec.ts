@@ -20,7 +20,10 @@ describe('initVectorEChart', () => {
     const element = document.createElement('div')
 
     expect(initVectorEChart(element)).toBe(echartsMock.chart)
-    expect(echartsMock.init).toHaveBeenCalledWith(element, undefined, { renderer: 'svg' })
+    expect(echartsMock.init).toHaveBeenCalledWith(element, { textStyle: expect.objectContaining({
+      fontFamily: expect.stringContaining('system-ui'),
+      fontWeight: 400,
+    }) }, { renderer: 'svg' })
   })
 
   it('根级缩放下把指针视口坐标统一换回图表布局坐标', () => {

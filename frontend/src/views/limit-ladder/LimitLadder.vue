@@ -322,7 +322,9 @@ function resetFilters(): void {
 }
 .limit-ladder__summary strong {
   color: var(--el-text-color-primary);
-  font-size: var(--app-font-size-title);
+  font-size: var(--app-font-size-data);
+  font-weight: var(--app-font-weight-section);
+  line-height: var(--app-line-height-data);
   font-variant-numeric: tabular-nums;
 }
 .limit-ladder__summary strong.is-total { color: var(--el-color-primary); }

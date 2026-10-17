@@ -931,6 +931,8 @@ const menuPageTitle = useMenuPageTitle()
   display: block;
   overflow-wrap: anywhere;
   font-size: var(--app-font-size-data);
+  line-height: var(--app-line-height-data);
+  font-weight: var(--app-font-weight-section);
 }
 .detail-title em {
   display: block;

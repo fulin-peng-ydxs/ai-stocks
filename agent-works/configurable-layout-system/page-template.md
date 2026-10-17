@@ -329,7 +329,7 @@ AppDialog
 
 页面设置抽屉不开放“允许折叠”和“默认折叠段”配置。首次使用全部展开；用户逐组折叠或使用抽屉根部一键操作后，统一记忆当前顶层折叠态。每个存在直接子分组的 `SettingsGroup` 由共享折叠树自动显示本层一键操作；父级收起直接子节点即可隐藏其子树，重新展开时保留更深层原状态。页面不得覆写这套策略、手工枚举子节点或添加第二套批量折叠入口。
 
-抽屉层级按稳定语义角色分档，不按任意 DOM 深度持续缩小：标准抽屉标题统一消费 `PageDrawer` 标准标题档或 `.app-drawer-title` 的 16px / 600 / 24px，内部一级 `SettingsGroup` 为 15px / 600 / 22px；只有嵌入局部工作区且空间受限的工具抽屉可声明 `compact`，标题使用 15px / 600 / 22px，内部一级 `SettingsGroup` 由共享抽屉上下文自动降为 14px / 600 / 22px，分段选项使用 13px / 600。业务抽屉不得覆盖这些字号。副标题统一消费 `.app-drawer-subtitle` 的 12px / 400 / 18px。页面设置中的一级分类为 15px，二级及更深节点统一 14px，事项名 13px，辅助说明 12px；所有可折叠节点使用箭头，并以最多两档缩进和纵向结构线表达父子关系。业务分区使用 `PageSettingSection`，它仅是 `SettingsGroup level=2` 的语义薄封装；设置事项统一使用 `PageSettingItem`，开关等短控件可选行内布局，页面不得复制 `.setting-item/.setting-label`。
+抽屉字体角色、标题档位与共享上下文统一遵守 [DESIGN.md §3](../../DESIGN.md#3-typography-rules)，本模板不另行维护字阶。所有可折叠节点使用箭头，并以最多两档缩进和纵向结构线表达父子关系。业务分区使用 `PageSettingSection`，它仅是 `SettingsGroup level=2` 的语义薄封装；设置事项统一使用 `PageSettingItem`，开关等短控件可选行内布局，页面不得复制 `.setting-item/.setting-label`。
 
 ### 6.2 页面骨架
 

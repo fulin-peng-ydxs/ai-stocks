@@ -81,7 +81,7 @@ function render() {
     tooltip: {
       trigger: 'axis',
       backgroundColor: t.tooltipBackground, borderColor: t.tooltipBorder, borderWidth: 1,
-      textStyle: { color: t.text, fontSize: 12 },
+      textStyle: { color: t.text, fontSize: t.typography.body },
       axisPointer: { type: 'cross', label: { backgroundColor: t.axis } },
       // 净值图悬浮：组合/基准按「相对首日涨跌幅 %」展示，并在基准可见时给组合一行「超额」（组合涨跌幅−基准涨跌幅），
       // 与板块行情对比图悬浮口径一致；回撤子图仍按 % 原值展示。
@@ -113,26 +113,26 @@ function render() {
             `<span style="text-align:right"><strong style="color:${colorOf(isDd ? val : r)}">${valText}</strong>${excessHtml}</span>`,
           )
         }).join('')
-        return `<div style="min-width:150px;line-height:1.7">`
+        return `<div style="min-width:150px;line-height:var(--app-line-height-longform)">`
           + `<div style="color:${t.label};margin-bottom:2px">${date}</div>${content}</div>`
       },
     },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     xAxis: [
       { type: 'category', data: dates, axisLine: { lineStyle: { color: t.axis } },
-        axisLabel: { color: t.label, fontSize: 10 } },
+        axisLabel: { color: t.label, fontSize: t.typography.axis } },
       { type: 'category', gridIndex: 1, data: dates, axisLine: { lineStyle: { color: t.axis } },
         axisLabel: { show: false }, axisTick: { show: false } },
     ],
     yAxis: [
       { scale: true, axisLine: { show: false }, axisLabel: {
         color: t.label,
-        fontSize: 10,
+        fontSize: t.typography.axis,
         formatter: (value: number) => formatMoney(value, { digits: 0, empty: '--' }),
       },
         splitLine: { lineStyle: { color: t.split } } },
       { gridIndex: 1, axisLine: { show: false }, splitNumber: 2,
-        axisLabel: { color: t.label, fontSize: 10, formatter: formatMarketPercent },
+        axisLabel: { color: t.label, fontSize: t.typography.axis, formatter: formatMarketPercent },
         splitLine: { show: false } },
     ],
     dataZoom: [{ type: 'inside', xAxisIndex: [0, 1] }],

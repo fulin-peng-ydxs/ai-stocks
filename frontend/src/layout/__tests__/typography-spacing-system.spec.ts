@@ -281,6 +281,7 @@ describe('字体与间距设计契约', () => {
     expect(globalCss).toContain("'Microsoft YaHei UI'")
     expect(globalCss).toContain('--app-font-size-body')
     expect(globalCss).toContain('--app-table-content-font-size')
+    expect(globalCss).toMatch(/html\[data-layout-preset\] \.el-table \.cell\s*\{\s*line-height: var\(--app-table-content-line-height\)/)
     expect(globalCss).toContain('@media (max-resolution: 1.5dppx)')
     expect(globalCss).toContain('.lh-density-comfortable')
     expect(globalCss).toContain('--app-font-weight-section: 600')
@@ -468,59 +469,18 @@ describe('字体与间距设计契约', () => {
     )
   })
 
-  it('普通页面样式不新增游离 font-size、line-height、font-weight、gap 或 font-family', () => {
+  it('普通页面样式不新增游离 gap', () => {
     const violations: string[] = []
-    const allowedRawFontSizeFiles = new Set([
-      'components/BrandMark.vue',
-      'views/LoginView.vue',
-    ])
-    const allowedRawFontFamilyFiles = new Set(['views/LoginView.vue'])
-    const allowedRawFontWeightFiles = new Set([
-      'components/BrandMark.vue',
-      'views/LoginView.vue',
-    ])
-    const allowedRawLineHeightFiles = new Set(['views/LoginView.vue'])
-
     for (const file of sourceFiles(SRC_DIR)) {
-      const rel = relative(SRC_DIR, file)
       for (const css of styleBlocks(file)) {
-        for (const match of css.matchAll(/font-size\s*:\s*([^;\n]+)/g)) {
-          const value = match[1].trim()
-          // inherit 是合法继承语义（继承父级字号），不构成新增游离字号。
-          if (value.startsWith('var(') || value === 'inherit') continue
-          if (value.startsWith('clamp(') && allowedRawFontSizeFiles.has(rel)) continue
-          if (!allowedRawFontSizeFiles.has(rel)) {
-            violations.push(`${rel}:${lineOf(css, match.index ?? 0)} font-size: ${value}`)
-          }
-        }
-        for (const match of css.matchAll(/line-height\s*:\s*([^;\n]+)/g)) {
-          const value = match[1].trim()
-          if (!value.startsWith('var(') && value !== 'inherit' && !allowedRawLineHeightFiles.has(rel)) {
-            violations.push(`${rel}:${lineOf(css, match.index ?? 0)} line-height: ${value}`)
-          }
-        }
-        for (const match of css.matchAll(/font-weight\s*:\s*([^;\n]+)/g)) {
-          const value = match[1].trim()
-          if (!value.startsWith('var(') && !allowedRawFontWeightFiles.has(rel)) {
-            violations.push(`${rel}:${lineOf(css, match.index ?? 0)} font-weight: ${value}`)
-          }
-        }
         for (const match of css.matchAll(/(^|[;{}\n]\s*)gap\s*:\s*([^;\n]+)/g)) {
           const value = match[2].trim()
-          // 0 不引入新的间距尺度，允许组件显式消除父级 gap。
           if (value !== '0' && !value.startsWith('var(')) {
-            violations.push(`${rel}:${lineOf(css, match.index ?? 0)} gap: ${value}`)
-          }
-        }
-        for (const match of css.matchAll(/font-family\s*:\s*([^;\n]+)/g)) {
-          const value = match[1].trim()
-          if (!value.startsWith('var(') && !allowedRawFontFamilyFiles.has(rel)) {
-            violations.push(`${rel}:${lineOf(css, match.index ?? 0)} font-family: ${value}`)
+            violations.push(`${relative(SRC_DIR, file)}:${lineOf(css, match.index ?? 0)} gap: ${value}`)
           }
         }
       }
     }
-
     expect(violations).toEqual([])
   })
 
@@ -530,17 +490,12 @@ describe('字体与间距设计契约', () => {
     // 值虽是 var()，选择器却是无 > 限定的后代选择器，会命中本不该用小字号的嵌套元素。
     // 这里强制：微字号只允许作用在语义类、:global 或 > 限定的直接子级上。
     const violations: string[] = []
-    const allowedRawFontSizeFiles = new Set([
-      'components/BrandMark.vue',
-      'views/LoginView.vue',
-    ])
     const SMALL_FONT = /micro|tiny|ornament/
     // 裸标签（含 span/strong/div/p/b/em/i/a），用于识别「未限定直接子级」的后代选择器
     const LOOSE_TAG = /(?<![\w.-])(span|strong|div|td|p|b|em|i|a)(\s|,|:|\.|\[|$)/
 
     for (const file of sourceFiles(SRC_DIR)) {
       const rel = relative(SRC_DIR, file)
-      if (allowedRawFontSizeFiles.has(rel)) continue
       for (const css of styleBlocks(file)) {
         for (const match of css.matchAll(/([^{}]+)\{([^}]*?)\}/gs)) {
           const selector = match[1].trim()

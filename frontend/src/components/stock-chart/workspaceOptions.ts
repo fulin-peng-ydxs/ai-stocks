@@ -300,8 +300,8 @@ export function buildSignalSeries(
               y: geometry.labelCenterY,
               text: label,
               fill: theme.text,
-              fontSize: 10,
-              fontWeight: 700,
+              fontSize: theme.typography.axis,
+              fontWeight: theme.typography.strong,
               align: 'center',
               verticalAlign: 'middle',
             },
@@ -363,9 +363,9 @@ function buildTradeMarkPoints(context: OptionContext) {
           show: true,
           position: isBuy ? 'bottom' : 'top',
           color,
-          fontSize: 10,
-          fontWeight: 600,
-          lineHeight: 13,
+          fontSize: context.theme.typography.axis,
+          fontWeight: context.theme.typography.section,
+          lineHeight: context.theme.typography.annotationLineHeight,
           formatter: marker.label,
         },
       }
@@ -474,8 +474,8 @@ function buildVisibleExtremaMarkPoints(context: OptionContext) {
         // 停牌等平价 K 线可能 high=low，上下错开仍能同时识别两个极值。
         offset: [0, item.kind === 'visible-high' ? -7 : 7],
         color: context.theme.text,
-        fontSize: 10,
-        fontWeight: 600,
+        fontSize: context.theme.typography.axis,
+        fontWeight: context.theme.typography.section,
         backgroundColor: context.theme.tooltipBackground,
         borderColor: context.theme.tooltipBorder,
         borderWidth: 1,
@@ -515,7 +515,7 @@ function commonAxes(context: OptionContext, showPointerDate: boolean) {
         alignMaxLabel: 'right',
         margin: 8,
         color: context.theme.label,
-        fontSize: 10,
+        fontSize: context.theme.typography.axis,
       },
       axisPointer: {
         label: { show: showPointerDate },
@@ -562,7 +562,7 @@ function commonOption(context: OptionContext, showPointerDate: boolean) {
       backgroundColor: context.theme.tooltipBackground,
       borderColor: context.theme.tooltipBorder,
       borderWidth: 1,
-      textStyle: { color: context.theme.text, fontSize: 12 },
+      textStyle: { color: context.theme.text, fontSize: context.theme.typography.body },
     },
     ...axes,
   }
@@ -596,8 +596,8 @@ export function buildKlineOption(context: OptionContext) {
       confine: true,
       transitionDuration: 0,
       extraCssText: 'transition:opacity .14s ease,visibility .14s ease;'
-        + 'font-size:calc(12px * var(--app-display-scale, 1))!important;'
-        + 'line-height:calc(18px * var(--app-display-scale, 1))!important;'
+        + 'font-size:calc(var(--app-font-size-caption) * var(--app-display-scale, 1))!important;'
+        + 'line-height:calc(var(--app-line-height-caption) * var(--app-display-scale, 1))!important;'
         + 'padding:calc(10px * var(--app-display-scale, 1))!important;',
       position: (
         point: number[],
@@ -633,7 +633,7 @@ export function buildKlineOption(context: OptionContext) {
         axisLine: { show: false },
         axisLabel: {
           color: context.theme.label,
-          fontSize: 10,
+          fontSize: context.theme.typography.axis,
           formatter: (value: number) => formatChartAxisNumber(value, 2),
         },
         splitLine: { lineStyle: { color: context.theme.split } },
@@ -653,7 +653,7 @@ export function buildKlineOption(context: OptionContext) {
         },
         axisLabel: {
           color: context.theme.label,
-          fontSize: 10,
+          fontSize: context.theme.typography.axis,
           formatter: (value: number) => {
             if (referencePrice == null) return '--'
             const percentage = ((value / referencePrice) - 1) * 100
@@ -752,7 +752,7 @@ export function buildVolumeOption(context: OptionContext) {
       axisLine: { show: false },
       axisLabel: {
         color: context.theme.label,
-        fontSize: 10,
+        fontSize: context.theme.typography.axis,
         formatter: (value: number) => formatVolume(value),
       },
       splitLine: { lineStyle: { color: context.theme.split } },
@@ -798,7 +798,7 @@ export function buildMacdOption(context: OptionContext) {
       axisLine: { show: false },
       axisLabel: {
         color: context.theme.label,
-        fontSize: 10,
+        fontSize: context.theme.typography.axis,
         formatter: (value: number) => formatChartAxisNumber(value, 2),
       },
       splitLine: { lineStyle: { color: context.theme.split } },

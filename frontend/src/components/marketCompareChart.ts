@@ -97,14 +97,14 @@ export function buildMarketCompareLineOption(input: MarketCompareLineOptionInput
       data: series.map((item) => item.name),
       top: 4,
       ...(scrollLegend ? { type: 'scroll' as const } : {}),
-      textStyle: { color: theme.label, fontSize: 11 },
+      textStyle: { color: theme.label, fontSize: theme.typography.compact },
     },
     tooltip: {
       trigger: 'axis',
       backgroundColor: theme.tooltipBackground,
       borderColor: theme.tooltipBorder,
       borderWidth: 1,
-      textStyle: { color: theme.text, fontSize: 12 },
+      textStyle: { color: theme.text, fontSize: theme.typography.body },
       axisPointer: { type: 'cross', label: { backgroundColor: theme.axis } },
       formatter: tooltipFormatter,
     },
@@ -113,7 +113,7 @@ export function buildMarketCompareLineOption(input: MarketCompareLineOptionInput
       data: dates,
       boundaryGap: false,
       axisLine: { lineStyle: { color: theme.axis } },
-      axisLabel: { color: theme.label, fontSize: 10 },
+      axisLabel: { color: theme.label, fontSize: theme.typography.axis },
     },
     yAxis: [
       {
@@ -125,7 +125,7 @@ export function buildMarketCompareLineOption(input: MarketCompareLineOptionInput
         axisLabel: {
           show: concreteValueBase != null && Number.isFinite(concreteValueBase) && concreteValueBase > 0,
           color: theme.label,
-          fontSize: 10,
+          fontSize: theme.typography.axis,
           formatter: concreteValueFormatter(concreteValueBase),
         },
         splitLine: { lineStyle: { color: theme.split } },
@@ -136,7 +136,7 @@ export function buildMarketCompareLineOption(input: MarketCompareLineOptionInput
         scale: true,
         ...extent,
         axisLine: { show: false },
-        axisLabel: { color: theme.label, fontSize: 10, formatter: formatMarketPercent },
+        axisLabel: { color: theme.label, fontSize: theme.typography.axis, formatter: formatMarketPercent },
         splitLine: { show: false },
       },
     ],

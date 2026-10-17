@@ -769,8 +769,9 @@ onMounted(async () => {
 }
 .metric strong {
   white-space: nowrap;
-  font-size: var(--app-font-size-subtitle);
-  font-weight: var(--app-font-weight-strong);
+  font-size: var(--app-font-size-data);
+  font-weight: var(--app-font-weight-section);
+  line-height: var(--app-line-height-data);
 }
 .metric--primary {
   background: color-mix(in srgb, var(--el-color-primary-light-9) 52%, transparent);

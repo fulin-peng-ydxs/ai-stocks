@@ -127,12 +127,12 @@ export function stockQuoteSummaryHtml(
   const detailColumnCount = (Math.max(1, grouped.length) * 2) + (summary.supplement ? 1 : 0)
   const time = summary.time
     ? '<thead><tr>'
-      + `<th style="padding:0 ${scaledPx(10)} ${scaledPx(4)} 0;text-align:left;color:${palette.label};font-weight:400">时间</th>`
+      + `<th style="padding:0 ${scaledPx(10)} ${scaledPx(4)} 0;text-align:left;color:${palette.label};font-weight:var(--app-font-weight-regular)">时间</th>`
       + `<td colspan="${detailColumnCount}" style="padding:0 0 ${scaledPx(4)} ${scaledPx(10)};text-align:right;color:${palette.text}">${summary.time}</td>`
       + '</tr></thead>'
     : ''
   const heroDetails = summary.hero.details?.length
-    ? `<div style="display:flex;justify-content:flex-start;gap:${scaledPx(8)};margin-top:${scaledPx(2)};font-size:${scaledPx(11)};white-space:nowrap">`
+    ? `<div style="display:flex;justify-content:flex-start;gap:${scaledPx(8)};margin-top:${scaledPx(2)};font-size:calc(var(--app-font-size-micro) * var(--app-display-scale, 1));white-space:nowrap">`
       + summary.hero.details.map((detail, index) => (
         `<span style="${widthCss(widths?.hero.details[index])}color:${colorOf(detail.tone, palette)}">${detail.value}</span>`
       )).join('') + '</div>'
@@ -140,8 +140,8 @@ export function stockQuoteSummaryHtml(
   const bodyRows = Array.from({ length: rowsPerColumn }, (_, rowIndex) => {
     const hero = rowIndex === 0
       ? `<td rowspan="${rowsPerColumn}" style="padding:0 ${scaledPx(10)} 0 0;border-right:1px solid ${palette.border};vertical-align:middle;text-align:left">`
-        + (summary.hero.label ? `<div style="color:${palette.label};font-size:${scaledPx(11)}">${summary.hero.label}</div>` : '')
-        + `<div style="${widthCss(widths?.hero.value, true)}color:${colorOf(summary.hero.tone, palette)};font-size:${scaledPx(18)};line-height:1.35;font-weight:700;white-space:nowrap">${summary.hero.value}</div>${heroDetails}</td>`
+        + (summary.hero.label ? `<div style="color:${palette.label};font-size:calc(var(--app-font-size-micro) * var(--app-display-scale, 1))">${summary.hero.label}</div>` : '')
+        + `<div style="${widthCss(widths?.hero.value, true)}color:${colorOf(summary.hero.tone, palette)};font-size:calc(var(--app-font-size-title-md) * var(--app-display-scale, 1));line-height:var(--app-line-height-compact);font-weight:var(--app-font-weight-strong);white-space:nowrap">${summary.hero.value}</div>${heroDetails}</td>`
       : ''
     const metrics = grouped.map((column, columnIndex) => {
       const metric = column[rowIndex]
@@ -149,21 +149,21 @@ export function stockQuoteSummaryHtml(
       const separatorGap = summary.supplement && columnIndex === grouped.length - 1
         ? supplementGap
         : '0'
-      return `<th style="padding:0 0 0 ${scaledPx(10)};text-align:left;color:${palette.label};font-weight:400;white-space:nowrap"><span style="${widthCss(widths?.columns[columnIndex]?.label)}">${metric.label}</span></th>`
+      return `<th style="padding:0 0 0 ${scaledPx(10)};text-align:left;color:${palette.label};font-weight:var(--app-font-weight-regular);white-space:nowrap"><span style="${widthCss(widths?.columns[columnIndex]?.label)}">${metric.label}</span></th>`
         + `<td style="padding:0 ${separatorGap} 0 ${scaledPx(8)};text-align:right;color:${colorOf(metric.tone, palette)};white-space:nowrap"><span style="${widthCss(widths?.columns[columnIndex]?.value)}">${metric.value}</span></td>`
     }).join('')
     const supplement = rowIndex === 0 && summary.supplement
       ? `<td rowspan="${rowsPerColumn}" style="padding:0 0 0 ${supplementGap};border-left:1px solid ${palette.border};vertical-align:middle">`
-        + `<div style="${widthCss(widths?.supplement?.label, true)}color:${palette.label};font-size:${scaledPx(11)};white-space:nowrap">${summary.supplement.label}</div>`
-        + `<div style="${widthCss(widths?.supplement?.value, true)}color:${colorOf(summary.supplement.tone, palette)};font-size:${scaledPx(16)};line-height:1.45;font-weight:700;white-space:nowrap">${summary.supplement.value}</div>`
+        + `<div style="${widthCss(widths?.supplement?.label, true)}color:${palette.label};font-size:calc(var(--app-font-size-micro) * var(--app-display-scale, 1));white-space:nowrap">${summary.supplement.label}</div>`
+        + `<div style="${widthCss(widths?.supplement?.value, true)}color:${colorOf(summary.supplement.tone, palette)};font-size:calc(var(--app-font-size-data) * var(--app-display-scale, 1));line-height:var(--app-line-height-comfy);font-weight:var(--app-font-weight-strong);white-space:nowrap">${summary.supplement.value}</div>`
         + (summary.supplement.details?.length
-          ? `<div style="display:flex;flex-direction:column;color:${palette.label};font-size:${scaledPx(11)};white-space:nowrap">${summary.supplement.details.map((detail, index) => `<span style="${widthCss(widths?.supplement?.details[index])}">${detail.value}</span>`).join('')}</div>`
+          ? `<div style="display:flex;flex-direction:column;color:${palette.label};font-size:calc(var(--app-font-size-micro) * var(--app-display-scale, 1));white-space:nowrap">${summary.supplement.details.map((detail, index) => `<span style="${widthCss(widths?.supplement?.details[index])}">${detail.value}</span>`).join('')}</div>`
           : '')
         + '</td>'
       : ''
     return `<tr style="height:${scaledPx(21)}">${hero}${metrics}${supplement}</tr>`
   }).join('')
 
-  return '<div style="width:max-content;max-width:calc(100cqw - 32px);box-sizing:border-box;font-variant-numeric:tabular-nums;line-height:1.55">'
+  return '<div style="width:max-content;max-width:calc(100cqw - 32px);box-sizing:border-box;font-variant-numeric:tabular-nums;line-height:var(--app-line-height-reading)">'
     + `<table style="border-collapse:collapse;border-spacing:0;color:${palette.text}">${time}<tbody>${bodyRows}</tbody></table></div>`
 }

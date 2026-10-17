@@ -1,3 +1,4 @@
+import { chartTypography } from '@/components/chartTheme'
 import { describe, expect, it } from 'vitest'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import {
@@ -32,6 +33,7 @@ import {
 } from '@/components/stock-chart/chartUtils'
 
 const theme: StockChartTheme = {
+  typography: chartTypography(),
   background: '#fff',
   axis: '#ddd',
   split: '#eee',
@@ -539,7 +541,7 @@ describe('workspaceOptions', () => {
     expect(content).toContain('text-align:left')
     expect(content).toContain('text-align:right')
     expect(content).toContain('font-variant-numeric:tabular-nums')
-    expect(content).toContain('font-size:calc(18px * var(--app-display-scale, 1))')
+    expect(content).toContain('font-size:calc(var(--app-font-size-title-md) * var(--app-display-scale, 1))')
     expect(content).toContain('border-right:1px solid #ddd')
     for (const field of ['时间', '开盘', '最高', '最低', '涨跌幅', '振幅', '成交量', '成交额', '换手率']) {
       expect(content).toContain(`>${field}<`)
@@ -559,7 +561,7 @@ describe('workspaceOptions', () => {
     ]) {
       expect(content).toContain(`>${value}<`)
     }
-    expect(content).toContain('color:#up;font-size:calc(18px * var(--app-display-scale, 1))')
+    expect(content).toContain('color:#up;font-size:calc(var(--app-font-size-title-md) * var(--app-display-scale, 1))')
     expect(content).toMatch(/color:#up;white-space:nowrap"><span[^>]*>\+1\.01%<\/span><\/td>/)
     expect(content).toMatch(/color:#down;white-space:nowrap"><span[^>]*>9\.80<\/span><\/td>/)
     expect(content).toMatch(/color:#up;white-space:nowrap"><span[^>]*>10\.40<\/span><\/td>/)
@@ -592,7 +594,7 @@ describe('workspaceOptions', () => {
     const downContent = (downOption.tooltip.formatter as (
       params: Array<{ dataIndex: number }>,
     ) => string)([{ dataIndex: 0 }])
-    expect(downContent).toContain('color:#down;font-size:calc(18px * var(--app-display-scale, 1))')
+    expect(downContent).toContain('color:#down;font-size:calc(var(--app-font-size-title-md) * var(--app-display-scale, 1))')
     expect(downContent).toMatch(/color:#down;white-space:nowrap"><span[^>]*>-2\.00%<\/span><\/td>/)
   })
 

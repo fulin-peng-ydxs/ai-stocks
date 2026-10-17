@@ -150,7 +150,7 @@ function render(): void {
             + '</span>',
         )
       }).join('')
-      return `<div style="min-width:180px;line-height:1.7">`
+      return `<div style="min-width:180px;line-height:var(--app-line-height-longform)">`
         + `<div style="color:${currentTheme.label};margin-bottom:2px">${escapeChartHtml(date)} · ${metricLabel.value}</div>`
         + content
         + '</div>'

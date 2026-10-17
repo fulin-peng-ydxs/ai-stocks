@@ -1051,7 +1051,7 @@ button.topbar-status:focus-visible {
   color: var(--chrome-text-strong);
 }
 .topbar-tool .el-icon {
-  font-size: var(--app-font-size-data);
+  font-size: var(--app-icon-size-sm);
 }
 .topbar-tool-signal {
   position: absolute;
@@ -1312,7 +1312,8 @@ button.topbar-status:focus-visible {
 }
 .drawer-user-name {
   font-size: var(--app-font-size-data);
-  font-weight: var(--app-font-weight-strong);
+  line-height: var(--app-line-height-data);
+  font-weight: var(--app-font-weight-section);
   color: var(--page-settings-text);
 }
 .drawer-user-sub {
@@ -1337,7 +1338,7 @@ button.topbar-status:focus-visible {
   color: var(--page-settings-accent);
   font-family: var(--app-font-family-mono);
   font-size: var(--app-font-size-data);
-  font-weight: var(--app-font-weight-strong);
+  font-weight: var(--app-font-weight-section);
   line-height: var(--app-line-height-data);
   font-variant-numeric: tabular-nums;
 }

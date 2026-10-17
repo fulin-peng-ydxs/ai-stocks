@@ -31,22 +31,22 @@ function render() {
     tooltip: {
       trigger: 'axis',
       backgroundColor: t.tooltipBackground, borderColor: t.tooltipBorder, borderWidth: 1,
-      textStyle: { color: t.text, fontSize: 12 },
+      textStyle: { color: t.text, fontSize: t.typography.body },
       axisPointer: { type: 'cross', label: { backgroundColor: t.axis } },
     },
     xAxis: {
       type: 'category', data: labels,
       axisLine: { lineStyle: { color: t.axis } },
-      axisLabel: { color: t.label, fontSize: 11 },
+      axisLabel: { color: t.label, fontSize: t.typography.compact },
     },
     yAxis: [
       { type: 'value', min: 0, max: 100,
         axisLine: { show: false },
-        axisLabel: { color: t.label, fontSize: 11 },
+        axisLabel: { color: t.label, fontSize: t.typography.compact },
         splitLine: { lineStyle: { color: t.split } } },
       { type: 'value', position: 'right',
         axisLine: { show: false },
-        axisLabel: { color: t.label, fontSize: 11, formatter: formatMarketPercent },
+        axisLabel: { color: t.label, fontSize: t.typography.compact, formatter: formatMarketPercent },
         splitLine: { show: false } },
     ],
     series: [
