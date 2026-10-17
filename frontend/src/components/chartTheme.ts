@@ -1,6 +1,7 @@
 import { computed, type ComputedRef } from 'vue'
 import { useTheme } from '@/composables/useTheme'
 import { useLayoutPreset } from '@/layout/useLayoutPreset'
+import { getLoginSurfaceSpec } from '@/layout/themeSurfaces'
 
 export interface EChartsTheme {
   typography: ChartTypography
@@ -48,21 +49,22 @@ export function hasRenderableChartSize(element: HTMLElement): boolean {
 
 /** 非股票 ECharts 的语义主题；只读取预设系统已经提交完成的 CSS token。fallback 与 balanced 预设同值，避免预设未就绪时回退到旧色。 */
 export function echartsTheme(isDark: boolean): EChartsTheme {
+  const surfaces = getLoginSurfaceSpec(isDark ? 'dark' : 'light')
   return {
     typography: chartTypography(),
-    background: chartCssVariable('--el-bg-color', isDark ? '#171717' : '#ffffff'),
+    background: chartCssVariable('--el-bg-color', surfaces.surfaceBg),
     axis: chartCssVariable('--el-border-color', isDark ? '#353535' : '#e5e5e5'),
     split: chartCssVariable('--el-border-color-lighter', isDark ? '#353535' : '#e5e5e5'),
-    label: chartCssVariable('--el-text-color-secondary', isDark ? '#9a9a9a' : '#73757d'),
+    label: chartCssVariable('--el-text-color-secondary', isDark ? '#9a9a9a' : '#6e7078'),
     text: chartCssVariable('--el-text-color-primary', isDark ? '#f4f4f4' : '#17181c'),
     tooltipBackground: chartCssVariable(
       '--el-bg-color-overlay',
-      isDark ? 'rgba(23,23,23,0.96)' : 'rgba(255,255,255,0.96)',
+      surfaces.surfaceBg,
     ),
     tooltipBorder: chartCssVariable('--el-border-color', isDark ? '#353535' : '#e5e5e5'),
     focus: chartCssVariable('--el-color-primary', isDark ? '#3b8cff' : '#1677ff'),
     accent: chartCssVariable('--el-color-warning', isDark ? '#f5a623' : '#f58a07'),
-    muted: chartCssVariable('--el-text-color-placeholder', isDark ? '#9a9a9a' : '#73757d'),
+    muted: chartCssVariable('--el-text-color-placeholder', isDark ? '#9a9a9a' : '#6e7078'),
     area: chartCssVariable(
       '--el-color-primary-light-9',
       isDark ? 'rgba(59,140,255,0.18)' : 'rgba(22,119,255,0.10)',
@@ -111,7 +113,7 @@ export function statusColorPalette(isDark: boolean): StatusColorPalette {
     danger: chartCssVariable('--el-color-danger', isDark ? '#ff6b66' : '#f04438'),
     marketUp: chartCssVariable('--market-up-color', isDark ? '#ff7a72' : '#f66055'),
     marketDown: chartCssVariable('--market-down-color', isDark ? '#3fdd90' : '#1ec96e'),
-    muted: chartCssVariable('--el-text-color-secondary', isDark ? '#9a9a9a' : '#73757d'),
+    muted: chartCssVariable('--el-text-color-secondary', isDark ? '#9a9a9a' : '#6e7078'),
   }
 }
 

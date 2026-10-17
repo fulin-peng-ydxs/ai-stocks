@@ -131,7 +131,7 @@ function bar(date: string, close = 10): Bar {
 
 describe('workspaceOptions', () => {
   it('平盘分时量柱在浅色主题使用灰色、黑色主题使用白色', () => {
-    expect(stockChartTheme(false).volumeNeutral).toBe('#73757d')
+    expect(stockChartTheme(false).volumeNeutral).toBe('#6e7078')
     expect(stockChartTheme(true).volumeNeutral).toBe('#ffffff')
   })
 

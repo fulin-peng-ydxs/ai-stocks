@@ -511,7 +511,7 @@ function onSubmit() {
 <style scoped>
 .login-shell {
   /* 仅作首帧兜底；运行时基础色由 themeSurfaces.ts 注入，确保登录页与工作台同源。 */
-  --login-page-bg: #ffffff;
+  --login-page-bg: #fafafa;
   --login-panel-bg: #fcfcfc;
   --login-panel-deep: #fcfcfc;
   --login-grid: color-mix(in srgb, var(--login-accent) 7%, transparent);
@@ -524,19 +524,19 @@ function onSubmit() {
   --login-input-bg: color-mix(in srgb, var(--login-card-opaque-bg) 92%, var(--login-page-bg) 8%);
   --login-text: var(--el-text-color-primary, #17181c);
   --login-text-sub: var(--el-text-color-regular, #44464d);
-  --login-text-muted: var(--el-text-color-secondary, #73757d);
+  --login-text-muted: var(--el-text-color-secondary, #6e7078);
   --login-accent: var(--el-color-primary, #1677ff);
   --login-accent-strong: var(--el-color-primary-dark-2, #1264d9);
   --login-accent-readable: var(--login-accent-strong);
   --login-accent-text: #ffffff;
-  --login-captcha-bg: var(--app-section-bg, #f3f3f3);
+  --login-captcha-bg: var(--app-section-bg, #f7f7f7);
   --login-toggle-bg: color-mix(in srgb, var(--login-card-opaque-bg) 88%, transparent);
   --login-divider: var(--el-border-color, #e5e5e5);
   --login-shadow: var(--shell-surface-shadow, rgba(20, 24, 32, 0.1));
   --login-brand-text: var(--el-text-color-primary, #17181c);
   --login-brand-accent: var(--login-accent);
   --login-brand-sub: var(--el-text-color-regular, #44464d);
-  --login-brand-muted: var(--el-text-color-secondary, #73757d);
+  --login-brand-muted: var(--el-text-color-secondary, #6e7078);
   --login-track: color-mix(in srgb, var(--login-accent) 84%, white 16%);
   --login-track-glow: color-mix(in srgb, var(--login-accent) 25%, transparent);
   --login-danger: var(--el-color-danger, #d9363e);

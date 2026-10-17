@@ -50,7 +50,7 @@ describe('EquityChart 基准对比渲染', () => {
     expect(option.series[1].lineStyle.type).toBe('solid')
     expect(option.series[1].color).toBe(option.series[1].lineStyle.color) // 圆点与线色一致
     // 基准用灰（t.label fallback），与板块行情基准一致，不用橙
-    expect(option.series[1].lineStyle.color).toBe('#73757d')
+    expect(option.series[1].lineStyle.color).toBe('#6e7078')
     wrapper.unmount()
   })
 

@@ -30,7 +30,7 @@ export const LAYOUT_PRESETS: Record<LayoutPresetKey, LayoutPreset> = {
         surfaceBg: THEME_SURFACE_SPECS.light.surfaceBg,
         surfaceHover: '#f3f3f3',
         border: '#e5e5e5', borderStrong: '#c9c9c9',
-        text: '#44464d', textStrong: '#17181c', textMuted: '#73757d',
+        text: '#44464d', textStrong: '#17181c', textMuted: '#6e7078',
         activeBg: '#efeff0', submenuBg: THEME_SURFACE_SPECS.light.sidebarBg,
         shadow: 'rgba(20, 24, 32, 0.10)',
       },

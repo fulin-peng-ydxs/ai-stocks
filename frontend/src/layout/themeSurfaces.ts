@@ -32,6 +32,8 @@ export interface LoginSurfaceSpec {
   cardAlpha: number
   /** 登录卡片叠加后的肉眼可见色，同时也是工作台 surfaceBg。 */
   surfaceBg: string
+  /** 常驻筛选、摘要和配置分组的次级表面，不参与悬停状态。 */
+  sectionBg: string
 }
 
 type RgbChannels = [number, number, number]
@@ -111,6 +113,7 @@ function surface(
   sidebarBg: string,
   cardBg: string,
   cardAlpha: number,
+  sectionBg: string,
 ): LoginSurfaceSpec {
   return {
     pageBg,
@@ -118,6 +121,7 @@ function surface(
     cardBg,
     cardAlpha,
     surfaceBg: blendHex(cardBg, pageBg, cardAlpha),
+    sectionBg,
   }
 }
 
@@ -126,8 +130,8 @@ function surface(
  * 预设只能覆盖强调色和形态，不能改变主画布、边栏、卡片、文字与边界的中性底色。
  */
 export const THEME_SURFACE_SPECS: Record<ThemeMode, LoginSurfaceSpec> = {
-  light: surface('#ffffff', '#fcfcfc', '#ffffff', 1),
-  dark: surface('#171717', '#1f1f1f', '#171717', 1),
+  light: surface('#fafafa', '#fcfcfc', '#ffffff', 1, '#f7f7f7'),
+  dark: surface('#111111', '#1c1c1c', '#191919', 1, '#202020'),
 }
 
 export function getLoginSurfaceSpec(mode: ThemeMode): LoginSurfaceSpec {

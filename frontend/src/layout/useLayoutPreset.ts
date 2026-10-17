@@ -2,6 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { DEFAULT_LAYOUT_PRESET, getLayoutPreset, LAYOUT_PRESETS } from './presets'
 import {
   blendHex,
+  getLoginSurfaceSpec,
   hasDistinctTextHierarchy,
   isHexColor,
   rgbChannelsFromHex,
@@ -206,6 +207,7 @@ function applyPreset(key: string) {
   root.dataset.layoutPreset = preset.key
   root.dataset.layoutMode = mode
   const chromeBg = t.submenuBg
+  const surfaces = getLoginSurfaceSpec(mode)
 
   applyElementColorScale(root, 'primary', t.primary, mode, t.surfaceBg)
   applyElementColorScale(root, 'success', t.success, mode, t.surfaceBg)
@@ -216,7 +218,7 @@ function applyPreset(key: string) {
   root.style.setProperty('--el-bg-color', t.surfaceBg)
   root.style.setProperty('--el-bg-color-overlay', t.surfaceBg)
   root.style.setProperty('--el-fill-color-blank', t.surfaceBg)
-  root.style.setProperty('--app-section-bg', t.surfaceHover)
+  root.style.setProperty('--app-section-bg', surfaces.sectionBg)
   root.style.setProperty('--el-fill-color-light', t.surfaceHover)
   root.style.setProperty('--el-fill-color-lighter', rgbaFromHex(t.border, mode === 'dark' ? 0.46 : 0.34))
   root.style.setProperty('--el-fill-color-extra-light', rgbaFromHex(t.surfaceHover, mode === 'dark' ? 0.72 : 0.58))
@@ -262,7 +264,7 @@ function applyPreset(key: string) {
   root.style.setProperty('--brand-signal', rgbaFromHex(t.danger, mode === 'dark' ? 0.58 : 0.42))
   root.style.setProperty('--brand-word', t.textStrong)
   root.style.setProperty('--brand-word-stroke', rgbaFromHex(mode === 'dark' ? t.pageBg : t.surfaceBg, mode === 'dark' ? 0.58 : 0.68))
-  root.style.setProperty('--drawer-bg', t.pageBg)
+  root.style.setProperty('--drawer-bg', t.surfaceBg)
   root.style.setProperty('--drawer-card-bg', t.surfaceBg)
   root.style.setProperty('--drawer-border', t.border)
   root.style.setProperty('--drawer-text', t.text)
@@ -270,7 +272,7 @@ function applyPreset(key: string) {
   root.style.setProperty('--page-settings-bg', t.surfaceBg)
   root.style.setProperty('--page-settings-border', t.border)
   root.style.setProperty('--page-settings-shadow', t.shadow)
-  root.style.setProperty('--page-settings-section-bg', t.surfaceBg)
+  root.style.setProperty('--page-settings-section-bg', surfaces.sectionBg)
   root.style.setProperty('--page-settings-section-border', t.border)
   root.style.setProperty('--page-settings-divider', t.border)
   root.style.setProperty('--page-settings-text', t.textStrong)

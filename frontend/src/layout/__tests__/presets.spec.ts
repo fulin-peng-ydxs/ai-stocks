@@ -83,8 +83,8 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
   it('常驻信息分区使用独立语义变量并覆盖描述表标签格', () => {
     const globalCss = readFileSync(join(SRC_DIR, 'styles/global.css'), 'utf8')
 
-    expect(globalCss).toContain('--app-section-bg: #f3f3f3')
-    expect(globalCss).toContain('--app-section-bg: #292929')
+    expect(globalCss).toContain('--app-section-bg: #f7f7f7')
+    expect(globalCss).toContain('--app-section-bg: #202020')
     expect(globalCss).toMatch(
       /\.el-descriptions__label\.el-descriptions__cell\.is-bordered-label\s*\{\s*background-color:\s*var\(--app-section-bg\)/,
     )
@@ -127,23 +127,26 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
   it('澄空蓝双模式的正文和弱文字保持 WCAG AA 对比度', () => {
     for (const mode of MODES) {
       const preset = LAYOUT_PRESETS.balanced.tokens[mode]
-      expect(contrastRatioFromHex(preset.text, preset.surfaceBg), `${mode} 正文`)
-        .toBeGreaterThanOrEqual(4.5)
-      expect(contrastRatioFromHex(preset.textMuted, preset.surfaceBg), `${mode} 弱文字`)
-        .toBeGreaterThanOrEqual(4.5)
+      const spec = THEME_SURFACE_SPECS[mode]
+      for (const background of [spec.pageBg, spec.surfaceBg, spec.sectionBg, spec.sidebarBg]) {
+        expect(contrastRatioFromHex(preset.text, background), `${mode} 正文 / ${background}`)
+          .toBeGreaterThanOrEqual(4.5)
+        expect(contrastRatioFromHex(preset.textMuted, background), `${mode} 弱文字 / ${background}`)
+          .toBeGreaterThanOrEqual(4.5)
+      }
     }
   })
 
-  it('澄空蓝使用参考原型的中性白天底与炭黑夜间底', () => {
+  it('澄空蓝使用分层的中性画布、内容面与分组面', () => {
     const light = LAYOUT_PRESETS.balanced.tokens.light
     const balanced = LAYOUT_PRESETS.balanced.tokens.dark
-    expect(light.pageBg).toBe('#ffffff')
+    expect(light.pageBg).toBe('#fafafa')
     expect(light.surfaceBg).toBe('#ffffff')
     expect(light.submenuBg).toBe('#fcfcfc')
     expect(light.primary).toBe('#1677ff')
-    expect(balanced.pageBg, '主页画布对齐登录统一画布').toBe('#171717')
-    expect(balanced.surfaceBg, '夜间主体表面必须与主页画布连续').toBe('#171717')
-    expect(balanced.submenuBg, '边栏对齐原型深色表面').toBe('#1f1f1f')
+    expect(balanced.pageBg, '主页画布对齐登录统一画布').toBe('#111111')
+    expect(balanced.surfaceBg, '夜间内容面比主页画布稍亮').toBe('#191919')
+    expect(balanced.submenuBg, '边栏使用独立中性表面').toBe('#1c1c1c')
     expect(balanced.primary).toBe('#3b8cff')
     expect(contrastRatioFromHex(balanced.textMuted, balanced.surfaceBg), '弱文字可读性')
       .toBeGreaterThanOrEqual(4.5)
@@ -157,10 +160,10 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
       /\.el-overlay\.app-drawer-surface-modal\s*\{\s*background-color:\s*rgba\(0, 0, 0, 0\.32\) !important;/,
     )
     expect(globalCss).toContain('--drawer-bg: #ffffff')
-    expect(globalCss).toContain('--page-settings-section-bg: #ffffff')
-    expect(globalCss).toContain('--drawer-bg: #171717')
-    expect(globalCss).toContain('--drawer-card-bg: #171717')
-    expect(globalCss).toContain('--page-settings-bg: #171717')
+    expect(globalCss).toContain('--page-settings-section-bg: #f7f7f7')
+    expect(globalCss).toContain('--drawer-bg: #191919')
+    expect(globalCss).toContain('--drawer-card-bg: #191919')
+    expect(globalCss).toContain('--page-settings-bg: #191919')
   })
 
   it('二级导航与工作标签栏共享中性底色，不混入预设强调色', () => {
