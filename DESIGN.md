@@ -102,7 +102,7 @@ Key Characteristics：
 - 行情身份摘要（`MarketDetailHero`）、行情主次栏头（`AppWorkspacePane`）、板块静态指标和交易纪律快捷卡保持中性底色，不恢复主色浅背景或渐变强调；真实选中、悬停及状态反馈继续沿用既有语义。
 - 调整基础表面必须同步维护 `light`、`dark`、`themeSurfaces.ts` 与 `presets.spec.ts`；调整预设能力必须验证后端目录、运行时选择和固定表面不受覆盖。
 - 页面设置抽屉保留 `32%` 黑色遮光层，用于明确浮层焦点和点击外部关闭边界；遮光层属于临时交互状态，不参与主题底色定义，抽屉内容面与页面常驻容器仍必须使用中性明暗表面。
-- `surfaceHover` 只用于 hover、选中或明确可操作控件状态；常驻的 KPI、指标标签格、查询摘要和配置分组等内部信息分区统一使用 `--app-section-bg`。该语义变量由主题运行时映射当前中性分区色，当前视觉值与 `surfaceHover` 同源但职责独立，页面不得直接借用悬停 token，也不得自行调深；图表画布、卡片主体和工作区内容面继续使用 `surfaceBg`。
+- `surfaceHover` 用于 hover、选中或明确可操作控件状态；禁用控件复用该基础色值的约定见 §4「按钮与输入」。常驻信息分区与抽屉设置组按 §6 的职责分别使用分区面和内容面；`--app-section-bg` 当前与 `surfaceHover` 同源，但职责独立，页面不得直接借用悬停 token 代替分区变量或自行调深。
 
 ## 3. Typography Rules
 
@@ -448,7 +448,7 @@ Key Characteristics：
 - 纯图标异步操作必须使用 `AppIconButton` 的 `loading`，不得在页面内为图标按钮新增私有旋转动画或把 loading 混同为 disabled 灰态。图标按钮有必要的功能说明时显式传 `tooltip`；外层已有 `AppHoverInfo` 时不再声明同一提示，统一遵循本节提示契约。
 - Unicode 禁令针对交互图标、操作按钮和纯图标控件；业务公式、状态文案里的箭头/对勾/叉号可作为局部文案保留，但不得用于按钮图标。选择态勾选标记也使用 Element Plus 图标或项目 SVG，不使用 Unicode 字形。
 - 自定义原生 `<button>` 仅保留给导航、登录主视觉切换、规则摘要 disclosure 等具有独立语义和结构的专用控件，并在实现中保持专用 class、键盘语义和必要的 ARIA 状态；普通命令和纯图标操作不得借此绕过统一组件。
-- 禁用或只读控件保留外形，边框消费 `border`，文字消费 `textMuted`；Element Plus 的边框与文字适配统一由 `global.css` 承接。`PageSegmented` 不以整体透明度淡化边界，保留真实选中项，禁用项不响应 hover。
+- 禁用或只读控件保留外形，边框消费 `border`，文字消费 `textMuted`；Element Plus 的边框与文字适配统一由 `global.css` 承接。禁用控件底色通过 `--el-disabled-bg-color` 读取，当前由 `useLayoutPreset.ts` 映射为 `surfaceHover`；允许与悬停基础色同色，但不表示控件可交互，禁用状态仍通过文字、边框和光标表达，禁用项不响应 hover。`PageSegmented` 保留原有分段底板和真实选中项，不以整体透明度淡化边界。
 - 夜间模式的复选框、单选框、输入边界和表格行悬浮必须使用强边框或主色反馈；空框、选中、禁用三态均需肉眼可辨。
 - 多行对象选择卡片的普通项必须保留共享卡片的中性边框；选中项通过主色边框和定位标记强调，不能只给选中项画边界。宿主透明边框只用于共享交互表面占位，不得把可见表面的边框 token 置为透明。
 - 工具栏按钮应贴近其影响区域，避免页面右上角堆积所有操作。
@@ -791,14 +791,15 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | 层级 | 表达方式 | 使用场景 |
 |---|---|---|
 | 页面底 | `--el-bg-color-page` | 工作区背景 |
-| 基础表面 | `--el-bg-color` / `--chrome-bg-soft` | 卡片、表格、输入框 |
-| 分区表面 | `--app-section-bg` | KPI、指标标签格、查询摘要、配置组内部 |
+| 基础表面 | `--el-bg-color` / `--chrome-bg-soft` | 卡片、表格、普通输入框；抽屉及其一级设置组通过 `--page-settings-bg` / `--page-settings-section-bg` 映射到同一 `surfaceBg` |
+| 分区表面 | `--app-section-bg` | KPI、指标标签格、查询摘要、主内容区普通配置标题等内部信息区 |
 | 浮层 | `--el-bg-color-overlay`、遮罩、边框 | dialog、drawer、popover |
 | 强浮层 | `box-shadow: 0 10px 30px ...` | 页面设置抽屉、用户中心 |
 
 规则：
 
 - 默认卡片圆角 4px，控件圆角 4-6px，抽屉卡片可到 16px。
+- 卡片主体、抽屉及抽屉一级设置组使用内容面；主内容区普通配置标题等内部信息区可使用分区色，保留共享组件已有的透明混合。`ConfigPanelSection` 的组头与 `SettingsGroup` 的一级卡片按各自职责消费，不将“配置分组”笼统视为同一种背景；更深层分组不强制增加底色，可用标题、缩进和分隔线区分。
 - 业务页面不通过多层阴影表达层级，优先用边框、间距、标题和背景差异。
 - 弹窗遮罩保持轻压暗，不能让背景表格干扰当前任务。
 - 高对比预设必须提高边框和文字对比，而不是仅加深背景。
