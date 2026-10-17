@@ -1,6 +1,6 @@
 # 响应式组件触发清单
 
-范围：`frontend/src/**/*.vue` 全部 163 个文件（含页面私有片段、布局宿主及应用外壳），每个文件一行。页面消费与实测结论见 [页面检查](responsive-pages.md)。规则以 [DESIGN.md](../../DESIGN.md) §8 为准。
+范围：`frontend/src/**/*.vue` 全部 163 个文件（含页面私有片段、布局宿主及应用外壳），每个文件一行。页面消费与实测结论见 [页面检查](responsive-pages.md)。响应式规则以 [DESIGN.md](../../DESIGN.md) §8 为准；应用导航字体与尺寸统一引用该文档 §3.4，本清单只登记消费与适配行为，不另行定义字阶。
 
 尺寸均为缩放后 CSS 像素。`app-viewport` 是应用画布，匿名/命名容器查询看自身容器，ResizeObserver 看被观察元素；不得把浏览器原始视口直接当作触发尺寸。无自身断点不代表无需响应式：该行列出自然布局或委托对象。
 
@@ -92,7 +92,7 @@
 | `frontend/src/components/SubScoreBars.vue` | 无自身 CSS 查询 | 语义微图min132，消费表格内部横滚承担最低宽。 | 按路由/动态渲染或内部消费；无直接Vue import匹配 |
 | `frontend/src/components/SubScoreChips.vue` | 无自身 CSS 查询 | 评分项自然换行，单项长文本省略并保留提示。 | RankedStockResultTable |
 | `frontend/src/components/SystemBuiltinTag.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | AssetVisibilityTag、ConfigView、LayoutPresetsView、MenuResourceView、RoleManageView、TenantManageView |
-| `frontend/src/components/TopNavigation.vue` | `@container app-viewport (max-width: 960px)` | 窄宽压缩导航间距/隐藏辅助上下文；一级与二级入口共用侧栏主入口的14px/600字阶及普通文字色，下拉叶子为14px/400；二级栏共用中性底色、不混入预设强调色；二级入口与工作标签复用`.app-nav-context-entry`的尺寸、圆角及选中边框/底线，下拉消费共享导航字阶、几何和叶子背景，导航动作保留。 两级及下拉入口共用悬停视觉层与180ms颜色过渡，下拉不回落组件库默认蓝底；命中区和下划线保持稳定。 一级保留图标框与整栏底部下划线，仅悬停和键盘焦点面压缩为32px，不套二级选中框。 | App |
+| `frontend/src/components/TopNavigation.vue` | `@container app-viewport (max-width: 960px)` | 窄宽压缩导航间距/隐藏辅助上下文；一级、二级与下拉入口的字体及尺寸按 DESIGN §3.4 消费共享导航 token；二级栏共用中性底色、不混入预设强调色；二级入口与工作标签复用`.app-nav-context-entry`的尺寸、圆角及选中边框/底线，下拉消费共享导航字阶、几何和叶子背景，导航动作保留。 两级及下拉入口共用悬停视觉层与180ms颜色过渡，下拉不回落组件库默认蓝底；命中区和下划线保持稳定。 一级保留图标框与整栏底部下划线，仅收紧悬停和键盘焦点面，不套二级选中框。 | App |
 | `frontend/src/components/TradeDatePicker.vue` | 无自身 CSS 查询 | 委托 AppDatePicker。 | StockGroupBatchActions、BoardTaskScopeFields、ResultMaintenanceTaskFields、StockIngestScopeFields、BacktestView、BoardView、ConfigView、ScreenView、SectorDetailView、SectorsView、StocksView、TrainingView、LimitLadderFilters、TradeCheckinForm、TradeDisciplineHistory |
 | `frontend/src/components/WorkspaceRouteView.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | App |
 | `frontend/src/components/WorkspaceTabs.vue` | `@container app-viewport (max-width: 720px)` | 窄宽压缩间距，标签条内部横向滚动，路由切换与容器缩窄按布局坐标最小滚动露出当前项，销毁时释放尺寸监听，当前页与关闭入口可达；共用中性栏底色，与双顶栏二级入口复用`.app-nav-context-entry`的尺寸、圆角及选中边框/底线；当前项保留无光晕强调色圆点，普通项透明占位，切换宽度稳定。 悬停抬起圆点和标题并增加投影，关闭按钮固定且键盘事件独立；栏内保留视觉层安全空间。 | App |
