@@ -251,7 +251,7 @@ body > .el-notification {
   --chrome-menu-icon-active-border: rgba(64, 158, 255, 0.26);
   --chrome-menu-icon-active-color: #409eff;
   --shell-accent: #409eff;
-  --chrome-context-bar-bg: linear-gradient(90deg, color-mix(in srgb, var(--chrome-bg) 94%, var(--shell-accent) 6%), var(--chrome-bg));
+  --chrome-context-bar-bg: var(--chrome-bg);
   --shell-accent-strong: #dc2626;
   --shell-accent-soft: rgba(64, 158, 255, 0.12);
   --shell-accent-faint: rgba(64, 158, 255, 0.07);

@@ -92,10 +92,10 @@
 | `frontend/src/components/SubScoreBars.vue` | 无自身 CSS 查询 | 语义微图min132，消费表格内部横滚承担最低宽。 | 按路由/动态渲染或内部消费；无直接Vue import匹配 |
 | `frontend/src/components/SubScoreChips.vue` | 无自身 CSS 查询 | 评分项自然换行，单项长文本省略并保留提示。 | RankedStockResultTable |
 | `frontend/src/components/SystemBuiltinTag.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | AssetVisibilityTag、ConfigView、LayoutPresetsView、MenuResourceView、RoleManageView、TenantManageView |
-| `frontend/src/components/TopNavigation.vue` | `@container app-viewport (max-width: 960px)` | 窄宽压缩导航间距/隐藏辅助上下文；导航动作保留。 | App |
+| `frontend/src/components/TopNavigation.vue` | `@container app-viewport (max-width: 960px)` | 窄宽压缩导航间距/隐藏辅助上下文；二级栏共用中性底色、不混入预设强调色，选中下划线及导航动作保留。 | App |
 | `frontend/src/components/TradeDatePicker.vue` | 无自身 CSS 查询 | 委托 AppDatePicker。 | StockGroupBatchActions、BoardTaskScopeFields、ResultMaintenanceTaskFields、StockIngestScopeFields、BacktestView、BoardView、ConfigView、ScreenView、SectorDetailView、SectorsView、StocksView、TrainingView、LimitLadderFilters、TradeCheckinForm、TradeDisciplineHistory |
 | `frontend/src/components/WorkspaceRouteView.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | App |
-| `frontend/src/components/WorkspaceTabs.vue` | `@container app-viewport (max-width: 720px)` | 窄宽压缩间距，标签条内部横向滚动，当前页与关闭入口可达。 | App |
+| `frontend/src/components/WorkspaceTabs.vue` | `@container app-viewport (max-width: 720px)` | 窄宽压缩间距，标签条内部横向滚动，当前页与关闭入口可达；共用中性栏底色，当前项保留边框/底线和无光晕蓝点，普通项圆点透明占位，8px内距/6px间距保证切换宽度稳定。 | App |
 | `frontend/src/components/asset-search/AssetProfileSelect.vue` | 无自身 CSS 查询 | 选择器0+auto网格，搜索交给AssetSearchDrawer。 | BacktestView、BoardView、ConfigView、ScreenView、StockDetailView |
 | `frontend/src/components/asset-search/AssetSearchDrawer.vue` | 无自身 CSS 查询 | 共享抽屉满高、搜索换行、列表内部滚动、统一分页，查询值保留。 | AssetProfileSelect、BacktestView |
 | `frontend/src/components/config/ConfigGroupForm.vue` | `@container app-viewport (max-width: 720px)` | 窄宽配置网格单列，控件占行宽；不清除输入。 | ConfigView |

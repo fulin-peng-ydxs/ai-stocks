@@ -163,13 +163,13 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     expect(globalCss).toContain('--page-settings-bg: #171717')
   })
 
-  it('二级导航与工作标签栏共享随预设强调色变化的背景渐变', () => {
+  it('二级导航与工作标签栏共享中性底色，不混入预设强调色', () => {
     const globalCss = readFileSync(join(SRC_DIR, 'styles/global.css'), 'utf8')
     const topNavigation = readFileSync(join(SRC_DIR, 'components/TopNavigation.vue'), 'utf8')
     const workspaceTabs = readFileSync(join(SRC_DIR, 'components/WorkspaceTabs.vue'), 'utf8')
 
     expect(globalCss).toContain(
-      '--chrome-context-bar-bg: linear-gradient(90deg, color-mix(in srgb, var(--chrome-bg) 94%, var(--shell-accent) 6%), var(--chrome-bg))',
+      '--chrome-context-bar-bg: var(--chrome-bg)',
     )
     expect(topNavigation).toContain('background: var(--chrome-context-bar-bg)')
     expect(workspaceTabs).toContain('background: var(--chrome-context-bar-bg)')

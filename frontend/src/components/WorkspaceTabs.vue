@@ -74,7 +74,7 @@ async function close(key: string) {
   flex: none;
   height: 45px;
   min-width: 0;
-  padding: 0 18px 0 21px;
+  padding: 0 var(--app-space-5);
   border-bottom: 1px solid var(--chrome-border);
   background: var(--chrome-context-bar-bg);
   display: flex;
@@ -95,14 +95,14 @@ async function close(key: string) {
   flex: none;
   height: 31px;
   max-width: 210px;
-  padding: 0 10px;
+  padding: 0 var(--app-space-2);
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
   color: var(--chrome-text-muted);
   display: inline-flex;
   align-items: center;
-  gap: var(--app-space-2);
+  gap: var(--app-space-control-gap);
   font-family: var(--app-nav-font-family);
   font-size: var(--app-nav-meta-font-size);
   line-height: var(--app-nav-meta-line-height);
@@ -116,7 +116,8 @@ async function close(key: string) {
   height: 4px;
   flex: none;
   border-radius: 50%;
-  background: var(--chrome-border-strong);
+  /* 保留圆点占位，只有当前项显示，避免切换标签时宽度跳动。 */
+  background: transparent;
 }
 .workspace-tab:hover {
   color: var(--chrome-text);
@@ -131,7 +132,6 @@ async function close(key: string) {
 }
 .workspace-tab.is-active::before {
   background: var(--shell-accent);
-  box-shadow: 0 0 0 3px var(--shell-accent-faint);
 }
 .workspace-tab-title {
   min-width: 0;
