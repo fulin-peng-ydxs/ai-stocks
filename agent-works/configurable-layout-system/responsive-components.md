@@ -77,7 +77,7 @@
 | `frontend/src/components/SectorAnalysisDefaultFields.vue` | 无自身 CSS 查询 | 委托 MarketBenchmarkSelect、PageSettingItem、PageSegmented、PageToggleRow。 | ComponentAutoSettings |
 | `frontend/src/components/SectorCompareChart.vue` | 无自身 CSS 查询 | 委托 AppStateBlock。 | SectorsView |
 | `frontend/src/components/SettingsGroup.vue` | 无自身 CSS 查询 | 手动递归折叠，父级收起只隐藏子树，不重置下级展开状态。 | App、ChartOperationGroup、ComponentAutoSettings、PageSettingSection、PageSettingsDrawer、LayoutSettingsSection |
-| `frontend/src/components/SideMenu.vue` | 无自身 CSS 查询 | 一级44px/子级36px固定行高，菜单高度不足由App侧栏内滚承接；授权层级与面包屑共用查询。 | App |
+| `frontend/src/components/SideMenu.vue` | 无自身 CSS 查询 | 一级44px/子级36px固定行高，菜单高度不足由App侧栏内滚承接；授权层级与面包屑共用查询，页面路径变化时展开当前链、收起其余分组，同页查询变化保留手动收展。 | App |
 | `frontend/src/components/SideMenuItem.vue` | 无自身 CSS 查询 | 每层缩进12px，图标占位与末尾箭头固定，长名称省略并交给全局溢出提示；收展及选中不重置页面。 | SideMenu |
 | `frontend/src/components/SourceTag.vue` | 无自身 CSS 查询 | 来源浮层min180/max280、字段网格44+0；受统一浮层边界约束。 | ComponentAutoSettings、LayoutSettingsSection |
 | `frontend/src/components/StockAnalysisDefaultFields.vue` | 无自身 CSS 查询 | 委托 MarketBenchmarkSelect、PageSettingItem、PageSegmented、PageToggleRow。 | ComponentAutoSettings |

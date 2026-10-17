@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 侧边导航（多租户 RBAC stage3·T15）：消费后端数据化菜单 auth.menus（按角色授权 ∩ 可见性双过滤）。
 // fail-closed：登录态未就绪显加载中、失败显错误+重试，**不回退静态全量菜单**（避免露越权入口；原 menuConfig.ts 已删）。
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import type { MenuInstance } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { Loading } from '@element-plus/icons-vue'
 import SideMenuItem from './SideMenuItem.vue'
@@ -12,14 +13,35 @@ import { resolveWorkspaceMenuPath } from '@/composables/useWorkspaceTabs'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const menuRef = ref<MenuInstance>()
 
 const menus = computed<MenuTreeNode[]>(() => auth.menus)
 
 const activeMenu = computed(() => activeMenuPath(menus.value, route.path))
 
-// 与面包屑共用最长匹配的授权层级，展开状态仍交给 el-menu 管理。
+// 与面包屑共用最长匹配的授权层级。
 const defaultOpeneds = computed(() => findMenuTrail(menus.value, route.path)
   .filter((node) => node.children?.length).map((node) => node.index))
+
+// default-openeds 仅在组件创建时生效；标签切换或详情跳转后要重新露出当前项。
+// 只响应页面/授权树变化，不监听手动收展，避免与用户浏览其他分组的操作争抢。
+watch([() => route.path, () => auth.menusStatus, menus], async () => {
+  await nextTick()
+  const menu = menuRef.value
+  if (auth.menusStatus !== 'ready' || !menu) return
+  const trail = defaultOpeneds.value
+  const currentGroups = new Set(trail)
+  const closeOtherGroups = (nodes: MenuTreeNode[]) => {
+    for (const node of nodes) {
+      if (!node.children?.length) continue
+      if (!currentGroups.has(node.index)) menu.close(node.index)
+      closeOtherGroups(node.children)
+    }
+  }
+  closeOtherGroups(menus.value)
+  const currentGroup = trail.at(-1)
+  if (currentGroup) menu.open(currentGroup)
+}, { flush: 'post' })
 
 function selectMenu(index: string) {
   if (index.startsWith('/')) void router.push(resolveWorkspaceMenuPath(index))
@@ -28,7 +50,7 @@ function selectMenu(index: string) {
 
 <template>
   <!-- 就绪：按后端菜单渲染 -->
-  <el-menu v-if="auth.menusStatus === 'ready' && menus.length" :default-active="activeMenu"
+  <el-menu v-if="auth.menusStatus === 'ready' && menus.length" ref="menuRef" :default-active="activeMenu"
            :default-openeds="defaultOpeneds" unique-opened class="menu" @select="selectMenu">
     <SideMenuItem v-for="node in menus" :key="node.index" :node="node" />
   </el-menu>

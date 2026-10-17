@@ -850,7 +850,7 @@ async function onLogout() {
   display: flex;
   flex-direction: column;
   gap: var(--app-space-2);
-  padding: var(--app-space-4) var(--app-space-2) var(--app-space-5);
+  padding: var(--app-space-4) var(--app-space-2);
 }
 .aside-brand-copy {
   padding-inline: var(--app-space-2);

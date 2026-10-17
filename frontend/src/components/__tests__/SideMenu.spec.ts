@@ -16,6 +16,8 @@ const router = createRouter({
     { path: '/board', component: { template: '<div/>' } },
     { path: '/screen', component: { template: '<div/>' } },
     { path: '/system/users', component: { template: '<div/>' } },
+    { path: '/system/users/:id', component: { template: '<div/>' } },
+    { path: '/system/audit', component: { template: '<div/>' } },
   ],
 })
 
@@ -44,6 +46,55 @@ async function mountMenu(status: string, menus: MenuTreeNode[], path = '/board')
 }
 
 describe('SideMenu fail-closed', () => {
+  it('跨分组切换页面及详情跳转后露出当前项，同页查询变化保留手动折叠', async () => {
+    const menus: MenuTreeNode[] = [...MENUS, {
+      index: 'system', title: '系统管理', children: [{
+        index: 'permission', title: '权限管理', children: [
+          { index: '/system/users', title: '用户管理' },
+        ],
+      }, { index: '/system/audit', title: '审计日志' }],
+    }]
+    const w = await mountMenu('ready', menus)
+    const groups = () => w.findAll('.el-sub-menu.is-opened > .el-sub-menu__title')
+      .map((item) => item.text())
+    expect(groups()).toEqual(['最新行情'])
+    await router.push('/system/users')
+    await flushPromises()
+    expect(groups()).toEqual(['系统管理', '权限管理'])
+    expect(w.get('.el-menu-item.is-active').text()).toBe('用户管理')
+
+    await w.findAll('.el-sub-menu__title').find((item) => item.text() === '系统管理')!.trigger('click')
+    expect(groups()).not.toContain('系统管理')
+    await router.push('/system/users/123')
+    await flushPromises()
+    expect(groups()).toEqual(['系统管理', '权限管理'])
+
+    await router.push('/system/audit')
+    await flushPromises()
+    expect(groups()).toEqual(['系统管理'])
+    await router.push('/screen')
+    await flushPromises()
+    expect(groups()).toEqual([])
+
+    await router.push('/board')
+    await flushPromises()
+    expect(groups()).toEqual(['最新行情'])
+    await w.findAll('.el-sub-menu__title').find((item) => item.text() === '最新行情')!.trigger('click')
+    await router.push('/board?date=2026-10-15')
+    await flushPromises()
+    expect(groups()).not.toContain('最新行情')
+  })
+
+  it('授权菜单异步就绪后展开当前页面的完整分组', async () => {
+    const w = await mountMenu('loading', [])
+    const auth = useAuthStore()
+    auth.menus = MENUS
+    auth.menusStatus = 'ready'
+    await flushPromises()
+    expect(w.get('.el-sub-menu').classes()).toContain('is-opened')
+    expect(w.get('.el-menu-item.is-active').text()).toBe('每日榜单')
+  })
+
   it('三级菜单沿授权层级展开，长名称保留完整文本，无图标项保留对齐位', async () => {
     const title = '页面布局与研究工作区的完整配置名称'
     const w = await mountMenu('ready', [{ index: 'system', title: '系统管理', children: [
