@@ -79,40 +79,6 @@ defineEmits<{
   --app-icon-button-size: 28px;
   --app-icon-button-glyph: 14px;
 }
-.app-icon-button.is-soft {
-  border-color: var(--el-border-color);
-  background: var(--el-fill-color-extra-light);
-}
-.app-icon-button:hover:not(:disabled) {
-  border-color: var(--el-border-color-darker);
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-primary);
-}
-.app-icon-button.is-primary {
-  color: var(--el-color-primary);
-}
-.app-icon-button.is-danger {
-  color: var(--el-color-danger);
-}
-.app-icon-button.is-primary:hover:not(:disabled) {
-  border-color: var(--el-color-primary-light-5);
-  background: var(--el-color-primary-light-9);
-}
-.app-icon-button.is-danger:hover:not(:disabled) {
-  border-color: var(--el-color-danger-light-5);
-  background: var(--el-color-danger-light-9);
-}
-.app-icon-button:focus-visible {
-  outline: var(--app-focus-ring);
-  outline-offset: 1px;
-}
-.app-icon-button:disabled:not(.is-loading) {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.app-icon-button.is-loading {
-  cursor: wait;
-}
 .app-icon-button__glyph {
   width: var(--app-icon-button-glyph);
   height: var(--app-icon-button-glyph);

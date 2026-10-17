@@ -991,9 +991,10 @@ button.topbar-status {
 }
 button.topbar-status:hover {
   border-color: var(--app-border-strong);
-  background: color-mix(in srgb, var(--chrome-bg-soft-hover) 58%, transparent);
+  background: var(--app-button-neutral-hover-bg);
   color: var(--chrome-text-strong);
 }
+button.topbar-status:active { background: var(--app-button-neutral-pressed-bg); }
 button.topbar-status:focus-visible {
   outline: var(--app-focus-ring);
   outline-offset: 1px;
@@ -1053,7 +1054,7 @@ button.topbar-status:focus-visible {
 }
 .topbar-tool:hover:not(:disabled) {
   border-color: transparent;
-  background: color-mix(in srgb, var(--chrome-bg-soft-hover) 58%, transparent);
+  background: var(--app-button-neutral-hover-bg);
   color: var(--chrome-text-strong);
 }
 .topbar-tool .el-icon {

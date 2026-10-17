@@ -2623,29 +2623,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   width: 190px;
   flex-shrink: 0;
 }
-.prof-list ul {
-  list-style: none;
-  padding: 0;
-  margin: 10px 0 0;
-}
-.prof-list li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 9px 11px;
-  border-radius: 7px;
-  cursor: pointer;
-  font-size: var(--app-font-size-body);
-  margin-bottom: 4px;
-}
-.prof-list li:hover {
-  background: var(--el-fill-color-light);
-}
-.prof-list li.active {
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
-  font-weight: var(--app-font-weight-section);
-}
 .editor {
   flex: 1;
   min-width: 0;

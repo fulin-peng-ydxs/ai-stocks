@@ -474,3 +474,7 @@ npm run scaffold-page -- --pageKey my-wizard --label "向导页" --archetype wiz
 键盘能力及适用范围以 [DESIGN.md](../../DESIGN.md)「键盘能力与适用边界」为唯一契约。普通按钮/链接复用原生语义；自定义命令接入 `v-keyboard-activate`，单行输入确认使用 `submitOnEnter`，范围调整使用 `keyboardRangeValue`，页面快捷键使用 `usePageShortcuts`。不得复制页面级 window keydown 监听。
 
 维护矩阵：改变共享行为时同步入口与消费点测试；增加快捷键时同步可见说明、可访问快捷键属性、权限和忙态守卫；改变焦点路径时复核弹层、关闭恢复及 KeepAlive。上述机制不增加布局 kind、slot 或用户持久化配置，既有页面布局与响应式画像保持原边界。
+
+### 按钮状态维护
+
+按 [DESIGN 按钮与输入](../../DESIGN.md#按钮与输入)选择组件与角色，不在模板重复定义颜色配方。新增角色须同步其状态矩阵、共享实现及代表性消费验证；仅状态调整不新增布局 kind 或持久化字段。验收复核明暗主题、键盘焦点、加载/禁用与代表性浮层消费点。

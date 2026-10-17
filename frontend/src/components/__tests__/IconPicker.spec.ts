@@ -38,4 +38,21 @@ describe('IconPicker 键盘选择', () => {
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     wrapper.unmount()
   })
+
+  it('浮层打开后禁用仍禁止清除当前值', async () => {
+    const wrapper = mount(IconPicker, {
+      props: { modelValue: 'Search' },
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+    await wrapper.get('.ip-trigger').trigger('keydown', { key: 'Enter', code: 'Enter' })
+    await flushPromises()
+    await wrapper.setProps({ disabled: true })
+    const clear = Array.from(document.querySelectorAll('button')).find(button => button.textContent?.includes('清除图标'))!
+    expect(clear.disabled).toBe(true)
+    clear.click()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    wrapper.unmount()
+  })
+
 })

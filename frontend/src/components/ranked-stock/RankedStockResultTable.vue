@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppRowActions from '@/components/AppRowActions.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import RelatedBoardCell from '@/components/RelatedBoardCell.vue'
@@ -84,6 +85,11 @@ function leadingControlsOf(column: RankedStockColumn): number {
     @size-change="emit('sizeChange', $event)"
   >
     <slot name="leading-columns" />
+    <AppTableColumn v-if="!columns.some(column => column.key === 'name')" label="操作" role="action-compact">
+      <template #default="{ row }">
+        <AppRowActions :actions="[{ key: 'view', label: '查看走势', onClick: () => emit('rowClick', row) }]" />
+      </template>
+    </AppTableColumn>
     <AppTableColumn
       v-for="column in columns"
       :key="column.key"
@@ -110,13 +116,14 @@ function leadingControlsOf(column: RankedStockColumn): number {
           :pinned="isPinned(row.code)"
           :is-st="row.is_st"
           :st-as-of-date="row.st_as_of_date || stAsOfDate"
+          @select="emit('rowClick', row)"
           @toggle="emit('toggleAnalysis', row)"
         >
           <template #leading><slot name="name-leading" :row="row" /></template>
         </StockAnalysisNameCell>
         <span v-else-if="column.key === 'name'" class="app-inline-info app-inline-info--nowrap">
           <slot name="name-leading" :row="row" />
-          <span>{{ row.name || '—' }}</span>
+          <el-button link type="primary" @click.stop="emit('rowClick', row)">{{ row.name || row.code }}</el-button>
           <StockStatusTag :is-st="row.is_st" :as-of-date="row.st_as_of_date || stAsOfDate" />
         </span>
         <template v-else-if="column.key === 'board'">{{ row.board || '—' }}</template>

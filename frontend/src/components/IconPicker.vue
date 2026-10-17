@@ -30,6 +30,7 @@ function choose(name: string) {
   visible.value = false
 }
 function clear() {
+  if (props.disabled) return
   emit('update:modelValue', null)
   visible.value = false
 }
@@ -67,7 +68,7 @@ function clear() {
       />
       <div class="ip-actions">
         <span class="ip-count">{{ filtered.length }} 个</span>
-        <el-button link size="small" @click="clear">清除图标</el-button>
+        <el-button link size="small" :disabled="disabled" @click="clear">清除图标</el-button>
       </div>
       <div class="ip-grid">
         <div
@@ -95,7 +96,9 @@ function clear() {
   background: var(--el-bg-color); color: var(--el-text-color-primary); padding: 0 8px;
   display: flex; align-items: center; gap: var(--app-space-2); cursor: pointer; font-size: var(--app-font-size-table);
 }
+@media (hover: hover) and (pointer: fine) {
 .ip-trigger:hover:not(.disabled) { border-color: var(--el-color-primary); }
+}
 .ip-trigger.disabled { cursor: not-allowed; background: var(--el-disabled-bg-color); color: var(--el-text-color-placeholder); }
 .ip-cur { display: inline-flex; align-items: center; gap: var(--app-space-control-gap); min-width: 0; }
 .ip-name { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); color: var(--el-text-color-regular);

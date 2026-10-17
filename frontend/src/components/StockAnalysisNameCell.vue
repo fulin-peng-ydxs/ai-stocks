@@ -23,6 +23,7 @@ withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
+  select: []
   toggle: []
 }>()
 </script>
@@ -36,7 +37,7 @@ const emit = defineEmits<{
       :label="`${pinned ? '移出' : '加入'}走势对比：${name || code}`"
       @toggle="emit('toggle')"
     />
-    <span class="stock-analysis-name-cell__name">{{ name || '—' }}</span>
+    <el-button link type="primary" class="stock-analysis-name-cell__name" :aria-label="`查看 ${name || code} 走势或详情`" @click.stop="emit('select')">{{ name || code || '—' }}</el-button>
     <StockStatusTag
       :is-st="isSt"
       :as-of-date="stAsOfDate"

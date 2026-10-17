@@ -19,6 +19,7 @@ import AppDataTable from '@/components/AppDataTable.vue'
 import AppHoverInfo from '@/components/AppHoverInfo'
 import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppRowActions from '@/components/AppRowActions.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppSplitWorkspace from '@/components/AppSplitWorkspace.vue'
@@ -676,6 +677,11 @@ onMounted(async () => {
                 </AppTableColumn>
                 <AppTableColumn v-if="colVisible('turnover')" label="换手率" prop="turnover_rate" role="number">
                   <template #default="{ row }"><span class="app-data-text">{{ fmtPct(row.turnover_rate) }}</span></template>
+                </AppTableColumn>
+                <AppTableColumn v-if="canViewStocks" label="操作" role="action-compact">
+                  <template #default="{ row }">
+                    <AppRowActions :aria-label="`${row.name || row.code} 行操作`" :actions="[{ key: 'view', label: '查看行情', onClick: () => openStock(row) }]" />
+                  </template>
                 </AppTableColumn>
                 <template #empty>
                   {{ memberKeyword.trim() ? '没有匹配的成分股，请更换代码或名称' : '暂无成分股数据，请先运行板块成分采集' }}

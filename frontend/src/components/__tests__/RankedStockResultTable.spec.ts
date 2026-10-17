@@ -6,6 +6,37 @@ import RankedStockResultTable from '@/components/ranked-stock/RankedStockResultT
 import { rankedStockColumns } from '@/components/ranked-stock/types'
 
 describe('RankedStockResultTable', () => {
+  it.each([true, false])('名称入口与行点击等价（对比图标=%s）', async (analysisPins) => {
+    const row = { code: '000001.SZ', name: '示例', rank: 1, total_score: 80, grade: 'A', sub_scores: {}, groups: [] }
+    const wrapper = mount(RankedStockResultTable, {
+      props: { rows: [row] as any, columns: rankedStockColumns(['name']), analysisPins },
+      global: {
+        plugins: [ElementPlus],
+        stubs: {
+          AppDataTable: { template: '<div><slot /></div>' },
+          AppTableColumn: { setup: () => ({ row }), template: '<div><slot :row="row" /></div>' },
+        },
+      },
+    })
+    const button = wrapper.findAll('button').find(button => button.text() === '示例')!
+    await button.trigger('click')
+    expect(wrapper.emitted('rowClick')).toEqual([[row]])
+    expect(wrapper.emitted('toggleAnalysis')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('隐藏名称列仍保留同一行操作入口', () => {
+    const wrapper = mount(RankedStockResultTable, {
+      props: { rows: [], columns: rankedStockColumns(['code']) },
+      global: { stubs: {
+        AppDataTable: { template: '<div><slot /></div>' },
+        AppTableColumn: { props: ['label'], template: '<div :data-label="label" />' },
+      } },
+    })
+    expect(wrapper.find('[data-label="操作"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('把通用分页配置和事件透传给统一表格', async () => {
     const wrapper = mount(RankedStockResultTable, {
       props: {

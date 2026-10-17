@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIconButton from '@/components/AppIconButton.vue'
 import { submitOnEnter } from '@/utils/keyboard'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppHoverInfo from '@/components/AppHoverInfo'
@@ -388,11 +389,11 @@ function onSubmit() {
           <p>{{ mode === 'login' ? '进入你的市场研究工作台' : '开启专业、专注的每日复盘' }}</p>
         </div>
 
-        <div class="login-tabs" role="tablist" aria-label="账户操作">
-          <button class="login-tab" :class="{ active: mode === 'login' }" type="button" role="tab"
-                  :aria-selected="mode === 'login'" @click="setMode('login')">登录账户</button>
-          <button class="login-tab" :class="{ active: mode === 'register' }" type="button" role="tab"
-                  :aria-selected="mode === 'register'" @click="setMode('register')">注册账户</button>
+        <div class="login-tabs" role="group" aria-label="账户操作">
+          <button class="login-tab" :class="{ active: mode === 'login' }" type="button"
+                  :aria-pressed="mode === 'login'" @click="setMode('login')">登录账户</button>
+          <button class="login-tab" :class="{ active: mode === 'register' }" type="button"
+                  :aria-pressed="mode === 'register'" @click="setMode('register')">注册账户</button>
         </div>
 
         <div class="login-field-block">
@@ -413,15 +414,16 @@ function onSubmit() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
             </svg>
-            <input v-model="form.password" name="password" :type="showPwd ? 'text' : 'password'"
+            <input v-model="form.password" name="password" aria-label="密码" :type="showPwd ? 'text' : 'password'"
                    :autocomplete="mode === 'register' ? 'new-password' : 'current-password'"
                    @input="errors.password = ''; errors.form = ''" @keydown="submitOnEnter($event, onSubmit)" />
-            <svg class="eye" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="2" @click="showPwd = !showPwd">
+            <AppIconButton :label="showPwd ? '隐藏密码' : '显示密码'" :aria-pressed="showPwd" size="xs" @click="showPwd = !showPwd">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path v-if="showPwd" d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z" />
               <path v-else d="M3 3l18 18M10.6 5.1A9.6 9.6 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.3 3.9M6.6 6.6A17 17 0 0 0 2 12s4 7 10 7a9.6 9.6 0 0 0 3.4-.6" />
               <circle v-if="showPwd" cx="12" cy="12" r="3" />
             </svg>
+            </AppIconButton>
           </label>
           <p v-if="errors.password" class="field-error">{{ errors.password }}</p>
         </div>
@@ -1036,9 +1038,6 @@ function onSubmit() {
   -webkit-box-shadow: 0 0 0 1000px transparent inset;
   -webkit-background-clip: text;
   transition: background-color 9999s ease-out 0s;
-}
-.login-field .eye {
-  cursor: pointer;
 }
 .login-emailcode .send {
   display: inline-flex;

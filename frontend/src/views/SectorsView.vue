@@ -9,6 +9,7 @@ import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
+import AppRowActions from '@/components/AppRowActions.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import ComparePinButton from '@/components/ComparePinButton.vue'
 import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
@@ -1134,6 +1135,11 @@ const menuPageTitle = useMenuPageTitle()
             @page-change="(value: number) => { page = value; void load() }"
             @size-change="changePageSize"
           >
+            <AppTableColumn v-if="!colVisible('name')" label="操作" role="action-compact">
+              <template #default="{ row }">
+                <AppRowActions :actions="[{ key: 'view', label: '查看走势', disabled: row.available === false, onClick: () => selectRow(row) }]" />
+              </template>
+            </AppTableColumn>
             <AppTableColumn
               v-if="colVisible('name')"
               label="板块"
@@ -1572,14 +1578,6 @@ const menuPageTitle = useMenuPageTitle()
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.sector-select:hover {
-  color: var(--el-color-primary-dark-2);
-}
-.sector-select:focus-visible {
-  border-radius: 2px;
-  outline: var(--app-focus-ring);
-  outline-offset: 1px;
 }
 .sector-name-copy > span {
   overflow: hidden;

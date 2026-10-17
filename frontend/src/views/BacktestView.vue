@@ -2263,7 +2263,7 @@ const menuPageTitle = useMenuPageTitle()
           <AppTableColumn label="代码" prop="code">
             <template #default="{ row }">
               <span class="app-inline-info app-inline-info--nowrap">
-                <span>{{ row.code }}</span>
+                <el-button link type="primary" :aria-label="`查看 ${row.code} 交易回放`" @click.stop="openTradeChart(row)">{{ row.code }}</el-button>
                 <StockStatusTag
                   :is-st="row.entry_is_st"
                   :as-of-date="row.st_as_of_date || row.entry_date"

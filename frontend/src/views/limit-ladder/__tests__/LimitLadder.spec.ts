@@ -38,6 +38,23 @@ function router() {
 }
 
 describe('LimitLadderCard', () => {
+  it('筛选请求期间保留热点入口及键盘焦点', async () => {
+    const wrapper = mount(LimitLadder, {
+      props: { result, tradeDate: result.trade_date, filters: { ...DEFAULT_LIMIT_LADDER_FILTERS }, loading: false, error: '', canViewSectors: false },
+      global: { plugins: [ElementPlus, router()] },
+      attachTo: document.body,
+    })
+    const button = wrapper.get('.ladder-hotspots__chip').element as HTMLButtonElement
+    button.focus()
+    await wrapper.setProps({ loading: true })
+    expect(wrapper.get('.ladder-hotspots__chip').element).toBe(button)
+    expect(document.activeElement).toBe(button)
+    expect(wrapper.text()).toContain('正在更新，热点数量暂为上次结果')
+    await wrapper.setProps({ loading: false })
+    expect(document.activeElement).toBe(button)
+    wrapper.unmount()
+  })
+
   it('行业和概念分别展示历史来源，并在恢复当日结果后移除', async () => {
     const history = {
       as_of_date: '2026-08-25',
@@ -360,11 +377,14 @@ describe('LimitLadder', () => {
     expect(wrapper.get('[data-testid="limit-ladder-layer-2"]').text()).toContain('2 连板')
   })
 
-  it('主动加载和失败状态接管结果区，不与旧摘要热点并存', async () => {
+  it('同日加载保留热点入口但隐藏旧摘要，跨日和失败清除旧热点', async () => {
     const wrapper=mount(LimitLadder,{props:{result,filters:{...DEFAULT_LIMIT_LADDER_FILTERS},tradeDate:'2026-08-28',loading:true,error:'',canViewSectors:false},global:{plugins:[ElementPlus],stubs:{TradeDatePicker:true}}})
     expect(wrapper.find('[data-testid="limit-ladder-summary-total"]').exists()).toBe(false)
-    expect(wrapper.find('.ladder-hotspots').exists()).toBe(false)
+    expect(wrapper.find('.ladder-hotspots').exists()).toBe(true)
+    expect(wrapper.text()).toContain('热点数量暂为上次结果')
     expect(wrapper.text()).toContain('正在加载天梯快照')
+    await wrapper.setProps({tradeDate:'2026-08-31'})
+    expect(wrapper.find('.ladder-hotspots').exists()).toBe(false)
     await wrapper.setProps({loading:false,error:'网络失败'})
     expect(wrapper.find('[data-testid="limit-ladder-summary-total"]').exists()).toBe(false)
     expect(wrapper.find('.ladder-hotspots').exists()).toBe(false)

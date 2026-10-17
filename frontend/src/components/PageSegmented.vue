@@ -108,9 +108,15 @@ function optionTestId(value: OptionValue): string | undefined {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.seg-btn:hover:not(.active, :disabled) {
-  background: var(--page-settings-seg-hover-bg);
-  color: var(--page-settings-text);
+@media (hover: hover) and (pointer: fine) {
+  .seg-btn:hover:not(.active, :disabled) {
+    background: var(--app-button-neutral-hover-bg);
+    color: var(--page-settings-text);
+  }
+}
+.seg-btn:active:not(:disabled) {
+  background: var(--app-button-neutral-pressed-bg);
+  color: var(--el-text-color-primary);
 }
 .seg-btn:focus-visible {
   outline: var(--app-focus-ring);
@@ -122,15 +128,26 @@ function optionTestId(value: OptionValue): string | undefined {
   border-color: var(--page-settings-seg-active-border);
   box-shadow: 0 1px 2px rgba(31, 45, 70, 0.1);
 }
+.seg-btn.active:active:not(:disabled) { background: var(--app-button-neutral-pressed-bg); }
 .page-segmented--primary .seg-btn.active {
   border-color: var(--el-color-primary);
   background: var(--el-color-primary);
   color: var(--el-color-white);
   box-shadow: 0 1px 3px color-mix(in srgb, var(--el-color-primary) 28%, transparent);
 }
-.page-segmented--primary .seg-btn:hover:not(.active, :disabled) {
-  background: var(--el-color-primary-light-9);
+@media (hover: hover) and (pointer: fine) {
+  .page-segmented--primary .seg-btn:hover:not(.active, :disabled) {
+    background: var(--app-button-primary-hover-bg);
+    color: var(--el-color-primary);
+  }
+}
+.page-segmented--primary .seg-btn:active:not(:disabled) {
+  background: var(--app-button-primary-pressed-bg);
   color: var(--el-color-primary);
+}
+.page-segmented--primary .seg-btn.active:active:not(:disabled) {
+  background: var(--app-button-primary-solid-pressed-bg);
+  color: var(--el-color-white);
 }
 .page-segmented--disabled {
   border-color: var(--el-disabled-border-color);
@@ -196,10 +213,13 @@ function optionTestId(value: OptionValue): string | undefined {
   background: var(--el-color-primary);
 }
 
-.page-segmented--tabs .seg-btn:hover:not(.active, :disabled),
-.page-segmented--tabs.page-segmented--primary .seg-btn:hover:not(.active, :disabled) {
-  background: transparent;
-  color: var(--el-text-color-primary);
+@media (hover: hover) and (pointer: fine) {
+
+  .page-segmented--tabs .seg-btn:hover:not(.active, :disabled),
+  .page-segmented--tabs.page-segmented--primary .seg-btn:hover:not(.active, :disabled) {
+    background: transparent;
+    color: var(--el-text-color-primary);
+  }
 }
 .page-segmented--tabs .seg-btn.active,
 .page-segmented--tabs.page-segmented--primary .seg-btn.active {

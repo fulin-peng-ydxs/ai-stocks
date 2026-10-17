@@ -79,7 +79,7 @@ const childToggleLabel = computed(() => (
     <div
       v-if="title || badge"
       class="sg-head"
-      :class="{ 'sg-foldable': foldable(), 'sg-top': level === 1 }"
+      :class="{ 'sg-foldable': foldable(), 'app-interaction-disclosure': foldable(), 'sg-top': level === 1 }"
       :aria-expanded="foldable() ? openState : undefined"
       :role="foldable() ? 'button' : undefined"
       :tabindex="foldable() ? 0 : undefined"
@@ -126,9 +126,6 @@ const childToggleLabel = computed(() => (
 .sg-l1 > .sg-head {
   padding: var(--app-density-overlay-group-gap) var(--app-density-overlay-padding);
 }
-.sg-l1 > .sg-head:hover {
-  background: var(--page-settings-seg-hover-bg);
-}
 .sg-l1 > .sg-head .sg-title {
   font-size: var(
     --app-settings-group-level-one-font-size,
@@ -151,9 +148,6 @@ const childToggleLabel = computed(() => (
   min-height: var(--app-control-height-sm);
   padding: 2px var(--app-space-1);
   border-radius: var(--layout-control-radius);
-}
-.sg-nested > .sg-head:hover {
-  background: var(--page-settings-seg-hover-bg);
 }
 .sg-nested > .sg-head .sg-title {
   font-size: var(--app-font-size-body);

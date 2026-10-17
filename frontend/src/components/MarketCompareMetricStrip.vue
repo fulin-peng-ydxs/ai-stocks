@@ -169,11 +169,17 @@ function metricDescription(item: MarketMetricStripItem): string {
 }
 @media (hover: hover) and (pointer: fine) {
   .market-metric.el-button:not(:disabled):hover {
-    background: var(--chrome-bg-soft-hover);
+    background: var(--app-button-neutral-hover-bg);
   }
   .market-metric.el-button.is-selected:not(:disabled):hover {
     background: var(--app-interaction-selected-background);
   }
+}
+.market-metric.el-button:not(:disabled):active {
+  background: var(--app-button-neutral-pressed-bg);
+}
+.market-metric.el-button.is-selected:not(:disabled):active {
+  background: var(--app-button-primary-hover-bg);
 }
 @container app-viewport (max-width: 1180px) {
   .market-metric-strip {

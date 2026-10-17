@@ -124,9 +124,12 @@ function toggle() {
 }
 .app-summary-disclosure-card__summary.has-leading { grid-template-columns: 28px minmax(0, 1fr) 16px; }
 .app-summary-disclosure-card__leading { display: inline-flex; align-items: center; }
-.app-summary-disclosure-card__summary:hover {
-  background: color-mix(in srgb, var(--el-fill-color-light) 58%, transparent);
+@media (hover: hover) and (pointer: fine) {
+  .app-summary-disclosure-card__summary:hover {
+    background: color-mix(in srgb, var(--app-button-neutral-hover-bg) 58%, transparent);
+  }
 }
+button.app-summary-disclosure-card__summary:active { background: var(--app-button-neutral-pressed-bg); }
 .app-summary-disclosure-card__summary:focus-visible {
   outline: var(--app-focus-ring);
   outline-offset: -2px;
@@ -217,7 +220,9 @@ function toggle() {
 .is-compact .app-summary-disclosure-card__preview { flex: 1 1 120px; margin: 0; white-space: normal; overflow-wrap: anywhere; }
 .is-compact .app-summary-disclosure-card__editor { padding: var(--app-space-2) 0 var(--app-space-3); border-top: 0; }
 .is-static .app-summary-disclosure-card__summary { cursor: default; }
+@media (hover: hover) and (pointer: fine) {
 .is-static .app-summary-disclosure-card__summary:hover { background: transparent; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .app-summary-disclosure-card__chevron { transition: none; }

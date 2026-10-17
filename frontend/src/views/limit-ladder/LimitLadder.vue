@@ -22,6 +22,7 @@ import {
 
 const props = withDefaults(defineProps<{
   result: LimitLadderResult | null
+  tradeDate?: string | null
   filters: LimitLadderFilters
   loading: boolean
   error: string
@@ -192,8 +193,9 @@ function resetFilters(): void {
       :title="stStatusBlocked ? 'ST 状态尚未就绪' : '结果已过期'"
       :description="staleDescription"
     />
-    <div v-if="result?.has_snapshot && !loading && !error" class="limit-ladder__overview">
-      <section class="limit-ladder__summary" aria-label="天梯摘要">
+    <div v-if="result?.has_snapshot && !error && !forbidden && (!loading || tradeDate === result.trade_date)" class="limit-ladder__overview" :aria-busy="loading">
+      <span v-if="loading" role="status" class="muted">正在更新，热点数量暂为上次结果</span>
+      <section v-if="!loading" class="limit-ladder__summary" aria-label="天梯摘要">
         <div><span>当前股票</span><strong class="is-total" data-testid="limit-ladder-summary-total">{{ result.summary.stock_count }}</strong><small>只</small></div>
         <div><span>最高板位</span><strong class="is-highest">{{ result.summary.highest_board ?? '—' }}</strong><small>板</small></div>
         <div><span>首板股票</span><strong class="is-first">{{ result.summary.first_board_count }}</strong><small>只</small></div>

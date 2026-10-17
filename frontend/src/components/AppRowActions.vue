@@ -299,7 +299,7 @@ onBeforeUnmount(() => {
             <el-button
               class="app-row-actions-menu__item"
               :class="actionClass(action)"
-              link
+              text
               size="small"
               :loading="action.loading"
               :disabled="action.disabled || action.loading"
@@ -359,51 +359,10 @@ onBeforeUnmount(() => {
 }
 
 .app-row-actions__button {
-  --row-action-text: var(--el-text-color-regular);
-  --row-action-hover-text: var(--el-text-color-primary);
   margin-left: 0 !important;
   min-height: 24px;
   padding: 0 5px !important;
-  color: var(--row-action-text) !important;
   font-weight: var(--app-font-weight-section);
-  transition: color 120ms ease;
-}
-
-.app-row-actions__button:hover,
-.app-row-actions__button:focus-visible,
-.app-row-actions__button.is-open {
-  color: var(--row-action-hover-text) !important;
-}
-
-.app-row-actions__button.is-tone-primary {
-  --row-action-text: var(--el-color-primary);
-  --row-action-hover-text: var(--el-color-primary-light-3);
-}
-
-.app-row-actions__button.is-tone-success {
-  --row-action-text: var(--el-color-success);
-  --row-action-hover-text: var(--el-color-success-light-3);
-}
-
-.app-row-actions__button.is-tone-warning {
-  --row-action-text: var(--el-color-warning);
-  --row-action-hover-text: var(--el-color-warning-light-3);
-}
-
-.app-row-actions__button.is-tone-danger {
-  --row-action-text: var(--el-color-danger);
-  --row-action-hover-text: var(--el-color-danger-light-3);
-}
-
-.app-row-actions__button.is-tone-info {
-  --row-action-text: var(--el-text-color-regular);
-  --row-action-hover-text: var(--el-text-color-primary);
-}
-
-.app-row-actions__button.is-disabled,
-.app-row-actions__button:disabled {
-  color: var(--el-text-color-disabled) !important;
-  background: transparent;
 }
 
 .app-row-actions__more-icon {
@@ -439,59 +398,13 @@ onBeforeUnmount(() => {
 .app-row-actions-menu :deep(.app-action-hint) { width: 100%; }
 
 .app-row-actions-menu__item {
-  --row-action-menu-text: var(--el-text-color-regular);
-  --row-action-menu-bg: var(--el-fill-color-light);
   width: 100%;
   min-height: 28px;
   justify-content: flex-start;
   margin-left: 0 !important;
   padding: 0 10px !important;
-  border: 0 !important;
   border-radius: 4px;
-  background: transparent !important;
-  color: var(--row-action-menu-text) !important;
   font-size: var(--app-font-size-body);
   text-align: left;
-  transition: color 120ms ease, background-color 120ms ease;
-}
-
-.app-row-actions-menu__item:not(.is-disabled):hover,
-.app-row-actions-menu__item:not(.is-disabled):focus-visible {
-  background: var(--row-action-menu-bg) !important;
-}
-
-.app-row-actions-menu__item.is-tone-primary {
-  --row-action-menu-text: var(--el-color-primary);
-  --row-action-menu-bg: var(--el-color-primary-light-9);
-}
-
-.app-row-actions-menu__item.is-tone-success {
-  --row-action-menu-text: var(--el-color-success);
-  --row-action-menu-bg: var(--el-color-success-light-9);
-}
-
-.app-row-actions-menu__item.is-tone-warning {
-  --row-action-menu-text: var(--el-color-warning);
-  --row-action-menu-bg: var(--el-color-warning-light-9);
-}
-
-.app-row-actions-menu__item.is-tone-danger {
-  --row-action-menu-text: var(--el-color-danger);
-  --row-action-menu-bg: var(--el-color-danger-light-9);
-}
-
-.app-row-actions-menu__item.is-tone-info {
-  --row-action-menu-text: var(--el-text-color-regular);
-  --row-action-menu-bg: var(--el-fill-color-light);
-}
-
-.app-row-actions-menu__item.is-disabled,
-.app-row-actions-menu__item:disabled {
-  color: var(--el-text-color-disabled) !important;
-  cursor: not-allowed;
-}
-
-.app-row-actions-menu__item.is-loading {
-  cursor: wait;
 }
 </style>

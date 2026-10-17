@@ -76,7 +76,9 @@ describe('字体与间距设计契约', () => {
     const top = read(join(SRC_DIR, 'components/TopNavigation.vue'))
     expect(css).toContain('--app-interaction-nav-hover-background: var(--chrome-bg-soft-hover)')
     expect(css).toMatch(/html\[data-layout-preset\] \.el-button\.app-interaction-target\s*\{[^}]*transition: var\(--app-interaction-color-transition\)/)
-    expect(css).toMatch(/:is\(:hover, :focus-visible\)[^{]*\{[^}]*background: var\(--app-interaction-nav-hover-background\)/)
+    // 键盘焦点不依赖指针能力，hover 只在精细指针设备启用。
+    expect(css).toMatch(/:focus-visible[^{]*\{[^}]*background: var\(--app-interaction-nav-hover-background\)/)
+    expect(css).toMatch(/@media \(hover: hover\) and \(pointer: fine\)\s*\{[^}]*:hover[^}]*background: var\(--app-interaction-nav-hover-background\)/)
     expect(side).not.toContain('background: var(--chrome-bg-soft)')
     expect(side).not.toMatch(/\.el-menu-item[^}]*:hover/)
     expect(side).toContain('--app-interaction-nav-hover-background: var(--chrome-nav-leaf-active-hover-bg)')

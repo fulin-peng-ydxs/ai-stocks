@@ -3,7 +3,7 @@ import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppHoverInfo from '@/components/AppHoverInfo'
 // 走势对比队列：板块/个股/榜单共用的对比对象 chip 行。遵循按钮契约不引入原生 button：
 // chip 为 role=button 容器承载激活（点击 + Enter/Space，.self 避免焦点在移除钮时连击），
-// 名称为纯 span 继承 chip 颜色（激活/悬浮随主色变蓝），移除用共享 AppCloseButton。
+// 名称继承共享紧凑选择状态，选中与悬浮分离；移除用共享 AppCloseButton。
 import AppCloseButton from '@/components/AppCloseButton.vue'
 
 export interface CompareQueueItem {
@@ -48,7 +48,7 @@ const emit = defineEmits<{
       :disabled="!(item.error || undefined)"
     >
       <div
-        class="compare-queue-chip"
+        class="compare-queue-chip app-interaction-choice"
         :class="{ active: item.active, error: Boolean(item.error) }"
         role="button"
         tabindex="0"
@@ -102,17 +102,6 @@ const emit = defineEmits<{
   cursor: pointer;
   font: inherit;
   font-size: var(--app-font-size-caption);
-}
-.compare-queue-chip:hover,
-.compare-queue-chip.active,
-.compare-queue-chip:focus-visible {
-  border-color: var(--el-color-primary-light-5);
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
-}
-.compare-queue-chip:focus-visible {
-  outline: var(--app-focus-ring);
-  outline-offset: 1px;
 }
 .compare-queue-chip.error {
   border-color: var(--el-color-warning);

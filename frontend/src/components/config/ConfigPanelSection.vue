@@ -52,7 +52,7 @@ function toggle() {
     <div
       v-if="title || badge"
       class="config-panel-section__head"
-      :class="{ 'is-foldable': foldable() }"
+      :class="{ 'is-foldable': foldable(), 'app-interaction-disclosure': foldable() }"
       :role="foldable() ? 'button' : undefined"
       :tabindex="foldable() ? 0 : undefined"
       :aria-expanded="foldable() ? isOpen() : undefined"
@@ -165,9 +165,6 @@ function toggle() {
   user-select: none;
 }
 
-.config-panel-section__head.is-foldable:hover .config-panel-section__title {
-  color: var(--el-color-primary);
-}
 
 .config-panel-section__caret {
   flex: none;

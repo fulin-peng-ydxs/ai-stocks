@@ -41,7 +41,7 @@ describe('全站按钮与图标操作契约', () => {
     const violations: string[] = []
     for (const file of vueFiles(SRC_DIR)) {
       const source = read(file)
-      for (const match of source.matchAll(/<(?:div|span|li|b|el-tag)\b(?:"[^"]*"|'[^']*'|[^'">])*>/g)) {
+      for (const match of source.matchAll(/<(?:div|span|li|b|svg|path|strong|p|label|section|article|header|td|tr|el-tag)\b(?:"[^"]*"|'[^']*'|[^'">])*>/g)) {
         const tag = match[0]
         // 仅检查真实动作；@click.stop 等拦截冒泡的容器不承担点击命令。
         if (!/@click(?:\.[\w-]+)*="[^"\s][^"]*"/.test(tag)) continue
@@ -136,9 +136,26 @@ describe('全站按钮与图标操作契约', () => {
   it('列表普通操作与禁用态使用不同文本层级', () => {
     const rowActions = read(join(SRC_DIR, 'components/AppRowActions.vue'))
 
-    expect(rowActions).toContain('--row-action-text: var(--el-text-color-regular)')
-    expect(rowActions).toContain('color: var(--el-text-color-disabled) !important')
-    expect(rowActions).not.toContain('--row-action-text: var(--el-text-color-secondary)')
+    const states = read(join(SRC_DIR, 'styles/buttonStates.css'))
+    expect(rowActions).not.toContain('--row-action-text:')
+    expect(rowActions).not.toContain('--row-action-menu-bg:')
+    expect(states).toContain('--app-button-neutral-text: var(--el-text-color-regular)')
+    expect(states).toContain('--app-button-disabled-text: var(--el-disabled-text-color)')
+
+  })
+
+  it('命令状态接入全局样式，按下色不回退通用填充且默认行操作不匹配语义通配符', () => {
+    const states = read(join(SRC_DIR, 'styles/buttonStates.css'))
+    expect(read(join(SRC_DIR, 'styles/global.css'))).toContain("@import './buttonStates.css'")
+    expect(states).not.toMatch(/var\(--el-fill-color(?:-dark)?\)/)
+    expect(states).not.toContain("[class*='is-tone-']")
+    for (const tone of ['primary', 'success', 'warning', 'danger', 'info']) {
+      expect(states).toContain(`.el-button--${tone}`)
+      expect(states).toContain(`.el-button.is-tone-${tone}`)
+    }
+    expect(states).toContain('.app-icon-button:not([data-close-size])')
+    expect(states).toContain('@media (hover: none), (pointer: coarse)')
+    expect(states).toContain('@media (prefers-reduced-motion: reduce)')
   })
 
   it('原生 button 只用于已声明的专用交互，不回流为页面私有命令按钮', () => {

@@ -809,6 +809,7 @@ const menuPageTitle = useMenuPageTitle()
         <template #list>
           <div ref="ladderHost" class="limit-ladder-host">
             <LimitLadder
+              :trade-date="tradeDate"
               :result="result"
               :filters="filters"
               :loading="loading"

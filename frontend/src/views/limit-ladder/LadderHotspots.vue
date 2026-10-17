@@ -45,8 +45,7 @@ function visibleItems(kind: LimitLadderHotspotType): LimitLadderHotspot[] {
           popper-class="app-wrapping-popper"
         >
           <ElButton
-            class="ladder-hotspots__chip"
-            :class="{ 'is-active': activeType === kind && activeKey === item.group_key }"
+            class="ladder-hotspots__chip app-interaction-choice"
             :aria-pressed="activeType === kind && activeKey === item.group_key"
             :data-testid="`limit-ladder-hotspot-${kind}-${item.group_key}`"
             @click="$emit('toggle', kind, item.group_key)"
@@ -60,7 +59,7 @@ function visibleItems(kind: LimitLadderHotspotType): LimitLadderHotspot[] {
         <span v-if="!hotspots[kind].length" class="ladder-hotspots__empty">暂无</span>
         <ElButton
           v-else-if="hotspots[kind].length > visibleLimit"
-          class="ladder-hotspots__more"
+          class="ladder-hotspots__more" type="primary" link
           :aria-expanded="expanded[kind]"
           @click="expanded[kind] = !expanded[kind]"
         >{{ expanded[kind] ? '收起' : `展开其余 ${hotspots[kind].length - visibleLimit} 项` }}</ElButton>
@@ -77,12 +76,7 @@ function visibleItems(kind: LimitLadderHotspotType): LimitLadderHotspot[] {
 .ladder-hotspots__chip { display:inline-flex; align-items:center; gap:var(--app-space-control-gap); min-height:var(--app-control-height-sm); margin:0; padding:0 var(--app-space-2); border:1px solid var(--el-border-color); border-radius:999px; background:var(--el-bg-color); color:var(--el-text-color-regular); cursor:pointer; }
 .ladder-hotspots__separator { color:var(--el-border-color-darker); }
 .ladder-hotspots__chip b { color:var(--el-text-color-secondary); font-size:var(--app-font-size-caption); font-variant-numeric:tabular-nums; }
-.ladder-hotspots__chip:hover,.ladder-hotspots__chip.is-active { border-color:var(--el-color-primary); color:var(--el-color-primary); }
-.ladder-hotspots__chip.is-active { background:var(--el-color-primary-light-9); }
-.ladder-hotspots__chip:focus-visible { outline: var(--app-focus-ring); outline-offset:2px; }
 .ladder-hotspots__empty { color:var(--app-placeholder-text); font-size:var(--app-font-size-caption); }
 .ladder-hotspots__more { min-height:var(--app-control-height-sm); margin:0; padding:0 var(--app-space-1); border:0; background:transparent; color:var(--el-color-primary); cursor:pointer; }
-.ladder-hotspots__more:hover { text-decoration:underline; }
-.ladder-hotspots__more:focus-visible { outline: var(--app-focus-ring); outline-offset:2px; }
 @container app-viewport (max-width:720px) { .ladder-hotspots__group { grid-template-columns:1fr; } }
 </style>

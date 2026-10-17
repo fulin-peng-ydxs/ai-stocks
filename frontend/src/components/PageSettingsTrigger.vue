@@ -20,14 +20,6 @@ defineEmits<{ click: [] }>()
 </template>
 
 <style scoped>
-.page-settings-trigger {
-  color: var(--page-settings-trigger-text);
-}
-.page-settings-trigger:hover:not(:disabled) {
-  border-color: transparent;
-  background: var(--page-settings-trigger-hover-bg);
-  color: var(--page-settings-trigger-hover-text);
-}
 .dot {
   position: absolute;
   top: 5px;

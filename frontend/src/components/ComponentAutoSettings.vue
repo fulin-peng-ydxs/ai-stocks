@@ -1101,22 +1101,6 @@ function setSort(slotId: string, field: string, order: string): void {
 .ca-number {
   width: 100%;
 }
-.ca-select :deep(.el-select__wrapper) {
-  min-height: 46px;
-  padding: 0 12px;
-  border-radius: 12px;
-  background: var(--page-settings-seg-bg);
-  box-shadow: 0 0 0 1px var(--page-settings-section-border) inset;
-  transition: background-color .15s ease, box-shadow .15s ease;
-}
-.ca-select :deep(.el-select__wrapper:hover) {
-  background: var(--page-settings-seg-hover-bg);
-  box-shadow: 0 0 0 1px var(--page-settings-seg-active-border) inset;
-}
-.ca-select :deep(.el-select__wrapper.is-focused) {
-  background: var(--page-settings-seg-bg);
-  box-shadow: 0 0 0 2px var(--page-settings-accent) inset;
-}
 .ca-select :deep(.el-select__placeholder),
 .ca-select :deep(.el-select__selected-item) {
   color: var(--page-settings-text);

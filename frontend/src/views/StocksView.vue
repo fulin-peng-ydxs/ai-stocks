@@ -20,6 +20,7 @@ import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
+import AppRowActions from '@/components/AppRowActions.vue'
 import StockAnalysisNameCell from '@/components/StockAnalysisNameCell.vue'
 import StockStatusTag from '@/components/StockStatusTag.vue'
 import RelatedBoardCell from '@/components/RelatedBoardCell.vue'
@@ -1181,6 +1182,11 @@ const menuPageTitle = useMenuPageTitle()
               </span>
             </template>
           </AppTableColumn>
+          <AppTableColumn v-if="!groupColVisible('name')" label="操作" role="action-compact">
+            <template #default="{ row }">
+              <AppRowActions :actions="[{ key: 'view', label: '查看走势', onClick: () => handleStockRowClick(row) }]" />
+            </template>
+          </AppTableColumn>
           <AppTableColumn v-if="groupColVisible('name')" label="名称" prop="name" role="entity" :leading-controls="1" sortable="custom">
             <template #default="{ row }">
               <StockAnalysisNameCell
@@ -1190,6 +1196,7 @@ const menuPageTitle = useMenuPageTitle()
                 :is-st="row.is_st"
                 :st-as-of-date="row.st_as_of_date"
                 :st-only-context="stOnlyContext"
+                @select="handleStockRowClick(row)"
                 @toggle="toggleAnalysisPinned(row)"
               />
             </template>
@@ -1259,6 +1266,11 @@ const menuPageTitle = useMenuPageTitle()
               </span>
             </template>
           </AppTableColumn>
+          <AppTableColumn v-if="!colVisible('name')" label="操作" role="action-compact">
+            <template #default="{ row }">
+              <AppRowActions :actions="[{ key: 'view', label: '查看走势', onClick: () => handleStockRowClick(row) }]" />
+            </template>
+          </AppTableColumn>
           <AppTableColumn
             v-if="colVisible('name')"
             label="名称"
@@ -1275,6 +1287,7 @@ const menuPageTitle = useMenuPageTitle()
                 :is-st="row.is_st"
                 :st-as-of-date="row.st_as_of_date"
                 :st-only-context="stOnlyContext"
+                @select="handleStockRowClick(row)"
                 @toggle="toggleAnalysisPinned(row)"
               >
                 <template #leading>
