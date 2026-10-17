@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { defineComponent, nextTick } from 'vue'
+import { defineComponent, nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import SettingsGroup from '@/components/SettingsGroup.vue'
@@ -52,5 +52,48 @@ describe('SettingsGroup 递归分组控制', () => {
     expect(group(wrapper, '子级一').attributes('data-settings-group-open')).toBe('true')
     expect(group(wrapper, '子级二').attributes('data-settings-group-open')).toBe('true')
     expect(group(wrapper, '孙级').attributes('data-settings-group-open')).toBe('false')
+  })
+
+  it('整体收起后操作下级时展开受控父组，并只切换直接子组', async () => {
+    const wrapper = mount(defineComponent({
+      components: { SettingsGroup, TreeFixture },
+      setup: () => ({ open: ref(true) }),
+      template: `
+        <button class="bulk-close" @click="open = false">全部收起</button>
+        <SettingsGroup title="受控父级" v-model="open"><TreeFixture /></SettingsGroup>
+      `,
+    }), {
+      attachTo: document.body,
+      global: { stubs: { ElIcon: true, ElCollapseTransition: { template: '<slot />' } } },
+    })
+    await nextTick()
+    await nextTick()
+
+    await wrapper.get('.bulk-close').trigger('click')
+    expect(wrapper.get('[data-settings-group-title="受控父级"] > .sg-body').isVisible()).toBe(false)
+    await wrapper.get('button[aria-label="受控父级：收起下级分组"]').trigger('click')
+    expect(group(wrapper, '受控父级').attributes('data-settings-group-open')).toBe('true')
+    expect(wrapper.get('[data-settings-group-title="受控父级"] > .sg-body').isVisible()).toBe(true)
+    expect(group(wrapper, '父级').attributes('data-settings-group-open')).toBe('false')
+    expect(group(wrapper, '子级一').attributes('data-settings-group-open')).toBe('true')
+
+    await wrapper.get('.bulk-close').trigger('click')
+    await wrapper.get('button[aria-label="受控父级：展开下级分组"]').trigger('click')
+    expect(wrapper.get('[data-settings-group-title="受控父级"] > .sg-body').isVisible()).toBe(true)
+    expect(group(wrapper, '父级').find('.sg-body').isVisible()).toBe(true)
+    expect(group(wrapper, '孙级').attributes('data-settings-group-open')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('嵌套分组自身收起后操作右侧按钮，也会露出该组内容', async () => {
+    const wrapper = mount(TreeFixture, { global: { stubs: { ElIcon: true } } })
+    await nextTick()
+    await nextTick()
+    await group(wrapper, '子级一').get('.sg-head').trigger('click')
+    expect(group(wrapper, '子级一').attributes('data-settings-group-open')).toBe('false')
+    await wrapper.get('button[aria-label="子级一：收起下级分组"]').trigger('click')
+    expect(group(wrapper, '子级一').find('.sg-body').isVisible()).toBe(true)
+    expect(group(wrapper, '孙级').attributes('data-settings-group-open')).toBe('false')
+    wrapper.unmount()
   })
 })

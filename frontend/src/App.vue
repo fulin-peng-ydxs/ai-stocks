@@ -183,7 +183,7 @@ const navigationOptions: Array<{
   description: string
 }> = [
   { value: 'sidebar-tabs', label: '侧栏标签', description: '层级清晰，适合多页面并行研究' },
-  { value: 'dual-topbar', label: '双层顶栏', description: '一级在上，二级与子页紧随其下' },
+  { value: 'dual-topbar', label: '双层顶栏', description: '菜单集中顶部，工作页签保留多页现场' },
 ]
 const themeModeOptions: Array<{ value: ThemeMode; label: string }> = [
   { value: 'light', label: '白天' },
@@ -625,7 +625,7 @@ async function onLogout() {
 
     <el-container class="app-body">
       <el-container class="workspace" data-testid="app-workspace-surface">
-        <WorkspaceTabs v-if="navigationMode === 'sidebar-tabs' && shellReady" />
+        <WorkspaceTabs v-if="shellReady" />
         <el-main class="main" data-testid="app-main-surface">
           <div v-if="!shellReady" class="shell-gate">
             <template v-if="auth.menusStatus === 'error'">
@@ -1572,8 +1572,11 @@ button.topbar-status:focus-visible {
   opacity: .78;
 }
 .navigation-preview.is-sidebar-tabs .nav-preview-rail::after { top: 24px; }
-.navigation-preview.is-dual-topbar .nav-preview-rail,
-.navigation-preview.is-dual-topbar .nav-preview-tabs { display: none; }
+.navigation-preview.is-dual-topbar .nav-preview-rail { display: none; }
+.navigation-preview.is-dual-topbar .nav-preview-tabs {
+  left: 0;
+  top: 29px;
+}
 .navigation-preview.is-dual-topbar .nav-preview-sub {
   display: block;
   left: 0;
@@ -1596,8 +1599,10 @@ button.topbar-status:focus-visible {
 }
 .navigation-preview.is-dual-topbar .nav-preview-content {
   left: 9px;
-  top: 38px;
+  top: 47px;
+  padding: 4px;
 }
+.navigation-preview.is-dual-topbar .nav-preview-content b { margin-bottom: 2px; }
 .navigation-option-copy {
   min-width: 0;
   display: flex;

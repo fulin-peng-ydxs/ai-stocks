@@ -81,7 +81,12 @@ const emit = defineEmits<{
 }
 .app-detail-drawer__body {
   display: grid;
+  /* 允许插槽内容收缩到抽屉宽度，由表格等子组件承接横向滚动。 */
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   gap: var(--app-space-4);
+}
+.app-detail-drawer__body > :slotted(*) {
+  min-width: 0;
 }
 </style>

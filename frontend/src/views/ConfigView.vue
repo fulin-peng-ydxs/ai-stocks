@@ -99,7 +99,6 @@ import { hasPermission } from '@/utils/permission'
 import { confirmProfileVisibilityReduction } from '@/utils/assetVisibility'
 import type { AppRowAction } from '@/components/rowActions'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
-import { LONG_DOCUMENT_TABLE_MAX_HEIGHT } from '@/components/table/tableSizing'
 
 const settingsOpen = ref(false)
 const route = useRoute()
@@ -1755,7 +1754,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 
             <AppDataTable
               :data="items"
-              :max-height="LONG_DOCUMENT_TABLE_MAX_HEIGHT"
               size="small"
               :border="tableBorder('scoreItems')"
               class="item-table"

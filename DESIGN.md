@@ -242,7 +242,7 @@ Key Characteristics：
 - 主入口以14px/600保证定位强度；下级保留14px正文可读性，通过缩进、分组、当前字重和定位标记表达层级，不随菜单深度继续缩小。12px只用于本表列明的辅助导航，不能用于压缩主菜单或面包屑；长名称通过省略和溢出说明承接。
 - 悬停、按下不改变字号或字重。当前项由现有路由/受控值决定，普通下级、下拉叶子及工作标签从400提升至600；主入口已为600，保持字重并通过颜色和定位标记强化。
 - 行容器高度决定点击区域，文字行高决定排版，二者不得混用。侧栏下级每层缩进12px；主菜单图标使用18px占位，下级及横向二级/下拉图形为16px；顶栏一级保留24px图标框和15px图形，侧栏分区标题也保留18px图标。图标与文字角色分开定义，不以缩小文字去迁就图标。
-- 二级顶栏和工作标签共用 `.app-nav-context-entry`：32px高、8px水平内距、6px图文间距，圆角引用 `--layout-control-radius`。一级保留原有图标框与顶栏底部下划线，仅悬停/焦点面收紧；文字统一不改变其选中外观。外壳宽高、导航定位及颜色规则见“应用外壳”，悬停/选中状态见“动效与状态过渡”。
+- 二级顶栏和工作标签共用 `.app-nav-context-entry`：32px高、6px图文间距，圆角引用 `--layout-control-radius`；二级顶栏水平内距8px，工作页签水平内距12px。一级保留原有图标框与顶栏底部下划线，仅悬停/焦点面收紧；文字统一不改变其选中外观。外壳宽高、导航定位及颜色规则见“应用外壳”，悬停/选中状态见“动效与状态过渡”。
 
 ### 3.5 全站字体角色、例外与校验
 
@@ -319,7 +319,7 @@ Key Characteristics：
 
 | 真实组件 | 路径 | 用途 | 系统组件关系 | 使用规则 |
 |---|---|---|---|---|
-| `PageSettingsDrawer` | `frontend/src/components/PageSettingsDrawer.vue` | 统一页面设置抽屉运行时组件 | 对应 `settings-drawer` 种类；仅 `size` 用户偏好走 PG `user_preference`，`bodyScroll` 只允许 page 层；分组固定可折叠，首次全部展开，当前折叠态作为内部用户偏好记忆 | `supportsPageSettings !== false` 的 registry 页面统一使用；抽屉根部控制一级分组，每个存在下级的可折叠分组自动控制自己的直接子分组；父级收起只隐藏子树、不重置更深层状态；禁止页面另写第二套设置抽屉 |
+| `PageSettingsDrawer` | `frontend/src/components/PageSettingsDrawer.vue` | 统一页面设置抽屉运行时组件 | 对应 `settings-drawer` 种类；仅 `size` 用户偏好走 PG `user_preference`，`bodyScroll` 只允许 page 层；分组固定可折叠，首次全部展开，当前折叠态作为内部用户偏好记忆 | `supportsPageSettings !== false` 的 registry 页面统一使用；抽屉根部控制一级分组，每个存在下级的可折叠分组自动控制自己的直接子分组；父级收起只隐藏子树、不重置更深层状态；在已收起组上操作右侧下级按钮时先展开该组，确保操作结果可见；禁止页面另写第二套设置抽屉 |
 | `AppStatusDot` | `frontend/src/components/AppStatusDot.vue` | 依附主体的黄色辅助状态点 | 无直接系统组件种类 | 头像待打卡、走势历史提示、天梯热点共用；统一 warning 色、圆点几何和可访问名称，简短说明复用 AppHoverInfo；圆形入口用 top-right 角标模式及宿主定位容器，文本用 inline，不用常驻文字扩宽主体 |
 | `PageSettingsTrigger` | `frontend/src/components/PageSettingsTrigger.vue` | 页面设置统一入口 | 触发 registry 页面中的 `settings-drawer` | 仅 `pageRegistry.supportsPageSettings !== false` 的真实消费页面显示；平台布局管理页不开放个人设置，不登记假入口 |
 | `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 全站抽屉唯一外壳与边界组件 | 无直接系统组件种类；内部唯一消费 `el-drawer` 和 `PageDrawerSurface` | 为 `AppDetailDrawer`、`PageSettingsDrawer`、应用级与专用抽屉统一提供挂载边界、遮罩、语义宽度、标题、关闭入口、正文滚动/填充布局和 footer；页面级默认挂到 `LayoutHost`，应用顶栏能力显式传 `boundary="app"`；直接消费只限实时日志、资产搜索、主从窄屏回退和应用级能力；标题默认标准档，局部工具才声明 `compact`；宽度只传 `xs/sm/md/lg/xl/xxl/wide/full`，禁止消费方直接使用 `el-drawer`、私传 px/% 或覆盖其 header/body/footer |
@@ -403,7 +403,7 @@ Key Characteristics：
 | `StockChartSettingSection` | `frontend/src/components/StockChartSettingSection.vue` | `ComponentAutoSettings` 内股票多图实例的专用字段编辑器，负责图表二/图表三选择、高度比例编辑和页面当前比例采用入口 | `chart.stockChart` | 每日榜单、个股查询、个股详情、板块行情、板块详情、盘感训练和回测交易回放统一通过 `ComponentAutoSettings` 间接复用；值按 `pageKey + slotId` 隔离，字段结构共享但不同页面实例不共享取值；工作区存在时控件回显默认值或匹配档案经过最低高度约束后的配置基线，没有工作区样本时回退默认比例；手动拖动只更新待采用会话样本，不得提前覆盖控件，点击“使用页面当前比例”后才更新回显并保存 `{width, height, ratios}`；编辑任一比例时，其余可见图表平均分配剩余额度并实时持久化，合计始终为 100%，当前工作区宽高有效时同步更新对应尺寸档案；尚未取得真实工作区宽高时必须禁用采用入口，禁止假保存；同一组合可保存多项，当前宽高均在档案 `±15%` 范围内时使用综合距离最近项，`5%` 内重复保存更新原项，无匹配时回退该组合默认比例，不同图表组合的档案互不混用；匹配距离、容差和数量上限复用全局尺寸档案能力；复权、查询范围等业务口径不得塞入该字段，辅助图选择、比例计算、尺寸匹配与恢复默认不得在消费页维护第二套 |
 | `EquityChart` / `GrowthChart` | `frontend/src/components/EquityChart.vue`、`frontend/src/components/GrowthChart.vue` | 回测/训练净值与成长曲线 | 无直接系统组件种类 | 保持各自数据与布局职责；画布主题统一消费 `useEChartsTheme()`，不得私有维护明暗基础色板。净值图「对比指数」虚线由父页注入 `extraBenchmark`（父页按各自日期区间拉指数行情并归一成资金净值），组件不内建数据获取；`fill` 撑满等高列仅在结算详情等需要时启用。基准可见性由 `showBenchmark` 控制：缺省 true 渲染基准线（无 `extraBenchmark` 时用 points 自带 `benchmark_equity` 实线，如训练「满仓持有」），显式 false（回测选「不对比指数」）整条隐藏。`setOption` 用 `notMerge: true` 整图重建，切「不对比」时基准 series 彻底移除不残留。配色：组合=focus 蓝，基准=`t.label` 灰（与板块行情对比图基准一致），回撤=`--el-color-danger` 红（面积用 `light-9` 浅红）；各 series 的 `color`/`itemStyle.color` 与线色同值，保证图例/悬浮圆点与线色一致。悬浮 tooltip 按「相对首日涨跌幅 %」展示组合/基准，并在基准可见时给组合一行「超额」（组合涨跌幅−基准涨跌幅），与板块行情对比图悬浮口径一致；回撤子图仍按 % 原值展示 |
 | `BrandMark` | `frontend/src/components/BrandMark.vue` | 应用品牌图形与「复盘啦」字标 | 无直接系统组件种类 | 应用外壳、登录页等品牌露出直接复用同一外观；禁止场景变体、消费侧 `--brand-*` 覆盖、私有 logo 或第二套字标；窄容器只允许等比缩放 |
-| `SideMenu` / `TopNavigation` / `WorkspaceTabs` / `WorkspaceRouteView` / `MenuIcon` | `frontend/src/components/SideMenu.vue`、`frontend/src/components/TopNavigation.vue`、`frontend/src/components/WorkspaceTabs.vue`、`frontend/src/components/WorkspaceRouteView.vue`、`frontend/src/components/MenuIcon.vue` | 应用级菜单树、双层顶栏、保留现场的工作标签页、路由缓存与统一菜单图标渲染 | 无直接系统组件种类 | 菜单统一消费 `/me` 授权树和 `utils/permission.ts` 的路由归属口径；工作页面统一由 `WorkspaceRouteView` 渲染并按标签独立缓存，禁止业务页私建 KeepAlive；关闭标签必须同步移除对应缓存；侧栏、双层顶栏和菜单管理页统一用 `MenuIcon` 消费后端图标名；新增导航模式时复用 `useAppNavigation` 持久化偏好 |
+| `SideMenu` / `TopNavigation` / `WorkspaceTabs` / `WorkspaceRouteView` / `MenuIcon` | `frontend/src/components/SideMenu.vue`、`frontend/src/components/TopNavigation.vue`、`frontend/src/components/WorkspaceTabs.vue`、`frontend/src/components/WorkspaceRouteView.vue`、`frontend/src/components/MenuIcon.vue` | 应用级菜单树、双层顶栏、保留现场的工作标签页、路由缓存与统一菜单图标渲染 | 无直接系统组件种类 | 菜单统一消费 `/me` 授权树和 `utils/permission.ts` 的路由归属口径；工作页面统一由 `WorkspaceRouteView` 渲染并按标签独立缓存，禁止业务页私建 KeepAlive；关闭标签必须同步移除对应缓存；侧栏、双层顶栏、工作页签和菜单管理页统一用 `MenuIcon` 消费后端图标名；新增导航模式时复用 `useAppNavigation` 持久化偏好 |
 | `AssetVisibilityTag` / `AssetProfileLabel` / `AssetVisibilityActions` | `frontend/src/components/AssetVisibilityTag.vue`、`frontend/src/components/AssetProfileLabel.vue`、`frontend/src/components/AssetVisibilityActions.vue` | 公开资产来源、可见范围、只读状态、方案名称+版本+归属标签、发布/收回、复制为我的方案和复用参数动作 | 无直接系统组件种类 | 评分、筛选、买卖、回测等公开资产页面必须复用；方案选择/列表入口统一用 `AssetProfileLabel`，消费页包括 `BoardView`、`ScreenView`、`StockDetailView`、`ConfigView` 评分 tab、`ConfigView` 买卖 tab、`BacktestView` |
 | `ScoreGradeTag` | `frontend/src/components/ScoreGradeTag.vue` | 统一综合评分评级标签：主升浪核心=`danger`、龙头候选=`warning`、观察=`success`、未知评级=`info` | 无直接系统组件种类 | 每日榜单、策略筛选、评分试算、回测交易及回测当日榜单统一复用；默认使用表格小号标签和统一垂直居中几何；训练模块的 S/A/B/C/D 属于另一套评级，不套用本组件 |
 | `SubScoreChips` | `frontend/src/components/SubScoreChips.vue` | 分项达标分的业务域复用单元格，统一评分等级、胶囊样式、末尾截断与完整内容提示 | 无直接系统组件种类；作为既有 `data-table` 业务列内容 | 每日榜单与评分试算共同消费；保留评分胶囊原有的紧凑自适应高度与间距，不为统一提示机制改变业务组件外观；超长内容在胶囊末尾使用原生省略号，不得叠加单元格公共省略遮罩或留下被截断的分数字符；省略原文提示由全局省略宿主自动承接 |
@@ -414,17 +414,17 @@ Key Characteristics：
 ### 应用外壳
 
 - 侧栏宽度固定为 `208px`，顶栏高度 `67px`，主工作区 padding 为 `20px 24px`。
-- 应用提供 `sidebar-tabs` 与 `dual-topbar` 两种导航布局：侧栏模式在内容区上方显示可关闭工作标签；双层顶栏模式把一级菜单放在品牌顶栏、当前一级下的二级菜单放在独立次栏，三级页面由二级菜单下拉承接。
+- 应用提供 `sidebar-tabs` 与 `dual-topbar` 两种导航布局：两种模式均在内容区上方显示同一套可关闭工作页签，切换布局不重建页签与工作页面实例；双层顶栏模式依次展示品牌与一级菜单、独立二级菜单栏、工作页签，三级菜单入口由二级菜单下拉承接。一级菜单保持完整内容宽度，空间不足由导航栏自身横向滚动承接，不允许压缩后文字重叠。
 - 侧栏模式左栏贯穿应用全高：顶部复用 `BrandMark` 并展示用户指定的英文标语 `Fraudulent Market`，菜单区域独立滚动，底部研究说明固定；右侧顶栏显示由授权菜单树及当前路由标题生成的层级面包屑，详情继承最长匹配菜单归属，当前页强调、长标题省略。双层顶栏模式继续在顶栏显示品牌；切换模式不重建工作页面。
 - 侧栏品牌区到菜单的底部留白为16px。一级分组常驻为不可点击、不可折叠的标题；连续的一级直达页面按原顺序合为无标题区段，各区段之间用中性细线和12px间距区分。初次加载、页面路径切换和授权菜单就绪时，收起不属于当前路径的下级分组，展开当前页面所属分组链，并按需在菜单区最小滚动露出当前叶子；同页允许手动浏览多个分组，查询参数变化不重置收展或滚动。加载、空授权菜单、失败重试分别呈现，不回退静态菜单。
 - 应用导航字体、字号、字重、文字行高及入口尺寸统一按§3.4“应用导航字阶与尺寸”执行，侧栏、双顶栏、下拉、面包屑和工作标签必须消费共享`--app-nav-*`。字阶不随页面内容密度或颜色预设变化，普通主菜单文字使用`--chrome-text`、当前项使用`--chrome-text-strong`；侧栏/下拉当前叶子保留主色文字。
-- 导航定位圆点4px、强调线2px；横向二级/工作标签当前项统一30%强调色混合中性边框、中性选中背景及底线；顶栏一级保留主色图标框与整栏底部下划线，不套用二级选中框。侧栏和下拉叶子共用12%主色背景，侧栏叶子悬停16%。下拉的指针焦点不代表选中，移出后恢复普通颜色；键盘焦点使用共享中性背景和焦点框，只有路由命中的叶子保留主色。禁止在消费组件另写同角色的高度、圆角或选中颜色配方。
+- 导航定位圆点4px、强调线2px；横向二级当前项使用30%强调色混合中性边框、中性选中背景及底线；工作标签复用同一高度与圆角，连续中性底托承接页签，当前项使用中性选中面、强边框、2px主色上沿与轻投影，不叠加定位圆点或底线；顶栏一级保留主色图标框与整栏底部下划线，不套用二级选中框。侧栏和下拉叶子共用12%主色背景，侧栏叶子悬停16%。下拉的指针焦点不代表选中，移出后恢复普通颜色；键盘焦点使用共享中性背景和焦点框，只有路由命中的叶子保留主色。禁止在消费组件另写同角色的高度、圆角或选中颜色配方。
 - 面包屑用于说明当前位置在授权菜单中的层级，例如“系统管理 / 配置管理 / 技术指标”。本项目仅在侧栏模式顶栏显示这条只读路径，当前末项加粗并带`aria-current=page`，不提供节点点击跳转；一级分区等无页面节点也可作为路径文本。内容来自授权菜单树的最长匹配归属，菜单主页尊重运行时标题，详情再追加路由标题，不显示重复末项；权限未就绪或失败时只显示对应状态，不露出旧路径。最近打开页面由工作标签承接，页面返回使用已有返回入口。
-- 工作标签按路由路径保留页面组件实例、表单筛选与独立滚动位置，最多缓存 12 个；同一页面类型的不同详情路由必须拥有独立缓存身份，关闭标签或超过上限时同步销毁对应实例与滚动记录。**菜单记忆只记菜单主页自身的访问（含查询态），不记详情子路由**——再次点击某菜单永远回该菜单主页，详情现场只由工作标签恢复；避免从榜单/板块等来源进详情后，菜单记忆被劫持到详情路由。
+- 工作标签按路由路径保留页面组件实例、表单筛选与独立滚动位置，最多缓存 12 个；同一页面类型的不同详情路由必须拥有独立缓存身份，关闭标签或超过上限时同步销毁对应实例与滚动记录。栏首提供“清空页签”，展开和折叠时均可使用；全部页签的未保存离开确认通过后才统一关闭，任一取消保留全部页签，确认期间禁止重复清空与单页关闭。允许关闭最后一个标签：整条工作区栏自动消失，正文显示空工作区；再次选择同一菜单也必须恢复页面，禁止只依赖路由地址变化。**菜单记忆只记菜单主页自身的访问（含查询态），不记详情子路由**——再次点击某菜单永远回该菜单主页，详情现场只由工作标签恢复；避免从榜单/板块等来源进详情后，菜单记忆被劫持到详情路由。
 - **详情页返回键的来源必须可信**：个股/板块详情的返回键必须显示具体目标（如“返回每日榜单”），统一消费返回目标文案映射。以来源集合上下文（`stockSet.returnPath`）为目标时，仅当当前对象仍属于该集合才有效；从菜单、标签或直接链接进入（对象不在集合中）时禁用残留来源、归位默认列表。任何从列表/榜单/板块/筛选页跳进个股详情的入口都必须 `setSet` 写入本次来源路径与集合，不得依赖上一次进入的残留值。
 - 图表范围等只影响单个内容面板的操作放入该面板标题行，与标题、图例和当前数据上下文就近编组；不得因页面分栏而放到远离图表的页头操作区。
 - 导航布局、界面比例模式和手动比例都是独立用户偏好，不与明暗模式或颜色预设绑定；自动模式的计算指数由系统外观配置提供；外观抽屉中的主题缩略图只表达色彩和材质，不暗示固定导航结构或显示比例。
-- 双层顶栏的二级导航与侧栏模式的工作标签栏统一消费 `--chrome-context-bar-bg = var(--chrome-bg)`，只随明暗模式切换中性底色，不混入预设强调色或渐变；两处保留原有选中边框、底部强调线与导航行为。工作标签仅当前项显示无光晕强调色圆点，普通项保留透明对齐槽，切换时不改变宽度。
+- 双层顶栏的二级导航与两种布局的工作标签栏统一消费 `--chrome-context-bar-bg = var(--chrome-bg)`，只随明暗模式切换中性底色，不混入预设强调色或渐变。二级导航保留选中边框和底部强调线。工作标签栏默认收起为28px摘要行，展开后恢复45px页签栏；箭头按钮可键盘操作，折叠不销毁页签或页面。展开/收起通过账号级 `workspace-tabs` 用户偏好自动记忆，按租户/用户隔离本地回退与待同步意图，快速刷新和旧响应不得覆盖手动选择。栏首固定显示折叠入口、“工作区”、已打开数量徽标和清空图标按钮（复用 `AppIconButton`），展开时显示“｜”，标题与徽标不参与标签滚动；标签轨道使用中性连续底托，每项展示所属授权菜单图标，缺失时回退统一文档图标，详情沿用最长匹配菜单归属。当前项通过中性选中面、强边框、主色图标和2px上沿强化；普通项不画重复分隔线。页签间距4px、水平内距12px、最大宽度180px；关闭入口始终预留空间，普通态弱显、当前项和悬停时清晰显示，避免切换时宽度跳动；窄宽继续由标签轨道内滚承接。
 - 双层顶栏必须在显示比例和视口几何变化期间保持导航 DOM 稳定，禁止通过重挂载制造按钮短暂失效；应用缩放必须使用参与布局和原生命中测试的统一坐标系，浏览器视口变化，或跨屏导致可用区域、屏幕位置、DPR 任一变化时触发布局复测，禁止通过视觉偏移补偿命中区域。
 - `.main` 必须保持 `overflow: clip` 和 flex 填充，禁止浏览器把隐藏外层变成可滚动容器；页面滚动由布局系统内部区域承载。
 - 菜单激活态使用主色边线和轻背景，不使用大面积高饱和底色。
@@ -437,7 +437,7 @@ Key Characteristics：
 - **关闭动作统一契约**：自有图标关闭、退出临时预览、移除对比对象使用 `AppCloseButton`（内部复用 `AppIconButton`）；组件库内置弹窗、确认框、标签、输入/选择/日期清空、消息、通知与 Alert 图标关闭入口由 `global.css` 唯一适配，禁止消费页面单独覆盖颜色、尺寸、圆角或动画。文字“取消/关闭”命令继续使用 `el-button`；删除真实参数、分段等数据继续使用危险操作，不能因图形相同套用普通关闭。
 - 关闭入口按位置选档：`default=28px / glyph=14px` 用于弹窗、确认框与抽屉头部；`compact=24px / glyph=12px` 用于局部临时预览、消息与通知；`inline=16px / glyph=12px` 只用于工作标签、队列 chip、标签移除和字段清空等内嵌操作。尺寸和图形 token 在 `global.css` 的 `--app-close-size-*`、`--app-icon-close-glyph-*` 定义；不得借用内嵌档压缩独立工具按钮。Alert 自定义文字关闭保留组件库文字布局，不强制图标几何。
 - 关闭入口常态透明底、辅助文字色；精细指针悬停统一 `--chrome-bg-soft-hover` 与主文字色，按下为 `--chrome-active-bg`；不使用危险红、缩放、浮起或阴影。键盘焦点为2px主色外框，颜色过渡复用共享180ms配方；减少动态效果时取消过渡。语义深色标签和告警保持必要的文字对比。禁用/加载不产生悬停反馈，加载保持进行中语义。页面只控制排列、间距和显隐。
-- `AppCloseButton` 必须传具体 `label` 作为可访问名称；明确的关闭图形默认不显示重复文字气泡，名称不自动转成可见提示。阻止点击与 Enter/Space 传播到父菜单、标签或卡片，Escape 继续交给浮层。库内置控件保留原生事件、焦点及键盘模型（字段清空仍依附输入控件，不额外改造成独立 Tab 入口）。工作标签在无悬停/粗指针设备始终显示关闭，最后一个标签不显示关闭；等待离开确认时阻止重复关闭，成功移除焦点所在标签后将焦点交还当前标签。取消关闭不改变选择或焦点。
+- `AppCloseButton` 必须传具体 `label` 作为可访问名称；明确的关闭图形默认不显示重复文字气泡，名称不自动转成可见提示。阻止点击与 Enter/Space 传播到父菜单、标签或卡片，Escape 继续交给浮层。库内置控件保留原生事件、焦点及键盘模型（字段清空仍依附输入控件，不额外改造成独立 Tab 入口）。工作标签在无悬停/粗指针设备始终显示关闭，最后一个标签也可关闭并进入空工作区；等待离开确认时阻止重复关闭，成功移除焦点所在标签后，有剩余页签时将焦点交还当前标签，最后一页关闭时交给空工作区。取消关闭不改变选择或焦点。
 - 关闭呈现不承担业务允许判断：未保存拦截、权限、异步状态由所属容器处理；`PageDrawer` 自定义关闭、遮罩与 Escape 共走组件库关闭链路，尊重 `before-close`，`show-close=false` 同时隐藏自定义头部入口。弹窗继续由 `AppDialog` / Element Plus 管理关闭与焦点归还。
 - 校验入口为 `npm run check:close-controls`（构建门禁同时执行），检测直接手写关闭图形、缺少名称和私有视觉配方；允许危险删除与非交互预览图形。交互、离开拦截和焦点恢复由定向组件测试覆盖，明暗主题的实际命中区、裁切与状态须在内置浏览器复核，源码扫描不能替代页面验收。
 - 标准命令按钮为 `32px` 高、左右 padding `12px`、文字 `13px / --app-font-weight-section`、图文间距 `6px`；small 为 `28px`、large 为 `36px`。输入框、选择器、按钮统一使用 `--layout-control-radius=6px`，主题只改变颜色和材质，不改变基础控件形态。
@@ -535,7 +535,7 @@ Key Characteristics：
 
 - 主数据表应作为 `growMain` 占据剩余空间，使用 `height="100%"` 让表体内部滚动；当一个标签页工作区承载多个互斥主表时，由 `tabs` 作为唯一 `growMain`，当前面板内的表体承接滚动。
 - `list` 原型必须且只能有一个顶层 `growMain`；主列表不得使用 `embedded`。
-- 长文档中后方仍有同级内容的局部表格不得独占富余高度；统一使用 `embedded` 并消费 `components/table/tableSizing.ts` 的 `LONG_DOCUMENT_TABLE_MAX_HEIGHT`。纵向混合工作台中，前置主业务表使用 `LEADING_WORKBENCH_TABLE_MAX_HEIGHT`，并通过 slot 的 `minH + idealH` 声明受控收缩范围；末尾表格可由 `section` 作为成长容器，在 `pageRegistry` 声明为唯一 `growMain`，内部表格继续作为嵌套 slot 登记。`VMixedGrow` 只让声明 `idealH` 的前置块收缩，未声明的固定块继续保持自然高度；页面不得复制 `clamp`、视口减法、私有行数换算或用 CSS 模拟成长关系。
+- 长文档中后方仍有同级内容的局部表格不得独占富余高度；统一使用 `embedded`，由 `AppDataTable` 默认消费 `components/table/tableSizing.ts` 的 `LONG_DOCUMENT_TABLE_MAX_HEIGHT`，页面不重复传默认上限。显式 `height` 不叠加默认上限；显式 `max-height` 优先，确需完整展开时传 `:max-height="null"` 并说明原因。纵向混合工作台中，前置主业务表使用 `LEADING_WORKBENCH_TABLE_MAX_HEIGHT`，并通过 slot 的 `minH + idealH` 声明受控收缩范围；末尾表格可由 `section` 作为成长容器，在 `pageRegistry` 声明为唯一 `growMain`，内部表格继续作为嵌套 slot 登记。`VMixedGrow` 只让声明 `idealH` 的前置块收缩，未声明的固定块继续保持自然高度；页面不得复制 `clamp`、视口减法、私有行数换算或用 CSS 模拟成长关系。
 - 页面数据表格统一使用 `AppDataTable + AppTableColumn`。页面不得直接使用原生 `<table>`、`el-table`、`el-table-column`，也不得向列传 `width/min-width`。
 - 列宽采用语义自适应契约：选择、展开、序号等结构列保持稳定窄宽；普通名称使用 `name`，含前置选择/收藏等控件并展示主副信息的对象识别列使用 `entity`；其余列取“语义内容基础宽度”和“表头标签 + 同行元信息 + 排序/筛选控件 + 主内容前置控件”的较大值，并按 8px 网格取整。表格内多选下拉必须按 `filterSelectVisibleTagCount` 或 `filterSelectDisplayMode=count` 计入控件容量和单元格留白，禁止先压窄控件再裁掉标签、`+N` 或“已选 N”。中英文混排使用稳定字符权重估算，不做运行时 DOM/数据采样，避免数据变化触发列宽跳动；异常长表头受角色上限保护，真实截断时由全局省略提示展示原文（超长内容按统一上限截断）。容器有余量时由 Element Plus `fit` 按最小宽度权重分配并铺满，空间不足时保持最小可读宽度并由表体横向滚动。
 - 横向滚动与单元格溢出是两套独立机制：前者只由所有列的语义最小宽度总和是否超过表格可视宽度决定；后者由 `AppDataTable` 递归比较单元格内文字、标签和嵌套结构的真实矩形是否越过该单元格边界。不得使用包含透明 padding / margin 的 `scrollWidth` 制造虚假省略号。省略号只有一种视觉规则：必须由实际承载文字的内容容器通过原生 `text-overflow: ellipsis` 绘制在自身末尾；表格只负责检测真实遮挡和触发统一悬浮，不得使用渐隐遮罩、伪元素或独立字符在单元格外层补画省略号。表格内标签、评分胶囊及其它有边界的复合内容必须在自身内部收缩，禁止切断背景、边框、文字或数字。全站省略原文统一由 `AppOverflowTooltipHost` 自动承接，只在真实截断时显示，并遵守统一的宽度与高度上限；页面不得传列级 `show-overflow-tooltip` 或自行维护截断 tooltip。操作列及动作组属于命令交互边界，不接入普通文本省略悬浮，也不得把隐藏测量副本纳入提示内容；结构列与操作列继续使用各自专用契约。
@@ -650,7 +650,7 @@ Key Characteristics：
 |---|---|---|---|
 | 侧栏可点击入口、可折叠下级分组（`SideMenu` / `SideMenuItem`） | `--chrome-bg-soft-hover`，禁止使用基础表面 `--chrome-bg-soft` 代替 | 叶子使用`--chrome-nav-leaf-active-bg`、2px左线及主色文字，悬停/焦点改用`--chrome-nav-leaf-active-hover-bg`；父分组只增强中性文字 | 只移动图标/文字；分区标题及其蓝色圆点保持静态 |
 | 双顶栏一级（`TopNavigation`） | 32px高的中性悬停/焦点面，使用`--chrome-bg-soft-hover`；宿主保持透明 | 保留原有主色图标框、加粗文字及顶栏底部下划线，不套二级选中框 | 点击区保持原位，紧凑面居中；下划线不随内容移动 |
-| 双顶栏二级、工作标签（`TopNavigation` / `WorkspaceTabs`） | 普通项使用`--chrome-bg-soft-hover`，当前项保持`--chrome-active-bg` | 共用`.app-nav-context-entry`的中性选中底、轻主色边框和底线 | 移动标记内容；标签关闭按钮固定，键盘事件独立 |
+| 双顶栏二级、工作标签（`TopNavigation` / `WorkspaceTabs`） | 普通项使用`--chrome-bg-soft-hover`，当前项保持中性选中底色 | 复用`.app-nav-context-entry`的高度与圆角；二级导航保留轻主色边框和底线，工作页签由连续底托承接并使用强中性边框、主色上沿与图标定位 | 移动标记内容；标签关闭按钮固定，键盘事件独立 |
 | 顶栏下拉菜单（`TopNavigation`） | `--chrome-bg-soft-hover`，不得回落为组件库默认蓝色悬停/焦点底 | 当前叶子保留`--chrome-nav-leaf-active-bg`及主色文字 | 只移动内容；普通项悬停不改变真实路由 |
 | 可点击卡片：天梯、数据概览可点击统计/问题卡、指标模板、外观预设/导航选项、交易纪律规则选择（`LimitLadderCard`、`OverviewView`、`ConfigView`、`App`、`RuleMasterList`） | 保留自身基础或告警语义底色，仅增强边界、投影与浮起，不统一刷成菜单灰底 | 具备选择语义的卡片使用`.app-interaction-card.is-selected`：主色边框、3px内侧线及`--app-interaction-selected-background`的6%浅底；悬停不加深选中底色 | 表面与标记内容同步浮起；金融涨跌和告警文字颜色保持原职责 |
 | 连续行情对比指标（`MarketCompareMetricStrip`，消费于`StockAnalysisPanel` / `SectorsView`） | 普通项使用`--chrome-bg-soft-hover`；选中项保持`--app-interaction-selected-background` | 6%浅底与铺满单元格宽度的底线，不使用独立卡片外框、外投影或左侧线 | 只移动内容，保持连续分段栏结构 |
@@ -676,7 +676,7 @@ Key Characteristics：
 - 破坏性确认使用 `ElMessageBox`；确认文案必须写清动作与对象，不用表单弹窗模拟二次确认。
 - 短表单、单一信息组编辑和轻量查看统一使用 `AppDialog`，业务页面和业务组件禁止直接使用 `el-dialog`。语义宽度固定为 `compact=420px`、`narrow=440px`、`medium=480px`、`large=520px`、`xlarge=560px`、`max=640px`；仅图表、宽表等完整横向工作区可用 `workspace=min(92cqw, 1200px)`，普通表单不得借此拉宽。
 - 完整对象详情、分段较多的编辑、历史版本和审计上下文统一使用 `AppDetailDrawer`；它负责标题、副标题、头部动作、四态、正文和 footer 的一致结构。业务详情按 `AppDetailSection` 分区，规则型键值展示使用 `AppDetailFields + AppDetailField`，空值统一为 `—`，不得复制私有详情网格或 `el-descriptions`。
-- 数据结构体检及同类只读检查报告的展开布局统一为“检查摘要 → 数量/基准日 → 明细表 → 处理说明”。摘要复用 `AppSummaryDisclosureCard variant="compact"`，通过项静态行与可展开项保持同一对齐；明细复用 `AppDataTable embedded + AppTableColumn` 的语义列与 `small` 密度，每个对象占一行、字段名仅在表头出现，板块处置明细与 SQL 样例不得混用逐条字段卡、编号清单或私有表格。共同基准日只在表格上方展示一次，不同日期保留日期列；显示全量计数及实际样例数量，不能将样例数量当作异常总数。表格复用 `LONG_DOCUMENT_TABLE_MAX_HEIGHT` 限高，宽列在表内横向滚动，报告正文由共享抽屉滚动；处理说明位于明细之后。列出版本等长值时保留完整值的共享溢出查看能力，不靠缩小字号压缩。只有能精确对应台账的对象才提供定位链接。
+- 数据结构体检及同类只读检查报告的展开布局统一为“检查摘要 → 数量/基准日 → 明细表 → 处理说明”。摘要复用 `AppSummaryDisclosureCard variant="compact"`，通过项静态行与可展开项保持同一对齐；明细复用 `AppDataTable embedded + AppTableColumn` 的语义列与 `small` 密度，每个对象占一行、字段名仅在表头出现，板块处置明细与 SQL 样例不得混用逐条字段卡、编号清单或私有表格。共同基准日只在表格上方展示一次，不同日期保留日期列；显示全量计数及实际样例数量，不能将样例数量当作异常总数。表格由 `embedded` 默认复用 `LONG_DOCUMENT_TABLE_MAX_HEIGHT` 限高，宽列在表内横向滚动，报告正文由共享抽屉滚动；处理说明位于明细之后。列出版本等长值时保留完整值的共享溢出查看能力，不靠缩小字号压缩。只有能精确对应台账的对象才提供定位链接。
 - `AppDetailDrawer` 基于 `PageDrawer`。页面直接使用 `PageDrawer` 只限实时日志、资产搜索、页面设置以及主从工作区窄屏回退等具有专用交互模型的底层场景；普通详情不得绕过 `AppDetailDrawer`。
 - 页面触发的抽屉遮罩和高度限制在当前 `LayoutHost` 内容区；只有应用顶栏触发的用户中心、外观等全局抽屉可以使用视口级浮层。
 - Element Plus teleport 生成的浮层 DOM 必须使用唯一全局类或 `:global` 定位内部样式，不要依赖 scoped 深层样式碰运气。

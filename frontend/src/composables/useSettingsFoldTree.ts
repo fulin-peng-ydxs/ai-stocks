@@ -70,6 +70,8 @@ export function useSettingsFoldTree(open: ComputedRef<boolean>, setOpen: (value:
 
   function toggleChildGroups(): void {
     const nextOpen = allChildGroupsClosed.value
+    // 父级可能已被整体收起；显式操作下级时先露出内容，避免变化藏在折叠区域内。
+    setOpen(true)
     childNodes.forEach((node) => node.setOpen(nextOpen))
   }
 

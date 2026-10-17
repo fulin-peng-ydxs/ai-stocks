@@ -3,6 +3,7 @@ import { vReveal } from '@/directives/reveal'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppPagination from '@/components/AppPagination.vue'
 import { syncTableCellVisualOverflow } from '@/components/table/cellVisualOverflow'
+import { LONG_DOCUMENT_TABLE_MAX_HEIGHT } from '@/components/table/tableSizing'
 import type { Sort } from 'element-plus'
 import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
 
@@ -25,6 +26,8 @@ const props = withDefaults(defineProps<{
   kind?: TableKind
   loading?: boolean
   height?: string | number
+  /** 嵌入表默认统一限高；显式高度优先，null 明确退出限高以完整展开。 */
+  maxHeight?: string | number | null
   size?: '' | 'large' | 'default' | 'small'
   rowKey?: RowKey
   defaultSort?: Record<string, unknown>
@@ -56,6 +59,10 @@ const props = withDefaults(defineProps<{
 })
 
 const resolvedHeight = computed(() => props.height ?? (!props.embedded ? '100%' : undefined))
+const resolvedMaxHeight = computed(() => {
+  if (props.maxHeight !== undefined) return props.maxHeight ?? undefined
+  return props.embedded && props.height == null ? LONG_DOCUMENT_TABLE_MAX_HEIGHT : undefined
+})
 const initialLoading = computed(() => props.loading && props.data.length === 0)
 const initialLoadingStyle = computed(() => {
   if (props.height == null) return undefined
@@ -159,6 +166,7 @@ const emit = defineEmits<{
       :aria-label="ariaLabel"
       :aria-busy="loading"
       :height="resolvedHeight"
+      :max-height="resolvedMaxHeight"
       :size="size"
       :row-key="rowKey"
       :default-sort="defaultSort"

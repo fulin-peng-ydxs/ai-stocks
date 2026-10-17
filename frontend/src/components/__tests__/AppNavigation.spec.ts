@@ -75,16 +75,20 @@ describe('应用导航外壳', () => {
     const input = wrapper.get('input')
     await input.setValue('保留研究现场')
     const originalMounts = pageMounts()
+    const originalTabs = wrapper.get('workspace-tabs-stub').element
     useAppNavigation().navigationMode.value = 'dual-topbar'
     await nextTick()
     expect(wrapper.find('.aside').exists()).toBe(false)
     expect(wrapper.find('.topbar .topbar-brand brand-mark-stub').exists()).toBe(true)
     expect(wrapper.find('.shell-breadcrumb').exists()).toBe(false)
+    expect(wrapper.get('workspace-tabs-stub').element).toBe(originalTabs)
+    expect(wrapper.findAll('top-navigation-stub')).toHaveLength(2)
     expect(pageMounts()).toBe(originalMounts)
     expect(wrapper.get('input').element).toHaveProperty('value', '保留研究现场')
     useAppNavigation().navigationMode.value = 'sidebar-tabs'
     await nextTick()
     expect(wrapper.get('input').element).toBe(input.element)
+    expect(wrapper.get('workspace-tabs-stub').element).toBe(originalTabs)
     wrapper.unmount()
   })
 

@@ -9,7 +9,7 @@ import SideMenuItem from './SideMenuItem.vue'
 import MenuIcon from './MenuIcon.vue'
 import { useAuthStore } from '@/stores/auth'
 import { activeMenuPath, findMenuTrail, type MenuTreeNode } from '@/utils/permission'
-import { resolveWorkspaceMenuPath } from '@/composables/useWorkspaceTabs'
+import { navigateWorkspaceMenu } from '@/composables/useWorkspaceTabs'
 
 const route = useRoute()
 const router = useRouter()
@@ -76,7 +76,7 @@ watch([() => route.path, () => auth.menusStatus, menus], async (_, __, onCleanup
 }, { flush: 'post', immediate: true })
 
 function selectMenu(index: string) {
-  if (index.startsWith('/')) void router.push(resolveWorkspaceMenuPath(index))
+  if (index.startsWith('/')) void navigateWorkspaceMenu(router, index, menus.value)
 }
 </script>
 

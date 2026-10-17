@@ -1,8 +1,15 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppCloseButton from './AppCloseButton.vue'
+import AppIconButton from './AppIconButton.vue'
+import { ArrowDown, ArrowRight, Delete } from '@element-plus/icons-vue'
+import { useWorkspaceTabPreferences } from '@/composables/useWorkspaceTabPreferences'
+import MenuIcon from './MenuIcon.vue'
+import { useAuthStore } from '@/stores/auth'
+import { findMenuLeaf } from '@/utils/permission'
 import {
+  clearWorkspaceTabs,
   removeWorkspaceTab,
   useWorkspaceTabs,
 } from '@/composables/useWorkspaceTabs'
@@ -11,8 +18,16 @@ import { permitNextRouteLeave } from '@/composables/useUnsavedChangesGuard'
 const route = useRoute()
 const router = useRouter()
 const { workspaceTabs } = useWorkspaceTabs()
+const { collapsed, setCollapsed } = useWorkspaceTabPreferences()
+const auth = useAuthStore()
+// 图标跟随授权菜单更新，详情页沿用所属菜单；不把菜单展示信息写进标签缓存。
+const tabIcons = computed(() => new Map(workspaceTabs.value.map((tab) => [
+  tab.key, findMenuLeaf(auth.menus, tab.key)?.icon || 'Document',
+])))
 const rail = ref<HTMLElement>()
 const closingKeys = ref(new Set<string>())
+const clearing = ref(false)
+watch(collapsed, () => { void nextTick(revealActiveTab) })
 
 function revealActiveTab() {
   const container = rail.value
@@ -45,7 +60,7 @@ function activate(path: string) {
 }
 
 async function close(key: string) {
-  if (closingKeys.value.has(key)) return
+  if (clearing.value || closingKeys.value.has(key)) return
   closingKeys.value.add(key)
   try {
     const restoreFocus = rail.value?.contains(document.activeElement)
@@ -62,11 +77,38 @@ async function close(key: string) {
     }
   } finally { closingKeys.value.delete(key) }
 }
+
+async function clear() {
+  if (clearing.value || closingKeys.value.size) return
+  clearing.value = true
+  try { await clearWorkspaceTabs() }
+  finally { clearing.value = false }
+}
 </script>
 
 <template>
-  <div v-if="workspaceTabs.length" class="workspace-tabs" aria-label="已打开页面">
-    <div ref="rail" class="workspace-tabs-rail" role="tablist">
+  <div v-if="workspaceTabs.length" class="workspace-tabs" :class="{ 'is-collapsed': collapsed }" aria-label="已打开页面">
+    <div class="workspace-tabs-heading">
+      <AppIconButton
+        :label="collapsed ? '展开工作区' : '收起工作区'"
+        :tooltip="collapsed ? '展开工作区' : '收起工作区'"
+        :aria-expanded="!collapsed"
+        size="xs"
+        @click="setCollapsed(!collapsed)"
+      ><ArrowRight v-if="collapsed" /><ArrowDown v-else /></AppIconButton>
+      <span class="workspace-tabs-label">工作区</span>
+      <span class="workspace-tabs-count" :aria-label="`${workspaceTabs.length} 个已打开页面`">{{ workspaceTabs.length }}</span>
+      <AppIconButton
+        label="清空页签"
+        tooltip="清空所有页签"
+        size="xs"
+        :loading="clearing"
+        :disabled="closingKeys.size > 0"
+        @click="clear"
+      ><Delete /></AppIconButton>
+      <span v-if="!collapsed" class="workspace-tabs-divider" aria-hidden="true">｜</span>
+    </div>
+    <div v-show="!collapsed" ref="rail" class="workspace-tabs-rail" role="tablist" :aria-hidden="collapsed">
       <div
         v-for="tab in workspaceTabs"
         :key="tab.key"
@@ -79,15 +121,14 @@ async function close(key: string) {
         @keydown.enter="activate(tab.path)"
         @keydown.space.prevent="activate(tab.path)"
       >
-        <span class="workspace-tab-dot app-interaction-content" aria-hidden="true" />
+        <MenuIcon class="workspace-tab-icon app-interaction-content" :name="tabIcons.get(tab.key)" />
         <span class="workspace-tab-title app-interaction-content">{{ tab.title }}</span>
         <AppCloseButton
-          v-if="workspaceTabs.length > 1"
           class="workspace-tab-close"
           size="inline"
           :label="`关闭 ${tab.title}`"
           @click.stop="close(tab.key)"
-          :disabled="closingKeys.has(tab.key)"
+          :disabled="clearing || closingKeys.has(tab.key)"
         />
       </div>
     </div>
@@ -104,50 +145,87 @@ async function close(key: string) {
   background: var(--chrome-context-bar-bg);
   display: flex;
   align-items: center;
-  gap: var(--app-space-3);
+  gap: var(--app-space-2);
+}
+.workspace-tabs.is-collapsed { height: var(--app-control-height-sm); }
+.workspace-tabs-heading {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-space-control-gap);
+  white-space: nowrap;
+  color: var(--chrome-text);
+  font-family: var(--app-nav-font-family);
+  font-size: var(--app-nav-tab-font-size);
+  line-height: var(--app-nav-meta-line-height);
+  font-weight: var(--app-nav-weight-active);
+}
+.workspace-tabs-count {
+  min-width: var(--app-control-height-xs);
+  height: var(--app-control-height-xs);
+  padding-inline: var(--app-space-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--app-control-height-xs);
+  background: var(--shell-accent-faint);
+  color: var(--shell-accent);
+  font-size: var(--app-font-size-micro);
+  font-variant-numeric: tabular-nums;
+}
+.workspace-tabs-divider {
+  color: var(--chrome-border-strong);
+  font-weight: var(--app-nav-weight-regular);
 }
 .workspace-tabs-rail {
   position: relative;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: var(--app-nav-entry-gap);
+  gap: var(--app-space-1);
+  padding: var(--app-nav-indicator-size);
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--app-nav-item-radius);
+  background: var(--chrome-bg-soft);
   overflow-x: auto;
   scrollbar-width: none;
-  padding-block: var(--app-space-1);
 }
 .workspace-tabs-rail::-webkit-scrollbar { display: none; }
 .workspace-tab {
   position: relative;
   flex: none;
-  max-width: 210px;
+  max-width: 180px;
+  padding-inline: var(--app-space-3);
   --app-nav-entry-color: var(--chrome-text-muted);
   font-family: var(--app-nav-font-family);
   font-size: var(--app-nav-tab-font-size);
   line-height: var(--app-nav-meta-line-height);
   font-weight: var(--app-nav-weight-regular);
 }
-.workspace-tab-dot {
-  width: var(--app-nav-location-dot-size);
-  height: var(--app-nav-location-dot-size);
-  flex: none;
-  border-radius: 50%;
-  /* 保留圆点占位，只有当前项显示，避免切换标签时宽度跳动。 */
-  background: transparent;
-}
 .workspace-tab.is-active {
+  --app-interaction-nav-hover-background: var(--chrome-active-bg);
+  background: var(--chrome-active-bg);
+  border-color: var(--chrome-border-strong);
+  box-shadow: inset 0 var(--app-nav-indicator-size) var(--shell-accent),
+    var(--app-interaction-nav-shadow);
   font-weight: var(--app-nav-weight-active);
 }
-.workspace-tab.is-active .workspace-tab-dot {
-  background: var(--shell-accent);
+.workspace-tab-icon {
+  flex: none;
+  width: var(--app-icon-size-sm);
+  height: var(--app-icon-size-sm);
+  font-size: var(--app-icon-size-sm);
 }
+.workspace-tab.is-active .workspace-tab-icon { color: var(--shell-accent); }
 .workspace-tab-title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.workspace-tab-close { opacity: 0; }
+.workspace-tab-close {
+  opacity: 0.4;
+}
 .workspace-tab:hover .workspace-tab-close,
 .workspace-tab.is-active .workspace-tab-close,
 .workspace-tab-close:focus-visible { opacity: 1; }

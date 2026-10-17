@@ -4,11 +4,13 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import ElementPlus from 'element-plus'
 import WorkspaceRouteView from '@/components/WorkspaceRouteView.vue'
 import {
   removeWorkspaceTab,
   resetWorkspaceTabs,
   useWorkspaceTabs,
+  navigateWorkspaceMenu,
 } from '@/composables/useWorkspaceTabs'
 import { useAuthStore } from '@/stores/auth'
 
@@ -40,7 +42,13 @@ describe('工作区路由缓存', () => {
     })
     await router.push('/detail/one')
     await router.isReady()
-    const wrapper = mount(WorkspaceRouteView, { global: { plugins: [pinia, router] } })
+    const visible = ref(true)
+    const host = defineComponent({
+      components: { WorkspaceRouteView },
+      setup: () => ({ visible }),
+      template: '<WorkspaceRouteView v-if="visible" />',
+    })
+    const wrapper = mount(host, { global: { plugins: [pinia, router, ElementPlus] } })
     await flushPromises()
     await wrapper.get('[aria-label="研究笔记"]').setValue('第一只股票的现场')
 
@@ -63,5 +71,23 @@ describe('工作区路由缓存', () => {
     await router.push('/detail/one')
     await flushPromises()
     expect(wrapper.get('[aria-label="研究笔记"]').element).toHaveProperty('value', '')
+    await removeWorkspaceTab('/detail/two', '/detail/one')
+    await removeWorkspaceTab('/detail/one', '/detail/one')
+    await flushPromises()
+    expect(wrapper.find('[aria-label="研究笔记"]').exists()).toBe(false)
+    expect(wrapper.get('[aria-label="空工作区"]').text()).toContain('工作区已清空')
+    auth.menus = [...auth.menus]
+    await flushPromises()
+    expect(useWorkspaceTabs().workspaceTabs.value).toHaveLength(0)
+    visible.value = false
+    await nextTick()
+    visible.value = true
+    await flushPromises()
+    expect(wrapper.find('[aria-label="空工作区"]').exists()).toBe(true)
+    await navigateWorkspaceMenu(router, '/detail/one', auth.menus)
+    await flushPromises()
+    expect(wrapper.get('[aria-label="研究笔记"]').element).toHaveProperty('value', '')
+    expect(useWorkspaceTabs().workspaceTabs.value).toHaveLength(1)
+    wrapper.unmount()
   })
 })

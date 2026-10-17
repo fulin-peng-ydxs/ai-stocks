@@ -1,10 +1,12 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
 import {
+  clearWorkspaceTabs,
   prepareWorkspaceTabVisit,
   removeWorkspaceTab,
   resolveWorkspaceMenuPath,
   resetWorkspaceTabs,
+  trackWorkspaceRouteVisit,
   useWorkspaceTabs,
   visitWorkspaceTab,
 } from '@/composables/useWorkspaceTabs'
@@ -60,12 +62,64 @@ describe('工作标签页状态', () => {
     expect(resolveWorkspaceMenuPath('/stocks')).toBe('/stocks')
   })
 
-  it('关闭当前标签后返回相邻页面，唯一标签不可关闭', async () => {
+  it('关闭当前标签后返回相邻页面，最后一个关闭后清空缓存身份', async () => {
     visitWorkspaceTab(route('/board', '每日榜单'), menus)
-    expect(await removeWorkspaceTab('/board', '/board')).toBeUndefined()
     visitWorkspaceTab(route('/stocks', '个股查询'), menus)
     expect(await removeWorkspaceTab('/stocks', '/stocks')).toBe('/board')
     expect(useWorkspaceTabs().workspaceTabs.value).toHaveLength(1)
+    expect(await removeWorkspaceTab('/board', '/board')).toBeUndefined()
+    expect(useWorkspaceTabs().workspaceTabs.value).toHaveLength(0)
+    expect(useWorkspaceTabs().workspaceCacheNames.value).toHaveLength(0)
+  })
+
+  it('最后一个脏标签也必须经过关闭确认', async () => {
+    visitWorkspaceTab(route('/board', '每日榜单'), menus)
+    registerUnsavedHandler('/board', { isDirty: () => true, requestLeave: async () => false })
+    await removeWorkspaceTab('/board', '/board')
+    expect(useWorkspaceTabs().workspaceTabs.value).toHaveLength(1)
+  })
+
+  it('清空全部缓存与菜单查询记忆，权限刷新不能重新打开当前页', async () => {
+    const current = { ...route('/board', '每日榜单'), fullPath: '/board?restore=1' }
+    visitWorkspaceTab(route('/stocks', '个股查询'), menus)
+    trackWorkspaceRouteVisit(current, menus)
+    expect(resolveWorkspaceMenuPath('/board')).toBe('/board?restore=1')
+    expect(await clearWorkspaceTabs()).toBe(true)
+    expect(useWorkspaceTabs().workspaceCacheNames.value).toEqual([])
+    expect(resolveWorkspaceMenuPath('/board')).toBe('/board')
+    trackWorkspaceRouteVisit(current, menus)
+    expect(useWorkspaceTabs().workspaceTabs.value).toEqual([])
+  })
+
+  it('逐页确认全部通过才清空，后续页面取消也保留之前的标签与缓存', async () => {
+    visitWorkspaceTab(route('/board', '每日榜单'), menus)
+    visitWorkspaceTab(route('/stocks', '个股查询'), menus)
+    const before = [...useWorkspaceTabs().workspaceCacheNames.value]
+    const first = vi.fn(async () => true)
+    const second = vi.fn(async () => false)
+    registerUnsavedHandler('/board', { isDirty: () => true, requestLeave: first })
+    registerUnsavedHandler('/stocks', { isDirty: () => true, requestLeave: second })
+    expect(await clearWorkspaceTabs()).toBe(false)
+    expect(first).toHaveBeenCalledWith('tab-close')
+    expect(second).toHaveBeenCalledWith('tab-close')
+    expect(useWorkspaceTabs().workspaceCacheNames.value).toEqual(before)
+    second.mockResolvedValue(true)
+    expect(await clearWorkspaceTabs()).toBe(true)
+    expect(useWorkspaceTabs().workspaceTabs.value).toEqual([])
+  })
+
+  it('确认期间新增页签时保留全部现场，不清除尚未确认的新页面', async () => {
+    visitWorkspaceTab(route('/board', '每日榜单'), menus)
+    let finish!: (allowed: boolean) => void
+    registerUnsavedHandler('/board', {
+      isDirty: () => true,
+      requestLeave: () => new Promise<boolean>(resolve => { finish = resolve }),
+    })
+    const pending = clearWorkspaceTabs()
+    visitWorkspaceTab(route('/stocks', '个股查询'), menus)
+    finish(true)
+    expect(await pending).toBe(false)
+    expect(useWorkspaceTabs().workspaceTabs.value).toHaveLength(2)
   })
 
   it('标签和缓存身份都限制为 12 个，超限时同步淘汰最旧项', () => {

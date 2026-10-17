@@ -7,7 +7,7 @@ import {
   type PropType,
   type VNode,
 } from 'vue'
-import type { RouteLocationNormalizedLoaded } from 'vue-router'
+import { isNavigationFailure, NavigationFailureType, type RouteLocationNormalizedLoaded, type Router } from 'vue-router'
 import { findMenuLeaf, type MenuTreeNode } from '@/utils/permission'
 import {
   confirmLeave,
@@ -27,6 +27,7 @@ const cacheNames = new Map<string, string>()
 const cacheWrappers = new Map<string, Component>()
 const lastPathByMenu = new Map<string, string>()
 let cacheSequence = 0
+let trackedRoutePath: string | undefined
 
 const workspaceCacheNames = computed(() => workspaceTabs.value.map((tab) => tab.cacheName))
 
@@ -44,7 +45,7 @@ function releaseCache(key: string) {
 }
 
 function discardWorkspaceTab(key: string, activeKey: string): string | undefined {
-  if (workspaceTabs.value.length <= 1) return undefined
+  if (!workspaceTabs.value.length) return undefined
   const index = workspaceTabs.value.findIndex((tab) => tab.key === key)
   if (index < 0) return undefined
   workspaceTabs.value.splice(index, 1)
@@ -104,9 +105,27 @@ export async function removeWorkspaceTab(
   key: string,
   activeKey: string,
 ): Promise<string | undefined> {
-  if (workspaceTabs.value.length <= 1) return undefined
+  if (!workspaceTabs.value.length) return undefined
   if (!(await confirmLeave(key, 'tab-close'))) return undefined
   return discardWorkspaceTab(key, activeKey)
+}
+
+/** 全部离开确认通过后才统一销毁，取消时保留整个工作区；保留当前路由追踪，避免权限刷新复活页面。 */
+export async function clearWorkspaceTabs(): Promise<boolean> {
+  const targets = [...workspaceTabs.value]
+  const unchanged = () => targets.length === workspaceTabs.value.length
+    && targets.every((tab, index) => {
+      const current = workspaceTabs.value[index]
+      return current?.key === tab.key && current.cacheName === tab.cacheName
+        && current.path === tab.path
+    })
+  for (const tab of targets) {
+    if (!(await confirmLeave(tab.key, 'tab-close')) || !unchanged()) return false
+  }
+  // 等待确认期间可能切换账号或打开新页，不能清除未确认的新现场。
+  if (!unchanged()) return false
+  for (const tab of targets) discardWorkspaceTab(tab.key, '')
+  return true
 }
 
 /**
@@ -132,11 +151,27 @@ export function resetWorkspaceTabs() {
   cacheNames.clear()
   cacheWrappers.clear()
   lastPathByMenu.clear()
+  trackedRoutePath = undefined
+}
+
+/** 权限刷新可能重挂载路由容器；同一路由不能因此复活已关闭的页面。 */
+export function trackWorkspaceRouteVisit(route: RouteLocationNormalizedLoaded, menus: MenuTreeNode[]) {
+  if (route.fullPath !== trackedRoutePath
+    || workspaceTabs.value.some(tab => tab.key === route.path)) visitWorkspaceTab(route, menus)
+  trackedRoutePath = route.fullPath
 }
 
 /** 菜单再次进入时恢复该菜单主页最后停留的访问（含查询态）；详情子路由不被菜单记忆，由工作标签恢复。 */
 export function resolveWorkspaceMenuPath(menuPath: string): string {
   return lastPathByMenu.get(menuPath) ?? menuPath
+}
+
+/** 空工作区仍可能停在原路由；再次点同一授权菜单也必须重新打开页面。 */
+export async function navigateWorkspaceMenu(router: Router, path: string, menus: MenuTreeNode[]) {
+  const failure = await router.push(resolveWorkspaceMenuPath(path))
+  const current = router.currentRoute.value
+  if (isNavigationFailure(failure, NavigationFailureType.duplicated)
+    && findMenuLeaf(menus, current.path)) visitWorkspaceTab(current, menus)
 }
 
 /**

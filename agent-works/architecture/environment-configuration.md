@@ -158,12 +158,14 @@ PostgreSQL `app_config` 是当前系统设置覆盖层的权威表：
 | 数据源限流/并发/超时、回测成本、认证开关/限流、审计保留期等运行期参数 | `get_effective_settings()` |
 | 布局预设、页面默认和组件字段开放策略 | `LayoutConfigRepo` 读取 PG 布局配置表 |
 | 页面布局/组件用户偏好 | `/api/layout/users/{pageKey}`，保存真实 pageKey 且组件路径带真实 `PageLayout` |
-| 主题、导航模式、页面业务偏好、K 线偏好、回测参数记忆 | `/api/user-preferences` / `/api/user-preferences/bulk` |
+| 主题、导航模式、工作页签折叠、页面业务偏好、K 线偏好、回测参数记忆 | `/api/user-preferences` / `/api/user-preferences/bulk` |
 | 评分方案、买卖方案、筛选方案 | 对应 profile/version 表，不走环境变量 |
 | 定时任务定义 | `scheduled_job` 表，不再用 `scheduler.*` 作为运行态配置 |
 | 调试账号密码 | `AI_STOCKS_TEST_USER_PASSWORD` 只在 dev-users 命令运行时读取 |
 
 新增配置项时先判断它是敏感启动变量、非敏感 YAML 基线、Web 可改运行期参数、平台布局配置、用户自有偏好，还是业务资产配置。敏感值只放环境变量；可由系统管理员在线修改的运行期参数必须进入 `CONFIG_GROUPS` 白名单并落 PostgreSQL `app_config`；布局配置使用 PG 布局配置表；登录用户自有 UI/页面偏好使用 `user_preference`；方案类配置应进入对应业务表并保留版本/归属规则。
+
+工作页签折叠保存为 `scope=global`、`pageKey=""`、`prefKey=workspace-tabs`、`value.collapsed`，首次默认 `true`。本地缓存按租户/用户隔离；仅待同步的手动意图优先于旧远端，写回成功后恢复远端权威，避免立刻刷新丢失选择。
 
 ### 5. 前端 localStorage 边界
 

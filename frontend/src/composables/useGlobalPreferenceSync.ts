@@ -98,24 +98,32 @@ export function createGlobalPreferenceSync<T>(options: GlobalPreferenceSyncOptio
     if (!changed && !options.isHydrated) return
 
     options.onLoadStart?.()
+    const requestIdentity = activeIdentity
+    const isCurrent = () => activeIdentity === requestIdentity
+      && `${getAccessToken() || ''}:${identityKey()}` === requestIdentity
     loadPromise = listUserPreferences({ scope: 'global', prefKey: options.prefKey })
       .then(async (res) => {
+        // 切换账号后，旧请求不得覆盖新账号的状态、缓存或待加载请求。
+        if (!isCurrent()) return
         const remote = options.normalize(res.items[0]?.value)
         if (remote !== undefined) {
           await options.applyRemote(remote)
+          if (!isCurrent()) return
           options.persistLocal?.()
           options.afterRemoteApplied?.()
         } else {
           await saveNow()
         }
-        options.onLoadSuccess?.()
+        if (isCurrent()) options.onLoadSuccess?.()
       })
       .catch(() => {
-        options.onLoadError?.()
+        if (isCurrent()) options.onLoadError?.()
       })
       .finally(() => {
-        options.onLoadFinally?.()
-        loadPromise = null
+        if (isCurrent()) {
+          options.onLoadFinally?.()
+          loadPromise = null
+        }
       })
     return loadPromise
   }

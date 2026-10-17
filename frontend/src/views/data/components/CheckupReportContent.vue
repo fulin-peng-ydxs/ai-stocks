@@ -6,7 +6,6 @@ import AppSummaryDisclosureCard from '@/components/AppSummaryDisclosureCard.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
-import { LONG_DOCUMENT_TABLE_MAX_HEIGHT } from '@/components/table/tableSizing'
 import type { CheckupCheck, CheckupIssueItem, CheckupReport } from '@/api/data'
 import { checkupDetailGroups } from '../qualityReport'
 
@@ -66,7 +65,7 @@ function toggle(key: string) {
               <span v-if="detail.context">{{ detail.context }}</span>
             </p>
             <AppDataTable :data="detail.rows" embedded size="small" row-key="id"
-              :max-height="LONG_DOCUMENT_TABLE_MAX_HEIGHT" :aria-label="`${check.name} ${detail.label}`">
+              :aria-label="`${check.name} ${detail.label}`">
               <AppTableColumn v-for="column in detail.columns" :key="column.key"
                 :prop="`values.${column.key}`" :label="column.label" :role="column.role">
                 <template #default="{ row }">

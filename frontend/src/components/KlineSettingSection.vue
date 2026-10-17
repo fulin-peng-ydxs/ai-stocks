@@ -26,7 +26,7 @@ function commitPeriods() {
 
 <template>
   <div class="kline-setting-fields" data-testid="kline-setting-section">
-    <PageSettingItem label="快捷范围（交易日，逗号分隔，如 15,30,60）">
+    <PageSettingItem label="快捷范围" hint="按交易日填写，多个范围用逗号分隔，如 15,30,60。">
       <el-input v-model="periodsStr" placeholder="15,30,60" @blur="commitPeriods" @keyup.enter="commitPeriods" />
     </PageSettingItem>
     <PageSettingItem label="提供「全部」选项" layout="inline">

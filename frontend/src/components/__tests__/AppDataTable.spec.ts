@@ -5,10 +5,11 @@ import { defineComponent, h } from 'vue'
 import ElementPlus from 'element-plus'
 import AppDataTable from '@/components/AppDataTable.vue'
 import appDataTableSource from '@/components/AppDataTable.vue?raw'
+import { LONG_DOCUMENT_TABLE_MAX_HEIGHT } from '@/components/table/tableSizing'
 
 const ElTableStub = defineComponent({
   name: 'ElTable',
-  props: ['data', 'border', 'fit', 'height', 'scrollbarAlwaysOn'],
+  props: ['data', 'border', 'fit', 'height', 'maxHeight', 'scrollbarAlwaysOn'],
   emits: ['sort-change', 'row-click'],
   setup(props, { slots, emit }) {
     return () => h('div', {
@@ -39,6 +40,30 @@ const AppPaginationStub = defineComponent({
 })
 
 describe('AppDataTable', () => {
+  it('嵌入表默认限高，显式高度、上限及完整展开可动态覆盖且不影响主表', async () => {
+    const wrapper = mount(AppDataTable, {
+      props: { data: [], embedded: true },
+      global: { directives: { loading: {} }, stubs: { ElTable: ElTableStub } },
+    })
+    const table = () => wrapper.findComponent(ElTableStub)
+    expect(table().props('height')).toBeUndefined()
+    expect(table().props('maxHeight')).toBe(LONG_DOCUMENT_TABLE_MAX_HEIGHT)
+    await wrapper.setProps({ height: 640 })
+    expect(table().props('height')).toBe(640)
+    expect(table().props('maxHeight')).toBeUndefined()
+    await wrapper.setProps({ maxHeight: '220' })
+    expect(table().props('maxHeight')).toBe('220')
+    await wrapper.setProps({ height: undefined, maxHeight: 480 })
+    expect(table().props('maxHeight')).toBe(480)
+    await wrapper.setProps({ maxHeight: null })
+    expect(table().props('maxHeight')).toBeUndefined()
+    await wrapper.setProps({ maxHeight: undefined })
+    expect(table().props('maxHeight')).toBe(LONG_DOCUMENT_TABLE_MAX_HEIGHT)
+    await wrapper.setProps({ embedded: false })
+    expect(table().props('height')).toBe('100%')
+    expect(table().props('maxHeight')).toBeUndefined()
+    wrapper.unmount()
+  })
   it('无旧数据加载时显示骨架，有旧数据刷新时保留表格遮罩', async () => {
     const wrapper = mount(AppDataTable, {
       props: {

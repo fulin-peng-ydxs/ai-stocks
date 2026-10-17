@@ -1009,7 +1009,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
     )
     expect(rankedWorkbenchSource).toContain("heightMode: 'adaptive'")
     expect(sourceForPage('config-score'))
-      .toContain(':max-height="LONG_DOCUMENT_TABLE_MAX_HEIGHT"')
+      .toMatch(/<AppDataTable[^>]*embedded[^>]*>/)
     expect(sourceForPage('data-schedule'))
       .toContain(':max-height="LEADING_WORKBENCH_TABLE_MAX_HEIGHT"')
     expect(sourceForPage('data-schedule'))
