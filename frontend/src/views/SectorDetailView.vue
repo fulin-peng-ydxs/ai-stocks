@@ -518,7 +518,7 @@ onMounted(async () => {
         </MarketDetailHero>
 
         <section class="metric-strip" aria-label="板块关键指标">
-          <div class="metric metric--primary">
+          <div class="metric">
             <span>今日涨幅</span>
             <strong :class="pctClass(detail?.pct_today)">{{ fmtPct(detail?.pct_today) }}</strong>
           </div>
@@ -771,9 +771,6 @@ onMounted(async () => {
   font-size: var(--app-font-size-data);
   font-weight: var(--app-font-weight-section);
   line-height: var(--app-line-height-data);
-}
-.metric--primary {
-  background: var(--app-surface-section);
 }
 .metric--leader {
   min-width: 154px;
