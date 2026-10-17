@@ -111,12 +111,11 @@ html[data-layout-preset] .app-interaction-target.app-interaction-card {
     --app-interaction-current-elevation: var(--app-interaction-shadow);
     --app-interaction-card-current-border: var(--app-interaction-card-hover-border, var(--chrome-border-strong));
   }
-  :is(.app-interaction-target, .side-menu-node > .el-sub-menu__title):not(.app-interaction-delegated):active,
-  .app-interaction-delegated:not(.is-disabled, .is-loading, [aria-disabled='true'], [aria-busy='true']):has(.app-interaction-trigger:not(:disabled, .is-disabled, .is-loading, [aria-disabled='true']):active) {
-    --app-interaction-shift: 0px;
-    --app-interaction-visible: 0;
-    --app-interaction-current-elevation: var(--app-interaction-rest-elevation, 0 0 transparent);
-    --app-interaction-card-current-border: var(--app-interaction-card-border, var(--el-border-color-lighter));
+  /* 按下只收敛投影，不改悬停位移；松开不反弹，移出后由普通态统一归位。 */
+  :is(.app-interaction-target, .side-menu-node > .el-sub-menu__title):not(.app-interaction-delegated, :disabled, .is-disabled, .is-loading, [aria-disabled='true'], [aria-busy='true']):hover:active,
+  .app-interaction-delegated:not(.is-disabled, .is-loading, [aria-disabled='true'], [aria-busy='true']):has(.app-interaction-trigger:not(:disabled, .is-disabled, .is-loading, [aria-disabled='true'], [aria-busy='true']):hover:active) {
+    --app-interaction-visible: 0.5;
+    --app-interaction-current-elevation: var(--app-interaction-nav-shadow);
   }
 }
 :is(.app-interaction-target, .side-menu-node > .el-sub-menu__title):not(.app-interaction-card)::before {
