@@ -6,12 +6,10 @@ withDefaults(defineProps<{
   eyebrow?: string
   ariaLabel?: string
   headerVisible?: boolean
-  primary?: boolean
 }>(), {
   eyebrow: '',
   ariaLabel: '',
   headerVisible: true,
-  primary: false,
 })
 
 defineSlots<{
@@ -27,7 +25,6 @@ const slots = useSlots()
     <header
       v-if="headerVisible"
       class="app-workspace-pane__header"
-      :class="{ 'app-workspace-pane__header--primary': primary }"
     >
       <div class="app-workspace-pane__identity">
         <div v-if="eyebrow" class="app-workspace-pane__eyebrow">{{ eyebrow }}</div>
@@ -64,11 +61,7 @@ const slots = useSlots()
   min-height: 64px;
   padding: var(--app-space-3) var(--app-space-4);
   border-bottom: 1px solid var(--el-border-color-lighter);
-  background: var(--el-bg-color);
-}
-
-.app-workspace-pane__header--primary {
-  background: color-mix(in srgb, var(--el-color-primary-light-9) 42%, var(--el-bg-color));
+  background: var(--app-section-bg);
 }
 
 .app-workspace-pane__identity {
@@ -83,7 +76,7 @@ const slots = useSlots()
 }
 
 .app-workspace-pane__eyebrow {
-  color: var(--el-color-primary);
+  color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-micro);
   line-height: var(--app-line-height-micro);
   font-weight: var(--app-font-weight-strong);

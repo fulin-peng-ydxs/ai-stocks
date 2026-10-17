@@ -550,7 +550,6 @@ onMounted(async () => {
             <AppWorkspacePane
               title="板块走势"
               aria-label="板块指数走势"
-              primary
               data-testid="sector-detail-chart-section"
             >
               <template #actions>

@@ -6,7 +6,7 @@ import AppWorkspacePane from '@/components/AppWorkspacePane.vue'
 describe('AppWorkspacePane', () => {
   it('统一渲染栏级标题、操作与内容', () => {
     const wrapper = mount(AppWorkspacePane, {
-      props: { title: '行情走势', eyebrow: '当前观察', primary: true },
+      props: { title: '行情走势', eyebrow: '当前观察' },
       slots: {
         actions: '<button data-testid="panel-action">近 120 日</button>',
         default: '<div data-testid="panel-content">图表</div>',
@@ -14,8 +14,6 @@ describe('AppWorkspacePane', () => {
     })
 
     expect(wrapper.get('.app-workspace-pane__header').text()).toContain('行情走势')
-    expect(wrapper.get('.app-workspace-pane__header').classes())
-      .toContain('app-workspace-pane__header--primary')
     expect(wrapper.get('.app-workspace-pane__eyebrow').text()).toBe('当前观察')
     expect(wrapper.get('[data-testid="panel-action"]').text()).toBe('近 120 日')
     expect(wrapper.get('[data-testid="panel-content"]').text()).toBe('图表')
@@ -33,12 +31,4 @@ describe('AppWorkspacePane', () => {
     expect(wrapper.attributes('aria-label')).toBe('分析概览')
   })
 
-  it('默认使用中性栏头，避免次栏与主栏争夺视觉焦点', () => {
-    const wrapper = mount(AppWorkspacePane, {
-      props: { title: '分析概览' },
-    })
-
-    expect(wrapper.get('.app-workspace-pane__header').classes())
-      .not.toContain('app-workspace-pane__header--primary')
-  })
 })

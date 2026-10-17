@@ -108,7 +108,7 @@ function optionTestId(value: OptionValue): string | undefined {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.seg-btn:hover:not(.active) {
+.seg-btn:hover:not(.active, :disabled) {
   background: var(--page-settings-seg-hover-bg);
   color: var(--page-settings-text);
 }
@@ -128,15 +128,19 @@ function optionTestId(value: OptionValue): string | undefined {
   color: var(--el-color-white);
   box-shadow: 0 1px 3px color-mix(in srgb, var(--el-color-primary) 28%, transparent);
 }
-.page-segmented--primary .seg-btn:hover:not(.active) {
+.page-segmented--primary .seg-btn:hover:not(.active, :disabled) {
   background: var(--el-color-primary-light-9);
   color: var(--el-color-primary);
 }
 .page-segmented--disabled {
-  opacity: .68;
+  background: var(--el-disabled-bg-color);
+  border-color: var(--el-disabled-border-color);
 }
 .page-segmented--disabled .seg-btn {
   cursor: not-allowed;
+}
+.page-segmented--disabled .seg-btn:not(.active) {
+  color: var(--el-disabled-text-color);
 }
 .page-segmented--small {
   box-sizing: border-box;
@@ -193,8 +197,8 @@ function optionTestId(value: OptionValue): string | undefined {
   background: var(--el-color-primary);
 }
 
-.page-segmented--tabs .seg-btn:hover:not(.active),
-.page-segmented--tabs.page-segmented--primary .seg-btn:hover:not(.active) {
+.page-segmented--tabs .seg-btn:hover:not(.active, :disabled),
+.page-segmented--tabs.page-segmented--primary .seg-btn:hover:not(.active, :disabled) {
   background: transparent;
   color: var(--el-text-color-primary);
 }

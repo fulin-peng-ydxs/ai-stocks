@@ -366,6 +366,11 @@ describe('TradeRuleEditor', () => {
     })
     const wrapper = await mountEditor()
 
+    const sections = wrapper.get('[data-testid="rule-editor"]').element.children
+    const noticeIndex = Array.from(sections).indexOf(wrapper.get('.readonly-notice').element)
+    const stateIndex = Array.from(sections).indexOf(wrapper.get('.rule-state-track').element)
+    expect(noticeIndex).toBeGreaterThan(0)
+    expect(stateIndex).toBe(noticeIndex + 1)
     expect(wrapper.find('[aria-label="上移选股规则"]').exists()).toBe(false)
     expect(wrapper.find('[aria-label="删除买卖规则"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('添加选股规则')

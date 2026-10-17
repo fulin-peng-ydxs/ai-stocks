@@ -65,12 +65,16 @@ describe('视觉预设运行时 Element Plus 色阶', () => {
         expect(document.documentElement.style.getPropertyValue('--page-settings-section-bg'))
           .toBe(THEME_SURFACE_SPECS[mode].sectionBg)
         for (const variable of ['--el-bg-color', '--el-bg-color-overlay', '--el-fill-color-blank',
-          '--drawer-bg', '--drawer-card-bg', '--page-settings-bg']) {
+          '--drawer-bg', '--drawer-card-bg', '--page-settings-bg', '--el-disabled-bg-color']) {
           expect(document.documentElement.style.getPropertyValue(variable), `${mode} ${variable}`)
             .toBe(tokens.surfaceBg)
         }
         expect(document.documentElement.style.getPropertyValue('--el-bg-color-page'))
           .toBe(tokens.pageBg)
+        expect(document.documentElement.style.getPropertyValue('--el-disabled-border-color'))
+          .toBe(tokens.border)
+        expect(document.documentElement.style.getPropertyValue('--el-disabled-text-color'))
+          .toBe(tokens.textMuted)
         expect(document.documentElement.style.getPropertyValue('--app-muted-text'))
           .toBe(tokens.textMuted)
         expect(document.documentElement.style.getPropertyValue('--page-settings-seg-hover-bg'))

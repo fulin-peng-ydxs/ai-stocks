@@ -81,7 +81,6 @@ defineExpose({ openCompactAnalysis, closeCompactAnalysis })
         :aria-label="listAriaLabel || title"
         :eyebrow="eyebrow"
         :title="title"
-        primary
       >
         <template #actions>
           <div class="market-list-actions">

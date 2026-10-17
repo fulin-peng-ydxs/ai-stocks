@@ -587,6 +587,9 @@ body > .el-notification {
   --el-bg-color: #ffffff;
   --el-bg-color-overlay: #ffffff;
   --el-fill-color-blank: #ffffff;
+  --el-disabled-bg-color: var(--el-bg-color);
+  --el-disabled-border-color: var(--el-border-color);
+  --el-disabled-text-color: var(--el-text-color-secondary);
   --app-section-bg: #f7f7f7;
   --chrome-bg: #fcfcfc;
   --chrome-bg-soft: #ffffff;
@@ -1236,6 +1239,27 @@ html[data-layout-preset] .el-input__inner,
 html[data-layout-preset] .el-select__placeholder,
 html[data-layout-preset] .el-select__selected-item {
   color: var(--chrome-text);
+}
+/* 禁用/只读数据仍保留控件外形；底色跟随内容面，边界不借用悬停或焦点反馈。
+   Select/SelectV2 直接使用 fill-light，范围日期和普通输入也有各自局部规则，统一在此适配。 */
+html[data-layout-preset] :is(
+  .el-input.is-disabled .el-input__wrapper,
+  .el-textarea.is-disabled .el-textarea__inner,
+  .el-select__wrapper.is-disabled,
+  .el-range-editor.is-disabled
+) {
+  background-color: var(--el-disabled-bg-color);
+  box-shadow: 0 0 0 1px var(--el-disabled-border-color) inset;
+}
+html[data-layout-preset] :is(
+  .el-input.is-disabled .el-input__inner,
+  .el-textarea.is-disabled .el-textarea__inner,
+  .el-select__wrapper.is-disabled .el-select__placeholder,
+  .el-select__wrapper.is-disabled .el-select__selected-item,
+  .el-range-editor.is-disabled input
+) {
+  color: var(--el-disabled-text-color);
+  -webkit-text-fill-color: var(--el-disabled-text-color);
 }
 html[data-layout-preset] .el-table__cell {
   padding-top: var(--layout-table-cell-padding-y);

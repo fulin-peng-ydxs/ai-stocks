@@ -416,7 +416,6 @@ const AppWorkspacePaneStub = defineComponent({
     title: { type: String, required: true },
     eyebrow: { type: String, default: '' },
     headerVisible: { type: Boolean, default: true },
-    primary: { type: Boolean, default: false },
   },
   setup(props, { attrs, slots }) {
     return () => h('section', attrs, [
@@ -1353,8 +1352,8 @@ describe('StockDetailView 三图数据协调', () => {
     expect(chartPanel.get('.app-workspace-pane__header').text()).toContain('行情走势')
     expect(auxiliaryPanel.get('.app-workspace-pane__eyebrow').text()).toBe('分析概览')
     expect(auxiliaryPanel.get('.app-workspace-pane__header h3').text()).toBe('2026-07-23')
-    expect(panes[0]?.props('primary')).toBe(true)
-    expect(panes[1]?.props('primary')).toBe(false)
+    expect(panes).toHaveLength(2)
+    expect(panes.map((pane) => pane.props('title'))).toEqual(['行情走势', '2026-07-23'])
   })
 
   it('MACD 局部失败保留行情和快照，局部重试不刷新行情', async () => {

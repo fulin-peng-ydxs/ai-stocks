@@ -173,7 +173,6 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
   padding: var(--app-space-2);
 }
 .rule-master__item {
-  --app-interaction-card-border: transparent;
   min-height: 70px;
   padding: var(--app-space-2) var(--app-space-3);
   border: 1px solid transparent;

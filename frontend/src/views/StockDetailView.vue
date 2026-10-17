@@ -1300,7 +1300,6 @@ onBeforeUnmount(() => {
           <AppWorkspacePane
             title="行情走势"
             aria-label="个股行情走势"
-            primary
             data-testid="stock-detail-chart-panel"
           >
             <template #actions>

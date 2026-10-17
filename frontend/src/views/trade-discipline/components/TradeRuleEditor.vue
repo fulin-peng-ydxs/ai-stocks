@@ -597,12 +597,6 @@ defineExpose({
         </div>
       </header>
 
-      <div class="rule-state-track" aria-label="规则双状态">
-        <div><span>当前有效</span><strong>{{ effectiveText() }}</strong></div>
-        <div><span>管理动作</span><strong>{{ managementText() }}</strong></div>
-        <div><span>编辑现场</span><strong>{{ hasSavedDraft ? `草稿 r${draftRevision}` : '无工作草稿' }}</strong></div>
-      </div>
-
       <AppStatusNotice v-if="!canManage" class="readonly-notice" title="当前账号只有查看权限" />
       <AppStatusNotice
         v-else-if="isArchived"
@@ -622,7 +616,13 @@ defineExpose({
         </template>
       </AppStatusNotice>
 
-      <el-form class="rule-editor__form" label-position="top" :disabled="!editing || !canManage">
+      <div class="rule-state-track" aria-label="规则双状态">
+        <div><span>当前有效</span><strong>{{ effectiveText() }}</strong></div>
+        <div><span>管理动作</span><strong>{{ managementText() }}</strong></div>
+        <div><span>编辑现场</span><strong>{{ hasSavedDraft ? `草稿 r${draftRevision}` : '无工作草稿' }}</strong></div>
+      </div>
+
+      <el-form class="rule-editor__form" label-position="top" :disabled="!canEditDetails">
         <div class="rule-editor__base">
           <el-form-item label="规则名称" :required="editing && canManage">
             <el-input v-model="form.name" data-testid="rule-name-input" maxlength="80" placeholder="例如：趋势突破纪律" />
@@ -781,7 +781,7 @@ defineExpose({
 .rule-state-track > div + div { border-left: 1px solid var(--el-border-color-lighter); }
 .rule-state-track span { display: block; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .rule-state-track strong { display: block; margin-top: var(--app-space-1); color: var(--el-text-color-primary); font-size: var(--app-font-size-table); }
-.readonly-notice { margin-bottom: var(--app-space-4); }
+.readonly-notice { margin: var(--app-space-4) 0; }
 .rule-editor__base { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--app-space-3); align-items: start; }
 .rule-editor__base :deep(.el-input), .rule-editor__base :deep(.el-input-number) { width: 100%; }
 .capital-meter { box-sizing: border-box; width: 100%; min-height: var(--app-density-control-height, var(--app-control-height-md)); padding: 0 var(--app-space-3); border: 1px solid color-mix(in srgb, var(--el-color-success) 38%, var(--el-border-color)); border-radius: var(--layout-control-radius); background: transparent; color: var(--el-color-success); display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); }

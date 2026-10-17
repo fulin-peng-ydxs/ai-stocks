@@ -49,7 +49,7 @@ defineSlots<{
   min-width: 0;
   border: 1px solid var(--el-border-color);
   border-radius: var(--layout-card-radius);
-  background: color-mix(in srgb, var(--el-color-primary-light-9) 42%, var(--el-bg-color));
+  background: var(--el-bg-color);
 }
 
 .market-detail-hero__main {
