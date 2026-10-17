@@ -310,6 +310,11 @@ function descendantLeaves(
 </style>
 
 <style>
+.top-navigation-dropdown {
+  /* 下拉项会在指针移入时获得焦点，移出后的遗留焦点不代表选中或悬停。 */
+  --el-dropdown-menuItem-hover-fill: transparent;
+  --el-dropdown-menuItem-hover-color: var(--chrome-text);
+}
 .top-navigation-dropdown .el-dropdown-menu__item {
   min-height: var(--app-nav-context-entry-height);
   padding-inline: var(--app-nav-entry-padding-x);
@@ -318,8 +323,11 @@ function descendantLeaves(
   font-size: var(--app-nav-font-size);
   line-height: var(--app-nav-line-height);
   font-weight: var(--app-nav-weight-regular);
+  color: var(--chrome-text);
 }
 .top-navigation-dropdown .el-dropdown-menu__item.is-active {
+  --el-dropdown-menuItem-hover-fill: var(--chrome-nav-leaf-active-bg);
+  --el-dropdown-menuItem-hover-color: var(--el-color-primary);
   --app-interaction-nav-hover-background: var(--chrome-nav-leaf-active-bg);
   --app-interaction-nav-hover-color: var(--el-color-primary);
   color: var(--el-color-primary);

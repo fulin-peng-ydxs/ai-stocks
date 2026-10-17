@@ -73,9 +73,9 @@ describe('LimitLadderCard', () => {
     expect(wrapper.text()).not.toContain('成交额')
     expect(wrapper.text()).not.toContain('截至')
     expect(wrapper.get('.limit-ladder-card__window-stat b').classes()).toContain('is-multiple')
-    expect(wrapper.get('.limit-ladder-card__identity strong').attributes('title')).toBe('甲软件')
-    expect(wrapper.get('[data-testid="limit-ladder-related-industry"]').attributes('title')).toBe('数字服务')
-    expect(wrapper.get('[data-testid="limit-ladder-related-600001.SH"]').attributes('title')).toBe('机器人')
+    expect(wrapper.get('.limit-ladder-card__identity strong').attributes('title')).toBeUndefined()
+    expect(wrapper.get('[data-testid="limit-ladder-related-industry"]').attributes('title')).toBeUndefined()
+    expect(wrapper.get('[data-testid="limit-ladder-related-600001.SH"]').attributes('title')).toBeUndefined()
     expect(wrapper.get('[data-testid="limit-ladder-related-600001.SH"]').attributes('href')).toBe('/sectors/C002?return_to=/limit-ladder?restore=1')
   })
 

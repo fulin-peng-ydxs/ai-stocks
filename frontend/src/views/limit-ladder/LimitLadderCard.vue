@@ -54,7 +54,7 @@ function selectCard(): void {
     >
       <span class="limit-ladder-card__head">
         <span class="limit-ladder-card__identity">
-          <strong :title="stock.name">{{ stock.name }}</strong>
+          <strong>{{ stock.name }}</strong>
           <span>{{ stock.code }}</span>
         </span>
         <span class="limit-ladder-card__return">
@@ -85,7 +85,7 @@ function selectCard(): void {
     <footer class="limit-ladder-card__foot">
       <span>{{ stock.board }}</span>
       <span aria-hidden="true">·</span>
-      <span class="limit-ladder-card__industry" :title="relatedIndustryName || undefined" data-testid="limit-ladder-related-industry">
+      <span class="limit-ladder-card__industry" data-testid="limit-ladder-related-industry">
         <template v-if="relatedIndustryName">
           <span class="limit-ladder-card__related-name">{{ relatedIndustryName }}</span>
           <RelatedBoardHistoryHint :history="stock.latest_related_industry?.history" />
@@ -101,12 +101,11 @@ function selectCard(): void {
         <RouterLink
           v-if="canViewSectors"
           :to="relatedLocation"
-          :title="stock.latest_related_concept.board_name"
           :aria-label="`进入${stock.latest_related_concept.board_name}板块行情`"
           :data-testid="`limit-ladder-related-${stock.code}`"
           @click.stop
         >{{ stock.latest_related_concept.board_name }} ↗</RouterLink>
-        <span v-else :title="stock.latest_related_concept.board_name">{{ stock.latest_related_concept.board_name }}</span>
+        <span v-else>{{ stock.latest_related_concept.board_name }}</span>
         <RelatedBoardHistoryHint :history="stock.latest_related_concept.history" />
       </span>
       <RelatedBoardEmptyValue

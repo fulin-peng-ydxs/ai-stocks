@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import HelpHint from '@/components/HelpHint.vue'
 
 export type MarketMetricTone = 'up' | 'down' | 'muted' | 'neutral'
 
@@ -25,6 +26,11 @@ const emit = defineEmits<{
 const stripStyle = computed(() => ({
   gridTemplateColumns: `repeat(${Math.max(1, props.items.length)}, minmax(72px, 1fr))`,
 }))
+
+function metricDescription(item: MarketMetricStripItem): string {
+  const value = item.parts?.map((part) => part.text).join(' ') || item.value
+  return `${item.label}：${value}`
+}
 </script>
 
 <template>
@@ -34,32 +40,35 @@ const stripStyle = computed(() => ({
     :data-testid="`${testIdPrefix}-strip`"
     :style="stripStyle"
   >
-    <el-button
-      v-for="item in items"
-      :key="item.key"
-      text
-      class="market-metric app-interaction-target"
-      :class="{
-        'market-metric--active': item.key === activeKey,
-        'is-selected': item.key === activeKey,
-      }"
-      :aria-pressed="item.key === activeKey"
-      :title="`${item.label}：${item.parts?.map((part) => part.text).join(' ') || item.value}`"
-      :data-testid="`${testIdPrefix}-${item.key}`"
-      @click="emit('select', item.key)"
-    >
-      <span class="market-metric-content app-interaction-content">
-        <span class="market-metric-label">{{ item.label }}</span>
-        <strong v-if="item.parts?.length" class="market-metric-value">
-          <span
-            v-for="(part, partIndex) in item.parts"
-            :key="`${part.text}-${partIndex}`"
-            :class="part.tone"
-          >{{ part.text }}</span>
-        </strong>
-        <strong v-else :class="item.tone">{{ item.value }}</strong>
+    <div v-for="item in items" :key="item.key" class="market-metric-cell">
+      <el-button
+        text
+        class="market-metric app-interaction-target"
+        :class="{
+          'market-metric--active': item.key === activeKey,
+          'is-selected': item.key === activeKey,
+        }"
+        :aria-pressed="item.key === activeKey"
+        :aria-label="metricDescription(item)"
+        :data-testid="`${testIdPrefix}-${item.key}`"
+        @click="emit('select', item.key)"
+      >
+        <span class="market-metric-content app-interaction-content">
+          <span class="market-metric-label">{{ item.label }}</span>
+          <strong v-if="item.parts?.length" class="market-metric-value">
+            <span
+              v-for="(part, partIndex) in item.parts"
+              :key="`${part.text}-${partIndex}`"
+              :class="part.tone"
+            >{{ part.text }}</span>
+          </strong>
+          <strong v-else :class="item.tone">{{ item.value }}</strong>
+        </span>
+      </el-button>
+      <span class="market-metric-help">
+        <HelpHint :text="metricDescription(item)" />
       </span>
-    </el-button>
+    </div>
   </div>
 </template>
 
@@ -71,11 +80,16 @@ const stripStyle = computed(() => ({
   border-bottom: 1px solid var(--el-border-color-lighter);
   background: color-mix(in srgb, var(--app-section-bg) 54%, var(--el-bg-color));
 }
+.market-metric-cell {
+  position: relative;
+  min-width: 0;
+}
+.market-metric-help { display: none; }
 .market-metric.el-button.is-text {
   box-sizing: border-box;
   min-width: 0;
   width: 100%;
-  height: auto;
+  height: 100%;
   min-height: 58px;
   margin: 0;
   padding: var(--app-space-2) var(--app-space-3);
@@ -88,13 +102,10 @@ const stripStyle = computed(() => ({
   color: var(--el-text-color-primary);
   text-align: left;
 }
-.market-metric.el-button + .market-metric.el-button.is-text {
-  margin-left: 0;
-}
-.market-metric.el-button:last-child {
+.market-metric-cell:last-child .market-metric.el-button {
   border-right: 0;
 }
-.market-metric :deep(.el-button__text) {
+.market-metric.el-button > :deep(span) {
   min-width: 0;
   width: 100%;
 }
@@ -107,6 +118,7 @@ const stripStyle = computed(() => ({
 }
 .market-metric-label {
   display: block;
+  max-width: 100%;
   overflow: hidden;
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-micro);
@@ -116,6 +128,7 @@ const stripStyle = computed(() => ({
 }
 .market-metric strong {
   display: block;
+  max-width: 100%;
   overflow: hidden;
   margin-top: 2px;
   font-size: var(--app-font-size-data);
@@ -167,15 +180,22 @@ const stripStyle = computed(() => ({
   }
 }
 @container app-viewport (max-height: 700px) {
-  /* 低高度仍保留唯一指标切换入口，只把辅助数值收敛到悬浮说明。 */
+  /* 低高度收起辅助数值时，提供独立且可见的说明入口，避免整块重复提示。 */
   .market-metric-strip {
     grid-template-columns: none !important;
     grid-auto-flow: column;
-    grid-auto-columns: minmax(90px, 1fr);
+    grid-auto-columns: minmax(max-content, 1fr);
   }
   .market-metric.el-button.is-text {
     min-height: var(--app-control-height-md);
-    padding: var(--app-space-1) var(--app-space-2);
+    padding: var(--app-space-1) var(--app-control-height-md) var(--app-space-1) var(--app-space-2);
+  }
+  .market-metric-help {
+    display: inline-flex;
+    position: absolute;
+    right: var(--app-space-2);
+    top: 50%;
+    transform: translateY(-50%);
   }
   .market-metric-label {
     font-size: var(--app-font-size-caption);

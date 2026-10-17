@@ -6,7 +6,7 @@ import MarketCompareMetricStrip from '@/components/MarketCompareMetricStrip.vue'
 
 // CSS 紧凑态由真实浏览器验证；这里检查收起数值后的信息恢复及切换契约。
 describe('MarketCompareMetricStrip', () => {
-  it('辅助值提供完整提示，复合值保留原有分隔，选中态仍由消费方控制', async () => {
+  it('完整内容无重复提示，紧凑态由独立说明入口恢复数值，选择仍由消费方控制', async () => {
     const wrapper = mount(MarketCompareMetricStrip, {
       props: {
         items: [
@@ -21,8 +21,15 @@ describe('MarketCompareMetricStrip', () => {
     })
     const growth = wrapper.get('[data-testid="metrics-growth"]')
     const members = wrapper.get('[data-testid="metrics-members"]')
-    expect(growth.attributes('title')).toBe('5日涨幅：+2.66%')
-    expect(members.attributes('title')).toBe('成员涨/跌：50 / 2')
+    expect(growth.attributes('title')).toBeUndefined()
+    expect(growth.attributes('aria-label')).toBe('5日涨幅：+2.66%')
+    expect(members.attributes('title')).toBeUndefined()
+    expect(members.attributes('aria-label')).toBe('成员涨/跌：50 / 2')
+    const help = wrapper.findAll('.market-metric-help .help-hint')
+    expect(help).toHaveLength(2)
+    expect(growth.find('.help-hint').exists()).toBe(false)
+    await help[1].trigger('click')
+    expect(wrapper.emitted('select')).toBeUndefined()
     await members.trigger('mouseenter')
     expect(wrapper.emitted('select')).toBeUndefined()
     const memberButton = members.element as HTMLButtonElement

@@ -51,7 +51,17 @@ watch([() => route.path, () => auth.menusStatus, menus], async (_, __, onCleanup
   await nextTick()
   const menu = menuRef.value
   if (cancelled || auth.menusStatus !== 'ready' || !menu) return
-  // 保留其他分组的手动收展，只补开当前页面所属的可折叠祖先。
+  // 页面离开某分组后收起它；同页浏览其他分组及查询变化不触发此同步。
+  const currentGroups = new Set(defaultOpeneds.value)
+  const closeGroup = menu.close
+  function closeInactiveGroups(nodes: MenuTreeNode[]) {
+    for (const node of nodes) {
+      if (!node.children?.length) continue
+      if (!currentGroups.has(node.index)) closeGroup(node.index)
+      closeInactiveGroups(node.children)
+    }
+  }
+  for (const section of sections.value) closeInactiveGroups(section.items)
   for (const index of defaultOpeneds.value) menu.open(index)
   await nextTick()
   if (cancelled) return

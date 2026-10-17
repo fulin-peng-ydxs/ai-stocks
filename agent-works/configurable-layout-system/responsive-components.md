@@ -56,7 +56,7 @@
 | `frontend/src/components/MarketAnalysisHeader.vue` | `@container (max-width: 820px)`<br>`@container app-viewport (max-height: 700px)` | 自身容器≤820身份与控制区上下排列，隐藏辅助描述/重复标签；低高压缩头部；身份和全部操作保留。 | StockAnalysisPanel、SectorsView |
 | `frontend/src/components/MarketBenchmarkSelect.vue` | 无自身 CSS 查询 | 委托 AppFilterSelect。 | SectorAnalysisDefaultFields、StockAnalysisDefaultFields、StockAnalysisPanel、BacktestView、SectorsView |
 | `frontend/src/components/MarketBoardTag.vue` | 无自身 CSS 查询 | 板块名称省略，涨跌/相关性保留；完整信息由提示承接。 | StockBoardMembershipPanel |
-| `frontend/src/components/MarketCompareMetricStrip.vue` | `@container app-viewport (max-width: 1180px)`<br>`@container app-viewport (max-height: 700px)` | 窄宽3列；低高紧凑单行横向滚动，仅隐藏辅助数值，完整值在按钮title；保留全部指标切换。 连续指标共用内容微移，选中仅显示铺满单元格宽度的底线和共享6%浅背景，悬停不再加深；不套卡片外框、左侧线或外投影，不给数据更新添加动画。 | StockAnalysisPanel、SectorsView |
+| `frontend/src/components/MarketCompareMetricStrip.vue` | `@container app-viewport (max-width: 1180px)`<br>`@container app-viewport (max-height: 700px)`<br>`@media (hover: hover) and (pointer: fine)` | 窄宽3列；低高紧凑单行按内容确定列宽并内部横向滚动，仅隐藏辅助数值，完整值由紧凑态可见的独立HelpHint恢复，按钮保留完整无障碍名称；常规态不重复提示；保留全部指标切换。 连续指标共用内容微移，选中仅显示铺满单元格宽度的底线和共享6%浅背景，悬停不再加深；不套卡片外框、左侧线或外投影，不给数据更新添加动画。 | StockAnalysisPanel、SectorsView |
 | `frontend/src/components/MarketDetailHero.vue` | `@container app-viewport (max-width: 980px)` | 窄宽主身份与侧摘要上下排列；侧摘要横向滚动，核心身份保留。 | SectorDetailView、StockDetailView |
 | `frontend/src/components/MarketMasterDetailWorkspace.vue` | `@container app-viewport (max-width: 1180px)` | 消费AppSplitWorkspace的≤720紧凑抽屉策略；标准最低高480、紧凑400，剩余高度不足由外层滚动；窄宽隐藏列表操作辅助文字，操作入口保留。 | RankedStockWorkbench、BoardView、LimitLadderView、SectorsView、StocksView |
 | `frontend/src/components/MasterDetailRatioProfileSettings.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | ComponentAutoSettings |
@@ -77,7 +77,7 @@
 | `frontend/src/components/SectorAnalysisDefaultFields.vue` | 无自身 CSS 查询 | 委托 MarketBenchmarkSelect、PageSettingItem、PageSegmented、PageToggleRow。 | ComponentAutoSettings |
 | `frontend/src/components/SectorCompareChart.vue` | 无自身 CSS 查询 | 委托 AppStateBlock。 | SectorsView |
 | `frontend/src/components/SettingsGroup.vue` | 无自身 CSS 查询 | 手动递归折叠，父级收起只隐藏子树，不重置下级展开状态。 | App、ChartOperationGroup、ComponentAutoSettings、PageSettingSection、PageSettingsDrawer、LayoutSettingsSection |
-| `frontend/src/components/SideMenu.vue` | 无自身 CSS 查询 | 一级为常驻分区标题，与二级文字左边界一致；当前分区标题和父菜单随路由同步使用中性高对比文字高亮，当前标题右侧圆点使用导航强调色且不显示下划线、图标使用导航激活色，选中叶子保留主色，详情继承所属分区；主入口44px/三级起36px，尺寸、图标和圆角消费共享导航token，高度不足由App侧栏内滚承接。页面路径或授权树变化只补开当前下级链并最小滚动露出叶子，保留其他展开状态；同页查询变化不干预收展或滚动。加载/空授权/失败分别呈现。 可点击菜单接入共享内容微移和纯投影层，普通悬停/焦点共用中性悬停底，当前叶子通过角色变量保留浅主色背景与定位线；常驻标题保持静态，点击区及层级缩进不移动。 | App |
+| `frontend/src/components/SideMenu.vue` | 无自身 CSS 查询 | 一级为常驻分区标题，与二级文字左边界一致；当前分区标题和父菜单随路由同步使用中性高对比文字高亮，当前标题右侧圆点使用导航强调色且不显示下划线、图标使用导航激活色，选中叶子保留主色，详情继承所属分区；主入口44px/三级起36px，尺寸、图标和圆角消费共享导航token，高度不足由App侧栏内滚承接。页面路径或授权树变化收起非当前下级组、展开当前链并最小滚动露出叶子，同页仍可手动浏览多个分组；同页查询变化不干预收展或滚动。加载/空授权/失败分别呈现。 可点击菜单接入共享内容微移和纯投影层，普通悬停/焦点共用中性悬停底，当前叶子通过角色变量保留浅主色背景与定位线；常驻标题保持静态，点击区及层级缩进不移动。 | App |
 | `frontend/src/components/SideMenuItem.vue` | 无自身 CSS 查询 | 分区内部展示深度从0开始，三级起每层缩进12px；图标统一18px占位、下级图形16px，末尾箭头固定，长名称省略并交给全局溢出提示；收展及选中不重置页面。 | SideMenu |
 | `frontend/src/components/SourceTag.vue` | 无自身 CSS 查询 | 来源浮层min180/max280、字段网格44+0；受统一浮层边界约束。 | ComponentAutoSettings、LayoutSettingsSection |
 | `frontend/src/components/StockAnalysisDefaultFields.vue` | 无自身 CSS 查询 | 委托 MarketBenchmarkSelect、PageSettingItem、PageSegmented、PageToggleRow。 | ComponentAutoSettings |
@@ -92,7 +92,7 @@
 | `frontend/src/components/SubScoreBars.vue` | 无自身 CSS 查询 | 语义微图min132，消费表格内部横滚承担最低宽。 | 按路由/动态渲染或内部消费；无直接Vue import匹配 |
 | `frontend/src/components/SubScoreChips.vue` | 无自身 CSS 查询 | 评分项自然换行，单项长文本省略并保留提示。 | RankedStockResultTable |
 | `frontend/src/components/SystemBuiltinTag.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | AssetVisibilityTag、ConfigView、LayoutPresetsView、MenuResourceView、RoleManageView、TenantManageView |
-| `frontend/src/components/TopNavigation.vue` | `@container app-viewport (max-width: 960px)` | 窄宽压缩导航间距/隐藏辅助上下文；一级、二级与下拉入口的字体及尺寸按 DESIGN §3.4 消费共享导航 token；二级栏共用中性底色、不混入预设强调色；二级入口与工作标签复用`.app-nav-context-entry`的尺寸、圆角及选中边框/底线，下拉消费共享导航字阶、几何和叶子背景，导航动作保留。 两级及下拉入口共用悬停视觉层与180ms颜色过渡，下拉不回落组件库默认蓝底；命中区和下划线保持稳定。 一级保留图标框与整栏底部下划线，仅收紧悬停和键盘焦点面，不套二级选中框。 | App |
+| `frontend/src/components/TopNavigation.vue` | `@container app-viewport (max-width: 960px)`<br>`@media (prefers-reduced-motion: reduce)` | 窄宽压缩导航间距/隐藏辅助上下文；一级、二级与下拉入口的字体及尺寸按 DESIGN §3.4 消费共享导航 token；二级栏共用中性底色、不混入预设强调色；二级入口与工作标签复用`.app-nav-context-entry`的尺寸、圆角及选中边框/底线，下拉消费共享导航字阶、几何和叶子背景，导航动作保留。 两级及下拉入口共用悬停视觉层与180ms颜色过渡，下拉不回落组件库默认蓝底，指针移出后不保留焦点蓝色；命中区和下划线保持稳定。 一级保留图标框与整栏底部下划线，仅收紧悬停和键盘焦点面，不套二级选中框。 | App |
 | `frontend/src/components/TradeDatePicker.vue` | 无自身 CSS 查询 | 委托 AppDatePicker。 | StockGroupBatchActions、BoardTaskScopeFields、ResultMaintenanceTaskFields、StockIngestScopeFields、BacktestView、BoardView、ConfigView、ScreenView、SectorDetailView、SectorsView、StocksView、TrainingView、LimitLadderFilters、TradeCheckinForm、TradeDisciplineHistory |
 | `frontend/src/components/WorkspaceRouteView.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | App |
 | `frontend/src/components/WorkspaceTabs.vue` | `@container app-viewport (max-width: 720px)` | 窄宽压缩间距，标签条内部横向滚动，路由切换与容器缩窄按布局坐标最小滚动露出当前项，销毁时释放尺寸监听，当前页与关闭入口可达；共用中性栏底色，与双顶栏二级入口复用`.app-nav-context-entry`的尺寸、圆角及选中边框/底线；当前项保留无光晕强调色圆点，普通项透明占位，切换宽度稳定。 悬停抬起圆点和标题并增加投影，关闭按钮固定且键盘事件独立；栏内保留视觉层安全空间。 | App |
@@ -153,7 +153,7 @@
 | `frontend/src/views/layout/LayoutPresetsView.vue` | `@container app-viewport (max-width: 980px)` | 窄宽导入/导出区单列；正文滚动，应用/保存动作保留。 | 路由 |
 | `frontend/src/views/limit-ladder/LadderHotspots.vue` | `@container app-viewport (max-width:720px)` | 常规每类12项；低高≤700、宽>768且分析开启时4项；选中项纳入常显，具名展开其余项，用户展开保留。 | LimitLadder |
 | `frontend/src/views/limit-ladder/LimitLadder.vue` | `@container limit-ladder (max-width: 700px)`<br>`@container app-viewport (max-width: 720px)`<br>`@container app-viewport (max-height: 620px)` | 自身limit-ladder容器≤700摘要重排；app宽≤720或高≤620热点整区默认收起，显式展开恢复，展开区限高内部滚动。 | LimitLadderView |
-| `frontend/src/views/limit-ladder/LimitLadderCard.vue` | 无自身 CSS 查询 | 自然换行；长文省略，完整内容由提示/详情承接；关联名称可收缩，历史标记保留；委托 RelatedBoardEmptyValue、RelatedBoardHistoryHint、StockStatusTag。 仅主选择区触发共享浮起层，卡片宿主及底部链接固定；受控选中使用单套边框、内侧线及浅背景；悬停时完整表面与内容同步浮起，宿主透明占位，不复制轮廓。 | LimitLadder |
+| `frontend/src/views/limit-ladder/LimitLadderCard.vue` | 无自身 CSS 查询 | 自然换行；长文省略，真实截断由全局宿主提示，完整名称不附加重复title；关联名称可收缩，历史标记保留；委托 RelatedBoardEmptyValue、RelatedBoardHistoryHint、StockStatusTag。 仅主选择区触发共享浮起层，卡片宿主及底部链接固定；受控选中使用单套边框、内侧线及浅背景；悬停时完整表面与内容同步浮起，宿主透明占位，不复制轮廓。 | LimitLadder |
 | `frontend/src/views/limit-ladder/LimitLadderFilters.vue` | 无自身 CSS 查询 | 委托 AppAdvancedSearch、AppFilterSelect、AppFilterSwitch、AppSearchInput、AppSortControl、PageSegmented、TradeDatePicker。 | LimitLadderView |
 | `frontend/src/views/system/AuditLogView.vue` | `@container app-viewport (max-width: 980px)` | 窄宽摘要2列、头部上下排列、操作左对齐；审计表格内部滚动。 | 路由 |
 | `frontend/src/views/system/DataDictionaryView.vue` | `@container app-viewport (max-width: 980px)` | 窄宽头部上下排列、操作左对齐；树与详情由主体内部滚动承接。 | 路由 |
