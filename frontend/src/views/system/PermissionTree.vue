@@ -165,7 +165,7 @@ const resourceStats = computed(() => {
 }
 .pt-group-toggle:focus-visible {
   border-radius: var(--layout-control-radius);
-  outline: 2px solid var(--el-color-primary);
+  outline: var(--app-focus-ring);
   outline-offset: 2px;
 }
 .pt-group-title {

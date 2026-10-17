@@ -37,6 +37,29 @@ afterEach(() => {
 })
 
 describe('AppOverflowTooltipHost', () => {
+  it('窗口失焦清理省略提示及计时，恢复焦点不弹出，重新 Tab 阅读正常', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(AppOverflowTooltipHost, {
+      attachTo: document.body,
+      global: { stubs: { ElTooltip: ElTooltipStub } },
+    })
+    const target = appendOverflowTarget('window-return')
+    target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    window.dispatchEvent(new Event('blur'))
+    vi.advanceTimersByTime(300)
+    target.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    target.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    await nextTick()
+    expect(wrapper.get('.tooltip-host').attributes('data-visible')).toBe('true')
+    window.dispatchEvent(new Event('blur'))
+    await nextTick()
+    expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('点击产生的焦点不锁定提示，阻止冒泡也能清理，Tab 焦点仍显示', async () => {
     vi.useFakeTimers()
     const wrapper = mount(AppOverflowTooltipHost, {

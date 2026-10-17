@@ -26,7 +26,7 @@ const reference = ref<HTMLSpanElement>()
   min-width: 0;
 }
 .app-action-hint:focus-visible {
-  outline: 2px solid var(--el-color-primary);
+  outline: var(--app-focus-ring);
   outline-offset: 2px;
   border-radius: var(--layout-control-radius);
 }

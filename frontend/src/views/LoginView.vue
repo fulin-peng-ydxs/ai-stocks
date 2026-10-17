@@ -456,8 +456,11 @@ function onSubmit() {
             </svg>
             <input v-model="form.emailCode" name="emailCode" type="text" autocomplete="one-time-code"
                    @input="errors.emailCode = ''" @keyup.enter="onSubmit" />
-            <span class="send" :class="{ disabled: emailCountdown > 0 || emailSending }"
-                  role="button" @click="onSendEmailCode">
+            <span class="send app-interaction-link" :class="{ disabled: emailCountdown > 0 || emailSending }"
+                  role="button" :tabindex="emailCountdown > 0 || emailSending ? -1 : 0"
+                  :aria-disabled="emailCountdown > 0 || emailSending" :aria-busy="emailSending"
+                  @keydown.enter.prevent="onSendEmailCode" @keydown.space.prevent="onSendEmailCode"
+                  @click="onSendEmailCode">
               <i v-if="emailSending" class="send-spinner" aria-hidden="true" />
               {{ emailSending ? '发送中…' : emailCountdown > 0 ? `${emailCountdown}s 后重发` : '发送验证码' }}
             </span>
@@ -1100,9 +1103,9 @@ function onSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.2s, filter 0.2s, box-shadow 0.2s;
+  transition: transform var(--app-motion-content) var(--app-motion-ease), box-shadow var(--app-motion-content) var(--app-motion-ease);
 }
-.login-primary:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 13px 30px color-mix(in srgb, var(--login-accent) 32%, transparent); }
+.login-primary:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--login-accent); box-shadow: 0 13px 30px color-mix(in srgb, var(--login-accent) 32%, transparent); }
 .login-primary:active:not(:disabled) { transform: translateY(0); }
 .login-primary:disabled {
   opacity: 0.7;

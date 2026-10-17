@@ -261,6 +261,19 @@ describe('DataDictionaryView', () => {
     }))
   })
 
+  it('键盘选择类型且不拦截子开关的空格事件', async () => {
+    const wrapper = await mountView()
+    const row = typeRowByText(wrapper, '审计结果')
+    const calls = vi.mocked(dictApi.listDictItems).mock.calls.length
+    await row.get('.dict-type-status').trigger('keydown', { key: ' ' })
+    await flushPromises()
+    expect(dictApi.listDictItems).toHaveBeenCalledTimes(calls)
+    await row.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(row.attributes('aria-pressed')).toBe('true')
+    expect(dictApi.listDictItems).toHaveBeenLastCalledWith(expect.objectContaining({ type_code: 'audit_result' }))
+  })
+
   it('左侧类型状态点击直接开停，右侧不再渲染启用类型开关', async () => {
     const wrapper = await mountView()
     expect(wrapper.text()).not.toContain('启用类型')

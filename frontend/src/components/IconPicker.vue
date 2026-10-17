@@ -24,6 +24,7 @@ const filtered = computed(() => {
 const currentComp = computed(() => resolveMenuIcon(props.modelValue))
 
 function choose(name: string) {
+  if (props.disabled) return
   emit('update:modelValue', name)
   visible.value = false
 }
@@ -38,12 +39,16 @@ function clear() {
     v-model:visible="visible"
     :width="420"
     trigger="click"
+    role="dialog"
+    title="选择图标"
     placement="bottom-start"
     :disabled="disabled"
     popper-class="icon-picker-pop"
   >
     <template #reference>
-      <div class="ip-trigger" :class="{ disabled }">
+      <div class="ip-trigger app-focus-ring" :class="{ disabled }"
+           role="button" :tabindex="disabled ? -1 : 0" :aria-disabled="disabled"
+           aria-label="选择图标">
         <span class="ip-cur">
           <el-icon v-if="currentComp" :size="16"><component :is="currentComp" /></el-icon>
           <span class="ip-name">{{ modelValue || '选择图标' }}</span>
@@ -67,7 +72,11 @@ function clear() {
         <div
           v-for="name in filtered"
           :key="name"
-          class="ip-cell"
+          class="ip-cell app-interaction-list-item"
+          role="button" :tabindex="disabled ? -1 : 0" :aria-disabled="disabled"
+          :aria-label="name" :aria-pressed="name === modelValue"
+          @keydown.enter.self.prevent="choose(name)"
+          @keydown.space.self.prevent="choose(name)"
           :class="{ on: name === modelValue }"
           @click="choose(name)"
         >
@@ -99,8 +108,7 @@ function clear() {
 .ip-cell { height: 58px; min-width: 0; border: 1px solid var(--el-border-color-lighter); border-radius: 6px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--app-space-1);
   cursor: pointer; color: var(--el-text-color-regular); overflow: hidden; }
-.ip-cell:hover { background: var(--el-fill-color-light); border-color: var(--el-color-primary); }
-.ip-cell.on { background: var(--el-color-primary-light-9); border-color: var(--el-color-primary); color: var(--el-color-primary); }
+.ip-cell.on { border-color: var(--el-color-primary); color: var(--el-color-primary); }
 .ip-cap { display: block; width: 100%; padding: 0 4px; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption);
   color: var(--el-text-color-secondary); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ip-empty { grid-column: 1 / -1; min-height: 72px; }

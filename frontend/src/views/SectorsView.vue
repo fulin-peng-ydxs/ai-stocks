@@ -1578,7 +1578,7 @@ const menuPageTitle = useMenuPageTitle()
 }
 .sector-select:focus-visible {
   border-radius: 2px;
-  outline: 2px solid var(--el-color-primary-light-5);
+  outline: var(--app-focus-ring);
   outline-offset: 1px;
 }
 .sector-name-copy > span {

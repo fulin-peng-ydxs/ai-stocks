@@ -51,7 +51,6 @@ defineProps<{ title?: string; width?: number; testId?: string }>()
   color: var(--el-color-white);
   background: var(--el-color-primary);
   border-color: var(--el-color-primary);
-  outline: none;
 }
 .help-body {
   display: flex;
@@ -60,4 +59,5 @@ defineProps<{ title?: string; width?: number; testId?: string }>()
   line-height: var(--app-line-height-longform);
   color: var(--el-text-color-regular);
 }
+.help-icon:focus-visible { outline: var(--app-focus-ring); outline-offset: 2px; }
 </style>

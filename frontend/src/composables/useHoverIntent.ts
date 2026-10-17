@@ -7,7 +7,7 @@ const CONTENT_ENTRY_GRACE_MS = 180
 /** 说明浮层共用的鼠标静止判定，键盘焦点不等待。 */
 export function useHoverIntent(isDisabled: () => boolean, allowsContentEntry: () => boolean) {
   const visible = ref(false)
-  const modality = useTooltipInputModality()
+  const modality = useTooltipInputModality(reset)
   let pointerInside = false
   let contentInside = false
   let focused = false

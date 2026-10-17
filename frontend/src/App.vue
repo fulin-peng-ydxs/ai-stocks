@@ -995,8 +995,8 @@ button.topbar-status:hover {
   color: var(--chrome-text-strong);
 }
 button.topbar-status:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--shell-accent) 18%, transparent);
+  outline: var(--app-focus-ring);
+  outline-offset: 1px;
 }
 .topbar-status.is-readonly {
   cursor: default;

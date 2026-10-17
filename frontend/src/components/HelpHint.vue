@@ -44,6 +44,6 @@ defineProps<{ text: string }>()
   color: #fff;
   background: var(--el-color-primary);
   border-color: var(--el-color-primary);
-  outline: none;
 }
+.help-hint:focus-visible { outline: var(--app-focus-ring); outline-offset: 2px; }
 </style>

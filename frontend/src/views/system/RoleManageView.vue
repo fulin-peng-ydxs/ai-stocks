@@ -367,7 +367,12 @@ const menuPageTitle = useMenuPageTitle()
             <div
               v-for="r in roles"
               :key="r.id"
-              class="role"
+              class="role app-interaction-list-item"
+              role="button"
+              tabindex="0"
+              :aria-pressed="r.id === activeId"
+              @keydown.enter.self.prevent="selectRole(r.id)"
+              @keydown.space.self.prevent="selectRole(r.id)"
               :class="{ active: r.id === activeId }"
               @click="selectRole(r.id)"
             >
@@ -487,8 +492,7 @@ const menuPageTitle = useMenuPageTitle()
 .rm-col-head .mini { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); font-weight: var(--app-font-weight-regular); }
 .rm-col-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 14px; }
 .role { padding: 10px 12px; border-radius: 7px; cursor: pointer; margin-bottom: 4px; border: 1px solid transparent; }
-.role:hover { background: var(--el-fill-color-light); }
-.role.active { background: var(--el-color-primary-light-9); border-color: var(--el-color-primary-light-5); }
+
 .role-name { font-size: var(--app-font-size-body); font-weight: var(--app-font-weight-section); display: flex; align-items: center; gap: var(--app-space-2); }
 .role-desc { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 3px; }
 .rm-detail-bar { padding: 12px 16px; border-bottom: 1px solid var(--el-border-color-lighter);

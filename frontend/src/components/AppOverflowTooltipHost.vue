@@ -14,7 +14,7 @@ const contentRef = ref<HTMLElement>()
 const contentTruncated = ref(false)
 let hoverTarget: HTMLElement | null = null
 let focusTarget: HTMLElement | null = null
-const modality = useTooltipInputModality()
+const modality = useTooltipInputModality(dismissCurrent)
 let hoverTimer: ReturnType<typeof setTimeout> | null = null
 let contentResizeObserver: ResizeObserver | null = null
 

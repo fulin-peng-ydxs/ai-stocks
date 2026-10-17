@@ -111,7 +111,7 @@ const emit = defineEmits<{
   color: var(--el-color-primary);
 }
 .compare-queue-chip:focus-visible {
-  outline: 2px solid var(--el-color-primary-light-5);
+  outline: var(--app-focus-ring);
   outline-offset: 1px;
 }
 .compare-queue-chip.error {

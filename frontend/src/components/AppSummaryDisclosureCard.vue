@@ -128,8 +128,8 @@ function toggle() {
   background: color-mix(in srgb, var(--el-fill-color-light) 58%, transparent);
 }
 .app-summary-disclosure-card__summary:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 2px var(--el-color-primary-light-5);
+  outline: var(--app-focus-ring);
+  outline-offset: -2px;
 }
 .app-summary-disclosure-card__index {
   width: 28px;

@@ -457,7 +457,6 @@ onBeforeUnmount(() => {
 
 .app-row-actions-menu__item:not(.is-disabled):hover,
 .app-row-actions-menu__item:not(.is-disabled):focus-visible {
-  outline: none;
   background: var(--row-action-menu-bg) !important;
 }
 

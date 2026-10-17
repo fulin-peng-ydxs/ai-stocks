@@ -287,6 +287,45 @@ describe('AssetProfileSelect', () => {
     wrapper.unmount()
   })
 
+  it('列表支持 Enter/Space 选择，加载期间禁止键盘和点击选择', async () => {
+    let finish: (() => void) | undefined
+    const fetchMine = vi.fn(async () => [mineItem])
+    const { wrapper } = mountSelect({ mode: 'list', fetchMine })
+    await flush()
+    const row = wrapper.get('.asset-profile-select__item-label')
+    expect(row.attributes('tabindex')).toBe('0')
+    await row.trigger('keydown', { key: 'Enter' })
+    await row.trigger('keydown', { key: ' ' })
+    expect(wrapper.emitted('update:modelValue')).toEqual([['ref_my_a'], ['ref_my_a']])
+    await wrapper.setProps({ modelValue: 'ref_my_a' })
+    expect(row.attributes('aria-pressed')).toBe('true')
+
+    fetchMine.mockImplementationOnce(() => new Promise((resolve) => {
+      finish = () => resolve([mineItem])
+    }))
+    const pending = wrapper.vm.reload()
+    await flush()
+    expect(row.attributes('tabindex')).toBe('-1')
+    await row.trigger('keydown', { key: 'Enter' })
+    await row.trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toHaveLength(2)
+    finish!()
+    await pending
+    wrapper.unmount()
+  })
+
+  it('临时项的独立子操作不通过键盘冒泡选择父项', async () => {
+    const { wrapper } = mountSelect({ mode: 'list' })
+    await flush()
+    wrapper.findComponent(AssetSearchDrawer).vm.$emit('load', publicItem)
+    await flush()
+    const close = wrapper.get('[data-testid="asset-profile-select-remove"]')
+    await close.trigger('keydown', { key: 'Enter' })
+    await close.trigger('keydown', { key: ' ' })
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it('list 行内×只移除临时预览，不影响我的方案或触发持久操作', async () => {
     const fetchMine = vi.fn(async () => [mineItem])
     const copyItem = vi.fn(async () => ({ id: 'copy', name: '副本', version: 1 }))

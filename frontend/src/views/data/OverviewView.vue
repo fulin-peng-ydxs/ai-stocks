@@ -1072,7 +1072,10 @@ const menuPageTitle = useMenuPageTitle()
                     <template #default="{ row }">
                       <AppHoverInfo :content="layerCell(k, row.layers[k]).tip" placement="top">
                         <el-tag :type="layerCell(k, row.layers[k]).type as any" size="small" effect="plain"
-                                class="clk-tag" @click="goLayer(k, row)">
+                                class="app-interaction-link" role="button" tabindex="0"
+                                @keydown.enter.prevent="goLayer(k, row)"
+                                @keydown.space.prevent="goLayer(k, row)"
+                                @click="goLayer(k, row)">
                           {{ layerCell(k, row.layers[k]).text }}
                         </el-tag>
                       </AppHoverInfo>
@@ -1328,8 +1331,7 @@ const menuPageTitle = useMenuPageTitle()
 .layer-foot { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 4px; }
 .quality-summary :deep(.el-card__header) { padding: 9px 12px; }
 .quality-summary :deep(.el-card__body) { padding: 10px 12px; }
-.clk-tag { cursor: pointer; }
-.clk-tag:hover { filter: brightness(0.95); text-decoration: underline; }
+
 .overview-stock-filter { width: min(460px, 100%); }
 .txt-warn { color: var(--app-warning-text); font-weight: var(--app-font-weight-section); }
 .pager { display: flex; justify-content: flex-end; margin-top: 12px; }

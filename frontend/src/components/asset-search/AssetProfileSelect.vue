@@ -219,6 +219,7 @@ async function onDrawerCopied(result: AssetCopyResult) {
 }
 
 function onSelect(value: string) {
+  if (loadingMine.value) return
   emit('update:modelValue', value)
 }
 
@@ -374,11 +375,19 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
           <li
             v-for="p in options"
             :key="assetItemKey(p)"
+            class="app-interaction-list-item"
+            :aria-busy="loadingMine"
             :class="{ active: assetItemKey(p) === modelValue }"
-            @click="onSelect(assetItemKey(p))"
           >
             <AssetProfileLabel
-              class="asset-profile-select__item-label"
+              class="asset-profile-select__item-label app-list-item-trigger"
+              role="button"
+              :tabindex="loadingMine ? -1 : 0"
+              :aria-disabled="loadingMine"
+              :aria-pressed="assetItemKey(p) === modelValue"
+              @keydown.enter.self.prevent="onSelect(assetItemKey(p))"
+              @keydown.space.self.prevent="onSelect(assetItemKey(p))"
+              @click="onSelect(assetItemKey(p))"
               :name="p.name"
               :version="p.version"
               :source="assetDisplaySource(p.source, p.is_preset)"
@@ -474,24 +483,21 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
   display: flex;
   align-items: center;
   gap: var(--app-space-1);
-  padding: 6px 8px;
+  padding: 0;
   border-radius: var(--layout-control-radius, 6px);
   cursor: pointer;
 }
 .asset-profile-select__item-label {
+  padding: 6px 8px;
   flex: 1 1 auto;
   min-width: 0;
 }
-.asset-profile-select__list li:hover {
-  background: var(--el-fill-color-light);
-}
-.asset-profile-select__list li.active {
-  background: var(--el-color-primary-light-9);
-}
+
 /* 行内「×」：给「加载查看」临时预览项靠右放置，仅从列表移除预览（不删数据），用中性色区别于破坏性删除 */
 .asset-profile-select__remove {
   flex: 0 0 auto;
   margin-left: auto;
+  margin-right: 8px;
 }
 .asset-profile-select__empty {
   display: flex;

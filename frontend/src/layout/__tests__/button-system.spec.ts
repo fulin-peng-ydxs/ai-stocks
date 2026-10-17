@@ -37,6 +37,22 @@ function visibleButtonText(content: string): string {
 }
 
 describe('全站按钮与图标操作契约', () => {
+  it('自定义直接点击入口必须同时提供键盘入口，纯事件容器不计入', () => {
+    const violations: string[] = []
+    for (const file of vueFiles(SRC_DIR)) {
+      const source = read(file)
+      for (const match of source.matchAll(/<(?:div|span|li|el-tag)\b(?:"[^"]*"|'[^']*'|[^'">])*>/g)) {
+        const tag = match[0]
+        // 仅检查真实动作；@click.stop 等拦截冒泡的容器不承担点击命令。
+        if (!/@click(?:\.[\w-]+)*="[^"\s][^"]*"/.test(tag)) continue
+        if (!/tabindex=/.test(tag) || !/@keydown\.enter/.test(tag) || !/@keydown\.space/.test(tag)) {
+          violations.push(`${relative(SRC_DIR, file)}:${lineOf(source, match.index ?? 0)}`)
+        }
+      }
+    }
+    expect(violations).toEqual([])
+  })
+
   it('普通命令与纯图标操作有唯一公共实现和长期文档入口', () => {
     const design = read(join(PROJECT_DIR, 'DESIGN.md'))
     const pageTemplate = read(join(PROJECT_DIR, 'agent-works/configurable-layout-system/page-template.md'))

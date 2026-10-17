@@ -26,9 +26,45 @@ const ElPopoverStub = defineComponent({
   },
 })
 
-afterEach(() => { vi.useRealTimers() })
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
 describe('AppHoverInfo', () => {
+  it.each(['blur', 'hidden'])('窗口离开（%s）清理已显示和待显示提示，恢复焦点不自动显示', async (reason) => {
+    vi.useFakeTimers()
+    const wrapper = mount(AppHoverInfo, {
+      slots: { default: () => h('button', { class: 'reference' }, '展开工作区') },
+      global: { stubs: { ElTooltip: ElTooltipStub } },
+    })
+    const reference = wrapper.get('.reference')
+    const leaveWindow = () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', altKey: true, bubbles: true }))
+      if (reason === 'blur') window.dispatchEvent(new Event('blur'))
+      else {
+        vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+        document.dispatchEvent(new Event('visibilitychange'))
+      }
+    }
+    await reference.trigger('mouseenter')
+    leaveWindow()
+    vi.advanceTimersByTime(300)
+    await reference.trigger('focusin')
+    expect(wrapper.get('.tooltip-stub').attributes('data-visible')).toBe('false')
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    await reference.trigger('focusin')
+    expect(wrapper.get('.tooltip-stub').attributes('data-visible')).toBe('true')
+    leaveWindow()
+    await nextTick()
+    expect(wrapper.get('.tooltip-stub').attributes('data-visible')).toBe('false')
+    await reference.trigger('focusin')
+    expect(wrapper.get('.tooltip-stub').attributes('data-visible')).toBe('false')
+    await reference.trigger('mouseenter')
+    vi.advanceTimersByTime(300)
+    await nextTick()
+    expect(wrapper.get('.tooltip-stub').attributes('data-visible')).toBe('true')
+    wrapper.unmount()
+  })
+
   it('鼠标在目标内移动会重置计时，显示后移动会收起；键盘焦点立即显示', async () => {
     vi.useFakeTimers()
     const wrapper = mount(AppHoverInfo, {

@@ -113,7 +113,7 @@ function optionTestId(value: OptionValue): string | undefined {
   color: var(--page-settings-text);
 }
 .seg-btn:focus-visible {
-  outline: 2px solid var(--page-settings-accent);
+  outline: var(--app-focus-ring);
   outline-offset: -2px;
 }
 .seg-btn.active {

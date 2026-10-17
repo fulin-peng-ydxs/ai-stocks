@@ -537,11 +537,12 @@ const menuPageTitle = useMenuPageTitle()
                 :key="row.code"
                 role="button"
                 tabindex="0"
-                class="dict-type-row"
+                class="dict-type-row app-interaction-list-item"
+                :aria-pressed="row.code === selectedTypeCode"
                 :class="{ active: row.code === selectedTypeCode }"
                 @click="selectType(row.code)"
-                @keydown.enter.prevent="selectType(row.code)"
-                @keydown.space.prevent="selectType(row.code)"
+                @keydown.enter.self.prevent="selectType(row.code)"
+                @keydown.space.self.prevent="selectType(row.code)"
               >
                 <span class="type-main">
                   <b>{{ row.name }}</b>
@@ -804,7 +805,6 @@ const menuPageTitle = useMenuPageTitle()
   width: 100%;
   border: 1px solid transparent;
   border-radius: 6px;
-  background: transparent;
   display: flex;
   align-items: center;
   gap: var(--app-space-2);
@@ -812,17 +812,6 @@ const menuPageTitle = useMenuPageTitle()
   color: var(--el-text-color-primary);
   cursor: pointer;
   text-align: left;
-}
-.dict-type-row:hover {
-  background: var(--el-fill-color-light);
-}
-.dict-type-row:focus-visible {
-  outline: none;
-  border-color: var(--el-color-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--el-color-primary) 16%, transparent);
-}
-.dict-type-row.active {
-  background: var(--el-color-primary-light-9);
 }
 .type-main {
   flex: 1 1 auto;

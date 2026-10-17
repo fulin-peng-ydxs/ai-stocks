@@ -56,7 +56,7 @@ withDefaults(defineProps<{
 .app-status-dot--help { cursor: help; }
 .app-status-dot:focus-visible {
   border-radius: var(--el-border-radius-small);
-  outline: 2px solid var(--el-color-primary);
+  outline: var(--app-focus-ring);
   outline-offset: 2px;
 }
 </style>

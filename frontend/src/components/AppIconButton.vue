@@ -103,8 +103,8 @@ defineEmits<{
   background: var(--el-color-danger-light-9);
 }
 .app-icon-button:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-primary) 18%, transparent);
+  outline: var(--app-focus-ring);
+  outline-offset: 1px;
 }
 .app-icon-button:disabled:not(.is-loading) {
   opacity: 0.45;

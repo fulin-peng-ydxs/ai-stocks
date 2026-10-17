@@ -8,6 +8,7 @@
   --app-interaction-color-transition: background-color var(--app-motion-content) var(--app-motion-ease),
     border-color var(--app-motion-content) var(--app-motion-ease),
     color var(--app-motion-content) var(--app-motion-ease);
+  --app-focus-ring: 2px solid var(--el-color-primary);
   --app-interaction-lift: 2px;
   --app-interaction-selected-background: color-mix(in srgb, var(--el-color-primary) 6%, var(--el-bg-color));
   --app-interaction-shadow: 0 4px 12px rgb(0 0 0 / 12%);
@@ -17,6 +18,40 @@
 html.dark {
   --app-interaction-shadow: 0 4px 12px rgb(0 0 0 / 34%);
   --app-interaction-nav-shadow: 0 2px 4px rgb(0 0 0 / 34%);
+}
+
+/* 紧凑列表和语义链接不浮起；选中不因悬停丢失，子操作独立承接焦点。 */
+.app-interaction-list-item {
+  cursor: pointer;
+  transition: var(--app-interaction-color-transition);
+}
+.app-interaction-list-item:is(.active, .on, [aria-pressed='true']) {
+  background: var(--app-interaction-selected-background);
+  box-shadow: inset 3px 0 var(--el-color-primary);
+}
+.app-interaction-link { cursor: pointer; text-underline-offset: 2px; }
+:is(.app-interaction-list-item, .app-interaction-link, .app-focus-ring):focus-visible,
+.app-interaction-list-item:has(> .app-list-item-trigger:focus-visible) {
+  outline: var(--app-focus-ring);
+  outline-offset: -2px;
+}
+.app-interaction-list-item > .app-list-item-trigger:focus-visible { outline: none; }
+.app-interaction-list-item[aria-busy='true'] { cursor: wait; }
+.app-list-item-trigger[aria-disabled='true'] { cursor: not-allowed; }
+.app-interaction-link:not([aria-disabled='true']):focus-visible { text-decoration: underline; }
+@media (hover: hover) and (pointer: fine) {
+  .app-interaction-list-item:not(.active, .on, [aria-pressed='true'], :disabled, [aria-disabled='true'], [aria-busy='true']):hover {
+    background: var(--chrome-bg-soft-hover);
+  }
+  .app-interaction-link:not(:disabled, [aria-disabled='true'], [aria-busy='true']):hover {
+    text-decoration: underline;
+  }
+}
+.app-interaction-list-item:not(:disabled, [aria-disabled='true'], [aria-busy='true']):active {
+  border-color: var(--el-color-primary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-interaction-list-item { transition: none; }
 }
 
 /* 点击宿主保持原位；导航投影和卡片单层表面不参与鼠标命中。 */
@@ -95,7 +130,7 @@ html[data-layout-preset] .app-interaction-target.app-interaction-card {
 }
 :is(.app-interaction-target, .side-menu-node > .el-sub-menu__title):focus-visible,
 .app-interaction-delegated:has(.app-interaction-trigger:focus-visible) {
-  outline: 2px solid var(--el-color-primary);
+  outline: var(--app-focus-ring);
   outline-offset: -2px;
 }
 /* 委托卡片的焦点归宿主，撤下组件库在内部主选择按钮上绘制的第二圈。 */
@@ -299,7 +334,7 @@ html[data-layout-preset] .app-interaction-target.app-interaction-card {
   .el-alert__close-btn:not(.is-customed),
   .el-message__closeBtn,
   .el-notification__closeBtn):focus-visible {
-  outline: 2px solid var(--el-color-primary);
+  outline: var(--app-focus-ring);
   outline-offset: 1px;
   box-shadow: none;
 }
@@ -1215,8 +1250,9 @@ html[data-layout-preset] .el-button .el-icon {
   font-size: var(--app-button-icon-size);
 }
 html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger):focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-primary) 18%, transparent);
+  outline: var(--app-focus-ring);
+  outline-offset: 1px;
+  box-shadow: none;
 }
 html[data-layout-preset] .el-input__wrapper,
 html[data-layout-preset] .el-select__wrapper {

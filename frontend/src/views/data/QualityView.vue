@@ -778,7 +778,7 @@ const menuPageTitle = useMenuPageTitle()
 .summary { margin-left: auto; }
 .sm-tag { cursor: pointer; user-select: none; }
 .sm-tag:focus-visible {
-  outline: 2px solid var(--el-color-warning-light-3);
+  outline: var(--app-focus-ring);
   outline-offset: 2px;
 }
 .sm-tag.active {
