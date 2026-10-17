@@ -53,6 +53,7 @@ import PageDrawer from '@/components/PageDrawer.vue'
 import SettingsGroup from '@/components/SettingsGroup.vue'
 import TradeDisciplineQuickCard from '@/components/trade-discipline/TradeDisciplineQuickCard.vue'
 import { formatDateTimeMinutes } from '@/utils/dateTime'
+import { findMenuTrail } from '@/utils/permission'
 
 const { isDark, themeMode, setThemeMode, syncThemePreference } = useTheme()
 const { navigationMode, setNavigationMode, syncNavigationPreference } = useAppNavigation()
@@ -74,6 +75,17 @@ const isFullscreen = computed(() => Boolean(route.meta.fullscreen))
 
 // 顶栏用户区（stage2·T9）：身份来自 auth store（登录态从 localStorage 自 hydrate）
 const auth = useAuthStore()
+const breadcrumbs = computed(() => {
+  if (auth.menusStatus !== 'ready') return []
+  const trail = findMenuTrail(auth.menus, route.path)
+  const titles = trail.map((node) => node.title)
+  const pageTitle = typeof route.meta.title === 'string' ? route.meta.title : ''
+  // 菜单主页尊重运行时改名；只有详情子路由才追加路由自身标题。
+  if (pageTitle && trail.at(-1)?.index !== route.path && titles.at(-1) !== pageTitle) {
+    titles.push(pageTitle)
+  }
+  return titles
+})
 const displayName = computed(() => auth.displayName || '未登录')
 const avatarText = computed(() => (auth.displayName ? auth.displayName.slice(0, 1) : 'A').toUpperCase())
 const ROLE_LABEL: Record<string, string> = {
@@ -390,13 +402,36 @@ async function onLogout() {
 
 <template>
   <router-view v-if="isFullscreen" :key="route.path" />
-  <el-container v-else class="app" role="region" aria-label="研究工作台">
+  <el-container v-else class="app" :class="`is-${navigationMode}`" role="region" aria-label="研究工作台">
+    <el-aside
+      v-if="navigationMode === 'sidebar-tabs'"
+      width="208px"
+      class="aside"
+      data-testid="app-sidebar-surface"
+    >
+      <div class="aside-brand">
+        <BrandMark :tone="isDark ? 'dark' : 'light'" />
+        <div class="aside-brand-copy">Fraudulent Market</div>
+      </div>
+      <div class="aside-navigation"><SideMenu /></div>
+      <div class="aside-foot">
+        <div class="foot-note">本地 EOD · 仅供研究</div>
+      </div>
+    </el-aside>
     <el-header class="topbar" data-testid="app-topbar-surface">
-      <div class="topbar-brand">
+      <div v-if="navigationMode === 'dual-topbar'" class="topbar-brand">
         <BrandMark :tone="isDark ? 'dark' : 'light'" />
       </div>
       <div class="topbar-slot">
         <TopNavigation v-if="navigationMode === 'dual-topbar'" level="primary" />
+        <nav v-else class="shell-breadcrumb" aria-label="当前位置">
+          <ol v-if="breadcrumbs.length">
+            <li v-for="(title, index) in breadcrumbs" :key="index" :aria-current="index === breadcrumbs.length - 1 ? 'page' : undefined">
+              <span>{{ title }}</span>
+            </li>
+          </ol>
+          <span v-else class="shell-breadcrumb-status">{{ auth.menusStatus === 'error' ? '权限加载失败' : auth.menusStatus === 'ready' ? '研究工作台' : '权限加载中…' }}</span>
+        </nav>
       </div>
       <div class="topbar-actions">
         <el-popover
@@ -585,18 +620,6 @@ async function onLogout() {
     <TopNavigation v-if="navigationMode === 'dual-topbar'" level="secondary" />
 
     <el-container class="app-body">
-      <el-aside
-        v-if="navigationMode === 'sidebar-tabs'"
-        width="208px"
-        class="aside"
-        data-testid="app-sidebar-surface"
-      >
-        <SideMenu />
-        <div class="aside-foot">
-          <div class="foot-note">本地 EOD · 仅供研究</div>
-        </div>
-      </el-aside>
-
       <el-container class="workspace" data-testid="app-workspace-surface">
         <WorkspaceTabs v-if="navigationMode === 'sidebar-tabs' && shellReady" />
         <el-main class="main" data-testid="app-main-surface">
@@ -796,8 +819,21 @@ async function onLogout() {
   flex-direction: column;
   background: var(--el-bg-color-page);
 }
+.app.is-sidebar-tabs {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  grid-template-rows: 67px minmax(0, 1fr);
+  overflow: hidden;
+}
+.is-sidebar-tabs > .aside { grid-area: 1 / 1 / 3 / 2; }
+.is-sidebar-tabs > .topbar {
+  grid-area: 1 / 2 / 2 / 3;
+  background: var(--chrome-bg);
+}
+.is-sidebar-tabs > .app-body { grid-area: 2 / 2 / 3 / 3; }
 .app-body {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
 }
 .aside {
@@ -807,8 +843,30 @@ async function onLogout() {
   flex-direction: column;
   border-right: 1px solid var(--chrome-border);
   min-height: 0;
+  overflow: hidden;
+}
+.aside-brand {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-2);
+  padding: var(--app-space-4) var(--app-space-2) var(--app-space-5);
+}
+.aside-brand-copy {
+  padding-inline: var(--app-space-2);
+  color: var(--chrome-text-muted);
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
+  font-weight: var(--app-font-weight-regular);
+  font-style: italic;
+}
+.aside-navigation {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 .aside-foot {
+  flex: none;
   padding: 12px 18px 14px;
   border-top: 1px solid var(--chrome-border);
 }
@@ -857,6 +915,46 @@ async function onLogout() {
   z-index: 1;
 }
 .topbar-slot > * { height: 100%; }
+.shell-breadcrumb {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding-inline: var(--app-space-5);
+  color: var(--chrome-text-muted);
+  font-family: var(--app-nav-font-family);
+  font-size: var(--app-nav-font-size);
+  line-height: var(--app-nav-line-height);
+  font-weight: var(--app-nav-weight-regular);
+}
+.shell-breadcrumb ol {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.shell-breadcrumb li {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.shell-breadcrumb li + li::before {
+  content: '/';
+  flex: none;
+  margin-inline: var(--app-space-3);
+  color: var(--chrome-border-strong);
+}
+.shell-breadcrumb li span,
+.shell-breadcrumb-status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shell-breadcrumb li[aria-current='page'] {
+  color: var(--chrome-text-strong);
+  font-weight: var(--app-nav-weight-active);
+}
 .topbar-actions {
   display: flex;
   align-items: center;
@@ -1467,6 +1565,21 @@ button.topbar-status:focus-visible {
   background: repeating-linear-gradient(90deg, var(--page-settings-text-muted) 0 18px, transparent 18px 26px);
   opacity: .34;
 }
+.navigation-preview.is-sidebar-tabs .nav-preview-head {
+  left: 29px;
+}
+.navigation-preview.is-sidebar-tabs .nav-preview-head::before {
+  width: 28px;
+  background: var(--page-settings-text-muted);
+}
+.navigation-preview.is-sidebar-tabs .nav-preview-rail { top: 0; }
+.navigation-preview.is-sidebar-tabs .nav-preview-rail::before {
+  top: 8px;
+  height: 5px;
+  background: var(--page-settings-accent);
+  opacity: .78;
+}
+.navigation-preview.is-sidebar-tabs .nav-preview-rail::after { top: 24px; }
 .navigation-preview.is-dual-topbar .nav-preview-rail,
 .navigation-preview.is-dual-topbar .nav-preview-tabs { display: none; }
 .navigation-preview.is-dual-topbar .nav-preview-sub {

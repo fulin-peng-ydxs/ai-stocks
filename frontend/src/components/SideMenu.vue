@@ -6,7 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Loading } from '@element-plus/icons-vue'
 import SideMenuItem from './SideMenuItem.vue'
 import { useAuthStore } from '@/stores/auth'
-import { activeMenuPath, type MenuTreeNode } from '@/utils/permission'
+import { activeMenuPath, findMenuTrail, type MenuTreeNode } from '@/utils/permission'
 import { resolveWorkspaceMenuPath } from '@/composables/useWorkspaceTabs'
 
 const route = useRoute()
@@ -17,19 +17,9 @@ const menus = computed<MenuTreeNode[]>(() => auth.menus)
 
 const activeMenu = computed(() => activeMenuPath(menus.value, route.path))
 
-// 默认只展开当前路由所在的分组链（初次挂载算一次，之后由 el-menu 维护）。
-function findOpenTrail(nodes: MenuTreeNode[], target: string, trail: string[] = []): string[] {
-  for (const n of nodes) {
-    if (n.children?.length) {
-      const found = findOpenTrail(n.children, target, [...trail, n.index])
-      if (found.length) return found
-    } else if (n.index === target) {
-      return trail
-    }
-  }
-  return []
-}
-const defaultOpeneds = computed(() => findOpenTrail(menus.value, activeMenu.value))
+// 与面包屑共用最长匹配的授权层级，展开状态仍交给 el-menu 管理。
+const defaultOpeneds = computed(() => findMenuTrail(menus.value, route.path)
+  .filter((node) => node.children?.length).map((node) => node.index))
 
 function selectMenu(index: string) {
   if (index.startsWith('/')) void router.push(resolveWorkspaceMenuPath(index))
@@ -61,7 +51,9 @@ function selectMenu(index: string) {
   flex: 1;
   border-right: none;
   background: transparent;
-  padding: 10px 10px 8px;
+  padding: 0 var(--app-space-2) var(--app-space-2);
+  --el-menu-base-level-padding: 8px;
+  --el-menu-level-padding: 12px;
 }
 .menu-hint {
   flex: 1;
@@ -76,50 +68,69 @@ function selectMenu(index: string) {
 .menu-hint.error {
   color: var(--el-color-danger);
 }
-.menu :deep(.el-menu-item) {
-  color: var(--chrome-text);
-  margin: 3px 0;
+.menu :deep(.el-menu-item.side-menu-node),
+.menu :deep(.side-menu-node > .el-sub-menu__title) {
+  --side-menu-icon-size: 16px;
+  height: 36px;
+  line-height: var(--app-nav-line-height);
+  padding-left: calc(var(--app-space-2) + var(--side-menu-depth) * var(--app-space-3)) !important;
+  padding-right: var(--app-space-2);
+  margin-block: 2px;
+  min-width: 0;
+  color: var(--chrome-text-muted);
+  font-family: var(--app-nav-font-family);
+  font-size: var(--app-nav-font-size);
+  font-weight: var(--app-nav-weight-regular);
   border-radius: var(--layout-control-radius);
 }
-.menu :deep(.el-menu-item.is-active) {
-  background: var(--chrome-active-bg);
-  color: var(--chrome-text-strong);
-  border-left: 0;
-  font-weight: var(--app-font-weight-section);
-  box-shadow: inset 3px 0 var(--el-color-primary);
+.menu :deep(.el-menu-item.is-root-menu-node),
+.menu :deep(.is-root-menu-node > .el-sub-menu__title) {
+  --side-menu-icon-size: 18px;
+  height: 44px;
+  color: var(--chrome-text);
+  font-weight: var(--app-nav-weight-primary);
 }
-.menu :deep(.el-menu-item.is-active .menu-icon),
-.menu :deep(.el-sub-menu.is-active > .el-sub-menu__title .menu-icon) {
-  background: var(--chrome-menu-icon-active-bg);
-  border-color: var(--chrome-menu-icon-active-border);
-  color: var(--chrome-menu-icon-active-color);
+.menu :deep(.el-menu-item.side-menu-node.is-active) {
+  background: color-mix(in srgb, var(--el-color-primary) 12%, transparent);
+  color: var(--el-color-primary);
+  border-left: 0;
+  font-weight: var(--app-nav-weight-active);
+  box-shadow: inset 2px 0 var(--el-color-primary);
+}
+.menu :deep(.el-sub-menu.is-active > .el-sub-menu__title) {
+  color: var(--chrome-text-strong);
+  font-weight: var(--app-nav-weight-active);
 }
 .menu :deep(.el-menu-item:hover) {
   background: var(--chrome-bg-soft);
 }
-.menu :deep(.el-sub-menu__title) {
-  color: var(--chrome-text);
-  margin: 3px 0;
-  border-radius: var(--layout-control-radius);
+.menu :deep(.el-menu-item.is-active:hover) {
+  background: color-mix(in srgb, var(--el-color-primary) 16%, transparent);
 }
 .menu :deep(.el-sub-menu__title:hover) {
   background: var(--chrome-bg-soft);
   color: var(--chrome-text-strong);
 }
 .menu :deep(.el-sub-menu .el-menu) {
-  background: var(--chrome-submenu-bg);
+  background: transparent;
 }
-.menu :deep(.el-sub-menu .el-menu-item) {
-  min-width: 0;
-  padding-left: 44px !important;
+.menu :deep(.el-sub-menu__icon-arrow) {
+  position: static;
+  flex: none;
+  width: 12px;
+  margin: 0 0 0 var(--app-space-2);
+  color: var(--chrome-text-muted);
+  font-size: var(--app-font-size-caption);
 }
-/* 三级（孙）菜单项再缩进一档，体现 系统管理 → 布局配置 → 工作区 的层级 */
-.menu :deep(.el-sub-menu .el-sub-menu .el-menu-item) {
-  padding-left: 60px !important;
+.menu :deep(.menu-icon > .el-icon) {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  font-size: inherit;
 }
-:global(html:not(.dark)) .menu :deep(.el-menu-item.is-active) {
-  box-shadow:
-    inset 3px 0 var(--el-color-primary),
-    inset 0 0 0 1px color-mix(in srgb, var(--el-color-primary) 12%, transparent);
+.menu :deep(.el-menu-item:focus-visible),
+.menu :deep(.el-sub-menu__title:focus-visible) {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
 }
 </style>

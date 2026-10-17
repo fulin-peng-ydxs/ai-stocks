@@ -57,18 +57,25 @@ export function menuContainsPath(node: MenuTreeNode, path: string): boolean {
   return node.children.some((child) => menuContainsPath(child, path))
 }
 
-/** 当前路由对应的叶子节点，用于工作标签页标题回落。 */
-export function findMenuLeaf(menus: MenuTreeNode[], path: string): MenuTreeNode | undefined {
-  let best: MenuTreeNode | undefined
+/** 当前授权菜单层级；详情继承最长匹配叶子，避免短路径抢占其子菜单。 */
+export function findMenuTrail(menus: MenuTreeNode[], path: string): MenuTreeNode[] {
+  let best: MenuTreeNode[] = []
   for (const node of menus) {
-    if (node.children?.length) {
-      const child = findMenuLeaf(node.children, path)
-      if (child && (!best || child.index.length > best.index.length)) best = child
-    } else if (menuContainsPath(node, path) && (!best || node.index.length > best.index.length)) {
-      best = node
+    const candidate = node.children?.length
+      ? findMenuTrail(node.children, path)
+      : menuContainsPath(node, path) ? [node] : []
+    if (!candidate.length) continue
+    const trail = node.children?.length ? [node, ...candidate] : candidate
+    if (!best.length || trail[trail.length - 1].index.length > best[best.length - 1].index.length) {
+      best = trail
     }
   }
   return best
+}
+
+/** 当前路由对应的叶子节点，用于工作标签页标题回落。 */
+export function findMenuLeaf(menus: MenuTreeNode[], path: string): MenuTreeNode | undefined {
+  return findMenuTrail(menus, path).at(-1)
 }
 
 /**

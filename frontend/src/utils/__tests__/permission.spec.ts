@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  activeMenuPath, collectMenuPaths, findMenuLeaf, firstMenuPath, firstPathInMenu,
+  activeMenuPath, collectMenuPaths, findMenuLeaf, findMenuTrail, firstMenuPath, firstPathInMenu,
   hasPermission, isRouteAllowed, menuContainsPath, resolveMenuGuard,
   SAFE_HOME, type MenuTreeNode,
 } from '@/utils/permission'
@@ -39,6 +39,25 @@ describe('firstMenuPath', () => {
 })
 
 describe('菜单树导航口径', () => {
+  it('面包屑保留三级授权分组，详情沿用所属菜单层级', () => {
+    expect(findMenuTrail(MENUS, '/system/users/123').map((node) => node.title))
+      .toEqual(['系统管理', '权限管理', '用户管理'])
+    expect(findMenuTrail(MENUS, '/screen').map((node) => node.title)).toEqual(['策略筛选'])
+    expect(findMenuTrail([], '/board')).toEqual([])
+    expect(findMenuTrail(MENUS, '/stocksXYZ')).toEqual([])
+  })
+
+  it('重叠路由优先最长匹配，不依赖授权菜单的排列顺序', () => {
+    const nested: MenuTreeNode = { index: 'special', title: '专题', children: [
+      { index: '/stocks/special', title: '专题个股' },
+    ] }
+    for (const menus of [[...MENUS, nested], [nested, ...MENUS]]) {
+      expect(findMenuTrail(menus, '/stocks/special/123').map((node) => node.title))
+        .toEqual(['专题', '专题个股'])
+      expect(findMenuLeaf(menus, '/stocks/special/123')?.index).toBe('/stocks/special')
+    }
+  })
+
   it('详情子路由按最长前缀命中授权叶子', () => {
     expect(activeMenuPath(MENUS, '/stocks/600000.SH')).toBe('/stocks')
     expect(findMenuLeaf(MENUS, '/stocks/600000.SH')?.title).toBe('个股行情')

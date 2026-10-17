@@ -8,7 +8,7 @@
 
 | 文件 | 查询原文（去重） | 行为 / 恢复入口 | 直接消费方 |
 |---|---|---|---|
-| `frontend/src/App.vue` | `@container app-viewport (max-width: 720px)` | 窄宽收起交易日辅助文字，保留状态图标与用户/视觉环境入口；画布统一缩放。 | 应用入口 |
+| `frontend/src/App.vue` | `@container app-viewport (max-width: 720px)` | 侧栏模式品牌/说明与底部固定，菜单独立内滚；右侧顶栏面包屑长标题省略，工作区独立收缩。窄宽收起交易日辅助文字，保留状态图标与用户/视觉环境入口；画布统一缩放。 | 应用入口 |
 | `frontend/src/components/AppAdvancedSearch.vue` | `@container app-viewport (max-width: 720px)` | 条件≥3时分常用/高级；高级折叠保留生效摘要与展开入口；窄宽逐行；错误自动展开，草稿不重置。 | ConfigView、StocksView、OverviewView、QualityView、LimitLadderFilters、AuditLogView、UserManageView、TradeDisciplineHistory |
 | `frontend/src/components/AppAsyncRegion.vue` | 无自身 CSS 查询 | 委托 AppStateBlock。 | StockAnalysisPanel、StockBoardMembershipPanel、BacktestView、ConfigView、SectorDetailView、SectorsView、StockDetailView、TrainingView、LayoutPagesView、AuditLogView、DataDictionaryView、MenuResourceView、RoleManageView、RuleMasterList |
 | `frontend/src/components/AppControlItem.vue` | 无自身 CSS 查询 | 控件min-width:0/max100%，标签不压缩，父行负责换行。 | BacktestView、AuditLogView、TradeDisciplineHistory |
@@ -77,8 +77,8 @@
 | `frontend/src/components/SectorAnalysisDefaultFields.vue` | 无自身 CSS 查询 | 委托 MarketBenchmarkSelect、PageSettingItem、PageSegmented、PageToggleRow。 | ComponentAutoSettings |
 | `frontend/src/components/SectorCompareChart.vue` | 无自身 CSS 查询 | 委托 AppStateBlock。 | SectorsView |
 | `frontend/src/components/SettingsGroup.vue` | 无自身 CSS 查询 | 手动递归折叠，父级收起只隐藏子树，不重置下级展开状态。 | App、ChartOperationGroup、ComponentAutoSettings、PageSettingSection、PageSettingsDrawer、LayoutSettingsSection |
-| `frontend/src/components/SideMenu.vue` | 无自身 CSS 查询 | 委托 SideMenuItem。 | App |
-| `frontend/src/components/SideMenuItem.vue` | 无自身 CSS 查询 | 委托 MenuIcon。 | SideMenu |
+| `frontend/src/components/SideMenu.vue` | 无自身 CSS 查询 | 一级44px/子级36px固定行高，菜单高度不足由App侧栏内滚承接；授权层级与面包屑共用查询。 | App |
+| `frontend/src/components/SideMenuItem.vue` | 无自身 CSS 查询 | 每层缩进12px，图标占位与末尾箭头固定，长名称省略并交给全局溢出提示；收展及选中不重置页面。 | SideMenu |
 | `frontend/src/components/SourceTag.vue` | 无自身 CSS 查询 | 来源浮层min180/max280、字段网格44+0；受统一浮层边界约束。 | ComponentAutoSettings、LayoutSettingsSection |
 | `frontend/src/components/StockAnalysisDefaultFields.vue` | 无自身 CSS 查询 | 委托 MarketBenchmarkSelect、PageSettingItem、PageSegmented、PageToggleRow。 | ComponentAutoSettings |
 | `frontend/src/components/StockAnalysisNameCell.vue` | 无自身 CSS 查询 | 委托 ComparePinButton、StockStatusTag。 | RankedStockResultTable、StocksView |

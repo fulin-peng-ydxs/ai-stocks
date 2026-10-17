@@ -173,9 +173,10 @@ function descendantLeaves(
   align-items: center;
   justify-content: center;
   gap: var(--app-space-2);
-  font-size: var(--app-font-size-body);
-  font-weight: var(--app-font-weight-section);
-  letter-spacing: .02em;
+  font-family: var(--app-nav-font-family);
+  font-size: var(--app-nav-font-size);
+  line-height: var(--app-nav-line-height);
+  font-weight: var(--app-nav-weight-primary);
   white-space: nowrap;
   cursor: pointer;
   transition: color .16s ease, background-color .16s ease;
@@ -235,10 +236,9 @@ function descendantLeaves(
   flex: none;
   margin-right: 8px;
   color: var(--chrome-text-muted);
-  font-size: var(--app-font-size-caption);
-  font-weight: var(--app-font-weight-strong);
-  letter-spacing: .13em;
-  text-transform: uppercase;
+  font-size: var(--app-nav-meta-font-size);
+  line-height: var(--app-nav-meta-line-height);
+  font-weight: var(--app-nav-weight-regular);
 }
 .secondary-context::after {
   content: '';
@@ -259,8 +259,10 @@ function descendantLeaves(
   display: inline-flex;
   align-items: center;
   gap: var(--app-space-control-gap);
-  font-size: var(--app-font-size-body);
-  font-weight: var(--app-font-weight-section);
+  font-family: var(--app-nav-font-family);
+  font-size: var(--app-nav-font-size);
+  line-height: var(--app-nav-line-height);
+  font-weight: var(--app-nav-weight-regular);
   white-space: nowrap;
   cursor: pointer;
   transition: color .16s ease, border-color .16s ease, background-color .16s ease;
@@ -282,6 +284,7 @@ function descendantLeaves(
   background: var(--chrome-bg-soft-hover);
 }
 .secondary-entry.is-active {
+  font-weight: var(--app-nav-weight-active);
   border-color: color-mix(in srgb, var(--shell-accent) 34%, var(--chrome-border));
   background: var(--chrome-active-bg);
   color: var(--chrome-text-strong);
@@ -299,10 +302,16 @@ function descendantLeaves(
 </style>
 
 <style>
+.top-navigation-dropdown .el-dropdown-menu__item {
+  font-family: var(--app-nav-font-family);
+  font-size: var(--app-nav-font-size);
+  line-height: var(--app-nav-line-height);
+  font-weight: var(--app-nav-weight-regular);
+}
 .top-navigation-dropdown .el-dropdown-menu__item.is-active {
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
-  font-weight: var(--app-font-weight-section);
+  font-weight: var(--app-nav-weight-active);
 }
 .top-navigation-dropdown .dropdown-entry-icon {
   width: 18px;

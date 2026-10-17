@@ -103,7 +103,10 @@ async function close(key: string) {
   display: inline-flex;
   align-items: center;
   gap: var(--app-space-2);
-  font-size: var(--app-font-size-caption);
+  font-family: var(--app-nav-font-family);
+  font-size: var(--app-nav-meta-font-size);
+  line-height: var(--app-nav-meta-line-height);
+  font-weight: var(--app-nav-weight-regular);
   cursor: pointer;
   transition: color .15s ease, background-color .15s ease, border-color .15s ease;
 }
@@ -120,6 +123,7 @@ async function close(key: string) {
   background: var(--chrome-bg-soft-hover);
 }
 .workspace-tab.is-active {
+  font-weight: var(--app-nav-weight-active);
   border-color: color-mix(in srgb, var(--shell-accent) 30%, var(--chrome-border));
   background: var(--chrome-active-bg);
   color: var(--chrome-text-strong);

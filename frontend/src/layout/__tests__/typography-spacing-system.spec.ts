@@ -33,6 +33,41 @@ function styleBlocks(file: string): string[] {
 const SIZE_MEDIA_QUERY = /@media[^{}]*\([^)]*\b(?:(?:min|max)-)?(?:width|height)\b/
 
 describe('字体与间距设计契约', () => {
+  it('侧栏与双排顶栏按相同导航角色消费字阶，辅助导航保留独立档位', () => {
+    const css = read(join(SRC_DIR, 'styles/global.css'))
+    const side = read(join(SRC_DIR, 'components/SideMenu.vue'))
+    const top = read(join(SRC_DIR, 'components/TopNavigation.vue'))
+    const tabs = read(join(SRC_DIR, 'components/WorkspaceTabs.vue'))
+    const app = read(join(SRC_DIR, 'App.vue'))
+    const rule = (source: string, selector: string) => {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      return source.match(new RegExp(`${escaped}\\s*\\{([^}]+)\\}`))?.[1] ?? ''
+    }
+    expect(css).toContain('--app-nav-font-size: var(--app-font-size-body)')
+    expect(css).toContain('--app-nav-font-family: var(--app-font-family-base)')
+    expect(css).toContain('--app-nav-meta-font-size: var(--app-font-size-caption)')
+    for (const [source, selector] of [
+      [side, '.menu :deep(.side-menu-node > .el-sub-menu__title)'],
+      [top, '.primary-entry'], [top, '.secondary-entry'],
+      [top, '.top-navigation-dropdown .el-dropdown-menu__item'],
+      [app, '.shell-breadcrumb'],
+    ]) {
+      expect(rule(source, selector), selector).toContain('font-size: var(--app-nav-font-size)')
+      expect(rule(source, selector), selector).toContain('line-height: var(--app-nav-line-height)')
+      expect(rule(source, selector), selector).toContain('font-family: var(--app-nav-font-family)')
+    }
+    expect(rule(top, '.primary-entry')).toContain('font-weight: var(--app-nav-weight-primary)')
+    expect(rule(top, '.secondary-entry')).toContain('font-weight: var(--app-nav-weight-regular)')
+    expect(rule(top, '.secondary-entry.is-active')).toContain('font-weight: var(--app-nav-weight-active)')
+    expect(rule(side, '.menu :deep(.is-root-menu-node > .el-sub-menu__title)'))
+      .toContain('font-weight: var(--app-nav-weight-primary)')
+    expect(rule(side, '.menu :deep(.el-sub-menu.is-active > .el-sub-menu__title)'))
+      .toContain('font-weight: var(--app-nav-weight-active)')
+    for (const [source, selector] of [[top, '.secondary-context'], [tabs, '.workspace-tab']]) {
+      expect(rule(source, selector), selector).toContain('font-size: var(--app-nav-meta-font-size)')
+    }
+  })
+
   it('页面设置抽屉以稳定字体角色和结构线表达层级', () => {
     const globalCss = read(join(SRC_DIR, 'styles/global.css'))
     const drawer = read(join(SRC_DIR, 'components/PageSettingsDrawer.vue'))
