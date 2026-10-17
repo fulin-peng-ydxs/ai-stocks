@@ -916,7 +916,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 完整触发清单统一维护在 [响应式组件触发清单](agent-works/configurable-layout-system/responsive-components.md)，逐项覆盖所有 Vue 文件（包括无自身断点、自然换行、内部滚动、委托共享组件及页面私有片段）。组件阈值、降级方式、恢复入口和直接消费方以该清单及真实代码为准，页面不复制断点。
 
-尺寸均为缩放后的布局 CSS 像素；应用画布、局部工作区和控件自身容器的尺寸不可混用。页面逐项检查与浏览器证据见 [响应式页面检查](agent-works/configurable-layout-system/responsive-pages.md)；登记策略不能代替实测。
+尺寸均为缩放后的布局 CSS 像素；应用画布、局部工作区和控件自身容器的尺寸不可混用。页面当前验收矩阵、实测范围与覆盖缺口见 [响应式页面检查](agent-works/configurable-layout-system/responsive-pages.md)；仅更新受影响行，不追加历史流水账，登记完整性不能代替实测。
 
 ### 8.3 响应式交付门禁
 
