@@ -55,7 +55,7 @@ function toggle(key: string) {
           <ElTag :type="colors[status(check)]" size="small" effect="plain">{{ labels[status(check)] }}</ElTag>
         </template>
         <div class="checkup-detail">
-          <p v-if="check.detail" class="checkup-description">
+          <p v-if="check.detail.length > 100" class="checkup-description">
             {{ check.detail }}
           </p>
           <section v-for="(detail, detailIndex) in check.details" :key="detailIndex" class="checkup-detail-group">

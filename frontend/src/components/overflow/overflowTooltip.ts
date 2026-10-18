@@ -1,9 +1,11 @@
 import {
   ACTION_COLUMN_CLASS,
   CELL_VISUAL_OVERFLOW_CLASS,
+  textClientRects,
 } from '@/components/table/cellVisualOverflow'
 
 const OVERFLOW_TOLERANCE_PX = 0.5
+const TEXT_GEOMETRY_EPSILON_PX = 0.01
 const OVERFLOW_TOOLTIP_DELEGATE_SELECTOR = '[data-overflow-tooltip-delegate]'
 const OVERFLOW_TOOLTIP_TARGET_SELECTOR = '[data-overflow-tooltip-target]'
 const AUTO_DELEGATE_INTERACTIVE_SELECTOR = [
@@ -37,7 +39,24 @@ export function isNativeEllipsisOverflow(element: HTMLElement): boolean {
   const style = getComputedStyle(element)
   if (!style.textOverflow.split(/\s+/).includes('ellipsis')) return false
   // 单行省略只发生在横向；字体行盒取整可能让 scrollHeight 略高，不能据此弹出重复提示。
-  return element.scrollWidth > element.clientWidth + OVERFLOW_TOLERANCE_PX
+  if (element.scrollWidth > element.clientWidth + OVERFLOW_TOLERANCE_PX) return true
+
+  // Chrome 在 zoom 下可能已经绘制省略号，但整数 scrollWidth/clientWidth 仍相等。
+  // 用既有 Range 测量补足亚像素差值；统一比较视口坐标，扣除边框和内边距。
+  const box = element.getBoundingClientRect()
+  if (box.width <= 0 || box.height <= 0) return false
+  const px = (value: string) => Number.parseFloat(value) || 0
+  const leftInset = px(style.borderLeftWidth) + px(style.paddingLeft)
+  const rightInset = px(style.borderRightWidth) + px(style.paddingRight)
+  const layoutWidth = px(style.width)
+    + (style.boxSizing === 'border-box' ? 0 : leftInset + rightInset)
+  if (layoutWidth <= 0) return false
+  const scale = box.width / layoutWidth
+  const left = box.left + leftInset * scale
+  const right = box.right - rightInset * scale
+  const epsilon = TEXT_GEOMETRY_EPSILON_PX * scale
+  return textClientRects(element).some(rect => rect.width > 0 && rect.height > 0
+    && (rect.left < left - epsilon || rect.right > right + epsilon))
 }
 
 function isWithinTooltipExclusion(element: HTMLElement): boolean {
@@ -53,10 +72,10 @@ function delegatedOverflowTarget(element: HTMLElement): HTMLElement | null {
       .find(isNativeEllipsisOverflow) ?? null
   }
   if (!element.matches(AUTO_DELEGATE_INTERACTIVE_SELECTOR)) return null
-  const overflowed = Array.from(element.querySelectorAll<HTMLElement>('*'))
-    .filter(isNativeEllipsisOverflow)
-  // 简单交互控件可自动代理唯一省略文本；存在多个候选时必须显式标记，避免提示错内容。
-  return overflowed.length === 1 ? overflowed[0] : null
+  const labels = Array.from(element.querySelectorAll<HTMLElement>('*'))
+    .filter(label => getComputedStyle(label).textOverflow.split(/\s+/).includes('ellipsis'))
+  // 只代理单一标签控件；复合摘要即使当下只有一段截断，也应按各段文字分别提示。
+  return labels.length === 1 && isNativeEllipsisOverflow(labels[0]) ? labels[0] : null
 }
 
 /**

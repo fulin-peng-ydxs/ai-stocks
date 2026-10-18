@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { defineComponent, h, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import AppOverflowTooltipHost from '@/components/AppOverflowTooltipHost.vue'
+import AppSummaryDisclosureCard from '@/components/AppSummaryDisclosureCard.vue'
 
 const ElTooltipStub = defineComponent({
   name: 'ElTooltip',
@@ -37,6 +38,95 @@ afterEach(() => {
 })
 
 describe('AppOverflowTooltipHost', () => {
+  it.each(['首次移动', '点击', '窗口失焦', 'Escape'])('%s 后无需移出文字再移入也能重新悬浮', async (action) => {
+    vi.useFakeTimers()
+    const wrapper = mount(AppOverflowTooltipHost, {
+      attachTo: document.body,
+      global: { stubs: { ElTooltip: ElTooltipStub } },
+    })
+    const target = appendOverflowTarget('resume-hover', '有标记无数据 0 / 有数据无标记 0')
+    if (action !== '首次移动') {
+      target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      vi.advanceTimersByTime(300)
+      await nextTick()
+      expect(wrapper.get('.tooltip-host').attributes('data-visible')).toBe('true')
+      if (action === '点击') target.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      if (action === '窗口失焦') {
+        window.dispatchEvent(new Event('blur'))
+        window.dispatchEvent(new Event('focus'))
+      }
+      if (action === 'Escape') document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      await nextTick()
+      expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+    }
+    // 鼠标一直位于同一文字节点内时只产生 mousemove，不会再产生 mouseover。
+    target.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+    vi.advanceTimersByTime(299)
+    await nextTick()
+    expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+    vi.advanceTimersByTime(1)
+    await nextTick()
+    expect(wrapper.get('.tooltip-host').attributes('data-content')).toBe(target.textContent)
+    wrapper.unmount()
+  })
+
+  it.each([true, false])('紧凑检查行按截断文字分别提示，留白不触发，collapsible=%s', async (collapsible) => {
+    vi.useFakeTimers()
+    const wrapper = mount(defineComponent({
+      setup: () => () => h('div', [
+        h(AppOverflowTooltipHost),
+        h(AppSummaryDisclosureCard, {
+          panelId: 'check-detail', title: '完整检查名称', toggleLabel: '展开检查',
+          preview: '有标记无数据 0 / 有数据无标记 0',
+          variant: 'compact', expanded: false, collapsible,
+        }),
+      ]),
+    }), {
+      attachTo: document.body,
+      global: { stubs: { ElTooltip: ElTooltipStub } },
+    })
+    const host = wrapper.getComponent(AppOverflowTooltipHost)
+    const card = wrapper.getComponent(AppSummaryDisclosureCard)
+    const summary = card.get('.app-summary-disclosure-card__summary')
+    const title = card.get<HTMLElement>('strong')
+    const preview = card.get<HTMLElement>('.app-summary-disclosure-card__preview')
+    // 标题与摘要是独立阅读目标，不能把整行留白代理成任意一段文字。
+    for (const target of [title.element, preview.element]) {
+      target.style.textOverflow = 'ellipsis'
+      Object.defineProperty(target, 'clientWidth', { value: 40, configurable: true })
+      Object.defineProperty(target, 'scrollWidth', { value: 200 })
+    }
+    await summary.trigger('mouseover')
+    vi.advanceTimersByTime(300)
+    await nextTick()
+    expect(host.find('.tooltip-host').exists()).toBe(false)
+    await preview.trigger('mousemove')
+    vi.advanceTimersByTime(300)
+    await nextTick()
+    expect(host.get('.tooltip-host').attributes('data-content')).toBe('有标记无数据 0 / 有数据无标记 0')
+    await preview.trigger('click')
+    await preview.trigger('mousemove')
+    vi.advanceTimersByTime(300)
+    await nextTick()
+    expect(host.get('.tooltip-host').attributes('data-content')).toBe('有标记无数据 0 / 有数据无标记 0')
+    await preview.trigger('mouseout')
+    await title.trigger('mouseover')
+    vi.advanceTimersByTime(300)
+    await nextTick()
+    expect(host.get('.tooltip-host').attributes('data-content')).toBe('完整检查名称')
+    await title.trigger('mouseout')
+    Object.defineProperty(preview.element, 'clientWidth', { value: 240 })
+    await preview.trigger('mousemove')
+    vi.advanceTimersByTime(300)
+    await nextTick()
+    expect(host.find('.tooltip-host').exists()).toBe(false)
+    await summary.trigger('mousemove')
+    vi.advanceTimersByTime(300)
+    await nextTick()
+    expect(host.find('.tooltip-host').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('窗口失焦清理省略提示及计时，恢复焦点不弹出，重新 Tab 阅读正常', async () => {
     vi.useFakeTimers()
     const wrapper = mount(AppOverflowTooltipHost, {

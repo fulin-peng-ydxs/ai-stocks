@@ -27,7 +27,8 @@ function rectOverflowsHorizontally(contentRect: DOMRect, cellRect: DOMRect): boo
     || contentRect.right > cellRect.right + GEOMETRY_TOLERANCE_PX
 }
 
-function textRects(node: Text): DOMRect[] {
+/** Range 保留缩放后的亚像素文字边界，供表格及原生省略判定共同使用。 */
+export function textClientRects(node: Node): DOMRect[] {
   if (!node.textContent?.trim()) return []
   const range = document.createRange()
   range.selectNodeContents(node)
@@ -70,7 +71,7 @@ function visualRects(cell: HTMLElement): DOMRect[] {
   const rects: DOMRect[] = []
   const visit = (node: Node): void => {
     if (node instanceof Text) {
-      rects.push(...textRects(node))
+      rects.push(...textClientRects(node))
       return
     }
     if (!(node instanceof HTMLElement || node instanceof SVGElement)) return

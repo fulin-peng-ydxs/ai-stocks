@@ -95,11 +95,14 @@ function matchesHoverTarget(target: EventTarget | null): boolean {
 }
 
 function onMouseMove(event: MouseEvent): void {
-  if (!hoverTarget || focusTarget) return
-  if (matchesHoverTarget(event.target)) {
-    if (visible.value) hideCurrent()
-    scheduleHover(hoverTarget)
-  }
+  if (focusTarget) return
+  // 点击、Escape 或窗口失焦会清空目标；鼠标仍在原节点内时不会再有 mouseover，
+  // 必须从本次移动重新识别，否则提示只能靠移出再移入恢复。
+  const next = findOverflowTooltipTarget(event.target)
+  hoverTarget = next
+  if (visible.value) hideCurrent()
+  if (next) scheduleHover(next)
+  else clearHoverTimer()
 }
 
 function onMouseOut(event: MouseEvent): void {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   findOverflowTooltipTarget,
   isNativeEllipsisOverflow,
@@ -16,10 +16,45 @@ function setBox(element: HTMLElement, clientWidth: number, scrollWidth: number):
 }
 
 afterEach(() => {
+  vi.restoreAllMocks()
   document.body.innerHTML = ''
 })
 
 describe('全局省略悬浮目标判定', () => {
+  it('Chrome 97% 缩放下整数宽度相等，仍识别亚像素截断；完整文字不误报', () => {
+    const element = document.createElement('span')
+    element.textContent = '有标记无数据 0 / 有数据无标记 0'
+    element.style.cssText = 'text-overflow:ellipsis;overflow:hidden;width:175.991px;box-sizing:border-box'
+    setBox(element, 176, 176)
+    vi.spyOn(element, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 20, 170.7109375, 18))
+    let textWidth = 170.9921875
+    vi.spyOn(document, 'createRange').mockReturnValue({
+      selectNodeContents: vi.fn(),
+      getClientRects: () => [new DOMRect(100, 21, textWidth, 14)],
+    } as unknown as Range)
+    expect(isNativeEllipsisOverflow(element)).toBe(true)
+    textWidth = 170.7109375
+    expect(isNativeEllipsisOverflow(element)).toBe(false)
+    textWidth = 169
+    expect(isNativeEllipsisOverflow(element)).toBe(false)
+  })
+
+  it('亚像素测量扣除边框和内边距，不将垂直行盒取整视为截断', () => {
+    const element = document.createElement('span')
+    element.textContent = '完整文字'
+    element.style.cssText = 'text-overflow:ellipsis;width:100px;box-sizing:border-box;padding:0 9px;border:1px solid'
+    setBox(element, 98, 98)
+    vi.spyOn(element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 200, 40))
+    let textWidth = 160
+    vi.spyOn(document, 'createRange').mockReturnValue({
+      selectNodeContents: vi.fn(),
+      getClientRects: () => [new DOMRect(20, -0.5, textWidth, 41)],
+    } as unknown as Range)
+    expect(isNativeEllipsisOverflow(element)).toBe(false)
+    textWidth = 160.5
+    expect(isNativeEllipsisOverflow(element)).toBe(true)
+  })
+
   it('只识别真实发生截断的 CSS 省略元素', () => {
     const element = document.createElement('span')
     element.style.textOverflow = 'ellipsis'
@@ -109,6 +144,9 @@ describe('全局省略悬浮目标判定', () => {
 
     expect(findOverflowTooltipTarget(rule)).toBe(ruleName)
     expect(findOverflowTooltipTarget(complexCard)).toBeNull()
+    setBox(complexTitle, 160, 160)
+    expect(findOverflowTooltipTarget(complexCard)).toBeNull()
+    expect(findOverflowTooltipTarget(complexPreview)).toBe(complexPreview)
   })
 
   it('复用表格视觉溢出标记，并跳过已有业务 popover 的内容', () => {
