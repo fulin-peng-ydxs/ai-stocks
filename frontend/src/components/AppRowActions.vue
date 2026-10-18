@@ -314,40 +314,43 @@ onBeforeUnmount(() => {
       </el-popover>
     </template>
     <span v-else class="app-row-actions__empty">{{ emptyText }}</span>
-    <span
-      v-if="visibleActions.length"
-      ref="measureEl"
-      class="app-row-actions__measure"
-      aria-hidden="true"
-      :data-testid="testId ? `${testId}-measure` : undefined"
-    >
-      <el-button
-        v-for="(action, index) in measuredActions"
-        :key="action.key"
-        class="app-row-actions__button"
-        :class="actionClass(action, index)"
-        link
-        size="small"
-        :loading="action.loading"
+    <!-- 裁切测量副本的滚动溢出，内部仍按完整固有宽度测量，不能用 display:none。 -->
+    <span v-if="visibleActions.length" class="app-row-actions__measure-clip" aria-hidden="true">
+      <span
+        ref="measureEl"
+        class="app-row-actions__measure"
+        aria-hidden="true"
+        :data-testid="testId ? `${testId}-measure` : undefined"
       >
-        {{ action.label }}
-      </el-button>
-      <el-button
-        v-if="visibleActions.length"
-        ref="moreMeasureBtn"
-        class="app-row-actions__button app-row-actions__more"
-        link
-        size="small"
-      >
-        {{ moreLabel }}
-        <el-icon class="app-row-actions__more-icon"><ArrowDown /></el-icon>
-      </el-button>
+        <el-button
+          v-for="(action, index) in measuredActions"
+          :key="action.key"
+          class="app-row-actions__button"
+          :class="actionClass(action, index)"
+          link
+          size="small"
+          :loading="action.loading"
+        >
+          {{ action.label }}
+        </el-button>
+        <el-button
+          v-if="visibleActions.length"
+          ref="moreMeasureBtn"
+          class="app-row-actions__button app-row-actions__more"
+          link
+          size="small"
+        >
+          {{ moreLabel }}
+          <el-icon class="app-row-actions__more-icon"><ArrowDown /></el-icon>
+        </el-button>
+      </span>
     </span>
   </div>
 </template>
 
 <style scoped>
 .app-row-actions {
+  position: relative;
   display: inline-flex;
   align-items: center;
   flex-wrap: nowrap;
@@ -374,6 +377,17 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-secondary);
 }
 
+.app-row-actions__measure-clip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  overflow: clip;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .app-row-actions__measure {
   position: absolute;
   top: 0;
@@ -382,6 +396,7 @@ onBeforeUnmount(() => {
   align-items: center;
   flex-wrap: nowrap;
   gap: var(--app-space-2);
+  width: max-content;
   max-width: none;
   visibility: hidden;
   pointer-events: none;
