@@ -616,7 +616,7 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #main>
-    <el-card shadow="never">
+    <el-card shadow="never" class="app-table-card">
       <AppStateBlock
         v-if="loadError"
         state="error"

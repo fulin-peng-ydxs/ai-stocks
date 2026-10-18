@@ -1185,6 +1185,16 @@ html[data-layout-preset] .el-card {
 html[data-layout-preset] .el-card__body {
   padding: var(--layout-card-padding);
 }
+/* 纯表格卡片只移除内容体内距；标题、状态反馈和分页仍保留各自操作空间。 */
+.el-card.app-table-card > .el-card__body {
+  padding: 0;
+}
+.el-card.app-table-card > .el-card__body > .app-state-block {
+  margin: var(--layout-card-padding);
+}
+.el-card.app-table-card > .el-card__body > .app-data-table > .app-data-table__pager {
+  padding: var(--app-space-3) var(--layout-card-padding);
+}
 /* 有边框描述表的标签格属于常驻信息分区，不借用 hover 状态的 Element token。 */
 .el-descriptions__label.el-descriptions__cell.is-bordered-label {
   background-color: var(--app-section-bg);

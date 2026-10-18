@@ -708,7 +708,7 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #jobTable>
-      <el-card shadow="never" class="blk">
+      <el-card shadow="never" class="blk app-table-card">
         <template #header>
           <div class="blk-head"><span>调度任务</span>
             <span class="app-caption-text">时间任务到点触发；依赖任务命中上游结果后可靠等待并按配置延迟执行。</span></div>
@@ -794,7 +794,7 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #sourcePanel>
-      <el-card shadow="never" class="blk">
+      <el-card shadow="never" class="blk app-table-card">
         <template #header>
           <div class="blk-head"><span>数据源健康</span>
             <el-button v-permission="'data-source:test'" size="small" type="primary" plain :loading="pinging || sourceLoading" @click="loadSources(true)">测试连通</el-button></div>

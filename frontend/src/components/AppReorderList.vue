@@ -225,7 +225,7 @@ onDeactivated(cancel)
 <style scoped>
 .app-reorder-list { display: grid; gap: var(--app-space-2); min-width: 0; }
 .app-reorder-list__row { position: relative; min-width: 0; }
-.app-reorder-list__row.is-editable { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: start; }
+.app-reorder-list__row.is-editable { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--app-space-2); align-items: start; }
 .app-reorder-list__handle { margin-top: var(--app-space-5); cursor: grab; touch-action: none; user-select: none; }
 .app-reorder-list__handle:not(:hover):not(:focus-visible):not([aria-pressed="true"]) { color: var(--el-text-color-placeholder); }
 .is-dragging > .app-reorder-list__handle { cursor: grabbing; }

@@ -575,7 +575,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           </AppAsyncRegion>
         </el-card>
 
-        <el-card shadow="never" class="hist-card">
+        <el-card shadow="never" class="hist-card app-table-card">
           <template #header><span class="card-title">训练历史</span><span class="card-sub">共 {{ history.total }} 局，点行回看</span></template>
           <AppStateBlock
             v-if="historyLoading && !history.list.length"
@@ -776,7 +776,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           </div>
         </div>
 
-        <el-card class="trades-card" shadow="never">
+        <el-card class="trades-card app-table-card" shadow="never">
           <AppDataTable :data="round.trades" height="100%" size="small" empty-text="尚无成交">
             <AppTableColumn label="相对日"><template #default="{ row }">D{{ row.rel_day }}</template></AppTableColumn>
             <AppTableColumn label="方向"><template #default="{ row }"><span :class="row.side === 'buy' ? 'up' : 'down'">{{ row.side === 'buy' ? '买入' : '卖出' }}</span></template></AppTableColumn>
@@ -1025,7 +1025,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 .card-title { font-weight: var(--app-font-weight-section); }
 .card-sub { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); margin-left: 8px; }
 .hist-card { flex: 1 1 auto; min-height: 300px; display: flex; flex-direction: column; }
-.hist-card :deep(.el-card__body) { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px 12px; }
+.hist-card :deep(.el-card__body) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .hist-table { cursor: pointer; flex: 1; }
 .grade-chip { color: #fff; padding: 1px 8px; border-radius: 10px; font-weight: var(--app-font-weight-strong); font-size: var(--app-font-size-caption); }
 
@@ -1055,7 +1055,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 .side-tag.buy { color: var(--el-color-danger); }
 .side-tag.sell { color: var(--el-color-success); }
 .trades-card { flex: 1 1 auto; min-height: 160px; display: flex; flex-direction: column; }
-.trades-card :deep(.el-card__body) { flex: 1; min-height: 0; padding: 8px; }
+.trades-card :deep(.el-card__body) { flex: 1; min-height: 0; }
 
 /* 结算：固定块（KPI/评分规则/回合卡）自然高，整局复盘卡吃满剩余高度；余量不足时整区滚动兜底 */
 .result-body { flex: 1 1 auto; min-height: 0; --app-scroll-display: flex; --app-scroll-direction: column; --app-scroll-gap: var(--app-space-3); --app-scroll-padding-right: 2px; }
