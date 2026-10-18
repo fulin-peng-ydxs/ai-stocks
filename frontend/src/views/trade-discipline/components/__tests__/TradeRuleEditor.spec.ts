@@ -121,7 +121,10 @@ describe('TradeRuleEditor', () => {
 
   it('保存时保留换行、启用态和调整后的展示顺序', async () => {
     const wrapper = await mountEditor()
-    await wrapper.get('[aria-label="下移选股规则"]').trigger('click')
+    const handle = wrapper.get('[aria-label="拖动排序：突破"]')
+    await handle.trigger('keydown', { key: ' ' })
+    await handle.trigger('keydown', { key: 'ArrowDown' })
+    await handle.trigger('keydown', { key: ' ' })
     await wrapper.findAll('[data-testid="stock-rule-card"]')[0]!
       .get('[data-testid="rule-card-toggle"]').trigger('click')
     const textareas = wrapper.findAll('textarea')
@@ -134,6 +137,53 @@ describe('TradeRuleEditor', () => {
     expect(payload.stock_rules.map((item: any) => item.detail_id)).toEqual(['s2', 's1'])
     expect(payload.stock_rules[0].enabled).toBe(false)
     expect(payload.stock_rules[0].content).toBe('第一行\n\n第三行')
+  })
+
+  it('买卖规则分别组内重排，保存全局顺序并重新加载，不交换业务类型', async () => {
+    const value = detail()
+    value.draft.action_rules.push(
+      { ...value.draft.action_rules[0], detail_id: 'a3', name: '加仓', action_subtype: 'add_position', display_order: 3 },
+      { ...value.draft.action_rules[1], detail_id: 'a4', name: '减仓', action_subtype: 'reduce_position', display_order: 4 },
+    )
+    api.get.mockResolvedValue(value)
+    const wrapper = await mountEditor()
+    for (const name of ['建仓', '清仓']) {
+      const handle = wrapper.get(`[aria-label="拖动排序：${name}"]`)
+      await handle.trigger('keydown', { key: ' ' })
+      await handle.trigger('keydown', { key: 'End' })
+      await handle.trigger('keydown', { key: 'Enter' })
+    }
+    const buy = wrapper.get('[data-testid="buy-rule-group"]')
+    const sell = wrapper.get('[data-testid="sell-rule-group"]')
+    expect(buy.findAll('[data-testid="action-rule-card"] strong').map(node => node.text())).toEqual(['加仓', '建仓'])
+    expect(sell.findAll('[data-testid="action-rule-card"] strong').map(node => node.text())).toEqual(['减仓', '清仓'])
+    await (wrapper.vm as any).saveDraft(false)
+    const payload = api.save.mock.calls[0][1]
+    expect(payload.action_rules.map((item: any) => [item.detail_id, item.action_type, item.display_order]))
+      .toEqual([['a3', 'buy', 1], ['a4', 'sell', 2], ['a1', 'buy', 3], ['a2', 'sell', 4]])
+    value.draft = { ...value.draft, ...payload }
+    wrapper.unmount()
+    const reloaded = await mountEditor()
+    expect(reloaded.get('[data-testid="buy-rule-group"]').findAll('[data-testid="action-rule-card"] strong').map(node => node.text())).toEqual(['加仓', '建仓'])
+  })
+
+  it('新增项重排保持展开字段身份，保存失败保留顺序与未保存状态', async () => {
+    const wrapper = await mountEditor()
+    const add = wrapper.findAll('button').find(node => node.text() === '添加选股规则')!
+    await add.trigger('click')
+    const name = wrapper.get('[data-testid="stock-rule-name-input"]')
+    await name.setValue('新增纪律')
+    const input = name.element
+    const handle = wrapper.get('[aria-label="拖动排序：新增纪律"]')
+    await handle.trigger('keydown', { key: ' ' })
+    await handle.trigger('keydown', { key: 'Home' })
+    await handle.trigger('keydown', { key: ' ' })
+    expect(wrapper.findAll('[data-testid="stock-rule-card"]')[0].get('[data-testid="stock-rule-name-input"]').element).toBe(input)
+    expect((wrapper.vm as any).isDirty()).toBe(true)
+    api.save.mockRejectedValueOnce(new Error('save failed'))
+    expect(await (wrapper.vm as any).saveDraft(false)).toBe(false)
+    expect(wrapper.findAll('[data-testid="stock-rule-card"] strong')[0].text()).toBe('新增纪律')
+    expect((wrapper.vm as any).isDirty()).toBe(true)
   })
 
   it('未保存时把离开决策交给页面浮层，并按继续、放弃和保存结果返回', async () => {
@@ -371,7 +421,7 @@ describe('TradeRuleEditor', () => {
     const stateIndex = Array.from(sections).indexOf(wrapper.get('.rule-state-track').element)
     expect(noticeIndex).toBeGreaterThan(0)
     expect(stateIndex).toBe(noticeIndex + 1)
-    expect(wrapper.find('[aria-label="上移选股规则"]').exists()).toBe(false)
+    expect(wrapper.find('.app-reorder-list__handle').exists()).toBe(false)
     expect(wrapper.find('[aria-label="删除买卖规则"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('添加选股规则')
     expect(wrapper.text()).not.toContain('添加买卖规则')
@@ -457,7 +507,7 @@ describe('TradeRuleEditor', () => {
     const stockCards = wrapper.findAll('[data-testid="stock-rule-card"]')
     await stockCards[0]!.get('[data-testid="rule-card-toggle"]').trigger('click')
     expect(wrapper.findAll('[data-testid="rule-card-editor"]')).toHaveLength(1)
-    expect(stockCards[0]!.classes()).toContain('rule-card--wide')
+    expect(stockCards[0]!.classes()).toContain('is-expanded')
 
     await wrapper.get('[data-testid="buy-rule-group"]')
       .get('[data-testid="rule-card-toggle"]').trigger('click')

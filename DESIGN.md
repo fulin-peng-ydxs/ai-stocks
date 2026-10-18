@@ -397,6 +397,7 @@ Key Characteristics：
 | `SectorCompareChart` | `frontend/src/components/SectorCompareChart.vue` | 多板块连续指数的涨跌幅对比折线、市场指数超额和资金流/成员涨跌截面柱图 | 无直接系统组件种类；由板块行情分析区承载 | 折线与股票对比复用 `marketCompare` 的 N+1、统一交易日、停牌补齐和对比基期算法，并共同消费 `marketCompareChart.ts` 的折线 option 骨架；板块资金流和成员涨跌柱图保留领域私有配置，不并入通用折线组件；资金流、当日涨跌和成员涨跌缺失值保持空值，不得代填 0；页面偏好只消费 `sectors` 页面键，禁止与 `stocks` / `board` 串用默认指标或基准配置 |
 | `AppPagination` | `frontend/src/components/AppPagination.vue` | 列表页统一分页；按自身容器宽度从“总数 + 每页条数 + 页码导航”依次降级为“总数 + 页码导航”和紧凑页码导航，禁止完整分页器反向溢出窄分栏 | 由 `data-table`/`wide-table` 的 `pageSize` 配置间接驱动 | 分页页脚统一复用；页面不得直接使用 `el-pagination` 或复制宽度降级逻辑 |
 | `AppFilterSelect` | `frontend/src/components/AppFilterSelect.vue` | 容量自适应选择器，统一列表筛选与紧凑多选编辑 | 无直接系统组件种类 | 默认多选、可搜索、可清空；业务只允许单选时必须传 `multiple=false`，需要创建新选项时显式启用 `allowCreate`；非空候选项恰好全部选中时，优先于标签/数量模式显示 `allSelectedLabel`，默认“全部选中”、可自定义，传空字符串可关闭；多选消费方必须在标签模式声明 `visibleTagCount=1..3`，组件据此同时确定可见标签上限和 `medium / long / wide` 容量档位，未全选且选中项更多时保留对应数量的值并显示 `+N`；只需表达选择规模时使用 `displayMode=count`，未全选时固定显示“已选 N”并使用 `short` 容量，空值仍显示占位文案；两种模式均不得由页面另加宽度 class 或内联宽度覆盖；未显式提供可访问名称时统一继承占位文案；同类筛选和紧凑多选编辑优先复用 |
+| `AppReorderList` | `frontend/src/components/AppReorderList.vue` | 用户自定义顺序列表的共享拖动排序，统一六点 SVG 把手、落点、取消、滚动和键盘操作 | 无直接系统组件种类；列表内部交互 | 交易纪律选股、买入和卖出规则共用；稳定 key 不依赖下标；拖动松手或键盘确认才提交 reorder，保存归调用方；禁用及单项不显示把手，不在页面复制上移/下移按钮 |
 | `AppSortControl` | `frontend/src/components/AppSortControl.vue` | 统一“排序字段菜单 + 升降序切换”的紧凑排序交互 | 无直接系统组件种类 | 页面只提供稳定选项、当前字段和方向，不得复制下拉菜单、选中勾选和方向按钮；位于筛选或操作栏时固定作为最后一个控件，空间不足按 DOM 顺序整体换行 |
 | `AppSearchInput` | `frontend/src/components/AppSearchInput.vue` | 列表页关键字搜索输入，统一"输入即防抖查 + 回车/清空立即查" | 无直接系统组件种类 | 关键字输入防抖（默认 300ms，可传 `debounceMs`）后 `@search`，回车/清空立即 `@search`；消费页绑定 `v-model` + `@search`（`@search` = 重置第 1 页 + 加载）。查询触发、重置筛选和手动刷新的通用行为以「按钮与输入 › 查询、重置与刷新」为准。查询防抖编排统一走 `frontend/src/composables/useDebouncedQuery.ts`；关键字字段不得再用裸 `<el-input>` 手写防抖 |
 | `AppDatePicker` / `TradeDatePicker` | `frontend/src/components/AppDatePicker.vue`、`frontend/src/components/TradeDatePicker.vue` | 通用日期浮层入口与交易日选择器 | 无直接系统组件种类 | 页面和业务组件的日期、日期时间及范围选择必须经过 `AppDatePicker`，浮层默认在触发器下方，仅在下方左右对齐间回退；有明确交互理由时才允许覆盖到其他方位。交易日输入继续统一复用基于它封装的 `TradeDatePicker`，不得退回普通日期选择后自行补交易日校验。单日查询类页面若语义是“默认最新、允许回看”，统一使用 `defaultLatest` 显示数据最新交易日；训练区间、回测区间和数据任务边界等显式范围不得擅自默认 |
@@ -635,6 +636,12 @@ Key Characteristics：
 - 操作列和列表项操作区优先单行可见；表格中 `label="操作"` 必须按动作密度显式声明 `action-compact`（单动作或仅“更多”入口，默认下限 96px）或 `action`（两个及以上候选动作，默认下限 144px），不得只靠标签推导；两档默认统一居中表头与单元格，宽度均可由当前已渲染行的最低可用组合向上扩展，但不参与表格富余空间分配。单动作最低完整显示该动作；多动作最低保留两个操作入口，可由两个直接动作或“首个直接动作 + 更多”构成，“更多”计作一个入口；除调用方明确把全部动作收进更多外，禁止退化为仅“更多”。行内按钮组优先使用 `AppRowActions`，普通操作使用常规正文色，禁用操作降为弱文本色并满足语义 token 规则定义的文字层级阈值；hover / focus-visible 只做轻量文字色反馈，不对整组做透明度显隐；操作过多时用轻量“更多”菜单、分组、详情入口或抽屉，不用多行按钮堆叠；超过最低组合后按操作列实际宽度尽量展示更多直接动作，放不下的按钮自动收进“更多”菜单，不硬截断；“更多”菜单不得引入重动画、布局跳动或遮挡表格内容，菜单命令仍消费 Element Plus 按钮的 disabled/loading 状态。业务事实字段不得使用含糊的“操作”标签冒充动作列，应改为“操作笔数”等准确名称并声明真实语义角色。
 - 宽表通过表体横向滚动承载，不让整页横向滚动。
 - `data-overview/assetTable` 保持单一 `wide-table` 主成长实例和内部双向滚动。其“全部 / DuckDB / PG / 规划中”场景只切换业务列，不创建并列表格：全部显示双库共同字段，DuckDB 承载数据源/业务日/鲜活度/质量，PG 承载归属/空间，规划中不展示物理统计。质量列中 `0` 表示已纳入质检且零问题，`—` 表示不适用或未纳入；字段展开区必须展示中文名/说明及其元数据来源。所有可显隐列登记在 `pageRegistry.componentMeta.assetTable.columns` 并消费既有 `hiddenColumns`；筛选只属于会话态。低高度由表体内滚承接，窄屏工具栏自然换行，字段展开区保持独立嵌入表并允许横向滚动。
+
+#### 自定义顺序
+
+- 用户调整条目先后次序统一使用 `AppReorderList` 的拖动把手与落点反馈，移除逐行上移/下移按钮；键盘通过空格拿起、方向键/Home/End 选择位置、空格或 Enter 确认，Esc 取消。表头按字段排序继续使用表格与 `AppSortControl`。
+- 列表以稳定对象 key 标识新增、复制和已保存条目，禁止用列表下标承担身份；仅在所属完整集合或业务允许的组内重排，不能跨组改变业务类型。只读、归档、保存中禁止排序，单项不显示把手。
+- 拖动预览不改写表单；松手提交当前列表的顺序，移出列表、指针取消、Esc、卸载或数据/权限变化均取消；长列表拖动接近滚动边缘时自动滚动。保存仍由所属业务流程负责，失败保留草稿，不暗示已保存。层级菜单继续消费树组件专用的拖动、父子约束及服务端失败回滚，不套用平面列表。
 
 ### 四态反馈总则
 

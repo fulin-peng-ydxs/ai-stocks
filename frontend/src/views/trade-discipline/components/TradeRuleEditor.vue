@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { computed, ref, watch } from 'vue'
-import { ArrowDown, ArrowUp, CopyDocument, Delete, Plus } from '@element-plus/icons-vue'
+import { CopyDocument, Delete, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppIconButton from '@/components/AppIconButton.vue'
+import AppReorderList from '@/components/AppReorderList.vue'
 import BuiltinOptionRow from '@/components/BuiltinOptionRow.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
@@ -158,9 +159,7 @@ function toggleRule(kind: 'stock' | 'action', item: DraftStockRule | DraftAction
 }
 
 function groupedActionRules(side: ActionType) {
-  return form.value.action_rules
-    .map((item, index) => ({ item, index }))
-    .filter(({ item }) => item.action_type === side)
+  return form.value.action_rules.filter(item => item.action_type === side)
 }
 
 function emptyPayload(): RuleDraftPayload {
@@ -519,13 +518,17 @@ function copyActionRule(index: number): void {
   expandedRule.value = { kind: 'action', item: copied }
 }
 
-function move<T>(items: T[], index: number, offset: -1 | 1): void {
-  if (!canEditDetails.value) return
-  const target = index + offset
-  if (target < 0 || target >= items.length) return
-  const current = items[index]
-  items[index] = items[target]
-  items[target] = current
+// 新增/复制项没有 detail_id，以对象身份分配稳定 key，重排时保留展开内容和输入焦点。
+const ruleKeys = new WeakMap<object, string>()
+let nextRuleKey = 0
+function ruleKey(item: DraftStockRule | DraftActionRule): string {
+  if (item.detail_id) return item.detail_id
+  if (!ruleKeys.has(item)) ruleKeys.set(item, `local-rule-${++nextRuleKey}`)
+  return ruleKeys.get(item)!
+}
+
+function reorderStock(items: DraftStockRule[]): void {
+  if (canEditDetails.value && !command.value) form.value.stock_rules = items
 }
 
 function removeStock(index: number): void {
@@ -539,15 +542,13 @@ function removeAction(index: number): void {
   if (expandedRule.value?.item === removed) expandedRule.value = null
 }
 
-function moveAction(side: ActionType, groupIndex: number, offset: -1 | 1): void {
-  if (!canEditDetails.value) return
-  const grouped = groupedActionRules(side)
-  const current = grouped[groupIndex]
-  const target = grouped[groupIndex + offset]
-  if (!current || !target) return
-  const value = form.value.action_rules[current.index]
-  form.value.action_rules[current.index] = form.value.action_rules[target.index]
-  form.value.action_rules[target.index] = value
+function reorderActions(side: ActionType, items: DraftActionRule[]): void {
+  if (!canEditDetails.value || command.value) return
+  // 仅替换当前方向占用的位置，另一方向的顺序和内容保持稳定。
+  let index = 0
+  form.value.action_rules = form.value.action_rules.map(item => (
+    item.action_type === side ? items[index++] : item
+  ))
 }
 
 function managementText(): string {
@@ -646,41 +647,46 @@ defineExpose({
         <section class="detail-group">
           <header><div><h4 class="app-section-title">选股规则</h4><p>仅启用项参与发布校验和资金汇总</p></div><el-button v-if="canEditDetails" v-permission="'trade-discipline:rule-manage'" :icon="Plus" @click="addStockRule">添加选股规则</el-button></header>
           <AppStateBlock v-if="!form.stock_rules.length" state="empty" size="tiny" title="尚未添加选股规则" />
-          <div v-else class="rule-card-grid">
-            <RuleSummaryCard
-              v-for="(item, index) in form.stock_rules"
-              :key="item.detail_id || `stock-${index}`"
-              :panel-id="`stock-rule-panel-${index}`"
-              :index-label="cardIndex(index)"
-              :title="cardTitle(item, `未命名选股规则 ${index + 1}`)"
-              :meta="stockCapitalMeta(item)"
-              :content="[stockConditionSummary(item), item.content].filter(Boolean).join(' · ')"
-              :enabled="item.enabled"
-              :expanded="isRuleExpanded('stock', item)"
-              :editable="canEditDetails"
-              :class="{ 'rule-card--wide': isRuleExpanded('stock', item) }"
-              data-testid="stock-rule-card"
-              @toggle="toggleRule('stock', item)"
-              @update:enabled="item.enabled = $event"
-            >
-              <template #actions>
-                <AppIconButton v-permission="'trade-discipline:rule-manage'" label="复制选股规则" tooltip="复制选股规则" size="sm" @click="copyStockRule(index)"><CopyDocument /></AppIconButton>
-                <AppIconButton v-permission="'trade-discipline:rule-manage'" label="上移选股规则" tooltip="上移选股规则" size="sm" :disabled="index === 0" @click="move(form.stock_rules, index, -1)"><ArrowUp /></AppIconButton>
-                <AppIconButton v-permission="'trade-discipline:rule-manage'" label="下移选股规则" tooltip="下移选股规则" size="sm" :disabled="index === form.stock_rules.length - 1" @click="move(form.stock_rules, index, 1)"><ArrowDown /></AppIconButton>
-                <AppIconButton v-permission="'trade-discipline:rule-manage'" label="删除选股规则" tooltip="删除选股规则" size="sm" tone="danger" @click="removeStock(index)"><Delete /></AppIconButton>
-              </template>
-              <div class="rule-card-form rule-card-form--stock">
-                <el-form-item label="规则名称" :required="editing && canManage"><el-input v-model="item.name" data-testid="stock-rule-name-input" maxlength="80" /></el-form-item>
-                <el-form-item label="资金上限（元）" :required="editing && canManage && item.enabled"><FixedDecimalInput v-model="item.max_capital" grouped data-testid="stock-rule-capital-input" /></el-form-item>
-                <el-form-item label="股价下限（元）"><FixedDecimalInput :model-value="item.price_min ?? null" @update:model-value="item.price_min = $event" :scale="4" :integer-digits="16" placeholder="不限" data-testid="stock-price-min" /></el-form-item>
-                <el-form-item label="股价上限（元）"><FixedDecimalInput :model-value="item.price_max ?? null" @update:model-value="item.price_max = $event" :scale="4" :integer-digits="16" placeholder="不限" data-testid="stock-price-max" /></el-form-item>
-                <el-form-item v-for="condition in stockConditionFields" :key="condition.key" :label="condition.label">
-                  <el-select v-model="item[condition.key]" :data-testid="`stock-${condition.key}`"><el-option v-for="option in conditionFilterOptions" :key="option.value" :label="option.label" :value="option.value" /></el-select>
-                </el-form-item>
-                <el-form-item class="rule-card-form__content" label="规则内容" :required="editing && canManage"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
-              </div>
-            </RuleSummaryCard>
-          </div>
+          <AppReorderList
+            v-else
+            :items="form.stock_rules"
+            :item-key="ruleKey"
+            :item-label="item => cardTitle(item, '未命名选股规则')"
+            label="选股规则排序"
+            :disabled="!canEditDetails || !!command"
+            @reorder="reorderStock"
+          >
+            <template #default="{ item, index }">
+              <RuleSummaryCard
+                :panel-id="`stock-rule-panel-${index}`"
+                :index-label="cardIndex(index)"
+                :title="cardTitle(item, `未命名选股规则 ${index + 1}`)"
+                :meta="stockCapitalMeta(item)"
+                :content="[stockConditionSummary(item), item.content].filter(Boolean).join(' · ')"
+                :enabled="item.enabled"
+                :expanded="isRuleExpanded('stock', item)"
+                :editable="canEditDetails"
+                data-testid="stock-rule-card"
+                @toggle="toggleRule('stock', item)"
+                @update:enabled="item.enabled = $event"
+              >
+                <template #actions>
+                  <AppIconButton v-permission="'trade-discipline:rule-manage'" label="复制选股规则" tooltip="复制选股规则" size="sm" @click="copyStockRule(index)"><CopyDocument /></AppIconButton>
+                  <AppIconButton v-permission="'trade-discipline:rule-manage'" label="删除选股规则" tooltip="删除选股规则" size="sm" tone="danger" @click="removeStock(index)"><Delete /></AppIconButton>
+                </template>
+                <div class="rule-card-form rule-card-form--stock">
+                  <el-form-item label="规则名称" :required="editing && canManage"><el-input v-model="item.name" data-testid="stock-rule-name-input" maxlength="80" /></el-form-item>
+                  <el-form-item label="资金上限（元）" :required="editing && canManage && item.enabled"><FixedDecimalInput v-model="item.max_capital" grouped data-testid="stock-rule-capital-input" /></el-form-item>
+                  <el-form-item label="股价下限（元）"><FixedDecimalInput :model-value="item.price_min ?? null" @update:model-value="item.price_min = $event" :scale="4" :integer-digits="16" placeholder="不限" data-testid="stock-price-min" /></el-form-item>
+                  <el-form-item label="股价上限（元）"><FixedDecimalInput :model-value="item.price_max ?? null" @update:model-value="item.price_max = $event" :scale="4" :integer-digits="16" placeholder="不限" data-testid="stock-price-max" /></el-form-item>
+                  <el-form-item v-for="condition in stockConditionFields" :key="condition.key" :label="condition.label">
+                    <el-select v-model="item[condition.key]" :data-testid="`stock-${condition.key}`"><el-option v-for="option in conditionFilterOptions" :key="option.value" :label="option.label" :value="option.value" /></el-select>
+                  </el-form-item>
+                  <el-form-item class="rule-card-form__content" label="规则内容" :required="editing && canManage"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
+                </div>
+              </RuleSummaryCard>
+            </template>
+          </AppReorderList>
         </section>
 
         <TradeDisciplineSectionPanel
@@ -695,65 +701,71 @@ defineExpose({
             </template>
             <template #default="{ group }">
               <AppStateBlock v-if="!groupedActionRules(group.value).length" state="empty" size="tiny" :title="`尚未添加${group.label}`" />
-              <div v-else class="rule-card-grid rule-card-grid--single">
-                <RuleSummaryCard
-                  v-for="({ item, index }, groupIndex) in groupedActionRules(group.value)"
-                  :key="item.detail_id || `action-${index}`"
-                  :panel-id="`${group.value}-rule-panel-${groupIndex}`"
-                  :index-label="cardIndex(groupIndex)"
-                  :title="cardTitle(item, `未命名${group.label} ${groupIndex + 1}`)"
-                  :meta="`类型 · ${subtypeLabel(item)}`"
-                  :content="item.content"
-                  :enabled="item.enabled"
-                  :expanded="isRuleExpanded('action', item)"
-                  :editable="canEditDetails"
-                  data-testid="action-rule-card"
-                  @toggle="toggleRule('action', item)"
-                  @update:enabled="item.enabled = $event"
-                >
-                  <template #actions>
-                    <AppIconButton v-permission="'trade-discipline:rule-manage'" label="复制买卖规则" tooltip="复制买卖规则" size="sm" @click="copyActionRule(index)"><CopyDocument /></AppIconButton>
-                    <AppIconButton v-permission="'trade-discipline:rule-manage'" label="上移买卖规则" tooltip="上移买卖规则" size="sm" :disabled="groupIndex === 0" @click="moveAction(group.value, groupIndex, -1)"><ArrowUp /></AppIconButton>
-                    <AppIconButton v-permission="'trade-discipline:rule-manage'" label="下移买卖规则" tooltip="下移买卖规则" size="sm" :disabled="groupIndex === groupedActionRules(group.value).length - 1" @click="moveAction(group.value, groupIndex, 1)"><ArrowDown /></AppIconButton>
-                    <AppIconButton v-permission="'trade-discipline:rule-manage'" label="删除买卖规则" tooltip="删除买卖规则" size="sm" tone="danger" @click="removeAction(index)"><Delete /></AppIconButton>
-                  </template>
-                  <div class="rule-card-form rule-card-form--action">
-                    <el-form-item label="规则名称" :required="editing && canManage"><el-input v-model="item.name" data-testid="action-rule-name-input" maxlength="80" /></el-form-item>
-                    <el-form-item :required="editing && canManage">
-                      <template #label>
-                        类型
-                        <HelpTip title="类型说明" :width="360" test-id="action-rule-type-help">
-                          <HelpTipItem question="类型如何维护">
-                            <ul>
-                              <li>内置类型不可删除；输入新类型并保存后可复用，自定义类型可从下拉项删除。</li>
-                            </ul>
-                          </HelpTipItem>
-                        </HelpTip>
-                      </template>
-                      <el-select v-model="item.action_subtype" filterable allow-create default-first-option maxlength="40" placeholder="选择或输入类型" data-testid="action-rule-type-select">
-                        <el-option
-                          v-if="subtypeIsMissing(item, group.value)"
-                          :label="missingSubtypeLabel(item)"
-                          :value="item.action_subtype"
-                          disabled
-                        />
-                        <el-option v-for="option in subtypeOptions(group.value)" :key="option.name" :label="option.label || option.name" :value="option.name">
-                          <BuiltinOptionRow :label="option.label || option.name" :builtin="option.builtin">
-                            <AppIconButton
-                              v-permission="'trade-discipline:rule-manage'"
-                              label="删除自定义买卖类型"
-                              tooltip="删除自定义买卖类型"
-                              size="sm"
-                              @click.stop="removeActionSubtype(option)"
-                            ><Delete /></AppIconButton>
-                          </BuiltinOptionRow>
-                        </el-option>
-                      </el-select>
-                    </el-form-item>
-                    <el-form-item class="rule-card-form__content" label="规则内容" :required="editing && canManage"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
-                  </div>
-                </RuleSummaryCard>
-              </div>
+              <AppReorderList
+                v-else
+                :items="groupedActionRules(group.value)"
+                :item-key="ruleKey"
+                :item-label="item => cardTitle(item, `未命名${group.label}`)"
+                :label="`${group.label}排序`"
+                :disabled="!canEditDetails || !!command"
+                @reorder="reorderActions(group.value, $event)"
+              >
+                <template #default="{ item, index: groupIndex }">
+                  <RuleSummaryCard
+                    :panel-id="`${group.value}-rule-panel-${groupIndex}`"
+                    :index-label="cardIndex(groupIndex)"
+                    :title="cardTitle(item, `未命名${group.label} ${groupIndex + 1}`)"
+                    :meta="`类型 · ${subtypeLabel(item)}`"
+                    :content="item.content"
+                    :enabled="item.enabled"
+                    :expanded="isRuleExpanded('action', item)"
+                    :editable="canEditDetails"
+                    data-testid="action-rule-card"
+                    @toggle="toggleRule('action', item)"
+                    @update:enabled="item.enabled = $event"
+                  >
+                    <template #actions>
+                      <AppIconButton v-permission="'trade-discipline:rule-manage'" label="复制买卖规则" tooltip="复制买卖规则" size="sm" @click="copyActionRule(form.action_rules.indexOf(item))"><CopyDocument /></AppIconButton>
+                      <AppIconButton v-permission="'trade-discipline:rule-manage'" label="删除买卖规则" tooltip="删除买卖规则" size="sm" tone="danger" @click="removeAction(form.action_rules.indexOf(item))"><Delete /></AppIconButton>
+                    </template>
+                    <div class="rule-card-form rule-card-form--action">
+                      <el-form-item label="规则名称" :required="editing && canManage"><el-input v-model="item.name" data-testid="action-rule-name-input" maxlength="80" /></el-form-item>
+                      <el-form-item :required="editing && canManage">
+                        <template #label>
+                          类型
+                          <HelpTip title="类型说明" :width="360" test-id="action-rule-type-help">
+                            <HelpTipItem question="类型如何维护">
+                              <ul>
+                                <li>内置类型不可删除；输入新类型并保存后可复用，自定义类型可从下拉项删除。</li>
+                              </ul>
+                            </HelpTipItem>
+                          </HelpTip>
+                        </template>
+                        <el-select v-model="item.action_subtype" filterable allow-create default-first-option maxlength="40" placeholder="选择或输入类型" data-testid="action-rule-type-select">
+                          <el-option
+                            v-if="subtypeIsMissing(item, group.value)"
+                            :label="missingSubtypeLabel(item)"
+                            :value="item.action_subtype"
+                            disabled
+                          />
+                          <el-option v-for="option in subtypeOptions(group.value)" :key="option.name" :label="option.label || option.name" :value="option.name">
+                            <BuiltinOptionRow :label="option.label || option.name" :builtin="option.builtin">
+                              <AppIconButton
+                                v-permission="'trade-discipline:rule-manage'"
+                                label="删除自定义买卖类型"
+                                tooltip="删除自定义买卖类型"
+                                size="sm"
+                                @click.stop="removeActionSubtype(option)"
+                              ><Delete /></AppIconButton>
+                            </BuiltinOptionRow>
+                          </el-option>
+                        </el-select>
+                      </el-form-item>
+                      <el-form-item class="rule-card-form__content" label="规则内容" :required="editing && canManage"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
+                    </div>
+                  </RuleSummaryCard>
+                </template>
+              </AppReorderList>
             </template>
           </TradeDirectionGroupGrid>
         </TradeDisciplineSectionPanel>
@@ -791,9 +803,6 @@ defineExpose({
 .detail-group > header { justify-content: space-between; gap: var(--app-space-3); margin-bottom: var(--app-space-2); }
 
 .detail-group p { margin: var(--app-space-1) 0 0; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
-.rule-card-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--app-space-2); }
-.rule-card-grid--single { grid-template-columns: 1fr; }
-.rule-card--wide { grid-column: 1 / -1; }
 .rule-card-form { display: grid; row-gap: 0; column-gap: var(--app-space-3); }
 .rule-card-form--stock { grid-template-columns: minmax(180px, 1fr) minmax(180px, 0.7fr); }
 .rule-card-form--action { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
@@ -805,7 +814,6 @@ defineExpose({
   .rule-editor { }
   .rule-state-track, .rule-editor__base { grid-template-columns: 1fr; }
   .rule-state-track > div + div { border-left: 0; border-top: 1px solid var(--el-border-color-lighter); }
-  .rule-card-grid { grid-template-columns: 1fr; }
 }
 @container app-viewport (max-width: 760px) {
   .rule-editor__head, .detail-group > header { align-items: stretch; flex-direction: column; }

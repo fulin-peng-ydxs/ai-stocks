@@ -100,6 +100,7 @@
 - 主 / 次 / 危险操作选型：
 - 按钮位置：按真实影响范围判断，不按动词机械归类；作用于整页或页面唯一主任务的主操作放 `.page-head-actions`、位于 `PageSettingsTrigger` 左侧并使用默认 32px 尺寸；当前页签、局部表单、选中对象或局部区块命令留在对应区域工具区（见 DESIGN.md §4「按钮与输入」）。
 - 控件宽度：普通控件按内容容量选择 `.app-control-width-compact/short/medium/long/wide/fill` 中能完整承载常态内容的最小档位；多选 `AppFilterSelect` 必须按使用场景声明 `visibleTagCount=1..3`，由组件确定可见值、`+N` 与宽度档位，或使用 `displayMode=count` 只显示“已选 N”；不得另加宽度 class 或内联宽度；独立复合组件例外必须使用具名 class 并说明理由。
+- 自定义条目顺序：统一复用 `AppReorderList`，使用稳定 key、组内拖动与键盘确认/取消；不新增上移/下移按钮，保存沿用业务流程。层级树沿用树组件拖动契约。
 - 排序操作：统一复用 `AppSortControl`，并作为所属筛选/操作栏的最后一个控件；空间不足保持 DOM 顺序整体换行。
 - 图标关闭/移除临时界面：使用 `AppCloseButton`；库内置关闭由全局适配，档位、状态、适用范围和业务边界统一引用 DESIGN §4，不私写配方。
 - 纯图标操作：使用 `AppIconButton`；异步纯图标操作使用 `:loading`；具体尺寸、显式 tooltip 和 Unicode 禁令见 DESIGN。
