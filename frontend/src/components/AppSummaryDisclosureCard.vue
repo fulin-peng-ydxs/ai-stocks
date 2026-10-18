@@ -50,7 +50,7 @@ function toggle() {
         :type="collapsible ? 'button' : undefined"
         class="app-summary-disclosure-card__summary"
         :class="{ 'has-leading': $slots.leading || indexLabel }"
-        data-overflow-tooltip-disabled
+        :data-overflow-tooltip-disabled="variant === 'card' ? '' : undefined"
         :aria-expanded="collapsible ? expanded : undefined"
         :aria-controls="collapsible ? panelId : undefined"
         :aria-label="collapsible ? toggleLabel : undefined"
@@ -214,10 +214,8 @@ button.app-summary-disclosure-card__summary:active { background: var(--app-butto
 .is-compact .app-summary-disclosure-card__bar { min-height: var(--app-density-control-height); }
 .is-compact .app-summary-disclosure-card__summary { padding: var(--app-space-2) 0; }
 .is-compact .app-summary-disclosure-card__summary.has-leading { grid-template-columns: auto minmax(0, 1fr) 16px; }
-.is-compact .app-summary-disclosure-card__copy { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--app-space-1) var(--app-space-2); }
-.is-compact .app-summary-disclosure-card__title-row { flex: 0 1 auto; flex-wrap: wrap; }
-.is-compact .app-summary-disclosure-card__title-row strong { white-space: normal; overflow-wrap: anywhere; }
-.is-compact .app-summary-disclosure-card__preview { flex: 1 1 120px; margin: 0; white-space: normal; overflow-wrap: anywhere; }
+.is-compact .app-summary-disclosure-card__copy { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: baseline; gap: var(--app-space-2); }
+.is-compact .app-summary-disclosure-card__preview { min-width: 0; margin: 0; }
 .is-compact .app-summary-disclosure-card__editor { padding: var(--app-space-2) 0 var(--app-space-3); border-top: 0; }
 .is-static .app-summary-disclosure-card__summary { cursor: default; }
 @media (hover: hover) and (pointer: fine) {

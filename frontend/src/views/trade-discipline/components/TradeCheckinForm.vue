@@ -351,6 +351,8 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
           <div v-else-if="existing && editing && canSubmit" class="checkin-head__commands">
             <el-button
               v-permission="'trade-discipline:checkin-submit'"
+              type="danger"
+              plain
               :disabled="submitting"
               @click="cancelAmend"
             >取消修正</el-button>

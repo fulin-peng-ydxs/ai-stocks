@@ -1,5 +1,6 @@
 export type AdaptiveColumnRole =
   | 'structural'
+  | 'switch'
   | 'rank'
   | 'code'
   | 'name'
@@ -21,6 +22,7 @@ interface AdaptiveColumnRule {
 }
 
 export type AdaptiveColumnAlign = 'left' | 'center' | 'right'
+export type TableControlWidth = 'compact' | 'short' | 'medium' | 'long' | 'wide'
 
 interface AdaptiveColumnSizing extends AdaptiveColumnRule {
   headerCapped?: boolean
@@ -42,6 +44,8 @@ export interface AdaptiveColumnDescriptor {
   filterSelectVisibleTagCount?: number
   /** 表格内 AppFilterSelect 的展示方式；count 只承载“已选 N”。 */
   filterSelectDisplayMode?: 'tags' | 'count'
+  /** 表内编辑控件（或同组控件）的容量档位，含控件外的单元格留白。 */
+  controlWidth?: TableControlWidth
 }
 
 interface AdaptiveColumnPolicy extends AdaptiveColumnRule {
@@ -57,6 +61,8 @@ interface AdaptiveColumnPolicy extends AdaptiveColumnRule {
  */
 export const ADAPTIVE_COLUMN_RULES: Record<AdaptiveColumnRole, AdaptiveColumnPolicy> = {
   structural: { width: 48, align: 'center' },
+  // 标准开关 40px + 单元格留白 24px，额外保留 16px 操作空间。
+  switch: { width: 80, align: 'center' },
   rank: { width: 60, align: 'center' },
   code: { minWidth: 112, maxAutoWidth: 192, align: 'left' },
   name: { minWidth: 128, maxAutoWidth: 240, align: 'left' },
@@ -91,8 +97,14 @@ const LEADING_CONTROL_SLOT_WIDTH = 32
 const MAX_LEADING_CONTROLS = 4
 const COLUMN_WIDTH_GRID = 8
 const TABLE_CELL_HORIZONTAL_INSET = 24
-const FILTER_SELECT_WIDTH_BY_VISIBLE_TAG_COUNT = [0, 180, 220, 300] as const
-const FILTER_SELECT_COUNT_MODE_WIDTH = 140
+// 与 global.css 的 --app-control-width-* 档位一致；统一供编辑列和多选列估算。
+const TABLE_CONTROL_WIDTHS: Record<TableControlWidth, number> = {
+  compact: 96, short: 140, medium: 180, long: 220, wide: 300,
+}
+const FILTER_SELECT_WIDTH_BY_VISIBLE_TAG_COUNT = [
+  0, TABLE_CONTROL_WIDTHS.medium, TABLE_CONTROL_WIDTHS.long, TABLE_CONTROL_WIDTHS.wide,
+] as const
+const FILTER_SELECT_COUNT_MODE_WIDTH = TABLE_CONTROL_WIDTHS.short
 
 function glyphWidthInEm(char: string): number {
   if (/\s/.test(char)) return 0.32
@@ -212,6 +224,9 @@ export function resolveAdaptiveColumnWidth(
   const headerIndent = resolveLeadingControlsReserve(descriptor.leadingControls)
   const baseMinWidth = Math.max(
     (policy.minWidth ?? 0) + headerIndent,
+    descriptor.controlWidth
+      ? roundUpToGrid(TABLE_CONTROL_WIDTHS[descriptor.controlWidth] + TABLE_CELL_HORIZONTAL_INSET)
+      : 0,
     resolveFilterSelectReserve(
       descriptor.filterSelectVisibleTagCount,
       descriptor.filterSelectDisplayMode,

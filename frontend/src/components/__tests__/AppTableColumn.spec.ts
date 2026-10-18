@@ -83,6 +83,29 @@ describe('自适应表格列', () => {
     expect(sizing.minWidth).toBeGreaterThanOrEqual(120)
   })
 
+  it('开关列保留控件、留白和操作空间，不占结构列宽度或富余空间', () => {
+    const wrapper = mount(AppTableColumn, {
+      props: { label: '启用', role: 'switch' },
+      global: { stubs: { ElTableColumn: ElTableColumnStub } },
+    })
+    expect(wrapper.get('.column').attributes('data-width')).toBe('80')
+    expect(wrapper.get('.column').attributes('data-align')).toBe('center')
+    expect(wrapper.get('.column').attributes('data-class-name')).not.toContain('overflow-aware')
+    expect(resolveAdaptiveColumnWidth({ type: 'selection' }).width).toBe(48)
+  })
+
+  it.each([
+    ['compact', 120], ['short', 168], ['medium', 208], ['long', 248], ['wide', 328],
+  ] as const)('编辑控件 %s 档位计入单元格留白并向上对齐网格', (controlWidth, minWidth) => {
+    const wrapper = mount(AppTableColumn, {
+      props: { label: '值', role: 'number', controlWidth },
+      global: { stubs: { ElTableColumn: ElTableColumnStub } },
+    })
+    expect(wrapper.get('.column').attributes('data-min-width')).toBe(String(minWidth))
+    expect(wrapper.get('.column').attributes('data-width')).toBeUndefined()
+    expect(resolveAdaptiveColumnWidth({ role: 'description', controlWidth: 'compact' }).minWidth).toBe(200)
+  })
+
   it('内容列默认统一启用真实溢出判定，结构列和操作列保持专用契约', () => {
     const content = mount(AppTableColumn, {
       props: { label: '评级', prop: 'grade' },
@@ -207,6 +230,7 @@ describe('自适应表格列', () => {
 
   it.each([
     ['structural', 'center'],
+    ['switch', 'center'],
     ['rank', 'center'],
     ['code', 'left'],
     ['name', 'left'],

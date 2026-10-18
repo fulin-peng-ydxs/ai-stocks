@@ -45,6 +45,25 @@ describe('AppSummaryDisclosureCard', () => {
     expect(wrapper.get('#check-detail').text()).toBe('对象明细')
   })
 
+  it.each([true, false])('紧凑行保留完整摘要并允许真实截断提示，collapsible=%s', (collapsible) => {
+    const previewText = '全历史异常 0 行；近90交易日台账范围 0 行'
+    const wrapper = mount(AppSummaryDisclosureCard, {
+      props: {
+        panelId: 'compact-summary', title: '市值关系', preview: previewText,
+        toggleLabel: '展开市值关系', expanded: false, variant: 'compact', collapsible,
+      },
+    })
+    expect(wrapper.get('.app-summary-disclosure-card__summary').attributes('data-overflow-tooltip-disabled')).toBeUndefined()
+    const preview = wrapper.get<HTMLElement>('.app-summary-disclosure-card__preview').element
+    expect(preview.textContent?.trim()).toBe(previewText)
+    preview.style.textOverflow = 'ellipsis'
+    Object.defineProperty(preview, 'clientWidth', { value: 100, configurable: true })
+    Object.defineProperty(preview, 'scrollWidth', { value: 300, configurable: true })
+    expect(findOverflowTooltipTarget(preview)).toBe(preview)
+    Object.defineProperty(preview, 'clientWidth', { value: 400, configurable: true })
+    expect(findOverflowTooltipTarget(preview)).toBeNull()
+  })
+
   it('无需明细的静态行保留同一摘要结构，不提供无效按钮或切换事件', async () => {
     const wrapper = mount(AppSummaryDisclosureCard, {
       props: {

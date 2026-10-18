@@ -26,10 +26,9 @@ const groups = computed(() => props.report.groups.map(group => ({
   ...group,
   checks: group.checks.map(check => ({
     ...check, key: keyOf(group.group, check), details: checkupDetailGroups(check),
-    summary: check.detail.length > 100 ? `${check.detail.slice(0, 100)}…` : check.detail,
     // 提醒/失败始终可查看说明；通过项只有额外依据或明细时才增加展开操作。
     expandable: status(check) !== 'pass'
-      || Boolean(check.items?.length || check.evidence?.length || check.help),
+      || Boolean(check.items?.length || check.evidence?.length || check.help || check.detail.length > 100),
   })),
 })))
 function toggle(key: string) {
@@ -48,7 +47,7 @@ function toggle(key: string) {
     <AppDetailSection v-for="group in groups" :key="group.group" :title="group.group">
       <AppSummaryDisclosureCard v-for="check in group.checks" :key="check.key"
         variant="compact" :panel-id="`checkup-${encodeURIComponent(check.key)}`"
-        :title="check.name" :preview="check.summary" :collapsible="check.expandable"
+        :title="check.name" :preview="check.detail" :collapsible="check.expandable"
         :expanded="expanded.includes(check.key)"
         :toggle-label="`${expanded.includes(check.key) ? '收起' : '展开'} ${check.name}`"
         @toggle="toggle(check.key)">
@@ -56,7 +55,7 @@ function toggle(key: string) {
           <ElTag :type="colors[status(check)]" size="small" effect="plain">{{ labels[status(check)] }}</ElTag>
         </template>
         <div class="checkup-detail">
-          <p v-if="check.detail.length > 100" class="checkup-description">
+          <p v-if="check.detail" class="checkup-description">
             {{ check.detail }}
           </p>
           <section v-for="(detail, detailIndex) in check.details" :key="detailIndex" class="checkup-detail-group">

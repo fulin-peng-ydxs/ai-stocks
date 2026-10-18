@@ -41,10 +41,20 @@ describe('体检报告展示与台账定位', () => {
   it('兼容旧任务长说明，保留全文但默认不撑高行', async () => {
     const legacy = { ...check(), items: undefined, detail: '历史检查说明。'.repeat(40) }
     const wrapper = render(report(legacy))
-    expect(wrapper.get('.app-summary-disclosure-card__preview').text()).toBe(`${legacy.detail.slice(0, 100)}…`)
+    expect(wrapper.get('.app-summary-disclosure-card__preview').text()).toBe(legacy.detail)
     expect(wrapper.find('.checkup-description').exists()).toBe(false)
     await wrapper.get('.app-summary-disclosure-card__summary').trigger('click')
     expect(wrapper.get('.checkup-description').text()).toBe(legacy.detail)
+  })
+
+  it('长说明通过项也可展开，短摘要的原文不做字符裁剪', async () => {
+    const detail = '全历史异常 0 行；近90交易日台账范围 0 行。'.repeat(8)
+    const wrapper = render(report({ name: '市值关系', ok: true, detail }))
+    const trigger = wrapper.get('button.app-summary-disclosure-card__summary')
+    expect(wrapper.get('.app-summary-disclosure-card__preview').text()).toBe(detail)
+    await trigger.trigger('click')
+    expect(wrapper.get('.checkup-description').text()).toBe(detail)
+    expect(wrapper.find('.checkup-detail-group').exists()).toBe(false)
   })
 
   it('短说明不增加展开操作，空报告有明确反馈', () => {

@@ -799,7 +799,7 @@ defineExpose({
 .rule-card-form--action { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
 .rule-card-form__content { grid-column: 1 / -1; }
 .rule-card-form :deep(.el-select), .rule-card-form :deep(.el-input) { width: 100%; }
-.rule-editor__footer { position: sticky; bottom: calc(var(--app-space-5) * -1); z-index: 2; justify-content: flex-end; gap: var(--app-space-2); margin: var(--app-space-5) calc(var(--app-space-5) * -1) calc(var(--app-space-5) * -1); padding: var(--app-space-3) var(--app-space-5); border-top: 1px solid var(--el-border-color); background: var(--el-bg-color); }
+.rule-editor__footer { position: sticky; bottom: 0; z-index: 2; justify-content: flex-end; flex-wrap: wrap; gap: var(--app-space-2); margin: var(--app-space-5) calc(var(--app-space-5) * -1) calc(var(--app-space-5) * -1); padding: var(--app-space-3) var(--app-space-5); border-top: 1px solid var(--el-border-color); background: var(--el-bg-color); }
 .dirty-copy { margin-right: auto; color: var(--el-color-warning); font-size: var(--app-font-size-caption); }
 @container app-viewport (max-width: 1100px) {
   .rule-editor { }
@@ -809,7 +809,6 @@ defineExpose({
 @container app-viewport (max-width: 760px) {
   .rule-editor__head, .detail-group > header { align-items: stretch; flex-direction: column; }
   .rule-editor__commands { flex-wrap: wrap; }
-  .rule-editor__footer { flex-wrap: wrap; }
   .rule-card-form--stock, .rule-card-form--action { grid-template-columns: 1fr; }
   .rule-card-form__content { grid-column: auto; }
 }

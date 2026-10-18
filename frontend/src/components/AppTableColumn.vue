@@ -12,6 +12,7 @@ import {
   resolveActionColumnWidth,
   resolveAdaptiveColumnWidth,
   type AdaptiveColumnRole,
+  type TableControlWidth,
 } from '@/components/table/adaptiveColumnWidth'
 import {
   ROW_ACTION_COLUMN_WIDTH_CONTEXT,
@@ -37,6 +38,8 @@ const props = defineProps<{
   filterSelectVisibleTagCount?: number
   /** 单元格内多选 AppFilterSelect 的展示方式；count 只承载“已选 N”。 */
   filterSelectDisplayMode?: 'tags' | 'count'
+  /** 编辑控件或控件组的语义容量；列宽额外计入单元格留白。 */
+  controlWidth?: TableControlWidth
   /** 长文本摘要保持单行，超出列宽时由单元格原生绘制省略号。 */
   singleLine?: boolean
 }>()
@@ -71,7 +74,7 @@ const isActionColumn = computed(() => (
   sizing.value.role === 'action' || sizing.value.role === 'action-compact'
 ))
 const overflowAware = computed(() => (
-  !['structural', 'rank', 'action', 'action-compact'].includes(sizing.value.role)
+  !['structural', 'switch', 'rank', 'action', 'action-compact'].includes(sizing.value.role)
 ))
 const resolvedColumnClassName = computed(() => [
   attrs.className,

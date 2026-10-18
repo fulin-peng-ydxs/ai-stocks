@@ -292,12 +292,14 @@ describe('TradeCheckinForm', () => {
     expect(wrapper.text()).toContain('当前内容与最新修订一致；修改后才可提交')
     expect(submitButton.element.closest('.checkin-head__facts')).not.toBeNull()
     expect(wrapper.find('.checkin-actions').exists()).toBe(false)
+    const cancelButton = wrapper.findAll('button').find((button) => button.text() === '取消修正')!
+    expect(cancelButton.classes()).toEqual(expect.arrayContaining(['el-button--danger', 'is-plain']))
     await submitButton.trigger('click')
     expect(amendCheckin).not.toHaveBeenCalled()
 
     await wrapper.get('textarea').setValue('尚未提交的修改')
     expect(submitButton.attributes('disabled')).toBeUndefined()
-    await wrapper.findAll('button').find((button) => button.text() === '取消修正')!.trigger('click')
+    await cancelButton.trigger('click')
     expect(wrapper.get('textarea').element.value).toBe('当前修订说明')
     expect(wrapper.get('textarea').attributes('disabled')).toBeDefined()
     expect(wrapper.findAll('button').some((button) => button.text() === '修正打卡')).toBe(true)

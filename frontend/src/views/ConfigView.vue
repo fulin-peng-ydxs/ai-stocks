@@ -1761,7 +1761,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               class="item-table"
               embedded
             >
-              <AppTableColumn label="启用" role="structural">
+              <AppTableColumn label="启用" role="switch">
                 <template #default="{ row }">
                   <StrategyItemEnabledSwitch
                     v-model="row.enabled"
@@ -1771,7 +1771,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                   />
                 </template>
               </AppTableColumn>
-              <AppTableColumn label="指标">
+              <AppTableColumn label="指标" control-width="long">
                 <template #default="{ row }">
                   <IndicatorSelect
                     v-model="row.indicator"
@@ -1790,7 +1790,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 </template>
               </AppTableColumn>
 
-              <AppTableColumn label="打分方式">
+              <AppTableColumn label="打分方式" control-width="wide">
                 <template #default="{ row }">
                   <div class="scoring-cell">
                     <el-radio-group
@@ -1840,7 +1840,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 </template>
               </AppTableColumn>
 
-              <AppTableColumn label="权重">
+              <AppTableColumn label="权重" control-width="medium">
                 <template #default="{ row, $index }">
                   <div class="weight-cell">
                     <el-slider
@@ -2732,7 +2732,9 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   align-items: center;
   gap: var(--app-space-2);
 }
+.weight-cell :deep(.el-slider) { flex: 1 1 auto; min-width: 0; }
 .wval {
+  flex: none;
   width: 42px;
   text-align: right;
   font-variant-numeric: tabular-nums;

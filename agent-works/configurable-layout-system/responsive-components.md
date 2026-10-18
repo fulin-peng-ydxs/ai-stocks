@@ -42,7 +42,7 @@
 | `frontend/src/components/AppStatusDot.vue` | 无自身 CSS 查询 | 辅助圆点不收缩；可访问名称和悬浮/键盘说明承接含义；文本为 inline，圆形入口为 top-right，角标依附宿主定位容器且不占横排空间。 | App、RelatedBoardHistoryHint、LadderHotspots |
 | `frontend/src/components/AppStateBlock.vue` | 无自身 CSS 查询 | 默认/compact/tiny最低高度180/120/72；动作换行；密度由调用方选择，无自动隐藏恢复入口。 | AppAsyncRegion、AppDataTable、AppDetailDrawer、SectorCompareChart、StockAnalysisPanel、StockCompareChart、AssetProfileSelect、AssetSearchDrawer、StockChartWorkspace、StockIntradayDialog、TradeDisciplineQuickCard、LayoutComponentPreview、BacktestView、BoardView、ConfigView、LimitLadderView、ScreenView、SectorDetailView、SectorsView、StockDetailView、StocksView、TradeDisciplineView、TrainingView、IngestView、OverviewView、QualityView、ScheduleView、LayoutComponentsView、LayoutPagesView、LayoutPresetsView、LimitLadder、AuditLogView、DataDictionaryView、MenuResourceView、RoleManageView、TenantManageView、UserManageView、RuleMasterList、TradeCheckinForm、TradeDisciplineHistory、TradeOperationEditor、TradeRuleEditor |
 | `frontend/src/components/AppStatusNotice.vue` | `@container app-viewport (max-width: 720px)`<br>`@media (prefers-reduced-motion: reduce)` | 窄宽正文/操作换行，恢复操作保留；减少动画偏好停用动画。 | PageSettingsDrawer、AssetProfileSelect、StockIntradayDialog、BacktestView、ConfigView、LimitLadderView、ScreenView、StocksView、OverviewView、LimitLadder、UserManageView、TradeRuleEditor |
-| `frontend/src/components/AppSummaryDisclosureCard.vue` | `@media (hover: hover) and (pointer: fine)`<br>`@media (prefers-reduced-motion: reduce)`<br>`@container app-viewport (max-width: 760px)` | 默认卡片窄宽摘要与工具上下排列；紧凑模式状态前缀与标题/说明自然换行，无明细时静态显示；用户展开独立于尺寸，保留摘要和显式开关。 | RuleSummaryCard、TradeOperationEditor、CheckupReportContent |
+| `frontend/src/components/AppSummaryDisclosureCard.vue` | `@media (hover: hover) and (pointer: fine)`<br>`@media (prefers-reduced-motion: reduce)`<br>`@container app-viewport (max-width: 760px)` | 默认卡片窄宽摘要与工具上下排列；紧凑模式保留状态前缀，标题/摘要分列单行省略，真实截断由全局提示恢复原文，无明细时静态显示；用户展开独立于尺寸，保留摘要和显式开关。 | RuleSummaryCard、TradeOperationEditor、CheckupReportContent |
 | `frontend/src/components/AppTabToolbar.vue` | 无自身 CSS 查询 | 工具条换行，结果说明宽度不超容器，业务动作保留。 | IngestView、OverviewView |
 | `frontend/src/components/AppTableColumn.vue` | 无自身 CSS 查询 | 长文省略，完整内容由提示/详情承接；宽度不超过父容器。 | AssetSearchDrawer、RankedStockResultTable、BacktestView、BoardView、ConfigView、ScreenView、SectorDetailView、SectorsView、StocksView、TrainingView、IngestView、OverviewView、QualityView、ScheduleView、LayoutComponentsView、LayoutPagesView、LayoutPresetsView、AuditLogView、DataDictionaryView、MenuResourceView、TenantManageView、UserManageView、TradeCheckinRevisionDrawer、TradeDisciplineHistory |
 | `frontend/src/components/AppWorkspacePane.vue` | 无自身 CSS 查询 | 头部不收缩、标题可省略；正文grow并由消费内容拥有滚动。 | MarketMasterDetailWorkspace、SectorDetailView、StockDetailView |
@@ -143,7 +143,7 @@
 | `frontend/src/layout/components/VMixedGrow.vue` | 无自身 CSS 查询 | 固定区idealH收敛至minH，主区grow；仍不足时主区域滚动，不裁掉固定操作。 | LayoutHost |
 | `frontend/src/views/BacktestView.vue` | `@container app-viewport (max-width: 720px)`<br>`@container app-viewport (max-width: 480px)` | 窄宽头部/历史区上下排列、选择器满宽；更窄压缩表单间距；参数与运行/历史入口保留。 | 路由 |
 | `frontend/src/views/BoardView.vue` | 无自身 CSS 查询 | 头部/筛选自然换行；排名/分析/分页委托共享工作台。 | 路由 |
-| `frontend/src/views/ConfigView.vue` | `@container app-viewport (max-width: 760px)`<br>`@container app-viewport (max-width: 980px)` | 窄宽技术参数表单单列；系统工具条/网格单列；四个路由共用外壳，配置分组可折叠。 | 路由 |
+| `frontend/src/views/ConfigView.vue` | `@container app-viewport (max-width: 760px)`<br>`@container app-viewport (max-width: 980px)` | 窄宽技术参数表单单列；系统工具条/网格单列；四个路由共用外壳，配置分组可折叠。评分编辑表按开关及 long/wide/medium 控件容量保留列宽，空间不足由表体横向滚动，不裁切控件。 | 路由 |
 | `frontend/src/views/LimitLadderView.vue` | 无自身 CSS 查询 | useLayoutViewport宽≤768/高≤700驱动热点数量策略；分析区显隐进入同一策略，未更改筛选口径。 | 路由 |
 | `frontend/src/views/LoginView.vue` | `@container app-viewport (max-width: 980px)`<br>`@container app-viewport (max-width: 520px)`<br>`@container app-viewport (max-height: 720px) and (min-width: 981px)`<br>`@media (prefers-reduced-motion: reduce)`<br>`@media (forced-colors: active)`<br>`@container app-viewport (max-width: 360px)`<br>`@container app-viewport (max-height: 620px) and (max-width: 980px)`<br>`@media print`<br>`@media (hover: none)`<br>`@media (prefers-contrast: more)` | 窄宽隐藏品牌补充说明/行情装饰，登录卡片单列；低高顶对齐，极窄缩小验证码占位；无障碍媒体偏好另有规则。 | 路由 |
 | `frontend/src/views/ScreenView.vue` | 无自身 CSS 查询 | 条件区限制高度并内部滚动，结果委托RankedStockWorkbench；运行条件始终可达。 | 路由 |
@@ -156,7 +156,7 @@
 | `frontend/src/views/data/IngestView.vue` | 无自身 CSS 查询 | auto-fill min220采集卡片；tab/table内部滚动，范围字段委托共享组件。 | 路由 |
 | `frontend/src/views/data/OverviewView.vue` | `@container app-viewport (max-height: 700px)`<br>`@container app-viewport (max-width: 1100px)` | 低高压缩统计/层级间距，隐藏补充脚注；窄宽主概览/覆盖率/鲜活度单列，主体滚动。 | 路由 |
 | `frontend/src/views/data/QualityView.vue` | 无自身 CSS 查询 | 头部/筛选自然换行；质检结果内部滚动，详情委托共享抽屉。 | 路由 |
-| `frontend/src/views/data/components/CheckupReportContent.vue` | 无自身 CSS 查询 | 抽屉内复用 AppDetailSection、AppSummaryDisclosureCard 紧凑行和 AppDataTable/AppTableColumn；提醒与未通过统一可展开，板块和 SQL 样例统一明细表并标明总数，数量/基准日在前、处理说明在后；摘要自然换行，宽表在自身横向滚动并限高，展开状态不随尺寸变化重置；正文由共享抽屉滚动。 | QualityView 私有报告片段 |
+| `frontend/src/views/data/components/CheckupReportContent.vue` | 无自身 CSS 查询 | 抽屉内复用 AppDetailSection、AppSummaryDisclosureCard 紧凑行和 AppDataTable/AppTableColumn；提醒与未通过统一可展开，板块和 SQL 样例统一明细表并标明总数，数量/基准日在前、处理说明在后；摘要不预裁原文，以原生省略和统一提示保持单行；展开说明自然换行，宽表在自身横向滚动并限高，展开状态不随尺寸变化重置；正文由共享抽屉滚动。 | QualityView 私有报告片段 |
 | `frontend/src/views/data/ScheduleView.vue` | 无自身 CSS 查询 | 任务表格/日志独立滚动，操作区自然换行；实时日志消费共享抽屉。 | 路由 |
 | `frontend/src/views/layout/LayoutComponentsView.vue` | 无自身 CSS 查询 | 头部/工具条换行；能力表格内部滚动、详情共享抽屉；覆盖范围与个人层覆盖表复用长文档限高，表头固定、表体双向内滚。 | 路由 |
 | `frontend/src/views/layout/LayoutPagesView.vue` | `@container app-viewport (max-width: 980px)` | 窄宽标签头部上下排列、配置网格单列并滚动；动作换行，编辑值保留。 | 路由 |
@@ -180,7 +180,7 @@
 | `frontend/src/views/trade-discipline/components/TradeCheckinRevisionDrawer.vue` | `@container app-viewport (max-width: 760px)` | 窄宽身份与版本切换上下排列、事实/规则单列，长内容在详情抽屉滚动。 | TradeDisciplineView |
 | `frontend/src/views/trade-discipline/components/TradeDisciplineHistory.vue` | 无自身 CSS 查询 | 筛选控件最大100%，期间网格最低110；历史表格内部滚动，详情交给统一抽屉。 | TradeDisciplineView |
 | `frontend/src/views/trade-discipline/components/TradeOperationEditor.vue` | `@container app-viewport (max-width: 1180px)`<br>`@container app-viewport (max-width: 760px)` | 中窄股票/时间占整行，规则/金额半行；更窄全部单列，输入保留。 | TradeCheckinForm |
-| `frontend/src/views/trade-discipline/components/TradeRuleEditor.vue` | `@container app-viewport (max-width: 1100px)`<br>`@container app-viewport (max-width: 760px)` | 规则始终单列；基础字段与资金汇总复用表单标签、顶部对齐及同档控件高度，辅助说明不改变同行对齐；窄宽状态/基础单列并开放主体滚动，更窄头部/表单/footer换行，条件输入保留。 | TradeDisciplineView |
+| `frontend/src/views/trade-discipline/components/TradeRuleEditor.vue` | `@container app-viewport (max-width: 1100px)`<br>`@container app-viewport (max-width: 760px)` | 规则始终单列；基础字段与资金汇总复用表单标签、顶部对齐及同档控件高度，辅助说明不改变同行对齐；窄宽状态/基础单列，更窄头部/表单换行，条件输入保留。底栏在滚动视口内侧吸底，按钮随可用宽度换行，滚动起点和末尾均完整可见。 | TradeDisciplineView |
 | `frontend/src/views/trade-discipline/components/ViolationReasonCombobox.vue` | 无自身 CSS 查询 | 委托 BuiltinOptionRow。 | TradeCheckinForm |
 
 ### 共享键盘行为
