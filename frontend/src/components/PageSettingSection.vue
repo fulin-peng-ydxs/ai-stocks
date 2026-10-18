@@ -3,13 +3,13 @@
 import SettingsGroup from './SettingsGroup.vue'
 
 const props = withDefaults(
-  defineProps<{ title?: string; desc?: string; collapsible?: boolean }>(),
+  defineProps<{ sectionKey: string; title?: string; desc?: string; collapsible?: boolean }>(),
   { collapsible: true },
 )
 </script>
 
 <template>
-  <SettingsGroup :title="title" :hint="desc" :level="2" :collapsible="collapsible">
+  <SettingsGroup :title="title" :hint="desc" :level="2" :collapsible="collapsible" :fold-key="`business:${sectionKey}`">
     <slot />
   </SettingsGroup>
 </template>

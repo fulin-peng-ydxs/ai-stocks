@@ -63,6 +63,18 @@ const rel = (f: string) => relative(VIEWS_DIR, f).split('\\').join('/')
 const sourceRel = (f: string) => relative(SOURCE_DIR, f).split('\\').join('/')
 
 describe('布局契约守卫（M6）', () => {
+  it('页面设置业务分组声明稳定且同页唯一的记忆标识', () => {
+    const offenders: string[] = []
+    for (const file of files) {
+      const keys = new Set<string>()
+      for (const tag of readFileSync(file, 'utf8').matchAll(/<PageSettingSection\b[^>]*>/g)) {
+        const key = tag[0].match(/\bsection-key="([a-z][a-z0-9-]*)"/)?.[1]
+        if (!key || keys.has(key)) offenders.push(`${rel(file)}: ${tag[0]}`)
+        if (key) keys.add(key)
+      }
+    }
+    expect(offenders).toEqual([])
+  })
   it('发现页面源码', () => {
     expect(files.length).toBeGreaterThan(0)
   })

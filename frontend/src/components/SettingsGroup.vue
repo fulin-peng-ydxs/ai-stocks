@@ -6,11 +6,12 @@ import { ElCollapseTransition } from 'element-plus'
  * 标题字号按语义角色稳定分档；紧凑抽屉可通过共享上下文降低一级分组字号，
  * 嵌套层级仍主要由卡片、缩进和结构线表达。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import { Expand, Fold } from '@element-plus/icons-vue'
 import { useSettingsFoldTree } from '../composables/useSettingsFoldTree'
 import AppIconButton from './AppIconButton.vue'
 import HelpHint from './HelpHint.vue'
+import { SETTINGS_FOLD_PREFERENCES } from '@/composables/settingsFoldPreferences'
 
 const props = withDefaults(
   defineProps<{
@@ -21,6 +22,8 @@ const props = withDefaults(
     collapsible?: boolean
     defaultOpen?: boolean
     modelValue?: boolean
+    /** 抽屉内稳定且唯一的节点标识，不使用标题或业务对象 ID。 */
+    foldKey?: string
   }>(),
   // modelValue 显式给 undefined 默认值：避免 Vue 对未受控的 Boolean prop 强制转成 false
   // （否则 isOpen() 的 `modelValue ?? localOpen` 会被 false 短路，导致非受控子组永远折叠且点不开）。
@@ -37,11 +40,17 @@ watch(
   },
 )
 const foldable = () => props.collapsible && !!props.title
-const openState = computed(() => props.modelValue ?? localOpen.value)
+const preferences = inject(SETTINGS_FOLD_PREFERENCES, undefined)
+const remembered = computed(() => props.foldKey && foldable() && preferences?.enabled() ? preferences : undefined)
+const openState = computed(() => props.modelValue
+  ?? remembered.value?.isOpen(props.foldKey!) ?? localOpen.value)
 
 function setOpen(value: boolean): void {
   if (openState.value === value) return
-  if (props.modelValue === undefined) localOpen.value = value
+  if (props.modelValue === undefined) {
+    if (remembered.value) remembered.value.setOpen(props.foldKey!, value)
+    else localOpen.value = value
+  }
   emit('update:modelValue', value)
 }
 

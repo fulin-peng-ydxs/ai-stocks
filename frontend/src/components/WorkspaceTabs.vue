@@ -12,7 +12,7 @@ import MenuIcon from './MenuIcon.vue'
 import { useAuthStore } from '@/stores/auth'
 import { findMenuLeaf } from '@/utils/permission'
 import {
-  clearWorkspaceTabs,
+  clearOtherWorkspaceTabs,
   removeWorkspaceTab,
   useWorkspaceTabs,
 } from '@/composables/useWorkspaceTabs'
@@ -35,6 +35,8 @@ const tabStop = computed(() => workspaceTabs.value.some(tab => tab.key === focus
 watch(() => route.path, path => { focusedKey.value = path })
 const closingKeys = ref(new Set<string>())
 const clearing = ref(false)
+const canClearOthers = computed(() => workspaceTabs.value.length > 1
+  && workspaceTabs.value.some(tab => tab.key === route.path))
 watch(collapsed, () => { void nextTick(revealActiveTab) })
 
 function revealActiveTab() {
@@ -106,9 +108,9 @@ async function close(key: string) {
 }
 
 async function clear() {
-  if (clearing.value || closingKeys.value.size) return
+  if (clearing.value || closingKeys.value.size || !canClearOthers.value) return
   clearing.value = true
-  try { await clearWorkspaceTabs() }
+  try { await clearOtherWorkspaceTabs(() => route.path) }
   finally { clearing.value = false }
 }
 </script>
@@ -126,11 +128,11 @@ async function clear() {
       <span class="workspace-tabs-label">工作区</span>
       <span class="workspace-tabs-count" :aria-label="`${workspaceTabs.length} 个已打开页面`">{{ workspaceTabs.length }}</span>
       <AppIconButton
-        label="清空页签"
-        tooltip="清空所有页签"
+        label="清除其他页签"
+        tooltip="保留当前页签，清除其他页签"
         size="xs"
         :loading="clearing"
-        :disabled="closingKeys.size > 0"
+        :disabled="closingKeys.size > 0 || !canClearOthers"
         @click="clear"
       ><Delete /></AppIconButton>
       <span v-if="!collapsed" class="workspace-tabs-divider" aria-hidden="true">｜</span>

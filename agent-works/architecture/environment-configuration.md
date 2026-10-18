@@ -148,7 +148,7 @@ PostgreSQL `app_config` 是当前系统设置覆盖层的权威表：
 | 组件字段开放策略 | PostgreSQL `layout_field_policy` | 控制组件字段可开放到 preset/page/user 的策略 |
 | 页面布局/组件用户层 | PostgreSQL `layout_user_config` | 只保存真实 pageKey 的布局与组件用户层；组件路径保存必须带真实 `PageLayout` 校验归属 |
 | 非布局用户偏好 | PostgreSQL `user_preference` | 主题、导航、K 线、页面业务偏好、回测参数记忆等 |
-| 设置抽屉跨页面偏好 | PostgreSQL `user_preference` | `scope='global'`、`pref_key='settings-drawer'`；用户层仅 `size/defaultCollapsed` |
+| 设置抽屉跨页面偏好 | PostgreSQL `user_preference` | `scope='global'`、`pref_key='settings-drawer'`；`size`、全局一级 `collapsedSections`、按页面隔离的 `collapsedGroups`，旧 `defaultCollapsed` 仅兼容读取 |
 
 ### 4. 读取规则
 
@@ -177,7 +177,7 @@ localStorage 不作为登录用户配置或偏好权威。在配置与偏好链�
 | 登录前主题读取 | 首屏可先读本地主题，登录后以 `user_preference(global/theme)` 同步 |
 | 离线/接口失败 fallback | 页面可继续使用旧本地值渲染，不能宣称云端已保存 |
 | 旧偏好迁移源 | 登录后由前端迁移器一次性迁到 PG，并写迁移 marker |
-| 临时交互态 | 例如抽屉本次打开期间的展开/收起状态，不进 PG |
+| 临时交互态 | 例如临时搜索草稿，不进 PG；页面设置折叠属于已声明的持久偏好，按 DESIGN.md“设置抽屉”执行 |
 
 `stockSet` 这类“当前股票集合/工作上下文”不是配置项，也不按用户偏好权威处理；如果后续要云端化，应按用户资产或工作集单独设计。
 

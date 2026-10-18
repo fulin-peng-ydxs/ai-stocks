@@ -91,6 +91,7 @@ function densityKnob(): EditableKnob {
     path: 'density',
     label: '信息密度',
     group: '基础布局',
+    groupKey: 'base',
     type: 'enum',
     options: ['compact', 'standard', 'comfortable'],
     optionLabels: { compact: '紧凑', standard: '标准', comfortable: '宽松' },
@@ -103,6 +104,7 @@ function slotVisibilityKnob(slotId: string, label: string): EditableKnob {
     path: `slots.${slotId}.visible`,
     label,
     group: '模块显示',
+    groupKey: 'modules',
     type: 'bool',
   }
 }

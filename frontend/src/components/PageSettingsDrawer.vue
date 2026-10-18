@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, useSlots, watch } from 'vue'
+import { computed, provide, ref, useSlots, watch } from 'vue'
 import { Expand, Fold } from '@element-plus/icons-vue'
 import type { EditableKnob } from '@/layout/schema'
 import type { LayoutConfigLayer } from '@/layout/merge'
@@ -18,6 +18,7 @@ import AppStatusNotice from './AppStatusNotice.vue'
 import type { PageDrawerSize } from './pageDrawerSize'
 import { useDrawerPreferences } from '@/composables/useDrawerPreferences'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
+import { SETTINGS_FOLD_PREFERENCES } from '@/composables/settingsFoldPreferences'
 
 /** 抽屉自动渲染所需的配置访问器（即 useRemoteLayoutConfig 的返回子集）。 */
 export interface DrawerConfig {
@@ -59,6 +60,13 @@ const emit = defineEmits<{
 const slots = useSlots()
 const drawerPreferences = useDrawerPreferences()
 const klinePreferences = useKlinePrefs()
+provide(SETTINGS_FOLD_PREFERENCES, {
+  enabled: () => !!props.pageKey,
+  isOpen: (key) => props.pageKey ? drawerPreferences.groupOpen(props.pageKey, key) : undefined,
+  setOpen: (key, open) => {
+    if (props.pageKey) drawerPreferences.setGroupOpen(props.pageKey, key, open)
+  },
+})
 
 function usesGlobalPreference(slotId: string, field: string): boolean {
   const slot = props.pageKey
@@ -165,51 +173,31 @@ const visibleSectionKeys = computed<SectionKey[]>(() => {
     return active ? hasBusinessContent.value : hasBusinessSlot.value
   })
 })
-const runtimeCollapsedSections = ref<SectionKey[]>([])
-const runtimeTouched = ref(false)
 const allVisibleSectionsCollapsed = computed(() => (
   visibleSectionKeys.value.length > 0
-  && visibleSectionKeys.value.every((key) => runtimeCollapsedSections.value.includes(key))
+  && visibleSectionKeys.value.every((key) => collapsedSections.value.includes(key))
 ))
 const bulkToggleLabel = computed(() => allVisibleSectionsCollapsed.value ? '全部展开' : '全部收起')
 
-watch(
-  () => props.modelValue,
-  (open) => {
-    if (open) {
-      runtimeTouched.value = false
-      runtimeCollapsedSections.value = [...collapsedSections.value]
-    }
-  },
-  { immediate: true },
-)
-watch(collapsedSections, (value) => {
-  if (props.modelValue && !runtimeTouched.value) runtimeCollapsedSections.value = [...value]
-})
-
 function sectionOpen(key: SectionKey): boolean {
-  return !runtimeCollapsedSections.value.includes(key)
+  return !collapsedSections.value.includes(key)
 }
 
 function setSectionOpen(key: SectionKey, open: boolean): void {
-  const next = new Set(runtimeCollapsedSections.value)
+  const next = new Set(collapsedSections.value)
   if (open) next.delete(key)
   else next.add(key)
-  runtimeTouched.value = true
-  runtimeCollapsedSections.value = SECTION_KEYS.filter((section) => next.has(section))
-  drawerPreferences.setCollapsedSections(runtimeCollapsedSections.value)
+  drawerPreferences.setCollapsedSections(SECTION_KEYS.filter((section) => next.has(section)))
 }
 
 function toggleAllSections(): void {
-  const next = new Set(runtimeCollapsedSections.value)
+  const next = new Set(collapsedSections.value)
   if (allVisibleSectionsCollapsed.value) {
     visibleSectionKeys.value.forEach((key) => next.delete(key))
   } else {
     visibleSectionKeys.value.forEach((key) => next.add(key))
   }
-  runtimeTouched.value = true
-  runtimeCollapsedSections.value = SECTION_KEYS.filter((section) => next.has(section))
-  drawerPreferences.setCollapsedSections(runtimeCollapsedSections.value)
+  drawerPreferences.setCollapsedSections(SECTION_KEYS.filter((section) => next.has(section)))
 }
 
 const componentSettings = ref<InstanceType<typeof ComponentAutoSettings>>()
@@ -217,9 +205,7 @@ watch(() => props.modelValue, () => componentSettings.value?.resetSearchDrafts()
 
 function handleReset(): void {
   componentSettings.value?.resetSearchDrafts()
-  runtimeTouched.value = false
-  runtimeCollapsedSections.value = []
-  drawerPreferences.reset()
+  drawerPreferences.reset(props.pageKey)
   const entry = props.pageKey ? getPageEntry(props.pageKey) : undefined
   if (entry?.layout.slots.some((slot) => (
     applicableComponentFields(entry, slot.id, 'user')

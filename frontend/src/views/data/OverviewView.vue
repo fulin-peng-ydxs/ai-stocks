@@ -1243,7 +1243,7 @@ const menuPageTitle = useMenuPageTitle()
       @reset="reset(); resetLayout()"
     >
       <template #business>
-        <PageSettingSection title="逐股体检">
+        <PageSettingSection section-key="stock-check" title="逐股体检">
           <PageSettingItem label="默认关注层">
             <PageSegmented v-model="settings.focusLayer" aria-label="默认关注层" :options="[
               { label: '全部', value: 'all' },

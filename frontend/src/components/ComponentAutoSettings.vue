@@ -575,6 +575,7 @@ function setSort(slotId: string, field: string, order: string): void {
     <SettingsGroup
       v-for="s in autoSlots"
       :key="s.slotId"
+      :fold-key="`component:${s.slotId}`"
       :title="showSlotTitle ? s.label : undefined"
       :level="2"
       :collapsible="collapsibleSlot"
@@ -1022,6 +1023,7 @@ function setSort(slotId: string, field: string, order: string): void {
       <SettingsGroup
         v-if="s.fields.includes('hiddenColumns') && s.meta.columns?.length"
         title="列显隐"
+        :fold-key="`component:${s.slotId}:hiddenColumns`"
         :hint="fieldHelp(s, 'hiddenColumns')"
         :level="showSlotTitle ? 3 : 2"
       >

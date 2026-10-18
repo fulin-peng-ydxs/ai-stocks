@@ -1477,7 +1477,7 @@ const menuPageTitle = useMenuPageTitle()
         @reset="resetSettings"
       >
         <template #business>
-          <PageSettingSection title="默认查询">
+          <PageSettingSection section-key="default-query" title="默认查询">
             <PageSettingItem v-if="canViewWatchlist" label="默认板块范围">
               <PageSegmented
                 v-model="settings.defaultScope"

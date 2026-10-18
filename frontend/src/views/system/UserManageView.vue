@@ -709,7 +709,7 @@ const menuPageTitle = useMenuPageTitle()
         @reset="reset(); resetLayout()"
       >
         <template #business>
-          <PageSettingSection title="默认查询">
+          <PageSettingSection section-key="default-query" title="默认查询">
             <PageSettingItem label="状态筛选">
               <PageSegmented v-model="settings.defaultStatus" aria-label="状态筛选" :options="[
                 { label: '全部', value: 'all' },

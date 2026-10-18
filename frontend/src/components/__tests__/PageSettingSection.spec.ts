@@ -9,8 +9,8 @@ const BusinessFixture = defineComponent({
   components: { PageSettingSection, SettingsGroup },
   template: `
     <SettingsGroup title="业务选项" :level="1">
-      <PageSettingSection title="业务分区一">内容一</PageSettingSection>
-      <PageSettingSection title="业务分区二">内容二</PageSettingSection>
+      <PageSettingSection section-key="one" title="业务分区一">内容一</PageSettingSection>
+      <PageSettingSection section-key="two" title="业务分区二">内容二</PageSettingSection>
     </SettingsGroup>
   `,
 })
@@ -45,7 +45,7 @@ describe('PageSettingSection 折叠树', () => {
 
   it('叶子业务分区不显示下级批量入口', async () => {
     const wrapper = mount(PageSettingSection, {
-      props: { title: '叶子分区' },
+      props: { sectionKey: 'leaf', title: '叶子分区' },
       slots: { default: '内容' },
       global: { stubs: { ElIcon: true } },
     })

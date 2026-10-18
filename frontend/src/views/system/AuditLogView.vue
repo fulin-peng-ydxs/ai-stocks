@@ -808,7 +808,7 @@ const menuPageTitle = useMenuPageTitle()
         @reset="resetBiz(); resetLayout()"
       >
         <template #business>
-          <PageSettingSection title="刷新偏好" desc="设置进入页面时是否默认自动刷新；页面顶部开关只影响本次访问。">
+          <PageSettingSection section-key="refresh" title="刷新偏好" desc="设置进入页面时是否默认自动刷新；页面顶部开关只影响本次访问。">
             <PageSettingItem label="默认自动刷新" layout="inline">
               <el-switch v-model="settings.autoRefreshEnabled" />
             </PageSettingItem>

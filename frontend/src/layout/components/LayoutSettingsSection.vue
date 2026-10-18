@@ -37,14 +37,15 @@ const knobGroups = computed(() => {
     items.push(knob)
     groups.set(title, items)
   }
-  return [...groups].map(([title, knobs]) => ({ title, knobs }))
+  return [...groups].map(([title, knobs]) => ({ title, knobs, key: knobs[0].groupKey ?? knobs[0].path }))
 })
 </script>
 
 <template>
   <SettingsGroup
     v-for="group in knobGroups"
-    :key="group.title"
+    :key="group.key"
+    :fold-key="`layout:${group.key}`"
     :title="group.title"
     :level="2"
   >

@@ -931,7 +931,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
     @reset="reset(); chartPreferences.cancelRatioDraft(); resetLayout()"
   >
       <template #business>
-      <PageSettingSection title="开局默认" desc="每次开局沿用的默认参数，开局前可临时改。">
+      <PageSettingSection section-key="session-defaults" title="开局默认" desc="每次开局沿用的默认参数，开局前可临时改。">
         <PageSettingItem label="训练模式">
           <PageSegmented
             v-model="settings.mode"
@@ -967,7 +967,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
       </PageSettingSection>
       <template v-if="phase !== 'config'">
       </template>
-      <PageSettingSection title="选股范围" desc="控制随机选股时的股票池过滤条件。">
+      <PageSettingSection section-key="stock-universe" title="选股范围" desc="控制随机选股时的股票池过滤条件。">
         <PageSettingItem label="排除 ST" layout="inline">
           <el-switch v-model="settings.exclude_st" />
         </PageSettingItem>
@@ -985,7 +985,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           <el-switch v-model="settings.fee_enabled" />
         </PageSettingItem>
       </PageSettingSection>
-      <PageSettingSection title="快捷下单" desc="配置下单方式与一键预设，训练时直接点选快速买卖。">
+      <PageSettingSection section-key="quick-order" title="快捷下单" desc="配置下单方式与一键预设，训练时直接点选快速买卖。">
         <PageSettingItem label="默认下单方式">
           <PageSegmented v-model="settings.orderMode" aria-label="默认下单方式" :options="[{ label: '按手数', value: 'hands' }, { label: '按金额', value: 'amount' }]" />
         </PageSettingItem>

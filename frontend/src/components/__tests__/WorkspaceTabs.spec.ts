@@ -11,7 +11,7 @@ import WorkspaceTabs from '@/components/WorkspaceTabs.vue'
 import WorkspaceRouteView from '@/components/WorkspaceRouteView.vue'
 import MenuIcon from '@/components/MenuIcon.vue'
 import { registerUnsavedHandler, resetUnsavedChangesGuard } from '@/composables/useUnsavedChangesGuard'
-import { navigateWorkspaceMenu, resetWorkspaceTabs } from '@/composables/useWorkspaceTabs'
+import { resetWorkspaceTabs } from '@/composables/useWorkspaceTabs'
 import { useAuthStore } from '@/stores/auth'
 
 async function mountTabs(expanded = true) {
@@ -107,31 +107,32 @@ describe('侧栏工作标签页', () => {
     wrapper.unmount()
   })
 
-  it('折叠时可一键清空，整栏隐藏并交接焦点，同一菜单可重开且仍然折叠', async () => {
+  it('折叠时仍可清除其他页签，保留当前实例与折叠状态，只剩当前页时禁用', async () => {
     const { wrapper, router } = await mountTabs(false)
     await router.push('/screen')
     await flushPromises()
-    const clear = wrapper.get('[aria-label="清空页签"]')
+    const activeTab = wrapper.get('.workspace-tab.is-active').element
+    const clear = wrapper.get('[aria-label="清除其他页签"]')
     expect(clear.isVisible()).toBe(true)
     await clear.trigger('click')
     await flushPromises()
-    expect(wrapper.find('.workspace-tabs').exists()).toBe(false)
-    expect(document.activeElement).toBe(wrapper.get('[aria-label="空工作区"]').element)
-    await navigateWorkspaceMenu(router, '/screen', useAuthStore().menus)
-    await flushPromises()
     expect(wrapper.findAll('.workspace-tab')).toHaveLength(1)
+    expect(wrapper.get('.workspace-tab.is-active').element).toBe(activeTab)
+    expect(router.currentRoute.value.path).toBe('/screen')
+    expect(wrapper.find('[aria-label="空工作区"]').exists()).toBe(false)
+    expect(clear.attributes('disabled')).toBeDefined()
     expect(wrapper.get('.workspace-tabs').classes()).toContain('is-collapsed')
     wrapper.unmount()
   })
 
-  it('清空确认中禁用重复清空和单页关闭，取消后保留全部页面并恢复按钮', async () => {
+  it('清除确认中禁用重复清除和单页关闭，其他页取消后保留全部页面并恢复按钮', async () => {
     const { wrapper, router } = await mountTabs()
     await router.push('/screen')
     await flushPromises()
     let finish!: (allowed: boolean) => void
     const requestLeave = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve }))
-    const unregister = registerUnsavedHandler('/screen', { isDirty: () => true, requestLeave })
-    const clear = wrapper.get('[aria-label="清空页签"]')
+    const unregister = registerUnsavedHandler('/board', { isDirty: () => true, requestLeave })
+    const clear = wrapper.get('[aria-label="清除其他页签"]')
     await clear.trigger('click')
     await flushPromises()
     await clear.trigger('click')

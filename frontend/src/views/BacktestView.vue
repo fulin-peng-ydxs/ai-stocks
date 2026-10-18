@@ -2470,7 +2470,7 @@ const menuPageTitle = useMenuPageTitle()
       @reset="resetBacktestSettings"
     >
       <template #business>
-        <PageSettingSection title="默认参数">
+        <PageSettingSection section-key="default-parameters" title="默认参数">
           <PageSettingItem label="默认模式">
             <PageSegmented
               v-model="settings.kind"

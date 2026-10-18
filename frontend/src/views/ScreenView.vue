@@ -1099,7 +1099,7 @@ const menuPageTitle = useMenuPageTitle()
       @reset="reset(); resetLayout()"
     >
       <template #business>
-        <PageSettingSection title="行情口径">
+        <PageSettingSection section-key="market-caliber" title="行情口径">
           <PageSettingItem label="复权模式">
             <PageSegmented v-model="settings.adjustMode" aria-label="复权模式" :options="[
               { label: '不复权', value: '' },
@@ -1108,7 +1108,7 @@ const menuPageTitle = useMenuPageTitle()
             ]" />
           </PageSettingItem>
         </PageSettingSection>
-        <PageSettingSection title="默认行为">
+        <PageSettingSection section-key="default-behavior" title="默认行为">
           <PageToggleRow v-model="settings.excludeSt" label="默认排除 ST" />
           <PageToggleRow v-model="settings.astExpanded" label="展开 AST 预览" />
         </PageSettingSection>

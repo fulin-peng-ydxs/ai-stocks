@@ -2533,7 +2533,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       @reset="reset(); resetLayout()"
     >
       <template v-if="activeTab === 'score'" #business>
-        <PageSettingSection title="行情口径">
+        <PageSettingSection section-key="market-caliber" title="行情口径">
           <PageSettingItem label="复权模式">
             <PageSegmented v-model="settingsAdjustMode" aria-label="复权模式" :options="[
               { label: '不复权', value: '' },

@@ -445,7 +445,7 @@ const menuPageTitle = useMenuPageTitle()
         @reset="reset(); resetLayout()"
       >
         <template #business>
-          <PageSettingSection title="默认状态筛选" desc="设置每次进入租户管理时的初始查询范围。">
+          <PageSettingSection section-key="default-status" title="默认状态筛选" desc="设置每次进入租户管理时的初始查询范围。">
             <PageSegmented v-model="settings.defaultStatus" aria-label="状态筛选" :options="[
               { label: '全部', value: 'all' },
               { label: '仅启用', value: 'active' },

@@ -110,11 +110,15 @@ export async function removeWorkspaceTab(
   return discardWorkspaceTab(key, activeKey)
 }
 
-/** 全部离开确认通过后才统一销毁，取消时保留整个工作区；保留当前路由追踪，避免权限刷新复活页面。 */
-export async function clearWorkspaceTabs(): Promise<boolean> {
-  const targets = [...workspaceTabs.value]
-  const unchanged = () => targets.length === workspaceTabs.value.length
-    && targets.every((tab, index) => {
+/** 只关闭非当前页；确认期间路由或标签现场变化时取消整批操作，避免误关新当前页。 */
+export async function clearOtherWorkspaceTabs(currentKey: () => string): Promise<boolean> {
+  const activeKey = currentKey()
+  const snapshot = [...workspaceTabs.value]
+  if (!snapshot.some((tab) => tab.key === activeKey)) return false
+  const targets = snapshot.filter((tab) => tab.key !== activeKey)
+  const unchanged = () => currentKey() === activeKey
+    && snapshot.length === workspaceTabs.value.length
+    && snapshot.every((tab, index) => {
       const current = workspaceTabs.value[index]
       return current?.key === tab.key && current.cacheName === tab.cacheName
         && current.path === tab.path
@@ -122,9 +126,9 @@ export async function clearWorkspaceTabs(): Promise<boolean> {
   for (const tab of targets) {
     if (!(await confirmLeave(tab.key, 'tab-close')) || !unchanged()) return false
   }
-  // 等待确认期间可能切换账号或打开新页，不能清除未确认的新现场。
+  // 等待确认期间可能切换账号、路由或打开新页，不能清除未确认的新现场。
   if (!unchanged()) return false
-  for (const tab of targets) discardWorkspaceTab(tab.key, '')
+  for (const tab of targets) discardWorkspaceTab(tab.key, activeKey)
   return true
 }
 

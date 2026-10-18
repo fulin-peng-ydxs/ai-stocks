@@ -243,6 +243,8 @@ export interface ResponsivePlan {
  * 对齐后端 app_config 的字段范式（type/min/max/options）。path 指向 PageLayout 内真实字段。
  */
 export interface EditableKnob {
+  /** 分组的稳定标识；展示标题 group 改名时不重置抽屉记忆。 */
+  groupKey?: string
   /** 点分路径，定位 PageLayout 内字段：'density' | 'slots.<id>.minH' | ...。 */
   path: string
   label: string

@@ -887,7 +887,7 @@ const menuPageTitle = useMenuPageTitle()
             title="默认偏好远端同步失败"
             description="当前修改已保存在本机，网络恢复后再次修改即可重试"
           />
-          <PageSettingSection title="行情口径">
+          <PageSettingSection section-key="market-caliber" title="行情口径">
               <PageSettingItem label="复权模式">
                 <PageSegmented
                   v-model="settings.adjustMode"
@@ -900,7 +900,7 @@ const menuPageTitle = useMenuPageTitle()
                 />
               </PageSettingItem>
           </PageSettingSection>
-          <PageSettingSection title="默认查询">
+          <PageSettingSection section-key="default-query" title="默认查询">
             <PageSettingItem label="统计窗口">
               <PageSegmented
                 v-model="settings.window"

@@ -1180,7 +1180,7 @@ const menuPageTitle = useMenuPageTitle()
       @reset="reset(); resetLayout()"
     >
       <template #business>
-        <PageSettingSection title="显示">
+        <PageSettingSection section-key="display" title="显示">
           <PageSettingItem label="时间显示">
             <PageSegmented v-model="settings.timeMode" aria-label="时间显示" :options="[
               { label: '完整时间', value: 'full' },
@@ -1188,7 +1188,7 @@ const menuPageTitle = useMenuPageTitle()
             ]" />
           </PageSettingItem>
         </PageSettingSection>
-        <PageSettingSection title="数据源视图">
+        <PageSettingSection section-key="source-view" title="数据源视图">
           <PageSettingItem label="显示范围">
             <PageSegmented v-model="settings.sourceMode" aria-label="显示范围" :options="[
               { label: '全部源', value: 'all' },

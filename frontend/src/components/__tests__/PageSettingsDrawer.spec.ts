@@ -288,7 +288,7 @@ describe('PageSettingsDrawer', () => {
     expect(prefApi.saveUserPreference).toHaveBeenCalledWith(expect.objectContaining({
       scope: 'global',
       prefKey: 'settings-drawer',
-      value: {},
+      value: { collapsedGroups: { board: [] } },
     }))
     vi.useRealTimers()
   })

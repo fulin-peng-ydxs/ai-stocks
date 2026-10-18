@@ -1226,7 +1226,7 @@ const menuPageTitle = useMenuPageTitle()
       @reset="reset(); resetLayout()"
     >
       <template #business>
-        <PageSettingSection title="任务中心">
+        <PageSettingSection section-key="task-center" title="任务中心">
           <PageSettingItem label="默认任务筛选">
             <PageSegmented v-model="settings.taskStatus" aria-label="默认任务筛选"
                            test-id="task-status-default" :options="[
@@ -1236,7 +1236,7 @@ const menuPageTitle = useMenuPageTitle()
             ]" />
           </PageSettingItem>
         </PageSettingSection>
-        <PageSettingSection title="采集日志">
+        <PageSettingSection section-key="collection-log" title="采集日志">
           <PageSettingItem label="采集日志筛选">
             <PageSegmented v-model="settings.logStatus" aria-label="采集日志筛选" :options="[
               { label: '全部', value: 'all' },
