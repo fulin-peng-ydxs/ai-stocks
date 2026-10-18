@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import { computed } from 'vue'
 import type { SettingField, SettingGroup } from '@/api/data'
 import HelpHint from '@/components/HelpHint.vue'
@@ -161,19 +158,16 @@ function collapsed(key: string): boolean {
               :disabled="disabled"
               @update:model-value="(value: boolean) => setValue(field.path, value)"
             />
-            <el-select
+            <AppSelect
               v-else-if="field.type === 'enum'"
               :model-value="String(valueOf(field.path) ?? '')"
               :disabled="disabled"
-              fit-input-width
               popper-class="config-select-popper"
               placeholder="请选择"
               @update:model-value="(value: string) => setValue(field.path, value)"
-              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
             >
               <el-option v-for="opt in field.options ?? []" :key="opt" :label="opt" :value="opt" />
-            </el-select>
+            </AppSelect>
             <el-input-number
               v-else-if="field.type === 'number' || field.type === 'int'"
               :model-value="Number(valueOf(field.path))"

@@ -318,7 +318,7 @@ describe('BacktestView 三方案选择器（T5）', () => {
     expect(wrapper.find('[data-testid="backtest-browse-open"]').exists()).toBe(true)
     const historySelect = wrapper.findAllComponents(ElSelectStub)
       .find((select) => select.classes().includes('history-run-select'))
-    expect(historySelect?.props('fitInputWidth')).toBe(true)
+    expect(historySelect?.props('fitInputWidth')).toBe(false)
     expect(historySelect?.props('placement')).toBe('bottom-start')
     wrapper.unmount()
   })

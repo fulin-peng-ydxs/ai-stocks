@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 // 统一「资产方案选择器」（R3/R7）：下拉/侧栏双形态，列表只加载「我的」资产（纯 owner），
@@ -266,7 +263,7 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
         @retry="reload"
       />
       <template v-else>
-        <el-select
+        <AppSelect
           ref="selectRef"
           v-model="inner"
           class="asset-profile-select__select"
@@ -275,10 +272,7 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
           filterable
           :loading="loadingMine"
           :data-testid="`${testId}-select`"
-          :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-          :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
           popper-class="app-option-popper asset-profile-select-popper"
-          fit-input-width
         >
           <template v-if="selectedItem" #label>
             <AssetProfileLabel
@@ -322,7 +316,7 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
               </el-button>
             </div>
           </template>
-        </el-select>
+        </AppSelect>
         <el-button
           v-if="canBrowse"
           class="asset-profile-select__search"
@@ -454,6 +448,11 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
 <style scoped>
 :global(.asset-profile-select-popper .asset-profile-label) {
   width: 100%;
+}
+:global(.asset-profile-select-popper .asset-profile-label__name) {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 .asset-profile-select__list-scroll { max-height: inherit; }
 .asset-profile-select {

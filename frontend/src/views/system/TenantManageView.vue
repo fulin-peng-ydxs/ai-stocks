@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 // 租户管理页（多租户 RBAC stage3·T14，R14）。承接 tenant-management.html（去勾选列、无批量工具条）。
@@ -340,16 +337,14 @@ const menuPageTitle = useMenuPageTitle()
 
         <el-card shadow="never" class="filter-card">
           <AppControlRow>
-            <el-select
+            <AppSelect
               v-model="filters.status"
               placeholder="状态：全部"
               clearable
-              class="app-control-width-short"
-              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+              width="short"
             >
               <el-option v-for="item in tenantStatusOptions" :key="item.code" :label="item.label" :value="item.code" />
-            </el-select>
+            </AppSelect>
             <AppSearchInput v-model="filters.q" placeholder="搜索租户名 / ID" class="app-control-width-long" @search="search" />
             <el-button data-testid="tenant-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>
           </AppControlRow>
@@ -428,18 +423,16 @@ const menuPageTitle = useMenuPageTitle()
             <span class="locked-field mono">{{ editing?.id }}<span class="muted">（系统生成，不可改）</span></span>
           </el-form-item>
           <el-form-item v-if="isEdit" label="租户管理员">
-            <el-select
+            <AppSelect
               v-model="form.adminUserId"
               placeholder="从该租户用户中指定"
               clearable
               filterable
               :loading="usersLoading"
-              style="width: 100%"
-              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+              width="fill"
             >
               <el-option v-for="u in tenantUsers" :key="u.id" :label="u.account" :value="u.id" />
-            </el-select>
+            </AppSelect>
           </el-form-item>
           <el-form-item v-if="!isEdit" label="状态" required>
             <el-radio-group v-model="form.status">

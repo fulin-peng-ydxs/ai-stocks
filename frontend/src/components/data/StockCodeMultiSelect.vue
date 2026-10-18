@@ -1,11 +1,8 @@
 <script setup lang="ts">
+import AppSelect from '@/components/AppSelect.vue'
 import { ref, watch } from 'vue'
 import { getStockQuality } from '@/api/data'
 import { getErrorMessage } from '@/utils/error'
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
 
 const props = withDefaults(defineProps<{
   modelValue: string[]
@@ -100,7 +97,7 @@ watch(
 
 <template>
   <div class="stock-code-multi-select" @paste="handlePaste">
-    <el-select
+    <AppSelect
       :model-value="modelValue"
       multiple
       filterable
@@ -116,10 +113,8 @@ watch(
       :placeholder="placeholder"
       :aria-label="ariaLabel"
       :data-testid="testId"
-      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
-      style="width: 100%"
       @update:model-value="emitValue($event as string[])"
+      width="fill"
     >
       <el-option
         v-for="option in options"
@@ -127,7 +122,7 @@ watch(
         :label="option.label"
         :value="option.code"
       />
-    </el-select>
+    </AppSelect>
   </div>
 </template>
 

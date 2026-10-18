@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import { computed, ref, watch } from 'vue'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import AppDatePicker from '@/components/AppDatePicker.vue'
@@ -346,30 +343,25 @@ defineExpose({ expandOperation })
               <AppDatePicker :model-value="operation.operated_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" format="YYYY-MM-DD HH:mm" :disabled="disabled" @update:model-value="update(index, { operated_at: $event })" />
             </el-form-item>
             <el-form-item label="选股规则" required class="operation-field operation-field--rule">
-              <el-select
+              <AppSelect
                 :model-value="operation.stock_rule_id"
                 :disabled="disabled || !stockRules.length"
                 :data-testid="`operation-stock-rule-${index}`"
                 placeholder="选择规则"
                 @update:model-value="selectStockRule(index, $event)"
-                :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
               >
                 <el-option v-for="rule in stockRules" :key="rule.detail_id!" :label="rule.name || '未命名规则'" :value="rule.detail_id!" />
-              </el-select>
+              </AppSelect>
               <small v-if="!stockRules.length" class="field-error">当前版本没有可用选股规则</small>
             </el-form-item>
             <el-form-item :label="operation.side === 'sell' ? '卖出规则' : '买入规则'" required class="operation-field operation-field--rule">
-              <el-select
+              <AppSelect
                 :model-value="operation.action_rule_id"
                 :disabled="disabled || !actionRules(operation.side).length"
                 :data-testid="`operation-action-rule-${index}`"
                 placeholder="选择规则"
                 @update:model-value="update(index, { action_rule_id: $event })"
-                :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
                 popper-class="app-option-popper trade-operation-rule-popper"
-                fit-input-width
               >
                 <template #label>
                   <BuiltinOptionRow :label="ruleName(operation, 'action')" :builtin="false">
@@ -381,7 +373,7 @@ defineExpose({ expandOperation })
                     <el-tag type="info" size="small" effect="plain">{{ actionSubtypeLabel(rule) }}</el-tag>
                   </BuiltinOptionRow>
                 </el-option>
-              </el-select>
+              </AppSelect>
               <small v-if="!actionRules(operation.side).length" class="field-error">当前方向没有可用买卖规则</small>
             </el-form-item>
             <el-form-item v-if="showCompliance" label="履约状态" required class="operation-field operation-field--compliance">
@@ -400,17 +392,15 @@ defineExpose({ expandOperation })
           <header><h5 class="app-section-title">选股条件核对</h5><p>{{ stockConditionSummary(selectedStockRule(operation)) }}；股价按本笔成交价核对。</p></header>
           <div class="operation-grid">
             <el-form-item v-for="field in requiredFactFields(operation)" :key="field.key" :label="field.label" :required="!disabled" class="operation-field operation-field--rule">
-              <el-select
+              <AppSelect
                 :model-value="operation[field.key]"
                 :disabled="disabled"
                 placeholder="选择事实状态"
                 :data-testid="`operation-${field.key}-${index}`"
                 @update:model-value="update(index, { [field.key]: $event })"
-                :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
               >
                 <el-option v-for="option in conditionFactOptions" :key="option.value" :label="option.label" :value="option.value" />
-              </el-select>
+              </AppSelect>
               <small v-if="disabled && !operation[field.key]" class="app-caption-text">{{ conditionFactLabel(operation[field.key]) }}</small>
             </el-form-item>
           </div>

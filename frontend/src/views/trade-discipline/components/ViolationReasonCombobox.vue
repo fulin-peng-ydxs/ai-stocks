@@ -8,10 +8,7 @@ export interface ReasonValue {
 </script>
 
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import { computed, onMounted, ref } from 'vue'
 import { Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -78,7 +75,7 @@ onMounted(load)
 </script>
 
 <template>
-  <el-select
+  <AppSelect
     :model-value="selectedKey"
     filterable
     allow-create
@@ -89,10 +86,7 @@ onMounted(load)
     placeholder="选择或输入一个原因"
     @update:model-value="change"
     @visible-change="(visible: boolean) => { if (visible && !reasons.length && !loading) load() }"
-    :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-    :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
     popper-class="app-option-popper violation-reason-popper"
-    fit-input-width
   >
     <el-option
       v-if="selectedCustomIsInactive && modelValue"
@@ -112,7 +106,7 @@ onMounted(load)
         ><Delete /></AppIconButton>
       </BuiltinOptionRow>
     </el-option>
-  </el-select>
+  </AppSelect>
 </template>
 
 <style scoped>

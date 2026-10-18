@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppHoverInfo from '@/components/AppHoverInfo'
@@ -1947,58 +1944,50 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             }"
           >
             <template #layer>
-              <el-select
+              <AppSelect
                 v-model="techLayer"
                 clearable
                 placeholder="业务层级"
-                class="app-control-width-short"
-                :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+                width="short"
               >
                 <el-option value="field" label="基础字段" />
                 <el-option value="metric" label="数值指标" />
                 <el-option value="signal" label="布尔信号" />
                 <el-option value="preset" label="参数预设" />
-              </el-select>
+              </AppSelect>
             </template>
             <template #source>
-              <el-select
+              <AppSelect
                 v-model="techSource"
                 clearable
                 placeholder="来源"
-                class="app-control-width-short"
-                :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+                width="short"
               >
                 <el-option value="builtin" label="系统内置" />
                 <el-option value="custom" label="自定义" />
-              </el-select>
+              </AppSelect>
             </template>
             <template #dtype>
-              <el-select
+              <AppSelect
                 v-model="techDtype"
                 clearable
                 placeholder="输出类型"
-                class="app-control-width-short"
-                :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+                width="short"
               >
                 <el-option value="number" label="数值" />
                 <el-option value="bool" label="布尔" />
-              </el-select>
+              </AppSelect>
             </template>
             <template #status>
-              <el-select
+              <AppSelect
                 v-model="techStatus"
                 clearable
                 placeholder="状态"
-                class="app-control-width-short"
-                :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+                width="short"
               >
                 <el-option value="enabled" label="已启用" />
                 <el-option value="disabled" label="已停用" />
-              </el-select>
+              </AppSelect>
             </template>
             <template #presets>
               <el-checkbox v-model="showPresets">展开快捷预设</el-checkbox>
@@ -2187,31 +2176,27 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 <IndicatorSelect v-model="c.indicator" :definitions="registry" :disabled="tReadonly" @change="onCondIndicator(c)" />
                 <IndicatorParamFields v-model="c.params!" :params="defOf(c.indicator)?.params ?? []" :disabled="tReadonly" />
                 <template v-if="defOf(c.indicator)?.dtype === 'bool'">
-                  <el-select
+                  <AppSelect
                     :model-value="c.value"
                     size="small"
                     :disabled="tReadonly"
                     @change="(v: boolean) => (c.value = v)"
-                    :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                    :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
-                    class="app-control-width-compact"
+                    width="compact"
                   >
                     <el-option :value="true" label="满足" />
                     <el-option :value="false" label="不满足" />
-                  </el-select>
+                  </AppSelect>
                 </template>
                 <template v-else>
-                  <el-select
+                  <AppSelect
                     :model-value="c.cmp"
                     size="small"
                     :disabled="tReadonly"
                     @change="(v: string) => onCmpChange(c, v)"
-                    :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                    :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
-                    class="app-control-width-compact"
+                    width="compact"
                   >
                     <el-option v-for="o in NUM_CMP" :key="o.v" :value="o.v" :label="o.t" />
-                  </el-select>
+                  </AppSelect>
                   <template v-if="c.cmp === 'between'">
                     <el-input-number :model-value="(c.value as number[])[0]" size="small" :disabled="tReadonly" :controls="false" style="width: 78px"
                                      @update:model-value="(v: number) => (c.value = [v, (c.value as number[])[1]])" />
@@ -2249,31 +2234,27 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 <IndicatorSelect v-model="c.indicator" :definitions="registry" :disabled="tReadonly" @change="onCondIndicator(c)" />
                 <IndicatorParamFields v-model="c.params!" :params="defOf(c.indicator)?.params ?? []" :disabled="tReadonly" />
                 <template v-if="defOf(c.indicator)?.dtype === 'bool'">
-                  <el-select
+                  <AppSelect
                     :model-value="c.value"
                     size="small"
                     :disabled="tReadonly"
                     @change="(v: boolean) => (c.value = v)"
-                    :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                    :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
-                    class="app-control-width-compact"
+                    width="compact"
                   >
                     <el-option :value="true" label="满足" />
                     <el-option :value="false" label="不满足" />
-                  </el-select>
+                  </AppSelect>
                 </template>
                 <template v-else>
-                  <el-select
+                  <AppSelect
                     :model-value="c.cmp"
                     size="small"
                     :disabled="tReadonly"
                     @change="(v: string) => onCmpChange(c, v)"
-                    :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                    :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
-                    class="app-control-width-compact"
+                    width="compact"
                   >
                     <el-option v-for="o in NUM_CMP" :key="o.v" :value="o.v" :label="o.t" />
-                  </el-select>
+                  </AppSelect>
                   <template v-if="c.cmp === 'between'">
                     <el-input-number :model-value="(c.value as number[])[0]" size="small" :disabled="tReadonly" :controls="false" style="width: 78px"
                                      @update:model-value="(v: number) => (c.value = [v, (c.value as number[])[1]])" />

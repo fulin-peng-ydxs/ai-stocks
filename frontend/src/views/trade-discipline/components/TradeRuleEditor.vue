@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { computed, ref, watch } from 'vue'
 import { CopyDocument, Delete, Plus } from '@element-plus/icons-vue'
@@ -675,12 +672,10 @@ defineExpose({
                   <el-form-item label="股价下限（元）"><FixedDecimalInput :model-value="item.price_min ?? null" @update:model-value="item.price_min = $event" :scale="4" :integer-digits="16" placeholder="不限" data-testid="stock-price-min" /></el-form-item>
                   <el-form-item label="股价上限（元）"><FixedDecimalInput :model-value="item.price_max ?? null" @update:model-value="item.price_max = $event" :scale="4" :integer-digits="16" placeholder="不限" data-testid="stock-price-max" /></el-form-item>
                   <el-form-item v-for="condition in stockConditionFields" :key="condition.key" :label="condition.label">
-                    <el-select
+                    <AppSelect
                       v-model="item[condition.key]"
                       :data-testid="`stock-${condition.key}`"
-                      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
-                    ><el-option v-for="option in conditionFilterOptions" :key="option.value" :label="option.label" :value="option.value" /></el-select>
+                    ><el-option v-for="option in conditionFilterOptions" :key="option.value" :label="option.label" :value="option.value" /></AppSelect>
                   </el-form-item>
                   <el-form-item class="rule-card-form__content" label="规则内容" :required="editing && canManage"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
                 </div>
@@ -741,7 +736,7 @@ defineExpose({
                             </HelpTipItem>
                           </HelpTip>
                         </template>
-                        <el-select
+                        <AppSelect
                           v-model="item.action_subtype"
                           filterable
                           allow-create
@@ -749,10 +744,7 @@ defineExpose({
                           maxlength="40"
                           placeholder="选择或输入类型"
                           data-testid="action-rule-type-select"
-                          :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                          :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
                           popper-class="app-option-popper trade-rule-subtype-popper"
-                          fit-input-width
                         >
                           <el-option
                             v-if="subtypeIsMissing(item, group.value)"
@@ -771,7 +763,7 @@ defineExpose({
                               ><Delete /></AppIconButton>
                             </BuiltinOptionRow>
                           </el-option>
-                        </el-select>
+                        </AppSelect>
                       </el-form-item>
                       <el-form-item class="rule-card-form__content" label="规则内容" :required="editing && canManage"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
                     </div>

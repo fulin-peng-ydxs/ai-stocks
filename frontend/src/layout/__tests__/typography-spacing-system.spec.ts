@@ -59,24 +59,34 @@ function floatingContractViolations(source: string, file: string): string[] {
     if (tag === 'market-benchmark-select' && (valueOf(node, 'width') || valueOf(node, 'style'))) {
       violations.push(`${where}: benchmark width must be owned by shared selector`)
     }
+    const selectRuntime = file === 'components/AppSelect.vue' && tag === 'el-select'
+    if ((tag === 'el-select' || node.tag === 'select') && !selectRuntime) {
+      violations.push(`${where}: use AppSelect instead of native select`)
+    }
+    if (tag === 'app-select' || selects.has(tag)) {
+      const width = valueOf(node, 'width')
+      if (width && !['compact', 'short', 'medium', 'long', 'wide', 'fill'].includes(width)) {
+        violations.push(`${where}: semantic width`)
+      }
+      if (/(?:^|;)\s*(?:min-|max-)?width\s*:\s*[\d.]+(?:px|rem|em)\b/.test(valueOf(node, 'style') ?? '')) {
+        violations.push(`${where}: inline fixed width`)
+      }
+    }
     if (panels.has(tag) || menus.has(tag)) {
-      // AppDatePicker 是唯一可透传特殊定位的底层入口，其默认值由日期契约单独检查。
+      // 底层共享入口集中维护默认值，消费方不再重复配置。
       const dateRuntime = file === 'components/AppDatePicker.vue' && tag === 'el-date-picker'
-      const placements = dateRuntime ? ['placement']
+      const placements = dateRuntime || selectRuntime ? ['placement']
         : ['APP_BOTTOM_FLOATING_PLACEMENT', 'APP_BOTTOM_END_FLOATING_PLACEMENT']
       if (!placements.some((placement) => hasBound(node, 'placement', placement))) violations.push(`${where}: placement`)
       const property = tag === 'el-dropdown' ? 'popper-options' : 'fallback-placements'
       const expression = tag === 'el-dropdown' ? 'APP_BOTTOM_FLOATING_POPPER_OPTIONS'
-        : dateRuntime ? 'fallbackPlacements' : 'APP_BOTTOM_FLOATING_FALLBACKS'
+        : dateRuntime || selectRuntime ? 'fallbackPlacements' : 'APP_BOTTOM_FLOATING_FALLBACKS'
       if (!hasBound(node, property, expression)) violations.push(`${where}: ${property}`)
-      if (selects.has(tag) && /(?:^|;)\s*(?:min-|max-)?width\s*:\s*[\d.]+(?:px|rem|em)\b/.test(valueOf(node, 'style') ?? '')) {
-        violations.push(`${where}: inline fixed width`)
-      }
     }
     if (tag === 'el-option' || tag === 'el-dropdown-item') {
       const compound = node.children.some((child) => child.type === 1)
       const owner = [...ancestors].reverse().find((ancestor) => !optionTags.has(tagOf(ancestor))
-        && (selects.has(tagOf(ancestor)) || tagOf(ancestor) === 'el-dropdown'))
+        && (selects.has(tagOf(ancestor)) || ['app-select', 'el-dropdown'].includes(tagOf(ancestor))))
       if (compound && owner) {
         const boundary = (valueOf(owner, 'popper-class') ?? '').split(/\s+/)
           .filter((name) => name && name !== 'app-option-popper')
@@ -474,26 +484,28 @@ describe('字体与间距设计契约', () => {
     expect(violations).toEqual([])
   })
 
-  it('同文件首个下拉合规时，仍能发现后续控件遗漏和复合选项边界缺失', () => {
+  it('逐控件禁止原生入口、固定宽度和无边界复合选项，合法共享入口不误报', () => {
     const source = `<template>
-      <el-select :placement="APP_BOTTOM_FLOATING_PLACEMENT" :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS" />
-      <el-select @change="(value) => update(value)" style="width: 170px">
+      <AppSelect width="short" /><el-icon><Select /></el-icon>
+      <AppSelect style="width: 170px" width="170px">
         <el-option><span>名称</span><small>状态</small></el-option>
-      </el-select>
+      </AppSelect>
+      <ElSelect :placement="APP_BOTTOM_FLOATING_PLACEMENT" :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS" />
+      <select><option>原生选项</option></select>
     </template>`
     const violations = floatingContractViolations(source, 'example.vue')
-    expect(violations).toHaveLength(4)
-    expect(violations.some((item) => item.endsWith(': placement'))).toBe(true)
-    expect(violations.some((item) => item.endsWith(': fallback-placements'))).toBe(true)
+    expect(violations).toHaveLength(5)
+    expect(violations.filter((item) => item.endsWith(': use AppSelect instead of native select'))).toHaveLength(2)
+    expect(violations.some((item) => item.endsWith(': semantic width'))).toBe(true)
     expect(violations.some((item) => item.endsWith(': inline fixed width'))).toBe(true)
     expect(violations.some((item) => item.endsWith(': compound option popper-class'))).toBe(true)
   })
 
-  it('指数单选使用专用组件与语义容量，不复用筛选多选的等宽浮层', () => {
+  it('指数单选复用 AppSelect 与语义容量，宽度由业务组件持有', () => {
     const benchmark = read(join(SRC_DIR, 'components/MarketBenchmarkSelect.vue'))
     expect(benchmark).not.toContain('AppFilterSelect')
-    expect(benchmark).toContain('class="app-control-width-short"')
-    expect(benchmark).toContain(':fit-input-width="false"')
+    expect(benchmark).toContain('<AppSelect')
+    expect(benchmark).toContain('width="short"')
     expect(floatingContractViolations('<template><MarketBenchmarkSelect width="120px" /></template>', 'example.vue'))
       .toEqual(['example.vue:1 market-benchmark-select: benchmark width must be owned by shared selector'])
   })

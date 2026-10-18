@@ -1,9 +1,6 @@
 <script setup lang="ts">
+import AppSelect from '@/components/AppSelect.vue'
 import { computed } from 'vue'
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
 
 export interface AppFilterSelectOption {
   value: string
@@ -108,7 +105,7 @@ function onChange(value: string[] | string) {
     :data-display-mode="multiple ? displayMode : undefined"
     :data-all-selected="multiple ? isAllSelected : undefined"
   >
-    <el-select
+    <AppSelect
       v-model="selected"
       class="app-filter-select__control"
       :multiple="multiple"
@@ -119,10 +116,7 @@ function onChange(value: string[] | string) {
       :collapse-tags="multiple && collapseTags"
       :collapse-tags-tooltip="multiple && collapseTags"
       :max-collapse-tags="normalizedVisibleTagCount"
-      :fit-input-width="true"
       popper-class="app-filter-select-popper"
-      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
       :size="size"
       :disabled="disabled"
       :placeholder="placeholder"
@@ -141,7 +135,7 @@ function onChange(value: string[] | string) {
         :label="item.label"
         :value="item.value"
       />
-    </el-select>
+    </AppSelect>
   </div>
 </template>
 

@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -936,11 +933,9 @@ const menuPageTitle = useMenuPageTitle()
               test-id="limit-ladder-default-ignore-st"
             />
             <PageSettingItem label="卡片层内排序">
-              <el-select
+              <AppSelect
                 v-model="settings.cardSort"
                 data-testid="limit-ladder-default-card-sort"
-                :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
               >
                 <el-option
                   v-for="option in LIMIT_LADDER_CARD_SORT_OPTIONS"
@@ -948,7 +943,7 @@ const menuPageTitle = useMenuPageTitle()
                   :label="option.label"
                   :value="option.value"
                 />
-              </el-select>
+              </AppSelect>
             </PageSettingItem>
             <PageSettingItem label="排序方向">
               <PageSegmented

@@ -547,6 +547,7 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
         template: '<button :data-testid="testId" :disabled="disabled" @click="$emit(\'click\')"><slot /></button>',
       },
       KlineSettingSection: true,
+      AppSelect: false,
       ElSelect: ElSelectStub,
       ElOption: {
         props: ['label', 'value'],

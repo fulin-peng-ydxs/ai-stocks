@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -1362,16 +1359,14 @@ const menuPageTitle = useMenuPageTitle()
                 />
               </div>
               <KlineRangeSelect v-if="chartMode === 'kline'" v-model="rangeDays" width="112px" test-id="sectors-range" />
-              <el-select
+              <AppSelect
                 v-else-if="chartMode === 'compare' && compareMetric === 'cum'"
                 v-model="compareWindow"
                 data-testid="sectors-compare-range"
-                :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
-                class="app-control-width-compact"
+                width="compact"
               >
                 <el-option v-for="o in COMPARE_RANGE_OPTIONS" :key="o.value" :value="o.value" :label="o.label" />
-              </el-select>
+              </AppSelect>
               <PageSegmented
                 v-model="chartMode"
                 :options="CHART_MODE_OPTIONS"

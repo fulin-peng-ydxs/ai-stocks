@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppSelect from '@/components/AppSelect.vue'
 import AppHoverInfo from '@/components/AppHoverInfo'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -1013,30 +1014,30 @@ const menuPageTitle = useMenuPageTitle()
           />
         </el-form-item>
         <el-form-item label="任务类型" required>
-          <el-select
+          <AppSelect
             v-model="form.task_type"
-            :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-            :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
             data-testid="schedule-task-type"
-            style="width: 100%"
             @change="changeTaskType"
+            width="fill"
           >
             <el-option v-for="o in taskTypeOptions()" :key="o.value" :label="o.label" :value="o.value" />
-          </el-select>
+          </AppSelect>
         </el-form-item>
         <!-- 按类型的动态参数 -->
         <el-form-item v-if="form.task_type === 'fix'" label="问题类型" required>
           <div class="app-inline-info app-inline-info--fill">
-            <el-select v-model="form.issue_type" data-testid="schedule-issue-type" style="width: 100%"
-                       :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                       :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS">
+            <AppSelect
+              v-model="form.issue_type"
+              data-testid="schedule-issue-type"
+              width="fill"
+            >
               <el-option
                 v-for="issueType in qualityIssueTypes"
                 :key="issueType"
                 :label="ISSUE_TYPE_LABEL[issueType] ?? issueType"
                 :value="issueType"
               />
-            </el-select>
+            </AppSelect>
             <span class="app-caption-text">每次触发时动态恢复该类型当前所有“未处理”问题，无问题时正常结束</span>
           </div>
         </el-form-item>
@@ -1094,10 +1095,8 @@ const menuPageTitle = useMenuPageTitle()
         </template>
         <template v-else>
           <el-form-item label="上游任务" required>
-            <el-select
+            <AppSelect
               v-model="form.dependency_job_id"
-              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
               data-testid="schedule-dependency-job"
               placeholder="选择上游任务"
               filterable
@@ -1105,7 +1104,7 @@ const menuPageTitle = useMenuPageTitle()
               :remote-method="loadDependencyOptions"
               :loading="dependencyOptionsLoading"
               :reserve-keyword="false"
-              style="width: 100%"
+              width="fill"
             >
               <el-option
                 v-for="job in dependencyOptions"
@@ -1113,7 +1112,7 @@ const menuPageTitle = useMenuPageTitle()
                 :label="`${job.name}${job.enabled ? '' : '（已停用）'}`"
                 :value="job.id"
               />
-            </el-select>
+            </AppSelect>
           </el-form-item>
           <el-form-item label="结果条件" required>
             <div class="app-inline-info">
@@ -1123,11 +1122,13 @@ const menuPageTitle = useMenuPageTitle()
           </el-form-item>
           <el-form-item label="触发延迟" required>
             <el-input-number v-model="form.dependency_delay_value" data-testid="schedule-dependency-delay" :min="0" :precision="0" />
-            <el-select v-model="form.dependency_delay_unit" data-testid="schedule-dependency-delay-unit" class="delay-unit-select"
-                       :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                       :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS">
+            <AppSelect
+              v-model="form.dependency_delay_unit"
+              data-testid="schedule-dependency-delay-unit"
+              class="delay-unit-select"
+            >
               <el-option v-for="item in DELAY_UNIT_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
-            </el-select>
+            </AppSelect>
           </el-form-item>
         </template>
 
@@ -1149,11 +1150,13 @@ const menuPageTitle = useMenuPageTitle()
           </el-form-item>
           <el-form-item label="重试延迟" required>
             <el-input-number v-model="form.retry_delay_value" data-testid="schedule-retry-delay" :min="0" :precision="0" />
-            <el-select v-model="form.retry_delay_unit" data-testid="schedule-retry-delay-unit" class="delay-unit-select"
-                       :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                       :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS">
+            <AppSelect
+              v-model="form.retry_delay_unit"
+              data-testid="schedule-retry-delay-unit"
+              class="delay-unit-select"
+            >
               <el-option v-for="item in DELAY_UNIT_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
-            </el-select>
+            </AppSelect>
           </el-form-item>
           <el-form-item label="最大重试" required>
             <div class="app-inline-info">

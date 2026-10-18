@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import { computed } from 'vue'
 import type { IndicatorDef } from '@/api/scoreProfile'
 
@@ -24,18 +21,16 @@ function update(value: string): void {
 </script>
 
 <template>
-  <el-select
+  <AppSelect
     v-bind="$attrs"
     :model-value="modelValue || ''"
     :disabled="disabled"
     filterable
     size="small"
-    class="indicator-select app-control-width-long"
+    class="indicator-select"
     @update:model-value="update"
-    :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-    :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
     popper-class="app-option-popper indicator-select-popper"
-    fit-input-width
+    width="long"
   >
     <el-option-group label="通用指标">
       <el-option v-for="item in general" :key="item.key" :value="item.key" :label="item.name_cn">
@@ -46,5 +41,5 @@ function update(value: string): void {
     <el-option-group v-if="presets.length" label="快捷预设">
       <el-option v-for="item in presets" :key="item.key" :value="item.key" :label="item.name_cn" />
     </el-option-group>
-  </el-select>
+  </AppSelect>
 </template>

@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import { computed, watch } from 'vue'
 import MarketBenchmarkSelect from '@/components/MarketBenchmarkSelect.vue'
 import PageSettingItem from '@/components/PageSettingItem.vue'
@@ -60,11 +57,9 @@ watch(compareMetrics, (metrics) => {
     </el-checkbox-group>
   </PageSettingItem>
   <PageSettingItem label="默认对比指标">
-    <el-select
+    <AppSelect
       v-model="defaultCompareMetric"
-      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
-      class="app-control-width-medium"
+      width="medium"
     >
       <el-option
         v-for="metric in defaultMetricOptions"
@@ -72,16 +67,14 @@ watch(compareMetrics, (metrics) => {
         :value="metric"
         :label="COMPARE_METRIC_META[metric].label"
       />
-    </el-select>
+    </AppSelect>
   </PageSettingItem>
   <PageSettingItem label="默认涨跌周期">
-    <el-select
+    <AppSelect
       v-model="compareWindow"
-      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
-      class="app-control-width-medium"
+      width="medium"
     >
       <el-option v-for="option in COMPARE_RANGE_OPTIONS" :key="option.value" :value="option.value" :label="option.label" />
-    </el-select>
+    </AppSelect>
   </PageSettingItem>
 </template>

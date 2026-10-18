@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import {
   computed,
@@ -71,10 +72,6 @@ import { getErrorMessage, getErrorStatus } from '@/utils/error'
 import { detailReturnLabel, trustedDetailReturnPath } from '@/utils/detailReturnNavigation'
 import { formatCompactMoneyYuan } from '@/utils/money'
 import { stockGroupTagStyle } from '@/utils/stockGroupPresentation'
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useStockAdjustModeSession } from '@/composables/useStockAnalysisSession'
@@ -1199,7 +1196,7 @@ onBeforeUnmount(() => {
                 <el-icon class="el-icon--right"><ArrowRight /></el-icon>
               </el-button>
             </el-button-group>
-            <el-select
+            <AppSelect
               data-testid="stock-set-select"
               :model-value="code"
               placeholder="从集合中选择"
@@ -1214,8 +1211,6 @@ onBeforeUnmount(() => {
               @change="onCollectionSelect"
               @visible-change="onCollectionVisibleChange"
               @end-reached="onCollectionEndReached"
-              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
             >
               <el-option
                 v-for="(it, i) in dropdownOptions"
@@ -1230,12 +1225,12 @@ onBeforeUnmount(() => {
                 disabled
                 :label="dropdownLoading ? '加载中...' : '向下滚动加载更多'"
               />
-            </el-select>
+            </AppSelect>
             <AppCloseButton label="退出集合" size="default" @click="stockSet.clear()" />
           </div>
           <div v-if="canUpdateGroups && !barsPermissionDenied" class="stock-context__groups">
             <span class="stock-context__label">所属分组</span>
-            <el-select
+            <AppSelect
               v-model="selectedGroupIds"
               v-permission="'stock-group:member-update'"
               data-testid="stock-group-select"
@@ -1245,14 +1240,11 @@ onBeforeUnmount(() => {
               collapse-tags-tooltip
               :max-collapse-tags="2"
               size="small"
-              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
               class="stock-context__group-select"
               placeholder="选择分组"
               :loading="groupOpsLoading"
               @change="onGroupsChange"
               popper-class="app-option-popper stock-group-select-popper"
-              fit-input-width
             >
               <template #tag>
                 <el-tag
@@ -1275,7 +1267,7 @@ onBeforeUnmount(() => {
                   <span class="app-option-label">{{ g.name }}（{{ g.member_count }}）</span>
                 </span>
               </el-option>
-            </el-select>
+            </AppSelect>
           </div>
         </template>
       </MarketDetailHero>

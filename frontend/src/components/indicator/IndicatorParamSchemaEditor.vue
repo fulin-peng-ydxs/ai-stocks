@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import { Plus, Close } from '@element-plus/icons-vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import type { IndicatorParam } from '@/api/scoreProfile'
@@ -38,16 +35,14 @@ function remove(index: number): void {
         <label><span>页面名称</span><el-input :model-value="param.label" :disabled="disabled" placeholder="如 统计周期" @update:model-value="(v: string) => update(index, { label: v })" /></label>
         <label>
           <span>数值类型</span>
-          <el-select
+          <AppSelect
             :model-value="param.type"
             :disabled="disabled"
             @update:model-value="(v: string) => update(index, { type: v })"
-            :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-            :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
           >
             <el-option value="int" label="整数" />
             <el-option value="float" label="小数" />
-          </el-select>
+          </AppSelect>
         </label>
         <label><span>单位</span><el-input :model-value="param.unit" :disabled="disabled" placeholder="如 交易日" @update:model-value="(v: string) => update(index, { unit: v })" /></label>
         <label><span>默认值</span><el-input-number :model-value="param.default" :disabled="disabled" :controls="false" @update:model-value="(v: number | undefined) => v !== undefined && update(index, { default: v })" /></label>

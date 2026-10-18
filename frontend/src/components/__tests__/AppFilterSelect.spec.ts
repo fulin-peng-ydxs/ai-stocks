@@ -168,8 +168,8 @@ describe('AppFilterSelect', () => {
     expect(select.attributes('data-allow-create')).toBe('true')
     expect(select.attributes('data-default-first-option')).toBe('true')
     expect(select.attributes('data-size')).toBe('small')
-    expect(select.attributes('data-fit-input-width')).toBe('true')
-    expect(select.attributes('data-popper-class')).toBe('app-filter-select-popper')
+    expect(select.attributes('data-fit-input-width')).toBe('false')
+    expect(select.attributes('data-popper-class')).toBe('app-select-popper app-filter-select-popper')
   })
 
   it('业务单选场景可关闭多选和标签折叠', async () => {

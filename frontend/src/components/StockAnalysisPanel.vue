@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import { getBars, getIndicators } from '@/api/stocks'
@@ -454,17 +451,15 @@ onBeforeUnmount(() => {
             @update:model-value="emit('update:benchmarkCode', String($event))"
           />
         </div>
-        <el-select
+        <AppSelect
           v-if="mode === 'compare' && compareMetric === 'cum'"
           :model-value="compareRange"
           data-testid="stock-compare-range"
           @update:model-value="emit('update:compareRange', $event)"
-          :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-          :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
-          class="app-control-width-compact"
+          width="compact"
         >
           <el-option v-for="option in COMPARE_RANGE_OPTIONS" :key="option.value" :value="option.value" :label="option.label" />
-        </el-select>
+        </AppSelect>
         <KlineRangeSelect
           v-else-if="mode === 'kline'"
           :model-value="klineRange"

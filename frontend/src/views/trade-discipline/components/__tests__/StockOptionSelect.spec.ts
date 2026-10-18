@@ -24,7 +24,7 @@ describe('StockOptionSelect', () => {
       props: { modelValue: null, tradeDate: '2026-08-22' }, global: { plugins: [ElementPlus] },
     })
     const select = wrapper.findComponent({ name: 'ElSelect' })
-    expect(select.props('popperClass')).toBe('stock-option-select-popper')
+    expect(select.props('popperClass')).toBe('app-select-popper stock-option-select-popper')
     select.props('remoteMethod')('平安')
     expect(searchStocks).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(250)

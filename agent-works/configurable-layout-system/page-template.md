@@ -99,7 +99,8 @@
 
 - 主 / 次 / 危险操作选型：
 - 按钮位置：按真实影响范围判断，不按动词机械归类；作用于整页或页面唯一主任务的主操作放 `.page-head-actions`、位于 `PageSettingsTrigger` 左侧并使用默认 32px 尺寸；当前页签、局部表单、选中对象或局部区块命令留在对应区域工具区（见 DESIGN.md §4「按钮与输入」）。
-- 控件宽度：普通控件按内容容量选择 `.app-control-width-compact/short/medium/long/wide/fill` 中能完整承载常态内容的最小档位；多选 `AppFilterSelect` 必须按使用场景声明 `visibleTagCount=1..3`，由组件确定可见值、`+N` 与宽度档位，或使用 `displayMode=count` 只显示“已选 N”；不得另加宽度 class 或内联宽度；独立复合组件例外必须使用具名 class 并说明理由。
+- 下拉选型：普通下拉使用 `AppSelect`，筛选/紧凑多选使用 `AppFilterSelect`，已有领域选择器继续复用；禁止页面直接使用原生 `el-select` 或 HTML `<select>`。面板默认按内容扩展到共享上限后换行，等宽例外按 DESIGN「按钮与输入」登记，消费页无需重复配置定位。
+- 控件宽度：`AppSelect` 的 `width` 使用 `compact / short / medium / long / wide / fill` 档位（如 `width="short"`）；普通控件按内容容量选择 `.app-control-width-compact/short/medium/long/wide/fill` 中能完整承载常态内容的最小档位；多选 `AppFilterSelect` 必须按使用场景声明 `visibleTagCount=1..3`，由组件确定可见值、`+N` 与宽度档位，或使用 `displayMode=count` 只显示“已选 N”；不得另加宽度 class 或内联宽度；独立复合组件例外必须使用具名 class 并说明理由。
 - 自定义条目顺序：按 [DESIGN.md「自定义顺序」](../../DESIGN.md#自定义顺序) 选择共享组件，核对允许调整的范围、稳定标识及业务保存流程。
 - 排序操作：统一复用 `AppSortControl`，并作为所属筛选/操作栏的最后一个控件；空间不足保持 DOM 顺序整体换行。
 - 图标关闭/移除临时界面：使用 `AppCloseButton`；库内置关闭由全局适配，档位、状态、适用范围和业务边界统一引用 DESIGN §4，不私写配方。
@@ -165,7 +166,7 @@
 - 滚动归属：抽屉正文内滚，页面不跟随滚动
 - 关闭策略：关闭按钮 / 遮罩 / Esc / 完成动作后关闭
 - Teleport 样式入口：唯一全局类或 `:global`
-- 文案容量：控件内直接可见的占位/后缀说明 ≤15 字，更完整的说明按内容结构使用 `HelpHint` / `HelpTip` 或移到字段辅助说明行；`HelpTipItem` 必须且只能传 `question="具体问题文本"` 或 `warning`，前者第一行显示具体问题文本并自动追加冒号，后者固定显示黄色“注意：”，第二行无论内容长短都使用由组件统一呈现为 `.` 开头的 `ul/li` 无序列表；`el-select` 占位只写「动作+对象」；验收按「弹窗宽 − 48px − label 宽」自检，不靠加宽弹窗绕过（见 DESIGN.md §3「排版规则」与 §4「组件资产分层」）
+- 文案容量：控件内直接可见的占位/后缀说明 ≤15 字，更完整的说明按内容结构使用 `HelpHint` / `HelpTip` 或移到字段辅助说明行；`HelpTipItem` 必须且只能传 `question="具体问题文本"` 或 `warning`，前者第一行显示具体问题文本并自动追加冒号，后者固定显示黄色“注意：”，第二行无论内容长短都使用由组件统一呈现为 `.` 开头的 `ul/li` 无序列表；`AppSelect` / `AppFilterSelect` 占位只写「动作+对象」；验收按「弹窗宽 − 48px − label 宽」自检，不靠加宽弹窗绕过（见 DESIGN.md §3「排版规则」与 §4「组件资产分层」）
 
 ### 复用与新增判断
 - 复用已有布局：

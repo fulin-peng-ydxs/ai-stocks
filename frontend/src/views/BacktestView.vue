@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import AppHoverInfo from '@/components/AppHoverInfo'
 import AppActionHint from '@/components/AppActionHint.vue'
@@ -1767,16 +1764,14 @@ const menuPageTitle = useMenuPageTitle()
             @action="loadHistory"
           />
           <template v-else>
-          <el-select
+          <AppSelect
             v-model="selectedRun"
-            class="history-run-select app-control-width-wide"
-            fit-input-width
-            :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+            class="history-run-select"
             @change="onMineRunSelected(selectedRun)"
             size="default"
             :placeholder="historyPlaceholder"
-            :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
             popper-class="app-option-popper backtest-run-select-popper"
+            width="wide"
           >
             <el-option v-for="o in runOptions" :key="o.id" :value="o.id" :label="o.label">
               <span class="app-inline-info app-inline-info--fill app-inline-info--nowrap app-inline-info--md">
@@ -1790,7 +1785,7 @@ const menuPageTitle = useMenuPageTitle()
                 <span class="app-option-meta">{{ o.range }} <b :style="{ color: o.color }">{{ o.retTxt }}</b></span>
               </span>
             </el-option>
-          </el-select>
+          </AppSelect>
           <HelpHint text="历史记录显示最近 100 条我的回测，可通过公开回测入口浏览共享记录。" />
           <span
             v-if="externalRunOption"
@@ -2148,15 +2143,13 @@ const menuPageTitle = useMenuPageTitle()
                 </el-radio-group>
                 <template v-if="robustMode === 'param_sweep'">
                   <AppControlItem label="扫描参数">
-                    <el-select
+                    <AppSelect
                       v-model="robustParam"
                       size="small"
-                      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
-                      class="app-control-width-medium"
+                      width="medium"
                     >
                       <el-option v-for="o in ROBUST_PARAM_OPTS" :key="o.v" :value="o.v" :label="o.t" />
-                    </el-select>
+                    </AppSelect>
                   </AppControlItem>
                   <AppControlItem label="取值">
                     <el-input v-model="robustValuesText" size="small" style="width: 220px" placeholder="逗号分隔，如 5,10,15,20" />

@@ -29,7 +29,7 @@ describe('StockIngestScopeFields', () => {
       placement: 'bottom-start',
       fallbackPlacements: ['bottom-start', 'bottom-end'],
       fitInputWidth: true,
-      popperClass: 'stock-ingest-recipe-popper',
+      popperClass: 'app-select-popper app-select-popper--fit stock-ingest-recipe-popper',
     })
     const options = wrapper.findAllComponents(ElOption)
     expect(options).toHaveLength(STOCK_INGEST_RECIPE_OPTIONS.length)

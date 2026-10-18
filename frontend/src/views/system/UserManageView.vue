@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -527,43 +524,37 @@ const menuPageTitle = useMenuPageTitle()
             }"
           >
             <template #tenant>
-              <el-select
+              <AppSelect
                 v-if="isSystem"
                 v-model="filters.tenant"
                 placeholder="租户：全部"
                 clearable
                 :loading="dependencyLoading"
-                class="app-control-width-medium"
-                :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+                width="medium"
               >
                 <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
-              </el-select>
+              </AppSelect>
             </template>
             <template #role>
-              <el-select
+              <AppSelect
                 v-model="filters.role"
                 :loading="dependencyLoading"
                 placeholder="角色：全部"
                 clearable
-                class="app-control-width-medium"
-                :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+                width="medium"
               >
                 <el-option v-for="r in assignableRoles" :key="r.id" :label="r.name" :value="r.code" />
-              </el-select>
+              </AppSelect>
             </template>
             <template #status>
-              <el-select
+              <AppSelect
                 v-model="filters.status"
                 placeholder="状态：全部"
                 clearable
-                class="app-control-width-short"
-                :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+                width="short"
               >
                 <el-option v-for="item in userStatusOptions" :key="item.code" :label="item.label" :value="item.code" />
-              </el-select>
+              </AppSelect>
             </template>
             <template #keyword>
               <AppSearchInput v-model="filters.q" placeholder="搜索账号 / 邮箱" class="app-control-width-long" @search="search" />
@@ -667,13 +658,11 @@ const menuPageTitle = useMenuPageTitle()
             <el-input v-model="form.email" placeholder="选填" />
           </el-form-item>
           <el-form-item label="角色" :required="!protectedRoleNames.length">
-            <el-select
+            <AppSelect
               v-model="form.roleIds"
               multiple
               placeholder="可多选，权限取并集"
-              style="width: 100%"
-              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+              width="fill"
             >
               <el-option
                 v-for="r in assignableRoles"
@@ -682,7 +671,7 @@ const menuPageTitle = useMenuPageTitle()
                 :value="r.id"
                 :disabled="editingOwnSystemRole && r.code === 'system'"
               />
-            </el-select>
+            </AppSelect>
           </el-form-item>
           <el-form-item v-if="isEdit && protectedRoleNames.length" label="平台保留">
             <span class="locked-field">
@@ -691,16 +680,14 @@ const menuPageTitle = useMenuPageTitle()
             </span>
           </el-form-item>
           <el-form-item label="租户">
-            <el-select
+            <AppSelect
               v-if="isSystem && !isEdit"
               v-model="form.tenantId"
               placeholder="归属租户"
-              style="width: 100%"
-              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+              width="fill"
             >
               <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
-            </el-select>
+            </AppSelect>
             <span v-else class="locked-field">
               {{ tenantName(form.tenantId) }}<span class="muted">（{{ isEdit ? '归属不可改' : '限本租户' }}）</span>
             </span>

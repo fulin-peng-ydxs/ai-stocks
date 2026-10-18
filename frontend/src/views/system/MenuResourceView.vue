@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 // 菜单与功能管理页（多租户 RBAC stage3·T13，R12+R13）。承接 menu-resource-management.html。
@@ -608,26 +605,22 @@ const menuPageTitle = useMenuPageTitle()
                     <el-input v-model="form.title" size="small" :disabled="!canMenuUpdate" @input="onFormChange" />
                   </div>
                   <div class="mr-field"><label>类型</label>
-                    <el-select
+                    <AppSelect
                       v-model="form.type"
                       size="small"
                       :disabled="!canMenuUpdate"
                       @change="onFormChange"
-                      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
                     >
                       <el-option label="叶子（可导航）" value="leaf" />
                       <el-option label="分组（不导航）" value="group" />
-                    </el-select>
+                    </AppSelect>
                   </div>
                   <div class="mr-field"><label>上级</label>
-                    <el-select
+                    <AppSelect
                       :model-value="form.parentId ?? ''"
                       size="small"
                       :disabled="!canMenuUpdate"
                       @change="onParentChange"
-                      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
                     >
                       <el-option
                         v-for="opt in parentOptions"
@@ -636,7 +629,7 @@ const menuPageTitle = useMenuPageTitle()
                         :value="opt.id ?? ''"
                         :disabled="opt.disabled"
                       />
-                    </el-select>
+                    </AppSelect>
                   </div>
                   <div class="mr-field"><label>路由</label>
                     <el-input v-model="form.routePath" size="small" placeholder="如 /board" class="mono"
@@ -651,17 +644,15 @@ const menuPageTitle = useMenuPageTitle()
                     </el-input>
                   </div>
                   <div class="mr-field"><label>可见性</label>
-                    <el-select
+                    <AppSelect
                       v-model="form.visible"
                       size="small"
                       :disabled="!canMenuUpdate"
                       @change="onFormChange"
-                      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
                     >
                       <el-option label="登录可见" value="login" />
                       <el-option label="仅系统管理员" value="system" />
-                    </el-select>
+                    </AppSelect>
                   </div>
                 </div>
               </div>
@@ -737,16 +728,14 @@ const menuPageTitle = useMenuPageTitle()
                   </AppTableColumn>
                   <AppTableColumn v-if="resourceColVisible('type')" label="类型" prop="type" role="status">
                     <template #default="{ row: r }">
-                      <el-select
+                      <AppSelect
                         v-if="editingId === r.id"
                         v-model="resDraft.type"
                         size="small"
-                        :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                        :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
                       >
                         <el-option label="接口" value="api" />
                         <el-option label="按钮" value="button" />
-                      </el-select>
+                      </AppSelect>
                       <el-tag v-else size="small" effect="plain" :type="r.type === 'api' ? 'success' : 'warning'">
                         {{ r.type === 'api' ? '接口' : '按钮' }}
                       </el-tag>
@@ -755,16 +744,14 @@ const menuPageTitle = useMenuPageTitle()
                   <AppTableColumn v-if="resourceColVisible('apiPath')" label="绑定接口" prop="api_path" role="description">
                     <template #default="{ row: r }">
                       <div v-if="editingId === r.id" class="mr-bind">
-                        <el-select
+                        <AppSelect
                           v-if="resDraft.type === 'api'"
                           v-model="resDraft.apiMethod"
                           size="small"
                           class="mr-method-select"
-                          :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                          :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
                         >
                           <el-option v-for="mth in ['GET','POST','PUT','DELETE']" :key="mth" :label="mth" :value="mth" />
-                        </el-select>
+                        </AppSelect>
                         <el-input v-model="resDraft.apiPath" size="small" class="mono" placeholder="/api/…（按钮可空）" />
                       </div>
                       <span v-else class="mono" :class="{ dim: !r.api_path }">{{ bindingText(r) }}</span>
@@ -800,12 +787,10 @@ const menuPageTitle = useMenuPageTitle()
       <AppDialog v-model="menuDialog" title="新增菜单节点" size="medium">
         <el-form label-width="72px">
           <el-form-item label="上级">
-            <el-select
+            <AppSelect
               :model-value="menuCreateForm.parentId ?? ''"
               filterable
               @change="onCreateParentChange"
-              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
             >
               <el-option
                 v-for="opt in createParentOptions"
@@ -813,7 +798,7 @@ const menuPageTitle = useMenuPageTitle()
                 :label="opt.title"
                 :value="opt.id ?? ''"
               />
-            </el-select>
+            </AppSelect>
           </el-form-item>
           <el-form-item label="标题" required>
             <el-input v-model="menuCreateForm.title" placeholder="如：每日榜单" />
@@ -826,14 +811,12 @@ const menuPageTitle = useMenuPageTitle()
             />
           </el-form-item>
           <el-form-item label="类型" required>
-            <el-select
+            <AppSelect
               v-model="menuCreateForm.type"
-              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
             >
               <el-option label="叶子（可导航）" value="leaf" />
               <el-option label="分组（不导航）" value="group" />
-            </el-select>
+            </AppSelect>
           </el-form-item>
           <el-form-item label="路由" v-if="menuCreateForm.type !== 'group'" required>
             <el-input v-model="menuCreateForm.routePath" class="mono" placeholder="如 /board（须与前端已注册路由对应）" />
@@ -842,14 +825,12 @@ const menuPageTitle = useMenuPageTitle()
             <IconPicker v-model="menuCreateForm.icon" />
           </el-form-item>
           <el-form-item label="可见性" required>
-            <el-select
+            <AppSelect
               v-model="menuCreateForm.visible"
-              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
             >
               <el-option label="登录可见" value="login" />
               <el-option label="仅系统管理员" value="system" />
-            </el-select>
+            </AppSelect>
           </el-form-item>
         </el-form>
         <template #footer>

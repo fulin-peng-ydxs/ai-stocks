@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppHoverInfo from '@/components/AppHoverInfo'
@@ -929,30 +926,26 @@ const menuPageTitle = useMenuPageTitle()
                 <IndicatorParamFields v-model="c.params" :params="defOf(c.key)?.params ?? []" :disabled="profileReadonly" />
                 <!-- 布尔：成立/不成立 -->
                 <template v-if="defOf(c.key)?.dtype === 'bool'">
-                  <el-select
+                  <AppSelect
                     v-model="c.boolVal"
                     size="small"
                     :disabled="profileReadonly"
-                    :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                    :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
-                    class="app-control-width-compact"
+                    width="compact"
                   >
                     <el-option :value="true" label="成立" />
                     <el-option :value="false" label="不成立" />
-                  </el-select>
+                  </AppSelect>
                 </template>
                 <!-- 数值：比较符 + 阈值 -->
                 <template v-else>
-                  <el-select
+                  <AppSelect
                     v-model="c.cmp"
                     size="small"
                     :disabled="profileReadonly"
-                    :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                    :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
-                    class="app-control-width-compact"
+                    width="compact"
                   >
                     <el-option v-for="o in NUM_CMP" :key="o.v" :value="o.v" :label="o.t" />
-                  </el-select>
+                  </AppSelect>
                   <el-input-number v-model="c.value" :disabled="profileReadonly" :controls="false" size="small" style="width: 86px" />
                   <template v-if="c.cmp === 'between'">
                     <span>~</span>

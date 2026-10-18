@@ -1,10 +1,7 @@
 <script setup lang="ts">
+import AppSelect from '@/components/AppSelect.vue'
 import { computed } from 'vue'
 import { MARKET_BENCHMARK_OPTIONS } from '@/utils/marketBenchmarks'
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
 
 const props = withDefaults(defineProps<{
   modelValue: string
@@ -34,17 +31,14 @@ const displayValue = computed({
 </script>
 
 <template>
-  <el-select
+  <AppSelect
     v-model="displayValue"
-    class="app-control-width-short"
     :multiple="false"
     :clearable="false"
     :filterable="false"
-    :fit-input-width="false"
-    :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-    :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
     :aria-label="ariaLabel"
     :data-testid="testId"
+    width="short"
   >
     <el-option
       v-for="option in displayOptions"
@@ -52,5 +46,5 @@ const displayValue = computed({
       :label="option.label"
       :value="option.value"
     />
-  </el-select>
+  </AppSelect>
 </template>

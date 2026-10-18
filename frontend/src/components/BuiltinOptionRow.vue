@@ -28,6 +28,11 @@ defineProps<{
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+:global(.app-select-popper .builtin-option-row__label) {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
 .builtin-option-label,
 .builtin-option-row__action {
   margin-left: auto;

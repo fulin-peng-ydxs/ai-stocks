@@ -1,10 +1,7 @@
 <script setup lang="ts">
+import AppSelect from '@/components/AppSelect.vue'
 import { onUnmounted, ref, watch } from 'vue'
 import { searchTradeDisciplineStocks, type StockOption } from '@/api/tradeDiscipline'
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
 import StockStatusTag from '@/components/StockStatusTag.vue'
 
 const props = defineProps<{
@@ -89,7 +86,7 @@ onUnmounted(() => {
 
 <template>
   <div class="stock-option-select">
-    <el-select
+    <AppSelect
       :model-value="modelValue?.code || ''"
       filterable
       remote
@@ -98,8 +95,6 @@ onUnmounted(() => {
       :loading="loading"
       :disabled="disabled"
       :clearable="clearable"
-      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
       popper-class="stock-option-select-popper"
       placeholder="输入代码或名称搜索"
       no-data-text="没有匹配股票"
@@ -114,7 +109,7 @@ onUnmounted(() => {
           {{ [item.industry, item.delist_date ? '已退市' : ''].filter(Boolean).join(' · ') }}
         </small>
       </el-option>
-    </el-select>
+    </AppSelect>
     <StockStatusTag
       v-if="modelValue"
       :is-st="modelValue.is_st"
@@ -140,13 +135,14 @@ small { color: var(--el-text-color-secondary); }
 }
 :global(.stock-option-select-popper .stock-option-select__primary) {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  white-space: normal;
 }
 :global(.stock-option-select-popper .stock-option-select__meta) {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   color: var(--el-text-color-secondary);
-  white-space: nowrap;
+  white-space: normal;
 }
 </style>

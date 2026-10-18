@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
+import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -523,15 +520,13 @@ const menuPageTitle = useMenuPageTitle()
             <p class="page-subtitle">配置单个页面的默认布局、组件特性、导入导出与校验报告。</p>
           </div>
           <div class="page-head-actions">
-            <el-select
+            <AppSelect
               v-model="selectedPageKey"
               class="page-select"
               aria-label="选择配置页面"
-              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
             >
               <el-option v-for="page in managedPages" :key="page.pageKey" :label="page.label" :value="page.pageKey" />
-            </el-select>
+            </AppSelect>
           </div>
         </div>
       </div>
@@ -608,14 +603,12 @@ const menuPageTitle = useMenuPageTitle()
                     <el-form label-position="top" class="config-form">
                       <!-- 页面级旋钮按本页 editable 白名单动态渲染。 -->
                       <el-form-item v-for="knob in selectedPage.layout.editable" :key="knob.path" :label="knob.label">
-                        <el-select
+                        <AppSelect
                           v-if="knob.type === 'enum'"
                           :model-value="pageDraft.values[knob.path] ?? ''"
                           clearable
                           placeholder="使用系统默认"
                           @update:model-value="(v: unknown) => setPageKnob(knob.path, v)"
-                          :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                          :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
                         >
                           <el-option
                             v-for="opt in knob.options"
@@ -623,7 +616,7 @@ const menuPageTitle = useMenuPageTitle()
                             :label="knob.optionLabels?.[String(opt)] ?? String(opt)"
                             :value="opt"
                           />
-                        </el-select>
+                        </AppSelect>
                         <el-switch
                           v-else-if="knob.type === 'bool'"
                           :model-value="Boolean(pageDraft.values[knob.path])"
@@ -734,15 +727,13 @@ const menuPageTitle = useMenuPageTitle()
                 <div class="section-title">导出</div>
                 <div class="section-subtitle">导出当前页面的页面/用户/有效配置；预设导出在「视觉预设」工作区。</div>
                 <div class="inline-controls">
-                  <el-select
+                  <AppSelect
                     v-model="exportScope"
-                    :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-                    :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
                   >
                     <el-option label="当前页面配置" value="page" />
                     <el-option label="当前用户配置" value="user" />
                     <el-option label="当前有效配置" value="effective" />
-                  </el-select>
+                  </AppSelect>
                   <el-button @click="buildExport">生成</el-button>
                   <el-button @click="downloadExport">下载</el-button>
                 </div>

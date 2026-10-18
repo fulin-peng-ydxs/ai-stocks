@@ -1,13 +1,10 @@
 <script setup lang="ts">
+import AppSelect from '@/components/AppSelect.vue'
 import { computed } from 'vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import StockCodeMultiSelect from '@/components/data/StockCodeMultiSelect.vue'
 import CurrentDayFallbackField from '@/components/data/CurrentDayFallbackField.vue'
-import {
-  APP_BOTTOM_FLOATING_FALLBACKS,
-  APP_BOTTOM_FLOATING_PLACEMENT,
-} from '@/utils/floatingPlacement'
 import {
   STOCK_INGEST_RECIPE_OPTIONS,
   isHeavyStockIngestRecipe,
@@ -54,16 +51,14 @@ function changeRecipe(recipe: StockIngestRecipe) {
 
 <template>
   <el-form-item label="采集方案" required>
-    <el-select
+    <AppSelect
       :model-value="modelValue.recipe"
       :data-testid="`${testIdPrefix}-recipe`"
-      class="app-control-width-fill"
       aria-label="采集方案"
-      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
-      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
       fit-input-width
       popper-class="stock-ingest-recipe-popper"
       @update:model-value="changeRecipe($event as StockIngestRecipe)"
+      width="fill"
     >
       <el-option
         v-for="option in STOCK_INGEST_RECIPE_OPTIONS"
@@ -74,7 +69,7 @@ function changeRecipe(recipe: StockIngestRecipe) {
         <span>{{ option.label }}</span>
         <span class="app-caption-text">{{ option.description }}</span>
       </el-option>
-    </el-select>
+    </AppSelect>
   </el-form-item>
 
   <el-form-item v-if="supportsCodes" label="股票范围" required>
