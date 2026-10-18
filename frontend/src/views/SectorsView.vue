@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -1354,7 +1358,6 @@ const menuPageTitle = useMenuPageTitle()
                 <span class="market-analysis-control-label">对比指数</span>
                 <MarketBenchmarkSelect
                   v-model="benchmarkCode"
-                  width="120px"
                   test-id="sectors-benchmark"
                 />
               </div>
@@ -1362,8 +1365,10 @@ const menuPageTitle = useMenuPageTitle()
               <el-select
                 v-else-if="chartMode === 'compare' && compareMetric === 'cum'"
                 v-model="compareWindow"
-                style="width: 96px"
                 data-testid="sectors-compare-range"
+                :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+                class="app-control-width-compact"
               >
                 <el-option v-for="o in COMPARE_RANGE_OPTIONS" :key="o.value" :value="o.value" :label="o.label" />
               </el-select>

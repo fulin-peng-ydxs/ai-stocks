@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import AppHoverInfo from '@/components/AppHoverInfo'
 import AppActionHint from '@/components/AppActionHint.vue'
@@ -1765,24 +1769,25 @@ const menuPageTitle = useMenuPageTitle()
           <template v-else>
           <el-select
             v-model="selectedRun"
-            class="history-run-select"
-            style="width: 340px"
+            class="history-run-select app-control-width-wide"
             fit-input-width
-            placement="bottom-start"
+            :placement="APP_BOTTOM_FLOATING_PLACEMENT"
             @change="onMineRunSelected(selectedRun)"
             size="default"
             :placeholder="historyPlaceholder"
+            :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+            popper-class="app-option-popper backtest-run-select-popper"
           >
             <el-option v-for="o in runOptions" :key="o.id" :value="o.id" :label="o.label">
-              <span class="history-run-option">
-                <span class="history-run-option-name" :style="{ color: o.color }">{{ o.label }}</span>
+              <span class="app-inline-info app-inline-info--fill app-inline-info--nowrap app-inline-info--md">
+                <span class="app-option-label" :style="{ color: o.color }">{{ o.label }}</span>
                 <AssetVisibilityTag
                   v-if="o.displaySource"
                   mode="source"
                   :source="o.displaySource"
                   :owner-label="o.ownerLabel"
                 />
-                <span class="opt-range">{{ o.range }} <b :style="{ color: o.color }">{{ o.retTxt }}</b></span>
+                <span class="app-option-meta">{{ o.range }} <b :style="{ color: o.color }">{{ o.retTxt }}</b></span>
               </span>
             </el-option>
           </el-select>
@@ -2108,7 +2113,6 @@ const menuPageTitle = useMenuPageTitle()
               <span class="bench-choice-label">对比指数</span>
               <MarketBenchmarkSelect
                 v-model="benchChoice"
-                width="120px"
                 test-id="backtest-benchmark"
               />
             </span>
@@ -2144,7 +2148,13 @@ const menuPageTitle = useMenuPageTitle()
                 </el-radio-group>
                 <template v-if="robustMode === 'param_sweep'">
                   <AppControlItem label="扫描参数">
-                    <el-select v-model="robustParam" style="width: 170px" size="small">
+                    <el-select
+                      v-model="robustParam"
+                      size="small"
+                      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+                      class="app-control-width-medium"
+                    >
                       <el-option v-for="o in ROBUST_PARAM_OPTS" :key="o.v" :value="o.v" :label="o.t" />
                     </el-select>
                   </AppControlItem>
@@ -2525,10 +2535,7 @@ const menuPageTitle = useMenuPageTitle()
   min-width: 0;
   max-width: 100%;
 }
-.history-run-select { flex: 1 1 260px; min-width: 0; max-width: 340px; }
-.history-run-option { display: flex; align-items: center; gap: var(--app-space-2); width: 100%; min-width: 0; }
-.history-run-option-name { font-weight: var(--app-font-weight-section); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.history-run-option .opt-range { flex: 0 0 auto; float: none; margin-left: 0; }
+.history-run-select { flex: 1 1 var(--app-control-width-wide); min-width: 0; }
 .opt-range { float: right; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); margin-left: 18px; }
 .dlg-legend { display: flex; align-items: center; gap: var(--app-space-4); margin-bottom: 8px; font-size: var(--app-font-size-caption); }
 .dlg-legend .lg.buy { color: var(--el-color-primary); font-weight: var(--app-font-weight-section); }

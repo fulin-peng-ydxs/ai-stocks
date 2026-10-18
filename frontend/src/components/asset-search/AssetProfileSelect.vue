@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 // 统一「资产方案选择器」（R3/R7）：下拉/侧栏双形态，列表只加载「我的」资产（纯 owner），
@@ -271,6 +275,10 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
           filterable
           :loading="loadingMine"
           :data-testid="`${testId}-select`"
+          :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+          :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+          popper-class="app-option-popper asset-profile-select-popper"
+          fit-input-width
         >
           <template v-if="selectedItem" #label>
             <AssetProfileLabel
@@ -444,6 +452,9 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
 </template>
 
 <style scoped>
+:global(.asset-profile-select-popper .asset-profile-label) {
+  width: 100%;
+}
 .asset-profile-select__list-scroll { max-height: inherit; }
 .asset-profile-select {
   display: inline-grid;

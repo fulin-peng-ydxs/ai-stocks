@@ -27,7 +27,12 @@ describe('AppSortControl', () => {
     const wrapper = mountControl()
 
     expect(wrapper.get('[data-testid="card-sort"]').text()).toContain('排序 · 累计涨幅')
-    wrapper.findComponent({ name: 'ElDropdown' }).vm.$emit('command', 'industry')
+    const dropdown = wrapper.findComponent({ name: 'ElDropdown' })
+    expect(dropdown.props('placement')).toBe('bottom-start')
+    expect(dropdown.props('popperOptions')).toMatchObject({
+      modifiers: [{ name: 'flip', options: { fallbackPlacements: ['bottom-start', 'bottom-end'] } }],
+    })
+    dropdown.vm.$emit('command', 'industry')
 
     expect(wrapper.emitted('update:modelValue')).toEqual([['industry']])
   })

@@ -197,7 +197,7 @@ Key Characteristics：
 - 时间、对象名称等主信息与紧随标签在表格中需要保持一行时叠加 `.app-inline-info--nowrap`；主文本必须允许省略，标签 `flex: none` 保持完整。普通内容区允许容器自然换行，换行后仍保留统一 gap。
 - 图标与文字、标签与标签、正文与状态标签均通过容器 `gap` 分隔；禁止依赖模板换行、普通空格、`&nbsp;`、相邻节点间的源码空白或页面私有固定值 `margin-left/right` 修补。用于两端对齐的 `margin-left: auto` 不属于间距修补，可在明确布局容器内保留。
 - 推荐层级为“主信息正文 > 次级弱文本 > 状态标签”；标签用于增加离散语义，不能取代主信息。
-- Element Plus Select、Popover、Tooltip 等 Teleport 浮层中的复合选项必须声明唯一 `popper-class`，通过该全局边界设置行内布局与 gap；不得使用无法命中 `body` 下浮层的 scoped 后代选择器。
+- Element Plus Select、Popover、Tooltip 等 Teleport 浮层中的复合选项必须声明唯一 `popper-class`，通过该全局边界设置行内布局与 gap；通用选项行复用 `.app-option-popper`，名称与次级信息消费 `.app-option-label` / `.app-option-meta`，内部信息组继续复用 `.app-inline-info`；不得使用无法命中 `body` 下浮层的 scoped 后代选择器。
 - 标准表单下拉和日期面板默认位于触发器下方，只在下方左右对齐间回退；共享控件与页面特殊选择器统一消费 `floatingPlacement.ts` 的位置契约。只有经明确交互证明的场景才允许覆盖到其他方位。
 
 ### 3.3 Tag, Badge & Chip Rules

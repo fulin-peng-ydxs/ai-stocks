@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 // 图标选择器（多租户 RBAC stage3·T13）：消费 @element-plus/icons-vue，供菜单 icon 字段选图标名。
@@ -44,9 +48,10 @@ function clear() {
     trigger="click"
     role="dialog"
     title="选择图标"
-    placement="bottom-start"
+    :placement="APP_BOTTOM_FLOATING_PLACEMENT"
     :disabled="disabled"
     popper-class="icon-picker-pop"
+    :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
   >
     <template #reference>
       <div class="ip-trigger app-focus-ring" :class="{ disabled }"

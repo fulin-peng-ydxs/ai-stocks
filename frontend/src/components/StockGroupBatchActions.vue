@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -180,7 +184,13 @@ async function removeFromGroup(): Promise<void> {
   <AppDialog v-model="addVisible" title="加入已有分组" size="narrow">
     <el-form label-width="80px">
       <el-form-item label="目标分组" required>
-        <el-select v-model="addTargetGid" filterable style="width: 100%">
+        <el-select
+          v-model="addTargetGid"
+          filterable
+          style="width: 100%"
+          :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+          :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+        >
           <el-option v-for="group in groups" :key="group.id" :value="group.id" :label="`${group.name}（${group.member_count}）`" />
         </el-select>
       </el-form-item>

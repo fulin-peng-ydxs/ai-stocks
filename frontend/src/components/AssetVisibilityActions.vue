@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_PLACEMENT,
+  APP_BOTTOM_FLOATING_POPPER_OPTIONS,
+} from '@/utils/floatingPlacement'
 import { computed } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 import AssetVisibilityTag from './AssetVisibilityTag.vue'
@@ -64,6 +68,8 @@ function onCommand(command: string | number | object) {
       trigger="click"
       :hide-on-click="true"
       @command="onCommand"
+      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+      :popper-options="APP_BOTTOM_FLOATING_POPPER_OPTIONS"
     >
       <AssetVisibilityTag :visibility="visibility" clickable>
         <el-icon class="asset-visibility-actions__arrow"><ArrowDown /></el-icon>

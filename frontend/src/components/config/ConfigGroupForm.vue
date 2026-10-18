@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 import { computed } from 'vue'
 import type { SettingField, SettingGroup } from '@/api/data'
 import HelpHint from '@/components/HelpHint.vue'
@@ -165,6 +169,8 @@ function collapsed(key: string): boolean {
               popper-class="config-select-popper"
               placeholder="请选择"
               @update:model-value="(value: string) => setValue(field.path, value)"
+              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
             >
               <el-option v-for="opt in field.options ?? []" :key="opt" :label="opt" :value="opt" />
             </el-select>

@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import { MARKET_BENCHMARK_OPTIONS } from '@/utils/marketBenchmarks'
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 
 const props = withDefaults(defineProps<{
   modelValue: string
-  width?: string
   testId?: string
   ariaLabel?: string
 }>(), {
-  width: '160px',
   testId: undefined,
   ariaLabel: '对比指数',
 })
@@ -30,18 +31,26 @@ const displayValue = computed({
     value === NONE_BENCHMARK_VALUE ? '' : String(value),
   ),
 })
-const controlStyle = computed(() => ({ width: props.width }))
 </script>
 
 <template>
-  <AppFilterSelect
+  <el-select
     v-model="displayValue"
-    :options="displayOptions"
+    class="app-control-width-short"
     :multiple="false"
     :clearable="false"
     :filterable="false"
-    :style="controlStyle"
+    :fit-input-width="false"
+    :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+    :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
     :aria-label="ariaLabel"
     :data-testid="testId"
-  />
+  >
+    <el-option
+      v-for="option in displayOptions"
+      :key="option.value"
+      :label="option.label"
+      :value="option.value"
+    />
+  </el-select>
 </template>

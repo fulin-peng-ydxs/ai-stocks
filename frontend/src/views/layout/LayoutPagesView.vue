@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -519,7 +523,13 @@ const menuPageTitle = useMenuPageTitle()
             <p class="page-subtitle">配置单个页面的默认布局、组件特性、导入导出与校验报告。</p>
           </div>
           <div class="page-head-actions">
-            <el-select v-model="selectedPageKey" class="page-select" aria-label="选择配置页面">
+            <el-select
+              v-model="selectedPageKey"
+              class="page-select"
+              aria-label="选择配置页面"
+              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+            >
               <el-option v-for="page in managedPages" :key="page.pageKey" :label="page.label" :value="page.pageKey" />
             </el-select>
           </div>
@@ -604,6 +614,8 @@ const menuPageTitle = useMenuPageTitle()
                           clearable
                           placeholder="使用系统默认"
                           @update:model-value="(v: unknown) => setPageKnob(knob.path, v)"
+                          :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                          :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
                         >
                           <el-option
                             v-for="opt in knob.options"
@@ -722,7 +734,11 @@ const menuPageTitle = useMenuPageTitle()
                 <div class="section-title">导出</div>
                 <div class="section-subtitle">导出当前页面的页面/用户/有效配置；预设导出在「视觉预设」工作区。</div>
                 <div class="inline-controls">
-                  <el-select v-model="exportScope">
+                  <el-select
+                    v-model="exportScope"
+                    :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                    :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+                  >
                     <el-option label="当前页面配置" value="page" />
                     <el-option label="当前用户配置" value="user" />
                     <el-option label="当前有效配置" value="effective" />

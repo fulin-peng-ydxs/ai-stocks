@@ -1214,6 +1214,8 @@ onBeforeUnmount(() => {
               @change="onCollectionSelect"
               @visible-change="onCollectionVisibleChange"
               @end-reached="onCollectionEndReached"
+              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
             >
               <el-option
                 v-for="(it, i) in dropdownOptions"
@@ -1249,6 +1251,8 @@ onBeforeUnmount(() => {
               placeholder="选择分组"
               :loading="groupOpsLoading"
               @change="onGroupsChange"
+              popper-class="app-option-popper stock-group-select-popper"
+              fit-input-width
             >
               <template #tag>
                 <el-tag
@@ -1266,9 +1270,9 @@ onBeforeUnmount(() => {
                 </el-tag>
               </template>
               <el-option v-for="g in groups" :key="g.id" :value="g.id" :label="g.name">
-                <span class="group-option">
+                <span class="app-inline-info app-inline-info--fill app-inline-info--nowrap">
                   <span class="color-dot" :style="{ backgroundColor: g.color }" />
-                  <span>{{ g.name }}（{{ g.member_count }}）</span>
+                  <span class="app-option-label">{{ g.name }}（{{ g.member_count }}）</span>
                 </span>
               </el-option>
             </el-select>
@@ -1615,11 +1619,6 @@ onBeforeUnmount(() => {
   font-weight: var(--app-font-weight-strong);
 }
 
-.group-option {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--app-space-control-gap);
-}
 .group-select-tag {
   margin: 2px 4px 2px 0;
   border-radius: 4px;

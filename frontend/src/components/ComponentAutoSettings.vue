@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 /**
  * 「组件特性」唯一渲染器——由组件种类字段定义 + pageRegistry 的实例元数据自动驱动，
  * 同时服务于**运行时页面设置抽屉**（user 层）与**页面布局编辑器**（page 层），各页不再手写
@@ -746,6 +750,8 @@ function setSort(slotId: string, field: string, order: string): void {
             size="small"
             filterable
             @update:model-value="(v: string) => setSort(s.slotId, String(v), sortOrder(s.slotId))"
+            :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+            :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
           >
             <el-option
               v-for="field in s.meta.sortFields"
@@ -794,6 +800,8 @@ function setSort(slotId: string, field: string, order: string): void {
             size="small"
             filterable
             @update:model-value="(v: string) => config.setComponentKnob(s.slotId, 'defaultSort', String(v))"
+            :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+            :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
           >
             <el-option
               v-for="field in s.meta.sortFields"

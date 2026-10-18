@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_PLACEMENT,
+  APP_BOTTOM_FLOATING_POPPER_OPTIONS,
+} from '@/utils/floatingPlacement'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -108,9 +112,10 @@ function descendantLeaves(
         <el-dropdown
           v-if="node.children?.length"
           trigger="click"
-          placement="bottom-start"
+          :placement="APP_BOTTOM_FLOATING_PLACEMENT"
           popper-class="top-navigation-dropdown"
           @command="chooseLeaf"
+          :popper-options="APP_BOTTOM_FLOATING_POPPER_OPTIONS"
         >
           <button
             class="secondary-entry app-nav-context-entry app-interaction-target app-interaction-nav"

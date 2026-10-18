@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_END_FLOATING_PLACEMENT,
+  APP_BOTTOM_FLOATING_FALLBACKS,
+} from '@/utils/floatingPlacement'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -438,7 +442,8 @@ async function onLogout() {
         <el-popover
           v-if="canReadDataStatus"
           trigger="click"
-          placement="bottom-end"
+          :placement="APP_BOTTOM_END_FLOATING_PLACEMENT"
+          :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
           :width="330"
           popper-class="topbar-popover"
         >
@@ -536,7 +541,8 @@ async function onLogout() {
         <el-popover
           v-if="canReadTasks"
           trigger="click"
-          placement="bottom-end"
+          :placement="APP_BOTTOM_END_FLOATING_PLACEMENT"
+          :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
           :width="330"
           popper-class="topbar-popover"
         >

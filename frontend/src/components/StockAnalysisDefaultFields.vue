@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 import { computed, watch } from 'vue'
 import MarketBenchmarkSelect from '@/components/MarketBenchmarkSelect.vue'
 import PageSettingItem from '@/components/PageSettingItem.vue'
@@ -45,7 +49,12 @@ watch(compareMetrics, (metrics) => {
     />
   </PageSettingItem>
   <PageSettingItem label="默认对比周期">
-    <el-select v-model="compareRange" style="width: 160px">
+    <el-select
+      v-model="compareRange"
+      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+      class="app-control-width-medium"
+    >
       <el-option v-for="days in [5, 10, 20, 60, 120, 250]" :key="days" :value="days" :label="`${days}日`" />
     </el-select>
   </PageSettingItem>
@@ -64,7 +73,12 @@ watch(compareMetrics, (metrics) => {
     </el-checkbox-group>
   </PageSettingItem>
   <PageSettingItem label="默认对比指标">
-    <el-select v-model="defaultCompareMetric" style="width: 160px">
+    <el-select
+      v-model="defaultCompareMetric"
+      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+      class="app-control-width-medium"
+    >
       <el-option
         v-for="metric in defaultMetricOptions"
         :key="metric"

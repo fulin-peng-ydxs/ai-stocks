@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 import { submitOnEnter } from '@/utils/keyboard'
 // 抽屉内的「K 线范围」配置：编辑全局快捷范围选项与默认范围，所有看 K 线的页面同步生效。
 import { ref, watch } from 'vue'
@@ -34,7 +38,12 @@ function commitPeriods() {
       <el-switch v-model="prefs.includeAll" />
     </PageSettingItem>
     <PageSettingItem label="默认范围" layout="inline">
-      <el-select v-model="prefs.defaultPeriod" style="width: 130px">
+      <el-select
+        v-model="prefs.defaultPeriod"
+        :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+        :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+        class="app-control-width-short"
+      >
         <el-option v-for="o in options" :key="o.value" :value="o.value" :label="o.label" />
       </el-select>
     </PageSettingItem>

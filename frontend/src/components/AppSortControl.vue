@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_PLACEMENT,
+  APP_BOTTOM_FLOATING_POPPER_OPTIONS,
+} from '@/utils/floatingPlacement'
 import { ArrowDown, Check, Sort, SortDown, SortUp } from '@element-plus/icons-vue'
 import { computed } from 'vue'
 import AppIconButton from '@/components/AppIconButton.vue'
@@ -53,6 +57,8 @@ function updateSort(value: unknown): void {
       popper-class="app-sort-control-popper"
       :disabled="disabled"
       @command="updateSort"
+      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+      :popper-options="APP_BOTTOM_FLOATING_POPPER_OPTIONS"
     >
       <el-button
         class="app-sort-control__trigger"

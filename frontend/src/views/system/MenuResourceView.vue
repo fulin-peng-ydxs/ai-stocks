@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 // 菜单与功能管理页（多租户 RBAC stage3·T13，R12+R13）。承接 menu-resource-management.html。
@@ -604,7 +608,14 @@ const menuPageTitle = useMenuPageTitle()
                     <el-input v-model="form.title" size="small" :disabled="!canMenuUpdate" @input="onFormChange" />
                   </div>
                   <div class="mr-field"><label>类型</label>
-                    <el-select v-model="form.type" size="small" :disabled="!canMenuUpdate" @change="onFormChange">
+                    <el-select
+                      v-model="form.type"
+                      size="small"
+                      :disabled="!canMenuUpdate"
+                      @change="onFormChange"
+                      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+                    >
                       <el-option label="叶子（可导航）" value="leaf" />
                       <el-option label="分组（不导航）" value="group" />
                     </el-select>
@@ -615,6 +626,8 @@ const menuPageTitle = useMenuPageTitle()
                       size="small"
                       :disabled="!canMenuUpdate"
                       @change="onParentChange"
+                      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
                     >
                       <el-option
                         v-for="opt in parentOptions"
@@ -638,7 +651,14 @@ const menuPageTitle = useMenuPageTitle()
                     </el-input>
                   </div>
                   <div class="mr-field"><label>可见性</label>
-                    <el-select v-model="form.visible" size="small" :disabled="!canMenuUpdate" @change="onFormChange">
+                    <el-select
+                      v-model="form.visible"
+                      size="small"
+                      :disabled="!canMenuUpdate"
+                      @change="onFormChange"
+                      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+                    >
                       <el-option label="登录可见" value="login" />
                       <el-option label="仅系统管理员" value="system" />
                     </el-select>
@@ -717,7 +737,13 @@ const menuPageTitle = useMenuPageTitle()
                   </AppTableColumn>
                   <AppTableColumn v-if="resourceColVisible('type')" label="类型" prop="type" role="status">
                     <template #default="{ row: r }">
-                      <el-select v-if="editingId === r.id" v-model="resDraft.type" size="small">
+                      <el-select
+                        v-if="editingId === r.id"
+                        v-model="resDraft.type"
+                        size="small"
+                        :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                        :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+                      >
                         <el-option label="接口" value="api" />
                         <el-option label="按钮" value="button" />
                       </el-select>
@@ -729,7 +755,14 @@ const menuPageTitle = useMenuPageTitle()
                   <AppTableColumn v-if="resourceColVisible('apiPath')" label="绑定接口" prop="api_path" role="description">
                     <template #default="{ row: r }">
                       <div v-if="editingId === r.id" class="mr-bind">
-                        <el-select v-if="resDraft.type === 'api'" v-model="resDraft.apiMethod" size="small" class="mr-method-select">
+                        <el-select
+                          v-if="resDraft.type === 'api'"
+                          v-model="resDraft.apiMethod"
+                          size="small"
+                          class="mr-method-select"
+                          :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                          :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+                        >
                           <el-option v-for="mth in ['GET','POST','PUT','DELETE']" :key="mth" :label="mth" :value="mth" />
                         </el-select>
                         <el-input v-model="resDraft.apiPath" size="small" class="mono" placeholder="/api/…（按钮可空）" />
@@ -771,6 +804,8 @@ const menuPageTitle = useMenuPageTitle()
               :model-value="menuCreateForm.parentId ?? ''"
               filterable
               @change="onCreateParentChange"
+              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
             >
               <el-option
                 v-for="opt in createParentOptions"
@@ -791,7 +826,11 @@ const menuPageTitle = useMenuPageTitle()
             />
           </el-form-item>
           <el-form-item label="类型" required>
-            <el-select v-model="menuCreateForm.type">
+            <el-select
+              v-model="menuCreateForm.type"
+              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+            >
               <el-option label="叶子（可导航）" value="leaf" />
               <el-option label="分组（不导航）" value="group" />
             </el-select>
@@ -803,7 +842,11 @@ const menuPageTitle = useMenuPageTitle()
             <IconPicker v-model="menuCreateForm.icon" />
           </el-form-item>
           <el-form-item label="可见性" required>
-            <el-select v-model="menuCreateForm.visible">
+            <el-select
+              v-model="menuCreateForm.visible"
+              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+            >
               <el-option label="登录可见" value="login" />
               <el-option label="仅系统管理员" value="system" />
             </el-select>

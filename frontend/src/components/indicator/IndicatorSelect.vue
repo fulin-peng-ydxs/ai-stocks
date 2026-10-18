@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 import { computed } from 'vue'
 import type { IndicatorDef } from '@/api/scoreProfile'
 
@@ -28,11 +32,15 @@ function update(value: string): void {
     size="small"
     class="indicator-select app-control-width-long"
     @update:model-value="update"
+    :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+    :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+    popper-class="app-option-popper indicator-select-popper"
+    fit-input-width
   >
     <el-option-group label="通用指标">
       <el-option v-for="item in general" :key="item.key" :value="item.key" :label="item.name_cn">
-        <span>{{ item.name_cn }}</span>
-        <small v-if="!item.enabled">已停用·历史兼容</small>
+        <span class="app-option-label">{{ item.name_cn }}</span>
+        <small v-if="!item.enabled" class="app-option-meta">已停用·历史兼容</small>
       </el-option>
     </el-option-group>
     <el-option-group v-if="presets.length" label="快捷预设">
@@ -40,7 +48,3 @@ function update(value: string): void {
     </el-option-group>
   </el-select>
 </template>
-
-<style scoped>
-small { float: right; margin-left: var(--app-space-3); color: var(--el-text-color-placeholder); }
-</style>

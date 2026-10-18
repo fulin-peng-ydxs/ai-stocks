@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_PLACEMENT,
+  APP_BOTTOM_FLOATING_POPPER_OPTIONS,
+} from '@/utils/floatingPlacement'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -1065,7 +1069,13 @@ const menuPageTitle = useMenuPageTitle()
     <el-card v-if="inGroupMode && groupDetail" shadow="never" class="group-banner">
       <div class="gb-row">
         <div class="gb-main">
-          <el-dropdown trigger="click" @command="switchGroup">
+          <el-dropdown
+            trigger="click"
+            @command="switchGroup"
+            :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+            :popper-options="APP_BOTTOM_FLOATING_POPPER_OPTIONS"
+            popper-class="app-option-popper stock-group-switch-popper"
+          >
             <el-button link type="primary" class="gb-name" data-testid="stocks-group-switcher">
               <span class="color-dot" :style="{ backgroundColor: groupDetail.color }" />
               {{ groupDetail.name }}
@@ -1079,9 +1089,9 @@ const menuPageTitle = useMenuPageTitle()
                   :command="g.id"
                   :disabled="g.id === activeGid"
                 >
-                  <span class="group-option">
+                  <span class="app-inline-info app-inline-info--fill app-inline-info--nowrap">
                     <span class="color-dot" :style="{ backgroundColor: g.color }" />
-                    <span>{{ g.name }}（{{ g.member_count }}）</span>
+                    <span class="app-option-label">{{ g.name }}（{{ g.member_count }}）</span>
                   </span>
                 </el-dropdown-item>
               </el-dropdown-menu>
@@ -1487,7 +1497,6 @@ const menuPageTitle = useMenuPageTitle()
   gap: var(--app-space-3);
   flex-wrap: wrap;
 }
-.group-option,
 .gb-name {
   display: inline-flex;
   align-items: center;

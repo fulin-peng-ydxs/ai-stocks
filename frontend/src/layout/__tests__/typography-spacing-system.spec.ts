@@ -2,6 +2,8 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, extname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { baseParse, type ElementNode, type TemplateChildNode } from '@vue/compiler-dom'
+import { parse as parseSfc } from '@vue/compiler-sfc'
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url))
 const FRONTEND_DIR = join(TEST_DIR, '../../..')
@@ -31,6 +33,61 @@ function styleBlocks(file: string): string[] {
 }
 
 const SIZE_MEDIA_QUERY = /@media[^{}]*\([^)]*\b(?:(?:min|max)-)?(?:width|height)\b/
+
+/** 逐控件检查，避免同文件内只有一个下拉接入契约就掩盖其余遗漏。 */
+function floatingContractViolations(source: string, file: string): string[] {
+  const template = parseSfc(source).descriptor.template
+  if (!template) return []
+  const violations: string[] = []
+  const tagOf = (node: ElementNode) => node.tag.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`).replace(/^-/, '')
+  const valueOf = (node: ElementNode, name: string): string | undefined => {
+    const prop = node.props.find((p) => p.type === 6 ? p.name === name : p.arg?.type === 4 && p.arg.content === name)
+    return prop?.type === 6 ? prop.value?.content : prop?.exp?.type === 4 ? prop.exp.content : undefined
+  }
+  const hasBound = (node: ElementNode, name: string, expression: string) => node.props.some(
+    (p) => p.type === 7 && p.name === 'bind' && p.arg?.type === 4
+      && p.arg.content === name && p.exp?.type === 4 && p.exp.content === expression,
+  )
+  const selects = new Set(['el-select', 'el-select-v2', 'el-cascader', 'el-tree-select'])
+  const panels = new Set([...selects, 'el-date-picker', 'el-time-picker', 'el-time-select'])
+  const menus = new Set(['el-dropdown', 'el-popover'])
+  const optionTags = new Set(['el-option', 'el-option-group', 'el-dropdown-item', 'el-dropdown-menu'])
+  const inspect = (node: TemplateChildNode, ancestors: ElementNode[]) => {
+    if (node.type !== 1) return
+    const tag = tagOf(node)
+    const where = `${file}:${template.loc.start.line + node.loc.start.line - 1} ${tag}`
+    if (tag === 'market-benchmark-select' && (valueOf(node, 'width') || valueOf(node, 'style'))) {
+      violations.push(`${where}: benchmark width must be owned by shared selector`)
+    }
+    if (panels.has(tag) || menus.has(tag)) {
+      // AppDatePicker 是唯一可透传特殊定位的底层入口，其默认值由日期契约单独检查。
+      const dateRuntime = file === 'components/AppDatePicker.vue' && tag === 'el-date-picker'
+      const placements = dateRuntime ? ['placement']
+        : ['APP_BOTTOM_FLOATING_PLACEMENT', 'APP_BOTTOM_END_FLOATING_PLACEMENT']
+      if (!placements.some((placement) => hasBound(node, 'placement', placement))) violations.push(`${where}: placement`)
+      const property = tag === 'el-dropdown' ? 'popper-options' : 'fallback-placements'
+      const expression = tag === 'el-dropdown' ? 'APP_BOTTOM_FLOATING_POPPER_OPTIONS'
+        : dateRuntime ? 'fallbackPlacements' : 'APP_BOTTOM_FLOATING_FALLBACKS'
+      if (!hasBound(node, property, expression)) violations.push(`${where}: ${property}`)
+      if (selects.has(tag) && /(?:^|;)\s*(?:min-|max-)?width\s*:\s*[\d.]+(?:px|rem|em)\b/.test(valueOf(node, 'style') ?? '')) {
+        violations.push(`${where}: inline fixed width`)
+      }
+    }
+    if (tag === 'el-option' || tag === 'el-dropdown-item') {
+      const compound = node.children.some((child) => child.type === 1)
+      const owner = [...ancestors].reverse().find((ancestor) => !optionTags.has(tagOf(ancestor))
+        && (selects.has(tagOf(ancestor)) || tagOf(ancestor) === 'el-dropdown'))
+      if (compound && owner) {
+        const boundary = (valueOf(owner, 'popper-class') ?? '').split(/\s+/)
+          .filter((name) => name && name !== 'app-option-popper')
+        if (!boundary.length) violations.push(`${where}: compound option popper-class`)
+      }
+    }
+    for (const child of node.children) inspect(child, [...ancestors, node])
+  }
+  for (const node of baseParse(template.content).children) inspect(node, [])
+  return violations
+}
 
 describe('字体与间距设计契约', () => {
   it('浮起只接入明确交互角色，视觉层不接管点击并提供禁用与减弱动效边界', () => {
@@ -411,36 +468,34 @@ describe('字体与间距设计契约', () => {
     expect(duplicatedFallbacks).toEqual([])
   })
 
-  it('关键共享下拉与个股分组选择器复用触发器下方定位契约', () => {
-    const consumers = [
-      'components/AppFilterSelect.vue',
-      'components/KlineRangeSelect.vue',
-      'components/data/StockCodeMultiSelect.vue',
-      'components/data/StockIngestScopeFields.vue',
-      'views/trade-discipline/components/StockOptionSelect.vue',
-      'views/StockDetailView.vue',
-    ]
-
-    for (const file of consumers) {
-      const source = read(join(SRC_DIR, file))
-      expect(source, file).toContain('APP_BOTTOM_FLOATING_PLACEMENT')
-      expect(source, file).toContain('APP_BOTTOM_FLOATING_FALLBACKS')
-    }
+  it('全站逐控件检查下拉定位、复合选项浮层边界与语义宽度', () => {
+    const violations = sourceFiles(SRC_DIR).filter((file) => file.endsWith('.vue'))
+      .flatMap((file) => floatingContractViolations(read(file), relative(SRC_DIR, file)))
+    expect(violations).toEqual([])
   })
 
-  it('采集与调度表单的每个下拉和时间面板均消费下方定位契约', () => {
-    for (const file of [
-      'components/data/StockIngestScopeFields.vue',
-      'views/data/IngestView.vue',
-      'views/data/ScheduleView.vue',
-    ]) {
-      const controls = [...read(join(SRC_DIR, file)).matchAll(/<el-(?:select|time-picker)\b[^>]*>/g)]
-      expect(controls.length, file).toBeGreaterThan(0)
-      for (const [control] of controls) {
-        expect(control, `${file}: ${control}`).toContain(':placement="APP_BOTTOM_FLOATING_PLACEMENT"')
-        expect(control, `${file}: ${control}`).toContain(':fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"')
-      }
-    }
+  it('同文件首个下拉合规时，仍能发现后续控件遗漏和复合选项边界缺失', () => {
+    const source = `<template>
+      <el-select :placement="APP_BOTTOM_FLOATING_PLACEMENT" :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS" />
+      <el-select @change="(value) => update(value)" style="width: 170px">
+        <el-option><span>名称</span><small>状态</small></el-option>
+      </el-select>
+    </template>`
+    const violations = floatingContractViolations(source, 'example.vue')
+    expect(violations).toHaveLength(4)
+    expect(violations.some((item) => item.endsWith(': placement'))).toBe(true)
+    expect(violations.some((item) => item.endsWith(': fallback-placements'))).toBe(true)
+    expect(violations.some((item) => item.endsWith(': inline fixed width'))).toBe(true)
+    expect(violations.some((item) => item.endsWith(': compound option popper-class'))).toBe(true)
+  })
+
+  it('指数单选使用专用组件与语义容量，不复用筛选多选的等宽浮层', () => {
+    const benchmark = read(join(SRC_DIR, 'components/MarketBenchmarkSelect.vue'))
+    expect(benchmark).not.toContain('AppFilterSelect')
+    expect(benchmark).toContain('class="app-control-width-short"')
+    expect(benchmark).toContain(':fit-input-width="false"')
+    expect(floatingContractViolations('<template><MarketBenchmarkSelect width="120px" /></template>', 'example.vue'))
+      .toEqual(['example.vue:1 market-benchmark-select: benchmark width must be owned by shared selector'])
   })
 
   it('不使用英文装饰性 eyebrow、kicker 或工作区标题', () => {

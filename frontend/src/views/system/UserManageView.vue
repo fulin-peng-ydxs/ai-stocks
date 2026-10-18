@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -523,18 +527,41 @@ const menuPageTitle = useMenuPageTitle()
             }"
           >
             <template #tenant>
-              <el-select v-if="isSystem" v-model="filters.tenant" placeholder="租户：全部" clearable
-                         :loading="dependencyLoading" class="app-control-width-medium">
+              <el-select
+                v-if="isSystem"
+                v-model="filters.tenant"
+                placeholder="租户：全部"
+                clearable
+                :loading="dependencyLoading"
+                class="app-control-width-medium"
+                :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+              >
                 <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
               </el-select>
             </template>
             <template #role>
-              <el-select v-model="filters.role" :loading="dependencyLoading" placeholder="角色：全部" clearable class="app-control-width-medium">
+              <el-select
+                v-model="filters.role"
+                :loading="dependencyLoading"
+                placeholder="角色：全部"
+                clearable
+                class="app-control-width-medium"
+                :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+              >
                 <el-option v-for="r in assignableRoles" :key="r.id" :label="r.name" :value="r.code" />
               </el-select>
             </template>
             <template #status>
-              <el-select v-model="filters.status" placeholder="状态：全部" clearable class="app-control-width-short">
+              <el-select
+                v-model="filters.status"
+                placeholder="状态：全部"
+                clearable
+                class="app-control-width-short"
+                :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+              >
                 <el-option v-for="item in userStatusOptions" :key="item.code" :label="item.label" :value="item.code" />
               </el-select>
             </template>
@@ -640,8 +667,14 @@ const menuPageTitle = useMenuPageTitle()
             <el-input v-model="form.email" placeholder="选填" />
           </el-form-item>
           <el-form-item label="角色" :required="!protectedRoleNames.length">
-            <el-select v-model="form.roleIds" multiple placeholder="可多选，权限取并集"
-                       style="width: 100%">
+            <el-select
+              v-model="form.roleIds"
+              multiple
+              placeholder="可多选，权限取并集"
+              style="width: 100%"
+              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+            >
               <el-option
                 v-for="r in assignableRoles"
                 :key="r.id"
@@ -658,8 +691,14 @@ const menuPageTitle = useMenuPageTitle()
             </span>
           </el-form-item>
           <el-form-item label="租户">
-            <el-select v-if="isSystem && !isEdit" v-model="form.tenantId" placeholder="归属租户"
-                       style="width: 100%">
+            <el-select
+              v-if="isSystem && !isEdit"
+              v-model="form.tenantId"
+              placeholder="归属租户"
+              style="width: 100%"
+              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+            >
               <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
             </el-select>
             <span v-else class="locked-field">

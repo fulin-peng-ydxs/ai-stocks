@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -935,6 +939,8 @@ const menuPageTitle = useMenuPageTitle()
               <el-select
                 v-model="settings.cardSort"
                 data-testid="limit-ladder-default-card-sort"
+                :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
               >
                 <el-option
                   v-for="option in LIMIT_LADDER_CARD_SORT_OPTIONS"

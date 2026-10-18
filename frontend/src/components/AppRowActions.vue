@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  APP_BOTTOM_END_FLOATING_PLACEMENT,
+  APP_BOTTOM_FLOATING_FALLBACKS,
+} from '@/utils/floatingPlacement'
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AppActionHint from './AppActionHint.vue'
 import { ArrowDown } from '@element-plus/icons-vue'
@@ -260,7 +264,7 @@ onBeforeUnmount(() => {
         ref="morePopover"
         trigger="click"
         role="menu"
-        placement="bottom-end"
+        :placement="APP_BOTTOM_END_FLOATING_PLACEMENT"
         :width="160"
         :show-arrow="false"
         :persistent="false"
@@ -268,6 +272,7 @@ onBeforeUnmount(() => {
         popper-class="app-row-actions-popper"
         @before-enter="menuOpen = true"
         @after-leave="menuOpen = false"
+        :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
       >
         <template #reference>
           <el-button
