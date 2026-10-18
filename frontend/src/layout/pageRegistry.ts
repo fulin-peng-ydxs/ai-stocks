@@ -740,7 +740,7 @@ const REGISTRY: PageRegistryEntry[] = [
     },
   },
   {
-    // 菜单与功能管理（P6·R12+R13）：master-detail（左菜单树 draggable + 右属性表单 + 功能子表）。
+    // 菜单与功能管理（P6·R12+R13）：master-detail（左 AppReorderTree + 右属性表单 + 功能子表）。
     pageKey: 'menu-manage',
     label: '菜单与功能',
     path: '/system/menus',

@@ -100,7 +100,7 @@
 - 主 / 次 / 危险操作选型：
 - 按钮位置：按真实影响范围判断，不按动词机械归类；作用于整页或页面唯一主任务的主操作放 `.page-head-actions`、位于 `PageSettingsTrigger` 左侧并使用默认 32px 尺寸；当前页签、局部表单、选中对象或局部区块命令留在对应区域工具区（见 DESIGN.md §4「按钮与输入」）。
 - 控件宽度：普通控件按内容容量选择 `.app-control-width-compact/short/medium/long/wide/fill` 中能完整承载常态内容的最小档位；多选 `AppFilterSelect` 必须按使用场景声明 `visibleTagCount=1..3`，由组件确定可见值、`+N` 与宽度档位，或使用 `displayMode=count` 只显示“已选 N”；不得另加宽度 class 或内联宽度；独立复合组件例外必须使用具名 class 并说明理由。
-- 自定义条目顺序：统一复用 `AppReorderList`，使用稳定 key、组内拖动与键盘确认/取消；不新增上移/下移按钮，保存沿用业务流程。层级树沿用树组件拖动契约。
+- 自定义条目顺序：按 [DESIGN.md「自定义顺序」](../../DESIGN.md#自定义顺序) 选择共享组件，核对允许调整的范围、稳定标识及业务保存流程。
 - 排序操作：统一复用 `AppSortControl`，并作为所属筛选/操作栏的最后一个控件；空间不足保持 DOM 顺序整体换行。
 - 图标关闭/移除临时界面：使用 `AppCloseButton`；库内置关闭由全局适配，档位、状态、适用范围和业务边界统一引用 DESIGN §4，不私写配方。
 - 纯图标操作：使用 `AppIconButton`；异步纯图标操作使用 `:loading`；具体尺寸、显式 tooltip 和 Unicode 禁令见 DESIGN。
@@ -474,7 +474,7 @@ npm run scaffold-page -- --pageKey my-wizard --label "向导页" --archetype wiz
 
 ### 键盘接入维护检查
 
-键盘能力及适用范围以 [DESIGN.md](../../DESIGN.md)「键盘能力与适用边界」为唯一契约。普通按钮/链接复用原生语义；自定义命令接入 `v-keyboard-activate`，单行输入确认使用 `submitOnEnter`，范围调整使用 `keyboardRangeValue`，页面快捷键使用 `usePageShortcuts`。不得复制页面级 window keydown 监听。
+键盘能力及适用范围以 [DESIGN.md「键盘能力与适用边界」](../../DESIGN.md#键盘能力与适用边界) 为唯一契约。按控件语义复用原生行为或共享实现；具体按键、适用范围和实现入口统一查阅该契约，禁止页面重复实现全局键盘监听。
 
 维护矩阵：改变共享行为时同步入口与消费点测试；增加快捷键时同步可见说明、可访问快捷键属性、权限和忙态守卫；改变焦点路径时复核弹层、关闭恢复及 KeepAlive。上述机制不增加布局 kind、slot 或用户持久化配置，既有页面布局与响应式画像保持原边界。
 

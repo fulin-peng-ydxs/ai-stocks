@@ -101,8 +101,9 @@ export const useAuthStore = defineStore('auth', {
       return data
     },
 
-    async fetchMe() {
-      this.menusStatus = 'loading'
+    async fetchMe(options: { background?: boolean } = {}) {
+      // 已就绪的菜单展示更新无需拆卸工作区；失败仍进入 error 并关闭受控页面。
+      if (!options.background || this.menusStatus !== 'ready') this.menusStatus = 'loading'
       try {
         const me = await authApi.getMe()
         this.user = me.user

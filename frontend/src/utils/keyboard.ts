@@ -9,6 +9,21 @@ export function isKeyboardDisabled(element: HTMLElement): boolean {
   return !!element.closest('[disabled], [aria-disabled="true"], [aria-busy="true"], [inert], .is-loading')
 }
 
+export type ReorderKey = 'confirm' | 'cancel' | 'previous' | 'next' | 'first' | 'last' | 'leave'
+
+/** 排序只接管把手自身的无修饰按键；Tab 离开会取消，但继续交给浏览器移动焦点。 */
+export function reorderKey(event: KeyboardEvent): ReorderKey | undefined {
+  if (event.target !== event.currentTarget) return
+  if (event.key === 'Tab' && !event.defaultPrevented && !event.isComposing) return 'leave'
+  const movement = ['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)
+  if (!acceptsKeyboardEvent(event, movement)) return
+  const keys: Record<string, ReorderKey> = {
+    ' ': 'confirm', Enter: 'confirm', Escape: 'cancel',
+    ArrowUp: 'previous', ArrowDown: 'next', Home: 'first', End: 'last',
+  }
+  return keys[event.key]
+}
+
 /** 仅确认当前单行输入；keydown 避免输入法结束后的 keyup 误提交。 */
 export function submitOnEnter(event: KeyboardEvent, submit: () => unknown): void {
   if (event.key !== 'Enter' || !acceptsKeyboardEvent(event)) return

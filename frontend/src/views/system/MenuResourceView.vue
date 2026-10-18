@@ -2,15 +2,16 @@
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 // 菜单与功能管理页（多租户 RBAC stage3·T13，R12+R13）。承接 menu-resource-management.html。
-// master-detail：左 el-tree(draggable) 菜单树 + 右 菜单属性表单(含 IconPicker) + 功能点子表。
+// master-detail：左 AppReorderTree 菜单树 + 右 菜单属性表单(含 IconPicker) + 功能点子表。
 // 菜单是平台级全局唯一源，SideMenu 消费它 + 按角色权限过滤（T15）；功能点是角色授权最小资源单位。
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import AppReorderTree from '@/components/AppReorderTree.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -58,7 +59,7 @@ const settingsOpen = ref(false)
 
 // ── 菜单树 ──
 const tree = ref<MenuNode[]>([])
-const treeRef = ref<InstanceType<typeof ElTree>>()
+const reorderSaving = ref(false)
 const treeLoading = ref(false)
 const treeError = ref(false)   // 菜单树加载失败 → 页内错误态 + 重试
 const activeId = ref<string>('')
@@ -214,7 +215,7 @@ async function saveForm() {
     ElMessage.success('已保存')
     await loadTree(true)
     // 页面标题与侧栏共同消费 /me 菜单树，保存名称后立即刷新全局快照。
-    await auth.fetchMe()
+    await auth.fetchMe({ background: true })
   } catch { /* 唯一/内置/成环等由拦截器弹出 */ } finally { savingForm.value = false }
 }
 function resetForm() {
@@ -274,35 +275,50 @@ async function removeMenu() {
   } catch (e) { if (e === 'cancel') return /* 内置/有子节点/有功能点由拦截器弹出 */ }
 }
 
-// ── 拖拽排序 / 移动 ──
-function allowDrag(): boolean {
-  return canMenuReorder.value
-}
-// 只有分组可作为容器（inner）；叶子不能有子节点
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function allowDrop(_draggingNode: any, dropNode: any, type: string): boolean {
-  if (type === 'inner') return (dropNode.data as MenuNode).type === 'group'
-  return true
-}
-/** 拖拽落定后：el-tree 已就地改动树结构，据当前结构重算全量 sort/parentId 并提交。 */
-function collectReorder(): Array<{ id: string; sort: number; parentId: string | null }> {
+// ── 拖动与键盘排序进入同一业务入口；保存互斥覆盖请求、重载和导航刷新。 ──
+function collectReorder(previous: MenuNode[], next: MenuNode[]): Array<{ id: string; sort: number; parentId: string | null }> {
+  const beforeGroups = new Map<string | null, string[]>()
+  const capture = (nodes: MenuNode[], parentId: string | null) => {
+    beforeGroups.set(parentId, nodes.map(node => node.id))
+    nodes.forEach(node => capture(node.children ?? [], node.id))
+  }
+  capture(previous, null)
   const items: Array<{ id: string; sort: number; parentId: string | null }> = []
-  const walk = (nodes: MenuNode[], parentId: string | null) => {
-    nodes.forEach((n, i) => {
-      items.push({ id: n.id, sort: (i + 1) * 10, parentId })
-      if (n.children?.length) walk(n.children, n.id)
+  const walk = (children: MenuNode[], parentId: string | null) => {
+    const before = beforeGroups.get(parentId) ?? []
+    const changed = before.length !== children.length || children.some((node, index) => node.id !== before[index])
+    children.forEach((node, index) => {
+      // 只归一发生移动的兄弟组，保留其他菜单已有的排序值与配置。
+      if (changed) items.push({ id: node.id, sort: (index + 1) * 10, parentId })
+      walk(node.children ?? [], node.id)
     })
   }
-  walk(tree.value, null)
+  walk(next, null)
   return items
 }
-async function onNodeDrop() {
+async function onMenuReorder(next: MenuNode[]): Promise<void> {
+  if (!canMenuReorder.value || reorderLocked.value) return
+  const previous = tree.value
+  const changes = collectReorder(previous, next)
+  if (!changes.length) return
+  reorderSaving.value = true
+  tree.value = next
+  let saved = false
   try {
-    await reorderMenus(collectReorder())
+    await reorderMenus(changes)
+    saved = true
     ElMessage.success('菜单顺序已保存')
     await loadTree(true)
+    await auth.fetchMe({ background: true })
   } catch {
-    await loadTree(true) // 失败回滚到服务端真值
+    if (!saved) {
+      tree.value = previous
+      await loadTree(true) // 失败后读取服务端真值；读取也失败时保留原树并显示重试入口。
+    } else {
+      ElMessage.warning('菜单顺序已保存，导航刷新失败，请刷新页面')
+    }
+  } finally {
+    reorderSaving.value = false
   }
 }
 
@@ -325,6 +341,11 @@ const {
   captureBaseline: captureResourceBaseline,
 } = useFormChangeTracker(resourceSubmitPayload)
 const resSaving = ref(false)
+// 排序会重载菜单属性；存在未保存表单或功能点编辑时先锁定，避免清掉编辑现场。
+const reorderLocked = computed(() => treeLoading.value || reorderSaving.value || savingForm.value
+  || menuSaving.value || resSaving.value || formDirty.value || Boolean(editingId.value))
+const reorderHint = computed(() => reorderSaving.value ? '正在保存顺序…'
+  : formDirty.value || editingId.value ? '结束当前编辑后可排序' : '拖动把手排序')
 const resourceRows = computed<Resource[]>(() => {
   if (editingId.value !== NEW_ROW) return resources.value
   return [
@@ -493,7 +514,7 @@ const menuPageTitle = useMenuPageTitle()
         <div class="mr-col mr-left">
           <div class="mr-col-head">
             <span>菜单树</span>
-            <span class="mini">可拖拽排序</span>
+            <span v-if="canMenuReorder" class="mini" role="status">{{ reorderHint }}</span>
             <div class="mr-head-spacer" />
             <AppIconButton
               v-permission="'menu:create'"
@@ -501,6 +522,7 @@ const menuPageTitle = useMenuPageTitle()
               tooltip="新增根节点"
               size="sm"
               class="mr-root-add"
+              :disabled="reorderSaving"
               @click="openCreateRoot"
             >
               <Plus />
@@ -518,21 +540,19 @@ const menuPageTitle = useMenuPageTitle()
             retry
             @retry="loadTree()"
           >
-            <el-tree
-              ref="treeRef"
-              :data="tree"
-              node-key="id"
-              :props="{ label: 'title', children: 'children' }"
-              default-expand-all
-              highlight-current
-              :expand-on-click-node="false"
-              :draggable="canMenuReorder"
-              :allow-drag="allowDrag"
-              :allow-drop="allowDrop"
-              @node-click="(d: MenuNode) => selectMenu(d.id)"
-              @node-drop="onNodeDrop"
+            <AppReorderTree
+              :items="tree"
+              :item-label="item => item.title"
+              :can-contain="item => item.type === 'group'"
+              label="菜单树"
+              :current-key="activeId"
+              :can-reorder="canMenuReorder"
+              :disabled="reorderLocked"
+              :busy="reorderSaving"
+              @select="selectMenu"
+              @reorder="onMenuReorder"
             >
-              <template #default="{ data }">
+              <template #default="{ item: data }">
                 <span class="mr-tnode">
                   <MenuIcon v-if="data.icon" :name="data.icon" class="mr-ticon" />
                   <span class="mr-tlabel">{{ data.title }}</span>
@@ -552,12 +572,12 @@ const menuPageTitle = useMenuPageTitle()
                   </AppIconButton>
                 </span>
               </template>
-            </el-tree>
+            </AppReorderTree>
           </AppScrollArea>
         </div>
 
         <!-- 右：属性 + 功能点 -->
-        <div class="mr-col mr-right">
+        <div class="mr-col mr-right" :inert="reorderSaving || undefined" :aria-busy="reorderSaving">
           <template v-if="activeMenu">
             <div class="mr-detail-bar">
               <div class="mr-detail-title">
@@ -834,7 +854,7 @@ const menuPageTitle = useMenuPageTitle()
   margin-left: auto;
   opacity: 0;
 }
-.mr-tnode:hover .mr-node-add {
+.mr-tnode:hover .mr-node-add, .mr-tnode:focus-within .mr-node-add {
   opacity: 1;
 }
 .mr-detail-bar { padding: 12px 16px; border-bottom: 1px solid var(--el-border-color-lighter);

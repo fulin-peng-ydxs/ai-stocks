@@ -224,6 +224,8 @@ flowchart LR
 | 功能点更新 | `PUT /api/resources/{id}`，`require_system` | 内置功能点 code 不可改；code 变化不能撞现有功能点；menu 必须存在 | code 变化会先计算引用用户与 system 用户，再与功能点写入和 `perm_ver` 自增同事务；改名称、类型、API 元数据或移动菜单不失效 |
 | 功能点删除 | `DELETE /api/resources/{id}`，`require_system` | 内置功能点不可删 | 删除前计算引用用户与 system 用户；删除 `sys_resource`，`sys_role_resource` 级联清理，并与 `perm_ver` 自增同事务 |
 
+菜单管理页的排序通过 `AppReorderTree` 提交移动意图，指针与同级键盘排序共用 `onMenuReorder`。保存期间锁定重复排序与属性操作；有未保存菜单属性或正在编辑功能点时先保存/还原编辑。请求仅更新顺序或归属发生变化的兄弟组，其他节点原排序值不重置。成功后重载菜单并以 `auth.fetchMe({ background: true })` 刷新 `/me` 导航，已就绪时不进入 loading 拆卸工作区，鉴权刷新失败仍进入 error；排序失败恢复服务端顺序；选中节点与展开状态保留。键盘边界以 `DESIGN.md`「键盘能力与适用边界」为准。
+
 ### 新增受控功能
 
 1. 后端新增 API 时明确它是可授权功能点还是 system-only 功能。

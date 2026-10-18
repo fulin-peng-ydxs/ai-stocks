@@ -122,6 +122,40 @@ describe('AppReorderList', () => {
     expect(wrapper.find('button').exists()).toBe(false)
   })
 
+  it('输入法、组合键与重复确认不拿起条目；内部弹窗的排序 Escape 先取消当前会话', async () => {
+    const wrapper = setup()
+    const handle = wrapper.get('[aria-label="拖动排序：甲"]')
+    await handle.trigger('keydown', { key: ' ', isComposing: true })
+    await handle.trigger('keydown', { key: ' ', ctrlKey: true })
+    await handle.trigger('keydown', { key: ' ', repeat: true })
+    expect(wrapper.find('.is-dragging').exists()).toBe(false)
+    const owner = wrapper.element.parentElement!
+    owner.setAttribute('role', 'dialog')
+    vi.spyOn(owner, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList)
+    await handle.trigger('keydown', { key: ' ' })
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    handle.element.dispatchEvent(escape)
+    await nextTick()
+    expect(escape.defaultPrevented).toBe(true)
+    expect(wrapper.find('.is-dragging').exists()).toBe(false)
+    owner.removeAttribute('role')
+  })
+
+  it('前景选择浮层先处理 Escape，排序会取消但不阻止其退出键', async () => {
+    const wrapper = setup()
+    const menu = document.createElement('div')
+    menu.setAttribute('role', 'listbox')
+    document.body.append(menu)
+    vi.spyOn(menu, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList)
+    await wrapper.get('[aria-label="拖动排序：甲"]').trigger('keydown', { key: ' ' })
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    menu.dispatchEvent(escape)
+    await nextTick()
+    expect(escape.defaultPrevented).toBe(false)
+    expect(wrapper.find('.is-dragging').exists()).toBe(false)
+    menu.remove()
+  })
+
   it('长列表拖动到容器边缘自动滚动，取消释放动画帧', async () => {
     let callback: FrameRequestCallback | undefined
     vi.stubGlobal('requestAnimationFrame', vi.fn(fn => { callback = fn; return 1 }))

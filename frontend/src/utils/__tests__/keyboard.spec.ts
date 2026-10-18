@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { acceptsPageShortcut, keyboardRangeValue, submitOnEnter } from '../keyboard'
+import { acceptsPageShortcut, keyboardRangeValue, reorderKey, submitOnEnter } from '../keyboard'
 
 afterEach(() => { document.body.innerHTML = ''; vi.restoreAllMocks() })
 function dispatch(element: HTMLElement, handler: (e: KeyboardEvent) => void, init: KeyboardEventInit) {
@@ -39,6 +39,23 @@ describe('键盘边界', () => {
     let accepted = true
     dispatch(target, e => { accepted = acceptsPageShortcut(e) }, { key: 'b' })
     expect(accepted).toBe(false)
+  })
+  it('排序把手拒绝输入法、组合键与重复确认，方向移动允许长按，Tab 不被接管', () => {
+    const handle = document.createElement('button')
+    let command: ReturnType<typeof reorderKey>
+    const read = (event: KeyboardEvent) => { command = reorderKey(event) }
+    for (const init of [
+      { key: ' ', isComposing: true }, { key: 'Enter', keyCode: 229 },
+      { key: ' ', ctrlKey: true }, { key: 'ArrowDown', altKey: true },
+      { key: 'Enter', metaKey: true }, { key: 'Enter', repeat: true },
+    ]) {
+      dispatch(handle, read, init)
+      expect(command).toBeUndefined()
+    }
+    dispatch(handle, read, { key: 'ArrowDown', repeat: true })
+    expect(command).toBe('next')
+    expect(dispatch(handle, read, { key: 'Tab', shiftKey: true }).defaultPrevented).toBe(false)
+    expect(command).toBe('leave')
   })
   it('已消费事件和可见弹层阻止快捷键，隐藏弹层不阻止', () => {
     const modal = document.createElement('div'); modal.setAttribute('role', 'dialog'); document.body.append(modal)

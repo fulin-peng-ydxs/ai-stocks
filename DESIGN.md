@@ -397,7 +397,9 @@ Key Characteristics：
 | `SectorCompareChart` | `frontend/src/components/SectorCompareChart.vue` | 多板块连续指数的涨跌幅对比折线、市场指数超额和资金流/成员涨跌截面柱图 | 无直接系统组件种类；由板块行情分析区承载 | 折线与股票对比复用 `marketCompare` 的 N+1、统一交易日、停牌补齐和对比基期算法，并共同消费 `marketCompareChart.ts` 的折线 option 骨架；板块资金流和成员涨跌柱图保留领域私有配置，不并入通用折线组件；资金流、当日涨跌和成员涨跌缺失值保持空值，不得代填 0；页面偏好只消费 `sectors` 页面键，禁止与 `stocks` / `board` 串用默认指标或基准配置 |
 | `AppPagination` | `frontend/src/components/AppPagination.vue` | 列表页统一分页；按自身容器宽度从“总数 + 每页条数 + 页码导航”依次降级为“总数 + 页码导航”和紧凑页码导航，禁止完整分页器反向溢出窄分栏 | 由 `data-table`/`wide-table` 的 `pageSize` 配置间接驱动 | 分页页脚统一复用；页面不得直接使用 `el-pagination` 或复制宽度降级逻辑 |
 | `AppFilterSelect` | `frontend/src/components/AppFilterSelect.vue` | 容量自适应选择器，统一列表筛选与紧凑多选编辑 | 无直接系统组件种类 | 默认多选、可搜索、可清空；业务只允许单选时必须传 `multiple=false`，需要创建新选项时显式启用 `allowCreate`；非空候选项恰好全部选中时，优先于标签/数量模式显示 `allSelectedLabel`，默认“全部选中”、可自定义，传空字符串可关闭；多选消费方必须在标签模式声明 `visibleTagCount=1..3`，组件据此同时确定可见标签上限和 `medium / long / wide` 容量档位，未全选且选中项更多时保留对应数量的值并显示 `+N`；只需表达选择规模时使用 `displayMode=count`，未全选时固定显示“已选 N”并使用 `short` 容量，空值仍显示占位文案；两种模式均不得由页面另加宽度 class 或内联宽度覆盖；未显式提供可访问名称时统一继承占位文案；同类筛选和紧凑多选编辑优先复用 |
-| `AppReorderList` | `frontend/src/components/AppReorderList.vue` | 用户自定义顺序列表的共享拖动排序，统一六点 SVG 把手、落点、取消、滚动和键盘操作 | 无直接系统组件种类；列表内部交互 | 交易纪律选股、买入和卖出规则共用；稳定 key 不依赖下标；拖动松手或键盘确认才提交 reorder，保存归调用方；禁用及单项不显示把手，不在页面复制上移/下移按钮 |
+| `AppDragHandle` | `frontend/src/components/AppDragHandle.vue` | 列表与树共用的六点排序把手 | 无直接系统组件种类 | 基于 AppIconButton 统一尺寸、说明、焦点、禁用与拿起状态；与相邻内容保留 8px 间距，排序按键与指针事件交给共享会话处理 |
+| `AppReorderTree` | `frontend/src/components/AppReorderTree.vue` | 层级树的把手拖动、同级键盘排序与合法落点反馈 | 无直接系统组件种类；树内部交互 | 菜单管理消费；和 AppReorderList 共用 AppDragHandle 与 useReorderInteraction，树导航委托 ElTree，业务调用方提供容器资格、权限、保存及失败恢复；保留选中、展开和保存后的焦点 |
+| `AppReorderList` | `frontend/src/components/AppReorderList.vue` | 用户自定义顺序列表的共享拖动排序，统一六点 SVG 把手、落点、取消、滚动和键盘操作 | 无直接系统组件种类；列表内部交互 | 交易纪律选股、买入和卖出规则共用；稳定 key 不依赖下标；拖动松手或键盘确认才提交 reorder，保存归调用方；禁用及单项不显示把手；与树共用 AppDragHandle 和 useReorderInteraction，不在页面复制排序输入或上移/下移按钮 |
 | `AppSortControl` | `frontend/src/components/AppSortControl.vue` | 统一“排序字段菜单 + 升降序切换”的紧凑排序交互 | 无直接系统组件种类 | 页面只提供稳定选项、当前字段和方向，不得复制下拉菜单、选中勾选和方向按钮；位于筛选或操作栏时固定作为最后一个控件，空间不足按 DOM 顺序整体换行 |
 | `AppSearchInput` | `frontend/src/components/AppSearchInput.vue` | 列表页关键字搜索输入，统一"输入即防抖查 + 回车/清空立即查" | 无直接系统组件种类 | 关键字输入防抖（默认 300ms，可传 `debounceMs`）后 `@search`，回车/清空立即 `@search`；消费页绑定 `v-model` + `@search`（`@search` = 重置第 1 页 + 加载）。查询触发、重置筛选和手动刷新的通用行为以「按钮与输入 › 查询、重置与刷新」为准。查询防抖编排统一走 `frontend/src/composables/useDebouncedQuery.ts`；关键字字段不得再用裸 `<el-input>` 手写防抖 |
 | `AppDatePicker` / `TradeDatePicker` | `frontend/src/components/AppDatePicker.vue`、`frontend/src/components/TradeDatePicker.vue` | 通用日期浮层入口与交易日选择器 | 无直接系统组件种类 | 页面和业务组件的日期、日期时间及范围选择必须经过 `AppDatePicker`，浮层默认在触发器下方，仅在下方左右对齐间回退；有明确交互理由时才允许覆盖到其他方位。交易日输入继续统一复用基于它封装的 `TradeDatePicker`，不得退回普通日期选择后自行补交易日校验。单日查询类页面若语义是“默认最新、允许回看”，统一使用 `defaultLatest` 显示数据最新交易日；训练区间、回测区间和数据任务边界等显式范围不得擅自默认 |
@@ -555,6 +557,7 @@ Key Characteristics：
 | 自定义卡片、标签、列表命令 | Tab 到达，Enter / 空格复用 click | `directives/keyboardActivate.ts` 的 `v-keyboard-activate`；显式提供 role、tabindex、名称及动态状态；只接受焦点目标自身事件，不激活子按钮的父操作 |
 | 工作标签 | ← / → 循环移动，Home / End 到首尾；Enter / 空格激活 | `WorkspaceTabs` 使用单一游走 tabindex；方向键仅移动焦点并滚动至可见，不提前切页；关闭按钮保持独立入口，沿用未保存确认和关闭后焦点恢复 |
 | 分段选择、独立选择列表 | Tab 到各按钮，Enter / 空格选择 | `PageSegmented` 和规则列表使用 group + button / aria-pressed；tabs 外观不等同于 ARIA tablist，不虚报 listbox/option 的方向键能力 |
+| 列表与树的条目排序 | 聚焦把手后空格 / Enter 拿起，再按 ↑ / ↓、Home / End 预览位置，空格 / Enter 确认；Esc、Tab 或失焦取消 | `AppDragHandle` → `useReorderInteraction` → `reorderKey`；未拿起时方向键不触发排序；树键盘排序限当前兄弟组，跨层通过拖动或已有上级选择与保存流程完成；命令拒绝重复和输入法/组合键，方向移动允许长按；仅接管把手自身事件，不覆盖树节点导航和浏览器快捷键 |
 | 单行输入确认 | Enter 搜索、登录提交或提交周期参数 | `utils/keyboard.ts` 的 `submitOnEnter`，在 keydown 处理；输入法确认、长按及组合键不触发；多行输入保留换行；无自动提交语义的输入不添加 Enter 命令 |
 | 左右分栏 / 图表上下分区 | 对应方向键按步长调整，Home / End 到允许边界；允许长按 | `keyboardRangeValue` 由 `AppSplitWorkspace`、`StockChartWorkspace` 共同消费；遵守当前最小尺寸，图表只调整相邻两区，沿用拖拽的草稿与提交链路 |
 | 选择器、日期、菜单、树等复合控件 | 按组件库提供的方向键、确认、退出行为 | 优先复用 Element Plus；不得以全局事件覆盖其输入或导航，不承诺业务表格支持电子表格式方向键编辑 |
@@ -565,7 +568,7 @@ Key Characteristics：
 - 公共判断位于 `utils/keyboard.ts`：自定义命令不接管已消费事件、输入法组合期（含 keyCode 229）、Ctrl / Meta / Alt / Shift 组合键；命令不接受自动重复，方向导航与尺寸调整允许自动重复。浏览器复制、粘贴、查找、刷新、撤销等快捷键保持原行为。
 - 页面快捷键还必须让位于 input、textarea、select、contenteditable、链接、按钮和所有 tabindex 控件；有可见 dialog、alertdialog、menu、listbox 或日期面板、页面隐藏或 KeepAlive 失活时暂停。监听在恢复时幂等注册，失活和卸载时清理；异步动作结束前不重复执行，失败需向用户反馈。
 - 权限判断必须在快捷键的共享业务入口执行，不能仅依赖模板 `v-permission`。加载、无权限或数据状态不允许时，不消费按键、不发请求；快捷键不替代服务端鉴权。
-- 未声明的全局保存、删除、返回、撤销、图表十字线键盘移动、拖拽排序等不属于当前能力；需要时先明确作用域、冲突、替代入口和反馈，再接入共享机制。不得以“统一键盘”为由接管系统快捷键。
+- 未声明的全局保存、删除、返回、撤销、图表十字线键盘移动等不属于当前能力；需要时先明确作用域、冲突、替代入口和反馈，再接入共享机制。不得以“统一键盘”为由接管系统快捷键。
 - 新增/修改入口须验证：鼠标与键盘等价、焦点可见、输入法与组合键不误触、禁用/忙态/权限一致、子控件不冒泡激活、弹层优先、缓存页面不残留监听。语义和事件用定向 Vitest 验证；真实焦点移动与滚动由内置浏览器复核。
 
 ### 提示、截断与可访问名称
@@ -641,7 +644,7 @@ Key Characteristics：
 
 - 用户调整条目先后次序统一使用 `AppReorderList` 的拖动把手与落点反馈，移除逐行上移/下移按钮；键盘通过空格拿起、方向键/Home/End 选择位置、空格或 Enter 确认，Esc 取消。表头按字段排序继续使用表格与 `AppSortControl`。
 - 列表以稳定对象 key 标识新增、复制和已保存条目，禁止用列表下标承担身份；仅在所属完整集合或业务允许的组内重排，不能跨组改变业务类型。只读、归档、保存中禁止排序，单项不显示把手。
-- 拖动预览不改写表单；松手提交当前列表的顺序，移出列表、指针取消、Esc、卸载或数据/权限变化均取消；长列表拖动接近滚动边缘时自动滚动。保存仍由所属业务流程负责，失败保留草稿，不暗示已保存。层级菜单继续消费树组件专用的拖动、父子约束及服务端失败回滚，不套用平面列表。
+- 拖动预览不改写表单；松手提交当前列表的顺序，移出列表、指针取消、Esc、卸载或数据/权限变化均取消；长列表拖动接近滚动边缘时自动滚动。保存仍由所属业务流程负责，失败保留草稿，不暗示已保存。层级菜单使用 `AppReorderTree`，与列表共用 `AppDragHandle` 和 `useReorderInteraction`；只有允许的分组能接收子节点，禁止移入自己或后代。菜单保存互斥覆盖提交、重载和导航刷新；已就绪的鉴权快照用后台方式刷新导航，保留工作区，失败仍 fail-closed；排序失败读取服务端顺序；存在未保存属性或功能点编辑时锁定排序。只有受影响兄弟组重新赋顺序，其他菜单配置保持原值。
 
 ### 四态反馈总则
 
