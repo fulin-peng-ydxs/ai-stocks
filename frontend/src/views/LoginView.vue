@@ -403,7 +403,7 @@ function onSubmit() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
             </svg>
-            <input v-model="form.account" name="account" type="text"
+            <input v-model="form.account" name="account" placeholder=" " type="text"
                    autocomplete="username" @input="errors.account = ''; errors.form = ''" @keydown="submitOnEnter($event, onSubmit)" />
           </label>
           <p v-if="errors.account" class="field-error">{{ errors.account }}</p>
@@ -415,7 +415,7 @@ function onSubmit() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
             </svg>
-            <input v-model="form.password" name="password" aria-label="密码" :type="showPwd ? 'text' : 'password'"
+            <input v-model="form.password" name="password" placeholder=" " aria-label="密码" :type="showPwd ? 'text' : 'password'"
                    :autocomplete="mode === 'register' ? 'new-password' : 'current-password'"
                    @input="errors.password = ''; errors.form = ''" @keydown="submitOnEnter($event, onSubmit)" />
             <AppIconButton :label="showPwd ? '隐藏密码' : '显示密码'" :aria-pressed="showPwd" size="xs" @click="showPwd = !showPwd">
@@ -435,7 +435,7 @@ function onSubmit() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
             </svg>
-            <input v-model="form.confirm" name="confirm" type="password" autocomplete="new-password"
+            <input v-model="form.confirm" name="confirm" placeholder=" " type="password" autocomplete="new-password"
                    @input="errors.confirm = ''" @keydown="submitOnEnter($event, onSubmit)" />
           </label>
           <p v-if="errors.confirm" class="field-error">{{ errors.confirm }}</p>
@@ -447,7 +447,7 @@ function onSubmit() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
             </svg>
-            <input v-model="form.email" name="email" type="email" autocomplete="email"
+            <input v-model="form.email" name="email" placeholder=" " type="email" autocomplete="email"
                    @input="errors.email = ''" @keydown="submitOnEnter($event, onSubmit)" />
           </label>
           <p v-if="errors.email" class="field-error">{{ errors.email }}</p>
@@ -459,7 +459,7 @@ function onSubmit() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
             </svg>
-            <input v-model="form.emailCode" name="emailCode" type="text" autocomplete="one-time-code"
+            <input v-model="form.emailCode" name="emailCode" placeholder=" " type="text" autocomplete="one-time-code"
                    @input="errors.emailCode = ''" @keydown="submitOnEnter($event, onSubmit)" />
             <span class="send app-interaction-link" :class="{ disabled: emailCountdown > 0 || emailSending }"
                   role="button" :tabindex="emailCountdown > 0 || emailSending ? -1 : 0"
@@ -482,7 +482,7 @@ function onSubmit() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M12 3v18M3 12h18" />
                 </svg>
-                <input v-model="form.captchaCode" name="captchaCode" type="text"
+                <input v-model="form.captchaCode" name="captchaCode" placeholder=" " type="text"
                        @input="errors.captcha = ''" @keydown="submitOnEnter($event, onSubmit)" />
               </label>
               <AppHoverInfo content="点击刷新">
@@ -959,13 +959,18 @@ function onSubmit() {
   align-items: center;
   gap: var(--app-space-2);
   height: 60px;
-  padding: 18px 14px 0;
+  padding: 0 14px;
   border: 1px solid var(--login-border);
   border-radius: 10px;
   background: var(--login-input-bg);
   color: var(--login-text-muted);
   font-size: var(--app-font-size-body);
   transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+/* 使用原生值状态兼容手动输入与自动填充；空值聚焦时仍保持标题居中。 */
+.login-field:has(input:not(:placeholder-shown)),
+.login-field:has(input:is(:autofill, :-webkit-autofill)) {
+  padding-top: 18px;
 }
 .login-field:focus-within {
   border-color: var(--login-border-focus);
@@ -1007,13 +1012,21 @@ function onSubmit() {
 }
 .field-label {
   position: absolute;
-  top: 6px;
+  top: 50%;
   left: 40px;
+  transform: translateY(-50%);
+  pointer-events: none;
   color: var(--login-text-muted);
   font-family: var(--app-font-family-base);
-  font-size: var(--app-font-size-caption);
+  font-size: var(--app-font-size-body);
   line-height: var(--app-line-height-caption);
   letter-spacing: 0.04em;
+}
+.login-field:has(input:not(:placeholder-shown)) .field-label,
+.login-field:has(input:is(:autofill, :-webkit-autofill)) .field-label {
+  top: 6px;
+  transform: none;
+  font-size: var(--app-font-size-caption);
 }
 .login-field svg {
   flex: none;
@@ -1022,6 +1035,7 @@ function onSubmit() {
 .login-field input {
   flex: 1;
   min-width: 0;
+  padding: 0;
   border: none;
   outline: none;
   background: transparent;
