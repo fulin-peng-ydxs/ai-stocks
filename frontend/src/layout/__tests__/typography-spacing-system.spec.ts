@@ -416,6 +416,7 @@ describe('字体与间距设计契约', () => {
       'components/AppFilterSelect.vue',
       'components/KlineRangeSelect.vue',
       'components/data/StockCodeMultiSelect.vue',
+      'components/data/StockIngestScopeFields.vue',
       'views/trade-discipline/components/StockOptionSelect.vue',
       'views/StockDetailView.vue',
     ]
@@ -424,6 +425,21 @@ describe('字体与间距设计契约', () => {
       const source = read(join(SRC_DIR, file))
       expect(source, file).toContain('APP_BOTTOM_FLOATING_PLACEMENT')
       expect(source, file).toContain('APP_BOTTOM_FLOATING_FALLBACKS')
+    }
+  })
+
+  it('采集与调度表单的每个下拉和时间面板均消费下方定位契约', () => {
+    for (const file of [
+      'components/data/StockIngestScopeFields.vue',
+      'views/data/IngestView.vue',
+      'views/data/ScheduleView.vue',
+    ]) {
+      const controls = [...read(join(SRC_DIR, file)).matchAll(/<el-(?:select|time-picker)\b[^>]*>/g)]
+      expect(controls.length, file).toBeGreaterThan(0)
+      for (const [control] of controls) {
+        expect(control, `${file}: ${control}`).toContain(':placement="APP_BOTTOM_FLOATING_PLACEMENT"')
+        expect(control, `${file}: ${control}`).toContain(':fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"')
+      }
     }
   })
 

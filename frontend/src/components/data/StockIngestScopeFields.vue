@@ -5,6 +5,10 @@ import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import StockCodeMultiSelect from '@/components/data/StockCodeMultiSelect.vue'
 import CurrentDayFallbackField from '@/components/data/CurrentDayFallbackField.vue'
 import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
+import {
   STOCK_INGEST_RECIPE_OPTIONS,
   isHeavyStockIngestRecipe,
   stockIngestSummary,
@@ -53,7 +57,12 @@ function changeRecipe(recipe: StockIngestRecipe) {
     <el-select
       :model-value="modelValue.recipe"
       :data-testid="`${testIdPrefix}-recipe`"
-      style="width: 100%"
+      class="app-control-width-fill"
+      aria-label="采集方案"
+      :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+      :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
+      fit-input-width
+      popper-class="stock-ingest-recipe-popper"
       @update:model-value="changeRecipe($event as StockIngestRecipe)"
     >
       <el-option
@@ -63,7 +72,7 @@ function changeRecipe(recipe: StockIngestRecipe) {
         :value="option.value"
       >
         <span>{{ option.label }}</span>
-        <span class="app-caption-text"> · {{ option.description }}</span>
+        <span class="app-caption-text">{{ option.description }}</span>
       </el-option>
     </el-select>
   </el-form-item>
@@ -153,6 +162,22 @@ function changeRecipe(recipe: StockIngestRecipe) {
 </template>
 
 <style scoped>
+/* 下拉与触发器等宽，选项按实际说明高度排版，避免长文撑宽并触发侧向定位。 */
+:global(.stock-ingest-recipe-popper .el-select-dropdown__item) {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--app-space-1);
+  height: auto;
+  padding-block: var(--app-density-control-gap);
+  line-height: var(--app-line-height-comfy);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+:global(.stock-ingest-recipe-popper .app-caption-text) {
+  font-weight: var(--app-font-weight-regular);
+}
+
 .stock-ingest-summary {
   margin: var(--app-space-2) 0 var(--app-space-4);
 }

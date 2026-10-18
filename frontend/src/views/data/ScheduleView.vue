@@ -41,6 +41,10 @@ import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
 import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
+import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
 import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
 import StockIngestScopeFields from '@/components/data/StockIngestScopeFields.vue'
 import ResultMaintenanceTaskFields from '@/components/data/ResultMaintenanceTaskFields.vue'
@@ -1011,6 +1015,8 @@ const menuPageTitle = useMenuPageTitle()
         <el-form-item label="任务类型" required>
           <el-select
             v-model="form.task_type"
+            :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+            :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
             data-testid="schedule-task-type"
             style="width: 100%"
             @change="changeTaskType"
@@ -1021,7 +1027,9 @@ const menuPageTitle = useMenuPageTitle()
         <!-- 按类型的动态参数 -->
         <el-form-item v-if="form.task_type === 'fix'" label="问题类型" required>
           <div class="app-inline-info app-inline-info--fill">
-            <el-select v-model="form.issue_type" data-testid="schedule-issue-type" style="width: 100%">
+            <el-select v-model="form.issue_type" data-testid="schedule-issue-type" style="width: 100%"
+                       :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                       :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS">
               <el-option
                 v-for="issueType in qualityIssueTypes"
                 :key="issueType"
@@ -1079,13 +1087,17 @@ const menuPageTitle = useMenuPageTitle()
           <el-input v-model="form.cron" placeholder="分 时 日 月 周，如 30 15 * * 1-5" />
         </el-form-item>
         <el-form-item v-if="form.freq_type !== 'cron'" label="执行时间" required>
-          <el-time-picker v-model="form.time" value-format="HH:mm" format="HH:mm" placeholder="HH:mm" :clearable="false" />
+          <el-time-picker v-model="form.time" value-format="HH:mm" format="HH:mm" placeholder="HH:mm" :clearable="false"
+                          :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                          :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS" />
         </el-form-item>
         </template>
         <template v-else>
           <el-form-item label="上游任务" required>
             <el-select
               v-model="form.dependency_job_id"
+              :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+              :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
               data-testid="schedule-dependency-job"
               placeholder="选择上游任务"
               filterable
@@ -1111,7 +1123,9 @@ const menuPageTitle = useMenuPageTitle()
           </el-form-item>
           <el-form-item label="触发延迟" required>
             <el-input-number v-model="form.dependency_delay_value" data-testid="schedule-dependency-delay" :min="0" :precision="0" />
-            <el-select v-model="form.dependency_delay_unit" data-testid="schedule-dependency-delay-unit" class="delay-unit-select">
+            <el-select v-model="form.dependency_delay_unit" data-testid="schedule-dependency-delay-unit" class="delay-unit-select"
+                       :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                       :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS">
               <el-option v-for="item in DELAY_UNIT_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
             </el-select>
           </el-form-item>
@@ -1135,7 +1149,9 @@ const menuPageTitle = useMenuPageTitle()
           </el-form-item>
           <el-form-item label="重试延迟" required>
             <el-input-number v-model="form.retry_delay_value" data-testid="schedule-retry-delay" :min="0" :precision="0" />
-            <el-select v-model="form.retry_delay_unit" data-testid="schedule-retry-delay-unit" class="delay-unit-select">
+            <el-select v-model="form.retry_delay_unit" data-testid="schedule-retry-delay-unit" class="delay-unit-select"
+                       :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                       :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS">
               <el-option v-for="item in DELAY_UNIT_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
             </el-select>
           </el-form-item>

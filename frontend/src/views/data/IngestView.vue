@@ -7,6 +7,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import {
+  APP_BOTTOM_FLOATING_FALLBACKS,
+  APP_BOTTOM_FLOATING_PLACEMENT,
+} from '@/utils/floatingPlacement'
+import {
   getUpdateLogs, listTasks, createTask, getTask, getTaskLogs, resumeTask, cancelTask, searchBoards,
   TASK_LABEL, STATUS_LABEL, taskDisplayLabel, SOURCE_LABEL,
   type AsyncTask, type TaskType, type TaskStatus, type TaskLogLine, type UpdateLog,
@@ -886,11 +890,15 @@ const menuPageTitle = useMenuPageTitle()
           <AppTabToolbar label="任务中心操作栏" data-testid="ingest-tasks-toolbar">
             <template #actions>
               <el-select v-model="taskFilter.task_type" data-testid="task-type-filter"
+                         :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                         :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
                          placeholder="类型" clearable size="small" class="app-control-width-medium"
                          @change="() => { taskPage = 1; loadTasks() }">
                 <el-option v-for="o in TASK_TYPE_OPTIONS" :key="o.v" :label="o.l" :value="o.v" />
               </el-select>
               <el-select v-model="taskFilter.status" data-testid="task-status-filter"
+                         :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                         :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
                          placeholder="状态" clearable size="small" class="app-control-width-short"
                          @change="() => { taskPage = 1; loadTasks() }">
                 <el-option v-for="o in TASK_STATUS_OPTIONS" :key="o.v" :label="o.l" :value="o.v" />
@@ -991,10 +999,14 @@ const menuPageTitle = useMenuPageTitle()
           <AppTabToolbar label="采集日志操作栏" data-testid="ingest-logs-toolbar">
             <template #actions>
               <el-select v-model="logFilter.table_name" placeholder="目标表" clearable size="small" class="app-control-width-short"
+                         :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                         :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
                          @change="() => { logPage = 1; loadLogs() }">
                 <el-option v-for="t in logTables" :key="t" :label="t" :value="t" />
               </el-select>
               <el-select v-model="logFilter.status" placeholder="结果" clearable size="small" class="app-control-width-compact"
+                         :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                         :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
                          @change="() => { logPage = 1; loadLogs() }">
                 <el-option label="成功" value="success" />
                 <el-option label="失败" value="failed" />
@@ -1098,6 +1110,8 @@ const menuPageTitle = useMenuPageTitle()
         <el-form-item v-if="optType === 'board'" label="指定板块">
           <div class="app-inline-info app-inline-info--fill">
             <el-select v-model="optForm.codes" multiple filterable remote clearable collapse-tags
+                       :placement="APP_BOTTOM_FLOATING_PLACEMENT"
+                       :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
                        :remote-method="remoteCode" :loading="codeOptLoading" :reserve-keyword="false"
                        placeholder="输入板块代码或名称搜索" style="width: 100%">
               <el-option v-for="o in codeOptions" :key="o.code" :label="o.label" :value="o.code" />
