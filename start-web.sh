@@ -10,7 +10,7 @@
 #   ./start-web.sh logs       跟踪日志（Ctrl-C 退出跟踪，不影响服务）
 #
 # 设计要点（对齐 start.sh）：
-#   - nohup 脱离会话：AI 跑别的命令 / 终端关闭 / 对话结束都不会误杀。
+#   - 独立 session 脱离会话：AI 跑别的命令 / 终端关闭 / 对话结束都不会误杀。
 #   - --strictPort：端口被占直接报错，不静默漂移到别的端口。
 #   - 进程识别用"端口监听者"而非进程名：vite 进程名不稳定，按端口最可靠。
 #   - 防重复启动：已在跑则直接退出，避免端口抢占。
@@ -21,9 +21,15 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 PORT="${WEB_PORT:-5173}"
+PY="${PYTHON:-python}"
 LOG_DIR="logs"
-LOG_FILE="$LOG_DIR/frontend.log"
-PID_FILE="$LOG_DIR/frontend.pid"
+# 日常服务沿用原路径；验证实例按端口隔离，避免覆盖日常服务日志和 PID。
+LOG_SUFFIX=""
+if [[ "$PORT" != "5173" ]]; then
+  LOG_SUFFIX="-$PORT"
+fi
+LOG_FILE="$LOG_DIR/frontend$LOG_SUFFIX.log"
+PID_FILE="$LOG_DIR/frontend$LOG_SUFFIX.pid"
 
 mkdir -p "$LOG_DIR"
 
@@ -41,8 +47,21 @@ start() {
   fi
 
   echo "🚀 启动前端（dev / HMR，端口 ${PORT}）…"
-  nohup npm --prefix frontend run dev -- --port "$PORT" --strictPort > "$LOG_FILE" 2>&1 < /dev/null &
-  disown 2>/dev/null || true
+  # 与后端启动方式一致：nohup 不能隔离命令工具退出时的进程组清理。
+  "$PY" - "$PORT" "$LOG_FILE" <<'PY'
+import subprocess
+import sys
+
+with open(sys.argv[2], "wb", buffering=0) as log:
+    subprocess.Popen(
+        ["npm", "--prefix", "frontend", "run", "dev", "--", "--port", sys.argv[1], "--strictPort"],
+        stdin=subprocess.DEVNULL,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+        close_fds=True,
+    )
+PY
 
   # 等待端口就绪（Vite 首次冷启动可能较慢，最多 ~30s）
   local i

@@ -15,7 +15,46 @@ const version: RuleVersionDetail = {
 }
 
 describe('TradeOperationEditor', () => {
-  it('买入按所选规则展示事实选择，未知可选；换股清除旧事实，卖出不核对', async () => {
+  it.each([
+    { side: 'buy' as const, selected: 'buy-1', labels: ['唯一买入', '均线加仓'], types: ['建仓', '加仓'], next: 'buy-2' },
+    { side: 'sell' as const, selected: 'sell-1', labels: ['唯一卖出', '分批卖出', '盘中回转'], types: ['清仓', '分批止盈', '做 T'], next: 'sell-2' },
+  ])('$side 规则候选及选中值显示类型，选择仍回传明细 ID', async ({ side, selected, labels, types, next }) => {
+    const typed: RuleVersionDetail = { ...version, action_rules: [
+      ...version.action_rules,
+      { ...version.action_rules[0], detail_id: 'buy-2', name: '均线加仓', action_subtype: 'add_position' },
+      { ...version.action_rules[1], detail_id: 'sell-2', name: '分批卖出', action_subtype: '分批止盈' },
+      { ...version.action_rules[1], detail_id: 'sell-3', name: '盘中回转', action_subtype: 'do_t' },
+      { ...version.action_rules[0], detail_id: 'disabled-buy', enabled: false },
+    ] }
+    const wrapper = mount(TradeOperationEditor, {
+      props: { modelValue: [{
+        stock_code: '000001.SZ', stock_name_snapshot: '平安银行', side,
+        stock_rule_id: 'stock-1', action_rule_id: selected, price: null, quantity: null,
+        amount: null, fee: null, operated_at: null, note: null, display_order: 1,
+      }], version: typed, tradeDate: '2026-08-22' },
+      global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } },
+    })
+    await wrapper.get('[data-testid="operation-card-toggle"]').trigger('click')
+    await flushPromises()
+    const selector = wrapper.findAllComponents({ name: 'ElSelect' }).find((node) => node.attributes('data-testid') === 'operation-action-rule-0')!
+    expect(selector.findAllComponents({ name: 'ElOption' }).map((option) => option.props('label'))).toEqual(labels)
+    const options = selector.findAllComponents({ name: 'ElOption' })
+    expect(options.map((option) => option.get('.el-tag').text())).toEqual(types)
+    expect(selector.get('.el-select__placeholder .builtin-option-row__label').text()).toBe(labels[0])
+    const selectedTag = selector.get('.el-select__placeholder .el-tag')
+    expect(selectedTag.text()).toBe(types[0])
+    expect(selectedTag.classes()).toEqual(expect.arrayContaining(['el-tag--info', 'el-tag--small', 'el-tag--plain']))
+    selector.vm.$emit('update:modelValue', next)
+    await flushPromises()
+    const changed = wrapper.emitted('update:modelValue')!.at(-1)![0] as any[]
+    expect(changed[0].action_rule_id).toBe(next)
+    await wrapper.setProps({ modelValue: changed })
+    await flushPromises()
+    expect(selector.get('.el-select__placeholder .builtin-option-row__label').text()).toBe(labels[1])
+    expect(selector.get('.el-select__placeholder .el-tag').text()).toBe(types[1])
+  })
+
+  it('买入按所选规则展示事实选择，未知可选；换股重新预填，卖出不核对', async () => {
     const limited: RuleVersionDetail = { ...version, stock_rules: [{ ...version.stock_rules[0], price_max: '10', loss_filter: 'exclude', st_risk_filter: 'exclude' }] }
     const operation = {
       client_key: 'condition-operation', stock_code: '000001.SZ', stock_name_snapshot: '平安银行',
@@ -38,9 +77,111 @@ describe('TradeOperationEditor', () => {
     wrapper.findComponent({ name: 'StockOptionSelect' }).vm.$emit('update:modelValue', { code: '000002.SZ', name: '万科A', is_st: false })
     await flushPromises()
     const switched = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as any[]
-    expect(switched[0]).toMatchObject({ stock_code: '000002.SZ', loss_status: null, st_risk_status: null, selection_facts: null })
+    expect(switched[0]).toMatchObject({ stock_code: '000002.SZ', loss_status: 'no', st_risk_status: 'no', selection_facts: null })
     await wrapper.setProps({ modelValue: [{ ...operation, side: 'sell', action_rule_id: 'sell-1' }] })
     expect(wrapper.find('[data-testid="operation-conditions"]').exists()).toBe(false)
+  })
+
+  it('新增买入自动预填规则条件，允许修改并在重选同股时保留，卖出不预填', async () => {
+    const limited: RuleVersionDetail = { ...version, stock_rules: [{ ...version.stock_rules[0], loss_filter: 'exclude', st_risk_filter: 'only' }] }
+    const wrapper = mount(TradeOperationEditor, {
+      props: { modelValue: [], version: limited, tradeDate: '2026-08-22' },
+      global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } },
+    })
+    await wrapper.get('button[aria-label="添加买入操作"]').trigger('click')
+    const created = wrapper.emitted('update:modelValue')!.at(-1)![0] as any[]
+    expect(created[0]).toMatchObject({ loss_status: 'no', st_risk_status: 'yes' })
+    await wrapper.setProps({ modelValue: [{ ...created[0], stock_code: '000001.SZ', stock_name_snapshot: '平安银行', is_st: false }] })
+    const selector = wrapper.findAllComponents({ name: 'ElSelect' }).find((node) => node.attributes('data-testid') === 'operation-loss_status-0')!
+    expect(selector.props('modelValue')).toBe('no')
+    expect(selector.props('disabled')).toBe(false)
+    selector.vm.$emit('update:modelValue', 'unknown')
+    await flushPromises()
+    const edited = wrapper.emitted('update:modelValue')!.at(-1)![0] as any[]
+    await wrapper.setProps({ modelValue: edited })
+    wrapper.findComponent({ name: 'StockOptionSelect' }).vm.$emit('update:modelValue', { code: '000001.SZ', name: '平安银行', is_st: null })
+    await flushPromises()
+    const reselected = wrapper.emitted('update:modelValue')!.at(-1)![0] as any[]
+    expect(reselected[0]).toMatchObject({ loss_status: 'unknown', st_risk_status: 'yes', is_st: false })
+    await wrapper.get('button[aria-label="添加卖出操作"]').trigger('click')
+    const withSell = wrapper.emitted('update:modelValue')!.at(-1)![0] as any[]
+    expect(withSell.at(-1)).toMatchObject({ side: 'sell', loss_status: null, st_risk_status: null })
+  })
+
+  it('多个候选在选定规则后补默认值，切换规则保留已有事实及未知', async () => {
+    const multi: RuleVersionDetail = { ...version, stock_rules: [
+      { ...version.stock_rules[0], loss_filter: 'exclude', st_risk_filter: 'only' },
+      { ...version.stock_rules[0], detail_id: 'stock-2', name: '第二规则', loss_filter: 'only', st_risk_filter: 'exclude' },
+    ] }
+    const wrapper = mount(TradeOperationEditor, {
+      props: { modelValue: [], version: multi, tradeDate: '2026-08-22' },
+      global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } },
+    })
+    await wrapper.get('button[aria-label="添加买入操作"]').trigger('click')
+    const created = wrapper.emitted('update:modelValue')!.at(-1)![0] as any[]
+    expect(created[0]).toMatchObject({ stock_rule_id: '', loss_status: null, st_risk_status: null })
+    await wrapper.setProps({ modelValue: created })
+    const selector = wrapper.findAllComponents({ name: 'ElSelect' }).find((node) => node.attributes('data-testid') === 'operation-stock-rule-0')!
+    selector.vm.$emit('update:modelValue', 'stock-1')
+    await flushPromises()
+    const selected = wrapper.emitted('update:modelValue')!.at(-1)![0] as any[]
+    expect(selected[0]).toMatchObject({ stock_rule_id: 'stock-1', loss_status: 'no', st_risk_status: 'yes' })
+    await wrapper.setProps({ modelValue: [{ ...selected[0], st_risk_status: 'unknown' }] })
+    selector.vm.$emit('update:modelValue', 'stock-2')
+    await flushPromises()
+    const switched = wrapper.emitted('update:modelValue')!.at(-1)![0] as any[]
+    expect(switched[0]).toMatchObject({ stock_rule_id: 'stock-2', loss_status: 'no', st_risk_status: 'unknown' })
+    await wrapper.setProps({ modelValue: switched })
+    expect(wrapper.text()).toContain('亏损状态不符合选股条件')
+  })
+
+  it('历史事实不因加载、展开或只读版本变化被默认值覆盖', async () => {
+    const historical = {
+      id: 'saved-operation', stock_code: '000001.SZ', stock_name_snapshot: '平安银行',
+      side: 'buy' as const, stock_rule_id: 'stock-1', action_rule_id: 'buy-1',
+      price: null, quantity: null, amount: null, fee: null, operated_at: null, note: null,
+      display_order: 1, loss_status: null, st_risk_status: 'unknown' as const,
+    }
+    const limited: RuleVersionDetail = { ...version, stock_rules: [{ ...version.stock_rules[0], loss_filter: 'exclude', st_risk_filter: 'exclude' }] }
+    const wrapper = mount(TradeOperationEditor, {
+      props: { modelValue: [historical], version: limited, tradeDate: '2026-08-22' },
+      global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } },
+    })
+    await wrapper.get('[data-testid="operation-card-toggle"]').trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    await wrapper.setProps({ disabled: true })
+    await wrapper.setProps({ version: { ...limited, version_no: 3 } })
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.props('modelValue')[0]).toEqual(historical)
+  })
+
+  it('版本变化自动关联唯一新规则时补未填写事实，保留已填写的未知', async () => {
+    const wrapper = mount(TradeOperationEditor, {
+      props: { modelValue: [], version, tradeDate: '2026-08-22' },
+      global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } },
+    })
+    await wrapper.get('button[aria-label="添加买入操作"]').trigger('click')
+    const created = wrapper.emitted('update:modelValue')!.at(-1)![0] as any[]
+    await wrapper.setProps({ modelValue: [{ ...created[0], st_risk_status: 'unknown' }] })
+    await wrapper.setProps({ version: { ...version, version_no: 3, stock_rules: [
+      { ...version.stock_rules[0], detail_id: 'stock-v3', loss_filter: 'exclude', st_risk_filter: 'only' },
+    ] } })
+    const rebound = wrapper.emitted('update:modelValue')!.at(-1)![0] as any[]
+    expect(rebound[0]).toMatchObject({ stock_rule_id: 'stock-v3', loss_status: 'no', st_risk_status: 'unknown' })
+  })
+
+  it('部分履约中已确认ST违规的买入也不能标记已履约', async () => {
+    const wrapper = mount(TradeOperationEditor, {
+      props: { modelValue: [{ client_key: 'st-violation', stock_code: '000001.SZ', stock_name_snapshot: 'ST股票', side: 'buy', stock_rule_id: 'stock-1', action_rule_id: 'buy-1', is_st: true, price: null, quantity: null, amount: null, fee: null, operated_at: null, note: null, display_order: 1 }], version: { ...version, stock_rules: [{ ...version.stock_rules[0], st_filter: 'exclude' }] }, tradeDate: '2026-08-22', showCompliance: true },
+      global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } },
+    })
+    await wrapper.get('[data-testid="operation-card-toggle"]').trigger('click')
+    const selector = wrapper.findComponent({ name: 'ElSegmented' })
+    expect(selector.props('options')[0].disabled).toBe(true)
+    selector.vm.$emit('update:modelValue', 'complied')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    selector.vm.$emit('update:modelValue', 'breached')
+    expect((wrapper.emitted('update:modelValue')?.at(-1)?.[0] as any[])[0].compliance_status).toBe('breached')
   })
 
   it('用统一业务分区完整包裹操作事实和买卖方向组', () => {

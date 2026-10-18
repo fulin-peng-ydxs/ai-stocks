@@ -40,5 +40,16 @@ defineProps<{
 .builtin-option-row__action {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
+  max-width: 50%;
+}
+.builtin-option-row__action :deep(.el-tag) {
+  min-width: 0;
+  max-width: 100%;
+}
+.builtin-option-row__action :deep(.el-tag__content) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

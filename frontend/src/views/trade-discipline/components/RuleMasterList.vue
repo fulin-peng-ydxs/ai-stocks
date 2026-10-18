@@ -117,7 +117,13 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
         size="inline"
         :title="query ? '没有匹配的规则' : '暂无交易规则'"
       />
-      <AppScrollArea v-else class="rule-master__list" role="group" aria-label="选择交易规则">
+      <AppScrollArea
+        v-else
+        class="rule-master__list"
+        :content-style="{ gridAutoRows: 'max-content' }"
+        role="group"
+        aria-label="选择交易规则"
+      >
         <div
           v-for="rule in filteredRules"
           :key="rule.id"
@@ -173,7 +179,7 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
   --app-scroll-padding-top: var(--app-space-2); --app-scroll-padding-right: var(--app-space-2); --app-scroll-padding-bottom: var(--app-space-2); --app-scroll-padding-left: var(--app-space-2);
 }
 .rule-master__item {
-  min-height: 70px;
+  min-height: min-content;
   padding: var(--app-space-2) var(--app-space-3);
   border: 1px solid transparent;
   border-radius: var(--layout-control-radius);
@@ -181,7 +187,7 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
 }
 .rule-master__name { display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-weight: var(--app-font-weight-section); }
 .rule-master__name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rule-master__states { margin-top: var(--app-space-1); display: flex; align-items: start; flex-direction: column; gap: var(--app-space-1); color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
+.rule-master__states { margin-top: var(--app-space-1); display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--app-space-1) var(--app-space-2); color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); }
 .rule-master__management { text-align: left; color: var(--el-text-color-secondary); overflow-wrap: anywhere; }
 .rule-master__management.is-success { color: var(--el-color-success); }
 .rule-master__management.is-danger { color: var(--app-danger-text); }

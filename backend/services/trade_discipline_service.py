@@ -13,7 +13,11 @@ import pandas as pd
 import psycopg
 
 from backend.common.exceptions import ConflictError, NotFoundError, ValidationError
-from backend.services.trade_discipline_conditions import condition_warnings, position_count
+from backend.services.trade_discipline_conditions import (
+    condition_violations,
+    condition_warnings,
+    position_count,
+)
 from backend.storage.duckdb_client import DuckDBClient, get_client
 from backend.storage.trade_discipline_repository import TradeDisciplineRepository
 
@@ -912,6 +916,19 @@ class TradeDisciplineService:
                 raise ValidationError("部分履约时每笔操作都必须选择履约状态")
         elif any(status is not None for status in operation_statuses):
             raise ValidationError("仅部分履约可以填写单笔操作履约状态")
+        # ST 使用服务端逐日事实/既有修订快照；不信任前端的自评或 ST 标记。
+        stock_rules = {item["detail_id"]: item for item in version["stock_rules"]}
+        violations = []
+        limit = version.get("max_positions")
+        if limit is not None and peak_positions is not None and peak_positions > limit:
+            violations.append(f"当日最大同时持仓 {peak_positions} 只，超过规则上限 {limit} 只")
+        for index, operation in enumerate(operations, start=1):
+            issues = condition_violations(stock_rules[operation["stock_rule_id"]], operation)
+            violations.extend(f"操作 {index}：{issue}" for issue in issues)
+            if issues and operation.get("compliance_status") == "complied":
+                raise ValidationError(f"操作 {index} 存在规则违规，不能选择已履约：{'；'.join(issues)}")
+        if assessment == "complied" and violations:
+            raise ValidationError(f"存在规则违规，不能选择已履约：{'；'.join(violations)}")
         return {
             "peak_positions": peak_positions,
             "assessment": assessment,
@@ -1110,7 +1127,12 @@ class TradeDisciplineService:
             result = self.repo.load_revision(checkin_id, new_revision, conn=conn)
         return self._decorate_revision(result)
 
-    def quick_no_operation(self, rule_id: str, trade_date: date) -> dict[str, Any]:
+    def quick_no_operation(
+        self, rule_id: str, trade_date: date, *, peak_positions: int | None = None
+    ) -> dict[str, Any]:
+        peak_positions = position_count(
+            peak_positions, label="当日最大同时持仓数", minimum=0
+        )
         self._require_trade_date(trade_date)
         with self.repo.transaction() as conn:
             self.repo.lock_rule(conn, rule_id)
@@ -1128,6 +1150,7 @@ class TradeDisciplineService:
                     and result.get("assessment") == "complied"
                     and bool(result.get("no_operation"))
                     and not result.get("operations")
+                    and result.get("peak_positions") == peak_positions
                 )
                 if same_quick_submission:
                     result["idempotent"] = True
@@ -1145,8 +1168,11 @@ class TradeDisciplineService:
             checkin_id = self._id("tdc")
             version_no = int(event["version_no"])
             version = self.repo.load_version(rule_id, version_no, conn=conn)
-            if version.get("max_positions") is not None:
-                raise ValidationError("本套规则限制持仓数量，请进入工作台填写当日最大同时持仓数")
+            prepared = self._prepare_checkin(
+                {"assessment": "complied", "no_operation": True, "operations": [],
+                 "peak_positions": peak_positions},
+                trade_date=trade_date, version=version,
+            )
             self.repo.create_checkin(
                 conn,
                 checkin_id=checkin_id,
@@ -1154,16 +1180,6 @@ class TradeDisciplineService:
                 trade_date=trade_date,
                 submission_source="quick_no_operation",
             )
-            prepared = {
-                "assessment": "complied",
-                "no_operation": True,
-                "violation_detail": None,
-                "review_note": None,
-                "reason_code": None,
-                "reason_id": None,
-                "reason_text": None,
-                "operations": [],
-            }
             self._write_revision(
                 conn,
                 checkin_id=checkin_id,

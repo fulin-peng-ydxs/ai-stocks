@@ -5,6 +5,7 @@ import AppDatePicker from '@/components/AppDatePicker.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppSummaryDisclosureCard from '@/components/AppSummaryDisclosureCard.vue'
+import BuiltinOptionRow from '@/components/BuiltinOptionRow.vue'
 import TradeDisciplineSectionPanel from '@/components/trade-discipline/TradeDisciplineSectionPanel.vue'
 import {
   decimalToMinorUnits,
@@ -13,6 +14,7 @@ import {
 } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
 import { formatDateTimeMinutes } from '@/utils/dateTime'
+import { actionSubtypeLabel } from '@/utils/tradeDisciplineRuleTypes'
 import {
   checkinAssessmentLabel,
   checkinAssessmentTagType,
@@ -28,7 +30,10 @@ import type {
   StockOption,
 } from '@/api/tradeDiscipline'
 
-import { conditionFactOptions, manualConditionFields, stockConditionSummary, stockConditionWarnings, conditionFactLabel } from '@/utils/tradeDisciplineConditions'
+import {
+  conditionFactOptions, manualConditionFields, manualConditionDefaults,
+  stockConditionSummary, stockConditionWarnings, stockConditionViolations, conditionFactLabel,
+} from '@/utils/tradeDisciplineConditions'
 
 const props = defineProps<{
   modelValue: CheckinOperation[]
@@ -61,14 +66,15 @@ function defaultOperatedAt(tradeDate: string, now = new Date()): string {
 }
 
 function emptyOperation(order: number, side: 'buy' | 'sell'): CheckinOperation {
+  const stockRule = stockRules.value.length === 1 ? stockRules.value[0] : undefined
   return {
     client_key: `operation-${Date.now()}-${++operationKey}`,
     stock_code: '', stock_name_snapshot: '', side,
-    stock_rule_id: stockRules.value.length === 1 ? stockRules.value[0].detail_id! : '',
+    stock_rule_id: stockRule?.detail_id ?? '',
     action_rule_id: actionRules(side).length === 1 ? actionRules(side)[0].detail_id! : '',
     price: null, quantity: null, amount: null, fee: null,
     operated_at: defaultOperatedAt(props.tradeDate), note: null,
-    compliance_status: null, loss_status: null, st_risk_status: null, display_order: order,
+    compliance_status: null, ...manualConditionDefaults(stockRule, side), display_order: order,
   }
 }
 
@@ -103,6 +109,13 @@ function ruleName(operation: CheckinOperation, kind: 'stock' | 'action'): string
 
 function selectedStockRule(operation: CheckinOperation) {
   return props.version.stock_rules.find((rule) => rule.detail_id === operation.stock_rule_id)
+}
+
+function operationActionSubtypeLabel(operation: CheckinOperation): string {
+  const rule = props.version.action_rules.find((item) => item.detail_id === operation.action_rule_id)
+  return actionSubtypeLabel(rule ?? {
+    action_type: operation.side, action_subtype: operation.action_subtype ?? null,
+  })
 }
 
 function requiredFactFields(operation: CheckinOperation) {
@@ -153,6 +166,8 @@ function update(index: number, patch: Partial<CheckinOperation>): void {
 }
 
 function updateCompliance(index: number, value: unknown): void {
+  const operation = props.modelValue[index]
+  if (value === 'complied' && operation && stockConditionViolations(selectedStockRule(operation), operation).length) return
   update(index, {
     compliance_status: value === 'complied' || value === 'breached' ? value : null,
   })
@@ -173,13 +188,36 @@ function remove(index: number): void {
 }
 
 function selectStock(index: number, stock: StockOption | null): void {
+  const operation = props.modelValue[index]
+  if (!operation || props.disabled) return
+  if (operation.stock_code === (stock?.code ?? '')) {
+    update(index, { stock_name_snapshot: stock?.name ?? '' })
+    return
+  }
   update(index, {
     stock_code: stock?.code ?? '',
     stock_name_snapshot: stock?.name ?? '',
-    loss_status: null, st_risk_status: null, selection_facts: null,
+    ...manualConditionDefaults(selectedStockRule(operation), operation.side), selection_facts: null,
     is_st: stock?.is_st ?? null,
     st_as_of_date: stock?.st_as_of_date ?? null,
   })
+}
+
+function selectStockRule(index: number, stockRuleId: string): void {
+  const operation = props.modelValue[index]
+  if (!operation || props.disabled || operation.stock_rule_id === stockRuleId) return
+  update(index, withStockRule(operation, stockRuleId))
+}
+
+function withStockRule(operation: CheckinOperation, stockRuleId: string): CheckinOperation {
+  const rule = props.version.stock_rules.find((item) => item.detail_id === stockRuleId)
+  const defaults = manualConditionDefaults(rule, operation.side)
+  // 切换规则只补未填写项，保留已确认的事实（包括“未知”），避免掩盖真实违规。
+  return {
+    ...operation, stock_rule_id: stockRuleId,
+    loss_status: operation.loss_status ?? defaults.loss_status,
+    st_risk_status: operation.st_risk_status ?? defaults.st_risk_status,
+  }
 }
 
 function computedAmount(operation: CheckinOperation): string | null {
@@ -194,13 +232,14 @@ function amountMismatch(operation: CheckinOperation): boolean {
 }
 
 watch(() => props.version.version_no, () => {
+  if (props.disabled) return
   const next = props.modelValue.map((item) => {
     const stocks = stockRules.value
     const actions = actionRules(item.side)
+    const stockRuleId = stocks.some((rule) => rule.detail_id === item.stock_rule_id)
+      ? item.stock_rule_id : (stocks.length === 1 ? stocks[0].detail_id! : '')
     return {
-      ...item,
-      stock_rule_id: stocks.some((rule) => rule.detail_id === item.stock_rule_id)
-        ? item.stock_rule_id : (stocks.length === 1 ? stocks[0].detail_id! : ''),
+      ...(stockRuleId === item.stock_rule_id ? item : withStockRule(item, stockRuleId)),
       action_rule_id: actions.some((rule) => rule.detail_id === item.action_rule_id)
         ? item.action_rule_id : (actions.length === 1 ? actions[0].detail_id! : ''),
     }
@@ -303,21 +342,30 @@ defineExpose({ expandOperation })
               <AppDatePicker :model-value="operation.operated_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" format="YYYY-MM-DD HH:mm" :disabled="disabled" @update:model-value="update(index, { operated_at: $event })" />
             </el-form-item>
             <el-form-item label="选股规则" required class="operation-field operation-field--rule">
-              <el-select :model-value="operation.stock_rule_id" :disabled="disabled || !stockRules.length" placeholder="选择规则" @update:model-value="update(index, { stock_rule_id: $event })">
+              <el-select :model-value="operation.stock_rule_id" :disabled="disabled || !stockRules.length" :data-testid="`operation-stock-rule-${index}`" placeholder="选择规则" @update:model-value="selectStockRule(index, $event)">
                 <el-option v-for="rule in stockRules" :key="rule.detail_id!" :label="rule.name || '未命名规则'" :value="rule.detail_id!" />
               </el-select>
               <small v-if="!stockRules.length" class="field-error">当前版本没有可用选股规则</small>
             </el-form-item>
             <el-form-item :label="operation.side === 'sell' ? '卖出规则' : '买入规则'" required class="operation-field operation-field--rule">
-              <el-select :model-value="operation.action_rule_id" :disabled="disabled || !actionRules(operation.side).length" placeholder="选择规则" @update:model-value="update(index, { action_rule_id: $event })">
-                <el-option v-for="rule in actionRules(operation.side)" :key="rule.detail_id!" :label="rule.name || '未命名规则'" :value="rule.detail_id!" />
+              <el-select :model-value="operation.action_rule_id" :disabled="disabled || !actionRules(operation.side).length" :data-testid="`operation-action-rule-${index}`" placeholder="选择规则" @update:model-value="update(index, { action_rule_id: $event })">
+                <template #label>
+                  <BuiltinOptionRow :label="ruleName(operation, 'action')" :builtin="false">
+                    <el-tag type="info" size="small" effect="plain">{{ operationActionSubtypeLabel(operation) }}</el-tag>
+                  </BuiltinOptionRow>
+                </template>
+                <el-option v-for="rule in actionRules(operation.side)" :key="rule.detail_id!" :label="rule.name || '未命名规则'" :value="rule.detail_id!">
+                  <BuiltinOptionRow :label="rule.name || '未命名规则'" :builtin="false">
+                    <el-tag type="info" size="small" effect="plain">{{ actionSubtypeLabel(rule) }}</el-tag>
+                  </BuiltinOptionRow>
+                </el-option>
               </el-select>
               <small v-if="!actionRules(operation.side).length" class="field-error">当前方向没有可用买卖规则</small>
             </el-form-item>
             <el-form-item v-if="showCompliance" label="履约状态" required class="operation-field operation-field--compliance">
               <el-segmented
                 :model-value="operation.compliance_status"
-                :options="[{ label: '已履约', value: 'complied' }, { label: '未履约', value: 'breached' }]"
+                :options="[{ label: '已履约', value: 'complied', disabled: stockConditionViolations(selectedStockRule(operation), operation).length > 0 }, { label: '未履约', value: 'breached' }]"
                 :disabled="disabled"
                 :data-testid="`operation-compliance-${index}`"
                 @update:model-value="updateCompliance(index, $event)"
@@ -336,7 +384,7 @@ defineExpose({ expandOperation })
               <small v-if="disabled && !operation[field.key]" class="app-caption-text">{{ conditionFactLabel(operation[field.key]) }}</small>
             </el-form-item>
           </div>
-          <p class="app-caption-text">ST按交易日逐日数据核对；亏损与ST风险由你确认操作当时情况，未查明选未知。</p>
+          <p class="app-caption-text">ST按交易日逐日数据核对；亏损与ST风险按规则预填，可按实际修改，未查明选未知。</p>
           <ul v-if="stockConditionWarnings(selectedStockRule(operation), operation).length" class="condition-warnings" role="status"><li v-for="warning in stockConditionWarnings(selectedStockRule(operation), operation)" :key="warning">{{ warning }}</li></ul>
         </section>
 

@@ -650,7 +650,7 @@ describe('字体与间距设计契约', () => {
     expect(training).not.toContain('训练结算')
 
     const menuManagement = read(join(SRC_DIR, 'views/system/MenuResourceView.vue'))
-    expect(menuManagement).toMatch(/await updateMenu\([\s\S]*await auth\.fetchMe\(\)/)
+    expect(menuManagement).toMatch(/await updateMenu\([\s\S]*await auth\.fetchMe\((?:\{\s*background:\s*true\s*\})?\)/)
   })
 
   it('新页面脚手架直接消费排版/间距事实源，并显式标记未完成占位', () => {

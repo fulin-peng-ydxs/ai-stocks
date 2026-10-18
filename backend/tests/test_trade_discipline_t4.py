@@ -95,7 +95,7 @@ def test_structured_conditions_and_peak_roundtrip_via_authorized_api(
     from backend.storage.trade_discipline_repository import TradeDisciplineRepository
     from backend.tests.test_trade_discipline_t3 import _operation, _rule_payload, _seed_market
 
-    trade_date, *_ = _seed_market(market)
+    trade_date, second, _ = _seed_market(market)
     identity = _make_user(pg, [
         "trade-discipline:view", "trade-discipline:rule-manage",
         "trade-discipline:checkin-view", "trade-discipline:checkin-submit",
@@ -125,9 +125,12 @@ def test_structured_conditions_and_peak_roundtrip_via_authorized_api(
             "operations": [operation],
         }
         submitted = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
+        assert submitted.status_code == 422, submitted.text
+        content["peak_positions"] = 2
+        submitted = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
         assert submitted.status_code == 200, submitted.text
         data = submitted.json()["data"]
-        assert data["peak_positions"] == 3
+        assert data["peak_positions"] == 2
         assert data["operations"][0]["price"] == "5.1234"
         assert data["operations"][0]["selection_facts"]["loss_status"] == "unknown"
         assert "亏损状态未知，无法核对" in data["operations"][0]["condition_warnings"]
@@ -136,6 +139,16 @@ def test_structured_conditions_and_peak_roundtrip_via_authorized_api(
         ).json()["data"]["latest_version"]
         assert draft["max_positions"] == 2
         assert draft["stock_rules"][0]["price_min"] == "5.1234"
+        quick_body = {"rule_id": rule_id, "trade_date": str(second), "peak_positions": 3}
+        endpoint = "/api/trade-discipline/checkins/quick-no-operation"
+        assert client.post(endpoint, headers=headers, json=quick_body).status_code == 422
+        quick_body["peak_positions"] = 0
+        quick = client.post(endpoint, headers=headers, json=quick_body)
+        assert quick.status_code == 200, quick.text
+        assert quick.json()["data"]["peak_positions"] == 0
+        assert client.post(endpoint, headers=headers, json=quick_body).json()["data"]["idempotent"]
+        quick_body["peak_positions"] = 1
+        assert client.post(endpoint, headers=headers, json=quick_body).status_code == 409
         content["operations"][0]["is_st"] = False
         forged = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
         assert forged.status_code == 422

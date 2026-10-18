@@ -10,8 +10,10 @@ const props = withDefaults(defineProps<{
   modelValue: boolean
   modalClass?: string
   size?: AppDialogSize
+  boundary?: 'page' | 'app'
 }>(), {
   size: 'medium',
+  boundary: 'page',
 })
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
@@ -21,10 +23,10 @@ const model = computed({
 })
 
 const pageTarget = inject(PAGE_OVERLAY_TARGET, null)
-if (import.meta.env.DEV && pageTarget == null) {
+if (import.meta.env.DEV && props.boundary === 'page' && pageTarget == null) {
   console.warn('[AppDialog] 未找到 LayoutHost 页面容器，弹窗将回退到 body。')
 }
-const appendTarget = computed(() => pageTarget?.value ?? 'body')
+const appendTarget = computed(() => props.boundary === 'app' ? 'body' : pageTarget?.value ?? 'body')
 const modalClassName = computed(() => [
   'app-dialog-modal',
   props.modalClass,

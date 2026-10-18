@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { flushPromises, mount } from '@vue/test-utils'
-import ElementPlus, { ElMessageBox } from 'element-plus'
+import ElementPlus from 'element-plus'
+import { defineComponent } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TradeDisciplineQuickCard from '@/components/trade-discipline/TradeDisciplineQuickCard.vue'
 import {
@@ -10,6 +11,10 @@ import {
 
 const getSummary = vi.fn()
 const quickSubmit = vi.fn()
+const dialogStub = defineComponent({
+  props: ['modelValue'],
+  template: '<div v-if="modelValue"><slot /><footer><slot name="footer" /></footer></div>',
+})
 
 vi.mock('@/api/tradeDiscipline', () => ({
   getTradeDisciplineSummary: (...args: unknown[]) => getSummary(...args),
@@ -30,6 +35,7 @@ async function mountCard(canSubmit = true) {
     props: { canSubmit, tradeDate: '2026-08-22' },
     global: {
       plugins: [ElementPlus],
+      stubs: { AppDialog: dialogStub },
       directives: { permission: { mounted: () => undefined } },
     },
   })
@@ -42,20 +48,46 @@ describe('TradeDisciplineQuickCard', () => {
     vi.clearAllMocks()
     resetTradeDisciplineSummaryForTests()
     getSummary.mockResolvedValue(pendingSummary)
+    quickSubmit.mockResolvedValue({ idempotent: false })
   })
 
-  it('配置持仓上限后快捷入口跳转表单，不自动确认履约', async () => {
+  it.each([true, false])('持仓上限不隐藏无操作快捷入口（提交权限：%s）', async (canSubmit) => {
     getSummary.mockResolvedValue({ ...pendingSummary, rules: pendingSummary.rules.map((rule) => ({ ...rule, max_positions: 2 })) })
     const state = useTradeDisciplineSummary()
     await state.refreshSummary('2026-08-22')
     const wrapper = mount(TradeDisciplineQuickCard, {
-      props: { canSubmit: true, tradeDate: '2026-08-22' },
-      global: { plugins: [ElementPlus], directives: { permission: {} } },
+      props: { canSubmit, tradeDate: '2026-08-22' },
+      global: { plugins: [ElementPlus], stubs: { AppDialog: dialogStub }, directives: { permission: {} } },
     })
     await flushPromises()
-    await wrapper.findAll('button').find((item) => item.text() === '填写持仓打卡')!.trigger('click')
+    const actions = wrapper.get('.quick-rule-actions').findAll('button')
+    expect(actions).toHaveLength(canSubmit ? 2 : 1)
+    if (canSubmit) {
+      expect(actions[0].text()).toBe('无操作履约')
+      await actions[0].trigger('click')
+      expect(wrapper.get<HTMLInputElement>('[data-testid="quick-peak-positions"] input').element.value).toBe('2')
+    }
+    await actions.at(-1)!.trigger('click')
     expect(quickSubmit).not.toHaveBeenCalled()
     expect(wrapper.emitted('navigate')?.at(-1)).toEqual([{ tab: 'checkin', ruleId: 'rule-1', tradeDate: '2026-08-22' }])
+  })
+
+  it('快捷确认允许按实际修改峰值，超限不能确认', async () => {
+    getSummary.mockResolvedValue({ ...pendingSummary, rules: pendingSummary.rules.map((rule) => ({ ...rule, max_positions: 2 })) })
+    await useTradeDisciplineSummary().refreshSummary('2026-08-22')
+    const wrapper = await mountCard(true)
+    await wrapper.get('.quick-rule-actions button.el-button--primary').trigger('click')
+    const input = wrapper.get('[data-testid="quick-peak-positions"] input')
+    await input.setValue('3')
+    await input.trigger('change')
+    expect(wrapper.get('[data-testid="quick-confirm"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="quick-confirm"]').trigger('click')
+    expect(quickSubmit).not.toHaveBeenCalled()
+    await input.setValue('0')
+    await input.trigger('change')
+    await wrapper.get('[data-testid="quick-confirm"]').trigger('click')
+    await flushPromises()
+    expect(quickSubmit).toHaveBeenCalledWith('rule-1', '2026-08-22', 0)
   })
 
   it('展示最新日摘要和待打卡规则，并按维护权限控制快捷动作', async () => {
@@ -86,10 +118,10 @@ describe('TradeDisciplineQuickCard', () => {
       }],
     })
     quickSubmit.mockResolvedValue({ idempotent: false })
-    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
     const wrapper = await mountCard(true)
 
-    await wrapper.get('button.el-button--primary').trigger('click')
+    await wrapper.get('.quick-rule-actions button.el-button--primary').trigger('click')
+    await wrapper.get('[data-testid="quick-confirm"]').trigger('click')
     await flushPromises()
 
     expect(quickSubmit).toHaveBeenCalledWith('rule-1', '2026-08-22')
@@ -103,10 +135,10 @@ describe('TradeDisciplineQuickCard', () => {
   it('409 冲突不覆盖记录，直接引导到正式打卡页面', async () => {
     await useTradeDisciplineSummary().refreshSummary('2026-08-22')
     quickSubmit.mockRejectedValue({ response: { status: 409, data: { msg: '已有正式记录' } } })
-    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
     const wrapper = await mountCard(true)
 
-    await wrapper.get('button.el-button--primary').trigger('click')
+    await wrapper.get('.quick-rule-actions button.el-button--primary').trigger('click')
+    await wrapper.get('[data-testid="quick-confirm"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.emitted('navigate')?.at(-1)).toEqual([{

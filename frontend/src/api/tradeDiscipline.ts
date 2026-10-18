@@ -395,10 +395,12 @@ export function submitTradeDisciplineCheckin(
 export function quickNoOperationTradeDisciplineCheckin(
   ruleId: string,
   tradeDate: string,
+  peakPositions?: number,
 ): Promise<TradeDisciplineCheckin & { idempotent: boolean }> {
   return http.post('/trade-discipline/checkins/quick-no-operation', {
     rule_id: ruleId,
     trade_date: tradeDate,
+    ...(peakPositions === undefined ? {} : { peak_positions: peakPositions }),
   })
 }
 

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import TradeDisciplineSectionPanel from '@/components/trade-discipline/TradeDisciplineSectionPanel.vue'
 import { getErrorMessage } from '@/utils/error'
-import { holdingCountWarning, manualConditionFields } from '@/utils/tradeDisciplineConditions'
+import { holdingCountWarning, manualConditionFields, stockConditionViolations } from '@/utils/tradeDisciplineConditions'
 import { decimalToMinorUnits, multiplyToMinorUnits } from '@/utils/fixedDecimal'
 import {
   checkinAssessmentOptions,
@@ -59,6 +60,22 @@ const form = reactive<CheckinFormState>({
 const existing = computed(() => context.value?.checkin ?? null)
 const readonly = computed(() => !props.canSubmit || (!!existing.value && !editing.value))
 const amendmentUnchanged = computed(() => !!existing.value && editing.value && !isDirty())
+const knownViolations = computed(() => {
+  const version = context.value?.version
+  if (!version) return []
+  const issues: string[] = []
+  if (version.max_positions != null && form.peak_positions != null && form.peak_positions > version.max_positions) {
+    issues.push(holdingCountWarning(version.max_positions, form.peak_positions))
+  }
+  form.operations.forEach((operation, index) => {
+    const rule = version.stock_rules.find((item) => item.detail_id === operation.stock_rule_id)
+    issues.push(...stockConditionViolations(rule, operation).map((issue) => `操作 ${index + 1}：${issue}`))
+  })
+  return issues
+})
+const assessmentOptions = computed(() => checkinAssessmentOptions.map((option) => ({
+  ...option, disabled: option.value === 'complied' && knownViolations.value.length > 0,
+})))
 
 function reasonFromContext(value: CheckinContext['checkin']): ReasonValue | null {
   if (!value?.reason_name_snapshot) return null
@@ -81,7 +98,10 @@ function snapshot(): string {
 
 function applyContext(value: CheckinContext): void {
   const checkin = value.checkin
-  form.peak_positions = checkin?.peak_positions ?? null
+  // 仅首次填报默认取规则上限；历史修订的 0 或未记录状态均按原快照保留。
+  form.peak_positions = checkin
+    ? checkin.peak_positions ?? null
+    : value.version.max_positions ?? null
   form.assessment = checkin?.assessment ?? 'complied'
   form.no_operation = checkin?.no_operation ?? false
   form.reason = reasonFromContext(checkin)
@@ -130,6 +150,7 @@ async function toggleNoOperation(value: boolean): Promise<void> {
 }
 
 function validate(): string | null {
+  if (form.assessment === 'complied' && knownViolations.value.length) return '存在规则违规，不能选择已履约'
   if (context.value?.version.max_positions != null && form.peak_positions === null) return '请填写当日最大同时持仓数'
   if (form.peak_positions !== null && (!Number.isInteger(form.peak_positions) || form.peak_positions < 0 || form.peak_positions > 2147483647)) return '当日最大同时持仓数必须为非负整数'
   if (form.assessment === 'partial' && !form.operations.length) return '部分履约至少需要一条操作'
@@ -146,6 +167,9 @@ function validate(): string | null {
     if (!operation.stock_rule_id) return operationError('请选择选股规则')
     if (!operation.action_rule_id) return operationError('请选择买卖规则')
     const stockRule = context.value?.version.stock_rules.find((rule) => rule.detail_id === operation.stock_rule_id)
+    if (operation.compliance_status === 'complied' && stockConditionViolations(stockRule, operation).length) {
+      return operationError('存在规则违规，不能选择已履约')
+    }
     if (operation.side === 'buy') {
       for (const field of manualConditionFields) {
         if (stockRule?.[field.filter] && stockRule[field.filter] !== 'any' && !operation[field.key]) return operationError(`请选择${field.label}，未查明可选未知`)
@@ -296,12 +320,16 @@ watch(() => form.assessment, (assessment, previous) => {
     }))
   }
 })
+// 只调整编辑中的自评；历史只读快照保持原样，修正时再按事实校验。
+watch([knownViolations, readonly], ([issues, isReadonly]) => {
+  if (!isReadonly && issues.length && form.assessment === 'complied') form.assessment = 'breached'
+})
 watch(() => [props.ruleId, props.tradeDate] as const, load, { immediate: true })
 defineExpose({ isDirty, requestLeave, load, startAmend })
 </script>
 
 <template>
-  <div class="checkin-detail panel-detail" data-testid="checkin-form">
+  <AppScrollArea as="section" class="checkin-detail panel-detail" aria-label="打卡内容工作区" data-testid="checkin-form">
     <AppStateBlock v-if="loading" state="loading" title="正在加载打卡上下文…" />
     <AppStateBlock v-else-if="loadError" state="error" title="打卡上下文不可用" :description="loadError" retry @retry="load" />
     <template v-else-if="context">
@@ -359,11 +387,12 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
                 data-testid="checkin-assessment"
                 v-model="form.assessment"
                 :disabled="readonly"
-                :options="checkinAssessmentOptions"
+                :options="assessmentOptions"
               />
             </el-form-item>
             <el-checkbox data-testid="checkin-no-operation" :model-value="form.no_operation" :disabled="readonly || form.assessment === 'partial'" @change="toggleNoOperation(Boolean($event))">今日无操作</el-checkbox>
           </div>
+          <p v-if="knownViolations.length && !readonly" class="condition-warning" role="status">已发现规则违规，不能选择“已履约”；请填写未履约情况或逐笔记录部分履约。</p>
           <div v-if="context.version.max_positions != null || form.peak_positions != null" class="holding-count" data-testid="checkin-holding-count">
             <el-form-item label="当日最大同时持仓数" :required="context.version.max_positions != null">
               <el-input-number v-model="form.peak_positions" :min="0" :max="2147483647" :precision="0" :step="1" :controls="false" :disabled="readonly" placeholder="填写实际数量" data-testid="checkin-peak-positions" />
@@ -404,16 +433,22 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
         </div>
       </el-form>
     </template>
-  </div>
+  </AppScrollArea>
 </template>
 
 <style scoped>
-.checkin-detail { display: block; }
+.checkin-detail.panel-detail {
+  padding: 0;
+  --app-scroll-padding-top: var(--app-space-5);
+  --app-scroll-padding-right: var(--app-space-5);
+  --app-scroll-padding-bottom: var(--app-space-5);
+  --app-scroll-padding-left: var(--app-space-5);
+}
 .condition-warning { color: var(--el-color-warning); font-size: var(--app-font-size-caption); }
 .checkin-head, .checkin-head__facts, .checkin-head__commands, .assessment-row, .checkin-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3); }
 .checkin-head { align-items: flex-start; padding-bottom: var(--app-space-3); border-bottom: 1px solid var(--el-border-color-lighter); }
 .checkin-head .app-section-title { margin: var(--app-space-1) 0 0; }
-.checkin-form { margin-top: var(--app-space-4); display: grid; gap: var(--app-space-4); }
+.checkin-form { margin-top: var(--app-space-4); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--app-space-4); }
 .assessment-row { align-items: flex-start; }
 .breach-grid { display: grid; grid-template-columns: minmax(220px, 0.7fr) minmax(320px, 1.3fr); gap: var(--app-space-4); }
 .permission-note {

@@ -82,11 +82,34 @@ describe('TradeCheckinForm', () => {
     amendCheckin.mockResolvedValue({ ...saved, revision_no: 2, current_revision_no: 2, checkin_status: 'amended' })
   })
 
-  it('限制持仓时无操作仍需填峰值，超限仅提示且如实提交', async () => {
+  it('新增买入无需逐项填写人工条件，规则默认值随正式打卡提交', async () => {
+    getContext.mockResolvedValue({ ...emptyContext, version: {
+      ...version, stock_rules: [{ ...version.stock_rules[0], loss_filter: 'exclude', st_risk_filter: 'exclude' }],
+    } })
+    const wrapper = mountForm({ StockOptionSelect: true })
+    await flushPromises()
+    await wrapper.get('button[aria-label="添加买入操作"]').trigger('click')
+    wrapper.findComponent({ name: 'StockOptionSelect' }).vm.$emit('update:modelValue', {
+      code: '000001.SZ', name: '平安银行', is_st: false, st_as_of_date: '2026-08-22',
+    })
+    await flushPromises()
+    await wrapper.get('button.el-button--primary').trigger('click')
+    await flushPromises()
+    expect(submitCheckin).toHaveBeenCalledWith(expect.objectContaining({
+      assessment: 'complied', no_operation: false,
+      operations: [expect.objectContaining({
+        stock_code: '000001.SZ', stock_rule_id: 'stock-rule-1', action_rule_id: 'action-buy-1',
+        loss_status: 'no', st_risk_status: 'no',
+      })],
+    }))
+  })
+
+  it('限制持仓时无操作仍需填峰值，超限不能选择已履约', async () => {
     getContext.mockResolvedValue({ ...emptyContext, version: { ...version, max_positions: 2 } })
-    const wrapper = mountForm()
+    const wrapper = mountForm({ ViolationReasonCombobox: ReasonStub })
     await flushPromises()
     wrapper.findComponent({ name: 'ElCheckbox' }).vm.$emit('change', true)
+    wrapper.findComponent({ name: 'ElInputNumber' }).vm.$emit('update:modelValue', null)
     await wrapper.vm.$nextTick()
     await wrapper.get('button.el-button--primary').trigger('click')
     expect(submitCheckin).not.toHaveBeenCalled()
@@ -94,9 +117,100 @@ describe('TradeCheckinForm', () => {
     await input.setValue('3')
     await input.trigger('change')
     expect(wrapper.text()).toContain('超过本套规则上限 2 只')
+    expect(wrapper.findComponent({ name: 'ElSegmented' }).props('options').find((option: { value: string }) => option.value === 'complied').disabled).toBe(true)
+    await wrapper.get('[aria-label="选择原因"]').trigger('click')
+    await wrapper.findAll('textarea')[0].setValue('当日持仓超限')
     await wrapper.get('button.el-button--primary').trigger('click')
     await flushPromises()
-    expect(submitCheckin).toHaveBeenCalledWith(expect.objectContaining({ peak_positions: 3, no_operation: true, assessment: 'complied' }))
+    expect(submitCheckin).toHaveBeenCalledWith(expect.objectContaining({ peak_positions: 3, no_operation: true, assessment: 'breached' }))
+  })
+
+  it.each([
+    { filter: 'exclude', st: true, blocked: true },
+    { filter: 'only', st: false, blocked: true },
+    { filter: 'any', st: true, blocked: false },
+    { filter: 'exclude', st: null, blocked: false },
+  ])('按规则 $filter 和ST事实 $st 限制整体已履约', async ({ filter, st, blocked }) => {
+    getContext.mockResolvedValue({ ...emptyContext, version: {
+      ...version, stock_rules: [{ ...version.stock_rules[0], st_filter: filter }],
+    } })
+    const stub = defineComponent({
+      emits: ['update:modelValue'],
+      template: '<button aria-label="填写操作" @click="$emit(\'update:modelValue\', operation)">填写操作</button>',
+      setup() { return { operation: [{ ...operation, is_st: st }] } },
+    })
+    const wrapper = mountForm({ TradeOperationEditor: stub, ViolationReasonCombobox: ReasonStub })
+    await flushPromises()
+    await wrapper.get('[aria-label="填写操作"]').trigger('click')
+    const selector = wrapper.findComponent({ name: 'ElSegmented' })
+    expect(selector.props('options').find((option: { value: string }) => option.value === 'complied').disabled).toBe(blocked)
+    expect(selector.props('modelValue')).toBe(blocked ? 'breached' : 'complied')
+  })
+
+  it('历史违规自评保留只读快照，进入修正才限制已履约，取消仍恢复原记录', async () => {
+    getContext.mockResolvedValue({ ...emptyContext, version: { ...version, max_positions: 2 }, checkin: { ...saved, peak_positions: 3 } })
+    const wrapper = mountForm({ ViolationReasonCombobox: ReasonStub })
+    await flushPromises()
+    const selector = wrapper.findComponent({ name: 'ElSegmented' })
+    expect(selector.props('modelValue')).toBe('complied')
+    await wrapper.findAll('button').find((button) => button.text() === '修正打卡')!.trigger('click')
+    expect(selector.props('modelValue')).toBe('breached')
+    await wrapper.findAll('button').find((button) => button.text() === '取消修正')!.trigger('click')
+    expect(selector.props('modelValue')).toBe('complied')
+    expect(amendCheckin).not.toHaveBeenCalled()
+  })
+
+  it('首次填报默认取规则持仓上限且不产生未保存修改，可直接按默认数量提交', async () => {
+    getContext.mockResolvedValue({ ...emptyContext, version: { ...version, max_positions: 2 } })
+    const wrapper = mountForm()
+    await flushPromises()
+    expect(wrapper.get<HTMLInputElement>('[data-testid="checkin-peak-positions"] input').element.value).toBe('2')
+    expect((wrapper.vm as any).isDirty()).toBe(false)
+    wrapper.findComponent({ name: 'ElCheckbox' }).vm.$emit('change', true)
+    await wrapper.vm.$nextTick()
+    await wrapper.get('button.el-button--primary').trigger('click')
+    await flushPromises()
+    expect(submitCheckin).toHaveBeenCalledWith(expect.objectContaining({ peak_positions: 2, no_operation: true }))
+  })
+
+  it('切换规则或交易日按新上下文初始化，无持仓上限时不沿用旧数量', async () => {
+    getContext.mockResolvedValueOnce({ ...emptyContext, version: { ...version, max_positions: 2 } })
+      .mockResolvedValueOnce({ ...emptyContext, version: { ...version, rule_id: 'rule-2', max_positions: 4 } })
+      .mockResolvedValueOnce({ ...emptyContext, trade_date: '2026-08-24' })
+    const wrapper = mountForm()
+    await flushPromises()
+    const input = wrapper.get('[data-testid="checkin-peak-positions"] input')
+    await input.setValue('1')
+    await input.trigger('change')
+    await wrapper.setProps({ ruleId: 'rule-2' })
+    await flushPromises()
+    expect(wrapper.get<HTMLInputElement>('[data-testid="checkin-peak-positions"] input').element.value).toBe('4')
+    expect((wrapper.vm as any).isDirty()).toBe(false)
+    await wrapper.setProps({ tradeDate: '2026-08-24' })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="checkin-holding-count"]').exists()).toBe(false)
+    expect((wrapper.vm as any).isDirty()).toBe(false)
+  })
+
+  it.each([undefined, null, 0, 1])('已有持仓数量 %s 在查看、修正和取消时均保留原快照', async (peakPositions) => {
+    getContext.mockResolvedValue({
+      ...emptyContext, version: { ...version, max_positions: 2 },
+      checkin: { ...saved, peak_positions: peakPositions },
+    })
+    const wrapper = mountForm()
+    await flushPromises()
+    const inputValue = () => wrapper.get<HTMLInputElement>('[data-testid="checkin-peak-positions"] input').element.value
+    const expected = peakPositions == null ? '' : String(peakPositions)
+    expect(inputValue()).toBe(expected)
+    await wrapper.findAll('button').find((button) => button.text() === '修正打卡')!.trigger('click')
+    expect(inputValue()).toBe(expected)
+    expect((wrapper.vm as any).isDirty()).toBe(false)
+    const input = wrapper.get('[data-testid="checkin-peak-positions"] input')
+    await input.setValue('3')
+    await input.trigger('change')
+    await wrapper.findAll('button').find((button) => button.text() === '取消修正')!.trigger('click')
+    expect(inputValue()).toBe(expected)
+    expect(amendCheckin).not.toHaveBeenCalled()
   })
 
   it('提交“已履约 + 今日无操作”并在成功后刷新上下文', async () => {

@@ -13,6 +13,7 @@ import HelpTipItem from '@/components/HelpTipItem.vue'
 import { decimalToMinorUnits, formatMinorUnits } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
 import { conditionFilterOptions, stockConditionFields, stockConditionSummary } from '@/utils/tradeDisciplineConditions'
+import { actionSubtypeLabel, builtinActionSubtypeOptions } from '@/utils/tradeDisciplineRuleTypes'
 import FixedDecimalInput from '@/views/trade-discipline/components/FixedDecimalInput.vue'
 import RuleSummaryCard from '@/components/trade-discipline/RuleSummaryCard.vue'
 import TradeDirectionGroupGrid, {
@@ -64,12 +65,7 @@ const expandedRule = ref<{
   kind: 'stock' | 'action'
   item: DraftStockRule | DraftActionRule
 } | null>(null)
-const actionSubtypeOptions = ref<ActionSubtypeOption[]>([
-  { name: 'open_position', label: '建仓', action_type: 'buy', builtin: true },
-  { name: 'add_position', label: '加仓', action_type: 'buy', builtin: true },
-  { name: 'liquidate', label: '清仓', action_type: 'sell', builtin: true },
-  { name: 'reduce_position', label: '减仓', action_type: 'sell', builtin: true },
-])
+const actionSubtypeOptions = ref<ActionSubtypeOption[]>(builtinActionSubtypeOptions.map((item) => ({ ...item })))
 let baseline = ''
 let loadRequest = 0
 
@@ -104,12 +100,7 @@ function subtypeOptions(side: ActionType): ActionSubtypeOption[] {
 }
 
 function subtypeLabel(item: DraftActionRule): string {
-  const option = actionSubtypeOptions.value.find((candidate) => (
-    candidate.action_type === item.action_type && candidate.name === item.action_subtype
-  ))
-  if (option) return option.label || option.name
-  if (item.action_subtype === 'do_t') return '做 T'
-  return item.action_subtype?.trim() || '未选择类型'
+  return actionSubtypeLabel(item, actionSubtypeOptions.value)
 }
 
 function missingSubtypeLabel(item: DraftActionRule): string {

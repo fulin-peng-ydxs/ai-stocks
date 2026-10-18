@@ -18,6 +18,23 @@ export const manualConditionFields = [
   { key: 'st_risk_status', filter: 'st_risk_filter', label: '是否存在ST风险' },
 ] as const
 
+/** 表单按规则预填人工事实，不推导财报或风险；ST仍以交易日权威数据为准。 */
+export function manualConditionDefaults(
+  rule: DraftStockRule | undefined,
+  side: CheckinOperation['side'],
+): Pick<CheckinOperation, 'loss_status' | 'st_risk_status'> {
+  const defaults: Pick<CheckinOperation, 'loss_status' | 'st_risk_status'> = {
+    loss_status: null, st_risk_status: null,
+  }
+  if (side === 'buy') {
+    for (const field of manualConditionFields) {
+      const filter = rule?.[field.filter]
+      defaults[field.key] = filter === 'exclude' ? 'no' : filter === 'only' ? 'yes' : null
+    }
+  }
+  return defaults
+}
+
 export function conditionFactLabel(value?: ConditionFact | null): string {
   return conditionFactOptions.find((item) => item.value === value)?.label ?? '未记录'
 }
@@ -39,14 +56,22 @@ export function stockConditionSummary(rule?: DraftStockRule): string {
 }
 
 export function stockConditionWarnings(rule: DraftStockRule | undefined, operation: CheckinOperation): string[] {
+  return stockConditionIssues(rule, operation, true)
+}
+
+export function stockConditionViolations(rule: DraftStockRule | undefined, operation: CheckinOperation): string[] {
+  return stockConditionIssues(rule, operation, false)
+}
+
+function stockConditionIssues(rule: DraftStockRule | undefined, operation: CheckinOperation, includeUnknown: boolean): string[] {
   if (!rule || operation.side !== 'buy') return []
   const warnings: string[] = []
   const price = decimalToMinorUnits(operation.price, 4)
   const low = decimalToMinorUnits(rule.price_min, 4)
   const high = decimalToMinorUnits(rule.price_max, 4)
   if (low !== null || high !== null) {
-    if (price === null) warnings.push('成交价未记录，无法核对股价条件')
-    else if ((low !== null && price < low) || (high !== null && price > high)) warnings.push('成交价不符合股价条件')
+    if (price === null && includeUnknown) warnings.push('成交价未记录，无法核对股价条件')
+    else if (price !== null && ((low !== null && price < low) || (high !== null && price > high))) warnings.push('成交价不符合股价条件')
   }
   const st = operation.is_st === true ? 'yes' : operation.is_st === false ? 'no' : 'unknown'
   for (const [filter, fact, label] of [
@@ -55,7 +80,9 @@ export function stockConditionWarnings(rule: DraftStockRule | undefined, operati
     [rule.st_risk_filter, operation.st_risk_status, 'ST风险'],
   ] as const) {
     if (!filter || filter === 'any') continue
-    if (!fact || fact === 'unknown') warnings.push(`${label}未知，无法核对`)
+    if (!fact || fact === 'unknown') {
+      if (includeUnknown) warnings.push(`${label}未知，无法核对`)
+    }
     else if ((fact === 'yes') !== (filter === 'only')) warnings.push(`${label}不符合选股条件`)
   }
   return warnings

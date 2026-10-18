@@ -757,6 +757,7 @@ const menuPageTitle = useMenuPageTitle()
   min-height: 0;
   --app-scroll-display: grid;
   --app-scroll-columns: 304px minmax(0, 1fr);
+  --app-scroll-rows: minmax(0, 1fr);
   --app-scroll-gap: var(--app-space-3);
 }
 .panel-detail {
@@ -774,7 +775,10 @@ const menuPageTitle = useMenuPageTitle()
 .readonly-note { margin-top: var(--app-space-4); color: var(--el-color-warning); }
 .history-panel { display: flex; }
 @container app-viewport (max-width: 1100px) {
-  .master-detail-shell { --app-scroll-columns: minmax(0, 1fr); }
+  .master-detail-shell {
+    --app-scroll-columns: minmax(0, 1fr);
+    --app-scroll-rows: minmax(0, min(210px, 45%)) minmax(0, 1fr);
+  }
   .panel-detail { min-width: 0; }
 }
 @container app-viewport (max-width: 900px) {

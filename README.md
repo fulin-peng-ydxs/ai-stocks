@@ -215,8 +215,8 @@ start.sh          后端启停脚本（dev/prod，见 §5.1）
 ```bash
 cp .env.local.example .env.local
 # 按 environment-configuration.md 填写本机后端启动变量
-./start.sh                      # 后端 8000，热重载（= python -m backend.cli serve --reload，nohup 脱离会话）
-./start-web.sh                  # 前端 5173，HMR（nohup 脱离会话，首次先 npm install）
+./start.sh                      # 后端 8000，热重载（= python -m backend.cli serve --reload，独立 session）
+./start-web.sh                  # 前端 5173，HMR（独立 session，依赖须先 npm install）
 ```
 
 本地账号分两类，避免权限测试混用：

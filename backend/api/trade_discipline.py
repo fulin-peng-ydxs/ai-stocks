@@ -165,6 +165,7 @@ class AmendCheckinBody(CheckinContentBody):
 class QuickNoOperationBody(StrictBody):
     rule_id: str
     trade_date: date
+    peak_positions: Annotated[int, Field(strict=True, ge=0, le=2147483647)] | None = None
 
 
 def _latest_market_date(service: TradeDisciplineService, *, required: bool) -> date | None:
@@ -354,7 +355,8 @@ def submit_checkin(body: SubmitCheckinBody) -> ApiResponse:
     dependencies=[Depends(require_perm(CHECKIN_SUBMIT))],
 )
 def quick_no_operation(body: QuickNoOperationBody) -> ApiResponse:
-    result = _call(_service().quick_no_operation, body.rule_id, body.trade_date)
+    kwargs = {"peak_positions": body.peak_positions} if body.peak_positions is not None else {}
+    result = _call(_service().quick_no_operation, body.rule_id, body.trade_date, **kwargs)
     _audit(
         "checkin_quick_no_operation",
         "trade_discipline_checkin",
