@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { computed, ref, watch } from 'vue'
 import { ArrowDown, ArrowUp, CopyDocument, Delete, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -574,7 +575,7 @@ defineExpose({
 </script>
 
 <template>
-  <section class="rule-editor" aria-label="规则编辑工作区" data-testid="rule-editor">
+  <AppScrollArea as="section" class="rule-editor" aria-label="规则编辑工作区" data-testid="rule-editor">
     <AppStateBlock v-if="loading" state="loading" title="正在加载规则…" />
     <AppStateBlock v-else-if="loadError" state="error" title="规则详情加载失败" retry @retry="load" />
     <template v-else-if="detail">
@@ -767,11 +768,11 @@ defineExpose({
       </footer>
 
     </template>
-  </section>
+  </AppScrollArea>
 </template>
 
 <style scoped>
-.rule-editor { min-width: 0; min-height: 0; overflow: auto; padding: var(--app-space-5); border: 1px solid var(--el-border-color); border-radius: var(--layout-card-radius); background: var(--el-bg-color); }
+.rule-editor { min-width: 0; min-height: 0; --app-scroll-padding-top: var(--app-space-5); --app-scroll-padding-right: var(--app-space-5); --app-scroll-padding-bottom: var(--app-space-5); --app-scroll-padding-left: var(--app-space-5); border: 1px solid var(--el-border-color); border-radius: var(--layout-card-radius); background: var(--el-bg-color); }
 .rule-editor__head, .rule-editor__commands, .detail-group > header, .rule-editor__footer { display: flex; align-items: center; }
 .rule-editor__head { justify-content: space-between; gap: var(--app-space-3); }
 .rule-editor__head .app-section-title { margin: var(--app-space-1) 0 0; }
@@ -801,7 +802,7 @@ defineExpose({
 .rule-editor__footer { position: sticky; bottom: calc(var(--app-space-5) * -1); z-index: 2; justify-content: flex-end; gap: var(--app-space-2); margin: var(--app-space-5) calc(var(--app-space-5) * -1) calc(var(--app-space-5) * -1); padding: var(--app-space-3) var(--app-space-5); border-top: 1px solid var(--el-border-color); background: var(--el-bg-color); }
 .dirty-copy { margin-right: auto; color: var(--el-color-warning); font-size: var(--app-font-size-caption); }
 @container app-viewport (max-width: 1100px) {
-  .rule-editor { overflow: visible; }
+  .rule-editor { }
   .rule-state-track, .rule-editor__base { grid-template-columns: 1fr; }
   .rule-state-track > div + div { border-left: 0; border-top: 1px solid var(--el-border-color-lighter); }
   .rule-card-grid { grid-template-columns: 1fr; }

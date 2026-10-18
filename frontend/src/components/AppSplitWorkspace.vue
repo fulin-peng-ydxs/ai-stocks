@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { keyboardRangeValue } from '@/utils/keyboard'
 import {
   computed,
@@ -374,6 +375,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <AppScrollArea class="app-split-scroll" axis="x">
   <div
     v-bind="attrs"
     ref="workspaceEl"
@@ -410,6 +412,7 @@ onBeforeUnmount(() => {
       <slot name="secondary" />
     </div>
   </div>
+  </AppScrollArea>
 
   <PageDrawer
     v-if="autoCompact"
@@ -429,12 +432,14 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.app-split-scroll { height: 100%; min-height: 0; min-width: 0; }
+.app-split-scroll :deep(> .app-scroll-area__renderer > .el-scrollbar__wrap > .app-scroll-area__content) { height: 100%; }
 .app-split-workspace {
   display: grid;
   gap: 0;
   min-height: 0;
   height: 100%;
-  overflow-x: auto;
+  overflow: clip;
 }
 .app-split-workspace--compact {
   overflow-x: hidden;

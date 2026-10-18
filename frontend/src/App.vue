@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Calendar, Clock, Minus, Plus, Refresh, Select } from '@element-plus/icons-vue'
@@ -413,7 +414,7 @@ async function onLogout() {
         <BrandMark :tone="isDark ? 'dark' : 'light'" />
         <div class="aside-brand-copy">Fraudulent Market</div>
       </div>
-      <div class="aside-navigation"><SideMenu /></div>
+      <AppScrollArea class="aside-navigation"><SideMenu /></AppScrollArea>
       <div class="aside-foot">
         <div class="foot-note">本地 EOD · 仅供研究</div>
       </div>
@@ -869,7 +870,6 @@ async function onLogout() {
 .aside-navigation {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
 }
 .aside-foot {
   flex: none;

@@ -41,8 +41,6 @@ const props = withDefaults(defineProps<{
   loadingText?: string
   ariaLabel?: string
   pagination?: PaginationConfig
-  /** 宽表默认常显滚动条；普通表格可按需显式开启。 */
-  scrollbarAlwaysOn?: boolean | null
   /** 仅用于抽屉、展开行、局部详情等非主成长表；页面主列表不得开启。 */
   embedded?: boolean
 }>(), {
@@ -54,7 +52,6 @@ const props = withDefaults(defineProps<{
   border: false,
   framed: false,
   loadingText: '正在加载数据…',
-  scrollbarAlwaysOn: null,
   embedded: false,
 })
 
@@ -68,9 +65,6 @@ const initialLoadingStyle = computed(() => {
   if (props.height == null) return undefined
   return { height: typeof props.height === 'number' ? `${props.height}px` : props.height }
 })
-const resolvedScrollbarAlwaysOn = computed(
-  () => props.scrollbarAlwaysOn ?? props.kind === 'wide-table',
-)
 const tableRef = ref<{ $el?: HTMLElement } | null>(null)
 let tableResizeObserver: ResizeObserver | null = null
 let observedTableRoot: HTMLElement | null = null
@@ -173,7 +167,7 @@ const emit = defineEmits<{
       :row-class-name="rowClassName"
       :stripe="stripe"
       :border="border"
-      :scrollbar-always-on="resolvedScrollbarAlwaysOn"
+      :scrollbar-always-on="true"
       v-loading="loading"
       :class="['app-data-table__table', tableClass, { clickable }]"
       @sort-change="(value: Sort) => emit('sort-change', value)"

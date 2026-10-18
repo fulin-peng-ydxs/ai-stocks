@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -763,7 +764,7 @@ const menuPageTitle = useMenuPageTitle()
 
             <AppDetailSection title="字段变更">
               <p v-if="!activeDetail.changes?.length" class="muted">无字段级变更</p>
-              <div v-else class="change-table">
+              <AppScrollArea v-else class="change-table">
                 <AppDataTable
                   :data="activeDetail.changes"
                   embedded
@@ -782,7 +783,7 @@ const menuPageTitle = useMenuPageTitle()
                     <template #default="{ row }"><span class="change-after">{{ formatChangeValue(row.after) }}</span></template>
                   </AppTableColumn>
                 </AppDataTable>
-              </div>
+              </AppScrollArea>
             </AppDetailSection>
 
             <AppDetailSection title="错误摘要">
@@ -790,7 +791,7 @@ const menuPageTitle = useMenuPageTitle()
             </AppDetailSection>
 
             <AppDetailSection title="事件上下文">
-              <pre class="json">{{ JSON.stringify(activeDetail.context || {}, null, 2) }}</pre>
+              <AppScrollArea as="pre" class="json">{{ JSON.stringify(activeDetail.context || {}, null, 2) }}</AppScrollArea>
             </AppDetailSection>
           </template>
         <template #footer>
@@ -952,7 +953,6 @@ const menuPageTitle = useMenuPageTitle()
   justify-content: flex-end;
 }
 .change-table {
-  overflow-x: auto;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
 }
@@ -977,11 +977,10 @@ const menuPageTitle = useMenuPageTitle()
 .json {
   margin: 0;
   max-height: 260px;
-  overflow: auto;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
   background: var(--app-section-bg);
-  padding: 10px;
+  --app-scroll-padding-top: 10px; --app-scroll-padding-right: 10px; --app-scroll-padding-bottom: 10px; --app-scroll-padding-left: 10px;
   color: var(--el-text-color-regular);
   font-size: var(--app-font-size-caption);
   line-height: var(--app-line-height-reading);

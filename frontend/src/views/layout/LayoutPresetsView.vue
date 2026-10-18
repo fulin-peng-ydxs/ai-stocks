@@ -486,8 +486,6 @@ const menuPageTitle = useMenuPageTitle()
   font-weight: var(--app-font-weight-section);
 }
 .preset-form {
-  max-height: 62cqh;
-  overflow: auto;
   padding-right: 4px;
 }
 .form-section-title {

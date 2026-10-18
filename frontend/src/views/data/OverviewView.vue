@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -1095,6 +1096,7 @@ const menuPageTitle = useMenuPageTitle()
           </el-tab-pane>
 
           <el-tab-pane label="板块数据" name="board" lazy class="board-pane">
+          <AppScrollArea class="board-pane-scroll">
             <div class="app-workspace-panel overview-panel" v-if="ov?.board">
               <div class="board-hero">
                 <div class="board-hero-main">
@@ -1225,6 +1227,7 @@ const menuPageTitle = useMenuPageTitle()
                 </el-button>
               </template>
             </AppStateBlock>
+          </AppScrollArea>
           </el-tab-pane>
         </el-tabs>
       </el-card>
@@ -1336,10 +1339,8 @@ const menuPageTitle = useMenuPageTitle()
 
 /* ── 板块数据 tab ── */
 /* el-tabs 内容区 overflow:hidden 会裁超高内容，板块面板须自行承接滚动。 */
-.board-pane {
-  overflow-y: auto;
-}
-.board-pane > .overview-panel {
+.board-pane-scroll { height: 100%; }
+.board-pane-scroll :deep(> .app-scroll-area__renderer > .el-scrollbar__wrap > .app-scroll-area__content) > .overview-panel {
   height: auto;
   min-height: 100%;
 }

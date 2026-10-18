@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
@@ -507,7 +508,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
     </template>
 
     <template #main>
-    <div class="cfg-body">
+    <AppScrollArea class="cfg-body">
         <el-card shadow="never" class="cfg-card">
           <div class="cfg-grid">
             <div class="cfg-item">
@@ -634,7 +635,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
             </AppTableColumn>
           </AppDataTable>
         </el-card>
-    </div>
+    </AppScrollArea>
     </template>
   </LayoutHost>
 
@@ -674,7 +675,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
     </template>
 
     <template #main>
-    <div class="run-body">
+    <AppScrollArea class="run-body">
         <div class="chart-block">
           <StockChartRegion
             v-slot="{ contentHeight }"
@@ -786,7 +787,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
             <AppTableColumn label="理由"><template #default="{ row }">{{ row.reason || (row.auto_close ? '到期清算' : '') }}</template></AppTableColumn>
           </AppDataTable>
         </el-card>
-    </div>
+    </AppScrollArea>
     </template>
   </LayoutHost>
 
@@ -813,7 +814,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
     </template>
 
     <template #main>
-    <div class="result-body">
+    <AppScrollArea class="result-body">
         <div class="kpi-row">
           <div class="kpi"><label>平均收益</label><b :class="(detail.total_return ?? 0) >= 0 ? 'up' : 'down'">{{ pct(detail.total_return) }}</b></div>
           <div class="kpi"><label>胜率</label><b>{{ detail.win_rate != null ? (detail.win_rate * 100).toFixed(0) + '%' : '--' }}</b></div>
@@ -913,7 +914,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           <el-input v-model="reviewNote" type="textarea" :rows="4" placeholder="记录本局思路、复盘总结、改进点……" />
           <div class="review-actions"><el-button v-permission="'training:review'" type="primary" :disabled="!reviewChanged" @click="persistReview">保存复盘</el-button></div>
         </el-card>
-    </div>
+    </AppScrollArea>
     </template>
   </LayoutHost>
 
@@ -1009,7 +1010,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 .page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
 
 /* 配置：固定块 + 历史主表 → 混合成长区 */
-.cfg-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--app-space-3); overflow: auto; padding-right: 2px; }
+.cfg-body { flex: 1 1 auto; min-height: 0; --app-scroll-display: flex; --app-scroll-direction: column; --app-scroll-gap: var(--app-space-3); --app-scroll-padding-right: 2px; }
 .cfg-card, .growth-card { flex: 0 0 auto; }
 .cfg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--app-space-4); }
 .cfg-item { display: flex; flex-direction: column; gap: var(--app-space-control-gap); }
@@ -1029,7 +1030,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 .grade-chip { color: #fff; padding: 1px 8px; border-radius: 10px; font-weight: var(--app-font-weight-strong); font-size: var(--app-font-size-caption); }
 
 /* 训练中：固定块（图+面板）+ 主表 → 混合成长区 */
-.run-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--app-space-2); overflow: auto; padding-right: 2px; }
+.run-body { flex: 1 1 auto; min-height: 0; --app-scroll-display: flex; --app-scroll-direction: column; --app-scroll-gap: var(--app-space-2); --app-scroll-padding-right: 2px; }
 .chart-block { flex: 0 0 auto; }
 .training-chart-workspace { height: 100%; }
 .action-panel { flex: 0 0 auto; background: var(--app-section-bg); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: var(--app-space-2); }
@@ -1057,7 +1058,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 .trades-card :deep(.el-card__body) { flex: 1; min-height: 0; padding: 8px; }
 
 /* 结算：固定块（KPI/评分规则/回合卡）自然高，整局复盘卡吃满剩余高度；余量不足时整区滚动兜底 */
-.result-body { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: var(--app-space-3); padding-right: 2px; }
+.result-body { flex: 1 1 auto; min-height: 0; --app-scroll-display: flex; --app-scroll-direction: column; --app-scroll-gap: var(--app-space-3); --app-scroll-padding-right: 2px; }
 .kpi-row { display: flex; gap: var(--app-space-3); flex-wrap: wrap; }
 .kpi { flex: 1 1 120px; background: var(--app-section-bg); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: var(--app-space-1); }
 .kpi label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }

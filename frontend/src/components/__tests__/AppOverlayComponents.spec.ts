@@ -38,6 +38,7 @@ describe('统一弹窗与详情组件', () => {
     expect(wrapper.get('.v-page').element.contains(overlay)).toBe(true)
     expect((document.querySelector('.el-dialog') as HTMLElement)?.style.getPropertyValue('--el-dialog-width'))
       .toBe(APP_DIALOG_WIDTHS.large)
+    expect(document.querySelector('.app-dialog__content .el-scrollbar__wrap')).not.toBeNull()
     wrapper.unmount()
   })
 

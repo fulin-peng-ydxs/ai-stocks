@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 /**
  * 响应式重排多列容器（规范 §5：兜底阶梯第 2 级「拿宽度换高度」）。
  * 按容器实际宽度（非视口，故支持侧栏伸缩）从 breakpoints 选列数，CSS Grid 等宽排布；
@@ -10,7 +11,7 @@ import type { ResponsiveBreakpoint, SlotSpec } from '../schema'
 
 const props = defineProps<{ breakpoints: ResponsiveBreakpoint[]; slots: SlotSpec[] }>()
 
-const host = ref<HTMLElement | null>(null)
+const scrollArea = ref<InstanceType<typeof AppScrollArea>>()
 const columns = ref(1)
 let ro: ResizeObserver | null = null
 
@@ -22,31 +23,30 @@ function pickColumns(width: number): number {
 }
 
 onMounted(() => {
-  if (!host.value) return
-  const apply = () => host.value && (columns.value = pickColumns(host.value.clientWidth))
+  if (!scrollArea.value?.viewport) return
+  const apply = () => scrollArea.value?.viewport && (columns.value = pickColumns(scrollArea.value?.viewport.clientWidth))
   apply()
   ro = new ResizeObserver(apply)
-  ro.observe(host.value)
+  ro.observe(scrollArea.value?.viewport)
 })
 onBeforeUnmount(() => ro?.disconnect())
 </script>
 
 <template>
-  <div ref="host" class="v-columns" :style="{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }">
+  <AppScrollArea ref="scrollArea" class="v-columns" :content-style="{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }">
     <template v-for="s in props.slots" :key="s.id">
       <div class="v-columns-cell"><slot :name="s.id" /></div>
     </template>
-  </div>
+  </AppScrollArea>
 </template>
 
 <style scoped>
 .v-columns {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
-  display: grid;
-  gap: var(--app-space-3);
-  align-content: start;
+  --app-scroll-display: grid;
+  --app-scroll-gap: var(--app-space-3);
+  --app-scroll-align-content: start;
 }
 .v-columns-cell {
   min-width: 0;

@@ -214,11 +214,11 @@ describe('MarketMasterDetailWorkspace', () => {
 
   it('小幅窗口变化保留会话宽度，跨尺寸范围后重新匹配响应式默认值', async () => {
     let width = 2000
-    let resizeCallback: ResizeObserverCallback | undefined
+    const observers = new Map<Element, ResizeObserverCallback>()
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width)
     vi.stubGlobal('ResizeObserver', class {
-      constructor(callback: ResizeObserverCallback) { resizeCallback = callback }
-      observe() {}
+      constructor(private callback: ResizeObserverCallback) {}
+      observe(element: Element) { observers.set(element, this.callback) }
       disconnect() {}
     })
     const wrapper = mount(MarketMasterDetailWorkspace, {
@@ -232,18 +232,19 @@ describe('MarketMasterDetailWorkspace', () => {
       global: { plugins: [ElementPlus] },
     })
     const separator = wrapper.get('[role="separator"]')
+    const resizeCallback = () => observers.get(wrapper.get('.app-split-workspace').element)?.([], {} as ResizeObserver)
     await nextTick()
     expect(separator.attributes('aria-valuenow')).toBe('900')
 
     await separator.trigger('keydown', { key: 'ArrowRight' })
     expect(separator.attributes('aria-valuenow')).toBe('916')
     width = 2100
-    resizeCallback?.([], {} as ResizeObserver)
+    resizeCallback()
     await nextTick()
     expect(separator.attributes('aria-valuenow')).toBe('916')
 
     width = 2400
-    resizeCallback?.([], {} as ResizeObserver)
+    resizeCallback()
     await nextTick()
     expect(separator.attributes('aria-valuenow')).toBe('1080')
 

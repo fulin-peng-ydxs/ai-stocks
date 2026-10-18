@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import AppCloseButton from './AppCloseButton.vue'
 
 withDefaults(defineProps<{
@@ -46,7 +47,8 @@ defineEmits<{
       </div>
     </header>
 
-    <div
+    <component
+      :is="bodyScroll ? AppScrollArea : 'div'"
       class="page-drawer-surface__body"
       :class="[
         `is-${bodyLayout}`,
@@ -54,7 +56,7 @@ defineEmits<{
       ]"
     >
       <slot />
-    </div>
+    </component>
 
     <footer v-if="$slots.footer" class="page-drawer-surface__footer">
       <slot name="footer" />
@@ -105,13 +107,17 @@ defineEmits<{
 .page-drawer-surface__body {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
-  padding: var(--app-density-overlay-padding);
+  --app-scroll-padding-top: var(--app-density-overlay-padding); --app-scroll-padding-right: var(--app-density-overlay-padding); --app-scroll-padding-bottom: var(--app-density-overlay-padding); --app-scroll-padding-left: var(--app-density-overlay-padding);
 }
 .page-drawer-surface__body.is-scroll-disabled {
   overflow: hidden;
+  padding: var(--app-density-overlay-padding);
 }
 .page-drawer-surface__body.is-fill {
+  --app-scroll-display: flex;
+  --app-scroll-direction: column;
+}
+.page-drawer-surface__body.is-fill.is-scroll-disabled {
   display: flex;
   flex-direction: column;
 }

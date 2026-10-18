@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -505,7 +506,7 @@ const menuPageTitle = useMenuPageTitle()
         description="数据字典管理仅系统管理员可用"
         class="dict-state"
       />
-      <div v-else class="dict-workspace">
+      <AppScrollArea v-else class="dict-workspace">
         <section class="dict-panel dict-left">
           <header class="dict-panel-head">
             <strong>字典类型</strong>
@@ -516,7 +517,7 @@ const menuPageTitle = useMenuPageTitle()
               <AppSearchInput v-model="typeKeyword" placeholder="搜索类型 / code" @search="searchTypes" />
             </AppControlRow>
           </el-card>
-          <AppAsyncRegion
+          <AppScrollArea :as="AppAsyncRegion"
             class="dict-type-list"
             :loading="typeLoading"
             :has-content="typeRows.length > 0"
@@ -560,7 +561,7 @@ const menuPageTitle = useMenuPageTitle()
                 />
               </div>
             </template>
-          </AppAsyncRegion>
+          </AppScrollArea>
         </section>
 
         <section class="dict-panel dict-right">
@@ -646,7 +647,7 @@ const menuPageTitle = useMenuPageTitle()
             </AppDataTable>
           </div>
         </section>
-      </div>
+      </AppScrollArea>
     </template>
 
     <template #overlays>
@@ -745,9 +746,8 @@ const menuPageTitle = useMenuPageTitle()
 .dict-workspace {
   flex: 1 1 auto;
   min-height: 0;
-  display: flex;
-  gap: var(--app-space-3);
-  overflow: auto;
+  --app-scroll-display: flex;
+  --app-scroll-gap: var(--app-space-3);
 }
 .dict-panel {
   min-height: 0;
@@ -798,8 +798,7 @@ const menuPageTitle = useMenuPageTitle()
 .dict-type-list {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
-  padding: 8px;
+  --app-scroll-padding-top: 8px; --app-scroll-padding-right: 8px; --app-scroll-padding-bottom: 8px; --app-scroll-padding-left: 8px;
 }
 .dict-type-row {
   width: 100%;

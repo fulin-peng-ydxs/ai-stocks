@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { computed, ref } from 'vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
@@ -208,7 +209,7 @@ function resetFilters(): void {
           @click="compactHotspotsOpen = !compactHotspotsOpen"
         >{{ compactHotspotsOpen ? '收起热点' : '展开热点' }}</el-button>
       </section>
-      <div id="limit-ladder-hotspots" class="limit-ladder__hotspots" :class="{ 'is-expanded': compactHotspotsOpen }">
+      <AppScrollArea id="limit-ladder-hotspots" class="limit-ladder__hotspots" :class="{ 'is-expanded': compactHotspotsOpen }">
         <LadderHotspots
           :hotspots="result.hotspots"
           :active-type="filters.hotspotType"
@@ -216,9 +217,9 @@ function resetFilters(): void {
           :compact="compactHotspots"
           @toggle="toggleHotspot"
         />
-      </div>
+      </AppScrollArea>
     </div>
-    <div class="limit-ladder__content" data-testid="limit-ladder-scroll-region">
+    <AppScrollArea class="limit-ladder__content" data-testid="limit-ladder-scroll-region">
       <div class="limit-ladder__body">
         <AppStateBlock v-if="loading" data-testid="limit-ladder-state" state="loading" title="正在加载天梯快照" :skeleton-rows="6" />
         <AppStateBlock
@@ -262,7 +263,7 @@ function resetFilters(): void {
           </section>
         </div>
       </div>
-    </div>
+    </AppScrollArea>
   </div>
 </template>
 
@@ -277,11 +278,10 @@ function resetFilters(): void {
   container-type: inline-size;
 }
 .limit-ladder__content {
-  display: flex;
+  --app-scroll-display: flex;
   flex: 1 1 auto;
-  flex-direction: column;
+  --app-scroll-direction: column;
   min-height: 0;
-  overflow: auto;
   overscroll-behavior: contain;
 }
 /* 概览与股票滚动区分离，展开热点也不能占满工作区。 */
@@ -292,7 +292,6 @@ function resetFilters(): void {
 }
 .limit-ladder__hotspots {
   max-height: min(calc(6 * var(--app-control-height-sm) + 8 * var(--app-space-2)), 24cqh);
-  overflow: auto;
   overscroll-behavior: contain;
 }
 .limit-ladder__hotspots-toggle { display: none; }

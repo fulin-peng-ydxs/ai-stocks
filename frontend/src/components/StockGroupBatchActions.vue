@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import AppDialog from '@/components/AppDialog.vue'
@@ -118,7 +119,7 @@ async function removeFromGroup(): Promise<void> {
     <div class="stock-batch-row">
       <div class="stock-batch-info">
         <span class="stock-batch-count">已选 <b>{{ selected.length }}</b> 只</span>
-        <div class="stock-batch-chips">
+        <AppScrollArea class="stock-batch-chips">
           <el-tag
             v-for="item in selected.slice(0, 30)"
             :key="item.code"
@@ -129,7 +130,7 @@ async function removeFromGroup(): Promise<void> {
             {{ item.name || item.code }}
           </el-tag>
           <span v-if="selected.length > 30" class="stock-batch-more">… 等 {{ selected.length }} 只</span>
-        </div>
+        </AppScrollArea>
       </div>
       <div class="stock-batch-ops">
         <el-button size="small" type="primary" @click="emit('view')">逐个查看</el-button>
@@ -202,7 +203,7 @@ async function removeFromGroup(): Promise<void> {
 .stock-batch-info { display: flex; align-items: flex-start; gap: var(--app-space-3); flex: 1; min-width: 260px; }
 .stock-batch-count { font-size: var(--app-font-size-table); white-space: nowrap; padding-top: 2px; }
 .stock-batch-count b { color: var(--market-up-color); font-size: var(--app-font-size-data); line-height: var(--app-line-height-data); font-weight: var(--app-font-weight-section); }
-.stock-batch-chips { display: flex; flex-wrap: wrap; gap: var(--app-space-control-gap); max-height: 64px; overflow: auto; }
+.stock-batch-chips { --app-scroll-display: flex; --app-scroll-wrap: wrap; --app-scroll-gap: var(--app-space-control-gap); max-height: 64px; }
 .stock-batch-more, .stock-batch-hint { color: var(--app-muted-text); font-size: var(--app-font-size-caption); }
 .stock-batch-more { align-self: center; }
 .stock-batch-ops { display: flex; gap: var(--app-space-2); align-items: center; flex-shrink: 0; }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import { computed, ref } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
@@ -116,7 +117,7 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
         size="inline"
         :title="query ? '没有匹配的规则' : '暂无交易规则'"
       />
-      <div v-else class="rule-master__list" role="group" aria-label="选择交易规则">
+      <AppScrollArea v-else class="rule-master__list" role="group" aria-label="选择交易规则">
         <div
           v-for="rule in filteredRules"
           :key="rule.id"
@@ -140,7 +141,7 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
             >{{ managementLabel(rule) }}</small>
           </div>
         </div>
-      </div>
+      </AppScrollArea>
     </AppAsyncRegion>
   </aside>
 </template>
@@ -164,13 +165,12 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
 .rule-master__list {
   min-height: 0;
   flex: 1 1 auto;
-  overflow: auto;
-  display: grid;
-  align-content: start;
-  gap: var(--app-space-1);
+  --app-scroll-display: grid;
+  --app-scroll-align-content: start;
+  --app-scroll-gap: var(--app-space-1);
   /* 借用外壳既有内距露出首尾浮层，条目占位与原始文字坐标保持不变。 */
   margin: calc(-1 * var(--app-space-2));
-  padding: var(--app-space-2);
+  --app-scroll-padding-top: var(--app-space-2); --app-scroll-padding-right: var(--app-space-2); --app-scroll-padding-bottom: var(--app-space-2); --app-scroll-padding-left: var(--app-space-2);
 }
 .rule-master__item {
   min-height: 70px;

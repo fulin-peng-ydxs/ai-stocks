@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 /**
  * 布局宿主（M2 核心）：消费一份已校验的 PageLayout，产出 .v-page 外壳 + 操作区（固定）+ 主内容区，
  * 并按规范自动选择主内容区策略（grow / 整区滚动 / 混合成长区 / 重排多列）。
@@ -47,15 +48,15 @@ const mainStrategy = computed<MainStrategy>(() => {
 
 <template>
   <div ref="pageRoot" class="v-page" :class="`lh-density-${layout.density}`">
-    <div v-if="layout.hasActionRegion && $slots.action" class="lh-action-region">
+    <AppScrollArea v-if="layout.hasActionRegion && $slots.action" class="lh-action-region">
       <slot name="action" />
-    </div>
+    </AppScrollArea>
     <VAdaptiveGrow v-if="mainStrategy === 'grow'" :slot="mainSlots[0]">
       <slot name="main" />
     </VAdaptiveGrow>
-    <div v-else-if="mainStrategy === 'scroll' && mainSlots.length === 1" class="v-scroll">
+    <AppScrollArea v-else-if="mainStrategy === 'scroll' && mainSlots.length === 1" class="v-scroll">
       <slot name="main" />
-    </div>
+    </AppScrollArea>
     <VMixedGrow v-else-if="mainStrategy === 'mixed'" :slots="mainSlots">
       <template v-for="s in mainSlots" #[s.id]>
         <slot :name="s.id" />
@@ -70,9 +71,9 @@ const mainStrategy = computed<MainStrategy>(() => {
         <slot :name="s.id" />
       </template>
     </VColumns>
-    <div v-else class="v-scroll">
+    <AppScrollArea v-else class="v-scroll">
       <slot name="main" />
-    </div>
+    </AppScrollArea>
     <!-- 固定底部区（如多选批量条/购物车条）：随 .v-page 取自身高、不滚动，在主区之下。纯渲染槽，不入 schema（同 #overlays）。 -->
     <div v-if="$slots.footer" class="lh-footer-region">
       <slot name="footer" />
@@ -82,7 +83,15 @@ const mainStrategy = computed<MainStrategy>(() => {
 </template>
 
 <style scoped>
-.lh-action-region,
+.lh-action-region {
+  /* 正常空间保持自然高度；极低窗口只收缩操作区，给主区保留两行控件的可达窗口。 */
+  flex: 0 1 auto;
+  min-height: 0;
+}
+.lh-action-region + :deep(.app-scroll-area) {
+  flex: 1 0 0;
+  min-height: calc(2 * var(--app-density-control-height));
+}
 .lh-footer-region {
   flex: 0 0 auto;
   min-height: 0;

@@ -1,4 +1,5 @@
 @import './buttonStates.css';
+@import './scrollbar.css';
 
 /* 动效时长统一使用 ms；reveal 指令与折叠组件共用此入口。 */
 :root {
@@ -765,7 +766,7 @@ b, strong, h1, h2, h3, h4, h5, h6 {
 /* LayoutHost 操作区/单组件主区插槽要求单根；用 .lh-action 把多个固定块（工具栏 + 筛选条等）
    收进一个根容器，纵向自然排列、保留区块间距。 */
 .lh-action { display: flex; flex-direction: column; gap: var(--app-density-section-gap); }
-.v-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.v-scroll { flex: 1 1 auto; min-height: 0; }
 
 /* 全站空态规范：
    - 列表/表格空态统一为「居中图标 + 场景文案」。

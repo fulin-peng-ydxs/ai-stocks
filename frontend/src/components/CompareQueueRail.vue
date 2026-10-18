@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppHoverInfo from '@/components/AppHoverInfo'
 // 走势对比队列：板块/个股/榜单共用的对比对象 chip 行。遵循按钮契约不引入原生 button：
@@ -35,7 +36,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div
+  <AppScrollArea
     class="compare-queue-rail"
     :aria-label="ariaLabel"
     :data-testid="testIdPrefix ? `${testIdPrefix}-compare-rail` : undefined"
@@ -69,18 +70,17 @@ const emit = defineEmits<{
       </div>
     </AppHoverInfo>
     <span v-if="hint && items.length < max" class="compare-queue-hint">{{ hint }}</span>
-  </div>
+  </AppScrollArea>
 </template>
 
 <style scoped>
 .compare-queue-rail {
-  display: flex;
+  --app-scroll-display: flex;
   flex: 0 0 auto;
-  align-items: center;
-  gap: var(--app-space-control-gap);
+  --app-scroll-align: center;
+  --app-scroll-gap: var(--app-space-control-gap);
   min-height: 42px;
-  padding: var(--app-space-2) var(--app-space-3);
-  overflow-x: auto;
+  --app-scroll-padding-top: var(--app-space-2); --app-scroll-padding-right: var(--app-space-3); --app-scroll-padding-bottom: var(--app-space-2); --app-scroll-padding-left: var(--app-space-3);
   border-bottom: 1px solid var(--el-border-color-lighter);
   white-space: nowrap;
 }

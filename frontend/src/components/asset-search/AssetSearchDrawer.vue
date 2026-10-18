@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 // 统一「资产搜索抽屉」（R5/R7/R14）：系统内置/租户公开/全体公开三来源分段 + 防抖关键字 +
 // 服务端分页 + 四态；操作列「加载查看 / 复制为我的」（回测为「加载查看 / 复用参数重跑」）。
 // 取数与复制通过回调注入，评分/筛选/买卖/榜单/个股详情/回测共用本组件（原型 §7.1）。
@@ -339,7 +340,7 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
         </el-input>
       </div>
 
-      <div class="asset-search__body">
+      <AppScrollArea class="asset-search__body">
         <AppStateBlock
           v-if="!canBrowse"
           state="error"
@@ -447,7 +448,7 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
             <span>{{ emptyText }}</span>
           </template>
         </AppDataTable>
-      </div>
+      </AppScrollArea>
 
       <!-- 非空才渲染分页 footer：total=0 时空态已由表格 #empty 显示「暂无…」，
            「共 0 条」+ 分页控件冗余且无意义；错误/无权态 total=0 时同样隐藏（P3）。 -->
@@ -492,7 +493,6 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
 .asset-search__body {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
 }
 .asset-search__footer {
   display: flex;

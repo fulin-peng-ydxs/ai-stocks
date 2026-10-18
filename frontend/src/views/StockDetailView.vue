@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import {
   computed,
   onActivated,
@@ -1375,7 +1376,7 @@ onBeforeUnmount(() => {
             :header-visible="!splitCompact"
             data-testid="stock-detail-auxiliary-panel"
           >
-          <aside class="stock-detail-auxiliary">
+          <AppScrollArea as="aside" class="stock-detail-auxiliary">
             <StockBoardMembershipPanel
               v-if="showRelatedBoards"
               :membership="boardMembership"
@@ -1494,7 +1495,7 @@ onBeforeUnmount(() => {
           </div>
         </AppAsyncRegion>
             </el-card>
-          </aside>
+          </AppScrollArea>
           </AppWorkspacePane>
           </template>
         </AppSplitWorkspace>
@@ -1575,15 +1576,14 @@ onBeforeUnmount(() => {
 
 .stock-detail-auxiliary {
   box-sizing: border-box;
-  display: flex;
+  --app-scroll-display: flex;
   flex: 1 1 auto;
-  flex-direction: column;
-  gap: var(--app-space-3);
+  --app-scroll-direction: column;
+  --app-scroll-gap: var(--app-space-3);
   width: 100%;
   min-width: 0;
   min-height: 0;
-  padding: var(--app-space-3);
-  overflow-y: auto;
+  --app-scroll-padding-top: var(--app-space-3); --app-scroll-padding-right: var(--app-space-3); --app-scroll-padding-bottom: var(--app-space-3); --app-scroll-padding-left: var(--app-space-3);
   overscroll-behavior: contain;
 }
 

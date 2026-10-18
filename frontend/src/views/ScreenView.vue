@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppHoverInfo from '@/components/AppHoverInfo'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -810,7 +811,7 @@ const menuPageTitle = useMenuPageTitle()
       retry
       @retry="initializeScreen"
     />
-    <div v-else class="screen-body">
+    <AppScrollArea v-else class="screen-body">
       <div class="screen-layout">
         <!-- 方案列表（R3/R5/R7：统一选择器 list 形态，仅我的 + 搜索系统内置/租户/全体公开） -->
         <aside class="prof-list">
@@ -887,7 +888,7 @@ const menuPageTitle = useMenuPageTitle()
             class="complex-ast-notice"
             title="该方案含嵌套分组，构建器暂以只读方式运行；如需改写请新建方案。"
           />
-          <pre v-if="complexAst" class="ast">{{ JSON.stringify(complexAst, null, 2) }}</pre>
+          <AppScrollArea as="pre" v-if="complexAst" class="ast">{{ JSON.stringify(complexAst, null, 2) }}</AppScrollArea>
 
           <!-- 融合构建器（卡片包裹，与结果区/编辑器头区分边界，对齐买卖 cond-block） -->
           <template v-else>
@@ -900,7 +901,7 @@ const menuPageTitle = useMenuPageTitle()
               </el-radio-group>
             </div>
 
-            <div
+            <AppScrollArea
               class="b-conds"
               data-testid="screen-condition-builder"
               :class="{ 'readonly-builder': profileReadonly }"
@@ -956,7 +957,7 @@ const menuPageTitle = useMenuPageTitle()
 
               <AppRowActions :actions="conditionRowActions(i)" :inline-limit="1" />
             </div>
-            </div>
+            </AppScrollArea>
 
             <div class="b-actions">
               <el-button size="small" :disabled="profileReadonly" @click="addIndRow">
@@ -980,7 +981,7 @@ const menuPageTitle = useMenuPageTitle()
                 </HelpTipItem>
               </HelpTip>
             </div>
-            <pre v-if="settings.astExpanded && buildAst()" class="ast">{{ JSON.stringify(buildAst(), null, 2) }}</pre>
+            <AppScrollArea as="pre" v-if="settings.astExpanded && buildAst()" class="ast">{{ JSON.stringify(buildAst(), null, 2) }}</AppScrollArea>
             </div>
           </template>
 
@@ -1071,7 +1072,7 @@ const menuPageTitle = useMenuPageTitle()
           </div>
         </section>
       </div>
-    </div>
+    </AppScrollArea>
     </template>
 
     <template #overlays>
@@ -1084,7 +1085,7 @@ const menuPageTitle = useMenuPageTitle()
           <span class="hint">{{ formatDateTimeMinutes(v.saved_at) }}</span>
           <AppRowActions :actions="versionRowActions(v)" :inline-limit="1" />
         </div>
-        <pre class="ast">{{ JSON.stringify(v.expression, null, 2) }}</pre>
+        <AppScrollArea as="pre" class="ast">{{ JSON.stringify(v.expression, null, 2) }}</AppScrollArea>
       </div>
     </AppDetailDrawer>
 
@@ -1133,7 +1134,6 @@ const menuPageTitle = useMenuPageTitle()
 /* 条件行区限高内滚：操作区(构建器)不会随条件增多无限增高、挤压下方结果区 */
 .b-conds {
   max-height: 220px;
-  overflow-y: auto;
 }
 /* 空态/无命中在结果区内居中，不再切换外层盒子（避免状态切换抖动）*/
 .run-table-wrap :deep(.el-empty) {
@@ -1143,9 +1143,8 @@ const menuPageTitle = useMenuPageTitle()
   flex: 1 1 auto;   /* 填满 LayoutHost 的条件成长区，页面内容在本区域内滚动 */
   min-height: 0;
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: auto;
+  --app-scroll-display: flex;
+  --app-scroll-direction: column;
 }
 .screen-layout {
   display: flex;
@@ -1158,10 +1157,10 @@ const menuPageTitle = useMenuPageTitle()
   flex-shrink: 0;
 }
 /* 方案列表限高内滚：不会随方案数量无限增高、挤压下方结果区 */
-.prof-list :deep(.asset-profile-select__list),
+.prof-list :deep(.asset-profile-select__list-scroll),
 .prof-list :deep(.asset-profile-select__empty) {
   max-height: 360px;
-  overflow-y: auto;
+
 }
 .editor {
   flex: 1;
@@ -1235,13 +1234,12 @@ const menuPageTitle = useMenuPageTitle()
 }
 .ast {
   margin: 12px 0 0;
-  padding: 10px 12px;
+  --app-scroll-padding-top: 10px; --app-scroll-padding-right: 12px; --app-scroll-padding-bottom: 10px; --app-scroll-padding-left: 12px;
   background: var(--app-section-bg);
   border-radius: 6px;
   font-size: var(--app-font-size-caption);
   color: var(--el-text-color-regular);
   max-height: 200px;
-  overflow: auto;
 }
 .complex-ast-notice { margin: var(--app-space-3) 0; }
 .readonly-builder {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import { submitOnEnter } from '@/utils/keyboard'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
@@ -359,7 +360,7 @@ function onSubmit() {
 
     </section>
 
-    <section class="login-auth" data-testid="login-auth-surface">
+    <AppScrollArea as="section" class="login-auth" data-testid="login-auth-surface">
       <div class="login-controls">
         <button
           v-if="presetOptions.length > 1"
@@ -511,7 +512,7 @@ function onSubmit() {
 
         <div class="login-footnote">复盘啦 · EOD 趋势龙头研究系统</div>
       </div>
-    </section>
+    </AppScrollArea>
   </div>
 </template>
 
@@ -832,12 +833,11 @@ function onSubmit() {
 
 .login-auth {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  --app-scroll-display: flex;
+  --app-scroll-align: center;
+  --app-scroll-justify: center;
   min-height: 0;
-  padding: 72px clamp(34px, 4cqw, 64px) 48px;
-  overflow-y: auto;
+  --app-scroll-padding-top: 72px; --app-scroll-padding-right: clamp(34px, 4cqw, 64px); --app-scroll-padding-bottom: 48px; --app-scroll-padding-left: clamp(34px, 4cqw, 64px);
   background:
     radial-gradient(circle at 85% 0, color-mix(in srgb, var(--login-accent) 12%, transparent), transparent 28%),
     var(--login-page-bg);
@@ -1174,7 +1174,7 @@ function onSubmit() {
   .market-stage { inset: 26% -35% 0 -20%; opacity: 0.38; }
   .login-auth {
     z-index: 2;
-    padding: 92px 20px 30px;
+    --app-scroll-padding-top: 92px; --app-scroll-padding-right: 20px; --app-scroll-padding-bottom: 30px; --app-scroll-padding-left: 20px;
     background: var(--login-page-bg);
   }
   .login-card { max-width: 430px; }
@@ -1193,7 +1193,7 @@ function onSubmit() {
 
 @container app-viewport (max-width: 520px) {
   .login-brand { padding: 18px; }
-  .login-auth { padding: 80px 12px 14px; }
+  .login-auth { --app-scroll-padding-top: 80px; --app-scroll-padding-right: 12px; --app-scroll-padding-bottom: 14px; --app-scroll-padding-left: 12px; }
   .login-card {
     padding: 28px 20px 24px;
     border-radius: 16px;
@@ -1203,7 +1203,7 @@ function onSubmit() {
 }
 
 @container app-viewport (max-height: 720px) and (min-width: 981px) {
-  .login-auth { align-items: flex-start; padding-top: 48px; }
+  .login-auth { --app-scroll-align: flex-start; --app-scroll-padding-top: 48px; }
   .login-card { padding-top: 28px; padding-bottom: 24px; }
   .login-tabs { margin-top: 18px; margin-bottom: 16px; }
   .login-footnote { margin-top: 18px; padding-top: 14px; }
@@ -1239,7 +1239,7 @@ function onSubmit() {
 }
 
 @container app-viewport (max-height: 620px) and (max-width: 980px) {
-  .login-auth { align-items: flex-start; }
+  .login-auth { --app-scroll-align: flex-start; }
   .login-card { margin-top: 0; }
 }
 

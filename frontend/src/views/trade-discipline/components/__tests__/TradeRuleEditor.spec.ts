@@ -366,7 +366,7 @@ describe('TradeRuleEditor', () => {
     })
     const wrapper = await mountEditor()
 
-    const sections = wrapper.get('[data-testid="rule-editor"]').element.children
+    const sections = wrapper.get('[data-testid="rule-editor"] .app-scroll-area__content').element.children
     const noticeIndex = Array.from(sections).indexOf(wrapper.get('.readonly-notice').element)
     const stateIndex = Array.from(sections).indexOf(wrapper.get('.rule-state-track').element)
     expect(noticeIndex).toBeGreaterThan(0)

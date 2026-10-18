@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { computed } from 'vue'
 import HelpHint from '@/components/HelpHint.vue'
 import type { StockQuoteSummaryModel, StockQuoteSummaryWidths } from './stockQuoteSummary'
@@ -19,7 +20,7 @@ const columns = computed(() => {
 </script>
 
 <template>
-  <dl class="stock-quote-summary" :class="[`stock-quote-summary--gap-${columnGap}`, { 'stock-quote-summary--stable': widths }]">
+  <AppScrollArea as="dl" class="stock-quote-summary" :class="[`stock-quote-summary--gap-${columnGap}`, { 'stock-quote-summary--stable': widths }]">
     <div class="stock-quote-summary__hero">
       <dt v-if="summary.hero.label">{{ summary.hero.label }}</dt>
       <div class="stock-quote-summary__hero-values">
@@ -52,13 +53,13 @@ const columns = computed(() => {
         </span>
       </div>
     </div>
-  </dl>
+  </AppScrollArea>
 </template>
 
 <style scoped>
-.stock-quote-summary { display: flex; align-items: stretch; gap: var(--app-space-2); margin: 0; font-variant-numeric: tabular-nums; }
-.stock-quote-summary--gap-relaxed { gap: var(--stock-quote-section-gap); }
-.stock-quote-summary--stable { max-width: 100%; overflow-x: auto; }
+.stock-quote-summary { --app-scroll-display: flex; --app-scroll-align: stretch; --app-scroll-gap: var(--app-space-2); margin: 0; font-variant-numeric: tabular-nums; }
+.stock-quote-summary--gap-relaxed { --app-scroll-gap: var(--stock-quote-section-gap); }
+.stock-quote-summary--stable { max-width: 100%; }
 .stock-quote-summary__hero { display: flex; flex-shrink: 0; align-items: center; justify-content: center; align-self: stretch; padding-right: var(--app-space-2); border-right: 1px solid var(--el-border-color); text-align: center; }
 .stock-quote-summary__hero-values { display: flex; flex-direction: column; align-items: center; }
 .stock-quote-summary__hero-details { display: flex; gap: var(--app-space-2); margin-top: 2px; font-size: var(--app-font-size-caption); white-space: nowrap; }
@@ -79,7 +80,7 @@ const columns = computed(() => {
 
 @container app-viewport (max-width: 720px) {
   .stock-quote-summary:has(.stock-quote-summary__supplement) {
-    flex-wrap: wrap;
+    --app-scroll-wrap: wrap;
   }
 
   .stock-quote-summary__supplement {

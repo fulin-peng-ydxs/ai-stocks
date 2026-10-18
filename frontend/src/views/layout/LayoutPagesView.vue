@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -557,9 +558,9 @@ const menuPageTitle = useMenuPageTitle()
               </div>
             </section>
 
-            <div class="page-config-grid">
+            <AppScrollArea class="page-config-grid">
               <!-- 左侧只表达结构和选中关系；配置说明统一由右侧检查器承接。 -->
-              <section class="plain-panel preview-panel">
+              <AppScrollArea as="section" class="plain-panel preview-panel">
                 <div class="panel-heading">
                   <div>
                     <div class="section-title">结构预览</div>
@@ -574,7 +575,7 @@ const menuPageTitle = useMenuPageTitle()
                   class="preview-host"
                   @focus-slot="onPreviewFocus"
                 />
-              </section>
+              </AppScrollArea>
 
               <!-- 右侧是唯一配置入口：页面默认、所选组件、折叠诊断、保存。 -->
               <section class="plain-panel config-panel">
@@ -586,7 +587,7 @@ const menuPageTitle = useMenuPageTitle()
                   <el-tag v-if="focusedSlotSpec" size="small" type="primary" effect="plain">已选组件</el-tag>
                 </div>
 
-                <div class="inspector-scroll">
+                <AppScrollArea class="inspector-scroll">
                   <section class="inspector-section">
                     <div class="inspector-section-head">
                       <div>
@@ -704,20 +705,20 @@ const menuPageTitle = useMenuPageTitle()
                       </div>
                     </el-collapse-item>
                   </el-collapse>
-                </div>
+                </AppScrollArea>
 
                 <div class="button-row cc-save-row">
                   <el-button v-permission="'layout:page-manage'" type="primary" :loading="pageSaving" :disabled="!pageConfigChanged" @click="savePageConfig">保存页面配置</el-button>
                   <el-button v-permission="'layout:page-manage'" @click="resetPageConfig">恢复页面默认</el-button>
                 </div>
               </section>
-            </div>
+            </AppScrollArea>
             </div>
           </el-tab-pane>
 
           <el-tab-pane label="导入导出" name="import">
-            <div class="import-grid">
-              <section class="plain-panel">
+            <AppScrollArea class="import-grid">
+              <AppScrollArea as="section" class="plain-panel">
                 <div class="section-title">导出</div>
                 <div class="section-subtitle">导出当前页面的页面/用户/有效配置；预设导出在「视觉预设」工作区。</div>
                 <div class="inline-controls">
@@ -730,9 +731,9 @@ const menuPageTitle = useMenuPageTitle()
                   <el-button @click="downloadExport">下载</el-button>
                 </div>
                 <el-input v-model="exportText" type="textarea" :rows="16" spellcheck="false" />
-              </section>
+              </AppScrollArea>
 
-              <section class="plain-panel">
+              <AppScrollArea as="section" class="plain-panel">
                 <div class="section-title">导入</div>
                 <div class="section-subtitle">导入前会校验 schema version、路径、取值域、组件归属。</div>
                 <input class="file-input" type="file" accept="application/json,.json" @change="onImportFile" />
@@ -740,8 +741,8 @@ const menuPageTitle = useMenuPageTitle()
                 <div class="button-row">
                   <el-button v-permission="'layout:page-manage'" type="primary" :loading="importSaving" @click="importConfig">校验并导入</el-button>
                 </div>
-              </section>
-            </div>
+              </AppScrollArea>
+            </AppScrollArea>
           </el-tab-pane>
 
           <el-tab-pane label="校验报告" name="report">
@@ -765,8 +766,8 @@ const menuPageTitle = useMenuPageTitle()
               retry
               @retry="runValidationReport"
             />
-            <div v-else class="report-grid">
-              <section class="plain-panel">
+            <AppScrollArea v-else class="report-grid">
+              <AppScrollArea as="section" class="plain-panel">
                 <div class="section-title">错误项</div>
                 <el-alert
                   v-if="!pageValidationErrors.length && !userValidationErrors.length"
@@ -782,17 +783,17 @@ const menuPageTitle = useMenuPageTitle()
                   :closable="false"
                   class="report-alert"
                 />
-              </section>
+              </AppScrollArea>
 
-              <section class="plain-panel">
+              <AppScrollArea as="section" class="plain-panel">
                 <div class="section-title">字段来源</div>
                 <AppDataTable :data="sourceRows" height="320" embedded>
                   <AppTableColumn prop="path" label="路径" />
                   <AppTableColumn prop="value" label="值" />
                   <AppTableColumn prop="source" label="来源" />
                 </AppDataTable>
-              </section>
-            </div>
+              </AppScrollArea>
+            </AppScrollArea>
           </el-tab-pane>
         </el-tabs>
       </AppAsyncRegion>
@@ -863,37 +864,39 @@ const menuPageTitle = useMenuPageTitle()
 }
 .import-grid,
 .report-grid {
-  display: grid;
-  grid-template-columns: minmax(320px, 0.85fr) minmax(360px, 1.15fr);
-  gap: var(--app-space-3);
+  --app-scroll-display: grid;
+  --app-scroll-columns: minmax(320px, 0.85fr) minmax(360px, 1.15fr);
+  --app-scroll-gap: var(--app-space-3);
 }
 .page-config-grid {
-  display: grid;
-  grid-template-columns: minmax(420px, 1.3fr) minmax(360px, 0.7fr);
-  gap: var(--app-space-3);
+  --app-scroll-display: grid;
+  --app-scroll-columns: minmax(420px, 1.3fr) minmax(360px, 0.7fr);
+  --app-scroll-gap: var(--app-space-3);
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  overflow: clip;
 }
 .import-grid,
 .report-grid {
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  overflow: clip;
 }
 .plain-panel {
+  padding: var(--app-density-card-padding);
   min-width: 0;
   min-height: 0;
   border: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
   border-radius: 6px;
-  padding: var(--app-density-card-padding);
+  --app-scroll-padding-top: var(--app-density-card-padding); --app-scroll-padding-right: var(--app-density-card-padding); --app-scroll-padding-bottom: var(--app-density-card-padding); --app-scroll-padding-left: var(--app-density-card-padding);
 }
 .preview-panel,
-.import-grid > .plain-panel,
-.report-grid > .plain-panel {
-  overflow: auto;
+.import-grid :deep(> .app-scroll-area__renderer > .el-scrollbar__wrap > .app-scroll-area__content) > .plain-panel,
+.report-grid :deep(> .app-scroll-area__renderer > .el-scrollbar__wrap > .app-scroll-area__content) > .plain-panel {
+  padding: var(--app-density-card-padding);
 }
+.plain-panel.app-scroll-area { padding: 0; }
 .source-panel {
   flex: 0 0 auto;
   display: grid;
@@ -952,11 +955,10 @@ const menuPageTitle = useMenuPageTitle()
 .inspector-scroll {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
-  padding: var(--app-space-3) 2px var(--app-space-3) 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-4);
+  --app-scroll-padding-top: var(--app-space-3); --app-scroll-padding-right: 2px; --app-scroll-padding-bottom: var(--app-space-3); --app-scroll-padding-left: 0;
+  --app-scroll-display: flex;
+  --app-scroll-direction: column;
+  --app-scroll-gap: var(--app-space-4);
 }
 .inspector-section {
   padding-bottom: var(--app-space-4);
@@ -1046,8 +1048,7 @@ const menuPageTitle = useMenuPageTitle()
   .page-config-grid,
   .import-grid,
   .report-grid {
-    grid-template-columns: 1fr;
-    overflow: auto;
+    --app-scroll-columns: 1fr;
   }
   .source-panel {
     grid-template-columns: 1fr;
@@ -1055,8 +1056,7 @@ const menuPageTitle = useMenuPageTitle()
   .source-facts {
     justify-content: flex-start;
   }
-  .config-panel,
-  .inspector-scroll {
+  .config-panel {
     overflow: visible;
   }
   .toolbar-actions,

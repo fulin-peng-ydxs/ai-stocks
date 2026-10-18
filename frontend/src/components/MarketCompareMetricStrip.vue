@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { computed } from 'vue'
 import HelpHint from '@/components/HelpHint.vue'
 
@@ -34,11 +35,11 @@ function metricDescription(item: MarketMetricStripItem): string {
 </script>
 
 <template>
-  <div
+  <AppScrollArea
     class="market-metric-strip"
     :aria-label="ariaLabel"
     :data-testid="`${testIdPrefix}-strip`"
-    :style="stripStyle"
+    :style="{ '--app-scroll-columns': stripStyle.gridTemplateColumns }"
   >
     <div v-for="item in items" :key="item.key" class="market-metric-cell">
       <el-button
@@ -69,14 +70,13 @@ function metricDescription(item: MarketMetricStripItem): string {
         <HelpHint :text="metricDescription(item)" />
       </span>
     </div>
-  </div>
+  </AppScrollArea>
 </template>
 
 <style scoped>
 .market-metric-strip {
-  display: grid;
+  --app-scroll-display: grid;
   flex: 0 0 auto;
-  overflow-x: auto;
   border-bottom: 1px solid var(--el-border-color-lighter);
   background: color-mix(in srgb, var(--app-section-bg) 54%, var(--el-bg-color));
 }
@@ -183,13 +183,13 @@ function metricDescription(item: MarketMetricStripItem): string {
 }
 @container app-viewport (max-width: 1180px) {
   .market-metric-strip {
-    grid-template-columns: repeat(3, minmax(84px, 1fr)) !important;
+    --app-scroll-columns: repeat(3, minmax(84px, 1fr)) !important;
   }
 }
 @container app-viewport (max-height: 700px) {
   /* 低高度收起辅助数值时，提供独立且可见的说明入口，避免整块重复提示。 */
   .market-metric-strip {
-    grid-template-columns: none !important;
+    --app-scroll-columns: none !important;
     grid-auto-flow: column;
     grid-auto-columns: minmax(max-content, 1fr);
   }

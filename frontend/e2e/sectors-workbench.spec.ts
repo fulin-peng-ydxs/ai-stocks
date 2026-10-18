@@ -356,6 +356,7 @@ test.describe('板块行情工作台', () => {
     if (scrollMetrics.scrollWidth > scrollMetrics.clientWidth) {
       await expect(rankTable).toHaveClass(/el-table--scrollable-x/)
       const horizontalScrollbar = rankTable.locator('.el-scrollbar__bar.is-horizontal')
+      await rankTable.hover()
       await expect(horizontalScrollbar).toBeVisible()
       const scrollbarVisual = await horizontalScrollbar.evaluate((bar) => ({
         opacity: Number(window.getComputedStyle(bar).opacity),

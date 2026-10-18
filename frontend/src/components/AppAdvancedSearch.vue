@@ -2,7 +2,7 @@
 import { computed, inject, nextTick, onBeforeUnmount, ref, watch, watchEffect } from 'vue'
 import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import AppControlRow from './AppControlRow.vue'
+import AppScrollArea from './AppScrollArea.vue'
 import { SEARCH_GROUPS, resolveCommonFields, searchSummary, type SearchFieldState, type SearchGroupKey } from '@/layout/searchGroups'
 import { SEARCH_COMPONENT_VALUE, SEARCH_RUNTIME_META } from '@/layout/searchContext'
 
@@ -55,7 +55,7 @@ function toggle(): void {
 
 <template>
   <div ref="root" class="app-advanced-search" :data-search-group="group" :aria-label="definition.label">
-    <AppControlRow class="app-advanced-search__controls">
+    <AppScrollArea class="app-advanced-search__controls">
       <template v-for="entry in entries" :key="entry.key">
         <slot v-if="entry.kind === 'context'" name="context" />
         <div v-else-if="entry.kind === 'commands'" class="app-advanced-search__commands">
@@ -71,7 +71,7 @@ function toggle(): void {
           <span v-if="props.states[entry.key]?.error" role="alert" class="app-advanced-search__error">{{ props.states[entry.key].error }}</span>
         </div>
       </template>
-    </AppControlRow>
+    </AppScrollArea>
     <div v-if="!expanded && summaries.length" class="app-advanced-search__summary" aria-label="生效的高级搜索条件">
       <span>高级条件：</span>
       <el-tag v-for="field in summaries.slice(0, 3)" :key="field.key" :closable="!!states[field.key].clear" @close="states[field.key].clear?.()">
@@ -84,7 +84,7 @@ function toggle(): void {
 
 <style scoped>
 .app-advanced-search { width: 100%; min-width: 0; }
-.app-advanced-search__controls { max-height: 40cqh; overflow-y: auto; padding: var(--app-space-1); }
+.app-advanced-search__controls { max-height: 40cqh; --app-scroll-display: flex; --app-scroll-wrap: wrap; --app-scroll-gap: var(--app-density-control-gap); --app-scroll-align: center; padding: var(--app-space-1); }
 .app-advanced-search__commands, .app-advanced-search__summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--app-density-control-gap, var(--app-space-2)); }
 .app-advanced-search__commands { flex: 1 1 auto; }
 .app-advanced-search__field { display: flex; flex-wrap: wrap; align-items: center; gap: var(--app-space-2); min-width: 0; max-width: 100%; }

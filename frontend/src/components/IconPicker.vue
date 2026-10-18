@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 // 图标选择器（多租户 RBAC stage3·T13）：消费 @element-plus/icons-vue，供菜单 icon 字段选图标名。
 // icon 字段存图标名（如 TrendCharts），渲染时按名取组件；不手填字符，从图标库可搜索网格中选。
@@ -70,7 +71,7 @@ function clear() {
         <span class="ip-count">{{ filtered.length }} 个</span>
         <el-button link size="small" :disabled="disabled" @click="clear">清除图标</el-button>
       </div>
-      <div class="ip-grid">
+      <AppScrollArea class="ip-grid">
         <div
           v-for="name in filtered"
           :key="name"
@@ -85,7 +86,7 @@ function clear() {
           <span class="ip-cap">{{ name }}</span>
         </div>
         <div v-if="!filtered.length" class="app-empty-inline ip-empty">无匹配图标</div>
-      </div>
+      </AppScrollArea>
     </div>
   </el-popover>
 </template>
@@ -107,7 +108,7 @@ function clear() {
 .ip-panel { display: flex; flex-direction: column; gap: var(--app-space-2); }
 .ip-actions { display: flex; align-items: center; justify-content: space-between; }
 .ip-count { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
-.ip-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--app-space-2); max-height: 320px; overflow: auto; }
+.ip-grid { --app-scroll-display: grid; --app-scroll-columns: repeat(4, minmax(0, 1fr)); --app-scroll-gap: var(--app-space-2); max-height: 320px; }
 .ip-cell { height: 58px; min-width: 0; border: 1px solid var(--el-border-color-lighter); border-radius: 6px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--app-space-1);
   cursor: pointer; color: var(--el-text-color-regular); overflow: hidden; }

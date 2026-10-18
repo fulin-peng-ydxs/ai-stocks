@@ -219,6 +219,7 @@
 | 按钮 / 图标操作体系 | `global.css` 控件 token、`AppIconButton` / `AppCloseButton`、DESIGN 按钮规范；确需新增专用原生按钮时同步契约允许项和理由 | `check:close-controls`、`button-system.spec.ts`、关闭/离开拦截组件测试、build、顶栏与操作区视觉验收 |
 | 提示 / 截断机制 | DESIGN 提示契约、AppHoverInfo / useHoverIntent、AppIconButton / AppActionHint、AppOverflowTooltipHost；涉及原文时同步专用内容来源，不恢复原生 title 自动提示 | `check:tooltips`、提示/消费者定向测试、build、实际停留/移动/点击/键盘与主题验收 |
 | 字体 / 间距体系 | `global.css` typography/spacing token、DESIGN 排版与节奏规范；新增语义层级时同步 token、文档和消费点 | 相关样式契约测试、build、关键页面视觉验收 |
+| 滚动条与滚动容器 | DESIGN「滚动条显隐」、`AppScrollArea`、公共策略/Element Plus 适配层和 `scrollbar.css`；迁移时同步真实 viewport 引用、位置恢复、主从测高、成长布局及已有断言；内部实现组件不登记假 slot | `check:scrollbars`、显隐/清理/消费者定向测试、全局变更 build；内置浏览器核对悬停、键盘、滚动、拖出与低高度，禁止新增局部显隐 E2E |
 | 全局界面比例 | `useDisplayScale`、`displayScaleProfiles`、`sizeProfileMatching`、`useLayoutViewport`、`displayScaleGeometry`、根画布与独立遮罩、视觉环境入口和 DESIGN；偏好复用 `useGlobalPreferenceSync`；自动缩放指数由系统外观配置 `ui.display.auto_scale_exponent`、后端校验、登录公开白名单和运行时缓存共同承接，默认 0.10；自定义比例按显示器可用 CSS 宽高保存个人尺寸档案，并与主从工作台复用尺寸匹配容差及距离工具；尺寸断点使用 `app-viewport`，第三方坐标补丁随安装校验 | composable/尺寸档案/坐标换算和真实组件交互单测、尺寸断点契约、build、分隔条/图表/滚动恢复与 Teleport 浮层视觉验收 |
 | 共享交互状态 | `global.css` 的焦点、紧凑列表和语义链接配方、实际消费者与 DESIGN「按钮与输入」；同角色不得页面私配高亮亮度 | 键盘/选择/嵌套操作/禁用定向测试、build、明暗主题焦点及悬停临时复核 |
 | 共享边框 | `themeSurfaces.ts::themeBorderVariables()`、`useLayoutPreset.ts`、实际消费者与 DESIGN §6 | `useLayoutPreset.spec.ts`、相关组件测试、build、明暗模式普通/禁用/选中态临时复核 |

@@ -172,8 +172,8 @@ describe('LimitLadder layout', () => {
     const contentRule = limitLadderSource.match(/\.limit-ladder__content \{([^}]*)\}/)?.[1] ?? ''
     const bodyRule = limitLadderSource.match(/\.limit-ladder__body \{([^}]*)\}/)?.[1] ?? ''
 
-    expect(contentRule).toContain('display: flex')
-    expect(contentRule).toContain('flex-direction: column')
+    expect(contentRule).toContain('--app-scroll-display: flex')
+    expect(contentRule).toContain('--app-scroll-direction: column')
     expect(bodyRule).toContain('flex: 1 0 auto')
     expect(bodyRule).toContain('flex-direction: column')
     expect(bodyRule).toContain('width: 100%')

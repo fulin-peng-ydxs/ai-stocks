@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -654,7 +655,7 @@ function applyLogPrefs(status = defaultLogStatus.value) {
 }
 useDefaultedSessionValue(defaultTaskStatus, { onSynced: applyTaskPrefs })
 useDefaultedSessionValue(defaultLogStatus, { onSynced: applyLogPrefs })
-const logBody = ref<HTMLElement | null>(null)
+const logBody = ref<InstanceType<typeof AppScrollArea> | null>(null)
 let logTimer: number | undefined
 let lastSeq = 0
 
@@ -707,7 +708,7 @@ function pollLogs(id: string) {
         logs.value.push(...lines)
         lastSeq = lines[lines.length - 1].seq
         if (autoScroll.value) requestAnimationFrame(() => {
-          if (logBody.value) logBody.value.scrollTop = logBody.value.scrollHeight
+          if (logBody.value?.viewport) logBody.value.viewport.scrollTop = logBody.value.viewport.scrollHeight
         })
       }
       const st = logTask.value?.status
@@ -1207,13 +1208,13 @@ const menuPageTitle = useMenuPageTitle()
         <AppDetailField label="未知规则" :value="ladderResult.coverage?.unsupported_rule_count ?? 0" />
         <AppDetailField label="采集终态" :value="ladderResult.coverage?.ingest_terminal_status" />
       </AppDetailFields>
-      <div ref="logBody" class="log-body">
+      <AppScrollArea ref="logBody" class="log-body">
         <div v-for="l in logs" :key="l.seq" class="log-line" :class="l.level">
           <span class="lt">{{ (l.ts || '').slice(11, 19) }}</span>
           <span class="lm">{{ l.message }}</span>
         </div>
         <div v-if="!logs.length" class="app-empty-inline">暂无日志…</div>
-      </div>
+      </AppScrollArea>
     </PageDrawer>
 
     <PageSettingsDrawer
@@ -1282,7 +1283,7 @@ const menuPageTitle = useMenuPageTitle()
 .correlation-task-result { flex: 0 0 auto; margin-bottom: var(--app-space-3); }
 .lm-msg { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lm-phase { font-size: var(--app-font-size-caption); color: var(--el-color-warning); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.log-body { flex: 1 1 auto; min-height: 0; overflow: auto; background: var(--el-fill-color-darker); border-radius: 6px; padding: 10px; font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); }
+.log-body { flex: 1 1 auto; min-height: 0; background: var(--el-fill-color-darker); border-radius: 6px; --app-scroll-padding-top: 10px; --app-scroll-padding-right: 10px; --app-scroll-padding-bottom: 10px; --app-scroll-padding-left: 10px; font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); }
 .log-line { display: flex; gap: var(--app-space-2); padding: 1px 0; }
 .log-line.warn { color: var(--app-warning-text); }
 .log-line.error { color: var(--app-danger-text); }

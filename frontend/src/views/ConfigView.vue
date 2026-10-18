@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppHoverInfo from '@/components/AppHoverInfo'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
@@ -1651,7 +1652,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
     </template>
 
     <template #main>
-    <div class="config-body">
+    <AppScrollArea class="config-body">
     <AppStateBlock
       v-if="pageInitError"
       state="error"
@@ -2317,7 +2318,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         </AppAsyncRegion>
       </template>
     </template>
-    </div>
+    </AppScrollArea>
     </template>
 
     <template #overlays>
@@ -2332,7 +2333,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           <div class="spacer" />
           <AppRowActions :actions="scoreVersionRowActions(v)" :inline-limit="1" />
         </div>
-        <pre class="ast">{{ JSON.stringify(v.items, null, 2) }}</pre>
+        <AppScrollArea as="pre" class="ast">{{ JSON.stringify(v.items, null, 2) }}</AppScrollArea>
       </div>
     </AppDetailDrawer>
 
@@ -2346,9 +2347,9 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           <div class="spacer" />
           <AppRowActions :actions="tradeVersionRowActions(v)" :inline-limit="1" />
         </div>
-        <pre class="ast">买入 {{ JSON.stringify(v.buy_tree, null, 2) }}
+        <AppScrollArea as="pre" class="ast">买入 {{ JSON.stringify(v.buy_tree, null, 2) }}
 卖出 {{ JSON.stringify(v.sell_tree, null, 2) }}
-兜底 {{ JSON.stringify(v.backstop, null, 2) }}</pre>
+兜底 {{ JSON.stringify(v.backstop, null, 2) }}</AppScrollArea>
       </div>
     </AppDetailDrawer>
 
@@ -2590,9 +2591,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   flex: 1 1 auto;   /* 填满 LayoutHost 的条件成长区，页面内容在本区域内滚动 */
   min-height: 0;
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: auto;
+  --app-scroll-display: flex;
+  --app-scroll-direction: column;
 }
 .pane-fill {
   height: 100%;
@@ -2686,13 +2686,12 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 }
 .ast {
   margin: 8px 0 0;
-  padding: 10px 12px;
+  --app-scroll-padding-top: 10px; --app-scroll-padding-right: 12px; --app-scroll-padding-bottom: 10px; --app-scroll-padding-left: 12px;
   background: var(--app-section-bg);
   border-radius: 6px;
   font-size: var(--app-font-size-caption);
   color: var(--el-text-color-regular);
   max-height: 200px;
-  overflow: auto;
   white-space: pre-wrap;
 }
 .wsum {

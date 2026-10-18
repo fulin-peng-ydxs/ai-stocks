@@ -161,7 +161,8 @@ describe('AppDataTable', () => {
 
     expect(wrapper.classes()).toContain('app-data-table--embedded')
     expect(wrapper.classes()).not.toContain('app-data-table--fill')
-    expect(wrapper.find('.el-table').attributes('data-scrollbar-always-on')).toBe('false')
+    // 内部轨道交由全站策略统一显隐，嵌入模式不再有独立显隐分支。
+    expect(wrapper.find('.el-table').attributes('data-scrollbar-always-on')).toBe('true')
   })
 
   it('嵌入式表格保持内容自然高度，不被父级纵向压缩', () => {

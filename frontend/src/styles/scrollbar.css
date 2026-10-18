@@ -1,0 +1,51 @@
+:root {
+  --app-scrollbar-size: 6px;
+  --app-scrollbar-show-duration: 120ms;
+  --app-scrollbar-hide-duration: 180ms;
+  --app-scrollbar-thumb: color-mix(in srgb, var(--el-text-color-secondary) 65%, transparent);
+  --app-scrollbar-thumb-hover: var(--el-text-color-secondary);
+}
+
+/* 唯一可见性入口；库内 v-show/过渡仍可运行，但不再决定托管滚动条的表现。 */
+:where(#app, .el-overlay, .el-popper, [id^="el-popper-container-"]) .el-scrollbar > .el-scrollbar__bar,
+[data-app-scroll-managed] > .el-scrollbar__bar {
+  display: block !important;
+  opacity: 0 !important;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--app-scrollbar-hide-duration),
+    visibility 0s var(--app-scrollbar-hide-duration);
+}
+[data-app-scroll-managed][data-app-scroll-visible='true'] > .el-scrollbar__bar {
+  opacity: 1 !important;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity var(--app-scrollbar-show-duration);
+}
+[data-app-scroll-managed][data-app-scroll-x='false'] > .el-scrollbar__bar.is-horizontal,
+[data-app-scroll-managed][data-app-scroll-y='false'] > .el-scrollbar__bar.is-vertical {
+  display: none !important;
+}
+[data-app-scroll-managed] > .el-scrollbar__bar.is-horizontal { height: var(--app-scrollbar-size); }
+[data-app-scroll-managed] > .el-scrollbar__bar.is-vertical { width: var(--app-scrollbar-size); }
+[data-app-scroll-managed] > .el-scrollbar__bar > .el-scrollbar__thumb {
+  background: var(--app-scrollbar-thumb);
+  opacity: 1;
+}
+[data-app-scroll-managed] > .el-scrollbar__bar > .el-scrollbar__thumb:hover {
+  background: var(--app-scrollbar-thumb-hover);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-app-scroll-managed] > .el-scrollbar__bar { transition: none !important; }
+}
+@media (forced-colors: active) {
+  [data-app-scroll-managed] > .el-scrollbar__bar {
+    opacity: 1 !important;
+    visibility: visible;
+    pointer-events: auto;
+  }
+  [data-app-scroll-managed] > .el-scrollbar__bar > .el-scrollbar__thumb {
+    background: CanvasText;
+    forced-color-adjust: none;
+  }
+}

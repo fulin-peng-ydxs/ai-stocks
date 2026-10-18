@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { ArrowLeft, DArrowLeft, DArrowRight, Star, StarFilled } from '@element-plus/icons-vue'
 import { ElMessage, type Sort } from 'element-plus'
@@ -518,7 +519,7 @@ onMounted(async () => {
           </template>
         </MarketDetailHero>
 
-        <section class="metric-strip" aria-label="板块关键指标">
+        <AppScrollArea as="section" class="metric-strip" aria-label="板块关键指标">
           <div class="metric">
             <span>今日涨幅</span>
             <strong :class="pctClass(detail?.pct_today)">{{ fmtPct(detail?.pct_today) }}</strong>
@@ -529,7 +530,7 @@ onMounted(async () => {
           <div class="metric"><span>成员涨 / 跌</span><strong><span class="up">{{ detail?.up_count ?? '—' }}</span> / <span class="down">{{ detail?.down_count ?? '—' }}</span></strong></div>
           <div class="metric"><span>最近快照返回</span><strong>{{ detail?.member_count ?? '—' }} <small>只</small></strong></div>
           <div class="metric metric--leader"><span>成员领涨</span><strong>{{ detail?.leader_stock || '—' }} <em :class="pctClass(detail?.leader_pct)">{{ fmtPct(detail?.leader_pct) }}</em></strong></div>
-        </section>
+        </AppScrollArea>
 
         <AppSplitWorkspace
           ref="splitWorkspaceRef"
@@ -754,9 +755,8 @@ onMounted(async () => {
 }
 .metric-strip {
   flex: 0 0 auto;
-  display: grid;
-  grid-template-columns: repeat(7, minmax(104px, 1fr));
-  overflow-x: auto;
+  --app-scroll-display: grid;
+  --app-scroll-columns: repeat(7, minmax(104px, 1fr));
 }
 .metric {
   min-width: 104px;
@@ -825,6 +825,6 @@ onMounted(async () => {
   font-style: normal;
 }
 @container app-viewport (max-width: 1120px) {
-  .metric-strip { grid-template-columns: repeat(4, minmax(132px, 1fr)); }
+  .metric-strip { --app-scroll-columns: repeat(4, minmax(132px, 1fr)); }
 }
 </style>

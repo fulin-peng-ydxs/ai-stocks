@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -564,7 +565,7 @@ const menuPageTitle = useMenuPageTitle()
             variant="permission"
             title="无权限查看履约打卡"
           />
-          <div v-else class="master-detail-shell">
+          <AppScrollArea v-else class="master-detail-shell">
             <RuleMasterList
               :rules="displayRules"
               :selected-id="selectedRuleId"
@@ -635,11 +636,11 @@ const menuPageTitle = useMenuPageTitle()
               @request-date-change="changeCheckinTradeDate"
               @submitted="handleCheckinSubmitted"
             />
-          </div>
+          </AppScrollArea>
         </section>
 
         <section v-else-if="activePanel === 'rules'" class="discipline-panel">
-          <div class="master-detail-shell">
+          <AppScrollArea class="master-detail-shell">
             <RuleMasterList
               :rules="rules"
               :selected-id="selectedRuleId"
@@ -667,7 +668,7 @@ const menuPageTitle = useMenuPageTitle()
               title="选择或新建一条规则"
               description="规则草稿会保存在服务端，发布后才生成正式版本"
             />
-          </div>
+          </AppScrollArea>
         </section>
 
         <section v-else class="discipline-panel history-panel">
@@ -754,17 +755,16 @@ const menuPageTitle = useMenuPageTitle()
 .master-detail-shell {
   height: 100%;
   min-height: 0;
-  display: grid;
-  grid-template-columns: 304px minmax(0, 1fr);
-  gap: var(--app-space-3);
-  overflow-x: auto;
+  --app-scroll-display: grid;
+  --app-scroll-columns: 304px minmax(0, 1fr);
+  --app-scroll-gap: var(--app-space-3);
 }
 .panel-detail {
   border: 1px solid var(--el-border-color);
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
 }
-.panel-detail { min-width: 0; min-height: 0; overflow: auto; padding: var(--app-space-5); }
+.panel-detail { min-width: 0; min-height: 0; padding: var(--app-space-5); }
 .detail-kicker { color: var(--el-color-primary); font-size: var(--app-font-size-caption); font-weight: var(--app-font-weight-section); }
 .panel-detail .app-section-title { margin: var(--app-space-1) 0 var(--app-space-4); }
 .rule-facts { display: grid; grid-template-columns: repeat(2, minmax(160px, 1fr)); gap: var(--app-space-3); margin: 0; }
@@ -774,8 +774,8 @@ const menuPageTitle = useMenuPageTitle()
 .readonly-note { margin-top: var(--app-space-4); color: var(--el-color-warning); }
 .history-panel { display: flex; }
 @container app-viewport (max-width: 1100px) {
-  .master-detail-shell { grid-template-columns: minmax(0, 1fr); overflow: auto; }
-  .panel-detail { min-width: 0; overflow: visible; }
+  .master-detail-shell { --app-scroll-columns: minmax(0, 1fr); }
+  .panel-detail { min-width: 0; }
 }
 @container app-viewport (max-width: 900px) {
   .page-head,

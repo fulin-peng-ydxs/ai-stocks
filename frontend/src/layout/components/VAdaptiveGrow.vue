@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 /**
  * 条件成长区：
  * - 可用高度达到主组件最低高度时，主组件吃满余量并自行内滚。
@@ -17,7 +18,7 @@ const minHeight = computed(() =>
 </script>
 
 <template>
-  <div class="v-adaptive-grow" data-testid="layout-adaptive-region">
+  <AppScrollArea class="v-adaptive-grow" data-testid="layout-adaptive-region">
     <div
       class="v-adaptive-grow__main"
       data-testid="layout-grow-region"
@@ -25,16 +26,15 @@ const minHeight = computed(() =>
     >
       <slot />
     </div>
-  </div>
+  </AppScrollArea>
 </template>
 
 <style scoped>
 .v-adaptive-grow {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
+  --app-scroll-display: flex;
+  --app-scroll-direction: column;
 }
 
 .v-adaptive-grow__main {

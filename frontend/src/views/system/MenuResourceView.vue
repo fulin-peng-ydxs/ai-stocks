@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 // 菜单与功能管理页（多租户 RBAC stage3·T13，R12+R13）。承接 menu-resource-management.html。
 // master-detail：左 el-tree(draggable) 菜单树 + 右 菜单属性表单(含 IconPicker) + 功能点子表。
@@ -487,7 +488,7 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #main>
-      <div class="mr-split">
+      <AppScrollArea class="mr-split">
         <!-- 左：菜单树 -->
         <div class="mr-col mr-left">
           <div class="mr-col-head">
@@ -505,7 +506,7 @@ const menuPageTitle = useMenuPageTitle()
               <Plus />
             </AppIconButton>
           </div>
-          <AppAsyncRegion
+          <AppScrollArea :as="AppAsyncRegion"
             class="mr-col-body"
             :loading="treeLoading"
             :has-content="tree.length > 0"
@@ -552,7 +553,7 @@ const menuPageTitle = useMenuPageTitle()
                 </span>
               </template>
             </el-tree>
-          </AppAsyncRegion>
+          </AppScrollArea>
         </div>
 
         <!-- 右：属性 + 功能点 -->
@@ -574,7 +575,7 @@ const menuPageTitle = useMenuPageTitle()
               </div>
             </div>
 
-            <div class="mr-col-body mr-detail-body">
+            <AppScrollArea class="mr-col-body mr-detail-body">
               <!-- 菜单属性 -->
               <div class="mr-section">
                 <h4>菜单属性</h4>
@@ -726,7 +727,7 @@ const menuPageTitle = useMenuPageTitle()
                   </AppTableColumn>
                 </AppDataTable>
               </div>
-            </div>
+            </AppScrollArea>
 
             <div class="mr-detail-foot">
               <span class="dirty" :class="{ hidden: !formDirty }">● 菜单属性有未保存修改</span>
@@ -738,7 +739,7 @@ const menuPageTitle = useMenuPageTitle()
           </template>
           <el-empty v-else class="app-empty app-empty--compact" description="请选择左侧菜单节点" />
         </div>
-      </div>
+      </AppScrollArea>
     </template>
 
     <template #overlays>
@@ -811,7 +812,7 @@ const menuPageTitle = useMenuPageTitle()
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-3); }
 .page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
 /* master-detail：窄视口体内横滚，右栏不被压垮 */
-.mr-split { height: 100%; display: flex; gap: var(--app-space-4); min-height: 0; overflow-x: auto; }
+.mr-split { height: 100%; --app-scroll-display: flex; --app-scroll-gap: var(--app-space-4); min-height: 0; }
 .mr-col { border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-bg-color-overlay);
   display: flex; flex-direction: column; min-height: 0; }
 .mr-left { width: 300px; flex: none; }
@@ -823,8 +824,8 @@ const menuPageTitle = useMenuPageTitle()
 .mr-root-add {
   color: var(--el-text-color-regular);
 }
-.mr-col-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px; }
-.mr-detail-body { display: flex; flex-direction: column; }
+.mr-col-body { flex: 1 1 auto; min-height: 0; --app-scroll-padding-top: 8px; --app-scroll-padding-right: 8px; --app-scroll-padding-bottom: 8px; --app-scroll-padding-left: 8px; }
+.mr-detail-body { --app-scroll-display: flex; --app-scroll-direction: column; }
 .mr-tnode { display: inline-flex; align-items: center; gap: var(--app-space-2); min-width: 0; width: 100%; }
 .mr-ticon { color: var(--el-text-color-regular); }
 .mr-tlabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

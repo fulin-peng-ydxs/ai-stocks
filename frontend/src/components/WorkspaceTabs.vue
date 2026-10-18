@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import { acceptsKeyboardEvent } from '@/utils/keyboard'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppCloseButton from './AppCloseButton.vue'
 import AppIconButton from './AppIconButton.vue'
-import { ArrowDown, ArrowRight, Delete } from '@element-plus/icons-vue'
+import { ArrowRight, Delete } from '@element-plus/icons-vue'
 import { useWorkspaceTabPreferences } from '@/composables/useWorkspaceTabPreferences'
 import MenuIcon from './MenuIcon.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -26,7 +27,8 @@ const auth = useAuthStore()
 const tabIcons = computed(() => new Map(workspaceTabs.value.map((tab) => [
   tab.key, findMenuLeaf(auth.menus, tab.key)?.icon || 'Document',
 ])))
-const rail = ref<HTMLElement>()
+const scrollArea = ref<InstanceType<typeof AppScrollArea>>()
+const rail = computed(() => scrollArea.value?.viewport)
 const focusedKey = ref(route.path)
 const tabStop = computed(() => workspaceTabs.value.some(tab => tab.key === focusedKey.value)
   ? focusedKey.value : workspaceTabs.value.find(tab => tab.key === route.path)?.key ?? workspaceTabs.value[0]?.key)
@@ -120,7 +122,7 @@ async function clear() {
         :aria-expanded="!collapsed"
         size="xs"
         @click="setCollapsed(!collapsed)"
-      ><ArrowRight v-if="collapsed" /><ArrowDown v-else /></AppIconButton>
+      ><ArrowRight class="workspace-tabs-chevron" /></AppIconButton>
       <span class="workspace-tabs-label">工作区</span>
       <span class="workspace-tabs-count" :aria-label="`${workspaceTabs.length} 个已打开页面`">{{ workspaceTabs.length }}</span>
       <AppIconButton
@@ -133,31 +135,33 @@ async function clear() {
       ><Delete /></AppIconButton>
       <span v-if="!collapsed" class="workspace-tabs-divider" aria-hidden="true">｜</span>
     </div>
-    <div v-show="!collapsed" ref="rail" class="workspace-tabs-rail" role="tablist" :aria-hidden="collapsed">
-      <div
-        v-for="tab in workspaceTabs"
-        :key="tab.key"
-        class="workspace-tab app-nav-context-entry app-interaction-target app-interaction-nav"
-        :class="{ 'is-active': tab.key === route.path }"
-        role="tab"
-        :tabindex="tab.key === tabStop ? 0 : -1"
-        @focus="focusedKey = tab.key"
-        :aria-selected="tab.key === route.path"
-        @click="activate(tab.path)"
-        v-keyboard-activate
-        @keydown="onTabKeydown($event, tab.key)"
-      >
-        <MenuIcon class="workspace-tab-icon app-interaction-content" :name="tabIcons.get(tab.key)" />
-        <span class="workspace-tab-title app-interaction-content">{{ tab.title }}</span>
-        <AppCloseButton
-          class="workspace-tab-close"
-          size="inline"
-          :label="`关闭 ${tab.title}`"
-          @click.stop="close(tab.key)"
-          :disabled="clearing || closingKeys.has(tab.key)"
-        />
-      </div>
-    </div>
+    <Transition name="workspace-tabs-rail" @after-enter="revealActiveTab">
+      <AppScrollArea v-show="!collapsed" ref="scrollArea" axis="x" class="workspace-tabs-rail" role="tablist" :aria-hidden="collapsed" :inert="collapsed ? '' : undefined">
+        <div
+          v-for="tab in workspaceTabs"
+          :key="tab.key"
+          class="workspace-tab app-nav-context-entry app-interaction-target app-interaction-nav"
+          :class="{ 'is-active': tab.key === route.path }"
+          role="tab"
+          :tabindex="tab.key === tabStop ? 0 : -1"
+          @focus="focusedKey = tab.key"
+          :aria-selected="tab.key === route.path"
+          @click="activate(tab.path)"
+          v-keyboard-activate
+          @keydown="onTabKeydown($event, tab.key)"
+        >
+          <MenuIcon class="workspace-tab-icon app-interaction-content" :name="tabIcons.get(tab.key)" />
+          <span class="workspace-tab-title app-interaction-content">{{ tab.title }}</span>
+          <AppCloseButton
+            class="workspace-tab-close"
+            size="inline"
+            :label="`关闭 ${tab.title}`"
+            @click.stop="close(tab.key)"
+            :disabled="clearing || closingKeys.has(tab.key)"
+          />
+        </div>
+      </AppScrollArea>
+    </Transition>
   </div>
 </template>
 
@@ -172,8 +176,20 @@ async function clear() {
   display: flex;
   align-items: center;
   gap: var(--app-space-2);
+  overflow: clip;
+  /* 栏高直接落到终态，避免整页图表与滚动区在动画每一帧重测尺寸。 */
 }
 .workspace-tabs.is-collapsed { height: var(--app-control-height-sm); }
+.workspace-tabs-chevron {
+  transition: transform var(--app-motion-collapse) var(--app-motion-ease);
+}
+.workspace-tabs:not(.is-collapsed) .workspace-tabs-chevron { transform: rotate(90deg); }
+.workspace-tabs-rail-enter-active,
+.workspace-tabs-rail-leave-active {
+  transition: opacity var(--app-motion-collapse) var(--app-motion-ease);
+}
+.workspace-tabs-rail-enter-from,
+.workspace-tabs-rail-leave-to { opacity: 0; }
 .workspace-tabs-heading {
   flex: none;
   display: inline-flex;
@@ -205,18 +221,16 @@ async function clear() {
 }
 .workspace-tabs-rail {
   position: relative;
+  --app-scroll-position: relative;
   min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-1);
-  padding: var(--app-nav-indicator-size);
+  --app-scroll-display: flex;
+  --app-scroll-align: center;
+  --app-scroll-gap: var(--app-space-1);
+  --app-scroll-padding-top: var(--app-nav-indicator-size); --app-scroll-padding-right: var(--app-nav-indicator-size); --app-scroll-padding-bottom: var(--app-nav-indicator-size); --app-scroll-padding-left: var(--app-nav-indicator-size);
   border: 1px solid var(--chrome-border);
   border-radius: var(--app-nav-item-radius);
   background: var(--chrome-bg-soft);
-  overflow-x: auto;
-  scrollbar-width: none;
 }
-.workspace-tabs-rail::-webkit-scrollbar { display: none; }
 .workspace-tab {
   position: relative;
   flex: none;

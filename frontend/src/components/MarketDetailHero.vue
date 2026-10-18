@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 withDefaults(defineProps<{
   title: string
   code: string
@@ -30,12 +31,12 @@ defineSlots<{
         </div>
         <p v-if="subtitle" class="market-detail-hero__subtitle">{{ subtitle }}</p>
       </div>
-      <div v-if="$slots.summary || $slots.meta" class="market-detail-hero__aside">
+      <AppScrollArea v-if="$slots.summary || $slots.meta" class="market-detail-hero__aside">
         <slot name="summary" />
         <div v-if="$slots.meta" class="market-detail-hero__meta app-caption-text">
           <slot name="meta" />
         </div>
-      </div>
+      </AppScrollArea>
     </div>
     <div v-if="$slots.footer" class="market-detail-hero__footer">
       <slot name="footer" />
@@ -65,15 +66,18 @@ defineSlots<{
   justify-content: flex-start;
 }
 
-.market-detail-hero__copy,
+.market-detail-hero__copy {
+  min-width: 0;
+}
+
 .market-detail-hero__aside {
   min-width: 0;
 }
 
 .market-detail-hero__aside {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-3);
+  --app-scroll-display: flex;
+  --app-scroll-align: center;
+  --app-scroll-gap: var(--app-space-3);
 }
 
 .market-detail-hero__title-row {
@@ -115,7 +119,6 @@ defineSlots<{
 
   .market-detail-hero__aside {
     width: 100%;
-    overflow-x: auto;
   }
 }
 </style>

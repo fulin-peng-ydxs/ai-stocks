@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import AppHoverInfo from '@/components/AppHoverInfo'
 import AppActionHint from '@/components/AppActionHint.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -2071,7 +2072,7 @@ const menuPageTitle = useMenuPageTitle()
       </div>
     </el-card>
 
-    <AppAsyncRegion
+    <AppScrollArea :as="AppAsyncRegion"
       class="results"
       :loading="loading"
       :has-content="Boolean(strat || sig)"
@@ -2306,7 +2307,7 @@ const menuPageTitle = useMenuPageTitle()
         </div>
       </el-card>
 
-    </AppAsyncRegion>
+    </AppScrollArea>
     </div>
     </template>
 
@@ -2578,13 +2579,12 @@ const menuPageTitle = useMenuPageTitle()
 .form-card { margin-bottom: 14px; flex: 0 0 auto; }  /* 操作区固定高，不被结果挤压（第一层级）*/
 .results {
   flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
+  --app-scroll-display: flex;
+  --app-scroll-direction: column;
   min-height: 0;
   /* 第二原则：各块最低高宽放不下时，整个结果区滚动兜底（够放时不出滚动条）*/
-  overflow: auto;
-  gap: var(--app-space-3);
-  padding-right: 2px;
+  --app-scroll-gap: var(--app-space-3);
+  --app-scroll-padding-right: 2px;
 }
 .results-top {
   flex: 0 0 auto;  /* 绩效卡/资金曲线/稳健性/分层表：按内容取自然高 */

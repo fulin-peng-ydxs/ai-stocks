@@ -138,14 +138,14 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 - 原型文件：`prototypes/sector-board.html`。当前承接区域：顶部筛选区（全市场/自选、板块类型、日期、搜索）、板块排行（默认板块/今日涨幅/5日涨幅/10日涨幅/即时净流入）、可收起的同屏走势区、标题说明、表体内部滚动与分页、设置抽屉和数据/空/错误/加载四态。原型只提供信息架构参考，当前重构后的同屏列表与图表交互为实现事实源。
 - 原型与需求差异说明：
-  1. 排行表默认展示板块/今日涨幅/5日涨幅/10日涨幅/即时净流入，类型与最近快照返回数合并到名称单元格；20日涨幅和多周期净流入通过设置启用，列总宽超过排行区域时由 `wide-table` 提供常显横向滚动条。当前观察摘要展示今日/5/10/20日涨幅、即时净流入和累计成员涨跌家数；列表与图表同屏，点行只切换观察对象，排行标题右上角的固定按钮可收起右侧分析区为全宽排行并保留上下文，同一位置负责再次展开。
+  1. 排行表默认展示板块/今日涨幅/5日涨幅/10日涨幅/即时净流入，类型与最近快照返回数合并到名称单元格；20日涨幅和多周期净流入通过设置启用，列总宽超过排行区域时由 `wide-table` 提供横向滚动，滚动条显隐遵循 [DESIGN.md「滚动条显隐」](../../DESIGN.md#滚动条显隐)。当前观察摘要展示今日/5/10/20日涨幅、即时净流入和累计成员涨跌家数；列表与图表同屏，点行只切换观察对象，排行标题右上角的固定按钮可收起右侧分析区为全宽排行并保留上下文，同一位置负责再次展开。
   2. 列表页 `pageSize` 使用全局 `PAGE_SIZE_OPTIONS=[20,50,100,200]`；详情成分股保持业务专属 10/20/30/50。
   3. **领涨股取数来源**：按 `board_member` 历史累计关系中所选行情交易日 `pct_chg` 最大者计算；停牌、缺收盘或缺有效前收者排除，同涨幅按成交额降序、代码升序稳定决胜。资金流源字段不参与页面口径。
 
 | 页面功能点 | 对应需求编号 | 需求交互要点 | 技术实现 | 涉及组件/模块 | 数据/API | 状态与异常处理 | 对应任务 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 板块列表筛选（7.1.1） | R7、R10 | 默认全部板块 + 今日涨幅降序；切类型/排序/搜索（≤50 字符） | action 区 `PageSegmented`（全部/概念/行业）+ `TradeDatePicker` + `AppSearchInput`；抽屉用户配置即时投影会话默认，列表普通状态进入 `sectorsSession`，不写 URL | SectorsView.vue、AppControlRow、TradeDatePicker、AppSearchInput、usePageSettings、sectorsSession | `GET /api/sectors`（白名单参数） | 加载 `v-loading`；空态引导去采集页；错误 AppStateBlock 重试；无权限 permission 态 | T11 |
-| 板块排行与观察联动（7.1.2） | R7 | 列头排序、服务端分页、点行切换当前板块、勾选附加对比、列显隐、宽表横向滚动、收起/展开走势分析、标题说明 | `AppDataTable(kind=wide-table)` + AppPagination 与右侧走势图组成 master-detail；列宽由全局 `AppTableColumn` 根据语义、表头长度、排序控件、同行元信息与主内容前置控件推导，资金日期使用标准 `header-meta` 同行表头；`defaultSort/pageSize/hiddenColumns` 走 `componentValueOf('table', ...)`；每个 `componentMeta.columns` 候选必须进入真实显隐判断；分析区展开状态走 `usePageSettings`；切换按钮固定在排行标题右上角；说明复用 `HelpTip`；「查看详情」位于当前观察身份区 | AppDataTable、AppTableColumn、AppPagination、SectorCompareChart、HelpTip、pageRegistry `sectors` | `GET /api/sectors` | 空值列显示「—」；资金流列标注数据日期；表头不换行并与主内容对齐；列超宽时滚动条常显且可真实横移；分页越界回落；收起不清空观察和对比状态 | T11 |
+| 板块排行与观察联动（7.1.2） | R7 | 列头排序、服务端分页、点行切换当前板块、勾选附加对比、列显隐、宽表横向滚动、收起/展开走势分析、标题说明 | `AppDataTable(kind=wide-table)` + AppPagination 与右侧走势图组成 master-detail；列宽由全局 `AppTableColumn` 根据语义、表头长度、排序控件、同行元信息与主内容前置控件推导，资金日期使用标准 `header-meta` 同行表头；`defaultSort/pageSize/hiddenColumns` 走 `componentValueOf('table', ...)`；每个 `componentMeta.columns` 候选必须进入真实显隐判断；分析区展开状态走 `usePageSettings`；切换按钮固定在排行标题右上角；说明复用 `HelpTip`；「查看详情」位于当前观察身份区 | AppDataTable、AppTableColumn、AppPagination、SectorCompareChart、HelpTip、pageRegistry `sectors` | `GET /api/sectors` | 空值列显示「—」；资金流列标注数据日期；表头不换行并与主内容对齐；列超宽时可真实横移，显隐遵循 [DESIGN.md「滚动条显隐」](../../DESIGN.md#滚动条显隐)；分页越界回落；收起不清空观察和对比状态 | T11 |
 
 组件资产闭环（P1）：
 

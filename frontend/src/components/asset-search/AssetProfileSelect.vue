@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 // 统一「资产方案选择器」（R3/R7）：下拉/侧栏双形态，列表只加载「我的」资产（纯 owner），
 // 内置「搜索」入口打开 AssetSearchDrawer；「加载查看」注入会话内临时只读选中项
@@ -372,7 +373,7 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
           action-text="重新加载"
           @action="reload"
         />
-        <ul class="asset-profile-select__list" v-loading="loadingMine">
+        <AppScrollArea class="asset-profile-select__list-scroll"><ul class="asset-profile-select__list" v-loading="loadingMine">
           <li
             v-for="p in options"
             :key="assetItemKey(p)"
@@ -405,7 +406,7 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
               @click="onRemoveTemp(p, $event)"
             />
           </li>
-        </ul>
+        </ul></AppScrollArea>
       </template>
       <div v-else class="asset-profile-select__empty">
         <AppStateBlock v-if="loadingMine" state="loading" size="tiny" :title="`正在加载${assetLabel}…`" />
@@ -443,6 +444,7 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
 </template>
 
 <style scoped>
+.asset-profile-select__list-scroll { max-height: inherit; }
 .asset-profile-select {
   display: inline-grid;
   grid-template-columns: minmax(0, 1fr) auto;

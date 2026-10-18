@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 /**
  * 混合成长区（规范 §8 / §4-F）：固定分析块 + 一张主表/主图（flex:1 + 内部内滚）。
  * 固定块声明 idealH 时，可在空间不足时从理想高度收缩到 minH；未声明时保持自然高且不收缩。
@@ -27,7 +28,7 @@ function slotStyle(slot: SlotSpec): Record<string, string> | undefined {
 </script>
 
 <template>
-  <div class="v-mixed" data-testid="layout-mixed-region">
+  <AppScrollArea class="v-mixed" data-testid="layout-mixed-region">
     <template v-for="s in props.slots" :key="s.id">
       <div
         :class="[
@@ -40,17 +41,16 @@ function slotStyle(slot: SlotSpec): Record<string, string> | undefined {
         <slot :name="s.id" />
       </div>
     </template>
-  </div>
+  </AppScrollArea>
 </template>
 
 <style scoped>
 .v-mixed {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-3);
+  --app-scroll-display: flex;
+  --app-scroll-direction: column;
+  --app-scroll-gap: var(--app-space-3);
 }
 .v-mixed-fixed {
   flex: 0 0 auto;

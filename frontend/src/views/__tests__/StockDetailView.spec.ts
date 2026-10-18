@@ -503,6 +503,8 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
       permission: {},
     },
     stubs: {
+      // 此处验证行情与评估编排；公共滚动条的真实库集成由 scrollbarPolicy.spec 覆盖。
+      AppScrollArea: { template: '<div><slot /></div>' },
       LayoutHost: {
         template: '<main><slot name="action"/><slot name="main"/><slot name="overlays"/></main>',
       },

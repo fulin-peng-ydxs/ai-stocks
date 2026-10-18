@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import { computed, onMounted, ref } from 'vue'
@@ -351,13 +352,13 @@ const menuPageTitle = useMenuPageTitle()
         retry
         @retry="loadAll"
       />
-      <div v-else class="rm-split">
+      <AppScrollArea v-else class="rm-split">
         <!-- 左：角色列表 -->
         <div class="rm-col rm-left">
           <div class="rm-col-head">
             <span class="rm-head-title">角色 <span class="mini">{{ roles.length }}</span></span>
           </div>
-          <AppAsyncRegion
+          <AppScrollArea :as="AppAsyncRegion"
             class="rm-col-body"
             :loading="rolesLoading"
             :has-content="roles.length > 0"
@@ -382,7 +383,7 @@ const menuPageTitle = useMenuPageTitle()
               </div>
               <div v-if="r.member_count != null" class="role-desc">关联用户 {{ r.member_count }} 名</div>
             </div>
-          </AppAsyncRegion>
+          </AppScrollArea>
         </div>
 
         <!-- 右：权限树 -->
@@ -410,7 +411,7 @@ const menuPageTitle = useMenuPageTitle()
             </div>
           </div>
 
-          <div class="rm-col-body">
+          <AppScrollArea class="rm-col-body">
             <template v-if="activeRole">
               <PermissionTree
                 v-for="node in treeData" :key="node.key"
@@ -418,7 +419,7 @@ const menuPageTitle = useMenuPageTitle()
               />
             </template>
             <el-empty v-else class="app-empty app-empty--compact" description="请选择左侧角色" />
-          </div>
+          </AppScrollArea>
 
           <div class="rm-detail-foot" v-if="activeRole">
             <span class="dirty" :class="{ hidden: !dirty }">● 有未保存修改</span>
@@ -428,7 +429,7 @@ const menuPageTitle = useMenuPageTitle()
             </div>
           </div>
         </div>
-      </div>
+      </AppScrollArea>
     </template>
 
     <template #overlays>
@@ -481,7 +482,7 @@ const menuPageTitle = useMenuPageTitle()
 .rm-error { height: 100%; }
 .form-help { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); line-height: var(--app-line-height-comfy); }
 /* master-detail：窄视口体内横滚，右栏不被压垮 */
-.rm-split { height: 100%; display: flex; gap: var(--app-space-4); min-height: 0; overflow-x: auto; }
+.rm-split { height: 100%; --app-scroll-display: flex; --app-scroll-gap: var(--app-space-4); min-height: 0; }
 .rm-col { border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-bg-color-overlay);
   display: flex; flex-direction: column; min-height: 0; }
 .rm-left { width: 288px; flex: none; }
@@ -490,7 +491,7 @@ const menuPageTitle = useMenuPageTitle()
   display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); }
 .rm-head-title { display: inline-flex; align-items: center; gap: var(--app-space-2); min-width: 0; }
 .rm-col-head .mini { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); font-weight: var(--app-font-weight-regular); }
-.rm-col-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 14px; }
+.rm-col-body { flex: 1 1 auto; min-height: 0; --app-scroll-padding-top: 10px; --app-scroll-padding-right: 14px; --app-scroll-padding-bottom: 10px; --app-scroll-padding-left: 14px; }
 .role { padding: 10px 12px; border-radius: 7px; cursor: pointer; margin-bottom: 4px; border: 1px solid transparent; }
 
 .role-name { font-size: var(--app-font-size-body); font-weight: var(--app-font-weight-section); display: flex; align-items: center; gap: var(--app-space-2); }

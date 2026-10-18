@@ -95,11 +95,14 @@ describe('侧栏工作标签页', () => {
   it('默认收起；展开与再次收起不销毁页签', async () => {
     const { wrapper } = await mountTabs(false)
     expect(wrapper.get('.workspace-tabs').classes()).toContain('is-collapsed')
+    expect(wrapper.get('.workspace-tabs-rail').attributes('inert')).toBeDefined()
     const tab = wrapper.get('.workspace-tab').element
     await wrapper.get('[aria-label="展开工作区"]').trigger('click')
     expect(wrapper.get('.workspace-tabs-rail').isVisible()).toBe(true)
+    expect(wrapper.get('.workspace-tabs-rail').attributes('inert')).toBeUndefined()
     await wrapper.get('[aria-label="收起工作区"]').trigger('click')
     expect(wrapper.get('.workspace-tabs-rail').isVisible()).toBe(false)
+    expect(wrapper.get('.workspace-tabs-rail').attributes('inert')).toBeDefined()
     expect(wrapper.get('.workspace-tab').element).toBe(tab)
     wrapper.unmount()
   })
@@ -170,7 +173,7 @@ describe('侧栏工作标签页', () => {
     const { wrapper, router } = await mountTabs()
     await router.push('/screen')
     await flushPromises()
-    const rail = wrapper.get('.workspace-tabs-rail').element as HTMLElement
+    const rail = wrapper.get('.workspace-tabs-rail .el-scrollbar__wrap').element as HTMLElement
     const current = wrapper.get('.workspace-tab.is-active').element as HTMLElement
     Object.defineProperty(rail, 'clientWidth', { configurable: true, value: 100 })
     Object.defineProperty(current, 'offsetLeft', { configurable: true, value: 180 })
@@ -184,7 +187,8 @@ describe('侧栏工作标签页', () => {
     resize!()
     expect(rail.scrollLeft).toBe(60)
     wrapper.unmount()
-    expect(disconnect).toHaveBeenCalledOnce()
+    // 公共滚动容器及页签定位分别释放自己的尺寸观察器。
+    expect(disconnect).toHaveBeenCalled()
   })
   it('关闭聚焦的非当前标签后不切页，并恢复当前标签焦点', async () => {
     const { wrapper, router } = await mountTabs()

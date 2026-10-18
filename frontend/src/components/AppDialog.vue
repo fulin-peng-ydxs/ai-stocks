@@ -2,6 +2,7 @@
 import { computed, inject } from 'vue'
 import { PAGE_OVERLAY_TARGET } from '@/layout/pageOverlay'
 import { APP_DIALOG_WIDTHS, type AppDialogSize } from './appDialogSize'
+import AppScrollArea from './AppScrollArea.vue'
 
 defineOptions({ inheritAttrs: false })
 
@@ -40,7 +41,7 @@ const modalClassName = computed(() => [
     class="app-dialog"
   >
     <template v-if="$slots.header" #header><slot name="header" /></template>
-    <slot />
+    <AppScrollArea class="app-dialog__content"><slot /></AppScrollArea>
     <template v-if="$slots.footer" #footer><slot name="footer" /></template>
   </el-dialog>
 </template>
@@ -48,8 +49,17 @@ const modalClassName = computed(() => [
 <style>
 .app-dialog {
   max-width: calc(100cqw - var(--app-space-6));
+  max-height: calc(100cqh - var(--el-dialog-margin-top) - var(--app-space-6));
+  display: flex;
+  flex-direction: column;
 }
+.app-dialog.is-fullscreen { max-height: 100%; }
+.app-dialog > :is(.el-dialog__header, .el-dialog__footer) { flex: none; }
 .app-dialog .el-dialog__body {
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
+.app-dialog__content { flex: 1 1 auto; min-height: 0; }
 </style>

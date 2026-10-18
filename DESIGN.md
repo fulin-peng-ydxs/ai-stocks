@@ -324,7 +324,7 @@ Key Characteristics：
 | `PageSettingsTrigger` | `frontend/src/components/PageSettingsTrigger.vue` | 页面设置统一入口 | 触发 registry 页面中的 `settings-drawer` | 仅 `pageRegistry.supportsPageSettings !== false` 的真实消费页面显示；平台布局管理页不开放个人设置，不登记假入口 |
 | `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 全站抽屉唯一外壳与边界组件 | 无直接系统组件种类；内部唯一消费 `el-drawer` 和 `PageDrawerSurface` | 为 `AppDetailDrawer`、`PageSettingsDrawer`、应用级与专用抽屉统一提供挂载边界、遮罩、语义宽度、标题、关闭入口、正文滚动/填充布局和 footer；页面级默认挂到 `LayoutHost`，应用顶栏能力显式传 `boundary="app"`；直接消费只限实时日志、资产搜索、主从窄屏回退和应用级能力；标题默认标准档，局部工具才声明 `compact`；宽度只传 `xs/sm/md/lg/xl/xxl/wide/full`，禁止消费方直接使用 `el-drawer`、私传 px/% 或覆盖其 header/body/footer |
 | `PageDrawerSurface` | `frontend/src/components/PageDrawerSurface.vue` | 全站抽屉统一内容面板 | 无直接系统组件种类；仅由 `PageDrawer` 内部消费 | 统一可见外边界、背景、圆角、阴影、标题/副标题、头部动作、关闭入口、正文滚动或填充布局和可选 footer；差异只通过 `PageDrawer` 的语义属性与内容插槽表达，消费方不得直接拼装或复制面板背景、边框、圆角、阴影、header/body/footer 间距、遮光层和关闭按钮样式 |
-| `AppDialog` | `frontend/src/components/AppDialog.vue` | 页面短表单、单组编辑和轻量查看的统一弹窗外壳 | 无直接系统组件种类；内部消费 `el-dialog` | 业务代码只传 `compact/narrow/medium/large/xlarge/max/workspace` 语义宽度；普通表单最大使用 `max`，`workspace` 只用于图表或宽表；统一挂载到当前 `LayoutHost`，禁止业务代码直接使用 `el-dialog` 或传 px/% |
+| `AppDialog` | `frontend/src/components/AppDialog.vue` | 页面短表单、单组编辑和轻量查看的统一弹窗外壳 | 无直接系统组件种类；内部消费 `el-dialog` | 业务代码只传 `compact/narrow/medium/large/xlarge/max/workspace` 语义宽度；普通表单最大使用 `max`，`workspace` 只用于图表或宽表；统一挂载到当前 `LayoutHost`，禁止业务代码直接使用 `el-dialog` 或传 px/%；正文统一消费 `AppScrollArea`，视口高度不足时正文内滚，标题与 footer 保持可达 |
 | `AppDetailDrawer` | `frontend/src/components/AppDetailDrawer.vue` | 完整详情、长编辑、历史版本和审计上下文的统一抽屉结构 | 无直接系统组件种类；内部消费 `PageDrawer` 的统一外壳 | 只补充详情语义、`ready/loading/empty/error/permission` 四态和正文分区，不维护第二套标题、关闭、正文外边界或 footer 外壳；普通业务详情必须使用，只有实时日志、资产搜索、页面设置、主从窄屏回退和应用级能力等专用场景可直接消费 `PageDrawer` |
 | `AppDetailSection` / `AppDetailFields` / `AppDetailField` | `frontend/src/components/AppDetailSection.vue`、`frontend/src/components/AppDetailFields.vue`、`frontend/src/components/AppDetailField.vue` | 详情分区和规则型键值展示 | 无直接系统组件种类；作为详情抽屉或页面详情的内容结构 | 分区标题、说明和动作使用 `AppDetailSection`；1–3 列键值使用 `AppDetailFields`，低宽度按容器自动单列；字段使用 `AppDetailField`，空值统一 `—`，长值可跨列、代码值可等宽；禁止复制私有详情网格或使用 `el-descriptions` |
 | `LayoutHost` | `frontend/src/layout/components/LayoutHost.vue` | registry 页面统一布局、slot、滚动和 overlay 运行时宿主 | 消费 `PageLayout` 中登记的系统组件种类与区域 | 所有 registry 业务页面统一消费；页面不得绕过宿主手写页面外壳、主成长区、滚动归属或 overlay 边界 |
@@ -361,7 +361,8 @@ Key Characteristics：
 | `IndicatorSelect` / `IndicatorParamFields` | `frontend/src/components/indicator/IndicatorSelect.vue`、`frontend/src/components/indicator/IndicatorParamFields.vue` | 技术指标选择与计算参数值的领域复用组件，统一通用指标/快捷预设分组、停用历史项回显、参数单位与范围 | 无直接系统组件种类；作为方案编辑器内部字段 | 筛选、评分、买入和卖出方案统一消费；新选择只展示启用项，当前已选停用项保留“历史兼容”回显；参数值只表达计算口径，比较符、阈值、评分方式和权重仍由下游方案维护，页面不得复制参数循环和单位展示 |
 | `StrategyItemEnabledSwitch` | `frontend/src/components/strategy/StrategyItemEnabledSwitch.vue` | 策略项启停开关，统一双向绑定、只读态和可访问名称 | 无直接系统组件种类；作为方案编辑器内部字段 | 筛选条件、评分因子及买卖条件统一复用；调用方传入领域化 `label`，不得在页面继续复制只透传启停值的裸开关包装 |
 | `IndicatorParamSchemaEditor` | `frontend/src/components/indicator/IndicatorParamSchemaEditor.vue` | 自定义指标参数 schema 编辑器，统一参数名、标签、类型、默认值、上下限、单位和说明 | 无直接系统组件种类；作为指标定义抽屉内部字段 | 只用于平台指标定义维护，不与方案参数值编辑器合并；定义被引用时整体只读，后端仍负责最终占位符和范围校验 |
-| `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、加载分流、空态插槽、行点击样式和成长/嵌入模式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 页面中的数据表格统一复用；`loading && data.length === 0` 自动显示 `AppStateBlock` 骨架，有旧数据刷新时保留表格并使用 `v-loading` 遮罩；主列表默认成长，抽屉、展开行和局部明细等数量受控的非主表显式使用 `embedded` 并按内容自然撑高；位于整体滚动长文档中、条目可由用户持续添加且后面仍有关键内容的编辑表，必须在 `embedded` 基础上声明语义 `max-height`，少量行自然高度、超出后由表体内部滚动，禁止把后续操作和结果区无限推远；`#empty` 只补充业务文案与操作并复用 `app-table-empty*`，禁止嵌套 `el-empty` 形成双图；`wide-table` 默认常显 Element Plus 内部滚动条，禁止页面再给 `el-table__body-wrapper` 添加第二层横向滚动；禁止用 `fill` 布尔值绕过主表语义；复杂单元格继续由业务页通过列插槽声明 |
+| `AppScrollArea` | `frontend/src/components/AppScrollArea.vue` | 自建滚动区域唯一入口，封装 Element Plus 并承接内容布局 | 内部实现组件，不单独登记系统组件种类或假 slot | 正文、侧栏、抽屉、导航、页签和局部列表统一消费；保留原有滚动归属、成长约束及布局，内部 viewport 和内容层由组件统一承载；表格与库控件内部滚动条由全站适配层接管，不再包第二层 |
+| `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、加载分流、空态插槽、行点击样式和成长/嵌入模式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 页面中的数据表格统一复用；`loading && data.length === 0` 自动显示 `AppStateBlock` 骨架，有旧数据刷新时保留表格并使用 `v-loading` 遮罩；主列表默认成长，抽屉、展开行和局部明细等数量受控的非主表显式使用 `embedded` 并按内容自然撑高；位于整体滚动长文档中、条目可由用户持续添加且后面仍有关键内容的编辑表，必须在 `embedded` 基础上声明语义 `max-height`，少量行自然高度、超出后由表体内部滚动，禁止把后续操作和结果区无限推远；`#empty` 只补充业务文案与操作并复用 `app-table-empty*`，禁止嵌套 `el-empty` 形成双图；普通表格与宽表共同消费本节「滚动条显隐」契约，禁止页面再给 `el-table__body-wrapper` 添加第二层横向滚动；禁止用 `fill` 布尔值绕过主表语义；复杂单元格继续由业务页通过列插槽声明 |
 | `AppAsyncRegion` | `frontend/src/components/AppAsyncRegion.vue` | 非表格异步内容区域外壳，统一首次加载、已有内容刷新、空态和异常态的互斥切换 | 消费 `AppStateBlock` 和 Element Plus `v-loading`，通过调用方提供的 `loading + hasContent + error` 推导区域状态；不负责请求、业务缓存或内容归属判断 | 图表、摘要、树、详情和结果等标准非表格异步区优先复用；接入后必须保持消费区域既有的高度、成长和滚动语义；表格仍使用 `AppDataTable`，长任务、多依赖聚合和纯生命周期遮罩按四态入口矩阵处理 |
 | `AppTableColumn` | `frontend/src/components/AppTableColumn.vue`、`frontend/src/components/table/adaptiveColumnWidth.ts` | 表格列运行时组件，根据结构类型、字段名和标签推导语义角色，以稳定字符权重结合排序/筛选控件计算弹性最小宽，并统一推导表头/单元格对齐、数字排版、单行表头及同行元信息 | `data-table`、`wide-table` 的稳定列宽、语义对齐和表头能力；不是用户可配置字段 | 页面表格列统一复用，禁止传 `width/min-width/align/header-align`；确有歧义的动态标签只传 `role`；文本、代码、名称和日期左对齐，排名、结构、状态与操作居中，普通数值右对齐，横向比较矩阵数值使用 `comparison-number` 居中，两类数值均使用等宽数字，表头与主值共用基准线；日期、单位或短口径摘要传 `header-meta`；单元格主内容前存在紧凑控件时传 `leading-controls`，组件统一预留宽度并让表头对齐主内容；单元格使用多选 `AppFilterSelect` 时，标签模式由列与选择器声明相同的 `filterSelectVisibleTagCount / visibleTagCount`，数量摘要模式则声明相同的 `filterSelectDisplayMode=count / displayMode=count`；列宽完整承载目标内容，总列宽超出表格时由表体横向滚动，不裁切交互控件；自定义 header slot 只用于复选、帮助入口等真实交互结构；呈现事实只维护在 `ADAPTIVE_COLUMN_RULES`，调用方私有对齐属性和表格 CSS 由契约测试阻止 |
 | `AppOverflowTooltipHost` | `frontend/src/components/AppOverflowTooltipHost.vue`、`frontend/src/components/overflow/overflowTooltip.ts` | 全站真实截断原文提示宿主 | 无直接系统组件种类 | 唯一全局挂载于 App；只识别真实截断，不接管原生 title；触发、原文来源与边界见本节提示契约 |
@@ -587,6 +588,17 @@ Key Characteristics：
 - 提示复用 `app-wrapping-popper` 的主题、排版和空间边界；简短说明与结构化帮助保留各自组件角色，不在消费页面私设颜色、字号或动效。
 - `npm run check:tooltips` 按 Vue/TS AST 检查原生/透传 title 和旧自动接口，已接入生产构建；组件标题、插槽和 iframe 名称不误报。定向测试覆盖默认不显示、显式说明、真实截断、禁用原因、焦点/鼠标区分、点击关闭及监听清理；内置浏览器复核实际主题、位置和消失行为。
 
+### 滚动条显隐
+
+- 自建滚动区域统一使用 `AppScrollArea`；普通表格、宽表以及 Select、Dropdown、Cascader 等内部 `ElScrollbar` 统一由 `installScrollbarPolicy` 接管。导航与工作页签遵循同一规则，不保留始终隐藏的例外。禁止页面直接使用 `ElScrollbar`、原生 `overflow: auto/scroll`、私有滚动条样式或显隐参数。
+- 横纵方向分别判断真实溢出；无溢出时不显示滑块或空轨道。悬停、所属区域内的键盘焦点、用户实际滚动和滑块拖动任一成立时显示；鼠标点击获得的普通焦点不锁定显示。滚轮、触摸移动、滚动按键或轨道操作提供滚动意图，实际滚动后才进入保持期；菜单切换、缓存激活、程序定位与尺寸收敛引起的位置变化不主动点亮滚动条。触摸不产生粘滞悬停，实际滚动后同样短暂显示。停止滚动后的保持时长和溢出容差唯一维护在 `components/scroll/scrollbarPolicy.ts`。
+- 指针离开区域时，仍在拖动的滑块保持显示；释放、取消、窗口失焦或页面隐藏时清理瞬态状态。嵌套滚动按实际 viewport 分别记账，不把子区域滚动算到父区域；缓存页恢复后重新测量，不恢复旧的悬停或拖动状态。
+- `LayoutHost` 操作区在正常空间保持自然高度；极低窗口中若操作区将挤掉主区，操作区通过 `AppScrollArea` 自身收缩内滚，给主区至少保留两行密度控件的可达窗口。主组件的 `minH` 不变，不足时继续走既有主内容区滚动兜底。
+- 显隐仅控制滑块和轨道的透明度、可见性与命中，禁止改变内容宽高、列宽或滚动位置。应用内与受控浮层的轨道在公共策略接管前默认隐藏，避免初始化或缓存切换闪现。隐藏轨道不拦截点击；可见滑块和轨道继续复用组件库的拖动、点击与界面比例坐标换算。没有可聚焦子控件且发生溢出的 viewport 由公共层补齐键盘滚动入口，表单和导航不增加额外 Tab 停靠点。
+- 视觉 token 唯一维护在 `styles/scrollbar.css`，颜色沿用现有主题中性色；减少动画偏好取消过渡，强制颜色模式在有溢出时保持显示。文本域等原生编辑控件保留浏览器滚动；图表画布内平移/缩放、浏览器自身界面不属于内容滚动条。
+- `AppScrollArea` 的外壳只承担尺寸、表面和布局项职责；内容层通过 `--app-scroll-*` 布局变量或 `contentStyle` 承接 flex/grid、间距和内边距，禁止使用后代宽泛选择器影响嵌套实例。`as` 保留原生语义或既有四态/表单组件；不增加业务状态分支。位置恢复与测量通过组件暴露的 `viewport`、`scrollTo`、`setScrollTop`、`setScrollLeft` 和 `update` 操作真实滚动元素，不再读写外壳的 `scrollTop`。
+- `npm run check:scrollbars` 是构建门禁，检查未接入的原生滚动区、私有显隐样式及消费方覆盖参数；行为、真实库组件和资源清理由定向 Vitest 覆盖。临时内置浏览器复核正文、表格、抽屉和导航的实际进出、滚动与拖动，不能只用样式文本断言替代交互验收。
+
 ### 金额展示与输入
 
 - 金额格式化的唯一前端事实源是 `frontend/src/utils/money.ts`。本金、资金、现金、资产、成交金额、费用、盈亏、市值、净流入、价格，以及图表中的金额轴和金额 tooltip，必须消费 `formatMoney` 或该文件导出的缩放/输入 helper；页面和业务组件不得再定义私有 `money`、`wan`、金额 `toLocaleString` 或正则分组逻辑。
@@ -709,6 +721,7 @@ Key Characteristics：
 - 全站动效时长与缓动统一由 `styles/global.css` 的 `--app-motion-content`（180ms）、`--app-motion-page`（220ms）、`--app-motion-collapse`（200ms）、`--app-motion-distance`（4px）与 `--app-motion-ease` 管理；时长固定使用 ms，不作为页面配置或视觉预设字段。
 - 工作区页面切换由 `WorkspaceRouteView` 消费 `directives/reveal.ts` 的 `vReveal`，仅在路径变化时对真实页面根节点短淡入并从下方 4px 归位；不增加布局外壳、不等待旧页离场、不改变 KeepAlive 身份、滚动位置或图表恢复逻辑。同路径 query 变化不重复播放。
 - `AppAsyncRegion` 与 `AppDataTable` 共用 `vReveal`，从无内容进入有效内容时原位短淡入（初始透明度 0.35，避免整块突然消失），共享加载遮罩按相同时长淡出；同一区域已有内容刷新、轮询和数值更新不重播。错误和上下文切换立即撤下旧内容，禁止为离场动画延迟清除、双份叠放旧新数据或人为等待骨架播放完毕。
+- `WorkspaceTabs` 的摘要行与页签同处横向栏，栏高直接切换到最终尺寸，禁止对高度做连续动画以免正文图表和滚动区逐帧重算；页签透明度和箭头旋转复用折叠时长与缓动，提供轻量收展反馈；页签沿用 `v-show` 保留实例，收起意图生效时立即设置 `inert` 和 `aria-hidden`，避免离场动画期间仍可聚焦或点击。快速反向切换交由 CSS/Vue Transition 接续，减少动态效果时即时完成，不增加计时器。
 - `SettingsGroup`、`AppSummaryDisclosureCard` 复用 `ElCollapseTransition` 与 `app-motion-collapse`，正文折叠和箭头使用同一时长。保留原来的 v-show/v-if 生命周期，不因动效重置编辑值或改变懒挂载行为。
 - `PageSegmented` 的常规分段保持选中底色渐变，tabs 外观通过单一下划线跟随受控选中值平移，复用内容时长与缓动；指示器不参与布局、不拦截点击，选项重排跟随真实选中值，无有效选中项时隐藏；tabs 消费点调整间距时使用 `--app-segment-gap`，使网格与指示器位置共用同一值，禁止页面新增私有切换动画。
 <a id="菜单与交互卡片"></a>
@@ -734,7 +747,7 @@ Key Characteristics：
 - “减少动态效果”来自操作系统辅助功能，由浏览器映射为 `prefers-reduced-motion`，不是应用新增设置；只降低运动呈现，不关闭加载状态、禁用状态或交互反馈。
 - 动效只增强反馈，缺少 Web Animations API 时直接显示内容。系统 `prefers-reduced-motion: reduce` 下不播放上述淡入、位移、折叠和选中指示过渡，停止共享骨架动画；偏好在淡入中变化时立即取消动画，恢复正常可见内容。
 - 不给行情数值、大表格行、K线或画布尺寸添加逐项进场、缩放或位移动画。不设置全局 `transition: all`；不使用常驻 `will-change`，动画结束、快速切换和卸载时释放资源。
-- 此入口覆盖工作区页面、标准异步区域、分段控件与上述两类折叠；抽屉、弹窗继续消费组件库原生动效，其他历史局部动效尚不自动统一；菜单与交互卡片按本节单独列出的角色接入。
+- 此入口覆盖工作区页面、标准异步区域、分段控件、工作区栏与上述两类内容折叠；抽屉、弹窗继续消费组件库原生动效，其他历史局部动效尚不自动统一；菜单与交互卡片按本节单独列出的角色接入。
 
 ### 卡片、面板与分区
 

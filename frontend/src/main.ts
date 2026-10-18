@@ -14,6 +14,7 @@ import { initAppNavigation } from './composables/useAppNavigation'
 import { initDisplayScale } from './composables/useDisplayScale'
 import { initLayoutPreset } from './layout'
 import { installElementPlusPopperContainer } from './utils/elementPlusPopperContainer'
+import { installScrollbarPolicy } from './components/scroll/installScrollbarPolicy'
 
 initTheme() // 挂载前确定主题，避免闪烁
 initLayoutPreset() // 挂载前应用内置预设 token（首屏不闪烁）
@@ -30,5 +31,8 @@ app.directive('permission', permission) // 全局 v-permission 按钮级权限�
 // 否则刷新 /login 时，START_LOCATION 会被 App 误判为非 fullscreen，短暂渲染工作台壳。
 void router.isReady().then(() => {
   app.mount('#app')
-  installElementPlusPopperContainer(document.querySelector<HTMLElement>('#app')!)
+  const root = document.querySelector<HTMLElement>('#app')!
+  const stopPoppers = installElementPlusPopperContainer(root)
+  const stopScrollbars = installScrollbarPolicy(root)
+  import.meta.hot?.dispose(() => { stopScrollbars(); stopPoppers() })
 })

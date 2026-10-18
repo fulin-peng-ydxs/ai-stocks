@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppScrollArea from '@/components/AppScrollArea.vue'
 import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowDownBold } from '@element-plus/icons-vue'
@@ -77,7 +78,7 @@ function descendantLeaves(
 </script>
 
 <template>
-  <nav
+  <AppScrollArea as="nav"
     v-if="auth.menusStatus === 'ready' && (level === 'primary' ? menus.length : secondaryMenus.length)"
     class="top-navigation"
     :class="`is-${level}`"
@@ -153,21 +154,18 @@ function descendantLeaves(
         </button>
       </template>
     </template>
-  </nav>
+  </AppScrollArea>
 </template>
 
 <style scoped>
 .top-navigation {
   min-width: 0;
-  display: flex;
-  align-items: center;
-  overflow-x: auto;
-  scrollbar-width: none;
+  --app-scroll-display: flex;
+  --app-scroll-align: center;
 }
-.top-navigation::-webkit-scrollbar { display: none; }
 .top-navigation.is-primary {
   height: 100%;
-  gap: var(--app-space-1);
+  --app-scroll-gap: var(--app-space-1);
   padding: 0 var(--app-space-3) 0 var(--app-space-control-gap);
 }
 .primary-entry {
@@ -250,7 +248,7 @@ function descendantLeaves(
 .top-navigation.is-secondary {
   flex: none;
   height: var(--app-nav-context-bar-height);
-  gap: var(--app-nav-entry-gap);
+  --app-scroll-gap: var(--app-nav-entry-gap);
   padding: 0 var(--app-space-5);
   border-bottom: 1px solid var(--chrome-border);
   background: var(--chrome-context-bar-bg);

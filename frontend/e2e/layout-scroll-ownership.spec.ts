@@ -10,7 +10,9 @@ async function openPresets(page: import('@playwright/test').Page) {
 
 async function scrollGeometry(page: import('@playwright/test').Page) {
   return page.evaluate(() => {
-    const adaptive = document.querySelector<HTMLElement>('[data-testid="layout-adaptive-region"]')
+    const adaptive = document.querySelector<HTMLElement>(
+      '[data-testid="layout-adaptive-region"] > .app-scroll-area__renderer > .el-scrollbar__wrap',
+    )
     const grow = document.querySelector<HTMLElement>('[data-testid="layout-grow-region"]')
     const main = document.querySelector<HTMLElement>('[data-testid="app-main-surface"]')
     const table = document.querySelector<HTMLElement>('[data-testid="preset-table"]')
