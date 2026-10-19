@@ -119,7 +119,7 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
       />
       <AppScrollArea
         v-else
-        class="rule-master__list"
+        class="rule-master__list app-scroll-paint-space"
         :content-style="{ gridAutoRows: 'max-content' }"
         role="group"
         aria-label="选择交易规则"
@@ -174,9 +174,7 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
   --app-scroll-display: grid;
   --app-scroll-align-content: start;
   --app-scroll-gap: var(--app-space-1);
-  /* 借用外壳既有内距露出首尾浮层，条目占位与原始文字坐标保持不变。 */
-  margin: calc(-1 * var(--app-space-2));
-  --app-scroll-padding-top: var(--app-space-2); --app-scroll-padding-right: var(--app-space-2); --app-scroll-padding-bottom: var(--app-space-2); --app-scroll-padding-left: var(--app-space-2);
+  /* 四向绘制空间复用共享规则，借用外壳内距保持条目原始占位。 */
 }
 .rule-master__item {
   min-height: min-content;

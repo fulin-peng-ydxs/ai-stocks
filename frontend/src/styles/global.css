@@ -16,6 +16,8 @@
   --app-interaction-selected-background: color-mix(in srgb, var(--el-color-primary) 6%, var(--el-bg-color));
   --app-interaction-shadow: 0 4px 12px rgb(0 0 0 / 12%);
   --app-interaction-nav-shadow: 0 2px 4px rgb(0 0 0 / 12%);
+  --app-scroll-paint-gutter: var(--app-space-2);
+  --app-border-raster-inset: 1px;
 }
 
 html.dark {
@@ -642,7 +644,7 @@ body > .el-notification {
   --app-density-table-cell-padding-y: 10px;
   --app-density-overlay-padding: 16px;
   --app-density-overlay-group-gap: 12px;
-  --layout-card-radius: 4px;
+  --layout-card-radius: 10px;
   --layout-control-radius: 6px;
   --layout-page-gap: var(--app-density-page-gap);
   --layout-card-padding: var(--app-density-card-padding);
@@ -670,7 +672,7 @@ body > .el-notification {
   --chrome-bg: #fcfcfc;
   --chrome-bg-soft: #ffffff;
   --chrome-bg-soft-hover: #f3f3f3;
-  --chrome-border: #e5e5e5;
+  --chrome-border: #d4d4d4;
   --chrome-border-strong: #c9c9c9;
   --chrome-border-hover: #1677ff;
   --chrome-text: #44464d;
@@ -698,15 +700,15 @@ body > .el-notification {
   --brand-word-stroke: rgba(255, 255, 255, 0.68);
   --drawer-bg: #ffffff;
   --drawer-card-bg: #ffffff;
-  --drawer-border: #e5e5e5;
+  --drawer-border: #d4d4d4;
   --drawer-text: #44464d;
   --drawer-text-muted: #6e7078;
   --page-settings-bg: #ffffff;
-  --page-settings-border: #e5e5e5;
+  --page-settings-border: #d4d4d4;
   --page-settings-shadow: rgba(20, 24, 32, 0.10);
   --page-settings-section-bg: #ffffff;
-  --page-settings-section-border: #e5e5e5;
-  --page-settings-divider: #e5e5e5;
+  --page-settings-section-border: #d4d4d4;
+  --page-settings-divider: #d4d4d4;
   --page-settings-text: #17181c;
   --page-settings-text-subtle: #44464d;
   --page-settings-text-muted: #6e7078;
@@ -764,6 +766,20 @@ b, strong, h1, h2, h3, h4, h5, h6 {
   gap: var(--layout-page-gap);
 }
 .v-page > * { min-height: 0; }
+/* 借用容器外的既有间距扩展滚动视口，再以内距还原内容坐标。
+   z-index 无法越过滚动裁切边界；首行卡片上浮与投影必须有真实可绘制空间。 */
+.v-page {
+  overflow-clip-margin: var(--app-scroll-paint-gutter);
+}
+.v-page > .app-scroll-area,
+.app-scroll-area.app-dialog__content,
+.app-scroll-area.app-scroll-paint-space {
+  margin: calc(-1 * var(--app-scroll-paint-gutter));
+  --app-scroll-padding-top: var(--app-scroll-paint-gutter);
+  --app-scroll-padding-right: var(--app-scroll-paint-gutter);
+  --app-scroll-padding-bottom: var(--app-scroll-paint-gutter);
+  --app-scroll-padding-left: var(--app-scroll-paint-gutter);
+}
 /* LayoutHost 操作区/单组件主区插槽要求单根；用 .lh-action 把多个固定块（工具栏 + 筛选条等）
    收进一个根容器，纵向自然排列、保留区块间距。 */
 .lh-action { display: flex; flex-direction: column; gap: var(--app-density-section-gap); }
@@ -870,15 +886,15 @@ html.dark {
   --app-section-bg: #292929;
   --el-text-color-primary: #f4f4f4;
   --el-text-color-regular: #d2d2d2;
-  --el-border-color: #353535;
-  --el-border-color-light: #353535;
-  --el-border-color-lighter: #353535;
+  --el-border-color: #454545;
+  --el-border-color-light: #454545;
+  --el-border-color-lighter: #454545;
   --el-fill-color: #303030;
   --el-fill-color-light: #292929;
   --chrome-bg: #1f1f1f;
   --chrome-bg-soft: #171717;
   --chrome-bg-soft-hover: #292929;
-  --chrome-border: #353535;
+  --chrome-border: #454545;
   --chrome-border-strong: #545454;
   --chrome-border-hover: #3b8cff;
   --chrome-text: #d2d2d2;
@@ -902,15 +918,15 @@ html.dark {
   --brand-word-stroke: rgba(0, 0, 0, 0.58);
   --drawer-bg: #171717;
   --drawer-card-bg: #171717;
-  --drawer-border: #353535;
+  --drawer-border: #454545;
   --drawer-text: #d2d2d2;
   --drawer-text-muted: #9a9a9a;
   --page-settings-bg: #171717;
-  --page-settings-border: #353535;
+  --page-settings-border: #454545;
   --page-settings-shadow: rgba(0, 0, 0, 0.42);
   --page-settings-section-bg: #171717;
-  --page-settings-section-border: #353535;
-  --page-settings-divider: #353535;
+  --page-settings-section-border: #454545;
+  --page-settings-divider: #454545;
   --page-settings-text: #f4f4f4;
   --page-settings-text-subtle: #d2d2d2;
   --page-settings-text-muted: #9a9a9a;
@@ -1217,9 +1233,8 @@ html[data-layout-preset] .el-card {
   background-color: var(--el-bg-color);
   border-color: var(--chrome-border);
   color: var(--chrome-text);
-  box-shadow:
-    0 8px 24px color-mix(in srgb, var(--shell-surface-shadow) 54%, transparent),
-    inset 0 1px 0 color-mix(in srgb, white 22%, transparent);
+  /* 顶边与其余边共用主题边框，不以白色内阴影叠出第二条亮边。 */
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--shell-surface-shadow) 54%, transparent);
 }
 html[data-layout-preset] .el-card__body {
   padding: var(--layout-card-padding);

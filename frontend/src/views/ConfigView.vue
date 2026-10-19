@@ -2901,7 +2901,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   padding: var(--app-space-3) var(--app-space-4);
   justify-items: start;
   border: 1px solid var(--el-border-color-light) !important;
-  border-radius: var(--app-radius-card) !important;
+  border-radius: var(--layout-card-radius) !important;
   box-shadow: none !important;
   text-align: left;
 }
@@ -2978,7 +2978,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 :global(.indicator-editor-section--preview) {
   padding: var(--app-space-4);
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--app-radius-card);
+  border-radius: var(--layout-card-radius);
   background: var(--app-section-bg);
 }
 :global(.indicator-preview-controls) {
@@ -2994,7 +2994,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   align-items: center;
   padding: var(--app-space-3);
   border: 1px solid var(--el-color-success-light-7);
-  border-radius: var(--app-radius-card);
+  border-radius: var(--layout-card-radius);
   background: var(--el-color-success-light-9);
 }
 :global(.indicator-preview-result code) { overflow-wrap: anywhere; }

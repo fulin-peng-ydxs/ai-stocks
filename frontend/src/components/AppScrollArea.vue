@@ -17,8 +17,20 @@ watch(scrollbar, (instance, _, onCleanup) => {
   if (instance) onCleanup(registerScrollbarGeometry(instance.$el, () => instance.update()))
 }, { flush: 'post' })
 onUpdated(() => { void nextTick(() => scrollbar.value?.update()) })
+
+/** 响应式断点按内容宽度判定，绘制安全内距不属于业务可用宽度。 */
+function getContentWidth(): number {
+  const view = viewport.value?.firstElementChild as HTMLElement | undefined
+  if (!view) return 0
+  const style = getComputedStyle(view)
+  return Math.max(0, view.clientWidth
+    - (Number.parseFloat(style.paddingLeft) || 0)
+    - (Number.parseFloat(style.paddingRight) || 0))
+}
+
 defineExpose({
   viewport,
+  getContentWidth,
   scrollTo: (options: ScrollToOptions) => scrollbar.value?.scrollTo(options),
   setScrollTop: (value: number) => scrollbar.value?.setScrollTop(value),
   setScrollLeft: (value: number) => scrollbar.value?.setScrollLeft(value),
@@ -51,8 +63,8 @@ defineExpose({
 </template>
 
 <style scoped>
-.app-scroll-area {
-  /* 每个实例重置内容布局变量，禁止从外层滚动区继承。 */
+:where(.app-scroll-area) {
+  /* 每个实例重置继承值；默认值保持低优先级，不能压过调用方的布局与绘制内距。 */
   --app-scroll-display: block;
   --app-scroll-direction: row;
   --app-scroll-wrap: nowrap;
@@ -67,6 +79,8 @@ defineExpose({
   --app-scroll-padding-left: 0;
   --app-scroll-align-content: normal;
   --app-scroll-position: static;
+}
+.app-scroll-area {
   height: auto;
   min-width: 0;
   min-height: 0;

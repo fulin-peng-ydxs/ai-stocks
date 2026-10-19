@@ -901,7 +901,7 @@ function onSubmit() {
   border: 1px solid var(--login-card-edge);
   border-radius: 20px;
   background: var(--login-card-bg);
-  box-shadow: 0 30px 80px var(--login-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.38);
+  box-shadow: 0 30px 80px var(--login-shadow);
   backdrop-filter: blur(18px);
 }
 .login-card::before {

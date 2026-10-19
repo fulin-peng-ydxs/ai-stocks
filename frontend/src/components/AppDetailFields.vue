@@ -16,7 +16,7 @@ withDefaults(defineProps<{ columns?: 1 | 2 | 3 }>(), { columns: 2 })
   margin: 0;
   overflow: hidden;
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--app-radius-card);
+  border-radius: var(--layout-card-radius);
 }
 @container app-viewport (max-width: 760px) {
   .app-detail-fields { grid-template-columns: 1fr; }

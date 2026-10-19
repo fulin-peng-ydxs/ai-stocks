@@ -432,7 +432,14 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.app-split-scroll { height: 100%; min-height: 0; min-width: 0; }
+.app-split-scroll {
+  height: 100%; min-height: 0; min-width: 0;
+  /* 内层独立滚动区保留一个细边的光栅化余量，避免外框与裁切线重合。 */
+  --app-scroll-padding-top: var(--app-border-raster-inset);
+  --app-scroll-padding-right: var(--app-border-raster-inset);
+  --app-scroll-padding-bottom: var(--app-border-raster-inset);
+  --app-scroll-padding-left: var(--app-border-raster-inset);
+}
 .app-split-scroll :deep(> .app-scroll-area__renderer > .el-scrollbar__wrap > .app-scroll-area__content) { height: 100%; }
 .app-split-workspace {
   display: grid;
@@ -440,6 +447,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   height: 100%;
   overflow: clip;
+  overflow-clip-margin: var(--app-border-raster-inset);
 }
 .app-split-workspace--compact {
   overflow-x: hidden;
@@ -449,7 +457,8 @@ onBeforeUnmount(() => {
   display: flex;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: var(--app-border-raster-inset);
 }
 .app-split-workspace__primary > :deep(*),
 .app-split-workspace__secondary > :deep(*),

@@ -63,7 +63,7 @@ function remove(index: number): void {
 .indicator-param-schema__row {
   padding: var(--app-space-3);
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--app-radius-card);
+  border-radius: var(--layout-card-radius);
   background: var(--app-section-bg);
 }
 .indicator-param-schema__row header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--app-space-3); }

@@ -100,6 +100,27 @@ function floatingContractViolations(source: string, file: string): string[] {
 }
 
 describe('字体与间距设计契约', () => {
+  it('所有卡片圆角变量均有定义，外框不叠加白色顶部亮边', () => {
+    const styles = sourceFiles(SRC_DIR).flatMap(file =>
+      styleBlocks(file).map(source => ({ file, source })))
+    const defined = new Set(styles.flatMap(({ source }) =>
+      [...source.matchAll(/(--(?:app|layout)-[\w-]+)\s*:/g)].map(match => match[1])))
+    const missing: string[] = []
+    const highlights: string[] = []
+    for (const { file, source } of styles) {
+      for (const declaration of source.matchAll(/border(?:-[\w-]+)?radius\s*:\s*([^;{}]+)/g)) {
+        for (const token of declaration[1].matchAll(/var\((--(?:app|layout)-[\w-]+)/g)) {
+          if (!defined.has(token[1])) missing.push(`${relative(SRC_DIR, file)}: ${token[1]}`)
+        }
+      }
+      if (/box-shadow\s*:[^;}]*inset\s+0\s+1px[^;}]*(?:\bwhite\b|rgba?\(255\s*,\s*255\s*,\s*255)/.test(source)) {
+        highlights.push(relative(SRC_DIR, file))
+      }
+    }
+    expect(missing).toEqual([])
+    expect(highlights).toEqual([])
+  })
+
   it('浮起只接入明确交互角色，视觉层不接管点击并提供禁用与减弱动效边界', () => {
     const css = read(join(SRC_DIR, 'styles/global.css'))
     for (const file of [

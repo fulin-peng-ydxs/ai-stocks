@@ -1535,7 +1535,6 @@ const menuPageTitle = useMenuPageTitle()
   border: 1px solid var(--el-border-color);
   border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
 }
 .chart-panel {
   display: flex;

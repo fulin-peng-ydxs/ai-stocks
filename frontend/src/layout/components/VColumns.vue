@@ -24,7 +24,9 @@ function pickColumns(width: number): number {
 
 onMounted(() => {
   if (!scrollArea.value?.viewport) return
-  const apply = () => scrollArea.value?.viewport && (columns.value = pickColumns(scrollArea.value?.viewport.clientWidth))
+  const apply = () => {
+    if (scrollArea.value) columns.value = pickColumns(scrollArea.value.getContentWidth())
+  }
   apply()
   ro = new ResizeObserver(apply)
   ro.observe(scrollArea.value?.viewport)
