@@ -21,11 +21,9 @@ class ShareCapitalService:
     @staticmethod
     def review_predicate():
         """缺失和非空不一致共用同一选择条件；容差与市值质检一致。"""
-        return (
-            "s.total_share IS NULL OR s.float_share IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL "
-            f"OR abs(m.total_mv-s.total_share*b.close)>greatest(abs(m.total_mv)*{MV_REL_TOLERANCE},1) "
-            f"OR abs(m.float_mv-s.float_share*b.close)>greatest(abs(m.float_mv)*{MV_REL_TOLERANCE},1)"
-        )
+        from backend.services.capital_quality import capital_predicates
+
+        return " OR ".join(f"({sql})" for sql in capital_predicates().values())
 
     def review_candidates(self, start, end, *, codes=None, limit=50, interval_days=7):
         """历史缺口公平轮询；复用采集日志持久化尝试时间，不让无变化复查刷新数据版本。"""
@@ -34,13 +32,17 @@ class ShareCapitalService:
         now = datetime.now()  # noqa: DTZ005 -- 与既有日志字段保持同一时间口径
         params = [start, end] + ([codes] if codes else []) + [now, interval_days, limit]
         return self.c.query_df(
-            "WITH candidates AS (SELECT b.code,count(*) issue_rows FROM daily_bar b "
+            "WITH candidates AS (SELECT b.code,count(*) issue_rows,min(b.trade_date) issue_start,"
+            "max(b.trade_date) issue_end FROM daily_bar b "
             "LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
             "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE b.trade_date BETWEEN ? AND ? "
             f"AND ({self.review_predicate()}) {condition} GROUP BY b.code), "
-            "attempts AS (SELECT substring(source,16) code,max(updated_at) last_attempt, "
-            "arg_max(status,updated_at) status FROM data_update_log "
-            "WHERE starts_with(source,'capital_review:') GROUP BY source) "
+            "logs AS (SELECT split_part(source,':',2) code,updated_at,status,date_start,date_end "
+            "FROM data_update_log WHERE starts_with(source,'capital_review:') "
+            "OR starts_with(source,'capital_collect:')), "
+            "attempts AS (SELECT c.code,max(l.updated_at) last_attempt,arg_max(l.status,l.updated_at) status "
+            "FROM candidates c JOIN logs l ON l.code=c.code AND l.date_start<=c.issue_start "
+            "AND l.date_end>=c.issue_end GROUP BY c.code) "
             "SELECT c.* FROM candidates c LEFT JOIN attempts a USING(code) "
             "WHERE a.last_attempt IS NULL OR a.last_attempt <= ?::TIMESTAMP - "
             "(CASE WHEN a.status='failed' THEN 1 ELSE ? END)*INTERVAL '1 day' "
@@ -324,7 +326,7 @@ class ShareCapitalService:
                 f"WHERE s.{field}_share>0 AND v._raw_close>0 AND isfinite(v._raw_close) "
                 f"ON CONFLICT (code,trade_date) DO UPDATE SET {col}=excluded.{col}, "
                 f"{col}_source=excluded.{col}_source WHERE daily_metrics.{col} IS NULL "
-                f"OR daily_metrics.{col}<=0 OR starts_with(daily_metrics.{col}_source,'computed:')"
+                f"OR daily_metrics.{col}<=0 OR NOT isfinite(daily_metrics.{col}) OR starts_with(daily_metrics.{col}_source,'computed:')"
             )
 
         # 跨源口径冲突时撤回计算值，保护既有源端/未知来源值；两项先算完再校验，

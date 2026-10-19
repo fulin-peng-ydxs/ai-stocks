@@ -858,6 +858,11 @@ def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
         result = ing.ingest_delisted(years=normalized.get("years"), ctx=ctx)
         result["basic_rows"] = basic_rows
 
+    if recipe in {"history_backfill", "range_refetch", "share_capital_history", "valuation_history",
+                  "valuation_gaps", "valuation_invalid_history", "delisted_history"}:
+        from backend.services.capital_quality import CapitalQualityService
+        # 批处理最后统一收敛台账，包括无需联网的重算和已不再进入缺口队列的股票。
+        result["capital_quality"] = CapitalQualityService(ing.c).sync(codes)
     if normalized.get("verified_facts"):
         result["verified_fact_rows"] = len(normalized["verified_facts"])
     if result.get("skipped"):
@@ -927,7 +932,8 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
     base_count = sum(int(q.get(k, 0)) for k in
             ("abnormal_change_rows", "price_volume_mismatch_rows", "adj_jump_rows",
              "mv_missing_rows", "mv_gap_rows", "mv_invalid_rows",
-             "data_gap_rows", "stale_rows", "st_status_missing_rows",
+             "capital_gap_rows", "capital_invalid_rows", "capital_mismatch_rows",
+             "data_gap_rows", "history_data_gap_rows", "stale_rows", "st_status_missing_rows",
              "st_status_approximate_rows", "st_status_mismatch_rows"))
     market_index = q.get("market_index") or {}
     b = q.get("board") or {}
@@ -937,7 +943,10 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
             f"复权跳变 {q.get('adj_jump_rows', 0)}、"
             f"市值缺失 {q.get('mv_missing_rows', 0)}、市值缺口 {q.get('mv_gap_rows', 0)}、"
             f"市值非法 {q.get('mv_invalid_rows', 0)}、"
-            f"缺口 {q.get('data_gap_rows', 0)}、滞后 {q.get('stale_rows', 0)}、"
+            f"历史股本市值缺失 {q.get('capital_gap_rows', 0)}、"
+            f"股本市值非法 {q.get('capital_invalid_rows', 0)}、"
+            f"股本市值不一致 {q.get('capital_mismatch_rows', 0)}、"
+            f"历史缺口 {q.get('history_data_gap_rows', 0)}、近端缺口 {q.get('data_gap_rows', 0)}、滞后 {q.get('stale_rows', 0)}、"
             f"ST缺失 {q.get('st_status_missing_rows', 0)}、"
             f"ST非权威 {q.get('st_status_approximate_rows', 0)}、"
             f"ST投影不一致 {q.get('st_status_mismatch_rows', 0)}、"
@@ -950,7 +959,7 @@ def _h_checkup(params: dict, ctx: TaskContext) -> dict:
     """数据结构体检（DataVerifier）：本地 SQL 的结构/价格正确性/字段契约/板块数据核查，返回结构化报告。
 
     与质检（_h_verify 写台账+修复闭环）互补：体检覆盖全历史结构、完整性和字段关系；
-    质检按可操作窗口聚合问题并写台账。体检只读、不写台账，cross=True 时附加联网交叉验证
+    股本市值质检覆盖全历史，其余类型按各自窗口聚合问题并写台账。体检只读、不写台账，cross=True 时附加联网交叉验证
     （默认关闭）。
     """
     from backend.services.data_verify import DataVerifier
@@ -1185,6 +1194,22 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
         ):
             note = "目标数据已满足复检要求，无需重复采集"
             ctx.log(f"{code or '全源'}：{note}")
+        elif issue_type in ("capital_gap", "capital_invalid", "capital_mismatch"):
+            if rep.recheck_clean(issue_type, code, td, detail=issue_detail):
+                from backend.services.capital_quality import CapitalQualityService
+                CapitalQualityService(c).sync([code])
+                note = "全历史复检已通过，无需重复采集"
+            else:
+                ctx.log(f"恢复(股本市值)：{code} 全历史多来源补采与复检")
+                res = ing.repair_capital_quality(code, ctx=ctx)
+                note = "多来源核验完成"
+                reasons = res.get("diagnostics", {}).get(code, {}).get("remaining", {})
+                if reasons:
+                    from backend.services.capital_quality import REASON_LABELS, reasons_for_issue
+                    reasons = reasons_for_issue(issue_type, reasons)
+                    labels = dict.fromkeys(label for reason in reasons for suffix,label in REASON_LABELS.items()
+                                           if reason.endswith(suffix))
+                    note += "；" + "、".join(labels)
         elif issue_type == "mv_missing":
             ctx.log(f"恢复(L2 字段契约)：拉取 {code} 估值，补市值字段")
             res = _call_with_ctx(ing.ingest_valuation, codes=[code], ctx=ctx)
@@ -1200,16 +1225,16 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
                 f"刷新异常市值 {res.get('total_mv_rows', 0)}/"
                 f"{res.get('target_days', 0)} 天"
             )
-        elif issue_type in ("data_gap", "stale"):
+        elif issue_type in ("data_gap", "stale", "history_data_gap"):
             ctx.log(f"恢复(L4 覆盖鲜活)：按缺口收口重采 {code}（与增量更新同口径）")
-            r = ing.reconcile_gaps(code, ctx=ctx)
+            r = ing.reconcile_gaps(code, ctx=ctx, full_history=issue_type == "history_data_gap")
             if not r["miss"]:
                 note = "无待补缺口（可能已被其它任务补齐）"
             else:
                 affected = r["backfilled"]
                 note = ing.reconcile_note(r)
                 ctx.log(f"重采写入 {r['rows']} 行；{note}"
-                        f"（内部缺口源端无数据者已确认停牌，末尾滞后不强判停牌）")
+                        f"（仅有明确停牌证据者确认停牌，其余保留缺口）")
         elif issue_type in (
             "null_close", "ohl_repaired", "abnormal_change", "price_volume_mismatch"
         ):
@@ -1449,7 +1474,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
     `issue_type` 会在每次真正执行时动态查询当前 open 问题，不把过期问题 ID 固化到调度定义。
     - mv_missing(L2)        → ingest_valuation([code])（补市值字段，不是重拉行情）
     - mv_invalid(L2)        → repair_invalid_valuation(code)（只强制覆盖异常日期）
-    - data_gap/stale(L4)    → 反向重采缺口区间：补回的入库；源端仍无数据的确认为停牌写 stock_suspension（收敛）
+    - data_gap/stale(L4)    → 反向重采缺口区间：补回的入库；取得逐日停牌状态证据后才写 stock_suspension
     - null_close/abnormal   → 重采该单日；adj_jump → 重采该股整段 + 重算复权
     复检由 DataIntegrityReport.recheck_clean 判定：通过 → resolved；未通过 → 保持 open。
     """

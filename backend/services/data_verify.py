@@ -424,6 +424,16 @@ class DataVerifier:
             )
 
     # ── B. 价格正确性 ──
+    def check_history_coverage(self) -> None:
+        from backend.services.history_quality import HistoryQualityService
+        self._cur_group = "A. 结构/完整性"
+        sql, params = HistoryQualityService(self.c).missing_sql()
+        finding = self._finding(sql, params)
+        self._check("全历史日线交易日覆盖", finding.total == 0,
+                    f"目标历史窗口及更早已存历史，含退市股：缺 {finding.total} 个股票交易日",
+                    "按上市至退市存续期核验；只排除已确认停牌。补采为空不能直接认定停牌。",
+                    findings=[finding])
+
     def check_prices(self) -> None:
         self._cur_group = "B. 价格正确性"
         self._say("\nB. 价格正确性")
@@ -632,6 +642,16 @@ class DataVerifier:
             "OR float_available_date>trade_date")
         self._check("逐日股本合法性与点时边界", invalid_shares.total == 0,
                     f"异常 {invalid_shares.total}", findings=[invalid_shares])
+        from backend.services.capital_quality import CAPITAL_LABELS, capital_predicates
+        for kind, predicate in capital_predicates().items():
+            finding = self._finding(
+                "SELECT b.code,b.trade_date,b.close,s.total_share,s.float_share,m.total_mv,m.float_mv "
+                "FROM daily_bar b LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
+                "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE " + predicate)
+            self._check("全历史" + CAPITAL_LABELS[kind], finding.total == 0,
+                        f"异常 {finding.total} 个股票交易日",
+                        "与质量台账、修复复检共用同一规则，含退市股；请在质量页按股本市值类型处理。",
+                        findings=[finding])
         required = [
             ("stock_basic", "name", "", "基础·名称"),
             ("stock_basic", "exchange", "", "基础·交易所"),
@@ -730,8 +750,8 @@ class DataVerifier:
             "在市股·总市值不低于流通市值（万分之一容差）",
             live_mv_inverted.total == 0,
             f"全历史异常 {live_mv_inverted.total} 行；近90交易日台账范围 {recent_mv_inverted} 行",
-            "结构体检覆盖库内全部年份；日常质量台账只覆盖最近90个交易日，"
-            "因此历史异常不会出现在当前台账中。",
+            "结构体检和全历史股本市值台账覆盖全部已有年份；旧 mv_invalid 仅近90个交易日，"
+            "全历史异常可在 capital_invalid 台账中处理。",
             findings=[live_mv_inverted],
         )
 
@@ -1128,6 +1148,7 @@ class DataVerifier:
         print("数据正确性 + 完整性 系统性核查")
         print("=" * 64)
         self.check_structure()
+        self.check_history_coverage()
         self.check_prices()
         self.check_contract()
         self.check_board()
@@ -1155,6 +1176,7 @@ class DataVerifier:
         self.results = []
         self._structured = []
         self.check_structure()
+        self.check_history_coverage()
         self.check_prices()
         self.check_contract()
         self.check_board()

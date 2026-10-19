@@ -265,7 +265,7 @@ TABLE_CATALOG: dict[str, dict] = {
         "fields": [
             {"name": "id", "type": "BIGINT", "name_cn": "序号", "desc": "自增"},
             {"name": "table_name", "type": "VARCHAR", "name_cn": "目标表", "desc": "采集写入的表"},
-            {"name": "source", "type": "VARCHAR", "name_cn": "数据源", "desc": "采集源；capital_review:股票代码记录历史股本轮询"},
+            {"name": "source", "type": "VARCHAR", "name_cn": "数据源", "desc": "采集源；capital_review:股票代码记录历史轮询，capital_collect:股票代码保存各入口股本诊断"},
             {"name": "date_start", "type": "DATE", "name_cn": "起始日", "desc": "本次采集区间起"},
             {"name": "date_end", "type": "DATE", "name_cn": "结束日", "desc": "本次采集区间止"},
             {"name": "row_count", "type": "BIGINT", "name_cn": "行数", "desc": "本次写入行数"},
@@ -885,13 +885,13 @@ _DUCK_FRESHNESS_POLICIES: dict[str, FreshnessPolicy] = {
 
 _DUCK_QUALITY_POLICIES: dict[str, QualityPolicy] = {
     "stock_special_trading_day": QUALITY_NOT_APPLICABLE,
-    "stock_share_capital_daily": QUALITY_NOT_APPLICABLE,  # 独立 checkup 全量检查，尚无问题台账类型
+    "stock_share_capital_daily": QualityPolicy("issue_types", ("capital_gap", "capital_invalid", "capital_mismatch")),
     "stock_basic": QUALITY_NOT_APPLICABLE,
     "daily_bar": QualityPolicy("issue_types", (
         "null_close", "ohl_repaired", "abnormal_change", "price_volume_mismatch",
-        "adj_jump", "data_gap", "stale",
+        "adj_jump", "data_gap", "stale", "history_data_gap",
     )),
-    "daily_metrics": QualityPolicy("issue_types", ("mv_missing", "mv_gap", "mv_invalid")),
+    "daily_metrics": QualityPolicy("issue_types", ("mv_missing", "mv_gap", "mv_invalid", "capital_gap", "capital_invalid", "capital_mismatch")),
     "index_bar": QualityPolicy("issue_types", _MARKET_INDEX_ISSUES),
     "trade_calendar": QUALITY_NOT_APPLICABLE,
     "data_update_log": QUALITY_NOT_APPLICABLE,

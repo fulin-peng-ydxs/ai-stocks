@@ -171,7 +171,7 @@ def test_nonempty_mismatch_is_reviewed_and_attempt_rotation_survives_recreation(
         "600001.SH"
     ]
     MarketRepository(market).log_update(
-        "stock_share_capital_daily", "capital_review:600001.SH", None, None, 2, "checked"
+        "stock_share_capital_daily", "capital_review:600001.SH", date(2026, 1, 1), date(2026, 1, 6), 2, "checked"
     )
     svc = ShareCapitalService(market)
     assert svc.review_candidates(date(2026, 1, 1), date(2026, 1, 6), limit=1).code.tolist() == [
@@ -222,7 +222,7 @@ def test_history_review_uses_shared_collector_and_retains_unresolved_evidence(ma
     )
 
 
-def test_review_only_dispatch_and_param_validation(monkeypatch):
+def test_review_only_dispatch_and_param_validation(monkeypatch, market):
     from backend.services.async_task import _h_stock_ingest
     from backend.services.stock_ingest import normalize_stock_ingest_params
 
@@ -230,6 +230,7 @@ def test_review_only_dispatch_and_param_validation(monkeypatch):
     monkeypatch.setattr(
         "backend.services.ingest.IngestionService",
         lambda: SimpleNamespace(
+            c=market,
             review_capital_history=lambda **kw: calls.append(kw) or {"ok": 1, "fail": 0}
         ),
     )

@@ -66,6 +66,11 @@ def _seed(c):
     c.register_df("_m", metrics)
     c.execute("INSERT INTO daily_metrics (code,trade_date,float_mv,total_mv) SELECT code, trade_date, float_mv, total_mv FROM _m")
     c.unregister("_m")
+    c.execute("INSERT INTO stock_share_capital_daily "
+              "(code,trade_date,total_share,float_share,total_source,float_source,"
+              "total_effective_date,total_available_date,float_effective_date,float_available_date) "
+              "SELECT code,trade_date,1000000000,800000000,'test','test',trade_date,trade_date,trade_date,trade_date "
+              "FROM daily_bar WHERE code='A.SH'")
 
 
 # ── 分层质量模型 + 全局评分（DM-D15）──
@@ -97,7 +102,7 @@ def test_quality_cache_invalidates_when_basic_stock_is_added(client):
         "WHERE code='NEW.SH' AND status='open' ORDER BY issue_type"
     )
 
-    assert issues["issue_type"].tolist() == ["mv_missing", "stale"]
+    assert issues["issue_type"].tolist() == ["history_data_gap", "mv_missing", "stale"]
     assert "滞后 1 个交易日" in issues.loc[issues["issue_type"] == "stale", "detail"].iloc[0]
 
 
@@ -609,7 +614,7 @@ def test_suspension_excluded_from_gap(client):
 
 
 def test_reverse_confirm_suspension(client, monkeypatch):
-    """反向确定：缺口先按漏采重采 → 源端无数据 → 确认停牌入表 → 复检通过解决 → 再扫不复现（收敛）。"""
+    """仅逐日状态明确停牌才可确认；行情空响应本身不是停牌证据。"""
     rep = DataIntegrityReport(client)
     _seed(client)
     rep.scan_quality_issues()
@@ -618,6 +623,9 @@ def test_reverse_confirm_suspension(client, monkeypatch):
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
     monkeypatch.setattr(ingest.IngestionService, "ingest_one_daily",
                         lambda self, code, start, end, *a, **k: 0, raising=True)   # 源端无数据
+    monkeypatch.setattr(ingest.IngestionService, "_fetch_st_status_rows",
+                        lambda *a, **k: ("baostock", pd.DataFrame([{
+                            "trade_date": date(2024, 1, 4), "trade_status": 0}])) )
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
     svc = AsyncTaskService(client)
     t = _wait(svc, svc.create("fix", {"issue_id": iid}))

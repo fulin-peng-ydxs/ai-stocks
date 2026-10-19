@@ -74,10 +74,13 @@ def filter_ignored_issues(
     issue_types: Iterable[str],
     *,
     reconcile_occurrences: bool,
+    scope_codes: Iterable[str] | None = None,
 ) -> list[dict]:
     """过滤有效忽略规则；完整快照可同时收敛已经消失的 occurrence 规则。"""
     types = tuple(dict.fromkeys(str(x) for x in issue_types))
     rules = _active_rules(client, types)
+    if scope_codes is not None and not rules.empty:
+        rules = rules[rules.code.isin(tuple(scope_codes))]
     if rules.empty:
         return issues
 

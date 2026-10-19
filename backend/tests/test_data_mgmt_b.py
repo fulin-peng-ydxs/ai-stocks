@@ -360,6 +360,11 @@ def _seed_market(c):
     c.register_df("_m", metrics)
     c.execute("INSERT INTO daily_metrics (code,trade_date,float_mv,total_mv) SELECT code, trade_date, float_mv, total_mv FROM _m")
     c.unregister("_m")
+    c.execute("INSERT INTO stock_share_capital_daily "
+              "(code,trade_date,total_share,float_share,total_source,float_source,"
+              "total_effective_date,total_available_date,float_effective_date,float_available_date) "
+              "SELECT code,trade_date,1000000000,800000000,'test','test',trade_date,trade_date,trade_date,trade_date "
+              "FROM daily_bar WHERE code='A.SH'")
 
 
 def test_stock_quality_freshness(client):

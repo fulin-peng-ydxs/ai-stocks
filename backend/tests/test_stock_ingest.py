@@ -15,6 +15,14 @@ from backend.services.async_task import (
 from backend.services.stock_ingest import normalize_stock_ingest_params
 
 
+@pytest.fixture
+def capital_sync(monkeypatch):
+    calls = []
+    monkeypatch.setattr("backend.services.capital_quality.CapitalQualityService",
+                        lambda client: SimpleNamespace(sync=lambda codes: calls.append(codes) or {}))
+    return calls
+
+
 class _Ctx:
     def __init__(self):
         self.logs = []
@@ -108,10 +116,11 @@ def test_normalize_stock_ingest_params_rejects_unsafe_combinations(params):
         ({"recipe": "st_status_refresh"}, "refresh_st_status"),
     ],
 )
-def test_stock_ingest_handler_dispatches_recipe(monkeypatch, params, called):
+def test_stock_ingest_handler_dispatches_recipe(monkeypatch, params, called, capital_sync):
     calls = []
 
     class FakeIngestion:
+        c = None
         def update(self, **kwargs): calls.append(("update", kwargs)); return {"ok": 1, "fail": 0}
         def backfill(self, **kwargs): calls.append(("backfill", kwargs)); return {"ok": 1, "fail": 0}
         def ingest_date(self, *args, **kwargs): calls.append(("ingest_date", (args, kwargs))); return {"ok": 1, "fail": 0}
@@ -147,10 +156,11 @@ def test_stock_ingest_handler_marks_partial_failure_resumable(monkeypatch):
     assert "可重试未完成项" in result["message"]
 
 
-def test_stock_ingest_handler_forwards_recipe_parameters(monkeypatch):
+def test_stock_ingest_handler_forwards_recipe_parameters(monkeypatch, capital_sync):
     calls = []
 
     class FakeIngestion:
+        c = None
         def backfill(self, **kwargs):
             calls.append(kwargs)
             return {"ok": 1, "fail": 0}
@@ -177,6 +187,7 @@ def test_stock_ingest_handler_forwards_force_current_day(monkeypatch):
     calls = []
 
     class FakeIngestion:
+        c = None
         def update(self, **kwargs):
             calls.append(kwargs)
             return {"ok": 1, "fail": 0}

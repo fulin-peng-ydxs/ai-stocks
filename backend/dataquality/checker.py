@@ -155,7 +155,11 @@ SEVERITY_BY_TYPE: dict[str, str] = {
     "null_close": "mid",       # 收盘价空/非正被丢弃——原始数据缺损（M2.9 L1 入库闸门）
     "mv_missing": "low",       # 市值字段整股缺失——字段契约不全（M2.9.2 L2）
     "mv_gap": "mid",           # 近端逐日市值字段缺口（total_mv/float_mv）——逐日缺、code 聚合
+    "capital_gap": "mid",
+    "capital_invalid": "high",
+    "capital_mismatch": "mid",
     "mv_invalid": "high",       # 近端市值非正或总市值倒挂超容差——逐日异常、code 聚合
+    "history_data_gap": "mid",
     "data_gap": "mid",         # 存续期缺口（疑似漏采，待重采反向确认）（M2.9.2 L4）
     "stale": "mid",            # 尾部鲜活滞后（最新<全局最新交易日）（M2.9.2 L4）
     "st_status_missing": "high",       # 行情/停牌事实存在但缺逐日 ST 权威事实
@@ -183,7 +187,7 @@ def severity_for(issue_type: str) -> str:
 # L2/L4 为聚合度量（非空率 / 缺口鲜活），不逐行落 issue，仅在 stock_quality / quality_model 计算。
 QUALITY_LAYERS: list[dict] = [
     {"layer": "L1", "name_cn": "入库闸门", "desc": "新采行情的原始/复权响应配对一致，收盘价与开高低合法；除权边界按官方前收盘校准"},
-    {"layer": "L2", "name_cn": "字段契约", "desc": "市值字段完整合法：非空、为正且总市值不低于流通市值（允许万分之一相对误差）"},
+    {"layer": "L2", "name_cn": "字段契约", "desc": "股本与市值全历史完整、合法且相互一致；市值关系允许万分之一相对误差"},
     {"layer": "L3", "name_cn": "正确性", "desc": "复权因子、涨跌停边界及成交价量口径一致"},
     {"layer": "L4", "name_cn": "覆盖鲜活", "desc": "存续期无缺口、数据更新到最新交易日"},
 ]
@@ -192,10 +196,14 @@ ISSUE_LAYER: dict[str, str] = {
     "ohl_repaired": "L1",
     "mv_missing": "L2",
     "mv_gap": "L2",
+    "capital_gap": "L2",
+    "capital_invalid": "L2",
+    "capital_mismatch": "L2",
     "mv_invalid": "L2",
     "abnormal_change": "L3",
     "price_volume_mismatch": "L3",
     "adj_jump": "L3",
+    "history_data_gap": "L4",
     "data_gap": "L4",
     "stale": "L4",
     "st_status_missing": "ST",
@@ -216,11 +224,11 @@ ISSUE_LAYER: dict[str, str] = {
 }
 # 各层落 data_quality_issue 表的离散异常类型（M2.9.2：四层都落表，质检可反复扫并幂等覆盖）。
 L1_ISSUE_TYPES: tuple[str, ...] = ("null_close", "ohl_repaired")
-L2_ISSUE_TYPES: tuple[str, ...] = ("mv_missing", "mv_gap", "mv_invalid")
+L2_ISSUE_TYPES: tuple[str, ...] = ("mv_missing", "mv_gap", "mv_invalid", "capital_gap", "capital_invalid", "capital_mismatch")
 L3_ISSUE_TYPES: tuple[str, ...] = (
     "abnormal_change", "price_volume_mismatch", "adj_jump",
 )
-L4_ISSUE_TYPES: tuple[str, ...] = ("data_gap", "stale")
+L4_ISSUE_TYPES: tuple[str, ...] = ("data_gap", "stale", "history_data_gap")
 ST_ISSUE_TYPES: tuple[str, ...] = (
     "st_status_missing", "st_status_approximate", "st_status_mismatch",
 )

@@ -1807,6 +1807,8 @@ class IngestionService:
             result["capital_review_error"] = str(error)
             if ctx:
                 ctx.log(f"历史股本轮询失败，后续任务重试：{error}", "warn")
+        from backend.services.capital_quality import CapitalQualityService
+        result["capital_quality"] = CapitalQualityService(self.c).sync(codes)
         if ctx:
             ctx.log(f"■ 增量更新完成：成功 {ok}、失败 {fail}，共写入 {total_rows} 行（{n} 只）")
             ctx.log("说明：最新日四字段已补采，历史缺口及股本/市值不一致按配置分批轮询；"
@@ -1835,23 +1837,19 @@ class IngestionService:
         return "源端仍无数据，保持待处理"
 
     def reconcile_gaps(self, code: str, ctx=None, confirm: bool = True,
-                       through: date | None = None) -> dict:
+                       through: date | None = None, full_history: bool = False) -> dict:
         """收口单只股票窗口内的覆盖缺口（增量更新与质量修复-补采共用，统一口径）。
 
-        步骤：窗口内仍缺的开市日 → 窄区间重采（区间收窄到缺口，主源整段无数据时兜底才会触发，
-        治"多日区间主源返回部分数据→兜底不触发"的盲区）→（confirm 时）仍无数据者确认为停牌
-        （写 stock_suspension 收敛）。返回 {miss, backfilled, confirmed, rows}。
-
-        confirm：是否把"重采后仍无数据"确认为停牌。
-          - 质量修复-补采（有人按质检台账把关）传 True：保留"反向确认停牌"收敛语义。
-          - 增量更新自动收尾传 False：只补回，不自动确认——避免把"可能只是源端当日未发布"的最新
-            缺口在全市场范围内误标成不可逆的停牌；真停牌交由质检+补采这条把关路径确认。
-        through：可选的截止日；增量自动收口传入本轮 target_end，防止源端未就绪回退后
-          又被库内局部的当天数据抬高缺口窗口。人工质量修复不传，仍处理全部真实缺口。
+        重采后仍缺的日期必须取得逐日 trade_status=0 证据才确认停牌。
+        full_history 使用全历史应有日期；through 限定本轮目标日，防止跨日扩大范围。
         """
         from backend.services.data_report import DataIntegrityReport
-        rep = DataIntegrityReport()   # 默认 get_client() 单例，与 self.repo.c 同一连接
-        miss = rep.missing_days_for(code)
+        from backend.services.history_quality import HistoryQualityService
+        rep = DataIntegrityReport(getattr(self, "c", None))
+        def missing():
+            return (HistoryQualityService(rep.c).dates(code) if full_history
+                    else rep.missing_days_for(code))
+        miss = missing()
         if through is not None:
             miss = [d for d in miss if d <= through]
         if not miss:
@@ -1867,10 +1865,30 @@ class IngestionService:
             rows = 0
             if ctx:
                 ctx.log(f"缺口收口：{code} {lo}~{hi} 源端仍无行情数据，进入停牌确认判断：{e}", "warn")
-        still = rep.missing_days_for(code)   # 仍缺的开市日（已随新 min_bar 收窄 lo，排除上市前的伪缺口）
+        still = missing()
+        if full_history and still:
+            # 主源部分返回不会触发原有空响应兜底；对残缺区间显式尝试备用源。
+            if ctx:
+                ctx.check_cancel()
+            try:
+                rows += self.ingest_one_daily(code, min(still), max(still), source=self._bao_source(), ctx=ctx)
+            except DataSourceError as exc:
+                if ctx:
+                    ctx.log(f"备用源历史补采未完成：{exc}", "warn")
+            still = missing()
         if through is not None:
             still = [d for d in still if d <= through]
-        confirmed = rep.confirm_suspension(code, still) if (confirm and still) else 0
+        confirmed = 0
+        if confirm and still:
+            _, status_rows = self._fetch_st_status_rows(code, min(still), max(still), ctx=ctx)
+            if status_rows is not None and not status_rows.empty:
+                checked = status_rows.assign(
+                    _day=pd.to_datetime(status_rows.trade_date).dt.date,
+                    _stopped=pd.to_numeric(status_rows.trade_status, errors="coerce").eq(0))
+                # 同一天存在相反或未知状态时，不得选择其中一条停牌记录冒充确认。
+                by_day = checked.groupby("_day")._stopped.all()
+                stopped = set(by_day[by_day].index)
+                confirmed = rep.confirm_suspension(code, [day for day in still if day in stopped])
         if ctx and confirmed:
             ctx.log(f"缺口收口：{code} 已确认停牌 {confirmed} 天")
         # 补回数 = miss 中重采后"确实已有行情"的日期（按 daily_bar 实判）。不能用 miss−still：次新股
@@ -1879,6 +1897,11 @@ class IngestionService:
             "SELECT trade_date FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ?",
             [code, lo, hi])["trade_date"]}
         backfilled = [d for d in miss if d in have_after]
+        # ingest_one_daily 也可能凭权威状态直接确认停牌，不能漏计成“仍无数据”。
+        suspension_after = {pd.Timestamp(day).date() for day in rep.c.query_df(
+            "SELECT trade_date FROM stock_suspension WHERE code=? AND trade_date BETWEEN ? AND ?",
+            [code, lo, hi])["trade_date"]}
+        confirmed = len(set(miss) & suspension_after)
         # 收口补市值（DM 口径统一）：补回了行情的天 total_mv 仍空，而 mv_missing 是整股粒度测不出、
         # ingest_valuation 又整股跳过已有 total_mv 的票 → 这些天会永久缺市值。故对实际补回的股顺带补
         # 一次估值（仅这只股 + 补回区间），一步到位。失败不影响补回主结果。
@@ -1937,7 +1960,7 @@ class IngestionService:
             return {"target_days": 0, "total_mv_rows": 0}
         if ctx:
             ctx.log(f"刷新 {code} 非法市值 {len(dates)} 天：{min(dates)}~{max(dates)}")
-        rows = self._valuation_one(
+        rows = self._collect_capital_one(
             code,
             self._source_for("valuation"),
             min(dates),
@@ -1997,7 +2020,7 @@ class IngestionService:
 
         def _one(item, source) -> int:
             code, dates = item
-            written = self._valuation_one(
+            written = self._collect_capital_one(
                 code, source, min(dates), max(dates), overwrite_dates=dates)
             remaining = self._invalid_valuation_dates(code, window_days=None)
             if remaining:
@@ -2163,7 +2186,7 @@ class IngestionService:
         )
         return result
 
-    def _collect_capital_one(self, code, source, start, end, diagnostics=None):
+    def _collect_capital_one(self, code, source, start, end, diagnostics=None, overwrite_dates=None):
         """历史与日常共用：四字段独立补缺，源端失败不阻断其它源且保持可重试。"""
         from backend.services.share_capital import ShareCapitalService
 
@@ -2171,7 +2194,8 @@ class IngestionService:
         evidence = {}
         count = 0
         try:
-            count = self._valuation_one(code, source, start, end)
+            count = (self._valuation_one(code, source, start, end) if overwrite_dates is None else
+                     self._valuation_one(code, source, start, end, overwrite_dates=overwrite_dates))
             evidence["eastmoney_daily"] = {"reported_mv_rows": count}
         except TaskCancelled:
             raise
@@ -2188,7 +2212,11 @@ class IngestionService:
                 f"AND ({service.review_predicate()})",
                 [code, start, end]).iloc[0, 0]
             if remaining == 0:
+                from backend.services.capital_quality import CapitalQualityService
+                CapitalQualityService(self.c).sync([code])
                 return count
+        if diagnostics is None:
+            diagnostics = {}
         facts = pd.DataFrame()
         get_events = getattr(source, "get_share_capital", None)
         if get_events is not None:
@@ -2323,10 +2351,40 @@ class IngestionService:
                                 "valuation_close": float(source_price) if source_price is not None and pd.notna(source_price) else None,
                                 "share": float(gap[f"{field}_share"]), "mv": float(gap[f"{field}_mv"]),
                             })
+            from backend.services.capital_quality import capital_predicates
+            invalid = self.c.query_df(
+                "SELECT b.trade_date FROM daily_bar b LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
+                "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE b.code=? AND b.trade_date BETWEEN ? AND ? "
+                f"AND ({capital_predicates()['capital_invalid']}) ORDER BY b.trade_date", [code,start,end])
+            if not invalid.empty:
+                reasons["capital_invalid"] = {"count": len(invalid),
+                    "samples": [str(pd.Timestamp(day).date()) for day in invalid.trade_date.head(3)]}
             diagnostics[code] = {"sources": evidence, "errors": errors, "remaining": reasons}
+        # 诊断进入正式质量台账；失败也留下原因，绝不以请求成功代替复检。
+        from backend.services.capital_quality import CapitalQualityService
+        check_thread_cancel()
+        MarketRepository(self.c).log_update(
+            "stock_share_capital_daily", f"capital_collect:{code}", start, end,
+            sum(item["count"] for item in diagnostics[code]["remaining"].values()),
+            "failed" if errors else "checked", json.dumps(diagnostics[code], ensure_ascii=False),
+        )
+        CapitalQualityService(self.c).sync([code])
         if errors:
             raise DataSourceError("；".join(errors))
         return count
+
+    def repair_capital_quality(self, code, ctx=None):
+        """按已有完整历史走共同多源链路；全量含退市股，不把近端通过当历史已修复。"""
+        span = self.c.query_df(
+            "SELECT min(trade_date) lo,max(trade_date) hi FROM daily_bar WHERE code=?", [code]).iloc[0]
+        if pd.isna(span.lo):
+            return {"rows": 0}
+        if ctx:
+            ctx.check_cancel()
+        diagnostics = {}
+        rows = self._collect_capital_one(code, self._source_for("share_capital"),
+                                        pd.Timestamp(span.lo).date(), pd.Timestamp(span.hi).date(), diagnostics)
+        return {"rows": rows, "diagnostics": diagnostics}
 
     def ingest_share_capital(self, codes=None, years=None, concurrency=None, ctx=None):
         """按已有日线覆盖含退市股；不因已有市值跳过股本采集。"""

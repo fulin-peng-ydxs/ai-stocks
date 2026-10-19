@@ -27,7 +27,7 @@ from backend.storage.duckdb_client import DuckDBClient, get_client
 log = get_logger("services.data_report")
 
 # 缺口/鲜活判定的近端窗口（DM-D21）：只在近 N 个开市日内判缺口与滞后；
-# 更早的历史空洞默认即停牌（老数据稳定，真漏采早暴露），不反复上报、不扣分。
+# 更早日期由 history_data_gap 全历史校验；缺记录不等于停牌。
 GAP_WINDOW_DAYS = 90
 MV_INVERTED = mv_inverted_sql("total_mv", "float_mv")
 M_INVERTED = mv_inverted_sql("m.total_mv", "m.float_mv")
@@ -108,9 +108,9 @@ class DataIntegrityReport:
         性能（M2.9.3-E）：不再逐股关联子查询，改为各扫一次的 GROUP BY 聚合 + pandas 合并。
         返回 (DataFrame, latest_trade_date_str)。
         """
-        cols = ["code", "name", "latest_date", "is_fresh", "mv_ok", "mv_detail",
+        cols = ["history_gap_days", "code", "name", "latest_date", "is_fresh", "mv_ok", "mv_detail",
                 "mv_gap_days", "mv_gap_lo", "mv_gap_hi", "mv_invalid_days",
-                "mv_invalid_lo", "mv_invalid_hi", "mv_invalid_detail", "gap_days", "gap_lo",
+                "mv_invalid_lo", "mv_invalid_hi", "mv_invalid_detail", "capital_issues", "capital_detail", "gap_days", "gap_lo",
                 "gap_hi", "stale_days", "stale_lo", "l1_open", "l1_breakdown", "l3_open",
                 "l3_breakdown", "open_total"]
         # 数据变更签名缓存：同一页多接口复用，任一数据变更即失效。
@@ -119,6 +119,7 @@ class DataIntegrityReport:
         sig = self.c.query_df(
             "SELECT (SELECT max(trade_date) FROM daily_bar) latest, "
             "(SELECT count(*) FROM daily_bar) bars, "
+            "(SELECT max(id) FROM data_update_log WHERE table_name IN ('stock_share_capital_daily','daily_metrics','daily_bar') AND status IN ('success','partial')) capital_revision, "
             "dm.metrics, "
             "(SELECT count(*) FROM stock_basic) basics, "
             "(SELECT COALESCE(bit_xor(hash(code, name, list_date, delist_date)), 0) "
@@ -142,10 +143,12 @@ class DataIntegrityReport:
         ).iloc[0]
         # daily_metrics 的行数、空值和非法值在同一次聚合中计算并纳入签名：补市值或修正
         # 非法值后，即便 bars/issues 尚未变化也要让 L2 缓存失效。
-        key = (id(self.c), str(sig["latest"]), int(sig["bars"]),
+        from backend.config import get_effective_settings
+        calendar_sig = self._scalar("SELECT coalesce(bit_xor(hash(trade_date,is_open)),0) FROM trade_calendar")
+        key = (id(self.c), get_effective_settings().datasource.history_years, calendar_sig, str(sig["latest"]), int(sig["bars"]),
                int(sig["metrics"]), int(sig["basics"]), int(sig["basicsig"]),
                int(sig["openi"]), int(sig["openisig"]), int(sig["susp"]),
-               int(sig["mvnull"]), int(sig["mvinvalid"]), int(window_days))
+               int(sig["mvnull"]), int(sig["mvinvalid"]), str(sig["capital_revision"]), int(window_days))
         if _FRAME_CACHE["key"] == key and _FRAME_CACHE["frame"] is not None:
             return _FRAME_CACHE["frame"], _FRAME_CACHE["latest"]
         latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
@@ -253,6 +256,12 @@ class DataIntegrityReport:
                                    for c, g in bars.groupby("code", sort=False)}
         susp_map: dict[str, set] = {c: set(pd.Timestamp(d).date() for d in g["trade_date"])
                                     for c, g in susp.groupby("code", sort=False)}
+        from backend.services.capital_quality import CAPITAL_LABELS, CapitalQualityService
+        capital = CapitalQualityService(self.c).aggregate()
+        capital_map = {code: group for code, group in capital.groupby("code", sort=False)}
+        from backend.services.history_quality import HistoryQualityService
+        history = HistoryQualityService(self.c).aggregate()
+        history_map = dict(zip(history.code, history.missing_days))
         rows = []
         # 列向量迭代（避免 pandas iterrows 在 5000+ 行上的高开销）
         for code, name, ld_raw in zip(stocks["code"].tolist(), stocks["name"].tolist(),
@@ -298,7 +307,12 @@ class DataIntegrityReport:
                 if mvg_both and mvg_both != mvg_total and mvg_both != mvg_float:
                     parts.append(f"二者均缺 {mvg_both} 天")
                 mv_detail = f"近端缺{'、'.join(parts)}（{mvg_lo}~{mvg_hi}）"
-            base = {"code": code, "name": name, "mv_ok": mv_ok, "mv_detail": mv_detail,
+            capital_rows = capital_map.get(code)
+            capital_count = 0 if capital_rows is None else len(capital_rows)
+            capital_detail = "" if capital_rows is None else "；".join(
+                f"全历史{CAPITAL_LABELS[item.issue_type]} {int(item.issue_days)} 天"
+                for item in capital_rows.itertuples())
+            base = {"history_gap_days": int(history_map.get(code, 0)), "capital_issues": capital_count, "capital_detail": capital_detail, "code": code, "name": name, "mv_ok": mv_ok, "mv_detail": mv_detail,
                     "mv_gap_days": mvg_days,
                     "mv_gap_lo": str(mvg_lo) if mvg_lo else None,
                     "mv_gap_hi": str(mvg_hi) if mvg_hi else None,
@@ -359,7 +373,7 @@ class DataIntegrityReport:
         return [d for d in win if d >= lo and d not in have and d not in suspd]
 
     def confirm_suspension(self, code: str, dates: list[date]) -> int:
-        """把"重采后源端仍无数据"的开市日确认为停牌写入 stock_suspension（去重）。"""
+        """保存调用方已核验逐日停牌状态的日期；空行情响应本身不是证据。"""
         if not dates:
             return 0
         from datetime import datetime
@@ -405,7 +419,7 @@ class DataIntegrityReport:
             mv_gap = int(r["mv_gap_days"])
             mv_invalid = int(r["mv_invalid_days"])
             # L2 统一口径：整股有值，且近端无逐日缺口或非法市值。
-            l2_ok = bool(r["mv_ok"]) and mv_gap == 0 and mv_invalid == 0
+            l2_ok = bool(r["mv_ok"]) and mv_gap == 0 and mv_invalid == 0 and r["capital_issues"] == 0
             out.append({
                 "code": r["code"], "name": r["name"], "latest_date": r["latest_date"],
                 "is_fresh": bool(r["is_fresh"]), "total_mv_ok": l2_ok, "gap_days": gap,
@@ -414,15 +428,16 @@ class DataIntegrityReport:
                     "L1": {"name_cn": "入库闸门", "ok": l1 == 0, "issues": l1,
                            "breakdown": r["l1_breakdown"]},
                     "L2": {"name_cn": "字段契约", "ok": l2_ok, "issues": 0 if l2_ok else 1,
-                           "mv_detail": r["mv_detail"],
-                           "mv_gap_days": mv_gap, "mv_gap_lo": r["mv_gap_lo"],
+                           "mv_detail": r["mv_detail"], "capital_detail": r["capital_detail"],
+                           "capital_issues": int(r["capital_issues"]), "mv_gap_days": mv_gap, "mv_gap_lo": r["mv_gap_lo"],
                            "mv_gap_hi": r["mv_gap_hi"], "mv_invalid_days": mv_invalid,
                            "mv_invalid_lo": r["mv_invalid_lo"],
                            "mv_invalid_hi": r["mv_invalid_hi"],
                            "mv_invalid_detail": r["mv_invalid_detail"]},
                     "L3": {"name_cn": "正确性", "ok": l3 == 0, "issues": l3,
                            "breakdown": r["l3_breakdown"]},
-                    "L4": {"name_cn": "覆盖鲜活", "ok": gap == 0 and stale == 0,
+                    "L4": {"name_cn": "覆盖鲜活", "ok": gap == 0 and stale == 0 and r["history_gap_days"] == 0,
+                           "history_gap_days": int(r["history_gap_days"]),
                            "gap_days": gap, "gap_lo": r["gap_lo"], "gap_hi": r["gap_hi"],
                            "stale_days": stale, "stale_lo": r["stale_lo"],
                            "is_fresh": bool(r["is_fresh"])},
@@ -443,18 +458,18 @@ class DataIntegrityReport:
             return {"score": 100, "latest_trade_date": latest_s, "by_layer": empty_layers,
                     "gaps": {"stocks_with_gap": 0, "gap_days_total": 0, "latest_trade_date": latest_s}}
         # L2 统一口径：整股有值，且近端无逐日市值字段缺口或非法值。
-        l2_ok = df["mv_ok"] & (df["mv_gap_days"] == 0) & (df["mv_invalid_days"] == 0)
+        l2_ok = df["mv_ok"] & (df["mv_gap_days"] == 0) & (df["mv_invalid_days"] == 0) & (df["capital_issues"] == 0)
         ok = {
             "L1": df["l1_open"] == 0,
             "L2": l2_ok,
             "L3": df["l3_open"] == 0,
-            "L4": (df["gap_days"] == 0) & (df["stale_days"] == 0),
+            "L4": (df["gap_days"] == 0) & (df["stale_days"] == 0) & (df["history_gap_days"] == 0),
         }
         issues = {
             "L1": int(df["l1_open"].sum()),
             "L2": int((~l2_ok).sum()),
             "L3": int(df["l3_open"].sum()),
-            "L4": int(df["gap_days"].sum() + df["stale_days"].sum()),
+            "L4": int(df["history_gap_days"].sum()),
         }
         by_layer = []
         for spec in QUALITY_LAYERS:
@@ -534,7 +549,7 @@ class DataIntegrityReport:
                 f"FROM {v}")
         return len(df)
 
-    def _upsert_scan_issues(self, issues: list[dict], issue_types: tuple[str, ...]) -> int:
+    def _upsert_scan_issues(self, issues: list[dict], issue_types: tuple[str, ...], *, codes=None) -> int:
         """原地替换扫描型 open 问题：与已存在 open 同键（issue_type+code+trade_date）复用其 id。
 
         不同于 DELETE+重建——后者每次扫描都会重排 open id，破坏修复任务持有的旧 id
@@ -556,12 +571,14 @@ class DataIntegrityReport:
         def _norm_td(v):
             return None if v is None or pd.isna(v) else str(pd.Timestamp(v).date())
 
+        scope = " AND code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
         old = self.c.query_df(
-            f"SELECT id, code, trade_date, issue_type FROM data_quality_issue "
-            f"WHERE status='open' AND issue_type IN ({ph})", list(issue_types))
+            f"SELECT id, code, trade_date, issue_type,status FROM data_quality_issue "
+            f"WHERE status IN ('open','fixing') AND issue_type IN ({ph})" + scope,
+            list(issue_types) + ([codes] if codes is not None else []))
         # 落库前重读通用忽略规则，避免扫描计算期间的人工操作被旧快照覆盖。
         issues = filter_ignored_issues(
-            self.c, issues, issue_types, reconcile_occurrences=True,
+            self.c, issues, issue_types, reconcile_occurrences=True, scope_codes=codes,
         )
 
         key_old: dict[tuple, int] = {}
@@ -593,7 +610,7 @@ class DataIntegrityReport:
             with self.c.temp_view(udf, prefix="qs") as v:
                 self.c.execute(
                     "UPDATE data_quality_issue "
-                    "SET severity=u.severity, detail=u.detail, status='open', detected_at=u.detected_at "
+                    "SET severity=u.severity, detail=u.detail, detected_at=u.detected_at "
                     f"FROM {v} u WHERE data_quality_issue.id=u.id")
         # 已消失问题：同键复用 id 收敛为 resolved，避免重扫重建 id、保留修复审计链路
         old_rows = old.copy()
@@ -754,7 +771,11 @@ class DataIntegrityReport:
                     ),
                 })
         st_rows = self._collect_st_status_issues()
-        issue_rows = ab_rows + price_volume_rows + adj_rows + rows + st_rows
+        from backend.services.capital_quality import CapitalQualityService
+        capital_rows = CapitalQualityService(self.c).issues()
+        from backend.services.history_quality import HistoryQualityService
+        history_rows = HistoryQualityService(self.c).issues()
+        issue_rows = ab_rows + price_volume_rows + adj_rows + rows + st_rows + capital_rows + history_rows
         # 仅台账替换使用短事务：失败回滚保留旧问题，计算期间不锁住轮询。
         with self.c.transaction():
             self._upsert_scan_issues(issue_rows, SCAN_ISSUE_TYPES)
@@ -775,7 +796,11 @@ class DataIntegrityReport:
             "mv_missing_rows": inserted_counts["mv_missing"],
             "mv_gap_rows": inserted_counts["mv_gap"],
             "mv_invalid_rows": inserted_counts["mv_invalid"],
+            "capital_gap_rows": inserted_counts["capital_gap"],
+            "capital_invalid_rows": inserted_counts["capital_invalid"],
+            "capital_mismatch_rows": inserted_counts["capital_mismatch"],
             "data_gap_rows": inserted_counts["data_gap"],
+            "history_data_gap_rows": inserted_counts["history_data_gap"],
             "stale_rows": inserted_counts["stale"],
             "st_status_missing_rows": inserted_counts["st_status_missing"],
             "st_status_approximate_rows": inserted_counts["st_status_approximate"],
@@ -1223,6 +1248,12 @@ class DataIntegrityReport:
     def recheck_clean(self, issue_type: str, code: str | None, trade_date: date | None,
                       window_days: int = GAP_WINDOW_DAYS, detail: str | dict | None = None) -> bool:
         """复检：该 (类型,股,日期) 的问题现在是否已不存在。True=已恢复，可置 resolved。"""
+        from backend.services.capital_quality import CAPITAL_ISSUE_TYPES, CapitalQualityService
+        if issue_type in CAPITAL_ISSUE_TYPES:
+            return CapitalQualityService(self.c).clean(issue_type, code)
+        if issue_type == "history_data_gap":
+            from backend.services.history_quality import HistoryQualityService
+            return HistoryQualityService(self.c).aggregate([code]).empty
         if issue_type == "mv_missing":
             # L2 整股缺失：总市值与流通市值都至少采到过一次；逐日缺口/非法分别复检。
             r = self.c.query_df(

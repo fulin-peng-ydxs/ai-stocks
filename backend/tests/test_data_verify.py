@@ -122,7 +122,7 @@ def test_market_value_contract_rejects_nonpositive_and_inverted_values():
             if item["name"] == "在市股·总市值不低于流通市值（万分之一容差）"
         )
         assert inverted_check["detail"] == "全历史异常 1 行；近90交易日台账范围 0 行"
-        assert "结构体检覆盖库内全部年份" in inverted_check["help"]
+        assert "全历史股本市值台账" in inverted_check["help"]
 
 
 def test_structure_warns_when_valid_ladder_uses_old_st_version():

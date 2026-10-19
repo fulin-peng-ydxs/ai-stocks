@@ -85,3 +85,34 @@ export function checkupIssueFilters(item: CheckupIssueItem) {
     status: item.status === 'unrecorded' ? [] : [item.status],
   }
 }
+
+
+/** 质量列表统一承接结构化诊断；保留旧文本，样例有界，不把接口 JSON 直接展示给用户。 */
+export function qualityDetailText(detail: string): string {
+  try {
+    const payload = JSON.parse(detail)
+    const message = payload?.message ?? payload?.reason
+    if (typeof message !== 'string' || !message) return detail
+    const collection = payload.last_collection
+    if (!collection) return message
+    const samples: string[] = []
+    for (const group of Object.values(collection.diagnostics?.remaining ?? {}) as any[]) {
+      for (const row of [...(group.evidence ?? []), ...(group.exchange_evidence ?? [])]) {
+        let evidence = ''
+        if (row.valuation_close != null) {
+          evidence = `${row.trade_date}：本地收盘 ${row.raw_close}，市值源收盘 ${row.valuation_close}`
+        } else if (row.exchange_total != null) {
+          evidence = `${row.trade_date}：统计总股本 ${row.exchange_total}，已存流通股本 ${row.stored_float}，统计精度 ${row.precision_shares} 股`
+        } else if (row.available_date) {
+          evidence = `${row.trade_date}：生效 ${row.effective_date}，披露 ${row.available_date}`
+        }
+        if (evidence && !samples.includes(evidence) && samples.length < 3) samples.push(evidence)
+      }
+    }
+    const errors = collection.diagnostics?.errors
+    return [message, `最近核验范围：${String(collection.date_start).slice(0, 10)}~${String(collection.date_end).slice(0, 10)}`,
+      ...samples, ...(Array.isArray(errors) && errors.length ? ['来源请求失败，详见关联采集任务日志'] : [])].join('；')
+  } catch {
+    return detail
+  }
+}

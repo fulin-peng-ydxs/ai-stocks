@@ -43,6 +43,7 @@ function toggle(key: string) {
       <ElTag :type="headerType" effect="light">{{ title }}</ElTag>
       <span>{{ report.passed }} 通过 · {{ warningCount }} 提醒项 / {{ report.total }} 检查项</span>
     </header>
+    <p class="checkup-scope">检查范围按各项规则确定：历史数据检查覆盖已入库历史；当前快照、运行就绪度和跨源抽样按各项说明。这里没有统一的近 90 个交易日限制。</p>
     <AppStateBlock v-if="!report.groups.length" state="empty" title="暂无体检明细" description="重新运行数据结构体检后查看结果" />
     <AppDetailSection v-for="group in groups" :key="group.group" :title="group.group">
       <AppSummaryDisclosureCard v-for="check in group.checks" :key="check.key"

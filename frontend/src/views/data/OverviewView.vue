@@ -371,6 +371,7 @@ function layerCell(k: string, lay: any): { type: string; text: string; tip: stri
     const hasMissing = Boolean(lay.mv_detail)
     const hasInvalid = Number(lay.mv_invalid_days || 0) > 0
     const parts: string[] = []
+    if (lay.capital_detail) parts.push(lay.capital_detail)
     if (hasMissing) parts.push(lay.mv_detail)
     if (hasInvalid) {
       const range = lay.mv_invalid_lo
@@ -378,7 +379,7 @@ function layerCell(k: string, lay: any): { type: string; text: string; tip: stri
         : ''
       parts.push(`市值数值异常：${lay.mv_invalid_detail || `${lay.mv_invalid_days} 天不符合字段契约`}${range}`)
     }
-    const text = hasMissing && hasInvalid ? '不达标' : hasInvalid ? '异常' : '缺'
+    const text = lay.capital_issues || (hasMissing && hasInvalid) ? '不达标' : hasInvalid ? '异常' : '缺'
     return {
       type: 'danger',
       text,
@@ -392,6 +393,7 @@ function layerCell(k: string, lay: any): { type: string; text: string; tip: stri
   }
   // L4
   const parts: string[] = []
+  if (lay.history_gap_days) parts.push(`全历史缺口 ${lay.history_gap_days} 天（含近端）`)
   if (lay.gap_days) parts.push(`缺口 ${lay.gap_days} 天${lay.gap_lo ? `（${lay.gap_lo}~${lay.gap_hi}）` : ''}`)
   if (lay.stale_days) parts.push(`滞后 ${lay.stale_days} 天`)
   return { type: 'danger', text: '不达标', tip: (parts.join(' · ') || '覆盖/鲜活不达标') + ' → 点击带区间前往重采' }
@@ -414,6 +416,10 @@ function shouldShowLayer(k: string): boolean {
 function goLayer(k: string, row: any) {
   const lay = row.layers[k]
   if (k === 'L4') {
+    if (lay?.history_gap_days) {
+      router.push({ path: '/data/quality', query: { code: row.code, issue_type: 'history_data_gap' } })
+      return
+    }
     // 带 code + 区间跳采集页（缺口区间，或滞后起点→全局最新），采集页预填后可直接重采
     const lo = lay?.gap_lo || lay?.stale_lo
     const hi = lay?.gap_hi || sq.value?.latest_trade_date
