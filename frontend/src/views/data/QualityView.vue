@@ -15,7 +15,7 @@ import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import {
   getDataQuality, fixQualityIssue, ignoreQualityIssue, restoreQualityMonitoring,
   resetQualityIssue, recoverQualityBatch, ignoreQualityBatch,
-  markDelisted, createTask, getTask,
+  markDelisted, getDelistingInfo, createTask, getTask,
   ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE, sortQualityIssueTypes, SEVERITY_LABEL, ISSUE_STATUS_LABEL, ISSUE_LAYER, LAYER_LABEL,
   RECOVER_ACTION_LABEL,
   type DataQuality, type QualityIssue, type QualityIgnoreScope, type CheckupIssueItem, type CheckupReport,
@@ -53,8 +53,12 @@ const statusFilterOptions = Object.entries(ISSUE_STATUS_LABEL)
   .map(([value, label]) => ({ value, label }))
 const severityFilterOptions = Object.entries(SEVERITY_LABEL)
   .map(([value, label]) => ({ value, label }))
-const issueTypeFilterOptions = sortQualityIssueTypes(Object.keys(ISSUE_TYPE_LABEL))
-  .map((value) => ({ value, label: ISSUE_TYPE_LABEL[value] }))
+const issueTypeFilterOptions = computed(() => {
+  const showHistory = !filters.value.status.length || filters.value.status.some(s => ['resolved', 'ignored'].includes(s))
+  const types = showHistory ? Object.keys(ISSUE_TYPE_LABEL) : [...new Set([...ISSUE_TYPES_ACTIVE, ...filters.value.issue_type])]
+  return sortQualityIssueTypes(types).map(value => ({ value, label: ISSUE_TYPE_LABEL[value]
+    + (ISSUE_TYPES_ACTIVE.includes(value as any) ? '' : '（历史类型）') }))
+})
 // 默认筛选/隐藏已办属业务态偏好，保留 usePageSettings；默认排序与列显隐迁入组件配置层（plan.md §13.3）。
 const qualityDefaults = {
   defaultStatus: 'todo' as 'todo' | 'all' | 'open',
@@ -300,16 +304,25 @@ async function resetOne(row: QualityIssue) {
 }
 
 // 标记退市：应对数据源退市识别不准（一直把已退市股报缺口/滞后）。指定退市日 → 写 delist_date +
-// 解决该股缺口/滞后，覆盖鲜活扫描据 delist_date 自动排除，不再复发。仅缺口/滞后类可用。
-const GAP_TYPES = ['data_gap', 'stale']
+// 重新核验缺口/滞后；退市前仍缺失的历史不能直接关闭。仅缺口/滞后类可用。
+const GAP_TYPES = ['history_data_gap', 'data_gap', 'stale']
 const delistDlg = ref(false)
+const delistRevoke = ref(false)
+const delistReason = ref('')
+const delistInfo = ref<Awaited<ReturnType<typeof getDelistingInfo>> | null>(null)
 const delistRow = ref<QualityIssue | null>(null)
 const delistDate = ref('')
 const delisting = ref(false)
-function openDelist(row: QualityIssue) {
+async function openDelist(row: QualityIssue) {
   delistRow.value = row
-  delistDate.value = (row.trade_date || '').slice(0, 10)   // 截到 YYYY-MM-DD（trade_date 可能带 00:00:00）
-  delistDlg.value = true
+  delistDate.value = ''
+  delistRevoke.value = false
+  delistReason.value = ''
+  try {
+    delistInfo.value = await getDelistingInfo(row.id)
+    delistDate.value = delistInfo.value.delist_date || ''
+    delistDlg.value = true
+  } catch { /* 请求失败时不显示过期资料 */ }
 }
 
 function qualityRowActions(row: QualityIssue): AppRowAction[] {
@@ -323,7 +336,7 @@ function qualityRowActions(row: QualityIssue): AppRowAction[] {
       onClick: () => restoreMonitoring(row),
     }]
   }
-  if (row.status !== 'open' && row.status !== 'fixing') return []
+  if (row.status !== 'open' && row.status !== 'fixing') return GAP_TYPES.includes(row.issue_type) ? [{ key: 'delist', label: '修正退市标记', permission: 'data-quality:fix', onClick: () => openDelist(row) }] : []
   const busy = busyId.value !== null
   const fixingElsewhere = row.status === 'fixing' && busyId.value !== row.id
   return [
@@ -368,11 +381,14 @@ function qualityRowActions(row: QualityIssue): AppRowAction[] {
 }
 async function confirmDelist() {
   if (!delistRow.value) return
-  if (!delistDate.value) { ElMessage.warning('请指定退市日期'); return }
+  if (!delistRevoke.value && !delistDate.value) { ElMessage.warning('请指定正式退市日期'); return }
+  if (!delistReason.value.trim()) { ElMessage.warning('请填写依据或撤销原因'); return }
   delisting.value = true
   try {
-    const r = await markDelisted(delistRow.value.id, delistDate.value)
-    ElMessage.success(`已标记 ${r.code} 于 ${r.delist_date} 退市，解决 ${r.resolved} 项缺口/滞后`)
+    const r = await markDelisted(delistRow.value.id, delistRevoke.value ? null : delistDate.value, delistReason.value.trim())
+    const task = await waitTask(r.task_id)
+    if (task.status !== 'done') { ElMessage.error(task.message || '退市标记更新未完成，请查看任务'); return }
+    ElMessage.success(task.message || '退市标记已更新并重新质检')
     delistDlg.value = false
     await load()
   } catch { /* 拦截器弹错 */ } finally { delisting.value = false }
@@ -486,7 +502,7 @@ onMounted(() => {
   if (typeof code === 'string' && code) { filters.value.code = code; filters.value.status = [] }
   const issueType = route.query.issue_type
   if (typeof issueType === 'string') {
-    filters.value.issue_type = issueType.split(',').filter((x) => ISSUE_TYPES_ACTIVE.includes(x as any))
+    filters.value.issue_type = issueType.split(',').filter((x) => Object.prototype.hasOwnProperty.call(ISSUE_TYPE_LABEL, x))
   }
   load()
 })
@@ -705,21 +721,24 @@ const menuPageTitle = useMenuPageTitle()
     <!-- 标记退市对话框 -->
     <AppDialog v-model="delistDlg" title="标记退市" size="narrow">
       <p class="delist-tip">
-        用于<b>数据源退市识别不准</b>（已退市却仍被当在市股、持续报缺口/滞后）的场景。指定退市日后：
-        写入该股退市日、解决其缺口/滞后问题，之后覆盖鲜活扫描会据退市日自动排除该股，不再复发。
+        用于<b>数据源退市识别不准</b>（已退市却仍被当在市股、持续报缺口/滞后）的场景。请填正式退市日期，不是最后交易日。
+        按正式退市日期重新核验；退市前仍缺失的数据继续保留。人工值不会被普通采集覆盖，撤销后恢复接口值。
       </p>
       <el-form label-width="84px">
         <el-form-item label="股票">
           <span>{{ delistRow?.code }} {{ delistRow?.name }}</span>
         </el-form-item>
-        <el-form-item label="退市日期" required>
+        <el-form-item label="当前资料"><span>最后行情：{{ delistInfo?.last_bar_date || '无' }}；当前退市日：{{ delistInfo?.delist_date || '未设置' }}；接口退市日：{{ delistInfo?.delist_date_reported || '未返回' }}；{{ delistInfo?.delist_date_manual ? '人工确认' : '接口维护' }}</span></el-form-item>
+        <el-form-item label="操作"><el-checkbox v-model="delistRevoke" :disabled="!delistInfo?.delist_date_manual">撤销人工标记，恢复接口值</el-checkbox></el-form-item>
+        <el-form-item v-if="!delistRevoke" label="退市日期" required>
           <AppDatePicker v-model="delistDate" type="date" value-format="YYYY-MM-DD"
-                         format="YYYY年MM月DD日" placeholder="该股最后有效交易日" />
+                         format="YYYY年MM月DD日" placeholder="请选择正式退市日期" />
         </el-form-item>
+        <el-form-item label="依据/原因" required><el-input v-model="delistReason" type="textarea" :maxlength="1000" placeholder="退市依据，或撤销错误标记的原因" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="delistDlg = false">取消</el-button>
-        <el-button type="warning" :loading="delisting" @click="confirmDelist">确认标记退市</el-button>
+        <el-button type="warning" :loading="delisting" @click="confirmDelist">确认更新</el-button>
       </template>
     </AppDialog>
 

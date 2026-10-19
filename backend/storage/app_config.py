@@ -36,6 +36,7 @@ CONFIG_GROUPS: list[dict] = [
         {"path": "datasource.history_years", "label": "回填年限", "type": "int", "min": 1, "max": 30, "desc": "历史行情回填向前覆盖的年数。"},
         {"path": "datasource.update_concurrency", "label": "采集并发数(增量/回填/重拉/估值)", "type": "int", "min": 1, "max": 16, "desc": "单次采集任务允许并发请求的数据分片数。"},
         {"path": "datasource.rate_limit_per_sec", "label": "请求限流(次/秒)", "type": "number", "min": 0.1, "max": 50, "desc": "调用外部公开数据源的每秒请求上限。"},
+        {"path": "datasource.baostock_login_timeout_sec", "label": "BaoStock登录超时(秒)", "type": "number", "min": 1, "max": 600, "desc": "仅限登录等待，登录完成后恢复普通请求超时。"},
         {"path": "datasource.socket_timeout_sec", "label": "请求超时(秒)", "type": "number", "min": 1, "desc": "单个外部数据请求的等待上限。"},
         {"path": "datasource.max_retries", "label": "失败重试次数", "type": "int", "min": 1, "max": 10, "desc": "采集请求失败后的最多重试次数。"},
         {"path": "datasource.retry_backoff_sec", "label": "重试退避(秒)", "type": "number", "min": 0, "max": 60, "desc": "连续重试之间的等待时间。"},

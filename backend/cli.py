@@ -16,11 +16,11 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import date, timedelta
+from datetime import date
 
 from backend.common.logging import get_logger
 from backend.common.timeutil import years_before
-from backend.config import get_settings
+from backend.config import get_settings, get_effective_settings
 
 log = get_logger("cli")
 
@@ -598,14 +598,11 @@ def cmd_delisted(args: argparse.Namespace) -> int:
 
 
 def cmd_purge_suspension_bars(args: argparse.Namespace) -> int:
-    """清理误插入 daily_bar 的停牌日行（volume=0：停牌无成交，却被兜底源写成"直线"行情）。
+    """核验零成交量候选；必须取得明确逐日停牌状态，才允许清理占位行情。
 
-    默认仅预览（dry-run）；--apply 才执行：先把这些 (code, trade_date) 记入 stock_suspension
-    （收敛，质检不再反复上报），再从 daily_bar 与 daily_metrics 删除。
+    默认仅预览；--apply 提交统一 fix 任务，保留删除前行情/市值记录。
     ⚠️ 写操作需独占库——先停掉占用 data/ai_stocks.duckdb 的服务再跑。
     """
-    from datetime import datetime
-
     from backend.storage import get_client
 
     c = get_client()
@@ -615,31 +612,29 @@ def cmd_purge_suspension_bars(args: argparse.Namespace) -> int:
         f"min(trade_date) AS d0, max(trade_date) AS d1 FROM daily_bar WHERE {cond}").iloc[0]
     n = int(s["rows"])
     if n == 0:
-        print("未发现 volume=0 的停牌日行，daily_bar 已干净。")
+        print("未发现零成交量/未知成交量候选行。")
         return 0
-    print(f"待清理停牌日行：{n} 行，涉及 {int(s['codes'])} 只股票，日期 {s['d0']} ~ {s['d1']}")
-    print("样例（前 10 行，应都是 volume=0 的平板行）：")
+    print(f"待核验零成交量行：{n} 行，涉及 {int(s['codes'])} 只股票，日期 {s['d0']} ~ {s['d1']}")
+    print("待核验样例（前 10 行，尚不能认定停牌）：")
     print(c.query_df(
         f"SELECT code, trade_date, open, high, low, close, volume "
         f"FROM daily_bar WHERE {cond} ORDER BY code, trade_date LIMIT 10").to_string(index=False))
     if not args.apply:
-        print("\n[dry-run] 未做任何改动。确认无误后加 --apply 执行（记入 stock_suspension 并删除）。")
+        print("\n[dry-run] 未做任何改动。加 --apply 提交逐日交易状态核验任务，只有证实停牌才清理。")
         return 0
-    # 1) 记入 stock_suspension（仅写库中尚无的，去重）——删除前先记，保证收敛
-    c.execute(
-        "INSERT INTO stock_suspension (code, trade_date, confirmed_at) "
-        f"SELECT DISTINCT b.code, b.trade_date, ? FROM daily_bar b WHERE {cond} "
-        "AND NOT EXISTS (SELECT 1 FROM stock_suspension s "
-        "WHERE s.code = b.code AND s.trade_date = b.trade_date)", [datetime.now()])
-    # 2) 删对应 daily_metrics（停牌日的衍生市值同样无意义）——须在删 daily_bar 之前
-    c.execute(
-        "DELETE FROM daily_metrics WHERE EXISTS (SELECT 1 FROM daily_bar b "
-        "WHERE b.code = daily_metrics.code AND b.trade_date = daily_metrics.trade_date "
-        "AND (b.volume = 0 OR b.volume IS NULL))")
-    # 3) 删 daily_bar 停牌日行
-    c.execute(f"DELETE FROM daily_bar WHERE {cond}")
-    print(f"已完成：记入 stock_suspension 并从 daily_bar/daily_metrics 删除 {n} 行停牌日数据。")
-    print("如需维护衍生结果，请在应用「结果维护」中显式执行对应任务，或配置任务调度。")
+    # 使用同一异步写任务入口，禁止零量直接转停牌或删除行情。
+    from backend.services.async_task import AsyncTaskService
+    import time
+    service = AsyncTaskService()
+    task_id = service.create("fix", {"review_suspensions": True, "purge_candidates": True})
+    print(f"已提交停牌证据核验任务：{task_id}")
+    while True:
+        task = service.get(task_id)
+        if task["status"] not in ("pending", "running"):
+            print(task.get("message"))
+            return 0 if task["status"] == "done" and task.get("result", {}).get("ok", False) else 1
+        time.sleep(0.5)
+
     return 0
 
 

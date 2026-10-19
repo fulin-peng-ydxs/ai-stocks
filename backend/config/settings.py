@@ -59,6 +59,7 @@ class DataSourceConfig(BaseModel):
     max_retries: int = 3
     retry_backoff_sec: float = 2
     socket_timeout_sec: float = 30  # 全局 socket 超时，防请求挂死
+    baostock_login_timeout_sec: float = Field(default=120, gt=0, le=600)  # 登录排队可明显慢于行情查询，单独限定
     cache_enabled: bool = True
     update_concurrency: int = 1     # 增量更新并发线程数（>1 提速；每线程独立限流，总速≈N×rate_limit）
 

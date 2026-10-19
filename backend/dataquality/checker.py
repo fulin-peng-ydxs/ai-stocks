@@ -257,6 +257,15 @@ SCAN_ISSUE_TYPES: tuple[str, ...] = (
 )
 
 
+# 新任务选项仅提供统一类型；旧参数仍通过 QUALITY_ISSUE_TYPES 校验并在执行时映射。
+from backend.dataquality.consolidation import QUALITY_TYPE_ALIASES
+
+ACTIVE_QUALITY_ISSUE_TYPES = tuple(
+    kind for kind in QUALITY_ISSUE_TYPES
+    if kind not in QUALITY_TYPE_ALIASES and kind != "capital_raw_invalid"
+)
+
+
 def layer_for(issue_type: str) -> str:
     return ISSUE_LAYER.get(issue_type, "L3")
 

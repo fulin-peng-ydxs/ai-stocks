@@ -22,6 +22,7 @@ from datetime import date
 import pandas as pd
 
 from backend.common.logging import get_logger
+from backend.services.async_task import TaskCancelled
 from backend.storage.duckdb_client import get_client
 
 log = get_logger("services.pipeline")
@@ -63,7 +64,8 @@ class DailyPipeline:
             try:
                 detail = fn()
                 secs = round(time.time() - t0, 1)
-                if isinstance(detail, dict) and detail.get("ok") is False:
+                if isinstance(detail, dict) and (detail.get("ok") is False
+                                                 or detail.get("stage_failures") or detail.get("fail")):
                     reason = detail.get("failed") or detail.get("message") or "步骤部分失败"
                     steps.append({"step": name, "status": "failed", "secs": secs,
                                   "detail": detail})
@@ -76,6 +78,8 @@ class DailyPipeline:
                 if ctx:
                     ctx.log(f"步骤「{name}」完成（{secs}s）：{detail}")
                 return True
+            except TaskCancelled:
+                raise
             except Exception as e:  # noqa: BLE001
                 secs = round(time.time() - t0, 1)
                 steps.append({"step": name, "status": "failed", "secs": secs, "detail": str(e)})
@@ -88,7 +92,9 @@ class DailyPipeline:
         if not skip_update:
             from backend.services import IngestionService
             if not step("更新数据", lambda: IngestionService().update(codes=codes, ctx=ctx)):
-                return {"ok": False, "steps": steps}
+                # 返回了部分成果时仍需运行后续质检；整体异常无结果才提前停止。
+                if not isinstance(steps[-1]["detail"], dict):
+                    return {"ok": False, "steps": steps}
 
         run_date = self._latest_date()
         if run_date is None:

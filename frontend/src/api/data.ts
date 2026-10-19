@@ -269,9 +269,12 @@ export function resetQualityIssue(issueId: number): Promise<{ id: number; status
   return http.post(`/data/quality/${issueId}/reset`)
 }
 // 标记退市：人工指定退市日，解决该股缺口/滞后（应对数据源退市识别不准）
-export function markDelisted(issueId: number, delistDate: string):
-  Promise<{ code: string; delist_date: string; resolved: number }> {
-  return http.post(`/data/quality/${issueId}/mark-delisted`, { delist_date: delistDate })
+export function getDelistingInfo(issueId: number): Promise<{ code: string; list_date: string | null; delist_date: string | null; delist_date_manual: boolean; delist_date_reported: string | null; last_bar_date: string | null }> {
+  return http.get(`/data/quality/${issueId}/delisting`)
+}
+export function markDelisted(issueId: number, delistDate: string | null, reason: string):
+  Promise<{ task_id: string }> {
+  return http.post(`/data/quality/${issueId}/mark-delisted`, { delist_date: delistDate, reason })
 }
 export function recoverQualityBatch(
   // issue_type/severity 支持多值（数组，后端按 IN 过滤）
@@ -601,9 +604,8 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
 // 当前在用的问题类型（下拉筛选用此顺序；missing_or_suspended 已废弃，不再产出/不再列出）。
 export const ISSUE_TYPES_ACTIVE = [
   'null_close', 'ohl_repaired', 'abnormal_change', 'price_volume_mismatch',
-  'data_gap', 'stale', 'history_data_gap',
+  'history_data_gap', 'stale',
   'adj_jump',
-  'mv_missing', 'mv_gap', 'mv_invalid',
   'capital_gap', 'capital_invalid', 'capital_mismatch',
   'st_status_missing', 'st_status_approximate', 'st_status_mismatch',
   'market_index_gap', 'market_index_gap_daily', 'market_index_invalid',
@@ -622,11 +624,11 @@ export function sortQualityIssueTypes(types: readonly string[]): string[] {
 export const ISSUE_TYPE_LABEL: Record<string, string> = {
   // 展示名统一为「对象·现象」，现象词固定：缺失/缺口(近端缺某日)/滞后(未更新到最新)/非法/异常/跳变/修补/为空。
   null_close: '行情·收盘价为空(丢弃)', ohl_repaired: '行情·开高低修补', mv_missing: '市值·整段缺失',
-  capital_raw_invalid: '来源记录·历史异常', capital_gap: '股本市值·历史缺失', capital_invalid: '股本市值·数值或日期非法',
+  capital_raw_invalid: '来源记录·历史异常', capital_gap: '股本市值·缺失', capital_invalid: '股本市值·数值或日期非法',
   capital_mismatch: '股本市值·不一致',
   mv_gap: '市值·近端缺某日', mv_invalid: '市值·数值非法', abnormal_change: '行情·涨跌幅异常',
   price_volume_mismatch: '行情·价量口径错配', adj_jump: '复权·因子跳变',
-  history_data_gap: '行情·全历史缺口', data_gap: '行情·近端缺某日', stale: '行情·未更新到最新',
+  history_data_gap: '行情·日线缺口', data_gap: '行情·近端缺某日', stale: '行情·未更新到最新',
   st_status_missing: 'ST状态·逐日事实缺失',
   st_status_approximate: 'ST状态·非权威兼容值',
   st_status_mismatch: 'ST状态·日线投影不一致',
@@ -645,6 +647,8 @@ export function taskDisplayLabel(
   params?: Record<string, any> | null,
 ): string {
   const base = TASK_LABEL[taskType as TaskType] ?? taskType
+  if (taskType === 'fix' && params?.manual_delisting) return `${base}·人工退市日期`
+  if (taskType === 'fix' && params?.review_suspensions) return `${base}·停牌证据复查`
   const issueType = taskType === 'fix' && typeof params?.issue_type === 'string'
     ? params.issue_type
     : ''

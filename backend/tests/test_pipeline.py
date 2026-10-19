@@ -781,3 +781,20 @@ def test_source_status_persists_latest_probe_and_keeps_last_success(monkeypatch)
     assert persisted["up"] is False
     assert persisted["last_test_at"] == akshare["last_test_at"]
     assert persisted["last_success_at"] == "2026-09-19T18:00:00+08:00"
+
+
+def test_partial_daily_update_still_runs_quality_and_reports_failure(monkeypatch):
+    from types import SimpleNamespace
+    from backend.services import data_report
+    seen = []
+    monkeypatch.setattr('backend.services.IngestionService', lambda: SimpleNamespace(
+        update=lambda **kw: {'ok':10,'fail':0,'stage_failures':{'valuation':'timeout'}}))
+    monkeypatch.setattr(data_report, 'DataIntegrityReport', lambda c: SimpleNamespace(
+        scan_quality_issues=lambda: seen.append('quality') or {},
+        scan_market_index_quality=lambda: {}, scan_board_quality=lambda: {}))
+    with DuckDBClient(':memory:') as c:
+        init_db(c)
+        c.execute("INSERT INTO daily_bar(code,trade_date,close) VALUES ('A.SH','2026-01-05',10)")
+        result = DailyPipeline(c).run(board=False)
+        assert result['ok'] is False and seen == ['quality']
+        assert [s['status'] for s in result['steps']] == ['failed','ok']

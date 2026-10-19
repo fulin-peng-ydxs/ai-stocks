@@ -1032,7 +1032,7 @@ const menuPageTitle = useMenuPageTitle()
               width="fill"
             >
               <el-option
-                v-for="issueType in qualityIssueTypes"
+                v-for="issueType in [...new Set([...qualityIssueTypes, ...(form.issue_type ? [form.issue_type] : [])])]"
                 :key="issueType"
                 :label="ISSUE_TYPE_LABEL[issueType] ?? issueType"
                 :value="issueType"

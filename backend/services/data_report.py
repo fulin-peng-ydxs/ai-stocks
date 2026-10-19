@@ -739,38 +739,12 @@ class DataIntegrityReport:
         rows = []
         for _, r in frame.iterrows():
             code = r["code"]
-            if not r["mv_ok"]:
-                rows.append({"code": code, "issue_type": "mv_missing",
-                             "detail": f"{r['mv_detail']}（字段契约不全，需补估值/市值数据）"})
-            if int(r["gap_days"]) > 0:
-                rows.append({"code": code, "trade_date": r["gap_lo"], "issue_type": "data_gap",
-                             "detail": f"近{gap_window_days}个交易日内 {int(r['gap_days'])} 天无行情"
-                                       f"（疑似漏采，待重采确认）：{r['gap_lo']}~{r['gap_hi']}"})
             if int(r["stale_days"]) > 0:
                 rows.append({"code": code, "trade_date": r["latest_date"], "issue_type": "stale",
                              "detail": f"数据未更新到最新交易日，滞后 {int(r['stale_days'])} 个交易日"
                                        f"（自 {r['stale_lo']} 起）"})
-        # L2 逐日市值缺口：在市股有日线但市值字段为空/缺行的近端缺口，
-        # 按 code 聚合一条。
-        # （detail 写缺失区间）。直接读同一份 frame 的 mv_gap_days（与概览/逐股 L2 完全统一，
-        # 同窗口同数据），命中多少写多少——与概览口径一致，台账不再静默。
-        for _, r in frame.iterrows():
-            code = r["code"]
-            if bool(r["mv_ok"]) and int(r["mv_gap_days"]) > 0:
-                rows.append({"code": code, "trade_date": r["mv_gap_hi"], "issue_type": "mv_gap",
-                             "detail": f"近{gap_window_days}个交易日内 {int(r['mv_gap_days'])} 天市值字段缺口"
-                                       f"（需补市值）：{r['mv_detail']}"})
-            if int(r["mv_invalid_days"]) > 0:
-                rows.append({
-                    "code": code,
-                    "trade_date": r["mv_invalid_hi"],
-                    "issue_type": "mv_invalid",
-                    "detail": (
-                        f"近{gap_window_days}个交易日内 {int(r['mv_invalid_days'])} 天市值非法"
-                        f"（{r['mv_invalid_lo']}~{r['mv_invalid_hi']}）：{r['mv_invalid_detail']}"
-                    ),
-                })
         st_rows = self._collect_st_status_issues()
+        from backend.dataquality.consolidation import reconcile_legacy_issues
         from backend.services.capital_quality import CapitalQualityService
         capital_rows = CapitalQualityService(self.c).issues()
         from backend.services.history_quality import HistoryQualityService
@@ -778,8 +752,10 @@ class DataIntegrityReport:
         issue_rows = ab_rows + price_volume_rows + adj_rows + rows + st_rows + capital_rows + history_rows
         # 仅台账替换使用短事务：失败回滚保留旧问题，计算期间不锁住轮询。
         with self.c.transaction():
+            reconcile_legacy_issues(self.c)
             CapitalQualityService(self.c).reclassify_legacy()
-            self._upsert_scan_issues(issue_rows, SCAN_ISSUE_TYPES)
+            self._upsert_scan_issues(issue_rows, tuple(t for t in SCAN_ISSUE_TYPES
+                                                   if t not in ("mv_missing", "mv_gap", "mv_invalid", "data_gap")))
         active_rows = self.c.query_df(
             f"SELECT issue_type, count(*) AS n FROM data_quality_issue WHERE status='open' "
             f"AND issue_type IN ({','.join('?' * len(SCAN_ISSUE_TYPES))}) GROUP BY issue_type",

@@ -77,13 +77,38 @@ class CapitalQualityService:
     def __init__(self, client):
         self.c = client
 
-    def aggregate(self, codes=None, *, source_only=False) -> pd.DataFrame:
+    def aggregate(self, codes=None, *, source_only=False, respect_legacy_ignores=False) -> pd.DataFrame:
         """业务异常与来源核验分开聚合；来源异常不计入 L2 或主质量台账。"""
         from backend.services.share_capital_history import historical_joins
         scope = "WHERE code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
         predicates = capital_predicates(include_sources=source_only)
         if source_only:
             predicates = {"capital_source_mismatch": predicates["capital_source_mismatch"]}
+        has_legacy_ignores = respect_legacy_ignores and not source_only and bool(self.c.query_df(
+            "SELECT 1 FROM data_quality_issue WHERE status='ignored' AND coalesce(ignore_active,true) "
+            "AND issue_type IN ('mv_missing','mv_gap','mv_invalid') LIMIT 1"
+        ).shape[0])
+        if has_legacy_ignores:
+            from backend.dataquality.consolidation import (
+                LIVE_STOCK_SQL,
+                RECENT_DAY_SQL,
+                legacy_ignore_sql,
+            )
+            recent = f"b.trade_date>={RECENT_DAY_SQL} AND {LIVE_STOCK_SQL}"
+            missing = ["s.total_share IS NULL", "s.float_share IS NULL"]
+            for field in ("total", "float"):
+                # 旧整段忽略只抑制整段未取得过的对应市值字段，不抑制股本。
+                entire = (f"{legacy_ignore_sql('mv_missing')} AND {LIVE_STOCK_SQL} AND b.code NOT IN "
+                          f"(SELECT code FROM daily_metrics old_m WHERE old_m.{field}_mv IS NOT NULL)")
+                missing.append(f"(m.{field}_mv IS NULL AND NOT (({entire}) OR "
+                               f"({legacy_ignore_sql('mv_gap')} AND {recent})))")
+            predicates['capital_gap'] = ' OR '.join(missing)
+            # 旧非法规则只覆盖近端金额问题；股数/来源日期问题仍需上报。
+            ignored = f"({legacy_ignore_sql('mv_invalid')} AND {recent})"
+            invalid = predicates['capital_invalid']
+            for expression in [f"m.total_mv<m.float_mv*(1-{MV_REL_TOLERANCE})", "m.total_mv<=0", "m.float_mv<=0"]:
+                invalid = invalid.replace(expression, f"({expression} AND NOT {ignored})")
+            predicates['capital_invalid'] = invalid
         flags = ",".join(f"coalesce(({sql}),false) AS {kind}" for kind, sql in predicates.items())
         kinds = ",".join(f"('{kind}',{kind})" for kind in predicates)
         raw_scope = " AND code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
@@ -144,7 +169,7 @@ class CapitalQualityService:
 
     def issues(self, codes=None) -> list[dict]:
         from backend.services.share_capital_history import historical_joins
-        frame = self.aggregate(codes)
+        frame = self.aggregate(codes, respect_legacy_ignores=True)
         if frame.empty:
             return []
         log_sources = [
@@ -244,10 +269,11 @@ class CapitalQualityService:
 
     def sync(self, codes=None) -> dict:
         """复用质量台账的幂等合并；定向补采只收敛指定股票。"""
+        from backend.dataquality.consolidation import reconcile_legacy_issues
         from backend.services.data_report import DataIntegrityReport
-
         rows = self.issues(codes)
         with self.c.transaction():
+            reconcile_legacy_issues(self.c, codes, kinds=("mv_missing", "mv_gap", "mv_invalid"))
             self.reclassify_legacy(codes)
             DataIntegrityReport(self.c)._upsert_scan_issues(rows, CAPITAL_ISSUE_TYPES, codes=codes)
         scope = " AND code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""

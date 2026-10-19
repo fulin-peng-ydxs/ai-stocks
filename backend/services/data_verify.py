@@ -772,7 +772,7 @@ class DataVerifier:
             "在市股·总市值不低于流通市值（万分之一容差）",
             live_mv_inverted.total == 0,
             f"全历史异常 {live_mv_inverted.total} 行；近90交易日台账范围 {recent_mv_inverted} 行",
-            "结构体检和全历史股本市值台账覆盖全部已有年份；旧 mv_invalid 仅近90个交易日，"
+            "结构体检和统一股本市值台账覆盖全部已有年份；旧 mv_invalid 仅保留近90日兼容复检，"
             "全历史异常可在 capital_invalid 台账中处理。",
             findings=[live_mv_inverted],
         )

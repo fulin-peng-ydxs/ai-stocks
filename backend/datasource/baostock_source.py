@@ -11,6 +11,7 @@ baostock 优势（探针实测）：
 
 from __future__ import annotations
 
+import socket
 import threading
 import time
 from contextlib import contextmanager
@@ -141,6 +142,7 @@ class BaostockSource(DataSource):
         self._max_retries = _s.max_retries
         self._retry_backoff_sec = _s.retry_backoff_sec
         self._socket_timeout_sec = _s.socket_timeout_sec
+        self._login_timeout_sec = _s.baostock_login_timeout_sec
         # 限流/重试读生效配置(含前端覆盖)，前端改「请求限流/重试」对新建实例即时生效；
         # 失败回落导入期默认。（baostock 登录态为进程级单连接，仍只能串行使用。）
         try:
@@ -149,11 +151,13 @@ class BaostockSource(DataSource):
             self._max_retries = eff.max_retries
             self._retry_backoff_sec = eff.retry_backoff_sec
             self._socket_timeout_sec = eff.socket_timeout_sec
+            self._login_timeout_sec = getattr(eff, "baostock_login_timeout_sec", self._login_timeout_sec)
         except Exception as exc:  # noqa: BLE001
             log.debug("读取 Baostock 生效配置失败，使用启动基线: %s", exc)
         # 看门狗阈值随 socket 超时联动；测试可下调该属性以缩短等待。
         self._hang_break_sec = (
-            max(float(self._socket_timeout_sec), _HANG_MIN_SOCKET_TIMEOUT_SEC) * _HANG_BREAK_FACTOR
+            max(max(float(self._socket_timeout_sec), _HANG_MIN_SOCKET_TIMEOUT_SEC) * _HANG_BREAK_FACTOR,
+                float(self._login_timeout_sec) + float(self._socket_timeout_sec))
         )
 
     @contextmanager
@@ -184,7 +188,26 @@ class BaostockSource(DataSource):
             except Exception:  # noqa: BLE001
                 pass
             self._logged_in = False
-        lg = bs.login()
+        # SDK 每次 login 都会新建 socket，登录后 settimeout 来不及保护登录收包。
+        # 仅替换 SDK 单例的本次连接器，不修改进程 socket 默认超时，避免影响并发 HTTP。
+        from baostock.common import contants, context
+        from baostock.util.socketutil import SocketUtil
+
+        connector = SocketUtil()
+        previous = connector.__dict__.get("connect")
+        def connect_for_login():
+            context.default_socket = socket.create_connection(
+                (contants.BAOSTOCK_SERVER_IP, contants.BAOSTOCK_SERVER_PORT),
+                timeout=float(self._login_timeout_sec),
+            )
+        connector.connect = connect_for_login
+        try:
+            lg = bs.login()
+        finally:
+            if previous is None:
+                del connector.connect
+            else:
+                connector.connect = previous
         if lg.error_code != "0":
             raise DataSourceError(f"baostock 登录失败: {lg.error_msg}")
         self._logged_in = True
@@ -377,6 +400,9 @@ class BaostockSource(DataSource):
                 "trade_date": raw["trade_date"],
                 "open": raw["open"], "high": raw["high"], "low": raw["low"], "close": raw["close"],
                 "pre_close": raw["preclose"],
+                "reference_pre_close": raw["preclose"],
+                "reference_close": raw["close"],
+                "reference_source": "baostock",
                 "volume": raw["volume"], "amount": raw["amount"],
                 "adj_factor": raw["adj_factor"].fillna(1.0),
                 "turnover_rate": raw["turn"],  # baostock turn 已是百分比
@@ -408,9 +434,10 @@ class BaostockSource(DataSource):
                 "code": code,
                 "trade_date": raw["date"].apply(to_date),
                 "is_st": status.astype("int8").astype(bool),
+                # 未知交易状态绝不能填成 0（停牌）；保留 NaN，交由证据校验拒绝确认。
                 "trade_status": pd.to_numeric(
                     raw["tradestatus"], errors="coerce"
-                ).fillna(0).astype("int8"),
+                ).where(lambda values: values.isin([0, 1])),
             }
         ).sort_values("trade_date").reset_index(drop=True)
 

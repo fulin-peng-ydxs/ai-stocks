@@ -72,7 +72,8 @@ describe('taskDisplayLabel', () => {
   })
 
   it('市值非法复用L2质量台账与异常值刷新映射', () => {
-    expect(ISSUE_TYPES_ACTIVE).toContain('mv_invalid')
+    expect(ISSUE_TYPES_ACTIVE).not.toContain('mv_invalid')
+    expect(ISSUE_TYPES_ACTIVE).toContain('capital_invalid')
     expect(RECOVER_ACTION_LABEL.mv_invalid).toBe('刷新异常市值')
     expect(taskDisplayLabel('fix', { issue_type: 'mv_invalid' }))
       .toBe('质检问题恢复·市值·数值非法')

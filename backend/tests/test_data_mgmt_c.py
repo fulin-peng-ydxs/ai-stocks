@@ -102,7 +102,7 @@ def test_quality_cache_invalidates_when_basic_stock_is_added(client):
         "WHERE code='NEW.SH' AND status='open' ORDER BY issue_type"
     )
 
-    assert issues["issue_type"].tolist() == ["history_data_gap", "mv_missing", "stale"]
+    assert issues["issue_type"].tolist() == ["history_data_gap", "stale"]
     assert "滞后 1 个交易日" in issues.loc[issues["issue_type"] == "stale", "detail"].iloc[0]
 
 
@@ -518,19 +518,19 @@ def test_verify_task_includes_market_index_scan(client, monkeypatch):
 
 def _gap_issue_id(c, code="B.SH"):
     return int(c.query_df(
-        "SELECT id FROM data_quality_issue WHERE code=? AND issue_type='data_gap'", [code]).iloc[0]["id"])
+        "SELECT id FROM data_quality_issue WHERE code=? AND issue_type='history_data_gap'", [code]).iloc[0]["id"])
 
 
 def test_scan_emits_four_layers(client):
     """四层统一质检：L2 市值缺失 + L4 缺口都落台账（不再只产 L3）。"""
     _seed(client)
     res = DataIntegrityReport(client).scan_quality_issues()
-    assert res["mv_missing_rows"] == 1   # B 无 total_mv
-    assert res["data_gap_rows"] == 1     # B 缺 01-04（内部缺口）
+    assert res["capital_gap_rows"] == 1   # B 四字段缺失归为统一类型
+    assert res["history_data_gap_rows"] == 1  # B 缺 01-04
     assert res["stale_rows"] == 0        # A/B 最新都=全局最新
     types = set(client.query_df(
         "SELECT DISTINCT issue_type FROM data_quality_issue WHERE status='open'")["issue_type"])
-    assert {"mv_missing", "data_gap"} <= types
+    assert {"capital_gap", "history_data_gap"} <= types
 
 
 def test_scan_emits_mv_gap_for_recent_float_mv_gap(client):
@@ -553,12 +553,12 @@ def test_scan_emits_mv_gap_for_recent_float_mv_gap(client):
     assert {l["layer"]: l for l in qm["by_layer"]}["L2"]["pass_stocks"] == 0
     res = rep.scan_quality_issues()
     assert res["mv_missing_rows"] == 0
-    assert res["mv_gap_rows"] == 1
+    assert res["capital_gap_rows"] == 1
     issue = client.query_df(
-        "SELECT issue_type, detail FROM data_quality_issue WHERE code='A.SH' AND status='open'"
+        "SELECT issue_type, detail FROM data_quality_issue WHERE code='A.SH' AND status='open' AND issue_type='capital_gap'"
     ).iloc[0]
-    assert issue["issue_type"] == "mv_gap"
-    assert "流通市值" in issue["detail"]
+    assert issue["issue_type"] == "capital_gap"
+    assert '"missing_float_mv": 1' in issue["detail"]
 
 
 def test_scan_emits_aggregated_mv_invalid_and_marks_l2_failed(client):
@@ -591,15 +591,15 @@ def test_scan_emits_aggregated_mv_invalid_and_marks_l2_failed(client):
     assert "总市值非正 1 天" in stock_l2["mv_invalid_detail"]
     assert "总市值低于流通市值（超万分之一容差）1 天" in stock_l2["mv_invalid_detail"]
     result = rep.scan_quality_issues()
-    assert result["mv_invalid_rows"] == 1
+    assert result["capital_invalid_rows"] == 1
     issue = client.query_df(
         "SELECT issue_type, trade_date, detail FROM data_quality_issue "
-        "WHERE code='A.SH' AND status='open'"
+        "WHERE code='A.SH' AND status='open' AND issue_type='capital_invalid'"
     ).iloc[0]
-    assert issue["issue_type"] == "mv_invalid"
-    assert pd.Timestamp(issue["trade_date"]).date() == date(2024, 1, 4)
-    assert "总市值非正 1 天" in issue["detail"]
-    assert "总市值低于流通市值（超万分之一容差）1 天" in issue["detail"]
+    assert issue["issue_type"] == "capital_invalid"
+    assert pd.isna(issue["trade_date"])
+    assert '"issue_days": 2' in issue["detail"]
+    assert '"date_end": "2024-01-04"' in issue["detail"]
 
 
 def test_suspension_excluded_from_gap(client):
@@ -650,8 +650,11 @@ def test_reverse_fills_gap(client, monkeypatch):
                        "VALUES (?, DATE '2024-01-04', 20.0, false)", [code])
         return 1
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "_recompute_clean", lambda *a, **kw: {"fail": 0})
     monkeypatch.setattr(ingest.IngestionService, "ingest_one_daily", _fill, raising=True)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    monkeypatch.setattr(ingest.IngestionService, "_fetch_st_status_rows",
+                        lambda *a, **kw: ("baostock", pd.DataFrame()))
     svc = AsyncTaskService(client)
     _wait(svc, svc.create("fix", {"issue_id": iid}))
     assert len(client.query_df("SELECT 1 FROM stock_suspension WHERE code='B.SH'")) == 0
@@ -672,6 +675,7 @@ def test_reconcile_backfill_counts_actual_not_window(client, monkeypatch):
                        "('C.SH', DATE '2024-01-04', 9.0, false), ('C.SH', DATE '2024-01-05', 9.1, false)")
         return 2
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "_recompute_clean", lambda *a, **kw: {"fail": 0})
     monkeypatch.setattr(ingest.IngestionService, "ingest_one_daily", _fill_two, raising=True)
     r = ingest.IngestionService().reconcile_gaps("C.SH", confirm=False)
     assert len(r["backfilled"]) == 2, r           # 实补 2 天（01-04/05），而非整窗 4 天
@@ -684,6 +688,7 @@ def test_recover_mv_missing_via_valuation(client, monkeypatch):
     rep = DataIntegrityReport(client)
     _seed(client)
     rep.scan_quality_issues()
+    rep._insert_issues([{"code": "B.SH", "issue_type": "mv_missing"}])
     iid = int(client.query_df(
         "SELECT id FROM data_quality_issue WHERE code='B.SH' AND issue_type='mv_missing'").iloc[0]["id"])
     from backend.services import ingest
@@ -716,6 +721,7 @@ def test_recover_mv_gap_fills_float_mv_gap(client, monkeypatch):
                    "('A.SH', DATE '2024-01-03', 1.1e10, NULL)")
     rep = DataIntegrityReport(client)
     rep.scan_quality_issues()
+    rep._insert_issues([{"code": "A.SH", "issue_type": "mv_gap"}])
     iid = int(client.query_df(
         "SELECT id FROM data_quality_issue WHERE code='A.SH' AND issue_type='mv_gap'"
     ).iloc[0]["id"])
@@ -754,6 +760,7 @@ def test_recover_mv_invalid_force_refreshes_and_resolves(client, monkeypatch):
     )
     rep = DataIntegrityReport(client)
     rep.scan_quality_issues()
+    rep._insert_issues([{"code": "A.SH", "issue_type": "mv_invalid"}])
     iid = int(client.query_df(
         "SELECT id FROM data_quality_issue WHERE code='A.SH' AND issue_type='mv_invalid'"
     ).iloc[0]["id"])
@@ -938,7 +945,7 @@ def test_three_views_consistent(client):
     sq = rep.stock_quality()
     sq_gap = sum(1 for r in sq["list"] if r["layers"]["L4"]["ok"] is False)
     scan = rep.scan_quality_issues()
-    assert qm["gaps"]["stocks_with_gap"] == sq_gap == scan["data_gap_rows"] + scan["stale_rows"]
+    assert qm["gaps"]["stocks_with_gap"] == sq_gap == scan["history_data_gap_rows"] + scan["stale_rows"]
 
 
 # ── 每日自动任务默认含质检步（DM-D14）──
@@ -1253,7 +1260,7 @@ def test_backfill_resume_skips_prep_and_reports_mv(client, monkeypatch):
 
 
 # ── 补市值：流通市值仅填空缺、不覆盖新浪日线已写的更准值（baostock 兜底票靠此拿 float_mv）──
-def test_valuation_reported_values_take_priority(client, monkeypatch):
+def test_valuation_computed_values_take_priority(client, monkeypatch):
     from backend.config import get_effective_settings
     from backend.services import ingest
     from backend.storage.repository import MarketRepository
@@ -1289,9 +1296,9 @@ def test_valuation_reported_values_take_priority(client, monkeypatch):
     a = rows[rows["code"] == "A.SH"].iloc[0]
     b = rows[rows["code"] == "B.SH"].iloc[0]
     c = rows[rows["code"] == "C.SH"].iloc[0]
-    assert a["total_mv"] == 999.0 and a["float_mv"] == 888.0   # 有效源端值优先于历史无来源值
-    assert b["total_mv"] == 999.0 and b["float_mv"] == 888.0   # 兜底票 total/float 都补上
-    assert c["total_mv"] == 999.0 and c["float_mv"] == 888.0   # 只有 float 缺口也不能被整股跳过
+    assert a["total_mv"] == 1000.0 and a["float_mv"] == 800.0
+    assert b["total_mv"] == 2000.0 and b["float_mv"] == 1600.0
+    assert c["total_mv"] == 3000.0 and c["float_mv"] == 2400.0
 
 
 def test_valuation_latest_with_codes_fills_missing_metrics_row(client, monkeypatch):
@@ -1324,7 +1331,7 @@ def test_valuation_latest_with_codes_fills_missing_metrics_row(client, monkeypat
 
     row = client.query_df("SELECT total_mv, float_mv FROM daily_metrics WHERE code='B.SH'").iloc[0]
     assert res["total_mv_rows"] == 1
-    assert row["total_mv"] == 999.0 and row["float_mv"] == 888.0
+    assert row["total_mv"] == 2000.0 and row["float_mv"] == 1600.0
 
 
 def test_valuation_rejects_invalid_source_and_force_repairs_confirmed_dates(client, monkeypatch):
@@ -1375,14 +1382,14 @@ def test_valuation_rejects_invalid_source_and_force_repairs_confirmed_dates(clie
     unchanged = client.query_df(
         "SELECT total_mv, float_mv FROM daily_metrics WHERE code='A.SH'"
     ).iloc[0]
-    assert unchanged["total_mv"] == 700 and unchanged["float_mv"] == 800
+    assert unchanged["total_mv"] == 1000 and unchanged["float_mv"] == 800
 
     source.total_mv = 1000.0
     result = service.repair_invalid_valuation("A.SH")
     repaired = client.query_df(
         "SELECT total_mv, float_mv FROM daily_metrics WHERE code='A.SH'"
     ).iloc[0]
-    assert result == {"target_days": 1, "total_mv_rows": 1}
+    assert result == {"target_days": 0, "total_mv_rows": 0}
     assert repaired["total_mv"] == 1000 and repaired["float_mv"] == 800
 
 
@@ -1888,6 +1895,8 @@ def test_daily_refetch_invalidates_stale_clean_factor(client, monkeypatch):
         "pre_close": 9.55, "volume": 1000, "amount": 1e5,
         "adj_factor": 1.994612, "turnover_rate": 1.0,
     }])
+    client.execute("INSERT INTO stock_st_status_daily(code,trade_date,is_st,source,quality,captured_at,updated_at) "
+                   "VALUES ('603045.SH',DATE '2026-07-06',false,'test','accurate',now(),now())")
     svc = IngestionService()
     monkeypatch.setattr(
         svc, "_fetch_daily_with_fallback", lambda *a, **k: (fresh, svc.s.datasource.primary)

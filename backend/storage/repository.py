@@ -65,6 +65,15 @@ class MarketRepository:
 
     # 语义化封装
     def upsert_stock_basic(self, df: pd.DataFrame) -> int:
+        if df is not None and not df.empty and "delist_date" in df:
+            df = df.copy()
+            df["delist_date_reported"] = df["delist_date"]
+            locked = self.c.query_df(
+                "SELECT code,delist_date FROM stock_basic WHERE delist_date_manual=true")
+            if not locked.empty:
+                values = locked.set_index("code")["delist_date"]
+                mask = df.code.isin(values.index)
+                df.loc[mask, "delist_date"] = df.loc[mask, "code"].map(values)
         return self.upsert("stock_basic", df)
 
     def upsert_daily_bar(self, df: pd.DataFrame) -> int:

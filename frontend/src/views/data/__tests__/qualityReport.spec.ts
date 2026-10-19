@@ -53,7 +53,7 @@ describe('质量类型排序', () => {
   it('服务端乱序子集按业务归类，保留未知与历史类型且不修改输入', () => {
     const types = ['capital_gap', 'board_fund_missing', 'mv_gap', 'data_gap', 'capital_raw_invalid', 'future_type']
     expect(sortQualityIssueTypes(types)).toEqual([
-      'data_gap', 'mv_gap', 'capital_gap', 'board_fund_missing', 'capital_raw_invalid', 'future_type',
+      'capital_gap', 'board_fund_missing', 'mv_gap', 'data_gap', 'capital_raw_invalid', 'future_type',
     ])
     expect(types[0]).toBe('capital_gap')
     expect(sortQualityIssueTypes([])).toEqual([])

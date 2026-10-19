@@ -286,6 +286,10 @@ class AsyncTaskService:
         if task_type not in TASK_TYPES:
             raise ValueError(f"未知任务类型: {task_type}（可选 {TASK_TYPES}）")
         params = params or {}
+        if task_type == "fix" and params.get("manual_delisting"):
+            from backend.auth.context import get_current_owner
+            tenant, user = get_current_owner()
+            params = {**params, "manual_delisting": {**params["manual_delisting"], "actor": {"tenant_id": tenant, "user_id": user}}}
         if task_type == "stock_special_trading_day":
             from backend.services.stock_special_trading_day import normalize_special_day_params
 
@@ -728,7 +732,8 @@ def _h_update(params: dict, ctx: TaskContext) -> dict:
     res = IngestionService().update(codes=params.get("codes"), concurrency=_concurrency(params), ctx=ctx)
     if res.get("skipped"):
         return {"message": "主源当日数据未就绪，本次增量未执行", "ingest": res}
-    return {"message": f"更新完成：{res}", "ingest": res}
+    return {"message": f"更新{'部分完成' if res.get('stage_failures') or res.get('fail') else '完成'}：{res}",
+            "ok": not (res.get("stage_failures") or res.get("fail")), "ingest": res}
 
 
 def _h_backfill(params: dict, ctx: TaskContext) -> dict:
@@ -772,7 +777,8 @@ def _h_ingest_codes(params: dict, ctx: TaskContext) -> dict:
             "message": "主源当日数据未就绪，本次指定股票采集未执行",
             "ingest": res,
         }
-    return {"message": f"指定股票采集完成：{res}", "ingest": res}
+    return {"message": f"指定股票采集结果：{res}",
+            "ok": not (res.get("stage_failures") or res.get("fail")), "ingest": res}
 
 
 def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
@@ -880,8 +886,8 @@ def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
     summary = {key: value for key, value in result.items() if key != "diagnostics"}
     message = f"{label}完成：{summary}"
     payload = {"message": message, "recipe": recipe, "ingest": result}
-    if fail:
-        payload["message"] = f"{label}部分完成（{fail} 项失败，可重试未完成项）"
+    if fail or result.get("stage_failures"):
+        payload["message"] = f"{label}部分完成（行情失败 {fail} 项，子阶段失败 {len(result.get('stage_failures', {}))} 项，可重试未完成项）"
         payload["ok"] = False
         ctx.log(payload["message"], "warn")
         return payload
@@ -918,8 +924,12 @@ def _h_rebuild_price_factors(params: dict, ctx: TaskContext) -> dict:
     ctx.log("重算价格因子")
     ctx.progress(0.05, "重算价格因子…")
     codes = params.get("codes")
-    res = IngestionService().rebuild_price_factors(codes=codes, ctx=ctx)
-    return {"message": f"价格因子重算完成：{res}", "rebuild": res}
+    ing = IngestionService()
+    references = ing.refresh_price_references(codes, ctx=ctx) if params.get("refresh_reference") else None
+    if references and (references["errors"] or references["unmatched"]):
+        return {"message": f"参考价核验未完成，保留原因子待重试：{references}", "ok": False, "references": references}
+    res = ing.rebuild_price_factors(codes=codes, ctx=ctx)
+    return {"message": f"价格因子重算完成：{res}", "ok": not res.get("fail"), "rebuild": res, "references": references}
 
 
 def _h_verify(params: dict, ctx: TaskContext) -> dict:
@@ -1163,7 +1173,7 @@ def _reingest_market_index(ing, code: str, start, end, ctx: TaskContext) -> int:
     return int(rows)
 
 
-def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, list, str]:
+def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=None) -> tuple[bool, list, str]:
     """恢复单条质检问题 → 复检 → 回写状态。返回 (复检是否通过, 受影响日期, 文案)。"""
     import pandas as pd
     df = c.query_df(
@@ -1179,6 +1189,8 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
     if current_status != "open":
         raise ValueError(f"仅未处理问题可恢复: id={issue_id}, status={current_status}")
     code, trade_date, issue_type = df.iloc[0]["code"], df.iloc[0]["trade_date"], df.iloc[0]["issue_type"]
+    ledger_type = issue_type
+    issue_type = repair_type or issue_type
     issue_detail = df.iloc[0]["detail"]
     td = None if trade_date is None or pd.isna(trade_date) \
         else pd.Timestamp(trade_date).date()
@@ -1243,6 +1255,11 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
             else:
                 affected = r["backfilled"]
                 note = ing.reconcile_note(r)
+                if r.get("stage_errors"):
+                    related = getattr(ctx, "related_stage_errors", {})
+                    related[code] = r["stage_errors"]
+                    ctx.related_stage_errors = related
+                    note += f"；关联阶段失败（已保留数据并同步股本台账）：{r['stage_errors']}"
                 ctx.log(f"重采写入 {r['rows']} 行；{note}"
                         f"（仅有明确停牌证据者确认停牌，其余保留缺口）")
         elif issue_type in (
@@ -1276,6 +1293,9 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
                 lo, hi = pd.Timestamp(span["lo"]).date(), pd.Timestamp(span["hi"]).date()
                 ctx.log(f"恢复(L3 复权口径)：重采 {code} {lo}~{hi} 整段")
                 ing.ingest_one_daily(code, lo, hi, ctx=ctx)
+                factors = ing._recompute_clean([code], ctx=ctx)
+                if factors["fail"]:
+                    raise RuntimeError(f"{code} 复权清洗因子重算失败")
             else:
                 note = "无行情可重算"
         elif issue_type in (
@@ -1443,10 +1463,23 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
         else:
             ctx.log(f"未知问题类型 {issue_type}，仅复检", "warn")
 
-        clean = rep.recheck_clean(issue_type, code, td, detail=issue_detail)
-    except Exception:
+        scope_clean = rep.recheck_clean(issue_type, code, td, detail=issue_detail)
+        clean = (scope_clean if ledger_type == issue_type else
+                 rep.recheck_clean(ledger_type, code, td, detail=issue_detail))
+    except Exception as error:
         # 恢复中途失败：复位为待处理（清绑定）再上抛，由 _h_fix 计入失败、不污染状态
-        c.execute("UPDATE data_quality_issue SET status='open', fix_task_id=NULL WHERE id=?", [issue_id])
+        try:
+            diagnostic = json.loads(issue_detail or "{}")
+        except (ValueError, TypeError):
+            diagnostic = {"message": issue_detail}
+        if not isinstance(diagnostic, dict):
+            diagnostic = {"message": str(diagnostic)}
+        original = diagnostic.get("base_message", diagnostic.get("message", ""))
+        diagnostic.update(base_message=original, message=f"{original}；最近修复未完成：{str(error)[:500]}",
+                          last_repair={"task_id": ctx.tid, "error": str(error)[:1000],
+                                       "checked_at": datetime.now().isoformat()})
+        c.execute("UPDATE data_quality_issue SET status='open', fix_task_id=NULL,detail=? WHERE id=?",
+                  [json.dumps(diagnostic, ensure_ascii=False), issue_id])
         raise
 
     if clean:
@@ -1472,9 +1505,14 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
                 note += "；关联问题复检失败，请稍后重新质检"
     else:
         c.execute("UPDATE data_quality_issue SET status='open', fix_task_id=NULL WHERE id=?", [issue_id])
+    if ledger_type == "history_data_gap":
+        from backend.services.history_quality import HistoryQualityService
+        HistoryQualityService(c).sync([code])
     msg = (f"已恢复：{code} {note}（复检通过，已解决）" if clean
            else f"{code} {note}（复检未通过：问题仍在，疑源端口径，保持待处理）")
-    return bool(clean), affected, msg
+    if scope_clean and not clean:
+        msg = f"{code} {note}（本次近端范围复检通过；其他历史/股本问题仍待处理）"
+    return bool(scope_clean), affected, msg
 
 
 def _h_fix(params: dict, ctx: TaskContext) -> dict:
@@ -1488,11 +1526,18 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
     - null_close/abnormal   → 重采该单日；adj_jump → 重采该股整段 + 重算复权
     复检由 DataIntegrityReport.recheck_clean 判定：通过 → resolved；未通过 → 保持 open。
     """
+    if params.get("manual_delisting"):
+        from backend.services.manual_delisting import apply_delisting
+        return apply_delisting(get_client(), params["manual_delisting"], ctx)
+    if params.get("review_suspensions"):
+        from backend.services.ingest import IngestionService
+        return IngestionService().review_suspensions(codes=params.get("codes"), ctx=ctx, purge_candidates=params.get("purge_candidates", False))
     from backend.services.data_report import DataIntegrityReport
     from backend.services.ingest import IngestionService
     c = get_client()
     rep = DataIntegrityReport(c)
     ing = IngestionService()
+    repair_type = None
     ids = params.get("issue_ids")
     if not ids:
         iid = params.get("issue_id")
@@ -1509,11 +1554,35 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
                 )
             # 定时恢复只接管待处理问题。fixing 属于另一任务或异常残留，
             # 应由在跑任务/reconcile/手工复位收口，避免定时任务抢占归属。
+            from backend.dataquality.consolidation import canonical_quality_type
+            canonical = canonical_quality_type(issue_type)
             ids = c.query_df(
                 "SELECT id FROM data_quality_issue "
-                "WHERE issue_type=? AND status='open' ORDER BY id",
-                [issue_type],
+                "WHERE issue_type IN (?,?) AND status='open' ORDER BY id",
+                [issue_type, canonical],
             )["id"].tolist()
+            if canonical != issue_type:
+                # 老调度的近端/市值范围不能随台账合并扩大到十年股本。
+                from backend.dataquality.ignore_rules import filter_ignored_issues
+                coverage, _ = rep._coverage_frame()
+                candidates = []
+                for row in coverage.to_dict("records"):
+                    bad = (not row["mv_ok"] if issue_type == "mv_missing" else
+                           row[{"mv_gap": "mv_gap_days", "mv_invalid": "mv_invalid_days",
+                                "data_gap": "gap_days"}[issue_type]] > 0)
+                    if bad:
+                        date_key = {"mv_gap": "mv_gap_hi", "mv_invalid": "mv_invalid_hi",
+                                    "data_gap": "gap_lo"}.get(issue_type)
+                        candidates.append({"code": row["code"], "issue_type": issue_type,
+                                           "trade_date": row.get(date_key)})
+                candidates = filter_ignored_issues(
+                    c, candidates, [issue_type], reconcile_occurrences=False)
+                codes = [row["code"] for row in candidates]
+                ids = c.query_df(
+                    "SELECT id FROM data_quality_issue WHERE id IN (SELECT unnest(?::BIGINT[])) "
+                    "AND code IN (SELECT unnest(?::VARCHAR[])) ORDER BY id", [ids, codes]
+                )["id"].tolist()
+                repair_type = issue_type
             ctx.log(f"定时恢复动态取数：{issue_type} 当前待处理 {len(ids)} 条")
     ids = [int(x) for x in ids]
     done_ids = set(int(x) for x in (ctx.checkpoint.get("issue_done_ids") or [])) if ctx.checkpoint else set()
@@ -1525,6 +1594,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
         ctx.progress(1.0, message)
         return {"message": message, "ok": True, "resolved": 0, "failed": 0, "total": 0}
     resolved = 0
+    scope_completed = 0
     failed = 0
     last_msg = ""
     last_err = ""
@@ -1539,8 +1609,12 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
                       current_item=iid, issue_done_ids=sorted(done_ids))
         ctx.progress(min(0.1 + 0.8 * (i - 1) / n, 0.9), f"恢复 {i}/{n}…")
         try:
-            clean, _affected, msg = _recover_one(c, rep, ing, ctx, iid)
-            resolved += int(clean)
+            kwargs = {"repair_type": repair_type} if repair_type else {}
+            clean, _affected, msg = _recover_one(c, rep, ing, ctx, iid, **kwargs)
+            scope_completed += int(clean)
+            resolved += int(c.query_df(
+                "SELECT status FROM data_quality_issue WHERE id=?", [iid]
+            ).iloc[0, 0] == "resolved") if repair_type else int(clean)
             last_msg = msg
             if clean:
                 done_ids.add(iid)
@@ -1548,6 +1622,8 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
                           phase_total=phase_total, phase_done=len(done_ids),
                           current_item=iid, issue_done_ids=sorted(done_ids))
             ctx.log(f"[{i}/{n}] {msg}")
+        except TaskCancelled:
+            raise
         except Exception as e:  # noqa: BLE001
             failed += 1
             last_err = str(e)
@@ -1564,8 +1640,11 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
         if failed:
             msg += f"，{failed} 条恢复失败（已退回待处理，详见日志）"
     # ok：单条=是否解决；批量=有解决且无失败时视为成功（部分失败由 ok=false 让前端给警告）
-    ok = (resolved == n)
-    return {"message": msg, "ok": ok, "resolved": resolved, "failed": failed, "total": n}
+    if repair_type and n > 1:
+        msg += f"，原调度范围完成 {scope_completed}/{n} 条"
+    ok = (scope_completed == n)
+    return {"message": msg, "ok": ok, "resolved": resolved, "failed": failed, "total": n,
+            "scope_completed": scope_completed, "related_stage_errors": getattr(ctx, "related_stage_errors", {})}
 
 
 def _h_board(params: dict, ctx: TaskContext) -> dict:

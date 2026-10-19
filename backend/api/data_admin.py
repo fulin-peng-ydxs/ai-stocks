@@ -756,40 +756,35 @@ def quality_restore_monitoring(issue_id: int) -> ApiResponse:
     return ok({"id": issue_id, "status": "ignored", "ignore_active": False})
 
 
+@router.get("/quality/{issue_id}/delisting", response_model=ApiResponse, dependencies=_QUALITY_VIEW)
+def quality_delisting_info(issue_id: int) -> ApiResponse:
+    row = get_client().query_df("SELECT s.code,s.list_date,s.delist_date,s.delist_date_manual,s.delist_date_reported,(SELECT max(trade_date) FROM daily_bar b WHERE b.code=s.code) last_bar_date FROM data_quality_issue q JOIN stock_basic s ON s.code=q.code WHERE q.id=?", [issue_id])
+    if row.empty:
+        return err(404, "股票资料不存在")
+    return ok({key: None if pd.isna(value) else (bool(value) if key == "delist_date_manual" else str(value)[:10] if key.endswith('date') or key == 'delist_date_reported' else value) for key,value in row.iloc[0].items()})
+
+
 class MarkDelistedIn(BaseModel):
-    delist_date: str               # YYYY-MM-DD：人工指定的退市日
+    delist_date: str | None = None  # NULL 表示撤销人工覆盖，恢复接口值。
+    reason: str = Field(min_length=1, max_length=1000)
 
 
 @router.post("/quality/{issue_id}/mark-delisted", response_model=ApiResponse, dependencies=_QUALITY_FIX)
 def quality_mark_delisted(issue_id: int, body: MarkDelistedIn) -> ApiResponse:
-    """标记退市（应对数据源退市识别不准导致的持续缺口/滞后）：把人工指定的退市日写入
-    stock_basic.delist_date，并把该股所有未处理的缺口/滞后问题置为已解决——退市后无后续行情属正常，
-    覆盖鲜活扫描据 delist_date 自动排除该股，不再复发。仅对缺口(data_gap)/滞后(stale)类问题开放。"""
-    from datetime import date as _date, datetime
-    c = get_client()
-    row = c.query_df("SELECT code, issue_type FROM data_quality_issue WHERE id=?", [issue_id])
-    if row.empty:
-        return err(404, f"质检问题不存在: id={issue_id}")
-    code, issue_type = row.iloc[0]["code"], row.iloc[0]["issue_type"]
-    if issue_type not in ("data_gap", "stale"):
-        return err(400, "仅缺口/滞后类问题支持标记退市")
-    if not code:
-        return err(400, "该问题无关联股票代码，无法标记退市")
+    from backend.services.manual_delisting import validate_delisting
+    from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
     try:
-        dl = _date.fromisoformat(str(body.delist_date)[:10])   # 容错：截掉可能带的 00:00:00 时间段
-    except (ValueError, TypeError):
-        return err(400, f"退市日期非法: {body.delist_date}（需 YYYY-MM-DD）")
-    c.execute("UPDATE stock_basic SET delist_date=? WHERE code=?", [dl, code])
-    now = datetime.now()
-    affected = int(c.query_df(
-        "SELECT count(*) AS n FROM data_quality_issue WHERE code=? "
-        "AND issue_type IN ('data_gap','stale') AND status IN ('open','fixing')", [code]).iloc[0]["n"])
-    c.execute(
-        "UPDATE data_quality_issue SET status='resolved', resolved_at=?, fix_task_id=NULL "
-        "WHERE code=? AND issue_type IN ('data_gap','stale') AND status IN ('open','fixing')",
-        [now, code])
-    return ok({"code": code, "delist_date": str(dl), "resolved": affected},
-              msg=f"已标记 {code} 于 {dl} 退市，解决 {affected} 项缺口/滞后")
+        validate_delisting(get_client(), issue_id, body.delist_date, body.reason)
+        actor = get_current_context()
+        tid = AsyncTaskService().create("fix", {"manual_delisting": {
+            "issue_id": issue_id, "delist_date": body.delist_date, "reason": body.reason,
+            "actor": {"tenant_id": actor.tenant_id, "user_id": actor.user_id} if actor else None,
+        }})
+    except ValueError as exc:
+        return err(400, str(exc))
+    except ConcurrentTaskError as exc:
+        return err(409, "已有行情写任务，请等待完成后再修改退市日期", {"running_id": exc.running_id})
+    return ok({"task_id": tid})
 
 
 # ── 定时任务（调度系统重构）：多条用户自定义定时任务的 CRUD + 立即触发 ─────────
@@ -818,14 +813,14 @@ def schedules_list(page: int = 1, size: int = 20,
                    sort_by: Literal["name", "freq"] = "name",
                    sort_order: Literal["asc", "desc"] = "asc") -> ApiResponse:
     """定时任务列表（含频率人话、下次触发、最近触发）+ 可调度类型/频率枚举，前端建表单用。"""
-    from backend.dataquality.checker import QUALITY_ISSUE_TYPES
+    from backend.dataquality.checker import ACTIVE_QUALITY_ISSUE_TYPES
     from backend.scheduler.scheduler import SCHEDULABLE_TASK_TYPES, ScheduledJobService
     result = ScheduledJobService().list_page(
         page=page, size=size, sort_by=sort_by, sort_order=sort_order,
     )
     result.update({
         "task_types": list(SCHEDULABLE_TASK_TYPES),
-        "quality_issue_types": list(QUALITY_ISSUE_TYPES),
+        "quality_issue_types": list(ACTIVE_QUALITY_ISSUE_TYPES),
     })
     return ok(result)
 
@@ -1074,8 +1069,8 @@ def _record_settings_audit(
     if not updates:
         return
     try:
-        from backend.storage.audit_repository import AuditRepository
         from backend.services.audit_service import AuditService
+        from backend.storage.audit_repository import AuditRepository
 
         ctx = get_current_context()
         keys = sorted(str(k) for k in updates)

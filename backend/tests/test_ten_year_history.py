@@ -173,7 +173,7 @@ def test_missing_sina_preclose_uses_official_backup(monkeypatch):
     frame = pd.DataFrame([{'trade_date': date(2017, 12, 18), 'close': 7.3,
                            'pre_close': None, '_pre_close_factor_event': False}])
     backup = SimpleNamespace(name='baostock', get_daily_bar=lambda *a: pd.DataFrame([
-        {'trade_date': date(2017, 12, 18), 'pre_close': 10.27}]))
+        {'trade_date': date(2017, 12, 18), 'pre_close': 10.27, 'close': 7.3}]))
     monkeypatch.setattr(svc, '_bao_source', lambda: backup)
     result, source = svc._calibrate_corporate_action_pre_close(frame, '000155.SZ', .10, 'akshare')
     assert result.pre_close.iloc[0] == 10.27
@@ -186,6 +186,7 @@ def test_confirmed_suspension_removes_only_zero_trade_bars(market, monkeypatch, 
 
     day = date(2024, 11, 6)
     market.execute("INSERT INTO trade_calendar VALUES (?,TRUE)", [day])
+    market.execute("INSERT INTO stock_basic(code,list_date) VALUES ('688089.SH','2020-01-01')")
     market.execute("INSERT INTO daily_bar(code,trade_date,close,volume,amount) VALUES ('688089.SH',?,20,?,0)", [day, volume])
     market.execute("INSERT INTO daily_metrics(code,trade_date,total_mv) VALUES ('688089.SH',?,1000)", [day])
     svc = object.__new__(IngestionService)

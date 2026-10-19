@@ -334,3 +334,55 @@ def test_source_warnings_are_visible_but_business_contract_stays_clean(market):
     # 没有替代有效股本时必须报缺口，不能以“来源异常”豁免业务缺失。
     market.execute("UPDATE stock_share_capital_daily SET float_share=NULL WHERE code='600001.SH'")
     assert quality.sync(["600001.SH"])["capital_gap"] == 1
+
+
+def test_merge_archives_old_open_without_claiming_repaired(market):
+    market.execute("INSERT INTO data_quality_issue(id,code,issue_type,status,detail) VALUES (900,'600001.SH','mv_gap','open','old evidence')")
+    CapitalQualityService(market).sync(['600001.SH'])
+    old = market.query_df('SELECT status,detail FROM data_quality_issue WHERE id=900').iloc[0]
+    assert old.status == 'resolved' and '不是数据已修复' in old.detail and 'old evidence' in old.detail
+    assert issue(market) != 900
+
+
+def test_legacy_market_value_ignore_never_suppresses_missing_shares(market):
+    market.execute("INSERT INTO data_quality_issue(id,code,issue_type,status,ignore_scope,ignore_active) VALUES (900,'600001.SH','mv_missing','ignored','object',true)")
+    q = CapitalQualityService(market)
+    assert not q.aggregate(['600001.SH'], respect_legacy_ignores=True).empty
+    ShareCapitalService(market).merge(fact(), 'eastmoney_daily')
+    market.execute("UPDATE daily_metrics SET total_mv=NULL,float_mv=NULL WHERE code='600001.SH'")
+    assert q.aggregate(['600001.SH'], respect_legacy_ignores=True).empty
+    assert not q.aggregate(['600001.SH']).empty
+
+
+def test_old_type_schedule_targets_canonical_issues(market, monkeypatch):
+    import backend.services.async_task as tasks
+    q = CapitalQualityService(market)
+    q.sync()
+    seen = []
+    monkeypatch.setattr(tasks, 'get_client', lambda: market)
+    monkeypatch.setattr('backend.services.ingest.IngestionService', lambda: object())
+    monkeypatch.setattr(DataIntegrityReport, '_coverage_frame', lambda self: (
+        pd.DataFrame([{"code": "600001.SH", "mv_gap_days": 1},
+                      {"code": "600002.SH", "mv_gap_days": 0}]), None))
+    def recover(c, r, i, ctx, iid, *, repair_type):
+        assert repair_type == "mv_gap"
+        seen.append(iid)
+        # 近端市值修好不等于历史股本也修好；统一台账必须保留。
+        return True, [], 'scope ok'
+    monkeypatch.setattr(tasks, '_recover_one', recover)
+    task = SimpleNamespace(checkpoint={},check_cancel=lambda:None,set_phase=lambda *a,**kw:None,
+                           log=lambda *a:None,progress=lambda *a:None)
+    result = tasks._h_fix({'issue_type':'mv_gap'}, task)
+    assert result['resolved'] == 0 and len(seen) == 1
+    assert result['ok'] and result['scope_completed'] == 1
+
+
+def test_legacy_scope_repair_cannot_close_remaining_capital_gap(market):
+    q = CapitalQualityService(market)
+    q.sync()
+    iid = issue(market)
+    service = SimpleNamespace(ingest_valuation_gaps=lambda **kw: {"total_mv_rows": 1})
+    report = SimpleNamespace(recheck_clean=lambda kind,*a,**kw: kind == "mv_gap")
+    clean, _, message = _recover_one(market, report, service, ctx(), iid, repair_type="mv_gap")
+    assert clean and "其他历史/股本问题仍待处理" in message
+    assert market.query_df("SELECT status FROM data_quality_issue WHERE id=?", [iid]).iloc[0,0] == "open"

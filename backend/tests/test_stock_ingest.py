@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+import pandas as pd
 
 from backend.scheduler.scheduler import SCHEDULABLE_TASK_TYPES
 from backend.services.async_task import (
@@ -19,7 +20,8 @@ from backend.services.stock_ingest import normalize_stock_ingest_params
 def capital_sync(monkeypatch):
     calls = []
     monkeypatch.setattr("backend.services.capital_quality.CapitalQualityService",
-                        lambda client: SimpleNamespace(sync=lambda codes: calls.append(codes) or {}))
+                        lambda client: SimpleNamespace(sync=lambda codes: calls.append(codes) or {},
+                                                       aggregate=lambda *a,**kw: pd.DataFrame(columns=["issue_type","issue_days"])))
     return calls
 
 
@@ -222,3 +224,12 @@ def test_raw_event_rebuild_dispatches_to_shared_service(monkeypatch, capital_syn
     result = _h_stock_ingest(params, ctx)
     assert calls == [{"codes": ["000004.SZ"], "ctx": ctx}]
     assert result["ingest"]["ok"] == 1
+
+
+@pytest.mark.parametrize('handler', ['_h_update', '_h_ingest_codes', '_h_stock_ingest'])
+def test_daily_substage_failure_is_not_success(monkeypatch, handler):
+    from backend.services import async_task
+    monkeypatch.setattr('backend.services.ingest.IngestionService', lambda: SimpleNamespace(
+        update=lambda **kw: {'ok': 10, 'fail': 0, 'stage_failures': {'valuation_latest_error': 'timeout'}}))
+    result = getattr(async_task, handler)({'codes':['600000.SH'], 'recipe':'daily_update'}, _Ctx())
+    assert result['ok'] is False

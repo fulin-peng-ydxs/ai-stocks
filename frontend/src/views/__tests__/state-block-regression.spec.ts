@@ -103,6 +103,7 @@ vi.mock('@/api/data', () => ({
   recoverQualityBatch: vi.fn(),
   ignoreQualityBatch: vi.fn(),
   markDelisted: vi.fn(),
+  getDelistingInfo: vi.fn(),
   createTask: vi.fn(),
   getTask: vi.fn(),
   getTaskLogs: vi.fn(),
@@ -118,7 +119,10 @@ vi.mock('@/api/data', () => ({
     L3: (issues: number) => `${issues} 项待处理`,
     L4: (issues: number) => `${issues} 天缺口/滞后`,
   },
+  ISSUE_TYPES_ACTIVE: ['history_data_gap', 'data_gap'],
+  sortQualityIssueTypes: (types: string[]) => types,
   ISSUE_TYPE_LABEL: {
+    history_data_gap: '历史日线缺口',
     data_gap: '缺口', null_close: '行情·收盘价为空(丢弃)',
     price_volume_mismatch: '行情·价量口径错配',
   },
@@ -964,6 +968,30 @@ describe('代表性页面四态回归', () => {
     expect(bar?.classes()).toContain('stale')
     expect(fund?.text()).toContain('同步')
     expect(fund?.classes()).not.toContain('stale')
+  })
+
+  it('人工退市已解决记录仍能修正并等待写任务完成', async () => {
+    ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockResolvedValue({
+      list: [{ id: 8, code: '000004.SZ', name: '测试', issue_type: 'history_data_gap', status: 'resolved', detail: '', severity: 'mid' }], total: 1, summary: [],
+    })
+    ;(dataApi.getDelistingInfo as ReturnType<typeof vi.fn>).mockResolvedValue({ code: '000004.SZ', delist_date: '2025-01-02', delist_date_manual: true, delist_date_reported: null, last_bar_date: '2024-12-30' })
+    ;(dataApi.markDelisted as ReturnType<typeof vi.fn>).mockResolvedValue({ task_id: 'manual-delist' })
+    ;(dataApi.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'done', message: '已更新并复检' })
+    const wrapper = await mountView(QualityView)
+    // 共用表格在该测试集被 stub，直接调用传给 AppRowActions 的动作，再验证真实弹窗。
+    const actions = (wrapper.vm as any).qualityRowActions({ id: 8, code: '000004.SZ', issue_type: 'history_data_gap', status: 'resolved' })
+    expect(actions[0].label).toBe('修正退市标记')
+    await actions[0].onClick()
+    await flushPromises()
+    expect(document.body.textContent).toContain('最后行情：2024-12-30')
+    const reason = document.querySelector<HTMLTextAreaElement>('textarea[placeholder="退市依据，或撤销错误标记的原因"]')!
+    reason.value = '核对正式退市日期'
+    reason.dispatchEvent(new Event('input', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+    Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('确认更新'))!.click()
+    await flushPromises()
+    expect(dataApi.markDelisted).toHaveBeenCalledWith(8, '2025-01-02', '核对正式退市日期')
+    expect(dataApi.getTask).toHaveBeenCalledWith('manual-delist', { silent: true })
   })
 
   it('数据质量加载失败显示错误态', async () => {

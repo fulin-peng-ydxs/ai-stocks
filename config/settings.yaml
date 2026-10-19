@@ -28,6 +28,7 @@ datasource:
   max_retries: 3              # 重试次数
   retry_backoff_sec: 2        # 重试退避秒数
   socket_timeout_sec: 30      # 全局 socket 超时（秒），防公开接口请求挂死
+  baostock_login_timeout_sec: 120  # BaoStock 登录等待；登录后仍使用请求超时
   cache_enabled: true
 
 # ── 个股分时（按需加载，不落库）──

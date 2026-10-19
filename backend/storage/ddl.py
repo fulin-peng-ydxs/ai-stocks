@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS stock_basic (
     exchange        VARCHAR,               -- SH/SZ
     board           VARCHAR,               -- 主板/创业板/科创板
     list_date       DATE,                  -- 上市日
+    delist_date_manual BOOLEAN DEFAULT false, -- 人工确认值，普通采集不得覆盖
+    delist_date_reported DATE, -- 最近接口值，供撤销及冲突核验
     delist_date     DATE,                  -- 退市日（NULL=在市）
     total_share     BIGINT,                -- 最新总股本
     float_share     BIGINT,                -- 最新流通股本
@@ -49,6 +51,9 @@ CREATE TABLE IF NOT EXISTS daily_bar (
     high          DOUBLE,
     low           DOUBLE,
     close         DOUBLE,
+    reference_pre_close DOUBLE, -- 独立来源参考价；不能用派生 pre_close 回填
+    reference_close DOUBLE, -- 同次响应收盘价，防止错配价格
+    reference_source VARCHAR, -- 直接参考价来源
     pre_close     DOUBLE,        -- 前收盘（算涨跌停用）
     volume        BIGINT,        -- 成交量（股）
     amount        DOUBLE,        -- 成交额（元）
@@ -208,14 +213,16 @@ CREATE TABLE IF NOT EXISTS data_quality_issue (
 );
 """
 
-# 确认停牌日（M2.9.2 DM-D19）：经"反向确定"重采后源端确实无数据的开市日 = 真停牌。
+# 确认停牌日：必须有逐日 trade_status=0；空返回、零成交量均不是证据。
 # 缺口判定减去本表实现收敛（停牌一旦确认就不再当缺口反复上报）。
 # 注意：停牌日 daily_bar 无行，故单独建表记忆，**绝不往 daily_bar 插占位行**（业务靠"有行=可交易"）。
 DDL_STOCK_SUSPENSION = """
 CREATE TABLE IF NOT EXISTS stock_suspension (
     code        VARCHAR,
     trade_date  DATE,
-    confirmed_at TIMESTAMP
+    confirmed_at TIMESTAMP,
+    source VARCHAR, -- 明确逐日状态来源；旧值为空需专项复查
+    task_id VARCHAR -- 最近核验任务
 );
 """
 
@@ -1460,6 +1467,13 @@ def init_db(client: DuckDBClient | None = None) -> list[str]:
         created.append(name)
         log.debug("表已就绪: %s", name)
     for table, column, dtype in [
+        ("stock_suspension", "source", "VARCHAR"),
+        ("stock_suspension", "task_id", "VARCHAR"),
+        ("stock_basic", "delist_date_manual", "BOOLEAN DEFAULT false"),
+        ("stock_basic", "delist_date_reported", "DATE"),
+        ("daily_bar", "reference_pre_close", "DOUBLE"),
+        ("daily_bar", "reference_close", "DOUBLE"),
+        ("daily_bar", "reference_source", "VARCHAR"),
         ("stock_basic", "total_share_date", "DATE"),
         ("stock_basic", "float_share_date", "DATE"),
         ("daily_metrics", "total_mv_source", "VARCHAR"),

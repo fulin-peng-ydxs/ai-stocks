@@ -145,7 +145,7 @@ def test_ingest_calibrates_limit_changing_corporate_action_pre_close(monkeypatch
     backup = type("Backup", (), {
         "name": "baostock",
         "get_daily_bar": lambda self, code, start, end: pd.DataFrame(
-            [{"trade_date": date(2026, 7, 2), "pre_close": 6.95}]
+            [{"trade_date": date(2026, 7, 2), "pre_close": 6.95, "close": 7.65}]
         ),
     })()
     service = object.__new__(IngestionService)
@@ -191,6 +191,7 @@ def test_factor_rebuild_preserves_calibrated_corporate_action_pre_close():
             "('603759.SH',DATE '2026-07-02',FALSE,'baostock','accurate',now(),now())"
         )
 
+        client.execute("UPDATE daily_bar SET reference_pre_close=pre_close,reference_close=close,reference_source='baostock' WHERE code='603759.SH'")
         service._recompute_clean_one("603759.SH", 0.10, full=True)
 
         row = client.query_df(
@@ -328,7 +329,7 @@ def test_dejitter_fills_missing_factor_and_keeps_real_reference_change():
     assert abs(pc.iloc[2] - 48.08) < 0.01
 
 
-def test_dejitter_ignores_source_factor_reset_when_raw_price_continuous():
+def test_dejitter_only_corrects_factor_reset_with_independent_reference():
     """源端后复权因子突然重置为 1，但原始价连续时，不应误判为除权。"""
     import pandas as pd
 
@@ -336,7 +337,9 @@ def test_dejitter_ignores_source_factor_reset_when_raw_price_continuous():
 
     close = pd.Series([7.59, 7.44, 7.67])
     raw_factor = pd.Series([2.578393, 1.0, 1.0])
-    clean = dejitter_adj_factor(raw_factor, close)
+    unverified = dejitter_adj_factor(raw_factor, close)
+    assert abs(unverified.iloc[1] - unverified.iloc[0]) > 1
+    clean = dejitter_adj_factor(raw_factor, close, pd.Series([7.5,7.59,7.44]))
     pc = compute_pre_close(close, clean)
 
     assert abs(clean.iloc[1] - clean.iloc[0]) < 1e-9

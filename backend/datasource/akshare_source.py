@@ -168,7 +168,8 @@ def to_sina_symbol(code6: str) -> str:
     return f"{prefix}{code6}"
 
 
-def dejitter_adj_factor(adj_factor: pd.Series, close: pd.Series | None = None) -> pd.Series:
+def dejitter_adj_factor(adj_factor: pd.Series, close: pd.Series | None = None,
+                        pre_close: pd.Series | None = None) -> pd.Series:
     """复权因子去抖：把"现算因子"整理成分段常数（序列须按日期升序）。
 
     因子 = 新浪后复权收盘 ÷ 不复权收盘，两端都被新浪四舍五入到分，相除后
@@ -185,6 +186,7 @@ def dejitter_adj_factor(adj_factor: pd.Series, close: pd.Series | None = None) -
     """
     f = pd.to_numeric(adj_factor, errors="coerce").to_numpy(dtype=float)
     out = f.copy()
+    refs = None if pre_close is None else pd.to_numeric(pre_close, errors="coerce").to_numpy(dtype=float)
     c = None if close is None else pd.to_numeric(close, errors="coerce").to_numpy(dtype=float)
     for i in range(1, len(f)):
         prev = out[i - 1]
@@ -209,15 +211,13 @@ def dejitter_adj_factor(adj_factor: pd.Series, close: pd.Series | None = None) -
             out[i] = prev
             continue
         implied_ref = prev_close * raw_prev / cur
+        # 调用方只能传经来源/同次收盘校验的独立参考价，禁止传旧派生 pre_close；
+        # 换码前因子被来源填成 1 时，也能按真实参考价恢复分红而非制造跨代码跳变。
+        if refs is not None and refs[i] > 0:
+            implied_ref = refs[i]
         if implied_ref == implied_ref and abs(implied_ref - prev_close) < _MIN_REF_PRICE_DIFF:
             out[i] = prev  # 非除权日：沿用前值，消除四舍五入噪声
         else:
-            cur_close = c[i]
-            if (cur_close == cur_close and cur_close > 0
-                    and abs(implied_ref / prev_close - 1.0) > 0.5
-                    and abs(cur_close / prev_close - 1.0) <= 0.3):
-                out[i] = prev  # 源端因子断层/重置：原始价未随参考价跳变，不当作除权。
-                continue
             ref_price = round(float(implied_ref), 2)
             out[i] = prev_close * prev / ref_price if ref_price > 0 else cur
     return pd.Series(out, index=adj_factor.index)
