@@ -32,6 +32,7 @@ _TIMESERIES_TABLES: frozenset[str] = frozenset(
     {
         "daily_bar",
         "daily_metrics",
+        "stock_share_capital_daily",
         "index_bar",
         "board_bar",
         "board_fund_flow",
@@ -56,6 +57,48 @@ _MARKET_INDEX_ISSUES: tuple[str, ...] = (
 # - date_col：用于取"最新数据时间"的列（None 表示该表无时间维度，取 NULL）。
 # - relations：与其它表的关联关系（人类可读）。
 TABLE_CATALOG: dict[str, dict] = {
+    "stock_share_capital_daily": {'name_cn': '逐日股本事实',
+     'purpose': '按交易日保存总股本和流通A股；用于股本指标与缺失市值补算，来源与生效/可用日逐字段留存。',
+     'date_col': 'trade_date',
+     'relations': ['(code, trade_date) → daily_bar',
+                   '按同日股本和原始收盘价补 daily_metrics',
+                   'stock_basic 仅投影最新行情日'],
+     'fields': [{'name': 'code', 'type': 'VARCHAR', 'name_cn': '股票代码', 'desc': '与行情同一代码'},
+                {'name': 'trade_date', 'type': 'DATE', 'name_cn': '交易日', 'desc': '与行情同一交易日'},
+                {'name': 'total_share', 'type': 'BIGINT', 'name_cn': '总股本', 'desc': '单位股；缺失不倒填'},
+                {'name': 'float_share',
+                 'type': 'BIGINT',
+                 'name_cn': '流通A股股本',
+                 'desc': '单位股；不含B/H股'},
+                {'name': 'total_source',
+                 'type': 'VARCHAR',
+                 'name_cn': '总股本来源',
+                 'desc': 'eastmoney_daily/eastmoney_events/sina_events/verified_notice:证据编号/verified_exchange_daily:证据编号/sse_conversion_100share:转债代码'},
+                {'name': 'float_source',
+                 'type': 'VARCHAR',
+                 'name_cn': '流通股本来源',
+                 'desc': 'eastmoney_daily/eastmoney_events/sina_events/sina_daily'},
+                {'name': 'total_effective_date',
+                 'type': 'DATE',
+                 'name_cn': '总股本生效日',
+                 'desc': '日频事实日或变动日'},
+                {'name': 'float_effective_date',
+                 'type': 'DATE',
+                 'name_cn': '流通股本生效日',
+                 'desc': '日频事实日或变动日'},
+                {'name': 'total_available_date',
+                 'type': 'DATE',
+                 'name_cn': '总股本可用日',
+                 'desc': '事件公告日或逐日报告交易日；不得晚于交易日'},
+                {'name': 'float_available_date',
+                 'type': 'DATE',
+                 'name_cn': '流通股本可用日',
+                 'desc': '事件公告日或逐日报告交易日；不得晚于交易日'},
+                {'name': 'total_mv_eligible',
+                 'type': 'BOOLEAN',
+                 'name_cn': '全A股组成已确认',
+                 'desc': '历史兼容字段：仅记录股份组成证据；不限制按总股本乘A股价补算总市值'},
+                {'name': 'updated_at', 'type': 'TIMESTAMP', 'name_cn': '采集更新时间', 'desc': '最近写入时间'}]},
     "stock_special_trading_day": {
         "name_cn": "特殊交易日事实",
         "category": "行情参考",
@@ -131,6 +174,8 @@ TABLE_CATALOG: dict[str, dict] = {
         "date_col": None,
         "relations": ["daily_bar/daily_metrics 经 code 关联", "stock_group_member 经 code 关联"],
         "fields": [
+            {'name': 'float_share_date', 'type': 'DATE', 'name_cn': '流通股本日期', 'desc': '逐日事实的投影日期；NULL表示旧值未认证'},
+            {'name': 'total_share_date', 'type': 'DATE', 'name_cn': '总股本日期', 'desc': '逐日事实的投影日期；NULL表示旧值未认证'},
             {"name": "code", "type": "VARCHAR", "name_cn": "股票代码", "desc": "含交易所后缀，如 600000.SH（主键）"},
             {"name": "name", "type": "VARCHAR", "name_cn": "名称", "desc": "当前名称（含 ST 前缀）"},
             {"name": "exchange", "type": "VARCHAR", "name_cn": "交易所", "desc": "SH 上交所 / SZ 深交所"},
@@ -174,9 +219,11 @@ TABLE_CATALOG: dict[str, dict] = {
         "date_col": "trade_date",
         "relations": ["(code, trade_date) → daily_bar"],
         "fields": [
+            {'name': 'float_mv_source', 'type': 'VARCHAR', 'name_cn': '流通市值来源', 'desc': 'NULL为未认证旧值；computed前缀为补算来源'},
+            {'name': 'total_mv_source', 'type': 'VARCHAR', 'name_cn': '总市值来源', 'desc': 'NULL为未认证旧值；computed前缀为补算来源'},
             {"name": "code", "type": "VARCHAR", "name_cn": "股票代码", "desc": "主键之一"},
             {"name": "trade_date", "type": "DATE", "name_cn": "交易日", "desc": "主键之一"},
-            {"name": "float_mv", "type": "DOUBLE", "name_cn": "流通市值", "desc": "close × 流通股本（元）"},
+            {"name": "float_mv", "type": "DOUBLE", "name_cn": "流通市值", "desc": "有效源端值优先；同日流通A股×原价补算（元）"},
             {"name": "total_mv", "type": "DOUBLE", "name_cn": "总市值", "desc": "元（逐股质量达标关键字段）"},
         ],
     },
@@ -218,11 +265,11 @@ TABLE_CATALOG: dict[str, dict] = {
         "fields": [
             {"name": "id", "type": "BIGINT", "name_cn": "序号", "desc": "自增"},
             {"name": "table_name", "type": "VARCHAR", "name_cn": "目标表", "desc": "采集写入的表"},
-            {"name": "source", "type": "VARCHAR", "name_cn": "数据源", "desc": "akshare / baostock"},
+            {"name": "source", "type": "VARCHAR", "name_cn": "数据源", "desc": "采集源；capital_review:股票代码记录历史股本轮询"},
             {"name": "date_start", "type": "DATE", "name_cn": "起始日", "desc": "本次采集区间起"},
             {"name": "date_end", "type": "DATE", "name_cn": "结束日", "desc": "本次采集区间止"},
             {"name": "row_count", "type": "BIGINT", "name_cn": "行数", "desc": "本次写入行数"},
-            {"name": "status", "type": "VARCHAR", "name_cn": "状态", "desc": "success / failed / partial"},
+            {"name": "status", "type": "VARCHAR", "name_cn": "状态", "desc": "success / failed / partial；checked为股本复查完成，不作为数据修订"},
             {"name": "detail", "type": "VARCHAR", "name_cn": "详情", "desc": "失败原因/摘要"},
             {"name": "updated_at", "type": "TIMESTAMP", "name_cn": "时间", "desc": "记录时间"},
         ],
@@ -568,6 +615,7 @@ _DUCK_EXTRA_META: dict[str, dict[str, Any]] = {
 }
 
 _DUCK_CATEGORY_OVERRIDES = {
+    "stock_share_capital_daily": "行情参考",
     "stock_basic": "行情参考",
     "daily_bar": "行情参考",
     "daily_metrics": "行情参考",
@@ -584,9 +632,10 @@ _DUCK_CATEGORY_OVERRIDES = {
 }
 
 _DUCK_CORE_SOURCES = {
+    "stock_share_capital_daily": "东财逐日估值/股本变动；新浪历史股本/日线；上交所逐日转股统计（100股精度）；指定日期证据核验",
     "stock_basic": "AKShare / baostock",
     "daily_bar": "AKShare / baostock",
-    "daily_metrics": "日线行情与股本衍生",
+    "daily_metrics": "东财源端市值优先；同日股本与原价补算",
     "index_bar": "AKShare",
     "trade_calendar": "AKShare",
     "data_update_log": "数据采集任务",
@@ -781,6 +830,7 @@ _COMMON_FIELD_META: dict[str, tuple[str, str]] = {
 
 _DUCK_FRESHNESS_POLICIES: dict[str, FreshnessPolicy] = {
     "stock_special_trading_day": FRESHNESS_NOT_APPLICABLE,
+    "stock_share_capital_daily": FreshnessPolicy("direct", "trade_date", "latest_trade_date", "equal"),
     "stock_basic": FRESHNESS_NOT_APPLICABLE,
     "daily_bar": FreshnessPolicy("direct", "trade_date", "latest_trade_date", "equal"),
     "daily_metrics": FreshnessPolicy("direct", "trade_date", "latest_trade_date", "equal"),
@@ -835,6 +885,7 @@ _DUCK_FRESHNESS_POLICIES: dict[str, FreshnessPolicy] = {
 
 _DUCK_QUALITY_POLICIES: dict[str, QualityPolicy] = {
     "stock_special_trading_day": QUALITY_NOT_APPLICABLE,
+    "stock_share_capital_daily": QUALITY_NOT_APPLICABLE,  # 独立 checkup 全量检查，尚无问题台账类型
     "stock_basic": QUALITY_NOT_APPLICABLE,
     "daily_bar": QualityPolicy("issue_types", (
         "null_close", "ohl_repaired", "abnormal_change", "price_volume_mismatch",

@@ -895,8 +895,8 @@ describe('StockDetailView 三图数据协调', () => {
     const wrapper = await mountView()
     const workspace = wrapper.getComponent({ name: 'StockChartWorkspace' })
     const summary = wrapper.getComponent({ name: 'StockQuoteSummary' })
-    const small = { ...bar('2026-07-20', 8), total_mv: 9_000_000, float_mv: 5_000_000 }
-    const large = { ...bar('2026-07-21', 9), total_mv: 2_000_000_000, float_mv: 1_000_000_000 }
+    const small = { ...bar('2026-07-20', 8), total_mv: 9_000_000, float_mv: 5_000_000, total_share: 100_000_000, float_share: 80_000_000 }
+    const large = { ...bar('2026-07-21', 9), total_mv: 2_000_000_000, float_mv: 1_000_000_000, total_share: 200_000_000, float_share: 90_000_000 }
     workspace.vm.$emit('quoteWindowChange', {
       latestBar: large, bars: [small, large], supplements: [null, null],
     })
@@ -908,22 +908,22 @@ describe('StockDetailView 三图数据协调', () => {
 
     workspace.vm.$emit('activeBarChange', small)
     await nextTick()
-    expect(values()).toMatchObject({ 总市值: '900.00 万', 流通市值: '500.00 万', 总股本: '10.00亿股', 流通股: '8.00亿股' })
+    expect(values()).toMatchObject({ 总市值: '900.00 万', 流通市值: '500.00 万', 总股本: '1.00亿股', 流通股: '8,000.00万股' })
     expect(summary.props('summary').metrics.slice(10, 12)).toMatchObject([
-      { label: '总股本', hint: expect.stringContaining('最新采集的总股本') },
-      { label: '流通股', hint: expect.stringContaining('最新采集的流通股本') },
+      { label: '总股本', hint: expect.stringContaining('对应交易日的总股本') },
+      { label: '流通股', hint: expect.stringContaining('对应交易日的流通 A 股股本') },
     ])
     workspace.vm.$emit('activeBarChange', large)
     await nextTick()
-    expect(values()).toMatchObject({ 总市值: '20.00 亿', 流通市值: '10.00 亿', 总股本: '10.00亿股', 流通股: '8.00亿股' })
+    expect(values()).toMatchObject({ 总市值: '20.00 亿', 流通市值: '10.00 亿', 总股本: '2.00亿股', 流通股: '9,000.00万股' })
     expect(summary.props('widths')).toBe(widths)
     expect(stocksApi.getBars).toHaveBeenCalledTimes(requests)
 
     workspace.vm.$emit('activeBarChange', {
-      ...small, total_mv: null, float_mv: null, amount: null, turnover_rate: null, pre_close: null,
+      ...small, total_mv: null, float_mv: null, total_share: null, float_share: null, amount: null, turnover_rate: null, pre_close: null,
     })
     await nextTick()
-    expect(values()).toMatchObject({ 总市值: '—', 流通市值: '—', 成交额: '—', 换手率: '—', 涨跌幅: '—', 总股本: '10.00亿股', 流通股: '8.00亿股' })
+    expect(values()).toMatchObject({ 总市值: '—', 流通市值: '—', 成交额: '—', 换手率: '—', 涨跌幅: '—', 总股本: '—', 流通股: '—' })
     workspace.vm.$emit('activeBarChange', null)
     await nextTick()
     expect(values()).toMatchObject({ 总市值: '100.00 亿', 流通市值: '80.00 亿', 总股本: '10.00亿股' })

@@ -250,17 +250,19 @@ def index_to_sina_symbol(index_code: str) -> str:
 class AKShareSource(DataSource):
     name = "akshare"
     # 新浪日线/指数/日历/列表 + 东财市值（valuation 单只历史）
-    capabilities = {"daily", "index", "calendar", "stock_list", "valuation", "intraday_1m"}
+    capabilities = {"daily", "index", "calendar", "stock_list", "valuation", "share_capital", "intraday_1m"}
 
     def __init__(self) -> None:
         # 读"生效配置"(YAML ⊕ 前端 app_config 覆盖)，让前端改「请求限流/超时/重试」
         # 对新建实例即时生效，无需重启。限流/重试走实例属性（被 @rate_limited / @with_retry
         # 优先采用）；超时刷新模块级 requests 默认值。失败回落导入期默认。
+        self._share_timeout_sec = _s.socket_timeout_sec
         try:
             eff = get_effective_settings().datasource
             self._min_interval_sec = 1.0 / max(eff.rate_limit_per_sec, 0.1)
             self._max_retries = eff.max_retries
             self._retry_backoff_sec = eff.retry_backoff_sec
+            self._share_timeout_sec = eff.socket_timeout_sec
             set_default_request_timeout(eff.socket_timeout_sec)
         except Exception:  # noqa: BLE001 —— 配置/DB 异常时回落 YAML 导入期默认
             self._min_interval_sec = _MIN_INTERVAL
@@ -509,13 +511,21 @@ class AKShareSource(DataSource):
         来源 stock_value_em（东财，与被封的 push2his 不同 endpoint，可用）。
         """
         code6 = code.split(".")[0]
-        df = _ak_or_empty(lambda: ak.stock_value_em(symbol=code6), f"{code6} 市值")
+        from backend.datasource.share_capital import fetch_daily_valuation
+
+        self._last_valuation_prices = (code, {})
+        df = fetch_daily_valuation(code, timeout=self._share_timeout_sec)
         if df is None or df.empty or "数据日期" not in df.columns:
             return pd.DataFrame()
         df = df.copy()
         df["trade_date"] = pd.to_datetime(df["数据日期"]).dt.date
         mask = (df["trade_date"] >= start) & (df["trade_date"] <= end)
         df = df[mask]
+        # 保留同次市值响应的价格证据，区分股本差异与行情源价格差异。
+        if "CLOSE_PRICE" in df:
+            self._last_valuation_prices = (code, dict(zip(
+                df.trade_date, pd.to_numeric(df.CLOSE_PRICE, errors="coerce"), strict=True,
+            )))
         return pd.DataFrame(
             {
                 "code": to_full_code(code6),
@@ -526,6 +536,58 @@ class AKShareSource(DataSource):
                 "float_share": pd.to_numeric(df["流通股本"], errors="coerce"),
             }
         ).reset_index(drop=True)
+
+    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
+    @rate_limited(_MIN_INTERVAL)
+    def get_share_capital(self, code: str, dates) -> pd.DataFrame:
+        """完整股本变动分页按生效日展开，公告前不可见。"""
+        from backend.datasource.share_capital import expand_equity_events, fetch_equity_events
+
+        events = fetch_equity_events(code, timeout=self._share_timeout_sec)
+        self._last_share_events = (code, events)
+        return expand_equity_events(code, events, dates)
+
+    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
+    @rate_limited(_MIN_INTERVAL)
+    def get_float_share_history(self, code: str, dates) -> pd.DataFrame:
+        """仅补流通股本缺口，不重采完整行情。"""
+        from backend.datasource.share_capital import fetch_sina_float_shares
+
+        return fetch_sina_float_shares(code, dates, timeout=self._share_timeout_sec)
+
+    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
+    @rate_limited(_MIN_INTERVAL)
+    def get_share_capital_fallback(self, code: str, dates) -> pd.DataFrame:
+        """独立历史股本源补缺，沿用同一公告/生效日闸门。"""
+        from backend.datasource.share_capital import expand_equity_events, fetch_sina_equity_events
+
+        return expand_equity_events(code, fetch_sina_equity_events(code, timeout=self._share_timeout_sec), dates)
+
+    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
+    @rate_limited(_MIN_INTERVAL)
+    def get_exchange_share_capital(self, code: str, dates) -> pd.DataFrame:
+        """自动发现沪市转债，使用转股前基准和交易所日统计补总股本。"""
+        from backend.datasource.share_capital import fetch_equity_events
+        from backend.datasource.share_conversion import (
+            fetch_convertible_bonds,
+            fetch_sse_conversions,
+            reconstruct_conversion_shares,
+        )
+        self._exchange_share_evidence = {}
+        if not code.endswith(".SH") or not len(dates):
+            return pd.DataFrame()
+        cached = getattr(self, "_last_share_events", None)
+        events = cached[1] if cached is not None and cached[0] == code else fetch_equity_events(
+            code, timeout=self._share_timeout_sec)
+        if events.empty or not events.CHANGE_REASON.fillna("").str.contains("债转股|转债转股").any():
+            self._exchange_share_evidence = {"not_applicable": "no_convertible_capital_events"}
+            return pd.DataFrame()
+        bonds = fetch_convertible_bonds(code, timeout=self._share_timeout_sec)
+        return reconstruct_conversion_shares(
+            code, dates, events, bonds,
+            lambda bond, year: fetch_sse_conversions(bond, year, timeout=self._share_timeout_sec),
+            evidence=self._exchange_share_evidence,
+        )
 
     # ── 指数日线（新浪）──
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)

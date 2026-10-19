@@ -813,6 +813,22 @@ def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
             concurrency=concurrency,
             ctx=ctx,
         )
+    elif recipe == "share_capital_history":
+        if normalized.get("review_only"):
+            result = ing.review_capital_history(codes=codes, ctx=ctx, concurrency=concurrency)
+        elif normalized.get("recalculate_only"):
+            from backend.services.share_capital import ShareCapitalService
+            ctx.check_cancel()
+            result = ShareCapitalService(ing.c).recalculate_missing(codes)
+        else:
+            verified = normalized.get("verified_facts")
+            if verified:
+                from backend.services.share_capital import ShareCapitalService
+                ctx.check_cancel()
+                rows = ShareCapitalService(ing.c).merge_verified(verified, codes)
+                ctx.log(f"已按核验证据导入 {rows} 条总股本事实；继续采集并核验剩余字段")
+            result = ing.ingest_share_capital(
+                codes=codes, years=normalized.get("years"), concurrency=concurrency, ctx=ctx)
     elif recipe == "valuation_history":
         result = ing.ingest_valuation(
             codes=codes, years=normalized.get("years"), concurrency=concurrency, ctx=ctx)
@@ -842,10 +858,13 @@ def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
         result = ing.ingest_delisted(years=normalized.get("years"), ctx=ctx)
         result["basic_rows"] = basic_rows
 
+    if normalized.get("verified_facts"):
+        result["verified_fact_rows"] = len(normalized["verified_facts"])
     if result.get("skipped"):
         return {"message": "主源当日数据未就绪，本次日常同步未执行", "ingest": result}
     fail = int(result.get("fail") or 0)
-    message = f"{label}完成：{result}"
+    summary = {key: value for key, value in result.items() if key != "diagnostics"}
+    message = f"{label}完成：{summary}"
     payload = {"message": message, "recipe": recipe, "ingest": result}
     if fail:
         payload["message"] = f"{label}部分完成（{fail} 项失败，可重试未完成项）"

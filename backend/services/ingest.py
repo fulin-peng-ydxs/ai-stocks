@@ -699,6 +699,11 @@ class IngestionService:
                             [code, code, start, end],
                         )
                         self.c.execute(
+                            "DELETE FROM stock_share_capital_daily WHERE code=? AND trade_date IN "
+                            "(SELECT trade_date FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ?)",
+                            [code, code, start, end],
+                        )
+                        self.c.execute(
                             "DELETE FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ?",
                             [code, start, end],
                         )
@@ -815,18 +820,10 @@ class IngestionService:
             change_reason="daily_ingest_st_sync",
             task_id=getattr(ctx, "tid", None),
         )
-        # 衍生指标：流通市值 = 收盘 × 当日流通股本（新浪日线自带 float_share）
-        if "float_share" in df.columns:
-            float_share = pd.to_numeric(df["float_share"], errors="coerce")
-            metrics = pd.DataFrame(
-                {
-                    "code": df["code"],
-                    "trade_date": df["trade_date"],
-                    # 非正股本不写成非法市值，保留为空并交给 L2 缺口闭环补采。
-                    "float_mv": (df["close"] * float_share).where(float_share > 0),
-                }
-            )
-            self.repo.upsert_daily_metrics(metrics)
+        from backend.services.share_capital import ShareCapitalService
+
+        # 备用源无股本列也需按已存股本刷新计算市值，避免修正原价后派生值陈旧。
+        ShareCapitalService(self.c).merge(df, "sina_daily")
         # 非默认源（兜底）取的数据登记来源，供审计/排查（默认主源不记录）
         if n and used_source != self.s.datasource.primary:
             self._record_provenance(code, "daily_bar", start, end, used_source, n)
@@ -882,7 +879,7 @@ class IngestionService:
             ctx.flush()
 
         def _one(code: str, source) -> int:
-            return self._valuation_one(code, source, start, end)
+            return self._collect_capital_one(code, source, start, end)
 
         def _tick(i: int) -> None:
             if ctx:
@@ -964,8 +961,12 @@ class IngestionService:
             "SELECT b.code AS code FROM daily_bar b "
             "JOIN stock_basic sb ON sb.code = b.code "
             "LEFT JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date "
+            "LEFT JOIN stock_share_capital_daily s ON s.code=b.code AND s.trade_date=b.trade_date "
             "WHERE b.trade_date = ? AND (sb.delist_date IS NULL OR sb.delist_date>?) "
-            "AND (m.code IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL)"
+            "AND (m.code IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL "
+            "OR s.total_share IS NULL OR s.float_share IS NULL "
+            f"OR abs(m.total_mv-s.total_share*b.close)>greatest(abs(m.total_mv)*{MV_REL_TOLERANCE},1) "
+            f"OR abs(m.float_mv-s.float_share*b.close)>greatest(abs(m.float_mv)*{MV_REL_TOLERANCE},1))"
         )
         params: list = [trade_date, trade_date]
         if codes:
@@ -985,7 +986,7 @@ class IngestionService:
             ctx.flush()
 
         def _one(code: str, source) -> int:
-            return self._valuation_one(code, source, trade_date, trade_date)
+            return self._collect_capital_one(code, source, trade_date, trade_date)
 
         val_src = self._source_for("valuation")
         if concurrency <= 1:
@@ -1073,9 +1074,11 @@ class IngestionService:
             "count(*) AS n FROM daily_bar b "
             "JOIN stock_basic sb ON sb.code = b.code "
             "LEFT JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date "
+            "LEFT JOIN stock_share_capital_daily s ON s.code=b.code AND s.trade_date=b.trade_date "
             "WHERE (sb.delist_date IS NULL OR sb.delist_date> "
             "(SELECT COALESCE(max(trade_date),current_date) FROM daily_bar)) "
-            "AND (m.code IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL) "
+            "AND (m.code IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL "
+            "OR s.total_share IS NULL OR s.float_share IS NULL) "
             "GROUP BY b.code")
         if codes:
             gap = gap[gap["code"].isin(set(codes))]
@@ -1095,7 +1098,7 @@ class IngestionService:
 
         def _one(item, source) -> int:
             code, lo, hi = item
-            return self._valuation_one(code, source, lo, hi)
+            return self._collect_capital_one(code, source, lo, hi)
 
         val_src = self._source_for("valuation")
         if concurrency <= 1:
@@ -1760,11 +1763,10 @@ class IngestionService:
                   "reconcile": recon}
         # 补市值并入更新行情（容错子阶段）：更新即产出 L2 完整数据（float_mv 由日线自带 + total_mv）。
         # 幂等只补缺失股；失败仅记日志、不让整次更新失败（市值源是慢接口，单独容错隔离）。
-        # 注意 total_mv 的增量语义：这里只保「最新交易日」新鲜，历史中间缺口不归 update 管
-        # （日线仅写 float_mv，保留已有 total_mv；历史缺口由 ingest_valuation_gaps/--fill-gaps 补齐）。
+        # 最新日期优先补齐；历史中间缺口由后续有界轮询处理，也可显式全量补采。
         try:
             if ctx:
-                ctx.log("↻ 补市值估值（total_mv）：只补最新交易日，历史缺口走 `valuation --fill-gaps`…")
+                ctx.log("↻ 补市值估值（total_mv）：优先补最新交易日，随后分批复查历史…")
             # 治 P1（已采票新天补不到）：逐只取最新交易日的 total_mv（单只 stock_value_em）。
             # 失败独立隔离，不连累后面的历史补采。
             latest_val: dict = {}
@@ -1789,7 +1791,7 @@ class IngestionService:
             if ctx:
                 ctx.log(f"■ 补市值完成：最新交易日 {latest_val.get('total_mv_rows', 0)} 行"
                         f" + 新票历史补采 {full_val.get('total_mv_rows', 0)} 行"
-                        f"（历史中间缺口请跑 `valuation --fill-gaps` 一次性回补）")
+                        f"（随后按配置轮询历史缺口）")
         except TaskCancelled:  # 终止穿透：补市值阶段被终止应转可续跑中断，而非记为失败后跑完
             raise
         except Exception as e:  # noqa: BLE001  市值源异常不影响行情更新结果
@@ -1797,10 +1799,18 @@ class IngestionService:
             result["valuation_error"] = str(e)
             if ctx:
                 ctx.log(f"补市值估值失败（不影响行情更新）：{e}", "warn")
+        try:
+            result["capital_review"] = self.review_capital_history(codes=codes, ctx=ctx, concurrency=concurrency)
+        except TaskCancelled:
+            raise
+        except Exception as error:  # noqa: BLE001 - 保留行情成果，但明确报告历史复查失败
+            result["capital_review_error"] = str(error)
+            if ctx:
+                ctx.log(f"历史股本轮询失败，后续任务重试：{error}", "warn")
         if ctx:
             ctx.log(f"■ 增量更新完成：成功 {ok}、失败 {fail}，共写入 {total_rows} 行（{n} 只）")
-            ctx.log("说明：本次已补最新交易日 total_mv；历史中间缺口未在本次覆盖，质检 `mv_gap` 仍显示属正常，"
-                    "需跑 `valuation --fill-gaps`（或质量页补修）一次性回补历史市值。")
+            ctx.log("说明：最新日四字段已补采，历史缺口及股本/市值不一致按配置分批轮询；"
+                    "仍缺的原因保存在 capital_review，需即时全量复查可运行逐日股本补采。")
         if codes is None:
             result["market_day_terminal"] = self._log_market_day_terminal(
                 end,
@@ -1874,7 +1884,7 @@ class IngestionService:
         # 一次估值（仅这只股 + 补回区间），一步到位。失败不影响补回主结果。
         if backfilled:
             try:
-                self._valuation_one(code, self._source_for("valuation"),
+                self._collect_capital_one(code, self._source_for("valuation"),
                                     min(backfilled), max(backfilled))
             except Exception as e:  # noqa: BLE001
                 log.warning("%s 收口补市值失败(不影响补回): %s", code, e)
@@ -2085,11 +2095,302 @@ class IngestionService:
             )
         return result
 
+    def review_capital_history(self, codes=None, ctx=None, concurrency=None):
+        """日常更新后的有界历史复查；失败可重试，无证据记录不挤占后续股票。"""
+        from backend.services.share_capital import ShareCapitalService
+
+        batch = self.s.datasource.capital_review_batch_size
+        if not batch:
+            return {"target": 0, "ok": 0, "fail": 0, "disabled": True}
+        # 子阶段不改写日常任务已冻结的交易窗口或全量股本任务的检查点。
+        checkpoint = getattr(ctx, "checkpoint", {}) or {}
+        window = checkpoint.get("capital_review_window")
+        if window:
+            start, end = (date.fromisoformat(value) for value in window)
+        elif checkpoint.get("target_end"):
+            end = date.fromisoformat(checkpoint["target_end"])
+            start = years_before(end, self.s.datasource.history_years)
+        else:
+            start, end = self._history_window(self.s.datasource.history_years, None)
+        if ctx and not window:
+            ctx.set_checkpoint(capital_review_window=[start.isoformat(), end.isoformat()])
+        service = ShareCapitalService(self.c)
+        targets = checkpoint.get("capital_review_targets")
+        if targets is None:
+            targets = service.review_candidates(
+                start, end, codes=codes, limit=batch,
+                interval_days=self.s.datasource.capital_review_interval_days,
+            ).code.tolist()
+            if ctx:
+                ctx.set_checkpoint(capital_review_targets=targets)
+        done = set(checkpoint.get("capital_review_done", []))
+        diagnostics = dict(checkpoint.get("capital_review_diagnostics", {}))
+        pending = [code for code in targets if code not in done]
+        result = {"target": len(targets), "ok": len(done), "fail": 0, "diagnostics": diagnostics}
+        tls = threading.local()
+        source_name = self._source_for("share_capital").name
+
+        def worker(code):
+            source = self._thread_source(tls, source_name)
+            return self._collect_capital_one(code, source, start, end, diagnostics=diagnostics)
+
+        def complete(i, code, value, error, _in_flight):
+            detail = diagnostics.get(code, {})
+            if error is not None:
+                result["fail"] += 1
+                detail = {**detail, "error": str(error)}
+            else:
+                result["ok"] += 1
+                done.add(code)
+            # checked 不计入行情版本；只有 merge 中的实际字段变化刷新版本。
+            self.repo.log_update(
+                "stock_share_capital_daily", f"capital_review:{code}", start, end,
+                sum(item["count"] for item in detail.get("remaining", {}).values()),
+                "failed" if error is not None else "checked",
+                json.dumps(detail, ensure_ascii=False),
+            )
+            if ctx:
+                ctx.set_checkpoint(capital_review_done=sorted(done), capital_review_diagnostics=dict(diagnostics))
+                ctx.log(f"历史股本轮询 {i}/{len(pending)}：{code}，" + ("失败待重试" if error else "已复查"))
+                ctx.flush()
+
+        self._run_bounded_parallel(
+            pending, worker, concurrency=concurrency or self.s.datasource.update_concurrency, ctx=ctx,
+            wait_label="历史股本轮询", on_complete=complete,
+        )
+        result["remaining_field_issues"] = sum(
+            item["count"] for detail in diagnostics.values() for item in detail.get("remaining", {}).values()
+        )
+        return result
+
+    def _collect_capital_one(self, code, source, start, end, diagnostics=None):
+        """历史与日常共用：四字段独立补缺，源端失败不阻断其它源且保持可重试。"""
+        from backend.services.share_capital import ShareCapitalService
+
+        errors = []
+        evidence = {}
+        count = 0
+        try:
+            count = self._valuation_one(code, source, start, end)
+            evidence["eastmoney_daily"] = {"reported_mv_rows": count}
+        except TaskCancelled:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 后续来源继续，最后向任务报告失败
+            errors.append(str(exc))
+        service = ShareCapitalService(self.c)
+        dates = self.c.query_df(
+            "SELECT trade_date FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ?",
+            [code, start, end])["trade_date"]
+        if diagnostics is None and not errors:
+            remaining = self.c.query_df(
+                "SELECT count(*) n FROM daily_bar b LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
+                "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE b.code=? AND b.trade_date BETWEEN ? AND ? "
+                f"AND ({service.review_predicate()})",
+                [code, start, end]).iloc[0, 0]
+            if remaining == 0:
+                return count
+        facts = pd.DataFrame()
+        get_events = getattr(source, "get_share_capital", None)
+        if get_events is not None:
+            try:
+                facts = get_events(code, dates)
+                check_thread_cancel()
+                service.merge(facts, "eastmoney_events")
+                evidence["eastmoney_events"] = {"expanded_rows": len(facts),
+                    "valid_total_rows": int(facts.total_share.notna().sum()) if not facts.empty else 0,
+                    "valid_float_rows": int(facts.float_share.notna().sum()) if not facts.empty else 0}
+            except TaskCancelled:
+                raise
+            except Exception as exc:  # noqa: BLE001 - 失败不冒充无数据
+                errors.append(str(exc))
+        converted = pd.DataFrame()
+        exchange = getattr(source, "get_exchange_share_capital", None)
+        if exchange is not None:
+            candidates = self.c.query_df(
+                "SELECT b.trade_date FROM daily_bar b LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
+                "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE b.code=? AND b.trade_date BETWEEN ? AND ? "
+                "AND (s.total_share IS NULL OR s.total_source IN ('eastmoney_events','sina_events') OR "
+                "starts_with(s.total_source,'sse_conversion_100share:'))", [code,start,end])["trade_date"]
+            if not candidates.empty:
+                try:
+                    converted = exchange(code, candidates)
+                    check_thread_cancel()
+                    service.merge(converted, "sse_conversion")
+                    evidence["sse_conversion"] = getattr(source, "_exchange_share_evidence", {"expanded_rows":len(converted)})
+                except TaskCancelled:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - 请求失败仍须重试
+                    errors.append(f"sse_conversion: {exc}")
+        for method, source_label in [("get_share_capital_fallback", "sina_events"),
+                                     ("get_float_share_history", "sina_daily")]:
+            fetch = getattr(source, method, None)
+            if fetch is None:
+                continue
+            condition = ("s.total_share IS NULL OR s.float_share IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL"
+                         if source_label == "sina_events" else
+                         "s.float_share IS NULL OR (s.float_source IN ('eastmoney_events','sina_events') AND "
+                         f"abs(m.float_mv-s.float_share*b.close)>greatest(abs(m.float_mv)*{MV_REL_TOLERANCE},1))")
+            missing = self.c.query_df(
+                "SELECT b.trade_date FROM daily_bar b LEFT JOIN stock_share_capital_daily s "
+                "USING(code,trade_date) LEFT JOIN daily_metrics m USING(code,trade_date) "
+                f"WHERE b.code=? AND b.trade_date BETWEEN ? AND ? AND ({condition})",
+                [code, start, end])["trade_date"]
+            if missing.empty:
+                continue
+            try:
+                fallback = fetch(code, missing)
+                check_thread_cancel()
+                if source_label == "sina_events" and not facts.empty and not fallback.empty:
+                    # 不能拿备用源的旧股本跨越主源已知的真实变动边界。
+                    primary = facts.assign(trade_date=pd.to_datetime(facts.trade_date).dt.date).set_index("trade_date")
+                    for field in ("total", "float"):
+                        boundary = pd.to_datetime(fallback.trade_date).dt.date.map(primary[f"{field}_effective_date"])
+                        stale = pd.to_datetime(fallback[f"{field}_effective_date"]) < pd.to_datetime(boundary)
+                        fallback.loc[stale, f"{field}_share"] = None
+                service.merge(fallback, source_label)
+                evidence[source_label] = {"expanded_rows": len(fallback)}
+            except TaskCancelled:
+                raise
+            except Exception as exc:  # noqa: BLE001 - 记录失败，允许后续源尝试
+                errors.append(str(exc))
+        if diagnostics is not None:
+            gaps = self.c.query_df(
+                "SELECT b.trade_date,b.close,s.total_share,s.float_share,s.total_mv_eligible,m.total_mv,m.float_mv "
+                "FROM daily_bar b LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
+                "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE b.code=? "
+                f"AND b.trade_date BETWEEN ? AND ? AND ({service.review_predicate()})", [code, start, end])
+            reasons = {}
+            primary = facts.assign(trade_date=pd.to_datetime(facts.trade_date).dt.date).set_index("trade_date") if not facts.empty else None
+            exchange_totals = (dict(zip(pd.to_datetime(converted.trade_date).dt.date,
+                                       converted.total_share, strict=True)) if not converted.empty else {})
+            price_code, prices = getattr(source, "_last_valuation_prices", (None, {}))
+            if price_code != code:
+                prices = {}
+            for _, gap in gaps.sort_values("trade_date").iterrows():
+                day = pd.Timestamp(gap.trade_date).date()
+                for field in ("total", "float"):
+                    if pd.isna(gap[f"{field}_share"]):
+                        reason = f"{field}_share_source_unavailable"
+                        if primary is not None and day in primary.index:
+                            effective = primary.loc[day, f"{field}_effective_date"]
+                            available = primary.loc[day, f"{field}_available_date"]
+                            if pd.isna(effective):
+                                reason = f"{field}_share_no_prior_record"
+                            elif pd.isna(available):
+                                reason = f"{field}_share_announcement_unknown"
+                            elif pd.Timestamp(available).date() > day:
+                                reason = f"{field}_share_not_yet_disclosed"
+                        exchange_total = exchange_totals.get(day)
+                        conflict = (field == "total" and exchange_total is not None
+                                    and pd.notna(gap.float_share) and exchange_total < gap.float_share)
+                        if conflict:
+                            reason = ("total_share_exchange_precision_conflict"
+                                      if gap.float_share - exchange_total <= 50
+                                      else "total_share_exchange_count_conflict")
+                        group = reasons.setdefault(reason, {"count": 0, "samples": []})
+                        group["count"] += 1
+                        if len(group["samples"]) < 3:
+                            group["samples"].append(str(day))
+                            if conflict:
+                                group.setdefault("exchange_evidence", []).append({
+                                    "trade_date": str(day), "exchange_total": float(exchange_total),
+                                    "stored_float": float(gap.float_share), "precision_shares": 100,
+                                })
+                            if primary is not None and day in primary.index:
+                                group.setdefault("evidence", []).append({
+                                    "trade_date": str(day),
+                                    "effective_date": str(primary.loc[day, f"{field}_effective_date"]),
+                                    "available_date": str(primary.loc[day, f"{field}_available_date"]),
+                                })
+                    elif pd.isna(gap[f"{field}_mv"]):
+                        reason = f"{field}_mv_source_conflict"
+                        group = reasons.setdefault(reason, {"count": 0, "samples": []})
+                        group["count"] += 1
+                        if len(group["samples"]) < 3:
+                            group["samples"].append(str(day))
+                    elif abs(gap[f"{field}_mv"]-gap[f"{field}_share"]*gap["close"]) > max(abs(gap[f"{field}_mv"])*MV_REL_TOLERANCE,1):
+                        source_price = prices.get(day)
+                        price_basis = (source_price is not None and pd.notna(source_price)
+                                       and abs(gap[f"{field}_mv"] - gap[f"{field}_share"] * source_price)
+                                       <= max(abs(gap[f"{field}_mv"]) * MV_REL_TOLERANCE, 1))
+                        reason = f"{field}_mv_price_basis_mismatch" if price_basis else f"{field}_mv_share_mismatch"
+                        group = reasons.setdefault(reason, {"count": 0, "samples": []})
+                        group["count"] += 1
+                        if len(group["samples"]) < 3:
+                            group["samples"].append(str(day))
+                            group.setdefault("evidence", []).append({
+                                "trade_date": str(day), "raw_close": float(gap["close"]),
+                                "valuation_close": float(source_price) if source_price is not None and pd.notna(source_price) else None,
+                                "share": float(gap[f"{field}_share"]), "mv": float(gap[f"{field}_mv"]),
+                            })
+            diagnostics[code] = {"sources": evidence, "errors": errors, "remaining": reasons}
+        if errors:
+            raise DataSourceError("；".join(errors))
+        return count
+
+    def ingest_share_capital(self, codes=None, years=None, concurrency=None, ctx=None):
+        """按已有日线覆盖含退市股；不因已有市值跳过股本采集。"""
+        start, end = self._history_window(years or self.s.datasource.history_years, ctx)
+        stocks = self.c.query_df(
+            "SELECT code FROM daily_bar WHERE trade_date BETWEEN ? AND ? GROUP BY code ORDER BY code",
+            [start, end])["code"].tolist()
+        if codes:
+            stocks = [code for code in stocks if code in set(codes)]
+        done = set((getattr(ctx, "checkpoint", {}) or {}).get("share_codes_done", []))
+        # 旧版本检查点没有逐股证据，升级续跑需补做核验，避免把未诊断股票当作已闭环。
+        done &= set((getattr(ctx, "checkpoint", {}) or {}).get("share_diagnostics", {}))
+        pending = [code for code in stocks if code not in done]
+        tls = threading.local()
+        source_name = self._source_for("share_capital").name
+        result = {"target": len(stocks), "ok": 0, "fail": 0, "valuation_empty": 0, "skip": len(stocks) - len(pending), "diagnostics": dict((getattr(ctx, "checkpoint", {}) or {}).get("share_diagnostics", {}))}
+
+        def worker(code):
+            source = self._thread_source(tls, source_name)
+            return self._collect_capital_one(code, source, start, end, diagnostics=result["diagnostics"])
+
+        def complete(i, code, value, error, _in_flight):
+            detail = result["diagnostics"].get(code, {})
+            self.repo.log_update(
+                "stock_share_capital_daily", f"capital_review:{code}", start, end,
+                sum(item["count"] for item in detail.get("remaining", {}).values()),
+                "failed" if error is not None else "checked",
+                json.dumps({**detail, **({"error": str(error)} if error else {})}, ensure_ascii=False),
+            )
+            if error is not None:
+                result["fail"] += 1
+                if ctx:
+                    ctx.log(f"{code} 逐日股本失败: {error}", "warn")
+            else:
+                result["ok"] += 1
+                result["valuation_empty"] += int(value == 0)
+                done.add(code)
+            if ctx:
+                ctx.progress(0.08 + 0.9 * i / max(len(pending), 1), f"逐日股本 {i}/{len(pending)}")
+                ctx.set_checkpoint(share_codes_done=sorted(done), share_diagnostics=dict(result["diagnostics"]))
+                ctx.set_phase("share_capital_history", phase_total=len(pending), phase_done=i,
+                              current_item=code)
+                if i % 20 == 0 or i == len(pending):
+                    ctx.log(f"逐日股本进度 {i}/{len(pending)}，成功 {result['ok']} 失败 {result['fail']}")
+                    ctx.flush()
+
+        self._run_bounded_parallel(pending, worker,
+            concurrency=concurrency or self.s.datasource.update_concurrency, ctx=ctx,
+            wait_label="逐日股本采集", on_complete=complete)
+        with self.c.temp_view(pd.DataFrame({"code": stocks}), prefix="share_targets") as target:
+            coverage = self.c.query_df(
+                "SELECT count(*) AS bar_rows,count(s.total_share) AS total_share_rows, "
+                "count(s.float_share) AS float_share_rows,count(m.total_mv) AS total_mv_rows, "
+                "count(m.float_mv) AS float_mv_rows FROM daily_bar b "
+                f"JOIN {target} t USING(code) LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
+                "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE b.trade_date BETWEEN ? AND ?",
+                [start, end]).iloc[0]
+            result["coverage"] = {key: int(value) for key, value in coverage.items()}
+        return result
+
     def _valuation_one(self, code: str, source, start: date, end: date,
                        overwrite_dates: set[date] | None = None) -> int:
-        """取单只 [start,end] 估值，幂等合并入 daily_metrics（只补 total_mv；float_mv 仅空缺才回填，
-        不覆盖日线更准值）；质量修复可用 overwrite_dates 仅强制覆盖已确认异常日期的两列市值。
-        同时把最新总/流通股本写入 stock_basic。返回总市值写入行数。
+        """取单只 [start,end] 的源端估值和逐日股本，源端市值优先于补算值。
+        质量修复仅处理 overwrite_dates；基础股本只投影最新行情日。返回总市值写入行数。
         供 ingest_valuation 全量补市值与 reconcile_gaps 收口补市值共用，口径一致。"""
         v = source.get_valuation(code, start, end)
         # 与行情入库保持同一安全边界：取消后不把刚返回的外部结果继续写入 DuckDB。
@@ -2120,41 +2421,24 @@ class IngestionService:
                 len(invalid_dates),
                 ",".join(invalid_dates[:10]),
             )
-            v = v.loc[~invalid].copy()
-            total_mv = total_mv.loc[~invalid]
-            float_mv = float_mv.loc[~invalid]
+            v = v.copy()
+            inverted = total_mv.notna() & float_mv.notna() & (
+                total_mv < float_mv * (1 - MV_REL_TOLERANCE)
+            )
+            total_mv = total_mv.mask((total_mv <= 0) | inverted)
+            float_mv = float_mv.mask((float_mv <= 0) | inverted)
         if v.empty:
             return 0
         v["total_mv"] = total_mv
         v["float_mv"] = float_mv
 
+        from backend.services.share_capital import ShareCapitalService
+
+        # 修复任务严格限于已确认异常日期，不扩散覆盖其它交易日。
         if overwrite_dates is not None:
-            replacement = v[
-                v["trade_date"].isin(overwrite_dates)
-                & v["total_mv"].notna()
-                & v["float_mv"].notna()
-            ][["code", "trade_date", "float_mv", "total_mv"]]
-            added = self.repo.upsert_daily_metrics(replacement)
-        else:
-            # 每日总市值入 daily_metrics（只更新 total_mv 列，不动有效的 float_mv）。
-            total_rows = v.dropna(subset=["total_mv"])[["code", "trade_date", "total_mv"]]
-            added = self.repo.upsert_daily_metrics(total_rows)
-        # 补流通市值：仅 float_mv 为空的行用估值源「流通市值」回填——保证 baostock 兜底票
-        # （日线无 float_share、无 float_mv）也满足 L2 契约；新浪日线已写的更准 float_mv 不覆盖。
-        fv = v[["code", "trade_date", "float_mv"]].dropna(subset=["float_mv"])
-        if overwrite_dates is None and not fv.empty:
-            with self.repo.c.temp_view(fv, prefix="fv_metrics") as t:
-                self.repo.c.execute(
-                    f"UPDATE daily_metrics m SET float_mv = src.float_mv FROM {t} src "
-                    f"WHERE m.code = src.code AND m.trade_date = src.trade_date AND m.float_mv IS NULL")
-        # 最新总/流通股本入 stock_basic
-        last = v.dropna(subset=["total_share"]).tail(1)
-        if not last.empty:
-            self.repo.upsert_stock_basic(pd.DataFrame([{
-                "code": code,
-                "total_share": int(last["total_share"].iloc[0]),
-                "float_share": int(last["float_share"].iloc[0]) if pd.notna(last["float_share"].iloc[0]) else None,
-            }]))
+            v = v[v["trade_date"].isin(overwrite_dates)]
+        ShareCapitalService(self.c).merge(v, "eastmoney_daily", reported=True)
+        added = int(v["total_mv"].notna().sum())
         return added
 
     # ── 指定日期采集（FR-DM-3 更多选项，M2.8-B）──

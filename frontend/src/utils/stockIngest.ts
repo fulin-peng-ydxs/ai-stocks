@@ -2,6 +2,7 @@ export type StockIngestRecipe =
   | 'daily_update'
   | 'history_backfill'
   | 'range_refetch'
+  | 'share_capital_history'
   | 'valuation_history'
   | 'valuation_gaps'
   | 'valuation_invalid_history'
@@ -31,6 +32,7 @@ export const STOCK_INGEST_RECIPE_OPTIONS: Array<{
   { value: 'daily_update', label: '日常同步', description: '补到最新交易日，包含行情收口、复权和最新市值维护' },
   { value: 'history_backfill', label: '历史行情补全', description: '补指定历史年限的日线行情，适合初始化或大范围缺数', heavy: true },
   { value: 'range_refetch', label: '日期区间重采', description: '覆盖重采指定交易日区间，可限定股票', heavy: true },
+  { value: 'share_capital_history', label: '逐日股本补采', description: '采集含退市股的逐日股本，并补算可确认口径的缺失市值', heavy: true },
   { value: 'valuation_history', label: '市值历史补采', description: '补从未完整采过市值的股票历史数据', heavy: true },
   { value: 'valuation_gaps', label: '市值缺口修复', description: '按已有日线逐股补齐总市值和流通市值缺口', heavy: true },
   {
@@ -49,15 +51,15 @@ export const STOCK_INGEST_RECIPE_LABEL = Object.fromEntries(
 ) as Record<StockIngestRecipe, string>
 
 const CODE_RECIPES = new Set<StockIngestRecipe>([
-  'daily_update', 'history_backfill', 'range_refetch', 'valuation_history', 'valuation_gaps',
+  'share_capital_history', 'daily_update', 'history_backfill', 'range_refetch', 'valuation_history', 'valuation_gaps',
   'valuation_invalid_history',
   'st_status_refresh',
 ])
 const YEAR_RECIPES = new Set<StockIngestRecipe>([
-  'history_backfill', 'valuation_history', 'delisted_history',
+  'share_capital_history', 'history_backfill', 'valuation_history', 'delisted_history',
 ])
 const CONCURRENCY_RECIPES = new Set<StockIngestRecipe>([
-  'daily_update', 'history_backfill', 'range_refetch', 'valuation_history', 'valuation_gaps',
+  'share_capital_history', 'daily_update', 'history_backfill', 'range_refetch', 'valuation_history', 'valuation_gaps',
   'valuation_invalid_history',
 ])
 

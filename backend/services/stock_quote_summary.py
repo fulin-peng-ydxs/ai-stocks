@@ -37,7 +37,7 @@ class StockQuoteSummaryService:
     def get_market_values(
         self, code: object, trade_dates: list[date]
     ) -> dict[str, dict[str, float | None]]:
-        """只批量读取已返回 K 线的指定日期；市值不复权，不向前填充历史缺口。"""
+        """批量读取 K 线对应日期的市值和股本；不复权、不向前填充历史缺口。"""
         normalized = normalize_stock_code(code)
         dates = list(dict.fromkeys(trade_dates))
         if len(dates) > 6000:
@@ -46,17 +46,22 @@ class StockQuoteSummaryService:
             return {}
         rows = self.c.query_df(
             """
-            SELECT requested.trade_date, metrics.total_mv, metrics.float_mv
+            SELECT requested.trade_date, metrics.total_mv, metrics.float_mv,
+                   shares.total_share, shares.float_share
             FROM unnest(?::DATE[]) AS requested(trade_date)
             LEFT JOIN daily_metrics metrics
               ON metrics.code = ? AND metrics.trade_date = requested.trade_date
+            LEFT JOIN stock_share_capital_daily shares
+              ON shares.code = ? AND shares.trade_date = requested.trade_date
             """,
-            [dates, normalized],
+            [dates, normalized, normalized],
         )
         return {
             str(pd.Timestamp(row["trade_date"]).date()): {
                 "total_mv": self._number(row["total_mv"], 0),
                 "float_mv": self._number(row["float_mv"], 0),
+                "total_share": self._integer(row["total_share"]),
+                "float_share": self._integer(row["float_share"]),
             }
             for _, row in rows.iterrows()
         }
@@ -83,7 +88,7 @@ class StockQuoteSummaryService:
                 SELECT count(*) AS sample_count, avg(volume) AS average_volume
                 FROM prior_volumes
             )
-            SELECT sb.code, sb.name, sb.board, sb.industry, sb.total_share, sb.float_share,
+            SELECT sb.code, sb.name, sb.board, sb.industry, shares.total_share, shares.float_share,
                    latest.trade_date, latest.open, latest.high, latest.low, latest.close,
                    latest.pre_close, latest.volume, latest.amount, latest.turnover_rate,
                    st.is_st,
@@ -91,6 +96,8 @@ class StockQuoteSummaryService:
                    stats.sample_count, stats.average_volume
             FROM stock_basic sb
             LEFT JOIN latest_bar latest ON TRUE
+            LEFT JOIN stock_share_capital_daily shares
+              ON shares.code = sb.code AND shares.trade_date = latest.trade_date
             LEFT JOIN daily_metrics metrics
               ON metrics.code = sb.code AND metrics.trade_date = latest.trade_date
             LEFT JOIN stock_st_status_daily st

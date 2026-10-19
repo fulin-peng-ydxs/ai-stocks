@@ -235,6 +235,13 @@ class BacktestService:
         out["st_data_version"] = StockSTStatusService(self.c).dataset_version(
             start_date, end_date
         )
+        revision = self.c.query_df(
+            "SELECT max(id) revision FROM data_update_log WHERE table_name='stock_share_capital_daily' "
+            "AND status IN ('success','partial') AND (?::DATE IS NULL OR date_end>=?::DATE) "
+            "AND (?::DATE IS NULL OR date_start<=?::DATE)",
+            [start_date, start_date, end_date, end_date],
+        ).iloc[0, 0]
+        out["capital_data_version"] = None if pd.isna(revision) else int(revision)
         return out
 
     def _signature(self, kind: str, params: dict, versions: dict) -> str:

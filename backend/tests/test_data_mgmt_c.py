@@ -64,7 +64,7 @@ def _seed(c):
          for d in (2, 3, 4, 5)]
     )
     c.register_df("_m", metrics)
-    c.execute("INSERT INTO daily_metrics SELECT code, trade_date, float_mv, total_mv FROM _m")
+    c.execute("INSERT INTO daily_metrics (code,trade_date,float_mv,total_mv) SELECT code, trade_date, float_mv, total_mv FROM _m")
     c.unregister("_m")
 
 
@@ -965,8 +965,11 @@ def test_update_includes_valuation(client, monkeypatch):
     monkeypatch.setattr(ingest.IngestionService, "ingest_valuation",
                         lambda self, codes=None, concurrency=None: called.__setitem__("val", True) or {"total_mv_rows": 0},
                         raising=True)
-    res = ingest.IngestionService().update()  # 空在市股 → 只跑日历/指数/补市值子阶段
+    monkeypatch.setattr(ingest.IngestionService, "review_capital_history",
+                        lambda self, **kw: called.__setitem__("review", True) or {"target": 0})
+    res = ingest.IngestionService().update()  # 空在市股也进入历史股本轮询子阶段
     assert called["val"] is True and "valuation" in res
+    assert called["review"] is True and res["capital_review"] == {"target": 0}
 
 
 def test_index_incremental_uses_each_code_latest_date_and_backfills_new_code(client, monkeypatch):
@@ -1242,7 +1245,7 @@ def test_backfill_resume_skips_prep_and_reports_mv(client, monkeypatch):
 
 
 # ── 补市值：流通市值仅填空缺、不覆盖新浪日线已写的更准值（baostock 兜底票靠此拿 float_mv）──
-def test_valuation_fills_missing_float_mv_only(client, monkeypatch):
+def test_valuation_reported_values_take_priority(client, monkeypatch):
     from backend.config import get_effective_settings
     from backend.services import ingest
     from backend.storage.repository import MarketRepository
@@ -1278,7 +1281,7 @@ def test_valuation_fills_missing_float_mv_only(client, monkeypatch):
     a = rows[rows["code"] == "A.SH"].iloc[0]
     b = rows[rows["code"] == "B.SH"].iloc[0]
     c = rows[rows["code"] == "C.SH"].iloc[0]
-    assert a["total_mv"] == 999.0 and a["float_mv"] == 111.0   # total 补上，float 不被覆盖
+    assert a["total_mv"] == 999.0 and a["float_mv"] == 888.0   # 有效源端值优先于历史无来源值
     assert b["total_mv"] == 999.0 and b["float_mv"] == 888.0   # 兜底票 total/float 都补上
     assert c["total_mv"] == 999.0 and c["float_mv"] == 888.0   # 只有 float 缺口也不能被整股跳过
 

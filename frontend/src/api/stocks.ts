@@ -81,6 +81,8 @@ export interface Bar {
   /** 详情按需加载的当日原始市值（元）；不随价格复权，历史缺口为 null。 */
   total_mv?: number | null
   float_mv?: number | null
+  total_share?: number | null
+  float_share?: number | null
   // 盘感训练 K 线由后端在 bars 内附带（12/26/9，严格后向），未暖机为 null
   macd_diff?: number | null
   macd_dea?: number | null

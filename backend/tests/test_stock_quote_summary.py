@@ -34,6 +34,8 @@ def _seed_stock(client: DuckDBClient, volumes: list[int]) -> None:
             ],
         )
     latest = start + timedelta(days=len(volumes) - 1)
+    client.execute("INSERT INTO stock_share_capital_daily(code,trade_date,total_share,float_share) VALUES (?,?,?,?)",
+                   ["600000.SH", latest, 10_000_000_000, 8_000_000_000])
     client.execute(
         "INSERT INTO daily_metrics (code,trade_date,float_mv,total_mv) VALUES (?,?,?,?)",
         ["600000.SH", latest, 8_000_000_000, 10_000_000_000],
@@ -128,7 +130,7 @@ def test_bars_market_values_align_by_date_without_adjustment_or_gap_filling(monk
             "WHERE trade_date < DATE '2026-09-06'"
         )
         market.execute(
-            "INSERT INTO daily_metrics VALUES "
+            "INSERT INTO daily_metrics (code,trade_date,float_mv,total_mv) VALUES "
             "('600000.SH','2026-09-04',5000000,9000000),"
             "('600001.SH','2026-09-05',90000000000,100000000000)"
         )
@@ -145,6 +147,9 @@ def test_bars_market_values_align_by_date_without_adjustment_or_gap_filling(monk
             ("2026-09-05", None, None),
             ("2026-09-06", 10_000_000_000, 8_000_000_000),
         ]
+        assert bars[0]["total_share"] is None
+        assert bars[-1]["total_share"] == 10_000_000_000
+        assert bars[-1]["float_share"] == 8_000_000_000
         assert bars[0]["close"] == {"": 13, "qfq": 6.5, "hfq": 13}[adjust]
         # 历史截止日不带未来最新市值，普通消费者也不增加字段。
         params["end"] = "2026-09-05"
@@ -176,7 +181,7 @@ def test_bars_market_values_6000_row_real_api_regression(monkeypatch):
             "10,11,9,10,9,100,1000,1,1 FROM range(6001) t(i)"
         )
         market.execute(
-            "INSERT INTO daily_metrics SELECT code,trade_date,5000000,9000000 FROM daily_bar "
+            "INSERT INTO daily_metrics (code,trade_date,float_mv,total_mv) SELECT code,trade_date,5000000,9000000 FROM daily_bar "
             "WHERE trade_date <> DATE '2000-01-01' + 3000"
         )
         queries: list[list[object]] = []

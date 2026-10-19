@@ -281,6 +281,7 @@ def test_ohl_repaired_fix_reingests_before_resolve(client, monkeypatch):
     from backend.services import ingest
 
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "_bao_source", lambda self: object())
     called: list[tuple] = []
 
     def restore_daily(self, code, start, end, *args, **kwargs):
@@ -357,7 +358,7 @@ def _seed_market(c):
          for d in (2, 3, 4, 5)]
     )
     c.register_df("_m", metrics)
-    c.execute("INSERT INTO daily_metrics SELECT code, trade_date, float_mv, total_mv FROM _m")
+    c.execute("INSERT INTO daily_metrics (code,trade_date,float_mv,total_mv) SELECT code, trade_date, float_mv, total_mv FROM _m")
     c.unregister("_m")
 
 

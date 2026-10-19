@@ -208,6 +208,7 @@ function isCancellingTask(t: AsyncTask | null | undefined): boolean {
 const PHASE_LABEL: Record<string, string> = {
   daily_bar: '行情采集',
   valuation_latest: '最新日市值补采',
+  share_capital_history: '逐日股本补采',
   valuation_history: '历史市值补采',
   valuation_gap: '市值缺口回补',
   price_factor: '价格因子',
@@ -1024,6 +1025,7 @@ const menuPageTitle = useMenuPageTitle()
                 <el-option label="成功" value="success" />
                 <el-option label="失败" value="failed" />
                 <el-option label="部分" value="partial" />
+                <el-option label="已复查" value="checked" />
               </AppSelect>
               <el-button data-testid="log-reset-filters" size="small" :disabled="!hasLogFilters" @click="resetLogFilters">重置筛选</el-button>
             </template>
@@ -1065,7 +1067,7 @@ const menuPageTitle = useMenuPageTitle()
             <AppTableColumn label="结果" prop="status" sortable="custom">
               <template #default="{ row }">
                 <el-tag :type="updateLogType[row.status] ?? 'info'" size="small" effect="plain">
-                  {{ row.status === 'success' ? '成功' : row.status === 'failed' ? '失败' : row.status === 'partial' ? '部分' : row.status }}
+                  {{ row.status === 'success' ? '成功' : row.status === 'failed' ? '失败' : row.status === 'partial' ? '部分' : row.status === 'checked' ? '已复查' : row.status }}
                 </el-tag>
               </template>
             </AppTableColumn>

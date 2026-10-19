@@ -206,6 +206,10 @@ class DataSource(ABC):
         """每日估值/市值。列：code,trade_date,total_mv,float_mv,total_share,float_share。"""
         raise NotImplementedError(f"{self.name} 不支持 valuation 能力")
 
+    def get_share_capital(self, code: str, dates) -> pd.DataFrame:
+        """对应行情日的历史股本，含生效/公告日及总市值可补算标记。"""
+        raise NotImplementedError(f"{self.name} 不支持逐日股本能力")
+
     def get_basic_dates(self) -> pd.DataFrame:
         """全市场上市/退市日期（含退市股）。列：code,name,list_date,delist_date,is_delisted。"""
         raise NotImplementedError(f"{self.name} 不支持 basic_dates 能力")

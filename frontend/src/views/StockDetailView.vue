@@ -362,7 +362,7 @@ function buildHeaderSummary(
   if (!quote) return null
   const close = bar ? bar.close : quote.close
   const preClose = bar ? bar.pre_close : quote.pre_close
-  // 光标市值取该根末交易日；股本保持最新采集值，并由悬浮说明区分日期口径。
+  // 市值与股本同取该根末交易日；历史缺口不回退最新值。
   const isLatestDate = !bar || bar.date === quote.trade_date
   const totalMv = bar ? bar.total_mv : quote.total_mv
   const floatMv = bar ? bar.float_mv : quote.float_mv
@@ -386,12 +386,12 @@ function buildHeaderSummary(
       { label: '总市值', value: formatCompactMoneyYuan(totalMv) },
       { label: '流通市值', value: formatCompactMoneyYuan(floatMv) },
       {
-        label: '总股本', value: formatShares(quote.total_share, '—'),
-        hint: '显示最新采集的总股本，不随 K 线光标日期变化；当前未提供历史股本数据。',
+        label: '总股本', value: formatShares(bar ? bar.total_share : quote.total_share, '—'),
+        hint: '显示对应交易日的总股本；周、月、年线取最后交易日，缺失不回填最新值。',
       },
       {
-        label: '流通股', value: formatShares(quote.float_share, '—'),
-        hint: '显示最新采集的流通股本，不随 K 线光标日期变化；当前未提供历史股本数据。',
+        label: '流通股', value: formatShares(bar ? bar.float_share : quote.float_share, '—'),
+        hint: '显示对应交易日的流通 A 股股本；周、月、年线取最后交易日，缺失不回填最新值。',
       },
       { label: '量比', value: volumeRatio == null ? '—' : volumeRatio.toFixed(2) },
       { label: '市盈率', value: !isLatestDate || quote.pe_ttm == null ? '—' : quote.pe_ttm.toFixed(2) },

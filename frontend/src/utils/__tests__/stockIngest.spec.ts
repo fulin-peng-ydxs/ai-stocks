@@ -9,6 +9,14 @@ import {
 } from '@/utils/stockIngest'
 
 describe('stock ingest shared form contract', () => {
+  it('builds resumable share capital history params', () => {
+    expect(buildStockIngestParams(createStockIngestForm({
+      recipe: 'share_capital_history', years: 10, concurrency: 4,
+      scope: 'selected', codes: ['600000.SH'],
+    })).params).toEqual({recipe: 'share_capital_history', years: 10,
+      concurrency: 4, codes: ['600000.SH']})
+  })
+
   it('builds selected range refetch params', () => {
     const form = createStockIngestForm({
       recipe: 'range_refetch', scope: 'selected', codes: ['600000.SH'],

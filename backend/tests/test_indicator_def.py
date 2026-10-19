@@ -309,7 +309,7 @@ def _seed_stock(c, code, closes):
     return days[-1]
 
 
-def test_share_capital_fields_are_point_in_time_market_value_derivatives():
+def test_share_capital_fields_read_daily_facts():
     with DuckDBClient(db_path=":memory:") as c:
         repo = IndicatorDefRepo(c)
         repo.seed_builtins()
@@ -319,12 +319,14 @@ def test_share_capital_fields_are_point_in_time_market_value_derivatives():
             ["SHARE.SH", target, 8_000_000_000, 10_000_000_000],
         )
 
+        c.execute("INSERT INTO stock_share_capital_daily(code,trade_date,float_share,total_share) VALUES (?,?,?,?)",
+                  ["SHARE.SH", target, 810_000_000, 1_100_000_000])
         snap = IndicatorEngine(c).wide_snapshot(target, target).set_index("code")
 
-        assert snap.loc["SHARE.SH", "float_share"] == pytest.approx(800_000_000)
-        assert snap.loc["SHARE.SH", "total_share"] == pytest.approx(1_000_000_000)
-        assert resolve_indicator("float_share", {}, snap).iloc[0] == pytest.approx(800_000_000)
-        assert resolve_indicator("total_share", {}, snap).iloc[0] == pytest.approx(1_000_000_000)
+        assert snap.loc["SHARE.SH", "float_share"] == pytest.approx(810_000_000)
+        assert snap.loc["SHARE.SH", "total_share"] == pytest.approx(1_100_000_000)
+        assert resolve_indicator("float_share", {}, snap).iloc[0] == pytest.approx(810_000_000)
+        assert resolve_indicator("total_share", {}, snap).iloc[0] == pytest.approx(1_100_000_000)
         assert repo.get("float_share")["layer"] == "field"
         assert repo.get("total_share")["categories"] == ["股本", "估值"]
 

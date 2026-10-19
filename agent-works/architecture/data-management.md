@@ -41,23 +41,24 @@
 - **涨跌停与 ST 标记口径**：`stock_st_status_daily` 是唯一 ST 点时事实；日线采集先复用待入库日期已有的 `accurate` 事实，缺失或非权威时才通过 Baostock 的窄字段接口读取 `date/tradestatus/isST`，禁止名称推断和默认非 ST。该 ST 接口不提供行情价格；日线主源失败时的 Baostock 整段行情兜底、以及除权异常时只校准 `pre_close`，是两条独立的数据源路径。`daily_bar.is_st` 仅是同步投影，不供业务读取。`daily_bar.limit_status` / `is_one_word` 由 `add_markers` 用原始 `pre_close`、逐日 ST 和中央市场规则计算，涨跌停价按 `ROUND_HALF_UP` 到分。主板 ST 2026-07-06 前 5%、当日起 10%，创业板/科创板 ST 20%；入库、质检、训练、回测和天梯共用该规则。日常同步与 ST 强制校准的对照、全市场发布门和失败恢复契约见 [st-status.md](st-status.md)。
 - **除权参考价校准**：新浪不直接提供官方 `pre_close`，由分位原价与后复权价反推时可能产生一分钱精度损失。适配器标记真实复权因子切换日；仅当该误差会令收盘价越过合法涨跌停边界时，入库层用直接提供 `preclose` 的 baostock 定向交叉校准。校准源不可用时该行拒绝落库，避免合法除权行情被持续误报且反复重采无法恢复。
 
-### 市值口径（`daily_metrics` 表，仅 `code, trade_date, float_mv, total_mv` 四列）
-- **流通市值 `float_mv`**：新浪日线自带时变流通股本 `outstanding_share`→`float_share`，日线入库时同步算 `float_mv = close × float_share`（[ingest.py:228](../../backend/services/ingest.py)）。随行情天然齐全、永远当前。
-- **总市值 `total_mv`**：唯一来源东财单只估值 `stock_value_em`（[akshare_source.py:339](../../backend/datasource/akshare_source.py)）。**无全市场快照可用**（东财全市场现货接口在本环境被封），故全部走**单只逐票取数**，与日线逐只采同量级。
-- `total_share/float_share` 存 `stock_basic`（最新快照），不进 `daily_metrics`（避免日线粒度膨胀）。
-- 历史筛选、评分和回测中的 `total_share/float_share` 指标不读取上述最新快照，而由 `wide_snapshot` 按指定交易日的 `total_mv/float_mv ÷ daily_bar.close` 点时派生；市值或收盘价缺失时指标为空。
+### 股本与市值口径
+- `stock_share_capital_daily` 保存逐日总股本、流通 A 股及各自来源、生效/可用日期；`stock_basic` 仅保留带日期的最新行情日兼容投影。历史指标直接读取当日股本，不再通过市值反推。
+- `daily_metrics` 保存总市值、流通市值及两个来源字段。有效东财逐日源值优先；缺失时用同日股本×未复权收盘价补算，`computed:` 标识计算来源，旧数据来源未知保持 NULL。总市值统一按东财行情口径，用总股本（包括 H/B 股）乘 A 股原始收盘价，计算来源为 `computed:a_price:`；不是各上市地市值加总。
+- 日线同步新浪流通股本；估值同步东财逐日股本；`share_capital_history` 补全含退市股的历史股本及可补算市值。股本变动完整分页、生效/公告边界与覆盖检查见 [stock-collection.md](stock-collection.md#逐日股本与市值2026-10-19)。
 
-### total_mv 的四个采集入口（统一走单只 `_valuation_one`，口径一致，[ingest.py](../../backend/services/ingest.py)）
+### 市值与股本采集入口（共用逐日事实合并服务，[ingest.py](../../backend/services/ingest.py)）
 | 入口 | 方法 | 场景 | 范围 |
 |------|------|------|------|
-| 日常补最新日 | `ingest_valuation_latest()` | 增量更新收尾 | 对"当日有日线但 total_mv 仍空"的在市股逐只取**最新一天** |
+| 逐日股本历史 | `ingest_share_capital()` (`stock_ingest/share_capital_history`) | 含退市股的股本历史及市值补算 | 按已有行情日期采集，逐股断点；不因已有市值跳过 |
+| 日常补最新日 | `ingest_valuation_latest()` | 增量更新收尾 | 对最新日四字段缺失或股本×原价与市值不一致的在市股补采 |
+| 日常历史轮询 | `review_capital_history()` | 每次日常更新后自动处理历史缺口及非空不一致 | 默认每次 50 股；无新证据 7 天后可重试，失败 1 天后；可用 `review_only=true` 独立运行 |
 | 历史补采（新票） | `ingest_valuation()` | 新上市/新入库 | **整股从没采过 total_mv** 的票补全历史（跳过已有 total_mv 的票） |
 | 一次性回补 | `ingest_valuation_gaps()` (`cli valuation --fill-gaps`) | 清存量缺口 | 逐(code,缺失区间)驱动，不受整股跳过限制 |
 | 缺口收口 | `reconcile_gaps()` 内顺带 | 补回行情天 | 补回的天顺带补市值 |
 
-> **total_mv 增量语义（重要）**：`update` 收尾只保证**最新交易日**的 total_mv 新鲜；**历史中间缺口不归 update 管**——日线入库每行写 `float_mv`、`total_mv=None`（[ingest.py](../../backend/services/ingest.py)），历史 total_mv 缺口由 `ingest_valuation_gaps`/`valuation --fill-gaps`（或质量页补修）一次性清。所以"跑完增量更新，质检 `mv_gap` 仍显示历史缺口"属**正常**，需补修/`--fill-gaps` 收敛。
+> **增量与历史覆盖**：`update` 先补最新交易日四字段，再按配置有界轮询历史缺口及非空不一致；不承诺一次更新清空全历史。立即全量复查使用逐日股本补采。每股尝试时间及原因持久记录在 `data_update_log`，`checked` 只代表完成检查，不代表四字段齐全。转股接口范围、证据优先级和精度见 [个股采集架构](stock-collection.md#自动转股补充与历史轮询)。
 
-`_valuation_one` 只写 `daily_bar` 已有交易日（杜绝游离行）；`total_mv` 覆盖写、`float_mv` 仅空缺回填（日线已写的更准值不覆盖）；最新总/流通股本写回 `stock_basic`。
+`_valuation_one` 只写 `daily_bar` 已有交易日（杜绝游离行）；有效源端市值优先于计算值；逐日股本落入独立事实表，只有最新行情日的股本可投影到 `stock_basic`。
 
 ### 个股四层与指数/板块独立质检（`backend/services/data_report.py`、`dataquality/checker.py`）
 统一口径 `_coverage_frame`（全市场一次扫描 + 数据变更签名内存缓存），概览/逐股/质检三处共用同一份，保证数字一致。缓存签名覆盖行情、市值、基础资料、问题台账和停牌事实；基础资料新增股票或变更上市/退市边界后，立即质检必须重新扫描，不能沿用旧股票池。
@@ -164,7 +165,7 @@
 
 | 操作 | 对应任务/命令 | 采集内容 | 适用场景 |
 |------|---------------|----------|----------|
-| 个股采集 | `stock_ingest` | 日常同步、历史行情、日期区间重采、市值历史/缺口/全历史异常修复、基础资料、退市股历史、ST 状态刷新九类安全方案 | Web 手动与调度的统一入口；按方案选择全市场、指定股票或日期区间 |
+| 个股采集 | `stock_ingest` | 日常同步、历史行情、日期区间重采、逐日股本、市值历史/缺口/全历史异常修复、基础资料、退市股历史、ST 状态刷新十类安全方案 | Web 手动与调度的统一入口；按方案选择全市场、指定股票或日期区间 |
 | 旧行情任务 | `update/backfill/ingest_date/ingest_codes` | 与统一入口对应方案相同 | 历史任务与旧接口继续兼容；旧调度中的可调度类型继续执行，新建 Web 任务不再直接使用 |
 | 板块采集 | `board` | 板块字典/成分快照/指数/资金流 | 板块数据（概念/行业），增量或全量回填 |
 | 走势相关重算 | `stock_board_correlation` | 最新完整日或固定日，全市场或指定股票；强制重算并原子发布 | 缺失快照首次读取时幂等创建一次；已有结果由「结果维护」手动或用户调度维护；失败保留最后成功结果 |
@@ -190,11 +191,13 @@
 | 日常同步 | `daily_update` | `codes`、`concurrency`、`force_current_day` |
 | 历史行情补全 | `history_backfill` | `codes`、`years`、`concurrency` |
 | 日期区间重采 | `range_refetch` | `codes`、`date_start/date_end`、`concurrency` |
+| 逐日股本补采 | `share_capital_history` | `codes`、`years`、`concurrency`；API 的 `verified_facts` 须同时指定 `codes` |
 | 市值历史补采 | `valuation_history` | `codes`、`years`、`concurrency` |
 | 市值缺口修复 | `valuation_gaps` | `codes`、`concurrency` |
 | 全历史异常市值修复 | `valuation_invalid_history` | `codes`、`concurrency`；仅强制覆盖结构体检同口径确认的非正或倒挂日期，逐股复检后才记成功 |
 | 基础资料刷新 | `basic_refresh` | 固定全市场，无额外参数 |
 | 退市股历史补全 | `delisted_history` | `years`，固定退市股票池 |
+| ST 状态刷新 | `st_status_refresh` | `codes`、可选 `date_start/date_end` |
 
 省略 `codes` 表示全市场；指定股票时必须是非空数组。采集表单、概览逐股体检和走势板块相关性调度统一使用 `StockCodeMultiSelect`，共同承接远程搜索、批量粘贴、去重和候选错误；非法或超范围代码仍由对应提交接口最终校验并保留原表单输入。并发范围为 1–16，日期区间不可反向。历史行情、日期区间、市值历史/缺口/全历史异常修复和退市股历史属于高耗时方案，手动提交与保存调度前均显示风险确认。
 
@@ -208,8 +211,9 @@
 | 股票基础信息 | `stock_basic` | AKShare + baostock 兜底 | 股票列表、板块、ST/退市、上市/退市日、点时股票池 |
 | 日线行情 | `daily_bar` | 新浪日线/baostock | K线、指标、筛选、榜单、回测撮合 |
 | 指数行情 | `index_bar` | AKShare | 中证 500、沪深 300、上证指数、科创 50、深证成指、创业板指；用于回测基准和市场环境对照。增量更新按指数分别计算最新日，新配置指数自动回填系统历史窗口；质检按指数分别识别滞后、单日缺口与非法行，可在质量页定向重采并复检收敛 |
-| 流通市值 | `daily_metrics.float_mv` | 日线内流通股本派生 | 股票池过滤、列表展示、市值条件 |
-| 总市值 | `daily_metrics.total_mv` | 东财单只估值 | 数据质量 L2、股票池过滤、榜单/筛选市值条件 |
+| 流通市值 | `daily_metrics.float_mv` | 源端优先，同日股本补算 | 股票池过滤、列表展示、市值条件 |
+| 总市值 | `daily_metrics.total_mv` | 源端优先，已确认 A 股口径的同日股本补算 | 数据质量 L2、股票池过滤、榜单/筛选市值条件 |
+| 逐日股本 | `stock_share_capital_daily` | 东财逐日/变动记录、新浪历史结构/流通序列 | 同日股本展示、指标、筛选、评分、回测与缺失市值补算 |
 | 溯源 | `data_source_provenance` | 采集服务写入 | 审计某段数据来自主源还是备源 |
 
 **任务状态解释**：
@@ -235,7 +239,7 @@
 | `ohl_repaired` | L1 入库闸门 | 开高低异常被收盘价修补 | 核对后重采或忽略 | K线展示、涨跌停判断 |
 | `mv_missing` | L2 字段契约 | 整股从未采到市值 | 补市值 | 市值筛选、股票池过滤 |
 | `mv_gap` | L2 字段契约 | 近端逐日市值字段缺口 | `valuation --fill-gaps` 或页面修复 | 市值条件与质量分 |
-| `mv_invalid` | L2 字段契约 | 近端市值非正或总市值低于流通市值超过万分之一容差 | 强制刷新异常日期市值并复检 | 市值条件、股本反推与质量分 |
+| `mv_invalid` | L2 字段契约 | 近端市值非正或总市值低于流通市值超过万分之一容差 | 强制刷新异常日期市值并复检 | 市值条件与质量分 |
 | `abnormal_change` | L3 正确性 | 涨跌幅超过板块上限缓冲 | 重采或人工标记正常 | 回测撮合、涨跌停判断 |
 | `adj_jump` | L3 正确性 | 前复权价格跳变异常 | 重采整段并重算复权 | K线、收益率、指标 |
 | `data_gap` | L4 覆盖鲜活 | 近 90 交易日中间缺日 | 缺口收口/重采 | 指标连续性、筛选和回测 |
@@ -336,7 +340,7 @@ flowchart LR
 ```
 建表(init_db,自动) → 交易日历 → 基准指数 → 股票基础 → 日线 backfill(含 float_mv)
   → 退市股 delisted --enrich(补上市/退市日+行业,防幸存者偏差)
-  → 全量 valuation(补 total_mv + 写 stock_basic 股本)
+  → 全量 valuation(补逐日总/流通股本和市值，投影最新行情日股本)
   → rebuild-price-factors(去抖因子/pre_close/涨跌停标记)
 ```
 命令：`cli backfill` / `cli delisted --enrich` / `cli valuation` / `cli rebuild-price-factors`。
@@ -344,12 +348,12 @@ flowchart LR
 ### 2. 日常运维（`DailyPipeline.run()`，[pipeline.py](../../backend/services/pipeline.py)）
 ```
 增量更新 update(): 日历自愈 → 指数 → 全市场日线增量 → 缺口收口 reconcile_gaps
-                 → 刷干净复权因子 → 补最新交易日 total_mv(逐只) → 历史补采(仅整股从没市值的
+                 → 刷干净复权因子 → 补最新交易日四字段(逐只) → 历史补采(仅整股从没市值的
                    新票)；历史中间缺口不自动补，跑 `valuation --fill-gaps` 一次性清
 → 数据质检（个股四层 + 市场指数 + 板块，统一写台账）
 → (可选) 数据体检 DataVerifier
 ```
-可手动 `cli daily`，或在「定时调度」页配 `stock_ingest` 日常同步以及 `verify`/`fix`/`checkup` 等数据任务按 cron/每日触发（通常仅交易日）；审计日志清理通过 `audit_cleanup` 定时任务执行，不受交易日限制。CLI 继续作为应急和批处理入口，不再是九类常用个股采集能力的唯一入口。
+可手动 `cli daily`，或在「定时调度」页配 `stock_ingest` 日常同步以及 `verify`/`fix`/`checkup` 等数据任务按 cron/每日触发（通常仅交易日）；审计日志清理通过 `audit_cleanup` 定时任务执行，不受交易日限制。CLI 继续作为应急和批处理入口，不再是十类常用个股采集能力的唯一入口。
 
 ### 3. 质检修复闭环
 ```
@@ -368,10 +372,10 @@ flowchart LR
 
 | 等级 | 风险点 | 影响 | 建议 |
 |------|--------|------|------|
-| <span style="color:#dc2626">●</span> 高 | `total_mv` 单数据源、无兜底 | 东财单只 `stock_value_em` 异常时，当日总市值会缺；流通市值主源来自日线、估值源兜底 | 通过 `mv_gap` 质检可见并补修；后续寻找第二总市值源 |
+| <span style="color:#dc2626">●</span> 高 | 历史披露及跨源数值证据不足 | 源端市值缺失时虽可按同日股本补算，但未知公告日、未披露区间及跨源数值冲突仍需核验 | 使用逐股诊断定位原因、补采和公告核验；不以当前股本倒填 |
 | <span style="color:#f59e0b">●</span> 中 | 日常补 `total_mv` 约 5000 次/日单只请求 | 提高并发可提速，但会增加源端封禁风险 | 在配置里权衡限流/并发，优先稳定 |
 | <span style="color:#f59e0b">●</span> 中 | 缺口大时 `mv_gap` 台账量大 | 新交易日大面积未补/存量未回补时，质检会一次写入数千条 `mv_gap`（已去掉上限，与概览口径一致） | 跑 `valuation --fill-gaps` 或一键恢复后台账随之清零 |
 | <span style="color:#f59e0b">●</span> 中 | L3 既有问题存量 | 多为新股、退市整理期、复牌或粗粒度复权残留 | 人工核对后标记正常或重采，逐步收敛 |
-| <span style="color:#16a34a">●</span> 低 | 退市股缺少少量市值 | baostock 无流通股本，约少量行无法补齐 | 体检已豁免，不影响在市选股 |
+| <span style="color:#16a34a">●</span> 低 | 退市股历史股本/市值缺失 | 免费源历史覆盖有限，可能影响含退市股的历史研究 | 逐日股本体检包含退市股；缺失保持可见，不据此删除历史股票池成员 |
 | <span style="color:#16a34a">●</span> 低 | 概览 L2 与体检口径不同 | 概览看整股/近端，体检看逐行 NULL，数字可能不一致 | 两者互补：概览看运营状态，体检查细节 |
 | <span style="color:#16a34a">●</span> 低 | DuckDB 单写锁 | Web 写任务与 CLI 写操作互斥 | 大型 CLI 写库前先停服务，避免锁争用 |

@@ -45,7 +45,7 @@ def _seed(c):
         [{"code": "AAA.SH", "trade_date": d, "float_mv": 1.0e10, "total_mv": 1.0e10} for d in dates]
     )
     c.register_df("m", mdf)
-    c.execute("INSERT INTO daily_metrics SELECT * FROM m")
+    c.execute("INSERT INTO daily_metrics (code,trade_date,float_mv,total_mv) SELECT * FROM m")
     c.unregister("m")
 
 

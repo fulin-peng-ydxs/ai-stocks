@@ -618,6 +618,20 @@ class DataVerifier:
             "(delist_date IS NULL OR delist_date> "
             "(SELECT COALESCE(max(trade_date),current_date) FROM daily_bar))"
         )
+        shares = self._finding(
+            "SELECT b.code,b.trade_date,s.total_share,s.float_share FROM daily_bar b "
+            "LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
+            "WHERE s.total_share IS NULL OR s.float_share IS NULL")
+        self._check("逐日股本覆盖", shares.total == 0, f"缺 {shares.total} 个股票交易日",
+                    "按已有日线检查，含退市股；源端缺失保持空值，不使用当前股本倒填。",
+                    findings=[shares])
+        invalid_shares = self._finding(
+            "SELECT * FROM stock_share_capital_daily WHERE total_share<=0 OR float_share<=0 "
+            "OR float_share>total_share OR total_effective_date>trade_date "
+            "OR float_effective_date>trade_date OR total_available_date>trade_date "
+            "OR float_available_date>trade_date")
+        self._check("逐日股本合法性与点时边界", invalid_shares.total == 0,
+                    f"异常 {invalid_shares.total}", findings=[invalid_shares])
         required = [
             ("stock_basic", "name", "", "基础·名称"),
             ("stock_basic", "exchange", "", "基础·交易所"),

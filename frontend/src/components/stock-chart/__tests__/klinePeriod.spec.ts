@@ -93,14 +93,16 @@ describe('klinePeriod', () => {
   it.each(['day', 'week', 'month', 'year'] as const)('%s 市值取末日，不累加且不填充末日缺口', (period) => {
     const source = [
       bar('2026-09-14', 10, { total_mv: 10_000_000, float_mv: 8_000_000 }),
-      bar('2026-09-18', 12, { total_mv: 20_000_000, float_mv: 16_000_000 }),
+      bar('2026-09-18', 12, { total_mv: 20_000_000, float_mv: 16_000_000, total_share: 1000, float_share: 800 }),
     ]
     expect(aggregateKlineBars(source, period).at(-1))
-      .toMatchObject({ date: '2026-09-18', total_mv: 20_000_000, float_mv: 16_000_000 })
+      .toMatchObject({ date: '2026-09-18', total_mv: 20_000_000, float_mv: 16_000_000, total_share: 1000, float_share: 800 })
     source[1]!.total_mv = null
     source[1]!.float_mv = null
+    source[1]!.total_share = null
+    source[1]!.float_share = null
     expect(aggregateKlineBars(source, period).at(-1))
-      .toMatchObject({ date: '2026-09-18', total_mv: null, float_mv: null })
+      .toMatchObject({ date: '2026-09-18', total_mv: null, float_mv: null, total_share: null, float_share: null })
   })
 
   it('周期图表直接消费后端对应周期指标，不在前端重算', () => {

@@ -85,7 +85,7 @@
 | ⚙️ **配置管理** | `ConfigView`（`/system/config/{score,trade,tech,system}`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 四个子页：评分规则（可公开/复制/版本回看）/ 买卖指标（买入+卖出+兜底，可公开/复制）/ 技术指标（注册表）/ 系统设置（数据源、回测成本、认证与审计白名单） | [config-definitions.md](agent-works/architecture/config-definitions.md) |
 | 🎨 **布局配置** | `views/layout/{Presets,Pages,Components}`（`/system/layout/*`） | `/api/layout/*` | 可配置布局系统的产品化工作台 3 子页：预设管理（全局风格 token / 预设×组件默认 / 响应式默认）、页面布局（左预览右配置 + `default→preset→page→user` 四层来源追踪）、系统组件（组件能力目录 + 字段开放策略 + 页面 slot 自动继承覆盖） | [DESIGN.md](DESIGN.md) |
 | 🔐 **系统菜单 / 权限 / 租户** | `views/system/{UserManage,RoleManage,MenuResource,TenantManage}` | `/api/auth/*`, `/api/users`, `/api/roles`, `/api/menus`, `/api/resources`, `/api/tenants` | 登录会话、用户域、角色授权、菜单树、功能点和租户启停；接口、菜单、按钮同源授权 | [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) |
-| 🗄️ **数据管理** | `views/data/{Overview,Ingest,Quality,Schedule}` | `/api/data/*` | 采集闭环 4 子页：概览 / 数据采集 / 质检修复 / 定时调度；个股采集统一提供九类安全方案，含 ST 全局/区间刷新 | [data-management.md](agent-works/architecture/data-management.md) / [stock-collection.md](agent-works/architecture/stock-collection.md) / [st-status.md](agent-works/architecture/st-status.md) |
+| 🗄️ **数据管理** | `views/data/{Overview,Ingest,Quality,Schedule}` | `/api/data/*` | 采集闭环 4 子页：概览 / 数据采集 / 质检修复 / 定时调度；个股采集统一提供十类安全方案，含 ST 全局/区间刷新 | [data-management.md](agent-works/architecture/data-management.md) / [stock-collection.md](agent-works/architecture/stock-collection.md) / [st-status.md](agent-works/architecture/st-status.md) |
 | 🧩 **板块行情与采集** | `SectorsView` / `SectorDetailView` / `views/data/*` | `/api/sectors/*`, `/api/data/*` | 板块工作台支持概念/行业查询、连续指数对比、资金流和成分股钻取；数据管理承接字典/成分/指数/资金流采集、周频控制和专项质检修复 | [board-collection.md](agent-works/architecture/board-collection.md) |
 | 🎮 **盘感训练** | `TrainingView` | `/api/training/*` | 盲测随机个股 + 逐日揭示 K 线（含 MACD）+ T+1 真实撮合买卖；一局产出评分/评级/资金曲线，结算揭晓板块；跨局成长轨迹 | [market-sense-training.md](agent-works/architecture/market-sense-training.md) |
 
@@ -297,9 +297,13 @@ flowchart LR
 | `backfill` | 全市场近 10 年日线回填，支持断点续跑 | 新库初始化、历史行情缺大段 |
 | `delisted --enrich` | 补退市股历史和上市/退市日 | 新库初始化、怀疑幸存者偏差 |
 | `valuation` | 按单只股票补总市值/总股本 | 新库初始化、新上市股票缺总市值 |
+| 数据采集页「逐日股本补采」 | 采集含退市股的逐日股本，并按同日原始收盘价补缺失市值 | 十年股本回补；支持断点和并发，公告未知或跨源数值冲突未解决时保留缺失；总市值统一按总股本×A股原价 |
 | `valuation --fill-gaps` | 针对已有库的总市值缺口逐段回补 | 质检出现大量 `mv_gap` 或历史缺口时 |
 | `rebuild-price-factors` | 不联网，重建清洗复权因子、`pre_close`、涨跌停标记 | 重采行情、发现复权跳变、初始化后 |
 | `verify-data` | 只读体检，输出 PASS/FAIL | 初始化后、重大补数后、回测前 |
+
+- 逐日股本采集包含交易所转股补充和历史缺口/非空差异轮询；默认每次 50 股，来源失败可重试。调度开关独立管理，详见 [个股采集架构](agent-works/architecture/stock-collection.md)。
+
 
 ### 5.4 一键日常流程
 
@@ -365,7 +369,7 @@ Web 与 CLI 共用同一采集服务和行情口径。Web 是常用运维入口�
 | 页面 | 主要用途 | 典型操作 |
 |------|----------|----------|
 | 数据概览 | 看数据新鲜度、质量分、缺口、双库数据资产目录 | 在数据资产中切换全部 / DuckDB / PG / 规划中；默认看 88 张当前事实表，可按需查看 28 张迁移旧表并逐表精确统计 |
-| 数据采集 | 发起异步采集/补数任务，看实时日志 | 在一个「个股采集」入口选择九类方案与全市场/指定股票范围，并续跑、重试或终止任务 |
+| 数据采集 | 发起异步采集/补数任务，看实时日志 | 在一个「个股采集」入口选择十类方案与全市场/指定股票范围，并续跑、重试或终止任务 |
 | 数据质量 | 质检台账、修复、忽略、结构体检 | 先筛高危 open 问题，批量修复后复检 |
 | 定时调度 | 配置自动更新、质检、体检、审计清理 | 建每日收盘后「个股采集·日常同步」，再建定期 verify/checkup；审计清理默认每天 03:30 |
 
@@ -424,7 +428,7 @@ python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB
 | [environment-configuration.md](agent-works/architecture/environment-configuration.md) | 环境变量、变量文件、YAML 基线、PG/DuckDB `app_config` 边界和配置生效规则 |
 | [stock-board-correlation.md](agent-works/architecture/stock-board-correlation.md) | 行业/概念走势冠军的算法口径、有效样本含义、任务落表、页面读取和风险边界 |
 | [stock-intraday.md](agent-works/architecture/stock-intraday.md) | 日 K 下钻近期分时的数据口径、Redis 缓存、源站并发保护、页面状态与运维边界 |
-| [stock-collection.md](agent-works/architecture/stock-collection.md) | 个股 EOD 数据的九类采集方案、交易日历与源端就绪、并发落库、断点续跑和质量修复 |
+| [stock-collection.md](agent-works/architecture/stock-collection.md) | 个股 EOD 数据的十类采集方案、交易日历与源端就绪、并发落库、断点续跑和质量修复 |
 | [board-collection.md](agent-works/architecture/board-collection.md) | 板块字典、成分、指数和资金流的日期口径、采集编排、反爬、质检与修复 |
 | [limit-ladder.md](agent-works/architecture/limit-ladder.md) | 连板天梯的涨停/ST 口径、快照 v2、任务协调、页面/API、权限、部署与风险边界 |
 | [st-status.md](agent-works/architecture/st-status.md) | ST 点时事实的采集、批次发布、质检、修复、业务门禁与涨跌停截止点 |

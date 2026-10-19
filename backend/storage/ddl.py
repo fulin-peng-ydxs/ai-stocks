@@ -21,7 +21,7 @@ log = get_logger("storage.ddl")
 
 # ── 基础数据表（SDD §4.1）──────────────────────────────────────
 
-# 股票基础信息：ST/股本时变，此处存最新值；时变 ST/股本见 daily_bar/daily_metrics
+# 股票基础信息：ST/股本时变，此处存最新值；时变 ST/股本见 stock_st_status_daily/stock_share_capital_daily
 DDL_STOCK_BASIC = """
 CREATE TABLE IF NOT EXISTS stock_basic (
     code            VARCHAR PRIMARY KEY,   -- 含交易所后缀，如 600000.SH
@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS stock_basic (
     delist_date     DATE,                  -- 退市日（NULL=在市）
     total_share     BIGINT,                -- 最新总股本
     float_share     BIGINT,                -- 最新流通股本
+    total_share_date DATE,                 -- 总股本投影日期；旧值未认证为 NULL
+    float_share_date DATE,                 -- 流通股本投影日期；旧值未认证为 NULL
     industry        VARCHAR,               -- 所属行业
     concept         VARCHAR,               -- 概念标签（JSON 字符串，可多值）
     price_limit_pct DOUBLE                 -- 涨跌幅限制 0.10/0.20
@@ -66,8 +68,29 @@ DDL_DAILY_METRICS = """
 CREATE TABLE IF NOT EXISTS daily_metrics (
     code       VARCHAR,
     trade_date DATE,
-    float_mv   DOUBLE,    -- 流通市值 = close × float_share（自算）
+    float_mv   DOUBLE,    -- 流通市值：源端优先，同日流通A股×原价补算
     total_mv   DOUBLE,    -- 总市值
+    total_mv_source VARCHAR, -- 总市值来源，computed: 前缀表示补算
+    float_mv_source VARCHAR, -- 流通市值来源
+    PRIMARY KEY (code, trade_date)
+);
+"""
+
+# 逐日股本：来源逐字段保留，禁止使用最新股本倒填历史。
+DDL_STOCK_SHARE_CAPITAL_DAILY = """
+CREATE TABLE IF NOT EXISTS stock_share_capital_daily (
+    code VARCHAR,
+    trade_date DATE,
+    total_share BIGINT,
+    float_share BIGINT,
+    total_source VARCHAR,
+    float_source VARCHAR,
+    total_effective_date DATE,
+    float_effective_date DATE,
+    total_available_date DATE,
+    float_available_date DATE,
+    total_mv_eligible BOOLEAN,
+    updated_at TIMESTAMP DEFAULT current_timestamp,
     PRIMARY KEY (code, trade_date)
 );
 """
@@ -106,7 +129,7 @@ CREATE TABLE IF NOT EXISTS data_update_log (
     date_start  DATE,
     date_end    DATE,
     row_count   BIGINT,
-    status      VARCHAR,        -- success/failed/partial
+    status      VARCHAR,        -- success/failed/partial/checked（复查留痕，不是数据修订）
     detail      VARCHAR,
     updated_at  TIMESTAMP
 );
@@ -184,6 +207,7 @@ M1_TABLES: dict[str, str] = {
     "stock_basic": DDL_STOCK_BASIC,
     "daily_bar": DDL_DAILY_BAR,
     "daily_metrics": DDL_DAILY_METRICS,
+    "stock_share_capital_daily": DDL_STOCK_SHARE_CAPITAL_DAILY,
     "index_bar": DDL_INDEX_BAR,
     "trade_calendar": DDL_TRADE_CALENDAR,
     "data_update_log": DDL_DATA_UPDATE_LOG,
@@ -1085,6 +1109,8 @@ _LIMIT_LADDER_INDEXES: tuple[str, ...] = (
 # 数据维度注册表 seed（DM-D4/D5）：已采集维度 + 规划中占位（股东数/筹码峰）。
 # 幂等 ON CONFLICT DO NOTHING：已存在则保留（允许后续人工调整 status）。
 _DIMENSION_SEED: list[tuple] = [
+    ("share_capital", "逐日股本", "collected", "东财/新浪", '["stock_share_capital_daily"]',
+     "同日总股本/流通A股及生效、可用日期；用于股本指标和缺失市值补算"),
     ("quote",        "日线行情",   "collected", "akshare(主)/baostock(备)", '["daily_bar"]',
      "OHLC/成交量额/换手/复权因子/涨跌停标记，选股回测核心"),
     ("valuation",    "估值市值",   "collected", "akshare(东财)",            '["daily_metrics"]',
@@ -1377,6 +1403,13 @@ def init_db(client: DuckDBClient | None = None) -> list[str]:
         client.execute(sql)
         created.append(name)
         log.debug("表已就绪: %s", name)
+    for table, column, dtype in [
+        ("stock_basic", "total_share_date", "DATE"),
+        ("stock_basic", "float_share_date", "DATE"),
+        ("daily_metrics", "total_mv_source", "VARCHAR"),
+        ("daily_metrics", "float_mv_source", "VARCHAR"),
+    ]:
+        client.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {dtype}")
     _migrate_special_day_event_types(client)
     _migrate_stock_board_correlation_snapshot_keys(client)
     for mig in _MIGRATIONS:

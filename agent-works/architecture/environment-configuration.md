@@ -123,6 +123,8 @@ flowchart TD
 
 `reload_settings()` 只清 `get_settings()` 缓存并重读 YAML。`GET /api/config` 返回 YAML-only 的 `get_settings()` 结果；`POST /api/config/reload` 适用于人工修改 YAML 后刷新基线缓存，不负责写数据库覆盖层。
 
+股本历史自动轮询的 YAML 基线参数为 `datasource.capital_review_batch_size`（默认 50，0 关闭）和 `capital_review_interval_days`（默认 7）；读取有效配置时生效，未增加 Web 覆盖项。它们控制日常采集内部复查，不改变调度任务的启停。
+
 ### 3. 生效配置与数据库覆盖层
 
 运行期业务参数应优先调用 `get_effective_settings()`。它每次读取 YAML 原始 dict，再从 PostgreSQL `app_config` 读取白名单覆盖项，按点分路径深合并后重新校验为 `Settings`。

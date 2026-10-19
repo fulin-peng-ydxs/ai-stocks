@@ -48,7 +48,7 @@
 - `close`：当日未复权收盘价，作为“股价”基础字段供绝对价格区间筛选和评分使用。
 - `total_mv/float_mv`：指定交易日的总市值/流通市值，作为可直接参与筛选和评分的基础字段；
   日常采集维持最新交易日，历史缺口由 `valuation --fill-gaps` 回补。
-- `float_share/total_share`：分别按指定交易日的流通市值/总市值除以当日未复权收盘价计算，
+- `float_share/total_share`：直接读取 `stock_share_capital_daily` 指定交易日的流通 A 股股本/总股本，
   单位为股；不读取 `stock_basic` 最新股本快照，保证历史筛选、评分和回测的点时口径。
 - `pct_change`：N 日涨跌幅。N 日跌幅使用负阈值筛选，不另建跌幅指标。
 - `range_amplitude_pct`：`(HHV(H,N) / LLV(L,N) - 1) × 100`。一年区间振幅使用 `N=240`。
@@ -57,3 +57,5 @@
 定义表结构调整由 `backend/storage/ddl.py` 幂等执行，SQL 审计副本见
 `agent-works/technical-indicator-governance/indicator-definition-layer-migration.sql`。新增或修改字段后必须执行
 `python -m backend.cli verify-catalog`。
+
+股本/市值实际值变更登记 `stock_share_capital_daily` 的更新日志，纳入指标缓存和评分快照的输入修订指纹；幂等采集不更新版本。四字段从逐日表读取，不在指标引擎中反算股本。

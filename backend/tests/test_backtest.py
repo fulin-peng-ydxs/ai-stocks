@@ -144,7 +144,7 @@ def _seed_one_stock(c, code, rows, pct=0.10, name="测试", rs=50.0):
     # rs 入参保留以兼容调用签名（涨幅高者横截面 RS 自然更高，与原 rs 排序意图一致）。
     _ = rs
     mdf = [{"code": code, "trade_date": d, "float_mv": 1e10, "total_mv": 1e10} for (d, *_3) in all_rows]
-    c.register_df("tm", pd.DataFrame(mdf)); c.execute("INSERT INTO daily_metrics SELECT * FROM tm"); c.unregister("tm")
+    c.register_df("tm", pd.DataFrame(mdf)); c.execute("INSERT INTO daily_metrics (code,trade_date,float_mv,total_mv) SELECT * FROM tm"); c.unregister("tm")
 
 
 def test_forward_returns_entry_and_window():

@@ -53,6 +53,8 @@ class DataSourceConfig(BaseModel):
     primary: str = "akshare"
     fallback: str = "baostock"
     history_years: int = Field(default=10, ge=1, le=30)
+    capital_review_batch_size: int = Field(default=50, ge=0, le=500)
+    capital_review_interval_days: int = Field(default=7, ge=1, le=365)
     rate_limit_per_sec: float = 5
     max_retries: int = 3
     retry_backoff_sec: float = 2

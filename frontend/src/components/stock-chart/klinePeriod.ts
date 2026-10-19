@@ -79,9 +79,11 @@ function aggregateGroup(group: readonly Bar[]): PeriodBar {
     high: highs.length ? Math.max(...highs) : first.high,
     low: lows.length ? Math.min(...lows) : first.low,
     close: last.close,
-    // 市值是周期末存量，不能像成交额一样求和，也不能取周期内前一天填补缺口。
+    // 市值和股本是周期末存量，不能像成交额一样求和，也不能取周期内前一天填补缺口。
     ...(last.total_mv !== undefined ? { total_mv: last.total_mv } : {}),
     ...(last.float_mv !== undefined ? { float_mv: last.float_mv } : {}),
+    ...(last.total_share !== undefined ? { total_share: last.total_share } : {}),
+    ...(last.float_share !== undefined ? { float_share: last.float_share } : {}),
     pre_close: preClose,
     // 接口类型保证日线 volume 为数值；这里仍保留运行时全缺失为空的聚合语义。
     volume: nullableSum(group.map((bar) => bar.volume)) as number,

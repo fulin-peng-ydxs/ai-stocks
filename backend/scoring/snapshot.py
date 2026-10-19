@@ -35,7 +35,7 @@ def _current_param_hash(market=None, profile: dict | None = None) -> str:
     client = market or get_client()
     data_revision = client.query_df(
         "SELECT max(id) AS revision FROM data_update_log "
-        "WHERE table_name IN ('daily_bar','daily_metrics') AND status IN ('success','partial')"
+        "WHERE table_name IN ('daily_bar','daily_metrics','stock_share_capital_daily') AND status IN ('success','partial')"
     ).iloc[0]["revision"]
     if pd.notna(data_revision):
         # 正常行情/市值更新会留下日志；将版本并入指纹，让历史修订自动淘汰旧榜单。
