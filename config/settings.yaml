@@ -21,7 +21,7 @@ duckdb:
 datasource:
   primary: "akshare"          # 主源
   fallback: "baostock"        # 补退市股/复权因子
-  history_years: 5            # 历史深度近 5 年
+  history_years: 10           # 历史深度近 10 年
   rate_limit_per_sec: 5       # 限流：每秒请求数
   max_retries: 3              # 重试次数
   retry_backoff_sec: 2        # 重试退避秒数

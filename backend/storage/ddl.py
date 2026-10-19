@@ -1029,7 +1029,7 @@ DDL_STOCK_SPECIAL_TRADING_DAY = """
 CREATE TABLE IF NOT EXISTS stock_special_trading_day (
     code VARCHAR NOT NULL, -- 股票标准代码
     trade_date DATE NOT NULL, -- 仅在此交易日生效
-    event_type VARCHAR NOT NULL CHECK (event_type = 'delisting_first_day'), -- 退市整理首日
+    event_type VARCHAR NOT NULL CHECK (event_type IN ('delisting_first_day', 'resumption_no_limit')), -- 公告确认无涨跌幅限制
     announcement_date DATE NOT NULL CHECK (announcement_date <= trade_date), -- 公告日期
     source_ref VARCHAR NOT NULL, -- 官方公告链接
     note VARCHAR NOT NULL, -- 人工核验说明/撤销原因
@@ -1345,6 +1345,22 @@ def _migrate_stock_board_correlation_snapshot_keys(client: DuckDBClient) -> None
     log.info("个股走势关联板块主键已升级为每日快照结构: %s", ",".join(pending))
 
 
+def _migrate_special_day_event_types(client: DuckDBClient) -> None:
+    """DuckDB 不支持替换 CHECK；事务内按正式 DDL 重建，完整保留历史审计。"""
+    constraints = client.query_df(
+        "SELECT constraint_text FROM duckdb_constraints() "
+        "WHERE schema_name='main' AND table_name='stock_special_trading_day' "
+        "AND constraint_type='CHECK'"
+    )
+    if any("resumption_no_limit" in str(value) for value in constraints["constraint_text"]):
+        return
+    with client.transaction():
+        client.execute("ALTER TABLE stock_special_trading_day RENAME TO special_day_migration_old")
+        client.execute(DDL_STOCK_SPECIAL_TRADING_DAY)
+        client.execute("INSERT INTO stock_special_trading_day SELECT * FROM special_day_migration_old")
+        client.execute("DROP TABLE special_day_migration_old")
+
+
 def init_db(client: DuckDBClient | None = None) -> list[str]:
     """幂等创建全部表与序列（M1 数据底座 + M2 指标），返回已创建的表名列表。"""
     client = client or get_client()
@@ -1361,6 +1377,7 @@ def init_db(client: DuckDBClient | None = None) -> list[str]:
         client.execute(sql)
         created.append(name)
         log.debug("表已就绪: %s", name)
+    _migrate_special_day_event_types(client)
     _migrate_stock_board_correlation_snapshot_keys(client)
     for mig in _MIGRATIONS:
         try:

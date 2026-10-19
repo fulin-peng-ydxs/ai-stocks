@@ -166,7 +166,8 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 ## 特殊交易日事实维护
 
 `stock_special_trading_day` 为 DuckDB 全市场参考事实，主键为股票代码与交易日。
-当前仅支持公告确认的 `delisting_first_day`（退市整理期首日）；仅匹配当日，后续日期仍走板块/ST 规则。
+支持公告确认的 `delisting_first_day`（退市整理期首日）与 `resumption_no_limit`（恢复上市/股改复牌等公告明确无涨跌幅限制日）；仅匹配当日，后续日期仍走板块/ST 规则。
+采集、ST 标记重算、全量质检及回测开盘撮合共享此事实。导入/撤销同事务重算当日标记；回测仅解除限幅条件，仍要求有效开盘价。
 门禁与窗口计算批量按代码、日期关联此表，不根据股票当前名称或缺失昨收推断例外。
 无涨跌幅日仍须满足有效 OHLC 和准确 ST 事实，但不要求昨收，不计涨停并中断连板。
 普通交易日缺失昨收继续阻断发布。失败 coverage 返回最多 10 条 `diagnostics`（代码、原因），页面和任务可定位问题。
@@ -177,7 +178,7 @@ DuckDB 与 PostgreSQL 不做跨库 JOIN。协调器通过不可变 `command_id`�
 2. 携带已登录 Bearer token 向 `POST /api/data/tasks` 提交：
    `{"task_type":"stock_special_trading_day","params":{"records":[{"code":"301139.SZ","trade_date":"2026-09-30","event_type":"delisting_first_day","announcement_date":"2026-09-21","source_ref":"https://disc.static.szse.cn/download/disc/disk03/finalpage/2026-09-21/d60f2508-dee7-4b50-9f42-57500e4d24b0.PDF","note":"元道通信公告2026-097：2026-09-30进入退市整理期，首日不设涨跌幅限制","active":true}]}}`。
 3. 通过 `GET /api/data/tasks/{task_id}` 检查 `done`，失败查同任务 `/logs`。单批最多 100 条，写任务互斥；不自动抓取公告，也不开放定时维护。
-4. 导入与失效 outbox 同一事务提交；修改会失效生效日及之后已有快照。失败重放先补完 pending 通知，再幂等维护；重新提交相同事实不会重复写入。
+4. 导入、当日标记重算与失效 outbox 同一事务提交；修改会失效生效日及之后已有快照。失败重放先补完 pending 通知，再幂等维护；重新提交相同事实不会重复写入。
 5. `POST /api/limit-ladder/2026-09-30/recompute` 显式重算，再通过 `/status` 与查询接口确认 `valid/READY`，coverage 无阻断原因。导入本身不代表重算成功。
 
 更正用相同代码/日期提交正确来源和说明；撤销提交 `active:false` 并填写撤销原因，再重算受影响日期。

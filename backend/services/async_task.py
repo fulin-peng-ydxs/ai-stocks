@@ -1161,7 +1161,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
         note = ""
         # 质检后普通采集可能已补齐数据；先按同一口径复检，避免旧台账重复请求源端。
         # 仍走下方状态回写和关联扫描，不能只跳过采集而留下 open 旧问题。
-        if issue_type in (scan_board_types | scan_market_index_types) and rep.recheck_clean(
+        if issue_type in (scan_board_types | scan_market_index_types | {"abnormal_change"}) and rep.recheck_clean(
             issue_type, code, td, detail=issue_detail,
         ):
             note = "目标数据已满足复检要求，无需重复采集"
@@ -1196,7 +1196,22 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
         ):
             if td:
                 ctx.log(f"恢复：重采 {code} {td} 单日行情")
-                ing.ingest_one_daily(code, td, td, ctx=ctx)
+                if issue_type == "abnormal_change":
+                    # 主源重采仍可能复现错价/遗漏重整因子；整段用既有备用源保持因子基准一致。
+                    span = c.query_df(
+                        "SELECT min(trade_date) lo,max(trade_date) hi FROM daily_bar WHERE code=?",
+                        [code],
+                    ).iloc[0]
+                    lo, hi = pd.Timestamp(span["lo"]).date(), pd.Timestamp(span["hi"]).date()
+                    ing.ingest_one_daily(code, lo, hi, source=ing._bao_source(), ctx=ctx)
+                    factors = ing._recompute_clean([code])
+                    if factors["fail"]:
+                        raise RuntimeError(f"{code} 备用源历史复权重算失败")
+                elif issue_type == "ohl_repaired":
+                    # 主源已证实缺少 OHL，重试同一响应不能修复；用既有备用源核验成交/停牌。
+                    ing.ingest_one_daily(code, td, td, source=ing._bao_source(), ctx=ctx)
+                else:
+                    ing.ingest_one_daily(code, td, td, ctx=ctx)
                 affected = [td]
             else:
                 note = "缺少日期，无法定向重采"
@@ -1318,8 +1333,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
             note = f"重采资金流 {res.get('rows', 0)} 行（未匹配 {res.get('unmatched', 0)}）"
             ctx.log(note)
         elif issue_type == "board_fund_missing":
-            # 资金流缺失：按问题交易日定向重采该板块缺失周期。页面只消费与行情截面
-            # 同日的资金流，不能让修复任务默认写入当前自然日后误判问题已收敛。
+            # 目标日传入服务做源能力校验；实时排行禁止倒填历史日或混入盘中快照。
             import json as _json
 
             from backend.services.board_ingest import BoardIngestService

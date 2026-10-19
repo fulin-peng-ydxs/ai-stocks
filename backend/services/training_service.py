@@ -299,7 +299,7 @@ class TrainingService:
         from backend.services.stock_st_status import StockSTStatusService
 
         is_st = StockSTStatusService(self.c).status_map(trade_date, [code])[code]
-        return price_limit_pct_for(board_pct, is_st, trade_date)
+        return price_limit_pct_for(board_pct, is_st, trade_date, code=code)
 
     # ════════════════════════════════════════════════════════════
     # 读取与视图

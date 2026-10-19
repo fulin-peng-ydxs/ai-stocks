@@ -59,7 +59,7 @@ TABLE_CATALOG: dict[str, dict] = {
     "stock_special_trading_day": {
         "name_cn": "特殊交易日事实",
         "category": "行情参考",
-        "purpose": "保存公告确认的退市整理首日无涨跌幅限制事实；事件非每日连续，无鲜活度和质检问题统计，导入执行强校验。",
+        "purpose": "保存公告确认的退市整理首日、恢复交易无涨跌幅限制事实；事件非每日连续，无鲜活度和质检问题统计，导入执行强校验。",
         "ownership_scope": "market_global",
         "source": "官方公告人工核验/异步维护",
         "relations": [
@@ -83,7 +83,7 @@ TABLE_CATALOG: dict[str, dict] = {
             {
                 "name": "event_type",
                 "name_cn": "特殊交易类型",
-                "desc": "delisting_first_day 表示退市整理期首日不设涨跌幅限制",
+                "desc": "delisting_first_day 为退市整理首日；resumption_no_limit 为恢复交易无涨跌幅限制日",
                 "type": "VARCHAR"
             },
             {

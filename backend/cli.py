@@ -19,6 +19,7 @@ import sys
 from datetime import date, timedelta
 
 from backend.common.logging import get_logger
+from backend.common.timeutil import years_before
 from backend.config import get_settings
 
 log = get_logger("cli")
@@ -272,7 +273,7 @@ def cmd_refetch_daily(args: argparse.Namespace) -> int:
 
             start = pd.Timestamp(df.iloc[0]["d"]).date()
         else:
-            start = end - timedelta(days=365 * 5)
+            start = years_before(end, get_effective_settings().datasource.history_years)
     result = IngestionService().ingest_date(
         start=start, end=end, codes=codes, ctx=CliTaskContext(),
         concurrency=getattr(args, "concurrency", None))
@@ -553,7 +554,7 @@ def cmd_check_data(args: argparse.Namespace) -> int:
 
     s = get_effective_settings()
     end = date.today()
-    start = date(end.year - s.datasource.history_years, end.month, end.day)
+    start = years_before(end, s.datasource.history_years)
     DataIntegrityReport().run(start, end)
     return 0
 
@@ -689,7 +690,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_bf = sub.add_parser("backfill", help="全量回填数据（M1）")
     p_bf.add_argument("--codes", help="逗号分隔的代码子集（如 600000.SH,000001.SZ）")
     p_bf.add_argument("--limit", type=int, help="只取列表前 N 只（小批量验证）")
-    p_bf.add_argument("--years", type=int, default=None, help="历史年数（默认按配置 5 年）")
+    p_bf.add_argument("--years", type=int, default=None, help="历史年数（默认按生效配置）")
     p_bf.add_argument("--concurrency", type=int, default=None, help="并发线程数（默认 1 串行；>1 提速但总速率≈N×限流）")
     p_bf.set_defaults(func=cmd_backfill)
 
@@ -702,13 +703,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_dl = sub.add_parser("delisted", help="灌入退市股历史（baostock，防幸存者偏差）")
     p_dl.add_argument("--enrich", action="store_true", help="同时用 baostock 补全全市场上市/退市日")
     p_dl.add_argument("--limit", type=int, help="只灌前 N 只退市股（小批量验证）")
-    p_dl.add_argument("--years", type=int, default=None, help="历史年数（默认按配置 5 年）")
+    p_dl.add_argument("--years", type=int, default=None, help="历史年数（默认按生效配置）")
     p_dl.set_defaults(func=cmd_delisted)
 
     p_val = sub.add_parser("valuation", help="补每日总市值/总股本（stock_value_em）")
     p_val.add_argument("--codes", help="逗号分隔代码子集")
     p_val.add_argument("--limit", type=int, help="只取前 N 只")
-    p_val.add_argument("--years", type=int, default=None, help="历史年数（默认配置5年）")
+    p_val.add_argument("--years", type=int, default=None, help="历史年数（默认按生效配置）")
     p_val.add_argument("--concurrency", type=int, default=None, help="并发线程数（默认 1 串行；>1 提速但总速率≈N×限流）")
     p_val.add_argument("--fill-gaps", action="store_true", dest="fill_gaps",
                        help="一次性历史回补：补在市股 total_mv 缺口（逐缺口驱动，不受整股断点跳过限制）")

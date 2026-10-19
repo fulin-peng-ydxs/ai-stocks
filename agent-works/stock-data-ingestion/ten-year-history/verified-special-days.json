@@ -1,0 +1,68 @@
+{
+  "records": [
+    {
+      "code": "600710.SH",
+      "trade_date": "2017-07-31",
+      "announcement_date": "2017-07-25",
+      "source_ref": "https://static.cninfo.com.cn/finalpage/2017-07-25/1203730109.PDF",
+      "note": "2017-042：恢复上市首日不设涨跌幅限制",
+      "event_type": "resumption_no_limit"
+    },
+    {
+      "code": "000155.SZ",
+      "trade_date": "2017-12-18",
+      "announcement_date": "2017-12-09",
+      "source_ref": "https://static.cninfo.com.cn/finalpage/2017-12-09/1204206641.PDF",
+      "note": "恢复上市公告书：首日不设涨跌幅限制，前收盘10.27元",
+      "event_type": "resumption_no_limit"
+    },
+    {
+      "code": "000629.SZ",
+      "trade_date": "2018-08-24",
+      "announcement_date": "2018-08-16",
+      "source_ref": "https://static.cninfo.com.cn/finalpage/2018-08-16/1205290543.PDF",
+      "note": "2018-53：恢复上市首日不设涨跌幅限制",
+      "event_type": "resumption_no_limit"
+    },
+    {
+      "code": "600733.SH",
+      "trade_date": "2018-09-27",
+      "announcement_date": "2018-09-26",
+      "source_ref": "https://static.cninfo.com.cn/finalpage/2018-09-26/1205465503.PDF",
+      "note": "临2018-107：股权分置改革实施完毕复牌首日不设涨跌幅限制",
+      "event_type": "resumption_no_limit"
+    },
+    {
+      "code": "600610.SH",
+      "trade_date": "2020-08-17",
+      "announcement_date": "2020-08-17",
+      "source_ref": "https://static.cninfo.com.cn/finalpage/2020-08-17/1208182631.PDF",
+      "note": "2020-050：恢复上市首日不设涨跌幅限制",
+      "event_type": "resumption_no_limit"
+    },
+    {
+      "code": "000995.SZ",
+      "trade_date": "2020-12-16",
+      "announcement_date": "2020-12-15",
+      "source_ref": "https://disc.static.szse.cn/download/disc/disk02/finalpage/2020-12-15/03bcc8ea-5b2d-4b00-a2c1-74dd60c52484.PDF",
+      "note": "2020-088：恢复上市首日不设涨跌幅限制",
+      "event_type": "resumption_no_limit"
+    },
+    {
+      "code": "000792.SZ",
+      "trade_date": "2021-08-10",
+      "announcement_date": "2021-08-10",
+      "source_ref": "https://static.cninfo.com.cn/finalpage/2021-08-10/1210709225.PDF",
+      "note": "2021-074：恢复上市首日不设涨跌幅限制",
+      "event_type": "resumption_no_limit"
+    },
+    {
+      "code": "000670.SZ",
+      "trade_date": "2022-08-22",
+      "announcement_date": "2022-08-15",
+      "source_ref": "https://static.cninfo.com.cn/finalpage/2022-08-15/1214289875.PDF",
+      "note": "恢复上市首日不设涨跌幅限制",
+      "event_type": "resumption_no_limit"
+    }
+  ]
+}

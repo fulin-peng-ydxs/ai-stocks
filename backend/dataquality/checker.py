@@ -58,10 +58,11 @@ def add_markers(
     if len(st_values) != len(out):
         raise ValueError("is_st 逐日状态数量必须与行情行数一致")
     dates = out["trade_date"].tolist() if "trade_date" in out.columns else [None] * len(out)
+    codes = out["code"].tolist() if "code" in out.columns else [None] * len(out)
     pcts = pd.Series(
         [
-            price_limit_pct_for(board_limit_pct, st, trade_day)
-            for st, trade_day in zip(st_values, dates, strict=True)
+            price_limit_pct_for(board_limit_pct, st, trade_day, code=code)
+            for st, trade_day, code in zip(st_values, dates, codes, strict=True)
         ],
         index=out.index,
         dtype="float64",
@@ -294,7 +295,7 @@ class QualityChecker:
             if pd.isna(row["is_st"]) or row["quality"] != "accurate":
                 continue  # ST completeness is reported by the dedicated ST contract scan.
             pct = price_limit_pct_for(
-                board_limit_pct, bool(row["is_st"]), row["trade_date"]
+                board_limit_pct, bool(row["is_st"]), row["trade_date"], code=code
             )
             up, down = limit_prices(float(row["pre_close"]), pct)
             close = round_price_to_cent(float(row["close"]))

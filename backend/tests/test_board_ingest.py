@@ -874,3 +874,30 @@ def test_board_date_range_normalization():
         normalize_board_date_range("update", "2026-08-02", "2026-08-01")
     with pytest.raises(ValueError, match="不能与强制采集当日"):
         normalize_board_date_range("update", "2026-08-01", None, True)
+
+@pytest.mark.parametrize('clock,target,blocked', [
+    ('2026-10-19T10:00:00', '2026-10-16', True),
+    ('2026-10-19T16:00:00', '2026-10-16', True),
+    ('2026-10-19T16:00:00', '2026-10-19', False),
+    ('2026-10-18T16:00:00', '2026-10-16', False),
+])
+def test_live_fund_snapshot_date_guard(market, monkeypatch, clock, target, blocked):
+    from datetime import datetime
+
+    import backend.services.board_ingest as module
+    from backend.common.exceptions import DataSourceError
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.fromisoformat(clock).replace(tzinfo=tz)
+
+    monkeypatch.setattr(module, 'datetime', Clock)
+    market.execute("INSERT INTO trade_calendar VALUES ('2026-10-16',TRUE),"
+                   "('2026-10-18',FALSE),('2026-10-19',TRUE)")
+    service = BoardIngestService(market, source=_FakeSource({}))
+    if blocked:
+        with pytest.raises(DataSourceError):
+            service._validate_fund_snapshot_date(date.fromisoformat(target))
+    else:
+        service._validate_fund_snapshot_date(date.fromisoformat(target))

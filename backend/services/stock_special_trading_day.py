@@ -31,8 +31,8 @@ def normalize_special_day_params(params: dict) -> dict:
             raise ValueError("交易日和公告日期必须为 YYYY-MM-DD") from exc
         if announced > day:
             raise ValueError("公告日期不得晚于特殊交易日")
-        if item.get("event_type") != "delisting_first_day":
-            raise ValueError("当前仅支持经公告确认的退市整理期首日")
+        if item.get("event_type") not in {"delisting_first_day", "resumption_no_limit"}:
+            raise ValueError("仅支持公告确认的退市整理首日或恢复交易无涨跌幅限制日")
         source_ref = str(item.get("source_ref", "")).strip()
         url = urlparse(source_ref)
         if (
@@ -64,7 +64,7 @@ def normalize_special_day_params(params: dict) -> dict:
                 "code": code,
                 "trade_date": day.isoformat(),
                 "announcement_date": announced.isoformat(),
-                "event_type": "delisting_first_day",
+                "event_type": item["event_type"],
                 "source_ref": source_ref,
                 "note": note,
                 "active": active,
@@ -122,6 +122,13 @@ class StockSpecialTradingDayService:
                     """,
                         [task_id],
                     )
+                from backend.services.stock_st_status import StockSTStatusService
+
+                # 变更与撤销均重算精确日期标记，防止旧涨跌停标记继续影响下游。
+                for row in changed.itertuples(index=False):
+                    StockSTStatusService(self.c).rebuild_daily_bar_markers(
+                        codes=[row.code], start=row.trade_date, end=row.trade_date
+                    )
                 affected = pd.Timestamp(changed["trade_date"].min()).date()
                 self.c.execute(
                     """
@@ -139,3 +146,22 @@ class StockSpecialTradingDayService:
             "affected_from": affected.isoformat(),
             "message": f"已维护 {len(changed)} 条特殊交易日事实，失效 {invalidated} 个快照",
         }
+
+
+def apply_special_day_markers(client: DuckDBClient, frame: pd.DataFrame) -> pd.DataFrame:
+    """采集和因子重算共用公告事实，按股票/日期精确匹配，不扩散到相邻日。"""
+    if frame.empty:
+        return frame
+    keys = frame[["code", "trade_date"]].drop_duplicates().copy()
+    keys["trade_date"] = pd.to_datetime(keys["trade_date"]).dt.date
+    with client.temp_view(keys, "marker_special_keys") as view:
+        facts = client.query_df(
+            f"SELECT s.code,s.trade_date FROM stock_special_trading_day s "
+            f"JOIN {view} k USING(code,trade_date) WHERE s.active"
+        )
+    special = {(r.code, pd.Timestamp(r.trade_date).date()) for r in facts.itertuples()}
+    result = frame.copy()
+    mask = [(r.code, pd.Timestamp(r.trade_date).date()) in special for r in result.itertuples()]
+    result.loc[mask, "limit_status"] = 0
+    result.loc[mask, "is_one_word"] = False
+    return result

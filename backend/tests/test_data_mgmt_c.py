@@ -999,10 +999,10 @@ def test_index_incremental_uses_each_code_latest_date_and_backfills_new_code(cli
     by_code = {code: (start, end) for code, start, end in calls}
     assert "000905.SH" not in by_code
     assert by_code["000300.SH"] == (date(2026, 8, 21), date(2026, 8, 25))
-    assert by_code["000001.SH"] == (date(2021, 8, 25), date(2026, 8, 25))
-    assert by_code["000688.SH"] == (date(2021, 8, 25), date(2026, 8, 25))
-    assert by_code["399001.SZ"] == (date(2021, 8, 25), date(2026, 8, 25))
-    assert by_code["399006.SZ"] == (date(2021, 8, 25), date(2026, 8, 25))
+    assert by_code["000001.SH"] == (date(2016, 8, 25), date(2026, 8, 25))
+    assert by_code["000688.SH"] == (date(2016, 8, 25), date(2026, 8, 25))
+    assert by_code["399001.SZ"] == (date(2016, 8, 25), date(2026, 8, 25))
+    assert by_code["399006.SZ"] == (date(2016, 8, 25), date(2026, 8, 25))
     assert written == 5
 
 

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from calendar import monthrange
 from datetime import date, datetime
 
 DATE_FMT = "%Y-%m-%d"
@@ -27,3 +28,9 @@ def to_date(value: str | date | datetime) -> date:
 def fmt_date(d: date, compact: bool = False) -> str:
     """date -> 字符串。compact=True 输出 YYYYMMDD（部分数据源接口需要）。"""
     return d.strftime(DATE_FMT_COMPACT if compact else DATE_FMT)
+
+
+def years_before(end: date, years: int) -> date:
+    """自然年回溯，闰日落到目标年的二月末，不使用 365 天近似。"""
+    year = end.year - years
+    return end.replace(year=year, day=min(end.day, monthrange(year, end.month)[1]))

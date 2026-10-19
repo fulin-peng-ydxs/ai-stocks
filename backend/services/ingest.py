@@ -13,13 +13,16 @@ from __future__ import annotations
 import json
 import threading
 import time
+from bisect import bisect_left
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
 from backend.common.exceptions import DataSourceError
 from backend.common.logging import get_logger
+from backend.common.timeutil import years_before
 from backend.config import get_effective_settings
 from backend.dataquality.checker import (
     MV_REL_TOLERANCE,
@@ -569,21 +572,30 @@ class IngestionService:
         新浪原始价和后复权价都只保留到分，由二者比值反推除权参考价时可能
         相差一分钱；这一分钱在再次计算涨跌停价时最多放大为两分钱。普通日
         不触发额外请求，只有因子真实切换且当前参考价会把收盘判为越界时才
-        定向交叉验证，避免把合法除权行情反复列为质量问题。
+        定向交叉验证，避免把合法除权行情反复列为质量问题。长期停牌后缺少前置成交
+        导致参考价为空时，也须获取备用源的官方参考价，不能据空值关闭质检问题。
         """
         marker = df.get("_pre_close_factor_event")
-        if marker is None or not bool(marker.fillna(False).any()):
+        if marker is None:
             return df, used_source
 
-        from backend.market_rules import limit_prices, round_price_to_cent
+        from backend.market_rules import limit_prices, price_limit_pct_for, round_price_to_cent
 
-        suspect_dates: list[date] = []
+        # 长期停牌后首日的前置窗口可能没有成交，不能用空参考价覆盖已知事实。
+        # 与除权边界共用 BaoStock 的直接前收盘校准及来源留痕。
+        reference_missing = pd.to_numeric(df["pre_close"], errors="coerce").isna()
+        suspect_dates: list[date] = [
+            pd.Timestamp(day).date() for day in df.loc[reference_missing, "trade_date"]
+        ]
         for _, row in df[marker.fillna(False)].iterrows():
             pre_close = row.get("pre_close")
             close = row.get("close")
             if pd.isna(pre_close) or pd.isna(close) or float(pre_close) <= 0:
                 continue
-            up, down = limit_prices(float(pre_close), float(board_limit_pct))
+            up, down = limit_prices(
+                float(pre_close),
+                price_limit_pct_for(board_limit_pct, False, row["trade_date"], code=code),
+            )
             rounded_close = round_price_to_cent(float(close))
             if rounded_close < down - 0.011 or rounded_close > up + 0.011:
                 suspect_dates.append(pd.Timestamp(row["trade_date"]).date())
@@ -670,6 +682,28 @@ class IngestionService:
                 if not expected_open or not expected_open.issubset(returned_dates):
                     raise DataSourceError("ST 状态未覆盖请求区间全部开市日")
                 check_thread_cancel()
+                existing = self.c.query_df(
+                    "SELECT trade_date,volume,amount FROM daily_bar "
+                    "WHERE code=? AND trade_date BETWEEN ? AND ?", [code, start, end]
+                )
+                if (pd.to_numeric(existing["volume"], errors="coerce").fillna(0).gt(0)
+                        | pd.to_numeric(existing["amount"], errors="coerce").fillna(0).gt(0)).any():
+                    raise DataSourceError("权威停牌状态与已有成交记录冲突，保留原数据待核验")
+                # 两个来源均无成交且逐日状态明确停牌，清掉源端沿用昨收生成的零成交伪K线。
+                # 只清实际存在的行及其指标；交易日历与 ST 事实仍保留。
+                if not existing.empty:
+                    with self.c.transaction():
+                        self.c.execute(
+                            "DELETE FROM daily_metrics WHERE code=? AND trade_date IN "
+                            "(SELECT trade_date FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ?)",
+                            [code, code, start, end],
+                        )
+                        self.c.execute(
+                            "DELETE FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ?",
+                            [code, start, end],
+                        )
+                    if ctx:
+                        ctx.log(f"{code} 按权威停牌事实移除 {len(existing)} 条零成交伪K线")
                 StockSTStatusService(self.c).upsert_facts(
                     self._st_facts_from_rows(code, st_source, status_rows),
                     change_reason="daily_ingest_st_suspended",
@@ -747,7 +781,9 @@ class IngestionService:
             effective_st_by_date[pd.Timestamp(trade_day).date()]
             for trade_day in df["trade_date"].tolist()
         ]
-        df = add_markers(df, board_limit_pct, point_in_time_st)
+        from backend.services.stock_special_trading_day import apply_special_day_markers
+
+        df = apply_special_day_markers(self.c, add_markers(df, board_limit_pct, point_in_time_st))
         # OHL 修补行：真实振幅未知 → 强制不标一字板，并记入问题台账（不静默/不臆造）
         if "_ohl_repaired" in df.columns and df["_ohl_repaired"].any():
             repaired_dates = {
@@ -788,7 +824,6 @@ class IngestionService:
                     "trade_date": df["trade_date"],
                     # 非正股本不写成非法市值，保留为空并交给 L2 缺口闭环补采。
                     "float_mv": (df["close"] * float_share).where(float_share > 0),
-                    "total_mv": None,
                 }
             )
             self.repo.upsert_daily_metrics(metrics)
@@ -798,6 +833,25 @@ class IngestionService:
         return n
 
     # ── 估值/市值（总市值/总股本，补 G2）──
+    def _history_window(self, years: int, ctx=None) -> tuple[date, date]:
+        """历史任务首次冻结日期窗口，续跑不随当天日期或默认年限漂移。"""
+        checkpoint = getattr(ctx, "checkpoint", {}) or {}
+        if checkpoint.get("history_start") and checkpoint.get("history_end"):
+            return (date.fromisoformat(checkpoint["history_start"]),
+                    date.fromisoformat(checkpoint["history_end"]))
+        end = self._latest_open_day()
+        if end == datetime.now(ZoneInfo("Asia/Shanghai")).date():
+            # 历史任务同样不能采入盘中半成品；复用日常同步的源端就绪判断。
+            now = datetime.now(ZoneInfo("Asia/Shanghai"))
+            if (now.hour, now.minute) < (15, 30):
+                end = self._previous_open_day(end)
+            else:
+                end = self._resolve_update_end(end, _UPDATE_READY_SAMPLE, None, ctx)
+        start = years_before(end, years)
+        if ctx is not None:
+            ctx.set_checkpoint(history_start=start.isoformat(), history_end=end.isoformat())
+        return start, end
+
     def ingest_valuation(self, codes: list[str] | None = None, years: int | None = None,
                          concurrency: int | None = None, ctx=None) -> dict:
         """补每日市值字段到 daily_metrics，并把最新总/流通股本写入 stock_basic。
@@ -807,8 +861,7 @@ class IngestionService:
         写入由 DuckDB 单写锁串行。默认 1（串行）。⚠️ 并发即提高总请求速率，注意封禁风险。
         """
         years = years or self.s.datasource.history_years
-        end = self._latest_open_day()   # 收敛到最近交易日，非交易日不当截止
-        start = date(end.year - years, end.month, end.day)
+        start, end = self._history_window(years, ctx)
         live = self._stock_basic_from_db(codes, as_of=end)["code"].tolist()
         val_src = self._source_for("valuation")  # 校验能力可用（串行直接用，并发用线程局部源）
         # 断点续跑：跳过已同时具备 total_mv 与 float_mv 的票；只缺流通市值的旧数据也要补。
@@ -1176,7 +1229,7 @@ class IngestionService:
         """返回历史行情已覆盖到目标起点的股票。
 
         只有任意一行行情不足以判定历史已补全；以回填起点或上市日为边界，
-        并保留少量自然日缓冲吸收首个交易日差异。回填与退市股历史共用此口径。
+        起点之前的空档必须是非交易日或有停牌证据，不能用宽限天数吞掉缺口。
         """
         min_df = self.repo.c.query_df(
             "SELECT code, min(trade_date) AS mn FROM daily_bar GROUP BY code")
@@ -1192,13 +1245,24 @@ class IngestionService:
             )
             for _, r in ld_df.iterrows()
         }
-        buffer = timedelta(days=15)
+        calendar = [pd.Timestamp(day).date() for day in self.c.query_df(
+            "SELECT trade_date FROM trade_calendar WHERE is_open AND trade_date>=? "
+            "ORDER BY trade_date", [start]
+        )["trade_date"].tolist()]
+        suspension = self.c.query_df(
+            "SELECT code,trade_date FROM stock_suspension WHERE trade_date>=?", [start]
+        )
+        suspended = set(zip(suspension["code"], pd.to_datetime(suspension["trade_date"]).dt.date))
         covered = set()
         for code, minimum in loaded_min.items():
             list_date = list_lut.get(code)
             threshold = list_date if (list_date and list_date > start) else start
-            if minimum <= threshold + buffer:
+            if minimum <= threshold:
                 covered.add(code)
+            elif calendar:
+                missing = calendar[bisect_left(calendar, threshold):bisect_left(calendar, minimum)]
+                if all((code, day) in suspended for day in missing):
+                    covered.add(code)
         return covered
 
     def backfill(self, codes: list[str] | None = None, years: int | None = None, ctx=None,
@@ -1211,8 +1275,7 @@ class IngestionService:
         ⚠️ 调高并发即调高总请求速率，注意免费源封禁风险。
         """
         years = years or self.s.datasource.history_years
-        end = self._latest_open_day()   # 收敛到最近交易日，非交易日不当截止
-        start = date(end.year - years, end.month, end.day)
+        start, end = self._history_window(years, ctx)
         log.info("开始回填 %s ~ %s", start, end)
 
         # 续跑跳过前置（与 update 一致）：日历/指数/基础信息首跑已幂等入库，prep_done 标记后续跑跳过；
@@ -1232,7 +1295,7 @@ class IngestionService:
 
         # 断点续跑 + 部分覆盖修复：旧逻辑"有任意数据就跳过"会把仅有部分近期数据的股票
         # （如经缺口兜底补了近窗口、或上次中断）误判为已完成，早期历史永远补不上。改为按
-        # "最早入库日是否已覆盖到回填起点(或上市日)"判断：mn <= max(start, 上市日)+缓冲 才算已覆盖、跳过。
+        # "最早入库日是否已覆盖到回填起点(或上市日)"判断：仅非交易日或准确停牌证据允许首日延后，不能宽限吞掉缺口。
         covered_codes = self._history_start_covered_codes(start)
         pending = [c for c in target_codes if c not in covered_codes]
         skip = len(target_codes) - len(pending)
@@ -1314,11 +1377,19 @@ class IngestionService:
                 pending, _worker, concurrency=concurrency, ctx=ctx,
                 wait_label="历史补数", on_complete=_complete,
             )
+        # 上次可在行情写入后、因子收尾前中断；即使本轮行情已覆盖也须补完收尾。
+        dirty_codes = set(self.c.query_df(
+            "SELECT DISTINCT code FROM daily_bar WHERE adj_factor_clean IS NULL"
+        )["code"].tolist())
+        updated.update(dirty_codes.intersection(target_codes))
+        factor_result = {"target": 0, "ok": 0, "fail": 0, "rows": 0}
         if updated:
             if ctx:
                 ctx.log(f"↻ 重算干净复权因子（{len(updated)} 只新入库）…")
-            self._refresh_clean_factors(sorted(updated), ctx=ctx)
-        result = {"target": len(target_codes), "ok": ok, "skip": skip, "fail": fail, "rows": total_rows}
+            factor_result = self._refresh_clean_factors(sorted(updated), ctx=ctx)
+        result = {"target": len(target_codes), "ok": ok, "skip": skip,
+                  "fail": fail + factor_result["fail"], "rows": total_rows,
+                  "price_factors": factor_result}
         # 市值透明化：历史补数只采行情，total_mv 历史市值不在本任务内采（市值源是慢接口，单列）。
         # 明确告知缺口去向，避免“市值盲区”不透明——增量更新只保最新交易日，历史全段缺口须靠
         # ingest_valuation_gaps/`valuation --fill-gaps`（或质量页补修）一次性回补，增量不自动补历史。
@@ -1368,8 +1439,8 @@ class IngestionService:
         ctx 仅串行路径传入（并发下从工作线程写实时日志不安全），用于把兜底源等细节写进任务日志。
         """
         last = self.repo.get_max_bar_date(code)
-        start = (last + timedelta(days=1)) if last else date(
-            end.year - self.s.datasource.history_years, end.month, end.day)
+        start = (last + timedelta(days=1)) if last else years_before(
+            end, self.s.datasource.history_years)
         if start > end:
             return 0
         return self.ingest_one_daily(code, start, end, source=source, ctx=ctx)
@@ -1690,7 +1761,7 @@ class IngestionService:
         # 补市值并入更新行情（容错子阶段）：更新即产出 L2 完整数据（float_mv 由日线自带 + total_mv）。
         # 幂等只补缺失股；失败仅记日志、不让整次更新失败（市值源是慢接口，单独容错隔离）。
         # 注意 total_mv 的增量语义：这里只保「最新交易日」新鲜，历史中间缺口不归 update 管
-        # （日线每行写 float_mv、total_mv=None；历史 total_mv 由 ingest_valuation_gaps/--fill-gaps 清）。
+        # （日线仅写 float_mv，保留已有 total_mv；历史缺口由 ingest_valuation_gaps/--fill-gaps 补齐）。
         try:
             if ctx:
                 ctx.log("↻ 补市值估值（total_mv）：只补最新交易日，历史缺口走 `valuation --fill-gaps`…")
@@ -2535,7 +2606,7 @@ class IngestionService:
                     ctx.log(f"[{i}/{n}] {code}，累计 {rows} 行")
             except Exception as e:  # noqa: BLE001
                 fail += 1
-                done_codes.add(code)
+                # 失败项不得进入完成断点，续跑必须继续重试。
                 log.warning("%s %s失败: %s", code, verb, e)
                 if ctx:
                     ctx.set_phase("price_factor", done=len(done_codes), total=len(done_codes) + n,
@@ -2612,7 +2683,8 @@ class IngestionService:
         # 入库时可能已经用直接提供官方 preclose 的备用源校准了除权日。
         # 全量/增量因子重算不得再用低精度的新浪反推值把它覆盖回去。
         existing_pre_close = pd.to_numeric(df["pre_close"], errors="coerce")
-        preserve = factor_event & existing_pre_close.gt(0)
+        # 序列首行没有上一行可推算，保留采集源提供的前收盘参考价。
+        preserve = (factor_event | computed_pre_close.isna()) & existing_pre_close.gt(0)
         df["pre_close"] = computed_pre_close.where(~preserve, existing_pre_close)
         facts = self.c.query_df(
             """
@@ -2637,7 +2709,9 @@ class IngestionService:
             marked = df
         else:
             point_st = [fact_map[pd.Timestamp(day).date()] for day in df["trade_date"]]
-            marked = add_markers(df, board_limit_pct, point_st)
+            from backend.services.stock_special_trading_day import apply_special_day_markers
+
+            marked = apply_special_day_markers(self.c, add_markers(df, board_limit_pct, point_st))
         if anchor_date is not None:  # 只写锚点之后的新行
             marked = marked[marked["trade_date"] > pd.Timestamp(anchor_date)]
         if marked.empty:
@@ -2706,6 +2780,11 @@ class IngestionService:
                 }
             )
         out = pd.DataFrame(rows)
+        # 行业源漏返或请求失败不代表原行业失效，禁止把已知分类清空。
+        existing_industry = self.c.query_df("SELECT code,industry FROM stock_basic")
+        industry_by_code = dict(zip(existing_industry["code"], existing_industry["industry"]))
+        out["industry"] = out["industry"].where(
+            out["industry"].notna(), out["code"].map(industry_by_code))
         if ctx:
             ctx.check_cancel()
         n = self.repo.upsert_stock_basic(out)
@@ -2722,11 +2801,10 @@ class IngestionService:
     def ingest_delisted(self, years: int | None = None, limit: int | None = None, ctx=None) -> dict:
         """灌入"近 N 年内退市"的退市股历史日线（防幸存者偏差核心）。
 
-        只取退市日落在回测窗口内的票（更早退市的在 5 年窗口内无数据，跳过）。
+        只取退市日落在回测窗口内的票（更早退市的在目标窗口内无数据，跳过）。
         """
         years = years or self.s.datasource.history_years
-        end = self._latest_open_day()   # 收敛到最近交易日，非交易日不当截止
-        start = date(end.year - years, end.month, end.day)
+        start, end = self._history_window(years, ctx)
         bao = self._source_for("delisted")  # 退市股能力源
 
         dl = bao.get_delisted_list()  # code,name,delist_date
@@ -2784,7 +2862,11 @@ class IngestionService:
                 if ctx:
                     ctx.log(f"退市股 {code} 灌入失败：{e}", "warn")
                 self.repo.log_update("daily_bar", bao.name, start, None, 0, "failed", f"{code}: {e}")
-        result = {"target": len(dl), "ok": ok, "skip": skip, "fail": fail, "rows": total_rows}
+        # 退市股同样完成干净因子和历史限幅标记；覆盖已满足但上次中断的也须收尾。
+        factor_result = self._refresh_clean_factors(dl["code"].tolist(), ctx=ctx)
+        result = {"target": len(dl), "ok": ok, "skip": skip,
+                  "fail": fail + factor_result["fail"], "rows": total_rows,
+                  "price_factors": factor_result}
         log.info("退市股灌入完成: %s", result)
         if ctx:
             ctx.log(f"子任务：退市股历史灌入完成，成功{ok} 跳过{skip} 失败{fail}，写入 {total_rows} 行")

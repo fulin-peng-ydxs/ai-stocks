@@ -52,7 +52,7 @@ class DuckDBConfig(BaseModel):
 class DataSourceConfig(BaseModel):
     primary: str = "akshare"
     fallback: str = "baostock"
-    history_years: int = 5
+    history_years: int = Field(default=10, ge=1, le=30)
     rate_limit_per_sec: float = 5
     max_retries: int = 3
     retry_backoff_sec: float = 2

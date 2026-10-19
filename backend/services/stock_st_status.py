@@ -492,11 +492,13 @@ class StockSTStatusService:
         """
         from backend.market_rules import price_limit_pct_sql
 
-        pct = price_limit_pct_sql("sb.price_limit_pct", "st.is_st", "b.trade_date")
+        pct = price_limit_pct_sql("sb.price_limit_pct", "st.is_st", "b.trade_date", code_expr="b.code")
         up = f"floor((b.pre_close*(1+({pct})))*100+0.5)/100"
         down = f"floor((b.pre_close*(1-({pct})))*100+0.5)/100"
         status = (
-            f"CASE WHEN b.close>=({up})-0.0001 THEN 1 "
+            "CASE WHEN EXISTS (SELECT 1 FROM stock_special_trading_day special "
+            "WHERE special.code=b.code AND special.trade_date=b.trade_date AND special.active) THEN 0 "
+            f"WHEN b.close>=({up})-0.0001 THEN 1 "
             f"WHEN b.close<=({down})+0.0001 THEN -1 ELSE 0 END"
         )
         where = [

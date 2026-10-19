@@ -494,12 +494,13 @@ class LimitLadderCalculator:
                     listing_session_number=current_index - first_index + 1,
                 )
         # 公告事实只由 (code, trade_date) 精确关联，不能由退市名称或缺昨收推断。
-        if fact.get("special_event_type") == "delisting_first_day":
+        if fact.get("special_event_type") in {"delisting_first_day", "resumption_no_limit"}:
             applicability = PriceLimitApplicability.NOT_APPLICABLE
         board_pct = (
             None if pd.isna(basic.get("price_limit_pct")) else float(basic.get("price_limit_pct"))
         )
         result = evaluate_close_limit_up(
+            code=code,
             close=fact.get("close"),
             pre_close=fact.get("pre_close"),
             board_limit_pct=board_pct,

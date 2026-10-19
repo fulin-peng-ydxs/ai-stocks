@@ -114,6 +114,7 @@ class ThsBoardSource:
     """同花顺板块数据适配器（独立普通类，见模块 docstring）。"""
 
     name = "ths_board"
+    fund_flow_is_live_snapshot = True
 
     def __init__(
         self,

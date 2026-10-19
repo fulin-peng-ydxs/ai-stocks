@@ -702,6 +702,28 @@ class BoardIngestService:
 
     # ── 4. 资金流（并集映射）─────────────────────────────────
 
+    def _validate_fund_snapshot_date(self, target: date) -> None:
+        """实时排行不能回填任意历史日期；盘中值也不能冒充已收盘快照。"""
+        from datetime import time as day_time
+        from zoneinfo import ZoneInfo
+
+        from backend.common.exceptions import DataSourceError
+
+        now = datetime.now(ZoneInfo("Asia/Shanghai"))
+        today = now.date()
+        calendar = self.c.query_df("SELECT is_open FROM trade_calendar WHERE trade_date=?", [today])
+        if calendar.empty:
+            raise DataSourceError("当前交易日历未就绪，无法确认资金流快照归属日")
+        if bool(calendar.iloc[0]["is_open"]) and now.time() < day_time(15, 30):
+            raise DataSourceError("同花顺资金流仅提供当前快照；交易日15:30前不能写为EOD或历史快照")
+        latest = self.c.query_df(
+            "SELECT max(trade_date) AS snapshot_day FROM trade_calendar WHERE is_open AND trade_date<=?", [today]
+        ).iloc[0]["snapshot_day"]
+        if pd.isna(latest) or target != pd.Timestamp(latest).date():
+            raise DataSourceError(
+                f"同花顺资金流不支持历史回填：目标{target}，当前可采快照日{latest}"
+            )
+
     def ingest_board_fund_flow(self, snapshot_date: date | None = None,
                                periods: tuple[str, ...] | None = None,
                                board_codes: list[str] | None = None,
@@ -714,6 +736,8 @@ class BoardIngestService:
         ctx：任务上下文，按类型×周期打实时日志。
         """
         sdate = snapshot_date or _asia_date()
+        if board_codes != [] and getattr(self.src, "fund_flow_is_live_snapshot", False):
+            self._validate_fund_snapshot_date(sdate)
         periods = periods or FUND_FLOW_PERIODS
         requested_types = set(_board_types(board_type))
         if board_codes is not None and not board_codes:

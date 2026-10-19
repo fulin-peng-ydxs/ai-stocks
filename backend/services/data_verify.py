@@ -410,13 +410,18 @@ class DataVerifier:
             "要求存在检查日之后的真实开市日。刷新交易日历后复检，不能按工作日推算。",
             evidence=evidence,
         )
-        self._check(
-            "交易日历已覆盖下一自然年",
-            readiness["cross_year_ready"],
-            detail,
-            "要求最远开市日至少进入下一自然年。源端未发布时保持未通过，发布后刷新日历并复检。",
-            evidence=evidence,
-        )
+        if not readiness["cross_year_ready"] and readiness["lifecycle_ready"]:
+            self._warn(
+                "交易日历已覆盖下一自然年", detail,
+                "下一开市日可用；跨年覆盖属于预备提醒。等待源端发布后刷新，禁止推算未来交易日。",
+                evidence=evidence,
+            )
+        else:
+            self._check(
+                "交易日历已覆盖下一自然年", readiness["cross_year_ready"], detail,
+                "按源端真实交易日检查覆盖；缺少下一开市日时仍阻断运行就绪度。",
+                evidence=evidence,
+            )
 
     # ── B. 价格正确性 ──
     def check_prices(self) -> None:
@@ -476,12 +481,14 @@ class DataVerifier:
         # 涨跌幅越界：逐日 ST 事实 + 统一市场规则（包含主板 2026-07-06 切换）。
         from backend.market_rules import price_limit_pct_sql
 
-        limit_sql = price_limit_pct_sql("sb.price_limit_pct", "st.is_st", "b.trade_date")
+        limit_sql = price_limit_pct_sql("sb.price_limit_pct", "st.is_st", "b.trade_date", code_expr="b.code")
         over = self._finding(
             "SELECT b.code,b.trade_date,b.close,b.pre_close,st.is_st,sb.price_limit_pct FROM daily_bar b JOIN stock_basic sb ON sb.code=b.code "
             "JOIN stock_st_status_daily st "
             "ON st.code=b.code AND st.trade_date=b.trade_date AND st.quality='accurate' "
-            f"WHERE b.pre_close>0 AND abs(b.close/b.pre_close-1) > ({limit_sql})+0.005"
+            f"WHERE b.pre_close>0 AND abs(b.close/b.pre_close-1) > ({limit_sql})+0.005 "
+            "AND NOT EXISTS (SELECT 1 FROM stock_special_trading_day s "
+            "WHERE s.code=b.code AND s.trade_date=b.trade_date AND s.active)"
         )
         total = self._count(
             "SELECT count(*) FROM daily_bar b JOIN stock_st_status_daily st "

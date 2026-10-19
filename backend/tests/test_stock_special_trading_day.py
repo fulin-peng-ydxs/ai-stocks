@@ -43,15 +43,16 @@ def _seed(market):
     return days
 
 
-def test_special_day_passes_gate_only_on_exact_date_and_does_not_count_limit_up(market):
+@pytest.mark.parametrize("event_type", ["delisting_first_day", "resumption_no_limit"])
+def test_special_day_passes_gate_only_on_exact_date_and_does_not_count_limit_up(market, event_type):
     days = _seed(market)
     gate = LimitLadderSnapshotService(market)
     before = gate.check_coverage(DAY)
     assert not before.ready and before.invalid_bar_count == 1
     assert before.diagnostics[0]["code"] == CODE
     service = StockSpecialTradingDayService(market)
-    assert service.import_records(_params(), task_id="test")["changed_count"] == 1
-    assert service.import_records(_params(), task_id="test")["changed_count"] == 0
+    assert service.import_records(_params(event_type=event_type), task_id="test")["changed_count"] == 1
+    assert service.import_records(_params(event_type=event_type), task_id="test")["changed_count"] == 0
     assert gate.check_coverage(DAY).ready
     calculator = LimitLadderCalculator(market)
     facts = calculator._load_daily_facts([CODE], days)
@@ -168,3 +169,38 @@ def test_special_day_task_uses_global_write_mutex(market, monkeypatch):
         service.create('stock_special_trading_day', _params())
     with pytest.raises(ValueError):
         service.create('stock_special_trading_day', _params(announcement_date='2026-10-01'))
+
+
+def test_legacy_constraint_upgrade_preserves_facts_and_is_idempotent(market):
+    from backend.storage.ddl import DDL_STOCK_SPECIAL_TRADING_DAY, _migrate_special_day_event_types
+    _seed(market)
+    market.execute("DROP TABLE stock_special_trading_day")
+    market.execute(DDL_STOCK_SPECIAL_TRADING_DAY.replace(
+        "event_type IN ('delisting_first_day', 'resumption_no_limit')",
+        "event_type = 'delisting_first_day'",
+    ))
+    StockSpecialTradingDayService(market).import_records(_params(), task_id="original")
+    _migrate_special_day_event_types(market)
+    _migrate_special_day_event_types(market)
+    assert market.query_df("SELECT task_id FROM stock_special_trading_day").iloc[0, 0] == "original"
+    assert StockSpecialTradingDayService(market).import_records(
+        _params(event_type="resumption_no_limit"), task_id="new"
+    )["changed_count"] == 1
+
+
+def test_no_limit_fact_shared_by_quality_markers_and_broker(market):
+    from backend.backtest.broker import can_buy_at_open, can_sell_at_open
+    from backend.services.data_report import DataIntegrityReport
+    from backend.services.stock_special_trading_day import apply_special_day_markers
+    _seed(market)
+    service = StockSpecialTradingDayService(market)
+    service.import_records(_params(event_type="resumption_no_limit"), task_id="test")
+    assert DataIntegrityReport(market).recheck_clean("abnormal_change", CODE, DAY)
+    bar = market.query_df("SELECT * FROM daily_bar WHERE code=? AND trade_date=?", [CODE, DAY])
+    marked = apply_special_day_markers(market, bar)
+    assert marked.iloc[0].limit_status == 0 and not marked.iloc[0].is_one_word
+    assert can_buy_at_open(40, 10, .1, no_price_limit=True)
+    assert not can_buy_at_open(40, 10, .1)
+    assert can_sell_at_open(1, 10, .1, no_price_limit=True)
+    assert not can_sell_at_open(1, 10, .1)
+    assert not can_buy_at_open(float("nan"), 10, .1, no_price_limit=True)

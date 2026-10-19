@@ -98,20 +98,18 @@ def price_limit_pct_for(
     board_limit_pct: float | None,
     is_st: bool,
     trade_date=None,
+    *,
+    code: str | None = None,
 ) -> float:
-    """Effective price limit ratio for a stock on a trade date.
-
-    Main-board ST/*ST stocks used 5% before 2026-07-06 and use 10% from
-    2026-07-06 onward. ChiNext/STAR ST stocks keep their board-level 20% limit.
-    When trade_date is omitted, keep the old 5% ST fallback to avoid pretending
-    an unknown historical date is after the rule change.
-    """
+    """按交易日计算限幅；历史创业板必须携带代码，不能与科创板混用 20%。"""
     board_pct = 0.10 if board_limit_pct is None else float(board_limit_pct)
-    if not is_st:
-        return board_pct
-    if board_pct >= 0.20 - 1e-12:
-        return board_pct
     d = _as_date(trade_date)
+    if (d is not None and d < CHINEXT_REGISTRATION_EFFECTIVE_DATE
+            and listing_board_for(code=code) is ListingBoard.CHINEXT):
+        # 创业板改革前普通及退市整理股票均为 10%，风险警示制度随改革实施。
+        return 0.10
+    if not is_st or board_pct >= 0.20 - 1e-12:
+        return board_pct
     if d is not None and d >= MAIN_BOARD_ST_10_EFFECTIVE_DATE:
         return board_pct
     return MAIN_BOARD_ST_OLD_LIMIT
@@ -121,6 +119,8 @@ def price_limit_pct_sql(
     board_limit_expr: str,
     is_st_expr: str,
     trade_date_expr: str,
+    *,
+    code_expr: str | None = None,
 ) -> str:
     """Return the SQL form of :func:`price_limit_pct_for` for internal bulk checks.
 
@@ -130,8 +130,15 @@ def price_limit_pct_sql(
     """
     board = f"COALESCE(({board_limit_expr}),0.10)"
     cutoff = MAIN_BOARD_ST_10_EFFECTIVE_DATE.isoformat()
+    historical_chinext = (
+        f"WHEN substr(CAST(({code_expr}) AS VARCHAR),1,3) IN ('300','301','302','303') "
+        f"AND CAST(({trade_date_expr}) AS DATE)<DATE '{CHINEXT_REGISTRATION_EFFECTIVE_DATE}' "
+        "THEN 0.10 "
+        if code_expr else ""
+    )
     return (
         "CASE "
+        f"{historical_chinext}"
         f"WHEN NOT COALESCE(({is_st_expr}),FALSE) THEN {board} "
         f"WHEN {board}>=0.20-1e-12 THEN {board} "
         f"WHEN CAST(({trade_date_expr}) AS DATE)>=DATE '{cutoff}' THEN {board} "
@@ -216,6 +223,7 @@ def evaluate_close_limit_up(
     trade_date=None,
     applicability: PriceLimitApplicability = PriceLimitApplicability.APPLICABLE,
     is_suspended: bool = False,
+    code: str | None = None,
 ) -> CloseLimitResult:
     """Evaluate an EOD close with the shared A-share price-limit rule.
 
@@ -256,7 +264,7 @@ def evaluate_close_limit_up(
         return CloseLimitResult(CloseLimitStatus.INVALID_PRICE, reason="PRICE_NOT_POSITIVE_FINITE")
 
     try:
-        limit_pct = price_limit_pct_for(board_limit_pct, is_st, trade_date)
+        limit_pct = price_limit_pct_for(board_limit_pct, is_st, trade_date, code=code)
     except (TypeError, ValueError):
         return CloseLimitResult(CloseLimitStatus.UNSUPPORTED_RULE, reason="LIMIT_PCT_INVALID")
     if not math.isfinite(limit_pct) or not 0 < limit_pct < 1:

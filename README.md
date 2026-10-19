@@ -12,7 +12,7 @@
 
 一条完整使用闭环是：**收盘后更新数据 → 处理质量问题 → 查看每日榜单 → 用筛选/配置调整思路 → 回测验证 → 把重点股票放入分组持续跟踪**。全程强调可解释、可回测、防未来函数。
 
-> 仅供个人研究，不构成投资建议。数据源为公开免费接口（新浪 / 东财 / baostock），覆盖近 5 年、主板 / 创业板 / 科创板（不含北交所）。
+> 仅供个人研究，不构成投资建议。数据源为公开免费接口（新浪 / 东财 / baostock），覆盖近 10 年、主板 / 创业板 / 科创板（不含北交所）。
 
 系统当前的三条设计主线：
 
@@ -122,7 +122,7 @@ flowchart LR
 
 | 场景 | 推荐路径 | 结果 |
 |------|----------|------|
-| 首次搭建本地库 | `backfill` → `delisted --enrich` → `valuation` → `rebuild-price-factors` → `verify-data` | 近 5 年行情、退市股、总市值、复权口径与体检报告齐全 |
+| 首次搭建本地库 | `backfill` → `delisted --enrich` → `valuation` → `rebuild-price-factors` → `verify-data` | 目标近 10 年行情、退市股及复权口径；市值按源端实际覆盖，缺口由体检报告披露 |
 | 每天收盘后更新 | 数据管理 → 数据采集 → 个股采集 → 日常同步，或 `python -m backend.cli daily` | 最新行情入库、总市值补齐；CLI `daily` 还会继续执行质检 |
 | 复盘当日涨停梯队 | 最新行情 → 连板天梯 → 查看热点/板位 → 选择股票分析 → 进入个股或板块详情 | 当日不可变涨停快照、窗口活跃度、走势相关热点和可恢复的详情上下文 |
 | 发现榜单异常 | 数据管理 → 概览/质量定位缺口 → 修复 → 按影响范围决定是否执行「结果维护」；若是 ST 事实纠错可直接重开对应日期 | ST 版本变化会在读取当前榜单时自动识别并重算；其它输入变化由用户显式维护结果 |
@@ -272,7 +272,7 @@ cd frontend && npm run build && cd ..   # 产物进 frontend/dist
 pip install -r requirements.txt
 cd frontend && npm install && cd ..
 
-python -m backend.cli backfill           # 全市场近 5 年日线全量回填（支持断点续跑）
+python -m backend.cli backfill           # 全市场近 10 年日线全量回填（支持断点续跑）
 python -m backend.cli delisted --enrich  # 退市股历史 + 上市/退市日（防幸存者偏差）
 python -m backend.cli valuation          # 总市值 / 总股本
 python -m backend.cli rebuild-price-factors  # 干净复权因子 / pre_close / 涨跌停标记
@@ -294,7 +294,7 @@ flowchart LR
 
 | 命令 | 大致作用 | 什么时候重跑 |
 |------|----------|--------------|
-| `backfill` | 全市场近 5 年日线回填，支持断点续跑 | 新库初始化、历史行情缺大段 |
+| `backfill` | 全市场近 10 年日线回填，支持断点续跑 | 新库初始化、历史行情缺大段 |
 | `delisted --enrich` | 补退市股历史和上市/退市日 | 新库初始化、怀疑幸存者偏差 |
 | `valuation` | 按单只股票补总市值/总股本 | 新库初始化、新上市股票缺总市值 |
 | `valuation --fill-gaps` | 针对已有库的总市值缺口逐段回补 | 质检出现大量 `mv_gap` 或历史缺口时 |

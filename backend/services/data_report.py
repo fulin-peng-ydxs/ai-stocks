@@ -648,6 +648,7 @@ class DataIntegrityReport:
             "sb.price_limit_pct",
             "st.quality='accurate' AND st.is_st",
             "b.trade_date",
+            code_expr="b.code",
         )
         # L3 异常涨跌幅：耗时扫描均在事务外完成，每条 SQL 结束即释放
         # 共享连接锁，任务状态/日志轮询可在查询间隙进入。
@@ -660,6 +661,9 @@ class DataIntegrityReport:
                        COALESCE(sb.price_limit_pct, 0.10) AS lim,
                        st.is_st,st.quality AS st_quality,
                        {effective_limit} AS effective_lim,
+                       EXISTS (SELECT 1 FROM stock_special_trading_day special
+                           WHERE special.code=b.code AND special.trade_date=b.trade_date
+                           AND special.active) AS no_price_limit,
                        sb.name,
                        sb.delist_date,
                        b.trade_date - lag(b.trade_date) OVER (PARTITION BY b.code ORDER BY b.trade_date)
@@ -677,7 +681,7 @@ class DataIntegrityReport:
                 WHERE b.pre_close IS NOT NULL AND b.pre_close > 0
             ) t
             """)
-        df = df[self._active_l3_mask(df)]
+        df = df[self._active_l3_mask(df) & ~df["no_price_limit"]]
         candidates = df[df["chg"] > df["effective_lim"] - 0.002]
         ab_rows = []
         for _, row in candidates.iterrows():
@@ -1267,6 +1271,12 @@ class DataIntegrityReport:
         if issue_type == "ohl_repaired":
             if trade_date is None:
                 return False
+            if self._scalar(
+                "SELECT count(*) FROM stock_suspension s WHERE s.code=? AND s.trade_date=? "
+                "AND NOT EXISTS (SELECT 1 FROM daily_bar b WHERE b.code=s.code AND b.trade_date=s.trade_date)",
+                [code, trade_date],
+            ):
+                return True  # 已核验停牌并移除零成交占位行，不能因旧问题记录继续报 OHL 缺损。
             # 当前问题在恢复期间已是 fixing；若重采后原始 OHL 仍异常，
             # 入库闸门会再生成一条 open 问题。以此区分“真正重采正常”与
             # “仍用收盘价回填”，不能只看库内 OHL 非空就误判恢复成功。
@@ -1309,6 +1319,11 @@ class DataIntegrityReport:
         if issue_type == "abnormal_change":
             if trade_date is None:
                 return False
+            if self._scalar(
+                "SELECT count(*) FROM stock_special_trading_day "
+                "WHERE code=? AND trade_date=? AND active", [code, trade_date]
+            ):
+                return True
             df = self.c.query_df(
                 """
                 SELECT *
@@ -1330,13 +1345,16 @@ class DataIntegrityReport:
                     FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code=b.code
                     LEFT JOIN stock_st_status_daily st
                       ON st.code=b.code AND st.trade_date=b.trade_date
-                    WHERE b.code=? AND b.pre_close>0
+                    WHERE b.code=?
                 ) t
                 WHERE trade_date=?
                 """, [code, trade_date])
             if df.empty:
                 return True  # 行已不在（被清洗）→ 不再是异常
             r = df.iloc[0]
+            # 缺失参考价不是异常已修复；避免单日重采后误关闭问题。
+            if pd.isna(r["pre_close"]) or float(r["pre_close"]) <= 0:
+                return False
             if not bool(self._active_l3_mask(df).iloc[0]):
                 return True
             if pd.isna(r["is_st"]) or r["st_quality"] != "accurate":
@@ -1347,7 +1365,9 @@ class DataIntegrityReport:
                 round_price_to_cent,
             )
 
-            pct = price_limit_pct_for(float(r["lim"]), bool(r["is_st"]), r["trade_date"])
+            pct = price_limit_pct_for(
+                float(r["lim"]), bool(r["is_st"]), r["trade_date"], code=code
+            )
             up, down = limit_prices(float(r["pre_close"]), pct)
             close = round_price_to_cent(float(r["close"]))
             return down - 0.011 <= close <= up + 0.011

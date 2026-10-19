@@ -59,10 +59,12 @@ def test_data_verifier_reports_calendar_lifecycle_and_cross_year_readiness():
             ),
             (
                 "交易日历已覆盖下一自然年",
-                False,
+                True,
                 "检查日 2026-08-24，下一开市日 2026-08-25，最远开市日 2026-08-25",
             ),
         ]
+
+        assert verifier._structured[-1]["status"] == "warn"
 
 
 def test_ingest_calendar_requests_extended_horizon_but_only_persists_source_facts(monkeypatch):

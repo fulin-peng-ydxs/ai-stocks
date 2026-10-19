@@ -12,20 +12,25 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from backend.config import CostConfig, get_effective_settings
 from backend.market_rules import limit_prices
 
 
-def can_buy_at_open(open_px: float, pre_close: float, pct: float) -> bool:
+def can_buy_at_open(open_px: float, pre_close: float, pct: float, *, no_price_limit: bool = False) -> bool:
     """次日开盘可买：开盘价 < 涨停价（开盘即涨停买不到）。"""
+    if no_price_limit:
+        return math.isfinite(open_px) and open_px > 0
     up, _ = limit_prices(pre_close, pct)
     return open_px < up - 1e-9
 
 
-def can_sell_at_open(open_px: float, pre_close: float, pct: float) -> bool:
+def can_sell_at_open(open_px: float, pre_close: float, pct: float, *, no_price_limit: bool = False) -> bool:
     """次日开盘可卖：开盘价 > 跌停价（开盘即跌停卖不出）。"""
+    if no_price_limit:
+        return math.isfinite(open_px) and open_px > 0
     _, down = limit_prices(pre_close, pct)
     return open_px > down + 1e-9
 

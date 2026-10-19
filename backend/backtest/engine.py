@@ -64,9 +64,12 @@ class BacktestEngine:
         bars = self.c.query_df(
             "SELECT b.code, b.trade_date, b.open, b.pre_close, b.close, "
             "       COALESCE(b.adj_factor_clean, b.adj_factor) AS adj_factor, "
-            "       sb.price_limit_pct, st.is_st, st.quality AS st_quality "
+            "       sb.price_limit_pct, st.is_st, st.quality AS st_quality, "
+            "       (special.code IS NOT NULL) AS no_price_limit "
             "FROM daily_bar b JOIN stock_basic sb ON sb.code=b.code "
             "LEFT JOIN stock_st_status_daily st ON st.code=b.code AND st.trade_date=b.trade_date "
+            "LEFT JOIN stock_special_trading_day special "
+            "ON special.code=b.code AND special.trade_date=b.trade_date AND special.active "
             "WHERE b.trade_date BETWEEN ? AND ? ORDER BY b.code, b.trade_date",
             [lo, hi],
         )
@@ -89,6 +92,7 @@ class BacktestEngine:
                 None if pd.isna(t.price_limit_pct) else float(t.price_limit_pct),
                 bool(t.is_st),
                 t.trade_date,
+                code=t.code,
             )
             for t in bars.itertuples(index=False)
         ]
@@ -395,7 +399,8 @@ class BacktestEngine:
                         continue
                     # 执行日 D 撮合：需有 bar 且开盘未封跌停
                     drow = price_row(code, D)
-                    if drow is None or not can_sell_at_open(drow.open, drow.pre_close, drow.pct):
+                    if drow is None or not can_sell_at_open(drow.open, drow.pre_close, drow.pct,
+                            no_price_limit=drow.no_price_limit):
                         pending_sells.add(code)  # 顺延
                         continue
                     pending_sells.discard(code)
@@ -456,7 +461,8 @@ class BacktestEngine:
                             if ind_count.get(ind, 0) >= ind_cap:
                                 continue  # 该行业已达上限，跳过
                         drow = price_row(code, D)
-                        if drow is None or not can_buy_at_open(drow.open, drow.pre_close, drow.pct):
+                        if drow is None or not can_buy_at_open(drow.open, drow.pre_close, drow.pct,
+                            no_price_limit=drow.no_price_limit):
                             continue
                         sc = score_map.get(code)
                         f = broker.buy(code, D, drow.open_hfq, alloc,
