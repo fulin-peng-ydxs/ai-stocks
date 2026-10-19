@@ -12,7 +12,7 @@ import { useRouter } from 'vue-router'
 import {
   listSchedules, listScheduleOptions, createSchedule, updateSchedule, setScheduleEnabled, deleteSchedule, runSchedule,
   listScheduleTriggerEvents,
-  getSources, testSources, SOURCE_LABEL, TASK_LABEL, ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE,
+  getSources, testSources, SOURCE_LABEL, TASK_LABEL, ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE, sortQualityIssueTypes,
   taskDisplayLabel, getSettingsView, saveSettings, resetSettings,
   type ScheduledJob, type ScheduledJobInput, type ScheduledJobOption, type ScheduledTriggerEvent,
   type SourceStatus, type TaskStatus, type TaskType, type FreqType, type TriggerMode,
@@ -653,9 +653,9 @@ async function load() {
     jobs.value = r.jobs
     jobTotal.value = r.total
     taskTypes.value = r.task_types
-    qualityIssueTypes.value = r.quality_issue_types?.length
+    qualityIssueTypes.value = sortQualityIssueTypes(r.quality_issue_types?.length
       ? r.quality_issue_types
-      : [...ISSUE_TYPES_ACTIVE]
+      : ISSUE_TYPES_ACTIVE)
   } catch (error) {
     if (scheduleListRequest.isCurrent(requestId)) {
       loadError.value = getErrorMessage(error, '调度任务加载失败')

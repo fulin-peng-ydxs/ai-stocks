@@ -39,7 +39,7 @@ def frame(day="2026-01-05", **kw):
     )
 
 
-def test_old_backfill_cannot_overwrite_latest_and_source_values_win(market):
+def test_old_backfill_cannot_overwrite_latest_and_computed_values_win(market):
     svc = ShareCapitalService(market)
     svc.merge(frame("2026-01-02"), "eastmoney_events")
     assert market.query_df("SELECT total_share FROM stock_basic").iloc[0, 0] == 999
@@ -51,7 +51,8 @@ def test_old_backfill_cannot_overwrite_latest_and_source_values_win(market):
     svc.merge(frame(), "sina_daily")
     assert market.query_df(
         "SELECT total_mv,float_mv FROM daily_metrics ORDER BY trade_date DESC"
-    ).iloc[0].tolist() == [2100, 1700]
+    ).iloc[0].tolist() == [2000, 1600]
+    assert market.query_df("SELECT reported_total_mv,reported_float_mv FROM daily_metrics ORDER BY trade_date DESC").iloc[0].tolist() == [2100,1700]
     svc.merge(frame("2026-01-02"), "eastmoney_daily")
     assert market.query_df("SELECT total_share_date FROM stock_basic").iloc[0, 0].date() == date(
         2026, 1, 5
@@ -229,13 +230,14 @@ def test_raw_price_correction_refreshes_only_computed_market_values(market):
     ]
 
 
-def test_computed_value_cannot_invert_protected_legacy_market_value(market):
+def test_computed_value_replaces_legacy_but_preserves_evidence(market):
     market.execute("INSERT INTO daily_metrics(code,trade_date,float_mv) VALUES ('600000.SH','2026-01-05',2200)")
     ShareCapitalService(market).merge(frame(), "eastmoney_events")
     row = market.query_df("SELECT total_mv,float_mv,total_mv_source FROM daily_metrics").iloc[0]
-    assert pd.isna(row.total_mv)
-    assert row.float_mv == 2200
-    assert pd.isna(row.total_mv_source)
+    assert row.total_mv == 2000
+    assert row.float_mv == 1600
+    assert row.total_mv_source.startswith("computed:")
+    assert market.query_df("SELECT reported_float_mv,reported_float_mv_source FROM daily_metrics").iloc[0].tolist() == [2200,"legacy_unknown"]
 
 
 def test_unchanged_total_survives_late_float_disclosure():
@@ -296,6 +298,10 @@ def test_latest_collection_checks_missing_shares_even_with_both_market_values(ma
     calls.clear()
     service.ingest_valuation_latest(trade_date=date(2026, 1, 5))
     assert calls == []
+    # 业务市值已计算一致，但接口仍有矛盾，日常入口必须继续选中。
+    ShareCapitalService(market).merge(frame(total_mv=2100,float_mv=1680), "eastmoney_daily", reported=True)
+    service.ingest_valuation_latest(trade_date=date(2026, 1, 5))
+    assert calls == ["600000.SH"]
 
 
 def test_fallback_cannot_cross_primary_unpublished_change(market, monkeypatch):
@@ -505,7 +511,7 @@ def test_missing_recalculation_is_scoped_idempotent_and_preserves_reported(marke
     market.execute("UPDATE stock_share_capital_daily SET total_mv_eligible=false")
     assert svc.recalculate_missing(["600001.SH"])["target"] == 0
     assert svc.recalculate_missing()["total_mv_filled"] == 1
-    assert market.query_df("SELECT total_mv FROM daily_metrics ORDER BY trade_date").total_mv.tolist() == [1000,2100]
+    assert market.query_df("SELECT total_mv FROM daily_metrics ORDER BY trade_date").total_mv.tolist() == [1000,2000]
     n = market.query_df("SELECT count(*) n FROM data_update_log").iloc[0,0]
     assert svc.recalculate_missing()["target"] == 0
     assert market.query_df("SELECT count(*) n FROM data_update_log").iloc[0,0] == n
@@ -596,3 +602,79 @@ def test_newer_fallback_does_not_replace_primary_confirmed_by_reported_market_va
     market.execute("UPDATE stock_share_capital_daily SET float_share=90,float_source='sina_events',float_effective_date='2026-01-05'")
     service.merge(old, "eastmoney_events")
     assert market.query_df("SELECT float_share FROM stock_share_capital_daily").iloc[0,0] == 80
+
+
+def test_reported_fallback_returns_when_calculation_inputs_disappear(market):
+    svc = ShareCapitalService(market)
+    incoming = frame(total_mv=2100, float_mv=1700, valuation_close=21)
+    svc.merge(incoming, 'eastmoney_daily', reported=True)
+    assert market.query_df('SELECT total_mv,reported_total_mv,reported_total_close FROM daily_metrics').iloc[0].tolist() == [2000,2100,21]
+    market.execute("UPDATE daily_bar SET close=NULL WHERE trade_date='2026-01-05'")
+    svc.recalculate_missing()
+    row = market.query_df('SELECT total_mv,total_mv_source FROM daily_metrics').iloc[0]
+    assert row.tolist() == [2100,'eastmoney_daily']
+    market.execute("UPDATE daily_bar SET close=30 WHERE trade_date='2026-01-05'")
+    svc.recalculate_missing()
+    assert market.query_df('SELECT total_mv,float_mv FROM daily_metrics').iloc[0].tolist() == [3000,2400]
+    market.execute('DELETE FROM stock_share_capital_daily')
+    svc.recalculate_missing()
+    assert market.query_df('SELECT total_mv,float_mv FROM daily_metrics').iloc[0].tolist() == [2100,1700]
+
+
+def test_no_reported_value_does_not_keep_stale_computation(market):
+    svc = ShareCapitalService(market)
+    svc.merge(frame(), 'eastmoney_events')
+    market.execute("UPDATE daily_bar SET close=0 WHERE trade_date='2026-01-05'")
+    svc.recalculate_missing()
+    row = market.query_df('SELECT total_mv,float_mv,reported_total_mv FROM daily_metrics').iloc[0]
+    assert row.isna().all()
+    assert svc.recalculate_missing()['rows_recalculated'] == 0
+
+
+def test_source_conflict_survives_recalculation_and_closes_only_when_evidence_agrees(market):
+    from backend.services.capital_quality import CapitalQualityService
+    svc = ShareCapitalService(market)
+    svc.merge(frame(total_mv=2100,float_mv=1680,valuation_close=21), 'eastmoney_daily', reported=True)
+    quality = CapitalQualityService(market)
+    assert len(quality.aggregate(source_only=True).query("issue_type == 'capital_source_mismatch'")) == 1
+    assert svc.recalculate_missing()['rows_recalculated'] == 0
+    assert len(quality.aggregate(source_only=True).query("issue_type == 'capital_source_mismatch'")) == 1
+    svc.merge(frame(total_mv=2000,float_mv=1600,valuation_close=20), 'eastmoney_daily', reported=True)
+    assert quality.aggregate(source_only=True).query("issue_type == 'capital_source_mismatch'").empty
+
+
+def test_market_value_migration_batches_real_240000_rows_and_is_idempotent(market):
+    market.execute('DELETE FROM daily_bar')
+    market.execute("INSERT INTO daily_bar(code,trade_date,close) SELECT 'S'||c::VARCHAR,DATE '2016-01-01'+d::INTEGER,10 FROM range(240) t(c) CROSS JOIN range(1000) u(d)")
+    market.execute("INSERT INTO stock_share_capital_daily(code,trade_date,total_share,float_share,total_source,float_source,total_effective_date,float_effective_date) SELECT code,trade_date,100,80,'eastmoney_daily','eastmoney_daily',trade_date,trade_date FROM daily_bar")
+    market.execute("INSERT INTO daily_metrics(code,trade_date,total_mv,float_mv) SELECT code,trade_date,990,792 FROM daily_bar")
+    from backend.services.capital_quality import CapitalQualityService
+    svc = ShareCapitalService(market)
+    assert svc.recalculate_missing()['rows_recalculated'] == 240000
+    stats = market.query_df("SELECT count(*) FILTER(WHERE total_mv=1000 AND float_mv=800) computed,count(*) FILTER(WHERE reported_total_mv=990 AND reported_float_mv=792) archived FROM daily_metrics").iloc[0]
+    assert stats.tolist() == [240000,240000]
+    assert CapitalQualityService(market).aggregate(source_only=True).query("issue_type == 'capital_source_mismatch'").issue_days.sum() == 240000
+    assert svc.recalculate_missing()['rows_recalculated'] == 0
+    # 日线修订后重算；接口证据不丢失，股票范围外不修改。
+    market.execute("UPDATE daily_bar SET close=9.9 WHERE code='S0'")
+    assert svc.recalculate_missing(['S0'])['rows_recalculated'] == 1000
+    assert CapitalQualityService(market).aggregate(['S0']).empty
+
+
+def test_float_fallback_reviews_archived_conflict_after_business_value_is_unified(market, monkeypatch):
+    from types import SimpleNamespace
+
+    from backend.services.ingest import IngestionService
+    service = IngestionService.__new__(IngestionService)
+    service.c = market
+    monkeypatch.setattr(service, "_valuation_one", lambda *args: 0)
+    ShareCapitalService(market).merge(frame(total_mv=2100,float_mv=1680), "eastmoney_events", reported=True)
+    calls = []
+    def fetch(code, days):
+        calls.extend(days.tolist())
+        return pd.DataFrame()
+    source = SimpleNamespace(get_float_share_history=fetch)
+    diagnostic = {}
+    service._collect_capital_one("600000.SH", source, date(2026,1,5), date(2026,1,5), diagnostic)
+    assert len(calls) == 1
+    assert "float_mv_share_mismatch" in diagnostic["600000.SH"]["remaining"]

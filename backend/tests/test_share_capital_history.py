@@ -106,7 +106,8 @@ def test_raw_zero_float_is_valid_but_negative_is_reported(market):
     assert quality.sync(["000004.SZ"])["capital_raw_invalid"] == 0
     raw["LISTED_A_SHARES"] = -50
     service.record_events("000004.SZ", raw, "eastmoney_events")
-    assert quality.sync(["000004.SZ"])["capital_raw_invalid"] == 1
+    assert quality.sync(["000004.SZ"])["capital_raw_invalid"] == 0
+    assert quality.aggregate(["000004.SZ"], source_only=True).issue_type.tolist() == ["capital_raw_invalid"]
     service.rebuild("000004.SZ", apply_events=True)
     assert (
         market.query_df("SELECT count(float_share) FROM stock_share_capital_daily").iloc[0, 0] == 0

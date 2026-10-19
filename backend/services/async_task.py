@@ -822,7 +822,7 @@ def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
         elif normalized.get("recalculate_only"):
             from backend.services.share_capital import ShareCapitalService
             ctx.check_cancel()
-            result = ShareCapitalService(ing.c).recalculate_missing(codes)
+            result = ShareCapitalService(ing.c).recalculate_missing(codes, ctx=ctx)
         else:
             verified = normalized.get("verified_facts")
             if verified:
@@ -865,7 +865,13 @@ def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
                   "valuation_gaps", "valuation_invalid_history", "delisted_history"}:
         from backend.services.capital_quality import CapitalQualityService
         # 批处理最后统一收敛台账，包括无需联网的重算和已不再进入缺口队列的股票。
-        result["capital_quality"] = CapitalQualityService(ing.c).sync(codes)
+        capital_service = CapitalQualityService(ing.c)
+        result["capital_quality"] = capital_service.sync(codes)
+        source_rows = capital_service.aggregate(codes, source_only=True)
+        result["capital_source_review"] = [
+            {"type": kind, "stocks": len(group), "records": int(group.issue_days.sum())}
+            for kind, group in source_rows.groupby("issue_type")
+        ]
     if normalized.get("verified_facts"):
         result["verified_fact_rows"] = len(normalized["verified_facts"])
     if result.get("skipped"):

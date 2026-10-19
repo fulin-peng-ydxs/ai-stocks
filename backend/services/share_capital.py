@@ -1,4 +1,4 @@
-"""逐日股本及市值合并：原始价格、同日事实、源端市值优先。"""
+"""逐日股本及市值合并：同日事实×原始价格优先，接口值核验与兜底。"""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ class ShareCapitalService:
         """缺失和非空不一致共用同一选择条件；容差与市值质检一致。"""
         from backend.services.capital_quality import capital_predicates
 
-        return " OR ".join(f"({sql})" for sql in capital_predicates().values())
+        return " OR ".join(f"({sql})" for sql in capital_predicates(include_sources=True).values())
 
     def review_candidates(self, start, end, *, codes=None, limit=50, interval_days=7):
         """历史缺口公平轮询；复用采集日志持久化尝试时间，不让无变化复查刷新数据版本。"""
@@ -137,7 +137,8 @@ class ShareCapitalService:
         ]
         with self.c.transaction(), self.c.temp_view(df[cols], prefix="share_input") as t:
             previous = self.c.query_df(
-                f"SELECT v.code,v.trade_date,s.total_share,s.float_share,m.total_mv,m.float_mv FROM {t} v "
+                f"SELECT v.code,v.trade_date,s.total_share,s.float_share,m.total_mv,m.float_mv,"
+                f"m.reported_total_mv,m.reported_float_mv,m.reported_total_close,m.reported_float_close FROM {t} v "
                 "LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
                 "LEFT JOIN daily_metrics m USING(code,trade_date)"
             )
@@ -224,8 +225,8 @@ class ShareCapitalService:
                         [source],
                     )
                 confirmation = (
-                    f"m.{field}_mv>0 AND NOT coalesce(starts_with(m.{field}_mv_source,'computed:'),false) "
-                    f"AND abs(m.{field}_mv-{{share}}*v._raw_close)<=greatest(abs(m.{field}_mv)*{MV_REL_TOLERANCE},1)"
+                    f"coalesce(m.reported_{field}_mv,CASE WHEN NOT coalesce(starts_with(m.{field}_mv_source,'computed:'),false) THEN m.{field}_mv END)>0 "
+                    f"AND abs(coalesce(m.reported_{field}_mv,CASE WHEN NOT coalesce(starts_with(m.{field}_mv_source,'computed:'),false) THEN m.{field}_mv END)-{{share}}*v._raw_close)<=greatest(abs(coalesce(m.reported_{field}_mv,m.{field}_mv))*{MV_REL_TOLERANCE},1)"
                 )
                 if source == "eastmoney_events":
                     # 用独立源端市值核验已有股数，不反推股数；避免备用源日期较新但数值错误。
@@ -277,31 +278,70 @@ class ShareCapitalService:
             self._log_changes(previous, source)
         return len(df)
 
-    def recalculate_missing(self, codes=None) -> dict:
-        """按库内同日股本批量补算；不请求外部源，不改股本及有效源端市值。"""
-        condition = "AND b.code IN (SELECT unnest(?::VARCHAR[]))" if codes else ""
-        # 只加载有股本可补算的缺口，避免把千万行情加载进 Python。
-        values = self.c.query_df(
-            "SELECT b.code,b.trade_date,b.close _raw_close,s.total_share,s.float_share,m.total_mv,m.float_mv "
-            "FROM daily_bar b JOIN stock_share_capital_daily s USING(code,trade_date) "
-            "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE "
-            "((m.total_mv IS NULL AND s.total_share>0) OR (m.float_mv IS NULL AND s.float_share>0)) "
-            + condition, [codes] if codes else None,
+    @staticmethod
+    def _calculation_valid(field, price="b.close"):
+        """有效股本和本地未复权收盘价才可计算；来源公告日不作门槛。"""
+        return (
+            f"s.{field}_share>0 AND s.{field}_effective_date<=s.trade_date "
+            f"AND s.{field}_source IS NOT NULL AND {price}>0 AND isfinite({price}) "
+            + ("AND (s.total_share IS NULL OR s.float_share<=s.total_share) " if field == "float" else "")
         )
-        result = {"target": int(values.code.nunique()), "ok": 0, "fail": 0,
-                  "total_mv_filled": 0, "float_mv_filled": 0}
-        if values.empty:
-            return result
-        with self.c.transaction(), self.c.temp_view(values, prefix="capital_recalculate") as view:
-            self._merge_market_values(values, view, "recalculate", False)
-            self._log_changes(values.drop(columns=["_raw_close"]), "a_price_recalculate")
-            filled = self.c.query_df(
-                f"SELECT count(*) FILTER(WHERE v.total_mv IS NULL AND m.total_mv IS NOT NULL) total_filled,"
-                "count(*) FILTER(WHERE v.float_mv IS NULL AND m.float_mv IS NOT NULL) float_filled "
-                f"FROM {view} v LEFT JOIN daily_metrics m USING(code,trade_date)"
-            ).iloc[0]
-            result.update(ok=result["target"], total_mv_filled=int(filled.total_filled),
-                          float_mv_filled=int(filled.float_filled))
+
+    @staticmethod
+    def _computed_source(field):
+        prefix = "computed:a_price:" if field == "total" else "computed:"
+        return f"'{prefix}'||s.{field}_source"
+
+    def recalculate_missing(self, codes=None, *, ctx=None) -> dict:
+        """统一补缺及刷新已有市值，按股票分批，避免加载千万日线到内存。"""
+        if codes is None:
+            codes = self.c.query_df("SELECT DISTINCT code FROM daily_bar ORDER BY code").code.tolist()
+        codes = list(dict.fromkeys(codes))
+        result = {"target": 0, "ok": 0, "fail": 0, "total_mv_filled": 0,
+                  "float_mv_filled": 0, "rows_recalculated": 0}
+        for offset in range(0, len(codes), 200):
+            if ctx:
+                ctx.check_cancel()
+            batch = codes[offset:offset + 200]
+            predicates = []
+            for field in ("total", "float"):
+                col = f"{field}_mv"
+                valid = self._calculation_valid(field)
+                expected = (f"CASE WHEN {valid} THEN s.{field}_share*b.close "
+                            f"ELSE coalesce(m.reported_{col},CASE WHEN NOT coalesce("
+                            f"starts_with(m.{col}_source,'computed:'),false) AND m.{col}>0 "
+                            f"AND isfinite(m.{col}) THEN m.{col} END) END")
+                predicates.extend([
+                    f"m.{col} IS DISTINCT FROM ({expected})",
+                    f"(({valid}) AND m.{col}_source IS DISTINCT FROM ({self._computed_source(field)}))",
+                    (f"(m.reported_{col} IS NULL AND m.{col}>0 AND isfinite(m.{col}) "
+                     f"AND NOT coalesce(starts_with(m.{col}_source,'computed:'),false))"),
+                ])
+            values = self.c.query_df(
+                "SELECT b.code,b.trade_date,b.close _raw_close,s.total_share,s.float_share,m.total_mv,m.float_mv "
+                "FROM daily_bar b LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
+                "LEFT JOIN daily_metrics m USING(code,trade_date) "
+                "WHERE b.code IN (SELECT unnest(?::VARCHAR[])) AND (" + " OR ".join(predicates) + ")",
+                [batch],
+            )
+            if not values.empty:
+                with self.c.transaction(), self.c.temp_view(values, prefix="capital_recalculate") as view:
+                    self._merge_market_values(values, view, "recalculate", False)
+                    self._log_changes(values.drop(columns=["_raw_close"]), "a_price_recalculate")
+                    filled = self.c.query_df(
+                        "SELECT count(*) FILTER(WHERE v.total_mv IS NULL AND m.total_mv IS NOT NULL) total_filled,"
+                        "count(*) FILTER(WHERE v.float_mv IS NULL AND m.float_mv IS NOT NULL) float_filled "
+                        f"FROM {view} v LEFT JOIN daily_metrics m USING(code,trade_date)"
+                    ).iloc[0]
+                    count = int(values.code.nunique())
+                    result["target"] += count
+                    result["ok"] += count
+                    result["rows_recalculated"] += len(values)
+                    result["total_mv_filled"] += int(filled.total_filled)
+                    result["float_mv_filled"] += int(filled.float_filled)
+            if ctx:
+                ctx.progress(min(offset + len(batch), len(codes)) / max(len(codes), 1),
+                             f"市值统一重算：已检查 {min(offset + len(batch), len(codes))}/{len(codes)} 只股票")
         return result
 
     def _log_changes(self, previous, source):
@@ -312,6 +352,9 @@ class ShareCapitalService:
                 "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE "
                 "p.total_share IS DISTINCT FROM s.total_share OR p.float_share IS DISTINCT FROM s.float_share "
                 "OR p.total_mv IS DISTINCT FROM m.total_mv OR p.float_mv IS DISTINCT FROM m.float_mv"
+                + "".join(f" OR p.{col} IS DISTINCT FROM m.{col}" for col in
+                          ("reported_total_mv", "reported_float_mv", "reported_total_close", "reported_float_close")
+                          if col in previous)
             ).iloc[0]
         if changed.n:
             # 修订与数据同事务提交；读取端用现有日志指纹识别新输入，幂等补采不刷版本。
@@ -332,54 +375,39 @@ class ShareCapitalService:
             )
 
     def _merge_market_values(self, df, share_view, source, reported):
-        if reported:
-            for field in ("total", "float"):
-                col = f"{field}_mv"
-                if col not in df:
-                    continue
-                values = df[["code", "trade_date", col]].copy()
-                values[col] = pd.to_numeric(values[col], errors="coerce")
-                values = values[np.isfinite(values[col]) & (values[col] > 0)]
-                with self.c.temp_view(values, prefix="reported_mv") as t:
-                    self.c.execute(
-                        f"INSERT INTO daily_metrics (code,trade_date,{col},{col}_source) "
-                        f"SELECT v.code,v.trade_date,v.{col},? FROM {t} v "
-                        f"ON CONFLICT (code,trade_date) DO UPDATE SET {col}=excluded.{col}, "
-                        f"{col}_source=excluded.{col}_source",
-                        [source],
-                    )
-        # 计算值仅补空/非正值或刷新已有计算值，永不覆盖有效源端值与来源未知旧值。
+        # 先保全旧接口值，随后写入本次接口证据；计算值绝不归档为接口值。
         for field in ("total", "float"):
             col = f"{field}_mv"
             self.c.execute(
-                f"UPDATE daily_metrics m SET {col}=NULL,{col}_source=NULL "
-                f"FROM stock_share_capital_daily s JOIN {share_view} v USING(code,trade_date) "
-                "WHERE m.code=s.code AND m.trade_date=s.trade_date "
-                f"AND starts_with(m.{col}_source,'computed:') AND "
-                f"(s.{field}_share IS NULL"
-                + ")"
+                f"UPDATE daily_metrics m SET reported_{col}=m.{col}, "
+                f"reported_{col}_source=coalesce(m.{col}_source,'legacy_unknown') "
+                f"FROM {share_view} v WHERE m.code=v.code AND m.trade_date=v.trade_date "
+                f"AND m.reported_{col} IS NULL AND m.{col}>0 AND isfinite(m.{col}) "
+                f"AND NOT coalesce(starts_with(m.{col}_source,'computed:'),false)"
             )
+            if reported and col in df:
+                values = df[["code", "trade_date", col]].copy()
+                values[col] = pd.to_numeric(values[col], errors="coerce")
+                values["valuation_close"] = pd.to_numeric(df.get("valuation_close"), errors="coerce")
+                values.loc[~(values.valuation_close.gt(0) & np.isfinite(values.valuation_close)), "valuation_close"] = np.nan
+                values = values[np.isfinite(values[col]) & (values[col] > 0)]
+                with self.c.temp_view(values, prefix="reported_mv") as t:
+                    self.c.execute(
+                        f"INSERT INTO daily_metrics (code,trade_date,reported_{col},reported_{col}_source,reported_{field}_close) "
+                        f"SELECT code,trade_date,{col},?,valuation_close FROM {t} "
+                        f"ON CONFLICT (code,trade_date) DO UPDATE SET reported_{col}=excluded.reported_{col}, "
+                        f"reported_{col}_source=excluded.reported_{col}_source, "
+                        f"reported_{field}_close=excluded.reported_{field}_close", [source],
+                    )
+            valid = self._calculation_valid(field, "v._raw_close")
+            # 每次根据当前输入重新决策：可计算则统一计算，不可计算才退回留存接口值。
             self.c.execute(
                 f"INSERT INTO daily_metrics (code,trade_date,{col},{col}_source) "
-                f"SELECT s.code,s.trade_date,s.{field}_share*v._raw_close,"
-                + ("'computed:a_price:'" if field == "total" else "'computed:'")
-                + f"||s.{field}_source "
-                "FROM stock_share_capital_daily s "
-                f"JOIN {share_view} v USING(code,trade_date) "
-                f"WHERE s.{field}_share>0 AND v._raw_close>0 AND isfinite(v._raw_close) "
+                f"SELECT v.code,v.trade_date,CASE WHEN {valid} THEN s.{field}_share*v._raw_close "
+                f"ELSE m.reported_{col} END,CASE WHEN {valid} THEN {self._computed_source(field)} "
+                f"ELSE m.reported_{col}_source END FROM {share_view} v "
+                "LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
+                "LEFT JOIN daily_metrics m USING(code,trade_date) "
                 f"ON CONFLICT (code,trade_date) DO UPDATE SET {col}=excluded.{col}, "
-                f"{col}_source=excluded.{col}_source WHERE daily_metrics.{col} IS NULL "
-                f"OR daily_metrics.{col}<=0 OR NOT isfinite(daily_metrics.{col}) OR starts_with(daily_metrics.{col}_source,'computed:')"
+                f"{col}_source=excluded.{col}_source"
             )
-
-        # 跨源口径冲突时撤回计算值，保护既有源端/未知来源值；两项先算完再校验，
-        # 避免原始价格修订时拿旧的另一项市值阻挡正确更新。
-        self.c.execute(
-            "UPDATE daily_metrics m SET "
-            "total_mv=CASE WHEN starts_with(total_mv_source,'computed:') THEN NULL ELSE m.total_mv END, "
-            "float_mv=CASE WHEN starts_with(float_mv_source,'computed:') THEN NULL ELSE m.float_mv END, "
-            "total_mv_source=CASE WHEN starts_with(total_mv_source,'computed:') THEN NULL ELSE total_mv_source END, "
-            "float_mv_source=CASE WHEN starts_with(float_mv_source,'computed:') THEN NULL ELSE float_mv_source END "
-            f"FROM {share_view} v WHERE m.code=v.code AND m.trade_date=v.trade_date "
-            f"AND m.total_mv < m.float_mv*(1-{MV_REL_TOLERANCE})"
-        )

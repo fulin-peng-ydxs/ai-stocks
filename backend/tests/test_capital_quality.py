@@ -153,22 +153,19 @@ def test_failed_primary_is_visible_even_when_fallback_fills(market):
     assert clean
 
 
-def test_price_basis_difference_remains_open_with_evidence(market):
+def test_price_basis_difference_is_source_review_not_business_failure(market):
     source = SimpleNamespace(
-        get_valuation=lambda *args: fact(total_mv=990, float_mv=792),
+        get_valuation=lambda *args: fact(total_mv=990, float_mv=792, valuation_close=9.9),
         _last_valuation_prices=("600001.SH", {date(2017, 1, 5): 9.9}),
     )
     ing = ingest(market, source)
-    ing.repair_capital_quality("600001.SH")
-    iid = issue(market, kind="capital_mismatch")
-    clean, _, msg = _recover_one(market, DataIntegrityReport(market), ing, ctx(), iid)
-    assert not clean and "价格" in msg
-    row = market.query_df("SELECT status,detail FROM data_quality_issue WHERE id=?", [iid]).iloc[0]
-    assert row.status == "open" and "price_basis_mismatch" in row.detail
-    assert (
-        market.query_df("SELECT total_mv FROM daily_metrics WHERE code='600001.SH'").iloc[0, 0]
-        == 990
-    )
+    result = ing.repair_capital_quality("600001.SH")
+    quality = CapitalQualityService(market)
+    assert quality.sync(["600001.SH"])["capital_mismatch"] == 0
+    assert quality.clean("capital_mismatch", "600001.SH")
+    assert quality.aggregate(["600001.SH"], source_only=True).issue_days.sum() == 1
+    assert "total_mv_price_basis_mismatch" in result["diagnostics"]["600001.SH"]["remaining"]
+    assert market.query_df("SELECT total_mv,reported_total_mv FROM daily_metrics WHERE code='600001.SH'").iloc[0].tolist() == [1000,990]
 
 
 def test_invalid_mv_repair_uses_share_fallback(market):
@@ -230,8 +227,9 @@ def test_quality_model_and_cache_follow_nonempty_capital_revision(market):
         fact(total_mv=990, float_mv=792), "eastmoney_daily", reported=True
     )
     after = report.stock_quality(codes=["600001.SH"])["list"][0]
-    assert not after["layers"]["L2"]["ok"]
-    assert "不一致" in after["layers"]["L2"]["capital_detail"]
+    assert after["layers"]["L2"]["ok"]
+    assert after["layers"]["L2"]["capital_issues"] == 0
+    assert CapitalQualityService(market).aggregate(["600001.SH"], source_only=True).issue_days.sum() == 1
 
 
 def test_scoped_scan_preserves_ignored_other_stock(market):
@@ -292,4 +290,47 @@ def test_scoped_repair_expires_only_its_occurrence_ignore(market):
     rows = market.query_df("SELECT code,ignore_active FROM data_quality_issue ORDER BY code")
     assert not rows.iloc[0].ignore_active and rows.iloc[1].ignore_active
     market.execute("DELETE FROM stock_share_capital_daily WHERE code='600001.SH'")
+    assert quality.sync(["600001.SH"])["capital_gap"] == 1
+
+
+def test_legacy_source_issues_close_without_erasing_evidence_or_ignores(market):
+    import json
+    ShareCapitalService(market).merge(fact(total_mv=990,float_mv=792), "eastmoney_daily", reported=True)
+    report = DataIntegrityReport(market)
+    report._insert_issues([
+        {"code":"600001.SH","trade_date":None,"issue_type":"capital_mismatch","detail":"原接口差异"},
+        {"code":"600001.SH","trade_date":None,"issue_type":"capital_raw_invalid","detail":"原始负数"},
+        {"code":"600002.SH","trade_date":None,"issue_type":"capital_raw_invalid","detail":"其他股票"},
+    ])
+    quality = CapitalQualityService(market)
+    quality.sync(["600001.SH"])
+    old = market.query_df("SELECT status,detail FROM data_quality_issue WHERE code='600001.SH'")
+    assert old.status.tolist() == ["resolved", "resolved"]
+    assert all("不表示源端数据已修正" in json.loads(x)["resolution_note"] for x in old.detail)
+    assert market.query_df("SELECT status FROM data_quality_issue WHERE code='600002.SH'").iloc[0,0] == "open"
+    assert quality.aggregate(["600001.SH"], source_only=True).issue_days.sum() == 1
+    quality.sync(["600001.SH"])
+    assert market.query_df("SELECT count(*) FROM data_quality_issue WHERE code='600001.SH'").iloc[0,0] == 2
+    # 真正的业务计算错误仍应进入主台账。
+    market.execute("UPDATE daily_metrics SET total_mv=500 WHERE code='600001.SH'")
+    assert quality.sync(["600001.SH"])["capital_mismatch"] == 1
+
+
+def test_source_warnings_are_visible_but_business_contract_stays_clean(market):
+    from backend.services.data_verify import DataVerifier
+    from backend.services.share_capital_history import ShareCapitalHistoryService
+    ShareCapitalService(market).merge(fact(total_mv=990,float_mv=792), "eastmoney_daily", reported=True)
+    ShareCapitalHistoryService(market).record_events("600001.SH", pd.DataFrame([{
+        "END_DATE":"2016-01-01", "NOTICE_DATE":"2016-01-02", "TOTAL_SHARES":100, "LISTED_A_SHARES":-50,
+    }]), "sina_events")
+    quality = CapitalQualityService(market)
+    assert quality.aggregate(["600001.SH"]).empty
+    assert set(quality.aggregate(["600001.SH"], source_only=True).issue_type) == {"capital_source_mismatch","capital_raw_invalid"}
+    verifier = DataVerifier(market, quiet=True)
+    verifier.check_contract()
+    warnings = [r for r in verifier._structured if r["name"].startswith("来源核验")]
+    assert len(warnings) == 2
+    assert all(r["status"] == "warn" and r["evidence"] for r in warnings)
+    # 没有替代有效股本时必须报缺口，不能以“来源异常”豁免业务缺失。
+    market.execute("UPDATE stock_share_capital_daily SET float_share=NULL WHERE code='600001.SH'")
     assert quality.sync(["600001.SH"])["capital_gap"] == 1

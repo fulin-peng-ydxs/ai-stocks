@@ -16,7 +16,7 @@ import {
   getDataQuality, fixQualityIssue, ignoreQualityIssue, restoreQualityMonitoring,
   resetQualityIssue, recoverQualityBatch, ignoreQualityBatch,
   markDelisted, createTask, getTask,
-  ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE, SEVERITY_LABEL, ISSUE_STATUS_LABEL, ISSUE_LAYER, LAYER_LABEL,
+  ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE, sortQualityIssueTypes, SEVERITY_LABEL, ISSUE_STATUS_LABEL, ISSUE_LAYER, LAYER_LABEL,
   RECOVER_ACTION_LABEL,
   type DataQuality, type QualityIssue, type QualityIgnoreScope, type CheckupIssueItem, type CheckupReport,
 } from '@/api/data'
@@ -53,8 +53,8 @@ const statusFilterOptions = Object.entries(ISSUE_STATUS_LABEL)
   .map(([value, label]) => ({ value, label }))
 const severityFilterOptions = Object.entries(SEVERITY_LABEL)
   .map(([value, label]) => ({ value, label }))
-const issueTypeFilterOptions = Object.entries(ISSUE_TYPE_LABEL)
-  .map(([value, label]) => ({ value, label }))
+const issueTypeFilterOptions = sortQualityIssueTypes(Object.keys(ISSUE_TYPE_LABEL))
+  .map((value) => ({ value, label: ISSUE_TYPE_LABEL[value] }))
 // 默认筛选/隐藏已办属业务态偏好，保留 usePageSettings；默认排序与列显隐迁入组件配置层（plan.md §13.3）。
 const qualityDefaults = {
   defaultStatus: 'todo' as 'todo' | 'all' | 'open',
@@ -509,7 +509,7 @@ const menuPageTitle = useMenuPageTitle()
           </HelpTipItem>
           <HelpTipItem question="质量口径是什么">
             <ul>
-              <li>L1 入库闸门、L2 字段契约、L3 正确性、L4 覆盖鲜活；ST 层检查逐日事实缺失、非权威和投影不一致；板块另查指数、成分与资金流。</li>
+              <li>L1 入库闸门、L2 字段契约、L3 正确性、L4 覆盖鲜活；ST 和板块专项独立检查。已拒用的原始股本和接口市值差异不计业务异常，但会保留来源核验提醒；实际股本缺失或非法仍会报告。</li>
             </ul>
           </HelpTipItem>
           <HelpTipItem question="问题从哪里来">
@@ -527,7 +527,7 @@ const menuPageTitle = useMenuPageTitle()
           </HelpTipItem>
         </HelpTip>
       </h2>
-      <p class="page-subtitle">个股四层与板块专项质量台账，每条问题按类型恢复，复检通过才标记「已解决」。</p>
+      <p class="page-subtitle">本页统计业务数据异常；接口原始负数及来源差异见「结构体检」中的来源核验提醒。</p>
       </div>
       <div class="page-head-actions">
         <AppActionHint :text="canBatch ? '' : '请先选择类型/严重度/代码再批量恢复'" :disabled="!canBatch" label="一键恢复" v-permission="'data-quality:fix'">

@@ -273,7 +273,7 @@ def test_diagnostics_distinguish_source_price_from_share_error(market, monkeypat
     remaining = diagnostics["600001.SH"]["remaining"]
     assert set(remaining) == {"total_mv_price_basis_mismatch", "float_mv_price_basis_mismatch"}
     assert remaining["total_mv_price_basis_mismatch"]["evidence"][0]["raw_close"] == 10
-    assert market.query_df("SELECT total_mv FROM daily_metrics").iloc[0, 0] == 990
+    assert market.query_df("SELECT total_mv,reported_total_mv FROM daily_metrics").iloc[0].tolist() == [1000,990]
 
 
 def test_diagnostics_explain_rounded_exchange_total_below_exact_float(market, monkeypatch):

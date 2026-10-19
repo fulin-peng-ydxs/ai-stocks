@@ -76,3 +76,21 @@ CREATE TABLE IF NOT EXISTS stock_share_capital_history (
     updated_at TIMESTAMP DEFAULT current_timestamp,
     PRIMARY KEY (code,trade_date)
 );
+
+
+-- 市值统一：升级启动幂等新增接口证据列；不在启动迁移中扫描/重写千万行。
+-- 前置：停止写任务并备份完整 DuckDB；业务数据重算走异步 share_capital_history/recalculate_only。
+-- 影响：daily_metrics 计算值优先，原有效非计算值在任务中逐批归档；不修改股本、日线。
+-- 回滚：停止任务及服务后恢复备份数据库和匹配代码，不在线删除证据列。
+-- 接口原始总市值（元），用于核验与兜底
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS reported_total_mv DOUBLE;
+-- 接口来源，legacy_unknown 为来源未认证旧值
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS reported_total_mv_source VARCHAR;
+-- 同次接口价格，仅作核验；旧数据未知则为空
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS reported_total_close DOUBLE;
+-- 接口原始流通市值（元），用于核验与兜底
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS reported_float_mv DOUBLE;
+-- 接口来源，legacy_unknown 为来源未认证旧值
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS reported_float_mv_source VARCHAR;
+-- 同次接口价格，仅作核验；旧数据未知则为空
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS reported_float_close DOUBLE;

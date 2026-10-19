@@ -640,7 +640,24 @@ class DataVerifier:
             "SELECT code,event_id,effective_date,available_date,total_share,float_share,raw_payload "
             "FROM stock_share_capital_event WHERE active AND (effective_date IS NULL OR total_share<=0 "
             "OR float_share<0 OR float_share>total_share)")
-        self._check("股本原始事件合法性",raw_invalid.total==0,f"异常 {raw_invalid.total} 条",findings=[raw_invalid])
+        if raw_invalid.total:
+            self._warn("来源核验·股本原始记录", f"{raw_invalid.total} 条原始记录不可用，保留追溯，不计入业务异常",
+                       "采集拒用非法股数；实际股本缺失或非法另由逐日股本检查报告。源端尚未改正不妨碍有效替代来源使用。",
+                       findings=[raw_invalid])
+        else:
+            self._check("来源核验·股本原始记录", True, "无非法原始记录")
+        from backend.services.capital_quality import capital_predicates
+        source_predicate = capital_predicates(include_sources=True)["capital_source_mismatch"]
+        source_difference = self._finding(
+            "SELECT b.code,b.trade_date,b.close,s.total_share,s.float_share,m.total_mv,m.float_mv,"
+            "m.reported_total_mv,m.reported_float_mv,m.reported_total_close,m.reported_float_close "
+            "FROM daily_bar b " + historical_joins() + " WHERE " + source_predicate)
+        if source_difference.total:
+            self._warn("来源核验·市值与股本价格差异", f"{source_difference.total} 个股票交易日来源待核验，不计入业务异常",
+                       "业务市值按本地逐日股本×未复权收盘价计算。接口价格差异和股本来源冲突继续复查；乘法一致不代表来源已核实。",
+                       findings=[source_difference])
+        else:
+            self._check("来源核验·市值与股本价格差异", True, "无来源差异")
         invalid_shares = self._finding(
             "SELECT * FROM stock_share_capital_daily WHERE total_share<=0 OR float_share<=0 "
             "OR float_share>total_share OR total_effective_date>trade_date "

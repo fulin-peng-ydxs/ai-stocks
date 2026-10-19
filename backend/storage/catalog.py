@@ -219,12 +219,18 @@ TABLE_CATALOG: dict[str, dict] = {
         "date_col": "trade_date",
         "relations": ["(code, trade_date) → daily_bar"],
         "fields": [
-            {'name': 'float_mv_source', 'type': 'VARCHAR', 'name_cn': '流通市值来源', 'desc': 'NULL为未认证旧值；computed前缀为补算来源'},
-            {'name': 'total_mv_source', 'type': 'VARCHAR', 'name_cn': '总市值来源', 'desc': 'NULL为未认证旧值；computed前缀为补算来源'},
+            {'name': 'reported_total_mv', 'type': 'DOUBLE', 'name_cn': '接口原始总市值', 'desc': '接口返回值（元）；独立保存用于核验，缺少有效计算输入时兜底'},
+            {'name': 'reported_total_mv_source', 'type': 'VARCHAR', 'name_cn': '接口总市值来源', 'desc': 'legacy_unknown 表示迁移前来源未认证的旧值'},
+            {'name': 'reported_total_close', 'type': 'DOUBLE', 'name_cn': '接口总市值对应收盘价', 'desc': '同次估值接口价格（元），仅核验，不替代本地日线'},
+            {'name': 'reported_float_mv', 'type': 'DOUBLE', 'name_cn': '接口原始流通市值', 'desc': '接口返回值（元）；独立保存用于核验，缺少有效计算输入时兜底'},
+            {'name': 'reported_float_mv_source', 'type': 'VARCHAR', 'name_cn': '接口流通市值来源', 'desc': 'legacy_unknown 表示迁移前来源未认证的旧值'},
+            {'name': 'reported_float_close', 'type': 'DOUBLE', 'name_cn': '接口流通市值对应收盘价', 'desc': '同次估值接口价格（元），仅核验，不替代本地日线'},
+            {'name': 'float_mv_source', 'type': 'VARCHAR', 'name_cn': '流通市值来源', 'desc': 'computed前缀表示逐日股本×本地未复权收盘价；其他来源为接口兜底'},
+            {'name': 'total_mv_source', 'type': 'VARCHAR', 'name_cn': '总市值来源', 'desc': 'computed前缀表示逐日股本×本地未复权收盘价；其他来源为接口兜底'},
             {"name": "code", "type": "VARCHAR", "name_cn": "股票代码", "desc": "主键之一"},
             {"name": "trade_date", "type": "DATE", "name_cn": "交易日", "desc": "主键之一"},
-            {"name": "float_mv", "type": "DOUBLE", "name_cn": "流通市值", "desc": "有效源端值优先；同日流通A股×原价补算（元）"},
-            {"name": "total_mv", "type": "DOUBLE", "name_cn": "总市值", "desc": "元（逐股质量达标关键字段）"},
+            {"name": "float_mv", "type": "DOUBLE", "name_cn": "流通市值", "desc": "同日流通A股×未复权收盘价优先；缺少计算输入时接口兜底（元）"},
+            {"name": "total_mv", "type": "DOUBLE", "name_cn": "总市值", "desc": "总股本×同日A股未复权收盘价优先；缺输入时接口兜底（元）"},
         ],
     },
     "index_bar": {
@@ -781,7 +787,7 @@ _DUCK_CORE_SOURCES = {
     "stock_share_capital_daily": "东财逐日估值/股本变动；新浪历史股本/日线；上交所逐日转股统计（100股精度）；指定日期证据核验",
     "stock_basic": "AKShare / baostock",
     "daily_bar": "AKShare / baostock",
-    "daily_metrics": "东财源端市值优先；同日股本与原价补算",
+    "daily_metrics": "同日股本×未复权收盘价优先；接口市值独立留存、核验与兜底",
     "index_bar": "AKShare",
     "trade_calendar": "AKShare",
     "data_update_log": "数据采集任务",
@@ -1032,7 +1038,7 @@ _DUCK_FRESHNESS_POLICIES: dict[str, FreshnessPolicy] = {
 }
 
 _DUCK_QUALITY_POLICIES: dict[str, QualityPolicy] = {
-    "stock_share_capital_event": QualityPolicy("issue_types", ("capital_raw_invalid",)),
+    "stock_share_capital_event": QUALITY_NOT_APPLICABLE,  # 原始输入含拒用记录；结构体检来源提醒，不计业务异常
     "stock_share_capital_history": QUALITY_NOT_APPLICABLE,  # 旧派生表停用，质量归统一逐日表
     "stock_special_trading_day": QUALITY_NOT_APPLICABLE,
     "stock_share_capital_daily": QualityPolicy("issue_types", ("capital_gap", "capital_invalid", "capital_mismatch")),

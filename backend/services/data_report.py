@@ -778,6 +778,7 @@ class DataIntegrityReport:
         issue_rows = ab_rows + price_volume_rows + adj_rows + rows + st_rows + capital_rows + history_rows
         # 仅台账替换使用短事务：失败回滚保留旧问题，计算期间不锁住轮询。
         with self.c.transaction():
+            CapitalQualityService(self.c).reclassify_legacy()
             self._upsert_scan_issues(issue_rows, SCAN_ISSUE_TYPES)
         active_rows = self.c.query_df(
             f"SELECT issue_type, count(*) AS n FROM data_quality_issue WHERE status='open' "

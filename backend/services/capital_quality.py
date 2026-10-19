@@ -13,7 +13,8 @@ CAPITAL_LABELS = {
     "capital_raw_invalid": "股本原始事件非法",
     "capital_gap": "股本/市值缺失",
     "capital_invalid": "股本/市值数值或日期非法",
-    "capital_mismatch": "股本与市值不一致",
+    "capital_mismatch": "业务市值与股本、收盘价不一致",
+    "capital_source_mismatch": "市值来源差异待核验",
 }
 REASON_LABELS = {
     "raw_record_invalid": "源端原始记录仍含负股数等非法值",
@@ -42,7 +43,7 @@ def reasons_for_issue(kind, reasons):
     }
 
 
-def capital_predicates(*, historical=False) -> dict[str, str]:
+def capital_predicates(*, historical=False, include_sources=False) -> dict[str, str]:
     """只使用内部固定别名 b/s/m；金额容差与既有市值质检保持一致。"""
     invalid = ["s.float_share>s.total_share", f"m.total_mv<m.float_mv*(1-{MV_REL_TOLERANCE})"]
     mismatch = []
@@ -59,25 +60,39 @@ def capital_predicates(*, historical=False) -> dict[str, str]:
         mismatch.append(
             f"abs(m.{field}_mv-s.{field}_share*b.close)>greatest(abs(m.{field}_mv)*{MV_REL_TOLERANCE},1)"
         )
-    return {
+    predicates = {
         "capital_gap": "s.total_share IS NULL OR s.float_share IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL",
         "capital_invalid": " OR ".join(invalid),
         "capital_mismatch": " OR ".join(mismatch),
     }
+    if include_sources:
+        predicates["capital_source_mismatch"] = " OR ".join(
+            f"abs(m.reported_{field}_mv-s.{field}_share*b.close)>greatest(abs(m.reported_{field}_mv)*{MV_REL_TOLERANCE},1)"
+            for field in ("total", "float")
+        )
+    return predicates
 
 
 class CapitalQualityService:
     def __init__(self, client):
         self.c = client
 
-    def aggregate(self, codes=None) -> pd.DataFrame:
-        """数据库内聚合；只返回每股每类问题，不把千万日线加载到 Python。"""
-        scope = "WHERE code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
-        flags = ",".join(
-            f"coalesce(({sql}),false) AS {kind}" for kind, sql in capital_predicates(historical=True).items()
-        )
+    def aggregate(self, codes=None, *, source_only=False) -> pd.DataFrame:
+        """业务异常与来源核验分开聚合；来源异常不计入 L2 或主质量台账。"""
         from backend.services.share_capital_history import historical_joins
+        scope = "WHERE code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
+        predicates = capital_predicates(include_sources=source_only)
+        if source_only:
+            predicates = {"capital_source_mismatch": predicates["capital_source_mismatch"]}
+        flags = ",".join(f"coalesce(({sql}),false) AS {kind}" for kind, sql in predicates.items())
+        kinds = ",".join(f"('{kind}',{kind})" for kind in predicates)
         raw_scope = " AND code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
+        raw = (
+            " UNION ALL SELECT code,'capital_raw_invalid',count(*),min(effective_date),max(effective_date),0,0,0,0 "
+            "FROM stock_share_capital_event WHERE active AND (effective_date IS NULL "
+            "OR total_share<=0 OR float_share<0 OR float_share>total_share)" + raw_scope + " GROUP BY code"
+        ) if source_only else ""
+        params = ([codes] if codes is not None else []) * (2 if source_only else 1)
         return self.c.query_df(
             "WITH facts AS (SELECT b.code,b.trade_date," + flags + ","
             "s.total_share IS NULL missing_total_share,s.float_share IS NULL missing_float_share,"
@@ -88,16 +103,44 @@ class CapitalQualityService:
             "count(*) FILTER(WHERE missing_float_share) missing_float_share,"
             "count(*) FILTER(WHERE missing_total_mv) missing_total_mv,"
             "count(*) FILTER(WHERE missing_float_mv) missing_float_mv "
-            "FROM facts CROSS JOIN LATERAL (VALUES "
-            "('capital_gap',capital_gap),('capital_invalid',capital_invalid),"
-            "('capital_mismatch',capital_mismatch)) kinds(issue_type,hit) "
-            "WHERE hit GROUP BY code,issue_type UNION ALL "
-            "SELECT code,'capital_raw_invalid',count(*),min(effective_date),max(effective_date),0,0,0,0 "
-            "FROM stock_share_capital_event WHERE active AND (effective_date IS NULL "
-            "OR total_share<=0 OR float_share<0 OR float_share>total_share)" + raw_scope +
-            " GROUP BY code ORDER BY code,issue_type",
-            [codes,codes] if codes is not None else [],
+            f"FROM facts CROSS JOIN LATERAL (VALUES {kinds}) kinds(issue_type,hit) "
+            "WHERE hit GROUP BY code,issue_type" + raw + " ORDER BY code,issue_type", params,
         )
+
+    def reclassify_legacy(self, codes=None):
+        """关闭仅来源异常的旧业务台账，保留原详情并说明转移原因；不抢占 fixing 或人工忽略。"""
+        scope = " AND code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
+        old = self.c.query_df(
+            "SELECT id,code,issue_type,detail FROM data_quality_issue WHERE status='open' "
+            "AND issue_type IN ('capital_mismatch','capital_raw_invalid')" + scope,
+            [codes] if codes is not None else [],
+        )
+        if old.empty:
+            return
+        business = self.aggregate(old.code.unique().tolist())
+        mismatches = set(business.loc[business.issue_type.eq("capital_mismatch"), "code"])
+        updates = []
+        for row in old.itertuples():
+            if row.issue_type == "capital_mismatch" and row.code in mismatches:
+                continue
+            note = ("业务异常已解除；原始接口异常已转入结构体检的来源核验提醒，"
+                    "不表示源端数据已修正。业务缺失或非法值仍按对应类型独立检查。")
+            try:
+                detail = json.loads(row.detail or "{}")
+            except (ValueError, TypeError):
+                detail = {"original_detail": row.detail}
+            if not isinstance(detail, dict):
+                detail = {"original_detail": detail}
+            detail["resolution_note"] = note
+            detail["original_message"] = detail.get("message", "")
+            detail["message"] = note
+            updates.append({"id": row.id, "detail": json.dumps(detail, ensure_ascii=False)})
+        if updates:
+            with self.c.temp_view(pd.DataFrame(updates), prefix="capital_reclassify") as view:
+                self.c.execute(
+                    "UPDATE data_quality_issue q SET status='resolved',resolved_at=now(),detail=v.detail "
+                    f"FROM {view} v WHERE q.id=v.id AND q.status='open'"
+                )
 
     def issues(self, codes=None) -> list[dict]:
         from backend.services.share_capital_history import historical_joins
@@ -121,7 +164,8 @@ class CapitalQualityService:
         ) as view:
             samples = self.c.query_df(
                 f"SELECT f.issue_type,b.code,b.trade_date,b.close,s.* EXCLUDE(code,trade_date),"
-                f"m.total_mv,m.float_mv FROM {view} f JOIN daily_bar b "
+                f"m.total_mv,m.float_mv,m.reported_total_mv,m.reported_float_mv,"
+                f"m.reported_total_close,m.reported_float_close FROM {view} f JOIN daily_bar b "
                 "ON b.code=f.code AND b.trade_date=f.date_start "
                 + historical_joins()
             )
@@ -204,6 +248,7 @@ class CapitalQualityService:
 
         rows = self.issues(codes)
         with self.c.transaction():
+            self.reclassify_legacy(codes)
             DataIntegrityReport(self.c)._upsert_scan_issues(rows, CAPITAL_ISSUE_TYPES, codes=codes)
         scope = " AND code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
         active = self.c.query_df(

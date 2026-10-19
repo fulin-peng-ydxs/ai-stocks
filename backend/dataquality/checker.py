@@ -197,7 +197,7 @@ ISSUE_LAYER: dict[str, str] = {
     "ohl_repaired": "L1",
     "mv_missing": "L2",
     "mv_gap": "L2",
-    "capital_raw_invalid": "L2",
+    "capital_raw_invalid": "来源",
     "capital_gap": "L2",
     "capital_invalid": "L2",
     "capital_mismatch": "L2",
@@ -226,7 +226,7 @@ ISSUE_LAYER: dict[str, str] = {
 }
 # 各层落 data_quality_issue 表的离散异常类型（M2.9.2：四层都落表，质检可反复扫并幂等覆盖）。
 L1_ISSUE_TYPES: tuple[str, ...] = ("null_close", "ohl_repaired")
-L2_ISSUE_TYPES: tuple[str, ...] = ("mv_missing", "mv_gap", "mv_invalid", "capital_gap", "capital_invalid", "capital_mismatch", "capital_raw_invalid")
+L2_ISSUE_TYPES: tuple[str, ...] = ("mv_missing", "mv_gap", "mv_invalid", "capital_gap", "capital_invalid", "capital_mismatch")
 L3_ISSUE_TYPES: tuple[str, ...] = (
     "abnormal_change", "price_volume_mismatch", "adj_jump",
 )
@@ -244,7 +244,7 @@ EXACT_IGNORE_ISSUE_TYPES: frozenset[str] = frozenset(
 # 能进入质检台账的完整问题类型集。调度、恢复参数校验统一复用这一契约，
 # 避免新增质量层问题后只能手工处理。
 QUALITY_ISSUE_TYPES: tuple[str, ...] = (
-    L1_ISSUE_TYPES + L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES + ST_ISSUE_TYPES
+    L1_ISSUE_TYPES + L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES + ST_ISSUE_TYPES + ("capital_raw_invalid",)  # 仅清理旧台账
     + ("market_index_gap", "market_index_gap_daily", "market_index_invalid",
        "board_index_gap", "board_index_gap_daily", "board_index_invalid", "board_member_incomplete",
        "board_fund_unmatched", "board_fund_missing", "board_fund_stale")
@@ -253,7 +253,7 @@ QUALITY_ISSUE_TYPES: tuple[str, ...] = (
 # L1 由入库闸门即时记录，质检只做防御性补扫，不在此清表。
 # 板块自动扫描由 scan_board_quality 在同一事务内独立替换，避免扫描失败时先删旧问题。
 SCAN_ISSUE_TYPES: tuple[str, ...] = (
-    L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES + ST_ISSUE_TYPES
+    L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES + ST_ISSUE_TYPES + ("capital_raw_invalid",)  # 仅清理旧台账
 )
 
 

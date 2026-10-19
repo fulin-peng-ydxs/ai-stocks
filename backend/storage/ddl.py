@@ -68,10 +68,16 @@ DDL_DAILY_METRICS = """
 CREATE TABLE IF NOT EXISTS daily_metrics (
     code       VARCHAR,
     trade_date DATE,
-    float_mv   DOUBLE,    -- 流通市值：源端优先，同日流通A股×原价补算
+    float_mv   DOUBLE,    -- 流通市值：同日流通A股×未复权收盘价优先，接口兜底
     total_mv   DOUBLE,    -- 总市值
-    total_mv_source VARCHAR, -- 总市值来源，computed: 前缀表示补算
+    total_mv_source VARCHAR, -- 总市值来源，computed: 前缀表示同日股本×本地原价
     float_mv_source VARCHAR, -- 流通市值来源
+    reported_total_mv DOUBLE, -- 接口原始市值，核验与兜底
+    reported_total_mv_source VARCHAR, -- 接口来源；legacy_unknown 表示旧值未认证
+    reported_total_close DOUBLE, -- 同次接口响应价格，仅作核验
+    reported_float_mv DOUBLE, -- 接口原始市值，核验与兜底
+    reported_float_mv_source VARCHAR, -- 接口来源；legacy_unknown 表示旧值未认证
+    reported_float_close DOUBLE, -- 同次接口响应价格，仅作核验
     PRIMARY KEY (code, trade_date)
 );
 """
@@ -1458,6 +1464,12 @@ def init_db(client: DuckDBClient | None = None) -> list[str]:
         ("stock_basic", "float_share_date", "DATE"),
         ("daily_metrics", "total_mv_source", "VARCHAR"),
         ("daily_metrics", "float_mv_source", "VARCHAR"),
+        ("daily_metrics", "reported_total_mv", "DOUBLE"),
+        ("daily_metrics", "reported_total_mv_source", "VARCHAR"),
+        ("daily_metrics", "reported_total_close", "DOUBLE"),
+        ("daily_metrics", "reported_float_mv", "DOUBLE"),
+        ("daily_metrics", "reported_float_mv_source", "VARCHAR"),
+        ("daily_metrics", "reported_float_close", "DOUBLE"),
     ]:
         client.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {dtype}")
     _migrate_special_day_event_types(client)

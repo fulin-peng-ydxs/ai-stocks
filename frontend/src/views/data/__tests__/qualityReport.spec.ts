@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { qualityDetailText } from '../qualityReport'
-import { ISSUE_LAYER, ISSUE_TYPES_ACTIVE, RECOVER_ACTION_LABEL, taskDisplayLabel } from '@/api/data'
+import { ISSUE_LAYER, ISSUE_TYPES_ACTIVE, sortQualityIssueTypes, RECOVER_ACTION_LABEL, taskDisplayLabel } from '@/api/data'
 
 describe('股本市值质量诊断', () => {
   it('兼容既有纯文本和板块消息', () => {
@@ -35,6 +35,10 @@ describe('股本市值质量诊断', () => {
     expect(ISSUE_LAYER.history_data_gap).toBe('L4')
     expect(RECOVER_ACTION_LABEL.history_data_gap).toContain('全历史')
   })
+  it('原始来源异常不再作为活动业务类型，历史记录仍可识别', () => {
+    expect(ISSUE_TYPES_ACTIVE).not.toContain('capital_raw_invalid')
+    expect(ISSUE_LAYER.capital_raw_invalid).toBe('来源')
+  })
   it('三类问题都可筛选、显示层次并创建修复任务', () => {
     for (const type of ['capital_gap', 'capital_invalid', 'capital_mismatch']) {
       expect(ISSUE_TYPES_ACTIVE).toContain(type)
@@ -42,5 +46,16 @@ describe('股本市值质量诊断', () => {
       expect(RECOVER_ACTION_LABEL[type]).toContain('复检')
       expect(taskDisplayLabel('fix', { issue_type: type })).toContain('股本市值')
     }
+  })
+})
+
+describe('质量类型排序', () => {
+  it('服务端乱序子集按业务归类，保留未知与历史类型且不修改输入', () => {
+    const types = ['capital_gap', 'board_fund_missing', 'mv_gap', 'data_gap', 'capital_raw_invalid', 'future_type']
+    expect(sortQualityIssueTypes(types)).toEqual([
+      'data_gap', 'mv_gap', 'capital_gap', 'board_fund_missing', 'capital_raw_invalid', 'future_type',
+    ])
+    expect(types[0]).toBe('capital_gap')
+    expect(sortQualityIssueTypes([])).toEqual([])
   })
 })

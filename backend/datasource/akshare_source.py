@@ -532,6 +532,7 @@ class AKShareSource(DataSource):
                 "trade_date": df["trade_date"],
                 "total_mv": pd.to_numeric(df["总市值"], errors="coerce"),
                 "float_mv": pd.to_numeric(df["流通市值"], errors="coerce"),
+                "valuation_close": pd.to_numeric(df.get("CLOSE_PRICE"), errors="coerce"),
                 "total_share": pd.to_numeric(df["总股本"], errors="coerce"),
                 "float_share": pd.to_numeric(df["流通股本"], errors="coerce"),
             }

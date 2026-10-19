@@ -957,16 +957,14 @@ class IngestionService:
             if r.empty or pd.isna(r.iloc[0]["d"]):
                 return {"trade_date": None, "ok": 0, "fail": 0, "total_mv_rows": 0}
             trade_date = pd.Timestamp(r.iloc[0]["d"]).date()
+        from backend.services.share_capital import ShareCapitalService
         sql = (
             "SELECT b.code AS code FROM daily_bar b "
             "JOIN stock_basic sb ON sb.code = b.code "
             "LEFT JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date "
             "LEFT JOIN stock_share_capital_daily s ON s.code=b.code AND s.trade_date=b.trade_date "
             "WHERE b.trade_date = ? AND (sb.delist_date IS NULL OR sb.delist_date>?) "
-            "AND (m.code IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL "
-            "OR s.total_share IS NULL OR s.float_share IS NULL "
-            f"OR abs(m.total_mv-s.total_share*b.close)>greatest(abs(m.total_mv)*{MV_REL_TOLERANCE},1) "
-            f"OR abs(m.float_mv-s.float_share*b.close)>greatest(abs(m.float_mv)*{MV_REL_TOLERANCE},1))"
+            f"AND ({ShareCapitalService.review_predicate()})"
         )
         params: list = [trade_date, trade_date]
         if codes:
@@ -1953,7 +1951,7 @@ class IngestionService:
                                  ctx=None) -> dict:
         """重拉并强制覆盖已确认非法的市值行。
 
-        正常补缺链路仍不覆盖有效流通市值。
+        正常链路同样统一重算业务市值，接口原值独立留存。
         """
         dates = self._invalid_valuation_dates(code, window_days)
         if not dates:
@@ -2270,7 +2268,8 @@ class IngestionService:
             condition = (service.review_predicate()
                          if source_label == "sina_events" else
                          "s.float_share IS NULL OR (s.float_source IN ('eastmoney_events','sina_events') AND "
-                         f"abs(m.float_mv-s.float_share*b.close)>greatest(abs(m.float_mv)*{MV_REL_TOLERANCE},1))")
+                         f"(abs(m.float_mv-s.float_share*b.close)>greatest(abs(m.float_mv)*{MV_REL_TOLERANCE},1) "
+                         f"OR abs(m.reported_float_mv-s.float_share*b.close)>greatest(abs(m.reported_float_mv)*{MV_REL_TOLERANCE},1)))")
             missing = self.c.query_df(
                 "SELECT b.trade_date FROM daily_bar b LEFT JOIN stock_share_capital_daily s "
                 "USING(code,trade_date) LEFT JOIN daily_metrics m USING(code,trade_date) "
@@ -2313,9 +2312,10 @@ class IngestionService:
         if diagnostics is not None:
             from backend.services.capital_quality import capital_predicates
             from backend.services.share_capital_history import historical_joins
-            predicates = capital_predicates(historical=True)
+            predicates = capital_predicates(historical=True, include_sources=True)
             gaps = self.c.query_df(
-                "SELECT b.trade_date,b.close,s.total_share,s.float_share,m.total_mv,m.float_mv "
+                "SELECT b.trade_date,b.close,s.total_share,s.float_share,m.total_mv,m.float_mv,"
+                "m.reported_total_mv,m.reported_float_mv,m.reported_total_close,m.reported_float_close "
                 "FROM (SELECT * FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ?) b "
                 + historical_joins() + "WHERE (" + " OR ".join(predicates.values()) + ")",
                 [code, start, end])
@@ -2365,11 +2365,19 @@ class IngestionService:
                         group["count"] += 1
                         if len(group["samples"]) < 3:
                             group["samples"].append(str(day))
-                    elif abs(gap[f"{field}_mv"]-gap[f"{field}_share"]*gap["close"]) > max(abs(gap[f"{field}_mv"])*MV_REL_TOLERANCE,1):
-                        source_price = prices.get(day)
+                    else:
+                        business_mv = gap[f"{field}_mv"]
+                        reported_mv = gap[f"reported_{field}_mv"]
+                        mismatch_mv = next((mv for mv in (business_mv, reported_mv)
+                            if pd.notna(mv) and abs(mv-gap[f"{field}_share"]*gap["close"])
+                            > max(abs(mv)*MV_REL_TOLERANCE,1)), None)
+                        if mismatch_mv is None:
+                            continue
+                        saved_price = gap[f"reported_{field}_close"]
+                        source_price = saved_price if pd.notna(saved_price) else prices.get(day)
                         price_basis = (source_price is not None and pd.notna(source_price)
-                                       and abs(gap[f"{field}_mv"] - gap[f"{field}_share"] * source_price)
-                                       <= max(abs(gap[f"{field}_mv"]) * MV_REL_TOLERANCE, 1))
+                                       and abs(mismatch_mv - gap[f"{field}_share"] * source_price)
+                                       <= max(abs(mismatch_mv) * MV_REL_TOLERANCE, 1))
                         reason = f"{field}_mv_price_basis_mismatch" if price_basis else f"{field}_mv_share_mismatch"
                         group = reasons.setdefault(reason, {"count": 0, "samples": []})
                         group["count"] += 1
@@ -2378,7 +2386,9 @@ class IngestionService:
                             group.setdefault("evidence", []).append({
                                 "trade_date": str(day), "raw_close": float(gap["close"]),
                                 "valuation_close": float(source_price) if source_price is not None and pd.notna(source_price) else None,
-                                "share": float(gap[f"{field}_share"]), "mv": float(gap[f"{field}_mv"]),
+                                "share": float(gap[f"{field}_share"]), "mv": float(mismatch_mv),
+                                "business_mv": float(business_mv),
+                                "reported_mv": float(reported_mv) if pd.notna(reported_mv) else None,
                             })
             from backend.services.capital_quality import capital_predicates
             invalid = self.c.query_df(
@@ -2486,7 +2496,7 @@ class IngestionService:
 
     def _valuation_one(self, code: str, source, start: date, end: date,
                        overwrite_dates: set[date] | None = None) -> int:
-        """取单只 [start,end] 的源端估值和逐日股本，源端市值优先于补算值。
+        """取单只 [start,end] 的源端估值和逐日股本，市值按同日股本与本地原价计算优先，接口值留存核验与兜底。
         质量修复仅处理 overwrite_dates；基础股本只投影最新行情日。返回总市值写入行数。
         供 ingest_valuation 全量补市值与 reconcile_gaps 收口补市值共用，口径一致。"""
         v = source.get_valuation(code, start, end)
