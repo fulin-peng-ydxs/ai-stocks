@@ -745,7 +745,7 @@ describe('StockDetailView 三图数据协调', () => {
 
     expect(stocksApi.getBars).toHaveBeenCalledWith(
       '600000.SH',
-      { adjust: 'qfq', lookback: 1250, include_market_values: true },
+      { adjust: 'qfq', lookback: 1250, include_market_values: true, capital_basis: 'historical' },
       expect.any(AbortSignal),
     )
     expect(stocksApi.getStockQuoteSummary).toHaveBeenCalledWith(

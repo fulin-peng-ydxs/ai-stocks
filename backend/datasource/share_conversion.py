@@ -89,9 +89,9 @@ def fetch_sse_conversions(bond: str, year: int, *, timeout=15) -> pd.DataFrame:
 
 
 def reconstruct_conversion_shares(code, dates, events, bonds, fetch, *, evidence=None):
-    """仅在已披露的转股前基准到下一次其他股本变动之间重建总股本。
+    """在转股前历史基准到下一次其他股本变动之间重建总股本。
 
-    拒绝重叠转债，避免漏计；不从事后公告反推基准，不推导流通股本。
+    拒绝重叠转债，避免漏计；仅使用转股开始前的历史记录，不推导流通股本。
     TOTAL_ZG_NUM 精度 100 股，来源标签和诊断均保留精度。
     """
     report = evidence if evidence is not None else {}
@@ -127,11 +127,10 @@ def reconstruct_conversion_shares(code, dates, events, bonds, fetch, *, evidence
             report["skipped"][number] = "overlapping_convertible_bonds"
             continue
         prior = ev[ev.effective.lt(start)]
-        if prior.empty or pd.isna(prior.iloc[-1].available):
-            report["skipped"][number] = "no_disclosed_preconversion_anchor"
+        if prior.empty:
+            report["skipped"][number] = "no_preconversion_anchor"
             continue
         anchor = prior.iloc[-1]
-        target = target[target >= anchor.available]
         # 非转股的真实数量变动使旧基准失效；同值季报不产生新边界。
         changed = ev.shares.ne(ev.shares.shift())
         other = ev[
@@ -179,7 +178,7 @@ def reconstruct_conversion_shares(code, dates, events, bonds, fetch, *, evidence
                     "trade_date": row.trade_date.date(),
                     "total_share": round(anchor.shares + row.cumulative),
                     "total_effective_date": row.effective.date(),
-                    "total_available_date": max(row.effective, anchor.available).date(),
+                    "total_available_date": (max(row.effective, anchor.available) if pd.notna(anchor.available) else row.effective).date(),
                     "total_mv_eligible": False,
                     "evidence_source": f"sse_conversion_100share:{number}",
                     "anchor_date": str(anchor.effective.date()),

@@ -34,7 +34,7 @@ STOCK_INGEST_RECIPE_LABELS = {
 }
 
 _COMMON_FIELDS = {
-    "recipe", "codes", "date_start", "date_end", "years", "concurrency", "force_current_day", "verified_facts", "recalculate_only", "review_only",
+    "recipe", "codes", "date_start", "date_end", "years", "concurrency", "force_current_day", "verified_facts", "recalculate_only", "review_only", "rebuild_events_only",
 }
 _CODE_RECIPES = {
     "daily_update", "history_backfill", "range_refetch",
@@ -90,9 +90,8 @@ def normalize_verified_share_facts(records, codes: list[str]) -> list[dict]:
             except ValueError as exc:
                 raise ValueError("公告股本日期须使用 YYYY-MM-DD") from exc
         if (fact["effective_date"] > fact["trade_date"]
-                or fact["available_date"] > fact["trade_date"]
                 or fact["trade_date"] > date.today().isoformat()):  # noqa: DTZ011 -- 与行情采集采用本地交易日
-            raise ValueError("公告股本不得用于生效前、披露前或未来交易日")
+            raise ValueError("股本不得用于生效前或未来交易日")
         fact["total_share"] = _strict_int(fact["total_share"], field="总股本", lo=1, hi=9_000_000_000_000_000_000)
         if not isinstance(fact["total_mv_eligible"], bool):
             raise ValueError("公告股本 A 股口径必须明确为布尔值")  # noqa: TRY004 -- API 统一映射 400
@@ -186,6 +185,14 @@ def normalize_stock_ingest_params(params: dict | None) -> dict:
             if "years" in out or "verified_facts" in out or raw.get("recalculate_only"):
                 raise ValueError("历史轮询不能与年份、核验导入或纯补算混用")
             out["review_only"] = True
+
+    if "rebuild_events_only" in raw:
+        if recipe != "share_capital_history" or not isinstance(raw["rebuild_events_only"], bool):
+            raise ValueError("原始股本重建仅支持逐日股本方案和布尔参数")
+        if raw["rebuild_events_only"]:
+            if any(key in raw for key in ("years","verified_facts","recalculate_only","review_only")):
+                raise ValueError("原始股本重建不能与联网补采或其他重算选项混用")
+            out["rebuild_events_only"] = True
 
     if "recalculate_only" in raw:
         if recipe != "share_capital_history" or not isinstance(raw["recalculate_only"], bool):

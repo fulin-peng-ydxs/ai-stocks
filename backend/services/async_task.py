@@ -814,7 +814,10 @@ def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
             ctx=ctx,
         )
     elif recipe == "share_capital_history":
-        if normalized.get("review_only"):
+        if normalized.get("rebuild_events_only"):
+            from backend.services.share_capital_history import ShareCapitalHistoryService
+            result = ShareCapitalHistoryService(ing.c).rebuild_all(codes=codes, ctx=ctx)
+        elif normalized.get("review_only"):
             result = ing.review_capital_history(codes=codes, ctx=ctx, concurrency=concurrency)
         elif normalized.get("recalculate_only"):
             from backend.services.share_capital import ShareCapitalService
@@ -932,7 +935,7 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
     base_count = sum(int(q.get(k, 0)) for k in
             ("abnormal_change_rows", "price_volume_mismatch_rows", "adj_jump_rows",
              "mv_missing_rows", "mv_gap_rows", "mv_invalid_rows",
-             "capital_gap_rows", "capital_invalid_rows", "capital_mismatch_rows",
+             "capital_gap_rows", "capital_invalid_rows", "capital_mismatch_rows", "capital_raw_invalid_rows",
              "data_gap_rows", "history_data_gap_rows", "stale_rows", "st_status_missing_rows",
              "st_status_approximate_rows", "st_status_mismatch_rows"))
     market_index = q.get("market_index") or {}
@@ -946,6 +949,7 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
             f"历史股本市值缺失 {q.get('capital_gap_rows', 0)}、"
             f"股本市值非法 {q.get('capital_invalid_rows', 0)}、"
             f"股本市值不一致 {q.get('capital_mismatch_rows', 0)}、"
+            f"股本原始事件非法 {q.get('capital_raw_invalid_rows', 0)}、"
             f"历史缺口 {q.get('history_data_gap_rows', 0)}、近端缺口 {q.get('data_gap_rows', 0)}、滞后 {q.get('stale_rows', 0)}、"
             f"ST缺失 {q.get('st_status_missing_rows', 0)}、"
             f"ST非权威 {q.get('st_status_approximate_rows', 0)}、"
@@ -1194,7 +1198,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
         ):
             note = "目标数据已满足复检要求，无需重复采集"
             ctx.log(f"{code or '全源'}：{note}")
-        elif issue_type in ("capital_gap", "capital_invalid", "capital_mismatch"):
+        elif issue_type in ("capital_gap", "capital_invalid", "capital_mismatch", "capital_raw_invalid"):
             if rep.recheck_clean(issue_type, code, td, detail=issue_detail):
                 from backend.services.capital_quality import CapitalQualityService
                 CapitalQualityService(c).sync([code])

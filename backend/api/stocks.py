@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -330,7 +330,8 @@ def stock_quote_summary(code: str) -> ApiResponse:
 @router.get("/stocks/{code}/bars", response_model=ApiResponse,
             dependencies=[Depends(require_perm("stocks:view"))])
 def stock_bars(code: str, adjust: str = "qfq", lookback: int = 250,
-               end: date | None = None, include_market_values: bool = False) -> ApiResponse:
+               end: date | None = None, include_market_values: bool = False,
+               capital_basis: Literal["point_in_time", "historical"] = "point_in_time") -> ApiResponse:
     # 附加市值只供详情联动消费，旧调用保持响应形态；禁止不受限历史加载。
     if include_market_values and not 1 <= lookback <= 6000:
         raise HTTPException(status_code=422, detail="市值行情窗口必须在 1 到 6000 根之间")
@@ -358,7 +359,7 @@ def stock_bars(code: str, adjust: str = "qfq", lookback: int = 250,
     if include_market_values:
         try:
             values = StockQuoteSummaryService(c).get_market_values(
-                code, [pd.Timestamp(day).date() for day in df["trade_date"]]
+                code, [pd.Timestamp(day).date() for day in df["trade_date"]], basis=capital_basis
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

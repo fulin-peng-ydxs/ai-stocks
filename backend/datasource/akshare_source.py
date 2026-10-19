@@ -540,7 +540,7 @@ class AKShareSource(DataSource):
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
     @rate_limited(_MIN_INTERVAL)
     def get_share_capital(self, code: str, dates) -> pd.DataFrame:
-        """完整股本变动分页按生效日展开，公告前不可见。"""
+        """完整股本变动分页按变动日期展开，公告日期保留用于溯源。"""
         from backend.datasource.share_capital import expand_equity_events, fetch_equity_events
 
         events = fetch_equity_events(code, timeout=self._share_timeout_sec)
@@ -558,10 +558,12 @@ class AKShareSource(DataSource):
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
     @rate_limited(_MIN_INTERVAL)
     def get_share_capital_fallback(self, code: str, dates) -> pd.DataFrame:
-        """独立历史股本源补缺，沿用同一公告/生效日闸门。"""
+        """独立历史股本源补缺，沿用同一变动日期口径。"""
         from backend.datasource.share_capital import expand_equity_events, fetch_sina_equity_events
 
-        return expand_equity_events(code, fetch_sina_equity_events(code, timeout=self._share_timeout_sec), dates)
+        events = fetch_sina_equity_events(code, timeout=self._share_timeout_sec)
+        self._last_fallback_share_events = (code, events)
+        return expand_equity_events(code, events, dates)
 
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
     @rate_limited(_MIN_INTERVAL)

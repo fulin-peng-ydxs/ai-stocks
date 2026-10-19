@@ -8,16 +8,17 @@ import pandas as pd
 
 from backend.dataquality.checker import MV_REL_TOLERANCE
 
-CAPITAL_ISSUE_TYPES = ("capital_gap", "capital_invalid", "capital_mismatch")
+CAPITAL_ISSUE_TYPES = ("capital_gap", "capital_invalid", "capital_mismatch", "capital_raw_invalid")
 CAPITAL_LABELS = {
+    "capital_raw_invalid": "股本原始事件非法",
     "capital_gap": "股本/市值缺失",
     "capital_invalid": "股本/市值数值或日期非法",
     "capital_mismatch": "股本与市值不一致",
 }
 REASON_LABELS = {
-    "not_yet_disclosed": "历史日期早于接口披露日",
+    "raw_record_invalid": "源端原始记录仍含负股数等非法值",
+    "source_record_invalid": "接口记录中的股数无效或与另一项股本冲突",
     "no_prior_record": "接口缺少此前股本记录",
-    "announcement_unknown": "接口未给出可用披露日",
     "source_unavailable": "当前来源未取得有效股数",
     "exchange_precision_conflict": "交易所统计精度与已有股数冲突",
     "exchange_count_conflict": "交易所统计与已有股数冲突",
@@ -33,13 +34,15 @@ def reasons_for_issue(kind, reasons):
     return {
         key: value
         for key, value in reasons.items()
-        if (kind == "capital_invalid" and key == "capital_invalid")
+        if not key.endswith(("not_yet_disclosed", "announcement_unknown", "snapshot_date_only"))
+        and ((kind == "capital_invalid" and key == "capital_invalid")
+        or (kind == "capital_raw_invalid" and key == "raw_record_invalid")
         or (kind == "capital_mismatch" and key.endswith("mismatch"))
-        or (kind == "capital_gap" and key != "capital_invalid" and not key.endswith("mismatch"))
+        or (kind == "capital_gap" and key not in ("capital_invalid", "raw_record_invalid") and not key.endswith("mismatch")))
     }
 
 
-def capital_predicates() -> dict[str, str]:
+def capital_predicates(*, historical=False) -> dict[str, str]:
     """只使用内部固定别名 b/s/m；金额容差与既有市值质检保持一致。"""
     invalid = ["s.float_share>s.total_share", f"m.total_mv<m.float_mv*(1-{MV_REL_TOLERANCE})"]
     mismatch = []
@@ -49,11 +52,8 @@ def capital_predicates() -> dict[str, str]:
                 f"s.{field}_share<=0",
                 f"m.{field}_mv<=0",
                 f"NOT isfinite(m.{field}_mv)",
-                (
-                    f"(s.{field}_share IS NOT NULL AND (s.{field}_effective_date IS NULL "
-                    f"OR s.{field}_available_date IS NULL OR s.{field}_source IS NULL "
-                    f"OR s.{field}_effective_date>b.trade_date OR s.{field}_available_date>b.trade_date))"
-                ),
+                (f"(s.{field}_share IS NOT NULL AND (s.{field}_effective_date IS NULL "
+                f"OR s.{field}_source IS NULL OR s.{field}_effective_date>b.trade_date))"),
             ]
         )
         mismatch.append(
@@ -72,16 +72,17 @@ class CapitalQualityService:
 
     def aggregate(self, codes=None) -> pd.DataFrame:
         """数据库内聚合；只返回每股每类问题，不把千万日线加载到 Python。"""
-        scope = "WHERE b.code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
+        scope = "WHERE code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
         flags = ",".join(
-            f"coalesce(({sql}),false) AS {kind}" for kind, sql in capital_predicates().items()
+            f"coalesce(({sql}),false) AS {kind}" for kind, sql in capital_predicates(historical=True).items()
         )
+        from backend.services.share_capital_history import historical_joins
+        raw_scope = " AND code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
         return self.c.query_df(
             "WITH facts AS (SELECT b.code,b.trade_date," + flags + ","
             "s.total_share IS NULL missing_total_share,s.float_share IS NULL missing_float_share,"
             "m.total_mv IS NULL missing_total_mv,m.float_mv IS NULL missing_float_mv "
-            "FROM daily_bar b LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
-            "LEFT JOIN daily_metrics m USING(code,trade_date) " + scope + ") "
+            "FROM (SELECT * FROM daily_bar " + scope + ") b " + historical_joins() + ") "
             "SELECT code,issue_type,count(*) issue_days,min(trade_date) date_start,max(trade_date) date_end,"
             "count(*) FILTER(WHERE missing_total_share) missing_total_share,"
             "count(*) FILTER(WHERE missing_float_share) missing_float_share,"
@@ -90,11 +91,16 @@ class CapitalQualityService:
             "FROM facts CROSS JOIN LATERAL (VALUES "
             "('capital_gap',capital_gap),('capital_invalid',capital_invalid),"
             "('capital_mismatch',capital_mismatch)) kinds(issue_type,hit) "
-            "WHERE hit GROUP BY code,issue_type ORDER BY code,issue_type",
-            [codes] if codes is not None else [],
+            "WHERE hit GROUP BY code,issue_type UNION ALL "
+            "SELECT code,'capital_raw_invalid',count(*),min(effective_date),max(effective_date),0,0,0,0 "
+            "FROM stock_share_capital_event WHERE active AND (effective_date IS NULL "
+            "OR total_share<=0 OR float_share<0 OR float_share>total_share)" + raw_scope +
+            " GROUP BY code ORDER BY code,issue_type",
+            [codes,codes] if codes is not None else [],
         )
 
     def issues(self, codes=None) -> list[dict]:
+        from backend.services.share_capital_history import historical_joins
         frame = self.aggregate(codes)
         if frame.empty:
             return []
@@ -117,13 +123,21 @@ class CapitalQualityService:
                 f"SELECT f.issue_type,b.code,b.trade_date,b.close,s.* EXCLUDE(code,trade_date),"
                 f"m.total_mv,m.float_mv FROM {view} f JOIN daily_bar b "
                 "ON b.code=f.code AND b.trade_date=f.date_start "
-                "LEFT JOIN stock_share_capital_daily s ON s.code=b.code AND s.trade_date=b.trade_date "
-                "LEFT JOIN daily_metrics m ON m.code=b.code AND m.trade_date=b.trade_date"
+                + historical_joins()
             )
         sample_map = {
             (row["code"], row["issue_type"]): row
             for row in json.loads(samples.to_json(orient="records", date_format="iso"))
         }
+        raw_codes = frame.loc[frame.issue_type.eq("capital_raw_invalid"), "code"].tolist()
+        if raw_codes:
+            raw_samples = self.c.query_df(
+                "SELECT * FROM stock_share_capital_event WHERE active AND code IN (SELECT unnest(?::VARCHAR[])) "
+                "AND (effective_date IS NULL OR total_share<=0 OR float_share<0 OR float_share>total_share) "
+                "QUALIFY row_number() OVER(PARTITION BY code ORDER BY effective_date NULLS FIRST,event_id)=1",
+                [raw_codes])
+            for item in json.loads(raw_samples.to_json(orient="records",date_format="iso")):
+                sample_map[(item["code"],"capital_raw_invalid")] = item
         evidence = {}
         for row in logs.itertuples():
             try:
@@ -141,6 +155,8 @@ class CapitalQualityService:
             kind, code = row["issue_type"], row["code"]
             counts = {key: int(value) for key, value in row.items() if key.startswith("missing_")}
             message = f"全历史{CAPITAL_LABELS[kind]} {int(row['issue_days'])} 个交易日（{str(row['date_start'])[:10]}~{str(row['date_end'])[:10]}）"
+            if kind == "capital_raw_invalid":
+                message = f"股本原始事件非法 {int(row['issue_days'])} 条，需核对原始载荷及记录日期"
             proof = evidence.get(code)
             if proof:
                 # 一个股票的缺失、非法和不一致分开解释，不能把另一类问题的原因混入当前行。
@@ -165,8 +181,8 @@ class CapitalQualityService:
                 "message": message,
                 "scope": "all_stored_history_including_delisted",
                 "issue_days": int(row["issue_days"]),
-                "date_start": str(row["date_start"])[:10],
-                "date_end": str(row["date_end"])[:10],
+                "date_start": None if pd.isna(row["date_start"]) else str(row["date_start"])[:10],
+                "date_end": None if pd.isna(row["date_end"]) else str(row["date_end"])[:10],
                 "missing_fields": counts,
                 "last_collection": proof,
                 "sample": sample_map.get((code, kind)),

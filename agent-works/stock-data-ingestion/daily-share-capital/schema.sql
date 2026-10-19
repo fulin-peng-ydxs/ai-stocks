@@ -1,7 +1,7 @@
 -- 用途：逐日股本及市值来源元数据。由 backend.storage.ddl.init_db 自动执行，禁止手工绕过。
 -- 执行时机：备份后升级启动；影响 DuckDB 股本事实/最新投影/市值来源，PG 无结构变更。
 -- 回滚：停止写任务与后端，恢复升级前 DuckDB 及对应代码；不要在线删除新表或来源列。
--- 股本单位股，trade_date 对齐日线；effective_date 生效日，available_date 公告可用日。
+-- 股本单位股，trade_date 对齐日线；effective_date 生效日，available_date 真实公告日，仅作溯源。
 -- 来源逐字段登记；total_mv_eligible 仅确认全为 A 股时为 true。
 
 CREATE TABLE IF NOT EXISTS stock_share_capital_daily (
@@ -32,3 +32,47 @@ INSERT INTO data_dimension_registry(dimension,name_cn,status,source,tables,descr
 VALUES ('share_capital','逐日股本','collected','东财/新浪','["stock_share_capital_daily"]',
         '同日总股本/流通A股及生效、可用日期；用于股本指标和缺失市值补算')
 ON CONFLICT(dimension) DO NOTHING;
+
+-- 原始事件归档：由同一 init_db 在备份后执行，不手工建表。
+-- source_record 按来源变更日期生效，公告日期不限制历史使用。
+-- 旧 history 表保留兼容结构但不再写入或查询；异步 rebuild_events_only 重放到统一逐日表并清理旧派生行。
+-- 回滚须停服后恢复完整备份库和代码，不在线删除原始记录。
+
+CREATE TABLE IF NOT EXISTS stock_share_capital_event (
+    event_id VARCHAR PRIMARY KEY,
+    code VARCHAR,
+    source VARCHAR,
+    effective_date DATE,
+    available_date DATE,
+    date_basis VARCHAR, -- source_record=来源变更日期，沿用至下一次变动
+    change_reason VARCHAR,
+    total_share BIGINT,
+    float_share BIGINT,
+    raw_payload VARCHAR,
+    active BOOLEAN,
+    first_seen_at TIMESTAMP,
+    last_seen_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS stock_share_capital_history (
+    code VARCHAR,
+    trade_date DATE,
+    total_share BIGINT,
+    float_share BIGINT,
+    total_source VARCHAR,
+    float_source VARCHAR,
+    total_effective_date DATE,
+    float_effective_date DATE,
+    total_available_date DATE,
+    float_available_date DATE,
+    total_basis VARCHAR,
+    float_basis VARCHAR,
+    total_event_id VARCHAR,
+    float_event_id VARCHAR,
+    total_mv DOUBLE,
+    float_mv DOUBLE,
+    total_mv_source VARCHAR,
+    float_mv_source VARCHAR,
+    updated_at TIMESTAMP DEFAULT current_timestamp,
+    PRIMARY KEY (code,trade_date)
+);

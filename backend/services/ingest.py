@@ -2202,16 +2202,23 @@ class IngestionService:
         except Exception as exc:  # noqa: BLE001 - 后续来源继续，最后向任务报告失败
             errors.append(str(exc))
         service = ShareCapitalService(self.c)
+        from backend.services.share_capital_history import ShareCapitalHistoryService
+        history_service = ShareCapitalHistoryService(self.c)
         dates = self.c.query_df(
             "SELECT trade_date FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ?",
             [code, start, end])["trade_date"]
-        if diagnostics is None and not errors:
+        invalid_raw_sources = set(self.c.query_df(
+            "SELECT DISTINCT source FROM stock_share_capital_event WHERE code=? AND active "
+            "AND (effective_date IS NULL OR total_share<=0 OR float_share<0 OR float_share>total_share)",
+            [code])["source"])
+        if diagnostics is None and not errors and not invalid_raw_sources:
             remaining = self.c.query_df(
                 "SELECT count(*) n FROM daily_bar b LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
                 "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE b.code=? AND b.trade_date BETWEEN ? AND ? "
                 f"AND ({service.review_predicate()})",
                 [code, start, end]).iloc[0, 0]
             if remaining == 0:
+                history_service.rebuild(code)
                 from backend.services.capital_quality import CapitalQualityService
                 CapitalQualityService(self.c).sync([code])
                 return count
@@ -2221,6 +2228,7 @@ class IngestionService:
         get_events = getattr(source, "get_share_capital", None)
         if get_events is not None:
             try:
+                source._last_share_events = None
                 facts = get_events(code, dates)
                 check_thread_cancel()
                 service.merge(facts, "eastmoney_events")
@@ -2231,6 +2239,11 @@ class IngestionService:
                 raise
             except Exception as exc:  # noqa: BLE001 - 失败不冒充无数据
                 errors.append(str(exc))
+            finally:
+                check_thread_cancel()
+                raw_events = getattr(source, "_last_share_events", None)
+                if raw_events is not None and raw_events[0] == code:
+                    history_service.record_events(code, raw_events[1], "eastmoney_events")
         converted = pd.DataFrame()
         exchange = getattr(source, "get_exchange_share_capital", None)
         if exchange is not None:
@@ -2254,7 +2267,7 @@ class IngestionService:
             fetch = getattr(source, method, None)
             if fetch is None:
                 continue
-            condition = ("s.total_share IS NULL OR s.float_share IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL"
+            condition = (service.review_predicate()
                          if source_label == "sina_events" else
                          "s.float_share IS NULL OR (s.float_source IN ('eastmoney_events','sina_events') AND "
                          f"abs(m.float_mv-s.float_share*b.close)>greatest(abs(m.float_mv)*{MV_REL_TOLERANCE},1))")
@@ -2263,9 +2276,14 @@ class IngestionService:
                 "USING(code,trade_date) LEFT JOIN daily_metrics m USING(code,trade_date) "
                 f"WHERE b.code=? AND b.trade_date BETWEEN ? AND ? AND ({condition})",
                 [code, start, end])["trade_date"]
+            # 原始源记录异常也必须重新请求，不能因逐日字段已被其它来源补齐而跳过修复。
+            if missing.empty and source_label in invalid_raw_sources:
+                missing = dates
             if missing.empty:
                 continue
             try:
+                if source_label == "sina_events":
+                    source._last_fallback_share_events = None
                 fallback = fetch(code, missing)
                 check_thread_cancel()
                 if source_label == "sina_events" and not facts.empty and not fallback.empty:
@@ -2281,12 +2299,26 @@ class IngestionService:
                 raise
             except Exception as exc:  # noqa: BLE001 - 记录失败，允许后续源尝试
                 errors.append(str(exc))
+            finally:
+                check_thread_cancel()
+                raw_events = getattr(source, "_last_fallback_share_events", None)
+                if source_label == "sina_events" and raw_events is not None and raw_events[0] == code:
+                    history_service.record_events(code, raw_events[1], source_label)
+        history_service.rebuild(code)
+        evidence["daily_facts"] = {
+            "daily_missing": self.c.query_df(
+                "SELECT count(*) n FROM daily_bar b LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
+                "WHERE b.code=? AND (s.total_share IS NULL OR s.float_share IS NULL)", [code]).iloc[0,0].item()}
+
         if diagnostics is not None:
+            from backend.services.capital_quality import capital_predicates
+            from backend.services.share_capital_history import historical_joins
+            predicates = capital_predicates(historical=True)
             gaps = self.c.query_df(
-                "SELECT b.trade_date,b.close,s.total_share,s.float_share,s.total_mv_eligible,m.total_mv,m.float_mv "
-                "FROM daily_bar b LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
-                "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE b.code=? "
-                f"AND b.trade_date BETWEEN ? AND ? AND ({service.review_predicate()})", [code, start, end])
+                "SELECT b.trade_date,b.close,s.total_share,s.float_share,m.total_mv,m.float_mv "
+                "FROM (SELECT * FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ?) b "
+                + historical_joins() + "WHERE (" + " OR ".join(predicates.values()) + ")",
+                [code, start, end])
             reasons = {}
             primary = facts.assign(trade_date=pd.to_datetime(facts.trade_date).dt.date).set_index("trade_date") if not facts.empty else None
             exchange_totals = (dict(zip(pd.to_datetime(converted.trade_date).dt.date,
@@ -2301,13 +2333,10 @@ class IngestionService:
                         reason = f"{field}_share_source_unavailable"
                         if primary is not None and day in primary.index:
                             effective = primary.loc[day, f"{field}_effective_date"]
-                            available = primary.loc[day, f"{field}_available_date"]
                             if pd.isna(effective):
                                 reason = f"{field}_share_no_prior_record"
-                            elif pd.isna(available):
-                                reason = f"{field}_share_announcement_unknown"
-                            elif pd.Timestamp(available).date() > day:
-                                reason = f"{field}_share_not_yet_disclosed"
+                            elif pd.isna(primary.loc[day,f"{field}_share"]):
+                                reason = f"{field}_share_source_record_invalid"
                         exchange_total = exchange_totals.get(day)
                         conflict = (field == "total" and exchange_total is not None
                                     and pd.notna(gap.float_share) and exchange_total < gap.float_share)
@@ -2353,12 +2382,21 @@ class IngestionService:
                             })
             from backend.services.capital_quality import capital_predicates
             invalid = self.c.query_df(
-                "SELECT b.trade_date FROM daily_bar b LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
-                "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE b.code=? AND b.trade_date BETWEEN ? AND ? "
-                f"AND ({capital_predicates()['capital_invalid']}) ORDER BY b.trade_date", [code,start,end])
+                "SELECT b.trade_date FROM (SELECT * FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ?) b "
+                + historical_joins() + f"WHERE ({predicates['capital_invalid']}) ORDER BY b.trade_date", [code,start,end])
             if not invalid.empty:
                 reasons["capital_invalid"] = {"count": len(invalid),
                     "samples": [str(pd.Timestamp(day).date()) for day in invalid.trade_date.head(3)]}
+            raw_invalid = self.c.query_df(
+                "SELECT source,effective_date,total_share,float_share,count(*) OVER() records "
+                "FROM stock_share_capital_event WHERE code=? AND active "
+                "AND (effective_date IS NULL OR total_share<=0 OR float_share<0 OR float_share>total_share) "
+                "ORDER BY effective_date NULLS FIRST LIMIT 3", [code])
+            if not raw_invalid.empty:
+                reasons["raw_record_invalid"] = {
+                    "count": int(raw_invalid.iloc[0].records),
+                    "evidence": json.loads(raw_invalid.to_json(orient="records",date_format="iso")),
+                }
             diagnostics[code] = {"sources": evidence, "errors": errors, "remaining": reasons}
         # 诊断进入正式质量台账；失败也留下原因，绝不以请求成功代替复检。
         from backend.services.capital_quality import CapitalQualityService
@@ -2443,6 +2481,7 @@ class IngestionService:
                 "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE b.trade_date BETWEEN ? AND ?",
                 [start, end]).iloc[0]
             result["coverage"] = {key: int(value) for key, value in coverage.items()}
+            result["historical_coverage"] = dict(result["coverage"])
         return result
 
     def _valuation_one(self, code: str, source, start: date, end: date,

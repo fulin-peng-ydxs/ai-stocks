@@ -628,26 +628,30 @@ class DataVerifier:
             "(delist_date IS NULL OR delist_date> "
             "(SELECT COALESCE(max(trade_date),current_date) FROM daily_bar))"
         )
+        from backend.services.share_capital_history import historical_joins
         shares = self._finding(
             "SELECT b.code,b.trade_date,s.total_share,s.float_share FROM daily_bar b "
-            "LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
+            + historical_joins() +
             "WHERE s.total_share IS NULL OR s.float_share IS NULL")
         self._check("逐日股本覆盖", shares.total == 0, f"缺 {shares.total} 个股票交易日",
                     "按已有日线检查，含退市股；源端缺失保持空值，不使用当前股本倒填。",
                     findings=[shares])
+        raw_invalid = self._finding(
+            "SELECT code,event_id,effective_date,available_date,total_share,float_share,raw_payload "
+            "FROM stock_share_capital_event WHERE active AND (effective_date IS NULL OR total_share<=0 "
+            "OR float_share<0 OR float_share>total_share)")
+        self._check("股本原始事件合法性",raw_invalid.total==0,f"异常 {raw_invalid.total} 条",findings=[raw_invalid])
         invalid_shares = self._finding(
             "SELECT * FROM stock_share_capital_daily WHERE total_share<=0 OR float_share<=0 "
             "OR float_share>total_share OR total_effective_date>trade_date "
-            "OR float_effective_date>trade_date OR total_available_date>trade_date "
-            "OR float_available_date>trade_date")
-        self._check("逐日股本合法性与点时边界", invalid_shares.total == 0,
+            "OR float_effective_date>trade_date")
+        self._check("逐日股本合法性与生效日期", invalid_shares.total == 0,
                     f"异常 {invalid_shares.total}", findings=[invalid_shares])
         from backend.services.capital_quality import CAPITAL_LABELS, capital_predicates
-        for kind, predicate in capital_predicates().items():
+        for kind, predicate in capital_predicates(historical=True).items():
             finding = self._finding(
                 "SELECT b.code,b.trade_date,b.close,s.total_share,s.float_share,m.total_mv,m.float_mv "
-                "FROM daily_bar b LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
-                "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE " + predicate)
+                "FROM daily_bar b " + historical_joins() + " WHERE " + predicate)
             self._check("全历史" + CAPITAL_LABELS[kind], finding.total == 0,
                         f"异常 {finding.total} 个股票交易日",
                         "与质量台账、修复复检共用同一规则，含退市股；请在质量页按股本市值类型处理。",
@@ -696,9 +700,10 @@ class DataVerifier:
             f"缺 {adj_missing.total}",
             findings=[adj_missing],
         )
+        historical_metrics_from = "FROM daily_metrics m JOIN stock_basic sb ON sb.code=m.code "
         # 在市股流通市值必须有
         live_mv_null = self._finding(
-            "SELECT m.code,m.trade_date,sb.name,m.float_mv,m.total_mv FROM daily_metrics m JOIN stock_basic sb ON sb.code=m.code "
+            "SELECT m.code,m.trade_date,sb.name,m.float_mv,m.total_mv " + historical_metrics_from +
             "WHERE (sb.delist_date IS NULL OR sb.delist_date> "
             "(SELECT COALESCE(max(trade_date),current_date) FROM daily_bar)) AND m.float_mv IS NULL"
         )
@@ -709,7 +714,7 @@ class DataVerifier:
             findings=[live_mv_null],
         )
         live_totalmv_null = self._finding(
-            "SELECT m.code,m.trade_date,sb.name,m.float_mv,m.total_mv FROM daily_metrics m JOIN stock_basic sb ON sb.code=m.code "
+            "SELECT m.code,m.trade_date,sb.name,m.float_mv,m.total_mv " + historical_metrics_from +
             "WHERE (sb.delist_date IS NULL OR sb.delist_date> "
             "(SELECT COALESCE(max(trade_date),current_date) FROM daily_bar)) AND m.total_mv IS NULL"
         )
@@ -720,7 +725,7 @@ class DataVerifier:
             findings=[live_totalmv_null],
         )
         live_mv_nonpositive = self._finding(
-            "SELECT m.code,m.trade_date,sb.name,m.float_mv,m.total_mv FROM daily_metrics m JOIN stock_basic sb ON sb.code=m.code "
+            "SELECT m.code,m.trade_date,sb.name,m.float_mv,m.total_mv " + historical_metrics_from +
             "WHERE (sb.delist_date IS NULL OR sb.delist_date> "
             "(SELECT COALESCE(max(trade_date),current_date) FROM daily_bar)) AND (m.total_mv <= 0 OR m.float_mv <= 0)"
         )
@@ -732,7 +737,7 @@ class DataVerifier:
         )
         inverted = mv_inverted_sql("m.total_mv", "m.float_mv")
         live_mv_inverted = self._finding(
-            "SELECT m.code,m.trade_date,sb.name,m.float_mv,m.total_mv FROM daily_metrics m JOIN stock_basic sb ON sb.code=m.code "
+            "SELECT m.code,m.trade_date,sb.name,m.float_mv,m.total_mv " + historical_metrics_from +
             "WHERE (sb.delist_date IS NULL OR sb.delist_date> "
             "(SELECT COALESCE(max(trade_date),current_date) FROM daily_bar)) AND m.total_mv > 0 AND m.float_mv > 0 "
             f"AND {inverted}"

@@ -93,10 +93,10 @@ describe('klinePeriod', () => {
   it.each(['day', 'week', 'month', 'year'] as const)('%s 市值取末日，不累加且不填充末日缺口', (period) => {
     const source = [
       bar('2026-09-14', 10, { total_mv: 10_000_000, float_mv: 8_000_000 }),
-      bar('2026-09-18', 12, { total_mv: 20_000_000, float_mv: 16_000_000, total_share: 1000, float_share: 800 }),
+      bar('2026-09-18', 12, { total_mv: 20_000_000, float_mv: 16_000_000, total_share: 1000, float_share: 800, capital_evidence: { total: { source: 'eastmoney_events', effective_date: '2026-09-18', available_date: '2026-10-01', basis: 'event', retrospective: true, mv_source: 'computed:historical' }, float: { source: null, effective_date: null, available_date: null, basis: null, retrospective: false, mv_source: null } } }),
     ]
     expect(aggregateKlineBars(source, period).at(-1))
-      .toMatchObject({ date: '2026-09-18', total_mv: 20_000_000, float_mv: 16_000_000, total_share: 1000, float_share: 800 })
+      .toMatchObject({ date: '2026-09-18', total_mv: 20_000_000, float_mv: 16_000_000, total_share: 1000, float_share: 800, capital_evidence: { total: { retrospective: true } } })
     source[1]!.total_mv = null
     source[1]!.float_mv = null
     source[1]!.total_share = null

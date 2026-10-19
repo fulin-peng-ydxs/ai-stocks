@@ -170,7 +170,8 @@ def test_bars_rejects_unbounded_market_value_windows_before_query(monkeypatch, l
     assert response.status_code == 422
 
 
-def test_bars_market_values_6000_row_real_api_regression(monkeypatch):
+@pytest.mark.parametrize("basis", ["point_in_time", "historical"])
+def test_bars_market_values_6000_row_real_api_regression(monkeypatch, basis):
     with DuckDBClient(db_path=":memory:") as market:
         init_db(market)
         market.execute("INSERT INTO stock_basic (code,name) VALUES ('600000.SH','测试股')")
@@ -195,13 +196,13 @@ def test_bars_market_values_6000_row_real_api_regression(monkeypatch):
         monkeypatch.setattr(market, "query_df", tracked_query)
         response = _api_client(monkeypatch, market).get(
             "/api/stocks/600000.SH/bars",
-            params={"include_market_values": True, "lookback": 6000},
+            params={"include_market_values": True, "lookback": 6000, "capital_basis": basis},
         )
         assert response.status_code == 200
         bars = response.json()["data"]["bars"]
         assert len(bars) == 6000
         assert len(queries) == 1
-        assert len(queries[0][0]) == 6000
+        assert len(queries[0][1]) == 6000
         assert bars[0]["date"] == "2000-01-02"
         assert bars[2999]["total_mv"] is None
         assert bars[-1]["total_mv"] == 9_000_000

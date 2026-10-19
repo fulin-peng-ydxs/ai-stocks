@@ -600,7 +600,7 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
 }
 // 当前在用的问题类型（下拉筛选用此顺序；missing_or_suspended 已废弃，不再产出/不再列出）。
 export const ISSUE_TYPES_ACTIVE = [
-  'capital_gap', 'capital_invalid', 'capital_mismatch',
+  'capital_gap', 'capital_invalid', 'capital_mismatch', 'capital_raw_invalid',
   'null_close', 'ohl_repaired', 'mv_missing', 'mv_gap', 'mv_invalid', 'abnormal_change',
   'price_volume_mismatch', 'adj_jump', 'data_gap', 'stale', 'history_data_gap',
   'st_status_missing', 'st_status_approximate', 'st_status_mismatch',
@@ -611,7 +611,7 @@ export const ISSUE_TYPES_ACTIVE = [
 export const ISSUE_TYPE_LABEL: Record<string, string> = {
   // 展示名统一为「对象·现象」，现象词固定：缺失/缺口(近端缺某日)/滞后(未更新到最新)/非法/异常/跳变/修补/为空。
   null_close: '行情·收盘价为空(丢弃)', ohl_repaired: '行情·开高低修补', mv_missing: '市值·整段缺失',
-  capital_gap: '股本市值·历史缺失', capital_invalid: '股本市值·数值或日期非法',
+  capital_raw_invalid: '股本原始事件·非法', capital_gap: '股本市值·历史缺失', capital_invalid: '股本市值·数值或日期非法',
   capital_mismatch: '股本市值·不一致',
   mv_gap: '市值·近端缺某日', mv_invalid: '市值·数值非法', abnormal_change: '行情·涨跌幅异常',
   price_volume_mismatch: '行情·价量口径错配', adj_jump: '复权·因子跳变',
@@ -675,7 +675,7 @@ export function taskDisplayLabel(
 }
 // 各问题类型归属的质量层（M2.9 DM-D15 / M2.9.2 DM-D20），用于质量页/概览按层归类。
 export const ISSUE_LAYER: Record<string, string> = {
-  capital_gap: 'L2', capital_invalid: 'L2', capital_mismatch: 'L2',
+  capital_raw_invalid: 'L2', capital_gap: 'L2', capital_invalid: 'L2', capital_mismatch: 'L2',
   null_close: 'L1', ohl_repaired: 'L1', mv_missing: 'L2', mv_gap: 'L2', mv_invalid: 'L2',
   abnormal_change: 'L3', price_volume_mismatch: 'L3', adj_jump: 'L3',
   history_data_gap: 'L4', data_gap: 'L4', stale: 'L4',
@@ -688,7 +688,7 @@ export const ISSUE_LAYER: Record<string, string> = {
 // 各问题类型的恢复动作文案（DM-D22）：按类型分派，不再统一“重拉/重算”。
 export const RECOVER_ACTION_LABEL: Record<string, string> = {
   null_close: '重采该日', ohl_repaired: '重采该日', mv_missing: '补市值', mv_gap: '补市值缺口',
-  capital_gap: '多源补采并复检', capital_invalid: '多源修复并复检', capital_mismatch: '多源核验并复检',
+  capital_raw_invalid: '重采原始股本并复检', capital_gap: '多源补采并复检', capital_invalid: '多源修复并复检', capital_mismatch: '多源核验并复检',
   mv_invalid: '刷新异常市值',
   abnormal_change: '重采该日', price_volume_mismatch: '重采该日',
   adj_jump: '重采整段重算复权',

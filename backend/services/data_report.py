@@ -119,7 +119,7 @@ class DataIntegrityReport:
         sig = self.c.query_df(
             "SELECT (SELECT max(trade_date) FROM daily_bar) latest, "
             "(SELECT count(*) FROM daily_bar) bars, "
-            "(SELECT max(id) FROM data_update_log WHERE table_name IN ('stock_share_capital_daily','daily_metrics','daily_bar') AND status IN ('success','partial')) capital_revision, "
+            "(SELECT max(id) FROM data_update_log WHERE table_name IN ('stock_share_capital_daily','stock_share_capital_history','stock_share_capital_event','daily_metrics','daily_bar') AND status IN ('success','partial')) capital_revision, "
             "dm.metrics, "
             "(SELECT count(*) FROM stock_basic) basics, "
             "(SELECT COALESCE(bit_xor(hash(code, name, list_date, delist_date)), 0) "
@@ -799,6 +799,7 @@ class DataIntegrityReport:
             "capital_gap_rows": inserted_counts["capital_gap"],
             "capital_invalid_rows": inserted_counts["capital_invalid"],
             "capital_mismatch_rows": inserted_counts["capital_mismatch"],
+            "capital_raw_invalid_rows": inserted_counts["capital_raw_invalid"],
             "data_gap_rows": inserted_counts["data_gap"],
             "history_data_gap_rows": inserted_counts["history_data_gap"],
             "stale_rows": inserted_counts["stale"],

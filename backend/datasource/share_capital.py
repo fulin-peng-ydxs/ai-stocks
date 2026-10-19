@@ -1,4 +1,4 @@
-"""东财股本变动的完整分页与点时展开（单位股，不向前填充）。"""
+"""东财股本变动的完整分页与逐日展开（单位股，不向前填充）。"""
 
 from __future__ import annotations
 
@@ -45,43 +45,28 @@ def fetch_equity_events(code: str, *, timeout: float = 15) -> pd.DataFrame:
 
 
 def expand_equity_events(code: str, events: pd.DataFrame, dates) -> pd.DataFrame:
-    """先选当日已生效的最近事件，再检查公告日；未知期间保持空值。"""
+    """按接口变动日期向后沿用到下一次变动；公告日期仅作溯源，不过滤历史股本。"""
     if events.empty:
         return pd.DataFrame()
     ev = events.copy()
     ev["effective"] = pd.to_datetime(ev.END_DATE, errors="coerce")
     ev["available"] = pd.to_datetime(ev.NOTICE_DATE, errors="coerce")
-    # 同生效日的不同版本：到最新修订公告前不回放修订后股数。
+    # 同变动日采用接口最新修订；禁止用后来的变动日向前填充。
     ev = ev.dropna(subset=["effective"]).sort_values(["effective", "available"])
     ev = ev.drop_duplicates("effective", keep="last")
     days = pd.DataFrame({"trade_date": pd.to_datetime(list(dates))}).sort_values("trade_date")
     df = pd.DataFrame({"code": code, "trade_date": days.trade_date.dt.date})
-    def history(changed):
-        # 同值记录可能有更早公告；压缩保留可用日改善的证据。
-        groups = changed.cumsum()
-        best = ev.available.groupby(groups).cummin().groupby(groups).ffill()
-        previous = best.groupby(groups).shift()
-        earlier = ev.available.notna() & (previous.isna() | (ev.available < previous))
-        return ev.loc[changed | earlier]
-
+    # 直接取最近一条源记录；相同股数的新记录也是确认，不能压缩掉后让旧备用源覆盖。
+    out = pd.merge_asof(days, ev, left_on="trade_date", right_on="effective", direction="backward")
+    valid = out.effective.notna() & (out.effective <= out.trade_date)
     for field, raw in [("total", "TOTAL_SHARES"), ("float", "LISTED_A_SHARES")]:
-        values = pd.to_numeric(ev[raw], errors="coerce")
-        # 仅真正数值变动形成股数边界；另一字段/股份口径变化不能抹掉已知股数。
-        changed = values.isna() | values.shift().isna() | values.ne(values.shift())
-        out = pd.merge_asof(days, history(changed), left_on="trade_date", right_on="effective", direction="backward")
-        valid = out.available.notna() & (out.available <= out.trade_date)
         df[f"{field}_share"] = pd.to_numeric(out[raw], errors="coerce").where(valid).to_numpy()
         df[f"{field}_effective_date"] = out.effective.dt.date.to_numpy()
         df[f"{field}_available_date"] = out.available.dt.date.to_numpy()
-        if field == "total":
-            scope = pd.to_numeric(ev.TOTAL_A_SHARES, errors="coerce").eq(values)
-            scope_out = pd.merge_asof(days, history(changed | scope.ne(scope.shift())),
-                                      left_on="trade_date", right_on="effective", direction="backward")
-            scope_valid = scope_out.available.notna() & (scope_out.available <= scope_out.trade_date)
-            df["total_mv_eligible"] = (
-                pd.to_numeric(scope_out.TOTAL_A_SHARES, errors="coerce")
-                == pd.to_numeric(scope_out.TOTAL_SHARES, errors="coerce")
-            ).to_numpy() & scope_valid.to_numpy() & valid.to_numpy()
+    df["total_mv_eligible"] = (
+        pd.to_numeric(out.TOTAL_A_SHARES, errors="coerce")
+        == pd.to_numeric(out.TOTAL_SHARES, errors="coerce")
+    ).to_numpy() & valid.to_numpy()
 
     return df
 
@@ -217,7 +202,7 @@ def fetch_sina_equity_events(code: str, *, timeout: float = 15) -> pd.DataFrame:
             if pd.notna(effective[col]):
                 records.append({"END_DATE": effective[col], "NOTICE_DATE": available[col],
                                 "TOTAL_SHARES": total[col], "LISTED_A_SHARES": floating[col],
-                                "TOTAL_A_SHARES": total_a[col]})
+                                "TOTAL_A_SHARES": total_a[col], "CHANGE_REASON": str(row("变动原因").get(col, ""))})
     if not records:
         raise ValueError(f"{code} 新浪历史股本结构格式异常或无可解析记录")
     return pd.DataFrame(records)

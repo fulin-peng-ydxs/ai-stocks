@@ -68,7 +68,17 @@ export interface StockMembershipOptions {
   list: StockMembershipOption[]
 }
 
+export interface CapitalEvidence {
+  source: string | null
+  effective_date: string | null
+  available_date: string | null
+  basis: string | null
+  retrospective: boolean
+  mv_source: string | null
+}
+
 export interface Bar {
+  capital_evidence?: { total: CapitalEvidence; float: CapitalEvidence }
   date: string
   open: number
   high: number
@@ -209,6 +219,7 @@ export interface StockQuoteSummary {
   total_share: number | null
   float_share: number | null
   pe_ttm: number | null
+  capital_evidence?: { total: CapitalEvidence; float: CapitalEvidence }
 }
 
 export function getStockQuoteSummary(
@@ -223,7 +234,7 @@ export function getStockQuoteSummary(
 
 export function getBars(
   code: string,
-  params?: { adjust?: string; lookback?: number; end?: string; include_market_values?: boolean },
+  params?: { adjust?: string; lookback?: number; end?: string; include_market_values?: boolean; capital_basis?: 'point_in_time' | 'historical' },
   signal?: AbortSignal,
 ): Promise<Bars> {
   return http.get(`/stocks/${code}/bars`, { params, signal })

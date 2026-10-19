@@ -36,7 +36,9 @@ class ShareCapitalService:
             "max(b.trade_date) issue_end FROM daily_bar b "
             "LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
             "LEFT JOIN daily_metrics m USING(code,trade_date) WHERE b.trade_date BETWEEN ? AND ? "
-            f"AND ({self.review_predicate()}) {condition} GROUP BY b.code), "
+            f"AND (({self.review_predicate()}) OR b.code IN (SELECT code FROM stock_share_capital_event "
+            "WHERE active AND (effective_date IS NULL OR total_share<=0 OR float_share<0 OR float_share>total_share))) "
+            f"{condition} GROUP BY b.code), "
             "logs AS (SELECT split_part(source,':',2) code,updated_at,status,date_start,date_end "
             "FROM data_update_log WHERE starts_with(source,'capital_review:') "
             "OR starts_with(source,'capital_collect:')), "
@@ -71,7 +73,7 @@ class ShareCapitalService:
         return self.merge(df, "verified_notice")
 
     def merge(self, frame: pd.DataFrame, source: str, *, reported=False) -> int:
-        """只接收已有行情日期的有效股本；低优先级源仅填空，不擦除事实。"""
+        """只接收已有行情日期的有效股本；逐日报告优先，事件比较生效日；冲突不擦除已有有效事实。"""
         if frame is None or frame.empty:
             return 0
         df = frame.copy()
@@ -105,9 +107,7 @@ class ShareCapitalService:
                 name = f"{field}_{suffix}"
                 df[name] = pd.to_datetime(df.get(name, df.trade_date)).dt.date
             df.loc[
-                df[f"{field}_available_date"].isna()
-                | df[f"{field}_effective_date"].isna()
-                | (df[f"{field}_available_date"] > df.trade_date)
+                df[f"{field}_effective_date"].isna()
                 | (df[f"{field}_effective_date"] > df.trade_date),
                 col,
             ] = np.nan
@@ -165,6 +165,8 @@ class ShareCapitalService:
                         f"starts_with(stock_share_capital_daily.{field}_source,'sse_conversion_100share:')) "
                         f"AND (stock_share_capital_daily.{field}_share IS NULL OR "
                         f"abs(excluded.{field}_share-stock_share_capital_daily.{field}_share)>50) "
+                        f"AND (stock_share_capital_daily.{field}_share IS NULL OR "
+                        f"excluded.{field}_effective_date>=stock_share_capital_daily.{field}_effective_date) "
                         "AND (stock_share_capital_daily.float_share IS NULL OR "
                         "excluded.total_share>=stock_share_capital_daily.float_share)"
                     ) if field == "total" else "FALSE"
@@ -178,20 +180,37 @@ class ShareCapitalService:
                         f"stock_share_capital_daily.{field}_share IS NULL OR "
                         f"stock_share_capital_daily.{field}_source='eastmoney_events' OR "
                         f"(stock_share_capital_daily.{field}_source='sina_events' AND "
-                        f"excluded.{field}_effective_date>=stock_share_capital_daily.{field}_effective_date)"
+                        f"(excluded.{field}_effective_date>=stock_share_capital_daily.{field}_effective_date OR "
+                        f"abs(excluded.{field}_share-stock_share_capital_daily.{field}_share)<=5))"
+                    )
+                    if field == "total":
+                        # 较新精确事件可校准较旧转股统计；统计未更新时不能把旧股数沿用到新变动后。
+                        predicate += (
+                            " OR (starts_with(stock_share_capital_daily.total_source,'sse_conversion_100share:') "
+                            "AND excluded.total_effective_date>=stock_share_capital_daily.total_effective_date "
+                            ")"
+                        )
+                elif source == "sina_events":
+                    # 变更记录先比较生效日期；同日仍以东财为准，旧主源不能压住新变动。
+                    predicate = (
+                        f"stock_share_capital_daily.{field}_share IS NULL OR "
+                        f"stock_share_capital_daily.{field}_source='sina_events' OR "
+                        f"(stock_share_capital_daily.{field}_source='eastmoney_events' AND "
+                        f"excluded.{field}_effective_date>stock_share_capital_daily.{field}_effective_date AND "
+                        f"abs(excluded.{field}_share-stock_share_capital_daily.{field}_share)>5)"
                     )
                 else:
                     predicate = (
                         f"stock_share_capital_daily.{field}_share IS NULL OR "
                         f"stock_share_capital_daily.{field}_source = '{source}'"
                     )
-                if field == "float" and source == "sina_daily":
+                if field == "float" and source in ("sina_daily", "sina_events"):
                     # 新的备用股数与已知总股本冲突时保留旧事实并报告，不先写入再清空。
                     predicate = (f"({predicate}) AND (stock_share_capital_daily.total_share IS NULL OR "
                                  "excluded.float_share<=stock_share_capital_daily.total_share)")
                 if source in ("eastmoney_events", "sina_events"):
                     # 新主源变动须撤回备用源更早事件，不能把旧数带过变动日。
-                    # 同一事件有备用源更早披露证据时仍保留，不让较晚公告覆盖它。
+                    # 新记录确实无有效股数时撤回旧事件值；公告延迟不撤回历史事实。
                     stale_fallback = (
                         f" OR (s.{field}_source='sina_events' AND "
                         f"s.{field}_effective_date<v.{field}_effective_date)"
@@ -200,16 +219,40 @@ class ShareCapitalService:
                     self.c.execute(
                         f"UPDATE stock_share_capital_daily s SET {field}_share=NULL "
                         f"FROM {t} v WHERE s.code=v.code AND s.trade_date=v.trade_date "
-                        f"AND (s.{field}_source=?{stale_fallback}) AND (v.{field}_available_date>v.trade_date "
-                        f"OR v.{field}_effective_date>v.trade_date "
-                        f"OR (v.{field}_available_date IS NULL AND v.{field}_effective_date IS NOT NULL))",
+                        f"AND (s.{field}_source=?{stale_fallback}) AND (v.{field}_effective_date>v.trade_date "
+                        f"OR (v.{field}_share IS NULL AND v.{field}_effective_date IS NOT NULL))",
                         [source],
+                    )
+                confirmation = (
+                    f"m.{field}_mv>0 AND NOT coalesce(starts_with(m.{field}_mv_source,'computed:'),false) "
+                    f"AND abs(m.{field}_mv-{{share}}*v._raw_close)<=greatest(abs(m.{field}_mv)*{MV_REL_TOLERANCE},1)"
+                )
+                if source == "eastmoney_events":
+                    # 用独立源端市值核验已有股数，不反推股数；避免备用源日期较新但数值错误。
+                    self.c.execute(
+                        "UPDATE stock_share_capital_daily s SET "
+                        + ",".join(f"{name}=v.{name}" for name in names)
+                        + f",updated_at=now() FROM {t} v JOIN daily_metrics m USING(code,trade_date) "
+                        "WHERE s.code=v.code AND s.trade_date=v.trade_date "
+                        f"AND s.{field}_source='sina_events' AND v.{field}_share IS NOT NULL AND ("
+                        + confirmation.format(share=f"v.{field}_share") + ") AND NOT ("
+                        + confirmation.format(share=f"s.{field}_share") + ")"
+                    )
+                incoming_filter = ""
+                if source == "sina_events":
+                    incoming_filter = (
+                        " AND NOT EXISTS (SELECT 1 FROM stock_share_capital_daily old "
+                        "JOIN daily_metrics m USING(code,trade_date) "
+                        f"JOIN {t} v USING(code,trade_date) "
+                        "WHERE old.code=s.code AND old.trade_date=s.trade_date "
+                        f"AND old.{field}_source='eastmoney_events' AND ("
+                        + confirmation.format(share=f"old.{field}_share") + "))"
                     )
                 self.c.execute(
                     f"INSERT INTO stock_share_capital_daily (code, trade_date, {', '.join(names)}) "
                     f"SELECT s.code,s.trade_date,{','.join('s.' + n for n in names)} FROM {t} s "
-                    f"WHERE s.{field}_share IS NOT NULL "
-                    "ON CONFLICT (code,trade_date) DO UPDATE SET "
+                    f"WHERE s.{field}_share IS NOT NULL " + incoming_filter +
+                    " ON CONFLICT (code,trade_date) DO UPDATE SET "
                     + ",".join(f"{n}=excluded.{n}" for n in names)
                     + f", updated_at=now() WHERE {predicate}"
                 )
@@ -225,7 +268,7 @@ class ShareCapitalService:
                     "AND NOT coalesce(starts_with(s.total_source,'verified_'),false) "
                     + ("AND abs(s.total_share-v.total_share)<=5 " if source == "sina_events"
                        else "AND s.total_share=v.total_share ")
-                    + "AND v.total_available_date<=v.trade_date "
+                    + "AND v.total_effective_date<=v.trade_date "
                     + ("AND v.total_mv_eligible=true" if source == "sina_events" else "")
                 )
             with self.c.temp_view(latest, prefix="share_latest") as latest_view:

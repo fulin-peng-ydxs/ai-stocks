@@ -155,6 +155,7 @@ SEVERITY_BY_TYPE: dict[str, str] = {
     "null_close": "mid",       # 收盘价空/非正被丢弃——原始数据缺损（M2.9 L1 入库闸门）
     "mv_missing": "low",       # 市值字段整股缺失——字段契约不全（M2.9.2 L2）
     "mv_gap": "mid",           # 近端逐日市值字段缺口（total_mv/float_mv）——逐日缺、code 聚合
+    "capital_raw_invalid": "high",
     "capital_gap": "mid",
     "capital_invalid": "high",
     "capital_mismatch": "mid",
@@ -196,6 +197,7 @@ ISSUE_LAYER: dict[str, str] = {
     "ohl_repaired": "L1",
     "mv_missing": "L2",
     "mv_gap": "L2",
+    "capital_raw_invalid": "L2",
     "capital_gap": "L2",
     "capital_invalid": "L2",
     "capital_mismatch": "L2",
@@ -224,7 +226,7 @@ ISSUE_LAYER: dict[str, str] = {
 }
 # 各层落 data_quality_issue 表的离散异常类型（M2.9.2：四层都落表，质检可反复扫并幂等覆盖）。
 L1_ISSUE_TYPES: tuple[str, ...] = ("null_close", "ohl_repaired")
-L2_ISSUE_TYPES: tuple[str, ...] = ("mv_missing", "mv_gap", "mv_invalid", "capital_gap", "capital_invalid", "capital_mismatch")
+L2_ISSUE_TYPES: tuple[str, ...] = ("mv_missing", "mv_gap", "mv_invalid", "capital_gap", "capital_invalid", "capital_mismatch", "capital_raw_invalid")
 L3_ISSUE_TYPES: tuple[str, ...] = (
     "abnormal_change", "price_volume_mismatch", "adj_jump",
 )

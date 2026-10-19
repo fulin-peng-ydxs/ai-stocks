@@ -1,6 +1,28 @@
 [
   {
     "code": "600183.SH",
+    "trade_date": "2017-07-24",
+    "effective_date": "2017-07-24",
+    "available_date": "2017-07-26",
+    "total_share": 1454472221,
+    "total_mv_eligible": true,
+    "notice_id": "AN201707250743319174",
+    "source_ref": "https://data.eastmoney.com/notices/detail/600183/AN201707250743319174.html",
+    "reason": "2017-034公告披露截至7月24日已完成登记的总股份；仅校正总股本，批量行权股7月31日上市，未据此提前增加流通股本。"
+  },
+  {
+    "code": "600183.SH",
+    "trade_date": "2017-07-25",
+    "effective_date": "2017-07-24",
+    "available_date": "2017-07-26",
+    "total_share": 1454472221,
+    "total_mv_eligible": true,
+    "notice_id": "AN201707250743319174",
+    "source_ref": "https://data.eastmoney.com/notices/detail/600183/AN201707250743319174.html",
+    "reason": "2017-034公告披露截至7月24日已完成登记的总股份；仅校正总股本，批量行权股7月31日上市，未据此提前增加流通股本。"
+  },
+  {
+    "code": "600183.SH",
     "trade_date": "2017-07-26",
     "effective_date": "2017-07-24",
     "available_date": "2017-07-26",
@@ -31,5 +53,16 @@
     "notice_id": "AN201707250743319174",
     "source_ref": "https://data.eastmoney.com/notices/detail/600183/AN201707250743319174.html",
     "reason": "2017-034公告披露截至7月24日已完成登记的总股份；仅校正总股本，批量行权股7月31日上市，未据此提前增加流通股本。"
+  },
+  {
+    "code": "600755.SH",
+    "trade_date": "2017-09-29",
+    "effective_date": "2017-09-29",
+    "available_date": "2017-10-27",
+    "total_share": 1776480031,
+    "total_mv_eligible": true,
+    "notice_id": "CNINFO_1204081334_SINA_20170929",
+    "source_ref": "https://static.cninfo.com.cn/finalpage/2017-10-27/1204081334.PDF",
+    "reason": "公司2017三季报股本1776480031；日期由新浪股本变动记录2017-09-29及逐日流通A股接口同日1776480031交叉确认，新浪总股本1776480030仅为万股三位显示舍入。该期全流通A股，仅纠正原100股精度转股估算少9股的已核验总股本；流通股本仍由正常接口采集，不从市值反推。"
   }
 ]

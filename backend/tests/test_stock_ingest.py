@@ -204,3 +204,21 @@ def test_stock_ingest_handler_forwards_force_current_day(monkeypatch):
         "force_current_day": True,
         "ctx": ctx,
     }]
+
+
+@pytest.mark.parametrize("extra", [{"years": 10}, {"review_only": True}, {"recalculate_only": True}])
+def test_raw_event_rebuild_rejects_mixed_modes(extra):
+    with pytest.raises(ValueError):
+        normalize_stock_ingest_params({"recipe": "share_capital_history", "rebuild_events_only": True, **extra})
+
+
+def test_raw_event_rebuild_dispatches_to_shared_service(monkeypatch, capital_sync):
+    calls = []
+    monkeypatch.setattr("backend.services.ingest.IngestionService", lambda: SimpleNamespace(c=None))
+    monkeypatch.setattr("backend.services.share_capital_history.ShareCapitalHistoryService",
+                        lambda c: SimpleNamespace(rebuild_all=lambda **kw: calls.append(kw) or {"ok": 1}))
+    ctx = _Ctx()
+    params = normalize_stock_ingest_params({"recipe": "share_capital_history", "rebuild_events_only": True, "codes": ["000004.SZ"]})
+    result = _h_stock_ingest(params, ctx)
+    assert calls == [{"codes": ["000004.SZ"], "ctx": ctx}]
+    assert result["ingest"]["ok"] == 1

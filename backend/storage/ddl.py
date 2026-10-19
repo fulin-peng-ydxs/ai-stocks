@@ -95,6 +95,51 @@ CREATE TABLE IF NOT EXISTS stock_share_capital_daily (
 );
 """
 
+# 原始股本事件完整存档；事后公告不得在入库前丢弃，修订版本保留。
+DDL_STOCK_SHARE_CAPITAL_EVENT = """
+CREATE TABLE IF NOT EXISTS stock_share_capital_event (
+    event_id VARCHAR PRIMARY KEY,
+    code VARCHAR,
+    source VARCHAR,
+    effective_date DATE,
+    available_date DATE,
+    date_basis VARCHAR, -- source_record=来源变更日期，沿用至下一次变动
+    change_reason VARCHAR,
+    total_share BIGINT,
+    float_share BIGINT,
+    raw_payload VARCHAR,
+    active BOOLEAN,
+    first_seen_at TIMESTAMP,
+    last_seen_at TIMESTAMP
+);
+"""
+
+# 旧版展示补充兼容表：已停用，重建时清理；业务统一使用逐日股本和 daily_metrics。
+DDL_STOCK_SHARE_CAPITAL_HISTORY = """
+CREATE TABLE IF NOT EXISTS stock_share_capital_history (
+    code VARCHAR,
+    trade_date DATE,
+    total_share BIGINT,
+    float_share BIGINT,
+    total_source VARCHAR,
+    float_source VARCHAR,
+    total_effective_date DATE,
+    float_effective_date DATE,
+    total_available_date DATE,
+    float_available_date DATE,
+    total_basis VARCHAR,
+    float_basis VARCHAR,
+    total_event_id VARCHAR,
+    float_event_id VARCHAR,
+    total_mv DOUBLE,
+    float_mv DOUBLE,
+    total_mv_source VARCHAR,
+    float_mv_source VARCHAR,
+    updated_at TIMESTAMP DEFAULT current_timestamp,
+    PRIMARY KEY (code,trade_date)
+);
+"""
+
 # 指数日线
 DDL_INDEX_BAR = """
 CREATE TABLE IF NOT EXISTS index_bar (
@@ -208,6 +253,8 @@ M1_TABLES: dict[str, str] = {
     "daily_bar": DDL_DAILY_BAR,
     "daily_metrics": DDL_DAILY_METRICS,
     "stock_share_capital_daily": DDL_STOCK_SHARE_CAPITAL_DAILY,
+    "stock_share_capital_event": DDL_STOCK_SHARE_CAPITAL_EVENT,
+    "stock_share_capital_history": DDL_STOCK_SHARE_CAPITAL_HISTORY,
     "index_bar": DDL_INDEX_BAR,
     "trade_calendar": DDL_TRADE_CALENDAR,
     "data_update_log": DDL_DATA_UPDATE_LOG,
@@ -1109,7 +1156,7 @@ _LIMIT_LADDER_INDEXES: tuple[str, ...] = (
 # 数据维度注册表 seed（DM-D4/D5）：已采集维度 + 规划中占位（股东数/筹码峰）。
 # 幂等 ON CONFLICT DO NOTHING：已存在则保留（允许后续人工调整 status）。
 _DIMENSION_SEED: list[tuple] = [
-    ("share_capital", "逐日股本", "collected", "东财/新浪", '["stock_share_capital_daily"]',
+    ("share_capital", "逐日股本", "collected", "东财/新浪", '["stock_share_capital_daily","stock_share_capital_event","stock_share_capital_history"]',
      "同日总股本/流通A股及生效、可用日期；用于股本指标和缺失市值补算"),
     ("quote",        "日线行情",   "collected", "akshare(主)/baostock(备)", '["daily_bar"]',
      "OHLC/成交量额/换手/复权因子/涨跌停标记，选股回测核心"),
@@ -1247,6 +1294,9 @@ _MIGRATIONS: list[str] = [
     "ALTER TABLE stock_group ADD COLUMN IF NOT EXISTS is_default BOOLEAN",
     "UPDATE stock_group SET color='#909399' WHERE color IS NULL",
     "UPDATE stock_group SET is_default=false WHERE is_default IS NULL",
+    # 股本维度关联表补齐；只迁移旧版系统表清单，不覆盖管理员自定义值。
+    "UPDATE data_dimension_registry SET tables='[\"stock_share_capital_daily\",\"stock_share_capital_event\",\"stock_share_capital_history\"]' "
+    "WHERE dimension='share_capital' AND tables='[\"stock_share_capital_daily\"]'",
     # 维度说明文案润色（去任务编号/开发口吻）——种子 ON CONFLICT DO NOTHING 不覆盖存量行，故迁移刷新
     "UPDATE data_dimension_registry SET descr='股东户数/十大股东等，规划中，暂未采集' WHERE dimension='shareholders'",
     "UPDATE data_dimension_registry SET descr='筹码峰/成本分布，规划中，暂未采集' WHERE dimension='chip_peak'",

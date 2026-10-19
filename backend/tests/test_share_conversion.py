@@ -98,10 +98,10 @@ def test_non_conversion_changes_stop_old_anchor(reason):
     assert out.trade_date.tolist() == [date(2026, 1, 5)]
 
 
-def test_unknown_anchor_and_overlapping_bonds_are_rejected():
+def test_unknown_notice_is_allowed_but_overlapping_bonds_are_rejected():
     ev = events()
     ev.loc[0, "NOTICE_DATE"] = None
-    assert reconstruct_conversion_shares("600001.SH", ["2026-01-05"], ev, bonds(), daily).empty
+    assert not reconstruct_conversion_shares("600001.SH", ["2026-01-05"], ev, bonds(), daily).empty
     overlapping = bonds() + [dict(bonds()[0], SECURITY_CODE="110002")]
     assert reconstruct_conversion_shares(
         "600001.SH", ["2026-01-05"], events(), overlapping, daily

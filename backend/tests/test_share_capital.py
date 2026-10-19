@@ -70,7 +70,7 @@ def test_total_uses_a_price_even_for_mixed_or_unknown_scope_and_invalid_does_not
     assert market.query_df("SELECT float_share FROM stock_share_capital_daily").iloc[0, 0] == 80
 
 
-def test_event_expansion_no_backward_fill_and_no_unannounced_values():
+def test_event_expansion_uses_change_date_without_publication_gate():
     ev = pd.DataFrame(
         [
             {
@@ -92,7 +92,7 @@ def test_event_expansion_no_backward_fill_and_no_unannounced_values():
     df = expand_equity_events(
         "600000.SH", ev, ["2026-01-01", "2026-01-02", "2026-01-05", "2026-01-07"]
     )
-    assert df.total_share.isna().tolist() == [True, False, True, False]
+    assert df.total_share.isna().tolist() == [True, False, False, False]
     assert df.total_mv_eligible.tolist() == [False, True, False, False]
 
 
@@ -133,14 +133,14 @@ def test_merge_representative_history_scale():
         )
 
 
-def test_event_revision_withdraws_unannounced_fact_and_computed_mv(market):
+def test_later_publication_does_not_erase_historical_shares_or_mv(market):
     svc = ShareCapitalService(market)
     svc.merge(frame(), "eastmoney_events")
     revised = frame(total_available_date="2026-01-07", float_available_date="2026-01-07")
     svc.merge(revised, "eastmoney_events")
     row = market.query_df("SELECT total_mv,float_mv FROM daily_metrics").iloc[0]
-    assert row.isna().all()
-    assert market.query_df("SELECT total_share FROM stock_basic").iloc[0].isna().all()
+    assert row.tolist() == [2000,1600]
+    assert market.query_df("SELECT total_share FROM stock_basic").iloc[0,0] == 100
 
 
 def test_reported_revisions_replace_same_source_without_replacing_other_dates(market):
@@ -249,9 +249,9 @@ def test_unchanged_total_survives_late_float_disclosure():
     ])
     out = expand_equity_events("600000.SH", events, ["2026-01-05", "2026-01-06"])
     assert out.iloc[0].total_share == 100
-    assert out.iloc[0].total_available_date == date(2026, 1, 2)
-    assert pd.isna(out.iloc[0].float_share)
-    assert pd.isna(out.iloc[1].total_share)  # 真正增股不得延用旧数
+    assert out.iloc[0].total_available_date == date(2026, 1, 9)
+    assert out.iloc[0].float_share == 90
+    assert out.iloc[1].total_share == 120  # 变动日立即使用新股数，不等公告日
 
 
 def test_sina_structure_units_dates_and_scope(monkeypatch):
@@ -313,8 +313,8 @@ def test_fallback_cannot_cross_primary_unpublished_change(market, monkeypatch):
                              get_share_capital_fallback=lambda *args: older)
     diagnostic = {}
     service._collect_capital_one("600000.SH", source, date(2026, 1, 5), date(2026, 1, 5), diagnostic)
-    assert market.query_df("SELECT count(*) FROM stock_share_capital_daily").iloc[0, 0] == 0
-    assert diagnostic["600000.SH"]["remaining"]["total_share_not_yet_disclosed"]["count"] == 1
+    assert market.query_df("SELECT total_source FROM stock_share_capital_daily").iloc[0,0] == "eastmoney_events"
+    assert diagnostic["600000.SH"]["remaining"] == {}
 
 
 def test_independent_source_runs_after_primary_failure(market, monkeypatch):
@@ -374,7 +374,7 @@ def verified_fact(**changes):
 
 
 @pytest.mark.parametrize("change", [
-    {"available_date": "2026-01-06"}, {"effective_date": "2026-01-06"},
+    {"effective_date": "2026-01-06"},
     {"total_share": 1.5}, {"total_share": True}, {"total_share": 0},
     {"total_mv_eligible": "true"}, {"source_ref": "file:///local"}, {"reason": ""},
     {"code": "600001.SH"}, {"trade_date": "2099-01-01"},
@@ -425,7 +425,7 @@ def test_primary_event_updates_or_withdraws_older_fallback_but_keeps_same_event_
     newer = frame(total_effective_date="2026-01-05", total_available_date="2026-01-08")
     newer["total_share"] = 120
     svc.merge(newer, "eastmoney_events")
-    assert pd.isna(market.query_df("SELECT total_share FROM stock_share_capital_daily").iloc[0, 0])
+    assert market.query_df("SELECT total_share FROM stock_share_capital_daily").iloc[0, 0] == 120
     # 独立来源已在当日披露同一事件时，不受另一源的更晚公告日覆盖。
     newer["total_available_date"] = "2026-01-05"
     svc.merge(newer, "sina_events")
@@ -459,17 +459,17 @@ def test_verified_facts_are_dispatched_before_collection(market, monkeypatch):
             normalize_stock_ingest_params(invalid)
 
 
-def test_unknown_publication_cannot_retain_old_event_value(market):
+def test_unknown_publication_does_not_block_valid_historical_record(market):
     svc = ShareCapitalService(market)
     svc.merge(frame(total_effective_date="2026-01-02"), "eastmoney_events")
     unknown = frame(total_effective_date="2026-01-05", total_available_date=None)
     unknown["total_share"] = 120
     svc.merge(unknown, "eastmoney_events")
-    assert pd.isna(market.query_df("SELECT total_share FROM stock_share_capital_daily").iloc[0, 0])
-    assert pd.isna(market.query_df("SELECT total_mv FROM daily_metrics").iloc[0, 0])
+    assert market.query_df("SELECT total_share FROM stock_share_capital_daily").iloc[0, 0] == 120
+    assert market.query_df("SELECT total_mv FROM daily_metrics").iloc[0, 0] == 2400
 
 
-def test_unchanged_value_keeps_later_event_with_earlier_publication():
+def test_unchanged_value_keeps_latest_confirmation_date():
     events = pd.DataFrame([
         {"END_DATE": "2026-01-02", "NOTICE_DATE": "2026-02-01", "TOTAL_SHARES": 100,
              "LISTED_A_SHARES": 80, "TOTAL_A_SHARES": 100},
@@ -479,9 +479,10 @@ def test_unchanged_value_keeps_later_event_with_earlier_publication():
              "LISTED_A_SHARES": 85, "TOTAL_A_SHARES": 100},
     ])
     facts = expand_equity_events("600000.SH", events, ["2026-01-02", "2026-01-05", "2026-01-06"])
-    assert pd.isna(facts.iloc[0].total_share)
+    assert facts.iloc[0].total_share == 100
     assert facts.total_share.iloc[1:].tolist() == [100, 100]
-    assert facts.total_available_date.iloc[1:].tolist() == [date(2026, 1, 3)] * 2
+    assert facts.total_available_date.iloc[1:].tolist() == [date(2026, 1, 3), date(2026, 2, 2)]
+    assert facts.total_effective_date.tolist() == [date(2026,1,2), date(2026,1,5), date(2026,1,6)]
 
 
 def test_scope_change_does_not_hide_unchanged_disclosed_total_share():
@@ -542,3 +543,56 @@ def test_recalculation_task_does_not_call_external_collection(market, monkeypatc
     ctx = SimpleNamespace(log=lambda *args: None, progress=lambda *args: None, check_cancel=lambda: None)
     result = _h_stock_ingest({"recipe":"share_capital_history", "recalculate_only":True}, ctx)
     assert result["ingest"]["total_mv_filled"] == 1
+
+
+def test_newer_fallback_event_replaces_stale_primary_but_same_date_primary_wins(market):
+    service = ShareCapitalService(market)
+    old = frame(total_effective_date="2026-01-02", float_effective_date="2026-01-02")
+    service.merge(old, "eastmoney_events")
+    newer = frame(total_effective_date="2026-01-05", float_effective_date="2026-01-05").assign(total_share=120, float_share=90)
+    service.merge(newer, "sina_events")
+    row = market.query_df("SELECT total_share,float_share,total_source FROM stock_share_capital_daily").iloc[0]
+    assert row.tolist() == [120, 90, "sina_events"]
+    service.merge(old, "eastmoney_events")
+    assert market.query_df("SELECT total_share FROM stock_share_capital_daily").iloc[0,0] == 120
+    newer["total_share"] = 125
+    service.merge(newer, "eastmoney_events")
+    service.merge(newer.assign(total_share=130), "sina_events")
+    assert market.query_df("SELECT total_share FROM stock_share_capital_daily").iloc[0,0] == 125
+
+
+def test_newer_fallback_float_cannot_erase_good_value_when_total_conflicts(market):
+    service = ShareCapitalService(market)
+    service.merge(frame(total_effective_date="2026-01-02", float_effective_date="2026-01-02"), "eastmoney_events")
+    service.merge(frame(total_effective_date="2026-01-02", float_effective_date="2026-01-05").assign(total_share=120, float_share=110), "sina_events")
+    assert market.query_df("SELECT total_share,float_share FROM stock_share_capital_daily").iloc[0].tolist() == [100,80]
+
+
+def test_precision_only_fallback_cannot_replace_exact_primary_or_erase_float(market):
+    service = ShareCapitalService(market)
+    old = frame(total_effective_date="2026-01-02", float_effective_date="2026-01-02").assign(total_share=104, float_share=104)
+    service.merge(old, "eastmoney_events")
+    rounded = frame(total_effective_date="2026-01-05", float_effective_date="2026-01-05").assign(total_share=100, float_share=100)
+    service.merge(rounded, "sina_events")
+    assert market.query_df("SELECT total_share,float_share FROM stock_share_capital_daily").iloc[0].tolist() == [104,104]
+
+
+def test_precise_event_refines_100_share_exchange_estimate(market):
+    service = ShareCapitalService(market)
+    service.merge(frame(total_effective_date="2026-01-02"), "eastmoney_events")
+    market.execute("UPDATE stock_share_capital_daily SET total_source='sse_conversion_100share:110001'")
+    exact = frame(total_effective_date="2026-01-05", float_effective_date="2026-01-05").assign(total_share=126,float_share=126)
+    service.merge(exact, "eastmoney_events")
+    assert market.query_df("SELECT total_share,float_share FROM stock_share_capital_daily").iloc[0].tolist() == [126,126]
+
+
+def test_newer_fallback_does_not_replace_primary_confirmed_by_reported_market_value(market):
+    service = ShareCapitalService(market)
+    old = frame(total_effective_date="2026-01-02",float_effective_date="2026-01-02",float_mv=1600)
+    service.merge(old, "eastmoney_events", reported=True)
+    newer = frame(total_effective_date="2026-01-05",float_effective_date="2026-01-05").assign(float_share=90)
+    service.merge(newer, "sina_events")
+    assert market.query_df("SELECT float_share FROM stock_share_capital_daily").iloc[0,0] == 80
+    market.execute("UPDATE stock_share_capital_daily SET float_share=90,float_source='sina_events',float_effective_date='2026-01-05'")
+    service.merge(old, "eastmoney_events")
+    assert market.query_df("SELECT float_share FROM stock_share_capital_daily").iloc[0,0] == 80

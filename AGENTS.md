@@ -25,6 +25,7 @@
 - 撮合口径：涨跌停价按板块/ST 计算，开盘封死不可成交，停牌顺延，退市强平，计佣金/印花/过户/方向性滑点。
 - ST 口径：唯一事实为 `stock_st_status_daily` 的准确逐日记录；禁止按当前名称或 `daily_bar.is_st` 投影推断。主板 ST 2026-07-06 前 5%、当日起 10%，创业板 2020-08-24 前 10%、当日起 20%，科创板 20%；完整链路见 `agent-works/architecture/st-status.md`。
 - 复权口径：前向收益与回测记账用后复权，成交性判定用原始价；复权查询统一 `COALESCE(adj_factor_clean, adj_factor)`，清洗因子不得写回 `adj_factor`。
+- 股本口径：按来源历史变更日期建立统一逐日事实，公告日期仅作溯源、不作历史入库门槛；展示、指标、筛选与回测统一读取 `stock_share_capital_daily` / `daily_metrics`，不另设事后展示股本。来源优先、精度与修复规则见 `agent-works/architecture/stock-collection.md`。
 - 评分与验证：分层命中率必须扣同期全市场 base rate 并附样本量；技术指标是唯一原子定义，下游只组合引用，不硬编码字段。
 - 双库边界：禁止跨库 JOIN。行情读 DuckDB，资产读写 PG；需要联合时在服务层分别取数后内存合并，并控制结果集规模。
 - 数据表接入：新增或修改表必须同步对应 DDL、表级中文业务元数据、归属/来源/关系、显式鲜活度与质量策略以及字段中文名/说明；不适用策略也必须登记。合并前执行 `python -m backend.cli verify-catalog`，禁止手工建表绕过 DDL。完整流程见 `agent-works/architecture/data-management.md`。
