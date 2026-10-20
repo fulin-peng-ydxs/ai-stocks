@@ -945,6 +945,14 @@ describe('组件消费关系与配置一致性（P4）', () => {
     expect(sectorDetailSource).not.toContain('<template #business>')
   })
 
+  it('分时归档登记为既有概览指标选项，默认可见并复用 visibleItems 配置', () => {
+    const page = getPageEntry('data-overview')!
+    expect(page.componentMeta?.summary?.items).toContainEqual({ key: 'intraday', label: '分时归档' })
+    expect(getPageLayout('data-overview').slots.find((slot) => slot.id === 'summary')?.config?.visibleItems)
+      .toContain('intraday')
+    expect(applicableComponentFields(page, 'summary').map((field) => field.key)).toEqual(['visibleItems'])
+  })
+
   it('业务选项插槽不得登记空内容', () => {
     const offenders: string[] = []
     for (const entry of PAGE_REGISTRY) {

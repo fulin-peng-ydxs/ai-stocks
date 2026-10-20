@@ -482,6 +482,13 @@ function gotoQuality(severity?: string, issueType?: string) {
   router.push(Object.keys(q).length ? { path: '/data/quality', query: q } : '/data/quality')
 }
 function gotoGap() { router.push('/data/ingest') }
+function gotoIntraday() {
+  if (!ov.value?.intraday?.stocks) {
+    router.push({ path: '/data/ingest', query: { task_type: 'intraday_ingest' } })
+    return
+  }
+  gotoQuality(undefined, 'intraday_gap,intraday_partial,intraday_invalid')
+}
 function gotoBoard() {
   router.push({ path: '/data/ingest', query: { task_type: 'board', mode: 'update' } })
 }
@@ -638,6 +645,46 @@ const menuPageTitle = useMenuPageTitle()
             <div class="stat-val">{{ ov?.bar_rows?.toLocaleString() ?? '—' }}</div>
           </el-card>
           <el-card
+            v-if="kpiVisible('intraday')"
+            shadow="never"
+            class="stat clickable app-interaction-target app-interaction-card"
+            data-testid="overview-intraday-card"
+            role="button"
+            tabindex="0"
+            @click="gotoIntraday"
+            v-keyboard-activate
+          >
+            <div class="stat-label" @click.stop @keydown.stop>
+              分时归档
+              <HelpTip title="分时归档统计" test-id="overview-intraday-help" :width="360">
+                <HelpTipItem question="监控范围">
+                  <p>自 {{ ov?.intraday?.monitoring_start?.slice(0, 10) || '尚未开始' }} 至 {{ ov?.intraday?.target_end?.slice(0, 10) || '尚无目标日' }}，监控 {{ ov?.intraday?.stocks?.toLocaleString() ?? '—' }} 只；最新归档 {{ ov?.intraday?.archive_end?.slice(0, 10) || '尚未归档' }}。</p>
+                </HelpTipItem>
+                <HelpTipItem question="累计覆盖">
+                  <p>完整 {{ ov?.intraday?.complete_days?.toLocaleString() ?? '—' }} / 部分 {{ ov?.intraday?.partial_days?.toLocaleString() ?? '—' }} / 缺失 {{ ov?.intraday?.missing_days?.toLocaleString() ?? '—' }} 个股票交易日。</p>
+                </HelpTipItem>
+                <HelpTipItem question="目标日覆盖">
+                  <p v-if="ov?.intraday?.latest_expected_stocks">{{ ov.intraday.target_end?.slice(0, 10) }} 完整 {{ ov.intraday.latest_complete_stocks?.toLocaleString() ?? '—' }} / {{ ov.intraday.latest_expected_stocks.toLocaleString() }} 只；最新归档日期不代表全市场已采齐。</p>
+                  <p v-else>尚无应采目标日。</p>
+                </HelpTipItem>
+                <HelpTipItem question="统计与处理">
+                  <p>按固定监控起点后的应有交易日统计，排除上市前、退市后和明确停牌日；完整表示必需分钟已覆盖，不表示量价对账通过。点击指标查看分时质检；尚未监控时进入分时采集。</p>
+                </HelpTipItem>
+              </HelpTip>
+            </div>
+            <div class="stat-val">{{ ov?.intraday?.bar_rows?.toLocaleString() ?? '—' }}<span class="sub"> 行</span></div>
+            <template v-if="ov?.intraday">
+              <div class="stat-foot" v-if="ov.intraday.stocks">
+                监控 {{ ov.intraday.stocks.toLocaleString() }} 只 · 完整 {{ ov.intraday.complete_days.toLocaleString() }}
+                / 部分 {{ ov.intraday.partial_days.toLocaleString() }} / 缺失 {{ ov.intraday.missing_days.toLocaleString() }} 个股票交易日
+              </div>
+              <div class="stat-foot" v-else>尚未开始监控 · 点击采集</div>
+              <div class="stat-foot" v-if="ov.intraday.latest_expected_stocks">
+                {{ ov.intraday.target_end?.slice(0, 10) }} 完整 {{ ov.intraday.latest_complete_stocks?.toLocaleString() ?? '—' }} / {{ ov.intraday.latest_expected_stocks.toLocaleString() }} 只
+              </div>
+            </template>
+          </el-card>
+          <el-card
             v-if="kpiVisible('stStatus')"
             shadow="never"
             class="stat clickable app-interaction-target app-interaction-card"
@@ -670,7 +717,7 @@ const menuPageTitle = useMenuPageTitle()
             </div>
           </el-card>
           <el-card v-if="kpiVisible('score')" shadow="never" class="stat">
-            <div class="stat-label">全局质量评分 <HelpHint text="在市股票中「四层质量全部达标」的占比（0~100），综合入库/契约/正确性/鲜活" /></div>
+            <div class="stat-label">日线四层评分 <HelpHint text="在市股票日线四层质量全部达标的占比（0~100），综合入库、契约、正确性和鲜活；分时质量独立统计，不计入此评分" /></div>
             <div class="stat-val" :style="{ color: scoreColor }">{{ ov?.quality.score ?? '—' }}</div>
           </el-card>
           <el-card v-if="kpiVisible('quality')" shadow="never" class="stat clickable app-interaction-target app-interaction-card" role="button" tabindex="0"
@@ -694,10 +741,9 @@ const menuPageTitle = useMenuPageTitle()
         </div>
 
         <div class="scan-time" v-if="ov">
-          <template v-if="ov?.intraday">
-            分时归档：监控自 {{ ov.intraday.monitoring_start?.slice(0, 10) || '尚未开始' }}，
-            最新 {{ ov.intraday.archive_end?.slice(0, 10) || '—' }}，
-            完整 {{ ov.intraday.complete_days }} / 部分 {{ ov.intraday.partial_days }} / 缺失 {{ ov.intraday.missing_days }} 个股票交易日。
+          <template v-if="kpiVisible('intraday') && ov.intraday?.stocks">
+            分时监控自 {{ ov.intraday.monitoring_start?.slice(0, 10) }}，
+            最新归档 {{ ov.intraday.archive_end?.slice(0, 10) || '尚未归档' }}。
           </template>
           最近质检时间：<b>{{ formatDateTimeSeconds(ov.last_scan_at, '尚未质检') }}</b>
           <span class="hint">（“立即质检”或定时质检任务会刷新它）</span>
@@ -712,7 +758,7 @@ const menuPageTitle = useMenuPageTitle()
         class="quality-summary"
         data-testid="overview-quality-summary"
       >
-          <template #header><span>分层质量模型（达标率）</span></template>
+          <template #header><span>日线四层质量（达标率）</span></template>
           <el-row :gutter="12">
             <el-col :span="6" v-for="l in ov.quality.by_layer" :key="l.layer">
               <AppHoverInfo :content="layerSummaryTip(l)" placement="top">
@@ -1294,7 +1340,7 @@ const menuPageTitle = useMenuPageTitle()
   flex: 1 1 auto;
   min-height: 0;
 }
-.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--app-space-3); }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--app-space-3); }
 .stat { text-align: center; }
 .stat :deep(.el-card__body) { padding: 14px 6px; }
 .stat.clickable { --app-interaction-card-border: var(--el-card-border-color); cursor: pointer; }

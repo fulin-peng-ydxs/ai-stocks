@@ -23,6 +23,9 @@ export interface IntradayCoverage {
   missing_days: number
   stocks?: number
   expected_days?: number
+  bar_rows?: number
+  latest_expected_stocks?: number
+  latest_complete_stocks?: number
 }
 export interface Overview {
   intraday?: IntradayCoverage

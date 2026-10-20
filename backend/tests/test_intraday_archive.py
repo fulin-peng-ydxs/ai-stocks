@@ -482,6 +482,37 @@ def test_refetch_does_not_expand_unmonitored_history(db):
     assert service.summary()["monitoring_start"][:10] == DAY
 
 
+def test_summary_separates_minute_rows_history_and_latest_stock_coverage(db, monkeypatch):
+    second = "600001.SH"
+    db.execute("INSERT INTO stock_basic(code,name,list_date) VALUES (?,'第二股',?)", [second, DAY])
+    db.execute("INSERT INTO daily_bar(code,trade_date,close) VALUES (?,?,3.6)", [second, DAY])
+    archive = IntradayArchiveService(db, quotes=Windows([window()]))
+    archive.collect()
+    for code in (CODE, second):
+        db.execute("INSERT INTO daily_bar(code,trade_date,close) VALUES (?,'2026-09-11',3.6)", [code])
+    monkeypatch.setattr(eod_dates, "shanghai_now", lambda: datetime(
+        2026, 9, 11, 16, tzinfo=eod_dates.SHANGHAI,
+    ))
+    archive.quotes = Windows([window(day="2026-09-11")])
+    archive.collect({"codes": [CODE]})
+    summary = archive.summary()
+    assert summary["bar_rows"] == 720
+    assert summary["stocks"] == 2 and summary["expected_days"] == 4
+    assert summary["complete_days"] == 3 and summary["missing_days"] == 1
+    assert summary["archive_end"].startswith("2026-09-11")
+    assert summary["latest_expected_stocks"] == 2 and summary["latest_complete_stocks"] == 1
+    assert archive.summary(CODE)["bar_rows"] == 480
+    assert archive.summary(second)["bar_rows"] == 240
+    assert archive.summary(second)["latest_complete_stocks"] == 0
+
+
+def test_empty_summary_does_not_treat_absent_monitoring_as_complete(db):
+    summary = IntradayArchiveService(db).summary()
+    assert summary["stocks"] == summary["expected_days"] == summary["bar_rows"] == 0
+    assert summary["latest_complete_stocks"] == summary["latest_expected_stocks"] == 0
+    assert summary["monitoring_start"] is None and summary["archive_end"] is None
+
+
 def test_monitoring_start_is_frozen_across_resume(db):
     service = IntradayArchiveService(db, quotes=Windows([window()]))
     ctx = Context()

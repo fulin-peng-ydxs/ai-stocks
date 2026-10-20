@@ -151,9 +151,10 @@ const DATA_OVERVIEW_KPI_ITEMS = [
   { key: 'latestTradeDate', label: '最新交易日' },
   { key: 'codes', label: '在市 / 退市' },
   { key: 'barRows', label: '日线总行数' },
+  { key: 'intraday', label: '分时归档' },
   { key: 'stStatus', label: 'ST 点时事实' },
   { key: 'board', label: '板块数据' },
-  { key: 'score', label: '全局质量评分' },
+  { key: 'score', label: '日线四层评分' },
   { key: 'quality', label: '未解决质检' },
   { key: 'gaps', label: '缺口 / 滞后' },
 ]

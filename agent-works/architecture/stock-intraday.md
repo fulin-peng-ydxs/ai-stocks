@@ -63,6 +63,8 @@ Redis 行情缓存仅来自已落库事实，按“股票 + 日期 + 修订”�
 
 存量诊断可通过既有 `verify` 异步任务的 `scope=intraday` 定向扫描，也可指定 `codes`；只补充质量详情、同步覆盖和收敛真实消失问题，不联网、不改监控起点、不重写分钟。普通全量质检继续包含同一分时扫描，任务汇总同时计入分时问题。
 
+概览复用同一累计覆盖口径，另提供 `bar_rows` 实际分钟行数与 `latest_expected_stocks/latest_complete_stocks` 目标日逐股统计。前端通过既有核心指标 `visibleItems` 中的 `intraday` 选项控制独立归档卡片，不新增布局槽位或配置字段；保持用户已有显示选择。低高度收起脚注时，结构化帮助仍提供监控范围、累计覆盖、目标日覆盖和统计说明；日线四层评分与分时质量分开呈现。
+
 ## 前端组件契约
 
 `StockChartWorkspace` 的 `enableIntradayDrilldown` 默认关闭；开启后只处理 `candlestick` 系列单击并发出 `barClick(tradeDate)`。`StockIntradayDialog` 统一负责请求、取消、迟到响应隔离和业务状态，`StockIntradayChart` 统一生成双 grid ECharts 配置。两个入口通过 `useStockIntradayDrilldown` 共享打开、重复点击和切股关闭状态，不复制请求逻辑。

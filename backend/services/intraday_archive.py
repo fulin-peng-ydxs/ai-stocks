@@ -827,15 +827,25 @@ class IntradayArchiveService:
         return json.loads(frame.to_json(orient="records", date_format="iso"))
 
     def summary(self, code=None):
+        """累计覆盖与目标日逐股覆盖分开统计，不能用单股最大归档日代表全部股票。"""
         expected_sql, args = self._coverage_sql([code] if code else None)
         frame = self.c.query_df(
+            f"WITH expected AS ({expected_sql}),target AS (SELECT max(trade_date) AS target_date FROM expected) "
             "SELECT min(monitoring_start) monitoring_start,max(trade_date) target_end,"
             "max(trade_date) FILTER(WHERE point_count>0) archive_end,"
             "count(DISTINCT code) stocks,count(*) expected_days,"
             "count(*) FILTER(WHERE status='ready') complete_days,"
             "count(*) FILTER(WHERE status='partial') partial_days,"
-            "count(*) FILTER(WHERE point_count=0) missing_days "
-            f"FROM ({expected_sql})",
+            "count(*) FILTER(WHERE point_count=0) missing_days,"
+            "count(*) FILTER(WHERE trade_date=(SELECT target_date FROM target)) latest_expected_stocks,"
+            "count(*) FILTER(WHERE trade_date=(SELECT target_date FROM target) AND status='ready') latest_complete_stocks "
+            "FROM expected",
             args,
         )
-        return json.loads(frame.to_json(orient="records", date_format="iso"))[0]
+        result = json.loads(frame.to_json(orient="records", date_format="iso"))[0]
+        # 全表 COUNT(*) 由 DuckDB 计数；不加载分钟明细，也不把逐日覆盖数当分钟行数。
+        scope, params = (" WHERE code=?", [code]) if code else ("", [])
+        result["bar_rows"] = int(self.c.query_df(
+            "SELECT count(*) n FROM stock_intraday_bar" + scope, params,
+        ).iloc[0].n)
+        return result

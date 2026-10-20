@@ -10,6 +10,7 @@ import { useStockSet } from '@/stores/stockSet'
 
 const layoutMockState = vi.hoisted(() => ({
   hiddenColumnsBySlot: {} as Record<string, string[]>,
+  visibleItems: undefined as string[] | undefined,
 }))
 
 vi.mock('@/composables/useRemoteLayoutConfig', () => ({
@@ -22,6 +23,7 @@ vi.mock('@/composables/useRemoteLayoutConfig', () => ({
     isDirty: ref(false),
     resetAll: vi.fn(),
     componentValueOf: vi.fn((slot: string, field: string) => {
+      if (field === 'visibleItems') return layoutMockState.visibleItems
       if (field === 'hiddenColumns') return layoutMockState.hiddenColumnsBySlot[slot] ?? []
       if (field === 'pageSize') return 50
       if (field === 'border') return false
@@ -193,6 +195,8 @@ const router = createRouter({
   routes: [
     { path: '/', component: { template: '<div />' } },
     { path: '/stocks/:code', component: { template: '<div />' } },
+    { path: '/data/ingest', component: { template: '<div />' } },
+    { path: '/data/quality', component: { template: '<div />' } },
   ],
 })
 
@@ -256,7 +260,7 @@ const stubs = {
   PageSettingSection: { template: '<section><slot/></section>' },
   PageSegmented: true,
   PageToggleRow: true,
-  HelpTip: { template: '<span><slot/></span>' },
+  HelpTip: { props: ['testId'], template: '<span :data-testid="testId"><slot/></span>' },
   AssetProfileLabel: { template: '<span>{{ name }}</span>', props: ['name'] },
   AssetVisibilityActions: true,
   AssetVisibilityTag: true,
@@ -298,6 +302,7 @@ async function mountView(
 beforeEach(() => {
   vi.clearAllMocks()
   layoutMockState.hiddenColumnsBySlot = {}
+  layoutMockState.visibleItems = undefined
   localStorage.clear()
   document.body.innerHTML = ''
   ;(scoreApi.getIndicatorRegistry as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -692,6 +697,55 @@ describe('代表性页面四态回归', () => {
     const wrapper = await mountView(OverviewView)
     expect(wrapper.text()).toContain('数据概览加载失败')
     expect(wrapper.text()).toContain('overview failed')
+  })
+
+  it.each([false, true])('分时概览承接未监控和已有缺口，点击进入对应入口（监控=%s）', async (monitored) => {
+    ;(dataApi.getOverview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      latest_trade_date: '2026-10-19', codes: { active: 2, delisted: 0 }, bar_rows: 4,
+      quality: { score: 100, open: 0, by_severity: {}, by_layer: [] },
+      gaps: { stocks_with_gap: 0, gap_days_total: 0 }, last_scan_at: null,
+      intraday: {
+        bar_rows: monitored ? 720 : 0, stocks: monitored ? 2 : 0,
+        monitoring_start: monitored ? '2026-10-16' : null,
+        target_end: monitored ? '2026-10-19' : null, archive_end: monitored ? '2026-10-19' : null,
+        complete_days: monitored ? 3 : 0, partial_days: 0, missing_days: monitored ? 1 : 0,
+        latest_complete_stocks: monitored ? 1 : 0, latest_expected_stocks: monitored ? 2 : 0,
+      },
+    })
+    const wrapper = await mountView(OverviewView)
+    const card = wrapper.get('[data-testid="overview-intraday-card"]')
+    if (monitored) {
+      expect(card.text()).toContain('720')
+      expect(card.text()).toContain('缺失 1 个股票交易日')
+      expect(card.text()).toContain('2026-10-19 完整 1 / 2 只')
+      expect(wrapper.text()).toContain('分时监控自 2026-10-16')
+    } else {
+      expect(card.text()).toContain('0 行')
+      expect(card.text()).toContain('尚未开始监控')
+    }
+    const push = vi.spyOn(router, 'push')
+    await wrapper.get('[data-testid="overview-intraday-help"]').trigger('click')
+    expect(push).not.toHaveBeenCalled()
+    await card.trigger('click')
+    expect(push).toHaveBeenLastCalledWith(monitored
+      ? { path: '/data/quality', query: { issue_type: 'intraday_gap,intraday_partial,intraday_invalid' } }
+      : { path: '/data/ingest', query: { task_type: 'intraday_ingest' } })
+    wrapper.unmount()
+  })
+
+  it('概览分时指标遵循已有显示设置，不覆盖用户选择', async () => {
+    layoutMockState.visibleItems = ['barRows']
+    ;(dataApi.getOverview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      latest_trade_date: '2026-10-19', codes: { active: 2, delisted: 0 }, bar_rows: 4,
+      quality: { score: 100, open: 0, by_severity: {}, by_layer: [] },
+      gaps: { stocks_with_gap: 0, gap_days_total: 0 }, last_scan_at: null,
+      intraday: { bar_rows: 720, stocks: 2 },
+    })
+    const wrapper = await mountView(OverviewView)
+    expect(wrapper.find('[data-testid="overview-intraday-card"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('日线总行数')
+    expect(layoutMockState.visibleItems).toEqual(['barRows'])
+    wrapper.unmount()
   })
 
   it('数据概览的逐股质量失败只落在局部错误态', async () => {
