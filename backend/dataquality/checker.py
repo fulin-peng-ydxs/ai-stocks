@@ -148,6 +148,7 @@ def mv_inverted_sql(total_mv: str = "total_mv", float_mv: str = "float_mv") -> s
 
 # 质检问题严重度映射（DM-D10）：复权跳变最伤回测=high；修补痕迹=low；其余=mid。
 SEVERITY_BY_TYPE: dict[str, str] = {
+    "intraday_gap": "mid", "intraday_partial": "mid", "intraday_invalid": "high",
     "adj_jump": "high",
     "abnormal_change": "mid",
     "price_volume_mismatch": "high",
@@ -193,6 +194,7 @@ QUALITY_LAYERS: list[dict] = [
     {"layer": "L4", "name_cn": "覆盖鲜活", "desc": "存续期无缺口、数据更新到最新交易日"},
 ]
 ISSUE_LAYER: dict[str, str] = {
+    "intraday_gap": "分时", "intraday_partial": "分时", "intraday_invalid": "分时",
     "null_close": "L1",
     "ohl_repaired": "L1",
     "mv_missing": "L2",
@@ -237,13 +239,14 @@ ST_ISSUE_TYPES: tuple[str, ...] = (
 # 「标记正常」的精确豁免类型：只豁免同一对象、同一问题类型、同一交易日。
 # 其余状态型问题按对象与类型整体豁免，避免各扫描/采集入口自行写死而产生口径分叉。
 EXACT_IGNORE_ISSUE_TYPES: frozenset[str] = frozenset(
-    L1_ISSUE_TYPES + L3_ISSUE_TYPES
+    L1_ISSUE_TYPES + L3_ISSUE_TYPES + ("intraday_gap", "intraday_partial", "intraday_invalid")
     + ("market_index_gap_daily", "market_index_invalid",
        "board_index_gap_daily", "board_index_invalid")
 )
 # 能进入质检台账的完整问题类型集。调度、恢复参数校验统一复用这一契约，
 # 避免新增质量层问题后只能手工处理。
 QUALITY_ISSUE_TYPES: tuple[str, ...] = (
+    ("intraday_gap", "intraday_partial", "intraday_invalid") +
     L1_ISSUE_TYPES + L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES + ST_ISSUE_TYPES + ("capital_raw_invalid",)  # 仅清理旧台账
     + ("market_index_gap", "market_index_gap_daily", "market_index_invalid",
        "board_index_gap", "board_index_gap_daily", "board_index_invalid", "board_member_incomplete",

@@ -21,7 +21,11 @@ def _ping(name: str, timeout: float) -> tuple[bool, str | None]:
     old = socket.getdefaulttimeout()
     socket.setdefaulttimeout(timeout)
     try:
-        if name == "ths_board":
+        if name.startswith("intraday_"):
+            from backend.services.intraday_source import IntradaySourceService
+            quotes = IntradaySourceService()
+            df = quotes._fetch_provider(quotes.source_factory(), "600000.SH", name.removeprefix("intraday_"))
+        elif name == "ths_board":
             from backend.datasource.ths_board import ThsBoardSource
 
             df = ThsBoardSource(timeout=timeout, max_retries=1).get_board_dict("industry")
@@ -47,7 +51,8 @@ def source_status(
     """返回各数据源状态；探活结果持久化，普通查询直接读取最近记录。"""
     s = get_effective_settings().datasource
     timeout = float(s.socket_timeout_sec)
-    roles = [(s.primary, "primary"), (s.fallback, "fallback"), ("ths_board", "board")]
+    roles = [(s.primary, "primary"), (s.fallback, "fallback"), ("ths_board", "board"),
+             ("intraday_sina", "intraday"), ("intraday_eastmoney", "intraday")]
     repo = repo or DataSourceHealthRepository()
     records = repo.list(list(dict.fromkeys(name for name, _role in roles)))
     out = []
@@ -78,7 +83,7 @@ def source_status(
             "last_test_at": record.get("last_test_at"),
             "last_success_at": record.get("last_success_at"),
             "failure_reason": record.get("failure_reason"),
-            "timeout_sec": timeout,
+            "timeout_sec": get_effective_settings().intraday.request_timeout_sec if name.startswith("intraday_") else timeout,
         }
         if name == "ths_board":
             from backend.services.ths_cookie_status import ths_cookie_status

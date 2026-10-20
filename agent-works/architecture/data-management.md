@@ -8,13 +8,13 @@
 
 ### 数据源适配（`backend/datasource/`）
 - 主源 **AKShare**（新浪日线/指数/日历/股票列表 + 东财单只估值 `stock_value_em`）、备源 **baostock**（退市股历史、复权因子兜底）。能力按 `capabilities` 声明，编排层 `IngestionService._source_for(capability)` 按能力选源（主源支持→主源，否则备源），不硬编码"谁负责什么"。
-- 个股分时是独立的按需读链路：`intraday_1m` 由新浪近期 1 分钟窗口提供、东财近 5 日兜底，经 Redis 12 小时窗口缓存供日 K 下钻；不进入 `IngestionService`、不落库、不参与质检与回测。详见 [stock-intraday.md](stock-intraday.md)。
+- 个股分时拥有独立的归档采集与按需读链路：`intraday_1m` 由新浪近期 1 分钟窗口提供、东财近 5 日兜底，通过 intraday_ingest 异步任务按统一北京时间 EOD 边界将分钟行情和逐日覆盖保存到 DuckDB，供历史日 K 下钻；查询只读已采集归档，Redis 仅缓存数据库事实；缺失数据由本模块统一采集、解释及修复，不参与分钟回测。分时整日缺失、分钟不完整、数据非法使用独立质量层，进入统一台账和修复复检。详见 [stock-intraday.md](stock-intraday.md)。
 - 统一封装**限流**（`rate_limited`，按生效配置 `rate_limit_per_sec`；已被外部锁全进程串行的路径传 `start_to_start=True`，按调用起始记时，使配置速率不再被请求往返二次拉低）、**重试**（`with_retry`，指数退避）、**超时**（模块级注入 requests 默认超时）、**挂起看门狗**（baostock 源端丢弃连接时其客户端会空转且不抛错，超阈值即断开会话使调用按失败重试）、**兜底**（主源取空→备源）、**溯源**（`data_source_provenance` 记录每段数据来自哪个源）。Baostock 同时提供与日线日期对齐的历史 `isST`；完整闭环见 [st-status.md](st-status.md)。
 - 调度页“测试连通”按数据源写入 PostgreSQL `data_source_health`：保存最近测试状态、测试时间、失败原因与最近成功时间。普通页面刷新只读取该运行态，不重复访问外部源；失败测试保留上一次成功时间，页面刷新和后端重启都不得清空记录。
 
 ### 双库数据资产目录（`backend/storage/catalog.py`）
 
-- `GET /api/data/catalog` 面向系统管理员自动发现 DuckDB `main` 与 PostgreSQL `public` 的物理表和字段，并在服务层合并；两库之间不执行跨库 JOIN。当前迁移完成态包含 89 张当前事实表（DuckDB 29、PostgreSQL 60）和 28 张默认隐藏的 DuckDB 迁移旧表。
+- `GET /api/data/catalog` 面向系统管理员自动发现 DuckDB `main` 与 PostgreSQL `public` 的物理表和字段，并在服务层合并；两库之间不执行跨库 JOIN。当前迁移完成态包含 94 张当前事实表（DuckDB 34、PostgreSQL 60）和 28 张默认隐藏的 DuckDB 迁移旧表。
 - 系统目录提供原生类型、可空性、默认值、主键、外键和数据库列注释；代码维护中文名、用途、业务分类、归属范围、数据源、关系、鲜活度策略与质量策略。字段中文名和说明按“表级显式注解 → 数据库列注释/公共词典 → 命名规则生成”解析，并返回来源；任何未识别字段保留为 `fallback`，由目录契约阻断。未登记的新物理表仍以 `unregistered` 展示，不能因缺注解而消失。
 - 列表行数使用数据库系统目录的快速估算；只有明确指定 `database + table` 时才允许单表 `COUNT(*)` 精确统计。表名先通过发现结果白名单校验；DuckDB 只报告数据库文件总大小，PostgreSQL 另报告表及索引空间。
 - 生命周期为 `active | legacy_readonly | unregistered`。任务运行态复用 `task_runtime_backend()`，平台布局配置复用配置迁移路由函数；受控回滚后事实源和旧表状态随真实 marker 自动切换，不维护第二套路由判断。
@@ -451,3 +451,11 @@ flowchart LR
 质量页面的退市操作要求正式退市日期和依据，显示当前日期、接口日期、最后行情日期；不能使用问题发生日或最后交易日默认代填。已解决的历史缺口记录仍提供修正入口。提交后等待互斥修复任务完成，支持撤销人工覆盖并恢复接口值；仅真正通过复检的问题关闭。
 
 停牌证据复查使用现有 `fix` 任务，参考价核验使用现有 `rebuild_price_factors`，不新增质量类型。源端失败与数据缺失分别通过任务结果和现有质量台账表达；停牌复查的 `unverified/errors` 非零或参考价 `unmatched/errors` 非零均不能表述为全部修复成功。七个新增字段及迁移说明见 `agent-works/stock-data-ingestion/ten-year-history/collection-evidence-migration.sql`，执行以 `storage/ddl.py` 为准。
+
+### 分时归档与质量闭环
+
+- stock_intraday_bar 按股票/交易日/分钟保存原始价格、手数、元金额及所选整日来源；stock_intraday_coverage 保存逐日监控目标、完整性、拒用诊断与缓存修订；stock_intraday_monitor 独立固定首次可采集窗口起点。质量、概览及逐股统计统一由起点和交易日历推导应有日期，包含没有逐日覆盖记录的历史缺口；不因源窗口滚动、空响应或覆盖记录丢失前移起点。历史及最新整日缺失共用 intraday_gap，持续检查其后的应有交易日；不要求此前十年分时历史。
+- 独立任务 intraday_ingest 支持全市场或指定股票、近期增量和日期区间重采；独立调度由管理员配置，默认关闭，不自动修改日线任务。任务/日志/调度仍在 PG，行情写任务互斥。
+- intraday_gap/intraday_partial/intraday_invalid 使用“分时”质量层，不混入日线四层评分。采集、质量扫描、实际修复复检和体检共用分钟契约；空响应和接口故障不作为停牌证据。源窗口外缺口保持待处理，不反复无效请求。
+- 数据概览展示分时监控起点、最新归档和完整/部分/缺失数量，逐股表展示独立覆盖；采集页和调度页共用 IntradayTaskScopeFields。源状态独立列示新浪分时、东财分时，仅显式测试时访问外网。
+- 升级留痕：agent-works/stock-data-ingestion/intraday-persistence/schema.sql。完整分钟、缓存和运维契约见 [stock-intraday.md](stock-intraday.md)。

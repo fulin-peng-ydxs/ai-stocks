@@ -34,7 +34,7 @@ _DEFAULT_AUDIT_CLEANUP_TIME = "03:30"
 
 # 可配成定时任务的类型：原子采集/维护/质检 + 按问题类型动态恢复。
 SCHEDULABLE_TASK_TYPES = (
-    "update", "backfill", "ingest_date", "stock_ingest", "recompute", "verify", "checkup", "fix", "enrich_basic",
+    "update", "backfill", "ingest_date", "stock_ingest", "intraday_ingest", "recompute", "verify", "checkup", "fix", "enrich_basic",
     "audit_cleanup", "board", "stock_board_correlation", "limit_ladder_invalidate",
 )
 _WEEKDAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]   # 1..7 → APScheduler 名称
@@ -640,6 +640,9 @@ class ScheduledJobService:
                 mode, normalized_params.get("date_start"), normalized_params.get("date_end"),
                 force_current_day,
             )
+        if task_type == "intraday_ingest":
+            from backend.services.intraday_contract import normalize_intraday_params
+            normalized_params = normalize_intraday_params(normalized_params)
         if task_type == "stock_ingest":
             from backend.services.stock_ingest import normalize_stock_ingest_params
 

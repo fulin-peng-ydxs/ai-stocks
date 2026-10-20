@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import { useAuthStore } from '@/stores/auth'
@@ -529,8 +530,8 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
                 <TradeDatePicker v-model="sessionConfig.range_start" placeholder="开始日" clearable />
                 <span>至</span>
                 <TradeDatePicker v-model="sessionConfig.range_end" placeholder="结束日" clearable />
-                <span class="hint">留空 = 全部历史</span>
               </div>
+              <AppFormHelp>留空 = 全部历史</AppFormHelp>
             </div>
             <div class="cfg-item">
               <label>板块</label>
@@ -541,8 +542,8 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           </div>
           <div class="cfg-actions">
             <el-button v-permission="'training:start'" type="primary" size="large" :loading="loading" @click="start">开始训练</el-button>
-            <span class="cfg-hint">回合数、连续交易日、初始资金等默认值可在右上角
-              <b class="hl" role="button" tabindex="0" v-keyboard-activate @click="settingsOpen = true">设置</b> 中调整</span>
+            <AppFormHelp>回合数、连续交易日、初始资金等默认值可在右上角
+              <b class="hl" role="button" tabindex="0" v-keyboard-activate @click="settingsOpen = true">设置</b> 中调整</AppFormHelp>
           </div>
         </el-card>
 
@@ -1018,10 +1019,8 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 .cfg-item label { font-size: var(--app-font-size-table); color: var(--el-text-color-secondary); }
 .cfg-item .lbl-tip { display: flex; align-items: center; }
 .cfg-item .range { display: flex; align-items: center; gap: var(--app-space-2); flex-wrap: wrap; }
-.cfg-item .hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-placeholder); }
 .cfg-actions { margin-top: 18px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: var(--app-space-2); }
-.cfg-hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
-.cfg-hint .hl { cursor: pointer; }
+.cfg-actions .hl { cursor: pointer; }
 .card-title { font-weight: var(--app-font-weight-section); }
 .card-sub { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); margin-left: 8px; }
 .hist-card { flex: 1 1 auto; min-height: 300px; display: flex; flex-direction: column; }

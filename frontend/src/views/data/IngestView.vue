@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import AppFormHelp from '@/components/AppFormHelp.vue'
+import { appendTaskLogs, taskLogMessage } from './taskLogs'
+import IntradayTaskScopeFields from '@/components/data/IntradayTaskScopeFields.vue'
+import { buildIntradayIngestParams, createIntradayIngestForm, type IntradayIngestForm } from '@/utils/intradayIngest'
+
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -192,7 +197,7 @@ function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
 }
 const TASK_TYPE_OPTIONS: { v: TaskType; l: string }[] = [
-  'stock_ingest', 'update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
+  'stock_ingest', 'intraday_ingest', 'update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
   'recompute', 'verify', 'checkup', 'fix', 'enrich_basic', 'board', 'stock_board_correlation',
   'limit_ladder_invalidate', 'limit_ladder_recompute', 'stock_special_trading_day',
 ].map((v) => ({ v: v as TaskType, l: TASK_LABEL[v as TaskType] }))
@@ -263,7 +268,7 @@ function logRowClass({ row }: { row: { status: string } }): string {
 const writeRunning = computed(() =>
   tasks.value.some((t) => ['pending', 'running'].includes(t.status)
     && ['update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
-      'verify', 'fix', 'enrich_basic', 'board', 'stock_ingest',
+      'verify', 'fix', 'enrich_basic', 'board', 'stock_ingest', 'intraday_ingest',
       'stock_board_correlation', 'limit_ladder_invalidate', 'limit_ladder_recompute',
       'stock_special_trading_day'].includes(t.task_type)))
 
@@ -296,7 +301,7 @@ function taskDuration(t: AsyncTask): string {
 // ── 采集执行对话框 ──
 const optDlg = ref(false)
 const optSubmitting = ref(false)
-const optType = ref<'stock_ingest' | 'board'>('stock_ingest')
+const optType = ref<'stock_ingest' | 'board' | 'intraday_ingest'>('stock_ingest')
 type OptionForm = {
   codes: string[]
   mode: 'backfill' | 'update'
@@ -307,11 +312,12 @@ type OptionForm = {
   board_date_start: string
   board_date_end: string
   stock: StockIngestFormValue
+  intraday: IntradayIngestForm
 }
 const defaultOptionForm = (): OptionForm => ({
   codes: [], mode: 'update', board_type: '', board_stages: ['dict', 'members', 'bar', 'fund'],
   force_members: false, board_force_current_day: false,
-  board_date_start: '', board_date_end: '', stock: createStockIngestForm(),
+  board_date_start: '', board_date_end: '', stock: createStockIngestForm(), intraday: createIntradayIngestForm(),
 })
 const optForm = ref<OptionForm>(defaultOptionForm())
 
@@ -365,7 +371,7 @@ async function remoteCode(q: string) {
   }
 }
 
-function openIngestExecution(type: 'stock_ingest' | 'board') {
+function openIngestExecution(type: 'stock_ingest' | 'board' | 'intraday_ingest') {
   optType.value = type
   optForm.value = defaultOptionForm()
   codeOptions.value = []
@@ -437,6 +443,10 @@ async function submitOptions() {
   const params: Record<string, unknown> = {}
   if (optType.value === 'stock_ingest') {
     const built = buildStockIngestParams(f.stock)
+    if (built.error) { ElMessage.warning(built.error); return }
+    Object.assign(params, built.params)
+  } else if (optType.value === 'intraday_ingest') {
+    const built = buildIntradayIngestParams(f.intraday)
     if (built.error) { ElMessage.warning(built.error); return }
     Object.assign(params, built.params)
   } else {
@@ -707,7 +717,7 @@ function pollLogs(id: string) {
       logTask.value = await getTask(id)
       const { logs: lines } = await getTaskLogs(id, lastSeq)
       if (lines.length) {
-        logs.value.push(...lines)
+        logs.value = appendTaskLogs(logs.value, lines)
         lastSeq = lines[lines.length - 1].seq
         if (autoScroll.value) requestAnimationFrame(() => {
           if (logBody.value?.viewport) logBody.value.viewport.scrollTop = logBody.value.viewport.scrollHeight
@@ -822,7 +832,7 @@ const menuPageTitle = useMenuPageTitle()
       <el-card shadow="never" class="blk">
         <template #header>
           <div class="blk-head"><span>数据采集</span>
-            <span class="app-caption-text">采集对象＝数据资产表中的：日线行情 / 市值指标 / 指数 / 交易日历 / 概念与行业板块。同类采集任务不可并发。</span></div>
+            <span class="app-caption-text">采集对象＝数据资产表中的：日线行情 / 分钟分时 / 市值指标 / 指数 / 交易日历 / 概念与行业板块。同类采集任务不可并发。</span></div>
         </template>
         <div class="act-grid">
           <div class="act">
@@ -831,6 +841,13 @@ const menuPageTitle = useMenuPageTitle()
             <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning"
                        data-testid="manual-stock-ingest"
                        @click="openIngestExecution('stock_ingest')">手动执行</el-button>
+          </div>
+          <div class="act">
+            <div class="act-t">分时采集</div>
+            <div class="act-d">已收盘1分钟分时 / 近期补采 / 区间重采 / 长期归档</div>
+            <el-button v-permission="'data-task:manage'" type="primary" plain size="small"
+                       :disabled="writeRunning" data-testid="manual-intraday-ingest"
+                       @click="openIngestExecution('intraday_ingest')">手动执行</el-button>
           </div>
           <div class="act">
             <div class="act-t">板块采集</div>
@@ -1105,6 +1122,11 @@ const menuPageTitle = useMenuPageTitle()
       data-testid="ingest-options-dialog"
     >
       <el-form label-width="92px">
+        <IntradayTaskScopeFields
+          v-if="optType === 'intraday_ingest'"
+          v-model="optForm.intraday"
+          test-id-prefix="ingest-intraday"
+        />
         <StockIngestScopeFields
           v-if="optType === 'stock_ingest'"
           v-model="optForm.stock"
@@ -1123,24 +1145,22 @@ const menuPageTitle = useMenuPageTitle()
           test-id-prefix="ingest-board"
         />
         <el-form-item v-if="optType === 'board'" label="指定板块">
-          <div class="app-inline-info app-inline-info--fill">
-            <AppSelect
-              v-model="optForm.codes"
-              multiple
-              filterable
-              remote
-              clearable
-              collapse-tags
-              :remote-method="remoteCode"
-              :loading="codeOptLoading"
-              :reserve-keyword="false"
-              placeholder="输入板块代码或名称搜索"
-              width="fill"
-            >
-              <el-option v-for="o in codeOptions" :key="o.code" :label="o.label" :value="o.code" />
-            </AppSelect>
-            <span class="app-caption-text">可多选；留空=全部板块</span>
-          </div>
+          <AppSelect
+            v-model="optForm.codes"
+            multiple
+            filterable
+            remote
+            clearable
+            collapse-tags
+            :remote-method="remoteCode"
+            :loading="codeOptLoading"
+            :reserve-keyword="false"
+            placeholder="输入板块代码或名称搜索"
+            width="fill"
+          >
+            <el-option v-for="o in codeOptions" :key="o.code" :label="o.label" :value="o.code" />
+          </AppSelect>
+          <AppFormHelp>可多选；留空=全部板块</AppFormHelp>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -1248,7 +1268,7 @@ const menuPageTitle = useMenuPageTitle()
       <AppScrollArea ref="logBody" class="log-body">
         <div v-for="l in logs" :key="l.seq" class="log-line" :class="l.level">
           <span class="lt">{{ (l.ts || '').slice(11, 19) }}</span>
-          <span class="lm">{{ l.message }}</span>
+          <span class="lm">{{ taskLogMessage(l.message) }}</span>
         </div>
         <div v-if="!logs.length" class="app-empty-inline">暂无日志…</div>
       </AppScrollArea>

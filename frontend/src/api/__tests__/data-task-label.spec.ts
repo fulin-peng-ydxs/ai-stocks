@@ -113,7 +113,7 @@ describe('taskDisplayLabel', () => {
     expect(ingest).toContain("q.task_type === 'stock_ingest' && typeof q.recipe === 'string'")
     expect(ingest).not.toContain('本次只按以上参数立即执行')
     expect(ingest).not.toContain('manual-result-execution-scope')
-    expect(ingest.match(/>手动执行<\/el-button>/g)).toHaveLength(5)
+    expect(ingest.match(/>手动执行<\/el-button>/g)).toHaveLength(6)
     expect(ingest).not.toContain('>配置采集</el-button>')
     expect(ingest).toContain('data-testid="manual-stock-ingest"')
     expect(ingest).toContain('data-testid="manual-board-ingest"')

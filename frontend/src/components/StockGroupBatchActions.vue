@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { ref } from 'vue'
@@ -159,14 +160,14 @@ async function removeFromGroup(): Promise<void> {
       </el-form-item>
       <el-form-item label="建组日期">
         <TradeDatePicker v-model="createForm.group_date" placeholder="默认最新交易日" clearable style="width: 200px" />
-        <span class="stock-batch-hint">这批股票加入日期默认 = 建组日期（涨幅基准）</span>
+        <AppFormHelp>这批股票加入日期默认 = 建组日期（涨幅基准）</AppFormHelp>
       </el-form-item>
       <el-form-item label="分组说明">
         <el-input v-model="createForm.description" type="textarea" :rows="2" placeholder="可选" />
       </el-form-item>
       <el-form-item label="颜色">
         <el-color-picker v-model="createForm.color" :predefine="STOCK_GROUP_COLOR_PRESETS" />
-        <span class="stock-batch-hint">用于列表标签和分组状态识别</span>
+        <AppFormHelp>用于列表标签和分组状态识别</AppFormHelp>
       </el-form-item>
     </el-form>
     <div class="stock-batch-codes">
@@ -191,7 +192,7 @@ async function removeFromGroup(): Promise<void> {
       </el-form-item>
       <el-form-item label="加入日期">
         <TradeDatePicker v-model="addDate" placeholder="默认最新交易日" clearable style="width: 200px" />
-        <span class="stock-batch-hint">作为这批股票的涨幅基准</span>
+        <AppFormHelp>作为这批股票的涨幅基准</AppFormHelp>
       </el-form-item>
     </el-form>
     <div class="stock-batch-codes">将加入 {{ selected.length }} 只（已在组内的保留原加入日期）</div>
@@ -209,7 +210,7 @@ async function removeFromGroup(): Promise<void> {
 .stock-batch-count { font-size: var(--app-font-size-table); white-space: nowrap; padding-top: 2px; }
 .stock-batch-count b { color: var(--market-up-color); font-size: var(--app-font-size-data); line-height: var(--app-line-height-data); font-weight: var(--app-font-weight-section); }
 .stock-batch-chips { --app-scroll-display: flex; --app-scroll-wrap: wrap; --app-scroll-gap: var(--app-space-control-gap); max-height: 64px; }
-.stock-batch-more, .stock-batch-hint { color: var(--app-muted-text); font-size: var(--app-font-size-caption); }
+.stock-batch-more { color: var(--app-muted-text); font-size: var(--app-font-size-caption); }
 .stock-batch-more { align-self: center; }
 .stock-batch-ops { display: flex; gap: var(--app-space-2); align-items: center; flex-shrink: 0; }
 .stock-batch-codes { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); margin-top: 4px; }

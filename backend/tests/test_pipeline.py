@@ -718,13 +718,14 @@ def test_source_status_includes_board_source(monkeypatch):
 
     monkeypatch.setattr(
         data_sources, "get_effective_settings",
-        lambda: SimpleNamespace(datasource=SimpleNamespace(
+        lambda: SimpleNamespace(intraday=SimpleNamespace(request_timeout_sec=15), datasource=SimpleNamespace(
             primary="akshare", fallback="baostock", socket_timeout_sec=3)),
     )
     monkeypatch.setattr(ths_cookie_status, "ths_cookie_status", lambda **_kwargs: {})
     result = data_sources.source_status(do_ping=False, repo=_Repo())
     roles = {item["source"]: item["role"] for item in result["sources"]}
-    assert roles == {"akshare": "primary", "baostock": "fallback", "ths_board": "board"}
+    assert roles == {"akshare": "primary", "baostock": "fallback", "ths_board": "board",
+                     "intraday_sina": "intraday", "intraday_eastmoney": "intraday"}
 
 
 def test_source_status_persists_latest_probe_and_keeps_last_success(monkeypatch):
@@ -763,11 +764,11 @@ def test_source_status_persists_latest_probe_and_keeps_last_success(monkeypatch)
     monkeypatch.setattr(
         data_sources,
         "get_effective_settings",
-        lambda: SimpleNamespace(datasource=SimpleNamespace(
+        lambda: SimpleNamespace(intraday=SimpleNamespace(request_timeout_sec=15), datasource=SimpleNamespace(
             primary="akshare", fallback="baostock", socket_timeout_sec=3)),
     )
     monkeypatch.setattr(ths_cookie_status, "ths_cookie_status", lambda **_kwargs: {})
-    results = iter([(False, "连接超时"), (True, None), (True, None)])
+    results = iter([(False, "连接超时"), (True, None), (True, None), (True, None), (False, "分钟源连接失败")])
     monkeypatch.setattr(data_sources, "_ping", lambda *_args: next(results))
 
     tested = data_sources.source_status(do_ping=True, repo=repo)

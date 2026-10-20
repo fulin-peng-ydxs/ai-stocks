@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -420,7 +421,8 @@ const menuPageTitle = useMenuPageTitle()
             <el-input v-model="form.name" placeholder="全局唯一" />
           </el-form-item>
           <el-form-item v-if="isEdit" label="租户 ID">
-            <span class="locked-field mono">{{ editing?.id }}<span class="muted">（系统生成，不可改）</span></span>
+            <span class="locked-field mono">{{ editing?.id }}</span>
+            <AppFormHelp>系统生成，不可改</AppFormHelp>
           </el-form-item>
           <el-form-item v-if="isEdit" label="租户管理员">
             <AppSelect

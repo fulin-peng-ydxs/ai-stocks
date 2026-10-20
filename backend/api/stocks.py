@@ -374,7 +374,7 @@ def stock_bars(code: str, adjust: str = "qfq", lookback: int = 250,
     dependencies=[Depends(require_perm("stocks:view"))],
 )
 def stock_intraday(code: str, trade_date: date) -> ApiResponse:
-    """按需返回近期交易日的 1 分钟不复权分时；只读本地门禁，源数据仅缓存 Redis。"""
+    """返回1分钟不复权分时；只读归档及其缓存，缺失由数据管理采集。"""
     try:
         return ok(IntradayQuoteService().get(code, trade_date))
     except IntradayServiceUnavailable as exc:

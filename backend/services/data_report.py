@@ -482,6 +482,10 @@ class DataIntegrityReport:
         df = df.sort_values("code")
         total = len(df)
         page_df = df.iloc[int((page - 1) * size): int((page - 1) * size + size)]
+        from backend.services.intraday_archive import IntradayArchiveService
+
+        minute_rows = IntradayArchiveService(self.c).summary_by_stock(page_df.code.tolist())
+        minute_map = {r["code"]: r for r in minute_rows}
         out = []
         for _, r in page_df.iterrows():
             l1, l3 = int(r["l1_open"]), int(r["l3_open"])
@@ -494,6 +498,7 @@ class DataIntegrityReport:
                 "code": r["code"], "name": r["name"], "latest_date": r["latest_date"],
                 "is_fresh": bool(r["is_fresh"]), "total_mv_ok": l2_ok, "gap_days": gap,
                 "open_issues": int(r["open_total"]),
+                "intraday": minute_map.get(r["code"]),
                 "layers": {
                     "L1": {"name_cn": "入库闸门", "ok": l1 == 0, "issues": l1,
                            "breakdown": r["l1_breakdown"]},
@@ -826,6 +831,8 @@ class DataIntegrityReport:
             CapitalQualityService(self.c).reclassify_legacy()
             self._upsert_scan_issues(issue_rows, tuple(t for t in SCAN_ISSUE_TYPES
                                                    if t not in ("mv_missing", "mv_gap", "mv_invalid", "data_gap")))
+        from backend.services.intraday_archive import IntradayArchiveService
+        intraday_counts = IntradayArchiveService(self.c).sync()
         active_rows = self.c.query_df(
             f"SELECT issue_type, count(*) AS n FROM data_quality_issue WHERE status='open' "
             f"AND issue_type IN ({','.join('?' * len(SCAN_ISSUE_TYPES))}) GROUP BY issue_type",
@@ -837,6 +844,7 @@ class DataIntegrityReport:
             for issue_type in SCAN_ISSUE_TYPES
         }
         return {
+            "intraday": intraday_counts,
             "abnormal_change_rows": inserted_counts["abnormal_change"],
             "price_volume_mismatch_rows": inserted_counts["price_volume_mismatch"],
             "adj_jump_rows": inserted_counts["adj_jump"],
@@ -1312,6 +1320,10 @@ class DataIntegrityReport:
     def recheck_clean(self, issue_type: str, code: str | None, trade_date: date | None,
                       window_days: int = GAP_WINDOW_DAYS, detail: str | dict | None = None) -> bool:
         """复检：该 (类型,股,日期) 的问题现在是否已不存在。True=已恢复，可置 resolved。"""
+        from backend.services.intraday_contract import INTRADAY_ISSUE_TYPES
+        if issue_type in INTRADAY_ISSUE_TYPES:
+            from backend.services.intraday_archive import IntradayArchiveService
+            return IntradayArchiveService(self.c).clean(issue_type, code, trade_date)
         from backend.services.capital_quality import CAPITAL_ISSUE_TYPES, CapitalQualityService
         if issue_type in CAPITAL_ISSUE_TYPES:
             return CapitalQualityService(self.c).clean(issue_type, code)

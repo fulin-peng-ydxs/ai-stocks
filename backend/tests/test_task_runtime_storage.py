@@ -157,3 +157,21 @@ def test_migration_status_does_not_initialize_duckdb(monkeypatch):
         duck=object(), pg=MarkerlessPg()
     )
     assert report["state"] is None
+
+
+@pytest.mark.parametrize('checkpoint,expected', [
+    ({'phase': '分时采集', 'phase_done': 56, 'phase_total': 100,
+      'intraday_scope': {'codes': ['a'] * 100}, 'intraday_done': ['a'],
+      'intraday_failed': {'b': 'offline'}}, '已成功完成 1/100 只，1 只失败待重试'),
+    ({'phase_done': 0, 'phase_total': 10}, '已处理 0/10 项'),
+    ({'done': 3, 'total': 8}, '已处理 3/8 项'),
+    ({'done': 3}, '已处理 3 项（总数未记录）'),
+    ({'phase': '读取数据'}, '未记录处理计数'),
+])
+def test_resume_log_counts_are_compatible_without_placeholder(checkpoint, expected):
+    from backend.services.async_task import _resume_message
+
+    task_type = 'intraday_ingest' if 'intraday_scope' in checkpoint else 'backfill'
+    message = _resume_message(task_type, checkpoint)
+    assert expected in message
+    assert 'None' not in message and '?' not in message

@@ -772,7 +772,7 @@ class DataVerifier:
             "在市股·总市值不低于流通市值（万分之一容差）",
             live_mv_inverted.total == 0,
             f"全历史异常 {live_mv_inverted.total} 行；近90交易日台账范围 {recent_mv_inverted} 行",
-            "结构体检和统一股本市值台账覆盖全部已有年份；旧 mv_invalid 仅保留近90日兼容复检，"
+            "结构体检和全历史股本市值台账覆盖全部已有年份；旧 mv_invalid 仅保留近90日兼容复检，"
             "全历史异常可在 capital_invalid 台账中处理。",
             findings=[live_mv_inverted],
         )
@@ -1165,6 +1165,24 @@ class DataVerifier:
             findings=[unsupported_benchmark_dates],
         )
 
+    def check_intraday(self) -> None:
+        from backend.services.intraday_archive import IntradayArchiveService
+        archive = IntradayArchiveService(self.c)
+        self._cur_group = "分时归档"
+        invalid = archive.invalid_facts()
+        self._check("分钟结构与价格量额", invalid.empty,
+                    f"异常股票交易日 {len(invalid)} 项",
+                    help_text="在分时数据质量台账中定位并重采；源窗口外保留待处理。",
+                    evidence=[self._frame_evidence("异常股票交易日", invalid.head(20), len(invalid))])
+        rows = archive.issues()
+        counts = {kind: sum(r["issue_type"] == kind for r in rows)
+                  for kind in ("intraday_gap", "intraday_partial", "intraday_invalid")}
+        if any(counts.values()):
+            self._warn("分时监控范围覆盖", str(counts),
+                       help_text="质量范围从独立固定的首次可采集窗口起算，含没有逐日覆盖记录的历史缺口，不要求此前十年分钟历史；在质量台账中处置。")
+        else:
+            self._check("分时监控范围覆盖", True, "监控范围暂无分时质量问题")
+
     def run(self, cross: bool = True) -> bool:
         print("=" * 64)
         print("数据正确性 + 完整性 系统性核查")
@@ -1176,6 +1194,7 @@ class DataVerifier:
         self.check_board()
         self.check_stock_board_correlation()
         self.check_calendar_readiness()
+        self.check_intraday()
         if cross:
             self.cross_validate()
         passed = sum(1 for item in self._structured if item["status"] == "pass")
@@ -1204,6 +1223,7 @@ class DataVerifier:
         self.check_board()
         self.check_stock_board_correlation()
         self.check_calendar_readiness()
+        self.check_intraday()
         if cross:
             self.cross_validate()
         groups: dict[str, list] = {}

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppFormHelp from '@/components/AppFormHelp.vue'
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowRight } from '@element-plus/icons-vue'
@@ -183,8 +184,8 @@ async function quickSubmit(): Promise<void> {
       <el-form v-if="pendingRule?.max_positions != null" label-position="top">
         <el-form-item label="当日最大同时持仓数" required>
           <el-input-number v-model="peakPositions" :min="0" :max="2147483647" :precision="0" :controls="false" :disabled="Boolean(submittingRuleId)" data-testid="quick-peak-positions" />
+          <AppFormHelp>规则上限 {{ pendingRule.max_positions }} 只；无操作也可能仍有持仓，请按当日实际峰值确认。</AppFormHelp>
         </el-form-item>
-        <p class="app-caption-text">规则上限 {{ pendingRule.max_positions }} 只；无操作也可能仍有持仓，请按当日实际峰值确认。</p>
         <p v-if="countError" class="quick-rule-error" role="alert">{{ countError }}。请进入“去打卡”记录实际情况。</p>
       </el-form>
       <p v-if="actionErrorRuleId === pendingRule?.rule_id" class="quick-rule-error" role="alert">{{ actionErrorMessage }}</p>

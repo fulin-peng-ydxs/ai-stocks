@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppFormHelp from '@/components/AppFormHelp.vue'
 import { computed } from 'vue'
 import {
   BOARD_STAGE_OPTIONS,
@@ -41,19 +42,17 @@ const includesMembers = computed(() => props.stages.includes('members'))
 
 <template>
   <el-form-item label="采集模式" required>
-    <div class="app-inline-info">
-      <PageSegmented
-        :model-value="mode"
-        :test-id="`${testIdPrefix}-mode`"
-        :options="[
-          { label: '增量', value: 'update' },
-          { label: '全量回填', value: 'backfill' },
-        ]"
-        aria-label="板块采集模式"
-        @update:model-value="$emit('update:mode', $event as 'update' | 'backfill')"
-      />
-      <span class="app-caption-text">增量按各板块最新指数日期续采，全量回填扩展指数历史；两种模式都刷新资金流五个周期</span>
-    </div>
+    <PageSegmented
+      :model-value="mode"
+      :test-id="`${testIdPrefix}-mode`"
+      :options="[
+        { label: '增量', value: 'update' },
+        { label: '全量回填', value: 'backfill' },
+      ]"
+      aria-label="板块采集模式"
+      @update:model-value="$emit('update:mode', $event as 'update' | 'backfill')"
+    />
+    <AppFormHelp>增量按各板块最新指数日期续采，全量回填扩展指数历史；两种模式都刷新资金流五个周期</AppFormHelp>
   </el-form-item>
   <el-form-item label="板块类型" required>
     <PageSegmented
@@ -65,18 +64,16 @@ const includesMembers = computed(() => props.stages.includes('members'))
     />
   </el-form-item>
   <el-form-item label="采集内容" required>
-    <div class="app-inline-info">
-      <el-checkbox-group
-        :model-value="stages"
-        :data-testid="`${testIdPrefix}-stages`"
-        @update:model-value="$emit('update:stages', $event as BoardIngestStage[])"
-      >
-        <el-checkbox v-for="stage in BOARD_STAGE_OPTIONS" :key="stage.value" :value="stage.value">
-          {{ stage.label }}
-        </el-checkbox>
-      </el-checkbox-group>
-      <span class="app-caption-text">可按需组合；质检恢复会自动选择与问题类型对应的最小采集内容</span>
-    </div>
+    <el-checkbox-group
+      :model-value="stages"
+      :data-testid="`${testIdPrefix}-stages`"
+      @update:model-value="$emit('update:stages', $event as BoardIngestStage[])"
+    >
+      <el-checkbox v-for="stage in BOARD_STAGE_OPTIONS" :key="stage.value" :value="stage.value">
+        {{ stage.label }}
+      </el-checkbox>
+    </el-checkbox-group>
+    <AppFormHelp>可按需组合；质检恢复会自动选择与问题类型对应的最小采集内容</AppFormHelp>
   </el-form-item>
   <el-form-item v-if="includesMembers" label="成分刷新">
     <el-checkbox
@@ -104,16 +101,14 @@ const includesMembers = computed(() => props.stages.includes('members'))
       />
     </el-form-item>
     <el-form-item label="指数结束日">
-      <div class="app-inline-info">
-        <TradeDatePicker
-          :model-value="dateEnd"
-          :data-testid="`${testIdPrefix}-date-end`"
-          placeholder="留空=仅开始日"
-          clearable
-          @update:model-value="$emit('update:dateEnd', $event || '')"
-        />
-        <span class="app-caption-text">仅作用于板块指数；开始日留空时使用自动增量，指定区间时不执行当日就绪回退</span>
-      </div>
+      <TradeDatePicker
+        :model-value="dateEnd"
+        :data-testid="`${testIdPrefix}-date-end`"
+        placeholder="留空=仅开始日"
+        clearable
+        @update:model-value="$emit('update:dateEnd', $event || '')"
+      />
+      <AppFormHelp>仅作用于板块指数；开始日留空时使用自动增量，指定区间时不执行当日就绪回退</AppFormHelp>
     </el-form-item>
   </template>
 </template>

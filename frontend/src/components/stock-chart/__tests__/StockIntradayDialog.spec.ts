@@ -99,13 +99,14 @@ describe('StockIntradayDialog', () => {
     expect(wrapper.text()).toContain('成交额3,610')
   })
 
-  it('超范围显示免费源日期说明，不渲染图表', async () => {
+  it('兼容旧范围状态，统一说明尚未采集并交由数据管理解释', async () => {
     vi.mocked(getIntraday).mockResolvedValue({ ...ready, status: 'out_of_range', points: [] })
     const wrapper = mountDialog()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('该日期超出免费源范围')
-    expect(wrapper.text()).toContain('2026-09-01 至 2026-09-10')
+    expect(wrapper.text()).toContain('该交易日尚未采集分时数据')
+    expect(wrapper.text()).toContain('数据管理')
+    expect(wrapper.text()).not.toMatch(/免费|源范围|2026-09-01|缓存/)
     expect(wrapper.findComponent(ChartStub).exists()).toBe(false)
   })
 
@@ -116,7 +117,7 @@ describe('StockIntradayDialog', () => {
 
     expect(wrapper.findComponent(ChartStub).exists()).toBe(true)
     expect(wrapper.findComponent(NoticeStub).props('tone')).toBe('info')
-    expect(wrapper.html()).toContain('免费源返回的分钟点可能不完整')
+    expect(wrapper.html()).toContain('该交易日分时数据采集不完整')
   })
 
   it('无成交数据显示就地空态', async () => {
@@ -124,7 +125,7 @@ describe('StockIntradayDialog', () => {
     const wrapper = mountDialog()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('该交易日暂无分时数据')
+    expect(wrapper.text()).toContain('该交易日尚未采集分时数据')
     expect(wrapper.findComponent(ChartStub).exists()).toBe(false)
   })
 
@@ -177,7 +178,7 @@ describe('StockIntradayDialog', () => {
 
   it('503 使用弹窗内错误态并支持重试', async () => {
     vi.mocked(getIntraday)
-      .mockRejectedValueOnce(new Error('免费分时源暂时不可用'))
+      .mockRejectedValueOnce(new Error('分时数据暂时不可用'))
       .mockResolvedValueOnce(ready)
     const wrapper = mountDialog()
     await flushPromises()

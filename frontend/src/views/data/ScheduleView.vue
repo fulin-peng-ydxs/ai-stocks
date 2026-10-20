@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import AppFormHelp from '@/components/AppFormHelp.vue'
+import IntradayTaskScopeFields from '@/components/data/IntradayTaskScopeFields.vue'
+import { buildIntradayIngestParams, createIntradayIngestForm } from '@/utils/intradayIngest'
+
 import AppSelect from '@/components/AppSelect.vue'
 import AppHoverInfo from '@/components/AppHoverInfo'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -138,6 +142,7 @@ const displaySources = computed(() => settings.sourceMode === 'primary' ? source
 function sourceRoleLabel(role: string): string {
   if (role === 'primary') return '主源'
   if (role === 'board') return '板块源'
+  if (role === 'intraday') return '分时源'
   return '备用源'
 }
 function boardSourceRowActions(): AppRowAction[] {
@@ -190,6 +195,7 @@ const saving = ref(false)
 const form = reactive({
   name: '', task_type: 'stock_ingest' as TaskType,
   stock: createStockIngestForm() as StockIngestFormValue,
+  intraday: createIntradayIngestForm(),
   resultMaintenance: createResultMaintenanceTaskForm() as ResultMaintenanceTaskForm,
   issue_type: 'null_close',
   board_mode: 'update' as 'update' | 'backfill',
@@ -243,6 +249,7 @@ watch(() => form.trigger_mode, (mode) => {
 })
 
 function changeTaskType(type: TaskType) {
+  if (type === 'intraday_ingest' && !editingId.value) form.enabled = false
   if (isResultMaintenanceTask(type)) {
     form.resultMaintenance = createResultMaintenanceTaskForm()
   }
@@ -251,7 +258,7 @@ function changeTaskType(type: TaskType) {
 function openCreate() {
   editingId.value = ''
   Object.assign(form, {
-    name: '', task_type: 'stock_ingest', stock: createStockIngestForm(),
+    name: '', task_type: 'stock_ingest', stock: createStockIngestForm(), intraday: createIntradayIngestForm(),
     resultMaintenance: createResultMaintenanceTaskForm(),
     issue_type: qualityIssueTypes.value[0] || 'null_close',
     board_mode: 'update', board_type: '', board_stages: ['dict', 'members', 'bar', 'fund'],
@@ -281,6 +288,7 @@ function openEdit(j: ScheduledJob) {
   Object.assign(form, {
     name: j.name, task_type: stock ? 'stock_ingest' : j.task_type,
     stock: stock || createStockIngestForm(),
+    intraday: createIntradayIngestForm(j.params),
     resultMaintenance: isResultMaintenanceTask(j.task_type)
       ? resultMaintenanceTaskFormFromParams(j.task_type, j.params)
       : createResultMaintenanceTaskForm(),
@@ -326,6 +334,10 @@ function buildPayload(): ScheduledJobInput | null {
   const params: Record<string, unknown> = {}
   if (form.task_type === 'stock_ingest') {
     const built = buildStockIngestParams(form.stock)
+    if (built.error) { ElMessage.warning(built.error); return null }
+    Object.assign(params, built.params)
+  } else if (form.task_type === 'intraday_ingest') {
+    const built = buildIntradayIngestParams(form.intraday)
     if (built.error) { ElMessage.warning(built.error); return null }
     Object.assign(params, built.params)
   } else if (isResultMaintenanceTask(form.task_type)) {
@@ -928,11 +940,11 @@ const menuPageTitle = useMenuPageTitle()
           </div>
         </el-form-item>
       </el-form>
-      <p v-if="cookieStatus !== 'loading' && cookieStatus !== 'error'" class="cookie-note">
+      <AppFormHelp v-if="cookieStatus !== 'loading' && cookieStatus !== 'error'">
         浏览器登录同花顺后，从开发者工具 Network 复制完整 Cookie 头。
         默认按 {{ cookieCredential?.validity_days ?? 30 }} 天提醒；点“测试连通”会访问登录深页真实校验。
         环境变量或受控文件仍优先于页面配置；数据库只保存加密密文，明文不会回显。
-      </p>
+      </AppFormHelp>
       <template #footer>
         <el-button v-if="cookieStatus === 'usable' || cookieStatus === 'unavailable'" :disabled="cookieSaving" @click="clearCookie">清除页面配置</el-button>
         <el-button @click="cookieDlg = false">取消</el-button>
@@ -1025,21 +1037,19 @@ const menuPageTitle = useMenuPageTitle()
         </el-form-item>
         <!-- 按类型的动态参数 -->
         <el-form-item v-if="form.task_type === 'fix'" label="问题类型" required>
-          <div class="app-inline-info app-inline-info--fill">
-            <AppSelect
-              v-model="form.issue_type"
-              data-testid="schedule-issue-type"
-              width="fill"
-            >
-              <el-option
-                v-for="issueType in [...new Set([...qualityIssueTypes, ...(form.issue_type ? [form.issue_type] : [])])]"
-                :key="issueType"
-                :label="ISSUE_TYPE_LABEL[issueType] ?? issueType"
-                :value="issueType"
-              />
-            </AppSelect>
-            <span class="app-caption-text">每次触发时动态恢复该类型当前所有“未处理”问题，无问题时正常结束</span>
-          </div>
+          <AppSelect
+            v-model="form.issue_type"
+            data-testid="schedule-issue-type"
+            width="fill"
+          >
+            <el-option
+              v-for="issueType in [...new Set([...qualityIssueTypes, ...(form.issue_type ? [form.issue_type] : [])])]"
+              :key="issueType"
+              :label="ISSUE_TYPE_LABEL[issueType] ?? issueType"
+              :value="issueType"
+            />
+          </AppSelect>
+          <AppFormHelp>每次触发时动态恢复该类型当前所有“未处理”问题，无问题时正常结束</AppFormHelp>
         </el-form-item>
         <BoardTaskScopeFields
           v-if="form.task_type === 'board'"
@@ -1049,6 +1059,11 @@ const menuPageTitle = useMenuPageTitle()
           v-model:force-members="form.board_force_members"
           v-model:force-current-day="form.board_force_current_day"
           test-id-prefix="schedule-board"
+        />
+        <IntradayTaskScopeFields
+          v-if="form.task_type === 'intraday_ingest'"
+          v-model="form.intraday"
+          test-id-prefix="schedule-intraday"
         />
         <StockIngestScopeFields
           v-if="form.task_type === 'stock_ingest'"
@@ -1079,10 +1094,8 @@ const menuPageTitle = useMenuPageTitle()
           </el-checkbox-group>
         </el-form-item>
         <el-form-item v-if="form.freq_type === 'monthly'" label="每月几号" required>
-          <div class="app-inline-info">
-            <el-input-number v-model="form.day" :min="1" :max="28" />
-            <span class="app-caption-text">1–28（避开月末不确定）</span>
-          </div>
+          <el-input-number v-model="form.day" :min="1" :max="28" />
+          <AppFormHelp>1–28（避开月末不确定）</AppFormHelp>
         </el-form-item>
         <el-form-item v-if="form.freq_type === 'cron'" label="cron 表达式" required>
           <el-input v-model="form.cron" placeholder="分 时 日 月 周，如 30 15 * * 1-5" />
@@ -1115,10 +1128,8 @@ const menuPageTitle = useMenuPageTitle()
             </AppSelect>
           </el-form-item>
           <el-form-item label="结果条件" required>
-            <div class="app-inline-info">
-              <PageSegmented v-model="form.dependency_condition" :options="CONDITION_OPTIONS" test-id="schedule-dependency-condition" aria-label="依赖结果条件" />
-              <span class="app-caption-text">“完成后”包含成功和失败；人工终止不会触发</span>
-            </div>
+            <PageSegmented v-model="form.dependency_condition" :options="CONDITION_OPTIONS" test-id="schedule-dependency-condition" aria-label="依赖结果条件" />
+            <AppFormHelp>“完成后”包含成功和失败；人工终止不会触发</AppFormHelp>
           </el-form-item>
           <el-form-item label="触发延迟" required>
             <el-input-number v-model="form.dependency_delay_value" data-testid="schedule-dependency-delay" :min="0" :precision="0" />
@@ -1134,19 +1145,15 @@ const menuPageTitle = useMenuPageTitle()
 
         <el-divider content-position="left" class="form-section-divider">自身重试</el-divider>
         <el-form-item label="启用重试">
-          <div class="app-inline-info">
-            <el-switch v-model="form.retry_enabled" data-testid="schedule-retry-enabled" />
-            <span class="app-caption-text">本任务结果持续命中条件时循环执行，达到上限后结束</span>
-          </div>
+          <el-switch v-model="form.retry_enabled" data-testid="schedule-retry-enabled" />
+          <AppFormHelp>本任务结果持续命中条件时循环执行，达到上限后结束</AppFormHelp>
         </el-form-item>
         <template v-if="form.retry_enabled">
           <el-form-item label="循环条件" required>
-            <div class="app-inline-info">
-              <PageSegmented v-model="form.retry_condition" :options="CONDITION_OPTIONS" test-id="schedule-retry-condition" aria-label="循环结果条件" />
-              <span v-if="form.retry_condition === 'completion'" class="app-caption-text warn-hint">
-                成功和失败都会继续循环，直到达到次数上限；人工终止除外
-              </span>
-            </div>
+            <PageSegmented v-model="form.retry_condition" :options="CONDITION_OPTIONS" test-id="schedule-retry-condition" aria-label="循环结果条件" />
+            <AppFormHelp v-if="form.retry_condition === 'completion'" tone="warning">
+              成功和失败都会继续循环，直到达到次数上限；人工终止除外
+            </AppFormHelp>
           </el-form-item>
           <el-form-item label="重试延迟" required>
             <el-input-number v-model="form.retry_delay_value" data-testid="schedule-retry-delay" :min="0" :precision="0" />
@@ -1159,19 +1166,15 @@ const menuPageTitle = useMenuPageTitle()
             </AppSelect>
           </el-form-item>
           <el-form-item label="最大重试" required>
-            <div class="app-inline-info">
-              <el-input-number v-model="form.max_retries" data-testid="schedule-max-retries" :min="1" :max="20" :precision="0" />
-              <span class="app-caption-text">不含首次执行；最多 20 次</span>
-            </div>
+            <el-input-number v-model="form.max_retries" data-testid="schedule-max-retries" :min="1" :max="20" :precision="0" />
+            <AppFormHelp>不含首次执行；最多 20 次</AppFormHelp>
           </el-form-item>
         </template>
 
         <el-divider content-position="left" class="form-section-divider">选项</el-divider>
         <el-form-item v-if="form.trigger_mode === 'time'" label="仅交易日">
-          <div class="app-inline-info">
-            <el-switch v-model="form.trading_day_only" />
-            <span class="app-caption-text">开启后非交易日自动跳过（行情/质检类建议开）</span>
-          </div>
+          <el-switch v-model="form.trading_day_only" />
+          <AppFormHelp>开启后非交易日自动跳过（行情/质检类建议开）</AppFormHelp>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="form.enabled" data-testid="schedule-enabled" />
@@ -1225,7 +1228,6 @@ const menuPageTitle = useMenuPageTitle()
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .page-head-actions { display: flex; gap: var(--app-space-2); align-items: center; }
 .delay-unit-select { width: 96px; margin-left: var(--space-2); }
-.warn-hint { color: var(--app-warning-text); }
 .blk-head { display: flex; justify-content: space-between; align-items: center; }
 .form-section-divider { margin: var(--app-space-4) 0 14px; }
 .src-status { display: inline-flex; align-items: center; gap: var(--app-space-control-gap); }
@@ -1233,5 +1235,4 @@ const menuPageTitle = useMenuPageTitle()
 .dot.up { background: var(--el-color-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-success) 18%, transparent); }
 .dot.down { background: var(--app-danger-text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-danger-text) 18%, transparent); }
 .dot.unknown { background: var(--app-placeholder-text); }
-.cookie-note { margin: 10px 0 0; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); }
 </style>

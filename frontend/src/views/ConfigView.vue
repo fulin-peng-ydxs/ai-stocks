@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
@@ -2505,12 +2506,10 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               class="indicator-formula-input"
               @input="defPreview = null"
             />
-            <div class="indicator-formula-help">
-              <span>示例：(C / REF(C, {window}) - 1) * 100</span>
-              <span>C/O/H/L/V/TURN：收开高低、成交量、换手率</span>
-              <span>MA、HHV、LLV、REF、COUNT、SUM、ABS：安全函数</span>
-              <span>{参数名}：引用下方计算参数</span>
-            </div>
+            <AppFormHelp>示例：(C / REF(C, {window}) - 1) * 100</AppFormHelp>
+            <AppFormHelp>C/O/H/L/V/TURN：收开高低、成交量、换手率</AppFormHelp>
+            <AppFormHelp>MA、HHV、LLV、REF、COUNT、SUM、ABS：安全函数</AppFormHelp>
+            <AppFormHelp>{参数名}：引用下方计算参数</AppFormHelp>
           </el-form-item>
           <div v-else-if="defForm.expression" class="indicator-formula-preview">
             <span>模板生成的计算公式</span><code>{{ defForm.expression }}</code>
@@ -2956,15 +2955,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 :global(.indicator-formula-input textarea),
 :global(.indicator-formula-preview code),
 :global(.indicator-preview-result code) { font-family: var(--app-font-family-mono); }
-:global(.indicator-formula-help) {
-  display: flex;
-  width: 100%;
-  flex-wrap: wrap;
-  gap: var(--app-space-1) var(--app-space-4);
-  margin-top: var(--app-space-2);
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-caption);
-}
 :global(.indicator-formula-preview) {
   display: grid;
   gap: var(--app-space-2);

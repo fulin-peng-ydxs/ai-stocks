@@ -359,8 +359,8 @@ class AKShareSource(DataSource):
         out["timestamp"] = pd.to_datetime(out["timestamp"], errors="coerce")
         for field in required[1:]:
             out[field] = pd.to_numeric(out[field], errors="coerce")
-        out = out.dropna(subset=required).sort_values("timestamp")
-        return out.drop_duplicates(subset=["timestamp"], keep="last").reset_index(drop=True)
+        # 不在适配层静默丢弃坏行，归档与查询共用清洗入口并保留拒用诊断。
+        return out.reset_index(drop=True)
 
     # ── 日线（新浪：不复权 + 后复权 → 现算复权因子）──
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)

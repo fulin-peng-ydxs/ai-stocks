@@ -1,6 +1,6 @@
 # 响应式组件触发清单
 
-范围：`frontend/src/**/*.vue` 全部 167 个文件（含页面私有片段、布局宿主及应用外壳），每个文件一行。页面消费与实测结论见 [页面检查](responsive-pages.md)。响应式规则以 [DESIGN.md](../../DESIGN.md) §8 为准；全站字体角色及例外统一引用该文档 §3、§3.5；应用导航尺寸引用 §3.4，本清单只登记消费与适配行为，不另行定义字阶。
+范围：`frontend/src/**/*.vue` 全部 173 个文件（含页面私有片段、布局宿主及应用外壳），每个文件一行。页面消费与实测结论见 [页面检查](responsive-pages.md)。响应式规则以 [DESIGN.md](../../DESIGN.md) §8 为准；全站字体角色及例外统一引用该文档 §3、§3.5；应用导航尺寸引用 §3.4，本清单只登记消费与适配行为，不另行定义字阶。
 
 字体实现维护：所有行均消费 `global.css` 的 token/语义类；MarketCompareMetricStrip、行情和数据概览等普通数据强调使用完整 data 角色，交易纪律分区复用 app-section-title；ECharts 消费 chartTheme 的 typography 快照并经 echartsRenderer 统一基础字体，HTML 行情浮层消费共享 stockQuoteSummaryHtml。源码守卫、构建门禁及例外登记入口见 DESIGN §3.5。
 
@@ -15,6 +15,7 @@
 | `frontend/src/App.vue` | `@container app-viewport (max-width: 720px)` | 两种导航模式共用工作页签且切换不重建实例；侧栏模式品牌/说明与底部固定，菜单独立内滚；右侧顶栏面包屑长标题省略。顶栏模式依次展示一级菜单、二级菜单、工作页签；内容区通过 flex 承接剩余高度，布局选项缩略图同步真实结构。窄宽收起交易日辅助文字，保留状态图标与用户/视觉环境入口；画布统一缩放。 | 应用入口 |
 | `frontend/src/components/AppActionHint.vue` | 无自身 CSS 查询 | 命令说明与禁用原因共用显式提示契约；外壳维持原按钮几何，禁用且有原因时可键盘阅读，无权入口连同外壳隐藏。 | AppRowActions、BacktestView、QualityView |
 | `frontend/src/components/AppAdvancedSearch.vue` | `@container app-viewport (max-width: 720px)` | 条件≥3时分常用/高级；高级折叠保留生效摘要与展开入口；窄宽逐行；错误自动展开，草稿不重置。 | ConfigView、StocksView、OverviewView、QualityView、LimitLadderFilters、AuditLogView、UserManageView、TradeDisciplineHistory |
+| `frontend/src/components/AppFormHelp.vue` | 无自身 CSS 查询 | 长文本随父字段宽度自然换行，不隐藏内容或改变字段状态；标记及字阶见 DESIGN「表单辅助说明」。 | BoardTaskScopeFields、ConfigView、CurrentDayFallbackField、IngestView、IntradayTaskScopeFields、ResultMaintenanceTaskFields、RoleManageView、ScheduleView、ScreenView、StockGroupBatchActions、StockIngestScopeFields、StocksView、TenantManageView、TradeCheckinForm、TradeDisciplineQuickCard、TradeOperationEditor、TradeRuleEditor、TrainingView、UserManageView |
 | `frontend/src/components/AppAsyncRegion.vue` | 无自身 CSS 查询 | 委托 AppStateBlock。 | StockAnalysisPanel、StockBoardMembershipPanel、BacktestView、ConfigView、SectorDetailView、SectorsView、StockDetailView、TrainingView、LayoutPagesView、AuditLogView、DataDictionaryView、MenuResourceView、RoleManageView、RuleMasterList |
 | `frontend/src/components/AppDragHandle.vue` | 无自身 CSS 查询 | 委托AppIconButton保持操作尺寸，拖动把手保留键盘排序入口；仅把手限制触摸手势，不影响正文滚动。 | AppReorderList、AppReorderTree |
 | `frontend/src/components/AppReorderList.vue` | 无自身 CSS 查询 | 排序把手占自然宽度、正文列minmax(0,1fr)允许收缩，内容与断点由插槽承接；保留稳定对象标识和键盘排序。 | TradeRuleEditor |
@@ -74,7 +75,7 @@
 | `frontend/src/components/MenuIcon.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | SideMenuItem、TopNavigation、MenuResourceView |
 | `frontend/src/components/PageDrawer.vue` | 无自身 CSS 查询 | 语义宽度且最大100%；工作台窄屏full；正文滚动，头部/关闭/footer保持可达。 | App、AppDetailDrawer、AppSplitWorkspace、PageSettingsDrawer、AssetSearchDrawer、StockChartOperationsDrawer、IngestView |
 | `frontend/src/components/PageDrawerSurface.vue` | 无自身 CSS 查询 | 头部与footer不收缩；正文grow或scroll由语义参数选择，标题可省略。 | PageDrawer |
-| `frontend/src/components/PageSegmented.vue` | `@media (hover: hover) and (pointer: fine)` | 长文省略，完整内容由提示/详情承接；宽度不超过父容器。 | App、ComponentAutoSettings、SectorAnalysisDefaultFields、StockAnalysisDefaultFields、StockAnalysisPanel、StockChartSettingSection、AssetSearchDrawer、BoardTaskScopeFields、ResultMaintenanceTaskFields、StockIngestScopeFields、StockChartWorkspace、LayoutPagePreview、LayoutSettingsSection、BacktestView、BoardView、ConfigView、LimitLadderView、ScreenView、SectorsView、StockDetailView、StocksView、TradeDisciplineView、TrainingView、IngestView、OverviewView、QualityView、ScheduleView、LimitLadderFilters、TenantManageView、UserManageView |
+| `frontend/src/components/PageSegmented.vue` | `@media (hover: hover) and (pointer: fine)` | 长文省略，完整内容由提示/详情承接；宽度不超过父容器。 | App、ComponentAutoSettings、SectorAnalysisDefaultFields、StockAnalysisDefaultFields、StockAnalysisPanel、StockChartSettingSection、AssetSearchDrawer、BoardTaskScopeFields、ResultMaintenanceTaskFields、StockIngestScopeFields、IntradayTaskScopeFields、StockChartWorkspace、LayoutPagePreview、LayoutSettingsSection、BacktestView、BoardView、ConfigView、LimitLadderView、ScreenView、SectorsView、StockDetailView、StocksView、TradeDisciplineView、TrainingView、IngestView、OverviewView、QualityView、ScheduleView、LimitLadderFilters、TenantManageView、UserManageView |
 | `frontend/src/components/PageSettingItem.vue` | 无自身 CSS 查询 | 字段堆叠或语义inline，控件满宽且min0；提示收进HelpHint。 | ComponentAutoSettings、KlineSettingSection、SectorAnalysisDefaultFields、StockAnalysisDefaultFields、StockChartSettingSection、LayoutSettingsSection、BacktestView、BoardView、ConfigView、LimitLadderView、ScreenView、SectorsView、StockDetailView、StocksView、TrainingView、IngestView、OverviewView、QualityView、ScheduleView、AuditLogView、UserManageView |
 | `frontend/src/components/PageSettingSection.vue` | 无自身 CSS 查询 | 委托 SettingsGroup。 | BacktestView、BoardView、ConfigView、LimitLadderView、ScreenView、SectorsView、StockDetailView、StocksView、TrainingView、IngestView、OverviewView、QualityView、ScheduleView、AuditLogView、TenantManageView、UserManageView |
 | `frontend/src/components/PageSettingsApplyButton.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | ComponentAutoSettings、MasterDetailRatioProfileSettings、StockChartSettingSection |
@@ -104,7 +105,7 @@
 | `frontend/src/components/SubScoreChips.vue` | 无自身 CSS 查询 | 评分项自然换行，单项长文本省略并保留提示。 | RankedStockResultTable |
 | `frontend/src/components/SystemBuiltinTag.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | AssetVisibilityTag、ConfigView、LayoutPresetsView、MenuResourceView、RoleManageView、TenantManageView |
 | `frontend/src/components/TopNavigation.vue` | `@container app-viewport (max-width: 960px)`<br>`@media (prefers-reduced-motion: reduce)` | 窄宽压缩导航间距/隐藏辅助上下文；一级菜单不收缩，空间不足由导航条自身横向滚动，避免图文相互重叠；一级、二级与下拉入口的字体及尺寸按 DESIGN §3.4 消费共享导航 token；二级栏共用中性底色、不混入预设强调色；二级入口与工作标签复用`.app-nav-context-entry`的尺寸、圆角及选中边框/底线，下拉消费共享导航字阶、几何和叶子背景，导航动作保留。 两级及下拉入口共用悬停视觉层与180ms颜色过渡，下拉不回落组件库默认蓝底，指针移出后不保留焦点蓝色；命中区和下划线保持稳定。 一级保留图标框与整栏底部下划线，仅收紧悬停和键盘焦点面，不套二级选中框。 | App |
-| `frontend/src/components/TradeDatePicker.vue` | 无自身 CSS 查询 | 委托 AppDatePicker。 | StockGroupBatchActions、BoardTaskScopeFields、ResultMaintenanceTaskFields、StockIngestScopeFields、BacktestView、BoardView、ConfigView、ScreenView、SectorDetailView、SectorsView、StocksView、TrainingView、LimitLadderFilters、TradeCheckinForm、TradeDisciplineHistory |
+| `frontend/src/components/TradeDatePicker.vue` | 无自身 CSS 查询 | 委托 AppDatePicker。 | StockGroupBatchActions、BoardTaskScopeFields、ResultMaintenanceTaskFields、StockIngestScopeFields、IntradayTaskScopeFields、BacktestView、BoardView、ConfigView、ScreenView、SectorDetailView、SectorsView、StocksView、TrainingView、LimitLadderFilters、TradeCheckinForm、TradeDisciplineHistory |
 | `frontend/src/components/WorkspaceRouteView.vue` | 无自身 CSS 查询 | 页面按页签独立缓存；关闭最后一页后释放页面实例并显示居中紧凑空态，从导航菜单访问同一路由也可重开；菜单元数据刷新不得自行恢复已关闭页面。 | App |
 | `frontend/src/components/WorkspaceTabs.vue` | `@media (hover: none), (pointer: coarse)`<br>`@container app-viewport (max-width: 720px)` | 默认收起为28px摘要行，展开为45px页签栏；折叠状态走账号级用户偏好自动记忆，折叠使用 v-show 保留页签，栏高一次切换到终态，避免正文逐帧重排；页签淡入淡出和箭头旋转消费共享折叠时长及缓动；收起时立即 inert/aria-hidden，减少动态效果时即时切换；零标签时隐藏整栏。栏首固定折叠入口、工作区标题、实时数量徽标和清除其他页签按钮，折叠时仍可操作；保留当前页及缓存，只有当前页时禁用；非当前页的未保存确认全部通过才统一关闭，取消保留全部，等待期间与单页关闭互斥，路由或页签现场变化时取消整批操作；展开显示分隔符；标签由连续中性底托承接，图标复用授权菜单和 MenuIcon，无图标时回退 Document；保持共享32px高度与圆角，4px间距、12px水平内距、180px最大宽度。当前项显示中性选中面、强边框、主色上沿与图标；关闭入口预留空间，普通态弱显，当前、悬停或粗指针时清晰显示。窄宽由轨道内滚承接，路由切换和缩窄按布局坐标最小滚动露出当前项，销毁释放尺寸监听；关闭确认防重复，成功移除焦点标签后恢复当前项焦点。 | App |
 | `frontend/src/components/asset-search/AssetProfileSelect.vue` | 无自身 CSS 查询 | 选择器0+auto网格，搜索交给AssetSearchDrawer。 | BacktestView、BoardView、ConfigView、ScreenView、StockDetailView |
@@ -112,9 +113,10 @@
 | `frontend/src/components/config/ConfigGroupForm.vue` | `@container app-viewport (max-width: 720px)` | 窄宽配置网格单列，控件占行宽；不清除输入。 | ConfigView |
 | `frontend/src/components/config/ConfigPanelSection.vue` | `@container app-viewport (max-width: 720px)` | 窄宽缩短装饰线/限制说明宽度；分组手动折叠，标题入口保留。 | ConfigGroupForm |
 | `frontend/src/components/data/BoardTaskScopeFields.vue` | 无自身 CSS 查询 | 委托 PageSegmented、TradeDatePicker、CurrentDayFallbackField。 | IngestView、ScheduleView |
+| `frontend/src/components/data/IntradayTaskScopeFields.vue` | 无自身 CSS 查询 | 随父表单宽度排版；控件委托 PageSegmented、TradeDatePicker、StockCodeMultiSelect，辅助说明委托 AppFormHelp。 | IngestView、ScheduleView |
 | `frontend/src/components/data/CurrentDayFallbackField.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | BoardTaskScopeFields、StockIngestScopeFields |
 | `frontend/src/components/data/ResultMaintenanceTaskFields.vue` | 无自身 CSS 查询 | 委托 TradeDatePicker、PageSegmented、StockCodeMultiSelect。 | IngestView、ScheduleView |
-| `frontend/src/components/data/StockCodeMultiSelect.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | ResultMaintenanceTaskFields、StockIngestScopeFields、OverviewView |
+| `frontend/src/components/data/StockCodeMultiSelect.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | ResultMaintenanceTaskFields、StockIngestScopeFields、IntradayTaskScopeFields、OverviewView |
 | `frontend/src/components/data/StockIngestScopeFields.vue` | 无自身 CSS 查询 | 委托 PageSegmented、TradeDatePicker、StockCodeMultiSelect、CurrentDayFallbackField。 | IngestView、ScheduleView |
 | `frontend/src/components/indicator/IndicatorParamFields.vue` | 无自身 CSS 查询 | 参数输入语义宽76、单项不换行；父级表单/编辑器负责换行或滚动。 | ConfigView、ScreenView |
 | `frontend/src/components/indicator/IndicatorParamSchemaEditor.vue` | `@container app-viewport (max-width: 760px)` | 窄宽参数编辑网格改为2列，字段仍可访问。 | ConfigView |
@@ -128,7 +130,7 @@
 | `frontend/src/components/stock-chart/StockChartRegion.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | TrainingView |
 | `frontend/src/components/stock-chart/StockChartWorkspace.vue` | `@container app-viewport (max-width: 1180px)`<br>`@container app-viewport (max-width: 400px)` | 窄宽面板图例第4项起移入指标栏；极窄≤400指标栏也减少常显项，完整配置在图表操作抽屉。ResizeObserver按面板最小高度分配，滑块canvas高度<84隐藏；不重新取行情。 | StockAnalysisPanel、BacktestView、SectorDetailView、SectorsView、StockDetailView、TrainingView |
 | `frontend/src/components/stock-chart/StockIntradayChart.vue` | `@container app-viewport (max-width: 960px)` | 窄宽图表58cqh、min340；图表自身resize，溢出由对话框正文滚动承接。 | StockIntradayDialog |
-| `frontend/src/components/stock-chart/StockIntradayDialog.vue` | `@container app-viewport (max-width: 960px)` | 窄宽头部上下排列，图表置于AppDialog工作区。 | StockAnalysisPanel、StockDetailView |
+| `frontend/src/components/stock-chart/StockIntradayDialog.vue` | `@container app-viewport (max-width: 960px)` | 窄宽头部上下排列，图表置于AppDialog工作区；未采集与部分提示复用 AppStateBlock/AppStatusNotice，窄屏说明自然换行，采集边界统一交由数据管理解释。 | StockAnalysisPanel、StockDetailView |
 | `frontend/src/components/stock-chart/StockQuoteSummary.vue` | `@container app-viewport (max-width: 720px)` | 窄宽补充信息换行，报价关键值保留；K 线联动摘要使用最新与可视窗口字符容量，空间不足由摘要内部横向滚动承接；可选字段说明复用 HelpHint 图标，字段名不加后缀；标签区容纳图标且数值列保持固定，支持悬浮与键盘聚焦。 | StockIntradayDialog、StockDetailView |
 | `frontend/src/components/strategy/StrategyItemEnabledSwitch.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | ConfigView、ScreenView |
 | `frontend/src/components/trade-discipline/RuleSummaryCard.vue` | 无自身 CSS 查询 | 委托 AppSummaryDisclosureCard。 | TradeRuleEditor |

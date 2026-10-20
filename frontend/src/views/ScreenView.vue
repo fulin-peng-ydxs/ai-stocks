@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
@@ -1024,8 +1025,8 @@ const menuPageTitle = useMenuPageTitle()
               运行筛选
             </el-button>
             <el-button v-if="result && result.hits.length" size="small" @click="exportCsv">导出 CSV</el-button>
-            <span class="run-hint">含表达式/带参指标需全市场逐股求值，约十几秒</span>
           </div>
+          <AppFormHelp>含表达式/带参指标需全市场逐股求值，约十几秒</AppFormHelp>
           <!-- ready 摘要：结果可回溯——命中数、是否排除 ST、按哪个只读方案口径跑的；交易日由日期选择器展示，不重复 -->
           <div v-if="result" class="run-meta">
             共 <b>{{ result.count }}</b> 只 · 评分方案「{{ result.score_profile_name }}」v{{ result.score_profile_version }}
@@ -1295,11 +1296,6 @@ const menuPageTitle = useMenuPageTitle()
 .run-table-wrap .el-table {
   flex: 1 1 auto;
   min-height: 0;
-}
-.run-hint {
-  color: var(--app-placeholder-text);
-  font-size: var(--app-font-size-caption);
-  margin-left: auto;
 }
 .score {
   color: var(--app-danger-text);

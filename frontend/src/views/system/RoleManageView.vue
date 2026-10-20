@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -444,18 +445,16 @@ const menuPageTitle = useMenuPageTitle()
               :disabled="dialogMode === 'edit'"
               placeholder="必填，创建后不可修改"
             />
-            <div v-if="dialogMode === 'create'" class="form-help">
+            <AppFormHelp v-if="dialogMode === 'create'">
               以字母开头，可使用小写字母、数字、下划线、冒号或短横线。
-            </div>
+            </AppFormHelp>
           </el-form-item>
           <el-form-item label="描述">
             <el-input v-model="roleForm.description" placeholder="可选" />
           </el-form-item>
           <el-form-item label="租户分配">
-            <div>
-              <el-switch v-model="roleForm.tenantAssignable" />
-              <div class="form-help">开启后，租户管理员可将此角色分配给本租户用户。</div>
-            </div>
+            <el-switch v-model="roleForm.tenantAssignable" />
+            <AppFormHelp>开启后，租户管理员可将此角色分配给本租户用户。</AppFormHelp>
           </el-form-item>
         </el-form>
         <template #footer>
@@ -480,7 +479,6 @@ const menuPageTitle = useMenuPageTitle()
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-3); }
 .page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
 .rm-error { height: 100%; }
-.form-help { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); line-height: var(--app-line-height-comfy); }
 /* master-detail：窄视口体内横滚，右栏不被压垮 */
 .rm-split { height: 100%; --app-scroll-display: flex; --app-scroll-gap: var(--app-space-4); min-height: 0; }
 .rm-col { border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-bg-color-overlay);

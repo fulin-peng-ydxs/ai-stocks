@@ -1,0 +1,69 @@
+"""显式规模门禁：以合成源窗口经过真实服务、清洗和 DuckDB 落表，不写开发数据。"""
+
+from __future__ import annotations
+
+import json
+import os
+import resource
+import sys
+import time
+from datetime import date, datetime
+
+import pandas as pd
+import pytest
+
+from backend.services import eod_dates
+from backend.services.intraday_archive import IntradayArchiveService
+from backend.services.intraday_source import IntradaySourceService
+from backend.tests.test_intraday_archive import Windows
+from backend.tests.test_intraday_quotes import _frame
+
+
+@pytest.mark.skipif(not os.getenv("INTRADAY_SCALE_STOCKS"), reason="仅显式执行代表性规模门禁")
+def test_real_ingestion_scale(market, monkeypatch):
+    count = int(os.environ["INTRADAY_SCALE_STOCKS"])
+    monkeypatch.setattr(
+        eod_dates, "shanghai_now", lambda: datetime(2026, 9, 10, 16, tzinfo=eod_dates.SHANGHAI)
+    )
+    days = pd.bdate_range("2026-09-01", "2026-09-10")
+    market.execute(
+        "INSERT INTO stock_basic(code,name,list_date) "
+        "SELECT CAST(600000+i AS VARCHAR)||'.SH','规模样本','2026-09-01' FROM range(?) t(i)",
+        [count],
+    )
+    with market.temp_view(pd.DataFrame({"trade_date": days.date, "is_open": True})) as view:
+        market.execute(f"INSERT INTO trade_calendar SELECT * FROM {view}")
+    market.execute(
+        "INSERT INTO daily_bar(code,trade_date,close) "
+        "SELECT s.code,t.trade_date,3.6 FROM stock_basic s CROSS JOIN trade_calendar t"
+    )
+    frame = pd.concat([_frame(date.fromisoformat(str(d.date()))) for d in days], ignore_index=True)
+    payload = IntradaySourceService._frame_to_window(frame, "sina")
+    payload["fetched_at"] = "2026-09-10T08:00:00+00:00"
+    source = Windows([payload])
+    service = IntradayArchiveService(market, quotes=source)
+    start = time.monotonic()
+    result = service.collect()
+    assert result["ok"] and result["inserted"] == count * 8
+    assert service.summary()["complete_days"] == count * 8
+    rows = market.query_df("SELECT count(*) n FROM stock_intraday_bar").iloc[0].n
+    assert rows == count * 8 * 240
+    assert service.issues() == []
+    # 再次真实入口执行只能跳过，不能二次请求源或增加分钟行。
+    second = service.collect()
+    assert second["skipped"] == count * 8 and len(source.calls) == count
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (
+        1024**2 if sys.platform == "darwin" else 1024
+    )
+    print(
+        json.dumps(
+            {
+                "stocks": count,
+                "days": 8,
+                "rows": int(rows),
+                "elapsed_sec": round(time.monotonic() - start, 2),
+                "peak_process_mb": round(peak, 1),
+            }
+        ),
+        flush=True,
+    )

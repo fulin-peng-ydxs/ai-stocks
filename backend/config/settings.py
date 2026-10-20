@@ -65,7 +65,7 @@ class DataSourceConfig(BaseModel):
 
 
 class IntradayConfig(BaseModel):
-    """按需分钟行情：免费近期源、Redis 短缓存与跨进程源站保护。"""
+    """分钟归档查询缓存与数据管理采集的跨进程源站保护。"""
 
     enabled: bool = True
     supported_trade_days: int = Field(default=8, ge=1, le=30)

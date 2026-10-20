@@ -14,7 +14,18 @@ export interface QualityLayer {
 }
 
 // ── 概览（FR-DM-1 + M2.9 分层质量评分）──
+export interface IntradayCoverage {
+  monitoring_start: string | null
+  target_end: string | null
+  archive_end: string | null
+  complete_days: number
+  partial_days: number
+  missing_days: number
+  stocks?: number
+  expected_days?: number
+}
 export interface Overview {
+  intraday?: IntradayCoverage
   latest_trade_date: string | null
   codes: { active: number; delisted: number }
   bar_rows: number
@@ -160,6 +171,7 @@ export interface StockQualityLayer {
   is_fresh?: boolean
 }
 export interface StockQualityRow {
+  intraday?: IntradayCoverage | null
   code: string
   name: string
   latest_date: string | null
@@ -412,7 +424,7 @@ export function listScheduleTriggerEvents(id: string, limit = 100): Promise<{ ev
 // ── 数据源状态（FR-DM-5）──
 export interface SourceStatus {
   source: string
-  role: 'primary' | 'fallback' | 'board'
+  role: 'primary' | 'fallback' | 'board' | 'intraday'
   up: boolean | null
   last_test_at: string | null
   last_success_at: string | null
@@ -476,7 +488,7 @@ export function resetSettings(paths: string[]): Promise<{ reset: number }> {
 export type TaskType =
   | 'update' | 'backfill' | 'ingest_date' | 'ingest_codes' | 'rebuild_price_factors'
   | 'recompute' | 'verify' | 'checkup' | 'fix'
-  | 'enrich_basic' | 'audit_cleanup' | 'board' | 'stock_ingest' | 'stock_board_correlation'
+  | 'enrich_basic' | 'audit_cleanup' | 'board' | 'stock_ingest' | 'intraday_ingest' | 'stock_board_correlation'
   | 'limit_ladder_invalidate' | 'limit_ladder_recompute' | 'stock_special_trading_day'
 
 // ── 数据结构体检报告（checkup 任务 result.checkup）──
@@ -592,7 +604,7 @@ export const TASK_LABEL: Record<TaskType, string> = {
   recompute: '每日榜单失效', verify: '数据质检',
   checkup: '结构体检', fix: '质检问题恢复',
   enrich_basic: STOCK_INGEST_RECIPE_LABEL.basic_refresh,
-  audit_cleanup: '审计日志清理', board: '板块采集', stock_ingest: '个股采集',
+  audit_cleanup: '审计日志清理', board: '板块采集', stock_ingest: '个股采集', intraday_ingest: '分时采集',
   stock_board_correlation: '走势相关重算',
   limit_ladder_invalidate: '连板天梯失效',
   stock_special_trading_day: '特殊交易日维护',
@@ -603,6 +615,7 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
 }
 // 当前在用的问题类型（下拉筛选用此顺序；missing_or_suspended 已废弃，不再产出/不再列出）。
 export const ISSUE_TYPES_ACTIVE = [
+  'intraday_gap', 'intraday_partial', 'intraday_invalid',
   'null_close', 'ohl_repaired', 'abnormal_change', 'price_volume_mismatch',
   'history_data_gap', 'stale',
   'adj_jump',
@@ -622,6 +635,7 @@ export function sortQualityIssueTypes(types: readonly string[]): string[] {
   return [...types].sort((a, b) => rank(a) - rank(b))
 }
 export const ISSUE_TYPE_LABEL: Record<string, string> = {
+  intraday_gap: '分时·整日缺失', intraday_partial: '分时·分钟不完整', intraday_invalid: '分时·数据非法',
   // 展示名统一为「对象·现象」，现象词固定：缺失/缺口(近端缺某日)/滞后(未更新到最新)/非法/异常/跳变/修补/为空。
   null_close: '行情·收盘价为空(丢弃)', ohl_repaired: '行情·开高低修补', mv_missing: '市值·整段缺失',
   capital_raw_invalid: '来源记录·历史异常', capital_gap: '股本市值·缺失', capital_invalid: '股本市值·数值或日期非法',
@@ -653,6 +667,9 @@ export function taskDisplayLabel(
     ? params.issue_type
     : ''
   if (issueType) return `${base}·${ISSUE_TYPE_LABEL[issueType] ?? issueType}`
+  if (taskType === 'intraday_ingest') {
+    return params?.mode === 'refetch' ? base + '·日期区间重采' : base + '·近期增量补采'
+  }
   if (taskType === 'stock_ingest') {
     const recipe = typeof params?.recipe === 'string' ? params.recipe : ''
     return recipe ? `${base}·${STOCK_INGEST_RECIPE_LABEL[recipe as keyof typeof STOCK_INGEST_RECIPE_LABEL] ?? recipe}` : base
@@ -690,6 +707,7 @@ export function taskDisplayLabel(
 }
 // 各问题类型归属的质量层（M2.9 DM-D15 / M2.9.2 DM-D20），用于质量页/概览按层归类。
 export const ISSUE_LAYER: Record<string, string> = {
+  intraday_gap: '分时', intraday_partial: '分时', intraday_invalid: '分时',
   capital_raw_invalid: '来源', capital_gap: 'L2', capital_invalid: 'L2', capital_mismatch: 'L2',
   null_close: 'L1', ohl_repaired: 'L1', mv_missing: 'L2', mv_gap: 'L2', mv_invalid: 'L2',
   abnormal_change: 'L3', price_volume_mismatch: 'L3', adj_jump: 'L3',
@@ -712,12 +730,14 @@ export const RECOVER_ACTION_LABEL: Record<string, string> = {
   st_status_mismatch: '同步ST状态',
   market_index_gap: '补齐市场指数', market_index_gap_daily: '重采市场指数缺失日',
   market_index_invalid: '重采市场指数异常日',
+  intraday_gap: '重采分时', intraday_partial: '补采分时', intraday_invalid: '重采分时',
   board_index_gap: '重采指数', board_index_gap_daily: '重采缺失日指数',
   board_index_invalid: '重采异常日指数', board_member_incomplete: '重采成分',
   board_fund_unmatched: '重采资金流',
   board_fund_missing: '重采资金流', board_fund_stale: '重采资金流',
 }
 export const LAYER_LABEL: Record<string, string> = {
+  分时: '分钟归档质量，独立于日线四层评分',
   L1: 'L1 入库闸门', L2: 'L2 字段契约', L3: 'L3 正确性', L4: 'L4 覆盖鲜活',
   指数: '市场指数维度',
   板块: '板块维度',  // 板块 issue 独立层（不混入个股 L1-L4 打分）
@@ -744,7 +764,7 @@ export const SEVERITY_LABEL: Record<string, string> = { high: '高', mid: '中',
 export const ISSUE_STATUS_LABEL: Record<string, string> = {
   open: '未处理', fixing: '修复中', resolved: '已解决', ignored: '已忽略',
 }
-export const SOURCE_LABEL: Record<string, string> = { akshare: 'AKShare', baostock: 'BaoStock', ths_board: '同花顺板块' }
+export const SOURCE_LABEL: Record<string, string> = { intraday_sina: '新浪分时', intraday_eastmoney: '东财分时', akshare: 'AKShare', baostock: 'BaoStock', ths_board: '同花顺板块' }
 
 export type BoardTypeScope = '' | 'concept' | 'industry'
 export type BoardIngestStage = 'dict' | 'members' | 'bar' | 'fund'

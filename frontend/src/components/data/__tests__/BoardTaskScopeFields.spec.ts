@@ -28,10 +28,8 @@ describe('BoardTaskScopeFields', () => {
     })
 
     expect(wrapper.find('[data-testid="board-force-current-day"]').exists()).toBe(true)
-    expect(
-      wrapper.findAll('.app-caption-text')
-        .every((item) => item.element.closest('.app-inline-info') !== null),
-    ).toBe(true)
+    expect(wrapper.findAll('.app-form-help')).toHaveLength(3)
+    expect(wrapper.findAll('.app-form-help__marker')).toHaveLength(3)
 
     await wrapper.setProps({ mode: 'backfill' })
     expect(wrapper.find('[data-testid="board-force-current-day"]').exists()).toBe(false)

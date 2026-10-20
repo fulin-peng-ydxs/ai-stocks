@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import { computed } from 'vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -122,16 +123,14 @@ function changeRecipe(recipe: StockIngestRecipe) {
   </el-form-item>
 
   <el-form-item v-if="supportsConcurrency" label="采集并发数">
-    <div class="app-inline-info">
-      <el-input-number
-        :model-value="modelValue.concurrency"
-        :min="1"
-        :max="16"
-        placeholder="默认"
-        @update:model-value="patch({ concurrency: $event as number | null })"
-      />
-      <span class="app-caption-text">留空沿用全局配置；提高并发会增加免费数据源封禁风险</span>
-    </div>
+    <el-input-number
+      :model-value="modelValue.concurrency"
+      :min="1"
+      :max="16"
+      placeholder="默认"
+      @update:model-value="patch({ concurrency: $event as number | null })"
+    />
+    <AppFormHelp>留空沿用全局配置；提高并发会增加免费数据源封禁风险</AppFormHelp>
   </el-form-item>
 
   <CurrentDayFallbackField

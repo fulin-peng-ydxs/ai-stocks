@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -676,8 +677,8 @@ const menuPageTitle = useMenuPageTitle()
           <el-form-item v-if="isEdit && protectedRoleNames.length" label="平台保留">
             <span class="locked-field">
               {{ protectedRoleNames.join('、') }}
-              <span class="muted">（仅平台管理员可调整，本次保存会保留）</span>
             </span>
+            <AppFormHelp>仅平台管理员可调整，本次保存会保留</AppFormHelp>
           </el-form-item>
           <el-form-item label="租户">
             <AppSelect
@@ -689,8 +690,9 @@ const menuPageTitle = useMenuPageTitle()
               <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
             </AppSelect>
             <span v-else class="locked-field">
-              {{ tenantName(form.tenantId) }}<span class="muted">（{{ isEdit ? '归属不可改' : '限本租户' }}）</span>
+              {{ tenantName(form.tenantId) }}
             </span>
+            <AppFormHelp v-if="!isSystem || isEdit">{{ isEdit ? '归属不可改' : '限本租户' }}</AppFormHelp>
           </el-form-item>
           <el-form-item label="状态" :required="!editingSelf">
             <el-radio-group v-model="form.status" :disabled="editingSelf">

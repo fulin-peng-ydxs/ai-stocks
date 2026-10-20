@@ -520,7 +520,7 @@ const menuPageTitle = useMenuPageTitle()
         <HelpTip title="数据质量怎么来的、怎么处理？" :width="480">
           <HelpTipItem question="质量问题如何闭环">
             <ul>
-              <li>个股四层、ST 点时事实与板块专项质量台账中的每条问题按类型采用对应恢复手段，只有复检通过才标记「已解决」。</li>
+              <li>个股四层、分时、ST 点时事实与板块专项质量台账中的每条问题按类型采用对应恢复手段，只有复检通过才标记「已解决」。</li>
             </ul>
           </HelpTipItem>
           <HelpTipItem question="质量口径是什么">

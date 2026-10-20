@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import { computed, ref, watch } from 'vue'
 import { Delete, Plus } from '@element-plus/icons-vue'
@@ -404,7 +405,7 @@ defineExpose({ expandOperation })
               <small v-if="disabled && !operation[field.key]" class="app-caption-text">{{ conditionFactLabel(operation[field.key]) }}</small>
             </el-form-item>
           </div>
-          <p class="app-caption-text">ST按交易日逐日数据核对；亏损与ST风险按规则预填，可按实际修改，未查明选未知。</p>
+          <AppFormHelp>ST按交易日逐日数据核对；亏损与ST风险按规则预填，可按实际修改，未查明选未知。</AppFormHelp>
           <ul v-if="stockConditionWarnings(selectedStockRule(operation), operation).length" class="condition-warnings" role="status"><li v-for="warning in stockConditionWarnings(selectedStockRule(operation), operation)" :key="warning">{{ warning }}</li></ul>
         </section>
 

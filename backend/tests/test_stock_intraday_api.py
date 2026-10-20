@@ -48,11 +48,11 @@ def test_intraday_api_translates_temporary_failure_to_503(monkeypatch) -> None:
     class Service:
         @staticmethod
         def get(_code, _trade_date):
-            raise stocks.IntradayServiceUnavailable("分钟源繁忙")
+            raise stocks.IntradayServiceUnavailable("分时数据暂时不可用")
 
     monkeypatch.setattr(stocks, "IntradayQuoteService", Service)
     with pytest.raises(HTTPException) as exc_info:
         stocks.stock_intraday("002251.SZ", date(2026, 9, 10))
 
     assert exc_info.value.status_code == 503
-    assert exc_info.value.detail == "分钟源繁忙"
+    assert exc_info.value.detail == "分时数据暂时不可用"

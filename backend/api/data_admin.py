@@ -10,7 +10,7 @@ from typing import Literal
 
 import pandas as pd
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.context import get_current_context
@@ -105,11 +105,13 @@ def overview() -> ApiResponse:
         "SELECT max(detected_at) AS t FROM data_quality_issue").iloc[0]["t"]
     last_scan_s = None if last_scan is None or str(last_scan) == "NaT" else str(last_scan)[:19]
     board = _board_stage(c)
+    from backend.services.intraday_archive import IntradayArchiveService
     return ok({
         "latest_trade_date": qm["latest_trade_date"],
         "codes": {"active": ov["stock_basic_live"], "delisted": ov["stock_basic_delisted"]},
         "bar_rows": ov["row_counts"]["daily_bar"],
         "board": board,
+        "intraday": IntradayArchiveService(c).summary(),
         "st_status": StockSTStatusService(c).coverage(),
         "quality": {"open": int(sum(by_sev.values())), "by_severity": by_sev,
                     "score": qm["score"], "by_layer": qm["by_layer"]},
@@ -809,6 +811,13 @@ class ScheduledJobIn(BaseModel):
     })
     trading_day_only: bool = True
     enabled: bool = True
+
+    @model_validator(mode="after")
+    def intraday_default_disabled(self):
+        # 仅新分时类型缺省关闭；显式启用和其他任务既有默认值保持不变。
+        if self.task_type == "intraday_ingest" and "enabled" not in self.model_fields_set:
+            self.enabled = False
+        return self
 
 
 @router.get("/schedules", response_model=ApiResponse, dependencies=_SCHEDULE)

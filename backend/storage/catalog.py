@@ -57,6 +57,58 @@ _MARKET_INDEX_ISSUES: tuple[str, ...] = (
 # - date_col：用于取"最新数据时间"的列（None 表示该表无时间维度，取 NULL）。
 # - relations：与其它表的关联关系（人类可读）。
 TABLE_CATALOG: dict[str, dict] = {
+    "stock_intraday_monitor": {
+        "name_cn": "个股分时监控起点", "category": "行情参考",
+        "purpose": "固定首次接入的可采集窗口起点，结合交易日历识别历史及最新整日缺失",
+        "source": "分时采集任务首次冻结范围；旧归档按最早覆盖日迁移",
+        "ownership_scope": "market_global",
+        "relations": ["code → stock_basic.code", "monitoring_start → trade_calendar.trade_date",
+                      "code → stock_intraday_coverage.code"],
+        "fields": [
+            {"name": "code", "name_cn": "股票代码", "desc": "已纳入分时监控的全市场股票代码"},
+            {"name": "monitoring_start", "name_cn": "监控起始日期",
+             "desc": "首次接入可采集窗口的首个交易日；不随源窗口滚动或单次采集失败前移"},
+            {"name": "created_at", "name_cn": "监控建立时间", "desc": "建立固定监控起点的 UTC 时间"},
+        ],
+    },
+    "stock_intraday_bar": {'name_cn': '个股分钟行情',
+     'category': '行情参考',
+     'purpose': '保存已收盘的1分钟不复权价格和量额，长期保留，供历史日K下钻',
+     'source': '新浪1分钟主源/东财1分钟备用源',
+     'ownership_scope': 'market_global',
+     'relations': ['code → stock_basic.code',
+                   'trade_date → trade_calendar.trade_date',
+                   'code + trade_date → daily_bar'],
+     'fields': [{'name': 'code', 'name_cn': '股票代码', 'desc': '全市场共享行情代码，与 stock_basic.code 关联'},
+                {'name': 'trade_date', 'name_cn': '交易日期', 'desc': '北京时间已收盘交易日，与 trade_calendar 关联'},
+                {'name': 'timestamp', 'name_cn': '分钟时间', 'desc': '北京时间分钟，交易日内唯一，不含午休补点'},
+                {'name': 'open', 'name_cn': '开盘价', 'desc': '分钟不复权开盘，源端占位或缺失保存 NULL'},
+                {'name': 'high', 'name_cn': '最高价', 'desc': '分钟不复权最高价，元'},
+                {'name': 'low', 'name_cn': '最低价', 'desc': '分钟不复权最低价，元'},
+                {'name': 'close', 'name_cn': '收盘价', 'desc': '分钟不复权收盘价，元'},
+                {'name': 'volume', 'name_cn': '成交量', 'desc': '分钟成交量，手；1 手为 100 股'},
+                {'name': 'amount', 'name_cn': '成交额', 'desc': '分钟成交额，元'},
+                {'name': 'source', 'name_cn': '行情来源', 'desc': '所选整日来源 sina 或 eastmoney，不拼接不同源'},
+                {'name': 'fetched_at', 'name_cn': '数据采集时间', 'desc': '所选归档数据的 UTC 采集时间'}]},
+    "stock_intraday_coverage": {'name_cn': '个股分时逐日覆盖',
+     'category': '行情参考',
+     'purpose': '保存分时监控目标、完整性、失败证据与缓存修订，不把请求成功当成覆盖完成',
+     'source': '新浪1分钟主源/东财1分钟备用源',
+     'ownership_scope': 'market_global',
+     'relations': ['code → stock_basic.code',
+                   'trade_date → trade_calendar.trade_date',
+                   'code + trade_date → daily_bar'],
+     'fields': [{'name': 'code', 'name_cn': '股票代码', 'desc': '全市场共享行情代码，与 stock_basic.code 关联'},
+                {'name': 'trade_date', 'name_cn': '交易日期', 'desc': '北京时间已收盘交易日，与 trade_calendar 关联'},
+                {'name': 'point_count', 'name_cn': '有效分钟数', 'desc': '已归档真实有效分钟点数'},
+                {'name': 'status', 'name_cn': '覆盖状态', 'desc': 'ready 完整、partial 部分、missing 尚无有效分钟'},
+                {'name': 'source', 'name_cn': '行情来源', 'desc': '所选整日来源 sina 或 eastmoney，不拼接不同源'},
+                {'name': 'fetched_at', 'name_cn': '数据采集时间', 'desc': '所选归档数据的 UTC 采集时间'},
+                {'name': 'attempted_at', 'name_cn': '最近尝试时间', 'desc': '最近采集尝试 UTC 时间，不表示采集成功'},
+                {'name': 'failure_reason', 'name_cn': '未完成原因', 'desc': '源端空响应、窗口过期或请求失败的说明'},
+                {'name': 'diagnostics', 'name_cn': '清洗诊断', 'desc': '非法、非交易时段与重复分钟的 JSON 计数'},
+                {'name': 'revision', 'name_cn': '归档修订标识', 'desc': '事实变化时更新，用于隔离旧 Redis 缓存'}]},
+
     "stock_share_capital_daily": {'name_cn': '逐日股本事实',
      'purpose': '按来源变更日期保存总股本和流通A股；展示、指标、选股、回测统一使用，公告日期仅作溯源。',
      'date_col': 'trade_date',
@@ -986,6 +1038,9 @@ _COMMON_FIELD_META: dict[str, tuple[str, str]] = {
 }
 
 _DUCK_FRESHNESS_POLICIES: dict[str, FreshnessPolicy] = {
+    "stock_intraday_monitor": FRESHNESS_NOT_APPLICABLE,
+    "stock_intraday_bar": FreshnessPolicy("direct", "trade_date", "latest_trade_date", "equal"),
+    "stock_intraday_coverage": FreshnessPolicy("direct", "trade_date", "latest_trade_date", "equal"),
     "stock_share_capital_event": FreshnessPolicy("not_applicable", "last_seen_at"),
     "stock_share_capital_history": FreshnessPolicy("not_applicable", "trade_date"),
     "stock_special_trading_day": FRESHNESS_NOT_APPLICABLE,
@@ -1043,6 +1098,9 @@ _DUCK_FRESHNESS_POLICIES: dict[str, FreshnessPolicy] = {
 }
 
 _DUCK_QUALITY_POLICIES: dict[str, QualityPolicy] = {
+    "stock_intraday_monitor": QualityPolicy("issue_types", ("intraday_gap", "intraday_invalid")),
+    "stock_intraday_bar": QualityPolicy("issue_types", ("intraday_invalid", "intraday_partial", "intraday_gap")),
+    "stock_intraday_coverage": QualityPolicy("issue_types", ("intraday_invalid", "intraday_partial", "intraday_gap")),
     "stock_share_capital_event": QUALITY_NOT_APPLICABLE,  # 原始输入含拒用记录；结构体检来源提醒，不计业务异常
     "stock_share_capital_history": QUALITY_NOT_APPLICABLE,  # 旧派生表停用，质量归统一逐日表
     "stock_special_trading_day": QUALITY_NOT_APPLICABLE,
@@ -1444,6 +1502,42 @@ def _duck_runtime_metrics(
             )
         else:
             fresh_overrides["index_bar"] = False
+    if {"stock_intraday_coverage", "daily_bar"} <= tables:
+        # 最新业务日必须逐股覆盖；历史缺口由独立质量策略报告，不混同为鲜活滞后。
+        row = client.query_df(
+            "SELECT count(*) n,count(*) FILTER(WHERE status<>'ready') gaps,"
+            "max(trade_date) hi FROM stock_intraday_coverage"
+        ).iloc[0]
+        fresh = (bool(row.n) and global_latest is not None
+                 and str(pd.Timestamp(row.hi).date()) >= global_latest)
+        if fresh:
+            fresh = not bool(client.query_df(
+                "SELECT 1 FROM daily_bar b LEFT JOIN stock_intraday_coverage c "
+                "ON c.code=b.code AND c.trade_date=b.trade_date "
+                "LEFT JOIN stock_suspension x ON x.code=b.code AND x.trade_date=b.trade_date "
+                "WHERE b.trade_date=? AND x.code IS NULL "
+                "AND (c.code IS NULL OR c.status<>'ready') LIMIT 1", [global_latest]
+            ).shape[0])
+        if fresh:
+            monitored = client.query_df(
+                "SELECT code,max(trade_date) hi FROM stock_intraday_coverage GROUP BY code"
+            )
+            with client.temp_view(monitored, prefix="intraday_fresh") as view:
+                fresh = not bool(client.query_df(
+                    f"SELECT 1 FROM daily_bar b JOIN {view} m ON m.code=b.code "
+                    "LEFT JOIN stock_suspension x ON x.code=b.code AND x.trade_date=b.trade_date "
+                    "WHERE b.trade_date>m.hi AND x.code IS NULL LIMIT 1"
+                ).shape[0])
+        if fresh and "stock_intraday_monitor" in tables:
+            from backend.services.intraday_archive import IntradayArchiveService
+
+            expected_sql, args = IntradayArchiveService(client)._coverage_sql()
+            fresh = client.query_df(
+                f"SELECT 1 FROM ({expected_sql}) WHERE trade_date=? AND status<>'ready' LIMIT 1",
+                args + [global_latest],
+            ).empty
+        for table in ("stock_intraday_bar", "stock_intraday_coverage"):
+            fresh_overrides[table] = fresh
     return latest, issues, global_latest, fresh_overrides
 
 

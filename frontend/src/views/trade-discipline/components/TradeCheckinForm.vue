@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppFormHelp from '@/components/AppFormHelp.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppScrollArea from '@/components/AppScrollArea.vue'
@@ -398,8 +399,8 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
           <div v-if="context.version.max_positions != null || form.peak_positions != null" class="holding-count" data-testid="checkin-holding-count">
             <el-form-item label="当日最大同时持仓数" :required="context.version.max_positions != null">
               <el-input-number v-model="form.peak_positions" :min="0" :max="2147483647" :precision="0" :step="1" :controls="false" :disabled="readonly" placeholder="填写实际数量" data-testid="checkin-peak-positions" />
+              <AppFormHelp>本套规则上限 {{ context.version.max_positions ?? '不限' }} 只；填写当日峰值，包含此前持仓，同股多笔只算一只。无操作也可能仍有持仓。</AppFormHelp>
             </el-form-item>
-            <p class="app-caption-text">本套规则上限 {{ context.version.max_positions ?? '不限' }} 只；填写当日峰值，包含此前持仓，同股多笔只算一只。无操作也可能仍有持仓。</p>
             <p v-if="holdingCountWarning(context.version.max_positions, form.peak_positions)" class="condition-warning" role="status">{{ holdingCountWarning(context.version.max_positions, form.peak_positions) }}</p>
           </div>
           <div v-if="hasCheckinViolation(form.assessment)" class="breach-grid">

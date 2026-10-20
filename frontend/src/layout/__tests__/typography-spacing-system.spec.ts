@@ -641,7 +641,7 @@ describe('字体与间距设计契约', () => {
     ).toEqual([])
   })
 
-  it('数据采集与任务调度表单的辅助说明统一消费全局 caption 语义类', () => {
+  it('数据采集与任务调度表单的辅助说明统一消费共享组件及 caption 字阶', () => {
     const targets = [
       'components/data/BoardTaskScopeFields.vue',
       'components/data/StockIngestScopeFields.vue',
@@ -653,11 +653,11 @@ describe('字体与间距设计契约', () => {
 
     for (const target of targets) {
       const source = read(join(SRC_DIR, target))
-      expect(source, target).toContain('app-caption-text')
-      expect(source, target).toContain('app-inline-info')
+      expect(source, target).toContain('AppFormHelp')
       expect(source, target).not.toContain('class="hint')
       expect(source, target).not.toMatch(/\.hint\s*\{/)
     }
+    expect(read(join(SRC_DIR, 'components/AppFormHelp.vue'))).toContain('app-caption-text')
 
     const globalCss = read(join(SRC_DIR, 'styles/global.css'))
     expect(globalCss).toContain('.app-inline-info--fill { width: 100%; }')

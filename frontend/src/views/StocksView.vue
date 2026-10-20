@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppFormHelp from '@/components/AppFormHelp.vue'
 import {
   APP_BOTTOM_FLOATING_PLACEMENT,
   APP_BOTTOM_FLOATING_POPPER_OPTIONS,
@@ -1420,7 +1421,7 @@ const menuPageTitle = useMenuPageTitle()
             :disabled="groupDetail?.is_default"
             :predefine="STOCK_GROUP_COLOR_PRESETS"
           />
-          <span class="f-hint">{{ groupDetail?.is_default ? '默认自选固定为红色' : '用于列表标签和分组状态识别' }}</span>
+          <AppFormHelp>{{ groupDetail?.is_default ? '默认自选固定为红色' : '用于列表标签和分组状态识别' }}</AppFormHelp>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -1559,8 +1560,7 @@ const menuPageTitle = useMenuPageTitle()
   font-weight: var(--app-font-weight-section);
   margin: 0 2px;
 }
-.gb-hint,
-.f-hint {
+.gb-hint {
   color: var(--app-muted-text);
   font-size: var(--app-font-size-caption);
 }

@@ -112,7 +112,7 @@ export interface Bars {
 
 export interface IntradayPoint {
   time: string
-  open: number
+  open: number | null
   high: number
   low: number
   close: number
@@ -122,6 +122,9 @@ export interface IntradayPoint {
 }
 
 export interface StockIntraday {
+  archived?: boolean
+  archive_start?: string | null
+  archive_end?: string | null
   code: string
   name: string | null
   trade_date: string
@@ -129,6 +132,7 @@ export interface StockIntraday {
   status: 'ready' | 'partial' | 'out_of_range' | 'no_data'
   source: 'sina' | 'eastmoney' | null
   fetched_at: string | null
+  /** 兼容旧接口，源端采集窗口统一由数据管理解释，查询固定返回 null。 */
   supported_start: string | null
   supported_end: string | null
   pre_close: number | null

@@ -29,13 +29,6 @@ let controller: AbortController | null = null
 let requestVersion = 0
 
 const title = computed(() => `${props.name || props.code} ${props.code} · ${props.tradeDate} · 分时`)
-const rangeDescription = computed(() => {
-  const start = data.value?.supported_start
-  const end = data.value?.supported_end
-  return start && end
-    ? `免费分钟源当前仅支持本地最近交易日（${start} 至 ${end}）`
-    : '免费分钟源当前仅支持本地最近 8 个交易日'
-})
 const summary = computed<StockQuoteSummaryModel | null>(() => {
   if (!data.value || !['ready', 'partial'].includes(data.value.status) || !data.value.points.length) {
     return null
@@ -137,7 +130,6 @@ onBeforeUnmount(() => controller?.abort())
       v-if="loading"
       state="loading"
       title="正在加载分时行情…"
-      description="首次加载会访问免费分钟行情源，后续优先使用 12 小时缓存"
     />
     <AppStateBlock
       v-else-if="error"
@@ -148,24 +140,18 @@ onBeforeUnmount(() => controller?.abort())
       @retry="load"
     />
     <AppStateBlock
-      v-else-if="data?.status === 'out_of_range'"
+      v-else-if="data?.status === 'out_of_range' || data?.status === 'no_data'"
       state="empty"
-      title="该日期超出免费源范围"
-      :description="rangeDescription"
-    />
-    <AppStateBlock
-      v-else-if="data?.status === 'no_data'"
-      state="empty"
-      title="该交易日暂无分时数据"
-      description="可能为停牌、源端暂未覆盖或当日没有成交"
+      title="该交易日尚未采集分时数据"
+      description="请联系管理员在数据管理中采集，采集进度和数据质量请在数据管理中查看"
     />
     <template v-else-if="data && (data.status === 'ready' || data.status === 'partial')">
       <AppStatusNotice
         v-if="data.status === 'partial'"
         class="stock-intraday-dialog__notice"
         tone="info"
-        title="免费源返回的分钟点可能不完整，图中仅展示真实数据"
-        description="可继续查看现有分时；缺失分钟不会补造价格或成交量"
+        title="该交易日分时数据采集不完整"
+        description="当前展示已采集数据，补采进度和数据质量请在数据管理中查看"
       />
       <StockIntradayChart :points="data.points" :pre-close="data.pre_close" />
     </template>

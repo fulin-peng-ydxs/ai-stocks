@@ -694,6 +694,11 @@ const menuPageTitle = useMenuPageTitle()
         </div>
 
         <div class="scan-time" v-if="ov">
+          <template v-if="ov?.intraday">
+            分时归档：监控自 {{ ov.intraday.monitoring_start?.slice(0, 10) || '尚未开始' }}，
+            最新 {{ ov.intraday.archive_end?.slice(0, 10) || '—' }}，
+            完整 {{ ov.intraday.complete_days }} / 部分 {{ ov.intraday.partial_days }} / 缺失 {{ ov.intraday.missing_days }} 个股票交易日。
+          </template>
           最近质检时间：<b>{{ formatDateTimeSeconds(ov.last_scan_at, '尚未质检') }}</b>
           <span class="hint">（“立即质检”或定时质检任务会刷新它）</span>
         </div>
@@ -1070,6 +1075,19 @@ const menuPageTitle = useMenuPageTitle()
                   <AppTableColumn label="名称" prop="name" />
                   <AppTableColumn label="最新数据">
                     <template #default="{ row }">{{ (row.latest_date || '—').slice(0, 10) }}</template>
+                  </AppTableColumn>
+                  <AppTableColumn label="分时覆盖" role="status">
+                    <template #default="{ row }">
+                      <AppHoverInfo
+                        v-if="row.intraday"
+                        :content="'监控自 ' + (row.intraday.monitoring_start || '').slice(0, 10) + '；最新归档 ' + (row.intraday.archive_end || '—').slice(0, 10)"
+                      >
+                        <el-button text size="small" @click="router.push({ path: '/data/quality', query: { code: row.code, issue_type: row.intraday.missing_days ? 'intraday_gap' : 'intraday_partial' } })">
+                          完整 {{ row.intraday.complete_days }} / 部分 {{ row.intraday.partial_days }} / 缺失 {{ row.intraday.missing_days }}
+                        </el-button>
+                      </AppHoverInfo>
+                      <span v-else class="app-caption-text">未监控</span>
+                    </template>
                   </AppTableColumn>
                   <AppTableColumn v-for="k in ['L1', 'L2', 'L3', 'L4'].filter(shouldShowLayer)" :key="k" :label="LAYER_CN[k]" role="status">
                     <template #header>

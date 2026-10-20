@@ -35,12 +35,12 @@ log = get_logger("services.async_task")
 # 全部任务类型：旧原子任务保持兼容，stock_ingest 按安全方案统一分派既有采集能力。
 TASK_TYPES = ("update", "backfill", "ingest_date", "ingest_codes", "rebuild_price_factors",
               "recompute", "verify", "checkup", "fix", "enrich_basic", "audit_cleanup",
-              "board", "stock_ingest", "stock_board_correlation", "limit_ladder_invalidate",
+              "board", "stock_ingest", "intraday_ingest", "stock_board_correlation", "limit_ladder_invalidate",
               "limit_ladder_recompute", "stock_special_trading_day")
 # 写类任务：互斥（写任务之间不并发），且服务重启需 reconcile。
 WRITE_TASK_TYPES = frozenset({"update", "backfill", "ingest_date", "ingest_codes",
                               "rebuild_price_factors", "verify", "fix", "enrich_basic",
-                              "board", "stock_ingest", "stock_board_correlation",
+                              "board", "stock_ingest", "intraday_ingest", "stock_board_correlation",
                               "limit_ladder_invalidate", "limit_ladder_recompute",
                               "stock_special_trading_day"})
 
@@ -53,6 +53,11 @@ _LOG_FLUSH_EVERY = 10  # 累计 N 条即 flush；长任务日志要比进度条�
 _TASK_CREATE_LOCK = threading.Lock()
 
 TASK_CAPABILITIES: dict[str, dict] = {
+    "intraday_ingest": {
+        "can_cancel": True, "can_resume": True, "cancel_mode": "checkpoint",
+        "resume_granularity": "code",
+        "cancel_message": "当前分钟源请求结束并提交本股票后停止",
+    },
     "stock_special_trading_day": {
         "can_cancel": False, "can_resume": False, "cancel_mode": "none",
         "resume_granularity": None, "cancel_message": "公告事实按批次原子维护",
@@ -152,6 +157,34 @@ class TaskCancelled(Exception):
 # 协作式取消：被请求取消的任务 id 集合（同进程内执行器线程与 API 共享）。
 _CANCEL_LOCK = threading.Lock()
 _CANCELLED: set[str] = set()
+
+
+def _resume_message(task_type: str, checkpoint: dict) -> str:
+    """兼容各任务检查点，缺少计数时不把 None 或问号暴露给用户。"""
+    phase = checkpoint.get("phase") or "未记录阶段"
+    item = checkpoint.get("current_item") or "未记录位置"
+    if task_type == "intraday_ingest":
+        scope = checkpoint.get("intraday_scope") or {}
+        total = len(scope.get("codes") or []) or checkpoint.get("phase_total")
+        done = len(checkpoint.get("intraday_done") or [])
+        failed = len(checkpoint.get("intraday_failed") or {})
+        count = f"已成功完成 {done}/{total} 只" if total else f"已成功完成 {done} 只"
+        if failed:
+            count += f"，{failed} 只失败待重试"
+    else:
+        done = checkpoint.get("done")
+        total = checkpoint.get("total")
+        if done is None:
+            done = checkpoint.get("phase_done")
+        if total is None:
+            total = checkpoint.get("phase_total")
+        if isinstance(done, (int, float)) and isinstance(total, (int, float)):
+            count = f"已处理 {done}/{total} 项"
+        elif isinstance(done, (int, float)):
+            count = f"已处理 {done} 项（总数未记录）"
+        else:
+            count = "未记录处理计数"
+    return f"从检查点继续：上次阶段 {phase}，位置 {item}，{count}；跳过已完成项，重试未完成项"
 
 
 class TaskContext:
@@ -294,6 +327,9 @@ class AsyncTaskService:
             from backend.services.stock_special_trading_day import normalize_special_day_params
 
             params = normalize_special_day_params(params)
+        if task_type == "intraday_ingest":
+            from backend.services.intraday_contract import normalize_intraday_params
+            params = normalize_intraday_params(params)
         if task_type == "stock_ingest":
             from backend.services.stock_ingest import normalize_stock_ingest_params
 
@@ -423,11 +459,7 @@ class AsyncTaskService:
         )
         ctx.log(f"▶ 任务启动：{task_type}，参数 {json.dumps(params, ensure_ascii=False, default=str)}")
         if checkpoint:
-            done = checkpoint.get("done")
-            phase = checkpoint.get("phase") or "未记录阶段"
-            item = checkpoint.get("current_item") or "-"
-            ctx.log(f"从检查点继续：上次阶段 {phase}，位置 {item}，约完成 {done}/{checkpoint.get('total', '?')} 项；"
-                    "将按 checkpoint/已入库数据跳过已完成部分")
+            ctx.log(_resume_message(task_type, checkpoint))
         ctx.flush()
         try:
             result = _HANDLERS[task_type](params, ctx)
@@ -779,6 +811,39 @@ def _h_ingest_codes(params: dict, ctx: TaskContext) -> dict:
         }
     return {"message": f"指定股票采集结果：{res}",
             "ok": not (res.get("stage_failures") or res.get("fail")), "ingest": res}
+
+
+class _IntradayRepairContext:
+    """每条修复独立范围；共享取消和日志，不覆盖 fix 的 issue checkpoint。"""
+
+    def __init__(self, ctx):
+        self.ctx, self.tid, self.checkpoint = ctx, ctx.tid, {}
+
+    def check_cancel(self):
+        self.ctx.check_cancel()
+
+    def log(self, message, level="info"):
+        self.ctx.log(message, level)
+
+    def flush(self):
+        self.ctx.flush()
+
+    def set_checkpoint(self, **data):
+        self.checkpoint.update(data)
+
+    def set_phase(self, phase, **data):
+        self.checkpoint.update(data)
+
+    def progress(self, value, message):
+        self.ctx.log(message)
+        self.ctx.flush()
+
+
+def _h_intraday_ingest(params: dict, ctx: TaskContext) -> dict:
+    """独立分时任务沿用现有 DuckDB 写槽位与 PG 运行态。"""
+    from backend.services.intraday_archive import IntradayArchiveService
+
+    return IntradayArchiveService(ctx.svc.market).collect(params, ctx=ctx)
 
 
 def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
@@ -1216,6 +1281,20 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
         ):
             note = "目标数据已满足复检要求，无需重复采集"
             ctx.log(f"{code or '全源'}：{note}")
+        elif issue_type in ("intraday_gap", "intraday_partial", "intraday_invalid"):
+            from backend.services.intraday_archive import IntradayArchiveService
+            archive = IntradayArchiveService(c)
+            if not archive.clean(issue_type, code, td):
+                if str(td) not in archive.online_dates():
+                    note = "超出现有分钟源窗口，无法重采，历史缺口保留待处理"
+                else:
+                    result = archive.collect(
+                        {"mode": "refetch", "codes": [code], "date_start": str(td), "date_end": str(td)},
+                        ctx=_IntradayRepairContext(ctx),
+                    )
+                    note = result["message"]
+            else:
+                note = "目标分时已满足复检要求"
         elif issue_type in ("capital_gap", "capital_invalid", "capital_mismatch", "capital_raw_invalid"):
             if rep.recheck_clean(issue_type, code, td, detail=issue_detail):
                 from backend.services.capital_quality import CapitalQualityService
@@ -1968,6 +2047,7 @@ _HANDLERS = {
     "audit_cleanup": _h_audit_cleanup,
     "board": _h_board,
     "stock_ingest": _h_stock_ingest,
+    "intraday_ingest": _h_intraday_ingest,
     "stock_board_correlation": _h_stock_board_correlation,
     "limit_ladder_invalidate": _h_limit_ladder_invalidate,
     "limit_ladder_recompute": _h_limit_ladder_recompute,
