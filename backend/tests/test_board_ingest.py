@@ -539,7 +539,7 @@ def test_fund_flow_batch_not_single_insert(tmp_path):
 
 
 def test_fund_checkpoint_legacy_and_scope(tmp_path):
-    """fund checkpoint：旧格式（无 scope 前缀）全量续跑兼容；改范围续跑不误命中旧组。"""
+    """fund checkpoint：同日旧格式兼容；改范围续跑不误命中旧组。"""
     import pandas as pd
     ff = {
         ("concept", "即时"): pd.DataFrame([
@@ -563,7 +563,7 @@ def test_fund_checkpoint_legacy_and_scope(tmp_path):
         def log(self, *args, **kwargs): self.logs.append(args)
 
     # 旧格式全量续跑：done_keys="concept:即时" 无前缀 → 平移为 ALL:concept:即时 → 命中跳过
-    legacy = _Ctx({"fund_done_keys": ["concept:即时"]})
+    legacy = _Ctx({"fund_snapshot_date": "2026-01-05", "fund_done_keys": ["concept:即时"]})
     r = svc.ingest_board_fund_flow(date(2026, 1, 5), periods=("即时",), ctx=legacy)
     assert r["rows"] == 0
     assert "ALL:concept:即时" in legacy.checkpoint["fund_done_keys"]
@@ -571,14 +571,16 @@ def test_fund_checkpoint_legacy_and_scope(tmp_path):
     # 新格式指定子集：scope=md5(309121)，done_keys 与之匹配 → 跳过
     from hashlib import md5
     scope = md5("309121".encode()).hexdigest()[:8]
-    scoped = _Ctx({"fund_done_keys": [f"{scope}:concept:即时"]})
+    scoped = _Ctx({"fund_snapshot_date": "2026-01-05",
+                   "fund_done_keys": [f"{scope}:concept:即时"]})
     r2 = svc.ingest_board_fund_flow(date(2026, 1, 5), periods=("即时",),
                                     board_codes=["309121"], ctx=scoped)
     assert r2["rows"] == 0
 
     # 改范围续跑：旧 scope 键（309121）与新区间（302035）不交 → 重拉 302035 范围资金流
     other_scope = md5("302035".encode()).hexdigest()[:8]
-    changed = _Ctx({"fund_done_keys": [f"{scope}:concept:即时"]})
+    changed = _Ctx({"fund_snapshot_date": "2026-01-05",
+                    "fund_done_keys": [f"{scope}:concept:即时"]})
     r3 = svc.ingest_board_fund_flow(date(2026, 1, 5), periods=("即时",),
                                     board_codes=["302035"], ctx=changed)
     assert r3["rows"] == 1
@@ -676,8 +678,9 @@ def _two_boards(c: DuckDBClient) -> None:
               "('309121','AI PC','concept',TRUE),('881121','半导体','industry',TRUE)")
 
 
-def test_bar_ready_probe_falls_back_when_source_lagging(tmp_path):
+def test_bar_ready_probe_falls_back_when_source_lagging(tmp_path, fund_clock):
     """全量增量且截止日=今天：未就绪时回退到上一交易日继续补采。"""
+    fund_clock('2026-10-20T16:00:00')
     from backend.services.board_ingest import _asia_date
     today = _asia_date()
     yesterday = today - timedelta(days=1)
@@ -701,8 +704,9 @@ def test_bar_ready_probe_falls_back_when_source_lagging(tmp_path):
     assert any("未就绪" in m and str(today) in m and str(yesterday) in m for m in warns)
 
 
-def test_bar_ready_probe_passes_and_logs_window_freshness(tmp_path):
+def test_bar_ready_probe_passes_and_logs_window_freshness(tmp_path, fund_clock):
     """源端已出当日数据：正常采集，日志带采集区间与「已出截止日 K/N」新鲜度。"""
+    fund_clock('2026-10-20T16:00:00')
     from backend.services.board_ingest import _asia_date
     today = _asia_date()
     src = _FakeSource({}, bar={
@@ -741,21 +745,24 @@ def test_bar_probe_applies_to_explicit_board_codes(tmp_path):
     assert r["rows"] == 1 and r["at_end"] == 1 and r["scope_total"] == 1
 
 
-def test_board_update_force_current_day_bypasses_all_fallbacks(monkeypatch):
+def test_board_update_force_current_day_bypasses_all_fallbacks(monkeypatch, market, fund_clock):
     """强制当日直接使用今天，指数不做就绪探测，资金流沿用同一目标日。"""
     from backend.services import board_ingest as board_module
     from backend.services.ingest import IngestionService
 
-    today = date(2026, 8, 29)
+    fund_clock("2026-10-20T16:00:00")
+    today = date(2026, 10, 20)
     previous = today - timedelta(days=1)
+    market.execute("INSERT INTO trade_calendar VALUES (?,TRUE),(?,TRUE)", [previous, today])
     captured: dict = {}
 
     class _FakeBoardService:
+        c = market
         def ingest_board_bar(self, start, end=None, **kwargs):
             captured["bar_end"] = end
             captured["probe_ready"] = kwargs.get("probe_ready")
             return {
-                "rows": 0, "boards": 0, "failed": [], "start": start.isoformat(),
+                "rows": 0, "boards": 0, "failed": [], "start": start.isoformat() if start else None,
                 "end": end.isoformat(), "requested_end": end.isoformat(), "fallback": False,
                 "at_end": 0, "scope_total": 0,
             }
@@ -778,11 +785,13 @@ def test_board_update_force_current_day_bypasses_all_fallbacks(monkeypatch):
     }
 
 
-def test_board_backfill_fund_uses_latest_open_day(monkeypatch, market):
-    """backfill 资金流以最近交易日标记快照，不使用周末采集日。"""
+def test_board_backfill_fund_without_bar_defers_snapshot_date(monkeypatch, market, fund_clock):
+    """空库回填没有行情锚点，由资金流服务解析已收盘日，避免凌晨误用今天。"""
     from backend.services import board_ingest as board_module
     from backend.services.ingest import IngestionService
 
+    fund_clock('2026-08-30T16:00:00')
+    market.execute("INSERT INTO trade_calendar VALUES ('2026-08-28',TRUE),('2026-08-31',TRUE)")
     latest_open_day = date(2026, 8, 28)
     captured: dict = {}
 
@@ -800,11 +809,12 @@ def test_board_backfill_fund_uses_latest_open_day(monkeypatch, market):
 
     svc.ingest_board(mode="backfill", only=["fund"])
 
-    assert captured == {"fund_date": latest_open_day}
+    assert captured == {"fund_date": None}
 
 
-def test_bar_probe_off_by_default_for_backfill(tmp_path):
+def test_bar_probe_off_by_default_for_backfill(tmp_path, fund_clock):
     """backfill/直接调用默认不就绪探测：全量+截止日=今天但源端滞后也照常采集已有部分。"""
+    fund_clock('2026-10-20T16:00:00')
     from backend.services.board_ingest import _asia_date
     today = _asia_date()
     yesterday = today - timedelta(days=1)
@@ -875,29 +885,306 @@ def test_board_date_range_normalization():
     with pytest.raises(ValueError, match="不能与强制采集当日"):
         normalize_board_date_range("update", "2026-08-01", None, True)
 
-@pytest.mark.parametrize('clock,target,blocked', [
-    ('2026-10-19T10:00:00', '2026-10-16', True),
-    ('2026-10-19T16:00:00', '2026-10-16', True),
-    ('2026-10-19T16:00:00', '2026-10-19', False),
-    ('2026-10-18T16:00:00', '2026-10-16', False),
-])
-def test_live_fund_snapshot_date_guard(market, monkeypatch, clock, target, blocked):
+@pytest.fixture()
+def fund_clock(monkeypatch):
+    """可推进的北京时间时钟，覆盖跨日与多页取数跨时段边界。"""
     from datetime import datetime
+    from zoneinfo import ZoneInfo
 
     import backend.services.board_ingest as module
-    from backend.common.exceptions import DataSourceError
+
+    current = [datetime(2026, 10, 20, 3, 57, 24, tzinfo=ZoneInfo("Asia/Shanghai"))]
 
     class Clock(datetime):
         @classmethod
         def now(cls, tz=None):
-            return datetime.fromisoformat(clock).replace(tzinfo=tz)
+            return current[0].astimezone(tz) if tz else current[0].replace(tzinfo=None)
 
-    monkeypatch.setattr(module, 'datetime', Clock)
-    market.execute("INSERT INTO trade_calendar VALUES ('2026-10-16',TRUE),"
-                   "('2026-10-18',FALSE),('2026-10-19',TRUE)")
+    def set_clock(value):
+        parsed = datetime.fromisoformat(value)
+        current[0] = parsed if parsed.tzinfo else parsed.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    monkeypatch.setattr(module, "datetime", Clock)
+    from backend.services import eod_dates
+    monkeypatch.setattr(eod_dates, "shanghai_now", lambda: current[0].astimezone(ZoneInfo("Asia/Shanghai")))
+    return set_clock
+
+
+@pytest.mark.parametrize('clock,target,blocked', [
+    ('2026-10-20T00:00:00', '2026-10-19', False),
+    ('2026-10-20T03:57:24', '2026-10-19', False),
+    ('2026-10-20T03:57:24', '2026-10-20', True),
+    ('2026-10-20T03:57:24', '2026-10-16', True),
+    ('2026-10-19T19:57:24+00:00', '2026-10-19', False),
+    ('2026-10-20T09:14:59', '2026-10-19', False),
+    ('2026-10-20T09:15:00', '2026-10-19', True),
+    ('2026-10-20T09:15:00', '2026-10-20', True),
+    ('2026-10-20T12:00:00', '2026-10-20', True),
+    ('2026-10-20T15:00:00', '2026-10-20', True),
+    ('2026-10-20T15:29:59', '2026-10-20', True),
+    ('2026-10-20T15:30:00', '2026-10-20', False),
+    ('2026-10-20T15:30:00', '2026-10-19', True),
+    ('2026-10-19T03:00:00', '2026-10-16', False),
+    ('2026-10-19T10:00:00', '2026-10-16', True),
+    ('2026-10-19T16:00:00', '2026-10-16', True),
+    ('2026-10-19T16:00:00', '2026-10-19', False),
+    ('2026-10-18T16:00:00', '2026-10-16', False),
+    ('2026-10-18T16:00:00', '2026-10-18', True),
+    ('2026-10-08T16:00:00', '2026-09-30', False),
+    ('2026-10-09T03:00:00', '2026-09-30', False),
+])
+def test_live_fund_snapshot_date_guard(market, fund_clock, clock, target, blocked):
+    from backend.common.exceptions import DataSourceError
+
+    fund_clock(clock)
+    market.execute("INSERT INTO trade_calendar VALUES ('2026-09-30',TRUE),"
+                   "('2026-10-08',FALSE),('2026-10-09',TRUE),('2026-10-16',TRUE),"
+                   "('2026-10-18',FALSE),('2026-10-19',TRUE),('2026-10-20',TRUE)")
     service = BoardIngestService(market, source=_FakeSource({}))
     if blocked:
         with pytest.raises(DataSourceError):
             service._validate_fund_snapshot_date(date.fromisoformat(target))
     else:
-        service._validate_fund_snapshot_date(date.fromisoformat(target))
+        assert service._validate_fund_snapshot_date(date.fromisoformat(target)) == date.fromisoformat(target)
+
+
+@pytest.fixture()
+def live_fund_service(market, fund_clock):
+    """真实资金流服务与临时行情库，仅替换外部 HTTP 数据和时钟。"""
+    market.execute("INSERT INTO trade_calendar VALUES ('2026-10-16',TRUE),"
+                   "('2026-10-18',FALSE),('2026-10-19',TRUE),('2026-10-20',TRUE)")
+    market.execute("INSERT INTO board_dict (board_code, name, board_type, has_bar) "
+                   "VALUES ('309121', 'AI PC', 'concept', TRUE)")
+    flow = pd.DataFrame([{
+        "name": "AI PC", "board_code": "309121", "inflow": 2.0, "outflow": 1.0,
+        "net_inflow": 1.0, "net_ratio": 1.0, "leader_stock": "x", "leader_pct": 1.0,
+    }])
+    from backend.datasource.ths_board import FUND_FLOW_PERIODS
+
+    src = _FakeSource({}, fund_flow={("concept", p): flow for p in FUND_FLOW_PERIODS})
+    src.fund_flow_is_live_snapshot = True
+    return BoardIngestService(market, source=src)
+
+
+class _FundContext:
+    def __init__(self, checkpoint=None):
+        self.checkpoint = checkpoint or {}
+
+    def check_cancel(self): pass
+    def set_checkpoint(self, **data): self.checkpoint.update(data)
+    def set_phase(self, phase, **data): self.checkpoint.update(data)
+    def log(self, *args, **kwargs): pass
+    def progress(self, *args, **kwargs): pass
+    def flush(self): pass
+
+
+@pytest.mark.parametrize('mode,stages,has_bar,resume', [
+    ('update', ['fund'], True, False),
+    ('update', ['fund'], False, False),
+    ('backfill', ['fund'], False, False),
+    ('update', ['bar', 'fund'], True, False),
+    ('backfill', ['bar', 'fund'], True, False),
+    ('update', ['bar', 'fund'], True, True),
+])
+def test_board_overnight_ingest_persists_previous_close(
+    live_fund_service, monkeypatch, mode, stages, has_bar, resume,
+):
+    """经真实编排、日期门禁、五周期映射与落库验证凌晨采集，不以桩响应替代闭环。"""
+    from backend.services import board_ingest as module
+    from backend.services.ingest import IngestionService
+
+    service = live_fund_service
+    if has_bar:
+        service.c.execute("INSERT INTO board_bar (board_code, trade_date, close) "
+                          "VALUES ('309121', DATE '2026-10-19', 100.0)")
+        service.src._bar = {"309121": pd.DataFrame([{
+            "trade_date": date(2026, 10, 19), "open": 100.0, "high": 101.0,
+            "low": 99.0, "close": 100.0, "volume": 1000, "amount": 100000,
+        }])}
+    monkeypatch.setattr(module, "BoardIngestService", lambda: service)
+    ing = IngestionService.__new__(IngestionService)
+    ing._latest_open_day = lambda: date(2026, 10, 20)
+    ctx = _FundContext({'bar_done_codes': ['309121']} if resume else None)
+    result = ing.ingest_board(mode=mode, only=stages, board_type="concept", ctx=ctx)
+
+    assert result['ok'] is True
+    assert result['fund_flow']['rows'] == 5
+    rows = service.c.query_df("SELECT snapshot_date, period FROM board_fund_flow")
+    assert len(rows) == 5
+    assert {d.date() for d in rows['snapshot_date']} == {date(2026, 10, 19)}
+    assert service.c.query_df("SELECT date_end FROM data_update_log "
+                              "WHERE table_name='board_fund_flow'").iloc[0]['date_end'].date() == date(2026, 10, 19)
+
+
+@pytest.mark.parametrize('target', [None, date(2026, 10, 19)])
+def test_live_fund_direct_ingest_overnight(live_fund_service, target):
+    """未匹配修复的默认日期与缺失/滞后修复的显式日期共享凌晨归属规则。"""
+    result = live_fund_service.ingest_board_fund_flow(target, board_type="concept")
+    assert result['rows'] == 5 and result['failed'] == []
+    assert live_fund_service.c.query_df(
+        "SELECT DISTINCT snapshot_date FROM board_fund_flow"
+    ).iloc[0]['snapshot_date'].date() == date(2026, 10, 19)
+
+
+def test_board_force_today_cannot_bypass_fund_guard(live_fund_service, monkeypatch):
+    """强制当日仍不能在凌晨把上一交易日资金流写成今天。"""
+    from backend.services import board_ingest as module
+    from backend.services.ingest import IngestionService
+
+    monkeypatch.setattr(module, 'BoardIngestService', lambda: live_fund_service)
+    monkeypatch.setattr(live_fund_service.src, 'get_board_fund_flow',
+                        lambda *_: pytest.fail('错误目标日期应在取数前拒绝'))
+    from backend.common.exceptions import DataSourceError
+    with pytest.raises(DataSourceError, match='目标2026-10-20'):
+        IngestionService.__new__(IngestionService).ingest_board(
+            mode='update', only=['fund'], force_current_day=True,
+        )
+    assert live_fund_service.c.query_df('SELECT * FROM board_fund_flow').empty
+
+
+def test_live_fund_fetch_crossing_midnight_keeps_previous_close(
+    live_fund_service, fund_clock, monkeypatch,
+):
+    """跨午夜不改变已收盘日，同一收盘快照仍可安全写入。"""
+    fund_clock('2026-10-19T23:59:59')
+    fetch = live_fund_service.src.get_board_fund_flow
+
+    def overnight_fetch(*args):
+        frame = fetch(*args)
+        fund_clock('2026-10-20T00:00:00')
+        return frame
+
+    monkeypatch.setattr(live_fund_service.src, 'get_board_fund_flow', overnight_fetch)
+    result = live_fund_service.ingest_board_fund_flow(board_type='concept')
+    assert result['rows'] == 5 and result['failed'] == []
+    assert live_fund_service.c.query_df(
+        'SELECT DISTINCT snapshot_date FROM board_fund_flow'
+    ).iloc[0]['snapshot_date'].date() == date(2026, 10, 19)
+
+
+@pytest.mark.parametrize('clock,target', [
+    ('2026-10-20T03:57:24', date(2026, 10, 20)),
+    ('2026-10-20T03:57:24', date(2026, 10, 16)),
+    ('2026-10-20T09:15:00', None),
+    ('2026-10-20T12:00:00', date(2026, 10, 20)),
+    ('2026-10-20T16:00:00', date(2026, 10, 19)),
+])
+def test_live_fund_invalid_date_rejects_before_fetch(
+    live_fund_service, fund_clock, monkeypatch, clock, target,
+):
+    from backend.common.exceptions import DataSourceError
+
+    fund_clock(clock)
+    monkeypatch.setattr(live_fund_service.src, 'get_board_fund_flow',
+                        lambda *_: pytest.fail('禁采时间或错误日期不应请求实时源'))
+    with pytest.raises(DataSourceError):
+        live_fund_service.ingest_board_fund_flow(target, board_type='concept')
+    assert live_fund_service.c.query_df('SELECT * FROM board_fund_flow').empty
+
+
+@pytest.mark.parametrize('issue_type', ['board_fund_missing', 'board_fund_stale'])
+def test_overnight_fund_repair_rechecks_and_resolves(live_fund_service, monkeypatch, issue_type):
+    """真实恢复处理器经采集落库、同日复检、关联扫描后关闭问题，不残留 fixing。"""
+    import json
+
+    from backend.datasource.ths_board import FUND_FLOW_PERIODS
+    from backend.services import board_ingest as module
+    from backend.services.async_task import AsyncTaskService, TaskContext, _recover_one
+    from backend.services.data_report import DataIntegrityReport
+
+    service = live_fund_service
+    c = service.c
+    c.execute("INSERT INTO daily_bar (code, trade_date, close) "
+              "VALUES ('600000.SH', DATE '2026-10-19', 10.0)")
+    c.execute("INSERT INTO board_bar (board_code, trade_date, close) "
+              "VALUES ('309121', DATE '2026-10-19', 100.0)")
+    for period in FUND_FLOW_PERIODS:
+        c.execute("INSERT INTO board_fund_flow (board_code, snapshot_date, period, net_inflow) "
+                  "VALUES ('309121', ?, ?, 1.0)",
+                  [date(2026, 10, 16) if period == '即时' else date(2026, 10, 19), period])
+    c.execute("INSERT INTO data_quality_issue "
+              "(id, code, trade_date, issue_type, severity, status, detail, detected_at) "
+              "VALUES (500, ?, DATE '2026-10-19', ?, 'mid', 'open', ?, now())",
+              ['309121' if issue_type == 'board_fund_missing' else None,
+               issue_type, json.dumps({'periods': ['即时']})])
+    # 滞后恢复拉全源，需要同时验证行业返回，不把概念数据冒充行业快照。
+    c.execute("INSERT INTO board_dict (board_code, name, board_type) "
+              "VALUES ('881121', '半导体', 'industry')")
+    service.src._fund_flow[('industry', '即时')] = service.src._fund_flow[
+        ('concept', '即时')
+    ].assign(board_code='881121', name='半导体')
+    monkeypatch.setattr(module, 'BoardIngestService', lambda _client=None: service)
+
+    clean, _, note = _recover_one(
+        c, DataIntegrityReport(c), None,
+        TaskContext(AsyncTaskService(c), 'test_overnight_fix', {}), 500,
+    )
+
+    assert clean is True
+    assert '复检通过' in note
+    issue = c.query_df('SELECT status, fix_task_id FROM data_quality_issue WHERE id=500').iloc[0]
+    assert issue['status'] == 'resolved' and pd.isna(issue['fix_task_id'])
+    assert c.query_df("SELECT count(*) n FROM board_fund_flow "
+                      "WHERE snapshot_date='2026-10-20'").iloc[0]['n'] == 0
+    assert DataIntegrityReport(c).recheck_clean(
+        issue_type, '309121' if issue_type == 'board_fund_missing' else None,
+        date(2026, 10, 19), detail={'periods': ['即时']},
+    ) is True
+
+
+@pytest.mark.parametrize('calendar_sql', [
+    "DELETE FROM trade_calendar WHERE trade_date='2026-10-20'",
+    "DELETE FROM trade_calendar WHERE trade_date<'2026-10-20'",
+])
+def test_live_fund_missing_calendar_rejects_before_fetch(live_fund_service, calendar_sql, monkeypatch):
+    from backend.common.exceptions import DataSourceError
+
+    service = live_fund_service
+    service.c.execute(calendar_sql)
+    monkeypatch.setattr(service.src, "get_board_fund_flow",
+                        lambda *_: pytest.fail("日历不齐时不应请求实时数据"))
+    with pytest.raises(DataSourceError, match="交易日历"):
+        service.ingest_board_fund_flow(board_type="concept")
+    assert service.c.query_df("SELECT * FROM board_fund_flow").empty
+
+
+@pytest.mark.parametrize('clock', ['2026-10-20T09:15:00', '2026-10-20T16:00:00'])
+def test_live_fund_fetch_crossing_session_rejects_before_write(
+    live_fund_service, fund_clock, clock, monkeypatch,
+):
+    from backend.common.exceptions import DataSourceError
+
+    service = live_fund_service
+    fetch = service.src.get_board_fund_flow
+
+    def slow_fetch(*args):
+        frame = fetch(*args)
+        fund_clock(clock)
+        return frame
+
+    monkeypatch.setattr(service.src, "get_board_fund_flow", slow_fetch)
+    ctx = _FundContext()
+    with pytest.raises(DataSourceError):
+        service.ingest_board_fund_flow(board_type="concept", ctx=ctx)
+    assert service.c.query_df("SELECT * FROM board_fund_flow").empty
+    assert ctx.checkpoint['fund_done_keys'] == []
+
+
+@pytest.mark.parametrize('checkpoint_date,expected_rows', [
+    (None, 5), ('2026-10-16', 5), ('2026-10-19', 0),
+])
+def test_live_fund_checkpoint_requires_same_snapshot_date(
+    live_fund_service, monkeypatch, checkpoint_date, expected_rows,
+):
+    from backend.datasource.ths_board import FUND_FLOW_PERIODS
+
+    ctx = _FundContext({
+        'fund_snapshot_date': checkpoint_date,
+        'fund_done_keys': [f'ALL:concept:{p}' for p in FUND_FLOW_PERIODS],
+    })
+    if not expected_rows:
+        monkeypatch.setattr(live_fund_service.src, 'get_board_fund_flow',
+                            lambda *_: pytest.fail('同日已完成周期不应重复拉取'))
+    result = live_fund_service.ingest_board_fund_flow(board_type='concept', ctx=ctx)
+    assert result['rows'] == expected_rows
+    assert ctx.checkpoint['fund_snapshot_date'] == '2026-10-19'

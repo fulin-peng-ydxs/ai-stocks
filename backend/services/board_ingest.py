@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 
@@ -29,6 +29,7 @@ from backend.common.logging import get_logger
 from backend.dataquality.checker import severity_for
 from backend.datasource.akshare_source import classify_board, to_full_code
 from backend.datasource.ths_board import FUND_FLOW_PERIODS, ThsBoardSource
+from backend.services import eod_dates
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
@@ -101,9 +102,14 @@ def normalize_board_date_range(
     return start, end
 
 
+def _asia_now() -> datetime:
+    """统一采集时钟，避免编排目标日与资金流门禁使用不同的时区。"""
+    return eod_dates.shanghai_now()
+
+
 def _asia_date() -> date:
     """Asia/Shanghai 当前日期（快照日期语义）。"""
-    return datetime.now(timezone.utc).astimezone(tz=timezone(timedelta(hours=8))).date()
+    return _asia_now().date()
 
 
 def _in_placeholders(n: int) -> str:
@@ -511,7 +517,8 @@ class BoardIngestService:
         if start is not None and start > end:
             raise ValueError("板块指数起始日期不能晚于结束日期")
         requested_end = end
-        fallback = False
+        end = eod_dates.cap_range(start, end) if start else eod_dates.cap_end(end)
+        fallback = end != requested_end
         types = _board_types(board_type)
         if board_codes is not None:
             if not board_codes:
@@ -535,7 +542,15 @@ class BoardIngestService:
         boards = 0
         failed: list[str] = []
         scope_codes = [str(x) for x in df_boards["board_code"].tolist()]  # 本轮全量范围（含续跑已完成）
-        done_codes = set(getattr(ctx, "checkpoint", {}).get("bar_done_codes") or []) if ctx else set()
+        checkpoint = (getattr(ctx, 'checkpoint', {}) or {}) if ctx else {}
+        scope = hashlib.md5(json.dumps({
+            'codes': sorted(board_codes) if board_codes is not None else None,
+            'type': board_type, 'start': start.isoformat() if start else None,
+            'incremental': resume_from_latest,
+        }, sort_keys=True).encode()).hexdigest()[:12]
+        done_codes = (set(checkpoint.get('bar_done_codes') or [])
+                      if (checkpoint.get('bar_target_end') == end.isoformat()
+                          and checkpoint.get('bar_scope') == scope) else set())
         done_codes.intersection_update({str(x) for x in df_boards["board_code"].tolist()})
         resumed_done = len(done_codes)  # 续跑命中 checkpoint 的板块数（done_codes 循环中会继续增长）
         if done_codes:
@@ -588,6 +603,9 @@ class BoardIngestService:
                 if start is not None:
                     start = min(start, end)
                 fallback = True
+        if ctx:
+            ctx.set_phase('board_bar', bar_target_end=end.isoformat(),
+                          bar_scope=scope, bar_done_codes=sorted(done_codes))
         for i, (_, b) in enumerate(df_boards.iterrows(), 1):
             code, board_type = str(b["board_code"]), str(b["board_type"])
             if ctx:
@@ -603,6 +621,7 @@ class BoardIngestService:
                     continue
                 df = self.src.get_board_bar(code, board_type, board_start, end)
                 failed_years = list(df.attrs.get("failed_years") or [])
+                df = eod_dates.bound_bars(df, board_start, end)
                 if df.empty:
                     if ctx:
                         ctx.log(f"指数 {i}/{n_total} {code}：无数据")
@@ -645,18 +664,13 @@ class BoardIngestService:
                 "start": log_start.isoformat() if log_start else None, "end": end.isoformat(),
                 "resume_from_latest": resume_from_latest,
                 "requested_end": requested_end.isoformat(), "fallback": fallback,
-                "reason": "source_not_ready" if fallback else None,
+                "reason": ("not_closed" if requested_end > eod_dates.time_cutoff()
+                           else "source_not_ready") if fallback else None,
                 "at_end": at_end, "scope_total": len(scope_codes)}
 
     def _previous_open_day(self, day: date) -> date:
-        """返回 day 之前最近的开市日；日历异常缺失时仅回退一个自然日作为最后兜底。"""
-        df = self.c.query_df(
-            "SELECT max(trade_date) AS d FROM trade_calendar WHERE is_open AND trade_date < ?",
-            [day],
-        )
-        if not df.empty and pd.notna(df.iloc[0]["d"]):
-            return pd.Timestamp(df.iloc[0]["d"]).date()
-        return day - timedelta(days=1)
+        """只按已入库事实回退，日历缺失时不能以自然日伪造交易日。"""
+        return eod_dates.latest_open_day(self.c, day - timedelta(days=1))
 
     def _probe_bar_ready(self, df_boards: pd.DataFrame, end: date) -> tuple[int, int]:
         """抽样探测源端是否已发布 end 当日板块指数，返回 (已出数板块数, 抽样数)。
@@ -702,27 +716,26 @@ class BoardIngestService:
 
     # ── 4. 资金流（并集映射）─────────────────────────────────
 
-    def _validate_fund_snapshot_date(self, target: date) -> None:
-        """实时排行不能回填任意历史日期；盘中值也不能冒充已收盘快照。"""
+    def _validate_fund_snapshot_date(self, target: date | None = None) -> date:
+        """解析并校验可采收盘日：集合竞价前归前一交易日，盘中禁止写入。"""
         from datetime import time as day_time
-        from zoneinfo import ZoneInfo
 
-        from backend.common.exceptions import DataSourceError
-
-        now = datetime.now(ZoneInfo("Asia/Shanghai"))
+        now = _asia_now()
         today = now.date()
-        calendar = self.c.query_df("SELECT is_open FROM trade_calendar WHERE trade_date=?", [today])
-        if calendar.empty:
-            raise DataSourceError("当前交易日历未就绪，无法确认资金流快照归属日")
-        if bool(calendar.iloc[0]["is_open"]) and now.time() < day_time(15, 30):
-            raise DataSourceError("同花顺资金流仅提供当前快照；交易日15:30前不能写为EOD或历史快照")
-        latest = self.c.query_df(
-            "SELECT max(trade_date) AS snapshot_day FROM trade_calendar WHERE is_open AND trade_date<=?", [today]
-        ).iloc[0]["snapshot_day"]
-        if pd.isna(latest) or target != pd.Timestamp(latest).date():
+        is_open = eod_dates.is_open_day(self.c, today)
+        if is_open and day_time(9, 15) <= now.time() < day_time(15, 30):
             raise DataSourceError(
-                f"同花顺资金流不支持历史回填：目标{target}，当前可采快照日{latest}"
+                "同花顺资金流仅提供当前快照；交易日09:15至15:30不能写为EOD或历史快照"
             )
+        # 午夜不产生新的收盘事实；到集合竞价开始才停止接受上一交易日快照。
+        # 日历缺历史开市日时明确拒绝，不能回退一个自然日伪造交易日。
+        snapshot_day = eod_dates.resolve_end(self.c, today)
+        if target is not None and target != snapshot_day:
+            raise DataSourceError(
+                f"同花顺资金流快照日期不匹配，不支持历史回填："
+                f"目标{target}，当前可采快照日{snapshot_day}"
+            )
+        return snapshot_day
 
     def ingest_board_fund_flow(self, snapshot_date: date | None = None,
                                periods: tuple[str, ...] | None = None,
@@ -735,9 +748,10 @@ class BoardIngestService:
         显式传入周期子集用于定向修复。当前 update/backfill 主编排均每次刷新全周期。
         ctx：任务上下文，按类型×周期打实时日志。
         """
+        live_snapshot = getattr(self.src, "fund_flow_is_live_snapshot", False)
         sdate = snapshot_date or _asia_date()
-        if board_codes != [] and getattr(self.src, "fund_flow_is_live_snapshot", False):
-            self._validate_fund_snapshot_date(sdate)
+        if board_codes != [] and live_snapshot:
+            sdate = self._validate_fund_snapshot_date(snapshot_date)
         periods = periods or FUND_FLOW_PERIODS
         requested_types = set(_board_types(board_type))
         if board_codes is not None and not board_codes:
@@ -763,7 +777,10 @@ class BoardIngestService:
         # （否则首跑 codes=[A] 记 "concept:即时"，改 codes=[B] 续跑会跳过 B 的资金流）。
         scope_tag = "ALL" if board_codes is None else hashlib.md5(
             ",".join(sorted(board_codes)).encode()).hexdigest()[:8]
-        done_keys = set(getattr(ctx, "checkpoint", {}).get("fund_done_keys") or []) if ctx else set()
+        checkpoint = (getattr(ctx, "checkpoint", {}) or {}) if ctx else {}
+        # 完成组只对同一快照日有效；跨日续跑和无日期旧 checkpoint 必须重拉，避免漏采新日。
+        done_keys = (set(checkpoint.get("fund_done_keys") or [])
+                     if checkpoint.get("fund_snapshot_date") == sdate.isoformat() else set())
         valid_keys = {f"{scope_tag}:{bt}:{period}" for bt in target_types for period in periods}
         # 旧格式兼容：改动前 checkpoint 的 fund_done_keys 无 scope 前缀（如 "concept:即时"）。
         # 全量范围（scope_tag=ALL）下旧键等价于当前签名键，平移后保留跳过；指定子集范围下旧键
@@ -775,6 +792,8 @@ class BoardIngestService:
         resumed_groups = len(done_keys)  # 续跑命中的类型×周期组数（done_keys 循环中会继续增长）
         if resumed_groups and ctx:
             ctx.log(f"资金流：{resumed_groups} 个类型×周期组上次已完成，本次跳过")
+        if ctx:
+            ctx.log(f"资金流快照日：{sdate}（北京时间采集，按已收盘交易日校验）")
         total_groups = len(target_types) * len(periods)
         for board_type in ("concept", "industry"):
             if board_type not in target_types:
@@ -788,7 +807,8 @@ class BoardIngestService:
                     ctx.check_cancel()
                     ctx.set_phase("board_fund_flow", done=len(done_keys), total=total_groups,
                                   phase_total=total_groups, phase_done=len(done_keys),
-                                  current_item=display_key, fund_done_keys=sorted(done_keys))
+                                  current_item=display_key, fund_done_keys=sorted(done_keys),
+                                  fund_snapshot_date=sdate.isoformat())
                 try:
                     df = self.src.get_board_fund_flow(board_type, period)
                 except Exception as e:  # noqa: BLE001
@@ -799,6 +819,9 @@ class BoardIngestService:
                     if ctx:
                         ctx.log(f"资金流 {board_type}/{period}：失败 {e}", "error")
                     continue
+                if live_snapshot:
+                    # 单次拉取含多页、重试；跨过集合竞价或下个交易日后不得沿用请求前日期。
+                    self._validate_fund_snapshot_date(sdate)
                 if df.empty:
                     failed.append(f"{display_key}: empty")
                     self._log_update("board_fund_flow", sdate, sdate, 0, "failed",
@@ -862,7 +885,8 @@ class BoardIngestService:
                     if ctx:
                         ctx.set_phase("board_fund_flow", done=len(done_keys), total=total_groups,
                                       phase_total=total_groups, phase_done=len(done_keys),
-                                      current_item=group_key, fund_done_keys=sorted(done_keys))
+                                      current_item=group_key, fund_done_keys=sorted(done_keys),
+                                      fund_snapshot_date=sdate.isoformat())
         # 资金流独有板块（链接带真实路径 code 但字典缺）补进 board_dict：有稳定主键，非伪造。
         # 能力字段 has_fund_flow=true、has_members/bar=false；列表页只展示有核心数据的板块，故不影响展示。
         if target_codes is None and newly_added_codes:

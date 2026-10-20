@@ -117,7 +117,7 @@ vi.mock('@/api/data', () => ({
     L1: (issues: number) => `${issues} 项待处理`,
     L2: (issues: number) => `${issues} 只未达标`,
     L3: (issues: number) => `${issues} 项待处理`,
-    L4: (issues: number) => `${issues} 天缺口/滞后`,
+    L4: (issues: number) => `累计 ${issues} 个交易日缺口/滞后`,
   },
   ISSUE_TYPES_ACTIVE: ['history_data_gap', 'data_gap'],
   sortQualityIssueTypes: (types: string[]) => types,

@@ -30,6 +30,7 @@
 - 双库边界：禁止跨库 JOIN。行情读 DuckDB，资产读写 PG；需要联合时在服务层分别取数后内存合并，并控制结果集规模。
 - 数据表接入：新增或修改表必须同步对应 DDL、表级中文业务元数据、归属/来源/关系、显式鲜活度与质量策略以及字段中文名/说明；不适用策略也必须登记。合并前执行 `python -m backend.cli verify-catalog`，禁止手工建表绕过 DDL。完整流程见 `agent-works/architecture/data-management.md`。
 - 采集机制：个股 EOD 采集、日期收敛和十类安全方案见 `agent-works/architecture/stock-collection.md`；板块字典、成分、指数和资金流采集见 `agent-works/architecture/board-collection.md`。
+- EOD 日期：个股、大盘指数、板块指数共用 `backend/services/eod_dates.py`；北京时间 15:30 前只写上一已收盘交易日及更早记录，收盘后仍须检查源端就绪。强制当日不能绕过收盘或休市边界；源响应不能越过请求区间。日常流程共享目标上界，续跑冻结实际日期与范围；资金流另受实时快照归属门禁约束，不能倒填任意历史日。
 - 资产隔离：用户私有 PG 表必须带 `tenant_id + owner_user_id`；复合主键、`ON CONFLICT`、JOIN/子查询、UPDATE/DELETE/`max(seq)` 都必须带归属条件。归属取请求上下文，禁止信任前端传入。
 - 鉴权边界：`AuthMiddleware` 默认 deny；白名单仅健康检查和认证接口。新增业务端点必须同步 `require_perm`/`require_system_perm`、`sys_resource` seed、SQL 留痕和路由扫描测试。
 - 新页面接入：新增前端页面、系统页或可导航业务功能时，必须同步路由、菜单 seed、功能点 seed、后端守卫、按钮 `v-permission`、默认角色授权决策和租户归属；流程见 `agent-works/architecture/system-rbac-tenant.md`。

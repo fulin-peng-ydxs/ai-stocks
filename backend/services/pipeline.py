@@ -22,6 +22,7 @@ from datetime import date
 import pandas as pd
 
 from backend.common.logging import get_logger
+from backend.services import eod_dates
 from backend.services.async_task import TaskCancelled
 from backend.storage.duckdb_client import get_client
 
@@ -96,16 +97,25 @@ class DailyPipeline:
                 if not isinstance(steps[-1]["detail"], dict):
                     return {"ok": False, "steps": steps}
 
-        run_date = self._latest_date()
+        checkpoint = (getattr(ctx, 'checkpoint', {}) or {}) if ctx else {}
+        target = checkpoint.get('pipeline_target_end')
+        if target is None:
+            updated = next((s['detail'] for s in steps if s['step'] == '更新数据'
+                            and isinstance(s['detail'], dict)), {})
+            target = updated.get('end')
+        run_date = date.fromisoformat(target) if target else self._latest_date()
         if run_date is None:
             steps.append({"step": "定位最新交易日", "status": "failed", "secs": 0, "detail": "无行情数据"})
             return {"ok": False, "steps": steps}
+        run_date = eod_dates.cap_end(run_date, strict=bool(target))
+        if ctx is not None and hasattr(ctx, 'set_checkpoint'):
+            ctx.set_checkpoint(pipeline_target_end=run_date.isoformat())
 
         # 2. 板块采集（板块概念需求 R21）：板块独立于行情更新；失败不阻塞后续质检。每日增量 mode。
         if board:
             def _board():
                 from backend.services.ingest import IngestionService
-                return IngestionService().ingest_board(ctx=ctx, mode="update")
+                return IngestionService().ingest_board(ctx=ctx, mode="update", target_end=run_date)
             step("板块采集", _board)
 
         # 3. 数据质检（M2.9 DM-D14）：扫异常涨跌/复权跳变写 data_quality_issue（幂等，每日自动监控）。

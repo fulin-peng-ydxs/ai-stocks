@@ -492,6 +492,9 @@ def quality(issue_type: str | None = None, severity: str | None = None,
         f"ORDER BY {sort_expr} {direction} NULLS LAST, q.detected_at DESC NULLS LAST, q.id "
         f"LIMIT {int(size)} OFFSET {int((page-1)*size)}", params)
     rows = df.to_dict("records")
+    from backend.services.data_report import DataIntegrityReport
+
+    DataIntegrityReport(c).normalize_legacy_fund_lags(rows)
     # 非股票问题名称：市场指数走统一名称表；板块 code 走 board_dict；无 code 的资金流读 detail。
     from backend.services.market_benchmark import BENCHMARK_NAMES
 

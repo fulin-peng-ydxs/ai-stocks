@@ -1348,6 +1348,7 @@ def test_scan_board_quality_fund_stale(client, monkeypatch):
     import json
     from backend.services.data_report import DataIntegrityReport
     _seed_board_scan(client)
+    client.execute("INSERT INTO trade_calendar VALUES ('2026-08-06',TRUE),('2026-08-07',TRUE)")
     r = DataIntegrityReport(client).scan_board_quality()
     assert r["fund_stale"] == 1
     stale = client.query_df(
@@ -1356,7 +1357,7 @@ def test_scan_board_quality_fund_stale(client, monkeypatch):
     assert stale.iloc[0]["code"] is None   # 源级单条，无 code
     assert str(stale.iloc[0]["trade_date"])[:10] == "2026-08-07"  # 日期 = 全局最新交易日
     payload = json.loads(stale.iloc[0]["detail"])
-    assert "滞后 1 天" in payload["message"]
+    assert "滞后 1 个交易日" in payload["message"]
     assert payload["periods"] == ["即时"]  # seed 只有即时有快照且滞后
 
 
@@ -1525,12 +1526,13 @@ def test_board_member_incomplete_fix_reingests(client, monkeypatch):
     assert row["status"] == "resolved"
 
 
-def test_board_update_uses_latest_open_day(client, monkeypatch):
+def test_board_update_uses_latest_open_day(client, monkeypatch, eod_session):
     """板块 update 指数区间复用现有交易日语义（_latest_open_day），非裸 today。"""
-    from datetime import date
     from backend.services import ingest as ingest_mod
-    from backend.services.ingest import IngestionService
     from backend.services.board_ingest import BoardIngestService
+    from backend.services.ingest import IngestionService
+
+    eod_session(client, date(2026, 8, 7))
 
     captured = {}
 
@@ -1585,8 +1587,9 @@ def test_board_update_uses_latest_open_day(client, monkeypatch):
         IngestionService().ingest_board(board_type="theme")
 
 
-def test_board_fund_only_uses_latest_board_bar_date(client, monkeypatch):
+def test_board_fund_only_uses_latest_board_bar_date(client, monkeypatch, eod_session):
     """只采资金流锚定页面行情截面，不把开市但尚未出行情的今天提前入库。"""
+    eod_session(client, date(2026, 8, 7), as_of=date(2026, 8, 10))
     from backend.services import ingest as ingest_mod
     from backend.services.board_ingest import BoardIngestService
     from backend.services.ingest import IngestionService
@@ -1660,8 +1663,9 @@ def test_search_boards_by_code_and_name(client):
     assert r.data["total"] == 0
 
 
-def test_ingest_board_only_selects_tables(client, monkeypatch):
+def test_ingest_board_only_selects_tables(client, monkeypatch, eod_session):
     """only 分表：only=["bar"] 时只跑指数，不跑字典/成分/资金流。"""
+    eod_session(client, date(2026, 8, 7))
     from backend.services import ingest as ingest_mod
     from backend.services.ingest import IngestionService
     from backend.services.board_ingest import BoardIngestService

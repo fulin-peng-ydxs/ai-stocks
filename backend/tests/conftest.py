@@ -123,6 +123,25 @@ def market():
 
 
 @pytest.fixture()
+def eod_session(monkeypatch):
+    """为编排单测提供明确收盘日与次日盘中时钟，不依赖运行测试的实际时间。"""
+    from datetime import datetime, timedelta
+
+    from backend.services import eod_dates
+
+    def seed(client, closed_day, *, as_of=None):
+        current = as_of or closed_day + timedelta(days=1)
+        client.execute(
+            'INSERT INTO trade_calendar VALUES (?,TRUE),(?,?) ON CONFLICT DO NOTHING',
+            [closed_day, current, current.weekday() < 5],
+        )
+        monkeypatch.setattr(eod_dates, 'shanghai_now',
+                            lambda: datetime.combine(current, datetime.min.time()).replace(
+                                hour=12, tzinfo=eod_dates.SHANGHAI))
+    return seed
+
+
+@pytest.fixture()
 def redis_cli():
     """Redis 客户端（认证短状态测试用）；Redis 不可用则 skip。
 

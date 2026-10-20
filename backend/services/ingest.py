@@ -16,7 +16,6 @@ import time
 from bisect import bisect_left
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -41,6 +40,7 @@ from backend.limit_ladder.rules import (
     PointInTimeSTStatus,
     STStatusQuality,
 )
+from backend.services import eod_dates
 from backend.services.async_task import TaskCancelled
 from backend.services.market_benchmark import configured_benchmark_codes
 from backend.services.stock_st_status import StockSTStatusFact, StockSTStatusService
@@ -293,6 +293,7 @@ class IngestionService:
         codes: list[str] | None = None,
     ) -> int:
         """采集配置内指数；可指定子集供逐指数增量补采复用。"""
+        end = eod_dates.cap_range(start, end)
         configured = configured_benchmark_codes()
         allowed = set(configured)
         codes = list(dict.fromkeys(codes if codes is not None else configured))
@@ -306,6 +307,7 @@ class IngestionService:
         for idx in codes:
             try:
                 df = self.src.get_index_bar(idx, start, end)
+                df = eod_dates.bound_bars(df, start, end)
                 total += self.repo.upsert_index_bar(df)
                 if ctx:
                     ctx.log(f"指数 {idx} 完成：{len(df) if df is not None else 0} 行")
@@ -685,6 +687,7 @@ class IngestionService:
         st_status: PointInTimeSTStatus | None = None,
         status_unavailable: bool = False,
     ) -> int:
+        end = eod_dates.cap_range(start, end)
         try:
             df, used_source = self._fetch_daily_with_fallback(
                 code, start, end, source or self.src, ctx=ctx, **({"allow_fallback": False} if status_unavailable else {})
@@ -761,6 +764,7 @@ class IngestionService:
                 raise DataSourceError(f"{daily_error}；ST 状态无法确认停牌: {st_error}") from daily_error
         # 并发终止可能发生在网络返回与入库之间；此检查保证任务进入 interrupted 后不再遗留写入。
         check_thread_cancel()
+        df = eod_dates.bound_bars(df, start, end)
         if df is None or df.empty:
             raise DataSourceError(f"{code} {start}~{end} 主源+兜底源均无数据")
         source_dates = list(df["trade_date"])
@@ -882,16 +886,16 @@ class IngestionService:
         """历史任务首次冻结日期窗口，续跑不随当天日期或默认年限漂移。"""
         checkpoint = getattr(ctx, "checkpoint", {}) or {}
         if checkpoint.get("history_start") and checkpoint.get("history_end"):
+            eod_dates.cap_end(date.fromisoformat(checkpoint['history_end']), strict=True)
             return (date.fromisoformat(checkpoint["history_start"]),
                     date.fromisoformat(checkpoint["history_end"]))
-        end = self._latest_open_day()
-        if end == datetime.now(ZoneInfo("Asia/Shanghai")).date():
-            # 历史任务同样不能采入盘中半成品；复用日常同步的源端就绪判断。
-            now = datetime.now(ZoneInfo("Asia/Shanghai"))
-            if (now.hour, now.minute) < (15, 30):
-                end = self._previous_open_day(end)
-            else:
-                end = self._resolve_update_end(end, _UPDATE_READY_SAMPLE, None, ctx)
+        today = eod_dates.shanghai_now().date()
+        try:
+            eod_dates.is_open_day(self.repo.c, today)
+        except DataSourceError:
+            # 首次初始化历史库时先补真实日历；源端仍未覆盖则由统一解析明确失败。
+            self.ingest_calendar(years_before(today, years), today, ctx=ctx)
+        end = self._resolve_update_end(today, _UPDATE_READY_SAMPLE, None, ctx)
         start = years_before(end, years)
         if ctx is not None:
             ctx.set_checkpoint(history_start=start.isoformat(), history_end=end.isoformat())
@@ -1005,6 +1009,7 @@ class IngestionService:
             if r.empty or pd.isna(r.iloc[0]["d"]):
                 return {"trade_date": None, "ok": 0, "fail": 0, "total_mv_rows": 0}
             trade_date = pd.Timestamp(r.iloc[0]["d"]).date()
+        eod_dates.cap_end(trade_date, strict=True)
         from backend.services.share_capital import ShareCapitalService
         sql = (
             "SELECT b.code AS code FROM daily_bar b "
@@ -1495,13 +1500,7 @@ class IngestionService:
         return self.ingest_one_daily(code, start, end, source=source, ctx=ctx)
 
     def _previous_open_day(self, day: date) -> date:
-        df = self.repo.c.query_df(
-            "SELECT max(trade_date) AS d FROM trade_calendar WHERE is_open AND trade_date < ?",
-            [day],
-        )
-        if not df.empty and pd.notna(df.iloc[0]["d"]):
-            return pd.Timestamp(df.iloc[0]["d"]).date()
-        return day - timedelta(days=1)
+        return eod_dates.latest_open_day(self.repo.c, day - timedelta(days=1))
 
     def _latest_open_day(self, ref: date | None = None) -> date:
         """≤ ref（默认今天）的最近交易日：ref 本身是交易日则为 ref，否则回退到上一交易日。
@@ -1527,39 +1526,22 @@ class IngestionService:
     ) -> date:
         """收敛增量更新的目标截止日：
 
-        ① 非交易日（requested_end 无开市行且日历已覆盖到该日）→ **回退到最新交易日**为截止，
-           不跳过任务（周末/节假日跑也能确保补齐到上一交易日；已最新则逐股短路，无网络开销）。
-        ② 全市场 + 今天确是交易日 → 抽样探测主源当日日线是否就绪；未就绪 →
-           回退到上一交易日继续增量。本轮不拉取当日半成品，下轮仍会重新目标当天。
-        ③ 全市场与指定股票都执行同一退级规则；只有 force_current_day 才跳过退级。
+        先按统一时间/日历规则选已收盘日，再对当天执行源端就绪探测。
+        全市场与指定股票使用同一保护；强制当日只能跳过源端回退。
         """
+        target = eod_dates.resolve_end(self.repo.c, requested_end, force=force_current_day)
         if force_current_day:
             if ctx:
-                ctx.log(f"已强制采集当日 {requested_end}，跳过交易日和数据就绪检查", "warn")
-            return requested_end
-
-        cal = self.repo.c.query_df(
-            "SELECT is_open FROM trade_calendar WHERE trade_date = ?",
-            [requested_end],
-        )
-        # 交易日历只存开市日 → requested_end 无开市行即非交易日。仅当日历确已覆盖到该日
-        # （update() 在本方法前已 ingest_calendar 补到年底）才据"缺行"判闭市，避免把"还没采到"误判成闭市。
-        is_open = (not cal.empty) and bool(cal.iloc[0]["is_open"])
-        target = requested_end
-        if not is_open:
-            mx = self.repo.c.query_df("SELECT max(trade_date) AS m FROM trade_calendar").iloc[0]["m"]
-            covered = mx is not None and pd.notna(mx) and pd.Timestamp(mx).date() >= requested_end
-            if covered:
-                target = self._previous_open_day(requested_end)
-                if ctx:
-                    ctx.log(f"今日 {requested_end} 非交易日，回退到最新交易日 {target} 截止")
-            # 日历未覆盖到该日（异常）→ 不武断判闭市，沿用 requested_end 继续
+                ctx.log(f"已确认当日 {target} 收盘，强制采集仅跳过源端就绪回退", "warn")
+            return target
+        if target != requested_end and ctx:
+            ctx.log(f"EOD目标日由 {requested_end} 收敛至已收盘交易日 {target}")
 
         if not basic:
             return target
 
         # 只有"今天确是交易日"才做主源当日就绪探测；非交易日已回退，无需探测。
-        if target != requested_end:
+        if target != requested_end or target != eod_dates.shanghai_now().date():
             return target
 
         basic_set = set(basic)
@@ -1572,6 +1554,7 @@ class IngestionService:
         for code in sample:
             try:
                 df = self.src.get_daily_bar(code, requested_end, requested_end)
+                df = eod_dates.bound_bars(df, requested_end, requested_end)
                 if df is not None and not df.empty:
                     ready += 1
                 else:
@@ -1609,7 +1592,7 @@ class IngestionService:
         ctx（M2.8-B，可选 TaskContext）：传入则逐股写实时日志 + 进度 + checkpoint（FR-DM-9/10）。
         续跑天然幂等：从各股已入库最新日 +1 起，重复跑只补缺口。
         """
-        end = date.today()
+        end = eod_dates.shanghai_now().date()
         concurrency = concurrency or self.s.datasource.update_concurrency
         basic = self._stock_basic_from_db(codes, as_of=end)["code"].tolist()
         # 续跑（FR-DM-10）：串行老任务按 done 兼容跳过；并发任务按 done_codes 精确跳过。
@@ -1629,6 +1612,7 @@ class IngestionService:
             except (ValueError, TypeError):
                 pinned_end = None
         if pinned_end is not None:
+            eod_dates.cap_end(pinned_end, strict=True)
             end = pinned_end
             if ctx:
                 ctx.log(f"续跑：沿用本次任务目标日 {end}，跳过日历/指数前置（已于首跑完成且幂等入库）")
@@ -1805,7 +1789,8 @@ class IngestionService:
             if ctx:
                 ctx.log(f"↻ 增量刷新干净复权因子（{len(updated)} 只有新行）…")
             self._refresh_clean_factors(sorted(updated), ctx=ctx)
-        result = {"target": n, "ok": ok, "fail": fail, "rows": total_rows, "concurrency": concurrency,
+        result = {"end": end.isoformat(), "target": n, "ok": ok, "fail": fail,
+                  "rows": total_rows, "concurrency": concurrency,
                   "reconcile": recon}
         # 四字段补采独立容错，保留行情成果；失败须进入子阶段汇总，不能把行情成功当全部成功。
         # 最新日期优先补齐；历史中间缺口由后续有界轮询处理，也可显式全量补采。
@@ -2886,6 +2871,16 @@ class IngestionService:
         （限流按线程隔离，总请求速率≈N×rate_limit_per_sec），写入经 DuckDB 单写锁串行。
         默认 1（串行，最稳）。⚠️ 调高并发即调高总请求速率，注意免费源封禁风险。
         """
+        checkpoint = (getattr(ctx, 'checkpoint', {}) or {}) if ctx else {}
+        if checkpoint.get('range_end'):
+            if checkpoint.get('range_start') != start.isoformat():
+                raise ValueError('续跑采集区间与原任务不一致')
+            end = date.fromisoformat(checkpoint['range_end'])
+            eod_dates.cap_end(end, strict=True)
+        else:
+            end = eod_dates.cap_range(start, end)
+            if ctx:
+                ctx.set_checkpoint(range_start=start.isoformat(), range_end=end.isoformat())
         live = self._stock_basic_from_db(codes, as_of=end)
         # 确保区间内日历+指数存在（与 update/backfill 一致：补缺口时该区间指数也一并补，避免回测基准留缺口）。
         # 续跑跳过前置：prep_done 标记后续跑不再重采日历/指数（首跑已幂等入库）。
@@ -3669,7 +3664,8 @@ class IngestionService:
                      force_members: bool | None = None,
                      force_current_day: bool = False,
                      date_start: date | str | None = None,
-                     date_end: date | str | None = None) -> dict:
+                     date_end: date | str | None = None,
+                     target_end: date | None = None) -> dict:
         """板块数据编排：字典 → 成分快照 → 指数 → 资金流。
 
         承接 plan §6.4 T4：单步骤失败记日志不中断（返回失败清单），供 T5/T6 失败隔离与续跑。
@@ -3687,7 +3683,6 @@ class IngestionService:
         from backend.services.board_ingest import (
             BOARD_INGEST_STAGES,
             BoardIngestService,
-            _asia_date,
             normalize_board_date_range,
             normalize_board_stages,
         )
@@ -3718,25 +3713,41 @@ class IngestionService:
         normalized_steps = normalize_board_stages(only)
         steps = list(BOARD_INGEST_STAGES if normalized_steps is None else normalized_steps)
         uses_market_date = any(step in steps for step in ("bar", "fund"))
-        update_target = (
-            _asia_date() if force_current_day else self._latest_open_day()
-        ) if mode == "update" and uses_market_date else None
+        checkpoint = (getattr(ctx, 'checkpoint', {}) or {}) if ctx else {}
+        pinned_end = checkpoint.get('board_target_end')
+        update_target = None
+        if uses_market_date:
+            if pinned_end:
+                update_target = date.fromisoformat(pinned_end)
+                eod_dates.cap_end(update_target, strict=True)
+                if target_end is not None and update_target > target_end:
+                    raise DataSourceError('板块续跑目标日不能晚于日常流程目标日')
+            else:
+                update_target = eod_dates.resolve_end(
+                    svc.c, target_end or explicit_end, force=force_current_day,
+                )
+                if ctx:
+                    ctx.set_checkpoint(board_target_end=update_target.isoformat())
         # 资金流源不返回可靠数据日：主编排统一用目标交易日标记快照，
-        # 使列表/详情可按行情截面严格同日匹配。backfill 也不得用周末或节假日的采集日。
-        fund_snapshot_date = (
-            update_target if mode == "update" else self._latest_open_day()
-        ) if "fund" in steps else None
-        if "fund" in steps and "bar" not in steps and not force_current_day:
+        # 使列表/详情可按行情截面严格同日匹配。无行情锚点时由资金流服务解析已收盘日，
+        # 不能把凌晨的“最近开市日”当成已经收盘；backfill 也不按自然日贴标签。
+        fund_snapshot_date = update_target if "fund" in steps else None
+        if ("fund" in steps and "bar" not in steps and not force_current_day
+                and not pinned_end and target_end is None):
             # 只采资金流时没有指数阶段执行源端就绪探测与日期回退，不能直接把“今天是开市日”
             # 当成“今天行情已就绪”。页面以 board_bar 最新日为截面，资金流必须锚定同一日期；
-            # 库内尚无板块行情时才保留最近开市日兜底，供初始化任务建立首个快照。
-            latest_bar = svc.c.query_df("SELECT max(trade_date) AS d FROM board_bar").iloc[0]["d"]
+            # 库内尚无板块行情时交由资金流服务解析快照日，供初始化任务建立首个快照。
+            fund_snapshot_date = None
+            latest_bar = svc.c.query_df(
+                "SELECT max(trade_date) AS d FROM board_bar WHERE trade_date<=?",
+                [update_target],
+            ).iloc[0]["d"]
             if latest_bar is not None and pd.notna(latest_bar):
                 fund_snapshot_date = pd.Timestamp(latest_bar).date()
                 if ctx:
                     ctx.log(f"只采资金流：按板块行情最新日 {fund_snapshot_date} 标记快照")
         if force_current_day and uses_market_date and ctx:
-            ctx.log(f"已强制采集当日 {update_target}，跳过交易日和数据就绪检查", "warn")
+            ctx.log(f"已确认当日 {update_target} 收盘，强制采集仅跳过源端就绪回退", "warn")
         # 阶段日志对齐现有采集（阶段 i/N + 进度推进，前端任务中心实时可见）
         total = len(steps)
         idx = {"n": 0}
@@ -3798,13 +3809,13 @@ class IngestionService:
                 if mode == "backfill":
                     # 全量回填：源端可用起始年到今天（实测 `d.` 域仅近 3 年、2021-2023 404，故 2024 起）
                     result["bar"] = svc.ingest_board_bar(
-                        _d(2024, 1, 1), board_codes=board_codes,
+                        _d(2024, 1, 1), end=update_target, board_codes=board_codes,
                         board_type=board_type, ctx=ctx)
                 else:
                     # 显式区间尊重调用方输入；自动增量按每个板块最大交易日续采，避免固定短窗口
                     # 在任务中断超过窗口后留下永久缺口。
                     assert update_target is not None or explicit_end is not None
-                    end = explicit_end or update_target
+                    end = min(explicit_end, update_target) if explicit_end else update_target
                     result["bar"] = svc.ingest_board_bar(explicit_start, end=end,
                                                          board_codes=board_codes,
                                                          board_type=board_type,
@@ -3814,6 +3825,8 @@ class IngestionService:
                     update_target = _d.fromisoformat(result["bar"]["end"])
                     if "fund" in steps:
                         fund_snapshot_date = update_target
+                    if ctx:
+                        ctx.set_checkpoint(board_target_end=update_target.isoformat())
                 if ctx:
                     bar = result["bar"]
                     rng = f"区间 {bar.get('start')} ~ {bar.get('end')}"

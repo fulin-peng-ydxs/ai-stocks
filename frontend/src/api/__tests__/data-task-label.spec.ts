@@ -6,11 +6,16 @@ import {
   BOARD_ISSUE_ITEMS,
   BOARD_STAGE_OPTIONS,
   ISSUE_TYPES_ACTIVE,
+  LAYER_ISSUE_SUMMARY,
   RECOVER_ACTION_LABEL,
   taskDisplayLabel,
 } from '@/api/data'
 
 describe('taskDisplayLabel', () => {
+  it('覆盖鲜活累计数明确使用交易日单位', () => {
+    expect(LAYER_ISSUE_SUMMARY.L4(3)).toBe('累计 3 个交易日缺口/滞后')
+  })
+
   it('质检恢复任务带上问题类型，其它任务保持通用名称', () => {
     expect(taskDisplayLabel('fix', { issue_type: 'data_gap' }))
       .toBe('质检问题恢复·行情·近端缺某日')

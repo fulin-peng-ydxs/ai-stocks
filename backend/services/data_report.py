@@ -15,6 +15,8 @@
 from __future__ import annotations
 
 import json
+import re
+from bisect import bisect_right
 from datetime import UTC, date, datetime, timedelta, timezone
 
 import pandas as pd
@@ -48,6 +50,74 @@ class DataIntegrityReport:
 
     def _scalar(self, sql: str, params: list | None = None):
         return self.c.query_df(sql, params or []).iloc[0, 0]
+
+    def _trading_day_lags(
+        self, ranges: list[tuple[date, date]],
+    ) -> dict[tuple[date, date], int | None]:
+        """批量计算 (已有数据日, 基准日] 的开市日数；日历缺覆盖时不猜测天数。"""
+        if not ranges:
+            return {}
+        calendar = self.c.query_df('SELECT trade_date, is_open FROM trade_calendar ORDER BY trade_date')
+        if calendar.empty:
+            return {pair: None for pair in ranges}
+        lo = pd.Timestamp(calendar.iloc[0]['trade_date']).date()
+        hi = pd.Timestamp(calendar.iloc[-1]['trade_date']).date()
+        days = [pd.Timestamp(row.trade_date).date() for row in calendar.itertuples()
+                if row.is_open]
+        return {
+            (start, end): (bisect_right(days, end) - bisect_right(days, start)
+                           if lo <= start <= end <= hi else None)
+            for start, end in ranges
+        }
+
+    @staticmethod
+    def _lag_text(count: int | None) -> str:
+        return (f'滞后 {count} 个交易日' if count is not None
+                else '滞后交易日数待核验（日历未覆盖区间）')
+
+    def normalize_legacy_fund_lags(self, rows: list[dict]) -> None:
+        """旧台账仅转换返回文案，不改原始详情、状态或忽略规则；整页一次读取日历。"""
+        pattern = re.compile(r'((?:即时|3日|5日|10日|20日)最新\s+(\d{4}-\d{2}-\d{2}))'
+                             r'（滞后\s+\d+\s*天）')
+        pending = []
+        ranges = []
+        for row in rows:
+            if row.get('issue_type') != 'board_fund_stale' or pd.isna(row.get('trade_date')):
+                continue
+            detail = row.get('detail')
+            if not isinstance(detail, str):
+                continue
+            try:
+                payload = json.loads(detail)
+            except (ValueError, TypeError):
+                payload = None
+            message = payload.get('message', '') if isinstance(payload, dict) else detail
+            if not isinstance(message, str):
+                continue
+            matches = list(pattern.finditer(message))
+            if not matches:
+                continue
+            try:
+                end = pd.Timestamp(row['trade_date']).date()
+                parsed = [(date.fromisoformat(match[2]), end) for match in matches]
+            except (ValueError, TypeError):
+                continue
+            ranges.extend(parsed)
+            pending.append((row, payload, message, end))
+        counts = self._trading_day_lags(ranges)
+        for row, payload, message, end in pending:
+            message = pattern.sub(
+                lambda match, end=end: (
+                    f'{match[1]}（{self._lag_text(counts[(date.fromisoformat(match[2]), end)])}）'
+                ),
+                message,
+            )
+            if isinstance(payload, dict):
+                payload['message'] = message
+                payload['lag_unit'] = 'trading_day'
+                row['detail'] = json.dumps(payload, ensure_ascii=False)
+            else:
+                row['detail'] = message
 
     # ── 1. 总览 ──
     def overview(self) -> dict:
@@ -876,6 +946,8 @@ class DataIntegrityReport:
         gap_issues: list[dict] = []
         daily_gap_issues: list[dict] = []
         if latest is not None:
+            lags = self._trading_day_lags([(span[1], latest) for span in spans.values()
+                                           if span[1] < latest])
             for code in codes:
                 last_bar = spans.get(code, (None, None))[1]
                 if last_bar is None or last_bar < latest:
@@ -884,7 +956,8 @@ class DataIntegrityReport:
                         "trade_date": latest,
                         "issue_type": "market_index_gap",
                         "detail": f"{BENCHMARK_NAMES.get(code, code)}（{code}）未更新到最新交易日："
-                                  f"最近 {last_bar or '无数据'}，目标 {latest}",
+                                  f"最近 {last_bar or '无数据'}，目标 {latest}"
+                                  + (f"，{self._lag_text(lags[(last_bar, latest)])}" if last_bar else ''),
                     })
 
             recent_days, _ = self._recent_open_days(latest, gap_window_days)
@@ -984,6 +1057,10 @@ class DataIntegrityReport:
                 WHERE b.has_bar
                 GROUP BY b.board_code, b.name
                 """)
+            lags = self._trading_day_lags([
+                (pd.Timestamp(value).date(), latest) for value in gap_df['last_bar']
+                if pd.notna(value) and pd.Timestamp(value).date() < latest
+            ])
             for _, r in gap_df.iterrows():
                 code = str(r["board_code"])
                 # LEFT JOIN 的 SQL NULL 经 query_df 转为 NaT，必须先判断缺失再比较。
@@ -996,7 +1073,8 @@ class DataIntegrityReport:
                         "name": str(r["name"]), "latest_date": str(last_bar) if last_bar else None,
                         "issue_type": "board_index_gap",
                         "detail": f"板块 {r['name']}（{code}）指数缺口：最近指数 {last_bar or '无'}，"
-                                  f"全局最新交易日 {latest}",
+                                  f"全局最新交易日 {latest}"
+                                  + (f"，{self._lag_text(lags[(last_bar, latest)])}" if last_bar else ''),
                     })
         latest_fund = self._scalar(
             "SELECT max(snapshot_date) FROM board_fund_flow WHERE period='即时'")
@@ -1169,14 +1247,21 @@ class DataIntegrityReport:
         if latest is not None:
             lag_parts: list[str] = []
             lag_periods: list[str] = []
+            watermarks = self.c.query_df(
+                'SELECT period, max(snapshot_date) AS d FROM board_fund_flow GROUP BY period'
+            )
+            latest_by_period = {str(row.period): pd.Timestamp(row.d).date()
+                                for row in watermarks.itertuples() if pd.notna(row.d)}
+            counts = self._trading_day_lags([(day, latest) for day in latest_by_period.values()
+                                             if day < latest])
+            lag_days = {}
             for period in FUND_FLOW_PERIODS:
-                pv = self._scalar(
-                    "SELECT max(snapshot_date) FROM board_fund_flow WHERE period=?", [period])
-                if pv is None or pd.isna(pv):
+                pd_date = latest_by_period.get(period)
+                if pd_date is None:
                     continue
-                pd_date = pd.Timestamp(pv).date()
                 if pd_date < latest:
-                    lag_parts.append(f"{period}最新 {pd_date}（滞后 {(latest - pd_date).days} 天）")
+                    lag_days[period] = counts[(pd_date, latest)]
+                    lag_parts.append(f"{period}最新 {pd_date}（{self._lag_text(lag_days[period])}）")
                     lag_periods.append(period)
             if lag_parts:
                 stale_issues.append({
@@ -1185,6 +1270,7 @@ class DataIntegrityReport:
                     # 结构化 periods 供 fix 定向重采与复检口径复用（旧纯文本 detail 由兼容逻辑兜底）
                     "detail": json.dumps({
                         "periods": lag_periods,
+                        "lag_unit": "trading_day", "lag_days": lag_days,
                         "message": f"资金流滞后：{'；'.join(lag_parts)}；"
                                    f"全局最新交易日 {latest}，待重采资金流",
                     }, ensure_ascii=False),

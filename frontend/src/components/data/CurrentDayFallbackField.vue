@@ -17,7 +17,7 @@ defineEmits<{ 'update:modelValue': [value: boolean] }>()
       >
         强制采集当日
       </el-checkbox>
-      <span class="app-caption-text">开启后，非交易日或数据未就绪也不回退</span>
+      <span class="app-caption-text">仅在当日已收盘后跳过源端就绪回退；休市日及15:30前不可强制</span>
     </div>
   </el-form-item>
 </template>

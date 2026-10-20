@@ -393,9 +393,9 @@ function layerCell(k: string, lay: any): { type: string; text: string; tip: stri
   }
   // L4
   const parts: string[] = []
-  if (lay.history_gap_days) parts.push(`全历史缺口 ${lay.history_gap_days} 天（含近端）`)
-  if (lay.gap_days) parts.push(`缺口 ${lay.gap_days} 天${lay.gap_lo ? `（${lay.gap_lo}~${lay.gap_hi}）` : ''}`)
-  if (lay.stale_days) parts.push(`滞后 ${lay.stale_days} 天`)
+  if (lay.history_gap_days) parts.push(`全历史缺口 ${lay.history_gap_days} 个交易日（含近端）`)
+  if (lay.gap_days) parts.push(`缺口 ${lay.gap_days} 个交易日${lay.gap_lo ? `（${lay.gap_lo}~${lay.gap_hi}）` : ''}`)
+  if (lay.stale_days) parts.push(`滞后 ${lay.stale_days} 个交易日`)
   return { type: 'danger', text: '不达标', tip: (parts.join(' · ') || '覆盖/鲜活不达标') + ' → 点击带区间前往重采' }
 }
 function layerSummaryText(layer: QualityLayer): string {
@@ -689,7 +689,7 @@ const menuPageTitle = useMenuPageTitle()
             <div class="stat-val" :class="{ warn: (ov?.gaps.stocks_with_gap ?? 0) > 0 }">
               {{ ov?.gaps.stocks_with_gap ?? '—' }}<span class="sub"> 只</span>
             </div>
-            <div class="stat-foot" v-if="ov?.gaps">缺口/滞后共 {{ ov.gaps.gap_days_total }} 天 · 点此补数</div>
+            <div class="stat-foot" v-if="ov?.gaps">缺口/滞后累计 {{ ov.gaps.gap_days_total }} 个交易日（按股票累加） · 点此补数</div>
           </el-card>
         </div>
 

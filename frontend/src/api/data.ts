@@ -738,7 +738,7 @@ export const LAYER_ISSUE_SUMMARY: Record<string, (issues: number) => string> = {
   L1: (issues) => `${issues} 项待处理`,
   L2: (issues) => `${issues} 只未达标`,
   L3: (issues) => `${issues} 项待处理`,
-  L4: (issues) => `${issues} 天缺口/滞后`,
+  L4: (issues) => `累计 ${issues} 个交易日缺口/滞后`,
 }
 export const SEVERITY_LABEL: Record<string, string> = { high: '高', mid: '中', low: '低' }
 export const ISSUE_STATUS_LABEL: Record<string, string> = {

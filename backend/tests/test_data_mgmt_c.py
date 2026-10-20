@@ -963,7 +963,8 @@ def test_daily_pipeline_includes_quality_step(client):
 
 
 # ── M2.9.3：补市值已并入更新行情（update 容错子阶段），不再单列流程步骤 ──
-def test_update_includes_valuation(client, monkeypatch):
+def test_update_includes_valuation(client, monkeypatch, eod_session):
+    eod_session(client, date(2026, 10, 19))
     from backend.config import get_effective_settings
     from backend.services import ingest
     from backend.storage.repository import MarketRepository
@@ -1025,9 +1026,10 @@ def test_index_incremental_uses_each_code_latest_date_and_backfills_new_code(cli
 
 
 # ── 续跑修复：终止信号穿透尾部容错兜底 / 续跑锁定目标日且跳过前置 ──
-def test_update_cancel_in_valuation_propagates(client, monkeypatch):
+def test_update_cancel_in_valuation_propagates(client, monkeypatch, eod_session):
     """回归：补市值阶段被终止时 TaskCancelled 必须穿透 update() 容错兜底（而非被
     except Exception 当成"市值源失败"吞掉后跑完）→ 任务才能转可续跑中断。"""
+    eod_session(client, date(2026, 10, 19))
     from backend.config import get_effective_settings
     from backend.services import ingest
     from backend.services.async_task import TaskCancelled, TaskContext
@@ -1142,8 +1144,10 @@ def test_update_resume_retries_failed_code_with_empty_exact_checkpoint(client, m
     assert calls == ["A.SH", "A.SH"]
 
 
-def test_delisted_history_does_not_skip_partially_covered_code(client, monkeypatch):
+def test_delisted_history_does_not_skip_partially_covered_code(client, monkeypatch, eod_session):
     """退市股只有近期一行行情不等于历史已补全，应继续回补目标起点至退市日。"""
+    eod_session(client, date(2026, 1, 5))
+    client.execute("INSERT INTO trade_calendar VALUES ('2021-01-05',TRUE)")
     from backend.config import get_effective_settings
     from backend.services import ingest
     from backend.storage.repository import MarketRepository
@@ -1222,8 +1226,9 @@ def test_ingest_date_collects_indices_and_resume_skips_prep(client, monkeypatch)
     assert calls == {"cal": 1, "idx": 1}                    # C：续跑没再采前置
 
 
-def test_backfill_resume_skips_prep_and_reports_mv(client, monkeypatch):
+def test_backfill_resume_skips_prep_and_reports_mv(client, monkeypatch, eod_session):
     """C：backfill 续跑跳过日历/指数/基础信息（基础信息改从库读）；B-1：结束报告缺 total_mv 数。"""
+    eod_session(client, date(2026, 10, 19))
     from backend.config import get_effective_settings
     from backend.services import ingest
     from backend.services.async_task import TaskContext
@@ -1260,7 +1265,8 @@ def test_backfill_resume_skips_prep_and_reports_mv(client, monkeypatch):
 
 
 # ── 补市值：流通市值仅填空缺、不覆盖新浪日线已写的更准值（baostock 兜底票靠此拿 float_mv）──
-def test_valuation_computed_values_take_priority(client, monkeypatch):
+def test_valuation_computed_values_take_priority(client, monkeypatch, eod_session):
+    eod_session(client, date(2026, 6, 12))
     from backend.config import get_effective_settings
     from backend.services import ingest
     from backend.storage.repository import MarketRepository
@@ -1457,14 +1463,16 @@ def test_full_history_invalid_valuation_repair_uses_structure_contract(client, m
 
 
 # ── 历史补数：仅有部分近期数据的股票(被兜底/中断补了近窗口)必须重补早期历史，不能误跳过 ──
-def test_backfill_refetches_partially_covered_code(client, monkeypatch):
+def test_backfill_refetches_partially_covered_code(client, monkeypatch, eod_session):
     from backend.config import get_effective_settings
     from backend.services import ingest
     from backend.storage.repository import MarketRepository
 
     s = get_effective_settings()
     today = date.today()
+    eod_session(client, today)
     start = date(today.year - s.datasource.history_years, today.month, today.day)
+    client.execute('INSERT INTO trade_calendar VALUES (?,TRUE)', [start])
     old_day = date(start.year - 1, 3, 1)   # 早于回填起点 → 已覆盖，应跳过
     part_day = date(today.year, 5, 6)       # 仅近期一条 → 部分覆盖（模拟兜底补的近窗口），应重补
 

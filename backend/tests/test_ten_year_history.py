@@ -45,10 +45,16 @@ def test_markers_do_not_apply_chinext_old_limit_to_star():
     assert result.is_one_word.tolist() == [True, False, False]
 
 
-def test_history_window_freezes_and_handles_leap_day():
+def test_history_window_freezes_and_handles_leap_day(market, monkeypatch):
     svc = object.__new__(IngestionService)
-    svc._latest_open_day = lambda: date(2024, 2, 29)
+    from datetime import datetime
+
+    from backend.services import eod_dates
+    monkeypatch.setattr(eod_dates, "shanghai_now", lambda: datetime(2024, 3, 1, 12, tzinfo=eod_dates.SHANGHAI))
+    market.execute("INSERT INTO trade_calendar VALUES ('2024-02-29',TRUE),('2024-03-01',TRUE)")
+    svc.repo = SimpleNamespace(c=market)
     ctx = SimpleNamespace(checkpoint={})
+    ctx.log = lambda *a, **k: None
     ctx.set_checkpoint = lambda **kw: ctx.checkpoint.update(kw)
     assert svc._history_window(10, ctx) == (date(2014, 2, 28), date(2024, 2, 29))
     svc._latest_open_day = lambda: date(2026, 10, 19)
@@ -92,20 +98,15 @@ def test_refetch_preserves_existing_total_market_value(market, monkeypatch):
     assert market.query_df("SELECT total_mv FROM daily_metrics").iloc[0, 0] == 1000.
 
 
-def test_history_window_before_close_uses_previous_session(monkeypatch):
+def test_history_window_before_close_uses_previous_session(monkeypatch, market):
     from datetime import datetime
 
-    import backend.services.ingest as module
-
-    class Clock(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return cls(2026, 10, 19, 10, 0, tzinfo=tz)
-
-    monkeypatch.setattr(module, "datetime", Clock)
+    from backend.services import eod_dates
+    monkeypatch.setattr(eod_dates, 'shanghai_now',
+                        lambda: datetime(2026, 10, 19, 10, tzinfo=eod_dates.SHANGHAI))
+    market.execute("INSERT INTO trade_calendar VALUES ('2026-10-16',TRUE),('2026-10-19',TRUE)")
     svc = object.__new__(IngestionService)
-    svc._latest_open_day = lambda: date(2026, 10, 19)
-    svc._previous_open_day = lambda day: date(2026, 10, 16)
+    svc.repo = SimpleNamespace(c=market)
     assert svc._history_window(10) == (date(2016, 10, 16), date(2026, 10, 16))
 
 

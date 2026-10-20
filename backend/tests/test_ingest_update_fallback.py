@@ -19,6 +19,15 @@ from backend.storage.duckdb_client import DuckDBClient
 from backend.storage.repository import MarketRepository
 
 
+@pytest.fixture(autouse=True)
+def closed_session_clock(monkeypatch):
+    from datetime import datetime
+
+    from backend.services import eod_dates
+    monkeypatch.setattr(eod_dates, 'shanghai_now',
+                        lambda: datetime(2026, 8, 28, 16, tzinfo=eod_dates.SHANGHAI))
+
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     c = DuckDBClient(db_path=str(tmp_path / "update-fallback.duckdb"))
@@ -95,9 +104,9 @@ def test_non_trading_day_falls_back_without_readiness_probe(client):
 
 
 def test_force_current_day_bypasses_fallback_and_readiness_probe(client):
-    closed_day = date(2026, 8, 29)
+    closed_day = date(2026, 8, 28)
     previous = closed_day - timedelta(days=1)
-    _seed_calendar(client, [(previous, True), (closed_day, False)])
+    _seed_calendar(client, [(previous, True), (closed_day, True)])
 
     def fail_if_probed(*_):
         raise AssertionError("强制当日不应执行源端就绪探测")
@@ -113,7 +122,7 @@ def test_force_current_day_bypasses_fallback_and_readiness_probe(client):
     )
 
     assert target == closed_day
-    assert any("强制采集当日" in message for _, message in ctx.logs)
+    assert any("强制采集" in message for _, message in ctx.logs)
 
 
 def test_automatic_gap_reconcile_respects_fallback_target(client, monkeypatch):

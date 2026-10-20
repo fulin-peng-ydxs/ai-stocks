@@ -486,7 +486,7 @@ def test_pipeline_board_default_runs(tmp_path, monkeypatch):
 
     called = {"n": 0}
 
-    def fake_ingest_board(self, ctx=None, board_type=None, board_codes=None, mode="update"):
+    def fake_ingest_board(self, ctx=None, board_type=None, board_codes=None, mode="update", target_end=None):
         called["n"] += 1
         return {"dict": {"total": 465}, "members": {}, "bar": {"rows": 0},
                 "fund_flow": {"rows": 0}, "failed": []}
@@ -511,7 +511,7 @@ def test_pipeline_board_skipped_with_board_false(tmp_path, monkeypatch):
 
     called = {"n": 0}
 
-    def fake_ingest_board(self, ctx=None, board_type=None, board_codes=None, mode="update"):
+    def fake_ingest_board(self, ctx=None, board_type=None, board_codes=None, mode="update", target_end=None):
         called["n"] += 1
         return {}
 
@@ -533,7 +533,7 @@ def test_pipeline_board_failure_continues_quality(tmp_path, monkeypatch):
     from backend.services.data_report import DataIntegrityReport
     from backend.services.pipeline import DailyPipeline
 
-    def boom_board(self, ctx=None, board_type=None, board_codes=None, mode="update"):
+    def boom_board(self, ctx=None, board_type=None, board_codes=None, mode="update", target_end=None):
         raise RuntimeError("板块采集失败")
 
     monkeypatch.setattr(ingest_mod.IngestionService, "ingest_board", boom_board, raising=True)
