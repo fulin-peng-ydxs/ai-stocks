@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { defineComponent, h, KeepAlive, nextTick, ref } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import AppHoverInfo from '@/components/AppHoverInfo'
+import ElementPlus from 'element-plus'
 
 const ElTooltipStub = defineComponent({
   name: 'ElTooltip',
@@ -29,6 +30,145 @@ const ElPopoverStub = defineComponent({
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
 describe('AppHoverInfo', () => {
+  it.each(['tooltip', 'popover'] as const)('%s 在分阶段布局通知后保留仍命中的静止鼠标意图', async (kind) => {
+    vi.useFakeTimers()
+    const descriptor = Object.getOwnPropertyDescriptor(document, 'elementFromPoint')
+    const hitTest = vi.fn()
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: hitTest })
+    const wrapper = mount(AppHoverInfo, {
+      attachTo: document.body,
+      props: { kind },
+      slots: kind === 'popover'
+        ? { reference: () => h('span', { class: 'reference' }, 'i'), default: () => h('div', '归档详情') }
+        : { default: () => h('span', { class: 'reference' }, '?') },
+      global: { stubs: { ElTooltip: ElTooltipStub, ElPopover: ElPopoverStub } },
+    })
+    try {
+      const reference = wrapper.get('.reference')
+      hitTest.mockReturnValue(reference.element)
+      const visible = () => wrapper.get(`.${kind}-stub`).attributes('data-visible')
+      await reference.trigger('mouseenter', { clientX: 120, clientY: 257 })
+      await vi.advanceTimersByTimeAsync(120)
+      window.dispatchEvent(new Event('resize'))
+      await vi.advanceTimersByTimeAsync(420)
+      // 屏幕稳定通知晚于首次悬浮门槛，鼠标没有再次移动。
+      window.dispatchEvent(new Event('resize'))
+      await nextTick()
+      expect(visible()).toBe('false')
+      await vi.advanceTimersByTimeAsync(300)
+      expect(visible()).toBe('true')
+      expect(hitTest).toHaveBeenLastCalledWith(120, 257)
+
+      hitTest.mockReturnValue(document.body)
+      window.dispatchEvent(new Event('resize'))
+      await vi.advanceTimersByTimeAsync(300)
+      expect(visible()).toBe('false')
+
+      hitTest.mockReturnValue(reference.element)
+      await reference.trigger('mouseenter', { clientX: 120, clientY: 257 })
+      window.dispatchEvent(new Event('blur'))
+      window.dispatchEvent(new Event('resize'))
+      await vi.advanceTimersByTimeAsync(300)
+      expect(visible()).toBe('false')
+    } finally {
+      wrapper.unmount()
+      if (descriptor) Object.defineProperty(document, 'elementFromPoint', descriptor)
+      else Reflect.deleteProperty(document, 'elementFromPoint')
+    }
+  })
+
+  it.each(['tooltip', 'popover'] as const)('%s 共用四向回退和双轴边界约束', (kind) => {
+    const wrapper = mount(AppHoverInfo, {
+      props: { kind },
+      slots: kind === 'popover'
+        ? { reference: () => h('span', 'i'), default: () => h('div', '详情') }
+        : { default: () => h('span', '?') },
+      global: { stubs: { ElTooltip: ElTooltipStub, ElPopover: ElPopoverStub } },
+    })
+    try {
+      const floating = wrapper.getComponent(kind === 'popover' ? ElPopoverStub : ElTooltipStub)
+      expect(floating.vm.$attrs.popperOptions).toEqual({ modifiers: [
+        { name: 'flip', options: { fallbackPlacements: ['top-start', 'bottom-start', 'left-start', 'right-start'], padding: 12 } },
+        { name: 'preventOverflow', options: { altAxis: true, tether: false, padding: 12 } },
+      ] })
+    } finally { wrapper.unmount() }
+  })
+
+  it.each(['tooltip', 'popover'] as const)('真实库 %s 在反复切屏后重新打开，ARIA 与实际浮层同步', async (kind) => {
+    vi.useFakeTimers()
+    const wrapper = mount(AppHoverInfo, {
+      attachTo: document.body,
+      props: { kind }, attrs: { content: '静态说明', transition: '' },
+      slots: kind === 'popover'
+        ? { reference: () => h('span', { class: 'reference', tabindex: 0 }, 'i'), default: () => h('div', '归档统计') }
+        : { default: () => h('span', { class: 'reference', tabindex: 0 }, '?') },
+      global: { plugins: [ElementPlus] },
+    })
+    try {
+      const reference = wrapper.get('.reference')
+      for (let cycle = 0; cycle < 3; cycle++) {
+        await reference.trigger('mousemove')
+        await vi.advanceTimersByTimeAsync(300)
+        const id = reference.attributes('aria-describedby')
+        expect(id).toBeTruthy()
+        const floating = document.getElementById(id!)!
+        expect(floating).not.toBeNull()
+        expect(floating.style.display).not.toBe('none')
+        window.dispatchEvent(new Event('resize'))
+        await nextTick()
+        await vi.advanceTimersByTimeAsync(0)
+        expect(reference.attributes('aria-describedby')).toBeUndefined()
+        expect(floating.style.display).toBe('none')
+      }
+    } finally { wrapper.unmount() }
+  })
+
+  it('多个说明入口共用一个尺寸监听，最后卸载时释放', () => {
+    const add = vi.spyOn(window, 'addEventListener')
+    const remove = vi.spyOn(window, 'removeEventListener')
+    const wrapper = mount(defineComponent({
+      setup: () => () => h('div', Array.from({ length: 12 }, (_, index) =>
+        h(AppHoverInfo, { content: String(index) }, { default: () => h('span', '?') }))),
+    }), { global: { stubs: { ElTooltip: ElTooltipStub } } })
+    expect(add.mock.calls.filter(([name]) => name === 'resize')).toHaveLength(1)
+    wrapper.unmount()
+    expect(remove.mock.calls.filter(([name]) => name === 'resize')).toHaveLength(1)
+  })
+
+  it.each(['tooltip', 'popover'] as const)('布局变化取消 %s 待显示状态，原位置再次移动后可恢复', async (kind) => {
+    vi.useFakeTimers()
+    const wrapper = mount(AppHoverInfo, {
+      props: { kind },
+      slots: kind === 'popover'
+        ? { reference: () => h('span', { class: 'reference' }, 'i'), default: () => h('div', { class: 'content' }, '归档详情') }
+        : { default: () => h('span', { class: 'reference' }, '?') },
+      global: { stubs: { ElTooltip: ElTooltipStub, ElPopover: ElPopoverStub } },
+    })
+    try {
+      const reference = wrapper.get('.reference')
+      const floating = () => wrapper.get(`.${kind}-stub`).attributes('data-visible')
+      await reference.trigger('mouseenter')
+      vi.advanceTimersByTime(200)
+      window.dispatchEvent(new Event('resize'))
+      vi.advanceTimersByTime(300)
+      await nextTick()
+      expect(floating()).toBe('false')
+      // 切屏后指针可能仍在原触发点内，不要求先移出、失焦或重新点击。
+      await reference.trigger('mousemove')
+      vi.advanceTimersByTime(300)
+      await nextTick()
+      expect(floating()).toBe('true')
+      if (kind === 'popover') await wrapper.get('.content').trigger('mouseenter')
+      window.dispatchEvent(new Event('resize'))
+      await nextTick()
+      expect(floating()).toBe('false')
+      await reference.trigger('mouseenter')
+      vi.advanceTimersByTime(300)
+      await nextTick()
+      expect(floating()).toBe('true')
+    } finally { wrapper.unmount() }
+  })
+
   it.each(['blur', 'hidden'])('窗口离开（%s）清理已显示和待显示提示，恢复焦点不自动显示', async (reason) => {
     vi.useFakeTimers()
     const wrapper = mount(AppHoverInfo, {

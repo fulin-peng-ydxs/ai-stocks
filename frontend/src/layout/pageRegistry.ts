@@ -1049,7 +1049,7 @@ const REGISTRY: PageRegistryEntry[] = [
           },
         },
         { id: 'quality', component: 'stat-strip', region: 'main', label: '四层质量摘要', order: 2 },
-        { id: 'workspace', component: 'tabs', region: 'main', growMain: true, label: '数据治理工作区', order: 3, config: { defaultActive: 'assets' } },
+        { id: 'workspace', component: 'tabs', region: 'main', growMain: true, minH: 300, label: '数据治理工作区', order: 3, config: { defaultActive: 'assets' } },
         { id: 'assetTable', component: 'wide-table', region: 'main', parentId: 'workspace', label: '数据资产表', order: 4, config: { pagination: false, hiddenColumns: [] } },
         { id: 'stockTable', component: 'data-table', region: 'main', parentId: 'workspace', label: '逐股分层体检表', order: 5, config: { pagination: true } },
         { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '页面设置', order: 6 },

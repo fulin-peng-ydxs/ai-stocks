@@ -951,6 +951,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
     expect(getPageLayout('data-overview').slots.find((slot) => slot.id === 'summary')?.config?.visibleItems)
       .toContain('intraday')
     expect(applicableComponentFields(page, 'summary').map((field) => field.key)).toEqual(['visibleItems'])
+    expect(getPageLayout('data-overview').slots.find((slot) => slot.id === 'workspace')?.minH).toBe(300)
   })
 
   it('业务选项插槽不得登记空内容', () => {

@@ -38,6 +38,41 @@ afterEach(() => {
 })
 
 describe('AppOverflowTooltipHost', () => {
+  it('分阶段布局后静止鼠标仍能显示；截断消失或失焦后不恢复', async () => {
+    vi.useFakeTimers()
+    const descriptor = Object.getOwnPropertyDescriptor(document, 'elementFromPoint')
+    const hitTest = vi.fn()
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: hitTest })
+    const wrapper = mount(AppOverflowTooltipHost, {
+      attachTo: document.body, global: { stubs: { ElTooltip: ElTooltipStub } },
+    })
+    const target = appendOverflowTarget('layout-hover')
+    hitTest.mockReturnValue(target)
+    try {
+      target.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 80, clientY: 100 }))
+      await vi.advanceTimersByTimeAsync(120)
+      window.dispatchEvent(new Event('resize'))
+      await vi.advanceTimersByTimeAsync(420)
+      window.dispatchEvent(new Event('resize'))
+      await vi.advanceTimersByTimeAsync(300)
+      expect(wrapper.get('.tooltip-host').attributes('data-visible')).toBe('true')
+      hitTest.mockReturnValue(document.body)
+      window.dispatchEvent(new Event('resize'))
+      await vi.advanceTimersByTimeAsync(300)
+      expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+      hitTest.mockReturnValue(target)
+      target.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+      window.dispatchEvent(new Event('blur'))
+      window.dispatchEvent(new Event('resize'))
+      await vi.advanceTimersByTimeAsync(300)
+      expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
+      if (descriptor) Object.defineProperty(document, 'elementFromPoint', descriptor)
+      else Reflect.deleteProperty(document, 'elementFromPoint')
+    }
+  })
+
   it.each(['首次移动', '点击', '窗口失焦', 'Escape'])('%s 后无需移出文字再移入也能重新悬浮', async (action) => {
     vi.useFakeTimers()
     const wrapper = mount(AppOverflowTooltipHost, {

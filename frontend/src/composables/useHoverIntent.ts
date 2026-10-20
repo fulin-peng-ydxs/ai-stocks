@@ -7,8 +7,9 @@ const CONTENT_ENTRY_GRACE_MS = 180
 /** 说明浮层共用的鼠标静止判定，键盘焦点不等待。 */
 export function useHoverIntent(isDisabled: () => boolean, allowsContentEntry: () => boolean) {
   const visible = ref(false)
-  const modality = useTooltipInputModality(reset)
+  const modality = useTooltipInputModality(reset, onLayoutChange)
   let pointerInside = false
+  let pointer: { reference: HTMLElement; x: number; y: number } | null = null
   let contentInside = false
   let focused = false
   let showTimer: ReturnType<typeof setTimeout> | null = null
@@ -30,9 +31,29 @@ export function useHoverIntent(isDisabled: () => boolean, allowsContentEntry: ()
     clearShow()
     clearHide()
     pointerInside = false
+    pointer = null
     contentInside = false
     focused = false
     visible.value = false
+  }
+
+  function rememberPointer(event?: MouseEvent): void {
+    if (event?.currentTarget instanceof HTMLElement) {
+      pointer = { reference: event.currentTarget, x: event.clientX, y: event.clientY }
+    }
+  }
+
+  function onLayoutChange(): void {
+    const previous = pointer
+    reset()
+    // 切屏会分阶段通知。取消旧定位后重新核对真实命中，不能丢掉刚进入且已静止的鼠标意图。
+    // 失焦/后台仍走 reset，不恢复；元素移走、被遮挡或移除时也不重弹。
+    if (!previous || document.hidden || !previous.reference.isConnected) return
+    const hit = document.elementFromPoint?.(previous.x, previous.y)
+    if (!hit || !previous.reference.contains(hit)) return
+    pointer = previous
+    pointerInside = true
+    scheduleShow()
   }
 
   function scheduleShow(): void {
@@ -44,15 +65,17 @@ export function useHoverIntent(isDisabled: () => boolean, allowsContentEntry: ()
     }, APP_HOVER_TOOLTIP_DELAY_MS)
   }
 
-  function onMouseEnter(): void {
+  function onMouseEnter(event?: MouseEvent): void {
     if (isDisabled()) return
+    rememberPointer(event)
     pointerInside = true
     clearHide()
     scheduleShow()
   }
 
-  function onMouseMove(): void {
+  function onMouseMove(event?: MouseEvent): void {
     if (isDisabled() || focused || contentInside) return
+    rememberPointer(event)
     pointerInside = true
     if (visible.value) visible.value = false
     scheduleShow()
@@ -60,6 +83,7 @@ export function useHoverIntent(isDisabled: () => boolean, allowsContentEntry: ()
 
   function onMouseLeave(): void {
     pointerInside = false
+    pointer = null
     clearShow()
     if (focused || contentInside) return
     if (!visible.value) return

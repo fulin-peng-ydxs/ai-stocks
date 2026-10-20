@@ -14,7 +14,8 @@ const contentRef = ref<HTMLElement>()
 const contentTruncated = ref(false)
 let hoverTarget: HTMLElement | null = null
 let focusTarget: HTMLElement | null = null
-const modality = useTooltipInputModality(dismissCurrent)
+let pointer: { x: number; y: number } | null = null
+const modality = useTooltipInputModality(dismissCurrent, onLayoutChange)
 let hoverTimer: ReturnType<typeof setTimeout> | null = null
 let contentResizeObserver: ResizeObserver | null = null
 
@@ -78,6 +79,7 @@ function syncVisibleTarget(): void {
 }
 
 function onMouseOver(event: MouseEvent): void {
+  pointer = { x: event.clientX, y: event.clientY }
   const next = findOverflowTooltipTarget(event.target)
   if (!next || hoverTarget === next) return
   hoverTarget = next
@@ -96,6 +98,7 @@ function matchesHoverTarget(target: EventTarget | null): boolean {
 
 function onMouseMove(event: MouseEvent): void {
   if (focusTarget) return
+  pointer = { x: event.clientX, y: event.clientY }
   // 点击、Escape 或窗口失焦会清空目标；鼠标仍在原节点内时不会再有 mouseover，
   // 必须从本次移动重新识别，否则提示只能靠移出再移入恢复。
   const next = findOverflowTooltipTarget(event.target)
@@ -109,6 +112,7 @@ function onMouseOut(event: MouseEvent): void {
   if (!hoverTarget) return
   if (!matchesHoverTarget(event.target) || matchesHoverTarget(event.relatedTarget)) return
   hoverTarget = null
+  pointer = null
   clearHoverTimer()
   syncVisibleTarget()
 }
@@ -143,8 +147,21 @@ function onPointerDown(): void {
 function dismissCurrent(): void {
   focusTarget = null
   hoverTarget = null
+  pointer = null
   clearHoverTimer()
   hideCurrent()
+}
+
+function onLayoutChange(): void {
+  const previous = pointer
+  dismissCurrent()
+  if (!previous || document.hidden) return
+  // 按变化后的真实命中及截断重新识别，不能恢复旧节点或已完整显示的文字。
+  const next = findOverflowTooltipTarget(document.elementFromPoint?.(previous.x, previous.y))
+  if (!next) return
+  pointer = previous
+  hoverTarget = next
+  scheduleHover(next)
 }
 
 function onKeyDown(event: KeyboardEvent): void {
@@ -161,7 +178,6 @@ onMounted(() => {
   document.addEventListener('mouseout', onMouseOut)
   document.addEventListener('focusin', onFocusIn)
   document.addEventListener('focusout', onFocusOut)
-  window.addEventListener('resize', dismissCurrent)
   if (typeof ResizeObserver !== 'undefined') {
     contentResizeObserver = new ResizeObserver(measureContentOverflow)
   }
@@ -176,7 +192,6 @@ onBeforeUnmount(() => {
   document.removeEventListener('mouseout', onMouseOut)
   document.removeEventListener('focusin', onFocusIn)
   document.removeEventListener('focusout', onFocusOut)
-  window.removeEventListener('resize', dismissCurrent)
   clearHoverTimer()
   contentResizeObserver?.disconnect()
 })

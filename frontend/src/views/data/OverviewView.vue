@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import AppScrollArea from '@/components/AppScrollArea.vue'
-import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppHoverInfo from '@/components/AppHoverInfo'
+import DataMetricCard from '@/components/data/DataMetricCard.vue'
+import DataMetricDetails from '@/components/data/DataMetricDetails.vue'
+import { overviewMetrics, intradayCoverageText, type OverviewAction } from './overviewMetrics'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppDetailField from '@/components/AppDetailField.vue'
 import AppDetailFields from '@/components/AppDetailFields.vue'
@@ -17,7 +19,7 @@ import { onMounted, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   getOverview, getCatalog, getDimensions, getStockQuality, LAYER_DESC, LAYER_ISSUE_SUMMARY,
-  BOARD_ISSUE_ITEMS, ISSUE_TYPE_LABEL, type Overview, type QualityLayer, type CatalogTable,
+  BOARD_ISSUE_ITEMS, ISSUE_TYPE_LABEL, ISSUE_LAYER, type Overview, type QualityLayer, type CatalogTable,
   type CatalogDatabaseSummary, type Dimension, type StockQuality,
 } from '@/api/data'
 import AppStateBlock from '@/components/AppStateBlock.vue'
@@ -344,10 +346,21 @@ function tableFreshness(row: CatalogTable): { type: string; text: string } {
   return { type: 'success', text: '鲜活' }
 }
 
-const scoreColor = computed(() => {
-  const s = ov.value?.quality.score ?? 0
-  return s >= 90 ? 'var(--el-color-success)' : s >= 70 ? 'var(--app-warning-text)' : 'var(--app-danger-text)'
-})
+const metrics = computed(() => overviewMetrics(ov.value).filter((item) => kpiVisible(item.key)))
+
+// 卡片外壳只展示，所有导航均由具名入口触发；页内定位与台账处理不混用。
+function metricAction(action?: OverviewAction) {
+  if (action === 'stocks') activeWorkspaceTab.value = 'stocks'
+  else if (action === 'gaps') gotoQuality(undefined, 'history_data_gap,stale')
+  else if (action === 'intraday-ingest') router.push({ path: '/data/ingest', query: { task_type: 'intraday_ingest' } })
+  else if (action === 'st-refresh') gotoStRefresh()
+  else if (action === 'board') activeWorkspaceTab.value = 'board'
+  else if (action === 'quality') gotoQuality()
+}
+const intradayIssueTypes = 'intraday_gap,intraday_partial,intraday_invalid'
+function gotoStockIntraday(code: string) {
+  router.push({ path: '/data/quality', query: { code, issue_type: intradayIssueTypes } })
+}
 
 // 逐股四层列（DM-D15）：每列即一层，hover 出具体结果，点击进对应解决页。
 // 列头短名（去掉 "Lx " 前缀）；层定义说明统一引用 data.ts 的权威 LAYER_DESC（单一出处）
@@ -365,7 +378,7 @@ function layerCell(k: string, lay: any): { type: string; text: string; tip: stri
   if (k === 'L1') return {
     type: 'danger',
     text: `${lay.issues} 问题`,
-    tip: `${breakdown.join(' · ') || `入库闸门有 ${lay.issues} 项待处理问题`} → 点击查看并修复`,
+    tip: `${breakdown.join(' · ') || `入库闸门有 ${lay.issues} 项待处理问题`} 查看台账可定位对应问题`,
   }
   if (k === 'L2') {
     const hasMissing = Boolean(lay.mv_detail)
@@ -383,30 +396,30 @@ function layerCell(k: string, lay: any): { type: string; text: string; tip: stri
     return {
       type: 'danger',
       text,
-      tip: `${parts.join(' · ') || '市值字段契约不达标'} → 点击前往质量页恢复`,
+      tip: `${parts.join(' · ') || '市值字段契约不达标'} 查看台账可定位对应问题`,
     }
   }
   if (k === 'L3') return {
     type: 'danger',
     text: `${lay.issues} 问题`,
-    tip: `${breakdown.join(' · ') || `正确性有 ${lay.issues} 项待处理问题`} → 点击查看并修复`,
+    tip: `${breakdown.join(' · ') || `正确性有 ${lay.issues} 项待处理问题`} 查看台账可定位对应问题`,
   }
   // L4
   const parts: string[] = []
   if (lay.history_gap_days) parts.push(`全历史缺口 ${lay.history_gap_days} 个交易日（含近端）`)
   if (lay.gap_days) parts.push(`缺口 ${lay.gap_days} 个交易日${lay.gap_lo ? `（${lay.gap_lo}~${lay.gap_hi}）` : ''}`)
   if (lay.stale_days) parts.push(`滞后 ${lay.stale_days} 个交易日`)
-  return { type: 'danger', text: '不达标', tip: (parts.join(' · ') || '覆盖/鲜活不达标') + ' → 点击带区间前往重采' }
+  return { type: 'danger', text: '不达标', tip: (parts.join(' · ') || '覆盖/鲜活不达标') + ' 查看台账定位历史缺口和滞后；台账由质检任务更新' }
 }
 function layerSummaryText(layer: QualityLayer): string {
   return LAYER_ISSUE_SUMMARY[layer.layer]?.(layer.issues) ?? `${layer.issues} 项`
 }
-function layerSummaryTip(layer: QualityLayer): string {
-  const failedStocks = Math.max(layer.total - layer.pass_stocks, 0)
-  const result = failedStocks === 0
-    ? '当前全部股票达标'
-    : `当前 ${failedStocks} 只股票未达标，${layerSummaryText(layer)}`
-  return `${result}。${layer.desc}`
+function layerDetails(layer: QualityLayer) {
+  return [
+    { label: '达标股票', value: `${layer.pass_stocks.toLocaleString()} / ${layer.total.toLocaleString()} 只` },
+    { label: '未达标股票', value: `${Math.max(layer.total - layer.pass_stocks, 0).toLocaleString()} 只` },
+    { label: '问题统计', value: layerSummaryText(layer) },
+  ]
 }
 function shouldShowLayer(k: string): boolean {
   if (settings.focusLayer === 'L12') return k === 'L1' || k === 'L2'
@@ -415,29 +428,20 @@ function shouldShowLayer(k: string): boolean {
 }
 function goLayer(k: string, row: any) {
   const lay = row.layers[k]
-  if (k === 'L4') {
-    if (lay?.history_gap_days) {
-      router.push({ path: '/data/quality', query: { code: row.code, issue_type: 'history_data_gap' } })
-      return
-    }
-    // 带 code + 区间跳采集页（缺口区间，或滞后起点→全局最新），采集页预填后可直接重采
-    const lo = lay?.gap_lo || lay?.stale_lo
-    const hi = lay?.gap_hi || sq.value?.latest_trade_date
-    const query: Record<string, string> = { task_type: 'stock_ingest', recipe: 'range_refetch', code: row.code }
-    if (lo) { query.start = (lo as string).slice(0, 10); query.end = ((hi as string) || lo).slice(0, 10) }
-    router.push({ path: '/data/ingest', query })
-  } else {
-    router.push(`/data/quality?code=${row.code}`)   // L1/L2/L3 → 质量页按类型恢复
-  }
+  if (!lay || lay.ok) return
+  // 覆盖帧是实时检查，台账由扫描更新；明确查看台账，不暗中切到采集参数页。
+  const types = k === 'L4'
+    ? ['history_data_gap', 'stale']
+    : k === 'L2' ? ['capital_gap', 'capital_invalid', 'capital_mismatch', 'mv_missing', 'mv_invalid']
+      : lay.breakdown?.length
+        ? lay.breakdown.map((item: { issue_type: string }) => item.issue_type)
+        : Object.keys(ISSUE_LAYER).filter((type) => ISSUE_LAYER[type] === k)
+  router.push({ path: '/data/quality', query: { code: row.code, ...(types.length ? { issue_type: types.join(',') } : {}) } })
 }
 
 function gotoStRefresh() {
   router.push({ path: '/data/ingest', query: { task_type: 'stock_ingest', recipe: 'st_status_refresh' } })
 }
-function stPublicationLabel(status?: 'refreshing' | 'ready' | 'failed'): string {
-  return status === 'refreshing' ? '刷新中' : status === 'failed' ? '失败' : status === 'ready' ? '就绪' : '未执行'
-}
-
 async function load() {
   loading.value = true
   error.value = ''
@@ -481,19 +485,8 @@ function gotoQuality(severity?: string, issueType?: string) {
   if (issueType) q.issue_type = issueType
   router.push(Object.keys(q).length ? { path: '/data/quality', query: q } : '/data/quality')
 }
-function gotoGap() { router.push('/data/ingest') }
-function gotoIntraday() {
-  if (!ov.value?.intraday?.stocks) {
-    router.push({ path: '/data/ingest', query: { task_type: 'intraday_ingest' } })
-    return
-  }
-  gotoQuality(undefined, 'intraday_gap,intraday_partial,intraday_invalid')
-}
 function gotoBoard() {
   router.push({ path: '/data/ingest', query: { task_type: 'board', mode: 'update' } })
-}
-function gotoBoardTab() {
-  activeWorkspaceTab.value = 'board'
 }
 const boardCoverageItems = computed(() => {
   const board = ov.value?.board
@@ -533,11 +526,11 @@ const boardIssueItems = computed(() => {
   const known = BOARD_ISSUE_ITEMS
     .map((item) => ({ ...item, count: issues[item.key] ?? 0 }))
     .filter((item) => item.count > 0)
-  const knownCount = known.reduce((sum, item) => sum + item.count, 0)
-  const otherCount = Math.max(0, (ov.value?.board?.open_issues ?? 0) - knownCount)
-  return otherCount
-    ? [...known, { key: '', label: '其他板块问题', hint: '前往质量台账查看', count: otherCount }]
-    : known
+  const knownKeys = new Set<string>(BOARD_ISSUE_ITEMS.map((item) => item.key))
+  // 未登记展示名的类型也保留真实筛选键，不能把“其他板块问题”跳成全系统台账。
+  const other = Object.entries(issues).filter(([key, count]) => count > 0 && !knownKeys.has(key))
+    .map(([key, count]) => ({ key, count, label: ISSUE_TYPE_LABEL[key] || key, hint: ISSUE_TYPE_LABEL[key] ? '前往对应质量台账查看' : '问题类型尚未登记' }))
+  return [...known, ...other]
 })
 const boardFreshnessItems = computed(() => {
   const board = ov.value?.board
@@ -568,7 +561,7 @@ function coverageText(ready: number | undefined, total: number | undefined): str
 }
 function coveragePct(ready: number | undefined, total: number | undefined): number {
   if (!total) return 0
-  return Math.round(((ready ?? 0) / total) * 100)
+  return Math.round(((ready ?? 0) / total) * 1000) / 10
 }
 // 与分层质量模型同阈值的状态档：ready/total ≥ 99% 绿、≥ 90% 橙、其余红。
 function coverageStatus(ready: number | undefined, total: number | undefined): 'success' | 'warning' | 'exception' {
@@ -610,12 +603,12 @@ const menuPageTitle = useMenuPageTitle()
           </HelpTipItem>
           <HelpTipItem question="问题如何处理">
             <ul>
-              <li>所有质量和缺口数字均可点击，并直达对应明细页处理。</li>
+              <li>统计详情通过指标旁的信息入口查看；具名链接定位覆盖或质量台账，采集按钮进入任务参数页。</li>
             </ul>
           </HelpTipItem>
         </HelpTip>
       </h2>
-      <p class="page-subtitle">家底全景：核心 KPI、数据资产表、四层质量达标率与逐股分层体检，数字可点击直达明细。</p>
+      <p class="page-subtitle">查看数据规模、覆盖与质量；通过具名入口定位明细和处理问题。</p>
       </div>
       <div class="page-head-actions">
         <el-button :loading="loading" type="primary" @click="load">刷新</el-button>
@@ -631,123 +624,18 @@ const menuPageTitle = useMenuPageTitle()
           state="loading"
           title="正在加载数据概览…"
         />
-        <div v-else class="stat-grid" data-testid="overview-kpi-grid" v-loading="loading && !!ov">
-          <el-card v-if="kpiVisible('latestTradeDate')" shadow="never" class="stat">
-            <div class="stat-label">最新交易日 <HelpHint text="库内 daily_bar 的最大交易日，全局鲜活度的基准日" /></div>
-            <div class="stat-val">{{ (ov?.latest_trade_date ?? '').slice(0, 10) || '—' }}</div>
-          </el-card>
-          <el-card v-if="kpiVisible('codes')" shadow="never" class="stat">
-            <div class="stat-label">在市 / 退市 <HelpHint text="在市 = 未退市股票数；退市 = 已退市（保留历史以防幸存者偏差）" /></div>
-            <div class="stat-val">{{ ov?.codes.active ?? '—' }}<span class="sub"> / {{ ov?.codes.delisted ?? '—' }}</span></div>
-          </el-card>
-          <el-card v-if="kpiVisible('barRows')" shadow="never" class="stat">
-            <div class="stat-label">日线总行数 <HelpHint text="daily_bar 日线行情总记录数（全市场×历史交易日）" /></div>
-            <div class="stat-val">{{ ov?.bar_rows?.toLocaleString() ?? '—' }}</div>
-          </el-card>
-          <el-card
-            v-if="kpiVisible('intraday')"
-            shadow="never"
-            class="stat clickable app-interaction-target app-interaction-card"
-            data-testid="overview-intraday-card"
-            role="button"
-            tabindex="0"
-            @click="gotoIntraday"
-            v-keyboard-activate
-          >
-            <div class="stat-label" @click.stop @keydown.stop>
-              分时归档
-              <HelpTip title="分时归档统计" test-id="overview-intraday-help" :width="360">
-                <HelpTipItem question="监控范围">
-                  <p>自 {{ ov?.intraday?.monitoring_start?.slice(0, 10) || '尚未开始' }} 至 {{ ov?.intraday?.target_end?.slice(0, 10) || '尚无目标日' }}，监控 {{ ov?.intraday?.stocks?.toLocaleString() ?? '—' }} 只；最新归档 {{ ov?.intraday?.archive_end?.slice(0, 10) || '尚未归档' }}。</p>
-                </HelpTipItem>
-                <HelpTipItem question="累计覆盖">
-                  <p>完整 {{ ov?.intraday?.complete_days?.toLocaleString() ?? '—' }} / 部分 {{ ov?.intraday?.partial_days?.toLocaleString() ?? '—' }} / 缺失 {{ ov?.intraday?.missing_days?.toLocaleString() ?? '—' }} 个股票交易日。</p>
-                </HelpTipItem>
-                <HelpTipItem question="目标日覆盖">
-                  <p v-if="ov?.intraday?.latest_expected_stocks">{{ ov.intraday.target_end?.slice(0, 10) }} 完整 {{ ov.intraday.latest_complete_stocks?.toLocaleString() ?? '—' }} / {{ ov.intraday.latest_expected_stocks.toLocaleString() }} 只；最新归档日期不代表全市场已采齐。</p>
-                  <p v-else>尚无应采目标日。</p>
-                </HelpTipItem>
-                <HelpTipItem question="统计与处理">
-                  <p>按固定监控起点后的应有交易日统计，排除上市前、退市后和明确停牌日；完整表示必需分钟已覆盖，不表示量价对账通过。点击指标查看分时质检；尚未监控时进入分时采集。</p>
-                </HelpTipItem>
-              </HelpTip>
-            </div>
-            <div class="stat-val">{{ ov?.intraday?.bar_rows?.toLocaleString() ?? '—' }}<span class="sub"> 行</span></div>
-            <template v-if="ov?.intraday">
-              <div class="stat-foot" v-if="ov.intraday.stocks">
-                监控 {{ ov.intraday.stocks.toLocaleString() }} 只 · 完整 {{ ov.intraday.complete_days.toLocaleString() }}
-                / 部分 {{ ov.intraday.partial_days.toLocaleString() }} / 缺失 {{ ov.intraday.missing_days.toLocaleString() }} 个股票交易日
-              </div>
-              <div class="stat-foot" v-else>尚未开始监控 · 点击采集</div>
-              <div class="stat-foot" v-if="ov.intraday.latest_expected_stocks">
-                {{ ov.intraday.target_end?.slice(0, 10) }} 完整 {{ ov.intraday.latest_complete_stocks?.toLocaleString() ?? '—' }} / {{ ov.intraday.latest_expected_stocks.toLocaleString() }} 只
-              </div>
-            </template>
-          </el-card>
-          <el-card
-            v-if="kpiVisible('stStatus')"
-            shadow="never"
-            class="stat clickable app-interaction-target app-interaction-card"
-            data-testid="overview-st-status-card"
-            role="button"
-            tabindex="0"
-            @click="gotoStRefresh"
-            v-keyboard-activate
-          >
-            <div class="stat-label">ST 点时事实 <HelpHint text="权威 ST 逐日事实覆盖 daily_bar 的比例；缺失或非权威时筛选、评分、回测和涨跌停业务会拒绝运行" @click.stop /></div>
-            <div class="stat-val" :class="{ danger: ov?.st_status?.ready === false }">{{ ov?.st_status?.coverage_rate ?? '—' }}<span class="sub">%</span></div>
-            <div class="stat-foot" v-if="ov?.st_status">
-              权威 {{ ov.st_status.accurate.toLocaleString() }} / {{ ov.st_status.expected.toLocaleString() }} · 缺失 {{ ov.st_status.missing }} · 非权威 {{ ov.st_status.approximate }} · 发布 {{ stPublicationLabel(ov.st_status.refresh_state?.status) }}
-            </div>
-          </el-card>
-          <el-card
-            v-if="kpiVisible('board')"
-            shadow="never"
-            class="stat clickable app-interaction-target app-interaction-card"
-            data-testid="overview-board-card"
-            role="button"
-            tabindex="0"
-            @click="gotoBoardTab()"
-            v-keyboard-activate
-          >
-            <div class="stat-label">板块数据 <HelpHint text="板块规模、覆盖与质量问题概览；点击进入下方「板块数据」专区" @click.stop /></div>
-            <div class="stat-val">{{ ov?.board ? (ov.board.board_dict ?? 0) + ' 板块' : '—' }}</div>
-            <div class="stat-foot" v-if="ov?.board">
-              概念 {{ ov.board.concept_count }} · 行业 {{ ov.board.industry_count }} · 待处理 {{ ov.board.open_issues }}
-            </div>
-          </el-card>
-          <el-card v-if="kpiVisible('score')" shadow="never" class="stat">
-            <div class="stat-label">日线四层评分 <HelpHint text="在市股票日线四层质量全部达标的占比（0~100），综合入库、契约、正确性和鲜活；分时质量独立统计，不计入此评分" /></div>
-            <div class="stat-val" :style="{ color: scoreColor }">{{ ov?.quality.score ?? '—' }}</div>
-          </el-card>
-          <el-card v-if="kpiVisible('quality')" shadow="never" class="stat clickable app-interaction-target app-interaction-card" role="button" tabindex="0"
-            @click="gotoQuality()" v-keyboard-activate>
-            <div class="stat-label">未解决质检 <HelpHint text="尚未解决的质检问题数（按高/中/低危分级）；点击前往数据质量页逐条恢复" @click.stop /></div>
-            <div class="stat-val" :class="{ danger: (ov?.quality.by_severity?.high ?? 0) > 0, warn: (ov?.quality.open ?? 0) > 0 }">
-              {{ ov?.quality.open ?? '—' }}
-            </div>
-            <div class="stat-foot" v-if="ov?.quality.open">
-              高{{ ov.quality.by_severity?.high ?? 0 }} 中{{ ov.quality.by_severity?.mid ?? 0 }} 低{{ ov.quality.by_severity?.low ?? 0 }} · 点此处理
-            </div>
-          </el-card>
-          <el-card v-if="kpiVisible('gaps')" shadow="never" class="stat clickable app-interaction-target app-interaction-card" role="button" tabindex="0"
-            @click="gotoGap" v-keyboard-activate>
-            <div class="stat-label">缺口 / 滞后 <HelpHint text="近 90 个交易日内存在缺口(疑似漏采)或数据滞后的股票数(已排除确认停牌)；点此前往补数。下方逐股表 L4 列可见各股缺口/滞后明细" @click.stop /></div>
-            <div class="stat-val" :class="{ warn: (ov?.gaps.stocks_with_gap ?? 0) > 0 }">
-              {{ ov?.gaps.stocks_with_gap ?? '—' }}<span class="sub"> 只</span>
-            </div>
-            <div class="stat-foot" v-if="ov?.gaps">缺口/滞后累计 {{ ov.gaps.gap_days_total }} 个交易日（按股票累加） · 点此补数</div>
-          </el-card>
-        </div>
-
-        <div class="scan-time" v-if="ov">
-          <template v-if="kpiVisible('intraday') && ov.intraday?.stocks">
-            分时监控自 {{ ov.intraday.monitoring_start?.slice(0, 10) }}，
-            最新归档 {{ ov.intraday.archive_end?.slice(0, 10) || '尚未归档' }}。
-          </template>
-          最近质检时间：<b>{{ formatDateTimeSeconds(ov.last_scan_at, '尚未质检') }}</b>
-          <span class="hint">（“立即质检”或定时质检任务会刷新它）</span>
-        </div>
+        <AppScrollArea v-else class="metric-scroll" axis="x" aria-label="核心数据指标">
+          <div class="stat-grid" data-testid="overview-kpi-grid" v-loading="loading && !!ov">
+            <DataMetricCard
+              v-for="metric in metrics" :key="metric.key"
+              :data-testid="metric.testId"
+              :label="metric.label" :value="metric.value" :unit="metric.unit"
+              :summary="metric.summary" :tone="metric.tone"
+              :info="metric.info" :action-label="metric.actionLabel"
+              @action="metricAction(metric.action)"
+            />
+          </div>
+        </AppScrollArea>
       </div>
     </template>
 
@@ -758,25 +646,42 @@ const menuPageTitle = useMenuPageTitle()
         class="quality-summary"
         data-testid="overview-quality-summary"
       >
-          <template #header><span>日线四层质量（达标率）</span></template>
-          <el-row :gutter="12">
-            <el-col :span="6" v-for="l in ov.quality.by_layer" :key="l.layer">
-              <AppHoverInfo :content="layerSummaryTip(l)" placement="top">
-                <div class="layer-card">
-                  <div class="layer-name">{{ l.layer }} · {{ l.name_cn }}</div>
-                  <el-progress :percentage="Math.round(l.pass_rate * 100)"
-                               :status="l.pass_rate >= 0.99 ? 'success' : l.pass_rate >= 0.9 ? 'warning' : 'exception'" />
-                  <div class="layer-foot">{{ l.pass_stocks }}/{{ l.total }} 达标 · {{ layerSummaryText(l) }}</div>
+          <template #header>
+            <div class="quality-heading">
+              <span>日线四层质量（达标率）</span>
+              <span class="hint">最近质检：{{ formatDateTimeSeconds(ov.last_scan_at, '尚未质检') }}
+                <HelpHint label="最近质检时间说明" text="质量台账由立即质检或定时质检更新；逐股覆盖实时检查，可能与尚未刷新或已忽略的台账不同。" />
+              </span>
+            </div>
+          </template>
+          <div class="quality-layer-grid">
+            <div v-for="l in ov.quality.by_layer" :key="l.layer" class="layer-card">
+              <div class="layer-name">
+                <span>{{ l.layer }} · {{ l.name_cn }}</span>
+                <DataMetricDetails :label="`${l.layer} · ${l.name_cn}`" :rows="layerDetails(l)" :notes="[l.desc]" />
+              </div>
+              <template v-if="l.total">
+                <div class="layer-progress">
+                  <el-progress :percentage="coveragePct(l.pass_stocks, l.total)" :show-text="false"
+                    :status="l.pass_rate >= 0.99 ? 'success' : l.pass_rate >= 0.9 ? 'warning' : 'exception'" />
+                  <span>{{ coveragePct(l.pass_stocks, l.total) }}%</span>
                 </div>
-              </AppHoverInfo>
-            </el-col>
-          </el-row>
+                <div class="layer-foot">{{ l.pass_stocks.toLocaleString() }} / {{ l.total.toLocaleString() }} 只达标</div>
+              </template>
+              <span v-else class="hint">尚无可检查股票</span>
+            </div>
+          </div>
       </el-card>
     </template>
 
     <template #workspace>
       <AppStateBlock
-        v-if="error"
+        v-if="loading && !ov && !error"
+        state="loading"
+        title="正在加载数据工作区…"
+      />
+      <AppStateBlock
+        v-else-if="error"
         state="error"
         :title="ov ? '数据概览刷新失败' : '数据概览加载失败'"
         :description="error"
@@ -946,7 +851,7 @@ const menuPageTitle = useMenuPageTitle()
                             统计于 {{ formatDateTimeSeconds(row.measured_at) }}
                           </span>
                           <span v-if="exactErrors[row.key]" class="asset-count-error" role="alert">
-                            {{ exactErrors[row.key] }}；已保留估算值
+                            {{ exactErrors[row.key] }}；已保留原统计结果
                           </span>
                         </div>
                       </div>
@@ -1019,7 +924,7 @@ const menuPageTitle = useMenuPageTitle()
                     <HelpTip title="表级鲜活度怎么判定？" :width="440">
                       <HelpTipItem question="时序表如何判定">
                         <ul>
-                          <li>日线行情、市值指标和指数的最新数据时间须不早于全局最新交易日才算鲜活；为空或滞后时显示「无数据 / 数据滞后」，有未解决质检问题时显示问题数。</li>
+                          <li>日线行情、市值指标和指数的最新数据时间须不早于全局最新交易日才算鲜活；为空或滞后时显示「无数据 / 数据滞后」，表级鲜活度与质量问题分列显示，不能用最大业务日证明全市场覆盖完整。</li>
                         </ul>
                       </HelpTipItem>
                       <HelpTipItem question="基础与台账表如何判定">
@@ -1045,13 +950,7 @@ const menuPageTitle = useMenuPageTitle()
                 >
                   <template #header>
                     <span>质量问题</span>
-                    <HelpTip title="质量问题怎么统计？" :width="400">
-                      <HelpTipItem question="0 和 — 有什么区别">
-                        <ul>
-                          <li>0 表示该表已纳入质量规则且当前没有待处理问题；— 表示该表不适用或尚未纳入表级质检，不能解释为质量正常。</li>
-                        </ul>
-                      </HelpTipItem>
-                    </HelpTip>
+                    <HelpHint label="表级质量问题口径说明" text="0 表示已纳入质量规则且没有待处理问题；— 表示不适用或尚未纳入表级质检，不能解释为质量正常。" />
                   </template>
                   <template #default="{ row }">
                     <span :class="{ 'txt-warn': row.open_issues != null && row.open_issues > 0 }">
@@ -1090,7 +989,7 @@ const menuPageTitle = useMenuPageTitle()
                   />
                 </template>
                 <template #description>
-                  点击层级徽章进入解决页 · 最新交易日 {{ (sq?.latest_trade_date || '—').slice(0, 10) }}
+                  异常入口查看对应台账 · 最新交易日 {{ (sq?.latest_trade_date || '—').slice(0, 10) }}
                 </template>
               </AppTabToolbar>
               <AppStateBlock
@@ -1122,29 +1021,36 @@ const menuPageTitle = useMenuPageTitle()
                   <AppTableColumn label="最新数据">
                     <template #default="{ row }">{{ (row.latest_date || '—').slice(0, 10) }}</template>
                   </AppTableColumn>
-                  <AppTableColumn label="分时覆盖" role="status">
+                  <AppTableColumn label="分时覆盖" role="text" control-width="medium">
                     <template #default="{ row }">
-                      <AppHoverInfo
-                        v-if="row.intraday"
-                        :content="'监控自 ' + (row.intraday.monitoring_start || '').slice(0, 10) + '；最新归档 ' + (row.intraday.archive_end || '—').slice(0, 10)"
-                      >
-                        <el-button text size="small" @click="router.push({ path: '/data/quality', query: { code: row.code, issue_type: row.intraday.missing_days ? 'intraday_gap' : 'intraday_partial' } })">
-                          完整 {{ row.intraday.complete_days }} / 部分 {{ row.intraday.partial_days }} / 缺失 {{ row.intraday.missing_days }}
-                        </el-button>
-                      </AppHoverInfo>
+                      <div v-if="row.intraday" class="stock-intraday-cell">
+                        <el-button v-if="row.intraday.partial_days || row.intraday.missing_days" link type="primary" size="small"
+                          :aria-label="`${row.code} 分时${intradayCoverageText(row.intraday)}，查看台账`"
+                          @click="gotoStockIntraday(row.code)">{{ intradayCoverageText(row.intraday) }} · 查看台账</el-button>
+                        <span v-else>{{ intradayCoverageText(row.intraday) }}</span>
+                        <DataMetricDetails label="分时覆盖" :rows="[
+                          { label: '完整归档', value: row.intraday.complete_days + ' 个股票交易日' },
+                          { label: '部分覆盖', value: row.intraday.partial_days + ' 个股票交易日' },
+                          { label: '整日缺失', value: row.intraday.missing_days + ' 个股票交易日' },
+                          { label: '监控起点', value: dateOnly(row.intraday.monitoring_start) },
+                          { label: '目标交易日', value: dateOnly(row.intraday.target_end) },
+                          { label: '最新归档日', value: dateOnly(row.intraday.archive_end) },
+                        ]" :notes="['覆盖数量单位为股票交易日；完整仅表示必需分钟已覆盖。缺失、部分和数据非法属于独立分时台账，不计入日线四层评分。']" />
+                      </div>
                       <span v-else class="app-caption-text">未监控</span>
                     </template>
                   </AppTableColumn>
                   <AppTableColumn v-for="k in ['L1', 'L2', 'L3', 'L4'].filter(shouldShowLayer)" :key="k" :label="LAYER_CN[k]" role="status">
                     <template #header>
-                      <span>{{ LAYER_CN[k] }} <HelpHint :text="LAYER_DESC[k]" /></span>
+                      <span>{{ LAYER_CN[k] }} <HelpHint :text="LAYER_DESC[k]" :label="`${LAYER_CN[k]}口径说明`" /></span>
                     </template>
                     <template #default="{ row }">
                       <AppHoverInfo :content="layerCell(k, row.layers[k]).tip" placement="top">
-                        <el-tag :type="layerCell(k, row.layers[k]).type as any" size="small" effect="plain"
-                                class="app-interaction-link" role="button" tabindex="0"
-                                v-keyboard-activate
-                                @click="goLayer(k, row)">
+                        <el-button v-if="row.layers[k] && !row.layers[k].ok" link type="danger" size="small"
+                          :aria-label="`${row.code} ${LAYER_CN[k]}：${layerCell(k, row.layers[k]).text}，查看质量台账`" @click="goLayer(k, row)">
+                          {{ layerCell(k, row.layers[k]).text }} · 查看台账
+                        </el-button>
+                        <el-tag v-else :type="layerCell(k, row.layers[k]).type as any" size="small" effect="plain">
                           {{ layerCell(k, row.layers[k]).text }}
                         </el-tag>
                       </AppHoverInfo>
@@ -1182,9 +1088,9 @@ const menuPageTitle = useMenuPageTitle()
                   </div>
                 </div>
                 <div class="board-hero-status" :class="{ 'is-warning': ov.board.open_issues > 0 }">
-                  <span class="board-status-label">{{ ov.board.open_issues > 0 ? '待处理问题' : '质量状态' }}</span>
-                  <strong>{{ ov.board.open_issues > 0 ? ov.board.open_issues : '正常' }}</strong>
-                  <span>{{ ov.board.open_issues > 0 ? '项需要恢复' : '暂无板块问题' }}</span>
+                  <span class="board-status-label">质量台账待处理</span>
+                  <strong>{{ ov.board.open_issues }} 项</strong>
+                  <span>覆盖与鲜活度单独检查</span>
                 </div>
               </div>
 
@@ -1193,7 +1099,7 @@ const menuPageTitle = useMenuPageTitle()
                   <div class="board-section-head">
                     <div>
                       <span class="panel-title">覆盖进度</span>
-                      <span class="hint">先确认成分、指数、资金流三条链路是否齐备</span>
+                      <HelpHint label="板块覆盖统计口径说明" text="成分、指数、资金流分别统计已覆盖与目标板块；日期追平仍须检查覆盖率，不以台账问题为零判定采齐。" />
                     </div>
                     <div class="board-section-actions">
                       <el-tag
@@ -1213,20 +1119,21 @@ const menuPageTitle = useMenuPageTitle()
                     <div v-for="item in boardCoverageItems" :key="item.key" class="cov-card">
                       <div class="cov-card-top">
                         <div>
-                          <div class="cov-label">{{ item.label }}</div>
-                          <div class="cov-desc">{{ item.desc }}</div>
+                          <div class="cov-label">{{ item.label }}
+                            <HelpHint :text="item.desc" :label="`${item.label}口径说明`" />
+                          </div>
                         </div>
-                        <div class="cov-pct" :class="[item.status === 'success' ? 'done' : item.status]">{{ item.pct }}%</div>
+                        <div class="cov-pct" :class="[item.status === 'success' ? 'done' : item.status]">{{ item.target ? item.pct + '%' : '—' }}</div>
                       </div>
                       <el-progress
+                        v-if="item.target"
                         :percentage="item.pct"
                         :status="item.status"
                         :stroke-width="9"
                         :show-text="false"
                       />
                       <div class="cov-foot">
-                        <span>{{ coverageText(item.ready, item.target) }}</span>
-                        <span>{{ item.pct >= 100 ? '覆盖完成' : '仍需补齐' }}</span>
+                        <span>{{ item.target ? coverageText(item.ready, item.target) + ' 个板块' : '尚无覆盖目标' }}</span>
                       </div>
                     </div>
                   </div>
@@ -1244,23 +1151,16 @@ const menuPageTitle = useMenuPageTitle()
                   <div class="board-side-block issue-panel">
                     <div class="board-side-title">
                       <span>质量问题</span>
-                      <span class="hint">点击进入对应问题列表</span>
+                      <HelpHint label="板块台账说明" text="显示已记录的未解决问题；零问题不等于覆盖完整，需结合覆盖进度和最近质检时间。" />
                     </div>
                     <div v-if="boardIssueItems.length" class="board-issue-list">
-                      <div
-                        v-for="item in boardIssueItems"
-                        :key="item.key"
-                        role="button"
-                        tabindex="0"
-                        class="issue-card app-interaction-target app-interaction-card"
-                        @click="gotoQuality(undefined, item.key)"
-                        v-keyboard-activate
-                      >
-                        <span class="issue-copy app-interaction-content">
+                      <div v-for="item in boardIssueItems" :key="item.key" class="issue-card">
+                        <span class="issue-copy">
                           <span class="issue-tag">{{ item.label }}</span>
                           <span class="issue-hint">{{ item.hint }}</span>
                         </span>
-                        <strong class="app-interaction-content">{{ item.count }}</strong>
+                        <el-button v-if="ISSUE_TYPE_LABEL[item.key]" link type="primary" @click="gotoQuality(undefined, item.key)">查看 {{ item.count }} 项 →</el-button>
+                        <span v-else class="hint">{{ item.count }} 项</span>
                       </div>
                     </div>
                     <div v-else class="issue-ok-card">
@@ -1277,9 +1177,9 @@ const menuPageTitle = useMenuPageTitle()
                       </el-tag>
                     </div>
                     <div class="board-update-card">
-                      <span class="mono">{{ ov.board.last_update.table_name }}</span>
+                      <span>{{ tables.find((table) => table.table === ov?.board?.last_update?.table_name)?.name_cn || ov.board.last_update.table_name }}</span>
                       <strong>{{ formatDateTimeSeconds(ov.board.last_update.updated_at, '') }}</strong>
-                      <span v-if="ov.board.last_update.detail" class="hint">{{ ov.board.last_update.detail }}</span>
+                      <DataMetricDetails label="最近板块采集" :rows="[{ label: '物理表', value: ov.board.last_update.table_name }]" :notes="ov.board.last_update.detail ? [ov.board.last_update.detail] : []" />
                     </div>
                   </div>
                 </div>
@@ -1340,18 +1240,12 @@ const menuPageTitle = useMenuPageTitle()
   flex: 1 1 auto;
   min-height: 0;
 }
-.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--app-space-3); }
-.stat { text-align: center; }
-.stat :deep(.el-card__body) { padding: 14px 6px; }
-.stat.clickable { --app-interaction-card-border: var(--el-card-border-color); cursor: pointer; }
-.stat-label { color: var(--el-text-color-secondary); font-size: var(--app-font-size-table); }
-.stat-val { font-size: var(--app-font-size-data); line-height: var(--app-line-height-data); font-weight: var(--app-font-weight-section); color: var(--el-text-color-primary); margin-top: 6px; white-space: nowrap; }
-.stat-val .sub { font-size: var(--app-font-size-body); font-weight: var(--app-font-weight-regular); color: var(--el-text-color-secondary); }
-.stat-val.warn { color: var(--app-warning-text); }
-.stat-val.danger { color: var(--app-danger-text); }
-.stat-foot { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 4px; }
-.scan-time { font-size: var(--app-font-size-caption); color: var(--el-text-color-regular); margin-top: 8px; }
-.scan-time .hint { color: var(--el-text-color-secondary); margin-left: 6px; }
+.metric-scroll { flex: 0 0 auto; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--app-space-3); }
+.quality-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--app-space-2); line-height: var(--app-line-height-table); }
+.quality-layer-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--app-space-3); }
+.stock-intraday-cell { display: flex; align-items: center; gap: var(--app-space-2); }
+.hint { color: var(--el-text-color-secondary); margin-left: 6px; }
 .hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .mono { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); }
 .expand { padding: 6px 14px; }
@@ -1397,8 +1291,11 @@ const menuPageTitle = useMenuPageTitle()
   font-size: var(--app-font-size-caption);
 }
 .layer-card { padding: 8px 10px; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
-.layer-name { font-size: var(--app-font-size-table); font-weight: var(--app-font-weight-section); margin-bottom: 6px; }
-.layer-foot { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 4px; }
+.layer-name { display: flex; align-items: center; gap: var(--app-space-1); font-size: var(--app-font-size-table); line-height: var(--app-line-height-table); font-weight: var(--app-font-weight-section); margin-bottom: 6px; }
+.layer-foot { font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); margin-top: 4px; }
+.layer-progress { display: flex; align-items: center; gap: var(--app-space-2); }
+.layer-progress .el-progress { flex: 1; min-width: 0; }
+.layer-progress > span { font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-primary); }
 .quality-summary :deep(.el-card__header) { padding: 9px 12px; }
 .quality-summary :deep(.el-card__body) { padding: 10px 12px; }
 
@@ -1417,7 +1314,7 @@ const menuPageTitle = useMenuPageTitle()
 .board-hero {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(150px, auto) auto;
+  grid-template-columns: minmax(260px, 1fr) minmax(150px, auto);
   align-items: stretch;
   gap: var(--app-space-3);
   margin-bottom: var(--app-space-3);
@@ -1481,14 +1378,13 @@ const menuPageTitle = useMenuPageTitle()
   flex-direction: column;
   justify-content: center;
   gap: var(--app-space-1);
-  border-color: var(--el-color-success-light-7);
+  border-color: var(--el-border-color-lighter);
 }
 .board-hero-status.is-warning {
   border-color: var(--el-color-warning-light-5);
   background: var(--el-color-warning-light-9);
 }
 .board-status-label,
-.cov-desc,
 .fresh-label,
 .issue-hint {
   font-size: var(--app-font-size-caption);
@@ -1568,10 +1464,6 @@ const menuPageTitle = useMenuPageTitle()
   font-weight: var(--app-font-weight-section);
   color: var(--el-text-color-primary);
 }
-.cov-desc {
-  margin-top: var(--app-space-1);
-  line-height: var(--app-line-height-caption);
-}
 .cov-pct {
   flex: 0 0 auto;
   font-size: var(--app-font-size-data);
@@ -1641,9 +1533,6 @@ const menuPageTitle = useMenuPageTitle()
   gap: var(--app-space-2);
 }
 .issue-card {
-  --app-interaction-card-border: var(--el-color-warning-light-7);
-  --app-interaction-card-hover-border: var(--app-warning-text);
-  --app-interaction-card-background: var(--el-color-warning-light-9);
   width: 100%;
   min-height: 54px;
   display: flex;
@@ -1655,7 +1544,6 @@ const menuPageTitle = useMenuPageTitle()
   border-radius: 4px;
   background: var(--el-color-warning-light-9);
   color: inherit;
-  cursor: pointer;
   text-align: left;
 }
 .issue-copy {
@@ -1668,13 +1556,6 @@ const menuPageTitle = useMenuPageTitle()
   font-size: var(--app-font-size-table);
   font-weight: var(--app-font-weight-section);
   color: var(--el-text-color-primary);
-}
-.issue-card strong {
-  flex: 0 0 auto;
-  font-size: var(--app-font-size-data);
-  line-height: var(--app-line-height-data);
-  font-weight: var(--app-font-weight-section);
-  color: var(--app-warning-text);
 }
 .issue-ok-card {
   min-height: 54px;
@@ -1704,16 +1585,12 @@ const menuPageTitle = useMenuPageTitle()
 }
 
 @container app-viewport (max-height: 700px) {
-  .stat :deep(.el-card__body) { padding: 7px 6px; }
-  .stat-label { font-size: var(--app-font-size-caption); }
-  .stat-val { margin-top: 1px; font-size: var(--app-font-size-body); line-height: var(--app-line-height-compact); }
-  .stat-foot { display: none; }
-  .scan-time { margin-top: 4px; line-height: var(--app-line-height-compact); }
+  .stat-grid { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(180px, 1fr); gap: var(--app-space-2); }
   .quality-summary :deep(.el-card__header) { padding: 5px 10px; }
   .quality-summary :deep(.el-card__body) { padding: 5px 10px; }
   .layer-card { padding: 3px 7px; }
   .layer-name { margin-bottom: 2px; font-size: var(--app-font-size-caption); }
-  .layer-foot { display: none; }
+
   .overview-workspace-card :deep(.el-card__body) { padding: 6px 10px 8px; }
   .overview-tabs :deep(.el-tabs__header) { margin-bottom: 5px; }
 }

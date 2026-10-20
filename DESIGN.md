@@ -354,6 +354,7 @@ Key Characteristics：
 | `AppHoverInfo` | `frontend/src/components/AppHoverInfo.ts`、`frontend/src/composables/useHoverIntent.ts`、`frontend/src/composables/useTooltipInputModality.ts` | 显式说明的共享 tooltip / popover 与悬停意图判定 | 无直接系统组件种类 | HelpHint、HelpTip、命令及状态说明共用；锚点、触发时序、禁用和清理规则见[提示、截断与可访问名称](#提示截断与可访问名称)。 |
 | `AppActionHint` | `frontend/src/components/AppActionHint.vue` | 命令补充说明与禁用原因的可聚焦外壳 | 无直接系统组件种类；复用 AppHoverInfo | 行操作与独立业务命令共同消费；不持有业务执行逻辑，权限指令作用于其真实 span 根节点，使用边界见本节提示契约 |
 | `HelpTip` / `HelpTipItem` / `HelpHint` | `frontend/src/components/HelpTip.vue`、`frontend/src/components/HelpTipItem.vue`、`frontend/src/components/HelpHint.vue` | 全站结构化“？”说明入口与说明项，统一键盘可达、两层结构、点号列表和警告语义色 | 无直接系统组件种类 | 字段帮助使用 HelpHint，结构化说明使用 HelpTip + HelpTipItem；选型与内容结构见[Typography Rules](#3-typography-rules)，交互见[提示、截断与可访问名称](#提示截断与可访问名称)。 |
+| `DataMetricCard` / `DataMetricDetails` | `frontend/src/components/data/DataMetricCard.vue`、`frontend/src/components/data/DataMetricDetails.vue` | 数据管理域的统计卡及只读统计详情 | 业务域内复用，不新增系统组件种类或配置字段 | OverviewView 的九项指标共用卡片，日线质量、逐股分时和最近采集共用详情；纯口径消费 HelpHint，补充事实消费 DataMetricDetails，主值、核心状态、具名操作与明细分层，详情复用 AppHoverInfo、AppDetailFields 和 AppScrollArea，规则见下文「数据概览统计与下钻」。 |
 | `RelatedBoardCell` / `RelatedBoardEmptyValue` / `RelatedBoardHistoryHint` | `frontend/src/components/RelatedBoardCell.vue`、`frontend/src/components/RelatedBoardEmptyValue.vue`、`frontend/src/components/RelatedBoardHistoryHint.vue` | 个股行业走势/概念走势冠军及可解释空值的业务域复用单元，统一名称、结构化相关性说明、低可信提示、首次计算、空结果原因、历史日期保护和权限感知导航 | 无直接系统组件种类；作为既有 `data-table` / `wide-table` 业务列内容及天梯卡片紧凑值 | 股票、榜单、筛选表格和天梯共用；调用方提供完整摘要与类型，显示、历史回退和权限见[关联板块架构](agent-works/architecture/stock-board-correlation.md#页面api-与权限)。 |
 | `BuiltinOptionRow` | `frontend/src/components/BuiltinOptionRow.vue` | 下拉项和选中值的统一主辅行结构，统一名称截断、来源提示与尾部标签/动作对齐 | 无直接系统组件种类 | 交易纪律的内置/自定义原因、买卖类型及打卡买卖规则选择统一复用；内置项只显示中性“内置”提示，自定义项的删除等动作或小号中性类型标签通过默认插槽注入；尾部标签最多占半行并省略，名称使用剩余空间，不在消费页复制选项行布局 |
 | `AppSummaryDisclosureCard` | `frontend/src/components/AppSummaryDisclosureCard.vue` | 编辑卡与只读检查清单的共享折叠摘要外壳，统一标题、元信息、工具区、展开边界与键盘可访问 disclosure | 无直接系统组件种类 | 可展开编辑与只读检查清单共用；变体、摘要和可访问性见[卡片、面板与分区](#卡片面板与分区)。 |
@@ -615,11 +616,23 @@ Key Characteristics：
 | 真实截断的菜单、标签、选项和表格原文 | 由 `AppOverflowTooltipHost` 自动检测；原生省略判定须覆盖缩放下整数宽度相等但文字已发生亚像素截断的情况，不能仅比较 `scrollWidth/clientWidth`；内容完整时不显示。原文默认来自真实内容/输入值，原文不在 DOM 时显式提供 `data-overflow-tooltip-content`，该属性只提供内容，不强制触发。 |
 | 图表行情读数、点击菜单与操作面板 | 保留所属共享图表或点击交互机制，不转换成普通悬停说明。 |
 
+**说明图标与内容格式**：先判断读者要了解的是“规则”还是“当前对象的补充事实”，再选择入口；共用悬浮机制不意味着统一图标或强制统一正文结构。
+
+| 场景 | 入口与组件 | 正文格式与边界 |
+|---|---|---|
+| 单一口径、单位、公式、适用范围或字段含义 | `?`，`HelpHint` tooltip | 直接说明一个概念，必要时附公式或范围；不把已显示的当前值再包装成明细表。 |
+| 多个独立规则、使用步骤、例子或注意事项 | `?`，`HelpTip` popover | 沿用 `HelpTipItem` 的具体问题或 warning 标题与 `ul/li` 内容结构；不因内容较长就改为统计明细。 |
+| 当前对象的额外日期、分母、覆盖分项、来源或状态事实 | `i`，数据管理域使用 `DataMetricDetails` popover | 对象标题、字段—值、可选简短口径备注；数字带单位，日期明确是业务日、归档日、采集时间还是质检时间。至少提供一项常驻区域未显示的有效事实；允许完整分项中保留必要的主值上下文。 |
+| 当前事实同时需要简短规则解释 | 一个 `i` 明细入口 | 分项用字段—值，规则放底部备注；不在同一对象旁并列重复的 `?` 与 `i`。纯规则内容仍使用帮助入口。 |
+
+- 图标表达用途，正文结构由内容决定：`?` 可承载短提示或结构化帮助；`i` 的统计详情采用键值结构，并不要求所有普通信息文字都表格化。无额外说明或明细为空时不生成入口。新增或修改的多入口区域应提供带对象名的可访问名称，如“分时归档统计详情”“最新交易日口径说明”。
+- `0`、`—`、未采集与未检查须保持各自业务语义；核心异常、必要状态和操作必须常驻。浮层只读，导航与执行使用外部具名操作，不能靠悬浮才能发现或执行。
+
 - 原生 HTML `title` 不再用作提示文案或触发信号；`nativeTitle` 接口已移除。组件的 `title` 标题属性、标题插槽、路由/业务标题及 iframe 可访问名称保留，不按字符串批量删除。
-- `AppHoverInfo` 与截断宿主复用 `tooltipTiming.ts` 的停留门槛；鼠标停止后才显示，持续移动重置等待，离开/点击/Escape 关闭，键盘聚焦立即显示，鼠标点击及其引起的焦点归还不锁定提示；输入来源由 `useTooltipInputModality` 在显式说明和截断宿主间共享，不接管控件焦点。富内容 popover 允许移入阅读；点击菜单及图表读数不等待这个门槛。窗口失焦或页面转入后台时统一清除已显示提示与待显示计时；窗口恢复焦点不能视为新的键盘阅读意图，不自动重弹，后续鼠标停留或 Tab 聚焦仍按原规则显示。页面不得新增私有计时器或第二套监听。
+- `AppHoverInfo` 与截断宿主复用 `tooltipTiming.ts` 的停留门槛；鼠标停止后才显示，持续移动重置等待，离开/点击/Escape 关闭，键盘聚焦立即显示，鼠标点击及其引起的焦点归还不锁定提示；输入来源由 `useTooltipInputModality` 在显式说明和截断宿主间共享，不接管控件焦点。富内容 popover 允许移入阅读；点击菜单及图表读数不等待这个门槛。窗口失焦、页面转入后台或窗口尺寸变化时统一清除已显示提示、待显示计时及触发区域瞬态状态；界面比例与切屏适配复用 `useDisplayScale` 已有的 resize 通知，显式提示和截断提示共用一份监听。尺寸变化后按最后一次鼠标位置重新核对真实命中：仍命中且页面可见时重新计算停留门槛，保留切屏分阶段通知期间已经建立的静止鼠标意图；移走、遮挡、移除或已不再截断的目标不恢复。原位置再次移动或重新 Tab 聚焦也可恢复，无需离开再进入、点击或刷新；窗口恢复焦点不能视为新的键盘阅读意图，不自动重弹，后续鼠标停留或 Tab 聚焦仍按原规则显示。页面不得新增私有计时器或第二套监听。
 - `AppHoverInfo` 的 `reference` 只用于稳定的虚拟锚点；图标按钮保留真实 button 根节点及原有权限、点击和加载语义。监听随锚点更换与销毁清理，缓存页面停用时清理瞬态显示。提示文案为空或不适用时不生成空触发层。
 - 禁用原因通过 `AppActionHint` 的外壳悬停或键盘阅读；禁用按钮仍不执行，外壳不代理点击。无权命令连同说明入口一起隐藏，权限过滤先于提示；加载状态不改成可执行状态。相同信息只出现一个提示，有显式说明的目标不再叠加截断气泡。
-- 提示复用 `app-wrapping-popper` 的主题、排版和空间边界；简短说明与结构化帮助保留各自组件角色，不在消费页面私设颜色、字号或动效。
+- 提示复用 `app-wrapping-popper` 的主题、排版和空间边界；共享 AppHoverInfo 允许在原方向空间不足时四向回退，并以双轴边界约束保持正文在视口内；简短说明与结构化帮助保留各自组件角色，不在消费页面私设颜色、字号或动效。
 - `npm run check:tooltips` 按 Vue/TS AST 检查原生/透传 title 和旧自动接口，已接入生产构建；组件标题、插槽和 iframe 名称不误报。定向测试覆盖默认不显示、显式说明、真实截断、禁用原因、焦点/鼠标区分、点击关闭及监听清理；内置浏览器复核实际主题、位置和消失行为。
 
 ### 滚动条显隐
@@ -676,6 +689,16 @@ Key Characteristics：
 - 用户调整条目先后次序统一使用 `AppReorderList` 的拖动把手与落点反馈，移除逐行上移/下移按钮；键盘通过空格拿起、方向键/Home/End 选择位置、空格或 Enter 确认，Esc 取消。表头按字段排序继续使用表格与 `AppSortControl`。
 - 列表以稳定对象 key 标识新增、复制和已保存条目，禁止用列表下标承担身份；仅在所属完整集合或业务允许的组内重排，不能跨组改变业务类型。只读、归档、保存中禁止排序，单项不显示把手。
 - 拖动预览不改写表单；松手提交当前列表的顺序，移出列表、指针取消、Esc、卸载或数据/权限变化均取消；长列表拖动接近滚动边缘时自动滚动。保存仍由所属业务流程负责，失败保留草稿，不暗示已保存。层级菜单使用 `AppReorderTree`，与列表共用 `AppDragHandle` 和 `useReorderInteraction`；只有允许的分组能接收子节点，禁止移入自己或后代。菜单保存互斥覆盖提交、重载和导航刷新；已就绪的鉴权快照用后台方式刷新导航，保留工作区，失败仍 fail-closed；排序失败读取服务端顺序；存在未保存属性或功能点编辑时锁定排序。只有受影响兄弟组重新赋顺序，其他菜单配置保持原值。
+
+### 数据概览统计与下钻
+
+- 数据概览指标统一由 `DataMetricCard` 承载：标题、主值与单位为第一层；至多一条核心状态为第二层；额外累计分项、日期与分母进入显式 `i` 统计详情；纯口径通过 `?` 帮助承接。最新交易日、在市/退市、日线总行数、日线四层评分使用短帮助；分时、ST 事实、板块、未解决质检、缺口使用事实明细，选型与内容格式统一遵循上文说明图标契约。数值左对齐并使用数据字阶、等宽数字，辅助状态使用 caption；状态行单行省略时仍可由完整原文提示及统计详情恢复。不得用最长脚注决定整排卡片高度，也不得以减少字阶替代信息分层。
+- 统计卡外壳只读，不承担导航。具名文字操作才定位或跳转：分时「查看逐股覆盖」定位本页逐股表，缺口「查看缺口台账」进入全历史缺口/滞后台账（详情说明与近 90 日指标的范围区别）；板块「查看板块」定位板块 tab；「处理问题」进入台账；「刷新 ST 事实」进入预填的采集参数页。未监控分时显示独立空态操作「去采集分时」，不将同名覆盖入口随数据状态暗中切换目的。规模指标无需强加操作。
+- `DataMetricDetails` 使用 `AppHoverInfo` popover 的共享停留、键盘聚焦及收起规则，采用 `AppDetailFields` 字段—值结构和底部口径说明。长明细通过 AppScrollArea 限制在视口高度的 80% 内，并按界面比例换算，正文内部滚动。浮层只读，不隐藏必要操作、不触发采集，也不叠加第二套悬浮计时器。统计明细不套用问答式 `HelpTipItem`；规则教学与字段解释仍按 HelpHint / HelpTip 契约。一个统计对象保留一个详情入口，避免整卡隐形提示和重复气泡。
+- 分时常驻真实分钟行数和目标日完整率（详情保留完整/应采股票数）；监控起点、最新归档日及累计完整/部分/缺失的股票交易日放入详情，禁止将最大归档日视为全市场采齐。日线四层评分与分时台账分开；未解决台账按最高现存严重程度显示一条摘要。最近质检时间归质量区域，并在质量统计详情中保留，不混写为整页数据更新时间。
+- 日线四层进度常驻达标率和达标股票数，分项问题及规则由显式统计详情恢复。逐股分时列优先显示整日缺失，其次分钟部分覆盖，无异常时显示完整或暂无归档；完整分项进入详情，操作组容量消费 AppTableColumn 的 controlWidth。逐股达标状态只读，异常使用明确的「查看台账」并携带股票与对应类型；分时覆盖的部分/缺失进入该股三类分时台账，不只筛某一种问题。覆盖帧实时检查与台账扫描时间、忽略状态不同，不能承诺两者数量相等。资产表保持估算/精确行数、零问题/不适用的既有区别。
+- 板块分别呈现规模、覆盖进度、日期鲜活度与质量台账；零台账问题不得写作笼统的「正常」或「全部采齐」。覆盖卡常驻百分比和已覆盖/目标，纯口径使用短帮助，禁止再用明细重复这些数字；问题项由具名链接进入对应类型台账；最近采集保留对象、时间和状态，长日志进入详情。
+- 正常高度指标随可用宽度重排；低于既有 700px 高度边界时用 `AppScrollArea` 单行横向滚动保留主值、核心状态、详情和操作，不能直接隐藏关键状态。质量四层摘要保留达标数；数据治理工作区使用既有 slot.minH=300，保证标签、工具栏和分页之外仍可阅读数行数据；余量不足由主内容区滚动兜底。表格内部滚动、板块专区内部纵向滚动继续由原有宿主承接。沿用 `visibleItems` 与用户列偏好，不新增配置字段。
 
 ### 四态反馈总则
 
@@ -779,7 +802,7 @@ Key Characteristics：
 | 双顶栏一级（`TopNavigation`） | 32px高的中性悬停/焦点面，使用`--chrome-bg-soft-hover`；宿主保持透明 | 保留原有主色图标框、加粗文字及顶栏底部下划线，不套二级选中框 | 点击区保持原位，紧凑面居中；下划线不随内容移动 |
 | 双顶栏二级、工作标签（`TopNavigation` / `WorkspaceTabs`） | 普通项使用`--chrome-bg-soft-hover`，当前项保持中性选中底色 | 复用`.app-nav-context-entry`的高度与圆角；二级导航保留轻主色边框和底线，工作页签由连续底托承接并使用强中性边框、主色上沿与图标定位 | 移动标记内容；标签关闭按钮固定，键盘事件独立 |
 | 顶栏下拉菜单（`TopNavigation`） | `--chrome-bg-soft-hover`，不得回落为组件库默认蓝色悬停/焦点底 | 当前叶子保留`--chrome-nav-leaf-active-bg`及主色文字 | 只移动内容；普通项悬停不改变真实路由 |
-| 可点击卡片：天梯、数据概览可点击统计/问题卡、指标模板、外观预设/导航选项、交易纪律规则选择（`LimitLadderCard`、`OverviewView`、`ConfigView`、`App`、`RuleMasterList`） | 保留自身基础或告警语义底色，仅增强边界、投影与浮起，不统一刷成菜单灰底 | 具备选择语义的卡片使用`.app-interaction-card.is-selected`：主色边框、3px内侧线及`--app-interaction-selected-background`的6%浅底；悬停不加深选中底色 | 表面与标记内容同步浮起；金融涨跌和告警文字颜色保持原职责 |
+| 可点击卡片：天梯、指标模板、外观预设/导航选项、交易纪律规则选择（`LimitLadderCard`、`ConfigView`、`App`、`RuleMasterList`） | 保留自身基础或告警语义底色，仅增强边界、投影与浮起，不统一刷成菜单灰底；数据概览统计与问题卡为只读外壳，使用具名链接 | 具备选择语义的卡片使用`.app-interaction-card.is-selected`：主色边框、3px内侧线及`--app-interaction-selected-background`的6%浅底；悬停不加深选中底色 | 表面与标记内容同步浮起；金融涨跌和告警文字颜色保持原职责 |
 | 连续行情对比指标（`MarketCompareMetricStrip`，消费于`StockAnalysisPanel` / `SectorsView`） | 普通项使用`--chrome-bg-soft-hover`；选中项保持`--app-interaction-selected-background` | 6%浅底与铺满单元格宽度的底线，不使用独立卡片外框、外投影或左侧线 | 只移动内容，保持连续分段栏结构 |
 
 - **背景消费方式**：导航共用`--app-interaction-nav-hover-background` / `--app-interaction-nav-hover-color`，当前态只通过角色变量提供差异，统一规则覆盖组件库hover/focus默认色。卡片通过`--app-interaction-card-background` / `--app-interaction-card-border` / `--app-interaction-card-hover-border`保留各自语义；选中浅底与连续指标共用`--app-interaction-selected-background`，不复制局部透明度配方。

@@ -16,8 +16,8 @@ test.describe('板块数据管理闭环', () => {
     const card = page.getByTestId('overview-board-card')
     await expect(card).toBeVisible({ timeout: 30_000 })
     // 三视口并发时后端会串行 DuckDB 查询，等待概览真实完成而非对初始占位断言。
-    await expect(card.locator('.stat-val')).not.toHaveText('—', { timeout: 30_000 })
-    await card.click()
+    await expect(card.locator('.data-metric-value')).not.toHaveText('—', { timeout: 30_000 })
+    await card.getByRole('button', { name: '查看板块 →' }).click()
     await expect(page.getByText('覆盖进度', { exact: true })).toBeVisible()
     await expect(page.getByText('成分覆盖', { exact: true })).toBeVisible()
     await expect(page.getByText('指数覆盖', { exact: true })).toBeVisible()

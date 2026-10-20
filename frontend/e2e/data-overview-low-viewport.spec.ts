@@ -104,7 +104,7 @@ test('数据概览在 1100×620 保持固定摘要和可用主工作区', async 
   await expect(page.getByTestId('overview-stock-table')).toBeVisible()
   const stockToolbar = page.getByTestId('overview-stocks-toolbar')
   await expect(stockToolbar.getByTestId('overview-stock-codes')).toBeVisible()
-  await expect(stockToolbar).toContainText('点击层级徽章进入解决页')
+  await expect(stockToolbar).toContainText('异常入口查看对应台账')
   await expect(stockToolbar.getByText('L1 入库 / L2 契约 / L3 正确性 / L4 覆盖鲜活', { exact: true })).toHaveCount(0)
   await expectAdaptiveTableFillsContainer(page, 'overview-stock-table')
   await expect(summary).toBeVisible()

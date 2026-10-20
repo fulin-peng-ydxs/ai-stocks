@@ -2,6 +2,14 @@ import { cloneVNode, defineComponent, h, watch, type Component, type PropType, t
 import { ElPopover, ElTooltip } from 'element-plus'
 import { useHoverIntent } from '@/composables/useHoverIntent'
 
+// 两侧都容不下长说明时，允许沿主定位方向平移，避免仅翻转仍把正文放到视口外。
+const hoverPopperOptions = {
+  modifiers: [
+    { name: 'flip', options: { fallbackPlacements: ['top-start', 'bottom-start', 'left-start', 'right-start'], padding: 12 } },
+    { name: 'preventOverflow', options: { altAxis: true, tether: false, padding: 12 } },
+  ],
+}
+
 /** 为 Element Plus 提示和富内容浮层提供同一套悬浮意图判定。 */
 export default defineComponent({
   name: 'AppHoverInfo',
@@ -27,7 +35,8 @@ export default defineComponent({
     watch(() => props.reference, (element, _, onCleanup) => {
       if (!element) return
       const events: Array<[string, EventListener, boolean?]> = [
-        ['mouseenter', intent.onMouseEnter], ['mousemove', intent.onMouseMove],
+        ['mouseenter', event => intent.onMouseEnter(event as MouseEvent)],
+        ['mousemove', event => intent.onMouseMove(event as MouseEvent)],
         ['mouseleave', intent.onMouseLeave], ['focusin', intent.onFocusIn],
         ['focusout', event => intent.onFocusOut(event as FocusEvent)],
         ['pointerdown', intent.onPointerDown, true],
@@ -56,6 +65,7 @@ export default defineComponent({
       const component = (popover ? ElPopover : ElTooltip) as Component
       return h(component, {
         popperClass: 'app-wrapping-popper',
+        popperOptions: hoverPopperOptions,
         ...attrs,
         disabled: props.disabled,
         visible: intent.visible.value,

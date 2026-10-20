@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import ElementPlus, { ElMessage, ElTooltip } from 'element-plus'
+import ElementPlus, { ElMessage } from 'element-plus'
 import { computed, reactive, ref, type Component } from 'vue'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -699,7 +699,24 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.text()).toContain('overview failed')
   })
 
-  it.each([false, true])('分时概览承接未监控和已有缺口，点击进入对应入口（监控=%s）', async (monitored) => {
+  it('数据概览加载期间不把尚未返回的板块数据展示为未采集', async () => {
+    let resolveOverview!: (value: unknown) => void
+    ;(dataApi.getOverview as ReturnType<typeof vi.fn>).mockReturnValue(new Promise((resolve) => { resolveOverview = resolve }))
+    const wrapper = await mountView(OverviewView)
+    expect(wrapper.text()).toContain('正在加载数据工作区')
+    expect(wrapper.text()).not.toContain('暂无板块数据')
+    expect(wrapper.text()).not.toContain('去采集板块')
+    resolveOverview({
+      latest_trade_date: null, codes: { active: 0, delisted: 0 }, bar_rows: 0,
+      quality: { score: 0, open: 0, by_severity: {}, by_layer: [] },
+      gaps: { stocks_with_gap: 0, gap_days_total: 0 }, last_scan_at: null,
+    })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('正在加载数据工作区')
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('分时概览区分统计详情和具名操作（监控=%s）', async (monitored) => {
     ;(dataApi.getOverview as ReturnType<typeof vi.fn>).mockResolvedValue({
       latest_trade_date: '2026-10-19', codes: { active: 2, delisted: 0 }, bar_rows: 4,
       quality: { score: 100, open: 0, by_severity: {}, by_layer: [] },
@@ -716,20 +733,36 @@ describe('代表性页面四态回归', () => {
     const card = wrapper.get('[data-testid="overview-intraday-card"]')
     if (monitored) {
       expect(card.text()).toContain('720')
-      expect(card.text()).toContain('缺失 1 个股票交易日')
-      expect(card.text()).toContain('2026-10-19 完整 1 / 2 只')
-      expect(wrapper.text()).toContain('分时监控自 2026-10-16')
+      expect(card.get('.data-metric-summary').text()).not.toContain('股票交易日')
+      expect(card.text()).toContain('目标日完整 50%')
+      expect(wrapper.text()).not.toContain('分时监控自')
     } else {
-      expect(card.text()).toContain('0 行')
+      expect(card.text()).toContain('0行')
       expect(card.text()).toContain('尚未开始监控')
     }
     const push = vi.spyOn(router, 'push')
-    await wrapper.get('[data-testid="overview-intraday-help"]').trigger('click')
-    expect(push).not.toHaveBeenCalled()
+    await card.get('[aria-label="分时归档统计详情"][tabindex="0"]').trigger('click')
     await card.trigger('click')
-    expect(push).toHaveBeenLastCalledWith(monitored
-      ? { path: '/data/quality', query: { issue_type: 'intraday_gap,intraday_partial,intraday_invalid' } }
-      : { path: '/data/ingest', query: { task_type: 'intraday_ingest' } })
+    expect(push).not.toHaveBeenCalled()
+    await card.get('.data-metric-action').trigger('click')
+    if (monitored) {
+      expect(push).not.toHaveBeenCalled()
+      expect((wrapper.vm as any).activeWorkspaceTab).toBe('stocks')
+    } else {
+      expect(push).toHaveBeenLastCalledWith({ path: '/data/ingest', query: { task_type: 'intraday_ingest' } })
+    }
+    wrapper.unmount()
+  })
+
+  it('概览台账下钻携带股票和类型，已达标状态不跳转', async () => {
+    const wrapper = await mountView(OverviewView)
+    const push = vi.spyOn(router, 'push')
+    ;(wrapper.vm as any).goLayer('L4', { code: '000001.SZ', layers: { L4: { ok: true } } })
+    expect(push).not.toHaveBeenCalled()
+    ;(wrapper.vm as any).goLayer('L3', { code: '000001.SZ', layers: { L3: { ok: false, breakdown: [{ issue_type: 'price_volume_mismatch', count: 1 }] } } })
+    expect(push).toHaveBeenLastCalledWith({ path: '/data/quality', query: { code: '000001.SZ', issue_type: 'price_volume_mismatch' } })
+    ;(wrapper.vm as any).gotoStockIntraday('000001.SZ')
+    expect(push).toHaveBeenLastCalledWith({ path: '/data/quality', query: { code: '000001.SZ', issue_type: 'intraday_gap,intraday_partial,intraday_invalid' } })
     wrapper.unmount()
   })
 
@@ -745,6 +778,20 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.find('[data-testid="overview-intraday-card"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('日线总行数')
     expect(layoutMockState.visibleItems).toEqual(['barRows'])
+    wrapper.unmount()
+  })
+
+  it('概览具名入口固定去向，部分覆盖不取整伪装为百分之百', async () => {
+    const wrapper = await mountView(OverviewView)
+    const vm = wrapper.vm as any
+    const push = vi.spyOn(router, 'push')
+    expect(vm.coveragePct(480, 481)).toBe(99.8)
+    vm.metricAction('gaps')
+    expect(push).toHaveBeenLastCalledWith({ path: '/data/quality', query: { issue_type: 'history_data_gap,stale' } })
+    vm.metricAction('st-refresh')
+    expect(push).toHaveBeenLastCalledWith({ path: '/data/ingest', query: { task_type: 'stock_ingest', recipe: 'st_status_refresh' } })
+    vm.metricAction('board')
+    expect(vm.activeWorkspaceTab).toBe('board')
     wrapper.unmount()
   })
 
@@ -863,12 +910,17 @@ describe('代表性页面四态回归', () => {
     const toolbarControlOrder = [
       'overview-asset-mode',
       'overview-asset-category',
-      'overview-asset-legacy',
       'overview-asset-search',
       'overview-asset-reset-filters',
     ].map((testId) => toolbarHtml.indexOf(testId))
     expect(toolbarControlOrder.every((position) => position >= 0)).toBe(true)
     expect(toolbarControlOrder).toEqual([...toolbarControlOrder].sort((a, b) => a - b))
+    // 旧表属于高级条件，不再按历史的平铺工具条顺序断言。
+    const legacyField = wrapper.get('[data-search-field="legacy"]')
+    expect(legacyField.isVisible()).toBe(false)
+    await wrapper.get('[data-search-toggle]').trigger('click')
+    expect(legacyField.isVisible()).toBe(true)
+    await wrapper.get('[data-search-toggle]').trigger('click')
     expect(wrapper.get('[data-testid="overview-asset-reset-filters"]').attributes('disabled'))
       .toBeDefined()
 
@@ -1148,10 +1200,11 @@ describe('代表性页面四态回归', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('体检通过，1 项提醒')
-    expect(wrapper.text()).toContain('WARN')
-    const warningRow = wrapper.get('.checkup-row.warn')
+    const warningRow = wrapper.findAll('.app-summary-disclosure-card').find((row) => row.text().includes('个股行情覆盖至结果日期'))!
+    expect(warningRow.text()).toContain('提醒')
     expect(warningRow.text()).toContain('目标日未覆盖 17 条')
-    expect(warningRow.findComponent(ElTooltip).props('content')).toBe('该日期差异本身不否定结果。')
+    await warningRow.get('button.app-summary-disclosure-card__summary').trigger('click')
+    expect(warningRow.get('.checkup-help').text()).toContain('该日期差异本身不否定结果。')
     expect(wrapper.text()).not.toContain('1 项未通过')
   })
 
@@ -1372,8 +1425,8 @@ describe('代表性页面四态回归', () => {
 
     expect(csvUtils.downloadCsv).toHaveBeenCalledWith(
       '筛选结果_2026-08-28.csv',
-      ['全市场排名', '代码', '名称', '板块', '行业走势', '综合分', '评级', '相对强度', '评分状态'],
-      [['', '000001.SZ', '平安银行', '主板', '银行', 90, '观察', 80, 'ranked']],
+      ['全市场排名', '代码', '名称', '板块', '行业走势', '行业走势截止日', '行业走势状态', '综合分', '评级', '相对强度', '评分状态'],
+      [['', '000001.SZ', '平安银行', '主板', '银行', '2026-08-28', '当日', 90, '观察', 80, 'ranked']],
     )
     const serialized = JSON.stringify((csvUtils.downloadCsv as ReturnType<typeof vi.fn>).mock.calls[0])
     expect(serialized).not.toContain('中特估')
