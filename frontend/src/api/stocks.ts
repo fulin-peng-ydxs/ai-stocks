@@ -130,7 +130,7 @@ export interface StockIntraday {
   trade_date: string
   frequency: '1m'
   status: 'ready' | 'partial' | 'out_of_range' | 'no_data'
-  source: 'sina' | 'eastmoney' | null
+  source: 'sina' | 'eastmoney' | 'ths' | null
   fetched_at: string | null
   /** 兼容旧接口，源端采集窗口统一由数据管理解释，查询固定返回 null。 */
   supported_start: string | null

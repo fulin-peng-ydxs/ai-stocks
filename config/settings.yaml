@@ -37,9 +37,7 @@ intraday:
   supported_trade_days: 8      # 数据管理采集的源端近期交易日窗口
   cache_ttl_sec: 43200         # 数据库逐股逐日归档查询缓存 12 小时
   negative_ttl_sec: 60         # 单股失败保护及东财连续失败后的熔断冷却秒数
-  source_min_interval_sec: 2   # 所有进程相邻源端请求至少间隔 2 秒
-  source_concurrency: 1        # 免费源全局并发固定为 1
-  request_timeout_sec: 15
+  # 请求限流、超时、重试和退避统一使用 datasource 的系统生效配置
   lock_wait_sec: 20
 
 # ── 标的范围 ──

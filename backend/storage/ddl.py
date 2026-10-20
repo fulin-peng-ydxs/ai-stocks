@@ -272,7 +272,7 @@ CREATE TABLE IF NOT EXISTS stock_intraday_bar (
     close DOUBLE NOT NULL,            -- 分钟收盘原始价
     volume DOUBLE NOT NULL,           -- 分钟成交量，手
     amount DOUBLE NOT NULL,           -- 分钟成交额，元
-    source VARCHAR NOT NULL,          -- sina / eastmoney
+    source VARCHAR NOT NULL,          -- sina / eastmoney / ths
     fetched_at TIMESTAMP NOT NULL,    -- UTC 采集时间
     PRIMARY KEY(code, trade_date, timestamp)
 );
@@ -294,6 +294,20 @@ CREATE TABLE IF NOT EXISTS stock_intraday_coverage (
 """
 
 # 每股独立保存监控起点，避免逐日覆盖记录丢失后历史缺口被隐藏。
+# 来源观察与行情事实分开：失败尝试不覆盖最后成功响应证据。
+DDL_STOCK_INTRADAY_SOURCE_STATE = """
+CREATE TABLE IF NOT EXISTS stock_intraday_source_state (
+    code VARCHAR NOT NULL,          -- 监控股票
+    source VARCHAR NOT NULL,        -- sina / eastmoney / ths
+    checked_at TIMESTAMP NOT NULL,  -- 最近真实请求的 UTC 时间
+    outcome VARCHAR NOT NULL,       -- ok / empty / error
+    failure_reason VARCHAR,         -- 最近请求失败原因，不能当停牌证据
+    evidence VARCHAR,               -- 最近有效响应的首尾、条数、逐日点数及缺失分钟 JSON
+    task_id VARCHAR,                -- 最近请求所属采集或修复任务
+    PRIMARY KEY(code, source)
+);
+"""
+
 DDL_STOCK_INTRADAY_MONITOR = """
 CREATE TABLE IF NOT EXISTS stock_intraday_monitor (
     code VARCHAR PRIMARY KEY,         -- 全市场股票代码
@@ -304,6 +318,7 @@ CREATE TABLE IF NOT EXISTS stock_intraday_monitor (
 
 # M1 全部 DDL（顺序无依赖）
 M1_TABLES: dict[str, str] = {
+    "stock_intraday_source_state": DDL_STOCK_INTRADAY_SOURCE_STATE,
     "stock_intraday_monitor": DDL_STOCK_INTRADAY_MONITOR,
     "stock_intraday_bar": DDL_STOCK_INTRADAY_BAR,
     "stock_intraday_coverage": DDL_STOCK_INTRADAY_COVERAGE,
@@ -1214,7 +1229,7 @@ _LIMIT_LADDER_INDEXES: tuple[str, ...] = (
 # 数据维度注册表 seed（DM-D4/D5）：已采集维度 + 规划中占位（股东数/筹码峰）。
 # 幂等 ON CONFLICT DO NOTHING：已存在则保留（允许后续人工调整 status）。
 _DIMENSION_SEED: list[tuple] = [
-    ("intraday", "分钟分时", "partial", "新浪/东财", '["stock_intraday_bar","stock_intraday_coverage","stock_intraday_monitor"]',
+    ("intraday", "分钟分时", "partial", "新浪/东财/同花顺", '["stock_intraday_bar","stock_intraday_coverage","stock_intraday_monitor","stock_intraday_source_state"]',
      "已收盘1分钟不复权分时，独立采集、长期归档，覆盖从监控起点持续积累"),
     ("share_capital", "逐日股本", "collected", "东财/新浪", '["stock_share_capital_daily","stock_share_capital_event","stock_share_capital_history"]',
      "同日总股本/流通A股及生效、可用日期；用于股本指标和缺失市值补算"),
@@ -1242,6 +1257,12 @@ _DIMENSION_SEED: list[tuple] = [
 
 # 轻量迁移：给已存在的旧表补列（CREATE TABLE IF NOT EXISTS 不会改既有表结构）
 _MIGRATIONS: list[str] = [
+    # 只追加分时证据资产，不覆盖管理员维护的维度属性。
+    "UPDATE data_dimension_registry SET tables=CAST(to_json(list_append("
+    "json_extract_string(tables,'$[*]'),'stock_intraday_source_state')) AS VARCHAR) "
+    "WHERE dimension='intraday' AND NOT list_contains("
+    "json_extract_string(tables,'$[*]'),'stock_intraday_source_state')",
+
     # 旧归档只补监控起点，不覆盖已固定的日期，也不根据当前源窗口前移。
     "INSERT INTO stock_intraday_monitor(code,monitoring_start) "
     "SELECT code,min(trade_date) FROM stock_intraday_coverage GROUP BY code "

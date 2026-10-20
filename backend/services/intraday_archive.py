@@ -15,9 +15,13 @@ from backend.services.intraday_contract import (
     BAR_FIELDS,
     EXPECTED_TIMES,
     INTRADAY_ISSUE_TYPES,
+    INTRADAY_PROVIDERS,
+    PROVIDER_LABELS,
+    REQUIRED_TIMES,
     candidate_rank,
     normalize_intraday_params,
 )
+from backend.services.intraday_evidence import IntradayEvidence, missing_ranges
 from backend.storage.repository import MarketRepository
 
 LABELS = {
@@ -153,13 +157,16 @@ class IntradayArchiveService:
                     f"SELECT code,monitoring_start FROM {view} ON CONFLICT DO NOTHING"
                 )
 
-    def online_dates(self) -> list[str]:
+    def online_dates(self, *, provider="sina") -> list[str]:
         """源端近期窗口由真实日历决定，不能因本地日线落后而向历史平移。"""
-        cutoff = eod_dates.resolve_end(self.c)
+        # 东财 ndays=5 包含尚未收盘的当前开市日，不能倒推为五个已收盘日。
+        cutoff = (eod_dates.shanghai_now().date() if provider == "eastmoney"
+                  else eod_dates.resolve_end(self.c))
+        limit = 5 if provider == "eastmoney" else get_settings().intraday.supported_trade_days
         rows = self.c.query_df(
             "SELECT trade_date FROM trade_calendar WHERE is_open AND trade_date<=? "
             "ORDER BY trade_date DESC LIMIT ?",
-            [cutoff, get_settings().intraday.supported_trade_days],
+            [cutoff, limit],
         )
         return sorted(str(_day(day)) for day in rows.trade_date)
 
@@ -333,6 +340,13 @@ class IntradayArchiveService:
                         "success",
                         json.dumps({"task_id": task_id, "status": status, "diagnostics": diag}),
                     )
+                elif existing["status"] != status:
+                    # 规则修订可能只改变覆盖状态；事实不重写，缓存仍需隔离旧状态。
+                    self.c.execute(
+                        "UPDATE stock_intraday_coverage SET status=?,revision=? "
+                        "WHERE code=? AND trade_date=?",
+                        [status, uuid4().hex, code, day],
+                    )
                 if best and selected is best:
                     # 清洗诊断可由重新取得的干净响应消除，即使事实数值没有变化。
                     diag = best.get("day_diagnostics", {}).get(day, best.get("diagnostics", {}))
@@ -359,7 +373,10 @@ class IntradayArchiveService:
             )
         return result
 
-    def collect(self, params=None, *, ctx=None):
+    def collect(
+        self, params=None, *, ctx=None, allow_fallback=False, recheck_source=False, repair_dates=None
+    ):
+        """统一归档入口；备用源开关仅由质检修复传入，不属于公开任务参数。"""
         from backend.services.intraday_source import IntradaySourceService
 
         params = normalize_intraday_params(params)
@@ -370,6 +387,8 @@ class IntradayArchiveService:
         scope = self._scope(params, ctx)
         self._register_monitoring(scope)
         quotes = self.quotes or IntradaySourceService(ctx=ctx)
+        evidence = IntradayEvidence(self.c)
+        states = evidence.load(scope["codes"])
         done = set(ctx.checkpoint.get("intraday_done", [])) if ctx else set()
         stats = dict(ctx.checkpoint.get("intraday_stats", {})) if ctx else {}
         for key in (
@@ -389,6 +408,19 @@ class IntradayArchiveService:
                 f"{len(scope['codes'])} 只，目标 {scope['start']} 至 {scope['end']}；"
                 f"已成功完成 {len(done)} 只，本轮跳过已完成股票，失败项重试"
             )
+            ctx.log(
+                "取源策略：新浪优先；质检修复按目标日依次尝试东财、同花顺备用"
+                if allow_fallback else
+                "取源策略：仅新浪；缺失与不完整进入质检，东财和同花顺仅在质检修复时尝试"
+            )
+            ctx.log(
+                f"完整性口径：{len(REQUIRED_TIMES)} 个必需时点，15:00 收盘柱必需；"
+                "14:58、14:59 集合竞价阶段不强制有独立成交柱，不补造分钟"
+            )
+            ctx.log(
+                "请求保护：单股串行，限流、超时、重试及退避统一读取系统配置；"
+                "按股票取源，同花顺按目标年份各请求一次，不按每个交易日重复请求"
+            )
             ctx.flush()
         errors = []
         failed_codes = dict(ctx.checkpoint.get("intraday_failed", {})) if ctx else {}
@@ -406,14 +438,30 @@ class IntradayArchiveService:
                     f"分时采集 {index}/{len(scope['codes'])} · 正在处理 {code}",
                 )
             expected = self._ensure_expected(code, scope)
+            if repair_dates is not None:
+                expected = expected[expected.trade_date.map(lambda d: str(_day(d)) in repair_dates)]
             pending = (
                 expected if scope["mode"] == "refetch" else expected[expected.status.ne("ready")]
             )
             stats["skipped"] += len(expected) - len(pending)
-            online = self.online_dates()
-            available = pending[
-                pending.trade_date.map(lambda d, window=online: str(_day(d)) in window)
-            ]
+            actual_times = {
+                str(_day(r.trade_date)): set(r.times) for r in self.c.query_df(
+                    "SELECT trade_date,list(strftime(timestamp,'%H:%M')) times "
+                    "FROM stock_intraday_bar WHERE code=? AND trade_date IN "
+                    "(SELECT unnest(?::DATE[])) GROUP BY trade_date",
+                    [code, pending.trade_date.dt.date.tolist()],
+                ).itertuples()
+            }
+            decisions = {
+                str(_day(row.trade_date)): evidence.assess(
+                    code, str(_day(row.trade_date)),
+                    sorted(REQUIRED_TIMES - actual_times.get(str(_day(row.trade_date)), set())),
+                    states, allow_fallback=allow_fallback, recheck=recheck_source,
+                ) for row in pending.itertuples()
+            }
+            available = pending[pending.trade_date.map(
+                lambda d: decisions[str(_day(d))]["can_repair"]
+            )]
             unavailable = pending[~pending.index.isin(available.index)]
             stats["out_of_range"] += len(unavailable)
             outcomes = {"inserted": 0, "updated": 0, "unchanged": 0, "missing": 0}
@@ -421,22 +469,36 @@ class IntradayArchiveService:
                 ctx.log(
                     f"[{index + 1}/{len(scope['codes'])}] {code}：应查 {len(expected)} 日，"
                     f"已完整跳过 {len(expected) - len(pending)} 日，待取源 {len(available)} 日，"
-                    f"窗口外 {len(unavailable)} 日"
+                    f"当前来源无法覆盖 {len(unavailable)} 日"
                 )
                 ctx.flush()
+                if allow_fallback:
+                    for day, decision in list(decisions.items())[:10]:
+                        for item in decision["decisions"]:
+                            action = "候选取源" if item["request"] else "跳过"
+                            ctx.log(f"{code} {day} {PROVIDER_LABELS[item['source']]}："
+                                    f"{action}；{item['reason']}")
+                    if len(decisions) > 10:
+                        ctx.log(f"另有 {len(decisions) - 10} 个目标日按相同来源规则判断；逐日依据保留在质量详情")
+                    ctx.flush()
             for row in unavailable.itertuples():
-                self.write_day(
-                    code,
-                    str(_day(row.trade_date)),
-                    [],
-                    error="超出现有分钟源窗口，历史缺口保留待处理",
-                    task_id=getattr(ctx, "tid", None),
+                # 未发请求只更新原因，不伪造“最近尝试”，更不改事实或修订。
+                self.c.execute(
+                    "UPDATE stock_intraday_coverage SET failure_reason=? WHERE code=? AND trade_date=?",
+                    [decisions[str(_day(row.trade_date))]["reason"], code, row.trade_date],
                 )
             technical_error = ""
             candidates = []
             if not available.empty:
                 try:
-                    window = quotes.fetch_window(code, [str(_day(d)) for d in available.trade_date])
+                    target_dates = [str(_day(d)) for d in available.trade_date]
+                    providers = tuple(p for p in INTRADAY_PROVIDERS if any(
+                        p in decisions[d]["providers"] for d in target_dates
+                    ))
+                    use_fallback = any(p != "sina" for p in providers)
+                    window = quotes.fetch_window(
+                        code, target_dates, allow_fallback=use_fallback, providers=providers,
+                    )
                     candidates = window.get("candidates", [window])
                     if window.get("errors"):
                         technical_error = "；".join(window["errors"])
@@ -445,11 +507,28 @@ class IntradayArchiveService:
                 except Exception as exc:  # noqa: BLE001 -- 单股失败留证，取消必须穿透
                     if ctx:
                         ctx.check_cancel()
+                    candidates = list(getattr(quotes, "last_windows", {}).values())
                     technical_error = f"{type(exc).__name__}: {str(exc)[:300]}"
                     if len(errors) < 100:
                         errors.append({"code": code, "reason": technical_error})
                     if ctx:
                         ctx.log(f"{code} 分时请求失败：{technical_error}", "warn")
+                evidence.record(
+                    code, candidates, getattr(quotes, "last_observations", {}),
+                    task_id=getattr(ctx, "tid", None),
+                )
+                # 同股为其他日期取源时，若新响应拓宽了范围，立即利用已取得的更好候选。
+                # 不必等待下一轮任务，也不为已证明不可覆盖的日期额外发送请求。
+                improved = []
+                for row in unavailable.itertuples():
+                    day = str(_day(row.trade_date))
+                    old_count = len(REQUIRED_TIMES & actual_times.get(day, set()))
+                    if any(len(REQUIRED_TIMES & {r[0][11:16] for r in w["rows"]
+                                                if r[0][:10] == day}) > old_count for w in candidates):
+                        improved.append(row.Index)
+                if improved:
+                    available = pd.concat([available, unavailable.loc[improved]])
+                    stats["out_of_range"] -= len(improved)
                 for row in available.itertuples():
                     if ctx:
                         ctx.check_cancel()
@@ -496,6 +575,11 @@ class IntradayArchiveService:
                     (index + 1) / max(1, len(scope["codes"])),
                     f"分时采集 {index + 1}/{len(scope['codes'])} · {code}",
                 )
+        if ctx:
+            ctx.log("逐股采集结束：正在复检分时覆盖、非法数据及历史整日缺口…")
+            ctx.flush()
+        quality = self.sync(scope["codes"])
+        # 汇总须消费复检后的覆盖，不能将旧口径的 partial 带入任务终态。
         expected_sql, args = self._coverage_sql(scope["codes"])
         remaining = self.c.query_df(
             f"SELECT status,count(*) n FROM ({expected_sql}) WHERE trade_date<=? GROUP BY status",
@@ -506,10 +590,6 @@ class IntradayArchiveService:
             int(counts.get("partial", 0)),
             int(counts.get("missing", 0)),
         )
-        if ctx:
-            ctx.log("逐股采集结束：正在复检分时覆盖、非法数据及历史整日缺口…")
-            ctx.flush()
-        quality = self.sync(scope["codes"])
         return {
             "ok": stats["failed"] == 0,
             **stats,
@@ -517,13 +597,13 @@ class IntradayArchiveService:
             "target_end": scope["end"],
             "quality": quality,
             "message": f"分时采集完成：新增 {stats['inserted']}、更新 {stats['updated']}、"
-            f"部分 {stats['partial']}、缺失 {stats['missing']}、源窗口外 {stats['out_of_range']}、技术失败 {stats['failed']}",
+            f"部分 {stats['partial']}、缺失 {stats['missing']}、当前来源无法覆盖 {stats['out_of_range']}、技术失败 {stats['failed']}",
         }
 
     def _coverage_facts(self, codes=None):
         """按逐日覆盖监控；实际分钟结构另行扫描，杜绝只相信完成标记。"""
         expected_sql, args = self._coverage_sql(codes)
-        return self.c.query_df(
+        facts = self.c.query_df(
             "SELECT c.*,coalesce(f.n,0) actual_count,coalesce(f.expected_count,0) expected_count,"
             "f.actual_source,f.actual_fetched_at "
             f"FROM ({expected_sql}) c "
@@ -534,19 +614,40 @@ class IntradayArchiveService:
             "FROM stock_intraday_bar "
             "WHERE (?::VARCHAR[] IS NULL OR code IN (SELECT unnest(?::VARCHAR[]))) "
             "GROUP BY code,trade_date) f ON f.code=c.code AND f.trade_date=c.trade_date",
-            args + [sorted(EXPECTED_TIMES), codes, codes],
+            args + [sorted(REQUIRED_TIMES), codes, codes],
         )
+        # 完整日只需计数；缺失分钟按最多 500 个股票交易日聚合，避免持有全市场分钟列表。
+        incomplete = facts.loc[facts.expected_count.lt(len(REQUIRED_TIMES)), ["code", "trade_date"]]
+        incomplete = incomplete.sort_values(["code", "trade_date"])
+        missing = {}
+        for offset in range(0, len(incomplete), 500):
+            with self.c.temp_view(incomplete.iloc[offset:offset + 500], prefix="intraday_missing") as view:
+                rows = self.c.query_df(
+                    "SELECT t.code,t.trade_date,list_filter(?::VARCHAR[],x -> NOT list_contains("
+                    "coalesce(f.times,[]::VARCHAR[]),x)) missing_times "
+                    f"FROM {view} t LEFT JOIN (SELECT b.code,b.trade_date,"
+                    "list(DISTINCT strftime(b.timestamp,'%H:%M')) times FROM stock_intraday_bar b "
+                    f"JOIN {view} q ON q.code=b.code AND q.trade_date=b.trade_date "
+                    "GROUP BY b.code,b.trade_date) f ON f.code=t.code AND f.trade_date=t.trade_date",
+                    [sorted(REQUIRED_TIMES)],
+                )
+                missing.update({(r.code, _day(r.trade_date)): list(r.missing_times)
+                                for r in rows.itertuples()})
+        facts["missing_times"] = [missing.get((r.code, _day(r.trade_date)), [])
+                                  for r in facts.itertuples()]
+        return facts
 
     def issues(self, codes=None, *, facts=None):
         rows = self._coverage_facts(codes) if facts is None else facts
-        online = set(self.online_dates()) if not rows.empty else set()
+        evidence = IntradayEvidence(self.c) if not rows.empty else None
+        states = evidence.load(codes) if evidence else {}
         result = []
         for row in rows.itertuples():
             kind = (
                 "intraday_gap"
                 if row.actual_count == 0
                 else "intraday_partial"
-                if row.expected_count < 240
+                if row.expected_count < len(REQUIRED_TIMES)
                 else None
             )
             diag = json.loads(row.diagnostics or "{}")
@@ -562,17 +663,46 @@ class IntradayArchiveService:
                 )
             if kind:
                 message = f"{LABELS[kind]}，有效 {row.actual_count} 点"
-                if row.failure_reason:
+                if row.failure_reason and not str(row.failure_reason).startswith("超出现有分钟源窗口"):
                     message += f"；{row.failure_reason}"
-                if str(_day(row.trade_date)) not in online:
-                    message += "；超出现有分钟源窗口，历史缺口保留待处理"
-                result.append(self._issue(row.code, row.trade_date, kind, message, diag))
+                missing = list(row.missing_times)
+                ranges = missing_ranges(missing)
+                availability = evidence.assess(row.code, str(_day(row.trade_date)), missing, states)
+                payload = {
+                    "message": message, "diagnostics": diag,
+                    "coverage": {"trade_date": str(_day(row.trade_date)), "point_count": int(row.actual_count),
+                                 "required_count": len(REQUIRED_TIMES),
+                                 "covered_count": int(row.expected_count),
+                                 "missing_times": missing, "missing_ranges": ranges},
+                    "availability": availability,
+                    "reason_code": availability["reason_code"] if availability["reason_code"] in ("window_truncated", "outside_observed_window")
+                                   else "source_missing_minutes" if any(
+                                       x["source"] == row.source for x in availability["sources"]
+                                   ) else "needs_verification",
+                }
+                issue = self._issue(row.code, row.trade_date, kind, message, diag)
+                issue["detail"] = json.dumps(payload, ensure_ascii=False)
+                result.append(issue)
         for row in self.invalid_facts(codes).itertuples():
             result.append(
                 self._issue(
                     row.code, row.trade_date, "intraday_invalid", "归档分钟结构或价格量额非法", {}
                 )
             )
+        # 数据非法与覆盖缺口同样承接可修复性和分钟证据，不在页面另算。
+        by_day = {(r.code, str(_day(r.trade_date))): r for r in rows.itertuples()}
+        for issue in result:
+            payload = json.loads(issue["detail"])
+            fact = by_day.get((issue["code"], str(issue["trade_date"])))
+            if "coverage" not in payload and fact is not None:
+                missing = list(fact.missing_times)
+                payload.update(
+                    coverage={"trade_date": str(_day(fact.trade_date)), "point_count": int(fact.actual_count), "required_count": len(REQUIRED_TIMES),
+                              "covered_count": int(fact.expected_count), "missing_times": missing,
+                              "missing_ranges": missing_ranges(missing)},
+                    availability=evidence.assess(issue["code"], str(issue["trade_date"]), missing, states),
+                )
+                issue["detail"] = json.dumps(payload, ensure_ascii=False)
         # 同日清洗诊断与结构错误合并为一个稳定问题身份。
         return list({(r["code"], r["trade_date"], r["issue_type"]): r for r in result}.values())
 
@@ -619,10 +749,27 @@ class IntradayArchiveService:
 
         facts = self._coverage_facts(codes)
         rows = self.issues(codes, facts=facts)
+        previous_repairs = self.c.query_df(
+            "SELECT code,trade_date,issue_type,json_extract(CASE WHEN json_valid(detail) THEN detail "
+            "ELSE '{}' END,'$.last_repair') last_repair FROM data_quality_issue "
+            "WHERE issue_type IN (SELECT unnest(?::VARCHAR[])) AND "
+            "json_exists(CASE WHEN json_valid(detail) THEN detail ELSE '{}' END,'$.last_repair') "
+            "AND (?::VARCHAR[] IS NULL OR code IN (SELECT unnest(?::VARCHAR[])))",
+            [list(INTRADAY_ISSUE_TYPES), codes, codes],
+        )
+        repair_by_day = {(r.code, str(_day(r.trade_date)), r.issue_type): r.last_repair
+                         for r in previous_repairs.itertuples()}
+        for issue in rows:
+            repair = repair_by_day.get((issue["code"], str(issue["trade_date"]), issue["issue_type"]))
+            if repair:
+                detail = json.loads(issue["detail"])
+                detail["last_repair"] = json.loads(repair)
+                issue["detail"] = json.dumps(detail, ensure_ascii=False)
         # 质量扫描确认物理分钟变化后同步覆盖与修订；概览不能继续显示旧完成标记。
         facts = facts.copy()
         facts["actual_status"] = [
-            "missing" if r.actual_count == 0 else "ready" if r.expected_count == 240 else "partial"
+            "missing" if r.actual_count == 0
+            else "ready" if r.expected_count == len(REQUIRED_TIMES) else "partial"
             for r in facts.itertuples()
         ]
         changed = facts[

@@ -52,7 +52,8 @@ def source_status(
     s = get_effective_settings().datasource
     timeout = float(s.socket_timeout_sec)
     roles = [(s.primary, "primary"), (s.fallback, "fallback"), ("ths_board", "board"),
-             ("intraday_sina", "intraday"), ("intraday_eastmoney", "intraday")]
+             ("intraday_sina", "intraday"), ("intraday_eastmoney", "intraday"),
+             ("intraday_ths", "intraday")]
     repo = repo or DataSourceHealthRepository()
     records = repo.list(list(dict.fromkeys(name for name, _role in roles)))
     out = []
@@ -83,7 +84,7 @@ def source_status(
             "last_test_at": record.get("last_test_at"),
             "last_success_at": record.get("last_success_at"),
             "failure_reason": record.get("failure_reason"),
-            "timeout_sec": get_effective_settings().intraday.request_timeout_sec if name.startswith("intraday_") else timeout,
+            "timeout_sec": timeout,
         }
         if name == "ths_board":
             from backend.services.ths_cookie_status import ths_cookie_status

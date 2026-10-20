@@ -954,7 +954,10 @@ def enqueue_terminal_events(task_id: str, *, client=None) -> int:
         job = job_df.iloc[0]
         retry = _json_value(job.get("retry_config"), _normalize_retry(None))
         current_retry = int(source.get("retry_count") or 0)
-        if retry.get("enabled") and _condition_matches(retry.get("condition"), source["status"]):
+        result = _json_value(source.get("result"), {})
+        # 已知来源无法覆盖的质量问题保留 open，但不触发无效的任务自身重试。
+        if (retry.get("enabled") and result.get("retryable") is not False
+                and _condition_matches(retry.get("condition"), source["status"])):
             next_retry = current_retry + 1
             max_retries = int(retry.get("max_retries") or 1)
             if next_retry <= max_retries:

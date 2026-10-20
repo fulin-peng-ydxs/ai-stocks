@@ -12,6 +12,7 @@ from backend.services.intraday_contract import normalize_intraday_params, saniti
 from backend.services.intraday_quotes import IntradayQuoteService
 from backend.services.intraday_source import IntradaySourceService
 from backend.tests.test_intraday_quotes import _frame, _Redis
+from backend.tests.test_intraday_source import request_settings as request_settings
 
 CODE = "600000.SH"
 DAY = "2026-09-10"
@@ -106,6 +107,7 @@ def test_cleaner_preserves_missing_open_and_rejects_bad_and_off_session_rows():
         {"mode": "update", "date_start": DAY},
         {"mode": "refetch", "date_start": DAY, "date_end": "2026-09-09"},
         {"concurrency": 16},
+        {"allow_fallback": True},
     ],
 )
 def test_parameter_rejection(params):
@@ -124,6 +126,57 @@ def test_collect_idempotent_and_skip_complete(db):
     assert again["skipped"] == 1 and len(q.calls) == 1
     assert service.read(CODE, DAY)["revision"] == before["revision"]
     assert db.query_df("SELECT count(*) n FROM stock_intraday_bar").iloc[0].n == 240
+
+
+@pytest.mark.parametrize("recheck", ["scan", "collect"])
+def test_closing_auction_rule_rechecks_old_archive_and_invalidates_cache(db, recheck):
+    from backend.services.data_report import DataIntegrityReport
+    from backend.services.intraday_contract import INTRADAY_ISSUE_TYPES
+
+    frame = _frame()
+    frame = frame[~frame.timestamp.dt.strftime("%H:%M").isin(["14:58", "14:59"])]
+    payload = IntradaySourceService._frame_to_window(frame, "sina")
+    payload["fetched_at"] = "2026-09-10T08:00:00+00:00"
+    q = Windows([payload])
+    service = IntradayArchiveService(db, quotes=q)
+    service.collect()
+    assert service.read(CODE, DAY)["status"] == "ready"
+    assert len(service.read(CODE, DAY)["rows"]) == 238
+    assert q.calls[0][2]["allow_fallback"] is False
+
+    # 模拟旧口径已落库的 partial 和质量误报；复检只改状态与修订，不伪造分钟。
+    db.execute("UPDATE stock_intraday_coverage SET status='partial',revision='legacy'")
+    issue = service._issue(CODE, date.fromisoformat(DAY), "intraday_partial", "旧口径误报", {})
+    DataIntegrityReport(db)._upsert_scan_issues([issue], INTRADAY_ISSUE_TYPES, codes=[CODE])
+    cache = _Redis()
+    assert service.read(CODE, DAY, cache)["status"] == "partial"
+    if recheck == "scan":
+        service.sync([CODE])
+    else:
+        result = service.collect()
+        assert result["partial"] == 0 and result["quality"]["intraday_partial"] == 0
+    assert service.read(CODE, DAY, cache)["status"] == "ready"
+    assert service.read(CODE, DAY)["revision"] != "legacy"
+    assert service.summary()["complete_days"] == 1
+    assert service.issues() == []
+    assert db.query_df("SELECT status FROM data_quality_issue").iloc[0].status == "resolved"
+    assert db.query_df("SELECT count(*) n FROM stock_intraday_bar").iloc[0].n == 238
+    service.collect()
+    assert len(q.calls) == (1 if recheck == "scan" else 2)
+
+
+@pytest.mark.parametrize("missing", ["09:31", "11:30", "13:01", "14:57", "15:00"])
+def test_real_missing_minute_stays_partial_even_with_enough_other_points(db, missing):
+    frame = _frame()
+    frame = frame[frame.timestamp.dt.strftime("%H:%M").ne(missing)]
+    payload = IntradaySourceService._frame_to_window(frame, "sina")
+    payload["fetched_at"] = "2026-09-10T08:00:00+00:00"
+    service = IntradayArchiveService(db, quotes=Windows([payload]))
+    result = service.collect()
+    assert result["failed"] == 0 and result["partial"] == 1
+    assert service.read(CODE, DAY)["status"] == "partial"
+    assert not service.clean("intraday_partial", CODE, DAY)
+    assert service.summary()["partial_days"] == 1
 
 
 def test_whole_day_precedence_and_failure_preserves_archive(db):
@@ -215,18 +268,15 @@ def test_midday_excludes_current_day_and_resume_scope_is_frozen(db, monkeypatch)
     assert service._scope({"mode": "update"}, ctx) == frozen
 
 
-def test_expired_gap_is_retained_without_fetch(db, monkeypatch):
+def test_calendar_window_alone_does_not_block_unknown_history(db, monkeypatch):
     service = IntradayArchiveService(db, quotes=Windows([]))
     service.collect()
     monkeypatch.setattr(service, "online_dates", lambda: ["2026-09-21"])
     q = service.quotes
     q.calls.clear()
     service.collect({"mode": "refetch", "date_start": DAY})
-    assert q.calls == [] and not service.clean("intraday_gap", CODE, DAY)
-    assert (
-        "超出"
-        in db.query_df("SELECT failure_reason FROM stock_intraday_coverage").iloc[0].failure_reason
-    )
+    assert len(q.calls) == 1 and not service.clean("intraday_gap", CODE, DAY)
+    assert "源端暂无数据" in db.query_df("SELECT failure_reason FROM stock_intraday_coverage").iloc[0].failure_reason
 
 
 def test_confirmed_suspension_not_expected_but_empty_not_suspension(db):
@@ -343,10 +393,39 @@ def test_fix_rechecks_actual_data_before_resolving(db, monkeypatch):
         db, DataIntegrityReport(db), None, context, issue_id
     )
     assert clean and "复检通过" in message
+    assert q.calls[-1][2]["allow_fallback"] is True
     assert (
         db.query_df("SELECT status FROM data_quality_issue WHERE id=?", [issue_id]).iloc[0].status
         == "resolved"
     )
+
+
+def test_regular_partial_archive_uses_fallback_only_when_quality_repair_runs(db, monkeypatch):
+    from backend.services import async_task, intraday_source
+    from backend.services.data_report import DataIntegrityReport
+    from backend.tests.test_intraday_source import _service
+
+    calls = []
+
+    class Source:
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
+            calls.append(provider)
+            return _frame(rows=10 if provider == "sina" else 240)
+
+    quotes = _service(factory=Source)
+    service = IntradayArchiveService(db, quotes=quotes)
+    first = service.collect()
+    assert first["ok"] and first["partial"] == 1 and calls == ["sina"]
+    issue_id = int(db.query_df(
+        "SELECT id FROM data_quality_issue WHERE issue_type='intraday_partial' AND status='open'"
+    ).iloc[0].id)
+    monkeypatch.setattr(intraday_source, "IntradaySourceService", lambda **kw: quotes)
+    clean, _, _ = async_task._recover_one(
+        db, DataIntegrityReport(db), None, Context(), issue_id
+    )
+    assert clean and calls == ["sina", "sina", "eastmoney"]
+    assert service.read(CODE, DAY)["source"] == "eastmoney"
+    assert service.read(CODE, DAY)["status"] == "ready"
 
 
 def test_schedule_api_defaults_disable_only_intraday():
@@ -355,6 +434,39 @@ def test_schedule_api_defaults_disable_only_intraday():
     assert ScheduledJobIn(name="x", task_type="intraday_ingest").enabled is False
     assert ScheduledJobIn(name="x", task_type="intraday_ingest", enabled=True).enabled is True
     assert ScheduledJobIn(name="x", task_type="stock_ingest").enabled is True
+
+
+def test_repair_outside_eastmoney_window_does_not_request_unavailable_fallback(db):
+    db.execute("UPDATE stock_basic SET list_date='2026-09-01'")
+    db.execute("INSERT INTO trade_calendar SELECT d::DATE,true "
+               "FROM generate_series(DATE '2026-09-01',DATE '2026-09-09',INTERVAL 1 DAY) t(d) "
+               "WHERE dayofweek(d) BETWEEN 1 AND 5")
+    db.execute("INSERT INTO daily_bar(code,trade_date,close) VALUES (?,'2026-09-01',3.6)", [CODE])
+    q = Windows([window(day="2026-09-01", rows=10)])
+    ctx = Context()
+    service = IntradayArchiveService(db, quotes=q)
+    result = service.collect(
+        {"mode": "refetch", "codes": [CODE], "date_start": "2026-09-01"},
+        ctx=ctx, allow_fallback=True,
+    )
+    assert result["partial"] == 1
+    assert q.calls[0][2]["providers"] == ("sina", "ths")
+    assert any("东财：跳过" in m and "2026-09-01 不在该接口近5交易日范围" in m for m, _ in ctx.logs)
+    assert not service.clean("intraday_partial", CODE, "2026-09-01")
+
+
+def test_eastmoney_five_day_window_includes_current_open_day(db, monkeypatch):
+    db.execute("INSERT INTO trade_calendar SELECT d::DATE,true "
+               "FROM generate_series(DATE '2026-09-01',DATE '2026-09-09',INTERVAL 1 DAY) t(d) "
+               "WHERE dayofweek(d) BETWEEN 1 AND 5")
+    monkeypatch.setattr(
+        eod_dates, "shanghai_now", lambda: datetime(2026, 9, 10, 14, tzinfo=eod_dates.SHANGHAI)
+    )
+    service = IntradayArchiveService(db)
+    assert service.online_dates(provider="eastmoney") == [
+        "2026-09-04", "2026-09-07", "2026-09-08", "2026-09-09", "2026-09-10",
+    ]
+    assert "2026-09-10" not in service.online_dates()
 
 
 def test_refetch_does_not_expand_unmonitored_history(db):
@@ -434,7 +546,7 @@ def test_queries_never_fetch_or_write_and_collector_is_only_ingestion_path(db):
     calls = []
 
     class Source:
-        def get_intraday_1m(self, code, provider):
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
             calls.append((code, provider))
             return _frame()
 
@@ -573,7 +685,7 @@ def test_monitor_migration_is_idempotent_and_preserves_dimension_customization(d
         "SELECT name_cn,tables FROM data_dimension_registry WHERE dimension='intraday'"
     ).iloc[0]
     assert dimension.name_cn == "定制分时"
-    assert json.loads(dimension.tables) == ["stock_intraday_bar", "stock_intraday_monitor"]
+    assert set(json.loads(dimension.tables)) == {"stock_intraday_bar", "stock_intraday_monitor", "stock_intraday_source_state"}
 
 
 def test_expired_historical_gap_explains_reason_without_running_collection(db, monkeypatch):
@@ -585,7 +697,7 @@ def test_expired_historical_gap_explains_reason_without_running_collection(db, m
     monkeypatch.setattr(service, "online_dates", lambda: ["2026-09-11"])
     issues = service.issues()
     assert len(issues) == 1 and issues[0]["issue_type"] == "intraday_gap"
-    assert "超出现有分钟源窗口" in json.loads(issues[0]["detail"])["message"]
+    assert json.loads(issues[0]["detail"])["availability"]["status"] == "needs_verification"
     assert len(service.quotes.calls) == 1
 
 
@@ -608,7 +720,7 @@ def test_partial_source_failure_keeps_data_and_warns_in_task_log(db):
     ctx = Context()
 
     class Source:
-        def get_intraday_1m(self, code, provider):
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
             assert ctx.flushes > 0
             assert any("请求" in message for message, _ in ctx.logs)
             if provider == "eastmoney":
@@ -617,7 +729,7 @@ def test_partial_source_failure_keeps_data_and_warns_in_task_log(db):
 
     quotes = _service(_Redis(), Source)
     quotes.ctx = ctx
-    result = IntradayArchiveService(db, quotes=quotes).collect(ctx=ctx)
+    result = IntradayArchiveService(db, quotes=quotes).collect(ctx=ctx, allow_fallback=True)
     assert result["failed"] == 1 and result["inserted"] == 1
     assert any("新浪返回" in message and "目标日完整 0/1" in message for message, _ in ctx.logs)
     assert any("东财取源失败" in message and level == "warn" for message, level in ctx.logs)
@@ -631,11 +743,12 @@ def test_circuit_skip_keeps_partial_archive_issue_and_resume_eligibility(db):
     from backend.tests.test_intraday_source import _service
 
     ctx, cache, calls = Context(), _Redis(), []
-    cache.set(IntradaySourceService._eastmoney_state_key(),
-              json.dumps({"failures": 3, "open_until": time.time() + 60}), ex=120)
+    for provider in ("eastmoney", "ths"):
+        cache.set(IntradaySourceService._backup_state_key(provider),
+                  json.dumps({"failures": 3, "open_until": time.time() + 60}), ex=120)
 
     class Source:
-        def get_intraday_1m(self, code, provider):
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
             calls.append(provider)
             assert provider == "sina"
             return _frame(rows=238)
@@ -643,7 +756,7 @@ def test_circuit_skip_keeps_partial_archive_issue_and_resume_eligibility(db):
     quotes = _service(cache, Source)
     quotes.ctx = ctx
     service = IntradayArchiveService(db, quotes=quotes)
-    result = service.collect(ctx=ctx)
+    result = service.collect(ctx=ctx, allow_fallback=True)
     assert calls == ["sina"] and result["inserted"] == 1 and result["failed"] == 1
     assert ctx.checkpoint["intraday_done"] == []
     assert "暂时熔断" in ctx.checkpoint["intraday_failed"][CODE]
@@ -651,6 +764,6 @@ def test_circuit_skip_keeps_partial_archive_issue_and_resume_eligibility(db):
     assert any(i["issue_type"] == "intraday_partial" for i in service.issues())
 
     # 续跑时重新评估未完成股票，不会被 checkpoint 当作成功跳过。
-    service.collect(ctx=ctx)
+    service.collect(ctx=ctx, allow_fallback=True)
     assert calls == ["sina", "sina"]
     assert db.query_df("SELECT count(*) n FROM stock_intraday_bar").iloc[0].n == 238

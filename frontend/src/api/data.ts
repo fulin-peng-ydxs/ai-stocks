@@ -241,6 +241,11 @@ export interface QualityIssue {
   resolved_at: string | null
   ignore_scope: QualityIgnoreScope | null
   ignore_active: boolean
+  intraday?: {
+    status: 'available' | 'needs_verification' | 'unavailable'
+    can_repair: boolean
+    reason: string
+  }
 }
 export interface QualitySummaryItem { issue_type: string; n: number }
 export interface DataQuality {
@@ -262,8 +267,8 @@ export function getDataQuality(params?: {
 }): Promise<DataQuality> {
   return http.get('/data/quality', { params })
 }
-export function fixQualityIssue(issueId: number): Promise<{ task_id: string }> {
-  return http.post(`/data/quality/${issueId}/fix`)
+export function fixQualityIssue(issueId: number, recheckSource = false): Promise<{ task_id: string }> {
+  return http.post(`/data/quality/${issueId}/fix`, null, { params: { recheck_source: recheckSource } })
 }
 export function fixQualityBatch(issueIds: number[]): Promise<{ task_id: string }> {
   return http.post('/data/quality/fix-batch', { issue_ids: issueIds })
@@ -764,7 +769,7 @@ export const SEVERITY_LABEL: Record<string, string> = { high: '高', mid: '中',
 export const ISSUE_STATUS_LABEL: Record<string, string> = {
   open: '未处理', fixing: '修复中', resolved: '已解决', ignored: '已忽略',
 }
-export const SOURCE_LABEL: Record<string, string> = { intraday_sina: '新浪分时', intraday_eastmoney: '东财分时', akshare: 'AKShare', baostock: 'BaoStock', ths_board: '同花顺板块' }
+export const SOURCE_LABEL: Record<string, string> = { intraday_sina: '新浪分时', intraday_eastmoney: '东财分时', intraday_ths: '同花顺分时', akshare: 'AKShare', baostock: 'BaoStock', ths_board: '同花顺板块' }
 
 export type BoardTypeScope = '' | 'concept' | 'industry'
 export type BoardIngestStage = 'dict' | 'members' | 'bar' | 'fund'

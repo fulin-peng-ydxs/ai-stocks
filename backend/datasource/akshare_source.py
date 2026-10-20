@@ -28,7 +28,12 @@ import requests
 from backend.common.logging import get_logger
 from backend.common.timeutil import fmt_date, to_date
 from backend.config import get_effective_settings, get_settings
-from backend.datasource.base import DataSource, rate_limited, with_retry
+from backend.datasource.base import (
+    SINA_INTRADAY_REQUEST_LIMIT,
+    DataSource,
+    rate_limited,
+    with_retry,
+)
 
 log = get_logger("datasource.akshare")
 
@@ -297,10 +302,21 @@ class AKShareSource(DataSource):
             ]
         )
 
-    def get_intraday_1m(self, code: str, provider: str = "sina") -> pd.DataFrame:
+    def get_intraday_1m(
+        self, code: str, provider: str = "sina", *, timeout_sec: float | None = None,
+        request_year: int | None = None,
+    ) -> pd.DataFrame:
         """读取免费源的近期 1 分钟不复权窗口，并把成交量统一为手。"""
         code6 = code.split(".")[0]
-        timeout = get_settings().intraday.request_timeout_sec
+        # 编排层传入同一轮生效快照，保证锁预算和实际 HTTP 超时一致。
+        timeout = (
+            get_effective_settings().datasource.socket_timeout_sec
+            if timeout_sec is None else timeout_sec
+        )
+        if provider == "ths":
+            from backend.datasource.ths_intraday import fetch_ths_minutes
+
+            return fetch_ths_minutes(code, request_year or pd.Timestamp.now(tz="Asia/Shanghai").year, timeout=timeout)
         if provider == "sina":
             url = "https://quotes.sina.cn/cn/api/jsonp_v2.php/=/CN_MarketDataService.getKLineData"
             response = requests.get(
@@ -309,7 +325,7 @@ class AKShareSource(DataSource):
                     "symbol": to_sina_symbol(code6),
                     "scale": "1",
                     "ma": "no",
-                    "datalen": "1970",
+                    "datalen": str(SINA_INTRADAY_REQUEST_LIMIT),
                 },
                 timeout=timeout,
             )
@@ -329,7 +345,7 @@ class AKShareSource(DataSource):
             frame["volume"] = pd.to_numeric(frame["volume"], errors="coerce") / 100
         elif provider == "eastmoney":
             # AKShare 当前封装在 1 分钟分支内写死 timeout=15，无法兑现项目配置；
-            # 这里直连同一公开接口，以项目 intraday.request_timeout_sec 为唯一超时入口。
+            # 这里直连同一公开接口，统一使用系统 datasource.socket_timeout_sec 的生效值。
             response = requests.get(
                 "https://push2his.eastmoney.com/api/qt/stock/trends2/get",
                 params={

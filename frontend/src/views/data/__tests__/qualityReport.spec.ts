@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { qualityDetailText } from '../qualityReport'
+import { qualityDetailText, intradayRecoveryAction } from '../qualityReport'
 import { ISSUE_LAYER, ISSUE_TYPES_ACTIVE, sortQualityIssueTypes, RECOVER_ACTION_LABEL, taskDisplayLabel } from '@/api/data'
 
 describe('股本市值质量诊断', () => {
@@ -58,4 +58,44 @@ describe('质量类型排序', () => {
     expect(types[0]).toBe('capital_gap')
     expect(sortQualityIssueTypes([])).toEqual([])
   })
+})
+
+describe('分时覆盖与来源证据', () => {
+  it('同花顺修复证据使用中文来源名', () => {
+    const text = qualityDetailText(JSON.stringify({ message: '缺口已补采', availability: {
+      sources: [{ source: 'ths', first: '2026-08-18 09:30:00', last: '2026-10-20 15:00:00' }],
+    } }))
+    expect(text).toContain('同花顺上次有效响应')
+    expect(text).not.toContain('ths上次有效响应')
+  })
+  it('展示缺失时段、响应范围和未改善结果，不输出原始 JSON', () => {
+    const text = qualityDetailText(JSON.stringify({
+      message: '分时分钟不完整，有效81点',
+      coverage: { covered_count: 81, required_count: 238, missing_ranges: ['09:31–11:30', '13:01–13:37'] },
+      availability: { reason: '当前来源未覆盖缺失分钟', sources: [{ source: 'sina', first: '2026-10-08 13:49:00', last: '2026-10-20 15:00:00', observed_at: '2026-10-20T15:43:47+08:00' }] },
+      last_repair: { outcome: 'unavailable', before_points: 81, after_points: 81 },
+    }))
+    expect(text).toContain('81/238')
+    expect(text).toContain('09:31–11:30、13:01–13:37')
+    expect(text).toContain('新浪上次有效响应 2026-10-08 13:49:00')
+    expect(text).toContain('2026-10-20 15:43:47')
+    expect(text).toContain('当前来源无法覆盖，归档 81→81 点')
+    expect(text).not.toContain('"coverage"')
+  })
+  it('失败尝试与旧有效窗口分别说明，不把旧窗口当成本次成功', () => {
+    const text = qualityDetailText(JSON.stringify({ message: '不完整', availability: { sources: [{
+      source: 'sina', outcome: 'error', failure_reason: 'TimeoutError', checked_at: '2026-10-20T16:00:00+08:00',
+    }] } }))
+    expect(text).toContain('新浪最近请求失败：TimeoutError')
+    expect(text).not.toContain('上次有效响应')
+  })
+})
+
+
+it('分时恢复动作消费后端可修复性，其他质量类型保持原入口', () => {
+  const issue = { issue_type: 'intraday_partial', intraday: { can_repair: false, reason: '缺失早盘' } } as any
+  expect(intradayRecoveryAction(issue)).toMatchObject({ label: '重新核验', recheck: true })
+  issue.intraday.can_repair = true
+  expect(intradayRecoveryAction(issue)).toMatchObject({ label: '补采复检', recheck: false })
+  expect(intradayRecoveryAction({ issue_type: 'capital_gap' } as any)).toBeNull()
 })

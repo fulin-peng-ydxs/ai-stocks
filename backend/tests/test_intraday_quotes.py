@@ -131,7 +131,7 @@ class _Source:
         self.frame = _frame() if frame is None else frame
         self.delay = delay
 
-    def get_intraday_1m(self, _code: str, provider: str) -> pd.DataFrame:
+    def get_intraday_1m(self, _code: str, provider: str, *, timeout_sec=None) -> pd.DataFrame:
         self.calls.append(provider)
         if self.delay:
             time.sleep(self.delay)

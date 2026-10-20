@@ -36,8 +36,8 @@ def users(pg):
         tid = "s5rc_t_" + uuid.uuid4().hex[:8]
         uid = "s5rc_u_" + uuid.uuid4().hex[:8]
         pg.execute(
-            "INSERT INTO sys_tenant (id,name,status) VALUES (%s,'stage5-rc','active')",
-            [tid],
+            "INSERT INTO sys_tenant (id,name,status) VALUES (%s,%s,'active')",
+            [tid, tid],
         )
         pg.execute(
             "INSERT INTO sys_user (id,tenant_id,account,role_code,perm_ver,status) "
@@ -279,3 +279,19 @@ def test_stage5_menu_paths_align_frontend_routes_and_registry(pg):
     for path in menus.values():
         assert f"path: '{path}'" in router_text
         assert f"path: '{path}'" in registry_text
+
+
+def test_intraday_quality_recheck_keeps_system_permission_guards(client, pg, users):
+    routes = list(_iter_api_routes(client.app))
+    for method, path, permission in [
+        ("GET", "/api/data/quality", "data-quality:view"),
+        ("POST", "/api/data/quality/{issue_id}/fix", "data-quality:fix"),
+        ("POST", "/api/data/quality/fix-batch", "data-quality:fix"),
+        ("POST", "/api/data/quality/recover-batch", "data-quality:fix"),
+    ]:
+        match = next(route for p, methods, route in routes if p == path and method in methods)
+        assert _has_system_perm(match, permission)
+    user = users(ROLE_NORMAL)
+    headers = _auth(pg, user['id'], user['tenant_id'])
+    assert client.get('/api/data/quality', headers=headers).status_code == 403
+    assert client.post('/api/data/quality/1/fix?recheck_source=true', headers=headers).status_code == 403

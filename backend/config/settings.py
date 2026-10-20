@@ -71,9 +71,6 @@ class IntradayConfig(BaseModel):
     supported_trade_days: int = Field(default=8, ge=1, le=30)
     cache_ttl_sec: int = Field(default=43_200, ge=60, le=86_400)
     negative_ttl_sec: int = Field(default=60, ge=1, le=600)
-    source_min_interval_sec: float = Field(default=2.0, ge=0.1, le=60)
-    source_concurrency: int = Field(default=1, ge=1, le=1)
-    request_timeout_sec: float = Field(default=15.0, ge=1, le=60)
     lock_wait_sec: float = Field(default=20.0, ge=1, le=60)
 
 

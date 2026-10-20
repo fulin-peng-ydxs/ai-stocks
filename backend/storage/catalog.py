@@ -57,6 +57,21 @@ _MARKET_INDEX_ISSUES: tuple[str, ...] = (
 # - date_col：用于取"最新数据时间"的列（None 表示该表无时间维度，取 NULL）。
 # - relations：与其它表的关联关系（人类可读）。
 TABLE_CATALOG: dict[str, dict] = {
+    "stock_intraday_source_state": {
+        "name_cn": "个股分时来源采集证据", "category": "行情参考",
+        "purpose": "保存逐股逐源的实际响应范围及最近尝试，用于判断历史缺口当前能否补采",
+        "source": "统一分时采集与质检修复的真实请求", "ownership_scope": "market_global",
+        "relations": ["code → stock_basic.code", "code + source → stock_intraday_coverage"],
+        "fields": [
+            {"name": "code", "name_cn": "股票代码", "desc": "请求对应的全市场共享股票代码"},
+            {"name": "source", "name_cn": "来源", "desc": "新浪 sina、东财 eastmoney 或同花顺 ths"},
+            {"name": "checked_at", "name_cn": "最近请求时间", "desc": "最近真实请求完成的 UTC 时间"},
+            {"name": "outcome", "name_cn": "最近请求结果", "desc": "ok 有数据、empty 空响应、error 技术失败"},
+            {"name": "failure_reason", "name_cn": "最近失败原因", "desc": "请求故障说明，不作为停牌或永久不可得证据"},
+            {"name": "evidence", "name_cn": "成功响应证据", "desc": "最近成功响应的观察时间、实际首尾分钟、请求条数、逐日有效点数与缺失分钟；失败不覆盖"},
+            {"name": "task_id", "name_cn": "关联任务", "desc": "产生最近请求的采集或修复异步任务标识"},
+        ],
+    },
     "stock_intraday_monitor": {
         "name_cn": "个股分时监控起点", "category": "行情参考",
         "purpose": "固定首次接入的可采集窗口起点，结合交易日历识别历史及最新整日缺失",
@@ -74,7 +89,7 @@ TABLE_CATALOG: dict[str, dict] = {
     "stock_intraday_bar": {'name_cn': '个股分钟行情',
      'category': '行情参考',
      'purpose': '保存已收盘的1分钟不复权价格和量额，长期保留，供历史日K下钻',
-     'source': '新浪1分钟主源/东财1分钟备用源',
+     'source': '新浪1分钟主源/东财与同花顺1分钟修复备用源',
      'ownership_scope': 'market_global',
      'relations': ['code → stock_basic.code',
                    'trade_date → trade_calendar.trade_date',
@@ -88,12 +103,12 @@ TABLE_CATALOG: dict[str, dict] = {
                 {'name': 'close', 'name_cn': '收盘价', 'desc': '分钟不复权收盘价，元'},
                 {'name': 'volume', 'name_cn': '成交量', 'desc': '分钟成交量，手；1 手为 100 股'},
                 {'name': 'amount', 'name_cn': '成交额', 'desc': '分钟成交额，元'},
-                {'name': 'source', 'name_cn': '行情来源', 'desc': '所选整日来源 sina 或 eastmoney，不拼接不同源'},
+                {'name': 'source', 'name_cn': '行情来源', 'desc': '所选整日来源 sina/eastmoney/ths，不拼接不同源'},
                 {'name': 'fetched_at', 'name_cn': '数据采集时间', 'desc': '所选归档数据的 UTC 采集时间'}]},
     "stock_intraday_coverage": {'name_cn': '个股分时逐日覆盖',
      'category': '行情参考',
      'purpose': '保存分时监控目标、完整性、失败证据与缓存修订，不把请求成功当成覆盖完成',
-     'source': '新浪1分钟主源/东财1分钟备用源',
+     'source': '新浪1分钟主源/东财与同花顺1分钟修复备用源',
      'ownership_scope': 'market_global',
      'relations': ['code → stock_basic.code',
                    'trade_date → trade_calendar.trade_date',
@@ -102,7 +117,7 @@ TABLE_CATALOG: dict[str, dict] = {
                 {'name': 'trade_date', 'name_cn': '交易日期', 'desc': '北京时间已收盘交易日，与 trade_calendar 关联'},
                 {'name': 'point_count', 'name_cn': '有效分钟数', 'desc': '已归档真实有效分钟点数'},
                 {'name': 'status', 'name_cn': '覆盖状态', 'desc': 'ready 完整、partial 部分、missing 尚无有效分钟'},
-                {'name': 'source', 'name_cn': '行情来源', 'desc': '所选整日来源 sina 或 eastmoney，不拼接不同源'},
+                {'name': 'source', 'name_cn': '行情来源', 'desc': '所选整日来源 sina/eastmoney/ths，不拼接不同源'},
                 {'name': 'fetched_at', 'name_cn': '数据采集时间', 'desc': '所选归档数据的 UTC 采集时间'},
                 {'name': 'attempted_at', 'name_cn': '最近尝试时间', 'desc': '最近采集尝试 UTC 时间，不表示采集成功'},
                 {'name': 'failure_reason', 'name_cn': '未完成原因', 'desc': '源端空响应、窗口过期或请求失败的说明'},
@@ -1038,6 +1053,7 @@ _COMMON_FIELD_META: dict[str, tuple[str, str]] = {
 }
 
 _DUCK_FRESHNESS_POLICIES: dict[str, FreshnessPolicy] = {
+    "stock_intraday_source_state": FRESHNESS_NOT_APPLICABLE,
     "stock_intraday_monitor": FRESHNESS_NOT_APPLICABLE,
     "stock_intraday_bar": FreshnessPolicy("direct", "trade_date", "latest_trade_date", "equal"),
     "stock_intraday_coverage": FreshnessPolicy("direct", "trade_date", "latest_trade_date", "equal"),
@@ -1098,6 +1114,7 @@ _DUCK_FRESHNESS_POLICIES: dict[str, FreshnessPolicy] = {
 }
 
 _DUCK_QUALITY_POLICIES: dict[str, QualityPolicy] = {
+    "stock_intraday_source_state": QUALITY_NOT_APPLICABLE,
     "stock_intraday_monitor": QualityPolicy("issue_types", ("intraday_gap", "intraday_invalid")),
     "stock_intraday_bar": QualityPolicy("issue_types", ("intraday_invalid", "intraday_partial", "intraday_gap")),
     "stock_intraday_coverage": QualityPolicy("issue_types", ("intraday_invalid", "intraday_partial", "intraday_gap")),

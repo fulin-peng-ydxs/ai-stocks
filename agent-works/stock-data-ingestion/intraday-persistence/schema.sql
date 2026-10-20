@@ -1,9 +1,9 @@
 -- 分时持久化升级留痕（DuckDB）。
 -- 执行时机：更新代码后，由 backend.storage.ddl.init_db 统一幂等建表；
 -- 本文件用于审核，不在运行中的共享数据库手工执行建表。
--- 影响范围：新增全市场分钟事实、逐日覆盖与独立监控起点，不修改日线/用户资产/调度配置。
+-- 影响范围：新增全市场分钟事实、逐日覆盖与独立监控起点及来源证据，不修改日线/用户资产/调度配置。
 -- 前置条件：按 start.sh 安全停服；本次只增量建表，随后启动会执行已登记 DDL。
--- 回滚：旧代码可忽略这三张表；保留归档即可回退读取链路。不得默认 DROP 丢失历史。
+-- 回滚：旧代码可忽略这些新增表；保留归档即可回退读取链路。不得默认 DROP 丢失历史。
 -- 如确认不再需要归档，停服备份后由管理员另行处理，不提供自动破坏性回滚。
 
 -- 新增分钟事实：价格不复权，成交量为手，时间为北京时间，采集时间为 UTC。
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS stock_intraday_bar (
     close DOUBLE NOT NULL,            -- 分钟收盘原始价
     volume DOUBLE NOT NULL,           -- 分钟成交量，手
     amount DOUBLE NOT NULL,           -- 分钟成交额，元
-    source VARCHAR NOT NULL,          -- sina / eastmoney
+    source VARCHAR NOT NULL,          -- sina / eastmoney / ths
     fetched_at TIMESTAMP NOT NULL,    -- UTC 采集时间
     PRIMARY KEY(code, trade_date, timestamp)
 );
@@ -53,7 +53,7 @@ ON CONFLICT DO NOTHING;
 
 -- 分钟维度登记：只补缺失，不覆盖已有配置。
 INSERT INTO data_dimension_registry(dimension,name_cn,status,source,tables,descr)
-VALUES ('intraday','分钟分时','partial','新浪/东财',
+VALUES ('intraday','分钟分时','partial','新浪/东财/同花顺',
         '["stock_intraday_bar","stock_intraday_coverage","stock_intraday_monitor"]',
         '已收盘1分钟不复权分时，独立采集、长期归档，覆盖从监控起点持续积累')
 ON CONFLICT DO NOTHING;
@@ -63,3 +63,22 @@ UPDATE data_dimension_registry
 SET tables=CAST(to_json(list_append(json_extract_string(tables,'$[*]'),'stock_intraday_monitor')) AS VARCHAR)
 WHERE dimension='intraday'
   AND NOT list_contains(json_extract_string(tables,'$[*]'),'stock_intraday_monitor');
+
+-- 来源证据升级：只记录真实请求；错误和空响应不覆盖最近有效窗口。
+
+CREATE TABLE IF NOT EXISTS stock_intraday_source_state (
+    code VARCHAR NOT NULL,          -- 监控股票
+    source VARCHAR NOT NULL,        -- sina / eastmoney / ths
+    checked_at TIMESTAMP NOT NULL,  -- 最近真实请求的 UTC 时间
+    outcome VARCHAR NOT NULL,       -- ok / empty / error
+    failure_reason VARCHAR,         -- 最近请求失败原因，不能当停牌证据
+    evidence VARCHAR,               -- 最近有效响应的首尾、条数、逐日点数及缺失分钟 JSON
+    task_id VARCHAR,                -- 最近请求所属采集或修复任务
+    PRIMARY KEY(code, source)
+);
+
+-- 维度只追加证据表，保留人工维护的属性。
+UPDATE data_dimension_registry
+SET tables=CAST(to_json(list_append(json_extract_string(tables,'$[*]'),'stock_intraday_source_state')) AS VARCHAR)
+WHERE dimension='intraday'
+  AND NOT list_contains(json_extract_string(tables,'$[*]'),'stock_intraday_source_state');

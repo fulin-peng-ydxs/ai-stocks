@@ -6,7 +6,7 @@ import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import CheckupReportContent from './components/CheckupReportContent.vue'
 import AppHoverInfo from '@/components/AppHoverInfo'
-import { checkupIssueFilters, visibleQualityRows, qualityDetailText } from './qualityReport'
+import { checkupIssueFilters, visibleQualityRows, qualityDetailText, intradayRecoveryAction } from './qualityReport'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
@@ -233,8 +233,9 @@ async function fixOne(row: QualityIssue) {
   busyId.value = row.id
   row.status = 'fixing'
   try {
-    const { task_id } = await fixQualityIssue(row.id)
-    ElMessage.info(`正在${RECOVER_ACTION_LABEL[row.issue_type] ?? '恢复'}：${row.code}…`)
+    const action = intradayRecoveryAction(row)
+    const { task_id } = await fixQualityIssue(row.id, action?.recheck ?? false)
+    ElMessage.info(`正在${action?.label ?? RECOVER_ACTION_LABEL[row.issue_type] ?? '恢复'}：${row.code}…`)
     const t = await waitTask(task_id)
     // 以任务结果(result.ok)而非仅任务状态判定成败：恢复中途失败的任务仍是 done，但 ok=false、
     // 问题已退回待处理——此时必须给警告而非"成功"（修复"日志失败却弹成功、状态卡修复中"）。
@@ -342,7 +343,8 @@ function qualityRowActions(row: QualityIssue): AppRowAction[] {
   return [
     {
       key: 'recover',
-      label: fixingElsewhere ? '处理中…' : (RECOVER_ACTION_LABEL[row.issue_type] ?? '恢复'),
+      label: fixingElsewhere ? '处理中…' : (intradayRecoveryAction(row)?.label ?? RECOVER_ACTION_LABEL[row.issue_type] ?? '恢复'),
+      tooltip: intradayRecoveryAction(row)?.tooltip,
       type: 'primary',
       permission: 'data-quality:fix',
       loading: busyId.value === row.id,

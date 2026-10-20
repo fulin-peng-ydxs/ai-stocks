@@ -12,9 +12,14 @@ from backend.services.stock_codes import normalize_stock_codes
 EXPECTED_TIMES = frozenset(
     pd.date_range("2000-01-01 09:31", periods=120, freq="min").strftime("%H:%M")
 ) | frozenset(pd.date_range("2000-01-01 13:01", periods=120, freq="min").strftime("%H:%M"))
+# 沪深股票收盘集合竞价在 15:00 一次撮合；14:58/14:59 不要求独立成交柱。
+# 仍接收源端返回的这些分钟及额外开盘点，不能用点数阈值替代必需时点集合。
+REQUIRED_TIMES = EXPECTED_TIMES - {"14:58", "14:59"}
 ALLOWED_TIMES = EXPECTED_TIMES | {"09:30", "13:00"}
 BAR_FIELDS = ["timestamp", "open", "high", "low", "close", "volume", "amount"]
 INTRADAY_ISSUE_TYPES = ("intraday_gap", "intraday_partial", "intraday_invalid")
+INTRADAY_PROVIDERS = ("sina", "eastmoney", "ths")
+PROVIDER_LABELS = {"sina": "新浪", "eastmoney": "东财", "ths": "同花顺"}
 
 
 def normalize_intraday_params(params: dict | None) -> dict:
@@ -83,9 +88,9 @@ def sanitize_minutes(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 
 
 def complete_times(times) -> bool:
-    return EXPECTED_TIMES.issubset(set(times))
+    return REQUIRED_TIMES.issubset(set(times))
 
 
 def candidate_rank(rows: list, provider: str) -> tuple:
     times = {str(row[0])[11:16] for row in rows}
-    return (complete_times(times), len(times & EXPECTED_TIMES), len(times), provider == "sina")
+    return (complete_times(times), len(times & REQUIRED_TIMES), len(times), provider == "sina")

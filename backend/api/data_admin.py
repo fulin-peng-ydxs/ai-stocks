@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Literal
 
 import pandas as pd
@@ -551,6 +552,25 @@ def quality(issue_type: str | None = None, severity: str | None = None,
         ignore_active = r.get("ignore_active")
         r["ignore_active"] = False if ignore_active is None or pd.isna(ignore_active) \
             else bool(ignore_active)
+    from backend.services.intraday_evidence import IntradayEvidence
+    intraday_rows = [r for r in rows if r["issue_type"].startswith("intraday_")]
+    if intraday_rows:
+        evidence = IntradayEvidence(c)
+        states = evidence.load(list({r["code"] for r in intraday_rows}))
+        for row in intraday_rows:
+            try:
+                payload = json.loads(row["detail"] or "{}")
+            except (ValueError, TypeError):
+                payload = {"message": row["detail"]}
+            if not isinstance(payload, dict):
+                payload = {"message": str(row["detail"])}
+            availability = evidence.assess(
+                row["code"], row["trade_date"][:10],
+                payload.get("coverage", {}).get("missing_times", []), states,
+            )
+            payload["availability"] = availability
+            row["intraday"] = availability
+            row["detail"] = json.dumps(payload, ensure_ascii=False)
     return ok({"summary": summary, "total": total, "page": page, "size": size, "list": rows})
 
 
@@ -613,7 +633,7 @@ def quality_ignore_batch(body: dict) -> ApiResponse:
 
 
 @router.post("/quality/{issue_id}/fix", response_model=ApiResponse, dependencies=_QUALITY_FIX)
-def quality_fix(issue_id: int) -> ApiResponse:
+def quality_fix(issue_id: int, recheck_source: bool = False) -> ApiResponse:
     from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
     row = get_client().query_df(
         "SELECT issue_type, status, fix_task_id FROM data_quality_issue WHERE id=?", [issue_id])
@@ -627,7 +647,8 @@ def quality_fix(issue_id: int) -> ApiResponse:
         return err(400, f"仅未处理问题可恢复，当前状态: {status}")
     try:
         # 带上 issue_type，任务中心可显示「问题修复·<类型>」
-        tid = AsyncTaskService().create("fix", {"issue_id": issue_id, "issue_type": row.iloc[0]["issue_type"]})
+        tid = AsyncTaskService().create("fix", {"issue_id": issue_id, "issue_type": row.iloc[0]["issue_type"],
+                                               "recheck_source": recheck_source})
     except ConcurrentTaskError as e:
         return err(409, f"已有修复/采集任务在运行（{e.task_type}），请稍后再试", {"running_id": e.running_id})
     except ValueError as e:
@@ -776,8 +797,8 @@ class MarkDelistedIn(BaseModel):
 
 @router.post("/quality/{issue_id}/mark-delisted", response_model=ApiResponse, dependencies=_QUALITY_FIX)
 def quality_mark_delisted(issue_id: int, body: MarkDelistedIn) -> ApiResponse:
-    from backend.services.manual_delisting import validate_delisting
     from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
+    from backend.services.manual_delisting import validate_delisting
     try:
         validate_delisting(get_client(), issue_id, body.delist_date, body.reason)
         actor = get_current_context()

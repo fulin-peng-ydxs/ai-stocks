@@ -718,14 +718,16 @@ def test_source_status_includes_board_source(monkeypatch):
 
     monkeypatch.setattr(
         data_sources, "get_effective_settings",
-        lambda: SimpleNamespace(intraday=SimpleNamespace(request_timeout_sec=15), datasource=SimpleNamespace(
+        lambda: SimpleNamespace(datasource=SimpleNamespace(
             primary="akshare", fallback="baostock", socket_timeout_sec=3)),
     )
     monkeypatch.setattr(ths_cookie_status, "ths_cookie_status", lambda **_kwargs: {})
     result = data_sources.source_status(do_ping=False, repo=_Repo())
+    assert all(item["timeout_sec"] == 3 for item in result["sources"])
     roles = {item["source"]: item["role"] for item in result["sources"]}
     assert roles == {"akshare": "primary", "baostock": "fallback", "ths_board": "board",
-                     "intraday_sina": "intraday", "intraday_eastmoney": "intraday"}
+                     "intraday_sina": "intraday", "intraday_eastmoney": "intraday",
+                     "intraday_ths": "intraday"}
 
 
 def test_source_status_persists_latest_probe_and_keeps_last_success(monkeypatch):
@@ -764,11 +766,11 @@ def test_source_status_persists_latest_probe_and_keeps_last_success(monkeypatch)
     monkeypatch.setattr(
         data_sources,
         "get_effective_settings",
-        lambda: SimpleNamespace(intraday=SimpleNamespace(request_timeout_sec=15), datasource=SimpleNamespace(
+        lambda: SimpleNamespace(datasource=SimpleNamespace(
             primary="akshare", fallback="baostock", socket_timeout_sec=3)),
     )
     monkeypatch.setattr(ths_cookie_status, "ths_cookie_status", lambda **_kwargs: {})
-    results = iter([(False, "连接超时"), (True, None), (True, None), (True, None), (False, "分钟源连接失败")])
+    results = iter([(False, "连接超时"), (True, None), (True, None), (True, None), (False, "分钟源连接失败"), (True, None)])
     monkeypatch.setattr(data_sources, "_ping", lambda *_args: next(results))
 
     tested = data_sources.source_status(do_ping=True, repo=repo)
@@ -799,3 +801,28 @@ def test_partial_daily_update_still_runs_quality_and_reports_failure(monkeypatch
         result = DailyPipeline(c).run(board=False)
         assert result['ok'] is False and seen == ['quality']
         assert [s['status'] for s in result['steps']] == ['failed','ok']
+
+
+def test_known_unavailable_repair_stops_self_retry_but_keeps_failure_dependents():
+    """来源不可覆盖不是技术故障；正常失败依赖仍触发，避免改变普通依赖语义。"""
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        svc = ScheduledJobService(c)
+        job = svc.create(
+            name="分时恢复", task_type="fix", params={"issue_type": "intraday_partial"},
+            freq_type="daily", freq_config={"time": "16:00"}, trading_day_only=False,
+            retry_config={"enabled": True, "condition": "failure", "max_retries": 2,
+                          "delay": {"value": 1, "unit": "second"}}, enabled=False,
+        )
+        c.execute("UPDATE scheduled_job SET enabled=true WHERE id=?", [job["id"]])
+        svc.create(
+            name="失败复检", task_type="checkup", params={}, freq_type=None, freq_config={},
+            trigger_mode="dependency", dependency_job_id=job["id"],
+            dependency_condition="failure", dependency_delay={"value": 0, "unit": "second"},
+            trading_day_only=False, enabled=True,
+        )
+        _insert_terminal_task(c, tid="unavailable_intraday", job_id=job["id"], status="failed")
+        c.execute("UPDATE async_task SET result=? WHERE id='unavailable_intraday'",
+                  ['{"retryable":false,"unavailable":1,"technical_failure":0}'])
+        assert enqueue_terminal_events("unavailable_intraday", client=c) == 1
+        assert c.query_df("SELECT trigger_kind FROM scheduled_trigger_event").trigger_kind.tolist() == ["dependency"]

@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 from backend.datasource.akshare_source import AKShareSource
+
+
+@pytest.fixture(autouse=True)
+def request_timeout(monkeypatch):
+    monkeypatch.setattr(
+        "backend.datasource.akshare_source.get_effective_settings",
+        lambda: SimpleNamespace(datasource=SimpleNamespace(socket_timeout_sec=7)),
+    )
 
 
 class _Response:
@@ -48,7 +58,7 @@ def test_sina_intraday_uses_unadjusted_one_minute_window_and_normalizes_fields(m
         "ma": "no",
         "datalen": "1970",
     }
-    assert calls[0][2] == 15
+    assert calls[0][2] == 7
     assert result.columns.tolist() == [
         "timestamp",
         "open",
@@ -95,7 +105,64 @@ def test_eastmoney_intraday_is_one_minute_unadjusted_fallback(monkeypatch) -> No
     assert calls[0][0].endswith("/api/qt/stock/trends2/get")
     assert calls[0][1]["secid"] == "0.002251"
     assert calls[0][1]["ndays"] == "5"
-    assert calls[0][2] == 15
+    assert calls[0][2] == 7
     assert result.iloc[0]["close"] == 3.61
     assert result.iloc[0]["volume"] == 1000
     assert result.iloc[0]["amount"] == 361000
+
+
+def test_direct_adapter_refreshes_system_timeout_without_recreating_source(monkeypatch):
+    from backend.config import get_effective_settings
+
+    overrides = {"datasource.socket_timeout_sec": 6}
+    monkeypatch.setattr("backend.storage.app_config.AppConfigRepo", lambda: SimpleNamespace(
+        get_overrides=lambda: overrides,
+    ))
+    monkeypatch.setattr("backend.datasource.akshare_source.get_effective_settings",
+                        get_effective_settings)
+    timeouts = []
+
+    def get(url, *, params, timeout):
+        timeouts.append(timeout)
+        return _Response([])
+
+    monkeypatch.setattr("backend.datasource.akshare_source.requests.get", get)
+    source = _source()
+    source.get_intraday_1m("000001.SZ")
+    overrides["datasource.socket_timeout_sec"] = 12
+    source.get_intraday_1m("000001.SZ")
+    assert timeouts == [6, 12]
+
+
+def test_ths_year_response_validates_identity_and_normalizes_units(monkeypatch):
+    from backend.datasource import ths_intraday
+
+    calls = []
+
+    class Response:
+        text = ('quotebridge_v6_line_hs_002879_60_2026({"data":'
+                '"202610080930,16.78,16.78,16.78,16.78,164501,2760326.78,0.120,,,0;'
+                '202610080931,16.70,16.80,16.58,16.68,888100,14841260.00,0.648,,,0"})')
+
+        def raise_for_status(self):
+            pass
+
+    def get(url, *, timeout):
+        calls.append((url, timeout))
+        return Response()
+
+    monkeypatch.setattr(ths_intraday.requests, "get", get)
+    frame = _source().get_intraday_1m("002879.SZ", "ths", request_year=2026, timeout_sec=11)
+    assert calls == [("https://d.10jqka.com.cn/v6/line/hs_002879/60/2026.js", 11)]
+    assert frame.timestamp.tolist() == list(pd.to_datetime(["2026-10-08 09:30", "2026-10-08 09:31"]))
+    assert frame.volume.tolist() == [1645.01, 8881]
+    assert frame.amount.tolist() == [2760326.78, 14841260]
+    assert frame.iloc[1][["open", "high", "low", "close"]].tolist() == [16.7, 16.8, 16.58, 16.68]
+    assert frame.attrs["request_years"] == [2026]
+    Response.text = Response.text.replace("hs_002879", "hs_600519")
+    with pytest.raises(ValueError, match="标的、周期或年份"):
+        _source().get_intraday_1m("002879.SZ", "ths", request_year=2026)
+    Response.text = ('quotebridge_v6_line_hs_002879_60_2025({"data":'
+                     '"202610080930,16,16,16,16,100,1600"})')
+    with pytest.raises(ValueError, match="超出请求年份"):
+        _source().get_intraday_1m("002879.SZ", "ths", request_year=2025)

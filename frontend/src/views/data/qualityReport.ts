@@ -1,5 +1,6 @@
 import type { CheckupCheck, CheckupIssueItem, QualityIssue } from '@/api/data'
 import type { AdaptiveColumnRole } from '@/components/table/adaptiveColumnWidth'
+import { formatDateTimeSeconds } from '@/utils/dateTime'
 
 export const checkupIssueLabels = {
   open: '待处理', fixing: '修复中', ignored: '已忽略', unrecorded: '未入账',
@@ -93,6 +94,31 @@ export function qualityDetailText(detail: string): string {
     const payload = JSON.parse(detail)
     const message = payload?.message ?? payload?.reason
     if (typeof message !== 'string' || !message) return detail
+    if (payload.coverage || payload.availability) {
+      const coverage = payload.coverage
+      const ranges = coverage?.missing_ranges ?? []
+      const sourceNames: Record<string, string> = { sina: '新浪', eastmoney: '东财', ths: '同花顺' }
+      const sources = (payload.availability?.sources ?? []).map((source: any) => {
+        const name = sourceNames[source.source] ?? source.source
+        const dayCount = coverage?.trade_date ? source.days?.[coverage.trade_date] : undefined
+        const count = dayCount != null ? `，目标日 ${dayCount} 点` : ''
+        const range = source.first && source.last
+          ? `${name}上次有效响应 ${source.first} 至 ${source.last}${count}（核验于 ${formatDateTimeSeconds(source.observed_at, '未记录')}）` : ''
+        const failure = source.outcome === 'error'
+          ? `${name}最近请求失败：${source.failure_reason || '原因未记录'}（${formatDateTimeSeconds(source.checked_at, '时间未记录')}）` : ''
+        return [range, failure].filter(Boolean).join('；')
+      })
+      const repairLabels: Record<string, string> = {
+        resolved: '已解决', improved: '改善但未完整', unchanged: '未改善', unavailable: '当前来源无法覆盖', technical_failure: '请求失败',
+      }
+      const repair = payload.last_repair
+      return [message,
+        coverage ? `必需分钟覆盖 ${coverage.covered_count}/${coverage.required_count}` : '',
+        ranges.length ? `缺失 ${ranges.join('、')}` : '',
+        payload.availability?.reason ?? '', ...sources,
+        repair ? `最近修复：${repairLabels[repair.outcome] ?? repair.outcome}，归档 ${repair.before_points}→${repair.after_points} 点` : '',
+      ].filter(Boolean).join('；')
+    }
     const collection = payload.last_collection
     if (!collection) return message
     const samples: string[] = []
@@ -114,5 +140,17 @@ export function qualityDetailText(detail: string): string {
       ...samples, ...(Array.isArray(errors) && errors.length ? ['来源请求失败，详见关联采集任务日志'] : [])].join('；')
   } catch {
     return detail
+  }
+}
+
+
+/** 普通修复使用当前证据；不可覆盖项提供显式核验，仍由异步任务取源。 */
+export function intradayRecoveryAction(row: QualityIssue) {
+  if (!row.issue_type.startsWith('intraday_')) return null
+  const recheck = row.intraday?.can_repair === false
+  return {
+    label: recheck ? '重新核验' : '补采复检', recheck,
+    tooltip: recheck ? '当前来源尚未提供更完整候选；发起一次来源范围重新核验，结果在任务中心查看'
+      : (row.intraday?.reason ?? '核验来源并补采，只有复检通过才关闭问题'),
   }
 }

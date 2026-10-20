@@ -38,6 +38,9 @@ from backend.common.logging import get_logger
 
 log = get_logger("datasource.base")
 
+# 当前新浪分钟接口的请求条数；用于真实响应截断证据，不代表源站全部历史能力。
+SINA_INTRADAY_REQUEST_LIMIT = 1970
+
 
 _CANCEL_LOCAL = threading.local()
 
@@ -222,8 +225,11 @@ class DataSource(ABC):
         """每日点时 ST 状态。列：code,trade_date,is_st,trade_status。"""
         raise NotImplementedError(f"{self.name} 不支持 st_status 能力")
 
-    def get_intraday_1m(self, code: str, provider: str = "sina") -> pd.DataFrame:
-        """近期 1 分钟不复权行情窗口；不支持时显式报错。"""
+    def get_intraday_1m(
+        self, code: str, provider: str = "sina", *, timeout_sec: float | None = None,
+        request_year: int | None = None,
+    ) -> pd.DataFrame:
+        """近期 1 分钟不复权窗口；超时可由编排层传入系统快照，不支持时显式报错。"""
         raise NotImplementedError(f"{self.name} 不支持 intraday_1m 能力")
 
     # ── 能力声明（供编排层按能力选源，见 IngestionService._source_for）──

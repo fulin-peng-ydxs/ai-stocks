@@ -370,7 +370,7 @@ def test_old_type_schedule_targets_canonical_issues(market, monkeypatch):
         # 近端市值修好不等于历史股本也修好；统一台账必须保留。
         return True, [], 'scope ok'
     monkeypatch.setattr(tasks, '_recover_one', recover)
-    task = SimpleNamespace(checkpoint={},check_cancel=lambda:None,set_phase=lambda *a,**kw:None,
+    task = SimpleNamespace(checkpoint={},set_checkpoint=lambda **kw:None,check_cancel=lambda:None,set_phase=lambda *a,**kw:None,
                            log=lambda *a:None,progress=lambda *a:None)
     result = tasks._h_fix({'issue_type':'mv_gap'}, task)
     assert result['resolved'] == 0 and len(seen) == 1

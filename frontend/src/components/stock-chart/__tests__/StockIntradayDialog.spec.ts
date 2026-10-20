@@ -76,8 +76,8 @@ describe('StockIntradayDialog', () => {
     vi.mocked(getIntraday).mockReset()
   })
 
-  it('打开后才加载，成功时向共享双图传入数据', async () => {
-    vi.mocked(getIntraday).mockResolvedValue(ready)
+  it.each(['sina', 'ths'] as const)('打开后才加载，成功时向共享双图传入数据（%s）', async (source) => {
+    vi.mocked(getIntraday).mockResolvedValue({ ...ready, source })
     const wrapper = mountDialog()
     await flushPromises()
 
