@@ -355,8 +355,8 @@ Key Characteristics：
 | `AppCloseButton` | `frontend/src/components/AppCloseButton.vue` | 关闭与移除临时界面的语义入口 | 无直接系统组件种类；复用 `AppIconButton` | 工作标签、抽屉头部、对比队列及临时预览共同消费；档位、颜色、状态与事件边界统一遵循本节关闭契约，业务允许判断留在容器，库内置关闭由全局样式适配 |
 | `AppHoverInfo` | `frontend/src/components/AppHoverInfo.ts`、`frontend/src/composables/useHoverIntent.ts`、`frontend/src/composables/useTooltipInputModality.ts` | 显式说明的共享 tooltip / popover 与悬停意图判定 | 无直接系统组件种类 | HelpHint、HelpTip、命令及状态说明共用；锚点、触发时序、禁用和清理规则见[提示、截断与可访问名称](#提示截断与可访问名称)。 |
 | `AppActionHint` | `frontend/src/components/AppActionHint.vue` | 命令补充说明与禁用原因的可聚焦外壳 | 无直接系统组件种类；复用 AppHoverInfo | 行操作与独立业务命令共同消费；不持有业务执行逻辑，权限指令作用于其真实 span 根节点，使用边界见本节提示契约 |
-| `HelpTip` / `HelpTipItem` / `HelpHint` | `frontend/src/components/HelpTip.vue`、`frontend/src/components/HelpTipItem.vue`、`frontend/src/components/HelpHint.vue` | 全站结构化“？”说明入口与说明项，统一键盘可达、两层结构、点号列表和警告语义色 | 无直接系统组件种类 | 选型、内容结构与交互统一见[提示、截断与可访问名称](#提示截断与可访问名称)。 |
-| `DataMetricCard` / `DataMetricDetails` | `frontend/src/components/data/DataMetricCard.vue`、`frontend/src/components/data/DataMetricDetails.vue` | 数据管理域的统计卡及只读统计详情 | 业务域内复用，不新增系统组件种类或配置字段 | 卡片数值左对齐，复用 HelpHint 与明细入口；明细复用 AppHoverInfo、AppDetailFields 和 AppScrollArea，视口高度约束见[响应式组件登记](agent-works/configurable-layout-system/responsive-components.md)。遵循[统计摘要与下钻](#统计摘要与下钻)及全站提示契约。消费范围与业务映射见[数据概览说明](agent-works/architecture/data-management.md#统计内容与操作映射)；不作为其他业务域必须依赖的数据组件。 |
+| `HelpTip` / `HelpTipItem` / `HelpHint` | `frontend/src/components/HelpTip.vue`、`frontend/src/components/HelpTipItem.vue`、`frontend/src/components/HelpHint.vue` | 全站帮助入口与结构化说明项 | 无直接系统组件种类 | 选型、内容结构与交互统一见[提示、截断与可访问名称](#提示截断与可访问名称)。 |
+| `DataMetricCard` / `DataMetricDetails` | `frontend/src/components/data/DataMetricCard.vue`、`frontend/src/components/data/DataMetricDetails.vue` | 数据管理域的统计卡及只读统计详情 | 业务域内复用，不新增系统组件种类或配置字段 | 卡片数值左对齐，复用 HelpHint 与明细入口；明细复用 AppHoverInfo、AppDetailFields 和 AppScrollArea，视口高度约束见[响应式组件登记](agent-works/configurable-layout-system/responsive-components.md)。遵循[统计摘要与下钻](#统计摘要与下钻)及全站提示契约。消费范围与业务映射见[数据概览说明](agent-works/architecture/data-management.md#统计内容与操作映射)。 |
 | `RelatedBoardCell` / `RelatedBoardEmptyValue` / `RelatedBoardHistoryHint` | `frontend/src/components/RelatedBoardCell.vue`、`frontend/src/components/RelatedBoardEmptyValue.vue`、`frontend/src/components/RelatedBoardHistoryHint.vue` | 个股行业走势/概念走势冠军及可解释空值的业务域复用单元，统一名称、结构化相关性说明、低可信提示、首次计算、空结果原因、历史日期保护和权限感知导航 | 无直接系统组件种类；作为既有 `data-table` / `wide-table` 业务列内容及天梯卡片紧凑值 | 股票、榜单、筛选表格和天梯共用；调用方提供完整摘要与类型，显示、历史回退和权限见[关联板块架构](agent-works/architecture/stock-board-correlation.md#页面api-与权限)。 |
 | `BuiltinOptionRow` | `frontend/src/components/BuiltinOptionRow.vue` | 下拉项和选中值的统一主辅行结构，统一名称截断、来源提示与尾部标签/动作对齐 | 无直接系统组件种类 | 交易纪律的内置/自定义原因、买卖类型及打卡买卖规则选择统一复用；内置项只显示中性“内置”提示，自定义项的删除等动作或小号中性类型标签通过默认插槽注入；尾部标签最多占半行并省略，名称使用剩余空间，不在消费页复制选项行布局 |
 | `AppSummaryDisclosureCard` | `frontend/src/components/AppSummaryDisclosureCard.vue` | 编辑卡与只读检查清单的共享折叠摘要外壳，统一标题、元信息、工具区、展开边界与键盘可访问 disclosure | 无直接系统组件种类 | 可展开编辑与只读检查清单共用；变体、摘要和可访问性见[卡片、面板与分区](#卡片面板与分区)。 |
@@ -847,7 +847,7 @@ Key Characteristics：
 弹窗文案容量规则（解决窄弹窗内占位/说明文字被截断）：
 
 - 弹窗宽度只使用 `AppDialog` 语义档位，窄档位只放短字段；宽度不足时优先压缩文案、调整字段布局或改用 `AppDetailDrawer`，不靠继续加宽弹窗绕过。
-- 控件内直接可见的提示文案（`placeholder`、单选/复选后缀）控制在 15 字以内；更完整的说明移出控件，按内容结构使用 `HelpHint` / `HelpTip`，常显字段说明及表单底部补充说明统一按下文「表单辅助说明」消费 `AppFormHelp`。tooltip 与 popover 的选择遵循 §3 和真实复用组件清单，不受该可见文案字数边界约束。
+- 控件内直接可见的提示文案（`placeholder`、单选/复选后缀）控制在 15 字以内；更完整的说明移出控件，按内容结构使用 `HelpHint` / `HelpTip`，常显字段说明及表单底部补充说明统一按下文「表单辅助说明」消费 `AppFormHelp`。tooltip 与 popover 的选型遵循[提示契约](#提示截断与可访问名称)，不受该可见文案字数边界约束。
 - `AppSelect` / `AppFilterSelect` 等选择控件的占位只写「动作 + 对象」（如「输入代码或名称搜索」）；「可多选」「留空=默认值」等可操作语义放到字段辅助说明行，不拼进 `placeholder`，占位文案在输入框内不换行、不省略。
 - 单选项文案过长时拆为「主文案（行内）+ 补充说明（辅助行）」，不让单选标签撑满或截断。
 - 验收自检：弹窗内最宽控件的可用宽度 = 弹窗宽度 − 左右内边距（约 48px）− `label-width`；文案超宽就压缩文案或改布局，不能靠改 `width` 硬撑。

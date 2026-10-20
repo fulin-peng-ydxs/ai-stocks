@@ -151,7 +151,7 @@
 
 #### 统计内容与操作映射
 
-本节集中维护数据概览的页面内容与目的地；图标用途、内容格式和交互遵循 [DESIGN 提示契约](../../DESIGN.md#提示截断与可访问名称)，信息层级遵循 [统计摘要与下钻](../../DESIGN.md#统计摘要与下钻)。实际指标文案与展示模型在 `frontend/src/views/data/overviewMetrics.ts`，区域和路由操作在 `OverviewView.vue`；此处不复制完整浮层文案。
+本页的图标及帮助遵循 [DESIGN 提示契约](../../DESIGN.md#提示截断与可访问名称)，信息层级遵循[统计摘要与下钻](../../DESIGN.md#统计摘要与下钻)。九项概览指标统一消费 `DataMetricCard`，日线四层摘要、逐股分时及最近板块采集的详情统一消费 `DataMetricDetails`。实际指标文案与展示模型在 `frontend/src/views/data/overviewMetrics.ts`，区域和路由操作在 `OverviewView.vue`。
 
 | 指标 | 常驻内容 | 说明入口及补充内容 | 具名操作 |
 |---|---|---|---|
@@ -175,7 +175,7 @@
 
 **展示偏好与布局登记**：核心指标沿用 `visibleItems`，分时使用既有 `intraday` 选项；日线体检沿用 `focusLayer` 与用户列偏好，不增加配置字段。逐股操作组容量由 `AppTableColumn.controlWidth` 承接；布局约束以 `frontend/src/layout/pageRegistry.ts` 和组件 CSS 为准，断点、滚动降级与视口实测登记在[组件清单](../configurable-layout-system/responsive-components.md)及[页面清单](../configurable-layout-system/responsive-pages.md)。
 
-**推荐读法**：先看库内最新交易日，再看未解决台账的最高严重程度，随后检查分时目标日完整率和板块覆盖、鲜活度，通过对应入口定位明细。退市基础资料的完整性影响历史回测的幸存者偏差；初始化补齐使用 `delisted --enrich`，不把概览股票数量当作历史覆盖已齐全的证明。
+**推荐读法**：先看库内最新交易日，再看未解决台账的最高严重程度，随后检查分时目标日完整率和板块覆盖、鲜活度，通过对应入口定位明细；是否阻断使用按具体问题类型判断，不只看总分。退市基础资料的完整性影响历史回测的幸存者偏差；初始化补齐使用 `delisted --enrich`，不把概览股票数量当作历史覆盖已齐全的证明。
 
 ### 2. 数据采集页：采集闭环的操作入口
 
