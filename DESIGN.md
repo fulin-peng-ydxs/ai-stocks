@@ -26,6 +26,8 @@ typography:
 - 后端持久化与校验：`backend/storage/layout_config.py`、`backend/api/layout.py`
 - 新页面模板：`agent-works/configurable-layout-system/page-template.md`
 
+本文维护全站界面规则和共享组件契约；各页面的指标清单、业务含义与操作目的地由对应架构文档维护，实际业务文案保留在领域代码中。响应式清单登记实现与验证证据，不另行定义设计规则。
+
 文件头 frontmatter 只保留已被自动化读取的兼容字段；运行时 token 以 `global.css`、`presets.ts` 和 `themeSurfaces.ts` 为准。新增 token 不回填 frontmatter，除非同步新增机器读取契约和测试。
 
 ## 1. Visual Theme & Atmosphere
@@ -141,7 +143,7 @@ Key Characteristics：
 - 抽屉标题统一消费 `PageDrawer` 的标题档位或 `.app-drawer-title`：标准抽屉使用 16px / 600 / 24px，嵌入局部工作区且空间受限的工具抽屉可声明 `compact`，使用 15px / 600 / 22px；标准抽屉内的一级 `SettingsGroup` 为 15px / 600 / 22px，紧凑抽屉内自动降为 14px / 600 / 22px，分段选项使用 13px / 600，形成清晰的标题—分组—选项层级。该差异由 `PageDrawerSurface` 与 `SettingsGroup` 的共享上下文承载，业务抽屉不得私自覆盖。副标题统一消费 `.app-drawer-subtitle` 的 12px / 400 / 18px。禁止依赖 Element Plus、原生标题标签默认字号字重或页面私有字号。
 - 微字号（`--app-font-size-micro`/`tiny`/`ornament`）不得通过无 `>` 限定的宽泛后代选择器（如 `.xx span`、`.xx strong`）声明——此类规则会把它误传给嵌套的数值、标题等本不该用小字号的元素。微字号只允许作用于语义类、`:global` 或 `>` 限定的直接子级；容器用常规字号，内部小字通过独立子级规则声明。该约束由 `typography-spacing-system.spec.ts` 强制，禁止用 `>` 缺失的选择器绕过。
 - 表格内长文本默认省略、tooltip 或详情承接，不默认自动换行撑高行高。
-- 单块纯文本说明优先进入 `HelpHint` 的 tooltip；需要标题、分段、列表、示例或同时解释多个独立要点时使用 `HelpTip` 的 popover。`HelpHint` 长文必须在共享浮层中换行并限制视口内最大宽度，不得撑成横跨页面的单行提示。`HelpTip` 的默认插槽只放 `HelpTipItem`，每个独立说明项固定两层：传 `question="具体问题文本"` 时，第一行显示该问题文本并由组件追加冒号；传 `warning` 时，第一行固定显示“注意：”并消费当前视觉预设的 `--app-warning-text`。第二行的全部内容无论长短都必须使用语义化 `ul/li`，由组件统一渲染为以 `.` 开头的无序列表。同一项必须且只能在 `question` 与 `warning` 中选择一个，调用方不得自行拼接标签、冒号、列表符号、颜色或项间距。页面上只保留必要短标签，不以字符数作为两者的硬边界。
+- 说明入口的选型、正文结构和可访问名称统一见[提示、截断与可访问名称](#提示截断与可访问名称)；字号与行高继续消费本节 token。
 - 组件内提示、说明、空状态、校验文案必须按容器宽度排版，避免长句硬塞一行；必要时分行、缩短文案或交给 tooltip / popover 承接，不得挤压主操作区或造成文本重叠。
 - 按钮、标签、抽屉标题、表格控件中的文字不得溢出容器。
 - 金融数字按列右对齐或按业务组件一致处理，避免同列数字参差。
@@ -353,8 +355,8 @@ Key Characteristics：
 | `AppCloseButton` | `frontend/src/components/AppCloseButton.vue` | 关闭与移除临时界面的语义入口 | 无直接系统组件种类；复用 `AppIconButton` | 工作标签、抽屉头部、对比队列及临时预览共同消费；档位、颜色、状态与事件边界统一遵循本节关闭契约，业务允许判断留在容器，库内置关闭由全局样式适配 |
 | `AppHoverInfo` | `frontend/src/components/AppHoverInfo.ts`、`frontend/src/composables/useHoverIntent.ts`、`frontend/src/composables/useTooltipInputModality.ts` | 显式说明的共享 tooltip / popover 与悬停意图判定 | 无直接系统组件种类 | HelpHint、HelpTip、命令及状态说明共用；锚点、触发时序、禁用和清理规则见[提示、截断与可访问名称](#提示截断与可访问名称)。 |
 | `AppActionHint` | `frontend/src/components/AppActionHint.vue` | 命令补充说明与禁用原因的可聚焦外壳 | 无直接系统组件种类；复用 AppHoverInfo | 行操作与独立业务命令共同消费；不持有业务执行逻辑，权限指令作用于其真实 span 根节点，使用边界见本节提示契约 |
-| `HelpTip` / `HelpTipItem` / `HelpHint` | `frontend/src/components/HelpTip.vue`、`frontend/src/components/HelpTipItem.vue`、`frontend/src/components/HelpHint.vue` | 全站结构化“？”说明入口与说明项，统一键盘可达、两层结构、点号列表和警告语义色 | 无直接系统组件种类 | 字段帮助使用 HelpHint，结构化说明使用 HelpTip + HelpTipItem；选型与内容结构见[Typography Rules](#3-typography-rules)，交互见[提示、截断与可访问名称](#提示截断与可访问名称)。 |
-| `DataMetricCard` / `DataMetricDetails` | `frontend/src/components/data/DataMetricCard.vue`、`frontend/src/components/data/DataMetricDetails.vue` | 数据管理域的统计卡及只读统计详情 | 业务域内复用，不新增系统组件种类或配置字段 | OverviewView 的九项指标共用卡片，日线质量、逐股分时和最近采集共用详情；纯口径消费 HelpHint，补充事实消费 DataMetricDetails，主值、核心状态、具名操作与明细分层，详情复用 AppHoverInfo、AppDetailFields 和 AppScrollArea，规则见下文「数据概览统计与下钻」。 |
+| `HelpTip` / `HelpTipItem` / `HelpHint` | `frontend/src/components/HelpTip.vue`、`frontend/src/components/HelpTipItem.vue`、`frontend/src/components/HelpHint.vue` | 全站结构化“？”说明入口与说明项，统一键盘可达、两层结构、点号列表和警告语义色 | 无直接系统组件种类 | 选型、内容结构与交互统一见[提示、截断与可访问名称](#提示截断与可访问名称)。 |
+| `DataMetricCard` / `DataMetricDetails` | `frontend/src/components/data/DataMetricCard.vue`、`frontend/src/components/data/DataMetricDetails.vue` | 数据管理域的统计卡及只读统计详情 | 业务域内复用，不新增系统组件种类或配置字段 | 卡片数值左对齐，复用 HelpHint 与明细入口；明细复用 AppHoverInfo、AppDetailFields 和 AppScrollArea，视口高度约束见[响应式组件登记](agent-works/configurable-layout-system/responsive-components.md)。遵循[统计摘要与下钻](#统计摘要与下钻)及全站提示契约。消费范围与业务映射见[数据概览说明](agent-works/architecture/data-management.md#统计内容与操作映射)；不作为其他业务域必须依赖的数据组件。 |
 | `RelatedBoardCell` / `RelatedBoardEmptyValue` / `RelatedBoardHistoryHint` | `frontend/src/components/RelatedBoardCell.vue`、`frontend/src/components/RelatedBoardEmptyValue.vue`、`frontend/src/components/RelatedBoardHistoryHint.vue` | 个股行业走势/概念走势冠军及可解释空值的业务域复用单元，统一名称、结构化相关性说明、低可信提示、首次计算、空结果原因、历史日期保护和权限感知导航 | 无直接系统组件种类；作为既有 `data-table` / `wide-table` 业务列内容及天梯卡片紧凑值 | 股票、榜单、筛选表格和天梯共用；调用方提供完整摘要与类型，显示、历史回退和权限见[关联板块架构](agent-works/architecture/stock-board-correlation.md#页面api-与权限)。 |
 | `BuiltinOptionRow` | `frontend/src/components/BuiltinOptionRow.vue` | 下拉项和选中值的统一主辅行结构，统一名称截断、来源提示与尾部标签/动作对齐 | 无直接系统组件种类 | 交易纪律的内置/自定义原因、买卖类型及打卡买卖规则选择统一复用；内置项只显示中性“内置”提示，自定义项的删除等动作或小号中性类型标签通过默认插槽注入；尾部标签最多占半行并省略，名称使用剩余空间，不在消费页复制选项行布局 |
 | `AppSummaryDisclosureCard` | `frontend/src/components/AppSummaryDisclosureCard.vue` | 编辑卡与只读检查清单的共享折叠摘要外壳，统一标题、元信息、工具区、展开边界与键盘可访问 disclosure | 无直接系统组件种类 | 可展开编辑与只读检查清单共用；变体、摘要和可访问性见[卡片、面板与分区](#卡片面板与分区)。 |
@@ -622,10 +624,11 @@ Key Characteristics：
 |---|---|---|
 | 单一口径、单位、公式、适用范围或字段含义 | `?`，`HelpHint` tooltip | 直接说明一个概念，必要时附公式或范围；不把已显示的当前值再包装成明细表。 |
 | 多个独立规则、使用步骤、例子或注意事项 | `?`，`HelpTip` popover | 沿用 `HelpTipItem` 的具体问题或 warning 标题与 `ul/li` 内容结构；不因内容较长就改为统计明细。 |
-| 当前对象的额外日期、分母、覆盖分项、来源或状态事实 | `i`，数据管理域使用 `DataMetricDetails` popover | 对象标题、字段—值、可选简短口径备注；数字带单位，日期明确是业务日、归档日、采集时间还是质检时间。至少提供一项常驻区域未显示的有效事实；允许完整分项中保留必要的主值上下文。 |
+| 当前对象的额外日期、分母、覆盖分项、来源或状态事实 | `i`，`AppHoverInfo` popover 与所属领域的明细组件 | 对象标题、字段—值、可选简短口径备注；数字带单位，日期明确是业务日、归档日、采集时间还是质检时间。至少提供一项常驻区域未显示的有效事实；允许完整分项中保留必要的主值上下文。 |
 | 当前事实同时需要简短规则解释 | 一个 `i` 明细入口 | 分项用字段—值，规则放底部备注；不在同一对象旁并列重复的 `?` 与 `i`。纯规则内容仍使用帮助入口。 |
 
-- 图标表达用途，正文结构由内容决定：`?` 可承载短提示或结构化帮助；`i` 的统计详情采用键值结构，并不要求所有普通信息文字都表格化。无额外说明或明细为空时不生成入口。新增或修改的多入口区域应提供带对象名的可访问名称，如“分时归档统计详情”“最新交易日口径说明”。
+- 结构化帮助的 `HelpTip` 默认插槽只放 `HelpTipItem`。每项必须且只能传 `question="具体问题文本"` 或 `warning`：标题分别为具体问题加冒号、固定“注意：”；警告消费 `--app-warning-text`。标题下全部正文无论长短都使用语义化 `ul/li`，点号标记由组件统一呈现；调用方不得手拼标签、冒号、列表符号、颜色或项间距。两种帮助不以字符数作为硬边界，长说明须换行并遵守共享浮层宽度上限。
+- 图标表达用途，正文结构由内容决定：`?` 可承载短提示或结构化帮助；`i` 的统计详情采用键值结构，并不要求所有普通信息文字都表格化。无额外说明或明细为空时不生成入口。新增或修改的多入口区域应提供带对象名的可访问名称，按“对象名＋用途”命名，避免多个入口都只叫“说明”。
 - `0`、`—`、未采集与未检查须保持各自业务语义；核心异常、必要状态和操作必须常驻。浮层只读，导航与执行使用外部具名操作，不能靠悬浮才能发现或执行。
 
 - 原生 HTML `title` 不再用作提示文案或触发信号；`nativeTitle` 接口已移除。组件的 `title` 标题属性、标题插槽、路由/业务标题及 iframe 可访问名称保留，不按字符串批量删除。
@@ -690,15 +693,15 @@ Key Characteristics：
 - 列表以稳定对象 key 标识新增、复制和已保存条目，禁止用列表下标承担身份；仅在所属完整集合或业务允许的组内重排，不能跨组改变业务类型。只读、归档、保存中禁止排序，单项不显示把手。
 - 拖动预览不改写表单；松手提交当前列表的顺序，移出列表、指针取消、Esc、卸载或数据/权限变化均取消；长列表拖动接近滚动边缘时自动滚动。保存仍由所属业务流程负责，失败保留草稿，不暗示已保存。层级菜单使用 `AppReorderTree`，与列表共用 `AppDragHandle` 和 `useReorderInteraction`；只有允许的分组能接收子节点，禁止移入自己或后代。菜单保存互斥覆盖提交、重载和导航刷新；已就绪的鉴权快照用后台方式刷新导航，保留工作区，失败仍 fail-closed；排序失败读取服务端顺序；存在未保存属性或功能点编辑时锁定排序。只有受影响兄弟组重新赋顺序，其他菜单配置保持原值。
 
-### 数据概览统计与下钻
+### 统计摘要与下钻
 
-- 数据概览指标统一由 `DataMetricCard` 承载：标题、主值与单位为第一层；至多一条核心状态为第二层；额外累计分项、日期与分母进入显式 `i` 统计详情；纯口径通过 `?` 帮助承接。最新交易日、在市/退市、日线总行数、日线四层评分使用短帮助；分时、ST 事实、板块、未解决质检、缺口使用事实明细，选型与内容格式统一遵循上文说明图标契约。数值左对齐并使用数据字阶、等宽数字，辅助状态使用 caption；状态行单行省略时仍可由完整原文提示及统计详情恢复。不得用最长脚注决定整排卡片高度，也不得以减少字阶替代信息分层。
-- 统计卡外壳只读，不承担导航。具名文字操作才定位或跳转：分时「查看逐股覆盖」定位本页逐股表，缺口「查看缺口台账」进入全历史缺口/滞后台账（详情说明与近 90 日指标的范围区别）；板块「查看板块」定位板块 tab；「处理问题」进入台账；「刷新 ST 事实」进入预填的采集参数页。未监控分时显示独立空态操作「去采集分时」，不将同名覆盖入口随数据状态暗中切换目的。规模指标无需强加操作。
-- `DataMetricDetails` 使用 `AppHoverInfo` popover 的共享停留、键盘聚焦及收起规则，采用 `AppDetailFields` 字段—值结构和底部口径说明。长明细通过 AppScrollArea 限制在视口高度的 80% 内，并按界面比例换算，正文内部滚动。浮层只读，不隐藏必要操作、不触发采集，也不叠加第二套悬浮计时器。统计明细不套用问答式 `HelpTipItem`；规则教学与字段解释仍按 HelpHint / HelpTip 契约。一个统计对象保留一个详情入口，避免整卡隐形提示和重复气泡。
-- 分时常驻真实分钟行数和目标日完整率（详情保留完整/应采股票数）；监控起点、最新归档日及累计完整/部分/缺失的股票交易日放入详情，禁止将最大归档日视为全市场采齐。日线四层评分与分时台账分开；未解决台账按最高现存严重程度显示一条摘要。最近质检时间归质量区域，并在质量统计详情中保留，不混写为整页数据更新时间。
-- 日线四层进度常驻达标率和达标股票数，分项问题及规则由显式统计详情恢复。逐股分时列优先显示整日缺失，其次分钟部分覆盖，无异常时显示完整或暂无归档；完整分项进入详情，操作组容量消费 AppTableColumn 的 controlWidth。逐股达标状态只读，异常使用明确的「查看台账」并携带股票与对应类型；分时覆盖的部分/缺失进入该股三类分时台账，不只筛某一种问题。覆盖帧实时检查与台账扫描时间、忽略状态不同，不能承诺两者数量相等。资产表保持估算/精确行数、零问题/不适用的既有区别。
-- 板块分别呈现规模、覆盖进度、日期鲜活度与质量台账；零台账问题不得写作笼统的「正常」或「全部采齐」。覆盖卡常驻百分比和已覆盖/目标，纯口径使用短帮助，禁止再用明细重复这些数字；问题项由具名链接进入对应类型台账；最近采集保留对象、时间和状态，长日志进入详情。
-- 正常高度指标随可用宽度重排；低于既有 700px 高度边界时用 `AppScrollArea` 单行横向滚动保留主值、核心状态、详情和操作，不能直接隐藏关键状态。质量四层摘要保留达标数；数据治理工作区使用既有 slot.minH=300，保证标签、工具栏和分页之外仍可阅读数行数据；余量不足由主内容区滚动兜底。表格内部滚动、板块专区内部纵向滚动继续由原有宿主承接。沿用 `visibleItems` 与用户列偏好，不新增配置字段。
+本节适用于展示规模、覆盖、质量等信息的只读统计摘要；承担选择或编辑的卡片、图表行情读数遵循各自组件契约。具体页面的指标、口径与操作目的地由所属架构文档维护。
+
+- 标题、主值与单位为第一层，至多一条核心状态为第二层；额外分项、日期与分母进入详情，说明入口按[提示契约](#提示截断与可访问名称)选择。数值按所属组件统一对齐并使用数据字阶、等宽数字，辅助状态使用 caption。不得用最长脚注决定整排高度，也不得以减少字阶替代信息分层。
+- 只读统计卡外壳不承担隐形导航；有后续操作时使用具名入口，文字准确表达定位、查看或执行目的。没有业务动作时不强加按钮，同名入口不得随数据状态暗中切换目的；空态恢复动作须明确命名。
+- 统计详情以 `AppDetailFields` 组织字段—值，口径备注与事实分开；不套用规则教学的问答结构。长内容按视口及界面比例约束，并由 `AppScrollArea` 内部滚动，末项和备注必须可达；不新增页面私有悬浮计时或监听。
+- 日期、覆盖、鲜活度和质量状态分别表达，最大日期或零台账问题不能单独代表整体完整。指标的范围、统计单位和状态语义须可查；扫描台账与实时覆盖、估算与精确统计等不同口径不可混写为同一结果。
+- 空间不足时按既有响应式策略重排或内部滚动，保留主值、必要状态及具名操作。收起的分项可由明确的详情入口恢复；沿用用户显示及列偏好，不通过断点改写配置。
 
 ### 四态反馈总则
 

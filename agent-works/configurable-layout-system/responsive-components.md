@@ -113,7 +113,7 @@
 | `frontend/src/components/config/ConfigGroupForm.vue` | `@container app-viewport (max-width: 720px)` | 窄宽配置网格单列，控件占行宽；不清除输入。 | ConfigView |
 | `frontend/src/components/config/ConfigPanelSection.vue` | `@container app-viewport (max-width: 720px)` | 窄宽缩短装饰线/限制说明宽度；分组手动折叠，标题入口保留。 | ConfigGroupForm |
 | `frontend/src/components/data/BoardTaskScopeFields.vue` | 无自身 CSS 查询 | 委托 PageSegmented、TradeDatePicker、CurrentDayFallbackField。 | IngestView、ScheduleView |
-| `frontend/src/components/data/DataMetricCard.vue` | `@container app-viewport (max-height: 700px)` | 按内容选择 ? 口径帮助或 i 事实明细；低高度仅压缩间距，主值、核心状态和具名操作保留，溢出摘要由完整原文与详情恢复。 | OverviewView |
+| `frontend/src/components/data/DataMetricCard.vue` | `@container app-viewport (max-height: 700px)` | 低高度仅压缩间距，主值、核心状态和具名操作保留，溢出摘要由完整原文与详情恢复。 | OverviewView |
 | `frontend/src/components/data/DataMetricDetails.vue` | 无自身 CSS 查询 | 显式 i 入口复用 AppHoverInfo 视口约束及焦点时序；字段和值换行，明细复用 AppDetailFields，AppScrollArea 按界面比例将正文限制在80vh内并内部滚动，不隐藏数据。 | DataMetricCard、OverviewView |
 | `frontend/src/components/data/IntradayTaskScopeFields.vue` | 无自身 CSS 查询 | 随父表单宽度排版；控件委托 PageSegmented、TradeDatePicker、StockCodeMultiSelect，辅助说明委托 AppFormHelp。 | IngestView、ScheduleView |
 | `frontend/src/components/data/CurrentDayFallbackField.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | BoardTaskScopeFields、StockIngestScopeFields |
