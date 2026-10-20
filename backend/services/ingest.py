@@ -579,6 +579,129 @@ class IngestionService:
             ctx.flush()
         raise DataSourceError(msg)
 
+    def _verified_price_references(self, code: str, local: pd.DataFrame) -> pd.DataFrame:
+        """只接纳直接参考价及同次收盘匹配的证据；缺日/冲突在写行情前失败。"""
+        backup = self._bao_source()
+        local = local[["trade_date", "close"]].copy()
+        local["trade_date"] = pd.to_datetime(local["trade_date"]).dt.date
+        try:
+            with _BAO_FALLBACK_LOCK:
+                reference = backup.get_daily_bar(
+                    code, local.trade_date.min(), local.trade_date.max()
+                )
+        except TaskCancelled:
+            raise
+        except Exception as exc:
+            raise DataSourceError(f"{code} 参考价备用源校准失败: {exc}") from exc
+        check_thread_cancel()
+        if reference is None or reference.empty:
+            raise DataSourceError(f"{code} 备用源无校准数据")
+        reference = reference[["trade_date", "pre_close", "close"]].copy()
+        reference["trade_date"] = pd.to_datetime(reference["trade_date"]).dt.date
+        checked = local.merge(
+            reference,
+            on="trade_date",
+            how="left",
+            suffixes=("", "_reference"),
+            validate="one_to_one",
+        )
+        refs = pd.to_numeric(checked.pre_close, errors="coerce")
+        valid = (
+            refs.gt(0)
+            & refs.lt(float("inf"))
+            & checked.close.sub(checked.close_reference).abs().le(0.011)
+        )
+        if not valid.all():
+            bad = checked.loc[~valid, "trade_date"].astype(str).tolist()
+            raise DataSourceError(
+                f"{code} {','.join(bad[:10])} 备用源缺少有效官方前收盘或收盘与主源不一致，拒绝混算"
+            )
+        return checked.rename(
+            columns={
+                "pre_close": "reference_pre_close",
+                "close_reference": "reference_close",
+            }
+        ).assign(reference_source=backup.name)
+
+    def _calibrate_factor_boundaries(
+        self,
+        df: pd.DataFrame,
+        code: str,
+        ctx=None,
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """核验重采区间接缝，不能将两个来源的因子绝对基准当作除权。
+
+        入参前收盘由同批来源的前置行情计算，仅用于发现接缝；真正衔接只用备用源
+        的直接参考价。右侧及源端漏返的区间内旧行，证据与行情一并提交。
+        """
+        empty = pd.DataFrame()
+        if df.empty:
+            return df, empty
+        ordered = df.sort_values("trade_date")
+        incoming_dates = pd.to_datetime(ordered.trade_date).dt.date.tolist()
+        neighbors = self.c.query_df(
+            "(SELECT * FROM daily_bar WHERE code=? AND trade_date<? "
+            "ORDER BY trade_date DESC LIMIT 1) UNION ALL "
+            "(SELECT * FROM daily_bar WHERE code=? AND trade_date>? "
+            "ORDER BY trade_date LIMIT 1) UNION ALL "
+            "SELECT * FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ? "
+            "AND trade_date NOT IN (SELECT unnest(?::DATE[]))",
+            [
+                code,
+                incoming_dates[0],
+                code,
+                incoming_dates[-1],
+                code,
+                incoming_dates[0],
+                incoming_dates[-1],
+                incoming_dates,
+            ],
+        )
+        if neighbors.empty:
+            return df, empty
+        # 只读取请求范围与相邻行；窗口内部保留旧行同样形成来源切换，不能漏掉。
+        timeline = pd.concat([ordered.assign(_incoming=True), neighbors.assign(_incoming=False)])
+        timeline["trade_date"] = pd.to_datetime(timeline.trade_date)
+        timeline = timeline.sort_values("trade_date").reset_index(drop=True)
+        switches = timeline._incoming.ne(timeline._incoming.shift())
+        suspect = []
+        for index in timeline.index[switches & (timeline.index > 0)]:
+            previous, current = timeline.iloc[index - 1], timeline.iloc[index]
+            ref = current.get("reference_pre_close")
+            ref_close = current.get("reference_close")
+            if (
+                pd.notna(current.get("reference_source"))
+                and pd.notna(ref)
+                and ref > 0
+                and pd.notna(ref_close)
+                and abs(ref_close - current.close) <= 0.011
+            ):
+                continue
+            factors = [previous.get("adj_factor"), current.get("adj_factor")]
+            expected = current.get("pre_close")
+            if any(pd.isna(value) or value <= 0 for value in factors):
+                # 缺因子同样不能证明接缝连续，交给直接参考价校验。
+                suspect.append(current)
+                continue
+            implied = previous.close * factors[0] / factors[1]
+            if pd.isna(expected) or abs(implied - expected) > 0.011:
+                suspect.append(current)
+        if not suspect:
+            return df, empty
+        verified = self._verified_price_references(code, pd.DataFrame(suspect))
+        calibrated = df.copy()
+        dates = pd.to_datetime(calibrated.trade_date).dt.date
+        for row in verified.itertuples():
+            mask = dates == row.trade_date
+            if mask.any():
+                for col in ("reference_pre_close", "reference_close", "reference_source"):
+                    calibrated.loc[mask, col] = getattr(row, col)
+                calibrated.loc[mask, "pre_close"] = row.reference_pre_close
+        retained = verified[~verified.trade_date.isin(incoming_dates)].copy()
+        if ctx:
+            ctx.log(f"{code} 跨来源因子接缝校验 {len(verified)} 日，保留原始因子并记录官方参考价")
+        return calibrated, retained
+
     def _calibrate_corporate_action_pre_close(
         self,
         df: pd.DataFrame,
@@ -630,36 +753,14 @@ class IngestionService:
             return df, used_source
 
         backup = self._bao_source()
-        try:
-            with _BAO_FALLBACK_LOCK:
-                reference = backup.get_daily_bar(code, min(suspect_dates), max(suspect_dates))
-        except Exception as exc:  # noqa: BLE001
-            raise DataSourceError(
-                f"{code} 除权参考价会改变涨跌停结论，备用源校准失败: {exc}"
-            ) from exc
-        if reference is None or reference.empty:
-            raise DataSourceError(f"{code} 除权参考价会改变涨跌停结论，备用源无校准数据")
-
-        ref_by_date = {
-            pd.Timestamp(row["trade_date"]).date(): (row.get("pre_close"), row.get("close"))
-            for _, row in reference.iterrows()
-        }
+        selected = df[pd.to_datetime(df.trade_date).dt.date.isin(suspect_dates)]
+        verified = self._verified_price_references(code, selected)
         calibrated = df.copy()
-        for trade_day in suspect_dates:
-            exact, ref_close = ref_by_date.get(trade_day, (None, None))
-            mask = pd.to_datetime(calibrated["trade_date"]).dt.date == trade_day
-            local_close = float(calibrated.loc[mask, "close"].iloc[0])
-            if ref_close is None or pd.isna(ref_close) or abs(float(ref_close) - local_close) > 0.011:
-                raise DataSourceError(f"{code} {trade_day} 参考价来源收盘与主源不一致，拒绝混算")
-            if exact is None or pd.isna(exact) or float(exact) <= 0:
-                raise DataSourceError(f"{code} {trade_day} 备用源缺少有效官方前收盘")
-            calibrated.loc[
-                pd.to_datetime(calibrated["trade_date"]).dt.date == trade_day,
-                "pre_close",
-            ] = float(exact)
-            calibrated.loc[mask, "reference_pre_close"] = float(exact)
-            calibrated.loc[mask, "reference_close"] = float(ref_close)
-            calibrated.loc[mask, "reference_source"] = backup.name
+        for row in verified.itertuples():
+            mask = pd.to_datetime(calibrated.trade_date).dt.date == row.trade_date
+            calibrated.loc[mask, "pre_close"] = row.reference_pre_close
+            for col in ("reference_pre_close", "reference_close", "reference_source"):
+                calibrated.loc[mask, col] = getattr(row, col)
         source = f"{used_source}+{backup.name}:preclose"
         message = (
             f"{code} 校准除权参考价 {len(suspect_dates)} 日："
@@ -794,6 +895,7 @@ class IngestionService:
         df, used_source = self._calibrate_corporate_action_pre_close(
             df, code, float(board_limit_pct), used_source, ctx=ctx
         )
+        df, retained_references = self._calibrate_factor_boundaries(df, code, ctx=ctx)
         st_service = StockSTStatusService(self.c)
         trade_dates = [pd.Timestamp(day).date() for day in df["trade_date"].tolist()]
         if st_status is not None or is_st is not None:
@@ -857,8 +959,18 @@ class IngestionService:
             "volume", "amount", "adj_factor", "turnover_rate",
             "adj_factor_clean", "is_st", "is_suspended", "limit_status", "is_one_word",
         ]
+        check_thread_cancel()
         with self.c.transaction():
             n = self.repo.upsert_daily_bar(df[bar_cols])
+            if not retained_references.empty:
+                # 局部重采右侧的既有日线也可能切换基准；证据与本次行情原子提交。
+                with self.c.temp_view(retained_references, "factor_boundary") as view:
+                    self.c.execute(
+                        f"UPDATE daily_bar b SET reference_pre_close=r.reference_pre_close, "
+                        f"reference_close=r.reference_close,reference_source=r.reference_source, "
+                        f"adj_factor_clean=NULL FROM {view} r "
+                        "WHERE b.code=? AND b.trade_date=r.trade_date", [code],
+                    )
             # 有真实成交的行情与停牌互斥；零量/未知量不能推翻旧停牌事实。
             traded = df.loc[pd.to_numeric(df.volume, errors="coerce").gt(0), "trade_date"].tolist()
             if traded:
@@ -3504,7 +3616,7 @@ class IngestionService:
         cols = ["code", "trade_date", "adj_factor_clean", "pre_close"]
         if not missing:
             cols += ["is_st", "is_suspended", "limit_status", "is_one_word"]
-        with self.c.temp_view(marked[cols], prefix="clean_rebuild") as v:
+        with self.c.transaction(), self.c.temp_view(marked[cols], prefix="clean_rebuild") as v:
             marker_sql = (
                 ", is_st = v.is_st, is_suspended = v.is_suspended, "
                 "limit_status = v.limit_status, is_one_word = v.is_one_word"
@@ -3515,6 +3627,13 @@ class IngestionService:
                 f"adj_factor_clean = v.adj_factor_clean, pre_close = v.pre_close{marker_sql} "
                 f"FROM {v} AS v "
                 "WHERE b.code = v.code AND b.trade_date = v.trade_date"
+            )
+            # 指标共享缓存按行情更新日志版本读取；纯因子重算也必须推进版本。
+            self.repo.log_update(
+                "daily_bar", "derived:price_factors",
+                pd.Timestamp(marked.trade_date.min()).date(),
+                pd.Timestamp(marked.trade_date.max()).date(), len(marked), "success",
+                json.dumps({"code": code, "full": full}, ensure_ascii=False),
             )
         return len(marked)
 
