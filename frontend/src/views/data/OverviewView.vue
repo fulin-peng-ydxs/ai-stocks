@@ -1202,7 +1202,10 @@ const menuPageTitle = useMenuPageTitle()
 
                   <div class="board-side-block" v-if="ov.board.last_update">
                     <div class="board-side-title">
-                      <span>最近采集</span>
+                      <span class="app-inline-info app-inline-info--nowrap">
+                        <span>最近采集</span>
+                        <DataMetricDetails label="最近板块采集" :rows="[{ label: '物理表', value: ov.board.last_update.table_name }]" :notes="ov.board.last_update.detail ? [ov.board.last_update.detail] : []" />
+                      </span>
                       <el-tag size="small" effect="plain" :type="boardUpdateStatus(ov.board.last_update.status).type">
                         {{ boardUpdateStatus(ov.board.last_update.status).label }}
                       </el-tag>
@@ -1210,7 +1213,6 @@ const menuPageTitle = useMenuPageTitle()
                     <div class="board-update-card">
                       <span>{{ tables.find((table) => table.table === ov?.board?.last_update?.table_name)?.name_cn || ov.board.last_update.table_name }}</span>
                       <strong>{{ formatDateTimeSeconds(ov.board.last_update.updated_at, '') }}</strong>
-                      <DataMetricDetails label="最近板块采集" :rows="[{ label: '物理表', value: ov.board.last_update.table_name }]" :notes="ov.board.last_update.detail ? [ov.board.last_update.detail] : []" />
                     </div>
                   </div>
                 </div>
