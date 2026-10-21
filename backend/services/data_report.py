@@ -1043,6 +1043,69 @@ class DataIntegrityReport:
         }
 
     # ── 板块维度质检（板块概念需求 R12，T7）──────────────────
+    def board_coverage_summary(self, market_date, fund_date) -> dict:
+        """实际覆盖与人工确认分开统计；概览只读消费同一套忽略规则。"""
+        from backend.dataquality.ignore_rules import filter_ignored_issues
+
+        market_date = None if market_date is None or pd.isna(market_date) \
+            else pd.Timestamp(market_date).date()
+        fund_date = None if fund_date is None or pd.isna(fund_date) \
+            else pd.Timestamp(fund_date).date()
+        frame = self.c.query_df(
+            """
+            SELECT b.board_code,COALESCE(b.has_members,false) AS has_members,
+                   COALESCE(b.has_bar,false) AS has_bar,
+                   b.member_snapshot_at IS NOT NULL AS member_ready,
+                   EXISTS (SELECT 1 FROM board_bar p
+                           WHERE p.board_code=b.board_code AND p.trade_date=?) AS bar_ready,
+                   EXISTS (SELECT 1 FROM board_fund_flow f
+                           WHERE f.board_code=b.board_code AND f.snapshot_date=?
+                             AND f.period='即时') AS fund_ready
+            FROM board_dict b
+            """,
+            [market_date, fund_date],
+        )
+        scopes = {
+            "member": ("board_member_incomplete",),
+            "bar": ("board_index_gap", "board_index_gap_daily"),
+            "fund": ("board_fund_missing",),
+        }
+        dates = {"member": _shanghai_today(), "bar": market_date, "fund": fund_date}
+        issues = []
+        summary = {}
+        missing_by_dimension = {}
+        for dimension, issue_types in scopes.items():
+            target = frame.has_members | frame.has_bar if dimension == "fund" \
+                else frame["has_members" if dimension == "member" else "has_bar"]
+            ready = target & frame[f"{dimension}_ready"]
+            missing = set(frame.loc[target & ~ready, "board_code"].astype(str))
+            summary[f"{dimension}_target"] = int(target.sum())
+            summary[f"{dimension}_ready"] = int(ready.sum())
+            missing_by_dimension[dimension] = missing
+            issues.extend(
+                {"code": code, "trade_date": dates[dimension], "issue_type": issue_type,
+                 "dimension": dimension}
+                for code in sorted(missing) for issue_type in issue_types
+            )
+        types = tuple(t for values in scopes.values() for t in values)
+        remaining = filter_ignored_issues(
+            self.c, issues, types, reconcile_occurrences=False,
+        )
+        remaining_keys = {(x["issue_type"], x["code"]) for x in remaining}
+        # 指数当日缺口既可按整体水位问题确认，也可按同日逐日问题确认；只计一次。
+        confirmed = {
+            (x["dimension"], x["code"]) for x in issues
+            if (x["issue_type"], x["code"]) not in remaining_keys
+        }
+        summary["coverage_handling"] = {
+            dimension: {
+                "ignored": sum((dimension, code) in confirmed for code in missing),
+                "pending": sum((dimension, code) not in confirmed for code in missing),
+            }
+            for dimension, missing in missing_by_dimension.items()
+        }
+        return summary
+
     def board_coverage_issues(self) -> dict:
         """只读计算指数水位与同日资金流覆盖，供质检台账和结构体检共用。
 

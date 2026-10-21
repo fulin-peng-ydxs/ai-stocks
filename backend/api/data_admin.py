@@ -210,33 +210,18 @@ def _board_stage(c) -> dict | None:
               for k in ("board_dict", "board_member", "board_bar", "board_fund_flow")}
         dims = c.query_df(
             "SELECT count(*) FILTER (WHERE board_type='concept') AS concept, "
-            "count(*) FILTER (WHERE board_type='industry') AS industry, "
-            "count(*) FILTER (WHERE has_members) AS member_target, "
-            "count(*) FILTER (WHERE has_members AND member_snapshot_at IS NOT NULL) AS member_ready, "
-            "count(*) FILTER (WHERE has_bar) AS bar_target, "
-            "count(*) FILTER (WHERE has_members OR has_bar) AS fund_target "
+            "count(*) FILTER (WHERE board_type='industry') AS industry "
             "FROM board_dict").iloc[0]
         latest_market = c.query_df("SELECT max(trade_date) AS t FROM daily_bar").iloc[0]["t"]
         latest_bar = c.query_df("SELECT max(trade_date) AS t FROM board_bar").iloc[0]["t"]
         latest_fund = c.query_df(
             "SELECT max(snapshot_date) AS t FROM board_fund_flow WHERE period='即时'").iloc[0]["t"]
-        bar_ready = 0
-        if latest_market is not None and str(latest_market) != "NaT":
-            bar_ready = int(c.query_df(
-                "SELECT count(DISTINCT b.board_code) AS n FROM board_bar b "
-                "JOIN board_dict d ON d.board_code=b.board_code AND d.has_bar "
-                "WHERE b.trade_date=?", [latest_market]).iloc[0]["n"])
-        fund_ready = 0
         fund_expected = latest_market
         if fund_expected is None or str(fund_expected) == "NaT":
             fund_expected = latest_fund
-        if fund_expected is not None and str(fund_expected) != "NaT":
-            fund_ready = int(c.query_df(
-                "SELECT count(*) AS n FROM board_dict b "
-                "WHERE (b.has_members OR b.has_bar) AND EXISTS ("
-                "SELECT 1 FROM board_fund_flow f WHERE f.board_code=b.board_code "
-                "AND f.snapshot_date>=? AND f.period='即时')",
-                [fund_expected]).iloc[0]["n"])
+        from backend.services.data_report import DataIntegrityReport
+
+        coverage = DataIntegrityReport(c).board_coverage_summary(latest_market, fund_expected)
         issues_by_type: dict[str, int] = {}
         if "data_quality_issue" in have:
             issues = c.query_df(
@@ -265,9 +250,7 @@ def _board_stage(c) -> dict | None:
         return {
             **bt,
             "concept_count": int(dims["concept"]), "industry_count": int(dims["industry"]),
-            "member_target": int(dims["member_target"]), "member_ready": int(dims["member_ready"]),
-            "bar_target": int(dims["bar_target"]), "bar_ready": bar_ready,
-            "fund_target": int(dims["fund_target"]), "fund_ready": fund_ready,
+            **coverage,
             "latest_bar_date": _date_text(latest_bar),
             "latest_fund_date": _date_text(latest_fund),
             "open_issues": sum(issues_by_type.values()),

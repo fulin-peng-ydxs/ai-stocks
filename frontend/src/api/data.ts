@@ -47,6 +47,7 @@ export interface Overview {
     concept_count: number; industry_count: number
     member_target: number; member_ready: number; bar_target: number; bar_ready: number
     fund_target: number; fund_ready: number
+    coverage_handling?: Record<'member' | 'bar' | 'fund', { ignored: number; pending: number }>
     latest_bar_date: string | null; latest_fund_date: string | null
     open_issues: number; issues_by_type: Record<string, number>
     last_update: { table_name: string; status: string; detail: string | null; updated_at: string } | null

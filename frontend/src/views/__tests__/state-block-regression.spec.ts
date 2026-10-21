@@ -1040,7 +1040,7 @@ describe('代表性页面四态回归', () => {
     expect((wrapper.vm as any).exactErrors[estimated.key]).toBe('精确统计失败')
   })
 
-  it('板块日期追平但覆盖率不足时不显示整体同步', async () => {
+  it.each([1, 99])('板块日期追平但覆盖率不足时不显示整体同步：%s/100', async (barReady) => {
     ;(dataApi.getOverview as ReturnType<typeof vi.fn>).mockResolvedValue({
       latest_trade_date: '2026-08-26',
       codes: { active: 1, delisted: 0 },
@@ -1049,7 +1049,7 @@ describe('代表性页面四态回归', () => {
         board_dict: 100, board_member: 1, board_bar: 1, board_fund_flow: 1,
         concept_count: 60, industry_count: 40,
         member_target: 100, member_ready: 100,
-        bar_target: 100, bar_ready: 1,
+        bar_target: 100, bar_ready: barReady,
         fund_target: 100, fund_ready: 100,
         latest_bar_date: '2026-08-26', latest_fund_date: '2026-08-26',
         open_issues: 0, issues_by_type: {}, last_update: null,
@@ -1074,6 +1074,68 @@ describe('代表性页面四态回归', () => {
     expect(bar?.classes()).toContain('stale')
     expect(fund?.text()).toContain('同步')
     expect(fund?.classes()).not.toContain('stale')
+  })
+
+  it.each([
+    { ignored: 481, barIgnored: 1, label: '缺失已人工确认', confirmed: true },
+    { ignored: 480, barIgnored: 1, label: '待补采', confirmed: false },
+    { ignored: 481, barIgnored: 0, label: '待补采', confirmed: true },
+    { ignored: 0, barIgnored: 0, label: '待补采', confirmed: false },
+  ])('板块人工确认单列显示且保留实际覆盖：$ignored / $barIgnored', async ({
+    ignored, barIgnored, label, confirmed,
+  }) => {
+    const board = {
+      board_dict: 481, board_member: 1, board_bar: 1, board_fund_flow: 1,
+      concept_count: 391, industry_count: 90,
+      member_target: 481, member_ready: 481,
+      bar_target: 481, bar_ready: 480,
+      fund_target: 481, fund_ready: 0,
+      latest_bar_date: '2026-10-20', latest_fund_date: '2026-10-16',
+      open_issues: 0, issues_by_type: {}, last_update: null,
+      coverage_handling: {
+        member: { ignored: 0, pending: 0 },
+        bar: { ignored: barIgnored, pending: 1 - barIgnored },
+        fund: { ignored, pending: 481 - ignored },
+      },
+    }
+    const overview = {
+      latest_trade_date: '2026-10-20', board,
+      codes: { active: 1, delisted: 0 }, bar_rows: 1,
+      quality: { score: 100, open: 0, by_severity: {}, by_layer: [] },
+      gaps: { stocks_with_gap: 0, gap_days_total: 0 }, last_scan_at: null,
+    }
+    ;(dataApi.getOverview as ReturnType<typeof vi.fn>).mockResolvedValue(overview)
+    const wrapper = await mountView(OverviewView)
+    const boardTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('板块数据'))!
+    await boardTab.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.board-coverage-tag').text()).toBe(label)
+    const fundCard = wrapper.findAll('.cov-card').find((card) => card.text().includes('资金流覆盖'))!
+    expect(fundCard.find('.cov-pct').text()).toBe('0%')
+    expect(fundCard.text()).toContain('0/481 个板块')
+    if (ignored) expect(fundCard.text()).toContain(`缺失已人工确认 ${ignored} 个`)
+    if (ignored && !confirmed) expect(fundCard.text()).toContain('待补采 1 个')
+    const fundDate = wrapper.findAll('.fresh-cell').find((cell) => cell.text().includes('资金流快照'))!
+    expect(fundDate.text()).toContain('2026-10-16')
+    expect(fundDate.text()).toContain(confirmed ? '缺失已人工确认' : '滞后')
+    expect(fundDate.classes().includes('stale')).toBe(!confirmed)
+    expect(fundDate.text()).not.toContain('同步')
+
+    // 恢复监控或忽略失效后，刷新必须立即恢复补采提示。
+    ;(dataApi.getOverview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...overview,
+      board: { ...board, coverage_handling: {
+        ...board.coverage_handling, fund: { ignored: 0, pending: 481 },
+      } },
+    })
+    await (wrapper.vm as any).load()
+    await flushPromises()
+    expect(wrapper.find('.board-coverage-tag').text()).toBe('待补采')
+    const refreshed = wrapper.findAll('.fresh-cell').find((cell) => cell.text().includes('资金流快照'))!
+    expect(refreshed.text()).toContain('滞后')
+    expect(refreshed.text()).not.toContain('缺失已人工确认')
+    wrapper.unmount()
   })
 
   it('未知质量诊断保留原始详情入口，查看不触发修复或改写原始记录', async () => {

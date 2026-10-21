@@ -514,7 +514,27 @@ const boardCoverageItems = computed(() => {
       ready: board?.fund_ready,
       target: board?.fund_target,
     },
-  ].map((item) => ({ ...item, pct: coveragePct(item.ready, item.target), status: coverageStatus(item.ready, item.target) }))
+  ].map((item) => {
+    const key = item.key as 'member' | 'bar' | 'fund'
+    const missing = Math.max((item.target ?? 0) - (item.ready ?? 0), 0)
+    const ignored = Math.min(missing, Math.max(board?.coverage_handling?.[key]?.ignored ?? 0, 0))
+    const pending = missing - ignored
+    const confirmed = ignored > 0 && pending === 0
+    return {
+      ...item, ignored, pending, confirmed,
+      pct: coveragePct(item.ready, item.target),
+      status: confirmed ? undefined : coverageStatus(item.ready, item.target),
+    }
+  })
+})
+// 真实覆盖率不因人工确认而增加；补采状态只统计尚未确认的实际缺失。
+const boardCoverageState = computed(() => {
+  const items = boardCoverageItems.value
+  if (items.some((item) => item.pending > 0)) return { label: '待补采', type: 'warning' as const }
+  if ((ov.value?.board?.open_issues ?? 0) > 0) return { label: '待处理', type: 'warning' as const }
+  if (items.some((item) => item.ignored > 0)) return { label: '缺失已人工确认', type: 'info' as const }
+  if (!items.some((item) => item.target)) return { label: '尚无覆盖目标', type: 'info' as const }
+  return { label: '已完成', type: 'success' as const }
 })
 const boardOverallCoverage = computed(() => {
   const totals = boardCoverageItems.value.reduce((acc, item) => ({
@@ -538,14 +558,16 @@ const boardFreshnessItems = computed(() => {
   const board = ov.value?.board
   const latest = ov.value?.latest_trade_date || ''
   return [
-    { key: 'trade', label: '最新交易日', value: ov.value?.latest_trade_date, stale: false, status: '基准' },
+    { key: 'trade', label: '最新交易日', value: ov.value?.latest_trade_date, stale: false, confirmed: false, status: '基准' },
     {
       key: 'bar', label: '板块指数', value: board?.latest_bar_date,
-      ...coverageFreshness(board?.latest_bar_date, latest, board?.bar_ready, board?.bar_target),
+      ...coverageFreshness(board?.latest_bar_date, latest, board?.bar_ready, board?.bar_target,
+        boardCoverageItems.value.find((item) => item.key === 'bar')?.confirmed),
     },
     {
       key: 'fund', label: '资金流快照', value: board?.latest_fund_date,
-      ...coverageFreshness(board?.latest_fund_date, latest, board?.fund_ready, board?.fund_target),
+      ...coverageFreshness(board?.latest_fund_date, latest, board?.fund_ready, board?.fund_target,
+        boardCoverageItems.value.find((item) => item.key === 'fund')?.confirmed),
     },
   ]
 })
@@ -575,16 +597,18 @@ function coverageStatus(ready: number | undefined, total: number | undefined): '
   if (rate >= 0.9) return 'warning'
   return 'exception'
 }
-// 日期追平只代表至少一个板块有当日数据；覆盖率同时达标后才能称为整体“同步”。
+// 日期追平只代表至少一个板块有当日数据；完整覆盖后才能称为整体“同步”。
 function coverageFreshness(
   value: string | null | undefined,
   latest: string,
   ready: number | undefined,
   target: number | undefined,
-): { stale: boolean; status: '无数据' | '滞后' | '未齐' | '同步' } {
+  confirmed = false,
+): { stale: boolean; confirmed?: boolean; status: string } {
+  if (confirmed) return { stale: false, confirmed: true, status: '缺失已人工确认' }
   if (!value) return { stale: true, status: '无数据' }
   if (!latest || value < latest) return { stale: true, status: '滞后' }
-  if (coverageStatus(ready, target) !== 'success') return { stale: true, status: '未齐' }
+  if (!target || (ready ?? 0) < target) return { stale: true, status: '未齐' }
   return { stale: false, status: '同步' }
 }
 
@@ -1103,16 +1127,16 @@ const menuPageTitle = useMenuPageTitle()
                   <div class="board-section-head">
                     <div>
                       <span class="panel-title">覆盖进度</span>
-                      <HelpHint label="板块覆盖统计口径说明" text="成分、指数、资金流分别统计已覆盖与目标板块；日期追平仍须检查覆盖率，不以台账问题为零判定采齐。" />
+                      <HelpHint label="板块覆盖统计口径说明" text="覆盖率和日期显示真实入库数据；当前有效的人工确认单独列示，不计入待补采，也不计为已采齐。资金流覆盖指基准交易日的即时快照。" />
                     </div>
                     <div class="board-section-actions">
                       <el-tag
                         size="small"
                         effect="plain"
                         class="board-coverage-tag"
-                        :type="boardOverallCoverage >= 100 ? 'success' : 'warning'"
+                        :type="boardCoverageState.type"
                       >
-                        {{ boardOverallCoverage >= 100 ? '已完成' : '待补采' }}
+                        {{ boardCoverageState.label }}
                       </el-tag>
                       <el-button data-testid="overview-board-ingest" size="small" type="primary" @click="gotoBoard()">
                         去采集板块
@@ -1127,7 +1151,7 @@ const menuPageTitle = useMenuPageTitle()
                             <HelpHint :text="item.desc" :label="`${item.label}口径说明`" />
                           </div>
                         </div>
-                        <div class="cov-pct" :class="[item.status === 'success' ? 'done' : item.status]">{{ item.target ? item.pct + '%' : '—' }}</div>
+                        <div class="cov-pct" :class="[item.confirmed ? 'confirmed' : item.status === 'success' ? 'done' : item.status]">{{ item.target ? item.pct + '%' : '—' }}</div>
                       </div>
                       <el-progress
                         v-if="item.target"
@@ -1139,11 +1163,14 @@ const menuPageTitle = useMenuPageTitle()
                       <div class="cov-foot">
                         <span>{{ item.target ? coverageText(item.ready, item.target) + ' 个板块' : '尚无覆盖目标' }}</span>
                       </div>
+                      <div v-if="item.ignored" class="app-caption-text">
+                        缺失已人工确认 {{ item.ignored }} 个<span v-if="item.pending">，待补采 {{ item.pending }} 个</span>
+                      </div>
                     </div>
                   </div>
 
                   <div class="board-freshness-strip">
-                    <div v-for="item in boardFreshnessItems" :key="item.key" class="fresh-cell" :class="{ stale: item.stale }">
+                    <div v-for="item in boardFreshnessItems" :key="item.key" class="fresh-cell" :class="{ stale: item.stale, confirmed: item.confirmed }">
                       <span class="fresh-label">{{ item.label }}</span>
                       <strong>{{ dateOnly(item.value) }}</strong>
                       <span>{{ item.status }}</span>
@@ -1481,6 +1508,9 @@ const menuPageTitle = useMenuPageTitle()
 .cov-pct.exception {
   color: var(--app-danger-text);
 }
+.cov-pct.confirmed {
+  color: var(--el-text-color-secondary);
+}
 .cov-foot {
   align-items: center;
   font-size: var(--app-font-size-caption);
@@ -1518,6 +1548,9 @@ const menuPageTitle = useMenuPageTitle()
 .fresh-cell.stale span:last-child,
 .fresh-cell.stale strong {
   color: var(--app-warning-text);
+}
+.fresh-cell.confirmed span:last-child {
+  color: var(--el-text-color-secondary);
 }
 .board-side-block {
   padding: var(--app-space-3);
