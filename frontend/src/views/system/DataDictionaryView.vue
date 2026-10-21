@@ -573,7 +573,7 @@ const menuPageTitle = useMenuPageTitle()
             <div class="dict-actions">
               <el-button v-if="activeType" v-permission="'dict:type-manage'" size="small" @click="openEditType()">编辑类型</el-button>
               <el-button v-if="activeType" v-permission="'dict:type-manage'" size="small" type="danger" plain @click="removeType()">删除类型</el-button>
-              <el-button v-if="activeType" v-permission="'dict:item-manage'" size="small" type="success" plain @click="openCreateItem">新建字典项</el-button>
+              <el-button v-if="activeType" v-permission="'dict:item-manage'" size="small" type="primary" plain @click="openCreateItem">新建字典项</el-button>
             </div>
           </header>
 
@@ -641,7 +641,7 @@ const menuPageTitle = useMenuPageTitle()
               <template #empty>
                 <div class="app-table-empty">
                   <span class="app-table-empty__description">{{ activeType ? '暂无字典项' : '请选择字典类型' }}</span>
-                  <el-button v-if="activeType" v-permission="'dict:item-manage'" type="success" plain @click="openCreateItem">新建字典项</el-button>
+                  <el-button v-if="activeType" v-permission="'dict:item-manage'" type="primary" plain @click="openCreateItem">新建字典项</el-button>
                 </div>
               </template>
             </AppDataTable>

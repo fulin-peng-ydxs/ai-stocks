@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import ElementPlus from 'element-plus'
 import { mount, flushPromises } from '@vue/test-utils'
 import { ref, type Component } from 'vue'
 import LoginView from '@/views/LoginView.vue'
@@ -35,6 +36,14 @@ vi.mock('@/api/auth', () => ({
 
 import * as authApi from '@/api/auth'
 
+const wrappers: ReturnType<typeof mount>[] = []
+function mountLogin() {
+  const wrapper = mount(LoginView as Component, { global: { plugins: [ElementPlus] } })
+  wrappers.push(wrapper)
+  return wrapper
+}
+afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount() })
+
 beforeEach(() => {
   vi.clearAllMocks()
   setRuntimePresetSources([
@@ -67,7 +76,7 @@ describe('LoginView captcha', () => {
       ],
     })
 
-    const wrapper = mount(LoginView as Component)
+    const wrapper = mountLogin()
     await flushPromises()
 
     expect(wrapper.find('.login-preset').exists()).toBe(false)
@@ -94,10 +103,47 @@ describe('LoginView captcha', () => {
       ],
     })
 
-    const wrapper = mount(LoginView as Component)
+    const wrapper = mountLogin()
     await flushPromises()
 
     expect(wrapper.get('.login-preset').attributes('aria-label')).toContain('当前澄空蓝')
+  })
+
+  it('创建账户与返回登录使用可键盘操作的标准链接按钮', async () => {
+    vi.mocked(authApi.getPublicConfig).mockResolvedValue({ require_email_code: true, login_captcha_enabled: false, captcha_after_fails: 3, auto_scale_exponent: 0.1, appearance_presets: [] })
+    const wrapper = mountLogin()
+    await flushPromises()
+    expect(wrapper.get('button.login-link').classes()).toEqual(expect.arrayContaining(['el-button--primary', 'is-link']))
+    await wrapper.get('button.login-link').trigger('click')
+    expect(wrapper.find('input[name="email"]').exists()).toBe(true)
+    expect(wrapper.get('button.login-link').text()).toBe('已有账户，返回登录')
+    await wrapper.get('button.login-link').trigger('click')
+    expect(wrapper.find('input[name="email"]').exists()).toBe(false)
+  })
+
+  it('发送验证码区分加载与倒计时禁用，失败后可重试且不会重复发送', async () => {
+    vi.mocked(authApi.getPublicConfig).mockResolvedValue({ require_email_code: true, login_captcha_enabled: false, captcha_after_fails: 3, auto_scale_exponent: 0.1, appearance_presets: [] })
+    let rejectSend!: (error: unknown) => void
+    vi.mocked(authApi.sendEmailCode).mockImplementationOnce(() => new Promise((_, reject) => { rejectSend = reject }))
+    const wrapper = mountLogin()
+    await flushPromises()
+    await wrapper.get('button.login-link').trigger('click')
+    await wrapper.get('input[name="email"]').setValue('test@example.com')
+    await wrapper.get('button.send').trigger('click')
+    expect(wrapper.get('button.send').classes()).toContain('is-loading')
+    await wrapper.get('button.send').trigger('click')
+    expect(authApi.sendEmailCode).toHaveBeenCalledTimes(1)
+    rejectSend({ uiMessage: '发送失败，请重试' })
+    await flushPromises()
+    expect(wrapper.get('button.send').classes()).not.toContain('is-loading')
+    expect(wrapper.get('button.send').attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).toContain('发送失败，请重试')
+    vi.mocked(authApi.sendEmailCode).mockResolvedValueOnce(null)
+    await wrapper.get('button.send').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('button.send').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('button.send').classes()).not.toContain('is-loading')
+    expect(wrapper.get('button.send').text()).toContain('后重发')
   })
 
   it('图形验证码开启后进入登录页直接展示验证码', async () => {
@@ -107,7 +153,7 @@ describe('LoginView captcha', () => {
       captcha_after_fails: 3,
     })
 
-    const wrapper = mount(LoginView as Component)
+    const wrapper = mountLogin()
     await flushPromises()
     await wrapper.vm.$nextTick()
 
@@ -124,7 +170,7 @@ describe('LoginView captcha', () => {
     })
     login.mockRejectedValueOnce({ response: { data: { msg: '请输入正确的图形验证码' } } })
 
-    const wrapper = mount(LoginView as Component)
+    const wrapper = mountLogin()
     await flushPromises()
     await wrapper.find('input[name="account"]').setValue('admin')
     await wrapper.find('input[name="password"]').setValue('bad-pass')
@@ -144,7 +190,7 @@ describe('LoginView captcha', () => {
     })
     login.mockResolvedValueOnce(undefined)
 
-    const wrapper = mount(LoginView as Component)
+    const wrapper = mountLogin()
     await flushPromises()
     await wrapper.find('input[name="account"]').setValue('debug_normal')
     await wrapper.find('input[name="password"]').setValue('test-password')

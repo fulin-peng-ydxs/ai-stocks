@@ -50,6 +50,16 @@ describe('视觉预设运行时 Element Plus 色阶', () => {
           expect(document.documentElement.style.getPropertyValue(`--el-color-${name}-dark-2`))
             .toBe(blendHex(color, activeTarget, 0.8))
         }
+        expect(document.documentElement.style.getPropertyValue('--el-color-info'))
+          .toBe(tokens.text)
+        expect(document.documentElement.style.getPropertyValue('--el-color-info-rgb'))
+          .toBe(rgbChannelsFromHex(tokens.text))
+        for (const level of COLOR_LEVELS) {
+          expect(document.documentElement.style.getPropertyValue(`--el-color-info-light-${level}`))
+            .toBe(blendHex(tokens.text, quietTarget, 1 - level / 10))
+        }
+        expect(document.documentElement.style.getPropertyValue('--el-color-info-dark-2'))
+          .toBe(blendHex(tokens.text, activeTarget, 0.8))
         expect(document.documentElement.style.getPropertyValue('--el-color-error'))
           .toBe(document.documentElement.style.getPropertyValue('--el-color-danger'))
         for (const level of COLOR_LEVELS) {

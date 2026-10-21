@@ -362,17 +362,16 @@ function onSubmit() {
 
     <AppScrollArea as="section" class="login-auth" data-testid="login-auth-surface">
       <div class="login-controls">
-        <button
+        <el-button
           v-if="presetOptions.length > 1"
           class="login-preset"
-          type="button"
           :aria-label="`切换研究空间，当前${activePresetLabel}`"
           @click="cyclePreset"
         >
           <i /><span>{{ activePresetLabel }}</span>
-        </button>
+        </el-button>
         <AppHoverInfo content="切换黑/白主题">
-          <button tabindex="0" class="login-theme" type="button" aria-label="切换主题" @click="toggleTheme">
+          <AppIconButton class="login-theme" label="切换主题" variant="soft" @click="toggleTheme">
             <svg v-if="isDark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4" />
               <circle cx="12" cy="12" r="4" />
@@ -380,7 +379,7 @@ function onSubmit() {
             <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z" />
             </svg>
-          </button>
+          </AppIconButton>
         </AppHoverInfo>
       </div>
 
@@ -461,14 +460,11 @@ function onSubmit() {
             </svg>
             <input v-model="form.emailCode" name="emailCode" placeholder=" " type="text" autocomplete="one-time-code"
                    @input="errors.emailCode = ''" @keydown="submitOnEnter($event, onSubmit)" />
-            <span class="send app-interaction-link" :class="{ disabled: emailCountdown > 0 || emailSending }"
-                  role="button" :tabindex="emailCountdown > 0 || emailSending ? -1 : 0"
-                  :aria-disabled="emailCountdown > 0 || emailSending" :aria-busy="emailSending"
-                  v-keyboard-activate
-                  @click="onSendEmailCode">
-              <i v-if="emailSending" class="send-spinner" aria-hidden="true" />
+            <el-button class="send" link type="primary"
+                       :disabled="emailCountdown > 0" :loading="emailSending"
+                       @click="onSendEmailCode">
               {{ emailSending ? '发送中…' : emailCountdown > 0 ? `${emailCountdown}s 后重发` : '发送验证码' }}
-            </span>
+            </el-button>
           </label>
           <p v-if="errors.emailCode" class="field-error">{{ errors.emailCode }}</p>
           <p v-else-if="emailHint" class="field-hint">{{ emailHint }}</p>
@@ -504,10 +500,10 @@ function onSubmit() {
 
         <div v-if="mode === 'login'" class="login-rowbetween">
           <span class="login-security"><i />安全加密连接</span>
-          <button class="login-link" type="button" @click="setMode('register')">创建账户</button>
+          <el-button class="login-link" link type="primary" @click="setMode('register')">创建账户</el-button>
         </div>
         <div v-else class="login-rowbetween login-rowend">
-          <button class="login-link" type="button" @click="setMode('login')">已有账户，返回登录</button>
+          <el-button class="login-link" link type="primary" @click="setMode('login')">已有账户，返回登录</el-button>
         </div>
 
         <div class="login-footnote">复盘啦 · EOD 趋势龙头研究系统</div>
@@ -535,10 +531,8 @@ function onSubmit() {
   --login-text-muted: var(--el-text-color-secondary, #6e7078);
   --login-accent: var(--el-color-primary);
   --login-accent-strong: var(--el-color-primary-dark-2, #1264d9);
-  --login-accent-readable: var(--login-accent-strong);
   --login-accent-text: #ffffff;
   --login-captcha-bg: var(--app-section-bg, #f3f3f3);
-  --login-toggle-bg: color-mix(in srgb, var(--login-card-opaque-bg) 88%, transparent);
   --login-divider: var(--app-border-default);
   --login-shadow: var(--shell-surface-shadow, rgba(20, 24, 32, 0.1));
   --login-brand-text: var(--el-text-color-primary, #17181c);
@@ -562,9 +556,7 @@ function onSubmit() {
   transition: background 0.3s, color 0.3s;
 }
 .login-shell.is-dark {
-  --login-accent-readable: var(--el-color-primary-light-3, #77adff);
   --login-input-bg: color-mix(in srgb, var(--login-card-opaque-bg) 88%, var(--login-page-bg) 12%);
-  --login-toggle-bg: color-mix(in srgb, var(--login-card-opaque-bg) 90%, transparent);
 }
 
 .login-brand {
@@ -852,31 +844,20 @@ function onSubmit() {
   gap: var(--app-space-2);
 }
 .login-theme {
-  width: 38px;
-  height: 38px;
+  --app-icon-button-size: 38px;
   border-radius: 50%;
-  border: 1px solid var(--login-border);
-  background: var(--login-toggle-bg);
-  color: var(--login-text-sub);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: border-color 0.2s, color 0.2s, transform 0.2s;
 }
 .login-preset {
   height: 38px;
   padding: 0 13px;
-  border: 1px solid var(--login-border);
   border-radius: 999px;
-  background: var(--login-toggle-bg);
-  color: var(--login-text-sub);
+  font-size: var(--app-font-size-micro);
+  letter-spacing: .08em;
+}
+.login-preset :deep(> span) {
   display: inline-flex;
   align-items: center;
   gap: var(--app-space-2);
-  cursor: pointer;
-  font-size: var(--app-font-size-micro);
-  letter-spacing: .08em;
 }
 .login-preset i {
   width: 7px;
@@ -885,12 +866,7 @@ function onSubmit() {
   background: var(--login-accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--login-accent) 13%, transparent);
 }
-.login-preset:hover { color: var(--login-text); border-color: var(--login-accent); }
-.login-theme:hover { color: var(--login-accent); border-color: var(--login-accent); transform: rotate(8deg); }
-.login-theme:focus-visible,
-.login-preset:focus-visible,
 .login-tab:focus-visible,
-.login-link:focus-visible,
 .login-primary:focus-visible { outline: 2px solid var(--login-accent); outline-offset: 3px; }
 .login-card {
   position: relative;
@@ -1054,27 +1030,10 @@ function onSubmit() {
   transition: background-color 9999s ease-out 0s;
 }
 .login-emailcode .send {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--app-space-control-gap);
-  color: var(--login-accent);
+  padding: 0;
   font-size: var(--app-font-size-table);
-  cursor: pointer;
   white-space: nowrap;
 }
-.login-emailcode .send.disabled {
-  color: var(--login-text-muted);
-  cursor: not-allowed;
-}
-.send-spinner {
-  width: 12px;
-  height: 12px;
-  border: 1.5px solid var(--app-border-default);
-  border-top-color: var(--login-accent);
-  border-radius: 50%;
-  animation: login-spin 0.7s linear infinite;
-}
-@keyframes login-spin { to { transform: rotate(360deg); } }
 .login-captcha-row {
   display: flex;
   gap: var(--app-space-2);
@@ -1138,13 +1097,8 @@ function onSubmit() {
 }
 .login-link {
   padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--login-accent-readable);
   font: inherit;
-  cursor: pointer;
 }
-.login-link:hover { color: var(--login-accent); }
 .login-security {
   display: flex;
   align-items: center;
@@ -1196,12 +1150,6 @@ function onSubmit() {
     position: fixed;
     top: 26px;
     right: 24px;
-  }
-  .login-theme,
-  .login-preset {
-    color: var(--login-text-sub);
-    border-color: var(--login-border);
-    background: var(--login-toggle-bg);
   }
 }
 

@@ -121,7 +121,7 @@ function parentLabel(s: SlotSpec): string | null {
         <div class="rs-col">
           <div class="rs-h">保持位置并内部滚动</div>
           <div class="rs-chips">
-            <el-tag v-for="s in summary.lockedSlots" :key="s.id" size="small" effect="plain">
+            <el-tag type="info" v-for="s in summary.lockedSlots" :key="s.id" size="small" effect="plain">
               {{ s.label }}<span v-if="s.growMain"> · 主区</span>
             </el-tag>
             <span v-if="!summary.lockedSlots.length" class="muted">—</span>
@@ -170,7 +170,7 @@ function parentLabel(s: SlotSpec): string | null {
               </div>
               <div class="slot-badges">
                 <el-tag v-if="s.growMain" size="small" type="success" effect="plain">grow 主区</el-tag>
-                <el-tag size="small" effect="plain">{{ SCROLL_LABELS[effScroll(s)] }}</el-tag>
+                <el-tag type="info" size="small" effect="plain">{{ SCROLL_LABELS[effScroll(s)] }}</el-tag>
                 <el-tag v-if="s.reflowable ?? COMPONENT_CATALOG[s.component]?.reflowable" size="small" type="warning" effect="plain">可重排</el-tag>
               </div>
               <div class="slot-size">最低 {{ effMinW(s) }} x {{ effMinH(s) }}</div>

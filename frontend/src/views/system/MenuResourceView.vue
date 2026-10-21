@@ -865,9 +865,6 @@ const menuPageTitle = useMenuPageTitle()
   display: flex; align-items: center; gap: var(--app-space-2); }
 .mr-col-head .mini { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); font-weight: var(--app-font-weight-regular); }
 .mr-head-spacer { flex: 1; }
-.mr-root-add {
-  color: var(--el-text-color-regular);
-}
 .mr-col-body { flex: 1 1 auto; min-height: 0; --app-scroll-padding-top: 8px; --app-scroll-padding-right: 8px; --app-scroll-padding-bottom: 8px; --app-scroll-padding-left: 8px; }
 .mr-detail-body { --app-scroll-display: flex; --app-scroll-direction: column; }
 .mr-tnode { display: inline-flex; align-items: center; gap: var(--app-space-2); min-width: 0; width: 100%; }

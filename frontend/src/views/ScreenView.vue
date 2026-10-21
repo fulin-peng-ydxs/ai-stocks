@@ -2,7 +2,6 @@
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
-import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppHoverInfo from '@/components/AppHoverInfo'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -844,11 +843,7 @@ const menuPageTitle = useMenuPageTitle()
           <div class="ed-head app-cluster-md">
             <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
             <AppHoverInfo v-if="curVersion && !isNew" content="点击查看历史版本">
-              <span tabindex="0"
-                class="ver-badge"
-                data-testid="screen-profile-version"
-                role="button" @click="openVersions" v-keyboard-activate
-              >v{{ curVersion }}</span>
+              <el-button class="ver-badge" text bg type="primary" data-testid="screen-profile-version" @click="openVersions">v{{ curVersion }}</el-button>
             </AppHoverInfo>
             <AssetVisibilityActions
               v-if="!isNew"
@@ -1188,16 +1183,13 @@ const menuPageTitle = useMenuPageTitle()
 }
 .ver-badge {
   font-size: var(--app-font-size-caption);
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
+  height: auto;
+  min-height: 0;
   border-radius: 10px;
   padding: 1px 8px;
   font-weight: var(--app-font-weight-section);
   cursor: pointer;
   user-select: none;
-}
-.ver-badge:hover {
-  background: var(--el-color-primary-light-7);
 }
 .hint {
   color: var(--app-muted-text);
@@ -1254,9 +1246,6 @@ const menuPageTitle = useMenuPageTitle()
   max-height: 200px;
 }
 .complex-ast-notice { margin: var(--app-space-3) 0; }
-.readonly-builder {
-  opacity: 0.82;
-}
 .ver-item {
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;

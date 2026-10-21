@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import DataMetricDetails from './DataMetricDetails.vue'
 import HelpHint from '@/components/HelpHint.vue'
+import { ArrowRight } from '@element-plus/icons-vue'
 
 export type DataMetricInfo =
   | { kind: 'help'; text: string }
@@ -30,7 +31,7 @@ defineEmits<{ action: [] }>()
     </div>
     <div v-if="summary" class="data-metric-summary">{{ summary }}</div>
     <el-button v-if="actionLabel" link type="primary" class="data-metric-action" @click="$emit('action')">
-      {{ actionLabel }} →
+      {{ actionLabel }}<el-icon class="el-icon--right"><ArrowRight /></el-icon>
     </el-button>
   </el-card>
 </template>

@@ -94,9 +94,9 @@ describe('全站按钮与图标操作契约', () => {
 
     expect(topLevelRules).not.toMatch(/AppFilterSelect|AppIconButton|HelpTip|HelpHint/)
     expect(topLevelRules).not.toMatch(/multiple=false|allowCreate|3 个标签|已选 N/)
-    expect(design).toContain('默认多选、可搜索、可清空')
+    expect(design).toContain('列表筛选与紧凑多选编辑使用 `AppFilterSelect`')
     expect(design).toContain('纯图标操作统一使用 `AppIconButton`')
-    expect(design).toContain('单块纯文本说明优先进入 `HelpHint`')
+    expect(design).toContain('单块解释使用可见 `HelpHint`')
   })
 
   it('应用外壳、页面设置和配置编辑器共同消费 AppIconButton', () => {
@@ -141,7 +141,19 @@ describe('全站按钮与图标操作契约', () => {
     expect(rowActions).not.toContain('--row-action-menu-bg:')
     expect(states).toContain('--app-button-neutral-text: var(--el-text-color-regular)')
     expect(states).toContain('--app-button-disabled-text: var(--el-disabled-text-color)')
+    // 普通 info 与行操作 info 必须共用中性角色，不能只修表格。
+    expect(states).toContain(':where(.el-button--info, .is-tone-info)')
 
+  })
+
+  it('训练买卖命令不借用危险/成功色表达交易方向', () => {
+    const training = read(join(SRC_DIR, 'views/TrainingView.vue'))
+    for (const command of ['doBuy', 'doSell']) {
+      const tag = training.match(new RegExp(`<el-button[^>]+@click="${command}"[^>]*>`))?.[0]
+      expect(tag).toContain('type="primary"')
+      expect(tag).toContain('plain')
+    }
+    expect(training).not.toMatch(/<el-button[^>]*type="(?:danger|success)"/)
   })
 
   it('命令状态接入全局样式，按下色不回退通用填充且默认行操作不匹配语义通配符', () => {
@@ -149,6 +161,10 @@ describe('全站按钮与图标操作契约', () => {
     expect(read(join(SRC_DIR, 'styles/global.css'))).toContain("@import './buttonStates.css'")
     expect(states).not.toMatch(/var\(--el-fill-color(?:-dark)?\)/)
     expect(states).not.toContain("[class*='is-tone-']")
+    // 常态文字/实体背景消费主题原色，不能再次引入自动对比度调色。
+    expect(states).toContain('--app-button-rest-text: var(--app-button-tone)')
+    expect(states).toContain('--app-button-rest-bg: var(--app-button-tone)')
+    expect(states).not.toContain('--app-button-tone-text')
     for (const tone of ['primary', 'success', 'warning', 'danger', 'info']) {
       expect(states).toContain(`.el-button--${tone}`)
       expect(states).toContain(`.el-button.is-tone-${tone}`)
@@ -159,13 +175,23 @@ describe('全站按钮与图标操作契约', () => {
   })
 
   it('原生 button 只用于已声明的专用交互，不回流为页面私有命令按钮', () => {
-    const allowedSpecializedClasses = /class="(?:topbar-status|appearance-mode-option|(?:navigation-option|theme-option)(?: app-interaction-target app-interaction-card)?|primary-entry(?: app-nav-context-entry)?(?: app-interaction-target app-interaction-nav)?|secondary-entry(?: app-nav-context-entry)?(?: app-interaction-target app-interaction-nav)?|seg-btn|pt-group-toggle|slot-box(?: [^"]*)?|app-icon-button|app-summary-disclosure-card__summary|login-[^"]+)"/
+    // 允许项绑定到真实文件和控件角色，不能凭 login-* 等页面前缀绕过组件契约。
+    const allowedSpecializedClasses: Record<string, string[]> = {
+      'App.vue': ['topbar-status', 'theme-option', 'navigation-option'],
+      'components/TopNavigation.vue': ['primary-entry', 'secondary-entry'],
+      'components/PageSegmented.vue': ['seg-btn'],
+      'components/AppIconButton.vue': ['app-icon-button'],
+      'layout/components/LayoutPagePreview.vue': ['slot-box'],
+      'views/system/PermissionTree.vue': ['pt-group-toggle'],
+      'views/LoginView.vue': ['login-primary', 'login-tab'],
+    }
     const violations: string[] = []
 
     for (const file of vueFiles(SRC_DIR)) {
       const source = read(file)
       for (const match of source.matchAll(/<button\b(?:"[^"]*"|'[^']*'|[^'">])*>/g)) {
-        if (!allowedSpecializedClasses.test(match[0])) {
+        const baseClass = match[0].match(/\bclass="([^"]+)"/)?.[1].split(/\s+/)[0]
+        if (!baseClass || !allowedSpecializedClasses[relative(SRC_DIR, file)]?.includes(baseClass)) {
           violations.push(`${relative(SRC_DIR, file)}: ${match[0].replace(/\s+/g, ' ')}`)
         }
       }

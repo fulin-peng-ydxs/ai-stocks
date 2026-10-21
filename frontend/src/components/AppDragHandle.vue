@@ -41,6 +41,5 @@ defineEmits<{
 
 <style scoped>
 .app-drag-handle { cursor: grab; touch-action: none; user-select: none; }
-.app-drag-handle:not(:hover):not(:focus-visible):not([aria-pressed="true"]):not(:disabled) { color: var(--el-text-color-placeholder); }
 .app-drag-handle[aria-pressed="true"] { cursor: grabbing; }
 </style>

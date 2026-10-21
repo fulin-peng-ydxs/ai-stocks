@@ -49,7 +49,7 @@ html[data-layout-preset] :where(.el-button--success, .el-button.is-tone-success,
 html[data-layout-preset] :where(.el-button--warning, .el-button.is-tone-warning, .app-icon-button.is-warning):not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice, [data-close-size]) { --app-button-tone: var(--el-color-warning); }
 html[data-layout-preset] :where(.el-button--danger, .el-button.is-tone-danger, .app-icon-button.is-danger):not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice, [data-close-size]) { --app-button-tone: var(--el-color-danger); }
 html[data-layout-preset] :where(.el-button--info, .el-button.is-tone-info, .app-icon-button.is-info):not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice, [data-close-size]) { --app-button-tone: var(--el-color-info); }
-html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice):where(.el-button--primary, .el-button--success, .el-button--warning, .el-button--danger, .el-button--info) {
+html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice):where(.el-button--primary, .el-button--success, .el-button--warning, .el-button--danger) {
   --app-button-rest-bg: var(--app-button-tone);
   --app-button-rest-text: var(--app-button-on-solid);
   --app-button-rest-border: var(--app-button-tone);
@@ -60,8 +60,8 @@ html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interactio
   --app-button-pressed-text: var(--app-button-on-solid);
   --app-button-pressed-border: var(--app-button-solid-pressed);
 }
-html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice):where(.el-button--primary, .el-button--success, .el-button--warning, .el-button--danger, .el-button--info):where(.is-plain, .is-dashed, .is-text, .is-link),
-html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice):where(.is-tone-primary, .is-tone-success, .is-tone-warning, .is-tone-danger, .is-tone-info),
+html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice):where(.el-button--primary, .el-button--success, .el-button--warning, .el-button--danger):where(.is-plain, .is-dashed, .is-text, .is-link),
+html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice):where(.is-tone-primary, .is-tone-success, .is-tone-warning, .is-tone-danger),
 html[data-layout-preset] .app-icon-button:not([data-close-size]):where(.is-primary, .is-danger) {
   --app-button-rest-text: var(--app-button-tone);
   --app-button-rest-bg: var(--app-button-tone-soft);
@@ -73,8 +73,8 @@ html[data-layout-preset] .app-icon-button:not([data-close-size]):where(.is-prima
   --app-button-pressed-bg: var(--app-button-tone-pressed);
   --app-button-pressed-border: var(--app-button-tone);
 }
-/* 表格 info 是次要命令，不伪装成灰色禁用命令。 */
-html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice).is-tone-info {
+/* 普通 info 与行操作 info 都是次要命令，完整复用中性角色。 */
+html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice):where(.el-button--info, .is-tone-info) {
   --app-button-rest-text: var(--app-button-neutral-text);
   --app-button-hover-text: var(--app-button-neutral-strong-text);
   --app-button-pressed-text: var(--app-button-neutral-strong-text);
@@ -90,6 +90,15 @@ html[data-layout-preset] .app-icon-button:not([data-close-size]) {
 }
 html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice).is-text.is-has-bg,
 html[data-layout-preset] .app-icon-button:not([data-close-size]).is-soft { --app-button-rest-bg: var(--app-button-neutral-hover-bg); }
+/* 图标选择表达持久状态；hover 不抹去选中，loading 保留选中角色色。 */
+html[data-layout-preset] .app-icon-button[aria-pressed='true']:not([data-close-size]) {
+  --app-button-rest-text: var(--el-color-primary);
+  --app-button-rest-bg: var(--app-interaction-selected-background);
+  --app-button-hover-text: var(--el-color-primary);
+  --app-button-hover-bg: var(--app-interaction-selected-background);
+  --app-button-pressed-text: var(--el-color-primary);
+  --app-button-pressed-bg: var(--app-button-primary-hover-bg);
+}
 html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice).is-text.is-has-bg {
   --app-button-hover-bg: var(--app-button-neutral-pressed-bg);
   --app-button-pressed-bg: color-mix(in srgb, var(--el-text-color-primary) 14%, var(--app-button-neutral-hover-bg));
@@ -125,7 +134,7 @@ html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interactio
 html[data-layout-preset] :is(.el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice), .app-icon-button:not([data-close-size])):focus-visible { outline: var(--app-focus-ring); outline-offset: 1px; }
 html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice).is-link:is(:focus-visible, .is-open) { text-decoration: underline; text-underline-offset: 3px; }
 @media (hover: none), (pointer: coarse) {
-  html[data-layout-preset] :is(.el-button, .app-icon-button):not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice, [data-close-size]):hover:not(:active, .is-active, :disabled, .is-disabled, .is-loading) {
+  html[data-layout-preset] :is(.el-button, .app-icon-button):not(.app-interaction-target, .app-interaction-trigger, .app-interaction-choice, [data-close-size]):hover:not(:active, .is-active, :focus-visible, .is-open, :disabled, .is-disabled, .is-loading) {
     color: var(--app-button-rest-text);
     background-color: var(--app-button-rest-bg);
     border-color: var(--app-button-rest-border);

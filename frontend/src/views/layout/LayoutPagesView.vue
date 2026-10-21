@@ -551,8 +551,8 @@ const menuPageTitle = useMenuPageTitle()
               <div class="source-head">
                 <div class="source-identity">
                   <div class="section-title app-section-title">页面结构</div>
-                  <el-tag size="small" effect="plain">{{ selectedPage.archetype }}</el-tag>
-                  <el-tag size="small" effect="plain">{{ responsiveProfileLabel(selectedPage.responsiveProfile) }}</el-tag>
+                  <el-tag type="info" size="small" effect="plain">{{ selectedPage.archetype }}</el-tag>
+                  <el-tag type="info" size="small" effect="plain">{{ responsiveProfileLabel(selectedPage.responsiveProfile) }}</el-tag>
                 </div>
                 <span class="source-path app-caption-text">{{ selectedPage.path }} · {{ selectedPage.pageKey }}</span>
               </div>
@@ -571,7 +571,7 @@ const menuPageTitle = useMenuPageTitle()
                     <div class="section-title">结构预览</div>
                     <div class="section-subtitle">选择结构块后，在右侧查看和修改它的页面默认设置。</div>
                   </div>
-                  <el-tag size="small" effect="plain">{{ selectedPage.label }}</el-tag>
+                  <el-tag type="info" size="small" effect="plain">{{ selectedPage.label }}</el-tag>
                 </div>
                 <LayoutPagePreview
                   :key="selectedPageKey"
@@ -677,7 +677,7 @@ const menuPageTitle = useMenuPageTitle()
                     <el-collapse-item name="diagnostic">
                       <template #title>
                         <span class="diagnostic-title">配置依据与诊断</span>
-                        <el-tag size="small" effect="plain">{{ focusedDiagnosticRows.length }} 项</el-tag>
+                        <el-tag type="info" size="small" effect="plain">{{ focusedDiagnosticRows.length }} 项</el-tag>
                       </template>
                       <div class="section-subtitle diagnostic-intro">查看当前组件的默认值来源、可覆盖范围与不可编辑原因。</div>
                       <AppDataTable v-if="focusedDiagnosticRows.length" :data="focusedDiagnosticRows" max-height="220" size="small" class="diagnostic-table" embedded>

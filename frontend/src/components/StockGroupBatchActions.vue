@@ -122,7 +122,7 @@ async function removeFromGroup(): Promise<void> {
       <div class="stock-batch-info">
         <span class="stock-batch-count">已选 <b>{{ selected.length }}</b> 只</span>
         <AppScrollArea class="stock-batch-chips">
-          <el-tag
+          <el-tag type="info"
             v-for="item in selected.slice(0, 30)"
             :key="item.code"
             size="small"

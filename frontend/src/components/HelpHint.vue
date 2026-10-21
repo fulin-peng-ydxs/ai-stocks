@@ -15,7 +15,7 @@ defineProps<{ text: string; label?: string }>()
     popper-class="app-wrapping-popper help-hint-popper"
     :hide-after="0"
   >
-    <span class="help-hint" tabindex="0" role="button" :aria-label="label || '说明'">?</span>
+    <span class="help-hint app-interaction-help" tabindex="0" role="button" :aria-label="label || '说明'">?</span>
   </AppHoverInfo>
 </template>
 
@@ -29,21 +29,11 @@ defineProps<{ text: string; label?: string }>()
   height: 16px;
   border-radius: 50%;
   /* 主题感知填充：白天浅灰、夜间深灰，确保 ? 在两种主题下都清晰可辨。 */
-  background: var(--el-fill-color);
   border: 1px solid var(--el-border-color);
-  color: var(--el-text-color-regular);
   font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-section);
   line-height: var(--app-line-height-solid);
   cursor: help;
   user-select: none;
-  transition: color .15s ease, border-color .15s ease, background-color .15s ease;
 }
-.help-hint:hover,
-.help-hint:focus-visible {
-  color: #fff;
-  background: var(--el-color-primary);
-  border-color: var(--el-color-primary);
-}
-.help-hint:focus-visible { outline: var(--app-focus-ring); outline-offset: 2px; }
 </style>

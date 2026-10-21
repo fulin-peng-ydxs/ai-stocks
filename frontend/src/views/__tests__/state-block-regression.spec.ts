@@ -1255,6 +1255,8 @@ describe('代表性页面四态回归', () => {
 
     const wrapper = await mountView(QualityView)
     const verifyButton = wrapper.findAll('button').find((button) => button.text().includes('立即质检'))!
+    expect(verifyButton.classes()).toContain('el-button--primary')
+    expect(verifyButton.classes()).not.toContain('is-plain')
     await verifyButton.trigger('click')
     await verifyButton.trigger('click')
     await flushPromises()

@@ -199,6 +199,7 @@ describe('RelatedBoardCell', () => {
       ['sectors:view'],
     )
     expect(allowed.get('a').attributes('href')).toBe('/sectors/%E6%A6%82%E5%BF%B5%2FAI')
+    expect(allowed.getComponent(ElTagStub).props('type')).toBe('primary')
 
     const system = mountCell({ summary: summary('medium'), boardType: 'industry' }, 'system')
     expect(system.find('a').exists()).toBe(true)
@@ -237,6 +238,7 @@ describe('RelatedBoardCell', () => {
     )
 
     expect(wrapper.find('a').exists()).toBe(false)
+    expect(wrapper.getComponent(ElTagStub).props('type')).toBe('info')
     expect(wrapper.get('.related-board-cell__name').attributes('tabindex')).toBe('0')
     expect(wrapper.text()).toContain('银行')
   })

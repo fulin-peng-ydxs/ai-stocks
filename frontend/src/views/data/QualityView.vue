@@ -572,9 +572,9 @@ const menuPageTitle = useMenuPageTitle()
             一键标记正常
           </el-button>
         </AppActionHint>
-        <el-button v-permission="'data-task:manage'" type="primary" plain
+        <el-button v-permission="'data-task:manage'" type="primary"
                    :loading="verifyRunning" :disabled="verifyRunning" @click="runVerify">立即质检</el-button>
-        <el-button v-permission="'data-task:manage'" type="success" plain :loading="checkupRunning" @click="runCheckup">结构体检</el-button>
+        <el-button v-permission="'data-task:manage'" :loading="checkupRunning" @click="runCheckup">结构体检</el-button>
         <el-button :loading="loading" @click="load">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
@@ -815,5 +815,5 @@ const menuPageTitle = useMenuPageTitle()
 .ignore-scope-group :deep(.el-radio__label) { display: flex; flex-direction: column; gap: var(--app-space-1); white-space: normal; }
 .ignore-option-title { color: var(--el-text-color-primary); font-weight: var(--app-font-weight-section); }
 .ignore-option-note { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); line-height: var(--app-line-height-comfy); }
-:deep(.row-done) { opacity: 0.55; }
+:deep(.row-done > td.el-table__cell) { background: var(--app-section-bg); }
 </style>

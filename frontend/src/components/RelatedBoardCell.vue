@@ -58,10 +58,10 @@ function formatCorrelation(value: number): string {
   >
     <template #reference>
       <span class="app-table-tag-shell related-board-cell__tag">
-        <el-tag size="small" effect="plain">
+        <el-tag size="small" effect="plain" :type="canNavigate ? 'primary' : 'info'">
           <RouterLink
             v-if="canNavigate"
-            class="related-board-cell__name related-board-cell__name--link"
+            class="related-board-cell__name app-interaction-link app-interaction-link--primary"
             :to="sectorLocation"
             :data-testid="testId"
             @click.stop
@@ -129,26 +129,20 @@ function formatCorrelation(value: number): string {
   display: inline-block;
   max-width: 100%;
   overflow: hidden;
-  color: var(--el-text-color-regular);
   line-height: var(--app-line-height-table);
   text-overflow: ellipsis;
   vertical-align: middle;
   white-space: nowrap;
 }
 
+.related-board-cell__name:not(.app-interaction-link) {
+  color: var(--el-text-color-regular);
+}
+
 .related-board-cell__name:focus-visible {
   border-radius: var(--el-border-radius-small);
   outline: var(--app-focus-ring);
   outline-offset: 2px;
-}
-
-.related-board-cell__name--link {
-  color: var(--el-color-primary);
-  text-decoration: none;
-}
-
-.related-board-cell__name--link:hover {
-  text-decoration: underline;
 }
 
 .related-board-cell__tag {

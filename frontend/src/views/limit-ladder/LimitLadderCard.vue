@@ -100,6 +100,7 @@ function selectCard(): void {
       <span v-if="stock.latest_related_concept" class="limit-ladder-card__concept">
         <RouterLink
           v-if="canViewSectors"
+          class="app-interaction-link app-interaction-link--primary"
           :to="relatedLocation"
           :aria-label="`进入${stock.latest_related_concept.board_name}板块行情`"
           :data-testid="`limit-ladder-related-${stock.code}`"
@@ -276,9 +277,6 @@ function selectCard(): void {
 }
 .limit-ladder-card__concept a {
   display: inline;
-  color: var(--el-color-primary);
-  text-decoration: none;
 }
-.limit-ladder-card__concept a:hover { text-decoration: underline; }
 .limit-ladder-card__empty { color: var(--app-placeholder-text); }
 </style>

@@ -77,6 +77,6 @@ function visibleItems(kind: LimitLadderHotspotType): LimitLadderHotspot[] {
 .ladder-hotspots__separator { color:var(--el-border-color-darker); }
 .ladder-hotspots__chip b { color:var(--el-text-color-secondary); font-size:var(--app-font-size-caption); font-variant-numeric:tabular-nums; }
 .ladder-hotspots__empty { color:var(--app-placeholder-text); font-size:var(--app-font-size-caption); }
-.ladder-hotspots__more { min-height:var(--app-control-height-sm); margin:0; padding:0 var(--app-space-1); border:0; background:transparent; color:var(--el-color-primary); cursor:pointer; }
+.ladder-hotspots__more { min-height:var(--app-control-height-sm); margin:0; padding:0 var(--app-space-1); }
 @container app-viewport (max-width:720px) { .ladder-hotspots__group { grid-template-columns:1fr; } }
 </style>

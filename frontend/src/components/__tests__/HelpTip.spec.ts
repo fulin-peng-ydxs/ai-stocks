@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 
 const source = readFileSync(new URL('../HelpTip.vue', import.meta.url), 'utf8')
 const style = source.match(/<style scoped>([\s\S]*?)<\/style>/)?.[1] ?? ''
+const sharedStyle = readFileSync(new URL('../../styles/global.css', import.meta.url), 'utf8')
+const sharedHelpStyle = sharedStyle.match(/html\[data-layout-preset\] \.app-interaction-help[\s\S]*?(?=\/\* 折叠标题)/)?.[0] ?? ''
 const itemSource = readFileSync(new URL('../HelpTipItem.vue', import.meta.url), 'utf8')
 const itemStyle = itemSource.match(/<style scoped>([\s\S]*?)<\/style>/)?.[1] ?? ''
 
@@ -16,11 +18,12 @@ function vueFiles(dir: string): string[] {
 
 describe('HelpTip 主题样式契约', () => {
   it('提示图标和正文只消费预设语义 token，不维护私有 hex 色板', () => {
-    expect(style).toContain('var(--app-section-bg)')
+    expect(source).toContain('app-interaction-help')
+    expect(sharedHelpStyle).toContain('var(--el-fill-color)')
     expect(style).toContain('var(--el-border-color)')
     expect(style).toContain('var(--el-text-color-regular)')
-    expect(style).toContain('var(--el-color-primary)')
-    expect(style).toContain('var(--el-color-white)')
+    expect(sharedHelpStyle).toContain('var(--el-color-primary)')
+    expect(sharedHelpStyle).toContain('var(--el-color-white)')
     expect(style).not.toMatch(/#[\da-f]{3,8}\b/i)
   })
 
@@ -28,7 +31,11 @@ describe('HelpTip 主题样式契约', () => {
     expect(source).toContain('<AppHoverInfo')
     expect(source).toContain('tabindex="0"')
     expect(source).toContain('role="button"')
-    expect(style).toContain('.help-icon:focus-visible')
+    expect(sharedHelpStyle).toContain('.app-interaction-help:focus-visible')
+    expect(sharedHelpStyle).toContain('.app-interaction-help:hover')
+    for (const file of ['../HelpHint.vue', '../data/DataMetricDetails.vue']) {
+      expect(readFileSync(new URL(file, import.meta.url), 'utf8')).toContain('app-interaction-help')
+    }
   })
 
   it('question 展示具体问题文本、warning 固定展示黄色注意项，内容统一使用点号列表', () => {

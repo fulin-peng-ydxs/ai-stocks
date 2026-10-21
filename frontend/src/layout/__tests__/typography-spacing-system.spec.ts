@@ -554,10 +554,10 @@ describe('字体与间距设计契约', () => {
     for (const text of forbidden) expect(source).not.toContain(text)
   })
 
-  it('所属板块标签只对涨跌幅使用金融色，名称保持中性', () => {
+  it('所属板块标签只对涨跌幅使用金融色，名称按导航或静态角色着色', () => {
     const source = read(join(SRC_DIR, 'components/MarketBoardTag.vue'))
 
-    expect(source).toContain('--el-tag-text-color: var(--el-text-color-regular)')
+    expect(source).toContain(':type="to ? \'primary\' : \'info\'"')
     expect(source).toContain('.market-board-tag.is-up .market-board-tag__pct')
     expect(source).toContain('.market-board-tag.is-down .market-board-tag__pct')
     expect(source).not.toMatch(/\.market-board-tag\.is-(?:up|down)\s*\{[^}]*--el-tag-text-color/s)

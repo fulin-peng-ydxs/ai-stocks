@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
-import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import { usePageShortcuts } from '@/composables/usePageShortcuts'
@@ -543,7 +542,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           <div class="cfg-actions">
             <el-button v-permission="'training:start'" type="primary" size="large" :loading="loading" @click="start">开始训练</el-button>
             <AppFormHelp>回合数、连续交易日、初始资金等默认值可在右上角
-              <b class="hl" role="button" tabindex="0" v-keyboard-activate @click="settingsOpen = true">设置</b> 中调整</AppFormHelp>
+              <el-button class="hl" link type="primary" @click="settingsOpen = true">设置</el-button> 中调整</AppFormHelp>
           </div>
         </el-card>
 
@@ -662,7 +661,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           </h2>
           <p class="page-subtitle app-inline-info">
             <span>回合 {{ view!.cur_round + 1 }}/{{ view!.n_rounds }} · 第 {{ round.cursor_idx + 1 }}/{{ round.window_days }} 个交易日 · 盲测中</span>
-            <el-tag v-if="round.board" size="small" effect="plain">{{ round.board }}</el-tag>
+            <el-tag type="info" v-if="round.board" size="small" effect="plain">{{ round.board }}</el-tag>
           </p>
         </div>
         <div class="page-head-actions">
@@ -737,30 +736,30 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
               <span class="hint" v-if="!isAmount">
                 约需 ¥{{ formatMoney(estCost, { digits: 0, empty: '--' }) }} · 最多可买
                 <AppHoverInfo content="点击填入全仓">
-                  <b tabindex="0" class="hl" role="button" @click="fillBuyMax" v-keyboard-activate>{{ maxBuyHands }}</b>
+                  <el-button class="hl" link type="primary" @click="fillBuyMax">{{ maxBuyHands }}</el-button>
                 </AppHoverInfo> 手
               </span>
               <span class="hint" v-else>
                 可用资金 <AppHoverInfo content="点击全额填入">
-                       <b tabindex="0" class="hl" role="button" @click="fillBuyMax" v-keyboard-activate>¥{{ formatMoney(cash, { digits: 0, empty: '--' }) }}</b>
+                       <el-button class="hl" link type="primary" @click="fillBuyMax">{{ `¥${formatMoney(cash, { digits: 0, empty: '--' })}` }}</el-button>
                      </AppHoverInfo> · 本单 ≈ {{ orderHands }} 手
               </span>
             </div>
 
             <div class="trade-row">
               <span class="side-tag buy">买入</span>
-              <el-button size="small" type="danger" plain :disabled="maxBuyHands < 1" @click="buyAll">全仓</el-button>
-              <el-button size="small" type="danger" plain :disabled="halfBuyHands < 1" @click="buyHalf">半仓</el-button>
+              <el-button size="small" plain :disabled="maxBuyHands < 1" @click="buyAll">全仓</el-button>
+              <el-button size="small" plain :disabled="halfBuyHands < 1" @click="buyHalf">半仓</el-button>
               <el-button v-for="p in activePresets" :key="'b' + p" size="small" plain :disabled="buyPresetDisabled(p)" @click="buyPreset(p)">{{ presetLabel(p) }}</el-button>
-              <el-button type="danger" :disabled="orderHands < 1 || maxBuyHands < 1" :loading="actionPending" aria-keyshortcuts="B" @click="doBuy">买入当前量 (B)</el-button>
+              <el-button type="primary" plain :disabled="orderHands < 1 || maxBuyHands < 1" :loading="actionPending" aria-keyshortcuts="B" @click="doBuy">买入当前量 (B)</el-button>
             </div>
 
-            <div class="trade-row" :class="{ disabled: posHands < 1 }">
+            <div class="trade-row">
               <span class="side-tag sell">卖出</span>
-              <el-button size="small" type="success" plain :disabled="posHands < 1" @click="sellAll">全部</el-button>
-              <el-button size="small" type="success" plain :disabled="halfPosHands < 1" @click="sellHalf">半仓</el-button>
+              <el-button size="small" plain :disabled="posHands < 1" @click="sellAll">全部</el-button>
+              <el-button size="small" plain :disabled="halfPosHands < 1" @click="sellHalf">半仓</el-button>
               <el-button v-for="p in activePresets" :key="'s' + p" size="small" plain :disabled="posHands < 1" @click="sellPreset(p)">{{ presetLabel(p) }}</el-button>
-              <el-button type="success" :disabled="posHands < 1 || orderHands < 1" :loading="actionPending" aria-keyshortcuts="S" @click="doSell">卖出当前量 (S)</el-button>
+              <el-button type="primary" plain :disabled="posHands < 1 || orderHands < 1" :loading="actionPending" aria-keyshortcuts="S" @click="doSell">卖出当前量 (S)</el-button>
             </div>
 
             <div class="ops">
@@ -862,7 +861,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           <template #header>
             <div class="round-head">
               <span class="rname app-inline-info"><span>回合 {{ rd.seq + 1 }} · {{ rd.name }} <span class="muted">{{ rd.code }}</span></span>
-                <el-tag v-if="rd.board" size="small" effect="plain">{{ rd.board }}</el-tag>
+                <el-tag type="info" v-if="rd.board" size="small" effect="plain">{{ rd.board }}</el-tag>
               </span>
               <span class="muted">{{ rd.start_date }} ~ {{ rd.end_date }}</span>
               <span class="round-ret">你 <b :class="(rd.round_return ?? 0) >= 0 ? 'up' : 'down'">{{ pct(rd.round_return) }}</b> · 满仓持有 <b :class="(rd.benchmark_return ?? 0) >= 0 ? 'up' : 'down'">{{ pct(rd.benchmark_return) }}</b> · 回撤 <b class="down">{{ pct(rd.max_drawdown) }}</b></span>
@@ -1045,14 +1044,12 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 .ops .hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; }
 .ops .last-tip { color: var(--el-color-warning); font-size: var(--app-font-size-table); }
 /* 预判高亮数字（可点填入） */
-.hl { color: var(--el-color-primary); font-weight: var(--app-font-weight-strong); font-size: var(--app-font-size-section-title); padding: 0 3px; border-radius: 4px; cursor: pointer; transition: background .15s; }
-.hl:hover { background: var(--el-color-primary-light-9); text-decoration: underline; }
+.hl { font-weight: var(--app-font-weight-strong); font-size: var(--app-font-size-section-title); padding: 0 3px; border-radius: 4px; }
 /* 买入/卖出快捷行 */
 .trade-row { display: flex; align-items: center; gap: var(--app-space-2); flex-wrap: wrap; }
-.trade-row.disabled { opacity: .55; }
 .side-tag { font-size: var(--app-font-size-table); font-weight: var(--app-font-weight-strong); width: 40px; }
-.side-tag.buy { color: var(--el-color-danger); }
-.side-tag.sell { color: var(--el-color-success); }
+.side-tag.buy { color: var(--market-up-color); }
+.side-tag.sell { color: var(--market-down-color); }
 .trades-card { flex: 1 1 auto; min-height: 160px; display: flex; flex-direction: column; }
 .trades-card :deep(.el-card__body) { flex: 1; min-height: 0; }
 

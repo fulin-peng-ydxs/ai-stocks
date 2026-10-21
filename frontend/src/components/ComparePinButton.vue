@@ -22,6 +22,7 @@ const emit = defineEmits<{
   <AppIconButton
     class="compare-pin-button"
     :class="{ 'compare-pin-button--active': active }"
+    :aria-pressed="active"
     :label="label"
     :disabled="disabled"
     :data-testid="testId"
@@ -31,10 +32,3 @@ const emit = defineEmits<{
     <el-icon><TrendCharts /></el-icon>
   </AppIconButton>
 </template>
-
-<style scoped>
-.compare-pin-button--active {
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-}
-</style>

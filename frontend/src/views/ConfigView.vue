@@ -2,7 +2,6 @@
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
-import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppHoverInfo from '@/components/AppHoverInfo'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -1701,7 +1700,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <div class="ed-head app-cluster-md">
               <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
               <AppHoverInfo v-if="curVersion && !isNew" content="点击查看历史版本">
-                <span tabindex="0" class="ver-badge" role="button" @click="openScoreVersions" v-keyboard-activate>v{{ curVersion }}</span>
+                <el-button class="ver-badge" text bg type="primary" @click="openScoreVersions">v{{ curVersion }}</el-button>
               </AppHoverInfo>
               <AssetVisibilityActions
                 v-if="!isNew"
@@ -2013,7 +2012,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           </AppTableColumn>
           <AppTableColumn prop="layerLabel" label="业务层级" sortable="custom">
             <template #default="{ row }">
-              <el-tag size="small" effect="plain">{{ row.layerLabel }}</el-tag>
+              <el-tag type="info" size="small" effect="plain">{{ row.layerLabel }}</el-tag>
               <div v-if="row.parent_key" class="tip">属于 {{ row.parentName }} · {{ formatPresetParams(row.preset_params) }}</div>
             </template>
           </AppTableColumn>
@@ -2056,7 +2055,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           </AppTableColumn>
           <AppTableColumn label="计算周期">
             <template #default="{ row }">
-              <el-tag
+              <el-tag type="info"
                 v-if="row.calculationPeriodLabel"
                 size="small"
                 effect="plain"
@@ -2124,7 +2123,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <div class="ed-head app-cluster-md">
               <el-input v-model="tEditName" :disabled="tReadonly" placeholder="方案名称" style="width: 190px" />
               <AppHoverInfo v-if="tCurVersion && !tIsNew" content="点击查看历史版本">
-                <span tabindex="0" class="ver-badge" role="button" @click="openTradeVersions" v-keyboard-activate>v{{ tCurVersion }}</span>
+                <el-button class="ver-badge" text bg type="primary" @click="openTradeVersions">v{{ tCurVersion }}</el-button>
               </AppHoverInfo>
               <AssetVisibilityActions
                 v-if="!tIsNew"
@@ -2486,7 +2485,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               />
             </el-form-item>
             <el-form-item label="计算周期">
-              <el-tag
+              <el-tag type="info"
                 size="small"
                 effect="plain"
                 data-testid="indicator-definition-calculation-period"
@@ -2702,16 +2701,13 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 }
 .ver-badge {
   font-size: var(--app-font-size-caption);
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
+  height: auto;
+  min-height: 0;
   border-radius: 10px;
   padding: 1px 8px;
   font-weight: var(--app-font-weight-section);
   cursor: pointer;
   user-select: none;
-}
-.ver-badge:hover {
-  background: var(--el-color-primary-light-7);
 }
 .mono {
   font-family: var(--app-font-family-mono);

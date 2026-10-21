@@ -1264,7 +1264,7 @@ onBeforeUnmount(() => {
                   :style="stockGroupTagStyle(g.color)"
                   @close.stop="removeSelectedGroup(g.id)"
                 >{{ g.name }}</el-tag>
-                <el-tag v-if="hiddenSelectedGroupCount" class="group-select-tag more" size="small">
+                <el-tag type="info" v-if="hiddenSelectedGroupCount" class="group-select-tag more" size="small">
                   +{{ hiddenSelectedGroupCount }}
                 </el-tag>
               </template>

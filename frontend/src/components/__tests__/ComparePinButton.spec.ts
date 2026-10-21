@@ -11,6 +11,7 @@ describe('ComparePinButton', () => {
     })
 
     expect(wrapper.classes()).toContain('compare-pin-button--active')
+    expect(wrapper.get('button').attributes('aria-pressed')).toBe('true')
     expect(wrapper.get('button').attributes('aria-label')).toBe('移出走势对比：测试标的')
     await wrapper.get('button').trigger('click')
     expect(wrapper.emitted('toggle')).toHaveLength(1)

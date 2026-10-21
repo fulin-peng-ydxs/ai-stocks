@@ -55,5 +55,6 @@ describe('StockGroupFavoriteButton', () => {
     expect(stockGroupApi.removeMembers).toHaveBeenCalledWith('grp-default', ['000001.SZ'])
     expect(wrapper.emitted('changed')).toEqual([[false]])
     expect(wrapper.classes()).toContain('stock-group-favorite-button--active')
+    expect(wrapper.get('button').attributes('aria-pressed')).toBe('true')
   })
 })

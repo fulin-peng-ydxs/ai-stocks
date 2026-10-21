@@ -386,7 +386,7 @@ const menuPageTitle = useMenuPageTitle()
               <AppTableColumn label="已开放 Web 配置（可覆盖范围）">
                 <template #default="{ row }">
                   <div v-if="row.configurableFields.length" class="field-chips">
-                    <el-tag v-for="f in row.configurableFields" :key="f.key" size="small" effect="plain">
+                    <el-tag type="info" v-for="f in row.configurableFields" :key="f.key" size="small" effect="plain">
                       {{ f.label }}（{{ f.layers }}）
                     </el-tag>
                   </div>
@@ -465,7 +465,7 @@ const menuPageTitle = useMenuPageTitle()
           <div class="detail-block">
             <div class="db-title">专属特性</div>
             <div class="chip-row">
-              <el-tag v-for="c in selected.configCapabilities" :key="c" size="small" effect="plain">{{ c }}</el-tag>
+              <el-tag type="info" v-for="c in selected.configCapabilities" :key="c" size="small" effect="plain">{{ c }}</el-tag>
               <span v-if="!selected.configCapabilities.length" class="muted">—</span>
             </div>
           </div>

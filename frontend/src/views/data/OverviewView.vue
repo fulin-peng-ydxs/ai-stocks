@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { enumText } from '@/utils/displayText'
+import { ArrowRight } from '@element-plus/icons-vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -882,7 +883,7 @@ const menuPageTitle = useMenuPageTitle()
                 </AppTableColumn>
                 <AppTableColumn v-if="assetMode === 'all' && assetColumnVisible('database')" label="数据库" role="status">
                   <template #default="{ row }">
-                    <el-tag size="small" effect="plain">{{ databaseLabel(row.database) }}</el-tag>
+                    <el-tag type="info" size="small" effect="plain">{{ databaseLabel(row.database) }}</el-tag>
                   </template>
                 </AppTableColumn>
                 <AppTableColumn v-if="assetColumnVisible('name')" label="中文名" prop="name_cn" />
@@ -1162,7 +1163,7 @@ const menuPageTitle = useMenuPageTitle()
                           <span class="issue-tag">{{ item.label }}</span>
                           <span class="issue-hint">{{ item.hint }}</span>
                         </span>
-                        <el-button v-if="ISSUE_TYPE_LABEL[item.key]" link type="primary" @click="gotoQuality(undefined, item.key)">查看 {{ item.count }} 项 →</el-button>
+                        <el-button v-if="ISSUE_TYPE_LABEL[item.key]" link type="primary" @click="gotoQuality(undefined, item.key)">查看 {{ item.count }} 项<el-icon class="el-icon--right"><ArrowRight /></el-icon></el-button>
                         <span v-else class="hint">{{ item.count }} 项</span>
                       </div>
                     </div>

@@ -1158,6 +1158,7 @@ const menuPageTitle = useMenuPageTitle()
                     v-permission="'sector-watchlist:update'"
                     class="watchlist-button"
                     :class="{ 'watchlist-button--active': isWatchlisted(row.board_code) }"
+                    :aria-pressed="isWatchlisted(row.board_code)"
                     :label="`${isWatchlisted(row.board_code) ? '移出' : '加入'}板块自选：${row.name}`"
                     :loading="isWatchlistBusy(row.board_code)"
                     :data-testid="`sectors-watchlist-${row.board_code}`"
@@ -1551,12 +1552,6 @@ const menuPageTitle = useMenuPageTitle()
   align-items: center;
   gap: var(--app-space-2);
   min-width: 0;
-}
-.watchlist-button {
-  color: var(--el-text-color-placeholder);
-}
-.watchlist-button--active {
-  color: var(--el-color-primary);
 }
 :deep(.el-table__row.sector-row--unavailable > td.el-table__cell) {
   background: var(--el-fill-color-extra-light);

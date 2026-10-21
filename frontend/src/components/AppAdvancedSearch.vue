@@ -74,7 +74,7 @@ function toggle(): void {
     </AppScrollArea>
     <div v-if="!expanded && summaries.length" class="app-advanced-search__summary" aria-label="生效的高级搜索条件">
       <span>高级条件：</span>
-      <el-tag v-for="field in summaries.slice(0, 3)" :key="field.key" :closable="!!states[field.key].clear" @close="states[field.key].clear?.()">
+      <el-tag type="info" v-for="field in summaries.slice(0, 3)" :key="field.key" :closable="!!states[field.key].clear" @close="states[field.key].clear?.()">
         <el-button link @click="focusField(field.key)">{{ field.label }}：{{ field.text }}</el-button>
       </el-tag>
       <el-button v-if="summaries.length > 3" link @click="expanded = true">其余 {{ summaries.length - 3 }} 项</el-button>

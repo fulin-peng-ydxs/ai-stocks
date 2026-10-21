@@ -33,9 +33,10 @@ const tagClass = computed(() => ({
   <component
     :is="to ? RouterLink : 'span'"
     class="market-board-tag__link"
+    :class="to ? 'app-interaction-link app-interaction-link--primary' : undefined"
     :to="to"
   >
-    <el-tag size="default" effect="plain" class="market-board-tag" :class="tagClass">
+    <el-tag size="default" effect="plain" :type="to ? 'primary' : 'info'" class="market-board-tag" :class="tagClass">
       <span class="market-board-tag__name">{{ name }}</span>
       <span class="market-board-tag__pct">{{ pctText }}</span>
       <span v-if="related && showRelatedLabel" class="market-board-tag__badge">最相关</span>
@@ -53,7 +54,6 @@ const tagClass = computed(() => ({
 
 .market-board-tag {
   max-width: 100%;
-  --el-tag-text-color: var(--el-text-color-regular);
 }
 
 .market-board-tag :deep(.el-tag__content) {
@@ -65,10 +65,6 @@ const tagClass = computed(() => ({
 
 .market-board-tag.is-related {
   --el-tag-border-color: var(--el-color-primary);
-}
-
-.market-board-tag.is-link:hover {
-  --el-tag-bg-color: var(--el-color-primary-light-9);
 }
 
 .market-board-tag__link:focus-visible {

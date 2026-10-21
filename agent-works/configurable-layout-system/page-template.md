@@ -220,7 +220,7 @@
 | 页面消费已有字段 | 登记组件 slot 即自动继承该 kind 的适用字段；结构能力写 slot `config`，候选能力写 `componentMeta`，明确例外写 `fieldApplicability` 和原因；页面仍必须读取/应用值，并把 `useRemoteLayoutConfig.componentAllowedLayers` 传给统一抽屉。需要会话交互时走“配置默认值 → session state”，页面操作不反写默认值 | `pageRegistry.spec.ts` 自动继承、适用性、策略接线、正向消费与禁止页面直写契约，页面交互验证 |
 | 新真实复用组件 | 组件文件、DESIGN 真实复用组件清单、至少一个消费页面；需要配置化时再同步系统组件种类/字段事实源 | 组件/消费页测试、build；涉及页面布局时做关键视口 |
 | 业务域内复用组件 | 组件文件、DESIGN 真实复用组件清单、明确业务边界与消费页面；仅在需要布局配置时登记系统组件 kind | 组件/消费页测试、build、对应业务页面交互验收 |
-| 按钮 / 图标操作体系 | `global.css` 控件 token、`AppIconButton` / `AppCloseButton`、DESIGN 按钮规范；确需新增专用原生按钮时同步契约允许项和理由 | `check:close-controls`、`button-system.spec.ts`、关闭/离开拦截组件测试、build、顶栏与操作区视觉验收 |
+| 按钮 / 图标操作体系 | `buttonStates.css` 命令状态、`global.css` 链接/选择状态、`AppIconButton` / `AppCloseButton`、真实消费者与 DESIGN 按钮规范；专用原生按钮按文件和角色登记，不按页面前缀放行 | `check:close-controls`、`button-system.spec.ts`、`interaction-color-consumers.spec.ts`、受影响消费者测试、build；内置浏览器复核实际颜色、焦点、选中与禁用/加载，不能以 class 存在代替呈现 |
 | 提示 / 截断机制 | DESIGN 提示契约、AppHoverInfo / useHoverIntent、AppIconButton / AppActionHint、AppOverflowTooltipHost；涉及原文时同步专用内容来源，不恢复原生 title 自动提示 | `check:tooltips`、提示/消费者定向测试、build、实际停留/移动/点击/键盘与主题验收 |
 | 字体 / 间距体系 | `global.css` typography/spacing token、DESIGN 排版与节奏规范；新增语义层级时同步 token、文档和消费点 | 相关样式契约测试、build、关键页面视觉验收 |
 | 滚动条与滚动容器 | DESIGN「滚动条显隐」、`AppScrollArea`、公共策略/Element Plus 适配层和 `scrollbar.css`；迁移时同步真实 viewport 引用、位置恢复、主从测高、成长布局及已有断言；内部实现组件不登记假 slot | `check:scrollbars`、显隐/清理/消费者定向测试、全局变更 build；内置浏览器核对悬停、键盘、滚动、拖出与低高度，禁止新增局部显隐 E2E |
@@ -481,4 +481,4 @@ npm run scaffold-page -- --pageKey my-wizard --label "向导页" --archetype wiz
 
 ### 按钮状态维护
 
-按 [DESIGN 按钮与输入](../../DESIGN.md#按钮与输入)选择组件与角色，不在模板重复定义颜色配方。新增角色须同步其状态矩阵、共享实现及代表性消费验证；仅状态调整不新增布局 kind 或持久化字段。验收复核明暗主题、键盘焦点、加载/禁用与代表性浮层消费点。
+按 [DESIGN 按钮与输入](../../DESIGN.md#按钮与输入)选择组件与角色，不在模板重复定义颜色配方。新增角色须同步其状态矩阵、对应共享样式入口及代表性消费验证；仅状态调整不新增布局 kind 或持久化字段。验收先检查链接、命令、选择项及静态标签的角色，再追踪局部 scoped 及子文字覆盖；复核启用预设的明暗主题、键盘焦点、加载/禁用、选中与代表性浮层消费点。仅规范或源码检查通过不能声明全站呈现通过，交付须说明实际覆盖和缺口。

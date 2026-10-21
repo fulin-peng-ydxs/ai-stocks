@@ -61,7 +61,7 @@ function setCssVar(tokens: StyleTokenConfig, key: keyof StyleTokenConfig, cssNam
 }
 
 const ELEMENT_COLOR_LIGHT_LEVELS = [3, 5, 7, 8, 9] as const
-type ElementSemanticColor = 'primary' | 'success' | 'warning' | 'danger' | 'error'
+type ElementSemanticColor = 'primary' | 'success' | 'warning' | 'danger' | 'error' | 'info'
 
 function applyElementColorScale(
   root: HTMLElement,
@@ -213,6 +213,8 @@ function applyPreset(key: string) {
   applyElementColorScale(root, 'warning', t.warning, mode, t.surfaceBg)
   applyElementColorScale(root, 'danger', t.danger, mode, t.surfaceBg)
   applyElementColorScale(root, 'error', t.danger, mode, t.surfaceBg)
+  // info 是中性信息，不复用禁用弱文字或组件库默认灰色。
+  applyElementColorScale(root, 'info', t.text, mode, t.surfaceBg)
   root.style.setProperty('--el-bg-color-page', t.pageBg)
   root.style.setProperty('--el-bg-color', t.surfaceBg)
   root.style.setProperty('--el-bg-color-overlay', t.surfaceBg)

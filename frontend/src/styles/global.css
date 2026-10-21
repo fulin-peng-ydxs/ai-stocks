@@ -33,7 +33,8 @@ html.dark {
 .app-interaction-list-item:is(.active, .on, [aria-pressed='true']) {
   background: var(--app-interaction-selected-background);
 }
-.app-interaction-link { cursor: pointer; text-underline-offset: 2px; }
+.app-interaction-link { cursor: pointer; text-underline-offset: 3px; }
+html[data-layout-preset] .app-interaction-link--primary { color: var(--el-color-primary); text-decoration: none; }
 :is(.app-interaction-list-item, .app-interaction-link, .app-focus-ring):focus-visible,
 .app-interaction-list-item:has(> .app-list-item-trigger:focus-visible) {
   outline: var(--app-focus-ring);
@@ -42,7 +43,10 @@ html.dark {
 .app-interaction-list-item > .app-list-item-trigger:focus-visible { outline: none; }
 .app-interaction-list-item[aria-busy='true'] { cursor: wait; }
 .app-list-item-trigger[aria-disabled='true'] { cursor: not-allowed; }
-.app-interaction-link:not([aria-disabled='true']):focus-visible { text-decoration: underline; }
+.app-interaction-link:not(:disabled, [aria-disabled='true'], [aria-busy='true']):is(:focus-visible, :active) { text-decoration: underline; }
+.app-interaction-link:not(:disabled, [aria-disabled='true'], [aria-busy='true']):active { text-decoration-thickness: 2px; }
+html[data-layout-preset] .app-interaction-link:is(:disabled, [aria-disabled='true']) { color: var(--el-disabled-text-color); cursor: not-allowed; text-decoration: none; }
+.app-interaction-link[aria-busy='true'] { cursor: wait; text-decoration: none; }
 @media (hover: hover) and (pointer: fine) {
   .app-interaction-list-item:not(.active, .on, [aria-pressed='true'], :disabled, [aria-disabled='true'], [aria-busy='true']):hover {
     background: var(--chrome-bg-soft-hover);
@@ -56,6 +60,31 @@ html.dark {
 }
 @media (prefers-reduced-motion: reduce) {
   .app-interaction-list-item { transition: none; }
+}
+
+/* 说明触发器只解释内容，与执行命令及选择项分开。 */
+html[data-layout-preset] .app-interaction-help {
+  color: var(--el-text-color-regular);
+  background: var(--el-fill-color);
+  border-color: var(--el-border-color);
+  transition: var(--app-interaction-color-transition);
+}
+html[data-layout-preset] .app-interaction-help:focus-visible {
+  color: var(--el-color-white);
+  background: var(--el-color-primary);
+  border-color: var(--el-color-primary);
+  outline: var(--app-focus-ring);
+  outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  html[data-layout-preset] .app-interaction-help:hover {
+    color: var(--el-color-white);
+    background: var(--el-color-primary);
+    border-color: var(--el-color-primary);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-layout-preset] .app-interaction-help { transition: none; }
 }
 
 /* 折叠标题与紧凑选择共享状态；不套用命令按下类，也不产生卡片浮起。 */

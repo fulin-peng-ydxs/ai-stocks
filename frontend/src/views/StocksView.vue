@@ -1098,9 +1098,9 @@ const menuPageTitle = useMenuPageTitle()
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-          <el-tag size="small" effect="plain">建组 {{ groupDetail.group_date || '—' }}</el-tag>
+          <el-tag type="info" size="small" effect="plain">建组 {{ groupDetail.group_date || '—' }}</el-tag>
           <el-tag v-if="groupDetail.is_default" size="small" type="danger" effect="plain">默认</el-tag>
-          <el-tag size="small" effect="plain">{{ groupDetail.count }} 只</el-tag>
+          <el-tag type="info" size="small" effect="plain">{{ groupDetail.count }} 只</el-tag>
           <span class="gb-ret">整组涨幅
             <b :class="pctClass(groupDetail.avg_ret)">{{ fmtPctRatio(groupDetail.avg_ret) }}</b>
             <span class="gb-hint">（各股自加入日起·等权平均）</span>
@@ -1346,7 +1346,7 @@ const menuPageTitle = useMenuPageTitle()
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('industry')" label="行业" prop="industry" sortable="custom">
             <template #default="{ row }">
-              <el-tag v-if="row.industry" size="small" effect="plain" class="box-tag industry-tag">{{ row.industry }}</el-tag>
+              <el-tag v-if="row.industry" size="small" effect="plain" type="info" class="box-tag industry-tag">{{ row.industry }}</el-tag>
               <span v-else class="muted">—</span>
             </template>
           </AppTableColumn>

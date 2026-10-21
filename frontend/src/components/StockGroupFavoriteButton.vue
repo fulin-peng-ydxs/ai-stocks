@@ -43,6 +43,7 @@ async function toggle(): Promise<void> {
     v-permission="'stock-group:member-update'"
     class="stock-group-favorite-button"
     :class="{ 'stock-group-favorite-button--active': active }"
+    :aria-pressed="active"
     :label="`${active ? '移出' : '加入'}自选分组：${name || code}`"
     :loading="loading"
     size="xs"
@@ -51,12 +52,3 @@ async function toggle(): Promise<void> {
     <el-icon><StarFilled v-if="active" /><Star v-else /></el-icon>
   </AppIconButton>
 </template>
-
-<style scoped>
-.stock-group-favorite-button {
-  color: var(--el-text-color-placeholder);
-}
-.stock-group-favorite-button--active {
-  color: var(--el-color-primary);
-}
-</style>
