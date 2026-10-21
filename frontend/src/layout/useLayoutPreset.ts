@@ -289,7 +289,8 @@ function applyPreset(key: string) {
   root.style.setProperty('--page-settings-trigger-hover-text', t.textStrong)
   root.style.setProperty('--page-settings-trigger-hover-bg', t.surfaceHover)
   root.style.setProperty('--page-settings-seg-bg', t.surfaceHover)
-  root.style.setProperty('--page-settings-seg-hover-bg', t.activeBg)
+  // 分段底板本身已使用 surfaceHover，悬浮面须与其区分，不能复用普通按钮 hover。
+  root.style.setProperty('--page-settings-seg-hover-bg', blendHex(t.textStrong, t.surfaceHover, 0.04))
   root.style.setProperty(
     '--page-settings-seg-active-bg',
     mode === 'dark' ? blendHex(t.activeBg, t.textStrong, 0.88) : t.surfaceBg,

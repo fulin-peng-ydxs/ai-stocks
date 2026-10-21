@@ -747,7 +747,7 @@ body > .el-notification {
   --page-settings-trigger-hover-text: #17181c;
   --page-settings-trigger-hover-bg: #f3f3f3;
   --page-settings-seg-bg: #f3f3f3;
-  --page-settings-seg-hover-bg: #efeff0;
+  --page-settings-seg-hover-bg: #eaeaea;
   --page-settings-seg-active-bg: #ffffff;
   --page-settings-seg-active-border: #c9c9c9;
   --page-settings-switch-off: #c9c9c9;
@@ -965,7 +965,7 @@ html.dark {
   --page-settings-trigger-hover-text: #f4f4f4;
   --page-settings-trigger-hover-bg: #292929;
   --page-settings-seg-bg: #292929;
-  --page-settings-seg-hover-bg: #303030;
+  --page-settings-seg-hover-bg: #313131;
   --page-settings-seg-active-bg: #484848;
   --page-settings-seg-active-border: #545454;
   --page-settings-switch-off: #545454;

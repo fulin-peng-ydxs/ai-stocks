@@ -4,8 +4,22 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import PageSegmented from '../PageSegmented.vue'
+import postcss from 'postcss'
+import { LAYOUT_PRESETS } from '@/layout/presets'
+import { blendHex } from '@/layout/themeSurfaces'
 
 const source = readFileSync(resolve(process.cwd(), 'src/components/PageSegmented.vue'), 'utf8')
+
+const style = postcss.parse(source.match(/<style scoped>([\s\S]*?)<\/style>/)?.[1] ?? '')
+function backgroundOf(selector: string): string | undefined {
+  let value: string | undefined
+  style.walkRules((rule) => {
+    if (rule.selectors.includes(selector)) {
+      rule.walkDecls('background', (decl) => { value = decl.value })
+    }
+  })
+  return value
+}
 
 describe('PageSegmented', () => {
   it('等分选项允许在窄容器内收缩且长标签省略，不撑破设置抽屉', () => {
@@ -14,6 +28,42 @@ describe('PageSegmented', () => {
     expect(source).toMatch(/\.seg-label\s*\{[\s\S]*?overflow:\s*hidden[\s\S]*?text-overflow:\s*ellipsis/)
     expect(source).toContain('data-overflow-tooltip-delegate')
     expect(source).toContain('data-overflow-tooltip-target')
+  })
+
+  it('中性未选项消费分段专用悬浮面，并且仅精细指针启用、不覆盖选中或禁用', () => {
+    const selector = '.seg-btn:hover:not(.active, :disabled)'
+    expect(backgroundOf(selector)).toBe('var(--page-settings-seg-hover-bg)')
+    let media = ''
+    style.walkRules((rule) => {
+      if (rule.selectors.includes(selector) && rule.parent?.type === 'atrule') media = rule.parent.params
+    })
+    expect(media).toBe('(hover: hover) and (pointer: fine)')
+    expect(backgroundOf('.page-segmented--primary .seg-btn:hover:not(.active, :disabled)'))
+      .toBe('var(--app-button-primary-hover-bg)')
+  })
+
+  it('明暗首帧悬浮色与运行时配方同源，且与底板及按下色不同', () => {
+    const globalCss = postcss.parse(readFileSync(resolve(process.cwd(), 'src/styles/global.css'), 'utf8'))
+    for (const [mode, selector] of [['light', ':root'], ['dark', 'html.dark']] as const) {
+      const tokens = LAYOUT_PRESETS.balanced.tokens[mode]
+      let fallback: string | undefined
+      globalCss.walkRules((rule) => {
+        if (rule.selectors.includes(selector)) {
+          rule.walkDecls('--page-settings-seg-hover-bg', (decl) => { fallback = decl.value })
+        }
+      })
+      expect(fallback, mode).toBe(blendHex(tokens.textStrong, tokens.surfaceHover, 0.04))
+      expect(fallback, mode).not.toBe(tokens.surfaceHover)
+      expect(fallback, mode).not.toBe(blendHex(tokens.textStrong, tokens.surfaceHover, 0.08))
+    }
+  })
+
+  it('两种 tone 的下划线页签在悬浮和按下时始终透明', () => {
+    for (const prefix of ['.page-segmented--tabs', '.page-segmented--tabs.page-segmented--primary']) {
+      expect(backgroundOf(`${prefix} .seg-btn:hover:not(.active, :disabled)`)).toBe('transparent')
+      expect(backgroundOf(`${prefix} .seg-btn:active:not(:disabled)`)).toBe('transparent')
+      expect(backgroundOf(`${prefix} .seg-btn.active`)).toBe('transparent')
+    }
   })
 
   it('supports a compact size for page control rows', () => {

@@ -110,7 +110,7 @@ function optionTestId(value: OptionValue): string | undefined {
 }
 @media (hover: hover) and (pointer: fine) {
   .seg-btn:hover:not(.active, :disabled) {
-    background: var(--app-button-neutral-hover-bg);
+    background: var(--page-settings-seg-hover-bg);
     color: var(--page-settings-text);
   }
 }
@@ -229,7 +229,17 @@ function optionTestId(value: OptionValue): string | undefined {
   color: var(--el-text-color-primary);
   font-weight: var(--app-font-weight-section);
 }
+/* tabs 的按下态也保持无底板，覆盖 contained/primary 的按下配方。 */
+.page-segmented--tabs .seg-btn:active:not(:disabled),
+.page-segmented--tabs.page-segmented--primary .seg-btn:active:not(:disabled) {
+  background: transparent;
+  color: var(--el-text-color-primary);
+}
 .page-segmented--tabs .seg-btn:focus-visible {
   outline-offset: -1px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .seg-btn,
+  .seg-indicator { transition: none; }
 }
 </style>

@@ -91,7 +91,9 @@ describe('视觉预设运行时 Element Plus 色阶', () => {
         expect(document.documentElement.style.getPropertyValue('--app-muted-text'))
           .toBe(tokens.textMuted)
         expect(document.documentElement.style.getPropertyValue('--page-settings-seg-hover-bg'))
-          .toBe(tokens.activeBg)
+          .toBe(blendHex(tokens.textStrong, tokens.surfaceHover, 0.04))
+        expect(document.documentElement.style.getPropertyValue('--page-settings-seg-hover-bg'))
+          .not.toBe(tokens.surfaceHover)
         expect(document.documentElement.style.getPropertyValue('--page-settings-seg-active-bg'))
           .toBe(mode === 'dark'
             ? blendHex(tokens.activeBg, tokens.textStrong, 0.88)

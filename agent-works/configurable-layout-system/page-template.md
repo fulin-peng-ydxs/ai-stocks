@@ -221,6 +221,7 @@
 | 新真实复用组件 | 组件文件、DESIGN 真实复用组件清单、至少一个消费页面；需要配置化时再同步系统组件种类/字段事实源 | 组件/消费页测试、build；涉及页面布局时做关键视口 |
 | 业务域内复用组件 | 组件文件、DESIGN 真实复用组件清单、明确业务边界与消费页面；仅在需要布局配置时登记系统组件 kind | 组件/消费页测试、build、对应业务页面交互验收 |
 | 按钮 / 图标操作体系 | `buttonStates.css` 命令状态、`global.css` 链接/选择状态、`AppIconButton` / `AppCloseButton`、真实消费者与 DESIGN 按钮规范；专用原生按钮按文件和角色登记，不按页面前缀放行 | `check:close-controls`、`button-system.spec.ts`、`interaction-color-consumers.spec.ts`、受影响消费者测试、build；内置浏览器复核实际颜色、焦点、选中与禁用/加载，不能以 class 存在代替呈现 |
+| 分段选择状态 | `PageSegmented`、`useLayoutPreset.ts` 分段变量及 `global.css` 兜底、DESIGN 分段矩阵；复用共享控件，不逐页覆盖 | `PageSegmented.spec.ts`、`useLayoutPreset.spec.ts`、全局资源变化时 build；分别检查 contained neutral/primary 与 tabs、明暗底板/悬浮/按下差异及选中/禁用/焦点 |
 | 提示 / 截断机制 | DESIGN 提示契约、AppHoverInfo / useHoverIntent、AppIconButton / AppActionHint、AppOverflowTooltipHost；涉及原文时同步专用内容来源，不恢复原生 title 自动提示 | `check:tooltips`、提示/消费者定向测试、build、实际停留/移动/点击/键盘与主题验收 |
 | 字体 / 间距体系 | `global.css` typography/spacing token、DESIGN 排版与节奏规范；新增语义层级时同步 token、文档和消费点 | 相关样式契约测试、build、关键页面视觉验收 |
 | 滚动条与滚动容器 | DESIGN「滚动条显隐」、`AppScrollArea`、公共策略/Element Plus 适配层和 `scrollbar.css`；迁移时同步真实 viewport 引用、位置恢复、主从测高、成长布局及已有断言；内部实现组件不登记假 slot | `check:scrollbars`、显隐/清理/消费者定向测试、全局变更 build；内置浏览器核对悬停、键盘、滚动、拖出与低高度，禁止新增局部显隐 E2E |
@@ -471,7 +472,7 @@ npm run scaffold-page -- --pageKey my-wizard --label "向导页" --archetype wiz
 
 消费页向 `LayoutHost` 传递 `:component-value-of="componentValueOf"`，组件通过宿主读取已合并的组件配置（结构布局 `effective` 不包含组件覆盖值），按同名字段插槽承载原有控件。`states` 提供各字段当前值、选项中文映射、实际限制判定、清除回调、业务适用性与错误；`context` 承载固定工作上下文，`commands` 承载重置和末位排序。条件变化仍由页面原有领域事件负责，不能因收展或替换常显项额外查询。全选、false 表示排除某类内容等特殊语义必须显式声明 `active` 和 `summary`，不能仅凭值是否为空判断。
 
-页面设置抽屉沿用 `ComponentAutoSettings`，保存回调接入 `saveRemoteUserConfig`；运行时权限候选由公共组件共享给设置消费，禁止页面复制配置编辑器。临时展开状态不保存为长期偏好。测试覆盖阈值、动态权限回退、控件实例保留、隐藏限制摘要、字段清除、错误聚焦与保存失败重试；维护入口见 DESIGN「列表高级搜索」。
+页面设置抽屉沿用 `ComponentAutoSettings`，保存回调接入 `saveRemoteUserConfig`；运行时权限候选由公共组件共享给设置消费，禁止页面复制配置编辑器。临时展开状态不保存为长期偏好。测试覆盖阈值、动态权限回退、控件实例保留、隐藏限制摘要的状态角色及明暗呈现、字段定位/清除、错误聚焦与保存失败重试；维护入口见 DESIGN「列表高级搜索」。
 
 ### 键盘接入维护检查
 

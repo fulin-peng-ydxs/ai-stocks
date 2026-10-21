@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h, nextTick, reactive } from 'vue'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElTag } from 'element-plus'
 import AppAdvancedSearch from '../AppAdvancedSearch.vue'
 import { SEARCH_COMPONENT_VALUE, SEARCH_RUNTIME_META } from '@/layout/searchContext'
 import { useLayoutConfig } from '@/layout/useLayoutConfig'
@@ -77,8 +77,10 @@ describe('列表高级搜索', () => {
     wrapper.unmount()
   })
 
-  it('摘要可定位并聚焦，清除只执行对应字段的领域回调', async () => {
+  it('生效摘要采用主题浅底，文字可定位聚焦，清除只执行对应字段回调', async () => {
     const { wrapper, states } = setup()
+    expect(wrapper.getComponent(ElTag).props()).toMatchObject({ type: 'primary', effect: 'light' })
+    expect(wrapper.get('.app-advanced-search__summary .el-button').attributes('disabled')).toBeUndefined()
     await wrapper.get('.app-advanced-search__summary .el-button').trigger('click')
     expect(document.activeElement).toBe(wrapper.get('[data-input]').element)
     await wrapper.get('[data-search-toggle]').trigger('click')
