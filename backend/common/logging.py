@@ -1,6 +1,6 @@
 """结构化日志（需求 F-CFG-03 关键流程有日志）。
 
-统一入口 get_logger(name)，输出到控制台 + 文件（按天滚动可后续加）。
+统一入口 get_logger(name)，服务输出由启动脚本统一收集、归档和清理。
 日志格式含时间/级别/模块/消息，便于排查数据更新/回测耗时与异常。
 """
 
@@ -30,9 +30,10 @@ def _configure_root(log_dir: Path | None = None, level: int = logging.INFO) -> N
     sh.setFormatter(formatter)
     root.addHandler(sh)
 
-    # 文件日志默认关闭：start.sh 已把 stdout/stderr 汇总到 logs/backend.log。
-    # 如需应用内另写 ai_stocks.log，可显式设置 AI_STOCKS_FILE_LOG=1。
-    if log_dir is not None and os.environ.get("AI_STOCKS_FILE_LOG") == "1":
+    # 脚本托管时禁止额外文件写入，避免第二份不受收集器管理的日志无限增长。
+    # 直接 CLI 的可选文件输出保持兼容；服务统一写 backend.log。
+    if (log_dir is not None and os.environ.get("AI_STOCKS_FILE_LOG") == "1"
+            and os.environ.get("AI_STOCKS_LOG_COLLECTED") != "1"):
         log_dir.mkdir(parents=True, exist_ok=True)
         fh = logging.FileHandler(log_dir / "ai_stocks.log", encoding="utf-8")
         fh.setFormatter(formatter)
@@ -50,6 +51,6 @@ def get_logger(name: str) -> logging.Logger:
             from backend.config import get_settings
 
             _configure_root(get_settings().log_path())
-        except Exception:
+        except Exception:  # noqa: BLE001 日志兜底不得阻断原始配置错误的报告
             _configure_root(None)
     return logging.getLogger(f"ai_stocks.{name}")

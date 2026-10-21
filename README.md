@@ -230,6 +230,8 @@ cp .env.local.example .env.local
 
 两个脚本的服务生命周期接口一致：`dev`(默认) / `stop` / `restart` / `status` / `logs`。后端另提供受环境守卫的 `dev-users` 与 E2E 内部 `e2e-user` 动作，确保与服务统一加载 `.env.local`。后端日志 `logs/backend.log`，前端日志 `logs/frontend.log`。
 
+文件日志按北京时间跨日或大小滚动至 `logs/archive/` 并 gzip 压缩：后端单文件 50 MiB、历史 30 天、归档总量 1 GiB；前端单文件 20 MiB、历史 7 天、每个端口归档总量 200 MiB。超过期限或容量删除最旧归档，容量限制可能使实际保留时间缩短。重启保留已有日志，`logs` 动作跨轮转持续跟踪。配置位于 `config/settings.yaml` 的 `logging` 段，修改后重启对应服务；详细生命周期与边界见 [环境配置说明](agent-works/architecture/environment-configuration.md#文件日志归档与清理)。
+
 | 角色 | 命令 | 监听 | 对外? | 热更 |
 |------|------|------|-------|------|
 | 后端 | `./start.sh`（dev，默认） | `127.0.0.1:8000` | ❌ 仅本机 | watchfiles 自动重启 |

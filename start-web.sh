@@ -23,7 +23,7 @@ cd "$(dirname "$0")"
 PORT="${WEB_PORT:-5173}"
 PY="${PYTHON:-python}"
 LOG_DIR="logs"
-# 日常服务沿用原路径；验证实例按端口隔离，避免覆盖日常服务日志和 PID。
+# 日常服务沿用原路径；验证实例按端口隔离，日志及归档、PID 各自独立。
 LOG_SUFFIX=""
 if [[ "$PORT" != "5173" ]]; then
   LOG_SUFFIX="-$PORT"
@@ -49,18 +49,15 @@ start() {
   echo "🚀 启动前端（dev / HMR，端口 ${PORT}）…"
   # 与后端启动方式一致：nohup 不能隔离命令工具退出时的进程组清理。
   "$PY" - "$PORT" "$LOG_FILE" <<'PY'
-import subprocess
 import sys
 
-with open(sys.argv[2], "wb", buffering=0) as log:
-    subprocess.Popen(
-        ["npm", "--prefix", "frontend", "run", "dev", "--", "--port", sys.argv[1], "--strictPort"],
-        stdin=subprocess.DEVNULL,
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-        close_fds=True,
-    )
+from scripts.service_logs import launch_logged_process
+
+launch_logged_process(
+    ["npm", "--prefix", "frontend", "run", "dev", "--", "--port", sys.argv[1], "--strictPort"],
+    path=sys.argv[2],
+    service="frontend",
+)
 PY
 
   # 等待端口就绪（Vite 首次冷启动可能较慢，最多 ~30s）
@@ -116,6 +113,6 @@ case "${1:-dev}" in
   stop)     stop ;;
   restart)  stop; start ;;
   status)   status ;;
-  logs)     tail -f "$LOG_FILE" ;;
+  logs)     tail -F "$LOG_FILE" ;;
   *)        echo "用法: ./start-web.sh [dev|stop|restart|status|logs]"; exit 1 ;;
 esac

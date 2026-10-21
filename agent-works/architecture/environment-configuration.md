@@ -58,7 +58,7 @@ flowchart TD
 | `AI_STOCKS_DUCKDB_READ_POOL_SIZE` | `backend/storage/duckdb_client.py::get_read_client()` | 覆盖 DuckDB 逻辑只读连接池大小 | `0..32`；缺省读 `duckdb.read_pool_size=4`，设 `0` 会回退到专用写连接串行查询 | 启动时读取，修改后重启 |
 | `AI_STOCKS_TASK_STORAGE_BACKEND` | `backend/storage/task_runtime.py` | 选择任务/日志/调度运行态存储 | `auto`（默认）只在 PG 存在 `migration.task_runtime_pg_v1` applied 标记后使用 PG；标记不可读时 fail-closed，不猜测切库；`duckdb` 仅用于已执行受控回退后的紧急切回；`postgres` 缺标记也会 fail-closed | 启动时读取，禁止运行中切换或双写 |
 | `AI_STOCKS_ENV_FILE` | `scripts/load-local-env.sh` | 覆盖后端和 Playwright 启动器要读取的变量文件路径 | 仅自动化验证变量加载器时使用；日常缺省为仓库根目录 `.env.local` | `start.sh` 及 `scripts/run-playwright.sh` 启动子进程前 |
-| `AI_STOCKS_FILE_LOG` | `backend/common/logging.py` | 额外写 `logs/ai_stocks.log` | 可选；仅值为 `1` 时开启 | 首次配置 logger 时读取；默认只由 `start.sh` 汇总 stdout/stderr 到 `logs/backend.log` |
+| `AI_STOCKS_FILE_LOG` | `backend/common/logging.py` | 直接运行 CLI 时额外写 `logs/ai_stocks.log` | 可选；仅值为 `1` 且未被日志收集器托管时开启；此兼容文件不参与服务归档 | `start.sh` 启动的服务始终只由收集器写 `logs/backend.log`，避免额外产生不受清理的副本 |
 | `PYTHON` | `start.sh` | 选择后端启动脚本使用的 Python 可执行文件 | 可选；默认 `python` | 必须在调用 `./start.sh` 前的 shell 环境中设置；当前脚本在读取 `.env.local` 前确定该值 |
 | `WEB_PORT` | `start-web.sh` | 选择 Vite dev server 端口 | 可选；默认 `5173` | 必须在调用 `./start-web.sh` 前的 shell 环境中设置；该脚本不读取 `.env.local` |
 
@@ -116,6 +116,25 @@ flowchart TD
 4. 执行 `./start.sh dev-users --list`，成功列出所需启用账号后按最小权限选择账号。若提示 `<unset>`，检查变量加载与环境配置；已经确认本地用途时补齐标记再试，不能据此直接跳过页面验收。账号缺失的维护流程见 [test-users.md](../multi-tenant-rbac/test-users.md)。
 
 运行档案仅保存恢复所需的安全字段和摘要，不是认证授权凭据；`dev` 标记也不能代替 E2E 写入授权和数据库指纹校验。
+
+### 文件日志归档与清理
+
+`start.sh` 与 `start-web.sh` 通过 `scripts/service_logs.py` 收集各自服务及子进程的 stdout/stderr，覆盖应用日志、Uvicorn、Vite 与启动异常。收集器与服务分别使用独立 session；后端原有 PID/进程组和运行档案契约不变，热重载仍共享同一输出管道，服务组退出后收集器读到 EOF 退出。每个日志路径使用文件锁保证单写入者，初始化失败时不启动业务进程。脚本托管时内部设置 `AI_STOCKS_LOG_COLLECTED=1`，阻止应用额外写一份 `ai_stocks.log`；该内部标记不需要用户配置。
+
+策略读取 YAML 基线 `logging`，遵循 `AI_STOCKS_CONFIG`，不读取 PG `app_config`。修改后须重启对应服务，不随应用热重载或 `/api/config/reload` 更新。
+
+| 配置项 | 后端 | 前端开发服务器 |
+|--------|------|----------------|
+| 当前文件 | `logs/backend.log` | `logs/frontend.log`，非 5173 实例为 `logs/frontend-{port}.log` |
+| `max_file_mb` | 50 MiB | 20 MiB |
+| `retention_days` | 30 天 | 7 天 |
+| `total_size_mb` | 1024 MiB | 200 MiB，每个端口独立计算 |
+
+- 按北京时间跨日或达到单文件大小上限滚动，归档示例为 `logs/archive/backend.2026-10-21.000001.log.gz`。同日序号递增，重启不覆盖当前文件或已有归档。字节流按大小切分，极长单行或 UTF-8 字符可能跨文件；分析此类原文时按日期和序号拼接解压内容。
+- 启动时清理过期与超容量归档；运行中每 `logging.cleanup_interval_sec` 秒检查一次（默认 300 秒），没有日志输出也检查跨日和过期。新产生输出时同步检查日期和大小。保留期按归档日期计算，删除早于“北京时间今日减保留天数”的文件；容量超限时优先删除最旧归档，因此不保证保留满上述天数。
+- 当前文件另受单文件上限约束，不计入归档总量。首次遇到旧的大文件先整体移动，压缩延后至运行期维护，避免阻塞启动握手。压缩用临时文件完成后原子替换，成功前保留原始归档；中途退出或压缩失败留下的原文在后续维护重试，未压缩原文也计入容量限制。
+- 只清理当前日志 basename 的受管归档，不删除其他端口、其他服务或未知命名文件。现有 `logs` 动作使用 `tail -F`，归档更换文件后继续跟踪。
+- 该策略只管理脚本启动的文件日志。PG 的 `task_log` 仍执行每任务 2,000 条与启动时 30 天清理，`audit_log` 仍按 `audit.retention_days` 和审计清理调度执行；浏览器控制台错误不自动采集到 Vite 日志。
 
 ### 2. YAML 基线与缓存
 

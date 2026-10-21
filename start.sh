@@ -145,24 +145,18 @@ start() {
   echo "🚀 启动后端（$mode 模式）…"
   rm -f "$RUNTIME_STATE_FILE"
   "$PY" - "$PY" "${args[@]}" "$LOG_FILE" <<'PY'
-import os
-import subprocess
 import sys
+
+from scripts.service_logs import launch_logged_process
 
 py = sys.argv[1]
 log_file = sys.argv[-1]
 cli_args = sys.argv[2:-1]
 
-log = open(log_file, "ab", buffering=0)
-proc = subprocess.Popen(
+launch_logged_process(
     [py, "-m", "backend.cli", *cli_args],
-    cwd=os.getcwd(),
-    env=os.environ.copy(),
-    stdin=subprocess.DEVNULL,
-    stdout=log,
-    stderr=subprocess.STDOUT,
-    start_new_session=True,
-    close_fds=True,
+    path=log_file,
+    service="backend",
 )
 PY
 
@@ -343,7 +337,7 @@ main() {
       ;;
     snapshot-runtime) snapshot_runtime_state "${1:-}" ;;
     restore-runtime) restore_runtime_state "${1:-}" ;;
-    logs)     tail -f "$LOG_FILE" ;;
+    logs)     tail -F "$LOG_FILE" ;;
     dev-users) "$PY" -m backend.cli dev-users "$@" ;;
     e2e-user) "$PY" -m backend.devtools.e2e_test_users "$@" ;;
     e2e-backtest-run) "$PY" -m backend.devtools.e2e_backtest_runs "$@" ;;

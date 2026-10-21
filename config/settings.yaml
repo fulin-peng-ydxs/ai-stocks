@@ -11,6 +11,18 @@ paths:
   export_dir: "data/exports"
   log_dir: "logs"
 
+# ── 前后端文件日志（启动脚本消费，修改后重启对应服务；不进入 PG 覆盖层）──
+logging:
+  cleanup_interval_sec: 300  # 无输出时也检查跨日归档和过期/容量清理
+  backend:
+    max_file_mb: 50          # 北京时间跨日或达到单文件上限时归档
+    retention_days: 30
+    total_size_mb: 1024      # gzip 归档总容量；超限优先删除最旧文件
+  frontend:
+    max_file_mb: 20
+    retention_days: 7
+    total_size_mb: 200       # 每个端口实例独立计算
+
 # ── DuckDB 进程内读并发 ──
 duckdb:
   read_pool_size: 4             # 逻辑只读连接数；环境变量设 0 可紧急退回单连接
