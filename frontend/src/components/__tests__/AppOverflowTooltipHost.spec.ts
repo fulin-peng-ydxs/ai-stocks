@@ -25,6 +25,7 @@ function appendOverflowTarget(id: string, title = '完整内容'): HTMLElement {
   target.dataset.overflowTooltipContent = title
   target.textContent = title
   target.style.textOverflow = 'ellipsis'
+  target.style.overflow = 'hidden'
   Object.defineProperty(target, 'clientWidth', { value: 40 })
   Object.defineProperty(target, 'scrollWidth', { value: 100 })
   document.body.append(target)
@@ -38,6 +39,27 @@ afterEach(() => {
 })
 
 describe('AppOverflowTooltipHost', () => {
+  it('没有裁切的内容不会在停留或键盘聚焦时弹出，真实裁切后恢复提示', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(AppOverflowTooltipHost, {
+      attachTo: document.body,
+      global: { stubs: { ElTooltip: ElTooltipStub } },
+    })
+    const target = appendOverflowTarget('visible-overflow', '完整可见的文字')
+    target.style.overflow = 'visible'
+    target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    await vi.advanceTimersByTimeAsync(300)
+    target.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('.tooltip-host').exists()).toBe(false)
+
+    target.style.overflow = 'hidden'
+    target.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+    await vi.advanceTimersByTimeAsync(300)
+    expect(wrapper.get('.tooltip-host').attributes('data-content')).toBe('完整可见的文字')
+    wrapper.unmount()
+  })
+
   it('分阶段布局后静止鼠标仍能显示；截断消失或失焦后不恢复', async () => {
     vi.useFakeTimers()
     const descriptor = Object.getOwnPropertyDescriptor(document, 'elementFromPoint')
@@ -128,6 +150,7 @@ describe('AppOverflowTooltipHost', () => {
     // 标题与摘要是独立阅读目标，不能把整行留白代理成任意一段文字。
     for (const target of [title.element, preview.element]) {
       target.style.textOverflow = 'ellipsis'
+      target.style.overflow = 'hidden'
       Object.defineProperty(target, 'clientWidth', { value: 40, configurable: true })
       Object.defineProperty(target, 'scrollWidth', { value: 200 })
     }
@@ -194,6 +217,7 @@ describe('AppOverflowTooltipHost', () => {
     const button = document.createElement('button')
     button.textContent = '用户列表：收起下级分组'
     button.style.textOverflow = 'ellipsis'
+    button.style.overflow = 'hidden'
     Object.defineProperty(button, 'clientWidth', { value: 40 })
     Object.defineProperty(button, 'scrollWidth', { value: 100 })
     document.body.append(button)
@@ -367,6 +391,7 @@ describe('AppOverflowTooltipHost', () => {
     label.dataset.overflowTooltipTarget = ''
     label.textContent = '较长的选项名称'
     label.style.textOverflow = 'ellipsis'
+    label.style.overflow = 'hidden'
     Object.defineProperty(label, 'clientWidth', { value: 40 })
     Object.defineProperty(label, 'scrollWidth', { value: 100 })
     button.append(label)

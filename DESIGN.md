@@ -638,7 +638,7 @@ Key Characteristics：
 | 需要解释的纯图标入口 | 显式传 `AppIconButton.tooltip`，内部复用 `AppHoverInfo`；页面设置、任务中心、图标编辑/新增等依实际用途声明，不给所有图标统一默认提示。 |
 | 必要的错误、状态和命令说明 | 使用 `AppHoverInfo`；命令或禁用原因使用 `AppActionHint`，行操作通过 `AppRowAction.tooltip` 接入；只读标签仅在拥有归属、日期或只读等补充信息时提示。 |
 | 字段帮助与多段说明 | 单块解释使用可见 `HelpHint`，结构化说明使用 `HelpTip`；不得把整块指标或卡片变成无标记的隐形说明区。 |
-| 真实截断的菜单、标签、选项和表格原文 | 由 `AppOverflowTooltipHost` 自动检测；原生省略判定须覆盖缩放下整数宽度相等但文字已发生亚像素截断的情况，不能仅比较 `scrollWidth/clientWidth`；内容完整时不显示。原文默认来自真实内容/输入值，原文不在 DOM 时显式提供 `data-overflow-tooltip-content`，该属性只提供内容，不强制触发。 |
+| 真实截断的菜单、标签、选项和表格原文 | 由 `AppOverflowTooltipHost` 自动检测；原生省略判定须确认横向裁切生效，覆盖缩放下整数宽度相等但文字已发生亚像素截断的情况，同时容忍盒边界与文字坐标的取整误差，不能仅凭 `text-overflow` 声明或 `scrollWidth/clientWidth` 判定；内容完整时不显示。原文默认来自真实内容/输入值，原文不在 DOM 时显式提供 `data-overflow-tooltip-content`，该属性只提供内容，不强制触发。 |
 | 图表行情读数、点击菜单与操作面板 | 保留所属共享图表或点击交互机制，不转换成普通悬停说明。 |
 
 **说明图标与内容格式**：先判断读者要了解的是“规则”还是“当前对象的补充事实”，再选择入口；共用悬浮机制不意味着统一图标或强制统一正文结构。

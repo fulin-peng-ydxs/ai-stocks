@@ -5,7 +5,8 @@ import {
 } from '@/components/table/cellVisualOverflow'
 
 const OVERFLOW_TOLERANCE_PX = 0.5
-const TEXT_GEOMETRY_EPSILON_PX = 0.01
+// 盒边界与文字坐标分别取整，容忍两个布局精度单位的差值，仍保留亚像素截断检测。
+const TEXT_GEOMETRY_EPSILON_PX = 1 / 32
 const OVERFLOW_TOOLTIP_DELEGATE_SELECTOR = '[data-overflow-tooltip-delegate]'
 const OVERFLOW_TOOLTIP_TARGET_SELECTOR = '[data-overflow-tooltip-target]'
 const AUTO_DELEGATE_INTERACTIVE_SELECTOR = [
@@ -38,6 +39,10 @@ const DESCRIBED_INTERACTIVE_SELECTOR = [
 export function isNativeEllipsisOverflow(element: HTMLElement): boolean {
   const style = getComputedStyle(element)
   if (!style.textOverflow.split(/\s+/).includes('ellipsis')) return false
+  // text-overflow 本身不会裁切内容；表格 td 等容器也可能声明它，但实际 overflow
+  // 为 visible。不能把这些祖先节点的布局矩形当成被省略的文字。
+  const overflowX = style.overflowX || style.overflow.split(/\s+/)[0]
+  if (!['hidden', 'clip', 'auto', 'scroll'].includes(overflowX)) return false
   // 单行省略只发生在横向；字体行盒取整可能让 scrollHeight 略高，不能据此弹出重复提示。
   if (element.scrollWidth > element.clientWidth + OVERFLOW_TOLERANCE_PX) return true
 

@@ -21,6 +21,39 @@ afterEach(() => {
 })
 
 describe('全局省略悬浮目标判定', () => {
+  it('缩放下文字起点的取整偏差不让完整板块短文本触发提示', () => {
+    const element = document.createElement('div')
+    element.textContent = '主板'
+    element.style.cssText = 'text-overflow:ellipsis;overflow:hidden;width:100px;padding:0 12px;box-sizing:border-box'
+    setBox(element, 100, 100)
+    vi.spyOn(element, 'getBoundingClientRect').mockReturnValue(new DOMRect(500, 20, 91, 18))
+    let textRight = 535
+    vi.spyOn(document, 'createRange').mockReturnValue({
+      selectNodeContents: vi.fn(),
+      getClientRects: () => [new DOMRect(510.90625, 21, textRight - 510.90625, 14)],
+    } as unknown as Range)
+    expect(isNativeEllipsisOverflow(element)).toBe(false)
+    // 同样的起点舍入下，文字真正超出右侧内容边界仍要提示。
+    textRight = 580.3
+    expect(isNativeEllipsisOverflow(element)).toBe(true)
+  })
+
+  it.each(['visible', 'unset'])('仅声明 ellipsis 但 overflow=%s 时不提示', (overflow) => {
+    const element = document.createElement('div')
+    element.textContent = '完整可见的内容'
+    element.style.cssText = `text-overflow:ellipsis;overflow:${overflow};width:100px`
+    setBox(element, 100, 140)
+    expect(isNativeEllipsisOverflow(element)).toBe(false)
+  })
+
+  it('完整表格文本不会向上命中不裁切的 td', () => {
+    document.body.innerHTML = '<table><tr><td style="text-overflow:ellipsis;overflow:visible"><div style="text-overflow:ellipsis;overflow:hidden">主板</div></td></tr></table>'
+    const cell = document.querySelector('div')!
+    setBox(cell, 80, 80)
+    setBox(cell.parentElement!, 100, 120)
+    expect(findOverflowTooltipTarget(cell)).toBeNull()
+  })
+
   it('Chrome 97% 缩放下整数宽度相等，仍识别亚像素截断；完整文字不误报', () => {
     const element = document.createElement('span')
     element.textContent = '有标记无数据 0 / 有数据无标记 0'
@@ -42,7 +75,7 @@ describe('全局省略悬浮目标判定', () => {
   it('亚像素测量扣除边框和内边距，不将垂直行盒取整视为截断', () => {
     const element = document.createElement('span')
     element.textContent = '完整文字'
-    element.style.cssText = 'text-overflow:ellipsis;width:100px;box-sizing:border-box;padding:0 9px;border:1px solid'
+    element.style.cssText = 'text-overflow:ellipsis;overflow:hidden;width:100px;box-sizing:border-box;padding:0 9px;border:1px solid'
     setBox(element, 98, 98)
     vi.spyOn(element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 200, 40))
     let textWidth = 160
