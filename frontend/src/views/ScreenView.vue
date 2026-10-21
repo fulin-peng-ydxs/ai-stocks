@@ -815,7 +815,7 @@ const menuPageTitle = useMenuPageTitle()
     <AppScrollArea v-else class="screen-body">
       <div class="screen-layout">
         <!-- 方案列表（R3/R5/R7：统一选择器 list 形态，仅我的 + 搜索系统内置/租户/全体公开） -->
-        <aside class="prof-list">
+        <aside class="prof-list app-stack-sm">
           <el-button type="primary" plain size="small" style="width: 100%" @click="newProfile">
             <template #icon><el-icon><Plus /></el-icon></template>
             新建方案

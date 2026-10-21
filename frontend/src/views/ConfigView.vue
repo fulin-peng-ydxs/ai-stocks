@@ -1670,7 +1670,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       <template v-if="activeTab === 'score'">
         <div class="score-layout pane-fill">
           <!-- 方案列表（R3/R5/R7：统一选择器 list 形态，仅我的 + 搜索系统内置/租户/全体公开） -->
-          <aside class="prof-list">
+          <aside class="prof-list app-stack-sm">
             <el-button type="primary" plain size="small" style="width: 100%" @click="newProfile">
               <template #icon><el-icon><Plus /></el-icon></template>
               新建方案
@@ -2094,7 +2094,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       <!-- ============ 买卖指标 ============ -->
       <template v-else-if="activeTab === 'trade'">
         <div class="score-layout pane-fill">
-          <aside class="prof-list">
+          <aside class="prof-list app-stack-sm">
             <el-button type="primary" plain size="small" style="width: 100%" @click="newTradeProfile">
               <template #icon><el-icon><Plus /></el-icon></template>
               新建方案
