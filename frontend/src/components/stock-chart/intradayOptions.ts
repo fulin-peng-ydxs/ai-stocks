@@ -1,7 +1,12 @@
 import type { EChartsOption } from 'echarts'
 import type { IntradayPoint } from '@/api/stocks'
-import { chartTooltipRowHtml } from '@/components/chartTooltipHtml'
 import { formatMarketPercent } from '@/utils/marketValue'
+import {
+  STOCK_QUOTE_TOOLTIP_CSS,
+  stockQuoteSummaryHtml,
+  stockQuoteSummaryWidths,
+  type StockQuoteSummaryModel,
+} from './stockQuoteSummary'
 import {
   buildStockVolumeBarSeries,
   formatAmount,
@@ -79,11 +84,31 @@ function symmetricPriceExtent(
   }
 }
 
-function tooltipRow(label: string, value: string, color: string, labelColor: string): string {
-  return chartTooltipRowHtml(
-    `<span style="color:${labelColor}">${label}</span>`,
-    `<span style="color:${color}">${value}</span>`,
-  )
+/** 分钟明细复用日 K 的行情网格；价格与涨跌幅按昨收判色，折线身份色独立。 */
+export function buildIntradayQuoteSummary(
+  point: IntradayPoint,
+  preClose: number | null,
+  theme: StockChartTheme,
+): StockQuoteSummaryModel {
+  const pct = preClose != null && Number.isFinite(preClose) && preClose > 0
+    ? ((point.close / preClose) - 1) * 100
+    : null
+  const tone = pct == null || pct === 0 ? 'neutral' : pct > 0 ? 'up' : 'down'
+  return {
+    time: point.time,
+    hero: { label: '', value: formatChartNumber(point.close, 2), tone },
+    rowsPerColumn: 2,
+    metrics: [
+      { label: '均价', value: formatChartNumber(point.average_price, 2), color: theme.series.kline.ma5 },
+      {
+        label: '涨跌幅',
+        value: pct == null ? '--' : `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`,
+        tone,
+      },
+      { label: '成交量', value: formatVolumeLots(point.volume) },
+      { label: '成交额', value: formatAmount(point.amount) },
+    ],
+  }
 }
 
 export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
@@ -103,6 +128,9 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
   const middayIndex = times.indexOf('11:30')
   const lastTimeIndex = times.length - 1
 
+  const summaries = points.map((point) => buildIntradayQuoteSummary(point, preClose, theme))
+  const quoteWidths = stockQuoteSummaryWidths(summaries)
+
   return {
     animation: false,
     backgroundColor: theme.background,
@@ -110,6 +138,9 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
     tooltip: {
       trigger: 'axis',
       confine: true,
+      appendTo: 'body',
+      transitionDuration: 0,
+      extraCssText: STOCK_QUOTE_TOOLTIP_CSS,
       axisPointer: { type: 'cross' },
       backgroundColor: theme.tooltipBackground,
       borderColor: theme.tooltipBorder,
@@ -118,22 +149,9 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         const items = Array.isArray(params) ? params as Array<{ dataIndex?: number }> : []
         const index = items.find((item) => typeof item.dataIndex === 'number')?.dataIndex
         if (index == null || !points[index]) return ''
-        const point = points[index]
-        const pct = preClose ? ((point.close / preClose) - 1) * 100 : null
-        const direction = pct == null || pct === 0 ? theme.text : pct > 0 ? theme.up : theme.down
-        return '<div style="min-width:150px;line-height:var(--app-line-height-reading)">'
-          + tooltipRow('时间', point.time, theme.text, theme.label)
-          + tooltipRow('价格', formatChartNumber(point.close, 2), direction, theme.label)
-          + tooltipRow(
-            '涨跌幅',
-            pct == null ? '--' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`,
-            direction,
-            theme.label,
-          )
-          + tooltipRow('均价', formatChartNumber(point.average_price, 2), theme.series.kline.ma5, theme.label)
-          + tooltipRow('成交量', formatVolumeLots(point.volume), theme.text, theme.label)
-          + tooltipRow('成交额', formatAmount(point.amount), theme.text, theme.label)
-          + '</div>'
+        return stockQuoteSummaryHtml(summaries[index]!, {
+          ...theme, border: theme.tooltipBorder,
+        }, quoteWidths)
       },
     },
     grid: [
@@ -221,6 +239,9 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
           showMaxLabel: false,
           formatter: (value: number) => value.toFixed(2),
         },
+        axisPointer: {
+          label: { formatter: ({ value }: { value: unknown }) => formatChartNumber(Number(value), 2) },
+        },
         axisLine: { show: false },
         splitLine: {
           showMinLine: false,
@@ -247,6 +268,13 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
           },
         },
         axisLine: { show: false },
+        axisPointer: {
+          label: {
+            formatter: ({ value }: { value: unknown }) => preClose != null && preClose > 0
+              ? formatMarketPercent(((Number(value) / preClose) - 1) * 100)
+              : '--',
+          },
+        },
         splitLine: { show: false },
       },
       {
@@ -256,6 +284,9 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         min: 0,
         splitNumber: 2,
         axisLabel: { color: theme.label, formatter: (value: number) => formatVolumeLots(value) },
+        axisPointer: {
+          label: { formatter: ({ value }: { value: unknown }) => formatVolumeLots(Number(value)) },
+        },
         axisLine: { show: false },
         splitLine: {
           showMinLine: false,
@@ -273,8 +304,13 @@ export function buildIntradayOption(input: IntradayOptionInput): EChartsOption {
         data: closes,
         showSymbol: false,
         connectNulls: false,
-        lineStyle: { color: theme.focus, width: 1.6 },
-        itemStyle: { color: theme.focus },
+        lineStyle: { color: theme.text, width: 1.6 },
+        // 默认 emptyCircle 内部固定白色；显式圆形保留空心轮廓，并让内部跟随背景。
+        symbol: 'circle',
+        itemStyle: { color: theme.background, borderColor: theme.text, borderWidth: 2 },
+        emphasis: {
+          itemStyle: { color: theme.background, borderColor: theme.text, borderWidth: 2 },
+        },
         markLine: preClose == null ? undefined : {
           symbol: ['none', 'none'],
           silent: true,

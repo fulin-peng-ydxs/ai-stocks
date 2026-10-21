@@ -41,7 +41,7 @@ const columns = computed(() => {
           <span>{{ metric.label }}</span>
           <HelpHint v-if="metric.hint" :text="metric.hint" />
         </dt>
-        <dd :style="{ width: widths?.columns[index]?.value }" :class="`is-${metric.tone || 'neutral'}`">{{ metric.value }}</dd>
+        <dd :style="{ width: widths?.columns[index]?.value, color: metric.color }" :class="`is-${metric.tone || 'neutral'}`">{{ metric.value }}</dd>
       </div>
     </div>
     <div v-if="summary.supplement" class="stock-quote-summary__supplement">

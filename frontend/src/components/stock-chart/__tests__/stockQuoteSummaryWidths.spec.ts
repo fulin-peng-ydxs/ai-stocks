@@ -77,6 +77,31 @@ describe('可视窗口行情摘要容量', () => {
     expect(widths.columns[0].value).not.toContain('8ch + 2em')
   })
 
+  it('HTML 和常驻摘要共同保留主题传入的序列身份色', () => {
+    const summary = buildKlineBarQuoteSummary(bar(10))
+    summary.metrics = [{ label: '均价', value: '10.00', color: '#e28a35' }]
+    const wrapper = mount(StockQuoteSummary, { props: { summary } })
+    expect(wrapper.get('.stock-quote-summary__metric dd').attributes('style'))
+      .toContain('color: rgb(226, 138, 53)')
+    expect(stockQuoteSummaryHtml(summary, palette)).toContain('color:#e28a35')
+    wrapper.unmount()
+  })
+
+  it('截止测算独立底行，完整保留日期、收益和交易日且不额外增加表格列', () => {
+    const summary = buildKlineBarQuoteSummary(bar(10), {
+      showTime: true,
+      supplement: { label: '截止 2026-10-20', value: '+12.34%', details: [{ label: '交易日', value: '123个交易日' }] },
+    })
+    const container = document.createElement('div')
+    container.innerHTML = stockQuoteSummaryHtml(summary, palette, stockQuoteSummaryWidths([summary]))
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(4)
+    expect(container.querySelectorAll('tbody tr:first-child > *')).toHaveLength(5)
+    expect(container.querySelector('thead td')?.getAttribute('colspan')).toBe('4')
+    expect(container.querySelector('table')?.textContent).not.toContain('截止')
+    expect(container.querySelector('table + div')?.textContent)
+      .toBe('截止 2026-10-20+12.34%123个交易日')
+  })
+
   it('字段说明复用 HelpHint 图标，支持键盘触达且说明正文不改变容量', () => {
     const summary = buildKlineBarQuoteSummary(bar(10))
     summary.metrics = [

@@ -2,7 +2,12 @@ import type { Bar, IndicatorRow } from '@/api/stocks'
 import type { ChartType } from '@/composables/useStockChartPreferences'
 import { elementVisualScale } from '@/utils/displayScaleGeometry'
 import { formatMarketPercent } from '@/utils/marketValue'
-import { stockQuoteSummaryWidths, type StockQuoteSummaryWidths, type StockQuoteSupplement } from './stockQuoteSummary'
+import {
+  STOCK_QUOTE_TOOLTIP_CSS,
+  stockQuoteSummaryWidths,
+  type StockQuoteSummaryWidths,
+  type StockQuoteSupplement,
+} from './stockQuoteSummary'
 import {
   buildStockVolumeBarSeries,
   buildKlineBarQuoteSummary,
@@ -595,10 +600,7 @@ export function buildKlineOption(context: OptionContext) {
       appendTo: 'body',
       confine: true,
       transitionDuration: 0,
-      extraCssText: 'transition:opacity .14s ease,visibility .14s ease;'
-        + 'font-size:calc(var(--app-font-size-caption) * var(--app-display-scale, 1))!important;'
-        + 'line-height:calc(var(--app-line-height-caption) * var(--app-display-scale, 1))!important;'
-        + 'padding:calc(10px * var(--app-display-scale, 1))!important;',
+      extraCssText: STOCK_QUOTE_TOOLTIP_CSS,
       position: (
         point: number[],
         params: unknown,

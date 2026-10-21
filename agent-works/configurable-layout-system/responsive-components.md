@@ -2,7 +2,7 @@
 
 范围：`frontend/src/**/*.vue` 全部 178 个文件（含页面私有片段、布局宿主及应用外壳），每个文件一行。页面消费与实测结论见 [页面检查](responsive-pages.md)。响应式规则以 [DESIGN.md](../../DESIGN.md) §8 为准；全站字体角色及例外统一引用该文档 §3、§3.5；应用导航尺寸引用 §3.4，本清单只登记消费与适配行为，不另行定义字阶。
 
-字体实现维护：所有行均消费 `global.css` 的 token/语义类；MarketCompareMetricStrip、行情和数据概览等普通数据强调使用完整 data 角色，交易纪律分区复用 app-section-title；ECharts 消费 chartTheme 的 typography 快照并经 echartsRenderer 统一基础字体，HTML 行情浮层消费共享 stockQuoteSummaryHtml。源码守卫、构建门禁及例外登记入口见 DESIGN §3.5。
+字体实现维护：所有行均消费 `global.css` 的 token/语义类；MarketCompareMetricStrip、行情和数据概览等普通数据强调使用完整 data 角色，交易纪律分区复用 app-section-title；ECharts 消费 chartTheme 的 typography 快照并经 echartsRenderer 统一基础字体，日 K 与分时的 HTML 行情浮层消费共享 stockQuoteSummaryHtml 和缩放外壳，压缩表格行距与内距；截止测算在底行完整展示，避免旁列撑宽。源码守卫、构建门禁及例外登记入口见 DESIGN §3.5。
 
 尺寸均为缩放后 CSS 像素。`app-viewport` 是应用画布，匿名/命名容器查询看自身容器，ResizeObserver 看被观察元素；不得把浏览器原始视口直接当作触发尺寸。无自身断点不代表无需响应式：该行列出自然布局或委托对象。
 
@@ -133,7 +133,7 @@
 | `frontend/src/components/stock-chart/StockChartPanelHeader.vue` | `@container app-viewport (max-width: 1180px)` | 窄宽压缩头部间距；标题/操作保持。 | StockChartWorkspace、StockIntradayChart |
 | `frontend/src/components/stock-chart/StockChartRegion.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | TrainingView |
 | `frontend/src/components/stock-chart/StockChartWorkspace.vue` | `@container app-viewport (max-width: 1180px)`<br>`@container app-viewport (max-width: 400px)` | 窄宽面板图例第4项起移入指标栏；极窄≤400指标栏也减少常显项，完整配置在图表操作抽屉。ResizeObserver按面板最小高度分配，滑块canvas高度<84隐藏；不重新取行情。 | StockAnalysisPanel、BacktestView、SectorDetailView、SectorsView、StockDetailView、TrainingView |
-| `frontend/src/components/stock-chart/StockIntradayChart.vue` | `@container app-viewport (max-width: 960px)` | 窄宽图表58cqh、min340；图表自身resize，溢出由对话框正文滚动承接。 | StockIntradayDialog |
+| `frontend/src/components/stock-chart/StockIntradayChart.vue` | `@container app-viewport (max-width: 960px)` | 窄宽图表58cqh、min340；图表自身resize，溢出由对话框正文滚动承接；分钟明细复用日 K 紧凑表格与 body 级缩放浮层，按全部分钟点预留字符容量，光标移动不抖动。 | StockIntradayDialog |
 | `frontend/src/components/stock-chart/StockIntradayDialog.vue` | `@container app-viewport (max-width: 960px)` | 窄宽头部上下排列，图表置于AppDialog工作区；未采集与部分提示复用 AppStateBlock/AppStatusNotice，窄屏说明自然换行，采集边界统一交由数据管理解释。 | StockAnalysisPanel、StockDetailView |
 | `frontend/src/components/stock-chart/StockQuoteSummary.vue` | `@container app-viewport (max-width: 720px)` | 窄宽补充信息换行，报价关键值保留；K 线联动摘要使用最新与可视窗口字符容量，空间不足由摘要内部横向滚动承接；可选字段说明复用 HelpHint 图标，字段名不加后缀；标签区容纳图标且数值列保持固定，支持悬浮与键盘聚焦。 | StockIntradayDialog、StockDetailView |
 | `frontend/src/components/strategy/StrategyItemEnabledSwitch.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | ConfigView、ScreenView |

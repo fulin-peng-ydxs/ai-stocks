@@ -35,7 +35,7 @@ const legendItems = computed<StockChartLegendItem[]>(() => [
     key: 'price',
     label: '价格',
     value: formatChartNumber(metricPoint.value?.close),
-    color: theme.value.focus,
+    color: theme.value.text,
     marker: 'line',
   },
   {
