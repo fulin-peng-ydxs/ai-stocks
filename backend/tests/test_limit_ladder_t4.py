@@ -11,6 +11,7 @@ import pytest
 from backend.common.exceptions import StorageError
 from backend.limit_ladder.rules import PointInTimeSTStatus, STStatusQuality
 from backend.services.ingest import IngestionService
+from backend.services.limit_ladder_calculator import LimitLadderCalculator
 from backend.services.limit_ladder_snapshot import LimitLadderSnapshotService
 from backend.services.stock_st_status import StockSTStatusFact, StockSTStatusService
 from backend.storage.ddl import init_db
@@ -126,6 +127,73 @@ def test_gate_closes_pool_with_valid_bar_and_confirmed_suspension(market):
     ready = LimitLadderSnapshotService(market).check_coverage(trade_date)
     assert ready.ready is True
     assert ready.ingest_terminal_status == "unknown"
+
+
+@pytest.mark.parametrize(
+    ("day_offset", "residual_bar"),
+    [(-1, False), (0, False), (1, False), (0, True)],
+)
+def test_delisting_boundary_agrees_across_quality_calculation_and_publication(
+    market, day_offset, residual_bar
+):
+    from backend.services.history_quality import HistoryQualityService
+
+    delist_date = date(2026, 8, 28)
+    # 覆盖完整上市起点及前五日不限幅窗口，避免截断日历造成未知规则。
+    days = _seed_calendar(market, delist_date + timedelta(days=1), count=12)
+    trade_date = delist_date + timedelta(days=day_offset)
+    _seed_basic(market, [
+        ("600001.SH", "在市公司", "主板", days[0], "软件", 0.10),
+        ("600002.SH", "退市公司", "主板", days[0], "软件", 0.10),
+    ])
+    market.execute(
+        "UPDATE stock_basic SET delist_date=? WHERE code='600002.SH'", [delist_date]
+    )
+    bars = [_bar("600001.SH", day, close=11.0) for day in days]
+    bars += [_bar("600002.SH", day, close=11.0) for day in days if day < delist_date]
+    if residual_bar:
+        # 即使残留退市当天行情，也不能把已退市股票重新纳入天梯。
+        bars.append(_bar("600002.SH", delist_date, close=11.0))
+    _upsert_bars(market, pd.DataFrame(bars))
+
+    expected_codes = {"600001.SH", "600002.SH"} if day_offset < 0 else {"600001.SH"}
+    assert HistoryQualityService(market).dates("600002.SH") == []
+
+    service = LimitLadderSnapshotService(market)
+    coverage = service.check_coverage(trade_date)
+    assert coverage.ready
+    assert coverage.pool_count == len(expected_codes)
+    assert coverage.valid_bar_count == len(expected_codes)
+    assert coverage.missing_count == 0
+    calculation = LimitLadderCalculator(market).calculate(trade_date)
+    assert {stock.code for stock in calculation.stocks} == expected_codes
+    assert not calculation.coverage_issues
+
+    outcome = service.materialize(trade_date)
+    assert outcome.status == "valid"
+    published = market.query_df(
+        "SELECT code FROM limit_ladder_snapshot_stock WHERE snapshot_id=?",
+        [outcome.snapshot_id],
+    )
+    assert set(published.code) == expected_codes
+
+
+def test_gate_still_requires_data_before_delisting(market):
+    trade_date = date(2026, 8, 27)
+    _seed_calendar(market, trade_date)
+    _seed_basic(market, [
+        ("600001.SH", "即将退市公司", "主板", date(2020, 1, 1), "软件", 0.10),
+    ])
+    market.execute("UPDATE stock_basic SET delist_date=?", [trade_date + timedelta(days=1)])
+
+    coverage = LimitLadderSnapshotService(market).check_coverage(trade_date)
+    assert coverage.pool_count == 1
+    assert coverage.missing_count == 1
+    assert coverage.reason_codes == ("MISSING_BAR_OR_SUSPENSION",)
+    calculation = LimitLadderCalculator(market).calculate(trade_date)
+    assert {(issue.code, issue.reason) for issue in calculation.coverage_issues} == {
+        ("600001.SH", "MISSING_BAR_OR_SUSPENSION"),
+    }
 
 
 def test_gate_uses_latest_structured_terminal_and_ignores_legacy_detail(market):

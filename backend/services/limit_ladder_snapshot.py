@@ -99,12 +99,13 @@ class LimitLadderSnapshotService:
             )
 
         calendar = self._calendar_through(trade_date)
+        # 退市日是存续区间的排他上界，与采集、质检的应有行情日期一致。
         basics = self.c.query_df(
             """
             SELECT code,name,board,list_date,delist_date,industry,price_limit_pct
             FROM stock_basic
             WHERE list_date IS NOT NULL AND list_date<=?
-              AND (delist_date IS NULL OR delist_date>=?)
+              AND (delist_date IS NULL OR delist_date>?)
             ORDER BY code
             """,
             [trade_date, trade_date],
