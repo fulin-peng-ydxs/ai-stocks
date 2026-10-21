@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppScrollArea from '@/components/AppScrollArea.vue'
+import AppJsonViewer from '@/components/AppJsonViewer.vue'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -791,7 +792,7 @@ const menuPageTitle = useMenuPageTitle()
             </AppDetailSection>
 
             <AppDetailSection title="事件上下文">
-              <AppScrollArea as="pre" class="json">{{ JSON.stringify(activeDetail.context || {}, null, 2) }}</AppScrollArea>
+              <AppJsonViewer :source="JSON.stringify(activeDetail.context ?? {})" label="事件上下文" />
             </AppDetailSection>
           </template>
         <template #footer>
@@ -973,18 +974,6 @@ const menuPageTitle = useMenuPageTitle()
 }
 .change-after {
   color: var(--el-text-color-primary);
-}
-.json {
-  margin: 0;
-  max-height: 260px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-  background: var(--app-section-bg);
-  --app-scroll-padding-top: 10px; --app-scroll-padding-right: 10px; --app-scroll-padding-bottom: 10px; --app-scroll-padding-left: 10px;
-  color: var(--el-text-color-regular);
-  font-size: var(--app-font-size-caption);
-  line-height: var(--app-line-height-reading);
-  white-space: pre-wrap;
 }
 @container app-viewport (max-width: 980px) {
   .audit-summary {

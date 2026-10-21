@@ -25,6 +25,14 @@ function authHeader(config: InternalAxiosRequestConfig): string {
 }
 
 describe('api client silent refresh', () => {
+  it('HTTP 200 软失败不会把 SQL 原文带入提示，业务码继续保留', async () => {
+    http.defaults.adapter = async config => ({ ...ok(config, null),
+      data: { code: 5003, msg: '查询失败: Binder Error\nSQL: SELECT secret FROM private_table', data: null } })
+    await expect(http.get('/storage-failure')).rejects.toMatchObject({
+      apiCode: 5003, uiMessage: '请求失败，请稍后重试',
+    })
+    expect(ElMessage.error).toHaveBeenCalledWith('请求失败，请稍后重试')
+  })
   beforeEach(() => {
     localStorage.clear()
     vi.restoreAllMocks()

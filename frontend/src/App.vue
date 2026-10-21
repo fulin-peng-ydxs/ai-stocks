@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { enumText } from '@/utils/displayText'
 import {
   APP_BOTTOM_END_FLOATING_PLACEMENT,
   APP_BOTTOM_FLOATING_FALLBACKS,
@@ -98,7 +99,7 @@ const ROLE_LABEL: Record<string, string> = {
   tenant_admin: '租户管理员',
   normal: '普通用户',
 }
-const roleLabel = computed(() => ROLE_LABEL[auth.role] ?? auth.role ?? '')
+const roleLabel = computed(() => enumText(ROLE_LABEL, auth.role, '自定义角色'))
 const tenantLabel = computed(() => (auth.tenantId ? `租户 ${auth.tenantId}` : ''))
 const userSubline = computed(() => [roleLabel.value, tenantLabel.value].filter(Boolean).join(' · '))
 const loggingOut = ref(false)
@@ -225,7 +226,7 @@ function taskTypeLabel(task: AsyncTask): string {
 }
 
 function taskStatusLabel(status: TaskStatus): string {
-  return STATUS_LABEL[status] ?? status
+  return enumText(STATUS_LABEL, status, '状态未识别')
 }
 
 function goTo(path: string) {

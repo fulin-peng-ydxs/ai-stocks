@@ -1,3 +1,4 @@
+import { enumText } from '@/utils/displayText'
 // 数据管理 API（对应 backend/api/data_admin.py + data_tasks.py + stocks.py 的 /data/*）
 import http, { type AppRequestConfig } from './client'
 import { STOCK_INGEST_RECIPE_LABEL } from '@/utils/stockIngest'
@@ -668,19 +669,19 @@ export function taskDisplayLabel(
   taskType: TaskType | string,
   params?: Record<string, any> | null,
 ): string {
-  const base = TASK_LABEL[taskType as TaskType] ?? taskType
+  const base = enumText(TASK_LABEL, taskType, '未识别任务类型')
   if (taskType === 'fix' && params?.manual_delisting) return `${base}·人工退市日期`
   if (taskType === 'fix' && params?.review_suspensions) return `${base}·停牌证据复查`
   const issueType = taskType === 'fix' && typeof params?.issue_type === 'string'
     ? params.issue_type
     : ''
-  if (issueType) return `${base}·${ISSUE_TYPE_LABEL[issueType] ?? issueType}`
+  if (issueType) return `${base}·${enumText(ISSUE_TYPE_LABEL, issueType, '未识别问题类型')}`
   if (taskType === 'intraday_ingest') {
     return params?.mode === 'refetch' ? base + '·日期区间重采' : base + '·近期增量补采'
   }
   if (taskType === 'stock_ingest') {
     const recipe = typeof params?.recipe === 'string' ? params.recipe : ''
-    return recipe ? `${base}·${STOCK_INGEST_RECIPE_LABEL[recipe as keyof typeof STOCK_INGEST_RECIPE_LABEL] ?? recipe}` : base
+    return recipe ? `${base}·${enumText(STOCK_INGEST_RECIPE_LABEL, recipe, '未识别采集模式')}` : base
   }
   if (taskType === 'board') {
     const parts = [params?.mode === 'backfill' ? '全量回填' : '增量']
@@ -688,7 +689,7 @@ export function taskDisplayLabel(
     if (params?.board_type === 'industry') parts.push('行业')
     if (Array.isArray(params?.only) && params.only.length > 0 && params.only.length < 4) {
       const labels: Record<string, string> = { dict: '字典', members: '成分', bar: '指数', fund: '资金流' }
-      parts.push(params.only.map((stage: string) => labels[stage] ?? stage).join('+'))
+      parts.push(params.only.map((stage: string) => enumText(labels, stage, '未识别采集阶段')).join('+'))
     }
     return `${base}·${parts.join('·')}`
   }
@@ -773,6 +774,9 @@ export const ISSUE_STATUS_LABEL: Record<string, string> = {
   open: '未处理', fixing: '修复中', resolved: '已解决', ignored: '已忽略',
 }
 export const SOURCE_LABEL: Record<string, string> = { intraday_sina: '新浪分时', intraday_eastmoney: '东财分时', intraday_ths: '同花顺分时', akshare: 'AKShare', baostock: 'BaoStock', ths_board: '同花顺板块' }
+export const SOURCE_ROLE_LABEL: Record<SourceStatus['role'], string> = {
+  primary: '主源', fallback: '备用源', board: '板块源', intraday: '分时源',
+}
 
 export type BoardTypeScope = '' | 'concept' | 'industry'
 export type BoardIngestStage = 'dict' | 'members' | 'bar' | 'fund'

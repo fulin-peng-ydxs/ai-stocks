@@ -7,7 +7,7 @@ import AppDataTable from '@/components/AppDataTable.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import type { CheckupCheck, CheckupIssueItem, CheckupReport } from '@/api/data'
-import { checkupDetailGroups } from '../qualityReport'
+import { checkupDetailGroups, checkupSummaryText } from '../qualityReport'
 
 const props = defineProps<{ report: CheckupReport }>()
 const emit = defineEmits<{ locate: [item: CheckupIssueItem] }>()
@@ -25,7 +25,8 @@ const keyOf = (group: string, check: CheckupCheck) => `${group}:${check.name}`
 const groups = computed(() => props.report.groups.map(group => ({
   ...group,
   checks: group.checks.map(check => ({
-    ...check, key: keyOf(group.group, check), details: checkupDetailGroups(check),
+    ...check, detail: checkupSummaryText(check),
+    key: keyOf(group.group, check), details: checkupDetailGroups(check),
     // 提醒/失败始终可查看说明；通过项只有额外依据或明细时才增加展开操作。
     expandable: status(check) !== 'pass'
       || Boolean(check.items?.length || check.evidence?.length || check.help || check.detail.length > 100),

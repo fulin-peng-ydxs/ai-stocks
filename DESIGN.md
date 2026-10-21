@@ -360,6 +360,8 @@ Key Characteristics：
 | `RelatedBoardCell` / `RelatedBoardEmptyValue` / `RelatedBoardHistoryHint` | `frontend/src/components/RelatedBoardCell.vue`、`frontend/src/components/RelatedBoardEmptyValue.vue`、`frontend/src/components/RelatedBoardHistoryHint.vue` | 个股行业走势/概念走势冠军及可解释空值的业务域复用单元，统一名称、结构化相关性说明、低可信提示、首次计算、空结果原因、历史日期保护和权限感知导航 | 无直接系统组件种类；作为既有 `data-table` / `wide-table` 业务列内容及天梯卡片紧凑值 | 股票、榜单、筛选表格和天梯共用；调用方提供完整摘要与类型，显示、历史回退和权限见[关联板块架构](agent-works/architecture/stock-board-correlation.md#页面api-与权限)。 |
 | `BuiltinOptionRow` | `frontend/src/components/BuiltinOptionRow.vue` | 下拉项和选中值的统一主辅行结构，统一名称截断、来源提示与尾部标签/动作对齐 | 无直接系统组件种类 | 交易纪律的内置/自定义原因、买卖类型及打卡买卖规则选择统一复用；内置项只显示中性“内置”提示，自定义项的删除等动作或小号中性类型标签通过默认插槽注入；尾部标签最多占半行并省略，名称使用剩余空间，不在消费页复制选项行布局 |
 | `AppSummaryDisclosureCard` | `frontend/src/components/AppSummaryDisclosureCard.vue` | 编辑卡与只读检查清单的共享折叠摘要外壳，统一标题、元信息、工具区、展开边界与键盘可访问 disclosure | 无直接系统组件种类 | 可展开编辑与只读检查清单共用；变体、摘要和可访问性见[卡片、面板与分区](#卡片面板与分区)。 |
+| `AppJsonViewer` | `frontend/src/components/AppJsonViewer.vue` | 具名技术详情中的只读原始数据查看器 | 不新增系统组件种类或配置字段 | 复用 Element Plus Tree 按需展开字段及数组，根字段默认可见；原值不经过业务摘要转换，旧文本保留原文，滚动委托 AppScrollArea 与共享文档高度。入口与业务摘要的边界遵循[业务内容与技术详情](#业务内容与技术详情)。 |
+| `ProfileVersionContent` | `frontend/src/components/indicator/ProfileVersionContent.vue` | 评分与买卖方案历史版本的只读业务内容 | 业务域内复用，不新增系统组件种类或配置字段 | 历史参数按保存值展示；复用 AppDataTable、AppDetailFields 和 AppSummaryDisclosureCard，原始配置由默认收起的具名入口及 AppJsonViewer 承接，不承担载入或恢复操作。 |
 | `TradeDirectionGroupGrid` | `frontend/src/components/trade-discipline/TradeDirectionGroupGrid.vue` | 交易纪律中按买入、卖出方向上下组织单列清单，统一分组标题、说明和动作区 | 无直接系统组件种类；仅承载交易纪律方向分组 | 买卖规则与操作事实统一消费；分组即方向事实源，组内卡片不得再展示重复方向选择器；规则或成交的领域状态留在调用方，通过分组动作和内容插槽注入；所有宽度保持买入在上、卖出在下，每条规则或操作独占一行，不在消费组件复制方向分组结构与样式 |
 | `RuleSummaryCard` | `frontend/src/components/trade-discipline/RuleSummaryCard.vue` | 买入、卖出和选股规则的紧凑摘要卡，基于 `AppSummaryDisclosureCard` 组合规则启停与动作区 | 无直接系统组件种类；仅承载交易纪律规则编辑 | 同类规则统一复用；默认只展示摘要并一次展开一项，动作通过插槽注入；不得把规则启停语义下沉到通用卡片外壳 |
 | `TradeDisciplineSectionPanel` | `frontend/src/components/trade-discipline/TradeDisciplineSectionPanel.vue` | 交易纪律编辑器的统一分区面板，承载标题、说明、摘要、展开编辑区和分区动作 | 无直接系统组件种类；仅承载交易纪律编辑分区 | 规则、操作事实和履约编辑的同层分区统一复用；领域字段与动作通过插槽注入，不在消费页复制分区外壳、标题层级和间距 |
@@ -692,6 +694,16 @@ Key Characteristics：
 - 用户调整条目先后次序统一使用 `AppReorderList` 的拖动把手与落点反馈，移除逐行上移/下移按钮；键盘通过空格拿起、方向键/Home/End 选择位置、空格或 Enter 确认，Esc 取消。表头按字段排序继续使用表格与 `AppSortControl`。
 - 列表以稳定对象 key 标识新增、复制和已保存条目，禁止用列表下标承担身份；仅在所属完整集合或业务允许的组内重排，不能跨组改变业务类型。只读、归档、保存中禁止排序，单项不显示把手。
 - 拖动预览不改写表单；松手提交当前列表的顺序，移出列表、指针取消、Esc、卸载或数据/权限变化均取消；长列表拖动接近滚动边缘时自动滚动。保存仍由所属业务流程负责，失败保留草稿，不暗示已保存。层级菜单使用 `AppReorderTree`，与列表共用 `AppDragHandle` 和 `useReorderInteraction`；只有允许的分组能接收子节点，禁止移入自己或后代。菜单保存互斥覆盖提交、重载和导航刷新；已就绪的鉴权快照用后台方式刷新导航，保留工作区，失败仍 fail-closed；排序失败读取服务端顺序；存在未保存属性或功能点编辑时锁定排序。只有受影响兄弟组重新赋顺序，其他菜单配置保持原值。
+
+### 业务内容与技术详情
+
+适用于标题、摘要、业务表格、状态、表单反馈与错误提示；审计、配置编辑/导入导出、指标开发和原始任务日志按下述技术查看边界承接。
+
+- 业务内容必须先展示中文名称、当前结论和必要单位；对象、数组、条件树按领域转换为摘要、字段—值或列表，不直接输出 JSON、字典或隐式字符串。规则历史版本须保留参数、启停和条件关系等有效内容，不能靠删除内容实现简化。
+- 已知枚举消费所属领域的名称映射；未知值显示“未识别类型/状态”等明确提示，不回显内部 key 充当业务名称，也不隐藏对应记录。展示转换不修改筛选键、定位标识或提交参数。空值、0、未记录、未采集、未检查分别表达，不显示 undefined、None、NaN 或对象占位。
+- 失败反馈区分业务摘要、恢复动作与技术原因；接口软失败、任务失败和 HTTP 错误均适用。普通提示不承载 SQL、异常栈、原始对象和运行时英文错误；原始诊断保留在服务日志或具名技术详情，不得通过清空失败记录、伪装成功或统一成无数据来简化。
+- 技术查看入口必须有明确用途，例如“原始配置”“原始诊断”或“任务日志”；普通业务区先提供可读摘要，必要原文再由展开/抽屉承接。审计上下文、配置路径、公式及证券专业标识可按任务保留；仅值本身使用代码字体。允许技术查看不等于允许整个页面默认展示代码结构。
+- 普通错误消费 `utils/error.ts`；中文业务消息与未知枚举兜底消费 `utils/displayText.ts`，具体对象的转换与名称仍归所属领域。新旧诊断版本、未知类型、缺字段、零值、软失败和请求失败须有适用的定向验证；不得在共享展示外壳中猜测任意对象语义或逐页复制翻译规则。
 
 ### 统计摘要与下钻
 

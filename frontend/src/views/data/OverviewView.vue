@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { enumText } from '@/utils/displayText'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -186,7 +187,7 @@ const categoryOptions = computed(() => {
       .map((item) => item.category)
   return [...new Set(values)].sort().map((value) => ({
     value,
-    label: assetMode.value === 'planned' ? DIM_STATUS[value]?.label ?? value : value,
+    label: assetMode.value === 'planned' ? DIM_STATUS[value]?.label ?? '状态未识别' : value,
   }))
 })
 
@@ -374,7 +375,7 @@ function layerCell(k: string, lay: any): { type: string; text: string; tip: stri
   }
   const breakdown = (lay.breakdown || [])
     .map((item: { issue_type: string; count: number }) =>
-      `${ISSUE_TYPE_LABEL[item.issue_type] ?? item.issue_type} ${item.count} 项`)
+      `${enumText(ISSUE_TYPE_LABEL, item.issue_type, '未识别问题类型')} ${item.count} 项`)
   if (k === 'L1') return {
     type: 'danger',
     text: `${lay.issues} 问题`,
@@ -529,7 +530,7 @@ const boardIssueItems = computed(() => {
   const knownKeys = new Set<string>(BOARD_ISSUE_ITEMS.map((item) => item.key))
   // 未登记展示名的类型也保留真实筛选键，不能把“其他板块问题”跳成全系统台账。
   const other = Object.entries(issues).filter(([key, count]) => count > 0 && !knownKeys.has(key))
-    .map(([key, count]) => ({ key, count, label: ISSUE_TYPE_LABEL[key] || key, hint: ISSUE_TYPE_LABEL[key] ? '前往对应质量台账查看' : '问题类型尚未登记' }))
+    .map(([key, count]) => ({ key, count, label: enumText(ISSUE_TYPE_LABEL, key, '未识别问题类型'), hint: ISSUE_TYPE_LABEL[key] ? '前往对应质量台账查看' : '问题类型尚未登记' }))
   return [...known, ...other]
 })
 const boardFreshnessItems = computed(() => {
@@ -552,9 +553,11 @@ function dateOnly(value?: string | null): string {
 }
 function boardUpdateStatus(status?: string): { label: string; type: 'success' | 'danger' | 'warning' | 'info' } {
   if (status === 'success') return { label: '成功', type: 'success' }
+  if (status === 'partial') return { label: '部分完成', type: 'warning' }
+  if (status === 'checked') return { label: '已复查', type: 'success' }
   if (status === 'failed') return { label: '失败', type: 'danger' }
   if (status === 'running') return { label: '运行中', type: 'warning' }
-  return { label: status || '未知', type: 'info' }
+  return { label: status ? '状态未识别' : '未记录', type: 'info' }
 }
 function coverageText(ready: number | undefined, total: number | undefined): string {
   return `${ready ?? 0}/${total ?? 0}`
@@ -798,7 +801,7 @@ const menuPageTitle = useMenuPageTitle()
                 <AppTableColumn label="状态" role="status">
                   <template #default="{ row }">
                     <el-tag :type="DIM_STATUS[row.status]?.type ?? 'info'" size="small" effect="plain">
-                      {{ DIM_STATUS[row.status]?.label ?? row.status }}
+                      {{ DIM_STATUS[row.status]?.label ?? '状态未识别' }}
                     </el-tag>
                   </template>
                 </AppTableColumn>
@@ -963,7 +966,7 @@ const menuPageTitle = useMenuPageTitle()
                   v-if="assetMode === 'postgres' && assetColumnVisible('ownershipScope')"
                   label="归属范围"
                 >
-                  <template #default="{ row }">{{ SCOPE_LABEL[row.ownership_scope] ?? row.ownership_scope }}</template>
+                  <template #default="{ row }">{{ enumText(SCOPE_LABEL, row.ownership_scope, '归属待核验') }}</template>
                 </AppTableColumn>
                 <AppTableColumn
                   v-if="assetMode === 'postgres' && assetColumnVisible('storageBytes')"

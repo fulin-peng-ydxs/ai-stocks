@@ -23,6 +23,22 @@ const check = (): CheckupCheck => ({
 })
 
 describe('体检报告展示与台账定位', () => {
+  it('分时体检的历史字典统计统一显示中文摘要，展开也不暴露内部字段', async () => {
+    const value = report({
+      name: '分时监控范围覆盖', ok: true, status: 'warn',
+      detail: "{'intraday_gap': 5216, 'intraday_partial': 17142, 'intraday_invalid': 0}",
+      help: '在分时质量台账中定位并处理。', evidence: [],
+    })
+    const original = JSON.stringify(value)
+    const wrapper = render(value)
+    expect(wrapper.get('.app-summary-disclosure-card__preview').text())
+      .toBe('整日缺失 5,216 项 · 分钟不完整 17,142 项 · 数据非法 0 项')
+    await wrapper.get('.app-summary-disclosure-card__summary').trigger('click')
+    expect(wrapper.text()).not.toContain('intraday_')
+    expect(wrapper.text()).toContain('在分时质量台账中定位并处理')
+    expect(JSON.stringify(value)).toBe(original)
+  })
+
   it('默认收起多对象明细，展开后逐项显示状态并发出精确定位事件', async () => {
     const wrapper = render(report(check()))
     expect(wrapper.text()).toContain('0 个待处理 · 1 个已忽略')

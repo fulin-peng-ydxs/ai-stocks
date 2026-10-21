@@ -50,7 +50,7 @@ from backend.api.user_preferences import router as user_preferences_router
 from backend.api.users import router as users_router
 from backend.auth.deps import require_system
 from backend.auth.middleware import AuthMiddleware, SecurityMiddleware
-from backend.common.exceptions import AIStocksError
+from backend.common.exceptions import AIStocksError, DataSourceError, StorageError
 from backend.common.logging import get_logger
 from backend.config import PROJECT_ROOT, get_settings
 
@@ -84,9 +84,15 @@ def create_app() -> FastAPI:
     async def _handle_biz_error(_: Request, exc: AIStocksError) -> JSONResponse:
         # 业务异常默认 HTTP 200 + 软失败 code；认证/鉴权/限流类用真实 401/403/429（exc.http_status）
         log.warning("业务异常 code=%s msg=%s", exc.code, exc.msg)
+        # 原始异常和 SQL 留在服务端日志；软失败也必须与普通业务提示分层。
+        message = exc.msg
+        if isinstance(exc, StorageError):
+            message = "数据存储暂时不可用，请稍后重试"
+        elif isinstance(exc, DataSourceError):
+            message = "数据源请求失败，请在数据管理的任务日志中查看详情"
         return JSONResponse(
             status_code=getattr(exc, "http_status", 200),
-            content={"code": exc.code, "msg": exc.msg, "data": getattr(exc, "data", None)},
+            content={"code": exc.code, "msg": message, "data": getattr(exc, "data", None)},
         )
 
     # 鉴权关键依赖 Redis 故障兜底：任何逃逸到路由层的 redis 错误 → fail-closed 503（非 500）。
@@ -106,13 +112,22 @@ def create_app() -> FastAPI:
     async def _handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
         errors: list = exc.errors()
         field = ""
+        field_labels = {
+            "date_start": "开始日期", "date_end": "结束日期", "trade_date": "交易日",
+            "code": "股票代码", "codes": "股票范围", "issue_ids": "质量问题范围",
+            "issue_type": "质量问题类型", "size": "每页条数", "page_size": "每页条数",
+            "page": "页码", "password": "密码", "account": "账号", "email": "邮箱",
+            "name": "名称", "mode": "执行模式", "task_type": "任务类型",
+        }
         for error in errors:
             loc = error.get("loc") or []
-            name = str(loc[-1]) if loc else ""
-            if name and name != "body":
-                field = name
+            # 嵌套定位优先使用最深的已知业务字段，数字下标不冒充字段名。
+            label = next((field_labels[name] for name in reversed(loc)
+                          if isinstance(name, str) and name in field_labels), "")
+            if label:
+                field = label
                 break
-        message = f"参数 {field} 不合法" if field else "请求参数不合法"
+        message = f"{field}不合法，请检查填写内容" if field else "请求参数不合法，请检查填写内容"
         # pydantic 的 error 会携带 input/ctx，其中可能包含密码或令牌；日志只保留定位元数据。
         safe_errors = [
             {"type": error.get("type"), "loc": error.get("loc")}

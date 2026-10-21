@@ -220,6 +220,21 @@ describe('LadderHotspots', () => {
 })
 
 describe('LimitLadder', () => {
+  it('失败状态保留恢复入口，SQL 和未知原因码不充当业务说明', async () => {
+    const failure = { ...result, has_snapshot: false, business_code: 'SNAPSHOT_FAILED',
+      snapshot_status: 'failed', failure_summary: '查询失败: Binder Error\nSQL: SELECT secret FROM private_table',
+      invalid_reason: 'INTERNAL_NEW_REASON', snapshot: null, layers: [] } as LimitLadderResult
+    const wrapper = mount(LimitLadder, { props: { result: failure, filters: { ...DEFAULT_LIMIT_LADDER_FILTERS },
+      tradeDate: result.trade_date, loading: false, error: '', canViewSectors: false, canRecompute: true },
+    global: { plugins: [ElementPlus], stubs: { TradeDatePicker: true } } })
+    expect(wrapper.text()).toContain('天梯快照计算失败')
+    expect(wrapper.text()).toContain('任务中心查看详情')
+    expect(wrapper.text()).not.toContain('SELECT')
+    expect(wrapper.text()).not.toContain('INTERNAL_NEW_REASON')
+    await wrapper.setProps({ result: { ...failure, failure_summary: null, invalid_reason: 'INTERNAL_NEW_REASON' } })
+    expect(wrapper.text()).not.toContain('INTERNAL_NEW_REASON')
+    wrapper.unmount()
+  })
   it('概览独立于股票滚动区，收展热点保留当前筛选且不重新查询', async () => {
     const wrapper = mount(LimitLadder, {
       props: { result, filters: { ...DEFAULT_LIMIT_LADDER_FILTERS, hotspotType: 'concept', hotspotKey: 'C002' }, loading: false, error: '', canViewSectors: false },
@@ -373,6 +388,7 @@ describe('LimitLadder', () => {
     const stNotice=wrapper.get('[data-testid="limit-ladder-stale-notice"]')
     expect(stNotice.text()).toContain('ST 状态尚未就绪')
     expect(stNotice.text()).toContain('未把旧快照判定为有效结果')
+    expect(stNotice.text()).not.toContain('refreshing')
     expect(stNotice.text()).toContain('最后成功版本供核对')
     expect(wrapper.get('[data-testid="limit-ladder-layer-2"]').text()).toContain('2 连板')
   })

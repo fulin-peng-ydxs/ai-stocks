@@ -8,10 +8,22 @@ import {
   ISSUE_TYPES_ACTIVE,
   LAYER_ISSUE_SUMMARY,
   RECOVER_ACTION_LABEL,
+  SOURCE_ROLE_LABEL,
   taskDisplayLabel,
 } from '@/api/data'
 
 describe('taskDisplayLabel', () => {
+  it('备用源沿用接口的 fallback 角色，不误判为未识别', () => {
+    expect(SOURCE_ROLE_LABEL.fallback).toBe('备用源')
+    expect(SOURCE_ROLE_LABEL.intraday).toBe('分时源')
+  })
+  it('未知任务和质量类型保留原参数，以中文业务名称兜底', () => {
+    const params = { issue_type: 'new_internal_issue' }
+    expect(taskDisplayLabel('fix', params)).toBe('质检问题恢复·未识别问题类型')
+    expect(taskDisplayLabel('new_internal_task')).toBe('未识别任务类型')
+    expect(params.issue_type).toBe('new_internal_issue')
+  })
+
   it('覆盖鲜活累计数明确使用交易日单位', () => {
     expect(LAYER_ISSUE_SUMMARY.L4(3)).toBe('累计 3 个交易日缺口/滞后')
   })

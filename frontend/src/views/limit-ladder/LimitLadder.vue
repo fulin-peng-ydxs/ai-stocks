@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
+import { businessMessage } from '@/utils/displayText'
 import {
   DEFAULT_LIMIT_LADDER_FILTERS,
   type LimitLadderFilters,
@@ -91,12 +92,14 @@ const coverageReasonLabels: Record<string, string> = {
 }
 function readableReason(value: string | null | undefined): string {
   if (!value) return ''
-  return value.split(',').map((reason) => coverageReasonLabels[reason.trim()] || reason.trim()).join('；')
+  return value.split(',').map((reason) => coverageReasonLabels[reason.trim()]
+    || businessMessage(reason, '结果尚未通过检查，请到任务中心查看详情')).join('；')
 }
 const coverageReasons = computed(() => {
   const value = props.result?.coverage?.reason_codes
   return Array.isArray(value)
-    ? value.map((reason) => coverageReasonLabels[String(reason)] || String(reason)).join('；')
+    ? value.map((reason) => coverageReasonLabels[String(reason)]
+      || businessMessage(reason, '数据完整性尚未确认')).join('；')
     : ''
 })
 const unavailableTitle = computed(() => {
@@ -113,8 +116,7 @@ const unavailableDescription = computed(() => {
       : '请切换到有效交易日后重试'
   }
   if (stStatusBlocked.value) {
-    return props.result?.st_status_error
-      || 'ST 状态刷新尚未完整发布，请等待刷新完成或重新运行“ST状态刷新”后重试'
+    return 'ST 状态刷新尚未完整发布，请等待刷新完成或重新运行“ST状态刷新”后重试'
   }
   const reason = readableReason(props.result?.failure_summary)
     || readableReason(props.result?.invalid_reason)
@@ -130,10 +132,10 @@ const unavailableDescription = computed(() => {
   const diagnostics = props.result?.coverage?.diagnostics
   const detail = Array.isArray(diagnostics)
     ? diagnostics.slice(0, 10).map((item) => (
-      `${item.code}：${coverageReasonLabels[item.reason] || item.reason}`
+      `${item.code}：${coverageReasonLabels[item.reason] || businessMessage(item.reason, '完整性原因待核验')}`
     )).join('；')
     : ''
-  return [detail ? (coverageReasons.value || reason) : (props.result?.task_error || reason), detail]
+  return [detail ? (coverageReasons.value || reason) : (businessMessage(props.result?.task_error, '') || reason), detail]
     .filter(Boolean).join('；')
     || '系统尚未发布通过完整性校验的结果，请稍后重试'
 })
@@ -143,7 +145,7 @@ const pendingDescription = computed(() => {
     ? `当前进度 ${Math.round(task.progress * 100)}%`
     : ''
   return [
-    `天梯快照正在计算：${task?.message || '正在校验行情完整性并生成快照'}`,
+    `天梯快照正在计算：${businessMessage(task?.message, '正在校验行情完整性并生成快照')}`,
     progress,
     '页面最多等待 2 分钟；失败后会停止等待并显示原因',
   ].filter(Boolean).join(' · ')
@@ -154,13 +156,13 @@ const staleDescription = computed(() => {
     return [
       'ST 状态刷新尚未完整发布，系统未把旧快照判定为有效结果',
       lastSuccess ? `下方仅保留 ${formatDateTimeSeconds(lastSuccess)} 生成的最后成功版本供核对` : '',
-      props.result?.st_status_error || '',
+      '请在数据管理中查看 ST 刷新任务的进度与诊断',
     ].filter(Boolean).join(' · ')
   }
   const recalculating = props.result?.snapshot_status === 'recalculating'
   const status = recalculating ? '当前版本正在重算' : '新版本暂不可用'
   const lastSuccess = props.result?.last_success_at || props.result?.snapshot?.computed_at
-  const failure = props.result?.task_error
+  const failure = businessMessage(props.result?.task_error, '')
     || readableReason(props.result?.failure_summary)
     || readableReason(props.result?.invalid_reason)
   return [

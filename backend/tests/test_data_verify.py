@@ -15,6 +15,21 @@ from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
 
 
+def test_intraday_check_summary_uses_business_labels_instead_of_dictionary(monkeypatch):
+    from backend.services.intraday_archive import IntradayArchiveService
+
+    monkeypatch.setattr(IntradayArchiveService, "invalid_facts", lambda self: pd.DataFrame())
+    monkeypatch.setattr(IntradayArchiveService, "issues", lambda self: [
+        {"issue_type": "intraday_gap"}, {"issue_type": "intraday_partial"},
+        {"issue_type": "intraday_partial"},
+    ])
+    verifier = DataVerifier(client=object(), quiet=True)
+    verifier.check_intraday()
+    summary = verifier.results[-1][2]
+    assert summary == "整日缺失 1 项 · 分钟不完整 2 项 · 数据非法 0 项"
+    assert verifier._structured[-1]["status"] == "warn"
+
+
 def test_contract_catches_missing_industry():
     with DuckDBClient(db_path=":memory:") as c:
         init_db(c)

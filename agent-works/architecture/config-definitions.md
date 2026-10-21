@@ -41,6 +41,7 @@
 - 版本递增逻辑（以 `ScoreProfileRepo.save` 为例，score_profile.py:176-208）：保存时比对当前主表的 name/items/grade_thresholds，**完全相同则返回原版本号不写新版**；有实质变更才 `version+1`，同时 upsert 主表与 version 表。`created_at` 在多次保存间保留。
 - 三类方案不设业务编码。新建和复制时由后端生成 32 位 UUIDv4 十六进制内部 `id`，名称不参与身份生成；页面不展示内部 `id`，只展示方案名称、版本和可见范围。存量可读 `id` 继续兼容，不批量改写其版本、快照和回测引用。
 - JSON 字段统一以 VARCHAR 存 `json.dumps` 字符串，不依赖 DuckDB JSON 扩展。
+- 评分与买卖方案的历史版本由 `ProfileVersionContent` 共同展示指标名称、已保存参数、启停、权重/条件关系和兜底规则；不补入当前默认参数。载入历史版本仍由原操作完成，原始配置放在默认收起的具名入口供核对。
 - `is_preset` 标记内置预设方案；`seed_defaults` 把默认方案（`DEFAULT_SCORE_PROFILES`/`DEFAULT_TRADE_PROFILES`）入库。
 - 评分方案、买卖方案和筛选方案均支持 `visibility=private|tenant|public`、`published_at`、`published_by`。API 返回 opaque `profile_ref`、`source`、`readonly`、`owner_label`，非 owner 公开方案只读，可复制当前版本或指定历史版本为当前用户自己的 private；跨租户 public 资产的 `owner_label` 使用脱敏占位，不暴露原始 owner_user_id。可见性收窄会保留历史结果并同步收窄引用该方案的公开回测，响应返回 `affected_run_count`。
 

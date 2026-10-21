@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { businessMessage, enumText } from '@/utils/displayText'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppActionHint from '@/components/AppActionHint.vue'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
@@ -26,6 +27,7 @@ import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
+import QualityDiagnosticContent from './components/QualityDiagnosticContent.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -49,6 +51,8 @@ import type { AppRowAction } from '@/components/rowActions'
 const route = useRoute()
 const router = useRouter()
 const settingsOpen = ref(false)
+const diagnosticOpen = ref(false)
+const diagnosticRow = ref<QualityIssue | null>(null)
 const statusFilterOptions = Object.entries(ISSUE_STATUS_LABEL)
   .map(([value, label]) => ({ value, label }))
 const severityFilterOptions = Object.entries(SEVERITY_LABEL)
@@ -56,7 +60,7 @@ const severityFilterOptions = Object.entries(SEVERITY_LABEL)
 const issueTypeFilterOptions = computed(() => {
   const showHistory = !filters.value.status.length || filters.value.status.some(s => ['resolved', 'ignored'].includes(s))
   const types = showHistory ? Object.keys(ISSUE_TYPE_LABEL) : [...new Set([...ISSUE_TYPES_ACTIVE, ...filters.value.issue_type])]
-  return sortQualityIssueTypes(types).map(value => ({ value, label: ISSUE_TYPE_LABEL[value]
+  return sortQualityIssueTypes(types).map(value => ({ value, label: enumText(ISSUE_TYPE_LABEL, value, '未识别问题类型')
     + (ISSUE_TYPES_ACTIVE.includes(value as any) ? '' : '（历史类型）') }))
 })
 // 默认筛选/隐藏已办属业务态偏好，保留 usePageSettings；默认排序与列显隐迁入组件配置层（plan.md §13.3）。
@@ -240,8 +244,8 @@ async function fixOne(row: QualityIssue) {
     // 以任务结果(result.ok)而非仅任务状态判定成败：恢复中途失败的任务仍是 done，但 ok=false、
     // 问题已退回待处理——此时必须给警告而非"成功"（修复"日志失败却弹成功、状态卡修复中"）。
     const succeeded = t.status === 'done' && (t.result?.ok ?? false)
-    if (succeeded) ElMessage.success(t.message || '恢复完成')
-    else ElMessage.warning(t.message || '恢复未完成，问题已退回待处理')
+    if (succeeded) ElMessage.success(businessMessage(t.message, '恢复完成'))
+    else ElMessage.warning(businessMessage(t.message, '恢复未完成，问题已退回待处理'))
     await load()
   } catch { row.status = 'open' } finally { busyId.value = null }
 }
@@ -327,6 +331,13 @@ async function openDelist(row: QualityIssue) {
 }
 
 function qualityRowActions(row: QualityIssue): AppRowAction[] {
+  return [...qualityManagementActions(row), {
+    key: 'diagnostic', label: '查看诊断详情', permission: 'data-quality:view', placement: 'more',
+    onClick: () => { diagnosticRow.value = row; diagnosticOpen.value = true },
+  }]
+}
+
+function qualityManagementActions(row: QualityIssue): AppRowAction[] {
   if (row.status === 'ignored' && row.ignore_active) {
     return [{
       key: 'restore-monitoring',
@@ -389,8 +400,8 @@ async function confirmDelist() {
   try {
     const r = await markDelisted(delistRow.value.id, delistRevoke.value ? null : delistDate.value, delistReason.value.trim())
     const task = await waitTask(r.task_id)
-    if (task.status !== 'done') { ElMessage.error(task.message || '退市标记更新未完成，请查看任务'); return }
-    ElMessage.success(task.message || '退市标记已更新并重新质检')
+    if (task.status !== 'done') { ElMessage.error(businessMessage(task.message, '退市标记更新未完成，请查看任务')); return }
+    ElMessage.success(businessMessage(task.message, '退市标记已更新并重新质检'))
     delistDlg.value = false
     await load()
   } catch { /* 拦截器弹错 */ } finally { delisting.value = false }
@@ -415,9 +426,9 @@ async function runVerify() {
     const { task_id } = await createTask('verify')
     ElMessage.info('质检任务已提交，可在「数据采集 › 任务中心」查看进度')
     const t = await waitTask(task_id)
-    if (t.status === 'done') ElMessage.success(t.message || '质检完成')
-    else if (t.status === 'failed') ElMessage.error(t.message || '质检失败，请前往任务中心查看日志')
-    else ElMessage.warning(t.message || '质检已终止')
+    if (t.status === 'done') ElMessage.success(businessMessage(t.message, '质检完成'))
+    else if (t.status === 'failed') ElMessage.error(businessMessage(t.message, '质检失败，请前往任务中心查看日志'))
+    else ElMessage.warning(businessMessage(t.message, '质检已终止'))
     await load()
   } catch { /* 并发/非超时错误由拦截器提示 */ } finally { verifyRunning.value = false }
 }
@@ -448,7 +459,7 @@ async function runCheckup() {
       checkupReport.value = report
       checkupOpen.value = true
     } else {
-      ElMessage.warning(t.message || '体检未返回结果')
+      ElMessage.warning(businessMessage(t.message, '体检未返回结果'))
     }
   } catch { /* 并发/错误由拦截器提示 */ } finally { checkupRunning.value = false }
 }
@@ -468,7 +479,7 @@ function currentBatchFilter() {
 
 async function batchRecover() {
   const f = filters.value
-  const scope = [f.issue_type.map((t) => ISSUE_TYPE_LABEL[t] ?? t).join('、'),
+  const scope = [f.issue_type.map((t) => enumText(ISSUE_TYPE_LABEL, t, '未识别问题类型')).join('、'),
                  f.severity.map((s) => `${SEVERITY_LABEL[s]}危`).join('、'),
                  f.code.trim()].filter(Boolean).join(' / ')
   try {
@@ -488,7 +499,7 @@ function batchMarkNormal() {
   const f = filters.value
   ignoreRow.value = null
   ignoreBatch.value = true
-  ignoreBatchLabel.value = [f.issue_type.map((t) => ISSUE_TYPE_LABEL[t] ?? t).join('、'),
+  ignoreBatchLabel.value = [f.issue_type.map((t) => enumText(ISSUE_TYPE_LABEL, t, '未识别问题类型')).join('、'),
                             f.severity.map((s) => `${SEVERITY_LABEL[s]}危`).join('、'),
                             f.code.trim()].filter(Boolean).join(' / ')
   ignoreScope.value = 'occurrence'
@@ -611,7 +622,7 @@ const menuPageTitle = useMenuPageTitle()
             @click="toggleIssueType(s.issue_type)"
             v-keyboard-activate
           >
-            {{ ISSUE_TYPE_LABEL[s.issue_type] ?? s.issue_type }}: {{ s.n }}
+            {{ enumText(ISSUE_TYPE_LABEL, s.issue_type, '未识别问题类型') }}: {{ s.n }}
           </el-tag>
         </div>
       </template>
@@ -645,7 +656,7 @@ const menuPageTitle = useMenuPageTitle()
       >
         <AppTableColumn v-if="colVisible('severity')" label="严重度" prop="severity" sortable="custom">
           <template #default="{ row }">
-            <el-tag :type="sevType[row.severity] ?? 'info'" size="small" effect="dark">{{ SEVERITY_LABEL[row.severity] ?? row.severity }}</el-tag>
+            <el-tag :type="sevType[row.severity] ?? 'info'" size="small" effect="dark">{{ enumText(SEVERITY_LABEL, row.severity, '级别未识别') }}</el-tag>
           </template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" />
@@ -661,14 +672,14 @@ const menuPageTitle = useMenuPageTitle()
           </template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('type')" label="类型">
-          <template #default="{ row }">{{ ISSUE_TYPE_LABEL[row.issue_type] ?? row.issue_type }}</template>
+          <template #default="{ row }">{{ enumText(ISSUE_TYPE_LABEL, row.issue_type, '未识别问题类型') }}</template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('detail')" label="详情" single-line>
           <template #default="{ row }">{{ qualityDetailText(row.detail) }}</template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('status')" label="状态">
           <template #default="{ row }">
-            <el-tag :type="statType[row.status] ?? 'info'" size="small" effect="plain">{{ ISSUE_STATUS_LABEL[row.status] ?? row.status }}</el-tag>
+            <el-tag :type="statType[row.status] ?? 'info'" size="small" effect="plain">{{ enumText(ISSUE_STATUS_LABEL, row.status, '状态未识别') }}</el-tag>
             <span v-if="row.status === 'ignored' && row.ignore_scope" class="ignore-scope-label">
               {{ row.ignore_active
                 ? (row.ignore_scope === 'object' ? '整体' : '本次')
@@ -689,6 +700,10 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #overlays>
+    <AppDetailDrawer v-model="diagnosticOpen" title="诊断详情" size="xl"
+      :subtitle="diagnosticRow ? `${[diagnosticRow.name, diagnosticRow.code].filter(Boolean).join(' · ')} · ${enumText(ISSUE_TYPE_LABEL, diagnosticRow.issue_type, '未识别问题类型')}` : ''">
+      <QualityDiagnosticContent v-if="diagnosticRow" :key="diagnosticRow.id" :issue="diagnosticRow" />
+    </AppDetailDrawer>
     <AppDialog v-model="ignoreDlg" title="选择忽略范围" size="narrow" data-testid="quality-ignore-dialog">
       <p class="ignore-tip">
         <template v-if="ignoreBatch">
@@ -696,7 +711,7 @@ const menuPageTitle = useMenuPageTitle()
         </template>
         <template v-else>
           {{ ignoreRow?.code || ignoreRow?.name || '当前对象' }} ·
-          {{ ignoreRow ? (ISSUE_TYPE_LABEL[ignoreRow.issue_type] ?? ignoreRow.issue_type) : '' }}
+          {{ ignoreRow ? (enumText(ISSUE_TYPE_LABEL, ignoreRow.issue_type, '未识别问题类型')) : '' }}
         </template>
       </p>
       <el-radio-group v-model="ignoreScope" class="ignore-scope-group" data-testid="quality-ignore-scope">

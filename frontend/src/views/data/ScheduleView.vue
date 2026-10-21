@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { enumText, businessMessage } from '@/utils/displayText'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import IntradayTaskScopeFields from '@/components/data/IntradayTaskScopeFields.vue'
 import { buildIntradayIngestParams, createIntradayIngestForm } from '@/utils/intradayIngest'
@@ -16,7 +17,7 @@ import { useRouter } from 'vue-router'
 import {
   listSchedules, listScheduleOptions, createSchedule, updateSchedule, setScheduleEnabled, deleteSchedule, runSchedule,
   listScheduleTriggerEvents,
-  getSources, testSources, SOURCE_LABEL, TASK_LABEL, ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE, sortQualityIssueTypes,
+  getSources, testSources, SOURCE_LABEL, SOURCE_ROLE_LABEL, TASK_LABEL, STATUS_LABEL, ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE, sortQualityIssueTypes,
   taskDisplayLabel, getSettingsView, saveSettings, resetSettings,
   type ScheduledJob, type ScheduledJobInput, type ScheduledJobOption, type ScheduledTriggerEvent,
   type SourceStatus, type TaskStatus, type TaskType, type FreqType, type TriggerMode,
@@ -140,10 +141,7 @@ const sourceLoading = ref(true)
 const sourceError = ref('')
 const displaySources = computed(() => settings.sourceMode === 'primary' ? sources.value.filter((s) => s.role === 'primary') : sources.value)
 function sourceRoleLabel(role: string): string {
-  if (role === 'primary') return '主源'
-  if (role === 'board') return '板块源'
-  if (role === 'intraday') return '分时源'
-  return '备用源'
+  return enumText(SOURCE_ROLE_LABEL, role, '角色未识别')
 }
 function boardSourceRowActions(): AppRowAction[] {
   return [{
@@ -179,7 +177,7 @@ function taskTypeOptions() {
   // 对滚动更新期的旧列表响应容错：页面的统一入口始终可选，保存仍由服务端二次校验。
   return Array.from(new Set<TaskType>(['stock_ingest', ...taskTypes.value]))
     .filter((value) => !legacyStockTypes.has(value))
-    .map((v) => ({ value: v, label: TASK_LABEL[v] ?? v }))
+    .map((v) => ({ value: v, label: enumText(TASK_LABEL, v, '未识别任务类型') }))
 }
 
 function fmtTime(value?: string | null): string {
@@ -502,10 +500,10 @@ const EVENT_STATUS_LABEL: Record<ScheduledTriggerEvent['status'], string> = {
   exhausted: '已达上限', failed: '触发失败',
 }
 function eventStatusLabel(status: ScheduledTriggerEvent['status']): string {
-  return EVENT_STATUS_LABEL[status] || status
+  return enumText(EVENT_STATUS_LABEL, status, '状态未识别')
 }
 function sourceStatusLabel(status: TaskStatus): string {
-  return SOURCE_STATUS_LABEL[status] || status
+  return enumText({ ...STATUS_LABEL, ...SOURCE_STATUS_LABEL }, status, '状态未识别')
 }
 function triggerConditionLabel(condition?: TriggerCondition | null): string {
   return condition ? CONDITION_LABEL[condition] : '—'
@@ -595,7 +593,7 @@ function cookieCredentialLabel(status = cookieCredential.value): string {
   const suffix = status.remaining_days != null && ['valid', 'expiring', 'pending'].includes(status.status)
     ? ` · 剩余 ${status.remaining_days} 天`
     : ''
-  return `${COOKIE_STATUS_LABEL[status.status] ?? status.status}${suffix}`
+  return `${enumText(COOKIE_STATUS_LABEL, status.status, '状态未识别')}${suffix}`
 }
 function cookieCredentialType(status?: string): 'success' | 'warning' | 'danger' | 'info' {
   if (status === 'valid') return 'success'
@@ -833,7 +831,7 @@ const menuPageTitle = useMenuPageTitle()
           :border="tableBorder('sourceTable')"
         >
           <AppTableColumn v-if="sourceColVisible('source')" label="数据源" prop="source">
-            <template #default="{ row }">{{ SOURCE_LABEL[row.source] ?? row.source }}</template>
+            <template #default="{ row }">{{ enumText(SOURCE_LABEL, row.source, '未识别来源') }}</template>
           </AppTableColumn>
           <AppTableColumn v-if="sourceColVisible('role')" label="角色" role="status">
             <template #default="{ row }">
@@ -1007,7 +1005,7 @@ const menuPageTitle = useMenuPageTitle()
           </template>
         </AppTableColumn>
         <AppTableColumn label="下游任务">
-          <template #default="{ row }">{{ row.task_id || row.message || '—' }}</template>
+          <template #default="{ row }">{{ row.task_id || businessMessage(row.message, '尚未创建任务，详情请查看触发记录') }}</template>
         </AppTableColumn>
         <template #empty>暂无依赖或自身重试触发记录</template>
       </AppDataTable>
@@ -1045,7 +1043,7 @@ const menuPageTitle = useMenuPageTitle()
             <el-option
               v-for="issueType in [...new Set([...qualityIssueTypes, ...(form.issue_type ? [form.issue_type] : [])])]"
               :key="issueType"
-              :label="ISSUE_TYPE_LABEL[issueType] ?? issueType"
+              :label="enumText(ISSUE_TYPE_LABEL, issueType, '未识别问题类型')"
               :value="issueType"
             />
           </AppSelect>

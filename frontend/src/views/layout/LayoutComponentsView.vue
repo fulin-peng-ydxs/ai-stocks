@@ -273,7 +273,7 @@ async function persistPolicy(field: string, layers: ComponentConfigLayer[]): Pro
     policyMap.value = next
     ElMessage.success('可覆盖范围已更新')
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '保存失败')
+    ElMessage.error(getErrorMessage(e, '可覆盖范围保存失败，请稍后重试'))
     void loadPolicies() // 失败回拉，撤销 UI 乐观态
   }
 }

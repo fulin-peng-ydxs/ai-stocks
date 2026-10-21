@@ -1166,7 +1166,7 @@ class DataVerifier:
         )
 
     def check_intraday(self) -> None:
-        from backend.services.intraday_archive import IntradayArchiveService
+        from backend.services.intraday_archive import LABELS, IntradayArchiveService
         archive = IntradayArchiveService(self.c)
         self._cur_group = "分时归档"
         invalid = archive.invalid_facts()
@@ -1178,7 +1178,11 @@ class DataVerifier:
         counts = {kind: sum(r["issue_type"] == kind for r in rows)
                   for kind in ("intraday_gap", "intraday_partial", "intraday_invalid")}
         if any(counts.values()):
-            self._warn("分时监控范围覆盖", str(counts),
+            summary = " · ".join(
+                f"{LABELS[kind].removeprefix('分时')} {count:,} 项"
+                for kind, count in counts.items()
+            )
+            self._warn("分时监控范围覆盖", summary,
                        help_text="质量范围从独立固定的首次可采集窗口起算，含没有逐日覆盖记录的历史缺口，不要求此前十年分钟历史；在质量台账中处置。")
         else:
             self._check("分时监控范围覆盖", True, "监控范围暂无分时质量问题")

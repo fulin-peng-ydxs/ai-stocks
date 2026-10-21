@@ -126,11 +126,16 @@ describe('字体与间距设计契约', () => {
     for (const file of [
       'components/SideMenuItem.vue', 'components/TopNavigation.vue', 'components/WorkspaceTabs.vue',
       'components/MarketCompareMetricStrip.vue', 'views/limit-ladder/LimitLadderCard.vue',
-      'views/data/OverviewView.vue', 'views/ConfigView.vue', 'views/trade-discipline/components/RuleMasterList.vue',
+      'views/ConfigView.vue', 'views/trade-discipline/components/RuleMasterList.vue',
       'App.vue',
     ]) {
       expect(read(join(SRC_DIR, file)), file).toContain('app-interaction-target')
     }
+    // 统计卡是只读摘要；导航由具名动作承接，不以整卡浮起来暗示可点击。
+    expect(read(join(SRC_DIR, 'views/data/OverviewView.vue'))).toContain('<DataMetricCard')
+    const dataMetric = read(join(SRC_DIR, 'components/data/DataMetricCard.vue'))
+    expect(dataMetric).not.toContain('app-interaction-target')
+    expect(dataMetric).toContain('actionLabel')
     const shadowLayer = css.match(/::before\s*\{([^}]+)\}/)?.[1] ?? ''
     expect(shadowLayer).toContain('pointer-events: none')
     expect(shadowLayer).not.toMatch(/(?:^|;)\s*(?:border|background):/)

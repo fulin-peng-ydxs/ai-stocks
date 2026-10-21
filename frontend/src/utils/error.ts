@@ -1,4 +1,7 @@
+import { businessMessage } from './displayText'
+
 export function getErrorMessage(error: unknown, fallback = '请求失败'): string {
+  if (error instanceof SyntaxError) return fallback
   const response = (error as { response?: { data?: Record<string, unknown>; status?: number } })
     ?.response
   const payload = response?.data
@@ -22,7 +25,7 @@ export function getErrorMessage(error: unknown, fallback = '请求失败'): stri
     error instanceof Error ? error.message : undefined,
   ]
   for (const candidate of candidates) {
-    if (typeof candidate === 'string' && candidate.trim()) return candidate
+    if (typeof candidate === 'string' && candidate.trim()) return businessMessage(candidate, fallback)
   }
   return fallback
 }

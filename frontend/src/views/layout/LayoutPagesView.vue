@@ -439,7 +439,7 @@ async function importConfig() {
     }
     ElMessage.error('请导入页面/用户配置文件；预设请在「视觉预设」工作区导入')
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '导入内容不是合法 JSON')
+    ElMessage.error(getErrorMessage(e, '配置文件格式不正确，请检查后重新导入'))
   } finally {
     importSaving.value = false
   }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { enumText, businessMessage } from '@/utils/displayText'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import { appendTaskLogs, taskLogMessage } from './taskLogs'
 import IntradayTaskScopeFields from '@/components/data/IntradayTaskScopeFields.vue'
@@ -236,7 +237,7 @@ function taskPhaseText(t: AsyncTask): string {
   const cap = t.capability
   const phase = cap?.current_phase
   const item = cap?.current_item
-  const phaseText = phase ? (PHASE_LABEL[phase] ?? phase) : ''
+  const phaseText = phase ? enumText(PHASE_LABEL, phase, '处理阶段待确认') : ''
   // 实时计数：phase_done/phase_total 随每只处理逐只更新（来自 checkpoint），
   // 串行慢任务也能在列表/日志抽屉看到进展在动，不必等进度条按批刷新。
   const cp = cap?.checkpoint
@@ -254,7 +255,7 @@ function canResumeTask(t: AsyncTask): boolean {
   return t.status === 'failed' && Boolean(t.capability?.checkpoint)
 }
 function taskStatusLabel(t: AsyncTask): string {
-  return isCancellingTask(t) ? '终止中' : (STATUS_LABEL[t.status as TaskStatus] ?? t.status)
+  return isCancellingTask(t) ? '终止中' : (enumText(STATUS_LABEL, t.status, '状态未识别'))
 }
 function taskStatusType(t: AsyncTask): 'success' | 'danger' | 'info' | 'warning' {
   return isCancellingTask(t) ? 'warning' : (statusType[t.status as TaskStatus] ?? 'info')
@@ -1079,12 +1080,12 @@ const menuPageTitle = useMenuPageTitle()
               <template #default="{ row }">{{ row.table_name }}</template>
             </AppTableColumn>
             <AppTableColumn label="数据源">
-              <template #default="{ row }">{{ (SOURCE_LABEL as Record<string, string>)[row.source] ?? row.source }}</template>
+              <template #default="{ row }">{{ enumText(SOURCE_LABEL, row.source, '未识别来源') }}</template>
             </AppTableColumn>
             <AppTableColumn label="结果" prop="status" sortable="custom">
               <template #default="{ row }">
                 <el-tag :type="updateLogType[row.status] ?? 'info'" size="small" effect="plain">
-                  {{ row.status === 'success' ? '成功' : row.status === 'failed' ? '失败' : row.status === 'partial' ? '部分' : row.status === 'checked' ? '已复查' : row.status }}
+                  {{ row.status === 'success' ? '成功' : row.status === 'failed' ? '失败' : row.status === 'partial' ? '部分' : row.status === 'checked' ? '已复查' : '状态未识别' }}
                 </el-tag>
               </template>
             </AppTableColumn>
@@ -1094,7 +1095,7 @@ const menuPageTitle = useMenuPageTitle()
             </AppTableColumn>
             <AppTableColumn label="详情 / 失败原因" single-line>
               <template #default="{ row }">
-                <span :class="{ 'fail-detail': row.status === 'failed', 'partial-detail': row.status === 'partial' }">{{ row.detail || (row.status === 'success' ? '—' : '') }}</span>
+                <span :class="{ 'fail-detail': row.status === 'failed', 'partial-detail': row.status === 'partial' }">{{ businessMessage(row.detail, row.status === 'success' ? '—' : '详细原因请查看关联任务日志') }}</span>
               </template>
             </AppTableColumn>
             <AppTableColumn label="时间" prop="time" sortable="custom">
@@ -1218,7 +1219,7 @@ const menuPageTitle = useMenuPageTitle()
     >
       <div v-if="logTask" class="log-meta">
         <el-tag :type="taskStatusType(logTask)" size="small" effect="dark">{{ taskStatusLabel(logTask) }}</el-tag>
-        <span class="lm-msg">{{ logTask.message }}</span>
+        <span class="lm-msg">{{ businessMessage(logTask.message, '任务执行结果请查看下方日志') }}</span>
         <span v-if="taskPhaseText(logTask)" class="lm-phase">{{ taskPhaseText(logTask) }}</span>
         <el-progress :percentage="Math.round((logTask.progress ?? 0) * 100)" :stroke-width="8" style="flex:1" />
         <el-checkbox v-model="autoScroll" size="small">自动滚动</el-checkbox>

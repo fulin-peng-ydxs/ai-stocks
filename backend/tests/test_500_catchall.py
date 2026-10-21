@@ -9,7 +9,7 @@ from __future__ import annotations
 from fastapi import Body, FastAPI, Query
 from fastapi.testclient import TestClient
 
-from backend.common.exceptions import AIStocksError, NotFoundError
+from backend.common.exceptions import AIStocksError, DataSourceError, NotFoundError, StorageError
 
 
 def _minimal_5xx_app() -> FastAPI:
@@ -34,6 +34,14 @@ def _minimal_5xx_app() -> FastAPI:
     @app.get("/soft")
     def soft() -> None:
         raise AIStocksError("软失败")
+
+    @app.get("/storage")
+    def storage() -> None:
+        raise StorageError("查询失败: Binder Error\nSQL: SELECT secret_column FROM private_table")
+
+    @app.get("/source")
+    def source() -> None:
+        raise DataSourceError("HTTPError: 502 for url: https://example.test/private")
 
     @app.get("/bounded")
     def bounded(size: int = Query(20, ge=1, le=100)) -> None:
@@ -83,7 +91,7 @@ def test_validation_error_maps_to_code_4000_chinese_msg():
     assert resp.status_code == 422
     body = resp.json()
     assert body["code"] == 4000
-    assert body["msg"] == "参数 size 不合法"
+    assert body["msg"] == "每页条数不合法，请检查填写内容"
     assert body["data"] is None
     assert "Input should be" not in resp.text
     assert "[" not in resp.text  # 数组 detail 不再原样回传
@@ -104,3 +112,31 @@ def test_validation_error_log_excludes_sensitive_input(monkeypatch):
     assert warning_calls
     assert "secret-in-validation-log" not in repr(warning_calls)
     assert "input" not in repr(warning_calls)
+
+
+def test_soft_infrastructure_errors_keep_codes_and_log_raw_details(monkeypatch):
+    logs = []
+    monkeypatch.setattr("backend.main.log.warning", lambda *args, **kwargs: logs.append(args))
+    client = TestClient(_minimal_5xx_app(), raise_server_exceptions=False)
+    storage = client.get("/storage")
+    assert storage.status_code == 200 and storage.json()["code"] == 5003
+    assert storage.json()["msg"] == "数据存储暂时不可用，请稍后重试"
+    assert "SELECT" not in storage.text and "private_table" not in storage.text
+    source = client.get("/source")
+    assert source.status_code == 200 and source.json()["code"] == 5002
+    assert "数据源请求失败" in source.json()["msg"] and "https://" not in source.text
+    assert "private_table" in repr(logs) and "HTTPError" in repr(logs)
+
+
+def test_unknown_validation_field_uses_business_fallback_without_exposing_key():
+    app = _minimal_5xx_app()
+
+    @app.get("/unknown-field")
+    def unknown_field(internal_debug_key: int) -> None:
+        return None
+
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.get("/unknown-field?internal_debug_key=x")
+    assert response.status_code == 422
+    assert response.json()["msg"] == "请求参数不合法，请检查填写内容"
+    assert "internal_debug_key" not in response.text

@@ -2,6 +2,7 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
 import { clearAuth, getAccessToken, getRefreshToken, updateTokens } from './authToken'
+import { businessMessage } from '@/utils/displayText'
 
 export interface ApiResponse<T = unknown> {
   code: number
@@ -125,7 +126,7 @@ http.interceptors.response.use(
   (resp) => {
     const body = resp.data as ApiResponse
     if (body.code !== 0) {
-      const message = body.msg || '请求失败'
+      const message = businessMessage(body.msg, '请求失败，请稍后重试')
       const skip = (resp.config as RetryableConfig | undefined)?.skipGlobalError
       if (!skip) ElMessage.error(message)
       return Promise.reject(decorateError(new Error(message), message, body.code))
@@ -190,6 +191,7 @@ http.interceptors.response.use(
       // 4xx/其它：后端部分端点用 FastAPI HTTPException（detail 承载中文业务文案），msg 缺失时取 detail。
       message = msg || detailMsg || error?.message || '网络错误'
     }
+    message = businessMessage(message, '请求失败，请稍后重试')
     decorateError(error, message)
     if (!skip) ElMessage.error(message)
     return Promise.reject(error)

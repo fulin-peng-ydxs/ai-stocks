@@ -1,4 +1,5 @@
 import { formatDateTimeMinutes } from '@/utils/dateTime'
+import { enumText } from '@/utils/displayText'
 
 // 资产搜索抽屉/选择器共享类型（R5/R7/R14）。
 // 方案类 summary 契约对齐后端 services/asset_visibility.py::summarize_asset_row；
@@ -55,12 +56,12 @@ const BACKTEST_STATUS_LABELS: Record<string, string> = {
 
 export function formatBacktestKind(value?: string | null): string {
   if (!value) return '回测'
-  return BACKTEST_KIND_LABELS[value] ?? value
+  return enumText(BACKTEST_KIND_LABELS, value, '未识别回测类型')
 }
 
 export function formatBacktestStatus(value?: string | null): string {
   if (!value) return '—'
-  return BACKTEST_STATUS_LABELS[value] ?? value
+  return enumText(BACKTEST_STATUS_LABELS, value, '状态未识别')
 }
 
 export type AssetBrowseItem = ProfileSummary | BacktestRunSummary

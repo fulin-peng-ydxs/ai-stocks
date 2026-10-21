@@ -1,10 +1,18 @@
 import type { CheckupCheck, CheckupIssueItem, QualityIssue } from '@/api/data'
+import { ISSUE_TYPE_LABEL } from '@/api/data'
 import type { AdaptiveColumnRole } from '@/components/table/adaptiveColumnWidth'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
+import { businessMessage, enumText } from '@/utils/displayText'
 
 export const checkupIssueLabels = {
   open: '待处理', fixing: '修复中', ignored: '已忽略', unrecorded: '未入账',
 } as const
+
+export const intradaySourceLabels: Readonly<Record<string, string>> = { sina: '新浪', eastmoney: '东财', ths: '同花顺' }
+export const intradayRepairLabels: Readonly<Record<string, string>> = {
+  resolved: '已解决', improved: '改善但未完整', unchanged: '未改善',
+  unavailable: '当前来源无法覆盖', technical_failure: '请求失败',
+}
 
 interface CheckupDetailColumn { key: string; label: string; role: AdaptiveColumnRole }
 export interface CheckupDetailGroup {
@@ -13,6 +21,27 @@ export interface CheckupDetailGroup {
   context?: string
   columns: CheckupDetailColumn[]
   rows: { id: string; values: Record<string, string>; issue?: CheckupIssueItem }[]
+}
+
+/** 兼容已保存的分时体检字典摘要，仅识别固定统计字段，不执行历史文本。 */
+export function checkupSummaryText(check: CheckupCheck): string {
+  if (check.name !== '分时监控范围覆盖' || !check.detail.trim().startsWith('{')) {
+    return check.detail
+  }
+  const types = ['intraday_gap', 'intraday_partial', 'intraday_invalid'] as const
+  try {
+    const counts = JSON.parse(check.detail.replace(/'([a-z_]+)'(?=\s*:)/g, '"$1"'))
+    if (!counts || Object.keys(counts).length !== types.length
+      || !types.every(type => Number.isSafeInteger(counts[type]) && counts[type] >= 0)) {
+      throw new Error('Invalid intraday counts')
+    }
+    return types.map(type => {
+      const label = ISSUE_TYPE_LABEL[type].split('·').pop()
+      return `${label} ${counts[type].toLocaleString('zh-CN')} 项`
+    }).join(' · ')
+  } catch {
+    return '历史统计格式无法识别，请重新运行结构体检'
+  }
 }
 
 function evidenceColumnRole(key: string): AdaptiveColumnRole {
@@ -90,56 +119,65 @@ export function checkupIssueFilters(item: CheckupIssueItem) {
 
 /** 质量列表统一承接结构化诊断；保留旧文本，样例有界，不把接口 JSON 直接展示给用户。 */
 export function qualityDetailText(detail: string): string {
+  const unsupported = '诊断格式暂不支持，请重新运行质检或查看诊断详情'
+  const recorded = (value: unknown): string => typeof value === 'number' && Number.isFinite(value)
+    ? String(value) : typeof value === 'string' && value.trim() ? value : '未记录'
+  const countText = (value: unknown): string => typeof value === 'number'
+    && Number.isSafeInteger(value) && value >= 0 ? String(value) : '未记录'
+  const timestamp = (value: unknown, fallback: string): string => formatDateTimeSeconds(
+    typeof value === 'string' ? value : null, fallback,
+  )
   try {
     const payload = JSON.parse(detail)
     const message = payload?.message ?? payload?.reason
-    if (typeof message !== 'string' || !message) return detail
+    if (typeof message !== 'string' || !message) return unsupported
+    const summary = businessMessage(message, '质量检查存在异常，请查看诊断详情及关联任务日志')
     if (payload.coverage || payload.availability) {
       const coverage = payload.coverage
-      const ranges = coverage?.missing_ranges ?? []
-      const sourceNames: Record<string, string> = { sina: '新浪', eastmoney: '东财', ths: '同花顺' }
-      const sources = (payload.availability?.sources ?? []).map((source: any) => {
-        const name = sourceNames[source.source] ?? source.source
+      const ranges = Array.isArray(coverage?.missing_ranges)
+        ? coverage.missing_ranges.filter((range: unknown) => typeof range === 'string') : []
+      const sources = (Array.isArray(payload.availability?.sources)
+        ? payload.availability.sources : []).filter((source: unknown) => source && typeof source === 'object')
+        .map((source: any) => {
+        const name = enumText(intradaySourceLabels, source.source, '未识别来源')
         const dayCount = coverage?.trade_date ? source.days?.[coverage.trade_date] : undefined
-        const count = dayCount != null ? `，目标日 ${dayCount} 点` : ''
-        const range = source.first && source.last
-          ? `${name}上次有效响应 ${source.first} 至 ${source.last}${count}（核验于 ${formatDateTimeSeconds(source.observed_at, '未记录')}）` : ''
+        const count = dayCount != null ? `，目标日 ${countText(dayCount)} 点` : ''
+        const range = typeof source.first === 'string' && typeof source.last === 'string'
+          ? `${name}上次有效响应 ${source.first} 至 ${source.last}${count}（核验于 ${timestamp(source.observed_at, '未记录')}）` : ''
         const failure = source.outcome === 'error'
-          ? `${name}最近请求失败：${source.failure_reason || '原因未记录'}（${formatDateTimeSeconds(source.checked_at, '时间未记录')}）` : ''
+          ? `${name}最近请求失败：${businessMessage(source.failure_reason, '详见关联任务日志')}（${timestamp(source.checked_at, '时间未记录')}）` : ''
         return [range, failure].filter(Boolean).join('；')
       })
-      const repairLabels: Record<string, string> = {
-        resolved: '已解决', improved: '改善但未完整', unchanged: '未改善', unavailable: '当前来源无法覆盖', technical_failure: '请求失败',
-      }
       const repair = payload.last_repair
-      return [message,
-        coverage ? `必需分钟覆盖 ${coverage.covered_count}/${coverage.required_count}` : '',
+      return [summary,
+        coverage ? `必需分钟覆盖 ${countText(coverage.covered_count)}/${countText(coverage.required_count)}` : '',
         ranges.length ? `缺失 ${ranges.join('、')}` : '',
-        payload.availability?.reason ?? '', ...sources,
-        repair ? `最近修复：${repairLabels[repair.outcome] ?? repair.outcome}，归档 ${repair.before_points}→${repair.after_points} 点` : '',
+        payload.availability?.reason
+          ? businessMessage(payload.availability.reason, '来源核验详情请查看关联任务日志') : '', ...sources,
+        repair ? `最近修复：${enumText(intradayRepairLabels, repair.outcome, '结果未识别')}，归档 ${countText(repair.before_points)}→${countText(repair.after_points)} 点` : '',
       ].filter(Boolean).join('；')
     }
     const collection = payload.last_collection
-    if (!collection) return message
+    if (!collection) return summary
     const samples: string[] = []
     for (const group of Object.values(collection.diagnostics?.remaining ?? {}) as any[]) {
       for (const row of [...(group.evidence ?? []), ...(group.exchange_evidence ?? [])]) {
         let evidence = ''
         if (row.valuation_close != null) {
-          evidence = `${row.trade_date}：本地收盘 ${row.raw_close}，市值源收盘 ${row.valuation_close}`
+          evidence = `${recorded(row.trade_date)}：本地收盘 ${recorded(row.raw_close)}，市值源收盘 ${recorded(row.valuation_close)}`
         } else if (row.exchange_total != null) {
-          evidence = `${row.trade_date}：统计总股本 ${row.exchange_total}，已存流通股本 ${row.stored_float}，统计精度 ${row.precision_shares} 股`
+          evidence = `${recorded(row.trade_date)}：统计总股本 ${recorded(row.exchange_total)}，已存流通股本 ${recorded(row.stored_float)}，统计精度 ${recorded(row.precision_shares)} 股`
         } else if (row.available_date) {
-          evidence = `${row.trade_date}：生效 ${row.effective_date}，披露 ${row.available_date}`
+          evidence = `${recorded(row.trade_date)}：生效 ${recorded(row.effective_date)}，披露 ${recorded(row.available_date)}`
         }
         if (evidence && !samples.includes(evidence) && samples.length < 3) samples.push(evidence)
       }
     }
     const errors = collection.diagnostics?.errors
-    return [message, `最近核验范围：${String(collection.date_start).slice(0, 10)}~${String(collection.date_end).slice(0, 10)}`,
+    return [summary, `最近核验范围：${recorded(collection.date_start).slice(0, 10)}~${recorded(collection.date_end).slice(0, 10)}`,
       ...samples, ...(Array.isArray(errors) && errors.length ? ['来源请求失败，详见关联采集任务日志'] : [])].join('；')
   } catch {
-    return detail
+    return businessMessage(detail, unsupported)
   }
 }
 

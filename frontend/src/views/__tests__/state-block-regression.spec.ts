@@ -570,7 +570,7 @@ describe('代表性页面四态回归', () => {
     ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('board failed'))
     const wrapper = await mountView(BoardView)
     expect(wrapper.text()).toContain('榜单加载失败')
-    expect(wrapper.text()).toContain('board failed')
+    expect(wrapper.text()).not.toContain('board failed')
   })
 
   it('ST 批次未发布时榜单显示明确错误态而不是空榜', async () => {
@@ -662,7 +662,7 @@ describe('代表性页面四态回归', () => {
 
     const wrapper = await mountView(BoardView)
     expect(wrapper.text()).toContain('榜单加载失败')
-    expect(wrapper.text()).toContain('profiles failed')
+    expect(wrapper.text()).not.toContain('profiles failed')
 
     await wrapper.findComponent(AssetProfileSelect).vm.reload()
     await flushPromises()
@@ -696,7 +696,7 @@ describe('代表性页面四态回归', () => {
     ;(dataApi.getOverview as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('overview failed'))
     const wrapper = await mountView(OverviewView)
     expect(wrapper.text()).toContain('数据概览加载失败')
-    expect(wrapper.text()).toContain('overview failed')
+    expect(wrapper.text()).not.toContain('overview failed')
   })
 
   it('数据概览加载期间不把尚未返回的板块数据展示为未采集', async () => {
@@ -812,7 +812,7 @@ describe('代表性页面四态回归', () => {
     await stockTab!.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('逐股质量加载失败')
-    expect(wrapper.text()).toContain('stock quality failed')
+    expect(wrapper.text()).not.toContain('stock quality failed')
     expect(wrapper.text()).not.toContain('数据概览加载失败')
   })
 
@@ -1037,7 +1037,7 @@ describe('代表性页面四态回归', () => {
     await (wrapper.vm as any).loadExactCount({ ...estimated, row_count: 12, row_count_mode: 'exact' })
     await flushPromises()
     expect((wrapper.vm as any).tables[0].row_count).toBe(12)
-    expect((wrapper.vm as any).exactErrors[estimated.key]).toContain('count failed')
+    expect((wrapper.vm as any).exactErrors[estimated.key]).toBe('精确统计失败')
   })
 
   it('板块日期追平但覆盖率不足时不显示整体同步', async () => {
@@ -1076,6 +1076,31 @@ describe('代表性页面四态回归', () => {
     expect(fund?.classes()).not.toContain('stale')
   })
 
+  it('未知质量诊断保留原始详情入口，查看不触发修复或改写原始记录', async () => {
+    const row = { id: 88, code: '000004.SZ', name: '测试', issue_type: 'new_internal_type',
+      status: 'resolved', detail: '{"unexpected_count":3}', severity: 'mid' }
+    ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockResolvedValue({
+      list: [row], total: 1, summary: [],
+    })
+    const wrapper = await mountView(QualityView)
+    const actions = (wrapper.vm as any).qualityRowActions(row)
+    const diagnostic = actions.find((action: any) => action.key === 'diagnostic')
+    expect(diagnostic.permission).toBe('data-quality:view')
+    await diagnostic.onClick()
+    await flushPromises()
+    expect(document.body.textContent).toContain('诊断详情')
+    expect(document.body.textContent).toContain('诊断格式暂不支持')
+    expect(document.body.textContent).not.toContain('unexpected_count')
+    const technical = document.querySelector<HTMLButtonElement>('button[aria-label="展开技术详情"]')!
+    technical.click()
+    await flushPromises()
+    expect(document.body.textContent).toContain('unexpected_count:3')
+    expect(document.body.textContent).toContain('问题类型编码new_internal_type')
+    expect(dataApi.fixQualityIssue).not.toHaveBeenCalled()
+    expect(row.detail).toBe('{"unexpected_count":3}')
+    wrapper.unmount()
+  })
+
   it('人工退市已解决记录仍能修正并等待写任务完成', async () => {
     ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockResolvedValue({
       list: [{ id: 8, code: '000004.SZ', name: '测试', issue_type: 'history_data_gap', status: 'resolved', detail: '', severity: 'mid' }], total: 1, summary: [],
@@ -1104,7 +1129,7 @@ describe('代表性页面四态回归', () => {
     ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('quality failed'))
     const wrapper = await mountView(QualityView)
     expect(wrapper.text()).toContain('数据质量加载失败')
-    expect(wrapper.text()).toContain('quality failed')
+    expect(wrapper.text()).not.toContain('quality failed')
   })
 
   it('数据质量已有列表刷新失败后由错误态接管，不继续展示旧表格', async () => {
@@ -1133,7 +1158,7 @@ describe('代表性页面四态回归', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('数据质量刷新失败')
-    expect(wrapper.text()).toContain('refresh failed')
+    expect(wrapper.text()).not.toContain('refresh failed')
     expect(wrapper.find('.app-data-table').exists()).toBe(false)
   })
 
@@ -1354,7 +1379,7 @@ describe('代表性页面四态回归', () => {
     await run!.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('筛选运行失败')
-    expect(wrapper.text()).toContain('screen failed')
+    expect(wrapper.text()).not.toContain('screen failed')
   })
 
   it('筛选空结果再次运行时显示加载态', async () => {
@@ -1439,7 +1464,7 @@ describe('代表性页面四态回归', () => {
     ;(scoreApi.getIndicatorRegistry as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('registry failed'))
     const wrapper = await mountView(ScreenView)
     expect(wrapper.text()).toContain('筛选配置加载失败')
-    expect(wrapper.text()).toContain('registry failed')
+    expect(wrapper.text()).not.toContain('registry failed')
   })
 
   // 「加载查看」（R5/§7.0）：组件 emit loaded 后页面经 onScreenSelect 载入该公开方案详情进编辑器
@@ -1633,7 +1658,7 @@ describe('代表性页面四态回归', () => {
     await run!.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('回测运行失败')
-    expect(wrapper.text()).toContain('backtest failed')
+    expect(wrapper.text()).not.toContain('backtest failed')
   })
 
   it('回测方案首次加载失败由字段错误态接管，不与空选择框并存', async () => {
@@ -1642,7 +1667,7 @@ describe('代表性页面四态回归', () => {
     const scoreSelector = wrapper.findAllComponents(AssetProfileSelect)
       .find((select) => select.props('testId') === 'backtest-score-select')!
     expect(wrapper.text()).toContain('评分方案加载失败')
-    expect(wrapper.text()).toContain('score profiles failed')
+    expect(wrapper.text()).not.toContain('score profiles failed')
     expect(scoreSelector.find('[data-testid="backtest-score-select-select"]').exists()).toBe(false)
     expect(scoreSelector.find('.app-state-block__inline-error').exists()).toBe(true)
     expect(wrapper.text()).toContain('运行回测')
@@ -1690,6 +1715,6 @@ describe('代表性页面四态回归', () => {
     ;(trainingApi.listSessions as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('history failed'))
     const wrapper = await mountView(TrainingView)
     expect(wrapper.text()).toContain('训练历史加载失败')
-    expect(wrapper.text()).toContain('history failed')
+    expect(wrapper.text()).not.toContain('history failed')
   })
 })

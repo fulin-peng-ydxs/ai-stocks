@@ -298,7 +298,7 @@ async function importPresets() {
     ElMessage.success('预设导入完成')
     await reloadPresets()
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '导入内容不是合法 JSON')
+    ElMessage.error(getErrorMessage(e, '配置文件格式不正确，请检查后重新导入'))
   } finally {
     importSaving.value = false
   }

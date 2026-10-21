@@ -49,6 +49,7 @@ import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
 import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
+import ProfileVersionContent from '@/components/indicator/ProfileVersionContent.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import RankedStockWorkbench from '@/components/ranked-stock/RankedStockWorkbench.vue'
@@ -2379,7 +2380,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           <div class="spacer" />
           <AppRowActions :actions="scoreVersionRowActions(v)" :inline-limit="1" />
         </div>
-        <AppScrollArea as="pre" class="ast">{{ JSON.stringify(v.items, null, 2) }}</AppScrollArea>
+        <ProfileVersionContent :version="v" :definitions="registry" />
       </div>
     </AppDetailDrawer>
 
@@ -2393,9 +2394,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           <div class="spacer" />
           <AppRowActions :actions="tradeVersionRowActions(v)" :inline-limit="1" />
         </div>
-        <AppScrollArea as="pre" class="ast">买入 {{ JSON.stringify(v.buy_tree, null, 2) }}
-卖出 {{ JSON.stringify(v.sell_tree, null, 2) }}
-兜底 {{ JSON.stringify(v.backstop, null, 2) }}</AppScrollArea>
+        <ProfileVersionContent :version="v" :definitions="registry" />
       </div>
     </AppDetailDrawer>
 
@@ -2727,16 +2726,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   display: flex;
   align-items: center;
   gap: var(--app-space-2);
-}
-.ast {
-  margin: 8px 0 0;
-  --app-scroll-padding-top: 10px; --app-scroll-padding-right: 12px; --app-scroll-padding-bottom: 10px; --app-scroll-padding-left: 12px;
-  background: var(--app-section-bg);
-  border-radius: 6px;
-  font-size: var(--app-font-size-caption);
-  color: var(--el-text-color-regular);
-  max-height: 200px;
-  white-space: pre-wrap;
 }
 .wsum {
   font-size: var(--app-font-size-table);
