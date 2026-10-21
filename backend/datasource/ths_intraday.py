@@ -18,6 +18,11 @@ def fetch_ths_minutes(code: str, year: int, *, timeout: float) -> pd.DataFrame:
     response = requests.get(
         f"https://d.10jqka.com.cn/v6/line/hs_{code6}/60/{year}.js",
         timeout=timeout,
+        # 部分标的对缺少浏览器标识/股票页来源的请求返回空 404，不能据此判定无数据。
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Referer": f"https://stockpage.10jqka.com.cn/{code6}/",
+        },
     )
     response.raise_for_status()
     match = re.fullmatch(re.escape(callback) + r"\((.*)\);?", response.text.strip(), re.S)

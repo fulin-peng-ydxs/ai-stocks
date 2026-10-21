@@ -18,7 +18,7 @@ REQUIRED_TIMES = EXPECTED_TIMES - {"14:58", "14:59"}
 ALLOWED_TIMES = EXPECTED_TIMES | {"09:30", "13:00"}
 BAR_FIELDS = ["timestamp", "open", "high", "low", "close", "volume", "amount"]
 INTRADAY_ISSUE_TYPES = ("intraday_gap", "intraday_partial", "intraday_invalid")
-INTRADAY_PROVIDERS = ("sina", "eastmoney", "ths")
+INTRADAY_PROVIDERS = ("sina", "ths", "eastmoney")
 PROVIDER_LABELS = {"sina": "新浪", "eastmoney": "东财", "ths": "同花顺"}
 
 

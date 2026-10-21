@@ -147,7 +147,12 @@ def test_ths_year_response_validates_identity_and_normalizes_units(monkeypatch):
         def raise_for_status(self):
             pass
 
-    def get(url, *, timeout):
+    def get(url, *, timeout, headers):
+        # 与真实失败样本一致：没有这两个请求头时，源端可返回空 404，解析器根本不会运行。
+        assert headers == {
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://stockpage.10jqka.com.cn/002879/",
+        }
         calls.append((url, timeout))
         return Response()
 

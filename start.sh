@@ -64,18 +64,40 @@ write_runtime_state() {
     --python-command "$PY"
 }
 
+# HTTP 可达不代表存储就绪；仍允许 assert_idle 独立读取 PG 任务数以安全停服。
+backend_ready() {
+  local body
+  body="$(curl -fsS --max-time 2 http://127.0.0.1:8000/api/health 2>/dev/null)" || return 1
+  HEALTH_BODY="$body" "$PY" - <<'PYREADY'
+import json
+import os
+
+try:
+    body = json.loads(os.environ["HEALTH_BODY"])
+    data = body.get("data") or {}
+    count = data.get("active_task_count")
+    ready = (
+        body.get("code") == 0
+        and data.get("status") == "up"
+        and all(data.get(key) is True for key in ("duckdb_ok", "pg_ok", "redis_ok"))
+        and isinstance(count, int) and not isinstance(count, bool) and count >= 0
+    )
+except (ValueError, TypeError, AttributeError):
+    ready = False
+raise SystemExit(0 if ready else 1)
+PYREADY
+}
+
 snapshot_runtime_state() {
   local target="${1:-}"
-  local pid health_code
+  local pid
   pid="$(running_pid)"
   if [[ -z "$target" || -z "$pid" || ! -f "$RUNTIME_STATE_FILE" ]]; then
     echo "无法取得可信后端运行档案，拒绝停止现有服务" >&2
     return 1
   fi
-  health_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
-    http://127.0.0.1:8000/api/health 2>/dev/null)" || health_code="000"
-  if [[ "$health_code" != "200" ]]; then
-    echo "现有后端健康检查为 ${health_code}，拒绝快照并停止未知状态服务" >&2
+  if ! backend_ready; then
+    echo "现有后端服务或存储未就绪，拒绝快照并停止未知状态服务" >&2
     return 1
   fi
   "$PY" -m backend.devtools.backend_runtime_state snapshot \
@@ -147,7 +169,7 @@ PY
   # 等待健康检查通过（最多 ~15s）
   local i
   for i in $(seq 1 15); do
-    if curl -s -o /dev/null --max-time 2 http://127.0.0.1:8000/api/health 2>/dev/null; then
+    if backend_ready; then
       pid="$(running_pid)"
       echo "$pid" > "$PID_FILE"
       if ! write_runtime_state "$mode" "$pid"; then
@@ -215,14 +237,11 @@ status() {
     echo "● 后端：未运行"
     return 0
   fi
-  local code
-  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
-    http://127.0.0.1:8000/api/health 2>/dev/null)" || code="000"
-  if [[ "$code" == "200" ]]; then
+  if backend_ready; then
     echo "● 后端：运行中 (PID $pid)  /api/health=200  端口 8000"
     return 0
   fi
-  echo "● 后端：异常（进程存活但服务不可用，PID ${pid}）  /api/health=$code  端口 8000"
+  echo "● 后端：异常（进程存活但服务或存储未就绪，PID ${pid}）  端口 8000"
   return 1
 }
 

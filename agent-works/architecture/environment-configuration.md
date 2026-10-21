@@ -110,7 +110,7 @@ flowchart TD
 
 在仓库根目录按以下顺序核查：
 
-1. 执行 `./start.sh status`，确认当前 PID 和 `/api/health=200`。
+1. 执行 `./start.sh status`，确认当前 PID 与服务就绪；脚本核对 `/api/health` 的 `status=up`、DuckDB/PG/Redis 状态及可信任务数，不能仅凭 HTTP 200 判断正常。DuckDB 健康探测实际读取 `stock_basic`，避免数据库失效时 `version()` 仍可执行造成误报。存储降级但 PG 任务数可信时，安全停服仍可执行。
 2. 读取 `logs/backend-runtime.json` 的 `pid`、`mode`、`safeEnv.AI_STOCKS_ENV`（兼容 `safeEnv.ENV`）与 `envFile`；PID 必须匹配。档案不存在或 PID 不匹配时标记为未知，不能将历史档案当作当前进程状态。
 3. `.env.local` 是后续命令与启动的配置，不会更新已运行进程；改动会让旧档案的变量文件摘要失配。需要生效时先通过脚本检查并停止空闲服务，再按原启动模式启动，禁止伪造或手工改写运行档案绕过校验；随后重新确认健康、PID 和环境标记。
 4. 执行 `./start.sh dev-users --list`，成功列出所需启用账号后按最小权限选择账号。若提示 `<unset>`，检查变量加载与环境配置；已经确认本地用途时补齐标记再试，不能据此直接跳过页面验收。账号缺失的维护流程见 [test-users.md](../multi-tenant-rbac/test-users.md)。

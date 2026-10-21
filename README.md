@@ -192,7 +192,7 @@ start.sh          后端启停脚本（dev/prod，见 §5.1）
 - **后端**：Python 3.11+（本机 3.12）/ FastAPI / Uvicorn / pandas + numpy / APScheduler / pydantic-settings
 - **持久层**：DuckDB（行情，嵌入式列存）+ PostgreSQL ≥14（用户资产/平台配置/任务运行态，psycopg3 同步）+ Redis ≥6（会话、安全短状态及分钟归档查询 12 小时缓存）；后端启动期三库连通性自检
 - **前端**：Vue 3 + TypeScript + Element Plus + ECharts + Pinia + Vue Router + Vite
-- **数据源**：AKShare（新浪 / 东财系）+ baostock（退市股历史、复权因子兜底）；分时常规采集只用新浪近期 1 分钟窗口，质检修复按目标日依次尝试东财近 5 日及同花顺年度分钟备用源，不复权；独立 intraday_ingest 任务将已收盘分钟长期归档到 DuckDB，Redis 仅缓存已入库事实，查询缺失不取源，统一由数据管理采集和解释。按首次可采集窗口固定监控起点，历史整日缺口与最新缺口统一质检。来源范围及缺失分钟另存证据；质量页支持补采复检与重新核验，普通调度跳过已知无更完整候选的历史目标。不承诺补齐当前接入来源无法提供的历史，独立调度默认关闭
+- **数据源**：AKShare（新浪 / 东财系）+ baostock（退市股历史、复权因子兜底）；分时常规采集只用新浪近期 1 分钟窗口，质检修复按目标日依次尝试同花顺年度分钟及东财近 5 日备用源，不复权；独立 intraday_ingest 任务将已收盘分钟长期归档到 DuckDB，Redis 仅缓存已入库事实，查询缺失不取源，统一由数据管理采集和解释。按首次可采集窗口固定监控起点，历史整日缺口与最新缺口统一质检。来源范围及缺失分钟另存证据；质量页支持补采复检与重新核验，普通调度跳过已知无更完整候选的历史目标。不承诺补齐当前接入来源无法提供的历史，独立调度默认关闭
 - 依赖清单见 [`requirements.txt`](requirements.txt) / [`pyproject.toml`](pyproject.toml)
 
 ---
@@ -237,7 +237,7 @@ cp .env.local.example .env.local
 
 - 唯一对外入口是前端 5173；后端 8000 只对本机，由 Vite 代理 `/api` 回 `127.0.0.1:8000`。
 - 开发期改前端**不要** `npm run build`（那是生产产物、不带 HMR）。
-- 日志在 `logs/backend.log`，`./start.sh logs` 跟踪、`./start.sh status` 查状态（`/health=200` 即就绪）。
+- 日志在 `logs/backend.log`，`./start.sh logs` 跟踪、`./start.sh status` 查状态（同时核对健康响应中的存储状态和任务运行态，HTTP 200 本身不代表就绪）。
 - 自动化验证（AI 截图/交互核查）走**专用端口 5181**，不占用日常的 5173。两个前端实例可并存，同样由 Vite 代理 `/api` 回 8000。Claude Code 的 preview 工具配置在 `.claude/launch.json`，与日常开发的 `start.sh`/`start-web.sh` 互不相关。
 
 **启动检查顺序**：

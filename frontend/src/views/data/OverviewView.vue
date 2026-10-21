@@ -648,7 +648,7 @@ const menuPageTitle = useMenuPageTitle()
       >
           <template #header>
             <div class="quality-heading">
-              <span>日线四层质量（达标率）</span>
+              <span>日线四层质量</span>
               <span class="hint">最近质检：{{ formatDateTimeSeconds(ov.last_scan_at, '尚未质检') }}
                 <HelpHint label="最近质检时间说明" text="质量台账由立即质检或定时质检更新；逐股覆盖实时检查，可能与尚未刷新或已忽略的台账不同。" />
               </span>

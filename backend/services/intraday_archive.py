@@ -409,7 +409,7 @@ class IntradayArchiveService:
                 f"已成功完成 {len(done)} 只，本轮跳过已完成股票，失败项重试"
             )
             ctx.log(
-                "取源策略：新浪优先；质检修复按目标日依次尝试东财、同花顺备用"
+                "取源策略：新浪优先；质检修复按目标日依次尝试同花顺、东财备用"
                 if allow_fallback else
                 "取源策略：仅新浪；缺失与不完整进入质检，东财和同花顺仅在质检修复时尝试"
             )
@@ -543,9 +543,39 @@ class IntradayArchiveService:
                         outcomes[result] += 1
                     if result in stats and result != "missing":
                         stats[result] += 1
-            if not technical_error:
+            # write_day 已按整日分钟重新判定覆盖；来源报错与目标归档完成分别记账。
+            # 诊断仍含非法行时不能按完整放行，最终质量同步继续按事实复检。
+            target_days = pending.trade_date.dt.date.tolist()
+            cover = self.c.query_df(
+                "SELECT count(*) FILTER(WHERE status='ready') complete_days,"
+                "count(*) FILTER(WHERE status='partial') partial_days,"
+                "count(*) FILTER(WHERE point_count=0) missing_days,"
+                "count(*) FILTER(WHERE trade_date IN (SELECT unnest(?::DATE[])) "
+                "AND status='ready' AND coalesce(try_cast(json_extract(diagnostics,"
+                "'$.invalid_rows') AS INTEGER),0)=0) target_complete_days "
+                "FROM stock_intraday_coverage WHERE code=? AND trade_date BETWEEN ? AND ?",
+                [target_days, code, scope.get("starts", {}).get(code, scope["start"]), scope["end"]],
+            ).iloc[0]
+            targets_complete = int(cover.target_complete_days) == len(target_days)
+            if technical_error and targets_complete:
+                # 消费质量层的实际事实复检，不能仅凭覆盖标记把来源错误降为警告。
+                target_facts = self._coverage_facts([code])
+                target_facts = target_facts[target_facts.trade_date.dt.date.isin(target_days)]
+                targets_complete = not self.issues([code], facts=target_facts)
+                # 区间重采全部请求失败时，旧完整归档不能冒充本次取源成功。
+                targets_complete = targets_complete and all(
+                    any(candidate_rank([r for r in w["rows"] if r[0][:10] == str(day)],
+                                       w["source"])[0] for w in candidates)
+                    for day in target_days
+                )
+            if not technical_error or targets_complete:
                 done.add(code)
                 failed_codes.pop(code, None)
+                if technical_error:
+                    self.c.execute(
+                        "UPDATE stock_intraday_coverage SET failure_reason='' WHERE code=? "
+                        "AND trade_date IN (SELECT unnest(?::DATE[]))", [code, target_days],
+                    )
             else:
                 failed_codes[code] = technical_error
             stats["failed"] = len(failed_codes)
@@ -556,20 +586,16 @@ class IntradayArchiveService:
                     intraday_failed=failed_codes,
                     phase_done=index + 1,
                 )
-                cover = self.c.query_df(
-                    "SELECT count(*) FILTER(WHERE status='ready') complete_days,"
-                    "count(*) FILTER(WHERE status='partial') partial_days,"
-                    "count(*) FILTER(WHERE point_count=0) missing_days "
-                    "FROM stock_intraday_coverage WHERE code=? AND trade_date BETWEEN ? AND ?",
-                    [code, scope.get("starts", {}).get(code, scope["start"]), scope["end"]],
-                ).iloc[0]
                 message = (
                     f"{code} 落库：新增 {outcomes['inserted']} 日、更新 {outcomes['updated']} 日、"
                     f"未变化 {outcomes['unchanged']} 日；范围内完整 {int(cover.complete_days)} 日、"
                     f"部分 {int(cover.partial_days)} 日、缺失 {int(cover.missing_days)} 日"
                 )
                 if technical_error:
-                    message += f"；取源未完成，未完成项保留重试资格：{technical_error}"
+                    message += (
+                        f"；目标日期已补齐；来源请求警告：{technical_error}" if targets_complete
+                        else f"；目标日期仍有缺口或数据异常，未完成项保留重试资格：{technical_error}"
+                    )
                 ctx.log(message, "warn" if technical_error else "info")
                 ctx.progress(
                     (index + 1) / max(1, len(scope["codes"])),

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 import time
 import uuid
@@ -28,17 +27,12 @@ from backend.storage import get_redis_client
 
 log = get_logger("services.intraday_source")
 _SOURCE_PREFIX = "market:intraday:1m"
-_BACKUP_FAILURE_LIMIT = 3
 _RELEASE_LOCK_SCRIPT = """
 if redis.call('get', KEYS[1]) == ARGV[1] then
   return redis.call('del', KEYS[1])
 end
 return 0
 """
-
-
-class IntradaySourceCoolingDown(IntradayServiceUnavailable):
-    """备用源熔断期间跳过请求，交由采集保留候选及重试资格。"""
 
 
 class IntradaySourceService:
@@ -58,7 +52,6 @@ class IntradaySourceService:
         self.sleep = sleep
         self.monotonic = monotonic
         self.config = get_settings().intraday
-        self._reported_cooldown_until = {}
         self._reported_request_policy = None
         self.last_observations = {}
         self.last_windows = {}
@@ -88,9 +81,7 @@ class IntradaySourceService:
         self.last_windows = {}
         if self.ctx:
             self.ctx.check_cancel()
-        negative_key = self._negative_key(code, allow_fallback=allow_fallback)
-        if self.redis.get(negative_key):
-            raise IntradayServiceUnavailable("分时采集源暂时不可用，请稍后重试")
+        target_range = f"{min(dates)}～{max(dates)}（{len(dates)} 日）" if dates else "未指定"
         windows: dict[str, dict] = self.last_windows
         source = self.source_factory()
         errors: list[str] = []
@@ -136,20 +127,19 @@ class IntradaySourceService:
                                        "前序来源的整日候选已覆盖全部目标日")
                     return {**self._with_candidates(self._pick_window(windows, dates), windows),
                             "errors": errors}
-            except IntradaySourceCoolingDown:
-                errors.append(f"{provider}:暂时熔断，稍后重试")
-                self.last_observations[provider] = {"outcome": "error", "error": "暂时熔断，稍后重试"}
             except (redis.RedisError, IntradayServiceUnavailable):
                 raise
             except Exception as exc:  # noqa: BLE001
                 if self.ctx:
                     self.ctx.check_cancel()
-                errors.append(f"{provider}:{type(exc).__name__}")
+                error = f"{type(exc).__name__}: {str(exc)[:300]}"
+                errors.append(f"{provider}:{error}")
                 self.last_observations[provider] = {
-                    "outcome": "error", "error": f"{type(exc).__name__}: {str(exc)[:300]}",
+                    "outcome": "error", "error": error,
                 }
                 self._task_log(
-                    f"{code} {PROVIDER_LABELS[provider]}取源失败：{type(exc).__name__}；"
+                    f"{code} {PROVIDER_LABELS[provider]}取源失败，目标日期 {target_range}："
+                    f"{error}；"
                     + (
                         "继续下一个备用源" if provider_index + 1 < len(providers)
                         else "保留已取得的数据，未完整日期交由质检修复"
@@ -167,10 +157,8 @@ class IntradaySourceService:
         if ready is not None:
             return {**self._with_candidates(ready, windows), "errors": errors}
         if errors:
-            self.redis.set(
-                negative_key, ",".join(errors), ex=self.config.negative_ttl_sec
-            )
-            raise IntradayServiceUnavailable("分时采集源暂时不可用，请稍后重试")
+            # 显式采集/修复每次按系统请求策略执行，不因此前失败抑制后续任务。
+            raise IntradayServiceUnavailable("分时取源失败：" + "；".join(errors))
         return self._with_candidates(self._empty_window(windows), windows)
 
     def _fetch_ths_years(self, source, code, dates):
@@ -224,29 +212,11 @@ class IntradaySourceService:
                 self.ctx.check_cancel()
             self._task_log(f"{code} {PROVIDER_LABELS[provider]}：等待串行保护")
             token = self._acquire_global_source_lock(settings)
-            state = None
-            probe = False
             try:
-                if provider in ("eastmoney", "ths"):
-                    state, now = self._backup_state(provider)
-                    until = state.get("open_until", 0)
-                    if until > now:
-                        if self._reported_cooldown_until.get(provider) != until:
-                            self._task_log(
-                                f"{PROVIDER_LABELS[provider]}暂时熔断，约 {math.ceil(until - now)} 秒后恢复探测；"
-                                "本轮继续保存已取得的整日候选，未完整日期保留重试资格",
-                                "warn",
-                            )
-                            self._reported_cooldown_until[provider] = until
-                        raise IntradaySourceCoolingDown(f"{PROVIDER_LABELS[provider]}暂时熔断，稍后重试")
-                    probe = bool(until)
-                    if probe:
-                        self._task_log(f"{code} {PROVIDER_LABELS[provider]}熔断到期，执行一次恢复探测")
                 self._task_log(
                     f"{code} {PROVIDER_LABELS[provider]}"
                     + (f" {request_year} 年" if request_year else "")
-                    + ("恢复探测" if probe else f"请求 {attempt + 1}/{attempts}")
-                    + "：等待串行限流并取源"
+                    + f"请求 {attempt + 1}/{attempts}：等待串行限流并取源"
                 )
                 self._wait_source_interval(interval)
                 if self.ctx:
@@ -255,12 +225,6 @@ class IntradaySourceService:
                 frame = source.get_intraday_1m(
                     code, provider, timeout_sec=settings.socket_timeout_sec, **kwargs
                 )
-                if provider in ("eastmoney", "ths"):
-                    # 有效空响应说明接口已连通，但不能作为停牌或完整覆盖证据。
-                    self.redis.set(self._backup_state_key(provider), '{"failures":0}', ex=86_400)
-                    self._reported_cooldown_until.pop(provider, None)
-                    if probe:
-                        self._task_log(f"{code} {PROVIDER_LABELS[provider]}恢复探测成功，恢复备用源采集")
                 return frame
             except (redis.RedisError, IntradayServiceUnavailable):
                 raise
@@ -268,48 +232,17 @@ class IntradaySourceService:
                 if self.ctx:
                     self.ctx.check_cancel()
                 last_error = exc
-                if provider in ("eastmoney", "ths") and (attempt == attempts - 1 or probe):
-                    self._record_backup_failure(state, provider)
-                if probe:
-                    # 半开仅允许一个真实请求；失败后立即重新熔断，不追加退避请求。
-                    raise
                 if attempt < attempts - 1:
-                    self._task_log(f"{code} 本次请求失败：{type(exc).__name__}，退避后重试", "warn")
+                    self._task_log(
+                        f"{code} {PROVIDER_LABELS[provider]}请求 {attempt + 1}/{attempts} 失败："
+                        f"{type(exc).__name__}: {str(exc)[:300]}；退避后重试", "warn",
+                    )
             finally:
                 self._release_lock(self._global_lock_key(), token)
             if attempt < attempts - 1:
                 self._pause(settings.retry_backoff_sec * 2 ** attempt)
         assert last_error is not None
         raise last_error
-
-    def _backup_state(self, provider="eastmoney") -> tuple[dict, float]:
-        """调用方持有全局源锁；以 Redis 时钟共享失败计数及半开探测资格。"""
-        raw = self.redis.get(self._backup_state_key(provider))
-        state = json.loads(raw) if raw else {}
-        seconds, micros = self.redis.time()
-        return state, float(seconds) + float(micros) / 1_000_000
-
-    def _record_backup_failure(self, state: dict, provider="eastmoney") -> None:
-        # 到达阈值后饱和计数，长时间故障不会累积无意义的大整数。
-        failures = min(_BACKUP_FAILURE_LIMIT, state.get("failures", 0) + 1)
-        updated = {"failures": failures}
-        if failures >= _BACKUP_FAILURE_LIMIT:
-            seconds, micros = self.redis.time()
-            updated["open_until"] = (
-                float(seconds) + float(micros) / 1_000_000 + self.config.negative_ttl_sec
-            )
-        self.redis.set(self._backup_state_key(provider), json.dumps(updated), ex=86_400)
-        if "open_until" in updated:
-            self._task_log(
-                f"{PROVIDER_LABELS[provider]}连续 {failures} 次取源失败，暂时熔断 {self.config.negative_ttl_sec} 秒；"
-                "到期单次探测，期间保留已取得候选和未完整日期",
-                "warn",
-            )
-            self._reported_cooldown_until[provider] = updated["open_until"]
-
-    @staticmethod
-    def _backup_state_key(provider="eastmoney") -> str:
-        return f"{_SOURCE_PREFIX}:source:{provider}:circuit"
 
     def _acquire_global_source_lock(self, settings: DataSourceConfig) -> str:
         interval = 1.0 / max(settings.rate_limit_per_sec, 0.1)
@@ -413,12 +346,6 @@ class IntradaySourceService:
 
     def _release_lock(self, key: str, token: str) -> None:
         self.redis.eval(_RELEASE_LOCK_SCRIPT, 1, key, token)
-
-    @staticmethod
-    def _negative_key(code: str, *, allow_fallback: bool = False) -> str:
-        # 常规主源失败不得抑制修复对备用源的尝试；两种取源策略独立短期保护。
-        suffix = ":repair:v3" if allow_fallback else ""
-        return f"{_SOURCE_PREFIX}:negative:{code}{suffix}"
 
     @staticmethod
     def _global_lock_key() -> str:

@@ -11,7 +11,7 @@ import pandas as pd
 from backend.common.exceptions import DataSourceError
 from backend.datasource.base import SINA_INTRADAY_REQUEST_LIMIT
 from backend.services import eod_dates
-from backend.services.intraday_contract import INTRADAY_PROVIDERS, REQUIRED_TIMES
+from backend.services.intraday_contract import INTRADAY_PROVIDERS, PROVIDER_LABELS, REQUIRED_TIMES
 
 SOURCE_POLICY_VERSION = 2
 SOURCE_REQUEST_LIMIT = SINA_INTRADAY_REQUEST_LIMIT
@@ -176,7 +176,16 @@ class IntradayEvidence:
             if recheck or not fresh:
                 providers.append(provider)
                 unknown = True
-                source_reason = "显式重新核验" if recheck else "来源证据不足、已过期或上次请求失败"
+                if recheck:
+                    source_reason = "显式重新核验"
+                elif state.get("outcome") == "error":
+                    source_reason = f"最近请求失败：{str(state.get('failure_reason') or '未知错误')[:200]}"
+                elif state.get("outcome") == "empty":
+                    source_reason = "最近响应为空，不能据此判断无数据，需重新核验"
+                elif observed_day and observed_day < self.session:
+                    source_reason = f"最近成功响应日期 {observed_day}，证据已过期，需重新核验"
+                else:
+                    source_reason = "尚无有效取源证据，需核验"
             elif (
                 provider == "ths"
                 and int(day[:4]) in evidence.get("request_years", [])
@@ -220,7 +229,11 @@ class IntradayEvidence:
                                  "目标日未提供比现有归档更完整的整日候选")
             else:
                 providers.append(provider)
-                source_reason = "最近响应有补采机会"
+                source_reason = (
+                    f"最近响应截至 {evidence['last']}，尚未覆盖目标日 {day} 的待补分钟，需核验"
+                    if evidence["last"] < f"{day} {min(required)}:00"
+                    else "最近响应有补采机会"
+                )
             decisions.append({"source": provider, "request": provider in providers,
                               "reason": source_reason})
         status = ("needs_verification" if unknown else "available") if providers else "unavailable"
@@ -232,6 +245,10 @@ class IntradayEvidence:
             else "来源证据不足、已过期或最近请求失败，需要核验"
             if unknown
             else "当前来源响应范围覆盖待补分钟，可尝试补采"
+        )
+        # 同一解释供台账、修复日志及调度复用，不以笼统的“证据不足”掩盖来源差异。
+        reason += "；" + "；".join(
+            f"{PROVIDER_LABELS[item['source']]}：{item['reason']}" for item in decisions
         )
         return {
             "status": status,

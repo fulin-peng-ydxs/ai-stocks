@@ -1366,10 +1366,17 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
             if issue:
                 diagnostic = json.loads(issue["detail"])
                 last = diagnostic.get("last_repair", {})
-                note = (f"已归档 {last.get('before_points', 0)}→{last.get('after_points', 0)} 点；"
+                coverage = diagnostic.get("coverage", {})
+                missing = coverage.get("missing_times", [])
+                ranges = coverage.get("missing_ranges", [])
+                gaps = "、".join(ranges[:8])
+                if len(ranges) > 8:
+                    gaps += f"等 {len(ranges)} 段"
+                note = (f"{td} 已归档 {last.get('before_points', 0)}→{last.get('after_points', 0)} 点；"
+                        + (f"缺失 {len(missing)} 分钟（{gaps}）；" if missing else "")
                         + diagnostic.get("availability", {}).get("reason", "复检仍存在异常"))
             else:
-                note = "目标分时已满足复检要求"
+                note = f"{td} 目标分时已满足复检要求"
         elif issue_type in ("capital_gap", "capital_invalid", "capital_mismatch", "capital_raw_invalid"):
             if rep.recheck_clean(issue_type, code, td, detail=issue_detail):
                 from backend.services.capital_quality import CapitalQualityService

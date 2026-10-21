@@ -24,7 +24,11 @@ def health() -> ApiResponse:
     active_task_count: int | None = None
     try:
         client = get_read_client()
-        version = client.query_df("SELECT version() AS v", timeout_sec=0.1).iloc[0]["v"]
+        # version() 不读取持久化数据，实例失效时仍可能成功，必须实际访问业务表。
+        version = client.query_df(
+            "SELECT version() AS v FROM (SELECT count(*) FROM stock_basic) probe",
+            timeout_sec=0.1,
+        ).iloc[0]["v"]
         duckdb_pool = client.stats()
         duckdb_ok = True
         duckdb_detail = f"duckdb {version} @ {client.db_path.name}"
@@ -55,7 +59,10 @@ def health() -> ApiResponse:
 
     return ok(
         {
-            "status": "up",
+            "status": (
+                "up" if duckdb_ok and pg_ok and redis_ok and active_task_count is not None
+                else "degraded"
+            ),
             "duckdb_ok": duckdb_ok,
             "duckdb": duckdb_detail,
             "duckdb_pool": duckdb_pool,

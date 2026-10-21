@@ -70,7 +70,6 @@ class IntradayConfig(BaseModel):
     enabled: bool = True
     supported_trade_days: int = Field(default=8, ge=1, le=30)
     cache_ttl_sec: int = Field(default=43_200, ge=60, le=86_400)
-    negative_ttl_sec: int = Field(default=60, ge=1, le=600)
     lock_wait_sec: float = Field(default=20.0, ge=1, le=60)
 
 

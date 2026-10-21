@@ -257,10 +257,14 @@ def test_redis_failure_after_primary_does_not_discard_obtained_candidate(db, mon
     from backend.tests.test_intraday_source import _service
 
     class Cache(_Redis):
-        def get(self, key):
-            if key.endswith(":eastmoney:circuit"):
-                raise redis.ConnectionError("protection unavailable")
-            return super().get(key)
+        source_locks = 0
+
+        def set(self, key, value, nx=False, ex=None):
+            if key == "market:intraday:1m:lock:source":
+                self.source_locks += 1
+                if self.source_locks > 1:
+                    raise redis.ConnectionError("protection unavailable")
+            return super().set(key, value, nx=nx, ex=ex)
 
     class Source:
         def get_intraday_1m(self, code, provider, *, timeout_sec=None):
@@ -323,7 +327,7 @@ def test_prior_day_known_hole_can_try_backup_but_current_day_keeps_retrying(db):
     old = evidence.assess(CODE, "2026-09-09", ["11:07"], states, allow_fallback=False)
     assert not old["can_repair"] and old["reason_code"] == "source_missing_minutes"
     backup = evidence.assess(CODE, "2026-09-09", ["11:07"], states)
-    assert backup["providers"] == ["eastmoney", "ths"]
+    assert backup["providers"] == ["ths", "eastmoney"]
     assert evidence.assess(CODE, DAY, ["11:07"], states, allow_fallback=False)["can_repair"]
 
 
@@ -358,7 +362,7 @@ def test_ths_actual_year_response_bounds_prevent_repeated_uncovered_requests(db,
                                    recheck=True)["providers"]
 
 
-def test_repair_third_source_replaces_whole_day_and_closes_only_after_recheck(db, monkeypatch):
+def test_repair_prefers_ths_replaces_whole_day_and_closes_only_after_recheck(db, monkeypatch):
     from backend.services import async_task, intraday_source
     from backend.tests.test_intraday_quotes import _Redis
     from backend.tests.test_intraday_source import _service
@@ -380,8 +384,45 @@ def test_repair_third_source_replaces_whole_day_and_closes_only_after_recheck(db
     monkeypatch.setattr("backend.services.ingest.IngestionService", lambda: None)
     result = async_task._h_fix({"issue_ids": [issue], "recheck_source": True}, Context())
     assert result["ok"] and result["resolved"] == 1 and result["technical_failure"] == 0
-    assert calls == ["sina", "eastmoney", "eastmoney", "ths"]
+    assert calls == ["sina", "ths"]
     archived = IntradayArchiveService(db).read(CODE, DAY)
     assert len(archived["rows"]) == 240 and archived["source"] == "ths"
     assert db.query_df("SELECT status FROM data_quality_issue").iloc[0, 0] == "resolved"
     assert db.query_df("SELECT DISTINCT source FROM stock_intraday_bar").source.tolist() == ["ths"]
+
+
+def test_unresolved_repair_explains_missing_minute_source_end_and_request_error(db, monkeypatch):
+    from backend.services import async_task, intraday_source
+    from backend.tests.test_intraday_source import _service
+
+    partial = _frame()
+    partial = partial[partial.timestamp.dt.strftime("%H:%M").ne("10:32")]
+    saved = IntradaySourceService._frame_to_window(partial, "sina")
+    saved["fetched_at"] = "2026-09-10T08:00:00+00:00"
+    IntradayArchiveService(db, quotes=Windows([saved])).collect()
+    issue = int(db.query_df("SELECT id FROM data_quality_issue").iloc[0, 0])
+    calls = []
+
+    class Source:
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
+            calls.append(provider)
+            if provider == "sina":
+                return partial
+            if provider == "ths":
+                return _frame(pd.Timestamp("2026-09-09").date())
+            raise ConnectionError("RemoteDisconnected: endpoint closed")
+
+    q = _service(factory=Source)
+    monkeypatch.setattr(intraday_source, "IntradaySourceService", lambda **kw: q)
+    monkeypatch.setattr(async_task, "get_client", lambda: db)
+    monkeypatch.setattr("backend.services.ingest.IngestionService", lambda: None)
+    ctx = Context()
+    result = async_task._h_fix({"issue_ids": [issue], "recheck_source": True}, ctx)
+    assert not result["ok"] and result["technical_failure"] == 1
+    assert calls == ["sina", "ths", "eastmoney", "eastmoney"]
+    for text in (DAY, "10:32", "2026-09-09 15:00:00", "RemoteDisconnected", "保持待处理"):
+        assert text in result["message"]
+    row = db.query_df("SELECT status,detail FROM data_quality_issue WHERE id=?", [issue]).iloc[0]
+    assert row.status == "open"
+    assert "RemoteDisconnected" in json.loads(row.detail)["availability"]["reason"]
+    assert len(IntradayArchiveService(db).read(CODE, DAY)["rows"]) == 239

@@ -408,7 +408,7 @@ def test_regular_partial_archive_uses_fallback_only_when_quality_repair_runs(db,
     calls = []
 
     class Source:
-        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
             calls.append(provider)
             return _frame(rows=10 if provider == "sina" else 240)
 
@@ -423,8 +423,8 @@ def test_regular_partial_archive_uses_fallback_only_when_quality_repair_runs(db,
     clean, _, _ = async_task._recover_one(
         db, DataIntegrityReport(db), None, Context(), issue_id
     )
-    assert clean and calls == ["sina", "sina", "eastmoney"]
-    assert service.read(CODE, DAY)["source"] == "eastmoney"
+    assert clean and calls == ["sina", "sina", "ths"]
+    assert service.read(CODE, DAY)["source"] == "ths"
     assert service.read(CODE, DAY)["status"] == "ready"
 
 
@@ -751,7 +751,7 @@ def test_partial_source_failure_keeps_data_and_warns_in_task_log(db):
     ctx = Context()
 
     class Source:
-        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
             assert ctx.flushes > 0
             assert any("请求" in message for message, _ in ctx.logs)
             if provider == "eastmoney":
@@ -767,34 +767,98 @@ def test_partial_source_failure_keeps_data_and_warns_in_task_log(db):
     assert any("部分 1 日" in message and "未完成项保留重试" in message for message, _ in ctx.logs)
 
 
-def test_circuit_skip_keeps_partial_archive_issue_and_resume_eligibility(db):
-    import json
-    import time
-
+def test_failed_backups_keep_partial_issue_and_resume_repairs_without_cooldown(db):
     from backend.tests.test_intraday_source import _service
 
     ctx, cache, calls = Context(), _Redis(), []
-    for provider in ("eastmoney", "ths"):
-        cache.set(IntradaySourceService._backup_state_key(provider),
-                  json.dumps({"failures": 3, "open_until": time.time() + 60}), ex=120)
+    recovered = False
 
     class Source:
-        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
             calls.append(provider)
-            assert provider == "sina"
-            return _frame(rows=238)
+            if provider != "sina":
+                if not recovered:
+                    raise ConnectionError("HTTP 502 unavailable")
+                return _frame()
+            return _frame(rows=10)
 
     quotes = _service(cache, Source)
     quotes.ctx = ctx
     service = IntradayArchiveService(db, quotes=quotes)
     result = service.collect(ctx=ctx, allow_fallback=True)
-    assert calls == ["sina"] and result["inserted"] == 1 and result["failed"] == 1
+    assert calls == ["sina", "ths", "ths", "eastmoney", "eastmoney"]
+    assert result["inserted"] == 1 and result["failed"] == 1
     assert ctx.checkpoint["intraday_done"] == []
-    assert "暂时熔断" in ctx.checkpoint["intraday_failed"][CODE]
-    assert len(service.read(CODE, DAY)["rows"]) == 238
+    assert "ConnectionError" in ctx.checkpoint["intraday_failed"][CODE]
+    assert len(service.read(CODE, DAY)["rows"]) == 10
     assert any(i["issue_type"] == "intraday_partial" for i in service.issues())
 
-    # 续跑时重新评估未完成股票，不会被 checkpoint 当作成功跳过。
-    service.collect(ctx=ctx, allow_fallback=True)
-    assert calls == ["sina", "sina"]
-    assert db.query_df("SELECT count(*) n FROM stock_intraday_bar").iloc[0].n == 238
+    # 同一冻结范围立即续跑；失败记录不能阻断备用源，也不能提前关闭质量问题。
+    recovered = True
+    result = service.collect(ctx=ctx, allow_fallback=True)
+    assert calls[-2:] == ["sina", "ths"]
+    assert result["updated"] == 1 and ctx.checkpoint["intraday_done"] == [CODE]
+    assert service.read(CODE, DAY)["source"] == "ths"
+    assert db.query_df("SELECT count(*) n FROM stock_intraday_bar").iloc[0].n == 240
+    assert not service.issues()
+
+
+@pytest.mark.parametrize("dirty", [False, True])
+def test_source_failure_is_only_warning_when_target_archive_is_clean_and_complete(db, dirty):
+    from backend.tests.test_intraday_source import _service
+
+    class Source:
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
+            if provider == "sina":
+                raise ConnectionError("Sina unavailable")
+            frame = _frame()
+            if dirty:
+                invalid = frame.iloc[[0]].copy()
+                invalid["volume"] = -1
+                frame = pd.concat([frame, invalid])
+            return frame
+
+    ctx = Context()
+    q = _service(factory=Source)
+    q.ctx = ctx
+    archive = IntradayArchiveService(db, quotes=q)
+    result = archive.collect(ctx=ctx, allow_fallback=True)
+    assert result["failed"] == int(dirty) and result["ok"] is not dirty
+    assert ctx.checkpoint["intraday_done"] == ([] if dirty else [CODE])
+    saved = archive.read(CODE, DAY)
+    assert saved["source"] == "ths" and saved["status"] == "ready"
+    reason = db.query_df("SELECT failure_reason FROM stock_intraday_coverage").iloc[0, 0]
+    if dirty:
+        assert "Sina unavailable" in reason
+        assert any(i["issue_type"] == "intraday_invalid" for i in archive.issues())
+    else:
+        assert reason == "" and not archive.issues()
+        assert result["errors"]  # 请求警告留存，与修复失败分开。
+        assert any("目标日期已补齐" in m and "来源请求警告" in m for m, _ in ctx.logs)
+        assert not any("未完成项保留重试" in m for m, _ in ctx.logs)
+
+
+def test_source_warning_requires_real_count_check_before_final_sync(db):
+    from backend.tests.test_intraday_source import _service
+
+    archive = IntradayArchiveService(db, quotes=Windows([window(provider="ths")]))
+    archive.collect()
+    db.execute("UPDATE stock_intraday_coverage SET point_count=1")
+
+    class Source:
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
+            if provider == "sina":
+                raise ConnectionError("Sina unavailable")
+            return _frame()
+
+    ctx = Context()
+    q = _service(factory=Source)
+    q.ctx = ctx
+    archive.quotes = q
+    result = archive.collect({"mode": "refetch", "date_start": DAY}, ctx=ctx,
+                             allow_fallback=True, recheck_source=True)
+    assert not result["ok"] and result["failed"] == 1
+    assert result["quality"]["intraday_invalid"] == 1
+    # 最终扫描会校准计数；此前逐股日志不能仅凭 ready 标记宣称已通过检查。
+    assert db.query_df("SELECT point_count FROM stock_intraday_coverage").iloc[0, 0] == 240
+    assert not any("目标日期已补齐" in m for m, _ in ctx.logs)

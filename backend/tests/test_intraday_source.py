@@ -36,13 +36,12 @@ def _service(cache=None, factory=None):
         source_factory=factory or (lambda: _Source([])),
     )
     service.config = SimpleNamespace(
-        negative_ttl_sec=60,
         lock_wait_sec=1.0,
     )
     return service
 
 
-def test_third_source_repairs_when_primary_partial_and_eastmoney_fails():
+def test_ths_repairs_primary_partial_before_requesting_eastmoney():
     from backend.tests.test_intraday_archive import Context
 
     calls = []
@@ -60,9 +59,10 @@ def test_third_source_repairs_when_primary_partial_and_eastmoney_fails():
     q.ctx = Context()
     result = q.fetch_window("002879.SZ", [DAY], allow_fallback=True)
     assert result["source"] == "ths"
-    assert calls == [("sina", None), ("eastmoney", None), ("eastmoney", None), ("ths", 2026)]
+    assert calls == [("sina", None), ("ths", 2026)]
     assert result["rows"] and result["request_years"] == [2026]
-    assert "eastmoney:ConnectionError" in result["errors"]
+    assert result["errors"] == []
+    assert any("东财：跳过" in m for m, _ in q.ctx.logs)
     assert any("同花顺返回" in m and "实际范围" in m for m, _ in q.ctx.logs)
 
 
@@ -167,7 +167,7 @@ def test_different_target_days_keep_independent_source_candidates():
     assert all(len(item["rows"]) == 240 for item in result["candidates"])
 
 
-def test_failed_sources_use_negative_protection_without_caching_market_data():
+def test_failed_sources_are_retried_immediately_without_caching_failures():
     calls, cache = [], _Redis()
 
     class Source:
@@ -179,8 +179,8 @@ def test_failed_sources_use_negative_protection_without_caching_market_data():
     for _ in range(2):
         with pytest.raises(IntradayServiceUnavailable):
             service.fetch_window("002251.SZ", [DAY], allow_fallback=True, providers=("sina", "eastmoney"))
-    assert calls == ["sina", "sina", "eastmoney", "eastmoney"]
-    assert cache.set_ttls[service._negative_key("002251.SZ", allow_fallback=True)] == 60
+    assert calls == ["sina", "sina", "eastmoney", "eastmoney"] * 2
+    assert not any(":negative:" in k or ":circuit" in k for k in cache.values)
     assert not any(":window:" in k for k in cache.values)
 
 
@@ -216,7 +216,7 @@ def test_regular_collection_never_requests_fallback(response):
         assert not result.get("errors")
 
 
-def test_primary_failure_protection_does_not_block_repair_fallback():
+def test_primary_failure_does_not_block_repair_fallback():
     calls = []
 
     class Source:
@@ -280,95 +280,73 @@ def test_global_source_lock_covers_long_configured_pacing_wait(request_settings)
     )
 
 
-class _CircuitSource:
-    def __init__(self):
-        self.calls = []
-        self.fail = True
+@pytest.mark.parametrize("provider", ["eastmoney", "ths"])
+def test_backup_failures_do_not_suppress_other_stocks_or_later_repair(provider):
+    from backend.tests.test_intraday_archive import Context
 
-    def get_intraday_1m(self, code, provider, *, timeout_sec=None):
-        self.calls.append((code, provider))
-        if provider == "eastmoney" and self.fail:
-            raise ConnectionError("unavailable")
-        return _frame(rows=238 if provider == "sina" else 240)
+    cache, calls = _Redis(), []
+    recovered = False
 
+    class Source:
+        def get_intraday_1m(self, code, source, *, timeout_sec=None, request_year=None):
+            calls.append((code, source))
+            if source == provider:
+                if not recovered:
+                    raise ConnectionError("HTTP 404 unavailable")
+                return _frame()
+            return _frame(rows=10)
 
-def _expire_circuit(cache):
-    key = IntradaySourceService._backup_state_key()
-    state = json.loads(cache.get(key))
-    state["open_until"] = time.time() - 1
-    cache.set(key, json.dumps(state), ex=60)
-
-
-def test_eastmoney_circuit_is_shared_and_retains_primary_candidates():
-    cache, source = _Redis(), _CircuitSource()
-    for i in range(3):
-        result = _service(cache, lambda: source).fetch_window(f"00000{i}.SZ", [DAY], allow_fallback=True, providers=("sina", "eastmoney"))
-        assert len(result["rows"]) == 238 and result["errors"]
-    assert len([p for _, p in source.calls if p == "eastmoney"]) == 6
-    # 新建服务/另一只股票也遵守共享熔断，不发出备用源请求。
-    result = _service(cache, lambda: source).fetch_window("600000.SH", [DAY], allow_fallback=True, providers=("sina", "eastmoney"))
-    assert result["errors"] == ["eastmoney:暂时熔断，稍后重试"]
-    assert result["source"] == "sina" and len(result["rows"]) == 238
-    assert len([p for _, p in source.calls if p == "eastmoney"]) == 6
+    for i in range(4):
+        q = _service(cache, Source)
+        q.ctx = Context()
+        result = q.fetch_window(f"00000{i}.SZ", [DAY], allow_fallback=True,
+                                providers=("sina", provider))
+        assert len(result["rows"]) == 10 and result["errors"]
+        assert any(DAY in m and "HTTP 404" in m for m, _ in q.ctx.logs)
+    assert sum(source == provider for _, source in calls) == 8
+    # 无需等待或清理 Redis，另一个任务可以立即修复此前失败的股票。
+    recovered = True
+    result = _service(cache, Source).fetch_window("000000.SZ", [DAY], allow_fallback=True,
+                                                 providers=("sina", provider))
+    assert result["source"] == provider and len(result["rows"]) == 240
     assert cache.get(IntradaySourceService._global_lock_key()) is None
 
 
-def test_eastmoney_half_open_single_failure_reopens_then_success_recovers():
-    cache, source = _Redis(), _CircuitSource()
-    service = _service(cache, lambda: source)
-    for i in range(3):
-        service.fetch_window(f"00000{i}.SZ", [DAY], allow_fallback=True, providers=("sina", "eastmoney"))
-    _expire_circuit(cache)
-    service.fetch_window("000010.SZ", [DAY], allow_fallback=True, providers=("sina", "eastmoney"))
-    assert len([p for _, p in source.calls if p == "eastmoney"]) == 7
-    service.fetch_window("000011.SZ", [DAY], allow_fallback=True, providers=("sina", "eastmoney"))
-    assert len([p for _, p in source.calls if p == "eastmoney"]) == 7
-    _expire_circuit(cache)
-    source.fail = False
-    assert service.fetch_window("000012.SZ", [DAY], allow_fallback=True, providers=("sina", "eastmoney"))["source"] == "eastmoney"
-    assert json.loads(cache.get(service._backup_state_key())) == {"failures": 0}
-    service.fetch_window("000013.SZ", [DAY], allow_fallback=True, providers=("sina", "eastmoney"))
-    assert len([p for _, p in source.calls if p == "eastmoney"]) == 9
-
-
-def test_success_resets_consecutive_eastmoney_failures():
-    cache, source = _Redis(), _CircuitSource()
-    service = _service(cache, lambda: source)
-    service.fetch_window("000001.SZ", [DAY], allow_fallback=True, providers=("sina", "eastmoney"))
-    service.fetch_window("000002.SZ", [DAY], allow_fallback=True, providers=("sina", "eastmoney"))
-    source.fail = False
-    service.fetch_window("000003.SZ", [DAY], allow_fallback=True, providers=("sina", "eastmoney"))
-    source.fail = True
-    for code in ("000004.SZ", "000005.SZ"):
-        service.fetch_window(code, [DAY], allow_fallback=True, providers=("sina", "eastmoney"))
-    state = json.loads(cache.get(service._backup_state_key()))
-    assert state == {"failures": 2}
-
-
-def test_concurrent_recovery_uses_one_probe_on_failure():
-    cache, source = _Redis(), _CircuitSource()
-    cache.set(IntradaySourceService._backup_state_key(),
-              json.dumps({"failures": 3, "open_until": time.time() - 1}), ex=60)
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        list(pool.map(
-            lambda code: _service(cache, lambda: source).fetch_window(code, [DAY], allow_fallback=True, providers=("sina", "eastmoney")),
-            ["000001.SZ", "000002.SZ"],
-        ))
-    assert len([p for _, p in source.calls if p == "eastmoney"]) == 1
-
-
-def test_empty_recovery_response_resets_circuit_without_claiming_completeness():
-    cache = _Redis()
-    cache.set(IntradaySourceService._backup_state_key(),
-              json.dumps({"failures": 3, "open_until": time.time() - 1}), ex=60)
+@pytest.mark.parametrize("provider", ["sina", "eastmoney", "ths"])
+@pytest.mark.parametrize("expired", [False, True])
+def test_legacy_failure_states_do_not_skip_requests_or_reduce_system_retries(
+    provider, expired, request_settings,
+):
+    cache, calls = _Redis(), []
+    code = "600000.SH"
+    cache.set(f"market:intraday:1m:source:{provider}:circuit", json.dumps({
+        "failures": 3, "open_until": time.time() + (-1 if expired else 60),
+    }), ex=120)
+    for suffix in ("", ":repair:v3"):
+        cache.set(f"market:intraday:1m:negative:{code}{suffix}", "old failure", ex=60)
+    request_settings.max_retries = 3
 
     class Source:
-        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
-            return _frame(rows=238) if provider == "sina" else pd.DataFrame()
+        def get_intraday_1m(self, code, source, *, timeout_sec=None, request_year=None):
+            calls.append(source)
+            if len(calls) < 3:
+                raise TimeoutError("temporary failure")
+            return _frame()
 
-    result = _service(cache, Source).fetch_window("600000.SH", [DAY], allow_fallback=True, providers=("sina", "eastmoney"))
-    assert len(result["rows"]) == 238 and result["source"] == "sina"
-    assert json.loads(cache.get(IntradaySourceService._backup_state_key())) == {"failures": 0}
+    result = _service(cache, Source).fetch_window(
+        code, [DAY], allow_fallback=provider != "sina", providers=(provider,),
+    )
+    assert calls == [provider] * 3 and len(result["rows"]) == 240
+
+
+def test_empty_backup_does_not_claim_completeness():
+    class Source:
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
+            return _frame(rows=10) if provider == "sina" else pd.DataFrame()
+
+    result = _service(factory=Source).fetch_window("600000.SH", [DAY], allow_fallback=True,
+                                                   providers=("sina", "eastmoney"))
+    assert len(result["rows"]) == 10 and result["source"] == "sina"
     assert not IntradaySourceService._targets_complete({"sina": result}, [DAY])
 
 
@@ -465,5 +443,21 @@ def test_system_request_waits_remain_cancellable(phase, request_settings):
     with pytest.raises(TaskCancelled):
         service.fetch_window("600000.SH", [DAY])
     assert calls == (["sina"] if phase == "backoff" else [])
-    assert not cache.get(service._negative_key("600000.SH"))
+    assert not any(":negative:" in k for k in cache.values)
     assert cache.get(service._global_lock_key()) == ("another worker" if phase == "lock" else None)
+
+
+def test_eastmoney_still_repairs_when_ths_fails():
+    calls = []
+
+    class Source:
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
+            calls.append(provider)
+            if provider == "ths":
+                raise ConnectionError("THS unavailable")
+            return _frame(rows=10 if provider == "sina" else 240)
+
+    result = _service(factory=Source).fetch_window("600000.SH", [DAY], allow_fallback=True)
+    assert calls == ["sina", "ths", "ths", "eastmoney"]
+    assert result["source"] == "eastmoney" and len(result["rows"]) == 240
+    assert result["errors"] and "THS unavailable" in result["errors"][0]
