@@ -11,6 +11,7 @@ import redis
 
 from backend.common.logging import get_logger
 from backend.config import get_effective_settings
+from backend.datasource import request_policy as source_requests
 from backend.datasource.akshare_source import AKShareSource
 from backend.services.intraday_contract import (
     INTRADAY_PROVIDERS,
@@ -180,41 +181,32 @@ class IntradaySourceService:
         self, source: AKShareSource, code: str, provider: str, *, request_year=None
     ) -> pd.DataFrame:
         # 每次取源重新合并系统覆盖层，长任务下一只股票/备用源即可使用页面新配置。
-        settings = get_effective_settings().datasource
-        # 与通用 with_retry 保持一致：max_retries 表示包含首次请求的总尝试次数。
-        attempts = settings.max_retries
-        policy = (
-            settings.rate_limit_per_sec, settings.socket_timeout_sec,
-            attempts, settings.retry_backoff_sec,
-        )
-        if policy != self._reported_request_policy:
+        policy = source_requests.request_policy(provider, get_effective_settings())
+        attempts = policy.attempts  # 一次取源固定总尝试预算；下一次取源读取新配置。
+        signature = (policy.rate, policy.timeout, attempts, policy.backoff)
+        if signature != self._reported_request_policy:
             self._task_log(
-                f"系统请求配置：限流 {settings.rate_limit_per_sec:g} 次/秒，"
-                f"超时 {settings.socket_timeout_sec:g} 秒，最多尝试 {attempts} 次，"
-                f"指数退避起始 {settings.retry_backoff_sec:g} 秒；按实际来源共享限流"
+                f"系统请求配置：限流 {policy.rate:g} 次/秒，"
+                f"超时 {policy.timeout:g} 秒，最多尝试 {attempts} 次，"
+                f"指数退避起始 {policy.backoff:g} 秒；按实际来源共享限流"
             )
-            self._reported_request_policy = policy
+            self._reported_request_policy = signature
         last_error: Exception | None = None
         for attempt in range(attempts):
-            settings = get_effective_settings().datasource
+            policy = source_requests.request_policy(provider, get_effective_settings())
             if self.ctx:
                 self.ctx.check_cancel()
-            from backend.datasource.request_policy import (
-                RequestPolicy,
-                http_policy_scope,
-                wait_for_source,
-            )
-            policy = RequestPolicy(settings.rate_limit_per_sec, settings.socket_timeout_sec,
-                                   attempts, settings.retry_backoff_sec)
             self._task_log(f"{code} {PROVIDER_LABELS[provider]}：等待来源限流")
             try:
-                wait_for_source(provider, policy, client=self.redis,
-                                check=self.ctx.check_cancel if self.ctx else None, sleep=self.sleep)
+                source_requests.wait_for_source(
+                    provider, policy, client=self.redis,
+                    check=self.ctx.check_cancel if self.ctx else None, sleep=self.sleep,
+                )
                 self._task_log(f"{code} {PROVIDER_LABELS[provider]}请求 {attempt + 1}/{attempts}")
                 kwargs = {"request_year": request_year} if provider == "ths" else {}
-                with http_policy_scope(provider, policy):
+                with source_requests.http_policy_scope(provider, policy):
                     frame = source.get_intraday_1m(
-                        code, provider, timeout_sec=settings.socket_timeout_sec, **kwargs
+                        code, provider, timeout_sec=policy.timeout, **kwargs
                     )
                 return frame
             except (redis.RedisError, IntradayServiceUnavailable):
@@ -229,7 +221,7 @@ class IntradaySourceService:
                         f"{type(exc).__name__}: {str(exc)[:300]}；退避后重试", "warn",
                     )
             if attempt < attempts - 1:
-                self._pause(settings.retry_backoff_sec * 2 ** attempt)
+                self._pause(policy.backoff * 2 ** attempt)
         assert last_error is not None
         raise last_error
 

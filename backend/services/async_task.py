@@ -1747,10 +1747,13 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
     # 冻结选择范围；按类型调度的续跑也不能把后来新检出的问题混进原任务。
     ids = ctx.checkpoint.get("fix_scope_ids", ids)
     ctx.set_checkpoint(fix_scope_ids=ids)
+    done_ids = set(int(x) for x in (ctx.checkpoint.get("issue_done_ids") or []))
     selected = c.query_df(
         "SELECT id,code,trade_date,issue_type FROM data_quality_issue "
-        "WHERE id IN (SELECT unnest(?::BIGINT[]))", [ids],
+        "WHERE id IN (SELECT unnest(?::BIGINT[])) AND status='open' "
+        "AND id NOT IN (SELECT unnest(?::BIGINT[]))", [ids, sorted(done_ids)],
     )
+    # 续跑或等待执行期间可能已被忽略/解决；并发取源前先过滤，不能等逐条复检才拦截。
     ctx._intraday_groups = {}
     if "recheck_source" in params and not isinstance(params["recheck_source"], bool):
         raise ValueError("recheck_source 必须为布尔值")
@@ -1791,7 +1794,6 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
                 recheck_source=ctx._intraday_recheck_source,
             )
         ctx._intraday_batch_failed = batch_ctx.checkpoint.get("intraday_failed", {})
-    done_ids = set(int(x) for x in (ctx.checkpoint.get("issue_done_ids") or [])) if ctx.checkpoint else set()
     ids = [x for x in ids if x not in done_ids]
     n = len(ids)
     if n == 0:

@@ -54,3 +54,43 @@ def test_cookie_real_validation_records_valid_and_invalid(monkeypatch):
     assert module.ths_cookie_status(validate=True, repo=repo)["status"] == "valid"
     _Source.valid = False
     assert module.ths_cookie_status(validate=True, repo=repo)["status"] == "invalid"
+
+
+def test_login_wall_for_other_cookie_preserves_current_validation(monkeypatch):
+    from backend.services import ths_cookie_status as module
+
+    repo = _Repo()
+    valid = {"fingerprint": module._fingerprint("current"), "result": "valid"}
+    repo.record = valid.copy()
+    monkeypatch.setattr(module, "AppConfigRepo", lambda: repo)
+    monkeypatch.setattr(module, "login_cookie_with_source", lambda: ("current", "app_config"))
+    module.mark_ths_cookie_invalid("old-instance")
+    assert repo.record == valid
+    module.mark_ths_cookie_invalid("current")
+    assert repo.record["result"] == "invalid"
+    assert repo.record["fingerprint"] == valid["fingerprint"]
+
+
+def test_late_validation_does_not_overwrite_new_cookie_status(monkeypatch):
+    from backend.services import ths_cookie_status as module
+
+    monkeypatch.setattr(module, "get_effective_settings", lambda: SimpleNamespace(
+        ths_board=SimpleNamespace(cookie_validity_days=30)))
+    cookie = ["old"]
+    monkeypatch.setattr(module, "login_cookie_with_source", lambda: (cookie[0], "app_config"))
+    repo = _Repo()
+    current = {"fingerprint": module._fingerprint("new"), "result": "valid",
+               "checked_at": datetime.now(UTC).replace(tzinfo=None).isoformat()}
+
+    class Source:
+        def __init__(self, **kwargs):
+            pass
+
+        def validate_login_cookie(self):
+            cookie[0] = "new"
+            repo.record = current.copy()
+            return False
+
+    monkeypatch.setattr(module, "ThsBoardSource", Source)
+    assert module.ths_cookie_status(validate=True, repo=repo)["status"] == "valid"
+    assert repo.record == current

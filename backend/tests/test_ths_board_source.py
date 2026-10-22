@@ -19,6 +19,19 @@ from backend.datasource.ths_board import ThsBoardSource
 _LOGIN_WALL = '<script>location.href="//upass.10jqka.com.cn/login?redir=..."</script>'
 
 
+@pytest.fixture(autouse=True)
+def cookie_validation_repo(monkeypatch):
+    """模拟登录墙也会回写失效标记，必须隔离旁路仓库，不能只mock HTTP。"""
+    from backend.services import ths_cookie_status
+    from backend.tests.test_ths_cookie_status import _Repo
+
+    repo = _Repo()
+    monkeypatch.setattr(ths_cookie_status, "AppConfigRepo", lambda: repo)
+    monkeypatch.setattr(ths_cookie_status, "login_cookie_with_source",
+                        lambda: ("user=1; ticket=abc", "app_config"))
+    return repo
+
+
 def _member_page(codes: list[str], rows_per_page: int = 20) -> str:
     """构造成分股 AJAX 页 HTML（行内 stockpage 链接）。"""
     rows = []
@@ -161,7 +174,7 @@ def _make_source(responses: dict[str, object], max_retries: int = 1) -> ThsBoard
             return _FakeResp("", status=404)
 
     s = ThsBoardSource(min_interval_sec=0.0, timeout=1.0, max_retries=max_retries,
-                       retry_backoff_sec=0.0)
+                       retry_backoff_sec=0.0, login_cookie="")
     s._session = _FakeSession()  # type: ignore[assignment]
     # 不真正执行 JS：直接注入假 v cookie
     s._v_code = "fake-v-cookie"
@@ -559,7 +572,7 @@ def test_get_board_app_code_uses_clid_and_cache():
     assert sum("/gn/detail/code/309121" in x for x in s._session.calls) == 1
 
 
-def test_get_board_members_login_breaks_wall():
+def test_get_board_members_login_breaks_wall(cookie_validation_repo):
     """登录态下：第 6 页返回真实数据（非登录墙）→ 正常拼接，空尾页才终止。"""
     p1 = _member_page(["300476", "603936"])
     p2 = _member_page(["002913", "688449"])
@@ -576,6 +589,7 @@ def test_get_board_members_login_breaks_wall():
     # 两页并集全拿到；第 3 页登录墙（极端情形）→ 不完整兜底
     assert set(m["codes"]) == {"300476", "603936", "002913", "688449"}
     assert m["complete"] is False  # 登录墙兜底仍生效
+    assert cookie_validation_repo.record["result"] == "invalid"
 
 
 def test_get_board_members_login_true_end():

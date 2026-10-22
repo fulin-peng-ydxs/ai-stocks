@@ -76,6 +76,10 @@ def ths_cookie_status(*, validate: bool = False, repo: AppConfigRepo | None = No
                 "result": "valid" if valid else "invalid",
                 "checked_at": checked_at.isoformat(timespec="seconds"),
             }
+        # 校验期间管理员可能已更换Cookie；迟到结果不能覆盖新凭据的校验记录。
+        active_cookie, _ = login_cookie_with_source()
+        if not active_cookie or _fingerprint(active_cookie) != fingerprint:
+            return ths_cookie_status(validate=False, repo=repo)
         repo.set_ths_cookie_validation(record)
 
     saved_at = _as_datetime(repo.get_updated_at(_COOKIE_PATH)) if source == "app_config" else None
@@ -115,8 +119,11 @@ def ths_cookie_status(*, validate: bool = False, repo: AppConfigRepo | None = No
 
 
 def mark_ths_cookie_invalid(cookie: str) -> None:
-    """采集明确命中登录墙时记录失效；失败不影响采集本身的降级流程。"""
+    """仅为当前生效Cookie记录登录墙；旧实例或显式注入的其它凭据不得覆盖当前状态。"""
     try:
+        active_cookie, _ = login_cookie_with_source()
+        if not active_cookie or _fingerprint(active_cookie) != _fingerprint(cookie):
+            return
         AppConfigRepo().set_ths_cookie_validation({
             "fingerprint": _fingerprint(cookie),
             "result": "invalid",

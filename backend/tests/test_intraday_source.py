@@ -41,6 +41,38 @@ def _service(cache=None, factory=None):
     return service
 
 
+def test_provider_consumes_public_request_policy_without_own_parameter_mapping(monkeypatch):
+    """公共策略的返回值同时约束限流、超时、尝试次数和退避，不另组一份配置。"""
+    from backend.datasource import request_policy as rp
+
+    policy = rp.RequestPolicy(rate=17, timeout=7.5, attempts=3, backoff=0.25)
+    policies, gates, timeouts, waits = [], [], [], []
+
+    def resolved(group, settings):
+        policies.append(group)
+        return policy
+
+    monkeypatch.setattr(rp, "request_policy", resolved)
+    monkeypatch.setattr(rp, "wait_for_source", lambda group, value, **kwargs:
+                        gates.append((group, value)))
+
+    class Source:
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
+            timeouts.append(timeout_sec)
+            if len(timeouts) < 3:
+                raise TimeoutError("测试重试")
+            return _frame()
+
+    service = _service(factory=Source)
+    service.sleep = waits.append
+    frame = service._fetch_provider(Source(), "600000.SH", "eastmoney")
+    assert not frame.empty
+    assert set(policies) == {"eastmoney"}
+    assert gates == [("eastmoney", policy)] * 3
+    assert timeouts == [7.5] * 3
+    assert waits == [0.25, 0.5]
+
+
 def test_ths_repairs_primary_partial_before_requesting_eastmoney():
     from backend.tests.test_intraday_archive import Context
 

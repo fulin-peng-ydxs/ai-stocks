@@ -641,7 +641,7 @@ def quality_fix(issue_id: int, recheck_source: bool = False) -> ApiResponse:
 
 @router.post("/quality/fix-batch", response_model=ApiResponse, dependencies=_QUALITY_FIX)
 def quality_fix_batch(body: dict) -> ApiResponse:
-    """批量恢复：一个 fix 任务内顺序恢复所有 issue_ids（单写者模型，逐条写实时日志 + 复检）。"""
+    """批量恢复：分时按股票并发取源，主线程串行归档与逐条复检，沿用单写任务互斥。"""
     from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
     try:
         ids = list(dict.fromkeys(int(x) for x in (body.get("issue_ids") or [])))
