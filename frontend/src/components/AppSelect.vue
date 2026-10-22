@@ -9,6 +9,8 @@ import {
 defineOptions({ inheritAttrs: false })
 
 const props = withDefaults(defineProps<{
+  /** 默认允许输入过滤候选；短枚举等场景可显式关闭，远程搜索仍由调用方提供。 */
+  filterable?: boolean
   /** 普通控件使用语义容量；复合控件可由具名 class 承接自身布局。 */
   width?: 'compact' | 'short' | 'medium' | 'long' | 'wide' | 'fill'
   placement?: Placement
@@ -17,6 +19,7 @@ const props = withDefaults(defineProps<{
   fitInputWidth?: boolean
   popperClass?: string
 }>(), {
+  filterable: true,
   width: undefined,
   placement: APP_BOTTOM_FLOATING_PLACEMENT,
   fallbackPlacements: () => [...APP_BOTTOM_FLOATING_FALLBACKS],
@@ -42,6 +45,7 @@ defineExpose({
   <el-select
     ref="select"
     v-bind="$attrs"
+    :filterable="filterable"
     class="app-select"
     :class="width ? `app-control-width-${width}` : undefined"
     :placement="placement"

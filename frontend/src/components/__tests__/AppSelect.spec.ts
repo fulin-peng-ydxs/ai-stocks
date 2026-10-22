@@ -1,20 +1,120 @@
 // @vitest-environment jsdom
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import { ElOption, ElSelect } from 'element-plus'
 import AppSelect from '@/components/AppSelect.vue'
 
-function mountSelect(attrs: Record<string, unknown> = {}, props = {}) {
+function mountSelect(
+  attrs: Record<string, unknown> = {},
+  props = {},
+  options: { label: string; value: string | number }[] = [{ label: '选项', value: 0 }],
+) {
   return mount(AppSelect, {
     props,
     attrs,
-    slots: { default: () => h(ElOption, { label: '选项', value: 0 }) },
+    slots: { default: () => options.map(option => h(ElOption, { ...option, key: option.value })) },
     global: { components: { ElSelect } },
   })
 }
 
 describe('AppSelect', () => {
+  const pages = [
+    { label: '连板天梯', value: 'ladder' },
+    { label: '个股研究', value: 'stocks' },
+  ]
+
+  it('默认可输入过滤，无匹配或清空搜索不改业务值，确认候选才提交一次', async () => {
+    const update = vi.fn()
+    const change = vi.fn()
+    const wrapper = mountSelect({
+      modelValue: 'ladder', 'onUpdate:modelValue': update, onChange: change,
+    }, {}, pages)
+    const input = wrapper.get('input')
+    expect(input.attributes('readonly')).toBeUndefined()
+    await wrapper.get('.el-select__wrapper').trigger('click')
+    await input.setValue('个股')
+    await flushPromises()
+    const options = wrapper.findAllComponents(ElOption)
+    expect(options[0]!.attributes('style')).toContain('display: none')
+    expect(options[1]!.attributes('style') ?? '').not.toContain('display: none')
+    expect(update).not.toHaveBeenCalled()
+    expect(change).not.toHaveBeenCalled()
+
+    await input.setValue('无此页面')
+    await flushPromises()
+    expect(options.every(option => option.attributes('style')?.includes('display: none'))).toBe(true)
+    expect(update).not.toHaveBeenCalled()
+    await input.setValue('')
+    await flushPromises()
+    expect(options.every(option => !option.attributes('style')?.includes('display: none'))).toBe(true)
+    await input.setValue('个股')
+    await flushPromises()
+    await options[1]!.trigger('click')
+    expect(update).toHaveBeenCalledTimes(1)
+    expect(update).toHaveBeenCalledWith('stocks')
+    expect(change).toHaveBeenCalledTimes(1)
+    expect(change).toHaveBeenCalledWith('stocks')
+    wrapper.unmount()
+  })
+
+  it('未确认搜索结果就关闭时清除关键词，并保留原选中值', async () => {
+    const update = vi.fn()
+    const wrapper = mountSelect({
+      modelValue: 'ladder', 'onUpdate:modelValue': update,
+    }, {}, pages)
+    await wrapper.get('.el-select__wrapper').trigger('click')
+    await wrapper.get('input').setValue('个股')
+    await flushPromises()
+    wrapper.vm.blur()
+    await flushPromises()
+    expect((wrapper.get('input').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.get('.el-select__placeholder').text()).toBe('连板天梯')
+    expect(update).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('允许短枚举显式关闭搜索，并响应调用方后续切换', async () => {
+    const wrapper = mountSelect({}, { filterable: false })
+    expect(wrapper.get('input').attributes('readonly')).toBeDefined()
+    await wrapper.setProps({ filterable: true })
+    expect(wrapper.get('input').attributes('readonly')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('多选搜索后确认候选仍保留之前的选择', async () => {
+    const update = vi.fn()
+    const wrapper = mountSelect({
+      modelValue: ['ladder'], multiple: true, 'onUpdate:modelValue': update,
+    }, {}, pages)
+    await wrapper.get('.el-select__wrapper').trigger('click')
+    await wrapper.get('input').setValue('个股')
+    await flushPromises()
+    expect(update).not.toHaveBeenCalled()
+    await wrapper.findAllComponents(ElOption)[1]!.trigger('click')
+    expect(update).toHaveBeenCalledTimes(1)
+    expect(update).toHaveBeenCalledWith(['ladder', 'stocks'])
+    wrapper.unmount()
+  })
+
+  it('远程输入交给调用方查询，不再按本地标签二次过滤', async () => {
+    const remoteMethod = vi.fn()
+    const update = vi.fn()
+    const wrapper = mountSelect({
+      remote: true, remoteMethod, debounce: 0, 'onUpdate:modelValue': update,
+    }, {}, [{ label: '平安银行', value: '000001.SZ' }])
+    await wrapper.get('.el-select__wrapper').trigger('click')
+    await flushPromises()
+    remoteMethod.mockClear()
+    await wrapper.get('input').setValue('000001')
+    await flushPromises()
+    expect(remoteMethod).toHaveBeenCalledTimes(1)
+    expect(remoteMethod).toHaveBeenCalledWith('000001')
+    expect(wrapper.getComponent(ElOption).attributes('style') ?? '').not.toContain('display: none')
+    expect(update).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('集中提供下方定位、内容扩展和语义容量，并保留消费方属性与浮层边界', () => {
     const wrapper = mountSelect({ disabled: true, 'aria-label': '业务选择', 'data-testid': 'select' }, {
       width: 'short' as const, popperClass: 'business-popper',

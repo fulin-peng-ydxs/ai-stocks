@@ -90,7 +90,7 @@ describe('StockCodeMultiSelect', () => {
     await select.props('remoteMethod')('银行')
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.find('.select-stub').attributes('data-no-data-text')).toContain('network down')
+    expect(wrapper.find('.select-stub').attributes('data-no-data-text')).toBe('股票候选加载失败')
     expect(wrapper.text()).toContain('600000.SH')
   })
 })

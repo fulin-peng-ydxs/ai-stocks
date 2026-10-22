@@ -269,7 +269,7 @@ describe('AssetProfileSelect', () => {
     await flush()
     expect(wrapper.text()).toContain('筛选方案加载失败')
     expect(wrapper.text()).not.toContain('暂无我的筛选方案')
-    expect(wrapper.emitted('loadFailed')?.at(-1)).toEqual(['boom'])
+    expect(wrapper.emitted('loadFailed')?.at(-1)).toEqual(['筛选方案加载失败'])
     const retry = wrapper.findAll('button').find((b) => b.text().includes('重试'))
     expect(retry).toBeTruthy()
     await retry!.trigger('click')
