@@ -93,6 +93,14 @@ class _Redis:
         if self.fail:
             raise redis.ConnectionError("down")
         with self.lock:
+            if "redis.call('TIME')" in _script:
+                import math
+                now = time.time()
+                wait = float(token) - (now - float(self.values.get(key, "0")))
+                if wait > 0:
+                    return math.ceil(wait * 1000)
+                self.values[key] = str(now)
+                return 0
             if self.values.get(key) != token:
                 return 0
             self.values.pop(key, None)

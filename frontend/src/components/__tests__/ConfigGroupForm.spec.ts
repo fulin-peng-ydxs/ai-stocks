@@ -44,6 +44,7 @@ function mountForm(extraProps: Record<string, unknown> = {}) {
       ...extraProps,
     },
     global: {
+      directives: { permission: {} },
       stubs: {
         HelpHint: {
           props: ['text'],
@@ -53,10 +54,11 @@ function mountForm(extraProps: Record<string, unknown> = {}) {
         ElFormItem: {
           template: '<div class="form-item"><slot name="label" /><slot /></div>',
         },
-        ElSwitch: { props: ['modelValue'], template: '<button>{{ String(modelValue) }}</button>' },
+        ElSwitch: { name: 'ElSwitch', props: ['modelValue'], template: '<button>{{ String(modelValue) }}</button>' },
         ElSelect: { template: '<div><slot /></div>' },
         ElOption: true,
-        ElInputNumber: { props: ['modelValue'], template: '<input :value="modelValue" />' },
+        ElInputNumber: { name: 'ElInputNumber', emits: ['update:modelValue'], props: ['modelValue'], template: '<input :value="modelValue" />' },
+        ElButton: { template: '<button><slot /></button>' },
         ElInput: {
           props: ['modelValue', 'type'],
           emits: ['update:modelValue'],
@@ -69,6 +71,30 @@ function mountForm(extraProps: Record<string, unknown> = {}) {
 }
 
 describe('ConfigGroupForm', () => {
+  it('来源覆盖以显式继承开关表达，关闭后提交 null', async () => {
+    const field = { path: 'ths_board.timeout_sec', label: '旧请求超时', type: 'number',
+      value: null, default: null, overridden: false, nullable: true, min: 1, inherited_value: 30 }
+    const wrapper = mountForm({ group: { key: 'ths_board', label: '板块', fields: [field] },
+      modelValue: { 'ths_board.timeout_sec': null } })
+    expect(wrapper.findComponent({ name: 'ElInputNumber' }).exists()).toBe(false)
+    expect(wrapper.text()).toContain('当前继承：30')
+    const toggle = wrapper.findComponent({ name: 'ElSwitch' })
+    toggle.vm.$emit('update:modelValue', true)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('update-field')?.[0]).toEqual(['ths_board.timeout_sec', 30])
+    toggle.vm.$emit('update:modelValue', false)
+    expect(wrapper.emitted('update-field')?.[1]).toEqual(['ths_board.timeout_sec', null])
+  })
+
+  it('密文不可用时仍提供清除入口，不要求先解密出原值', async () => {
+    const wrapper = mountForm({ group: { key: 'ths_board', label: '板块', fields: [{
+      path: 'ths_board.login_cookie', label: 'Cookie', type: 'password', value: '',
+      default: '', overridden: true, secret_status: 'unavailable',
+    }] }, modelValue: { 'ths_board.login_cookie': '' } })
+    await wrapper.findAll('button').find((button) => button.text() === '清除已存配置')!.trigger('click')
+    expect(wrapper.emitted('reset-field')?.[0]).toEqual(['ths_board.login_cookie'])
+  })
+
   it('把字段描述、默认值和范围传给 HelpHint', () => {
     const wrapper = mountForm()
     const helpTexts = wrapper.findAll('.help-hint-stub').map((node) => node.text())
@@ -182,7 +208,8 @@ describe('ConfigGroupForm', () => {
           ElSelect: { template: '<div><slot /></div>' },
           ElOption: true,
           ElInputNumber: { template: '<input />' },
-          ElInput: {
+          ElButton: { template: '<button><slot /></button>' },
+        ElInput: {
             props: ['modelValue', 'type'],
             emits: ['update:modelValue'],
             template: '<input :value="modelValue" :type="type" @input="$emit(\'update:modelValue\', $event.target.value)" />',

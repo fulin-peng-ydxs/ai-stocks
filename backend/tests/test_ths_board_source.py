@@ -253,7 +253,7 @@ def test_401_refresh_and_retry():
                 return _FakeResp("", status=401)
             return _FakeResp(p1)
 
-    s = _make_source({})
+    s = _make_source({}, max_retries=2)
     s._session = _FakeSession()  # type: ignore[assignment]
     s._v_code = "v1"
     m = s.get_board_members("309121", "concept")

@@ -36,8 +36,8 @@ datasource:
   history_years: 10           # 历史深度近 10 年
   capital_review_batch_size: 50  # 每次日常更新轮询股本历史缺口/不一致股票；0关闭
   capital_review_interval_days: 7 # 无新增证据的同股历史复查间隔；失败次日可重试
-  rate_limit_per_sec: 5       # 限流：每秒请求数
-  max_retries: 3              # 重试次数
+  rate_limit_per_sec: 5       # 每实际来源共享的请求起始频率，分页/重试均计入
+  max_retries: 3              # 总尝试次数，包含首次
   retry_backoff_sec: 2        # 重试退避秒数
   socket_timeout_sec: 30      # 全局 socket 超时（秒），防公开接口请求挂死
   baostock_login_timeout_sec: 120  # BaoStock 登录等待；登录后仍使用请求超时
@@ -49,7 +49,6 @@ intraday:
   supported_trade_days: 8      # 数据管理采集的源端近期交易日窗口
   cache_ttl_sec: 43200         # 数据库逐股逐日归档查询缓存 12 小时
   # 请求限流、超时、重试和退避统一使用 datasource 的系统生效配置
-  lock_wait_sec: 20
 
 # ── 标的范围 ──
 universe:
@@ -200,13 +199,12 @@ mail:
   sender: ""                   # 留空则回落 username；可用 AI_STOCKS_SMTP_SENDER 覆盖显示名
   timeout_sec: 10
 
-# 同花顺板块直连源请求参数（板块概念 R1-R4；独立于 datasource 通用行情源——同花顺是独立反爬直连源，
-# 频率限制比 akshare/baostock 更敏感，故限流/超时/重试单独配置、单独 Web 可调（数据治理·同花顺板块）。
-# min_interval_sec 为相邻两次请求最小间隔：实测 1.0s 稳定，风控收紧（如 401 频发）时调大到 2.0~3.0。
+# 同花顺板块：最小起始间隔与通用频率取更严格值，超时/尝试/退避默认继承通用配置。
+# 历史显式覆盖保留；置 null 后恢复继承。Cookie仅用于板块登录页。
 ths_board:
   min_interval_sec: 1.0      # 相邻请求最小间隔（秒），越小请求越快
-  timeout_sec: 10.0          # 单请求超时（秒）
-  max_retries: 3             # 失败重试次数
-  retry_backoff_sec: 2.0     # 重试退避基数（秒，指数退避）
+  timeout_sec: null          # 继承 datasource.socket_timeout_sec
+  max_retries: null          # 继承 datasource.max_retries（包含首次）
+  retry_backoff_sec: null    # 继承 datasource.retry_backoff_sec
   member_update_interval_days: 7  # 成分快照更新间隔（天）
   cookie_validity_days: 30    # 登录 Cookie 默认有效期提醒（天）；连通测试会做真实登录态校验

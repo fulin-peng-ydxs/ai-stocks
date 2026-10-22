@@ -33,6 +33,7 @@ function statusOf(path: string): FieldStatus | undefined {
 
 const emit = defineEmits<{
   'update-field': [path: string, value: unknown]
+  'reset-field': [path: string]
 }>()
 
 function valueOf(path: string) {
@@ -65,6 +66,7 @@ function helpText(field: SettingField): string {
   const range = rangeLabel(field)
   return [
     field.desc,
+    field.nullable ? "留空：继承通用请求配置" : "",
     `默认值：${defaultLabel(field.default)}`,
     range ? `允许范围：${range}` : '',
   ].filter(Boolean).join('；')
@@ -141,7 +143,7 @@ function collapsed(key: string): boolean {
         <el-form-item
           v-for="field in block.fields"
           :key="field.path"
-          :required="!disabled && (field.type === 'enum' || field.type === 'int' || field.type === 'number')"
+          :required="!disabled && !field.nullable && (field.type === 'enum' || field.type === 'int' || field.type === 'number')"
           :class="{ 'is-invalid': isInvalid(field.path) }"
         >
           <template #label>
@@ -152,8 +154,22 @@ function collapsed(key: string): boolean {
           </template>
 
           <div class="field-control" :class="`is-${field.type}`">
+            <template v-if="field.nullable">
+              <el-switch
+                :model-value="valueOf(field.path) != null"
+                :aria-label="`${field.label}独立覆盖`"
+                active-text="单独设置" inactive-text="继承通用"
+                :disabled="disabled"
+                @update:model-value="(enabled: boolean) => setValue(field.path, enabled ? field.inherited_value ?? field.min ?? 0 : null)"
+              />
+              <el-input-number v-if="valueOf(field.path) != null"
+                :model-value="Number(valueOf(field.path))" :min="field.min" :max="field.max"
+                :controls="field.type === 'int'" :disabled="disabled"
+                @update:model-value="(value: number | undefined) => setValue(field.path, value ?? null)" />
+              <span v-else class="field-inherited">当前继承：{{ field.inherited_value ?? '通用配置' }}</span>
+            </template>
             <el-switch
-              v-if="field.type === 'bool'"
+              v-else-if="field.type === 'bool'"
               :model-value="Boolean(valueOf(field.path))"
               :disabled="disabled"
               @update:model-value="(value: boolean) => setValue(field.path, value)"
@@ -170,13 +186,14 @@ function collapsed(key: string): boolean {
             </AppSelect>
             <el-input-number
               v-else-if="field.type === 'number' || field.type === 'int'"
-              :model-value="Number(valueOf(field.path))"
+              :model-value="valueOf(field.path) == null ? undefined : Number(valueOf(field.path))"
+              :placeholder="field.nullable ? '继承通用配置' : undefined"
               :min="field.min"
               :max="field.max"
               :step="field.type === 'number' ? 0.0001 : 1"
               :controls="field.type === 'int'"
               :disabled="disabled"
-              @update:model-value="(value: number | undefined) => setValue(field.path, value)"
+              @update:model-value="(value: number | undefined) => setValue(field.path, value ?? (field.nullable ? null : value))"
             />
             <el-input
               v-else-if="field.type === 'password'"
@@ -198,6 +215,10 @@ function collapsed(key: string): boolean {
               @update:model-value="(value: string) => setValue(field.path, value)"
             />
           </div>
+
+          <el-button v-if="field.type === 'password' && field.secret_status && field.secret_status !== 'unset'"
+            v-permission="'data-settings:manage'" link type="danger" :disabled="disabled"
+            @click="emit('reset-field', field.path)">清除已存配置</el-button>
 
           <div v-if="isInvalid(field.path) || statusOf(field.path)" class="field-meta">
             <span v-if="isInvalid(field.path)" class="field-error">超出允许范围</span>
@@ -236,6 +257,7 @@ function collapsed(key: string): boolean {
   gap: var(--app-space-control-gap);
   min-width: 0;
 }
+.field-inherited { display: block; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .field-control {
   width: min(100%, 280px);
   min-width: 0;

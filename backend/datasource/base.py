@@ -43,6 +43,7 @@ SINA_INTRADAY_REQUEST_LIMIT = 1970
 
 
 _CANCEL_LOCAL = threading.local()
+_RETRY_LOCAL = threading.local()
 
 
 def check_thread_cancel() -> None:
@@ -84,16 +85,11 @@ def thread_cancel_scope(check):
 
 
 def rate_limited(min_interval_sec: float, *, start_to_start: bool = False) -> Callable:
-    """方法级简单限流：相邻两次调用间隔 >= 间隔秒数（按方法名隔离记时）。
+    """非行情来源的兼容限流装饰器。
 
-    间隔取值优先级：实例属性 `self._min_interval_sec`（运行时按生效配置注入，
-    见各源 __init__）> 装饰器入参 min_interval_sec（导入期默认兜底）。这样前端
-    改「请求限流」后，新建的数据源实例即按新值限流，无需重启进程。并发时每线程
-    各自独立实例 → 限流按线程隔离，总速率≈并发数×单线程速率。
-
-    `start_to_start=True` 按「调用起始」记时，使配置的每秒请求数就是真实起始间隔；
-    默认按「调用结束」记时，间隔之外还会再叠加一次请求往返耗时，实际速率低于配置值。
-    已被外部锁全进程串行的路径用前者：锁已保证不并发，再按结束记时会与串行重复叠加。
+    AKShare/同花顺在真实HTTP发送处按来源共享限流，BaoStock在SDK查询处限流，
+    因而这些来源在此直接透传，不再按实例或方法叠加等待。其它调用方保持既有
+    实例间隔及 start_to_start 行为，避免改变与本次采集配置无关的装饰器消费者。
     """
 
     def deco(fn: Callable) -> Callable:
@@ -101,6 +97,9 @@ def rate_limited(min_interval_sec: float, *, start_to_start: bool = False) -> Ca
 
         @wraps(fn)
         def wrapper(self, *args, **kwargs):
+            # HTTP 来源在真实请求处统一限流，不能再按方法/实例叠加休眠。
+            if getattr(self, "name", None) in {"akshare", "ths_board", "baostock"}:
+                return fn(self, *args, **kwargs)
             interval = getattr(self, "_min_interval_sec", None)
             if interval is None:
                 interval = min_interval_sec
@@ -133,6 +132,8 @@ def with_retry(max_retries: int = 3, backoff_sec: float = 2.0) -> Callable:
     def deco(fn: Callable) -> Callable:
         @wraps(fn)
         def wrapper(*args, **kwargs):
+            if getattr(_RETRY_LOCAL, "active", False):
+                return fn(*args, **kwargs)
             self = args[0] if args else None
             retries = getattr(self, "_max_retries", None)
             if retries is None:
@@ -140,14 +141,25 @@ def with_retry(max_retries: int = 3, backoff_sec: float = 2.0) -> Callable:
             backoff = getattr(self, "_retry_backoff_sec", None)
             if backoff is None:
                 backoff = backoff_sec
+            if getattr(self, "name", None) in {"akshare", "baostock"}:
+                from backend.datasource.request_policy import request_policy
+                policy = request_policy(self.name)
+                retries, backoff = policy.attempts, policy.backoff
             last_err: Exception | None = None
             for attempt in range(1, retries + 1):
                 check_thread_cancel()
                 try:
-                    result = fn(*args, **kwargs)
+                    _RETRY_LOCAL.active = True
+                    try:
+                        result = fn(*args, **kwargs)
+                    finally:
+                        _RETRY_LOCAL.active = False
                     check_thread_cancel()
                     return result
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
+                    from backend.services.async_task import TaskCancelled
+                    if isinstance(e, TaskCancelled):
+                        raise
                     last_err = e
                     check_thread_cancel()
                     if attempt < retries:

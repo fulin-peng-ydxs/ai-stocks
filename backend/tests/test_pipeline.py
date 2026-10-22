@@ -708,7 +708,7 @@ def test_board_schedulable_and_catalog(tmp_path):
 
 def test_source_status_includes_board_source(monkeypatch):
     """数据源健康列表把同花顺标为独立板块源，不混入行情主备源。"""
-    from types import SimpleNamespace
+    from backend.config.settings import Settings
 
     from backend.services import data_sources, ths_cookie_status
 
@@ -718,8 +718,7 @@ def test_source_status_includes_board_source(monkeypatch):
 
     monkeypatch.setattr(
         data_sources, "get_effective_settings",
-        lambda: SimpleNamespace(datasource=SimpleNamespace(
-            primary="akshare", fallback="baostock", socket_timeout_sec=3)),
+        lambda: Settings(datasource={"socket_timeout_sec": 3}),
     )
     monkeypatch.setattr(ths_cookie_status, "ths_cookie_status", lambda **_kwargs: {})
     result = data_sources.source_status(do_ping=False, repo=_Repo())
@@ -727,12 +726,12 @@ def test_source_status_includes_board_source(monkeypatch):
     roles = {item["source"]: item["role"] for item in result["sources"]}
     assert roles == {"akshare": "primary", "baostock": "fallback", "ths_board": "board",
                      "intraday_sina": "intraday", "intraday_eastmoney": "intraday",
-                     "intraday_ths": "intraday"}
+                     "intraday_ths": "intraday", "eastmoney_capital": "reference", "sse_capital": "reference"}
 
 
 def test_source_status_persists_latest_probe_and_keeps_last_success(monkeypatch):
     """失败测试更新最近状态和原因，但保留此前成功时间。"""
-    from types import SimpleNamespace
+    from backend.config.settings import Settings
 
     from backend.services import data_sources, ths_cookie_status
 
@@ -766,11 +765,10 @@ def test_source_status_persists_latest_probe_and_keeps_last_success(monkeypatch)
     monkeypatch.setattr(
         data_sources,
         "get_effective_settings",
-        lambda: SimpleNamespace(datasource=SimpleNamespace(
-            primary="akshare", fallback="baostock", socket_timeout_sec=3)),
+        lambda: Settings(datasource={"socket_timeout_sec": 3}),
     )
     monkeypatch.setattr(ths_cookie_status, "ths_cookie_status", lambda **_kwargs: {})
-    results = iter([(False, "连接超时"), (True, None), (True, None), (True, None), (False, "分钟源连接失败"), (True, None)])
+    results = iter([(False, "连接超时"), (True, None), (True, None), (True, None), (False, "分钟源连接失败"), (True, None), (True, None), (True, None)])
     monkeypatch.setattr(data_sources, "_ping", lambda *_args: next(results))
 
     tested = data_sources.source_status(do_ping=True, repo=repo)

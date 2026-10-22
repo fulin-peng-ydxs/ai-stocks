@@ -434,19 +434,29 @@ export function listScheduleTriggerEvents(id: string, limit = 100): Promise<{ ev
 // ── 数据源状态（FR-DM-5）──
 export interface SourceStatus {
   source: string
-  role: 'primary' | 'fallback' | 'board' | 'intraday'
+  role: 'primary' | 'fallback' | 'board' | 'intraday' | 'reference'
   up: boolean | null
   last_test_at: string | null
   last_success_at: string | null
   failure_reason: string | null
   timeout_sec: number
+  label?: string
+  scope?: string
+  concurrency?: number
+  rate_limit_per_sec?: number
+  max_attempts?: number
+  retry_backoff_sec?: number
+  login_timeout_sec?: number | null
+  policy_origin?: string
+  policy_overrides?: string[]
+  probe_scope?: string
   credential?: CredentialStatus
 }
 export function getSources(ping = false): Promise<{ sources: SourceStatus[] }> {
   return http.get('/data/sources', { params: { ping } })
 }
-export function testSources(): Promise<{ sources: SourceStatus[] }> {
-  return http.post('/data/sources/test')
+export function testSources(source?: string): Promise<{ sources: SourceStatus[] }> {
+  return http.post('/data/sources/test', undefined, { params: { source }, timeout: 600_000 })
 }
 
 // ── 系统设置（FR-DM-12）──
@@ -458,6 +468,8 @@ export interface SettingField {
   value: any
   default: any
   overridden: boolean
+  nullable?: boolean
+  inherited_value?: number
   options?: string[]
   placeholder?: string
   min?: number
@@ -776,7 +788,7 @@ export const ISSUE_STATUS_LABEL: Record<string, string> = {
 }
 export const SOURCE_LABEL: Record<string, string> = { intraday_sina: '新浪分时', intraday_eastmoney: '东财分时', intraday_ths: '同花顺分时', akshare: 'AKShare', baostock: 'BaoStock', ths_board: '同花顺板块' }
 export const SOURCE_ROLE_LABEL: Record<SourceStatus['role'], string> = {
-  primary: '主源', fallback: '备用源', board: '板块源', intraday: '分时源',
+  primary: '行情主接入', fallback: '行情备用接入', board: '板块', intraday: '分时', reference: '参考数据',
 }
 
 export type BoardTypeScope = '' | 'concept' | 'industry'

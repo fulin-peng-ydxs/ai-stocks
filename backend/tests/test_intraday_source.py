@@ -244,7 +244,7 @@ def test_redis_failure_blocks_collector_before_source_access():
     assert calls == []
 
 
-def test_different_stocks_share_global_serial_gate_and_interval():
+def test_different_stocks_overlap_without_multiplying_source_rate():
     cache = _Redis()
     active, maximum = 0, 0
     starts = []
@@ -257,27 +257,23 @@ def test_different_stocks_share_global_serial_gate_and_interval():
                 active += 1
                 maximum = max(maximum, active)
                 starts.append(time.monotonic())
-            time.sleep(0.003)
+            time.sleep(0.06)
             with tracker:
                 active -= 1
             return _frame()
 
-    service = _service(cache, Source)
     with ThreadPoolExecutor(max_workers=2) as pool:
-        list(pool.map(lambda code: service.fetch_window(code, [DAY]), ["002251.SZ", "600000.SH"]))
-    assert maximum == 1 and len(starts) == 2
+        list(pool.map(lambda code: _service(cache, Source).fetch_window(code, [DAY]), ["002251.SZ", "600000.SH"]))
+    assert maximum == 2 and len(starts) == 2
     assert starts[1] - starts[0] >= 0.019
 
 
-def test_global_source_lock_covers_long_configured_pacing_wait(request_settings):
+def test_long_timeouts_no_longer_hold_source_lock(request_settings):
     cache = _Redis()
-    service = _service(cache)
-    request_settings.rate_limit_per_sec = 0.1
     request_settings.socket_timeout_sec = 120
-    service._acquire_global_source_lock(request_settings)
-    assert cache.set_ttls[service._global_lock_key()] >= (
-        1 / request_settings.rate_limit_per_sec + 2 * request_settings.socket_timeout_sec + 10
-    )
+    result = _service(cache).fetch_window("600000.SH", [DAY])
+    assert result is not None
+    assert not any(":lock:" in key for key in cache.values)
 
 
 @pytest.mark.parametrize("provider", ["eastmoney", "ths"])
@@ -309,7 +305,7 @@ def test_backup_failures_do_not_suppress_other_stocks_or_later_repair(provider):
     result = _service(cache, Source).fetch_window("000000.SZ", [DAY], allow_fallback=True,
                                                  providers=("sina", provider))
     assert result["source"] == provider and len(result["rows"]) == 240
-    assert cache.get(IntradaySourceService._global_lock_key()) is None
+    assert not any(":lock:" in key for key in cache.values)
 
 
 @pytest.mark.parametrize("provider", ["sina", "eastmoney", "ths"])
@@ -373,19 +369,19 @@ def test_system_overrides_control_real_requests_and_refresh_during_task(monkeypa
         check_cancel=lambda: None, flush=lambda: None,
         log=lambda message, level: messages.append(message),
     )
-    monkeypatch.setattr(service, "_wait_source_interval", intervals.append)
+    monkeypatch.setattr("backend.datasource.request_policy.wait_for_source",
+                        lambda group, policy, **_: intervals.append(1 / policy.rate))
 
     def pause(seconds):
         # 重试等待期间已经释放全局请求锁。
-        assert service.redis.get(service._global_lock_key()) is None
+        assert not any(":lock:" in key for key in service.redis.values)
         waits.append(seconds)
 
     monkeypatch.setattr(service, "_pause", pause)
 
     def request(url, *, params, timeout):
         calls.append(timeout)
-        ttl = service.redis.set_ttls[service._global_lock_key()]
-        assert ttl >= 2 * timeout + 10
+        assert not any(":lock:" in key for key in service.redis.values)
         if params["symbol"] == "sh600000":
             raise TimeoutError("source unavailable")
         return _Response([{
@@ -411,7 +407,7 @@ def test_system_overrides_control_real_requests_and_refresh_during_task(monkeypa
     assert any("最多尝试 1 次" in message for message in messages)
 
 
-@pytest.mark.parametrize("phase", ["lock", "limit", "backoff"])
+@pytest.mark.parametrize("phase", ["limit", "backoff"])
 def test_system_request_waits_remain_cancellable(phase, request_settings):
     from backend.services.async_task import TaskCancelled
 
@@ -435,16 +431,14 @@ def test_system_request_waits_remain_cancellable(phase, request_settings):
     service.ctx = SimpleNamespace(check_cancel=check_cancel, log=lambda *_: None, flush=lambda: None)
     service.sleep = sleep
     request_settings.retry_backoff_sec = 2
-    if phase == "lock":
-        cache.set(service._global_lock_key(), "another worker", ex=60)
     if phase == "limit":
         request_settings.rate_limit_per_sec = 0.1
-        cache.set(service._last_start_key(), str(time.time()), ex=60)
+        cache.set("market:source:rate:v1:sina", str(time.time()), ex=60)
     with pytest.raises(TaskCancelled):
         service.fetch_window("600000.SH", [DAY])
     assert calls == (["sina"] if phase == "backoff" else [])
     assert not any(":negative:" in k for k in cache.values)
-    assert cache.get(service._global_lock_key()) == ("another worker" if phase == "lock" else None)
+    assert not any(":lock:" in key for key in cache.values)
 
 
 def test_eastmoney_still_repairs_when_ths_fails():

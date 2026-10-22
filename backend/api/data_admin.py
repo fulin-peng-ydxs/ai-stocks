@@ -934,9 +934,12 @@ def sources(ping: bool = False) -> ApiResponse:
 
 
 @router.post("/sources/test", response_model=ApiResponse, dependencies=_SOURCE)
-def sources_test() -> ApiResponse:
+def sources_test(source: str | None = None) -> ApiResponse:
     from backend.services.data_sources import source_status
-    return ok(source_status(do_ping=True), msg="连通测试完成")
+    try:
+        return ok(source_status(do_ping=True, source=source), msg="连通测试完成")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 # ── 系统设置（FR-DM-12 / DM-D2/D3）─────────────────────────
@@ -986,6 +989,10 @@ def get_settings_view() -> ApiResponse:
                           "value": val,
                           "default": default_val,
                           "overridden": f["path"] in override_keys}
+            if f.get("nullable") and f["path"].startswith("ths_board."):
+                shared_key = f["path"].split(".")[-1]
+                shared_key = "socket_timeout_sec" if shared_key == "timeout_sec" else shared_key
+                field_view["inherited_value"] = eff["datasource"][shared_key]
             if f.get("type") == "password":
                 field_view["secret_status"] = secret_status
                 if f["path"] == "ths_board.login_cookie":

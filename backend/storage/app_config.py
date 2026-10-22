@@ -30,16 +30,16 @@ CONFIG_GROUPS: list[dict] = [
     {"key": "ui", "label": "界面显示", "desc": "控制所有用户共享的界面显示基线，不包含个人页面密度。", "fields": [
         {"path": "ui.display.auto_scale_exponent", "label": "自动界面比例强度", "type": "number", "min": 0, "max": 1, "default": 0.10, "app_config_only": True, "desc": "按当前屏幕可用面积自动缩放的指数；0 表示保持 100%，自动结果仍限制在 90%～110%。"},
     ]},
-    {"key": "datasource", "label": "数据源", "desc": "控制公开行情数据源、采集并发和请求容错参数。", "fields": [
-        {"path": "datasource.primary", "label": "主数据源", "type": "enum", "options": ["akshare", "baostock"], "desc": "日常采集优先使用的数据源。"},
-        {"path": "datasource.fallback", "label": "备用数据源", "type": "enum", "options": ["akshare", "baostock"], "desc": "主数据源不可用时的备用来源。"},
+    {"key": "datasource", "label": "数据源", "desc": "统一行情采集、修复和源测试的请求规则；特殊来源限制在下方说明。", "fields": [
+        {"path": "datasource.primary", "label": "行情主接入器", "type": "enum", "options": ["akshare", "baostock"], "desc": "只控制支持切换的行情能力。AKShare 内部使用新浪、东财等接口；分时、股本和板块按各自能力取源。"},
+        {"path": "datasource.fallback", "label": "行情备用接入器", "type": "enum", "options": ["akshare", "baostock"], "desc": "行情主接入器不可用时的备用来源。"},
         {"path": "datasource.history_years", "label": "回填年限", "type": "int", "min": 1, "max": 30, "desc": "历史行情回填向前覆盖的年数。"},
-        {"path": "datasource.update_concurrency", "label": "采集并发数(增量/回填/重拉/估值)", "type": "int", "min": 1, "max": 16, "desc": "单次采集任务允许并发请求的数据分片数。"},
-        {"path": "datasource.rate_limit_per_sec", "label": "请求限流(次/秒)", "type": "number", "min": 0.1, "max": 50, "desc": "调用外部公开数据源的每秒请求上限。"},
+        {"path": "datasource.update_concurrency", "label": "默认采集并发数", "type": "int", "min": 1, "max": 16, "desc": "单任务工作单元上限；任务显式参数可覆盖。分时按股票并发，BaoStock 和板块会话保持串行；不放大来源请求频率。"},
+        {"path": "datasource.rate_limit_per_sec", "label": "每来源请求上限(次/秒)", "type": "number", "min": 0.1, "max": 50, "desc": "按实际来源跨线程、跨进程合计限制请求起始频率，分页及重试均计入；新浪行情与新浪分时共享限额。"},
         {"path": "datasource.baostock_login_timeout_sec", "label": "BaoStock登录超时(秒)", "type": "number", "min": 1, "max": 600, "desc": "仅限登录等待，登录完成后恢复普通请求超时。"},
-        {"path": "datasource.socket_timeout_sec", "label": "请求超时(秒)", "type": "number", "min": 1, "desc": "单个外部数据请求的等待上限。"},
-        {"path": "datasource.max_retries", "label": "失败重试次数", "type": "int", "min": 1, "max": 10, "desc": "采集请求失败后的最多重试次数。"},
-        {"path": "datasource.retry_backoff_sec", "label": "重试退避(秒)", "type": "number", "min": 0, "max": 60, "desc": "连续重试之间的等待时间。"},
+        {"path": "datasource.socket_timeout_sec", "label": "请求超时(秒)", "type": "number", "min": 1, "desc": "每次网络尝试的连接和读取超时；不是整个任务的时长上限。下一次请求读取新值，在途请求不变。"},
+        {"path": "datasource.max_retries", "label": "最多尝试次数", "type": "int", "min": 1, "max": 10, "desc": "包含首次请求；3 表示首次加最多两次重试。一次多接口业务操作可能包含多个请求。"},
+        {"path": "datasource.retry_backoff_sec", "label": "重试初始等待(秒)", "type": "number", "min": 0, "max": 60, "desc": "指数退避起点；2 秒表示依次等待 2、4、8……秒。"},
     ]},
     {"key": "cost", "label": "回测成本", "desc": "控制回测成交记账时使用的默认交易成本。", "fields": [
         {"path": "backtest.cost.commission_rate", "label": "佣金率", "type": "number", "min": 0, "max": 0.1, "desc": "买卖双边计入的佣金比例。"},
@@ -58,11 +58,11 @@ CONFIG_GROUPS: list[dict] = [
     {"key": "audit", "label": "审计设置", "desc": "控制审计查询默认窗口和保留期自动清理。", "fields": [
         {"path": "audit.retention_days", "label": "审计保留期/默认查询窗口(天)", "type": "int", "min": 7, "max": 365, "desc": "审计页未选择时间时默认查询最近多少天，同时用于自动清理超期审计日志。"},
     ]},
-    {"key": "ths_board", "label": "同花顺板块", "desc": "同花顺板块直连源请求参数（限流/超时/重试，独立于通用行情源）。", "fields": [
-        {"path": "ths_board.min_interval_sec", "label": "请求间隔(秒)", "type": "number", "min": 0.05, "max": 30, "desc": "相邻两次请求最小间隔（越小越快；同花顺风控收紧时调大）。"},
-        {"path": "ths_board.timeout_sec", "label": "请求超时(秒)", "type": "number", "min": 1, "max": 120, "desc": "单个同花顺请求的等待上限。"},
-        {"path": "ths_board.max_retries", "label": "失败重试次数", "type": "int", "min": 1, "max": 10, "desc": "同花顺请求失败后的最多重试次数。"},
-        {"path": "ths_board.retry_backoff_sec", "label": "重试退避(秒)", "type": "number", "min": 0, "max": 60, "desc": "同花顺请求连续重试之间的退避时间。"},
+    {"key": "ths_board", "label": "同花顺板块", "desc": "板块来源的特殊频率限制、采集规则和访问凭据；同花顺股票分钟不使用本组Cookie。", "fields": [
+        {"path": "ths_board.min_interval_sec", "label": "请求间隔(秒)", "type": "number", "min": 0.05, "max": 30, "desc": "板块接口最小请求起始间隔，与通用来源频率取更严格限制；不影响同花顺股票分钟接口。"},
+        {"path": "ths_board.timeout_sec", "nullable": True, "label": "请求超时(秒)", "type": "number", "min": 1, "max": 120, "desc": "旧显式覆盖；关闭单独设置后继承通用请求超时。"},
+        {"path": "ths_board.max_retries", "nullable": True, "label": "最多尝试次数", "type": "int", "min": 1, "max": 10, "desc": "旧显式覆盖，包含首次；关闭单独设置后继承通用最多尝试次数。"},
+        {"path": "ths_board.retry_backoff_sec", "nullable": True, "label": "重试初始等待(秒)", "type": "number", "min": 0, "max": 60, "desc": "旧显式覆盖；关闭单独设置后继承通用重试初始等待。"},
         {"path": "ths_board.member_update_interval_days", "label": "成分快照更新间隔(天)", "type": "int", "min": 1, "max": 30, "desc": "成分股快照多久全量拉取一次；未达间隔且上次完整时跳过（默认 7=周频）。"},
         {"path": "ths_board.cookie_validity_days", "label": "Cookie 默认有效期(天)", "type": "int", "min": 1, "max": 365, "desc": "从保存或最近成功校验起计算的期限提醒；测试连通时仍会真实访问登录态页面确认是否有效。"},
         {"path": "ths_board.login_cookie", "label": "登录 Cookie", "type": "password",
@@ -132,6 +132,8 @@ class ConfigValidationError(ValueError):
 
 def _coerce(field: dict, value):
     """按字段类型转换并做范围校验，返回规范化后的值。"""
+    if value is None and field.get("nullable"):
+        return None
     t = field["type"]
     path = field["path"]
     if t == "bool":
@@ -147,7 +149,9 @@ def _coerce(field: dict, value):
             raise ConfigValidationError(f"{path} 需为数值")
         try:
             num = int(value) if t == "int" else float(value)
-        except (TypeError, ValueError):
+            if t == "int" and float(value) != num:
+                raise ValueError("fractional integer")
+        except (TypeError, ValueError, OverflowError):
             raise ConfigValidationError(f"{path} 需为{'整数' if t == 'int' else '数值'}")
         if not math.isfinite(num):
             raise ConfigValidationError(f"{path} 需为有限数值")

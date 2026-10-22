@@ -125,20 +125,15 @@ class ThsBoardSource:
         retry_backoff_sec: float | None = None,
         login_cookie: str | None = None,
     ):
-        # 读"生效配置"(YAML ⊕ 前端 app_config 覆盖)注入同花顺专属限流/重试/超时，
-        # 对齐 akshare/baostock 同款模式：前端改「数据治理·同花顺板块」后新建实例即生效。
-        # 显式入参优先（测试直接传）；未传才回落生效配置；配置异常回落参数默认。
-        try:
-            eff = get_effective_settings().ths_board
-            self._min_interval_sec = min_interval_sec if min_interval_sec is not None else eff.min_interval_sec
-            self._timeout = timeout if timeout is not None else eff.timeout_sec
-            self._max_retries = max_retries if max_retries is not None else eff.max_retries
-            self._retry_backoff_sec = retry_backoff_sec if retry_backoff_sec is not None else eff.retry_backoff_sec
-        except Exception:  # noqa: BLE001 —— 配置/DB 异常时回落参数默认
-            self._min_interval_sec = min_interval_sec if min_interval_sec is not None else 1.0
-            self._timeout = timeout if timeout is not None else 10.0
-            self._max_retries = max_retries if max_retries is not None else 3
-            self._retry_backoff_sec = retry_backoff_sec if retry_backoff_sec is not None else 2.0
+        from backend.datasource.request_policy import install_http_policy, request_policy
+        install_http_policy()
+        policy = request_policy("ths_board")
+        self._min_interval_sec = min_interval_sec if min_interval_sec is not None else 1 / policy.rate
+        self._timeout = timeout if timeout is not None else policy.timeout
+        self._max_retries = max_retries if max_retries is not None else policy.attempts
+        self._retry_backoff_sec = retry_backoff_sec if retry_backoff_sec is not None else policy.backoff
+        self._request_overrides = {"timeout": timeout, "attempts": max_retries,
+                                   "backoff": retry_backoff_sec}
         self._session = session or requests.Session()
         self._v_code: str | None = None
         self._clid_cache: dict[tuple[str, str], str] = {}
@@ -214,32 +209,33 @@ class ThsBoardSource:
         v cookie 失效（401）会触发同花顺频次反爬：刷新 cookie 后**只重试一次**，不经过
         with_retry 的指数退避（避免连续 401 时白等 2s+4s）；其余异常按 _max_retries 指数退避。
         """
-        for attempt in range(1, self._max_retries + 1):
+        from backend.datasource.request_policy import pause, request_policy
+        from backend.datasource.base import check_thread_cancel
+
+        policy = request_policy("ths_board")
+        attempts = self._request_overrides["attempts"]
+        attempts = policy.attempts if attempts is None else attempts
+        for attempt in range(1, attempts + 1):
+            check_thread_cancel()
+            policy = request_policy("ths_board")
+            timeout = self._request_overrides["timeout"]
+            timeout = policy.timeout if timeout is None else timeout
             try:
                 headers = self._headers(data_host=data_host)
                 if referer:
                     headers["Referer"] = referer
-                resp = self._session.get(url, headers=headers, timeout=self._timeout)
+                resp = self._session.get(url, headers=headers, timeout=timeout)
                 if resp.status_code == 401:
                     self._refresh_v_cookie()
-                    # 刷新后重试一次
-                    headers = self._headers(data_host=data_host)
-                    if referer:
-                        headers["Referer"] = referer
-                    resp = self._session.get(url, headers=headers, timeout=self._timeout)
-                    if resp.status_code == 401:
-                        raise _VCookieInvalid("v cookie 刷新后仍 401")
                 resp.raise_for_status()
                 return resp.text
-            except _VCookieInvalid as e:
-                raise DataSourceError(f"{url} v cookie 失效且刷新后仍不可用: {e}") from e
-            except Exception as e:  # noqa: BLE001
-                if attempt < self._max_retries:
-                    sleep = self._retry_backoff_sec * (2 ** (attempt - 1))
-                    log.warning("%s 第%d次失败: %s，%.1fs 后重试", url, attempt, e, sleep)
-                    time.sleep(sleep)
-                else:
-                    raise DataSourceError(f"{url} 重试 {self._max_retries} 次仍失败: {e}") from e
+            except Exception as exc:  # noqa: BLE001 -- 次数包含401刷新，不额外发送隐藏重试
+                check_thread_cancel()
+                if attempt == attempts:
+                    raise DataSourceError(f"同花顺请求尝试 {attempts} 次仍失败: {exc}") from exc
+                backoff = self._request_overrides["backoff"]
+                pause((policy.backoff if backoff is None else backoff) * 2 ** (attempt - 1),
+                      check_thread_cancel)
 
     # ── 公开取数方法 ─────────────────────────────────────────
 

@@ -816,8 +816,10 @@ def _h_ingest_codes(params: dict, ctx: TaskContext) -> dict:
 class _IntradayRepairContext:
     """每条修复独立范围；共享取消和日志，不覆盖 fix 的 issue checkpoint。"""
 
-    def __init__(self, ctx):
-        self.ctx, self.tid, self.checkpoint = ctx, ctx.tid, {}
+    def __init__(self, ctx, persist_key=None):
+        self.ctx, self.tid = ctx, ctx.tid
+        self.persist_key = persist_key
+        self.checkpoint = dict(ctx.checkpoint.get(persist_key, {})) if persist_key else {}
 
     def check_cancel(self):
         self.ctx.check_cancel()
@@ -830,9 +832,11 @@ class _IntradayRepairContext:
 
     def set_checkpoint(self, **data):
         self.checkpoint.update(data)
+        if self.persist_key:
+            self.ctx.set_checkpoint(**{self.persist_key: dict(self.checkpoint)})
 
     def set_phase(self, phase, **data):
-        self.checkpoint.update(data)
+        self.set_checkpoint(phase=phase, **data)
 
     def progress(self, value, message):
         self.ctx.log(message)
@@ -1268,12 +1272,16 @@ def _repair_intraday_stock(c, ctx, code, day):
         "WHERE code=? AND starts_with(issue_type,'intraday_') "
         "AND trade_date IN (SELECT unnest(?::DATE[]))", [code, days],
     )
-    before = archive._coverage_facts([code])
+    before = getattr(ctx, "_intraday_batch_before", {}).get(code)
+    if before is None:
+        before = archive._coverage_facts([code])
     before_counts = {str(r.trade_date.date()): int(r.actual_count) for r in before.itertuples()}
     current = archive.issues([code], facts=before)
     pending_days = {str(r["trade_date"]) for r in current}.intersection(days)
     result = {"failed": 0, "out_of_range": 0}
-    if pending_days:
+    if hasattr(ctx, "_intraday_batch_failed"):
+        result = {"failed": int(code in ctx._intraday_batch_failed)}
+    elif pending_days:
         result = archive.collect(
             {"mode": "refetch", "codes": [code], "date_start": min(pending_days),
              "date_end": max(pending_days)}, ctx=_IntradayRepairContext(ctx),
@@ -1774,6 +1782,31 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
             key = ("intraday", intraday_codes[iid]) if iid in intraday_codes else ("issue", iid)
             groups.setdefault(key, []).append(iid)
         ids = [iid for group in groups.values() for iid in group]
+    if ctx._intraday_groups:
+        from backend.services.intraday_archive import IntradayArchiveService
+        archive = IntradayArchiveService(c)
+        groups = ctx._intraday_groups
+        # 只加载覆盖事实，不持有全市场分钟；同股选中日期共用来源请求。
+        facts = archive._coverage_facts(list(groups))
+        ctx._intraday_batch_before = {
+            code: frame for code, frame in facts.groupby("code", sort=False)
+        }
+        pending_dates = {}
+        for code, days in groups.items():
+            current = archive.issues([code], facts=ctx._intraday_batch_before.get(code))
+            pending = {str(issue["trade_date"]) for issue in current}.intersection(days)
+            if pending:
+                pending_dates[code] = pending
+        batch_ctx = _IntradayRepairContext(ctx, "intraday_repair_checkpoint")
+        if pending_dates:
+            dates = set().union(*pending_dates.values())
+            archive.collect(
+                {"mode": "refetch", "codes": sorted(pending_dates),
+                 "date_start": min(dates), "date_end": max(dates)},
+                ctx=batch_ctx, allow_fallback=True, repair_dates=pending_dates,
+                recheck_source=ctx._intraday_recheck_source,
+            )
+        ctx._intraday_batch_failed = batch_ctx.checkpoint.get("intraday_failed", {})
     done_ids = set(int(x) for x in (ctx.checkpoint.get("issue_done_ids") or [])) if ctx.checkpoint else set()
     ids = [x for x in ids if x not in done_ids]
     n = len(ids)

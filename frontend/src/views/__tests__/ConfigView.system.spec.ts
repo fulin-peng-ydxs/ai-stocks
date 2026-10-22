@@ -7,6 +7,8 @@ import { ref, h, defineComponent, type Component } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import ConfigView from '@/views/ConfigView.vue'
 import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
+import AppDataTable from '@/components/AppDataTable.vue'
+import AppTabToolbar from '@/components/AppTabToolbar.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import HelpHint from '@/components/HelpHint.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -26,6 +28,8 @@ vi.mock('@/api/data', async (importOriginal) => {
   return {
     ...actual,
     getSettingsView: vi.fn(),
+    getSources: vi.fn(async () => ({ sources: [] })),
+    testSources: vi.fn(),
     saveSettings: vi.fn(),
   }
 })
@@ -386,12 +390,101 @@ describe('ConfigView tech tab', () => {
 })
 
 describe('ConfigView system tab', () => {
+  it('数据治理承载真实来源清单，查看不联网，单项测试后更新状态', async () => {
+    const source = { source: 'ths_board', label: '同花顺板块', role: 'board' as const, scope: '字典、成分、指数和资金流',
+      up: null, last_test_at: null, last_success_at: null, failure_reason: null,
+      timeout_sec: 12, rate_limit_per_sec: 1, concurrency: 1, max_attempts: 3,
+      retry_backoff_sec: 2, policy_origin: '保留旧显式覆盖' }
+    vi.mocked(dataApi.getSources).mockResolvedValue({ sources: [source] })
+    vi.mocked(dataApi.testSources).mockResolvedValue({ sources: [{ ...source, up: true }] })
+    const wrapper = await mountView()
+    const tab = wrapper.findAll('[role="tab"]').find((node) => node.text() === '数据治理')!
+    await tab.trigger('click')
+    await flushPromises()
+    expect(dataApi.getSources).toHaveBeenCalledWith(false)
+    expect(dataApi.testSources).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('数据源能力与健康')
+    expect(wrapper.text()).toContain('超时 12 秒')
+    expect(wrapper.text()).toContain('保留旧显式覆盖')
+    await wrapper.find('.source-health [role="button"]').trigger('click')
+    const button = wrapper.findAll('button').find((node) => node.text() === '测试全部来源')!
+    expect(button.isVisible()).toBe(true)
+    await button.trigger('click')
+    await flushPromises()
+    expect(dataApi.testSources).toHaveBeenCalledWith('ths_board')
+    expect(wrapper.text()).toContain('通过')
+    wrapper.unmount()
+  })
+
+  it('页签和保存按钮位于内容滚动区外，健康表默认收起且使用统一嵌入限高', async () => {
+    const wrapper = await mountView()
+    await wrapper.findAll('[role="tab"]').find((node) => node.text() === '数据治理')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.config-body--system').element.tagName).toBe('DIV')
+    const content = wrapper.find('#pane-data-governance .sys-content')
+    expect(content.exists()).toBe(true)
+    expect(content.findComponent(AppTabToolbar).exists()).toBe(false)
+    expect(content.find('[role="tablist"]').exists()).toBe(false)
+    const health = wrapper.findComponent('.source-health')
+    const head = health.find('[role="button"]')
+    expect(head.attributes('aria-expanded')).toBe('false')
+    const table = health.findComponent(AppDataTable)
+    expect(table.props('embedded')).toBe(true)
+    const mountedTable = table.element
+    await head.trigger('click')
+    expect(head.attributes('aria-expanded')).toBe('true')
+    expect(health.find('.config-panel-section__body').isVisible()).toBe(true)
+    await head.trigger('click')
+    expect(health.find('.config-panel-section__body').isVisible()).toBe(false)
+    expect(health.findComponent(AppDataTable).element).toBe(mountedTable)
+    const override = wrapper.findComponent({ name: 'PageSettingsDrawer' }).props('componentMetaOverrides')
+    expect(override.configPanel.collapseSections).toContainEqual({ key: 'source-health', label: '数据源能力与健康' })
+    wrapper.unmount()
+  })
+
+  it('切换页签保留配置草稿和健康区展开状态', async () => {
+    const wrapper = await mountView()
+    const governance = wrapper.findAll('[role="tab"]').find((node) => node.text() === '数据治理')!
+    await governance.trigger('click')
+    await flushPromises()
+    const health = wrapper.findComponent('.source-health')
+    await health.find('[role="button"]').trigger('click')
+    const form = wrapper.findAllComponents(ConfigGroupForm).find((node) => node.props('group').key === 'datasource')!
+    form.vm.$emit('update-field', 'datasource.concurrent_jobs', 3)
+    await wrapper.findAll('[role="tab"]').find((node) => node.text() === '访问安全')!.trigger('click')
+    await governance.trigger('click')
+    expect(health.find('[role="button"]').attributes('aria-expanded')).toBe('true')
+    expect(form.props('modelValue')['datasource.concurrent_jobs']).toBe(3)
+    expect(dataApi.saveSettings).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('通用参数有未保存修改时不允许使用旧值测试来源', async () => {
+    const wrapper = await mountView()
+    const tab = wrapper.findAll('[role="tab"]').find((node) => node.text() === '数据治理')!
+    await tab.trigger('click')
+    await flushPromises()
+    const form = wrapper.findComponent(ConfigGroupForm)
+    form.vm.$emit('update-field', 'datasource.concurrent_jobs', 3)
+    await flushPromises()
+    const button = wrapper.findAll('button').find((node) => node.text() === '测试全部来源')!
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('请先保存当前修改')
+    wrapper.unmount()
+  })
+
   it('系统设置保存与恢复默认留在当前页签工具区，不进入总页头', async () => {
     const wrapper = await mountView()
+    const tabs = wrapper.find('.app-workspace-tabs')
+    expect(tabs.exists()).toBe(true)
+    const panel = wrapper.find('#pane-access > .app-workspace-panel')
+    expect(panel.findComponent(AppTabToolbar).props('label')).toBe('系统配置操作栏')
+    expect(panel.find('.app-tab-toolbar__actions').text()).toContain('保存并生效')
+    expect(panel.find('.sys-content').exists()).toBe(true)
     expect(wrapper.find('.page-head-actions').text()).not.toContain('保存并生效')
     expect(wrapper.find('.page-head-actions').text()).not.toContain('恢复默认')
-    expect(wrapper.find('.sys-tab-toolbar').text()).toContain('保存并生效')
-    expect(wrapper.find('.sys-tab-toolbar').text()).toContain('恢复默认')
+    expect(wrapper.findComponent(AppTabToolbar).text()).toContain('保存并生效')
+    expect(wrapper.findComponent(AppTabToolbar).text()).toContain('恢复默认')
   })
 
   it('按设置接口动态渲染认证和审计配置，且不加载指标注册表', async () => {
@@ -449,7 +542,8 @@ describe('ConfigView system tab', () => {
     await saveButton(wrapper).trigger('click')
     await flushPromises()
     expect(dataApi.saveSettings).toHaveBeenCalledWith({ 'auth.require_email_code': false })
-    expect(wrapper.text()).toContain('保存失败，已保留当前编辑值')
+    expect(wrapper.findComponent(AppTabToolbar).find('.app-tab-toolbar__description').text())
+      .toContain('保存失败，已保留当前编辑值')
     expect(dataApi.getSettingsView).toHaveBeenCalledTimes(1)
   })
 

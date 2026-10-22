@@ -106,26 +106,13 @@ def set_default_request_timeout(timeout: float) -> None:
 
 
 def _install_default_requests_timeout() -> None:
-    """一次性给 requests 注入默认 timeout（仅当调用方未显式传 timeout）。
+    """兼容已有安装入口；实际发送包装由统一请求策略维护。
 
-    AkShare 多处 requests 调用未传 timeout，遇到 TLS 握手/读挂起会无限等待，
-    socket.setdefaulttimeout 并不总能兜住。这里在模块加载时一次性、幂等地在
-    Session.request（requests.get/post 等顶层函数都经由它）外包一层，覆盖**所有**
-    ak.* 网络调用（日线/市值/指数/日历/列表），而非只护住日线。包装体读模块级
-    _DEFAULT_REQUEST_TIMEOUT（运行时可改），故只装一次、线程安全、不串行化并发。
+    支持的行情网站按实时生效策略限流并设置超时，覆盖AKShare内部未传超时及
+    写死超时的调用；其它网站仅在未指定超时时补充原有默认值。
     """
-    Session = requests.sessions.Session
-    if getattr(Session, "_ai_stocks_timeout_patched", False):
-        return
-    _orig_request = Session.request
-
-    def request_with_timeout(self, *args, **kwargs):
-        if kwargs.get("timeout") is None:
-            kwargs["timeout"] = _DEFAULT_REQUEST_TIMEOUT
-        return _orig_request(self, *args, **kwargs)
-
-    Session.request = request_with_timeout
-    Session._ai_stocks_timeout_patched = True
+    from backend.datasource.request_policy import install_http_policy
+    install_http_policy(lambda: _DEFAULT_REQUEST_TIMEOUT)
 
 
 # 模块加载即安装：覆盖本进程所有 ak/requests 调用，统一请求超时

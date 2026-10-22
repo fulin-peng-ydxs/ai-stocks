@@ -1199,7 +1199,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `screen` | `ScreenView`（策略筛选） | `master-detail` | `density` | action:`filter-bar` / main:`master-detail` / main:`wide-table` / main:`chart` |
 | `stocks` | `StocksView`（个股查询） | `master-detail` | `density` | action:`filter-bar` / main:`master-detail` / nested:`wide-table` / nested:`wide-table` / nested:`chart` / footer |
 | `data-quality` | `QualityView`（数据质量） | `list` | `density` | action:`filter-bar` / main:`data-table` |
-| `data-schedule` | `ScheduleView`（任务调度） | `detail` | `density` | action:`toolbar` / main:`data-table` / main:`section(growMain)` / nested:`data-table` / overlay:`detail` |
+| `data-schedule` | `ScheduleView`（任务调度） | `list` | `density` | action:`toolbar` / main:`data-table(growMain)` / overlay:`detail` |
 | `data-ingest` | `IngestView`（数据采集） | `workbench` | `density` | action:`toolbar` / main:`section` / main:`tabs(growMain)` / nested:`data-table` / nested:`data-table` / overlay:`form` / overlay:`form` / overlay:`detail` |
 | `data-overview` | `OverviewView`（数据概览） | `workbench` | `density` | action:`toolbar` / main:`kpi-grid` / main:`stat-strip` / main:`tabs` / nested:`wide-table` / nested:`data-table`  / nested:`filter-bar` |
 | `backtest` | `BacktestView`（策略回测） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / nested:`chart` |
@@ -1209,7 +1209,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `config-score` | `ConfigView`（评分规则） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / main:`master-detail` / nested:`wide-table` / nested:`chart` |
 | `config-trade` | `ConfigView`（买卖指标） | `workbench` | `density` | action:`toolbar` / main:`section` |
 | `config-tech` | `ConfigView`（技术指标） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`filter-bar` / nested:`data-table` / overlay:`form` |
-| `config-system` | `ConfigView`（系统设置） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`tabs` / nested:`config-panel` |
+| `config-system` | `ConfigView`（系统设置） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`tabs` / nested:`config-panel` / nested:`data-table` |
 | `user-manage` | `UserManageView`（用户管理） | `list` | `density` | action:`filter-bar` / main:`data-table` |
 | `role-manage` | `RoleManageView`（角色管理） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` |
 | `menu-manage` | `MenuResourceView`（菜单与功能） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` / nested:`wide-table` |

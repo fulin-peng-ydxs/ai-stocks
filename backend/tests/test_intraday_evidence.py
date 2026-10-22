@@ -206,7 +206,8 @@ def test_repair_cancel_resume_freezes_ids_and_does_not_repeat_completed_stock(db
     ctx = Cancelling()
     with pytest.raises(TaskCancelled):
         async_task._h_fix({"issue_type": "intraday_partial"}, ctx)
-    assert len(q.calls) == 3
+    # 批量取源可先完成多个股票；续跑必须复用已完成的归档检查点。
+    assert len(q.calls) == 4
     frozen = list(ctx.checkpoint["fix_scope_ids"])
     DataIntegrityReport(db)._insert_issues(
         [
@@ -227,7 +228,7 @@ def test_repair_cancel_resume_freezes_ids_and_does_not_repeat_completed_stock(db
         db.query_df("SELECT status FROM data_quality_issue WHERE code='600002.SH'").iloc[0, 0]
         == "open"
     )
-    assert len(resumed._intraday_repair_cache) <= 1
+    assert len(getattr(resumed, "_intraday_repair_cache", {})) <= 1
 
 
 def test_intraday_only_verify_uses_shared_scan_without_network(db, monkeypatch):
@@ -259,12 +260,11 @@ def test_redis_failure_after_primary_does_not_discard_obtained_candidate(db, mon
     class Cache(_Redis):
         source_locks = 0
 
-        def set(self, key, value, nx=False, ex=None):
-            if key == "market:intraday:1m:lock:source":
-                self.source_locks += 1
-                if self.source_locks > 1:
-                    raise redis.ConnectionError("protection unavailable")
-            return super().set(key, value, nx=nx, ex=ex)
+        def eval(self, script, keys, key, interval):
+            self.source_locks += 1
+            if self.source_locks > 1:
+                raise redis.ConnectionError("protection unavailable")
+            return super().eval(script, keys, key, interval)
 
     class Source:
         def get_intraday_1m(self, code, provider, *, timeout_sec=None):

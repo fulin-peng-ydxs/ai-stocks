@@ -156,7 +156,7 @@ PostgreSQL `app_config` 是当前系统设置覆盖层的权威表：
 | `value` | JSON 字符串，保留布尔、整数、浮点等类型 |
 | `updated_at` | 覆盖值最后更新时间 |
 
-写入口是 `AppConfigRepo.set_many()`，只接受 `CONFIG_GROUPS` 派生出的 `WHITELIST`，并逐项做类型、枚举和范围校验；任一项非法则整批拒绝。当前 Web 系统设置展示数据源、回测成本、认证与防滥用、审计设置四组；隐藏的 `scheduler.*` 只服务旧配置迁移。
+写入口是 `AppConfigRepo.set_many()`，只接受 `CONFIG_GROUPS` 派生出的 `WHITELIST`，并逐项做类型、枚举和范围校验；任一项非法则整批拒绝。当前 Web 系统设置按访问安全、数据治理和研究运行组织认证、数据源、同花顺板块、审计、回测成本及界面基线等白名单配置；隐藏的 `scheduler.*` 只服务旧配置迁移。
 
 同名的 DuckDB `app_config` 仍存在于旧 DDL 中，但不再作为运行期系统设置覆盖层。DuckDB 旧配置表只允许作为旧版本迁移读取源和回滚依据保留；新增运行期系统配置不要写 DuckDB `app_config`。
 
@@ -170,6 +170,26 @@ PostgreSQL `app_config` 是当前系统设置覆盖层的权威表：
 | 页面布局/组件用户层 | PostgreSQL `layout_user_config` | 只保存真实 pageKey 的布局与组件用户层；组件路径保存必须带真实 `PageLayout` 校验归属 |
 | 非布局用户偏好 | PostgreSQL `user_preference` | 主题、导航、K 线、页面业务偏好、回测参数记忆等 |
 | 设置抽屉跨页面偏好 | PostgreSQL `user_preference` | `scope='global'`、`pref_key='settings-drawer'`；`size`、全局一级 `collapsedSections`、按页面隔离的 `collapsedGroups`，旧 `defaultCollapsed` 仅兼容读取 |
+
+#### 行情请求参数与来源能力
+
+系统配置「数据治理」是采集请求参数、访问凭据和数据源能力/健康的统一管理入口；调度页只管理任务。`backend/datasource/request_policy.py` 维护生效请求策略，`backend/services/data_sources.py` 的能力清单供界面列示和显式测试。AKShare 是接入器，不是单一网站；主备选择仅控制支持切换的行情能力，股本、分时与板块仍按各自接入契约取源。
+
+| 配置 | 统一消费口径 | 生效边界 |
+|---|---|---|
+| `datasource.update_concurrency` | 单任务工作单元默认上限；任务显式并发参数优先；分时按股票并发取源，归档、来源证据和 checkpoint 由主线程收口 | 任务开始确定；BaoStock 共享会话及同花顺板块会话保持串行 |
+| `datasource.rate_limit_per_sec` | 实际来源的请求起始频率上限；Redis TIME + 原子脚本跨线程/进程合计，分页和重试计入；新浪行情/分时共享 `sina`，东财股本/估值/分时共享 `eastmoney`，上交所使用 `sse`，同花顺股票分钟和板块分别保护 | 下一次网络尝试；等待支持取消，不持有覆盖整个HTTP响应的排他锁；Redis失败不绕过保护 |
+| `datasource.socket_timeout_sec` | 每次网络尝试的连接和读取超时；不是总任务时限；requests唯一发送包装覆盖AKShare内部HTTP及直连接口 | 下一次请求；在途请求保持已有值 |
+| `datasource.max_retries` | 最多尝试次数，包含首次；嵌套重试装饰器共用外层预算，避免次数相乘；多接口业务操作不等于一个HTTP请求 | 开始一次请求操作时读取 |
+| `datasource.retry_backoff_sec` | 指数退避起点，如2秒对应2、4、8……秒；限流与退避均可取消 | 新尝试序列读取；同一序列沿用快照 |
+| `datasource.baostock_login_timeout_sec` | 仅登录等待；登录后恢复普通请求超时；SDK适配器的进程会话锁覆盖登录、查询、游标读取、失效清理及退出，采集与探活共同受保护 | 下一次SDK查询读取 |
+| `ths_board.min_interval_sec` | 板块接口最小起始间隔，与通用请求频率取更严格值；不用于股票分钟 | 下一次板块请求 |
+
+`ths_board.timeout_sec/max_retries/retry_backoff_sec` 是保留的旧显式覆盖，默认 NULL 表示继承通用配置。已有 YAML/PG 自定义值不删除、不改写，系统页的「旧请求覆盖」可查看，关闭「单独设置」并保存为 NULL 后恢复继承；实际来源行显示「保留旧显式覆盖」及有效参数，避免误以为通用设置已经覆盖了它。历史回填年限、板块成分更新间隔、Cookie期限和访问凭据分别归入范围、业务规则与凭据，不与网络参数混用。Cookie保持环境变量 > 受控文件 > 页面加密配置，不回显原文。
+
+能力表分别列示新浪行情、BaoStock、东财股本/估值、上交所股本核验、同花顺板块和三种分时来源，展示使用范围、有效频率/超时/尝试/退避、任务并发上限及BaoStock登录超时。新浪行情以日历接口作代表测试，股本与上交所分别使用轻量估值/转股统计请求；测试通过只证明代表接口返回有效响应，不保证该来源的全部接口或数据覆盖。Cookie登录态独立校验，不能由匿名接口连通推断。
+
+查看来源状态仅读PG最近测试，不触网；`data-source:test` 仍是系统级权限，显式测试可按来源单项执行，全部测试逐项更新。未保存配置时禁用测试，避免把草稿当成生效值。历史测试/最近测试成功时间保留，新增能力在首次测试前显示未测试；并发结果按实际测试时间收敛，较旧结果不得覆盖较新状态或丢失成功记录。无需重置真实 `app_config`、健康记录或菜单。
 
 ### 4. 读取规则
 

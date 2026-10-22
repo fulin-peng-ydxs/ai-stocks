@@ -77,20 +77,20 @@ export const CONFIG_SYSTEM_GROUP_SECTIONS: Record<string, ConfigFieldSection[]> 
   datasource: [
     {
       key: 'source',
-      title: '数据源选择',
-      hint: '控制主备公开行情数据源。',
+      title: '行情接入选择',
+      hint: '只控制支持主备切换的行情能力，实际来源及用途见来源能力与健康。',
       fieldPaths: ['datasource.primary', 'datasource.fallback'],
     },
     {
       key: 'collection',
       title: '采集规模',
-      hint: '控制历史覆盖范围和单次采集任务并发。',
+      hint: '任务启动时确定范围和并发；任务参数可覆盖默认值，来源串行限制优先。',
       fieldPaths: ['datasource.history_years', 'datasource.update_concurrency'],
     },
     {
       key: 'request',
-      title: '请求容错',
-      hint: '控制外部数据请求的限流、超时、重试和退避。',
+      title: '通用请求规则',
+      hint: '行情、股本、估值、分时、板块、修复和测试共用。下一次请求读取新值，在途请求不变。',
       fieldPaths: [
         'datasource.rate_limit_per_sec',
         'datasource.socket_timeout_sec',
@@ -98,14 +98,18 @@ export const CONFIG_SYSTEM_GROUP_SECTIONS: Record<string, ConfigFieldSection[]> 
         'datasource.retry_backoff_sec',
       ],
     },
+    { key: 'session', title: 'BaoStock 会话规则', hint: '共享登录会话强制串行；登录完成后使用通用请求超时。', fieldPaths: ['datasource.baostock_login_timeout_sec'] },
   ],
   ths_board: [
+    { key: 'rate', title: '来源频率限制', hint: '与通用频率取更严格值；板块会话保持串行。', fieldPaths: ['ths_board.min_interval_sec'] },
+    { key: 'collection', title: '成分采集规则', fieldPaths: ['ths_board.member_update_interval_days'] },
+    { key: 'credential', title: '访问凭据', fieldPaths: ['ths_board.login_cookie', 'ths_board.cookie_validity_days'] },
     {
-      key: 'request',
-      title: '请求容错',
-      hint: '控制同花顺板块直连源的请求间隔、超时、重试和退避（独立于通用行情源，频率限制更敏感）。',
+      key: 'compatibility',
+      title: '旧请求覆盖',
+      hint: '已有自定义值继续生效；关闭单独设置并保存后继承通用规则。',
+      defaultOpen: false,
       fieldPaths: [
-        'ths_board.min_interval_sec',
         'ths_board.timeout_sec',
         'ths_board.max_retries',
         'ths_board.retry_backoff_sec',
@@ -155,4 +159,7 @@ export function configPanelCollapseSectionsOf(
   ])
 }
 
-export const CONFIG_SYSTEM_COLLAPSE_SECTIONS = configPanelCollapseSectionsOf(CONFIG_SYSTEM_GROUPS)
+export const CONFIG_SYSTEM_COLLAPSE_SECTIONS = [
+  { key: 'source-health', label: '数据源能力与健康' },
+  ...configPanelCollapseSectionsOf(CONFIG_SYSTEM_GROUPS),
+]

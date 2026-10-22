@@ -63,7 +63,7 @@ def ths_cookie_status(*, validate: bool = False, repo: AppConfigRepo | None = No
     if validate:
         checked_at = _now_local()
         try:
-            valid = ThsBoardSource(login_cookie=cookie, max_retries=1).validate_login_cookie()
+            valid = ThsBoardSource(login_cookie=cookie).validate_login_cookie()
         except DataSourceError:  # 网络/反爬异常不能等价为凭证失效
             record = {
                 "fingerprint": fingerprint,

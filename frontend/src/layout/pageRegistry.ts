@@ -616,6 +616,16 @@ const REGISTRY: PageRegistryEntry[] = [
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
     componentMeta: {
+      sourceTable: {
+        columns: [
+          { key: 'source', label: '数据源' },
+          { key: 'scope', label: '使用范围' },
+          { key: 'policy', label: '生效请求规则' },
+          { key: 'status', label: '状态' },
+          { key: 'lastTest', label: '最近测试' },
+          { key: 'lastSuccess', label: '最近成功' },
+        ],
+      },
       configPanel: {
         collapseSections: CONFIG_SYSTEM_COLLAPSE_SECTIONS,
       },
@@ -631,9 +641,10 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
-        { id: 'body', component: 'section', region: 'main', label: '系统设置', order: 1 },
-        { id: 'configPanel', component: 'config-panel', region: 'main', parentId: 'body', label: '系统设置面板', order: 2 },
+        { id: 'body', component: 'section', region: 'main', label: '系统设置', order: 1, growMain: true },
+        { id: 'configPanel', component: 'config-panel', region: 'main', parentId: 'body', label: '系统设置面板', order: 2, config: { defaultCollapsed: ['source-health'] } },
         // 系统设置分组页签（访问安全/数据治理/研究运行）：defaultActive 进组件配置层，页面 el-tabs 联动。
+        { id: 'sourceTable', component: 'data-table', region: 'main', parentId: 'body', label: '来源能力与健康', order: 4, config: { pagination: false } },
         { id: 'sysTabs', component: 'tabs', region: 'main', parentId: 'body', label: '系统设置分组页签', order: 3, config: { defaultActive: 'access' } },
         { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
       ],
@@ -1061,7 +1072,7 @@ const REGISTRY: PageRegistryEntry[] = [
     pageKey: 'data-schedule',
     label: '任务调度',
     path: '/data/schedule',
-    archetype: 'detail',
+    archetype: 'list',
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
     componentMeta: {
@@ -1086,28 +1097,18 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'freq', label: '触发规则' },
         ],
       },
-      sourceTable: {
-        columns: [
-          { key: 'source', label: '数据源' },
-          { key: 'role', label: '角色' },
-          { key: 'status', label: '状态' },
-          { key: 'lastTest', label: '最近测试' },
-          { key: 'lastSuccess', label: '最近成功' },
-          { key: 'timeout', label: '超时' },
-        ],
-      },
+
     },
     layout: {
       pageKey: 'data-schedule',
-      archetype: 'detail',
+      archetype: 'list',
       hasActionRegion: true,
       density: 'standard',
       responsive: singleColumn(),
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
-        { id: 'jobTable', component: 'data-table', region: 'main', minH: 300, idealH: 960, label: '定时任务', order: 1, config: { pagination: true, pageSize: DEFAULT_PAGE_SIZE, defaultSort: 'name:asc' } },
-        { id: 'sourcePanel', component: 'section', region: 'main', growMain: true, minH: 200, label: '数据源健康', order: 2 },
-        { id: 'sourceTable', component: 'data-table', region: 'main', parentId: 'sourcePanel', label: '数据源健康表', order: 1, config: { pagination: false } },
+        { id: 'jobTable', component: 'data-table', region: 'main', growMain: true, minH: 300, label: '定时任务', order: 1, config: { pagination: true, pageSize: DEFAULT_PAGE_SIZE, defaultSort: 'name:asc' } },
+        { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '页面设置', order: 5 },
         { id: 'triggerEvents', component: 'detail', region: 'overlay', label: '触发记录抽屉', order: 4 },
       ],
       editable: [densityKnob()],

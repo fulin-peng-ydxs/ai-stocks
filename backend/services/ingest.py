@@ -12,9 +12,7 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 from bisect import bisect_left
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -68,12 +66,6 @@ class IngestionService:
     def __init__(self, source: DataSource | None = None):
         # 生效配置 = YAML ⊕ 前端 app_config 覆盖（限流/并发/超时改前端即生效）。
         self.s = get_effective_settings()
-        # 全局 socket 超时：根治公开接口"无超时挂死"——卡住的请求到点抛错，
-        # 由 @with_retry 重试，循环不再僵死（需求 §10.1 稳定性）。
-        import socket
-
-        socket.setdefaulttimeout(self.s.datasource.socket_timeout_sec)
-
         # 主源由配置 datasource.primary 决定（可插拔，改配置即换源）
         self.src = source or get_source(self.s.datasource.primary)
         self.c = get_client()
@@ -152,93 +144,10 @@ class IngestionService:
         return src
 
     @staticmethod
-    def _run_bounded_parallel(
-        items: list,
-        worker,
-        *,
-        concurrency: int,
-        ctx,
-        wait_label: str,
-        on_complete,
-    ) -> None:
-        """有界执行可取消采集，不预提交全量任务，也不留下终止后的孤儿写线程。
-
-        收到终止时只取消尚未开始的 Future，并等待最多 ``concurrency`` 个在途工作单元
-        到达安全边界。工作线程内的数据源限流/重试会读取同一取消检查器，从而跳过后续
-        退避和重试；执行器完全退出后，外层才会把任务标记为 interrupted。
-        """
-        iterator = iter(items)
-        executor = ThreadPoolExecutor(max_workers=concurrency)
-        pending: dict = {}
-        completed = 0
-        last_heartbeat = 0.0
-
-        def _run(item):
-            with thread_cancel_scope(ctx.check_cancel if ctx else None):
-                return worker(item)
-
-        def _submit_one() -> bool:
-            try:
-                item = next(iterator)
-            except StopIteration:
-                return False
-            pending[executor.submit(_run, item)] = item
-            return True
-
-        for _ in range(min(concurrency, len(items))):
-            _submit_one()
-
-        try:
-            while pending:
-                if ctx:
-                    ctx.check_cancel()
-                done_futures, _ = wait(
-                    set(pending), timeout=1.0, return_when=FIRST_COMPLETED
-                )
-                now = time.monotonic()
-                if not done_futures:
-                    if ctx and now - last_heartbeat >= 10:
-                        last_heartbeat = now
-                        ctx.log(
-                            f"{wait_label}等待中：已完成 {completed}/{len(items)}，"
-                            f"在途 {len(pending)}，外部接口返回后继续"
-                        )
-                        ctx.flush()
-                    continue
-                for future in done_futures:
-                    item = pending.pop(future)
-                    if ctx:
-                        ctx.check_cancel()
-                    try:
-                        value = future.result()
-                        error = None
-                    except TaskCancelled:
-                        raise
-                    except Exception as exc:  # noqa: BLE001 - 单工作单元失败交给调用方记录
-                        value = None
-                        error = exc
-                    completed += 1
-                    on_complete(completed, item, value, error, len(pending))
-                    if ctx:
-                        ctx.check_cancel()
-                    _submit_one()
-        except TaskCancelled:
-            cancelled = sum(1 for future in pending if future.cancel())
-            running = sum(1 for future in pending if not future.done() and not future.cancelled())
-            if ctx:
-                ctx.log(
-                    f"终止收尾：已取消 {cancelled} 个排队工作单元，"
-                    f"等待 {running} 个在途请求安全结束…",
-                    "warn",
-                )
-                ctx.flush()
-            executor.shutdown(wait=True, cancel_futures=True)
-            raise
-        except BaseException:
-            executor.shutdown(wait=True, cancel_futures=True)
-            raise
-        else:
-            executor.shutdown(wait=True)
+    def _run_bounded_parallel(*args, **kwargs):
+        """兼容已有调用；执行机制由采集共享队列维护。"""
+        from backend.services.bounded_parallel import run_bounded_parallel
+        return run_bounded_parallel(*args, **kwargs)
 
     def _in_target_board(self, code6: str) -> tuple[bool, str, float]:
         """是否纳入目标板块（默认剔除北交所）。返回 (纳入?, board, limit_pct)。"""
@@ -1019,7 +928,7 @@ class IngestionService:
 
         数据源 stock_value_em（东财市值接口，可用）。按在市股逐只拉取。
         concurrency（与 update 同款）：>1 时线程池并发拉取，每线程独立 DataSource，
-        写入由 DuckDB 单写锁串行。默认 1（串行）。⚠️ 并发即提高总请求速率，注意封禁风险。
+        写入由 DuckDB 单写锁串行。默认 1（串行）。并发不放大来源请求频率。
         """
         years = years or self.s.datasource.history_years
         start, end = self._history_window(years, ctx)
@@ -1437,8 +1346,8 @@ class IngestionService:
 
         ctx（M2.8-B，可选）：逐股写实时日志 + 进度 + checkpoint。续跑天然幂等（跳过已入库）。
         concurrency（与 update 同款）：>1 时线程池并发拉取，每线程独立 DataSource
-        （限流按线程隔离，总速率≈N×单线程），写入由 DuckDB 单写锁串行。默认 1（串行）。
-        ⚠️ 调高并发即调高总请求速率，注意免费源封禁风险。
+        （限流按实际来源共享，不放大来源总限速），写入由 DuckDB 单写锁串行。默认 1（串行）。
+        并发仅覆盖网络等待，不放大来源请求频率。
         """
         years = years or self.s.datasource.history_years
         start, end = self._history_window(years, ctx)
@@ -1514,7 +1423,7 @@ class IngestionService:
                 except Exception as e:  # noqa: BLE001
                     fail += 1
                     _fail(i, code, e)
-        else:  # 并发：线程局部 DataSource（限流按线程隔离），写入由 DuckDB RLock 串行
+        else:  # 并发：线程局部 DataSource（限流按实际来源共享），写入由 DuckDB RLock 串行
             tls = threading.local()
             source_name = self.src.name
 
@@ -1697,9 +1606,9 @@ class IngestionService:
     ) -> dict:
         """增量更新：每只股票从已入库最新日 +1 起补到今天。
 
-        concurrency（T-M7-7）：>1 时用线程池并发拉取，**每线程独立 DataSource（限流按线程隔离，
-        总请求速率≈N×rate_limit_per_sec）**；写入经 DuckDB 单写锁串行，数据零影响。默认读配置
-        `datasource.update_concurrency`。⚠️ 调高并发即调高总请求速率，注意免费源封禁风险。
+        concurrency（T-M7-7）：>1 时用线程池并发拉取，**每线程独立 DataSource（限流按实际来源共享，
+        请求起始频率按实际来源共享限流）**；写入经 DuckDB 单写锁串行，数据零影响。默认读配置
+        `datasource.update_concurrency`。并发仅覆盖网络等待，不放大来源请求频率。
 
         ctx（M2.8-B，可选 TaskContext）：传入则逐股写实时日志 + 进度 + checkpoint（FR-DM-9/10）。
         续跑天然幂等：从各股已入库最新日 +1 起，重复跑只补缺口。
@@ -1812,7 +1721,7 @@ class IngestionService:
                     if ctx:
                         ctx.log(f"[{a}/{n_total}] {code} 增量更新失败（补到 {end}，主源+兜底源均未取到）: {e}", "error")
                     self.repo.log_update("daily_bar", self.src.name, None, end, 0, "failed", f"{code}: {e}")
-        else:  # 并发：线程局部 DataSource（限流按线程隔离），写入由 DuckDB RLock 串行
+        else:  # 并发：线程局部 DataSource（限流按实际来源共享），写入由 DuckDB RLock 串行
             tls = threading.local()
             source_name = self.src.name
 
@@ -2980,8 +2889,8 @@ class IngestionService:
         返回受影响交易日列表供调用方标记评分快照失效。
 
         concurrency（与 update 同款）：>1 时用线程池并发拉取，每线程独立 DataSource
-        （限流按线程隔离，总请求速率≈N×rate_limit_per_sec），写入经 DuckDB 单写锁串行。
-        默认 1（串行，最稳）。⚠️ 调高并发即调高总请求速率，注意免费源封禁风险。
+        （限流按实际来源共享，请求起始频率按实际来源共享限流），写入经 DuckDB 单写锁串行。
+        默认 1（串行，最稳）。并发仅覆盖网络等待，不放大来源请求频率。
         """
         checkpoint = (getattr(ctx, 'checkpoint', {}) or {}) if ctx else {}
         if checkpoint.get('range_end'):
@@ -3061,7 +2970,7 @@ class IngestionService:
                 except Exception as e:  # noqa: BLE001
                     fail += 1
                     _fail(i, code, e)
-        else:  # 并发：线程局部 DataSource（限流按线程隔离），写入由 DuckDB RLock 串行
+        else:  # 并发：线程局部 DataSource（限流按实际来源共享），写入由 DuckDB RLock 串行
             tls = threading.local()
             source_name = self.src.name
 

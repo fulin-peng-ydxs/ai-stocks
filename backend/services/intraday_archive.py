@@ -9,7 +9,7 @@ from uuid import uuid4
 import pandas as pd
 import redis
 
-from backend.config import get_settings
+from backend.config import get_effective_settings, get_settings
 from backend.services import eod_dates
 from backend.services.intraday_contract import (
     BAR_FIELDS,
@@ -40,7 +40,7 @@ def _utcnow():
 
 
 class IntradayArchiveService:
-    """按股票分批处理，内存中最多保留一只股票的近期源窗口。"""
+    """有界并发取源，主线程串行归档，内存只保留在途股票窗口。"""
 
     def __init__(self, client, *, quotes=None):
         self.c = client
@@ -377,8 +377,6 @@ class IntradayArchiveService:
         self, params=None, *, ctx=None, allow_fallback=False, recheck_source=False, repair_dates=None
     ):
         """统一归档入口；备用源开关仅由质检修复传入，不属于公开任务参数。"""
-        from backend.services.intraday_source import IntradaySourceService
-
         params = normalize_intraday_params(params)
         if not get_settings().intraday.enabled:
             raise ValueError("分时数据功能当前未启用")
@@ -386,7 +384,34 @@ class IntradayArchiveService:
             ctx.check_cancel()
         scope = self._scope(params, ctx)
         self._register_monitoring(scope)
-        quotes = self.quotes or IntradaySourceService(ctx=ctx)
+        from queue import SimpleQueue
+
+        from backend.services.bounded_parallel import run_bounded_parallel
+        from backend.services.intraday_source import IntradaySourceService
+
+        concurrency = get_effective_settings().datasource.update_concurrency
+        events = SimpleQueue()
+
+        class SourceContext:
+            # 工作线程不写任务日志序号、进度或checkpoint，主线程统一消费。
+            def check_cancel(self):
+                if ctx:
+                    ctx.check_cancel()
+
+            def log(self, message, level="info"):
+                events.put((message, level))
+
+            def flush(self):
+                pass
+
+        def drain_events():
+            while not events.empty():
+                message, level = events.get()
+                if ctx:
+                    ctx.log(message, level)
+            if ctx:
+                ctx.flush()
+
         evidence = IntradayEvidence(self.c)
         states = evidence.load(scope["codes"])
         done = set(ctx.checkpoint.get("intraday_done", [])) if ctx else set()
@@ -418,32 +443,26 @@ class IntradayArchiveService:
                 "14:58、14:59 集合竞价阶段不强制有独立成交柱，不补造分钟"
             )
             ctx.log(
-                "请求保护：单股串行，限流、超时、重试及退避统一读取系统配置；"
+                f"请求保护：并发 {concurrency}，限流、超时、重试及退避统一读取系统配置；"
                 "按股票取源，同花顺按目标年份各请求一次，不按每个交易日重复请求"
             )
             ctx.flush()
         errors = []
         failed_codes = dict(ctx.checkpoint.get("intraday_failed", {})) if ctx else {}
-        for index, code in enumerate(scope["codes"]):
+        items = [(index, code) for index, code in enumerate(scope["codes"]) if code not in done]
+        already_done = len(done)
+
+        def prepare(item):
+            index, code = item
             if ctx:
                 ctx.check_cancel()
-            if code in done:
-                continue
-            if ctx:
-                ctx.set_phase(
-                    "分时采集", current_item=code, phase_done=index, phase_total=len(scope["codes"])
-                )
-                ctx.progress(
-                    index / max(1, len(scope["codes"])),
-                    f"分时采集 {index}/{len(scope['codes'])} · 正在处理 {code}",
-                )
             expected = self._ensure_expected(code, scope)
             if repair_dates is not None:
-                expected = expected[expected.trade_date.map(lambda d: str(_day(d)) in repair_dates)]
+                selected_dates = repair_dates.get(code, set()) if isinstance(repair_dates, dict) else repair_dates
+                expected = expected[expected.trade_date.map(lambda d: str(_day(d)) in selected_dates)]
             pending = (
                 expected if scope["mode"] == "refetch" else expected[expected.status.ne("ready")]
             )
-            stats["skipped"] += len(expected) - len(pending)
             actual_times = {
                 str(_day(r.trade_date)): set(r.times) for r in self.c.query_df(
                     "SELECT trade_date,list(strftime(timestamp,'%H:%M')) times "
@@ -463,8 +482,6 @@ class IntradayArchiveService:
                 lambda d: decisions[str(_day(d))]["can_repair"]
             )]
             unavailable = pending[~pending.index.isin(available.index)]
-            stats["out_of_range"] += len(unavailable)
-            outcomes = {"inserted": 0, "updated": 0, "unchanged": 0, "missing": 0}
             if ctx:
                 ctx.log(
                     f"[{index + 1}/{len(scope['codes'])}] {code}：应查 {len(expected)} 日，"
@@ -474,10 +491,10 @@ class IntradayArchiveService:
                 ctx.flush()
                 if allow_fallback:
                     for day, decision in list(decisions.items())[:10]:
-                        for item in decision["decisions"]:
-                            action = "候选取源" if item["request"] else "跳过"
-                            ctx.log(f"{code} {day} {PROVIDER_LABELS[item['source']]}："
-                                    f"{action}；{item['reason']}")
+                        for source_decision in decision["decisions"]:
+                            action = "候选取源" if source_decision["request"] else "跳过"
+                            ctx.log(f"{code} {day} {PROVIDER_LABELS[source_decision['source']]}："
+                                    f"{action}；{source_decision['reason']}")
                     if len(decisions) > 10:
                         ctx.log(f"另有 {len(decisions) - 10} 个目标日按相同来源规则判断；逐日依据保留在质量详情")
                     ctx.flush()
@@ -487,8 +504,14 @@ class IntradayArchiveService:
                     "UPDATE stock_intraday_coverage SET failure_reason=? WHERE code=? AND trade_date=?",
                     [decisions[str(_day(row.trade_date))]["reason"], code, row.trade_date],
                 )
-            technical_error = ""
-            candidates = []
+            return {"index": index, "code": code, "expected": expected, "pending": pending,
+                        "actual_times": actual_times, "decisions": decisions, "available": available,
+                        "unavailable": unavailable}
+
+        def fetch(plan):
+            code, available, decisions = plan["code"], plan["available"], plan["decisions"]
+            quotes = self.quotes or IntradaySourceService(ctx=SourceContext())
+            technical_error, candidates = "", []
             if not available.empty:
                 try:
                     target_dates = [str(_day(d)) for d in available.trade_date]
@@ -502,19 +525,31 @@ class IntradayArchiveService:
                     candidates = window.get("candidates", [window])
                     if window.get("errors"):
                         technical_error = "；".join(window["errors"])
-                        if len(errors) < 100:
-                            errors.append({"code": code, "reason": technical_error})
                 except Exception as exc:  # noqa: BLE001 -- 单股失败留证，取消必须穿透
                     if ctx:
                         ctx.check_cancel()
                     candidates = list(getattr(quotes, "last_windows", {}).values())
                     technical_error = f"{type(exc).__name__}: {str(exc)[:300]}"
-                    if len(errors) < 100:
-                        errors.append({"code": code, "reason": technical_error})
                     if ctx:
-                        ctx.log(f"{code} 分时请求失败：{technical_error}", "warn")
+                        events.put((f"{code} 分时请求失败：{technical_error}", "warn"))
+            return candidates, technical_error, getattr(quotes, "last_observations", {})
+
+        def complete(completed, plan, value, error, _in_flight):
+            if error is not None:
+                raise error
+            index = already_done + completed - 1
+            code, pending = plan["code"], plan["pending"]
+            actual_times = plan["actual_times"]
+            available, unavailable = plan["available"], plan["unavailable"]
+            candidates, technical_error, observations = value
+            stats["skipped"] += len(plan["expected"]) - len(pending)
+            stats["out_of_range"] += len(unavailable)
+            outcomes = {"inserted": 0, "updated": 0, "unchanged": 0, "missing": 0}
+            if technical_error and len(errors) < 100:
+                errors.append({"code": code, "reason": technical_error})
+            if not available.empty:
                 evidence.record(
-                    code, candidates, getattr(quotes, "last_observations", {}),
+                    code, candidates, observations,
                     task_id=getattr(ctx, "tid", None),
                 )
                 # 同股为其他日期取源时，若新响应拓宽了范围，立即利用已取得的更好候选。
@@ -601,6 +636,11 @@ class IntradayArchiveService:
                     (index + 1) / max(1, len(scope["codes"])),
                     f"分时采集 {index + 1}/{len(scope['codes'])} · {code}",
                 )
+        # 注入的单实例测试源保留串行；生产每个工作单元拥有独立源和候选证据。
+        run_bounded_parallel(items, fetch, concurrency=concurrency if self.quotes is None else 1,
+                             ctx=ctx, prepare=prepare, on_complete=complete,
+                             on_tick=drain_events, wait_label="分时采集")
+        drain_events()
         if ctx:
             ctx.log("逐股采集结束：正在复检分时覆盖、非法数据及历史整日缺口…")
             ctx.flush()

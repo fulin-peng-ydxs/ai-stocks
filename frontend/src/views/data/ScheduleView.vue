@@ -9,7 +9,6 @@ import AppHoverInfo from '@/components/AppHoverInfo'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
-import AppDialog from '@/components/AppDialog.vue'
 import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -17,11 +16,10 @@ import { useRouter } from 'vue-router'
 import {
   listSchedules, listScheduleOptions, createSchedule, updateSchedule, setScheduleEnabled, deleteSchedule, runSchedule,
   listScheduleTriggerEvents,
-  getSources, testSources, SOURCE_LABEL, SOURCE_ROLE_LABEL, TASK_LABEL, STATUS_LABEL, ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE, sortQualityIssueTypes,
-  taskDisplayLabel, getSettingsView, saveSettings, resetSettings,
+  TASK_LABEL, STATUS_LABEL, ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE, sortQualityIssueTypes,
+  taskDisplayLabel,
   type ScheduledJob, type ScheduledJobInput, type ScheduledJobOption, type ScheduledTriggerEvent,
-  type SourceStatus, type TaskStatus, type TaskType, type FreqType, type TriggerMode,
-  type CredentialStatus,
+  type TaskStatus, type TaskType, type FreqType, type TriggerMode,
   type TriggerCondition,
   type DelayUnit,
   type BoardIngestStage, type BoardTypeScope,
@@ -54,7 +52,6 @@ import {
 import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
 import StockIngestScopeFields from '@/components/data/StockIngestScopeFields.vue'
 import ResultMaintenanceTaskFields from '@/components/data/ResultMaintenanceTaskFields.vue'
-import { LEADING_WORKBENCH_TABLE_MAX_HEIGHT } from '@/components/table/tableSizing'
 import {
   buildStockIngestParams,
   createStockIngestForm,
@@ -73,7 +70,7 @@ import {
 
 const router = useRouter()
 const settingsOpen = ref(false)
-const scheduleDefaults = { sourceMode: 'all' as 'all' | 'primary', timeMode: 'full' as 'full' | 'hm' }
+const scheduleDefaults = { timeMode: 'full' as 'full' | 'hm' }
 const { settings, isDirty, reset } = usePageSettings('data-schedule', scheduleDefaults)
 
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
@@ -98,9 +95,7 @@ const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, component
 
 // 表格列显隐/边框消费（对齐 QualityView 模式）：字段由 pageRegistry.componentMeta.columns 提供候选
 const jobHiddenColumns = computed<string[]>(() => (componentValueOf('jobTable', 'hiddenColumns') as string[]) ?? [])
-const sourceHiddenColumns = computed<string[]>(() => (componentValueOf('sourceTable', 'hiddenColumns') as string[]) ?? [])
 function jobColVisible(key: string): boolean { return !jobHiddenColumns.value.includes(key) }
-function sourceColVisible(key: string): boolean { return !sourceHiddenColumns.value.includes(key) }
 function tableBorder(slotId: string): boolean { return componentValueOf(slotId, 'border') === true }
 
 const loading = ref(true)
@@ -134,24 +129,6 @@ const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(ty
 const taskTypes = ref<TaskType[]>([])
 const qualityIssueTypes = ref<string[]>([...ISSUE_TYPES_ACTIVE])
 const togglingId = ref('')
-
-const sources = ref<SourceStatus[]>([])
-const pinging = ref(false)
-const sourceLoading = ref(true)
-const sourceError = ref('')
-const displaySources = computed(() => settings.sourceMode === 'primary' ? sources.value.filter((s) => s.role === 'primary') : sources.value)
-function sourceRoleLabel(role: string): string {
-  return enumText(SOURCE_ROLE_LABEL, role, '角色未识别')
-}
-function boardSourceRowActions(): AppRowAction[] {
-  return [{
-    key: 'cookie',
-    label: '授权配置',
-    permission: 'data-settings:manage',
-    testId: 'ths-login-cookie-btn',
-    onClick: () => openCookieConfig(),
-  }]
-}
 
 const FREQ_OPTIONS: { label: string; value: FreqType }[] = [
   { label: '每日', value: 'daily' }, { label: '每周', value: 'weekly' },
@@ -540,103 +517,6 @@ function scheduleRowActions(row: ScheduledJob): AppRowAction[] {
   ]
 }
 
-async function loadSources(ping = false) {
-  sourceLoading.value = true
-  pinging.value = ping
-  sourceError.value = ''
-  try {
-    sources.value = (ping ? await testSources() : await getSources(false)).sources
-  } catch (error) {
-    sourceError.value = getErrorMessage(error, '数据源健康加载失败')
-  } finally {
-    sourceLoading.value = false
-    pinging.value = false
-  }
-}
-
-const cookieDlg = ref(false)
-const cookieSaving = ref(false)
-const cookieValue = ref('')
-type CookieDialogStatus = 'loading' | 'error' | 'unset' | 'usable' | 'unavailable'
-const cookieStatus = ref<CookieDialogStatus>('loading')
-const cookieCredential = ref<CredentialStatus | null>(null)
-const cookieStatusError = ref('')
-let cookieStatusRequestVersion = 0
-// 与系统配置页同一掩码：已设置时输入框回显「已设置」占位，明文不回显，留空/掩码即不修改。
-const COOKIE_SET_MASK = '••••••已设置'
-async function loadCookieStatus() {
-  const version = ++cookieStatusRequestVersion
-  cookieStatus.value = 'loading'
-  cookieStatusError.value = ''
-  try {
-    const view = await getSettingsView()
-    if (version !== cookieStatusRequestVersion) return
-    const ths = view.groups.find((group) => group.key === 'ths_board')
-    const field = ths?.fields.find((item) => item.path === 'ths_board.login_cookie')
-    cookieStatus.value = field?.secret_status ?? 'unset'
-    cookieCredential.value = field?.credential ?? null
-    // 对齐系统配置页：usable 时输入框回显掩码，避免「已设置」被显示成空白输入框。
-    cookieValue.value = cookieStatus.value === 'usable' ? COOKIE_SET_MASK : ''
-  } catch (error) {
-    if (version !== cookieStatusRequestVersion) return
-    cookieStatus.value = 'error'
-    cookieStatusError.value = getErrorMessage(error, '授权配置状态加载失败')
-  }
-}
-const COOKIE_STATUS_LABEL: Record<string, string> = {
-  unset: '未配置', unavailable: '密文不可用', pending: '待真实校验', valid: '有效',
-  expiring: '即将到期', expired: '已到期', invalid: '已失效', unknown: '有效期未知',
-  check_failed: '校验失败',
-}
-function cookieCredentialLabel(status = cookieCredential.value): string {
-  if (!status) return '未配置'
-  const suffix = status.remaining_days != null && ['valid', 'expiring', 'pending'].includes(status.status)
-    ? ` · 剩余 ${status.remaining_days} 天`
-    : ''
-  return `${enumText(COOKIE_STATUS_LABEL, status.status, '状态未识别')}${suffix}`
-}
-function cookieCredentialType(status?: string): 'success' | 'warning' | 'danger' | 'info' {
-  if (status === 'valid') return 'success'
-  if (status === 'pending' || status === 'expiring' || status === 'unknown' || status === 'check_failed') return 'warning'
-  if (status === 'expired' || status === 'invalid' || status === 'unavailable') return 'danger'
-  return 'info'
-}
-function openCookieConfig() {
-  cookieDlg.value = true
-  cookieSaving.value = false
-  cookieValue.value = ''
-  void loadCookieStatus()
-}
-async function saveCookie() {
-  const value = cookieValue.value.trim()
-  if (cookieSaving.value || !value || value === COOKIE_SET_MASK) return
-  cookieSaving.value = true
-  try {
-    await saveSettings({ 'ths_board.login_cookie': value })
-    ElMessage.success('登录 Cookie 已加密保存')
-    cookieDlg.value = false
-    void loadSources(false)
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error, '保存登录 Cookie 失败'))
-  } finally {
-    cookieSaving.value = false
-  }
-}
-async function clearCookie() {
-  if (cookieSaving.value || !['usable', 'unavailable'].includes(cookieStatus.value)) return
-  cookieSaving.value = true
-  try {
-    await resetSettings(['ths_board.login_cookie'])
-    ElMessage.success('页面 Cookie 配置已清除')
-    cookieDlg.value = false
-    void loadSources(false)
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error, '清除登录 Cookie 失败'))
-  } finally {
-    cookieSaving.value = false
-  }
-}
-
 async function load() {
   const requestId = scheduleListRequest.begin()
   loading.value = true
@@ -676,7 +556,7 @@ async function load() {
 }
 
 onMounted(async () => {
-  await Promise.all([load(), loadSources(false)])
+  await load()
   openResultScheduleFromIntent()
 })
 
@@ -700,11 +580,6 @@ const menuPageTitle = useMenuPageTitle()
               <li>实际执行记录进入「数据采集」任务中心，并标注「定时·任务名」。</li>
             </ul>
           </HelpTipItem>
-          <HelpTipItem question="数据源健康看什么">
-            <ul>
-              <li>用于查看 AKShare、BaoStock 和同花顺板块源的连通性。</li>
-            </ul>
-          </HelpTipItem>
         </HelpTip>
       </h2>
       <p class="page-subtitle">按时间或上游任务结果编排采集、结果维护、质检、恢复与审计任务，支持延迟触发和有上限重试。</p>
@@ -722,7 +597,7 @@ const menuPageTitle = useMenuPageTitle()
     </div>
     </template>
 
-    <template #jobTable>
+    <template #main>
       <el-card shadow="never" class="blk app-table-card">
         <template #header>
           <div class="blk-head"><span>调度任务</span>
@@ -744,9 +619,7 @@ const menuPageTitle = useMenuPageTitle()
         <AppDataTable
           v-else
           :data="jobs"
-          :max-height="LEADING_WORKBENCH_TABLE_MAX_HEIGHT"
           size="small"
-          embedded
           :loading="loading"
           :border="tableBorder('jobTable')"
           :default-sort="elementDefaultSort"
@@ -808,156 +681,7 @@ const menuPageTitle = useMenuPageTitle()
       </el-card>
     </template>
 
-    <template #sourcePanel>
-      <el-card shadow="never" class="blk app-table-card">
-        <template #header>
-          <div class="blk-head"><span>数据源健康</span>
-            <el-button v-permission="'data-source:test'" size="small" type="primary" plain :loading="pinging || sourceLoading" @click="loadSources(true)">测试连通</el-button></div>
-        </template>
-        <AppStateBlock
-          v-if="sourceError"
-          state="error"
-          :title="displaySources.length ? '数据源健康刷新失败' : '数据源健康加载失败'"
-          :description="sourceError"
-          retry
-          @retry="loadSources(false)"
-        />
-        <AppDataTable
-          v-else
-          :data="displaySources"
-          :loading="sourceLoading"
-          loading-text="正在加载数据源健康…"
-          size="small"
-          :border="tableBorder('sourceTable')"
-        >
-          <AppTableColumn v-if="sourceColVisible('source')" label="数据源" prop="source">
-            <template #default="{ row }">{{ enumText(SOURCE_LABEL, row.source, '未识别来源') }}</template>
-          </AppTableColumn>
-          <AppTableColumn v-if="sourceColVisible('role')" label="角色" role="status">
-            <template #default="{ row }">
-              <el-tag size="small" effect="plain" :type="row.role === 'primary' ? 'primary' : 'info'">
-                {{ sourceRoleLabel(row.role) }}
-              </el-tag>
-            </template>
-          </AppTableColumn>
-          <AppTableColumn v-if="sourceColVisible('status')" label="状态" role="status">
-            <template #default="{ row }">
-              <span class="app-inline-info app-inline-info--nowrap">
-                <AppHoverInfo
-                  :content="row.up === false && row.failure_reason ? row.failure_reason : undefined"
-                  :disabled="!(row.up === false && row.failure_reason ? row.failure_reason : undefined)"
-                >
-                  <span :tabindex="row.up === false && row.failure_reason ? 0 : undefined"
-                    class="src-status"
-                  >
-                    <span class="dot" :class="row.up === true ? 'up' : row.up === false ? 'down' : 'unknown'" />
-                    {{ row.up === true ? '连通' : row.up === false ? '不可达' : '未测试' }}
-                  </span>
-                </AppHoverInfo>
-                <el-tag
-                  v-if="row.source === 'ths_board' && row.credential"
-                  size="small"
-                  effect="plain"
-                  :type="cookieCredentialType(row.credential.status)"
-                >登录态：{{ cookieCredentialLabel(row.credential) }}</el-tag>
-              </span>
-            </template>
-          </AppTableColumn>
-          <AppTableColumn v-if="sourceColVisible('lastTest')" label="最近测试">
-            <template #default="{ row }">{{ fmtTime(row.last_test_at) }}</template>
-          </AppTableColumn>
-          <AppTableColumn v-if="sourceColVisible('lastSuccess')" label="最近成功">
-            <template #default="{ row }">{{ fmtTime(row.last_success_at) }}</template>
-          </AppTableColumn>
-          <AppTableColumn v-if="sourceColVisible('timeout')" label="超时">
-            <template #default="{ row }">{{ row.timeout_sec }}s</template>
-          </AppTableColumn>
-          <AppTableColumn label="操作" role="action-compact" fixed="right">
-            <template #default="{ row }">
-              <AppRowActions v-if="row.source === 'ths_board'" :actions="boardSourceRowActions()" :inline-limit="1" />
-            </template>
-          </AppTableColumn>
-          <template #empty>点「测试连通」检查行情源与板块源可达性</template>
-        </AppDataTable>
-      </el-card>
-    </template>
-
     <template #overlays>
-    <AppDialog v-model="cookieDlg" title="配置同花顺登录 Cookie" size="medium" data-testid="ths-login-cookie-dialog">
-      <AppStateBlock
-        v-if="cookieStatus === 'loading'"
-        data-testid="ths-login-cookie-status"
-        state="loading"
-        size="tiny"
-        title="正在确认授权配置状态"
-        :skeleton-rows="2"
-      />
-      <AppStateBlock
-        v-else-if="cookieStatus === 'error'"
-        data-testid="ths-login-cookie-status"
-        state="error"
-        size="tiny"
-        title="授权配置状态加载失败"
-        :description="`${cookieStatusError}。状态确认前不会修改或清除已有配置。`"
-        retry
-        retry-text="重新加载"
-        @retry="loadCookieStatus"
-      />
-      <el-form v-else label-width="92px">
-        <el-form-item label="当前状态">
-          <div class="app-inline-info app-inline-info--fill app-inline-info--md">
-            <el-tag :type="cookieCredentialType(cookieCredential?.status)" effect="plain">
-              {{ cookieCredentialLabel() }}
-            </el-tag>
-            <span v-if="cookieCredential?.checked_at" class="app-caption-text">
-              最近校验：{{ fmtTime(cookieCredential.checked_at) }}
-            </span>
-            <span v-if="cookieCredential?.saved_at" class="app-caption-text">
-              页面保存：{{ fmtTime(cookieCredential.saved_at) }}
-            </span>
-            <span v-if="cookieCredential?.expires_at" class="app-caption-text">
-              预计到期：{{ fmtTime(cookieCredential.expires_at) }}
-            </span>
-          </div>
-        </el-form-item>
-        <el-form-item label="登录 Cookie">
-          <div class="app-stack-sm app-inline-info--fill">
-            <el-input
-              v-model="cookieValue"
-              type="password"
-              show-password
-              autocomplete="new-password"
-              readonly
-              placeholder="粘贴登录后的完整 Cookie；数据库只保存加密密文"
-              data-testid="ths-login-cookie-input"
-              @focus="($event.target as HTMLInputElement).removeAttribute('readonly')"
-            />
-            <span v-if="cookieStatus === 'unavailable'" class="app-caption-text">
-              已存密文无法解密，当前采集不会使用它；请检查主密钥，或输入新 Cookie 重新加密覆盖。
-            </span>
-          </div>
-        </el-form-item>
-      </el-form>
-      <AppFormHelp v-if="cookieStatus !== 'loading' && cookieStatus !== 'error'">
-        浏览器登录同花顺后，从开发者工具 Network 复制完整 Cookie 头。
-        默认按 {{ cookieCredential?.validity_days ?? 30 }} 天提醒；点“测试连通”会访问登录深页真实校验。
-        环境变量或受控文件仍优先于页面配置；数据库只保存加密密文，明文不会回显。
-      </AppFormHelp>
-      <template #footer>
-        <el-button v-if="cookieStatus === 'usable' || cookieStatus === 'unavailable'" :disabled="cookieSaving" @click="clearCookie">清除页面配置</el-button>
-        <el-button @click="cookieDlg = false">取消</el-button>
-        <el-button
-          v-if="cookieStatus !== 'loading' && cookieStatus !== 'error'"
-          type="primary"
-          :loading="cookieSaving"
-          :disabled="!cookieValue.trim() || cookieValue.trim() === COOKIE_SET_MASK"
-          data-testid="ths-login-cookie-save"
-          @click="saveCookie"
-        >
-          加密保存
-        </el-button>
-      </template>
-    </AppDialog>
 
     <AppDetailDrawer
       v-model="eventDrawer"
@@ -1208,14 +932,6 @@ const menuPageTitle = useMenuPageTitle()
             ]" />
           </PageSettingItem>
         </PageSettingSection>
-        <PageSettingSection section-key="source-view" title="数据源视图">
-          <PageSettingItem label="显示范围">
-            <PageSegmented v-model="settings.sourceMode" aria-label="显示范围" :options="[
-              { label: '全部源', value: 'all' },
-              { label: '只主源', value: 'primary' },
-            ]" />
-          </PageSettingItem>
-        </PageSettingSection>
       </template>
     </PageSettingsDrawer>
     </template>
@@ -1228,9 +944,4 @@ const menuPageTitle = useMenuPageTitle()
 .delay-unit-select { width: 96px; margin-left: var(--space-2); }
 .blk-head { display: flex; justify-content: space-between; align-items: center; }
 .form-section-divider { margin: var(--app-space-4) 0 14px; }
-.src-status { display: inline-flex; align-items: center; gap: var(--app-space-control-gap); }
-.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.dot.up { background: var(--el-color-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-success) 18%, transparent); }
-.dot.down { background: var(--app-danger-text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-danger-text) 18%, transparent); }
-.dot.unknown { background: var(--app-placeholder-text); }
 </style>

@@ -862,3 +862,80 @@ def test_source_warning_requires_real_count_check_before_final_sync(db):
     # 最终扫描会校准计数；此前逐股日志不能仅凭 ready 标记宣称已通过检查。
     assert db.query_df("SELECT point_count FROM stock_intraday_coverage").iloc[0, 0] == 240
     assert not any("目标日期已补齐" in m for m, _ in ctx.logs)
+
+
+def test_bounded_collection_real_archive_scale_and_cancel_resume(db, monkeypatch):
+    """64只×240分钟经实际规划、候选选择、落库和复检；并发只用于取源。"""
+    import threading
+    import time
+    from backend.config.settings import Settings
+    from backend.services import intraday_archive, intraday_source
+
+    codes = [f"600{index:03d}.SH" for index in range(100, 164)]
+    db.executemany(
+        "INSERT INTO stock_basic(code,name,list_date) VALUES (?,?,'2026-09-10')",
+        [(code, code) for code in codes],
+    )
+    db.executemany(
+        "INSERT INTO daily_bar(code,trade_date,open,high,low,close,pre_close) "
+        "VALUES (?,'2026-09-10',3.6,3.7,3.5,3.6,3.55)", [(code,) for code in codes],
+    )
+    settings = Settings()
+    settings.datasource.update_concurrency = 4
+    monkeypatch.setattr(intraday_archive, "get_effective_settings", lambda: settings)
+    active = peak = 0
+    calls, writes = [], []
+    lock = threading.Lock()
+
+    class Source:
+        def __init__(self, **kwargs):
+            self.ctx = kwargs["ctx"]
+            self.last_observations = {}
+
+        def fetch_window(self, code, dates, **kwargs):
+            nonlocal active, peak
+            with lock:
+                active += 1
+                peak = max(peak, active)
+                calls.append(code)
+            self.ctx.log(f"fetch {code}")
+            time.sleep(0.02)
+            candidate = window(close=3 + int(code[3:6]) / 1000)
+            with lock:
+                active -= 1
+            return {"candidates": [candidate]}
+
+    monkeypatch.setattr(intraday_source, "IntradaySourceService", Source)
+    service = IntradayArchiveService(db)
+    original_write = service.write_day
+    main = threading.get_ident()
+
+    def write(*args, **kwargs):
+        writes.append(threading.get_ident())
+        result = original_write(*args, **kwargs)
+        if len(writes) == 2:
+            ctx.cancel = True
+        return result
+
+    monkeypatch.setattr(service, "write_day", write)
+    ctx = Context()
+    with pytest.raises(TaskCancelled):
+        service.collect({"codes": codes}, ctx=ctx)
+    assert len(ctx.checkpoint["intraday_done"]) == 2
+    assert set(writes) == {main}
+    count = db.query_df("SELECT count(*) n FROM stock_intraday_bar").iloc[0].n
+    time.sleep(0.04)
+    assert db.query_df("SELECT count(*) n FROM stock_intraday_bar").iloc[0].n == count
+    ctx.cancel = False
+    completed = set(ctx.checkpoint["intraday_done"])
+    calls.clear()
+    result = service.collect({"codes": codes}, ctx=ctx)
+    assert result["ok"] and result["inserted"] == len(codes)
+    assert 2 <= peak <= 4 and set(writes) == {main}
+    assert completed.isdisjoint(calls)
+    facts = db.query_df("SELECT code,min(close) lo,max(close) hi,count(*) n "
+                        "FROM stock_intraday_bar GROUP BY code")
+    assert len(facts) == 64 and set(facts.n) == {240}
+    for row in facts.itertuples():
+        assert row.lo == row.hi == pytest.approx(3 + int(row.code[3:6]) / 1000)
+    assert set(ctx.checkpoint["intraday_done"]) == set(codes)

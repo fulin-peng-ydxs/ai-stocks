@@ -74,10 +74,15 @@ class DataSourceHealthRepository:
             "(source,is_up,last_test_at,last_success_at,failure_reason,updated_at) "
             "VALUES (%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (source) DO UPDATE SET "
-            "is_up=EXCLUDED.is_up,last_test_at=EXCLUDED.last_test_at,"
-            "last_success_at=CASE WHEN EXCLUDED.is_up THEN EXCLUDED.last_test_at "
-            "ELSE data_source_health.last_success_at END,"
-            "failure_reason=EXCLUDED.failure_reason,updated_at=EXCLUDED.updated_at",
+            "is_up=CASE WHEN EXCLUDED.last_test_at>=data_source_health.last_test_at "
+            "THEN EXCLUDED.is_up ELSE data_source_health.is_up END,"
+            "last_test_at=greatest(EXCLUDED.last_test_at,data_source_health.last_test_at),"
+            "last_success_at=greatest(data_source_health.last_success_at,"
+            "CASE WHEN EXCLUDED.is_up THEN EXCLUDED.last_test_at "
+            "ELSE data_source_health.last_success_at END),"
+            "failure_reason=CASE WHEN EXCLUDED.last_test_at>=data_source_health.last_test_at "
+            "THEN EXCLUDED.failure_reason ELSE data_source_health.failure_reason END,"
+            "updated_at=greatest(EXCLUDED.updated_at,data_source_health.updated_at)",
             [source, up, tested_at, tested_at if up else None, failure_reason, tested_at],
         )
 

@@ -1,10 +1,8 @@
-"""数据管理专用分时取源：串行保护和有限重试，不缓存未入库行情。"""
+"""数据管理专用分时取源：共享限流和有限重试，不缓存未入库行情。"""
 
 from __future__ import annotations
 
-import math
 import time
-import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -12,8 +10,7 @@ import pandas as pd
 import redis
 
 from backend.common.logging import get_logger
-from backend.config import get_effective_settings, get_settings
-from backend.config.settings import DataSourceConfig
+from backend.config import get_effective_settings
 from backend.datasource.akshare_source import AKShareSource
 from backend.services.intraday_contract import (
     INTRADAY_PROVIDERS,
@@ -26,13 +23,6 @@ from backend.services.intraday_quotes import IntradayServiceUnavailable
 from backend.storage import get_redis_client
 
 log = get_logger("services.intraday_source")
-_SOURCE_PREFIX = "market:intraday:1m"
-_RELEASE_LOCK_SCRIPT = """
-if redis.call('get', KEYS[1]) == ARGV[1] then
-  return redis.call('del', KEYS[1])
-end
-return 0
-"""
 
 
 class IntradaySourceService:
@@ -51,7 +41,6 @@ class IntradaySourceService:
         self.source_factory = source_factory
         self.sleep = sleep
         self.monotonic = monotonic
-        self.config = get_settings().intraday
         self._reported_request_policy = None
         self.last_observations = {}
         self.last_windows = {}
@@ -162,7 +151,7 @@ class IntradaySourceService:
         return self._with_candidates(self._empty_window(windows), windows)
 
     def _fetch_ths_years(self, source, code, dates):
-        """跨年目标逐年取全响应；每个请求仍经过同一串行、限流和重试入口。"""
+        """跨年目标逐年取全响应；每个请求仍经过同一限流和重试入口。"""
         frames, errors, years = [], [], []
         for year in sorted({int(day[:4]) for day in dates}):
             try:
@@ -192,7 +181,6 @@ class IntradaySourceService:
     ) -> pd.DataFrame:
         # 每次取源重新合并系统覆盖层，长任务下一只股票/备用源即可使用页面新配置。
         settings = get_effective_settings().datasource
-        interval = 1.0 / max(settings.rate_limit_per_sec, 0.1)
         # 与通用 with_retry 保持一致：max_retries 表示包含首次请求的总尝试次数。
         attempts = settings.max_retries
         policy = (
@@ -203,32 +191,35 @@ class IntradaySourceService:
             self._task_log(
                 f"系统请求配置：限流 {settings.rate_limit_per_sec:g} 次/秒，"
                 f"超时 {settings.socket_timeout_sec:g} 秒，最多尝试 {attempts} 次，"
-                f"指数退避起始 {settings.retry_backoff_sec:g} 秒；分时全局串行"
+                f"指数退避起始 {settings.retry_backoff_sec:g} 秒；按实际来源共享限流"
             )
             self._reported_request_policy = policy
         last_error: Exception | None = None
         for attempt in range(attempts):
+            settings = get_effective_settings().datasource
             if self.ctx:
                 self.ctx.check_cancel()
-            self._task_log(f"{code} {PROVIDER_LABELS[provider]}：等待串行保护")
-            token = self._acquire_global_source_lock(settings)
+            from backend.datasource.request_policy import (
+                RequestPolicy,
+                http_policy_scope,
+                wait_for_source,
+            )
+            policy = RequestPolicy(settings.rate_limit_per_sec, settings.socket_timeout_sec,
+                                   attempts, settings.retry_backoff_sec)
+            self._task_log(f"{code} {PROVIDER_LABELS[provider]}：等待来源限流")
             try:
-                self._task_log(
-                    f"{code} {PROVIDER_LABELS[provider]}"
-                    + (f" {request_year} 年" if request_year else "")
-                    + f"请求 {attempt + 1}/{attempts}：等待串行限流并取源"
-                )
-                self._wait_source_interval(interval)
-                if self.ctx:
-                    self.ctx.check_cancel()
+                wait_for_source(provider, policy, client=self.redis,
+                                check=self.ctx.check_cancel if self.ctx else None, sleep=self.sleep)
+                self._task_log(f"{code} {PROVIDER_LABELS[provider]}请求 {attempt + 1}/{attempts}")
                 kwargs = {"request_year": request_year} if provider == "ths" else {}
-                frame = source.get_intraday_1m(
-                    code, provider, timeout_sec=settings.socket_timeout_sec, **kwargs
-                )
+                with http_policy_scope(provider, policy):
+                    frame = source.get_intraday_1m(
+                        code, provider, timeout_sec=settings.socket_timeout_sec, **kwargs
+                    )
                 return frame
             except (redis.RedisError, IntradayServiceUnavailable):
                 raise
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- 来源故障有限重试并保留具体错误
                 if self.ctx:
                     self.ctx.check_cancel()
                 last_error = exc
@@ -237,36 +228,10 @@ class IntradaySourceService:
                         f"{code} {PROVIDER_LABELS[provider]}请求 {attempt + 1}/{attempts} 失败："
                         f"{type(exc).__name__}: {str(exc)[:300]}；退避后重试", "warn",
                     )
-            finally:
-                self._release_lock(self._global_lock_key(), token)
             if attempt < attempts - 1:
                 self._pause(settings.retry_backoff_sec * 2 ** attempt)
         assert last_error is not None
         raise last_error
-
-    def _acquire_global_source_lock(self, settings: DataSourceConfig) -> str:
-        interval = 1.0 / max(settings.rate_limit_per_sec, 0.1)
-        token = uuid.uuid4().hex
-        deadline = self.monotonic() + self.config.lock_wait_sec
-        # requests 超时分别约束连接和读取，锁还须覆盖限流等待及释放余量。
-        ttl = max(30, math.ceil(settings.socket_timeout_sec * 2 + interval + 10))
-        while self.monotonic() < deadline:
-            if self.redis.set(self._global_lock_key(), token, nx=True, ex=ttl):
-                return token
-            self._pause(0.1)
-        raise IntradayServiceUnavailable("分钟行情源正在繁忙，请稍后重试")
-
-    def _wait_source_interval(self, min_interval_sec: float) -> None:
-        seconds, micros = self.redis.time()
-        now = float(seconds) + float(micros) / 1_000_000
-        last_raw = self.redis.get(self._last_start_key())
-        last = float(last_raw) if last_raw else 0.0
-        wait = min_interval_sec - (now - last)
-        if wait > 0:
-            self._pause(wait)
-            seconds, micros = self.redis.time()
-            now = float(seconds) + float(micros) / 1_000_000
-        self.redis.set(self._last_start_key(), f"{now:.6f}", ex=86_400)
 
     @staticmethod
     def _frame_to_window(frame: pd.DataFrame, provider: str) -> dict:
@@ -343,14 +308,3 @@ class IntradaySourceService:
             "fetched_at": newest.get("fetched_at"),
             "rows": [],
         }
-
-    def _release_lock(self, key: str, token: str) -> None:
-        self.redis.eval(_RELEASE_LOCK_SCRIPT, 1, key, token)
-
-    @staticmethod
-    def _global_lock_key() -> str:
-        return f"{_SOURCE_PREFIX}:lock:source"
-
-    @staticmethod
-    def _last_start_key() -> str:
-        return f"{_SOURCE_PREFIX}:source:last-start"

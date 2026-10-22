@@ -55,22 +55,21 @@ class DataSourceConfig(BaseModel):
     history_years: int = Field(default=10, ge=1, le=30)
     capital_review_batch_size: int = Field(default=50, ge=0, le=500)
     capital_review_interval_days: int = Field(default=7, ge=1, le=365)
-    rate_limit_per_sec: float = 5
-    max_retries: int = 3
-    retry_backoff_sec: float = 2
-    socket_timeout_sec: float = 30  # 全局 socket 超时，防请求挂死
-    baostock_login_timeout_sec: float = Field(default=120, gt=0, le=600)  # 登录排队可明显慢于行情查询，单独限定
+    rate_limit_per_sec: float = Field(default=5, ge=0.1, le=50)
+    max_retries: int = Field(default=3, ge=1, le=10)
+    retry_backoff_sec: float = Field(default=2, ge=0, le=60)
+    socket_timeout_sec: float = Field(default=30, ge=1)  # 全局 socket 超时，防请求挂死
+    baostock_login_timeout_sec: float = Field(default=120, ge=1, le=600)  # 登录排队可明显慢于行情查询，单独限定
     cache_enabled: bool = True
-    update_concurrency: int = 1     # 增量更新并发线程数（>1 提速；每线程独立限流，总速≈N×rate_limit）
+    update_concurrency: int = Field(default=1, ge=1, le=16)  # 单任务默认工作单元数；不放大来源总限速
 
 
 class IntradayConfig(BaseModel):
-    """分钟归档查询缓存与数据管理采集的跨进程源站保护。"""
+    """分钟归档范围与查询缓存；网络参数统一读取数据源请求策略。"""
 
     enabled: bool = True
     supported_trade_days: int = Field(default=8, ge=1, le=30)
     cache_ttl_sec: int = Field(default=43_200, ge=60, le=86_400)
-    lock_wait_sec: float = Field(default=20.0, ge=1, le=60)
 
 
 class UniverseConfig(BaseModel):
@@ -245,18 +244,16 @@ class AuditConfig(BaseModel):
 
 
 class ThsBoardConfig(BaseModel):
-    """同花顺板块数据源请求参数（板块概念需求 R1-R4，独立于 datasource 通用行情源）。
+    """板块特殊频率、凭据和业务规则；旧请求覆盖为空时继承通用配置。
 
-    同花顺是**独立反爬直连源**（q/data/d.10jqka.com.cn，v cookie 反爬），频率限制比
-    akshare/baostock 更敏感，因此限流/重试/超时**单独配置**，不复用 datasource.* 通用项
-    （避免板块采集把通用行情源限流误调）。min_interval_sec 为相邻两次请求最小间隔秒数
-    （实测 1.0s 稳定，风控收紧时可调大）；YAML 基线 + CONFIG_GROUPS 白名单可 Web 覆盖。
+    旧部署中显式配置的超时、尝试次数、退避继续有效，管理员清空后恢复继承。
+    同花顺股票分钟使用独立接口，不读取板块Cookie和专属频率。
     """
 
-    min_interval_sec: float = Field(default=1.0, ge=0.05)   # 相邻请求最小间隔（秒），越小请求越快
-    timeout_sec: float = Field(default=10.0, ge=1)           # 单请求超时（秒）
-    max_retries: int = Field(default=3, ge=1, le=10)         # 失败重试次数
-    retry_backoff_sec: float = Field(default=2.0, ge=0, le=60)  # 重试退避基数（秒，指数退避）
+    min_interval_sec: float = Field(default=1.0, ge=0.05, le=30)   # 相邻请求最小间隔（秒），越小请求越快
+    timeout_sec: float | None = Field(default=None, ge=1, le=120)           # 单请求超时（秒）
+    max_retries: int | None = Field(default=None, ge=1, le=10)  # 旧显式覆盖；None继承通用
+    retry_backoff_sec: float | None = Field(default=None, ge=0, le=60)  # 重试退避基数（秒，指数退避）
     member_update_interval_days: int = Field(default=7, ge=1, le=30)  # 成分快照更新间隔（天）：默认周频，达标后按此跳过
     cookie_validity_days: int = Field(default=30, ge=1, le=365)  # Cookie 期限提醒；真实有效性仍以登录页校验为准
     # 仅承接 AppConfigRepo 解密后的进程内值；YAML 中禁止配置，页面与接口只返回掩码。

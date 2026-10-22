@@ -46,6 +46,7 @@ _LOGIN_TTL_SEC = 25 * 60
 _HANG_BREAK_FACTOR = 3.0
 _HANG_MIN_SOCKET_TIMEOUT_SEC = 20.0
 _WATCHDOG_POLL_SEC = 1.0
+_SESSION_LOCK = threading.RLock()
 _watchdog_lock = threading.Lock()
 _watchdog_deadline = 0.0  # monotonic 截止时刻；0 表示当前没有在途调用
 _watchdog_limit = 0.0  # 本次在途调用的挂起阈值（秒），仅用于日志
@@ -154,6 +155,7 @@ class BaostockSource(DataSource):
             self._login_timeout_sec = getattr(eff, "baostock_login_timeout_sec", self._login_timeout_sec)
         except Exception as exc:  # noqa: BLE001
             log.debug("读取 Baostock 生效配置失败，使用启动基线: %s", exc)
+        self._hang_policy = (self._socket_timeout_sec, self._login_timeout_sec)
         # 看门狗阈值随 socket 超时联动；测试可下调该属性以缩短等待。
         self._hang_break_sec = (
             max(max(float(self._socket_timeout_sec), _HANG_MIN_SOCKET_TIMEOUT_SEC) * _HANG_BREAK_FACTOR,
@@ -245,20 +247,38 @@ class BaostockSource(DataSource):
         整段（登录 + 查询 + 游标遍历）都在看门狗保护内：源端丢弃连接时客户端会空转，
         只有断开会话才会抛错，才能落到下面的失效重登与 ``with_retry`` 重试。
         """
+        from backend.datasource.base import check_thread_cancel
+        from backend.datasource.request_policy import request_policy, wait_for_source
+
+        # 锁覆盖登录、查询、游标读取及断线清理；探活也必须遵守，不能只靠采集调用方加锁。
+        while not _SESSION_LOCK.acquire(timeout=0.1):
+            check_thread_cancel()
         try:
+            policy = request_policy("baostock")
+            self._socket_timeout_sec = policy.timeout
+            self._login_timeout_sec = get_effective_settings().datasource.baostock_login_timeout_sec
+            wait_for_source("baostock", policy, check=check_thread_cancel)
+            current = (policy.timeout, self._login_timeout_sec)
+            if current != self._hang_policy:
+                self._hang_break_sec = max(max(policy.timeout, _HANG_MIN_SOCKET_TIMEOUT_SEC)
+                                           * _HANG_BREAK_FACTOR,
+                                           self._login_timeout_sec + policy.timeout)
+                self._hang_policy = current
             with self._hang_guard(self._hang_break_sec):
                 self._ensure_login()
                 return _collect(query())
         except Exception:
             self._invalidate_login()
             raise
+        finally:
+            _SESSION_LOCK.release()
 
     def close(self) -> None:
-        if self._logged_in:
-            import baostock as bs
-
-            bs.logout()
-            self._logged_in = False
+        with _SESSION_LOCK:
+            if self._logged_in:
+                import baostock as bs
+                bs.logout()
+                self._logged_in = False
 
     def __del__(self):
         try:
@@ -495,6 +515,7 @@ def shared_baostock() -> "BaostockSource":
     """进程级单例 baostock 源（复用登录会话）。所有 get_source('baostock') 经此返回同一实例，
     避免每个任务/每只股重登 ~6s；会话型，调用方仍经 _BAO_FALLBACK_LOCK 串行使用。"""
     global _SHARED
-    if _SHARED is None:
-        _SHARED = BaostockSource()
-    return _SHARED
+    with _SESSION_LOCK:
+        if _SHARED is None:
+            _SHARED = BaostockSource()
+        return _SHARED

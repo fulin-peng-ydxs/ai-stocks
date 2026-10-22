@@ -2,6 +2,9 @@
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
+import AppTabToolbar from '@/components/AppTabToolbar.vue'
+import AppControlRow from '@/components/AppControlRow.vue'
+import ConfigPanelSection from '@/components/config/ConfigPanelSection.vue'
 import AppHoverInfo from '@/components/AppHoverInfo'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -69,7 +72,7 @@ import IndicatorParamSchemaEditor from '@/components/indicator/IndicatorParamSch
 import IndicatorSelect from '@/components/indicator/IndicatorSelect.vue'
 import StrategyItemEnabledSwitch from '@/components/strategy/StrategyItemEnabledSwitch.vue'
 import { getErrorMessage } from '@/utils/error'
-import { formatDateTimeMinutes } from '@/utils/dateTime'
+import { formatDateTimeMinutes, formatDateTimeSeconds } from '@/utils/dateTime'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
@@ -87,7 +90,7 @@ import {
   useStockAdjustModeSession,
   type StockAdjustMode,
 } from '@/composables/useStockAnalysisSession'
-import { getSettingsView, resetSettings, saveSettings, type MailStatus, type SettingGroup } from '@/api/data'
+import { getSettingsView, resetSettings, saveSettings, type MailStatus, type SettingGroup, getSources, testSources, type SourceStatus } from '@/api/data'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import type { SlotConfigMeta } from '@/layout/pageRegistry'
@@ -122,7 +125,7 @@ const pageSubtitle = computed(() => {
   if (forcedTab.value === 'score') return '按权重组合技术指标打分排序，权重自动归一到 100%。'
   if (forcedTab.value === 'trade') return '买入/卖出各一组技术指标条件（且/或），止盈/止损/持仓为可选兜底。'
   if (forcedTab.value === 'tech') return '系统内置指标不可删除仅可启停；自定义指标为一段带参数的表达式，供评分/筛选/买卖引用。'
-  if (forcedTab.value === 'system') return '保存后即时影响访问安全、数据采集、审计留存和研究运行参数。'
+  if (forcedTab.value === 'system') return '统一维护访问安全、采集请求规则与数据源健康；生效范围和特殊限制随配置列示。'
   return ''
 })
 type ConfigPageSettings = Record<string, unknown> & {
@@ -196,6 +199,7 @@ const sysGroups = ref<SettingGroup[]>([])
 const mailStatus = ref<MailStatus | null>(null)
 const sysDraft = ref<Record<string, unknown>>({})
 const sysLoading = ref(false)
+const sysLoadError = ref('')
 const sysSaving = ref(false)
 const sysSaveError = ref(false)
 // 系统设置分组页签单向：组件配置层默认值（sysTabs.defaultActive）→ 会话 ref；页面切换不写回配置层。
@@ -213,7 +217,7 @@ const configPanelBehavior = computed<ConfigPanelBehavior>(() => {
   const defaultCollapsed = componentValueOf('configPanel', 'defaultCollapsed')
   return {
     collapsibleSections: componentValueOf('configPanel', 'collapsibleSections') !== false,
-    defaultCollapsed: Array.isArray(defaultCollapsed) ? (defaultCollapsed as string[]) : [],
+    defaultCollapsed: Array.isArray(defaultCollapsed) ? (defaultCollapsed as string[]) : ['source-health'],
     showGroupDescription: componentValueOf('configPanel', 'showGroupDescription') !== false,
     showSectionDescription: componentValueOf('configPanel', 'showSectionDescription') !== false,
   }
@@ -221,6 +225,7 @@ const configPanelBehavior = computed<ConfigPanelBehavior>(() => {
 async function loadSystem() {
   if (!canManageSystemSettings.value) return
   sysLoading.value = true
+  sysLoadError.value = ''
   sysSaveError.value = false
   try {
     const { groups, mail_status } = await getSettingsView()
@@ -229,6 +234,8 @@ async function loadSystem() {
     const d: Record<string, unknown> = {}
     groups.forEach((g) => g.fields.forEach((f) => { d[f.path] = f.value }))
     sysDraft.value = d
+  } catch (error) {
+    sysLoadError.value = getErrorMessage(error, '系统设置加载失败')
   } finally { sysLoading.value = false }
 }
 
@@ -285,6 +292,7 @@ const sysDirty = computed(() => {
   return false
 })
 function systemFieldInvalid(field: SettingGroup['fields'][number], value: unknown): boolean {
+  if (field.nullable && value == null) return false
   if (field.type === 'bool') return typeof value !== 'boolean'
   if (field.type === 'enum') return !(field.options ?? []).includes(String(value))
   // string/password：文本字段无数值范围校验，直接放行
@@ -324,7 +332,11 @@ const configPanelMetaOverrides = computed<Record<string, SlotConfigMeta> | undef
   if (activeTab.value !== 'system') return undefined
   return {
     configPanel: {
-      collapseSections: configPanelCollapseSectionsOf(activeSysGroups.value),
+      collapseSections: [
+        ...(activeSysTab.value === 'data-governance' && canTestSources.value
+          ? [{ key: 'source-health', label: '数据源能力与健康' }] : []),
+        ...configPanelCollapseSectionsOf(activeSysGroups.value),
+      ],
     },
   }
 })
@@ -348,8 +360,32 @@ async function saveSystem() {
     await saveSettings(updates)
     ElMessage.success('配置已更新')
     await loadSystem()
+    if (activeSysTab.value === 'data-governance') await loadSources()
   } catch {
     sysSaveError.value = true
+  } finally { sysSaving.value = false }
+}
+async function resetSystemField(path: string) {
+  if (!canManageSystemSettings.value || sysSaving.value || sourceTesting.value) return
+  try {
+    await ElMessageBox.confirm('清除已保存的页面凭据？部署环境中的凭据仍会优先使用，其它未保存编辑会保留。',
+      '清除凭据', { type: 'warning' })
+  } catch { return }
+  const changed: Record<string, unknown> = {}
+  for (const group of sysGroups.value) for (const field of group.fields) {
+    if (field.path !== path && sysDraft.value[field.path] !== field.value) {
+      changed[field.path] = sysDraft.value[field.path]
+    }
+  }
+  sysSaving.value = true
+  try {
+    await resetSettings([path])
+    await loadSystem()
+    sysDraft.value = { ...sysDraft.value, ...changed }
+    await loadSources()
+    ElMessage.success('已清除页面凭据配置')
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error, '清除配置失败'))
   } finally { sysSaving.value = false }
 }
 async function resetActiveSystemTab() {
@@ -366,6 +402,7 @@ async function resetActiveSystemTab() {
     await resetSettings(activeSysPaths.value)
     ElMessage.success('配置已恢复默认')
     await loadSystem()
+    if (activeSysTab.value === 'data-governance') await loadSources()
   } catch {
     sysSaveError.value = true
   } finally { sysSaving.value = false }
@@ -375,6 +412,65 @@ watch(() => sysTabs.value.map((tab) => tab.key).join('|'), () => {
     activeSysTab.value = sysTabs.value[0]?.key || 'access'
   }
 })
+// 数据源健康与已保存配置共用消费入口；查看不触网，显式测试逐行更新。
+const sources = ref<SourceStatus[]>([])
+const sourceLoading = ref(false)
+const sourceError = ref('')
+const sourceTesting = ref('')
+const canTestSources = computed(() => hasPermission(auth.role, auth.permissions, 'data-source:test'))
+let sourceVersion = 0
+const sourceColumns = computed<string[]>(() => (componentValueOf('sourceTable', 'hiddenColumns') as string[]) ?? [])
+function sourceColVisible(key: string) { return !sourceColumns.value.includes(key) }
+async function loadSources() {
+  if (!canTestSources.value || sourceTesting.value) return
+  const version = ++sourceVersion
+  sourceLoading.value = true
+  sourceError.value = ''
+  try {
+    const result = await getSources(false)
+    if (version === sourceVersion) sources.value = result.sources
+  } catch (error) {
+    if (version === sourceVersion) sourceError.value = getErrorMessage(error, '来源清单加载失败')
+  } finally {
+    if (version === sourceVersion) sourceLoading.value = false
+  }
+}
+async function testSource(source?: string) {
+  if (!canTestSources.value || sourceLoading.value || sourceTesting.value || sysDirty.value || sysSaving.value) return
+  sourceTesting.value = source || '*'
+  sourceError.value = ''
+  ++sourceVersion
+  try {
+    // 每项独立请求并及时反馈，长登录不会让其它已完成状态丢失。
+    const targets = source ? [source] : sources.value.map((item) => item.source)
+    for (const target of targets) {
+      const result = await testSources(target)
+      for (const row of result.sources) {
+        sources.value = sources.value.map((item) => item.source === row.source ? row : item)
+      }
+    }
+  } catch (error) {
+    sourceError.value = getErrorMessage(error, '测试失败，已保留其它来源结果')
+  } finally {
+    sourceTesting.value = ''
+  }
+}
+function sourceActions(row: SourceStatus): AppRowAction[] {
+  return [{ key: 'test', label: '测试连通', permission: 'data-source:test',
+    loading: sourceTesting.value === row.source,
+    disabled: !!sourceTesting.value || sysDirty.value || sysSaving.value,
+    onClick: () => testSource(row.source) }]
+}
+function credentialText(row: SourceStatus): string {
+  const credential = row.credential
+  if (!credential) return ''
+  const labels: Record<string, string> = { unset: '未配置', unavailable: '密文不可用', pending: '待校验',
+    valid: '有效', expiring: '即将到期', expired: '已到期', invalid: '失效', unknown: '未校验', check_failed: '校验失败' }
+  return `板块登录态：${labels[credential.status] ?? '状态未知'}`
+}
+watch([activeSysTab, canTestSources], ([tab]) => {
+  if (activeTab.value === 'system' && tab === 'data-governance') void loadSources()
+}, { immediate: true })
 // ── 技术指标注册表（含内置 + 自定义）──
 const registry = ref<IndicatorDef[]>([])
 const indicatorTemplates = ref<IndicatorTemplate[]>([])
@@ -1654,7 +1750,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
     </template>
 
     <template #main>
-    <AppScrollArea class="config-body">
+    <component :is="activeTab === 'system' ? 'div' : AppScrollArea" class="config-body"
+      :class="{ 'config-body--system': activeTab === 'system' }">
     <AppStateBlock
       v-if="pageInitError"
       state="error"
@@ -2299,72 +2396,131 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         />
         <AppAsyncRegion
           v-else
-          class="sys-wrap"
+          class="app-workspace-panel"
           :loading="sysLoading"
+          :error="sysLoadError" retry @retry="loadSystem"
           :has-content="sysGroups.length > 0"
           loading-title="正在加载系统设置…"
           empty-title="暂无可维护配置"
         >
-          <el-tabs v-model="activeSysTab" class="sys-tabs">
+          <el-tabs v-model="activeSysTab" class="app-workspace-tabs">
             <el-tab-pane
               v-for="tab in sysTabs"
               :key="tab.key"
               :name="tab.key"
               :label="tab.label"
             >
-              <div v-if="tab.key === activeSysTab" class="sys-tab-toolbar">
-                <div v-if="sysSaveError || sysInvalidPaths.length" class="sys-alerts">
-                  <AppStatusNotice
-                    v-if="sysSaveError"
-                    tone="error"
-                    title="保存失败，已保留当前编辑值"
-                  />
-                  <AppStatusNotice
-                    v-else-if="sysInvalidPaths.length"
-                    tone="warning"
-                    title="存在超出允许范围的配置项"
-                  />
-                </div>
-                <div class="sys-actions">
-                  <el-button
-                    v-permission="'data-settings:manage'"
-                    :loading="sysSaving"
-                    :disabled="!activeSysPaths.length"
-                    @click="resetActiveSystemTab"
-                  >
-                    恢复默认
-                  </el-button>
-                  <el-button
-                    v-permission="'data-settings:manage'"
-                    type="primary"
-                    :loading="sysSaving"
-                    :disabled="!sysDirty || !!sysInvalidPaths.length"
-                    @click="saveSystem"
-                  >
-                    保存并生效
-                  </el-button>
-                </div>
-              </div>
-              <div class="sys-grid">
-                <ConfigGroupForm
-                  v-for="group in tab.groups"
-                  :key="group.key"
-                  :group="group"
-                  :sections="configPanelSectionsOf(group.key)"
-                  :panel-behavior="configPanelBehavior"
-                  :model-value="sysDraft"
-                  :disabled="sysSaving"
-                  :invalid-paths="sysInvalidPaths"
-                  :field-status="systemFieldStatus"
-                  @update-field="updateSystemField"
-                />
+              <div class="app-workspace-panel">
+                <AppTabToolbar v-if="tab.key === activeSysTab" label="系统配置操作栏">
+                  <template #actions>
+                    <el-button
+                      v-permission="'data-settings:manage'"
+                      :loading="sysSaving"
+                      :disabled="!activeSysPaths.length || !!sourceTesting"
+                      @click="resetActiveSystemTab"
+                    >
+                      恢复默认
+                    </el-button>
+                    <el-button
+                      v-permission="'data-settings:manage'"
+                      type="primary"
+                      :loading="sysSaving"
+                      :disabled="!sysDirty || !!sysInvalidPaths.length || !!sourceTesting"
+                      @click="saveSystem"
+                    >
+                      保存并生效
+                    </el-button>
+                  </template>
+                  <template v-if="sysSaveError || sysInvalidPaths.length" #description>
+                    <AppStatusNotice
+                      v-if="sysSaveError"
+                      tone="error"
+                      title="保存失败，已保留当前编辑值"
+                    />
+                    <AppStatusNotice
+                      v-else-if="sysInvalidPaths.length"
+                      tone="warning"
+                      title="存在超出允许范围的配置项"
+                    />
+                  </template>
+                </AppTabToolbar>
+                <AppScrollArea class="sys-content" aria-label="系统配置内容">
+                  <div class="sys-grid">
+                    <ConfigPanelSection v-if="tab.key === 'data-governance' && canTestSources"
+                      class="source-health" title="数据源能力与健康"
+                      description="查看各来源的用途、实际生效规则和最近测试结果。"
+                      :collapsible="configPanelBehavior.collapsibleSections"
+                      :default-open="!configPanelBehavior.defaultCollapsed.includes('source-health')"
+                      :show-description="configPanelBehavior.showGroupDescription">
+                      <AppControlRow justify="end" class="source-health-head">
+                        <HelpHint text="测试使用已保存配置；查看不联网。成功只代表本行代表接口返回有效响应，不能证明其它接口、登录态或数据覆盖完整。最近成功指最近一次测试成功。并发列为任务上限，单条测试仍顺序执行。" />
+                        <el-button v-permission="'data-source:test'" type="primary" plain
+                          :loading="!!sourceTesting" :disabled="sourceLoading || sysDirty || sysSaving || !sources.length"
+                          @click="testSource()">测试全部来源</el-button>
+                      </AppControlRow>
+                      <AppFormHelp v-if="sysDirty">测试使用已保存配置，请先保存当前修改。</AppFormHelp>
+                      <AppStateBlock v-if="sourceError" state="error" title="来源状态读取或测试失败"
+                        :description="sourceError" retry @retry="loadSources" />
+                      <AppDataTable :data="sources" :loading="sourceLoading" embedded aria-label="数据源能力与健康"
+                        empty-text="暂无来源清单" :border="tableBorder('sourceTable')"
+                        loading-text="正在读取已保存的来源状态…">
+                        <AppTableColumn v-if="sourceColVisible('source')" label="来源能力" prop="label">
+                          <template #default="{ row }">{{ row.label || row.source }}</template>
+                        </AppTableColumn>
+                        <AppTableColumn v-if="sourceColVisible('scope')" label="使用范围" prop="scope" role="description" />
+                        <AppTableColumn v-if="sourceColVisible('policy')" label="生效请求规则" role="description">
+                          <template #default="{ row }">
+                            <span class="source-policy">
+                              <span>{{ row.policy_origin }}</span>
+                              <span>并发上限 {{ row.concurrency }} · {{ row.rate_limit_per_sec }} 次/秒</span>
+                              <span>超时 {{ row.timeout_sec }} 秒 · 最多尝试 {{ row.max_attempts }} 次</span>
+                              <span>退避起点 {{ row.retry_backoff_sec }} 秒<span v-if="row.login_timeout_sec"> · 登录超时 {{ row.login_timeout_sec }} 秒</span></span>
+                            </span>
+                          </template>
+                        </AppTableColumn>
+                        <AppTableColumn v-if="sourceColVisible('status')" label="最近测试结果" role="status">
+                          <template #default="{ row }">
+                            <AppHoverInfo :content="row.failure_reason || row.probe_scope">
+                              <el-tag :type="row.up === true ? 'success' : row.up === false ? 'danger' : 'info'" effect="plain">
+                                {{ sourceTesting === row.source ? '测试中' : row.up === true ? '通过' : row.up === false ? '未通过' : '未测试' }}
+                              </el-tag>
+                            </AppHoverInfo>
+                            <span v-if="row.credential" class="source-credential">{{ credentialText(row) }}</span>
+                          </template>
+                        </AppTableColumn>
+                        <AppTableColumn v-if="sourceColVisible('lastTest')" label="最近测试" role="datetime">
+                          <template #default="{ row }">{{ formatDateTimeSeconds(row.last_test_at) }}</template>
+                        </AppTableColumn>
+                        <AppTableColumn v-if="sourceColVisible('lastSuccess')" label="最近测试成功" role="datetime">
+                          <template #default="{ row }">{{ formatDateTimeSeconds(row.last_success_at) }}</template>
+                        </AppTableColumn>
+                        <AppTableColumn label="操作" role="action-compact" fixed="right">
+                          <template #default="{ row }"><AppRowActions :actions="sourceActions(row)" :inline-limit="1" /></template>
+                        </AppTableColumn>
+                      </AppDataTable>
+                    </ConfigPanelSection>
+                    <ConfigGroupForm
+                      v-for="group in tab.groups"
+                      :key="group.key"
+                      :group="group"
+                      :sections="configPanelSectionsOf(group.key)"
+                      :panel-behavior="configPanelBehavior"
+                      :model-value="sysDraft"
+                      :disabled="sysSaving || !!sourceTesting"
+                      :invalid-paths="sysInvalidPaths"
+                      :field-status="systemFieldStatus"
+                      @update-field="updateSystemField"
+                      @reset-field="resetSystemField"
+                    />
+                  </div>
+                </AppScrollArea>
               </div>
             </el-tab-pane>
           </el-tabs>
         </AppAsyncRegion>
       </template>
     </template>
-    </AppScrollArea>
+    </component>
     </template>
 
     <template #overlays>
@@ -2591,41 +2747,14 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 </template>
 
 <style scoped>
-.sys-wrap {
+.source-health-head { margin-bottom: var(--app-space-2); }
+.source-policy { display: flex; flex-direction: column; gap: var(--app-space-1); white-space: normal; }
+.source-credential { display: block; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
+.sys-content {
   flex: 1 1 auto;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-2);
-}
-.sys-tab-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--app-space-3);
-  margin-bottom: var(--app-space-3);
-}
-.sys-alerts {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.sys-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--app-space-2);
-  flex: none;
-}
-.sys-tabs {
-  min-width: 0;
-}
-.sys-tabs :deep(.el-tabs__content) {
-  overflow: visible;
 }
 .sys-grid {
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-3);
   min-width: 0;
 }
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-3); }
@@ -2635,6 +2764,10 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   height: 100%;
   --app-scroll-display: flex;
   --app-scroll-direction: column;
+}
+.config-body--system {
+  display: flex;
+  flex-direction: column;
 }
 .pane-fill {
   height: 100%;
@@ -3031,17 +3164,5 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .bs-item i {
   font-style: normal;
   color: var(--el-text-color-secondary);
-}
-@container app-viewport (max-width: 980px) {
-  .sys-tab-toolbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-  .sys-actions {
-    justify-content: flex-start;
-  }
-  .sys-grid {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

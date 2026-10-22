@@ -137,6 +137,8 @@ def test_baostock_hung_query_is_broken_by_watchdog(monkeypatch):
 
 def test_daily_ingest_persists_st_when_baostock_confirms_suspension(market, monkeypatch):
     day = date(2026, 7, 6)
+    # 停牌确认只针对已登记且当时存续的股票，夹具必须包含股票池事实。
+    market.execute("INSERT INTO stock_basic(code,name,list_date) VALUES ('600001.SH','示例','2020-01-01')")
     market.execute("INSERT INTO trade_calendar VALUES (?,TRUE)", [day])
     source = SimpleNamespace(name="baostock")
     ingest = IngestionService.__new__(IngestionService)
