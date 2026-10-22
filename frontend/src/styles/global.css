@@ -639,6 +639,7 @@ body > .el-notification {
   --app-nav-weight-active: var(--app-font-weight-section);
   --app-space-1: 4px;
   --app-select-panel-max-width: 480px;
+  --app-command-menu-max-width: 160px;
   --app-space-2: 8px;
   --app-space-3: 12px;
   --app-space-4: 16px;
@@ -1117,6 +1118,20 @@ html.dark {
 .app-inline-info--md { gap: var(--app-space-2); }
 .app-inline-info--nowrap { flex-wrap: nowrap; }
 .app-inline-info > .el-tag { flex: none; }
+
+/* 命令菜单按最长项（含图标与内距）撑宽；覆盖 Popover 默认的 150px 下限。 */
+.app-command-menu-popper.el-popper {
+  width: max-content;
+  min-width: 0;
+  max-width: min(var(--app-command-menu-max-width), calc(100cqw - 24px));
+}
+.app-command-menu-popper .el-dropdown-menu__item {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.app-command-menu-popper .el-dropdown-menu__item > span {
+  min-width: 0;
+}
 
 /* 复合候选项共用行布局；各选择器仍以独立 popper-class 约束自己的浮层。 */
 .app-select-popper:not(.app-select-popper--fit) .el-select-dropdown {

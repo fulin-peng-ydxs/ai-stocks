@@ -66,6 +66,7 @@ function onCommand(command: string | number | object) {
     <el-dropdown
       v-if="canEdit"
       trigger="click"
+      popper-class="app-command-menu-popper asset-visibility-actions-popper"
       :hide-on-click="true"
       @command="onCommand"
       :placement="APP_BOTTOM_FLOATING_PLACEMENT"

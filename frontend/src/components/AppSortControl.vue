@@ -54,7 +54,7 @@ function updateSort(value: unknown): void {
   <div class="app-sort-control" :aria-label="ariaLabel">
     <el-dropdown
       trigger="click"
-      popper-class="app-sort-control-popper"
+      popper-class="app-command-menu-popper app-sort-control-popper"
       :disabled="disabled"
       @command="updateSort"
       :placement="APP_BOTTOM_FLOATING_PLACEMENT"

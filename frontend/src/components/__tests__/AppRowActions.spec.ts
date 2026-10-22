@@ -214,6 +214,28 @@ describe('AppRowActions', () => {
     expect(document.body.querySelector('[data-testid="user-actions-menu"]')).toBeNull()
   })
 
+  it('Escape 在入口或菜单内关闭浮层并归还焦点，关闭态继续向外传播', async () => {
+    const wrapper = await mountActions([
+      { key: 'edit', label: '编辑' },
+      { key: 'delete', label: '删除', placement: 'more' },
+    ])
+    const more = wrapper.get('.app-row-actions__more')
+    for (const target of ['.app-row-actions__more', '.app-row-actions-menu__item']) {
+      await more.trigger('click')
+      await wrapper.get(target).trigger('keydown', { key: 'Escape' })
+      expect(wrapper.find('.app-row-actions-menu').exists()).toBe(false)
+      expect(document.activeElement).toBe(more.element)
+    }
+    const escape = new KeyboardEvent('keydown', {
+      key: 'Escape', bubbles: true, cancelable: true,
+    })
+    const received = vi.fn()
+    document.body.addEventListener('keydown', received, { once: true })
+    more.element.dispatchEvent(escape)
+    expect(received).toHaveBeenCalledOnce()
+    expect(escape.defaultPrevented).toBe(false)
+  })
+
   it('首个未指定语义色的行内高频动作使用主色，后续普通动作保持弱化', async () => {
     const wrapper = await mountActions([
       { key: 'view', label: '查看' },

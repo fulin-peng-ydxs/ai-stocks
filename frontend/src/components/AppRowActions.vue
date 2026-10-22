@@ -217,6 +217,15 @@ function closeMenu(): void {
   menuOpen.value = false
 }
 
+// Popover 的焦点仍在触发按钮时，组件库浮层收不到 Escape；只接管本菜单的事件。
+function onMenuEscape(event: KeyboardEvent): void {
+  if (!menuOpen.value) return
+  event.stopPropagation()
+  event.preventDefault()
+  closeMenu()
+  rootEl.value?.querySelector<HTMLButtonElement>('.app-row-actions__more')?.focus()
+}
+
 function runMenuAction(action: AppRowAction, event: MouseEvent): void {
   event.stopPropagation()
   runAction(action, event)
@@ -233,6 +242,7 @@ onBeforeUnmount(() => {
   <div
     ref="rootEl"
     class="app-row-actions"
+    @keydown.esc="onMenuEscape"
     role="group"
     :aria-label="ariaLabel"
     data-overflow-tooltip-disabled
@@ -265,11 +275,11 @@ onBeforeUnmount(() => {
         trigger="click"
         role="menu"
         :placement="APP_BOTTOM_END_FLOATING_PLACEMENT"
-        :width="160"
+        width="max-content"
         :show-arrow="false"
         :persistent="false"
         :popper-style="{ padding: '4px' }"
-        popper-class="app-row-actions-popper"
+        popper-class="app-command-menu-popper app-row-actions-popper"
         @before-enter="menuOpen = true"
         @after-leave="menuOpen = false"
         :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
@@ -291,6 +301,7 @@ onBeforeUnmount(() => {
         </template>
         <div
           class="app-row-actions-menu"
+          @keydown.esc="onMenuEscape"
           :data-testid="testId ? `${testId}-menu` : undefined"
           @click.stop
         >
@@ -312,7 +323,7 @@ onBeforeUnmount(() => {
               :data-testid="actionTestId(action)"
               @click="runMenuAction(action, $event)"
             >
-              {{ action.label }}
+              <span class="app-row-actions-menu__label">{{ action.label }}</span>
             </el-button>
           </AppActionHint>
         </div>
@@ -417,14 +428,21 @@ onBeforeUnmount(() => {
 
 .app-row-actions-menu :deep(.app-action-hint) { width: 100%; }
 
-.app-row-actions-menu__item {
+.app-row-actions-menu .el-button.app-row-actions-menu__item {
   width: 100%;
+  height: auto;
   min-height: 28px;
   justify-content: flex-start;
   margin-left: 0 !important;
-  padding: 0 10px !important;
+  padding: 4px 10px !important;
   border-radius: 4px;
   font-size: var(--app-font-size-body);
   text-align: left;
+  white-space: normal;
+}
+
+.app-row-actions-menu__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 </style>
