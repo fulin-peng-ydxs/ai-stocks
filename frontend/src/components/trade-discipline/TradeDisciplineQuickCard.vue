@@ -180,15 +180,35 @@ async function quickSubmit(): Promise<void> {
       </div>
     </div>
     <AppDialog v-model="confirmationOpen" title="确认无操作履约" size="compact" boundary="app" :close-on-click-modal="false">
-      <p>确认将“{{ pendingRule?.rule_name }}”在 {{ quickTradeDate }} 记录为“已履约 · 今日无操作”？</p>
-      <el-form v-if="pendingRule?.max_positions != null" label-position="top">
-        <el-form-item label="当日最大同时持仓数" required>
-          <el-input-number v-model="peakPositions" :min="0" :max="2147483647" :precision="0" :controls="false" :disabled="Boolean(submittingRuleId)" data-testid="quick-peak-positions" />
-          <AppFormHelp>规则上限 {{ pendingRule.max_positions }} 只；无操作也可能仍有持仓，请按当日实际峰值确认。</AppFormHelp>
-        </el-form-item>
-        <p v-if="countError" class="quick-rule-error" role="alert">{{ countError }}。请进入“去打卡”记录实际情况。</p>
-      </el-form>
-      <p v-if="actionErrorRuleId === pendingRule?.rule_id" class="quick-rule-error" role="alert">{{ actionErrorMessage }}</p>
+      <div class="quick-confirm-content">
+        <div class="quick-confirm-context">
+          <strong class="app-section-title">{{ pendingRule?.rule_name }}</strong>
+          <span class="app-caption-text">交易日 · <time :datetime="quickTradeDate">{{ quickTradeDate }}</time></span>
+        </div>
+        <p class="quick-confirm-outcome app-body-text">本次将记录为<strong>已履约 · 今日无操作</strong></p>
+        <el-form v-if="pendingRule?.max_positions != null" label-position="top" class="quick-confirm-form">
+          <el-form-item label="当日最大同时持仓数" required>
+            <div class="quick-confirm-count">
+              <el-input-number
+                v-model="peakPositions"
+                class="app-control-width-short"
+                :min="0"
+                :max="2147483647"
+                :precision="0"
+                :controls="false"
+                :disabled="Boolean(submittingRuleId)"
+                aria-label="当日最大同时持仓数"
+                data-testid="quick-peak-positions"
+              />
+              <span>只</span>
+              <el-tag class="quick-confirm-limit" type="info" effect="plain">上限 {{ pendingRule.max_positions }} 只</el-tag>
+            </div>
+            <AppFormHelp>无操作也可能有持仓，请填写当日实际峰值；没有持仓填 0。</AppFormHelp>
+          </el-form-item>
+          <p v-if="countError" class="quick-rule-error" role="alert">{{ countError }}。请进入“去打卡”记录实际情况。</p>
+        </el-form>
+        <p v-if="actionErrorRuleId === pendingRule?.rule_id" class="quick-rule-error" role="alert">{{ actionErrorMessage }}</p>
+      </div>
       <template #footer>
         <el-button :disabled="Boolean(submittingRuleId)" @click="confirmationOpen = false">取消</el-button>
         <el-button v-if="countError" @click="openPendingCheckin">去打卡</el-button>
@@ -244,6 +264,14 @@ async function quickSubmit(): Promise<void> {
 .quick-rule-actions { margin-top: var(--app-space-2); display: flex; justify-content: flex-end; gap: var(--app-space-1); }
 .quick-rule-actions :deep(.el-button + .el-button) { margin-left: 0; }
 .quick-rule-error { margin-top: var(--app-space-2); color: var(--el-color-danger); font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); }
+.quick-confirm-content { display: flex; flex-direction: column; gap: var(--app-space-4); }
+.quick-confirm-context { display: flex; flex-direction: column; gap: var(--app-space-1); min-width: 0; overflow-wrap: anywhere; }
+.quick-confirm-outcome { display: flex; flex-wrap: wrap; gap: var(--app-space-1) var(--app-space-2); margin: 0; }
+.quick-confirm-outcome strong { color: var(--el-text-color-primary); font-weight: var(--app-font-weight-section); }
+.quick-confirm-form { padding-top: var(--app-space-4); border-top: 1px solid var(--el-border-color-lighter); }
+.quick-confirm-form .el-form-item { margin-bottom: 0; }
+.quick-confirm-count { display: flex; align-items: center; flex-wrap: wrap; gap: var(--app-space-2); width: 100%; min-width: 0; }
+.quick-confirm-limit { margin-left: auto; }
 @container app-viewport (max-width: 520px) {
   .quick-head { align-items: flex-start; }
   .quick-rule-actions { justify-content: flex-start; flex-wrap: wrap; }
