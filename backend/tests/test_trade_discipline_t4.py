@@ -109,6 +109,9 @@ def test_structured_conditions_and_peak_roundtrip_via_authorized_api(
         payload = _rule_payload()
         payload["max_positions"] = 2
         payload["stock_rules"][0].update(price_min="5.1234", loss_filter="exclude")
+        payload["stock_rules"][0]["checklist_items"] = [
+            {"item_id": "trend", "category": "technical", "text": "涨幅不超过50%", "display_order": 1},
+        ]
         created = client.post("/api/trade-discipline/rules", headers=headers, json=payload)
         assert created.status_code == 200, created.text
         rule_id = created.json()["data"]["id"]
@@ -119,6 +122,7 @@ def test_structured_conditions_and_peak_roundtrip_via_authorized_api(
         assert published.status_code == 200, published.text
         operation = _operation(trade_date, complete=False)
         operation.update(loss_status="unknown", price="5.1234")
+        operation["checklist_results"] = [{"item_id": "trend", "status": "unknown"}]
         content = {
             "rule_id": rule_id, "trade_date": str(trade_date),
             "assessment": "complied", "no_operation": False, "peak_positions": 3,
@@ -127,12 +131,21 @@ def test_structured_conditions_and_peak_roundtrip_via_authorized_api(
         submitted = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
         assert submitted.status_code == 422, submitted.text
         content["peak_positions"] = 2
+        # 直接 API 不能绕过逐项核对、引用范围或明确违规守卫。
+        for results in ([], [{"item_id": "foreign", "status": "yes"}],
+                        [{"item_id": "trend", "status": "yes"}] * 2,
+                        [{"item_id": "trend", "status": "no"}]):
+            operation["checklist_results"] = results
+            rejected = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
+            assert rejected.status_code == 422, rejected.text
+        operation["checklist_results"] = [{"item_id": "trend", "status": "unknown"}]
         submitted = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
         assert submitted.status_code == 200, submitted.text
         data = submitted.json()["data"]
         assert data["peak_positions"] == 2
         assert data["operations"][0]["price"] == "5.1234"
         assert data["operations"][0]["selection_facts"]["loss_status"] == "unknown"
+        assert data["operations"][0]["checklist_results"] == [{"item_id": "trend", "status": "unknown"}]
         assert "亏损状态未知，无法核对" in data["operations"][0]["condition_warnings"]
         draft = client.get(
             f"/api/trade-discipline/rules/{rule_id}", headers=headers,

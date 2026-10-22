@@ -62,6 +62,8 @@ FIELD_LABELS: dict[str, str] = {
     "loss_filter": "亏损选股条件",
     "st_risk_filter": "ST风险选股条件",
     "selection_facts": "选股事实快照",
+    "checklist_items": "选股分类检查项",
+    "checklist_results": "选股逐项核对结果",
     "id": "标识",
     "key": "键",
     "code": "代码",

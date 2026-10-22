@@ -69,6 +69,7 @@ vi.mock('@/layout/pageRegistry', () => ({
         },
         componentMeta: {
           configPanel: {
+            hint: '规则管理、今日打卡和历史详情共用默认值。',
             collapseSections: [
               { key: 'auth', label: '认证与防滥用' },
               { key: 'auth.login', label: '登录保护', parentKey: 'auth' },
@@ -455,6 +456,24 @@ describe('ComponentAutoSettings', () => {
     })
     await wrapper.find('.number-stub').trigger('click')
     expect(setComponentKnob).toHaveBeenCalledWith('chart', 'minHeight', 620)
+  })
+
+  it('组件组说明使用悬浮帮助且不改动标题或折叠，隐藏组标题时仍可查看', async () => {
+    const { wrapper } = mountConfigPanelDemo()
+    const text = '规则管理、今日打卡和历史详情共用默认值。'
+    const hint = () => wrapper.findAllComponents(HelpHint).find(item => item.props('text') === text)!
+    const header = wrapper.get('[data-cc-slot="configPanel"] > .sg-head')
+    expect(header.text()).toContain('系统设置面板')
+    expect(header.text()).not.toContain(text)
+    const expanded = header.attributes('aria-expanded')
+    await hint().trigger('click')
+    await hint().trigger('keydown', { key: 'Enter' })
+    await hint().trigger('keydown', { key: ' ' })
+    expect(header.attributes('aria-expanded')).toBe(expanded)
+    await wrapper.setProps({ showSlotTitle: false })
+    expect(hint()).toBeTruthy()
+    expect(hint().props('label')).toBe('系统设置面板说明')
+    wrapper.unmount()
   })
 
   it('较长字段说明统一收进 HelpHint，不在抽屉正文常驻铺开', () => {

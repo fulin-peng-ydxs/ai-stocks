@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CheckinOperation, DraftStockRule } from '@/api/tradeDiscipline'
-import { holdingCountWarning, manualConditionDefaults, stockConditionSummary, stockConditionWarnings, stockConditionViolations } from '../tradeDisciplineConditions'
+import { holdingCountWarning, manualConditionDefaults, stockConditionSummary, stockConditionWarnings, stockConditionViolations, normalizeChecklist, conditionSectionSummary } from '../tradeDisciplineConditions'
 
 const rule: DraftStockRule = {
   detail_id: 's', name: '选股', max_capital: '100', content: '趋势', display_order: 1, enabled: true,
@@ -48,5 +48,28 @@ describe('交易纪律选股条件', () => {
     expect(holdingCountWarning(2, 2)).toBe('')
     expect(holdingCountWarning(2, null)).toContain('尚未记录')
     expect(holdingCountWarning(2, 3)).toContain('超过本套规则上限 2 只')
+  })
+})
+
+
+describe('自定义检查项履约边界', () => {
+  it('旧分类规范化保留标识和相对顺序，标题区分未核对、未知和不符合', () => {
+    const legacy = [{ item_id: 'a', category: 'other' as const, text: '条件一', display_order: 1 },
+      { item_id: 'b', category: 'technical' as const, text: '条件二', display_order: 2 },
+      { item_id: 'c', category: 'other' as const, text: '条件三', display_order: 3 }]
+    expect(normalizeChecklist(legacy).map(item => [item.item_id, item.category])).toEqual([
+      ['a', 'technical'], ['b', 'technical'], ['c', 'technical'],
+    ])
+    expect(legacy[0].category).toBe('other')
+    expect(conditionSectionSummary({ ...rule, checklist_items: legacy }, 'technical', true,
+      [{ item_id: 'a', status: 'no' }, { item_id: 'b', status: 'unknown' }])).toBe('3 项核对 · 待核对 1 · 不符合 1 · 未知 1')
+  })
+  const checklistRule = { ...rule, checklist_items: [{ item_id: 'c', category: 'technical' as const, text: '两个月处于30%区间', display_order: 1 }] }
+  it('不符合纳入违规，未知仅提示，卖出不校验', () => {
+    const checked = { ...operation, checklist_results: [{ item_id: 'c', status: 'no' as const }] }
+    expect(stockConditionViolations(checklistRule, checked)).toContain('选股条件“两个月处于30%区间”不符合')
+    expect(stockConditionViolations(checklistRule, { ...checked, checklist_results: [{ item_id: 'c', status: 'unknown' }] })).toEqual([])
+    expect(stockConditionWarnings(checklistRule, { ...checked, checklist_results: [{ item_id: 'c', status: 'unknown' }] })).toContain('选股条件“两个月处于30%区间”未知，无法核对')
+    expect(stockConditionViolations(checklistRule, { ...checked, side: 'sell' })).toEqual([])
   })
 })

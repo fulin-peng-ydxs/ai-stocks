@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import type { StockConditionPanelDefaults } from '@/layout/configPanel'
 import { computed, ref, watch } from 'vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
 import AppTableColumn from '@/components/AppTableColumn.vue'
+import StockRuleConditionChecklist from '@/components/trade-discipline/StockRuleConditionChecklist.vue'
 import StockStatusTag from '@/components/StockStatusTag.vue'
 import {
   getTradeDisciplineCheckinRevision,
@@ -15,13 +17,14 @@ import {
 import { getErrorMessage } from '@/utils/error'
 import { formatDecimalString } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
-import { stockConditionSummary, conditionFactLabel, holdingCountWarning } from '@/utils/tradeDisciplineConditions'
+import { conditionFactLabel, holdingCountWarning } from '@/utils/tradeDisciplineConditions'
 import {
   checkinAssessmentLabel,
   checkinAssessmentTagType,
 } from '@/utils/tradeDisciplineAssessment'
 
 const props = defineProps<{
+  conditionPanelDefaults?: StockConditionPanelDefaults
   modelValue: boolean
   row: CheckinHistoryRow | null
   canSubmit: boolean
@@ -204,6 +207,12 @@ watch(
           </AppTableColumn>
           <AppTableColumn prop="note" label="说明" role="description"><template #default="{ row }">{{ row.note || '—' }}</template></AppTableColumn>
         </AppDataTable>
+        <template v-for="(operation, index) in detail.operations" :key="operation.id || index">
+          <div v-if="operation.side === 'buy' && ruleVersion?.stock_rules.find(rule => rule.detail_id === operation.stock_rule_id)?.checklist_items?.length" class="text-snapshot" data-testid="revision-checklist-results">
+            <strong>操作 {{ index + 1 }} · {{ operation.stock_name_snapshot }} · 选股条件核对</strong>
+            <StockRuleConditionChecklist :panel-defaults="conditionPanelDefaults" :key="`${detail.checkin_id}:${detail.revision_no}:${operation.id || index}`" :operation="operation" :rule="ruleVersion!.stock_rules.find(rule => rule.detail_id === operation.stock_rule_id)!" :results="operation.checklist_results ?? null" checking disabled />
+          </div>
+        </template>
       </section>
 
       <section v-if="ruleVersion" class="detail-card" data-testid="revision-rule-snapshot">
@@ -220,8 +229,7 @@ watch(
             <article v-for="rule in ruleVersion.stock_rules" :key="rule.detail_id || rule.display_order" class="rule-snapshot">
               <span>{{ rule.name || '未命名规则' }} · {{ rule.enabled ? '启用' : '停用' }}</span>
               <small>资金上限 ¥ {{ formatMoney(rule.max_capital) }}</small>
-              <p>{{ stockConditionSummary(rule) }}</p>
-              <p>{{ rule.content || '—' }}</p>
+              <StockRuleConditionChecklist :panel-defaults="conditionPanelDefaults" :key="`${detail.checkin_id}:${detail.revision_no}:${rule.detail_id}`" :rule="rule" />
             </article>
           </div>
           <div>

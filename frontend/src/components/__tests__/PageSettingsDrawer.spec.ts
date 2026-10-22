@@ -118,6 +118,15 @@ async function flushPromises() {
 }
 
 describe('PageSettingsDrawer', () => {
+  it('显式组件默认值修改通知消费页，保持配置写入由共享渲染器完成', async () => {
+    const { wrapper, setComponentKnob } = mountDrawer()
+    const access = wrapper.findComponent({ name: 'ComponentAutoSettings' }).props('config') as DrawerConfig
+    access.setComponentKnob('stockConditions', 'defaultCollapsed', ['risk'])
+    expect(setComponentKnob).toHaveBeenCalledWith('stockConditions', 'defaultCollapsed', ['risk'])
+    expect(wrapper.emitted('component-default-change')).toEqual([['stockConditions', 'defaultCollapsed']])
+    wrapper.unmount()
+  })
+
   beforeEach(() => {
     vi.useRealTimers()
     vi.clearAllMocks()

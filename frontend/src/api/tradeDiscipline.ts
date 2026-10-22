@@ -49,8 +49,21 @@ export interface TradeDisciplineRule {
 
 export type ConditionFilter = 'any' | 'exclude' | 'only'
 export type ConditionFact = 'yes' | 'no' | 'unknown'
+export type ChecklistCategory = 'basic' | 'risk' | 'technical'
+export interface StockChecklistItem {
+  item_id: string
+  /** other 仅用于读取旧快照，新保存时统一规范为 technical。 */
+  category: ChecklistCategory | 'other'
+  text: string
+  display_order: number
+}
+export interface StockChecklistResult {
+  item_id: string
+  status: ConditionFact
+}
 
 export interface DraftStockRule {
+  checklist_items?: StockChecklistItem[]
   price_min?: string | null
   price_max?: string | null
   st_filter?: ConditionFilter
@@ -184,6 +197,7 @@ export interface ViolationReason {
 }
 
 export interface CheckinOperation {
+  checklist_results?: StockChecklistResult[] | null
   loss_status?: ConditionFact | null
   st_risk_status?: ConditionFact | null
   selection_facts?: { is_st: boolean | null; st_as_of_date: string; loss_status: ConditionFact | null; st_risk_status: ConditionFact | null } | null

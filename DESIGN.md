@@ -136,6 +136,7 @@ Key Characteristics：
 - 可导航页面标题必须通过 `useMenuPageTitle()` 读取后端菜单树中的当前名称，路由 `meta.title` 只作菜单未就绪时的稳定回退；页面不得重复硬编码菜单标题。阶段标题通过该入口的 `suffix` 统一拼接，保持菜单改名后基础标题同步变化。
 - 页面顶部标题字号唯一来源是全局 `app-page-title`（22px），禁止页面用 `.page-head h2`/`.title h2`/`.title-row` 等私有选择器覆盖标题字号或边距；详情页对象标题（个股/板块名）同样走 `app-page-title`。
 - 标题内嵌 `HelpTip` 时，标题行使用 `align-items: center`（flex 或 `vertical-align: middle`）保证圆点与标题垂直居中，不随行高下沉。
+- 页面、分区、组件组和弹层标题只保留名称，不在标题中用中文或英文括号追加用途、适用范围、技术标识等说明；简短说明使用 `HelpHint`，多段说明使用 `HelpTip`。标题收展和帮助入口独立操作，不因查看说明改变折叠状态。
 - 页面主体新增 `font-size`、`line-height`、`font-weight` 时必须引用上述 token 或语义类；原始数字仅允许出现在共享 token 定义、§3.5 登记的品牌选择器或图表数字适配器中；第三方适配、角标和图标同样消费已有 token，不是整文件豁免。禁止页面内联添加另一套字体规则。
 - 10px 以下只允许使用 `--app-font-size-ornament` 或 `--app-icon-size-xs`，用于图标内部标记、红点角标或不可读正文之外的装饰性标尺；不得用于业务说明、表格、表单、按钮、筛选项。
 - 11px 只用于弱标签或极窄 chrome 信息；业务内容、表格单元格、表单 label、按钮文案不得小于 12px。
@@ -339,7 +340,7 @@ Key Characteristics：
 | `PageSettingSection` | `frontend/src/components/PageSettingSection.vue` | 页面设置业务选项分区 | 无直接系统组件种类 | 仅作为 `SettingsGroup level=2` 的业务语义薄封装，以必填 `sectionKey` 声明稳定分区标识；不得维护第二套标题、折叠或间距样式 |
 | `AppFormHelp` | `frontend/src/components/AppFormHelp.vue` | 全站表单字段与补充说明的标记、caption 字阶和续行排版 | 无直接系统组件种类或配置字段 | 表单字段及补充说明统一消费；语义、标记与排版见[表单辅助说明](#表单辅助说明)。 |
 | `PageSettingItem` | `frontend/src/components/PageSettingItem.vue` | 设置抽屉的事项名、控件与辅助说明布局 | 无直接系统组件种类 | 设置抽屉字段块统一消费；简单开关可用行内布局，帮助选型与字阶见[设置抽屉](#设置抽屉)及[Typography Rules](#3-typography-rules)。 |
-| `ConfigPanelSection` | `frontend/src/components/config/ConfigPanelSection.vue` | 主内容区配置面板的可折叠分组容器 | 对应 `config-panel` 种类；读取 `collapsibleSections`、`defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | 系统设置等主面板配置分组共用；字段帮助使用 HelpHint / HelpTip，组说明随所属层级展示或收展。 |
+| `ConfigPanelSection` | `frontend/src/components/config/ConfigPanelSection.vue` | 主内容区配置面板的可折叠分组容器 | 对应 `config-panel` 种类；读取 `collapsibleSections`、`defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | 系统设置等主面板配置分组共用；字段帮助使用 HelpHint / HelpTip，组说明随所属层级展示或收展；可选 summary 在收起时保留简短摘要，紧凑子分区标题/摘要自然换行；不传时保持原有布局。 |
 | `PageSegmented` | `frontend/src/components/PageSegmented.vue` | 页面设置和业务偏好的分段选择控件 | 无直接系统组件种类 | 枚举选择与轻量视图切换复用；选型见[分段选择](#分段选择)，状态、键盘和动效分别引用对应规范 |
 | `PageSettingsApplyButton` | `frontend/src/components/PageSettingsApplyButton.vue` | 设置抽屉采用当前页面值的统一按钮 | 无直接系统组件种类 | 采用页面当前值的共享入口；保存行为与布局见[设置抽屉](#设置抽屉)，视觉角色见[按钮角色与完整状态矩阵](#按钮角色与完整状态矩阵) |
 | `BoardTaskScopeFields` | `frontend/src/components/data/BoardTaskScopeFields.vue` | 板块采集范围和分阶段参数组 | 无直接系统组件种类 | 数据采集与任务调度的板块参数表单共用；采集语义见[板块采集架构](agent-works/architecture/board-collection.md)。 |
@@ -367,6 +368,8 @@ Key Characteristics：
 | `TradeDirectionGroupGrid` | `frontend/src/components/trade-discipline/TradeDirectionGroupGrid.vue` | 交易纪律中按买入、卖出方向上下组织单列清单，统一分组标题、说明和动作区 | 无直接系统组件种类；仅承载交易纪律方向分组 | 买卖规则与操作事实统一消费；分组即方向事实源，组内卡片不得再展示重复方向选择器；规则或成交的领域状态留在调用方，通过分组动作和内容插槽注入；所有宽度保持买入在上、卖出在下，每条规则或操作独占一行，不在消费组件复制方向分组结构与样式 |
 | `RuleSummaryCard` | `frontend/src/components/trade-discipline/RuleSummaryCard.vue` | 买入、卖出和选股规则的紧凑摘要卡，基于 `AppSummaryDisclosureCard` 组合规则启停与动作区 | 无直接系统组件种类；仅承载交易纪律规则编辑 | 同类规则统一复用；默认只展示摘要并一次展开一项，动作通过插槽注入；不得把规则启停语义下沉到通用卡片外壳 |
 | `TradeDisciplineSectionPanel` | `frontend/src/components/trade-discipline/TradeDisciplineSectionPanel.vue` | 交易纪律编辑器的统一分区面板，承载标题、说明、摘要、展开编辑区和分区动作 | 无直接系统组件种类；仅承载交易纪律编辑分区 | 规则、操作事实和履约编辑的同层分区统一复用；领域字段与动作通过插槽注入，不在消费页复制分区外壳、标题层级和间距 |
+| `StockRuleChecklistEditor` | `frontend/src/components/trade-discipline/StockRuleChecklistEditor.vue` | 分类检查项编辑与组内排序 | 消费 `config-panel` 的默认折叠配置 | 交易纪律规则编辑；消费 stockConditions 配置面板的 defaultCollapsed；三类和补充说明复用 ConfigPanelSection，代码默认独立收起，标题摘要保留，新建/校验错误展开定位；分类及排序逻辑复用条件工具和 AppReorderList，基本/风险字段经插槽消费；增删改由规则草稿统一保存 |
+| `StockRuleConditionChecklist` | `frontend/src/components/trade-discipline/StockRuleConditionChecklist.vue` | 交易纪律分类条件、逐项核对与补充说明 | 消费 `config-panel` 的默认折叠配置 | 今日买入和历史规则/操作快照统一消费；消费同一 stockConditions.defaultCollapsed；三类与补充说明复用 ConfigPanelSection，代码默认收起、标题保留摘要/核对数量，开合不卸载字段，状态按操作隔离；结果通过 props/events 传递，未知与未记录分别展示，服务端负责版本归属与履约守卫；宽度不足自然换行，保留条件、结果与展开入口 |
 | `AppRowActions` | `frontend/src/components/AppRowActions.vue` | 表格行操作列和列表项操作区的统一动作组，按权限过滤、单行排列、动作颜色层级、禁用/加载态展示、轻量“更多”菜单收纳和**宽度自适应折叠** | 无直接系统组件种类 | 行内动作组复用；动作层级、更多菜单及宽度折叠见[行操作组](#行操作组) |
 | `SystemBuiltinTag` | `frontend/src/components/SystemBuiltinTag.vue` | 全站“系统内置”来源标记，固定使用灰色文字、灰色描边和中性浅底 | 无直接系统组件种类 | 菜单、功能点、角色、租户、视觉预设、技术指标和系统内置方案等来源标记统一复用；文案固定为“系统内置”，不追加对象名称或保护规则说明；与对象名称或标识并列时统一放在对象后面，独立的来源/类型字段保持标签单独展示 |
 | `IndicatorSelect` / `IndicatorParamFields` | `frontend/src/components/indicator/IndicatorSelect.vue`、`frontend/src/components/indicator/IndicatorParamFields.vue` | 技术指标选择与计算参数值的领域复用组件，统一通用指标/快捷预设分组、停用历史项回显、参数单位与范围 | 无直接系统组件种类；作为方案编辑器内部字段 | 筛选、评分、买入和卖出方案统一消费；新选择只展示启用项，当前已选停用项保留“历史兼容”回显；参数值只表达计算口径，比较符、阈值、评分方式和权重仍由下游方案维护，页面不得复制参数循环和单位展示 |
@@ -410,7 +413,7 @@ Key Characteristics：
 | `AppFilterSelect` | `frontend/src/components/AppFilterSelect.vue` | 基于 `AppSelect` 的容量自适应选择器，统一列表筛选与紧凑多选编辑 | 无直接系统组件种类 | 列表筛选与紧凑多选编辑统一消费；标签/数量模式、全选文案、容量和输入属性见[按钮与输入](#按钮与输入)。 |
 | `AppDragHandle` | `frontend/src/components/AppDragHandle.vue` | 列表与树共用的六点排序把手 | 无直接系统组件种类 | 基于 AppIconButton 统一尺寸、说明、焦点、禁用与拿起状态；与相邻内容保留 8px 间距，排序按键与指针事件交给共享会话处理 |
 | `AppReorderTree` | `frontend/src/components/AppReorderTree.vue` | 层级树的把手拖动、同级键盘排序与合法落点反馈 | 无直接系统组件种类；树内部交互 | 菜单管理消费；和 AppReorderList 共用 AppDragHandle 与 useReorderInteraction，树导航委托 ElTree，业务调用方提供容器资格、权限、保存及失败恢复；保留选中、展开和保存后的焦点 |
-| `AppReorderList` | `frontend/src/components/AppReorderList.vue` | 用户自定义顺序列表的共享拖动排序，统一六点 SVG 把手、落点、取消、滚动和键盘操作 | 无直接系统组件种类；列表内部交互 | 交易纪律选股、买入和卖出规则共用；稳定 key 不依赖下标；拖动松手或键盘确认才提交 reorder，保存归调用方；禁用及单项不显示把手；与树共用 AppDragHandle 和 useReorderInteraction，不在页面复制排序输入或上移/下移按钮 |
+| `AppReorderList` | `frontend/src/components/AppReorderList.vue` | 用户自定义顺序列表的共享拖动排序，统一六点 SVG 把手、落点、取消、滚动和键盘操作 | 无直接系统组件种类；列表内部交互 | 交易纪律选股、买入和卖出规则共用；稳定 key 不依赖下标；拖动松手或键盘确认才提交 reorder，保存归调用方；禁用及单项不显示把手；与树共用 AppDragHandle 和 useReorderInteraction，紧凑行通过 --app-reorder-handle-offset 调整把手对齐，不在页面复制排序输入或上移/下移按钮 |
 | `AppSortControl` | `frontend/src/components/AppSortControl.vue` | 统一“排序字段菜单 + 升降序切换”的紧凑排序交互 | 无直接系统组件种类 | 页面只提供稳定选项、当前字段和方向，不得复制下拉菜单、选中勾选和方向按钮；位于筛选或操作栏时固定作为最后一个控件，空间不足按 DOM 顺序整体换行 |
 | `AppSearchInput` | `frontend/src/components/AppSearchInput.vue` | 列表页关键字搜索输入，统一"输入即防抖查 + 回车/清空立即查" | 无直接系统组件种类 | 关键字输入统一消费；防抖编排复用 useDebouncedQuery，查询、归页及刷新见[查询、重置与刷新](#查询重置与刷新)。 |
 | `AppDatePicker` / `TradeDatePicker` | `frontend/src/components/AppDatePicker.vue`、`frontend/src/components/TradeDatePicker.vue` | 通用日期浮层入口与交易日选择器 | 无直接系统组件种类 | 通用日期输入使用 AppDatePicker，交易日输入使用 TradeDatePicker；浮层与默认最新日期规则见[按钮与输入](#按钮与输入)。 |
@@ -1098,7 +1101,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `settings-drawer` | `size` | page/user（全局偏好持久化） | `supportsPageSettings !== false` 的 registry 页面共享 `settings` overlay slot；具体 slotId 不作为存储判定条件 |
 | `settings-drawer` | `bodyScroll` | page | `supportsPageSettings !== false` 的 registry 页面共享 `settings` overlay slot |
 | `config-panel` | `collapsibleSections` | preset/page | `config-system.configPanel` |
-| `config-panel` | `defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | page/user | `config-system.configPanel`；分区候选以 `componentMeta.collapseSections` 为准 |
+| `config-panel` | `defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | page/user | `config-system.configPanel`、`trade-discipline.stockConditions`（仅默认折叠适用）；分区候选以 `componentMeta.collapseSections` 为准 |
 
 `usePageSettings` 只保留页面业务偏好，不承载通用组件展示能力。
 `settings-drawer.size` 与 `chart.klineRangePreferences` 的字段元数据将 `userPersistence` 标为 `global-preference`，分别由对应专用全局偏好承接。后端布局写接口按 `(component kind, field)` 反向拒绝它们进入 `layout_user_config`，不绑定具体 pageKey 或 slotId。`settings-drawer.bodyScroll` 只能由 page 层控制。折叠能力固定开启，不开放 `collapsibleSections` 或 `defaultCollapsed` 配置；实际交互状态以内部 `collapsedSections`（全局一级）和 `collapsedGroups[pageKey]`（页面内节点关闭清单）用户偏好保存，旧 `defaultCollapsed` 偏好仅兼容读取，新写入不再产生旧字段。其他未声明 `userPersistence` 的 user 字段默认写页面布局用户层。
@@ -1110,7 +1113,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 - 页面、布局原型、系统组件种类、组件字段、真实复用组件、按钮图标体系或业务偏好发生变化时，必须同步对应代码事实源、页面消费事实源、文档入口和测试。
 - 非公开 View 路由、`pageRegistry` 和页面登记 marker 必须以 `pageKey` 双向一致；registry 页面必须真实渲染 `LayoutHost`、通过 `getPageLayout` 消费布局，并按四态入口矩阵实际渲染 `AppDataTable`、`AppAsyncRegion` 或 `AppStateBlock` 中至少一种标准运行时状态入口，禁止把直接使用 `AppStateBlock` 固化为所有页面的唯一接入方式。
-- 已有稳定真实实现的系统组件种类必须由消费页面实际导入并渲染对应复用入口；当前强映射包括 `data-table` / `wide-table` → `AppDataTable + AppTableColumn`、`settings-drawer` → `PageSettingsDrawer`、`config-panel` → `ConfigGroupForm → ConfigPanelSection`。`toolbar`、`section`、`tabs` 等组合型种类不要求虚构一对一空壳组件。
+- 已有稳定真实实现的系统组件种类必须由消费页面实际导入并渲染对应复用入口；当前强映射包括 `data-table` / `wide-table` → `AppDataTable + AppTableColumn`、`settings-drawer` → `PageSettingsDrawer`、`config-panel` → `ConfigPanelSection`（系统字段表单由 `ConfigGroupForm` 承载；交易纪律由 `StockRuleChecklistEditor` / `StockRuleConditionChecklist` 承载）。`toolbar`、`section`、`tabs` 等组合型种类不要求虚构一对一空壳组件。
 - DESIGN 只维护稳定设计规则、组件关系、字段治理原则和机器读取的页面登记 marker；不展开可复制流程和命令清单。
 - `page-template.md` 是执行清单；如它与本文件或布局测试冲突，优先修正模板或代码事实源，不在 DESIGN 复制第二套矩阵。
 
@@ -1205,7 +1208,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `data-overview` | `OverviewView`（数据概览） | `workbench` | `density` | action:`toolbar` / main:`kpi-grid` / main:`stat-strip` / main:`tabs` / nested:`wide-table` / nested:`data-table`  / nested:`filter-bar` |
 | `backtest` | `BacktestView`（策略回测） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / nested:`chart` |
 | `training` | `TrainingView`（盘感训练） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / nested:`chart` |
-| `trade-discipline` | `TradeDisciplineView`（交易纪律） | `workbench` | `density` | action:`toolbar` / main:`tabs(growMain)` / nested:`section` / nested:`section` / nested:`data-table` / overlay:`detail`  / nested:`filter-bar` |
+| `trade-discipline` | `TradeDisciplineView`（交易纪律） | `workbench` | `density` | action:`toolbar` / main:`tabs(growMain)` / nested:`section` / nested:`section` / nested:`config-panel` / nested:`data-table` / overlay:`detail`  / nested:`filter-bar` |
 | `stock-detail` | `StockDetailView`（个股详情） | `master-detail` | `density`、模块显隐 | action:`toolbar` / main:`master-detail` / nested:`chart` / nested:`section` / nested:`section` / nested:`section` / nested:`section` / nested:`section` |
 | `config-score` | `ConfigView`（评分规则） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / main:`master-detail` / nested:`wide-table` / nested:`chart` |
 | `config-trade` | `ConfigView`（买卖指标） | `workbench` | `density` | action:`toolbar` / main:`section` |

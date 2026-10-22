@@ -77,7 +77,21 @@ ConditionFilter = Literal["any", "exclude", "only"]
 FactStatus = Literal["yes", "no", "unknown"]
 
 
+class ChecklistItemBody(StrictBody):
+    item_id: str | None = None
+    # other 仅兼容旧草稿/客户端；保存时服务层统一转为 technical。
+    category: Literal["basic", "risk", "technical", "other"] = "technical"
+    text: str = ""
+    display_order: int = Field(strict=True, ge=1)
+
+
+class ChecklistResultBody(StrictBody):
+    item_id: str
+    status: FactStatus
+
+
 class StockRuleBody(StrictBody):
+    checklist_items: list[ChecklistItemBody] = Field(default_factory=list)
     price_min: Annotated[Decimal, Field(gt=0, max_digits=20, decimal_places=4)] | None = None
     price_max: Annotated[Decimal, Field(gt=0, max_digits=20, decimal_places=4)] | None = None
     st_filter: ConditionFilter = "any"
@@ -122,6 +136,7 @@ class CopyRuleBody(StrictBody):
 
 
 class OperationBody(StrictBody):
+    checklist_results: list[ChecklistResultBody] | None = None
     loss_status: FactStatus | None = None
     st_risk_status: FactStatus | None = None
     id: str | None = None

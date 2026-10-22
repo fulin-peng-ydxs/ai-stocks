@@ -56,6 +56,8 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   reset: []
+  /** 通知消费页重新应用显式修改的默认值；实际写入仍由共享设置渲染器承接。 */
+  'component-default-change': [slotId: string, field: string]
 }>()
 const slots = useSlots()
 const drawerPreferences = useDrawerPreferences()
@@ -103,6 +105,7 @@ const activeConfig = computed<DrawerConfig | undefined>(() => {
         return
       }
       props.config?.setComponentKnob(slotId, field, value)
+      emit('component-default-change', slotId, field)
     },
     componentSourceOf(slotId: string, field: string) {
       if (usesGlobalPreference(slotId, field) && field === 'klineRangePreferences') {

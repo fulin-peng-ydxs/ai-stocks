@@ -441,7 +441,7 @@ const SLOT_RUNTIME_COMPONENTS: Partial<Record<ComponentKind, string[]>> = {
   'data-table': ['AppDataTable', 'AppTableColumn'],
   'wide-table': ['AppDataTable', 'AppTableColumn'],
   'settings-drawer': ['PageSettingsDrawer'],
-  'config-panel': ['ConfigGroupForm'],
+  'config-panel': ['ConfigPanelSection'],
 }
 
 describe('页面注册表完整性', () => {
@@ -467,7 +467,7 @@ describe('页面注册表完整性', () => {
       'workspaceTabs',
     ])
     expect(slots.filter((slot) => slot.parentId === 'workspaceTabs').map((slot) => slot.id))
-      .toEqual(['checkinPanel', 'rulesPanel', 'history', 'historyFilters'])
+      .toEqual(['checkinPanel', 'rulesPanel', 'stockConditions', 'history', 'historyFilters'])
     expect(applicableComponentFields(entry, 'history').map((field) => field.key)).toEqual([
       'border', 'pageSize', 'defaultSort', 'hiddenColumns',
     ])
@@ -487,6 +487,31 @@ describe('页面注册表完整性', () => {
     expect(`${view}\n${history}\n${drawer}`).not.toMatch(/<el-(?:table|drawer)\b/i)
     expect(history).toContain('<AppDataTable')
     expect(drawer).toContain('<AppDetailDrawer')
+  })
+
+  it('选股条件统一登记默认折叠配置，三条消费链真实透传且固定摘要不可隐藏', () => {
+    const entry = getPageEntry('trade-discipline')!
+    expect(entry.layout.slots.find(slot => slot.id === 'stockConditions')).toMatchObject({
+      component: 'config-panel', config: { defaultCollapsed: ['basic', 'risk', 'technical', 'notes'] },
+    })
+    expect(entry.layout.slots.find(slot => slot.id === 'stockConditions')?.label).toBe('选股条件')
+    expect(entry.componentMeta?.stockConditions?.hint).toContain('规则管理、今日打卡和历史详情')
+    expect(applicableComponentFields(entry, 'stockConditions').map(field => field.key)).toEqual(['defaultCollapsed'])
+    expect(entry.componentMeta?.stockConditions?.collapseSections?.map(section => section.key))
+      .toEqual(['basic', 'risk', 'technical', 'notes'])
+    const view = sourceForPage('trade-discipline')
+    expect(view).toContain("componentValueOf('stockConditions', 'defaultCollapsed')")
+    for (const name of ['TradeRuleEditor', 'TradeCheckinForm', 'TradeCheckinRevisionDrawer']) {
+      expect(view).toMatch(new RegExp(`<${name}\\b[^>]*:condition-panel-defaults="conditionPanelDefaults"`))
+      const source = readFileSync(join(VIEWS_DIR, `trade-discipline/components/${name}.vue`), 'utf8')
+      expect(source).toContain('conditionPanelDefaults?: StockConditionPanelDefaults')
+      expect(source).toContain(name === 'TradeCheckinForm'
+        ? ':condition-panel-defaults="conditionPanelDefaults"' : ':panel-defaults="conditionPanelDefaults"')
+    }
+    const operation = readFileSync(join(VIEWS_DIR, 'trade-discipline/components/TradeOperationEditor.vue'), 'utf8')
+    expect(operation).toContain(':panel-defaults="conditionPanelDefaults"')
+    // config-panel 的专业字段表单仍由 ConfigGroupForm 承载；条件面板复用共同的分区入口。
+    expect(sourceTreeForPage('config-system')).toContain('<ConfigGroupForm')
   })
 
   it('数据采集将任务中心与采集日志登记为同一成长页签的两个面板', () => {

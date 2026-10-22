@@ -1,4 +1,4 @@
-import type { CheckinOperation, ConditionFact, DraftStockRule } from '@/api/tradeDiscipline'
+import type { CheckinOperation, ChecklistCategory, ConditionFact, DraftStockRule, StockChecklistItem, StockChecklistResult } from '@/api/tradeDiscipline'
 import { decimalToMinorUnits } from './fixedDecimal'
 import { formatMoney } from './money'
 
@@ -8,6 +8,84 @@ export const conditionFilterOptions = [
 export const conditionFactOptions = [
   { label: '是', value: 'yes' }, { label: '否', value: 'no' }, { label: '未知', value: 'unknown' },
 ]
+export const checklistCategories: Array<{ value: ChecklistCategory; label: string }> = [
+  { value: 'basic', label: '基本条件' }, { value: 'risk', label: '风险排除' },
+  { value: 'technical', label: '技术形态' },
+]
+export type ConditionSection = ChecklistCategory | 'notes'
+export type ConditionSectionsState = Partial<Record<ConditionSection, boolean>>
+export function checklistCategory(category: StockChecklistItem['category']): ChecklistCategory {
+  return category === 'other' ? 'technical' : category
+}
+export const checklistResultOptions = [
+  { label: '符合', value: 'yes' }, { label: '不符合', value: 'no' }, { label: '未知', value: 'unknown' },
+]
+
+/** 同分类内排序，跨分类按固定顺序排列；不改写原数组或检查项。 */
+export function normalizeChecklist(items: StockChecklistItem[]): StockChecklistItem[] {
+  return checklistCategories.flatMap(({ value }) => items.filter(item => checklistCategory(item.category) === value))
+    .map((item, index) => ({ ...item, category: checklistCategory(item.category), display_order: index + 1 }))
+}
+
+/** 收起时仍展示条件范围及核对进度；旧分类只在展示层归入技术形态。 */
+export function conditionSectionSummary(rule: DraftStockRule | undefined, category: ChecklistCategory,
+  checking = false, results?: StockChecklistResult[] | null, operation?: CheckinOperation): string {
+  const items = (rule?.checklist_items ?? []).filter(item => checklistCategory(item.category) === category)
+  const states: Array<ConditionFact | 'pending'> = items.map(item => results?.find(result => result.item_id === item.item_id)?.status ?? 'pending')
+  let summary = category === 'technical' ? '' : stockConditionSummary({
+    ...rule, checklist_items: [],
+    ...(category === 'basic' ? { st_filter: 'any', loss_filter: 'any', st_risk_filter: 'any' }
+      : { price_min: null, price_max: null }),
+  } as DraftStockRule)
+  if (summary === '股价与状态不限') summary = category === 'basic' ? '股价不限' : '风险状态不限'
+  if (operation && rule) {
+    if (category === 'basic' && (rule.price_min || rule.price_max)) {
+      const price = decimalToMinorUnits(operation.price, 4)
+      const violated = stockConditionViolations({ ...rule, checklist_items: [], st_filter: 'any', loss_filter: 'any', st_risk_filter: 'any' }, operation).length > 0
+      states.push(price === null ? 'unknown' : violated ? 'no' : 'yes')
+    }
+    if (category === 'risk') {
+      for (const [filter, fact] of [
+        [rule.st_filter, operation.is_st == null ? 'unknown' : operation.is_st ? 'yes' : 'no'],
+        [rule.loss_filter, operation.loss_status], [rule.st_risk_filter, operation.st_risk_status],
+      ] as const) {
+        if (!filter || filter === 'any') continue
+        states.push(fact == null ? 'pending' : fact === 'unknown' ? 'unknown' : (fact === 'yes') === (filter === 'only') ? 'yes' : 'no')
+      }
+    }
+  }
+  const parts = summary ? [summary] : []
+  const count = checking ? states.length : items.length
+  if (count || category === 'technical') parts.push(`${count} 项${checking ? '核对' : '人工检查'}`)
+  if (checking) for (const [status, label] of [['pending', '待核对'], ['no', '不符合'], ['unknown', '未知']] as const) {
+    const count = states.filter(value => value === status).length
+    if (count) parts.push(`${label} ${count}`)
+  }
+  return parts.join(' · ')
+}
+
+export function checklistMissingItem(rule: DraftStockRule | undefined, operation: CheckinOperation): StockChecklistItem | undefined {
+  if (operation.side !== 'buy') return undefined
+  return rule?.checklist_items?.find(item => !(operation.checklist_results ?? []).some(result =>
+    result.item_id === item.item_id && checklistResultOptions.some(option => option.value === result.status)))
+}
+
+export function conditionViolationTarget(rule: DraftStockRule | undefined, operation: CheckinOperation): { section: ChecklistCategory; itemId?: string } | undefined {
+  if (!rule || operation.side !== 'buy') return undefined
+  const fixed = stockConditionViolations({ ...rule, checklist_items: [] }, operation)
+  if (fixed.length) return { section: fixed[0] === '成交价不符合股价条件' ? 'basic' : 'risk' }
+  const failed = rule.checklist_items?.find(item => operation.checklist_results?.some(result => result.item_id === item.item_id && result.status === 'no'))
+  return failed ? { section: checklistCategory(failed.category), itemId: failed.item_id } : undefined
+}
+
+export function stockRuleHasContent(rule: DraftStockRule): boolean {
+  return Boolean(rule.content?.trim() || rule.checklist_items?.length || rule.price_min || rule.price_max
+    || stockConditionFields.some(field => rule[field.key] && rule[field.key] !== 'any'))
+}
+
+export function checklistMissing(rule: DraftStockRule | undefined, operation: CheckinOperation): boolean {
+  return !!checklistMissingItem(rule, operation)
+}
 export const stockConditionFields = [
   { key: 'st_filter', label: '是否ST' },
   { key: 'loss_filter', label: '是否亏损' },
@@ -52,6 +130,7 @@ export function stockConditionSummary(rule?: DraftStockRule): string {
     const mode = rule[key] ?? 'any'
     if (mode !== 'any') parts.push(`${mode === 'exclude' ? '排除' : '仅限'}${label}`)
   }
+  if (rule.checklist_items?.length) parts.push(`${rule.checklist_items.length} 项人工检查`)
   return parts.length ? parts.join(' · ') : '股价与状态不限'
 }
 
@@ -84,6 +163,11 @@ function stockConditionIssues(rule: DraftStockRule | undefined, operation: Check
       if (includeUnknown) warnings.push(`${label}未知，无法核对`)
     }
     else if ((fact === 'yes') !== (filter === 'only')) warnings.push(`${label}不符合选股条件`)
+  }
+  for (const item of rule.checklist_items ?? []) {
+    const status = operation.checklist_results?.find(result => result.item_id === item.item_id)?.status
+    if (status === 'no') warnings.push(`选股条件“${item.text}”不符合`)
+    else if (includeUnknown && status !== 'yes') warnings.push(`选股条件“${item.text}”${status === 'unknown' ? '未知' : '未记录'}，无法核对`)
   }
   return warnings
 }

@@ -89,7 +89,7 @@ const { activeKey, destination, announcement, pointerDown, keydown, blur, cancel
 .app-reorder-list { display: grid; gap: var(--app-space-2); min-width: 0; }
 .app-reorder-list__row { position: relative; min-width: 0; }
 .app-reorder-list__row.is-editable { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--app-space-2); align-items: start; }
-.app-reorder-list__handle { margin-top: var(--app-space-5); }
+.app-reorder-list__handle { margin-top: var(--app-reorder-handle-offset, var(--app-space-5)); }
 .is-dragging > .app-reorder-list__content { opacity: 0.65; outline: 1px dashed var(--el-color-primary); border-radius: var(--layout-card-radius); }
 .app-reorder-list__content { min-width: 0; }
 .is-drop-before::before, .is-drop-after::after { content: ''; position: absolute; inset-inline: 0; height: 3px; background: var(--el-color-primary); border-radius: 2px; pointer-events: none; z-index: 1; }

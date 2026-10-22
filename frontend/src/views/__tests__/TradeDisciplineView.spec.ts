@@ -22,6 +22,8 @@ const ensureTradeDates = vi.fn(async () => undefined)
 const tradeDateStatus = { value: 'ready' }
 const layoutHarness = vi.hoisted(() => ({
   historyPageSize: null as { value: number } | null,
+  conditionCollapsed: null as { value: string[] } | null,
+  setComponentKnob: vi.fn(),
   resetLayout: vi.fn(),
   resetPageSettings: vi.fn(),
 }))
@@ -46,14 +48,17 @@ vi.mock('@/composables/useTradeDates', async () => {
 vi.mock('@/composables/useRemoteLayoutConfig', async () => {
   const { ref } = await import('vue')
   layoutHarness.historyPageSize ??= ref(20)
+  layoutHarness.conditionCollapsed ??= ref(['basic', 'risk', 'technical', 'notes'])
   return {
     useRemoteLayoutConfig: (layout: unknown) => ({
       effective: ref(layout), knobs: [], setKnob: vi.fn(), valueOf: vi.fn(), sourceOf: vi.fn(),
       isDirty: ref(false), resetAll: layoutHarness.resetLayout,
-      componentValueOf: (_slot: string, field: string) => field === 'pageSize'
+      componentValueOf: (_slot: string, field: string) => field === 'defaultCollapsed'
+        ? layoutHarness.conditionCollapsed!.value
+        : field === 'pageSize'
         ? layoutHarness.historyPageSize!.value
         : false,
-      setComponentKnob: vi.fn(), componentSourceOf: vi.fn(), layerValuesOf: vi.fn(),
+      setComponentKnob: layoutHarness.setComponentKnob, componentSourceOf: vi.fn(), layerValuesOf: vi.fn(),
       componentLayerValuesOf: vi.fn(),
     }),
   }
@@ -115,6 +120,8 @@ describe('交易纪律 T5 工作台壳', () => {
     vi.clearAllMocks()
     resetTradeDisciplineSummaryForTests()
     layoutHarness.historyPageSize!.value = 20
+    layoutHarness.conditionCollapsed!.value = ['basic', 'risk', 'technical', 'notes']
+    layoutHarness.setComponentKnob.mockImplementation((_slot, _field, value) => { layoutHarness.conditionCollapsed!.value = value })
     tradeDateStatus.value = 'ready'
     listRules.mockResolvedValue([])
     listCheckins.mockResolvedValue({ total: 0, page: 1, page_size: 20, list: [] })
@@ -358,6 +365,30 @@ describe('交易纪律 T5 工作台壳', () => {
       tab: 'checkin', rule_ref: 'rule-1', trade_date: '2026-08-22',
     })
     expect(wrapper.get('h3').text()).toBe('纪律一')
+  })
+
+  it('属性抽屉默认折叠写回现有组件配置，透传规则与历史，并显式重置会话', async () => {
+    listRules.mockResolvedValue([ruleState()])
+    const Editor = defineComponent({ props: ['conditionPanelDefaults'], template: '<div />' })
+    const History = defineComponent({ props: ['conditionPanelDefaults'], template: '<div />' })
+    const wrapper = await mountPage(['trade-discipline:view', 'trade-discipline:rule-manage'],
+      '/trade-discipline?tab=rules', { TradeRuleEditor: Editor, TradeCheckinRevisionDrawer: History })
+    const drawer = wrapper.findComponent(PageSettingsDrawer)
+    const editor = wrapper.findComponent(Editor)
+    const history = wrapper.findComponent(History)
+    expect(editor.props('conditionPanelDefaults')).toEqual({ defaultCollapsed: ['basic', 'risk', 'technical', 'notes'], resetKey: 0 })
+    const config = drawer.props('config')!
+    config.setComponentKnob('stockConditions', 'defaultCollapsed', ['risk', 'notes'])
+    drawer.vm.$emit('component-default-change', 'stockConditions', 'defaultCollapsed')
+    await flushPromises()
+    expect(layoutHarness.setComponentKnob).toHaveBeenCalledWith('stockConditions', 'defaultCollapsed', ['risk', 'notes'])
+    expect(editor.props('conditionPanelDefaults')).toEqual({ defaultCollapsed: ['risk', 'notes'], resetKey: 1 })
+    expect(history.props('conditionPanelDefaults')).toEqual(editor.props('conditionPanelDefaults'))
+    drawer.vm.$emit('reset')
+    await flushPromises()
+    expect(editor.props('conditionPanelDefaults').resetKey).toBe(2)
+    expect(layoutHarness.resetLayout).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
   })
 
   it('历史分页默认值重载并在恢复默认时同时重置页面与布局配置', async () => {

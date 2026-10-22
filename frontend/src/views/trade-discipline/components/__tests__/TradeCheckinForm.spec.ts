@@ -75,6 +75,28 @@ function mountForm(
 }
 
 describe('TradeCheckinForm', () => {
+  it('提交要求逐项明确选择，未知可提交且结果随请求保存', async () => {
+    const checklistVersion = { ...version, stock_rules: [{ ...version.stock_rules[0],
+      checklist_items: [{ item_id: 'c', category: 'technical', text: '涨幅不超过50%', display_order: 1 }] }] }
+    getContext.mockResolvedValue({ ...emptyContext, version: checklistVersion })
+    const wrapper = mountForm()
+    await flushPromises()
+    const editor = wrapper.findComponent({ name: 'TradeOperationEditor' })
+    editor.vm.$emit('update:modelValue', [{ ...operation }])
+    await flushPromises()
+    const submit = () => wrapper.findAll('button').find(button => button.text() === '提交打卡')!.trigger('click')
+    await submit()
+    await flushPromises()
+    expect(submitCheckin).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-condition-section="technical"] .config-panel-section__head').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('[data-checklist-id="c"]').isVisible()).toBe(true)
+    editor.vm.$emit('update:modelValue', [{ ...operation, checklist_results: [{ item_id: 'c', status: 'unknown' }] }])
+    await flushPromises()
+    await submit()
+    await flushPromises()
+    expect(submitCheckin).toHaveBeenCalledWith(expect.objectContaining({ assessment: 'complied',
+      operations: [expect.objectContaining({ checklist_results: [{ item_id: 'c', status: 'unknown' }] })] }))
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     getContext.mockResolvedValue(emptyContext)

@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import type { StockConditionPanelDefaults } from '@/layout/configPanel'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import AppDatePicker from '@/components/AppDatePicker.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
@@ -21,6 +22,7 @@ import {
   checkinAssessmentLabel,
   checkinAssessmentTagType,
 } from '@/utils/tradeDisciplineAssessment'
+import StockRuleConditionChecklist from '@/components/trade-discipline/StockRuleConditionChecklist.vue'
 import FixedDecimalInput from './FixedDecimalInput.vue'
 import StockOptionSelect from './StockOptionSelect.vue'
 import TradeDirectionGroupGrid, {
@@ -33,11 +35,12 @@ import type {
 } from '@/api/tradeDiscipline'
 
 import {
-  conditionFactOptions, manualConditionFields, manualConditionDefaults,
+  conditionFactOptions, manualConditionFields, manualConditionDefaults, checklistMissing, type ConditionSection, type ConditionSectionsState,
   stockConditionSummary, stockConditionWarnings, stockConditionViolations, conditionFactLabel,
 } from '@/utils/tradeDisciplineConditions'
 
 const props = defineProps<{
+  conditionPanelDefaults?: StockConditionPanelDefaults
   modelValue: CheckinOperation[]
   version: RuleVersionDetail
   tradeDate: string
@@ -45,6 +48,17 @@ const props = defineProps<{
   disabled?: boolean
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: CheckinOperation[]] }>()
+const conditionSections = reactive<Record<string, ConditionSectionsState>>({})
+watch(() => props.conditionPanelDefaults?.resetKey, () => {
+  Object.keys(conditionSections).forEach(key => delete conditionSections[key])
+})
+const conditionRefs = new Map<string, InstanceType<typeof StockRuleConditionChecklist>>()
+function conditionKey(operation: CheckinOperation, index: number) { return `${itemKey(operation, index)}:${operation.stock_rule_id}` }
+function setConditionRef(operation: CheckinOperation, index: number, component: unknown) {
+  const key = conditionKey(operation, index)
+  if (component) conditionRefs.set(key, component as InstanceType<typeof StockRuleConditionChecklist>)
+  else conditionRefs.delete(key)
+}
 let operationKey = 0
 // 单一展开 key 保证多笔成交仍保持紧凑；新增和校验失败会主动切换到目标卡片。
 const expandedOperationKey = ref<string | null>(null)
@@ -76,7 +90,7 @@ function emptyOperation(order: number, side: 'buy' | 'sell'): CheckinOperation {
     action_rule_id: actionRules(side).length === 1 ? actionRules(side)[0].detail_id! : '',
     price: null, quantity: null, amount: null, fee: null,
     operated_at: defaultOperatedAt(props.tradeDate), note: null,
-    compliance_status: null, ...manualConditionDefaults(stockRule, side), display_order: order,
+    checklist_results: null, compliance_status: null, ...manualConditionDefaults(stockRule, side), display_order: order,
   }
 }
 
@@ -139,6 +153,7 @@ function cardPreview(operation: CheckinOperation): string {
 function operationIssue(operation: CheckinOperation): string | null {
   if (!operation.stock_code || !operation.stock_name_snapshot
     || !operation.stock_rule_id || !operation.action_rule_id) return '信息未完整'
+  if (checklistMissing(selectedStockRule(operation), operation)) return '选股条件待核对'
   if (props.showCompliance && !operation.compliance_status) return '履约状态未选择'
   if (operation.operated_at && operation.operated_at.slice(0, 10) !== props.tradeDate) {
     return '日期需检查'
@@ -157,13 +172,26 @@ function toggle(operation: CheckinOperation, index: number): void {
   expandedOperationKey.value = expandedOperationKey.value === key ? null : key
 }
 
-function expandOperation(index: number): void {
+function expandOperation(index: number, section?: ConditionSection, itemId?: string): void {
   const operation = props.modelValue[index]
-  if (operation) expandedOperationKey.value = itemKey(operation, index)
+  if (!operation) return
+  expandedOperationKey.value = itemKey(operation, index)
+  if (section) {
+    const key = conditionKey(operation, index)
+    conditionSections[key] = { ...conditionSections[key], [section]: true }
+    void nextTick(() => conditionRefs.get(key)?.reveal(section, itemId))
+  }
 }
 
 function update(index: number, patch: Partial<CheckinOperation>): void {
-  const next = props.modelValue.map((item, position) => position === index ? { ...item, ...patch } : item)
+  const next = props.modelValue.map((item, position) => {
+    if (position !== index) return item
+    const updated = { ...item, ...patch }
+    if (updated.compliance_status === 'complied' && stockConditionViolations(selectedStockRule(updated), updated).length) {
+      updated.compliance_status = 'breached'
+    }
+    return updated
+  })
   emit('update:modelValue', next)
 }
 
@@ -199,7 +227,7 @@ function selectStock(index: number, stock: StockOption | null): void {
   update(index, {
     stock_code: stock?.code ?? '',
     stock_name_snapshot: stock?.name ?? '',
-    ...manualConditionDefaults(selectedStockRule(operation), operation.side), selection_facts: null,
+    ...manualConditionDefaults(selectedStockRule(operation), operation.side), selection_facts: null, checklist_results: null,
     is_st: stock?.is_st ?? null,
     st_as_of_date: stock?.st_as_of_date ?? null,
   })
@@ -216,7 +244,7 @@ function withStockRule(operation: CheckinOperation, stockRuleId: string): Checki
   const defaults = manualConditionDefaults(rule, operation.side)
   // 切换规则只补未填写项，保留已确认的事实（包括“未知”），避免掩盖真实违规。
   return {
-    ...operation, stock_rule_id: stockRuleId,
+    ...operation, stock_rule_id: stockRuleId, checklist_results: null,
     loss_status: operation.loss_status ?? defaults.loss_status,
     st_risk_status: operation.st_risk_status ?? defaults.st_risk_status,
   }
@@ -247,6 +275,10 @@ watch(() => props.version.version_no, () => {
     }
   })
   emit('update:modelValue', next)
+})
+
+watch(() => props.modelValue.map(conditionKey), (keys) => {
+  Object.keys(conditionSections).forEach(key => { if (!keys.includes(key)) delete conditionSections[key] })
 })
 
 watch(() => props.modelValue.map(itemKey), (keys) => {
@@ -390,7 +422,10 @@ defineExpose({ expandOperation })
         </section>
 
         <section v-if="operation.side === 'buy' && selectedStockRule(operation)" class="operation-form-section" aria-label="选股条件核对" data-testid="operation-conditions">
-          <header><h5 class="app-section-title">选股条件核对</h5><p>{{ stockConditionSummary(selectedStockRule(operation)) }}；股价按本笔成交价核对。</p></header>
+          <header><h5 class="app-section-title">选股条件核对</h5><p>逐项确认是否符合；未查明选未知，股价按本笔成交价核对。</p></header>
+          <StockRuleConditionChecklist :panel-defaults="conditionPanelDefaults" :ref="(component: unknown) => setConditionRef(operation, index, component)" :rule="selectedStockRule(operation)!" :operation="operation" :results="operation.checklist_results" checking :disabled="disabled"
+            :open-sections="conditionSections[conditionKey(operation, index)] ?? {}" @update:open-sections="conditionSections[conditionKey(operation, index)] = $event" @update:results="update(index, { checklist_results: $event })">
+            <template #risk>
           <div class="operation-grid">
             <el-form-item v-for="field in requiredFactFields(operation)" :key="field.key" :label="field.label" :required="!disabled" class="operation-field operation-field--rule">
               <AppSelect
@@ -406,7 +441,9 @@ defineExpose({ expandOperation })
             </el-form-item>
           </div>
           <AppFormHelp>ST按交易日逐日数据核对；亏损与ST风险按规则预填，可按实际修改，未查明选未知。</AppFormHelp>
-          <ul v-if="stockConditionWarnings(selectedStockRule(operation), operation).length" class="condition-warnings" role="status"><li v-for="warning in stockConditionWarnings(selectedStockRule(operation), operation)" :key="warning">{{ warning }}</li></ul>
+            </template>
+          </StockRuleConditionChecklist>
+          <ul v-if="stockConditionViolations(selectedStockRule(operation), operation).length" class="condition-warnings" role="status"><li v-for="warning in stockConditionViolations(selectedStockRule(operation), operation)" :key="warning">{{ warning }}</li></ul>
         </section>
 
         <section class="operation-form-section" aria-label="成交明细" data-testid="operation-trade-section">

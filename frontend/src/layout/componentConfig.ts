@@ -77,6 +77,8 @@ export interface ComponentFieldApplicabilityOverride {
 
 /** 页面只声明组件实例候选和明确例外；不再逐字段复制组件种类的配置白名单。 */
 export interface ComponentSlotConfigMeta {
+  /** 组件分组的简短说明，由设置渲染器交给共享悬浮帮助入口。 */
+  hint?: string
   searchFields?: { key: string; label: string }[]
   columns?: { key: string; label: string }[]
   sortFields?: { key: string; label: string }[]

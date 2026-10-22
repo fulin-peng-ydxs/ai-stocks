@@ -309,8 +309,8 @@ class TradeDisciplineRepository:
                 cur.execute(
                     "INSERT INTO trade_discipline_draft_stock_rule "
                     "(rule_id,tenant_id,owner_user_id,detail_id,name,max_capital,content,display_order,enabled,"
-                    "price_min,price_max,st_filter,loss_filter,st_risk_filter) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "price_min,price_max,st_filter,loss_filter,st_risk_filter,checklist_items) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     [
                         rule_id,
                         *self.owner,
@@ -325,6 +325,7 @@ class TradeDisciplineRepository:
                         item.get("st_filter", "any"),
                         item.get("loss_filter", "any"),
                         item.get("st_risk_filter", "any"),
+                        Jsonb(item.get("checklist_items", [])),
                     ],
                 )
             for item in draft.get("action_rules", []):
@@ -418,8 +419,8 @@ class TradeDisciplineRepository:
                 cur.execute(
                     "INSERT INTO trade_discipline_stock_rule "
                     "(rule_id,tenant_id,owner_user_id,version_no,detail_id,name,max_capital,content,"
-                    "display_order,enabled,price_min,price_max,st_filter,loss_filter,st_risk_filter) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "display_order,enabled,price_min,price_max,st_filter,loss_filter,st_risk_filter,checklist_items) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     [
                         rule_id,
                         *self.owner,
@@ -435,6 +436,7 @@ class TradeDisciplineRepository:
                         item.get("st_filter", "any"),
                         item.get("loss_filter", "any"),
                         item.get("st_risk_filter", "any"),
+                        Jsonb(item.get("checklist_items", [])),
                     ],
                 )
             for item in draft["action_rules"]:
@@ -729,8 +731,8 @@ class TradeDisciplineRepository:
                     "INSERT INTO trade_discipline_operation "
                     "(id,tenant_id,owner_user_id,checkin_id,revision_no,rule_id,version_no,"
                     "stock_code,stock_name_snapshot,side,stock_rule_id,action_rule_id,price,"
-                    "quantity,amount,fee,operated_at,note,compliance_status,display_order,selection_facts) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "quantity,amount,fee,operated_at,note,compliance_status,display_order,selection_facts,checklist_results) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     [
                         item["id"],
                         *self.owner,
@@ -752,6 +754,7 @@ class TradeDisciplineRepository:
                         item.get("compliance_status"),
                         item["display_order"],
                         Jsonb(item["selection_facts"]) if item.get("selection_facts") else None,
+                        Jsonb(item["checklist_results"]) if item.get("checklist_results") else None,
                     ],
                 )
 
@@ -853,7 +856,7 @@ class TradeDisciplineRepository:
     ) -> list[dict[str, Any]]:
         sql = (
             "SELECT op.*,sr.name AS stock_rule_name,ar.name AS action_rule_name,"
-            "ar.action_subtype,sr.price_min,sr.price_max,sr.st_filter,sr.loss_filter,sr.st_risk_filter "
+            "ar.action_subtype,sr.price_min,sr.price_max,sr.st_filter,sr.loss_filter,sr.st_risk_filter,sr.checklist_items "
             "FROM trade_discipline_operation op "
             "JOIN trade_discipline_stock_rule sr ON sr.tenant_id=op.tenant_id "
             "AND sr.owner_user_id=op.owner_user_id AND sr.rule_id=op.rule_id "

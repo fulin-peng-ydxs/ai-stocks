@@ -22,6 +22,7 @@ import {
   registerUnsavedHandler,
 } from '@/composables/useUnsavedChangesGuard'
 import { getPageLayout } from '@/layout'
+import { STOCK_CONDITION_DEFAULT_COLLAPSED, type StockConditionPanelDefaults } from '@/layout/configPanel'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getErrorStatus } from '@/utils/error'
@@ -81,6 +82,26 @@ const {
   layerValuesOf,
   componentLayerValuesOf, componentAllowedLayers, saveRemoteUserConfig,
 } = useRemoteLayoutConfig(pageLayout)
+const conditionDefaultsResetKey = ref(0)
+const conditionPanelDefaults = computed<StockConditionPanelDefaults>(() => {
+  const value = componentValueOf('stockConditions', 'defaultCollapsed')
+  const configured = Array.isArray(value) ? new Set<unknown>(value) : undefined
+  return {
+    defaultCollapsed: configured
+      ? STOCK_CONDITION_DEFAULT_COLLAPSED.filter(key => configured.has(key))
+      : STOCK_CONDITION_DEFAULT_COLLAPSED,
+    resetKey: conditionDefaultsResetKey.value,
+  }
+})
+function onComponentDefaultChange(slotId: string, field: string) {
+  // 只有设置面板的显式修改重置临时开合；水合不会清除用户正在处理的分区。
+  if (slotId === 'stockConditions' && field === 'defaultCollapsed') conditionDefaultsResetKey.value += 1
+}
+function resetSettings() {
+  resetPageSettings()
+  resetLayout()
+  conditionDefaultsResetKey.value += 1
+}
 const drawerConfig = {
   knobs: layoutKnobs,
   setKnob,
@@ -628,6 +649,7 @@ const menuPageTitle = useMenuPageTitle()
               </template>
             </AppStateBlock>
             <TradeCheckinForm
+              :condition-panel-defaults="conditionPanelDefaults"
               v-else-if="selectedRule"
               ref="checkinFormRef"
               :rule-id="selectedRule.id"
@@ -652,6 +674,7 @@ const menuPageTitle = useMenuPageTitle()
               @retry="refreshRules"
             />
             <TradeRuleEditor
+              :condition-panel-defaults="conditionPanelDefaults"
               v-if="selectedRuleId"
               ref="ruleEditorRef"
               :rule-id="selectedRuleId"
@@ -717,6 +740,7 @@ const menuPageTitle = useMenuPageTitle()
         </template>
       </AppDialog>
       <TradeCheckinRevisionDrawer
+        :condition-panel-defaults="conditionPanelDefaults"
         v-model="historyDetailOpen"
         :row="historyDetailRow"
         :can-submit="canSubmitCheckins"
@@ -728,7 +752,8 @@ const menuPageTitle = useMenuPageTitle()
         :dirty="layoutDirty"
         :page-key="PAGE_KEY"
         :config="drawerConfig"
-        @reset="resetPageSettings(); resetLayout()"
+        @component-default-change="onComponentDefaultChange"
+        @reset="resetSettings"
       />
     </template>
   </LayoutHost>

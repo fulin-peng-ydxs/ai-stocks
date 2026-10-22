@@ -660,8 +660,11 @@ const menuPageTitle = useMenuPageTitle()
               <!-- 功能点 -->
               <div class="mr-section mr-resource-section">
                 <div class="mr-func-head">
-                  <h4 style="margin: 0">功能点（供角色授权）
+                  <h4 style="margin: 0">功能点
                     <HelpTip title="功能点说明" :width="360">
+                      <HelpTipItem question="功能点用于什么">
+                        <ul><li>功能点用于角色授权，控制接口和按钮的访问权限。</li></ul>
+                      </HelpTipItem>
                       <HelpTipItem question="功能码有什么约束">
                         <ul>
                           <li>功能码全局唯一、稳定且不可复用，并与后端接口权限码对账。</li>

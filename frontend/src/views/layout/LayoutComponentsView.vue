@@ -418,10 +418,13 @@ const menuPageTitle = useMenuPageTitle()
       <AppDetailDrawer
         :model-value="detailVisible"
         @update:model-value="(value: boolean) => { detailVisible = value }"
-        :title="selected ? `${selected.label}（${selected.kind}）` : '组件详情'"
+        :title="selected?.label || '组件详情'"
         size="xl"
         data-testid="component-preview-drawer"
       >
+        <template v-if="selected" #header-meta>
+          <HelpHint :text="`组件种类：${selected.kind}`" />
+        </template>
         <div v-if="selected" class="detail-body">
           <div class="detail-block">
             <div class="db-head">

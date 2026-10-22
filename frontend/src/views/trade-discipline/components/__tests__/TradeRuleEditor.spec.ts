@@ -72,6 +72,44 @@ function latestLeaveResolver(wrapper: ReturnType<typeof mount>): (allowLeave: bo
 }
 
 describe('TradeRuleEditor', () => {
+  it('发布失败自动展开空检查项所在规则与分类，外层收起后保留分类展开状态', async () => {
+    const value: any = detail()
+    value.draft.stock_rules[0].checklist_items = [{ item_id: 'blank', category: 'risk', text: '', display_order: 1 }]
+    api.get.mockResolvedValue(value)
+    const wrapper = await mountEditor()
+    await wrapper.get('[data-testid="rule-name-input"]').setValue('修改后的规则')
+    await wrapper.get('.rule-editor__footer .el-button:last-child').trigger('click')
+    await flushPromises()
+    const head = () => wrapper.get('[data-condition-section="risk"] .config-panel-section__head')
+    expect(head().attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('[data-checklist-id="blank"]').isVisible()).toBe(true)
+    expect(api.publish).not.toHaveBeenCalled()
+    const toggle = () => wrapper.get('[data-testid="stock-rule-card"] [data-testid="rule-card-toggle"]')
+    await toggle().trigger('click')
+    await toggle().trigger('click')
+    expect(head().attributes('aria-expanded')).toBe('true')
+  })
+  it('分类检查项保存、复制独立标识，补充说明不是必填', async () => {
+    const value: any = detail()
+    value.draft.stock_rules[0].content = null
+    value.draft.stock_rules[0].checklist_items = [{ item_id: 'c', category: 'technical', text: '涨幅不超过50%', display_order: 1 }]
+    api.get.mockResolvedValue(value)
+    const wrapper = await mountEditor()
+    await wrapper.get('[data-testid="stock-rule-card"] [data-testid="rule-card-toggle"]').trigger('click')
+    const notes = field(wrapper, '补充说明')
+    expect(notes.classes()).not.toContain('is-required')
+    await wrapper.get('[data-testid="stock-rule-card"] button[aria-label="复制选股规则"]').trigger('click')
+    const editors = wrapper.findAllComponents({ name: 'StockRuleChecklistEditor' })
+    const copyItems = editors.at(-1)!.props('modelValue')
+    expect(copyItems[0]).toMatchObject({ text: '涨幅不超过50%', category: 'technical' })
+    expect(copyItems[0].item_id).not.toBe('c')
+    editors.at(-1)!.vm.$emit('update:modelValue', [{ ...copyItems[0], text: '副本条件' }])
+    await (wrapper.vm as any).saveDraft()
+    const payload = api.save.mock.calls.at(-1)![1]
+    expect(payload.stock_rules[0].checklist_items[0].text).toBe('涨幅不超过50%')
+    expect(payload.stock_rules[1].checklist_items[0].text).toBe('副本条件')
+    expect(payload.stock_rules[0].content).toBeNull()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     api.get.mockResolvedValue(detail())
@@ -277,7 +315,7 @@ describe('TradeRuleEditor', () => {
     const stockRequiredLabels = wrapper.findAll('.el-form-item.is-required .el-form-item__label')
       .map((item) => item.text())
     expect(stockRequiredLabels).toEqual(expect.arrayContaining([
-      '规则名称', '资金上限（元）', '规则内容',
+      '规则名称', '资金上限（元）',
     ]))
 
     await wrapper.get('[data-testid="stock-rule-name-input"]').setValue('')
@@ -493,6 +531,24 @@ describe('TradeRuleEditor', () => {
       capital: '999999999999999999.99',
       stock_rules: [expect.objectContaining({ max_capital: '9007199254740992.01' })],
     }))
+  })
+
+  it('默认配置晚到和外层卡片重开保留分区开合，恢复默认清除全部临时开合且不清草稿', async () => {
+    const wrapper = await mountEditor()
+    await wrapper.setProps({ conditionPanelDefaults: { defaultCollapsed: ['basic', 'risk', 'technical', 'notes'], resetKey: 0 } })
+    const toggle = wrapper.findAll('[data-testid="stock-rule-card"]')[0]!.get('[data-testid="rule-card-toggle"]')
+    await toggle.trigger('click')
+    const technical = () => wrapper.get('[data-condition-section="technical"] .config-panel-section__head')
+    await technical().trigger('click')
+    await wrapper.setProps({ conditionPanelDefaults: { defaultCollapsed: ['risk', 'technical', 'notes'], resetKey: 0 } })
+    expect(technical().attributes('aria-expanded')).toBe('true')
+    await toggle.trigger('click')
+    // 即使分区已经随外层卡片卸载，恢复默认也应重置保存于表单的开合。
+    await wrapper.setProps({ conditionPanelDefaults: { defaultCollapsed: ['basic', 'risk', 'technical', 'notes'], resetKey: 1 } })
+    await toggle.trigger('click')
+    expect(technical().attributes('aria-expanded')).toBe('false')
+    expect((wrapper.get('[data-testid="stock-rule-capital-input"]').element as HTMLInputElement).value).toBe('40,000.00')
+    expect(api.save).not.toHaveBeenCalled()
   })
 
   it('默认仅展示规则摘要，且同一时间只展开一张卡片', async () => {

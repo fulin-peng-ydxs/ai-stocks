@@ -17,6 +17,8 @@ from backend.services.trade_discipline_conditions import (
     condition_violations,
     condition_warnings,
     position_count,
+    prepare_checklist_items,
+    prepare_checklist_results,
 )
 from backend.storage.duckdb_client import DuckDBClient, get_client
 from backend.storage.trade_discipline_repository import TradeDisciplineRepository
@@ -137,6 +139,7 @@ class TradeDisciplineService:
                     raise ValidationError("规则内容必须为文本")
                 item["content"] = content
                 if kind == "stock_rules":
+                    item["checklist_items"] = prepare_checklist_items(raw.get("checklist_items", []))
                     item["max_capital"] = self._money(item.get("max_capital"))
                     for key in ("price_min", "price_max"):
                         item[key] = self._decimal(item.get(key), places=4, label="股价")
@@ -224,8 +227,18 @@ class TradeDisciplineService:
             raise ValidationError("至少启用一条卖出规则")
         total = Decimal(0)
         for item in draft["stock_rules"]:
-            if not item.get("name") or not str(item.get("content") or "").strip():
-                raise ValidationError("选股规则名称和内容不能为空")
+            if not item.get("name"):
+                raise ValidationError("选股规则名称不能为空")
+            checklist = item.get("checklist_items") or []
+            if any(not entry["text"] for entry in checklist):
+                raise ValidationError("检查项内容不能为空，请填写或删除空项")
+            has_condition = bool(checklist) or any(
+                item.get(key) is not None for key in ("price_min", "price_max")
+            ) or any(item.get(key, "any") != "any" for key in (
+                "st_filter", "loss_filter", "st_risk_filter"
+            ))
+            if not has_condition and not str(item.get("content") or "").strip():
+                raise ValidationError("选股规则至少填写一项条件或补充说明")
             if item["enabled"]:
                 maximum = item.get("max_capital")
                 if maximum is None or maximum <= 0 or maximum > capital:
@@ -263,6 +276,8 @@ class TradeDisciplineService:
                 x.get("st_filter", "any"),
                 x.get("loss_filter", "any"),
                 x.get("st_risk_filter", "any"),
+                tuple((entry["item_id"], entry["category"], entry["text"], entry["display_order"])
+                      for entry in x.get("checklist_items") or []),
                 x.get("content"),
                 x["display_order"],
                 x["enabled"],
@@ -647,6 +662,10 @@ class TradeDisciplineService:
                 }
             )
             draft["normalized_name"] = normalized
+            # 副本是独立规则，检查项不能复用来源的标识或可变对象。
+            for stock_rule in draft["stock_rules"]:
+                for entry in stock_rule["checklist_items"]:
+                    entry["item_id"] = self._id("tdci")
             copied_id = self._id("tdr")
             self.repo.create_rule(conn, copied_id)
             copied = self.repo.lock_rule(conn, copied_id)
@@ -768,6 +787,7 @@ class TradeDisciplineService:
                     raise ValidationError("操作时间必须落在履约交易日")
             facts = {}
             stock_rule = enabled_stocks[stock_rule_id]
+            checklist_results = prepare_checklist_results(stock_rule, item)
             for key, condition_key in (
                 ("loss_status", "loss_filter"), ("st_risk_status", "st_risk_filter")
             ):
@@ -784,6 +804,7 @@ class TradeDisciplineService:
                     # 名称在批量验证股票主数据后由服务端覆盖，禁止信任客户端快照。
                     "stock_name_snapshot": "",
                     "selection_facts": facts,
+                    "checklist_results": checklist_results,
                     "side": side,
                     "stock_rule_id": stock_rule_id,
                     "action_rule_id": action_rule_id,

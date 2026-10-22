@@ -1969,7 +1969,7 @@ const menuPageTitle = useMenuPageTitle()
           <AppControlItem>
             <template #label>
               持仓数
-              <HelpTip title="持仓数（Top N）" :width="300">
+              <HelpTip title="持仓数" :width="300">
                 <HelpTipItem question="持仓数如何生效">
                   <ul>
                     <li>每个调仓日在候选中按综合分取前 N 只等权买入，并限制同时最多持有的股票数量。</li>
@@ -2425,7 +2425,13 @@ const menuPageTitle = useMenuPageTitle()
     </AppDialog>
 
     <!-- 查看买入当日的每日榜单（全市场评分 Top 50，高亮本笔买入的票）-->
-    <AppDialog v-model="boardDlg" class="board-dlg" :title="`${boardDate}（选股信号日）每日榜单 · 全市场评分 Top 50`" size="max" top="6cqh">
+    <AppDialog v-model="boardDlg" class="board-dlg" :title="`${boardDate} 每日榜单 · 全市场评分 Top 50`" size="max" top="6cqh">
+      <template #header>
+        <span class="el-dialog__title app-inline-info">
+          <span>{{ boardDate }} 每日榜单 · 全市场评分 Top 50</span>
+          <HelpHint text="日期为选股信号日，即买入日的前一交易日；榜单展示当日全市场评分前 50 名。" />
+        </span>
+      </template>
       <div>
         <div class="dlg-hint" style="margin-bottom:8px">
           这是<b>选股信号日</b>（买入日的前一交易日）全市场按评分排序的榜单；<b class="bd-hit-legend">高亮行</b>=本笔买入的票，能看清它在大盘里的相对位置。

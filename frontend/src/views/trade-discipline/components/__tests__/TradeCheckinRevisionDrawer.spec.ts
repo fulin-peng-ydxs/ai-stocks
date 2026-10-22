@@ -51,6 +51,25 @@ function mountDrawer(canSubmit = true) {
 }
 
 describe('TradeCheckinRevisionDrawer', () => {
+  it('按历史修订展示分类检查项和当时的核对结果，不读取后续规则', async () => {
+    getRevision.mockImplementation(async (_id: string, revisionNo: number) => ({
+      ...revision, revision_no: revisionNo,
+      operations: [{ ...revision.operations[0], checklist_results: [{ item_id: 'c', status: revisionNo === 1 ? 'no' : 'unknown' }] }],
+      rule_version: { ...revision.rule_version, stock_rules: [{ ...revision.rule_version.stock_rules[0],
+        checklist_items: [{ item_id: 'c', category: 'technical', text: '涨幅不超过50%', display_order: 1 }] }] },
+    }))
+    const wrapper = mountDrawer()
+    await flushPromises()
+    const snapshot = () => wrapper.get('[data-testid="revision-checklist-results"]')
+    expect(snapshot().text()).toContain('技术形态')
+    expect(snapshot().text()).toContain('涨幅不超过50%')
+    expect(snapshot().text()).toContain('未知')
+    expect(snapshot().findAllComponents({ name: 'ElSegmented' })).toHaveLength(0)
+    wrapper.findComponent(AppFilterSelect).vm.$emit('change', '1')
+    await flushPromises()
+    expect(snapshot().text()).toContain('不符合')
+    expect(snapshot().text()).not.toContain('未知')
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     getRevision.mockImplementation(async (_id: string, revisionNo: number) => ({

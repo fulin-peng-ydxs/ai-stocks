@@ -57,7 +57,7 @@
 | `frontend/src/components/ChartOperationGroup.vue` | 无自身 CSS 查询 | 委托 SettingsGroup。 | StockChartWorkspace |
 | `frontend/src/components/ComparePinButton.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | StockAnalysisNameCell、SectorsView |
 | `frontend/src/components/CompareQueueRail.vue` | 无自身 CSS 查询 | 对比队列始终单行内部横向滚动，选中对象与移除动作不隐藏。 | StockAnalysisPanel、SectorsView |
-| `frontend/src/components/ComponentAutoSettings.vue` | 无自身 CSS 查询 | 委托 AppRowActions、SettingsGroup、PageSegmented、PageSettingItem、PageToggleRow、StockChartSettingSection、StockAnalysisDefaultFields、SectorAnalysisDefaultFields、KlineSettingSection、MasterDetailRatioProfileSettings、SourceTag；默认折叠候选清单及有子项的父组委托 SettingsGroup 收展，展开态与选值分离；按元数据父组分行、子分区缩进并在同父组内自然换行，长标签换行，不增加局部滚动；父子选值独立，切换候选范围保留隐藏选值。 | PageSettingsDrawer、LayoutPagesView |
+| `frontend/src/components/ComponentAutoSettings.vue` | 无自身 CSS 查询 | 委托 AppRowActions、SettingsGroup、PageSegmented、PageSettingItem、PageToggleRow、StockChartSettingSection、StockAnalysisDefaultFields、SectorAnalysisDefaultFields、KlineSettingSection、MasterDetailRatioProfileSettings、SourceTag；组件组说明通过 componentMeta.hint 复用悬浮帮助，标题不拼接范围说明；配置中心隐藏组标题时仍保留帮助入口；默认折叠候选清单及有子项的父组委托 SettingsGroup 收展，展开态与选值分离；按元数据父组分行、子分区缩进并在同父组内自然换行，长标签换行，不增加局部滚动；父子选值独立，切换候选范围保留隐藏选值。 | PageSettingsDrawer、LayoutPagesView |
 | `frontend/src/components/EquityChart.vue` | 无自身 CSS 查询 | 默认高420或fill满区，自身resize；图表容器min0。 | BacktestView、TrainingView |
 | `frontend/src/components/GrowthChart.vue` | 无自身 CSS 查询 | 固定200高微图，自身resize；没有信息隐藏。 | TrainingView |
 | `frontend/src/components/HelpHint.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | DataMetricCard、PageSettingItem、PageToggleRow、SettingsGroup、ConfigGroupForm、BacktestView、ConfigView、OverviewView、LayoutComponentsView |
@@ -112,7 +112,7 @@
 | `frontend/src/components/asset-search/AssetProfileSelect.vue` | 无自身 CSS 查询 | 选择器0+auto网格，搜索交给AssetSearchDrawer。 | BacktestView、BoardView、ConfigView、ScreenView、StockDetailView |
 | `frontend/src/components/asset-search/AssetSearchDrawer.vue` | 无自身 CSS 查询 | 共享抽屉满高、搜索换行、列表内部滚动、统一分页，查询值保留。 | AssetProfileSelect、BacktestView |
 | `frontend/src/components/config/ConfigGroupForm.vue` | `@container app-viewport (max-width: 720px)` | 窄宽配置网格单列，控件占行宽；不清除输入。；可继承的旧来源覆盖用显式开关承载，继承态只读显示通用生效值，密码字段保留单项清除入口。 | ConfigView |
-| `frontend/src/components/config/ConfigPanelSection.vue` | `@container app-viewport (max-width: 720px)` | 窄宽缩短装饰线/限制说明宽度；分组手动折叠，标题入口保留。 | ConfigGroupForm |
+| `frontend/src/components/config/ConfigPanelSection.vue` | `@container app-viewport (max-width: 720px)` | 窄宽缩短装饰线/限制说明宽度；分组手动折叠，标题入口保留；可选 summary 随标题换行，收起仍可见，不传时布局保持。 | ConfigGroupForm、ConfigView、StockRuleChecklistEditor、StockRuleConditionChecklist |
 | `frontend/src/components/data/BoardTaskScopeFields.vue` | 无自身 CSS 查询 | 委托 PageSegmented、TradeDatePicker、CurrentDayFallbackField。 | IngestView、ScheduleView |
 | `frontend/src/components/data/DataMetricCard.vue` | `@container app-viewport (max-height: 700px)` | 低高度仅压缩间距，主值、核心状态和具名操作保留，溢出摘要由完整原文与详情恢复。 | OverviewView |
 | `frontend/src/components/data/DataMetricDetails.vue` | 无自身 CSS 查询 | 显式 i 入口复用 AppHoverInfo 视口约束及焦点时序；字段和值换行，明细复用 AppDetailFields，AppScrollArea 按界面比例将正文限制在80vh内并内部滚动，不隐藏数据。 | DataMetricCard、OverviewView |
@@ -138,6 +138,8 @@
 | `frontend/src/components/stock-chart/StockQuoteSummary.vue` | `@container app-viewport (max-width: 720px)` | 窄宽补充信息换行，报价关键值保留；K 线联动摘要使用最新与可视窗口字符容量，空间不足由摘要内部横向滚动承接；可选字段说明复用 HelpHint 图标，字段名不加后缀；标签区容纳图标且数值列保持固定，支持悬浮与键盘聚焦。 | StockIntradayDialog、StockDetailView |
 | `frontend/src/components/strategy/StrategyItemEnabledSwitch.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | ConfigView、ScreenView |
 | `frontend/src/components/trade-discipline/RuleSummaryCard.vue` | 无自身 CSS 查询 | 委托 AppSummaryDisclosureCard。 | TradeRuleEditor |
+| `frontend/src/components/trade-discipline/StockRuleChecklistEditor.vue` | 无自身 CSS 查询 | 三类/补充说明委托 ConfigPanelSection，默认值读取 stockConditions.defaultCollapsed，代码默认独立收起；设置抽屉显式改默认/重置只重置开合，保留编辑输入；摘要常显，新建/错误展开定位；分类内逐行编辑；字段网格 auto-fit、条件文本和分类控件自然换行；组内拖动和键盘排序复用 AppReorderList；宽度变化后重新测量文本高度，卸载释放观察器，尺寸变化不改草稿。 | TradeRuleEditor |
+| `frontend/src/components/trade-discipline/StockRuleConditionChecklist.vue` | 无自身 CSS 查询 | 条件文本与结果 flex-wrap，空间不足结果换至下一行；三个分类和补充说明委托 ConfigPanelSection，共用 stockConditions.defaultCollapsed，代码默认独立收起；远端水合保留已操作分区，显式改默认/重置不改核对结果；标题保留摘要与待核对/不符合/未知数量，可键盘展开；条件、结果和错误保留，尺寸恢复不重置选择或展开。 | TradeOperationEditor、TradeCheckinRevisionDrawer |
 | `frontend/src/components/trade-discipline/TradeDirectionGroupGrid.vue` | 无自身 CSS 查询 | 所有宽度按买入、卖出顺序单列，规则与操作逐条独占一行。 | TradeOperationEditor、TradeRuleEditor |
 | `frontend/src/components/trade-discipline/TradeDisciplineQuickCard.vue` | `@container app-viewport (max-width: 520px)` | 窄容器操作换行，规则与动作保留；快捷确认委托AppDialog，持仓数量输入限制在弹窗内并允许实际修改。 | App |
 | `frontend/src/components/trade-discipline/TradeDisciplineSectionPanel.vue` | `@container app-viewport (max-width: 760px)` | 窄宽头部上下排列，不隐藏操作。 | TradeCheckinForm、TradeOperationEditor、TradeRuleEditor |

@@ -31,6 +31,21 @@ export interface ConfigPanelCollapseSection {
   parentKey?: string
 }
 
+/** 三个交易纪律入口共用分区默认；resetKey 只用于显式修改默认/恢复默认后的会话重置。 */
+export interface StockConditionPanelDefaults {
+  defaultCollapsed: readonly string[]
+  resetKey: number
+}
+
+export const STOCK_CONDITION_COLLAPSE_SECTIONS = [
+  { key: 'basic', label: '基本条件' },
+  { key: 'risk', label: '风险排除' },
+  { key: 'technical', label: '技术形态' },
+  { key: 'notes', label: '补充说明' },
+] satisfies ConfigPanelCollapseSection[]
+
+export const STOCK_CONDITION_DEFAULT_COLLAPSED = STOCK_CONDITION_COLLAPSE_SECTIONS.map(section => section.key)
+
 export const CONFIG_SYSTEM_GROUP_TABS: ConfigSystemGroupTab[] = [
   { key: 'access', label: '访问安全', groupKeys: ['auth'] },
   { key: 'data-governance', label: '数据治理', groupKeys: ['datasource', 'ths_board', 'audit'] },

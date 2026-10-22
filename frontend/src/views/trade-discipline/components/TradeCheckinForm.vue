@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { StockConditionPanelDefaults } from '@/layout/configPanel'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -7,7 +8,7 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import TradeDisciplineSectionPanel from '@/components/trade-discipline/TradeDisciplineSectionPanel.vue'
 import { getErrorMessage } from '@/utils/error'
-import { holdingCountWarning, manualConditionFields, stockConditionViolations } from '@/utils/tradeDisciplineConditions'
+import { holdingCountWarning, manualConditionFields, stockConditionViolations, checklistMissingItem, checklistCategory, conditionViolationTarget, type ConditionSection } from '@/utils/tradeDisciplineConditions'
 import { decimalToMinorUnits, multiplyToMinorUnits } from '@/utils/fixedDecimal'
 import {
   checkinAssessmentOptions,
@@ -26,6 +27,7 @@ import {
 } from '@/api/tradeDiscipline'
 
 const props = defineProps<{
+  conditionPanelDefaults?: StockConditionPanelDefaults
   ruleId: string
   tradeDate: string
   canSubmit: boolean
@@ -151,7 +153,15 @@ async function toggleNoOperation(value: boolean): Promise<void> {
 }
 
 function validate(): string | null {
-  if (form.assessment === 'complied' && knownViolations.value.length) return '存在规则违规，不能选择已履约'
+  if (form.assessment === 'complied' && knownViolations.value.length) {
+    form.operations.some((operation, index) => {
+      const rule = context.value?.version.stock_rules.find(item => item.detail_id === operation.stock_rule_id)
+      const target = conditionViolationTarget(rule, operation)
+      if (target) operationEditor.value?.expandOperation(index, target.section, target.itemId)
+      return !!target
+    })
+    return '存在规则违规，不能选择已履约'
+  }
   if (context.value?.version.max_positions != null && form.peak_positions === null) return '请填写当日最大同时持仓数'
   if (form.peak_positions !== null && (!Number.isInteger(form.peak_positions) || form.peak_positions < 0 || form.peak_positions > 2147483647)) return '当日最大同时持仓数必须为非负整数'
   if (form.assessment === 'partial' && !form.operations.length) return '部分履约至少需要一条操作'
@@ -160,20 +170,23 @@ function validate(): string | null {
   if (hasCheckinViolation(form.assessment) && !form.violation_detail.trim()) return '部分履约或未履约时必须填写详细说明'
   for (const [index, operation] of form.operations.entries()) {
     const prefix = `操作 ${index + 1}`
-    const operationError = (message: string) => {
-      operationEditor.value?.expandOperation(index)
+    const operationError = (message: string, section?: ConditionSection, itemId?: string) => {
+      operationEditor.value?.expandOperation(index, section, itemId)
       return `${prefix}：${message}`
     }
     if (!operation.stock_code || !operation.stock_name_snapshot) return operationError('请选择股票')
     if (!operation.stock_rule_id) return operationError('请选择选股规则')
     if (!operation.action_rule_id) return operationError('请选择买卖规则')
     const stockRule = context.value?.version.stock_rules.find((rule) => rule.detail_id === operation.stock_rule_id)
+    const missing = checklistMissingItem(stockRule, operation)
+    if (missing) return operationError('请逐项核对选股条件，未查明可选未知', checklistCategory(missing.category), missing.item_id)
     if (operation.compliance_status === 'complied' && stockConditionViolations(stockRule, operation).length) {
-      return operationError('存在规则违规，不能选择已履约')
+      const target = conditionViolationTarget(stockRule, operation)
+      return operationError('存在规则违规，不能选择已履约', target?.section, target?.itemId)
     }
     if (operation.side === 'buy') {
       for (const field of manualConditionFields) {
-        if (stockRule?.[field.filter] && stockRule[field.filter] !== 'any' && !operation[field.key]) return operationError(`请选择${field.label}，未查明可选未知`)
+        if (stockRule?.[field.filter] && stockRule[field.filter] !== 'any' && !operation[field.key]) return operationError(`请选择${field.label}，未查明可选未知`, 'risk')
       }
     }
     if (form.assessment === 'partial' && !operation.compliance_status) {
@@ -221,6 +234,7 @@ function payload(): CheckinContentPayload {
       side: item.side,
       stock_rule_id: item.stock_rule_id,
       action_rule_id: item.action_rule_id,
+      checklist_results: item.checklist_results ?? null,
       loss_status: item.loss_status ?? null,
       st_risk_status: item.st_risk_status ?? null,
       price: item.price,
@@ -417,6 +431,7 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
         </TradeDisciplineSectionPanel>
 
         <TradeOperationEditor
+          :condition-panel-defaults="conditionPanelDefaults"
           v-if="!form.no_operation"
           ref="operationEditor"
           v-model="form.operations"

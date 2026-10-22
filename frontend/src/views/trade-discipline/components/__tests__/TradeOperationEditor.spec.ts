@@ -15,6 +15,59 @@ const version: RuleVersionDetail = {
 }
 
 describe('TradeOperationEditor', () => {
+  it('分类展开状态按操作隔离，收起外层卡片不丢失已展开分类或核对结果', async () => {
+    const withChecklist: RuleVersionDetail = { ...version, stock_rules: [{ ...version.stock_rules[0],
+      checklist_items: [{ item_id: 'c', category: 'technical', text: '涨幅不超过50%', display_order: 1 }] }] }
+    withChecklist.stock_rules.push({ ...withChecklist.stock_rules[0], detail_id: 'stock-2', name: '另一选股规则' })
+    const operation = { stock_code: '000001.SZ', stock_name_snapshot: '平安银行', side: 'buy' as const,
+      stock_rule_id: 'stock-1', action_rule_id: 'buy-1', price: null, quantity: null, amount: null,
+      fee: null, operated_at: null, note: null, display_order: 1, checklist_results: [{ item_id: 'c', status: 'unknown' as const }] }
+    const model = [{ ...operation, client_key: 'first' }, { ...operation, client_key: 'second', display_order: 2 }]
+    const wrapper = mount(TradeOperationEditor, { props: { modelValue: model, version: withChecklist, tradeDate: '2026-08-22' },
+      global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } } })
+    const toggles = () => wrapper.findAll('[data-testid="operation-card-toggle"]')
+    const head = () => wrapper.get('[data-condition-section="technical"] .config-panel-section__head')
+    await toggles()[0].trigger('click')
+    expect(head().attributes('aria-expanded')).toBe('false')
+    await head().trigger('click')
+    await toggles()[0].trigger('click')
+    await toggles()[0].trigger('click')
+    expect(head().attributes('aria-expanded')).toBe('true')
+    await toggles()[1].trigger('click')
+    expect(head().attributes('aria-expanded')).toBe('false')
+    expect(wrapper.props('modelValue')).toEqual(model)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    await toggles()[0].trigger('click')
+    expect(head().attributes('aria-expanded')).toBe('true')
+    await wrapper.setProps({ modelValue: [{ ...model[0], stock_rule_id: 'stock-2' }, model[1]] })
+    expect(head().attributes('aria-expanded')).toBe('false')
+  })
+  it('逐项不符合会限制单笔履约，换股或换规则清空结果，回显不补选', async () => {
+    const rule = { ...version.stock_rules[0], checklist_items: [{ item_id: 'c', category: 'technical' as const, text: '涨幅不超过50%', display_order: 1 }] }
+    const withChecklist = { ...version, stock_rules: [rule, { ...rule, detail_id: 'stock-2', name: '另一规则' }] }
+    const operation = { stock_code: '000001.SZ', stock_name_snapshot: '平安银行', side: 'buy' as const,
+      stock_rule_id: 'stock-1', action_rule_id: 'buy-1', price: null, quantity: null, amount: null,
+      fee: null, operated_at: null, note: null, display_order: 1, compliance_status: 'complied' as const,
+      checklist_results: [{ item_id: 'c', status: 'unknown' as const }] }
+    const wrapper = mount(TradeOperationEditor, { props: { modelValue: [operation], version: withChecklist, tradeDate: '2026-08-22', showCompliance: true },
+      global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } } })
+    await wrapper.get('[data-testid="operation-card-toggle"]').trigger('click')
+    const checklist = wrapper.findComponent({ name: 'StockRuleConditionChecklist' })
+    expect(checklist.props('results')).toEqual(operation.checklist_results)
+    checklist.vm.$emit('update:results', [{ item_id: 'c', status: 'no' }])
+    await flushPromises()
+    const changed = wrapper.emitted('update:modelValue')!.at(-1)![0] as any[]
+    expect(changed[0].compliance_status).toBe('breached')
+    await wrapper.setProps({ modelValue: changed })
+    expect(wrapper.text()).toContain('选股条件“涨幅不超过50%”不符合')
+    wrapper.findComponent({ name: 'StockOptionSelect' }).vm.$emit('update:modelValue', { code: '000002.SZ', name: '万科A' })
+    await flushPromises()
+    expect((wrapper.emitted('update:modelValue')!.at(-1)![0] as any[])[0].checklist_results).toBeNull()
+    const selector = wrapper.findAllComponents({ name: 'ElSelect' }).find(node => node.attributes('data-testid') === 'operation-stock-rule-0')!
+    selector.vm.$emit('update:modelValue', 'stock-2')
+    await flushPromises()
+    expect((wrapper.emitted('update:modelValue')!.at(-1)![0] as any[])[0]).toMatchObject({ stock_rule_id: 'stock-2', checklist_results: null })
+  })
   it.each([
     { side: 'buy' as const, selected: 'buy-1', labels: ['唯一买入', '均线加仓'], types: ['建仓', '加仓'], next: 'buy-2' },
     { side: 'sell' as const, selected: 'sell-1', labels: ['唯一卖出', '分批卖出', '盘中回转'], types: ['清仓', '分批止盈', '做 T'], next: 'sell-2' },

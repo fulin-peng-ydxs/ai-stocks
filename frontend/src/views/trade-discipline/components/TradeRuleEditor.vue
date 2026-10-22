@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import type { StockConditionPanelDefaults } from '@/layout/configPanel'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { CopyDocument, Delete, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppIconButton from '@/components/AppIconButton.vue'
@@ -14,9 +15,10 @@ import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import { decimalToMinorUnits, formatMinorUnits } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
-import { conditionFilterOptions, stockConditionFields, stockConditionSummary } from '@/utils/tradeDisciplineConditions'
+import { conditionFilterOptions, stockConditionFields, stockConditionSummary, normalizeChecklist, stockRuleHasContent, checklistCategory, type ConditionSection, type ConditionSectionsState } from '@/utils/tradeDisciplineConditions'
 import { actionSubtypeLabel, builtinActionSubtypeOptions } from '@/utils/tradeDisciplineRuleTypes'
 import FixedDecimalInput from '@/views/trade-discipline/components/FixedDecimalInput.vue'
+import StockRuleChecklistEditor from '@/components/trade-discipline/StockRuleChecklistEditor.vue'
 import RuleSummaryCard from '@/components/trade-discipline/RuleSummaryCard.vue'
 import TradeDirectionGroupGrid, {
   type TradeDirectionGroup,
@@ -44,6 +46,7 @@ import {
 } from '@/api/tradeDiscipline'
 
 const props = defineProps<{
+  conditionPanelDefaults?: StockConditionPanelDefaults
   ruleId: string
   tradeDate: string | null
   canManage: boolean
@@ -67,6 +70,23 @@ const expandedRule = ref<{
   kind: 'stock' | 'action'
   item: DraftStockRule | DraftActionRule
 } | null>(null)
+const stockSectionStates = reactive<Record<string, ConditionSectionsState>>({})
+const stockChecklistRefs = new Map<string, InstanceType<typeof StockRuleChecklistEditor>>()
+function stockStateKey(item: DraftStockRule) { return `${props.ruleId}:${ruleKey(item)}` }
+function setStockChecklistRef(item: DraftStockRule, component: unknown) {
+  const key = stockStateKey(item)
+  if (component) stockChecklistRefs.set(key, component as InstanceType<typeof StockRuleChecklistEditor>)
+  else stockChecklistRefs.delete(key)
+}
+function revealStockCondition(item: DraftStockRule, section: ConditionSection, itemId?: string) {
+  expandedRule.value = { kind: 'stock', item }
+  const key = stockStateKey(item)
+  stockSectionStates[key] = { ...stockSectionStates[key], [section]: true }
+  void nextTick(() => stockChecklistRefs.get(key)?.reveal(section, itemId))
+}
+watch([() => props.ruleId, () => props.conditionPanelDefaults?.resetKey], () => {
+  Object.keys(stockSectionStates).forEach(key => delete stockSectionStates[key])
+})
 const actionSubtypeOptions = ref<ActionSubtypeOption[]>(builtinActionSubtypeOptions.map((item) => ({ ...item })))
 let baseline = ''
 let loadRequest = 0
@@ -173,6 +193,7 @@ function clonePayload(source: RuleDraftPayload | RuleVersionDetail | null): Rule
       st_filter: item.st_filter ?? 'any', loss_filter: item.loss_filter ?? 'any',
       st_risk_filter: item.st_risk_filter ?? 'any',
       content: item.content ?? null,
+      checklist_items: normalizeChecklist(item.checklist_items ?? []),
       display_order: index + 1,
       enabled: Boolean(item.enabled),
     })),
@@ -244,6 +265,7 @@ function normalizedPayload(): RuleDraftPayload {
       ...item,
       name: item.name?.trim() || null,
       content: item.content ?? null,
+      checklist_items: normalizeChecklist(item.checklist_items ?? []).map(entry => ({ ...entry, text: entry.text.trim() })),
       max_capital: item.max_capital === '' ? null : item.max_capital,
       display_order: index + 1,
     })),
@@ -322,8 +344,14 @@ function validateConditions(): boolean {
     const low = decimalToMinorUnits(item.price_min, 4)
     const high = decimalToMinorUnits(item.price_max, 4)
     if ((item.price_min != null && (low === null || low <= 0n))
-      || (item.price_max != null && (high === null || high <= 0n))) return warn('股价上下限必须大于 0，最多4位小数')
-    if (low !== null && high !== null && low > high) return warn('股价下限不能大于上限')
+      || (item.price_max != null && (high === null || high <= 0n))) {
+      revealStockCondition(item, 'basic')
+      return warn('股价上下限必须大于 0，最多4位小数')
+    }
+    if (low !== null && high !== null && low > high) {
+      revealStockCondition(item, 'basic')
+      return warn('股价下限不能大于上限')
+    }
   }
   return true
 }
@@ -333,8 +361,16 @@ function validateForPublish(): boolean {
   if (!form.value.name?.trim()) return warn('发布前请填写规则名称')
   if (totalCapitalUnits.value <= 0n) return warn('发布前请填写大于 0 的总本金')
   if (!enabledStockRules.value.length) return warn('发布前至少启用一条选股规则')
-  if (form.value.stock_rules.some((item) => !item.name?.trim() || !item.content?.trim())) {
-    return warn('选股规则名称和内容不能为空')
+  for (const item of form.value.stock_rules) {
+    if (!item.name?.trim() || !stockRuleHasContent(item)) {
+      revealStockCondition(item, 'technical')
+      return warn('选股规则需填写名称，且至少填写一项条件或补充说明')
+    }
+    const empty = item.checklist_items?.find(entry => !entry.text.trim())
+    if (empty) {
+      revealStockCondition(item, checklistCategory(empty.category), empty.item_id)
+      return warn('请填写或删除空检查项')
+    }
   }
   if (capitalExceeded.value) {
     const excess = formatMoney(formatMinorUnits(-remainingCapitalUnits.value))
@@ -468,7 +504,7 @@ async function removeUnpublished(): Promise<void> {
 function addStockRule(): void {
   if (!canEditDetails.value) return
   const item: DraftStockRule = {
-    detail_id: null, name: null, max_capital: null, content: null,
+    detail_id: null, name: null, max_capital: null, content: null, checklist_items: [],
     price_min: null, price_max: null, st_filter: 'any', loss_filter: 'any', st_risk_filter: 'any',
     display_order: form.value.stock_rules.length + 1, enabled: true,
   }
@@ -492,6 +528,7 @@ function copyStockRule(index: number): void {
   const source = form.value.stock_rules[index]
   const copied: DraftStockRule = {
     ...source,
+    checklist_items: (source.checklist_items ?? []).map(entry => ({ ...entry, item_id: `tdci_${crypto.randomUUID()}` })),
     detail_id: null,
     name: source.name ? `${source.name}-副本` : null,
   }
@@ -670,15 +707,24 @@ defineExpose({
                 <div class="rule-card-form rule-card-form--stock">
                   <el-form-item label="规则名称" :required="editing && canManage"><el-input v-model="item.name" data-testid="stock-rule-name-input" maxlength="80" /></el-form-item>
                   <el-form-item label="资金上限（元）" :required="editing && canManage && item.enabled"><FixedDecimalInput v-model="item.max_capital" grouped data-testid="stock-rule-capital-input" /></el-form-item>
+                  <StockRuleChecklistEditor :panel-defaults="conditionPanelDefaults" :ref="(component: unknown) => setStockChecklistRef(item, component)" class="rule-card-form__content" :model-value="item.checklist_items ?? []" :rule="item" :disabled="!canEditDetails"
+                    :open-sections="stockSectionStates[stockStateKey(item)] ?? {}" @update:open-sections="stockSectionStates[stockStateKey(item)] = $event" @update:model-value="item.checklist_items = $event">
+                    <template #basic>
                   <el-form-item label="股价下限（元）"><FixedDecimalInput :model-value="item.price_min ?? null" @update:model-value="item.price_min = $event" :scale="4" :integer-digits="16" placeholder="不限" data-testid="stock-price-min" /></el-form-item>
                   <el-form-item label="股价上限（元）"><FixedDecimalInput :model-value="item.price_max ?? null" @update:model-value="item.price_max = $event" :scale="4" :integer-digits="16" placeholder="不限" data-testid="stock-price-max" /></el-form-item>
+                    </template>
+                    <template #risk>
                   <el-form-item v-for="condition in stockConditionFields" :key="condition.key" :label="condition.label">
                     <AppSelect
                       v-model="item[condition.key]"
                       :data-testid="`stock-${condition.key}`"
                     ><el-option v-for="option in conditionFilterOptions" :key="option.value" :label="option.label" :value="option.value" /></AppSelect>
                   </el-form-item>
-                  <el-form-item class="rule-card-form__content" label="规则内容" :required="editing && canManage"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
+                    </template>
+                    <template #notes>
+                      <el-form-item label="补充说明"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3 }" resize="vertical" placeholder="补充解释、适用场景；需要逐项核对的条件请添加为检查项" /></el-form-item>
+                    </template>
+                  </StockRuleChecklistEditor>
                 </div>
               </RuleSummaryCard>
             </template>

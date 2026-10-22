@@ -17,6 +17,7 @@ import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { ElInput, ElInputNumber, ElMessage } from 'element-plus'
 import AppRowActions from './AppRowActions.vue'
 import SettingsGroup from './SettingsGroup.vue'
+import HelpHint from './HelpHint.vue'
 import PageSegmented from './PageSegmented.vue'
 import PageSettingItem from './PageSettingItem.vue'
 import PageSettingsApplyButton from './PageSettingsApplyButton.vue'
@@ -592,11 +593,13 @@ function setSort(slotId: string, field: string, order: string): void {
       :key="s.slotId"
       :fold-key="`component:${s.slotId}`"
       :title="showSlotTitle ? s.label : undefined"
+      :hint="showSlotTitle ? s.meta.hint : undefined"
       :level="2"
       :collapsible="collapsibleSlot"
       :data-cc-slot="s.slotId"
       :class="{ 'ca-highlight': s.slotId === highlightSlot }"
     >
+      <HelpHint v-if="!showSlotTitle && s.meta.hint" :text="s.meta.hint" :label="`${s.label}说明`" />
       <PageSettingItem v-if="s.fields.includes('commonFields')" label="常显搜索条件" :hint="fieldHelp(s, 'commonFields')">
         <template #actions>
           <SourceTag v-if="srcOf(s.slotId, 'commonFields')" :source="srcOf(s.slotId, 'commonFields')!" :values="srcValuesOf(s.slotId, 'commonFields')" />

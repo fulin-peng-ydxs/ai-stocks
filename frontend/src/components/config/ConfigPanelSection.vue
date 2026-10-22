@@ -7,6 +7,7 @@ const props = withDefaults(
   defineProps<{
     title?: string
     description?: string
+    summary?: string
     badge?: string
     level?: 1 | 2
     collapsible?: boolean
@@ -48,7 +49,7 @@ function toggle() {
 </script>
 
 <template>
-  <section class="config-panel-section" :class="[`is-level-${level}`, { 'is-closed': !isOpen() }]">
+  <section class="config-panel-section" :class="[`is-level-${level}`, { 'is-closed': !isOpen(), 'has-summary': !!summary }]">
     <div
       v-if="title || badge"
       class="config-panel-section__head"
@@ -64,6 +65,7 @@ function toggle() {
       </el-icon>
       <div class="config-panel-section__copy">
         <span v-if="title" class="config-panel-section__title">{{ title }}</span>
+        <span v-if="summary" class="config-panel-section__summary">{{ summary }}</span>
         <span
           v-if="level === 1 && showDescription && description"
           class="config-panel-section__description"
@@ -196,6 +198,21 @@ function toggle() {
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
   line-height: var(--app-line-height-caption);
+}
+
+.config-panel-section.has-summary > .config-panel-section__head .config-panel-section__copy {
+  flex: 1 1 auto;
+  max-width: none;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--app-space-3);
+}
+.config-panel-section__summary {
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
+  overflow-wrap: anywhere;
 }
 
 .is-level-1 > .config-panel-section__head .config-panel-section__title {

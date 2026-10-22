@@ -14,7 +14,7 @@
 import type { Archetype, EditableKnob, PageLayout, SlotSpec } from './schema'
 import { SEARCH_GROUPS } from './searchGroups'
 import { cloneLayout } from './path'
-import { CONFIG_SYSTEM_COLLAPSE_SECTIONS, CONFIG_SYSTEM_GROUP_TABS } from './configPanel'
+import { CONFIG_SYSTEM_COLLAPSE_SECTIONS, CONFIG_SYSTEM_GROUP_TABS, STOCK_CONDITION_COLLAPSE_SECTIONS, STOCK_CONDITION_DEFAULT_COLLAPSED } from './configPanel'
 import {
   getApplicableComponentFieldDefs,
   type ComponentConfigLayer,
@@ -510,6 +510,15 @@ const REGISTRY: PageRegistryEntry[] = [
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
     componentMeta: {
+      stockConditions: {
+        hint: '规则管理、今日打卡和历史详情共用这些默认折叠分区；页面内临时开合不修改默认值。',
+        collapseSections: STOCK_CONDITION_COLLAPSE_SECTIONS,
+        fieldApplicability: {
+          collapsibleSections: { enabled: false, reason: '选股条件固定支持逐类折叠' },
+          showGroupDescription: { enabled: false, reason: '选股条件不展示独立组说明' },
+          showSectionDescription: { enabled: false, reason: '条件摘要是必要核对信息，始终显示' },
+        },
+      },
       history: {
         sortFields: [{ key: 'trade_date', label: '交易日' }],
         columns: [
@@ -539,6 +548,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'workspaceTabs', component: 'tabs', region: 'main', growMain: true, label: '交易纪律业务页签', order: 1 },
         { id: 'checkinPanel', component: 'section', region: 'main', parentId: 'workspaceTabs', label: '今日打卡', order: 1 },
         { id: 'rulesPanel', component: 'section', region: 'main', parentId: 'workspaceTabs', label: '规则管理', order: 2 },
+        { id: 'stockConditions', component: 'config-panel', region: 'main', parentId: 'workspaceTabs', label: '选股条件', order: 4, config: { defaultCollapsed: STOCK_CONDITION_DEFAULT_COLLAPSED } },
         { id: 'history', component: 'data-table', region: 'main', parentId: 'workspaceTabs', label: '历史记录', order: 3, config: { pagination: true, defaultSort: 'trade_date:desc', pageSize: 20 } },
         { id: 'historyDetail', component: 'detail', region: 'overlay', label: '履约修订详情抽屉', order: 1 },
       ],
