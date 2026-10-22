@@ -20,6 +20,13 @@ from backend.services.trade_discipline_conditions import (
     prepare_checklist_items,
     prepare_checklist_results,
 )
+from backend.services.trade_discipline_dictionary import (
+    BUY_TYPES,
+    SELL_TYPES,
+    TradeDisciplineDictionary,
+    action_snapshot_label,
+    category_snapshot_label,
+)
 from backend.storage.duckdb_client import DuckDBClient, get_client
 from backend.storage.trade_discipline_repository import TradeDisciplineRepository
 
@@ -34,7 +41,6 @@ _LEGACY_ACTION_SUBTYPES: tuple[tuple[str, str, str], ...] = (
     ("do_t", "做 T", "sell"),
 )
 _SUPPORTED_ACTION_SUBTYPES = _BUILTIN_ACTION_SUBTYPES + _LEGACY_ACTION_SUBTYPES
-_BUILTIN_SUBTYPE_SIDE = {value: side for value, _label, side in _SUPPORTED_ACTION_SUBTYPES}
 _BUILTIN_SUBTYPE_ALIASES = {
     unicodedata.normalize("NFKC", alias).strip().casefold(): (value, side)
     for value, label, side in _SUPPORTED_ACTION_SUBTYPES
@@ -75,6 +81,13 @@ class TradeDisciplineService:
     ):
         self.repo = repo or TradeDisciplineRepository()
         self.market = market or get_client()
+        self._dictionary: TradeDisciplineDictionary | None = None
+
+    @property
+    def dictionary(self) -> TradeDisciplineDictionary:
+        if self._dictionary is None:
+            self._dictionary = TradeDisciplineDictionary(self.repo.pg)
+        return self._dictionary
 
     @staticmethod
     def _id(prefix: str) -> str:
@@ -169,37 +182,14 @@ class TradeDisciplineService:
                     item["action_subtype"] = subtype
                     if action_type is not None and action_type not in {"buy", "sell"}:
                         raise ValidationError("操作方向不正确")
-                    if subtype is not None and len(subtype) > 40:
-                        raise ValidationError("操作类型最多 40 个字符")
-                    if builtin and action_type is not None and builtin[1] != action_type:
-                        raise ValidationError("操作方向与类型不匹配")
+                    if subtype is not None and len(subtype) > 64:
+                        raise ValidationError("操作类型最多 64 个字符")
                     order_key = (action_type, item["display_order"])
                 if order_key in seen_order:
                     raise ValidationError("同类规则明细顺序不能重复")
                 seen_order.add(order_key)
                 prepared[kind].append(item)
         return prepared
-
-    @staticmethod
-    def _action_subtype_claims(draft: dict[str, Any]) -> list[dict[str, str]]:
-        claims: dict[str, dict[str, str]] = {}
-        for item in draft["action_rules"]:
-            subtype = item.get("action_subtype")
-            side = item.get("action_type")
-            if not subtype or not side:
-                continue
-            if subtype in _BUILTIN_SUBTYPE_SIDE:
-                continue
-            normalized = unicodedata.normalize("NFKC", str(subtype)).strip().casefold()
-            previous = claims.get(normalized)
-            if previous and previous["action_type"] != side:
-                raise ValidationError(f"类型名称不能同时用于买入和卖出：{subtype}")
-            claims[normalized] = {
-                "normalized_name": normalized,
-                "name": str(subtype),
-                "action_type": str(side),
-            }
-        return list(claims.values())
 
     @staticmethod
     def _claims(rule: dict[str, Any], draft: dict[str, Any] | None) -> dict[str, str]:
@@ -261,8 +251,6 @@ class TradeDisciplineService:
             subtype = item.get("action_subtype")
             if action_type not in {"buy", "sell"} or not subtype:
                 raise ValidationError("操作方向和类型不能为空")
-            if subtype in _BUILTIN_SUBTYPE_SIDE and _BUILTIN_SUBTYPE_SIDE[subtype] != action_type:
-                raise ValidationError("操作方向与类型不匹配")
 
     @staticmethod
     def _fingerprint(data: dict[str, Any]) -> tuple[Any, ...]:
@@ -276,8 +264,11 @@ class TradeDisciplineService:
                 x.get("st_filter", "any"),
                 x.get("loss_filter", "any"),
                 x.get("st_risk_filter", "any"),
-                tuple((entry["item_id"], entry["category"], entry["text"], entry["display_order"])
-                      for entry in x.get("checklist_items") or []),
+                tuple(
+                    (entry["item_id"], entry["category"], category_snapshot_label(entry),
+                     entry["text"], entry["display_order"])
+                    for entry in x.get("checklist_items") or []
+                ),
                 x.get("content"),
                 x["display_order"],
                 x["enabled"],
@@ -292,6 +283,7 @@ class TradeDisciplineService:
                 x.get("name"),
                 x.get("action_type"),
                 x.get("action_subtype"),
+                action_snapshot_label(x),
                 x.get("content"),
                 x["display_order"],
                 x["enabled"],
@@ -323,12 +315,12 @@ class TradeDisciplineService:
 
     def create_rule(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         draft = self._prepare_draft(payload or {})
+        self.dictionary.resolve(draft)
         rule_id = self._id("tdr")
         with self.repo.transaction() as conn:
             self.repo.create_rule(conn, rule_id)
             rule = self.repo.lock_rule(conn, rule_id)
             self.repo.sync_name_claims(conn, rule_id, self._claims(rule, draft))
-            self.repo.claim_action_subtypes(conn, self._action_subtype_claims(draft))
             self.repo.replace_draft(conn, rule_id, draft, 1, None)
         return self.get_rule(rule_id)
 
@@ -344,35 +336,12 @@ class TradeDisciplineService:
         return self.repo.list_rules()
 
     def list_action_subtypes(self) -> list[dict[str, Any]]:
-        saved = self.repo.list_action_subtypes()
-        by_name = {
-            unicodedata.normalize("NFKC", str(item["name"])).strip().casefold(): {
-                **item,
-                "builtin": False,
-            }
-            for item in saved
-            # 新增全局默认类型前可能已有同名自定义候选；全局项必须成为唯一展示项。
-            if unicodedata.normalize("NFKC", str(item["name"])).strip().casefold()
-            not in _BUILTIN_SUBTYPE_ALIASES
-        }
-        for value, label, side in _BUILTIN_ACTION_SUBTYPES:
-            by_name.setdefault(
-                value.casefold(),
-                {
-                    "name": value,
-                    "label": label,
-                    "action_type": side,
-                    "builtin": True,
-                },
-            )
-        return sorted(
-            by_name.values(),
-            key=lambda item: (
-                item["action_type"],
-                not item.get("builtin", False),
-                item.get("label") or item["name"],
-            ),
-        )
+        # 目录由系统字典维护；不再把个人输入自动登记为全局候选。
+        return [
+            {"name": item["code"], "label": item["label"], "action_type": side, "builtin": False}
+            for side, type_code in (("buy", BUY_TYPES), ("sell", SELL_TYPES))
+            for item in self.dictionary.items(type_code)
+        ]
 
     def delete_action_subtype(self, name: str) -> dict[str, str]:
         display, normalized = normalize_rule_name(name)
@@ -501,8 +470,8 @@ class TradeDisciplineService:
                 raise NotFoundError("工作草稿不存在，请先创建草稿")
             if int(current["draft_revision"]) != expected_revision:
                 raise ConflictError("草稿已被其他操作更新，请刷新后重试")
+            self.dictionary.resolve(draft, current)
             self.repo.sync_name_claims(conn, rule_id, self._claims(rule, draft))
-            self.repo.claim_action_subtypes(conn, self._action_subtype_claims(draft))
             self.repo.replace_draft(
                 conn,
                 rule_id,
@@ -661,6 +630,7 @@ class TradeDisciplineService:
                     "action_rules": source_data["action_rules"],
                 }
             )
+            self.dictionary.resolve(draft, source_data)
             draft["normalized_name"] = normalized
             # 副本是独立规则，检查项不能复用来源的标识或可变对象。
             for stock_rule in draft["stock_rules"]:
@@ -670,7 +640,6 @@ class TradeDisciplineService:
             self.repo.create_rule(conn, copied_id)
             copied = self.repo.lock_rule(conn, copied_id)
             self.repo.sync_name_claims(conn, copied_id, self._claims(copied, draft))
-            self.repo.claim_action_subtypes(conn, self._action_subtype_claims(draft))
             self.repo.replace_draft(conn, copied_id, draft, 1, None)
         return self.get_rule(copied_id)
 

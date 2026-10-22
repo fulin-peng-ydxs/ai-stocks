@@ -71,7 +71,7 @@ def test_legacy_formal_snapshot_remains_unchanged_when_saving_draft(pg, market):
         {},
         [None],
         [{"item_id": "", "text": "条件"}],
-        [{"category": "bad"}],
+        [{"category": "bad category"}],
         [{"display_order": True}],
         _items() * 2,
     ],
@@ -144,7 +144,8 @@ def test_checklist_publish_copy_checkin_amend_history_and_owner(pg, market):
         result = service.publish_rule(rule_id, expected_revision=draft["draft_revision"])
         assert result["version_no"] == 3
         assert (
-            service.repo.load_version(rule_id, 2)["stock_rules"][0]["checklist_items"] == _items()
+            service.repo.load_version(rule_id, 2)["stock_rules"][0]["checklist_items"]
+            == [{**item, "category_label": "技术形态"} for item in _items()]
         )
         operation = _operation(trade_date)
         content = {"assessment": "complied", "no_operation": False, "operations": [operation]}

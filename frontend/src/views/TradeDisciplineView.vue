@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import AppScrollArea from '@/components/AppScrollArea.vue'
+import { provideTradeDisciplineCategories, tradeConditionMeta } from '@/composables/useTradeDisciplineCategories'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
+import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppDialog from '@/components/AppDialog.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -22,7 +24,7 @@ import {
   registerUnsavedHandler,
 } from '@/composables/useUnsavedChangesGuard'
 import { getPageLayout } from '@/layout'
-import { STOCK_CONDITION_DEFAULT_COLLAPSED, type StockConditionPanelDefaults } from '@/layout/configPanel'
+import type { StockConditionPanelDefaults } from '@/layout/configPanel'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getErrorStatus } from '@/utils/error'
@@ -82,15 +84,20 @@ const {
   layerValuesOf,
   componentLayerValuesOf, componentAllowedLayers, saveRemoteUserConfig,
 } = useRemoteLayoutConfig(pageLayout)
+const conditionDictionary = provideTradeDisciplineCategories()
+const conditionMeta = computed(() => tradeConditionMeta(conditionDictionary.categories.value))
+onMounted(() => { void conditionDictionary.load() })
+onActivated(() => { void conditionDictionary.load() })
 const conditionDefaultsResetKey = ref(0)
 const conditionPanelDefaults = computed<StockConditionPanelDefaults>(() => {
   const value = componentValueOf('stockConditions', 'defaultCollapsed')
   const configured = Array.isArray(value) ? new Set<unknown>(value) : undefined
   return {
-    defaultCollapsed: configured
-      ? STOCK_CONDITION_DEFAULT_COLLAPSED.filter(key => configured.has(key))
-      : STOCK_CONDITION_DEFAULT_COLLAPSED,
+    defaultCollapsed: configured && componentSourceOf('stockConditions', 'defaultCollapsed') !== 'default'
+      ? Array.from(configured).filter((key): key is string => typeof key === 'string')
+      : conditionMeta.value.stockConditions.collapseSections.map(item => item.key),
     resetKey: conditionDefaultsResetKey.value,
+    sectionKeys: conditionMeta.value.stockConditions.collapseSections.map(item => item.key),
   }
 })
 function onComponentDefaultChange(slotId: string, field: string) {
@@ -107,7 +114,8 @@ const drawerConfig = {
   setKnob,
   valueOf,
   sourceOf,
-  componentValueOf,
+  componentValueOf: (slotId: string, field: string) => slotId === 'stockConditions' && field === 'defaultCollapsed'
+    ? [...conditionPanelDefaults.value.defaultCollapsed] : componentValueOf(slotId, field),
   setComponentKnob,
   componentSourceOf,
   layerValuesOf,
@@ -567,6 +575,9 @@ const menuPageTitle = useMenuPageTitle()
         @retry="loadPage"
       />
       <div v-else class="discipline-workspace">
+        <AppStatusNotice v-if="conditionDictionary.error.value" tone="warning" title="检查项分类加载失败">
+          <el-button size="small" :loading="conditionDictionary.loading.value" @click="conditionDictionary.load">重试</el-button>
+        </AppStatusNotice>
         <div class="discipline-rail">
           <PageSegmented
             :model-value="activePanel"
@@ -752,6 +763,7 @@ const menuPageTitle = useMenuPageTitle()
         :dirty="layoutDirty"
         :page-key="PAGE_KEY"
         :config="drawerConfig"
+        :component-meta-overrides="conditionMeta"
         @component-default-change="onComponentDefaultChange"
         @reset="resetSettings"
       />

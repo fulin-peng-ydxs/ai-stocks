@@ -4,7 +4,7 @@ import ConfigPanelSection from '@/components/config/ConfigPanelSection.vue'
 import type { StockConditionPanelDefaults } from '@/layout/configPanel'
 import { useTradeConditionSections } from '@/composables/useTradeConditionSections'
 import type { CheckinOperation, DraftStockRule, StockChecklistResult, ConditionFact } from '@/api/tradeDiscipline'
-import { checklistCategories, checklistResultOptions, normalizeChecklist, conditionSectionSummary, type ConditionSectionsState } from '@/utils/tradeDisciplineConditions'
+import { conditionCategories, checklistResultOptions, normalizeChecklist, conditionSectionSummary, type ConditionSectionsState } from '@/utils/tradeDisciplineConditions'
 
 const props = defineProps<{
   rule: DraftStockRule
@@ -17,6 +17,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ 'update:results': [results: StockChecklistResult[]]; 'update:openSections': [state: ConditionSectionsState] }>()
 const { root, open, setOpen, reveal } = useTradeConditionSections(() => props.openSections, state => emit('update:openSections', state), () => props.panelDefaults)
+const categories = computed(() => conditionCategories(props.rule.checklist_items ?? [], undefined, true))
 const items = computed(() => normalizeChecklist(props.rule.checklist_items ?? []))
 function status(itemId: string) {
   return props.results?.find(item => item.item_id === itemId)?.status
@@ -36,7 +37,7 @@ defineExpose({ reveal })
 
 <template>
   <div ref="root" class="stock-condition-checklist" data-testid="stock-condition-checklist">
-    <ConfigPanelSection v-for="category in checklistCategories" :key="category.value" class="stock-condition-checklist__group" :title="category.label" :aria-label="category.label"
+    <ConfigPanelSection v-for="category in categories" :key="category.value" class="stock-condition-checklist__group" :title="category.label" :aria-label="category.label"
       :level="2" :default-open="false" :model-value="!!open[category.value]" :data-condition-section="category.value"
       :summary="conditionSectionSummary(rule, category.value, checking || results !== undefined, results, operation)"
       @update:model-value="setOpen(category.value, $event)">

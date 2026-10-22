@@ -28,6 +28,7 @@ const layoutHarness = vi.hoisted(() => ({
   resetPageSettings: vi.fn(),
 }))
 
+vi.mock('@/api/dict', () => ({ getPublicDictItems: vi.fn(async () => ({ items: [], fallback: false })) }))
 vi.mock('@/api/tradeDiscipline', () => ({
   listTradeDisciplineRules: (...args: unknown[]) => listRules(...args),
   listTradeDisciplineCheckins: (...args: unknown[]) => listCheckins(...args),
@@ -376,14 +377,14 @@ describe('交易纪律 T5 工作台壳', () => {
     const drawer = wrapper.findComponent(PageSettingsDrawer)
     const editor = wrapper.findComponent(Editor)
     const history = wrapper.findComponent(History)
-    expect(editor.props('conditionPanelDefaults')).toEqual({ defaultCollapsed: ['basic', 'risk', 'technical', 'notes'], resetKey: 0 })
+    expect(editor.props('conditionPanelDefaults')).toMatchObject({ defaultCollapsed: ['basic', 'risk', 'technical', 'notes'], resetKey: 0 })
     const config = drawer.props('config')!
     config.setComponentKnob('stockConditions', 'defaultCollapsed', ['risk', 'notes'])
     drawer.vm.$emit('component-default-change', 'stockConditions', 'defaultCollapsed')
     await flushPromises()
     expect(layoutHarness.setComponentKnob).toHaveBeenCalledWith('stockConditions', 'defaultCollapsed', ['risk', 'notes'])
-    expect(editor.props('conditionPanelDefaults')).toEqual({ defaultCollapsed: ['risk', 'notes'], resetKey: 1 })
-    expect(history.props('conditionPanelDefaults')).toEqual(editor.props('conditionPanelDefaults'))
+    expect(editor.props('conditionPanelDefaults')).toMatchObject({ defaultCollapsed: ['risk', 'notes'], resetKey: 1 })
+    expect(history.props('conditionPanelDefaults')).toMatchObject(editor.props('conditionPanelDefaults'))
     drawer.vm.$emit('reset')
     await flushPromises()
     expect(editor.props('conditionPanelDefaults').resetKey).toBe(2)

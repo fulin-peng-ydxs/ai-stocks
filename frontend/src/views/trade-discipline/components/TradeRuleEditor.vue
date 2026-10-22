@@ -3,12 +3,11 @@ import type { StockConditionPanelDefaults } from '@/layout/configPanel'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, reactive, ref, watch } from 'vue'
 import { CopyDocument, Delete, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppReorderList from '@/components/AppReorderList.vue'
-import BuiltinOptionRow from '@/components/BuiltinOptionRow.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -27,7 +26,6 @@ import TradeDisciplineSectionPanel from '@/components/trade-discipline/TradeDisc
 import {
   archiveTradeDisciplineRule,
   copyTradeDisciplineRule,
-  deleteTradeDisciplineRuleType,
   deleteTradeDisciplineRule,
   discardTradeDisciplineRuleDraft,
   getTradeDisciplineRule,
@@ -88,6 +86,12 @@ watch([() => props.ruleId, () => props.conditionPanelDefaults?.resetKey], () => 
   Object.keys(stockSectionStates).forEach(key => delete stockSectionStates[key])
 })
 const actionSubtypeOptions = ref<ActionSubtypeOption[]>(builtinActionSubtypeOptions.map((item) => ({ ...item })))
+const typesError = ref(false)
+async function refreshTypes() {
+  try { actionSubtypeOptions.value = await listTradeDisciplineRuleTypes(); typesError.value = false }
+  catch { typesError.value = true }
+}
+onActivated(() => { if (!loading.value) void refreshTypes() })
 let baseline = ''
 let loadRequest = 0
 
@@ -133,22 +137,6 @@ function missingSubtypeLabel(item: DraftActionRule): string {
 function subtypeIsMissing(item: DraftActionRule, side: ActionType): boolean {
   return Boolean(item.action_subtype)
     && !subtypeOptions(side).some((option) => option.name === item.action_subtype)
-}
-
-async function removeActionSubtype(option: ActionSubtypeOption): Promise<void> {
-  if (option.builtin || !canEditDetails.value) return
-  try {
-    await ElMessageBox.confirm(
-      `删除自定义买卖类型“${option.label || option.name}”？现有规则仍保留该类型，再次保存使用该类型的草稿时会重新加入列表。`,
-      '删除买卖类型',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
-    )
-    await deleteTradeDisciplineRuleType(option.name)
-    actionSubtypeOptions.value = await listTradeDisciplineRuleTypes()
-    ElMessage.success('自定义买卖类型已删除')
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') { /* 统一请求层已反馈 */ }
-  }
 }
 
 function stockCapitalMeta(item: DraftStockRule): string {
@@ -202,6 +190,7 @@ function clonePayload(source: RuleDraftPayload | RuleVersionDetail | null): Rule
       name: item.name ?? null,
       action_type: item.action_type ?? null,
       action_subtype: item.action_subtype ?? null,
+      action_subtype_label: item.action_subtype_label ?? null,
       content: item.content ?? null,
       display_order: index + 1,
       enabled: Boolean(item.enabled),
@@ -229,10 +218,11 @@ async function load(): Promise<void> {
   try {
     const [result, types] = await Promise.all([
       getTradeDisciplineRule(props.ruleId, props.tradeDate),
-      listTradeDisciplineRuleTypes().catch(() => actionSubtypeOptions.value),
+      listTradeDisciplineRuleTypes(),
     ])
     if (request !== loadRequest) return
     detail.value = result
+    typesError.value = false
     actionSubtypeOptions.value = types
     if (result.draft) setEditorSource(result.draft, result.draft.draft_revision)
     else setEditorSource(result.latest_version, null)
@@ -280,7 +270,7 @@ function normalizedPayload(): RuleDraftPayload {
 
 async function saveDraft(showMessage = true): Promise<boolean> {
   if (!detail.value || draftRevision.value === null || !dirty.value) return false
-  if (!validateConditions() || !validateSubtypeOwnership()) return false
+  if (!validateConditions()) return false
   command.value = 'save'
   try {
     const saved = await saveTradeDisciplineRuleDraft(detail.value.id, {
@@ -393,20 +383,6 @@ function validateForPublish(): boolean {
 function warn(message: string): false {
   ElMessage.warning(message)
   return false
-}
-
-function validateSubtypeOwnership(): boolean {
-  const ownership = new Map<string, ActionType>()
-  for (const item of form.value.action_rules) {
-    if (!item.action_type || !item.action_subtype?.trim()) continue
-    const normalized = item.action_subtype.normalize('NFKC').trim().toLocaleLowerCase()
-    const existing = ownership.get(normalized)
-    if (existing && existing !== item.action_type) {
-      return warn(`类型“${item.action_subtype.trim()}”不能同时用于买入和卖出`)
-    }
-    ownership.set(normalized, item.action_type)
-  }
-  return true
 }
 
 async function publish(): Promise<void> {
@@ -615,6 +591,7 @@ defineExpose({
           <div class="detail-kicker">{{ latestVersionLabel }}</div>
           <h3 class="app-section-title">{{ form.name || detail.name || '未命名规则' }}</h3>
         </div>
+        <AppStatusNotice v-if="typesError" tone="warning" title="买卖类型加载失败" action-text="重试" @action="refreshTypes" />
         <div v-if="canManage" class="rule-editor__commands">
           <el-button v-permission="'trade-discipline:rule-manage'" :loading="command === 'copy'" @click="copyRule">复制</el-button>
           <el-button
@@ -778,18 +755,17 @@ defineExpose({
                           <HelpTip title="类型说明" :width="360" test-id="action-rule-type-help">
                             <HelpTipItem question="类型如何维护">
                               <ul>
-                                <li>内置类型不可删除；输入新类型并保存后可复用，自定义类型可从下拉项删除。</li>
+                                <li>买入与卖出类型分别在系统数据字典维护，支持新增、排序和停用；旧规则保留原类型。</li>
                               </ul>
                             </HelpTipItem>
                           </HelpTip>
                         </template>
                         <AppSelect
-                          v-model="item.action_subtype"
+                          :model-value="item.action_subtype"
+                          @update:model-value="item.action_subtype = $event; item.action_subtype_label = null"
                           filterable
-                          allow-create
                           default-first-option
-                          maxlength="40"
-                          placeholder="选择或输入类型"
+                          placeholder="选择类型"
                           data-testid="action-rule-type-select"
                           popper-class="app-option-popper trade-rule-subtype-popper"
                         >
@@ -799,17 +775,7 @@ defineExpose({
                             :value="item.action_subtype"
                             disabled
                           />
-                          <el-option v-for="option in subtypeOptions(group.value)" :key="option.name" :label="option.label || option.name" :value="option.name">
-                            <BuiltinOptionRow :label="option.label || option.name" :builtin="option.builtin">
-                              <AppIconButton
-                                v-permission="'trade-discipline:rule-manage'"
-                                label="删除自定义买卖类型"
-                                tooltip="删除自定义买卖类型"
-                                size="sm"
-                                @click.stop="removeActionSubtype(option)"
-                              ><Delete /></AppIconButton>
-                            </BuiltinOptionRow>
-                          </el-option>
+                          <el-option v-for="option in subtypeOptions(group.value)" :key="option.name" :label="option.label || option.name" :value="option.name" />
                         </AppSelect>
                       </el-form-item>
                       <el-form-item class="rule-card-form__content" label="规则内容" :required="editing && canManage"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>

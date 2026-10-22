@@ -17,6 +17,7 @@ import {
 import { getErrorMessage } from '@/utils/error'
 import { formatDecimalString } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
+import { actionSubtypeLabel } from '@/utils/tradeDisciplineRuleTypes'
 import { conditionFactLabel, holdingCountWarning } from '@/utils/tradeDisciplineConditions'
 import {
   checkinAssessmentLabel,
@@ -235,7 +236,7 @@ watch(
           <div>
             <strong>买卖规则</strong>
             <article v-for="rule in ruleVersion.action_rules" :key="rule.detail_id || rule.display_order" class="rule-snapshot">
-              <span>{{ rule.name || '未命名规则' }} · {{ rule.action_type === 'buy' ? '买入' : '卖出' }} · {{ rule.enabled ? '启用' : '停用' }}</span>
+              <span>{{ rule.name || '未命名规则' }} · {{ rule.action_type === 'buy' ? '买入' : '卖出' }} · {{ actionSubtypeLabel(rule) }} · {{ rule.enabled ? '启用' : '停用' }}</span>
               <p>{{ rule.content || '—' }}</p>
             </article>
           </div>

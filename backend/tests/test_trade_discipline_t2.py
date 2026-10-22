@@ -122,67 +122,32 @@ def test_draft_optimistic_lock_and_archived_edit_rejected(pg, market):
         service.open_draft(rule_id)
 
 
-def test_custom_action_subtype_is_reusable_and_unique_across_sides(pg, market):
-    service = _service(pg, market)
-    payload = _payload()
-    payload["action_rules"][0]["action_subtype"] = " 趋势回踩 "
-    rule_id = service.create_rule(payload)["id"]
-
-    options = service.list_action_subtypes()
-    builtins = {
-        (item["action_type"], item["label"])
-        for item in options
-        if item["builtin"] is True
-    }
-    assert builtins == {
-        ("buy", "建仓"),
-        ("buy", "加仓"),
-        ("sell", "清仓"),
-        ("sell", "减仓"),
-    }
-    assert any(
-        item["name"] == "趋势回踩"
-        and item["action_type"] == "buy"
-        and item["builtin"] is False
-        for item in options
-    )
-    assert any(item.get("label") == "建仓" and item["builtin"] is True for item in options)
-
-    draft = service.get_rule(rule_id)["draft"]
-    conflicting = _payload()
-    conflicting["action_rules"][1]["action_subtype"] = "ＴＲＥＮＤ"
-    saved = service.save_draft(
-        rule_id,
-        conflicting,
-        expected_revision=int(draft["draft_revision"]),
-    )
-    other = _payload("另一套纪律")
-    other["action_rules"][0]["action_subtype"] = "trend"
-    with pytest.raises(ConflictError, match="另一方向"):
-        service.create_rule(other)
-
-    assert int(saved["draft_revision"]) == 2
-
-
-def test_custom_action_subtype_delete_keeps_draft_snapshot_and_can_be_reclaimed(pg, market):
+def test_new_custom_action_subtype_requires_dictionary(pg, market):
     service = _service(pg, market)
     payload = _payload()
     payload["action_rules"][0]["action_subtype"] = "趋势回踩"
-    rule_id = service.create_rule(payload)["id"]
+    with pytest.raises(ValidationError, match="数据字典"):
+        service.create_rule(payload)
 
-    removed = service.delete_action_subtype("  趋势回踩 ")
-    assert removed == {"name": "趋势回踩", "action_type": "buy"}
+
+def test_legacy_custom_type_preserved_without_reclaiming_private_catalog(pg, market):
+    service = _service(pg, market)
+    rule_id = service.create_rule(_payload())["id"]
+    pg.execute(
+        "UPDATE trade_discipline_draft_action_rule SET action_subtype=%s,action_subtype_label=NULL "
+        "WHERE tenant_id=%s AND owner_user_id=%s AND rule_id=%s AND detail_id='buy-1'",
+        ["趋势回踩", TEST_TENANT, TEST_OWNER, rule_id],
+    )
+    draft = service.repo.load_draft(rule_id)
+    saved = service.save_draft(rule_id, draft, expected_revision=1)
+    assert saved["action_rules"][0]["action_subtype"] == "趋势回踩"
+    assert saved["action_rules"][0]["action_subtype_label"] == "趋势回踩"
     assert all(item["name"] != "趋势回踩" for item in service.list_action_subtypes())
-    draft = service.get_rule(rule_id)["draft"]
-    assert draft["action_rules"][0]["action_subtype"] == "趋势回踩"
-
-    service.save_draft(rule_id, draft, expected_revision=int(draft["draft_revision"]))
-    assert any(item["name"] == "趋势回踩" for item in service.list_action_subtypes())
-
-    with pytest.raises(ValidationError, match="全局默认"):
-        service.delete_action_subtype("减仓")
-    with pytest.raises(NotFoundError, match="不存在或已删除"):
-        _service(pg, market, owner="other-owner").delete_action_subtype("趋势回踩")
+    assert service.repo.list_action_subtypes() == []
+    other = _payload("另一套纪律")
+    other["action_rules"][0]["action_subtype"] = "趋势回踩"
+    with pytest.raises(ValidationError, match="数据字典"):
+        service.create_rule(other)
 
 
 def test_historical_custom_subtype_matching_new_builtin_is_hidden_and_deletable(pg, market):
@@ -199,7 +164,7 @@ def test_historical_custom_subtype_matching_new_builtin_is_hidden_and_deletable(
             "name": "reduce_position",
             "label": "减仓",
             "action_type": "sell",
-            "builtin": True,
+            "builtin": False,
         }
     ]
     assert service.delete_action_subtype("减仓") == {"name": "减仓", "action_type": "sell"}
@@ -210,8 +175,14 @@ def test_historical_custom_subtype_matching_new_builtin_is_hidden_and_deletable(
 def test_legacy_do_t_remains_valid_but_is_not_a_default_option(pg, market):
     service = _service(pg, market)
     payload = _payload()
-    payload["action_rules"][1]["action_subtype"] = "do_t"
     rule_id = service.create_rule(payload)["id"]
+    pg.execute(
+        "UPDATE trade_discipline_draft_action_rule SET action_subtype='do_t',action_subtype_label=NULL "
+        "WHERE tenant_id=%s AND owner_user_id=%s AND rule_id=%s AND detail_id='sell-1'",
+        [TEST_TENANT, TEST_OWNER, rule_id],
+    )
+    draft = service.repo.load_draft(rule_id)
+    service.save_draft(rule_id, draft, expected_revision=1)
 
     assert service.get_rule(rule_id)["draft"]["action_rules"][1]["action_subtype"] == "do_t"
     assert all(item["name"] != "do_t" for item in service.list_action_subtypes())

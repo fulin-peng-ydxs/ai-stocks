@@ -356,7 +356,7 @@ describe('TradeRuleEditor', () => {
     expect(api.copy).toHaveBeenLastCalledWith('rule-1', 'published')
   })
 
-  it('买入卖出分组展示，并可复制卡片及复用可输入类型', async () => {
+  it('买入卖出分组展示，并可复制卡片及选择字典类型', async () => {
     const wrapper = await mountEditor()
 
     expect(wrapper.get('[data-testid="buy-rule-group"]').text()).toContain('买入规则')
@@ -372,56 +372,27 @@ describe('TradeRuleEditor', () => {
       .get('[data-testid="rule-card-toggle"]').trigger('click')
     const sellSelect = wrapper.findAllComponents({ name: 'ElSelect' })
       .find((select) => select.props('modelValue') === 'liquidate')!
-    sellSelect.vm.$emit('update:modelValue', '趋势止盈')
+    expect(sellSelect.props('allowCreate')).toBe(false)
+    sellSelect.vm.$emit('update:modelValue', 'reduce_position')
     await wrapper.vm.$nextTick()
     expect((wrapper.vm as any).isDirty()).toBe(true)
   })
 
-  it('默认类型按方向展示且自定义类型可从下拉项删除', async () => {
-    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
-    api.types
-      .mockResolvedValueOnce([
-        { name: 'open_position', label: '建仓', action_type: 'buy', builtin: true },
-        { name: 'add_position', label: '加仓', action_type: 'buy', builtin: true },
-        { name: 'liquidate', label: '清仓', action_type: 'sell', builtin: true },
-        { name: 'reduce_position', label: '减仓', action_type: 'sell', builtin: true },
-        { name: '趋势止盈', action_type: 'sell', builtin: false },
-      ])
-      .mockResolvedValue([
-        { name: 'open_position', label: '建仓', action_type: 'buy', builtin: true },
-        { name: 'add_position', label: '加仓', action_type: 'buy', builtin: true },
-        { name: 'liquidate', label: '清仓', action_type: 'sell', builtin: true },
-        { name: 'reduce_position', label: '减仓', action_type: 'sell', builtin: true },
-      ])
-    const wrapper = mount(TradeRuleEditor, {
-      attachTo: document.body,
-      props: { ruleId: 'rule-1', tradeDate: '2026-08-21', canManage: true },
-      global: { plugins: [ElementPlus], directives: { permission: {} } },
-    })
+  it('字典类型按方向展示，不再提供私有输入和删除入口', async () => {
+    api.types.mockResolvedValue([
+      { name: 'open_position', label: '建仓', action_type: 'buy', builtin: false },
+      { name: 'liquidate', label: '清仓', action_type: 'sell', builtin: false },
+      { name: 'trend_exit', label: '趋势止盈', action_type: 'sell', builtin: false },
+    ])
+    const wrapper = await mountEditor()
+    await wrapper.get('[data-testid="sell-rule-group"] [data-testid="rule-card-toggle"]').trigger('click')
+    const select = wrapper.findAllComponents({ name: 'ElSelect' }).find(item => item.props('modelValue') === 'liquidate')!
+    expect(select.props('allowCreate')).toBe(false)
+    expect(select.findAllComponents({ name: 'ElOption' }).map(item => item.props('value'))).toEqual(['liquidate', 'trend_exit'])
+    expect(wrapper.find('[aria-label="删除自定义买卖类型"]').exists()).toBe(false)
+    select.vm.$emit('update:modelValue', 'trend_exit')
     await flushPromises()
-
-    expect(wrapper.text()).toContain('建仓与加仓条件')
-    expect(wrapper.text()).toContain('止盈、止损与减仓条件')
-    await wrapper.get('[data-testid="sell-rule-group"]')
-      .get('[data-testid="rule-card-toggle"]').trigger('click')
-    await wrapper.get('[data-testid="sell-rule-group"] .el-select__wrapper').trigger('click')
-    await flushPromises()
-
-    const optionRows = Array.from(document.body.querySelectorAll('.builtin-option-row'))
-    expect(optionRows).toHaveLength(3)
-    expect(optionRows.filter((row) => row.querySelector('.builtin-option-label'))).toHaveLength(2)
-    expect(optionRows.filter((row) => row.querySelector('.builtin-option-row__action'))).toHaveLength(1)
-    expect(wrapper.get('[data-testid="action-rule-type-help"]').attributes('aria-label')).toBe('说明')
-    expect(wrapper.text()).not.toContain('内置类型不可删除')
-    expect(document.body.textContent).not.toContain('全局类型不可删除')
-    const deleteButtons = Array.from(
-      document.body.querySelectorAll('[aria-label="删除自定义买卖类型"]'),
-    )
-    expect(deleteButtons).toHaveLength(1)
-    await new DOMWrapper(deleteButtons[0] as Element).trigger('click')
-    await flushPromises()
-    expect(api.deleteType).toHaveBeenCalledWith('趋势止盈')
-    expect(api.types).toHaveBeenCalledTimes(2)
+    expect((wrapper.vm as any).isDirty()).toBe(true)
   })
 
   it('快速切换规则时忽略迟到的旧详情响应', async () => {

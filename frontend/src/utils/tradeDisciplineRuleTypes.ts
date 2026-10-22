@@ -9,9 +9,10 @@ export const builtinActionSubtypeOptions: readonly ActionSubtypeOption[] = [
 
 /** 管理与打卡共用类型名称；已删除的自定义类型仍按规则快照展示。 */
 export function actionSubtypeLabel(
-  rule: Pick<DraftActionRule, 'action_type' | 'action_subtype'>,
+  rule: Pick<DraftActionRule, 'action_type' | 'action_subtype' | 'action_subtype_label'>,
   options: readonly ActionSubtypeOption[] = builtinActionSubtypeOptions,
 ): string {
+  if (rule.action_subtype_label) return rule.action_subtype_label
   const option = options.find((item) => (
     item.action_type === rule.action_type && item.name === rule.action_subtype
   ))

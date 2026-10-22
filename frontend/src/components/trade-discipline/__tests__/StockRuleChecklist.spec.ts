@@ -5,6 +5,9 @@ import ElementPlus from 'element-plus'
 import StockRuleChecklistEditor from '../StockRuleChecklistEditor.vue'
 import StockRuleConditionChecklist from '../StockRuleConditionChecklist.vue'
 import type { DraftStockRule, StockChecklistItem } from '@/api/tradeDiscipline'
+import { defineComponent, h } from 'vue'
+import { provideTradeDisciplineCategories, tradeConditionMeta } from '@/composables/useTradeDisciplineCategories'
+import { normalizeChecklist } from '@/utils/tradeDisciplineConditions'
 
 const items: StockChecklistItem[] = [
   { item_id: 'a', category: 'technical', text: '多头排列涨幅不超过50%', display_order: 1 },
@@ -14,6 +17,47 @@ const rule: DraftStockRule = { detail_id: 's', name: '主升启动', max_capital
   display_order: 1, content: '原文第一行\n\n补充说明', checklist_items: items }
 
 describe('选股分类检查项', () => {
+  it('新增字典分类进入编辑和折叠属性，删除分类后历史条件及违规仍然可见', async () => {
+    const custom = [{ item_id: 'earnings', category: 'fundamental', category_label: '基本面旧名', text: '业绩增长', display_order: 1 }]
+    expect(normalizeChecklist(custom)).toEqual(custom)
+    const host = defineComponent({
+      setup() {
+        const dictionary = provideTradeDisciplineCategories()
+        dictionary.categories.value = [{ value: 'technical', label: '技术形态' }, { value: 'fundamental', label: '基本面新名' }]
+        expect(tradeConditionMeta(dictionary.categories.value).stockConditions.collapseSections).toContainEqual({ key: 'fundamental', label: '基本面新名' })
+        return () => h(StockRuleChecklistEditor, { modelValue: custom })
+      },
+    })
+    const editor = mount(host, { global: { plugins: [ElementPlus] } })
+    const category = editor.get('[data-condition-section="fundamental"] .config-panel-section__head')
+    expect(category.text()).toContain('基本面新名')
+    expect(category.attributes('aria-expanded')).toBe('false')
+    await category.trigger('click')
+    expect((editor.get('[data-checklist-id="earnings"] textarea').element as HTMLTextAreaElement).value).toBe('业绩增长')
+    const history = mount(StockRuleConditionChecklist, { props: { rule: { ...rule, checklist_items: custom }, checking: true, disabled: true, results: [{ item_id: 'earnings', status: 'no' }] }, global: { plugins: [ElementPlus] } })
+    expect(history.get('[data-condition-section="fundamental"]').text()).toContain('基本面旧名')
+    expect(history.get('[data-condition-section="fundamental"]').text()).toContain('不符合 1')
+    expect(custom[0].category_label).toBe('基本面旧名')
+    await flushPromises()
+    editor.unmount()
+    history.unmount()
+  })
+
+  it('动态分类读取并重置默认折叠，临时开合与核对结果独立保留', async () => {
+    const custom = [{ item_id: 'c', category: 'custom', text: '自定义条件', display_order: 1 }]
+    const results = [{ item_id: 'c', status: 'unknown' as const }]
+    const wrapper = mount(StockRuleConditionChecklist, { props: { rule: { ...rule, checklist_items: custom }, checking: true, results,
+      panelDefaults: { defaultCollapsed: [], sectionKeys: ['custom'], resetKey: 0 } }, global: { plugins: [ElementPlus] } })
+    const head = () => wrapper.get('[data-condition-section="custom"] .config-panel-section__head')
+    expect(head().attributes('aria-expanded')).toBe('true')
+    await head().trigger('click')
+    await wrapper.setProps({ panelDefaults: { defaultCollapsed: [], sectionKeys: ['custom'], resetKey: 0 } })
+    expect(head().attributes('aria-expanded')).toBe('false')
+    await wrapper.setProps({ panelDefaults: { defaultCollapsed: [], sectionKeys: ['custom'], resetKey: 1 } })
+    expect(head().attributes('aria-expanded')).toBe('true')
+    expect(wrapper.props('results')).toEqual(results)
+    wrapper.unmount()
+  })
   it('三个分类默认收起，独立开合且收起保留输入与核对，支持键盘展开', async () => {
     const wrapper = mount(StockRuleConditionChecklist, { attachTo: document.body, props: { rule, checking: true,
       results: [{ item_id: 'a', status: 'no' }, { item_id: 'b', status: 'unknown' }] }, global: { plugins: [ElementPlus] } })

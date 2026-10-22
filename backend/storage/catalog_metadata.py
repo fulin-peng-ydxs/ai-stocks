@@ -112,6 +112,7 @@ FIELD_LABELS: dict[str, str] = {
     "n_codes": "股票数量",
     "window_metadata_json": "窗口元数据",
     "action_subtype": "动作子类型",
+    "action_subtype_label": "买卖类型名称快照",
     "display_order": "展示顺序",
     "normalized_name": "规范化名称",
     "submission_source": "提交来源",

@@ -332,7 +332,7 @@ class TradeDisciplineRepository:
                 cur.execute(
                     "INSERT INTO trade_discipline_draft_action_rule "
                     "(rule_id,tenant_id,owner_user_id,detail_id,name,action_type,action_subtype,"
-                    "content,display_order,enabled) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "content,display_order,enabled,action_subtype_label) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     [
                         rule_id,
                         *self.owner,
@@ -343,6 +343,7 @@ class TradeDisciplineRepository:
                         item.get("content"),
                         item["display_order"],
                         item["enabled"],
+                        item.get("action_subtype_label"),
                     ],
                 )
 
@@ -443,8 +444,8 @@ class TradeDisciplineRepository:
                 cur.execute(
                     "INSERT INTO trade_discipline_action_rule "
                     "(rule_id,tenant_id,owner_user_id,version_no,detail_id,name,action_type,"
-                    "action_subtype,content,display_order,enabled) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "action_subtype,content,display_order,enabled,action_subtype_label) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     [
                         rule_id,
                         *self.owner,
@@ -456,6 +457,7 @@ class TradeDisciplineRepository:
                         item["content"],
                         item["display_order"],
                         item["enabled"],
+                        item.get("action_subtype_label"),
                     ],
                 )
 

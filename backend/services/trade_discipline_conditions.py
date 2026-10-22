@@ -1,5 +1,6 @@
 """交易纪律结构化条件：区分已知违规与事实未知，供提示和履约校验共用。"""
 
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -25,7 +26,11 @@ def prepare_checklist_items(value: Any) -> list[dict]:
         category = source_category
         if category == "other":
             category = "technical"  # 兼容旧客户端和草稿，不改写正式历史快照。
-        if category not in CHECKLIST_CATEGORIES:
+        if (
+            not isinstance(category, str)
+            or not re.fullmatch(r"[a-z][a-z0-9_:-]{0,63}", category)
+            or category == "notes"
+        ):
             raise ValidationError("检查项分类不正确")
         text = raw.get("text", "")
         if not isinstance(text, str):
@@ -38,8 +43,17 @@ def prepare_checklist_items(value: Any) -> list[dict]:
         items.append(
             {"item_id": item_id, "category": category, "text": text.strip(), "display_order": order}
         )
+    category_order = {
+        category: index
+        for index, category in enumerate(dict.fromkeys(item["category"] for item in items))
+    }
     items.sort(
-        key=lambda item: (CHECKLIST_CATEGORIES.index(item["category"]), item["display_order"])
+        key=lambda item: (
+            CHECKLIST_CATEGORIES.index(item["category"])
+            if item["category"] in CHECKLIST_CATEGORIES else len(CHECKLIST_CATEGORIES),
+            category_order[item["category"]],
+            item["display_order"],
+        )
     )
     for index, item in enumerate(items, 1):
         item["display_order"] = index

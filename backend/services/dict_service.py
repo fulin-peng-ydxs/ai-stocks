@@ -122,13 +122,12 @@ class DictService:
         raw_type_code = (type_code or "").strip()
         try:
             type_code = self._norm_code(type_code, "类型 code")
-            if self.repo.get_type(type_code):
-                data = self.repo.list_items(
-                    type_code=type_code, enabled=True, page=1, size=500
-                )
+            kind = self.repo.get_type(type_code)
+            if kind:
+                items = self.repo.enabled_items(type_code) if kind["enabled"] else []
                 return {
                     "type_code": type_code,
-                    "items": data["list"],
+                    "items": items,
                     "fallback": False,
                     "version": self.repo.version(type_code),
                 }
@@ -155,6 +154,8 @@ class DictService:
         type_code = self._norm_code(type_code, "类型 code")
         code = self._norm_code(code, "字典项 code")
         self._load_type(type_code)
+        if type_code == "trade_discipline_condition_category" and code in {"notes", "other"}:
+            raise ValidationError("notes 和 other 为历史兼容保留编码，请使用其他分类编码")
         if self.repo.get_item(type_code, code):
             raise ValidationError("字典项 code 已存在")
         row = self.repo.create_item(

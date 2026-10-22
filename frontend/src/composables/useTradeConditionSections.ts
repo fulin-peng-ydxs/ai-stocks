@@ -16,7 +16,7 @@ export function useTradeConditionSections(
     return Object.fromEntries(STOCK_CONDITION_DEFAULT_COLLAPSED.map(key => [key, !closed.includes(key)]))
   }))
   // 远端默认晚到时只更新尚未操作的分区，不覆盖手动开合或校验定位。
-  const open = computed(() => ({ ...baseline.value, ...(state() ?? local.value) }))
+  const open = computed<ConditionSectionsState>(() => ({ ...baseline.value, ...Object.fromEntries((defaults()?.sectionKeys ?? []).map(key => [key, !(defaults()?.defaultCollapsed ?? []).includes(key)])), ...(state() ?? local.value) }))
   watch(() => defaults()?.resetKey, () => {
     local.value = {}
     changed({})

@@ -80,7 +80,8 @@ FactStatus = Literal["yes", "no", "unknown"]
 class ChecklistItemBody(StrictBody):
     item_id: str | None = None
     # other 仅兼容旧草稿/客户端；保存时服务层统一转为 technical。
-    category: Literal["basic", "risk", "technical", "other"] = "technical"
+    category: str = Field(default="technical", pattern=r"^[a-z][a-z0-9_:-]{0,63}$")
+    category_label: str | None = None
     text: str = ""
     display_order: int = Field(strict=True, ge=1)
 
@@ -109,7 +110,8 @@ class ActionRuleBody(StrictBody):
     detail_id: str | None = None
     name: str | None = None
     action_type: Literal["buy", "sell"] | None = None
-    action_subtype: str | None = Field(default=None, max_length=40)
+    action_subtype: str | None = Field(default=None, max_length=64)
+    action_subtype_label: str | None = None
     content: str | None = None
     display_order: int = Field(ge=1)
     enabled: bool = True
@@ -221,7 +223,7 @@ def list_rule_types() -> ApiResponse:
 @router.delete(
     "/rule-types", response_model=ApiResponse, dependencies=[Depends(require_perm(RULE_MANAGE))]
 )
-def delete_rule_type(name: str = Query(min_length=1, max_length=40)) -> ApiResponse:
+def delete_rule_type(name: str = Query(min_length=1, max_length=64)) -> ApiResponse:
     result = _call(_service().delete_action_subtype, name)
     _audit("rule_type_delete", "trade_discipline_action_subtype", result["name"], RULE_MANAGE)
     return ok(result, msg="自定义买卖类型已删除")

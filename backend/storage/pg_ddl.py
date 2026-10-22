@@ -436,6 +436,7 @@ CREATE TABLE IF NOT EXISTS trade_discipline_action_rule (
     name          TEXT NOT NULL,
     action_type   TEXT NOT NULL,
     action_subtype TEXT NOT NULL,
+    action_subtype_label TEXT,
     content       TEXT NOT NULL,
     display_order INTEGER NOT NULL,
     enabled       BOOLEAN NOT NULL DEFAULT TRUE,
@@ -508,6 +509,7 @@ CREATE TABLE IF NOT EXISTS trade_discipline_draft_action_rule (
     name          TEXT,
     action_type   TEXT,
     action_subtype TEXT,
+    action_subtype_label TEXT,
     content       TEXT,
     display_order INTEGER NOT NULL,
     enabled       BOOLEAN NOT NULL DEFAULT TRUE,
@@ -1430,6 +1432,10 @@ COMMENT ON COLUMN trade_discipline_operation.selection_facts IS '操作时点事
 
 _TRADE_DISCIPLINE_CHECKLIST_UPGRADES = """
 -- 检查项只扩展规则快照，不从旧文本拆分或重写历史记录。
+ALTER TABLE trade_discipline_action_rule ADD COLUMN IF NOT EXISTS action_subtype_label TEXT;
+ALTER TABLE trade_discipline_draft_action_rule ADD COLUMN IF NOT EXISTS action_subtype_label TEXT;
+COMMENT ON COLUMN trade_discipline_action_rule.action_subtype_label IS '发布版本的买卖类型名称快照；旧版本为空时按旧编码兼容展示，不跟随字典改名';
+COMMENT ON COLUMN trade_discipline_draft_action_rule.action_subtype_label IS '草稿的买卖类型名称快照，由服务端从字典或原明细生成，禁止信任客户端标签';
 ALTER TABLE trade_discipline_stock_rule ADD COLUMN IF NOT EXISTS checklist_items JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(checklist_items) = 'array');
 ALTER TABLE trade_discipline_draft_stock_rule ADD COLUMN IF NOT EXISTS checklist_items JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(checklist_items) = 'array');
 ALTER TABLE trade_discipline_operation ADD COLUMN IF NOT EXISTS checklist_results JSONB CHECK (jsonb_typeof(checklist_results) = 'array');
@@ -1448,7 +1454,7 @@ DO $$ DECLARE old_constraint RECORD; BEGIN
         ALTER TABLE trade_discipline_stock_rule ADD CONSTRAINT trade_discipline_stock_rule_name_required CHECK (btrim(name) <> '');
     END IF;
 END $$;
-COMMENT ON COLUMN trade_discipline_stock_rule.checklist_items IS '版本化人工检查项：item_id稳定标识、category基本/风险/技术；旧other读取兼容技术形态、text条件、display_order顺序；空数组表示未配置';
+COMMENT ON COLUMN trade_discipline_stock_rule.checklist_items IS '版本化人工检查项：item_id稳定标识、category为选股分类字典编码、category_label分类名称快照；旧other读取兼容技术形态、text条件、display_order顺序；空数组表示未配置';
 COMMENT ON COLUMN trade_discipline_draft_stock_rule.checklist_items IS '草稿人工检查项，与正式版本同结构；发布前允许空正文，旧文本不自动拆分';
 COMMENT ON COLUMN trade_discipline_operation.checklist_results IS '买入逐项人工核对快照：item_id属于所选版本规则、status为yes符合/no不符合/unknown未知；空表示未记录或不适用';
 COMMENT ON COLUMN trade_discipline_stock_rule.content IS '选股规则补充说明，保留原文换行，不参与逐项自动判定';
@@ -1803,9 +1809,19 @@ _SEED_DICT_TYPES: tuple[tuple[str, str, int, str], ...] = (
     ("audit_event_type", "审计事件类型", 30, "审计日志事件分类"),
     ("audit_result", "审计结果", 40, "审计日志处理结果"),
     ("audit_status", "审计状态", 50, "审计日志处理状态"),
+    ("trade_discipline_buy_type", "交易纪律买入类型", 60, "买入规则类型，编码固定，停用后旧版本保留"),
+    ("trade_discipline_sell_type", "交易纪律卖出类型", 70, "卖出规则类型，编码固定，停用后旧版本保留"),
+    ("trade_discipline_condition_category", "选股检查项分类", 80, "自定义人工检查项分类；notes保留给补充说明，不可用作分类编码"),
 )
 
 _SEED_DICT_ITEMS: tuple[tuple[str, str, str, int, str], ...] = (
+    ("trade_discipline_buy_type", "open_position", "建仓", 10, "#409EFF"),
+    ("trade_discipline_buy_type", "add_position", "加仓", 20, "#409EFF"),
+    ("trade_discipline_sell_type", "liquidate", "清仓", 10, "#409EFF"),
+    ("trade_discipline_sell_type", "reduce_position", "减仓", 20, "#409EFF"),
+    ("trade_discipline_condition_category", "basic", "基本条件", 10, "#409EFF"),
+    ("trade_discipline_condition_category", "risk", "风险排除", 20, "#409EFF"),
+    ("trade_discipline_condition_category", "technical", "技术形态", 30, "#409EFF"),
     ("role_type", ROLE_SYSTEM, "系统管理员", 10, "#F56C6C"),
     ("role_type", ROLE_TENANT_ADMIN, "租户管理员", 20, "#409EFF"),
     ("role_type", ROLE_NORMAL, "普通用户", 30, "#67C23A"),

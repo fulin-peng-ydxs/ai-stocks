@@ -21,9 +21,24 @@ export const checklistResultOptions = [
   { label: '符合', value: 'yes' }, { label: '不符合', value: 'no' }, { label: '未知', value: 'unknown' },
 ]
 
-/** 同分类内排序，跨分类按固定顺序排列；不改写原数组或检查项。 */
-export function normalizeChecklist(items: StockChecklistItem[]): StockChecklistItem[] {
-  return checklistCategories.flatMap(({ value }) => items.filter(item => checklistCategory(item.category) === value))
+export interface ChecklistCategoryOption { value: string; label: string; disabled?: boolean }
+
+/** 字典项、固定字段分区及历史快照共同构成分组，停用/删除分类也不能吞掉旧条件。 */
+export function conditionCategories(items: StockChecklistItem[], options: readonly ChecklistCategoryOption[] = checklistCategories, snapshot = false): ChecklistCategoryOption[] {
+  const groups = new Map<string, ChecklistCategoryOption>(checklistCategories.map(item => [item.value, { ...item, disabled: true }]))
+  for (const item of options) groups.set(item.value, { ...item })
+  for (const item of items) {
+    const value = checklistCategory(item.category)
+    const existing = groups.get(value)
+    if (!existing) groups.set(value, { value, label: item.category_label || value, disabled: true })
+    else if (snapshot && item.category_label) groups.set(value, { ...existing, label: item.category_label })
+  }
+  return [...groups.values()]
+}
+
+/** 组内保留顺序，兼容未知/停用分类；不能按固定枚举筛选而丢弃检查项。 */
+export function normalizeChecklist(items: StockChecklistItem[], options: readonly ChecklistCategoryOption[] = checklistCategories): StockChecklistItem[] {
+  return conditionCategories(items, options).flatMap(({ value }) => items.filter(item => checklistCategory(item.category) === value))
     .map((item, index) => ({ ...item, category: checklistCategory(item.category), display_order: index + 1 }))
 }
 
@@ -32,7 +47,7 @@ export function conditionSectionSummary(rule: DraftStockRule | undefined, catego
   checking = false, results?: StockChecklistResult[] | null, operation?: CheckinOperation): string {
   const items = (rule?.checklist_items ?? []).filter(item => checklistCategory(item.category) === category)
   const states: Array<ConditionFact | 'pending'> = items.map(item => results?.find(result => result.item_id === item.item_id)?.status ?? 'pending')
-  let summary = category === 'technical' ? '' : stockConditionSummary({
+  let summary = !['basic', 'risk'].includes(category) ? '' : stockConditionSummary({
     ...rule, checklist_items: [],
     ...(category === 'basic' ? { st_filter: 'any', loss_filter: 'any', st_risk_filter: 'any' }
       : { price_min: null, price_max: null }),
@@ -56,7 +71,7 @@ export function conditionSectionSummary(rule: DraftStockRule | undefined, catego
   }
   const parts = summary ? [summary] : []
   const count = checking ? states.length : items.length
-  if (count || category === 'technical') parts.push(`${count} 项${checking ? '核对' : '人工检查'}`)
+  if (count || !['basic', 'risk'].includes(category)) parts.push(`${count} 项${checking ? '核对' : '人工检查'}`)
   if (checking) for (const [status, label] of [['pending', '待核对'], ['no', '不符合'], ['unknown', '未知']] as const) {
     const count = states.filter(value => value === status).length
     if (count) parts.push(`${label} ${count}`)

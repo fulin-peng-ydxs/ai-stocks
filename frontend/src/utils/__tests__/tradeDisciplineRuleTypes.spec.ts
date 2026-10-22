@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { actionSubtypeLabel } from '../tradeDisciplineRuleTypes'
 
 describe('交易纪律买卖类型名称', () => {
+  it('版本名称快照优先于当前字典改名', () => {
+    expect(actionSubtypeLabel({ action_type: 'buy', action_subtype: 'custom', action_subtype_label: '发布时名称' },
+      [{ name: 'custom', label: '改名后名称', action_type: 'buy', builtin: false }])).toBe('发布时名称')
+  })
   it.each([
     ['buy', 'open_position', '建仓'],
     ['buy', 'add_position', '加仓'],

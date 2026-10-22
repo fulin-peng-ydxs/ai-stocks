@@ -49,11 +49,12 @@ export interface TradeDisciplineRule {
 
 export type ConditionFilter = 'any' | 'exclude' | 'only'
 export type ConditionFact = 'yes' | 'no' | 'unknown'
-export type ChecklistCategory = 'basic' | 'risk' | 'technical'
+export type ChecklistCategory = string
 export interface StockChecklistItem {
   item_id: string
   /** other 仅用于读取旧快照，新保存时统一规范为 technical。 */
-  category: ChecklistCategory | 'other'
+  category: ChecklistCategory
+  category_label?: string | null
   text: string
   display_order: number
 }
@@ -92,6 +93,7 @@ export interface DraftActionRule {
   name: string | null
   action_type: ActionType | null
   action_subtype: ActionSubtype | null
+  action_subtype_label?: string | null
   content: string | null
   display_order: number
   enabled: boolean

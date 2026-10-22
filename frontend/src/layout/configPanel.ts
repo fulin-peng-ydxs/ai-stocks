@@ -35,6 +35,7 @@ export interface ConfigPanelCollapseSection {
 export interface StockConditionPanelDefaults {
   defaultCollapsed: readonly string[]
   resetKey: number
+  sectionKeys?: readonly string[]
 }
 
 export const STOCK_CONDITION_COLLAPSE_SECTIONS = [

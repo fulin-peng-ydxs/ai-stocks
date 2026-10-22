@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { provideTradeDisciplineCategories, tradeConditionMeta } from '@/composables/useTradeDisciplineCategories'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -37,6 +38,7 @@ import {
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import ComponentAutoSettings from '@/components/ComponentAutoSettings.vue'
 import HelpHint from '@/components/HelpHint.vue'
+import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import LayoutPagePreview from '@/layout/components/LayoutPagePreview.vue'
 import {
@@ -76,6 +78,10 @@ function onPreviewFocus(slotId: string) {
 }
 const selectedUserId = ref('local')
 const selectedPage = computed<PageRegistryEntry>(() => getPageEntry(selectedPageKey.value) ?? managedPages[0])
+const conditionDictionary = provideTradeDisciplineCategories()
+const dictionaryMeta = computed(() => selectedPageKey.value === 'trade-discipline' ? tradeConditionMeta(conditionDictionary.categories.value) : {})
+watch(selectedPageKey, key => { if (key === 'trade-discipline') void conditionDictionary.load() }, { immediate: true })
+
 const densityLabels: Record<string, string> = {
   compact: '紧凑',
   standard: '标准',
@@ -123,6 +129,10 @@ const pageDefaultComponentResult = computed(() => resolveComponentConfig(selecte
 }))
 
 function getPageComponentValue(slotId: string, field: string): unknown {
+  if (selectedPageKey.value === 'trade-discipline' && slotId === 'stockConditions' && field === 'defaultCollapsed'
+    && getPageComponentOverride(slotId, field) === undefined) {
+    return tradeConditionMeta(conditionDictionary.categories.value).stockConditions.collapseSections.map(item => item.key)
+  }
   return pageDefaultComponentResult.value.configBySlot[slotId]?.[field]
 }
 
@@ -662,9 +672,11 @@ const menuPageTitle = useMenuPageTitle()
                           <span>{{ focusedSlotSpec.id }}</span>
                         </div>
                       </div>
+                      <AppStatusNotice v-if="selectedPageKey === 'trade-discipline' && conditionDictionary.error.value" tone="warning" title="检查项分类加载失败" action-text="重试" :action-loading="conditionDictionary.loading.value" @action="conditionDictionary.load" />
                       <ComponentAutoSettings
                         :page-key="selectedPageKey"
                         :config="pageComponentConfig"
+                        :component-meta-overrides="dictionaryMeta"
                         layer="page"
                         :slot-ids="focusedSlotIds"
                         :allowed-layers-of="componentAllowedLayers"

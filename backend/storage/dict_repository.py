@@ -107,6 +107,14 @@ class DictRepository:
             "SELECT count(*) AS n FROM dict_item WHERE type_code=%s", [type_code]
         ).iloc[0]["n"])
 
+    def enabled_items(self, type_code: str) -> list[dict]:
+        """业务候选消费完整启用集，不受管理表格分页上限截断。"""
+        rows = self.pg.query_df(
+            "SELECT id,type_code,code,label,color,enabled,sort,remark,created_at,updated_at "
+            "FROM dict_item WHERE type_code=%s AND enabled ORDER BY sort,code", [type_code]
+        )
+        return [self._row(row.to_dict()) for _, row in rows.iterrows()]
+
     def list_items(
         self,
         *,
