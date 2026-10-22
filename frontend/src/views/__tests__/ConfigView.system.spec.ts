@@ -543,6 +543,7 @@ describe('ConfigView system tab', () => {
     expect(tabs.exists()).toBe(true)
     const panel = wrapper.find('#pane-access > .app-workspace-panel')
     expect(panel.findComponent(AppTabToolbar).props('label')).toBe('系统配置操作栏')
+    expect(panel.findComponent(AppTabToolbar).props('actionsAlign')).toBe('end')
     expect(panel.find('.app-tab-toolbar__actions').text()).toContain('保存并生效')
     expect(panel.find('.sys-content').exists()).toBe(true)
     expect(wrapper.find('.page-head-actions').text()).not.toContain('保存并生效')

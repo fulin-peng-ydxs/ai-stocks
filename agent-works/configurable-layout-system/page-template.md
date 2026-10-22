@@ -98,7 +98,7 @@
 规则入口：[DESIGN.md](../../DESIGN.md) §4「按钮与输入」和 §7「Do's and Don'ts」。
 
 - 主 / 次 / 危险操作选型：
-- 按钮位置：按真实影响范围判断，不按动词机械归类；作用于整页或页面唯一主任务的主操作放 `.page-head-actions`、位于 `PageSettingsTrigger` 左侧并使用默认 32px 尺寸；当前页签、局部表单、选中对象或局部区块命令留在对应区域工具区（见 DESIGN.md §4「按钮与输入」）。
+- 按钮位置：按真实影响范围判断，不按动词机械归类；作用于整页或页面唯一主任务的主操作放 `.page-head-actions`、位于 `PageSettingsTrigger` 左侧并使用默认 32px 尺寸；当前页签、局部表单、选中对象或局部区块命令留在对应区域工具区；区域内再按内容和相邻结构选择对齐，筛选与对象选择从左起排，独立纯命令组优先右对齐，具体判断及共享入口见 DESIGN.md §4「按钮与输入」。
 - 下拉选型：普通下拉使用 `AppSelect`，筛选/紧凑多选使用 `AppFilterSelect`，已有领域选择器继续复用；禁止页面直接使用原生 `el-select` 或 HTML `<select>`。面板默认按内容扩展到共享上限后换行，等宽例外按 DESIGN「按钮与输入」登记，消费页无需重复配置定位。
 - 控件宽度：`AppSelect` 的 `width` 使用 `compact / short / medium / long / wide / fill` 档位（如 `width="short"`）；普通控件按内容容量选择 `.app-control-width-compact/short/medium/long/wide/fill` 中能完整承载常态内容的最小档位；多选 `AppFilterSelect` 必须按使用场景声明 `visibleTagCount=1..3`，由组件确定可见值、`+N` 与宽度档位，或使用 `displayMode=count` 只显示“已选 N”；不得另加宽度 class 或内联宽度；独立复合组件例外必须使用具名 class 并说明理由。
 - 自定义条目顺序：按 [DESIGN.md「自定义顺序」](../../DESIGN.md#自定义顺序) 选择共享组件，核对允许调整的范围、稳定标识及业务保存流程。

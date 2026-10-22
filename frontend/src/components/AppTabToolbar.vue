@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import AppControlRow from '@/components/AppControlRow.vue'
 
-defineProps<{ label: string }>()
+withDefaults(defineProps<{
+  label: string
+  /** 筛选输入从左起排；纯命令组可在所属内容区右对齐。 */
+  actionsAlign?: 'start' | 'end'
+}>(), { actionsAlign: 'start' })
 </script>
 
 <template>
-  <div class="app-tab-toolbar" role="toolbar" :aria-label="label">
-    <AppControlRow v-if="$slots.actions" class="app-tab-toolbar__actions">
+  <div class="app-tab-toolbar" :class="{ 'is-actions-end': actionsAlign === 'end' }" role="toolbar" :aria-label="label">
+    <AppControlRow v-if="$slots.actions" class="app-tab-toolbar__actions" :justify="actionsAlign">
       <slot name="actions" />
     </AppControlRow>
     <div v-if="$slots.description" class="app-tab-toolbar__description">
@@ -37,5 +41,10 @@ defineProps<{ label: string }>()
   font-size: var(--app-font-size-caption);
   line-height: var(--app-line-height-body);
   text-align: right;
+}
+.is-actions-end .app-tab-toolbar__description {
+  flex: 1 1 100%;
+  margin-left: 0;
+  text-align: left;
 }
 </style>

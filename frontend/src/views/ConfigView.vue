@@ -2481,7 +2481,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               :label="tab.label"
             >
               <div class="app-workspace-panel">
-                <AppTabToolbar v-if="tab.key === activeSysTab" label="系统配置操作栏">
+                <AppTabToolbar v-if="tab.key === activeSysTab" label="系统配置操作栏" actions-align="end">
                   <template #actions>
                     <el-button v-permission="'data-settings:manage'" type="primary"
                       :loading="sysOperation === 'save'"

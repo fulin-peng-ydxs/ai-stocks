@@ -353,7 +353,7 @@ Key Characteristics：
 | `AppFilterSwitch` | `frontend/src/components/AppFilterSwitch.vue` | 筛选操作栏中独立布尔条件的紧凑开关 | `filter-bar` 内的业务条件，不新增系统组件种类 | 连板天梯的“忽略 ST”“仅一字板”共同消费；名称在开启和关闭时均可见，开关有同名可访问名称；切换只更新筛选值并沿用页面既有查询、默认值和重置流程，不用于表格批量选择或多选集合 |
 | `AppAdvancedSearch` | `frontend/src/components/AppAdvancedSearch.vue` | 列表筛选常显与高级区统一收纳，复用 `AppControlRow`，保留控件实例、条件值与领域事件 | `filter-bar.commonFields`，候选与默认值统一由 `layout/searchGroups.ts` 驱动页面登记，运行时权限候选经 `LayoutHost` 共享给设置抽屉 | 每个独立列表 ≥3 个可收纳条件时常显两个，高级区默认收起；收起不清空、不查询；摘要体现隐藏的实际限制（包括默认限制），可定位和按字段清除；复杂日期范围算一个条件，整页上下文不收纳；禁止复制页面私有收展与配置保存逻辑 |
 | `AppControlRow` / `AppControlItem` | `frontend/src/components/AppControlRow.vue`、`frontend/src/components/AppControlItem.vue` | 页面工具行、查询行和参数行的通用横向控件容器；控件行默认按控件自然宽度排列，空间不足时换行，不自动拉伸填满；控件项把标签和控件作为一个整体换行 | `filter-bar`、`toolbar` 等系统组件种类的真实渲染基础 | 横向条件、参数及操作组统一消费；整体换行与复合控件边界见[按钮与输入](#按钮与输入)。 |
-| `AppTabToolbar` | `frontend/src/components/AppTabToolbar.vue` | Tab 内容区的统一操作栏，左侧承载筛选或命令，右侧承载当前面板的简短说明，并在空间不足时自然换行 | `tabs` 下属 `filter-bar` / `toolbar` 的真实组合外壳，内部复用 `AppControlRow` | Tab 标签已表达面板名称时，内容区不得重复标题；操作和筛选统一放 `#actions`，说明统一放 `#description`；没有操作时允许仅右对齐展示说明，不得为填空新增无业务意义的按钮 |
+| `AppTabToolbar` | `frontend/src/components/AppTabToolbar.vue` | Tab 内容区的统一操作栏，按内容安排筛选、命令和说明，并在空间不足时自然换行 | `tabs` 下属 `filter-bar` / `toolbar` 的真实组合外壳，内部复用 `AppControlRow` | Tab 标签已表达面板名称时，内容区不得重复标题；操作和筛选统一放 `#actions`，说明统一放 `#description`；筛选型默认从左起排，纯命令组可用 `actionsAlign=end` 在当前区域右对齐，此时反馈独立放下一行；没有操作时允许仅右对齐展示说明，不得为填空新增无业务意义的按钮 |
 | `AppIconButton` | `frontend/src/components/AppIconButton.vue` | 全站纯图标操作按钮，统一可访问名称、尺寸、圆角、悬浮、聚焦、禁用、loading 和语义色 | 无直接系统组件种类 | 纯图标命令复用；尺寸、名称、加载与提示边界见[按钮与输入](#按钮与输入) |
 | `AppCloseButton` | `frontend/src/components/AppCloseButton.vue` | 关闭与移除临时界面的语义入口 | 无直接系统组件种类；复用 `AppIconButton` | 工作标签、抽屉头部、对比队列及临时预览共同消费；档位、颜色、状态与事件边界统一遵循本节关闭契约，业务允许判断留在容器，库内置关闭由全局样式适配 |
 | `AppHoverInfo` | `frontend/src/components/AppHoverInfo.ts`、`frontend/src/composables/useHoverIntent.ts`、`frontend/src/composables/useTooltipInputModality.ts` | 显式说明的共享 tooltip / popover 与悬停意图判定 | 无直接系统组件种类 | HelpHint、HelpTip、命令及状态说明共用；锚点、触发时序、禁用和清理规则见[提示、截断与可访问名称](#提示截断与可访问名称)。 |
@@ -503,6 +503,7 @@ Key Characteristics：
 - 多行对象选择卡片的普通项必须保留共享卡片的中性边框；选中项通过主色边框和定位标记强调，不能只给选中项画边界。宿主透明边框只用于共享交互表面占位，不得把可见表面的边框 token 置为透明。
 - 工具栏按钮应贴近其影响区域，避免页面右上角堆积所有操作。
 - 操作位置按真实影响范围判断，不按“新建 / 保存 / 刷新”等动词机械归类：作用于整页或页面唯一主任务的主操作统一放页头 `.page-head-actions`，位于 `PageSettingsTrigger` 左侧并使用默认 32px 尺寸；只作用于当前页签、局部表单、选中对象或局部区块的命令必须留在对应区域工具区，不进总页头。
+- 确定操作归属后，再按实际内容和相邻结构选择横向位置，不将“局部工具区”等同于“统一靠左”：含筛选输入、工作对象或范围选择时，从左侧按任务阅读顺序排列；只有保存、还原、刷新等命令且左侧没有关联输入时，优先在所属内容区域内右对齐，避免紧贴左侧页签导航形成第二排竞争焦点。需要与具体对象或输入就近操作时保持关联，不将所有按钮机械推到最右侧。`AppTabToolbar` 以 `actionsAlign` 承接差异，页面不写私有对齐样式；纯命令组的错误或校验反馈独立放下方左对齐。空间不足时命令保持 DOM 顺序自然换行，核心操作不裁切或隐藏，输入和草稿不因重排重建。
 - 顶栏状态和工具按 `32px` 控件基线对齐、间距 `6px`。交易日等状态项使用“图标 + 弱标签 + 强值 + 5px 状态点”的轻量结构；无详情权限时使用只读 `role=status`，不得伪装成禁用按钮，也不得使用永久渐变、内阴影或大胶囊底板。
 
 #### 分段选择
