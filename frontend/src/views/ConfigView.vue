@@ -3,6 +3,7 @@ import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import AppTabToolbar from '@/components/AppTabToolbar.vue'
+import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import AppControlRow from '@/components/AppControlRow.vue'
 import ConfigPanelSection from '@/components/config/ConfigPanelSection.vue'
 import AppHoverInfo from '@/components/AppHoverInfo'
@@ -200,8 +201,13 @@ const mailStatus = ref<MailStatus | null>(null)
 const sysDraft = ref<Record<string, unknown>>({})
 const sysLoading = ref(false)
 const sysLoadError = ref('')
-const sysSaving = ref(false)
-const sysSaveError = ref(false)
+const sysOperation = ref<'' | 'save' | 'reset' | 'clear'>('')
+const sysSaving = computed(() => sysOperation.value !== '')
+const sysRefreshing = ref(false)
+const sysActionError = ref('')
+// 写入成功但回读失败时，先刷新核对，避免对旧基线重复执行写操作。
+const sysPendingReadPaths = ref<string[]>([])
+const sysReadGuard = createLatestRequestGuard()
 // 系统设置分组页签单向：组件配置层默认值（sysTabs.defaultActive）→ 会话 ref；页面切换不写回配置层。
 const sysTabDefault = computed<string>(() => (componentValueOf('sysTabs', 'defaultActive') as string) || 'access')
 const activeSysTab = useDefaultedSessionValue(sysTabDefault)
@@ -222,18 +228,33 @@ const configPanelBehavior = computed<ConfigPanelBehavior>(() => {
     showSectionDescription: componentValueOf('configPanel', 'showSectionDescription') !== false,
   }
 })
+/** 同步一致的服务端基线；只丢弃本次写入范围的草稿，其余草稿始终保留。 */
+async function readSystemSettings(paths?: readonly string[], preserveDrafts = false) {
+  const requestId = sysReadGuard.begin()
+  const { groups, mail_status } = await getSettingsView()
+  if (!sysReadGuard.isCurrent(requestId)) return
+  const selected = paths ? new Set(paths) : null
+  const freshFields = new Map(groups.flatMap((g) => g.fields.map((f) => [f.path, f] as const)))
+  const oldFields = new Map(sysGroups.value.flatMap((g) => g.fields.map((f) => [f.path, f] as const)))
+  const nextDraft = { ...sysDraft.value }
+  for (const [path, field] of freshFields) {
+    const dirty = oldFields.has(path) && sysDraft.value[path] !== oldFields.get(path)!.value
+    const keepDraft = dirty && (preserveDrafts || (selected !== null && !selected.has(path)))
+    if (!keepDraft) nextDraft[path] = field.value
+  }
+  // 继承值、凭据状态等关联元数据必须一起更新，不能留下与已保存配置矛盾的旧值。
+  sysGroups.value = groups
+  sysDraft.value = nextDraft
+  mailStatus.value = mail_status ?? null
+}
 async function loadSystem() {
-  if (!canManageSystemSettings.value) return
+  if (!canManageSystemSettings.value || sysLoading.value || sysSaving.value || sysRefreshing.value) return
   sysLoading.value = true
   sysLoadError.value = ''
-  sysSaveError.value = false
   try {
-    const { groups, mail_status } = await getSettingsView()
-    sysGroups.value = groups
-    mailStatus.value = mail_status ?? null
-    const d: Record<string, unknown> = {}
-    groups.forEach((g) => g.fields.forEach((f) => { d[f.path] = f.value }))
-    sysDraft.value = d
+    await readSystemSettings()
+    sysActionError.value = ''
+    sysPendingReadPaths.value = []
   } catch (error) {
     sysLoadError.value = getErrorMessage(error, '系统设置加载失败')
   } finally { sysLoading.value = false }
@@ -285,12 +306,6 @@ const systemFieldStatus = computed<Record<string, FieldStatus>>(() => {
 function updateSystemField(path: string, value: unknown) {
   sysDraft.value = { ...sysDraft.value, [path]: value }
 }
-const sysDirty = computed(() => {
-  for (const g of sysGroups.value) for (const f of g.fields) {
-    if (sysDraft.value[f.path] !== f.value) return true
-  }
-  return false
-})
 function systemFieldInvalid(field: SettingGroup['fields'][number], value: unknown): boolean {
   if (field.nullable && value == null) return false
   if (field.type === 'bool') return typeof value !== 'boolean'
@@ -343,69 +358,111 @@ const configPanelMetaOverrides = computed<Record<string, SlotConfigMeta> | undef
 const activeSysPaths = computed(() =>
   activeSysGroups.value.flatMap((group) => group.fields.map((field) => field.path)),
 )
+const activeSysDirty = computed(() => activeSysGroups.value.some((group) =>
+  group.fields.some((field) => sysDraft.value[field.path] !== field.value)))
+const activeSysInvalidPaths = computed(() => sysInvalidPaths.value.filter((path) =>
+  activeSysPaths.value.includes(path)))
+const activeSysOverridden = computed(() => activeSysGroups.value.some((group) =>
+  group.fields.some((field) => field.overridden)))
+const sysBusy = computed(() => sysLoading.value || sysSaving.value || sysRefreshing.value || !!sourceTesting.value)
+const sourceConfigDirty = computed(() => sysGroups.value.some((group) =>
+  ['datasource', 'ths_board'].includes(group.key) && group.fields.some((field) =>
+    sysDraft.value[field.path] !== field.value)))
+
+function restoreSystemDraft() {
+  if (!canManageSystemSettings.value || sysBusy.value || !activeSysDirty.value) return
+  const draft = { ...sysDraft.value }
+  for (const group of activeSysGroups.value) for (const field of group.fields) {
+    draft[field.path] = field.value
+  }
+  sysDraft.value = draft
+  if (!sysPendingReadPaths.value.length) sysActionError.value = ''
+}
+async function refreshSystem() {
+  if (!canManageSystemSettings.value || sysBusy.value) return
+  const paths = [...new Set([...activeSysPaths.value, ...sysPendingReadPaths.value])]
+  const refreshSources = activeSysTab.value === 'data-governance'
+  sysRefreshing.value = true
+  try {
+    await readSystemSettings(paths, true)
+    sysPendingReadPaths.value = []
+    sysActionError.value = ''
+    if (refreshSources) await loadSources()
+  } catch (error) {
+    sysActionError.value = `刷新失败，已保留当前编辑值：${getErrorMessage(error, '请稍后重试')}`
+  } finally { sysRefreshing.value = false }
+}
+
+/** 三种持久化操作共用范围保护、确认、忙态和写后回读，不丢弃无关页签草稿。 */
+async function runSystemMutation(options: {
+  kind: 'save' | 'reset' | 'clear'
+  paths: string[]
+  write: () => Promise<unknown>
+  success: string
+  failure: string
+  confirm?: { title: string; message: string }
+}) {
+  if (!canManageSystemSettings.value || sysBusy.value || sysPendingReadPaths.value.length) return
+  sysOperation.value = options.kind
+  let persisted = false
+  try {
+    if (options.confirm) {
+      try {
+        await ElMessageBox.confirm(options.confirm.message, options.confirm.title, {
+          type: 'warning', confirmButtonText: options.confirm.title,
+          confirmButtonClass: 'el-button--danger', cancelButtonText: '取消',
+        })
+      } catch { return }
+    }
+    sysActionError.value = ''
+    await options.write()
+    persisted = true
+    await readSystemSettings(options.paths)
+    ElMessage.success(options.success)
+    if (options.paths.some((path) => /^(datasource|ths_board)\./.test(path))) await loadSources()
+  } catch {
+    if (persisted) {
+      sysPendingReadPaths.value = options.paths
+      sysActionError.value = '操作已生效，但最新配置读取失败；已保留编辑现场，请刷新核对'
+    } else {
+      sysActionError.value = options.failure
+    }
+  } finally { sysOperation.value = '' }
+}
 async function saveSystem() {
-  if (!canManageSystemSettings.value) return
-  if (sysInvalidPaths.value.length) {
-    ElMessage.warning('请修正超出范围的配置项')
+  if (sysBusy.value || !activeSysDirty.value) return
+  if (activeSysInvalidPaths.value.length) {
+    ElMessage.warning('请修正当前页签超出范围的配置项')
     return
   }
   const updates: Record<string, unknown> = {}
-  for (const g of sysGroups.value) for (const f of g.fields) {
-    if (sysDraft.value[f.path] !== f.value) updates[f.path] = sysDraft.value[f.path]
+  for (const group of activeSysGroups.value) for (const field of group.fields) {
+    if (sysDraft.value[field.path] !== field.value) updates[field.path] = sysDraft.value[field.path]
   }
-  if (!Object.keys(updates).length) { ElMessage.info('无修改'); return }
-  sysSaving.value = true
-  sysSaveError.value = false
-  try {
-    await saveSettings(updates)
-    ElMessage.success('配置已更新')
-    await loadSystem()
-    if (activeSysTab.value === 'data-governance') await loadSources()
-  } catch {
-    sysSaveError.value = true
-  } finally { sysSaving.value = false }
+  await runSystemMutation({ kind: 'save', paths: Object.keys(updates),
+    write: () => saveSettings(updates), success: '当前页签配置已更新',
+    failure: '保存失败，已保留当前编辑值' })
 }
 async function resetSystemField(path: string) {
-  if (!canManageSystemSettings.value || sysSaving.value || sourceTesting.value) return
-  try {
-    await ElMessageBox.confirm('清除已保存的页面凭据？部署环境中的凭据仍会优先使用，其它未保存编辑会保留。',
-      '清除凭据', { type: 'warning' })
-  } catch { return }
-  const changed: Record<string, unknown> = {}
-  for (const group of sysGroups.value) for (const field of group.fields) {
-    if (field.path !== path && sysDraft.value[field.path] !== field.value) {
-      changed[field.path] = sysDraft.value[field.path]
-    }
-  }
-  sysSaving.value = true
-  try {
-    await resetSettings([path])
-    await loadSystem()
-    sysDraft.value = { ...sysDraft.value, ...changed }
-    await loadSources()
-    ElMessage.success('已清除页面凭据配置')
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error, '清除配置失败'))
-  } finally { sysSaving.value = false }
+  if (!activeSysPaths.value.includes(path)) return
+  await runSystemMutation({ kind: 'clear', paths: [path], write: () => resetSettings([path]),
+    success: '已清除页面凭据配置', failure: '清除配置失败，已保留当前编辑值',
+    confirm: { title: '清除凭据',
+      message: '清除已保存的页面凭据并立即生效？部署环境中的凭据仍会优先使用，其它未保存编辑会保留。' } })
 }
 async function resetActiveSystemTab() {
-  if (!canManageSystemSettings.value || !activeSysPaths.value.length) return
+  if (!activeSysOverridden.value) return
+  // 确认期间允许切换页签；请求仍使用点击时冻结的范围。
+  const paths = [...activeSysPaths.value]
   const tabLabel = sysTabs.value.find((tab) => tab.key === activeSysTab.value)?.label || '当前配置'
-  await ElMessageBox.confirm(
-    `确认将「${tabLabel}」下所有配置恢复为默认值？未保存的编辑也会被丢弃。`,
-    '恢复默认',
-    { type: 'warning' },
-  )
-  sysSaving.value = true
-  sysSaveError.value = false
-  try {
-    await resetSettings(activeSysPaths.value)
-    ElMessage.success('配置已恢复默认')
-    await loadSystem()
-    if (activeSysTab.value === 'data-governance') await loadSources()
-  } catch {
-    sysSaveError.value = true
-  } finally { sysSaving.value = false }
+  const hasCredential = activeSysGroups.value.some((g) => g.fields.some((f) =>
+    f.type === 'password' && f.overridden))
+  await runSystemMutation({ kind: 'reset', paths, write: () => resetSettings(paths),
+    success: `「${tabLabel}」已恢复默认`, failure: '恢复默认失败，已保留当前编辑值',
+    confirm: { title: '恢复默认', message:
+      `将删除「${tabLabel}」全部页面配置覆盖，回退到当前部署默认值并立即生效。`
+      + (hasCredential ? '本页签已保存的页面凭据也会被清除。' : '')
+      + '当前页签未保存编辑将被丢弃，其他页签草稿保留。确认恢复默认？' } })
 }
 watch(() => sysTabs.value.map((tab) => tab.key).join('|'), () => {
   if (!sysTabs.value.some((tab) => tab.key === activeSysTab.value)) {
@@ -436,7 +493,7 @@ async function loadSources() {
   }
 }
 async function testSource(source?: string) {
-  if (!canTestSources.value || sourceLoading.value || sourceTesting.value || sysDirty.value || sysSaving.value) return
+  if (!canTestSources.value || sourceLoading.value || sourceTesting.value || sourceConfigDirty.value || sysSaving.value || sysRefreshing.value || sysPendingReadPaths.value.length) return
   sourceTesting.value = source || '*'
   sourceError.value = ''
   ++sourceVersion
@@ -458,7 +515,7 @@ async function testSource(source?: string) {
 function sourceActions(row: SourceStatus): AppRowAction[] {
   return [{ key: 'test', label: '测试连通', permission: 'data-source:test',
     loading: sourceTesting.value === row.source,
-    disabled: !!sourceTesting.value || sysDirty.value || sysSaving.value,
+    disabled: !!sourceTesting.value || sourceConfigDirty.value || sysSaving.value || sysRefreshing.value || !!sysPendingReadPaths.value.length,
     onClick: () => testSource(row.source) }]
 }
 function credentialText(row: SourceStatus): string {
@@ -1722,12 +1779,18 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             </HelpTipItem>
             <HelpTipItem question="保存何时生效">
               <ul>
-                <li>「保存并生效」写入后立即影响全站运行；存在超出允许范围的配置项时无法保存。</li>
+                <li>「保存并生效」只提交当前页签的修改，立即影响全站运行；当前页签存在非法值时无法保存。</li>
+              </ul>
+            </HelpTipItem>
+            <HelpTipItem question="还原修改与刷新有什么区别">
+              <ul>
+                <li>「还原修改」只将当前页签草稿回退到上次加载值，不写入服务端。</li>
+                <li>「刷新」同步当前页签的最新已保存配置及来源状态，保留未保存编辑，不执行联网测试。</li>
               </ul>
             </HelpTipItem>
             <HelpTipItem question="恢复默认做什么">
               <ul>
-                <li>「恢复默认」将当前分组页签下所有配置恢复为默认值，未保存的编辑一并丢弃。</li>
+                <li>「恢复默认」删除当前页签的页面配置覆盖（含页面凭据），回退到当前部署默认值并立即生效；其他页签草稿保留。</li>
               </ul>
             </HelpTipItem>
           </HelpTip>
@@ -2413,35 +2476,24 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               <div class="app-workspace-panel">
                 <AppTabToolbar v-if="tab.key === activeSysTab" label="系统配置操作栏">
                   <template #actions>
-                    <el-button
-                      v-permission="'data-settings:manage'"
-                      :loading="sysSaving"
-                      :disabled="!activeSysPaths.length || !!sourceTesting"
-                      @click="resetActiveSystemTab"
-                    >
-                      恢复默认
-                    </el-button>
-                    <el-button
-                      v-permission="'data-settings:manage'"
-                      type="primary"
-                      :loading="sysSaving"
-                      :disabled="!sysDirty || !!sysInvalidPaths.length || !!sourceTesting"
-                      @click="saveSystem"
-                    >
-                      保存并生效
-                    </el-button>
+                    <el-button v-permission="'data-settings:manage'" type="primary"
+                      :loading="sysOperation === 'save'"
+                      :disabled="sysBusy || !activeSysDirty || !!activeSysInvalidPaths.length || !!sysPendingReadPaths.length"
+                      @click="saveSystem">保存并生效</el-button>
+                    <el-button v-permission="'data-settings:manage'"
+                      :disabled="sysBusy || !activeSysDirty" @click="restoreSystemDraft">还原修改</el-button>
+                    <el-button v-permission="'data-settings:manage'" :loading="sysRefreshing"
+                      :disabled="sysLoading || sysSaving || !!sourceTesting" @click="refreshSystem">刷新</el-button>
+                    <el-button v-permission="'data-settings:manage'" type="danger" plain
+                      :loading="sysOperation === 'reset'"
+                      :disabled="sysBusy || !activeSysOverridden || !!sysPendingReadPaths.length"
+                      @click="resetActiveSystemTab">恢复默认</el-button>
                   </template>
-                  <template v-if="sysSaveError || sysInvalidPaths.length" #description>
-                    <AppStatusNotice
-                      v-if="sysSaveError"
-                      tone="error"
-                      title="保存失败，已保留当前编辑值"
-                    />
-                    <AppStatusNotice
-                      v-else-if="sysInvalidPaths.length"
-                      tone="warning"
-                      title="存在超出允许范围的配置项"
-                    />
+                  <template v-if="sysActionError || activeSysInvalidPaths.length" #description>
+                    <AppStatusNotice v-if="sysActionError" tone="error" :title="sysActionError"
+                      action-text="刷新" :action-loading="sysRefreshing" @action="refreshSystem" />
+                    <AppStatusNotice v-else-if="activeSysInvalidPaths.length" tone="warning"
+                      title="当前页签存在超出允许范围的配置项" />
                   </template>
                 </AppTabToolbar>
                 <AppScrollArea class="sys-content" aria-label="系统配置内容">
@@ -2452,13 +2504,16 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                       :collapsible="configPanelBehavior.collapsibleSections"
                       :default-open="!configPanelBehavior.defaultCollapsed.includes('source-health')"
                       :show-description="configPanelBehavior.showGroupDescription">
-                      <AppControlRow justify="end" class="source-health-head">
-                        <HelpHint text="测试使用已保存配置；查看不联网。成功只代表本行代表接口返回有效响应，不能证明其它接口、登录态或数据覆盖完整。最近成功指最近一次测试成功。并发列为任务上限，单条测试仍顺序执行。" />
+                      <AppControlRow justify="between" class="source-health-head">
+                        <span class="app-inline-info app-caption-text">
+                          来源规则与测试说明
+                          <HelpHint label="来源规则与测试说明" text="规则由已保存的生效配置计算，未保存编辑不参与。默认并发可由任务显式参数覆盖，会话串行限制优先。查看不联网，测试只核验代表接口；通过不等于其它接口、登录态或数据覆盖完整。最近成功指最近一次测试成功。" />
+                        </span>
                         <el-button v-permission="'data-source:test'" type="primary" plain
-                          :loading="!!sourceTesting" :disabled="sourceLoading || sysDirty || sysSaving || !sources.length"
+                          :loading="!!sourceTesting" :disabled="sourceLoading || sourceConfigDirty || sysSaving || sysRefreshing || !!sysPendingReadPaths.length || !sources.length"
                           @click="testSource()">测试全部来源</el-button>
                       </AppControlRow>
-                      <AppFormHelp v-if="sysDirty">测试使用已保存配置，请先保存当前修改。</AppFormHelp>
+                      <AppFormHelp v-if="sourceConfigDirty">测试使用已保存配置，请先保存当前修改。</AppFormHelp>
                       <AppStateBlock v-if="sourceError" state="error" title="来源状态读取或测试失败"
                         :description="sourceError" retry @retry="loadSources" />
                       <AppDataTable :data="sources" :loading="sourceLoading" embedded aria-label="数据源能力与健康"
@@ -2472,7 +2527,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                           <template #default="{ row }">
                             <span class="source-policy">
                               <span>{{ row.policy_origin }}</span>
-                              <span>并发上限 {{ row.concurrency }} · {{ row.rate_limit_per_sec }} 次/秒</span>
+                              <span>{{ row.serial_required ? '会话串行' : '默认并发' }} {{ row.concurrency }} · {{ row.rate_limit_per_sec }} 次/秒</span>
                               <span>超时 {{ row.timeout_sec }} 秒 · 最多尝试 {{ row.max_attempts }} 次</span>
                               <span>退避起点 {{ row.retry_backoff_sec }} 秒<span v-if="row.login_timeout_sec"> · 登录超时 {{ row.login_timeout_sec }} 秒</span></span>
                             </span>

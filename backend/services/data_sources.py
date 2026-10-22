@@ -161,6 +161,7 @@ def source_status(do_ping: bool = True, *, repo=None, source: str | None = None)
             "rate_limit_per_sec": policy.rate,
             "max_attempts": policy.attempts,
             "retry_backoff_sec": policy.backoff,
+            "serial_required": group in {"baostock", "ths_board"},
             "concurrency": 1 if group in {"baostock", "ths_board"} else s.update_concurrency,
             "rate_group": group,
             "policy_overrides": list(policy.overrides),

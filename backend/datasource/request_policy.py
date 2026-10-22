@@ -54,13 +54,18 @@ def request_policy(group: str, settings=None) -> RequestPolicy:
 
 
 def source_group(url: str) -> str | None:
-    """接入库不作为限流单位；同花顺股票分钟与板块接口分别保护。"""
+    """按实际网站限流；股票列表SDK内部访问的交易所也需保护。
+
+    同花顺股票分钟与板块分别保护；交易所分组不改变业务股票池范围。
+    """
     host = (urlsplit(url).hostname or "").lower()
     for domain, group in (
         ("sina.com.cn", "sina"),
         ("sina.cn", "sina"),
         ("eastmoney.com", "eastmoney"),
         ("sse.com.cn", "sse"),
+        ("szse.cn", "szse"),
+        ("bse.cn", "bse"),
     ):
         if host == domain or host.endswith("." + domain):
             return group

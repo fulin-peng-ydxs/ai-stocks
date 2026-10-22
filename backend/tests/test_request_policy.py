@@ -40,6 +40,9 @@ def test_policy_inherits_common_and_preserves_legacy_explicit_values():
         ("https://d.10jqka.com.cn/v6/line/hs_600000/60/2026.js", "ths"),
         ("https://d.10jqka.com.cn/v6/line/bk_886000/01/2026.js", "ths_board"),
         ("https://query.sse.com.cn/commonQuery.do", "sse"),
+        ("https://www.szse.cn/api/report/ShowReport", "szse"),
+        ("https://www.bse.cn/nqxxController/nqxxCnzq.do", "bse"),
+        ("https://evil-szse.cn/", None),
         ("https://evil-sina.cn/", None),
     ],
 )
@@ -74,6 +77,38 @@ def test_http_pages_and_retries_use_shared_gate_and_next_request_settings(monkey
     with rp.http_policy_scope("eastmoney", rp.RequestPolicy(2, 19, 1, 0)):
         session.get("https://push2his.eastmoney.com/api")
     assert len(gates) == 3 and timeouts[-1] == 19  # 同一分时尝试不重复限流
+
+
+@pytest.mark.parametrize("url,group", [
+    ("https://www.szse.cn/api/report/ShowReport", "szse"),
+    ("https://www.bse.cn/nqxxController/nqxxCnzq.do", "bse"),
+])
+def test_stock_catalog_endpoints_override_sdk_timeout_and_share_request_gate(monkeypatch, url, group):
+    from backend.datasource import akshare_source  # noqa: F401 -- 安装唯一发送拦截
+
+    settings = Settings()
+    settings.datasource.socket_timeout_sec = 47
+    settings.datasource.rate_limit_per_sec = 0.5
+    monkeypatch.setattr(rp, "get_effective_settings", lambda: settings)
+    gates, timeouts = [], []
+    monkeypatch.setattr(
+        rp, "wait_for_source", lambda name, policy, **_: gates.append((name, policy.rate))
+    )
+
+    def send(_session, request, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        response = requests.Response()
+        response.status_code = 200
+        response._content = b"{}"
+        return response
+
+    monkeypatch.setattr(requests.Session, "send", send)
+    # 股票列表 SDK 自带 timeout=15；每个真实请求都必须消费系统配置。
+    for timeout in (47, 19):
+        settings.datasource.socket_timeout_sec = timeout
+        requests.get(url, timeout=15)
+    assert timeouts == [47, 19]
+    assert gates == [(group, 0.5), (group, 0.5)]
 
 
 def test_shared_limiter_allows_overlap_but_keeps_aggregate_start_interval():
@@ -126,6 +161,10 @@ def test_source_registry_explains_capabilities_and_uses_real_policy(monkeypatch)
     from backend.services import data_sources, ths_cookie_status
 
     settings = Settings()
+    settings.datasource.update_concurrency = 7
+    settings.datasource.rate_limit_per_sec = 2.5
+    settings.datasource.max_retries = 4
+    settings.datasource.retry_backoff_sec = 1.5
     settings.datasource.socket_timeout_sec = 31
     settings.datasource.baostock_login_timeout_sec = 123
     settings.ths_board.timeout_sec = 12
@@ -142,6 +181,17 @@ def test_source_registry_explains_capabilities_and_uses_real_policy(monkeypatch)
     assert rows["intraday_ths"]["timeout_sec"] == 31
     assert rows["baostock"]["login_timeout_sec"] == 123
     assert rows["baostock"]["concurrency"] == 1
+    assert rows["baostock"]["serial_required"] is True
+    assert rows["ths_board"]["serial_required"] is True
+    assert rows["akshare"]["concurrency"] == 7
+    assert rows["akshare"]["serial_required"] is False
+    assert rows["akshare"]["rate_limit_per_sec"] == 2.5
+    assert rows["akshare"]["max_attempts"] == 4
+    assert rows["akshare"]["retry_backoff_sec"] == 1.5
+    settings.datasource.update_concurrency = 3
+    refreshed = {row["source"]: row for row in data_sources.source_status(False, repo=Repo())["sources"]}
+    assert refreshed["akshare"]["concurrency"] == 3
+    assert refreshed["baostock"]["concurrency"] == 1
     assert rows["eastmoney_capital"]["rate_group"] == rows["intraday_eastmoney"]["rate_group"]
     assert all(row["scope"] and row["probe_scope"] for row in rows.values())
     with pytest.raises(ValueError, match="未知"):

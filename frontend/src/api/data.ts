@@ -443,6 +443,7 @@ export interface SourceStatus {
   label?: string
   scope?: string
   concurrency?: number
+  serial_required?: boolean
   rate_limit_per_sec?: number
   max_attempts?: number
   retry_backoff_sec?: number

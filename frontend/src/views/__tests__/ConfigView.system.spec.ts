@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessageBox } from 'element-plus'
 import { ref, h, defineComponent, type Component } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import ConfigView from '@/views/ConfigView.vue'
@@ -31,6 +31,7 @@ vi.mock('@/api/data', async (importOriginal) => {
     getSources: vi.fn(async () => ({ sources: [] })),
     testSources: vi.fn(),
     saveSettings: vi.fn(),
+    resetSettings: vi.fn(),
   }
 })
 
@@ -249,10 +250,12 @@ async function mountView(role = 'system', permissions?: string[]): Promise<VueWr
 }
 
 function mockSettings(nextGroups = groups, mailStatus?: MailStatus) {
+  vi.mocked(dataApi.getSettingsView).mockReset()
   ;(dataApi.getSettingsView as ReturnType<typeof vi.fn>).mockResolvedValue({
     groups: nextGroups, mail_status: mailStatus,
   })
   ;(dataApi.saveSettings as ReturnType<typeof vi.fn>).mockResolvedValue({ saved: 1 })
+  vi.mocked(dataApi.resetSettings).mockResolvedValue({ reset: 1 })
 }
 
 function saveButton(wrapper: VueWrapper) {
@@ -261,12 +264,32 @@ function saveButton(wrapper: VueWrapper) {
   return button!
 }
 
+function sysButton(wrapper: VueWrapper, label: string) {
+  return wrapper.findComponent(AppTabToolbar).find('.app-tab-toolbar__actions')
+    .findAll('button').find((button) => button.text() === label)!
+}
+async function selectSysTab(wrapper: VueWrapper, label: string) {
+  await wrapper.findAll('[role="tab"]').find((node) => node.text() === label)!.trigger('click')
+  await flushPromises()
+}
+function sysForm(wrapper: VueWrapper, key: string) {
+  return wrapper.findAllComponents(ConfigGroupForm).find((node) => node.props('group').key === key)!
+}
+function settingsWith(values: Record<string, unknown>, clearOverrides = false) {
+  return { groups: groups.map((group) => ({ ...group, fields: group.fields.map((field) => ({
+    ...field, value: field.path in values ? values[field.path] : field.value,
+    overridden: clearOverrides ? false : field.overridden,
+  })) })) }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   routeState.meta.configTab = 'system'
   localStorage.clear()
   document.body.innerHTML = ''
   mockSettings()
+  vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
+  vi.mocked(dataApi.getSources).mockResolvedValue({ sources: [] })
   ;(scoreApi.getIndicatorRegistry as ReturnType<typeof vi.fn>).mockResolvedValue({
     calculation_context: { default_period: 'day', supported_periods: ['day'] },
     items: [
@@ -393,7 +416,7 @@ describe('ConfigView system tab', () => {
   it('数据治理承载真实来源清单，查看不联网，单项测试后更新状态', async () => {
     const source = { source: 'ths_board', label: '同花顺板块', role: 'board' as const, scope: '字典、成分、指数和资金流',
       up: null, last_test_at: null, last_success_at: null, failure_reason: null,
-      timeout_sec: 12, rate_limit_per_sec: 1, concurrency: 1, max_attempts: 3,
+      timeout_sec: 12, rate_limit_per_sec: 1, concurrency: 1, serial_required: true, max_attempts: 3,
       retry_backoff_sec: 2, policy_origin: '保留旧显式覆盖' }
     vi.mocked(dataApi.getSources).mockResolvedValue({ sources: [source] })
     vi.mocked(dataApi.testSources).mockResolvedValue({ sources: [{ ...source, up: true }] })
@@ -405,6 +428,7 @@ describe('ConfigView system tab', () => {
     expect(dataApi.testSources).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('数据源能力与健康')
     expect(wrapper.text()).toContain('超时 12 秒')
+    expect(wrapper.text()).toContain('会话串行 1')
     expect(wrapper.text()).toContain('保留旧显式覆盖')
     await wrapper.find('.source-health [role="button"]').trigger('click')
     const button = wrapper.findAll('button').find((node) => node.text() === '测试全部来源')!
@@ -413,6 +437,27 @@ describe('ConfigView system tab', () => {
     await flushPromises()
     expect(dataApi.testSources).toHaveBeenCalledWith('ths_board')
     expect(wrapper.text()).toContain('通过')
+    wrapper.unmount()
+  })
+
+  it('来源规则显示接口返回的生效参数，说明提示紧邻其解释文字', async () => {
+    vi.mocked(dataApi.getSources).mockResolvedValue({ sources: [{
+      source: 'akshare', label: '新浪行情', role: 'primary', scope: '日线',
+      up: null, last_test_at: null, last_success_at: null, failure_reason: null,
+      concurrency: 7, serial_required: false, rate_limit_per_sec: 2.5,
+      timeout_sec: 47, max_attempts: 4, retry_backoff_sec: 1.5,
+      policy_origin: '继承通用配置',
+    }] })
+    const wrapper = await mountView()
+    await wrapper.findAll('[role="tab"]').find((node) => node.text() === '数据治理')!.trigger('click')
+    await flushPromises()
+    const health = wrapper.find('.source-health')
+    expect(health.text()).toContain('默认并发 7 · 2.5 次/秒')
+    expect(health.text()).toContain('超时 47 秒 · 最多尝试 4 次')
+    expect(health.text()).toContain('退避起点 1.5 秒')
+    const hint = health.find('[aria-label="来源规则与测试说明"]')
+    expect(hint.element.parentElement?.textContent).toContain('来源规则与测试说明')
+    expect(hint.element.parentElement?.textContent).not.toContain('测试全部来源')
     wrapper.unmount()
   })
 
@@ -487,6 +532,24 @@ describe('ConfigView system tab', () => {
     expect(wrapper.findComponent(AppTabToolbar).text()).toContain('恢复默认')
   })
 
+  it('访问安全草稿不阻止按已保存来源配置测试，刷新来源状态不触发探活', async () => {
+    vi.mocked(dataApi.getSources).mockResolvedValue({ sources: [{
+      source: 'baostock', label: 'BaoStock', role: 'fallback', timeout_sec: 30,
+      up: null, last_test_at: null, last_success_at: null, failure_reason: null,
+    }] })
+    const wrapper = await mountView()
+    sysForm(wrapper, 'auth').vm.$emit('update-field', 'auth.require_email_code', false)
+    await selectSysTab(wrapper, '数据治理')
+    const testButton = wrapper.findAll('button').find((node) => node.text() === '测试全部来源')!
+    expect(testButton.attributes('disabled')).toBeUndefined()
+    await sysButton(wrapper, '刷新').trigger('click')
+    await flushPromises()
+    expect(dataApi.getSources).toHaveBeenLastCalledWith(false)
+    expect(dataApi.testSources).not.toHaveBeenCalled()
+    expect(sysForm(wrapper, 'auth').props('modelValue')['auth.require_email_code']).toBe(false)
+    wrapper.unmount()
+  })
+
   it('按设置接口动态渲染认证和审计配置，且不加载指标注册表', async () => {
     const wrapper = await mountView()
     expect(wrapper.text()).toContain('系统设置')
@@ -522,8 +585,222 @@ describe('ConfigView system tab', () => {
     expect(labels).not.toContain('回测成本')
   })
 
+  it('还原修改只回退当前页签草稿，不写服务端、不影响其他页签', async () => {
+    const wrapper = await mountView()
+    expect(sysButton(wrapper, '还原修改').attributes('disabled')).toBeDefined()
+    sysForm(wrapper, 'auth').vm.$emit('update-field', 'auth.require_email_code', false)
+    sysForm(wrapper, 'datasource').vm.$emit('update-field', 'datasource.concurrent_jobs', 3)
+    await flushPromises()
+    await sysButton(wrapper, '还原修改').trigger('click')
+    expect(sysForm(wrapper, 'auth').props('modelValue')['auth.require_email_code']).toBe(true)
+    expect(sysForm(wrapper, 'datasource').props('modelValue')['datasource.concurrent_jobs']).toBe(3)
+    expect(dataApi.saveSettings).not.toHaveBeenCalled()
+    expect(dataApi.resetSettings).not.toHaveBeenCalled()
+    expect(dataApi.getSettingsView).toHaveBeenCalledTimes(1)
+    expect(sysButton(wrapper, '还原修改').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('保存只提交当前页签，保留其他页签待保存草稿', async () => {
+    const wrapper = await mountView()
+    sysForm(wrapper, 'auth').vm.$emit('update-field', 'auth.require_email_code', false)
+    sysForm(wrapper, 'datasource').vm.$emit('update-field', 'datasource.concurrent_jobs', 3)
+    await flushPromises()
+    vi.mocked(dataApi.getSettingsView).mockResolvedValue(settingsWith({ 'auth.require_email_code': false }))
+    await sysButton(wrapper, '保存并生效').trigger('click')
+    await flushPromises()
+    expect(dataApi.saveSettings).toHaveBeenCalledWith({ 'auth.require_email_code': false })
+    expect(sysButton(wrapper, '保存并生效').attributes('disabled')).toBeDefined()
+    await selectSysTab(wrapper, '数据治理')
+    expect(sysForm(wrapper, 'datasource').props('modelValue')['datasource.concurrent_jobs']).toBe(3)
+    expect(sysButton(wrapper, '保存并生效').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('刷新同步当前已保存值并保留两个页签的草稿', async () => {
+    const wrapper = await mountView()
+    sysForm(wrapper, 'auth').vm.$emit('update-field', 'auth.require_email_code', false)
+    sysForm(wrapper, 'datasource').vm.$emit('update-field', 'datasource.concurrent_jobs', 3)
+    vi.mocked(dataApi.getSettingsView).mockResolvedValue(settingsWith({ 'auth.login_rate_per_min': 30, 'datasource.concurrent_jobs': 4 }))
+    await sysButton(wrapper, '刷新').trigger('click')
+    await flushPromises()
+    expect(sysForm(wrapper, 'auth').props('modelValue')).toMatchObject({
+      'auth.require_email_code': false, 'auth.login_rate_per_min': 30, 'datasource.concurrent_jobs': 3,
+    })
+    expect(dataApi.saveSettings).not.toHaveBeenCalled()
+    expect(dataApi.resetSettings).not.toHaveBeenCalled()
+    await selectSysTab(wrapper, '数据治理')
+    await sysButton(wrapper, '还原修改').trigger('click')
+    expect(sysForm(wrapper, 'datasource').props('modelValue')['datasource.concurrent_jobs']).toBe(4)
+    wrapper.unmount()
+  })
+
+  it('刷新期间允许继续编辑，响应不会覆盖新输入，重复刷新被拦截', async () => {
+    const wrapper = await mountView()
+    let finish!: (data: ReturnType<typeof settingsWith>) => void
+    vi.mocked(dataApi.getSettingsView).mockReturnValueOnce(new Promise((resolve) => { finish = resolve }))
+    await sysButton(wrapper, '刷新').trigger('click')
+    expect(sysButton(wrapper, '刷新').classes()).toContain('is-loading')
+    expect(sysForm(wrapper, 'auth').props('disabled')).toBe(false)
+    await sysButton(wrapper, '刷新').trigger('click')
+    sysForm(wrapper, 'auth').vm.$emit('update-field', 'auth.login_rate_per_min', 40)
+    await flushPromises()
+    finish(settingsWith({ 'auth.login_rate_per_min': 30 }))
+    await flushPromises()
+    expect(dataApi.getSettingsView).toHaveBeenCalledTimes(2)
+    expect(sysForm(wrapper, 'auth').props('modelValue')['auth.login_rate_per_min']).toBe(40)
+    expect(sysButton(wrapper, '保存并生效').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('刷新失败保留表单和草稿，并可再次刷新恢复', async () => {
+    const wrapper = await mountView()
+    sysForm(wrapper, 'auth').vm.$emit('update-field', 'auth.require_email_code', false)
+    vi.mocked(dataApi.getSettingsView).mockRejectedValueOnce(new Error('offline'))
+    await sysButton(wrapper, '刷新').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('刷新失败，已保留当前编辑值')
+    expect(sysForm(wrapper, 'auth').isVisible()).toBe(true)
+    expect(sysForm(wrapper, 'auth').props('modelValue')['auth.require_email_code']).toBe(false)
+    await sysButton(wrapper, '刷新').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('刷新失败，已保留当前编辑值')
+    expect(sysForm(wrapper, 'auth').props('modelValue')['auth.require_email_code']).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('保存通用请求值后同时更新来源继承元数据，保留其他页签草稿', async () => {
+    const inheritedGroup: SettingGroup = { key: 'ths_board', label: '同花顺板块', fields: [{
+      path: 'ths_board.timeout_sec', label: '旧超时覆盖', type: 'number',
+      value: null, default: null, nullable: true, inherited_value: 30, overridden: false,
+    }] }
+    const requestGroup: SettingGroup = { key: 'datasource', label: '数据源', fields: [{
+      path: 'datasource.socket_timeout_sec', label: '请求超时', type: 'number',
+      value: 30, default: 30, overridden: false,
+    }] }
+    const otherGroups = groups.filter((group) => group.key !== 'datasource')
+    mockSettings([...otherGroups, requestGroup, inheritedGroup])
+    const wrapper = await mountView()
+    sysForm(wrapper, 'auth').vm.$emit('update-field', 'auth.require_email_code', false)
+    await selectSysTab(wrapper, '数据治理')
+    sysForm(wrapper, 'datasource').vm.$emit('update-field', 'datasource.socket_timeout_sec', 60)
+    vi.mocked(dataApi.getSettingsView).mockResolvedValue({ groups: [
+      ...otherGroups,
+      { ...requestGroup, fields: [{ ...requestGroup.fields[0], value: 60, overridden: true }] },
+      { ...inheritedGroup, fields: [{ ...inheritedGroup.fields[0], inherited_value: 60 }] },
+    ] })
+    await flushPromises()
+    await sysButton(wrapper, '保存并生效').trigger('click')
+    await flushPromises()
+    expect(sysForm(wrapper, 'ths_board').props('group').fields[0].inherited_value).toBe(60)
+    expect(sysForm(wrapper, 'auth').props('modelValue')['auth.require_email_code']).toBe(false)
+    expect(sysButton(wrapper, '保存并生效').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('恢复默认只在存在持久化覆盖时可用，使用危险色描边', async () => {
+    const wrapper = await mountView()
+    expect(sysButton(wrapper, '恢复默认').classes()).toEqual(expect.arrayContaining(['el-button--danger', 'is-plain']))
+    expect(sysButton(wrapper, '恢复默认').attributes('disabled')).toBeUndefined()
+    await selectSysTab(wrapper, '数据治理')
+    expect(sysButton(wrapper, '恢复默认').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('确认恢复默认后即使切换页签也只清除冻结范围，保留其他草稿', async () => {
+    const wrapper = await mountView()
+    sysForm(wrapper, 'auth').vm.$emit('update-field', 'auth.require_email_code', false)
+    sysForm(wrapper, 'datasource').vm.$emit('update-field', 'datasource.concurrent_jobs', 3)
+    let confirm!: () => void
+    vi.mocked(ElMessageBox.confirm).mockReturnValueOnce(new Promise((resolve) => {
+      confirm = () => resolve('confirm' as never)
+    }))
+    await sysButton(wrapper, '恢复默认').trigger('click')
+    await selectSysTab(wrapper, '数据治理')
+    vi.mocked(dataApi.getSettingsView).mockResolvedValue(settingsWith({}, true))
+    confirm()
+    await flushPromises()
+    expect(dataApi.resetSettings).toHaveBeenCalledWith(groups.find((group) => group.key === 'auth')!.fields.map((field) => field.path))
+    expect(sysForm(wrapper, 'auth').props('modelValue')['auth.require_email_code']).toBe(true)
+    expect(sysForm(wrapper, 'datasource').props('modelValue')['datasource.concurrent_jobs']).toBe(3)
+    expect(vi.mocked(ElMessageBox.confirm).mock.calls[0][0]).toContain('其他页签草稿保留')
+    wrapper.unmount()
+  })
+
+  it('取消恢复默认不产生写入也不丢弃草稿', async () => {
+    const wrapper = await mountView()
+    sysForm(wrapper, 'auth').vm.$emit('update-field', 'auth.require_email_code', false)
+    vi.mocked(ElMessageBox.confirm).mockRejectedValueOnce('cancel')
+    await sysButton(wrapper, '恢复默认').trigger('click')
+    await flushPromises()
+    expect(dataApi.resetSettings).not.toHaveBeenCalled()
+    expect(sysForm(wrapper, 'auth').props('modelValue')['auth.require_email_code']).toBe(false)
+    expect(sysButton(wrapper, '保存并生效').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('恢复默认请求失败时保留当前和其他页签草稿，解除忙态', async () => {
+    const wrapper = await mountView()
+    sysForm(wrapper, 'auth').vm.$emit('update-field', 'auth.require_email_code', false)
+    sysForm(wrapper, 'datasource').vm.$emit('update-field', 'datasource.concurrent_jobs', 3)
+    vi.mocked(dataApi.resetSettings).mockRejectedValueOnce(new Error('offline'))
+    await sysButton(wrapper, '恢复默认').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('恢复默认失败，已保留当前编辑值')
+    expect(sysForm(wrapper, 'auth').props('modelValue')).toMatchObject({
+      'auth.require_email_code': false, 'datasource.concurrent_jobs': 3,
+    })
+    expect(sysButton(wrapper, '恢复默认').classes()).not.toContain('is-loading')
+    expect(sysButton(wrapper, '保存并生效').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('清除凭据只清除选中字段并保留同页签及其他页签草稿', async () => {
+    const credentialGroup: SettingGroup = { key: 'ths_board', label: '同花顺板块', fields: [{
+      path: 'ths_board.login_cookie', label: '登录 Cookie', type: 'password',
+      value: '••••••已设置', default: '', overridden: true, secret_status: 'usable',
+    }] }
+    mockSettings([...groups, credentialGroup])
+    const wrapper = await mountView()
+    sysForm(wrapper, 'auth').vm.$emit('update-field', 'auth.require_email_code', false)
+    await selectSysTab(wrapper, '数据治理')
+    sysForm(wrapper, 'datasource').vm.$emit('update-field', 'datasource.concurrent_jobs', 3)
+    vi.mocked(dataApi.getSettingsView).mockResolvedValue({ groups: [...groups, {
+      ...credentialGroup, fields: [{ ...credentialGroup.fields[0], value: '', overridden: false, secret_status: 'unset' }],
+    }] })
+    await sysForm(wrapper, 'ths_board').findAll('button')
+      .find((button) => button.text() === '清除已存配置')!.trigger('click')
+    await flushPromises()
+    expect(dataApi.resetSettings).toHaveBeenCalledWith(['ths_board.login_cookie'])
+    expect(sysForm(wrapper, 'ths_board').props('modelValue')).toMatchObject({
+      'ths_board.login_cookie': '', 'datasource.concurrent_jobs': 3, 'auth.require_email_code': false,
+    })
+    wrapper.unmount()
+  })
+
+  it('保存成功但回读失败时保留草稿，刷新核对前阻止重复写入', async () => {
+    const wrapper = await mountView()
+    sysForm(wrapper, 'auth').vm.$emit('update-field', 'auth.require_email_code', false)
+    vi.mocked(dataApi.getSettingsView).mockRejectedValueOnce(new Error('offline'))
+    await flushPromises()
+    await sysButton(wrapper, '保存并生效').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('操作已生效，但最新配置读取失败')
+    expect(sysButton(wrapper, '保存并生效').attributes('disabled')).toBeDefined()
+    expect(sysButton(wrapper, '恢复默认').attributes('disabled')).toBeDefined()
+    expect(sysForm(wrapper, 'auth').props('modelValue')['auth.require_email_code']).toBe(false)
+    vi.mocked(dataApi.getSettingsView).mockResolvedValue(settingsWith({ 'auth.require_email_code': false }))
+    await sysButton(wrapper, '刷新').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('操作已生效，但最新配置读取失败')
+    expect(dataApi.saveSettings).toHaveBeenCalledTimes(1)
+    expect(sysButton(wrapper, '还原修改').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
   it('保存时只提交改动字段，成功后重新加载设置', async () => {
     const wrapper = await mountView()
+    await selectSysTab(wrapper, '数据治理')
     const form = wrapper.findAllComponents(ConfigGroupForm).find((node) => node.props('group').key === 'audit')
     expect(form).toBeTruthy()
     form!.vm.$emit('update-field', 'audit.retention_days', 120)
