@@ -36,6 +36,7 @@ import {
 } from '@/api/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import ComponentAutoSettings from '@/components/ComponentAutoSettings.vue'
+import HelpHint from '@/components/HelpHint.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import LayoutPagePreview from '@/layout/components/LayoutPagePreview.vue'
 import {
@@ -260,6 +261,9 @@ function diagnosticTagType(status: ComponentDiagnosticRow['status']): 'success' 
 const focusedSlotSpec = computed<SlotSpec | null>(() =>
   focusedSlot.value ? (selectedPage.value.layout.slots.find((s) => s.id === focusedSlot.value) ?? null) : null,
 )
+const focusedSlotHint = computed(() => focusedSlotSpec.value
+  ? componentMetaForSlot(selectedPage.value, focusedSlotSpec.value).hint
+  : undefined)
 // 聚焦单个 slot：仅把该 slot 交给共享渲染器（page 层）。
 const focusedSlotIds = computed<string[]>(() => (focusedSlot.value ? [focusedSlot.value] : []))
 // 把页面草稿访问器包装成共享渲染器期望的「组件配置访问器」形状（page 层写值经页面草稿）。
@@ -646,7 +650,12 @@ const menuPageTitle = useMenuPageTitle()
                     </div>
                     <div v-if="focusedSlotSpec" class="cc-cfg-host">
                       <div class="focused-slot-card">
-                        <div class="focused-slot-name">{{ focusedSlotSpec.label || focusedSlotSpec.id }}</div>
+                        <div class="focused-slot-name">
+                          <span class="app-inline-info">
+                            <span>{{ focusedSlotSpec.label || focusedSlotSpec.id }}</span>
+                            <HelpHint v-if="focusedSlotHint" :text="focusedSlotHint" :label="`${focusedSlotSpec.label || focusedSlotSpec.id}说明`" />
+                          </span>
+                        </div>
                         <div class="muted app-inline-info">
                           <span>{{ focusedSlotSpec.component }}</span>
                           <span>{{ focusedSlotSpec.region }}</span>

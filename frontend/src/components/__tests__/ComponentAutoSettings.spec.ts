@@ -458,7 +458,7 @@ describe('ComponentAutoSettings', () => {
     expect(setComponentKnob).toHaveBeenCalledWith('chart', 'minHeight', 620)
   })
 
-  it('组件组说明使用悬浮帮助且不改动标题或折叠，隐藏组标题时仍可查看', async () => {
+  it('组件组说明与标题共同显示，隐藏组标题时不留下独立问号', async () => {
     const { wrapper } = mountConfigPanelDemo()
     const text = '规则管理、今日打卡和历史详情共用默认值。'
     const hint = () => wrapper.findAllComponents(HelpHint).find(item => item.props('text') === text)!
@@ -471,8 +471,7 @@ describe('ComponentAutoSettings', () => {
     await hint().trigger('keydown', { key: ' ' })
     expect(header.attributes('aria-expanded')).toBe(expanded)
     await wrapper.setProps({ showSlotTitle: false })
-    expect(hint()).toBeTruthy()
-    expect(hint().props('label')).toBe('系统设置面板说明')
+    expect(hint()).toBeUndefined()
     wrapper.unmount()
   })
 
