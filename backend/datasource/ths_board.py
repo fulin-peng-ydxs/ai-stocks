@@ -23,18 +23,18 @@ from __future__ import annotations
 
 import json
 import re
-import time
+from collections.abc import Callable
 from datetime import date
+from importlib import resources
 from io import StringIO
 
 import pandas as pd
 import requests
-from importlib import resources
 
 from backend.common.exceptions import DataSourceError
 from backend.common.logging import get_logger
 from backend.config import get_effective_settings
-from backend.datasource.base import rate_limited, with_retry
+from backend.datasource.base import check_thread_cancel, rate_limited, with_retry
 
 log = get_logger("datasource.ths_board")
 
@@ -62,8 +62,6 @@ _FUND_FLOW_PERIODS = {
 }
 # 资金流周期元组（单一事实源：采集默认全周期、质检多周期检查、查询层字段映射共用）
 FUND_FLOW_PERIODS: tuple[str, ...] = tuple(_FUND_FLOW_PERIODS)
-# 资金流分页空壳重试次数：data.*/funds 偶发 200-无行空壳页，重试后再空才跳过该页（不截断后续页）
-_FUND_FLOW_EMPTY_RETRIES = 3
 # 指数日线 JS 模板（{clid}/{yyyy}）
 _BAR_LINE_URL = "https://d.10jqka.com.cn/v4/line/bk_{clid}/01/{year}.js"
 # 分页终止护栏（登录墙截断下的兜底；实测第 6 页起必登录墙，护栏远大于实际可达页数）
@@ -203,14 +201,16 @@ class ThsBoardSource:
     # ── 底层 HTTP ────────────────────────────────────────────
 
     @rate_limited(1.0)
-    def _http_get(self, url: str, *, data_host: bool = False, referer: str | None = None) -> str:
-        """GET 并返回文本（带限流 + 401 刷新单次重试 + 普通异常指数退避重试）。
+    def _http_get(
+        self, url: str, *, data_host: bool = False, referer: str | None = None,
+        accept: Callable[[str], bool] | None = None,
+    ) -> str:
+        """HTTP失败、401刷新及有效空响应共用同一尝试预算（包含首次）。
 
-        v cookie 失效（401）会触发同花顺频次反爬：刷新 cookie 后**只重试一次**，不经过
-        with_retry 的指数退避（避免连续 401 时白等 2s+4s）；其余异常按 _max_retries 指数退避。
+        accept 用于识别可补取的空壳/未发布数据；预算耗尽仍返回最后一次空响应，
+        由业务保留缺口或跳过该页。网络失败耗尽则抛错，不能伪装成有效空响应。
         """
         from backend.datasource.request_policy import pause, request_policy
-        from backend.datasource.base import check_thread_cancel
 
         policy = request_policy("ths_board")
         attempts = self._request_overrides["attempts"]
@@ -225,17 +225,19 @@ class ThsBoardSource:
                 if referer:
                     headers["Referer"] = referer
                 resp = self._session.get(url, headers=headers, timeout=timeout)
+                check_thread_cancel()
                 if resp.status_code == 401:
                     self._refresh_v_cookie()
                 resp.raise_for_status()
-                return resp.text
+                if accept is None or accept(resp.text) or attempt == attempts:
+                    return resp.text
             except Exception as exc:  # noqa: BLE001 -- 次数包含401刷新，不额外发送隐藏重试
                 check_thread_cancel()
                 if attempt == attempts:
                     raise DataSourceError(f"同花顺请求尝试 {attempts} 次仍失败: {exc}") from exc
-                backoff = self._request_overrides["backoff"]
-                pause((policy.backoff if backoff is None else backoff) * 2 ** (attempt - 1),
-                      check_thread_cancel)
+            backoff = self._request_overrides["backoff"]
+            pause((policy.backoff if backoff is None else backoff) * 2 ** (attempt - 1),
+                  check_thread_cancel)
 
     # ── 公开取数方法 ─────────────────────────────────────────
 
@@ -311,6 +313,7 @@ class ThsBoardSource:
                 try:
                     html = self._http_get(url, referer="https://q.10jqka.com.cn/")
                 except Exception as e:  # noqa: BLE001 —— 单页失败标记不完整，不中断整体
+                    check_thread_cancel()
                     log.warning("板块 %s 第 %d 页取数失败: %s", code, page, e)
                     complete = False
                     break
@@ -347,8 +350,15 @@ class ThsBoardSource:
         for year in range(start.year, end.year + 1):
             url = _BAR_LINE_URL.format(clid=clid, year=year)
             try:
-                text = self._http_get(url, referer="https://q.10jqka.com.cn/")
+                text = self._http_get(
+                    url, referer="https://q.10jqka.com.cn/",
+                    accept=lambda text, year=year: any(
+                        start.isoformat() <= row["trade_date"] <= end.isoformat()
+                        for row in _parse_bar_js(text, year)
+                    ),
+                )
             except Exception as e:  # noqa: BLE001 —— 单年失败跳过（指数缺口由 T7 质检扫描发现）
+                check_thread_cancel()
                 log.warning("板块 %s 指数 %d 年取数失败: %s", code, year, e)
                 failed_years.append(year)
                 continue
@@ -384,30 +394,28 @@ class ThsBoardSource:
         board_seg = _FUND_FLOW_PERIODS[period]
         # 先探首页拿总页数（page_info「1/N」）；空壳重试至拿到含数据的首页
         first_url = f"{base}/{board_seg}field/tradezdf/order/desc/page/1/ajax/1/free/1/"
-        first_text = ""
-        first = pd.DataFrame(columns=_FUND_FLOW_COLS)
-        for attempt in range(_FUND_FLOW_EMPTY_RETRIES):
-            first_text = self._http_get(first_url, data_host=True)
-            first = _parse_fund_flow(first_text, board_type=board_type, period=period)
-            if not first.empty:
-                break
-            if attempt < _FUND_FLOW_EMPTY_RETRIES - 1:
-                time.sleep(self._retry_backoff_sec)
+
+        def read_page(url: str) -> tuple[str, pd.DataFrame]:
+            # 校验时已解析页面，保留本页结果，避免成功响应再次执行 HTML 表格解析。
+            parsed = pd.DataFrame(columns=_FUND_FLOW_COLS)
+
+            def accept_page(text: str) -> bool:
+                nonlocal parsed
+                parsed = _parse_fund_flow(text, board_type=board_type, period=period)
+                return not parsed.empty
+
+            text = self._http_get(url, data_host=True, accept=accept_page)
+            return text, parsed
+
+        first_text, first = read_page(first_url)
         total_pages = _fund_flow_total_pages(first_text)
         frames = [first] if not first.empty else []
         for page in range(2, total_pages + 1):
             url = f"{base}/{board_seg}field/tradezdf/order/desc/page/{page}/ajax/1/free/1/"
-            df = pd.DataFrame(columns=_FUND_FLOW_COLS)
-            for attempt in range(_FUND_FLOW_EMPTY_RETRIES):
-                text = self._http_get(url, data_host=True)
-                df = _parse_fund_flow(text, board_type=board_type, period=period)
-                if not df.empty:
-                    break
-                if attempt < _FUND_FLOW_EMPTY_RETRIES - 1:
-                    time.sleep(self._retry_backoff_sec)
+            _, df = read_page(url)
             if df.empty:
-                log.warning("资金流 %s/%s 第 %d/%d 页重试 %d 次仍空壳，跳过该页",
-                            board_type, period, page, total_pages, _FUND_FLOW_EMPTY_RETRIES)
+                log.warning("资金流 %s/%s 第 %d/%d 页按请求预算尝试后仍空壳，跳过该页",
+                            board_type, period, page, total_pages)
                 continue
             frames.append(df)
         if not frames:

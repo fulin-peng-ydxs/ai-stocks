@@ -379,6 +379,40 @@ def test_stock_quality_freshness(client):
 
 
 # ── 系统设置（FR-DM-12）──
+@pytest.fixture()
+def settings_pg(monkeypatch):
+    """连接内临时表遮蔽全局配置；真实加解密及仓库SQL不接触共享 app_config。"""
+    from backend.storage import app_config
+    from backend.storage.audit_repository import AuditRepository
+    from backend.storage.pg_client import get_pg_client
+
+    class ConnectionPg:
+        def __init__(self, conn):
+            self.conn = conn
+
+        def execute(self, sql, params=None):
+            self.conn.execute(sql, params)
+
+        def query_df(self, sql, params=None):
+            cursor = self.conn.execute(sql, params)
+            return pd.DataFrame(cursor.fetchall(), columns=[col.name for col in cursor.description])
+
+    with get_pg_client().transaction() as conn:
+        conn.execute("CREATE TEMP TABLE app_config (LIKE public.app_config INCLUDING ALL) "
+                     "ON COMMIT DROP")
+        isolated = ConnectionPg(conn)
+        monkeypatch.setattr(app_config, "get_pg_client", lambda: isolated)
+        monkeypatch.setattr(AuditRepository, "record", lambda *args, **kwargs: None)
+        yield isolated
+
+
+@pytest.fixture()
+def app_cfg(settings_pg):
+    from backend.storage.app_config import AppConfigRepo
+
+    return AppConfigRepo(settings_pg)
+
+
 def _fake_request():
     """save_settings 需 Request（仅用于审计取 IP/method/path）：造最小 ASGI scope。"""
     from starlette.requests import Request
@@ -387,7 +421,7 @@ def _fake_request():
                     "scheme": "http", "server": ("testserver", 80)})
 
 
-def test_settings_view_and_save(client):
+def test_settings_view_and_save(client, app_cfg):
     from backend.api.data_admin import get_settings_view, save_settings
     view = get_settings_view().data
     assert any(g["key"] == "datasource" for g in view["groups"])
@@ -401,7 +435,7 @@ def test_settings_view_and_save(client):
     assert bad.code == 400
 
 
-def test_ths_login_cookie_is_encrypted_and_masked(client, pg, app_cfg):
+def test_ths_login_cookie_is_encrypted_and_masked(client, settings_pg, app_cfg):
     """同花顺登录 Cookie 可从页面配置，但数据库与响应都不得出现明文。"""
     from backend.api.data_admin import get_settings_view, save_settings
     from backend.config import get_effective_settings
@@ -417,7 +451,7 @@ def test_ths_login_cookie_is_encrypted_and_masked(client, pg, app_cfg):
     cookie = "user=xxx; ticket=secret; v=yyy"
     resp = save_settings({"updates": {"ths_board.login_cookie": cookie}}, _fake_request())
     assert resp.code == 0
-    stored = pg.query_df(
+    stored = settings_pg.query_df(
         "SELECT value FROM app_config WHERE key=%s", ["ths_board.login_cookie"]
     ).iloc[0]["value"]
     stored_value = json.loads(stored)
@@ -434,7 +468,7 @@ def test_ths_login_cookie_is_encrypted_and_masked(client, pg, app_cfg):
 
 @pytest.mark.parametrize("failure_mode", ["missing_key", "wrong_key", "tampered_ciphertext"])
 def test_ths_login_cookie_unavailable_status_matches_runtime(
-    client, pg, app_cfg, monkeypatch, failure_mode,
+    client, settings_pg, app_cfg, monkeypatch, failure_mode,
 ):
     """密钥缺失/错误或密文损坏时，接口不得把运行态不可用的 Cookie 显示为已设置。"""
     from cryptography.fernet import Fernet
@@ -452,11 +486,11 @@ def test_ths_login_cookie_unavailable_status_matches_runtime(
             Fernet.generate_key().decode("ascii"),
         )
     else:
-        row = pg.query_df(
+        row = settings_pg.query_df(
             "SELECT value FROM app_config WHERE key=%s", ["ths_board.login_cookie"]
         ).iloc[0]
         stored = json.loads(row["value"])
-        pg.execute(
+        settings_pg.execute(
             "UPDATE app_config SET value=%s WHERE key=%s",
             [json.dumps(f"{stored[:-1]}X"), "ths_board.login_cookie"],
         )
@@ -470,7 +504,7 @@ def test_ths_login_cookie_unavailable_status_matches_runtime(
 
 
 def test_ths_login_cookie_save_without_key_is_rejected_before_other_writes(
-    client, pg, app_cfg, monkeypatch,
+    client, settings_pg, app_cfg, monkeypatch,
 ):
     from backend.storage.app_config import ConfigValidationError
 
@@ -485,7 +519,7 @@ def test_ths_login_cookie_save_without_key_is_rejected_before_other_writes(
             "ths_board.login_cookie": "must-not-persist",
         })
 
-    assert pg.query_df(
+    assert settings_pg.query_df(
         "SELECT 1 FROM app_config WHERE key = ANY(%s)",
         [["audit.retention_days", "ths_board.login_cookie"]],
     ).empty
@@ -1491,9 +1525,9 @@ def test_ths_board_config_overridable(client, monkeypatch):
     from backend.config.settings import Settings
     s = Settings()
     assert s.ths_board.min_interval_sec == 1.0
-    assert s.ths_board.timeout_sec == 10.0
-    assert s.ths_board.max_retries == 3
-    assert s.ths_board.retry_backoff_sec == 2.0
+    assert s.ths_board.timeout_sec is None
+    assert s.ths_board.max_retries is None
+    assert s.ths_board.retry_backoff_sec is None
     from backend.storage.app_config import WHITELIST
     assert "ths_board.min_interval_sec" in WHITELIST
     assert "ths_board.timeout_sec" in WHITELIST
@@ -1941,61 +1975,51 @@ def test_board_index_batch_fix_survives_rescan_of_siblings(client, monkeypatch):
 
 
 def test_board_index_gap_daily_fix_retries_on_empty_rows(client, monkeypatch):
-    """板块指数逐日缺口修复：单日重采返回 0 行时按 ths_board 配置重试。
-
-    源端按年返回 K 线，盘后单点请求可能因数据暂未发布返回 0 行；重试可避免因偶发延迟误失败。
-    """
-    from types import SimpleNamespace
-
-    svc = AsyncTaskService(client)
+    """真实修复任务经来源补取空年度响应，落库、复检并关闭问题；不重复执行整段采集。"""
+    from backend.config.settings import Settings
+    from backend.datasource import request_policy
     from backend.services import ingest
     from backend.services.board_ingest import BoardIngestService
+    from backend.tests.test_ths_board_source import _FakeResp, _make_source
 
-    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    cfg = Settings()
+    cfg.datasource.max_retries = 2
+    cfg.datasource.retry_backoff_sec = 0
+    assert cfg.ths_board.max_retries is None
+    monkeypatch.setattr(request_policy, "get_effective_settings", lambda: cfg)
+    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
-    # 缩短重试配置，避免测试耗时
-    fake_cfg = SimpleNamespace(ths_board=SimpleNamespace(max_retries=2, retry_backoff_sec=0.01))
-    monkeypatch.setattr("backend.config.get_effective_settings", lambda: fake_cfg)
+    requests = []
+
+    class Session:
+        def get(self, url, **kwargs):
+            requests.append(url)
+            data = "" if len(requests) == 1 else "20260818,100,101,99,100,1000,100000"
+            return _FakeResp('quotebridge({"data":"' + data + '"})')
+
+    source = _make_source({})
+    source._session = Session()
+    source._request_overrides = {"timeout": None, "attempts": None, "backoff": None}
+    init = BoardIngestService.__init__
     monkeypatch.setattr(BoardIngestService, "__init__",
-                        lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
-
-    calls = []
-
-    def fake_ingest_board_bar(self, start, end=None, board_codes=None, board_type=None, ctx=None):
-        calls.append({"start": start, "end": end, "codes": board_codes,
-                      "bar_done_codes": ctx.checkpoint.get("bar_done_codes") if ctx else None})
-        # 模拟真实 ingest_board_bar：调用结束后会把当前板块写入 checkpoint
-        if ctx:
-            ctx.set_phase("board_bar", bar_done_codes=["300037"])
-        # 第一次返回 0 行，第二次返回 1 行（模拟源端延迟后恢复）
-        if len(calls) == 1:
-            return {"rows": 0, "boards": 0, "failed": []}
-        for code in (board_codes or []):
-            self.c.execute(
-                "INSERT INTO board_bar (board_code, trade_date, open, high, low, close, volume, amount) "
-                "VALUES (?, DATE '2026-08-18', 100, 101, 99, 100, 1000, 100000)", [code])
-        return {"rows": len(board_codes or []), "boards": 1, "failed": []}
-
-    monkeypatch.setattr(BoardIngestService, "ingest_board_bar", fake_ingest_board_bar, raising=True)
+                        lambda self, client=None, **kwargs: init(self, client=client, source=source))
     client.execute("INSERT INTO board_dict (board_code, name, board_type, has_bar) "
-                   "VALUES ('300037','智能电网','concept',TRUE)")
-    client.execute("INSERT INTO daily_bar (code, trade_date, close) VALUES ('600000.SH', DATE '2026-08-18', 10.0)")
+                   "VALUES ('300037','测试行业','industry',TRUE)")
+    client.execute("INSERT INTO daily_bar (code, trade_date, close) "
+                   "VALUES ('600000.SH', DATE '2026-08-18', 10.0)")
     client.execute("SELECT nextval('seq_quality_issue')")
     client.execute("INSERT INTO data_quality_issue "
                    "(id, code, issue_type, trade_date, severity, status, detected_at) "
-                   "VALUES (100, '300037', 'board_index_gap_daily', DATE '2026-08-18', 'mid', 'open', now())")
+                   "VALUES (100, '300037', 'board_index_gap_daily', DATE '2026-08-18', "
+                   "'mid', 'open', now())")
 
-    tid = svc.create("fix", {"issue_ids": [100]})
-    t = _wait(svc, tid)
-    assert t["status"] == "done"
-    row = client.query_df("SELECT status FROM data_quality_issue WHERE id=100").iloc[0]
-    assert row["status"] == "resolved"
-    # 第一次 0 行触发重试，共调用 2 次
-    assert len(calls) == 2
-    assert calls[0]["start"] == calls[0]["end"] == date(2026, 8, 18)
-    assert calls[1]["start"] == calls[1]["end"] == date(2026, 8, 18)
-    # 关键：第 2 次调用前必须清掉上次的 bar_done_codes，否则会被续跑跳过
-    assert calls[1]["bar_done_codes"] is None
+    svc = AsyncTaskService(client)
+    task = _wait(svc, svc.create("fix", {"issue_ids": [100]}))
+    assert task["status"] == "done", task
+    assert len(requests) == 2
+    assert requests[0] == requests[1]
+    assert client.query_df("SELECT status FROM data_quality_issue WHERE id=100").iloc[0]["status"] == "resolved"
+    assert client.query_df("SELECT close FROM board_bar WHERE board_code='300037'").iloc[0]["close"] == 100
 
 
 def test_board_fund_unmatched_fix_resolves_only_after_mapping(client, monkeypatch):

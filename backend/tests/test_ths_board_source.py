@@ -353,7 +353,7 @@ def test_get_board_fund_flow_empty_shell_retried_then_success():
                 return _FakeResp(p1)
             return _FakeResp("", status=404)
 
-    s = _make_source({})
+    s = _make_source({}, max_retries=2)
     s._session = _FlakySession()  # type: ignore[assignment]
     df = s.get_board_fund_flow("concept", "即时")
     assert len(df) == 3
@@ -385,6 +385,102 @@ def test_get_board_fund_flow_persistent_empty_mid_page_skipped():
     df = s.get_board_fund_flow("concept", "即时")
     assert len(df) == 2
     assert set(df["name"]) == {"CRO概念", "猴痘概念"}
+
+
+@pytest.mark.parametrize("common,legacy,expected", [(1, None, 1), (4, None, 4), (4, 2, 2)])
+def test_empty_fund_pages_use_effective_policy_per_page(monkeypatch, common, legacy, expected):
+    """首页及后续空页各消费一次完整预算；继承与旧覆盖均与能力表一致。"""
+    from backend.config.settings import Settings
+    from backend.datasource import request_policy as rp
+
+    cfg = Settings()
+    cfg.datasource.max_retries = common
+    cfg.datasource.retry_backoff_sec = 0.25
+    cfg.ths_board.max_retries = legacy
+    monkeypatch.setattr(rp, "get_effective_settings", lambda: cfg)
+    waits = []
+    monkeypatch.setattr(rp, "pause", lambda seconds, check: waits.append(seconds))
+    source = _make_source({"/funds/gnzjl/": '<span class="page_info">1/3</span>'})
+    source._request_overrides = {"timeout": None, "attempts": None, "backoff": None}
+    assert source.get_board_fund_flow("concept").empty
+    for page in (1, 2, 3):
+        assert sum(f"/page/{page}/" in url for url in source._session.calls) == expected
+    assert waits == [0.25 * 2 ** index for index in range(expected - 1)] * 3
+
+
+@pytest.mark.parametrize("outcomes,has_row,failed", [
+    (["empty", "error", "row"], True, False),
+    (["error", "empty", "empty"], False, False),
+    (["empty", "empty", "error"], False, True),
+])
+def test_annual_empty_and_network_failure_share_one_budget(monkeypatch, outcomes, has_row, failed):
+    """年度响应补取与网络失败合计最多三次；缺数据与传输失败仍分开报告。"""
+    from backend.datasource import request_policy as rp
+
+    monkeypatch.setattr(rp, "pause", lambda *args: None)
+    calls = []
+
+    class Session:
+        def get(self, url, **kwargs):
+            outcome = outcomes[len(calls)]
+            calls.append(url)
+            if outcome == "error":
+                raise ConnectionError("测试断线")
+            data = "20260818,100,101,99,100,1000,100000" if outcome == "row" else ""
+            return _FakeResp('quotebridge({"data":"' + data + '"})')
+
+    source = _make_source({}, max_retries=3)
+    source._session = Session()
+    frame = source.get_board_bar("881121", "industry", date(2026, 8, 18), date(2026, 8, 18))
+    assert len(calls) == 3
+    assert (not frame.empty) is has_row
+    assert frame.attrs["failed_years"] == ([2026] if failed else [])
+
+
+def test_annual_empty_retry_cancellation_does_not_continue_to_next_year(monkeypatch):
+    from backend.datasource import request_policy as rp
+    from backend.datasource.base import thread_cancel_scope
+    from backend.services.async_task import TaskCancelled
+
+    cancelled = False
+
+    def check():
+        if cancelled:
+            raise TaskCancelled("测试取消")
+
+    def cancel_on_wait(seconds, check):
+        nonlocal cancelled
+        cancelled = True
+        check()
+
+    monkeypatch.setattr(rp, "pause", cancel_on_wait)
+    source = _make_source({"/v4/line/": 'quotebridge({"data":""})'}, max_retries=3)
+    with thread_cancel_scope(check), pytest.raises(TaskCancelled):
+        source.get_board_bar("881121", "industry", date(2025, 1, 1), date(2026, 8, 18))
+    assert len(source._session.calls) == 1
+
+
+def test_empty_fund_page_cancellation_uses_same_retry_wait(monkeypatch):
+    from backend.datasource import request_policy as rp
+    from backend.datasource.base import thread_cancel_scope
+    from backend.services.async_task import TaskCancelled
+
+    cancelled = False
+
+    def check():
+        if cancelled:
+            raise TaskCancelled("测试取消")
+
+    def cancel_on_wait(seconds, check):
+        nonlocal cancelled
+        cancelled = True
+        check()
+
+    monkeypatch.setattr(rp, "pause", cancel_on_wait)
+    source = _make_source({"/funds/gnzjl/": ""}, max_retries=3)
+    with thread_cancel_scope(check), pytest.raises(TaskCancelled):
+        source.get_board_fund_flow("concept")
+    assert len(source._session.calls) == 1
 
 
 def test_validate_board_type():
