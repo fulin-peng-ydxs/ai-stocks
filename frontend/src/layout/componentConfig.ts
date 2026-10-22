@@ -110,13 +110,13 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
     { key: 'commonFields', label: '常显搜索条件', control: 'string[]', layers: ['page', 'user'], applicability: 'searchFields', help: '选择两个常显条件，其余条件收纳到默认关闭的高级搜索。' },
   ],
   'data-table': [
-    { key: 'border', label: '显示表格边框', control: 'bool', layers: ['page'], default: false, highFrequency: true },
+    { key: 'border', label: '显示列分隔线', help: '控制表格内部的列分隔线；结果区外框由卡片或工作区面板统一承接。', control: 'bool', layers: ['page'], default: false, highFrequency: true },
     { key: 'pageSize', label: '默认分页大小', control: 'int', layers: ['page', 'user'], min: 10, max: 200, default: 20, highFrequency: true, applicability: 'explicit' },
     { key: 'defaultSort', label: '默认排序', control: 'string', layers: ['page', 'user'], applicability: 'sortFields', help: '字段:方向，如 score:desc（取值随页面而异）' },
     { key: 'hiddenColumns', label: '隐藏列', control: 'string[]', layers: ['page', 'user'], applicability: 'columns', help: '列 key 列表（随页面而异）' },
   ],
   'wide-table': [
-    { key: 'border', label: '显示表格边框', control: 'bool', layers: ['page'], default: false, highFrequency: true },
+    { key: 'border', label: '显示列分隔线', help: '控制表格内部的列分隔线；结果区外框由卡片或工作区面板统一承接。', control: 'bool', layers: ['page'], default: false, highFrequency: true },
     { key: 'pageSize', label: '默认分页大小', control: 'int', layers: ['page', 'user'], min: 10, max: 200, default: 50, highFrequency: true, applicability: 'explicit' },
     { key: 'defaultSort', label: '默认排序', control: 'string', layers: ['page', 'user'], applicability: 'sortFields', help: '字段:方向，如 event_time:desc（取值随页面而异）' },
     { key: 'hiddenColumns', label: '隐藏列', control: 'string[]', layers: ['page', 'user'], applicability: 'columns', help: '列 key 列表（随页面而异）' },

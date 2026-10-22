@@ -593,7 +593,6 @@ const menuPageTitle = useMenuPageTitle()
               row-key="id"
               :border="tableBorder('itemTable')"
               stripe
-              framed
               :default-sort="elementDefaultSort"
               :pagination="{ currentPage: itemPage, pageSize, total: itemTotal }"
               @sort-change="onSortChange"
@@ -754,8 +753,8 @@ const menuPageTitle = useMenuPageTitle()
   display: flex;
   flex-direction: column;
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  background: var(--el-bg-color-overlay);
+  border-radius: var(--layout-card-radius);
+  background: var(--el-bg-color);
 }
 .dict-left {
   flex: 0 0 320px;

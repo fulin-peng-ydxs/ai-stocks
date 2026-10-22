@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableCard from '@/components/AppTableCard.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -330,7 +331,7 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #main>
-      <section class="plain-panel preset-list-panel">
+      <AppTableCard class="preset-list-panel">
         <AppStateBlock
           v-if="loadError"
           state="error"
@@ -374,7 +375,7 @@ const menuPageTitle = useMenuPageTitle()
             </template>
           </AppTableColumn>
         </AppDataTable>
-      </section>
+      </AppTableCard>
     </template>
 
     <template #overlays>
@@ -464,18 +465,8 @@ const menuPageTitle = useMenuPageTitle()
   align-items: center;
   gap: var(--app-space-2);
 }
-.plain-panel {
-  min-width: 0;
-  border: 1px solid var(--el-border-color);
-  background: var(--el-bg-color);
-  border-radius: 6px;
-  padding: var(--app-density-card-padding);
-}
 .preset-list-panel {
   height: 100%;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
 }
 .section-title {
   font-size: var(--app-font-size-section-title);

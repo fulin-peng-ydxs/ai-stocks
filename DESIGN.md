@@ -377,6 +377,7 @@ Key Characteristics：
 | `IndicatorParamSchemaEditor` | `frontend/src/components/indicator/IndicatorParamSchemaEditor.vue` | 自定义指标参数 schema 编辑器，统一参数名、标签、类型、默认值、上下限、单位和说明 | 无直接系统组件种类；作为指标定义抽屉内部字段 | 只用于平台指标定义维护，不与方案参数值编辑器合并；定义被引用时整体只读，后端仍负责最终占位符和范围校验 |
 | `AppScrollArea` | `frontend/src/components/AppScrollArea.vue` | 自建滚动区域唯一入口，封装 Element Plus 并承接内容布局 | 内部实现组件，不单独登记系统组件种类或假 slot | 正文、侧栏、抽屉、导航、页签和局部列表统一消费；保留原有滚动归属、成长约束及布局，内部 viewport 和内容层由组件统一承载；表格与库控件内部滚动条由全站适配层接管，不再包第二层 |
 | `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、加载分流、空态插槽、行点击样式和成长/嵌入模式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 主表与局部明细统一复用；成长、嵌入、列宽和滚动见[表格与列表](#表格与列表)，加载/空态见[四态反馈总则](#四态反馈总则)。 |
+| `AppTableCard` | `frontend/src/components/AppTableCard.vue` | 独立列表的统一结果外壳，复用 Element Plus 卡片及主题边框、圆角；承接标题、四态和分页 | 无独立系统组件种类或配置字段 | ConfigView、QualityView、ScheduleView、TrainingView、AuditLogView、UserManageView、TenantManageView、LayoutPresetsView、TradeDisciplineHistory；已有工作区面板的表格不重复套卡 |
 | `AppAsyncRegion` | `frontend/src/components/AppAsyncRegion.vue` | 非表格异步内容区域外壳，统一首次加载、已有内容刷新、空态和异常态的互斥切换 | 消费 `AppStateBlock` 和 Element Plus `v-loading`，通过调用方提供的 `loading + hasContent + error` 推导区域状态；不负责请求、业务缓存或内容归属判断 | 标准非表格异步区统一复用；只消费调用方状态，不持有请求或缓存，接入边界见[四态反馈总则](#四态反馈总则)。 |
 | `AppTableColumn` | `frontend/src/components/AppTableColumn.vue`、`frontend/src/components/table/adaptiveColumnWidth.ts` | 表格列运行时组件，根据结构类型、字段名和标签推导语义角色，以稳定字符权重结合排序/筛选控件计算弹性最小宽，并统一推导表头/单元格对齐、数字排版、单行表头及同行元信息 | `data-table`、`wide-table` 的稳定列宽、语义对齐和表头能力；不是用户可配置字段 | 数据表格列统一消费；语义角色、宽度、对齐和控件容量见[表格与列表](#表格与列表)，禁止页面覆盖列呈现。 |
 | `AppOverflowTooltipHost` | `frontend/src/components/AppOverflowTooltipHost.vue`、`frontend/src/components/overflow/overflowTooltip.ts` | 全站真实截断原文提示宿主 | 无直接系统组件种类 | 唯一全局挂载于 App；只识别真实截断，不接管原生 title；触发、原文来源与边界见本节提示契约 |
@@ -694,6 +695,7 @@ Key Characteristics：
 - 主数据表应作为 `growMain` 占据剩余空间，使用 `height="100%"` 让表体内部滚动；当一个标签页工作区承载多个互斥主表时，由 `tabs` 作为唯一 `growMain`，当前面板内的表体承接滚动。
 - `list` 原型必须且只能有一个顶层 `growMain`；主列表不得使用 `embedded`。
 - 长文档中后方仍有同级内容的局部表格不得独占富余高度；统一使用 `embedded`，由 `AppDataTable` 默认消费 `components/table/tableSizing.ts` 的 `LONG_DOCUMENT_TABLE_MAX_HEIGHT`，页面不重复传默认上限。显式 `height` 不叠加默认上限；显式 `max-height` 优先，确需完整展开时传 `:max-height="null"` 并说明原因。纵向混合工作台中，前置主业务表使用 `LEADING_WORKBENCH_TABLE_MAX_HEIGHT`，并通过 slot 的 `minH + idealH` 声明受控收缩范围；末尾表格可由 `section` 作为成长容器，在 `pageRegistry` 声明为唯一 `growMain`，内部表格继续作为嵌套 slot 登记。`VMixedGrow` 只让声明 `idealH` 的前置块收缩，未声明的固定块继续保持自然高度；页面不得复制 `clamp`、视口减法、私有行数换算或用 CSS 模拟成长关系。
+- 表格内部列线与结果区外框分开：布局配置保留 `border` key，对外名称为“显示列分隔线”，默认关闭，仅控制列线，不控制卡片或工作区外围边界。`AppDataTable` 保留组件库固定列布局并移除其额外围框，外框与圆角由所属容器消费主题 token。
 - 页面数据表格统一使用 `AppDataTable + AppTableColumn`。页面不得直接使用原生 `<table>`、`el-table`、`el-table-column`，也不得向列传 `width/min-width`。
 - 列宽采用语义自适应契约：选择、展开、序号等结构列保持稳定窄宽；开关列显式使用 `switch`，固定 80px 以容纳标准开关、单元格留白及操作空间，不占富余宽度；普通名称使用 `name`，含前置选择/收藏等控件并展示主副信息的对象识别列使用 `entity`；其余列取“语义内容基础宽度”和“表头标签 + 同行元信息 + 排序/筛选控件 + 主内容前置控件”的较大值，并按 8px 网格取整。表格内编辑控件或控件组通过 `control-width="compact|short|medium|long|wide"` 声明容量，列宽额外计入单元格留白并按网格向上取整；评分指标、评分参数、权重分别使用 long、wide、medium。表格内多选下拉必须按 `filterSelectVisibleTagCount` 或 `filterSelectDisplayMode=count` 计入控件容量和单元格留白，禁止先压窄控件再裁掉标签、`+N` 或“已选 N”。中英文混排使用稳定字符权重估算，不做运行时 DOM/数据采样，避免数据变化触发列宽跳动；异常长表头受角色上限保护，真实截断时由全局省略提示展示原文（超长内容按统一上限截断）。容器有余量时由 Element Plus `fit` 按最小宽度权重分配并铺满，空间不足时保持最小可读宽度并由表体横向滚动。
 - 横向滚动与单元格溢出是两套独立机制：前者只由所有列的语义最小宽度总和是否超过表格可视宽度决定；后者由 `AppDataTable` 递归比较单元格内文字、标签和嵌套结构的真实矩形是否越过该单元格边界。不得使用包含透明 padding / margin 的 `scrollWidth` 制造虚假省略号。省略号只有一种视觉规则：必须由实际承载文字的内容容器通过原生 `text-overflow: ellipsis` 绘制在自身末尾；表格只负责检测真实遮挡和触发统一悬浮，不得使用渐隐遮罩、伪元素或独立字符在单元格外层补画省略号。表格内标签、评分胶囊及其它有边界的复合内容必须在自身内部收缩，禁止切断背景、边框、文字或数字。全站省略原文统一由 `AppOverflowTooltipHost` 自动承接，只在真实截断时显示，并遵守统一的宽度与高度上限；页面不得传列级 `show-overflow-tooltip` 或自行维护截断 tooltip。操作列及动作组属于命令交互边界，不接入普通文本省略悬浮，也不得把隐藏测量副本纳入提示内容；结构列与操作列继续使用各自专用契约。
@@ -860,7 +862,7 @@ Key Characteristics：
 - 卡片只用于承载独立数据块、表格容器、设置组、弹层内容，不把页面 section 都做成浮动卡片。
 - 同角色普通与可浮起卡片的静止边框统一消费主题边框色，不叠加白色内阴影提亮顶部；悬停时才按交互规范增强边框与投影。
 - 普通卡片圆角统一消费 `--layout-card-radius`，默认预设为 10px；设置抽屉和用户中心等浮层卡片可使用 12-16px。
-- 普通内容卡片内距消费页面密度（紧凑 12px / 标准 16px / 宽松 24px）。纯表格卡片统一使用 `el-card.app-table-card`：内容体无内距，表头与容器边缘、标题分隔线相接；标题与工具栏放在 header 插槽并保留内距，直属状态反馈和分页由共享样式保留空间。已有 `AppWorkspacePane` 表格区沿用无内距结构。混合说明、表单或图表的内容卡片不整体清零，禁止为贴边改写表格单元格内距。
+- 普通内容卡片内距消费页面密度（紧凑 12px / 标准 16px / 宽松 24px）。独立主列表统一使用 `AppTableCard` 承接结果区外框：内容体无内距，表头与容器边缘、标题分隔线相接；标题与工具栏放在 header 插槽并保留内距，加载、空态、错误重试和分页必须位于同一外壳内，状态反馈和分页由组件保留空间。已有工作区卡片、`AppWorkspacePane` 或主从面板承接外围边界时，不重复套表格卡片；抽屉、展开行和局部明细表默认沿用所属容器。禁止使用页面私有表格外框或 `AppDataTable.framed`。混合说明、表单或图表的内容卡片不整体清零，禁止为贴边改写表格单元格内距。
 
 ### 弹窗与抽屉
 

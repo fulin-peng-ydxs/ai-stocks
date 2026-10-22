@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableCard from '@/components/AppTableCard.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -575,7 +576,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           </AppAsyncRegion>
         </el-card>
 
-        <el-card shadow="never" class="hist-card app-table-card">
+        <AppTableCard class="hist-card">
           <template #header><span class="card-title">训练历史</span><span class="card-sub">共 {{ history.total }} 局，点行回看</span></template>
           <AppStateBlock
             v-if="historyLoading && !history.list.length"
@@ -634,7 +635,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
               </template>
             </AppTableColumn>
           </AppDataTable>
-        </el-card>
+        </AppTableCard>
     </AppScrollArea>
     </template>
   </LayoutHost>
@@ -776,7 +777,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           </div>
         </div>
 
-        <el-card class="trades-card app-table-card" shadow="never">
+        <AppTableCard class="trades-card">
           <AppDataTable :data="round.trades" height="100%" size="small" empty-text="尚无成交">
             <AppTableColumn label="相对日"><template #default="{ row }">D{{ row.rel_day }}</template></AppTableColumn>
             <AppTableColumn label="方向"><template #default="{ row }"><span :class="row.side === 'buy' ? 'up' : 'down'">{{ row.side === 'buy' ? '买入' : '卖出' }}</span></template></AppTableColumn>
@@ -786,7 +787,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
             <AppTableColumn label="收益率"><template #default="{ row }"><span v-if="row.return_pct != null" :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
             <AppTableColumn label="理由"><template #default="{ row }">{{ row.reason || (row.auto_close ? '到期清算' : '') }}</template></AppTableColumn>
           </AppDataTable>
-        </el-card>
+        </AppTableCard>
     </AppScrollArea>
     </template>
   </LayoutHost>
@@ -1022,8 +1023,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 .cfg-actions .hl { cursor: pointer; }
 .card-title { font-weight: var(--app-font-weight-section); }
 .card-sub { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); margin-left: 8px; }
-.hist-card { flex: 1 1 auto; min-height: 300px; display: flex; flex-direction: column; }
-.hist-card :deep(.el-card__body) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.hist-card { min-height: 300px; }
 .hist-table { cursor: pointer; flex: 1; }
 .grade-chip { color: #fff; padding: 1px 8px; border-radius: 10px; font-weight: var(--app-font-weight-strong); font-size: var(--app-font-size-caption); }
 
@@ -1050,8 +1050,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 .side-tag { font-size: var(--app-font-size-table); font-weight: var(--app-font-weight-strong); width: 40px; }
 .side-tag.buy { color: var(--market-up-color); }
 .side-tag.sell { color: var(--market-down-color); }
-.trades-card { flex: 1 1 auto; min-height: 160px; display: flex; flex-direction: column; }
-.trades-card :deep(.el-card__body) { flex: 1; min-height: 0; }
+.trades-card { min-height: 160px; }
 
 /* 结算：固定块（KPI/评分规则/回合卡）自然高，整局复盘卡吃满剩余高度；余量不足时整区滚动兜底 */
 .result-body { flex: 1 1 auto; min-height: 0; --app-scroll-display: flex; --app-scroll-direction: column; --app-scroll-gap: var(--app-space-3); --app-scroll-padding-right: 2px; }

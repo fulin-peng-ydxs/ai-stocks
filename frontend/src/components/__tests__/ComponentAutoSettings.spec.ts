@@ -121,7 +121,7 @@ vi.mock('@/layout/componentConfig', () => {
       : field === 'masterRatioProfiles'
         ? { key: 'masterRatioProfiles', label: '尺寸比例档案', control: 'object', layers: ['user'], default: { profiles: [] } }
       : field === 'border'
-      ? { key: 'border', label: '显示表格边框', control: 'bool', layers: ['page'], default: false }
+      ? { key: 'border', label: '显示列分隔线', control: 'bool', layers: ['page'], default: false }
       : field === 'bodyScroll'
         ? { key: 'bodyScroll', label: '内容区滚动', control: 'bool', layers: ['preset', 'page'], default: true }
         : { key: field, label: field, control: 'string[]', layers: field === 'defaultCollapsed' ? ['page', 'user'] : ['user'] }
@@ -442,8 +442,8 @@ describe('ComponentAutoSettings', () => {
   })
 
   it('表格边框是 page 层组件能力，不进入用户设置层', () => {
-    expect(mountBorderDemo('page').text()).toContain('显示表格边框')
-    expect(mountBorderDemo('user').text()).not.toContain('显示表格边框')
+    expect(mountBorderDemo('page').text()).toContain('显示列分隔线')
+    expect(mountBorderDemo('user').text()).not.toContain('显示列分隔线')
   })
 
   it('数值型组件字段按统一元数据渲染并写回', async () => {

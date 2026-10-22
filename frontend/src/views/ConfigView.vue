@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableCard from '@/components/AppTableCard.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
@@ -1815,16 +1816,22 @@ watch(activeTab, (tab) => { initActivePage(tab) })
     <template #main>
     <component :is="activeTab === 'system' ? 'div' : AppScrollArea" class="config-body"
       :class="{ 'config-body--system': activeTab === 'system' }">
-    <AppStateBlock
-      v-if="pageInitError"
-      state="error"
-      title="配置数据加载失败"
-      description="权限、菜单或指标目录尚未就绪，请重试"
-      class="config-error"
-      retry
-      @retry="initActivePage()"
-    />
-    <AppStateBlock v-else-if="!pageReady" state="loading" title="正在加载配置数据…" class="config-error" />
+    <component
+      :is="activeTab === 'tech' ? AppTableCard : 'div'"
+      v-if="pageInitError || !pageReady"
+      class="config-initial-state"
+    >
+      <AppStateBlock
+        v-if="pageInitError"
+        state="error"
+        title="配置数据加载失败"
+        description="权限、菜单或指标目录尚未就绪，请重试"
+        class="config-error"
+        retry
+        @retry="initActivePage()"
+      />
+      <AppStateBlock v-else state="loading" title="正在加载配置数据…" class="config-error" />
+    </component>
     <template v-else>
       <!-- ============ 评分规则 ============ -->
       <template v-if="activeTab === 'score'">
@@ -2161,7 +2168,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               </template>
             </AppAdvancedSearch>
         </el-card>
-        <div class="tech-table-wrap">
+        <AppTableCard class="tech-table-wrap">
         <AppDataTable :data="techRows" size="small" :border="tableBorder('techTable')"
                   :default-sort="techDefaultSort" @sort-change="onTechSortChange">
           <AppTableColumn prop="name_cn" label="名称" sortable="custom" />
@@ -2246,7 +2253,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             </template>
           </AppTableColumn>
         </AppDataTable>
-        </div>
+        </AppTableCard>
 
         </div>
       </template>
@@ -2985,6 +2992,10 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   gap: var(--app-space-control-gap);
   margin-top: 5px;
 }
+.config-initial-state {
+  flex: 1 1 auto;
+  min-height: 0;
+}
 .tech-pane {
   flex-direction: column;
   gap: var(--app-space-3);
@@ -2995,14 +3006,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 }
 /* 技术指标表承接复合面板内部的成长与表体滚动。 */
 .tech-table-wrap {
-  flex: 1 1 auto;
   min-height: 360px;
-  display: flex;
-  flex-direction: column;
-}
-.tech-table-wrap .el-table {
-  flex: 1 1 auto;
-  min-height: 0;
 }
 .expr {
   font-family: var(--app-font-family-mono);

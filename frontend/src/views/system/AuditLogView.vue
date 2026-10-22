@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableCard from '@/components/AppTableCard.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import AppJsonViewer from '@/components/AppJsonViewer.vue'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
@@ -638,32 +639,30 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #auditTable>
-      <AppStateBlock
-        v-if="permissionError"
-        state="error"
-        variant="permission"
-        title="无权限查看审计日志"
-        description="请联系系统管理员调整审计查看权限"
-        class="audit-state"
-      />
-      <AppStateBlock
-        v-else-if="loadError"
-        state="error"
-        title="审计服务暂不可用"
-        description="请稍后重试，已发生事件仍会在服务端继续写入"
-        class="audit-state"
-        retry
-        @retry="loadAll()"
-      />
-      <div v-else class="audit-table-wrap">
+      <AppTableCard>
+        <AppStateBlock
+          v-if="permissionError"
+          state="error"
+          variant="permission"
+          title="无权限查看审计日志"
+          description="请联系系统管理员调整审计查看权限"
+        />
+        <AppStateBlock
+          v-else-if="loadError"
+          state="error"
+          title="审计服务暂不可用"
+          description="请稍后重试，已发生事件仍会在服务端继续写入"
+          retry
+          @retry="loadAll()"
+        />
         <AppDataTable
+          v-else
           :data="rows"
           kind="wide-table"
           :loading="tableLoading"
           row-key="id"
           :border="tableBorder('auditTable')"
           stripe
-          framed
           clickable
           :default-sort="elementDefaultSort"
           :pagination="{ currentPage: page, pageSize, total }"
@@ -721,7 +720,7 @@ const menuPageTitle = useMenuPageTitle()
             </div>
           </template>
         </AppDataTable>
-      </div>
+      </AppTableCard>
     </template>
 
     <template #overlays>
@@ -880,13 +879,6 @@ const menuPageTitle = useMenuPageTitle()
 .w140 { width: 140px; }
 .w160 { width: 160px; }
 .w180 { width: 180px; }
-.audit-state {
-  height: 100%;
-}
-.audit-table-wrap {
-  flex: 1 1 auto;
-  min-height: 0;
-}
 .mono {
   font-family: var(--app-font-family-mono);
   font-size: var(--app-font-size-caption);

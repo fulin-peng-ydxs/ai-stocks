@@ -35,8 +35,8 @@ const props = withDefaults(defineProps<{
   tableClass?: string
   clickable?: boolean
   stripe?: boolean
+  /** 历史配置 key 保留；只显示列分隔线，外围边界归结果卡片或工作区面板。 */
   border?: boolean
-  framed?: boolean
   emptyText?: string
   loadingText?: string
   ariaLabel?: string
@@ -50,7 +50,6 @@ const props = withDefaults(defineProps<{
   clickable: false,
   stripe: false,
   border: false,
-  framed: false,
   loadingText: '正在加载数据…',
   embedded: false,
 })
@@ -138,7 +137,6 @@ const emit = defineEmits<{
         'app-data-table--fill': !embedded,
         'app-data-table--embedded': embedded,
         'app-data-table--clickable': clickable,
-        'app-data-table--framed': framed,
         'app-data-table--with-pager': Boolean(pagination),
       },
     ]"
@@ -214,16 +212,20 @@ const emit = defineEmits<{
   flex: 0 0 auto;
 }
 
-.app-data-table--framed {
-  overflow: hidden;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  background: var(--el-bg-color-overlay);
-}
-
 .app-data-table__table {
   min-height: 0;
   width: 100%;
+}
+
+/* 保留组件库的列线及固定列布局，移除 border 模式额外生成的外围描边。 */
+.app-data-table :deep(.app-data-table__table.el-table--border::before),
+.app-data-table :deep(.app-data-table__table.el-table--border::after),
+.app-data-table :deep(.app-data-table__table.el-table--border > .el-table__inner-wrapper::after) {
+  display: none;
+}
+
+.app-data-table :deep(.el-table--border tr > .el-table__cell:last-child) {
+  border-right: none;
 }
 
 .app-data-table--fill .app-data-table__table {
@@ -266,8 +268,4 @@ const emit = defineEmits<{
   padding: 10px 12px 0;
 }
 
-.app-data-table--framed .app-data-table__pager {
-  padding: 10px 12px;
-  border-top: 1px solid var(--el-border-color-lighter);
-}
 </style>

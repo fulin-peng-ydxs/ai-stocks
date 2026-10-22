@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableCard from '@/components/AppTableCard.vue'
 import { businessMessage, enumText } from '@/utils/displayText'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import AppActionHint from '@/components/AppActionHint.vue'
@@ -632,7 +633,7 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #main>
-    <el-card shadow="never" class="app-table-card">
+    <AppTableCard>
       <AppStateBlock
         v-if="loadError"
         state="error"
@@ -696,7 +697,7 @@ const menuPageTitle = useMenuPageTitle()
           </template>
         </AppTableColumn>
       </AppDataTable>
-    </el-card>
+    </AppTableCard>
     </template>
 
     <template #overlays>

@@ -305,6 +305,25 @@ beforeEach(() => {
 })
 
 describe('ConfigView tech tab', () => {
+  it('指标目录加载、失败重试和列表就绪均由统一结果外壳承接', async () => {
+    routeState.meta.configTab = 'tech'
+    vi.mocked(scoreApi.getIndicatorRegistry)
+      .mockRejectedValueOnce(new Error('registry unavailable'))
+      .mockRejectedValueOnce(new Error('registry unavailable'))
+    const wrapper = await mountView('normal', ['indicator:registry'])
+    expect(wrapper.find('.app-table-card').text()).toContain('正在加载配置数据')
+    await vi.waitFor(() => {
+      expect(wrapper.find('.app-table-card').text()).toContain('配置数据加载失败')
+    })
+    await wrapper.find('.app-table-card').findAll('button')
+      .find((button) => button.text() === '重试')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.app-table-card').findComponent(AppDataTable).exists()).toBe(true)
+    expect(wrapper.findAll('.app-table-card')).toHaveLength(1)
+    expect(wrapper.find('.app-table-card').text()).toContain('相对强度')
+    wrapper.unmount()
+  })
+
   it('使用紧凑标签展示K线指标周期，非K线字段不伪装成日K', async () => {
     routeState.meta.configTab = 'tech'
     ;(scoreApi.getIndicatorRegistry as ReturnType<typeof vi.fn>).mockResolvedValue({

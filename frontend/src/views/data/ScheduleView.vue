@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableCard from '@/components/AppTableCard.vue'
 import { enumText, businessMessage } from '@/utils/displayText'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import IntradayTaskScopeFields from '@/components/data/IntradayTaskScopeFields.vue'
@@ -598,7 +599,7 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #main>
-      <el-card shadow="never" class="blk app-table-card">
+      <AppTableCard class="blk">
         <template #header>
           <div class="blk-head"><span>调度任务</span>
             <span class="app-caption-text">时间任务到点触发；依赖任务命中上游结果后可靠等待并按配置延迟执行。</span></div>
@@ -678,7 +679,7 @@ const menuPageTitle = useMenuPageTitle()
           </AppTableColumn>
           <template #empty>暂无调度任务，点右上「新建调度任务」添加</template>
         </AppDataTable>
-      </el-card>
+      </AppTableCard>
     </template>
 
     <template #overlays>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableCard from '@/components/AppTableCard.vue'
 import AppAdvancedSearch from '@/components/AppAdvancedSearch.vue'
 import { computed, ref, watch } from 'vue'
 import AppControlItem from '@/components/AppControlItem.vue'
@@ -207,60 +208,61 @@ defineExpose({ reload: load })
       </AppAdvancedSearch>
     </el-card>
 
-    <AppStateBlock
-      v-if="loadError"
-      state="error"
-      title="履约历史加载失败"
-      description="当前筛选结果不可用，请重试"
-      retry
-      @retry="load"
-    />
-    <AppDataTable
-      v-else
-      :data="rows"
-      :loading="loading"
-      row-key="id"
-      kind="wide-table"
-      aria-label="履约历史"
-      empty-text="暂无符合条件的履约记录"
-      :border="border"
-      :default-sort="defaultSort"
-      stripe
-      framed
-      :pagination="{ currentPage: page, pageSize, total }"
-      @page-change="emit('page-change', $event)"
-      @size-change="emit('size-change', $event)"
-      @sort-change="emit('sort-change', $event)"
-    >
-      <AppTableColumn v-if="colVisible('trade_date')" prop="trade_date" label="交易日" role="date" sortable="custom" :sort-orders="['descending', 'ascending']" />
-      <AppTableColumn v-if="colVisible('rule_name')" label="规则" role="name">
-        <template #default="{ row }">
-          <el-button
-            link
-            type="primary"
-            size="small"
-            :data-testid="`history-detail-${row.id}`"
-            :aria-label="`查看${row.rule_name}详情`"
-            @click="openDetail(row)"
-          >{{ row.rule_name }} · v{{ row.version_no }}</el-button>
+    <AppTableCard>
+      <AppStateBlock
+        v-if="loadError"
+        state="error"
+        title="履约历史加载失败"
+        description="当前筛选结果不可用，请重试"
+        retry
+        @retry="load"
+      />
+      <AppDataTable
+        v-else
+        :data="rows"
+        :loading="loading"
+        row-key="id"
+        kind="wide-table"
+        aria-label="履约历史"
+        empty-text="暂无符合条件的履约记录"
+        :border="border"
+        :default-sort="defaultSort"
+        stripe
+        :pagination="{ currentPage: page, pageSize, total }"
+        @page-change="emit('page-change', $event)"
+        @size-change="emit('size-change', $event)"
+        @sort-change="emit('sort-change', $event)"
+      >
+        <AppTableColumn v-if="colVisible('trade_date')" prop="trade_date" label="交易日" role="date" sortable="custom" :sort-orders="['descending', 'ascending']" />
+        <AppTableColumn v-if="colVisible('rule_name')" label="规则" role="name">
+          <template #default="{ row }">
+            <el-button
+              link
+              type="primary"
+              size="small"
+              :data-testid="`history-detail-${row.id}`"
+              :aria-label="`查看${row.rule_name}详情`"
+              @click="openDetail(row)"
+            >{{ row.rule_name }} · v{{ row.version_no }}</el-button>
+          </template>
+        </AppTableColumn>
+        <AppTableColumn v-if="colVisible('assessment')" prop="assessment" label="用户自评">
+          <template #default="{ row }"><el-tag :type="checkinAssessmentTagType(row.assessment)" effect="plain">{{ checkinAssessmentLabel(row.assessment) }}</el-tag></template>
+        </AppTableColumn>
+        <AppTableColumn v-if="colVisible('operation_count')" label="操作笔数" prop="operation_count" role="number"><template #default="{ row }">{{ row.no_operation ? '无操作' : `${row.operation_count} 笔` }}</template></AppTableColumn>
+        <AppTableColumn v-if="colVisible('reason_name_snapshot')" prop="reason_name_snapshot" label="违规摘要" role="description"><template #default="{ row }">{{ row.reason_name_snapshot || '—' }}</template></AppTableColumn>
+        <AppTableColumn v-if="colVisible('current_revision_no')" label="修订">
+          <template #default="{ row }"><el-tag :type="row.status === 'amended' ? 'warning' : 'info'" effect="plain">r{{ row.current_revision_no }}{{ row.status === 'amended' ? ' · 已修正' : '' }}</el-tag></template>
+        </AppTableColumn>
+        <AppTableColumn v-if="colVisible('updated_at')" prop="updated_at" label="最后更新"><template #default="{ row }">{{ formatDateTimeMinutes(row.updated_at) }}</template></AppTableColumn>
+        <template #empty>
+          <div class="app-table-empty">
+            <span class="app-table-empty__description">暂无符合条件的履约记录</span>
+            <el-button v-if="hasFilters" @click="resetFilters">重置筛选</el-button>
+          </div>
         </template>
-      </AppTableColumn>
-      <AppTableColumn v-if="colVisible('assessment')" prop="assessment" label="用户自评">
-        <template #default="{ row }"><el-tag :type="checkinAssessmentTagType(row.assessment)" effect="plain">{{ checkinAssessmentLabel(row.assessment) }}</el-tag></template>
-      </AppTableColumn>
-      <AppTableColumn v-if="colVisible('operation_count')" label="操作笔数" prop="operation_count" role="number"><template #default="{ row }">{{ row.no_operation ? '无操作' : `${row.operation_count} 笔` }}</template></AppTableColumn>
-      <AppTableColumn v-if="colVisible('reason_name_snapshot')" prop="reason_name_snapshot" label="违规摘要" role="description"><template #default="{ row }">{{ row.reason_name_snapshot || '—' }}</template></AppTableColumn>
-      <AppTableColumn v-if="colVisible('current_revision_no')" label="修订">
-        <template #default="{ row }"><el-tag :type="row.status === 'amended' ? 'warning' : 'info'" effect="plain">r{{ row.current_revision_no }}{{ row.status === 'amended' ? ' · 已修正' : '' }}</el-tag></template>
-      </AppTableColumn>
-      <AppTableColumn v-if="colVisible('updated_at')" prop="updated_at" label="最后更新"><template #default="{ row }">{{ formatDateTimeMinutes(row.updated_at) }}</template></AppTableColumn>
-      <template #empty>
-        <div class="app-table-empty">
-          <span class="app-table-empty__description">暂无符合条件的履约记录</span>
-          <el-button v-if="hasFilters" @click="resetFilters">重置筛选</el-button>
-        </div>
-      </template>
-    </AppDataTable>
+      </AppDataTable>
+    </AppTableCard>
   </div>
 </template>
 

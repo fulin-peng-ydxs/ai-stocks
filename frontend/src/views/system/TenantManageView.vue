@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableCard from '@/components/AppTableCard.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -354,7 +355,7 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #main>
-      <el-card shadow="never">
+      <AppTableCard>
         <AppStateBlock
           v-if="loadError"
           state="error"
@@ -411,7 +412,7 @@ const menuPageTitle = useMenuPageTitle()
           </AppTableColumn>
         </AppDataTable>
         </template>
-      </el-card>
+      </AppTableCard>
     </template>
 
     <template #overlays>
