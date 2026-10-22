@@ -163,7 +163,7 @@ class DataIntegrityReport:
         days = sorted(pd.Timestamp(d).date() for d in df["trade_date"])
         return days, (days[0] if days else None)
 
-    def _coverage_frame(self, window_days: int = GAP_WINDOW_DAYS):
+    def _coverage_frame(self, window_days: int = GAP_WINDOW_DAYS, *, codes=None):
         """每只在市股票的覆盖鲜活全景（DM-D20 唯一口径）。
 
         在近 window_days 个开市日窗口内，对每只在市股票：
@@ -183,44 +183,46 @@ class DataIntegrityReport:
                 "mv_invalid_lo", "mv_invalid_hi", "mv_invalid_detail", "capital_issues", "capital_detail", "gap_days", "gap_lo",
                 "gap_hi", "stale_days", "stale_lo", "l1_open", "l1_breakdown", "l3_open",
                 "l3_breakdown", "open_total"]
-        # 数据变更签名缓存：同一页多接口复用，任一数据变更即失效。
-        # openi 只数个股 issue 类型（L1-L4），市场指数/板块类型都有独立质量层，
-        # 不参与个股 frame，也不应击穿个股覆盖帧缓存。
-        sig = self.c.query_df(
-            "SELECT (SELECT max(trade_date) FROM daily_bar) latest, "
-            "(SELECT count(*) FROM daily_bar) bars, "
-            "(SELECT max(id) FROM data_update_log WHERE table_name IN ('stock_share_capital_daily','stock_share_capital_history','stock_share_capital_event','daily_metrics','daily_bar') AND status IN ('success','partial')) capital_revision, "
-            "dm.metrics, "
-            "(SELECT count(*) FROM stock_basic) basics, "
-            "(SELECT COALESCE(bit_xor(hash(code, name, list_date, delist_date)), 0) "
-            "   FROM stock_basic) basicsig, "
-            "(SELECT count(*) FROM data_quality_issue WHERE status='open' "
-            "   AND issue_type NOT IN ('market_index_gap','market_index_gap_daily',"
-            "'market_index_invalid','board_index_gap','board_index_gap_daily','board_member_incomplete',"
-            "'board_fund_unmatched','board_fund_missing','board_fund_stale')) openi, "
-            "(SELECT COALESCE(bit_xor(hash(id, code, trade_date, issue_type)), 0) "
-            "   FROM data_quality_issue WHERE status='open' "
-            "   AND issue_type NOT IN ('market_index_gap','market_index_gap_daily',"
-            "'market_index_invalid','board_index_gap','board_index_gap_daily','board_member_incomplete',"
-            "'board_fund_unmatched','board_fund_missing','board_fund_stale')) openisig, "
-            "(SELECT count(*) FROM stock_suspension) susp, "
-            "dm.mvnull, dm.mvinvalid FROM ("
-            "  SELECT count(*) AS metrics, "
-            "  count(*) FILTER (WHERE total_mv IS NULL OR float_mv IS NULL) AS mvnull, "
-            f"  count(*) FILTER (WHERE total_mv <= 0 OR float_mv <= 0 OR {MV_INVERTED}) "
-            "    AS mvinvalid FROM daily_metrics"
-            ") dm"
-        ).iloc[0]
-        # daily_metrics 的行数、空值和非法值在同一次聚合中计算并纳入签名：补市值或修正
-        # 非法值后，即便 bars/issues 尚未变化也要让 L2 缓存失效。
-        from backend.config import get_effective_settings
-        calendar_sig = self._scalar("SELECT coalesce(bit_xor(hash(trade_date,is_open)),0) FROM trade_calendar")
-        key = (id(self.c), get_effective_settings().datasource.history_years, calendar_sig, str(sig["latest"]), int(sig["bars"]),
-               int(sig["metrics"]), int(sig["basics"]), int(sig["basicsig"]),
-               int(sig["openi"]), int(sig["openisig"]), int(sig["susp"]),
-               int(sig["mvnull"]), int(sig["mvinvalid"]), str(sig["capital_revision"]), int(window_days))
-        if _FRAME_CACHE["key"] == key and _FRAME_CACHE["frame"] is not None:
-            return _FRAME_CACHE["frame"], _FRAME_CACHE["latest"]
+        key = None
+        if codes is None:
+            # 数据变更签名缓存：同一页多接口复用，任一数据变更即失效。
+            # openi 只数个股 issue 类型（L1-L4），市场指数/板块类型都有独立质量层，
+            # 不参与个股 frame，也不应击穿个股覆盖帧缓存。
+            sig = self.c.query_df(
+                "SELECT (SELECT max(trade_date) FROM daily_bar) latest, "
+                "(SELECT count(*) FROM daily_bar) bars, "
+                "(SELECT max(id) FROM data_update_log WHERE table_name IN ('stock_share_capital_daily','stock_share_capital_history','stock_share_capital_event','daily_metrics','daily_bar') AND status IN ('success','partial')) capital_revision, "
+                "dm.metrics, "
+                "(SELECT count(*) FROM stock_basic) basics, "
+                "(SELECT COALESCE(bit_xor(hash(code, name, list_date, delist_date)), 0) "
+                "   FROM stock_basic) basicsig, "
+                "(SELECT count(*) FROM data_quality_issue WHERE status='open' "
+                "   AND issue_type NOT IN ('market_index_gap','market_index_gap_daily',"
+                "'market_index_invalid','board_index_gap','board_index_gap_daily','board_member_incomplete',"
+                "'board_fund_unmatched','board_fund_missing','board_fund_stale')) openi, "
+                "(SELECT COALESCE(bit_xor(hash(id, code, trade_date, issue_type)), 0) "
+                "   FROM data_quality_issue WHERE status='open' "
+                "   AND issue_type NOT IN ('market_index_gap','market_index_gap_daily',"
+                "'market_index_invalid','board_index_gap','board_index_gap_daily','board_member_incomplete',"
+                "'board_fund_unmatched','board_fund_missing','board_fund_stale')) openisig, "
+                "(SELECT count(*) FROM stock_suspension) susp, "
+                "dm.mvnull, dm.mvinvalid FROM ("
+                "  SELECT count(*) AS metrics, "
+                "  count(*) FILTER (WHERE total_mv IS NULL OR float_mv IS NULL) AS mvnull, "
+                f"  count(*) FILTER (WHERE total_mv <= 0 OR float_mv <= 0 OR {MV_INVERTED}) "
+                "    AS mvinvalid FROM daily_metrics"
+                ") dm"
+            ).iloc[0]
+            # daily_metrics 的行数、空值和非法值在同一次聚合中计算并纳入签名：补市值或修正
+            # 非法值后，即便 bars/issues 尚未变化也要让 L2 缓存失效。
+            from backend.config import get_effective_settings
+            calendar_sig = self._scalar("SELECT coalesce(bit_xor(hash(trade_date,is_open)),0) FROM trade_calendar")
+            key = (id(self.c), get_effective_settings().datasource.history_years, calendar_sig, str(sig["latest"]), int(sig["bars"]),
+                   int(sig["metrics"]), int(sig["basics"]), int(sig["basicsig"]),
+                   int(sig["openi"]), int(sig["openisig"]), int(sig["susp"]),
+                   int(sig["mvnull"]), int(sig["mvinvalid"]), str(sig["capital_revision"]), int(window_days))
+            if _FRAME_CACHE["key"] == key and _FRAME_CACHE["frame"] is not None:
+                return _FRAME_CACHE["frame"], _FRAME_CACHE["latest"]
         latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
         if latest is None:
             return pd.DataFrame(columns=cols), None
@@ -228,18 +230,22 @@ class DataIntegrityReport:
         win, win_lo = self._recent_open_days(latest, window_days)
         if win_lo is None:
             return pd.DataFrame(columns=cols), str(latest)
-        # 聚合（各一次全表扫描，避免逐股关联子查询）
+        scope = " AND code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
+        bscope = scope.replace("code IN", "b.code IN")
+        params = [codes] if codes is not None else []
+        # 按对象先过滤再聚合，定向采集不把全市场历史搬入内存。
         span = self.c.query_df(
-            "SELECT code, min(trade_date) min_bar, max(trade_date) max_bar FROM daily_bar GROUP BY code")
+            "SELECT code, min(trade_date) min_bar, max(trade_date) max_bar FROM daily_bar "
+            f"WHERE true{scope} GROUP BY code", params)
         span_map = {r["code"]: (r["min_bar"], r["max_bar"]) for _, r in span.iterrows()}
         mv = self.c.query_df(
             "SELECT code, count(*) FILTER (WHERE total_mv IS NOT NULL) tmv, "
-            "count(*) FILTER (WHERE float_mv IS NOT NULL) fmv FROM daily_metrics GROUP BY code")
+            f"count(*) FILTER (WHERE float_mv IS NOT NULL) fmv FROM daily_metrics WHERE true{scope} GROUP BY code", params)
         mv_map = {r["code"]: (int(r["tmv"]), int(r["fmv"])) for _, r in mv.iterrows()}
         # 窗口内逐日市值缺口（L2 统一口径：与 mv_missing/data_gap/stale 同一份 frame、同一窗口）。
         # 以 daily_bar 为基准，daily_metrics 整行缺失、total_mv 缺失、float_mv 缺失都算近端缺口。
         mvgap = self.c.query_df(
-            """
+            f"""
             SELECT b.code,
                    count(*) AS g,
                    count(*) FILTER (WHERE m.code IS NULL OR m.total_mv IS NULL) AS total_g,
@@ -254,10 +260,10 @@ class DataIntegrityReport:
             LEFT JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date
             WHERE (sb.delist_date IS NULL OR sb.delist_date>
                 (SELECT COALESCE(max(trade_date),current_date) FROM daily_bar))
-              AND b.trade_date >= ?
+              AND b.trade_date >= ? {bscope}
               AND (m.code IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL)
             GROUP BY b.code
-            """, [win_lo])
+            """, [win_lo, *params])
         mvgap_map = {
             r["code"]: (
                 int(r["g"]), int(r["total_g"]), int(r["float_g"]), int(r["both_g"]),
@@ -280,11 +286,11 @@ class DataIntegrityReport:
             JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date
             WHERE (sb.delist_date IS NULL OR sb.delist_date>
                 (SELECT COALESCE(max(trade_date),current_date) FROM daily_bar))
-              AND b.trade_date >= ?
+              AND b.trade_date >= ? {bscope}
               AND (m.total_mv <= 0 OR m.float_mv <= 0 OR {M_INVERTED})
             GROUP BY b.code
             """,
-            [win_lo],
+            [win_lo, *params],
         )
         mvinvalid_map = {
             r["code"]: (
@@ -300,7 +306,7 @@ class DataIntegrityReport:
             "AND issue_type NOT IN ('market_index_gap','market_index_gap_daily',"
             "'market_index_invalid','board_index_gap','board_index_gap_daily','board_member_incomplete',"
             "'board_fund_unmatched','board_fund_missing','board_fund_stale') "
-            "GROUP BY code, issue_type ORDER BY code, issue_type")
+            f"{scope} GROUP BY code, issue_type ORDER BY code, issue_type", params)
         issue_totals: dict[str, int] = {}
         issue_breakdowns: dict[tuple[str, str], list[dict]] = {}
         for _, issue in iss.iterrows():
@@ -317,20 +323,20 @@ class DataIntegrityReport:
         stocks = self.c.query_df(
             "SELECT code, name, list_date FROM stock_basic "
             "WHERE (list_date IS NULL OR list_date<=?) "
-            "AND (delist_date IS NULL OR delist_date>?)",
-            [latest, latest],
+            f"AND (delist_date IS NULL OR delist_date>?) {scope}",
+            [latest, latest, *params],
         )
-        bars = self.c.query_df("SELECT code, trade_date FROM daily_bar WHERE trade_date >= ?", [win_lo])
-        susp = self.c.query_df("SELECT code, trade_date FROM stock_suspension WHERE trade_date >= ?", [win_lo])
+        bars = self.c.query_df(f"SELECT code, trade_date FROM daily_bar WHERE trade_date >= ? {scope}", [win_lo, *params])
+        susp = self.c.query_df(f"SELECT code, trade_date FROM stock_suspension WHERE trade_date >= ? {scope}", [win_lo, *params])
         bar_map: dict[str, set] = {c: set(pd.Timestamp(d).date() for d in g["trade_date"])
                                    for c, g in bars.groupby("code", sort=False)}
         susp_map: dict[str, set] = {c: set(pd.Timestamp(d).date() for d in g["trade_date"])
                                     for c, g in susp.groupby("code", sort=False)}
         from backend.services.capital_quality import CAPITAL_LABELS, CapitalQualityService
-        capital = CapitalQualityService(self.c).aggregate()
+        capital = CapitalQualityService(self.c).aggregate(codes)
         capital_map = {code: group for code, group in capital.groupby("code", sort=False)}
         from backend.services.history_quality import HistoryQualityService
-        history = HistoryQualityService(self.c).aggregate()
+        history = HistoryQualityService(self.c).aggregate(codes)
         history_map = dict(zip(history.code, history.missing_days))
         rows = []
         # 列向量迭代（避免 pandas iterrows 在 5000+ 行上的高开销）
@@ -416,7 +422,8 @@ class DataIntegrityReport:
                 "stale_days": len(tail), "stale_lo": str(tail[0]) if tail else None,
             })
         frame = pd.DataFrame(rows, columns=cols)
-        _FRAME_CACHE.update(key=key, frame=frame, latest=str(latest))
+        if codes is None:
+            _FRAME_CACHE.update(key=key, frame=frame, latest=str(latest))
         return frame, str(latest)
 
     def missing_days_for(self, code: str, window_days: int = GAP_WINDOW_DAYS) -> list[date]:
@@ -723,7 +730,9 @@ class DataIntegrityReport:
         return after_listing_window & before_delist & ~retire_entry
 
     # ── 市场级四层质检（写 data_quality_issue，DM-D20 统一口径）──
-    def scan_quality_issues(self, gap_window_days: int = GAP_WINDOW_DAYS) -> dict:
+    def scan_quality_issues(
+        self, gap_window_days: int = GAP_WINDOW_DAYS, *, codes=None, include_intraday=True,
+    ) -> dict:
         """四层统一质检：L2 字段契约 / L3 正确性 / L4 覆盖鲜活。
 
         L1 由采集即时记录，这里覆盖立即质检与每日自动质检。幂等扫描把上轮
@@ -732,10 +741,15 @@ class DataIntegrityReport:
 
         先在事务外完整计算本轮问题；失败时旧问题不变。最后使用短事务原子替换台账。
         verify 占用异步写任务全局槽位，避免其他数据任务并发写。
+        codes=None 为全量；显式对象范围同时约束计算、忽略对账和台账收敛。
+        采集收尾 include_intraday=False，分时由自己的归档批次单独检查。
         """
         from backend.dataquality.checker import SCAN_ISSUE_TYPES
         from backend.market_rules import limit_prices, price_limit_pct_sql, round_price_to_cent
 
+        scope = " AND code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
+        bscope = scope.replace("code IN", "b.code IN")
+        params = [codes] if codes is not None else []
         effective_limit = price_limit_pct_sql(
             "sb.price_limit_pct",
             "st.quality='accurate' AND st.is_st",
@@ -770,9 +784,9 @@ class DataIntegrityReport:
                 FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code = b.code
                 LEFT JOIN stock_st_status_daily st
                   ON st.code=b.code AND st.trade_date=b.trade_date
-                WHERE b.pre_close IS NOT NULL AND b.pre_close > 0
+                WHERE b.pre_close IS NOT NULL AND b.pre_close > 0 {bscope}
             ) t
-            """)
+            """, params)
         df = df[self._active_l3_mask(df) & ~df["no_price_limit"]]
         candidates = df[df["chg"] > df["effective_lim"] - 0.002]
         ab_rows = []
@@ -789,12 +803,12 @@ class DataIntegrityReport:
             })
 
         mismatch = self.c.query_df(
-            """
+            f"""
             SELECT code,trade_date,low,high,volume,amount,amount/volume AS average_price
             FROM daily_bar
             WHERE volume>0 AND amount IS NOT NULL AND low>0 AND high>=low
-              AND (amount/volume < low*0.99 OR amount/volume > high*1.01)
-            """
+              AND (amount/volume < low*0.99 OR amount/volume > high*1.01) {scope}
+            """, params
         )
         price_volume_rows = [
             {
@@ -808,9 +822,9 @@ class DataIntegrityReport:
             }
             for _, row in mismatch.iterrows()
         ]
-        adj_rows = self._collect_adj_jump_issues()
+        adj_rows = self._collect_adj_jump_issues(codes=codes)
         # L2 + L4：来自统一的覆盖鲜活全景（与 quality_model/stock_quality 同口径）
-        frame, _ = self._coverage_frame(gap_window_days)
+        frame, _ = self._coverage_frame(gap_window_days, codes=codes)
         rows = []
         for _, r in frame.iterrows():
             code = r["code"]
@@ -818,25 +832,25 @@ class DataIntegrityReport:
                 rows.append({"code": code, "trade_date": r["latest_date"], "issue_type": "stale",
                              "detail": f"数据未更新到最新交易日，滞后 {int(r['stale_days'])} 个交易日"
                                        f"（自 {r['stale_lo']} 起）"})
-        st_rows = self._collect_st_status_issues()
+        st_rows = self._collect_st_status_issues(codes)
         from backend.dataquality.consolidation import reconcile_legacy_issues
         from backend.services.capital_quality import CapitalQualityService
-        capital_rows = CapitalQualityService(self.c).issues()
+        capital_rows = CapitalQualityService(self.c).issues(codes)
         from backend.services.history_quality import HistoryQualityService
-        history_rows = HistoryQualityService(self.c).issues()
+        history_rows = HistoryQualityService(self.c).issues(codes)
         issue_rows = ab_rows + price_volume_rows + adj_rows + rows + st_rows + capital_rows + history_rows
         # 仅台账替换使用短事务：失败回滚保留旧问题，计算期间不锁住轮询。
         with self.c.transaction():
-            reconcile_legacy_issues(self.c)
-            CapitalQualityService(self.c).reclassify_legacy()
+            reconcile_legacy_issues(self.c, codes=codes)
+            CapitalQualityService(self.c).reclassify_legacy(codes)
             self._upsert_scan_issues(issue_rows, tuple(t for t in SCAN_ISSUE_TYPES
-                                                   if t not in ("mv_missing", "mv_gap", "mv_invalid", "data_gap")))
+                                                   if t not in ("mv_missing", "mv_gap", "mv_invalid", "data_gap")), codes=codes)
         from backend.services.intraday_archive import IntradayArchiveService
-        intraday_counts = IntradayArchiveService(self.c).sync()
+        intraday_counts = IntradayArchiveService(self.c).sync(codes) if include_intraday else None
         active_rows = self.c.query_df(
             f"SELECT issue_type, count(*) AS n FROM data_quality_issue WHERE status='open' "
-            f"AND issue_type IN ({','.join('?' * len(SCAN_ISSUE_TYPES))}) GROUP BY issue_type",
-            list(SCAN_ISSUE_TYPES),
+            f"AND issue_type IN ({','.join('?' * len(SCAN_ISSUE_TYPES))}) {scope} GROUP BY issue_type",
+            [*SCAN_ISSUE_TYPES, *params],
         )
         active_counts = {str(r["issue_type"]): int(r["n"]) for _, r in active_rows.iterrows()}
         inserted_counts = {
@@ -863,10 +877,11 @@ class DataIntegrityReport:
             "st_status_mismatch_rows": inserted_counts["st_status_mismatch"],
         }
 
-    def _collect_st_status_issues(self) -> list[dict]:
+    def _collect_st_status_issues(self, codes=None) -> list[dict]:
         """Aggregate ST contract failures per stock instead of flooding one issue per day."""
         from backend.services.stock_st_status import ST_EXPECTED_POINTS_SQL
 
+        scope = " AND b.code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
         checks = (
             (
                 "st_status_missing",
@@ -897,9 +912,9 @@ class DataIntegrityReport:
                 FROM {expected} b
                 LEFT JOIN stock_st_status_daily st
                   ON st.code=b.code AND st.trade_date=b.trade_date
-                WHERE {predicate}
+                WHERE {predicate} {scope}
                 GROUP BY b.code
-                """
+                """, [codes] if codes is not None else []
             )
             for row in frame.to_dict("records"):
                 result.append(
@@ -917,7 +932,7 @@ class DataIntegrityReport:
         return result
 
     # ── 市场基准指数质检 ─────────────────────────────────────
-    def scan_market_index_quality(self, gap_window_days: int = GAP_WINDOW_DAYS) -> dict:
+    def scan_market_index_quality(self, gap_window_days: int = GAP_WINDOW_DAYS, *, codes=None) -> dict:
         """逐配置指数扫描尾部滞后、近端逐日缺口和字段非法，并幂等写入质量台账。
 
         市场指数与板块指数共用扫描型问题状态机，但配置来源和恢复服务不同，故保持
@@ -926,13 +941,15 @@ class DataIntegrityReport:
         """
         from backend.services.market_benchmark import BENCHMARK_NAMES, configured_benchmark_codes
 
-        codes = configured_benchmark_codes()
+        scope_codes = codes
+        configured = configured_benchmark_codes()
+        codes = configured if codes is None else [c for c in dict.fromkeys(codes) if c in configured]
         issue_types = (
             "market_index_gap", "market_index_gap_daily", "market_index_invalid",
         )
         if not codes:
             with self.c.transaction():
-                self._upsert_scan_issues([], issue_types)
+                self._upsert_scan_issues([], issue_types, codes=scope_codes)
             return {"index_gap": 0, "index_gap_daily": 0, "index_invalid": 0}
 
         ph = ",".join("?" * len(codes))
@@ -1027,13 +1044,14 @@ class DataIntegrityReport:
         with self.c.transaction():
             self._upsert_scan_issues(
                 gap_issues + daily_gap_issues + invalid_issues,
-                issue_types,
+                issue_types, codes=scope_codes,
             )
+        scope = " AND code IN (SELECT unnest(?::VARCHAR[]))" if scope_codes is not None else ""
         active = self.c.query_df(
             f"SELECT issue_type, count(*) AS n FROM data_quality_issue "
             f"WHERE status='open' AND issue_type IN ({','.join('?' * len(issue_types))}) "
-            f"GROUP BY issue_type",
-            list(issue_types),
+            f"{scope} GROUP BY issue_type",
+            [*issue_types, *([scope_codes] if scope_codes is not None else [])],
         )
         counts = {str(r["issue_type"]): int(r["n"]) for _, r in active.iterrows()}
         return {
@@ -1106,12 +1124,15 @@ class DataIntegrityReport:
         }
         return summary
 
-    def board_coverage_issues(self) -> dict:
+    def board_coverage_issues(self, *, codes=None) -> dict:
         """只读计算指数水位与同日资金流覆盖，供质检台账和结构体检共用。
 
         不沿用已处理/忽略台账状态，以当前行情基准和实际数据判断可用性。
         每类数据一次聚合，避免逐板块查询或因已有历史记录而漏掉尾部缺口。
         """
+        scope = " AND board_code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
+        bscope = scope.replace("board_code IN", "b.board_code IN")
+        params = [codes] if codes is not None else []
         # 板块指数缺口：board_bar 最近交易日滞后于 daily_bar 全局最新交易日。
         gap_issues: list[dict] = []
         latest_raw = self._scalar("SELECT max(trade_date) FROM daily_bar")
@@ -1121,13 +1142,13 @@ class DataIntegrityReport:
         if latest is not None:
             fund_date = latest
             gap_df = self.c.query_df(
-                """
+                f"""
                 SELECT b.board_code, b.name, max(bar.trade_date) AS last_bar
                 FROM board_dict b
                 LEFT JOIN board_bar bar ON bar.board_code = b.board_code
-                WHERE b.has_bar
+                WHERE b.has_bar {bscope}
                 GROUP BY b.board_code, b.name
-                """)
+                """, params)
             lags = self._trading_day_lags([
                 (pd.Timestamp(value).date(), latest) for value in gap_df['last_bar']
                 if pd.notna(value) and pd.Timestamp(value).date() < latest
@@ -1155,11 +1176,11 @@ class DataIntegrityReport:
         fund_issues: list[dict] = []
         if fund_date is not None:
             boards = self.c.query_df(
-                "SELECT board_code, name FROM board_dict WHERE (has_members OR has_bar)")
+                f"SELECT board_code, name FROM board_dict WHERE (has_members OR has_bar) {scope}", params)
             # 一次聚合该板块在基准日的全部周期覆盖，避免逐板块 N+1 查询
             have_all = self.c.query_df(
-                "SELECT board_code, period FROM board_fund_flow WHERE snapshot_date=?",
-                [fund_date])
+                f"SELECT board_code, period FROM board_fund_flow WHERE snapshot_date=? {scope}",
+                [fund_date, *params])
             have_map: dict[str, set[str]] = {}
             for _, r in have_all.iterrows():
                 have_map.setdefault(str(r["board_code"]), set()).add(str(r["period"]))
@@ -1181,7 +1202,7 @@ class DataIntegrityReport:
         return {"latest_trade_date": latest, "fund_date": fund_date,
                 "index_gaps": gap_issues, "fund_missing": fund_issues}
 
-    def scan_board_quality(self) -> dict:
+    def scan_board_quality(self, *, codes=None) -> dict:
         """板块数据质检：成分覆盖、板块指数缺口/非法值和资金流覆盖扫描。
 
         收敛语义：先完整计算本轮结果，再在一个事务内替换 open 的
@@ -1194,7 +1215,11 @@ class DataIntegrityReport:
         成分数波动不做质量判断；但 has_members=true 且从未形成完整快照必须进入台账，
         否则概览只能显示覆盖不足、质量页却没有恢复入口。
         """
-        coverage = self.board_coverage_issues()
+        scope = " AND board_code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
+        bscope = scope.replace("board_code IN", "b.board_code IN")
+        issue_scope = scope.replace("board_code IN", "code IN")
+        params = [codes] if codes is not None else []
+        coverage = self.board_coverage_issues(codes=codes)
         gap_issues = coverage["index_gaps"]
         latest = coverage["latest_trade_date"]
         if latest is not None:
@@ -1208,20 +1233,20 @@ class DataIntegrityReport:
             recent_set = set(recent_days)
             if recent_set:
                 bar_df = self.c.query_df(
-                    """
+                    f"""
                     SELECT b.board_code, b.name, bar.trade_date
                     FROM board_dict b
                     LEFT JOIN board_bar bar ON bar.board_code = b.board_code
                         AND bar.trade_date >= ? AND bar.trade_date <= ?
-                    WHERE b.has_bar
+                    WHERE b.has_bar {bscope}
                     """,
-                    [min(recent_set), max(recent_set)])
+                    [min(recent_set), max(recent_set), *params])
                 start_df = self.c.query_df(
-                    """
+                    f"""
                     SELECT board_code, min(trade_date) AS bar_start
-                    FROM board_bar
+                    FROM board_bar WHERE true {scope}
                     GROUP BY board_code
-                    """)
+                    """, params)
                 bar_start_by_code: dict[str, date] = {
                     str(r["board_code"]): pd.Timestamp(r["bar_start"]).date()
                     for _, r in start_df.iterrows()
@@ -1255,17 +1280,17 @@ class DataIntegrityReport:
 
         # 板块指数内容合法性：记录存在不代表可用于行情展示，坏 OHLC/负成交字段必须可发现、可重采。
         invalid_df = self.c.query_df(
-            """
+            f"""
             SELECT d.board_code, d.name, b.trade_date, b.open, b.high, b.low, b.close,
                    b.volume, b.amount
             FROM board_bar b
             JOIN board_dict d ON d.board_code=b.board_code AND d.has_bar
-            WHERE b.close IS NULL OR b.close<=0 OR b.high IS NULL OR b.low IS NULL
+            WHERE (b.close IS NULL OR b.close<=0 OR b.high IS NULL OR b.low IS NULL
                OR b.high<b.low
                OR (b.open IS NOT NULL AND (b.open>b.high OR b.open<b.low))
                OR (b.close IS NOT NULL AND (b.close>b.high OR b.close<b.low))
-               OR COALESCE(b.volume, 0)<0 OR COALESCE(b.amount, 0)<0
-            """)
+               OR COALESCE(b.volume, 0)<0 OR COALESCE(b.amount, 0)<0) {bscope}
+            """, params)
         invalid_issues = [
             {
                 "code": str(r["board_code"]),
@@ -1283,11 +1308,11 @@ class DataIntegrityReport:
         active_member_codes: set[str] = set()
         active_member_df = self.c.query_df(
             "SELECT code FROM data_quality_issue "
-            "WHERE issue_type='board_member_incomplete' AND status IN ('open','fixing')")
+            f"WHERE issue_type='board_member_incomplete' AND status IN ('open','fixing') {issue_scope}", params)
         active_member_codes.update(str(x) for x in active_member_df["code"].tolist())
         member_df = self.c.query_df(
             "SELECT board_code, name FROM board_dict "
-            "WHERE has_members AND member_snapshot_at IS NULL")
+            f"WHERE has_members AND member_snapshot_at IS NULL {scope}", params)
         member_issues = [
             {
                 "code": str(r["board_code"]),
@@ -1315,7 +1340,8 @@ class DataIntegrityReport:
         # 只把「有快照但滞后」的周期计入：从未有快照的周期（新板块/老数据模式）由
         # board_fund_missing 按板块覆盖，这里不重复报源级滞后。
         stale_issues: list[dict] = []
-        if latest is not None:
+        # 定向补采不能代表全源恢复，也不能关闭 code=NULL 的全源事件。
+        if latest is not None and codes is None:
             lag_parts: list[str] = []
             lag_periods: list[str] = []
             watermarks = self.c.query_df(
@@ -1355,19 +1381,19 @@ class DataIntegrityReport:
             # member 类不在此替换集内：由采集层即时写 + active/ignored 去重，扫描只补盲区。
             self._upsert_scan_issues(
                 gap_issues + daily_gap_issues + invalid_issues + fund_issues + stale_issues,
-                scan_issue_types)
+                scan_issue_types, codes=codes)
             from backend.dataquality.ignore_rules import filter_ignored_issues
             visible_member_issues = filter_ignored_issues(
                 self.c, member_issues, ("board_member_incomplete",),
-                reconcile_occurrences=True,
+                reconcile_occurrences=True, scope_codes=codes,
             )
             if visible_member_issues:
                 self._insert_issues(visible_member_issues)
         all_board_types = (*scan_issue_types, "board_member_incomplete")
         active = self.c.query_df(
             f"SELECT issue_type, count(*) AS n FROM data_quality_issue WHERE status='open' "
-            f"AND issue_type IN ({','.join('?' * len(all_board_types))}) GROUP BY issue_type",
-            list(all_board_types),
+            f"AND issue_type IN ({','.join('?' * len(all_board_types))}) {issue_scope} GROUP BY issue_type",
+            [*all_board_types, *params],
         )
         counts = {str(r["issue_type"]): int(r["n"]) for _, r in active.iterrows()}
         return {
@@ -1755,15 +1781,16 @@ class DataIntegrityReport:
         return True
 
     def _collect_adj_jump_issues(self, threshold: float = 0.5,
-                                 ignored_exact: set | None = None) -> list[dict]:
+                                 ignored_exact: set | None = None, *, codes=None) -> list[dict]:
         """全市场前复权价相邻日跳变 > threshold（T-M7-6，补 T-M1-8 遗留）→ 复权异常。
 
         阈值 0.5（50%）远超任一板块单日涨跌停（≤20%），故捕获的是粗粒度复权口径错误
         （如除权日因子未更新致整段错位），噪音极低。向量化：按 code 分组算 qfq 比值跳变。
         缺失/停牌缺口属正常现象，由 coverage() 汇总，不在此逐条记 issue（避免淹没真异常）。
         """
+        scope = " AND b.code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
         df = self.c.query_df(
-            """
+            f"""
             SELECT b.code, b.trade_date, b.close,
                    COALESCE(b.adj_factor_clean, b.adj_factor) AS adj_factor,
                    sb.name,
@@ -1776,9 +1803,9 @@ class DataIntegrityReport:
                        ELSE NULL
                    END AS listing_trade_seq
             FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code = b.code
-            WHERE b.close > 0
+            WHERE b.close > 0 {scope}
             ORDER BY b.code, b.trade_date
-            """
+            """, [codes] if codes is not None else []
         )
         if df.empty:
             return []

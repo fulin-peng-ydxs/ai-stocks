@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 
 from backend.common.exceptions import ConflictError
 from backend.common.logging import get_logger
+from backend.services.collection_quality import collection_summary
 from backend.storage.duckdb_client import get_client
 from backend.storage.task_runtime import (
     get_task_runtime_client,
@@ -764,7 +765,7 @@ def _h_update(params: dict, ctx: TaskContext) -> dict:
     res = IngestionService().update(codes=params.get("codes"), concurrency=_concurrency(params), ctx=ctx)
     if res.get("skipped"):
         return {"message": "主源当日数据未就绪，本次增量未执行", "ingest": res}
-    return {"message": f"更新{'部分完成' if res.get('stage_failures') or res.get('fail') else '完成'}：{res}",
+    return {"message": f"更新{'部分完成' if res.get('stage_failures') or res.get('fail') else '完成'}：{collection_summary(res)}",
             "ok": not (res.get("stage_failures") or res.get("fail")), "ingest": res}
 
 
@@ -774,7 +775,9 @@ def _h_backfill(params: dict, ctx: TaskContext) -> dict:
     ctx.progress(0.1, "历史补数中（可能较久）…")
     res = IngestionService().backfill(codes=params.get("codes"), years=params.get("years"),
                                       concurrency=_concurrency(params), ctx=ctx)
-    return {"message": f"补数完成：{res}", "ingest": res}
+    failed = bool(res.get("fail") or res.get("stage_failures"))
+    return {"message": f"补数{'部分完成' if failed else '完成'}：{collection_summary(res)}",
+            "ok": not failed, "ingest": res}
 
 
 def _h_ingest_date(params: dict, ctx: TaskContext) -> dict:
@@ -792,7 +795,9 @@ def _h_ingest_date(params: dict, ctx: TaskContext) -> dict:
     ctx.progress(0.1, f"采集 {start}~{end} 行情…")
     res = IngestionService().ingest_date(start, end, codes=params.get("codes"),
                                          concurrency=_concurrency(params), ctx=ctx)
-    return {"message": f"指定采集完成：{res}", "ingest": res}
+    failed = bool(res.get("fail") or res.get("stage_failures"))
+    return {"message": f"指定采集{'部分完成' if failed else '完成'}：{collection_summary(res)}",
+            "ok": not failed, "ingest": res}
 
 
 def _h_ingest_codes(params: dict, ctx: TaskContext) -> dict:
@@ -809,7 +814,7 @@ def _h_ingest_codes(params: dict, ctx: TaskContext) -> dict:
             "message": "主源当日数据未就绪，本次指定股票采集未执行",
             "ingest": res,
         }
-    return {"message": f"指定股票采集结果：{res}",
+    return {"message": f"指定股票采集结果：{collection_summary(res)}",
             "ok": not (res.get("stage_failures") or res.get("fail")), "ingest": res}
 
 
@@ -938,10 +943,14 @@ def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
 
     if recipe in {"history_backfill", "range_refetch", "share_capital_history", "valuation_history",
                   "valuation_gaps", "valuation_invalid_history", "delisted_history"}:
-        from backend.services.capital_quality import CapitalQualityService
+        from backend.services.capital_quality import CAPITAL_ISSUE_TYPES, CapitalQualityService
         # 批处理最后统一收敛台账，包括无需联网的重算和已不再进入缺口队列的股票。
         capital_service = CapitalQualityService(ing.c)
-        result["capital_quality"] = capital_service.sync(codes)
+        stock_quality = result.get("quality", {}).get("stock")
+        result["capital_quality"] = (
+            {kind: stock_quality[f"{kind}_rows"] for kind in CAPITAL_ISSUE_TYPES}
+            if stock_quality is not None else capital_service.sync(codes)
+        )
         source_rows = capital_service.aggregate(codes, source_only=True)
         result["capital_source_review"] = [
             {"type": kind, "stocks": len(group), "records": int(group.issue_days.sum())}
@@ -952,7 +961,7 @@ def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
     if result.get("skipped"):
         return {"message": "主源当日数据未就绪，本次日常同步未执行", "ingest": result}
     fail = int(result.get("fail") or 0)
-    summary = {key: value for key, value in result.items() if key != "diagnostics"}
+    summary = collection_summary(result)
     message = f"{label}完成：{summary}"
     payload = {"message": message, "recipe": recipe, "ingest": result}
     if fail or result.get("stage_failures"):
@@ -1129,12 +1138,14 @@ def _h_enrich_basic(params: dict, ctx: TaskContext) -> dict:
         ctx.log("阶段 2/2：灌入退市股历史行情")
         ctx.progress(0.5, "灌入退市股历史（防幸存者偏差，可能较久）…")
         dl = ing.ingest_delisted(years=params.get("years"), limit=params.get("limit"), ctx=ctx)
-        ctx.log(f"退市股灌入：{dl}")
+        ctx.log(f"退市股灌入：{collection_summary(dl)}")
         res["delisted"] = dl
     else:
         ctx.log("阶段 2/2：退市股历史灌入跳过（参数未开启）")
-    ctx.progress(1.0, "完成")
-    return {"message": f"基础信息刷新 {n} 只" + ("（含退市股历史）" if "delisted" in res else ""), **res}
+    failed = bool(res.get("delisted", {}).get("fail"))
+    ctx.progress(1.0, "部分完成" if failed else "完成")
+    return {"message": f"基础信息刷新 {n} 只" + ("（退市股历史部分失败）" if failed else
+            "（含退市股历史）" if "delisted" in res else ""), "ok": not failed, **res}
 
 
 def _reingest_board_bar_with_retry(

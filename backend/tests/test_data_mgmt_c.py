@@ -23,6 +23,17 @@ from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
 
 
+@pytest.fixture(autouse=True)
+def isolated_settings(monkeypatch):
+    """固定单线程基线；测试桩不会因本机配置改变而创建真实联网工作线程。"""
+    from backend.config import get_settings
+
+    settings = get_settings().model_copy(deep=True)
+    settings.datasource.update_concurrency = 1
+    monkeypatch.setattr("backend.config.get_effective_settings", lambda: settings)
+    monkeypatch.setattr("backend.services.ingest.get_effective_settings", lambda: settings)
+
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     c = DuckDBClient(db_path=str(tmp_path / "t.duckdb"))
@@ -1450,6 +1461,8 @@ def test_full_history_invalid_valuation_repair_uses_structure_contract(client, m
         "SELECT trade_date, total_mv, float_mv FROM daily_metrics "
         "WHERE code='A.SH' ORDER BY trade_date"
     )
+    assert result.pop("quality")["stock"]["capital_invalid_rows"] == 0
+    assert result.pop("quality_scopes")["stock"] == ["A.SH"]
     assert result == {
         "target": 1,
         "target_days": 1,

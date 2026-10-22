@@ -24,6 +24,7 @@ import pandas as pd
 from backend.common.logging import get_logger
 from backend.services import eod_dates
 from backend.services.async_task import TaskCancelled
+from backend.services.collection_quality import collection_summary
 from backend.storage.duckdb_client import get_client
 
 log = get_logger("services.pipeline")
@@ -75,9 +76,10 @@ class DailyPipeline:
                         ctx.log(f"步骤「{name}」失败：{reason}", "error")
                     return False
                 steps.append({"step": name, "status": "ok", "secs": secs, "detail": detail})
-                log.info("[daily] %s ✓ %.1fs %s", name, secs, detail)
+                summary = collection_summary(detail) if isinstance(detail, dict) else detail
+                log.info("[daily] %s ✓ %.1fs %s", name, secs, summary)
                 if ctx:
-                    ctx.log(f"步骤「{name}」完成（{secs}s）：{detail}")
+                    ctx.log(f"步骤「{name}」完成（{secs}s）：{summary}")
                 return True
             except TaskCancelled:
                 raise
@@ -123,10 +125,41 @@ class DailyPipeline:
             def _quality():
                 from backend.services.data_report import DataIntegrityReport
                 rep = DataIntegrityReport(self.c)
-                base = rep.scan_quality_issues()
-                # 市场指数/板块扫描失败必须让质检步骤失败，保留旧问题并暴露给任务状态。
-                base["market_index"] = rep.scan_market_index_quality()
-                base["board"] = rep.scan_board_quality()
+                collected = {}
+                checked_scopes = {}
+                for item in steps:
+                    if isinstance(item.get("detail"), dict):
+                        collected.update(item["detail"].get("quality") or {})
+                        checked_scopes.update(item["detail"].get("quality_scopes") or {})
+                if codes is None and "stock" in collected and "stock" in checked_scopes:
+                    # 全市场收尾已经检查了个股；补查本批次未采集的分时，避免重复扫十年日线。
+                    from backend.services.intraday_archive import IntradayArchiveService
+                    base = dict(collected["stock"])
+                    if checked_scopes["stock"] is not None:
+                        from backend.dataquality.checker import SCAN_ISSUE_TYPES
+                        # 日常在市股收尾不包含退市股/孤儿旧台账；全量监测仍需补齐这些对象。
+                        known = self.c.query_df(
+                            "SELECT code FROM stock_basic UNION SELECT code FROM daily_bar "
+                            "UNION SELECT code FROM stock_suspension UNION SELECT code "
+                            "FROM data_quality_issue WHERE issue_type IN "
+                            "(SELECT unnest(?::VARCHAR[])) AND code IS NOT NULL",
+                            [list(SCAN_ISSUE_TYPES)],
+                        )["code"].tolist()
+                        remaining = sorted(set(known) - set(checked_scopes["stock"]))
+                        if remaining:
+                            extra = rep.scan_quality_issues(codes=remaining, include_intraday=False)
+                            for key, value in extra.items():
+                                if key != "intraday":
+                                    base[key] = base.get(key, 0) + value
+                    base["intraday"] = IntradayArchiveService(self.c).sync()
+                else:
+                    # 跳过更新或仅更新个股子集时，保留日常全量监测语义。
+                    base = rep.scan_quality_issues()
+                # 缺少收尾结果（例如板块阶段异常）仍走完整扫描，并向任务暴露扫描失败。
+                base["market_index"] = (collected["market_index"] if "market_index" in collected
+                                        else rep.scan_market_index_quality())
+                base["board"] = (collected["board"] if "board" in collected
+                                 else rep.scan_board_quality())
                 return base
             step("数据质检", _quality)
 

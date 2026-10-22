@@ -109,6 +109,8 @@ flowchart LR
   DB --> DOWNSTREAM[指标/筛选/评分/回测]
 ```
 
+批次采集的收尾检查通过 `backend/services/collection_quality.py` 统一承接，合并嵌套阶段后按实际对象复用既有质检规则；范围隔离、任务失败与主动全量质检的契约以 [数据管理](data-management.md) 为准。
+
 ## 使用与运行方式
 
 系统管理员可在“数据管理 → 数据采集”手动执行，在“定时调度”创建 `stock_ingest` 调度。Web 统一调用 `POST /api/data/tasks`，请求示例：

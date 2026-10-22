@@ -40,6 +40,7 @@ from backend.limit_ladder.rules import (
 )
 from backend.services import eod_dates
 from backend.services.async_task import TaskCancelled
+from backend.services.collection_quality import checked_collection, include_collection_scope
 from backend.services.market_benchmark import configured_benchmark_codes
 from backend.services.stock_st_status import StockSTStatusFact, StockSTStatusService
 from backend.services.trade_calendar_readiness import (
@@ -194,6 +195,7 @@ class IngestionService:
         return n
 
     # ── 指数 ──
+    @checked_collection
     def ingest_indices(
         self,
         start: date,
@@ -203,12 +205,14 @@ class IngestionService:
     ) -> int:
         """采集配置内指数；可指定子集供逐指数增量补采复用。"""
         end = eod_dates.cap_range(start, end)
+        full_scope = codes is None
         configured = configured_benchmark_codes()
         allowed = set(configured)
         codes = list(dict.fromkeys(codes if codes is not None else configured))
         unsupported = [code for code in codes if code not in allowed]
         if unsupported:
             raise ValueError(f"指数不在系统配置清单中: {unsupported}")
+        include_collection_scope(self, "market_index", None if full_scope else codes)
         total = 0
         if ctx:
             ctx.log(f"子任务：指数行情采集开始，{len(codes)} 个指数，区间 {start}~{end}")
@@ -230,9 +234,11 @@ class IngestionService:
             ctx.log(f"子任务：指数行情采集完成，共写入/更新 {total} 行")
         return total
 
+    @checked_collection
     def _ingest_indices_incremental(self, end: date, ctx=None) -> int:
         """逐指数补到目标日；首次加入配置的指数自动回填系统历史窗口。"""
         codes = configured_benchmark_codes()
+        include_collection_scope(self, "market_index", None)
         latest_df = self.repo.c.query_df(
             "SELECT index_code, max(trade_date) AS d FROM index_bar GROUP BY index_code"
         )
@@ -258,6 +264,7 @@ class IngestionService:
         return total
 
     # ── 股票列表 + 基础信息 ──
+    @checked_collection
     def ingest_stock_basic(self, codes: list[str] | None = None, ctx=None) -> pd.DataFrame:
         """入库 stock_basic（板块由代码判定），返回纳入的 code 列表 DataFrame。"""
         if ctx:
@@ -285,6 +292,7 @@ class IngestionService:
         # 仅保留目标板块（默认剔除北交所）
         if not self.s.universe.include_bse:
             basic = basic[basic["board"] != "北交所"]
+        include_collection_scope(self, "stock", basic["code"].tolist())
         n = self.repo.upsert_stock_basic(basic)
         self.repo.log_update("stock_basic", self.src.name, None, None, n, "success")
         log.info("股票基础信息入库 %d 只", n)
@@ -922,6 +930,7 @@ class IngestionService:
             ctx.set_checkpoint(history_start=start.isoformat(), history_end=end.isoformat())
         return start, end
 
+    @checked_collection
     def ingest_valuation(self, codes: list[str] | None = None, years: int | None = None,
                          concurrency: int | None = None, ctx=None) -> dict:
         """补每日市值字段到 daily_metrics，并把最新总/流通股本写入 stock_basic。
@@ -933,6 +942,7 @@ class IngestionService:
         years = years or self.s.datasource.history_years
         start, end = self._history_window(years, ctx)
         live = self._stock_basic_from_db(codes, as_of=end)["code"].tolist()
+        include_collection_scope(self, "stock", live)
         val_src = self._source_for("valuation")  # 校验能力可用（串行直接用，并发用线程局部源）
         # 断点续跑：跳过已同时具备 total_mv 与 float_mv 的票；只缺流通市值的旧数据也要补。
         done = set(self.repo.c.query_df(
@@ -1015,6 +1025,7 @@ class IngestionService:
             ctx.log(f"子任务：历史市值字段补采完成，成功{ok} 跳过{skip} 失败{fail}，写入 {rows} 行")
         return result
 
+    @checked_collection
     def ingest_valuation_latest(self, trade_date: date | None = None,
                                 codes: list[str] | None = None,
                                 concurrency: int | None = None, ctx=None) -> dict:
@@ -1038,13 +1049,16 @@ class IngestionService:
             "LEFT JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date "
             "LEFT JOIN stock_share_capital_daily s ON s.code=b.code AND s.trade_date=b.trade_date "
             "WHERE b.trade_date = ? AND (sb.delist_date IS NULL OR sb.delist_date>?) "
-            f"AND ({ShareCapitalService.review_predicate()})"
+
         )
         params: list = [trade_date, trade_date]
         if codes:
             sql += f" AND b.code IN ({','.join('?' * len(codes))})"
             params += list(codes)
-        pending = self.repo.c.query_df(sql, params)["code"].tolist()
+        include_collection_scope(self, "stock", self.repo.c.query_df(sql, params)["code"].tolist())
+        pending = self.repo.c.query_df(
+            sql + f" AND ({ShareCapitalService.review_predicate()})", params
+        )["code"].tolist()
         concurrency = concurrency if concurrency is not None else self.s.datasource.update_concurrency
         ok = fail = rows = 0
         done_latest = set(ctx.checkpoint.get("valuation_latest_done_codes") or []) if (ctx and ctx.checkpoint) else set()
@@ -1134,6 +1148,7 @@ class IngestionService:
             ctx.log(f"子任务：最新日市值补采完成，成功{ok} 失败{fail}，写入 {rows} 行")
         return result
 
+    @checked_collection
     def ingest_valuation_gaps(self, codes: list[str] | None = None,
                               concurrency: int | None = None, ctx=None) -> dict:
         """一次性历史回补（WS2）：补所有『有 daily_bar 但市值字段不完整』的在市股缺口。
@@ -1154,6 +1169,10 @@ class IngestionService:
             "GROUP BY b.code")
         if codes:
             gap = gap[gap["code"].isin(set(codes))]
+        include_collection_scope(self, "stock", codes if codes is not None else self.c.query_df(
+            "SELECT code FROM stock_basic WHERE delist_date IS NULL OR delist_date>"
+            "(SELECT COALESCE(max(trade_date),current_date) FROM daily_bar)"
+        )["code"].tolist())
         pending = [(r["code"], pd.Timestamp(r["lo"]).date(), pd.Timestamp(r["hi"]).date())
                    for _, r in gap.iterrows()]
         concurrency = concurrency if concurrency is not None else self.s.datasource.update_concurrency
@@ -1340,6 +1359,7 @@ class IngestionService:
                     covered.add(code)
         return covered
 
+    @checked_collection
     def backfill(self, codes: list[str] | None = None, years: int | None = None, ctx=None,
                  concurrency: int | None = None) -> dict:
         """全量回填近 N 年。codes=None 表示全市场；可断点续跑（跳过已入库）。
@@ -1365,6 +1385,7 @@ class IngestionService:
             if ctx:
                 ctx.set_checkpoint(prep_done=True)
         target_codes = basic["code"].tolist()
+        include_collection_scope(self, "stock", target_codes)
         # 板块涨跌幅查找表；ST 状态由 ingest_one_daily 按行情日期读取 baostock 点时事实。
         limit_lut = dict(zip(basic["code"], basic["price_limit_pct"]))
 
@@ -1597,6 +1618,7 @@ class IngestionService:
             return fallback
         return requested_end
 
+    @checked_collection
     def update(
         self,
         codes: list[str] | None = None,
@@ -1645,6 +1667,7 @@ class IngestionService:
         # 就绪门可能回退日期，续跑也可能沿用旧目标日；以最终目标重取点时名册。
         # 已登记未来退市日的停牌股票仍需每日同步 ST，不能按 delist_date 非空提前排除。
         basic = self._stock_basic_from_db(codes, as_of=end)["code"].tolist()
+        include_collection_scope(self, "stock", basic)
         n_total = len(basic)
         completed_codes = (set(done_codes) | set(basic[:skip_done])) & set(basic)
         resumed_count = len(completed_codes)
@@ -2299,6 +2322,7 @@ class IngestionService:
         )
         return {"target_days": len(dates), "total_mv_rows": rows}
 
+    @checked_collection
     def repair_invalid_valuation_history(self, codes: list[str] | None = None,
                                          concurrency: int | None = None, ctx=None) -> dict:
         """按结构体检口径修复全历史非法市值，并逐股复检形成闭环。"""
@@ -2320,6 +2344,10 @@ class IngestionService:
             str(code): {pd.Timestamp(value).date() for value in rows["trade_date"].tolist()}
             for code, rows in invalid.groupby("code")
         }
+        include_collection_scope(self, "stock", codes if codes is not None else self.c.query_df(
+            "SELECT code FROM stock_basic WHERE delist_date IS NULL OR delist_date>"
+            "(SELECT COALESCE(max(trade_date),current_date) FROM daily_bar)"
+        )["code"].tolist())
         target_days = sum(len(dates) for dates in target_map.values())
         done_codes = set(
             ctx.checkpoint.get("valuation_invalid_done_codes") or []
@@ -2448,6 +2476,7 @@ class IngestionService:
             )
         return result
 
+    @checked_collection
     def review_capital_history(self, codes=None, ctx=None, concurrency=None):
         """日常更新后的有界历史复查；失败可重试，无证据记录不挤占后续股票。"""
         from backend.services.share_capital import ShareCapitalService
@@ -2478,6 +2507,7 @@ class IngestionService:
                 ctx.set_checkpoint(capital_review_targets=targets)
         done = set(checkpoint.get("capital_review_done", []))
         diagnostics = dict(checkpoint.get("capital_review_diagnostics", {}))
+        include_collection_scope(self, "stock", targets)
         pending = [code for code in targets if code not in done]
         result = {"target": len(targets), "ok": len(done), "fail": 0, "diagnostics": diagnostics}
         tls = threading.local()
@@ -2766,6 +2796,7 @@ class IngestionService:
                                         pd.Timestamp(span.lo).date(), pd.Timestamp(span.hi).date(), diagnostics)
         return {"rows": rows, "diagnostics": diagnostics}
 
+    @checked_collection
     def ingest_share_capital(self, codes=None, years=None, concurrency=None, ctx=None):
         """按已有日线覆盖含退市股；不因已有市值跳过股本采集。"""
         start, end = self._history_window(years or self.s.datasource.history_years, ctx)
@@ -2777,6 +2808,7 @@ class IngestionService:
         done = set((getattr(ctx, "checkpoint", {}) or {}).get("share_codes_done", []))
         # 旧版本检查点没有逐股证据，升级续跑需补做核验，避免把未诊断股票当作已闭环。
         done &= set((getattr(ctx, "checkpoint", {}) or {}).get("share_diagnostics", {}))
+        include_collection_scope(self, "stock", stocks)
         pending = [code for code in stocks if code not in done]
         tls = threading.local()
         source_name = self._source_for("share_capital").name
@@ -2881,6 +2913,7 @@ class IngestionService:
         return added
 
     # ── 指定日期采集（FR-DM-3 更多选项，M2.8-B）──
+    @checked_collection
     def ingest_date(self, start: date, end: date, codes: list[str] | None = None, ctx=None,
                     concurrency: int | None = None) -> dict:
         """补指定日期（或区间）的行情。codes=None 表示全部在市股票。
@@ -2903,6 +2936,7 @@ class IngestionService:
             if ctx:
                 ctx.set_checkpoint(range_start=start.isoformat(), range_end=end.isoformat())
         live = self._stock_basic_from_db(codes, as_of=end)
+        include_collection_scope(self, "stock", live["code"].tolist())
         # 确保区间内日历+指数存在（与 update/backfill 一致：补缺口时该区间指数也一并补，避免回测基准留缺口）。
         # 续跑跳过前置：prep_done 标记后续跑不再重采日历/指数（首跑已幂等入库）。
         if ctx and ctx.checkpoint.get("prep_done"):
@@ -3100,6 +3134,7 @@ class IngestionService:
         )["code"].tolist()
         return self._recompute_clean(target, ctx=ctx, full=True, verb="重算价格因子")
 
+    @checked_collection
     def refresh_st_status(
         self,
         codes: list[str] | None = None,
@@ -3111,6 +3146,7 @@ class IngestionService:
         st_service = StockSTStatusService(self.c)
         previous_state = st_service.refresh_state()
         market_hi, spans = self._st_refresh_spans(codes)
+        include_collection_scope(self, "stock", spans["code"].tolist())
         target_count = len(spans)
         st_service.begin_refresh(
             task_id=getattr(ctx, "tid", None),
@@ -3550,6 +3586,7 @@ class IngestionService:
     # baostock 补充（T-M1-4）：上市/退市日 + 退市股历史（防幸存者偏差）
     # ══════════════════════════════════════════════════════════
 
+    @checked_collection
     def enrich_basic_dates(self, ctx=None) -> int:
         """补全 stock_basic 的上市/退市日 + 行业（含新增退市股），按能力选源。"""
         dates_src = self._source_for("basic_dates")
@@ -3600,6 +3637,7 @@ class IngestionService:
             out["industry"].notna(), out["code"].map(industry_by_code))
         if ctx:
             ctx.check_cancel()
+        include_collection_scope(self, "stock", out["code"].tolist())
         n = self.repo.upsert_stock_basic(out)
         self.repo.log_update("stock_basic", dates_src.name, None, None, n, "success", "补上市/退市日+行业")
         log.info("%s 补全基础信息 %d 只（含退市股+行业）", dates_src.name, n)
@@ -3611,6 +3649,7 @@ class IngestionService:
             ctx.log(f"子任务：上市/退市日与行业入库完成，写入/更新 {n} 只")
         return n
 
+    @checked_collection
     def ingest_delisted(self, years: int | None = None, limit: int | None = None, ctx=None) -> dict:
         """灌入"近 N 年内退市"的退市股历史日线（防幸存者偏差核心）。
 
@@ -3627,6 +3666,7 @@ class IngestionService:
         dl = dl[dl["code"].apply(lambda c: self._in_target_board(c.split(".")[0])[0])]
         if limit:
             dl = dl.head(limit)
+        include_collection_scope(self, "stock", dl["code"].tolist())
         log.info("待灌退市股 %d 只（退市日 >= %s）", len(dl), start)
         if ctx:
             ctx.set_phase("delisted_history", phase_total=len(dl), phase_done=0, current_item=None)
@@ -3686,6 +3726,7 @@ class IngestionService:
         return result
 
     # ── 板块概念采集（字典 / 完整成分快照 / 指数 / 资金流）─────────────────
+    @checked_collection
     def ingest_board(self, ctx=None, board_type: str | None = None,
                      board_codes: list[str] | None = None, mode: str = "update",
                      only: list[str] | None = None, limit: int | None = None,
@@ -3900,6 +3941,13 @@ class IngestionService:
             known_codes = {str(x) for x in known["board_code"].tolist()}
             result["failed"] += [f"unknown_board:{code}" for code in board_codes
                                  if code not in known_codes]
+        # 字典阶段可能新增对象，必须在步骤结束后解析实际类型/limit 范围。
+        quality_codes = board_codes
+        if quality_codes is None and board_type is not None:
+            quality_codes = svc.c.query_df(
+                "SELECT board_code FROM board_dict WHERE board_type=?", [board_type]
+            )["board_code"].tolist()
+        include_collection_scope(self, "board", quality_codes)
         result["failed"] = list(dict.fromkeys(result["failed"]))
         result["ok"] = not result["failed"]
         if ctx:

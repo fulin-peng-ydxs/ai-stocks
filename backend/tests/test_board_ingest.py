@@ -774,6 +774,7 @@ def test_board_update_force_current_day_bypasses_all_fallbacks(monkeypatch, mark
     monkeypatch.setattr(board_module, "_asia_date", lambda: today)
     monkeypatch.setattr(board_module, "BoardIngestService", _FakeBoardService)
     svc = IngestionService.__new__(IngestionService)
+    svc.c = market
     svc._latest_open_day = lambda: previous
 
     svc.ingest_board(mode="update", only=["bar", "fund"], force_current_day=True)
@@ -805,6 +806,7 @@ def test_board_backfill_fund_without_bar_defers_snapshot_date(monkeypatch, marke
 
     monkeypatch.setattr(board_module, "BoardIngestService", _FakeBoardService)
     svc = IngestionService.__new__(IngestionService)
+    svc.c = market
     svc._latest_open_day = lambda: latest_open_day
 
     svc.ingest_board(mode="backfill", only=["fund"])
@@ -1003,6 +1005,7 @@ def test_board_overnight_ingest_persists_previous_close(
         }])}
     monkeypatch.setattr(module, "BoardIngestService", lambda: service)
     ing = IngestionService.__new__(IngestionService)
+    ing.c = service.c
     ing._latest_open_day = lambda: date(2026, 10, 20)
     ctx = _FundContext({'bar_done_codes': ['309121']} if resume else None)
     result = ing.ingest_board(mode=mode, only=stages, board_type="concept", ctx=ctx)
