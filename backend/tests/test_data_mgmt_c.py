@@ -485,7 +485,7 @@ def test_verify_task_includes_market_index_scan(client, monkeypatch):
     monkeypatch.setattr(
         DataIntegrityReport,
         "scan_quality_issues",
-        lambda self: called.__setitem__("base", called["base"] + 1) or {
+        lambda self, **kwargs: called.__setitem__("base", called["base"] + 1) or {
             "abnormal_change_rows": 0,
             "adj_jump_rows": 0,
             "mv_missing_rows": 0,
@@ -498,7 +498,7 @@ def test_verify_task_includes_market_index_scan(client, monkeypatch):
     monkeypatch.setattr(
         DataIntegrityReport,
         "scan_market_index_quality",
-        lambda self: called.__setitem__("market", called["market"] + 1) or {
+        lambda self, **kwargs: called.__setitem__("market", called["market"] + 1) or {
             "index_gap": 1, "index_gap_daily": 0, "index_invalid": 0,
         },
         raising=True,
@@ -506,7 +506,7 @@ def test_verify_task_includes_market_index_scan(client, monkeypatch):
     monkeypatch.setattr(
         DataIntegrityReport,
         "scan_board_quality",
-        lambda self: called.__setitem__("board", called["board"] + 1) or {
+        lambda self, **kwargs: called.__setitem__("board", called["board"] + 1) or {
             "index_gap": 0,
         },
         raising=True,

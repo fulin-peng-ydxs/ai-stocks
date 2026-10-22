@@ -1938,6 +1938,13 @@ def test_board_index_batch_fix_survives_rescan_of_siblings(client, monkeypatch):
     from backend.services import ingest
     from backend.services.board_ingest import BoardIngestService
 
+    original_scan = DataIntegrityReport.scan_board_quality
+    scopes = []
+    def scoped_scan(report, **kwargs):
+        scopes.append(kwargs.get("codes"))
+        return original_scan(report, **kwargs)
+    monkeypatch.setattr(DataIntegrityReport, "scan_board_quality", scoped_scan)
+
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
     monkeypatch.setattr(BoardIngestService, "__init__",
@@ -1972,6 +1979,7 @@ def test_board_index_batch_fix_survives_rescan_of_siblings(client, monkeypatch):
     rows = client.query_df("SELECT id, status FROM data_quality_issue WHERE id IN (1,2)")
     statuses = {int(r["id"]): str(r["status"]) for _, r in rows.iterrows()}
     assert statuses == {1: "resolved", 2: "resolved"}
+    assert scopes == [["309121"], ["309131"]]
 
 
 def test_board_index_gap_daily_fix_retries_on_empty_rows(client, monkeypatch):

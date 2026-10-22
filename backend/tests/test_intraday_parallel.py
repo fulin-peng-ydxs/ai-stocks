@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from datetime import date
@@ -22,6 +23,122 @@ from backend.tests.test_intraday_quotes import _frame, _Redis
 from backend.tests.test_intraday_source import (
     request_settings as request_settings,  # noqa: PLC0414 -- pytest夹具显式复用
 )
+
+
+@pytest.mark.parametrize("count", [8, pytest.param(
+    5000, marks=pytest.mark.skipif(not os.getenv("INTRADAY_SCALE_STOCKS"),
+                                 reason="显式全市场规模门禁"),
+)])
+def test_repair_commits_quality_and_progress_before_full_market_finishes(db, monkeypatch, count):
+    """真实恢复入口必须首股即关闭问题，而不是等全市场取源完成；仅替换外部传输。"""
+    codes = [f"{600100 + index:06d}.SH" for index in range(count)]
+    db.execute("INSERT INTO trade_calendar VALUES ('2026-09-09',true)")
+    db.executemany("INSERT INTO stock_basic(code,name,list_date) VALUES (?,?,'2026-09-09')",
+                   [(code, code) for code in codes])
+    with db.temp_view(pd.DataFrame({"code": codes})) as view:
+        db.execute(f"INSERT INTO stock_intraday_monitor(code,monitoring_start) "
+                   f"SELECT code,'2026-09-09' FROM {view}")
+        db.execute(f"INSERT INTO daily_bar(code,trade_date,close) "
+                   f"SELECT code,trade_date,3.6 FROM {view} CROSS JOIN trade_calendar "
+                   "WHERE trade_date IN ('2026-09-09','2026-09-10')")
+    archive = IntradayArchiveService(db)
+    archive.sync(codes)
+    cfg = Settings()
+    cfg.datasource.update_concurrency = 4
+    monkeypatch.setattr(intraday_archive, "get_effective_settings", lambda: cfg)
+    monkeypatch.setattr(async_task, "get_client", lambda: db)
+    monkeypatch.setattr("backend.services.ingest.IngestionService", lambda: None)
+    calls = []
+    payload = pd.concat([_frame(date(2026, 9, 9)), _frame(date.fromisoformat(DAY))])
+
+    class Transport:
+        def get_intraday_1m(self, code, provider, **kwargs):
+            calls.append(code)
+            return payload.copy()
+
+    cache = _Redis()
+    monkeypatch.setattr(intraday_source, "IntradaySourceService", lambda **kwargs:
+                        IntradaySourceService(redis_client=cache, source_factory=Transport, **kwargs))
+
+    class LiveContext(Context):
+        def __init__(self):
+            super().__init__()
+            self.updates = []
+
+        def progress(self, value, message):
+            self.updates.append((value, message))
+
+        def set_checkpoint(self, **data):
+            super().set_checkpoint(**data)
+            done = data.get("intraday_repair_checkpoint", {}).get("intraday_done", [])
+            if done:
+                # 归档完成检查点提交前，选中问题必须已复检关闭并上报外层进度。
+                assert len(self.checkpoint["issue_done_ids"]) == 2
+                assert db.query_df("SELECT count(*) n FROM data_quality_issue "
+                                   "WHERE code=? AND status='resolved'", [done[0]]).iloc[0].n == 2
+                assert any(value > 0.1 and "已解决 2 条" in msg for value, msg in self.updates)
+                self.cancel = True
+
+    ctx = LiveContext()
+    with pytest.raises(TaskCancelled):
+        async_task._h_fix({"issue_type": "intraday_gap"}, ctx)
+    assert len(ctx.checkpoint["fix_scope_ids"]) == 2 * count
+    assert 1 <= len(calls) <= 4 < count
+    assert len(ctx.checkpoint["intraday_repair_checkpoint"]["intraday_done"]) == 1
+
+
+@pytest.mark.parametrize("prior_error", [False, True])
+def test_resume_legacy_archived_stock_reconciles_ledger_before_next_request(db, monkeypatch, prior_error):
+    """兼容旧检查点：先收敛已落库但未关闭的台账，不再请求已完成股票。"""
+    other = "600001.SH"
+    db.execute("INSERT INTO stock_basic(code,name,list_date) VALUES (?,'第二股',?)", [other, DAY])
+    db.execute("INSERT INTO daily_bar(code,trade_date,close) VALUES (?,?,3.6)", [other, DAY])
+    source = Windows([window(rows=10)])
+    archive = IntradayArchiveService(db, quotes=source)
+    archive.collect()
+    ids = db.query_df("SELECT id FROM data_quality_issue ORDER BY id").id.tolist()
+    archive.write_day(CODE, DAY, [window()])
+    ctx = Context()
+    ctx.checkpoint = {"fix_scope_ids": ids, "intraday_repair_checkpoint": {"intraday_done": [CODE]}}
+    if prior_error:
+        ctx.checkpoint["intraday_repair_checkpoint"]["intraday_failed"] = {CODE: "旧请求失败"}
+    class NextStock(Windows):
+        def fetch_window(self, code, dates, **kwargs):
+            assert code == other
+            assert db.query_df("SELECT status FROM data_quality_issue WHERE code=?", [CODE]).iloc[0, 0] == "resolved"
+            return super().fetch_window(code, dates, **kwargs)
+
+    next_source = NextStock([window()])
+    cfg = Settings()
+    cfg.datasource.update_concurrency = 1  # 传输替身内读取隔离库，仅此回归使用串行。
+    monkeypatch.setattr(intraday_archive, "get_effective_settings", lambda: cfg)
+    monkeypatch.setattr(intraday_source, "IntradaySourceService", lambda **kwargs: next_source)
+    monkeypatch.setattr(async_task, "get_client", lambda: db)
+    monkeypatch.setattr("backend.services.ingest.IngestionService", lambda: None)
+    result = async_task._h_fix({"issue_ids": ids}, ctx)
+    assert result["ok"] and result["resolved"] == 2
+    assert len(next_source.calls) == 1
+    assert ctx.checkpoint["intraday_repair_checkpoint"]["intraday_failed"] == {}
+
+
+def test_resume_retries_unresolved_stock_even_after_error_free_archive_checkpoint(db, monkeypatch):
+    """取源无异常但分钟仍缺失时，归档完成不等于问题解决，续跑可继续补采。"""
+    source = Windows([window(rows=10)])
+    IntradayArchiveService(db, quotes=source).collect()
+    monkeypatch.setattr(intraday_source, "IntradaySourceService", lambda **kwargs: source)
+    monkeypatch.setattr(async_task, "get_client", lambda: db)
+    monkeypatch.setattr("backend.services.ingest.IngestionService", lambda: None)
+    ctx = Context()
+    first = async_task._h_fix({"issue_type": "intraday_partial"}, ctx)
+    assert not first["ok"] and first["retryable"]
+    assert ctx.checkpoint["intraday_repair_checkpoint"]["intraday_done"] == [CODE]
+    previous_calls = len(source.calls)
+    source.windows = [window()]
+    resumed = Context()
+    resumed.checkpoint = json.loads(json.dumps(ctx.checkpoint))
+    result = async_task._h_fix({"issue_type": "intraday_partial"}, resumed)
+    assert result["ok"] and result["resolved"] == 1
+    assert len(source.calls) == previous_calls + 1
 
 
 def test_daily_and_quality_repair_share_parallel_source_and_resume(db, monkeypatch):

@@ -206,7 +206,7 @@ def test_repair_cancel_resume_freezes_ids_and_does_not_repeat_completed_stock(db
     ctx = Cancelling()
     with pytest.raises(TaskCancelled):
         async_task._h_fix({"issue_type": "intraday_partial"}, ctx)
-    # 批量取源可先完成多个股票；续跑必须复用已完成的归档检查点。
+    # 并发请求可能已返回，但取消后仅完成归档收口的股票进入检查点。
     assert len(q.calls) == 4
     frozen = list(ctx.checkpoint["fix_scope_ids"])
     DataIntegrityReport(db)._insert_issues(
@@ -222,7 +222,8 @@ def test_repair_cancel_resume_freezes_ids_and_does_not_repeat_completed_stock(db
     resumed = Context()
     resumed.checkpoint = json.loads(json.dumps(ctx.checkpoint))
     result = async_task._h_fix({"issue_type": "intraday_partial"}, resumed)
-    assert result["ok"] and len(q.calls) == 4
+    assert result["ok"] and len(q.calls) == 5
+    assert q.calls[-1][0] == second  # 已完成股票不重复取源，未落库的在途结果正常重试。
     assert resumed.checkpoint["fix_scope_ids"] == frozen
     assert (
         db.query_df("SELECT status FROM data_quality_issue WHERE code='600002.SH'").iloc[0, 0]

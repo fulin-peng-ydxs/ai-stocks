@@ -311,6 +311,12 @@ def test_quality_detects_physical_loss_even_with_ready_coverage(db):
 
 def test_async_write_mutex_failure_resume_and_terminal_logs(db, monkeypatch):
     from backend.services import async_task, intraday_source
+    from backend.config.settings import Settings
+
+    # 本例替换 Thread 来接管任务启动；线程池并发由专门回归覆盖，避免一并替换其工作线程。
+    settings = Settings()
+    settings.datasource.update_concurrency = 1
+    monkeypatch.setattr("backend.services.intraday_archive.get_effective_settings", lambda: settings)
 
     q = Windows([window()])
     q.fail = True

@@ -217,7 +217,11 @@ class IngestionService:
         if ctx:
             ctx.log(f"子任务：指数行情采集开始，{len(codes)} 个指数，区间 {start}~{end}")
             ctx.flush()
-        for idx in codes:
+        for i, idx in enumerate(codes, 1):
+            if ctx:
+                ctx.check_cancel()
+                ctx.set_phase("market_index", phase_total=len(codes), phase_done=i - 1,
+                              current_item=idx)
             try:
                 df = self.src.get_index_bar(idx, start, end)
                 df = eod_dates.bound_bars(df, start, end)
@@ -229,6 +233,9 @@ class IngestionService:
                 if ctx:
                     ctx.log(f"指数 {idx} 采集失败：{e}", "warn")
                 self.repo.log_update("index_bar", self.src.name, start, end, 0, "failed", str(e))
+            if ctx:
+                ctx.set_phase("market_index", phase_total=len(codes), phase_done=i,
+                              current_item=idx)
         log.info("指数入库 %d 行（%s）", total, codes)
         if ctx:
             ctx.log(f"子任务：指数行情采集完成，共写入/更新 {total} 行")
@@ -992,6 +999,7 @@ class IngestionService:
                 except Exception as e:  # noqa: BLE001
                     fail += 1
                     _fail(code, e)
+                    _tick(i)
         else:  # 并发：线程局部 DataSource，写入由 DuckDB RLock 串行
             tls = threading.local()
             source_name = val_src.name
@@ -1014,6 +1022,7 @@ class IngestionService:
                 else:
                     fail += 1
                     _fail(code, error)
+                    _tick(i)
 
             self._run_bounded_parallel(
                 pending, _worker, concurrency=concurrency, ctx=ctx,
@@ -1089,11 +1098,12 @@ class IngestionService:
                     fail += 1; log.warning("%s 补最新日市值失败: %s", code, e)
                     if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
                         ctx.log(f"{code} 最新日市值补采失败（{trade_date}）：{e}", "warn")
+                if ctx:
+                    ctx.set_phase("valuation_latest", phase_total=n, phase_done=i, current_item=code,
+                                  valuation_latest_done_codes=sorted(done_latest))
                 if i % 20 == 0 or i == n:
                     log.info("补最新日市值进度 %d/%d（成功%d 失败%d，写入 %d行）", i, n, ok, fail, rows)
                     if ctx:
-                        ctx.set_phase("valuation_latest", phase_total=n, phase_done=i, current_item=code,
-                                      valuation_latest_done_codes=sorted(done_latest))
                         ctx.log(f"最新日市值补采进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
                         ctx.flush()
         else:
@@ -1121,17 +1131,15 @@ class IngestionService:
                     log.warning("%s 补最新日市值失败: %s", code, error)
                     if ctx:
                         ctx.log(f"{code} 最新日市值补采失败（{trade_date}）：{error}", "warn")
+                if ctx:
+                    ctx.set_phase("valuation_latest", phase_total=n, phase_done=i, current_item=code,
+                                  valuation_latest_done_codes=sorted(done_latest))
                 if i % 20 == 0 or i == n:
                     log.info(
                         "补最新日市值进度 %d/%d（成功%d 失败%d，写入 %d行）",
                         i, n, ok, fail, rows,
                     )
                     if ctx:
-                        ctx.set_phase(
-                            "valuation_latest", phase_total=n, phase_done=i,
-                            current_item=code,
-                            valuation_latest_done_codes=sorted(done_latest),
-                        )
                         ctx.log(
                             f"最新日市值补采进度 {i}/{n}：成功{ok} 失败{fail}，"
                             f"写入 {rows} 行"
@@ -1205,11 +1213,12 @@ class IngestionService:
                     fail += 1; log.warning("%s 市值回补失败: %s", item[0], e)
                     if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
                         ctx.log(f"{item[0]} 市值缺口回补失败（{item[1]}~{item[2]}）：{e}", "warn")
+                if ctx:
+                    ctx.set_phase("valuation_gap", phase_total=n, phase_done=i, current_item=item[0],
+                                  valuation_gap_done_codes=sorted(done_gap_codes))
                 if i % 20 == 0 or i == n:
                     log.info("市值回补进度 %d/%d（成功%d 失败%d，写入 %d行）", i, n, ok, fail, rows)
                     if ctx:
-                        ctx.set_phase("valuation_gap", phase_total=n, phase_done=i, current_item=item[0],
-                                      valuation_gap_done_codes=sorted(done_gap_codes))
                         ctx.log(f"市值缺口回补进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
                         ctx.flush()
         else:
@@ -1238,17 +1247,15 @@ class IngestionService:
                     log.warning("%s 市值回补失败: %s", code, error)
                     if ctx:
                         ctx.log(f"{code} 市值缺口回补失败（{lo}~{hi}）：{error}", "warn")
+                if ctx:
+                    ctx.set_phase("valuation_gap", phase_total=n, phase_done=i, current_item=code,
+                                  valuation_gap_done_codes=sorted(done_gap_codes))
                 if i % 20 == 0 or i == n:
                     log.info(
                         "市值回补进度 %d/%d（成功%d 失败%d，写入 %d行）",
                         i, n, ok, fail, rows,
                     )
                     if ctx:
-                        ctx.set_phase(
-                            "valuation_gap", phase_total=n, phase_done=i,
-                            current_item=code,
-                            valuation_gap_done_codes=sorted(done_gap_codes),
-                        )
                         ctx.log(
                             f"市值缺口回补进度 {i}/{n}：成功{ok} 失败{fail}，"
                             f"写入 {rows} 行"
@@ -1425,6 +1432,8 @@ class IngestionService:
             if ctx:
                 ctx.log(f"[{i}/{n}] {code} 回填失败（{start}~{end}，主源+兜底源均未取到）: {e}", "error")
             self.repo.log_update("daily_bar", self.src.name, start, end, 0, "failed", f"{code}: {e}")
+            if ctx:
+                ctx.set_phase("daily_bar", phase_total=n, phase_done=i, current_item=code)
 
         if concurrency <= 1:  # 串行（默认，最稳）
             for i, code in enumerate(pending, 1):
@@ -1691,19 +1700,6 @@ class IngestionService:
             ctx.log(f"▶ 开始增量更新：共 {n_total} 只在市股票，待补 {n} 只{tail}，"
                     f"各股从已入库最新日+1 补到 {end}（并发 {concurrency}）")
 
-        def _checkpoint(processed_count: int) -> None:
-            if not ctx:
-                return
-            data = {
-                "phase": "daily_bar",
-                "done": len(completed_codes),
-                "total": n_total,
-                "phase_total": n_total,
-                "phase_done": processed_count,
-                "done_codes": sorted(completed_codes),
-            }
-            ctx.set_checkpoint(**data)
-
         def _tick(a: int, code: str, rows: int, *, in_flight: int = 0) -> None:
             if ctx:
                 ctx.set_phase("daily_bar", done=len(completed_codes), total=n_total, phase_total=n_total,
@@ -1740,7 +1736,7 @@ class IngestionService:
                 except Exception as e:  # noqa: BLE001
                     fail += 1
                     log.warning("%s 增量失败: %s", code, e)
-                    _checkpoint(a)
+                    _tick(a, code, 0)
                     if ctx:
                         ctx.log(f"[{a}/{n_total}] {code} 增量更新失败（补到 {end}，主源+兜底源均未取到）: {e}", "error")
                     self.repo.log_update("daily_bar", self.src.name, None, end, 0, "failed", f"{code}: {e}")
@@ -1775,8 +1771,7 @@ class IngestionService:
                         "daily_bar", self.src.name, None, end, 0, "failed",
                         f"{code}: {error}",
                     )
-                    if a % 20 == 0 or a == n_total:
-                        _checkpoint(a)
+                    _tick(a, code, 0, in_flight=in_flight)
 
             self._run_bounded_parallel(
                 pending, _worker, concurrency=concurrency, ctx=ctx,
@@ -1801,6 +1796,8 @@ class IngestionService:
             for gi, gcode in enumerate(gapped, 1):
                 if ctx:
                     ctx.check_cancel()
+                    ctx.set_phase("gap_reconcile", phase_total=gtotal, phase_done=gi - 1,
+                                  current_item=gcode)
                     if gi == 1 or gi % 20 == 1:
                         ctx.log(f"缺口收口进度 {gi}/{gtotal}：开始处理 {gcode}")
                         ctx.flush()
@@ -1818,6 +1815,9 @@ class IngestionService:
                     log.warning("%s 缺口收口失败: %s", gcode, e)
                     if ctx:
                         ctx.log(f"缺口收口 {gcode} 失败：{e}", "warn")
+                if ctx:
+                    ctx.set_phase("gap_reconcile", phase_total=gtotal, phase_done=gi,
+                                  current_item=gcode)
                 if ctx and (gi % 20 == 0 or gi == gtotal):
                     ctx.log(f"缺口收口进度 {gi}/{gtotal}：已补回 {recon['stocks']} 只 / {recon['backfilled']} 天")
                     ctx.flush()
@@ -2410,17 +2410,15 @@ class IngestionService:
                         f"（{min(dates)}~{max(dates)}）：{error}",
                         "warn",
                     )
+            if ctx:
+                ctx.set_phase("valuation_invalid_history", phase_total=n, phase_done=i,
+                              current_item=code, valuation_invalid_done_codes=sorted(done_codes))
             if i % 20 == 0 or i == n:
                 log.info(
                     "全历史异常市值修复进度 %d/%d（成功%d 失败%d，写入 %d行）",
                     i, n, ok, fail, rows,
                 )
                 if ctx:
-                    ctx.set_phase(
-                        "valuation_invalid_history", phase_total=n, phase_done=i,
-                        current_item=code,
-                        valuation_invalid_done_codes=sorted(done_codes),
-                    )
                     ctx.log(
                         f"全历史异常市值修复进度 {i}/{n}："
                         f"成功{ok} 失败{fail}，写入 {rows} 行"
@@ -2510,6 +2508,9 @@ class IngestionService:
         include_collection_scope(self, "stock", targets)
         pending = [code for code in targets if code not in done]
         result = {"target": len(targets), "ok": len(done), "fail": 0, "diagnostics": diagnostics}
+        if ctx:
+            ctx.set_phase("capital_review", phase_total=len(pending), phase_done=0,
+                          current_item=None)
         tls = threading.local()
         source_name = self._source_for("share_capital").name
 
@@ -2533,7 +2534,9 @@ class IngestionService:
                 json.dumps(detail, ensure_ascii=False),
             )
             if ctx:
-                ctx.set_checkpoint(capital_review_done=sorted(done), capital_review_diagnostics=dict(diagnostics))
+                ctx.set_phase("capital_review", phase_total=len(pending), phase_done=i,
+                              current_item=code, capital_review_done=sorted(done),
+                              capital_review_diagnostics=dict(diagnostics))
                 ctx.log(f"历史股本轮询 {i}/{len(pending)}：{code}，" + ("失败待重试" if error else "已复查"))
                 ctx.flush()
 
@@ -2982,6 +2985,8 @@ class IngestionService:
             if ctx:
                 ctx.log(f"[{i}/{n}] {code} 采集失败（{start}~{end}，主源+兜底源均未取到）: {e}", "error")
             self.repo.log_update("daily_bar", self.src.name, start, end, 0, "failed", f"{code}: {e}")
+            if ctx:
+                ctx.set_phase("daily_bar", phase_total=n, phase_done=i, current_item=code)
 
         if concurrency <= 1:  # 串行（默认，最稳）
             for i, code in enumerate(target, 1):
@@ -3819,6 +3824,13 @@ class IngestionService:
             ctx.log(f"已确认当日 {update_target} 收盘，强制采集仅跳过源端就绪回退", "warn")
         # 阶段日志对齐现有采集（阶段 i/N + 进度推进，前端任务中心实时可见）
         total = len(steps)
+        if board_codes is not None or limit is None:
+            quality_codes = board_codes
+            if quality_codes is None and board_type is not None:
+                quality_codes = svc.c.query_df(
+                    "SELECT board_code FROM board_dict WHERE board_type=?", [board_type]
+                )["board_code"].tolist()
+            include_collection_scope(self, "board", quality_codes)
         idx = {"n": 0}
         if ctx:
             ctx.log(f"板块采集开始（{mode}）：{steps}")
@@ -3829,6 +3841,10 @@ class IngestionService:
             try:
                 result["dict"] = svc.ingest_board_dict(board_type=board_type, ctx=ctx)
                 result["failed"] += [f"dict:{x}" for x in result["dict"].get("failed", [])]
+                if board_type is not None and board_codes is None and limit is None:
+                    include_collection_scope(self, "board", svc.c.query_df(
+                        "SELECT board_code FROM board_dict WHERE board_type=?", [board_type]
+                    )["board_code"].tolist())
                 if ctx:
                     ctx.log(f"步骤 {idx['n']}/{total} 板块字典：概念 {result['dict'].get('concept', 0)} / "
                             f"行业 {result['dict'].get('industry', 0)}")
@@ -3846,6 +3862,7 @@ class IngestionService:
                 [board_type, limit] if board_type else [limit])
             board_codes = [str(x) for x in limited["board_code"].tolist()]
             result["scope_codes"] = board_codes
+            include_collection_scope(self, "board", board_codes)
             if not board_codes:
                 result["failed"].append("scope:no_boards")
         if "members" in steps:
@@ -3951,7 +3968,7 @@ class IngestionService:
         result["failed"] = list(dict.fromkeys(result["failed"]))
         result["ok"] = not result["failed"]
         if ctx:
-            ctx.progress(1.0, "板块采集完成")
+            ctx.progress(0.9, "板块取数结束，开始收尾质检")
             ctx.log(f"板块采集完成（{mode}）：字典{result['dict']} 成分{len(result['members'])} 板块 "
                     f"指数{result['bar']} 资金流{result['fund_flow']} 失败{result['failed']}")
             ctx.flush()

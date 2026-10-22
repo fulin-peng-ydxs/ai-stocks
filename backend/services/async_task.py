@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from backend.common.exceptions import ConflictError
 from backend.common.logging import get_logger
 from backend.services.collection_quality import collection_summary
+from backend.services.task_progress import TaskProgressScope
 from backend.storage.duckdb_client import get_client
 from backend.storage.task_runtime import (
     get_task_runtime_client,
@@ -200,7 +201,8 @@ class TaskContext:
 
     def progress(self, p: float, msg: str) -> None:
         self.flush()  # 进度推进时顺带 flush 日志，前端两路同步
-        self.svc._set(self.tid, progress=round(float(p), 3), message=msg)
+        # 100% 与终态在 _finish_terminal 同次写入；处理器结束前仍可能有质检/事件收尾。
+        self.svc._set(self.tid, progress=round(min(0.99, max(0, float(p))), 3), message=msg)
 
     def log(self, message: str, level: str = "info") -> None:
         self._seq += 1
@@ -819,11 +821,12 @@ def _h_ingest_codes(params: dict, ctx: TaskContext) -> dict:
 
 
 class _IntradayRepairContext:
-    """每条修复独立范围；共享取消和日志，不覆盖 fix 的 issue checkpoint。"""
+    """归档子上下文复用取消与日志，隔离检查点，并按外层问题口径上报进度。"""
 
-    def __init__(self, ctx, persist_key=None):
+    def __init__(self, ctx, persist_key=None, *, on_progress=None):
         self.ctx, self.tid = ctx, ctx.tid
         self.persist_key = persist_key
+        self.on_progress = on_progress
         self.checkpoint = dict(ctx.checkpoint.get(persist_key, {})) if persist_key else {}
 
     def check_cancel(self):
@@ -844,6 +847,9 @@ class _IntradayRepairContext:
         self.set_checkpoint(phase=phase, **data)
 
     def progress(self, value, message):
+        if self.on_progress:
+            self.on_progress(value, message)
+            return
         self.ctx.log(message)
         self.ctx.flush()
 
@@ -1025,18 +1031,20 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
         codes = normalize_stock_codes(params["codes"]) if "codes" in params else None
         ctx.check_cancel()
         ctx.progress(0.2, "分时归档与来源证据复检中…")
-        quality = IntradayArchiveService(ctx.svc.market).sync(codes)
+        quality = IntradayArchiveService(ctx.svc.market).sync(
+            codes, progress=TaskProgressScope(ctx, 0.2, 0.99).progress)
         ctx.check_cancel()
         message = f"分时质检完成：整日缺失 {quality['intraday_gap']}、分钟不完整 {quality['intraday_partial']}、数据非法 {quality['intraday_invalid']}"
         ctx.log(message)
         return {"message": message, "quality": {"intraday": quality}}
-    ctx.progress(0.3, "全市场四层数据质检中…")
+    ctx.progress(0.08, "全市场四层数据质检中…")
     ctx.log("数据质检：扫描市值 / 行情 / 复权 / 覆盖鲜活 / ST 点时事实，写入质量台账")
     rep = DataIntegrityReport()
-    q = rep.scan_quality_issues()
+    q = rep.scan_quality_issues(progress=TaskProgressScope(ctx, 0.08, 0.75).progress)
     # 市场指数与板块维度同一质检任务内扫描，统一进入问题台账与恢复闭环。
-    q["market_index"] = rep.scan_market_index_quality()
-    q["board"] = rep.scan_board_quality()
+    q["market_index"] = rep.scan_market_index_quality(
+        progress=TaskProgressScope(ctx, 0.75, 0.82).progress)
+    q["board"] = rep.scan_board_quality(progress=TaskProgressScope(ctx, 0.82, 0.99).progress)
     base_count = sum(int(q.get(k, 0)) for k in
             ("abnormal_change_rows", "price_volume_mismatch_rows", "adj_jump_rows",
              "mv_missing_rows", "mv_gap_rows", "mv_invalid_rows",
@@ -1131,13 +1139,15 @@ def _h_enrich_basic(params: dict, ctx: TaskContext) -> dict:
     ing = IngestionService()
     ctx.log("阶段 1/2：刷新股票基础信息、上市/退市日、行业")
     ctx.progress(0.1, "刷新基础资料（上市/退市日及行业）…")
-    n = ing.enrich_basic_dates(ctx=ctx)
+    basic_end = 0.5 if params.get("ingest_delisted") else 0.99
+    n = ing.enrich_basic_dates(ctx=TaskProgressScope(ctx, 0.1, basic_end))
     ctx.log(f"已刷新基础信息 {n} 只（含退市股打标 delist_date）")
     res: dict = {"basic_rows": n}
     if params.get("ingest_delisted"):
         ctx.log("阶段 2/2：灌入退市股历史行情")
         ctx.progress(0.5, "灌入退市股历史（防幸存者偏差，可能较久）…")
-        dl = ing.ingest_delisted(years=params.get("years"), limit=params.get("limit"), ctx=ctx)
+        dl = ing.ingest_delisted(years=params.get("years"), limit=params.get("limit"),
+                                ctx=TaskProgressScope(ctx, 0.5, 0.99))
         ctx.log(f"退市股灌入：{collection_summary(dl)}")
         res["delisted"] = dl
     else:
@@ -1657,7 +1667,8 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
         # 逐板块缺失；扫描失败不回滚已真实修好的当前问题，但在任务日志中明确告警。
         if issue_type in scan_board_types:
             try:
-                scan_result = rep.scan_board_quality()
+                # 单板块修复只重查该对象；源级资金流恢复确实影响全源，保留全量检查。
+                scan_result = rep.scan_board_quality(codes=[str(code)] if code else None)
                 ctx.log(f"板块关联问题复检完成：{scan_result}")
             except Exception as scan_error:  # noqa: BLE001 -- 当前问题已复检通过，关联扫描降级告警
                 ctx.log("本条问题已复检通过并关闭；其他板块的质量检查未完成，"
@@ -1665,7 +1676,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int, *, repair_type=No
                 note += "；本条已解决，其他板块的质量检查未完成，请重新质检"
         if issue_type in scan_market_index_types:
             try:
-                scan_result = rep.scan_market_index_quality()
+                scan_result = rep.scan_market_index_quality(codes=[str(code)])
                 ctx.log(f"市场指数关联问题复检完成：{scan_result}")
             except Exception as scan_error:  # noqa: BLE001 -- 当前问题已真实修复
                 ctx.log(f"当前问题已解决，但市场指数关联问题复检失败：{scan_error}", "warn")
@@ -1780,31 +1791,6 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
             key = ("intraday", intraday_codes[iid]) if iid in intraday_codes else ("issue", iid)
             groups.setdefault(key, []).append(iid)
         ids = [iid for group in groups.values() for iid in group]
-    if ctx._intraday_groups:
-        from backend.services.intraday_archive import IntradayArchiveService
-        archive = IntradayArchiveService(c)
-        groups = ctx._intraday_groups
-        # 只加载覆盖事实，不持有全市场分钟；同股选中日期共用来源请求。
-        facts = archive._coverage_facts(list(groups))
-        ctx._intraday_batch_before = {
-            code: frame for code, frame in facts.groupby("code", sort=False)
-        }
-        pending_dates = {}
-        for code, days in groups.items():
-            current = archive.issues([code], facts=ctx._intraday_batch_before.get(code))
-            pending = {str(issue["trade_date"]) for issue in current}.intersection(days)
-            if pending:
-                pending_dates[code] = pending
-        batch_ctx = _IntradayRepairContext(ctx, "intraday_repair_checkpoint")
-        if pending_dates:
-            dates = set().union(*pending_dates.values())
-            archive.collect(
-                {"mode": "refetch", "codes": sorted(pending_dates),
-                 "date_start": min(dates), "date_end": max(dates)},
-                ctx=batch_ctx, allow_fallback=True, repair_dates=pending_dates,
-                recheck_source=ctx._intraday_recheck_source,
-            )
-        ctx._intraday_batch_failed = batch_ctx.checkpoint.get("intraday_failed", {})
     ids = [x for x in ids if x not in done_ids]
     n = len(ids)
     if n == 0:
@@ -1821,15 +1807,25 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
     ctx.set_phase("fix_issue", done=len(done_ids), total=phase_total,
                   phase_total=phase_total, phase_done=len(done_ids),
                   current_item=None, issue_done_ids=sorted(done_ids))
-    for i, iid in enumerate(ids, 1):
+    processed_ids = set()
+
+    def recover_issue(iid):
+        nonlocal resolved, scope_completed, failed, last_msg, last_err
+        if iid in processed_ids:
+            return
+        i = len(processed_ids) + 1
         ctx.check_cancel()
+        processed_ids.add(iid)
+        last_msg = last_err = ""
         ctx.set_phase("fix_issue", done=len(done_ids), total=phase_total,
                       phase_total=phase_total, phase_done=len(done_ids),
                       current_item=iid, issue_done_ids=sorted(done_ids))
         ctx.progress(min(0.1 + 0.8 * (i - 1) / n, 0.9), f"恢复 {i}/{n}…")
         try:
             kwargs = {"repair_type": repair_type} if repair_type else {}
-            clean, _affected, msg = _recover_one(c, rep, ing, ctx, iid, **kwargs)
+            issue_ctx = TaskProgressScope(ctx, 0.1 + 0.8 * (i - 1) / n,
+                                         0.1 + 0.8 * i / n)
+            clean, _affected, msg = _recover_one(c, rep, ing, issue_ctx, iid, **kwargs)
             scope_completed += int(clean)
             resolved += int(c.query_df(
                 "SELECT status FROM data_quality_issue WHERE id=?", [iid]
@@ -1850,6 +1846,83 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
                           phase_total=phase_total, phase_done=len(done_ids),
                           current_item=iid, issue_done_ids=sorted(done_ids))
             ctx.log(f"[{i}/{n}] 恢复失败 id={iid}: {e}（已退回待处理）", "error")
+        ctx.progress(0.1 + 0.8 * i / n,
+                     f"恢复 {i}/{n} 条，已解决 {resolved} 条；{last_msg or last_err}")
+
+    if ctx._intraday_groups:
+        from backend.services.intraday_archive import IntradayArchiveService
+        archive = IntradayArchiveService(c)
+        groups = ctx._intraday_groups
+        # 只加载覆盖事实，不持有全市场分钟；同股选中日期共用来源请求。
+        ctx.progress(0.1, f"分时恢复：正在核对 {len(groups)} 只股票的本地归档与待修日期")
+        facts = archive._coverage_facts(list(groups))
+        ctx._intraday_batch_before = {
+            code: frame for code, frame in facts.groupby("code", sort=False)
+        }
+        pending_dates = {}
+        # 全范围一次扫描后按股票分组，避免规划时逐股重复扫描分钟表和来源证据。
+        for issue in archive.issues(list(groups), facts=facts):
+            code, day = issue["code"], str(issue["trade_date"])
+            if day in groups[code]:
+                pending_dates.setdefault(code, set()).add(day)
+        group_ids = {}
+        for iid, code in intraday_codes.items():
+            group_ids.setdefault(code, []).append(iid)
+
+        def report_progress(_value, message):
+            ctx.progress(0.1 + 0.8 * len(processed_ids) / n,
+                         f"恢复 {len(processed_ids)}/{n} 条，已解决 {resolved} 条；{message}")
+
+        batch_ctx = _IntradayRepairContext(
+            ctx, "intraday_repair_checkpoint", on_progress=report_progress,
+        )
+        ctx._intraday_batch_failed = dict(batch_ctx.checkpoint.get("intraday_failed", {}))
+
+        def finish_stock(code, error=None):
+            if error:
+                ctx._intraday_batch_failed[code] = error
+            else:
+                ctx._intraday_batch_failed.pop(code, None)
+            for iid in group_ids.get(code, []):
+                recover_issue(iid)
+            # 复用质量同步，关闭消失问题并承接整日缺失变为分钟不完整等同股问题变化。
+            archive.sync([code])
+            ctx._intraday_batch_before.pop(code, None)
+
+        # 兼容旧任务“归档已完成、台账尚未处理”的检查点，先在本地收口再继续网络请求。
+        archived = set(batch_ctx.checkpoint.get("intraday_done", []))
+        for code in groups:
+            if code not in pending_dates:
+                finish_stock(code)
+            elif code in archived:
+                # 旧归档检查点只证明当次取源完成，不能让仍待修复的日期永久跳过续跑。
+                _repair_intraday_stock(c, ctx, code, min(groups[code]))
+                archive.sync([code])
+                closed = c.query_df(
+                    "SELECT id FROM data_quality_issue WHERE status='resolved' "
+                    "AND id IN (SELECT unnest(?::BIGINT[]))", [group_ids[code]],
+                ).id.tolist()
+                for iid in closed:
+                    recover_issue(int(iid))
+                archived.remove(code)
+                ctx._intraday_repair_cache.clear()
+        if (archived != set(batch_ctx.checkpoint.get("intraday_done", []))
+                or ctx._intraday_batch_failed != batch_ctx.checkpoint.get("intraday_failed", {})):
+            batch_ctx.set_checkpoint(intraday_done=sorted(archived),
+                                     intraday_failed=dict(ctx._intraday_batch_failed))
+        if pending_dates:
+            dates = set().union(*pending_dates.values())
+            report_progress(0, f"分时并发取源：剩余 {len(pending_dates)} 只股票，逐股落库复检")
+            archive.collect(
+                {"mode": "refetch", "codes": sorted(pending_dates),
+                 "date_start": min(dates), "date_end": max(dates)},
+                ctx=batch_ctx, allow_fallback=True, repair_dates=pending_dates,
+                recheck_source=ctx._intraday_recheck_source,
+                on_stock_complete=finish_stock,
+            )
+        ctx._intraday_batch_failed = batch_ctx.checkpoint.get("intraday_failed", {})
+    for iid in ids:
+        recover_issue(iid)
     # 诚实文案：区分 已解决 / 复检未通过(仍 open) / 恢复失败(异常退回 open)。单条直接给原因。
     if n == 1:
         msg = (last_msg if not failed

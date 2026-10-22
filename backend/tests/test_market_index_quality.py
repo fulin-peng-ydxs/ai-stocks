@@ -98,7 +98,7 @@ def test_scan_market_indices_detects_and_converges_all_issue_types(client):
         ("market_index_invalid", date(2024, 1, 3)),
     ],
 )
-def test_market_index_fix_reingests_and_resolves(client, issue_type, problem_day):
+def test_market_index_fix_reingests_and_resolves(client, issue_type, problem_day, monkeypatch):
     days = _seed_complete_indices(client)
     code = "000300.SH"
     if issue_type == "market_index_invalid":
@@ -113,6 +113,12 @@ def test_market_index_fix_reingests_and_resolves(client, issue_type, problem_day
         )
     rep = DataIntegrityReport(client)
     rep.scan_market_index_quality()
+    original_scan = rep.scan_market_index_quality
+    scopes = []
+    def scan(**kwargs):
+        scopes.append(kwargs.get("codes"))
+        return original_scan(**kwargs)
+    monkeypatch.setattr(rep, "scan_market_index_quality", scan)
     issue_id = int(client.query_df(
         "SELECT id FROM data_quality_issue "
         "WHERE code=? AND issue_type=? AND trade_date=? AND status='open'",
@@ -148,6 +154,7 @@ def test_market_index_fix_reingests_and_resolves(client, issue_type, problem_day
     clean, _, _ = _recover_one(client, rep, _Ingest(), _Ctx(), issue_id)
     assert clean is True
     assert calls
+    assert scopes == [[code]]
     assert client.query_df(
         "SELECT status FROM data_quality_issue WHERE id=?", [issue_id]
     ).iloc[0]["status"] == "resolved"

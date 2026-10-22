@@ -25,6 +25,7 @@ from backend.common.logging import get_logger
 from backend.services import eod_dates
 from backend.services.async_task import TaskCancelled
 from backend.services.collection_quality import collection_summary
+from backend.services.task_progress import TaskProgressScope
 from backend.storage.duckdb_client import get_client
 
 log = get_logger("services.pipeline")
@@ -64,7 +65,11 @@ class DailyPipeline:
                 ctx.progress(round(0.05 + 0.9 * (idx["n"] - 1) / max(total_steps, 1), 3), name)
             t0 = time.time()
             try:
-                detail = fn()
+                stage_ctx = TaskProgressScope(
+                    ctx, 0.05 + 0.9 * (idx["n"] - 1) / max(total_steps, 1),
+                    0.05 + 0.9 * idx["n"] / max(total_steps, 1),
+                ) if ctx else None
+                detail = fn(stage_ctx)
                 secs = round(time.time() - t0, 1)
                 if isinstance(detail, dict) and (detail.get("ok") is False
                                                  or detail.get("stage_failures") or detail.get("fail")):
@@ -94,7 +99,7 @@ class DailyPipeline:
         # 1. 增量更新（最慢，可跳过：数据已最新时）
         if not skip_update:
             from backend.services import IngestionService
-            if not step("更新数据", lambda: IngestionService().update(codes=codes, ctx=ctx)):
+            if not step("更新数据", lambda stage_ctx: IngestionService().update(codes=codes, ctx=stage_ctx)):
                 # 返回了部分成果时仍需运行后续质检；整体异常无结果才提前停止。
                 if not isinstance(steps[-1]["detail"], dict):
                     return {"ok": False, "steps": steps}
@@ -115,16 +120,18 @@ class DailyPipeline:
 
         # 2. 板块采集（板块概念需求 R21）：板块独立于行情更新；失败不阻塞后续质检。每日增量 mode。
         if board:
-            def _board():
+            def _board(stage_ctx):
                 from backend.services.ingest import IngestionService
-                return IngestionService().ingest_board(ctx=ctx, mode="update", target_end=run_date)
+                return IngestionService().ingest_board(ctx=stage_ctx, mode="update", target_end=run_date)
             step("板块采集", _board)
 
         # 3. 数据质检（M2.9 DM-D14）：扫异常涨跌/复权跳变写 data_quality_issue（幂等，每日自动监控）。
         if quality:
-            def _quality():
+            def _quality(stage_ctx):
                 from backend.services.data_report import DataIntegrityReport
                 rep = DataIntegrityReport(self.c)
+                def feedback(start, end):
+                    return {"progress": TaskProgressScope(stage_ctx, start, end).progress} if stage_ctx else {}
                 collected = {}
                 checked_scopes = {}
                 for item in steps:
@@ -147,19 +154,20 @@ class DailyPipeline:
                         )["code"].tolist()
                         remaining = sorted(set(known) - set(checked_scopes["stock"]))
                         if remaining:
-                            extra = rep.scan_quality_issues(codes=remaining, include_intraday=False)
+                            extra = rep.scan_quality_issues(
+                                codes=remaining, include_intraday=False, **feedback(0, 0.45))
                             for key, value in extra.items():
                                 if key != "intraday":
                                     base[key] = base.get(key, 0) + value
-                    base["intraday"] = IntradayArchiveService(self.c).sync()
+                    base["intraday"] = IntradayArchiveService(self.c).sync(**feedback(0.45, 0.65))
                 else:
                     # 跳过更新或仅更新个股子集时，保留日常全量监测语义。
-                    base = rep.scan_quality_issues()
+                    base = rep.scan_quality_issues(**feedback(0, 0.65))
                 # 缺少收尾结果（例如板块阶段异常）仍走完整扫描，并向任务暴露扫描失败。
                 base["market_index"] = (collected["market_index"] if "market_index" in collected
-                                        else rep.scan_market_index_quality())
+                                        else rep.scan_market_index_quality(**feedback(0.65, 0.8)))
                 base["board"] = (collected["board"] if "board" in collected
-                                 else rep.scan_board_quality())
+                                 else rep.scan_board_quality(**feedback(0.8, 1)))
                 return base
             step("数据质检", _quality)
 
@@ -167,7 +175,7 @@ class DailyPipeline:
 
         # 4. 可选：数据体检（不联网交叉验证）
         if verify:
-            def _verify():
+            def _verify(stage_ctx):
                 from backend.services.data_verify import DataVerifier
                 return {"passed": DataVerifier(self.c).run(cross=False)}
             step("数据体检", _verify)

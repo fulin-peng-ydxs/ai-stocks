@@ -166,27 +166,25 @@ class BoardIngestService:
         done_types = set(getattr(ctx, "checkpoint", {}).get("dict_done_types") or []) if ctx else set()
         types = _board_types(board_type)
         fetched = False  # 本次是否真实拉取过字典（区分全新入库与 checkpoint 跳过）
-        for current_type in types:
+        def report(processed, current_type):
+            if ctx:
+                ctx.set_phase("board_dict", done=len(done_types.intersection(types)), total=len(types),
+                              phase_total=len(types), phase_done=processed, current_item=current_type,
+                              dict_done_types=sorted(done_types))
+
+        for type_index, current_type in enumerate(types, 1):
             if current_type in done_types:
                 # 续跑命中 checkpoint：本次不拉取，回查库内数量回填，避免日志误报「概念 0 / 行业 0」
                 existing = self.c.query_df(
                     "SELECT count(*) AS n FROM board_dict WHERE board_type=?", [current_type])
                 result[current_type] = int(existing["n"].iloc[0]) if not existing.empty else 0
                 if ctx:
-                    done_in_scope = len(done_types.intersection(types))
-                    ctx.set_phase("board_dict", done=done_in_scope, total=len(types),
-                                  phase_total=len(types), phase_done=done_in_scope,
-                                  current_item=current_type,
-                                  dict_done_types=sorted(done_types))
+                    report(type_index, current_type)
                     ctx.log(f"字典 {current_type}：上次已完成，本次跳过（库内 {result[current_type]} 个）")
                 continue
             if ctx:
                 ctx.check_cancel()
-                done_in_scope = len(done_types.intersection(types))
-                ctx.set_phase("board_dict", done=done_in_scope, total=len(types),
-                              phase_total=len(types), phase_done=done_in_scope,
-                              current_item=current_type,
-                              dict_done_types=sorted(done_types))
+                report(type_index - 1, current_type)
             try:
                 df = self.src.get_board_dict(current_type)
             except Exception as e:  # noqa: BLE001 -- 两类字典独立失败，保留另一类成功结果
@@ -194,6 +192,7 @@ class BoardIngestService:
                 self._log_update("board_dict", sdate, sdate, 0, "failed", f"{current_type} 字典：{e}")
                 if ctx:
                     ctx.log(f"字典 {current_type}：失败 {e}", "error")
+                report(type_index, current_type)
                 continue
             if df.empty:
                 log.warning("字典 %s 为空，跳过", current_type)
@@ -201,6 +200,7 @@ class BoardIngestService:
                 self._log_update("board_dict", sdate, sdate, 0, "failed", f"{current_type} 字典为空")
                 if ctx:
                     ctx.log(f"字典 {current_type}：为空，跳过", "warn")
+                report(type_index, current_type)
                 continue
             existing = self.c.query_df(
                 "SELECT board_code, app_code FROM board_dict WHERE board_type=?", [current_type])
@@ -246,12 +246,7 @@ class BoardIngestService:
                              f"{current_type} 字典")
             if len(result["failed"]) == app_failures_before:
                 done_types.add(current_type)
-            if ctx and current_type in done_types:
-                done_in_scope = len(done_types.intersection(types))
-                ctx.set_phase("board_dict", done=done_in_scope, total=len(types),
-                              phase_total=len(types), phase_done=done_in_scope,
-                              current_item=current_type,
-                              dict_done_types=sorted(done_types))
+            report(type_index, current_type)
         result["total"] = result["concept"] + result["industry"]
         if not fetched and done_types.issuperset(types):
             log.info("板块字典本次跳过（checkpoint 已完成）：概念 %d + 行业 %d（库内现有）",
@@ -379,12 +374,17 @@ class BoardIngestService:
         n_err = 0
         n_total = len(df_boards)
         phase_total = len(done_codes) + n_total + len(skipped_codes)
+        resumed_members = len(done_codes) + len(skipped_codes)
+        if ctx:
+            ctx.set_phase("board_members", done=len(done_codes), total=phase_total,
+                          phase_total=phase_total, phase_done=resumed_members,
+                          current_item=None, member_done_codes=sorted(done_codes))
         for i, (_, b) in enumerate(df_boards.iterrows(), 1):
             code, board_type = str(b["board_code"]), str(b["board_type"])
             if ctx:
                 ctx.check_cancel()
                 ctx.set_phase("board_members", done=len(done_codes), total=phase_total,
-                              phase_total=phase_total, phase_done=len(done_codes),
+                              phase_total=phase_total, phase_done=resumed_members + i - 1,
                               current_item=code, member_done_codes=sorted(done_codes))
             try:
                 results[code] = self._ingest_one_member(code, board_type, sdate)
@@ -393,7 +393,7 @@ class BoardIngestService:
                 if ctx:
                     ctx.set_phase("board_members", done=len(done_codes), total=phase_total,
                                   phase_total=phase_total,
-                                  phase_done=len(done_codes), current_item=code,
+                                  phase_done=resumed_members + i, current_item=code,
                                   member_done_codes=sorted(done_codes))
                 if ctx:
                     ctx.log(
@@ -410,6 +410,9 @@ class BoardIngestService:
                 self._write_incomplete_quality(code, sdate, str(e))
                 if ctx:
                     ctx.log(f"成分 {i}/{n_total} {code}：失败 {e}", "error")
+                    ctx.set_phase("board_members", done=len(done_codes), total=phase_total,
+                                  phase_total=phase_total, phase_done=resumed_members + i,
+                                  current_item=code, member_done_codes=sorted(done_codes))
         if skipped_codes and ctx:
             ctx.log(f"成分：{len(skipped_codes)} 个板块未达更新间隔（{self._member_interval_days} 天），跳过")
         # 更新留痕（聚合：一次运行一条日志，避免逐板块刷屏）
@@ -605,19 +608,25 @@ class BoardIngestService:
                 fallback = True
         if ctx:
             ctx.set_phase('board_bar', bar_target_end=end.isoformat(),
-                          bar_scope=scope, bar_done_codes=sorted(done_codes))
+                          bar_scope=scope, bar_done_codes=sorted(done_codes),
+                          phase_total=phase_total, phase_done=len(done_codes), current_item=None)
+        resumed_bars = len(done_codes)
         for i, (_, b) in enumerate(df_boards.iterrows(), 1):
             code, board_type = str(b["board_code"]), str(b["board_type"])
             if ctx:
                 ctx.check_cancel()
                 ctx.set_phase("board_bar", done=len(done_codes), total=phase_total,
-                              phase_total=phase_total, phase_done=len(done_codes),
+                              phase_total=phase_total, phase_done=resumed_bars + i - 1,
                               current_item=code, bar_done_codes=sorted(done_codes))
             try:
                 board_start = board_starts.get(code, start)
                 assert board_start is not None
                 if board_start > end:
                     done_codes.add(code)
+                    if ctx:
+                        ctx.set_phase("board_bar", done=len(done_codes), total=phase_total,
+                                      phase_total=phase_total, phase_done=resumed_bars + i,
+                                      current_item=code, bar_done_codes=sorted(done_codes))
                     continue
                 df = self.src.get_board_bar(code, board_type, board_start, end)
                 failed_years = list(df.attrs.get("failed_years") or [])
@@ -636,10 +645,10 @@ class BoardIngestService:
                                      f"{code} 失败年份 {failed_years}")
                 if not failed_years:
                     done_codes.add(code)
-                if ctx and not failed_years:
+                if ctx:
                     ctx.set_phase("board_bar", done=len(done_codes), total=phase_total,
                                   phase_total=phase_total,
-                                  phase_done=len(done_codes), current_item=code,
+                                  phase_done=resumed_bars + i, current_item=code,
                                   bar_done_codes=sorted(done_codes))
                 if ctx:
                     ctx.log(f"指数 {i}/{n_total} {code}：{len(df)} 行")
@@ -649,6 +658,9 @@ class BoardIngestService:
                 self._log_update("board_bar", board_starts.get(code, start), end, 0, "failed", f"{code} {e}")
                 if ctx:
                     ctx.log(f"指数 {i}/{n_total} {code}：失败 {e}", "error")
+                    ctx.set_phase("board_bar", done=len(done_codes), total=phase_total,
+                                  phase_total=phase_total, phase_done=resumed_bars + i,
+                                  current_item=code, bar_done_codes=sorted(done_codes))
         status = "partial" if failed else "success"
         # 新鲜度透出：成功不代表源端已发截止日（源端分板块陆续发布），汇总里给出已出截止日的覆盖数，
         # 避免「成功 480 板块」掩盖「大部分停在昨天」；缺口仍由质检扫描兜底发现。
@@ -795,6 +807,16 @@ class BoardIngestService:
         if ctx:
             ctx.log(f"资金流快照日：{sdate}（北京时间采集，按已收盘交易日校验）")
         total_groups = len(target_types) * len(periods)
+        processed_groups = resumed_groups
+
+        def report(current_item):
+            if ctx:
+                ctx.set_phase("board_fund_flow", done=len(done_keys), total=total_groups,
+                              phase_total=total_groups, phase_done=processed_groups,
+                              current_item=current_item, fund_done_keys=sorted(done_keys),
+                              fund_snapshot_date=sdate.isoformat())
+
+        report(None)
         for board_type in ("concept", "industry"):
             if board_type not in target_types:
                 continue
@@ -806,9 +828,10 @@ class BoardIngestService:
                 if ctx:
                     ctx.check_cancel()
                     ctx.set_phase("board_fund_flow", done=len(done_keys), total=total_groups,
-                                  phase_total=total_groups, phase_done=len(done_keys),
+                                  phase_total=total_groups, phase_done=processed_groups,
                                   current_item=display_key, fund_done_keys=sorted(done_keys),
                                   fund_snapshot_date=sdate.isoformat())
+                processed_groups += 1
                 try:
                     df = self.src.get_board_fund_flow(board_type, period)
                 except Exception as e:  # noqa: BLE001
@@ -818,6 +841,7 @@ class BoardIngestService:
                                      f"{display_key} {e}")
                     if ctx:
                         ctx.log(f"资金流 {board_type}/{period}：失败 {e}", "error")
+                    report(display_key)
                     continue
                 if live_snapshot:
                     # 单次拉取含多页、重试；跨过集合竞价或下个交易日后不得沿用请求前日期。
@@ -828,6 +852,7 @@ class BoardIngestService:
                                      f"{display_key} 资金流为空")
                     if ctx:
                         ctx.log(f"资金流 {board_type}/{period}：无数据，记失败", "error")
+                    report(display_key)
                     continue
                 # 优先用资金流链接里抓到的路径 code 匹配；其次名称匹配。
                 # 资金流源板块单元格带链接（/gn/detail/code/308734/），code 真实存在。
@@ -882,11 +907,7 @@ class BoardIngestService:
                             f"（未匹配 {len(unmatched)}）")
                 if not any(x.startswith(display_key + ":") for x in failed):
                     done_keys.add(group_key)
-                    if ctx:
-                        ctx.set_phase("board_fund_flow", done=len(done_keys), total=total_groups,
-                                      phase_total=total_groups, phase_done=len(done_keys),
-                                      current_item=group_key, fund_done_keys=sorted(done_keys),
-                                      fund_snapshot_date=sdate.isoformat())
+                report(group_key)
         # 资金流独有板块（链接带真实路径 code 但字典缺）补进 board_dict：有稳定主键，非伪造。
         # 能力字段 has_fund_flow=true、has_members/bar=false；列表页只展示有核心数据的板块，故不影响展示。
         if target_codes is None and newly_added_codes:

@@ -732,6 +732,7 @@ class DataIntegrityReport:
     # ── 市场级四层质检（写 data_quality_issue，DM-D20 统一口径）──
     def scan_quality_issues(
         self, gap_window_days: int = GAP_WINDOW_DAYS, *, codes=None, include_intraday=True,
+        progress=None,
     ) -> dict:
         """四层统一质检：L2 字段契约 / L3 正确性 / L4 覆盖鲜活。
 
@@ -746,6 +747,12 @@ class DataIntegrityReport:
         """
         from backend.dataquality.checker import SCAN_ISSUE_TYPES
         from backend.market_rules import limit_prices, price_limit_pct_sql, round_price_to_cent
+
+        def tick(p, message):
+            if progress:
+                progress(p, message)
+
+        tick(0, "行情价格合法性")
 
         scope = " AND code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
         bscope = scope.replace("code IN", "b.code IN")
@@ -802,6 +809,7 @@ class DataIntegrityReport:
                 "detail": f"收盘价 {close:.2f} 超出合法区间 {down:.2f}~{up:.2f}",
             })
 
+        tick(0.15, "价量一致性")
         mismatch = self.c.query_df(
             f"""
             SELECT code,trade_date,low,high,volume,amount,amount/volume AS average_price
@@ -822,8 +830,10 @@ class DataIntegrityReport:
             }
             for _, row in mismatch.iterrows()
         ]
+        tick(0.25, "复权连续性")
         adj_rows = self._collect_adj_jump_issues(codes=codes)
         # L2 + L4：来自统一的覆盖鲜活全景（与 quality_model/stock_quality 同口径）
+        tick(0.35, "覆盖与鲜活度")
         frame, _ = self._coverage_frame(gap_window_days, codes=codes)
         rows = []
         for _, r in frame.iterrows():
@@ -832,21 +842,27 @@ class DataIntegrityReport:
                 rows.append({"code": code, "trade_date": r["latest_date"], "issue_type": "stale",
                              "detail": f"数据未更新到最新交易日，滞后 {int(r['stale_days'])} 个交易日"
                                        f"（自 {r['stale_lo']} 起）"})
+        tick(0.45, "ST 点时事实")
         st_rows = self._collect_st_status_issues(codes)
         from backend.dataquality.consolidation import reconcile_legacy_issues
         from backend.services.capital_quality import CapitalQualityService
+        tick(0.55, "逐日股本与市值")
         capital_rows = CapitalQualityService(self.c).issues(codes)
         from backend.services.history_quality import HistoryQualityService
+        tick(0.70, "历史行情缺口")
         history_rows = HistoryQualityService(self.c).issues(codes)
         issue_rows = ab_rows + price_volume_rows + adj_rows + rows + st_rows + capital_rows + history_rows
         # 仅台账替换使用短事务：失败回滚保留旧问题，计算期间不锁住轮询。
+        tick(0.80, "回写质量台账")
         with self.c.transaction():
             reconcile_legacy_issues(self.c, codes=codes)
             CapitalQualityService(self.c).reclassify_legacy(codes)
             self._upsert_scan_issues(issue_rows, tuple(t for t in SCAN_ISSUE_TYPES
                                                    if t not in ("mv_missing", "mv_gap", "mv_invalid", "data_gap")), codes=codes)
         from backend.services.intraday_archive import IntradayArchiveService
-        intraday_counts = IntradayArchiveService(self.c).sync(codes) if include_intraday else None
+        tick(0.90, "分时归档检查" if include_intraday else "汇总台账")
+        minute_progress = {"progress": lambda p, msg: tick(0.9 + 0.09 * p, msg)} if progress else {}
+        intraday_counts = IntradayArchiveService(self.c).sync(codes, **minute_progress) if include_intraday else None
         active_rows = self.c.query_df(
             f"SELECT issue_type, count(*) AS n FROM data_quality_issue WHERE status='open' "
             f"AND issue_type IN ({','.join('?' * len(SCAN_ISSUE_TYPES))}) {scope} GROUP BY issue_type",
@@ -857,6 +873,7 @@ class DataIntegrityReport:
             issue_type: active_counts.get(issue_type, 0)
             for issue_type in SCAN_ISSUE_TYPES
         }
+        tick(1, "检查完成")
         return {
             "intraday": intraday_counts,
             "abnormal_change_rows": inserted_counts["abnormal_change"],
@@ -932,7 +949,8 @@ class DataIntegrityReport:
         return result
 
     # ── 市场基准指数质检 ─────────────────────────────────────
-    def scan_market_index_quality(self, gap_window_days: int = GAP_WINDOW_DAYS, *, codes=None) -> dict:
+    def scan_market_index_quality(self, gap_window_days: int = GAP_WINDOW_DAYS, *, codes=None,
+                                  progress=None) -> dict:
         """逐配置指数扫描尾部滞后、近端逐日缺口和字段非法，并幂等写入质量台账。
 
         市场指数与板块指数共用扫描型问题状态机，但配置来源和恢复服务不同，故保持
@@ -940,6 +958,9 @@ class DataIntegrityReport:
         逐日缺口。从未入库的配置指数只报尾部缺口，避免一次扫描生成整个窗口的问题。
         """
         from backend.services.market_benchmark import BENCHMARK_NAMES, configured_benchmark_codes
+
+        if progress:
+            progress(0, "指数覆盖与逐日缺口")
 
         scope_codes = codes
         configured = configured_benchmark_codes()
@@ -1012,6 +1033,8 @@ class DataIntegrityReport:
                                       f"{missing_day} 无指数日线",
                         })
 
+        if progress:
+            progress(0.6, "指数字段合法性")
         invalid_df = self.c.query_df(
             f"""
             SELECT index_code, trade_date, open, high, low, close, volume, amount
@@ -1041,6 +1064,8 @@ class DataIntegrityReport:
             for _, r in invalid_df.iterrows()
         ]
 
+        if progress:
+            progress(0.9, "回写指数台账")
         with self.c.transaction():
             self._upsert_scan_issues(
                 gap_issues + daily_gap_issues + invalid_issues,
@@ -1054,6 +1079,8 @@ class DataIntegrityReport:
             [*issue_types, *([scope_codes] if scope_codes is not None else [])],
         )
         counts = {str(r["issue_type"]): int(r["n"]) for _, r in active.iterrows()}
+        if progress:
+            progress(1, "检查完成")
         return {
             "index_gap": counts.get("market_index_gap", 0),
             "index_gap_daily": counts.get("market_index_gap_daily", 0),
@@ -1202,7 +1229,7 @@ class DataIntegrityReport:
         return {"latest_trade_date": latest, "fund_date": fund_date,
                 "index_gaps": gap_issues, "fund_missing": fund_issues}
 
-    def scan_board_quality(self, *, codes=None) -> dict:
+    def scan_board_quality(self, *, codes=None, progress=None) -> dict:
         """板块数据质检：成分覆盖、板块指数缺口/非法值和资金流覆盖扫描。
 
         收敛语义：先完整计算本轮结果，再在一个事务内替换 open 的
@@ -1219,6 +1246,8 @@ class DataIntegrityReport:
         bscope = scope.replace("board_code IN", "b.board_code IN")
         issue_scope = scope.replace("board_code IN", "code IN")
         params = [codes] if codes is not None else []
+        if progress:
+            progress(0, "板块覆盖与逐日缺口")
         coverage = self.board_coverage_issues(codes=codes)
         gap_issues = coverage["index_gaps"]
         latest = coverage["latest_trade_date"]
@@ -1279,6 +1308,8 @@ class DataIntegrityReport:
             daily_gap_issues = []
 
         # 板块指数内容合法性：记录存在不代表可用于行情展示，坏 OHLC/负成交字段必须可发现、可重采。
+        if progress:
+            progress(0.4, "板块指数合法性")
         invalid_df = self.c.query_df(
             f"""
             SELECT d.board_code, d.name, b.trade_date, b.open, b.high, b.low, b.close,
@@ -1305,6 +1336,8 @@ class DataIntegrityReport:
 
         # 从未形成完整成分快照也属于不可用状态。采集中途失败仍由采集层即时写同一类型，
         # 这里仅补齐“从未采集/历史初始化漏跑”的静态盲区，并尊重 active/ignored 去重。
+        if progress:
+            progress(0.6, "板块成分与资金流")
         active_member_codes: set[str] = set()
         active_member_df = self.c.query_df(
             "SELECT code FROM data_quality_issue "
@@ -1374,6 +1407,8 @@ class DataIntegrityReport:
                 })
         scan_issue_types = ("board_index_gap", "board_index_gap_daily", "board_index_invalid",
                             "board_fund_missing", "board_fund_stale")
+        if progress:
+            progress(0.9, "回写板块台账")
         with self.c.transaction():
             # 扫描型替换复用 open id（type+code+trade_date 同键原地更新），保证 id 跨扫描稳定。
             # 板块 fix 成功后立即重扫收敛兄弟问题；若 DELETE+重建，会把其他板块仍在 open、
@@ -1396,6 +1431,8 @@ class DataIntegrityReport:
             [*all_board_types, *params],
         )
         counts = {str(r["issue_type"]): int(r["n"]) for _, r in active.iterrows()}
+        if progress:
+            progress(1, "检查完成")
         return {
             "index_gap": counts.get("board_index_gap", 0),
             "index_gap_daily": counts.get("board_index_gap_daily", 0),

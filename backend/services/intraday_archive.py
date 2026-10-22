@@ -374,7 +374,8 @@ class IntradayArchiveService:
         return result
 
     def collect(
-        self, params=None, *, ctx=None, allow_fallback=False, recheck_source=False, repair_dates=None
+        self, params=None, *, ctx=None, allow_fallback=False, recheck_source=False, repair_dates=None,
+        on_stock_complete=None,
     ):
         """统一归档入口；备用源开关仅由质检修复传入，不属于公开任务参数。"""
         params = normalize_intraday_params(params)
@@ -614,6 +615,9 @@ class IntradayArchiveService:
             else:
                 failed_codes[code] = technical_error
             stats["failed"] = len(failed_codes)
+            # 修复入口逐股复检和回写台账；收口成功后才持久化归档完成检查点。
+            if on_stock_complete:
+                on_stock_complete(code, failed_codes.get(code))
             if ctx:
                 ctx.set_checkpoint(
                     intraday_done=sorted(done),
@@ -810,10 +814,14 @@ class IntradayArchiveService:
         )
         return pd.concat([frame, monitors], ignore_index=True).drop_duplicates()
 
-    def sync(self, codes=None):
+    def sync(self, codes=None, *, progress=None):
         from backend.services.data_report import DataIntegrityReport
 
+        if progress:
+            progress(0, "分时归档覆盖事实")
         facts = self._coverage_facts(codes)
+        if progress:
+            progress(0.4, "分钟完整性与来源证据")
         rows = self.issues(codes, facts=facts)
         previous_repairs = self.c.query_df(
             "SELECT code,trade_date,issue_type,json_extract(CASE WHEN json_valid(detail) THEN detail "
@@ -841,6 +849,8 @@ class IntradayArchiveService:
         changed = facts[
             (facts.point_count != facts.actual_count) | (facts.status != facts.actual_status)
         ]
+        if progress:
+            progress(0.8, "回写分时覆盖与质量台账")
         with self.c.transaction():
             expected_sql, args = self._coverage_sql(codes)
             self.c.execute(
@@ -870,6 +880,8 @@ class IntradayArchiveService:
                         f"FROM {view} f WHERE c.code=f.code AND c.trade_date=f.trade_date"
                     )
             DataIntegrityReport(self.c)._upsert_scan_issues(rows, INTRADAY_ISSUE_TYPES, codes=codes)
+        if progress:
+            progress(1, "分时检查完成")
         return {
             kind: sum(row["issue_type"] == kind for row in rows) for kind in INTRADAY_ISSUE_TYPES
         }
