@@ -118,7 +118,7 @@ function toggle() {
 }
 
 .is-level-2 + .is-level-2 {
-  margin-top: 24px;
+  margin-top: var(--app-space-3);
 }
 
 .is-level-2 > .config-panel-section__head {
@@ -201,8 +201,6 @@ function toggle() {
 }
 
 .config-panel-section.has-summary > .config-panel-section__head .config-panel-section__copy {
-  flex: 1 1 auto;
-  max-width: none;
   flex-direction: row;
   flex-wrap: wrap;
   align-items: baseline;

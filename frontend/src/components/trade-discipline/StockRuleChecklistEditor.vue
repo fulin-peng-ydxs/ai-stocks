@@ -92,8 +92,7 @@ defineExpose({ reveal })
 
 <style scoped>
 .stock-checklist-editor { min-width: 0; --app-reorder-handle-offset: var(--app-space-1); }
-.stock-checklist-editor__tools { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--app-space-2); }
-.stock-checklist-editor__group { margin-top: var(--app-space-3); }
+.stock-checklist-editor__tools { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--app-space-2); margin-bottom: var(--app-space-3); }
 .stock-checklist-editor__fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 0 var(--app-space-3); }
 .stock-checklist-editor__row { display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--app-space-2); }
 .stock-checklist-editor__row > .el-textarea { flex: 1 1 240px; min-width: 0; }

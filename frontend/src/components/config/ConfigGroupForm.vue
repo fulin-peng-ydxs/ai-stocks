@@ -248,9 +248,6 @@ function collapsed(key: string): boolean {
   align-items: start;
   padding: 0;
 }
-.config-field-block + .config-field-block {
-  margin-top: 12px;
-}
 .field-label {
   display: inline-flex;
   align-items: center;

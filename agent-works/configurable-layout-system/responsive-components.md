@@ -112,7 +112,7 @@
 | `frontend/src/components/asset-search/AssetProfileSelect.vue` | 无自身 CSS 查询 | 选择器0+auto网格，搜索交给AssetSearchDrawer。 | BacktestView、BoardView、ConfigView、ScreenView、StockDetailView |
 | `frontend/src/components/asset-search/AssetSearchDrawer.vue` | 无自身 CSS 查询 | 共享抽屉满高、搜索换行、列表内部滚动、统一分页，查询值保留。 | AssetProfileSelect、BacktestView |
 | `frontend/src/components/config/ConfigGroupForm.vue` | `@container app-viewport (max-width: 720px)` | 窄宽配置网格单列，控件占行宽；不清除输入。；可继承的旧来源覆盖用显式开关承载，继承态只读显示通用生效值，密码字段保留单项清除入口。 | ConfigView |
-| `frontend/src/components/config/ConfigPanelSection.vue` | `@container app-viewport (max-width: 720px)` | 窄宽缩短装饰线/限制说明宽度；分组手动折叠，标题入口保留；可选 summary 随标题换行，收起仍可见，不传时布局保持。 | ConfigGroupForm、ConfigView、StockRuleChecklistEditor、StockRuleConditionChecklist |
+| `frontend/src/components/config/ConfigPanelSection.vue` | `@container app-viewport (max-width: 720px)` | 窄宽缩短装饰线/限制说明宽度；分组手动折叠，标题入口保留；可选 summary 随标题换行，收起仍可见；文案区不伸展挤占分隔线，二级分区间距在共享入口统一维护，系统配置与选股编辑/核对/历史不另覆写；不传时布局保持。 | ConfigGroupForm、ConfigView、StockRuleChecklistEditor、StockRuleConditionChecklist |
 | `frontend/src/components/data/BoardTaskScopeFields.vue` | 无自身 CSS 查询 | 委托 PageSegmented、TradeDatePicker、CurrentDayFallbackField。 | IngestView、ScheduleView |
 | `frontend/src/components/data/DataMetricCard.vue` | `@container app-viewport (max-height: 700px)` | 低高度仅压缩间距，主值、核心状态和具名操作保留，溢出摘要由完整原文与详情恢复。 | OverviewView |
 | `frontend/src/components/data/DataMetricDetails.vue` | 无自身 CSS 查询 | 显式 i 入口复用 AppHoverInfo 视口约束及焦点时序；字段和值换行，明细复用 AppDetailFields，AppScrollArea 按界面比例将正文限制在80vh内并内部滚动，不隐藏数据。 | DataMetricCard、OverviewView |

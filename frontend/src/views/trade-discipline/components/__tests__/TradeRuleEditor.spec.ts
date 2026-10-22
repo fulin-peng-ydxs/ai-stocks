@@ -96,8 +96,9 @@ describe('TradeRuleEditor', () => {
     api.get.mockResolvedValue(value)
     const wrapper = await mountEditor()
     await wrapper.get('[data-testid="stock-rule-card"] [data-testid="rule-card-toggle"]').trigger('click')
-    const notes = field(wrapper, '补充说明')
+    const notes = wrapper.findAll('.el-form-item').find(item => item.find('textarea[aria-label="补充说明"]').exists())!
     expect(notes.classes()).not.toContain('is-required')
+    expect(notes.find('.el-form-item__label').exists()).toBe(false)
     await wrapper.get('[data-testid="stock-rule-card"] button[aria-label="复制选股规则"]').trigger('click')
     const editors = wrapper.findAllComponents({ name: 'StockRuleChecklistEditor' })
     const copyItems = editors.at(-1)!.props('modelValue')

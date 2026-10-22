@@ -722,7 +722,7 @@ defineExpose({
                   </el-form-item>
                     </template>
                     <template #notes>
-                      <el-form-item label="补充说明"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3 }" resize="vertical" placeholder="补充解释、适用场景；需要逐项核对的条件请添加为检查项" /></el-form-item>
+                      <el-form-item><el-input v-model="item.content" aria-label="补充说明" type="textarea" :autosize="{ minRows: 3 }" resize="vertical" placeholder="补充解释、适用场景；需要逐项核对的条件请添加为检查项" /></el-form-item>
                     </template>
                   </StockRuleChecklistEditor>
                 </div>

@@ -340,7 +340,7 @@ Key Characteristics：
 | `PageSettingSection` | `frontend/src/components/PageSettingSection.vue` | 页面设置业务选项分区 | 无直接系统组件种类 | 仅作为 `SettingsGroup level=2` 的业务语义薄封装，以必填 `sectionKey` 声明稳定分区标识；不得维护第二套标题、折叠或间距样式 |
 | `AppFormHelp` | `frontend/src/components/AppFormHelp.vue` | 全站表单字段与补充说明的标记、caption 字阶和续行排版 | 无直接系统组件种类或配置字段 | 表单字段及补充说明统一消费；语义、标记与排版见[表单辅助说明](#表单辅助说明)。 |
 | `PageSettingItem` | `frontend/src/components/PageSettingItem.vue` | 设置抽屉的事项名、控件与辅助说明布局 | 无直接系统组件种类 | 设置抽屉字段块统一消费；简单开关可用行内布局，帮助选型与字阶见[设置抽屉](#设置抽屉)及[Typography Rules](#3-typography-rules)。 |
-| `ConfigPanelSection` | `frontend/src/components/config/ConfigPanelSection.vue` | 主内容区配置面板的可折叠分组容器 | 对应 `config-panel` 种类；读取 `collapsibleSections`、`defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | 系统设置等主面板配置分组共用；字段帮助使用 HelpHint / HelpTip，组说明随所属层级展示或收展；可选 summary 在收起时保留简短摘要，紧凑子分区标题/摘要自然换行；不传时保持原有布局。 |
+| `ConfigPanelSection` | `frontend/src/components/config/ConfigPanelSection.vue` | 主内容区配置面板的可折叠分组容器 | 对应 `config-panel` 种类；读取 `collapsibleSections`、`defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | 系统设置等主面板配置分组共用；字段帮助使用 HelpHint / HelpTip，组说明随所属层级展示或收展；可选 summary 在收起时保留简短摘要，紧凑子分区标题/摘要自然换行；摘要不伸展占满横向空间，分隔线紧接文案延伸，二级分区间距由共享组件统一维护；不传时保持原有布局。 |
 | `PageSegmented` | `frontend/src/components/PageSegmented.vue` | 页面设置和业务偏好的分段选择控件 | 无直接系统组件种类 | 枚举选择与轻量视图切换复用；选型见[分段选择](#分段选择)，状态、键盘和动效分别引用对应规范 |
 | `PageSettingsApplyButton` | `frontend/src/components/PageSettingsApplyButton.vue` | 设置抽屉采用当前页面值的统一按钮 | 无直接系统组件种类 | 采用页面当前值的共享入口；保存行为与布局见[设置抽屉](#设置抽屉)，视觉角色见[按钮角色与完整状态矩阵](#按钮角色与完整状态矩阵) |
 | `BoardTaskScopeFields` | `frontend/src/components/data/BoardTaskScopeFields.vue` | 板块采集范围和分阶段参数组 | 无直接系统组件种类 | 数据采集与任务调度的板块参数表单共用；采集语义见[板块采集架构](agent-works/architecture/board-collection.md)。 |
