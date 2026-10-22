@@ -1,6 +1,6 @@
 # 响应式组件触发清单
 
-范围：`frontend/src/**/*.vue` 全部 178 个文件（含页面私有片段、布局宿主及应用外壳），每个文件一行。页面消费与实测结论见 [页面检查](responsive-pages.md)。响应式规则以 [DESIGN.md](../../DESIGN.md) §8 为准；全站字体角色及例外统一引用该文档 §3、§3.5；应用导航尺寸引用 §3.4，本清单只登记消费与适配行为，不另行定义字阶。
+范围：`frontend/src/**/*.vue` 全部 182 个文件（含页面私有片段、布局宿主及应用外壳），每个文件一行。页面消费与实测结论见 [页面检查](responsive-pages.md)。响应式规则以 [DESIGN.md](../../DESIGN.md) §8 为准；全站字体角色及例外统一引用该文档 §3、§3.5；应用导航尺寸引用 §3.4，本清单只登记消费与适配行为，不另行定义字阶。
 
 字体实现维护：所有行均消费 `global.css` 的 token/语义类；MarketCompareMetricStrip、行情和数据概览等普通数据强调使用完整 data 角色，交易纪律分区复用 app-section-title；ECharts 消费 chartTheme 的 typography 快照并经 echartsRenderer 统一基础字体，日 K 与分时的 HTML 行情浮层消费共享 stockQuoteSummaryHtml 和缩放外壳，压缩表格行距与内距；截止测算在底行完整展示，避免旁列撑宽。源码守卫、构建门禁及例外登记入口见 DESIGN §3.5。
 
@@ -145,6 +145,7 @@
 | `frontend/src/components/trade-discipline/TradeDisciplineQuickCard.vue` | `@container app-viewport (max-width: 520px)` | 窄容器操作换行，规则与动作保留；快捷确认委托AppDialog，持仓数量输入限制在弹窗内并允许实际修改。 | App |
 | `frontend/src/components/trade-discipline/TradeDisciplineSectionPanel.vue` | `@container app-viewport (max-width: 760px)` | 窄宽头部上下排列，不隐藏操作。 | TradeCheckinForm、TradeOperationEditor、TradeRuleEditor |
 | `frontend/src/layout/components/LayoutComponentPreview.vue` | 无自身 CSS 查询 | 固定256高规范样板；状态复用AppStateBlock，消费页可用性需独立验证。 | LayoutComponentsView |
+| `frontend/src/layout/components/LayoutConfigTransferPanel.vue` | 无自身 CSS 查询 | 标题、工具行和底部动作不收缩；编辑区承接剩余高度，至少保留六行。工具行自然换行，长文件名省略；最小分区高度交由父工作区或抽屉滚动承接，重排保留草稿和文件名。 | LayoutPagesView、LayoutPresetsView |
 | `frontend/src/layout/components/LayoutHost.vue` | 无自身 CSS 查询 | 按registry原型装配grow/mixed/columns/scroll；操作/footer不收缩，主区滚动，overlay始终挂载页面边界。 | BacktestView、BoardView、ConfigView、LimitLadderView、ScreenView、SectorDetailView、SectorsView、StockDetailView、StocksView、TradeDisciplineView、TrainingView、IngestView、OverviewView、QualityView、ScheduleView、LayoutComponentsView、LayoutPagesView、LayoutPresetsView、AuditLogView、DataDictionaryView、MenuResourceView、RoleManageView、TenantManageView、UserManageView |
 | `frontend/src/layout/components/LayoutPagePreview.vue` | `@container app-viewport (max-width: 980px)` | 窄宽预览网格单列，两类原型均保留内容。 | LayoutPagesView |
 | `frontend/src/layout/components/LayoutSettingsSection.vue` | 无自身 CSS 查询 | 委托 PageSegmented、PageSettingItem、PageToggleRow、SettingsGroup、SourceTag。 | PageSettingsDrawer |
@@ -170,8 +171,8 @@
 | `frontend/src/views/data/components/CheckupReportContent.vue` | 无自身 CSS 查询 | 抽屉内复用 AppDetailSection、AppSummaryDisclosureCard 紧凑行和 AppDataTable/AppTableColumn；提醒与未通过统一可展开，板块和 SQL 样例统一明细表并标明总数，数量/基准日在前、处理说明在后；摘要不预裁原文，以原生省略和统一提示保持单行；展开区不重复短计数，长说明自然换行，宽表在自身横向滚动并限高，展开状态不随尺寸变化重置；正文由共享抽屉滚动。 | QualityView 私有报告片段 |
 | `frontend/src/views/data/ScheduleView.vue` | 无自身 CSS 查询 | 任务页改为单主表list原型，main插槽及条件成长表体内滚、分页固定可达，操作区自然换行；触发记录消费共享抽屉；来源健康与Cookie编辑移入系统配置，不保留数据源视图偏好控件。 | 路由 |
 | `frontend/src/views/layout/LayoutComponentsView.vue` | 无自身 CSS 查询 | 头部/工具条换行；能力表格内部滚动、详情共享抽屉；覆盖范围与个人层覆盖表复用长文档限高，表头固定、表体双向内滚。 | 路由 |
-| `frontend/src/views/layout/LayoutPagesView.vue` | `@container app-viewport (max-width: 980px)` | 窄宽标签头部上下排列、配置网格单列并滚动；动作换行，编辑值保留。 | 路由 |
-| `frontend/src/views/layout/LayoutPresetsView.vue` | `@container app-viewport (max-width: 980px)` | 窄宽导入/导出区单列；正文滚动，应用/保存动作保留。 | 路由 |
+| `frontend/src/views/layout/LayoutPagesView.vue` | `@container app-viewport (max-width: 980px)` | 配置网格窄宽单列并滚动；导入导出复用 LayoutConfigTransferPanel，宽屏等宽双栏、980px 以下单列，两栏编辑与底部动作对齐；低窗口由外层滚动保留完整操作，编辑值不重建。 | 路由 |
+| `frontend/src/views/layout/LayoutPresetsView.vue` | `@container app-viewport (max-width: 980px)` | 导入导出复用 LayoutConfigTransferPanel，宽屏等宽双栏、980px 以下单列；编辑与底部动作对齐，低窗口由抽屉正文滚动承接；应用/保存动作及草稿保留。 | 路由 |
 | `frontend/src/views/limit-ladder/LadderHotspots.vue` | `@container app-viewport (max-width:720px)` | 常规每类12项；低高≤700、宽>768且分析开启时4项；选中项纳入常显，具名展开其余项，用户展开保留。 | LimitLadder |
 | `frontend/src/views/limit-ladder/LimitLadder.vue` | `@container limit-ladder (max-width: 700px)`<br>`@container app-viewport (max-width: 720px)`<br>`@container app-viewport (max-height: 620px)` | 自身limit-ladder容器≤700摘要重排；app宽≤720或高≤620热点整区默认收起，显式展开恢复，展开区限高内部滚动。 | LimitLadderView |
 | `frontend/src/views/limit-ladder/LimitLadderCard.vue` | 无自身 CSS 查询 | 自然换行；长文省略，真实截断由全局宿主提示，完整名称不附加重复title；关联名称可收缩，历史标记保留；委托 RelatedBoardEmptyValue、RelatedBoardHistoryHint、StockStatusTag。 仅主选择区触发共享浮起层，卡片宿主及底部链接固定；受控选中使用单套边框、内侧线及浅背景；悬停时完整表面与内容同步浮起，宿主透明占位，不复制轮廓。 | LimitLadder |

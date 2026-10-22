@@ -6,6 +6,7 @@ import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppAsyncRegion from '@/components/AppAsyncRegion.vue'
+import AppTabToolbar from '@/components/AppTabToolbar.vue'
 /**
  * 页面布局工作区（P4 布局平台 IA 重构）。
  *
@@ -33,14 +34,13 @@ import {
   type LayoutOverlayValue,
   type LayoutOverlayValues,
   type LayoutPageConfig,
-  type LayoutUserConfig,
 } from '@/api/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import ComponentAutoSettings from '@/components/ComponentAutoSettings.vue'
 import HelpHint from '@/components/HelpHint.vue'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
-import AppStateBlock from '@/components/AppStateBlock.vue'
 import LayoutPagePreview from '@/layout/components/LayoutPagePreview.vue'
+import LayoutConfigTransferPanel from '@/layout/components/LayoutConfigTransferPanel.vue'
 import {
   listManagedPages,
   getPageEntry,
@@ -57,10 +57,10 @@ import {
   type ComponentConfigSource,
   type PageRegistryEntry,
   type SlotSpec,
-  type SlotConfigMeta,
 } from '@/layout'
 import { getErrorMessage } from '@/utils/error'
 import { useFormChangeTracker } from '@/composables/useFormChangeTracker'
+import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 
 type TabKey = 'workbench' | 'import' | 'report'
 type ExportScope = 'page' | 'user' | 'effective'
@@ -76,7 +76,6 @@ const focusedSlot = ref<string | null>(null)
 function onPreviewFocus(slotId: string) {
   focusedSlot.value = slotId
 }
-const selectedUserId = ref('local')
 const selectedPage = computed<PageRegistryEntry>(() => getPageEntry(selectedPageKey.value) ?? managedPages[0])
 const conditionDictionary = provideTradeDisciplineCategories()
 const dictionaryMeta = computed(() => selectedPageKey.value === 'trade-discipline' ? tradeConditionMeta(conditionDictionary.categories.value) : {})
@@ -93,6 +92,8 @@ const pageLoadError = ref('')
 // 页面配置表单值按页面 editable 白名单 + 组件配置路径动态承载（不硬编码字段）。
 const pageDraft = reactive<{ values: LayoutOverlayValues }>({ values: {} })
 const pageSaving = ref(false)
+const pageResetting = ref(false)
+const userResetting = ref(false)
 const pageDensityLabel = computed(() => {
   const density = String(pageDraft.values.density ?? selectedPage.value.layout.density)
   return densityLabels[density] ?? density
@@ -100,6 +101,7 @@ const pageDensityLabel = computed(() => {
 
 /** 设置/清除某个页面级旋钮草稿值；空值视为"不覆盖"。 */
 function setPageKnob(path: string, value: unknown): void {
+  if (operationBusy.value) return
   if (value === '' || value == null) delete pageDraft.values[path]
   else pageDraft.values[path] = value as LayoutOverlayValue
 }
@@ -290,16 +292,23 @@ const focusedDiagnosticRows = computed(() =>
 
 const exportScope = ref<ExportScope>('page')
 const exportText = ref('')
+const exportAction = ref<'generate' | 'download' | null>(null)
+const exportError = ref('')
 const importText = ref('')
 const importSaving = ref(false)
 
 const reportLoading = ref(false)
 const reportError = ref('')
+const reportReady = ref(false)
 const pageLoading = ref(true)
 const effectiveConfig = ref<EffectiveLayoutConfig | null>(null)
-const userConfig = ref<LayoutUserConfig | null>(null)
 const pageValidationErrors = ref<string[]>([])
 const userValidationErrors = ref<string[]>([])
+const pageRequest = createLatestRequestGuard()
+const reportRequest = createLatestRequestGuard()
+const operationBusy = computed(() => pageSaving.value || pageResetting.value
+  || userResetting.value || importSaving.value || Boolean(exportAction.value) || reportLoading.value)
+const contextLocked = computed(() => pageLoading.value || operationBusy.value)
 
 function pageDraftValues(): LayoutOverlayValues {
   // 回写：页面 editable 白名单内的 L2 旋钮 + 组件配置路径（slots.<id>.config.<field>）。空值视为"不覆盖"。
@@ -317,11 +326,14 @@ const { hasChanges: pageConfigChanged, captureBaseline: capturePageConfigBaselin
 )
 
 async function loadPageConfig(options: { clearCurrent?: boolean } = {}) {
+  const pageKey = selectedPageKey.value
+  const requestId = pageRequest.begin()
   if (options.clearCurrent) pageConfig.value = null
   pageLoading.value = true
   pageLoadError.value = ''
   try {
-    const cfg = await getLayoutPageConfig(selectedPageKey.value)
+    const cfg = await getLayoutPageConfig(pageKey)
+    if (!pageRequest.isCurrent(requestId) || pageKey !== selectedPageKey.value) return
     pageConfig.value = cfg
     for (const key of Object.keys(pageDraft.values)) delete pageDraft.values[key]
     const stored = cfg.config.values ?? {}
@@ -333,9 +345,10 @@ async function loadPageConfig(options: { clearCurrent?: boolean } = {}) {
     }
     capturePageConfigBaseline()
   } catch (error) {
+    if (!pageRequest.isCurrent(requestId) || pageKey !== selectedPageKey.value) return
     pageLoadError.value = getErrorMessage(error, '页面布局配置加载失败')
   } finally {
-    pageLoading.value = false
+    if (pageRequest.isCurrent(requestId)) pageLoading.value = false
   }
 }
 
@@ -351,68 +364,102 @@ async function retryPageRegion() {
 }
 
 async function savePageConfig() {
-  if (!pageConfigChanged.value) return
+  if (contextLocked.value || !pageConfigChanged.value) return
+  const pageKey = selectedPageKey.value
+  // 校验和落库必须消费同一份草稿，不能在两次请求之间重新读取表单。
+  const values: LayoutOverlayValues = JSON.parse(JSON.stringify(pageDraftValues()))
+  const layout = selectedPage.value.layout as unknown as Record<string, unknown>
   pageSaving.value = true
   try {
     const validation = await validateLayoutConfig({
-      config: { values: pageDraftValues() },
-      layout: selectedPage.value.layout as unknown as Record<string, unknown>,
+      config: { values },
+      layout,
     })
     if (!validation.valid) {
       ElMessage.error(validation.errors[0] || '页面配置校验失败')
       return
     }
-    pageConfig.value = await saveLayoutPageConfig(selectedPageKey.value, {
+    const saved = await saveLayoutPageConfig(pageKey, {
       presetKey: null,
-      config: { values: pageDraftValues() },
-      layout: selectedPage.value.layout as unknown as Record<string, unknown>,
+      config: { values },
+      layout,
     })
-    capturePageConfigBaseline()
+    if (pageKey === selectedPageKey.value) {
+      pageConfig.value = saved
+      capturePageConfigBaseline()
+      exportText.value = ''
+    }
     ElMessage.success('页面默认布局已保存')
+  } catch {
+    // API 拦截器已展示失败原因；保留草稿与原基线，允许重试。
   } finally {
     pageSaving.value = false
   }
 }
 
 async function resetPageConfig() {
+  if (contextLocked.value) return
+  const pageKey = selectedPageKey.value
+  const pageLabel = selectedPage.value.label
+  pageResetting.value = true
   try {
-    await ElMessageBox.confirm(
-      `确认将「${selectedPage.value?.label || selectedPageKey.value}」的页面配置恢复为系统默认？`,
-      '恢复页面默认',
-      { type: 'warning', confirmButtonText: '恢复默认', cancelButtonText: '取消' },
-    )
+    try {
+      await ElMessageBox.confirm(
+        `确认将「${pageLabel}」的页面布局和组件默认配置恢复为系统初始值？这将影响所有用户的页面默认设置，并丢弃当前未保存修改；各用户的个性化覆盖会保留。`,
+        '恢复页面系统默认',
+        { type: 'warning', confirmButtonText: '恢复默认', cancelButtonText: '取消', confirmButtonClass: 'el-button--warning' },
+      )
+    } catch { return }
+    await resetLayoutConfig({ scope: 'page', pageKey })
+    exportText.value = ''
+    ElMessage.success('所选页面已恢复系统默认配置')
+    if (pageKey === selectedPageKey.value) await loadPageConfig()
   } catch {
-    return
+    // API 拦截器已展示失败原因；失败时保留当前配置。
+  } finally {
+    pageResetting.value = false
   }
-  await resetLayoutConfig({ scope: 'page', pageKey: selectedPageKey.value })
-  ElMessage.success('页面配置已恢复默认')
-  await loadPageConfig()
 }
 
-async function buildExport() {
-  if (exportScope.value === 'page') {
-    const cfg = await getLayoutPageConfig(selectedPageKey.value)
-    exportText.value = JSON.stringify({ type: 'layout-page-config', page: cfg }, null, 2)
-    return
+async function readExport(pageKey: string, scope: ExportScope): Promise<string> {
+  if (scope === 'page') {
+    const cfg = await getLayoutPageConfig(pageKey)
+    return JSON.stringify({ type: 'layout-page-config', page: cfg }, null, 2)
   }
-  if (exportScope.value === 'user') {
-    const cfg = await getLayoutUserConfig(selectedPageKey.value, selectedUserId.value)
-    exportText.value = JSON.stringify({ type: 'layout-user-config', user: cfg }, null, 2)
-    return
+  if (scope === 'user') {
+    const cfg = await getLayoutUserConfig(pageKey)
+    return JSON.stringify({ type: 'layout-user-config', user: cfg }, null, 2)
   }
-  const cfg = await getEffectiveLayoutConfig(selectedPageKey.value, selectedUserId.value)
-  exportText.value = JSON.stringify({ type: 'layout-effective-config', effective: cfg }, null, 2)
+  const cfg = await getEffectiveLayoutConfig(pageKey)
+  return JSON.stringify({ type: 'layout-effective-config', effective: cfg }, null, 2)
 }
 
-async function downloadExport() {
-  if (!exportText.value) await buildExport()
-  const blob = new Blob([exportText.value], { type: 'application/json;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `layout-${exportScope.value}-${selectedPageKey.value}.json`
-  a.click()
-  URL.revokeObjectURL(url)
+/** 生成与下载共享在途锁，下载缺少内容时在同一次操作内生成。 */
+async function runExport(action: 'generate' | 'download') {
+  if (contextLocked.value) return
+  const pageKey = selectedPageKey.value
+  const scope = exportScope.value
+  exportAction.value = action
+  exportError.value = ''
+  try {
+    const content = action === 'download' && exportText.value
+      ? exportText.value : await readExport(pageKey, scope)
+    if (pageKey !== selectedPageKey.value || scope !== exportScope.value) return
+    exportText.value = content
+    if (action === 'download') {
+      const url = URL.createObjectURL(new Blob([content], { type: 'application/json;charset=utf-8' }))
+      try {
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `layout-${scope}-${pageKey}.json`
+        a.click()
+      } finally { URL.revokeObjectURL(url) }
+    }
+  } catch (error) {
+    exportError.value = getErrorMessage(error, '配置导出失败，请重试')
+  } finally {
+    exportAction.value = null
+  }
 }
 
 function onImportFile(e: Event) {
@@ -424,10 +471,18 @@ function onImportFile(e: Event) {
 }
 
 async function importConfig() {
+  if (contextLocked.value || !importText.value.trim()) return
+  const pageKey = selectedPageKey.value
+  const layout = selectedPage.value.layout as unknown as Record<string, unknown>
   importSaving.value = true
   try {
     const parsed = JSON.parse(importText.value)
-    const layout = selectedPage.value.layout as unknown as Record<string, unknown>
+    const imported = parsed?.type === 'layout-page-config' ? parsed.page
+      : parsed?.type === 'layout-user-config' ? parsed.user : null
+    if (!imported?.config || imported.pageKey !== pageKey) {
+      ElMessage.error('请选择与当前页面一致的页面/用户配置文件')
+      return
+    }
     if (parsed.type === 'layout-page-config') {
       const page = parsed.page
       const validation = await validateLayoutConfig({ config: page.config, layout })
@@ -435,9 +490,10 @@ async function importConfig() {
         ElMessage.error(validation.errors[0] || '导入配置非法')
         return
       }
-      await saveLayoutPageConfig(page.pageKey, { presetKey: null, config: page.config, layout })
+      await saveLayoutPageConfig(pageKey, { presetKey: null, config: page.config, layout })
       ElMessage.success('页面配置导入完成')
-      await loadPageConfig()
+      if (pageKey === selectedPageKey.value) await loadPageConfig()
+      exportText.value = ''
       return
     }
     if (parsed.type === 'layout-user-config') {
@@ -447,8 +503,10 @@ async function importConfig() {
         ElMessage.error(validation.errors[0] || '导入配置非法')
         return
       }
-      await saveLayoutUserConfig(user.pageKey, { userId: user.userId, config: user.config, layout })
-      ElMessage.success('用户配置导入完成')
+      // 用户归属始终由后端登录上下文确定，不沿用导出文件的用户标识。
+      await saveLayoutUserConfig(pageKey, { config: user.config, layout })
+      exportText.value = ''
+      ElMessage.success('当前登录用户的配置导入完成')
       return
     }
     ElMessage.error('请导入页面/用户配置文件；预设请在「视觉预设」工作区导入')
@@ -460,40 +518,57 @@ async function importConfig() {
 }
 
 async function runValidationReport() {
+  if (contextLocked.value) return
+  const pageKey = selectedPageKey.value
+  const requestId = reportRequest.begin()
+  const layout = selectedPage.value.layout as unknown as Record<string, unknown>
   reportLoading.value = true
   reportError.value = ''
   try {
-    const layout = selectedPage.value.layout as unknown as Record<string, unknown>
-    const page = await getLayoutPageConfig(selectedPageKey.value)
-    const user = await getLayoutUserConfig(selectedPageKey.value, selectedUserId.value)
-    const eff = await getEffectiveLayoutConfig(selectedPageKey.value, selectedUserId.value)
-    const pageResult = await validateLayoutConfig({ config: page.config, layout })
-    const userResult = await validateLayoutConfig({ config: user.config, layout })
-    pageConfig.value = page
-    userConfig.value = user
+    const [page, user, eff] = await Promise.all([
+      getLayoutPageConfig(pageKey), getLayoutUserConfig(pageKey), getEffectiveLayoutConfig(pageKey),
+    ])
+    const [pageResult, userResult] = await Promise.all([
+      validateLayoutConfig({ config: page.config, layout }),
+      validateLayoutConfig({ config: user.config, layout }),
+    ])
+    if (!reportRequest.isCurrent(requestId) || pageKey !== selectedPageKey.value) return
     effectiveConfig.value = eff
     pageValidationErrors.value = pageResult.errors
     userValidationErrors.value = userResult.errors
+    reportReady.value = true
   } catch (error) {
+    if (!reportRequest.isCurrent(requestId) || pageKey !== selectedPageKey.value) return
     reportError.value = getErrorMessage(error, '校验报告加载失败')
   } finally {
-    reportLoading.value = false
+    if (reportRequest.isCurrent(requestId)) reportLoading.value = false
   }
 }
 
 async function resetUserConfig() {
+  if (contextLocked.value) return
+  const pageKey = selectedPageKey.value
+  const pageLabel = selectedPage.value.label
+  let reset = false
+  userResetting.value = true
   try {
-    await ElMessageBox.confirm(
-      `确认清除用户「${selectedUserId.value}」在当前页面的全部个性化覆盖？`,
-      '清除用户覆盖',
-      { type: 'warning', confirmButtonText: '清除覆盖', cancelButtonText: '取消' },
-    )
+    try {
+      await ElMessageBox.confirm(
+        `确认清除当前登录用户在「${pageLabel}」页面的全部个性化覆盖？`,
+        '清除用户覆盖',
+        { type: 'warning', confirmButtonText: '清除覆盖', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' },
+      )
+    } catch { return }
+    await resetLayoutConfig({ scope: 'user', pageKey })
+    exportText.value = ''
+    ElMessage.success('当前登录用户的覆盖已清除')
+    reset = true
   } catch {
-    return
+    // API 拦截器已展示失败原因；不误报清除成功。
+  } finally {
+    userResetting.value = false
   }
-  await resetLayoutConfig({ scope: 'user', pageKey: selectedPageKey.value, userId: selectedUserId.value })
-  ElMessage.success('用户覆盖已清除')
-  await runValidationReport()
+  if (reset && pageKey === selectedPageKey.value) await runValidationReport()
 }
 
 function onTabChange(name: string | number) {
@@ -505,17 +580,27 @@ const sourceRows = computed(() => {
   if (!eff) return []
   return Object.entries(eff.values).map(([path, value]) => ({
     path,
-    value,
+    value: formatDiagnosticValue(value),
     source: eff.source[path] ?? 'default',
   }))
 })
 
 watch(selectedPageKey, async () => {
   exportText.value = ''
+  exportError.value = ''
+  reportRequest.invalidate()
+  reportLoading.value = false
+  reportReady.value = false
+  reportError.value = ''
+  effectiveConfig.value = null
+  pageValidationErrors.value = []
+  userValidationErrors.value = []
   focusedSlot.value = null
   await loadPageConfig({ clearCurrent: true })
   if (tab.value === 'report') await runValidationReport()
 })
+
+watch(exportScope, () => { exportText.value = ''; exportError.value = '' })
 
 onMounted(async () => {
   await reloadFieldPolicies()
@@ -538,6 +623,7 @@ const menuPageTitle = useMenuPageTitle()
               v-model="selectedPageKey"
               class="page-select"
               aria-label="选择配置页面"
+              :disabled="contextLocked"
             >
               <el-option v-for="page in managedPages" :key="page.pageKey" :label="page.label" :value="page.pageKey" />
             </AppSelect>
@@ -558,7 +644,7 @@ const menuPageTitle = useMenuPageTitle()
         retry
         @retry="retryPageRegion"
       >
-        <el-tabs v-model="tab" class="config-tabs" @tab-change="onTabChange">
+        <el-tabs v-model="tab" class="config-tabs" :before-leave="() => !operationBusy" @tab-change="onTabChange">
           <el-tab-pane label="页面设计" name="workbench">
             <div class="workbench-pane">
             <section class="plain-panel source-panel">
@@ -606,7 +692,7 @@ const menuPageTitle = useMenuPageTitle()
                   <el-tag v-if="focusedSlotSpec" size="small" type="primary" effect="plain">已选组件</el-tag>
                 </div>
 
-                <AppScrollArea class="inspector-scroll">
+                <AppScrollArea class="inspector-scroll" :inert="operationBusy || undefined">
                   <section class="inspector-section">
                     <div class="inspector-section-head">
                       <div>
@@ -614,7 +700,7 @@ const menuPageTitle = useMenuPageTitle()
                         <div class="section-subtitle">未设置时使用系统默认值。</div>
                       </div>
                     </div>
-                    <el-form label-position="top" class="config-form">
+                    <el-form label-position="top" class="config-form" :disabled="operationBusy">
                       <!-- 页面级旋钮按本页 editable 白名单动态渲染。 -->
                       <el-form-item v-for="knob in selectedPage.layout.editable" :key="knob.path" :label="knob.label">
                         <AppSelect
@@ -734,8 +820,8 @@ const menuPageTitle = useMenuPageTitle()
                 </AppScrollArea>
 
                 <div class="button-row cc-save-row">
-                  <el-button v-permission="'layout:page-manage'" type="primary" :loading="pageSaving" :disabled="!pageConfigChanged" @click="savePageConfig">保存页面配置</el-button>
-                  <el-button v-permission="'layout:page-manage'" @click="resetPageConfig">恢复页面默认</el-button>
+                  <el-button v-permission="'layout:page-manage'" type="primary" :loading="pageSaving" :disabled="!pageConfigChanged || (operationBusy && !pageSaving)" @click="savePageConfig">保存页面配置</el-button>
+                  <el-button v-permission="'layout:page-manage'" type="warning" plain :loading="pageResetting" :disabled="operationBusy && !pageResetting" @click="resetPageConfig">恢复页面系统默认</el-button>
                 </div>
               </section>
             </AppScrollArea>
@@ -744,57 +830,74 @@ const menuPageTitle = useMenuPageTitle()
 
           <el-tab-pane label="导入导出" name="import">
             <AppScrollArea class="import-grid">
-              <AppScrollArea as="section" class="plain-panel">
-                <div class="section-title">导出</div>
-                <div class="section-subtitle">导出当前页面的页面/用户/有效配置；预设导出在「视觉预设」工作区。</div>
-                <div class="inline-controls">
+              <LayoutConfigTransferPanel
+                v-model="exportText"
+                mode="export"
+                title="导出"
+                description="导出当前页面的页面默认、当前登录用户或最终生效配置。视觉预设请到「视觉预设」工作区导出。"
+                editor-label="导出配置 JSON"
+                placeholder="点击生成或下载配置"
+                :busy="operationBusy"
+              >
+                <template #toolbar>
                   <AppSelect
                     v-model="exportScope"
+                    width="medium"
+                    aria-label="导出范围"
+                    :disabled="operationBusy"
                   >
                     <el-option label="当前页面配置" value="page" />
                     <el-option label="当前用户配置" value="user" />
                     <el-option label="当前有效配置" value="effective" />
                   </AppSelect>
-                  <el-button @click="buildExport">生成</el-button>
-                  <el-button @click="downloadExport">下载</el-button>
-                </div>
-                <el-input v-model="exportText" type="textarea" :rows="16" spellcheck="false" />
-              </AppScrollArea>
+                </template>
+                <template #actions>
+                  <el-button :loading="exportAction === 'generate'" :disabled="operationBusy && exportAction !== 'generate'" @click="runExport('generate')">生成</el-button>
+                  <el-button :loading="exportAction === 'download'" :disabled="operationBusy && exportAction !== 'download'" @click="runExport('download')">下载</el-button>
+                </template>
+                <template #feedback>
+                  <AppStatusNotice v-if="exportError" tone="error" title="配置导出失败" :description="exportError" />
+                </template>
+              </LayoutConfigTransferPanel>
 
-              <AppScrollArea as="section" class="plain-panel">
-                <div class="section-title">导入</div>
-                <div class="section-subtitle">导入前会校验 schema version、路径、取值域、组件归属。</div>
-                <input class="file-input" type="file" accept="application/json,.json" @change="onImportFile" />
-                <el-input v-model="importText" type="textarea" :rows="16" spellcheck="false" placeholder="粘贴导出的页面/用户配置 JSON" />
-                <div class="button-row">
-                  <el-button v-permission="'layout:page-manage'" type="primary" :loading="importSaving" @click="importConfig">校验并导入</el-button>
-                </div>
-              </AppScrollArea>
+              <LayoutConfigTransferPanel
+                v-model="importText"
+                mode="import"
+                title="导入"
+                description="仅导入当前页面的配置；用户配置应用于当前登录用户。导入前校验版本、路径、取值域和组件归属。"
+                editor-label="导入配置 JSON"
+                placeholder="粘贴页面/用户配置 JSON"
+                :busy="operationBusy"
+                @file-change="onImportFile"
+              >
+                <template #actions>
+                  <el-button v-permission="'layout:page-manage'" type="primary" :loading="importSaving" :disabled="!importText.trim() || (operationBusy && !importSaving)" @click="importConfig">校验并导入</el-button>
+                </template>
+              </LayoutConfigTransferPanel>
             </AppScrollArea>
           </el-tab-pane>
 
           <el-tab-pane label="校验报告" name="report">
-            <div class="tab-head">
-              <div>
-                <div class="section-title">校验报告</div>
-                <div class="section-subtitle">检查当前页面配置和用户覆盖，并展示字段来源。</div>
-              </div>
-              <div class="toolbar-actions">
-                <el-input v-model="selectedUserId" class="user-input" placeholder="userId" />
-                <el-button v-permission="'layout:page-manage'" type="primary" :loading="reportLoading" @click="runValidationReport">重新校验</el-button>
-                <el-button v-permission="'layout:page-manage'" @click="resetUserConfig">清除用户覆盖</el-button>
-              </div>
-            </div>
+            <AppTabToolbar label="校验报告操作" actions-align="end">
+              <template #actions>
+                <el-button v-permission="'layout:page-manage'" :loading="reportLoading" :disabled="operationBusy && !reportLoading" @click="runValidationReport">重新校验</el-button>
+                <el-button v-permission="'layout:page-manage'" type="danger" plain :loading="userResetting" :disabled="operationBusy && !userResetting" @click="resetUserConfig">清除用户覆盖</el-button>
+              </template>
+              <template #description>检查当前页面已保存的默认配置和当前登录用户的覆盖，并展示字段来源。</template>
+            </AppTabToolbar>
 
-            <AppStateBlock
-              v-if="reportError"
-              state="error"
-              title="校验报告加载失败"
-              :description="reportError"
+            <AppAsyncRegion
+              class="report-region"
+              :loading="reportLoading"
+              :has-content="reportReady"
+              :error="reportError"
+              loading-title="正在校验布局配置…"
+              error-title="校验报告加载失败"
+              empty-title="尚未生成校验报告"
               retry
               @retry="runValidationReport"
-            />
-            <AppScrollArea v-else class="report-grid">
+            >
+            <AppScrollArea class="report-grid">
               <AppScrollArea as="section" class="plain-panel">
                 <div class="section-title">错误项</div>
                 <el-alert
@@ -822,6 +925,7 @@ const menuPageTitle = useMenuPageTitle()
                 </AppDataTable>
               </AppScrollArea>
             </AppScrollArea>
+            </AppAsyncRegion>
           </el-tab-pane>
         </el-tabs>
       </AppAsyncRegion>
@@ -835,8 +939,6 @@ const menuPageTitle = useMenuPageTitle()
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
 }
-.toolbar-actions,
-.inline-controls,
 .button-row {
   display: flex;
   align-items: center;
@@ -878,13 +980,12 @@ const menuPageTitle = useMenuPageTitle()
   gap: var(--app-space-3);
   overflow: hidden;
 }
-.tab-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--app-space-4);
-  margin-bottom: 12px;
+.report-region {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
+.config-tabs :deep(#pane-report) { display: flex; flex-direction: column; }
 .section-title {
   font-size: var(--app-font-size-section-title);
   font-weight: var(--app-font-weight-strong);
@@ -895,6 +996,10 @@ const menuPageTitle = useMenuPageTitle()
   --app-scroll-display: grid;
   --app-scroll-columns: minmax(320px, 0.85fr) minmax(360px, 1.15fr);
   --app-scroll-gap: var(--app-space-3);
+}
+.import-grid {
+  --app-scroll-columns: repeat(2, minmax(0, 1fr));
+  --app-scroll-rows: minmax(400px, 1fr);
 }
 .page-config-grid {
   --app-scroll-display: grid;
@@ -920,7 +1025,6 @@ const menuPageTitle = useMenuPageTitle()
   --app-scroll-padding-top: var(--app-density-card-padding); --app-scroll-padding-right: var(--app-density-card-padding); --app-scroll-padding-bottom: var(--app-density-card-padding); --app-scroll-padding-left: var(--app-density-card-padding);
 }
 .preview-panel,
-.import-grid :deep(> .app-scroll-area__renderer > .el-scrollbar__wrap > .app-scroll-area__content) > .plain-panel,
 .report-grid :deep(> .app-scroll-area__renderer > .el-scrollbar__wrap > .app-scroll-area__content) > .plain-panel {
   padding: var(--app-density-card-padding);
 }
@@ -1057,26 +1161,17 @@ const menuPageTitle = useMenuPageTitle()
   font-weight: var(--app-font-weight-section);
   color: var(--el-text-color-primary);
 }
-.file-input {
-  display: block;
-  margin: 12px 0;
-  color: var(--el-text-color-regular);
-}
 .report-alert {
   margin-top: 8px;
 }
-.user-input {
-  width: 140px;
-}
 @container app-viewport (max-width: 980px) {
-  .tab-head {
-    align-items: stretch;
-    flex-direction: column;
-  }
   .page-config-grid,
   .import-grid,
   .report-grid {
     --app-scroll-columns: 1fr;
+  }
+  .import-grid {
+    --app-scroll-rows: repeat(2, minmax(400px, 1fr));
   }
   .source-panel {
     grid-template-columns: 1fr;
@@ -1087,8 +1182,6 @@ const menuPageTitle = useMenuPageTitle()
   .config-panel {
     overflow: visible;
   }
-  .toolbar-actions,
-  .inline-controls,
   .button-row {
     flex-wrap: wrap;
   }

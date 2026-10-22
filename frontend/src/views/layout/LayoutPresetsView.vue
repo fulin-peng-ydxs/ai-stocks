@@ -21,6 +21,7 @@ import {
   type LayoutPresetRecord,
 } from '@/api/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
+import LayoutConfigTransferPanel from '@/layout/components/LayoutConfigTransferPanel.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
@@ -261,6 +262,7 @@ function onImportFile(e: Event) {
 }
 
 async function importPresets() {
+  if (importSaving.value || !importText.value.trim()) return
   importSaving.value = true
   try {
     const parsed = JSON.parse(importText.value)
@@ -430,23 +432,35 @@ const menuPageTitle = useMenuPageTitle()
 
       <AppDetailDrawer v-model="importExportVisible" size="xxl" title="视觉预设导入导出">
         <div class="ie-grid">
-          <section>
-            <div class="section-title">导出全部预设</div>
-            <div class="inline-controls">
-              <el-button @click="buildExport">生成</el-button>
-              <el-button @click="downloadExport">下载</el-button>
-            </div>
-            <el-input v-model="exportText" type="textarea" :rows="12" spellcheck="false" />
-          </section>
-          <section>
-            <div class="section-title">导入预设</div>
-            <div class="section-subtitle">仅接受 layout-presets 文件；导入的预设一律落为自定义。</div>
-            <input class="file-input" type="file" accept="application/json,.json" @change="onImportFile" />
-            <el-input v-model="importText" type="textarea" :rows="10" spellcheck="false" placeholder="粘贴导出的 JSON" />
-            <div class="button-row">
-              <el-button v-permission="'layout:preset-manage'" type="primary" :loading="importSaving" @click="importPresets">校验并导入</el-button>
-            </div>
-          </section>
+          <LayoutConfigTransferPanel
+            v-model="exportText"
+            mode="export"
+            title="导出全部预设"
+            description="导出全部视觉预设，包含明暗主题的颜色及共享圆角。"
+            editor-label="导出视觉预设 JSON"
+            placeholder="点击生成或下载预设"
+            :busy="importSaving"
+          >
+            <template #toolbar><span class="app-caption-text muted">全部视觉预设</span></template>
+            <template #actions>
+              <el-button :disabled="importSaving" @click="buildExport">生成</el-button>
+              <el-button :disabled="importSaving" @click="downloadExport">下载</el-button>
+            </template>
+          </LayoutConfigTransferPanel>
+          <LayoutConfigTransferPanel
+            v-model="importText"
+            mode="import"
+            title="导入预设"
+            description="仅接受 layout-presets 文件；导入的预设一律保存为自定义预设。"
+            editor-label="导入视觉预设 JSON"
+            placeholder="粘贴视觉预设 JSON"
+            :busy="importSaving"
+            @file-change="onImportFile"
+          >
+            <template #actions>
+              <el-button v-permission="'layout:preset-manage'" type="primary" :loading="importSaving" :disabled="!importText.trim()" @click="importPresets">校验并导入</el-button>
+            </template>
+          </LayoutConfigTransferPanel>
         </div>
       </AppDetailDrawer>
     </template>
@@ -458,12 +472,6 @@ const menuPageTitle = useMenuPageTitle()
 .muted {
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
-}
-.inline-controls,
-.button-row {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-2);
 }
 .preset-list-panel {
   height: 100%;
@@ -497,19 +505,8 @@ const menuPageTitle = useMenuPageTitle()
 }
 .ie-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--app-space-4);
-}
-.inline-controls {
-  margin: 8px 0;
-}
-.file-input {
-  display: block;
-  margin: 10px 0;
-  color: var(--el-text-color-regular);
-}
-.button-row {
-  margin-top: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--app-space-3);
 }
 @container app-viewport (max-width: 980px) {
   .ie-grid {
