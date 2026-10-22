@@ -7,7 +7,7 @@ import AppSelect from '@/components/AppSelect.vue'
  * （可排序字段 + 方向）、每页条数、列显隐（独立 level 3 子组，每列一个开关）等。
  * 写值统一经组件配置层（config.setComponentKnob），与配置中心/后端校验同源。
  *
- * 折叠规则（统一）：slot 是一个可折叠组；多行清单类特性（列显隐）作为可折叠子组；
+ * 折叠规则（统一）：slot 是一个可折叠组；多行清单类特性（列显隐、默认折叠候选）作为可折叠子组；
  * 单字段为叶子不折叠。页面布局编辑器一次只聚焦一个 slot，slot 头作锚点不折叠（collapsibleSlot=false）。
  */
 import { computed, inject, nextTick, ref, watch } from 'vue'
@@ -480,14 +480,28 @@ function boolVal(slotId: string, field: string, fallback: boolean): boolean {
   return typeof v === 'boolean' ? v : fallback
 }
 
-function defaultCollapsedOptions(slot: AutoSlot): { label: string; value: string }[] {
+interface CollapsedOption { label: string; value: string; parentKey?: string }
+
+function defaultCollapsedOptions(slot: AutoSlot): CollapsedOption[] {
   if (slot.kind === 'config-panel') {
     return (slot.meta.collapseSections ?? []).map((section) => ({
       label: section.label,
       value: section.key,
+      parentKey: section.parentKey,
     }))
   }
   return visibleDrawerSectionOptions.value
+}
+
+/** 两层配置面板按父组归集；缺少父组的候选保留为根项，不静默丢失。 */
+function defaultCollapsedGroups(slot: AutoSlot) {
+  const options = defaultCollapsedOptions(slot)
+  const keys = new Set(options.map((option) => option.value))
+  return options.filter((option) => !option.parentKey || !keys.has(option.parentKey))
+    .map((root) => ({
+      ...root,
+      children: options.filter((option) => option.parentKey === root.value),
+    }))
 }
 
 function visibleDefaultCollapsedValues(slot: AutoSlot): string[] {
@@ -1053,9 +1067,11 @@ function setSort(slotId: string, field: string, order: string): void {
         />
       </SettingsGroup>
 
-      <PageSettingItem
+      <SettingsGroup
         v-if="s.fields.includes('defaultCollapsed')"
-        :label="s.kind === 'config-panel' ? '默认折叠分区' : '默认折叠段'"
+        :title="s.kind === 'config-panel' ? '默认折叠分区' : '默认折叠段'"
+        :fold-key="`component:${s.slotId}:defaultCollapsed`"
+        :level="showSlotTitle ? 3 : 2"
         :hint="fieldHelp(s, 'defaultCollapsed')"
       >
         <template #actions>
@@ -1073,14 +1089,37 @@ function setSort(slotId: string, field: string, order: string): void {
           </span>
         </template>
         <el-checkbox-group
+          class="ca-collapse-options"
+          :class="{ 'is-flat': s.kind !== 'config-panel' }"
           :model-value="visibleDefaultCollapsedValues(s)"
           @update:model-value="(v: string[]) => setDefaultCollapsed(s, v)"
         >
-          <el-checkbox v-for="opt in defaultCollapsedOptions(s)" :key="opt.value" :value="opt.value">
-            {{ opt.label }}
-          </el-checkbox>
+          <div
+            v-for="group in defaultCollapsedGroups(s)" :key="group.value"
+            class="ca-collapse-branch" :data-collapse-group="group.value"
+          >
+            <SettingsGroup
+              v-if="group.children.length"
+              :title="group.label"
+              :fold-key="`component:${s.slotId}:defaultCollapsed:${group.value}`"
+              :level="showSlotTitle ? 4 : 3"
+            >
+              <template #title>
+                <!-- 标题内的选值控件不能触发分组展开或键盘激活。 -->
+                <span @click.stop @keydown.stop>
+                  <el-checkbox :value="group.value">{{ group.label }}</el-checkbox>
+                </span>
+              </template>
+              <div class="ca-collapse-children" role="group" :aria-label="`${group.label}下级分区`">
+                <el-checkbox v-for="child in group.children" :key="child.value" :value="child.value">
+                  {{ child.label }}
+                </el-checkbox>
+              </div>
+            </SettingsGroup>
+            <el-checkbox v-else :value="group.value">{{ group.label }}</el-checkbox>
+          </div>
         </el-checkbox-group>
-      </PageSettingItem>
+      </SettingsGroup>
 
     </SettingsGroup>
   </div>
@@ -1088,6 +1127,37 @@ function setSort(slotId: string, field: string, order: string): void {
 </template>
 
 <style scoped>
+.ca-collapse-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-1);
+}
+.ca-collapse-options.is-flat {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--app-space-1) var(--app-space-4);
+}
+.ca-collapse-branch {
+  min-width: 0;
+}
+.ca-collapse-children {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 0;
+  column-gap: var(--app-space-4);
+}
+.ca-collapse-options :deep(.el-checkbox) {
+  max-width: 100%;
+  height: auto;
+  min-height: var(--app-density-control-height);
+  margin-inline-end: 0;
+}
+.ca-collapse-options :deep(.el-checkbox__label) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: var(--app-line-height-table);
+}
+
 .ca-search-hint {
   margin: 0;
   color: var(--el-text-color-secondary);

@@ -81,8 +81,6 @@ export interface SlotConfigMeta extends ComponentSlotConfigMeta {
   tabs?: { key: string; label: string }[]
   /** 组件内部可配置项（驱动 visibleItems 等动态候选字段）。 */
   items?: { key: string; label: string }[]
-  /** 可折叠分区项（驱动 config-panel/defaultCollapsed 选择；key 为折叠节点 key、label 为中文名）。 */
-  collapseSections?: { key: string; label: string }[]
 }
 
 /** 信息密度旋钮——所有页面通用的 L2 可编辑项，统一文案与取值域。 */

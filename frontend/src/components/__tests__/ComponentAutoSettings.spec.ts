@@ -2,9 +2,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, reactive, type Component } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElCheckbox, ElCheckboxGroup, ElMessage } from 'element-plus'
 import ComponentAutoSettings from '@/components/ComponentAutoSettings.vue'
 import HelpHint from '@/components/HelpHint.vue'
+import { SETTINGS_FOLD_PREFERENCES, type SettingsFoldPreferences } from '@/composables/settingsFoldPreferences'
 import { createDefaultStockChartPreferences } from '@/composables/useStockChartPreferences'
 
 vi.mock('@/layout/pageRegistry', () => ({
@@ -70,7 +71,7 @@ vi.mock('@/layout/pageRegistry', () => ({
           configPanel: {
             collapseSections: [
               { key: 'auth', label: '认证与防滥用' },
-              { key: 'auth.login', label: '登录保护' },
+              { key: 'auth.login', label: '登录保护', parentKey: 'auth' },
               { key: 'datasource', label: '数据源' },
             ],
           },
@@ -122,7 +123,7 @@ vi.mock('@/layout/componentConfig', () => {
       ? { key: 'border', label: '显示表格边框', control: 'bool', layers: ['page'], default: false }
       : field === 'bodyScroll'
         ? { key: 'bodyScroll', label: '内容区滚动', control: 'bool', layers: ['preset', 'page'], default: true }
-        : { key: field, label: field, control: 'string[]', layers: ['user'] }
+        : { key: field, label: field, control: 'string[]', layers: field === 'defaultCollapsed' ? ['page', 'user'] : ['user'] }
   )
   return {
     getComponentFieldDef: fieldDef,
@@ -232,55 +233,51 @@ function mountBorderDemo(layer: 'page' | 'user') {
   })
 }
 
-function mountConfigPanelDemo() {
-  const setComponentKnob = vi.fn()
+function mountConfigPanelDemo(layer: 'page' | 'user' = 'user', preferences?: SettingsFoldPreferences) {
+  const state = reactive({ collapsed: ['datasource', 'auth.login'] })
+  const setComponentKnob = vi.fn((_slot: string, _field: string, values: string[]) => {
+    state.collapsed = values
+  })
   const wrapper = mount(ComponentAutoSettings as Component, {
     props: {
       pageKey: 'config-panel-demo',
+      layer,
       componentMetaOverrides: {
         configPanel: {
           collapseSections: [
             { key: 'auth', label: '认证与防滥用' },
-            { key: 'auth.login', label: '登录保护' },
+            { key: 'auth.login', label: '登录保护', parentKey: 'auth' },
           ],
         },
       },
       config: {
         componentValueOf: vi.fn((slotId: string, field: string) => (
           slotId === 'configPanel' && field === 'defaultCollapsed'
-            ? ['datasource', 'auth.login']
+            ? state.collapsed
             : []
         )),
         setComponentKnob,
       },
     },
     global: {
+      components: { ElCheckboxGroup, ElCheckbox },
+      provide: preferences ? { [SETTINGS_FOLD_PREFERENCES as symbol]: preferences } : {},
       stubs: {
-        SettingsGroup: {
-          props: ['title'],
-          template: '<section><h3 v-if="title">{{ title }}</h3><slot /></section>',
-        },
+        SettingsGroup: false,
+        ElIcon: true,
+        ElCollapseTransition: { template: '<slot />' },
         SourceTag: true,
         ElButton: { template: '<button><slot /></button>' },
         ElSwitch: true,
         ElEmpty: true,
         ElSelect: { template: '<div><slot /></div>' },
         ElOption: { props: ['label'], template: '<span>{{ label }}</span>' },
-        ElCheckboxGroup: {
-          props: ['modelValue'],
-          emits: ['update:modelValue'],
-          template: `
-            <div class="checkbox-group" :data-model-value="modelValue.join('|')">
-              <button class="emit-collapsed" @click="$emit('update:modelValue', ['auth'])" />
-              <slot />
-            </div>
-          `,
-        },
-        ElCheckbox: { props: ['value'], template: '<label><slot /></label>' },
+        ElCheckboxGroup: false,
+        ElCheckbox: false,
       },
     },
   })
-  return { wrapper, setComponentKnob }
+  return { wrapper, setComponentKnob, state }
 }
 
 function mountChartDemo(withRuntime = false) {
@@ -645,9 +642,93 @@ describe('ComponentAutoSettings', () => {
     expect(wrapper.text()).toContain('认证与防滥用')
     expect(wrapper.text()).toContain('登录保护')
     expect(wrapper.text()).not.toContain('数据源')
-    expect(wrapper.find('.checkbox-group').attributes('data-model-value')).toBe('auth.login')
+    expect(wrapper.findComponent(ElCheckboxGroup).props('modelValue')).toEqual(['auth.login'])
 
-    await wrapper.find('.emit-collapsed').trigger('click')
+    await wrapper.findComponent(ElCheckboxGroup).vm.$emit('update:modelValue', ['auth'])
     expect(setComponentKnob).toHaveBeenCalledWith('configPanel', 'defaultCollapsed', ['datasource', 'auth'])
   })
+
+  it.each(['page', 'user'] as const)('config-panel 在 %s 层按父组显示子项，父子选值独立', async (layer) => {
+    const { wrapper, state } = mountConfigPanelDemo(layer)
+    const branch = wrapper.find('[data-collapse-group="auth"]')
+    const children = branch.find('[role="group"]')
+    expect(children.attributes('aria-label')).toBe('认证与防滥用下级分区')
+    expect(children.text()).toBe('登录保护')
+    const parent = branch.findComponent(ElCheckbox)
+    const child = children.findComponent(ElCheckbox)
+    expect(parent.props('value')).toBe('auth')
+    expect(child.find<HTMLInputElement>('input').element.checked).toBe(true)
+    await parent.find('input').setValue(true)
+    expect(state.collapsed).toEqual(['datasource', 'auth.login', 'auth'])
+    await child.find('input').setValue(false)
+    expect(state.collapsed).toEqual(['datasource', 'auth'])
+    await parent.find('input').setValue(false)
+    expect(state.collapsed).toEqual(['datasource'])
+  })
+
+  it('切换候选范围后保留已选值，缺失父组的候选仍可访问', async () => {
+    const { wrapper, state } = mountConfigPanelDemo()
+    await wrapper.setProps({ componentMetaOverrides: {
+      configPanel: { collapseSections: [{ key: 'datasource', label: '数据源' }] },
+    } })
+    await wrapper.findComponent(ElCheckbox).find('input').setValue(false)
+    expect(state.collapsed).toEqual(['auth.login'])
+    await wrapper.setProps({ componentMetaOverrides: {
+      configPanel: { collapseSections: [{ key: 'auth.login', label: '登录保护', parentKey: 'auth' }] },
+    } })
+    expect(wrapper.find('[data-collapse-group="auth.login"]').exists()).toBe(true)
+    expect(wrapper.find('[data-collapse-group="auth.login"] .sg-head').exists()).toBe(false)
+    expect(wrapper.findComponent(ElCheckbox).find<HTMLInputElement>('input').element.checked).toBe(true)
+  })
+
+  it.each(['page', 'user'] as const)('默认折叠清单在 %s 层整体与父组可折叠，折叠和选值互不影响', async (layer) => {
+    const { wrapper, state, setComponentKnob } = mountConfigPanelDemo(layer)
+    const list = wrapper.get('[data-settings-group-title="默认折叠分区"]')
+    const branch = wrapper.get('[data-collapse-group="auth"]')
+    const header = branch.get('.sg-head')
+    const childInput = branch.get('[role="group"]').get<HTMLInputElement>('input')
+
+    await header.get('.el-checkbox').trigger('click')
+    expect(header.attributes('aria-expanded')).toBe('true')
+    // 键盘操作复选框同样不能冒泡成为分组展开操作。
+    await header.get('input').trigger('keydown', { key: ' ' })
+    expect(header.attributes('aria-expanded')).toBe('true')
+    const selected = [...state.collapsed]
+    setComponentKnob.mockClear()
+
+    await header.trigger('click')
+    expect(header.attributes('aria-expanded')).toBe('false')
+    expect(branch.get('.sg-body').attributes('style')).toContain('display: none')
+    expect(childInput.element.checked).toBe(selected.includes('auth.login'))
+    await list.get('.sg-head').trigger('click')
+    expect(list.get('.sg-body').attributes('style')).toContain('display: none')
+    await list.get('.sg-head').trigger('click')
+    expect(header.attributes('aria-expanded')).toBe('false')
+    await header.trigger('keydown', { key: 'Enter' })
+    expect(header.attributes('aria-expanded')).toBe('true')
+    expect(branch.get('.sg-body').attributes('style')).not.toContain('display: none')
+    expect(state.collapsed).toEqual(selected)
+    expect(setComponentKnob).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('清单与父组通过共享折叠偏好恢复状态，批量收展不写业务默认值', async () => {
+    const open = reactive<Record<string, boolean>>({
+      'component:configPanel:defaultCollapsed:auth': false,
+    })
+    const setOpen = vi.fn((key: string, value: boolean) => { open[key] = value })
+    const { wrapper, setComponentKnob } = mountConfigPanelDemo('user', {
+      enabled: () => true, isOpen: key => open[key], setOpen,
+    })
+    await nextTick()
+    const list = wrapper.get('[data-settings-group-title="默认折叠分区"]')
+    expect(list.get('[data-collapse-group="auth"] .sg-head').attributes('aria-expanded')).toBe('false')
+    await list.get('button[aria-label="默认折叠分区：展开下级分组"]').trigger('click')
+    expect(setOpen).toHaveBeenLastCalledWith('component:configPanel:defaultCollapsed:auth', true)
+    await list.get('.sg-head').trigger('click')
+    expect(setOpen).toHaveBeenLastCalledWith('component:configPanel:defaultCollapsed', false)
+    expect(setComponentKnob).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
 })

@@ -57,7 +57,7 @@
 | `frontend/src/components/ChartOperationGroup.vue` | 无自身 CSS 查询 | 委托 SettingsGroup。 | StockChartWorkspace |
 | `frontend/src/components/ComparePinButton.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | StockAnalysisNameCell、SectorsView |
 | `frontend/src/components/CompareQueueRail.vue` | 无自身 CSS 查询 | 对比队列始终单行内部横向滚动，选中对象与移除动作不隐藏。 | StockAnalysisPanel、SectorsView |
-| `frontend/src/components/ComponentAutoSettings.vue` | 无自身 CSS 查询 | 委托 AppRowActions、SettingsGroup、PageSegmented、PageSettingItem、PageToggleRow、StockChartSettingSection、StockAnalysisDefaultFields、SectorAnalysisDefaultFields、KlineSettingSection、MasterDetailRatioProfileSettings、SourceTag。 | PageSettingsDrawer、LayoutPagesView |
+| `frontend/src/components/ComponentAutoSettings.vue` | 无自身 CSS 查询 | 委托 AppRowActions、SettingsGroup、PageSegmented、PageSettingItem、PageToggleRow、StockChartSettingSection、StockAnalysisDefaultFields、SectorAnalysisDefaultFields、KlineSettingSection、MasterDetailRatioProfileSettings、SourceTag；默认折叠候选清单及有子项的父组委托 SettingsGroup 收展，展开态与选值分离；按元数据父组分行、子分区缩进并在同父组内自然换行，长标签换行，不增加局部滚动；父子选值独立，切换候选范围保留隐藏选值。 | PageSettingsDrawer、LayoutPagesView |
 | `frontend/src/components/EquityChart.vue` | 无自身 CSS 查询 | 默认高420或fill满区，自身resize；图表容器min0。 | BacktestView、TrainingView |
 | `frontend/src/components/GrowthChart.vue` | 无自身 CSS 查询 | 固定200高微图，自身resize；没有信息隐藏。 | TrainingView |
 | `frontend/src/components/HelpHint.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | DataMetricCard、PageSettingItem、PageToggleRow、SettingsGroup、ConfigGroupForm、BacktestView、ConfigView、OverviewView、LayoutComponentsView |
@@ -89,7 +89,7 @@
 | `frontend/src/components/ScoreGradeTag.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | RankedStockResultTable、BacktestView |
 | `frontend/src/components/SectorAnalysisDefaultFields.vue` | 无自身 CSS 查询 | 委托 MarketBenchmarkSelect、PageSettingItem、PageSegmented、PageToggleRow。 | ComponentAutoSettings |
 | `frontend/src/components/SectorCompareChart.vue` | 无自身 CSS 查询 | 委托 AppStateBlock。 | SectorsView |
-| `frontend/src/components/SettingsGroup.vue` | 无自身 CSS 查询 | 手动递归折叠，父级收起只隐藏子树，不重置下级展开状态；操作右侧下级按钮时展开当前组，并只切换直接子组。页面设置抽屉通过共享上下文按稳定 foldKey 记忆内部节点，持久化与重置边界遵循 DESIGN.md“设置抽屉”；不改变几何或断点。 | App、ChartOperationGroup、ComponentAutoSettings、PageSettingSection、PageSettingsDrawer、LayoutSettingsSection |
+| `frontend/src/components/SettingsGroup.vue` | 无自身 CSS 查询 | 标题支持插槽承载独立输入控件，由消费方阻止其事件触发收展；手动递归折叠，父级收起只隐藏子树，不重置下级展开状态；操作右侧下级按钮时展开当前组，并只切换直接子组。页面设置抽屉通过共享上下文按稳定 foldKey 记忆内部节点，持久化与重置边界遵循 DESIGN.md“设置抽屉”；不改变几何或断点。 | App、ChartOperationGroup、ComponentAutoSettings、PageSettingSection、PageSettingsDrawer、LayoutSettingsSection |
 | `frontend/src/components/SideMenu.vue` | 无自身 CSS 查询 | 一级为常驻分区标题，与二级文字左边界一致；当前分区标题和父菜单随路由同步使用中性高对比文字高亮，当前标题右侧圆点使用导航强调色且不显示下划线、图标使用导航激活色，选中叶子保留主色，详情继承所属分区；主入口44px/三级起36px，尺寸、图标和圆角消费共享导航token，高度不足由App侧栏内滚承接。页面路径或授权树变化收起非当前下级组、展开当前链并最小滚动露出叶子，同页仍可手动浏览多个分组；同页查询变化不干预收展或滚动。加载/空授权/失败分别呈现。 可点击菜单接入共享内容微移和纯投影层，普通悬停/焦点共用中性悬停底，当前叶子通过角色变量保留浅主色背景与定位线；常驻标题保持静态，点击区及层级缩进不移动。 | App |
 | `frontend/src/components/SideMenuItem.vue` | 无自身 CSS 查询 | 分区内部展示深度从0开始，三级起每层缩进12px；图标统一18px占位、下级图形16px，末尾箭头固定，长名称省略并交给全局溢出提示；收展及选中不重置页面。 | SideMenu |
 | `frontend/src/components/SourceTag.vue` | 无自身 CSS 查询 | 来源浮层min180/max280、字段网格44+0；受统一浮层边界约束。 | ComponentAutoSettings、LayoutSettingsSection |

@@ -577,12 +577,15 @@ describe('ConfigView system tab', () => {
     const wrapper = await mountView()
     const drawer = wrapper.findComponent({ name: 'PageSettingsDrawer' })
     const overrides = drawer.props('componentMetaOverrides') as {
-      configPanel?: { collapseSections?: { key: string; label: string }[] }
+      configPanel?: { collapseSections?: { key: string; label: string; parentKey?: string }[] }
     }
     const labels = overrides.configPanel?.collapseSections?.map((section) => section.label) ?? []
     expect(labels).toEqual(['认证与防滥用', '登录保护', '注册校验', '邮箱验证码发送'])
     expect(labels).not.toContain('数据源')
     expect(labels).not.toContain('回测成本')
+    expect(overrides.configPanel?.collapseSections).toContainEqual({
+      key: 'auth.login', label: '登录保护', parentKey: 'auth',
+    })
   })
 
   it('还原修改只回退当前页签草稿，不写服务端、不影响其他页签', async () => {

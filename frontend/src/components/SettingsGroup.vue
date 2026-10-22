@@ -96,7 +96,7 @@ const childToggleLabel = computed(() => (
       v-keyboard-activate
     >
       <span v-if="foldable()" class="sg-caret" :class="{ open: openState }" aria-hidden="true">▸</span>
-      <span v-if="title" class="sg-title">{{ title }}</span>
+      <span v-if="title" class="sg-title"><slot name="title">{{ title }}</slot></span>
       <HelpHint v-if="hint" :text="hint" @click.stop />
       <span v-if="badge || hasChildGroups || $slots.actions" class="sg-tail" @click.stop @keydown.stop>
         <span v-if="badge" class="sg-badge">{{ badge }}</span>
@@ -196,6 +196,9 @@ const childToggleLabel = computed(() => (
   font-size: var(--app-font-size-micro);
   color: var(--page-settings-text-muted);
   transition: transform var(--app-motion-collapse) var(--app-motion-ease);
+}
+.sg-title {
+  min-width: 0;
 }
 .sg-caret.open {
   transform: rotate(90deg);

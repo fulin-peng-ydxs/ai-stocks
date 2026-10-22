@@ -27,6 +27,8 @@ export interface ConfigSystemGroupTab {
 export interface ConfigPanelCollapseSection {
   key: string
   label: string
+  /** 配置面板为组/分区两层；省略表示顶层组，子分区明确引用所属组。 */
+  parentKey?: string
 }
 
 export const CONFIG_SYSTEM_GROUP_TABS: ConfigSystemGroupTab[] = [
@@ -155,6 +157,7 @@ export function configPanelCollapseSectionsOf(
     ...configPanelSectionsOf(group.key).map((section) => ({
       key: `${group.key}.${section.key}`,
       label: section.title,
+      parentKey: group.key,
     })),
   ])
 }

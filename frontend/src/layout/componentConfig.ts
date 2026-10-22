@@ -10,6 +10,7 @@
  * 合并优先级：slot.config（代码默认） < page < user，仅允许各字段声明的层级覆盖。
  */
 import type { ComponentKind, PageLayout, SlotSpec } from './schema'
+import type { ConfigPanelCollapseSection } from './configPanel'
 import {
   createDefaultStockChartPreferences,
   normalizeStockChartPreferences,
@@ -81,7 +82,7 @@ export interface ComponentSlotConfigMeta {
   sortFields?: { key: string; label: string }[]
   tabs?: { key: string; label: string }[]
   items?: { key: string; label: string }[]
-  collapseSections?: { key: string; label: string }[]
+  collapseSections?: ConfigPanelCollapseSection[]
   fieldApplicability?: Record<string, ComponentFieldApplicabilityOverride>
 }
 
@@ -326,7 +327,7 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       layers: ['page', 'user'],
       default: [],
       highFrequency: true,
-      help: '控制配置面板的组和分区默认折叠；取值由页面登记的分区 key 决定。',
+      help: '按页面分组层级设置默认折叠。父组与子分区分别选择，互不联动；切换页签保留其他分区的设置。',
       applicability: 'collapseSections',
     },
     {
