@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import StockCodeMultiSelect from '../StockCodeMultiSelect.vue'
@@ -12,7 +12,7 @@ const ElSelectStub = defineComponent({
   inheritAttrs: false,
   props: [
     'modelValue', 'remoteMethod', 'loading', 'noDataText', 'placeholder',
-    'ariaLabel', 'dataTestid',
+    'ariaLabel', 'dataTestid', 'allowCreate',
   ],
   emits: ['update:modelValue'],
   setup(props, { attrs, slots }) {
@@ -40,8 +40,23 @@ function mountSelect(modelValue: string[] = []) {
   })
 }
 
+function paste(wrapper: ReturnType<typeof mountSelect>, text: string) {
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'clipboardData', { value: { getData: () => text } })
+  wrapper.get('.select-stub').element.dispatchEvent(event)
+  expect(event.defaultPrevented).toBe(true)
+}
+
 describe('StockCodeMultiSelect', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => { vi.resetAllMocks() })
+  it('仅指数搜索使用共享指数注册表，不请求股票候选', async () => {
+    const wrapper = mountSelect()
+    await wrapper.setProps({ assetType: 'index' })
+    await wrapper.findComponent(ElSelectStub).props('remoteMethod')('上证')
+    await wrapper.vm.$nextTick()
+    expect(getStockQuality).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('000001.SH 上证指数')
+  })
 
   it('远程搜索展示代码名称并保留已选代码', async () => {
     vi.mocked(getStockQuality).mockResolvedValue({
@@ -59,27 +74,99 @@ describe('StockCodeMultiSelect', () => {
     expect(wrapper.text()).toContain('000001.SZ 平安银行')
   })
 
-  it('选择和批量粘贴统一转大写、去空并稳定去重', async () => {
+  it('搜索文本不能创建选项，只接受已有候选并支持清空', async () => {
     const wrapper = mountSelect(['600000.SH'])
+    await wrapper.setProps({ assetType: 'all' })
+    vi.mocked(getStockQuality).mockResolvedValue({ list: [] } as never)
     const select = wrapper.findComponent(ElSelectStub)
-    select.vm.$emit('update:modelValue', ['600000.sh', ' 000001.sz ', '600000.SH'])
+    await select.props('remoteMethod')('上')
+    expect(select.props('allowCreate')).toBeFalsy()
+    select.vm.$emit('update:modelValue', ['600000.sh', '上', ' 000001.sh ', '999999.SH'])
     await wrapper.vm.$nextTick()
-    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([['600000.SH', '000001.SZ']])
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([['600000.SH', '000001.SH']])
+    select.vm.$emit('update:modelValue', [])
+    expect(wrapper.emitted('change')?.[1]).toEqual([[]])
+  })
 
-    const pasteEvent = new Event('paste', { bubbles: true, cancelable: true })
-    Object.defineProperty(pasteEvent, 'clipboardData', {
-      value: { getData: () => '000001.sz， 300001.SZ\n600000.sh' },
+  it('批量粘贴精确校验、规范大小写、去重并拒绝不存在的代码', async () => {
+    vi.mocked(getStockQuality).mockResolvedValue({
+      list: [{ code: '000001.SZ', name: '平安银行' }, { code: '300001.SZ', name: '特锐德' }],
+    } as never)
+    const wrapper = mountSelect(['600000.SH'])
+    paste(wrapper, '000001.sz， 300001.SZ\n000001.SZ 999999.SH 上')
+    await flushPromises()
+    expect(getStockQuality).toHaveBeenCalledWith({
+      codes: '000001.SZ,300001.SZ,999999.SH', size: 3,
     })
-    const preventDefault = vi.spyOn(pasteEvent, 'preventDefault')
-    wrapper.find('.stock-code-multi-select').element.dispatchEvent(pasteEvent)
+    expect(wrapper.emitted('change')?.[0]).toEqual([
+      ['600000.SH', '000001.SZ', '300001.SZ'],
+    ])
+    expect(wrapper.get('[role="alert"]').text()).toContain('999999.SH、上')
+    expect(wrapper.findComponent(ElSelectStub).props('loading')).toBe(false)
+  })
+
+  it('仅指数粘贴拒绝股票及未知指数，使用注册表而不查询股票接口', async () => {
+    const wrapper = mountSelect()
+    await wrapper.setProps({ assetType: 'index' })
+    paste(wrapper, '000001.sh 000001.SZ 999999.SH')
+    await flushPromises()
+    expect(getStockQuality).not.toHaveBeenCalled()
+    expect(wrapper.emitted('change')?.[0]).toEqual([['000001.SH']])
+    // Element Plus 在更新已选值后会清空搜索，不能顺带抹掉无效粘贴提示。
+    await wrapper.findComponent(ElSelectStub).props('remoteMethod')('')
     await wrapper.vm.$nextTick()
-    expect(preventDefault).toHaveBeenCalled()
-    expect(wrapper.emitted('update:modelValue')?.[1]).toEqual([
-      ['600000.SH', '000001.SZ', '300001.SZ'],
-    ])
-    expect(wrapper.emitted('change')?.[1]).toEqual([
-      ['600000.SH', '000001.SZ', '300001.SZ'],
-    ])
+    expect(wrapper.get('[role="alert"]').text()).toContain('000001.SZ、999999.SH')
+  })
+
+  it('混合粘贴分别核实股票和指数，股票模式拒绝指数', async () => {
+    vi.mocked(getStockQuality).mockResolvedValue({
+      list: [{ code: '000001.SZ', name: '平安银行' }],
+    } as never)
+    const wrapper = mountSelect()
+    await wrapper.setProps({ assetType: 'all' })
+    paste(wrapper, '000001.SH,000001.SZ')
+    await flushPromises()
+    expect(wrapper.emitted('change')?.[0]).toEqual([['000001.SH', '000001.SZ']])
+    await wrapper.setProps({ assetType: 'stock' })
+    paste(wrapper, '000001.SH,000001.SZ')
+    await flushPromises()
+    expect(wrapper.emitted('change')?.[1]).toEqual([['000001.SZ']])
+    expect(wrapper.get('[role="alert"]').text()).toContain('000001.SH')
+  })
+
+  it('校验失败不加入粘贴项且保留已选标的', async () => {
+    vi.mocked(getStockQuality).mockRejectedValue(new Error('network down'))
+    const wrapper = mountSelect(['600000.SH'])
+    paste(wrapper, '000001.SZ,300001.SZ')
+    await flushPromises()
+    expect(wrapper.emitted('change')).toBeUndefined()
+    expect(wrapper.text()).toContain('600000.SH')
+    expect(wrapper.get('[role="alert"]').text()).toBe('标的校验失败，请重新粘贴')
+    expect(wrapper.findComponent(ElSelectStub).props('loading')).toBe(false)
+  })
+
+  it.each(['clear', 'assetType', 'unmount', 'newPaste'])('旧粘贴响应在 %s 后失效', async (action) => {
+    let resolve!: (value: never) => void
+    vi.mocked(getStockQuality).mockReturnValueOnce(new Promise(r => { resolve = r }))
+    const wrapper = mountSelect(['600000.SH'])
+    paste(wrapper, '000001.SZ,300001.SZ')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findComponent(ElSelectStub).props('loading')).toBe(true)
+    if (action === 'clear') await wrapper.setProps({ modelValue: [] })
+    if (action === 'assetType') await wrapper.setProps({ assetType: 'index' })
+    if (action === 'unmount') wrapper.unmount()
+    if (action === 'newPaste') paste(wrapper, '无效,输入')
+    resolve({ list: [{ code: '000001.SZ', name: '平安银行' }] } as never)
+    await flushPromises()
+    expect(wrapper.emitted('change')).toBeUndefined()
+  })
+
+  it('混合搜索的股票接口失败仍保留本地指数候选', async () => {
+    vi.mocked(getStockQuality).mockRejectedValue(new Error('network down'))
+    const wrapper = mountSelect()
+    await wrapper.setProps({ assetType: 'all' })
+    await wrapper.findComponent(ElSelectStub).props('remoteMethod')('上')
+    expect(wrapper.text()).toContain('000001.SH 上证指数')
   })
 
   it('搜索失败保留控件并显示明确候选错误', async () => {

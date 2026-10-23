@@ -395,6 +395,19 @@ def search_boards(keyword: str | None = None, board_type: str | None = None,
 
 
 # ── 质量修复（FR-DM-4）─────────────────────────────────────
+def _quality_asset_clause(asset_type, alias="q"):
+    """列表、汇总、批量恢复和忽略共用对象过滤，防止处置筛选外问题。"""
+    from backend.services.market_benchmark import configured_benchmark_codes
+
+    if asset_type == "index":
+        return f"{alias}.code IN (SELECT unnest(?::VARCHAR[]))", [configured_benchmark_codes()]
+    if asset_type == "stock":
+        return f"{alias}.code IN (SELECT code FROM stock_basic)", []
+    if asset_type not in (None, "all", ""):
+        raise HTTPException(status_code=400, detail="未知质量问题对象类型")
+    return "1=1", []
+
+
 def _quality_keyword_clause(c, keyword: str, alias: str = "q") -> tuple[str, list[str]]:
     """质量台账对象搜索单一口径：股票、市场指数、板块及未匹配资金流名称。"""
     from backend.services.market_benchmark import BENCHMARK_NAMES
@@ -431,6 +444,7 @@ def _quality_keyword_clause(c, keyword: str, alias: str = "q") -> tuple[str, lis
 @router.get("/quality", response_model=ApiResponse, dependencies=_QUALITY_VIEW)
 def quality(issue_type: str | None = None, severity: str | None = None,
             status: str | None = None, code: str | None = None,
+            asset_type: Literal["all", "stock", "index"] = "all",
             page: int = 1, size: int = 50,
             sort_by: str = "time", sort_order: str = "desc") -> ApiResponse:
     """质检问题列表（含 severity/status，服务端分页/筛选）。中文化由前端映射。
@@ -446,6 +460,9 @@ def quality(issue_type: str | None = None, severity: str | None = None,
     # 基础筛选（不含 issue_type）：summary 按此分组统计各类型，list 在此基础上再叠加 issue_type。
     # 这样顶部分组标签 = 当前筛选(状态/严重度/代码)下的各类型分布，与列表口径一致、可对得上。
     base_conds, base_params = ["1=1"], []
+    clause, values = _quality_asset_clause(asset_type)
+    base_conds.append(clause)
+    base_params += values
     for col, val in (("severity", severity), ("status", status)):
         vals = _multi(val)
         if vals:
@@ -500,7 +517,8 @@ def quality(issue_type: str | None = None, severity: str | None = None,
         it = r.get("issue_type")
         detail = r.get("detail")
         if nm is None or pd.isna(nm) or not str(nm).strip():
-            if it in ("market_index_gap", "market_index_gap_daily", "market_index_invalid") \
+            if (it in ("market_index_gap", "market_index_gap_daily", "market_index_invalid")
+                    or str(it).startswith("intraday_")) \
                     and r.get("code"):
                 nm = BENCHMARK_NAMES.get(str(r["code"]), str(r["code"]))
             elif it in ("board_member_incomplete", "board_index_gap", "board_index_gap_daily",
@@ -573,6 +591,9 @@ def _quality_open_issue_ids(c, body: dict) -> tuple[list[int], list[str]]:
 
     conds = ["status='open'"]
     params: list = []
+    clause, values = _quality_asset_clause(body.get("asset_type"), alias="data_quality_issue")
+    conds.append(clause)
+    params += values
     types = _multi(body.get("issue_type"))
     if types:
         conds.append(f"issue_type IN ({','.join('?' * len(types))})")
@@ -595,7 +616,8 @@ def _quality_open_issue_ids(c, body: dict) -> tuple[list[int], list[str]]:
 @router.post("/quality/ignore-batch", response_model=ApiResponse, dependencies=_QUALITY_FIX)
 def quality_ignore_batch(body: dict) -> ApiResponse:
     """按当前筛选批量标记正常；只处理 open，忽略范围与单条操作保持一致。"""
-    if not any((body.get("issue_type"), body.get("severity"), body.get("code"))):
+    if not any((body.get("issue_type"), body.get("severity"), body.get("code"),
+                body.get("asset_type") in ("stock", "index"))):
         return err(400, "请先选择问题类型、严重度或输入代码/名称")
     scope = str(body.get("scope") or "occurrence")
     if scope not in ("occurrence", "object"):

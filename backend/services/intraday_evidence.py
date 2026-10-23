@@ -11,7 +11,8 @@ import pandas as pd
 from backend.common.exceptions import DataSourceError
 from backend.datasource.base import SINA_INTRADAY_REQUEST_LIMIT
 from backend.services import eod_dates
-from backend.services.intraday_contract import INTRADAY_PROVIDERS, PROVIDER_LABELS, REQUIRED_TIMES
+from backend.services.intraday_contract import PROVIDER_LABELS, required_times
+from backend.services.intraday_subjects import providers_for
 
 SOURCE_POLICY_VERSION = 2
 SOURCE_REQUEST_LIMIT = SINA_INTRADAY_REQUEST_LIMIT
@@ -40,9 +41,10 @@ def window_evidence(window: dict) -> dict:
     by_day = {}
     for row in rows:
         by_day.setdefault(row[0][:10], set()).add(row[0][11:16])
+    required = required_times(window.get("code"))
     return {
-        "missing_by_day": {day: sorted(REQUIRED_TIMES - times) for day, times in by_day.items()},
-        "required_counts": {day: len(REQUIRED_TIMES & times) for day, times in by_day.items()},
+        "missing_by_day": {day: sorted(required - times) for day, times in by_day.items()},
+        "required_counts": {day: len(required & times) for day, times in by_day.items()},
         "policy_version": SOURCE_POLICY_VERSION,
         "observed_at": window.get("fetched_at"),
         "first": window.get("raw_first") or (min(r[0] for r in rows) if rows else None),
@@ -129,8 +131,9 @@ class IntradayEvidence:
         """只有成功响应范围证据能拒绝取源；固定八日、空响应、异常均不能证明永久不可得。"""
         providers, observations, blocked, decisions = [], [], [], []
         unknown = False
-        required = missing or sorted(REQUIRED_TIMES)
-        for provider in INTRADAY_PROVIDERS if allow_fallback else ("sina",):
+        expected = required_times(code)
+        required = missing or sorted(expected)
+        for provider in providers_for(code, allow_fallback):
             if provider == "eastmoney" and day not in self.east_dates:
                 span = (f"{min(self.east_dates)}～{max(self.east_dates)}"
                         if self.east_dates else "交易日历未就绪")
@@ -212,8 +215,8 @@ class IntradayEvidence:
                 and missing
                 and (
                     set(required).issubset(evidence["missing_by_day"][day])
-                    or evidence.get("required_counts", {}).get(day, len(REQUIRED_TIMES))
-                    <= len(REQUIRED_TIMES) - len(missing)
+                    or evidence.get("required_counts", {}).get(day, len(expected))
+                    <= len(expected) - len(missing)
                 )
             ):
                 # 历史已收盘日：未提供待补分钟，或整日覆盖不优于已有归档，自动重复无收益。

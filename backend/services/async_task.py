@@ -58,7 +58,7 @@ TASK_CAPABILITIES: dict[str, dict] = {
     "intraday_ingest": {
         "can_cancel": True, "can_resume": True, "cancel_mode": "checkpoint",
         "resume_granularity": "code",
-        "cancel_message": "当前分钟源请求结束并提交本股票后停止",
+        "cancel_message": "当前分钟源请求结束并提交本标的后停止",
     },
     "stock_special_trading_day": {
         "can_cancel": False, "can_resume": False, "cancel_mode": "none",
@@ -1854,7 +1854,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
         archive = IntradayArchiveService(c)
         groups = ctx._intraday_groups
         # 只加载覆盖事实，不持有全市场分钟；同股选中日期共用来源请求。
-        ctx.progress(0.1, f"分时恢复：正在核对 {len(groups)} 只股票的本地归档与待修日期")
+        ctx.progress(0.1, f"分时恢复：正在核对 {len(groups)} 个标的的本地归档与待修日期")
         facts = archive._coverage_facts(list(groups))
         ctx._intraday_batch_before = {
             code: frame for code, frame in facts.groupby("code", sort=False)
@@ -1912,7 +1912,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
                                      intraday_failed=dict(ctx._intraday_batch_failed))
         if pending_dates:
             dates = set().union(*pending_dates.values())
-            report_progress(0, f"分时并发取源：剩余 {len(pending_dates)} 只股票，逐股落库复检")
+            report_progress(0, f"分时并发取源：剩余 {len(pending_dates)} 个标的，逐标的落库复检")
             archive.collect(
                 {"mode": "refetch", "codes": sorted(pending_dates),
                  "date_start": min(dates), "date_end": max(dates)},

@@ -24,4 +24,11 @@ describe('分时手动和调度参数', () => {
     expect(ISSUE_TYPES_ACTIVE).toContain('intraday_gap')
     expect(ISSUE_LAYER.intraday_partial).toBe('分时')
   })
+  it('对象选择往返兼容旧任务，并透传到采集和调度', () => {
+    expect(createIntradayIngestForm().asset_type).toBe('all')
+    expect(buildIntradayIngestParams(createIntradayIngestForm({ asset_type: 'index' })).params)
+      .toEqual({ mode: 'update', asset_type: 'index' })
+    expect(createIntradayIngestForm({ asset_type: 'stock', codes: ['600000.SH'] }))
+      .toMatchObject({ asset_type: 'stock', scope: 'selected' })
+  })
 })

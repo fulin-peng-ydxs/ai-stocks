@@ -14,6 +14,12 @@ def fetch_ths_minutes(code: str, year: int, *, timeout: float) -> pd.DataFrame:
     code6 = code.split(".")[0]
     if not re.fullmatch(r"\d{6}", code6):
         raise ValueError("同花顺分钟请求须使用六位股票代码")
+    from backend.services.intraday_subjects import THS_INDEX_SYMBOLS, is_index
+
+    if is_index(code):
+        if code not in THS_INDEX_SYMBOLS:
+            raise ValueError(f"同花顺尚未登记该指数的分钟标识：{code}")
+        code6 = THS_INDEX_SYMBOLS[code]
     callback = f"quotebridge_v6_line_hs_{code6}_60_{year}"
     response = requests.get(
         f"https://d.10jqka.com.cn/v6/line/hs_{code6}/60/{year}.js",

@@ -212,4 +212,25 @@ describe('AppFilterSelect', () => {
 
     expect(wrapper.get('.el-select').attributes('data-aria-label')).toBe('按事件类型筛选')
   })
+
+  it('多选复用基础组件的去重与候选限制，change 只发出一次', async () => {
+    const wrapper = mountSelect([])
+    const control = wrapper.findComponent(ElSelectStub)
+    control.vm.$emit('update:modelValue', ['a', 'a', 'unknown'])
+    control.vm.$emit('change', ['a', 'a', 'unknown'])
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['a']]])
+    expect(wrapper.emitted('change')).toEqual([[['a']]])
+  })
+
+  it.each([false, true])('多选粘贴统一校验并按 allowCreate=%s 处理未知值', async allowCreate => {
+    const wrapper = mountSelect(['a'], { allowCreate })
+    const event = new Event('paste', { cancelable: true, bubbles: true })
+    Object.defineProperty(event, 'clipboardData', { value: { getData: () => 'b,b,自定义' } })
+    wrapper.get('.el-select').element.dispatchEvent(event)
+    await flushPromises()
+    expect(wrapper.emitted('change')).toEqual([[allowCreate ? ['a', 'b', '自定义'] : ['a', 'b']]])
+    expect(wrapper.find('[role="alert"]').exists()).toBe(!allowCreate)
+  })
+
 })

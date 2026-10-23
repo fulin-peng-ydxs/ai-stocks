@@ -41,7 +41,7 @@ describe('概览信息层级', () => {
     expect(metric.info.kind).toBe('details')
     if (metric.info.kind !== 'details') throw new Error('分时应提供事实明细')
     expect(metric.info.rows).toContainEqual({ label: '目标日完整 / 应采', value: '1 / 2 只' })
-    expect(metric.info.rows).toContainEqual({ label: '累计缺失', value: '0 个股票交易日' })
+    expect(metric.info.rows).toContainEqual({ label: '累计缺失', value: '0 个标的交易日' })
     expect(metric.info.rows).toContainEqual({ label: '监控起点', value: '2026-10-16' })
     expect(metric.action).toBe('stocks')
     intraday.missing_days = 4
@@ -61,5 +61,13 @@ describe('概览信息层级', () => {
     const metrics = overviewMetrics(fixture({ quality: { score: 100, open: 7, by_severity: { high: 0, mid: 6, low: 1 }, by_layer: [] } }))
     expect(metrics.find((item) => item.key === 'quality')).toMatchObject({ summary: '中危 6 项', tone: 'warning' })
     expect(metrics.find((item) => item.key === 'score')).toMatchObject({ value: '100', tone: 'success' })
+  })
+  it('只有指数时完整率与处理入口仍有效，不跳转空的逐股表', () => {
+    const intraday = { stocks: 0, indices: 6, monitoring_start: '2026-10-08', target_end: '2026-10-22',
+      archive_end: '2026-10-22', complete_days: 66, partial_days: 0, missing_days: 0,
+      latest_expected_stocks: 0, latest_complete_stocks: 0,
+      latest_expected_indices: 6, latest_complete_indices: 6 }
+    expect(overviewMetrics(fixture({ intraday })).find(m => m.key === 'intraday'))
+      .toMatchObject({ summary: '目标日完整 100%', action: 'intraday-quality', actionLabel: '查看分时问题' })
   })
 })

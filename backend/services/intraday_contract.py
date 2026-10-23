@@ -7,6 +7,7 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
+from backend.services.intraday_subjects import is_index
 from backend.services.stock_codes import normalize_stock_codes
 
 EXPECTED_TIMES = frozenset(
@@ -22,14 +23,23 @@ INTRADAY_PROVIDERS = ("sina", "ths", "eastmoney")
 PROVIDER_LABELS = {"sina": "新浪", "eastmoney": "东财", "ths": "同花顺"}
 
 
+def required_times(code: str | None = None) -> frozenset[str]:
+    """指数连续计算点位，收盘集合竞价期间也须覆盖 14:58、14:59。"""
+    return EXPECTED_TIMES if is_index(code) else REQUIRED_TIMES
+
+
 def normalize_intraday_params(params: dict | None) -> dict:
     raw = dict(params or {})
-    if set(raw) - {"mode", "codes", "date_start", "date_end"}:
+    if set(raw) - {"mode", "codes", "date_start", "date_end", "asset_type"}:
         raise ValueError("分时采集包含不支持的参数")
     mode = raw.get("mode", "update")
     if mode not in ("update", "refetch"):
         raise ValueError("分时采集模式须为 update 或 refetch")
     out = {"mode": mode}
+    if "asset_type" in raw:
+        if raw["asset_type"] not in ("all", "stock", "index"):
+            raise ValueError("分时采集对象须为个股＋指数、仅个股或仅指数")
+        out["asset_type"] = raw["asset_type"]
     if "codes" in raw:
         if not isinstance(raw["codes"], (list, tuple)) or not raw["codes"]:
             raise ValueError("指定股票时 codes 必须是非空数组")
@@ -87,10 +97,11 @@ def sanitize_minutes(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     return out.drop_duplicates("timestamp", keep="last").reset_index(drop=True), diagnostics
 
 
-def complete_times(times) -> bool:
-    return REQUIRED_TIMES.issubset(set(times))
+def complete_times(times, code=None) -> bool:
+    return required_times(code).issubset(set(times))
 
 
-def candidate_rank(rows: list, provider: str) -> tuple:
+def candidate_rank(rows: list, provider: str, code=None) -> tuple:
     times = {str(row[0])[11:16] for row in rows}
-    return (complete_times(times), len(times & REQUIRED_TIMES), len(times), provider == "sina")
+    return (complete_times(times, code), len(times & required_times(code)), len(times),
+            provider == ("ths" if is_index(code) else "sina"))

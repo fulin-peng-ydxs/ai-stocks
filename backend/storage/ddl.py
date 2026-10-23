@@ -263,7 +263,7 @@ DDL_SEQUENCES = [
 # 分钟事实与逐日覆盖仅由互斥异步任务写入；时间列分别注明北京时间与 UTC。
 DDL_STOCK_INTRADAY_BAR = """
 CREATE TABLE IF NOT EXISTS stock_intraday_bar (
-    code VARCHAR NOT NULL,             -- 全市场股票代码
+    code VARCHAR NOT NULL,             -- 全市场个股或指数代码（历史表名兼容保留）
     trade_date DATE NOT NULL,          -- 北京时间交易日
     timestamp TIMESTAMP NOT NULL,     -- 北京时间分钟
     open DOUBLE,                      -- 源端开盘占位为 NULL
@@ -279,7 +279,7 @@ CREATE TABLE IF NOT EXISTS stock_intraday_bar (
 """
 DDL_STOCK_INTRADAY_COVERAGE = """
 CREATE TABLE IF NOT EXISTS stock_intraday_coverage (
-    code VARCHAR NOT NULL,            -- 监控股票
+    code VARCHAR NOT NULL,            -- 监控个股或指数
     trade_date DATE NOT NULL,         -- 预期应有分时的交易日
     point_count INTEGER DEFAULT 0,   -- 实际有效分钟点数
     status VARCHAR DEFAULT 'missing',-- ready / partial / missing
@@ -297,7 +297,7 @@ CREATE TABLE IF NOT EXISTS stock_intraday_coverage (
 # 来源观察与行情事实分开：失败尝试不覆盖最后成功响应证据。
 DDL_STOCK_INTRADAY_SOURCE_STATE = """
 CREATE TABLE IF NOT EXISTS stock_intraday_source_state (
-    code VARCHAR NOT NULL,          -- 监控股票
+    code VARCHAR NOT NULL,          -- 监控个股或指数
     source VARCHAR NOT NULL,        -- sina / eastmoney / ths
     checked_at TIMESTAMP NOT NULL,  -- 最近真实请求的 UTC 时间
     outcome VARCHAR NOT NULL,       -- ok / empty / error
@@ -310,8 +310,8 @@ CREATE TABLE IF NOT EXISTS stock_intraday_source_state (
 
 DDL_STOCK_INTRADAY_MONITOR = """
 CREATE TABLE IF NOT EXISTS stock_intraday_monitor (
-    code VARCHAR PRIMARY KEY,         -- 全市场股票代码
-    monitoring_start DATE NOT NULL,    -- 首次接入可采集窗口起点，后续不滚动
+    code VARCHAR PRIMARY KEY,         -- 全市场个股或指数代码
+    monitoring_start DATE NOT NULL,    -- 全局起点，成功补采仅自动前移、丢失不后移
     created_at TIMESTAMP NOT NULL DEFAULT current_timestamp -- UTC 建立时间
 );
 """
@@ -1269,6 +1269,10 @@ _MIGRATIONS: list[str] = [
     "INSERT INTO stock_intraday_monitor(code,monitoring_start) "
     "SELECT code,min(trade_date) FROM stock_intraday_coverage GROUP BY code "
     "ON CONFLICT DO NOTHING",
+    # 已有归档统一为最早真实分钟/历史边界；只前移，不按当前来源窗口改写。
+    "UPDATE stock_intraday_monitor SET monitoring_start=least(monitoring_start,"
+    "(SELECT min(d) FROM (SELECT min(trade_date) d FROM stock_intraday_bar "
+    "UNION ALL SELECT min(monitoring_start) FROM stock_intraday_monitor)))",
     # 已登记分钟维度只追加新事实表，不覆盖标题、状态或其他人工维护属性。
     "UPDATE data_dimension_registry SET tables=CAST(to_json(list_append("
     "json_extract_string(tables,'$[*]'),'stock_intraday_monitor')) AS VARCHAR) "

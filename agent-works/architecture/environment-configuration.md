@@ -180,7 +180,7 @@ PostgreSQL `app_config` 是当前系统设置覆盖层的权威表：
 | 配置 | 统一消费口径 | 生效边界 |
 |---|---|---|
 | `datasource.update_concurrency` | 单任务工作单元默认上限；任务显式并发参数优先；分时按股票并发取源，归档、来源证据和 checkpoint 由主线程收口 | 任务开始确定；BaoStock 共享会话及同花顺板块会话保持串行 |
-| `datasource.rate_limit_per_sec` | 实际来源的请求起始频率上限；Redis TIME + 原子脚本跨线程/进程合计，分页和重试计入；新浪行情/分时共享 `sina`，东财股本/估值/分时共享 `eastmoney`，上交所使用 `sse`，股票列表SDK内部的深交所和北交所请求分别使用 `szse` / `bse`（不改变入库股票池），同花顺股票分钟和板块分别保护 | 下一次网络尝试；等待支持取消，不持有覆盖整个HTTP响应的排他锁；Redis失败不绕过保护 |
+| `datasource.rate_limit_per_sec` | 实际来源的请求起始频率上限；Redis TIME + 原子脚本跨线程/进程合计，分页和重试计入；新浪行情/分时共享 `sina`，东财股本/估值/分时共享 `eastmoney`，上交所使用 `sse`，股票列表SDK内部的深交所和北交所请求分别使用 `szse` / `bse`（不改变入库股票池），同花顺个股/指数分钟和板块分别保护 | 下一次网络尝试；等待支持取消，不持有覆盖整个HTTP响应的排他锁；Redis失败不绕过保护 |
 | `datasource.socket_timeout_sec` | 每次网络尝试的连接和读取超时；不是总任务时限；requests唯一发送包装覆盖AKShare内部HTTP及直连接口 | 下一次请求；在途请求保持已有值 |
 | `datasource.max_retries` | 最多尝试次数，包含首次；嵌套重试装饰器共用外层预算，避免次数相乘；多接口业务操作不等于一个HTTP请求 | 开始一次请求操作时读取 |
 | `datasource.retry_backoff_sec` | 指数退避起点，如2秒对应2、4、8……秒；限流与退避均可取消 | 新尝试序列读取；同一序列沿用快照 |

@@ -365,6 +365,7 @@ function metricAction(action?: OverviewAction) {
   if (action === 'stocks') activeWorkspaceTab.value = 'stocks'
   else if (action === 'gaps') gotoQuality(undefined, 'history_data_gap,stale')
   else if (action === 'intraday-ingest') router.push({ path: '/data/ingest', query: { task_type: 'intraday_ingest' } })
+  else if (action === 'intraday-quality') gotoQuality(undefined, 'intraday_gap,intraday_partial,intraday_invalid')
   else if (action === 'st-refresh') gotoStRefresh()
   else if (action === 'board') activeWorkspaceTab.value = 'board'
   else if (action === 'quality') gotoQuality()

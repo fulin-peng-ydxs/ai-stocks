@@ -1197,9 +1197,9 @@ class DataVerifier:
         self._cur_group = "分时归档"
         invalid = archive.invalid_facts()
         self._check("分钟结构与价格量额", invalid.empty,
-                    f"异常股票交易日 {len(invalid)} 项",
+                    f"异常标的交易日 {len(invalid)} 项",
                     help_text="在分时数据质量台账中定位并重采；源窗口外保留待处理。",
-                    evidence=[self._frame_evidence("异常股票交易日", invalid.head(20), len(invalid))])
+                    evidence=[self._frame_evidence("异常标的交易日", invalid.head(20), len(invalid))])
         rows = archive.issues()
         counts = {kind: sum(r["issue_type"] == kind for r in rows)
                   for kind in ("intraday_gap", "intraday_partial", "intraday_invalid")}
@@ -1209,7 +1209,7 @@ class DataVerifier:
                 for kind, count in counts.items()
             )
             self._warn("分时监控范围覆盖", summary,
-                       help_text="质量范围从独立固定的首次可采集窗口起算，含没有逐日覆盖记录的历史缺口，不要求此前十年分钟历史；在质量台账中处置。")
+                       help_text="个股与指数从全局最早归档日统一检查；成功补采自动前移，丢失不后移，含没有覆盖记录的整日缺口；在质量台账中处置。")
         else:
             self._check("分时监控范围覆盖", True, "监控范围暂无分时质量问题")
 

@@ -16,7 +16,7 @@ export const SEARCH_GROUPS = {
   stocks: group('stocks', 'filter', '个股搜索', [['boards', '上市板块'], ['status', '股票状态'], ['membership', '所属行业 / 概念'], ['keyword', '代码 / 名称']], ['boards', 'keyword']),
   users: group('user-manage', 'head', '用户搜索', [['tenant', '租户'], ['role', '角色'], ['status', '状态'], ['keyword', '账号 / 邮箱']], ['status', 'keyword']),
   audit: group('audit-log', 'filters', '审计搜索', [['date', '时间范围'], ['event', '事件类型'], ['result', '结果'], ['status', '状态'], ['tenant', '租户'], ['resource', '资源码'], ['actor', '处理人'], ['target', '目标对象']], ['date', 'actor']),
-  quality: group('data-quality', 'head', '质检搜索', [['status', '状态'], ['severity', '严重度'], ['type', '问题类型'], ['keyword', '股票 / 板块']], ['status', 'keyword']),
+  quality: group('data-quality', 'head', '质检搜索', [['status', '状态'], ['severity', '严重度'], ['type', '问题类型'], ['keyword', '个股 / 指数 / 板块']], ['status', 'keyword']),
   indicators: group('config-tech', 'techFilters', '技术指标搜索', [['layer', '业务层级'], ['source', '来源'], ['dtype', '输出类型'], ['status', '状态'], ['presets', '展开快捷预设'], ['keyword', '名称 / 标识']], ['layer', 'keyword']),
   ladder: group('limit-ladder', 'head', '连板天梯搜索', [['boards', '上市板块'], ['ignoreSt', '忽略 ST'], ['oneWord', '仅一字板'], ['keyword', '代码 / 名称']], ['boards', 'keyword']),
   history: group('trade-discipline', 'historyFilters', '履约历史搜索', [['date', '交易日期范围'], ['rule', '规则'], ['assessment', '结果'], ['operation', '操作状态'], ['amended', '修订状态'], ['stock', '股票'], ['reason', '违规原因']], ['date', 'stock'], 'workspaceTabs'),

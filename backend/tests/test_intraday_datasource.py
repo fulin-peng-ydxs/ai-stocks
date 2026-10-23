@@ -30,6 +30,29 @@ def _source() -> AKShareSource:
     return object.__new__(AKShareSource)
 
 
+def test_index_symbols_preserve_exchange_and_ths_callback(monkeypatch):
+    calls = []
+
+    def get(url, *, params=None, timeout, headers=None):
+        calls.append((url, params))
+        if '10jqka' in url:
+            return SimpleNamespace(
+                raise_for_status=lambda: None,
+                text='quotebridge_v6_line_hs_1A0001_60_2026('
+                     '{"data":"202610081500,3800,3801,3799,3800,10000,100000"});',
+            )
+        return _Response([])
+
+    monkeypatch.setattr('backend.datasource.akshare_source.requests.get', get)
+    _source().get_intraday_1m('000001.SH', 'sina')
+    assert calls[-1][1]['symbol'] == 'sh000001'
+    _source().get_intraday_1m('000001.SZ', 'sina')
+    assert calls[-1][1]['symbol'] == 'sz000001'
+    frame = _source().get_intraday_1m('000001.SH', 'ths', request_year=2026)
+    assert '/hs_1A0001/60/2026.js' in calls[-1][0]
+    assert frame.iloc[0].volume == 100
+
+
 def test_sina_intraday_uses_unadjusted_one_minute_window_and_normalizes_fields(monkeypatch) -> None:
     calls: list[tuple[str, dict, float]] = []
 

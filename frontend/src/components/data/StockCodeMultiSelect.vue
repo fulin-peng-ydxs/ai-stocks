@@ -1,133 +1,77 @@
 <script setup lang="ts">
-import AppSelect from '@/components/AppSelect.vue'
-import { ref, watch } from 'vue'
+import { computed } from 'vue'
+import AppMultiSelect, { type AppMultiSelectOption } from '@/components/AppMultiSelect.vue'
 import { getStockQuality } from '@/api/data'
-import { getErrorMessage } from '@/utils/error'
+import { isMarketBenchmarkCode, MARKET_BENCHMARKS } from '@/utils/marketBenchmarks'
 
 const props = withDefaults(defineProps<{
   modelValue: string[]
   testId?: string
   placeholder?: string
   ariaLabel?: string
+  assetType?: 'all' | 'stock' | 'index'
 }>(), {
   testId: undefined,
   placeholder: '输入代码或名称搜索',
   ariaLabel: '股票代码多选',
+  assetType: 'stock',
 })
-
 const emit = defineEmits<{
   'update:modelValue': [value: string[]]
   change: [value: string[]]
 }>()
-
-const options = ref<{ code: string; label: string }[]>([])
-const loading = ref(false)
-const error = ref('')
-let searchSequence = 0
-
-function normalizeCodes(values: string[]): string[] {
-  return Array.from(new Set(values.map((value) => value.trim().toUpperCase()).filter(Boolean)))
+const indexOptions = computed<AppMultiSelectOption[]>(() => props.assetType === 'stock' ? []
+  : MARKET_BENCHMARKS.map(item => ({ value: item.value, label: `${item.value} ${item.label}` })))
+const codeSeparators = /[,，\s]+/
+function normalizeCode(value: string): string { return value.trim().toUpperCase() }
+async function searchStocks(keyword: string): Promise<AppMultiSelectOption[]> {
+  if (props.assetType === 'index') return []
+  const result = await getStockQuality({ keyword, size: 30 })
+  return result.list.map(item => ({ value: item.code, label: `${item.code} ${item.name}` }))
 }
-
-function emitValue(values: string[]) {
-  const normalized = normalizeCodes(values)
-  emit('update:modelValue', normalized)
-  emit('change', normalized)
+/** 领域层仅负责存在性和类型判定；粘贴、去重、异步状态与错误展示由基础组件持有。 */
+async function resolveCodes(codes: string[]): Promise<AppMultiSelectOption[]> {
+  const indices = indexOptions.value.filter(item => codes.includes(item.value))
+  const stockCodes: string[] = props.assetType === 'index' ? []
+    : codes.filter(code => /^\d{6}\.(SH|SZ)$/.test(code) && !isMarketBenchmarkCode(code))
+  if (!stockCodes.length) return indices
+  const result = await getStockQuality({ codes: stockCodes.join(','), size: stockCodes.length })
+  return [...indices, ...result.list.filter(item => stockCodes.includes(item.code))
+    .map(item => ({ value: item.code, label: `${item.code} ${item.name}` }))]
 }
-
-function mergeWithSelected(items: Array<{ code: string; label: string }>) {
-  const selected = new Set(normalizeCodes(props.modelValue))
-  const merged = new Map<string, { code: string; label: string }>()
-  for (const item of options.value) {
-    if (selected.has(item.code)) merged.set(item.code, item)
-  }
-  for (const code of selected) {
-    if (!merged.has(code)) merged.set(code, { code, label: code })
-  }
-  for (const item of items) merged.set(item.code, item)
-  options.value = Array.from(merged.values())
+function rejectedCodes(codes: string[]): string {
+  return `未加入不存在或不适用于当前类型的标的：${codes.slice(0, 5).join('、')}${codes.length > 5 ? '等' : ''}`
 }
-
-async function search(keyword: string) {
-  const query = keyword.trim()
-  const sequence = ++searchSequence
-  if (!query) {
-    options.value = []
-    error.value = ''
-    loading.value = false
-    return
-  }
-  loading.value = true
-  error.value = ''
-  try {
-    const result = await getStockQuality({ keyword: query, size: 30 })
-    if (sequence !== searchSequence) return
-    mergeWithSelected(result.list.map((item) => ({
-      code: item.code,
-      label: `${item.code} ${item.name}`,
-    })))
-  } catch (reason) {
-    if (sequence !== searchSequence) return
-    mergeWithSelected([])
-    error.value = getErrorMessage(reason, '股票候选加载失败')
-  } finally {
-    if (sequence === searchSequence) loading.value = false
-  }
-}
-
-function handlePaste(event: ClipboardEvent) {
-  const text = event.clipboardData?.getData('text') ?? ''
-  if (!/[,，\s]/.test(text.trim())) return
-  event.preventDefault()
-  emitValue([...props.modelValue, ...text.split(/[,，\s]+/)])
-}
-
-watch(
-  () => props.modelValue,
-  (codes) => {
-    for (const code of normalizeCodes(codes)) {
-      if (!options.value.some((item) => item.code === code)) {
-        options.value.push({ code, label: code })
-      }
-    }
-  },
-  { immediate: true },
-)
 </script>
 
 <template>
-  <div class="stock-code-multi-select" @paste="handlePaste">
-    <AppSelect
+  <div class="stock-code-multi-select">
+    <AppMultiSelect
       :model-value="modelValue"
-      multiple
-      filterable
-      remote
+      :options="indexOptions"
+      :load-options="searchStocks"
+      :resolve-values="resolveCodes"
+      :normalize-value="normalizeCode"
+      :paste-separator="codeSeparators"
+      :context-key="assetType"
+      :rejected-message="rejectedCodes"
+      load-error-message="股票候选加载失败"
+      validation-error-message="标的校验失败，请重新粘贴"
       clearable
       collapse-tags
-      allow-create
       default-first-option
-      :remote-method="search"
-      :loading="loading"
       :reserve-keyword="false"
-      :no-data-text="error || '无匹配股票'"
+      :no-data-text="assetType === 'stock' ? '无匹配股票' : '无匹配个股或指数'"
       :placeholder="placeholder"
       :aria-label="ariaLabel"
       :data-testid="testId"
-      @update:model-value="emitValue($event as string[])"
       width="fill"
-    >
-      <el-option
-        v-for="option in options"
-        :key="option.code"
-        :label="option.label"
-        :value="option.code"
-      />
-    </AppSelect>
+      @update:model-value="emit('update:modelValue', $event)"
+      @change="emit('change', $event)"
+    />
   </div>
 </template>
 
 <style scoped>
-.stock-code-multi-select {
-  width: 100%;
-}
+.stock-code-multi-select { width: 100%; }
 </style>

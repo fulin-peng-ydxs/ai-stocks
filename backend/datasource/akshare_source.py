@@ -309,7 +309,7 @@ class AKShareSource(DataSource):
             response = requests.get(
                 url,
                 params={
-                    "symbol": to_sina_symbol(code6),
+                    "symbol": index_to_sina_symbol(code) if "." in code else to_sina_symbol(code6),
                     "scale": "1",
                     "ma": "no",
                     "datalen": str(SINA_INTRADAY_REQUEST_LIMIT),
@@ -341,7 +341,7 @@ class AKShareSource(DataSource):
                     "ut": "7eea3edcaed734bea9cbfc24409ed989",
                     "ndays": "5",
                     "iscr": "0",
-                    "secid": f"{1 if code6.startswith('6') else 0}.{code6}",
+                    "secid": f"{1 if code.endswith('.SH') else 0}.{code6}",
                 },
                 timeout=timeout,
             )

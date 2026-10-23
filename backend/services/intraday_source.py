@@ -14,13 +14,13 @@ from backend.config import get_effective_settings
 from backend.datasource import request_policy as source_requests
 from backend.datasource.akshare_source import AKShareSource
 from backend.services.intraday_contract import (
-    INTRADAY_PROVIDERS,
     PROVIDER_LABELS,
     candidate_rank,
     sanitize_minutes,
 )
 from backend.services.intraday_evidence import SOURCE_REQUEST_LIMIT, window_evidence
 from backend.services.intraday_quotes import IntradayServiceUnavailable
+from backend.services.intraday_subjects import providers_for
 from backend.storage import get_redis_client
 
 log = get_logger("services.intraday_source")
@@ -66,7 +66,7 @@ class IntradaySourceService:
     def fetch_window(
         self, code: str, dates: list[str], *, allow_fallback: bool = False, providers=None
     ) -> dict:
-        """常规采集只取新浪；质检修复显式允许按目标日完整性尝试备用源。"""
+        """常规采集按标的主源取数；质检修复按目标日完整性尝试备用源。"""
         self.last_observations = {}
         self.last_windows = {}
         if self.ctx:
@@ -75,9 +75,10 @@ class IntradaySourceService:
         windows: dict[str, dict] = self.last_windows
         source = self.source_factory()
         errors: list[str] = []
-        providers = providers or (INTRADAY_PROVIDERS if allow_fallback else ("sina",))
-        if any(p not in (INTRADAY_PROVIDERS if allow_fallback else ("sina",)) for p in providers):
-            raise ValueError("常规采集仅允许新浪，备用源仅供质检修复")
+        allowed = providers_for(code, allow_fallback)
+        providers = providers or allowed
+        if any(p not in allowed for p in providers):
+            raise ValueError("常规采集仅允许标的主源，备用源仅供质检修复")
         for provider_index, provider in enumerate(providers):
             started = self.monotonic()
             try:
@@ -88,6 +89,7 @@ class IntradaySourceService:
                     frame = self._fetch_provider(source, code, provider)
                     year_errors = []
                 window = self._frame_to_window(frame, provider)
+                window["code"] = code
                 windows[provider] = window
                 self.last_observations[provider] = {
                     "outcome": "error" if year_errors else "ok" if window["rows"] else "empty",
@@ -96,7 +98,7 @@ class IntradaySourceService:
                 }
                 if self.ctx is not None:
                     complete = sum(
-                        candidate_rank([r for r in window["rows"] if r[0][:10] == day], provider)[0]
+                        candidate_rank([r for r in window["rows"] if r[0][:10] == day], provider, code)[0]
                         for day in dates
                     )
                     self._task_log(
@@ -111,7 +113,7 @@ class IntradaySourceService:
                     len(window["rows"]),
                     round((self.monotonic() - started) * 1000),
                 )
-                if self._targets_complete(windows, dates):
+                if self._targets_complete(windows, dates, code):
                     for skipped in providers[provider_index + 1:]:
                         self._task_log(f"{code} {PROVIDER_LABELS[skipped]}：跳过；"
                                        "前序来源的整日候选已覆盖全部目标日")
@@ -162,7 +164,7 @@ class IntradaySourceService:
                 combined = pd.concat(frames, ignore_index=True)
                 combined.attrs["request_years"] = years.copy()
                 # 后续年份失败或取消前已取得的响应不能丢弃。
-                self.last_windows["ths"] = self._frame_to_window(combined, "ths")
+                self.last_windows["ths"] = {**self._frame_to_window(combined, "ths"), "code": code}
             except (redis.RedisError, IntradayServiceUnavailable):
                 raise
             except Exception as exc:  # noqa: BLE001 -- 按年份保留候选与失败，取消必须穿透
@@ -265,12 +267,12 @@ class IntradaySourceService:
         }
 
     @staticmethod
-    def _targets_complete(windows: dict, dates=None) -> bool:
+    def _targets_complete(windows: dict, dates=None, code=None) -> bool:
         if not dates:
             return any(w.get("rows") for w in windows.values())
         return all(
             any(
-                candidate_rank([r for r in w["rows"] if r[0][:10] == day], p)[0]
+                candidate_rank([r for r in w["rows"] if r[0][:10] == day], p, code)[0]
                 for p, w in windows.items()
             )
             for day in dates
@@ -288,7 +290,7 @@ class IntradaySourceService:
                 {**w, "rows": [r for r in w["rows"] if r[0][:10] in dates]} for w in candidates
             ]
         candidates = [w for w in candidates if w.get("rows")]
-        return max(candidates, key=lambda w: candidate_rank(w["rows"], w["source"]), default=None)
+        return max(candidates, key=lambda w: candidate_rank(w["rows"], w["source"], w.get("code")), default=None)
 
     @staticmethod
     def _empty_window(windows: dict[str, dict]) -> dict:

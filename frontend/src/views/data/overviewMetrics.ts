@@ -2,7 +2,7 @@ import type { IntradayCoverage, Overview } from '@/api/data'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
 import type { DataMetricInfo } from '@/components/data/DataMetricCard.vue'
 
-export type OverviewAction = 'stocks' | 'intraday-ingest' | 'st-refresh' | 'board' | 'quality' | 'gaps'
+export type OverviewAction = 'stocks' | 'intraday-ingest' | 'intraday-quality' | 'st-refresh' | 'board' | 'quality' | 'gaps'
 export interface OverviewMetric {
   key: string
   label: string
@@ -32,10 +32,14 @@ export function overviewMetrics(overview: Overview | null): OverviewMetric[] {
   const board = overview?.board
   const quality = overview?.quality
   const gaps = overview?.gaps
-  const monitored = !!intraday?.stocks
+  const monitored = !!(intraday?.stocks || intraday?.indices)
   const severity = (['high', 'mid', 'low'] as const).find((key) => quality?.by_severity?.[key])
-  const latestCoverage = intraday?.latest_expected_stocks
-    ? `目标日完整 ${intraday.latest_complete_stocks == null ? '—' : ((intraday.latest_complete_stocks / intraday.latest_expected_stocks) * 100).toLocaleString('zh-CN', { maximumFractionDigits: 1 }) + '%'}`
+  const latestExpected = (intraday?.latest_expected_stocks ?? 0) + (intraday?.latest_expected_indices ?? 0)
+  const latestComplete = ((intraday?.latest_expected_stocks && intraday.latest_complete_stocks == null)
+    || (intraday?.latest_expected_indices && intraday.latest_complete_indices == null))
+    ? null : (intraday?.latest_complete_stocks ?? 0) + (intraday?.latest_complete_indices ?? 0)
+  const latestCoverage = latestExpected
+    ? `目标日完整 ${latestComplete == null ? '—' : ((latestComplete / latestExpected) * 100).toLocaleString('zh-CN', { maximumFractionDigits: 1 }) + '%'}`
     : monitored ? '尚无应采目标日' : intraday ? '尚未开始监控' : '尚无统计'
   return [
     {
@@ -57,20 +61,22 @@ export function overviewMetrics(overview: Overview | null): OverviewMetric[] {
           { label: '目标交易日', value: date(intraday?.target_end) },
           { label: '目标日完整 / 应采', value: `${count(intraday?.latest_complete_stocks)} / ${count(intraday?.latest_expected_stocks)} 只` },
           { label: '监控股票', value: `${count(intraday?.stocks)} 只` },
+          { label: '监控指数', value: `${count(intraday?.indices ?? 0)} 个` },
+          { label: '指数目标日完整 / 应采', value: `${count(intraday?.latest_complete_indices ?? 0)} / ${count(intraday?.latest_expected_indices ?? 0)} 个` },
           { label: '监控起点', value: date(intraday?.monitoring_start) },
           { label: '最新归档日', value: date(intraday?.archive_end) },
-          { label: '累计完整', value: `${count(intraday?.complete_days)} 个股票交易日` },
-          { label: '累计部分', value: `${count(intraday?.partial_days)} 个股票交易日` },
-          { label: '累计缺失', value: `${count(intraday?.missing_days)} 个股票交易日` },
+          { label: '累计完整', value: `${count(intraday?.complete_days)} 个标的交易日` },
+          { label: '累计部分', value: `${count(intraday?.partial_days)} 个标的交易日` },
+          { label: '累计缺失', value: `${count(intraday?.missing_days)} 个标的交易日` },
         ],
         notes: [
-          '累计覆盖按各股监控起点后的应有交易日统计，排除上市前、退市后及明确停牌日；一个股票的一天计一个股票交易日。',
+          '累计覆盖按全局统一监控起点后的应有交易日统计，排除上市前、退市后及明确停牌日；一个股票的一天计一个标的交易日。',
           '完整表示必需分钟已覆盖，不表示量价对账通过；最新归档日不代表全市场已采齐。',
         ],
       },
       // 未监控时明确提供采集空态入口；覆盖入口本身始终只定位本页逐股表。
-      actionLabel: monitored ? '查看逐股覆盖' : intraday ? '去采集分时' : undefined,
-      action: monitored ? 'stocks' : intraday ? 'intraday-ingest' : undefined,
+      actionLabel: intraday?.indices ? '查看分时问题' : monitored ? '查看逐股覆盖' : intraday ? '去采集分时' : undefined,
+      action: intraday?.indices ? 'intraday-quality' : monitored ? 'stocks' : intraday ? 'intraday-ingest' : undefined,
       testId: 'overview-intraday-card',
     },
     {
@@ -122,7 +128,7 @@ export function overviewMetrics(overview: Overview | null): OverviewMetric[] {
       key: 'gaps', label: '缺口 / 滞后', value: count(gaps?.stocks_with_gap), unit: '只',
       summary: '日线近 90 个交易日', tone: gaps?.stocks_with_gap ? 'warning' : undefined,
       info: { kind: 'details',
-        rows: [{ label: '存在缺口 / 滞后', value: `${count(gaps?.stocks_with_gap)} 只` }, { label: '累计缺口 / 滞后', value: `${count(gaps?.gap_days_total)} 个股票交易日` }],
+        rows: [{ label: '存在缺口 / 滞后', value: `${count(gaps?.stocks_with_gap)} 只` }, { label: '累计缺口 / 滞后', value: `${count(gaps?.gap_days_total)} 个标的交易日` }],
         notes: ['按股票累计日线近 90 个交易日的缺口或滞后，排除明确停牌。台账按全历史缺口和滞后处理，范围与近端指标不同，数量不直接比较。'],
       },
       actionLabel: '查看缺口台账', action: 'gaps',

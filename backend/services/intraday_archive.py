@@ -15,13 +15,15 @@ from backend.services.intraday_contract import (
     BAR_FIELDS,
     EXPECTED_TIMES,
     INTRADAY_ISSUE_TYPES,
-    INTRADAY_PROVIDERS,
     PROVIDER_LABELS,
     REQUIRED_TIMES,
     candidate_rank,
     normalize_intraday_params,
+    required_times,
 )
 from backend.services.intraday_evidence import IntradayEvidence, missing_ranges
+from backend.services.intraday_subjects import is_index, providers_for
+from backend.services.market_benchmark import configured_benchmark_codes
 from backend.storage.repository import MarketRepository
 
 LABELS = {
@@ -45,6 +47,58 @@ class IntradayArchiveService:
     def __init__(self, client, *, quotes=None):
         self.c = client
         self.quotes = quotes
+        self._registered_start = None
+        self._boundary_loaded = False
+        self._boundary = None
+        self._indices = None
+
+    @property
+    def index_codes(self):
+        """一次任务/查询冻结配置清单，不在逐股质量查询中重复访问配置库。"""
+        if self._indices is None:
+            self._indices = configured_benchmark_codes()
+        return self._indices
+
+    def global_start(self):
+        """全局最早事实与持久化边界取最小值，整日丢失不能使检查起点后退。"""
+        if self._boundary_loaded:
+            return self._boundary
+        value = self.c.query_df(
+            "SELECT min(d) d FROM (SELECT min(trade_date) d FROM stock_intraday_bar "
+            "UNION ALL SELECT min(monitoring_start) FROM stock_intraday_monitor)"
+        ).iloc[0].d
+        self._boundary = None if pd.isna(value) else _day(value)
+        self._boundary_loaded = True
+        return self._boundary
+
+    def _advance_start(self, day):
+        """仅成功归档更早事实或扫描已有事实时前移；失败请求不扩张监控义务。"""
+        day = _day(day)
+        if self._registered_start is not None and day >= self._registered_start:
+            return
+        # 为已归档但尚未有监控记录的旧标的补边界，不能只更新已存在的行。
+        self.c.execute(
+            "INSERT INTO stock_intraday_monitor(code,monitoring_start) "
+            "SELECT code,?::DATE FROM stock_intraday_bar GROUP BY code ON CONFLICT DO NOTHING",
+            [day],
+        )
+        self.c.execute(
+            "UPDATE stock_intraday_monitor SET monitoring_start=least(monitoring_start,?)",
+            [day],
+        )
+        self._registered_start = day
+        self._boundary = min(self._boundary, day) if self._boundary is not None else day
+        self._boundary_loaded = True
+
+    @staticmethod
+    def _subjects_sql():
+        # 日线与主数据分开：指数不得伪装股票，也不继承股票停牌、复权规则。
+        return """
+            SELECT code,list_date,delist_date,false is_index FROM stock_basic
+            UNION ALL
+            SELECT index_code,min(trade_date),NULL,true FROM index_bar
+            WHERE index_code IN (SELECT unnest(?::VARCHAR[])) GROUP BY index_code
+        """
 
     def bounds(self, code):
         row = self.c.query_df(
@@ -106,30 +160,34 @@ class IntradayArchiveService:
                 pass
         return payload
 
-    def _coverage_sql(self, codes=None):
-        """由独立起点和日历生成应有日期；没有覆盖记录的日期也必须参与质检。"""
-        # 兼容尚未迁移的旧覆盖；有独立起点后不再从逐日记录反推边界。
+    def _coverage_sql(self, codes=None, *, start_override=None):
+        """由全局边界和日历生成应有日期；没有覆盖记录的日期也必须参与质检。"""
+        # 查询只读取边界；持久化前移由归档或写侧扫描完成。
         sql = """
-            WITH monitors AS (
-                SELECT code,monitoring_start FROM stock_intraday_monitor
-                UNION ALL
-                SELECT c.code,min(c.trade_date) FROM stock_intraday_coverage c
-                WHERE NOT EXISTS (SELECT 1 FROM stock_intraday_monitor m WHERE m.code=c.code)
-                GROUP BY c.code
+            WITH boundary AS (SELECT ?::DATE monitoring_start),
+            subjects AS (""" + self._subjects_sql() + """), monitors AS (
+                SELECT s.*,b.monitoring_start FROM subjects s CROSS JOIN boundary b
+                WHERE b.monitoring_start IS NOT NULL
             )
             SELECT m.code,t.trade_date,m.monitoring_start,
                 coalesce(c.point_count,0) point_count,coalesce(c.status,'missing') status,
                 c.source,c.fetched_at,c.attempted_at,c.failure_reason,c.diagnostics,c.revision
-            FROM monitors m JOIN stock_basic s ON s.code=m.code
+            FROM monitors m
             JOIN trade_calendar t ON t.is_open AND t.trade_date>=m.monitoring_start
             LEFT JOIN stock_intraday_coverage c ON c.code=m.code AND c.trade_date=t.trade_date
-            WHERE t.trade_date<=(SELECT max(trade_date) FROM daily_bar WHERE trade_date<=?)
-              AND (s.list_date IS NULL OR t.trade_date>=s.list_date)
-              AND (s.delist_date IS NULL OR t.trade_date<s.delist_date)
-              AND NOT EXISTS (SELECT 1 FROM stock_suspension x
+            WHERE t.trade_date<=CASE WHEN m.is_index THEN
+                (SELECT max(trade_date) FROM index_bar i WHERE i.index_code=m.code AND trade_date<=?)
+                ELSE (SELECT max(trade_date) FROM daily_bar WHERE trade_date<=?) END
+              AND (m.list_date IS NULL OR t.trade_date>=m.list_date)
+              AND (m.delist_date IS NULL OR t.trade_date<m.delist_date)
+              AND (m.is_index OR NOT EXISTS (SELECT 1 FROM stock_suspension x
                               WHERE x.code=m.code AND x.trade_date=t.trade_date)
+              )
         """
-        args = [eod_dates.time_cutoff()]
+        boundary = self.global_start()
+        if start_override is not None:
+            boundary = min(boundary, _day(start_override)) if boundary else _day(start_override)
+        args = [boundary, self.index_codes, eod_dates.time_cutoff(), eod_dates.time_cutoff()]
         if codes is not None:
             sql += " AND m.code IN (SELECT unnest(?::VARCHAR[]))"
             args.append(codes)
@@ -156,6 +214,11 @@ class IntradayArchiveService:
                     "INSERT INTO stock_intraday_monitor(code,monitoring_start) "
                     f"SELECT code,monitoring_start FROM {view} ON CONFLICT DO NOTHING"
                 )
+        start = self.global_start() or min(
+            (_day(day) for day in scope.get("monitoring_starts", {}).values()), default=None,
+        )
+        if start is not None:
+            self._advance_start(start)
 
     def online_dates(self, *, provider="sina") -> list[str]:
         """源端近期窗口由真实日历决定，不能因本地日线落后而向历史平移。"""
@@ -178,84 +241,49 @@ class IntradayArchiveService:
         online = self.online_dates()
         if not online:
             raise ValueError("请先完成交易日历与日线采集")
-        last = (
-            self.c.query_df(
-                "SELECT max(trade_date) d FROM daily_bar WHERE trade_date<=?",
-                [eod_dates.time_cutoff()],
-            )
-            .iloc[0]
-            .d
+        asset_type = params.get("asset_type", "all")
+        indices = self.index_codes
+        subjects = self.c.query_df(
+            "SELECT code,false is_index FROM stock_basic WHERE code NOT LIKE '%.BJ' "
+            "UNION ALL SELECT unnest(?::VARCHAR[]),true", [indices],
         )
-        if pd.isna(last):
-            raise ValueError("尚无已收盘的本地日线，请先完成日线采集")
-        end = min(_day(last), date.fromisoformat(online[-1]))
-        if params["mode"] == "update" and end < date.fromisoformat(online[0]):
-            raise ValueError("本地日线落后于近期分钟源窗口，请先完成日线采集")
+        allowed = {r.code for r in subjects.itertuples()
+                   if asset_type == "all" or r.is_index == (asset_type == "index")}
+        codes = params.get("codes")
+        if codes is not None and not set(codes).issubset(allowed):
+            raise ValueError("指定标的未入库、未配置或与采集对象不符："
+                             + "、".join(sorted(set(codes) - allowed)))
+        bars = self.c.query_df(
+            "SELECT code,min(trade_date) first_day,max(trade_date) last_day FROM ("
+            "SELECT code,trade_date FROM daily_bar UNION ALL "
+            "SELECT index_code,trade_date FROM index_bar) "
+            "WHERE code IN (SELECT unnest(?::VARCHAR[])) AND trade_date<=? GROUP BY code",
+            [codes if codes is not None else sorted(allowed), eod_dates.time_cutoff()],
+        )
+        if bars.empty:
+            raise ValueError("尚无已收盘的本地日线，请先完成对应个股或指数日线采集")
+        end = min(_day(bars.last_day.max()), date.fromisoformat(online[-1]))
+        boundary = self.global_start()
         if params["mode"] == "refetch":
-            start, requested = (
-                date.fromisoformat(params["date_start"]),
-                date.fromisoformat(params["date_end"]),
-            )
+            start = date.fromisoformat(params["date_start"])
+            requested = date.fromisoformat(params["date_end"])
             eod_dates.cap_end(requested, strict=True)
             end = min(requested, end)
             if start > end:
                 raise ValueError("重采区间尚无本地已收盘日线，请先完成日线采集")
         else:
-            start = date.fromisoformat(online[0])
-        if "codes" in params:
-            codes = params["codes"]
-            known = set(
-                self.c.query_df(
-                    "SELECT code FROM stock_basic WHERE code IN (SELECT unnest(?::VARCHAR[]))",
-                    [codes],
-                ).code
-            )
-            if known != set(codes):
-                raise ValueError("指定股票未入库：" + "、".join(sorted(set(codes) - known)))
-            with_bars = set(
-                self.c.query_df(
-                    "SELECT DISTINCT code FROM daily_bar WHERE code IN (SELECT unnest(?::VARCHAR[])) "
-                    "AND trade_date BETWEEN ? AND ?",
-                    [codes, start, end],
-                ).code
-            )
-            if with_bars != set(codes):
-                raise ValueError(
-                    "区间内尚无本地日线，请先完成日线采集："
-                    + "、".join(sorted(set(codes) - with_bars))
-                )
-        else:
-            codes = self.c.query_df(
-                "SELECT DISTINCT b.code FROM daily_bar b JOIN stock_basic s ON s.code=b.code "
-                "WHERE b.trade_date BETWEEN ? AND ? AND b.code NOT LIKE '%.BJ' "
-                "UNION SELECT code FROM stock_intraday_coverage "
-                "UNION SELECT code FROM stock_intraday_monitor ORDER BY code",
-                [start, end],
-            ).code.tolist()
-        prior = self.c.query_df(
-            "SELECT code,min(d) d FROM (SELECT code,monitoring_start d FROM stock_intraday_monitor "
-            "UNION ALL SELECT code,trade_date FROM stock_intraday_coverage) "
-            "WHERE code IN (SELECT unnest(?::VARCHAR[])) GROUP BY code",
-            [codes],
-        )
-        monitored = {row.code: str(_day(row.d)) for row in prior.itertuples()}
-        if params["mode"] == "update":
-            starts = monitored
-        else:
-            # 重采不能将尚未监控的十年日线意外扩展为分钟覆盖义务。
-            starts = {
-                code: max(str(start), min(monitored.get(code, online[0]), online[0]))
-                for code in codes
-            }
-            if starts and all(value > str(end) for value in starts.values()):
-                raise ValueError("重采区间超出现有分钟源窗口且无已监控日期，无法取得任意历史分时")
+            start = boundary or date.fromisoformat(online[0])
+        available = set(bars.loc[(bars.first_day.dt.date <= end)
+                                 & (bars.last_day.dt.date >= start), "code"])
+        if codes is not None and not set(codes).issubset(available):
+            raise ValueError("区间内尚无本地日线，请先完成日线采集："
+                             + "、".join(sorted(set(codes) - available)))
+        codes = codes if codes is not None else sorted(available)
         frozen = {
-            "codes": codes,
-            "start": str(start),
-            "end": str(end),
-            "mode": params["mode"],
-            "starts": starts,
-            "monitoring_starts": {code: monitored.get(code, online[0]) for code in codes},
+            "codes": codes, "start": str(start), "end": str(end), "mode": params["mode"],
+            "asset_type": asset_type, "starts": {code: str(start) for code in codes},
+            # 早期区间重采必须先取得真实分钟，不能用请求日期提前扩大质量范围。
+            "monitoring_starts": {code: str(boundary or online[0]) for code in codes},
         }
         if ctx:
             ctx.set_checkpoint(intraday_scope=frozen)
@@ -263,7 +291,7 @@ class IntradayArchiveService:
 
     def _ensure_expected(self, code, scope):
         start = scope.get("starts", {}).get(code, scope["start"])
-        expected_sql, args = self._coverage_sql([code])
+        expected_sql, args = self._coverage_sql([code], start_override=start)
         self.c.execute(
             "INSERT INTO stock_intraday_coverage(code,trade_date) "
             f"SELECT code,trade_date FROM ({expected_sql}) "
@@ -278,18 +306,20 @@ class IntradayArchiveService:
 
     def write_day(self, code: str, day: str, candidates: list[dict], *, error="", task_id=None):
         """选整日最优候选；事实、修订、覆盖和溯源原子提交，不混用两源分钟。"""
+        if _day(day) > eod_dates.time_cutoff():
+            raise ValueError("尚未收盘的分钟不得归档")
         options = []
         for window in candidates:
             rows = [r for r in window["rows"] if r[0][:10] == day]
             if rows:
                 options.append({**window, "rows": rows})
-        best = max(options, key=lambda w: candidate_rank(w["rows"], w["source"]), default=None)
+        best = max(options, key=lambda w: candidate_rank(w["rows"], w["source"], code), default=None)
         existing = self.read(code, day)
         selected = best
         if existing and (
             not best
-            or candidate_rank(existing["rows"], existing["source"])
-            > candidate_rank(best["rows"], best["source"])
+            or candidate_rank(existing["rows"], existing["source"], code)
+            > candidate_rank(best["rows"], best["source"], code)
         ):
             selected = existing
         changed = selected is not None and (
@@ -302,7 +332,7 @@ class IntradayArchiveService:
         with self.c.transaction():
             if selected:
                 rows, source = selected["rows"], selected["source"]
-                status = "ready" if candidate_rank(rows, source)[0] else "partial"
+                status = "ready" if candidate_rank(rows, source, code)[0] else "partial"
                 if changed:
                     fetched = (
                         pd.Timestamp(selected["fetched_at"]).tz_convert("UTC").tz_localize(None)
@@ -318,6 +348,7 @@ class IntradayArchiveService:
                         self.c.execute(
                             f"INSERT INTO stock_intraday_bar BY NAME SELECT * FROM {view}"
                         )
+                    self._advance_start(day)
                     revision = uuid4().hex
                     diag = selected.get("day_diagnostics", {}).get(
                         day, selected.get("diagnostics", {})
@@ -385,6 +416,7 @@ class IntradayArchiveService:
             ctx.check_cancel()
         scope = self._scope(params, ctx)
         self._register_monitoring(scope)
+        initial_start = self.global_start()
         from queue import SimpleQueue
 
         from backend.services.bounded_parallel import run_bounded_parallel
@@ -431,17 +463,18 @@ class IntradayArchiveService:
         if ctx:
             ctx.log(
                 f"分时{'近期增量补采' if scope['mode'] == 'update' else '日期区间重采'}："
-                f"{len(scope['codes'])} 只，目标 {scope['start']} 至 {scope['end']}；"
-                f"已成功完成 {len(done)} 只，本轮跳过已完成股票，失败项重试"
+                f"{len(scope['codes'])} 个标的，目标 {scope['start']} 至 {scope['end']}；"
+                f"个股 {sum(not is_index(c) for c in scope['codes'])} 只、"
+                f"指数 {sum(is_index(c) for c in scope['codes'])} 个；"
+                f"已成功完成 {len(done)} 个，本轮跳过已完成标的，失败项重试"
             )
             ctx.log(
-                "取源策略：新浪优先；质检修复按目标日依次尝试同花顺、东财备用"
+                "取源策略：个股新浪优先、指数同花顺优先；质检修复按标的尝试备用源"
                 if allow_fallback else
-                "取源策略：仅新浪；缺失与不完整进入质检，东财和同花顺仅在质检修复时尝试"
+                "取源策略：个股仅新浪、指数仅同花顺；缺失与不完整进入统一质检"
             )
             ctx.log(
-                f"完整性口径：{len(REQUIRED_TIMES)} 个必需时点，15:00 收盘柱必需；"
-                "14:58、14:59 集合竞价阶段不强制有独立成交柱，不补造分钟"
+                "完整性口径：个股238、指数240个必需时点，均须含15:00；不补造分钟"
             )
             ctx.log(
                 f"请求保护：并发 {concurrency}，限流、超时、重试及退避统一读取系统配置；"
@@ -475,7 +508,7 @@ class IntradayArchiveService:
             decisions = {
                 str(_day(row.trade_date)): evidence.assess(
                     code, str(_day(row.trade_date)),
-                    sorted(REQUIRED_TIMES - actual_times.get(str(_day(row.trade_date)), set())),
+                    sorted(required_times(code) - actual_times.get(str(_day(row.trade_date)), set())),
                     states, allow_fallback=allow_fallback, recheck=recheck_source,
                 ) for row in pending.itertuples()
             }
@@ -516,10 +549,10 @@ class IntradayArchiveService:
             if not available.empty:
                 try:
                     target_dates = [str(_day(d)) for d in available.trade_date]
-                    providers = tuple(p for p in INTRADAY_PROVIDERS if any(
+                    providers = tuple(p for p in providers_for(code, allow_fallback) if any(
                         p in decisions[d]["providers"] for d in target_dates
                     ))
-                    use_fallback = any(p != "sina" for p in providers)
+                    use_fallback = allow_fallback
                     window = quotes.fetch_window(
                         code, target_dates, allow_fallback=use_fallback, providers=providers,
                     )
@@ -558,8 +591,8 @@ class IntradayArchiveService:
                 improved = []
                 for row in unavailable.itertuples():
                     day = str(_day(row.trade_date))
-                    old_count = len(REQUIRED_TIMES & actual_times.get(day, set()))
-                    if any(len(REQUIRED_TIMES & {r[0][11:16] for r in w["rows"]
+                    old_count = len(required_times(code) & actual_times.get(day, set()))
+                    if any(len(required_times(code) & {r[0][11:16] for r in w["rows"]
                                                 if r[0][:10] == day}) > old_count for w in candidates):
                         improved.append(row.Index)
                 if improved:
@@ -601,7 +634,7 @@ class IntradayArchiveService:
                 # 区间重采全部请求失败时，旧完整归档不能冒充本次取源成功。
                 targets_complete = targets_complete and all(
                     any(candidate_rank([r for r in w["rows"] if r[0][:10] == str(day)],
-                                       w["source"])[0] for w in candidates)
+                                       w["source"], code)[0] for w in candidates)
                     for day in target_days
                 )
             if not technical_error or targets_complete:
@@ -648,7 +681,9 @@ class IntradayArchiveService:
         if ctx:
             ctx.log("逐股采集结束：正在复检分时覆盖、非法数据及历史整日缺口…")
             ctx.flush()
-        quality = self.sync(scope["codes"])
+        # 一股补到更早日期会扩大所有标的的质检范围，收尾必须同步全局台账。
+        quality = self.sync(None if initial_start and self.global_start() < initial_start
+                            else scope["codes"])
         # 汇总须消费复检后的覆盖，不能将旧口径的 partial 带入任务终态。
         expected_sql, args = self._coverage_sql(scope["codes"])
         remaining = self.c.query_df(
@@ -665,6 +700,8 @@ class IntradayArchiveService:
             **stats,
             "errors": errors[:100],
             "target_end": scope["end"],
+            "stocks": sum(not is_index(c) for c in scope["codes"]),
+            "indices": sum(is_index(c) for c in scope["codes"]),
             "quality": quality,
             "message": f"分时采集完成：新增 {stats['inserted']}、更新 {stats['updated']}、"
             f"部分 {stats['partial']}、缺失 {stats['missing']}、当前来源无法覆盖 {stats['out_of_range']}、技术失败 {stats['failed']}",
@@ -674,32 +711,37 @@ class IntradayArchiveService:
         """按逐日覆盖监控；实际分钟结构另行扫描，杜绝只相信完成标记。"""
         expected_sql, args = self._coverage_sql(codes)
         facts = self.c.query_df(
-            "SELECT c.*,coalesce(f.n,0) actual_count,coalesce(f.expected_count,0) expected_count,"
+            "SELECT c.*,CASE WHEN c.code IN (SELECT unnest(?::VARCHAR[])) THEN 240 ELSE 238 END required_count,"
+            "coalesce(f.n,0) actual_count,coalesce(f.expected_count,0) expected_count,"
             "f.actual_source,f.actual_fetched_at "
             f"FROM ({expected_sql}) c "
             "LEFT JOIN (SELECT code,trade_date,count(*) n,"
             "count(DISTINCT strftime(timestamp,'%H:%M')) FILTER(WHERE strftime(timestamp,'%H:%M') "
-            "IN (SELECT unnest(?::VARCHAR[]))) expected_count,"
+            "IN (SELECT unnest(?::VARCHAR[])) OR (code IN (SELECT unnest(?::VARCHAR[])) "
+            "AND strftime(timestamp,'%H:%M') IN ('14:58','14:59'))) expected_count,"
             "arg_max(source,fetched_at) actual_source,max(fetched_at) actual_fetched_at "
             "FROM stock_intraday_bar "
             "WHERE (?::VARCHAR[] IS NULL OR code IN (SELECT unnest(?::VARCHAR[]))) "
             "GROUP BY code,trade_date) f ON f.code=c.code AND f.trade_date=c.trade_date",
-            args + [sorted(REQUIRED_TIMES), codes, codes],
+            [self.index_codes] + args
+            + [sorted(REQUIRED_TIMES), self.index_codes, codes, codes],
         )
         # 完整日只需计数；缺失分钟按最多 500 个股票交易日聚合，避免持有全市场分钟列表。
-        incomplete = facts.loc[facts.expected_count.lt(len(REQUIRED_TIMES)), ["code", "trade_date"]]
+        incomplete = facts.loc[facts.expected_count.lt(facts.required_count),
+                               ["code", "trade_date", "required_count"]]
         incomplete = incomplete.sort_values(["code", "trade_date"])
         missing = {}
         for offset in range(0, len(incomplete), 500):
             with self.c.temp_view(incomplete.iloc[offset:offset + 500], prefix="intraday_missing") as view:
                 rows = self.c.query_df(
-                    "SELECT t.code,t.trade_date,list_filter(?::VARCHAR[],x -> NOT list_contains("
+                    "SELECT t.code,t.trade_date,list_filter(CASE WHEN t.required_count=240 "
+                    "THEN ?::VARCHAR[] ELSE ?::VARCHAR[] END,x -> NOT list_contains("
                     "coalesce(f.times,[]::VARCHAR[]),x)) missing_times "
                     f"FROM {view} t LEFT JOIN (SELECT b.code,b.trade_date,"
                     "list(DISTINCT strftime(b.timestamp,'%H:%M')) times FROM stock_intraday_bar b "
                     f"JOIN {view} q ON q.code=b.code AND q.trade_date=b.trade_date "
                     "GROUP BY b.code,b.trade_date) f ON f.code=t.code AND f.trade_date=t.trade_date",
-                    [sorted(REQUIRED_TIMES)],
+                    [sorted(EXPECTED_TIMES), sorted(REQUIRED_TIMES)],
                 )
                 missing.update({(r.code, _day(r.trade_date)): list(r.missing_times)
                                 for r in rows.itertuples()})
@@ -717,7 +759,7 @@ class IntradayArchiveService:
                 "intraday_gap"
                 if row.actual_count == 0
                 else "intraday_partial"
-                if row.expected_count < len(REQUIRED_TIMES)
+                if row.expected_count < row.required_count
                 else None
             )
             diag = json.loads(row.diagnostics or "{}")
@@ -741,7 +783,7 @@ class IntradayArchiveService:
                 payload = {
                     "message": message, "diagnostics": diag,
                     "coverage": {"trade_date": str(_day(row.trade_date)), "point_count": int(row.actual_count),
-                                 "required_count": len(REQUIRED_TIMES),
+                                 "required_count": int(row.required_count),
                                  "covered_count": int(row.expected_count),
                                  "missing_times": missing, "missing_ranges": ranges},
                     "availability": availability,
@@ -767,7 +809,7 @@ class IntradayArchiveService:
             if "coverage" not in payload and fact is not None:
                 missing = list(fact.missing_times)
                 payload.update(
-                    coverage={"trade_date": str(_day(fact.trade_date)), "point_count": int(fact.actual_count), "required_count": len(REQUIRED_TIMES),
+                    coverage={"trade_date": str(_day(fact.trade_date)), "point_count": int(fact.actual_count), "required_count": int(fact.required_count),
                               "covered_count": int(fact.expected_count), "missing_times": missing,
                               "missing_ranges": missing_ranges(missing)},
                     availability=evidence.assess(issue["code"], str(issue["trade_date"]), missing, states),
@@ -793,7 +835,8 @@ class IntradayArchiveService:
             "SELECT DISTINCT b.code,b.trade_date FROM stock_intraday_bar b "
             "LEFT JOIN stock_basic s ON s.code=b.code "
             "LEFT JOIN trade_calendar t ON t.trade_date=b.trade_date "
-            "WHERE (s.code IS NULL OR NOT coalesce(t.is_open,false) OR CAST(b.timestamp AS DATE)<>b.trade_date "
+            "WHERE ((s.code IS NULL AND b.code NOT IN (SELECT unnest(?::VARCHAR[]))) "
+            "OR NOT coalesce(t.is_open,false) OR CAST(b.timestamp AS DATE)<>b.trade_date "
             "OR strftime(b.timestamp,'%H:%M') NOT IN (SELECT unnest(?::VARCHAR[])) "
             "OR extract(second FROM b.timestamp)<>0 "
             "OR b.close<=0 OR b.low<=0 OR b.high<b.low OR b.close NOT BETWEEN b.low AND b.high "
@@ -801,7 +844,8 @@ class IntradayArchiveService:
             "OR (b.open IS NOT NULL AND (NOT isfinite(b.open) OR b.open<=0 OR b.open NOT BETWEEN b.low AND b.high)) "
             "OR b.volume<0 OR b.amount<0 OR NOT isfinite(b.volume) OR NOT isfinite(b.amount))"
             + scope,
-            [sorted(EXPECTED_TIMES | {"09:30", "13:00"})] + ([codes] if codes is not None else []),
+            [self.index_codes, sorted(EXPECTED_TIMES | {"09:30", "13:00"})]
+            + ([codes] if codes is not None else []),
         )
 
         monitor_scope = " AND m.code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
@@ -809,14 +853,16 @@ class IntradayArchiveService:
             "SELECT m.code,m.monitoring_start trade_date FROM stock_intraday_monitor m "
             "LEFT JOIN stock_basic s ON s.code=m.code "
             "LEFT JOIN trade_calendar t ON t.trade_date=m.monitoring_start "
-            "WHERE (s.code IS NULL OR NOT coalesce(t.is_open,false))" + monitor_scope,
-            [codes] if codes is not None else [],
+            "WHERE ((s.code IS NULL AND m.code NOT IN (SELECT unnest(?::VARCHAR[]))) "
+            "OR NOT coalesce(t.is_open,false))" + monitor_scope,
+            [self.index_codes] + ([codes] if codes is not None else []),
         )
         return pd.concat([frame, monitors], ignore_index=True).drop_duplicates()
 
     def sync(self, codes=None, *, progress=None):
         from backend.services.data_report import DataIntegrityReport
 
+        self._boundary_loaded = False
         if progress:
             progress(0, "分时归档覆盖事实")
         facts = self._coverage_facts(codes)
@@ -840,10 +886,13 @@ class IntradayArchiveService:
                 detail["last_repair"] = json.loads(repair)
                 issue["detail"] = json.dumps(detail, ensure_ascii=False)
         # 质量扫描确认物理分钟变化后同步覆盖与修订；概览不能继续显示旧完成标记。
+        start = self.global_start()
+        if start is not None:
+            self._advance_start(start)
         facts = facts.copy()
         facts["actual_status"] = [
             "missing" if r.actual_count == 0
-            else "ready" if r.expected_count == len(REQUIRED_TIMES) else "partial"
+            else "ready" if r.expected_count == r.required_count else "partial"
             for r in facts.itertuples()
         ]
         changed = facts[
@@ -908,17 +957,22 @@ class IntradayArchiveService:
         """累计覆盖与目标日逐股覆盖分开统计，不能用单股最大归档日代表全部股票。"""
         expected_sql, args = self._coverage_sql([code] if code else None)
         frame = self.c.query_df(
-            f"WITH expected AS ({expected_sql}),target AS (SELECT max(trade_date) AS target_date FROM expected) "
+            f"WITH source AS ({expected_sql}),expected AS (SELECT *,"
+            "code IN (SELECT unnest(?::VARCHAR[])) is_index FROM source),"
+            "target AS (SELECT max(trade_date) AS target_date FROM expected) "
             "SELECT min(monitoring_start) monitoring_start,max(trade_date) target_end,"
             "max(trade_date) FILTER(WHERE point_count>0) archive_end,"
-            "count(DISTINCT code) stocks,count(*) expected_days,"
+            "count(DISTINCT code) FILTER(WHERE NOT is_index) stocks,"
+            "count(DISTINCT code) FILTER(WHERE is_index) indices,count(*) expected_days,"
             "count(*) FILTER(WHERE status='ready') complete_days,"
             "count(*) FILTER(WHERE status='partial') partial_days,"
             "count(*) FILTER(WHERE point_count=0) missing_days,"
-            "count(*) FILTER(WHERE trade_date=(SELECT target_date FROM target)) latest_expected_stocks,"
-            "count(*) FILTER(WHERE trade_date=(SELECT target_date FROM target) AND status='ready') latest_complete_stocks "
+            "count(*) FILTER(WHERE NOT is_index AND trade_date=(SELECT target_date FROM target)) latest_expected_stocks,"
+            "count(*) FILTER(WHERE NOT is_index AND trade_date=(SELECT target_date FROM target) AND status='ready') latest_complete_stocks,"
+            "count(*) FILTER(WHERE is_index AND trade_date=(SELECT target_date FROM target)) latest_expected_indices,"
+            "count(*) FILTER(WHERE is_index AND trade_date=(SELECT target_date FROM target) AND status='ready') latest_complete_indices "
             "FROM expected",
-            args,
+            args + [self.index_codes],
         )
         result = json.loads(frame.to_json(orient="records", date_format="iso"))[0]
         # 全表 COUNT(*) 由 DuckDB 计数；不加载分钟明细，也不把逐日覆盖数当分钟行数。

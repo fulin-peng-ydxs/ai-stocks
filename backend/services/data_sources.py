@@ -46,8 +46,8 @@ SOURCE_DEFINITIONS = (
         "板块字典、成分、指数和资金流；独立Cookie、会话串行",
         "board",
     ),
-    ("intraday_sina", "新浪分时", "sina", "常规分时采集主源；逐股1分钟窗口", "intraday"),
-    ("intraday_ths", "同花顺分时", "ths", "仅质检修复备用；按目标年份取1分钟数据", "intraday"),
+    ("intraday_sina", "新浪分时", "sina", "个股分时常规主源；指数修复备用；1分钟窗口", "intraday"),
+    ("intraday_ths", "同花顺分时", "ths", "指数分时常规主源；个股修复备用；按目标年份取1分钟数据", "intraday"),
     ("intraday_eastmoney", "东财分时", "eastmoney", "仅质检修复备用；最近5个交易日", "intraday"),
 )
 

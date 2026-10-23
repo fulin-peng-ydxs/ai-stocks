@@ -23,10 +23,13 @@ export interface IntradayCoverage {
   partial_days: number
   missing_days: number
   stocks?: number
+  indices?: number
   expected_days?: number
   bar_rows?: number
   latest_expected_stocks?: number
   latest_complete_stocks?: number
+  latest_expected_indices?: number
+  latest_complete_indices?: number
 }
 export interface Overview {
   intraday?: IntradayCoverage
@@ -261,6 +264,7 @@ export interface DataQuality {
   list: QualityIssue[]
 }
 export function getDataQuality(params?: {
+  asset_type?: 'all' | 'stock' | 'index'
   issue_type?: string
   severity?: string
   status?: string
@@ -300,12 +304,12 @@ export function markDelisted(issueId: number, delistDate: string | null, reason:
 }
 export function recoverQualityBatch(
   // issue_type/severity 支持多值（数组，后端按 IN 过滤）
-  filter: { issue_type?: string[]; severity?: string[]; code?: string },
+  filter: { issue_type?: string[]; severity?: string[]; code?: string; asset_type?: 'all' | 'stock' | 'index' },
 ): Promise<{ task_id: string; count: number }> {
   return http.post('/data/quality/recover-batch', filter)
 }
 export function ignoreQualityBatch(
-  filter: { issue_type?: string[]; severity?: string[]; code?: string },
+  filter: { issue_type?: string[]; severity?: string[]; code?: string; asset_type?: 'all' | 'stock' | 'index' },
   scope: QualityIgnoreScope,
 ): Promise<{ count: number; status: 'ignored'; ignore_scope: QualityIgnoreScope }> {
   return http.post('/data/quality/ignore-batch', { ...filter, scope })

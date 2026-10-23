@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import AppSelect from '@/components/AppSelect.vue'
+import AppMultiSelect, { type AppMultiSelectOption } from '@/components/AppMultiSelect.vue'
 import { computed } from 'vue'
 
-export interface AppFilterSelectOption {
-  value: string
-  label: string
-}
+export type AppFilterSelectOption = AppMultiSelectOption
 
 export type AppFilterSelectDisplayMode = 'tags' | 'count'
 
@@ -105,7 +103,9 @@ function onChange(value: string[] | string) {
     :data-display-mode="multiple ? displayMode : undefined"
     :data-all-selected="multiple ? isAllSelected : undefined"
   >
-    <AppSelect
+    <component
+      :is="multiple ? AppMultiSelect : AppSelect"
+      v-bind="multiple ? { options } : {}"
       v-model="selected"
       class="app-filter-select__control"
       :multiple="multiple"
@@ -130,12 +130,12 @@ function onChange(value: string[] | string) {
         <span class="app-filter-select__selection-summary">已选 {{ selectedCount }}</span>
       </template>
       <el-option
-        v-for="item in options"
+        v-for="item in multiple ? [] : options"
         :key="item.value"
         :label="item.label"
         :value="item.value"
       />
-    </AppSelect>
+    </component>
   </div>
 </template>
 

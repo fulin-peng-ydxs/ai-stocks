@@ -24,4 +24,18 @@ describe('共享分时参数表单', () => {
     await wrapper.setProps({ modelValue: { ...createIntradayIngestForm(), mode: 'refetch' } })
     expect(wrapper.findAllComponents({ name: 'TradeDatePicker' })).toHaveLength(2)
   })
+  it('对象切换移除不匹配标的，保留模式和日期草稿', async () => {
+    const form = createIntradayIngestForm({
+      mode: 'refetch', codes: ['600000.SH', '000001.SH'], date_start: '2026-10-08',
+    })
+    const wrapper = mount(IntradayTaskScopeFields, {
+      props: { modelValue: form, testIdPrefix: 'test' },
+      global: { stubs: { PageSegmented: Select, TradeDatePicker: true, StockCodeMultiSelect: true,
+        'el-form-item': { template: '<div><slot /></div>' }, 'el-alert': true } },
+    })
+    await wrapper.findAll('button').find(b => b.text() === '仅指数')!.trigger('click')
+    expect(wrapper.emitted('update:modelValue')![0]![0]).toMatchObject({
+      asset_type: 'index', codes: ['000001.SH'], mode: 'refetch', date_start: '2026-10-08',
+    })
+  })
 })

@@ -118,6 +118,11 @@ const { pageSize: size, changePageSize } = useComponentPageSizeSession({
 // 类型/严重度/状态多选；默认勾选「未处理 + 修复中」（待办两态），code 为模糊文本
 const filters = ref<{ issue_type: string[]; severity: string[]; status: string[]; code: string }>(
   { issue_type: [], severity: [], status: ['open', 'fixing'], code: '' })
+const assetType = ref<'all' | 'stock' | 'index'>('all')
+const assetOptions = [
+  { label: '全部对象', value: 'all' }, { label: '个股', value: 'stock' }, { label: '指数', value: 'index' },
+]
+watch(assetType, () => { if (!suppressFilterReload) { page.value = 1; void load() } })
 const QUALITY_SORT_FIELDS = ['time', 'severity'] as const
 const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(typeof QUALITY_SORT_FIELDS)[number]>({
   slotId: 'table',
@@ -149,6 +154,7 @@ function applyDefaultFilters() {
   filters.value.severity = [...defaultSeverityFilters.value]
 }
 const hasQueryFilters = computed(() => (
+  assetType.value !== 'all' ||
   filters.value.issue_type.length > 0
   || filters.value.code.trim() !== ''
   || filters.value.status.join(',') !== defaultStatusFilters.value.join(',')
@@ -163,6 +169,7 @@ async function load() {
   loadError.value = ''
   try {
     const result = await getDataQuality({
+      asset_type: assetType.value === 'all' ? undefined : assetType.value,
       issue_type: filters.value.issue_type.join(',') || undefined,
       severity: filters.value.severity.join(',') || undefined,
       status: filters.value.status.join(',') || undefined,
@@ -202,6 +209,7 @@ watch(() => [settings.defaultStatus, settings.defaultSeverity], () => { void app
 async function resetQueryFilters(): Promise<void> {
   if (!hasQueryFilters.value) return
   suppressFilterReload = true
+  assetType.value = 'all'
   filters.value.issue_type = []
   filters.value.code = ''
   applyDefaultFilters()
@@ -441,6 +449,7 @@ const checkupOpen = ref(false)
 const checkupReport = ref<CheckupReport | null>(null)
 async function locateCheckupIssue(item: CheckupIssueItem) {
   suppressFilterReload = true
+  assetType.value = 'all'
   filters.value = checkupIssueFilters(item)
   page.value = 1
   checkupOpen.value = false
@@ -467,11 +476,12 @@ async function runCheckup() {
 
 // 至少选一个筛选条件（类型/严重度/代码）才允许一键恢复，避免误整库恢复
 const canBatch = computed(() =>
-  !!(filters.value.issue_type.length || filters.value.severity.length || filters.value.code.trim()))
+  !!(assetType.value !== 'all' || filters.value.issue_type.length || filters.value.severity.length || filters.value.code.trim()))
 const batching = ref(false)
 function currentBatchFilter() {
   const f = filters.value
   return {
+    asset_type: assetType.value === 'all' ? undefined : assetType.value,
     issue_type: f.issue_type.length ? f.issue_type : undefined,
     severity: f.severity.length ? f.severity : undefined,
     code: f.code.trim() || undefined,
@@ -480,7 +490,7 @@ function currentBatchFilter() {
 
 async function batchRecover() {
   const f = filters.value
-  const scope = [f.issue_type.map((t) => enumText(ISSUE_TYPE_LABEL, t, '未识别问题类型')).join('、'),
+  const scope = [assetType.value === 'all' ? '' : assetOptions.find(o => o.value === assetType.value)?.label, f.issue_type.map((t) => enumText(ISSUE_TYPE_LABEL, t, '未识别问题类型')).join('、'),
                  f.severity.map((s) => `${SEVERITY_LABEL[s]}危`).join('、'),
                  f.code.trim()].filter(Boolean).join(' / ')
   try {
@@ -500,7 +510,7 @@ function batchMarkNormal() {
   const f = filters.value
   ignoreRow.value = null
   ignoreBatch.value = true
-  ignoreBatchLabel.value = [f.issue_type.map((t) => enumText(ISSUE_TYPE_LABEL, t, '未识别问题类型')).join('、'),
+  ignoreBatchLabel.value = [assetType.value === 'all' ? '' : assetOptions.find(o => o.value === assetType.value)?.label, f.issue_type.map((t) => enumText(ISSUE_TYPE_LABEL, t, '未识别问题类型')).join('、'),
                             f.severity.map((s) => `${SEVERITY_LABEL[s]}危`).join('、'),
                             f.code.trim()].filter(Boolean).join(' / ')
   ignoreScope.value = 'occurrence'
@@ -591,6 +601,10 @@ const menuPageTitle = useMenuPageTitle()
         keyword: { value: filters.code, clear: () => { filters.code = ''; applyFilter() } }
       }"
     >
+      <template #context>
+        <PageSegmented v-model="assetType" :options="assetOptions" aria-label="质量问题对象"
+          data-testid="quality-asset-type" />
+      </template>
       <template #status>
         <AppFilterSelect v-model="filters.status" :options="statusFilterOptions"
         :visible-tag-count="2" placeholder="状态" />
@@ -604,7 +618,7 @@ const menuPageTitle = useMenuPageTitle()
         :visible-tag-count="3" placeholder="问题类型" />
       </template>
       <template #keyword>
-        <AppSearchInput v-model="filters.code" placeholder="股票/板块代码或名称" class="app-control-width-long" @search="applyFilter" />
+        <AppSearchInput v-model="filters.code" placeholder="个股/指数/板块代码或名称" class="app-control-width-long" @search="applyFilter" />
       </template>
       <template #commands>
         <el-button data-testid="quality-reset-filters" :disabled="!hasQueryFilters" @click="resetQueryFilters">重置筛选</el-button>

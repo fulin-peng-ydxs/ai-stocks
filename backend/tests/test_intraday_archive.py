@@ -479,9 +479,9 @@ def test_refetch_does_not_expand_unmonitored_history(db):
     service = IntradayArchiveService(db, quotes=Windows([window()]))
     db.execute("UPDATE stock_basic SET list_date='2020-01-01'")
     db.execute("INSERT INTO daily_bar(code,trade_date,close) VALUES (?,'2020-01-02',3.6)", [CODE])
-    with pytest.raises(ValueError, match="超出"):
-        service.collect({"mode": "refetch", "codes": [CODE], "date_start": "2020-01-02"})
-    assert service.summary()["expected_days"] == 0
+    # 可以显式尝试更早历史；没有取得真实分钟时不能扩大监控范围。
+    service.collect({"mode": "refetch", "codes": [CODE], "date_start": "2020-01-02"})
+    assert str(service.global_start()) == DAY
     service.collect(
         {"mode": "refetch", "codes": [CODE], "date_start": "2020-01-02", "date_end": DAY}
     )

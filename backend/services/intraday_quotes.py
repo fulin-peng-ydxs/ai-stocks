@@ -6,6 +6,8 @@ from datetime import date
 
 import pandas as pd
 
+from backend.services.intraday_subjects import is_index
+from backend.services.market_benchmark import BENCHMARK_NAMES
 from backend.storage import get_read_client, get_redis_client
 
 
@@ -30,7 +32,7 @@ class IntradayQuoteService:
                 status=saved["status"],
                 source=saved["source"],
                 fetched_at=saved["fetched_at"],
-                points=self._points(saved["rows"]),
+                points=self._points(saved["rows"], index=is_index(code)),
             )
         else:
             metadata["status"] = "no_data"
@@ -39,6 +41,8 @@ class IntradayQuoteService:
     def _local_metadata(self, code: str, trade_date: date) -> dict:
         name_df = self.market.query_df("SELECT name FROM stock_basic WHERE code = ?", [code])
         name = None if name_df.empty else str(name_df.iloc[0]["name"])
+        if is_index(code):
+            name = BENCHMARK_NAMES.get(code, code)
         metadata = {
             "code": code,
             "name": name,
@@ -55,6 +59,14 @@ class IntradayQuoteService:
         }
         if name is None:
             metadata["status"] = "no_data"
+            return metadata
+        if is_index(code):
+            previous = self.market.query_df(
+                "SELECT close FROM index_bar WHERE index_code=? AND trade_date<? "
+                "ORDER BY trade_date DESC LIMIT 1", [code, trade_date],
+            )
+            if not previous.empty and pd.notna(previous.iloc[0].close):
+                metadata["pre_close"] = float(previous.iloc[0].close)
             return metadata
         bar_df = self.market.query_df(
             "SELECT pre_close, turnover_rate FROM daily_bar "
@@ -73,7 +85,7 @@ class IntradayQuoteService:
         return metadata
 
     @staticmethod
-    def _points(rows: list[list]) -> list[dict]:
+    def _points(rows: list[list], *, index=False) -> list[dict]:
         amount_sum = 0.0
         volume_sum = 0.0
         points: list[dict] = []
@@ -82,7 +94,8 @@ class IntradayQuoteService:
             amount_value = float(amount)
             volume_sum += max(volume_lots, 0.0)
             amount_sum += max(amount_value, 0.0)
-            average = amount_sum / (volume_sum * 100) if volume_sum > 0 else None
+            # 指数点位不是成分股每股成交均价，不能把量额商画成指数均价线。
+            average = amount_sum / (volume_sum * 100) if volume_sum > 0 and not index else None
             points.append(
                 {
                     "time": timestamp[11:16],
