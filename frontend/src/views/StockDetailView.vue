@@ -1620,7 +1620,7 @@ onBeforeUnmount(() => {
 
 .group-select-tag {
   margin: 2px 4px 2px 0;
-  border-radius: 4px;
+  border-radius: var(--app-radius-mark);
   border-style: solid;
   font-weight: var(--app-font-weight-section);
 }

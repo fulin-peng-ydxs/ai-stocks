@@ -125,7 +125,7 @@ const childToggleLabel = computed(() => (
 /* ── 第一层：卡片 + 箭头 ───────────────────────────── */
 .sg-l1 {
   border: 1px solid var(--page-settings-section-border);
-  border-radius: 12px;
+  border-radius: var(--app-radius-floating-section);
   background: var(--page-settings-section-bg);
   overflow: hidden;
 }

@@ -1,6 +1,6 @@
 # 响应式组件触发清单
 
-范围：`frontend/src/**/*.vue` 全部 182 个文件（含页面私有片段、布局宿主及应用外壳），每个文件一行。页面消费与实测结论见 [页面检查](responsive-pages.md)。响应式规则以 [DESIGN.md](../../DESIGN.md) §8 为准；全站字体角色及例外统一引用该文档 §3、§3.5；应用导航尺寸引用 §3.4，本清单只登记消费与适配行为，不另行定义字阶。
+范围：`frontend/src/**/*.vue` 全部 184 个文件（含页面私有片段、布局宿主及应用外壳），每个文件一行。页面消费与实测结论见 [页面检查](responsive-pages.md)。响应式规则以 [DESIGN.md](../../DESIGN.md) §8 为准；全站字体角色及例外统一引用该文档 §3、§3.5；应用导航尺寸引用 §3.4，本清单只登记消费与适配行为，不另行定义字阶。
 
 字体实现维护：所有行均消费 `global.css` 的 token/语义类；MarketCompareMetricStrip、行情和数据概览等普通数据强调使用完整 data 角色，交易纪律分区复用 app-section-title；ECharts 消费 chartTheme 的 typography 快照并经 echartsRenderer 统一基础字体，日 K 与分时的 HTML 行情浮层消费共享 stockQuoteSummaryHtml 和缩放外壳，压缩表格行距与内距；截止测算在底行完整展示，避免旁列撑宽。源码守卫、构建门禁及例外登记入口见 DESIGN §3.5。
 
@@ -145,6 +145,7 @@
 | `frontend/src/components/trade-discipline/TradeDirectionGroupGrid.vue` | 无自身 CSS 查询 | 所有宽度按买入、卖出顺序单列，规则与操作逐条独占一行。 | TradeOperationEditor、TradeRuleEditor |
 | `frontend/src/components/trade-discipline/TradeDisciplineQuickCard.vue` | `@container app-viewport (max-width: 520px)` | 窄容器操作换行，规则与动作保留；快捷确认委托AppDialog，持仓数量输入限制在弹窗内并允许实际修改。 | App |
 | `frontend/src/components/trade-discipline/TradeDisciplineSectionPanel.vue` | `@container app-viewport (max-width: 760px)` | 窄宽头部上下排列，不隐藏操作。 | TradeCheckinForm、TradeOperationEditor、TradeRuleEditor |
+| `frontend/src/layout/components/BorderStatePreview.vue` | 无自身 CSS 查询 | 内部表单auto-fit随容器换列；详情网格委托AppDetailFields的760px单列；状态仅本地切换，边界不随内容三态拆卸。 | LayoutComponentsView |
 | `frontend/src/layout/components/LayoutComponentPreview.vue` | 无自身 CSS 查询 | 固定256高规范样板；状态复用AppStateBlock，消费页可用性需独立验证。 | LayoutComponentsView |
 | `frontend/src/layout/components/LayoutConfigTransferPanel.vue` | 无自身 CSS 查询 | 标题、工具行和底部动作不收缩；编辑区承接剩余高度，至少保留六行。工具行自然换行，长文件名省略；最小分区高度交由父工作区或抽屉滚动承接，重排保留草稿和文件名。 | LayoutPagesView、LayoutPresetsView |
 | `frontend/src/layout/components/LayoutHost.vue` | 无自身 CSS 查询 | 按registry原型装配grow/mixed/columns/scroll；操作/footer不收缩，主区滚动，overlay始终挂载页面边界。 | BacktestView、BoardView、ConfigView、LimitLadderView、ScreenView、SectorDetailView、SectorsView、StockDetailView、StocksView、TradeDisciplineView、TrainingView、IngestView、OverviewView、QualityView、ScheduleView、LayoutComponentsView、LayoutPagesView、LayoutPresetsView、AuditLogView、DataDictionaryView、MenuResourceView、RoleManageView、TenantManageView、UserManageView |

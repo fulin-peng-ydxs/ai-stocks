@@ -102,6 +102,17 @@ describe('视觉预设运行时 Element Plus 色阶', () => {
     }
   })
 
+  it('自定义圆角同步驱动普通面板、控件与库内子部件，切回预设后恢复', () => {
+    setPresetOverrides({ balanced: { 'tokens.shared.cardRadius': 14, 'tokens.shared.controlRadius': 9 } })
+    setLayoutPreset('balanced')
+    expect(document.documentElement.style.getPropertyValue('--layout-card-radius')).toBe('14px')
+    expect(document.documentElement.style.getPropertyValue('--layout-control-radius')).toBe('9px')
+    expect(document.documentElement.style.getPropertyValue('--el-border-radius-base')).toBe('9px')
+    setPresetOverrides({})
+    expect(document.documentElement.style.getPropertyValue('--el-border-radius-base'))
+      .toBe(`${LAYOUT_PRESETS.balanced.tokens.light.controlRadius}px`)
+  })
+
   it('澄空蓝夜间同步生成蓝色派生色，不回退 Element Plus 默认色板', () => {
     isDark.value = true
     setLayoutPreset('balanced')

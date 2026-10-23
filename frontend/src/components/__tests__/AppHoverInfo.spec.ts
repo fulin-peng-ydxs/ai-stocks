@@ -7,7 +7,7 @@ import ElementPlus from 'element-plus'
 
 const ElTooltipStub = defineComponent({
   name: 'ElTooltip',
-  props: ['visible', 'content'],
+  props: ['visible', 'content', 'popperClass'],
   setup(props, { slots }) {
     return () => h('div', {
       class: 'tooltip-stub',
@@ -18,7 +18,7 @@ const ElTooltipStub = defineComponent({
 
 const ElPopoverStub = defineComponent({
   name: 'ElPopover',
-  props: ['visible'],
+  props: ['visible', 'popperClass'],
   setup(props, { slots }) {
     return () => h('div', {
       class: 'popover-stub',
@@ -30,6 +30,21 @@ const ElPopoverStub = defineComponent({
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
 describe('AppHoverInfo', () => {
+  it.each(['tooltip', 'popover'] as const)('%s 保留消费方浮层类并带上明确边界角色', (kind) => {
+    const wrapper = mount(AppHoverInfo, {
+      props: { kind },
+      attrs: { 'popper-class': 'consumer-popper' },
+      slots: kind === 'popover'
+        ? { reference: () => h('span', '入口'), default: () => h('div', '说明') }
+        : { default: () => h('span', '说明') },
+      global: { stubs: { ElTooltip: ElTooltipStub, ElPopover: ElPopoverStub } },
+    })
+    const popperClass = wrapper.findComponent(kind === 'popover' ? ElPopoverStub : ElTooltipStub).props('popperClass')
+    expect(popperClass).toContain('consumer-popper')
+    expect(popperClass).toContain(`app-hover-info--${kind}`)
+    wrapper.unmount()
+  })
+
   it.each(['tooltip', 'popover'] as const)('%s 在分阶段布局通知后保留仍命中的静止鼠标意图', async (kind) => {
     vi.useFakeTimers()
     const descriptor = Object.getOwnPropertyDescriptor(document, 'elementFromPoint')

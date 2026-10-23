@@ -181,7 +181,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .eq-wrap {
   background: v-bind(wrapBg);
-  border-radius: 6px;
+  border-radius: var(--app-radius-canvas);
   padding: 4px;
 }
 .eq {

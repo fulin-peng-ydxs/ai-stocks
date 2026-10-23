@@ -343,7 +343,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .cmp-wrap {
   background: v-bind(wrapBg);
-  border-radius: 6px;
+  border-radius: var(--app-radius-canvas);
   padding: 4px;
 }
 .cmp-wrap--fill,

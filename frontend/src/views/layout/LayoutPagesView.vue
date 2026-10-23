@@ -647,7 +647,7 @@ const menuPageTitle = useMenuPageTitle()
         <el-tabs v-model="tab" class="config-tabs" :before-leave="() => !operationBusy" @tab-change="onTabChange">
           <el-tab-pane label="页面设计" name="workbench">
             <div class="workbench-pane">
-            <section class="plain-panel source-panel">
+            <section class="app-surface plain-panel source-panel">
               <div class="source-head">
                 <div class="source-identity">
                   <div class="section-title app-section-title">页面结构</div>
@@ -665,7 +665,7 @@ const menuPageTitle = useMenuPageTitle()
 
             <AppScrollArea class="page-config-grid">
               <!-- 左侧只表达结构和选中关系；配置说明统一由右侧检查器承接。 -->
-              <AppScrollArea as="section" class="plain-panel preview-panel">
+              <AppScrollArea as="section" class="app-surface plain-panel preview-panel">
                 <div class="panel-heading">
                   <div>
                     <div class="section-title">结构预览</div>
@@ -683,7 +683,7 @@ const menuPageTitle = useMenuPageTitle()
               </AppScrollArea>
 
               <!-- 右侧是唯一配置入口：页面默认、所选组件、折叠诊断、保存。 -->
-              <section class="plain-panel config-panel">
+              <section class="app-surface plain-panel config-panel">
                 <div class="inspector-head">
                   <div>
                     <div class="section-title">配置检查器</div>
@@ -898,7 +898,7 @@ const menuPageTitle = useMenuPageTitle()
               @retry="runValidationReport"
             >
             <AppScrollArea class="report-grid">
-              <AppScrollArea as="section" class="plain-panel">
+              <AppScrollArea as="section" class="app-surface plain-panel">
                 <div class="section-title">错误项</div>
                 <el-alert
                   v-if="!pageValidationErrors.length && !userValidationErrors.length"
@@ -916,7 +916,7 @@ const menuPageTitle = useMenuPageTitle()
                 />
               </AppScrollArea>
 
-              <AppScrollArea as="section" class="plain-panel">
+              <AppScrollArea as="section" class="app-surface plain-panel">
                 <div class="section-title">字段来源</div>
                 <AppDataTable :data="sourceRows" height="320" embedded>
                   <AppTableColumn prop="path" label="路径" />
@@ -1019,9 +1019,6 @@ const menuPageTitle = useMenuPageTitle()
   padding: var(--app-density-card-padding);
   min-width: 0;
   min-height: 0;
-  border: 1px solid var(--el-border-color);
-  background: var(--el-bg-color);
-  border-radius: 6px;
   --app-scroll-padding-top: var(--app-density-card-padding); --app-scroll-padding-right: var(--app-density-card-padding); --app-scroll-padding-bottom: var(--app-density-card-padding); --app-scroll-padding-left: var(--app-density-card-padding);
 }
 .preview-panel,

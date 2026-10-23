@@ -846,7 +846,7 @@ const menuPageTitle = useMenuPageTitle()
 }
 .metric {
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
+  border-radius: var(--layout-card-radius);
   background: var(--el-bg-color-overlay);
   padding: 11px 12px;
   min-width: 0;
@@ -907,7 +907,7 @@ const menuPageTitle = useMenuPageTitle()
 }
 .detail-hero {
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
+  border-radius: var(--layout-card-radius);
   background: var(--el-bg-color-overlay);
   padding: 12px;
   margin-bottom: 12px;
@@ -947,7 +947,7 @@ const menuPageTitle = useMenuPageTitle()
 }
 .change-table {
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
+  border-radius: var(--layout-card-radius);
 }
 .change-table :deep(.cell) {
   color: var(--el-text-color-regular);

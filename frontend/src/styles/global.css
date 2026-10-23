@@ -1,5 +1,6 @@
 @import './buttonStates.css';
 @import './scrollbar.css';
+@import './borders.css';
 
 /* 动效时长统一使用 ms；reveal 指令与折叠组件共用此入口。 */
 :root {
@@ -889,7 +890,7 @@ b, strong, h1, h2, h3, h4, h5, h6 {
   color: var(--el-color-primary);
   font-weight: var(--app-font-weight-strong);
   background: var(--el-color-primary-light-9);
-  border-radius: 5px;
+  border-radius: var(--app-radius-item);
 }
 .trade-cal .el-date-table td.available:not(.current):not(.today):hover .el-date-table-cell__text {
   background: var(--el-color-primary-light-7);
@@ -1069,7 +1070,7 @@ html.dark {
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--el-border-radius-base);
+  border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
 }
 
@@ -1393,45 +1394,10 @@ html[data-layout-preset] .el-button:not(.app-interaction-target, .app-interactio
   outline-offset: 1px;
   box-shadow: none;
 }
-html[data-layout-preset] .el-input__wrapper,
-html[data-layout-preset] .el-select__wrapper {
-  background-color: var(--chrome-bg-soft);
-  box-shadow: 0 0 0 1px var(--chrome-border) inset;
-  transition: box-shadow .18s ease, background-color .18s ease;
-}
-html[data-layout-preset] .el-input__wrapper:hover,
-html[data-layout-preset] .el-select__wrapper:hover {
-  box-shadow: 0 0 0 1px var(--chrome-border-strong) inset;
-}
-html[data-layout-preset] .el-input__wrapper.is-focus,
-html[data-layout-preset] .el-select__wrapper.is-focused {
-  box-shadow:
-    0 0 0 1px var(--el-color-primary) inset,
-    0 0 0 3px color-mix(in srgb, var(--el-color-primary) 12%, transparent);
-}
 html[data-layout-preset] .el-input__inner,
 html[data-layout-preset] .el-select__placeholder,
 html[data-layout-preset] .el-select__selected-item {
   color: var(--chrome-text);
-}
-/* 禁用/只读数据保留控件外形，统一中性边框和弱文字；背景沿用原有控件样式。 */
-html[data-layout-preset] :is(
-  .el-input.is-disabled .el-input__wrapper,
-  .el-textarea.is-disabled .el-textarea__inner,
-  .el-select__wrapper.is-disabled,
-  .el-range-editor.is-disabled
-) {
-  box-shadow: 0 0 0 1px var(--el-disabled-border-color) inset;
-}
-html[data-layout-preset] :is(
-  .el-input.is-disabled .el-input__inner,
-  .el-textarea.is-disabled .el-textarea__inner,
-  .el-select__wrapper.is-disabled .el-select__placeholder,
-  .el-select__wrapper.is-disabled .el-select__selected-item,
-  .el-range-editor.is-disabled input
-) {
-  color: var(--el-disabled-text-color);
-  -webkit-text-fill-color: var(--el-disabled-text-color);
 }
 html[data-layout-preset] .el-table__cell {
   padding-top: var(--layout-table-cell-padding-y);

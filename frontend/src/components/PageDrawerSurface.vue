@@ -74,7 +74,7 @@ defineEmits<{
   flex-direction: column;
   background: var(--page-settings-bg);
   border: 1px solid var(--page-settings-border);
-  border-radius: 16px;
+  border-radius: var(--app-radius-overlay);
   box-shadow: 0 10px 30px var(--page-settings-shadow);
   overflow: hidden;
 }

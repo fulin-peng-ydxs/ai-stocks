@@ -73,7 +73,7 @@ const live = computed(() => props.tone === 'error' ? 'assertive' : 'polite')
 <style scoped>
 .app-status-notice {
   --app-status-notice-color: var(--el-color-info);
-  --app-status-notice-border: var(--el-color-info-light-7);
+  --app-status-notice-border: var(--app-border-notice-info);
   --app-status-notice-bg: var(--el-color-info-light-9);
   display: flex;
   min-width: 0;
@@ -90,19 +90,19 @@ const live = computed(() => props.tone === 'error' ? 'assertive' : 'polite')
 
 .app-status-notice--success {
   --app-status-notice-color: var(--el-color-success);
-  --app-status-notice-border: var(--el-color-success-light-7);
+  --app-status-notice-border: var(--app-border-notice-success);
   --app-status-notice-bg: var(--el-color-success-light-9);
 }
 
 .app-status-notice--warning {
   --app-status-notice-color: var(--app-warning-text);
-  --app-status-notice-border: var(--el-color-warning-light-7);
+  --app-status-notice-border: var(--app-border-notice-warning);
   --app-status-notice-bg: var(--el-color-warning-light-9);
 }
 
 .app-status-notice--error {
   --app-status-notice-color: var(--app-danger-text);
-  --app-status-notice-border: var(--el-color-danger-light-7);
+  --app-status-notice-border: var(--app-border-notice-danger);
   --app-status-notice-bg: var(--el-color-danger-light-9);
 }
 

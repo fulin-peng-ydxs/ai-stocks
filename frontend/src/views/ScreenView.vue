@@ -1185,7 +1185,7 @@ const menuPageTitle = useMenuPageTitle()
   font-size: var(--app-font-size-caption);
   height: auto;
   min-height: 0;
-  border-radius: 10px;
+  border-radius: var(--app-radius-pill);
   padding: 1px 8px;
   font-weight: var(--app-font-weight-section);
   cursor: pointer;
@@ -1200,7 +1200,7 @@ const menuPageTitle = useMenuPageTitle()
   margin: var(--app-space-3) 0;
   padding: 12px 14px;
   border: 1px solid var(--el-border-color-light);
-  border-radius: 8px;
+  border-radius: var(--layout-card-radius);
   background: var(--el-fill-color-blank);
 }
 .b-group {
@@ -1240,7 +1240,7 @@ const menuPageTitle = useMenuPageTitle()
   margin: 12px 0 0;
   --app-scroll-padding-top: 10px; --app-scroll-padding-right: 12px; --app-scroll-padding-bottom: 10px; --app-scroll-padding-left: 12px;
   background: var(--app-section-bg);
-  border-radius: 6px;
+  border-radius: var(--layout-control-radius);
   font-size: var(--app-font-size-caption);
   color: var(--el-text-color-regular);
   max-height: 200px;
@@ -1248,7 +1248,7 @@ const menuPageTitle = useMenuPageTitle()
 .complex-ast-notice { margin: var(--app-space-3) 0; }
 .ver-item {
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
+  border-radius: var(--layout-card-radius);
   padding: 8px 10px;
   margin-bottom: 10px;
 }

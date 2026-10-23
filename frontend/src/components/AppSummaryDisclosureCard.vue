@@ -137,7 +137,7 @@ button.app-summary-disclosure-card__summary:active { background: var(--app-butto
 .app-summary-disclosure-card__index {
   width: 28px;
   height: 28px;
-  border-radius: 6px;
+  border-radius: var(--layout-control-radius);
   background: color-mix(in srgb, var(--app-section-bg) 68%, var(--el-bg-color));
   color: var(--el-text-color-secondary);
   display: inline-flex;

@@ -92,7 +92,7 @@ defineProps<{
   flex: none;
   padding: 0 4px;
   border: 1px solid var(--el-border-color);
-  border-radius: 3px;
+  border-radius: var(--app-radius-mark);
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
 }

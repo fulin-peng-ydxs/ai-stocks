@@ -21,6 +21,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import LayoutComponentPreview from '@/layout/components/LayoutComponentPreview.vue'
+import BorderStatePreview from '@/layout/components/BorderStatePreview.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpHint from '@/components/HelpHint.vue'
@@ -336,7 +337,7 @@ const menuPageTitle = useMenuPageTitle()
       <section
         v-loading="policyLoading"
         element-loading-text="正在加载组件字段策略…"
-        class="plain-panel"
+        class="app-surface plain-panel"
         :aria-busy="policyLoading"
         data-testid="component-catalog"
       >
@@ -440,6 +441,7 @@ const menuPageTitle = useMenuPageTitle()
               </el-radio-group>
             </div>
             <LayoutComponentPreview :kind="selected.kind" :state="previewState" />
+            <BorderStatePreview />
             <div class="preview-purpose app-caption-text">
               用途：统一状态语义、文案和稳定占位；业务页面仍需接入真实数据并单独通过四态测试。
             </div>
@@ -582,9 +584,6 @@ const menuPageTitle = useMenuPageTitle()
 }
 .plain-panel {
   min-width: 0;
-  border: 1px solid var(--el-border-color);
-  background: var(--el-bg-color);
-  border-radius: 6px;
   padding: var(--app-density-card-padding);
 }
 .cat-title {

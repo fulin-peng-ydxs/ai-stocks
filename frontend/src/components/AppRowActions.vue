@@ -435,7 +435,7 @@ onBeforeUnmount(() => {
   justify-content: flex-start;
   margin-left: 0 !important;
   padding: 4px 10px !important;
-  border-radius: 4px;
+  border-radius: var(--app-radius-item);
   font-size: var(--app-font-size-body);
   text-align: left;
   white-space: normal;

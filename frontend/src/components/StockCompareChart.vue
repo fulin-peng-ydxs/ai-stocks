@@ -239,7 +239,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .stock-compare-wrap {
   padding: 4px;
-  border-radius: 6px;
+  border-radius: var(--app-radius-canvas);
   background: v-bind(wrapBg);
 }
 .stock-compare-wrap--fill,

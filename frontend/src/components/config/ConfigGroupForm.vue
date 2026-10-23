@@ -239,7 +239,6 @@ function collapsed(key: string): boolean {
 <style scoped>
 .config-group-panel {
   min-width: 0;
-  border-radius: 8px;
 }
 .config-group-form {
   display: grid;

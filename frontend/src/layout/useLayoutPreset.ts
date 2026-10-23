@@ -322,6 +322,8 @@ function applyPreset(key: string) {
 
   setCssVar(t, 'cardRadius', '--layout-card-radius', 'px')
   setCssVar(t, 'controlRadius', '--layout-control-radius', 'px')
+  // 库内 textarea、number 子件与 radio-button 等共享基础半径，圆形/胶囊仍由库角色管理。
+  setCssVar(t, 'controlRadius', '--el-border-radius-base', 'px')
   // 必须在全部 CSS 变量写入后发布，避免画布消费者读到新版本号与旧 token 的中间态。
   themeRevision.value += 1
 }

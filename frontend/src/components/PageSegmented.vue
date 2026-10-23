@@ -74,7 +74,7 @@ function optionTestId(value: OptionValue): string | undefined {
   gap: var(--app-space-1);
   padding: 3px;
   border: 1px solid var(--page-settings-section-border);
-  border-radius: 12px;
+  border-radius: var(--layout-control-radius);
   background: var(--page-settings-seg-bg);
 }
 .seg-btn {
@@ -84,7 +84,7 @@ function optionTestId(value: OptionValue): string | undefined {
   min-height: 38px;
   padding: 0 10px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--app-radius-segment);
   background: transparent;
   color: var(--page-settings-text-subtle);
   font-size: var(--app-font-size-table);
@@ -168,7 +168,7 @@ function optionTestId(value: OptionValue): string | undefined {
   min-height: 0;
   height: 100%;
   padding: 0 var(--app-space-2);
-  border-radius: calc(var(--layout-control-radius) - 1px);
+  border-radius: var(--app-radius-segment);
 }
 .page-segmented--tabs {
   height: var(--app-control-height-md);

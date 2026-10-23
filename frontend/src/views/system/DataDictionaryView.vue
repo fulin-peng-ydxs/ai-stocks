@@ -802,7 +802,7 @@ const menuPageTitle = useMenuPageTitle()
 .dict-type-row {
   width: 100%;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--app-radius-item);
   display: flex;
   align-items: center;
   gap: var(--app-space-2);
@@ -876,7 +876,7 @@ html[data-layout-mode='dark'] .dict-type-status {
   height: 14px;
   flex: none;
   border: 1px solid var(--el-border-color);
-  border-radius: 3px;
+  border-radius: var(--app-radius-mark);
 }
 @container app-viewport (max-width: 980px) {
   .dict-page-head {

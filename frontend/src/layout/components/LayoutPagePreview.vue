@@ -236,7 +236,7 @@ function parentLabel(s: SlotSpec): string | null {
 }
 .resp-summary {
   border: 1px solid var(--el-border-color);
-  border-radius: 6px;
+  border-radius: var(--layout-card-radius);
   background: var(--app-section-bg);
   padding: 10px 12px;
   display: flex;
@@ -279,7 +279,7 @@ function parentLabel(s: SlotSpec): string | null {
 }
 .device-frame {
   border: 1px solid var(--el-border-color);
-  border-radius: 8px;
+  border-radius: var(--layout-card-radius);
   background: var(--app-section-bg);
   padding: 12px;
   display: flex;
@@ -298,7 +298,7 @@ function parentLabel(s: SlotSpec): string | null {
 .region-main,
 .region-off-flow {
   border: 1px dashed var(--el-border-color);
-  border-radius: 6px;
+  border-radius: var(--layout-card-radius);
   padding: 10px;
   background: var(--el-bg-color);
 }
@@ -327,7 +327,7 @@ function parentLabel(s: SlotSpec): string | null {
 .slot-box {
   text-align: left;
   border: 1px solid var(--el-border-color);
-  border-radius: 6px;
+  border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
   padding: 10px;
   cursor: pointer;

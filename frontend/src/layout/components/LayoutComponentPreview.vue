@@ -116,7 +116,7 @@ const effState = computed<ComponentState>(() => {
   box-sizing: border-box;
   height: 256px;
   border: 1px solid var(--el-border-color);
-  border-radius: 6px;
+  border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
   padding: 12px;
   overflow: hidden;
@@ -196,7 +196,7 @@ span {
   height: 30px;
   flex: 1;
   border: 1px solid var(--el-border-color);
-  border-radius: 4px;
+  border-radius: var(--layout-control-radius);
   background: var(--app-section-bg);
 }
 .cp-input.sm {
@@ -207,7 +207,7 @@ span {
   padding: 0 14px;
   display: inline-flex;
   align-items: center;
-  border-radius: 4px;
+  border-radius: var(--layout-control-radius);
   background: var(--el-color-primary);
   color: #fff;
   font-size: var(--app-font-size-caption);
@@ -232,7 +232,7 @@ span {
 }
 .cp-card {
   border: 1px solid var(--el-border-color);
-  border-radius: 6px;
+  border-radius: var(--layout-card-radius);
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -269,7 +269,7 @@ span {
   flex: 1;
   height: 30px;
   border: 1px solid var(--el-border-color);
-  border-radius: 4px;
+  border-radius: var(--layout-control-radius);
   background: var(--app-section-bg);
 }
 .cp-overlay,
@@ -392,7 +392,7 @@ span {
 .cp-structure {
   flex: 1;
   border: 1px dashed var(--el-border-color);
-  border-radius: 6px;
+  border-radius: var(--layout-card-radius);
   display: flex;
   align-items: center;
   justify-content: center;

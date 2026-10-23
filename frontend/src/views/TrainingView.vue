@@ -1025,26 +1025,26 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 .card-sub { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); margin-left: 8px; }
 .hist-card { min-height: 300px; }
 .hist-table { cursor: pointer; flex: 1; }
-.grade-chip { color: #fff; padding: 1px 8px; border-radius: 10px; font-weight: var(--app-font-weight-strong); font-size: var(--app-font-size-caption); }
+.grade-chip { color: #fff; padding: 1px 8px; border-radius: var(--app-radius-pill); font-weight: var(--app-font-weight-strong); font-size: var(--app-font-size-caption); }
 
 /* 训练中：固定块（图+面板）+ 主表 → 混合成长区 */
 .run-body { flex: 1 1 auto; min-height: 0; --app-scroll-display: flex; --app-scroll-direction: column; --app-scroll-gap: var(--app-space-2); --app-scroll-padding-right: 2px; }
 .chart-block { flex: 0 0 auto; }
 .training-chart-workspace { height: 100%; }
-.action-panel { flex: 0 0 auto; background: var(--app-section-bg); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: var(--app-space-2); }
+.action-panel { flex: 0 0 auto; background: var(--app-section-bg); border-radius: var(--layout-card-radius); padding: 10px 14px; display: flex; flex-direction: column; gap: var(--app-space-2); }
 .acct { display: flex; gap: var(--app-space-5); flex-wrap: wrap; }
 .acct-item { display: flex; flex-direction: column; }
 .acct-item label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .acct-item b { font-size: var(--app-font-size-data); line-height: var(--app-line-height-data); font-weight: var(--app-font-weight-section); font-variant-numeric: tabular-nums; }
 .acct-item b.lim { color: var(--el-color-primary); }
 .acct-item .muted { font-size: var(--app-font-size-caption); }
-.pending { display: flex; align-items: center; gap: var(--app-space-2); background: var(--el-color-warning-light-9); padding: 4px 10px; border-radius: 6px; font-size: var(--app-font-size-table); }
+.pending { display: flex; align-items: center; gap: var(--app-space-2); background: var(--el-color-warning-light-9); padding: 4px 10px; border-radius: var(--layout-control-radius); font-size: var(--app-font-size-table); }
 .ops { display: flex; align-items: center; gap: var(--app-space-2); flex-wrap: wrap; }
 .ops .unit { color: var(--el-text-color-secondary); margin-left: -4px; }
 .ops .hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; }
 .ops .last-tip { color: var(--el-color-warning); font-size: var(--app-font-size-table); }
 /* 预判高亮数字（可点填入） */
-.hl { font-weight: var(--app-font-weight-strong); font-size: var(--app-font-size-section-title); padding: 0 3px; border-radius: 4px; }
+.hl { font-weight: var(--app-font-weight-strong); font-size: var(--app-font-size-section-title); padding: 0 3px; border-radius: var(--app-radius-mark); }
 /* 买入/卖出快捷行 */
 .trade-row { display: flex; align-items: center; gap: var(--app-space-2); flex-wrap: wrap; }
 .side-tag { font-size: var(--app-font-size-table); font-weight: var(--app-font-weight-strong); width: 40px; }
@@ -1055,7 +1055,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 /* 结算：固定块（KPI/评分规则/回合卡）自然高，整局复盘卡吃满剩余高度；余量不足时整区滚动兜底 */
 .result-body { flex: 1 1 auto; min-height: 0; --app-scroll-display: flex; --app-scroll-direction: column; --app-scroll-gap: var(--app-space-3); --app-scroll-padding-right: 2px; }
 .kpi-row { display: flex; gap: var(--app-space-3); flex-wrap: wrap; }
-.kpi { flex: 1 1 120px; background: var(--app-section-bg); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: var(--app-space-1); }
+.kpi { flex: 1 1 120px; background: var(--app-section-bg); border-radius: var(--layout-card-radius); padding: 10px 14px; display: flex; flex-direction: column; gap: var(--app-space-1); }
 .kpi label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .kpi b { font-size: var(--app-font-size-page-title-sm); font-variant-numeric: tabular-nums; }
 .score-rule-card { flex: 0 0 auto; }

@@ -1,4 +1,4 @@
-import { cloneVNode, defineComponent, h, watch, type Component, type PropType, type VNode } from 'vue'
+import { cloneVNode, normalizeClass, defineComponent, h, watch, type Component, type PropType, type VNode } from 'vue'
 import { ElPopover, ElTooltip } from 'element-plus'
 import { useHoverIntent } from '@/composables/useHoverIntent'
 
@@ -64,9 +64,9 @@ export default defineComponent({
       const popover = props.kind === 'popover'
       const component = (popover ? ElPopover : ElTooltip) as Component
       return h(component, {
-        popperClass: 'app-wrapping-popper',
         popperOptions: hoverPopperOptions,
         ...attrs,
+        popperClass: normalizeClass(['app-wrapping-popper', `app-hover-info--${props.kind}`, attrs.popperClass, attrs['popper-class']]),
         disabled: props.disabled,
         visible: intent.visible.value,
         trigger: ['hover', 'focus'],

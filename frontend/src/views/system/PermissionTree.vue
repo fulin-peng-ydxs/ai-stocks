@@ -135,7 +135,7 @@ const resourceStats = computed(() => {
   overflow: hidden;
   margin-bottom: var(--app-space-3);
   border: 1px solid var(--el-border-color);
-  border-radius: 8px;
+  border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
 }
 .pt-group-head {
@@ -238,7 +238,7 @@ const resourceStats = computed(() => {
   flex: none;
   padding: 0 4px;
   border: 1px solid var(--app-border-warning);
-  border-radius: 3px;
+  border-radius: var(--app-radius-mark);
   color: var(--el-color-warning);
   font-size: var(--app-font-size-caption);
   font-weight: var(--app-font-weight-regular);

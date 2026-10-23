@@ -2898,7 +2898,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   font-size: var(--app-font-size-caption);
   height: auto;
   min-height: 0;
-  border-radius: 10px;
+  border-radius: var(--app-radius-pill);
   padding: 1px 8px;
   font-weight: var(--app-font-weight-section);
   cursor: pointer;
@@ -2909,7 +2909,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 }
 .ver-item {
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
+  border-radius: var(--layout-card-radius);
   padding: 8px 10px;
   margin-bottom: 10px;
 }
@@ -2981,7 +2981,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .subchip {
   display: inline-block;
   background: var(--app-section-bg);
-  border-radius: 4px;
+  border-radius: var(--app-radius-mark);
   padding: 1px 6px;
   margin: 0 4px 2px 0;
   font-size: var(--app-font-size-caption);
@@ -3011,7 +3011,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .expr {
   font-family: var(--app-font-family-mono);
   background: var(--app-section-bg);
-  border-radius: 4px;
+  border-radius: var(--app-radius-mark);
   padding: 1px 6px;
   font-size: var(--app-font-size-caption);
 }
@@ -3182,7 +3182,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   margin: var(--app-space-3) 0;
   padding: 12px 14px;
   border: 1px solid var(--el-border-color-light);
-  border-radius: 8px;
+  border-radius: var(--layout-card-radius);
   background: var(--el-fill-color-blank);
 }
 .cond-head {

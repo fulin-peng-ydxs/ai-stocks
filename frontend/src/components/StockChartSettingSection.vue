@@ -201,7 +201,7 @@ watch(
   align-items: center;
   padding: 0 10px;
   border: 1px solid var(--page-settings-seg-active-border);
-  border-radius: 10px;
+  border-radius: var(--layout-control-radius);
   background: var(--page-settings-seg-active-bg);
   color: var(--page-settings-text);
   font-size: var(--app-font-size-table);

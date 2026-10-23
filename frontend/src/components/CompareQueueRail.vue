@@ -104,7 +104,7 @@ const emit = defineEmits<{
   font-size: var(--app-font-size-caption);
 }
 .compare-queue-chip.error {
-  border-color: var(--el-color-warning);
+  border-color: var(--app-border-warning);
 }
 
 </style>

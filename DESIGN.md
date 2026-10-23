@@ -331,6 +331,7 @@ Key Characteristics：
 | `PageSettingsTrigger` | `frontend/src/components/PageSettingsTrigger.vue` | 页面设置统一入口 | 触发 registry 页面中的 `settings-drawer` | 仅 `pageRegistry.supportsPageSettings !== false` 的真实消费页面显示；平台布局管理页不开放个人设置，不登记假入口 |
 | `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 全站抽屉唯一外壳与边界组件 | 无直接系统组件种类；内部唯一消费 `el-drawer` 和 `PageDrawerSurface` | 仅供页面设置、实时日志、资产搜索、主从窄屏回退和应用级专用抽屉直接消费；普通详情使用 AppDetailDrawer，边界与宽度见[弹窗与抽屉](#弹窗与抽屉)。 |
 | `PageDrawerSurface` | `frontend/src/components/PageDrawerSurface.vue` | 全站抽屉统一内容面板 | 无直接系统组件种类；仅由 `PageDrawer` 内部消费 | 仅由 PageDrawer 内部消费；外壳差异经语义属性和插槽表达，禁止页面复制面板外观。 |
+| `BorderStatePreview` | `frontend/src/layout/components/BorderStatePreview.vue` | 系统组件详情内的真实边界状态样板 | 无独立kind、slot或配置字段 | 仅本地展示；覆盖输入错误/禁用、选中禁用、网格列数/跨列与结果三态；不替代业务入口验收。 |
 | `AppDialog` | `frontend/src/components/AppDialog.vue` | 页面短表单、单组编辑和轻量查看的统一弹窗外壳 | 无直接系统组件种类；内部消费 `el-dialog` | 短表单与轻量查看统一消费；语义宽度、挂载边界及正文滚动见[弹窗与抽屉](#弹窗与抽屉)。 |
 | `AppDetailDrawer` | `frontend/src/components/AppDetailDrawer.vue` | 完整详情、长编辑、历史版本和审计上下文的统一抽屉结构 | 无直接系统组件种类；内部消费 `PageDrawer` 的统一外壳 | 普通对象详情、长编辑和审计上下文统一消费；外壳委托 PageDrawer，详情分区见[弹窗与抽屉](#弹窗与抽屉)。 |
 | `AppDetailSection` / `AppDetailFields` / `AppDetailField` | `frontend/src/components/AppDetailSection.vue`、`frontend/src/components/AppDetailFields.vue`、`frontend/src/components/AppDetailField.vue` | 详情分区和规则型键值展示 | 无直接系统组件种类；作为详情抽屉或页面详情的内容结构 | 详情分区和键值展示统一消费，禁止私建详情网格；布局及空值规则见[弹窗与抽屉](#弹窗与抽屉)。 |
@@ -500,7 +501,7 @@ Key Characteristics：
 - 纯图标异步操作必须使用 `AppIconButton` 的 `loading`，不得在页面内为图标按钮新增私有旋转动画或把 loading 混同为 disabled 灰态。图标按钮有必要的功能说明时显式传 `tooltip`；外层已有 `AppHoverInfo` 时不再声明同一提示，统一遵循本节提示契约。
 - Unicode 禁令针对交互图标、操作按钮和纯图标控件；业务公式、状态文案里的箭头/对勾/叉号可作为局部文案保留，但不得用于按钮图标。选择态勾选标记也使用 Element Plus 图标或项目 SVG，不使用 Unicode 字形。
 - 自定义原生 `<button>` 仅保留给导航、登录主视觉切换、规则摘要 disclosure 等具有独立语义和结构的专用控件，并在实现中保持专用 class、键盘语义和必要的 ARIA 状态；普通命令和纯图标操作不得借此绕过统一组件。
-- 输入与复合选择控件的禁用或只读状态保留外形，边框消费 `border`，文字消费 `textMuted`；Element Plus 的边框与文字适配统一由 `global.css` 承接。禁用控件底色通过 `--el-disabled-bg-color` 读取，当前由 `useLayoutPreset.ts` 映射为 `surfaceHover`；允许与悬停基础色同色，但不表示控件可交互，禁用状态仍通过文字、边框和光标表达，禁用项不响应 hover。按钮和分段选择的禁用呈现见下方矩阵。
+- 输入与复合选择控件的禁用或只读状态保留外形，边框消费 `border`，文字消费 `textMuted`；Element Plus 的边框与文字适配统一由 `borders.css` 承接。禁用控件底色通过 `--el-disabled-bg-color` 读取，当前由 `useLayoutPreset.ts` 映射为 `surfaceHover`；允许与悬停基础色同色，但不表示控件可交互，禁用状态仍通过文字、边框和光标表达，禁用项不响应 hover。按钮和分段选择的禁用呈现见下方矩阵。
 - 夜间模式的复选框、单选框、输入边界和表格行悬浮必须使用强边框或主色反馈；空框、选中、禁用三态均需肉眼可辨。
 - 多行对象选择卡片的普通项必须保留共享卡片的中性边框；选中项通过主色边框和定位标记强调，不能只给选中项画边界。宿主透明边框只用于共享交互表面占位，不得把可见表面的边框 token 置为透明。
 - 工具栏按钮应贴近其影响区域，避免页面右上角堆积所有操作。
@@ -1029,6 +1030,28 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 弹窗遮罩保持轻压暗，不能让背景表格干扰当前任务。
 - 高对比预设必须提高边框和文字对比，而不是仅加深背景。
 - 共享边框角色由 `themeSurfaces.ts::themeBorderVariables()` 提供，包含常规、分隔、强边框、选中及语义状态边框；`useLayoutPreset.ts` 统一同步组件库边框。背景仍按本节原有层级和 §2 维护。
+
+### 全组件边界所有权与状态适配
+
+颜色事实源保持 `themeSurfaces.ts::themeBorderVariables()`；`styles/borders.css` 统一维护表面、形态例外、库控件变体和输入组合态。组件和页面仅选择角色，不在消费点增加同角色边框配方。普通矩形圆角随预设变化；`useLayoutPreset.ts` 同步库基础半径，textarea、radio-button、number 子部件不能回退库默认 4px。
+
+| 角色 | 实现入口与形态 | 边界所有者与适用范围 |
+|---|---|---|
+| 普通表面 | `AppTableCard`、`AppWorkspacePane`；结构不同的面板用 `.app-surface`；card token | 外沿1 CSS px常规边框；配置一级组、权限组、结果面板和页面私有面板同源；排版容器不强制画框 |
+| 输入/矩形触发 | control token；库子部件经基础半径及 `borders.css` 适配 | input、textarea、select、range、number、color；禁用保形，只读可聚焦复制，不把事实值整体灰化 |
+| 分段/列表子项 | `--app-radius-item`、`--app-radius-segment` | 默认和small消费同一角色；tabs无外框；选中标记由自身语义承接，hover不覆盖选中，disabled不响应操作 |
+| 大弹层 | `--app-radius-overlay`，16px | Dialog、MessageBox、PageDrawerSurface统一1px主题外沿；全屏Dialog贴画布；蒙层与阴影不代替外沿 |
+| 锚点浮层/说明 | popover、菜单用card；tooltip用control | 浮层和触发器各自拥有边界；AppHoverInfo显式携带tooltip/popover角色，明底tooltip同样适配 |
+| 浮层内分组 | `--app-radius-floating-section`，12px | SettingsGroup、用户中心卡、交易纪律快捷卡；不外推到主内容区普通面板 |
+| 软提示/状态强调 | `--app-border-notice-{info,primary,success,warning,danger}` / `--app-border-{success,warning,danger}` | 软提示沿用主题light-7；状态强调框与常规边框混色，保留强调程度差异；字段错误直接消费danger，不借用软提示框 |
+| 详情结构网格 | AppDetailFields拥有card外沿，gap1px；AppDetailField向间隙投影1px接缝 | 父裁切外侧投影，覆盖单列、跨列和不完整行；不在末行/末列叠加inset外沿，空缺位置保留内容面 |
+| 图表画布 | 嵌入图表用 `--app-radius-canvas`（0），独立股票画布用 `.app-stock-chart-frame` | EquityChart/SectorCompareChart/StockCompareChart所有当前消费者已有宿主外框，不再额外套卡；AppWorkspacePane内股票画布去重外框；后续独立使用须由宿主承接表面 |
+| 图形/身份 | 圆、胶囊、`--app-radius-mark`及具名图形 | 登录品牌、预览缩略图、评分热力格、图例、拖拽提示保留图形语义；金融涨跌、来源和字典身份沿用领域helper，不映射成系统告警 |
+
+输入优先级为 **disabled > error+focus > error > focus > hover > default**：焦点匹配真实 `.is-focus`、`.is-focused`、range的`.is-active`及textarea`:focus`；错误焦点保留danger内沿与同色光晕。命令按钮继续复用 `buttonStates.css` 和共享焦点轮廓，loading保留角色原色。选中与焦点独立承接；区域loading/empty/error替换内容时保留宿主外框。各组件仅声明和消费真实支持的状态，不因库支持就虚构包装组件的loading/readonly能力。
+
+`npm run check:borders` 检查全量Vue/CSS中的普通游离圆角、边框直写颜色和页面私改输入边界，并纳入构建；登录品牌与具名缩略图例外由 `scripts/border-contract.mjs` 登记。该静态门禁不证明全部视觉状态通过。系统组件详情中的 `BorderStatePreview` 直接渲染真实控件，供本地核对组合态、详情1/2/3列及结果三态，不请求或保存业务数据；原型预览仍只证明其规范样板。
+
 
 ## 7. Do's and Don'ts
 

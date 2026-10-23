@@ -355,7 +355,7 @@ const menuPageTitle = useMenuPageTitle()
       />
       <AppScrollArea v-else class="rm-split">
         <!-- 左：角色列表 -->
-        <div class="rm-col rm-left">
+        <div class="app-surface rm-col rm-left">
           <div class="rm-col-head">
             <span class="rm-head-title">角色 <span class="mini">{{ roles.length }}</span></span>
           </div>
@@ -388,7 +388,7 @@ const menuPageTitle = useMenuPageTitle()
         </div>
 
         <!-- 右：权限树 -->
-        <div class="rm-col rm-right">
+        <div class="app-surface rm-col rm-right">
           <div class="rm-detail-bar">
               <div class="rm-detail-title">
               <h2 class="rname">
@@ -481,7 +481,7 @@ const menuPageTitle = useMenuPageTitle()
 .rm-error { height: 100%; }
 /* master-detail：窄视口体内横滚，右栏不被压垮 */
 .rm-split { height: 100%; --app-scroll-display: flex; --app-scroll-gap: var(--app-space-4); min-height: 0; }
-.rm-col { border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-bg-color-overlay);
+.rm-col {
   display: flex; flex-direction: column; min-height: 0; }
 .rm-left { width: 288px; flex: none; }
 .rm-right { flex: 1 1 auto; min-width: 460px; }
@@ -490,7 +490,7 @@ const menuPageTitle = useMenuPageTitle()
 .rm-head-title { display: inline-flex; align-items: center; gap: var(--app-space-2); min-width: 0; }
 .rm-col-head .mini { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); font-weight: var(--app-font-weight-regular); }
 .rm-col-body { flex: 1 1 auto; min-height: 0; --app-scroll-padding-top: 10px; --app-scroll-padding-right: 14px; --app-scroll-padding-bottom: 10px; --app-scroll-padding-left: 14px; }
-.role { padding: 10px 12px; border-radius: 7px; cursor: pointer; margin-bottom: 4px; border: 1px solid transparent; }
+.role { padding: 10px 12px; border-radius: var(--app-radius-item); cursor: pointer; margin-bottom: 4px; border: 1px solid transparent; }
 
 .role-name { font-size: var(--app-font-size-body); font-weight: var(--app-font-weight-section); display: flex; align-items: center; gap: var(--app-space-2); }
 .role-desc { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 3px; }

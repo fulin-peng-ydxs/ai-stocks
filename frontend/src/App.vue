@@ -1308,7 +1308,7 @@ button.topbar-status:focus-visible {
   gap: var(--app-space-3);
   padding: 14px;
   border: 1px solid var(--page-settings-section-border);
-  border-radius: 12px;
+  border-radius: var(--app-radius-floating-section);
   background: var(--page-settings-section-bg);
 }
 .drawer-avatar {
@@ -1390,7 +1390,7 @@ button.topbar-status:focus-visible {
   min-height: 76px;
   padding: 10px 11px;
   border: 1px solid var(--page-settings-section-border);
-  border-radius: 12px;
+  border-radius: var(--app-radius-floating-section);
   background: color-mix(in srgb, var(--page-settings-section-bg) 58%, transparent);
   color: var(--page-settings-text-muted);
   display: grid;
@@ -1449,7 +1449,7 @@ button.topbar-status:focus-visible {
   min-height: 142px;
   padding: 9px;
   border: 1px solid var(--page-settings-section-border);
-  border-radius: 13px;
+  border-radius: var(--app-radius-floating-section);
   background: color-mix(in srgb, var(--page-settings-section-bg) 58%, transparent);
   color: var(--page-settings-text-muted);
   display: grid;

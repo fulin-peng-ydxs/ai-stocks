@@ -98,12 +98,12 @@ function clear() {
 
 <style scoped>
 .ip-trigger {
-  height: 32px; width: 100%; border: 1px solid var(--el-border-color); border-radius: 4px;
+  height: 32px; width: 100%; border: 1px solid var(--el-border-color); border-radius: var(--layout-control-radius);
   background: var(--el-bg-color); color: var(--el-text-color-primary); padding: 0 8px;
   display: flex; align-items: center; gap: var(--app-space-2); cursor: pointer; font-size: var(--app-font-size-table);
 }
 @media (hover: hover) and (pointer: fine) {
-.ip-trigger:hover:not(.disabled) { border-color: var(--el-color-primary); }
+.ip-trigger:hover:not(.disabled) { border-color: var(--app-border-strong); }
 }
 .ip-trigger.disabled { cursor: not-allowed; background: var(--el-disabled-bg-color); color: var(--el-text-color-placeholder); }
 .ip-cur { display: inline-flex; align-items: center; gap: var(--app-space-control-gap); min-width: 0; }
@@ -114,7 +114,7 @@ function clear() {
 .ip-actions { display: flex; align-items: center; justify-content: space-between; }
 .ip-count { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .ip-grid { --app-scroll-display: grid; --app-scroll-columns: repeat(4, minmax(0, 1fr)); --app-scroll-gap: var(--app-space-2); max-height: 320px; }
-.ip-cell { height: 58px; min-width: 0; border: 1px solid var(--el-border-color-lighter); border-radius: 6px;
+.ip-cell { height: 58px; min-width: 0; border: 1px solid var(--el-border-color-lighter); border-radius: var(--app-radius-item);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--app-space-1);
   cursor: pointer; color: var(--el-text-color-regular); overflow: hidden; }
 .ip-cell.on { border-color: var(--el-color-primary); color: var(--el-color-primary); }

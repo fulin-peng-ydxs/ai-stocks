@@ -94,7 +94,7 @@ function toggle() {
 
 .is-level-1 {
   border: 1px solid var(--app-border-default);
-  border-radius: 6px;
+  border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
   overflow: hidden;
 }

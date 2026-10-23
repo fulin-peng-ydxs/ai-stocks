@@ -512,7 +512,7 @@ const menuPageTitle = useMenuPageTitle()
     <template #main>
       <AppScrollArea class="mr-split">
         <!-- 左：菜单树 -->
-        <div class="mr-col mr-left">
+        <div class="app-surface mr-col mr-left">
           <div class="mr-col-head">
             <span>菜单树</span>
             <span v-if="canMenuReorder" class="mini" role="status">{{ reorderHint }}</span>
@@ -578,7 +578,7 @@ const menuPageTitle = useMenuPageTitle()
         </div>
 
         <!-- 右：属性 + 功能点 -->
-        <div class="mr-col mr-right" :inert="reorderSaving || undefined" :aria-busy="reorderSaving">
+        <div class="app-surface mr-col mr-right" :inert="reorderSaving || undefined" :aria-busy="reorderSaving">
           <template v-if="activeMenu">
             <div class="mr-detail-bar">
               <div class="mr-detail-title">
@@ -860,7 +860,7 @@ const menuPageTitle = useMenuPageTitle()
 .page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
 /* master-detail：窄视口体内横滚，右栏不被压垮 */
 .mr-split { height: 100%; --app-scroll-display: flex; --app-scroll-gap: var(--app-space-4); min-height: 0; }
-.mr-col { border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-bg-color-overlay);
+.mr-col {
   display: flex; flex-direction: column; min-height: 0; }
 .mr-left { width: 300px; flex: none; }
 .mr-right { flex: 1 1 auto; min-width: 480px; }
@@ -907,7 +907,7 @@ const menuPageTitle = useMenuPageTitle()
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
+  border-radius: var(--layout-card-radius);
 }
 .resource-table :deep(.mr-edit-row > td) { background: var(--el-fill-color-lighter); }
 .resource-table :deep(.dim) { color: var(--el-text-color-placeholder); }

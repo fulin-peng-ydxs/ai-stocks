@@ -1323,7 +1323,7 @@ const menuPageTitle = useMenuPageTitle()
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
 }
-.layer-card { padding: 8px 10px; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
+.layer-card { padding: 8px 10px; border: 1px solid var(--el-border-color-lighter); border-radius: var(--layout-card-radius); }
 .layer-name { display: flex; align-items: center; gap: var(--app-space-1); font-size: var(--app-font-size-table); line-height: var(--app-line-height-table); font-weight: var(--app-font-weight-section); margin-bottom: 6px; }
 .layer-foot { font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); margin-top: 4px; }
 .layer-progress { display: flex; align-items: center; gap: var(--app-space-2); }
@@ -1358,7 +1358,7 @@ const menuPageTitle = useMenuPageTitle()
 .cov-card,
 .fresh-cell {
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 4px;
+  border-radius: var(--layout-card-radius);
   background: var(--el-bg-color);
 }
 .board-hero-main {
@@ -1579,8 +1579,8 @@ const menuPageTitle = useMenuPageTitle()
   justify-content: space-between;
   gap: var(--app-space-3);
   padding: var(--app-space-2) var(--app-space-3);
-  border: 1px solid var(--el-color-warning-light-7);
-  border-radius: 4px;
+  border: 1px solid var(--app-border-notice-warning);
+  border-radius: var(--layout-card-radius);
   background: var(--el-color-warning-light-9);
   color: inherit;
   text-align: left;
@@ -1602,8 +1602,8 @@ const menuPageTitle = useMenuPageTitle()
   align-items: center;
   gap: var(--app-space-2);
   padding: var(--app-space-3);
-  border: 1px solid var(--el-color-success-light-7);
-  border-radius: 4px;
+  border: 1px solid var(--app-border-notice-success);
+  border-radius: var(--layout-card-radius);
   color: var(--el-color-success);
   font-size: var(--app-font-size-table);
 }

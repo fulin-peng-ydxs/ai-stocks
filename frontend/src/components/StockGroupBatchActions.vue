@@ -204,7 +204,7 @@ async function removeFromGroup(): Promise<void> {
 </template>
 
 <style scoped>
-.stock-batch-card { border: 1px solid var(--el-color-primary-light-7); flex: 0 0 auto; }
+.stock-batch-card { border: 1px solid var(--app-border-notice-primary); flex: 0 0 auto; }
 .stock-batch-row { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-4); flex-wrap: wrap; }
 .stock-batch-info { display: flex; align-items: flex-start; gap: var(--app-space-3); flex: 1; min-width: 260px; }
 .stock-batch-count { font-size: var(--app-font-size-table); white-space: nowrap; padding-top: 2px; }

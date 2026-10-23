@@ -221,7 +221,7 @@ async function quickSubmit(): Promise<void> {
 <style scoped>
 .discipline-quick-card {
   border: 1px solid var(--page-settings-section-border);
-  border-radius: 12px;
+  border-radius: var(--app-radius-floating-section);
   background: var(--page-settings-section-bg);
   overflow: hidden;
 }
@@ -240,7 +240,7 @@ async function quickSubmit(): Promise<void> {
   min-width: 82px;
   padding: var(--app-space-control-gap) var(--app-space-2);
   border: 1px solid var(--app-border-warning);
-  border-radius: 8px;
+  border-radius: var(--layout-control-radius);
   background: color-mix(in srgb, var(--el-color-warning) 8%, transparent);
   color: var(--page-settings-text);
   display: flex;

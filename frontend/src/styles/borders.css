@@ -1,0 +1,103 @@
+/* 边界角色适配唯一入口。颜色来自 themeBorderVariables，形态来自视觉预设；不增加 Web 配置字段。 */
+:root {
+  --el-border-radius-base: var(--layout-control-radius);
+  --app-radius-overlay: 16px;
+  --app-radius-floating-section: 12px;
+  --app-radius-pill: 999px;
+  --app-radius-mark: 3px;
+  --app-radius-item: var(--layout-control-radius);
+  --app-radius-canvas: 0px;
+  --app-radius-segment: max(0px, calc(var(--layout-control-radius) - 1px));
+  --app-border-notice-info: var(--el-color-info-light-7);
+  --app-border-notice-primary: var(--el-color-primary-light-7);
+  --app-border-notice-success: var(--el-color-success-light-7);
+  --app-border-notice-warning: var(--el-color-warning-light-7);
+  --app-border-notice-danger: var(--el-color-danger-light-7);
+}
+
+/* 结构不同的页面面板共用表面配方；有统一栏头/正文结构时优先用 AppWorkspacePane。 */
+.app-surface {
+  border: 1px solid var(--app-border-default);
+  border-radius: var(--layout-card-radius);
+  background: var(--el-bg-color);
+}
+
+/* 大弹层绘一次实体外沿；全屏态贴合所属画布。抽屉内容面消费同一角色。 */
+html[data-layout-preset] :is(.el-dialog, .el-message-box) {
+  border: 1px solid var(--app-border-default);
+  border-radius: var(--app-radius-overlay);
+}
+html[data-layout-preset] .el-dialog.is-fullscreen { border: 0; border-radius: 0; }
+html[data-layout-preset] :is(.el-popper, .el-popover, .el-dropdown__popper) {
+  border-radius: var(--layout-card-radius);
+}
+/* is-dark 只描述底色；Popover/菜单即使深底也保留卡片角色。 */
+html[data-layout-preset] .el-popper.is-dark:where(:not(.el-popover, .el-dropdown__popper, .app-hover-info--popover)),
+html[data-layout-preset] .el-popper.app-hover-info--tooltip {
+  border-radius: var(--layout-control-radius);
+}
+html[data-layout-preset] :is(.el-message, .el-notification, .el-alert) {
+  border-radius: var(--layout-control-radius);
+}
+/* 库的局部变量会遮住根级基础半径；显式适配实际存在的变体，不改变圆形/胶囊。 */
+html[data-layout-preset] :is(.el-textarea__inner, .el-color-picker__trigger, .el-segmented) {
+  border-radius: var(--layout-control-radius);
+}
+html[data-layout-preset] .el-segmented { --el-border-radius-base: var(--layout-control-radius); }
+html[data-layout-preset] :is(.el-segmented__item-selected, .el-segmented__item) { border-radius: var(--app-radius-segment); }
+
+/* 输入以内描边承接焦点。range 的真实焦点 class 是 is-active，和单值输入分开适配。 */
+html[data-layout-preset] :is(.el-input__wrapper, .el-select__wrapper, .el-textarea__inner) {
+  background-color: var(--chrome-bg-soft);
+  box-shadow: 0 0 0 1px var(--app-border-default) inset;
+  transition: box-shadow .18s ease, background-color .18s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  html[data-layout-preset] :is(.el-input__wrapper, .el-select__wrapper, .el-textarea__inner):hover {
+    box-shadow: 0 0 0 1px var(--app-border-strong) inset;
+  }
+}
+html[data-layout-preset] :is(
+  .el-input__wrapper.is-focus, .el-select__wrapper.is-focused,
+  .el-range-editor.is-active, .el-textarea__inner:focus
+) {
+  box-shadow: 0 0 0 1px var(--app-border-selected) inset,
+    0 0 0 3px color-mix(in srgb, var(--app-border-selected) 12%, transparent);
+}
+/* 错误+焦点仍保留错误内沿，焦点光晕继续可见。该分支只消费真正的表单错误状态。 */
+html[data-layout-preset] .el-form-item.is-error :is(
+  .el-input__wrapper, .el-select__wrapper, .el-textarea__inner, .el-range-editor
+) { box-shadow: 0 0 0 1px var(--el-color-danger) inset; }
+html[data-layout-preset] .el-form-item.is-error :is(
+  .el-input__wrapper.is-focus, .el-select__wrapper.is-focused,
+  .el-range-editor.is-active, .el-textarea__inner:focus
+) {
+  box-shadow: 0 0 0 1px var(--el-color-danger) inset,
+    0 0 0 3px color-mix(in srgb, var(--el-color-danger) 12%, transparent);
+}
+/* 禁用优先于 hover/error/focus；readonly 仍可聚焦、复制，不等同 disabled。 */
+html[data-layout-preset] :is(
+  .el-input.is-disabled .el-input__wrapper, .el-textarea.is-disabled .el-textarea__inner,
+  .el-select__wrapper.is-disabled, .el-range-editor.is-disabled
+) {
+  background-color: var(--el-disabled-bg-color);
+  box-shadow: 0 0 0 1px var(--el-disabled-border-color) inset;
+}
+html[data-layout-preset] .el-form-item.is-error :is(
+  .el-input.is-disabled .el-input__wrapper, .el-textarea.is-disabled .el-textarea__inner,
+  .el-select__wrapper.is-disabled, .el-range-editor.is-disabled
+) { box-shadow: 0 0 0 1px var(--el-disabled-border-color) inset; }
+html[data-layout-preset] :is(
+  .el-input.is-disabled .el-input__inner, .el-textarea.is-disabled .el-textarea__inner,
+  .el-select__wrapper.is-disabled .el-select__placeholder,
+  .el-select__wrapper.is-disabled .el-select__selected-item, .el-range-editor.is-disabled input
+) {
+  color: var(--el-disabled-text-color);
+  -webkit-text-fill-color: var(--el-disabled-text-color);
+}
+
+/* circle 是明确的形状角色，不能被普通按钮圆角适配改成方形。 */
+html[data-layout-preset] .el-button.is-circle { border-radius: 50%; }
+
+html[data-layout-preset] .el-color-picker__color { border-radius: max(0px, calc(var(--layout-control-radius) - 2px)); }
+html[data-layout-preset] .el-color-picker__panel { border-radius: var(--layout-card-radius); }

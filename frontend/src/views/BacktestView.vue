@@ -2543,7 +2543,7 @@ const menuPageTitle = useMenuPageTitle()
 .dlg-trades { margin-top: 8px; }
 .dlg-summary {
   display: flex; flex-wrap: wrap; gap: var(--app-space-2) var(--app-space-5); align-items: center;
-  padding: 10px 14px; margin-bottom: 10px; border-radius: 8px;
+  padding: 10px 14px; margin-bottom: 10px; border-radius: var(--layout-card-radius);
   background: var(--app-section-bg);
 }
 .ds-item { display: flex; flex-direction: column; }
@@ -2560,7 +2560,7 @@ const menuPageTitle = useMenuPageTitle()
 :deep(.bd-hit td) { color: var(--el-color-primary); }
 .bd-hit-legend {
   background: var(--el-color-primary-light-8); color: var(--el-color-primary);
-  padding: 0 4px; border-radius: 3px; box-shadow: inset 3px 0 0 0 var(--el-color-primary);
+  padding: 0 4px; border-radius: var(--app-radius-mark); box-shadow: inset 3px 0 0 0 var(--el-color-primary);
 }
 .run-time-notice { margin-bottom: var(--app-space-3); }
 .board-missing-notice { margin-bottom: var(--app-space-2); }
@@ -2603,7 +2603,7 @@ const menuPageTitle = useMenuPageTitle()
 .tip-line { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); margin-top: 8px; }
 .tip-inline { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .prof-desc {
-  margin-top: 12px; padding: 8px 12px; border-radius: 6px;
+  margin-top: 12px; padding: 8px 12px; border-radius: var(--layout-control-radius);
   background: var(--el-color-primary-light-9); font-size: var(--app-font-size-table);
   display: flex; align-items: baseline; gap: var(--app-space-2);
 }
@@ -2641,7 +2641,7 @@ const menuPageTitle = useMenuPageTitle()
 .bench-choice :deep(.app-filter-select) { width: 120px; }
 .export-btn { margin-left: auto; }
 .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--app-space-3); }
-.metric { background: var(--app-section-bg); border-radius: 8px; padding: 12px 14px; }
+.metric { background: var(--app-section-bg); border-radius: var(--layout-card-radius); padding: 12px 14px; }
 .m-label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .m-val { font-size: var(--app-font-size-page-title-sm); font-weight: var(--app-font-weight-strong); font-variant-numeric: tabular-nums; margin-top: 4px; }
 .metric.good .m-val { color: var(--market-up-color); }

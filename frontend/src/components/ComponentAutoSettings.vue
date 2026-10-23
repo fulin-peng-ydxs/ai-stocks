@@ -1183,7 +1183,7 @@ function setSort(slotId: string, field: string, order: string): void {
 }
 /* 页面布局「点击预览即配置」聚焦高亮 */
 .ca-highlight {
-  border-radius: 12px;
+  border-radius: var(--app-radius-floating-section);
   box-shadow: 0 0 0 1px var(--page-settings-accent) inset;
 }
 </style>

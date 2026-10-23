@@ -1332,7 +1332,7 @@ const menuPageTitle = useMenuPageTitle()
 .blk-head { display: flex; justify-content: space-between; align-items: center; gap: var(--app-space-3); }
 .flt { display: flex; align-items: center; gap: var(--app-space-2); }
 .act-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--app-space-3); }
-.act { border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 12px 14px; }
+.act { border: 1px solid var(--el-border-color-lighter); border-radius: var(--layout-card-radius); padding: 12px 14px; }
 .act-t { font-weight: var(--app-font-weight-section); }
 .act-d { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin: 4px 0 10px; }
 .task-id { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
@@ -1341,7 +1341,7 @@ const menuPageTitle = useMenuPageTitle()
 .correlation-task-result { flex: 0 0 auto; margin-bottom: var(--app-space-3); }
 .lm-msg { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lm-phase { font-size: var(--app-font-size-caption); color: var(--el-color-warning); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.log-body { flex: 1 1 auto; min-height: 0; background: var(--el-fill-color-darker); border-radius: 6px; --app-scroll-padding-top: 10px; --app-scroll-padding-right: 10px; --app-scroll-padding-bottom: 10px; --app-scroll-padding-left: 10px; font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); }
+.log-body { flex: 1 1 auto; min-height: 0; background: var(--el-fill-color-darker); border-radius: var(--layout-control-radius); --app-scroll-padding-top: 10px; --app-scroll-padding-right: 10px; --app-scroll-padding-bottom: 10px; --app-scroll-padding-left: 10px; font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); }
 .log-line { display: flex; gap: var(--app-space-2); padding: 1px 0; }
 .log-line.warn { color: var(--app-warning-text); }
 .log-line.error { color: var(--app-danger-text); }

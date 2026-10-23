@@ -28,7 +28,7 @@ withDefaults(defineProps<{
   grid-template-columns: minmax(96px, 32%) minmax(0, 1fr);
   min-width: 0;
   background: var(--el-bg-color);
-  box-shadow: inset -1px -1px 0 var(--el-border-color-lighter);
+  box-shadow: 0 0 0 1px var(--app-border-divider);
 }
 .app-detail-field--full { grid-column: 1 / -1; }
 .app-detail-field dt,

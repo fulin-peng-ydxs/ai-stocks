@@ -1535,7 +1535,7 @@ const menuPageTitle = useMenuPageTitle()
   padding: 0;
 }
 .box-tag {
-  border-radius: 4px;
+  border-radius: var(--app-radius-mark);
   font-weight: var(--app-font-weight-section);
 }
 .box-tag[role='button'] {
