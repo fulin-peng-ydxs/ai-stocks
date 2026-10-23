@@ -419,7 +419,22 @@ describe('workspaceOptions', () => {
       .toEqual(['left', 'right'])
     expect(kline.yAxis[1].axisLabel.formatter(9.7)).toBe('0.00%')
     expect(kline.yAxis[1].axisLabel.formatter(10.67)).toBe('+10.00%')
-    expect(kline.yAxis[1].axisPointer.label.formatter({ value: 10.67 })).toBe('+10.00%')
+    for (const axis of kline.yAxis) {
+      expect(axis.axisLabel.color(10.67)).toBe(theme.up)
+      expect(axis.axisLabel.color(8.73)).toBe(theme.down)
+      expect(axis.axisLabel.color(9.7)).toBe(theme.label)
+    }
+    expect(macd.yAxis.axisLabel.color(0.28)).toBe(theme.up)
+    expect(macd.yAxis.axisLabel.color(-0.28)).toBe(theme.down)
+    expect(macd.yAxis.axisLabel.color(-0.0001)).toBe(theme.label)
+    expect(macd.yAxis.axisLabel.color(0)).toBe(theme.label)
+    expect(volume.yAxis.axisLabel.color).toBe(theme.label)
+    expect(kline.yAxis[1].axisPointer.label.formatter({ value: 10.67 })).toBe('{u|+10.00%}')
+    expect(kline.yAxis[0].axisPointer.label.formatter({ value: 8.73 })).toBe('{d|8.73}')
+    expect(kline.yAxis[1].axisPointer.label.formatter({ value: 9.7 })).toBe('{n|0.00%}')
+    expect(macd.yAxis.axisPointer.label.formatter({ value: -0.28 })).toBe('{d|-0.28}')
+    expect(macd.yAxis.axisPointer.label.formatter({ value: 0.28 })).toBe('{u|0.28}')
+    expect(macd.yAxis.axisPointer.label.formatter({ value: -0.0001 })).toBe('{n|0.00}')
     expect(kline.series.at(-1)).toMatchObject({
       name: '__price_axis_sync__',
       yAxisIndex: 1,

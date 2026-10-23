@@ -143,10 +143,16 @@ describe('SectorCompareChart', () => {
     const option = echartsMock.setOption.mock.calls.at(-1)?.[0] as {
       series: Array<{ type: string }>
       dataZoom?: unknown[]
-      yAxis: { axisLabel: { formatter: (value: number) => string } }
+      yAxis: { axisLabel: {
+        formatter: (value: number) => string
+        color: (value: number) => string
+      } }
     }
     expect(option.series.every((s) => s.type === 'bar')).toBe(true)
     expect(option.yAxis.axisLabel.formatter(12.3456)).toBe('+12.35%')
+    expect(option.yAxis.axisLabel.color(5)).toBe('#f04438')
+    expect(option.yAxis.axisLabel.color(-5)).toBe('#0ea968')
+    expect(option.yAxis.axisLabel.color(0)).not.toBe(option.yAxis.axisLabel.color(5))
     expect(option.dataZoom).toBeUndefined()
     expect(wrapper.attributes('data-benchmark-code')).toBe('')
     expect(wrapper.attributes('data-benchmark-point-count')).toBe('0')

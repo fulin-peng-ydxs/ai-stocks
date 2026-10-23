@@ -1,0 +1,18 @@
+diff --git a/node_modules/echarts/lib/component/axisPointer/viewHelper.js b/node_modules/echarts/lib/component/axisPointer/viewHelper.js
+--- a/node_modules/echarts/lib/component/axisPointer/viewHelper.js
++++ b/node_modules/echarts/lib/component/axisPointer/viewHelper.js
+@@ -74,7 +74,13 @@
+   var labelModel = axisPointerModel.getModel('label');
+   var paddings = formatUtil.normalizeCssArray(labelModel.get('padding') || 0);
+   var font = labelModel.getFont();
+-  var textRect = textContain.getBoundingRect(text, font);
++  // Measure rich labels with the same text layout used by the renderer.
++  // Plain measurement counts the style tokens and shifts/clips pointer labels.
++  var textRect = labelModel.get('rich')
++    ? new graphic.Text({
++        style: createTextStyle(labelModel, { text: text, font: font, padding: 0 })
++      }).getBoundingRect()
++    : textContain.getBoundingRect(text, font);
+   var position = labelPos.position;
+   var width = textRect.width + paddings[1] + paddings[3];
+   var height = textRect.height + paddings[0] + paddings[2];

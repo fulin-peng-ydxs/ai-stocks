@@ -59,9 +59,19 @@ describe('buildIntradayOption', () => {
       .toEqual(['left', 'right', 'left'])
     expect(option.yAxis[1].axisLabel.formatter(9.8)).toBe('0.00%')
     expect(option.yAxis[0].axisLabel.formatter(9.8)).toBe('9.80')
-    expect(option.yAxis[0].axisPointer.label.formatter({ value: '10.123456' })).toBe('10.12')
-    expect(option.yAxis[1].axisPointer.label.formatter({ value: 9.8 })).toBe('0.00%')
-    expect(option.yAxis[1].axisPointer.label.formatter({ value: 10.78 })).toBe('+10.00%')
+    for (const axis of option.yAxis.slice(0, 2)) {
+      expect(axis.axisLabel.color(10.78)).toBe(theme.up)
+      expect(axis.axisLabel.color(8.82)).toBe(theme.down)
+      expect(axis.axisLabel.color(9.8)).toBe(theme.label)
+    }
+    expect(option.yAxis[2].axisLabel.color).toBe(theme.label)
+    expect(option.yAxis[0].axisPointer.label.formatter({ value: '10.123456' })).toBe('{u|10.12}')
+    expect(option.yAxis[1].axisPointer.label.formatter({ value: 9.8 })).toBe('{n|0.00%}')
+    expect(option.yAxis[1].axisPointer.label.formatter({ value: 10.78 })).toBe('{u|+10.00%}')
+    expect(option.yAxis[0].axisPointer.label.formatter({ value: 8.82 })).toBe('{d|8.82}')
+    expect(option.yAxis[1].axisPointer.label.formatter({ value: 8.82 })).toBe('{d|-10.00%}')
+    expect(option.yAxis[0].axisPointer.label.rich.u.color).toBe(theme.up)
+    expect(option.yAxis[1].axisPointer.label.rich.d.color).toBe(theme.down)
     expect(option.yAxis[2].axisPointer.label.formatter({ value: 15_000 })).toBe('1.50万手')
     expect(option.yAxis[0].interval).toBe(option.yAxis[1].interval)
     expect((9.8 - option.yAxis[0].min) / option.yAxis[0].interval).toBeCloseTo(2)
@@ -106,6 +116,16 @@ describe('buildIntradayOption', () => {
       zoom.start === 25 && zoom.end === 75
     ))).toBe(true)
     expect((option.yAxis[0].min + option.yAxis[0].max) / 2).toBeCloseTo(9.8)
+  })
+
+  it.each([null, 0, -1, NaN, Infinity])('昨收无效（%s）时两轴保持中性且隐藏百分比轴', (preClose) => {
+    const option = buildIntradayOption({ points, preClose, theme }) as any
+    expect(option.yAxis[0].axisLabel.color(10)).toBe(theme.label)
+    expect(option.yAxis[1].axisLabel.color(10)).toBe(theme.label)
+    expect(option.yAxis[1].axisLabel.show).toBe(false)
+    expect(option.yAxis[0].axisPointer.label.formatter({ value: 10 })).toBe('{n|10.00}')
+    expect(option.yAxis[1].axisPointer.label.formatter({ value: 10 })).toBe('{n|--}')
+    expect(option.series[0].markLine).toBeUndefined()
   })
 
   it('明暗主题价格线跟随中性文字，均价始终保留 MA5 身份色', () => {

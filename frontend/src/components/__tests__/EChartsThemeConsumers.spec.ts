@@ -4,6 +4,7 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import EquityChart from '@/components/EquityChart.vue'
 import GrowthChart from '@/components/GrowthChart.vue'
+import { chartCssVariable } from '@/components/chartTheme'
 import { setLayoutPreset, setPresetOverrides } from '@/layout/useLayoutPreset'
 
 const echartsMock = vi.hoisted(() => ({
@@ -78,6 +79,8 @@ describe('普通 ECharts 主题消费者', () => {
         'tokens.light.surfaceBg': '#f2f5f8',
         'tokens.light.primary': '#2457d6',
         'tokens.light.warning': '#a35200',
+        'tokens.light.marketUp': '#f75c50',
+        'tokens.light.marketDown': '#20c970',
       },
     })
     await nextTick()
@@ -87,6 +90,16 @@ describe('普通 ECharts 主题消费者', () => {
     const option = chart.setOption.mock.calls.at(-1)?.[0]
     expect(option.backgroundColor).toBe('#ffffff')
     expect(option.series[0].lineStyle.color).toBe('#2457d6')
+    const directionalLabel = option.yAxis[1].axisLabel
+    expect(directionalLabel.color(5)).toBe(chartCssVariable('--market-up-color', ''))
+    expect(directionalLabel.color(-5)).toBe(chartCssVariable('--market-down-color', ''))
+    expect(directionalLabel.color(0)).toBe(chartCssVariable('--el-text-color-secondary', ''))
+    expect(typeof option.yAxis[0].axisLabel.color).toBe('string')
+    const pointerLabel = option.yAxis[1].axisPointer.label
+    expect(pointerLabel.formatter({ value: -5 })).toBe('{d|-5.00%}')
+    expect(pointerLabel.rich.u.color).toBe(directionalLabel.color(5))
+    expect(pointerLabel.rich.d.color).toBe(directionalLabel.color(-5))
+    expect(pointerLabel.backgroundColor).toBe(option.backgroundColor)
 
     wrapper.unmount()
   })

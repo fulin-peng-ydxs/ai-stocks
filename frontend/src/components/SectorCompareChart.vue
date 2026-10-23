@@ -30,6 +30,7 @@ import {
 } from '@/utils/marketCompare'
 import { formatMoney } from '@/utils/money'
 import { formatMarketPercent } from '@/utils/marketValue'
+import { marketAxisLabelColor } from '@/components/chartAxisLabel'
 
 // 单个板块的序列：code/name 标识 + 该板块的日线 bars（升序）
 export interface CompareSeries {
@@ -247,7 +248,7 @@ function renderBar() {
       scale: true,
       axisLine: { show: false },
       axisLabel: {
-        color: t.label,
+        color: marketAxisLabelColor({ up: upColor, down: downColor, label: t.label }),
         fontSize: t.typography.axis,
         formatter: props.metric === 'inflow'
           ? (value: number) => `${formatMoney(value)}${unit}`

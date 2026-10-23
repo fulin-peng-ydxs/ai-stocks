@@ -6,6 +6,8 @@ import { useEChartsTheme } from '@/components/chartTheme'
 import { initVectorEChart } from '@/components/echartsRenderer'
 import type { GrowthPoint } from '@/api/training'
 import { formatMarketPercent } from '@/utils/marketValue'
+import { marketAxisLabelColor, marketAxisPointerLabel } from '@/components/chartAxisLabel'
+import { marketCompareChangeColors } from '@/components/marketCompareChart'
 
 const props = defineProps<{ data: GrowthPoint[] }>()
 const el = ref<HTMLDivElement | null>(null)
@@ -46,7 +48,14 @@ function render() {
         splitLine: { lineStyle: { color: t.split } } },
       { type: 'value', position: 'right',
         axisLine: { show: false },
-        axisLabel: { color: t.label, fontSize: t.typography.compact, formatter: formatMarketPercent },
+        axisLabel: {
+          color: marketAxisLabelColor({ ...marketCompareChangeColors(t), label: t.label }),
+          fontSize: t.typography.compact,
+          formatter: formatMarketPercent,
+        },
+        axisPointer: {
+          label: marketAxisPointerLabel({ ...t, ...marketCompareChangeColors(t) }, formatMarketPercent),
+        },
         splitLine: { show: false } },
     ],
     series: [

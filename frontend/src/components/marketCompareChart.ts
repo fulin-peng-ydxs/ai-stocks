@@ -1,5 +1,6 @@
 import { chartCssVariable, type EChartsTheme } from '@/components/chartTheme'
 import { formatMarketPercent } from '@/utils/marketValue'
+import { marketAxisLabelColor, marketAxisPointerLabel } from '@/components/chartAxisLabel'
 
 interface NamedSeries {
   name: string
@@ -88,6 +89,8 @@ export function buildMarketCompareLineOption(input: MarketCompareLineOptionInput
     concreteValueBase,
   } = input
   const extent = percentExtent(series)
+  const axisColors = { ...theme, ...marketCompareChangeColors(theme) }
+  const labelColor = marketAxisLabelColor(axisColors)
   return {
     animation: false,
     backgroundColor: theme.background,
@@ -124,9 +127,14 @@ export function buildMarketCompareLineOption(input: MarketCompareLineOptionInput
         axisLine: { show: false },
         axisLabel: {
           show: concreteValueBase != null && Number.isFinite(concreteValueBase) && concreteValueBase > 0,
-          color: theme.label,
+          color: labelColor,
           fontSize: theme.typography.axis,
           formatter: concreteValueFormatter(concreteValueBase),
+        },
+        axisPointer: {
+          label: marketAxisPointerLabel(axisColors, concreteValueFormatter(concreteValueBase),
+            concreteValueBase != null && Number.isFinite(concreteValueBase) && concreteValueBase > 0
+              ? 0 : null),
         },
         splitLine: { lineStyle: { color: theme.split } },
       },
@@ -136,7 +144,8 @@ export function buildMarketCompareLineOption(input: MarketCompareLineOptionInput
         scale: true,
         ...extent,
         axisLine: { show: false },
-        axisLabel: { color: theme.label, fontSize: theme.typography.axis, formatter: formatMarketPercent },
+        axisLabel: { color: labelColor, fontSize: theme.typography.axis, formatter: formatMarketPercent },
+        axisPointer: { label: marketAxisPointerLabel(axisColors, formatMarketPercent) },
         splitLine: { show: false },
       },
     ],

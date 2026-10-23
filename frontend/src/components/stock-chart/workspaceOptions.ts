@@ -2,6 +2,7 @@ import type { Bar, IndicatorRow } from '@/api/stocks'
 import type { ChartType } from '@/composables/useStockChartPreferences'
 import { elementVisualScale } from '@/utils/displayScaleGeometry'
 import { formatMarketPercent } from '@/utils/marketValue'
+import { marketAxisLabelColor, marketAxisPointerLabel } from '@/components/chartAxisLabel'
 import {
   STOCK_QUOTE_TOOLTIP_CSS,
   stockQuoteSummaryWidths,
@@ -589,6 +590,7 @@ export function buildKlineOption(context: OptionContext) {
       ? warmupClose
       : null
   const base = commonOption(context, true)
+  const priceLabelColor = marketAxisLabelColor(context.theme, referencePrice)
   return {
     ...base,
     tooltip: {
@@ -634,9 +636,12 @@ export function buildKlineOption(context: OptionContext) {
         position: 'left',
         axisLine: { show: false },
         axisLabel: {
-          color: context.theme.label,
+          color: priceLabelColor,
           fontSize: context.theme.typography.axis,
           formatter: (value: number) => formatChartAxisNumber(value, 2),
+        },
+        axisPointer: {
+          label: marketAxisPointerLabel(context.theme, (value) => formatChartAxisNumber(value, 2), referencePrice),
         },
         splitLine: { lineStyle: { color: context.theme.split } },
       },
@@ -647,14 +652,12 @@ export function buildKlineOption(context: OptionContext) {
         axisPointer: {
           label: {
             show: true,
-            formatter: ({ value }: { value: number }) => {
-              if (referencePrice == null) return '--'
-              return formatMarketPercent(((value / referencePrice) - 1) * 100)
-            },
+            ...marketAxisPointerLabel(context.theme, (value) => referencePrice == null
+              ? '--' : formatMarketPercent(((value / referencePrice) - 1) * 100), referencePrice),
           },
         },
         axisLabel: {
-          color: context.theme.label,
+          color: priceLabelColor,
           fontSize: context.theme.typography.axis,
           formatter: (value: number) => {
             if (referencePrice == null) return '--'
@@ -799,9 +802,12 @@ export function buildMacdOption(context: OptionContext) {
       position: 'left',
       axisLine: { show: false },
       axisLabel: {
-        color: context.theme.label,
+        color: marketAxisLabelColor(context.theme),
         fontSize: context.theme.typography.axis,
         formatter: (value: number) => formatChartAxisNumber(value, 2),
+      },
+      axisPointer: {
+        label: marketAxisPointerLabel(context.theme, (value) => formatChartAxisNumber(value, 2)),
       },
       splitLine: { lineStyle: { color: context.theme.split } },
     },

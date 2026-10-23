@@ -54,6 +54,19 @@ describe('marketCompareChart', () => {
       expect(percentFormatter(0)).toBe('0.00%')
     }
     expect(option.yAxis[0].min).toBe(option.yAxis[1].min)
+    const financialColors = marketCompareChangeColors(theme)
+    for (const axis of option.yAxis) {
+      expect(axis.axisLabel.color(5)).toBe(financialColors.up)
+      expect(axis.axisLabel.color(-5)).toBe(financialColors.down)
+      expect(axis.axisLabel.color(0)).toBe(theme.label)
+      expect(axis.axisLabel.color(-0.000001)).toBe(theme.label)
+      expect(axis.axisLabel.color(NaN)).toBe(theme.label)
+    }
+    expect(option.yAxis[0].axisPointer.label.formatter({ value: 5 })).toBe('{u|10.50}')
+    expect(option.yAxis[0].axisPointer.label.formatter({ value: -5 })).toBe('{d|9.50}')
+    expect(option.yAxis[1].axisPointer.label.formatter({ value: 5 })).toBe('{u|+5.00%}')
+    expect(option.yAxis[1].axisPointer.label.formatter({ value: -5 })).toBe('{d|-5.00%}')
+    expect(option.yAxis[1].axisPointer.label.formatter({ value: 0 })).toBe('{n|0.00%}')
     expect(option.yAxis[0].max).toBe(option.yAxis[1].max)
     expect(option.dataZoom).toHaveLength(2)
     expect(option.tooltip.formatter).toBe(formatter)

@@ -8,6 +8,7 @@ import { chartTooltipRowHtml } from '@/components/chartTooltipHtml'
 import { initVectorEChart } from '@/components/echartsRenderer'
 import { formatMoney } from '@/utils/money'
 import { formatMarketPercent } from '@/utils/marketValue'
+import { marketAxisLabelColor, marketAxisPointerLabel } from '@/components/chartAxisLabel'
 
 // showBenchmark：缺省 true（默认展示基准）；父页显式传 false（回测选「不对比指数」）时整条基准线隐藏。
 // extraBenchmark 由父页按各自 trade_date 归一成资金净值曲线（与 points 同长同序）；有值渲染指数虚线，
@@ -132,7 +133,14 @@ function render() {
       },
         splitLine: { lineStyle: { color: t.split } } },
       { gridIndex: 1, axisLine: { show: false }, splitNumber: 2,
-        axisLabel: { color: t.label, fontSize: t.typography.axis, formatter: formatMarketPercent },
+        axisLabel: {
+          color: marketAxisLabelColor({ up: upColor, down: downColor, label: t.label }),
+          fontSize: t.typography.axis,
+          formatter: formatMarketPercent,
+        },
+        axisPointer: {
+          label: marketAxisPointerLabel({ ...t, up: upColor, down: downColor }, formatMarketPercent),
+        },
         splitLine: { show: false } },
     ],
     dataZoom: [{ type: 'inside', xAxisIndex: [0, 1] }],
