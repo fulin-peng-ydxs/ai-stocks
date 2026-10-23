@@ -197,6 +197,10 @@ CREATE TABLE IF NOT EXISTS trade_discipline_checkin_revision (
     revision_no INTEGER, rule_id TEXT NOT NULL, version_no INTEGER NOT NULL,
     revision_kind TEXT NOT NULL, assessment TEXT NOT NULL, no_operation BOOLEAN NOT NULL,
     violation_detail TEXT, review_note TEXT, created_at TIMESTAMPTZ NOT NULL,
+    violation_items JSONB CONSTRAINT td_revision_violation_items_check
+    CHECK (jsonb_typeof(violation_items) = 'array'
+        AND violation_items <@ '["missed_buy","missed_sell","other"]'::jsonb
+        AND jsonb_array_length(violation_items) <= 3),
     CHECK (revision_no > 0), CHECK (revision_kind IN ('initial','amendment')),
     CONSTRAINT td_revision_kind_no_check
     CHECK ((revision_kind='initial' AND revision_no=1)

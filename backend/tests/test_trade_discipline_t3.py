@@ -175,6 +175,7 @@ def test_four_assessment_operation_combinations(pg, market, assessment, no_opera
         payload.update(
             reason_code="missed_required_action",
             violation_detail="计划内动作没有执行\n下次设置提醒",
+            violation_items=["missed_sell"],
         )
     elif reason_kind == "custom":
         payload.update(
@@ -318,6 +319,7 @@ def test_custom_reason_reused_deleted_and_history_snapshot_retained(pg, market):
         first,
         {
             "assessment": "breached",
+            "violation_items": ["missed_sell"],
             "no_operation": True,
             "reason_text": "  Ａ计划外  ",
             "violation_detail": "第一次说明",
@@ -329,6 +331,7 @@ def test_custom_reason_reused_deleted_and_history_snapshot_retained(pg, market):
         second,
         {
             "assessment": "breached",
+            "violation_items": ["missed_sell"],
             "no_operation": True,
             "reason_text": "a计划外",
             "violation_detail": "第二次说明",
@@ -361,6 +364,7 @@ def test_reason_and_checkin_rollback_together_on_revision_failure(pg, market, mo
             trade_date,
             {
                 "assessment": "breached",
+                "violation_items": ["missed_sell"],
                 "no_operation": True,
                 "reason_text": "事务内新原因",
                 "violation_detail": "必须回滚",
@@ -390,6 +394,7 @@ def test_amendment_keeps_original_version_and_history_is_immutable(pg, market):
         str(initial["checkin_id"]),
         {
             "assessment": "breached",
+            "violation_items": ["missed_sell"],
             "no_operation": True,
             "reason_code": "other",
             "violation_detail": "修正后仍绑定原版本",
@@ -436,6 +441,7 @@ def test_quick_no_operation_is_idempotent_under_concurrency(pg, market):
         {"assessment": "complied", "no_operation": True, "operations": []},
         {
             "assessment": "breached",
+            "violation_items": ["missed_sell"],
             "no_operation": True,
             "reason_code": "other",
             "violation_detail": "普通入口记录为未履约",
@@ -475,6 +481,7 @@ def test_quick_no_operation_conflicts_after_quick_record_was_amended(pg, market)
         quick["checkin_id"],
         {
             "assessment": "breached",
+            "violation_items": ["missed_sell"],
             "no_operation": True,
             "reason_code": "other",
             "violation_detail": "快捷记录已被修正",
@@ -601,6 +608,7 @@ def test_history_filters_pagination_and_owner_isolation(pg, market):
         second,
         {
             "assessment": "breached",
+            "violation_items": ["missed_sell"],
             "no_operation": False,
             "reason_code": "unplanned_operation",
             "violation_detail": "计划外交易",
@@ -652,6 +660,7 @@ def test_invalid_date_assessment_reason_operation_time_and_negative_value(pg, ma
             first,
             {
                 "assessment": "breached",
+                "violation_items": ["missed_sell"],
                 "no_operation": True,
                 "reason_code": "other",
                 "violation_detail": "  ",
@@ -664,6 +673,7 @@ def test_invalid_date_assessment_reason_operation_time_and_negative_value(pg, ma
             first,
             {
                 "assessment": "breached",
+                "violation_items": ["missed_sell"],
                 "no_operation": True,
                 "reason_text": ["其他", "冲动交易"],
                 "violation_detail": "原因格式非法",
@@ -676,6 +686,7 @@ def test_invalid_date_assessment_reason_operation_time_and_negative_value(pg, ma
             first,
             {
                 "assessment": "breached",
+                "violation_items": ["missed_sell"],
                 "no_operation": True,
                 "reason_code": "other",
                 "reason_text": "另一个原因",

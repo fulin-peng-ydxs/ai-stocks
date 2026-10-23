@@ -709,3 +709,51 @@ def test_quick_conflict_response_contains_existing_opaque_reference(client, pg, 
         }
     finally:
         _remove_user(pg, identity)
+
+
+def test_violation_items_authorized_submit_amend_and_history_roundtrip(client, pg, market, monkeypatch):
+    from backend.services.trade_discipline_service import TradeDisciplineService
+    from backend.storage.trade_discipline_repository import TradeDisciplineRepository
+    from backend.tests.test_trade_discipline_t3 import _rule_payload, _seed_market
+
+    trade_date, *_ = _seed_market(market)
+    identity = _make_user(pg, [
+        "trade-discipline:view", "trade-discipline:rule-manage",
+        "trade-discipline:checkin-view", "trade-discipline:checkin-submit",
+    ])
+    headers = _auth(identity[0], identity[1])
+    monkeypatch.setattr("backend.api.trade_discipline._service",
+                        lambda: TradeDisciplineService(TradeDisciplineRepository(pg), market))
+    try:
+        response = client.post("/api/trade-discipline/rules", headers=headers, json=_rule_payload())
+        rule_id = response.json()["data"]["id"]
+        published = client.post(f"/api/trade-discipline/rules/{rule_id}/publish",
+                                headers=headers, json={"expected_revision": 1})
+        assert published.status_code == 200, published.text
+        content = {
+            "rule_id": rule_id, "trade_date": str(trade_date), "assessment": "breached",
+            "no_operation": True, "reason_code": "missed_required_action",
+            "violation_detail": "达到加仓和止损条件，但均未执行", "operations": [],
+        }
+        endpoint = "/api/trade-discipline/checkins"
+        assert client.post(endpoint, headers=headers, json=content).status_code == 422
+        content["violation_items"] = ["missed_sell", "missed_buy"]
+        created = client.post(endpoint, headers=headers, json=content)
+        assert created.status_code == 200, created.text
+        data = created.json()["data"]
+        checkin_id = data["checkin_id"]
+        assert data["violation_items"] == ["missed_buy", "missed_sell"]
+        content.pop("rule_id")
+        content.pop("trade_date")
+        amended = client.post(f"{endpoint}/{checkin_id}/amendments", headers=headers,
+                              json={**content, "violation_items": ["other"], "expected_revision": 1})
+        assert amended.status_code == 200, amended.text
+        assert amended.json()["data"]["violation_items"] == ["other"]
+        original = client.get(f"{endpoint}/{checkin_id}/revisions/1", headers=headers)
+        assert original.status_code == 200, original.text
+        assert original.json()["data"]["violation_items"] == ["missed_buy", "missed_sell"]
+        current = client.get(f"{endpoint}/current", headers=headers,
+                             params={"rule_id": rule_id, "trade_date": str(trade_date)})
+        assert current.json()["data"]["checkin"]["violation_items"] == ["other"]
+    finally:
+        _remove_user(pg, identity)

@@ -119,6 +119,7 @@ FIELD_LABELS: dict[str, str] = {
     "checkin_id": "打卡标识",
     "no_operation": "是否无操作",
     "violation_detail": "违规详情",
+    "violation_items": "未履约事项",
     "compliance_status": "合规状态",
     "effective_from_trade_date": "生效交易日",
     "next_activation_seq": "下次启用序号",

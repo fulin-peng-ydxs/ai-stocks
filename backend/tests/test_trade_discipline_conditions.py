@@ -104,7 +104,7 @@ def test_no_operation_still_checks_peak_and_excess_cannot_be_complied(pg, market
         if peak > 1:
             with pytest.raises(ValidationError, match="不能选择已履约"):
                 service.submit_checkin(rule_id, target, content)
-            content.update(assessment="breached", reason_code="other", violation_detail="持仓超限")
+            content.update(assessment="breached", reason_code="other", violation_detail="持仓超限", violation_items=["other"])
         result = service.submit_checkin(rule_id, target, content)
         assert result["peak_positions"] == peak
 

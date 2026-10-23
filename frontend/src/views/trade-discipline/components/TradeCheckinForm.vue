@@ -12,6 +12,8 @@ import { holdingCountWarning, manualConditionFields, stockConditionViolations, c
 import { decimalToMinorUnits, multiplyToMinorUnits } from '@/utils/fixedDecimal'
 import {
   checkinAssessmentOptions,
+  checkinViolationItemOptions,
+  checkinViolationItemsText,
   hasCheckinViolation,
 } from '@/utils/tradeDisciplineAssessment'
 import TradeOperationEditor from './TradeOperationEditor.vue'
@@ -24,6 +26,7 @@ import {
   type CheckinOperation,
   type CheckinContext,
   type CheckinAssessment,
+  type CheckinViolationItem,
 } from '@/api/tradeDiscipline'
 
 const props = defineProps<{
@@ -38,6 +41,7 @@ const emit = defineEmits<{
 }>()
 
 interface CheckinFormState {
+  violation_items: CheckinViolationItem[] | null
   peak_positions: number | null
   assessment: CheckinAssessment
   no_operation: boolean
@@ -56,10 +60,12 @@ const baseline = ref('')
 const operationEditor = ref<InstanceType<typeof TradeOperationEditor> | null>(null)
 let loadSeq = 0
 const form = reactive<CheckinFormState>({
-  peak_positions: null, assessment: 'complied', no_operation: false, reason: null,
+  violation_items: null, peak_positions: null, assessment: 'complied', no_operation: false, reason: null,
   violation_detail: '', review_note: '', operations: [],
 })
 
+const selectedViolationItems = computed(() => checkinViolationItemOptions
+  .filter(option => form.violation_items?.includes(option.value)).map(option => option.value))
 const existing = computed(() => context.value?.checkin ?? null)
 const readonly = computed(() => !props.canSubmit || (!!existing.value && !editing.value))
 const amendmentUnchanged = computed(() => !!existing.value && editing.value && !isDirty())
@@ -92,6 +98,7 @@ function snapshot(): string {
     peak_positions: form.peak_positions,
     assessment: form.assessment,
     no_operation: form.no_operation,
+    violation_items: form.violation_items == null ? null : selectedViolationItems.value,
     reason: form.reason,
     violation_detail: form.violation_detail,
     review_note: form.review_note,
@@ -107,6 +114,7 @@ function applyContext(value: CheckinContext): void {
     : value.version.max_positions ?? null
   form.assessment = checkin?.assessment ?? 'complied'
   form.no_operation = checkin?.no_operation ?? false
+  form.violation_items = checkin?.violation_items ? [...checkin.violation_items] : null
   form.reason = reasonFromContext(checkin)
   form.violation_detail = checkin?.violation_detail ?? ''
   form.review_note = checkin?.review_note ?? ''
@@ -166,6 +174,7 @@ function validate(): string | null {
   if (form.peak_positions !== null && (!Number.isInteger(form.peak_positions) || form.peak_positions < 0 || form.peak_positions > 2147483647)) return '当日最大同时持仓数必须为非负整数'
   if (form.assessment === 'partial' && !form.operations.length) return '部分履约至少需要一条操作'
   if (!form.no_operation && !form.operations.length) return '请添加至少一条操作，或选择“今日无操作”'
+  if (hasCheckinViolation(form.assessment) && form.no_operation && !form.violation_items?.length) return '未履约且今日无操作时必须选择未履约事项'
   if (hasCheckinViolation(form.assessment) && !form.reason) return '部分履约或未履约时必须选择或输入一个原因'
   if (hasCheckinViolation(form.assessment) && !form.violation_detail.trim()) return '部分履约或未履约时必须填写详细说明'
   for (const [index, operation] of form.operations.entries()) {
@@ -221,6 +230,7 @@ function payload(): CheckinContentPayload {
     peak_positions: form.peak_positions,
     assessment: form.assessment,
     no_operation: form.no_operation,
+    violation_items: hasViolation ? selectedViolationItems.value : [],
     reason_code: hasViolation && form.reason?.kind === 'builtin' ? form.reason.code ?? null : null,
     reason_id: hasViolation && form.reason?.kind === 'custom' ? form.reason.id ?? null : null,
     reason_text: hasViolation && form.reason?.kind === 'text' ? form.reason.name.trim() : null,
@@ -417,6 +427,16 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
             </el-form-item>
             <p v-if="holdingCountWarning(context.version.max_positions, form.peak_positions)" class="condition-warning" role="status">{{ holdingCountWarning(context.version.max_positions, form.peak_positions) }}</p>
           </div>
+          <el-form-item v-if="hasCheckinViolation(form.assessment)" label="未履约事项" :required="form.no_operation" data-testid="checkin-violation-items">
+            <template v-if="readonly">{{ checkinViolationItemsText(form.violation_items) }}</template>
+            <template v-else>
+              <el-checkbox-group :model-value="form.violation_items ?? []" aria-label="未履约事项" @update:model-value="form.violation_items = $event as CheckinViolationItem[]">
+                <el-checkbox v-for="option in checkinViolationItemOptions" :key="option.value" :value="option.value">{{ option.label }}</el-checkbox>
+              </el-checkbox-group>
+              <AppFormHelp>可多选；今日无操作时必填。有实际操作但仍有应买未买、应卖未卖，也可在此补充。</AppFormHelp>
+              <AppFormHelp tone="warning" v-if="form.peak_positions === 0 && form.violation_items?.includes('missed_sell')" role="status">已选择应卖未卖，但当日最大同时持仓为 0，请核对持仓数量或在详细说明中解释。</AppFormHelp>
+            </template>
+          </el-form-item>
           <div v-if="hasCheckinViolation(form.assessment)" class="breach-grid">
             <el-form-item label="未履约原因" required>
               <ViolationReasonCombobox v-model="form.reason" data-testid="checkin-reason" :disabled="readonly" />

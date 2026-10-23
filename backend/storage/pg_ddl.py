@@ -605,6 +605,10 @@ CREATE TABLE IF NOT EXISTS trade_discipline_checkin_revision (
     CONSTRAINT td_revision_violation_detail_check
     CHECK ((assessment IN ('partial', 'breached') AND btrim(coalesce(violation_detail, '')) <> '')
         OR (assessment = 'complied' AND violation_detail IS NULL)),
+    violation_items JSONB CONSTRAINT td_revision_violation_items_check
+    CHECK (jsonb_typeof(violation_items) = 'array'
+        AND violation_items <@ '["missed_buy","missed_sell","other"]'::jsonb
+        AND jsonb_array_length(violation_items) <= 3),
     peak_positions INTEGER CHECK (peak_positions >= 0),
     PRIMARY KEY (tenant_id, owner_user_id, checkin_id, revision_no),
     UNIQUE (tenant_id, owner_user_id, checkin_id, revision_no, rule_id, version_no),
@@ -1445,6 +1449,23 @@ COMMENT ON COLUMN trade_discipline_checkin_revision.peak_positions IS '用户确
 COMMENT ON COLUMN trade_discipline_operation.selection_facts IS '操作时点事实快照：is_st、st_as_of_date为服务端逐日ST数据；loss_status和st_risk_status为用户是/否/未知确认，null旧记录未采集';
 """
 
+_TRADE_DISCIPLINE_VIOLATION_ITEMS_UPGRADES = """
+-- 未履约事项只新增字段，禁止按历史原因或持仓数量回填。
+ALTER TABLE trade_discipline_checkin_revision ADD COLUMN IF NOT EXISTS violation_items JSONB;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+        WHERE conrelid='trade_discipline_checkin_revision'::regclass
+          AND conname='td_revision_violation_items_check') THEN
+        ALTER TABLE trade_discipline_checkin_revision
+            ADD CONSTRAINT td_revision_violation_items_check
+            CHECK (jsonb_typeof(violation_items) = 'array'
+        AND violation_items <@ '["missed_buy","missed_sell","other"]'::jsonb
+        AND jsonb_array_length(violation_items) <= 3);
+    END IF;
+END $$;
+COMMENT ON COLUMN trade_discipline_checkin_revision.violation_items IS '未履约事项多选：missed_buy应买未买、missed_sell应卖未卖、other其他规则未履约；NULL为旧记录未采集，空数组为未填事项，不计入成交';
+"""
+
 _TRADE_DISCIPLINE_CHECKLIST_UPGRADES = """
 -- 检查项只扩展规则快照，不从旧文本拆分或重写历史记录。
 ALTER TABLE trade_discipline_action_rule ADD COLUMN IF NOT EXISTS action_subtype_label TEXT;
@@ -1890,6 +1911,7 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
         client.execute(upgrade_sql)
     client.execute(_TRADE_DISCIPLINE_CONDITION_UPGRADES)
     client.execute(_TRADE_DISCIPLINE_CHECKLIST_UPGRADES)
+    client.execute(_TRADE_DISCIPLINE_VIOLATION_ITEMS_UPGRADES)
     for constraint_sql in _TRADE_DISCIPLINE_POINTER_CONSTRAINTS:
         client.execute(constraint_sql)
     for idx_sql in _TRADE_DISCIPLINE_INDEXES:

@@ -666,13 +666,14 @@ class TradeDisciplineRepository:
         violation_detail: str | None,
         review_note: str | None,
         peak_positions: int | None = None,
+        violation_items: list[str] | None = None,
     ) -> dict[str, Any]:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 "INSERT INTO trade_discipline_checkin_revision "
                 "(checkin_id,tenant_id,owner_user_id,revision_no,rule_id,version_no,"
-                "revision_kind,assessment,no_operation,violation_detail,review_note,peak_positions,created_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,clock_timestamp()) RETURNING *",
+                "revision_kind,assessment,no_operation,violation_detail,review_note,peak_positions,violation_items,created_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,clock_timestamp()) RETURNING *",
                 [
                     checkin_id,
                     *self.owner,
@@ -685,6 +686,7 @@ class TradeDisciplineRepository:
                     violation_detail,
                     review_note,
                     peak_positions,
+                    Jsonb(violation_items) if violation_items is not None else None,
                 ],
             )
             row = self._one(cur)

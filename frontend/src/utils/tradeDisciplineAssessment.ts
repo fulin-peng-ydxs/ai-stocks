@@ -1,4 +1,4 @@
-import type { CheckinAssessment } from '@/api/tradeDiscipline'
+import type { CheckinAssessment, CheckinViolationItem } from '@/api/tradeDiscipline'
 
 export const checkinAssessmentOptions: Array<{
   value: CheckinAssessment
@@ -28,4 +28,17 @@ export function checkinAssessmentTagType(
 
 export function hasCheckinViolation(assessment: CheckinAssessment): boolean {
   return assessment !== 'complied'
+}
+
+// 今日表单和历史详情共用事项名称；空值保留旧快照未采集的含义。
+export const checkinViolationItemOptions: Array<{ value: CheckinViolationItem; label: string }> = [
+  { value: 'missed_buy', label: '应买未买' },
+  { value: 'missed_sell', label: '应卖未卖' },
+  { value: 'other', label: '其他规则未履约' },
+]
+
+export function checkinViolationItemsText(items?: CheckinViolationItem[] | null): string {
+  if (items == null) return '未记录'
+  return checkinViolationItemOptions.filter(option => items.includes(option.value))
+    .map(option => option.label).join('、') || '未填写'
 }

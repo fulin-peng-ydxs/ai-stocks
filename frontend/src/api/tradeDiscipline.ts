@@ -3,6 +3,7 @@ import http from './client'
 export type RuleManagementStatus = 'unpublished' | 'active' | 'archived'
 export type RuleEffectiveStatus = 'unpublished' | 'active' | 'archived'
 export type CheckinAssessment = 'complied' | 'partial' | 'breached'
+export type CheckinViolationItem = 'missed_buy' | 'missed_sell' | 'other'
 export type OperationComplianceStatus = 'complied' | 'breached'
 
 export interface RuleLifecycleEvent {
@@ -228,6 +229,7 @@ export interface CheckinOperation {
 }
 
 export interface TradeDisciplineCheckin {
+  violation_items?: CheckinViolationItem[] | null
   peak_positions?: number | null
   max_positions?: number | null
   checkin_id: string
@@ -261,6 +263,7 @@ export interface CheckinContext {
 }
 
 export interface CheckinContentPayload {
+  violation_items?: CheckinViolationItem[] | null
   peak_positions?: number | null
   assessment: CheckinAssessment
   no_operation: boolean

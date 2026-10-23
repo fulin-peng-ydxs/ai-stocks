@@ -115,4 +115,18 @@ describe('TradeCheckinRevisionDrawer', () => {
     expect(wrapper.findAll('button').some((button) => button.text() === '发起修正')).toBe(false)
     expect(wrapper.text()).toContain('规则版本快照')
   })
+  it('切换修订分别展示未执行事项和旧记录未记录，成交快照数量不变', async () => {
+    getRevision.mockImplementation(async (_id: string, revisionNo: number) => ({
+      ...revision, revision_no: revisionNo,
+      violation_items: revisionNo === 2 ? ['missed_buy', 'missed_sell'] : null,
+    }))
+    const wrapper = mountDrawer()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="revision-violation-items"]').text()).toBe('应买未买、应卖未卖')
+    expect(wrapper.get('[data-testid="revision-operation-snapshot"]').text()).toContain('平安银行')
+    wrapper.findComponent(AppFilterSelect).vm.$emit('change', '1')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="revision-violation-items"]').text()).toBe('未记录')
+  })
+
 })

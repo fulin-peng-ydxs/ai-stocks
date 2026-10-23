@@ -897,6 +897,22 @@ class TradeDisciplineService:
             if selected_reasons or (violation_detail is not None and str(violation_detail).strip()):
                 raise ValidationError("已履约不能填写未履约原因或详细说明")
             violation_detail = None
+        # 事项与成交事实独立；旧快照保持 NULL，新提交无事项保存空数组。
+        violation_items = payload.get("violation_items")
+        if violation_items is None:
+            violation_items = []
+        allowed_items = ("missed_buy", "missed_sell", "other")
+        if (not isinstance(violation_items, list)
+                or any(not isinstance(item, str) or item not in allowed_items
+                       for item in violation_items)
+                or len(violation_items) != len(set(violation_items))):
+            raise ValidationError("未履约事项必须为不重复的应买未买、应卖未卖或其他规则未履约")
+        if not has_violation and violation_items:
+            raise ValidationError("已履约不能填写未履约事项")
+        if has_violation and no_operation and not violation_items:
+            raise ValidationError("未履约且今日无操作时必须选择未履约事项")
+        # 固定顺序，避免多选顺序改变被解释为不同的业务事实。
+        violation_items = [item for item in allowed_items if item in violation_items]
         operations = self._prepare_operations(
             raw_operations, trade_date=trade_date, version=version, previous=previous
         )
@@ -921,6 +937,7 @@ class TradeDisciplineService:
             raise ValidationError(f"存在规则违规，不能选择已履约：{'；'.join(violations)}")
         return {
             "peak_positions": peak_positions,
+            "violation_items": violation_items,
             "assessment": assessment,
             "no_operation": no_operation,
             "violation_detail": violation_detail,
@@ -986,6 +1003,7 @@ class TradeDisciplineService:
             violation_detail=prepared["violation_detail"],
             review_note=prepared["review_note"],
             peak_positions=prepared.get("peak_positions"),
+            violation_items=prepared["violation_items"],
         )
         if reason is not None:
             self.repo.insert_violation(

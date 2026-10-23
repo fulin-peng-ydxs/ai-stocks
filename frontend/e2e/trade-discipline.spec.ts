@@ -433,6 +433,7 @@ test('标准视口真实完成规则、打卡、修订、快捷入口与权限�
   await expect(checkin.getByTestId('checkin-version-kicker')).toHaveText('履约版本 v3')
   await checkin.getByTestId('checkin-assessment').getByText('未履约', { exact: true }).click()
   await checkin.getByTestId('checkin-no-operation').click()
+  await checkin.getByTestId('checkin-violation-items').getByRole('checkbox', { name: '应卖未卖', exact: true }).check()
   const reasonSelect = checkin.getByTestId('checkin-reason').getByRole('combobox')
   await reasonSelect.fill('E2E原因-T13临时偏差')
   await page.getByRole('option', { name: 'E2E原因-T13临时偏差', exact: true }).click()

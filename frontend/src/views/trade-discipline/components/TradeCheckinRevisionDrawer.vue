@@ -21,6 +21,7 @@ import { actionSubtypeLabel } from '@/utils/tradeDisciplineRuleTypes'
 import { conditionFactLabel, holdingCountWarning } from '@/utils/tradeDisciplineConditions'
 import {
   checkinAssessmentLabel,
+  checkinViolationItemsText,
   checkinAssessmentTagType,
 } from '@/utils/tradeDisciplineAssessment'
 
@@ -151,6 +152,8 @@ watch(
         <dl class="fact-grid">
           <div><dt>用户自评</dt><dd><el-tag :type="checkinAssessmentTagType(detail.assessment)" effect="plain">{{ checkinAssessmentLabel(detail.assessment) }}</el-tag></dd></div>
           <div><dt>操作状态</dt><dd>{{ detail.no_operation ? '今日无操作' : `${detail.operations.length} 笔操作` }}</dd></div>
+          <div><dt>当日最大同时持仓数</dt><dd>{{ detail.peak_positions ?? '未记录' }}</dd></div>
+          <div v-if="detail.assessment !== 'complied'"><dt>未履约事项</dt><dd data-testid="revision-violation-items">{{ checkinViolationItemsText(detail.violation_items) }}</dd></div>
           <div><dt>未履约原因</dt><dd>{{ detail.reason_name_snapshot || '—' }}</dd></div>
           <div><dt>记录时间</dt><dd>{{ formatDateTimeSeconds(detail.created_at || detail.amended_at || detail.submitted_at) }}</dd></div>
         </dl>

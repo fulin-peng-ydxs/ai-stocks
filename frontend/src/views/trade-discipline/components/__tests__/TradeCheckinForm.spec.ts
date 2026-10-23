@@ -142,6 +142,8 @@ describe('TradeCheckinForm', () => {
     expect(wrapper.findComponent({ name: 'ElSegmented' }).props('options').find((option: { value: string }) => option.value === 'complied').disabled).toBe(true)
     await wrapper.get('[aria-label="选择原因"]').trigger('click')
     await wrapper.findAll('textarea')[0].setValue('当日持仓超限')
+    wrapper.findComponent({ name: 'ElCheckboxGroup' }).vm.$emit('update:modelValue', ['other'])
+    await wrapper.vm.$nextTick()
     await wrapper.get('button.el-button--primary').trigger('click')
     await flushPromises()
     expect(submitCheckin).toHaveBeenCalledWith(expect.objectContaining({ peak_positions: 3, no_operation: true, assessment: 'breached' }))
@@ -377,10 +379,13 @@ describe('TradeCheckinForm', () => {
     await wrapper.vm.$nextTick()
     await wrapper.get('[aria-label="选择原因"]').trigger('click')
     await wrapper.findAll('textarea')[0].setValue('无操作但仍违反当日纪律')
+    wrapper.findComponent({ name: 'ElCheckboxGroup' }).vm.$emit('update:modelValue', ['missed_buy', 'missed_sell'])
+    await wrapper.vm.$nextTick()
     await wrapper.get('button.el-button--primary').trigger('click')
     await flushPromises()
     expect(submitCheckin).toHaveBeenCalledWith(expect.objectContaining({
       assessment: 'breached', no_operation: true, reason_code: 'impulsive', operations: [],
+      violation_items: ['missed_buy', 'missed_sell'],
     }))
   })
 
@@ -445,4 +450,90 @@ describe('TradeCheckinForm', () => {
     expect(wrapper.findAll('button').some((button) => button.text() === '修正打卡')).toBe(false)
     expect(wrapper.find('textarea').attributes('disabled')).toBeDefined()
   })
+  it('未履约无操作不能漏填事项，零持仓应卖未卖提示后仍可如实提交', async () => {
+    getContext.mockResolvedValue({ ...emptyContext, version: { ...version, max_positions: 2 } })
+    const wrapper = mountForm({ ViolationReasonCombobox: ReasonStub })
+    await flushPromises()
+    wrapper.findComponent({ name: 'ElSegmented' }).vm.$emit('update:modelValue', 'breached')
+    wrapper.findComponent({ name: 'ElCheckbox' }).vm.$emit('change', true)
+    await wrapper.vm.$nextTick()
+    await wrapper.get('[aria-label="选择原因"]').trigger('click')
+    await wrapper.findAll('textarea')[0].setValue('核对持仓后记录漏卖')
+    await wrapper.get('button.el-button--primary').trigger('click')
+    expect(submitCheckin).not.toHaveBeenCalled()
+    wrapper.findComponent({ name: 'ElInputNumber' }).vm.$emit('update:modelValue', 0)
+    wrapper.findComponent({ name: 'ElCheckboxGroup' }).vm.$emit('update:modelValue', ['missed_sell'])
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('当日最大同时持仓为 0')
+    await wrapper.get('button.el-button--primary').trigger('click')
+    await flushPromises()
+    expect(submitCheckin).toHaveBeenCalledWith(expect.objectContaining({
+      peak_positions: 0, violation_items: ['missed_sell'], no_operation: true, operations: [],
+    }))
+  })
+
+  it('实际操作与未执行事项分别提交，切换已履约不提交隐藏事项', async () => {
+    const wrapper = mountForm({ TradeOperationEditor: OperationStub, ViolationReasonCombobox: ReasonStub })
+    await flushPromises()
+    wrapper.findComponent({ name: 'ElSegmented' }).vm.$emit('update:modelValue', 'breached')
+    await wrapper.vm.$nextTick()
+    await wrapper.get('[aria-label="填写操作"]').trigger('click')
+    await wrapper.get('[aria-label="选择原因"]').trigger('click')
+    await wrapper.findAll('textarea')[0].setValue('买入执行，另一只应卖未卖')
+    wrapper.findComponent({ name: 'ElCheckboxGroup' }).vm.$emit('update:modelValue', ['missed_sell'])
+    await wrapper.vm.$nextTick()
+    submitCheckin.mockRejectedValueOnce(new Error('retry'))
+    await wrapper.get('button.el-button--primary').trigger('click')
+    await flushPromises()
+    expect(submitCheckin).toHaveBeenLastCalledWith(expect.objectContaining({
+      violation_items: ['missed_sell'], operations: [expect.objectContaining({ side: 'buy' })],
+    }))
+    wrapper.findComponent({ name: 'ElSegmented' }).vm.$emit('update:modelValue', 'complied')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="checkin-violation-items"]').exists()).toBe(false)
+    await wrapper.get('button.el-button--primary').trigger('click')
+    await flushPromises()
+    expect(submitCheckin).toHaveBeenLastCalledWith(expect.objectContaining({
+      assessment: 'complied', violation_items: [], reason_code: null,
+    }))
+  })
+
+  it('旧事项显示未记录，修正和取消保留原快照，新事项独立标记脏状态', async () => {
+    getContext.mockResolvedValue({ ...emptyContext, checkin: { ...saved,
+      assessment: 'breached', violation_detail: '原始说明', reason_code: 'other',
+      reason_name_snapshot: '其他', violation_items: null,
+    } })
+    const wrapper = mountForm({ ViolationReasonCombobox: ReasonStub })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="checkin-violation-items"]').text()).toContain('未记录')
+    await wrapper.findAll('button').find(button => button.text() === '修正打卡')!.trigger('click')
+    wrapper.findComponent({ name: 'ElCheckboxGroup' }).vm.$emit('update:modelValue', ['missed_buy'])
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).isDirty()).toBe(true)
+    await wrapper.findAll('button').find(button => button.text() === '取消修正')!.trigger('click')
+    expect(wrapper.get('[data-testid="checkin-violation-items"]').text()).toContain('未记录')
+    await wrapper.findAll('button').find(button => button.text() === '修正打卡')!.trigger('click')
+    wrapper.findComponent({ name: 'ElCheckboxGroup' }).vm.$emit('update:modelValue', ['missed_sell'])
+    await wrapper.vm.$nextTick()
+    await wrapper.findAll('button').find(button => button.text() === '提交修正')!.trigger('click')
+    await flushPromises()
+    expect(amendCheckin).toHaveBeenCalledWith('checkin-1', expect.objectContaining({
+      expected_revision: 1, violation_items: ['missed_sell'],
+    }))
+  })
+
+  it('仅改变多选事项顺序不产生实质修改', async () => {
+    getContext.mockResolvedValue({ ...emptyContext, checkin: { ...saved,
+      assessment: 'breached', violation_items: ['missed_buy', 'missed_sell'],
+      reason_code: 'other', reason_name_snapshot: '其他', violation_detail: '尚未执行',
+    } })
+    const wrapper = mountForm({ ViolationReasonCombobox: ReasonStub })
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === '修正打卡')!.trigger('click')
+    wrapper.findComponent({ name: 'ElCheckboxGroup' }).vm.$emit('update:modelValue', ['missed_sell', 'missed_buy'])
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).isDirty()).toBe(false)
+    expect(wrapper.findAll('button').find(button => button.text() === '提交修正')!.attributes('disabled')).toBeDefined()
+  })
+
 })

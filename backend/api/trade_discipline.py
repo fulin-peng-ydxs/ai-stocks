@@ -159,6 +159,9 @@ class OperationBody(StrictBody):
 
 
 class CheckinContentBody(StrictBody):
+    violation_items: list[Literal["missed_buy", "missed_sell", "other"]] | None = Field(
+        default=None, max_length=3
+    )
     peak_positions: Annotated[int, Field(strict=True, ge=0, le=2147483647)] | None = None
     assessment: Literal["complied", "partial", "breached"]
     no_operation: bool
