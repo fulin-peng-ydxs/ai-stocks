@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from psycopg.conninfo import make_conninfo
 
-from backend.common.exceptions import ConflictError, NotFoundError, ValidationError
+from backend.common.exceptions import ConflictError, NotFoundError, StorageError, ValidationError
 from backend.scheduler import scheduler
 from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
 from backend.storage.ddl import init_db
@@ -18,6 +18,7 @@ from backend.storage.pg_client import PostgresClient
 from backend.storage.pg_ddl import (
     _TASK_RUNTIME_UPGRADES,
     DDL_ASYNC_TASK_RUNTIME,
+    DDL_SCHEDULED_JOB_DEPENDENCY_RUNTIME,
     DDL_SCHEDULED_JOB_RUNTIME,
     DDL_SCHEDULED_TRIGGER_EVENT_RUNTIME,
     DDL_TASK_LOG_RUNTIME,
@@ -42,7 +43,7 @@ def runtime(request, tmp_path):
     scoped = PostgresClient(make_conninfo(admin.conninfo, options=f'-csearch_path={schema}'))
     try:
         for ddl in (DDL_ASYNC_TASK_RUNTIME, DDL_TASK_LOG_RUNTIME, DDL_SCHEDULED_JOB_RUNTIME,
-                    DDL_SCHEDULED_TRIGGER_EVENT_RUNTIME):
+                    DDL_SCHEDULED_JOB_DEPENDENCY_RUNTIME, DDL_SCHEDULED_TRIGGER_EVENT_RUNTIME):
             scoped.execute(ddl)
         yield PostgresTaskRuntimeClient(scoped)
     finally:
@@ -68,9 +69,9 @@ def terminal(client, parent, *, status='done'):
     tid = 'pytest_task_' + uuid.uuid4().hex
     now = datetime.now(ZoneInfo("Asia/Shanghai"))
     client.execute(
-        'INSERT INTO async_task (id,task_type,params,status,job_id,created_at,updated_at) '
-        'VALUES (?,?,?,?,?,?,?)',
-        [tid, 'recompute', runtime_json_param(client, {}), status, parent['id'], now, now])
+        'INSERT INTO async_task (id,task_type,params,status,progress,job_id,created_at,updated_at) '
+        'VALUES (?,?,?,?,?,?,?,?)',
+        [tid, 'recompute', runtime_json_param(client, {}), status, 1.0, parent['id'], now, now])
     with client.transaction():
         scheduler.enqueue_terminal_events(tid, client=client)
     return tid
@@ -78,6 +79,216 @@ def terminal(client, parent, *, status='done'):
 
 def ids(result):
     return [job['id'] for job in result['jobs']]
+
+
+def multi_child(svc, parents, name='共享下游', *, condition='success'):
+    return svc.create(
+        name=name, task_type='recompute', params={}, freq_type=None, freq_config={},
+        trigger_mode='dependency', dependency_job_ids=[job['id'] for job in parents],
+        dependency_condition=condition, dependency_delay={'value': 0, 'unit': 'second'},
+        trading_day_only=False, enabled=True)
+
+
+def edit_fields(job, **changes):
+    return {**{key: job[key] for key in (
+        'name', 'task_type', 'params', 'freq_type', 'freq_config', 'trigger_mode',
+        'dependency_job_ids', 'dependency_condition', 'dependency_delay', 'retry_config',
+        'trading_day_only', 'enabled')}, **changes}
+
+
+def test_multi_upstream_each_fires_and_same_attempt_is_idempotent(runtime, monkeypatch):
+    svc = scheduler.ScheduledJobService(runtime, initialize=False)
+    a, b = root(svc, 'A'), root(svc, 'B')
+    c = multi_child(svc, [a, b, a])
+    assert set(c['dependency_job_ids']) == {a['id'], b['id']}
+    assert [p['name'] for p in c['dependency_jobs']] == ['A', 'B']
+    assert '任一上游（A、B）' in c['trigger_text']
+    task_a, task_b = terminal(runtime, a), terminal(runtime, b)
+    scheduler.enqueue_terminal_events(task_a, client=runtime)
+    events = svc.list_events(c['id'])
+    assert len(events) == 2
+    assert {e['source_task_id'] for e in events} == {task_a, task_b}
+    assert {e['source_job_name'] for e in events} == {'A', 'B'}
+    assert all(e['trigger_condition'] == 'success' for e in events)
+    # A 的失败不命中成功条件；人工终止不传播。
+    terminal(runtime, a, status='failed')
+    terminal(runtime, b, status='interrupted')
+    assert len(svc.list_events(c['id'])) == 2
+    created = []
+    busy = {'value': True}
+    def create(_self, *args, **kwargs):
+        if busy['value']:
+            raise ConcurrentTaskError('busy', 'recompute')
+        created.append(kwargs)
+        return 'task_' + uuid.uuid4().hex
+    monkeypatch.setattr(scheduler, '_runtime_client', lambda: runtime)
+    monkeypatch.setattr(AsyncTaskService, 'create', create)
+    assert scheduler.dispatch_due_events() == 0
+    assert {e['status'] for e in svc.list_events(c['id'])} == {'waiting'}
+    # 去掉一个上游后，已持久化事件仍使用生成时快照可靠分发。
+    svc.update(c['id'], **edit_fields(c, dependency_job_ids=[a['id']]))
+    busy['value'] = False
+    assert scheduler.dispatch_due_events() == 2
+    assert {task['parent_task_id'] for task in created} == {task_a, task_b}
+    assert {task['job_id'] for task in created} == {c['id']}
+    assert scheduler.dispatch_due_events() == 0
+
+
+def test_multi_upstream_independent_orders_and_relationship_edits(runtime):
+    svc = scheduler.ScheduledJobService(runtime, initialize=False)
+    a, b, d = root(svc, 'A'), root(svc, 'B'), root(svc, 'D')
+    c = multi_child(svc, [a, b])
+    x, y = child(svc, a, 'X'), child(svc, b, 'Y')
+    a_before, b_before = svc.downstream(a['id']), svc.downstream(b['id'])
+    svc.reorder_downstream(a['id'], [x['id'], c['id']], a_before['revision'])
+    b_after = svc.downstream(b['id'])
+    assert b_after['revision'] == b_before['revision']
+    assert ids(b_after) == ids(b_before)
+    assert [job['dependency_order'] for job in b_after['jobs']] == [0, 1]
+    saved = svc.update(c['id'], **edit_fields(c, name='共享下游改名',
+                                            dependency_job_ids=[a['id'], b['id'], d['id']]))
+    assert ids(svc.downstream(a['id'])) == [x['id'], c['id']]
+    assert ids(svc.downstream(b['id'])) == [c['id'], y['id']]
+    assert ids(svc.downstream(d['id'])) == [c['id']]
+    svc.update(c['id'], **edit_fields(saved, dependency_job_ids=[a['id']]))
+    assert ids(svc.downstream(b['id'])) == [y['id']]
+    with pytest.raises(ConflictError):
+        svc.reorder_downstream(b['id'], ids(b_before), b_before['revision'])
+    svc.delete(y['id'])
+    svc.delete(b['id'])
+    svc.update(c['id'], **edit_fields(saved, trigger_mode='time', freq_type='daily',
+                                    freq_config={'time': '17:00'}))
+    assert svc.get(c['id'])['dependency_job_ids'] == []
+    assert ids(svc.downstream(a['id'])) == [x['id']]
+    # 重复初始化不能把已经解除的旧单上游投影恢复为依赖边。
+    if isinstance(runtime, PostgresTaskRuntimeClient):
+        for sql in _TASK_RUNTIME_UPGRADES:
+            runtime.execute(sql)
+    else:
+        init_db(runtime)
+    assert svc.get(c['id'])['dependency_job_ids'] == []
+
+
+def test_multi_upstream_graph_validation_and_delete_protection(runtime):
+    svc = scheduler.ScheduledJobService(runtime, initialize=False)
+    a = root(svc, 'A')
+    b, c = multi_child(svc, [a], 'B'), multi_child(svc, [a], 'C')
+    d = multi_child(svc, [b, c], 'D')  # 菱形共享祖先合法。
+    for invalid in ([], ['missing'], [d['id']], [a['id'], 'missing']):
+        with pytest.raises(ValueError):
+            svc.update(d['id'], **edit_fields(d, dependency_job_ids=invalid))
+    with pytest.raises(ValueError, match='循环依赖'):
+        svc.update(a['id'], **edit_fields(a, trigger_mode='dependency',
+                                        dependency_job_ids=[d['id']],
+                                        dependency_condition='success'))
+    # 环路仅位于第二个上游分支也必须拒绝。
+    with pytest.raises(ValueError, match='循环依赖'):
+        svc.update(c['id'], **edit_fields(c, dependency_job_ids=[a['id'], d['id']]))
+    for parent in (b, c):
+        with pytest.raises(ValueError, match='仍被以下任务依赖'):
+            svc.delete(parent['id'])
+    assert set(svc.get(d['id'])['dependency_job_ids']) == {b['id'], c['id']}
+    svc.delete(d['id'])
+    assert svc.downstream(b['id'])['jobs'] == []
+    assert svc.downstream(c['id'])['jobs'] == []
+
+
+def test_dependency_relation_write_failure_rolls_back_job_definition(runtime, monkeypatch):
+    svc = scheduler.ScheduledJobService(runtime, initialize=False)
+    a, b = root(svc, 'A'), root(svc, 'B')
+    c = multi_child(svc, [a, b])
+    before = svc.get(c['id'])
+    original = runtime.executemany
+    def fail_edge(sql, rows):
+        if sql.startswith('INSERT INTO scheduled_job_dependency'):
+            raise RuntimeError('模拟关系写入失败')
+        return original(sql, rows)
+    monkeypatch.setattr(runtime, 'executemany', fail_edge)
+    with pytest.raises(StorageError, match='模拟关系写入失败'):
+        svc.update(c['id'], **edit_fields(c, name='不应保存', dependency_job_ids=[b['id']]))
+    assert svc.get(c['id']) == before
+
+
+def test_legacy_single_upstream_backfill_is_idempotent(runtime):
+    svc = scheduler.ScheduledJobService(runtime, initialize=False)
+    a = root(svc, '存量上游')
+    c = child(svc, a, '存量下游')
+    runtime.execute('DELETE FROM scheduled_job_dependency')
+    for _ in range(2):
+        if isinstance(runtime, PostgresTaskRuntimeClient):
+            for sql in _TASK_RUNTIME_UPGRADES:
+                runtime.execute(sql)
+        else:
+            init_db(runtime)
+    assert svc.get(c['id'])['dependency_job_ids'] == [a['id']]
+    assert ids(svc.downstream(a['id'])) == [c['id']]
+
+
+def test_frozen_legacy_duckdb_dependency_read_does_not_create_table(tmp_path):
+    from backend.storage.task_runtime_migration import _duck_frames
+    with DuckDBClient(db_path=str(tmp_path / 'frozen.duckdb')) as source:
+        init_db(source)
+        svc = scheduler.ScheduledJobService(source, initialize=False)
+        a = root(svc, '旧上游')
+        c = child(svc, a, '旧下游')
+        source.execute('DROP TABLE scheduled_job_dependency')
+        frames = _duck_frames(source)
+        assert frames['scheduled_job_dependency'].to_dict('records') == [{
+            'upstream_job_id': a['id'], 'downstream_job_id': c['id'], 'dependency_order': 0,
+        }]
+        assert source.query_df("SELECT * FROM information_schema.tables "
+                               "WHERE table_name='scheduled_job_dependency'").empty
+
+
+def test_schedule_api_accepts_multi_upstream_and_returns_all_options(runtime, monkeypatch):
+    from backend.api.data_admin import ScheduledJobIn, schedules_create, schedules_update
+    svc = scheduler.ScheduledJobService(runtime, initialize=False)
+    a, b = root(svc, 'A'), root(svc, 'B')
+    monkeypatch.setattr(scheduler, '_runtime_client', lambda: runtime)
+    body = ScheduledJobIn(
+        name='API共享任务', task_type='verify', trigger_mode='dependency',
+        dependency_job_ids=[a['id'], b['id']], dependency_condition='completion',
+        trading_day_only=False, enabled=False)
+    created = schedules_create(body).data
+    assert set(created['dependency_job_ids']) == {a['id'], b['id']}
+    page = svc.list_page(page=1, size=10, sort_by='freq', sort_order='asc')
+    item = next(j for j in page['jobs'] if j['id'] == created['id'])
+    assert {p['name'] for p in item['dependency_jobs']} == {'A', 'B'}
+    updated = schedules_update(created['id'], body.model_copy(
+        update={'dependency_job_ids': [b['id']]})).data
+    assert updated['dependency_job_ids'] == [b['id']]
+
+
+def test_multi_upstream_runtime_migration_round_trip(runtime, tmp_path, monkeypatch):
+    if not isinstance(runtime, PostgresTaskRuntimeClient):
+        pytest.skip('运行态迁移需隔离 PG schema')
+    from backend.storage import pg_ddl
+    from backend.storage import task_runtime_migration as migration
+    runtime.pg.execute(pg_ddl.DDL_STORAGE_MIGRATION)
+    monkeypatch.setattr(pg_ddl, 'init_pg_db', lambda _pg: None)
+    with DuckDBClient(db_path=str(tmp_path / 'source.duckdb')) as source:
+        init_db(source)
+        svc = scheduler.ScheduledJobService(source, initialize=False)
+        a, b = root(svc, 'A'), root(svc, 'B')
+        c = multi_child(svc, [a, b])
+        x = child(svc, a, 'X')
+        task_id = terminal(source, a)
+        source.execute(
+            "INSERT INTO task_log (id,task_id,seq,ts,level,message) VALUES (?,?,?,?,?,?)",
+            [79, task_id, 1, datetime.now(ZoneInfo('Asia/Shanghai')), 'info', '迁移日志'])
+        current = svc.downstream(a['id'])
+        svc.reorder_downstream(a['id'], [x['id'], c['id']], current['revision'])
+        before = source.query_df('SELECT * FROM scheduled_job_dependency ORDER BY 1,2')
+        report = migration.migrate_task_runtime_to_postgres(duck=source, pg=runtime.pg)
+        assert report['duckdb_counts'] == report['postgres_counts']
+        assert set(scheduler.ScheduledJobService(runtime, initialize=False)
+                   .get(c['id'])['dependency_job_ids']) == {a['id'], b['id']}
+        migration.rollback_task_runtime_to_duckdb(
+            confirm_marker=migration.TASK_RUNTIME_MIGRATION_MARKER, duck=source, pg=runtime.pg)
+        after = source.query_df('SELECT * FROM scheduled_job_dependency ORDER BY 1,2')
+        assert after.equals(before)
+        assert runtime.query_df('SELECT * FROM scheduled_job_dependency').empty
+        assert int(source.query_df("SELECT nextval('seq_task_log') AS id").iloc[0]['id']) == 80
 
 
 def test_downstream_complete_set_validation_and_revision(runtime):

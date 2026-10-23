@@ -134,7 +134,7 @@ def test_scheduled_job_server_pagination_sort_and_options():
 
 
 def test_scheduled_dependency_validation_and_cycle_rejected():
-    """依赖任务只选一个上游，普通关系拒绝环路，引用中的上游不能删除。"""
+    """兼容单上游入参，普通关系拒绝环路，引用中的上游不能删除。"""
     with DuckDBClient(db_path=":memory:") as c:
         init_db(c)
         svc = ScheduledJobService(c)

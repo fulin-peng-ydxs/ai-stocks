@@ -762,8 +762,8 @@ CREATE TABLE IF NOT EXISTS scheduled_job (
     freq_type        VARCHAR,               -- daily | weekly | monthly | cron
     freq_config      VARCHAR,               -- 频率配置（JSON）：{time} / {weekdays,time} / {day,time} / {cron}
     trigger_mode     VARCHAR,               -- time | dependency
-    dependency_job_id VARCHAR,              -- 依赖的上游 scheduled_job id
-    dependency_order INTEGER,               -- 同一上游的下游触发优先级（越小越先）
+    dependency_job_id VARCHAR,              -- 旧单上游兼容投影；依赖事实见 scheduled_job_dependency
+    dependency_order INTEGER,               -- 兼容投影上游下的顺序；实际排序读取依赖边
     dependency_condition VARCHAR,           -- success | failure | completion
     dependency_delay VARCHAR,               -- {value,unit}，unit=second|minute|hour
     retry_config     VARCHAR,                -- {enabled,condition,delay,max_retries}
@@ -773,6 +773,16 @@ CREATE TABLE IF NOT EXISTS scheduled_job (
     last_task_id     VARCHAR,               -- 最近一次触发产生的 async_task id（可空）
     created_at       TIMESTAMP,
     updated_at       TIMESTAMP
+);
+"""
+
+# 多上游依赖：每条边独立排序，任一上游命中条件均产生独立事件。
+DDL_SCHEDULED_JOB_DEPENDENCY = """
+CREATE TABLE IF NOT EXISTS scheduled_job_dependency (
+    upstream_job_id VARCHAR NOT NULL,   -- 上游调度任务
+    downstream_job_id VARCHAR NOT NULL, -- 下游调度任务
+    dependency_order INTEGER NOT NULL, -- 此上游下的触发优先级
+    PRIMARY KEY (upstream_job_id, downstream_job_id)
 );
 """
 
@@ -806,6 +816,7 @@ M28_TABLES: dict[str, str] = {
     "data_dimension_registry": DDL_DATA_DIMENSION_REGISTRY,
     "data_source_provenance": DDL_DATA_SOURCE_PROVENANCE,
     "scheduled_job": DDL_SCHEDULED_JOB,
+    "scheduled_job_dependency": DDL_SCHEDULED_JOB_DEPENDENCY,
     "scheduled_trigger_event": DDL_SCHEDULED_TRIGGER_EVENT,
 }
 
@@ -1428,6 +1439,13 @@ _MIGRATIONS: list[str] = [
     )
     UPDATE scheduled_job SET dependency_order=ranked.position
     FROM ranked WHERE scheduled_job.id=ranked.id AND scheduled_job.dependency_order IS NULL
+    """,
+    # 仅补缺失边；重启不覆盖用户已保存的各上游独立顺序。
+    """
+    INSERT INTO scheduled_job_dependency (upstream_job_id, downstream_job_id, dependency_order)
+    SELECT dependency_job_id, id, COALESCE(dependency_order, 0) FROM scheduled_job
+    WHERE trigger_mode='dependency' AND dependency_job_id IS NOT NULL
+    ON CONFLICT (upstream_job_id, downstream_job_id) DO NOTHING
     """,
     "UPDATE scheduled_job SET trigger_mode='time' WHERE trigger_mode IS NULL",
     (

@@ -76,6 +76,7 @@ test('可配置单上游依赖、延迟触发和有上限自身重试', async ({
     expect(downstream).toMatchObject({
       trigger_mode: 'dependency',
       dependency_job_id: upstreamId,
+      dependency_job_ids: [upstreamId],
       dependency_condition: 'failure',
       dependency_delay: { value: 2, unit: 'minute' },
       retry_config: {

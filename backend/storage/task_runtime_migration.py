@@ -2,7 +2,7 @@
 
 Forward migration copies the complete DuckDB history in one PostgreSQL transaction and writes
 the activation marker last.  The old DuckDB tables remain untouched as a frozen rollback source.
-Reverse migration requires an exact confirmation marker and replaces those four DuckDB tables
+Reverse migration requires an exact confirmation marker and replaces the DuckDB runtime tables
 from PostgreSQL in one DuckDB transaction.
 """
 
@@ -33,6 +33,7 @@ _TABLE_COLUMNS: dict[str, tuple[str, ...]] = {
         "retry_config",
         "trading_day_only", "enabled", "last_run_at", "last_task_id", "created_at", "updated_at",
     ),
+    "scheduled_job_dependency": ("upstream_job_id", "downstream_job_id", "dependency_order"),
     "async_task": (
         "id", "task_type", "params", "status", "progress", "message", "result",
         "trigger_source", "job_id", "job_name", "chain_id", "parent_task_id",
@@ -120,13 +121,31 @@ def _to_duck_time(value: Any) -> datetime | None:
 
 
 def _duck_frames(duck: DuckDBClient) -> dict[str, pd.DataFrame]:
-    return {
-        table: duck.query_df(f"SELECT {','.join(columns)} FROM {table}")
-        for table, columns in _TABLE_COLUMNS.items()
-    }
+    frames = {}
+    for table, columns in _TABLE_COLUMNS.items():
+        if table == "scheduled_job_dependency" and duck.query_df(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema='main' AND table_name='scheduled_job_dependency'"
+        ).empty:
+            # status/dry-run 不初始化已冻结的旧库；单上游在内存投影成依赖边。
+            jobs = frames["scheduled_job"]
+            selected = jobs[(jobs.trigger_mode == "dependency") & jobs.dependency_job_id.notna()]
+            frames[table] = pd.DataFrame({
+                "upstream_job_id": selected.dependency_job_id,
+                "downstream_job_id": selected.id,
+                "dependency_order": selected.dependency_order.fillna(0).astype(int),
+            })
+        else:
+            frames[table] = duck.query_df(f"SELECT {','.join(columns)} FROM {table}")
+    return frames
 
 
 def _validate_frames(frames: dict[str, pd.DataFrame]) -> None:
+    jobs = set(frames["scheduled_job"]["id"].astype(str))
+    edges = frames["scheduled_job_dependency"]
+    if (set(edges["upstream_job_id"].astype(str))
+            | set(edges["downstream_job_id"].astype(str))) - jobs:
+        raise ValueError("调度依赖存在孤儿任务标识，拒绝迁移")
     tasks = set(frames["async_task"]["id"].astype(str))
     logs = frames["task_log"]
     orphan_logs = set(logs["task_id"].astype(str)) - tasks if not logs.empty else set()
@@ -147,7 +166,7 @@ def _validate_frames(frames: dict[str, pd.DataFrame]) -> None:
 def _pg_counts(pg: PostgresClient) -> dict[str, int]:
     counts: dict[str, int] = {}
     for table in _TABLE_COLUMNS:
-        exists = pg.query_df("SELECT to_regclass(%s) AS name", [f"public.{table}"])
+        exists = pg.query_df("SELECT to_regclass(%s) AS name", [table])
         counts[table] = (
             0
             if exists.empty or exists.iloc[0]["name"] is None
@@ -163,7 +182,7 @@ def inspect_task_runtime_migration(
     pg = pg or get_pg_client()
     frames = _duck_frames(duck)
     _validate_frames(frames)
-    marker_table = pg.query_df("SELECT to_regclass('public.storage_migration') AS name")
+    marker_table = pg.query_df("SELECT to_regclass('storage_migration') AS name")
     marker = (
         pg.query_df(
             "SELECT state, applied_at, details FROM storage_migration WHERE marker=%s",
@@ -202,7 +221,7 @@ def migrate_task_runtime_to_postgres(
         raise ValueError(f"PostgreSQL 任务运行表不是空表，拒绝覆盖: {target_counts}")
 
     with pg.transaction() as conn, conn.cursor() as cur:
-        for table in ("scheduled_job", "async_task", "task_log", "scheduled_trigger_event"):
+        for table in tuple(_TABLE_COLUMNS):
             columns = _TABLE_COLUMNS[table]
             rows: list[list[Any]] = []
             for record in frames[table].to_dict("records"):
@@ -269,9 +288,9 @@ def rollback_task_runtime_to_duckdb(
     _validate_frames(frames)
     init_db(duck)
     with duck.transaction():
-        for table in ("scheduled_trigger_event", "task_log", "async_task", "scheduled_job"):
+        for table in tuple(reversed(_TABLE_COLUMNS)):
             duck.execute(f"DELETE FROM {table}")
-        for table in ("scheduled_job", "async_task", "task_log", "scheduled_trigger_event"):
+        for table in tuple(_TABLE_COLUMNS):
             columns = _TABLE_COLUMNS[table]
             rows: list[tuple[Any, ...]] = []
             for record in frames[table].to_dict("records"):
@@ -296,11 +315,14 @@ def rollback_task_runtime_to_duckdb(
                     rows,
                 )
         max_id = int(frames["task_log"]["id"].max()) if not frames["task_log"].empty else 0
-        duck.execute(f"ALTER SEQUENCE seq_task_log RESTART WITH {max_id + 1}")
-    # DuckDB 已成为回退后的唯一运行态事实源；PG 四表必须与 marker 在同一事务内清空，
+        # DuckDB 不支持 ALTER SEQUENCE RESTART；日志写入显式 nextval，无表默认值依赖。
+        # 与日志恢复同事务重建序列，避免回退后新日志主键撞上历史最大值。
+        duck.execute("DROP SEQUENCE IF EXISTS seq_task_log")
+        duck.execute(f"CREATE SEQUENCE seq_task_log START {max_id + 1}")
+    # DuckDB 已成为回退后的唯一运行态事实源；PG 运行态表必须与 marker 在同一事务内清空，
     # 避免后续重新正向迁移被旧副本阻塞，也避免 rolled_back 状态下出现双事实源。
     with pg.transaction() as conn, conn.cursor() as cur:
-        for table in ("scheduled_trigger_event", "task_log", "async_task", "scheduled_job"):
+        for table in tuple(reversed(_TABLE_COLUMNS)):
             cur.execute(f"DELETE FROM {table}")
         cur.execute(
             "UPDATE storage_migration SET state='rolled_back', updated_at=now() WHERE marker=%s",

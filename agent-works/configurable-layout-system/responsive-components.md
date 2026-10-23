@@ -171,7 +171,7 @@
 | `frontend/src/views/data/QualityView.vue` | 无自身 CSS 查询 | 头部/筛选自然换行；质检结果内部滚动，详情委托共享抽屉。 | 路由 |
 | `frontend/src/views/data/components/QualityDiagnosticContent.vue` | 无自身 CSS 查询 | 分区、字段组及来源表委托共享详情组件，窄宽字段单列、来源表内部滚动；技术详情默认收起，展开后复用 AppJsonViewer；更换问题收起技术详情，尺寸变化不重置。 | QualityView |
 | `frontend/src/views/data/components/CheckupReportContent.vue` | 无自身 CSS 查询 | 抽屉内复用 AppDetailSection、AppSummaryDisclosureCard 紧凑行和 AppDataTable/AppTableColumn；提醒与未通过统一可展开，板块和 SQL 样例统一明细表并标明总数，数量/基准日在前、处理说明在后；摘要不预裁原文，以原生省略和统一提示保持单行；展开区不重复短计数，长说明自然换行，宽表在自身横向滚动并限高，展开状态不随尺寸变化重置；正文由共享抽屉滚动。 | QualityView 私有报告片段 |
-| `frontend/src/views/data/ScheduleView.vue` | 无自身 CSS 查询 | 任务页改为单主表list原型，main插槽及条件成长表体内滚、分页固定可达，操作区自然换行；触发记录与下游排序消费共享抽屉；来源健康与Cookie编辑移入系统配置，不保留数据源视图偏好控件。 | 路由 |
+| `frontend/src/views/data/ScheduleView.vue` | 无自身 CSS 查询 | 任务页改为单主表list原型，main插槽及条件成长表体内滚、分页固定可达，操作区自然换行；触发记录与下游排序消费共享抽屉；上游多选复用满宽 AppSelect，标签折叠、候选内滚，保留跨搜索选值；来源健康与Cookie编辑移入系统配置，不保留数据源视图偏好控件。 | 路由 |
 | `frontend/src/views/layout/LayoutComponentsView.vue` | 无自身 CSS 查询 | 头部/工具条换行；能力表格内部滚动、详情共享抽屉；覆盖范围与个人层覆盖表复用长文档限高，表头固定、表体双向内滚。 | 路由 |
 | `frontend/src/views/layout/LayoutPagesView.vue` | `@container app-viewport (max-width: 980px)` | 配置网格窄宽单列并滚动；导入导出复用 LayoutConfigTransferPanel，宽屏等宽双栏、980px 以下单列，两栏编辑与底部动作对齐；低窗口由外层滚动保留完整操作，编辑值不重建。 | 路由 |
 | `frontend/src/views/layout/LayoutPresetsView.vue` | `@container app-viewport (max-width: 980px)` | 导入导出复用 LayoutConfigTransferPanel，宽屏等宽双栏、980px 以下单列；编辑与底部动作对齐，低窗口由抽屉正文滚动承接；应用/保存动作及草稿保留。 | 路由 |

@@ -827,7 +827,8 @@ class ScheduledJobIn(BaseModel):
     freq_type: str | None = None   # daily | weekly | monthly | cron（时间触发）
     freq_config: dict = Field(default_factory=dict)
     trigger_mode: str = "time"     # time | dependency
-    dependency_job_id: str | None = None
+    dependency_job_id: str | None = None  # 兼容旧客户端
+    dependency_job_ids: list[str] | None = None
     dependency_condition: str | None = None  # success | failure | completion
     dependency_delay: dict = Field(default_factory=lambda: {"value": 0, "unit": "minute"})
     retry_config: dict = Field(default_factory=lambda: {
@@ -903,6 +904,7 @@ def schedules_create(body: ScheduledJobIn) -> ApiResponse:
             name=body.name, task_type=body.task_type, params=body.params,
             freq_type=body.freq_type, freq_config=body.freq_config,
             trigger_mode=body.trigger_mode, dependency_job_id=body.dependency_job_id,
+            dependency_job_ids=body.dependency_job_ids,
             dependency_condition=body.dependency_condition,
             dependency_delay=body.dependency_delay, retry_config=body.retry_config,
             trading_day_only=body.trading_day_only, enabled=body.enabled)
@@ -919,6 +921,7 @@ def schedules_update(job_id: str, body: ScheduledJobIn) -> ApiResponse:
             job_id, name=body.name, task_type=body.task_type, params=body.params,
             freq_type=body.freq_type, freq_config=body.freq_config,
             trigger_mode=body.trigger_mode, dependency_job_id=body.dependency_job_id,
+            dependency_job_ids=body.dependency_job_ids,
             dependency_condition=body.dependency_condition,
             dependency_delay=body.dependency_delay, retry_config=body.retry_config,
             trading_day_only=body.trading_day_only, enabled=body.enabled)

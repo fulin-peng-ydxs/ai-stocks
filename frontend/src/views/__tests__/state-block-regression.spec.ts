@@ -193,6 +193,7 @@ import IngestView from '@/views/data/IngestView.vue'
 import QualityView from '@/views/data/QualityView.vue'
 import ScheduleView from '@/views/data/ScheduleView.vue'
 import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
+import AppSelect from '@/components/AppSelect.vue'
 import ScreenView from '@/views/ScreenView.vue'
 import BacktestView from '@/views/BacktestView.vue'
 import TrainingView from '@/views/TrainingView.vue'
@@ -319,6 +320,7 @@ beforeEach(() => {
     jobs: [], total: 0, page: 1, size: 20, task_types: ['verify'], issue_types: [],
   } as any)
   vi.mocked(dataApi.listScheduleTriggerEvents).mockResolvedValue({ events: [] })
+  vi.mocked(dataApi.listScheduleOptions).mockResolvedValue({ list: [] })
   ;(scoreApi.getIndicatorRegistry as ReturnType<typeof vi.fn>).mockResolvedValue({
     items: [
       { key: 'bull_arrange', name_cn: '多头排列', dtype: 'bool', enabled: true, params: [] },
@@ -704,6 +706,65 @@ describe('代表性页面四态回归', () => {
 
     expect((wrapper.vm as unknown as { profileRef: string }).profileRef).toBe('')
     expect((wrapper.vm as unknown as { rows: unknown[] }).rows).toEqual([])
+  })
+
+  it('调度上游多选回填、跨搜索保留选值并提交完整数组', async () => {
+    const parents = [
+      { id: 'parent-a', name: '个股采集', enabled: true },
+      { id: 'parent-b', name: '板块采集', enabled: false },
+    ]
+    const wrapper = await mountView(ScheduleView)
+    const vm = wrapper.vm as any
+    vm.openEdit({
+      id: 'shared-child', name: '共享质检', task_type: 'verify', params: {}, freq_type: null,
+      freq_config: {}, trigger_mode: 'dependency', dependency_job_ids: parents.map(p => p.id),
+      dependency_jobs: parents, dependency_job_id: 'parent-a', enabled: true,
+      trading_day_only: false,
+    })
+    await flushPromises()
+    expect(vm.form.dependency_job_ids).toEqual(['parent-a', 'parent-b'])
+    expect(vm.dependencyOptions).toEqual(parents)
+    vi.mocked(dataApi.listScheduleOptions).mockResolvedValueOnce({ list: [
+      { id: 'parent-c', name: '其他采集', enabled: true },
+      { id: 'shared-child', name: '自身', enabled: true },
+    ] })
+    await vm.loadDependencyOptions('其他')
+    expect(vm.dependencyOptions.map((p: { id: string }) => p.id))
+      .toEqual(['parent-a', 'parent-b', 'parent-c'])
+    const select = wrapper.findAllComponents(AppSelect)
+      .find(item => item.attributes('data-testid') === 'schedule-dependency-job')!
+    expect(select.attributes('multiple')).toBeDefined()
+    select.vm.$emit('update:modelValue', ['parent-b', 'parent-c'])
+    await flushPromises()
+    expect(vm.buildPayload()).toMatchObject({ dependency_job_ids: ['parent-b', 'parent-c'] })
+    expect(wrapper.text()).toContain('每个上游满足结果条件后分别触发一次')
+    vm.form.dependency_job_ids = []
+    expect(vm.buildPayload()).toBeNull()
+    vm.form.trigger_mode = 'time'
+    vm.form.freq_type = 'daily'
+    expect(vm.buildPayload().dependency_job_ids).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('调度兼容旧单上游，切换编辑对象后不接受旧候选响应', async () => {
+    const wrapper = await mountView(ScheduleView)
+    const vm = wrapper.vm as any
+    let resolveOld!: (value: unknown) => void
+    vi.mocked(dataApi.listScheduleOptions).mockReturnValueOnce(
+      new Promise<any>((resolve) => { resolveOld = resolve }),
+    )
+    vm.openEdit({
+      id: 'old-child', name: '旧配置', task_type: 'verify', params: {}, freq_type: null,
+      freq_config: {}, trigger_mode: 'dependency', dependency_job_id: 'legacy-parent',
+      dependency_job_name: '旧上游', enabled: true, trading_day_only: false,
+    })
+    expect(vm.form.dependency_job_ids).toEqual(['legacy-parent'])
+    vm.openCreate()
+    resolveOld({ list: [{ id: 'stale-parent', name: '迟到候选', enabled: true }] })
+    await flushPromises()
+    expect(vm.form.dependency_job_ids).toEqual([])
+    expect(vm.dependencyOptions).toEqual([])
+    wrapper.unmount()
   })
 
   it('调度触发记录填满抽屉剩余空间并标明事件范围', async () => {

@@ -946,6 +946,7 @@ _PG_META_GROUPS: tuple[tuple[str, str, dict[str, str]], ...] = (
         "async_task": "异步任务",
         "task_log": "任务日志",
         "scheduled_job": "定时任务",
+        "scheduled_job_dependency": "调度任务依赖关系",
         "scheduled_trigger_event": "调度触发事件",
     }),
     ("审计与协调", "platform_global", {
@@ -1011,7 +1012,8 @@ _PG_TABLE_PURPOSES: dict[str, str] = {
     "storage_migration": "记录存储迁移 marker、状态和执行摘要。",
     "async_task": "保存异步任务状态、进度、检查点和取消请求。",
     "task_log": "保存异步任务的结构化运行日志。",
-    "scheduled_job": "保存调度定义、依赖关系、下游触发优先级和启停状态。",
+    "scheduled_job": "保存调度定义、启停状态与旧单上游兼容投影；多上游依赖事实见 scheduled_job_dependency。",
+    "scheduled_job_dependency": "保存多上游依赖边及每个上游下独立的下游触发顺序；任一上游命中均分别触发。",
     "scheduled_trigger_event": "记录调度触发、派发和执行关联。",
     "audit_log": "保存平台权限和关键业务操作审计记录。",
     "limit_ladder_task_ledger": "协调连板天梯任务的幂等执行、重试和终态。",
@@ -1030,11 +1032,16 @@ for _category, _scope, _names in _PG_META_GROUPS:
         }
 
 _PG_TABLE_META["scheduled_job"]["relations"] = ["dependency_job_id → scheduled_job.id"]
+_PG_TABLE_META["scheduled_job_dependency"]["relations"] = [
+    "upstream_job_id → scheduled_job.id", "downstream_job_id → scheduled_job.id",
+]
 _PG_TABLE_META["scheduled_trigger_event"]["relations"] = [
     "target_job_id → scheduled_job.id", "source_task_id → async_task.id", "task_id → async_task.id",
 ]
 
 _COMMON_FIELD_META: dict[str, tuple[str, str]] = {
+    "upstream_job_id": ("上游调度任务标识", "触发该依赖边的 scheduled_job.id"),
+    "downstream_job_id": ("下游调度任务标识", "接收该依赖边触发的 scheduled_job.id"),
     "dependency_order": ("下游触发优先级", "同一上游下越小越先，仅用于新事件的同到期时间触发顺序"),
     "dispatch_order": ("事件触发顺序快照", "同批次同到期时间按此值触发，生成后不随任务顺序调整而变化"),
     "tenant_id": ("租户标识", "数据所属租户"),
@@ -1254,6 +1261,7 @@ def _table_asset_meta(
 
 _RUNTIME_TABLES = {
     "data_source_health", "async_task", "task_log", "scheduled_job", "scheduled_trigger_event",
+    "scheduled_job_dependency",
 }
 _LAYOUT_PLATFORM_TABLES = {
     "app_config",

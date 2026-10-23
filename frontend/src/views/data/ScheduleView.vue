@@ -183,7 +183,7 @@ const form = reactive({
   freq_type: 'daily' as FreqType,
   time: '15:30', weekdays: [1, 2, 3, 4, 5] as number[], day: 1, cron: '',
   trigger_mode: 'time' as TriggerMode,
-  dependency_job_id: '', dependency_condition: 'completion' as TriggerCondition,
+  dependency_job_ids: [] as string[], dependency_condition: 'completion' as TriggerCondition,
   dependency_delay_value: 0, dependency_delay_unit: 'minute' as DelayUnit,
   retry_enabled: false, retry_condition: 'failure' as TriggerCondition,
   retry_delay_value: 5, retry_delay_unit: 'minute' as DelayUnit, max_retries: 1,
@@ -199,11 +199,10 @@ async function loadDependencyOptions(query = '') {
   try {
     const result = await listScheduleOptions(query)
     if (!dependencyOptionsRequest.isCurrent(requestId)) return
-    const selected = dependencyOptions.value.find((item) => item.id === form.dependency_job_id)
+    const selected = dependencyOptions.value.filter((item) => form.dependency_job_ids.includes(item.id))
     const next = result.list.filter((item) => item.id !== editingId.value)
-    dependencyOptions.value = selected && !next.some((item) => item.id === selected.id)
-      ? [selected, ...next]
-      : next
+    const nextIds = new Set(next.map((item) => item.id))
+    dependencyOptions.value = [...selected.filter((item) => !nextIds.has(item.id)), ...next]
   } catch (error) {
     if (dependencyOptionsRequest.isCurrent(requestId)) {
       ElMessage.error(getErrorMessage(error, '上游任务候选加载失败'))
@@ -233,6 +232,8 @@ function changeTaskType(type: TaskType) {
 }
 
 function openCreate() {
+  dependencyOptionsRequest.invalidate()
+  dependencyOptionsLoading.value = false
   editingId.value = ''
   Object.assign(form, {
     name: '', task_type: 'stock_ingest', stock: createStockIngestForm(), intraday: createIntradayIngestForm(),
@@ -241,7 +242,7 @@ function openCreate() {
     board_mode: 'update', board_type: '', board_stages: ['dict', 'members', 'bar', 'fund'],
     board_force_members: false, board_force_current_day: false,
     freq_type: 'daily', time: '15:30', weekdays: [1, 2, 3, 4, 5], day: 1, cron: '',
-    trigger_mode: 'time', dependency_job_id: '', dependency_condition: 'completion',
+    trigger_mode: 'time', dependency_job_ids: [], dependency_condition: 'completion',
     dependency_delay_value: 0, dependency_delay_unit: 'minute',
     retry_enabled: false, retry_condition: 'failure', retry_delay_value: 5,
     retry_delay_unit: 'minute', max_retries: 1,
@@ -260,6 +261,8 @@ function openResultScheduleFromIntent() {
 }
 
 function openEdit(j: ScheduledJob) {
+  dependencyOptionsRequest.invalidate()
+  dependencyOptionsLoading.value = false
   editingId.value = j.id
   const stock = stockIngestFormFromTask(j.task_type, j.params)
   Object.assign(form, {
@@ -283,7 +286,8 @@ function openEdit(j: ScheduledJob) {
     weekdays: j.freq_config?.weekdays?.length ? [...j.freq_config.weekdays] : [1, 2, 3, 4, 5],
     day: j.freq_config?.day ?? 1,
     cron: j.freq_config?.cron || '',
-    trigger_mode: j.trigger_mode || 'time', dependency_job_id: j.dependency_job_id || '',
+    trigger_mode: j.trigger_mode || 'time',
+    dependency_job_ids: [...(j.dependency_job_ids ?? (j.dependency_job_id ? [j.dependency_job_id] : []))],
     dependency_condition: j.dependency_condition || 'completion',
     dependency_delay_value: j.dependency_delay?.value ?? 0,
     dependency_delay_unit: j.dependency_delay?.unit || 'minute',
@@ -294,7 +298,7 @@ function openEdit(j: ScheduledJob) {
     max_retries: j.retry_config?.max_retries ?? 1,
     trading_day_only: j.trading_day_only, enabled: j.enabled,
   })
-  dependencyOptions.value = j.dependency_job_id
+  dependencyOptions.value = j.dependency_jobs?.length ? [...j.dependency_jobs] : j.dependency_job_id
     ? [{
         id: j.dependency_job_id,
         name: j.dependency_job_name || j.dependency_job_id,
@@ -336,7 +340,7 @@ function buildPayload(): ScheduledJobInput | null {
       && (form.board_stages.includes('bar') || form.board_stages.includes('fund'))
     ) params.force_current_day = true
   }
-  if (form.trigger_mode === 'dependency' && !form.dependency_job_id) {
+  if (form.trigger_mode === 'dependency' && !form.dependency_job_ids.length) {
     ElMessage.warning('请选择上游任务'); return null
   }
   if (form.trigger_mode === 'dependency'
@@ -371,7 +375,7 @@ function buildPayload(): ScheduledJobInput | null {
     name: form.name.trim(), task_type: form.task_type, params,
     freq_type: form.freq_type, freq_config: fc,
     trigger_mode: form.trigger_mode,
-    dependency_job_id: form.trigger_mode === 'dependency' ? form.dependency_job_id : null,
+    dependency_job_ids: form.trigger_mode === 'dependency' ? [...form.dependency_job_ids] : [],
     dependency_condition: form.trigger_mode === 'dependency' ? form.dependency_condition : null,
     dependency_delay: {
       value: form.dependency_delay_value, unit: form.dependency_delay_unit,
@@ -846,9 +850,12 @@ const menuPageTitle = useMenuPageTitle()
         <template v-else>
           <el-form-item label="上游任务" required>
             <AppSelect
-              v-model="form.dependency_job_id"
+              v-model="form.dependency_job_ids"
               data-testid="schedule-dependency-job"
               placeholder="选择上游任务"
+              multiple
+              clearable
+              collapse-tags
               filterable
               remote
               :remote-method="loadDependencyOptions"
@@ -863,6 +870,7 @@ const menuPageTitle = useMenuPageTitle()
                 :value="job.id"
               />
             </AppSelect>
+            <AppFormHelp>可多选；每个上游满足结果条件后分别触发一次，不等待其他上游。</AppFormHelp>
           </el-form-item>
           <el-form-item label="结果条件" required>
             <PageSegmented v-model="form.dependency_condition" :options="CONDITION_OPTIONS" test-id="schedule-dependency-condition" aria-label="依赖结果条件" />

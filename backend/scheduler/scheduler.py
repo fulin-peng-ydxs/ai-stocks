@@ -434,12 +434,12 @@ class ScheduledJobService:
     @staticmethod
     def _row(r) -> dict:
         import pandas as pd
-        d = r.to_dict()
+        d = r.to_dict() if hasattr(r, "to_dict") else dict(r)
         for k in ("created_at", "updated_at", "last_run_at", "next_dependency_run_at"):
             v = d.get(k)
             d[k] = None if v is None or str(v) == "NaT" else str(v)
         for key in (
-            "dependency_job_name", "dependency_job_id", "dependency_condition",
+            "dependency_job_name", "dependency_job_id", "dependency_condition", "dependency_order",
             "freq_type", "last_task_id",
         ):
             if d.get(key) is not None and pd.isna(d[key]):
@@ -466,7 +466,11 @@ class ScheduledJobService:
                 d.get("dependency_condition"), d.get("dependency_condition") or "")
             delay = d["dependency_delay"]
             unit = {"second": "秒", "minute": "分钟", "hour": "小时"}.get(delay.get("unit"), "")
-            prefix = d.get("dependency_job_name") or d.get("dependency_job_id") or "上游任务"
+            parents = d.get("dependency_jobs") or []
+            prefix = "、".join(item["name"] for item in parents) \
+                or d.get("dependency_job_name") or d.get("dependency_job_id") or "上游任务"
+            if len(parents) > 1:
+                prefix = f"任一上游（{prefix}）"
             suffix = "立即" if int(delay.get("value", 0)) == 0 else f"延迟{delay.get('value')}{unit}"
             d["trigger_text"] = f"{prefix}·{condition}，{suffix}"
         d["next_run_time"] = next_run_time(d["id"]) \
@@ -475,6 +479,29 @@ class ScheduledJobService:
         _ = pd  # 仅为静态可读
         return d
 
+    def _rows(self, df) -> list[dict]:
+        """批量补齐上游候选与选值，分页列表不逐行查询关系。"""
+        if df.empty:
+            return []
+        job_ids = df["id"].astype(str).tolist()
+        parents = self.c.query_df(
+            "SELECT d.downstream_job_id, u.id, u.name, u.enabled "
+            "FROM scheduled_job_dependency d JOIN scheduled_job u ON u.id=d.upstream_job_id "
+            f"WHERE d.downstream_job_id IN ({','.join('?' for _ in job_ids)}) "
+            "ORDER BY lower(u.name), u.id", job_ids)
+        grouped: dict[str, list[dict]] = {}
+        for _, row in parents.iterrows():
+            grouped.setdefault(str(row["downstream_job_id"]), []).append({
+                "id": str(row["id"]), "name": str(row["name"]), "enabled": bool(row["enabled"]),
+            })
+        result = []
+        for _, row in df.iterrows():
+            item = row.to_dict()
+            item["dependency_jobs"] = grouped.get(str(row["id"]), [])
+            item["dependency_job_ids"] = [parent["id"] for parent in item["dependency_jobs"]]
+            result.append(self._row(item))
+        return result
+
     def list(self) -> list[dict]:
         df = self.c.query_df(
             "SELECT j.*, u.name AS dependency_job_name, "
@@ -482,9 +509,12 @@ class ScheduledJobService:
             " AND e.status IN ('waiting','dispatching')) AS waiting_trigger_count, "
             "(SELECT min(due_at) FROM scheduled_trigger_event e WHERE e.target_job_id=j.id "
             " AND e.status IN ('waiting','dispatching')) AS next_dependency_run_at "
-            "FROM scheduled_job j LEFT JOIN scheduled_job u ON u.id=j.dependency_job_id "
+            "FROM scheduled_job j LEFT JOIN ("
+            "SELECT d.downstream_job_id, string_agg(p.name, '、' ORDER BY p.name, p.id) AS name "
+            "FROM scheduled_job_dependency d JOIN scheduled_job p ON p.id=d.upstream_job_id "
+            "GROUP BY d.downstream_job_id) u ON u.downstream_job_id=j.id "
             "ORDER BY j.created_at")
-        return [self._row(r) for _, r in df.iterrows()]
+        return self._rows(df)
 
     def _frequency_order_sql(self, direction: str) -> str:
         """Return a cross-runtime frequency order matching the UI's configured frequency fields."""
@@ -555,13 +585,16 @@ class ScheduledJobService:
             " AND e.status IN ('waiting','dispatching')) AS waiting_trigger_count, "
             "(SELECT min(due_at) FROM scheduled_trigger_event e WHERE e.target_job_id=j.id "
             " AND e.status IN ('waiting','dispatching')) AS next_dependency_run_at "
-            "FROM scheduled_job j LEFT JOIN scheduled_job u ON u.id=j.dependency_job_id "
+            "FROM scheduled_job j LEFT JOIN ("
+            "SELECT d.downstream_job_id, string_agg(p.name, '、' ORDER BY p.name, p.id) AS name "
+            "FROM scheduled_job_dependency d JOIN scheduled_job p ON p.id=d.upstream_job_id "
+            "GROUP BY d.downstream_job_id) u ON u.downstream_job_id=j.id "
             f"ORDER BY {primary_order}, lower(j.name) {direction}, j.id {direction} "
             "LIMIT ? OFFSET ?",
             [size, (page - 1) * size],
         )
         return {
-            "jobs": [self._row(r) for _, r in df.iterrows()],
+            "jobs": self._rows(df),
             "total": total,
             "page": page,
             "size": size,
@@ -590,9 +623,12 @@ class ScheduledJobService:
             " AND e.status IN ('waiting','dispatching')) AS waiting_trigger_count, "
             "(SELECT min(due_at) FROM scheduled_trigger_event e WHERE e.target_job_id=j.id "
             " AND e.status IN ('waiting','dispatching')) AS next_dependency_run_at "
-            "FROM scheduled_job j LEFT JOIN scheduled_job u ON u.id=j.dependency_job_id "
+            "FROM scheduled_job j LEFT JOIN ("
+            "SELECT d.downstream_job_id, string_agg(p.name, '、' ORDER BY p.name, p.id) AS name "
+            "FROM scheduled_job_dependency d JOIN scheduled_job p ON p.id=d.upstream_job_id "
+            "GROUP BY d.downstream_job_id) u ON u.downstream_job_id=j.id "
             "WHERE j.id=?", [jid])
-        return None if df.empty else self._row(df.iloc[0])
+        return None if df.empty else self._rows(df)[0]
 
     def downstream(self, jid: str) -> dict:
         """完整读取直接下游；主表分页和启停状态不缩小排序范围。"""
@@ -600,10 +636,13 @@ class ScheduledJobService:
             if not self.get(jid):
                 raise NotFoundError("调度任务不存在")
             rows = self.c.query_df(
-                "SELECT * FROM scheduled_job WHERE trigger_mode='dependency' "
-                "AND dependency_job_id=? "
-                "ORDER BY dependency_order NULLS LAST, created_at, id", [jid])
-            jobs = [self._row(row) for _, row in rows.iterrows()]
+                "SELECT j.*, d.dependency_order AS edge_order FROM scheduled_job j "
+                "JOIN scheduled_job_dependency d ON d.downstream_job_id=j.id "
+                "WHERE j.trigger_mode='dependency' AND d.upstream_job_id=? "
+                "ORDER BY d.dependency_order, j.created_at, j.id", [jid])
+            jobs = self._rows(rows)
+            for job in jobs:
+                job["dependency_order"] = int(job.pop("edge_order"))
             # 运行时间和启停不改变关系版本，避免任务自动运行造成无意义的保存冲突。
             relation = [(job["id"], job.get("dependency_order")) for job in jobs]
             revision = hashlib.sha256(json.dumps(relation, default=str).encode()).hexdigest()
@@ -622,25 +661,21 @@ class ScheduledJobService:
                 now = datetime.now()  # noqa: DTZ005 - 兼容运行态的上海本地 naive 时间
                 with self.c.transaction():
                     self.c.executemany(
+                        "UPDATE scheduled_job_dependency SET dependency_order=? "
+                        "WHERE downstream_job_id=? AND upstream_job_id=?",
+                        [(index, child, jid) for index, child in enumerate(job_ids)],
+                    )
+                    # 单上游旧字段仅作为兼容投影，运行与排序均读取依赖边。
+                    self.c.executemany(
                         "UPDATE scheduled_job SET dependency_order=?, updated_at=? "
-                        "WHERE id=? AND trigger_mode='dependency' AND dependency_job_id=?",
+                        "WHERE id=? AND dependency_job_id=?",
                         [(index, now, child, jid) for index, child in enumerate(job_ids)],
                     )
             return self.downstream(jid)
 
-    def _next_dependency_order(self, parent_id: str | None) -> int | None:
-        if not parent_id:
-            return None
-        row = self.c.query_df(
-            "SELECT COALESCE(max(dependency_order), -1)+1 AS position "
-            "FROM scheduled_job WHERE trigger_mode='dependency' AND dependency_job_id=?",
-            [parent_id],
-        ).iloc[0]
-        return int(row["position"])
-
     def _validate(self, jid: str, task_type: str, params: dict | None,
                   freq_type: str | None, freq_config: dict | None,
-                  trigger_mode: str, dependency_job_id: str | None,
+                  trigger_mode: str, dependency_job_ids: list[str],
                   dependency_condition: str | None, dependency_delay: dict | None,
                   retry_config: dict | None) -> tuple[dict, dict, dict]:
         normalized_params = dict(params or {})
@@ -714,66 +749,116 @@ class ScheduledJobService:
                 raise ValueError(f"未知频率类型: {freq_type}（可选 {_FREQ_TYPES}）")
             compile_trigger(str(freq_type), freq_config)
         else:
-            if not dependency_job_id:
+            if not dependency_job_ids:
                 raise ValueError("依赖触发必须选择上游任务")
-            if dependency_job_id == jid:
+            if jid in dependency_job_ids:
                 raise ValueError("任务不能直接依赖自己；循环执行请使用自身重试")
-            if not self.get(dependency_job_id):
-                raise ValueError("上游任务不存在")
+            placeholders = ','.join('?' for _ in dependency_job_ids)
+            parents = self.c.query_df(
+                f"SELECT id FROM scheduled_job WHERE id IN ({placeholders})", dependency_job_ids)
+            if len(parents) != len(dependency_job_ids):
+                raise ValueError("上游任务不存在，请刷新后重新选择")
             if dependency_condition not in _RESULT_CONDITIONS:
                 raise ValueError(f"依赖结果条件非法（可选 {_RESULT_CONDITIONS}）")
-            self._validate_no_cycle(jid, dependency_job_id)
+            self._validate_no_cycle(jid, dependency_job_ids)
         return normalized_params, delay, retry
 
-    def _validate_no_cycle(self, jid: str, dependency_job_id: str) -> None:
-        """沿上游链回溯；若回到当前任务，拒绝普通跨任务环路并给出链路。"""
-        chain = [jid, dependency_job_id]
-        current = dependency_job_id
-        seen = {jid}
-        while current:
-            if current in seen:
-                names = []
-                for item in chain:
-                    row = self.get(item)
-                    names.append(row["name"] if row else item)
-                raise ValueError(f"检测到循环依赖：{' → '.join(names)}")
-            seen.add(current)
-            row = self.get(current)
-            if not row or row.get("trigger_mode") != "dependency":
-                return
-            current = row.get("dependency_job_id")
-            if current:
-                chain.append(current)
+    def _validate_no_cycle(self, jid: str, dependency_job_ids: list[str]) -> None:
+        """遍历多上游图；共享祖先不是环，所有分支都必须检查。"""
+        from collections import defaultdict
+
+        parents: dict[str, list[str]] = defaultdict(list)
+        edges = self.c.query_df(
+            "SELECT upstream_job_id, downstream_job_id FROM scheduled_job_dependency")
+        for _, edge in edges.iterrows():
+            parents[str(edge["downstream_job_id"])].append(str(edge["upstream_job_id"]))
+        pending = [(parent, [jid, parent]) for parent in dependency_job_ids]
+        visited: set[str] = set()
+        while pending:
+            current, chain = pending.pop()
+            if current == jid:
+                names = {job["id"]: job["name"] for job in self.c.query_df(
+                    "SELECT id, name FROM scheduled_job").to_dict("records")}
+                raise ValueError("检测到循环依赖：" + " → ".join(names.get(x, x) for x in chain))
+            if current in visited:
+                continue
+            visited.add(current)
+            pending.extend((parent, [*chain, parent]) for parent in parents[current])
+
+    @staticmethod
+    def _dependency_ids(trigger_mode: str, legacy_id: str | None,
+                        selected: list[str] | None) -> list[str]:
+        """数组为权威输入；缺省数组时兼容旧客户端单上游，显式空数组仍参与校验。"""
+        if trigger_mode != "dependency":
+            return []
+        values = selected if selected is not None else ([legacy_id] if legacy_id else [])
+        if any(not isinstance(item, str) or not item.strip() for item in values):
+            raise ValueError("上游任务标识不能为空")
+        return sorted({item.strip() for item in values})
+
+    def _save_dependencies(self, jid: str, parent_ids: list[str]) -> None:
+        """与任务定义在同一事务保存；保留仍存在的边顺序，新增边追加到各上游末尾。"""
+        existing = self.c.query_df(
+            "SELECT upstream_job_id, dependency_order FROM scheduled_job_dependency "
+            "WHERE downstream_job_id=?", [jid])
+        orders = {str(row["upstream_job_id"]): int(row["dependency_order"])
+                  for _, row in existing.iterrows()}
+        added = [parent for parent in parent_ids if parent not in orders]
+        if added:
+            # 一次查询各新增上游的末尾位置，避免多选数量增加时产生 N+1 查询。
+            positions = self.c.query_df(
+                "SELECT upstream_job_id, max(dependency_order)+1 AS position "
+                "FROM scheduled_job_dependency "
+                f"WHERE upstream_job_id IN ({','.join('?' for _ in added)}) "
+                "GROUP BY upstream_job_id", added)
+            orders.update({str(row["upstream_job_id"]): int(row["position"])
+                           for _, row in positions.iterrows()})
+        self.c.execute("DELETE FROM scheduled_job_dependency WHERE downstream_job_id=?", [jid])
+        saved_orders = {parent: orders.get(parent, 0) for parent in parent_ids}
+        if parent_ids:
+            self.c.executemany(
+                "INSERT INTO scheduled_job_dependency "
+                "(upstream_job_id, downstream_job_id, dependency_order) VALUES (?,?,?)",
+                [(parent, jid, saved_orders[parent]) for parent in parent_ids])
+        # 存量字段只投影一个稳定上游，供旧接口消费者及升级补缺读取。
+        primary = parent_ids[0] if parent_ids else None
+        self.c.execute(
+            "UPDATE scheduled_job SET dependency_job_id=?, dependency_order=? WHERE id=?",
+            [primary, saved_orders.get(primary), jid])
 
     def create(self, *, name: str, task_type: str, params: dict | None,
                freq_type: str | None, freq_config: dict | None,
                trading_day_only: bool, enabled: bool,
                trigger_mode: str = "time", dependency_job_id: str | None = None,
+               dependency_job_ids: list[str] | None = None,
                dependency_condition: str | None = None, dependency_delay: dict | None = None,
                retry_config: dict | None = None) -> dict:
         with _EVENT_DISPATCH_LOCK:
             if not (name or "").strip():
                 raise ValueError("任务名称不能为空")
             jid = f"job_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+            parent_ids = self._dependency_ids(trigger_mode, dependency_job_id, dependency_job_ids)
             params, dependency_delay, retry_config = self._validate(
                 jid, task_type, params, freq_type, freq_config, trigger_mode,
-                dependency_job_id, dependency_condition, dependency_delay, retry_config)
+                parent_ids, dependency_condition, dependency_delay, retry_config)
             now = datetime.now()
-            self.c.execute(
-                "INSERT INTO scheduled_job (id, name, task_type, params, freq_type, freq_config, "
-                "trigger_mode, dependency_job_id, dependency_order, dependency_condition, "
-                "dependency_delay, "
-                "retry_config, trading_day_only, enabled, last_run_at, last_task_id, created_at, "
-                "updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                [jid, name.strip(), task_type, runtime_json_param(self.c, params),
-                 freq_type, runtime_json_param(self.c, freq_config or {}),
-                 trigger_mode, dependency_job_id if trigger_mode == "dependency" else None,
-                 (self._next_dependency_order(dependency_job_id)
-                  if trigger_mode == "dependency" else None),
-                 dependency_condition if trigger_mode == "dependency" else None,
-                 runtime_json_param(self.c, dependency_delay),
-                 runtime_json_param(self.c, retry_config),
-                 bool(trading_day_only), bool(enabled), None, None, now, now])
+            with self.c.transaction():
+                self.c.execute(
+                    "INSERT INTO scheduled_job (id, name, task_type, params, "
+                    "freq_type, freq_config, "
+                    "trigger_mode, dependency_job_id, dependency_order, dependency_condition, "
+                    "dependency_delay, "
+                    "retry_config, trading_day_only, enabled, last_run_at, last_task_id, "
+                    "created_at, "
+                    "updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    [jid, name.strip(), task_type, runtime_json_param(self.c, params),
+                     freq_type, runtime_json_param(self.c, freq_config or {}),
+                     trigger_mode, None, None,
+                     dependency_condition if trigger_mode == "dependency" else None,
+                     runtime_json_param(self.c, dependency_delay),
+                     runtime_json_param(self.c, retry_config),
+                     bool(trading_day_only), bool(enabled), None, None, now, now])
+                self._save_dependencies(jid, parent_ids)
             job = self.get(jid)
             if job["enabled"]:
                 register_job(job)
@@ -783,6 +868,7 @@ class ScheduledJobService:
                freq_type: str | None, freq_config: dict | None,
                trading_day_only: bool, enabled: bool,
                trigger_mode: str = "time", dependency_job_id: str | None = None,
+               dependency_job_ids: list[str] | None = None,
                dependency_condition: str | None = None, dependency_delay: dict | None = None,
                retry_config: dict | None = None) -> dict:
         with _EVENT_DISPATCH_LOCK:
@@ -791,30 +877,25 @@ class ScheduledJobService:
                 raise ValueError("定时任务不存在")
             if not (name or "").strip():
                 raise ValueError("任务名称不能为空")
+            parent_ids = self._dependency_ids(trigger_mode, dependency_job_id, dependency_job_ids)
             params, dependency_delay, retry_config = self._validate(
                 jid, task_type, params, freq_type, freq_config, trigger_mode,
-                dependency_job_id, dependency_condition, dependency_delay, retry_config)
-            dependency_order = None
-            if trigger_mode == "dependency":
-                dependency_order = (
-                    previous.get("dependency_order")
-                    if previous["trigger_mode"] == "dependency"
-                    and previous.get("dependency_job_id") == dependency_job_id
-                    else self._next_dependency_order(dependency_job_id)
-                )
-            self.c.execute(
-                "UPDATE scheduled_job SET name=?, task_type=?, params=?, freq_type=?, freq_config=?, "
-                "trigger_mode=?, dependency_job_id=?, dependency_order=?, dependency_condition=?, "
-                "dependency_delay=?, "
-                "retry_config=?, trading_day_only=?, enabled=?, updated_at=? WHERE id=?",
-                [name.strip(), task_type, runtime_json_param(self.c, params),
-                 freq_type, runtime_json_param(self.c, freq_config or {}),
-                 trigger_mode, dependency_job_id if trigger_mode == "dependency" else None,
-                 dependency_order,
-                 dependency_condition if trigger_mode == "dependency" else None,
-                 runtime_json_param(self.c, dependency_delay),
-                 runtime_json_param(self.c, retry_config),
-                 bool(trading_day_only), bool(enabled), datetime.now(), jid])
+                parent_ids, dependency_condition, dependency_delay, retry_config)
+            with self.c.transaction():
+                self.c.execute(
+                    "UPDATE scheduled_job SET name=?, task_type=?, params=?, "
+                    "freq_type=?, freq_config=?, trigger_mode=?, dependency_job_id=?, "
+                    "dependency_order=?, dependency_condition=?, "
+                    "dependency_delay=?, "
+                    "retry_config=?, trading_day_only=?, enabled=?, updated_at=? WHERE id=?",
+                    [name.strip(), task_type, runtime_json_param(self.c, params),
+                     freq_type, runtime_json_param(self.c, freq_config or {}),
+                     trigger_mode, None, None,
+                     dependency_condition if trigger_mode == "dependency" else None,
+                     runtime_json_param(self.c, dependency_delay),
+                     runtime_json_param(self.c, retry_config),
+                     bool(trading_day_only), bool(enabled), datetime.now(), jid])
+                self._save_dependencies(jid, parent_ids)
             job = self.get(jid)
             unregister_job(jid)            # 先注销旧触发器
             if job["enabled"] and job["trigger_mode"] == "time":
@@ -848,12 +929,16 @@ class ScheduledJobService:
     def delete(self, jid: str) -> None:
         with _EVENT_DISPATCH_LOCK:
             refs = self.c.query_df(
-                "SELECT name FROM scheduled_job WHERE dependency_job_id=? ORDER BY created_at", [jid])
+                "SELECT j.name FROM scheduled_job j JOIN scheduled_job_dependency d "
+                "ON d.downstream_job_id=j.id WHERE d.upstream_job_id=? ORDER BY j.created_at",
+                [jid])
             if not refs.empty:
                 raise ValueError(
                     "该任务仍被以下任务依赖：" + "、".join(refs["name"].astype(str).tolist()))
             unregister_job(jid)
             with self.c.transaction():
+                self.c.execute(
+                    "DELETE FROM scheduled_job_dependency WHERE downstream_job_id=?", [jid])
                 self.c.execute(
                     "UPDATE scheduled_trigger_event SET status='cancelled', message='目标任务已删除', "
                     "updated_at=? WHERE target_job_id=? AND status IN ('waiting','dispatching')",
@@ -997,9 +1082,10 @@ def enqueue_terminal_events(task_id: str, *, client=None) -> int:
     # 同次终态共享基准时间，使相同延迟产生完全相同的 due_at。
     batch_time = datetime.now()  # noqa: DTZ005 - 兼容 DuckDB 与 PG 运行态时间适配
     dependents = client.query_df(
-        "SELECT * FROM scheduled_job WHERE enabled=true AND trigger_mode='dependency' "
-        "AND dependency_job_id=? "
-        "ORDER BY dependency_order NULLS LAST, created_at, id", [source["job_id"]])
+        "SELECT j.* FROM scheduled_job j JOIN scheduled_job_dependency d "
+        "ON d.downstream_job_id=j.id WHERE j.enabled=true AND j.trigger_mode='dependency' "
+        "AND d.upstream_job_id=? "
+        "ORDER BY d.dependency_order, j.created_at, j.id", [source["job_id"]])
     for position, (_, target) in enumerate(dependents.iterrows()):
         if not _condition_matches(str(target.get("dependency_condition") or ""), source["status"]):
             continue

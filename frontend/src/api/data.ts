@@ -342,6 +342,8 @@ export interface ScheduledJob {
   freq_config: FreqConfig
   trigger_mode: TriggerMode
   dependency_job_id: string | null
+  dependency_job_ids: string[]
+  dependency_jobs: ScheduledJobOption[]
   dependency_order?: number | null
   dependency_job_name?: string | null
   dependency_condition: TriggerCondition | null
@@ -367,6 +369,7 @@ export interface ScheduledJobInput {
   freq_config: FreqConfig
   trigger_mode: TriggerMode
   dependency_job_id?: string | null
+  dependency_job_ids?: string[]
   dependency_condition?: TriggerCondition | null
   dependency_delay: DelayConfig
   retry_config: RetryConfig

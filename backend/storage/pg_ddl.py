@@ -1041,8 +1041,8 @@ CREATE TABLE IF NOT EXISTS scheduled_job (
     trigger_mode             TEXT NOT NULL DEFAULT 'time' CHECK (
         trigger_mode IN ('time', 'dependency')
     ),
-    dependency_job_id        TEXT,
-    dependency_order INTEGER,               -- 同一上游的下游触发优先级（越小越先）
+    dependency_job_id        TEXT,           -- 旧单上游兼容投影；依赖事实见关系表
+    dependency_order INTEGER,               -- 兼容投影上游下的顺序；实际排序读取依赖边
     dependency_condition     TEXT,
     dependency_delay         JSONB NOT NULL DEFAULT '{"value":0,"unit":"minute"}'::jsonb,
     retry_config             JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -1053,6 +1053,17 @@ CREATE TABLE IF NOT EXISTS scheduled_job (
     created_at               TIMESTAMPTZ NOT NULL,
     updated_at               TIMESTAMPTZ NOT NULL
 );
+"""
+
+DDL_SCHEDULED_JOB_DEPENDENCY_RUNTIME = """
+CREATE TABLE IF NOT EXISTS scheduled_job_dependency (
+    upstream_job_id TEXT NOT NULL,   -- 上游调度任务标识
+    downstream_job_id TEXT NOT NULL, -- 下游调度任务标识
+    dependency_order INTEGER NOT NULL, -- 此上游下的触发优先级
+    PRIMARY KEY (upstream_job_id, downstream_job_id)
+);
+CREATE INDEX IF NOT EXISTS idx_schedule_dependency_downstream
+    ON scheduled_job_dependency (downstream_job_id);
 """
 
 DDL_SCHEDULED_TRIGGER_EVENT_RUNTIME = """
@@ -1295,6 +1306,7 @@ _OTHER_TABLES: dict[str, str] = {
     "async_task": DDL_ASYNC_TASK_RUNTIME,
     "task_log": DDL_TASK_LOG_RUNTIME,
     "scheduled_job": DDL_SCHEDULED_JOB_RUNTIME,
+    "scheduled_job_dependency": DDL_SCHEDULED_JOB_DEPENDENCY_RUNTIME,
     "scheduled_trigger_event": DDL_SCHEDULED_TRIGGER_EVENT_RUNTIME,
     "layout_preset": DDL_LAYOUT_PRESET,
     "layout_page_config": DDL_LAYOUT_PAGE_CONFIG,
@@ -1389,6 +1401,13 @@ _TASK_RUNTIME_UPGRADES: tuple[str, ...] = (
     )
     UPDATE scheduled_job SET dependency_order=ranked.position
     FROM ranked WHERE scheduled_job.id=ranked.id AND scheduled_job.dependency_order IS NULL
+    """,
+    # 旧单上游补为一条边；幂等升级不得覆盖已有边的排序。
+    """
+    INSERT INTO scheduled_job_dependency (upstream_job_id, downstream_job_id, dependency_order)
+    SELECT dependency_job_id, id, COALESCE(dependency_order, 0) FROM scheduled_job
+    WHERE trigger_mode='dependency' AND dependency_job_id IS NOT NULL
+    ON CONFLICT (upstream_job_id, downstream_job_id) DO NOTHING
     """,
     """
     DO $$
