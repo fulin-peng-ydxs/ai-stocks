@@ -11,6 +11,7 @@ import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
+import ScheduleDownstreamDrawer from '@/components/data/ScheduleDownstreamDrawer.vue'
 import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
@@ -444,6 +445,9 @@ async function runNow(j: ScheduledJob) {
   } catch { /* 409 等由拦截器弹出 */ }
 }
 
+const downstreamDrawer = ref(false)
+const downstreamJob = ref<ScheduledJob | null>(null)
+
 const eventDrawer = ref(false)
 const eventJob = ref<ScheduledJob | null>(null)
 const triggerEvents = ref<ScheduledTriggerEvent[]>([])
@@ -503,6 +507,10 @@ function scheduleRowActions(row: ScheduledJob): AppRowAction[] {
       onClick: () => runNow(row),
     },
     { key: 'edit', label: '编辑', permission: 'data-schedule:manage', onClick: () => openEdit(row) },
+    {
+      key: 'downstream', label: '下游任务', permission: 'data-schedule:manage', placement: 'more',
+      onClick: () => { downstreamJob.value = row; downstreamDrawer.value = true },
+    },
     {
       key: 'events', label: '触发记录', permission: 'data-schedule:manage', placement: 'more',
       onClick: () => openTriggerEvents(row),
@@ -683,6 +691,7 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #overlays>
+    <ScheduleDownstreamDrawer v-model="downstreamDrawer" :job="downstreamJob" />
 
     <AppDetailDrawer
       v-model="eventDrawer"

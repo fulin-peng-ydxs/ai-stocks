@@ -61,15 +61,19 @@ def _mk_user(pg, codes: list[str]) -> tuple[str, str, str]:
     tid = "s4rc_t_" + uuid.uuid4().hex[:8]
     uid = "s4rc_u_" + uuid.uuid4().hex[:8]
     rid = "s4rc_r_" + uuid.uuid4().hex[:8]
-    pg.execute("INSERT INTO sys_tenant (id,name,status) VALUES (%s,'t','active') ON CONFLICT DO NOTHING", [tid])
-    pg.execute("INSERT INTO sys_user (id,tenant_id,account,role_code,perm_ver,status) "
-               "VALUES (%s,%s,%s,'normal',0,'active')", [uid, tid, uid])
-    pg.execute("INSERT INTO sys_role (id,code,name,kind,is_builtin,is_locked) "
-               "VALUES (%s,%s,'t8','custom',FALSE,FALSE)", [rid, rid])
-    pg.execute("INSERT INTO sys_user_role (user_id,role_id) VALUES (%s,%s)", [uid, rid])
-    for c in codes:
-        pg.execute("INSERT INTO sys_role_resource (role_id,resource_id) VALUES (%s,%s) "
-                   "ON CONFLICT DO NOTHING", [rid, c])
+    try:
+        pg.execute("INSERT INTO sys_tenant (id,name,status) VALUES (%s,%s,'active')", [tid, tid])
+        pg.execute("INSERT INTO sys_user (id,tenant_id,account,role_code,perm_ver,status) "
+                   "VALUES (%s,%s,%s,'normal',0,'active')", [uid, tid, uid])
+        pg.execute("INSERT INTO sys_role (id,code,name,kind,is_builtin,is_locked) "
+                   "VALUES (%s,%s,%s,'custom',FALSE,FALSE)", [rid, rid, rid])
+        pg.execute("INSERT INTO sys_user_role (user_id,role_id) VALUES (%s,%s)", [uid, rid])
+        for c in codes:
+            pg.execute("INSERT INTO sys_role_resource (role_id,resource_id) VALUES (%s,%s) "
+                       "ON CONFLICT DO NOTHING", [rid, c])
+    except Exception:
+        _rm_user(pg, uid, tid, rid)
+        raise
     return uid, tid, rid
 
 

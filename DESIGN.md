@@ -415,7 +415,7 @@ Key Characteristics：
 | `AppFilterSelect` | `frontend/src/components/AppFilterSelect.vue` | 基于 `AppSelect` 的容量自适应选择器，统一列表筛选与紧凑多选编辑 | 无直接系统组件种类 | 列表筛选与紧凑多选编辑统一消费；标签/数量模式、全选文案、容量和输入属性见[按钮与输入](#按钮与输入)。 |
 | `AppDragHandle` | `frontend/src/components/AppDragHandle.vue` | 列表与树共用的六点排序把手 | 无直接系统组件种类 | 基于 AppIconButton 统一尺寸、说明、焦点、禁用与拿起状态；与相邻内容保留 8px 间距，排序按键与指针事件交给共享会话处理 |
 | `AppReorderTree` | `frontend/src/components/AppReorderTree.vue` | 层级树的把手拖动、同级键盘排序与合法落点反馈 | 无直接系统组件种类；树内部交互 | 菜单管理消费；和 AppReorderList 共用 AppDragHandle 与 useReorderInteraction，树导航委托 ElTree，业务调用方提供容器资格、权限、保存及失败恢复；保留选中、展开和保存后的焦点 |
-| `AppReorderList` | `frontend/src/components/AppReorderList.vue` | 用户自定义顺序列表的共享拖动排序，统一六点 SVG 把手、落点、取消、滚动和键盘操作 | 无直接系统组件种类；列表内部交互 | 交易纪律选股、买入和卖出规则共用；稳定 key 不依赖下标；拖动松手或键盘确认才提交 reorder，保存归调用方；禁用及单项不显示把手；与树共用 AppDragHandle 和 useReorderInteraction，紧凑行通过 --app-reorder-handle-offset 调整把手对齐，不在页面复制排序输入或上移/下移按钮 |
+| `AppReorderList` | `frontend/src/components/AppReorderList.vue` | 用户自定义顺序列表的共享拖动排序，统一六点 SVG 把手、落点、取消、滚动和键盘操作 | 无直接系统组件种类；列表内部交互 | 交易纪律选股、买入和卖出规则及任务调度下游顺序共用；稳定 key 不依赖下标；拖动松手或键盘确认才提交 reorder，保存归调用方；禁用及单项不显示把手；与树共用 AppDragHandle 和 useReorderInteraction，紧凑行通过 --app-reorder-handle-offset 调整把手对齐，不在页面复制排序输入或上移/下移按钮 |
 | `AppSortControl` | `frontend/src/components/AppSortControl.vue` | 统一“排序字段菜单 + 升降序切换”的紧凑排序交互 | 无直接系统组件种类 | 页面只提供稳定选项、当前字段和方向，不得复制下拉菜单、选中勾选和方向按钮；位于筛选或操作栏时固定作为最后一个控件，空间不足按 DOM 顺序整体换行 |
 | `AppSearchInput` | `frontend/src/components/AppSearchInput.vue` | 列表页关键字搜索输入，统一"输入即防抖查 + 回车/清空立即查" | 无直接系统组件种类 | 关键字输入统一消费；防抖编排复用 useDebouncedQuery，查询、归页及刷新见[查询、重置与刷新](#查询重置与刷新)。 |
 | `AppDatePicker` / `TradeDatePicker` | `frontend/src/components/AppDatePicker.vue`、`frontend/src/components/TradeDatePicker.vue` | 通用日期浮层入口与交易日选择器 | 无直接系统组件种类 | 通用日期输入使用 AppDatePicker，交易日输入使用 TradeDatePicker；浮层与默认最新日期规则见[按钮与输入](#按钮与输入)。 |
@@ -1210,7 +1210,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `screen` | `ScreenView`（策略筛选） | `master-detail` | `density` | action:`filter-bar` / main:`master-detail` / main:`wide-table` / main:`chart` |
 | `stocks` | `StocksView`（个股查询） | `master-detail` | `density` | action:`filter-bar` / main:`master-detail` / nested:`wide-table` / nested:`wide-table` / nested:`chart` / footer |
 | `data-quality` | `QualityView`（数据质量） | `list` | `density` | action:`filter-bar` / main:`data-table` |
-| `data-schedule` | `ScheduleView`（任务调度） | `list` | `density` | action:`toolbar` / main:`data-table(growMain)` / overlay:`detail` |
+| `data-schedule` | `ScheduleView`（任务调度） | `list` | `density` | action:`toolbar` / main:`data-table(growMain)` / overlay:`detail` / overlay:`detail` |
 | `data-ingest` | `IngestView`（数据采集） | `workbench` | `density` | action:`toolbar` / main:`section` / main:`tabs(growMain)` / nested:`data-table` / nested:`data-table` / overlay:`form` / overlay:`form` / overlay:`detail` |
 | `data-overview` | `OverviewView`（数据概览） | `workbench` | `density` | action:`toolbar` / main:`kpi-grid` / main:`stat-strip` / main:`tabs` / nested:`wide-table` / nested:`data-table`  / nested:`filter-bar` |
 | `backtest` | `BacktestView`（策略回测） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / nested:`chart` |

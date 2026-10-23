@@ -763,6 +763,7 @@ CREATE TABLE IF NOT EXISTS scheduled_job (
     freq_config      VARCHAR,               -- 频率配置（JSON）：{time} / {weekdays,time} / {day,time} / {cron}
     trigger_mode     VARCHAR,               -- time | dependency
     dependency_job_id VARCHAR,              -- 依赖的上游 scheduled_job id
+    dependency_order INTEGER,               -- 同一上游的下游触发优先级（越小越先）
     dependency_condition VARCHAR,           -- success | failure | completion
     dependency_delay VARCHAR,               -- {value,unit}，unit=second|minute|hour
     retry_config     VARCHAR,                -- {enabled,condition,delay,max_retries}
@@ -787,6 +788,7 @@ CREATE TABLE IF NOT EXISTS scheduled_trigger_event (
     trigger_kind     VARCHAR,               -- dependency | retry
     trigger_condition VARCHAR,              -- success | failure | completion（生成时规则快照）
     retry_count      INTEGER,
+    dispatch_order INTEGER NOT NULL DEFAULT 0, -- 事件生成时的批次触发顺序快照
     due_at           TIMESTAMP,
     dispatched_at    TIMESTAMP,             -- 实际创建下游 async_task 的时间
     status           VARCHAR,               -- waiting | dispatching | dispatched | cancelled | exhausted | failed
@@ -1407,10 +1409,22 @@ _MIGRATIONS: list[str] = [
     "UPDATE async_task SET execution_attempt=1 WHERE execution_attempt IS NULL",
     # 依赖调度：存量任务均为时间触发，新增配置列只补缺失值，不覆盖用户配置。
     "ALTER TABLE scheduled_job ADD COLUMN IF NOT EXISTS trigger_mode VARCHAR",
+    "ALTER TABLE scheduled_job ADD COLUMN IF NOT EXISTS dependency_order INTEGER",
+    "ALTER TABLE scheduled_trigger_event ADD COLUMN IF NOT EXISTS dispatch_order INTEGER DEFAULT 0",
     "ALTER TABLE scheduled_job ADD COLUMN IF NOT EXISTS dependency_job_id VARCHAR",
     "ALTER TABLE scheduled_job ADD COLUMN IF NOT EXISTS dependency_condition VARCHAR",
     "ALTER TABLE scheduled_job ADD COLUMN IF NOT EXISTS dependency_delay VARCHAR",
     "ALTER TABLE scheduled_job ADD COLUMN IF NOT EXISTS retry_config VARCHAR",
+    """
+    WITH ranked AS (
+        SELECT id, row_number() OVER (
+            PARTITION BY dependency_job_id ORDER BY created_at, id
+        ) - 1 AS position
+        FROM scheduled_job WHERE trigger_mode='dependency'
+    )
+    UPDATE scheduled_job SET dependency_order=ranked.position
+    FROM ranked WHERE scheduled_job.id=ranked.id AND scheduled_job.dependency_order IS NULL
+    """,
     "UPDATE scheduled_job SET trigger_mode='time' WHERE trigger_mode IS NULL",
     (
         "UPDATE scheduled_job SET dependency_delay='{\"value\":0,\"unit\":\"minute\"}' "

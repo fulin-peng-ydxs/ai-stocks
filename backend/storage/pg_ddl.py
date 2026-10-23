@@ -1038,6 +1038,7 @@ CREATE TABLE IF NOT EXISTS scheduled_job (
         trigger_mode IN ('time', 'dependency')
     ),
     dependency_job_id        TEXT,
+    dependency_order INTEGER,               -- 同一上游的下游触发优先级（越小越先）
     dependency_condition     TEXT,
     dependency_delay         JSONB NOT NULL DEFAULT '{"value":0,"unit":"minute"}'::jsonb,
     retry_config             JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -1061,6 +1062,7 @@ CREATE TABLE IF NOT EXISTS scheduled_trigger_event (
     trigger_kind        TEXT NOT NULL CHECK (trigger_kind IN ('dependency', 'retry')),
     trigger_condition   TEXT,
     retry_count         INTEGER NOT NULL DEFAULT 0,
+    dispatch_order INTEGER NOT NULL DEFAULT 0, -- 事件生成时的批次触发顺序快照
     due_at              TIMESTAMPTZ NOT NULL,
     dispatched_at       TIMESTAMPTZ,
     status              TEXT NOT NULL CHECK (
@@ -1371,6 +1373,19 @@ _TASK_RUNTIME_INDEXES: tuple[str, ...] = (
 )
 
 _TASK_RUNTIME_UPGRADES: tuple[str, ...] = (
+    "ALTER TABLE scheduled_job ADD COLUMN IF NOT EXISTS dependency_order INTEGER",
+    ("ALTER TABLE scheduled_trigger_event "
+     "ADD COLUMN IF NOT EXISTS dispatch_order INTEGER NOT NULL DEFAULT 0"),
+    """
+    WITH ranked AS (
+        SELECT id, row_number() OVER (
+            PARTITION BY dependency_job_id ORDER BY created_at, id
+        ) - 1 AS position
+        FROM scheduled_job WHERE trigger_mode='dependency'
+    )
+    UPDATE scheduled_job SET dependency_order=ranked.position
+    FROM ranked WHERE scheduled_job.id=ranked.id AND scheduled_job.dependency_order IS NULL
+    """,
     """
     DO $$
     BEGIN

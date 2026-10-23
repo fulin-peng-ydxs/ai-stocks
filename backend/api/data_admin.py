@@ -10,7 +10,7 @@ import json
 from typing import Literal
 
 import pandas as pd
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
 from backend.api.response import ApiResponse, err, ok
@@ -847,6 +847,29 @@ def schedule_options(q: str = "", limit: int = 50) -> ApiResponse:
     from backend.scheduler.scheduler import ScheduledJobService
 
     return ok({"list": ScheduledJobService().list_options(query=q, limit=limit)})
+
+
+class DownstreamOrderIn(BaseModel):
+    job_ids: list[str]
+    revision: str = Field(min_length=64, max_length=64)
+
+
+@router.get("/schedules/{job_id}/downstream", response_model=ApiResponse, dependencies=_SCHEDULE)
+def schedules_downstream(job_id: str) -> ApiResponse:
+    """完整直接下游及关系版本；不受调度主表分页限制。"""
+    from backend.scheduler.scheduler import ScheduledJobService
+
+    return ok(ScheduledJobService().downstream(job_id))
+
+
+@router.put("/schedules/{job_id}/downstream-order", response_model=ApiResponse,
+            dependencies=_SCHEDULE)
+def schedules_downstream_order(job_id: str, body: DownstreamOrderIn) -> ApiResponse:
+    """原子保存同一上游的完整下游顺序，仅影响以后生成的事件。"""
+    from backend.scheduler.scheduler import ScheduledJobService
+
+    return ok(ScheduledJobService().reorder_downstream(job_id, body.job_ids, body.revision),
+              msg="下游触发顺序已保存")
 
 
 @router.post("/schedules", response_model=ApiResponse, dependencies=_SCHEDULE)

@@ -40,7 +40,10 @@ withDefaults(defineProps<{
   justify-content: space-between;
   gap: var(--app-space-3);
 }
+/* 标题区必须允许收缩；长任务名、版本标识等不能撑宽所属详情抽屉。 */
+.app-detail-section__header > div:first-child { min-width: 0; }
 .app-detail-section__header h3 {
+  overflow-wrap: anywhere;
   margin: 0;
   color: var(--el-text-color-primary);
   font-size: var(--app-font-size-section-title);

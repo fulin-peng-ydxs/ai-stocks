@@ -1011,7 +1011,7 @@ _PG_TABLE_PURPOSES: dict[str, str] = {
     "storage_migration": "记录存储迁移 marker、状态和执行摘要。",
     "async_task": "保存异步任务状态、进度、检查点和取消请求。",
     "task_log": "保存异步任务的结构化运行日志。",
-    "scheduled_job": "保存定时任务定义、频率和启停状态。",
+    "scheduled_job": "保存调度定义、依赖关系、下游触发优先级和启停状态。",
     "scheduled_trigger_event": "记录调度触发、派发和执行关联。",
     "audit_log": "保存平台权限和关键业务操作审计记录。",
     "limit_ladder_task_ledger": "协调连板天梯任务的幂等执行、重试和终态。",
@@ -1029,7 +1029,14 @@ for _category, _scope, _names in _PG_META_GROUPS:
             "source": "业务服务",
         }
 
+_PG_TABLE_META["scheduled_job"]["relations"] = ["dependency_job_id → scheduled_job.id"]
+_PG_TABLE_META["scheduled_trigger_event"]["relations"] = [
+    "target_job_id → scheduled_job.id", "source_task_id → async_task.id", "task_id → async_task.id",
+]
+
 _COMMON_FIELD_META: dict[str, tuple[str, str]] = {
+    "dependency_order": ("下游触发优先级", "同一上游下越小越先，仅用于新事件的同到期时间触发顺序"),
+    "dispatch_order": ("事件触发顺序快照", "同批次同到期时间按此值触发，生成后不随任务顺序调整而变化"),
     "tenant_id": ("租户标识", "数据所属租户"),
     "owner_user_id": ("所有者用户标识", "用户资产真实所有者"),
     "created_at": ("创建时间", "记录创建时间"),

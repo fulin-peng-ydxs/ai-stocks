@@ -29,7 +29,8 @@ _LOCAL_TZ = ZoneInfo("Asia/Shanghai")
 _TABLE_COLUMNS: dict[str, tuple[str, ...]] = {
     "scheduled_job": (
         "id", "name", "task_type", "params", "freq_type", "freq_config", "trigger_mode",
-        "dependency_job_id", "dependency_condition", "dependency_delay", "retry_config",
+        "dependency_job_id", "dependency_order", "dependency_condition", "dependency_delay",
+        "retry_config",
         "trading_day_only", "enabled", "last_run_at", "last_task_id", "created_at", "updated_at",
     ),
     "async_task": (
@@ -41,7 +42,8 @@ _TABLE_COLUMNS: dict[str, tuple[str, ...]] = {
     "task_log": ("id", "task_id", "seq", "ts", "level", "message"),
     "scheduled_trigger_event": (
         "id", "chain_id", "source_task_id", "source_attempt", "source_status", "target_job_id",
-        "trigger_kind", "trigger_condition", "retry_count", "due_at", "dispatched_at", "status",
+        "trigger_kind", "trigger_condition", "retry_count", "dispatch_order", "due_at",
+        "dispatched_at", "status",
         "task_id", "job_snapshot", "message", "created_at", "updated_at",
     ),
 }

@@ -17,6 +17,7 @@ import threading
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
+from backend.common.exceptions import ConflictError, NotFoundError, ValidationError
 from backend.common.logging import get_logger
 from backend.storage.duckdb_client import get_client
 from backend.storage.task_runtime import (
@@ -593,6 +594,50 @@ class ScheduledJobService:
             "WHERE j.id=?", [jid])
         return None if df.empty else self._row(df.iloc[0])
 
+    def downstream(self, jid: str) -> dict:
+        """完整读取直接下游；主表分页和启停状态不缩小排序范围。"""
+        with _EVENT_DISPATCH_LOCK:
+            if not self.get(jid):
+                raise NotFoundError("调度任务不存在")
+            rows = self.c.query_df(
+                "SELECT * FROM scheduled_job WHERE trigger_mode='dependency' "
+                "AND dependency_job_id=? "
+                "ORDER BY dependency_order NULLS LAST, created_at, id", [jid])
+            jobs = [self._row(row) for _, row in rows.iterrows()]
+            # 运行时间和启停不改变关系版本，避免任务自动运行造成无意义的保存冲突。
+            relation = [(job["id"], job.get("dependency_order")) for job in jobs]
+            revision = hashlib.sha256(json.dumps(relation, default=str).encode()).hexdigest()
+            return {"jobs": jobs, "revision": revision}
+
+    def reorder_downstream(self, jid: str, job_ids: list[str], revision: str) -> dict:
+        """校验完整兄弟集合并原子保存；等待事件的顺序快照不回写。"""
+        with _EVENT_DISPATCH_LOCK:
+            current = self.downstream(jid)
+            if revision != current["revision"]:
+                raise ConflictError("下游关系或顺序已变化，请刷新后重新调整")
+            actual = {job["id"] for job in current["jobs"]}
+            if len(job_ids) != len(set(job_ids)) or set(job_ids) != actual:
+                raise ValidationError("请提交全部直接下游且每个任务只出现一次")
+            if job_ids:
+                now = datetime.now()  # noqa: DTZ005 - 兼容运行态的上海本地 naive 时间
+                with self.c.transaction():
+                    self.c.executemany(
+                        "UPDATE scheduled_job SET dependency_order=?, updated_at=? "
+                        "WHERE id=? AND trigger_mode='dependency' AND dependency_job_id=?",
+                        [(index, now, child, jid) for index, child in enumerate(job_ids)],
+                    )
+            return self.downstream(jid)
+
+    def _next_dependency_order(self, parent_id: str | None) -> int | None:
+        if not parent_id:
+            return None
+        row = self.c.query_df(
+            "SELECT COALESCE(max(dependency_order), -1)+1 AS position "
+            "FROM scheduled_job WHERE trigger_mode='dependency' AND dependency_job_id=?",
+            [parent_id],
+        ).iloc[0]
+        return int(row["position"])
+
     def _validate(self, jid: str, task_type: str, params: dict | None,
                   freq_type: str | None, freq_config: dict | None,
                   trigger_mode: str, dependency_job_id: str | None,
@@ -716,12 +761,15 @@ class ScheduledJobService:
             now = datetime.now()
             self.c.execute(
                 "INSERT INTO scheduled_job (id, name, task_type, params, freq_type, freq_config, "
-                "trigger_mode, dependency_job_id, dependency_condition, dependency_delay, "
+                "trigger_mode, dependency_job_id, dependency_order, dependency_condition, "
+                "dependency_delay, "
                 "retry_config, trading_day_only, enabled, last_run_at, last_task_id, created_at, "
-                "updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 [jid, name.strip(), task_type, runtime_json_param(self.c, params),
                  freq_type, runtime_json_param(self.c, freq_config or {}),
                  trigger_mode, dependency_job_id if trigger_mode == "dependency" else None,
+                 (self._next_dependency_order(dependency_job_id)
+                  if trigger_mode == "dependency" else None),
                  dependency_condition if trigger_mode == "dependency" else None,
                  runtime_json_param(self.c, dependency_delay),
                  runtime_json_param(self.c, retry_config),
@@ -738,20 +786,31 @@ class ScheduledJobService:
                dependency_condition: str | None = None, dependency_delay: dict | None = None,
                retry_config: dict | None = None) -> dict:
         with _EVENT_DISPATCH_LOCK:
-            if not self.get(jid):
+            previous = self.get(jid)
+            if not previous:
                 raise ValueError("定时任务不存在")
             if not (name or "").strip():
                 raise ValueError("任务名称不能为空")
             params, dependency_delay, retry_config = self._validate(
                 jid, task_type, params, freq_type, freq_config, trigger_mode,
                 dependency_job_id, dependency_condition, dependency_delay, retry_config)
+            dependency_order = None
+            if trigger_mode == "dependency":
+                dependency_order = (
+                    previous.get("dependency_order")
+                    if previous["trigger_mode"] == "dependency"
+                    and previous.get("dependency_job_id") == dependency_job_id
+                    else self._next_dependency_order(dependency_job_id)
+                )
             self.c.execute(
                 "UPDATE scheduled_job SET name=?, task_type=?, params=?, freq_type=?, freq_config=?, "
-                "trigger_mode=?, dependency_job_id=?, dependency_condition=?, dependency_delay=?, "
+                "trigger_mode=?, dependency_job_id=?, dependency_order=?, dependency_condition=?, "
+                "dependency_delay=?, "
                 "retry_config=?, trading_day_only=?, enabled=?, updated_at=? WHERE id=?",
                 [name.strip(), task_type, runtime_json_param(self.c, params),
                  freq_type, runtime_json_param(self.c, freq_config or {}),
                  trigger_mode, dependency_job_id if trigger_mode == "dependency" else None,
+                 dependency_order,
                  dependency_condition if trigger_mode == "dependency" else None,
                  runtime_json_param(self.c, dependency_delay),
                  runtime_json_param(self.c, retry_config),
@@ -902,22 +961,25 @@ def _insert_trigger_event(
     delay: dict,
     status: str = "waiting",
     message: str | None = None,
+    batch_time: datetime | None = None,
+    dispatch_order: int = 0,
 ) -> str:
     attempt = int(source.get("execution_attempt") or 1)
     raw = f"{source['id']}|{attempt}|{target['id']}|{trigger_kind}|{retry_count}"
     event_id = "evt_" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
-    now = datetime.now()
+    now = batch_time or datetime.now()
     due_at = now + timedelta(seconds=_delay_seconds(delay))
     client.execute(
         "INSERT INTO scheduled_trigger_event "
         "(id, chain_id, source_task_id, source_attempt, source_status, target_job_id, "
         "trigger_kind, trigger_condition, retry_count, due_at, dispatched_at, status, task_id, "
-        "job_snapshot, message, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+        "job_snapshot, message, created_at, updated_at, dispatch_order) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT (id) DO NOTHING",
         [event_id, source.get("chain_id") or source["id"], source["id"], attempt,
          source["status"], target["id"], trigger_kind, trigger_condition, retry_count, due_at,
          None, status, None, runtime_json_param(client, _job_snapshot(target)),
-         message, now, now])
+         message, now, now, dispatch_order])
     return event_id
 
 
@@ -932,10 +994,13 @@ def enqueue_terminal_events(task_id: str, *, client=None) -> int:
         return 0
 
     created = 0
+    # 同次终态共享基准时间，使相同延迟产生完全相同的 due_at。
+    batch_time = datetime.now()  # noqa: DTZ005 - 兼容 DuckDB 与 PG 运行态时间适配
     dependents = client.query_df(
         "SELECT * FROM scheduled_job WHERE enabled=true AND trigger_mode='dependency' "
-        "AND dependency_job_id=? ORDER BY created_at", [source["job_id"]])
-    for _, target in dependents.iterrows():
+        "AND dependency_job_id=? "
+        "ORDER BY dependency_order NULLS LAST, created_at, id", [source["job_id"]])
+    for position, (_, target) in enumerate(dependents.iterrows()):
         if not _condition_matches(str(target.get("dependency_condition") or ""), source["status"]):
             continue
         _insert_trigger_event(
@@ -944,7 +1009,7 @@ def enqueue_terminal_events(task_id: str, *, client=None) -> int:
             target=target,
             trigger_kind="dependency",
             trigger_condition=str(target.get("dependency_condition")),
-            retry_count=0,
+            retry_count=0, batch_time=batch_time, dispatch_order=position,
             delay=_json_value(target.get("dependency_delay"), {"value": 0, "unit": "minute"}),
         )
         created += 1
@@ -968,6 +1033,7 @@ def enqueue_terminal_events(task_id: str, *, client=None) -> int:
                     trigger_kind="retry",
                     trigger_condition=str(retry.get("condition")),
                     retry_count=next_retry,
+                    batch_time=batch_time, dispatch_order=len(dependents),
                     delay=retry.get("delay") or {"value": 0, "unit": "minute"},
                 )
             else:
@@ -978,6 +1044,7 @@ def enqueue_terminal_events(task_id: str, *, client=None) -> int:
                     trigger_kind="retry",
                     trigger_condition=str(retry.get("condition")),
                     retry_count=next_retry,
+                    batch_time=batch_time, dispatch_order=len(dependents),
                     delay={"value": 0, "unit": "minute"},
                     status="exhausted",
                     message=f"已达到最大重试次数 {max_retries}，链路结束",
@@ -996,7 +1063,9 @@ def dispatch_due_events() -> int:
     else:
         events = svc.c.query_df(
             "SELECT * FROM scheduled_trigger_event WHERE status='waiting' AND due_at<=? "
-            "ORDER BY due_at, created_at LIMIT 50", [datetime.now()])
+            "ORDER BY due_at, created_at, dispatch_order, id LIMIT 50", [datetime.now()])
+    if not events.empty:
+        events = events.sort_values(["due_at", "created_at", "dispatch_order", "id"], kind="stable")
     dispatched = 0
     for _, row in events.iterrows():
         event_id = str(row["id"])

@@ -338,6 +338,7 @@ export interface ScheduledJob {
   freq_config: FreqConfig
   trigger_mode: TriggerMode
   dependency_job_id: string | null
+  dependency_order?: number | null
   dependency_job_name?: string | null
   dependency_condition: TriggerCondition | null
   dependency_delay: DelayConfig
@@ -392,6 +393,18 @@ export function listSchedules(query: ScheduleListQuery): Promise<{
 export function listScheduleOptions(q = '', limit = 50): Promise<{ list: ScheduledJobOption[] }> {
   return http.get('/data/schedules/options', { params: { q, limit } })
 }
+export interface ScheduleDownstream {
+  jobs: ScheduledJob[]
+  revision: string
+}
+export function listScheduleDownstream(id: string): Promise<ScheduleDownstream> {
+  return http.get(`/data/schedules/${id}/downstream`)
+}
+export function saveScheduleDownstreamOrder(
+  id: string, jobIds: string[], revision: string,
+): Promise<ScheduleDownstream> {
+  return http.put(`/data/schedules/${id}/downstream-order`, { job_ids: jobIds, revision })
+}
 export function createSchedule(body: ScheduledJobInput): Promise<ScheduledJob> {
   return http.post('/data/schedules', body)
 }
@@ -419,6 +432,7 @@ export interface ScheduledTriggerEvent {
   trigger_kind: 'dependency' | 'retry'
   trigger_condition?: TriggerCondition | null
   retry_count: number
+  dispatch_order?: number
   due_at: string | null
   dispatched_at?: string | null
   status: TriggerEventStatus

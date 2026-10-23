@@ -160,7 +160,7 @@ class PostgresTaskRuntimeClient:
                 SELECT id
                 FROM scheduled_trigger_event
                 WHERE status='waiting' AND due_at<=%s
-                ORDER BY due_at, created_at
+                ORDER BY due_at, created_at, dispatch_order, id
                 FOR UPDATE SKIP LOCKED
                 LIMIT %s
             )

@@ -1084,6 +1084,11 @@ const REGISTRY: PageRegistryEntry[] = [
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
     componentMeta: {
+      downstream: {
+        fieldApplicability: {
+          autoScroll: { enabled: false, reason: '下游列表由用户调整顺序，不随日志追加滚动' },
+        },
+      },
       triggerEvents: {
         fieldApplicability: {
           autoScroll: { enabled: false, reason: '触发记录是静态列表，不跟随追加日志滚动' },
@@ -1118,6 +1123,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'jobTable', component: 'data-table', region: 'main', growMain: true, minH: 300, label: '定时任务', order: 1, config: { pagination: true, pageSize: DEFAULT_PAGE_SIZE, defaultSort: 'name:asc' } },
         { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '页面设置', order: 5 },
         { id: 'triggerEvents', component: 'detail', region: 'overlay', label: '触发记录抽屉', order: 4 },
+        { id: 'downstream', component: 'detail', region: 'overlay', label: '下游任务抽屉', order: 6 },
       ],
       editable: [densityKnob()],
     },
