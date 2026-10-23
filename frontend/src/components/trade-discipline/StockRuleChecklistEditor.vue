@@ -62,9 +62,9 @@ defineExpose({ reveal })
 
 <template>
   <div ref="root" class="stock-checklist-editor" data-testid="stock-checklist-editor">
-    <div class="stock-checklist-editor__tools">
+    <div v-if="!disabled" class="stock-checklist-editor__tools">
       <span class="app-caption-text">逐项填写可在今日打卡核对的条件</span>
-      <el-button v-if="!disabled" :disabled="!options.some(item => !item.disabled)" :icon="Plus" size="small" data-testid="add-checklist-item" @click="add">添加检查项</el-button>
+      <el-button :disabled="!options.some(item => !item.disabled)" :icon="Plus" size="small" data-testid="add-checklist-item" @click="add">添加检查项</el-button>
     </div>
     <ConfigPanelSection v-for="category in categories" :key="category.value" class="stock-checklist-editor__group" :aria-label="category.label"
       :title="category.label" :level="2" :default-open="false" :model-value="!!open[category.value]"
@@ -79,7 +79,7 @@ defineExpose({ reveal })
         <template #default="{ item }">
           <div class="stock-checklist-editor__row" :data-checklist-id="item.item_id">
             <el-input :ref="(input: unknown) => setInput(item.item_id, input as InputInstance | null)" :model-value="item.text" :disabled="disabled" type="textarea" :autosize="{ minRows: 1 }" resize="none" :aria-label="`${category.label}条件内容`" placeholder="填写一条可核对的条件" @update:model-value="update(item, { text: $event })" />
-            <AppSelect :model-value="item.category" :disabled="disabled" aria-label="检查项分类" @update:model-value="update(item, { category: $event })">
+            <AppSelect v-if="!disabled" :model-value="item.category" aria-label="检查项分类" @update:model-value="update(item, { category: $event })">
               <el-option v-for="option in categories" :key="option.value" :label="option.label" :value="option.value" :disabled="option.disabled" />
             </AppSelect>
             <AppIconButton v-if="!disabled" label="删除检查项" tooltip="删除检查项" size="sm" tone="danger" @click="save(modelValue.filter(entry => entry.item_id !== item.item_id))"><Delete /></AppIconButton>
