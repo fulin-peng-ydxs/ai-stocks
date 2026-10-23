@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
@@ -39,6 +40,7 @@ def client(tmp_path, monkeypatch):
     c = DuckDBClient(db_path=str(tmp_path / "t.duckdb"))
     init_db(c)
     monkeypatch.setattr(dc, "_client", c)
+    monkeypatch.setattr("backend.api.data_admin.get_read_client", lambda: c)
     yield c
     c.close()
 
@@ -51,6 +53,45 @@ def _wait(svc, tid, timeout=8.0):
             return t
         time.sleep(0.05)
     raise AssertionError("任务超时")
+
+
+def test_concurrent_overview_and_stock_quality_share_cold_frame(client, monkeypatch):
+    """同页并发首载只计算一次，后续仍验证签名；不以过期缓存换性能。"""
+    from backend.services import data_report
+    from backend.services.capital_quality import CapitalQualityService
+    from backend.storage.duckdb_client import DuckDBReadClient, DuckDBReadPool
+
+    _seed(client)
+    monkeypatch.setattr(data_report, '_FRAME_CACHE', {'key': None, 'frame': None, 'latest': None})
+    aggregate = CapitalQualityService.aggregate
+    calls = []
+
+    def counted(self, *args, **kwargs):
+        calls.append(1)
+        return aggregate(self, *args, **kwargs)
+
+    monkeypatch.setattr(CapitalQualityService, 'aggregate', counted)
+    read_pool = DuckDBReadPool(
+        client.db_path, size=2, acquire_timeout_sec=5, read_only=False,
+    )
+    reader = DuckDBReadClient(read_pool, client)
+    gate = threading.Barrier(2)
+
+    def load(kind):
+        gate.wait(timeout=5)
+        report = DataIntegrityReport(reader)
+        return report.quality_model() if kind == 'overview' else report.stock_quality()
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(load, ['overview', 'stocks']))
+        assert len(calls) == 1
+        assert results[0]['latest_trade_date'] == results[1]['latest_trade_date']
+        client.execute("INSERT INTO stock_basic(code,list_date) VALUES ('C.SH','2024-01-02')")
+        DataIntegrityReport(reader).quality_model()
+        assert len(calls) == 2
+    finally:
+        read_pool.close()
 
 
 def _seed(c):

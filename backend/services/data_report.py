@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from bisect import bisect_right
 from datetime import UTC, date, datetime, timedelta, timezone
 
@@ -24,7 +25,7 @@ import pandas as pd
 from backend.common.logging import get_logger
 from backend.dataquality.checker import ISSUE_LAYER, mv_inverted_sql
 from backend.datasource.ths_board import FUND_FLOW_PERIODS
-from backend.storage.duckdb_client import DuckDBClient, get_client
+from backend.storage.duckdb_client import DuckDBClient, DuckDBReadClient, get_client
 
 log = get_logger("services.data_report")
 
@@ -42,6 +43,7 @@ def _shanghai_today() -> date:
 # 各自都要 _coverage_frame（全市场扫描）。用「数据变更签名」做单条缓存，让同一页的多次调用复用；
 # 签名 = (最新交易日, 未解决问题数, 日线总行数, 停牌确认数, 窗口)，任一数据变更即失效重算（不会读到陈旧）。
 _FRAME_CACHE: dict = {"key": None, "frame": None, "latest": None}
+_FRAME_CACHE_LOCK = threading.RLock()
 
 
 class DataIntegrityReport:
@@ -164,6 +166,13 @@ class DataIntegrityReport:
         return days, (days[0] if days else None)
 
     def _coverage_frame(self, window_days: int = GAP_WINDOW_DAYS, *, codes=None):
+        # 读池并发首载只计算一份全市场帧；写任务不等此锁，避免与写事务反向持锁。
+        if codes is not None or not isinstance(self.c, DuckDBReadClient):
+            return self._build_coverage_frame(window_days, codes=codes)
+        with _FRAME_CACHE_LOCK:
+            return self._build_coverage_frame(window_days)
+
+    def _build_coverage_frame(self, window_days: int = GAP_WINDOW_DAYS, *, codes=None):
         """每只在市股票的覆盖鲜活全景（DM-D20 唯一口径）。
 
         在近 window_days 个开市日窗口内，对每只在市股票：
@@ -729,6 +738,63 @@ class DataIntegrityReport:
             )
         return after_listing_window & before_delist & ~retire_entry
 
+    @staticmethod
+    def _active_l3_sql() -> str:
+        """窗口计算后再过滤上市/退市边界，避免改变历史行序与相邻日。"""
+        return (
+            "(listing_trade_seq IS NULL OR listing_trade_seq>5) "
+            "AND (delist_date IS NULL OR trade_date<delist_date) "
+            "AND NOT (contains(coalesce(name,''),'退') AND coalesce(gap_days,0)>10)"
+        )
+
+    def _collect_abnormal_change_issues(self, *, codes=None) -> list[dict]:
+        """只传回越界候选；分价舍入仍由公共 Decimal 实现最终判定。"""
+        from backend.market_rules import limit_prices, price_limit_pct_sql, round_price_to_cent
+
+        scope = " AND b.code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
+        effective_limit = price_limit_pct_sql(
+            "sb.price_limit_pct", "st.quality='accurate' AND st.is_st", "b.trade_date",
+            code_expr="b.code",
+        )
+        candidates = self.c.query_df(
+            f"""
+            SELECT code,trade_date,close,pre_close,effective_lim FROM (
+                SELECT b.code,b.trade_date,b.close,b.pre_close,
+                       abs(b.close/b.pre_close-1) AS chg,
+                       {effective_limit} AS effective_lim,
+                       EXISTS (SELECT 1 FROM stock_special_trading_day special
+                           WHERE special.code=b.code AND special.trade_date=b.trade_date
+                           AND special.active) AS no_price_limit,
+                       sb.name,sb.delist_date,
+                       b.trade_date-lag(b.trade_date) OVER (
+                           PARTITION BY b.code ORDER BY b.trade_date) AS gap_days,
+                       CASE WHEN sb.list_date IS NOT NULL
+                            AND min(b.trade_date) OVER (PARTITION BY b.code)
+                                <=sb.list_date+INTERVAL 30 DAY
+                            THEN row_number() OVER (PARTITION BY b.code ORDER BY b.trade_date)
+                       END AS listing_trade_seq
+                FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code=b.code
+                LEFT JOIN stock_st_status_daily st
+                  ON st.code=b.code AND st.trade_date=b.trade_date
+                WHERE b.pre_close IS NOT NULL AND b.pre_close>0 {scope}
+            ) t
+            WHERE {self._active_l3_sql()} AND NOT no_price_limit
+              AND NOT isnan(chg) AND chg>effective_lim-0.002
+            """, [codes] if codes is not None else [],
+        )
+        rows = []
+        for row in candidates.itertuples(index=False):
+            up, down = limit_prices(float(row.pre_close), float(row.effective_lim))
+            close = round_price_to_cent(float(row.close))
+            if down - 0.011 <= close <= up + 0.011:
+                continue
+            rows.append({
+                "code": row.code, "trade_date": row.trade_date,
+                "issue_type": "abnormal_change",
+                "detail": f"收盘价 {close:.2f} 超出合法区间 {down:.2f}~{up:.2f}",
+            })
+        return rows
+
     # ── 市场级四层质检（写 data_quality_issue，DM-D20 统一口径）──
     def scan_quality_issues(
         self, gap_window_days: int = GAP_WINDOW_DAYS, *, codes=None, include_intraday=True,
@@ -746,7 +812,6 @@ class DataIntegrityReport:
         采集收尾 include_intraday=False，分时由自己的归档批次单独检查。
         """
         from backend.dataquality.checker import SCAN_ISSUE_TYPES
-        from backend.market_rules import limit_prices, price_limit_pct_sql, round_price_to_cent
 
         def tick(p, message):
             if progress:
@@ -755,59 +820,10 @@ class DataIntegrityReport:
         tick(0, "行情价格合法性")
 
         scope = " AND code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
-        bscope = scope.replace("code IN", "b.code IN")
         params = [codes] if codes is not None else []
-        effective_limit = price_limit_pct_sql(
-            "sb.price_limit_pct",
-            "st.quality='accurate' AND st.is_st",
-            "b.trade_date",
-            code_expr="b.code",
-        )
         # L3 异常涨跌幅：耗时扫描均在事务外完成，每条 SQL 结束即释放
         # 共享连接锁，任务状态/日志轮询可在查询间隙进入。
-        df = self.c.query_df(
-            f"""
-            SELECT *
-            FROM (
-                SELECT b.code, b.trade_date, b.close, b.pre_close,
-                       abs(b.close / b.pre_close - 1) AS chg,
-                       COALESCE(sb.price_limit_pct, 0.10) AS lim,
-                       st.is_st,st.quality AS st_quality,
-                       {effective_limit} AS effective_lim,
-                       EXISTS (SELECT 1 FROM stock_special_trading_day special
-                           WHERE special.code=b.code AND special.trade_date=b.trade_date
-                           AND special.active) AS no_price_limit,
-                       sb.name,
-                       sb.delist_date,
-                       b.trade_date - lag(b.trade_date) OVER (PARTITION BY b.code ORDER BY b.trade_date)
-                           AS gap_days,
-                       CASE
-                           WHEN sb.list_date IS NOT NULL
-                                AND min(b.trade_date) OVER (PARTITION BY b.code)
-                                    <= sb.list_date + INTERVAL 30 DAY
-                           THEN row_number() OVER (PARTITION BY b.code ORDER BY b.trade_date)
-                           ELSE NULL
-                       END AS listing_trade_seq
-                FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code = b.code
-                LEFT JOIN stock_st_status_daily st
-                  ON st.code=b.code AND st.trade_date=b.trade_date
-                WHERE b.pre_close IS NOT NULL AND b.pre_close > 0 {bscope}
-            ) t
-            """, params)
-        df = df[self._active_l3_mask(df) & ~df["no_price_limit"]]
-        candidates = df[df["chg"] > df["effective_lim"] - 0.002]
-        ab_rows = []
-        for _, row in candidates.iterrows():
-            up, down = limit_prices(float(row["pre_close"]), float(row["effective_lim"]))
-            close = round_price_to_cent(float(row["close"]))
-            if down - 0.011 <= close <= up + 0.011:
-                continue
-            ab_rows.append({
-                "code": row["code"],
-                "trade_date": row["trade_date"],
-                "issue_type": "abnormal_change",
-                "detail": f"收盘价 {close:.2f} 超出合法区间 {down:.2f}~{up:.2f}",
-            })
+        ab_rows = self._collect_abnormal_change_issues(codes=codes)
 
         tick(0.15, "价量一致性")
         mismatch = self.c.query_df(
@@ -1822,50 +1838,49 @@ class DataIntegrityReport:
         """全市场前复权价相邻日跳变 > threshold（T-M7-6，补 T-M1-8 遗留）→ 复权异常。
 
         阈值 0.5（50%）远超任一板块单日涨跌停（≤20%），故捕获的是粗粒度复权口径错误
-        （如除权日因子未更新致整段错位），噪音极低。向量化：按 code 分组算 qfq 比值跳变。
+        （如除权日因子未更新致整段错位），噪音极低。SQL 窗口按 code 计算 qfq 比值跳变，只读取命中行。
         缺失/停牌缺口属正常现象，由 coverage() 汇总，不在此逐条记 issue（避免淹没真异常）。
         """
         scope = " AND b.code IN (SELECT unnest(?::VARCHAR[]))" if codes is not None else ""
+        # 复权基数、相邻日与上市序号都在过滤前计算；只把异常行送入 Python。
+        # 保留旧算法的最后有效因子归一化与 NaN/零基数行为，不能先过滤退市或新股行。
         df = self.c.query_df(
             f"""
-            SELECT b.code, b.trade_date, b.close,
-                   COALESCE(b.adj_factor_clean, b.adj_factor) AS adj_factor,
-                   sb.name,
-                   sb.delist_date,
-                   CASE
-                       WHEN sb.list_date IS NOT NULL
+            WITH bars AS (
+                SELECT b.code,b.trade_date,b.close,sb.name,sb.delist_date,
+                       CASE WHEN isnan(COALESCE(b.adj_factor_clean,b.adj_factor)) THEN 1.0
+                            ELSE COALESCE(b.adj_factor_clean,b.adj_factor,1.0) END AS factor,
+                       CASE WHEN sb.list_date IS NOT NULL
                             AND min(b.trade_date) OVER (PARTITION BY b.code)
-                                <= sb.list_date + INTERVAL 30 DAY
-                       THEN row_number() OVER (PARTITION BY b.code ORDER BY b.trade_date)
-                       ELSE NULL
-                   END AS listing_trade_seq
-            FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code = b.code
-            WHERE b.close > 0 {scope}
-            ORDER BY b.code, b.trade_date
-            """, [codes] if codes is not None else []
+                                <=sb.list_date+INTERVAL 30 DAY
+                            THEN row_number() OVER (PARTITION BY b.code ORDER BY b.trade_date)
+                       END AS listing_trade_seq
+                FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code=b.code
+                WHERE b.close>0 {scope}
+            ), normalized AS (
+                SELECT *,last_value(factor) OVER (
+                    PARTITION BY code ORDER BY trade_date
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS base
+                FROM bars
+            ), prices AS (
+                SELECT *,CASE WHEN base<>0 AND isfinite(base) THEN close*factor/base END AS qfq
+                FROM normalized
+            ), changes AS (
+                SELECT *,abs(qfq/lag(qfq) OVER (
+                    PARTITION BY code ORDER BY trade_date)-1) AS ratio,
+                    trade_date-lag(trade_date) OVER (
+                        PARTITION BY code ORDER BY trade_date) AS gap_days
+                FROM prices
+            )
+            SELECT code,trade_date,ratio FROM changes
+            WHERE {self._active_l3_sql()} AND coalesce(gap_days,0)<=30
+              AND NOT isnan(ratio) AND ratio>?
+            ORDER BY code,trade_date
+            """, [*([codes] if codes is not None else []), threshold],
         )
-        if df.empty:
-            return []
-        parts = []
-        for code, g in df.groupby("code", sort=False):
-            af = g["adj_factor"].fillna(1.0)
-            base = af.iloc[-1] if len(af) else 1.0
-            qfq = g["close"] * af / base
-            ratio = (qfq / qfq.shift(1) - 1).abs()
-            prev_date = pd.to_datetime(g["trade_date"]).shift(1)
-            gap_days = (pd.to_datetime(g["trade_date"]) - prev_date).dt.days
-            g = g.assign(gap_days=gap_days)
-            actionable = (ratio > threshold) & self._active_l3_mask(g) & (gap_days.fillna(0) <= 30)
-            bad = g[actionable]
-            if not bad.empty:
-                parts.append(pd.DataFrame({"code": bad["code"], "trade_date": bad["trade_date"],
-                                           "ratio": ratio[actionable]}))
-        if not parts:
-            return []
-        allbad = pd.concat(parts, ignore_index=True)
         ig = ignored_exact or set()
-        keep = [(r["code"], r["trade_date"], r["ratio"]) for _, r in allbad.iterrows()
-                if (r["code"], "adj_jump", str(pd.Timestamp(r["trade_date"]).date())) not in ig]
+        keep = [(r.code, r.trade_date, r.ratio) for r in df.itertuples(index=False)
+                if (r.code, "adj_jump", str(pd.Timestamp(r.trade_date).date())) not in ig]
         return [
             {"code": c, "trade_date": td, "issue_type": "adj_jump",
              "detail": f"前复权相邻日跳变 {rt*100:.0f}%（疑复权口径异常）"}

@@ -43,6 +43,7 @@ import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { getErrorMessage } from '@/utils/error'
+import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import { formatDateTimeSeconds } from '@/utils/dateTime'
 
 const router = useRouter()
@@ -118,11 +119,16 @@ const dims = ref<Dimension[]>([])
 const catalogSummary = ref<Partial<Record<'duckdb' | 'postgres', CatalogDatabaseSummary>>>({})
 const catalogLoading = ref(false)
 const catalogError = ref('')
+const dimensionsLoading = ref(true)
+const dimensionsError = ref('')
 
 // 逐股质量
 const sq = ref<StockQuality | null>(null)
 const sqLoading = ref(true)
 const sqError = ref('')
+const refreshing = computed(() =>
+  loading.value || catalogLoading.value || dimensionsLoading.value || sqLoading.value,
+)
 const sqSelected = ref<string[]>([])
 const sqPage = ref(1)
 const { pageSize: sqSize, changePageSize: changeSqSize } = useComponentPageSizeSession({
@@ -219,26 +225,30 @@ const hasAssetFilters = computed(() => (
 
 watch(assetMode, () => { assetCategory.value = '' })
 
+const catalogRequest = createLatestRequestGuard()
 async function loadCatalog(includeLegacy = showLegacyAssets.value) {
+  const request = catalogRequest.begin()
   catalogLoading.value = true
   catalogError.value = ''
   try {
     const response = await getCatalog({ database: 'all', include_legacy: includeLegacy })
+    if (!catalogRequest.isCurrent(request)) return null
     tables.value = response.tables
     catalogSummary.value = response.summary
     return true
   } catch (e) {
+    if (!catalogRequest.isCurrent(request)) return null
     catalogError.value = getErrorMessage(e, '数据资产目录加载失败')
     return false
   } finally {
-    catalogLoading.value = false
+    if (catalogRequest.isCurrent(request)) catalogLoading.value = false
   }
 }
 
 async function toggleLegacyAssets(value: boolean) {
   const previous = showLegacyAssets.value
   showLegacyAssets.value = value
-  if (!await loadCatalog(value)) showLegacyAssets.value = previous
+  if (await loadCatalog(value) === false) showLegacyAssets.value = previous
 }
 
 async function resetAssetFilters() {
@@ -445,38 +455,55 @@ function gotoStRefresh() {
   router.push({ path: '/data/ingest', query: { task_type: 'stock_ingest', recipe: 'st_status_refresh' } })
 }
 async function load() {
+  // 各区独立呈现与重试；主概览不等待目录、规划维度或逐股质量。
+  await Promise.all([loadOverview(), loadCatalog(), loadDimensions(), loadSq()])
+}
+
+const overviewRequest = createLatestRequestGuard()
+async function loadOverview() {
+  const request = overviewRequest.begin()
   loading.value = true
   error.value = ''
   try {
-    const [o, c, d] = await Promise.all([
-      getOverview(),
-      getCatalog({ database: 'all', include_legacy: false }),
-      getDimensions(),
-    ])
-    ov.value = o
-    tables.value = c.tables
-    catalogSummary.value = c.summary
-    dims.value = d.dimensions
-    await loadSq()
+    const response = await getOverview()
+    if (overviewRequest.isCurrent(request)) ov.value = response
   } catch (e) {
-    error.value = getErrorMessage(e, '数据概览加载失败')
+    if (overviewRequest.isCurrent(request)) error.value = getErrorMessage(e, '数据概览加载失败')
   } finally {
-    loading.value = false
+    if (overviewRequest.isCurrent(request)) loading.value = false
   }
 }
 
+const dimensionsRequest = createLatestRequestGuard()
+async function loadDimensions() {
+  const request = dimensionsRequest.begin()
+  dimensionsLoading.value = true
+  dimensionsError.value = ''
+  try {
+    const response = await getDimensions()
+    if (dimensionsRequest.isCurrent(request)) dims.value = response.dimensions
+  } catch (e) {
+    if (dimensionsRequest.isCurrent(request)) dimensionsError.value = getErrorMessage(e, '规划维度加载失败')
+  } finally {
+    if (dimensionsRequest.isCurrent(request)) dimensionsLoading.value = false
+  }
+}
+
+const stockQualityRequest = createLatestRequestGuard()
 async function loadSq() {
+  const request = stockQualityRequest.begin()
   sqLoading.value = true
   sqError.value = ''
   try {
-    sq.value = await getStockQuality({
+    const response = await getStockQuality({
       codes: sqSelected.value.length ? sqSelected.value.join(',') : undefined,
       page: sqPage.value, size: sqSize.value,
     })
+    if (stockQualityRequest.isCurrent(request)) sq.value = response
   } catch (error) {
-    sqError.value = getErrorMessage(error, '逐股质量加载失败')
+    if (stockQualityRequest.isCurrent(request)) sqError.value = getErrorMessage(error, '逐股质量加载失败')
   } finally {
-    sqLoading.value = false
+    if (stockQualityRequest.isCurrent(request)) sqLoading.value = false
   }
 }
 function onSqSelect() { sqPage.value = 1; loadSq() }
@@ -639,16 +666,24 @@ const menuPageTitle = useMenuPageTitle()
       <p class="page-subtitle">查看数据规模、覆盖与质量；通过具名入口定位明细和处理问题。</p>
       </div>
       <div class="page-head-actions">
-        <el-button :loading="loading" type="primary" @click="load">刷新</el-button>
+        <el-button :loading="refreshing" type="primary" @click="load">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
     </div>
     </template>
 
     <template #summary>
-      <div v-if="!error" class="overview-summary" data-testid="overview-summary">
+      <div class="overview-summary" data-testid="overview-summary">
         <AppStateBlock
-          v-if="loading && !ov"
+          v-if="error"
+          state="error"
+          :title="ov ? '数据概览刷新失败' : '数据概览加载失败'"
+          :description="error"
+          retry
+          @retry="loadOverview"
+        />
+        <AppStateBlock
+          v-else-if="loading && !ov"
           state="loading"
           title="正在加载数据概览…"
         />
@@ -703,21 +738,7 @@ const menuPageTitle = useMenuPageTitle()
     </template>
 
     <template #workspace>
-      <AppStateBlock
-        v-if="loading && !ov && !error"
-        state="loading"
-        title="正在加载数据工作区…"
-      />
-      <AppStateBlock
-        v-else-if="error"
-        state="error"
-        :title="ov ? '数据概览刷新失败' : '数据概览加载失败'"
-        :description="error"
-        retry
-        @retry="load"
-      />
       <el-card
-        v-else
         shadow="never"
         class="app-workspace-card overview-workspace-card"
         data-testid="overview-workspace"
@@ -792,21 +813,18 @@ const menuPageTitle = useMenuPageTitle()
                 </template>
               </AppTabToolbar>
 
-              <AppStatusNotice
-                v-if="catalogError && tables.length"
-                class="asset-local-error"
-                title="目录切换失败，已保留原筛选结果"
-                :description="catalogError"
-                tone="error"
-                size="compact"
-                action-text="重试"
-                @action="loadCatalog()"
-              />
-
               <AppStateBlock
-                v-if="catalogError && !tables.length"
+                v-if="assetMode === 'planned' && dimensionsError"
                 state="error"
-                title="数据资产目录加载失败"
+                title="规划维度加载失败"
+                :description="dimensionsError"
+                retry
+                @retry="loadDimensions"
+              />
+              <AppStateBlock
+                v-else-if="assetMode !== 'planned' && catalogError"
+                state="error"
+                :title="tables.length ? '数据资产目录刷新失败' : '数据资产目录加载失败'"
                 :description="catalogError"
                 retry
                 @retry="loadCatalog()"
@@ -820,6 +838,7 @@ const menuPageTitle = useMenuPageTitle()
                 aria-label="规划中数据资产表"
                 data-testid="overview-planned-asset-table"
                 :border="tableBorder('assetTable')"
+                :loading="dimensionsLoading"
                 row-key="dimension"
               >
                 <AppTableColumn label="维度" prop="name_cn" />
@@ -842,7 +861,7 @@ const menuPageTitle = useMenuPageTitle()
                 aria-label="数据资产表"
                 data-testid="overview-asset-table"
                 :border="tableBorder('assetTable')"
-                :loading="loading || catalogLoading"
+                :loading="catalogLoading"
                 row-key="key"
               >
                 <AppTableColumn type="expand">
@@ -1218,6 +1237,19 @@ const menuPageTitle = useMenuPageTitle()
                 </div>
               </div>
             </div>
+            <AppStateBlock
+              v-else-if="loading && !ov"
+              state="loading"
+              title="正在加载板块数据…"
+            />
+            <AppStateBlock
+              v-else-if="error"
+              state="error"
+              title="板块概览加载失败"
+              :description="error"
+              retry
+              @retry="loadOverview"
+            />
             <AppStateBlock
               v-else
               state="empty"

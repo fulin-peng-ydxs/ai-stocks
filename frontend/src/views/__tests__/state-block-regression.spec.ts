@@ -703,7 +703,12 @@ describe('代表性页面四态回归', () => {
     let resolveOverview!: (value: unknown) => void
     ;(dataApi.getOverview as ReturnType<typeof vi.fn>).mockReturnValue(new Promise((resolve) => { resolveOverview = resolve }))
     const wrapper = await mountView(OverviewView)
-    expect(wrapper.text()).toContain('正在加载数据工作区')
+    expect(wrapper.text()).toContain('正在加载数据概览')
+    expect(wrapper.find('[data-testid="overview-workspace"]').exists()).toBe(true)
+    const boardTab = wrapper.findAll('[role="tab"]')
+      .find((tab) => tab.text().includes('板块数据'))!
+    await boardTab.trigger('click')
+    expect(wrapper.text()).toContain('正在加载板块数据')
     expect(wrapper.text()).not.toContain('暂无板块数据')
     expect(wrapper.text()).not.toContain('去采集板块')
     resolveOverview({
@@ -712,7 +717,66 @@ describe('代表性页面四态回归', () => {
       gaps: { stocks_with_gap: 0, gap_days_total: 0 }, last_scan_at: null,
     })
     await flushPromises()
-    expect(wrapper.text()).not.toContain('正在加载数据工作区')
+    expect(wrapper.text()).not.toContain('正在加载板块数据')
+    wrapper.unmount()
+  })
+
+  it('概览和逐股质量不等待较慢的目录接口', async () => {
+    let resolveCatalog!: (value: unknown) => void
+    ;(dataApi.getCatalog as ReturnType<typeof vi.fn>).mockReturnValue(new Promise((resolve) => { resolveCatalog = resolve }))
+    const wrapper = await mountView(OverviewView)
+    expect(dataApi.getStockQuality).toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="overview-kpi-grid"]').exists()).toBe(true)
+    expect((wrapper.vm as any).loading).toBe(false)
+    expect((wrapper.vm as any).catalogLoading).toBe(true)
+    resolveCatalog({ tables: [], summary: {} })
+    await flushPromises()
+    expect((wrapper.vm as any).refreshing).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('概览目录失败不隐藏已加载的指标，支持局部重试', async () => {
+    ;(dataApi.getCatalog as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('catalog failed'))
+    const wrapper = await mountView(OverviewView)
+    expect(wrapper.find('[data-testid="overview-kpi-grid"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('数据资产目录加载失败')
+    expect(wrapper.text()).not.toContain('数据概览加载失败')
+    const overviewCalls = vi.mocked(dataApi.getOverview).mock.calls.length
+    await (wrapper.vm as any).loadCatalog()
+    await flushPromises()
+    expect((wrapper.vm as any).catalogError).toBe('')
+    expect(dataApi.getOverview).toHaveBeenCalledTimes(overviewCalls)
+    wrapper.unmount()
+  })
+
+  it('逐股质量忽略先发后到的过期响应', async () => {
+    let resolveOld!: (value: unknown) => void
+    ;(dataApi.getStockQuality as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve }))
+      .mockResolvedValueOnce({ latest_trade_date: '2026-10-22', total: 0, list: [] })
+    const wrapper = await mountView(OverviewView)
+    await (wrapper.vm as any).loadSq()
+    resolveOld({ latest_trade_date: '2026-10-21', total: 0, list: [] })
+    await flushPromises()
+    expect((wrapper.vm as any).sq.latest_trade_date).toBe('2026-10-22')
+    expect((wrapper.vm as any).sqLoading).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('概览规划维度失败仅阻断规划表并支持局部重试', async () => {
+    ;(dataApi.getDimensions as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('dimensions failed'))
+    const wrapper = await mountView(OverviewView)
+    const vm = wrapper.vm as any
+    vm.assetMode = 'planned'
+    await flushPromises()
+    expect(wrapper.text()).toContain('规划维度加载失败')
+    expect(wrapper.find('[data-testid="overview-kpi-grid"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('数据概览加载失败')
+    const overviewCalls = vi.mocked(dataApi.getOverview).mock.calls.length
+    await vm.loadDimensions()
+    await flushPromises()
+    expect(vm.dimensionsError).toBe('')
+    expect(dataApi.getOverview).toHaveBeenCalledTimes(overviewCalls)
     wrapper.unmount()
   })
 

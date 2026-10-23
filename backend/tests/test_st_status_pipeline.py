@@ -261,7 +261,8 @@ def test_st_quality_covers_suspensions_and_latest_listed_without_bars(market):
     )
     market.execute(
         "INSERT INTO stock_suspension (code,trade_date) VALUES ('SUSP.SH',?),('SUSP.SH',?),"
-        "('SUSP.SH',DATE '2026-10-08'),('DELIST.SH',DATE '2026-10-08')",
+        "('SUSP.SH',DATE '2026-10-08'),('SUSP.SH',DATE '2026-10-09'),"
+        "('DELIST.SH',DATE '2026-10-08')",
         [old_day, day],
     )
     service = StockSTStatusService(market)
@@ -271,7 +272,7 @@ def test_st_quality_covers_suspensions_and_latest_listed_without_bars(market):
     ], change_reason='seed')
     report = DataIntegrityReport(market)
     coverage = service.coverage()
-    assert coverage['expected'] == 4  # 两条日线 + 两个停牌日，最新日去重。
+    assert coverage['expected'] == 4  # 日线/停牌重叠、停牌/最新日重叠都只计一次。
     assert coverage['missing'] == 2
     assert coverage['ready'] is False
     issue = report._collect_st_status_issues()

@@ -18,7 +18,7 @@ from backend.auth.context import get_current_context
 from backend.auth.deps import require_system_perm
 from backend.common.request import trusted_client_ip
 from backend.config import get_effective_settings
-from backend.storage.duckdb_client import get_client
+from backend.storage.duckdb_client import get_client, get_read_client
 from backend.storage.task_runtime import get_task_runtime_client
 
 router = APIRouter(prefix="/api/data", tags=["data-admin"])
@@ -94,10 +94,10 @@ def _dig_config_value(dump: dict, path: str):
 def overview() -> ApiResponse:
     from backend.services.data_report import DataIntegrityReport
     from backend.services.stock_st_status import StockSTStatusService
-    rep = DataIntegrityReport()
+    c = get_read_client()
+    rep = DataIntegrityReport(c)
     ov = rep.overview()
     qm = rep.quality_model()   # M2.9：质量评分 + 分层达标 + 缺口（一次扫描，避免双扫）
-    c = get_client()
     sev = c.query_df(
         "SELECT severity, count(*) AS n FROM data_quality_issue WHERE status='open' GROUP BY severity"
     )
@@ -133,10 +133,10 @@ def hub() -> ApiResponse:
     from backend.services.data_report import DataIntegrityReport
     from backend.services.data_sources import source_status
 
-    rep = DataIntegrityReport()
+    c = get_read_client()
+    rep = DataIntegrityReport(c)
     ov = rep.overview()
     qm = rep.quality_model()
-    c = get_client()
     sev = c.query_df(
         "SELECT severity, count(*) AS n FROM data_quality_issue WHERE status='open' GROUP BY severity")
     by_sev = {r["severity"] or "mid": int(r["n"]) for _, r in sev.iterrows()}
@@ -158,7 +158,7 @@ def hub() -> ApiResponse:
                    "latest_trade_date": qm["latest_trade_date"]},
         "quality": {"open": int(sum(by_sev.values())), "by_severity": by_sev,
                     "score": qm["score"], "days_since_scan": days_since_scan},
-        "score": {"latest_board_date": _latest_board_date()},
+        "score": {"latest_board_date": _latest_board_date(c)},
         "board": _board_stage(c),
     }
 
@@ -290,6 +290,7 @@ def catalog(
 
     try:
         payload = build_catalog_payload(
+            client=get_read_client(),
             database=database,
             include_legacy=include_legacy,
             table=table,
@@ -305,7 +306,7 @@ def catalog(
 @router.get("/dimensions", response_model=ApiResponse, dependencies=_OVERVIEW)
 def dimensions() -> ApiResponse:
     import json
-    df = get_client().query_df(
+    df = get_read_client().query_df(
         "SELECT dimension, name_cn, status, source, tables, descr FROM data_dimension_registry "
         "ORDER BY CASE status WHEN 'collected' THEN 0 WHEN 'partial' THEN 1 ELSE 2 END, dimension")
     rows = df.to_dict("records")
@@ -356,7 +357,7 @@ def stock_quality(codes: str | None = None, keyword: str | None = None,
     from backend.services.data_report import DataIntegrityReport
     code_list = [c.strip() for c in codes.split(",") if c.strip()] if codes else None
     kw = keyword.strip() if keyword and keyword.strip() else None
-    return ok(DataIntegrityReport().stock_quality(code_list, kw, page, size))
+    return ok(DataIntegrityReport(get_read_client()).stock_quality(code_list, kw, page, size))
 
 
 @router.get("/boards", response_model=ApiResponse, dependencies=_OVERVIEW)

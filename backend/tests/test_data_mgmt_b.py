@@ -24,6 +24,7 @@ def client(tmp_path, monkeypatch):
     c = DuckDBClient(db_path=str(tmp_path / "t.duckdb"))
     init_db(c)
     monkeypatch.setattr(dc, "_client", c)   # get_client() → 本临时库
+    monkeypatch.setattr("backend.api.data_admin.get_read_client", lambda: c)
     # 本模块验证 DuckDB 数据管理闭环，不依赖 PostgreSQL 审计库；避免本地 PG 状态污染单测。
     monkeypatch.setattr(AsyncTaskService, "_audit_task", lambda *args, **kwargs: None)
     yield c

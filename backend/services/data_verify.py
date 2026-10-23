@@ -148,6 +148,23 @@ class DataVerifier:
             if finding.total
         ]
 
+    def _batch_findings(
+        self, from_sql: str, checks: dict[str, tuple[str, str]],
+    ) -> dict[str, CheckupFinding]:
+        """同一数据集只扫一次计数；异常明细仍按原条件按需取有限样例。"""
+        selections = [
+            f"count(*) FILTER (WHERE {predicate}) AS n{i}"
+            for i, (predicate, _) in enumerate(checks.values())
+        ]
+        counts = self.c.query_df("SELECT " + ",".join(selections) + " " + from_sql).iloc[0]
+        return {
+            key: CheckupFinding(
+                int(counts[f"n{i}"]), f"SELECT {fields} {from_sql} WHERE {predicate}",
+                [], "命中记录",
+            )
+            for i, (key, (predicate, fields)) in enumerate(checks.items())
+        }
+
     def _frame_evidence(self, label: str, frame: pd.DataFrame, total: int) -> dict:
         """复用目录字段中文化；日期/空值/非有限数值统一转成可安全保存的展示值。"""
         from backend.storage.catalog import TABLE_CATALOG
@@ -628,11 +645,23 @@ class DataVerifier:
             "(delist_date IS NULL OR delist_date> "
             "(SELECT COALESCE(max(trade_date),current_date) FROM daily_bar))"
         )
+        from backend.services.capital_quality import CAPITAL_LABELS, capital_predicates
         from backend.services.share_capital_history import historical_joins
-        shares = self._finding(
-            "SELECT b.code,b.trade_date,s.total_share,s.float_share FROM daily_bar b "
-            + historical_joins() +
-            "WHERE s.total_share IS NULL OR s.float_share IS NULL")
+
+        capital_fields = "b.code,b.trade_date,b.close,s.total_share,s.float_share,m.total_mv,m.float_mv"
+        predicates = capital_predicates(historical=True, include_sources=True)
+        capital_findings = self._batch_findings(
+            "FROM daily_bar b " + historical_joins(),
+            {
+                "shares": ("s.total_share IS NULL OR s.float_share IS NULL",
+                           "b.code,b.trade_date,s.total_share,s.float_share"),
+                "source": (predicates["capital_source_mismatch"], capital_fields +
+                           ",m.reported_total_mv,m.reported_float_mv,m.reported_total_close,m.reported_float_close"),
+                **{kind: (predicate, capital_fields)
+                   for kind, predicate in predicates.items() if kind != "capital_source_mismatch"},
+            },
+        )
+        shares = capital_findings["shares"]
         self._check("逐日股本覆盖", shares.total == 0, f"缺 {shares.total} 个股票交易日",
                     "按已有日线检查，含退市股；源端缺失保持空值，不使用当前股本倒填。",
                     findings=[shares])
@@ -646,12 +675,7 @@ class DataVerifier:
                        findings=[raw_invalid])
         else:
             self._check("来源核验·股本原始记录", True, "无非法原始记录")
-        from backend.services.capital_quality import capital_predicates
-        source_predicate = capital_predicates(include_sources=True)["capital_source_mismatch"]
-        source_difference = self._finding(
-            "SELECT b.code,b.trade_date,b.close,s.total_share,s.float_share,m.total_mv,m.float_mv,"
-            "m.reported_total_mv,m.reported_float_mv,m.reported_total_close,m.reported_float_close "
-            "FROM daily_bar b " + historical_joins() + " WHERE " + source_predicate)
+        source_difference = capital_findings["source"]
         if source_difference.total:
             self._warn("来源核验·市值与股本价格差异", f"{source_difference.total} 个股票交易日来源待核验，不计入业务异常",
                        "业务市值按本地逐日股本×未复权收盘价计算。接口价格差异和股本来源冲突继续复查；乘法一致不代表来源已核实。",
@@ -664,11 +688,8 @@ class DataVerifier:
             "OR float_effective_date>trade_date")
         self._check("逐日股本合法性与生效日期", invalid_shares.total == 0,
                     f"异常 {invalid_shares.total}", findings=[invalid_shares])
-        from backend.services.capital_quality import CAPITAL_LABELS, capital_predicates
-        for kind, predicate in capital_predicates(historical=True).items():
-            finding = self._finding(
-                "SELECT b.code,b.trade_date,b.close,s.total_share,s.float_share,m.total_mv,m.float_mv "
-                "FROM daily_bar b " + historical_joins() + " WHERE " + predicate)
+        for kind in capital_predicates(historical=True):
+            finding = capital_findings[kind]
             self._check("全历史" + CAPITAL_LABELS[kind], finding.total == 0,
                         f"异常 {finding.total} 个股票交易日",
                         "与质量台账、修复复检共用同一规则，含退市股；请在质量页按股本市值类型处理。",
@@ -690,11 +711,16 @@ class DataVerifier:
             ("daily_bar", "amount", "", "日线·成交额"),
             ("daily_bar", "turnover_rate", "", "日线·换手率"),
         ]
-        for table, col, where, label in required:
-            w = f" AND {where}" if where else ""
-            n_null = self._finding(
-                f"SELECT code{',trade_date' if table == 'daily_bar' else ''},{col} FROM {table} WHERE {col} IS NULL{w}"
-            )
+        required_findings = {}
+        for table in dict.fromkeys(item[0] for item in required):
+            required_findings.update(self._batch_findings(
+                f"FROM {table}",
+                {label: (f"{col} IS NULL" + (f" AND {where}" if where else ""),
+                         f"code{',trade_date' if table == 'daily_bar' else ''},{col}")
+                 for t, col, where, label in required if t == table},
+            ))
+        for _, _, _, label in required:
+            n_null = required_findings[label]
             self._check(
                 f"{label} 无缺失", n_null.total == 0, f"缺 {n_null.total}", findings=[n_null]
             )

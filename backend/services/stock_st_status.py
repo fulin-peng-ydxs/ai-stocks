@@ -14,25 +14,32 @@ from backend.storage.duckdb_client import DuckDBClient, get_client
 
 # 停牌不免除 ST 身份契约；最新市场日还需覆盖没有当日日线的在市证券。
 # 不展开「全股票 × 全日历」，避免质检生成项目研究范围外的历史缺口。
+# 日线主键已保证唯一；只对少量补充点去重、反连接，避免全历史 UNION 去重。
 ST_EXPECTED_POINTS_SQL = """
     WITH market AS (SELECT max(trade_date) AS latest FROM daily_bar),
-    bar_spans AS (SELECT code,min(trade_date) AS first_date FROM daily_bar GROUP BY code)
+    bar_spans AS (SELECT code,min(trade_date) AS first_date FROM daily_bar GROUP BY code),
+    suspension_points AS (
+        SELECT s.code,s.trade_date FROM stock_suspension s
+        JOIN stock_basic sb ON sb.code=s.code
+        JOIN bar_spans span ON span.code=s.code AND s.trade_date>=span.first_date
+        CROSS JOIN market
+        WHERE s.trade_date<=market.latest
+          AND (sb.list_date IS NULL OR sb.list_date<=s.trade_date)
+          AND (sb.delist_date IS NULL OR sb.delist_date>s.trade_date)
+          AND sb.board IN ('主板','创业板','科创板')
+    ), extra_points AS (
+        SELECT code,trade_date FROM suspension_points
+        UNION
+        SELECT sb.code,market.latest AS trade_date FROM stock_basic sb CROSS JOIN market
+        WHERE market.latest IS NOT NULL
+          AND (sb.list_date IS NULL OR sb.list_date<=market.latest)
+          AND (sb.delist_date IS NULL OR sb.delist_date>market.latest)
+          AND sb.board IN ('主板','创业板','科创板')
+    )
     SELECT code,trade_date FROM daily_bar
-    UNION
-    SELECT s.code,s.trade_date FROM stock_suspension s
-    JOIN stock_basic sb ON sb.code=s.code
-    JOIN bar_spans span ON span.code=s.code AND s.trade_date>=span.first_date
-    CROSS JOIN market
-    WHERE s.trade_date<=market.latest
-      AND (sb.list_date IS NULL OR sb.list_date<=s.trade_date)
-      AND (sb.delist_date IS NULL OR sb.delist_date>s.trade_date)
-      AND sb.board IN ('主板','创业板','科创板')
-    UNION
-    SELECT sb.code,market.latest AS trade_date FROM stock_basic sb CROSS JOIN market
-    WHERE market.latest IS NOT NULL
-      AND (sb.list_date IS NULL OR sb.list_date<=market.latest)
-      AND (sb.delist_date IS NULL OR sb.delist_date>market.latest)
-      AND sb.board IN ('主板','创业板','科创板')
+    UNION ALL
+    SELECT e.code,e.trade_date FROM extra_points e
+    ANTI JOIN daily_bar b ON b.code=e.code AND b.trade_date=e.trade_date
 """
 
 
