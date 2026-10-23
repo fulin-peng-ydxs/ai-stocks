@@ -12,7 +12,7 @@ import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import ScheduleDownstreamDrawer from '@/components/data/ScheduleDownstreamDrawer.vue'
-import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import {
@@ -453,16 +453,19 @@ const eventJob = ref<ScheduledJob | null>(null)
 const triggerEvents = ref<ScheduledTriggerEvent[]>([])
 const eventLoading = ref(false)
 const eventError = ref('')
+const eventRequests = createLatestRequestGuard()
 async function loadTriggerEvents() {
-  if (!eventJob.value) return
+  if (!eventJob.value || !eventDrawer.value) return
+  const request = eventRequests.begin()
   eventLoading.value = true
   eventError.value = ''
   try {
-    triggerEvents.value = (await listScheduleTriggerEvents(eventJob.value.id)).events
+    const result = await listScheduleTriggerEvents(eventJob.value.id)
+    if (eventRequests.isCurrent(request)) triggerEvents.value = result.events
   } catch (error) {
-    eventError.value = getErrorMessage(error, '触发记录加载失败')
+    if (eventRequests.isCurrent(request)) eventError.value = getErrorMessage(error, '触发记录加载失败')
   } finally {
-    eventLoading.value = false
+    if (eventRequests.isCurrent(request)) eventLoading.value = false
   }
 }
 async function openTriggerEvents(job: ScheduledJob) {
@@ -471,6 +474,13 @@ async function openTriggerEvents(job: ScheduledJob) {
   eventDrawer.value = true
   await loadTriggerEvents()
 }
+watch(eventDrawer, (open) => {
+  if (!open) {
+    eventRequests.invalidate()
+    eventLoading.value = false
+  }
+})
+onBeforeUnmount(() => eventRequests.invalidate())
 const CONDITION_LABEL: Record<TriggerCondition, string> = {
   success: '成功后', failure: '失败后', completion: '完成后',
 }
@@ -697,22 +707,17 @@ const menuPageTitle = useMenuPageTitle()
       v-model="eventDrawer"
       size="xl"
       :title="eventJob ? `${eventJob.name} · 触发记录` : '触发记录'"
+      subtitle="仅包含任务依赖和自身重试事件；手动、定时执行记录请在任务中心查看。"
+      :body-scroll="false"
+      body-layout="fill"
       class="schedule-trigger-events-drawer"
+      :state="eventLoading ? 'loading' : eventError ? 'error' : 'ready'"
+      :state-title="eventLoading ? '正在加载触发记录…' : '触发记录加载失败'"
+      :state-description="eventError"
+      :retry="Boolean(eventError)"
+      @retry="loadTriggerEvents"
     >
-      <AppStateBlock
-        v-if="eventLoading && !triggerEvents.length"
-        state="loading"
-        title="正在加载触发记录…"
-      />
-      <AppStateBlock
-        v-else-if="eventError"
-        state="error"
-        title="触发记录加载失败"
-        :description="eventError"
-        retry
-        @retry="loadTriggerEvents"
-      />
-      <AppDataTable v-else :data="triggerEvents" embedded size="small">
+      <AppDataTable :data="triggerEvents" size="small" aria-label="调度触发记录表" data-testid="schedule-trigger-events-table">
         <AppTableColumn label="来源任务">
           <template #default="{ row }">{{ row.source_job_name || row.source_task_id }}</template>
         </AppTableColumn>

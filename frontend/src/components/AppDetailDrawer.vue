@@ -16,6 +16,8 @@ withDefaults(defineProps<{
   stateTitle?: string
   stateDescription?: string
   retry?: boolean
+  bodyScroll?: boolean
+  bodyLayout?: 'flow' | 'fill'
 }>(), {
   subtitle: '',
   size: 'xl',
@@ -23,6 +25,8 @@ withDefaults(defineProps<{
   stateTitle: '',
   stateDescription: '',
   retry: false,
+  bodyScroll: true,
+  bodyLayout: 'flow',
 })
 
 const emit = defineEmits<{
@@ -38,6 +42,8 @@ const emit = defineEmits<{
     :size="size"
     :title="title"
     :subtitle="subtitle"
+    :body-scroll="bodyScroll"
+    :body-layout="bodyLayout"
     class="app-detail-drawer"
     @update:model-value="emit('update:modelValue', $event)"
   >
@@ -61,7 +67,7 @@ const emit = defineEmits<{
       :retry="retry && state === 'error'"
       @retry="emit('retry')"
     />
-    <div v-else class="app-detail-drawer__body"><slot /></div>
+    <div v-else class="app-detail-drawer__body" :class="{ 'is-fill': bodyLayout === 'fill' }"><slot /></div>
 
     <template v-if="$slots.footer" #footer>
       <div class="app-detail-drawer__footer"><slot name="footer" /></div>
@@ -88,5 +94,11 @@ const emit = defineEmits<{
 }
 .app-detail-drawer__body > :slotted(*) {
   min-width: 0;
+}
+.app-detail-drawer__body.is-fill {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
 }
 </style>

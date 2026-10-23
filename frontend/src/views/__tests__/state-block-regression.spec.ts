@@ -111,6 +111,14 @@ vi.mock('@/api/data', () => ({
   getTaskLogs: vi.fn(),
   resumeTask: vi.fn(),
   cancelTask: vi.fn(),
+  listSchedules: vi.fn(),
+  listScheduleOptions: vi.fn(),
+  createSchedule: vi.fn(),
+  updateSchedule: vi.fn(),
+  setScheduleEnabled: vi.fn(),
+  deleteSchedule: vi.fn(),
+  runSchedule: vi.fn(),
+  listScheduleTriggerEvents: vi.fn(),
   taskDisplayLabel: vi.fn((taskType: string) => taskType),
   TASK_LABEL: { update: '每日更新' },
   STATUS_LABEL: { running: '运行中', done: '已完成' },
@@ -183,6 +191,8 @@ import BoardView from '@/views/BoardView.vue'
 import OverviewView from '@/views/data/OverviewView.vue'
 import IngestView from '@/views/data/IngestView.vue'
 import QualityView from '@/views/data/QualityView.vue'
+import ScheduleView from '@/views/data/ScheduleView.vue'
+import AppDetailDrawer from '@/components/AppDetailDrawer.vue'
 import ScreenView from '@/views/ScreenView.vue'
 import BacktestView from '@/views/BacktestView.vue'
 import TrainingView from '@/views/TrainingView.vue'
@@ -305,6 +315,10 @@ beforeEach(() => {
   layoutMockState.visibleItems = undefined
   localStorage.clear()
   document.body.innerHTML = ''
+  vi.mocked(dataApi.listSchedules).mockResolvedValue({
+    jobs: [], total: 0, page: 1, size: 20, task_types: ['verify'], issue_types: [],
+  } as any)
+  vi.mocked(dataApi.listScheduleTriggerEvents).mockResolvedValue({ events: [] })
   ;(scoreApi.getIndicatorRegistry as ReturnType<typeof vi.fn>).mockResolvedValue({
     items: [
       { key: 'bull_arrange', name_cn: '多头排列', dtype: 'bool', enabled: true, params: [] },
@@ -690,6 +704,46 @@ describe('代表性页面四态回归', () => {
 
     expect((wrapper.vm as unknown as { profileRef: string }).profileRef).toBe('')
     expect((wrapper.vm as unknown as { rows: unknown[] }).rows).toEqual([])
+  })
+
+  it('调度触发记录填满抽屉剩余空间并标明事件范围', async () => {
+    const wrapper = await mountView(ScheduleView)
+    await (wrapper.vm as any).openTriggerEvents({ id: 'schedule-a', name: '每日质检' })
+    await flushPromises()
+    const drawer = wrapper.findAllComponents(AppDetailDrawer)
+      .find((item) => item.props('title') === '每日质检 · 触发记录')!
+    expect(drawer.props('bodyLayout')).toBe('fill')
+    expect(drawer.props('bodyScroll')).toBe(false)
+    expect(drawer.props('subtitle')).toContain('手动、定时执行记录请在任务中心查看')
+    const table = drawer.getComponent('[data-testid="schedule-trigger-events-table"]')
+    expect(table.attributes('embedded')).toBeUndefined()
+    expect(table.attributes('aria-label')).toBe('调度触发记录表')
+    wrapper.unmount()
+  })
+
+  it('调度触发记录切换任务和关闭时忽略旧响应', async () => {
+    let resolveOld!: (value: unknown) => void
+    vi.mocked(dataApi.listScheduleTriggerEvents)
+      .mockReturnValueOnce(new Promise<any>((resolve) => { resolveOld = resolve }))
+      .mockResolvedValueOnce({ events: [{ id: 'new-event' }] } as any)
+    const wrapper = await mountView(ScheduleView)
+    const vm = wrapper.vm as any
+    const oldRequest = vm.openTriggerEvents({ id: 'schedule-old', name: '旧任务' })
+    await vm.openTriggerEvents({ id: 'schedule-new', name: '新任务' })
+    resolveOld({ events: [{ id: 'old-event' }] })
+    await oldRequest
+    expect(vm.triggerEvents.map((event: { id: string }) => event.id)).toEqual(['new-event'])
+    let rejectClosed!: (error: Error) => void
+    vi.mocked(dataApi.listScheduleTriggerEvents)
+      .mockReturnValueOnce(new Promise((_resolve, reject) => { rejectClosed = reject }))
+    const closedRequest = vm.loadTriggerEvents()
+    vm.eventDrawer = false
+    await wrapper.vm.$nextTick()
+    rejectClosed(new Error('closed request failed'))
+    await closedRequest
+    expect(vm.eventError).toBe('')
+    expect(vm.eventLoading).toBe(false)
+    wrapper.unmount()
   })
 
   it('数据概览加载失败显示错误态', async () => {

@@ -333,7 +333,7 @@ Key Characteristics：
 | `PageDrawerSurface` | `frontend/src/components/PageDrawerSurface.vue` | 全站抽屉统一内容面板 | 无直接系统组件种类；仅由 `PageDrawer` 内部消费 | 仅由 PageDrawer 内部消费；外壳差异经语义属性和插槽表达，禁止页面复制面板外观。 |
 | `BorderStatePreview` | `frontend/src/layout/components/BorderStatePreview.vue` | 系统组件详情内的真实边界状态样板 | 无独立kind、slot或配置字段 | 仅本地展示；覆盖输入错误/禁用、选中禁用、网格列数/跨列与结果三态；不替代业务入口验收。 |
 | `AppDialog` | `frontend/src/components/AppDialog.vue` | 页面短表单、单组编辑和轻量查看的统一弹窗外壳 | 无直接系统组件种类；内部消费 `el-dialog` | 短表单与轻量查看统一消费；语义宽度、挂载边界及正文滚动见[弹窗与抽屉](#弹窗与抽屉)。 |
-| `AppDetailDrawer` | `frontend/src/components/AppDetailDrawer.vue` | 完整详情、长编辑、历史版本和审计上下文的统一抽屉结构 | 无直接系统组件种类；内部消费 `PageDrawer` 的统一外壳 | 普通对象详情、长编辑和审计上下文统一消费；外壳委托 PageDrawer，详情分区见[弹窗与抽屉](#弹窗与抽屉)。 |
+| `AppDetailDrawer` | `frontend/src/components/AppDetailDrawer.vue` | 完整详情、长编辑、历史版本和审计上下文的统一抽屉结构 | 无直接系统组件种类；内部消费 `PageDrawer` 的统一外壳，默认 `bodyLayout=flow`；单表可声明 `bodyLayout=fill`、`bodyScroll=false` 将剩余高度交给表体内滚 | 普通对象详情、长编辑和审计上下文统一消费；外壳委托 PageDrawer，详情分区见[弹窗与抽屉](#弹窗与抽屉)。 |
 | `AppDetailSection` / `AppDetailFields` / `AppDetailField` | `frontend/src/components/AppDetailSection.vue`、`frontend/src/components/AppDetailFields.vue`、`frontend/src/components/AppDetailField.vue` | 详情分区和规则型键值展示 | 无直接系统组件种类；作为详情抽屉或页面详情的内容结构 | 详情分区和键值展示统一消费，禁止私建详情网格；布局及空值规则见[弹窗与抽屉](#弹窗与抽屉)。 |
 | `LayoutHost` | `frontend/src/layout/components/LayoutHost.vue` | registry 页面统一布局、slot、滚动和 overlay 运行时宿主 | 消费 `PageLayout` 中登记的系统组件种类与区域 | 所有 registry 业务页面统一消费；页面不得绕过宿主手写页面外壳、主成长区、滚动归属或 overlay 边界 |
 | `ComponentAutoSettings` | `frontend/src/components/ComponentAutoSettings.vue` | 组件特性唯一渲染器 | 按 slot kind 自动消费 `COMPONENT_FIELD_DEFS`，再结合 `componentMeta` / slot `config` / `fieldApplicability` 判定实例适用性 | 页面设置与布局编辑器共用唯一渲染器；候选、默认值和层级限制见[设置抽屉](#设置抽屉)与[组件特性配置治理](#73-组件特性配置治理)。 |
