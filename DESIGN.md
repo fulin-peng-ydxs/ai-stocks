@@ -372,7 +372,7 @@ Key Characteristics：
 | `TradeDirectionGroupGrid` | `frontend/src/components/trade-discipline/TradeDirectionGroupGrid.vue` | 交易纪律中按买入、卖出方向上下组织单列清单，统一分组标题、说明和动作区 | 无直接系统组件种类；仅承载交易纪律方向分组 | 买卖规则与操作事实统一消费；分组即方向事实源，组内卡片不得再展示重复方向选择器；规则或成交的领域状态留在调用方，通过分组动作和内容插槽注入；所有宽度保持买入在上、卖出在下，每条规则或操作独占一行，不在消费组件复制方向分组结构与样式 |
 | `RuleSummaryCard` | `frontend/src/components/trade-discipline/RuleSummaryCard.vue` | 买入、卖出和选股规则的紧凑摘要卡，基于 `AppSummaryDisclosureCard` 组合规则启停与动作区 | 无直接系统组件种类；仅承载交易纪律规则编辑 | 同类规则统一复用；默认只展示摘要并一次展开一项，动作通过插槽注入；不得把规则启停语义下沉到通用卡片外壳 |
 | `TradeDisciplineSectionPanel` | `frontend/src/components/trade-discipline/TradeDisciplineSectionPanel.vue` | 交易纪律编辑器的统一分区面板，承载标题、说明、摘要、展开编辑区和分区动作 | 无直接系统组件种类；仅承载交易纪律编辑分区 | 规则、操作事实和履约编辑的同层分区统一复用；领域字段与动作通过插槽注入，不在消费页复制分区外壳、标题层级和间距 |
-| `StockRuleChecklistEditor` | `frontend/src/components/trade-discipline/StockRuleChecklistEditor.vue` | 分类检查项编辑与组内排序 | 消费 `config-panel` 的默认折叠配置 | 交易纪律规则编辑；消费 stockConditions 配置面板的 defaultCollapsed；字典分类和补充说明复用 ConfigPanelSection，代码默认独立收起，标题摘要保留，新建/校验错误展开定位；分类及排序逻辑复用条件工具和 AppReorderList，基本/风险字段经插槽消费；只读态保留分组标题与条件内容，隐藏重复的分类选择器和编辑提示；增删改由规则草稿统一保存；分类候选来自系统字典，未知或停用分类按既有条件保留，默认折叠候选同步字典编码 |
+| `StockRuleChecklistEditor` | `frontend/src/components/trade-discipline/StockRuleChecklistEditor.vue` | 分类检查项编辑与组内排序 | 消费 `config-panel` 的默认折叠配置 | 交易纪律规则编辑；消费 stockConditions 配置面板的 defaultCollapsed；字典分类和补充说明复用 ConfigPanelSection，代码默认独立收起，标题摘要保留，新建/校验错误展开定位；分类及排序逻辑复用条件工具和 AppReorderList，基本/风险字段经插槽消费；编辑与阅读态呈现遵循[编辑态与阅读态](#编辑态与阅读态)；增删改由规则草稿统一保存；分类候选来自系统字典，未知或停用分类按既有条件保留，默认折叠候选同步字典编码 |
 | `StockRuleConditionChecklist` | `frontend/src/components/trade-discipline/StockRuleConditionChecklist.vue` | 交易纪律分类条件、逐项核对与补充说明 | 消费 `config-panel` 的默认折叠配置 | 今日买入和历史规则/操作快照统一消费；消费同一 stockConditions.defaultCollapsed；字典分类与补充说明复用 ConfigPanelSection，代码默认收起、标题保留摘要/核对数量，开合不卸载字段，状态按操作隔离；结果通过 props/events 传递，未知与未记录分别展示，分类名读取版本快照，服务端负责版本归属与履约守卫；宽度不足自然换行，保留条件、结果与展开入口 |
 | `AppRowActions` | `frontend/src/components/AppRowActions.vue` | 表格行操作列和列表项操作区的统一动作组，按权限过滤、单行排列、动作颜色层级、禁用/加载态展示、轻量“更多”菜单收纳和**宽度自适应折叠** | 无直接系统组件种类 | 行内动作组复用；动作层级、更多菜单及宽度折叠见[行操作组](#行操作组) |
 | `SystemBuiltinTag` | `frontend/src/components/SystemBuiltinTag.vue` | 全站“系统内置”来源标记，固定使用灰色文字、灰色描边和中性浅底 | 无直接系统组件种类 | 菜单、功能点、角色、租户、视觉预设、技术指标和系统内置方案等来源标记统一复用；文案固定为“系统内置”，不追加对象名称或保护规则说明；与对象名称或标识并列时统一放在对象后面，独立的来源/类型字段保持标签单独展示 |
@@ -503,7 +503,7 @@ Key Characteristics：
 - 纯图标异步操作必须使用 `AppIconButton` 的 `loading`，不得在页面内为图标按钮新增私有旋转动画或把 loading 混同为 disabled 灰态。图标按钮有必要的功能说明时显式传 `tooltip`；外层已有 `AppHoverInfo` 时不再声明同一提示，统一遵循本节提示契约。
 - Unicode 禁令针对交互图标、操作按钮和纯图标控件；业务公式、状态文案里的箭头/对勾/叉号可作为局部文案保留，但不得用于按钮图标。选择态勾选标记也使用 Element Plus 图标或项目 SVG，不使用 Unicode 字形。
 - 自定义原生 `<button>` 仅保留给导航、登录主视觉切换、规则摘要 disclosure 等具有独立语义和结构的专用控件，并在实现中保持专用 class、键盘语义和必要的 ARIA 状态；普通命令和纯图标操作不得借此绕过统一组件。
-- 输入与复合选择控件的禁用或只读状态保留外形，边框消费 `border`，文字消费 `textMuted`；Element Plus 的边框与文字适配统一由 `borders.css` 承接。禁用控件底色通过 `--el-disabled-bg-color` 读取，当前由 `useLayoutPreset.ts` 映射为 `surfaceHover`；允许与悬停基础色同色，但不表示控件可交互，禁用状态仍通过文字、边框和光标表达，禁用项不响应 hover。按钮和分段选择的禁用呈现见下方矩阵。
+- 确需保留的输入与复合选择控件在禁用或只读状态下保留外形，边框消费 `border`，文字消费 `textMuted`；是否保留先按[编辑态与阅读态](#编辑态与阅读态)判断，本条不要求阅读态保留全部编辑控件。Element Plus 的边框与文字适配统一由 `borders.css` 承接。禁用控件底色通过 `--el-disabled-bg-color` 读取，当前由 `useLayoutPreset.ts` 映射为 `surfaceHover`；允许与悬停基础色同色，但不表示控件可交互，禁用状态仍通过文字、边框和光标表达，禁用项不响应 hover。按钮和分段选择的禁用呈现见下方矩阵。
 - 夜间模式的复选框、单选框、输入边界和表格行悬浮必须使用强边框或主色反馈；空框、选中、禁用三态均需肉眼可辨。
 - 多行对象选择卡片的普通项必须保留共享卡片的中性边框；选中项通过主色边框和定位标记强调，不能只给选中项画边界。宿主透明边框只用于共享交互表面占位，不得把可见表面的边框 token 置为透明。
 - 工具栏按钮应贴近其影响区域，避免页面右上角堆积所有操作。
@@ -511,9 +511,16 @@ Key Characteristics：
 - 确定操作归属后，再按实际内容和相邻结构选择横向位置，不将“局部工具区”等同于“统一靠左”：含筛选输入、工作对象或范围选择时，从左侧按任务阅读顺序排列；只有保存、还原、刷新等命令且左侧没有关联输入时，优先在所属内容区域内右对齐，避免紧贴左侧页签导航形成第二排竞争焦点。需要与具体对象或输入就近操作时保持关联，不将所有按钮机械推到最右侧。`AppTabToolbar` 以 `actionsAlign` 承接差异，页面不写私有对齐样式；纯命令组的错误或校验反馈独立放下方左对齐。空间不足时命令保持 DOM 顺序自然换行，核心操作不裁切或隐藏，输入和草稿不因重排重建。
 - 顶栏状态和工具按 `32px` 控件基线对齐、间距 `6px`。交易日等状态项使用“图标 + 弱标签 + 强值 + 5px 状态点”的轻量结构；无详情权限时使用只读 `role=status`，不得伪装成禁用按钮，也不得使用永久渐变、内阴影或大胶囊底板。
 
+#### 编辑态与阅读态
+
+- 按当前任务区分编辑态、阅读态与保存中等临时禁用态，不能仅将整套编辑表单禁用而跳过阅读态的控件必要性判断。编辑态保留完成填写、分类调整、排序和校验所需的控件及提示。
+- 阅读态隐藏仅服务编辑、且信息已由分组标题、标签或正文完整表达的控件与提示，包括重复的分类选择器、填写提示和必填标记；不改成另一枚重复的静态标签，也不保留无内容的工具区或占位。
+- 控件承载唯一业务信息时，以静态文本、字段—值或状态展示保留完整值、单位、条件关系和必要说明，不能随控件一起隐藏。展开、复制、跳转等仍服务阅读任务的入口继续保留。
+- 保存中、加载中或前置条件暂不满足造成的禁用，不自动套用阅读态隐藏规则；权限受限时按页面实际任务判断哪些信息需要阅读、哪些操作需说明不可用。验收对照编辑与阅读两态，检查重复项已移除、必要信息完整、切回编辑后值与分组状态按既有契约保留；隐藏控件不得占据键盘焦点路径。
+
 #### 分段选择
 
-业务选项、组件设置中的枚举选择优先复用；默认 `contained` 使用连续底板与基础边框，选中项在组内浮起，不把选项渲染成彼此分散的独立按钮；轻量视图切换通过 `variant="tabs"` 使用无底板文字与选中下划线，文字固定为表格正文 13px，未选中使用常规字重、选中使用分区字重，避免与同排标题争夺层级；同时继续复用同一组选项和测试锚点；页面级模式/范围切换使用 `tone="primary"` 跟随系统主色，局部工具与设置枚举保持默认中性色；固定操作区使用 `small`，设置抽屉与表单使用默认尺寸；只读资产使用 `disabled`；多组并列使用时由消费页提供可访问名称。状态见下方矩阵，键盘见[键盘能力与适用边界](#键盘能力与适用边界)，切换动画见动效规范。
+业务选项、组件设置中的枚举选择优先复用；默认 `contained` 使用连续底板与基础边框，选中项在组内浮起，不把选项渲染成彼此分散的独立按钮；轻量视图切换通过 `variant="tabs"` 使用无底板文字与选中下划线，文字固定为表格正文 13px，未选中使用常规字重、选中使用分区字重，避免与同排标题争夺层级；同时继续复用同一组选项和测试锚点；页面级模式/范围切换使用 `tone="primary"` 跟随系统主色，局部工具与设置枚举保持默认中性色；固定操作区使用 `small`，设置抽屉与表单使用默认尺寸；只读资产中确需保留的编辑选项使用 `disabled`，显隐先按[编辑态与阅读态](#编辑态与阅读态)判断，仅服务阅读的视图切换仍可操作；多组并列使用时由消费页提供可访问名称。状态见下方矩阵，键盘见[键盘能力与适用边界](#键盘能力与适用边界)，切换动画见动效规范。
 
 带底板分段的中性悬浮面由 `--page-settings-seg-hover-bg` 唯一提供，运行时在 `useLayoutPreset.ts` 生成，首帧兜底在 `global.css` 保持一致；不能直接复用与底板同色的普通按钮悬浮面。默认、悬浮和按下须形成可辨层级，不能只以存在 hover 选择器作为验收依据。下划线式 `tabs` 的悬浮／按下保持透明，是独立外观规则；两种外观均保留键盘焦点，禁用不产生悬浮／按下反馈，减少动态效果时关闭过渡。
 
@@ -1040,7 +1047,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | 角色 | 实现入口与形态 | 边界所有者与适用范围 |
 |---|---|---|
 | 普通表面 | `AppTableCard`、`AppWorkspacePane`；结构不同的面板用 `.app-surface`；card token | 外沿1 CSS px常规边框；配置一级组、权限组、结果面板和页面私有面板同源；排版容器不强制画框 |
-| 输入/矩形触发 | control token；库子部件经基础半径及 `borders.css` 适配 | input、textarea、select、range、number、color；禁用保形，只读可聚焦复制，不把事实值整体灰化 |
+| 输入/矩形触发 | control token；库子部件经基础半径及 `borders.css` 适配 | input、textarea、select、range、number、color；显隐先按[编辑态与阅读态](#编辑态与阅读态)判断；确需保留的控件禁用保形，只读可聚焦复制，不把事实值整体灰化 |
 | 分段/列表子项 | `--app-radius-item`、`--app-radius-segment` | 默认和small消费同一角色；tabs无外框；选中标记由自身语义承接，hover不覆盖选中，disabled不响应操作 |
 | 大弹层 | `--app-radius-overlay`，16px | Dialog、MessageBox、PageDrawerSurface统一1px主题外沿；全屏Dialog贴画布；蒙层与阴影不代替外沿 |
 | 锚点浮层/说明 | popover、菜单用card；tooltip用control | 浮层和触发器各自拥有边界；AppHoverInfo显式携带tooltip/popover角色，明底tooltip同样适配 |
