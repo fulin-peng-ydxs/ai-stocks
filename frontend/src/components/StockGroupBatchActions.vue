@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
@@ -154,7 +155,7 @@ async function removeFromGroup(): Promise<void> {
   </el-card>
 
   <AppDialog v-model="createVisible" title="存为新分组" size="medium">
-    <el-form label-width="80px">
+    <AppForm label-width="80px">
       <el-form-item label="分组名" required>
         <el-input v-model="createForm.name" placeholder="如：5月观察龙头" maxlength="30" show-word-limit />
       </el-form-item>
@@ -169,7 +170,7 @@ async function removeFromGroup(): Promise<void> {
         <el-color-picker v-model="createForm.color" :predefine="STOCK_GROUP_COLOR_PRESETS" />
         <AppFormHelp>用于列表标签和分组状态识别</AppFormHelp>
       </el-form-item>
-    </el-form>
+    </AppForm>
     <div class="stock-batch-codes">
       将加入 {{ selected.length }} 只：{{ selected.slice(0, 8).map(item => item.name || item.code).join('、') }}{{ selected.length > 8 ? ' …' : '' }}
     </div>
@@ -180,7 +181,7 @@ async function removeFromGroup(): Promise<void> {
   </AppDialog>
 
   <AppDialog v-model="addVisible" title="加入已有分组" size="narrow">
-    <el-form label-width="80px">
+    <AppForm label-width="80px">
       <el-form-item label="目标分组" required>
         <AppSelect
           v-model="addTargetGid"
@@ -194,7 +195,7 @@ async function removeFromGroup(): Promise<void> {
         <TradeDatePicker v-model="addDate" placeholder="默认最新交易日" clearable style="width: 200px" />
         <AppFormHelp>作为这批股票的涨幅基准</AppFormHelp>
       </el-form-item>
-    </el-form>
+    </AppForm>
     <div class="stock-batch-codes">将加入 {{ selected.length }} 只（已在组内的保留原加入日期）</div>
     <template #footer>
       <el-button @click="addVisible = false">取消</el-button>

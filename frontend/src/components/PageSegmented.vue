@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useFormSize } from 'element-plus'
 type OptionValue = string | number | boolean
 
 const props = defineProps<{
@@ -7,7 +8,7 @@ const props = defineProps<{
   options: { label: string; value: OptionValue }[]
   /** 稳定自动化测试锚点；只在需要 E2E 覆盖的关键控件上显式传入。 */
   testId?: string
-  /** 默认跟随所在页面密度；small / large 仅表达显式尺寸层级。 */
+  /** 显式尺寸优先，否则继承表单尺寸；无尺寸上下文时跟随页面密度。 */
   size?: 'default' | 'small' | 'large'
   /** 页面级模式切换使用 primary；设置型枚举保持 neutral。 */
   tone?: 'neutral' | 'primary'
@@ -17,6 +18,8 @@ const props = defineProps<{
   disabled?: boolean
 }>()
 
+// 与输入框、选择器共用表单尺寸上下文，动态业务字段无需逐层透传 size。
+const controlSize = useFormSize()
 const activeIndex = computed(() => props.options.findIndex(option => option.value === props.modelValue))
 
 defineEmits<{
@@ -32,8 +35,8 @@ function optionTestId(value: OptionValue): string | undefined {
   <div
     class="page-segmented"
     :class="{
-      'page-segmented--small': props.size === 'small',
-      'page-segmented--large': props.size === 'large',
+      'page-segmented--small': controlSize === 'small',
+      'page-segmented--large': controlSize === 'large',
       'page-segmented--primary': props.tone === 'primary',
       'page-segmented--tabs': props.variant === 'tabs',
       'page-segmented--disabled': props.disabled,

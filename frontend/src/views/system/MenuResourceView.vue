@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -600,14 +601,13 @@ const menuPageTitle = useMenuPageTitle()
               <!-- 菜单属性 -->
               <div class="mr-section">
                 <h4>菜单属性</h4>
-                <div class="mr-form-grid">
+                <AppForm class="mr-form-grid">
                   <div class="mr-field"><label>标题</label>
-                    <el-input v-model="form.title" size="small" :disabled="!canMenuUpdate" @input="onFormChange" />
+                    <el-input v-model="form.title" :disabled="!canMenuUpdate" @input="onFormChange" />
                   </div>
                   <div class="mr-field"><label>类型</label>
                     <AppSelect
                       v-model="form.type"
-                      size="small"
                       :disabled="!canMenuUpdate"
                       @change="onFormChange"
                     >
@@ -618,7 +618,6 @@ const menuPageTitle = useMenuPageTitle()
                   <div class="mr-field"><label>上级</label>
                     <AppSelect
                       :model-value="form.parentId ?? ''"
-                      size="small"
                       :disabled="!canMenuUpdate"
                       @change="onParentChange"
                     >
@@ -632,21 +631,20 @@ const menuPageTitle = useMenuPageTitle()
                     </AppSelect>
                   </div>
                   <div class="mr-field"><label>路由</label>
-                    <el-input v-model="form.routePath" size="small" placeholder="如 /board" class="mono"
+                    <el-input v-model="form.routePath" placeholder="如 /board" class="mono"
                               :disabled="form.type === 'group' || !canMenuUpdate" @input="onFormChange" />
                   </div>
                   <div class="mr-field"><label>图标</label>
                     <IconPicker v-model="form.icon" :disabled="!canMenuUpdate" @update:model-value="onFormChange" />
                   </div>
                   <div class="mr-field"><label>排序</label>
-                    <el-input :model-value="form.sort" size="small" disabled>
+                    <el-input :model-value="form.sort" disabled>
                       <template #suffix><span class="hint">拖拽树调整</span></template>
                     </el-input>
                   </div>
                   <div class="mr-field"><label>可见性</label>
                     <AppSelect
                       v-model="form.visible"
-                      size="small"
                       :disabled="!canMenuUpdate"
                       @change="onFormChange"
                     >
@@ -654,7 +652,7 @@ const menuPageTitle = useMenuPageTitle()
                       <el-option label="仅系统管理员" value="system" />
                     </AppSelect>
                   </div>
-                </div>
+                </AppForm>
               </div>
 
               <!-- 功能点 -->
@@ -788,7 +786,7 @@ const menuPageTitle = useMenuPageTitle()
     <template #overlays>
       <!-- 新建菜单 -->
       <AppDialog v-model="menuDialog" title="新增菜单节点" size="medium">
-        <el-form label-width="72px">
+        <AppForm label-width="72px">
           <el-form-item label="上级">
             <AppSelect
               :model-value="menuCreateForm.parentId ?? ''"
@@ -835,7 +833,7 @@ const menuPageTitle = useMenuPageTitle()
               <el-option label="仅系统管理员" value="system" />
             </AppSelect>
           </el-form-item>
-        </el-form>
+        </AppForm>
         <template #footer>
           <el-button @click="menuDialog = false">取消</el-button>
           <el-button type="primary" :loading="menuSaving" @click="saveCreateMenu">创建</el-button>

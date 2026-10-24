@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import type { StockConditionPanelDefaults } from '@/layout/configPanel'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import { computed, reactive, ref, watch } from 'vue'
@@ -401,7 +402,7 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
       >当前内容与最新修订一致；修改后才可提交</div>
 
       <div v-if="!canSubmit" class="permission-note">当前账号仅可查看，不能提交或修正打卡。</div>
-      <el-form label-position="top" class="checkin-form">
+      <AppForm label-position="top" class="checkin-form">
         <TradeDisciplineSectionPanel
           class="checkin-section"
           title="履约判断"
@@ -469,7 +470,7 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
             @click="submit"
           >提交打卡</el-button>
         </div>
-      </el-form>
+      </AppForm>
     </template>
   </AppScrollArea>
 </template>

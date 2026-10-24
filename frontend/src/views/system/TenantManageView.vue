@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
@@ -417,7 +418,7 @@ const menuPageTitle = useMenuPageTitle()
 
     <template #overlays>
       <AppDialog v-model="dialogVisible" :title="isEdit ? '编辑租户' : '新建租户'" size="medium">
-        <el-form label-width="88px">
+        <AppForm label-width="88px">
           <el-form-item label="租户名" required>
             <el-input v-model="form.name" placeholder="全局唯一" />
           </el-form-item>
@@ -444,7 +445,7 @@ const menuPageTitle = useMenuPageTitle()
               </el-radio-button>
             </el-radio-group>
           </el-form-item>
-        </el-form>
+        </AppForm>
         <template #footer>
           <el-button @click="dialogVisible = false">取消</el-button>
           <el-button type="primary" :loading="saving" :disabled="!tenantFormChanged" @click="save">保存</el-button>

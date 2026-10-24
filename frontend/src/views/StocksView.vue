@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import {
   APP_BOTTOM_FLOATING_PLACEMENT,
@@ -1410,7 +1411,7 @@ const menuPageTitle = useMenuPageTitle()
     <template #overlays>
     <!-- 编辑分组 -->
     <AppDialog v-model="editVisible" title="编辑分组" size="medium">
-      <el-form label-width="80px">
+      <AppForm label-width="80px">
         <el-form-item label="分组名" required><el-input v-model="editForm.name" maxlength="30" show-word-limit /></el-form-item>
         <el-form-item label="建组日期"><TradeDatePicker v-model="editForm.group_date" clearable style="width: 200px" /></el-form-item>
         <el-form-item label="分组说明"><el-input v-model="editForm.description" type="textarea" :rows="2" /></el-form-item>
@@ -1422,7 +1423,7 @@ const menuPageTitle = useMenuPageTitle()
           />
           <AppFormHelp>{{ groupDetail?.is_default ? '默认自选固定为红色' : '用于列表标签和分组状态识别' }}</AppFormHelp>
         </el-form-item>
-      </el-form>
+      </AppForm>
       <template #footer>
         <el-button @click="editVisible = false">取消</el-button>
         <el-button v-permission="'stock-group:update'" type="primary" :disabled="!groupFormChanged" @click="doEdit">保存</el-button>

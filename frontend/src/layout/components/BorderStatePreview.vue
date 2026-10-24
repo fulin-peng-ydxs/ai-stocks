@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import { ref } from 'vue'
 import { APP_BOTTOM_FLOATING_FALLBACKS, APP_BOTTOM_FLOATING_PLACEMENT } from '@/utils/floatingPlacement'
 import AppDatePicker from '@/components/AppDatePicker.vue'
@@ -36,7 +37,7 @@ const options = [{ label: '方案一', value: 'a' }, { label: '方案二', value
         <el-radio-button :value="3">三列</el-radio-button>
       </el-radio-group>
     </div>
-    <el-form label-position="top" :disabled="disabled" class="border-state-preview__inputs">
+    <AppForm label-position="top" :disabled="disabled" class="border-state-preview__inputs">
       <el-form-item label="单行输入样板" :error="invalid ? '示例字段错误' : ''">
         <el-input v-model="value" aria-label="单行输入样板" />
       </el-form-item>
@@ -54,7 +55,7 @@ const options = [{ label: '方案一', value: 'a' }, { label: '方案二', value
       </el-form-item>
       <el-form-item label="数字样板"><el-input-number v-model="number" aria-label="数字样板" /></el-form-item>
       <el-form-item label="颜色样板"><el-color-picker v-model="color" aria-label="颜色样板" /></el-form-item>
-    </el-form>
+    </AppForm>
     <div class="border-state-preview__tools">
       <PageSegmented v-model="selection" :options="options" :disabled="disabled" aria-label="分段选择样板" />
       <el-segmented v-model="selection" :options="options" :disabled="disabled" aria-label="库分段样板" />

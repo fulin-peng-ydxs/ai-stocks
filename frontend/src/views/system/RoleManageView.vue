@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
@@ -435,7 +436,7 @@ const menuPageTitle = useMenuPageTitle()
 
     <template #overlays>
       <AppDialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新建角色' : '编辑角色'" size="compact">
-        <el-form label-width="72px">
+        <AppForm label-width="72px">
           <el-form-item label="角色名" required>
             <el-input v-model="roleForm.name" placeholder="如：数据分析员" />
           </el-form-item>
@@ -456,7 +457,7 @@ const menuPageTitle = useMenuPageTitle()
             <el-switch v-model="roleForm.tenantAssignable" />
             <AppFormHelp>开启后，租户管理员可将此角色分配给本租户用户。</AppFormHelp>
           </el-form-item>
-        </el-form>
+        </AppForm>
         <template #footer>
           <el-button @click="dialogVisible = false">取消</el-button>
           <el-button type="primary" :loading="roleSaving" :disabled="!roleFormChanged" @click="saveRole">保存</el-button>

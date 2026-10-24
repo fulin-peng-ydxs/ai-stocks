@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import type { StockConditionPanelDefaults } from '@/layout/configPanel'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
@@ -631,7 +632,7 @@ defineExpose({
         <div><span>编辑现场</span><strong>{{ hasSavedDraft ? `草稿 r${draftRevision}` : '无工作草稿' }}</strong></div>
       </div>
 
-      <el-form class="rule-editor__form" label-position="top" :disabled="!canEditDetails">
+      <AppForm class="rule-editor__form" label-position="top" :disabled="!canEditDetails">
         <div class="rule-editor__base">
           <el-form-item label="规则名称" :required="editing && canManage">
             <el-input v-model="form.name" data-testid="rule-name-input" maxlength="80" placeholder="例如：趋势突破纪律" />
@@ -786,7 +787,7 @@ defineExpose({
             </template>
           </TradeDirectionGroupGrid>
         </TradeDisciplineSectionPanel>
-      </el-form>
+      </AppForm>
 
       <footer v-if="canManage && editing" class="rule-editor__footer">
         <span v-if="dirty" class="dirty-copy">有未保存修改</span>

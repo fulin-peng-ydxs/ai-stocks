@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { mount } from '@vue/test-utils'
+import { ElConfigProvider, ElForm, ElFormItem } from 'element-plus'
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -22,6 +23,41 @@ function backgroundOf(selector: string): string | undefined {
 }
 
 describe('PageSegmented', () => {
+  it('分段继承表单的响应式尺寸，嵌套业务字段无需透传', async () => {
+    const wrapper = mount({
+      components: { ElForm, PageSegmented },
+      props: ['size'],
+      template: `<ElForm :size="size"><div><PageSegmented model-value="all"
+        :options="[{ label: '全部', value: 'all' }]" /></div></ElForm>`,
+    }, { props: { size: 'large' } })
+    const segmented = wrapper.getComponent(PageSegmented)
+    expect(segmented.classes()).toContain('page-segmented--large')
+    await wrapper.setProps({ size: 'small' })
+    expect(segmented.classes()).toContain('page-segmented--small')
+    expect(segmented.classes()).not.toContain('page-segmented--large')
+    await wrapper.setProps({ size: 'default' })
+    expect(segmented.classes()).not.toContain('page-segmented--small')
+    wrapper.unmount()
+  })
+
+  it('显式尺寸优先于字段、表单和全局尺寸，显式 default 恢复页面密度', () => {
+    const wrapper = mount({
+      components: { ElConfigProvider, ElForm, ElFormItem, PageSegmented },
+      template: `<ElConfigProvider size="small"><ElForm size="large">
+        <ElFormItem size="small"><PageSegmented model-value="all"
+          :options="[{ label: '全部', value: 'all' }]" /></ElFormItem>
+        <PageSegmented size="default" model-value="all" :options="[{ label: '全部', value: 'all' }]" />
+        <PageSegmented size="small" model-value="all" :options="[{ label: '全部', value: 'all' }]" />
+      </ElForm></ElConfigProvider>`,
+    })
+    const segments = wrapper.findAllComponents(PageSegmented)
+    expect(segments[0].classes()).toContain('page-segmented--small')
+    expect(segments[1].classes()).not.toContain('page-segmented--large')
+    expect(segments[1].classes()).not.toContain('page-segmented--small')
+    expect(segments[2].classes()).toContain('page-segmented--small')
+    wrapper.unmount()
+  })
+
   it('等分选项允许在窄容器内收缩且长标签省略，不撑破设置抽屉', () => {
     expect(source).toMatch(/grid-auto-columns:\s*minmax\(0,\s*1fr\)/)
     expect(source).toMatch(/\.seg-btn\s*\{[\s\S]*?min-width:\s*0/)

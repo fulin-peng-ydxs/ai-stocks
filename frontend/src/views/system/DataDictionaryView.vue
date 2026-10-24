@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -651,7 +652,7 @@ const menuPageTitle = useMenuPageTitle()
 
     <template #overlays>
       <AppDialog v-model="typeDialogOpen" :title="typeDialogMode === 'create' ? '新建字典类型' : '编辑字典类型'" size="large">
-        <el-form label-width="92px">
+        <AppForm label-width="92px">
           <el-form-item label="类型 code" :required="typeDialogMode === 'create'">
             <el-input v-model="typeForm.code" :disabled="typeDialogMode === 'edit'" placeholder="如 user_status" />
           </el-form-item>
@@ -667,7 +668,7 @@ const menuPageTitle = useMenuPageTitle()
           <el-form-item label="备注">
             <el-input v-model="typeForm.remark" type="textarea" :rows="3" />
           </el-form-item>
-        </el-form>
+        </AppForm>
         <template #footer>
           <el-button @click="typeDialogOpen = false">取消</el-button>
           <el-button type="primary" :loading="savingType" :disabled="!typeFormChanged" @click="saveType">保存</el-button>
@@ -675,7 +676,7 @@ const menuPageTitle = useMenuPageTitle()
       </AppDialog>
 
       <AppDialog v-model="itemDialogOpen" :title="itemDialogMode === 'create' ? '新建字典项' : '编辑字典项'" size="large">
-        <el-form label-width="92px">
+        <AppForm label-width="92px">
           <el-form-item label="类型 code">
             <el-input v-model="itemForm.type_code" disabled />
           </el-form-item>
@@ -703,7 +704,7 @@ const menuPageTitle = useMenuPageTitle()
           <el-form-item label="备注">
             <el-input v-model="itemForm.remark" type="textarea" :rows="3" />
           </el-form-item>
-        </el-form>
+        </AppForm>
         <template #footer>
           <el-button @click="itemDialogOpen = false">取消</el-button>
           <el-button type="primary" :loading="savingItem" :disabled="!itemFormChanged" @click="saveItem">保存</el-button>

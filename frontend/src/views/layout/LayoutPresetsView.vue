@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
@@ -382,7 +383,7 @@ const menuPageTitle = useMenuPageTitle()
 
     <template #overlays>
       <AppDetailDrawer v-model="presetDialog" size="xxl" title="视觉预设">
-        <el-form label-position="top" class="preset-form">
+        <AppForm label-position="top" class="preset-form">
           <div class="form-grid">
             <el-form-item label="标识" :required="!presetForm.is_builtin">
               <el-input v-model="presetForm.key" :disabled="presetForm.is_builtin" />
@@ -423,7 +424,7 @@ const menuPageTitle = useMenuPageTitle()
           </div>
 
           <el-switch v-model="presetForm.enabled" active-text="启用" inactive-text="停用" />
-        </el-form>
+        </AppForm>
         <template #footer>
           <el-button @click="presetDialog = false">取消</el-button>
           <el-button v-permission="'layout:preset-manage'" type="primary" :loading="presetSaving" :disabled="!presetFormChanged" @click="submitPreset">保存</el-button>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import { taskRequestFields } from '@/utils/requestRuntime'
 import { enumText, businessMessage } from '@/utils/displayText'
 import AppFormHelp from '@/components/AppFormHelp.vue'
@@ -1131,7 +1132,7 @@ const menuPageTitle = useMenuPageTitle()
       :show-close="!optSubmitting"
       data-testid="ingest-options-dialog"
     >
-      <el-form label-width="92px">
+      <AppForm label-width="92px">
         <IntradayTaskScopeFields
           v-if="optType === 'intraday_ingest'"
           v-model="optForm.intraday"
@@ -1172,7 +1173,7 @@ const menuPageTitle = useMenuPageTitle()
           </AppSelect>
           <AppFormHelp>可多选；留空=全部板块</AppFormHelp>
         </el-form-item>
-      </el-form>
+      </AppForm>
       <template #footer>
         <el-button :disabled="optSubmitting" @click="optDlg = false">取消</el-button>
         <el-button
@@ -1195,13 +1196,13 @@ const menuPageTitle = useMenuPageTitle()
       :show-close="!resultSubmitting"
       data-testid="result-maintenance-dialog"
     >
-      <el-form label-width="92px">
+      <AppForm label-width="92px">
         <ResultMaintenanceTaskFields
           v-model="resultForm"
           :task-type="resultType"
           test-id-prefix="manual-result"
         />
-      </el-form>
+      </AppForm>
       <template #footer>
         <el-button :disabled="resultSubmitting" @click="resultDlg = false">取消</el-button>
         <el-button

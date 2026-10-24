@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import { requestRuntimeText } from '@/utils/requestRuntime'
 import AppTableCard from '@/components/AppTableCard.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
@@ -1864,7 +1865,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           </aside>
 
           <!-- 编辑器 -->
-          <section class="editor editor-score">
+          <AppForm class="editor editor-score">
             <div class="ed-head app-cluster-md">
               <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
               <AppHoverInfo v-if="curVersion && !isNew" content="点击查看历史版本">
@@ -2092,7 +2093,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               title="当前配置在该交易日暂无评分结果"
             />
             <AppStateBlock v-else state="empty" title="配置评分规则后点「用当前配置试算」" />
-          </section>
+          </AppForm>
         </div>
       </template>
 
@@ -2286,7 +2287,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             />
           </aside>
 
-          <section class="editor">
+          <AppForm class="editor">
             <div class="ed-head app-cluster-md">
               <el-input v-model="tEditName" :disabled="tReadonly" placeholder="方案名称" style="width: 190px" />
               <AppHoverInfo v-if="tCurVersion && !tIsNew" content="点击查看历史版本">
@@ -2450,7 +2451,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 <span class="bs-item"><label>最大持仓</label><el-input-number v-model="backstop.hold" size="small" :disabled="tReadonly" :controls="false" :min="1" style="width: 80px" /><i>天</i></span>
               </div>
             </div>
-          </section>
+          </AppForm>
         </div>
       </template>
 
@@ -2636,7 +2637,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         v-else-if="semanticLocked && !defReferencesLoading"
         title="该指标已被方案引用，计算类型、表达式和参数结构已锁定；如需修改口径，请另存为新指标。"
       />
-      <el-form label-position="top" size="small" class="indicator-definition-form">
+      <AppForm label-position="top" class="indicator-definition-form">
         <section v-if="!editingKey" class="indicator-editor-section">
           <header class="indicator-editor-section__head">
             <span>01</span>
@@ -2779,7 +2780,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             当前被 {{ defReferences.count }} 个方案版本引用，关联 {{ defReferences.backtest_count }} 条回测。
           </div>
         </section>
-      </el-form>
+      </AppForm>
       <template #footer>
         <el-button @click="defDrawer = false">取消</el-button>
         <el-button v-permission="'indicator:def-manage'" type="primary" :loading="defSaving" :disabled="!indicatorFormChanged" @click="submitNewDef">保存指标</el-button>

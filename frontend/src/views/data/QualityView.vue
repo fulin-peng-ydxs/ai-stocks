@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
 import { businessMessage, enumText } from '@/utils/displayText'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
@@ -756,7 +757,7 @@ const menuPageTitle = useMenuPageTitle()
         用于<b>数据源退市识别不准</b>（已退市却仍被当在市股、持续报缺口/滞后）的场景。请填正式退市日期，不是最后交易日。
         按正式退市日期重新核验；退市前仍缺失的数据继续保留。人工值不会被普通采集覆盖，撤销后恢复接口值。
       </p>
-      <el-form label-width="84px">
+      <AppForm label-width="84px">
         <el-form-item label="股票">
           <span>{{ delistRow?.code }} {{ delistRow?.name }}</span>
         </el-form-item>
@@ -767,7 +768,7 @@ const menuPageTitle = useMenuPageTitle()
                          format="YYYY年MM月DD日" placeholder="请选择正式退市日期" />
         </el-form-item>
         <el-form-item label="依据/原因" required><el-input v-model="delistReason" type="textarea" :maxlength="1000" placeholder="退市依据，或撤销错误标记的原因" /></el-form-item>
-      </el-form>
+      </AppForm>
       <template #footer>
         <el-button @click="delistDlg = false">取消</el-button>
         <el-button type="warning" :loading="delisting" @click="confirmDelist">确认更新</el-button>

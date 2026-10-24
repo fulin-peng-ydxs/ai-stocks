@@ -9,6 +9,7 @@ import { vKeyboardActivate } from '@/directives/keyboardActivate'
 // icon 字段存图标名（如 TrendCharts），渲染时按名取组件；不手填字符，从图标库可搜索网格中选。
 // 复用组件：SideMenu/菜单管理页共用同一图标名 → 组件映射，保证选什么就渲染什么。
 import { computed, ref } from 'vue'
+import { useFormSize } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { MENU_ICON_NAMES, resolveMenuIcon } from '@/utils/menuIcon'
 
@@ -17,6 +18,7 @@ const props = defineProps<{
   disabled?: boolean
 }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: string | null): void }>()
+const controlSize = useFormSize()
 
 // 全部图标名（稳定排序，便于网格展示）
 const keyword = ref('')
@@ -54,7 +56,7 @@ function clear() {
     :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS"
   >
     <template #reference>
-      <div class="ip-trigger app-focus-ring" :class="{ disabled }"
+      <div class="ip-trigger app-focus-ring" :class="{ disabled, 'ip-trigger--large': controlSize === 'large', 'ip-trigger--small': controlSize === 'small' }"
            role="button" :tabindex="disabled ? -1 : 0" :aria-disabled="disabled"
            aria-label="选择图标">
         <span class="ip-cur">
@@ -98,10 +100,13 @@ function clear() {
 
 <style scoped>
 .ip-trigger {
-  height: 32px; width: 100%; border: 1px solid var(--el-border-color); border-radius: var(--layout-control-radius);
+  box-sizing: border-box;
+  height: var(--app-density-control-height, var(--app-control-height-md)); width: 100%; border: 1px solid var(--el-border-color); border-radius: var(--layout-control-radius);
   background: var(--el-bg-color); color: var(--el-text-color-primary); padding: 0 8px;
   display: flex; align-items: center; gap: var(--app-space-2); cursor: pointer; font-size: var(--app-font-size-table);
 }
+.ip-trigger--large { height: var(--app-control-height-lg); }
+.ip-trigger--small { height: var(--app-control-height-sm); }
 @media (hover: hover) and (pointer: fine) {
 .ip-trigger:hover:not(.disabled) { border-color: var(--app-border-strong); }
 }

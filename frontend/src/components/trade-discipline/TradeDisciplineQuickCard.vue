@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -186,7 +187,7 @@ async function quickSubmit(): Promise<void> {
           <span class="app-caption-text">交易日 · <time :datetime="quickTradeDate">{{ quickTradeDate }}</time></span>
         </div>
         <p class="quick-confirm-outcome app-body-text">本次将记录为<strong>已履约 · 今日无操作</strong></p>
-        <el-form v-if="pendingRule?.max_positions != null" label-position="top" class="quick-confirm-form">
+        <AppForm v-if="pendingRule?.max_positions != null" label-position="top" class="quick-confirm-form">
           <el-form-item label="当日最大同时持仓数" required>
             <div class="quick-confirm-count">
               <el-input-number
@@ -206,7 +207,7 @@ async function quickSubmit(): Promise<void> {
             <AppFormHelp>无操作也可能有持仓，请填写当日实际峰值；没有持仓填 0。</AppFormHelp>
           </el-form-item>
           <p v-if="countError" class="quick-rule-error" role="alert">{{ countError }}。请进入“去打卡”记录实际情况。</p>
-        </el-form>
+        </AppForm>
         <p v-if="actionErrorRuleId === pendingRule?.rule_id" class="quick-rule-error" role="alert">{{ actionErrorMessage }}</p>
       </div>
       <template #footer>

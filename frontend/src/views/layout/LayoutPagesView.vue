@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import { provideTradeDisciplineCategories, tradeConditionMeta } from '@/composables/useTradeDisciplineCategories'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
@@ -700,7 +701,8 @@ const menuPageTitle = useMenuPageTitle()
                         <div class="section-subtitle">未设置时使用系统默认值。</div>
                       </div>
                     </div>
-                    <el-form label-position="top" class="config-form" :disabled="operationBusy">
+                    <!-- 布局编辑器的局部组件参数跟随页面密度，非一级业务表单。 -->
+                    <AppForm size="default" label-position="top" class="config-form" :disabled="operationBusy">
                       <!-- 页面级旋钮按本页 editable 白名单动态渲染。 -->
                       <el-form-item v-for="knob in selectedPage.layout.editable" :key="knob.path" :label="knob.label">
                         <AppSelect
@@ -734,7 +736,7 @@ const menuPageTitle = useMenuPageTitle()
                       <div v-if="!selectedPage.layout.editable.length" class="inspector-empty">
                         该页面没有可调整的页面级设置
                       </div>
-                    </el-form>
+                    </AppForm>
                   </section>
 
                   <section v-if="selectedPage.supportsComponentConfig" class="inspector-section">

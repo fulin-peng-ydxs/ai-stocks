@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
@@ -648,7 +649,7 @@ const menuPageTitle = useMenuPageTitle()
     <template #overlays>
       <!-- 新建 / 编辑用户 -->
       <AppDialog v-model="dialogVisible" :title="isEdit ? '编辑用户' : '新建用户'" size="large">
-        <el-form label-width="76px">
+        <AppForm label-width="76px">
           <el-form-item label="账号" :required="!isEdit">
             <el-input v-model="form.account" :disabled="isEdit" placeholder="账号唯一，创建后不可改" />
           </el-form-item>
@@ -702,7 +703,7 @@ const menuPageTitle = useMenuPageTitle()
               </el-radio-button>
             </el-radio-group>
           </el-form-item>
-        </el-form>
+        </AppForm>
         <template #footer>
           <el-button @click="dialogVisible = false">取消</el-button>
           <el-button type="primary" :loading="saving" :disabled="!userFormChanged" @click="save">保存</el-button>
@@ -711,7 +712,7 @@ const menuPageTitle = useMenuPageTitle()
 
       <!-- 重置密码 -->
       <AppDialog v-model="resetVisible" title="重置密码" size="compact">
-        <el-form label-width="76px">
+        <AppForm label-width="76px">
           <el-form-item label="账号">
             <span>{{ resetTarget?.account }}</span>
           </el-form-item>
@@ -722,7 +723,7 @@ const menuPageTitle = useMenuPageTitle()
           <el-form-item label="确认" required>
             <el-input v-model="resetForm.confirm" type="password" show-password placeholder="再次输入" />
           </el-form-item>
-        </el-form>
+        </AppForm>
         <template #footer>
           <el-button @click="resetVisible = false">取消</el-button>
           <el-button type="primary" :loading="resetting" @click="confirmReset">重置密码</el-button>

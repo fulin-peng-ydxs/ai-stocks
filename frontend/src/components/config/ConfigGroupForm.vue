@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import { computed } from 'vue'
 import type { SettingField, SettingGroup } from '@/api/data'
@@ -139,7 +140,7 @@ function collapsed(key: string): boolean {
       :default-open="block.defaultOpen && !collapsed(`${group.key}.${block.key}`)"
       :show-description="behavior.showSectionDescription"
     >
-      <el-form class="config-group-form" label-position="top">
+      <AppForm class="config-group-form" label-position="top">
         <el-form-item
           v-for="field in block.fields"
           :key="field.path"
@@ -231,7 +232,7 @@ function collapsed(key: string): boolean {
             </span>
           </div>
         </el-form-item>
-      </el-form>
+      </AppForm>
     </ConfigPanelSection>
   </ConfigPanelSection>
 </template>

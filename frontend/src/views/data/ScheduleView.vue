@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
 import { enumText, businessMessage } from '@/utils/displayText'
 import AppFormHelp from '@/components/AppFormHelp.vue'
@@ -756,7 +757,7 @@ const menuPageTitle = useMenuPageTitle()
 
     <!-- 新建/编辑对话框 -->
     <AppDetailDrawer v-model="dlg" :title="dlgTitle" size="xl" data-testid="schedule-dialog">
-      <el-form label-width="92px">
+      <AppForm label-width="92px">
         <el-form-item label="任务名称" required>
           <el-input
             v-model="form.name"
@@ -924,7 +925,7 @@ const menuPageTitle = useMenuPageTitle()
         <el-form-item label="启用">
           <el-switch v-model="form.enabled" data-testid="schedule-enabled" />
         </el-form-item>
-      </el-form>
+      </AppForm>
       <template #footer>
         <el-button @click="dlg = false">取消</el-button>
         <el-button

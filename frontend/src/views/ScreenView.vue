@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
@@ -839,7 +840,7 @@ const menuPageTitle = useMenuPageTitle()
         </aside>
 
         <!-- 编辑器 -->
-        <section class="editor editor-screen">
+        <AppForm class="editor editor-screen">
           <div class="ed-head app-cluster-md">
             <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
             <AppHoverInfo v-if="curVersion && !isNew" content="点击查看历史版本">
@@ -1077,7 +1078,7 @@ const menuPageTitle = useMenuPageTitle()
             <AppStateBlock v-else-if="result" state="empty" title="当前条件暂无命中" />
             <AppStateBlock v-else state="empty" title="运行后在这里展示筛选结果" />
           </div>
-        </section>
+        </AppForm>
       </div>
     </AppScrollArea>
     </template>

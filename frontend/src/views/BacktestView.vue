@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppForm from '@/components/AppForm.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import AppHoverInfo from '@/components/AppHoverInfo'
@@ -1846,6 +1847,7 @@ const menuPageTitle = useMenuPageTitle()
       shadow="never"
       class="form-card"
     >
+      <AppForm>
       <AppControlRow class="form-row">
         <AppControlItem label="区间">
           <TradeDatePicker v-model="dateStart" placeholder="开始" style="width: 160px" />
@@ -2069,6 +2071,7 @@ const menuPageTitle = useMenuPageTitle()
         本地同步执行，区间数月约 10 秒级；信号质量分析覆盖全市场（耗时稍长）。
         <span v-if="dataMin">数据可用范围 {{ dataMin }} ~ {{ dataMax }}。</span>
       </div>
+      </AppForm>
     </el-card>
 
     <AppScrollArea :as="AppAsyncRegion"
