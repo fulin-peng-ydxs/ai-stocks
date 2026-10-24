@@ -3075,11 +3075,14 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 :global(.indicator-create-mode) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--app-space-3); }
 :global(.indicator-create-mode .el-radio-button) { width: 100%; }
 :global(.indicator-create-mode .el-radio-button__inner) {
-  display: grid;
+  /* 两行创建方式属于选项卡片，显式声明自然高度与卡片内距。 */
+  --app-choice-control-height: auto;
+  --app-choice-padding-block: var(--app-space-3);
+  --app-choice-display: grid;
+  --app-choice-justify: start;
   width: 100%;
-  height: auto;
   min-height: 68px;
-  padding: var(--app-space-3) var(--app-space-4);
+  padding-inline: var(--app-space-4);
   justify-items: start;
   border: 1px solid var(--el-border-color-light) !important;
   border-radius: var(--layout-card-radius) !important;

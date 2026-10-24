@@ -1,12 +1,40 @@
 // @vitest-environment jsdom
 import { mount } from '@vue/test-utils'
 import { defineComponent, reactive } from 'vue'
-import { ElForm, ElFormItem, ElInput } from 'element-plus'
+import { ElForm, ElFormItem, ElInput, ElOption, ElSelect } from 'element-plus'
 import { describe, expect, it } from 'vitest'
 import AppForm from '../AppForm.vue'
 import PageSegmented from '../PageSegmented.vue'
+import AppFilterSelect from '../AppFilterSelect.vue'
 
 describe('一级编辑表单尺寸', () => {
+  it.each([false, true])('复合选择器（multiple=%s）的最终控件继承表单尺寸，显式覆盖仍有效', async (multiple) => {
+    const wrapper = mount(defineComponent({
+      components: { AppForm, ElFormItem, AppFilterSelect },
+      props: ['formSize', 'override', 'multiple'],
+      setup() { return { selection: reactive({ value: multiple ? [] : '' }) } },
+      template: `<AppForm :size="formSize"><ElFormItem label="分类">
+        <AppFilterSelect v-model="selection.value" :multiple="multiple" :size="override"
+          :options="[{label:'分类 A',value:'a'}]" />
+      </ElFormItem></AppForm>`,
+    }), {
+      props: { formSize: 'large', multiple },
+      global: { components: { ElSelect, ElOption } },
+    })
+    const select = wrapper.getComponent(ElSelect)
+    const filter = wrapper.getComponent(AppFilterSelect)
+    expect(select.props('size')).toBe('large')
+    expect(select.classes()).toContain('el-select--large')
+    expect(filter.classes()).toContain('app-filter-select--large')
+    await wrapper.setProps({ formSize: 'small' })
+    expect(select.props('size')).toBe('small')
+    expect(filter.classes()).toContain('app-filter-select--small')
+    await wrapper.setProps({ override: 'default' })
+    expect(select.props('size')).toBe('default')
+    expect(filter.classes()).toContain('app-filter-select--default')
+    wrapper.unmount()
+  })
+
   it('主表单的输入框和嵌套分段默认继承大号，并保留字段写回', async () => {
     const wrapper = mount(defineComponent({
       components: { AppForm, ElFormItem, ElInput, PageSegmented },

@@ -29,6 +29,9 @@ describe('交互呈现的共享尺寸契约', () => {
       ['components/AppFilterSelect.vue', '.app-filter-select__control :deep(.el-select__wrapper)', 'height'],
       ['components/AppIconButton.vue', '.app-icon-button', '--app-icon-button-size'],
       ['components/AppTabToolbar.vue', '.app-tab-toolbar', 'min-height'],
+      ['styles/global.css', 'html[data-layout-preset] .el-radio-button', '--app-choice-control-height'],
+      ['styles/global.css', 'html[data-layout-preset] .el-checkbox-button', '--app-choice-control-height'],
+      ['styles/global.css', 'html[data-layout-preset] .el-segmented:not(.el-segmented--vertical)', '--app-choice-control-height'],
     ]
     for (const [file, selector, property] of consumers) {
       expect(declaration(file, selector, property), `${file} ${selector}`).toBe(inherited)
@@ -45,6 +48,10 @@ describe('交互呈现的共享尺寸契约', () => {
     expect(declaration('components/PageSegmented.vue', `.page-segmented--${size}`, 'height')).toBe(expected)
     expect(declaration('components/AppSelect.vue', `.app-select.el-select--${size}`, '--app-select-control-height')).toBe(expected)
     expect(declaration('components/AppFilterSelect.vue', `.app-filter-select--${size} .app-filter-select__control :deep(.el-select__wrapper)`, 'height')).toBe(expected)
+    for (const kind of ['radio-button', 'checkbox-button', 'segmented']) {
+      const selector = `html[data-layout-preset] .el-${kind}--${size}${kind === 'segmented' ? ':not(.el-segmented--vertical)' : ''}`
+      expect(declaration('styles/global.css', selector, '--app-choice-control-height')).toBe(expected)
+    }
   })
 
   it('选择器适配同时约束库的最小高度，避免高度变量被固定最小值顶回去', () => {
@@ -52,5 +59,18 @@ describe('交互呈现的共享尺寸契约', () => {
       .toBe('var(--app-select-control-height)')
     expect(declaration('components/AppSelect.vue', '.app-select :deep(.el-select__wrapper)', 'padding-block'))
       .toBe('0')
+  })
+
+  it('选择按钮消除库的纵向 padding，库分段同时覆盖固定最小高度，卡片选项保留自然高度', () => {
+    for (const kind of ['radio', 'checkbox']) {
+      const selector = `html[data-layout-preset] .el-${kind}-button__inner`
+      expect(declaration('styles/global.css', selector, 'height')).toBe('var(--app-choice-control-height)')
+      expect(declaration('styles/global.css', selector, 'padding-block')).toBe('var(--app-choice-padding-block, 0)')
+      expect(declaration('styles/global.css', selector, 'font-size')).toBe('var(--app-font-size-table)')
+    }
+    const segmented = 'html[data-layout-preset] .el-segmented:not(.el-segmented--vertical)'
+    expect(declaration('styles/global.css', segmented, 'min-height')).toBe('var(--app-choice-control-height)')
+    expect(declaration('views/ConfigView.vue', ':global(.indicator-create-mode .el-radio-button__inner)', '--app-choice-control-height')).toBe('auto')
+    expect(declaration('views/ConfigView.vue', ':global(.indicator-create-mode .el-radio-button__inner)', '--app-choice-justify')).toBe('start')
   })
 })

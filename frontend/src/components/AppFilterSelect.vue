@@ -2,6 +2,7 @@
 import AppSelect from '@/components/AppSelect.vue'
 import AppMultiSelect, { type AppMultiSelectOption } from '@/components/AppMultiSelect.vue'
 import { computed } from 'vue'
+import { useFormSize } from 'element-plus'
 
 export type AppFilterSelectOption = AppMultiSelectOption
 
@@ -35,10 +36,12 @@ const props = withDefaults(defineProps<{
   allSelectedLabel: '全部选中',
   allowCreate: false,
   defaultFirstOption: false,
-  size: 'default',
   disabled: false,
   ariaLabel: undefined,
 })
+
+// 未指定尺寸时继承表单/全局上下文；不能把默认值写成显式 default 截断继承。
+const controlSize = useFormSize()
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string[] | string): void
@@ -97,7 +100,7 @@ function onChange(value: string[] | string) {
       'app-filter-select--has-selection': multiple && hasSelection,
       'app-filter-select--count': multiple && displayMode === 'count',
       [`app-filter-select--visible-tags-${normalizedVisibleTagCount}`]: multiple && displayMode === 'tags',
-      [`app-filter-select--${size}`]: true,
+      [`app-filter-select--${controlSize || 'default'}`]: true,
     }"
     :data-visible-tag-count="multiple ? normalizedVisibleTagCount : undefined"
     :data-display-mode="multiple ? displayMode : undefined"
@@ -117,7 +120,7 @@ function onChange(value: string[] | string) {
       :collapse-tags-tooltip="multiple && collapseTags"
       :max-collapse-tags="normalizedVisibleTagCount"
       popper-class="app-filter-select-popper"
-      :size="size"
+      :size="controlSize || undefined"
       :disabled="disabled"
       :placeholder="placeholder"
       :aria-label="ariaLabel || placeholder"

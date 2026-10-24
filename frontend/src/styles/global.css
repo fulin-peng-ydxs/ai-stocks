@@ -1348,6 +1348,36 @@ html[data-layout-preset] .el-select__wrapper {
   width: var(--app-control-inline-width) !important;
   min-width: 0;
 }
+/* 库选择控件不能靠原生 padding/min-height 解释尺寸；水平分段共用项目档位。 */
+html[data-layout-preset] .el-radio-button,
+html[data-layout-preset] .el-checkbox-button,
+html[data-layout-preset] .el-segmented:not(.el-segmented--vertical) {
+  --app-choice-control-height: var(--app-density-control-height, var(--app-control-height-md));
+}
+html[data-layout-preset] .el-radio-button--small,
+html[data-layout-preset] .el-checkbox-button--small,
+html[data-layout-preset] .el-segmented--small:not(.el-segmented--vertical) {
+  --app-choice-control-height: var(--app-control-height-sm);
+}
+html[data-layout-preset] .el-radio-button--large,
+html[data-layout-preset] .el-checkbox-button--large,
+html[data-layout-preset] .el-segmented--large:not(.el-segmented--vertical) {
+  --app-choice-control-height: var(--app-control-height-lg);
+}
+html[data-layout-preset] .el-radio-button__inner,
+html[data-layout-preset] .el-checkbox-button__inner {
+  height: var(--app-choice-control-height);
+  padding-block: var(--app-choice-padding-block, 0);
+  display: var(--app-choice-display, inline-flex);
+  align-items: center;
+  justify-content: var(--app-choice-justify, center);
+  font-size: var(--app-font-size-table);
+}
+html[data-layout-preset] .el-segmented:not(.el-segmented--vertical) {
+  height: var(--app-choice-control-height);
+  min-height: var(--app-choice-control-height);
+  font-size: var(--app-font-size-table);
+}
 /* 全站命令按钮契约：业务按钮继续复用 Element Plus，尺寸、字重、图标和状态反馈统一在此收口。 */
 html[data-layout-preset] .el-button {
   height: var(--app-density-control-height, var(--app-control-height-md));
