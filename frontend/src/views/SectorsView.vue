@@ -1613,13 +1613,6 @@ const menuPageTitle = useMenuPageTitle()
 .benchmark-control :deep(.app-filter-select) {
   width: 124px;
 }
-.chart-panel :deep(.market-analysis-header__controls .page-segmented) {
-  white-space: nowrap;
-}
-.chart-panel :deep(.market-analysis-header__controls .seg-btn) {
-  min-width: 52px;
-  font-variant-numeric: tabular-nums;
-}
 .chart-stage {
   position: relative;
   flex: 1 1 auto;

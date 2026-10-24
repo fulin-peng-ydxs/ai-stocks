@@ -3,6 +3,7 @@ import { extname, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { baseParse, type ElementNode, type TemplateChildNode } from '@vue/compiler-dom'
 import { parse as parseSfc } from '@vue/compiler-sfc'
+import postcss from 'postcss'
 
 const SRC_DIR = new URL('../../', import.meta.url)
 
@@ -15,6 +16,48 @@ function vueFiles(dir: URL): URL[] {
 }
 
 describe('PageSegmented 消费契约', () => {
+  it('消费端只控制分段组排列，不覆盖共享尺寸、内部选项或视觉变量', () => {
+    const violations: string[] = []
+    for (const file of vueFiles(SRC_DIR)) {
+      if (file.pathname.endsWith('/PageSegmented.vue')) continue
+      const { descriptor } = parseSfc(readFileSync(file, 'utf8'))
+      const classes = new Set(['page-segmented', 'seg-btn', 'seg-label', 'seg-indicator'])
+      // 同时追踪直接挂在组件上的业务 class，避免只检查共享类而漏掉根节点覆盖。
+      const inspect = (node: TemplateChildNode) => {
+        if (node.type !== 1) return
+        if (node.tag === 'PageSegmented') {
+          for (const prop of node.props) {
+            if (prop.type === 6 && prop.name === 'class') {
+              prop.value?.content.split(/\s+/).filter(Boolean).forEach(name => classes.add(name))
+            }
+          }
+        }
+        node.children.forEach(inspect)
+      }
+      if (descriptor.template) baseParse(descriptor.template.content).children.forEach(inspect)
+      for (const style of descriptor.styles) {
+        postcss.parse(style.content).walkRules(rule => {
+          const selectorClasses = Array.from(rule.selector.matchAll(/\.([\w-]+)/g), match => match[1])
+          if (!selectorClasses.some(name => classes.has(name))) return
+          const internal = selectorClasses.some(name =>
+            ['seg-btn', 'seg-label', 'seg-indicator'].includes(name),
+          )
+          rule.walkDecls(decl => {
+            const privateSize = /^(?:min-|max-)?(?:height|block-size)$/.test(decl.prop)
+            const privateAppearance = /^(?:padding|font|border|background)(?:-|$)/.test(decl.prop)
+              || /^(?:gap|row-gap|column-gap|line-height|color|box-shadow)$/.test(decl.prop)
+              || /^--(?:app|page-settings)-/.test(decl.prop)
+            if (internal || privateSize || privateAppearance) {
+              const line = style.loc.start.line + (decl.source?.start?.line ?? 1) - 1
+              violations.push(`${relative(SRC_DIR.pathname, file.pathname)}:${line}: ${decl.prop}`)
+            }
+          })
+        })
+      }
+    }
+    expect(violations).toEqual([])
+  })
+
   it('工具栏继承共同密度，表单与设置中的枚举选择保持中性', () => {
     const violations: string[] = []
     const attr = (node: ElementNode, name: string) => node.props.find(

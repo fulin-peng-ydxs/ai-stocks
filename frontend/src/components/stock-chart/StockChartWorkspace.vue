@@ -1443,14 +1443,6 @@ onBeforeUnmount(() => {
 .stock-chart-period-switch {
   flex: 0 0 auto;
   width: auto;
-  height: var(--app-control-height-xs);
-  padding: 0;
-  --app-segment-gap: var(--app-space-3);
-}
-
-.stock-chart-period-switch :deep(.seg-btn) {
-  min-width: 32px;
-  padding-inline: var(--app-space-1);
 }
 
 .stock-chart-metric-rail {
@@ -1525,16 +1517,6 @@ onBeforeUnmount(() => {
   .stock-chart-metric-rail :deep(.stock-chart-legend) {
     gap: var(--app-space-2);
   }
-
-  .stock-chart-period-switch :deep(.seg-btn) {
-    min-width: 28px;
-    padding-inline: var(--app-space-control-gap);
-  }
-
-  .stock-chart-period-switch {
-    --app-segment-gap: var(--app-space-control-gap);
-  }
-
 }
 
 @container app-viewport (max-width: 400px) {
