@@ -88,6 +88,29 @@ def _reap_dead(client, keys):
 
 
 @contextmanager
+def session_lock(lock, group):
+    """来源本机会话等待同样有界可取消；继续保留 SDK 的整段串行约束。"""
+    from backend.datasource.base import check_thread_cancel
+    from backend.datasource.request_policy import request_policy
+
+    deadline = time.monotonic() + request_policy(group).wait_timeout
+    acquired = False
+    try:
+        with work_state("source_wait"):
+            while not acquired:
+                check_thread_cancel()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise SourceRequestError(f"{group} 等待本机会话超时")
+                acquired = lock.acquire(timeout=min(0.1, remaining))
+            check_thread_cancel()
+        yield
+    finally:
+        if acquired:
+            lock.release()
+
+
+@contextmanager
 def request_slot(group, policy, *, client=None, check=None):
     """只覆盖网络实际占用；额度等待不占网络槽，取消/失败均释放本请求所有权。"""
     from backend.datasource.request_policy import pause, request_policy

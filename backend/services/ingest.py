@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import threading
 from bisect import bisect_left
+from contextlib import nullcontext
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -34,6 +35,7 @@ from backend.datasource.base import (
     get_source,
     thread_cancel_scope,
 )
+from backend.datasource.request_runtime import session_lock
 from backend.limit_ladder.rules import (
     PointInTimeSTStatus,
     STStatusQuality,
@@ -463,8 +465,8 @@ class IngestionService:
         if ctx:
             ctx.log(f"{code} 补采 ST/逐日交易状态 {start}~{end}（{st_source.name}）")
             ctx.flush()
-        lock = _BAO_FALLBACK_LOCK if st_source.name == "baostock" else threading.Lock()
-        with lock, thread_cancel_scope(ctx.check_cancel if ctx else None):
+        lock = session_lock(_BAO_FALLBACK_LOCK, "baostock") if st_source.name == "baostock" else nullcontext()
+        with thread_cancel_scope(ctx.check_cancel if ctx else None), lock:
             rows = st_source.get_st_status(code, start, end)
         return st_source, rows
 
@@ -496,8 +498,8 @@ class IngestionService:
         """
         primary_error = None
         try:
-            lock = _BAO_FALLBACK_LOCK if primary.name == "baostock" else threading.Lock()
-            with lock:
+            lock = session_lock(_BAO_FALLBACK_LOCK, "baostock") if primary.name == "baostock" else nullcontext()
+            with thread_cancel_scope(ctx.check_cancel if ctx else None), lock:
                 df = primary.get_daily_bar(code, start, end)
         except DataSourceError as e:
             primary_error = e
@@ -520,7 +522,7 @@ class IngestionService:
                 ctx.log(msg, "error")
                 ctx.flush()
             raise DataSourceError(msg)
-        with _BAO_FALLBACK_LOCK:   # baostock 会话型，进程内串行
+        with thread_cancel_scope(ctx.check_cancel if ctx else None), session_lock(_BAO_FALLBACK_LOCK, "baostock"):
             try:
                 if ctx:
                     ctx.log(f"{code} 主源无数据，开始请求兜底源 {bao.name}（{start}~{end}）", "warn")
@@ -550,7 +552,7 @@ class IngestionService:
         local = local[["trade_date", "close"]].copy()
         local["trade_date"] = pd.to_datetime(local["trade_date"]).dt.date
         try:
-            with _BAO_FALLBACK_LOCK:
+            with session_lock(_BAO_FALLBACK_LOCK, "baostock"):
                 reference = backup.get_daily_bar(
                     code, local.trade_date.min(), local.trade_date.max()
                 )
@@ -3254,7 +3256,7 @@ class IngestionService:
             lo, hi = pd.to_datetime(local.trade_date).dt.date.iloc[[0, -1]]
             try:
                 source = self._bao_source()
-                with _BAO_FALLBACK_LOCK:
+                with session_lock(_BAO_FALLBACK_LOCK, "baostock"):
                     reference = source.get_daily_bar(code, lo, hi)
                 if reference is None or reference.empty:
                     raise DataSourceError("参考价来源为空")

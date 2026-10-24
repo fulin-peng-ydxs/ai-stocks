@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import re
+import threading
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -21,6 +22,7 @@ from backend.config.source_registry import SOURCE_GROUPS
 
 _DEFAULT_TIMEOUT_GETTER = None
 _HTTP_SEND = None
+_INSTALL_LOCK = threading.RLock()
 
 
 @dataclass(frozen=True)
@@ -193,7 +195,7 @@ def prepare_http(url: str, kwargs: dict):
         return
     scope = _HTTP_SCOPE.get()
     if scope is not None and scope[0] == group:
-        # 分时编排已经在源调用前限流，真实请求只补充相同快照的超时。
+        # 分时编排传递策略快照；真实请求仍在发送层统一准入。
         policy = scope[1]
     else:
 
@@ -203,6 +205,12 @@ def prepare_http(url: str, kwargs: dict):
 
 
 def install_http_policy(default_timeout=None):
+    """冷启动的并发取源也只安装一次，避免把发送包装器再次当成底层发送函数。"""
+    with _INSTALL_LOCK:
+        _install_http_policy(default_timeout)
+
+
+def _install_http_policy(default_timeout=None):
     """统一安装一次发送拦截；适配器只提供默认超时兼容入口，不各自包装requests。"""
     import requests
 

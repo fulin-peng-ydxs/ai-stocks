@@ -367,7 +367,7 @@ class AKShareSource(DataSource):
         return out.reset_index(drop=True)
 
     # ── 日线（新浪：不复权 + 后复权 → 现算复权因子）──
-    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
+    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec, source_group="sina")
     @rate_limited(_MIN_INTERVAL)
     def _sina_daily(self, code6: str, start: date, end: date, adjust: str) -> pd.DataFrame:
         # 请求超时已由模块级 _install_default_requests_timeout 全局注入，
@@ -383,7 +383,7 @@ class AKShareSource(DataSource):
             f"{code6} sina日线",
         )
 
-    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
+    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec, source_group="sina")
     def _sina_daily_pair(
         self, code6: str, start: date, end: date
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -511,7 +511,7 @@ class AKShareSource(DataSource):
         return out
 
     # ── 每日估值/市值（东财 stock_value_em，含总市值/总股本）──
-    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
+    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec, source_group="eastmoney")
     @rate_limited(_MIN_INTERVAL)
     def get_valuation(self, code: str, start: date, end: date) -> pd.DataFrame:
         """每日总市值/总股本/流通市值/流通股本。
@@ -547,7 +547,7 @@ class AKShareSource(DataSource):
             }
         ).reset_index(drop=True)
 
-    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
+    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec, source_group="eastmoney")
     @rate_limited(_MIN_INTERVAL)
     def get_share_capital(self, code: str, dates) -> pd.DataFrame:
         """完整股本变动分页按变动日期展开，公告日期保留用于溯源。"""
@@ -557,7 +557,7 @@ class AKShareSource(DataSource):
         self._last_share_events = (code, events)
         return expand_equity_events(code, events, dates)
 
-    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
+    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec, source_group="sina")
     @rate_limited(_MIN_INTERVAL)
     def get_float_share_history(self, code: str, dates) -> pd.DataFrame:
         """仅补流通股本缺口，不重采完整行情。"""
@@ -565,7 +565,7 @@ class AKShareSource(DataSource):
 
         return fetch_sina_float_shares(code, dates, timeout=self._share_timeout_sec)
 
-    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
+    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec, source_group="sina")
     @rate_limited(_MIN_INTERVAL)
     def get_share_capital_fallback(self, code: str, dates) -> pd.DataFrame:
         """独立历史股本源补缺，沿用同一变动日期口径。"""
@@ -602,7 +602,7 @@ class AKShareSource(DataSource):
         )
 
     # ── 指数日线（新浪）──
-    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
+    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec, source_group="sina")
     @rate_limited(_MIN_INTERVAL)
     def get_index_bar(self, index_code: str, start: date, end: date) -> pd.DataFrame:
         # 指数代码带后缀（'000905.SH'）→ 新浪 symbol 'sh000905'
@@ -629,7 +629,7 @@ class AKShareSource(DataSource):
         return out.reset_index(drop=True)
 
     # ── 交易日历（新浪：仅列交易日 → is_open=True）──
-    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
+    @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec, source_group="sina")
     @rate_limited(_MIN_INTERVAL)
     def get_trade_calendar(self, start: date, end: date) -> pd.DataFrame:
         df = ak.tool_trade_date_hist_sina()

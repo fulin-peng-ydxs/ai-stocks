@@ -67,6 +67,10 @@ def _cancel_aware_sleep(seconds: float) -> None:
 @contextmanager
 def thread_cancel_scope(check):
     """仅在当前工作线程绑定取消检查器，退出时恢复原值，避免污染共享数据源实例。"""
+    # 未提供新上下文的适配器必须继承外层任务，不能清掉编排线程已有的取消信号。
+    if check is None:
+        yield
+        return
     previous = getattr(_CANCEL_LOCAL, "check", None)
     _CANCEL_LOCAL.check = check
     try:
@@ -121,12 +125,14 @@ def rate_limited(min_interval_sec: float, *, start_to_start: bool = False) -> Ca
     return deco
 
 
-def with_retry(max_retries: int = 3, backoff_sec: float = 2.0) -> Callable:
+def with_retry(
+    max_retries: int = 3, backoff_sec: float = 2.0, *, source_group: str | None = None,
+) -> Callable:
     """失败重试 + 指数退避；最终失败抛 DataSourceError。
 
-    次数/退避取值优先级：实例属性 `self._max_retries` / `self._retry_backoff_sec`
-    （运行时按生效配置注入，见各源 __init__）> 装饰器入参（导入期默认兜底）。这样前端
-    改「重试次数 / 退避」后，新建的数据源实例即按新值重试，无需重启进程（与 rate_limited 同款）。
+    行情操作按实际来源解析当前策略，单次操作固定次数和退避，嵌套调用共享预算；
+    跨来源聚合使用通用语义预算，物理请求各自受来源上限保护。其它消费者依次取
+    实例属性与装饰器入参，不改变已有非行情重试规则。
     """
 
     def deco(fn: Callable) -> Callable:
@@ -141,9 +147,11 @@ def with_retry(max_retries: int = 3, backoff_sec: float = 2.0) -> Callable:
             backoff = getattr(self, "_retry_backoff_sec", None)
             if backoff is None:
                 backoff = backoff_sec
-            if getattr(self, "name", None) in {"akshare", "baostock"}:
+            if source_group or getattr(self, "name", None) in {"akshare", "baostock"}:
                 from backend.datasource.request_policy import request_policy
-                policy = request_policy(self.name)
+                # AKShare 是接入器；语义失败的重取次数也必须跟随实际网站覆盖。
+                # 多网站聚合操作仍用通用语义预算，各物理 URL 分别受来源总预算约束。
+                policy = request_policy(source_group or self.name)
                 retries, backoff = policy.attempts, policy.backoff
             last_err: Exception | None = None
             for attempt in range(1, retries + 1):

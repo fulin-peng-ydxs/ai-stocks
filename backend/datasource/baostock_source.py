@@ -22,7 +22,8 @@ import pandas as pd
 from backend.common.exceptions import DataSourceError
 from backend.common.logging import get_logger
 from backend.common.timeutil import fmt_date, to_date
-from backend.config import get_effective_settings, get_settings
+from backend.config import get_settings
+from backend.config.request_snapshot import get_request_settings as get_effective_settings
 from backend.datasource.akshare_source import classify_board
 from backend.datasource.base import DataSource, rate_limited, with_retry
 
@@ -249,29 +250,26 @@ class BaostockSource(DataSource):
         """
         from backend.datasource.base import check_thread_cancel
         from backend.datasource.request_policy import request_policy
-        from backend.datasource.request_runtime import request_slot
+        from backend.datasource.request_runtime import request_slot, session_lock
 
         # 锁覆盖登录、查询、游标读取及断线清理；探活也必须遵守，不能只靠采集调用方加锁。
-        while not _SESSION_LOCK.acquire(timeout=0.1):
-            check_thread_cancel()
-        try:
-            policy = request_policy("baostock")
-            self._socket_timeout_sec = policy.timeout
-            self._login_timeout_sec = get_effective_settings().datasource.baostock_login_timeout_sec
-            current = (policy.timeout, self._login_timeout_sec)
-            if current != self._hang_policy:
-                self._hang_break_sec = max(max(policy.timeout, _HANG_MIN_SOCKET_TIMEOUT_SEC)
-                                           * _HANG_BREAK_FACTOR,
-                                           self._login_timeout_sec + policy.timeout)
-                self._hang_policy = current
-            with request_slot("baostock", policy, check=check_thread_cancel), self._hang_guard(self._hang_break_sec):
-                self._ensure_login()
-                return _collect(query())
-        except Exception:
-            self._invalidate_login()
-            raise
-        finally:
-            _SESSION_LOCK.release()
+        with session_lock(_SESSION_LOCK, "baostock"):
+            try:
+                policy = request_policy("baostock")
+                self._socket_timeout_sec = policy.timeout
+                self._login_timeout_sec = get_effective_settings().datasource.baostock_login_timeout_sec
+                current = (policy.timeout, self._login_timeout_sec)
+                if current != self._hang_policy:
+                    self._hang_break_sec = max(max(policy.timeout, _HANG_MIN_SOCKET_TIMEOUT_SEC)
+                                               * _HANG_BREAK_FACTOR,
+                                               self._login_timeout_sec + policy.timeout)
+                    self._hang_policy = current
+                with request_slot("baostock", policy, check=check_thread_cancel), self._hang_guard(self._hang_break_sec):
+                    self._ensure_login()
+                    return _collect(query())
+            except Exception:
+                self._invalidate_login()
+                raise
 
     def close(self) -> None:
         with _SESSION_LOCK:

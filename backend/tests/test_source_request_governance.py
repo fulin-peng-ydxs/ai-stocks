@@ -148,6 +148,157 @@ def test_source_overrides_and_session_hard_limit():
         Settings.model_validate({"datasource": {"sources": {"unknown": {"max_retries": 2}}}})
 
 
+def test_actual_source_override_also_controls_sdk_semantic_retries(monkeypatch):
+    from backend.datasource import base, share_capital
+    from backend.datasource.akshare_source import AKShareSource
+
+    settings = Settings()
+    settings.datasource.max_retries = 1
+    settings.datasource.sources["eastmoney"] = SourceRequestOverrides(
+        max_retries=4,
+        retry_backoff_sec=0,
+    )
+    monkeypatch.setattr(rp, "get_effective_settings", lambda: settings)
+    waits, calls = [], []
+    monkeypatch.setattr(base, "_cancel_aware_sleep", waits.append)
+
+    def fetch(*args, **kwargs):
+        calls.append(1)
+        if len(calls) < 4:
+            raise ValueError("源响应字段尚未就绪")
+        return pd.DataFrame()
+
+    monkeypatch.setattr(share_capital, "fetch_daily_valuation", fetch)
+    source = AKShareSource.__new__(AKShareSource)
+    source._share_timeout_sec = 1
+    from datetime import date
+
+    assert source.get_valuation("600000.SH", date(2026, 10, 22), date(2026, 10, 23)).empty
+    assert len(calls) == 4 and waits == [0, 0, 0]
+
+
+def test_nested_missing_context_preserves_cancellation_and_session_wait_is_bounded(monkeypatch):
+    import threading
+    from dataclasses import replace
+
+    from backend.datasource.base import check_thread_cancel, thread_cancel_scope
+
+    def cancel():
+        raise TaskCancelled()
+
+    with thread_cancel_scope(cancel), thread_cancel_scope(None), pytest.raises(TaskCancelled):
+        check_thread_cancel()
+    policy = replace(rp.RequestPolicy(5, 30, 1, 0), wait_timeout=0.01)
+    monkeypatch.setattr(rp, "request_policy", lambda *_: policy)
+    lock = threading.Lock()
+    lock.acquire()
+    try:
+        with pytest.raises(Exception, match="本机会话超时"), rt.session_lock(lock, "baostock"):
+            pytest.fail("不能越过已有会话")
+        with (
+            thread_cancel_scope(cancel),
+            pytest.raises(TaskCancelled),
+            rt.session_lock(lock, "baostock"),
+        ):
+            pytest.fail("等待会话时必须可取消")
+        assert lock.locked()
+    finally:
+        lock.release()
+    with (
+        thread_cancel_scope(cancel),
+        pytest.raises(TaskCancelled),
+        rt.session_lock(lock, "baostock"),
+    ):
+        pass
+    assert not lock.locked()
+
+
+def test_st_fallback_binds_explicit_cancel_context_before_waiting_for_session(monkeypatch):
+    from dataclasses import replace
+
+    from backend.services import ingest
+
+    monkeypatch.setattr(
+        rp,
+        "request_policy",
+        lambda *_: replace(
+            rp.RequestPolicy(5, 30, 1, 0),
+            wait_timeout=0.01,
+        ),
+    )
+    service = ingest.IngestionService.__new__(ingest.IngestionService)
+    source = type("Source", (), {"name": "baostock"})()
+    monkeypatch.setattr(service, "_source_for", lambda *_: source)
+
+    class Context:
+        def check_cancel(self):
+            raise TaskCancelled()
+
+        def log(self, *args):
+            pass
+
+        def flush(self):
+            pass
+
+    ingest._BAO_FALLBACK_LOCK.acquire()
+    try:
+        with pytest.raises(TaskCancelled):
+            service._fetch_st_status_rows("600000.SH", None, None, ctx=Context())
+    finally:
+        ingest._BAO_FALLBACK_LOCK.release()
+
+
+def test_baostock_repeated_queries_do_not_reload_full_configuration(monkeypatch):
+    from backend.config import request_snapshot as cache
+    from backend.datasource import baostock_source as bao
+    from backend.storage.app_config import AppConfigRepo
+
+    reads = []
+    monkeypatch.setattr(cache, "_settings", None)
+    monkeypatch.setattr(cache, "_checked", 0)
+    monkeypatch.setattr(cache, "_loaded", 0)
+    monkeypatch.setattr(cache, "_notification", None)
+    monkeypatch.setattr(cache, "_status", {"version": "", "degraded": False})
+    monkeypatch.setattr(cache, "_redis", lambda: type("Version", (), {"get": lambda *_: "v1"})())
+    monkeypatch.setattr(AppConfigRepo, "get_overrides", lambda *_: reads.append(1) or {})
+    source = bao.BaostockSource()
+    monkeypatch.setattr(source, "_ensure_login", lambda: None)
+
+    @contextmanager
+    def guard(*args, **kwargs):
+        yield
+
+    monkeypatch.setattr(source, "_hang_guard", guard)
+    monkeypatch.setattr(rt, "request_slot", guard)
+    monkeypatch.setattr(bao, "_collect", lambda value: value)
+    for _ in range(3):
+        assert source._query_frame(lambda: pd.DataFrame({"value": [1]})).iloc[0, 0] == 1
+    assert len(reads) == 1
+
+
+def test_cold_parallel_http_install_keeps_one_transport_layer():
+    import subprocess
+    import sys
+
+    script = """
+from concurrent.futures import ThreadPoolExecutor
+import threading
+import requests
+from backend.datasource import request_policy as rp
+original = requests.adapters.HTTPAdapter.send
+barrier = threading.Barrier(8)
+def install(_):
+    barrier.wait()
+    rp.install_http_policy()
+with ThreadPoolExecutor(max_workers=8) as pool:
+    list(pool.map(install, range(8)))
+assert rp._HTTP_SEND is original
+assert requests.adapters.HTTPAdapter.send is not original
+assert requests.sessions.Session._ai_stocks_timeout_patched
+"""
+    subprocess.run([sys.executable, "-c", script], check=True, timeout=15)
+
+
 def test_ready_batch_committed_before_checkpoints_and_bounded_to_window():
     committed, completed, sizes = [], [], []
 
