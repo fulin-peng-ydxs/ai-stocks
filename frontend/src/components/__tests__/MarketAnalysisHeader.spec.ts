@@ -16,6 +16,7 @@ describe('MarketAnalysisHeader', () => {
       },
       slots: {
         description: '<span>区间走势说明</span>',
+        summary: '<div>开盘 12.00</div>',
         controls: '<button class="test-control">切换模式</button>',
       },
       global: { plugins: [ElementPlus] },
@@ -25,6 +26,7 @@ describe('MarketAnalysisHeader', () => {
     expect(wrapper.text()).toContain('000001.SZ')
     expect(wrapper.get('.market-analysis-header__description').text()).toBe('区间走势说明')
     expect(wrapper.get('.market-analysis-header__controls').text()).toBe('切换模式')
+    expect(wrapper.get('.market-analysis-header__summary').text()).toBe('开盘 12.00')
     await wrapper.get('[data-testid="analysis-detail"]').trigger('click')
     expect(wrapper.emitted('openDetail')).toHaveLength(1)
   })

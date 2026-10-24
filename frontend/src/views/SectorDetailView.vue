@@ -33,6 +33,8 @@ import MarketDetailHero from '@/components/MarketDetailHero.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
+import StockQuoteSummary from '@/components/stock-chart/StockQuoteSummary.vue'
+import { useKlineHeaderQuote } from '@/composables/useKlineHeaderQuote'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import {
   klineRangeQueryStart,
@@ -182,6 +184,10 @@ const detailLoading = ref(false)
 const detailError = ref('')
 const forbidden = ref(false)
 const bars = ref<Bar[]>([])
+const {
+  activeBar: chartActiveBar, supplement: chartMeasurementSummary,
+  quoteWindow: chartQuoteWindow, summary: headerSummary, widths: headerQuoteWidths,
+} = useKlineHeaderQuote(bars, () => `${code.value}:${chartPreferences.klinePeriod.value}`)
 const warmupBars = ref<Bar[]>([])
 const indicators = ref<IndicatorRow[]>([])
 const indicatorPeriod = ref<KlinePeriod>('day')
@@ -498,7 +504,18 @@ onMounted(async () => {
           :title="detail?.name || code"
           :code="code"
           subtitle="指数趋势与历史成员强弱联动观察"
+          aside-align="start"
         >
+          <template #summary>
+            <StockQuoteSummary
+              v-if="headerSummary"
+              :summary="headerSummary"
+              :widths="headerQuoteWidths"
+              column-gap="relaxed"
+              data-testid="sector-detail-header-quote"
+            />
+            <span v-else class="app-caption-text">{{ chartLoading ? '行情摘要加载中…' : '行情摘要暂不可用' }}</span>
+          </template>
           <template #badges>
             <span v-if="detail" class="sector-type">
               {{ detail.board_type === 'concept' ? '概念板块' : '行业板块' }}
@@ -595,6 +612,10 @@ onMounted(async () => {
                   :zoom-end="100"
                   fit-available-height
                   aria-label="板块指数 K 线与量能联动工作区"
+                  :show-kline-tooltip="false"
+                  @active-bar-change="chartActiveBar = $event"
+                  @measurement-summary-change="chartMeasurementSummary = $event"
+                  @quote-window-change="chartQuoteWindow = $event"
                   enable-return-measurement
                   enable-kline-period-switch
                   v-model:return-measurement-mode="chartPreferences.returnMeasurementMode.value"

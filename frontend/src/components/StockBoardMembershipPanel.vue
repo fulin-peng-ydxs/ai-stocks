@@ -31,16 +31,6 @@ function isWinner(type: 'industry' | 'concept', item: BoardMembershipItem): bool
   return item.board_code === winnerCode(type)
 }
 
-const concepts = computed(() => {
-  const items = props.membership?.concepts ?? []
-  const winner = winnerCode('concept')
-  if (!winner) return items
-
-  const winnerIndex = items.findIndex((item) => item.board_code === winner)
-  if (winnerIndex <= 0) return items
-  return [items[winnerIndex]!, ...items.slice(0, winnerIndex), ...items.slice(winnerIndex + 1)]
-})
-
 const relatedIndustry = computed<BoardMembershipItem | null>(() => {
   const code = winnerCode('industry')
   if (!code) return null
@@ -52,26 +42,23 @@ const relatedIndustry = computed<BoardMembershipItem | null>(() => {
     : null
 })
 
+// 冠军优先，其他板块保留接口顺序；跨类型去重，避免冠军重复出现。
+const boards = computed(() => {
+  const items = [
+    ...(relatedIndustry.value ? [relatedIndustry.value] : []),
+    ...(props.membership?.concepts ?? []).filter((item) => isWinner('concept', item)),
+    ...(props.membership?.industries ?? []),
+    ...(props.membership?.concepts ?? []),
+  ]
+  return [...new Map(items.map((item) => [item.board_code, item])).values()]
+})
+
 </script>
 
 <template>
   <el-card shadow="never" class="stock-board-membership" data-testid="stock-board-membership-card">
     <template #header>
-      <div class="stock-board-membership__head">
-        <span>所属板块</span>
-        <MarketBoardTag
-          v-if="relatedIndustry"
-          :name="relatedIndustry.name"
-          :pct-chg="relatedIndustry.pct_chg"
-          related
-          :show-related-label="false"
-          :to="canNavigate
-            ? sectorDetailLocation(relatedIndustry.board_code, returnPath)
-            : undefined"
-          class="stock-board-membership__featured"
-          data-testid="stock-board-related-industry"
-        />
-      </div>
+      <span>所属板块</span>
     </template>
 
     <AppAsyncRegion
@@ -86,18 +73,19 @@ const relatedIndustry = computed<BoardMembershipItem | null>(() => {
       @retry="emit('retry')"
     >
       <div class="stock-board-membership__body">
-        <div v-if="concepts.length" class="stock-board-membership__grid">
+        <div v-if="boards.length" class="stock-board-membership__grid">
           <MarketBoardTag
-            v-for="item in concepts"
+            v-for="item in boards"
             :key="item.board_code"
             :name="item.name"
             :pct-chg="item.pct_chg"
-            :related="isWinner('concept', item)"
+            :related="isWinner(item.board_type, item)"
             :to="canNavigate ? sectorDetailLocation(item.board_code, returnPath) : undefined"
-            :data-testid="`stock-board-${item.board_code}`"
+            :data-testid="isWinner('industry', item)
+              ? 'stock-board-related-industry' : `stock-board-${item.board_code}`"
           />
         </div>
-        <span v-else class="stock-board-membership__empty">暂无其他板块</span>
+        <span v-else class="stock-board-membership__empty">暂无所属板块</span>
       </div>
     </AppAsyncRegion>
   </el-card>
@@ -108,23 +96,12 @@ const relatedIndustry = computed<BoardMembershipItem | null>(() => {
   flex: 0 0 auto;
 }
 
-.stock-board-membership__head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: var(--app-space-2);
-}
-
-.stock-board-membership__featured {
-  margin-left: auto;
-}
-
 .stock-board-membership__grid {
   display: flex;
-  align-items: center;
   flex-wrap: wrap;
-  gap: var(--app-space-2);
+  align-items: stretch;
+  gap: var(--app-space-3) var(--app-space-2);
+  padding-top: var(--app-space-2);
 }
 
 .stock-board-membership__empty {

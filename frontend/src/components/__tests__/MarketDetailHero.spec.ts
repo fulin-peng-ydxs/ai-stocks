@@ -119,7 +119,7 @@ describe('StockQuoteSummary', () => {
     expect(wrapper.get('.stock-quote-summary__supplement-details').text()).toContain('19个交易日')
   })
 
-  it('悬浮摘要第三分区保持日期表头与正文列数一致', () => {
+  it('悬浮摘要日期表头与正文列数一致，测算单列底行', () => {
     const html = stockQuoteSummaryHtml({
       time: '2026-09-18',
       hero: { label: '', value: '10.20' },
@@ -141,18 +141,16 @@ describe('StockQuoteSummary', () => {
       border: '#ddd',
     })
 
-    expect(html).toContain('colspan="5"')
     const container = document.createElement('div')
     container.innerHTML = html
-    const firstRowCells = container.querySelectorAll('tbody tr:first-child td')
-    const valueBeforeSeparator = firstRowCells[2]
-    const supplement = firstRowCells[3]
-    expect(valueBeforeSeparator?.textContent).toBe('5')
-    expect(valueBeforeSeparator?.getAttribute('style'))
-      .toContain('padding:0 calc(var(--stock-quote-section-gap) * var(--app-display-scale, 1)) 0')
-    expect(supplement?.getAttribute('style'))
-      .toContain('padding:0 0 0 calc(var(--stock-quote-section-gap) * var(--app-display-scale, 1))')
-    expect(supplement?.querySelectorAll('[style*="padding-left"]')).toHaveLength(0)
+    const headerCells = container.querySelectorAll('thead tr > *')
+    const headerColumns = [...headerCells].reduce((sum, cell) =>
+      sum + Number(cell.getAttribute('colspan') ?? 1), 0)
+    expect(headerColumns).toBe(container.querySelectorAll('tbody tr:first-child > *').length)
+    const supplement = container.querySelector('table + div')
+    expect(supplement?.textContent).toContain('区间涨跌+9.06%19个交易日')
+    expect(supplement?.getAttribute('style')).toContain('border-top:1px solid #ddd')
+
   })
 })
 
@@ -182,58 +180,45 @@ describe('StockBoardMembershipPanel', () => {
     },
   }
 
-  it('标题旁只展示最相关行业值，正文直接展示概念标签', () => {
+  it('相关行业和概念置前，卡片同时保留方向、标识与板块名称', () => {
     const wrapper = mount(StockBoardMembershipPanel, {
       props: { membership, canNavigate: false },
       global: {
-        stubs: {
-          ElCard: ElCardStub,
-          ElTag: ElTagStub,
-          AppStateBlock: true,
-          RouterLink: RouterLinkStub,
-        },
+        stubs: { ElCard: ElCardStub, AppStateBlock: true, RouterLink: RouterLinkStub },
         directives: { loading: {} },
       },
     })
-
-    expect(wrapper.text()).not.toContain('所属行业')
-    expect(wrapper.text()).not.toContain('所属概念')
-    expect(wrapper.text()).toContain('+2.00%')
-    expect(wrapper.text()).toContain('-1.50%')
-    const industry = wrapper.get('[data-testid="stock-board-related-industry"]')
-    expect(industry.classes()).toContain('stock-board-membership__featured')
-    expect(industry.get('.market-board-tag').classes()).toContain('is-related')
-    expect(industry.find('.market-board-tag__badge').exists()).toBe(false)
-    expect(industry.text()).not.toContain('最相关')
-    expect(wrapper.get('[data-testid="stock-board-301001"] .market-board-tag__badge').text())
-      .toBe('最相关')
-    expect(wrapper.get('.stock-board-membership__grid')
-      .findAll('.market-board-tag__link')
-      .map((tag) => tag.attributes('data-testid')))
-      .toEqual(['stock-board-301001', 'stock-board-301002', 'stock-board-301003'])
-    expect(industry.getComponent(ElTagStub).props()).toMatchObject({
-      size: 'default',
-      effect: 'plain',
-    })
+    expect(wrapper.get('header').text()).toBe('所属板块')
+    const cards = wrapper.get('.stock-board-membership__grid').findAll('.market-board-tag')
+    expect(cards.map((card) => card.attributes('data-testid'))).toEqual([
+      'stock-board-related-industry', 'stock-board-301001', 'stock-board-301002', 'stock-board-301003',
+    ])
+    expect(cards[0]!.classes()).toContain('is-up')
+    expect(cards[1]!.classes()).toContain('is-down')
+    expect(cards.slice(0, 2).every((card) => card.text().includes('走势最相关'))).toBe(true)
+    expect(cards[1]!.text()).toContain('-1.50%')
+    expect(wrapper.findAll('.market-board-tag.is-related')).toHaveLength(2)
+    expect(wrapper.findAll('a')).toHaveLength(0)
   })
 
-  it('概念标签按内容自然换行而不增加分组标题', () => {
+  it('相关性不可用时保留全部所属行业和概念，缺少行情不标成涨跌', () => {
     const wrapper = mount(StockBoardMembershipPanel, {
-      props: { membership },
+      props: { membership: {
+        ...membership, related_boards: null,
+        industries: [{ ...membership.industries[0]!, pct_chg: null }],
+      } },
       global: {
-        stubs: {
-          ElCard: ElCardStub,
-          ElTag: ElTagStub,
-          AppStateBlock: true,
-          RouterLink: RouterLinkStub,
-        },
+        stubs: { ElCard: ElCardStub, AppStateBlock: true, RouterLink: RouterLinkStub },
         directives: { loading: {} },
       },
     })
-
-    expect(wrapper.text()).not.toContain('所属行业')
-    expect(wrapper.text()).not.toContain('所属概念')
-    expect(wrapper.find('.stock-board-membership__grid').exists()).toBe(true)
+    const cards = wrapper.findAll('.market-board-tag')
+    expect(cards).toHaveLength(4)
+    expect(cards[0]!.text()).toContain('银行')
+    expect(cards[0]!.text()).toContain('—')
+    expect(cards[0]!.classes()).not.toContain('is-up')
+    expect(cards[0]!.classes()).not.toContain('is-down')
+    expect(wrapper.find('.market-board-tag__badge').exists()).toBe(false)
   })
 
   it('有权限时复用板块详情地址并携带个股返回路径', () => {
