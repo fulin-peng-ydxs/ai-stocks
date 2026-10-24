@@ -15,7 +15,7 @@ function vueFiles(dir: URL): URL[] {
 }
 
 describe('PageSegmented 消费契约', () => {
-  it('搜索工具栏使用紧凑尺寸，采集与调度共用的表单选项保持中性', () => {
+  it('工具栏继承共同密度，表单与设置中的枚举选择保持中性', () => {
     const violations: string[] = []
     const attr = (node: ElementNode, name: string) => node.props.find(
       prop => prop.type === 6 && prop.name === name,
@@ -36,9 +36,12 @@ describe('PageSegmented 消费契约', () => {
             || /(?:^|[\s_-])toolbar(?:$|[\s_-])/.test(value(parent, 'class') ?? ''),
           )
           const where = `${path}:${template.loc.start.line + node.loc.start.line - 1}`
-          if (toolbar && value(node, 'size') !== 'small') violations.push(`${where}: compact toolbar`)
-          if (path.startsWith('components/data/') && value(node, 'tone') === 'primary') {
-            violations.push(`${where}: neutral task parameters`)
+          if (toolbar && value(node, 'size') && value(node, 'size') !== 'default') {
+            violations.push(`${where}: inherit toolbar density`)
+          }
+          const field = ancestors.some(parent => ['el-form-item', 'PageSettingItem'].includes(parent.tag))
+          if (field && value(node, 'tone') === 'primary') {
+            violations.push(`${where}: neutral field choice`)
           }
         }
         node.children.forEach(child => inspect(child, [...ancestors, node]))

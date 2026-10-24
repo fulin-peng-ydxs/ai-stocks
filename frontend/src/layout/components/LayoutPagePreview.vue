@@ -91,7 +91,6 @@ function parentLabel(s: SlotSpec): string | null {
           v-if="!isSinglePreviewShape"
           v-model="tier"
           :options="tierOptions"
-          size="small"
           tone="primary"
           aria-label="预览宽度"
         />

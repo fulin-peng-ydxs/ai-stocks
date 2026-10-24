@@ -684,6 +684,10 @@ body > .el-notification {
   --app-control-height-sm: 28px;
   --app-control-height-md: 32px;
   --app-control-height-lg: 36px;
+  /* 命令、输入与选择共用尺寸来源；常规档继承页面密度，显式档位保留语义层级。 */
+  --el-component-size: var(--app-density-control-height, var(--app-control-height-md));
+  --el-component-size-small: var(--app-control-height-sm);
+  --el-component-size-large: var(--app-control-height-lg);
   --app-control-width-compact: 96px;
   --app-control-width-short: 140px;
   --app-control-width-medium: 180px;

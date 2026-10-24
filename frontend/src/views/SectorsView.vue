@@ -1055,7 +1055,6 @@ const menuPageTitle = useMenuPageTitle()
               :options="LIST_SCOPE_OPTIONS"
               aria-label="板块范围"
               test-id="sectors-list-scope"
-              size="small"
               tone="primary"
               @update:model-value="changeListScope"
             />
@@ -1064,7 +1063,6 @@ const menuPageTitle = useMenuPageTitle()
               :options="TYPE_OPTIONS"
               aria-label="板块类型"
               test-id="sectors-type"
-              size="small"
               @update:model-value="search"
             />
             <TradeDatePicker
@@ -1373,7 +1371,6 @@ const menuPageTitle = useMenuPageTitle()
                 :options="CHART_MODE_OPTIONS"
                 aria-label="图表模式"
                 test-id="sectors-chart-mode"
-                size="small"
                 tone="primary"
               />
             </template>

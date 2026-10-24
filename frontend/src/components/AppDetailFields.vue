@@ -12,7 +12,7 @@ withDefaults(defineProps<{ columns?: 1 | 2 | 3 }>(), { columns: 2 })
 .app-detail-fields {
   display: grid;
   grid-template-columns: repeat(var(--app-detail-columns), minmax(0, 1fr));
-  gap: 1px;
+  gap: var(--el-border-width);
   margin: 0;
   /* 间隙只容纳一条接缝；外沿由此容器绘制并裁去子项向外投影。 */
   overflow: hidden;

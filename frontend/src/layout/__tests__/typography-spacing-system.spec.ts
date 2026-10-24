@@ -99,6 +99,13 @@ function floatingContractViolations(source: string, file: string): string[] {
   return violations
 }
 
+/** gap 可由一个或两个语义值组成；零与 token 组合不构成游离间距。 */
+function isTokenGap(value: string): boolean {
+  const parts = value.match(/var\((?:[^()]|\([^()]*\))*\)|\S+/g) ?? []
+  return parts.length >= 1 && parts.length <= 2
+    && parts.every(part => part === '0' || /^var\(--[\w-]+(?:,|\))/.test(part))
+}
+
 describe('字体与间距设计契约', () => {
   it('所有卡片圆角变量均有定义，外框不叠加白色顶部亮边', () => {
     const styles = sourceFiles(SRC_DIR).flatMap(file =>
@@ -580,13 +587,23 @@ describe('字体与间距设计契约', () => {
     )
   })
 
+  it('间距校验按语义值识别单双轴组合，避免误报零间距或漏报第二轴', () => {
+    for (const value of ['0', 'var(--app-space-3)', '0 var(--app-space-3)',
+      'var(--app-space-2) 0', 'var(--app-space-2, var(--app-space-3))']) {
+      expect(isTokenGap(value), value).toBe(true)
+    }
+    for (const value of ['1px', '0 13px', 'var(--app-space-2) 13px', 'var(--app-space-2) 0 0']) {
+      expect(isTokenGap(value), value).toBe(false)
+    }
+  })
+
   it('普通页面样式不新增游离 gap', () => {
     const violations: string[] = []
     for (const file of sourceFiles(SRC_DIR)) {
       for (const css of styleBlocks(file)) {
         for (const match of css.matchAll(/(^|[;{}\n]\s*)gap\s*:\s*([^;\n]+)/g)) {
           const value = match[2].trim()
-          if (value !== '0' && !value.startsWith('var(')) {
+          if (!isTokenGap(value)) {
             violations.push(`${relative(SRC_DIR, file)}:${lineOf(css, match.index ?? 0)} gap: ${value}`)
           }
         }

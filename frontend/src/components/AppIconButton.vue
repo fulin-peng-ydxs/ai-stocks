@@ -49,7 +49,7 @@ defineEmits<{
 
 <style scoped>
 .app-icon-button {
-  --app-icon-button-size: 32px;
+  --app-icon-button-size: var(--app-density-control-height, var(--app-control-height-md));
   --app-icon-button-glyph: 16px;
   position: relative;
   width: var(--app-icon-button-size);
@@ -72,11 +72,11 @@ defineEmits<{
     box-shadow 0.15s ease;
 }
 .app-icon-button.is-xs {
-  --app-icon-button-size: 24px;
+  --app-icon-button-size: var(--app-control-height-xs);
   --app-icon-button-glyph: 12px;
 }
 .app-icon-button.is-sm {
-  --app-icon-button-size: 28px;
+  --app-icon-button-size: var(--app-control-height-sm);
   --app-icon-button-glyph: 14px;
 }
 .app-icon-button__glyph {

@@ -27,7 +27,7 @@ withDefaults(defineProps<{
   gap: var(--app-space-3);
   flex-wrap: wrap;
   min-width: 0;
-  min-height: 32px;
+  min-height: var(--app-density-control-height, var(--app-control-height-md));
   margin-bottom: var(--app-space-2);
 }
 .app-tab-toolbar__actions {

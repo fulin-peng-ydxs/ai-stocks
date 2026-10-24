@@ -66,7 +66,7 @@ describe('PageSegmented', () => {
     }
   })
 
-  it('supports a compact size for page control rows', () => {
+  it('显式 small 保留独立尺寸层级', () => {
     const wrapper = mount(PageSegmented, {
       props: {
         modelValue: 'all',

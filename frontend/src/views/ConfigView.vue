@@ -1899,7 +1899,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                   { label: '参与', value: true },
                   { label: '不参与', value: false },
                 ]"
-                size="small"
                 aria-label="ST 股票参与评分排名"
                 :disabled="profileReadonly"
                 test-id="score-include-st"

@@ -7,8 +7,8 @@ const props = defineProps<{
   options: { label: string; value: OptionValue }[]
   /** 稳定自动化测试锚点；只在需要 E2E 覆盖的关键控件上显式传入。 */
   testId?: string
-  /** 紧凑控件行使用 small；设置抽屉与表单保持 default。 */
-  size?: 'default' | 'small'
+  /** 默认跟随所在页面密度；small / large 仅表达显式尺寸层级。 */
+  size?: 'default' | 'small' | 'large'
   /** 页面级模式切换使用 primary；设置型枚举保持 neutral。 */
   tone?: 'neutral' | 'primary'
   /** tabs 用于图表周期等轻量视图切换；保留分段控件行为，仅改为文字与下划线表达。 */
@@ -33,6 +33,7 @@ function optionTestId(value: OptionValue): string | undefined {
     class="page-segmented"
     :class="{
       'page-segmented--small': props.size === 'small',
+      'page-segmented--large': props.size === 'large',
       'page-segmented--primary': props.tone === 'primary',
       'page-segmented--tabs': props.variant === 'tabs',
       'page-segmented--disabled': props.disabled,
@@ -72,7 +73,8 @@ function optionTestId(value: OptionValue): string | undefined {
   min-width: 0;
   max-width: 100%;
   gap: var(--app-space-1);
-  padding: 3px;
+  height: var(--app-density-control-height, var(--app-control-height-md));
+  padding: 2px;
   border: 1px solid var(--page-settings-section-border);
   border-radius: var(--layout-control-radius);
   background: var(--page-settings-seg-bg);
@@ -81,8 +83,9 @@ function optionTestId(value: OptionValue): string | undefined {
   box-sizing: border-box;
   min-width: 0;
   max-width: 100%;
-  min-height: 38px;
-  padding: 0 10px;
+  min-height: 0;
+  height: 100%;
+  padding: 0 var(--app-space-2);
   border: 1px solid transparent;
   border-radius: var(--app-radius-segment);
   background: transparent;
@@ -158,20 +161,10 @@ function optionTestId(value: OptionValue): string | undefined {
 .page-segmented--disabled .seg-btn:not(.active) {
   color: var(--el-disabled-text-color);
 }
-.page-segmented--small {
-  box-sizing: border-box;
-  height: var(--app-control-height-md);
-  padding: 2px;
-  border-radius: var(--layout-control-radius);
-}
-.page-segmented--small .seg-btn {
-  min-height: 0;
-  height: 100%;
-  padding: 0 var(--app-space-2);
-  border-radius: var(--app-radius-segment);
-}
+/* 与标准命令、输入控件使用相同显式档位，不按所在业务页面重新解释 small。 */
+.page-segmented--small { height: var(--app-control-height-sm); }
+.page-segmented--large { height: var(--app-control-height-lg); }
 .page-segmented--tabs {
-  height: var(--app-control-height-md);
   gap: var(--app-segment-gap, var(--app-space-2));
   padding: 0;
   border: 0;

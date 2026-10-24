@@ -1015,7 +1015,6 @@ const menuPageTitle = useMenuPageTitle()
             :options="viewOptions"
             aria-label="个股范围"
             test-id="stocks-list-scope"
-            size="small"
             tone="primary"
             @update:model-value="onViewChange"
           />

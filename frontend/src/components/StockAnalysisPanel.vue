@@ -472,7 +472,6 @@ onBeforeUnmount(() => {
           :options="MODE_OPTIONS"
           aria-label="图表模式"
           test-id="stock-analysis-mode"
-          size="small"
           tone="primary"
           @update:model-value="updateMode"
         />

@@ -74,7 +74,7 @@ function resetFilters(): void {
         <div class="limit-ladder__date">
           <TradeDatePicker :model-value="tradeDate" placeholder="选择交易日" data-testid="limit-ladder-date" @update:model-value="$emit('update:tradeDate',$event)" />
         </div>
-        <PageSegmented class="limit-ladder__window" :model-value="filters.window" :options="windowOptions" size="small" tone="primary" test-id="limit-ladder-window" aria-label="统计窗口" @update:model-value="updateFilters({window:Number($event) as LimitLadderFilters['window']})" />
+        <PageSegmented class="limit-ladder__window" :model-value="filters.window" :options="windowOptions" tone="primary" test-id="limit-ladder-window" aria-label="统计窗口" @update:model-value="updateFilters({window:Number($event) as LimitLadderFilters['window']})" />
       </template>
       <template #boards>
         <AppFilterSelect :model-value="filters.boards" :options="LIMIT_LADDER_BOARD_OPTIONS" :visible-tag-count="2" all-selected-label="全部板块" placeholder="上市板块" aria-label="按上市板块筛选" data-testid="limit-ladder-boards" @change="updateBoards" />

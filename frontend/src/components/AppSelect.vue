@@ -58,3 +58,16 @@ defineExpose({
     </template>
   </el-select>
 </template>
+
+<style scoped>
+/* 组件库将选择器最小高度写成固定像素；在唯一适配入口映射到共享尺寸契约。 */
+.app-select {
+  --app-select-control-height: var(--app-density-control-height, var(--app-control-height-md));
+}
+.app-select.el-select--small { --app-select-control-height: var(--app-control-height-sm); }
+.app-select.el-select--large { --app-select-control-height: var(--app-control-height-lg); }
+.app-select :deep(.el-select__wrapper) {
+  min-height: var(--app-select-control-height);
+  padding-block: 0;
+}
+</style>

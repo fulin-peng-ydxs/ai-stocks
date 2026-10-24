@@ -603,7 +603,7 @@ const menuPageTitle = useMenuPageTitle()
     >
       <template #context>
         <PageSegmented v-model="assetType" :options="assetOptions" aria-label="质量问题对象"
-          data-testid="quality-asset-type" size="small" />
+          data-testid="quality-asset-type" />
       </template>
       <template #status>
         <AppFilterSelect v-model="filters.status" :options="statusFilterOptions"

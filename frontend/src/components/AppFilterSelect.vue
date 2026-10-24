@@ -165,7 +165,7 @@ function onChange(value: string[] | string) {
   flex-wrap: nowrap;
 }
 .app-filter-select__control :deep(.el-select__wrapper) {
-  height: var(--app-control-height-md);
+  height: var(--app-density-control-height, var(--app-control-height-md));
 }
 .app-filter-select--small .app-filter-select__control :deep(.el-select__wrapper) {
   height: var(--app-control-height-sm);

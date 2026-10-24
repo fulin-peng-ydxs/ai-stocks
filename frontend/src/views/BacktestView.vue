@@ -1838,7 +1838,6 @@ const menuPageTitle = useMenuPageTitle()
         v-model="kind"
         :options="BACKTEST_KIND_OPTIONS"
         tone="primary"
-        size="small"
         test-id="backtest-kind-tabs"
         aria-label="回测验证模式"
       />

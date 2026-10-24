@@ -583,7 +583,6 @@ const menuPageTitle = useMenuPageTitle()
             :model-value="activePanel"
             :options="PANEL_OPTIONS"
             tone="primary"
-            size="small"
             test-id="trade-discipline-tabs"
             aria-label="交易纪律功能区"
             @update:model-value="switchPanel"

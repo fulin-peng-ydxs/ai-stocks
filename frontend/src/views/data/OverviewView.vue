@@ -762,7 +762,6 @@ const menuPageTitle = useMenuPageTitle()
                       :options="assetModeOptions"
                       aria-label="数据资产数据库场景"
                       test-id="overview-asset-mode"
-                      size="small"
                       tone="primary"
                     />
                   </template>

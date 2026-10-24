@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { APP_BOTTOM_FLOATING_FALLBACKS, APP_BOTTOM_FLOATING_PLACEMENT } from '@/utils/floatingPlacement'
 import AppDatePicker from '@/components/AppDatePicker.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
@@ -59,7 +60,7 @@ const options = [{ label: '方案一', value: 'a' }, { label: '方案二', value
       <el-segmented v-model="selection" :options="options" :disabled="disabled" aria-label="库分段样板" />
       <el-button :disabled="disabled">普通命令样板</el-button>
       <el-button type="primary" loading>加载命令样板</el-button>
-      <el-popover trigger="click" effect="dark" content="浮层形态由内容角色决定，深浅底色不改变卡片圆角。">
+      <el-popover :placement="APP_BOTTOM_FLOATING_PLACEMENT" :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS" trigger="click" effect="dark" content="浮层形态由内容角色决定，深浅底色不改变卡片圆角。">
         <template #reference><el-button>深底浮层样板</el-button></template>
       </el-popover>
     </div>
