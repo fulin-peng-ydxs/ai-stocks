@@ -71,8 +71,9 @@ class DuckDBClient:
         try:
             started = time.perf_counter()
             with self._lock:
+                executing = time.perf_counter()
                 result = self.conn.execute(sql, params or [])
-            self._log_if_slow(sql, started, role="writer")
+            self._record_writer_timing(sql, started, executing)
             return result
         except Exception as e:
             self._conn = None  # 连接状态已污染，下次访问自动重建
@@ -85,8 +86,9 @@ class DuckDBClient:
         try:
             started = time.perf_counter()
             with self._lock:
+                executing = time.perf_counter()
                 result = self.conn.executemany(sql, rows)
-            self._log_if_slow(sql, started, role="writer")
+            self._record_writer_timing(sql, started, executing)
             return result
         except Exception as e:
             self._conn = None
@@ -97,8 +99,9 @@ class DuckDBClient:
         try:
             started = time.perf_counter()
             with self._lock:
+                executing = time.perf_counter()
                 result = self.conn.execute(sql, params or []).df()
-            self._log_if_slow(sql, started, role="writer")
+            self._record_writer_timing(sql, started, executing)
             return result
         except Exception as e:
             self._conn = None  # 连接状态已污染，下次访问自动重建
@@ -137,6 +140,16 @@ class DuckDBClient:
             self._conn.close()
             self._conn = None
             log.info("DuckDB connection closed")
+
+    @staticmethod
+    def _record_writer_timing(sql, started, executing):
+        from backend.datasource.observability import record
+        ended = time.perf_counter()
+        waiting, execution = executing - started, ended - executing
+        record(db_wait_seconds=waiting, db_execute_seconds=execution, db_queries=1)
+        if (ended - started) * 1000 >= get_settings().duckdb.slow_query_ms:
+            log.warning("DuckDB slow query role=writer lock_wait_ms=%.1f execute_ms=%.1f sql=%s",
+                        waiting * 1000, execution * 1000, " ".join(sql.split())[:240])
 
     @staticmethod
     def _log_if_slow(sql: str, started: float, *, role: str) -> None:

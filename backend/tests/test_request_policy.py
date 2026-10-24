@@ -1,7 +1,7 @@
 """统一配置、来源分组、HTTP发送与会话互斥的低层回归。"""
 
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import nullcontext
+from contextlib import nullcontext, contextmanager
 import threading
 import time
 
@@ -12,6 +12,12 @@ import requests
 from backend.config.settings import Settings
 from backend.datasource import request_policy as rp
 from backend.tests.test_intraday_quotes import _Redis
+
+
+@contextmanager
+def _gate(calls, group, policy):
+    calls.append((group, policy.rate))
+    yield {}
 
 
 def test_policy_inherits_common_and_preserves_legacy_explicit_values():
@@ -57,7 +63,8 @@ def test_http_pages_and_retries_use_shared_gate_and_next_request_settings(monkey
     monkeypatch.setattr(rp, "get_effective_settings", lambda: settings)
     gates, timeouts = [], []
     monkeypatch.setattr(
-        rp, "wait_for_source", lambda group, policy, **_: gates.append((group, policy.rate))
+        "backend.datasource.request_runtime.request_slot",
+        lambda group, policy, **_: _gate(gates, group, policy)
     )
 
     def send(_session, request, **kwargs):
@@ -65,9 +72,10 @@ def test_http_pages_and_retries_use_shared_gate_and_next_request_settings(monkey
         response = requests.Response()
         response.status_code = 200
         response._content = b"{}"
+        response._content_consumed = True
         return response
 
-    monkeypatch.setattr(requests.Session, "send", send)
+    monkeypatch.setattr(rp, "_HTTP_SEND", send)
     session = requests.Session()
     for index in range(3):
         settings.datasource.socket_timeout_sec = 10 + index
@@ -76,7 +84,7 @@ def test_http_pages_and_retries_use_shared_gate_and_next_request_settings(monkey
     assert timeouts == [10, 11, 12]
     with rp.http_policy_scope("eastmoney", rp.RequestPolicy(2, 19, 1, 0)):
         session.get("https://push2his.eastmoney.com/api")
-    assert len(gates) == 3 and timeouts[-1] == 19  # 同一分时尝试不重复限流
+    assert len(gates) == 4 and gates[-1] == ("eastmoney", 2) and timeouts[-1] == 19  # 每个真实HTTP都准入
 
 
 @pytest.mark.parametrize("url,group", [
@@ -92,7 +100,8 @@ def test_stock_catalog_endpoints_override_sdk_timeout_and_share_request_gate(mon
     monkeypatch.setattr(rp, "get_effective_settings", lambda: settings)
     gates, timeouts = [], []
     monkeypatch.setattr(
-        rp, "wait_for_source", lambda name, policy, **_: gates.append((name, policy.rate))
+        "backend.datasource.request_runtime.request_slot",
+        lambda group, policy, **_: _gate(gates, group, policy)
     )
 
     def send(_session, request, **kwargs):
@@ -100,9 +109,10 @@ def test_stock_catalog_endpoints_override_sdk_timeout_and_share_request_gate(mon
         response = requests.Response()
         response.status_code = 200
         response._content = b"{}"
+        response._content_consumed = True
         return response
 
-    monkeypatch.setattr(requests.Session, "send", send)
+    monkeypatch.setattr(rp, "_HTTP_SEND", send)
     # 股票列表 SDK 自带 timeout=15；每个真实请求都必须消费系统配置。
     for timeout in (47, 19):
         settings.datasource.socket_timeout_sec = timeout
@@ -134,7 +144,7 @@ def test_baostock_adapter_serializes_probe_and_collection_even_without_caller_lo
 
     active = maximum = 0
     tracker = threading.Lock()
-    monkeypatch.setattr(rp, "wait_for_source", lambda *_, **__: None)
+    monkeypatch.setattr("backend.datasource.request_runtime.request_slot", lambda *_, **__: nullcontext({}))
     monkeypatch.setattr(bao, "get_effective_settings", Settings)
     monkeypatch.setattr(bao, "_collect", lambda frame: frame)
 
@@ -183,14 +193,16 @@ def test_source_registry_explains_capabilities_and_uses_real_policy(monkeypatch)
     assert rows["baostock"]["concurrency"] == 1
     assert rows["baostock"]["serial_required"] is True
     assert rows["ths_board"]["serial_required"] is True
-    assert rows["akshare"]["concurrency"] == 7
+    assert rows["akshare"]["network_concurrency"] == 6
+    assert rows["akshare"]["work_concurrency"] == 7
     assert rows["akshare"]["serial_required"] is False
     assert rows["akshare"]["rate_limit_per_sec"] == 2.5
     assert rows["akshare"]["max_attempts"] == 4
     assert rows["akshare"]["retry_backoff_sec"] == 1.5
     settings.datasource.update_concurrency = 3
     refreshed = {row["source"]: row for row in data_sources.source_status(False, repo=Repo())["sources"]}
-    assert refreshed["akshare"]["concurrency"] == 3
+    assert refreshed["akshare"]["work_concurrency"] == 3
+    assert refreshed["akshare"]["network_concurrency"] == 6
     assert refreshed["baostock"]["concurrency"] == 1
     assert rows["eastmoney_capital"]["rate_group"] == rows["intraday_eastmoney"]["rate_group"]
     assert all(row["scope"] and row["probe_scope"] for row in rows.values())

@@ -160,9 +160,18 @@ def with_retry(max_retries: int = 3, backoff_sec: float = 2.0) -> Callable:
                     from backend.services.async_task import TaskCancelled
                     if isinstance(e, TaskCancelled):
                         raise
+                    if getattr(e, "request_attempts_exhausted", False):
+                        raise
+                    # 明确的鉴权、参数和不存在错误不重复打源；限流和5xx仍走有界预算。
+                    response = getattr(e, "response", None)
+                    status = getattr(response, "status_code", None)
+                    if status is not None and 400 <= status < 500 and status not in (408, 429):
+                        raise DataSourceError(f"{fn.__name__} 请求被拒绝（HTTP {status}）") from e
                     last_err = e
                     check_thread_cancel()
                     if attempt < retries:
+                        from backend.datasource.observability import record
+                        record(**{"sdk_retries" if getattr(self, "name", None) == "baostock" else "semantic_retries": 1})
                         sleep = backoff * (2 ** (attempt - 1))
                         log.warning(
                             "%s 第%d次失败: %s，%.1fs 后重试", fn.__name__, attempt, e, sleep
@@ -172,7 +181,8 @@ def with_retry(max_retries: int = 3, backoff_sec: float = 2.0) -> Callable:
                 f"{fn.__name__} 重试 {retries} 次仍失败: {last_err}"
             ) from last_err
 
-        return wrapper
+        from backend.datasource.request_policy import request_budgeted
+        return request_budgeted(wrapper)
 
     return deco
 

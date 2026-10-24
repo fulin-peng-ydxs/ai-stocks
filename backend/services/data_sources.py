@@ -8,9 +8,11 @@ import pandas as pd
 import requests
 
 from backend.common.logging import get_logger
-from backend.config import get_effective_settings
+from backend.config.request_snapshot import get_request_settings as get_effective_settings
 from backend.datasource.base import get_source, with_retry
 from backend.datasource.request_policy import request_policy
+from backend.config.request_snapshot import request_settings_status
+from backend.datasource.request_runtime import source_runtime
 from backend.storage.data_source_health_repository import DataSourceHealthRepository
 
 log = get_logger("services.data_sources")
@@ -131,10 +133,14 @@ def source_status(do_ping: bool = True, *, repo=None, source: str | None = None)
     repo = repo or DataSourceHealthRepository()
     records = repo.list([item[0] for item in definitions])
     out = []
+    runtimes = {}
     for name, label, group, scope, role in definitions:
         if name in {s.primary, s.fallback}:
             role = "primary" if name == s.primary else "fallback"
         policy = request_policy(group, settings)
+        if group not in runtimes:
+            runtimes[group] = source_runtime(group)
+        snapshot_status = request_settings_status()
         record = records.get(name, {})
         if do_ping:
             up, failure_reason = _ping(name, policy.timeout)
@@ -162,8 +168,14 @@ def source_status(do_ping: bool = True, *, repo=None, source: str | None = None)
             "max_attempts": policy.attempts,
             "retry_backoff_sec": policy.backoff,
             "serial_required": group in {"baostock", "ths_board"},
-            "concurrency": 1 if group in {"baostock", "ths_board"} else s.update_concurrency,
+            "concurrency": policy.concurrency,
+            "network_concurrency": policy.concurrency,
+            "work_concurrency": s.update_concurrency,
+            "runtime": runtimes[group],
+            "policy_version": snapshot_status["version"],
+            "policy_degraded": snapshot_status["degraded"],
             "rate_group": group,
+            "request_unit": "SDK查询（含登录和游标读取）" if group == "baostock" else "HTTP请求",
             "policy_overrides": list(policy.overrides),
             "policy_origin": (
                 ("保留旧显式覆盖" if policy.overrides else "继承通用配置")

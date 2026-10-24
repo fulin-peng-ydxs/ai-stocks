@@ -8,6 +8,8 @@
 
 弹窗只有两个联动绘图区：上图为每分钟收盘价、当日累计均价和昨收参考线，下图为分钟成交量。价格左轴显示价格、右轴按昨收显示涨跌幅，量能数值轴使用左侧；午休时段不补点，图表连接源端实际返回的相邻分钟。系统仍是 EOD 产品，弹窗不轮询、不产生盘中日 K。
 
+请求准入位于实际HTTP发送处，分时业务层只传递策略快照和尝试预算，不预占一次额度替代SDK内部请求。新浪/东财分时与各自日线、股本共享来源额度，频率与网络并发分别控制；取消检查覆盖额度、退避和响应返回，技术请求耗尽后不再次放大外层重试。运行指标随原任务检查点聚合，完整规则见[环境与配置加载](environment-configuration.md#行情请求参数与来源能力)。
+
 ## 数据口径与接口
 
 `GET /api/stocks/{code}/intraday?trade_date=YYYY-MM-DD` 复用 `stocks:view` 权限，返回 `frequency=1m` 及 `ready|partial|out_of_range|no_data` 业务状态。分钟点包含 `time/open/high/low/close/volume/amount/average_price`：

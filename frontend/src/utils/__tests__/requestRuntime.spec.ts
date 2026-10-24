@@ -1,0 +1,29 @@
+import { describe, expect, it } from 'vitest'
+import { requestRuntimeText, taskRequestFields } from '../requestRuntime'
+
+describe('请求运行指标', () => {
+  it('历史任务缺指标时不补零', () => {
+    expect(taskRequestFields()).toEqual([])
+    expect(requestRuntimeText()).toContain('暂不可用')
+  })
+
+  it('来源真实失败与耗时独立于探活结果展示', () => {
+    const text = requestRuntimeText({ requests: 20, failures: 2, network_seconds: 12.5,
+      wait_seconds: 3, active: 2, waiting: 1, observed_rate: 4.5 })
+    expect(text).toContain('网络在途 2 · 等待额度 1 · 近一分钟 4.5 次/秒')
+    expect(text).toContain('累计请求 20 次 · 技术失败 2 次 · 网络 12.5 秒 · 额度等待 3.0 秒')
+  })
+
+  it('区分任务覆盖、物理请求与等待状态，未知ETA不展示精确时间', () => {
+    const fields = taskRequestFields({
+      requests: 30, failures: 2, network_seconds: 8.25, wait_seconds: 3.15,
+      states: { network: 2, source_wait: 1, write_queue: 3 },
+      completed: 20, elapsed_seconds: 15, work_concurrency: 6, default_concurrency: 4,
+      concurrency_origin: 'task', policy_version: 'v1', policy_degraded: true,
+    })
+    expect(fields.find(f => f.label === '工作并发')?.value).toBe('6（任务覆盖；启动时默认 4）')
+    expect(fields.find(f => f.label === '工作状态')?.value).toContain('网络 2 · 等待额度 1 · 等待落库 3')
+    expect(fields.find(f => f.label === '当前阶段预计剩余')?.value).toContain('样本不足')
+    expect(fields.find(f => f.label === '请求配置版本')?.value).toContain('最近有效配置')
+  })
+})

@@ -94,7 +94,11 @@ def test_revisions_keep_archive_and_rebuild_is_idempotent(market):
         market.query_df("SELECT DISTINCT float_share FROM stock_share_capital_daily").iloc[0, 0]
         == 90
     )
-    assert market.query_df("SELECT DISTINCT float_mv FROM daily_metrics").iloc[0, 0] == 900
+    values = market.query_df("SELECT trade_date,float_mv FROM daily_metrics ORDER BY trade_date")
+    # 变更前一天必须保持缺失；DISTINCT 无序，不能假定第一行一定是非空市值。
+    assert values.loc[values.trade_date < "2016-12-30", "float_mv"].isna().all()
+    after = values.loc[values.trade_date >= "2016-12-30", "float_mv"]
+    assert len(after) == 8 and after.eq(900).all()
 
 
 def test_raw_zero_float_is_valid_but_negative_is_reported(market):

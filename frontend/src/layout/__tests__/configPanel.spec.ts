@@ -12,6 +12,7 @@ describe('配置面板折叠候选层级', () => {
       { key: 'datasource.source', parentKey: 'datasource' },
       { key: 'datasource.collection', parentKey: 'datasource' },
       { key: 'datasource.request', parentKey: 'datasource' },
+      ...['sina', 'eastmoney', 'sse', 'szse', 'bse', 'ths', 'ths_board', 'baostock'].map(source => ({ key: `datasource.source-${source}`, parentKey: 'datasource' })),
       { key: 'datasource.session', parentKey: 'datasource' },
     ])
   })

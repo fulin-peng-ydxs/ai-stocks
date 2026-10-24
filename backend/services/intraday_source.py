@@ -10,9 +10,10 @@ import pandas as pd
 import redis
 
 from backend.common.logging import get_logger
-from backend.config import get_effective_settings
+from backend.config.request_snapshot import get_request_settings as get_effective_settings
 from backend.datasource import request_policy as source_requests
 from backend.datasource.akshare_source import AKShareSource
+from backend.datasource.base import thread_cancel_scope
 from backend.services.intraday_contract import (
     PROVIDER_LABELS,
     candidate_rank,
@@ -179,6 +180,7 @@ class IntradaySourceService:
         combined.attrs["request_years"] = years
         return combined, errors
 
+    @source_requests.request_budgeted
     def _fetch_provider(
         self, source: AKShareSource, code: str, provider: str, *, request_year=None
     ) -> pd.DataFrame:
@@ -200,13 +202,9 @@ class IntradaySourceService:
                 self.ctx.check_cancel()
             self._task_log(f"{code} {PROVIDER_LABELS[provider]}：等待来源限流")
             try:
-                source_requests.wait_for_source(
-                    provider, policy, client=self.redis,
-                    check=self.ctx.check_cancel if self.ctx else None, sleep=self.sleep,
-                )
                 self._task_log(f"{code} {PROVIDER_LABELS[provider]}请求 {attempt + 1}/{attempts}")
                 kwargs = {"request_year": request_year} if provider == "ths" else {}
-                with source_requests.http_policy_scope(provider, policy):
+                with thread_cancel_scope(self.ctx.check_cancel if self.ctx else None), source_requests.http_policy_scope(provider, policy, client=self.redis):
                     frame = source.get_intraday_1m(
                         code, provider, timeout_sec=policy.timeout, **kwargs
                     )
@@ -216,6 +214,8 @@ class IntradaySourceService:
             except Exception as exc:  # noqa: BLE001 -- 来源故障有限重试并保留具体错误
                 if self.ctx:
                     self.ctx.check_cancel()
+                if getattr(exc, "request_attempts_exhausted", False):
+                    raise
                 last_error = exc
                 if attempt < attempts - 1:
                     self._task_log(
@@ -223,6 +223,8 @@ class IntradaySourceService:
                         f"{type(exc).__name__}: {str(exc)[:300]}；退避后重试", "warn",
                     )
             if attempt < attempts - 1:
+                from backend.datasource.observability import record
+                record(semantic_retries=1)
                 self._pause(policy.backoff * 2 ** attempt)
         assert last_error is not None
         raise last_error

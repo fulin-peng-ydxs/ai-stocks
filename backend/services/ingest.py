@@ -150,6 +150,47 @@ class IngestionService:
         from backend.services.bounded_parallel import run_bounded_parallel
         return run_bounded_parallel(*args, **kwargs)
 
+    @staticmethod
+    def _fetch_capital_material(code, source, start, end):
+        """历史路径先并发取逐日估值；后续事件补充和所有持久化在编排线程处理。"""
+        frame = source.get_valuation(code, start, end)
+        return frame, getattr(source, "_last_valuation_prices", None)
+
+    def _complete_capital_material(self, entries, source, one):
+        """将已取结果交回原合并链，不重发已完成／预算耗尽的估值请求。"""
+        class PreparedSource:
+            def __init__(self, material, error):
+                object.__setattr__(self, "_source", source)
+                object.__setattr__(self, "_material", material)
+                object.__setattr__(self, "_error", error)
+
+            def __getattr__(self, name):
+                return getattr(self._source, name)
+
+            def __setattr__(self, name, value):
+                setattr(self._source, name, value)
+
+            def get_valuation(self, *args):
+                if self._error is not None:
+                    raise self._error
+                frame, prices = self._material
+                if prices is not None:
+                    self._source._last_valuation_prices = prices
+                return frame
+
+        results = []
+        for index, item, material, error, pending in entries:
+            check_thread_cancel()
+            try:
+                value = one(item, PreparedSource(material, error))
+                error = None
+            except TaskCancelled:
+                raise
+            except Exception as exc:  # noqa: BLE001 -- 单股失败按原回调记录，不能推进成功断点
+                value, error = None, exc
+            results.append((index, item, value, error, pending))
+        return results
+
     def _in_target_board(self, code6: str) -> tuple[bool, str, float]:
         """是否纳入目标板块（默认剔除北交所）。返回 (纳入?, board, limit_pct)。"""
         _, board, limit = classify_board(code6)
@@ -711,10 +752,14 @@ class IngestionService:
         source: DataSource | None = None, ctx=None,
         st_status: PointInTimeSTStatus | None = None,
         status_unavailable: bool = False,
+        _prefetched=None,
+        _fetch_error=None,
     ) -> int:
         end = eod_dates.cap_range(start, end)
         try:
-            df, used_source = self._fetch_daily_with_fallback(
+            if _fetch_error is not None:
+                raise _fetch_error
+            df, used_source = _prefetched if _prefetched is not None else self._fetch_daily_with_fallback(
                 code, start, end, source or self.src, ctx=ctx, **({"allow_fallback": False} if status_unavailable else {})
             )
         except DataSourceError as daily_error:
@@ -1006,7 +1051,7 @@ class IngestionService:
 
             def _worker(code: str) -> int:
                 src = self._thread_source(tls, source_name)
-                return _one(code, src)
+                return self._fetch_capital_material(code, src, start, end)
 
             def _complete(i, code, value, error, _in_flight):
                 nonlocal rows, ok, fail
@@ -1027,6 +1072,7 @@ class IngestionService:
             self._run_bounded_parallel(
                 pending, _worker, concurrency=concurrency, ctx=ctx,
                 wait_label="历史市值字段补采", on_complete=_complete,
+                transform_batch=lambda entries: self._complete_capital_material(entries, val_src, _one),
             )
         result = {"target": len(live), "ok": ok, "skip": skip, "fail": fail, "total_mv_rows": rows}
         log.info("估值入库完成: %s", result)
@@ -1112,7 +1158,60 @@ class IngestionService:
 
             def _worker(code: str) -> int:
                 src = self._thread_source(tls, source_name)
-                return _one(code, src)
+                frame = src.get_valuation(code, trade_date, trade_date)
+                if frame is not None:
+                    frame.attrs["source_valuation_prices"] = getattr(src, "_last_valuation_prices", None)
+                return frame
+
+            def _merge_batch(entries):
+                from backend.services.capital_quality import CapitalQualityService
+                frames, normalized = [], []
+                for index, code, frame, error, in_flight in entries:
+                    if error is None:
+                        try:
+                            frame = self._validated_valuation_frame(code, frame, trade_date, trade_date)
+                            if not frame.empty:
+                                frames.append(frame)
+                        except Exception as exc:
+                            error = exc
+                    normalized.append((index, code, frame, error, in_flight))
+                # 一批提交后才调用完成回调；事务失败不会把任何待提交股票登记成功。
+                check_thread_cancel()
+                if frames:
+                    ShareCapitalService(self.c).merge(pd.concat(frames, ignore_index=True),
+                                                     "eastmoney_daily", reported=True)
+                codes_in_batch = [entry[1] for entry in normalized]
+                review = set(self.c.query_df(
+                    "SELECT DISTINCT b.code FROM daily_bar b "
+                    "LEFT JOIN stock_share_capital_daily s USING(code,trade_date) "
+                    "LEFT JOIN daily_metrics m USING(code,trade_date) "
+                    "WHERE b.trade_date=? AND b.code IN (SELECT unnest(?::VARCHAR[])) "
+                    f"AND ({ShareCapitalService.review_predicate()}) UNION "
+                    "SELECT code FROM stock_share_capital_event WHERE active "
+                    "AND code IN (SELECT unnest(?::VARCHAR[])) AND "
+                    "(effective_date IS NULL OR total_share<=0 OR float_share<0 OR float_share>total_share)",
+                    [trade_date, codes_in_batch, codes_in_batch])["code"])
+                results = []
+                for index, code, frame, error, in_flight in normalized:
+                    try:
+                        # 缺口、拒用原始记录及来源冲突仍走既有多来源补采，不能以批量
+                        # 计算一致掩盖来源核验。源请求失败也继续尝试原有补充来源。
+                        if error is not None or code in review or frame is None or frame.empty:
+                            prices = frame.attrs.get("source_valuation_prices") if frame is not None else None
+                            prepared = self._complete_capital_material(
+                                [(index, code, (frame, prices), error, in_flight)], val_src, _one)[0]
+                            value, error = prepared[2], prepared[3]
+                        else:
+                            value = int(frame["total_mv"].notna().sum())
+                    except TaskCancelled:
+                        raise
+                    except Exception as exc:
+                        value, error = None, exc
+                    results.append((index, code, value, error, in_flight))
+                CapitalQualityService(self.c).sync(codes_in_batch)
+                from backend.services.share_capital_history import ShareCapitalHistoryService
+                ShareCapitalHistoryService(self.c).rebuild_many(codes_in_batch)
+                return results
 
             def _complete(i, code, value, error, _in_flight):
                 nonlocal rows, ok, fail
@@ -1149,6 +1248,7 @@ class IngestionService:
             self._run_bounded_parallel(
                 pending, _worker, concurrency=concurrency, ctx=ctx,
                 wait_label="最新日市值补采", on_complete=_complete,
+                transform_batch=_merge_batch, batch_size=concurrency,
             )
         result = {"trade_date": str(trade_date), "ok": ok, "fail": fail, "total_mv_rows": rows}
         log.info("补最新日市值完成: %s", result)
@@ -1227,7 +1327,7 @@ class IngestionService:
 
             def _worker(item) -> int:
                 src = self._thread_source(tls, source_name)
-                return _one(item, src)
+                return self._fetch_capital_material(item[0], src, item[1], item[2])
 
             def _complete(i, item, value, error, _in_flight):
                 nonlocal rows, ok, fail
@@ -1265,6 +1365,7 @@ class IngestionService:
             self._run_bounded_parallel(
                 pending, _worker, concurrency=concurrency, ctx=ctx,
                 wait_label="市值缺口回补", on_complete=_complete,
+                transform_batch=lambda entries: self._complete_capital_material(entries, val_src, _one),
             )
         result = {"target": n, "ok": ok, "fail": fail, "total_mv_rows": rows}
         log.info("市值缺口回补完成: %s", result)
@@ -1411,9 +1512,12 @@ class IngestionService:
             ctx.log(f"▶ 开始历史补数：共 {len(target_codes)} 只（已入库跳过 {skip}，待补 {n}），"
                     f"区间 {start}~{end}（并发 {concurrency}）")
 
-        def _one(code: str, source: DataSource | None = None, ctx_=None) -> int:
+        def _one(
+            code: str, source: DataSource | None = None, ctx_=None, *,
+            prefetched=None, fetch_error=None,
+        ) -> int:
             return self.ingest_one_daily(code, start, end, limit_lut.get(code),
-                                         source=source, ctx=ctx_)
+                                         source=source, ctx=ctx_, _prefetched=prefetched, _fetch_error=fetch_error)
 
         def _tick(i: int, code: str, rows: int) -> None:
             if ctx:
@@ -1459,10 +1563,17 @@ class IngestionService:
 
             def _worker(code: str) -> int:
                 src = self._thread_source(tls, source_name)
-                return _one(code, source=src)
+                return self._fetch_daily_with_fallback(code, start, end, src)
 
             def _complete(i, code, value, error, _in_flight):
                 nonlocal total_rows, ok, fail
+                try:
+                    value = _one(code, prefetched=value, fetch_error=error)
+                    error = None
+                except TaskCancelled:
+                    raise
+                except Exception as exc:
+                    error = exc
                 if ctx:
                     ctx.set_phase(
                         "daily_bar", phase_total=n, phase_done=i - 1,
@@ -1645,7 +1756,17 @@ class IngestionService:
         续跑天然幂等：从各股已入库最新日 +1 起，重复跑只补缺口。
         """
         end = eod_dates.shanghai_now().date()
+        explicit_concurrency = concurrency is not None
         concurrency = concurrency or self.s.datasource.update_concurrency
+        if getattr(ctx, "request_tracker", None):
+            from backend.config.request_snapshot import request_settings_status
+            status = request_settings_status()
+            ctx.request_tracker.meta.update(
+                work_concurrency=concurrency,
+                default_concurrency=self.s.datasource.update_concurrency,
+                concurrency_origin=ctx.request_tracker.meta.get("concurrency_origin", "task" if explicit_concurrency else "default"),
+                policy_version=status["version"], policy_degraded=status["degraded"],
+            )
         basic = self._stock_basic_from_db(codes, as_of=end)["code"].tolist()
         # 续跑（FR-DM-10）：串行老任务按 done 兼容跳过；并发任务按 done_codes 精确跳过。
         checkpoint = ctx.checkpoint if (ctx and ctx.checkpoint) else {}
@@ -1709,7 +1830,7 @@ class IngestionService:
                          a, n_total, ok, fail, total_rows, code, rows)
             if ctx and (a % 20 == 0 or a == n_total):
                 prefix = "并发增量" if concurrency > 1 else "增量更新"
-                in_flight_note = f"，在途{in_flight}" if concurrency > 1 else ""
+                in_flight_note = f"，未完成工作单元{in_flight}" if concurrency > 1 else ""
                 ctx.log(f"[{a}/{n_total}] {prefix}进度：成功{ok} 失败{fail}{in_flight_note}，"
                         f"累计 +{total_rows} 行（最近完成 {code} +{rows}）")
                 ctx.progress(min(0.1 + 0.78 * a / max(n_total, 1), 0.88),
@@ -1744,13 +1865,36 @@ class IngestionService:
             tls = threading.local()
             source_name = self.src.name
 
-            def _worker(code: str) -> int:
-                src = self._thread_source(tls, source_name)
-                return self._update_one(code, end, source=src)
+            # 只加载每股最新日期，不在每个工作线程重复查行情库。工作线程只取源，
+            # ST、清洗、参考价校准和落库由编排线程按原业务契约处理。
+            dates = self.c.query_df(
+                "SELECT code,max(trade_date) d FROM daily_bar "
+                "WHERE code IN (SELECT unnest(?::VARCHAR[])) GROUP BY code", [pending]
+            )
+            last_dates = {row.code: pd.Timestamp(row.d).date() for row in dates.itertuples()}
+            starts = {code: (last_dates[code] + timedelta(days=1) if code in last_dates
+                            else years_before(end, self.s.datasource.history_years)) for code in pending}
+
+            def _worker(code):
+                if starts[code] > end:
+                    return None
+                return self._fetch_daily_with_fallback(
+                    code, starts[code], end, self._thread_source(tls, source_name))
 
             def _complete(i, code, value, error, in_flight):
                 nonlocal total_rows, ok, fail
                 a = resumed_count + i
+                try:
+                    if starts[code] > end:
+                        value = 0
+                    else:
+                        value = self.ingest_one_daily(
+                            code, starts[code], end, _prefetched=value, _fetch_error=error)
+                    error = None
+                except TaskCancelled:
+                    raise
+                except Exception as exc:
+                    error = exc
                 if error is None:
                     total_rows += value
                     if value:
@@ -2440,11 +2584,12 @@ class IngestionService:
             source_name = val_src.name
 
             def _worker(item) -> int:
-                return _one(item, self._thread_source(tls, source_name))
+                return self._fetch_capital_material(item[0], self._thread_source(tls, source_name), min(item[1]), max(item[1]))
 
             self._run_bounded_parallel(
                 pending, _worker, concurrency=concurrency, ctx=ctx,
                 wait_label="全历史异常市值修复", on_complete=_complete,
+                transform_batch=lambda entries: self._complete_capital_material(entries, val_src, _one),
             )
 
         remaining_by_code = {
@@ -2516,7 +2661,7 @@ class IngestionService:
 
         def worker(code):
             source = self._thread_source(tls, source_name)
-            return self._collect_capital_one(code, source, start, end, diagnostics=diagnostics)
+            return self._fetch_capital_material(code, source, start, end)
 
         def complete(i, code, value, error, _in_flight):
             detail = diagnostics.get(code, {})
@@ -2543,6 +2688,10 @@ class IngestionService:
         self._run_bounded_parallel(
             pending, worker, concurrency=concurrency or self.s.datasource.update_concurrency, ctx=ctx,
             wait_label="历史股本轮询", on_complete=complete,
+            transform_batch=lambda entries: self._complete_capital_material(
+                entries, self._source_for("share_capital"),
+                lambda code, source: self._collect_capital_one(
+                    code, source, start, end, diagnostics=diagnostics)),
         )
         result["remaining_field_issues"] = sum(
             item["count"] for detail in diagnostics.values() for item in detail.get("remaining", {}).values()
@@ -2819,7 +2968,7 @@ class IngestionService:
 
         def worker(code):
             source = self._thread_source(tls, source_name)
-            return self._collect_capital_one(code, source, start, end, diagnostics=result["diagnostics"])
+            return self._fetch_capital_material(code, source, start, end)
 
         def complete(i, code, value, error, _in_flight):
             detail = result["diagnostics"].get(code, {})
@@ -2848,7 +2997,11 @@ class IngestionService:
 
         self._run_bounded_parallel(pending, worker,
             concurrency=concurrency or self.s.datasource.update_concurrency, ctx=ctx,
-            wait_label="逐日股本采集", on_complete=complete)
+            wait_label="逐日股本采集", on_complete=complete,
+            transform_batch=lambda entries: self._complete_capital_material(
+                entries, self._source_for("share_capital"),
+                lambda code, source: self._collect_capital_one(
+                    code, source, start, end, diagnostics=result["diagnostics"])))
         with self.c.temp_view(pd.DataFrame({"code": stocks}), prefix="share_targets") as target:
             coverage = self.c.query_df(
                 "SELECT count(*) AS bar_rows,count(s.total_share) AS total_share_rows, "
@@ -2869,6 +3022,7 @@ class IngestionService:
         v = source.get_valuation(code, start, end)
         # 与行情入库保持同一安全边界：取消后不把刚返回的外部结果继续写入 DuckDB。
         check_thread_cancel()
+        v = self._validated_valuation_frame(code, v, start, end)
         if v is None or v.empty:
             return 0
         # 只保留 daily_bar 已有的交易日，杜绝 value_em 日期错位产生游离 metrics 行
@@ -2914,6 +3068,23 @@ class IngestionService:
         ShareCapitalService(self.c).merge(v, "eastmoney_daily", reported=True)
         added = int(v["total_mv"].notna().sum())
         return added
+
+    @staticmethod
+    def _validated_valuation_frame(code, frame, start, end):
+        """逐股／批量共用响应边界；保留原始接口值，非法市值不得进入合并层。"""
+        if frame is None or frame.empty:
+            return pd.DataFrame()
+        frame = frame.copy()
+        if not frame["code"].eq(code).all():
+            raise DataSourceError(f"{code} 估值响应标的不匹配")
+        frame["trade_date"] = pd.to_datetime(frame["trade_date"]).dt.date
+        frame = frame[frame.trade_date.between(start, end)].copy()
+        total = pd.to_numeric(frame["total_mv"], errors="coerce")
+        floating = pd.to_numeric(frame["float_mv"], errors="coerce")
+        inverted = total.notna() & floating.notna() & (total < floating * (1 - MV_REL_TOLERANCE))
+        frame["total_mv"] = total.mask((total <= 0) | inverted)
+        frame["float_mv"] = floating.mask((floating <= 0) | inverted)
+        return frame
 
     # ── 指定日期采集（FR-DM-3 更多选项，M2.8-B）──
     @checked_collection
@@ -2964,9 +3135,12 @@ class IngestionService:
                           current_item=None, done_codes=sorted(done_codes))
             ctx.log(f"▶ 开始指定日期采集：{n} 只股票，区间 {start}~{end}（并发 {concurrency}）")
 
-        def _one(code: str, source: DataSource | None = None, ctx_=None) -> int:
+        def _one(
+            code: str, source: DataSource | None = None, ctx_=None, *,
+            prefetched=None, fetch_error=None,
+        ) -> int:
             return self.ingest_one_daily(
-                code, start, end, limit_lut.get(code), source=source, ctx=ctx_)
+                code, start, end, limit_lut.get(code), source=source, ctx=ctx_, _prefetched=prefetched, _fetch_error=fetch_error)
 
         def _tick(i: int, code: str, rows: int) -> None:
             if ctx:
@@ -3015,10 +3189,17 @@ class IngestionService:
 
             def _worker(code: str) -> int:
                 src = self._thread_source(tls, source_name)
-                return _one(code, source=src)
+                return self._fetch_daily_with_fallback(code, start, end, src)
 
             def _complete(i, code, value, error, _in_flight):
                 nonlocal total_rows, ok, fail
+                try:
+                    value = _one(code, prefetched=value, fetch_error=error)
+                    error = None
+                except TaskCancelled:
+                    raise
+                except Exception as exc:
+                    error = exc
                 if ctx:
                     ctx.set_phase(
                         "daily_bar", done=len(done_codes), total=full_total,

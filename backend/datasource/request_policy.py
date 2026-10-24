@@ -6,15 +6,21 @@ BaoStock 使用独立会话锁，但消费同一份请求策略。
 
 from __future__ import annotations
 
+import copy
+import hashlib
+import re
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+from functools import wraps
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from backend.config import get_effective_settings
+from backend.config.request_snapshot import get_request_settings as get_effective_settings
+from backend.config.source_registry import SOURCE_GROUPS
 
 _DEFAULT_TIMEOUT_GETTER = None
+_HTTP_SEND = None
 
 
 @dataclass(frozen=True)
@@ -24,6 +30,11 @@ class RequestPolicy:
     attempts: int
     backoff: float
     overrides: tuple[str, ...] = ()
+    concurrency: int = 6
+    wait_timeout: float = 300
+    cooldown: float = 30
+    failure_threshold: int = 3
+    max_response_mb: int = 32
 
 
 def request_policy(group: str, settings=None) -> RequestPolicy:
@@ -37,6 +48,21 @@ def request_policy(group: str, settings=None) -> RequestPolicy:
         float(source.retry_backoff_sec),
     )
     overrides = []
+    concurrency = int(getattr(source, "network_concurrency", 6))
+    specific = getattr(source, "sources", {}).get(group)
+    if specific:
+        fields = {"rate_limit_per_sec": "rate", "socket_timeout_sec": "timeout",
+                  "max_retries": "attempts", "retry_backoff_sec": "backoff",
+                  "network_concurrency": "concurrency"}
+        values = {"rate": rate, "timeout": timeout, "attempts": attempts, "backoff": backoff,
+                  "concurrency": concurrency}
+        for field, key in fields.items():
+            value = getattr(specific, field)
+            if value is not None:
+                values[key] = value
+                overrides.append(f"datasource.sources.{group}.{field}")
+        rate, timeout, attempts, backoff, concurrency = (values[key] for key in
+            ("rate", "timeout", "attempts", "backoff", "concurrency"))
     if group == "ths_board":
         board = settings.ths_board
         rate = min(rate, 1 / float(board.min_interval_sec))
@@ -50,7 +76,13 @@ def request_policy(group: str, settings=None) -> RequestPolicy:
         timeout = timeout if board.timeout_sec is None else float(board.timeout_sec)
         attempts = attempts if board.max_retries is None else int(board.max_retries)
         backoff = backoff if board.retry_backoff_sec is None else float(board.retry_backoff_sec)
-    return RequestPolicy(rate, timeout, attempts, backoff, tuple(overrides))
+    if SOURCE_GROUPS.get(group, {}).get("serial"):
+        concurrency = 1
+    return RequestPolicy(rate, timeout, attempts, backoff, tuple(overrides), concurrency,
+                         getattr(source, "request_wait_timeout_sec", 300),
+                         getattr(source, "cooldown_sec", 30),
+                         getattr(source, "failure_threshold", 3),
+                         getattr(source, "max_response_mb", 32))
 
 
 def source_group(url: str) -> str | None:
@@ -59,15 +91,9 @@ def source_group(url: str) -> str | None:
     同花顺股票分钟与板块分别保护；交易所分组不改变业务股票池范围。
     """
     host = (urlsplit(url).hostname or "").lower()
-    for domain, group in (
-        ("sina.com.cn", "sina"),
-        ("sina.cn", "sina"),
-        ("eastmoney.com", "eastmoney"),
-        ("sse.com.cn", "sse"),
-        ("szse.cn", "szse"),
-        ("bse.cn", "bse"),
-    ):
-        if host == domain or host.endswith("." + domain):
+    for group, definition in SOURCE_GROUPS.items():
+        if any(host == domain or host.endswith("." + domain)
+               for domain in definition["domains"]):
             return group
     if host == "10jqka.com.cn" or host.endswith(".10jqka.com.cn"):
         return "ths" if "/line/hs_" in url else "ths_board"
@@ -84,13 +110,48 @@ if wait > 0 then return math.ceil(wait * 1000) end
 redis.call('SET', KEYS[1], string.format('%.6f', now), 'EX', 86400)
 return 0
 """
-_HTTP_SCOPE: ContextVar[tuple[str, RequestPolicy] | None] = ContextVar("market_http", default=None)
+_HTTP_SCOPE: ContextVar[tuple | None] = ContextVar("market_http", default=None)
+_REUSE_SCOPE = ContextVar("sina_daily_materials", default=None)
+_ATTEMPT_BUDGET = ContextVar("source_http_attempt_budget", default=None)
+
+
+def request_budgeted(fn):
+    """同一业务取源的语义重取与传输重试共用逐URL预算，分页按真实URL分别计数。"""
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        # 探活/CLI可能在冷进程中先访问股本源，不能依赖先导入AKShare才安装发送控制。
+        install_http_policy()
+        if _ATTEMPT_BUDGET.get() is not None:
+            return fn(*args, **kwargs)
+        token = _ATTEMPT_BUDGET.set({})
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            _ATTEMPT_BUDGET.reset(token)
+    return wrapped
 
 
 @contextmanager
-def http_policy_scope(group: str, policy: RequestPolicy):
+def daily_materials(symbol: str):
+    """同股同次日线复用材料；不跨股、不跨重试、不跨日期操作缓存响应。
+
+    SDK 原始/后复权解析仍各自执行，但复用的量额不再作为独立证据。三个真实响应
+    的 JS 变量名必须绑定请求标的，补上独立的来源身份验证后才能复用。
+    """
+    import requests
+
+    with requests.Session() as session:
+        token = _REUSE_SCOPE.set({"symbol": symbol, "cache": {}, "session": session})
+        try:
+            yield
+        finally:
+            _REUSE_SCOPE.reset(token)
+
+
+@contextmanager
+def http_policy_scope(group: str, policy: RequestPolicy, *, client=None):
     """同一次来源尝试使用同一策略快照，避免并发共享可变超时。"""
-    token = _HTTP_SCOPE.set((group, policy))
+    token = _HTTP_SCOPE.set((group, policy, client))
     try:
         yield
     finally:
@@ -135,10 +196,9 @@ def prepare_http(url: str, kwargs: dict):
         # 分时编排已经在源调用前限流，真实请求只补充相同快照的超时。
         policy = scope[1]
     else:
-        from backend.datasource.base import check_thread_cancel
 
         policy = request_policy(group)
-        wait_for_source(group, policy, check=check_thread_cancel)
+        # 准入统一在 HTTPAdapter.send 执行，覆盖 SDK 分页、重定向和 PreparedRequest。
     kwargs["timeout"] = policy.timeout
 
 
@@ -148,13 +208,104 @@ def install_http_policy(default_timeout=None):
 
     from backend.config import get_settings
 
-    global _DEFAULT_TIMEOUT_GETTER
+    global _DEFAULT_TIMEOUT_GETTER, _HTTP_SEND
     if default_timeout is not None:
         _DEFAULT_TIMEOUT_GETTER = default_timeout
     session = requests.sessions.Session
     if getattr(session, "_ai_stocks_timeout_patched", False):
         return
     original = session.request
+
+    adapter = requests.adapters.HTTPAdapter
+    original_send = adapter.send
+    _HTTP_SEND = original_send
+
+    def send_with_policy(self, request, *args, **kwargs):
+        from email.utils import parsedate_to_datetime
+
+        from backend.datasource.base import check_thread_cancel
+        from backend.datasource.request_runtime import request_slot
+
+        group = source_group(request.url)
+        if group is None:
+            if _ATTEMPT_BUDGET.get() is not None:
+                from backend.common.exceptions import SourceRequestError
+                raise SourceRequestError("采集请求的实际来源未登记，已停止发送")
+            return _HTTP_SEND(self, request, *args, **kwargs)
+        scope = _HTTP_SCOPE.get()
+        policy = scope[1] if scope and scope[0] == group else request_policy(group)
+        kwargs["timeout"] = policy.timeout
+        # 隐藏的 urllib3 自动重试既无法准确计数也可能放大预算，明确拒绝旁路配置。
+        if self.max_retries.total not in (0, False):
+            raise ValueError("行情 HTTPAdapter 不允许隐藏自动重试，请使用统一尝试预算")
+        from redis import RedisError
+
+        from backend.common.exceptions import SourceRequestError
+
+        for attempt in range(policy.attempts):
+            check_thread_cancel()
+            budget = _ATTEMPT_BUDGET.get()
+            parsed = urlsplit(request.url)
+            query = urlencode(sorted((key, value) for key, value in parse_qsl(parsed.query)
+                                     if key not in {"_", "callback", "cb", "random"}))
+            address = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, query, ""))
+            body = request.body or b""
+            if isinstance(body, str):
+                body = body.encode()
+            budget_key = (request.method, address, hashlib.sha256(body).hexdigest())
+            if budget is not None:
+                used = budget.get(budget_key, 0)
+                if used >= policy.attempts:
+                    raise SourceRequestError(f"{group} 同一请求的语义与网络尝试预算已耗尽")
+                budget[budget_key] = used + 1
+            try:
+                with request_slot(group, policy, client=scope[2] if scope and scope[0] == group else None,
+                                  check=check_thread_cancel) as outcome:
+                    response = _HTTP_SEND(self, request, *args, **kwargs)
+                    outcome["failed"] = response.status_code == 429 or response.status_code >= 500
+                    if response.status_code == 429:
+                        value = response.headers.get("Retry-After", "")
+                        try:
+                            delay = float(value)
+                        except ValueError:
+                            try:
+                                delay = parsedate_to_datetime(value).timestamp() - time.time()
+                            except (ValueError, TypeError, OverflowError):
+                                delay = policy.cooldown
+                        outcome["retry_after"] = min(600, max(1, delay))
+                    # 行情响应有界读完再释放额度，包括 SDK stream=True；释放前仍占网络槽。
+                    try:
+                        chunks, size = [], 0
+                        for chunk in response.iter_content(65536):
+                            size += len(chunk)
+                            if size > policy.max_response_mb * 1024 * 1024:
+                                raise SourceRequestError("来源响应超过配置容量，请缩小请求分页或区间")
+                            chunks.append(chunk)
+                        response._content = b"".join(chunks)
+                        response._content_consumed = True
+                    except BaseException:
+                        response.close()
+                        raise
+                    check_thread_cancel()
+                    if outcome["failed"]:
+                        response.raise_for_status()
+                    return response
+            except SourceRequestError:
+                raise
+            except RedisError as exc:
+                raise SourceRequestError(f"{group} 请求保护不可用，已停止发送") from exc
+            except requests.RequestException as exc:
+                if attempt + 1 >= policy.attempts:
+                    raise SourceRequestError(
+                        f"{group} HTTP请求已尝试 {policy.attempts} 次，技术失败"
+                    ) from exc
+                if budget is not None and budget.get(budget_key, 0) >= policy.attempts:
+                    raise SourceRequestError(f"{group} 同一请求的语义与网络尝试预算已耗尽") from exc
+                from backend.datasource.observability import record
+                record(network_retries=1)
+                pause(policy.backoff * 2 ** attempt, check_thread_cancel)
+
+    adapter.send = send_with_policy
 
     def request_with_policy(self, *args, **kwargs):
         url = kwargs.get("url") or (args[1] if len(args) > 1 else "")
@@ -165,7 +316,36 @@ def install_http_policy(default_timeout=None):
                 if _DEFAULT_TIMEOUT_GETTER
                 else get_settings().datasource.socket_timeout_sec
             )
-        return original(self, *args, **kwargs)
+        reuse = _REUSE_SCOPE.get()
+        target = self
+        key = None
+        if reuse and source_group(str(url)) == "sina":
+            target = reuse["session"]
+            key = (str(url), repr(kwargs.get("params")))
+            cached = reuse["cache"].get(key)
+            if cached is not None:
+                return copy.copy(cached)
+        response = original(target, *args, **kwargs)
+        if reuse and key is not None:
+            response.raise_for_status()
+            # 此上下文只容许日线三种已知材料，SDK 接口变化时明确失败，不能误用缓存。
+            symbol = reuse["symbol"]
+            path = urlsplit(str(url)).path
+            if path.endswith("/hisdata_klc2/klc_kl.js"):
+                expected = f"KLC_K2_{symbol}"
+            elif path.endswith("/StockService.getAmountBySymbol"):
+                expected = f"KKE_ShareAmount_{symbol}"
+            elif path.endswith("/hfq.js"):
+                expected = f"{symbol}hfq"
+            else:
+                raise ValueError("新浪日线材料接口未登记，拒绝复用")
+            declaration = re.search(r"^\s*var\s+(\w+)\s*=", response.text, re.MULTILINE)
+            if declaration is None or declaration[1] != expected:
+                raise ValueError(f"{symbol} 新浪日线材料响应标的不匹配")
+            if len(response.content) > get_effective_settings().datasource.max_response_mb * 1024 * 1024:
+                raise ValueError("新浪日线材料超过单股响应容量")
+            reuse["cache"][key] = response
+        return response
 
     session.request = request_with_policy
     session._ai_stocks_timeout_patched = True

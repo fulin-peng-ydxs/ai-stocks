@@ -81,12 +81,15 @@ class ShareCapitalService:
         df = df.drop_duplicates(["code", "trade_date"], keep="last")
         codes = df.code.unique().tolist()
         # 每批只读一次目标股票日线，同时获得真实最新日期；避免每个字段重复扫大表。
-        condition = "code=?" if len(codes) == 1 else "code IN (SELECT unnest(?::VARCHAR[]))"
-        market = self.c.query_df(
-            "SELECT code,trade_date,close AS _raw_close, "
-            f"max(trade_date) OVER (PARTITION BY code) AS latest_date FROM daily_bar WHERE {condition}",
-            codes if len(codes) == 1 else [codes],
-        )
+        # 日常通常只合并一天；按目标日期取价格，最新日单独聚合，避免每股装载十年
+        # 行情到 pandas。历史补采同样使用真实目标键，最新投影边界保持不变。
+        with self.c.temp_view(df[["code", "trade_date"]], prefix="share_targets") as targets:
+            market = self.c.query_df(
+                "WITH latest AS (SELECT code,max(trade_date) latest_date FROM daily_bar "
+                f"WHERE code IN (SELECT code FROM {targets}) GROUP BY code) "
+                f"SELECT b.code,b.trade_date,b.close AS _raw_close,l.latest_date FROM {targets} t "
+                "JOIN daily_bar b USING(code,trade_date) JOIN latest l USING(code)"
+            )
         if market.empty:
             return 0
         latest = market[["code", "latest_date"]].drop_duplicates()

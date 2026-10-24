@@ -43,6 +43,33 @@ def _pin_test_task_runtime_to_duckdb():
         task_runtime._backend_cache = previous
 
 
+@pytest.fixture(autouse=True)
+def _isolate_source_request_runtime(monkeypatch):
+    """模拟来源失败不能污染共享Redis冷却/指标；每用例隔离并精确清理实际用到的键。"""
+    from uuid import uuid4
+
+    from backend.datasource import request_runtime
+
+    original = request_runtime._keys
+    prefix = f"pytest:requests:{uuid4().hex}:"
+    used = set()
+
+    def keys(group):
+        names = [prefix + key for key in original(group)]
+        used.update(names)
+        return names
+
+    monkeypatch.setattr(request_runtime, "_keys", keys)
+    yield
+    if used:
+        from redis import RedisError
+        try:
+            request_runtime.redis_client().delete(*used)
+        except RedisError:
+            # 离线单测不强制依赖Redis；前缀唯一，不触碰任何其它测试或真实任务。
+            pass
+
+
 TEST_TENANT = "pytest"
 TEST_OWNER = "pytest_owner"
 

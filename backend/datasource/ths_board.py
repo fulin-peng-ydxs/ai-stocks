@@ -35,6 +35,7 @@ from backend.common.exceptions import DataSourceError
 from backend.common.logging import get_logger
 from backend.config import get_effective_settings
 from backend.datasource.base import check_thread_cancel, rate_limited, with_retry
+from backend.datasource.request_policy import request_budgeted
 
 log = get_logger("datasource.ths_board")
 
@@ -201,6 +202,7 @@ class ThsBoardSource:
     # ── 底层 HTTP ────────────────────────────────────────────
 
     @rate_limited(1.0)
+    @request_budgeted
     def _http_get(
         self, url: str, *, data_host: bool = False, referer: str | None = None,
         accept: Callable[[str], bool] | None = None,
@@ -233,6 +235,8 @@ class ThsBoardSource:
                     return resp.text
             except Exception as exc:  # noqa: BLE001 -- 次数包含401刷新，不额外发送隐藏重试
                 check_thread_cancel()
+                if getattr(exc, "request_attempts_exhausted", False):
+                    raise
                 if attempt == attempts:
                     raise DataSourceError(f"同花顺请求尝试 {attempts} 次仍失败: {exc}") from exc
             backoff = self._request_overrides["backoff"]

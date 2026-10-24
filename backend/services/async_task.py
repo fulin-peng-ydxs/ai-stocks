@@ -193,6 +193,9 @@ class TaskContext:
     """处理器运行上下文：进度 / 实时日志 / checkpoint。"""
 
     def __init__(self, svc: "AsyncTaskService", tid: str, checkpoint: dict | None = None):
+        from backend.datasource.observability import RequestTracker
+
+        self.request_tracker = RequestTracker()
         self.svc = svc
         self.tid = tid
         self.checkpoint: dict = checkpoint or {}
@@ -219,6 +222,8 @@ class TaskContext:
     def set_checkpoint(self, **data) -> None:
         """合并并持久化 checkpoint（写 result 列），供 resume 跳过已完成。"""
         self.checkpoint.update(data)
+        if self.request_tracker.meta or self.request_tracker.counts:
+            self.checkpoint["request_runtime"] = self.request_tracker.snapshot(self.checkpoint)
         self.svc._set(self.tid, result={"checkpoint": self.checkpoint})
 
     def set_phase(self, phase: str, **data) -> None:
@@ -465,7 +470,21 @@ class AsyncTaskService:
             ctx.log(_resume_message(task_type, checkpoint))
         ctx.flush()
         try:
-            result = _HANDLERS[task_type](params, ctx)
+            from backend.datasource.observability import observe_work
+            from backend.datasource.base import thread_cancel_scope
+            if task_type in {"stock_ingest", "update", "backfill", "ingest_date", "ingest_codes", "intraday_ingest", "board", "fix"}:
+                from backend.config import get_effective_settings
+                defaults = get_effective_settings().datasource.update_concurrency
+                ctx.request_tracker.meta.update(
+                    work_concurrency=params.get("concurrency") or defaults,
+                    default_concurrency=defaults,
+                    concurrency_origin="task" if params.get("concurrency") else "default",
+                )
+
+            with observe_work(ctx.request_tracker, state="coordinator"), thread_cancel_scope(ctx.check_cancel):
+                result = _HANDLERS[task_type](params, ctx)
+            if ctx.request_tracker.meta or ctx.request_tracker.counts:
+                result = {**result, "request_runtime": ctx.request_tracker.snapshot(ctx.checkpoint)}
             if result.get("ok") is False:
                 message = result.get("message", "任务部分失败")
                 ctx.log(f"■ 任务失败：{message}", "error")
@@ -510,7 +529,10 @@ class AsyncTaskService:
                 ctx.log("⏹ 任务已被用户终止（正式结果未发生不完整切换）", "warn")
             self._release_fixing(tid)
             ctx.flush()
-            self._set(tid, status="interrupted", message=terminal_message)
+            if ctx.request_tracker.meta or ctx.request_tracker.counts:
+                ctx.checkpoint["request_runtime"] = ctx.request_tracker.snapshot(ctx.checkpoint)
+            self._set(tid, status="interrupted", message=terminal_message,
+                      result={"checkpoint": ctx.checkpoint} if ctx.checkpoint else None)
             self._audit_task(
                 action="interrupt",
                 result="failed",
@@ -524,7 +546,11 @@ class AsyncTaskService:
             ctx.log(f"任务失败: {e}", "error")
             self._release_fixing(tid)
             ctx.flush()
-            self._finish_terminal(tid, status="failed", message=str(e))
+            if ctx.request_tracker.meta or ctx.request_tracker.counts:
+                ctx.checkpoint["request_runtime"] = ctx.request_tracker.snapshot(ctx.checkpoint)
+            self._finish_terminal(tid, status="failed", message=str(e),
+                                  result=json.dumps({"checkpoint": ctx.checkpoint}, ensure_ascii=False,
+                                                    default=str) if ctx.checkpoint else None)
             self._audit_task(
                 action="finish",
                 result="failed",
@@ -721,11 +747,15 @@ def _row(r) -> dict:
             except (ValueError, TypeError):
                 pass
     cap = dict(TASK_CAPABILITIES.get(d.get("task_type"), {}))
-    checkpoint = (d.get("result") or {}).get("checkpoint") if isinstance(d.get("result"), dict) else {}
+    checkpoint = ((d.get("result") or {}).get("checkpoint") or {}) if isinstance(d.get("result"), dict) else {}
     if isinstance(checkpoint, dict):
         cap["current_phase"] = checkpoint.get("phase")
         cap["current_item"] = checkpoint.get("current_item")
         cap["checkpoint"] = checkpoint
+        result_payload = d.get("result") if isinstance(d.get("result"), dict) else {}
+        runtime = result_payload.get("request_runtime") or checkpoint.get("request_runtime")
+        if isinstance(runtime, dict):
+            cap["request_runtime"] = runtime
     d["capability"] = cap
     return d
 

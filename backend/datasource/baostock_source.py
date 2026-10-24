@@ -248,7 +248,8 @@ class BaostockSource(DataSource):
         只有断开会话才会抛错，才能落到下面的失效重登与 ``with_retry`` 重试。
         """
         from backend.datasource.base import check_thread_cancel
-        from backend.datasource.request_policy import request_policy, wait_for_source
+        from backend.datasource.request_policy import request_policy
+        from backend.datasource.request_runtime import request_slot
 
         # 锁覆盖登录、查询、游标读取及断线清理；探活也必须遵守，不能只靠采集调用方加锁。
         while not _SESSION_LOCK.acquire(timeout=0.1):
@@ -257,14 +258,13 @@ class BaostockSource(DataSource):
             policy = request_policy("baostock")
             self._socket_timeout_sec = policy.timeout
             self._login_timeout_sec = get_effective_settings().datasource.baostock_login_timeout_sec
-            wait_for_source("baostock", policy, check=check_thread_cancel)
             current = (policy.timeout, self._login_timeout_sec)
             if current != self._hang_policy:
                 self._hang_break_sec = max(max(policy.timeout, _HANG_MIN_SOCKET_TIMEOUT_SEC)
                                            * _HANG_BREAK_FACTOR,
                                            self._login_timeout_sec + policy.timeout)
                 self._hang_policy = current
-            with self._hang_guard(self._hang_break_sec):
+            with request_slot("baostock", policy, check=check_thread_cancel), self._hang_guard(self._hang_break_sec):
                 self._ensure_login()
                 return _collect(query())
         except Exception:

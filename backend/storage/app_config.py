@@ -80,6 +80,33 @@ CONFIG_GROUPS: list[dict] = [
     ]},
 ]
 
+# 来源覆盖仍属数据源组，统一继承通用表单的 nullable、校验和保存能力。
+from backend.config.source_registry import SOURCE_GROUPS
+
+_REQUEST_FIELDS = [
+    ("network_concurrency", "网络并发上限", "int", 1, 16),
+    ("rate_limit_per_sec", "请求上限(次/秒)", "number", 0.1, 50),
+    ("socket_timeout_sec", "请求超时(秒)", "number", 1, 600),
+    ("max_retries", "最多尝试次数", "int", 1, 10),
+    ("retry_backoff_sec", "退避起点(秒)", "number", 0, 60),
+]
+_datasource_fields = next(g["fields"] for g in CONFIG_GROUPS if g["key"] == "datasource")
+_datasource_fields.extend([
+    {"path": "datasource.network_concurrency", "label": "每来源网络并发上限", "type": "int", "min": 1, "max": 16, "desc": "来源跨线程、跨进程共享的真实网络在途上限；任务工作并发不能突破，会话串行来源固定为1。"},
+    {"path": "datasource.request_wait_timeout_sec", "label": "等待来源额度上限(秒)", "type": "number", "min": 1, "max": 3600, "desc": "包括来源冷却、频率和网络槽等待，超过后该工作单元可失败重试；等待支持取消。"},
+    {"path": "datasource.cooldown_sec", "label": "来源冷却时间(秒)", "type": "number", "min": 1, "max": 600, "desc": "限流响应或连续技术失败后跨进程共同冷却；到期仅允许单请求试探恢复。"},
+    {"path": "datasource.failure_threshold", "label": "连续失败冷却阈值", "type": "int", "min": 1, "max": 20, "desc": "网络错误或5xx达到阈值后暂缓该来源；明确空结果不计技术失败。"},
+    {"path": "datasource.max_response_mb", "label": "单次响应容量上限(MiB)", "type": "int", "min": 1, "max": 128, "desc": "读取响应时执行容量保护；超过后应缩小分页或区间，不进入重复请求。"},
+])
+for _group, _definition in SOURCE_GROUPS.items():
+    for _field, _label, _type, _minimum, _maximum in _REQUEST_FIELDS:
+        _datasource_fields.append({
+            "path": f"datasource.sources.{_group}.{_field}",
+            "label": f"{_definition['label']} · {_label}", "type": _type,
+            "min": _minimum, "max": _maximum, "nullable": True,
+            "desc": "关闭单独设置后继承通用请求规则；来源串行能力约束仍优先。",
+        })
+
 # path → field 元信息（含 group label）
 _FIELD_BY_PATH: dict[str, dict] = {
     f["path"]: {**f, "group": g["key"], "group_label": g["label"]}
@@ -279,17 +306,19 @@ class AppConfigRepo:
             except ConfigEncryptionError as exc:
                 raise ConfigValidationError(str(exc)) from exc
         now = datetime.now()
-        for path, value in stored_values.items():
-            if path in ENCRYPTED_CONFIG_PATHS:
-                if value == "":
-                    self.pg.execute("DELETE FROM app_config WHERE key=%s", [path])
+        # 整批值与 Cookie 旧验证状态原子提交；快照读取不能看到半批配置。
+        with self.pg.transaction() as conn, conn.cursor() as cur:
+            for path, value in stored_values.items():
+                if path in ENCRYPTED_CONFIG_PATHS and value == "":
+                    cur.execute("DELETE FROM app_config WHERE key=%s", [path])
                     continue
-            self.pg.execute(
-                "INSERT INTO app_config (key, value, updated_at) VALUES (%s,%s,%s) "
-                "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
-                [path, json.dumps(value, ensure_ascii=False), now])
-        if "ths_board.login_cookie" in normalized:
-            self.clear_ths_cookie_validation()
+                cur.execute(
+                    "INSERT INTO app_config (key, value, updated_at) VALUES (%s,%s,%s) "
+                    "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
+                    [path, json.dumps(value, ensure_ascii=False), now])
+            if "ths_board.login_cookie" in normalized:
+                cur.execute("DELETE FROM app_config WHERE key=%s", [THS_COOKIE_STATUS_KEY])
+        self._invalidate_requests(normalized)
         log.info("配置覆盖写入 %d 项: %s", len(normalized), list(normalized))
         return len(normalized)
 
@@ -301,6 +330,7 @@ class AppConfigRepo:
         self.pg.execute("DELETE FROM app_config WHERE key=%s", [path])
         if path == "ths_board.login_cookie":
             self.clear_ths_cookie_validation()
+        self._invalidate_requests([path])
 
     def reset_many(self, paths: list[str]) -> int:
         """批量删除覆盖项，回落到 settings.yaml 默认。返回删除条数。"""
@@ -320,7 +350,14 @@ class AppConfigRepo:
         self.pg.execute("DELETE FROM app_config WHERE key = ANY(%s)", [normalized])
         if "ths_board.login_cookie" in normalized:
             self.clear_ths_cookie_validation()
+        self._invalidate_requests(normalized)
         return int(len(df))
+
+    @staticmethod
+    def _invalidate_requests(paths):
+        if any(path.startswith(("datasource.", "ths_board.")) for path in paths):
+            from backend.config.request_snapshot import invalidate_request_settings
+            invalidate_request_settings()
 
 
 def apply_overrides(base: dict, overrides: dict[str, object]) -> dict:

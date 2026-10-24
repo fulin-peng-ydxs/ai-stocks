@@ -111,11 +111,21 @@ export const CONFIG_SYSTEM_GROUP_SECTIONS: Record<string, ConfigFieldSection[]> 
       hint: '行情、股本、估值、分时、板块、修复和测试共用。下一次请求读取新值，在途请求不变。',
       fieldPaths: [
         'datasource.rate_limit_per_sec',
+        'datasource.network_concurrency',
+        'datasource.request_wait_timeout_sec',
+        'datasource.cooldown_sec',
+        'datasource.failure_threshold',
+        'datasource.max_response_mb',
         'datasource.socket_timeout_sec',
         'datasource.max_retries',
         'datasource.retry_backoff_sec',
       ],
     },
+    ...Object.entries({ sina: '新浪', eastmoney: '东方财富', sse: '上交所', szse: '深交所', bse: '北交所资料接口', ths: '同花顺分时', ths_board: '同花顺板块', baostock: 'BaoStock' }).map(([key, title]) => ({
+      key: `source-${key}`, title: `${title}请求覆盖`, defaultOpen: false,
+      hint: '关闭单独设置后继承通用规则；串行会话的网络并发固定为1。',
+      fieldPaths: ['network_concurrency', 'rate_limit_per_sec', 'socket_timeout_sec', 'max_retries', 'retry_backoff_sec'].map(field => `datasource.sources.${key}.${field}`),
+    })),
     { key: 'session', title: 'BaoStock 会话规则', hint: '共享登录会话强制串行；登录完成后使用通用请求超时。', fieldPaths: ['datasource.baostock_login_timeout_sec'] },
   ],
   ths_board: [

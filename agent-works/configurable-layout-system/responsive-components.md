@@ -34,6 +34,7 @@
 | `frontend/src/components/AppFilterSelect.vue` | 无自身 CSS 查询 | 统一语义宽度与max100%；标签摘要按数量折叠，浮层扩展与长选项换行委托 AppSelect；不按尺寸修改筛选。 | BacktestView、BoardView、ConfigView、LimitLadderView、SectorsView、StocksView、TrainingView、OverviewView、QualityView、LimitLadderFilters、AuditLogView、TradeCheckinRevisionDrawer、TradeDisciplineHistory |
 | `frontend/src/components/AppFilterSwitch.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | LimitLadderFilters |
 | `frontend/src/components/AppIconButton.vue` | 无自身 CSS 查询 | 保持真实 button 根节点；名称不生成提示，显式 tooltip 复用 AppHoverInfo 虚拟锚点。 | App、AppCloseButton、AppSortControl、ComparePinButton、ConfigView、IndicatorParamSchemaEditor、MarketMasterDetailWorkspace、MenuResourceView、PageSettingsDrawer、PageSettingsTrigger、SectorDetailView、SectorsView、SettingsGroup、StockChartWorkspace、StockDetailView、StockGroupFavoriteButton、StocksView、TradeOperationEditor、TradeRuleEditor、ViolationReasonCombobox |
+| `frontend/src/components/AppMultiSelect.vue` | 无自身 CSS 查询 | 多选输入与浮层委托AppSelect，选值不因尺寸变化重置；远程搜索和批量粘贴校验保留请求竞态保护。 | AppFilterSelect、StockCodeMultiSelect |
 | `frontend/src/components/AppOverflowTooltipHost.vue` | 无自身 CSS 查询 | 只承接真实截断的原文，原生省略结合 Range 亚像素边界补足整数宽度在缩放下的漏判，不读取或修改 title；完整内容不显示，提示尺寸服从统一浮层安全边界；与显式说明共享窗口失焦/后台清理，恢复窗口焦点不自动重弹，后续在原文字内移动即可重新进入停留计时，页面不复制监听。 | App |
 | `frontend/src/components/AppPagination.vue` | 无自身 CSS 查询 | 自身宽≥640完整、420–639摘要、<420导航；实测溢出继续降档；始终保留翻页并自动恢复。 | AppDataTable、AssetSearchDrawer、OverviewView |
 | `frontend/src/components/AppRowActions.vue` | 无自身 CSS 查询 | ResizeObserver 实测父容器与按钮宽，默认最多3个常显；放不下进入具名“更多”菜单，操作不丢失；菜单消费 DESIGN 按钮操作菜单宽度契约，长文案换行并增高。 | ComponentAutoSettings、AssetSearchDrawer、ConfigView、ScreenView、TrainingView、IngestView、QualityView、ScheduleView、LayoutComponentsView、LayoutPresetsView、AuditLogView、DataDictionaryView、MenuResourceView、TenantManageView、UserManageView |
@@ -166,7 +167,7 @@
 | `frontend/src/views/StocksView.vue` | 无自身 CSS 查询 | 头部/筛选换行，分组长名省略；主从/表格/分页委托共享组件。 | 路由 |
 | `frontend/src/views/TradeDisciplineView.vue` | `@container app-viewport (max-width: 1100px)`<br>`@container app-viewport (max-width: 900px)` | 双栏网格行高限制在可用空间内，两侧独立滚动；窄宽转上下两区，规则栏最多占工作区45%且不超过210，余量交给详情内滚；更窄头部上下排列，规则/履约入口与草稿保留。 | 路由 |
 | `frontend/src/views/TrainingView.vue` | `@container app-viewport (max-width: 1100px)` | 窄宽训练网格单列；图表尺寸交给共享图表resize，输入不重置。 | 路由 |
-| `frontend/src/views/data/IngestView.vue` | 无自身 CSS 查询 | auto-fill min220采集卡片；tab/table内部滚动，范围字段委托共享组件。 | 路由 |
+| `frontend/src/views/data/IngestView.vue` | 无自身 CSS 查询 | auto-fill min220采集卡片；tab/table内部滚动，范围字段委托共享组件。日志抽屉统计复用AppDetailFields两列，统计与结果汇总占正文45%由AppScrollArea内滚，日志占剩余空间独立内滚，低高度不互相挤压；无新增视口高度或私有断点。 | 路由 |
 | `frontend/src/views/data/OverviewView.vue` | `@container app-viewport (max-height: 700px)`<br>`@container app-viewport (max-width: 1100px)` | 低高指标单行区内横向滚动，保留主值/核心状态/操作；质量保留达标数。正常高度指标随宽度重排，窄宽板块覆盖率/鲜活度单列，表格及板块主体内部滚动；统计明细由显式 i 入口恢复。 | 路由 |
 | `frontend/src/views/data/QualityView.vue` | 无自身 CSS 查询 | 头部/筛选自然换行；质检结果内部滚动，详情委托共享抽屉。 | 路由 |
 | `frontend/src/views/data/components/QualityDiagnosticContent.vue` | 无自身 CSS 查询 | 分区、字段组及来源表委托共享详情组件，窄宽字段单列、来源表内部滚动；技术详情默认收起，展开后复用 AppJsonViewer；更换问题收起技术详情，尺寸变化不重置。 | QualityView |

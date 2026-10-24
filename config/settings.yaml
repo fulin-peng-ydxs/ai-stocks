@@ -37,6 +37,12 @@ datasource:
   capital_review_batch_size: 50  # 每次日常更新轮询股本历史缺口/不一致股票；0关闭
   capital_review_interval_days: 7 # 无新增证据的同股历史复查间隔；失败次日可重试
   rate_limit_per_sec: 5       # 每实际来源共享的请求起始频率，分页/重试均计入
+  network_concurrency: 6     # 每来源真实网络在途上限，独立于任务工作并发；会话串行源固定1
+  request_wait_timeout_sec: 300 # 来源额度与冷却等待上限，等待可取消
+  cooldown_sec: 30          # 限流或连续技术失败后共同冷却，到期单请求试探
+  failure_threshold: 3      # 连续技术失败达到此数后冷却
+  max_response_mb: 32       # 单次响应读取容量；超过应缩小分页或区间
+  sources: {}               # 按已登记来源覆盖请求参数；未设置或null继承通用规则
   max_retries: 3              # 总尝试次数，包含首次
   retry_backoff_sec: 2        # 重试退避秒数
   socket_timeout_sec: 30      # 全局 socket 超时（秒），防公开接口请求挂死

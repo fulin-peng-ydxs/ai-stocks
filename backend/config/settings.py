@@ -18,7 +18,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from backend.common.exceptions import ConfigError
 
@@ -49,6 +49,17 @@ class DuckDBConfig(BaseModel):
     slow_query_ms: int = Field(default=500, ge=1, le=60_000)
 
 
+class SourceRequestOverrides(BaseModel):
+    """来源覆盖只接受请求参数；None 表示继承，不放宽会话串行硬约束。"""
+
+    model_config = {"extra": "forbid"}
+    rate_limit_per_sec: float | None = Field(default=None, ge=0.1, le=50)
+    network_concurrency: int | None = Field(default=None, ge=1, le=16)
+    socket_timeout_sec: float | None = Field(default=None, ge=1, le=600)
+    max_retries: int | None = Field(default=None, ge=1, le=10)
+    retry_backoff_sec: float | None = Field(default=None, ge=0, le=60)
+
+
 class DataSourceConfig(BaseModel):
     primary: str = "akshare"
     fallback: str = "baostock"
@@ -62,6 +73,21 @@ class DataSourceConfig(BaseModel):
     baostock_login_timeout_sec: float = Field(default=120, ge=1, le=600)  # 登录排队可明显慢于行情查询，单独限定
     cache_enabled: bool = True
     update_concurrency: int = Field(default=1, ge=1, le=16)  # 单任务默认工作单元数；不放大来源总限速
+    network_concurrency: int = Field(default=6, ge=1, le=16)
+    request_wait_timeout_sec: float = Field(default=300, ge=1, le=3600)
+    cooldown_sec: float = Field(default=30, ge=1, le=600)
+    failure_threshold: int = Field(default=3, ge=1, le=20)
+    max_response_mb: int = Field(default=32, ge=1, le=128)
+    sources: dict[str, SourceRequestOverrides] = Field(default_factory=dict)
+
+    @field_validator("sources")
+    @classmethod
+    def known_sources(cls, value):
+        from backend.config.source_registry import SOURCE_GROUPS
+
+        if set(value) - SOURCE_GROUPS.keys():
+            raise ValueError("请求覆盖包含未登记来源")
+        return value
 
 
 class IntradayConfig(BaseModel):

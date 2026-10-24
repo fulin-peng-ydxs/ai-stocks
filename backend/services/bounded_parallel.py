@@ -2,8 +2,10 @@
 
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from uuid import uuid4
 
 from backend.datasource.base import thread_cancel_scope
+from backend.datasource.observability import observe_work
 from backend.services.async_task import TaskCancelled
 
 
@@ -17,6 +19,8 @@ def run_bounded_parallel(
     on_complete,
     prepare=None,
     on_tick=None,
+    transform_batch=None,
+    batch_size: int = 1,
 ) -> None:
     """有界执行可取消采集，不预提交全量任务，也不留下终止后的孤儿写线程。
 
@@ -30,7 +34,7 @@ def run_bounded_parallel(
                 ctx.check_cancel()
             prepared = prepare(item) if prepare else item
             try:
-                with thread_cancel_scope(ctx.check_cancel if ctx else None):
+                with observe_work(getattr(ctx, "request_tracker", None)), thread_cancel_scope(ctx.check_cancel if ctx else None):
                     value = worker(prepared)
                 error = None
             except TaskCancelled:
@@ -41,17 +45,47 @@ def run_bounded_parallel(
                 on_tick()
             if ctx:
                 ctx.check_cancel()
-            on_complete(completed, prepared, value, error, 0)
+            entry = (completed, prepared, value, error, 0)
+            if transform_batch:
+                entry = transform_batch([entry])[0]
+            on_complete(*entry)
         return
     iterator = iter(items)
     executor = ThreadPoolExecutor(max_workers=concurrency)
     pending: dict = {}
     completed = 0
     last_heartbeat = 0.0
+    ready = []
+    queued_keys = {}
+    last_flush = time.monotonic()
+    tracker = getattr(ctx, "request_tracker", None)
 
-    def _run(item):
+    def _flush():
+        nonlocal last_flush
+        if not ready:
+            return
+        if ctx:
+            ctx.check_cancel()
         with thread_cancel_scope(ctx.check_cancel if ctx else None):
-            return worker(item)
+            batch = transform_batch(ready) if transform_batch else ready
+        for entry in batch:
+            if tracker:
+                with tracker.lock:
+                    tracker.states.pop(queued_keys.pop(entry[0], None), None)
+            if ctx:
+                ctx.check_cancel()
+            on_complete(*entry)
+        ready.clear()
+        last_flush = time.monotonic()
+
+    def _run(item, queue_key):
+        with observe_work(tracker), thread_cancel_scope(ctx.check_cancel if ctx else None):
+            try:
+                return worker(item)
+            finally:
+                if tracker:
+                    with tracker.lock:
+                        tracker.states[queue_key] = "write_queue"
 
     def _submit_one() -> bool:
         try:
@@ -59,13 +93,21 @@ def run_bounded_parallel(
         except StopIteration:
             return False
         prepared = prepare(item) if prepare else item
-        pending[executor.submit(_run, prepared)] = prepared
+        queue_key = uuid4().hex
+        pending[executor.submit(_run, prepared, queue_key)] = (prepared, queue_key)
         return True
 
     try:
         for _ in range(min(concurrency, len(items))):
             _submit_one()
-        while pending:
+        while pending or ready:
+            if ready and (len(ready) >= min(batch_size, concurrency) or not pending
+                          or time.monotonic() - last_flush >= 1):
+                _flush()
+                while len(pending) < concurrency and _submit_one():
+                    pass
+            if not pending:
+                continue
             if on_tick:
                 on_tick()
             if ctx:
@@ -77,12 +119,15 @@ def run_bounded_parallel(
                     last_heartbeat = now
                     ctx.log(
                         f"{wait_label}等待中：已完成 {completed}/{len(items)}，"
-                        f"在途 {len(pending)}，外部接口返回后继续"
+                        f"未完成工作单元 {len(pending)}，待落库 {len(ready)}；"
+                        "取源、额度等待及落库状态见请求运行指标"
                     )
                     ctx.flush()
+                    if hasattr(ctx, "set_checkpoint"):
+                        ctx.set_checkpoint()
                 continue
             for future in done_futures:
-                item = pending.pop(future)
+                item, queue_key = pending.pop(future)
                 if ctx:
                     ctx.check_cancel()
                 try:
@@ -94,16 +139,21 @@ def run_bounded_parallel(
                     value = None
                     error = exc
                 completed += 1
-                on_complete(completed, item, value, error, len(pending))
+                queued_keys[completed] = queue_key
+                ready.append((completed, item, value, error, len(pending)))
                 if ctx:
                     ctx.check_cancel()
-                _submit_one()
+                if not transform_batch:
+                    _flush()
+                    _submit_one()
+                elif len(pending) + len(ready) < concurrency:
+                    _submit_one()
     except TaskCancelled:
         cancelled = sum(1 for future in pending if future.cancel())
         running = sum(1 for future in pending if not future.done() and not future.cancelled())
         if ctx:
             ctx.log(
-                f"终止收尾：已取消 {cancelled} 个排队工作单元，等待 {running} 个在途请求安全结束…",
+                f"终止收尾：已取消 {cancelled} 个排队工作单元，等待 {running} 个工作单元安全结束；未提交结果不登记完成…",
                 "warn",
             )
             ctx.flush()
@@ -114,3 +164,10 @@ def run_bounded_parallel(
         raise
     else:
         executor.shutdown(wait=True)
+    finally:
+        if tracker:
+            with tracker.lock:
+                for key in queued_keys.values():
+                    tracker.states.pop(key, None)
+                for _, key in pending.values():
+                    tracker.states.pop(key, None)

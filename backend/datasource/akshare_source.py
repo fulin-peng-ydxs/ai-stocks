@@ -27,7 +27,8 @@ import requests
 
 from backend.common.logging import get_logger
 from backend.common.timeutil import fmt_date, to_date
-from backend.config import get_effective_settings, get_settings
+from backend.config import get_settings
+from backend.config.request_snapshot import get_request_settings as get_effective_settings
 from backend.datasource.base import (
     SINA_INTRADAY_REQUEST_LIMIT,
     DataSource,
@@ -387,10 +388,15 @@ class AKShareSource(DataSource):
         self, code6: str, start: date, end: date
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """成对获取并校验不复权/后复权响应；语义串票也按数据源失败自动重试。"""
-        raw = self._sina_daily(code6, start, end, "")
-        if raw is None or raw.empty or "date" not in raw.columns:
-            return pd.DataFrame(), pd.DataFrame()
-        hfq = self._sina_daily(code6, start, end, "hfq")
+        from backend.datasource.request_policy import daily_materials
+
+        # 原始/后复权解析共用同次已校验标的的材料，避免重复HTTP和快照漂移；
+        # 请求级变量名校验负责独立身份验证，下面的量额比较只作为解析一致性闸门。
+        with daily_materials(to_sina_symbol(code6)):
+            raw = self._sina_daily(code6, start, end, "")
+            if raw is None or raw.empty or "date" not in raw.columns:
+                return pd.DataFrame(), pd.DataFrame()
+            hfq = self._sina_daily(code6, start, end, "hfq")
         self._validate_daily_pair(code6, raw, hfq)
         return raw, hfq
 

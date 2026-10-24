@@ -130,7 +130,7 @@ function changeRecipe(recipe: StockIngestRecipe) {
       placeholder="默认"
       @update:model-value="patch({ concurrency: $event as number | null })"
     />
-    <AppFormHelp>留空沿用全局配置；提高并发会增加免费数据源封禁风险</AppFormHelp>
+    <AppFormHelp>留空沿用系统默认工作并发；任务覆盖仍受来源网络并发和每秒请求上限约束</AppFormHelp>
   </el-form-item>
 
   <CurrentDayFallbackField

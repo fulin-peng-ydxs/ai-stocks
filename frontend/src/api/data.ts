@@ -464,6 +464,13 @@ export interface SourceStatus {
   label?: string
   scope?: string
   concurrency?: number
+  network_concurrency?: number
+  work_concurrency?: number
+  rate_group?: string
+  request_unit?: string
+  policy_version?: string
+  policy_degraded?: boolean
+  runtime?: import('@/utils/requestRuntime').RequestRuntime | null
   serial_required?: boolean
   rate_limit_per_sec?: number
   max_attempts?: number
@@ -592,6 +599,7 @@ export interface AsyncTask {
   execution_attempt?: number
   cancel_requested_at?: string | null
   capability?: {
+    request_runtime?: import('@/utils/requestRuntime').TaskRequestRuntime
     can_cancel?: boolean
     can_resume?: boolean
     cancel_mode?: 'checkpoint' | 'none' | string

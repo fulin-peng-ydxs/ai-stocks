@@ -150,6 +150,28 @@ class ShareCapitalHistoryService:
                 )
         return count
 
+    def rebuild_many(self, codes):
+        """日常批量合并的兼容清理；保留旧表撤销审计，避免每只股票重复查空表。"""
+        codes = list(dict.fromkeys(codes))
+        if not codes:
+            return
+        with self.c.transaction():
+            previous = self.c.query_df(
+                "SELECT code,count(*) n FROM stock_share_capital_history "
+                "WHERE code IN (SELECT unnest(?::VARCHAR[])) GROUP BY code", [codes])
+            self.c.execute(
+                "UPDATE stock_share_capital_event SET date_basis='source_record' "
+                "WHERE code IN (SELECT unnest(?::VARCHAR[])) AND active "
+                "AND date_basis IS DISTINCT FROM 'source_record'", [codes])
+            if not previous.empty:
+                self.c.execute(
+                    "DELETE FROM stock_share_capital_history "
+                    "WHERE code IN (SELECT unnest(?::VARCHAR[]))", [codes])
+                for row in previous.itertuples():
+                    MarketRepository(self.c).log_update(
+                        "stock_share_capital_history", "unified_daily:" + row.code,
+                        None, None, int(row.n), "success")
+
     def rebuild_all(self, codes=None, ctx=None):
         """经异步任务重放原始记录；不重复联网、不修改有效源端市值。"""
         from backend.services.capital_quality import CapitalQualityService

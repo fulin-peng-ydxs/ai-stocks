@@ -41,6 +41,12 @@ class StorageError(AIStocksError):
     code = 5003
 
 
+class SourceRequestError(DataSourceError):
+    """真实请求预算已收敛或来源保护不可用；业务层不得重新放大网络重试。"""
+
+    request_attempts_exhausted = True
+
+
 class DataQualityError(AIStocksError):
     """数据质量校验未通过。"""
 

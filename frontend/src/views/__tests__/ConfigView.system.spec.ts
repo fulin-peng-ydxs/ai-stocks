@@ -435,7 +435,7 @@ describe('ConfigView system tab', () => {
   it('数据治理承载真实来源清单，查看不联网，单项测试后更新状态', async () => {
     const source = { source: 'ths_board', label: '同花顺板块', role: 'board' as const, scope: '字典、成分、指数和资金流',
       up: null, last_test_at: null, last_success_at: null, failure_reason: null,
-      timeout_sec: 12, rate_limit_per_sec: 1, concurrency: 1, serial_required: true, max_attempts: 3,
+      timeout_sec: 12, rate_limit_per_sec: 1, network_concurrency: 1, serial_required: true, max_attempts: 3,
       retry_backoff_sec: 2, policy_origin: '保留旧显式覆盖' }
     vi.mocked(dataApi.getSources).mockResolvedValue({ sources: [source] })
     vi.mocked(dataApi.testSources).mockResolvedValue({ sources: [{ ...source, up: true }] })
@@ -463,7 +463,7 @@ describe('ConfigView system tab', () => {
     vi.mocked(dataApi.getSources).mockResolvedValue({ sources: [{
       source: 'akshare', label: '新浪行情', role: 'primary', scope: '日线',
       up: null, last_test_at: null, last_success_at: null, failure_reason: null,
-      concurrency: 7, serial_required: false, rate_limit_per_sec: 2.5,
+      network_concurrency: 3, work_concurrency: 7, serial_required: false, rate_limit_per_sec: 2.5,
       timeout_sec: 47, max_attempts: 4, retry_backoff_sec: 1.5,
       policy_origin: '继承通用配置',
     }] })
@@ -471,7 +471,8 @@ describe('ConfigView system tab', () => {
     await wrapper.findAll('[role="tab"]').find((node) => node.text() === '数据治理')!.trigger('click')
     await flushPromises()
     const health = wrapper.find('.source-health')
-    expect(health.text()).toContain('默认并发 7 · 2.5 次/秒')
+    expect(health.text()).toContain('来源网络并发上限 3 · 2.5 次/秒')
+    expect(health.text()).toContain('默认工作并发 7')
     expect(health.text()).toContain('超时 47 秒 · 最多尝试 4 次')
     expect(health.text()).toContain('退避起点 1.5 秒')
     const hint = health.find('[aria-label="来源规则与测试说明"]')

@@ -4,6 +4,7 @@ import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import date
 from types import SimpleNamespace
 
@@ -19,6 +20,17 @@ DAY = "2026-09-10"
 
 @pytest.fixture(autouse=True)
 def request_settings(monkeypatch):
+    # 这些编排单测的假 SDK 不发 HTTP；在策略作用域入口模拟一次物理发送。
+    # 真正的发送拦截、多请求和跨进程限额另由 request_policy/governance 回归覆盖。
+    from backend.datasource import request_policy as rp
+    from backend.datasource.base import check_thread_cancel
+    original_scope = rp.http_policy_scope
+    @contextmanager
+    def fake_wire(group, policy, *, client=None):
+        rp.wait_for_source(group, policy, client=client, check=check_thread_cancel)
+        with original_scope(group, policy, client=client):
+            yield
+    monkeypatch.setattr(rp, "http_policy_scope", fake_wire)
     settings = SimpleNamespace(
         rate_limit_per_sec=50, socket_timeout_sec=0.2,
         max_retries=2, retry_backoff_sec=0.01,
@@ -440,7 +452,7 @@ def test_system_overrides_control_real_requests_and_refresh_during_task(monkeypa
 
 
 @pytest.mark.parametrize("phase", ["limit", "backoff"])
-def test_system_request_waits_remain_cancellable(phase, request_settings):
+def test_system_request_waits_remain_cancellable(phase, request_settings, monkeypatch):
     from backend.services.async_task import TaskCancelled
 
     cache, calls = _Redis(), []
@@ -465,7 +477,10 @@ def test_system_request_waits_remain_cancellable(phase, request_settings):
     request_settings.retry_backoff_sec = 2
     if phase == "limit":
         request_settings.rate_limit_per_sec = 0.1
-        cache.set("market:source:rate:v1:sina", str(time.time()), ex=60)
+        def waiting(*args, **kwargs):
+            sleep(0.1)
+            kwargs["check"]()
+        monkeypatch.setattr("backend.datasource.request_policy.wait_for_source", waiting)
     with pytest.raises(TaskCancelled):
         service.fetch_window("600000.SH", [DAY])
     assert calls == (["sina"] if phase == "backoff" else [])
