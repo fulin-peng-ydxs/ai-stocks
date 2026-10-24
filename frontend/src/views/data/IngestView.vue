@@ -1230,60 +1230,61 @@ const menuPageTitle = useMenuPageTitle()
         <el-button link type="primary" @click="goToDataResult('/data/overview')">查看数据概览</el-button>
         <el-button link type="primary" @click="goToDataResult('/data/quality')">查看数据质量</el-button>
       </div>
-      <AppScrollArea
+      <div
         v-if="logTask?.capability?.request_runtime || correlationResult || ladderResult"
         class="task-result-summary"
-        aria-label="任务运行与结果明细"
       >
-        <AppDetailFields
-          v-if="logTask?.capability?.request_runtime"
-          :columns="2"
-          class="task-result-fields"
-          data-testid="task-request-runtime"
-        >
-          <AppDetailField
-            v-for="field in taskRequestFields(logTask.capability.request_runtime)"
-            :key="field.label" :label="field.label" :value="field.value"
-          />
-        </AppDetailFields>
-        <AppDetailFields
-          v-if="correlationResult"
-          :columns="3"
-          class="task-result-fields"
-          data-testid="correlation-task-result"
-        >
-          <AppDetailField label="目标日期" :value="correlationResult.target_date" />
-          <AppDetailField label="目标股票" :value="correlationResult.target_stock_count ?? 0" />
-          <AppDetailField label="候选关系" :value="correlationResult.candidate_relation_count ?? 0" />
-          <AppDetailField label="行业冠军" :value="correlationResult.industry_champion_count ?? 0" />
-          <AppDetailField label="概念冠军" :value="correlationResult.concept_champion_count ?? 0" />
-          <AppDetailField label="空结果" :value="correlationResult.empty_result_count ?? 0" />
-          <AppDetailField label="回退上证" :value="correlationResult.fallback_count ?? 0" />
-          <AppDetailField label="跳过股票" :value="correlationResult.skipped_count ?? 0" />
-          <AppDetailField label="失败数" :value="correlationResult.failed_count ?? 0" />
-          <AppDetailField label="计算耗时" :value="`${correlationResult.calculation_seconds ?? 0} 秒`" />
-          <AppDetailField label="写入耗时" :value="`${correlationResult.write_seconds ?? 0} 秒`" />
-          <AppDetailField label="基准分布" :value="correlationBenchmarkText()" />
-          <AppDetailField label="写入状态" :value="correlationWriteStatus()" />
-        </AppDetailFields>
-        <AppDetailFields
-          v-if="ladderResult"
-          :columns="3"
-          class="task-result-fields"
-          data-testid="limit-ladder-task-result"
-        >
-          <AppDetailField label="交易日" :value="ladderResult.trade_date" />
-          <AppDetailField label="快照状态" :value="ladderResult.snapshot_status" />
-          <AppDetailField label="快照 ID" :value="ladderResult.snapshot_id" mono />
-          <AppDetailField label="股票池" :value="ladderResult.coverage?.pool_count ?? 0" />
-          <AppDetailField label="有效行情" :value="ladderResult.coverage?.valid_bar_count ?? 0" />
-          <AppDetailField label="确认停牌" :value="ladderResult.coverage?.confirmed_suspension_count ?? 0" />
-          <AppDetailField label="缺失" :value="ladderResult.coverage?.missing_count ?? 0" />
-          <AppDetailField label="非法行情" :value="ladderResult.coverage?.invalid_bar_count ?? 0" />
-          <AppDetailField label="未知规则" :value="ladderResult.coverage?.unsupported_rule_count ?? 0" />
-          <AppDetailField label="采集终态" :value="ladderResult.coverage?.ingest_terminal_status" />
-        </AppDetailFields>
-      </AppScrollArea>
+        <AppScrollArea :content-style="{ height: 'auto', minHeight: '0' }" aria-label="任务运行与结果明细">
+          <AppDetailFields
+            v-if="logTask?.capability?.request_runtime"
+            :columns="2"
+            class="task-result-fields"
+            data-testid="task-request-runtime"
+          >
+            <AppDetailField
+              v-for="field in taskRequestFields(logTask.capability.request_runtime)"
+              :key="field.label" :label="field.label" :value="field.value"
+            />
+          </AppDetailFields>
+          <AppDetailFields
+            v-if="correlationResult"
+            :columns="3"
+            class="task-result-fields"
+            data-testid="correlation-task-result"
+          >
+            <AppDetailField label="目标日期" :value="correlationResult.target_date" />
+            <AppDetailField label="目标股票" :value="correlationResult.target_stock_count ?? 0" />
+            <AppDetailField label="候选关系" :value="correlationResult.candidate_relation_count ?? 0" />
+            <AppDetailField label="行业冠军" :value="correlationResult.industry_champion_count ?? 0" />
+            <AppDetailField label="概念冠军" :value="correlationResult.concept_champion_count ?? 0" />
+            <AppDetailField label="空结果" :value="correlationResult.empty_result_count ?? 0" />
+            <AppDetailField label="回退上证" :value="correlationResult.fallback_count ?? 0" />
+            <AppDetailField label="跳过股票" :value="correlationResult.skipped_count ?? 0" />
+            <AppDetailField label="失败数" :value="correlationResult.failed_count ?? 0" />
+            <AppDetailField label="计算耗时" :value="`${correlationResult.calculation_seconds ?? 0} 秒`" />
+            <AppDetailField label="写入耗时" :value="`${correlationResult.write_seconds ?? 0} 秒`" />
+            <AppDetailField label="基准分布" :value="correlationBenchmarkText()" />
+            <AppDetailField label="写入状态" :value="correlationWriteStatus()" />
+          </AppDetailFields>
+          <AppDetailFields
+            v-if="ladderResult"
+            :columns="3"
+            class="task-result-fields"
+            data-testid="limit-ladder-task-result"
+          >
+            <AppDetailField label="交易日" :value="ladderResult.trade_date" />
+            <AppDetailField label="快照状态" :value="ladderResult.snapshot_status" />
+            <AppDetailField label="快照 ID" :value="ladderResult.snapshot_id" mono />
+            <AppDetailField label="股票池" :value="ladderResult.coverage?.pool_count ?? 0" />
+            <AppDetailField label="有效行情" :value="ladderResult.coverage?.valid_bar_count ?? 0" />
+            <AppDetailField label="确认停牌" :value="ladderResult.coverage?.confirmed_suspension_count ?? 0" />
+            <AppDetailField label="缺失" :value="ladderResult.coverage?.missing_count ?? 0" />
+            <AppDetailField label="非法行情" :value="ladderResult.coverage?.invalid_bar_count ?? 0" />
+            <AppDetailField label="未知规则" :value="ladderResult.coverage?.unsupported_rule_count ?? 0" />
+            <AppDetailField label="采集终态" :value="ladderResult.coverage?.ingest_terminal_status" />
+          </AppDetailFields>
+        </AppScrollArea>
+      </div>
       <AppScrollArea ref="logBody" class="log-body">
         <div v-for="l in logs" :key="l.seq" class="log-line" :class="l.level">
           <span class="lt">{{ (l.ts || '').slice(11, 19) }}</span>
@@ -1357,10 +1358,11 @@ const menuPageTitle = useMenuPageTitle()
 .log-meta { flex: 0 0 auto; display: flex; align-items: center; gap: var(--app-space-2); margin-bottom: 10px; }
 .log-followups { flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; gap: var(--app-space-2); margin: -2px 0 10px; font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .task-result-fields { flex: 0 0 auto; margin-bottom: var(--app-space-3); }
-.task-result-summary { flex: 0 0 45%; margin-bottom: var(--app-space-3); }
+.task-result-fields:last-child { margin-bottom: 0; }
+.task-result-summary { display: flex; flex-direction: column; flex: 0 0 auto; min-height: 0; max-height: 45%; margin-bottom: var(--app-space-3); }
 .lm-msg { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lm-phase { font-size: var(--app-font-size-caption); color: var(--el-color-warning); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.log-body { flex: 1 1 auto; min-height: 0; background: var(--el-fill-color-darker); border-radius: var(--layout-control-radius); --app-scroll-padding-top: 10px; --app-scroll-padding-right: 10px; --app-scroll-padding-bottom: 10px; --app-scroll-padding-left: 10px; font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); }
+.log-body { flex: 1 1 0; min-height: 0; background: var(--el-fill-color-darker); border-radius: var(--layout-control-radius); --app-scroll-padding-top: 10px; --app-scroll-padding-right: 10px; --app-scroll-padding-bottom: 10px; --app-scroll-padding-left: 10px; font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); }
 .log-line { display: flex; gap: var(--app-space-2); padding: 1px 0; }
 .log-line.warn { color: var(--app-warning-text); }
 .log-line.error { color: var(--app-danger-text); }

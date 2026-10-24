@@ -167,7 +167,7 @@
 | `frontend/src/views/StocksView.vue` | 无自身 CSS 查询 | 头部/筛选换行，分组长名省略；主从/表格/分页委托共享组件。 | 路由 |
 | `frontend/src/views/TradeDisciplineView.vue` | `@container app-viewport (max-width: 1100px)`<br>`@container app-viewport (max-width: 900px)` | 双栏网格行高限制在可用空间内，两侧独立滚动；窄宽转上下两区，规则栏最多占工作区45%且不超过210，余量交给详情内滚；更窄头部上下排列，规则/履约入口与草稿保留。 | 路由 |
 | `frontend/src/views/TrainingView.vue` | `@container app-viewport (max-width: 1100px)` | 窄宽训练网格单列；图表尺寸交给共享图表resize，输入不重置。 | 路由 |
-| `frontend/src/views/data/IngestView.vue` | 无自身 CSS 查询 | auto-fill min220采集卡片；tab/table内部滚动，范围字段委托共享组件。日志抽屉统计复用AppDetailFields两列，统计与结果汇总占正文45%由AppScrollArea内滚，日志占剩余空间独立内滚，低高度不互相挤压；无新增视口高度或私有断点。 | 路由 |
+| `frontend/src/views/data/IngestView.vue` | 无自身 CSS 查询 | auto-fill min220采集卡片；tab/table内部滚动，范围字段委托共享组件。日志抽屉统计复用AppDetailFields两列，统计与结果汇总按内容自然占高、最多占正文45%，AppScrollArea内容使用自然高度并在受限时内滚；日志以零基础成长项承接剩余空间独立内滚，低高度不互相挤压；无新增视口高度或私有断点。 | 路由 |
 | `frontend/src/views/data/OverviewView.vue` | `@container app-viewport (max-height: 700px)`<br>`@container app-viewport (max-width: 1100px)` | 低高指标单行区内横向滚动，保留主值/核心状态/操作；质量保留达标数。正常高度指标随宽度重排，窄宽板块覆盖率/鲜活度单列，表格及板块主体内部滚动；统计明细由显式 i 入口恢复。 | 路由 |
 | `frontend/src/views/data/QualityView.vue` | 无自身 CSS 查询 | 头部/筛选自然换行；质检结果内部滚动，详情委托共享抽屉。 | 路由 |
 | `frontend/src/views/data/components/QualityDiagnosticContent.vue` | 无自身 CSS 查询 | 分区、字段组及来源表委托共享详情组件，窄宽字段单列、来源表内部滚动；技术详情默认收起，展开后复用 AppJsonViewer；更换问题收起技术详情，尺寸变化不重置。 | QualityView |
