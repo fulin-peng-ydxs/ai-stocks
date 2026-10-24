@@ -6,7 +6,7 @@ export const conditionFilterOptions = [
   { label: '不限', value: 'any' }, { label: '排除', value: 'exclude' }, { label: '仅限', value: 'only' },
 ]
 export const conditionFactOptions = [
-  { label: '是', value: 'yes' }, { label: '否', value: 'no' }, { label: '未知', value: 'unknown' },
+  { label: '是', value: 'yes' }, { label: '否', value: 'no' },
 ]
 export const checklistCategories: Array<{ value: ChecklistCategory; label: string }> = [
   { value: 'basic', label: '基本条件' }, { value: 'risk', label: '风险排除' },
@@ -18,7 +18,7 @@ export function checklistCategory(category: StockChecklistItem['category']): Che
   return category === 'other' ? 'technical' : category
 }
 export const checklistResultOptions = [
-  { label: '符合', value: 'yes' }, { label: '不符合', value: 'no' }, { label: '未知', value: 'unknown' },
+  { label: '符合', value: 'yes' }, { label: '不符合', value: 'no' },
 ]
 
 export interface ChecklistCategoryOption { value: string; label: string; disabled?: boolean }
@@ -81,8 +81,9 @@ export function conditionSectionSummary(rule: DraftStockRule | undefined, catego
 
 export function checklistMissingItem(rule: DraftStockRule | undefined, operation: CheckinOperation): StockChecklistItem | undefined {
   if (operation.side !== 'buy') return undefined
+  // 移除填报候选不改变历史快照的合法状态，修正其他字段时仍可保留旧未知值。
   return rule?.checklist_items?.find(item => !(operation.checklist_results ?? []).some(result =>
-    result.item_id === item.item_id && checklistResultOptions.some(option => option.value === result.status)))
+    result.item_id === item.item_id && ['yes', 'no', 'unknown'].includes(result.status)))
 }
 
 export function conditionViolationTarget(rule: DraftStockRule | undefined, operation: CheckinOperation): { section: ChecklistCategory; itemId?: string } | undefined {
@@ -128,7 +129,22 @@ export function manualConditionDefaults(
   return defaults
 }
 
+/** 新增或重新关联时预填符合；由操作编辑器写入表单，展示组件不补写历史。 */
+export function checklistDefaults(
+  rule: DraftStockRule | undefined,
+  side: CheckinOperation['side'],
+): StockChecklistResult[] | null {
+  return side === 'buy' && rule?.checklist_items?.length
+    ? rule.checklist_items.map(item => ({ item_id: item.item_id, status: 'yes' }))
+    : null
+}
+
+export function checklistResultLabel(value?: ConditionFact | null): string {
+  return value === 'unknown' ? '未知' : checklistResultOptions.find(item => item.value === value)?.label ?? '未记录'
+}
+
 export function conditionFactLabel(value?: ConditionFact | null): string {
+  if (value === 'unknown') return '未知' // 历史快照仍需如实展示，填报候选不再提供未知。
   return conditionFactOptions.find((item) => item.value === value)?.label ?? '未记录'
 }
 

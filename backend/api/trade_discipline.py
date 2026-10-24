@@ -148,10 +148,10 @@ class OperationBody(StrictBody):
     side: Literal["buy", "sell"]
     stock_rule_id: str
     action_rule_id: str
-    price: FourPlaceDecimal | None = None
-    quantity: FourPlaceDecimal | None = None
-    amount: MoneyDecimal | None = None
-    fee: MoneyDecimal | None = None
+    price: FourPlaceDecimal
+    quantity: FourPlaceDecimal
+    amount: MoneyDecimal
+    fee: MoneyDecimal
     operated_at: datetime | None = None
     note: str | None = None
     compliance_status: Literal["complied", "breached"] | None = None

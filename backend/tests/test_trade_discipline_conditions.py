@@ -125,7 +125,8 @@ def test_request_models_reject_forged_st_and_fractional_counts():
     from backend.api.trade_discipline import CheckinContentBody, OperationBody, RuleDraftBody
 
     operation = {"stock_code": "600000.SH", "side": "buy", "stock_rule_id": "s",
-                 "action_rule_id": "a", "display_order": 1}
+                 "action_rule_id": "a", "display_order": 1,
+                 "price": "10", "quantity": "100", "amount": "1000", "fee": "0"}
     for patch in ({"selection_facts": {"is_st": False}}, {"is_st": False},
                   {"loss_status": "unverified"}):
         with pytest.raises(BodyValidationError):
@@ -179,6 +180,9 @@ def test_authoritative_st_blocks_complied_and_partial_operation(pg, market, monk
     with pytest.raises(ValidationError, match="不能选择已履约"):
         service.submit_checkin(rule_id, trade_date, content)
     operation["compliance_status"] = "breached"
+    content["operations"].append(dict(
+        _operation(trade_date, side="sell"), compliance_status="complied", display_order=2,
+    ))
     created = service.submit_checkin(rule_id, trade_date, content)
     assert created["assessment"] == "partial"
     operation["compliance_status"] = "complied"

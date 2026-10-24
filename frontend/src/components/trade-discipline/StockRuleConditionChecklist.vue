@@ -4,7 +4,7 @@ import ConfigPanelSection from '@/components/config/ConfigPanelSection.vue'
 import type { StockConditionPanelDefaults } from '@/layout/configPanel'
 import { useTradeConditionSections } from '@/composables/useTradeConditionSections'
 import type { CheckinOperation, DraftStockRule, StockChecklistResult, ConditionFact } from '@/api/tradeDiscipline'
-import { conditionCategories, checklistResultOptions, normalizeChecklist, conditionSectionSummary, type ConditionSectionsState } from '@/utils/tradeDisciplineConditions'
+import { conditionCategories, checklistResultOptions, checklistResultLabel, normalizeChecklist, conditionSectionSummary, type ConditionSectionsState } from '@/utils/tradeDisciplineConditions'
 
 const props = defineProps<{
   rule: DraftStockRule
@@ -45,7 +45,7 @@ defineExpose({ reveal })
         <div v-for="item in items.filter(entry => entry.category === category.value)" :key="item.item_id" class="stock-condition-checklist__row" :data-checklist-id="item.item_id">
           <span class="stock-condition-checklist__text">{{ item.text }}</span>
           <el-segmented v-if="checking && !disabled" :model-value="status(item.item_id)" :options="checklistResultOptions" :aria-label="`核对：${item.text}`" @update:model-value="choose(item.item_id, $event)" />
-          <span v-else-if="checking || results !== undefined" class="stock-condition-checklist__result" :class="{ 'is-breached': status(item.item_id) === 'no' }">{{ checklistResultOptions.find(option => option.value === status(item.item_id))?.label ?? '未记录' }}</span>
+          <span v-else-if="checking || results !== undefined" class="stock-condition-checklist__result" :class="{ 'is-breached': status(item.item_id) === 'no' }">{{ checklistResultLabel(status(item.item_id)) }}</span>
         </div>
     </ConfigPanelSection>
     <ConfigPanelSection v-if="rule.content" title="补充说明" :level="2" :default-open="false" :model-value="!!open.notes" summary="已填写"

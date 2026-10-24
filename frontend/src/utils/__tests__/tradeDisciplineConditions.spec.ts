@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CheckinOperation, DraftStockRule } from '@/api/tradeDiscipline'
-import { holdingCountWarning, manualConditionDefaults, stockConditionSummary, stockConditionWarnings, stockConditionViolations, normalizeChecklist, conditionSectionSummary } from '../tradeDisciplineConditions'
+import { holdingCountWarning, manualConditionDefaults, checklistDefaults, checklistResultLabel, conditionFactLabel, conditionFactOptions, checklistResultOptions, stockConditionSummary, stockConditionWarnings, stockConditionViolations, normalizeChecklist, conditionSectionSummary } from '../tradeDisciplineConditions'
 
 const rule: DraftStockRule = {
   detail_id: 's', name: '选股', max_capital: '100', content: '趋势', display_order: 1, enabled: true,
@@ -19,6 +19,25 @@ describe('交易纪律选股条件', () => {
       .toEqual({ loss_status: null, st_risk_status: null })
     expect(manualConditionDefaults(undefined, 'buy')).toEqual({ loss_status: null, st_risk_status: null })
     expect(manualConditionDefaults(rule, 'sell')).toEqual({ loss_status: null, st_risk_status: null })
+  })
+  it('填报不提供未知选项，历史快照仍保留未知标签', () => {
+    expect(conditionFactOptions.map(item => item.value)).toEqual(['yes', 'no'])
+    expect(checklistResultOptions.map(item => item.value)).toEqual(['yes', 'no'])
+    expect(conditionFactLabel('unknown')).toBe('未知')
+    expect(checklistResultLabel('unknown')).toBe('未知')
+    expect(checklistResultLabel(null)).toBe('未记录')
+  })
+  it('买入全部检查项默认符合，卖出和缺少检查项不补写', () => {
+    const configured = { ...rule, checklist_items: [
+      { item_id: 'a', category: 'basic' as const, text: '基本条件', display_order: 1 },
+      { item_id: 'b', category: 'technical' as const, text: '技术条件', display_order: 2 },
+    ] }
+    expect(checklistDefaults(configured, 'buy')).toEqual([
+      { item_id: 'a', status: 'yes' }, { item_id: 'b', status: 'yes' },
+    ])
+    expect(checklistDefaults(configured, 'sell')).toBeNull()
+    expect(checklistDefaults(rule, 'buy')).toBeNull()
+    expect(checklistDefaults(undefined, 'buy')).toBeNull()
   })
   it('保留价格四位精度，摘要只列出已配置的限制', () => {
     expect(stockConditionSummary(rule)).toBe('股价 5.1234～10.0000 元 · 排除ST · 排除亏损 · 仅限ST风险')

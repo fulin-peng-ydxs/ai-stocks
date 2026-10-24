@@ -97,7 +97,7 @@ def test_dictionary_snapshot_publish_checkin_amend_copy_and_isolation(pg, market
     assert copied["draft"]["action_rules"][0]["action_subtype_label"] == "趋势回踩"
     copied_item = copied["draft"]["stock_rules"][0]["checklist_items"][0]
     assert copied_item["item_id"] != "earnings" and copied_item["category_label"] == "基本面"
-    operation = _operation(trade_date, complete=False)
+    operation = _operation(trade_date)
     operation["checklist_results"] = [{"item_id": "earnings", "status": "unknown"}]
     body = {"assessment": "complied", "no_operation": False, "operations": [operation]}
     checkin = service.submit_checkin(rule_id, trade_date, body)

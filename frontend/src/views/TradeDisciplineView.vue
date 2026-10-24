@@ -8,6 +8,7 @@ import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
+import { checkinAssessmentOptions, checkinAssessmentGuides } from '@/utils/tradeDisciplineAssessment'
 import AppStatusNotice from '@/components/AppStatusNotice.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppDialog from '@/components/AppDialog.vue'
@@ -536,6 +537,11 @@ const menuPageTitle = useMenuPageTitle()
                 <HelpTipItem question="为什么显示待生效">
                   <ul>
                     <li>正式版本已经发布，但生效日晚于当前可打卡交易日；等生效日行情入库后，规则会自动出现在今日打卡中。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="履约自评怎么选">
+                  <ul>
+                    <li v-for="option in checkinAssessmentOptions" :key="option.value">{{ option.label }}：{{ checkinAssessmentGuides[option.value].summary }}</li>
                   </ul>
                 </HelpTipItem>
                 <HelpTipItem question="历史如何保留">

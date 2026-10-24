@@ -196,36 +196,80 @@ def test_four_assessment_operation_combinations(pg, market, assessment, no_opera
         assert result["reason_name_snapshot"] is None
 
 
-@pytest.mark.parametrize("operation_status", ["complied", "breached"])
-def test_partial_assessment_accepts_single_operation_status(pg, market, operation_status):
+@pytest.mark.parametrize(
+    ("statuses", "items", "limit", "peak", "valid"),
+    [
+        (["complied"], [], None, None, False),
+        (["breached"], [], None, None, False),
+        (["breached"], ["missed_sell"], None, None, False),
+        (["breached", "breached"], ["other"], None, None, False),
+        (["complied", "complied"], [], None, None, False),
+        (["complied"], ["missed_buy"], None, None, True),
+        (["complied"], ["missed_sell"], None, None, True),
+        (["complied"], ["other"], None, None, True),
+        (["complied", "breached"], [], None, None, True),
+        (["complied"], [], 2, 3, True),
+        (["complied"], [], 2, 2, False),
+        (["complied"], [], None, 3, False),
+    ],
+)
+def test_partial_assessment_requires_both_kinds_of_evidence(
+    pg, market, statuses, items, limit, peak, valid
+):
     trade_date, _, _ = _seed_market(market)
     service = _service(pg, market)
-    rule_id = _published_rule(service)
-
-    result = service.submit_checkin(
-        rule_id,
-        trade_date,
-        {
-            "assessment": "partial",
-            "no_operation": False,
-            "reason_code": "unplanned_operation",
-            "violation_detail": "整体规则存在偏差，单笔操作单独记录履约状态",
-            "operations": [
-                dict(
-                    _operation(trade_date),
-                    compliance_status=operation_status,
-                    display_order=1,
-                )
-            ],
-        },
-    )
-
+    rule_id = service.create_rule(dict(_rule_payload(), max_positions=limit))["id"]
+    service.publish_rule(rule_id, expected_revision=1)
+    payload = {
+        "assessment": "partial", "no_operation": False,
+        "reason_code": "unplanned_operation",
+        "violation_detail": "原因文字不能替代已履约和未履约依据",
+        "violation_items": items, "peak_positions": peak,
+        "operations": [dict(_operation(trade_date), compliance_status=status, display_order=i)
+                       for i, status in enumerate(statuses, start=1)],
+    }
+    if not valid:
+        with pytest.raises(ValidationError, match="部分履约须"):
+            service.submit_checkin(rule_id, trade_date, payload)
+        assert service.repo.get_checkin_by_rule_date(rule_id, trade_date) is None
+        return
+    result = service.submit_checkin(rule_id, trade_date, payload)
     assert result["assessment"] == "partial"
-    assert result["reason_name_snapshot"] == "计划外操作"
-    assert [item["compliance_status"] for item in result["operations"]] == [operation_status]
+    assert [item["compliance_status"] for item in result["operations"]] == statuses
+    assert result["violation_items"] == items
     page = service.list_checkins(assessment="partial")
     assert page["total"] == 1
     assert page["list"][0]["id"] == result["checkin_id"]
+
+
+def test_partial_amendment_rechecks_evidence_and_keeps_legacy_snapshot(pg, market):
+    trade_date, *_ = _seed_market(market)
+    service = _service(pg, market)
+    rule_id = _published_rule(service)
+    payload = {
+        "assessment": "partial", "no_operation": False,
+        "reason_code": "unplanned_operation", "violation_detail": "买入合规，另有应卖未卖",
+        "violation_items": ["missed_sell"],
+        "operations": [dict(_operation(trade_date), compliance_status="complied")],
+    }
+    result = service.submit_checkin(rule_id, trade_date, payload)
+    # 模拟旧口径允许的单笔已履约、未记录结构化偏差的历史快照；读取不能回填或改写。
+    pg.execute(
+        "UPDATE trade_discipline_checkin_revision SET violation_items='[]'::jsonb "
+        "WHERE tenant_id=%s AND owner_user_id=%s AND checkin_id=%s AND revision_no=1",
+        [TEST_TENANT, TEST_OWNER, result["checkin_id"]],
+    )
+    assert service.get_revision(result["checkin_id"], 1)["violation_items"] == []
+    with pytest.raises(ValidationError, match="未履约依据"):
+        service.amend_checkin(
+            result["checkin_id"], dict(payload, violation_items=[], review_note="只补说明"),
+            expected_revision=1,
+        )
+    assert service.get_checkin_context(rule_id, trade_date)["checkin"]["current_revision_no"] == 1
+    amended = service.amend_checkin(result["checkin_id"], payload, expected_revision=1)
+    assert amended["revision_no"] == 2
+    assert amended["violation_items"] == ["missed_sell"]
+    assert service.get_revision(result["checkin_id"], 1)["violation_items"] == []
 
 
 @pytest.mark.parametrize(
@@ -286,7 +330,7 @@ def test_non_partial_assessment_rejects_operation_compliance_status(pg, market):
         )
 
 
-def test_incomplete_financial_facts_allowed_and_rule_links_enforced(pg, market):
+def test_financial_facts_required_and_rule_links_enforced(pg, market):
     trade_date, _, _ = _seed_market(market)
     service = _service(pg, market)
     rule_id = _published_rule(service)
@@ -295,9 +339,14 @@ def test_incomplete_financial_facts_allowed_and_rule_links_enforced(pg, market):
         "no_operation": False,
         "operations": [_operation(trade_date, complete=False)],
     }
+    with pytest.raises(ValidationError, match="请填写成交价格"):
+        service.submit_checkin(rule_id, trade_date, payload)
+    assert service.repo.get_checkin_by_rule_date(rule_id, trade_date) is None
+    payload["operations"] = [dict(_operation(trade_date), fee="0", operated_at=None)]
     result = service.submit_checkin(rule_id, trade_date, payload)
-    assert result["financial_complete"] is False
-    assert result["operations"][0]["financial_complete"] is False
+    assert result["financial_complete"] is True
+    assert result["operations"][0]["fee"] == Decimal(0)
+    assert result["operations"][0]["operated_at"] is None
 
     second_rule = service.create_rule(_rule_payload("第二套纪律"))["id"]
     service.publish_rule(second_rule, expected_revision=1)
@@ -308,6 +357,42 @@ def test_incomplete_financial_facts_allowed_and_rule_links_enforced(pg, market):
     }
     with pytest.raises(ValidationError, match="方向错误"):
         service.submit_checkin(second_rule, trade_date, bad)
+
+
+@pytest.mark.parametrize("field", ["price", "quantity", "amount", "fee"])
+@pytest.mark.parametrize("side", ["buy", "sell"])
+def test_every_financial_field_required_on_submit_and_amend(pg, market, field, side):
+    trade_date, *_ = _seed_market(market)
+    service = _service(pg, market)
+    rule_id = _published_rule(service)
+    full = _operation(trade_date, side=side)
+    payload = {"assessment": "complied", "no_operation": False, "operations": [full]}
+    for missing in (None, "", "omit"):
+        operation = dict(full)
+        if missing == "omit":
+            operation.pop(field)
+        else:
+            operation[field] = missing
+        invalid = dict(payload, operations=[operation])
+        with pytest.raises(ValidationError, match="请填写"):
+            service.submit_checkin(rule_id, trade_date, invalid)
+    result = service.submit_checkin(rule_id, trade_date, payload)
+    # 历史空值仍可读取，修正提交必须补齐，不能用0自动回填。
+    pg.execute(
+        f"UPDATE trade_discipline_operation SET {field}=NULL "
+        "WHERE tenant_id=%s AND owner_user_id=%s AND checkin_id=%s AND revision_no=1",
+        [TEST_TENANT, TEST_OWNER, result["checkin_id"]],
+    )
+    assert service.get_revision(result["checkin_id"], 1)["operations"][0][field] is None
+    assert service.get_revision(result["checkin_id"], 1)["financial_complete"] is False
+    invalid = dict(payload, operations=[dict(full, **{field: None})], review_note="只改说明")
+    with pytest.raises(ValidationError, match="请填写"):
+        service.amend_checkin(result["checkin_id"], invalid, expected_revision=1)
+    assert service.get_revision(result["checkin_id"], 1)["operations"][0][field] is None
+    amended = service.amend_checkin(result["checkin_id"], payload, expected_revision=1)
+    assert amended["revision_no"] == 2
+    assert amended["financial_complete"] is True
+    assert service.get_revision(result["checkin_id"], 1)["operations"][0][field] is None
 
 
 def test_custom_reason_reused_deleted_and_history_snapshot_retained(pg, market):

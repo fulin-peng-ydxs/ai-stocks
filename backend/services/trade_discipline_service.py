@@ -766,6 +766,16 @@ class TradeDisciplineService:
                 if side == "buy" and stock_rule.get(condition_key, "any") != "any" and status is None:
                     raise ValidationError("请明确选择亏损/ST风险事实，未查明可选未知")
                 facts[key] = status if side == "buy" else None
+            # 新增/修正都必须补齐成交明细；历史可空列继续保留，不为旧记录编造数值。
+            financials = {}
+            for field, places, label in (
+                ("price", 4, "成交价格"), ("quantity", 4, "成交数量"),
+                ("amount", 2, "成交金额"), ("fee", 2, "交易费用"),
+            ):
+                value = self._decimal(item.get(field), places=places, label=label)
+                if value is None:
+                    raise ValidationError(f"操作 {index}：请填写{label}")
+                financials[field] = value
             prepared.append(
                 {
                     "id": operation_id,
@@ -777,10 +787,7 @@ class TradeDisciplineService:
                     "side": side,
                     "stock_rule_id": stock_rule_id,
                     "action_rule_id": action_rule_id,
-                    "price": self._decimal(item.get("price"), places=4, label="成交价格"),
-                    "quantity": self._decimal(item.get("quantity"), places=4, label="成交数量"),
-                    "amount": self._decimal(item.get("amount"), places=2, label="成交金额"),
-                    "fee": self._decimal(item.get("fee"), places=2, label="交易费用"),
+                    **financials,
                     "operated_at": operated_at,
                     "note": self._optional_text(item.get("note"), "操作说明"),
                     "compliance_status": item.get("compliance_status"),
@@ -906,7 +913,7 @@ class TradeDisciplineService:
                 or any(not isinstance(item, str) or item not in allowed_items
                        for item in violation_items)
                 or len(violation_items) != len(set(violation_items))):
-            raise ValidationError("未履约事项必须为不重复的应买未买、应卖未卖或其他规则未履约")
+            raise ValidationError("未履约事项必须为不重复的应买未买、应卖未卖或买卖操作未履约")
         if not has_violation and violation_items:
             raise ValidationError("已履约不能填写未履约事项")
         if has_violation and no_operation and not violation_items:
@@ -935,6 +942,16 @@ class TradeDisciplineService:
                 raise ValidationError(f"操作 {index} 存在规则违规，不能选择已履约：{'；'.join(issues)}")
         if assessment == "complied" and violations:
             raise ValidationError(f"存在规则违规，不能选择已履约：{'；'.join(violations)}")
+        # 部分履约必须同时有正反两类依据；原因/自由说明不能替代结构化事实。
+        # 漏买漏卖及持仓超限无需伪造第二笔成交，仍可与一笔合规操作并存。
+        if assessment == "partial":
+            if "complied" not in operation_statuses:
+                raise ValidationError("部分履约须至少有一笔已履约操作；全部未履约请选择未履约")
+            if "breached" not in operation_statuses and not violation_items and not violations:
+                raise ValidationError(
+                    "部分履约须同时记录未履约依据：未履约操作、未履约事项或实际持仓超限；"
+                    "均已履约请选择已履约"
+                )
         return {
             "peak_positions": peak_positions,
             "violation_items": violation_items,
@@ -1050,7 +1067,7 @@ class TradeDisciplineService:
             operation["condition_warnings"] = condition_warnings(operation, operation)
             operation["financial_complete"] = all(
                 operation.get(field) is not None
-                for field in ("price", "quantity", "amount", "fee", "operated_at")
+                for field in ("price", "quantity", "amount", "fee")
             )
         revision["financial_complete"] = bool(revision.get("no_operation")) or all(
             operation["financial_complete"] for operation in operations

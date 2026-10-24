@@ -16,6 +16,7 @@ import {
   multiplyToMinorUnits,
 } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
+import { operationFinancialFields, missingOperationFinancialField } from '@/utils/tradeDisciplineOperations'
 import { formatDateTimeMinutes } from '@/utils/dateTime'
 import { actionSubtypeLabel } from '@/utils/tradeDisciplineRuleTypes'
 import {
@@ -35,7 +36,7 @@ import type {
 } from '@/api/tradeDiscipline'
 
 import {
-  conditionFactOptions, manualConditionFields, manualConditionDefaults, checklistMissing, type ConditionSection, type ConditionSectionsState,
+  conditionFactOptions, manualConditionFields, manualConditionDefaults, checklistDefaults, checklistMissing, type ConditionSection, type ConditionSectionsState,
   stockConditionSummary, stockConditionWarnings, stockConditionViolations, conditionFactLabel,
 } from '@/utils/tradeDisciplineConditions'
 
@@ -90,7 +91,8 @@ function emptyOperation(order: number, side: 'buy' | 'sell'): CheckinOperation {
     action_rule_id: actionRules(side).length === 1 ? actionRules(side)[0].detail_id! : '',
     price: null, quantity: null, amount: null, fee: null,
     operated_at: defaultOperatedAt(props.tradeDate), note: null,
-    checklist_results: null, compliance_status: null, ...manualConditionDefaults(stockRule, side), display_order: order,
+    checklist_results: checklistDefaults(stockRule, side),
+    compliance_status: props.showCompliance ? 'complied' : null, ...manualConditionDefaults(stockRule, side), display_order: order,
   }
 }
 
@@ -155,13 +157,14 @@ function operationIssue(operation: CheckinOperation): string | null {
     || !operation.stock_rule_id || !operation.action_rule_id) return '信息未完整'
   if (checklistMissing(selectedStockRule(operation), operation)) return '选股条件待核对'
   if (props.showCompliance && !operation.compliance_status) return '履约状态未选择'
+  const missingFinancial = missingOperationFinancialField(operation)
+  if (missingFinancial) return `${missingFinancial.label}未填写`
   if (operation.operated_at && operation.operated_at.slice(0, 10) !== props.tradeDate) {
     return '日期需检查'
   }
-  for (const field of ['price', 'quantity', 'amount', 'fee'] as const) {
-    const value = operation[field]
-    if (value === null || value === '') continue
-    const units = decimalToMinorUnits(value, field === 'price' || field === 'quantity' ? 4 : 2)
+  for (const { key, scale } of operationFinancialFields) {
+    const value = operation[key]
+    const units = decimalToMinorUnits(value, scale)
     if (units === null || units < 0n) return '数值需检查'
   }
   return amountMismatch(operation) ? '金额不一致' : null
@@ -183,16 +186,16 @@ function expandOperation(index: number, section?: ConditionSection, itemId?: str
   }
 }
 
+function guardCompliance(operation: CheckinOperation): CheckinOperation {
+  return operation.compliance_status === 'complied'
+    && stockConditionViolations(selectedStockRule(operation), operation).length
+    ? { ...operation, compliance_status: 'breached' }
+    : operation
+}
+
 function update(index: number, patch: Partial<CheckinOperation>): void {
-  const next = props.modelValue.map((item, position) => {
-    if (position !== index) return item
-    const updated = { ...item, ...patch }
-    if (updated.compliance_status === 'complied' && stockConditionViolations(selectedStockRule(updated), updated).length) {
-      updated.compliance_status = 'breached'
-    }
-    return updated
-  })
-  emit('update:modelValue', next)
+  emit('update:modelValue', props.modelValue.map((item, position) =>
+    position === index ? guardCompliance({ ...item, ...patch }) : item))
 }
 
 function updateCompliance(index: number, value: unknown): void {
@@ -227,7 +230,8 @@ function selectStock(index: number, stock: StockOption | null): void {
   update(index, {
     stock_code: stock?.code ?? '',
     stock_name_snapshot: stock?.name ?? '',
-    ...manualConditionDefaults(selectedStockRule(operation), operation.side), selection_facts: null, checklist_results: null,
+    ...manualConditionDefaults(selectedStockRule(operation), operation.side), selection_facts: null,
+    checklist_results: checklistDefaults(selectedStockRule(operation), operation.side),
     is_st: stock?.is_st ?? null,
     st_as_of_date: stock?.st_as_of_date ?? null,
   })
@@ -244,7 +248,7 @@ function withStockRule(operation: CheckinOperation, stockRuleId: string): Checki
   const defaults = manualConditionDefaults(rule, operation.side)
   // 切换规则只补未填写项，保留已确认的事实（包括“未知”），避免掩盖真实违规。
   return {
-    ...operation, stock_rule_id: stockRuleId, checklist_results: null,
+    ...operation, stock_rule_id: stockRuleId, checklist_results: checklistDefaults(rule, operation.side),
     loss_status: operation.loss_status ?? defaults.loss_status,
     st_risk_status: operation.st_risk_status ?? defaults.st_risk_status,
   }
@@ -268,11 +272,11 @@ watch(() => props.version.version_no, () => {
     const actions = actionRules(item.side)
     const stockRuleId = stocks.some((rule) => rule.detail_id === item.stock_rule_id)
       ? item.stock_rule_id : (stocks.length === 1 ? stocks[0].detail_id! : '')
-    return {
+    return guardCompliance({
       ...(stockRuleId === item.stock_rule_id ? item : withStockRule(item, stockRuleId)),
       action_rule_id: actions.some((rule) => rule.detail_id === item.action_rule_id)
         ? item.action_rule_id : (actions.length === 1 ? actions[0].detail_id! : ''),
-    }
+    })
   })
   emit('update:modelValue', next)
 })
@@ -422,7 +426,7 @@ defineExpose({ expandOperation })
         </section>
 
         <section v-if="operation.side === 'buy' && selectedStockRule(operation)" class="operation-form-section" aria-label="选股条件核对" data-testid="operation-conditions">
-          <header><h5 class="app-section-title">选股条件核对</h5><p>逐项确认是否符合；未查明选未知，股价按本笔成交价核对。</p></header>
+          <header><h5 class="app-section-title">选股条件核对</h5><p>检查项默认符合，可按实际修改；股价按本笔成交价核对。</p></header>
           <StockRuleConditionChecklist :panel-defaults="conditionPanelDefaults" :ref="(component: unknown) => setConditionRef(operation, index, component)" :rule="selectedStockRule(operation)!" :operation="operation" :results="operation.checklist_results" checking :disabled="disabled"
             :open-sections="conditionSections[conditionKey(operation, index)] ?? {}" @update:open-sections="conditionSections[conditionKey(operation, index)] = $event" @update:results="update(index, { checklist_results: $event })">
             <template #risk>
@@ -435,12 +439,13 @@ defineExpose({ expandOperation })
                 :data-testid="`operation-${field.key}-${index}`"
                 @update:model-value="update(index, { [field.key]: $event })"
               >
+                <template #label>{{ conditionFactLabel(operation[field.key]) }}</template>
                 <el-option v-for="option in conditionFactOptions" :key="option.value" :label="option.label" :value="option.value" />
               </AppSelect>
               <small v-if="disabled && !operation[field.key]" class="app-caption-text">{{ conditionFactLabel(operation[field.key]) }}</small>
             </el-form-item>
           </div>
-          <AppFormHelp>ST按交易日逐日数据核对；亏损与ST风险按规则预填，可按实际修改，未查明选未知。</AppFormHelp>
+          <AppFormHelp>ST按交易日逐日数据核对；亏损与ST风险按规则预填，可按实际修改。</AppFormHelp>
             </template>
           </StockRuleConditionChecklist>
           <ul v-if="stockConditionViolations(selectedStockRule(operation), operation).length" class="condition-warnings" role="status"><li v-for="warning in stockConditionViolations(selectedStockRule(operation), operation)" :key="warning">{{ warning }}</li></ul>
@@ -449,18 +454,18 @@ defineExpose({ expandOperation })
         <section class="operation-form-section" aria-label="成交明细" data-testid="operation-trade-section">
           <header>
             <h5 class="app-section-title">成交明细</h5>
-            <p>价格、数量、金额和费用均为可选事实，系统不会覆盖手工填写值。</p>
+            <p>成交价、数量、成交金额和费用均须填写；费用可填0，系统不会覆盖手工填写值。</p>
           </header>
           <div class="operation-grid">
-            <el-form-item label="成交价" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.price" :scale="4" :integer-digits="16" :disabled="disabled" placeholder="0.0000" @update:model-value="update(index, { price: $event })" /></el-form-item>
-            <el-form-item label="数量" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.quantity" :scale="4" :integer-digits="16" :disabled="disabled" placeholder="0.0000" @update:model-value="update(index, { quantity: $event })" /></el-form-item>
-            <el-form-item label="成交金额" class="operation-field operation-field--amount">
+            <el-form-item label="成交价" :required="!disabled" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.price" :scale="4" :integer-digits="16" :disabled="disabled" placeholder="0.0000" @update:model-value="update(index, { price: $event })" /></el-form-item>
+            <el-form-item label="数量" :required="!disabled" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.quantity" :scale="4" :integer-digits="16" :disabled="disabled" placeholder="0.0000" @update:model-value="update(index, { quantity: $event })" /></el-form-item>
+            <el-form-item label="成交金额" :required="!disabled" class="operation-field operation-field--amount">
               <FixedDecimalInput :model-value="operation.amount" grouped :disabled="disabled" @update:model-value="update(index, { amount: $event })" />
               <small v-if="computedAmount(operation) !== null" :class="{ 'field-error': amountMismatch(operation) }">
                 价 × 量 = {{ computedAmount(operation) }}{{ amountMismatch(operation) ? '，与填写金额不一致' : '' }}
               </small>
             </el-form-item>
-            <el-form-item label="费用" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.fee" grouped :disabled="disabled" @update:model-value="update(index, { fee: $event })" /></el-form-item>
+            <el-form-item label="费用" :required="!disabled" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.fee" grouped :disabled="disabled" @update:model-value="update(index, { fee: $event })" /></el-form-item>
           </div>
         </section>
 

@@ -3,6 +3,8 @@ import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import type { StockConditionPanelDefaults } from '@/layout/configPanel'
 import AppFormHelp from '@/components/AppFormHelp.vue'
+import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppScrollArea from '@/components/AppScrollArea.vue'
@@ -12,8 +14,11 @@ import TradeDisciplineSectionPanel from '@/components/trade-discipline/TradeDisc
 import { getErrorMessage } from '@/utils/error'
 import { holdingCountWarning, manualConditionFields, stockConditionViolations, checklistMissingItem, checklistCategory, conditionViolationTarget, type ConditionSection } from '@/utils/tradeDisciplineConditions'
 import { decimalToMinorUnits, multiplyToMinorUnits } from '@/utils/fixedDecimal'
+import { operationFinancialFields, missingOperationFinancialField } from '@/utils/tradeDisciplineOperations'
 import {
   checkinAssessmentOptions,
+  checkinAssessmentGuides,
+  partialAssessmentIssue,
   checkinViolationItemOptions,
   checkinViolationItemsText,
   hasCheckinViolation,
@@ -84,6 +89,9 @@ const knownViolations = computed(() => {
   })
   return issues
 })
+const partialIssue = computed(() => partialAssessmentIssue(
+  form.operations, selectedViolationItems.value, knownViolations.value.length > 0,
+))
 const assessmentOptions = computed(() => checkinAssessmentOptions.map((option) => ({
   ...option, disabled: option.value === 'complied' && knownViolations.value.length > 0,
 })))
@@ -191,14 +199,14 @@ function validate(): string | null {
     if (!operation.action_rule_id) return operationError('请选择买卖规则')
     const stockRule = context.value?.version.stock_rules.find((rule) => rule.detail_id === operation.stock_rule_id)
     const missing = checklistMissingItem(stockRule, operation)
-    if (missing) return operationError('请逐项核对选股条件，未查明可选未知', checklistCategory(missing.category), missing.item_id)
+    if (missing) return operationError('请逐项选择符合或不符合', checklistCategory(missing.category), missing.item_id)
     if (operation.compliance_status === 'complied' && stockConditionViolations(stockRule, operation).length) {
       const target = conditionViolationTarget(stockRule, operation)
       return operationError('存在规则违规，不能选择已履约', target?.section, target?.itemId)
     }
     if (operation.side === 'buy') {
       for (const field of manualConditionFields) {
-        if (stockRule?.[field.filter] && stockRule[field.filter] !== 'any' && !operation[field.key]) return operationError(`请选择${field.label}，未查明可选未知`, 'risk')
+        if (stockRule?.[field.filter] && stockRule[field.filter] !== 'any' && !operation[field.key]) return operationError(`请选择${field.label}`, 'risk')
       }
     }
     if (form.assessment === 'partial' && !operation.compliance_status) {
@@ -207,14 +215,16 @@ function validate(): string | null {
     if (operation.operated_at && operation.operated_at.slice(0, 10) !== props.tradeDate) {
       return operationError('操作时间必须属于当前交易日')
     }
-    for (const field of ['price', 'quantity', 'amount', 'fee'] as const) {
-      const value = operation[field]
-      if (value === null || value === '') continue
-      const units = decimalToMinorUnits(value, field === 'price' || field === 'quantity' ? 4 : 2)
+    const missingFinancial = missingOperationFinancialField(operation)
+    if (missingFinancial) return operationError(`请填写${missingFinancial.label}`)
+    for (const { key, scale } of operationFinancialFields) {
+      const value = operation[key]
+      const units = decimalToMinorUnits(value, scale)
       if (units === null) return operationError('金额与数量格式不正确')
       if (units < 0n) return operationError('金额与数量不能为负数')
     }
   }
+  if (form.assessment === 'partial' && partialIssue.value) return partialIssue.value
   return null
 }
 
@@ -340,6 +350,14 @@ function requestDateChange(value: string | null): void {
 watch(() => form.assessment, (assessment, previous) => {
   if (assessment === 'partial') {
     form.no_operation = false
+    if (!readonly.value) {
+      form.operations = form.operations.map(operation => ({
+        ...operation,
+        compliance_status: operation.compliance_status ?? (stockConditionViolations(
+          context.value?.version.stock_rules.find(rule => rule.detail_id === operation.stock_rule_id), operation,
+        ).length ? 'breached' : 'complied'),
+      }))
+    }
     return
   }
   if (previous === 'partial') {
@@ -414,15 +432,29 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
         >
           <div class="assessment-row">
             <el-form-item label="履约自评" required>
+              <template #label>
+                履约自评
+                <HelpTip title="履约自评操作说明" :width="420" test-id="checkin-assessment-help-tip">
+                  <HelpTipItem v-for="option in checkinAssessmentOptions" :key="option.value" :question="option.label">
+                    <ul>
+                      <li>{{ checkinAssessmentGuides[option.value].summary }}</li>
+                      <li v-for="detail in checkinAssessmentGuides[option.value].details" :key="detail">{{ detail }}</li>
+                    </ul>
+                  </HelpTipItem>
+                </HelpTip>
+              </template>
               <el-segmented
                 data-testid="checkin-assessment"
                 v-model="form.assessment"
                 :disabled="readonly"
                 :options="assessmentOptions"
+                aria-describedby="checkin-assessment-help"
               />
+              <AppFormHelp id="checkin-assessment-help">{{ checkinAssessmentGuides[form.assessment].summary }}</AppFormHelp>
             </el-form-item>
             <el-checkbox data-testid="checkin-no-operation" :model-value="form.no_operation" :disabled="readonly || form.assessment === 'partial'" @change="toggleNoOperation(Boolean($event))">今日无操作</el-checkbox>
           </div>
+          <p v-if="form.assessment === 'partial' && partialIssue && !readonly" class="condition-warning" role="status" data-testid="checkin-partial-issue">{{ partialIssue }}</p>
           <p v-if="knownViolations.length && !readonly" class="condition-warning" role="status">已发现规则违规，不能选择“已履约”；请填写未履约情况或逐笔记录部分履约。</p>
           <div v-if="context.version.max_positions != null || form.peak_positions != null" class="holding-count" data-testid="checkin-holding-count">
             <el-form-item label="当日最大同时持仓数" :required="context.version.max_positions != null">

@@ -1482,7 +1482,7 @@ DO $$ BEGIN
         AND jsonb_array_length(violation_items) <= 3);
     END IF;
 END $$;
-COMMENT ON COLUMN trade_discipline_checkin_revision.violation_items IS '未履约事项多选：missed_buy应买未买、missed_sell应卖未卖、other其他规则未履约；NULL为旧记录未采集，空数组为未填事项，不计入成交';
+COMMENT ON COLUMN trade_discipline_checkin_revision.violation_items IS '未履约事项多选：missed_buy应买未买、missed_sell应卖未卖、other买卖操作未履约；NULL为旧记录未采集，空数组为未填事项，不计入成交';
 """
 
 _TRADE_DISCIPLINE_CHECKLIST_UPGRADES = """

@@ -83,6 +83,7 @@ def test_operation_request_allows_server_owned_stock_name_snapshot():
         side="buy",
         stock_rule_id="stock-1",
         action_rule_id="buy-1",
+        price="10", quantity="100", amount="1000", fee="0",
         display_order=1,
     )
     assert body.stock_name_snapshot is None
@@ -120,7 +121,7 @@ def test_structured_conditions_and_peak_roundtrip_via_authorized_api(
             json={"expected_revision": 1},
         )
         assert published.status_code == 200, published.text
-        operation = _operation(trade_date, complete=False)
+        operation = dict(_operation(trade_date), operated_at=None)
         operation.update(loss_status="unknown", price="5.1234")
         operation["checklist_results"] = [{"item_id": "trend", "status": "unknown"}]
         content = {
@@ -169,6 +170,69 @@ def test_structured_conditions_and_peak_roundtrip_via_authorized_api(
         _remove_user(pg, identity)
 
 
+def test_partial_evidence_guard_cannot_be_bypassed_via_api(client, pg, market, monkeypatch):
+    from backend.services.trade_discipline_service import TradeDisciplineService
+    from backend.storage.trade_discipline_repository import TradeDisciplineRepository
+    from backend.tests.test_trade_discipline_t3 import _operation, _rule_payload, _seed_market
+
+    trade_date, *_ = _seed_market(market)
+    identity = _make_user(pg, [
+        "trade-discipline:view", "trade-discipline:rule-manage",
+        "trade-discipline:checkin-view", "trade-discipline:checkin-submit",
+    ])
+    headers = _auth(identity[0], identity[1])
+    monkeypatch.setattr(
+        "backend.api.trade_discipline._service",
+        lambda: TradeDisciplineService(TradeDisciplineRepository(pg), market),
+    )
+    try:
+        created = client.post("/api/trade-discipline/rules", headers=headers, json=_rule_payload())
+        assert created.status_code == 200, created.text
+        rule_id = created.json()["data"]["id"]
+        assert client.post(
+            f"/api/trade-discipline/rules/{rule_id}/publish", headers=headers,
+            json={"expected_revision": 1},
+        ).status_code == 200
+        content = {
+            "rule_id": rule_id, "trade_date": str(trade_date),
+            "assessment": "partial", "no_operation": False,
+            "reason_code": "unplanned_operation", "violation_detail": "只有文字描述偏差",
+            "operations": [dict(_operation(trade_date), operated_at=None, compliance_status="complied")],
+        }
+        for status, message in (("complied", "未履约依据"), ("breached", "已履约操作")):
+            content["operations"][0]["compliance_status"] = status
+            rejected = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
+            assert rejected.status_code == 422, rejected.text
+            assert message in rejected.text
+        content["operations"][0]["compliance_status"] = "complied"
+        content["violation_items"] = ["missed_sell"]
+        for field in ("price", "quantity", "amount", "fee"):
+            original = content["operations"][0].pop(field)
+            rejected = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
+            assert rejected.status_code == 422, rejected.text
+            assert rejected.json()["msg"] == "请求参数不合法，请检查填写内容"
+            content["operations"][0][field] = None
+            assert client.post("/api/trade-discipline/checkins", headers=headers, json=content).status_code == 422
+            content["operations"][0][field] = original
+        content["operations"][0]["fee"] = "0"
+        submitted = client.post("/api/trade-discipline/checkins", headers=headers, json=content)
+        assert submitted.status_code == 200, submitted.text
+        result = submitted.json()["data"]
+        assert result["assessment"] == "partial"
+        assert result["violation_items"] == ["missed_sell"]
+        # 修正入口复用同一服务守卫，不能移除唯一未履约依据。
+        amendment = {key: value for key, value in content.items() if key not in {"rule_id", "trade_date"}}
+        amendment.update(expected_revision=1, violation_items=[])
+        rejected = client.post(
+            f"/api/trade-discipline/checkins/{result['checkin_id']}/amendments",
+            headers=headers, json=amendment,
+        )
+        assert rejected.status_code == 422, rejected.text
+        assert "未履约依据" in rejected.text
+    finally:
+        _remove_user(pg, identity)
+
+
 def test_partial_assessment_and_operation_status_are_openapi_validated():
     from backend.api.trade_discipline import CheckinContentBody
 
@@ -184,6 +248,7 @@ def test_partial_assessment_and_operation_status_are_openapi_validated():
                 "stock_rule_id": "stock-1",
                 "action_rule_id": "buy-1",
                 "compliance_status": "complied",
+                "price": "10", "quantity": "100", "amount": "1000", "fee": "0",
                 "display_order": 1,
             }
         ],

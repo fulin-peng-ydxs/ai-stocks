@@ -161,9 +161,13 @@ def test_checklist_publish_copy_checkin_amend_history_and_owner(pg, market):
         with pytest.raises(ValidationError, match="不能选择已履约"):
             service.submit_checkin(rule_id, trade_date, content)
         operation["compliance_status"] = "breached"
+        content["operations"].append(dict(
+            _operation(trade_date, side="sell"), compliance_status="complied", display_order=2,
+        ))
         created = service.submit_checkin(rule_id, trade_date, content)
         assert created["operations"][0]["checklist_results"][0]["status"] == "no"
         assert "不符合" in created["operations"][0]["condition_warnings"][0]
+        content["operations"] = [operation]
         content.update(assessment="complied", reason_code=None, violation_detail=None)
         operation.update(
             compliance_status=None, checklist_results=[{"item_id": "trend", "status": "unknown"}]

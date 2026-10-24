@@ -38,8 +38,8 @@ const ReasonStub = defineComponent({
 })
 const operation = {
   stock_code: '000001.SZ', stock_name_snapshot: '平安银行', side: 'buy',
-  stock_rule_id: 'stock-rule-1', action_rule_id: 'action-buy-1', price: null,
-  quantity: null, amount: null, fee: null, operated_at: null, note: null, display_order: 1,
+  stock_rule_id: 'stock-rule-1', action_rule_id: 'action-buy-1', price: '10',
+  quantity: '100', amount: '1000', fee: '0', operated_at: null, note: null, display_order: 1,
 }
 const OperationStub = defineComponent({
   name: 'TradeOperationEditor',
@@ -75,7 +75,24 @@ function mountForm(
 }
 
 describe('TradeCheckinForm', () => {
-  it('提交要求逐项明确选择，未知可提交且结果随请求保存', async () => {
+  it('履约自评切换时同步展示对应操作要求，部分履约禁用无操作', async () => {
+    const wrapper = mountForm({ TradeOperationEditor: OperationStub, ViolationReasonCombobox: ReasonStub })
+    await flushPromises()
+    const help = () => wrapper.get('#checkin-assessment-help').text()
+    const assessment = wrapper.findComponent({ name: 'ElSegmented' })
+    expect(help()).toContain('没有交易可勾选“今日无操作”')
+    assessment.vm.$emit('update:modelValue', 'partial')
+    await flushPromises()
+    expect(help()).toContain('须同时有已履约操作和未履约依据')
+    expect(wrapper.findComponent({ name: 'ElCheckbox' }).props('disabled')).toBe(true)
+    assessment.vm.$emit('update:modelValue', 'breached')
+    await flushPromises()
+    expect(help()).toContain('无交易则勾选“今日无操作”并选择未履约事项')
+    expect(wrapper.findComponent({ name: 'ElCheckbox' }).props('disabled')).toBe(false)
+    expect(wrapper.findComponent({ name: 'ElCheckboxGroup' }).exists()).toBe(true)
+  })
+
+  it('缺失结果阻止提交，历史未知结果修正时仍可保留', async () => {
     const checklistVersion = { ...version, stock_rules: [{ ...version.stock_rules[0],
       checklist_items: [{ item_id: 'c', category: 'technical', text: '涨幅不超过50%', display_order: 1 }] }] }
     getContext.mockResolvedValue({ ...emptyContext, version: checklistVersion })
@@ -106,7 +123,8 @@ describe('TradeCheckinForm', () => {
 
   it('新增买入无需逐项填写人工条件，规则默认值随正式打卡提交', async () => {
     getContext.mockResolvedValue({ ...emptyContext, version: {
-      ...version, stock_rules: [{ ...version.stock_rules[0], loss_filter: 'exclude', st_risk_filter: 'exclude' }],
+      ...version, stock_rules: [{ ...version.stock_rules[0], loss_filter: 'exclude', st_risk_filter: 'exclude',
+        checklist_items: [{ item_id: 'c', category: 'technical', text: '趋势符合', display_order: 1 }] }],
     } })
     const wrapper = mountForm({ StockOptionSelect: true })
     await flushPromises()
@@ -115,15 +133,32 @@ describe('TradeCheckinForm', () => {
       code: '000001.SZ', name: '平安银行', is_st: false, st_as_of_date: '2026-08-22',
     })
     await flushPromises()
+    const editor = wrapper.findComponent({ name: 'TradeOperationEditor' })
+    editor.vm.$emit('update:modelValue', editor.props('modelValue').map((item: any) => ({ ...item, price: '10', quantity: '100', amount: '1000', fee: '0' })))
+    await flushPromises()
     await wrapper.get('button.el-button--primary').trigger('click')
     await flushPromises()
     expect(submitCheckin).toHaveBeenCalledWith(expect.objectContaining({
       assessment: 'complied', no_operation: false,
       operations: [expect.objectContaining({
         stock_code: '000001.SZ', stock_rule_id: 'stock-rule-1', action_rule_id: 'action-buy-1',
-        loss_status: 'no', st_risk_status: 'no',
+        loss_status: 'no', st_risk_status: 'no', checklist_results: [{ item_id: 'c', status: 'yes' }],
       })],
     }))
+  })
+
+  it('切换部分履约为未填写的单笔状态补默认值，已有违规默认未履约', async () => {
+    getContext.mockResolvedValue({ ...emptyContext, version: {
+      ...version, stock_rules: [{ ...version.stock_rules[0], st_filter: 'exclude' }],
+    } })
+    const wrapper = mountForm({ StockOptionSelect: true })
+    await flushPromises()
+    const editor = wrapper.findComponent({ name: 'TradeOperationEditor' })
+    editor.vm.$emit('update:modelValue', [operation, { ...operation, is_st: true, display_order: 2 }])
+    await flushPromises()
+    wrapper.findAllComponents({ name: 'ElSegmented' })[0].vm.$emit('update:modelValue', 'partial')
+    await flushPromises()
+    expect(editor.props('modelValue').map((item: any) => item.compliance_status)).toEqual(['complied', 'breached'])
   })
 
   it('限制持仓时无操作仍需填峰值，超限不能选择已履约', async () => {
@@ -271,6 +306,45 @@ describe('TradeCheckinForm', () => {
     expect(submitCheckin).not.toHaveBeenCalled()
   })
 
+  it.each(['price', 'quantity', 'amount', 'fee'] as const)('成交明细%s未填阻止提交并展开操作卡', async (field) => {
+    const wrapper = mountForm({ StockOptionSelect: true })
+    await flushPromises()
+    const editor = wrapper.findComponent({ name: 'TradeOperationEditor' })
+    editor.vm.$emit('update:modelValue', [{ ...operation, [field]: null }])
+    await flushPromises()
+    const toggle = wrapper.get('[data-testid="operation-card-toggle"]')
+    if (toggle.attributes('aria-expanded') === 'true') await toggle.trigger('click')
+    await wrapper.findAll('button').find(button => button.text() === '提交打卡')!.trigger('click')
+    await flushPromises()
+    expect(submitCheckin).not.toHaveBeenCalled()
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    editor.vm.$emit('update:modelValue', [{ ...operation }])
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === '提交打卡')!.trigger('click')
+    await flushPromises()
+    expect(submitCheckin).toHaveBeenCalledWith(expect.objectContaining({
+      operations: [expect.objectContaining({ fee: '0', operated_at: null })],
+    }))
+  })
+
+  it('修正旧记录须补齐成交明细，取消修正保留原缺失值', async () => {
+    const historical = { ...operation, price: null, quantity: null, amount: null, fee: null }
+    getContext.mockResolvedValue({ ...emptyContext, checkin: { ...saved, no_operation: false, operations: [historical] } })
+    const wrapper = mountForm({ StockOptionSelect: true })
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'TradeOperationEditor' }).props('modelValue')[0].fee).toBeNull()
+    await wrapper.findAll('button').find(button => button.text() === '修正打卡')!.trigger('click')
+    await wrapper.get('textarea').setValue('补充复盘说明')
+    await wrapper.findAll('button').find(button => button.text() === '提交修正')!.trigger('click')
+    await flushPromises()
+    expect(amendCheckin).not.toHaveBeenCalled()
+    const confirm = vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as any)
+    await wrapper.findAll('button').find(button => button.text() === '取消修正')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'TradeOperationEditor' }).props('modelValue')[0].price).toBeNull()
+    confirm.mockRestore()
+  })
+
   it('已有打卡以 expected_revision 修正且不改变绑定版本', async () => {
     const decoratedOperation = {
       ...operation,
@@ -389,7 +463,7 @@ describe('TradeCheckinForm', () => {
     }))
   })
 
-  it('提交“部分履约”时允许单笔操作状态并复用整体未履约原因', async () => {
+  it('部分履约接受单笔已履约加应卖未卖，并保存两类依据', async () => {
     getContext.mockResolvedValueOnce(emptyContext).mockResolvedValue({ ...emptyContext, checkin: saved })
     const wrapper = mountForm({
       TradeOperationEditor: PartialOperationStub,
@@ -401,14 +475,36 @@ describe('TradeCheckinForm', () => {
     expect(wrapper.findComponent({ name: 'ElCheckbox' }).props('disabled')).toBe(true)
     await wrapper.get('[aria-label="填写混合操作"]').trigger('click')
     await wrapper.get('[aria-label="选择原因"]').trigger('click')
-    await wrapper.findAll('textarea')[0].setValue('选股规则存在偏差，操作本身已履约')
+    wrapper.findComponent({ name: 'ElCheckboxGroup' }).vm.$emit('update:modelValue', ['missed_sell'])
+    await wrapper.findAll('textarea')[0].setValue('买入已履约，另一持仓应卖未卖')
     await wrapper.get('button.el-button--primary').trigger('click')
     await flushPromises()
     expect(submitCheckin).toHaveBeenCalledWith(expect.objectContaining({
       assessment: 'partial', no_operation: false, reason_code: 'impulsive',
-      violation_detail: '选股规则存在偏差，操作本身已履约',
+      violation_detail: '买入已履约，另一持仓应卖未卖', violation_items: ['missed_sell'],
       operations: [expect.objectContaining({ compliance_status: 'complied', display_order: 1 })],
     }))
+  })
+
+  it.each(['complied', 'breached'])('部分履约单笔%s且只有原因文字时阻止提交', async (status) => {
+    const wrapper = mountForm({ StockOptionSelect: true, ViolationReasonCombobox: ReasonStub })
+    await flushPromises()
+    wrapper.findComponent({ name: 'ElSegmented' }).vm.$emit('update:modelValue', 'partial')
+    const editor = wrapper.findComponent({ name: 'TradeOperationEditor' })
+    editor.vm.$emit('update:modelValue', [{ ...operation, compliance_status: status }])
+    await flushPromises()
+    await wrapper.get('[aria-label="选择原因"]').trigger('click')
+    await wrapper.findAll('textarea')[0].setValue('文字说明有违规，不能替代结构化依据')
+    const warning = wrapper.get('[data-testid="checkin-partial-issue"]').text()
+    expect(warning).toContain(status === 'complied' ? '未履约依据' : '至少有一笔已履约操作')
+    await wrapper.findAll('button').find(button => button.text() === '提交打卡')!.trigger('click')
+    await flushPromises()
+    expect(submitCheckin).not.toHaveBeenCalled()
+    if (status === 'complied') {
+      wrapper.findComponent({ name: 'ElCheckboxGroup' }).vm.$emit('update:modelValue', ['missed_sell'])
+      await flushPromises()
+      expect(wrapper.find('[data-testid="checkin-partial-issue"]').exists()).toBe(false)
+    }
   })
 
   it('部分履约仍要求至少一条操作且不能选择今日无操作', async () => {
