@@ -7,7 +7,7 @@ typography:
     fontWeight: 600
 ---
 
-# 复盘啦 Design System
+# 复盘啦 设计系统
 
 > 本文是前端页面、视觉样式、布局系统和组件配置的长期事实源。强制规则在 `frontend/src/layout/`、后端 layout 配置校验和 `frontend/src/layout/__tests__/` 中；新页面执行流程和可复制计划块放在 `agent-works/configurable-layout-system/page-template.md`。
 
@@ -30,11 +30,11 @@ typography:
 
 文件头 frontmatter 只保留已被自动化读取的兼容字段；运行时 token 以 `global.css`、`presets.ts` 和 `themeSurfaces.ts` 为准。新增 token 不回填 frontmatter，除非同步新增机器读取契约和测试。
 
-## 1. Visual Theme & Atmosphere
+## 1. 视觉主题与氛围
 
 复盘啦是专业金融研究空间，不是传统后台、营销页或内容站。界面优先支持反复扫描、比较、筛选、回测和配置，以高辨识蓝色信号、中性黑白表面和清晰层级保持明亮、现代的金融科技气质。
 
-Key Characteristics：
+核心特征：
 
 - 信息密度偏高，但通过表格内滚、抽屉分段、字段收纳和提示悬浮保持可扫读。
 - 默认气质为明亮、清晰的金融科技研究终端；主交互蓝保持鲜明，不通过低饱和暖灰、金棕或泛黄底色营造所谓护眼感。**亮色模式信号文字与实色按钮的常态直接消费预设原色，不额外向黑或白混色；浅底、边框及悬浮/按下反馈按按钮状态矩阵消费共享配方。**金融数据场景允许红绿涨跌色，但不以过度紧凑和控件堆叠表达专业。
@@ -43,7 +43,7 @@ Key Characteristics：
 - 所有业务页面通过布局系统组织，页面结构由 schema 和测试约束，不依赖临时 CSS 猜高度。
 - 视觉预设只改变白天/夜间语义色、边框、阴影和共享圆角，不改变页面密度、组件行为或业务结构。
 
-## 2. Color Palette & Roles
+## 2. 色彩体系与语义角色
 
 颜色以 Element Plus 变量、`global.css` 的 `--chrome-*` / `--page-settings-*` 变量和 `LAYOUT_PRESETS` 为事实源。**金融涨跌色（`--market-up-color` / `--market-down-color`）与状态/评分文本色（`--app-warning-text` / `--app-danger-text` / `--score-high-*` / `--score-mid-*`）唯一事实源是 `LAYOUT_PRESETS` 的 `marketUp` / `marketDown` / `success` / `warning` / `danger` token，由 `useLayoutPreset.applyPreset()` 统一写入，禁止在 `global.css`、页面或组件内平行硬编码第二套色值（含 Element/AntD 默认蓝绿橙红）。**内置视觉只保留 `balanced` 一个稳定 key，对外名称为“澄空蓝”；历史内置项统一迁移到该默认项。“视觉预设”页仍可新增自定义预设，启用项会自动进入外观抽屉并真实驱动语义色、边框、阴影和共享圆角。
 
@@ -108,7 +108,7 @@ Key Characteristics：
 - 页面设置抽屉保留 `32%` 黑色遮光层，用于明确浮层焦点和点击外部关闭边界；遮光层属于临时交互状态，不参与主题底色定义，抽屉内容面与页面常驻容器仍必须使用中性明暗表面。
 - `surfaceHover` 用于 hover、选中或明确可操作控件状态；禁用控件复用该基础色值的约定见 §4「按钮与输入」。常驻信息分区与抽屉设置组按 §6 的职责分别使用分区面和内容面；`--app-section-bg` 当前与 `surfaceHover` 同源，但职责独立，页面不得直接借用悬停 token 代替分区变量或自行调深。
 
-## 3. Typography Rules
+## 3. 字体与排版规范
 
 字体栈以系统 UI 字体为主：`system-ui, -apple-system, BlinkMacSystemFont, Segoe UI Variable, Segoe UI, Microsoft YaHei UI, PingFang SC, Hiragino Sans GB, sans-serif`。macOS 由系统字体与苹方承接，Windows 由 Segoe UI 与微软雅黑 UI 承接；不得引入需要联网加载的字体。
 
@@ -155,7 +155,7 @@ Key Characteristics：
 - 股票代码、配置 key、日志字段、接口路径等技术标识可使用 `--app-font-family-mono`，但仅限值本身，不把整段说明改成等宽体。
 - 不使用英文 eyebrow、kicker 或类似小标题作为纯装饰；页面层级使用清晰的中文标题、副标题和业务状态。股票代码、MACD、HTTP 方法等真实业务或技术标识不属于装饰英文。
 
-### 3.1 Spacing & Rhythm Rules
+### 3.1 间距与节奏规范
 
 间距事实源在 `global.css`：`--app-space-1=4px`、`--app-space-2=8px`、`--app-space-3=12px`、`--app-space-4=16px`、`--app-space-5=24px`、`--app-space-6=32px`，控件内部图文间距使用 `--app-space-control-gap=6px`。
 
@@ -192,7 +192,7 @@ Key Characteristics：
 - 同一页面内不得同时出现多套标题上/下边距节奏；分区标题下接正文用 4-8px，下接表格或复杂控件用 8-12px。
 - 精细特例可以保留，但必须局部、少量、可解释，且不改变页面主体网格和信息层级。
 
-### 3.2 Inline Information Unit Rules
+### 3.2 行内信息单元规范
 
 同行内容必须先判断是一个连续文本，还是多个独立信息单元；明显不是同一个连贯内容单位的信息不得直接相邻。统一按以下契约表达：
 
@@ -205,7 +205,7 @@ Key Characteristics：
 - Element Plus Select、Popover、Tooltip 等 Teleport 浮层中的复合选项必须声明唯一 `popper-class`，通过该全局边界设置行内布局与 gap；通用选项行复用 `.app-option-popper`，名称与次级信息消费 `.app-option-label` / `.app-option-meta`，内部信息组继续复用 `.app-inline-info`；不得使用无法命中 `body` 下浮层的 scoped 后代选择器。
 - 标准表单下拉和日期面板默认位于触发器下方，只在下方左右对齐间回退；共享控件与页面特殊选择器统一消费 `floatingPlacement.ts` 的位置契约。只有经明确交互证明的场景才允许覆盖到其他方位。
 
-### 3.3 Tag, Badge & Chip Rules
+### 3.3 标签、徽标与胶囊标签规范
 
 依附主体的非阻断辅助状态（如历史结果沿用、待处理提醒）优先使用 `AppStatusDot` 的黄色状态点，避免另加文字标签挤占主体；说明通过 `AppHoverInfo` 悬浮或键盘聚焦显示，并保留可访问名称。圆形头像/图标入口使用 `placement="top-right"` 依附右上角，宿主提供定位容器；`AppIconButton` 使用 `badge` 插槽，不把角标放进图形的横向排列。文本旁的提示保持默认 `inline`。已有整体说明时复用该浮层，不叠加第二个提示。独立主要业务状态仍按下表使用标签。
 
@@ -280,7 +280,7 @@ Key Characteristics：
 - `typography-audit.spec.ts` 以违规夹具证明拦截有效；`typography-spacing-system.spec.ts` 保留语义组件、导航、微字号选择器和间距契约；`chartTypography.spec.ts` 验证图表真实读取 CSS token。
 - 静态守卫不能代替浏览器的层叠、裁切和继承检查。全局字体变更还需生产构建，并用内置浏览器抽查导航、数据指标、长说明、表格、抽屉及图表；记录实际状态，不把未打开的页面或设备写成实测通过。
 
-## 4. Component Stylings
+## 4. 组件样式规范
 
 组件样式基于 Element Plus 和项目 token，不另建并行组件库。新增组件先判断能否复用 Element Plus、项目已有基础组件和 `frontend/src/layout/components.ts` 中的组件能力目录。
 
@@ -358,7 +358,7 @@ Key Characteristics：
 | `PageSettingSection` | `frontend/src/components/PageSettingSection.vue` | 页面设置业务选项分区 | 无直接系统组件种类 | 仅作为 `SettingsGroup level=2` 的业务语义薄封装，以必填 `sectionKey` 声明稳定分区标识；不得维护第二套标题、折叠或间距样式 |
 | `AppForm` | `frontend/src/components/AppForm.vue` | 一级编辑表单的统一尺寸与 Element Plus 表单能力入口 | 无直接系统组件种类或配置字段 | 默认 `large`；动态字段继承尺寸、禁用及校验上下文；通过暴露的 `form` 访问原生校验实例；局部设置例外显式声明尺寸并说明原因。 |
 | `AppFormHelp` | `frontend/src/components/AppFormHelp.vue` | 全站表单字段与补充说明的标记、caption 字阶和续行排版 | 无直接系统组件种类或配置字段 | 表单字段及补充说明统一消费；语义、标记与排版见[表单辅助说明](#表单辅助说明)。 |
-| `PageSettingItem` | `frontend/src/components/PageSettingItem.vue` | 设置抽屉的事项名、控件与辅助说明布局 | 无直接系统组件种类 | 设置抽屉字段块统一消费；简单开关可用行内布局，帮助选型与字阶见[设置抽屉](#设置抽屉)及[Typography Rules](#3-typography-rules)。 |
+| `PageSettingItem` | `frontend/src/components/PageSettingItem.vue` | 设置抽屉的事项名、控件与辅助说明布局 | 无直接系统组件种类 | 设置抽屉字段块统一消费；简单开关可用行内布局，帮助选型与字阶见[设置抽屉](#设置抽屉)及[字体与排版规范](#3-字体与排版规范)。 |
 | `ConfigPanelSection` | `frontend/src/components/config/ConfigPanelSection.vue` | 主内容区配置面板的可折叠分组容器 | 对应 `config-panel` 种类；读取 `collapsibleSections`、`defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | 系统设置等主面板配置分组共用；字段帮助使用 HelpHint / HelpTip，组说明随所属层级展示或收展；可选 summary 在收起时保留简短摘要，紧凑子分区标题/摘要自然换行；摘要不伸展占满横向空间，分隔线紧接文案延伸，二级分区间距由共享组件统一维护；不传时保持原有布局。 |
 | `PageSegmented` | `frontend/src/components/PageSegmented.vue` | 页面设置和业务偏好的分段选择控件 | 无直接系统组件种类 | 枚举选择与轻量视图切换复用；选型见[分段选择](#分段选择)，状态、键盘和动效分别引用对应规范 |
 | `PageSettingsApplyButton` | `frontend/src/components/PageSettingsApplyButton.vue` | 设置抽屉采用当前页面值的统一按钮 | 无直接系统组件种类 | 采用页面当前值的共享入口；保存行为与布局见[设置抽屉](#设置抽屉)，视觉角色见[按钮角色与完整状态矩阵](#按钮角色与完整状态矩阵) |
@@ -404,7 +404,7 @@ Key Characteristics：
 | `AppStateBlock` | `frontend/src/components/AppStateBlock.vue` | 页面和组件的加载、空、异常、无权反馈块，统一 `ready / loading / empty / error` 四态中的非 ready 呈现、重试入口和尺寸档位 | 对应布局系统中的 `loading-state`、`empty-state`、`error-state`、`skeleton` 语义，但作为真实运行时复用组件消费 | 加载、空、异常与无权反馈统一消费；标准异步区由 AppAsyncRegion 编排，状态及尺寸规则见[四态反馈总则](#四态反馈总则)。 |
 | `AppWorkspacePane` | `frontend/src/components/AppWorkspacePane.vue` | 主从工作区单栏的统一栏级外壳，承载标题、可选辅助行、操作区和自适应内容区 | `master-detail` 左右栏的内部面板 | 行情列表、分析及详情两栏共用；栏头与内容承接见[共享工作区与尺寸档案](#55-共享工作区与尺寸档案)。 |
 | `AppStatusNotice` | `frontend/src/components/AppStatusNotice.vue` | ready 内容仍可继续使用时的轻量持久提示，统一信息、成功、警告、失败语义、紧凑尺寸和可选动作 | 不属于第五种顶层状态；作为 ready 的辅助消息层 | 可安全保留内容时的局部降级提示；使用边界见[四态反馈总则](#四态反馈总则)与[消息反馈层级](#消息反馈层级)。 |
-| `StockChartPanelHeader` / `StockChartLegend` / `StockChartPanelDivider` | `frontend/src/components/stock-chart/StockChartPanelHeader.vue`、`frontend/src/components/stock-chart/StockChartLegend.vue`、`frontend/src/components/stock-chart/StockChartPanelDivider.vue` | 股票图表面板的共享标题栏、图例项与独立分隔区，统一 32px 高度、标题层级、水平对齐、序列形态标识、图例文字层级以及双边框分隔 | 股票画布内部结构，不直接映射布局系统组件种类 | 日 K 与分时面板共用；标题、图例与独立分隔区规则见[Color Palette & Roles](#2-color-palette--roles)，页面不另画同类结构。 |
+| `StockChartPanelHeader` / `StockChartLegend` / `StockChartPanelDivider` | `frontend/src/components/stock-chart/StockChartPanelHeader.vue`、`frontend/src/components/stock-chart/StockChartLegend.vue`、`frontend/src/components/stock-chart/StockChartPanelDivider.vue` | 股票图表面板的共享标题栏、图例项与独立分隔区，统一 32px 高度、标题层级、水平对齐、序列形态标识、图例文字层级以及双边框分隔 | 股票画布内部结构，不直接映射布局系统组件种类 | 日 K 与分时面板共用；标题、图例与独立分隔区规则见[色彩体系与语义角色](#2-色彩体系与语义角色)，页面不另画同类结构。 |
 | `StockChartOperationsDrawer` / `ChartOperationGroup` | `frontend/src/components/stock-chart/StockChartOperationsDrawer.vue`、`frontend/src/components/ChartOperationGroup.vue` | 图表工作区内部的局部操作抽屉与带名称边界的紧凑操作组，统一局部遮罩、关闭与焦点归还、分组边界、间距和组内控件高度 | 图表内部结构，不直接映射布局系统组件种类 | 使用与短选项内容匹配的受控紧凑宽度，边界只覆盖所属 `StockChartWorkspace`，不得进入页面级覆盖层或遮挡相邻区域；局部枚举保持中性色，主色只用于主视图切换；容器不持有图表领域状态或计算，每类操作独立成组，消费页不得复制同类抽屉、边框、标题和紧凑尺寸 |
 | `StockChartWorkspace` | `frontend/src/components/stock-chart/StockChartWorkspace.vue` | 行情 K线、量能和可选 MACD 的纵向联动工作区，统一日期轴、光标、显式缩放同步、局部状态、买卖标记和可访问高度分隔线 | `chart.minHeight`（仅由固定高度详情实例消费） | 股票、板块、训练和回测画布共用；交互边界见[股票图表工作区](#股票图表工作区)，主题见 §2，尺寸见[共享工作区与尺寸档案](#55-共享工作区与尺寸档案)。 |
 | `StockIntradayDialog` / `StockIntradayChart` | `frontend/src/components/stock-chart/StockIntradayDialog.vue`、`frontend/src/components/stock-chart/StockIntradayChart.vue` | 日 K 蜡烛下钻的共享分时弹窗与双绘图区，统一按需请求、取消/迟到响应、范围/空/错误/部分状态、行情摘要、价格/均价/昨收和分钟量能联动 | 无直接系统组件种类；作为股票画布的按需覆盖层 | 个股详情及 StockAnalysisPanel 的日 K 下钻共用；业务范围、状态与请求生命周期见[分时架构](agent-works/architecture/stock-intraday.md)，画布规范见 §2。 |
@@ -952,7 +952,7 @@ Key Characteristics：
 - **页面可改动属性单向默认机制**：抽屉/组件配置层只提供**默认值**，页面主区可直接交互改动的属性必须用独立会话 ref 承载；重复的默认值投影统一复用 `composables/useDefaultedSessionValue.ts`，组件配置分页统一经 `composables/useComponentPageSizeSession.ts` 完成默认值解析、会话投影、归页和重载，**页面改动只进会话态、绝不写回默认值**——刷新/重进页面后重新应用抽屉默认。这样「默认」才有意义：用户临时改动不污染长期偏好。禁止可写 computed 或主区 `v-model` 直写持久层；设置抽屉内的默认值编辑，以及带有明确“设为默认”语义的显式操作，才是默认值持久化入口。初始化优先级固定为：先完成页面业务偏好与远端布局默认值水合，再应用 URL query、返回列表态等显式会话恢复，最后才接受用户交互；迟到的默认值不得清除已经恢复的显式会话覆盖。URL query/分享链接恢复只写会话 ref，不触碰默认。**会话态清单**（本就该会话级、也不进抽屉）：纯查询条件（关键字/日期口径/方案选择）、业务资产选择、运行参数（如回测日期、所选方案和当次执行参数）。
 - **新增属性登记判断（开发闭环必经步骤）**：新增页面、改造页面或给页面/组件新增任何可交互属性后，必须逐一回答三个问题再收尾——①该属性是否需要跨会话记住（默认值/偏好）？②需要时登记到哪条链路（业务偏好进 `usePageSettings` defaults + `#business` 插槽；组件展示字段按 §7.3 进 `COMPONENT_FIELD_DEFS`/后端规则，页面 slot 自动继承，仅候选或实例例外进 `componentMeta`）？③需要默认值时页面是否已按上条单向机制消费（读默认初始化会话 ref、不写回）？三问任一答「是」却未落地，即视为本次改动未完成。反向同样成立：不再需要或语义失效的已登记项必须及时下线，不得在抽屉里堆积死项。
 
-## 5. Layout Principles
+## 5. 布局原则
 
 所有业务页面走可配置布局系统：页面声明 `PageLayout`，通过 `<LayoutHost>` 渲染，不手写 `.v-page` / `.v-grow` / 视口高度。配置合并顺序固定为：
 
@@ -1041,7 +1041,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 多图比例控件回显经最低高度调整后的配置基线；拖动只更新待采用值，显式采用才保存 `{width, height, ratios}`。直接编辑一个比例时其余可见面板平分剩余比例，合计 100%，并同步默认值和当前有效尺寸档案；尚无有效宽高时禁用采用入口。匹配算法、容差与数量上限复用公共尺寸档案能力，消费页只转发尺寸事件。
 - 固定行情区通过 `chart.minHeight` 配置高度；随视口填充的个股/板块详情与主从工作台不使用固定高度字段，应显式启用可用高度适配和共享紧凑下限。其它图表以可见面板最小高度之和加分隔线作为硬下限。复权、查询范围等业务口径不并入 `chart.stockChart`，会话与默认值的通用规则见[设置抽屉](#设置抽屉)。
 
-## 6. Depth & Elevation
+## 6. 视觉层次与浮层
 
 层级主要通过背景、边框、轻阴影和密度表达，不使用强装饰和多层浮动卡片。
 
@@ -1084,7 +1084,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 `npm run check:borders` 检查全量Vue/CSS中的普通游离圆角、边框直写颜色和页面私改输入边界，并纳入构建；登录品牌与具名缩略图例外由 `scripts/border-contract.mjs` 登记。该静态门禁不证明全部视觉状态通过。系统组件详情中的 `BorderStatePreview` 直接渲染真实控件，供本地核对组合态、详情1/2/3列及结果三态，不请求或保存业务数据；原型预览仍只证明其规范样板。
 
 
-## 7. Do's and Don'ts
+## 7. 使用规范与禁用事项
 
 ### 7.1 必须遵守
 
@@ -1188,7 +1188,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 复用组件提供可选 `testId` 时，页面或配置渲染器只在需要 E2E 覆盖的关键实例上传入。
 - Playwright E2E 优先用 `getByTestId` 和项目 helper；临时浏览器复核可以用可见文本定位，但不能把脆弱定位沉淀成长期用例。
 
-## 8. Responsive Behavior
+## 8. 响应式行为
 
 当前项目主要面向桌面端本地工作台，仍必须保证低高度和常见桌面宽度下可用。
 
@@ -1252,7 +1252,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 新增组件字段必须回到 §7.3 的字段治理闭环，不在 prompt 或计划里临时声明第二套配置口径。
 - 如 `page-template.md` 与本文件或布局测试冲突，优先修正下游模板，不在 DESIGN 复制流程细节。
 
-### Page Registry Index
+### 页面登记索引
 
 该区块只作为机器读取和轻量人工索引，不承载组件字段、slot 配置、列、排序或业务状态事实源。新增 registry 页面必须写入 `pageRegistry.ts` 并以相同 `pageKey` 出现在下方 marker 内；`pageRegistry.spec.ts` 会校验受控路由、registry 与 marker 的 `pageKey` 双向一致，`scaffold-page` 负责同步生成三处登记。
 
@@ -1290,7 +1290,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 除 `supportsPageSettings=false` 的视觉预设、页面布局、系统组件三个平台管理页外，registry 页面必须有 `settings-drawer` overlay slot。三个管理页只管理系统配置，不开放或持久化个人页面设置。组件字段、slot 结构、候选项和明确例外的事实源在 `COMPONENT_FIELD_DEFS`、slot `config` 和 `componentMeta`，不要在本表重复维护。
 
-## 10. Scope & Exceptions
+## 10. 适用范围与例外
 
 - 本项目桌面工作台优先；响应式规则覆盖低高度和常见桌面宽度，移动端不是当前验收重点。
 - 当前没有独立品牌设计稿；视觉方向以本文件的金融科技研究终端规则和现有品牌组件为准。

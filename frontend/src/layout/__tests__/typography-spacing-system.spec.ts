@@ -372,7 +372,7 @@ describe('字体与间距设计契约', () => {
     const pageTemplate = read(join(PROJECT_DIR, 'agent-works/configurable-layout-system/page-template.md'))
     const globalCss = read(join(SRC_DIR, 'styles/global.css'))
 
-    expect(design).toContain('### 3.1 Spacing & Rhythm Rules')
+    expect(design).toContain('### 3.1 间距与节奏规范')
     expect(design).toContain('--app-font-size-page-title')
     expect(design).toContain('--app-line-height-solid')
     expect(design).toContain('--app-space-1=4px')
@@ -418,7 +418,7 @@ describe('字体与间距设计契约', () => {
     expect(design).toContain('同一行并列的对象识别块、摘要组、状态块等同层信息块')
     expect(design).toContain('行情摘要统一消费 `StockQuoteSummary`')
     expect(globalCss).toContain('.app-cluster-md')
-    expect(design).toContain('### 3.2 Inline Information Unit Rules')
+    expect(design).toContain('### 3.2 行内信息单元规范')
     expect(design).toContain('明显不是同一个连贯内容单位的信息不得直接相邻')
     expect(globalCss).toContain('.app-inline-info')
     expect(globalCss).toContain('.app-inline-info--nowrap')

@@ -95,7 +95,7 @@
 - 自检结论：四态互斥、空态/错误态/重试入口按 DESIGN 处理；如有例外写明原因。
 
 ### 控件与操作规范
-规则入口：[DESIGN.md](../../DESIGN.md) §4「按钮与输入」和 §7「Do's and Don'ts」。
+规则入口：[DESIGN.md](../../DESIGN.md) §4「按钮与输入」和 §7「使用规范与禁用事项」。
 
 - 主 / 次 / 危险操作选型：
 - 按钮位置：按真实影响范围判断，不按动词机械归类；作用于整页或页面唯一主任务的主操作放 `.page-head-actions`、位于 `PageSettingsTrigger` 左侧并使用默认 32px 尺寸；当前页签、局部表单、选中对象或局部区块命令留在对应区域工具区；区域内再按内容和相邻结构选择对齐，筛选与对象选择从左起排，独立纯命令组优先右对齐，具体判断及共享入口见 DESIGN.md §4「按钮与输入」。
@@ -113,7 +113,7 @@
 - 表单常显辅助说明统一使用 `AppFormHelp`；单行/多行标记、正文续行、控件列对齐及语义边界见 [DESIGN.md「表单辅助说明」](../../DESIGN.md#表单辅助说明)，不得恢复页面私有说明类或手写星号。
 
 ### 字体与间距规范
-规则入口：[DESIGN.md](../../DESIGN.md) §3「Typography Rules / Spacing & Rhythm Rules」。
+规则入口：[DESIGN.md](../../DESIGN.md) §3「字体与排版规范 / 间距与节奏规范」。
 
 - 新增或复用的语义类 / token：
 - 可导航页面标题是否通过 `useMenuPageTitle()` 消费当前菜单名称；阶段状态是否使用 `suffix` 拼接且未复制基础菜单标题：
@@ -125,7 +125,7 @@
 - 自检结论：
 
 ### 主题底色规范
-规则入口：[DESIGN.md](../../DESIGN.md) §2「Color Palette & Roles」。
+规则入口：[DESIGN.md](../../DESIGN.md) §2「色彩体系与语义角色」。
 
 - 是否调整主题底色 / 预设：
 - 涉及 `themeSurfaces.ts` / `presets.ts`：
@@ -341,7 +341,7 @@ AppDialog
 
 页面设置抽屉不开放“允许折叠”和“默认折叠段”配置。首次使用全部展开；用户逐组折叠或使用抽屉根部一键操作后，统一记忆当前顶层折叠态。每个存在直接子分组的 `SettingsGroup` 由共享折叠树自动显示本层一键操作；父级收起直接子节点即可隐藏其子树，重新展开时保留更深层原状态。页面不得覆写这套策略、手工枚举子节点或添加第二套批量折叠入口。
 
-抽屉字体角色、标题档位与共享上下文统一遵守 [DESIGN.md §3](../../DESIGN.md#3-typography-rules)，本模板不另行维护字阶。所有可折叠节点使用箭头，并以最多两档缩进和纵向结构线表达父子关系。业务分区使用 `PageSettingSection`，它仅是 `SettingsGroup level=2` 的语义薄封装；设置事项统一使用 `PageSettingItem`，开关等短控件可选行内布局，页面不得复制 `.setting-item/.setting-label`。
+抽屉字体角色、标题档位与共享上下文统一遵守 [DESIGN.md §3](../../DESIGN.md#3-字体与排版规范)，本模板不另行维护字阶。所有可折叠节点使用箭头，并以最多两档缩进和纵向结构线表达父子关系。业务分区使用 `PageSettingSection`，它仅是 `SettingsGroup level=2` 的语义薄封装；设置事项统一使用 `PageSettingItem`，开关等短控件可选行内布局，页面不得复制 `.setting-item/.setting-label`。
 
 ### 6.2 页面骨架
 
