@@ -78,7 +78,6 @@ function changeRecipe(recipe: StockIngestRecipe) {
       :model-value="modelValue.scope"
       :options="[{ label: '全市场', value: 'all' }, { label: '指定股票', value: 'selected' }]"
       :test-id="`${testIdPrefix}-scope`"
-      tone="primary"
       aria-label="个股采集范围"
       @update:model-value="patch({ scope: $event as StockIngestScope })"
     />

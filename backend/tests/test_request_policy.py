@@ -57,7 +57,7 @@ def test_rate_group_uses_actual_endpoint(url, group):
 
 
 def test_http_pages_and_retries_use_shared_gate_and_next_request_settings(monkeypatch):
-    from backend.datasource import akshare_source  # 安装现有唯一requests包装
+    from backend.datasource import akshare_source  # noqa: F401 -- 安装现有唯一requests包装
 
     settings = Settings()
     monkeypatch.setattr(rp, "get_effective_settings", lambda: settings)
@@ -186,7 +186,7 @@ def test_source_registry_explains_capabilities_and_uses_real_policy(monkeypatch)
             return {}
 
     rows = {row["source"]: row for row in data_sources.source_status(False, repo=Repo())["sources"]}
-    assert len(rows) == 8
+    assert len(rows) == 7
     assert rows["ths_board"]["timeout_sec"] == 12
     assert rows["intraday_ths"]["timeout_sec"] == 31
     assert rows["baostock"]["login_timeout_sec"] == 123
@@ -204,7 +204,10 @@ def test_source_registry_explains_capabilities_and_uses_real_policy(monkeypatch)
     assert refreshed["akshare"]["work_concurrency"] == 3
     assert refreshed["akshare"]["network_concurrency"] == 6
     assert refreshed["baostock"]["concurrency"] == 1
-    assert rows["eastmoney_capital"]["rate_group"] == rows["intraday_eastmoney"]["rate_group"]
+    assert rows["eastmoney_capital"]["rate_group"] == "eastmoney"
+    assert "intraday_eastmoney" not in rows
+    with pytest.raises(ValueError, match="未知"):
+        data_sources.source_status(False, repo=Repo(), source="intraday_eastmoney")
     assert all(row["scope"] and row["probe_scope"] for row in rows.values())
     with pytest.raises(ValueError, match="未知"):
         data_sources.source_status(False, repo=Repo(), source="missing")

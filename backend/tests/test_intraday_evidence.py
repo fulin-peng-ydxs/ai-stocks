@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 
 import pandas as pd
+import pytest
 
 from backend.services import eod_dates
 from backend.services.intraday_archive import IntradayArchiveService
@@ -328,11 +329,11 @@ def test_prior_day_known_hole_can_try_backup_but_current_day_keeps_retrying(db):
     old = evidence.assess(CODE, "2026-09-09", ["11:07"], states, allow_fallback=False)
     assert not old["can_repair"] and old["reason_code"] == "source_missing_minutes"
     backup = evidence.assess(CODE, "2026-09-09", ["11:07"], states)
-    assert backup["providers"] == ["ths", "eastmoney"]
+    assert backup["providers"] == ["ths"]
     assert evidence.assess(CODE, DAY, ["11:07"], states, allow_fallback=False)["can_repair"]
 
 
-def test_new_backup_is_not_blocked_by_primary_boundary_and_logs_exact_eastmoney_reason(db, monkeypatch):
+def test_backup_not_blocked_by_primary_boundary_and_removed_source_not_assessed(db, monkeypatch):
     payload = _boundary(db, monkeypatch)
     db.execute("DELETE FROM stock_intraday_source_state WHERE source='ths'")
     evidence = IntradayEvidence(db)
@@ -342,9 +343,7 @@ def test_new_backup_is_not_blocked_by_primary_boundary_and_logs_exact_eastmoney_
     result = evidence.assess(CODE, "2026-09-01", missing, evidence.load())
     assert result["providers"] == ["ths"] and result["can_repair"]
     decision = {r["source"]: r for r in result["decisions"]}
-    assert not decision["eastmoney"]["request"]
-    assert "2026-09-07～2026-09-11" in decision["eastmoney"]["reason"]
-    assert "不在该接口近5交易日范围" in decision["eastmoney"]["reason"]
+    assert set(decision) == {"sina", "ths"}
     forced = evidence.assess(CODE, "2026-09-01", missing, evidence.load(), recheck=True)
     assert forced["providers"] == ["sina", "ths"]
 
@@ -392,7 +391,8 @@ def test_repair_prefers_ths_replaces_whole_day_and_closes_only_after_recheck(db,
     assert db.query_df("SELECT DISTINCT source FROM stock_intraday_bar").source.tolist() == ["ths"]
 
 
-def test_unresolved_repair_explains_missing_minute_source_end_and_request_error(db, monkeypatch):
+@pytest.mark.parametrize("backup", ["old", "failure"])
+def test_unresolved_repair_explains_missing_minute_source_end_or_error(db, monkeypatch, backup):
     from backend.services import async_task, intraday_source
     from backend.tests.test_intraday_source import _service
 
@@ -409,7 +409,7 @@ def test_unresolved_repair_explains_missing_minute_source_end_and_request_error(
             calls.append(provider)
             if provider == "sina":
                 return partial
-            if provider == "ths":
+            if provider == "ths" and backup == "old":
                 return _frame(pd.Timestamp("2026-09-09").date())
             raise ConnectionError("RemoteDisconnected: endpoint closed")
 
@@ -419,11 +419,12 @@ def test_unresolved_repair_explains_missing_minute_source_end_and_request_error(
     monkeypatch.setattr("backend.services.ingest.IngestionService", lambda: None)
     ctx = Context()
     result = async_task._h_fix({"issue_ids": [issue], "recheck_source": True}, ctx)
-    assert not result["ok"] and result["technical_failure"] == 1
-    assert calls == ["sina", "ths", "eastmoney", "eastmoney"]
-    for text in (DAY, "10:32", "2026-09-09 15:00:00", "RemoteDisconnected", "保持待处理"):
+    assert not result["ok"] and result["technical_failure"] == int(backup == "failure")
+    assert calls == (["sina", "ths"] if backup == "old" else ["sina", "ths", "ths"])
+    reason = "2026-09-09 15:00:00" if backup == "old" else "RemoteDisconnected"
+    for text in (DAY, "10:32", reason, "保持待处理"):
         assert text in result["message"]
     row = db.query_df("SELECT status,detail FROM data_quality_issue WHERE id=?", [issue]).iloc[0]
     assert row.status == "open"
-    assert "RemoteDisconnected" in json.loads(row.detail)["availability"]["reason"]
+    assert reason in json.loads(row.detail)["availability"]["reason"]
     assert len(IntradayArchiveService(db).read(CODE, DAY)["rows"]) == 239

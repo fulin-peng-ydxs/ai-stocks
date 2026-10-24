@@ -27,5 +27,5 @@ def is_index(code: str | None) -> bool:
 
 def providers_for(code: str | None, allow_fallback: bool = False) -> tuple[str, ...]:
     if is_index(code):
-        return ("ths", "sina", "eastmoney") if allow_fallback else ("ths",)
-    return ("sina", "ths", "eastmoney") if allow_fallback else ("sina",)
+        return ("ths", "sina") if allow_fallback else ("ths",)
+    return ("sina", "ths") if allow_fallback else ("sina",)

@@ -263,7 +263,7 @@ def test_daily_and_quality_repair_share_parallel_source_and_resume(db, monkeypat
     assert set(writes) == {main_thread}
     assert {row[3] for row in calls} == {0.2}
     assert {row[4] for row in calls if row[2] == "ths"} == {2026}
-    assert {f"market:source:rate:v1:{name}" for name in ("sina", "ths", "eastmoney")} <= cache.values.keys()
+    assert {f"market:source:rate:v1:{name}" for name in ("sina", "ths")} <= cache.values.keys()
     assert set(db.query_df(
         "SELECT status FROM data_quality_issue WHERE id IN (SELECT unnest(?::BIGINT[]))",
         [frozen],

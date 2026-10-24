@@ -331,28 +331,6 @@ class AKShareSource(DataSource):
             frame = frame.rename(columns={"day": "timestamp"})
             # 新浪分钟接口的 volume 为股；分时统一契约使用手，保留零碎股形成的小数手。
             frame["volume"] = pd.to_numeric(frame["volume"], errors="coerce") / 100
-        elif provider == "eastmoney":
-            # AKShare 当前封装在 1 分钟分支内写死 timeout=15，无法兑现项目配置；
-            # 这里直连同一公开接口，统一使用系统 datasource.socket_timeout_sec 的生效值。
-            response = requests.get(
-                "https://push2his.eastmoney.com/api/qt/stock/trends2/get",
-                params={
-                    "fields1": "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13",
-                    "fields2": "f51,f52,f53,f54,f55,f56,f57,f58",
-                    "ut": "7eea3edcaed734bea9cbfc24409ed989",
-                    "ndays": "5",
-                    "iscr": "0",
-                    "secid": f"{1 if code.endswith('.SH') else 0}.{code6}",
-                },
-                timeout=timeout,
-            )
-            response.raise_for_status()
-            payload = response.json()
-            trends = ((payload.get("data") or {}).get("trends") or [])
-            frame = pd.DataFrame(
-                [item.split(",") for item in trends],
-                columns=["timestamp", "open", "close", "high", "low", "volume", "amount", "average"],
-            )
         else:
             raise ValueError(f"未知分钟行情源: {provider}")
 

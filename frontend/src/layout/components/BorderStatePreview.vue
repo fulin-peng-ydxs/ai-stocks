@@ -55,7 +55,7 @@ const options = [{ label: '方案一', value: 'a' }, { label: '方案二', value
       <el-form-item label="颜色样板"><el-color-picker v-model="color" aria-label="颜色样板" /></el-form-item>
     </el-form>
     <div class="border-state-preview__tools">
-      <PageSegmented v-model="selection" :options="options" :disabled="disabled" />
+      <PageSegmented v-model="selection" :options="options" :disabled="disabled" aria-label="分段选择样板" />
       <el-segmented v-model="selection" :options="options" :disabled="disabled" aria-label="库分段样板" />
       <el-button :disabled="disabled">普通命令样板</el-button>
       <el-button type="primary" loading>加载命令样板</el-button>

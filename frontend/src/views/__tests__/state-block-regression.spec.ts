@@ -1393,7 +1393,7 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.find('.app-data-table').exists()).toBe(true)
 
     ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('refresh failed'))
-    const search = wrapper.find('input[placeholder="股票/板块代码或名称"]')
+    const search = wrapper.find('[data-search-field="keyword"] input')
     await search.setValue('600000')
     await search.trigger('keydown', { key: 'Enter' })
     await flushPromises()
@@ -1411,7 +1411,7 @@ describe('代表性页面四态回归', () => {
       count: 2, status: 'ignored', ignore_scope: 'object',
     })
     const wrapper = await mountView(QualityView)
-    const search = wrapper.find('input[placeholder="股票/板块代码或名称"]')
+    const search = wrapper.find('[data-search-field="keyword"] input')
     await search.setValue('309121')
     const batchButton = wrapper.findAll('button')
       .find((button) => button.text().includes('一键标记正常'))!

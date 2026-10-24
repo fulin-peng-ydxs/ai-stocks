@@ -725,7 +725,7 @@ def test_source_status_includes_board_source(monkeypatch):
     assert all(item["timeout_sec"] == 3 for item in result["sources"])
     roles = {item["source"]: item["role"] for item in result["sources"]}
     assert roles == {"akshare": "primary", "baostock": "fallback", "ths_board": "board",
-                     "intraday_sina": "intraday", "intraday_eastmoney": "intraday",
+                     "intraday_sina": "intraday",
                      "intraday_ths": "intraday", "eastmoney_capital": "reference", "sse_capital": "reference"}
 
 

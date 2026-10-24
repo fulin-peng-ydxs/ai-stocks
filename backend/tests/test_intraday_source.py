@@ -69,7 +69,7 @@ def test_provider_consumes_public_request_policy_without_own_parameter_mapping(m
                         gates.append((group, value)))
 
     class Source:
-        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
             timeouts.append(timeout_sec)
             if len(timeouts) < 3:
                 raise TimeoutError("测试重试")
@@ -77,15 +77,15 @@ def test_provider_consumes_public_request_policy_without_own_parameter_mapping(m
 
     service = _service(factory=Source)
     service.sleep = waits.append
-    frame = service._fetch_provider(Source(), "600000.SH", "eastmoney")
+    frame = service._fetch_provider(Source(), "600000.SH", "ths")
     assert not frame.empty
-    assert set(policies) == {"eastmoney"}
-    assert gates == [("eastmoney", policy)] * 3
+    assert set(policies) == {"ths"}
+    assert gates == [("ths", policy)] * 3
     assert timeouts == [7.5] * 3
     assert waits == [0.25, 0.5]
 
 
-def test_ths_repairs_primary_partial_before_requesting_eastmoney():
+def test_ths_repairs_primary_partial_without_eastmoney():
     from backend.tests.test_intraday_archive import Context
 
     calls = []
@@ -93,8 +93,6 @@ def test_ths_repairs_primary_partial_before_requesting_eastmoney():
     class Source:
         def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
             calls.append((provider, request_year))
-            if provider == "eastmoney":
-                raise ConnectionError("unavailable")
             frame = _frame(rows=10 if provider == "sina" else 240)
             frame.attrs["request_years"] = [request_year] if request_year else []
             return frame
@@ -106,7 +104,7 @@ def test_ths_repairs_primary_partial_before_requesting_eastmoney():
     assert calls == [("sina", None), ("ths", 2026)]
     assert result["rows"] and result["request_years"] == [2026]
     assert result["errors"] == []
-    assert any("东财：跳过" in m for m, _ in q.ctx.logs)
+    assert not any("东财" in m for m, _ in q.ctx.logs)
     assert any("同花顺返回" in m and "实际范围" in m for m, _ in q.ctx.logs)
 
 
@@ -130,7 +128,7 @@ def test_ths_multiple_target_days_use_one_request_per_year_and_keep_other_year_o
     assert any("ths/2025" in error for error in result["errors"])
 
 
-def test_complete_primary_skips_both_backups_with_explicit_log():
+def test_complete_primary_skips_backup_with_explicit_log():
     from backend.tests.test_intraday_archive import Context
 
     calls = []
@@ -138,7 +136,7 @@ def test_complete_primary_skips_both_backups_with_explicit_log():
     q.ctx = Context()
     q.fetch_window("002251.SZ", [DAY], allow_fallback=True)
     assert calls == ["sina"]
-    for name in ("东财", "同花顺"):
+    for name in ("同花顺",):
         assert any(f"{name}：跳过" in m and "全部目标日" in m for m, _ in q.ctx.logs)
 
 
@@ -160,41 +158,41 @@ def test_fallback_is_selected_for_target_day_missing_from_primary():
     calls = []
 
     class Source:
-        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
             calls.append(provider)
             return _frame(date(2026, 9, 9) if provider == "sina" else date(2026, 9, 10))
 
-    result = _service(factory=Source).fetch_window("002251.SZ", [DAY], allow_fallback=True, providers=("sina", "eastmoney"))
-    assert result["source"] == "eastmoney" and len(result["rows"]) == 240
-    assert calls == ["sina", "eastmoney"]
+    result = _service(factory=Source).fetch_window("002251.SZ", [DAY], allow_fallback=True, providers=("sina", "ths"))
+    assert result["source"] == "ths" and len(result["rows"]) == 240
+    assert calls == ["sina", "ths"]
 
 
 def test_partial_primary_does_not_prevent_complete_fallback():
     calls = []
 
     class Source:
-        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
             calls.append(provider)
             return _frame(rows=3 if provider == "sina" else 240)
 
-    result = _service(factory=Source).fetch_window("002251.SZ", [DAY], allow_fallback=True, providers=("sina", "eastmoney"))
-    assert result["source"] == "eastmoney"
+    result = _service(factory=Source).fetch_window("002251.SZ", [DAY], allow_fallback=True, providers=("sina", "ths"))
+    assert result["source"] == "ths"
     assert len(result["candidates"]) == 2
-    assert calls == ["sina", "eastmoney"]
+    assert calls == ["sina", "ths"]
 
 
 def test_closing_auction_empty_minutes_do_not_trigger_repair_fallback():
     calls = []
 
     class Source:
-        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
             calls.append(provider)
             frame = _frame()
             if provider == "sina":
                 return frame[~frame.timestamp.dt.strftime("%H:%M").isin(["14:58", "14:59"])]
             return frame
 
-    result = _service(factory=Source).fetch_window("600000.SH", [DAY], allow_fallback=True, providers=("sina", "eastmoney"))
+    result = _service(factory=Source).fetch_window("600000.SH", [DAY], allow_fallback=True, providers=("sina", "ths"))
     primary = result["candidates"][0]
     assert len(primary["rows"]) == 238
     assert IntradaySourceService._targets_complete({"sina": primary}, [DAY])
@@ -203,10 +201,10 @@ def test_closing_auction_empty_minutes_do_not_trigger_repair_fallback():
 
 def test_different_target_days_keep_independent_source_candidates():
     class Source:
-        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
             return _frame(date(2026, 9, 9) if provider == "sina" else date(2026, 9, 10))
 
-    result = _service(factory=Source).fetch_window("002251.SZ", ["2026-09-09", DAY], allow_fallback=True, providers=("sina", "eastmoney"))
+    result = _service(factory=Source).fetch_window("002251.SZ", ["2026-09-09", DAY], allow_fallback=True, providers=("sina", "ths"))
     assert len(result["candidates"]) == 2
     assert all(len(item["rows"]) == 240 for item in result["candidates"])
 
@@ -215,25 +213,30 @@ def test_failed_sources_are_retried_immediately_without_caching_failures():
     calls, cache = [], _Redis()
 
     class Source:
-        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
             calls.append(provider)
             raise TimeoutError(provider)
 
     service = _service(cache, Source)
     for _ in range(2):
         with pytest.raises(IntradayServiceUnavailable):
-            service.fetch_window("002251.SZ", [DAY], allow_fallback=True, providers=("sina", "eastmoney"))
-    assert calls == ["sina", "sina", "eastmoney", "eastmoney"] * 2
+            service.fetch_window("002251.SZ", [DAY], allow_fallback=True, providers=("sina", "ths"))
+    assert calls == ["sina", "sina", "ths", "ths"] * 2
     assert not any(":negative:" in k or ":circuit" in k for k in cache.values)
     assert not any(":window:" in k for k in cache.values)
 
 
 def test_empty_source_responses_do_not_create_market_cache():
     calls, cache = [], _Redis()
-    result = _service(cache, lambda: _Source(calls, pd.DataFrame())).fetch_window(
-        "002251.SZ", [DAY], allow_fallback=True, providers=("sina", "eastmoney")
+    class Source:
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
+            calls.append(provider)
+            return pd.DataFrame()
+
+    result = _service(cache, Source).fetch_window(
+        "002251.SZ", [DAY], allow_fallback=True, providers=("sina", "ths")
     )
-    assert result["rows"] == [] and calls == ["sina", "eastmoney"]
+    assert result["rows"] == [] and calls == ["sina", "ths"]
     assert not any(":window:" in k for k in cache.values)
 
 
@@ -242,7 +245,7 @@ def test_regular_collection_never_requests_fallback(response):
     calls = []
 
     class Source:
-        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
             calls.append(provider)
             assert provider == "sina"
             if response == "failure":
@@ -264,7 +267,7 @@ def test_primary_failure_does_not_block_repair_fallback():
     calls = []
 
     class Source:
-        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
             calls.append(provider)
             if provider == "sina":
                 raise ConnectionError("primary offline")
@@ -273,9 +276,9 @@ def test_primary_failure_does_not_block_repair_fallback():
     service = _service(factory=Source)
     with pytest.raises(IntradayServiceUnavailable):
         service.fetch_window("600000.SH", [DAY])
-    result = service.fetch_window("600000.SH", [DAY], allow_fallback=True, providers=("sina", "eastmoney"))
-    assert result["source"] == "eastmoney"
-    assert calls == ["sina", "sina", "sina", "sina", "eastmoney"]
+    result = service.fetch_window("600000.SH", [DAY], allow_fallback=True, providers=("sina", "ths"))
+    assert result["source"] == "ths"
+    assert calls == ["sina", "sina", "sina", "sina", "ths"]
 
 
 def test_redis_failure_blocks_collector_before_source_access():
@@ -295,7 +298,7 @@ def test_different_stocks_overlap_without_multiplying_source_rate():
     tracker = threading.Lock()
 
     class Source:
-        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
             nonlocal active, maximum
             with tracker:
                 active += 1
@@ -320,7 +323,7 @@ def test_long_timeouts_no_longer_hold_source_lock(request_settings):
     assert not any(":lock:" in key for key in cache.values)
 
 
-@pytest.mark.parametrize("provider", ["eastmoney", "ths"])
+@pytest.mark.parametrize("provider", ["ths"])
 def test_backup_failures_do_not_suppress_other_stocks_or_later_repair(provider):
     from backend.tests.test_intraday_archive import Context
 
@@ -352,7 +355,7 @@ def test_backup_failures_do_not_suppress_other_stocks_or_later_repair(provider):
     assert not any(":lock:" in key for key in cache.values)
 
 
-@pytest.mark.parametrize("provider", ["sina", "eastmoney", "ths"])
+@pytest.mark.parametrize("provider", ["sina", "ths"])
 @pytest.mark.parametrize("expired", [False, True])
 def test_legacy_failure_states_do_not_skip_requests_or_reduce_system_retries(
     provider, expired, request_settings,
@@ -381,11 +384,11 @@ def test_legacy_failure_states_do_not_skip_requests_or_reduce_system_retries(
 
 def test_empty_backup_does_not_claim_completeness():
     class Source:
-        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
             return _frame(rows=10) if provider == "sina" else pd.DataFrame()
 
     result = _service(factory=Source).fetch_window("600000.SH", [DAY], allow_fallback=True,
-                                                   providers=("sina", "eastmoney"))
+                                                   providers=("sina", "ths"))
     assert len(result["rows"]) == 10 and result["source"] == "sina"
     assert not IntradaySourceService._targets_complete({"sina": result}, [DAY])
 
@@ -459,7 +462,7 @@ def test_system_request_waits_remain_cancellable(phase, request_settings, monkey
     cancelled = False
 
     class Source:
-        def get_intraday_1m(self, code, provider, *, timeout_sec=None):
+        def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
             calls.append(provider)
             raise TimeoutError("unavailable")
 
@@ -488,7 +491,7 @@ def test_system_request_waits_remain_cancellable(phase, request_settings, monkey
     assert not any(":lock:" in key for key in cache.values)
 
 
-def test_eastmoney_still_repairs_when_ths_fails():
+def test_failed_remaining_backup_never_requests_removed_eastmoney():
     calls = []
 
     class Source:
@@ -496,9 +499,21 @@ def test_eastmoney_still_repairs_when_ths_fails():
             calls.append(provider)
             if provider == "ths":
                 raise ConnectionError("THS unavailable")
-            return _frame(rows=10 if provider == "sina" else 240)
+            assert provider == "sina"
+            return _frame(rows=10)
 
     result = _service(factory=Source).fetch_window("600000.SH", [DAY], allow_fallback=True)
-    assert calls == ["sina", "ths", "ths", "eastmoney"]
-    assert result["source"] == "eastmoney" and len(result["rows"]) == 240
+    assert calls == ["sina", "ths", "ths"]
+    assert result["source"] == "sina" and len(result["rows"]) == 10
     assert result["errors"] and "THS unavailable" in result["errors"][0]
+
+
+@pytest.mark.parametrize("code", ["600000.SH", "000001.SH"])
+def test_removed_source_cannot_be_explicitly_selected_or_probed(code):
+    calls = []
+    service = _service(factory=lambda: _Source(calls))
+    with pytest.raises(ValueError):
+        service.fetch_window(code, [DAY], allow_fallback=True, providers=("eastmoney",))
+    with pytest.raises(ValueError, match="不支持的分时数据源"):
+        service._fetch_provider(service.source_factory(), code, "eastmoney")
+    assert calls == []

@@ -834,27 +834,35 @@ const menuPageTitle = useMenuPageTitle()
       <el-card shadow="never" class="blk">
         <template #header>
           <div class="blk-head"><span>数据采集</span>
-            <span class="app-caption-text">采集对象＝数据资产表中的：日线行情 / 分钟分时 / 市值指标 / 指数 / 交易日历 / 概念与行业板块。同类采集任务不可并发。</span></div>
+            <span id="ingest-availability-hint" class="app-caption-text" role="status">
+              {{ writeRunning
+                ? '已有数据任务排队或执行中，采集入口暂不可用；请在任务中心查看进度，任务结束后可继续采集。'
+                : '采集对象＝数据资产表中的：日线行情 / 分钟分时 / 市值指标 / 指数 / 交易日历 / 概念与行业板块。同类采集任务不可并发。' }}
+            </span></div>
         </template>
         <div class="act-grid">
           <div class="act">
             <div class="act-t">个股采集</div>
             <div class="act-d">日常同步 / 历史行情 / 区间重采 / 市值 / 基础资料 / 退市股历史</div>
-            <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning"
+            <el-button v-permission="'data-task:manage'" size="small" :disabled="writeRunning"
+                       :aria-describedby="writeRunning ? 'ingest-availability-hint' : undefined"
                        data-testid="manual-stock-ingest"
                        @click="openIngestExecution('stock_ingest')">手动执行</el-button>
           </div>
           <div class="act">
             <div class="act-t">分时采集</div>
             <div class="act-d">已收盘1分钟分时 / 近期补采 / 区间重采 / 长期归档</div>
-            <el-button v-permission="'data-task:manage'" type="primary" plain size="small"
-                       :disabled="writeRunning" data-testid="manual-intraday-ingest"
+            <el-button v-permission="'data-task:manage'" size="small"
+                       :disabled="writeRunning"
+                       :aria-describedby="writeRunning ? 'ingest-availability-hint' : undefined"
+                       data-testid="manual-intraday-ingest"
                        @click="openIngestExecution('intraday_ingest')">手动执行</el-button>
           </div>
           <div class="act">
             <div class="act-t">板块采集</div>
             <div class="act-d">板块字典 / 成分 / 指数 / 资金流，可选增量或全量回填</div>
-            <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning"
+            <el-button v-permission="'data-task:manage'" size="small" :disabled="writeRunning"
+                       :aria-describedby="writeRunning ? 'ingest-availability-hint' : undefined"
                        data-testid="manual-board-ingest"
                        @click="openIngestExecution('board')">手动执行</el-button>
           </div>
@@ -869,7 +877,7 @@ const menuPageTitle = useMenuPageTitle()
           <div class="act">
             <div class="act-t">走势相关重算</div>
             <div class="act-d">强制重算股票与行业、概念板块的走势相关结果，并原子发布</div>
-            <el-button v-permission="'data-task:manage'" type="primary" plain size="small"
+            <el-button v-permission="'data-task:manage'" size="small"
                        data-testid="manual-stock-board-correlation"
                        @click="openResultMaintenance('stock_board_correlation')">手动执行</el-button>
             <el-button v-permission="'data-schedule:manage'" text size="small"
@@ -878,7 +886,7 @@ const menuPageTitle = useMenuPageTitle()
           <div class="act">
             <div class="act-t">连板天梯失效</div>
             <div class="act-d">只标记指定日期起的快照失效；访问对应日期时再重算</div>
-            <el-button v-permission="'data-task:manage'" type="primary" plain size="small"
+            <el-button v-permission="'data-task:manage'" size="small"
                        data-testid="manual-limit-ladder-invalidate"
                        @click="openResultMaintenance('limit_ladder_invalidate')">手动执行</el-button>
             <el-button v-permission="'data-schedule:manage'" text size="small"
@@ -887,7 +895,7 @@ const menuPageTitle = useMenuPageTitle()
           <div class="act">
             <div class="act-t">每日榜单失效</div>
             <div class="act-d">只标记评分快照失效；下次读取对应榜单时按需重算</div>
-            <el-button v-permission="'data-task:manage'" type="primary" plain size="small"
+            <el-button v-permission="'data-task:manage'" size="small"
                        data-testid="manual-score-snapshot-invalidate"
                        @click="openResultMaintenance('recompute')">手动执行</el-button>
             <el-button v-permission="'data-schedule:manage'" text size="small"

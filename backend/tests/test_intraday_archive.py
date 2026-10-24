@@ -180,10 +180,10 @@ def test_real_missing_minute_stays_partial_even_with_enough_other_points(db, mis
 
 
 def test_whole_day_precedence_and_failure_preserves_archive(db):
-    q = Windows([window(provider="sina", rows=100), window(provider="eastmoney")])
+    q = Windows([window(provider="sina", rows=100), window(provider="ths")])
     service = IntradayArchiveService(db, quotes=q)
     service.collect()
-    assert service.read(CODE, DAY)["source"] == "eastmoney"
+    assert service.read(CODE, DAY)["source"] == "ths"
     q.windows = [window(provider="sina", rows=20)]
     service.collect({"mode": "refetch", "date_start": DAY})
     assert len(service.read(CODE, DAY)["rows"]) == 240
@@ -442,7 +442,7 @@ def test_schedule_api_defaults_disable_only_intraday():
     assert ScheduledJobIn(name="x", task_type="stock_ingest").enabled is True
 
 
-def test_repair_outside_eastmoney_window_does_not_request_unavailable_fallback(db):
+def test_historical_repair_only_uses_supported_sources(db):
     db.execute("UPDATE stock_basic SET list_date='2026-09-01'")
     db.execute("INSERT INTO trade_calendar SELECT d::DATE,true "
                "FROM generate_series(DATE '2026-09-01',DATE '2026-09-09',INTERVAL 1 DAY) t(d) "
@@ -457,22 +457,18 @@ def test_repair_outside_eastmoney_window_does_not_request_unavailable_fallback(d
     )
     assert result["partial"] == 1
     assert q.calls[0][2]["providers"] == ("sina", "ths")
-    assert any("东财：跳过" in m and "2026-09-01 不在该接口近5交易日范围" in m for m, _ in ctx.logs)
+    assert not any("东财" in m for m, _ in ctx.logs)
     assert not service.clean("intraday_partial", CODE, "2026-09-01")
 
 
-def test_eastmoney_five_day_window_includes_current_open_day(db, monkeypatch):
+def test_recent_target_dates_exclude_current_unclosed_day(db, monkeypatch):
     db.execute("INSERT INTO trade_calendar SELECT d::DATE,true "
                "FROM generate_series(DATE '2026-09-01',DATE '2026-09-09',INTERVAL 1 DAY) t(d) "
                "WHERE dayofweek(d) BETWEEN 1 AND 5")
     monkeypatch.setattr(
         eod_dates, "shanghai_now", lambda: datetime(2026, 9, 10, 14, tzinfo=eod_dates.SHANGHAI)
     )
-    service = IntradayArchiveService(db)
-    assert service.online_dates(provider="eastmoney") == [
-        "2026-09-04", "2026-09-07", "2026-09-08", "2026-09-09", "2026-09-10",
-    ]
-    assert "2026-09-10" not in service.online_dates()
+    assert "2026-09-10" not in IntradayArchiveService(db).online_dates()
 
 
 def test_refetch_does_not_expand_unmonitored_history(db):
@@ -760,7 +756,7 @@ def test_partial_source_failure_keeps_data_and_warns_in_task_log(db):
         def get_intraday_1m(self, code, provider, *, timeout_sec=None, request_year=None):
             assert ctx.flushes > 0
             assert any("请求" in message for message, _ in ctx.logs)
-            if provider == "eastmoney":
+            if provider == "ths":
                 raise ConnectionError("offline")
             return _frame(rows=10)
 
@@ -769,7 +765,7 @@ def test_partial_source_failure_keeps_data_and_warns_in_task_log(db):
     result = IntradayArchiveService(db, quotes=quotes).collect(ctx=ctx, allow_fallback=True)
     assert result["failed"] == 1 and result["inserted"] == 1
     assert any("新浪返回" in message and "目标日完整 0/1" in message for message, _ in ctx.logs)
-    assert any("东财取源失败" in message and level == "warn" for message, level in ctx.logs)
+    assert any("同花顺取源失败" in message and level == "warn" for message, level in ctx.logs)
     assert any("部分 1 日" in message and "未完成项保留重试" in message for message, _ in ctx.logs)
 
 
@@ -792,7 +788,7 @@ def test_failed_backups_keep_partial_issue_and_resume_repairs_without_cooldown(d
     quotes.ctx = ctx
     service = IntradayArchiveService(db, quotes=quotes)
     result = service.collect(ctx=ctx, allow_fallback=True)
-    assert calls == ["sina", "ths", "ths", "eastmoney", "eastmoney"]
+    assert calls == ["sina", "ths", "ths"]
     assert result["inserted"] == 1 and result["failed"] == 1
     assert ctx.checkpoint["intraday_done"] == []
     assert "ConnectionError" in ctx.checkpoint["intraday_failed"][CODE]
@@ -945,3 +941,14 @@ def test_bounded_collection_real_archive_scale_and_cancel_resume(db, monkeypatch
     for row in facts.itertuples():
         assert row.lo == row.hi == pytest.approx(3 + int(row.code[3:6]) / 1000)
     assert set(ctx.checkpoint["intraday_done"]) == set(codes)
+
+
+def test_legacy_eastmoney_archive_is_preserved_after_source_removal(db):
+    service = IntradayArchiveService(db, quotes=Windows([window(rows=10)]))
+    db.execute("INSERT INTO stock_intraday_coverage(code,trade_date) VALUES (?,?)", [CODE, DAY])
+    service.write_day(CODE, DAY, [window(provider="eastmoney")])
+    assert service.read(CODE, DAY)["source"] == "eastmoney"
+    result = service.collect({"mode": "refetch", "date_start": DAY})
+    assert result["ok"] and result["updated"] == result["inserted"] == 0
+    assert service.read(CODE, DAY)["source"] == "eastmoney"
+    assert len(service.read(CODE, DAY)["rows"]) == 240

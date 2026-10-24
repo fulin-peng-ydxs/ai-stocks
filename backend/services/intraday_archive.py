@@ -220,12 +220,10 @@ class IntradayArchiveService:
         if start is not None:
             self._advance_start(start)
 
-    def online_dates(self, *, provider="sina") -> list[str]:
-        """源端近期窗口由真实日历决定，不能因本地日线落后而向历史平移。"""
-        # 东财 ndays=5 包含尚未收盘的当前开市日，不能倒推为五个已收盘日。
-        cutoff = (eod_dates.shanghai_now().date() if provider == "eastmoney"
-                  else eod_dates.resolve_end(self.c))
-        limit = 5 if provider == "eastmoney" else get_settings().intraday.supported_trade_days
+    def online_dates(self) -> list[str]:
+        """近期目标日期由真实已收盘日历决定，不能因本地日线落后向历史平移。"""
+        cutoff = eod_dates.resolve_end(self.c)
+        limit = get_settings().intraday.supported_trade_days
         rows = self.c.query_df(
             "SELECT trade_date FROM trade_calendar WHERE is_open AND trade_date<=? "
             "ORDER BY trade_date DESC LIMIT ?",

@@ -15,6 +15,7 @@ from backend.datasource import request_policy as source_requests
 from backend.datasource.akshare_source import AKShareSource
 from backend.datasource.base import thread_cancel_scope
 from backend.services.intraday_contract import (
+    INTRADAY_PROVIDERS,
     PROVIDER_LABELS,
     candidate_rank,
     sanitize_minutes,
@@ -184,6 +185,8 @@ class IntradaySourceService:
     def _fetch_provider(
         self, source: AKShareSource, code: str, provider: str, *, request_year=None
     ) -> pd.DataFrame:
+        if provider not in INTRADAY_PROVIDERS:
+            raise ValueError(f"不支持的分时数据源: {provider}")
         # 每次取源重新合并系统覆盖层，长任务下一只股票/备用源即可使用页面新配置。
         policy = source_requests.request_policy(provider, get_effective_settings())
         attempts = policy.attempts  # 一次取源固定总尝试预算；下一次取源读取新配置。

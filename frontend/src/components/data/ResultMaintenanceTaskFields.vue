@@ -39,7 +39,6 @@ function patch(value: Partial<ResultMaintenanceTaskForm>) {
       :model-value="modelValue.target_mode"
       :options="targetOptions"
       :test-id="`${testIdPrefix}-target-mode`"
-      tone="primary"
       aria-label="结果维护目标范围"
       @update:model-value="patch({ target_mode: $event as ResultTargetMode })"
     />
@@ -61,7 +60,6 @@ function patch(value: Partial<ResultMaintenanceTaskForm>) {
         :model-value="modelValue.stock_scope"
         :options="[{ label: '全市场', value: 'all' }, { label: '指定股票', value: 'selected' }]"
         :test-id="`${testIdPrefix}-stock-scope`"
-        tone="primary"
         aria-label="走势相关重算股票范围"
         @update:model-value="patch({ stock_scope: $event as 'all' | 'selected' })"
       />

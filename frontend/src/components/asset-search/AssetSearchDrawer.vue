@@ -326,6 +326,7 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
           :options="segments"
           :test-id="`${testId}-segment`"
           aria-label="资产来源"
+          size="small"
         />
         <el-input
           v-model="q"

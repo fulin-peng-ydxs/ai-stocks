@@ -69,14 +69,6 @@ class IntradayEvidence:
             # 旧异常记录可能先于日历存在；只读台账可查看，不能据此认定窗口不可覆盖。
             self.calendar_ready = False
             self.session = str(eod_dates.shanghai_now().date())
-        self.east_dates = set(
-            str(pd.Timestamp(d).date())
-            for d in client.query_df(
-                "SELECT trade_date FROM trade_calendar WHERE is_open AND trade_date<=? "
-                "ORDER BY trade_date DESC LIMIT 5",
-                [eod_dates.shanghai_now().date()],
-            ).trade_date
-        )
 
     def load(self, codes=None) -> dict:
         where, args = (
@@ -134,12 +126,6 @@ class IntradayEvidence:
         expected = required_times(code)
         required = missing or sorted(expected)
         for provider in providers_for(code, allow_fallback):
-            if provider == "eastmoney" and day not in self.east_dates:
-                span = (f"{min(self.east_dates)}～{max(self.east_dates)}"
-                        if self.east_dates else "交易日历未就绪")
-                decisions.append({"source": provider, "request": False,
-                                  "reason": f"目标日 {day} 不在该接口近5交易日范围（{span}）"})
-                continue
             state = states.get((code, provider), {})
             evidence = state.get("evidence", {})
             observed = evidence.get("observed_at")

@@ -272,7 +272,7 @@ CREATE TABLE IF NOT EXISTS stock_intraday_bar (
     close DOUBLE NOT NULL,            -- 分钟收盘原始价
     volume DOUBLE NOT NULL,           -- 分钟成交量，手
     amount DOUBLE NOT NULL,           -- 分钟成交额，元
-    source VARCHAR NOT NULL,          -- sina / eastmoney / ths
+    source VARCHAR NOT NULL,          -- sina / ths；兼容历史 eastmoney
     fetched_at TIMESTAMP NOT NULL,    -- UTC 采集时间
     PRIMARY KEY(code, trade_date, timestamp)
 );
@@ -298,7 +298,7 @@ CREATE TABLE IF NOT EXISTS stock_intraday_coverage (
 DDL_STOCK_INTRADAY_SOURCE_STATE = """
 CREATE TABLE IF NOT EXISTS stock_intraday_source_state (
     code VARCHAR NOT NULL,          -- 监控个股或指数
-    source VARCHAR NOT NULL,        -- sina / eastmoney / ths
+    source VARCHAR NOT NULL,        -- sina / ths；兼容历史 eastmoney
     checked_at TIMESTAMP NOT NULL,  -- 最近真实请求的 UTC 时间
     outcome VARCHAR NOT NULL,       -- ok / empty / error
     failure_reason VARCHAR,         -- 最近请求失败原因，不能当停牌证据

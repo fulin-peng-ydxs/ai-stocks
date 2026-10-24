@@ -816,7 +816,7 @@ export const SEVERITY_LABEL: Record<string, string> = { high: '高', mid: '中',
 export const ISSUE_STATUS_LABEL: Record<string, string> = {
   open: '未处理', fixing: '修复中', resolved: '已解决', ignored: '已忽略',
 }
-export const SOURCE_LABEL: Record<string, string> = { intraday_sina: '新浪分时', intraday_eastmoney: '东财分时', intraday_ths: '同花顺分时', akshare: 'AKShare', baostock: 'BaoStock', ths_board: '同花顺板块' }
+export const SOURCE_LABEL: Record<string, string> = { intraday_sina: '新浪分时', intraday_ths: '同花顺分时', akshare: 'AKShare', baostock: 'BaoStock', ths_board: '同花顺板块' }
 export const SOURCE_ROLE_LABEL: Record<SourceStatus['role'], string> = {
   primary: '行情主接入', fallback: '行情备用接入', board: '板块', intraday: '分时', reference: '参考数据',
 }
