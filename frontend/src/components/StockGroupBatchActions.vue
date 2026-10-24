@@ -136,7 +136,7 @@ async function removeFromGroup(): Promise<void> {
         </AppScrollArea>
       </div>
       <div class="stock-batch-ops">
-        <el-button size="small" type="primary" @click="emit('view')">逐个查看</el-button>
+        <el-button size="small" @click="emit('view')">逐个查看</el-button>
         <el-button
           v-if="mode === 'remove'"
           v-permission="'stock-group:member-update'"

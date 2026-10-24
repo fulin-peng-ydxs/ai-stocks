@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { routeLocationKey } from 'vue-router'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessageBox } from 'element-plus'
 import { computed, defineComponent, h, inject, provide, ref, type Component, type ComputedRef } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import DataDictionaryView from '@/views/system/DataDictionaryView.vue'
@@ -238,6 +238,28 @@ afterEach(() => {
 })
 
 describe('DataDictionaryView', () => {
+  it.each(['cancel', 'close'])('删除确认以 %s 退出时不写库、不刷新或丢失当前类型', async action => {
+    const confirm = vi.spyOn(ElMessageBox, 'confirm').mockRejectedValue(action)
+    const wrapper = await mountView()
+    try {
+      const typeLoads = vi.mocked(dictApi.listDictTypes).mock.calls.length
+      const itemLoads = vi.mocked(dictApi.listDictItems).mock.calls.length
+      await buttonByText(wrapper, '删除类型').trigger('click')
+      await flushPromises()
+      await buttonByText(wrapper, '删除').trigger('click')
+      await flushPromises()
+      expect(confirm).toHaveBeenCalledTimes(2)
+      expect(dictApi.deleteDictType).not.toHaveBeenCalled()
+      expect(dictApi.deleteDictItem).not.toHaveBeenCalled()
+      expect(dictApi.listDictTypes).toHaveBeenCalledTimes(typeLoads)
+      expect(dictApi.listDictItems).toHaveBeenCalledTimes(itemLoads)
+      expect(typeRowByText(wrapper, '用户状态').attributes('aria-pressed')).toBe('true')
+    } finally {
+      wrapper.unmount()
+      confirm.mockRestore()
+    }
+  })
+
   it('加载字典类型和当前类型的字典项', async () => {
     const wrapper = await mountView()
     expect(wrapper.text()).toContain('数据字典')

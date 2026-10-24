@@ -46,6 +46,21 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 describe('下游任务查看和顺序保存', () => {
+  it('刷新在真实请求期间显示加载并阻止重复执行，结束后恢复可用', async () => {
+    const wrapper = await setup()
+    let finish!: (value: ReturnType<typeof result>) => void
+    api.list.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    await button(wrapper, '刷新').trigger('click')
+    await flushPromises()
+    expect(button(wrapper, '刷新').classes()).toContain('is-loading')
+    await button(wrapper, '刷新').trigger('click')
+    expect(api.list).toHaveBeenCalledTimes(2)
+    finish(result())
+    await flushPromises()
+    expect(button(wrapper, '刷新').classes()).not.toContain('is-loading')
+    expect(button(wrapper, '刷新').attributes('disabled')).toBeUndefined()
+  })
+
   it('展示停用任务和触发条件，无变化不能保存；键盘只改草稿', async () => {
     const wrapper = await setup()
     expect(wrapper.text()).toContain('已停用 · 不自动触发')

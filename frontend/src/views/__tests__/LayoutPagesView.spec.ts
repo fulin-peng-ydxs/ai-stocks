@@ -129,7 +129,7 @@ describe('页面布局操作闭环', () => {
     expect(button('重新校验').props('disabled')).toBe(true)
     expect(ElMessageBox.confirm).toHaveBeenCalledWith(
       expect.stringContaining('当前登录用户'), '清除用户覆盖',
-      expect.objectContaining({ confirmButtonClass: 'el-button--danger' }),
+      expect.objectContaining({ confirmButtonType: 'danger' }),
     )
     expect(api.resetLayoutConfig).toHaveBeenCalledTimes(1)
     expect(api.resetLayoutConfig).toHaveBeenCalledWith({ scope: 'user', pageKey: 'limit-ladder' })

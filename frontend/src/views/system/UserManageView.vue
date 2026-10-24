@@ -373,7 +373,7 @@ async function changeStatus(row: AdminUser, status: string, verb: string) {
   try {
     if (status !== 'active') {
       await ElMessageBox.confirm(`确认${verb}用户「${row.account}」？${verb}后该用户将立即无法访问。`,
-        verb, { type: 'warning' })
+        verb, { confirmButtonType: 'danger', type: 'warning' })
     }
     await setUserStatus(row.id, status)
     ElMessage.success(`已${verb}`)
@@ -389,7 +389,7 @@ function isTenantAdminBlocked(row: AdminUser): boolean {
 async function removeUser(row: AdminUser) {
   try {
     await ElMessageBox.confirm(`确认删除用户「${row.account}」？该操作不可恢复。`, '删除用户',
-      { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' })
+      { type: 'warning', confirmButtonText: '删除', confirmButtonType: 'danger' })
     await deleteUser(row.id)
     ElMessage.success('已删除')
     await load()

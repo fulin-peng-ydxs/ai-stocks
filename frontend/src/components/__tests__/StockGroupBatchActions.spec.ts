@@ -22,7 +22,7 @@ describe('StockGroupBatchActions', () => {
     })
 
     expect(wrapper.text()).toContain('已选 2 只')
-    await wrapper.get('button.el-button--primary').trigger('click')
+    await wrapper.findAll('button').find(button => button.text() === '逐个查看')!.trigger('click')
     expect(wrapper.emitted('view')).toHaveLength(1)
 
     await wrapper.get('.el-tag__close').trigger('click')

@@ -272,7 +272,7 @@ async function removeRole() {
   if (!r) return
   try {
     await ElMessageBox.confirm(`确认删除自定义角色「${r.name}」？删除后不可恢复。`, '删除角色',
-      { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' })
+      { type: 'warning', confirmButtonText: '删除', confirmButtonType: 'danger' })
     await deleteRole(r.id)
     ElMessage.success('已删除')
     activeId.value = ''
@@ -334,7 +334,7 @@ const menuPageTitle = useMenuPageTitle()
             <p class="page-subtitle">管理角色及其功能点/菜单授权，多角色可叠加权限。</p>
           </div>
           <div class="page-head-actions">
-            <el-button v-permission="'role:create'" type="primary" @click="openCreate">
+            <el-button v-permission="'role:create'" type="primary" plain @click="openCreate">
               <template #icon><el-icon><Plus /></el-icon></template>
               新建角色
             </el-button>

@@ -1025,6 +1025,7 @@ async function removeCurrentRun() {
   const desc = cur ? `${cur.kind === 'strategy' ? '策略' : '评分验证'} ${cur.date_start?.slice(0, 10)}~${cur.date_end?.slice(0, 10)}` : selectedRun.value
   try {
     await ElMessageBox.confirm(`确认删除这次回测记录？\n${desc}\n删除后保留当前参数，便于重新运行。`, '删除历史回测', {
+      confirmButtonType: 'danger',
       type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消',
     })
   } catch { return /* 取消 */ }
@@ -1403,7 +1404,7 @@ async function run() {
         await ElMessageBox.confirm(
           `已存在条件完全一致的历史记录（运行于 ${formatDateTimeSeconds(pre.duplicate.created_at)}）。\n可直接加载该结果，或重新回测覆盖它。`,
           '发现相同条件的历史回测',
-          { confirmButtonText: '加载历史', cancelButtonText: '重新回测', distinguishCancelAndClose: true, type: 'info' },
+          { confirmButtonType: 'info', cancelButtonType: 'warning', confirmButtonText: '加载历史', cancelButtonText: '重新回测', distinguishCancelAndClose: true, type: 'info' },
         )
         choice = 'load'
       } catch (act) {
@@ -1816,7 +1817,7 @@ const menuPageTitle = useMenuPageTitle()
             @publish="publishRunVisibility"
             @reuse="reuseCurrentRunParams"
           />
-          <el-button v-permission="'backtest:delete'" v-if="!selectedRunReadonly" :disabled="!selectedRun" @click="removeCurrentRun">删除</el-button>
+          <el-button v-permission="'backtest:delete'" v-if="!selectedRunReadonly" type="danger" plain :disabled="!selectedRun" @click="removeCurrentRun">删除</el-button>
           <!-- 浏览公开回测（R5/R6）：表格化浏览 tenant/public 回测 + 加载查看 + 复用参数重跑 -->
           <AppActionHint v-if="canViewBacktest" text="浏览租户/全体公开的历史回测，可加载查看或复用参数重跑" label="浏览公开回测">
             <el-button

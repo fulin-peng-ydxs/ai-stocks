@@ -59,6 +59,7 @@ async function confirmDiscard(): Promise<boolean> {
   if (!hasChanges.value) return true
   try {
     await ElMessageBox.confirm('下游触发顺序尚未保存，确认放弃修改？', '放弃排序修改', {
+      confirmButtonType: 'danger',
       type: 'warning', confirmButtonText: '放弃修改', cancelButtonText: '继续调整',
     })
     return true
@@ -139,7 +140,7 @@ onBeforeUnmount(() => requests.invalidate())
     </AppReorderList>
     <template #footer>
       <AppStatusNotice v-if="saveError" :title="saveError" tone="error" size="compact" />
-      <el-button :disabled="saving || loading" @click="refresh">刷新</el-button>
+      <el-button :loading="loading" :disabled="saving" @click="refresh">刷新</el-button>
       <el-button :disabled="saving" @click="close">关闭</el-button>
       <el-button v-permission="'data-schedule:manage'" type="primary" :loading="saving"
         :disabled="!hasChanges || loading || jobs.length < 2" @click="save">保存顺序</el-button>

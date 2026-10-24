@@ -299,7 +299,7 @@ async function restoreMonitoring(row: QualityIssue) {
     await ElMessageBox.confirm(
       '恢复后，当前异常若仍存在，将在下一次质检或采集时重新上报。确认恢复监控？',
       '恢复监控',
-      { type: 'warning' },
+      { confirmButtonType: 'warning', type: 'warning' },
     )
   } catch { return }
   try {
@@ -497,7 +497,7 @@ async function batchRecover() {
   try {
     await ElMessageBox.confirm(
       `将对当前筛选【${scope}】下所有「待处理」问题按类型分派恢复（复检通过才标记已解决），`
-      + '可能较久，可随时在任务中心「终止」。确认？', '一键恢复', { type: 'warning' })
+      + '可能较久，可随时在任务中心「终止」。确认？', '一键恢复', { confirmButtonType: 'warning', type: 'warning' })
   } catch { return }
   batching.value = true
   try {
@@ -771,7 +771,7 @@ const menuPageTitle = useMenuPageTitle()
       </AppForm>
       <template #footer>
         <el-button @click="delistDlg = false">取消</el-button>
-        <el-button type="warning" :loading="delisting" @click="confirmDelist">确认更新</el-button>
+        <el-button :type="delistRevoke ? 'warning' : 'danger'" :loading="delisting" @click="confirmDelist">确认更新</el-button>
       </template>
     </AppDialog>
 

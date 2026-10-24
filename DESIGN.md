@@ -496,6 +496,7 @@ typography:
 本节是按钮规范唯一维护入口：组件选型、尺寸及专用组件规则在本节维护，颜色状态在[按钮角色与完整状态矩阵](#按钮角色与完整状态矩阵)维护；键盘与动效分别引用专章。组件清单只作索引，页面模板只列接入与验收步骤；业务场景章节保留执行、保存与错误处理规则，不复制视觉配方。
 
 - 普通业务命令统一使用 Element Plus `<el-button>`：主命令用 `primary`，危险操作用 `danger`，次要命令用默认、plain、text 或 link；禁止页面再封装一套并行命令按钮。
+- `ElMessageBox.confirm` 的提示 `type` 只决定图标，动作按钮须通过 `confirmButtonType` 显式声明上述语义，不通过 `confirmButtonClass` 拼接组件库类型类；“取消”承载另一条真实命令时，同样按动作后果声明 `cancelButtonType`，普通取消保持中性。调用方必须处理取消与关闭的拒绝分支，普通取消不写入、不清理当前数据，也不作为组件事件异常上报。
 - 纯图标操作统一使用 `AppIconButton`，默认 `md=常规密度档 / glyph=16px`，紧凑区用 `sm=28px / glyph=14px`，微型附属操作用 `xs=24px / glyph=12px`。所有纯图标操作必须提供可访问 `label`。
 - **关闭动作统一契约**：自有图标关闭、退出临时预览、移除对比对象使用 `AppCloseButton`（内部复用 `AppIconButton`）；组件库内置弹窗、确认框、标签、输入/选择/日期清空、消息、通知与 Alert 图标关闭入口由 `global.css` 唯一适配，禁止消费页面单独覆盖颜色、尺寸、圆角或动画。文字“取消/关闭”命令继续使用 `el-button`；删除真实参数、分段等数据继续使用危险操作，不能因图形相同套用普通关闭。
 - 关闭入口按位置选档：`default=28px / glyph=14px` 用于弹窗、确认框与抽屉头部；`compact=24px / glyph=12px` 用于局部临时预览、消息与通知；`inline=16px / glyph=12px` 只用于工作标签、队列 chip、标签移除和字段清空等内嵌操作。尺寸和图形 token 在 `global.css` 的 `--app-close-size-*`、`--app-icon-close-glyph-*` 定义；不得借用内嵌档压缩独立工具按钮。Alert 自定义文字关闭保留组件库文字布局，不强制图标几何。

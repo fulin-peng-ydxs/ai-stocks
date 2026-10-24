@@ -519,7 +519,6 @@ onBeforeUnmount(() => {
         >
           <template v-if="!error && mode === 'compare' && benchmarkError" #extra>
             <el-button
-              type="primary"
               data-testid="stock-analysis-retry-calendar"
               @click="retryCalendar"
             >

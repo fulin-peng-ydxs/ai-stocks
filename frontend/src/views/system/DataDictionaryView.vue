@@ -391,11 +391,14 @@ async function saveItem() {
 
 async function removeType(row = activeType.value) {
   if (!row) return
-  await ElMessageBox.confirm(`确认删除字典类型「${row.name}」？`, '删除字典类型', {
-    type: 'warning',
-    confirmButtonText: '删除',
-    cancelButtonText: '取消',
-  })
+  try {
+    await ElMessageBox.confirm(`确认删除字典类型「${row.name}」？`, '删除字典类型', {
+      confirmButtonType: 'danger',
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+  } catch { return }
   await deleteDictType(row.code)
   selectedTypeCode.value = ''
   await loadTypes(false)
@@ -404,11 +407,14 @@ async function removeType(row = activeType.value) {
 }
 
 async function removeItem(row: DictItem) {
-  await ElMessageBox.confirm(`确认删除字典项「${row.label}」？`, '删除字典项', {
-    type: 'warning',
-    confirmButtonText: '删除',
-    cancelButtonText: '取消',
-  })
+  try {
+    await ElMessageBox.confirm(`确认删除字典项「${row.label}」？`, '删除字典项', {
+      confirmButtonType: 'danger',
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+  } catch { return }
   await deleteDictItem(row.type_code, row.code)
   await loadTypes(true)
   await loadItems()
@@ -531,7 +537,7 @@ const menuPageTitle = useMenuPageTitle()
           >
             <template #empty>
               <el-empty class="app-empty app-empty--compact" description="暂无字典类型">
-                <el-button v-permission="'dict:type-manage'" type="primary" @click="openCreateType">新建类型</el-button>
+                <el-button v-permission="'dict:type-manage'" type="primary" plain @click="openCreateType">新建类型</el-button>
               </el-empty>
             </template>
             <template #default>

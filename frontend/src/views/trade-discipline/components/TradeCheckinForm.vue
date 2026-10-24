@@ -153,6 +153,7 @@ async function toggleNoOperation(value: boolean): Promise<void> {
   if (value && form.operations.length) {
     try {
       await ElMessageBox.confirm('选择“今日无操作”会清空已填写的操作记录。', '清空操作记录？', {
+        confirmButtonType: 'danger',
         confirmButtonText: '清空并继续', cancelButtonText: '取消', type: 'warning',
       })
     } catch { return }
@@ -274,7 +275,7 @@ async function submit(): Promise<void> {
       await ElMessageBox.confirm(
         `操作 ${mismatches.join('、')} 的成交金额与“成交价 × 数量”不一致，仍要提交吗？`,
         '确认成交金额',
-        { confirmButtonText: '仍然提交', cancelButtonText: '返回检查', type: 'warning' },
+        { confirmButtonType: 'warning', confirmButtonText: '仍然提交', cancelButtonText: '返回检查', type: 'warning' },
       )
     } catch { return }
   }
@@ -322,6 +323,7 @@ async function requestLeave(): Promise<boolean> {
   if (!isDirty()) return true
   try {
     await ElMessageBox.confirm('当前打卡尚未提交，离开会丢失本次修改。', '放弃未提交修改？', {
+      confirmButtonType: 'danger',
       confirmButtonText: '放弃修改', cancelButtonText: '继续编辑', type: 'warning',
       closeOnClickModal: false, closeOnPressEscape: false, showClose: false,
     })

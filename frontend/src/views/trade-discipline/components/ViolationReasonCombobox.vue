@@ -58,6 +58,7 @@ async function remove(reason: ViolationReason): Promise<void> {
   if (!reason.id || reason.builtin || props.disabled) return
   try {
     await ElMessageBox.confirm(`删除自定义原因“${reason.name}”？`, '删除原因', {
+      confirmButtonType: 'danger',
       confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning',
     })
     await deleteTradeDisciplineReason(reason.id)
@@ -101,6 +102,7 @@ onMounted(load)
           label="删除自定义原因"
           tooltip="删除自定义原因"
           size="sm"
+          tone="danger"
           :disabled="disabled"
           @click.stop="remove(reason)"
         ><Delete /></AppIconButton>

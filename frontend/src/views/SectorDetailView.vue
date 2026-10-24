@@ -511,7 +511,7 @@ onMounted(async () => {
               :label="watchlisted ? '移出板块自选' : '加入板块自选'"
               :tooltip="watchlisted ? '移出板块自选' : '加入板块自选'"
               :loading="watchlistBusy"
-              :class="{ 'watchlist-active': watchlisted }"
+              :aria-pressed="watchlisted"
               @click="toggleWatchlist"
             >
               <el-icon><StarFilled v-if="watchlisted" /><Star v-else /></el-icon>
@@ -749,9 +749,6 @@ onMounted(async () => {
   background: var(--el-color-primary-light-9);
   font-size: var(--app-font-size-caption);
   font-weight: var(--app-font-weight-strong);
-}
-.watchlist-active {
-  color: var(--el-color-primary);
 }
 .metric-strip {
   flex: 0 0 auto;

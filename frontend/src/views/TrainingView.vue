@@ -358,7 +358,7 @@ async function backToConfig() {
 }
 async function openSession(id: string) { view.value = await getSession(id) as RunningView & DetailView }
 async function removeSession(id: string) {
-  try { await ElMessageBox.confirm('确认删除该训练记录？', '提示', { type: 'warning' }) } catch { return }
+  try { await ElMessageBox.confirm('确认删除该训练记录？', '提示', { confirmButtonType: 'danger', type: 'warning' }) } catch { return }
   await deleteSession(id)
   await Promise.all([loadHistory(), loadGrowth()])
 }
@@ -737,12 +737,12 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
               <span class="hint" v-if="!isAmount">
                 约需 ¥{{ formatMoney(estCost, { digits: 0, empty: '--' }) }} · 最多可买
                 <AppHoverInfo content="点击填入全仓">
-                  <el-button class="hl" link type="primary" @click="fillBuyMax">{{ maxBuyHands }}</el-button>
+                  <el-button class="hl" link @click="fillBuyMax">{{ maxBuyHands }}</el-button>
                 </AppHoverInfo> 手
               </span>
               <span class="hint" v-else>
                 可用资金 <AppHoverInfo content="点击全额填入">
-                       <el-button class="hl" link type="primary" @click="fillBuyMax">{{ `¥${formatMoney(cash, { digits: 0, empty: '--' })}` }}</el-button>
+                       <el-button class="hl" link @click="fillBuyMax">{{ `¥${formatMoney(cash, { digits: 0, empty: '--' })}` }}</el-button>
                      </AppHoverInfo> · 本单 ≈ {{ orderHands }} 手
               </span>
             </div>

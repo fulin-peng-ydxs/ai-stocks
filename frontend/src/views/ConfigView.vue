@@ -413,7 +413,7 @@ async function runSystemMutation(options: {
       try {
         await ElMessageBox.confirm(options.confirm.message, options.confirm.title, {
           type: 'warning', confirmButtonText: options.confirm.title,
-          confirmButtonClass: 'el-button--danger', cancelButtonText: '取消',
+          confirmButtonType: 'danger', cancelButtonText: '取消',
         })
       } catch { return }
     }
@@ -653,7 +653,9 @@ async function removeDef(row: IndicatorDef) {
     ElMessage.warning(`该指标被 ${refs.count} 个方案版本引用，并关联 ${refs.backtest_count} 条回测，不能删除`)
     return
   }
-  await ElMessageBox.confirm(`确认删除自定义指标「${row.name_cn}」？`, '提示', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(`确认删除自定义指标「${row.name_cn}」？`, '提示', { confirmButtonType: 'danger', type: 'warning' })
+  } catch { return }
   await deleteIndicatorDef(row.key)
   ElMessage.success('已删除')
   await reloadRegistry()
@@ -1132,7 +1134,9 @@ async function save() {
 
 async function remove() {
   if (!curRef.value || profileReadonly.value) return
-  await ElMessageBox.confirm(`确认删除方案「${editName.value}」？`, '提示', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(`确认删除方案「${editName.value}」？`, '提示', { confirmButtonType: 'danger', type: 'warning' })
+  } catch { return }
   await deleteScoreProfile(curRef.value)
   ElMessage.success('已删除')
   newProfile()
@@ -1506,7 +1510,9 @@ async function saveTrade() {
 }
 async function removeTrade() {
   if (!tCurRef.value || tReadonly.value) return
-  await ElMessageBox.confirm(`确认删除买卖方案「${tEditName.value}」？`, '提示', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(`确认删除买卖方案「${tEditName.value}」？`, '提示', { confirmButtonType: 'danger', type: 'warning' })
+  } catch { return }
   await deleteTradeProfile(tCurRef.value)
   ElMessage.success('已删除'); newTradeProfile()
   // 删除后只经组件 reload 刷新 mine 列表并回写（内部 emit ready → onTradeReady → tProfiles.value），不再并行 loadTradeProfiles()。
@@ -2043,7 +2049,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               <span class="run-title">试算榜单</span>
               <el-tag v-if="runRows.length" type="info" size="small" round>共 {{ runRows.length }} 只</el-tag>
               <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" default-latest />
-              <el-button v-permission="'score:run'" :loading="running" type="primary" @click="tryRun">
+              <el-button v-permission="'score:run'" :loading="running" @click="tryRun">
                 <template #icon><el-icon><VideoPlay /></el-icon></template>
                 用当前配置试算
               </el-button>
@@ -2756,7 +2762,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <el-input v-model="previewCode" placeholder="如 600000.SH" class="app-control-width-long" />
             <TradeDatePicker v-model="defPreviewDate" placeholder="默认最新交易日" class="app-control-width-medium" />
             <IndicatorParamFields v-model="previewValues" :params="defForm.params" :disabled="semanticLocked" />
-            <el-button type="primary" :loading="defPreviewing" :disabled="semanticLocked" @click="runDefPreview">验证计算</el-button>
+            <el-button :loading="defPreviewing" :disabled="semanticLocked" @click="runDefPreview">验证计算</el-button>
           </div>
           <AppStateBlock
             v-if="defPreview && defPreview.status !== 'ok'"

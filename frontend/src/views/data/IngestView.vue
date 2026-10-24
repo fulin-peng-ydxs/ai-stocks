@@ -603,7 +603,7 @@ async function cancel(t: AsyncTask) {
       : '该任务不支持续跑，终止后需重新创建任务。'
   try {
     await ElMessageBox.confirm(`${preservation}${tip}。确认终止该任务？`,
-                               '终止任务', { type: 'warning' })
+                               '终止任务', { confirmButtonType: 'danger', type: 'warning' })
   } catch { return }
   try {
     await cancelTask(t.id)

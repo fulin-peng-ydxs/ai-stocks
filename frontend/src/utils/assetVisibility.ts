@@ -22,7 +22,7 @@ export async function confirmProfileVisibilityReduction(
     await ElMessageBox.confirm(
       `确认将方案「${name}」收回为${targetLabel}？引用它且可见范围更大的回测将同步收窄，历史结果不会删除。`,
       '收回方案可见性',
-      { type: 'warning', confirmButtonText: '确认收回', cancelButtonText: '取消' },
+      { confirmButtonType: 'warning', type: 'warning', confirmButtonText: '确认收回', cancelButtonText: '取消' },
     )
     return true
   } catch {

@@ -43,8 +43,12 @@ describe('ViolationReasonCombobox', () => {
       .not.toBeNull()
     const buttons = Array.from(document.body.querySelectorAll('[aria-label="删除自定义原因"]'))
     expect(buttons).toHaveLength(1)
+    expect(buttons[0].classList.contains('is-danger')).toBe(true)
     await new DOMWrapper(buttons[0] as Element).trigger('click')
     await flushPromises()
+    expect(ElMessageBox.confirm).toHaveBeenCalledWith(
+      expect.any(String), '删除原因', expect.objectContaining({ confirmButtonType: 'danger' }),
+    )
     expect(deleteReason).toHaveBeenCalledWith('reason-1')
     expect(wrapper.emitted('update:modelValue')).toContainEqual([null])
   })

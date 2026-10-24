@@ -695,7 +695,6 @@ const menuPageTitle = useMenuPageTitle()
           <el-button
             :loading="loading && !recomputing"
             :disabled="recomputing"
-            type="primary"
             @click="refreshBoard"
           >刷新</el-button>
           <el-button

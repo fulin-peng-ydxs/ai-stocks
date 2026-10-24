@@ -269,7 +269,7 @@ async function removeMenu() {
   if (!m) return
   try {
     await ElMessageBox.confirm(`确认删除菜单「${m.title}」？删除后拥有该菜单的角色将失去入口。`, '删除菜单',
-      { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' })
+      { type: 'warning', confirmButtonText: '删除', confirmButtonType: 'danger' })
     await deleteMenu(m.id)
     ElMessage.success('已删除')
     activeId.value = ''
@@ -413,7 +413,7 @@ async function removeRes(r: Resource) {
   if (!m) return
   try {
     await ElMessageBox.confirm(`确认删除功能点「${r.name}」（${r.code}）？被角色引用时将同时解除授权。`, '删除功能点',
-      { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' })
+      { type: 'warning', confirmButtonText: '删除', confirmButtonType: 'danger' })
     await deleteResource(r.id)
     ElMessage.success('已删除')
     await loadResources(m.id)

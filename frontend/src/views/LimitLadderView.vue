@@ -526,7 +526,7 @@ async function recomputeCurrentDate(): Promise<void> {
     await ElMessageBox.confirm(
       `确认重算 ${tradeDate.value} 的连板天梯？新结果完整发布前仍保留最后成功快照。`,
       '重算当日',
-      { type: 'warning', confirmButtonText: '确认重算', cancelButtonText: '取消' },
+      { confirmButtonType: 'warning', type: 'warning', confirmButtonText: '确认重算', cancelButtonText: '取消' },
     )
   } catch {
     return

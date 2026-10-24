@@ -408,7 +408,7 @@ async function resetPageConfig() {
       await ElMessageBox.confirm(
         `确认将「${pageLabel}」的页面布局和组件默认配置恢复为系统初始值？这将影响所有用户的页面默认设置，并丢弃当前未保存修改；各用户的个性化覆盖会保留。`,
         '恢复页面系统默认',
-        { type: 'warning', confirmButtonText: '恢复默认', cancelButtonText: '取消', confirmButtonClass: 'el-button--warning' },
+        { type: 'warning', confirmButtonText: '恢复默认', cancelButtonText: '取消', confirmButtonType: 'warning' },
       )
     } catch { return }
     await resetLayoutConfig({ scope: 'page', pageKey })
@@ -557,7 +557,7 @@ async function resetUserConfig() {
       await ElMessageBox.confirm(
         `确认清除当前登录用户在「${pageLabel}」页面的全部个性化覆盖？`,
         '清除用户覆盖',
-        { type: 'warning', confirmButtonText: '清除覆盖', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' },
+        { type: 'warning', confirmButtonText: '清除覆盖', cancelButtonText: '取消', confirmButtonType: 'danger' },
       )
     } catch { return }
     await resetLayoutConfig({ scope: 'user', pageKey })

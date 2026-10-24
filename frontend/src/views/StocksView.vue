@@ -866,7 +866,9 @@ async function doEdit() {
 async function doDeleteGroup() {
   if (!groupDetail.value) return
   if (groupDetail.value.is_default) return ElMessage.warning('默认自选分组不能删除')
-  await ElMessageBox.confirm(`确认删除分组「${groupDetail.value.name}」？成员关系一并清除。`, '删除分组', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(`确认删除分组「${groupDetail.value.name}」？成员关系一并清除。`, '删除分组', { confirmButtonType: 'danger', type: 'warning' })
+  } catch { return }
   await deleteGroup(activeGid.value)
   ElMessage.success('已删除')
   await reloadGroups()

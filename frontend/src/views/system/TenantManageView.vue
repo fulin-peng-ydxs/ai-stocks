@@ -180,7 +180,7 @@ async function changeStatus(row: Tenant, to: string, actionLabel: string) {
     if (to !== 'active') {
       await ElMessageBox.confirm(
         `停用租户「${row.name}」后，其下全部用户将立即无法登录（在线会话下次校验即失效）。确认停用？`,
-        '停用租户', { type: 'warning', confirmButtonText: '停用', confirmButtonClass: 'el-button--danger' })
+        '停用租户', { type: 'warning', confirmButtonText: '停用', confirmButtonType: 'danger' })
     }
     await setTenantStatus(row.id, to)
     ElMessage.success(`已${actionLabel}`)
@@ -192,7 +192,7 @@ async function changeStatus(row: Tenant, to: string, actionLabel: string) {
 async function removeTenant(row: Tenant) {
   try {
     await ElMessageBox.confirm(`确认删除租户「${row.name}」？删除后不可恢复。`, '删除租户',
-      { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' })
+      { type: 'warning', confirmButtonText: '删除', confirmButtonType: 'danger' })
     await deleteTenant(row.id)
     ElMessage.success('已删除')
     await load()

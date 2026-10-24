@@ -312,7 +312,7 @@ async function discardSavedDraft(): Promise<void> {
     await ElMessageBox.confirm(
       `放弃编辑中草稿并恢复${latestVersionLabel.value}？`,
       '放弃工作草稿',
-      { type: 'warning', confirmButtonText: '放弃草稿', confirmButtonClass: 'el-button--danger' },
+      { type: 'warning', confirmButtonText: '放弃草稿', confirmButtonType: 'danger' },
     )
   } catch { return }
   command.value = 'discard'
@@ -412,6 +412,7 @@ async function copyRule(): Promise<void> {
         '该规则同时存在正式版本和编辑中草稿，请选择复制来源。',
         '复制规则',
         {
+          confirmButtonType: 'primary',
           confirmButtonText: '复制草稿',
           cancelButtonText: '复制正式版本',
           distinguishCancelAndClose: true,
@@ -443,7 +444,7 @@ async function archiveOrRestore(): Promise<void> {
     await ElMessageBox.confirm(
       restoring ? '恢复后将从下一真实交易日重新生效。' : '归档后将从下一真实交易日起停止生效。',
       restoring ? '恢复规则' : '归档规则',
-      { type: 'warning', confirmButtonText: restoring ? '恢复' : '归档' },
+      { confirmButtonType: restoring ? 'success' : 'danger', type: 'warning', confirmButtonText: restoring ? '恢复' : '归档' },
     )
   } catch { return }
   command.value = restoring ? 'restore' : 'archive'
@@ -465,7 +466,7 @@ async function removeUnpublished(): Promise<void> {
     await ElMessageBox.confirm(
       `删除未发布规则「${form.value.name || '未命名规则'}」？`,
       '删除未发布规则',
-      { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' },
+      { type: 'warning', confirmButtonText: '删除', confirmButtonType: 'danger' },
     )
   } catch { return }
   command.value = 'delete'
@@ -598,7 +599,7 @@ defineExpose({
           <el-button
             v-if="!isUnpublished"
             v-permission="'trade-discipline:rule-manage'"
-            :type="isArchived ? 'primary' : 'danger'"
+            :type="isArchived ? 'success' : 'danger'"
             plain
             :loading="command === 'archive' || command === 'restore'"
             @click="archiveOrRestore"

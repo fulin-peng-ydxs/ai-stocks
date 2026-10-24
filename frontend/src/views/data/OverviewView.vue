@@ -667,7 +667,7 @@ const menuPageTitle = useMenuPageTitle()
       <p class="page-subtitle">查看数据规模、覆盖与质量；通过具名入口定位明细和处理问题。</p>
       </div>
       <div class="page-head-actions">
-        <el-button :loading="refreshing" type="primary" @click="load">刷新</el-button>
+        <el-button :loading="refreshing" @click="load">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
     </div>

@@ -399,7 +399,7 @@ async function save() {
       await ElMessageBox.confirm(
         '该采集方案耗时较长，周期触发可能与其他 DuckDB 写任务冲突。确认保存调度任务？',
         '重任务调度确认',
-        { type: 'warning' },
+        { confirmButtonType: 'primary', type: 'warning' },
       )
     } catch { return }
   }
@@ -418,7 +418,7 @@ async function toggleEnabled(j: ScheduledJob) {
       await ElMessageBox.confirm(
         `停用后会取消当前 ${j.waiting_trigger_count} 条等待或触发中的事件，重新启用不会自动恢复。确认停用「${j.name}」？`,
         '停用调度任务',
-        { type: 'warning', confirmButtonText: '确认停用' },
+        { confirmButtonType: 'danger', type: 'warning', confirmButtonText: '确认停用' },
       )
     } catch { return }
   }
@@ -431,7 +431,7 @@ async function toggleEnabled(j: ScheduledJob) {
 
 async function remove(j: ScheduledJob) {
   try {
-    await ElMessageBox.confirm(`确认删除调度任务「${j.name}」？删除后不再自动触发。`, '删除调度任务', { type: 'warning' })
+    await ElMessageBox.confirm(`确认删除调度任务「${j.name}」？删除后不再自动触发。`, '删除调度任务', { confirmButtonType: 'danger', type: 'warning' })
   } catch { return }
   try { await deleteSchedule(j.id); ElMessage.success('已删除'); await load() } catch { /* */ }
 }
@@ -441,7 +441,7 @@ async function runNow(j: ScheduledJob) {
     await ElMessageBox.confirm(
       `立即执行一次「${j.name}」（${taskDisplayLabel(j.task_type, j.params)}）？`
       + '将直接创建任务，不等待定时点，并按当前任务参数执行。',
-      '立即执行', { type: 'warning' })
+      '立即执行', { confirmButtonType: 'primary', type: 'warning' })
   } catch { return }
   try {
     await runSchedule(j.id)

@@ -206,7 +206,9 @@ async function togglePreset(row: LayoutPresetRecord) {
 }
 
 async function removePreset(row: LayoutPresetRecord) {
-  await ElMessageBox.confirm(`确认删除预设「${row.name}」？`, '删除预设', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(`确认删除预设「${row.name}」？`, '删除预设', { confirmButtonType: 'danger', type: 'warning' })
+  } catch { return }
   await deleteLayoutPreset(row.key)
   ElMessage.success('已删除')
   await reloadPresets()
@@ -280,7 +282,7 @@ async function importPresets() {
         await ElMessageBox.confirm(
           `检测到 ${discarded} 个旧版布局、密度或组件字段。它们已不属于视觉预设，导入时将被移除。`,
           '兼容旧版预设',
-          { type: 'warning', confirmButtonText: '移除并导入' },
+          { confirmButtonType: 'warning', type: 'warning', confirmButtonText: '移除并导入' },
         )
       } catch {
         return

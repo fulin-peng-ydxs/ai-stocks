@@ -687,7 +687,9 @@ async function copyCurrentProfile(version?: number) {
 // 删除自己的方案（readonly/公开态不可删，后端亦按归属 403）；删后清空编辑器并刷新 mine 列表
 async function remove() {
   if (!curRef.value || !loadedProfile.value || profileReadonly.value) return
-  await ElMessageBox.confirm(`确认删除方案「${editName.value}」？`, '提示', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(`确认删除方案「${editName.value}」？`, '提示', { confirmButtonType: 'danger', type: 'warning' })
+  } catch { return }
   await deleteProfile(curRef.value)
   ElMessage.success('已删除')
   newProfile()
@@ -859,7 +861,7 @@ const menuPageTitle = useMenuPageTitle()
               @copy="copyCurrentProfile"
             />
             <div class="spacer" />
-            <el-button v-permission="'screen-profile:save'" :disabled="profileReadonly || !screenFormChanged" :loading="saving" type="primary" @click="save">保存</el-button>
+            <el-button v-permission="'screen-profile:save'" :disabled="profileReadonly || !screenFormChanged" :loading="saving" type="primary" plain @click="save">保存</el-button>
             <el-button v-permission="'screen-profile:delete'" v-if="curId && !isNew && !profileReadonly" type="danger" plain @click="remove">删除</el-button>
           </div>
 
