@@ -699,6 +699,7 @@ async function onLogout() {
           </template>
           <PageSegmented
             v-model="displayScaleModeModel"
+            size="large"
             aria-label="界面比例模式"
             test-id="appearance-display-scale-mode"
             :options="displayScaleModeOptions"
@@ -748,6 +749,7 @@ async function onLogout() {
         >
           <PageSegmented
             v-model="themeModeModel"
+            size="large"
             aria-label="明暗模式"
             test-id="appearance-theme-mode"
             :options="themeModeOptions"

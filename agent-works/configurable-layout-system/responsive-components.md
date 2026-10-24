@@ -12,7 +12,7 @@
 
 | 文件 | 查询原文（去重） | 行为 / 恢复入口 | 直接消费方 |
 |---|---|---|---|
-| `frontend/src/App.vue` | `@container app-viewport (max-width: 720px)` | 两种导航模式共用工作页签且切换不重建实例；侧栏模式品牌/说明与底部固定，菜单独立内滚；右侧顶栏面包屑长标题省略。顶栏模式依次展示一级菜单、二级菜单、工作页签；内容区通过 flex 承接剩余高度，布局选项缩略图同步真实结构。窄宽收起交易日辅助文字，保留状态图标与用户/视觉环境入口；画布统一缩放。 | 应用入口 |
+| `frontend/src/App.vue` | `@container app-viewport (max-width: 720px)` | 两种导航模式共用工作页签且切换不重建实例；侧栏模式品牌/说明与底部固定，菜单独立内滚；右侧顶栏面包屑长标题省略。顶栏模式依次展示一级菜单、二级菜单、工作页签；内容区通过 flex 承接剩余高度，布局选项缩略图同步真实结构。窄宽收起交易日辅助文字，保留状态图标与用户/视觉环境入口；视觉环境两组主要分段显式消费共享large档位；画布统一缩放。 | 应用入口 |
 | `frontend/src/components/AppActionHint.vue` | 无自身 CSS 查询 | 命令说明与禁用原因共用显式提示契约；外壳维持原按钮几何，禁用且有原因时可键盘阅读，无权入口连同外壳隐藏。 | AppRowActions、BacktestView、QualityView |
 | `frontend/src/components/AppAdvancedSearch.vue` | `@container app-viewport (max-width: 720px)` | 条件≥3时分常用/高级；高级折叠保留生效摘要与展开入口；窄宽逐行；错误自动展开，草稿不重置。 | ConfigView、StocksView、OverviewView、QualityView、LimitLadderFilters、AuditLogView、UserManageView、TradeDisciplineHistory |
 | `frontend/src/components/AppForm.vue` | 无自身 CSS 查询 | 委托 Element Plus 表单布局，一级编辑默认 large，局部可显式使用页面密度；不按尺寸隐藏字段或改变编辑值。 | BacktestView、BorderStatePreview、ConfigGroupForm、ConfigView、DataDictionaryView、IngestView、LayoutPagesView、LayoutPresetsView、MenuResourceView、QualityView、RoleManageView、ScheduleView、ScreenView、StockGroupBatchActions、StocksView、TenantManageView、TradeCheckinForm、TradeDisciplineQuickCard、TradeRuleEditor、UserManageView |
