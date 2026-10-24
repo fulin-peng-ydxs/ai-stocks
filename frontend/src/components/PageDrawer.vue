@@ -7,8 +7,10 @@ import {
   type PageDrawerSize,
 } from './pageDrawerSize'
 import PageDrawerSurface from './PageDrawerSurface.vue'
+import { resetControlRowSizing } from './controlRowSizing'
 
 defineOptions({ inheritAttrs: false })
+resetControlRowSizing()
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -72,7 +74,7 @@ const resolvedCloseLabel = computed(() => props.closeLabel || `关闭${props.tit
     v-bind="$attrs"
     :show-close="false"
     :append-to="appendTarget"
-    class="page-drawer--surface app-drawer-surface-host"
+    class="page-drawer--surface app-drawer-surface-host app-control-row-boundary"
     :modal-class="modalClassName"
     :size="drawerWidth"
   >

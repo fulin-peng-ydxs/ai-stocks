@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { ElForm, type FormInstance } from 'element-plus'
+import { resetControlRowSizing } from './controlRowSizing'
 
 defineOptions({ inheritAttrs: false })
+resetControlRowSizing()
 
 // 一级编辑表单统一使用大号；局部设置或行内编辑可显式回到页面密度。
 withDefaults(defineProps<{ size?: 'large' | 'default' | 'small' }>(), { size: 'large' })
@@ -12,7 +14,7 @@ defineExpose({ form })
 </script>
 
 <template>
-  <ElForm ref="form" v-bind="$attrs" :size="size">
+  <ElForm ref="form" v-bind="$attrs" class="app-control-row-boundary" :size="size">
     <template v-for="(_, name) in $slots" #[name]="scope">
       <slot :name="name" v-bind="scope || {}" />
     </template>

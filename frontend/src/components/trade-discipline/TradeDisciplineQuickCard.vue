@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import { computed, ref } from 'vue'
@@ -155,11 +156,11 @@ async function quickSubmit(): Promise<void> {
             <span>{{ ruleStatus(rule) }} · v{{ rule.version_no }}</span>
           </div>
         </div>
-        <div class="quick-rule-actions">
+        <AppControlRow size="small" class="quick-rule-actions">
           <el-button
             v-if="!rule.checkin_id && canSubmit"
             v-permission="'trade-discipline:checkin-submit'"
-            size="small"
+
             type="primary"
             plain
             :loading="submittingRuleId === rule.rule_id"
@@ -171,7 +172,7 @@ async function quickSubmit(): Promise<void> {
           <el-button size="small" text @click="navigateToCheckin(rule.rule_id)">
             去打卡<el-icon><ArrowRight /></el-icon>
           </el-button>
-        </div>
+        </AppControlRow>
         <div v-if="actionErrorRuleId === rule.rule_id" class="quick-rule-error" role="alert">
           {{ actionErrorMessage }}
         </div>

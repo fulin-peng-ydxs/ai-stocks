@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import { provideTradeDisciplineCategories, tradeConditionMeta } from '@/composables/useTradeDisciplineCategories'
 import AppSelect from '@/components/AppSelect.vue'
@@ -619,7 +620,7 @@ const menuPageTitle = useMenuPageTitle()
             <h2 class="app-page-title">{{ menuPageTitle }}</h2>
             <p class="page-subtitle">配置单个页面的默认布局、组件特性、导入导出与校验报告。</p>
           </div>
-          <div class="page-head-actions">
+          <AppControlRow class="page-head-actions">
             <AppSelect
               v-model="selectedPageKey"
               class="page-select"
@@ -628,7 +629,7 @@ const menuPageTitle = useMenuPageTitle()
             >
               <el-option v-for="page in managedPages" :key="page.pageKey" :label="page.label" :value="page.pageKey" />
             </AppSelect>
-          </div>
+          </AppControlRow>
         </div>
       </div>
     </template>

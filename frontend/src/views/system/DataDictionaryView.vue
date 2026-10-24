@@ -497,10 +497,10 @@ const menuPageTitle = useMenuPageTitle()
           </h2>
           <p class="page-subtitle">维护数据字段、类型与口径说明。</p>
         </div>
-        <div class="dict-actions">
+        <AppControlRow class="dict-actions">
           <el-button v-permission="'dict:type-manage'" type="primary" @click="openCreateType">新建类型</el-button>
           <PageSettingsTrigger :dirty="drawerDirty" @click="settingsOpen = true" />
-        </div>
+        </AppControlRow>
       </div>
     </template>
 
@@ -577,11 +577,11 @@ const menuPageTitle = useMenuPageTitle()
               <strong>{{ activeType?.name || '未选择类型' }}</strong>
               <span>{{ activeType?.code || '请选择左侧字典类型' }}</span>
             </div>
-            <div class="dict-actions">
-              <el-button v-if="activeType" v-permission="'dict:type-manage'" size="small" @click="openEditType()">编辑类型</el-button>
-              <el-button v-if="activeType" v-permission="'dict:type-manage'" size="small" type="danger" plain @click="removeType()">删除类型</el-button>
-              <el-button v-if="activeType" v-permission="'dict:item-manage'" size="small" type="primary" plain @click="openCreateItem">新建字典项</el-button>
-            </div>
+            <AppControlRow class="dict-actions">
+              <el-button v-if="activeType" v-permission="'dict:type-manage'" @click="openEditType()">编辑类型</el-button>
+              <el-button v-if="activeType" v-permission="'dict:type-manage'" type="danger" plain @click="removeType()">删除类型</el-button>
+              <el-button v-if="activeType" v-permission="'dict:item-manage'" type="primary" plain @click="openCreateItem">新建字典项</el-button>
+            </AppControlRow>
           </header>
 
           <AppStateBlock

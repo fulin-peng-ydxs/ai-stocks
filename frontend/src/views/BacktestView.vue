@@ -1753,7 +1753,7 @@ const menuPageTitle = useMenuPageTitle()
         </h2>
         <p class="page-subtitle">用策略/评分方案做 T+1 开盘撮合回测，查看收益、交易与当日榜单。</p>
       </div>
-      <div class="page-head-actions">
+      <AppControlRow class="page-head-actions">
         <div class="hist">
           <span class="lbl">回测记录</span>
           <AppStatusNotice
@@ -1770,7 +1770,7 @@ const menuPageTitle = useMenuPageTitle()
             v-model="selectedRun"
             class="history-run-select"
             @change="onMineRunSelected(selectedRun)"
-            size="default"
+
             :placeholder="historyPlaceholder"
             popper-class="app-option-popper backtest-run-select-popper"
             width="wide"
@@ -1829,7 +1829,7 @@ const menuPageTitle = useMenuPageTitle()
           </template>
         </div>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
-      </div>
+      </AppControlRow>
     </div>
     </template>
 
@@ -2056,18 +2056,18 @@ const menuPageTitle = useMenuPageTitle()
       </AppControlRow>
 
       <!-- 运行按钮 + 紧贴其下的执行说明。dirty=蓝可点；出结果/载入历史后置灰；改参恢复 -->
-      <div class="run-row">
-        <el-button v-permission="'backtest:run'" :type="dirty ? 'primary' : 'info'" size="large" :loading="loading || runningRun"
+      <AppControlRow class="run-row">
+        <el-button v-permission="'backtest:run'" :type="dirty ? 'primary' : 'info'" :loading="loading || runningRun"
                    :disabled="!dirty" @click="run">
           {{ dirty ? '运行回测' : '已是最新结果' }}
         </el-button>
         <el-button
-          size="large"
+
           data-testid="backtest-reset-params"
           :disabled="!hasResettableRunParams"
           @click="resetRunParams"
         >重置参数</el-button>
-      </div>
+      </AppControlRow>
       <div class="tip-line">
         本地同步执行，区间数月约 10 秒级；信号质量分析覆盖全市场（耗时稍长）。
         <span v-if="dataMin">数据可用范围 {{ dataMin }} ~ {{ dataMax }}。</span>
@@ -2140,7 +2140,7 @@ const menuPageTitle = useMenuPageTitle()
                 </span>
               </template>
               <AppControlRow class="form-row robust-row">
-                <el-radio-group v-model="robustMode" size="small">
+                <el-radio-group v-model="robustMode">
                   <el-radio-button value="param_sweep">参数敏感性</el-radio-button>
                   <el-radio-button value="in_out_sample">样本内外</el-radio-button>
                 </el-radio-group>
@@ -2148,14 +2148,14 @@ const menuPageTitle = useMenuPageTitle()
                   <AppControlItem label="扫描参数">
                     <AppSelect
                       v-model="robustParam"
-                      size="small"
+
                       width="medium"
                     >
                       <el-option v-for="o in ROBUST_PARAM_OPTS" :key="o.v" :value="o.v" :label="o.t" />
                     </AppSelect>
                   </AppControlItem>
                   <AppControlItem label="取值">
-                    <el-input v-model="robustValuesText" size="small" style="width: 220px" placeholder="逗号分隔，如 5,10,15,20" />
+                    <el-input v-model="robustValuesText" style="width: 220px" placeholder="逗号分隔，如 5,10,15,20" />
                   </AppControlItem>
                 </template>
                 <template v-else>
@@ -2163,7 +2163,7 @@ const menuPageTitle = useMenuPageTitle()
                     <TradeDatePicker v-model="robustSplit" placeholder="区间内某交易日" style="width: 160px" />
                   </AppControlItem>
                 </template>
-                <el-button v-permission="'backtest:robust'" type="primary" plain size="small" :loading="robustLoading" @click="runRobustTest">运行</el-button>
+                <el-button v-permission="'backtest:robust'" type="primary" plain :loading="robustLoading" @click="runRobustTest">运行</el-button>
                 <span class="tip-inline">逐组完整回测，较慢</span>
               </AppControlRow>
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import {
@@ -976,7 +977,7 @@ const menuPageTitle = useMenuPageTitle()
       </h2>
       <p class="page-subtitle">按代码、名称、上市板块或行业概念归属筛选，可跨分页勾选与分组管理。</p>
       </div>
-      <div class="page-head-actions">
+      <AppControlRow class="page-head-actions">
         <AppStatusNotice
           v-if="groupListError"
           tone="warning"
@@ -997,7 +998,7 @@ const menuPageTitle = useMenuPageTitle()
         />
         <el-button data-testid="stocks-refresh" :loading="loading || groupLoading || membershipOptionsLoading" @click="refreshStocks">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
-      </div>
+      </AppControlRow>
     </div>
 
     <!-- 搜索 / 筛选（置顶）-->

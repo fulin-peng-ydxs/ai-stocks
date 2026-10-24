@@ -1266,6 +1266,32 @@ html.dark {
   --el-component-size: var(--app-density-control-height);
 }
 
+/* 行提供共同高度，库的默认/small/large 也读取同一来源；不依赖子控件逐个传参。 */
+.app-control-row-scope {
+  --el-component-size: var(--app-control-row-height);
+  --el-component-size-small: var(--app-control-row-height);
+  --el-component-size-large: var(--app-control-row-height);
+}
+/* CSS 与 Vue 上下文同时隔离：编辑区/浮层/表格不继承调用方的行尺寸。 */
+.app-control-row-boundary {
+  --app-control-row-height: initial;
+  --el-component-size: var(--app-density-control-height, var(--app-control-height-md));
+  --el-component-size-small: var(--app-control-height-sm);
+  --el-component-size-large: var(--app-control-height-lg);
+}
+html[data-layout-preset] .el-input-number {
+  --app-number-control-half-height: calc((var(--app-control-row-height, var(--el-component-size)) - 2px) / 2);
+}
+html[data-layout-preset] .el-input-number--small {
+  --app-number-control-half-height: calc((var(--app-control-row-height, var(--el-component-size-small)) - 2px) / 2);
+}
+html[data-layout-preset] .el-input-number--large {
+  --app-number-control-half-height: calc((var(--app-control-row-height, var(--el-component-size-large)) - 2px) / 2);
+}
+html[data-layout-preset] .el-input-number.is-controls-right :is(.el-input-number__increase, .el-input-number__decrease) {
+  --el-input-number-controls-height: var(--app-number-control-half-height);
+}
+
 /* 全局：所有列表统一不隔行变色（兜底，即使误带 stripe 也保持一致） */
 .el-table .el-table__body tr.el-table__row--striped td.el-table__cell {
   background: transparent;
@@ -1352,17 +1378,17 @@ html[data-layout-preset] .el-select__wrapper {
 html[data-layout-preset] .el-radio-button,
 html[data-layout-preset] .el-checkbox-button,
 html[data-layout-preset] .el-segmented:not(.el-segmented--vertical) {
-  --app-choice-control-height: var(--app-density-control-height, var(--app-control-height-md));
+  --app-choice-control-height: var(--app-control-row-height, var(--app-density-control-height, var(--app-control-height-md)));
 }
 html[data-layout-preset] .el-radio-button--small,
 html[data-layout-preset] .el-checkbox-button--small,
 html[data-layout-preset] .el-segmented--small:not(.el-segmented--vertical) {
-  --app-choice-control-height: var(--app-control-height-sm);
+  --app-choice-control-height: var(--app-control-row-height, var(--app-control-height-sm));
 }
 html[data-layout-preset] .el-radio-button--large,
 html[data-layout-preset] .el-checkbox-button--large,
 html[data-layout-preset] .el-segmented--large:not(.el-segmented--vertical) {
-  --app-choice-control-height: var(--app-control-height-lg);
+  --app-choice-control-height: var(--app-control-row-height, var(--app-control-height-lg));
 }
 html[data-layout-preset] .el-radio-button__inner,
 html[data-layout-preset] .el-checkbox-button__inner {
@@ -1380,7 +1406,7 @@ html[data-layout-preset] .el-segmented:not(.el-segmented--vertical) {
 }
 /* 全站命令按钮契约：业务按钮继续复用 Element Plus，尺寸、字重、图标和状态反馈统一在此收口。 */
 html[data-layout-preset] .el-button {
-  height: var(--app-density-control-height, var(--app-control-height-md));
+  height: var(--app-control-row-height, var(--app-density-control-height, var(--app-control-height-md)));
   padding: 0 var(--app-density-button-padding-x, var(--app-button-padding-x));
   gap: var(--app-space-control-gap);
   font-size: var(--app-button-font-size);
@@ -1393,27 +1419,27 @@ html[data-layout-preset] .el-button {
     box-shadow .15s ease;
 }
 html[data-layout-preset] .el-button.el-button--small {
-  height: var(--app-control-height-sm);
+  height: var(--app-control-row-height, var(--app-control-height-sm));
   padding: 0 10px;
   font-size: var(--app-font-size-caption);
 }
 html[data-layout-preset] .el-button.el-button--large {
-  height: var(--app-control-height-lg);
+  height: var(--app-control-row-height, var(--app-control-height-lg));
   padding: 0 14px;
   font-size: var(--app-font-size-body);
 }
 html[data-layout-preset] .el-button.is-circle,
 html[data-layout-preset] .el-button.is-square {
-  width: var(--app-control-height-md);
+  width: var(--app-control-row-height, var(--app-control-height-md));
   padding: 0;
 }
 html[data-layout-preset] .el-button.el-button--small.is-circle,
 html[data-layout-preset] .el-button.el-button--small.is-square {
-  width: var(--app-control-height-sm);
+  width: var(--app-control-row-height, var(--app-control-height-sm));
 }
 html[data-layout-preset] .el-button.el-button--large.is-circle,
 html[data-layout-preset] .el-button.el-button--large.is-square {
-  width: var(--app-control-height-lg);
+  width: var(--app-control-row-height, var(--app-control-height-lg));
 }
 html[data-layout-preset] .el-button.is-text,
 html[data-layout-preset] .el-button.is-link {

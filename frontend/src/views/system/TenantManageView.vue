@@ -329,13 +329,13 @@ const menuPageTitle = useMenuPageTitle()
             </h2>
             <p class="page-subtitle">管理租户、默认套餐与租户级配置。</p>
           </div>
-          <div class="page-head-actions">
+          <AppControlRow class="page-head-actions">
             <el-button v-permission="'tenant:create'" type="primary" @click="openCreate">
               <template #icon><el-icon><Plus /></el-icon></template>
               新建租户
             </el-button>
             <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
-          </div>
+          </AppControlRow>
         </div>
 
         <el-card shadow="never" class="filter-card">

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import StockChartLegend from './StockChartLegend.vue'
+import { useControlRowSizing } from '../controlRowSizing'
 import type { StockChartLegendItem } from './StockChartLegend.vue'
 
 withDefaults(defineProps<{
@@ -10,10 +11,11 @@ withDefaults(defineProps<{
   items: () => [],
   legendLabel: undefined,
 })
+const row = useControlRowSizing()
 </script>
 
 <template>
-  <header class="stock-chart-panel__header">
+  <header class="stock-chart-panel__header app-control-row-scope" :style="row.style.value" :data-control-row="row.size.value">
     <strong class="stock-chart-panel__title">{{ title }}</strong>
     <StockChartLegend v-if="items.length" :items="items" :aria-label="legendLabel" />
     <slot />
@@ -23,7 +25,7 @@ withDefaults(defineProps<{
 
 <style scoped>
 .stock-chart-panel__header {
-  min-height: 32px;
+  min-height: var(--app-control-row-height);
   padding: 5px var(--app-space-3);
   display: flex;
   align-items: center;

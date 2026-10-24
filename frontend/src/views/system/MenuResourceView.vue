@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
@@ -503,9 +504,9 @@ const menuPageTitle = useMenuPageTitle()
             </h2>
             <p class="page-subtitle">维护菜单树、功能点与接口绑定，支持拖拽排序。</p>
           </div>
-          <div class="page-head-actions">
+          <AppControlRow class="page-head-actions">
             <PageSettingsTrigger :dirty="layoutDirty" @click="settingsOpen = true" />
-          </div>
+          </AppControlRow>
         </div>
       </div>
     </template>
@@ -592,9 +593,9 @@ const menuPageTitle = useMenuPageTitle()
                   菜单编码 {{ activeMenu.code }}
                 </div>
               </div>
-              <div class="page-head-actions">
-                <el-button v-permission="'menu:delete'" size="small" type="danger" plain :disabled="activeMenu.is_builtin" @click="removeMenu">删除节点</el-button>
-              </div>
+              <AppControlRow class="page-head-actions">
+                <el-button v-permission="'menu:delete'" type="danger" plain :disabled="activeMenu.is_builtin" @click="removeMenu">删除节点</el-button>
+              </AppControlRow>
             </div>
 
             <AppScrollArea class="mr-col-body mr-detail-body">
@@ -772,10 +773,10 @@ const menuPageTitle = useMenuPageTitle()
 
             <div class="mr-detail-foot">
               <span class="dirty" :class="{ hidden: !formDirty }">● 菜单属性有未保存修改</span>
-              <div class="page-head-actions">
+              <AppControlRow class="page-head-actions">
                 <el-button :disabled="!formDirty" @click="resetForm">还原修改</el-button>
                 <el-button type="primary" :loading="savingForm" :disabled="!formDirty || !canMenuUpdate" @click="saveForm">保存</el-button>
-              </div>
+              </AppControlRow>
             </div>
           </template>
           <el-empty v-else class="app-empty app-empty--compact" description="请选择左侧菜单节点" />

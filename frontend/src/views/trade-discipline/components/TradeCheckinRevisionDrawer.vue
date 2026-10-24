@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import type { StockConditionPanelDefaults } from '@/layout/configPanel'
 import { computed, ref, watch } from 'vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -248,7 +249,7 @@ watch(
     </div>
 
     <template #footer>
-      <div class="drawer-actions">
+      <AppControlRow class="drawer-actions">
         <span v-if="detail && !isCurrent" class="app-caption-text">历史修订不可编辑，请切换到当前修订。</span>
         <el-button
           v-if="canSubmit"
@@ -258,7 +259,7 @@ watch(
           @click="startAmend"
         >发起修正</el-button>
         <el-button @click="emit('update:modelValue', false)">关闭</el-button>
-      </div>
+      </AppControlRow>
     </template>
   </AppDetailDrawer>
 </template>

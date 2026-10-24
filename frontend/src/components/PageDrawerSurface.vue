@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import AppCloseButton from './AppCloseButton.vue'
+import { resetControlRowSizing } from './controlRowSizing'
+
+resetControlRowSizing()
 
 withDefaults(defineProps<{
   title: string
@@ -25,7 +28,7 @@ defineEmits<{
 
 <template>
   <section
-    class="page-drawer-surface"
+    class="page-drawer-surface app-control-row-boundary"
     :class="{ 'is-title-compact': titleSize === 'compact' }"
   >
     <header class="page-drawer-surface__header">

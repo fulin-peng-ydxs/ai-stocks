@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
 import { enumText, businessMessage } from '@/utils/displayText'
@@ -608,7 +609,7 @@ const menuPageTitle = useMenuPageTitle()
       </h2>
       <p class="page-subtitle">按时间或上游任务结果编排采集、结果维护、质检、恢复与审计任务，支持延迟触发和有上限重试。</p>
       </div>
-      <div class="page-head-actions">
+      <AppControlRow class="page-head-actions">
         <el-button
           v-permission="'data-schedule:manage'"
           data-testid="schedule-create"
@@ -617,7 +618,7 @@ const menuPageTitle = useMenuPageTitle()
         >新建调度任务</el-button>
         <el-button :loading="loading" @click="load">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
-      </div>
+      </AppControlRow>
     </div>
     </template>
 

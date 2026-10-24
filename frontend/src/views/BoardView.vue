@@ -690,7 +690,7 @@ const menuPageTitle = useMenuPageTitle()
           <template v-if="cacheStatus"> · {{ cacheStatus === 'cached' ? '已缓存' : '已更新' }}</template>
         </p>
       </div>
-      <div class="page-head-actions">
+      <AppControlRow class="page-head-actions">
         <div class="ops">
           <el-button
             :loading="loading && !recomputing"
@@ -708,7 +708,7 @@ const menuPageTitle = useMenuPageTitle()
           <el-button :loading="exporting" :disabled="!total || exporting" @click="exportCsv">导出 CSV</el-button>
         </div>
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
-      </div>
+      </AppControlRow>
     </div>
 
     <!-- 筛选条件（独立一行居左，与全站列表页 filter-card 规范一致；操作按钮留页头） -->

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import type { PageDrawerSize } from './pageDrawerSize'
 import AppStateBlock from './AppStateBlock.vue'
 import PageDrawer from './PageDrawer.vue'
@@ -53,9 +54,9 @@ const emit = defineEmits<{
       </div>
     </template>
     <template v-if="$slots['header-actions']" #header-actions>
-      <div class="app-detail-drawer__header-actions">
+      <AppControlRow class="app-detail-drawer__header-actions">
         <slot name="header-actions" />
-      </div>
+      </AppControlRow>
     </template>
 
     <AppStateBlock

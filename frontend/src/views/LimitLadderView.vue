@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
@@ -728,7 +729,7 @@ const menuPageTitle = useMenuPageTitle()
             </h2>
             <p class="page-subtitle">按交易日观察涨停梯队，筛选、热点与导出共享同一快照口径。</p>
           </div>
-          <div class="page-head-actions">
+          <AppControlRow class="page-head-actions">
             <el-button
               data-testid="limit-ladder-refresh"
               :loading="loading"
@@ -750,7 +751,7 @@ const menuPageTitle = useMenuPageTitle()
               @click="exportCsv"
             >导出 CSV</el-button>
             <PageSettingsTrigger :dirty="isDirty || pageSettingsDirty" @click="settingsOpen = true" />
-          </div>
+          </AppControlRow>
         </div>
         <LimitLadderFilterBar
           v-if="tradeDate"

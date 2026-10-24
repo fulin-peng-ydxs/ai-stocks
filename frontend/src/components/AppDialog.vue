@@ -3,8 +3,10 @@ import { computed, inject } from 'vue'
 import { PAGE_OVERLAY_TARGET } from '@/layout/pageOverlay'
 import { APP_DIALOG_WIDTHS, type AppDialogSize } from './appDialogSize'
 import AppScrollArea from './AppScrollArea.vue'
+import { resetControlRowSizing } from './controlRowSizing'
 
 defineOptions({ inheritAttrs: false })
+resetControlRowSizing()
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -40,7 +42,7 @@ const modalClassName = computed(() => [
     :append-to="appendTarget"
     :modal-class="modalClassName"
     :width="APP_DIALOG_WIDTHS[size]"
-    class="app-dialog"
+    class="app-dialog app-control-row-boundary"
   >
     <template v-if="$slots.header" #header><slot name="header" /></template>
     <AppScrollArea class="app-dialog__content"><slot /></AppScrollArea>

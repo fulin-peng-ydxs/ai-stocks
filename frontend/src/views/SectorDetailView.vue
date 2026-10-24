@@ -466,7 +466,7 @@ onMounted(async () => {
           <el-button :icon="ArrowLeft" text data-testid="sector-detail-back" @click="returnToSource">
             {{ returnLabel }}
           </el-button>
-          <div class="detail-actions">
+          <AppControlRow class="detail-actions">
             <el-button
               data-testid="sector-detail-refresh"
               :loading="detailLoading || chartLoading || memberLoading"
@@ -474,7 +474,7 @@ onMounted(async () => {
             >刷新</el-button>
             <TradeDatePicker v-model="tradeDate" default-latest class="detail-date" />
             <PageSettingsTrigger :dirty="pageDirty" @click="settingsOpen = true" />
-          </div>
+          </AppControlRow>
         </div>
       </div>
     </template>
@@ -576,7 +576,6 @@ onMounted(async () => {
                 <AppIconButton
                   :label="splitCompact ? '查看成分股' : (memberPanelVisible ? '收起成分股，仅看走势' : '显示成分股')"
                   data-testid="sector-detail-toggle-members"
-                  size="sm"
                   @click="toggleMemberPanel"
                 >
                   <el-icon>

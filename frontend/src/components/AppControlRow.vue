@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { useControlRowSizing, type ControlRowSize } from './controlRowSizing'
+
 withDefaults(defineProps<{
+  size?: ControlRowSize
   align?: 'center' | 'start' | 'end' | 'baseline'
   justify?: 'start' | 'end' | 'between'
   fill?: boolean
@@ -8,11 +11,14 @@ withDefaults(defineProps<{
   justify: 'start',
   fill: false,
 })
+const row = useControlRowSizing()
 </script>
 
 <template>
   <div
-    class="app-control-row"
+    class="app-control-row app-control-row-scope"
+    :style="row.style.value"
+    :data-control-row="row.size.value"
     :class="[
       `is-align-${align}`,
       `is-justify-${justify}`,
@@ -29,6 +35,7 @@ withDefaults(defineProps<{
   flex-wrap: wrap;
   gap: var(--app-density-control-gap, var(--app-space-2));
   min-width: 0;
+  min-height: var(--app-control-row-height);
 }
 .app-control-row.is-fill :deep(> *) {
   flex: 1 1 auto;

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 // 统一「资产搜索抽屉」（R5/R7/R14）：系统内置/租户公开/全体公开三来源分段 + 防抖关键字 +
 // 服务端分页 + 四态；操作列「加载查看 / 复制为我的」（回测为「加载查看 / 复用参数重跑」）。
@@ -320,7 +321,7 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
     class="asset-search-drawer"
   >
     <div class="asset-search" :data-testid="testId">
-      <div v-if="canBrowse" class="asset-search__toolbar">
+      <AppControlRow v-if="canBrowse" class="asset-search__toolbar">
         <PageSegmented
           v-model="source"
           :options="segments"
@@ -338,7 +339,7 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
             <el-icon><Search /></el-icon>
           </template>
         </el-input>
-      </div>
+      </AppControlRow>
 
       <AppScrollArea class="asset-search__body">
         <AppStateBlock

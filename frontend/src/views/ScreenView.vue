@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
@@ -795,9 +796,9 @@ const menuPageTitle = useMenuPageTitle()
         </h2>
         <p class="page-subtitle">组合技术指标条件筛选候选股，支持表达式与嵌套分组。</p>
       </div>
-      <div class="page-head-actions">
+      <AppControlRow class="page-head-actions">
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
-      </div>
+      </AppControlRow>
     </div>
     </template>
 
@@ -969,12 +970,12 @@ const menuPageTitle = useMenuPageTitle()
             </div>
             </AppScrollArea>
 
-            <div class="b-actions">
-              <el-button size="small" :disabled="profileReadonly" @click="addIndRow">
+            <AppControlRow class="b-actions">
+              <el-button :disabled="profileReadonly" @click="addIndRow">
                 <template #icon><el-icon><Plus /></el-icon></template>
                 指标条件
               </el-button>
-              <el-button size="small" :disabled="profileReadonly" @click="addExprRow">
+              <el-button :disabled="profileReadonly" @click="addExprRow">
                 <template #icon><el-icon><Plus /></el-icon></template>
                 表达式条件
               </el-button>
@@ -990,7 +991,7 @@ const menuPageTitle = useMenuPageTitle()
                   </ul>
                 </HelpTipItem>
               </HelpTip>
-            </div>
+            </AppControlRow>
             <AppScrollArea as="pre" v-if="settings.astExpanded && buildAst()" class="ast">{{ JSON.stringify(buildAst(), null, 2) }}</AppScrollArea>
             </div>
           </template>

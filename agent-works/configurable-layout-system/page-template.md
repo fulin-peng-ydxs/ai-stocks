@@ -222,6 +222,7 @@
 | 新真实复用组件 | 组件文件、DESIGN 真实复用组件清单、至少一个消费页面；需要配置化时再同步系统组件种类/字段事实源 | 组件/消费页测试、build；涉及页面布局时做关键视口 |
 | 业务域内复用组件 | 组件文件、DESIGN 真实复用组件清单、明确业务边界与消费页面；仅在需要布局配置时登记系统组件 kind | 组件/消费页测试、build、对应业务页面交互验收 |
 | 按钮 / 图标操作体系 | `buttonStates.css` 命令状态、`global.css` 链接/选择状态、`AppIconButton` / `AppCloseButton`、真实消费者与 DESIGN 按钮规范；专用原生按钮按文件和角色登记，不按页面前缀放行 | `check:close-controls`、`button-system.spec.ts`、`interaction-color-consumers.spec.ts`、受影响消费者测试、build；内置浏览器复核实际颜色、焦点、选中与禁用/加载，不能以 class 存在代替呈现 |
+| 操作行共同尺寸 | `controlRowSizing.ts`、`AppControlRow` / `AppTabToolbar` / `AppAdvancedSearch`、公共控件适配、表单/浮层/表格边界及 DESIGN 操作行规则；页面只声明行尺寸，附属角色例外精确登记 | `check:control-rows`、`AppControlRow.spec.ts`、`control-row-consumers.spec.ts`、`control-presentation.spec.ts`、相关控件与消费者定向测试；全局样式/构建门禁变化时 build；真实混合控件组合、三档密度、关键视口、动态尺寸、输入保留及独立浮层实际外框验证 |
 | 分段选择状态 | `PageSegmented`、`useLayoutPreset.ts` 分段变量及 `global.css` 兜底、DESIGN 分段矩阵；复用共享控件，不逐页覆盖 | `PageSegmented.spec.ts`、`useLayoutPreset.spec.ts`、全局资源变化时 build；分别检查 contained neutral/primary 与 tabs、明暗底板/悬浮/按下差异及选中/禁用/焦点 |
 | 提示 / 截断机制 | DESIGN 提示契约、AppHoverInfo / useHoverIntent、AppIconButton / AppActionHint、AppOverflowTooltipHost；涉及原文时同步专用内容来源，不恢复原生 title 自动提示 | `check:tooltips`、提示/消费者定向测试、build、实际停留/移动/点击/键盘与主题验收 |
 | 字体 / 间距体系 | `global.css` typography/spacing token、DESIGN 排版与节奏规范；新增语义层级时同步 token、文档和消费点 | 相关样式契约测试、build、关键页面视觉验收 |

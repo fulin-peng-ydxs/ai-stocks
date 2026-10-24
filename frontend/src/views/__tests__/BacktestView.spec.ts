@@ -259,7 +259,7 @@ describe('BacktestView 金额格式契约', () => {
     const tabs = rail.findComponent(PageSegmented)
 
     expect(tabs.props('tone')).toBe('primary')
-    expect(tabs.props('size')).toBe('small')
+    expect(tabs.props('size')).toBeUndefined()
     expect(tabs.props('testId')).toBe('backtest-kind-tabs')
     expect(tabs.props('options')).toEqual([
       { label: '策略回测', value: 'strategy' },

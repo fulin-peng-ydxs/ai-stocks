@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppSummaryDisclosureCard from '@/components/AppSummaryDisclosureCard.vue'
 
 const props = withDefaults(defineProps<{
@@ -42,9 +43,9 @@ const emit = defineEmits<{
         :aria-label="`${enabled ? '停用' : '启用'}规则“${title}”`"
         @update:model-value="emit('update:enabled', $event)"
       />
-      <div v-if="editable" class="rule-summary-card__actions">
+      <AppControlRow v-if="editable" class="rule-summary-card__actions">
         <slot name="actions" />
-      </div>
+      </AppControlRow>
     </template>
     <slot />
   </AppSummaryDisclosureCard>

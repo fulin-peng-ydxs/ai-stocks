@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
@@ -507,13 +508,13 @@ const menuPageTitle = useMenuPageTitle()
             </h2>
             <p class="page-subtitle">管理系统用户、账号状态与租户归属。</p>
           </div>
-          <div class="page-head-actions">
+          <AppControlRow class="page-head-actions">
             <el-button v-permission="'user:create'" type="primary" @click="openCreate">
               <template #icon><el-icon><Plus /></el-icon></template>
               新建用户
             </el-button>
             <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
-          </div>
+          </AppControlRow>
         </div>
 
         <el-card shadow="never" class="filter-card">

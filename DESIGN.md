@@ -188,7 +188,7 @@ typography:
 
 - 页面新增 `gap`、`padding`、`margin` 时优先使用 spacing token 或语义类；不得随手新增 5px、7px、9px、11px、13px、15px 这类游离节奏。
 - 6px 仅用于控件内部图文、顶栏轻量状态组、极小图标与文字之间；10px、14px、18px 只作为已有组件历史兼容或特定密度调优，不作为新增页面默认节奏。
-- 同一行内控件必须在视觉基线上对齐；说明文字和控件作为一个整体时使用 `AppControlItem`，多个控件行使用 `AppControlRow`。
+- 同一行内控件必须在视觉基线上对齐；说明文字和控件作为一个整体时使用 `AppControlItem`，多个控件行使用 `AppControlRow`。常规控件外框动态消费行提供的共同高度，行保持自然高度并允许换行，不按最高控件测量回写。
 - 同一页面内不得同时出现多套标题上/下边距节奏；分区标题下接正文用 4-8px，下接表格或复杂控件用 8-12px。
 - 精细特例可以保留，但必须局部、少量、可解释，且不改变页面主体网格和信息层级。
 
@@ -370,8 +370,8 @@ typography:
 | `ResultMaintenanceTaskFields` | `frontend/src/components/data/ResultMaintenanceTaskFields.vue` | 结果失效与重算任务的目标范围、日期和股票范围字段组 | 无直接系统组件种类 | 数据采集与任务调度统一复用；页面只传任务类型和表单值，不复制目标范围候选、股票范围分支或任务说明 |
 | `PageToggleRow` | `frontend/src/components/PageToggleRow.vue` | 页面设置和业务偏好的开关行 | 无直接系统组件种类 | 业务选项、列显隐、布尔设置优先复用；事项名与 `PageSettingItem` 同为 13px，默认高度跟随页面密度，显式 `sm` 保持业务小尺寸；简短说明复用 `HelpHint` |
 | `AppFilterSwitch` | `frontend/src/components/AppFilterSwitch.vue` | 筛选操作栏中独立布尔条件的紧凑开关 | `filter-bar` 内的业务条件，不新增系统组件种类 | 连板天梯的“忽略 ST”“仅一字板”共同消费；名称在开启和关闭时均可见，开关有同名可访问名称；切换只更新筛选值并沿用页面既有查询、默认值和重置流程，不用于表格批量选择或多选集合 |
-| `AppAdvancedSearch` | `frontend/src/components/AppAdvancedSearch.vue` | 列表筛选常显与高级区统一收纳，复用 `AppControlRow`，保留控件实例、条件值与领域事件 | `filter-bar.commonFields`，候选与默认值统一由 `layout/searchGroups.ts` 驱动页面登记，运行时权限候选经 `LayoutHost` 共享给设置抽屉 | 每个独立列表 ≥3 个可收纳条件时常显两个，高级区默认收起；收起不清空、不查询；摘要体现隐藏的实际限制（包括默认限制），可定位和按字段清除；复杂日期范围算一个条件，整页上下文不收纳；禁止复制页面私有收展与配置保存逻辑 |
-| `AppControlRow` / `AppControlItem` | `frontend/src/components/AppControlRow.vue`、`frontend/src/components/AppControlItem.vue` | 页面工具行、查询行和参数行的通用横向控件容器；控件行默认按控件自然宽度排列，空间不足时换行，不自动拉伸填满；控件项把标签和控件作为一个整体换行 | `filter-bar`、`toolbar` 等系统组件种类的真实渲染基础 | 横向条件、参数及操作组统一消费；整体换行与复合控件边界见[按钮与输入](#按钮与输入)。 |
+| `AppAdvancedSearch` | `frontend/src/components/AppAdvancedSearch.vue` | 列表筛选常显与高级区统一收纳，在稳定滚动节点上复用操作行尺寸作用域，保留控件实例、条件值与领域事件 | `filter-bar.commonFields`，候选与默认值统一由 `layout/searchGroups.ts` 驱动页面登记，运行时权限候选经 `LayoutHost` 共享给设置抽屉 | 每个独立列表 ≥3 个可收纳条件时常显两个，高级区默认收起；收起不清空、不查询；摘要体现隐藏的实际限制（包括默认限制），可定位和按字段清除；复杂日期范围算一个条件，整页上下文不收纳；禁止复制页面私有收展与配置保存逻辑 |
+| `AppControlRow` / `AppControlItem` | `frontend/src/components/AppControlRow.vue`、`frontend/src/components/AppControlItem.vue` | 页面工具行、查询行和参数行的通用横向控件容器；控件行默认按控件自然宽度排列，空间不足时换行，不自动拉伸填满；控件项把标签和控件作为一个整体换行 | `filter-bar`、`toolbar` 等系统组件种类的真实渲染基础 | 横向条件、参数及操作组统一消费；`AppControlRow` 提供共同高度与嵌套尺寸继承，`AppControlItem` 不截断作用域；整体换行与复合控件边界见[按钮与输入](#按钮与输入)。 |
 | `AppTabToolbar` | `frontend/src/components/AppTabToolbar.vue` | Tab 内容区的统一操作栏，按内容安排筛选、命令和说明，并在空间不足时自然换行 | `tabs` 下属 `filter-bar` / `toolbar` 的真实组合外壳，内部复用 `AppControlRow` | Tab 标签已表达面板名称时，内容区不得重复标题；操作和筛选统一放 `#actions`，说明统一放 `#description`；筛选型默认从左起排，纯命令组可用 `actionsAlign=end` 在当前区域右对齐，此时反馈独立放下一行；没有操作时允许仅右对齐展示说明，不得为填空新增无业务意义的按钮 |
 | `LayoutConfigTransferPanel` | `frontend/src/layout/components/LayoutConfigTransferPanel.vue` | 布局配置与视觉预设共用的 JSON 导入导出分区 | 无直接系统组件种类或配置字段 | 统一标题与帮助、工具行、伸展编辑区和底部右对齐操作；文件选择使用标准命令按钮，解析及保存仍由工作区负责。两处消费共用几何与间距，不改变各自校验、权限或持久化范围。 |
 | `AppIconButton` | `frontend/src/components/AppIconButton.vue` | 全站纯图标操作按钮，统一可访问名称、尺寸、圆角、悬浮、聚焦、禁用、loading 和语义色 | 无直接系统组件种类 | 纯图标命令复用；尺寸、名称、加载与提示边界见[按钮与输入](#按钮与输入) |
@@ -505,6 +505,10 @@ typography:
 - 关闭呈现不承担业务允许判断：未保存拦截、权限、异步状态由所属容器处理；`PageDrawer` 自定义关闭、遮罩与 Escape 共走组件库关闭链路，尊重 `before-close`，`show-close=false` 同时隐藏自定义头部入口。弹窗继续由 `AppDialog` / Element Plus 管理关闭与焦点归还。
 - 校验入口为 `npm run check:close-controls`（构建门禁同时执行），检测直接手写关闭图形、缺少名称和私有视觉配方；允许危险删除与非交互预览图形。交互、离开拦截和焦点恢复由定向组件测试覆盖，明暗主题的实际命中区、裁切与状态须在内置浏览器复核，源码扫描不能替代页面验收。
 - 标准命令按钮随页面密度取高及水平内距（标准密度为 `32px` 高、左右 padding `12px`）、文字 `13px / --app-font-weight-section`、图文间距 `6px`；small 为 `28px`、large 为 `36px`。输入框、选择器、按钮与分段选择的常规高度共用 `--app-density-control-height`，显式 small / large 共用 `--app-control-height-sm/lg`；Element Plus 尺寸变量由全局样式映射，禁止组件另立同名档位。输入框、选择器、按钮统一使用 `--layout-control-radius=6px`，主题只改变颜色和材质，不改变基础控件形态。
+- **操作行共同高度**：`AppControlRow`、`AppTabToolbar` 和 `AppAdvancedSearch` 共用 `controlRowSizing.ts`，通过局部 `--app-control-row-height` 动态控制常规输入、数字、搜索、选择、日期、分段、水平按钮选择、命令按钮与同级图标命令的外框高度。省略行 `size` 时先继承最近操作行，再继承表单项/表单/全局尺寸，无上下文时跟随页面密度；显式 `default` 回到页面密度，`small / large` 复用现有档位。行内常规控件不得独立设置 `size`、内联高度或私有 wrapper 高度；行外保留原有尺寸继承。独立主要设置仍可在行外显式选择较大档位。
+- 行只设置共同控件高度和最小高度，换行、错误与说明使容器自然增高；禁止固定整行高度、拉伸所有后代或在生产测量最高控件反向设高。帮助、关闭、清空、状态标签、普通复选/开关及文字链接保留各自角色尺寸；多行字段、卡片和表格行操作不参与。全局交易纪律快捷卡片的规则动作是紧凑附属操作组，整组显式 `small`，不得把此例外推广为常规工具栏默认值。
+- 新一级 `AppForm`、独立 `AppDialog` / `PageDrawer` / `PageDrawerSurface`、`AppDataTable` 和 `AppRowActions` 同时隔离 Vue 行上下文和 CSS 高度继承；独立浮层不继承调用方旧表单的尺寸，内部新建表单仍正常继承自身档位。普通包装层、插槽不截断行作用域。日期浮层候选与数字加减图形不作为独立行控件拉伸；数字输入的右侧上下按钮按实际外框分半。
+- 门禁 `npm run check:control-rows` 使用模板 AST 与 PostCSS 检查独立尺寸、绑定高度和局部覆盖，构建同时执行；动态样式无法确认时要求收口。静态检查不证明最终几何一致，必须在代表性真实控件组合与页面按主题、密度和换行边界验证实际外框，同一缩放下归一化高度差不超过 1px，并检查焦点、禁用、加载和输入保留。
 - 按钮式单选、按钮式复选与水平库分段（`el-radio-button / el-checkbox-button / el-segmented`）通过 `global.css` 的选择控件适配共同消费上述尺寸档位，覆盖库内固定纵向内距和最小高度；普通枚举文字与 `PageSegmented` 同用表格正文字阶。不得仅凭 `size` 名称或尺寸变量已配置就判定实际高度一致。多行选项卡片保留自然高度：当前指标创建方式卡片通过 `--app-choice-control-height / --app-choice-padding-block / --app-choice-display / --app-choice-justify` 声明卡片布局；普通控件不得用这些变量私改尺寸。
 - 控件宽度不按组件类型强制等宽，而按内容容量使用全局语义档位：`compact=96px`（短数值/短状态）、`short=140px`（短枚举）、`medium=180px`（普通日期/选择）、`long=220px`（搜索/较长选择）、`wide=300px`（复杂多选/长输入），需要承接容器剩余空间时使用 `fill=100%`。事实源为 `global.css` 的 `--app-control-width-*` 与 `.app-control-width-*`；普通控件由页面选择能完整承载常态内容的最小档位。`AppFilterSelect` 全选摘要优先复用当前模式的容量档位；标签模式由 `visibleTagCount=1..3` 依次映射到 `medium / long / wide`，未全选时预留对应数量的值和 `+N`；`displayMode=count` 映射到 `short`，未全选时显示“已选 N”。页面不得再叠加宽度档位。窄容器统一由 `max-width: 100%` 收缩。新增或修改控件禁止匿名内联固定宽度；确有独立几何或响应式算法的复合组件使用具名组件 class，并说明不能消费通用档位的理由。
 - **下拉选型与宽度契约**：普通单选/表单下拉使用 `AppSelect`，列表筛选与紧凑多选编辑使用 `AppFilterSelect`，需要远程搜索或批量校验的业务多选基于 `AppMultiSelect`，已有领域选择器（如 `MarketBenchmarkSelect`、`IndicatorSelect`、`AssetProfileSelect`）继续复用其业务组件；这些组件内部统一使用 `AppSelect`。页面与业务组件禁止直接使用 `el-select` / `ElSelect` 或 HTML `<select>`；`el-option` / `el-option-group` 继续用于声明候选项。不要为视觉统一合并不同领域的选项、空值或搜索逻辑。

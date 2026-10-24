@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { provideTradeDisciplineCategories, tradeConditionMeta } from '@/composables/useTradeDisciplineCategories'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -546,9 +547,9 @@ const menuPageTitle = useMenuPageTitle()
             </h2>
             <p class="page-subtitle">把规则、执行和复盘留在同一条可追溯的纪律轨道上。</p>
           </div>
-          <div class="page-head-actions">
+          <AppControlRow class="page-head-actions">
             <PageSettingsTrigger :dirty="layoutDirty" @click="settingsOpen = true" />
-          </div>
+          </AppControlRow>
         </div>
       </div>
     </template>

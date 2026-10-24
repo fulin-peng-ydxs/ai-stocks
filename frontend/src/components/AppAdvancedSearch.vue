@@ -3,10 +3,12 @@ import { computed, inject, nextTick, onBeforeUnmount, ref, watch, watchEffect } 
 import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AppScrollArea from './AppScrollArea.vue'
+import { useControlRowSizing, type ControlRowSize } from './controlRowSizing'
 import { SEARCH_GROUPS, resolveCommonFields, searchSummary, type SearchFieldState, type SearchGroupKey } from '@/layout/searchGroups'
 import { SEARCH_COMPONENT_VALUE, SEARCH_RUNTIME_META } from '@/layout/searchContext'
 
-const props = defineProps<{ group: SearchGroupKey; states: Record<string, SearchFieldState> }>()
+const props = defineProps<{ group: SearchGroupKey; states: Record<string, SearchFieldState>; size?: ControlRowSize }>()
+const row = useControlRowSizing()
 const componentValueOf = inject(SEARCH_COMPONENT_VALUE, undefined)
 const runtimeMeta = inject(SEARCH_RUNTIME_META, undefined)
 const definition = computed(() => SEARCH_GROUPS[props.group])
@@ -54,7 +56,7 @@ function toggle(): void {
 </script>
 
 <template>
-  <div ref="root" class="app-advanced-search" :data-search-group="group" :aria-label="definition.label">
+  <div ref="root" class="app-advanced-search app-control-row-scope" :style="row.style.value" :data-control-row="row.size.value" :data-search-group="group" :aria-label="definition.label">
     <AppScrollArea class="app-advanced-search__controls">
       <template v-for="entry in entries" :key="entry.key">
         <slot v-if="entry.kind === 'context'" name="context" />

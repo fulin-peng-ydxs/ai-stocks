@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 withDefaults(defineProps<{
   title?: string
   description?: string
@@ -17,7 +18,7 @@ withDefaults(defineProps<{
         <h3 v-if="title">{{ title }}</h3>
         <p v-if="description">{{ description }}</p>
       </div>
-      <div v-if="$slots.actions" class="app-detail-section__actions"><slot name="actions" /></div>
+      <AppControlRow v-if="$slots.actions" class="app-detail-section__actions"><slot name="actions" /></AppControlRow>
     </header>
     <div class="app-detail-section__content app-body-text"><slot /></div>
   </section>

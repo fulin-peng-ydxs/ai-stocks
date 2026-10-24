@@ -18,6 +18,9 @@ import {
   type AppRowActionType,
 } from './rowActions'
 import { ROW_ACTION_COLUMN_WIDTH_CONTEXT } from './table/rowActionColumnWidth'
+import { resetControlRowSizing } from './controlRowSizing'
+
+resetControlRowSizing()
 
 const props = withDefaults(defineProps<{
   actions: AppRowAction[]
@@ -241,7 +244,7 @@ onBeforeUnmount(() => {
 <template>
   <div
     ref="rootEl"
-    class="app-row-actions"
+    class="app-row-actions app-control-row-boundary"
     @keydown.esc="onMenuEscape"
     role="group"
     :aria-label="ariaLabel"

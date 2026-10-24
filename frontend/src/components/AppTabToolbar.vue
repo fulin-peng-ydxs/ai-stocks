@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import AppControlRow from '@/components/AppControlRow.vue'
+import { useControlRowSizing, type ControlRowSize } from './controlRowSizing'
 
 withDefaults(defineProps<{
   label: string
+  size?: ControlRowSize
   /** 筛选输入从左起排；纯命令组可在所属内容区右对齐。 */
   actionsAlign?: 'start' | 'end'
 }>(), { actionsAlign: 'start' })
+const row = useControlRowSizing()
 </script>
 
 <template>
-  <div class="app-tab-toolbar" :class="{ 'is-actions-end': actionsAlign === 'end' }" role="toolbar" :aria-label="label">
+  <div class="app-tab-toolbar app-control-row-scope" :style="row.style.value" :data-control-row="row.size.value" :class="{ 'is-actions-end': actionsAlign === 'end' }" role="toolbar" :aria-label="label">
     <AppControlRow v-if="$slots.actions" class="app-tab-toolbar__actions" :justify="actionsAlign">
       <slot name="actions" />
     </AppControlRow>
@@ -27,7 +30,7 @@ withDefaults(defineProps<{
   gap: var(--app-space-3);
   flex-wrap: wrap;
   min-width: 0;
-  min-height: var(--app-density-control-height, var(--app-control-height-md));
+  min-height: var(--app-control-row-height);
   margin-bottom: var(--app-space-2);
 }
 .app-tab-toolbar__actions {

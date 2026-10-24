@@ -1806,7 +1806,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         </h2>
         <p class="page-subtitle">{{ pageSubtitle }}</p>
       </div>
-      <div class="page-head-actions">
+      <AppControlRow class="page-head-actions">
         <el-button
           v-if="activeTab === 'tech'"
           v-permission="'indicator:def-manage'"
@@ -1817,7 +1817,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           新建自定义指标
         </el-button>
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
-      </div>
+      </AppControlRow>
     </div>
     </template>
 
@@ -2758,12 +2758,12 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <span>{{ editingKey ? '02' : '03' }}</span>
             <div><h3>用真实行情验证</h3><p>选择一只代表性股票，确认公式能得到符合预期的结果后再保存。</p></div>
           </header>
-          <div class="indicator-preview-controls">
+          <AppControlRow class="indicator-preview-controls">
             <el-input v-model="previewCode" placeholder="如 600000.SH" class="app-control-width-long" />
             <TradeDatePicker v-model="defPreviewDate" placeholder="默认最新交易日" class="app-control-width-medium" />
             <IndicatorParamFields v-model="previewValues" :params="defForm.params" :disabled="semanticLocked" />
             <el-button :loading="defPreviewing" :disabled="semanticLocked" @click="runDefPreview">验证计算</el-button>
-          </div>
+          </AppControlRow>
           <AppStateBlock
             v-if="defPreview && defPreview.status !== 'ok'"
             state="empty"

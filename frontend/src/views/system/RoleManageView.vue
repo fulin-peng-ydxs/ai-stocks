@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
@@ -333,13 +334,13 @@ const menuPageTitle = useMenuPageTitle()
             </h2>
             <p class="page-subtitle">管理角色及其功能点/菜单授权，多角色可叠加权限。</p>
           </div>
-          <div class="page-head-actions">
+          <AppControlRow class="page-head-actions">
             <el-button v-permission="'role:create'" type="primary" plain @click="openCreate">
               <template #icon><el-icon><Plus /></el-icon></template>
               新建角色
             </el-button>
             <PageSettingsTrigger :dirty="layoutDirty" @click="settingsOpen = true" />
-          </div>
+          </AppControlRow>
         </div>
       </div>
     </template>
@@ -404,13 +405,13 @@ const menuPageTitle = useMenuPageTitle()
                 </template>
               </div>
             </div>
-            <div class="page-head-actions" v-if="activeRole">
-              <el-button v-if="!activeRole.is_locked" v-permission="'role:update'" size="small" @click="openEditRole">编辑</el-button>
-              <el-button v-if="!activeRole.is_builtin" v-permission="'role:delete'" size="small" type="danger" plain
+            <AppControlRow class="page-head-actions" v-if="activeRole">
+              <el-button v-if="!activeRole.is_locked" v-permission="'role:update'" @click="openEditRole">编辑</el-button>
+              <el-button v-if="!activeRole.is_builtin" v-permission="'role:delete'" type="danger" plain
                          @click="removeRole">删除</el-button>
-              <el-button size="small" :disabled="treeReadonly" @click="setAll(true)">全选</el-button>
-              <el-button size="small" :disabled="treeReadonly" @click="setAll(false)">清空</el-button>
-            </div>
+              <el-button :disabled="treeReadonly" @click="setAll(true)">全选</el-button>
+              <el-button :disabled="treeReadonly" @click="setAll(false)">清空</el-button>
+            </AppControlRow>
           </div>
 
           <AppScrollArea class="rm-col-body">
@@ -425,10 +426,10 @@ const menuPageTitle = useMenuPageTitle()
 
           <div class="rm-detail-foot" v-if="activeRole">
             <span class="dirty" :class="{ hidden: !dirty }">● 有未保存修改</span>
-            <div class="page-head-actions">
+            <AppControlRow class="page-head-actions">
               <el-button :disabled="!dirty || treeReadonly" @click="resetGrants">还原修改</el-button>
               <el-button type="primary" :loading="saving" :disabled="!dirty || treeReadonly" @click="save">保存并刷新权限</el-button>
-            </div>
+            </AppControlRow>
           </div>
         </div>
       </AppScrollArea>

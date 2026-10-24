@@ -510,6 +510,7 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
       },
       AppSplitWorkspace: AppSplitWorkspaceStub,
       AppWorkspacePane: AppWorkspacePaneStub,
+      AppControlRow: false,
       StockChartWorkspace: StockChartWorkspaceStub,
       MarketDetailHero: {
         props: ['eyebrow', 'title', 'code', 'subtitle', 'asideAlign'],

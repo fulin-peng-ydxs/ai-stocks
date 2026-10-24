@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import {
@@ -1112,14 +1113,14 @@ onBeforeUnmount(() => {
           <template #icon><el-icon><ArrowLeft /></el-icon></template>
           {{ returnLabel }}
         </el-button>
-        <div class="page-head-actions detail-actions">
+        <AppControlRow class="page-head-actions detail-actions">
           <el-button
             data-testid="stock-detail-refresh"
             :loading="barsLoading || indicatorLoading || quoteLoading || membershipLoading || tradeLoading"
             @click="refreshStockDetail"
           >刷新</el-button>
           <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
-        </div>
+        </AppControlRow>
       </div>
     </div>
     </template>
@@ -1316,7 +1317,6 @@ onBeforeUnmount(() => {
                 v-if="hasAuxiliaryContent"
                 :label="splitCompact ? '查看辅助信息' : (showAuxiliary ? '收起辅助信息，仅看图表' : '显示辅助信息')"
                 data-testid="stock-detail-toggle-auxiliary"
-                size="sm"
                 @click="toggleAuxiliaryPanel"
               >
                 <el-icon>

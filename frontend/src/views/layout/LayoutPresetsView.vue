@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
@@ -326,11 +327,11 @@ const menuPageTitle = useMenuPageTitle()
             <h2 class="app-page-title">{{ menuPageTitle }}</h2>
             <p class="page-subtitle">管理颜色、圆角、边框与阴影等全局视觉预设（共 {{ presetCount }} 套）。</p>
           </div>
-          <div class="page-head-actions">
+          <AppControlRow class="page-head-actions">
             <el-button @click="importExportVisible = true">导入导出</el-button>
             <el-button :loading="loading" @click="reloadPresets">刷新</el-button>
             <el-button v-permission="'layout:preset-manage'" type="primary" @click="openNewPreset">新增视觉预设</el-button>
-          </div>
+          </AppControlRow>
         </div>
       </div>
     </template>

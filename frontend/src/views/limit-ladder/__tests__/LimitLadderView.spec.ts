@@ -99,6 +99,7 @@ const LimitLadderStub = defineComponent({
 })
 
 const stubs = {
+  AppControlRow: false,
   LayoutHost: {
     template: '<main><slot name="action"/><slot name="main"/><slot name="overlays"/></main>',
   },

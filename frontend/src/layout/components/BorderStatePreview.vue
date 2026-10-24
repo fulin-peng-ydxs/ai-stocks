@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import AppForm from '@/components/AppForm.vue'
+import AppControlRow from '@/components/AppControlRow.vue'
+import AppIconButton from '@/components/AppIconButton.vue'
+import type { ControlRowSize } from '@/components/controlRowSizing'
+import { Refresh } from '@element-plus/icons-vue'
 import { ref } from 'vue'
 import { APP_BOTTOM_FLOATING_FALLBACKS, APP_BOTTOM_FLOATING_PLACEMENT } from '@/utils/floatingPlacement'
 import AppDatePicker from '@/components/AppDatePicker.vue'
@@ -22,13 +26,15 @@ const color = ref('#1677ff')
 const columns = ref<1 | 2 | 3>(2)
 const state = ref<'loading' | 'empty' | 'error'>('empty')
 const options = [{ label: '方案一', value: 'a' }, { label: '方案二', value: 'b' }]
+const rowSize = ref<ControlRowSize>('default')
+const selections = ref(['a', 'b'])
 </script>
 
 <template>
   <details class="border-state-preview">
     <summary class="app-section-title">真实组件边界状态样板</summary>
     <p class="app-caption-text">本地样板，可用 Tab 核对焦点；跟随当前主题与圆角，不保存业务数据。</p>
-    <div class="border-state-preview__tools">
+    <AppControlRow class="border-state-preview__tools">
       <el-checkbox v-model="disabled">禁用控件</el-checkbox>
       <el-checkbox v-model="invalid">字段错误</el-checkbox>
       <el-radio-group v-model="columns" aria-label="详情列数">
@@ -36,7 +42,12 @@ const options = [{ label: '方案一', value: 'a' }, { label: '方案二', value
         <el-radio-button :value="2">两列</el-radio-button>
         <el-radio-button :value="3">三列</el-radio-button>
       </el-radio-group>
-    </div>
+      <el-radio-group v-model="rowSize" aria-label="操作行尺寸">
+        <el-radio-button value="default">跟随密度</el-radio-button>
+        <el-radio-button value="small">小号行</el-radio-button>
+        <el-radio-button value="large">大号行</el-radio-button>
+      </el-radio-group>
+    </AppControlRow>
     <AppForm label-position="top" :disabled="disabled" class="border-state-preview__inputs">
       <el-form-item label="单行输入样板" :error="invalid ? '示例字段错误' : ''">
         <el-input v-model="value" aria-label="单行输入样板" />
@@ -56,15 +67,33 @@ const options = [{ label: '方案一', value: 'a' }, { label: '方案二', value
       <el-form-item label="数字样板"><el-input-number v-model="number" aria-label="数字样板" /></el-form-item>
       <el-form-item label="颜色样板"><el-color-picker v-model="color" aria-label="颜色样板" /></el-form-item>
     </AppForm>
-    <div class="border-state-preview__tools">
+    <AppControlRow :size="rowSize" class="border-state-preview__tools" aria-label="共同高度控件样板">
+      <el-input v-model="value" :disabled="disabled" class="app-control-width-short" aria-label="操作行输入样板" />
+      <AppSelect v-model="selection" :disabled="disabled" width="short" aria-label="操作行选择样板">
+        <el-option v-for="option in options" :key="option.value" :label="option.label" :value="option.value" />
+      </AppSelect>
+      <AppSelect v-model="selections" multiple collapse-tags :max-collapse-tags="1"
+        :disabled="disabled" width="long" aria-label="操作行多选样板">
+        <el-option v-for="option in options" :key="option.value" :label="`${option.label} · 较长的候选名称`" :value="option.value" />
+      </AppSelect>
+      <el-radio-group v-model="selection" :disabled="disabled" aria-label="操作行按钮单选样板">
+        <el-radio-button value="a">选项一</el-radio-button><el-radio-button value="b">选项二</el-radio-button>
+      </el-radio-group>
+      <el-checkbox-group v-model="selections" :disabled="disabled" aria-label="操作行按钮多选样板">
+        <el-checkbox-button value="a">甲</el-checkbox-button><el-checkbox-button value="b">乙</el-checkbox-button>
+      </el-checkbox-group>
+      <AppDatePicker v-model="range" :disabled="disabled" type="daterange" value-format="YYYY-MM-DD"
+        class="app-control-width-wide" start-placeholder="开始日期" end-placeholder="结束日期" />
+      <el-input-number v-model="number" :disabled="disabled" controls-position="right" class="app-control-width-short" aria-label="操作行数字样板" />
       <PageSegmented v-model="selection" :options="options" :disabled="disabled" aria-label="分段选择样板" />
       <el-segmented v-model="selection" :options="options" :disabled="disabled" aria-label="库分段样板" />
       <el-button :disabled="disabled">普通命令样板</el-button>
       <el-button type="primary" loading>加载命令样板</el-button>
+      <AppIconButton label="操作行图标样板" :disabled="disabled"><Refresh /></AppIconButton>
       <el-popover :placement="APP_BOTTOM_FLOATING_PLACEMENT" :fallback-placements="APP_BOTTOM_FLOATING_FALLBACKS" trigger="click" effect="dark" content="浮层形态由内容角色决定，深浅底色不改变卡片圆角。">
         <template #reference><el-button>深底浮层样板</el-button></template>
       </el-popover>
-    </div>
+    </AppControlRow>
     <AppDetailFields :columns="columns">
       <AppDetailField label="字段一" value="普通字段" />
       <AppDetailField label="跨列字段" span="full" value="跨列前存在不完整行，空白区域保持内容面。" />
@@ -74,13 +103,13 @@ const options = [{ label: '方案一', value: 'a' }, { label: '方案二', value
       <AppDetailField label="字段六" value="不完整末行" />
     </AppDetailFields>
     <AppStatusNotice tone="warning" title="软提示边界样板" />
-    <div class="border-state-preview__tools">
+    <AppControlRow class="border-state-preview__tools">
       <el-radio-group v-model="state" aria-label="结果区域状态">
         <el-radio-button value="loading">加载</el-radio-button>
         <el-radio-button value="empty">空</el-radio-button>
         <el-radio-button value="error">错误</el-radio-button>
       </el-radio-group>
-    </div>
+    </AppControlRow>
     <AppTableCard><AppStateBlock :state="state" title="结果区域样板" size="compact" /></AppTableCard>
   </details>
 </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
@@ -540,11 +541,11 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
                                placeholder="不限（全部板块）" />
             </div>
           </div>
-          <div class="cfg-actions">
-            <el-button v-permission="'training:start'" type="primary" size="large" :loading="loading" @click="start">开始训练</el-button>
+          <AppControlRow size="large" class="cfg-actions">
+            <el-button v-permission="'training:start'" type="primary" :loading="loading" @click="start">开始训练</el-button>
             <AppFormHelp>回合数、连续交易日、初始资金等默认值可在右上角
               <el-button class="hl" link type="primary" @click="settingsOpen = true">设置</el-button> 中调整</AppFormHelp>
-          </div>
+          </AppControlRow>
         </el-card>
 
         <el-card v-if="growthLoading || growthData.length || growthError" shadow="never" class="growth-card">
@@ -665,13 +666,13 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
             <el-tag type="info" v-if="round.board" size="small" effect="plain">{{ round.board }}</el-tag>
           </p>
         </div>
-        <div class="page-head-actions">
+        <AppControlRow class="page-head-actions">
           <div class="ops">
             <KlineRangeSelect v-model="viewDays" />
           </div>
           <el-button :disabled="actionPending" @click="backToConfig">退出训练</el-button>
           <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
-        </div>
+        </AppControlRow>
       </div>
     </template>
 
@@ -804,13 +805,13 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
           </h2>
           <p class="page-subtitle">{{ modeText(detail.mode) }} · {{ detail.n_rounds }} 回合 · {{ formatDateTimeMinutes(detail.created_at) }}</p>
         </div>
-        <div class="page-head-actions">
+        <AppControlRow class="page-head-actions">
           <div class="ops">
             <KlineRangeSelect v-model="viewDays" />
           </div>
           <el-button :disabled="actionPending" @click="backToConfig">返回</el-button>
           <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
-        </div>
+        </AppControlRow>
       </div>
     </template>
 
@@ -913,7 +914,7 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
         <el-card shadow="never" class="review-card">
           <template #header><span class="card-title">整局复盘</span></template>
           <el-input v-model="reviewNote" type="textarea" :rows="4" placeholder="记录本局思路、复盘总结、改进点……" />
-          <div class="review-actions"><el-button v-permission="'training:review'" type="primary" :disabled="!reviewChanged" @click="persistReview">保存复盘</el-button></div>
+          <AppControlRow class="review-actions"><el-button v-permission="'training:review'" type="primary" :disabled="!reviewChanged" @click="persistReview">保存复盘</el-button></AppControlRow>
         </el-card>
     </AppScrollArea>
     </template>

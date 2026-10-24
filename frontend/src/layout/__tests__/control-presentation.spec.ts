@@ -20,19 +20,25 @@ function declaration(file: string, selector: string, property: string): string |
 
 describe('交互呈现的共享尺寸契约', () => {
   it('命令、输入、选择、图标命令及工具栏共同消费常规密度', () => {
-    const inherited = 'var(--app-density-control-height, var(--app-control-height-md))'
+    const density = 'var(--app-density-control-height, var(--app-control-height-md))'
+    const inherited = `var(--app-control-row-height, ${density})`
     const consumers = [
-      ['styles/global.css', ':root', '--el-component-size'],
+
       ['styles/global.css', 'html[data-layout-preset] .el-button', 'height'],
       ['components/PageSegmented.vue', '.page-segmented', 'height'],
       ['components/AppSelect.vue', '.app-select', '--app-select-control-height'],
       ['components/AppFilterSelect.vue', '.app-filter-select__control :deep(.el-select__wrapper)', 'height'],
-      ['components/AppIconButton.vue', '.app-icon-button', '--app-icon-button-size'],
-      ['components/AppTabToolbar.vue', '.app-tab-toolbar', 'min-height'],
+
+
       ['styles/global.css', 'html[data-layout-preset] .el-radio-button', '--app-choice-control-height'],
       ['styles/global.css', 'html[data-layout-preset] .el-checkbox-button', '--app-choice-control-height'],
       ['styles/global.css', 'html[data-layout-preset] .el-segmented:not(.el-segmented--vertical)', '--app-choice-control-height'],
     ]
+    expect(declaration('styles/global.css', ':root', '--el-component-size')).toBe(density)
+    expect(declaration('components/AppIconButton.vue', '.app-icon-button', 'height'))
+      .toBe('var(--app-control-row-height, var(--app-icon-button-size))')
+    expect(declaration('components/AppTabToolbar.vue', '.app-tab-toolbar', 'min-height'))
+      .toBe('var(--app-control-row-height)')
     for (const [file, selector, property] of consumers) {
       expect(declaration(file, selector, property), `${file} ${selector}`).toBe(inherited)
     }
@@ -42,8 +48,9 @@ describe('交互呈现的共享尺寸契约', () => {
     ['small', 'sm'],
     ['large', 'lg'],
   ])('显式 %s 在命令、输入与选择中映射同一个档位', (size, token) => {
-    const expected = `var(--app-control-height-${token})`
-    expect(declaration('styles/global.css', ':root', `--el-component-size-${size}`)).toBe(expected)
+    const tokenHeight = `var(--app-control-height-${token})`
+    const expected = `var(--app-control-row-height, ${tokenHeight})`
+    expect(declaration('styles/global.css', ':root', `--el-component-size-${size}`)).toBe(tokenHeight)
     expect(declaration('styles/global.css', `html[data-layout-preset] .el-button.el-button--${size}`, 'height')).toBe(expected)
     expect(declaration('components/PageSegmented.vue', `.page-segmented--${size}`, 'height')).toBe(expected)
     expect(declaration('components/AppSelect.vue', `.app-select.el-select--${size}`, '--app-select-control-height')).toBe(expected)

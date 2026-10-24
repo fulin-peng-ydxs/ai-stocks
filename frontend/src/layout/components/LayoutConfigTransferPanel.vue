@@ -90,7 +90,6 @@ function onFileChange(event: Event) {
 .layout-config-transfer-panel__toolbar,
 .layout-config-transfer-panel__actions {
   flex: 0 0 auto;
-  min-height: var(--app-control-height-md);
 }
 .layout-config-transfer-panel__filename {
   flex: 1 1 120px;

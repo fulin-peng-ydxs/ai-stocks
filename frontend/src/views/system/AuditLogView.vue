@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import AppJsonViewer from '@/components/AppJsonViewer.vue'
@@ -514,14 +515,14 @@ const menuPageTitle = useMenuPageTitle()
           </h2>
           <p class="page-subtitle">查询登录、配置变更、数据操作等审计记录。</p>
         </div>
-        <div class="audit-actions">
+        <AppControlRow class="audit-actions">
           <el-switch v-model="autoRefreshEnabled" size="small" active-text="自动刷新" />
           <el-button :loading="tableLoading || summaryLoading" @click="refresh(false)">刷新</el-button>
           <AppHoverInfo content="导出能力不在本阶段范围" placement="bottom">
             <span><el-button disabled>导出</el-button></span>
           </AppHoverInfo>
           <PageSettingsTrigger :dirty="drawerDirty" @click="settingsOpen = true" />
-        </div>
+        </AppControlRow>
       </div>
     </template>
 

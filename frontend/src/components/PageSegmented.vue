@@ -76,7 +76,7 @@ function optionTestId(value: OptionValue): string | undefined {
   min-width: 0;
   max-width: 100%;
   gap: var(--app-space-1);
-  height: var(--app-density-control-height, var(--app-control-height-md));
+  height: var(--app-control-row-height, var(--app-density-control-height, var(--app-control-height-md)));
   padding: 2px;
   border: 1px solid var(--page-settings-section-border);
   border-radius: var(--layout-control-radius);
@@ -165,8 +165,8 @@ function optionTestId(value: OptionValue): string | undefined {
   color: var(--el-disabled-text-color);
 }
 /* 与标准命令、输入控件使用相同显式档位，不按所在业务页面重新解释 small。 */
-.page-segmented--small { height: var(--app-control-height-sm); }
-.page-segmented--large { height: var(--app-control-height-lg); }
+.page-segmented--small { height: var(--app-control-row-height, var(--app-control-height-sm)); }
+.page-segmented--large { height: var(--app-control-row-height, var(--app-control-height-lg)); }
 .page-segmented--tabs {
   gap: var(--app-segment-gap, var(--app-space-2));
   padding: 0;

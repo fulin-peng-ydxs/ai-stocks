@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import type { StockConditionPanelDefaults } from '@/layout/configPanel'
 import AppFormHelp from '@/components/AppFormHelp.vue'
@@ -464,14 +465,14 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
           :disabled="readonly"
         />
 
-        <div v-if="canSubmit && !existing" class="checkin-actions">
+        <AppControlRow v-if="canSubmit && !existing" class="checkin-actions">
           <el-button
             v-permission="'trade-discipline:checkin-submit'"
             type="primary"
             :loading="submitting"
             @click="submit"
           >提交打卡</el-button>
-        </div>
+        </AppControlRow>
       </AppForm>
     </template>
   </AppScrollArea>

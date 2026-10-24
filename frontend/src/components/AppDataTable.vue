@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { vReveal } from '@/directives/reveal'
+import { resetControlRowSizing } from './controlRowSizing'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppPagination from '@/components/AppPagination.vue'
 import { syncTableCellVisualOverflow } from '@/components/table/cellVisualOverflow'
@@ -8,6 +9,7 @@ import type { Sort } from 'element-plus'
 import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
 
 defineOptions({ inheritAttrs: false })
+resetControlRowSizing()
 
 type TableKind = 'data-table' | 'wide-table'
 type RowKey = string | ((row: any) => string)
@@ -129,7 +131,7 @@ const emit = defineEmits<{
 <template>
   <div
     v-reveal="!initialLoading && data.length > 0"
-    class="app-data-table"
+    class="app-data-table app-control-row-boundary"
     :aria-busy="loading"
     :class="[
       `app-data-table--${kind}`,

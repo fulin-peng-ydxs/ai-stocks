@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import { enumText } from '@/utils/displayText'
 import { ArrowRight } from '@element-plus/icons-vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
@@ -666,10 +667,10 @@ const menuPageTitle = useMenuPageTitle()
       </h2>
       <p class="page-subtitle">查看数据规模、覆盖与质量；通过具名入口定位明细和处理问题。</p>
       </div>
-      <div class="page-head-actions">
+      <AppControlRow class="page-head-actions">
         <el-button :loading="refreshing" @click="load">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
-      </div>
+      </AppControlRow>
     </div>
     </template>
 
@@ -1148,7 +1149,7 @@ const menuPageTitle = useMenuPageTitle()
                       <span class="panel-title">覆盖进度</span>
                       <HelpHint label="板块覆盖统计口径说明" text="覆盖率和日期显示真实入库数据；当前有效的人工确认单独列示，不计入待补采，也不计为已采齐。资金流覆盖指基准交易日的即时快照。" />
                     </div>
-                    <div class="board-section-actions">
+                    <AppControlRow class="board-section-actions">
                       <el-tag
                         size="small"
                         effect="plain"
@@ -1157,10 +1158,10 @@ const menuPageTitle = useMenuPageTitle()
                       >
                         {{ boardCoverageState.label }}
                       </el-tag>
-                      <el-button data-testid="overview-board-ingest" size="small" type="primary" @click="gotoBoard()">
+                      <el-button data-testid="overview-board-ingest" type="primary" @click="gotoBoard()">
                         去采集板块
                       </el-button>
-                    </div>
+                    </AppControlRow>
                   </div>
                   <div class="board-coverage-grid">
                     <div v-for="item in boardCoverageItems" :key="item.key" class="cov-card">

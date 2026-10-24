@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppTableCard from '@/components/AppTableCard.vue'
 import { businessMessage, enumText } from '@/utils/displayText'
@@ -570,7 +571,7 @@ const menuPageTitle = useMenuPageTitle()
       </h2>
       <p class="page-subtitle">本页统计业务数据异常；接口原始负数及来源差异见「结构体检」中的来源核验提醒。</p>
       </div>
-      <div class="page-head-actions">
+      <AppControlRow class="page-head-actions">
         <AppActionHint :text="canBatch ? '' : '请先选择类型/严重度/代码再批量恢复'" :disabled="!canBatch" label="一键恢复" v-permission="'data-quality:fix'">
           <el-button type="warning" plain :loading="batching" :disabled="!canBatch"
                       @click="batchRecover">
@@ -589,7 +590,7 @@ const menuPageTitle = useMenuPageTitle()
         <el-button v-permission="'data-task:manage'" :loading="checkupRunning" @click="runCheckup">结构体检</el-button>
         <el-button :loading="loading" @click="load">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
-      </div>
+      </AppControlRow>
     </div>
 
     <el-card shadow="never" class="filter-card">

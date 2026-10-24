@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import { taskRequestFields } from '@/utils/requestRuntime'
 import { enumText, businessMessage } from '@/utils/displayText'
@@ -822,10 +823,10 @@ const menuPageTitle = useMenuPageTitle()
       </h2>
       <p class="page-subtitle">手动触发数据采集与结果维护；自动执行时间和依赖关系由任务调度配置。</p>
       </div>
-      <div class="page-head-actions">
+      <AppControlRow class="page-head-actions">
         <el-button :loading="loading" @click="load">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
-      </div>
+      </AppControlRow>
     </div>
     </template>
 
@@ -920,7 +921,7 @@ const menuPageTitle = useMenuPageTitle()
                 data-testid="task-type-filter"
                 placeholder="类型"
                 clearable
-                size="small"
+
                 @change="() => { taskPage = 1; loadTasks() }"
                 width="medium"
               >
@@ -931,13 +932,13 @@ const menuPageTitle = useMenuPageTitle()
                 data-testid="task-status-filter"
                 placeholder="状态"
                 clearable
-                size="small"
+
                 @change="() => { taskPage = 1; loadTasks() }"
                 width="short"
               >
                 <el-option v-for="o in TASK_STATUS_OPTIONS" :key="o.v" :label="o.l" :value="o.v" />
               </AppSelect>
-              <el-button data-testid="task-reset-filters" size="small" :disabled="!hasTaskFilters" @click="resetTaskFilters">重置筛选</el-button>
+              <el-button data-testid="task-reset-filters" :disabled="!hasTaskFilters" @click="resetTaskFilters">重置筛选</el-button>
             </template>
             <template #description>筛选变更后自动刷新；点击任务行查看运行日志</template>
           </AppTabToolbar>
@@ -1036,7 +1037,7 @@ const menuPageTitle = useMenuPageTitle()
                 v-model="logFilter.table_name"
                 placeholder="目标表"
                 clearable
-                size="small"
+
                 @change="() => { logPage = 1; loadLogs() }"
                 width="short"
               >
@@ -1046,7 +1047,7 @@ const menuPageTitle = useMenuPageTitle()
                 v-model="logFilter.status"
                 placeholder="结果"
                 clearable
-                size="small"
+
                 @change="() => { logPage = 1; loadLogs() }"
                 width="compact"
               >
@@ -1055,7 +1056,7 @@ const menuPageTitle = useMenuPageTitle()
                 <el-option label="部分" value="partial" />
                 <el-option label="已复查" value="checked" />
               </AppSelect>
-              <el-button data-testid="log-reset-filters" size="small" :disabled="!hasLogFilters" @click="resetLogFilters">重置筛选</el-button>
+              <el-button data-testid="log-reset-filters" :disabled="!hasLogFilters" @click="resetLogFilters">重置筛选</el-button>
             </template>
             <template #description>失败行可见原因；逐股明细见任务中心「日志」</template>
           </AppTabToolbar>

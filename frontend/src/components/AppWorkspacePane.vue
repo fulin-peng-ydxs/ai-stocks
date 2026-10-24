@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import { useSlots } from 'vue'
 
 withDefaults(defineProps<{
@@ -30,9 +31,9 @@ const slots = useSlots()
         <div v-if="eyebrow" class="app-workspace-pane__eyebrow">{{ eyebrow }}</div>
         <h3 class="app-section-title">{{ title }}</h3>
       </div>
-      <div v-if="slots.actions" class="app-workspace-pane__actions">
+      <AppControlRow v-if="slots.actions" class="app-workspace-pane__actions">
         <slot name="actions" />
-      </div>
+      </AppControlRow>
     </header>
     <div class="app-workspace-pane__body">
       <slot />

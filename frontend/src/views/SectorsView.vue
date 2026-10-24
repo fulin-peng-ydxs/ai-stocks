@@ -1047,10 +1047,10 @@ const menuPageTitle = useMenuPageTitle()
             </h2>
             <p class="page-subtitle">从强弱排行定位主线，点选板块后在同一视野比较走势。</p>
           </div>
-          <div class="page-head-actions">
+          <AppControlRow class="page-head-actions">
             <el-button data-testid="sectors-refresh" :loading="loading || chartLoading" @click="refreshSectors">刷新</el-button>
             <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
-          </div>
+          </AppControlRow>
         </div>
 
         <el-card shadow="never" class="filter-card">

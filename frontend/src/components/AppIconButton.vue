@@ -52,9 +52,9 @@ defineEmits<{
   --app-icon-button-size: var(--app-density-control-height, var(--app-control-height-md));
   --app-icon-button-glyph: 16px;
   position: relative;
-  width: var(--app-icon-button-size);
-  min-width: var(--app-icon-button-size);
-  height: var(--app-icon-button-size);
+  width: var(--app-control-row-height, var(--app-icon-button-size));
+  min-width: var(--app-control-row-height, var(--app-icon-button-size));
+  height: var(--app-control-row-height, var(--app-icon-button-size));
   padding: 0;
   border: 1px solid transparent;
   border-radius: var(--layout-control-radius, 6px);

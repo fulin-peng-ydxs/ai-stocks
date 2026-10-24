@@ -168,13 +168,13 @@ function onChange(value: string[] | string) {
   flex-wrap: nowrap;
 }
 .app-filter-select__control :deep(.el-select__wrapper) {
-  height: var(--app-density-control-height, var(--app-control-height-md));
+  height: var(--app-control-row-height, var(--app-density-control-height, var(--app-control-height-md)));
 }
 .app-filter-select--small .app-filter-select__control :deep(.el-select__wrapper) {
-  height: var(--app-control-height-sm);
+  height: var(--app-control-row-height, var(--app-control-height-sm));
 }
 .app-filter-select--large .app-filter-select__control :deep(.el-select__wrapper) {
-  height: var(--app-control-height-lg);
+  height: var(--app-control-row-height, var(--app-control-height-lg));
 }
 .app-filter-select--multiple.app-filter-select--has-selection .app-filter-select__control :deep(.el-select__wrapper) {
   overflow: hidden;
