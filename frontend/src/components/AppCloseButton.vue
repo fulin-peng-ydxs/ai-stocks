@@ -21,6 +21,7 @@ defineEmits<{ click: [event: MouseEvent] }>()
     class="app-close-control"
     :data-close-size="size"
     :label="label"
+    :tooltip="false"
     :size="size === 'default' ? 'sm' : 'xs'"
     :disabled="disabled"
     :loading="loading"

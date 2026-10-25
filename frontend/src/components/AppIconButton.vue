@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import AppHoverInfo from './AppHoverInfo'
 import { Loading } from '@element-plus/icons-vue'
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   label: string
   size?: 'xs' | 'sm' | 'md'
   variant?: 'ghost' | 'soft'
   tone?: 'default' | 'primary' | 'danger'
   disabled?: boolean
   loading?: boolean
-  tooltip?: string
+  tooltip?: string | false
 }>(), {
   size: 'md',
   variant: 'ghost',
@@ -21,6 +21,8 @@ withDefaults(defineProps<{
 })
 
 const button = ref<HTMLButtonElement>()
+// 业务图标默认说明用途；仅明确豁免时关闭，空文案不能意外取消提示。
+const tooltipContent = computed(() => props.tooltip === false ? '' : props.tooltip?.trim() || props.label.trim())
 
 defineEmits<{
   click: [event: MouseEvent]
@@ -43,7 +45,7 @@ defineEmits<{
       <slot v-else />
     </span>
     <slot name="badge" />
-    <AppHoverInfo v-if="tooltip && button" :reference="button" :content="tooltip" :disabled="loading" />
+    <AppHoverInfo v-if="tooltipContent && button" :reference="button" :content="tooltipContent" :disabled="disabled || loading" />
   </button>
 </template>
 

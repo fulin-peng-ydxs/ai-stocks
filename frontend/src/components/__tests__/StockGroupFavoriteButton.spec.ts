@@ -34,7 +34,7 @@ describe('StockGroupFavoriteButton', () => {
     vi.mocked(stockGroupApi.removeMembers).mockResolvedValue({ msg: '已移除' })
   })
 
-  it('显式用途提示随自选状态和股票名称更新', async () => {
+  it('默认用途提示随自选状态和股票名称更新', async () => {
     const wrapper = mountButton()
     await flushPromises()
     expect(wrapper.findComponent(AppHoverInfo).vm.$attrs.content).toBe('加入自选分组：平安银行')

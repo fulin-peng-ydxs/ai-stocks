@@ -238,7 +238,6 @@ function handleReset(): void {
         <AppIconButton
           v-if="visibleSectionKeys.length"
           :label="bulkToggleLabel"
-          :tooltip="bulkToggleLabel"
           size="sm"
           @click="toggleAllSections"
         >

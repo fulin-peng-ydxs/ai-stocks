@@ -526,7 +526,6 @@ onMounted(async () => {
               v-if="canUpdateWatchlist"
               v-permission="'sector-watchlist:update'"
               :label="watchlisted ? '移出板块自选' : '加入板块自选'"
-              :tooltip="watchlisted ? '移出板块自选' : '加入板块自选'"
               :loading="watchlistBusy"
               :aria-pressed="watchlisted"
               @click="toggleWatchlist"

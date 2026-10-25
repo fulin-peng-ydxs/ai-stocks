@@ -1,16 +1,19 @@
 // @vitest-environment jsdom
-import { defineComponent } from 'vue'
+import { defineComponent, nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import AppCloseButton from '../AppCloseButton.vue'
 import AppIconButton from '../AppIconButton.vue'
+import AppHoverInfo from '../AppHoverInfo'
 
 describe('关闭语义入口', () => {
-  it.each(['default', 'compact', 'inline'] as const)('档位 %s 复用图标按钮且保留完整可访问名称', size => {
+  it.each(['default', 'compact', 'inline'] as const)('档位 %s 复用图标按钮且保留完整可访问名称', async size => {
     const wrapper = mount(AppCloseButton, { props: { label: '关闭板块详情', size } })
     expect(wrapper.findComponent(AppIconButton).exists()).toBe(true)
     expect(wrapper.get('button').attributes()).toMatchObject({ 'data-close-size': size, 'aria-label': '关闭板块详情', type: 'button' })
     expect(wrapper.get('button').attributes('title')).toBeUndefined()
+    await nextTick()
+    expect(wrapper.findComponent(AppHoverInfo).exists()).toBe(false)
     expect(wrapper.find('svg').exists()).toBe(true)
     wrapper.unmount()
   })

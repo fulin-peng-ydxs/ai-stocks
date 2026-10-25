@@ -680,8 +680,8 @@ defineExpose({
                 @update:enabled="item.enabled = $event"
               >
                 <template #actions>
-                  <AppIconButton v-permission="'trade-discipline:rule-manage'" label="复制选股规则" tooltip="复制选股规则" size="sm" @click="copyStockRule(index)"><CopyDocument /></AppIconButton>
-                  <AppIconButton v-permission="'trade-discipline:rule-manage'" label="删除选股规则" tooltip="删除选股规则" size="sm" tone="danger" @click="removeStock(index)"><Delete /></AppIconButton>
+                  <AppIconButton v-permission="'trade-discipline:rule-manage'" label="复制选股规则" size="sm" @click="copyStockRule(index)"><CopyDocument /></AppIconButton>
+                  <AppIconButton v-permission="'trade-discipline:rule-manage'" label="删除选股规则" size="sm" tone="danger" @click="removeStock(index)"><Delete /></AppIconButton>
                 </template>
                 <div class="rule-card-form rule-card-form--stock">
                   <el-form-item label="规则名称" :required="editing && canManage"><el-input v-model="item.name" data-testid="stock-rule-name-input" maxlength="80" /></el-form-item>
@@ -746,8 +746,8 @@ defineExpose({
                     @update:enabled="item.enabled = $event"
                   >
                     <template #actions>
-                      <AppIconButton v-permission="'trade-discipline:rule-manage'" label="复制买卖规则" tooltip="复制买卖规则" size="sm" @click="copyActionRule(form.action_rules.indexOf(item))"><CopyDocument /></AppIconButton>
-                      <AppIconButton v-permission="'trade-discipline:rule-manage'" label="删除买卖规则" tooltip="删除买卖规则" size="sm" tone="danger" @click="removeAction(form.action_rules.indexOf(item))"><Delete /></AppIconButton>
+                      <AppIconButton v-permission="'trade-discipline:rule-manage'" label="复制买卖规则" size="sm" @click="copyActionRule(form.action_rules.indexOf(item))"><CopyDocument /></AppIconButton>
+                      <AppIconButton v-permission="'trade-discipline:rule-manage'" label="删除买卖规则" size="sm" tone="danger" @click="removeAction(form.action_rules.indexOf(item))"><Delete /></AppIconButton>
                     </template>
                     <div class="rule-card-form rule-card-form--action">
                       <el-form-item label="规则名称" :required="editing && canManage"><el-input v-model="item.name" data-testid="action-rule-name-input" maxlength="80" /></el-form-item>

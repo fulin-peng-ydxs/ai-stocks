@@ -386,7 +386,6 @@ defineExpose({ expandOperation, validate })
           <AppIconButton
             v-permission="'trade-discipline:checkin-submit'"
             label="删除操作"
-            tooltip="删除操作"
             size="sm"
             tone="danger"
             :disabled="disabled"

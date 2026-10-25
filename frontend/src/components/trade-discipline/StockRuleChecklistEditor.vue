@@ -82,7 +82,7 @@ defineExpose({ reveal })
             <AppSelect v-if="!disabled" :model-value="item.category" aria-label="检查项分类" @update:model-value="update(item, { category: $event })">
               <el-option v-for="option in categories" :key="option.value" :label="option.label" :value="option.value" :disabled="option.disabled" />
             </AppSelect>
-            <AppIconButton v-if="!disabled" label="删除检查项" tooltip="删除检查项" size="sm" tone="danger" @click="save(modelValue.filter(entry => entry.item_id !== item.item_id))"><Delete /></AppIconButton>
+            <AppIconButton v-if="!disabled" label="删除检查项" size="sm" tone="danger" @click="save(modelValue.filter(entry => entry.item_id !== item.item_id))"><Delete /></AppIconButton>
           </div>
         </template>
       </AppReorderList>

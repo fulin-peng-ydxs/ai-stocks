@@ -1164,7 +1164,6 @@ const menuPageTitle = useMenuPageTitle()
                     :class="{ 'watchlist-button--active': isWatchlisted(row.board_code) }"
                     :aria-pressed="isWatchlisted(row.board_code)"
                     :label="`${isWatchlisted(row.board_code) ? '移出' : '加入'}板块自选：${row.name}`"
-                    :tooltip="`${isWatchlisted(row.board_code) ? '移出' : '加入'}板块自选：${row.name}`"
                     :loading="isWatchlistBusy(row.board_code)"
                     :data-testid="`sectors-watchlist-${row.board_code}`"
                     size="xs"

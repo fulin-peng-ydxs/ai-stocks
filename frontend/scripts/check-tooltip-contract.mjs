@@ -14,8 +14,20 @@ export function auditTooltipContract(sources) {
   for (const { file, source } of sources) {
     const report = (line, message) => violations.push(`${file}:${line} ${message}`)
     const descriptor = file.endsWith('.vue') ? parse(source).descriptor : null
-    function template(node) {
+    function template(node, parent) {
       if (node.type === 1) {
+        if (node.tag === 'AppIconButton') {
+          const label = node.props.find(prop => prop.type === 6 && prop.name === 'label'
+            || prop.type === 7 && prop.name === 'bind' && prop.arg?.content === 'label')
+          if (!label || !(label.type === 6 ? label.value?.content : label.exp?.content)?.trim()) {
+            report(node.loc.start.line, '图标按钮必须提供非空 label，供可访问名称与默认提示共同使用')
+          }
+          if (['AppHoverInfo', 'AppActionHint', 'el-tooltip'].includes(parent?.tag)) {
+            const suppressed = node.props.some(prop => prop.type === 7 && prop.name === 'bind'
+              && prop.arg?.content === 'tooltip' && prop.exp?.content.trim() === 'false')
+            if (!suppressed) report(node.loc.start.line, '外层已有提示时优先收口到 AppIconButton.tooltip；保留外层时必须 :tooltip="false" 避免重复')
+          }
+        }
         for (const prop of node.props) {
           const name = prop.type === 6 ? prop.name : prop.type === 7 && prop.name === 'bind' ? prop.arg?.content : undefined
           if (node.tag === 'AppCloseButton' && name === 'tooltip') report(prop.loc.start.line, '关闭入口不增加重复说明')
@@ -27,7 +39,7 @@ export function auditTooltipContract(sources) {
           }
         }
       }
-      for (const child of node.children ?? []) template(child)
+      for (const child of node.children ?? []) template(child, node)
     }
     if (descriptor?.template?.ast) template(descriptor.template.ast)
     const scripts = descriptor ? [descriptor.script, descriptor.scriptSetup].filter(Boolean).map(block => block.content)

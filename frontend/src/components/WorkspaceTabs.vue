@@ -120,7 +120,6 @@ async function clear() {
     <div class="workspace-tabs-heading">
       <AppIconButton
         :label="collapsed ? '展开工作区' : '收起工作区'"
-        :tooltip="collapsed ? '展开工作区' : '收起工作区'"
         :aria-expanded="!collapsed"
         size="xs"
         @click="setCollapsed(!collapsed)"

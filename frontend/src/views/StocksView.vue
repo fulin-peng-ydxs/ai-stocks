@@ -18,6 +18,7 @@ import { createLatestRequestGuard } from '@/utils/latestRequestGuard'
 import { isSameSelectedFilter, normalizeAllSelectedFilter } from '@/utils/multiSelectFilter'
 import { ArrowDown, Delete, Edit } from '@element-plus/icons-vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import AppActionHint from '@/components/AppActionHint.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -1114,20 +1115,26 @@ const menuPageTitle = useMenuPageTitle()
           <AppIconButton
             v-permission="'stock-group:update'"
             label="编辑分组"
-            tooltip="编辑分组"
             size="sm"
             tone="primary"
             @click="openEdit"
           ><Edit /></AppIconButton>
-          <AppIconButton
-            v-permission="'stock-group:delete'"
-            :label="groupDetail.is_default ? '默认自选分组不能删除' : '删除分组'"
-            :tooltip="groupDetail.is_default ? '默认自选分组不能删除' : '删除分组'"
-            size="sm"
-            tone="danger"
+          <AppActionHint
+            v-if="hasPermission(auth.role, auth.permissions, 'stock-group:delete')"
+            :text="groupDetail.is_default ? '默认自选分组不能删除' : '删除分组'"
             :disabled="groupDetail.is_default"
-            @click="doDeleteGroup"
-          ><Delete /></AppIconButton>
+            label="删除分组"
+          >
+            <AppIconButton
+              v-permission="'stock-group:delete'"
+              label="删除分组"
+              :tooltip="false"
+              size="sm"
+              tone="danger"
+              :disabled="groupDetail.is_default"
+              @click="doDeleteGroup"
+            ><Delete /></AppIconButton>
+          </AppActionHint>
         </div>
       </div>
     </el-card>

@@ -104,8 +104,8 @@
 - 自定义条目顺序：按 [DESIGN.md「自定义顺序」](../../DESIGN.md#自定义顺序) 选择共享组件，核对允许调整的范围、稳定标识及业务保存流程。
 - 排序操作：统一复用 `AppSortControl`，并作为所属筛选/操作栏的最后一个控件；空间不足保持 DOM 顺序整体换行。
 - 图标关闭/移除临时界面：使用 `AppCloseButton`；库内置关闭由全局适配，档位、状态、适用范围和业务边界统一引用 DESIGN §4，不私写配方。
-- 纯图标操作：使用 `AppIconButton`；异步纯图标操作使用 `:loading`；具体尺寸、显式 tooltip 和 Unicode 禁令见 DESIGN。
-- 提示与可访问名称：默认名称不生成气泡；必要说明、禁用原因和真实截断分别消费 `AppHoverInfo` / `AppActionHint` / `AppOverflowTooltipHost`，完整规则统一引用 DESIGN §4“提示、截断与可访问名称”。
+- 纯图标操作：使用 `AppIconButton`；异步纯图标操作使用 `:loading`；具体尺寸、默认 tooltip／显式豁免和 Unicode 禁令见 DESIGN。
+- 提示与可访问名称：图标默认用途提示与明确豁免、必要说明、禁用原因和真实截断统一引用 DESIGN §4“提示、截断与可访问名称”；分别复用 `AppIconButton` / `AppHoverInfo` / `AppActionHint` / `AppOverflowTooltipHost`，其他控件不因名称自动生成气泡。
 - 专用原生按钮例外：
 - 自检结论：
 

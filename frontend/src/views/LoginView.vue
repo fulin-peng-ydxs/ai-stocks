@@ -370,17 +370,15 @@ function onSubmit() {
         >
           <i /><span>{{ activePresetLabel }}</span>
         </el-button>
-        <AppHoverInfo content="切换黑/白主题">
-          <AppIconButton class="login-theme" label="切换主题" variant="soft" @click="toggleTheme">
-            <svg v-if="isDark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4" />
-              <circle cx="12" cy="12" r="4" />
-            </svg>
-            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z" />
-            </svg>
-          </AppIconButton>
-        </AppHoverInfo>
+        <AppIconButton class="login-theme" label="切换主题" tooltip="切换黑/白主题" variant="soft" @click="toggleTheme">
+          <svg v-if="isDark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4" />
+            <circle cx="12" cy="12" r="4" />
+          </svg>
+          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z" />
+          </svg>
+        </AppIconButton>
       </div>
 
       <div class="login-card" data-testid="login-card-surface">

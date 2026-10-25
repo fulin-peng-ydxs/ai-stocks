@@ -46,7 +46,6 @@ async function toggle(): Promise<void> {
     :class="{ 'stock-group-favorite-button--active': active }"
     :aria-pressed="active"
     :label="actionLabel"
-    :tooltip="actionLabel"
     :loading="loading"
     size="xs"
     @click.stop="toggle"

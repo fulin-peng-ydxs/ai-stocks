@@ -522,7 +522,6 @@ const menuPageTitle = useMenuPageTitle()
             <AppIconButton
               v-permission="'menu:create'"
               label="新增根节点"
-              tooltip="新增根节点"
               size="sm"
               class="mr-root-add"
               :disabled="reorderSaving"
@@ -566,7 +565,6 @@ const menuPageTitle = useMenuPageTitle()
                     v-if="data.type === 'group'"
                     v-permission="'menu:create'"
                     label="新增子节点"
-                    tooltip="新增子节点"
                     class="mr-node-add"
                     size="sm"
                     @click.stop="openCreateChild(data)"

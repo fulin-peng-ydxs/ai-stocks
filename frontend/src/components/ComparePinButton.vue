@@ -24,7 +24,6 @@ const emit = defineEmits<{
     :class="{ 'compare-pin-button--active': active }"
     :aria-pressed="active"
     :label="label"
-    :tooltip="label"
     :disabled="disabled"
     :data-testid="testId"
     size="xs"
