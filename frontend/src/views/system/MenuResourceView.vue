@@ -656,7 +656,7 @@ const menuPageTitle = useMenuPageTitle()
 
               <!-- 功能点 -->
               <div class="mr-section mr-resource-section">
-                <div class="mr-func-head">
+                <AppControlRow class="mr-func-head" justify="between">
                   <h4 style="margin: 0">功能点
                     <HelpTip title="功能点说明" :width="360">
                       <HelpTipItem question="功能点用于什么">
@@ -679,12 +679,12 @@ const menuPageTitle = useMenuPageTitle()
                       </HelpTipItem>
                     </HelpTip>
                   </h4>
-                  <el-button v-permission="'resource:create'" size="small" :disabled="editingId === NEW_ROW"
+                  <el-button v-permission="'resource:create'" :disabled="editingId === NEW_ROW"
                              @click="startCreateRes">
                     <template #icon><el-icon><Plus /></el-icon></template>
                     新增功能点
                   </el-button>
-                </div>
+                </AppControlRow>
                 <!-- 表内联增删改（承接原型，无编辑 dialog）；宽度由统一语义列规则自适应。 -->
                 <AppStateBlock
                   v-if="resError"
@@ -898,7 +898,7 @@ const menuPageTitle = useMenuPageTitle()
 .mr-field :deep(.el-select), .mr-field :deep(.el-input) { flex: 1; }
 .mono :deep(input), .mono { font-family: var(--app-font-family-mono); }
 .hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-placeholder); }
-.mr-func-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.mr-func-head { margin-bottom: 10px; }
 .resource-table {
   flex: 1 1 auto;
   min-height: 0;

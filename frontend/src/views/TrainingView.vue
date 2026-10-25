@@ -754,21 +754,21 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
               </span>
             </div>
 
-            <div class="trade-row">
+            <AppControlRow class="trade-row">
               <span class="side-tag buy">买入</span>
-              <el-button size="small" plain :disabled="maxBuyHands < 1" @click="buyAll">全仓</el-button>
-              <el-button size="small" plain :disabled="halfBuyHands < 1" @click="buyHalf">半仓</el-button>
-              <el-button v-for="p in activePresets" :key="'b' + p" size="small" plain :disabled="buyPresetDisabled(p)" @click="buyPreset(p)">{{ presetLabel(p) }}</el-button>
+              <el-button plain :disabled="maxBuyHands < 1" @click="buyAll">全仓</el-button>
+              <el-button plain :disabled="halfBuyHands < 1" @click="buyHalf">半仓</el-button>
+              <el-button v-for="p in activePresets" :key="'b' + p" plain :disabled="buyPresetDisabled(p)" @click="buyPreset(p)">{{ presetLabel(p) }}</el-button>
               <el-button type="primary" plain :disabled="orderHands < 1 || maxBuyHands < 1" :loading="actionPending" aria-keyshortcuts="B" @click="doBuy">买入当前量 (B)</el-button>
-            </div>
+            </AppControlRow>
 
-            <div class="trade-row">
+            <AppControlRow class="trade-row">
               <span class="side-tag sell">卖出</span>
-              <el-button size="small" plain :disabled="posHands < 1" @click="sellAll">全部</el-button>
-              <el-button size="small" plain :disabled="halfPosHands < 1" @click="sellHalf">半仓</el-button>
-              <el-button v-for="p in activePresets" :key="'s' + p" size="small" plain :disabled="posHands < 1" @click="sellPreset(p)">{{ presetLabel(p) }}</el-button>
+              <el-button plain :disabled="posHands < 1" @click="sellAll">全部</el-button>
+              <el-button plain :disabled="halfPosHands < 1" @click="sellHalf">半仓</el-button>
+              <el-button v-for="p in activePresets" :key="'s' + p" plain :disabled="posHands < 1" @click="sellPreset(p)">{{ presetLabel(p) }}</el-button>
               <el-button type="primary" plain :disabled="posHands < 1 || orderHands < 1" :loading="actionPending" aria-keyshortcuts="S" @click="doSell">卖出当前量 (S)</el-button>
-            </div>
+            </AppControlRow>
 
             <div class="ops">
               <el-input v-model="order.reason" placeholder="操作理由（选填，记录买卖思路）" size="default" style="width:280px" />
@@ -1093,7 +1093,6 @@ const resultPageTitle = useMenuPageTitle({ suffix: '结算' })
 /* 预判高亮数字（可点填入） */
 .hl { font-weight: var(--app-font-weight-strong); font-size: var(--app-font-size-section-title); padding: 0 3px; border-radius: var(--app-radius-mark); }
 /* 买入/卖出快捷行 */
-.trade-row { display: flex; align-items: center; gap: var(--app-space-2); flex-wrap: wrap; }
 .side-tag { font-size: var(--app-font-size-table); font-weight: var(--app-font-weight-strong); width: 40px; }
 .side-tag.buy { color: var(--market-up-color); }
 .side-tag.sell { color: var(--market-down-color); }

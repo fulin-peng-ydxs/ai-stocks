@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppForm from '@/components/AppForm.vue'
 import AppFormHelp from '@/components/AppFormHelp.vue'
 import AppSelect from '@/components/AppSelect.vue'
@@ -135,22 +136,21 @@ async function removeFromGroup(): Promise<void> {
           <span v-if="selected.length > 30" class="stock-batch-more">… 等 {{ selected.length }} 只</span>
         </AppScrollArea>
       </div>
-      <div class="stock-batch-ops">
-        <el-button size="small" @click="emit('view')">逐个查看</el-button>
+      <AppControlRow class="stock-batch-ops">
+        <el-button @click="emit('view')">逐个查看</el-button>
         <el-button
           v-if="mode === 'remove'"
           v-permission="'stock-group:member-update'"
-          size="small"
           type="danger"
           plain
           @click="removeFromGroup"
         >从本组移出</el-button>
         <template v-else>
-          <el-button v-permission="'stock-group:create'" size="small" @click="openCreate">存为新分组</el-button>
-          <el-button v-permission="'stock-group:member-update'" size="small" @click="openAdd">加入已有分组</el-button>
+          <el-button v-permission="'stock-group:create'" @click="openCreate">存为新分组</el-button>
+          <el-button v-permission="'stock-group:member-update'" @click="openAdd">加入已有分组</el-button>
         </template>
         <el-button size="small" text @click="selected = []">清空</el-button>
-      </div>
+      </AppControlRow>
     </div>
   </el-card>
 
@@ -213,6 +213,6 @@ async function removeFromGroup(): Promise<void> {
 .stock-batch-chips { --app-scroll-display: flex; --app-scroll-wrap: wrap; --app-scroll-gap: var(--app-space-control-gap); max-height: 64px; }
 .stock-batch-more { color: var(--app-muted-text); font-size: var(--app-font-size-caption); }
 .stock-batch-more { align-self: center; }
-.stock-batch-ops { display: flex; gap: var(--app-space-2); align-items: center; flex-shrink: 0; }
+.stock-batch-ops { flex-shrink: 0; }
 .stock-batch-codes { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); margin-top: 4px; }
 </style>

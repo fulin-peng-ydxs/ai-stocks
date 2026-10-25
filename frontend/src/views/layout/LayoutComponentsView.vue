@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import { useMenuPageTitle } from '@/composables/useMenuPageTitle'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -428,10 +429,10 @@ const menuPageTitle = useMenuPageTitle()
         </template>
         <div v-if="selected" class="detail-body">
           <div class="detail-block">
-            <div class="db-head">
+            <AppControlRow class="db-head">
               <span class="db-title">四态规范预览</span>
               <HelpHint text="给开发与验收人员对照该组件种类的 ready / loading / empty / error 规范；不是业务页面截图，也不代表消费页面已经接入。非 ready 态与真实页面共用 AppStateBlock。" />
-              <el-radio-group v-model="previewState" size="small" style="margin-left:auto">
+              <el-radio-group v-model="previewState" style="margin-left:auto">
                 <el-radio-button
                   v-for="s in PREVIEW_STATES"
                   :key="s.value"
@@ -439,7 +440,7 @@ const menuPageTitle = useMenuPageTitle()
                   :data-testid="`component-state-${s.value}`"
                 >{{ s.label }}</el-radio-button>
               </el-radio-group>
-            </div>
+            </AppControlRow>
             <LayoutComponentPreview :kind="selected.kind" :state="previewState" />
             <BorderStatePreview />
             <div class="preview-purpose app-caption-text">
@@ -622,7 +623,7 @@ const menuPageTitle = useMenuPageTitle()
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: var(--app-space-2);
+  gap: var(--app-density-control-gap, var(--app-space-2));
 }
 .db-title {
   font-size: var(--app-font-size-table);

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppScrollArea from '@/components/AppScrollArea.vue'
 import { vKeyboardActivate } from '@/directives/keyboardActivate'
 import { computed, ref } from 'vue'
@@ -82,14 +83,13 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
 
 <template>
   <aside class="rule-master" aria-label="规则管理列表">
-    <div class="rule-master__tools">
+    <AppControlRow class="rule-master__tools">
       <el-button
         v-if="canManage && showCreate"
         v-permission="'trade-discipline:rule-manage'"
         type="primary"
         plain
         :icon="Plus"
-        size="small"
         class="rule-master__create"
         aria-label="新建规则"
         :disabled="loading || error"
@@ -97,8 +97,8 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
       >
         新建规则
       </el-button>
-      <AppSearchInput v-model="query" size="small" placeholder="搜索规则" />
-    </div>
+      <AppSearchInput v-model="query" placeholder="搜索规则" />
+    </AppControlRow>
 
     <AppAsyncRegion
       class="rule-master__region"
@@ -165,7 +165,7 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
   flex-direction: column;
   gap: var(--app-space-2);
 }
-.rule-master__tools { display: grid; gap: var(--app-space-2); flex: none; }
+.rule-master__tools { display: grid; flex: none; }
 .rule-master__create { width: 100%; }
 .rule-master__region { min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; }
 .rule-master__list {

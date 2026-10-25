@@ -718,7 +718,7 @@ defineExpose({
         >
           <TradeDirectionGroupGrid :groups="actionGroups">
             <template #actions="{ group }">
-              <el-button v-if="canEditDetails" v-permission="'trade-discipline:rule-manage'" :icon="Plus" size="small" @click="addActionRule(group.value)">添加</el-button>
+              <el-button v-if="canEditDetails" v-permission="'trade-discipline:rule-manage'" :icon="Plus" @click="addActionRule(group.value)">添加</el-button>
             </template>
             <template #default="{ group }">
               <AppStateBlock v-if="!groupedActionRules(group.value).length" state="empty" size="tiny" :title="`尚未添加${group.label}`" />

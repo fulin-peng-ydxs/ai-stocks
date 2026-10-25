@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import { enumText } from '@/utils/displayText'
 import {
   APP_BOTTOM_END_FLOATING_PLACEMENT,
@@ -514,10 +515,10 @@ async function onLogout() {
               <div v-else class="topbar-empty">暂无最近更新</div>
             </div>
 
-            <footer class="topbar-panel-actions">
-              <el-button size="small" plain @click="goTo('/data/overview')">数据概览</el-button>
-              <el-button size="small" plain @click="goTo('/data/quality')">质量检查</el-button>
-            </footer>
+            <AppControlRow class="topbar-panel-actions" justify="end">
+              <el-button plain @click="goTo('/data/overview')">数据概览</el-button>
+              <el-button plain @click="goTo('/data/quality')">质量检查</el-button>
+            </AppControlRow>
           </div>
         </el-popover>
         <div
@@ -592,10 +593,10 @@ async function onLogout() {
             </div>
             <div v-else class="topbar-empty">暂无任务记录</div>
 
-            <footer class="topbar-panel-actions">
-              <el-button size="small" plain @click="goTo('/data/ingest')">查看任务</el-button>
-              <el-button size="small" plain @click="goTo('/data/schedule')">任务调度</el-button>
-            </footer>
+            <AppControlRow class="topbar-panel-actions" justify="end">
+              <el-button plain @click="goTo('/data/ingest')">查看任务</el-button>
+              <el-button plain @click="goTo('/data/schedule')">任务调度</el-button>
+            </AppControlRow>
           </div>
         </el-popover>
 
@@ -693,13 +694,14 @@ async function onLogout() {
           <template #actions>
             <output class="display-scale-value" aria-live="polite">{{ displayScalePercent }}%</output>
           </template>
-          <PageSegmented
-            v-model="displayScaleModeModel"
-            size="large"
-            aria-label="界面比例模式"
-            test-id="appearance-display-scale-mode"
-            :options="displayScaleModeOptions"
-          />
+          <AppControlRow size="large">
+            <PageSegmented
+              v-model="displayScaleModeModel"
+              aria-label="界面比例模式"
+              test-id="appearance-display-scale-mode"
+              :options="displayScaleModeOptions"
+            />
+          </AppControlRow>
           <div class="display-scale-control">
             <AppIconButton
               label="缩小界面"
@@ -741,17 +743,18 @@ async function onLogout() {
           :level="1"
           :collapsible="false"
         >
-          <PageSegmented
-            v-model="themeModeModel"
-            size="large"
-            aria-label="明暗模式"
-            test-id="appearance-theme-mode"
-            :options="themeModeOptions"
-          >
-            <template #icon="{ option }">
-              <span class="mode-orb" :class="`mode-orb--${option.value}`" aria-hidden="true" />
-            </template>
-          </PageSegmented>
+          <AppControlRow size="large">
+            <PageSegmented
+              v-model="themeModeModel"
+              aria-label="明暗模式"
+              test-id="appearance-theme-mode"
+              :options="themeModeOptions"
+            >
+              <template #icon="{ option }">
+                <span class="mode-orb" :class="`mode-orb--${option.value}`" aria-hidden="true" />
+              </template>
+            </PageSegmented>
+          </AppControlRow>
         </SettingsGroup>
 
         <SettingsGroup
@@ -1292,12 +1295,7 @@ button.topbar-status:focus-visible {
   color: var(--el-text-color-placeholder);
   font-size: var(--app-font-size-caption);
 }
-.topbar-panel-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--app-space-2);
-  padding-top: 2px;
-}
+.topbar-panel-actions { padding-top: 2px; }
 .drawer-user-card {
   display: flex;
   align-items: center;

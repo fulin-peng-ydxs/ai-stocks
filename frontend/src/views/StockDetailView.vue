@@ -1184,7 +1184,7 @@ onBeforeUnmount(() => {
           </span>
         </template>
         <template v-if="(showCollectionNavigation && stockSet.has) || (canUpdateGroups && !barsPermissionDenied)" #footer>
-          <div
+          <AppControlRow
             v-if="showCollectionNavigation && stockSet.has"
             class="stock-context__collection"
             data-testid="stock-set-navigation"
@@ -1195,11 +1195,11 @@ onBeforeUnmount(() => {
               <span v-else class="nav-pos muted">不在集合内 · 共 {{ collectionTotal }} 只</span>
             </span>
             <el-button-group class="nav-btns">
-              <el-button size="small" :loading="setLoading" :disabled="!prevCode && !canLoadPrev" @click="gotoNeighbor(-1)">
+              <el-button :loading="setLoading" :disabled="!prevCode && !canLoadPrev" @click="gotoNeighbor(-1)">
                 <template #icon><el-icon><ArrowLeft /></el-icon></template>
                 {{ prevLabel }}
               </el-button>
-              <el-button size="small" :loading="setLoading" :disabled="!nextCode && !canLoadNext" @click="gotoNeighbor(1)">
+              <el-button :loading="setLoading" :disabled="!nextCode && !canLoadNext" @click="gotoNeighbor(1)">
                 {{ nextLabel }}
                 <el-icon class="el-icon--right"><ArrowRight /></el-icon>
               </el-button>
@@ -1212,7 +1212,6 @@ onBeforeUnmount(() => {
               remote
               clearable
               reserve-keyword
-              size="small"
               class="stock-context__select"
               :remote-method="onCollectionSearch"
               :loading="dropdownLoading"
@@ -1235,8 +1234,8 @@ onBeforeUnmount(() => {
               />
             </AppSelect>
             <AppCloseButton label="退出集合" size="default" @click="stockSet.clear()" />
-          </div>
-          <div v-if="canUpdateGroups && !barsPermissionDenied" class="stock-context__groups">
+          </AppControlRow>
+          <AppControlRow v-if="canUpdateGroups && !barsPermissionDenied" class="stock-context__groups" justify="end">
             <span class="stock-context__label">所属分组</span>
             <AppSelect
               v-model="selectedGroupIds"
@@ -1247,7 +1246,6 @@ onBeforeUnmount(() => {
               collapse-tags
               collapse-tags-tooltip
               :max-collapse-tags="2"
-              size="small"
               class="stock-context__group-select"
               placeholder="选择分组"
               :loading="groupOpsLoading"
@@ -1276,7 +1274,7 @@ onBeforeUnmount(() => {
                 </span>
               </el-option>
             </AppSelect>
-          </div>
+          </AppControlRow>
         </template>
       </MarketDetailHero>
       <AppStateBlock
@@ -1416,7 +1414,7 @@ onBeforeUnmount(() => {
               class="trade-card"
             >
         <template #header>
-          <div class="trade-head">
+          <AppControlRow class="trade-head">
             <span>买卖信号评估</span>
             <AssetProfileSelect
               ref="tradeSelectRef"
@@ -1437,7 +1435,6 @@ onBeforeUnmount(() => {
             />
             <el-button
               type="primary"
-              size="small"
               :disabled="!tradeId"
               :loading="tradeLoading"
               data-testid="stock-trade-eval-run"
@@ -1446,7 +1443,7 @@ onBeforeUnmount(() => {
               评估
             </el-button>
             <span class="hint" v-if="tradeEval">交易日 {{ tradeEval.date }} · v{{ tradeEval.version }}</span>
-          </div>
+          </AppControlRow>
         </template>
         <AppAsyncRegion
           :loading="tradeLoading"
@@ -1593,9 +1590,7 @@ onBeforeUnmount(() => {
 
 .detail-action,
 .detail-nav,
-.detail-actions,
-.stock-context__collection,
-.stock-context__groups {
+.detail-actions {
   display: flex;
   align-items: center;
 }
@@ -1639,8 +1634,6 @@ onBeforeUnmount(() => {
 .stock-context__collection {
   min-width: 0;
   flex: 1 1 620px;
-  gap: var(--app-space-3);
-  flex-wrap: wrap;
 }
 .nav-label {
   font-size: var(--app-font-size-table);
@@ -1654,8 +1647,6 @@ onBeforeUnmount(() => {
 .stock-context__groups {
   min-width: 0;
   flex: 1 1 300px;
-  justify-content: flex-end;
-  gap: var(--app-space-2);
 }
 .stock-context__label {
   flex: 0 0 auto;
@@ -1680,12 +1671,6 @@ onBeforeUnmount(() => {
   margin: 10px 0 0;
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
-}
-.trade-head {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-3);
-  flex-wrap: wrap;
 }
 .trade-profile-select {
   flex: 1 1 240px;

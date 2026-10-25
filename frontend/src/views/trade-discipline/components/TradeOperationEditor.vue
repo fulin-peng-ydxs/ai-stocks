@@ -345,7 +345,6 @@ defineExpose({ expandOperation, validate })
         <el-button
           v-permission="'trade-discipline:checkin-submit'"
           :icon="Plus"
-          size="small"
           :disabled="disabled"
           :aria-label="`添加${group.label}`"
           @click="add(group.value)"

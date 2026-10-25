@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppReorderList from '@/components/AppReorderList.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
@@ -62,10 +63,10 @@ defineExpose({ reveal })
 
 <template>
   <div ref="root" class="stock-checklist-editor" data-testid="stock-checklist-editor">
-    <div v-if="!disabled" class="stock-checklist-editor__tools">
+    <AppControlRow v-if="!disabled" class="stock-checklist-editor__tools" justify="between">
       <span class="app-caption-text">逐项填写可在今日打卡核对的条件</span>
-      <el-button :disabled="!options.some(item => !item.disabled)" :icon="Plus" size="small" data-testid="add-checklist-item" @click="add">添加检查项</el-button>
-    </div>
+      <el-button :disabled="!options.some(item => !item.disabled)" :icon="Plus" data-testid="add-checklist-item" @click="add">添加检查项</el-button>
+    </AppControlRow>
     <ConfigPanelSection v-for="category in categories" :key="category.value" class="stock-checklist-editor__group" :aria-label="category.label"
       :title="category.label" :level="2" :default-open="false" :model-value="!!open[category.value]"
       :summary="conditionSectionSummary({ ...rule, checklist_items: modelValue } as DraftStockRule, category.value)"
@@ -97,7 +98,7 @@ defineExpose({ reveal })
 
 <style scoped>
 .stock-checklist-editor { min-width: 0; --app-reorder-handle-offset: var(--app-space-1); }
-.stock-checklist-editor__tools { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--app-space-2); margin-bottom: var(--app-space-3); }
+.stock-checklist-editor__tools { margin-bottom: var(--app-space-3); }
 .stock-checklist-editor__fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 0 var(--app-space-3); }
 .stock-checklist-editor__row { display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--app-space-2); }
 .stock-checklist-editor__row > .el-textarea { flex: 1 1 240px; min-width: 0; }

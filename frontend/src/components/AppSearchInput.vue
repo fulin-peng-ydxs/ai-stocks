@@ -17,7 +17,6 @@ const props = withDefaults(defineProps<AppSearchInputProps>(), {
   placeholder: '搜索',
   debounceMs: 300,
   clearable: true,
-  size: 'default',
 })
 
 const emit = defineEmits<{

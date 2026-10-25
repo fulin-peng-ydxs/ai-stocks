@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppControlRow from '@/components/AppControlRow.vue'
 export interface TradeDirectionGroup {
   value: 'buy' | 'sell'
   label: string
@@ -25,7 +26,7 @@ defineProps<{
           <h5>{{ group.label }}</h5>
           <p>{{ group.hint }}</p>
         </div>
-        <slot name="actions" :group="group" />
+        <AppControlRow v-if="$slots.actions"><slot name="actions" :group="group" /></AppControlRow>
       </header>
       <div class="trade-direction-group__body">
         <slot :group="group" />

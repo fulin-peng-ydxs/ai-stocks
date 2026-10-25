@@ -70,7 +70,6 @@ function clear() {
     <div class="ip-panel">
       <el-input
         v-model="keyword"
-        size="small"
         placeholder="搜索图标名（Element Plus Icons）"
         clearable
       />
@@ -101,12 +100,12 @@ function clear() {
 <style scoped>
 .ip-trigger {
   box-sizing: border-box;
-  height: var(--app-density-control-height, var(--app-control-height-md)); width: 100%; border: 1px solid var(--el-border-color); border-radius: var(--layout-control-radius);
+  height: var(--app-control-row-height, var(--app-density-control-height, var(--app-control-height-md))); width: 100%; border: 1px solid var(--el-border-color); border-radius: var(--layout-control-radius);
   background: var(--el-bg-color); color: var(--el-text-color-primary); padding: 0 8px;
   display: flex; align-items: center; gap: var(--app-space-2); cursor: pointer; font-size: var(--app-font-size-table);
 }
-.ip-trigger--large { height: var(--app-control-height-lg); }
-.ip-trigger--small { height: var(--app-control-height-sm); }
+.ip-trigger--large { height: var(--app-control-row-height, var(--app-control-height-lg)); }
+.ip-trigger--small { height: var(--app-control-row-height, var(--app-control-height-sm)); }
 @media (hover: hover) and (pointer: fine) {
 .ip-trigger:hover:not(.disabled) { border-color: var(--app-border-strong); }
 }

@@ -2265,11 +2265,11 @@ const menuPageTitle = useMenuPageTitle()
 
       <!-- 逐笔交易（策略）-->
       <el-card v-if="hasTradeRows" shadow="never" class="block trade-block">
-        <div class="block-title">
+        <AppControlRow class="block-title">
           逐笔交易（{{ strat!.trades.length }} 笔）
           <span class="sub">点任一行 → 在 K 线上看该股的买卖点与原因（不跳转）</span>
-          <el-button size="small" class="export-btn" @click="exportTradesCsv">导出 CSV</el-button>
-        </div>
+          <el-button class="export-btn" @click="exportTradesCsv">导出 CSV</el-button>
+        </AppControlRow>
         <div class="trade-table-wrap">
         <AppDataTable :data="tradeRows" size="small" clickable
                   :border="tableBorder('trades')"
@@ -2721,7 +2721,7 @@ const menuPageTitle = useMenuPageTitle()
   display: flex;
   flex-direction: column;
 }
-.block-title { font-weight: var(--app-font-weight-section); margin-bottom: 10px; display: flex; align-items: baseline; gap: var(--app-space-2); }
+.block-title { font-weight: var(--app-font-weight-section); margin-bottom: 10px; display: flex; align-items: baseline; gap: var(--app-density-control-gap, var(--app-space-2)); }
 .block-title .sub { font-weight: var(--app-font-weight-regular); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .bench-choice { margin-left: auto; display: flex; align-items: center; gap: var(--app-space-2); font-weight: var(--app-font-weight-regular); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .bench-choice :deep(.app-filter-select) { width: 120px; }

@@ -9,18 +9,23 @@ const frontend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const rows = new Set(['AppControlRow', 'AppTabToolbar', 'AppAdvancedSearch', 'StockChartPanelHeader'])
 // 共享组合组件的具名插槽在消费方仍须接受同一门禁。
 const rowSlots = new Map([['AppWorkspacePane', ['actions', 'toolbar', 'footer']], ['AppDetailSection', 'actions'],
-  ['MarketAnalysisHeader', 'controls'], ['AppDetailDrawer', 'header-actions']])
+  ['MarketAnalysisHeader', 'controls'], ['AppDetailDrawer', 'header-actions'], ['TradeDirectionGroupGrid', 'actions']])
 const boundaries = new Set(['AppForm', 'AppDialog', 'PageDrawer', 'PageDrawerSurface',
   'AppDataTable', 'AppRowActions', 'AppCloseButton'])
 const controls = new Set(['el-button', 'el-input', 'el-input-number', 'el-date-picker',
   'el-radio-group', 'el-radio-button', 'el-checkbox-group', 'el-checkbox-button', 'el-segmented',
   'AppSelect', 'AppFilterSelect', 'AppMultiSelect', 'AppSearchInput', 'AppDatePicker',
   'TradeDatePicker', 'PageSegmented', 'AppIconButton', 'AssetProfileSelect',
-  'MarketBenchmarkSelect', 'IndicatorSelect', 'IndicatorParamFields', 'KlineRangeSelect', 'StockCodeMultiSelect',
+  'IconPicker', 'MarketBenchmarkSelect', 'IndicatorSelect', 'IndicatorParamFields', 'KlineRangeSelect', 'StockCodeMultiSelect',
   'StockGroupSelect', 'BoardGroupSelect'])
 const shared = new Set(['components/AppControlRow.vue', 'components/AppTabToolbar.vue',
   'components/AppAdvancedSearch.vue', 'components/AppSelect.vue', 'components/AppFilterSelect.vue',
-  'components/PageSegmented.vue', 'components/AppIconButton.vue'])
+  'components/PageSegmented.vue', 'components/AppIconButton.vue', 'components/IconPicker.vue'])
+// 基础适配器仅透传自身尺寸 API；业务消费方仍须通过所属表单/操作组声明层级。
+const sizeAdapters = new Set([...shared, 'components/AppSearchInput.vue',
+  'components/indicator/IndicatorParamFields.vue'])
+const compactRoles = new Set(['AppDataTable', 'AppTableColumn', 'el-table', 'el-table-column',
+  'AppRowActions', 'AppStateBlock', 'AppStatusNotice'])
 const height = /^(?:(?:min-|max-)?(?:height|block-size)|--app-control-row-height)$/
 const segmentedGeometry = /^(?:(?:min-|max-)?(?:width|height|inline-size|block-size)|display|flex(?:-.+)?|grid(?:-.+)?|padding(?:-.+)?|font(?:-.+)?|border(?:-.+)?|background(?:-.+)?|gap|row-gap|column-gap|line-height|color|box-shadow|--.+)$/
 const fieldBoundaries = new Set(['AppDataTable', 'AppTableColumn', 'el-table', 'el-table-column',
@@ -38,9 +43,10 @@ export function auditControlRows(sources) {
     const segmentedClasses = new Set(['page-segmented', 'seg-btn', 'seg-label', 'seg-indicator'])
     const descriptor = file.endsWith('.vue') ? parseVue(source).descriptor : undefined
     const template = descriptor?.template
-    function inspect(node, inRow = false, inField = false) {
+    function inspect(node, inRow = false, inField = false, compactRole = false) {
       if (node.type !== 1) return
-      if (boundaries.has(node.tag)) inRow = false
+      if (boundaries.has(node.tag)) { inRow = false; compactRole = false }
+      compactRole ||= compactRoles.has(node.tag)
       if (fieldBoundaries.has(node.tag)) inField = false
       if (['AppForm', 'PageSettingItem'].includes(node.tag)) inField = true
       const ownsRow = rows.has(node.tag) || node.props.some(p =>
@@ -50,11 +56,11 @@ export function auditControlRows(sources) {
       if (ownsRow) classes.forEach(c => rowClasses.add(c))
       const textCommand = staticAttr(node, 'text') || staticAttr(node, 'link')
       const line = template.loc.start.line + node.loc.start.line - 1
-      if (inField && !inRow && controls.has(node.tag) && node.tag !== 'AppIconButton' && !textCommand) {
+      if ((inField || !compactRole && !sizeAdapters.has(file)) && !inRow && controls.has(node.tag) && node.tag !== 'AppIconButton' && !textCommand) {
         const size = node.props.find(p => p.type === 6 && p.name === 'size'
           || p.type === 7 && p.name === 'bind' && p.arg?.content === 'size')
         if (size && !(size.type === 6 && size.value?.content === 'default')) {
-          report(line, '普通表单/设置字段不得独立设置 size；尺寸由表单或操作组统一提供')
+          report(line, '常规控件不得独立设置 size；尺寸由所属表单或操作组统一提供（含行外入口）')
         }
       }
       if (node.tag === 'PageSegmented' && file !== 'components/PageSegmented.vue') {
@@ -103,7 +109,7 @@ export function auditControlRows(sources) {
         const ownedSlots = rowSlots.get(node.tag)
         const slotOwnsRow = slot && (Array.isArray(ownedSlots)
           ? ownedSlots.includes(slot.arg?.content) : slot.arg?.content === ownedSlots)
-        inspect(child, inRow || !!slotOwnsRow, inField && !['actions', 'header-actions', 'tail'].includes(slot?.arg?.content))
+        inspect(child, inRow || !!slotOwnsRow, inField && !['actions', 'header-actions', 'tail'].includes(slot?.arg?.content), compactRole)
       })
     }
     if (template) baseParse(template.content).children.forEach(node => inspect(node))

@@ -20,7 +20,7 @@ describe('操作行消费门禁', () => {
   it.each(['actions', 'toolbar', 'footer'])('跟踪共享组件的%s插槽，不污染正文内容', slot => {
     expect(audit(`<template><AppWorkspacePane>
       <template #${slot}><AppSelect size="small" /></template>
-      <AppSelect size="large" />
+      <AppForm size="large"><AppSelect /></AppForm>
     </AppWorkspacePane></template>`)).toHaveLength(1)
   })
   it('追踪参与控件业务类和内部 wrapper，禁止通过局部样式补偿高度', () => {
@@ -33,12 +33,25 @@ describe('操作行消费门禁', () => {
     expect(audit(`<template><AppControlRow>
       <AppCloseButton label="关闭预览" size="compact" /><el-tag size="small" />
       <el-button link size="small">详情</el-button>
-      <AppDialog><AppSelect size="large" /></AppDialog>
+      <AppDialog><AppForm size="large"><AppSelect /></AppForm></AppDialog>
       <AppForm size="large"><AppSelect /></AppForm>
     </AppControlRow></template>`)).toEqual([])
     expect(audit(`<template><AppControlRow><AppDialog><AppControlRow>
       <AppSelect size="large" />
     </AppControlRow></AppDialog></AppControlRow></template>`)).toHaveLength(1)
+  })
+
+  it('行外和普通包装层也拦截各自定档，复用插槽由共享动作行承接', () => {
+    for (const tag of ['el-button', 'AppSelect', 'AppSearchInput', 'PageSegmented', 'el-input-number']) {
+      expect(audit(`<template><section><div><${tag} size="small" /></div></section></template>`))
+        .toHaveLength(1)
+    }
+    expect(audit(`<template><TradeDirectionGroupGrid><template #actions>
+      <el-button size="small">添加</el-button>
+    </template></TradeDirectionGroupGrid></template>`)).toHaveLength(1)
+    expect(audit(`<template><AppControlRow size="small"><el-button>紧凑附属操作</el-button></AppControlRow>
+      <AppDataTable><AppTableColumn><AppSelect size="small" /></AppTableColumn></AppDataTable>
+    </template>`)).toEqual([])
   })
 
   it('分段宽度门禁覆盖业务类、媒体查询、内联样式和动态逃逸', () => {
