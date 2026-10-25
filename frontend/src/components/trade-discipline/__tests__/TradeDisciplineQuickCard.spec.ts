@@ -58,6 +58,8 @@ describe('TradeDisciplineQuickCard', () => {
     await wrapper.findAll('button').find(node => node.text() === '进入交易打卡')!.trigger('click')
     expect(wrapper.emitted('navigate')?.at(-1)).toEqual([{ tab: 'checkin', ruleId: undefined, tradeDate: '2026-08-22' }])
     expect(quickSubmit).not.toHaveBeenCalled()
+    await wrapper.findAll('button').find(node => node.text() === '查看规则')!.trigger('click')
+    expect(wrapper.emitted('navigate')?.at(-1)).toEqual([{ tab: 'rules' }])
     wrapper.unmount()
   })
 
@@ -102,14 +104,19 @@ describe('TradeDisciplineQuickCard', () => {
     expect(writable.text()).toContain('0/1')
     expect(writable.text()).toContain('趋势纪律')
     expect(writable.text()).toContain('今日无操作')
+    const progress = writable.get('.quick-progress')
+    expect(progress.element.tagName).toBe('DIV')
+    expect(progress.attributes('tabindex')).toBeUndefined()
+    await progress.trigger('click')
+    expect(writable.emitted('navigate')).toBeUndefined()
 
     writable.unmount()
     const readonly = await mountCard(false)
     expect(readonly.text()).not.toContain('今日无操作')
     expect(readonly.text()).toContain('去打卡')
-    expect(readonly.text()).toContain('管理规则')
-    await readonly.findAll('button').find((button) => button.text() === '管理规则')!.trigger('click')
-    expect(readonly.emitted('navigate')?.at(-1)).toEqual([{ tab: 'rules' }])
+    expect(readonly.text()).not.toContain('管理规则')
+    expect(readonly.text()).not.toContain('查看规则')
+    readonly.unmount()
   })
 
   it('确认后只提交规则和交易日，成功刷新摘要并广播跨入口变更', async () => {
@@ -133,6 +140,15 @@ describe('TradeDisciplineQuickCard', () => {
     expect(quickSubmit).toHaveBeenCalledWith('rule-1', '2026-08-22')
     expect(wrapper.text()).toContain('全部完成')
     expect(wrapper.text()).toContain('1/1')
+    expect(wrapper.text()).not.toContain('去打卡')
+    expect(wrapper.text()).not.toContain('今日无操作')
+    const progress = wrapper.get('.quick-progress')
+    await progress.trigger('click')
+    expect(wrapper.emitted('navigate')).toBeUndefined()
+    await wrapper.findAll('button').find((button) => button.text() === '查看记录')!.trigger('click')
+    expect(wrapper.emitted('navigate')?.at(-1)).toEqual([{
+      tab: 'checkin', ruleId: 'rule-1', tradeDate: '2026-08-22',
+    }])
     expect(useTradeDisciplineSummary().latestChange.value).toEqual({
       ruleId: 'rule-1', tradeDate: '2026-08-22', source: 'quick',
     })

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import StockGroupFavoriteButton from '@/components/StockGroupFavoriteButton.vue'
+import AppHoverInfo from '@/components/AppHoverInfo'
 import * as stockGroupApi from '@/api/stockGroup'
 
 vi.mock('@/api/stockGroup', () => ({
@@ -31,6 +32,18 @@ describe('StockGroupFavoriteButton', () => {
     vi.clearAllMocks()
     vi.mocked(stockGroupApi.addMembers).mockResolvedValue({ added: 1 })
     vi.mocked(stockGroupApi.removeMembers).mockResolvedValue({ msg: '已移除' })
+  })
+
+  it('显式用途提示随自选状态和股票名称更新', async () => {
+    const wrapper = mountButton()
+    await flushPromises()
+    expect(wrapper.findComponent(AppHoverInfo).vm.$attrs.content).toBe('加入自选分组：平安银行')
+    await wrapper.setProps({ active: true, name: '测试股票' })
+    expect(wrapper.get('button').attributes('aria-label')).toBe('移出自选分组：测试股票')
+    expect(wrapper.findComponent(AppHoverInfo).vm.$attrs.content).toBe('移出自选分组：测试股票')
+    expect(stockGroupApi.addMembers).not.toHaveBeenCalled()
+    expect(stockGroupApi.removeMembers).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('空心星标把股票加入默认自选分组并回传激活态', async () => {

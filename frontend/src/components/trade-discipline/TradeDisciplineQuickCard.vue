@@ -97,17 +97,13 @@ async function quickSubmit(): Promise<void> {
         <span class="quick-kicker">今日交易纪律</span>
         <strong>{{ summary?.trade_date || tradeDate || '最新交易日' }}</strong>
       </div>
-      <el-button
+      <div
         v-if="status === 'ready' && summary?.total"
         class="quick-progress"
-        :class="{ 'is-complete': allCompleted }"
-        text
-        aria-label="打开交易纪律工作台"
-        @click="navigateToCheckin()"
       >
         <span class="quick-progress-label">{{ allCompleted ? '全部完成' : '已完成' }}</span>
         <strong class="quick-progress-value">{{ completionText }}</strong>
-      </el-button>
+      </div>
     </header>
 
     <AppStateBlock
@@ -134,7 +130,7 @@ async function quickSubmit(): Promise<void> {
       description="可先建立规则，也可进入交易打卡设置真实持仓、记录实际成交。"
     >
       <template #extra>
-        <AppControlRow size="small"><el-button type="primary" plain @click="navigateToCheckin()">进入交易打卡</el-button><el-button text @click="emit('navigate', { tab: 'rules' })">查看规则</el-button></AppControlRow>
+        <AppControlRow size="small"><el-button type="primary" plain @click="navigateToCheckin()">进入交易打卡</el-button><el-button link type="primary" @click="emit('navigate', { tab: 'rules' })">查看规则<el-icon class="el-icon--right"><ArrowRight /></el-icon></el-button></AppControlRow>
       </template>
     </AppStateBlock>
     <div v-else class="quick-rule-list">
@@ -159,17 +155,14 @@ async function quickSubmit(): Promise<void> {
           >
             今日无操作
           </el-button>
-          <el-button size="small" text @click="navigateToCheckin(rule.rule_id)">
-            去打卡<el-icon><ArrowRight /></el-icon>
+          <el-button size="small" link type="primary" @click="navigateToCheckin(rule.rule_id)">
+            {{ rule.checkin_id ? '查看记录' : '去打卡' }}<el-icon class="el-icon--right"><ArrowRight /></el-icon>
           </el-button>
         </AppControlRow>
         <div v-if="actionErrorRuleId === rule.rule_id" class="quick-rule-error" role="alert">
           {{ actionErrorMessage }}
         </div>
       </article>
-      <div class="quick-card-footer">
-        <el-button size="small" text @click="emit('navigate', { tab: 'rules' })">管理规则</el-button>
-      </div>
     </div>
     <AppDialog v-model="confirmationOpen" title="确认今日无操作" size="compact" boundary="app" :close-on-click-modal="false">
       <div class="quick-confirm-content">
@@ -208,23 +201,14 @@ async function quickSubmit(): Promise<void> {
 .quick-kicker { color: var(--page-settings-text-muted); font-size: var(--app-font-size-caption); }
 .quick-head strong { color: var(--page-settings-text); font-size: var(--app-font-size-data); line-height: var(--app-line-height-data); font-weight: var(--app-font-weight-section); }
 .quick-progress {
-  min-width: 82px;
-  padding: var(--app-space-control-gap) var(--app-space-2);
-  border: 1px solid var(--app-border-warning);
-  border-radius: var(--layout-control-radius);
-  background: color-mix(in srgb, var(--el-color-warning) 8%, transparent);
-  color: var(--page-settings-text);
-  display: flex;
-  flex-direction: column;
+  flex: none;
   align-items: flex-end;
 }
 .quick-progress-label { color: var(--page-settings-text-muted); font-size: var(--app-font-size-caption); }
 .quick-progress-value { font-variant-numeric: tabular-nums; }
-.quick-progress.is-complete { border-color: var(--app-border-success); background: color-mix(in srgb, var(--el-color-success) 8%, transparent); }
 .quick-rule-list { padding: var(--app-space-1) var(--app-space-3) var(--app-space-2); }
 .quick-rule-row { padding: var(--app-space-3) 0; border-bottom: 1px solid var(--page-settings-divider); }
 .quick-rule-row:last-child { border-bottom: 0; }
-.quick-card-footer { display: flex; justify-content: flex-end; padding-top: var(--app-space-1); }
 .quick-rule-main { min-width: 0; display: flex; align-items: center; gap: var(--app-space-2); }
 .quick-rule-main > div { min-width: 0; display: flex; flex-direction: column; gap: var(--app-space-1); }
 .quick-rule-main strong { color: var(--page-settings-text); font-size: var(--app-font-size-table); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

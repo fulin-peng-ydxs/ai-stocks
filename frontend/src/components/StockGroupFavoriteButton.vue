@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Star, StarFilled } from '@element-plus/icons-vue'
 import AppIconButton from '@/components/AppIconButton.vue'
@@ -22,6 +22,7 @@ const emit = defineEmits<{
 }>()
 
 const loading = ref(false)
+const actionLabel = computed(() => `${props.active ? '移出' : '加入'}自选分组：${props.name || props.code}`)
 
 async function toggle(): Promise<void> {
   if (!props.groupId || !props.code || loading.value) return
@@ -44,7 +45,8 @@ async function toggle(): Promise<void> {
     class="stock-group-favorite-button"
     :class="{ 'stock-group-favorite-button--active': active }"
     :aria-pressed="active"
-    :label="`${active ? '移出' : '加入'}自选分组：${name || code}`"
+    :label="actionLabel"
+    :tooltip="actionLabel"
     :loading="loading"
     size="xs"
     @click.stop="toggle"

@@ -58,7 +58,7 @@
 | `frontend/src/components/BrandMark.vue` | 无自身 CSS 查询 | 宽min(184,100%)保持比例；统一品牌身份不按页面变形。 | App、LoginView |
 | `frontend/src/components/BuiltinOptionRow.vue` | 无自身 CSS 查询 | 名称省略，内置标识/操作固定；尾部类型标签最多半行并省略，完整原文由全局溢出提示承接。 | TradeRuleEditor、ViolationReasonCombobox、TradeOperationEditor |
 | `frontend/src/components/ChartOperationGroup.vue` | 无自身 CSS 查询 | 委托 SettingsGroup。 | StockChartWorkspace |
-| `frontend/src/components/ComparePinButton.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | StockAnalysisNameCell、SectorsView |
+| `frontend/src/components/ComparePinButton.vue` | 无自身 CSS 查询 | 随父容器布局，不按几何隐藏信息；加入／移出走势对比提示随状态及对象名称更新，复用AppIconButton.tooltip，不改变按钮尺寸。 | StockAnalysisNameCell、SectorsView |
 | `frontend/src/components/CompareQueueRail.vue` | 无自身 CSS 查询 | 对比队列始终单行内部横向滚动，选中对象与移除动作不隐藏。 | StockAnalysisPanel、SectorsView |
 | `frontend/src/components/ComponentAutoSettings.vue` | 无自身 CSS 查询 | 委托 AppRowActions、SettingsGroup、PageSegmented、PageSettingItem、PageToggleRow、StockChartSettingSection、StockAnalysisDefaultFields、SectorAnalysisDefaultFields、KlineSettingSection、MasterDetailRatioProfileSettings、SourceTag；组件组说明通过 componentMeta.hint 复用悬浮帮助，标题不拼接范围说明；配置中心隐藏重复组标题时由外层组件标题承接帮助，表单不单独渲染问号；默认折叠候选清单及有子项的父组委托 SettingsGroup 收展，展开态与选值分离；按元数据父组分行、子分区缩进并在同父组内自然换行，长标签换行，不增加局部滚动；父子选值独立，切换候选范围保留隐藏选值。 | PageSettingsDrawer、LayoutPagesView |
 | `frontend/src/components/EquityChart.vue` | 无自身 CSS 查询 | 默认高420或fill满区，自身resize；图表容器min0。 | BacktestView、TrainingView |
@@ -103,7 +103,7 @@
 | `frontend/src/components/StockChartSettingSection.vue` | 无自身 CSS 查询 | 比例网格min52+116+14；长设置由共享抽屉滚动承接。 | ComponentAutoSettings |
 | `frontend/src/components/StockCompareChart.vue` | 无自身 CSS 查询 | 委托 AppStateBlock。 | StockAnalysisPanel |
 | `frontend/src/components/StockGroupBatchActions.vue` | 无自身 CSS 查询 | 批量动作自然换行；分组条max-height64内部滚动。 | BoardView、StocksView |
-| `frontend/src/components/StockGroupFavoriteButton.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | BoardView、StockDetailView、StocksView |
+| `frontend/src/components/StockGroupFavoriteButton.vue` | 无自身 CSS 查询 | 随父容器布局，不按几何隐藏信息；加入／移出自选提示随状态及股票名称更新，复用AppIconButton.tooltip，不改变按钮尺寸。 | BoardView、StockDetailView、StocksView |
 | `frontend/src/components/StockStatusTag.vue` | 无自身 CSS 查询 | 语义控件/展示单元随父容器布局；无几何触发的信息隐藏。 | StockAnalysisNameCell、RankedStockResultTable、BacktestView、SectorDetailView、StockDetailView、StocksView、LimitLadderCard、StockOptionSelect、TradeCheckinRevisionDrawer |
 | `frontend/src/components/SubScoreBars.vue` | 无自身 CSS 查询 | 语义微图min132，消费表格内部横滚承担最低宽。 | 按路由/动态渲染或内部消费；无直接Vue import匹配 |
 | `frontend/src/components/SubScoreChips.vue` | 无自身 CSS 查询 | 评分项自然换行，单项长文本省略并保留提示。 | RankedStockResultTable |
@@ -145,7 +145,7 @@
 | `frontend/src/components/trade-discipline/StockRuleChecklistEditor.vue` | 无自身 CSS 查询 | 三类/补充说明委托 ConfigPanelSection，默认值读取 stockConditions.defaultCollapsed，代码默认独立收起；设置抽屉显式改默认/重置只重置开合，保留编辑输入；摘要常显，新建/错误展开定位；分类内逐行编辑；字段网格 auto-fit、条件文本和分类控件自然换行；组内拖动和键盘排序复用 AppReorderList；宽度变化后重新测量文本高度，卸载释放观察器，尺寸变化不改草稿。；新增字典分类沿用共享折叠与换行，停用分类保留旧条件及版本名称。 | TradeRuleEditor |
 | `frontend/src/components/trade-discipline/StockRuleConditionChecklist.vue` | 无自身 CSS 查询 | 条件文本与结果 flex-wrap，空间不足结果换至下一行；三个分类和补充说明委托 ConfigPanelSection，共用 stockConditions.defaultCollapsed，代码默认独立收起；远端水合保留已操作分区，显式改默认/重置不改核对结果；标题保留摘要与待核对/不符合/未知数量，可键盘展开；条件、结果和错误保留，尺寸恢复不重置选择或展开。；新增字典分类沿用共享折叠与换行，停用分类保留旧条件及版本名称。 | TradeOperationEditor、TradeCheckinRevisionDrawer |
 | `frontend/src/components/trade-discipline/TradeDirectionGroupGrid.vue` | `@container app-viewport (max-width: 760px)` | 规则与已有成交按方向单列；可用columns=2仅并列无成交的买卖空态，760以下仍单列。 | TradeOperationEditor、TradeRuleEditor |
-| `frontend/src/components/trade-discipline/TradeDisciplineQuickCard.vue` | `@container app-viewport (max-width: 520px)` | 窄容器操作换行，规则与动作保留；快捷确认委托AppDialog，持仓数量输入限制在弹窗内并允许实际修改。 | App |
+| `frontend/src/components/trade-discipline/TradeDisciplineQuickCard.vue` | `@container app-viewport (max-width: 520px)` | 窄容器操作换行，规则与动作保留；进度为静态摘要，规则记录入口用带箭头链接；仅空态保留查看规则入口；快捷确认委托AppDialog，持仓核对由服务端按账本事实执行。 | App |
 | `frontend/src/components/trade-discipline/TradeDisciplineSectionPanel.vue` | `@container app-viewport (max-width: 760px)` | 头部actions插槽复用AppControlRow；showBody默认保留内容，空分区可仅保留头部；borderPlacement=panel复用app-surface，将标题/动作/正文纳入同一外框并去掉正文内框，默认body保持既有消费者；窄宽头部上下排列，不隐藏操作。 | TradeCheckinForm、TradeOperationEditor、TradeRuleEditor、TradeLedgerWorkspace |
 | `frontend/src/layout/components/BorderStatePreview.vue` | 无自身 CSS 查询 | 真实混合控件行可切换共同尺寸并自然换行；无框命令行委托AppControlRow自然换行，主色/危险/关闭反馈及加载/选中禁用不改变尺寸；内部表单auto-fit随容器换列；详情网格委托AppDetailFields的760px单列；状态仅本地切换，边界不随内容三态拆卸。 | LayoutComponentsView |
 | `frontend/src/layout/components/LayoutComponentPreview.vue` | 无自身 CSS 查询 | 固定256高规范样板；状态复用AppStateBlock，消费页可用性需独立验证。 | LayoutComponentsView |
