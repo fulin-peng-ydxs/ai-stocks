@@ -365,12 +365,13 @@ function onSubmit() {
         <el-button
           v-if="presetOptions.length > 1"
           class="login-preset"
+          text
           :aria-label="`切换研究空间，当前${activePresetLabel}`"
           @click="cyclePreset"
         >
           <i /><span>{{ activePresetLabel }}</span>
         </el-button>
-        <AppIconButton class="login-theme" label="切换主题" tooltip="切换黑/白主题" variant="soft" @click="toggleTheme">
+        <AppIconButton class="login-theme" label="切换主题" tooltip="切换黑/白主题" variant="ghost" @click="toggleTheme">
           <svg v-if="isDark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4" />
             <circle cx="12" cy="12" r="4" />
